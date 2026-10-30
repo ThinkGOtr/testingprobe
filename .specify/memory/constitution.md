@@ -1,6 +1,8 @@
 <!--
 Sync Impact Report
-- Version change: 1.0.0 → 1.0.1 (PATCH: İlke I ve Doğruluk kaynağı maddesi iş akışı motorundan
+- Version change: 1.0.1 → 1.1.0 (MINOR: test edilen uygulamaya salt okuma erişim kısıtları ve kanıt
+  doğrulama kuralı eklendi)
+- Önceki: 1.0.0 → 1.0.1 (PATCH: İlke I ve Doğruluk kaynağı maddesi iş akışı motorundan
   bağımsız ifade edildi; demo Postgres durum makinesi, ürün Temporal — kural değişmedi)
 - Önceki: (template) → 1.0.0
 - Modified principles: tümü şablon yer tutucularından ilk kez tanımlandı
@@ -100,6 +102,10 @@ bağımsız bir sözleşme sunar; sağlayıcıya özgü özellikler yalnızca ad
   `npm ci --ignore-scripts`; Semgrep her PR'da koşar.
 - **Ağ:** Host'a açılan tüm portlar yalnızca `127.0.0.1`; Mac'e dışarıdan gelen bağlantı yoktur.
 - **Sırlar:** Sırlar git'e girmez (`.env`, Docker secrets; imza anahtarı Keychain'de).
+- **Test edilen uygulamaya erişim:** Kod ve veritabanına yalnızca salt okuma; kod için read-only GitHub
+  MCP ve yalnızca ilgili repoda `contents:read`; veri için izin listeli tablolar, tek `SELECT`, zaman
+  ve satır sınırı, maskelenmiş sonuç. Genel amaçlı SQL çalıştıran araç kullanılmaz. AI'ın kod/veri
+  kanıtına dayanan her bulgusu, gösterilmeden önce deterministik olarak yeniden doğrulanır.
 
 ## Geliştirme Akışı ve Kalite Kapıları
 
@@ -124,4 +130,4 @@ ve etkisi yazılır ve teknik lider ile ürün sahibi tarafından onaylanır. S�
 kaldırma veya yeniden tanımlama MAJOR, yeni ilke veya bölüm MINOR, açıklama ve ifade düzeltmeleri
 PATCH. Çalışma zamanı rehberi için `docs/TEKNIK-TASARIM.md` ve `CLAUDE.md` kullanılır.
 
-**Version**: 1.0.1 | **Ratified**: 2026-10-30 | **Last Amended**: 2026-10-30
+**Version**: 1.1.0 | **Ratified**: 2026-10-30 | **Last Amended**: 2026-10-30

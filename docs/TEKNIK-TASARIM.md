@@ -1,6 +1,6 @@
 # AI Automation Testing (Test Engineering Suite) — Demo Teknik Tasarımı
 
-> **Sürüm:** v1.3 · 2026-10-30 · **Hazırlayan:** Gökhan Sipahi · **Gözden geçirecek:** Cengizhan Bey, Hakan, İsmail
+> **Sürüm:** v1.4 · 2026-10-30 · **Hazırlayan:** Gökhan Sipahi · **Gözden geçirecek:** Cengizhan Bey, Hakan, İsmail
 > **Bağlayıcı kaynak:** "AI Automation Testing — Geliştirme Ekibi için Ürün Brief'i" (Cengizhan Bey, 30.10.2026). Bu doküman o brief'in **demo dilimini** tarif eder. Brief'ten sapmalar §19'dadır.
 > **Spec Kit nedir:** GitHub'ın açık kaynak "spesifikasyon güdümlü geliştirme" aracı. Bu doküman önce projenin değişmez kurallarına (constitution, §3), sonra her kilometre taşı için ayrı spec → plan → görev → uygulama döngüsüne (§21) girdi olur.
 >
@@ -41,6 +41,7 @@
 | 18 | Jira bug "Faz 2 alanları" | Sonraki fazda; demoda temel bug alanları | §8.12 |
 | 19 | 1 hafta, tüm akış canlı | **Tüm 14 adım canlı**, ince sürümlerle | §2.1 |
 | 21 | Rakip analizinden (TheRafi) | **Demoya:** erişilebilirlik denetimi, serbest metin gereksinim girişi, Xray arka ucu. **Sonra:** TestRail, Zephyr. **Gerek yok:** tasarım dosyasından case üretimi, kurulum seçenekleri | §2.1, §17, §18, §20.1 |
+| 22 | Doküman tutarlılık denetimi | **Sistem, test edilen uygulamanın GitHub reposuna ve veritabanına salt okuma erişimle analistin dokümanını (Jira story açıklaması + AC) iç tutarlılık, kod ve veri açısından denetler**; AI düzeltme önerir, analist onaylar, sistem Jira'yı günceller; kod hatalıysa bug taslağı; engelleyici bulgu kalmayınca "son hal" → PO teyidi | §2 adım 2, §8.2b, §17 |
 | 20 | Demo sadeleştirmeleri | **Onaylı** (Temporal yerine demoda Postgres durum makinesi; tek ekran Kontrol Kulesi; deploy tetiği elle; triage kural + mükerrer arama) | §2.1, §19 sapma 14 |
 
 ---
@@ -69,7 +70,7 @@ Renkler ekibin diyagramıyla aynı: **AI adımı (taslak)** · **İnsan kapısı
 | # | Adım (diyagram) | Tür | Kim | Sistem davranışı | Ekranda |
 |---|---|---|---|---|---|
 | 1 | **Jira** — AC ve açıklama | Sistem | Analist | Rovo MCP ile story, açıklama ve kabul kriterleri okunur | Story listesi |
-| 2 | **Ön inceleme** — soru ve eksik | AI | AI | Story şemalı olarak incelenir: belirsiz ifadeler, eksik kabul kriterleri, çelişkiler, test edilemeyen maddeler → soru listesi. Sorular Jira'da story'ye **yorum** olarak yazılır, `tp-po-pending` etiketi eklenir | Portal: soru kartları; Jira'da yorum |
+| 2 | **Ön inceleme** — soru, eksik ve **kod/veri tutarlılığı** | AI + İnsan | AI, Analist | (a) İç tutarlılık: belirsizlik, eksik AC, çelişki, test edilemeyen madde. (b) **Kodla karşılaştırma:** uygulamanın GitHub reposu salt okunur incelenir. (c) **Veriyle karşılaştırma:** uygulamanın veritabanı salt okunur sorgulanır. Her bulgu kanıtlıdır (dosya:satır, sorgu + sonuç) ve kanıt deterministik olarak yeniden doğrulanır. Analist her bulgu için: **dokümanı düzelt** (AI önerisi → onay → sistem Jira'daki açıklama/AC'yi günceller) · **kod/veri hatalı** (bug taslağı) · **bilinçli fark** (gerekçeli). Engelleyici bulgu kalmayana kadar yeniden kontrol → doküman "son hal". Kalan sorular Jira yorumu olarak yazılır, `tp-po-pending` etiketi eklenir (§8.2b) | Portal: bulgu kartları + kanıt; önerilen metin farkı; Jira'da güncellenmiş story |
 | 3 | **PO teyidi** — insan kapısı | İnsan | PO | PO Jira'da soruları cevaplar (gerekirse AC'yi günceller) ve `tp-po-approved` etiketini koyar; ürün etiketi okur, story'yi güncel haliyle yeniden çeker. Etiket yoksa case üretimine geçilmez | Jira'da PO cevabı → portalda "PO onaylı" |
 | 4 | **Test case** — AI iskelet, QA onay | AI + İnsan | AI, Analist (QA) | Şemalı pozitif/negatif/sınır case'ler (AC ve PO cevaplarına bağlı); QA onay/düzelt/reddet; onaylılar `publish_test_cases` ile Jira'ya (önizleme → yayın). **Claude kanalı:** Claude Code taslak üretir → `submit_draft_cases` → aynı QA onayı | Case kartları, sayaç, kabul oranı; Jira'da Test issue'ları |
 | 5 | **Kod taslağı** — AI, ayrı dalda PR | AI | Mühendis + AI | Playwright MCP ile adımlar uygulamada doğrulanır → page object eşlemesi → şablonla TypeScript test → yerel kontrol → bot ayrı dalda PR açar | Adım ekran görüntüleri; PR linki |
@@ -217,6 +218,7 @@ Demo story'si mutlaka `add-to-cart` ve kampanya hesabı adımlarını içerir.
 | `run` | id, script_id, pr_no, commit, github_run_id, sonuç, artefaktlar, süre |
 | `failure` | id, run_id, test_adı, hata_imzası, sınıf, alt_tür, eşleşen_sinyaller, karar_kaynağı (`rule`/`llm`), öneri_türü, öneri_durumu |
 | `requirement_review` | id, requirement_id, sorular (JSON), verdict, jira_comment_id, po_onay_kullanıcısı, po_onay_zamanı, durum (`pending_po`/`approved`) |
+| `consistency_finding` | id, requirement_id, tur (tür), doc_ref, kanıtlar (JSON), kanıt_doğrulandı, severity, önerilen_metin, analist_kararı (`fix_doc`/`code_defect`/`accept_difference`), gerekçe, karar_veren, kontrol_turu, durum |
 | `test_result` | id, run_id, test_adı, durum, süre, retry, commit, tetik (`pr`/`push`/`nightly`/`deploy`), kaynak (`local`/`sauce`) |
 | `bug_draft` | id, failure_id, içerik (JSON), mükerrer_adayları, karar (`new`/`link`), onaylayan, onaylanan_hash, jira_key, durum |
 | `external_ref` | entity_id, sistem (`jira`/`github`), idempotency_key, external_key, durum (`intent`/`created`/`failed`) |
@@ -365,6 +367,28 @@ FailureToFix(run_id)
 - **Jira'ya yazma:** sorular tek bir yorum olarak (numaralı, "AI-generated" etiketiyle) story'ye eklenir; `tp-po-pending` etiketi konur. `verdict = ready` ise yine de PO teyidi istenir (insan kapısı atlanmaz).
 - **PO teyidi:** PO cevapları Jira yorumu olarak yazar, gerekirse AC'yi günceller ve `tp-po-approved` etiketini koyar. Ürün 15 sn'de bir sorgular; etiket görülünce story yeniden çekilir (`kaynak_hash` güncellenir), PO cevapları case üretim bağlamına eklenir ve kapı açılır. Etiketi koyan kişi Jira'dan okunup kayda yazılır.
 - **Yetki:** yazma kullanıcısı yalnızca yorum, etiket, Test ve Bug oluşturma yetkili.
+
+### 8.2b Doküman tutarlılık denetimi: kod ve veriyle (adım 2, karar §0-22)
+
+**Amaç:** Test case üretiminden önce analistin dokümanını (Jira story açıklaması + AC) kendi içinde ve uygulamanın gerçek kodu ve verisiyle tutarlı hale getirmek.
+
+**Erişim (salt okuma, en az yetki):**
+- **Kod:** GitHub'ın resmi MCP sunucusu (`github-mcp-server`) **read-only modda**, yalnızca `repos` ve `code_search` araç setleri; ince yetkili token, yalnızca test edilen uygulamanın reposunda `contents:read`.
+- **Veri:** kendi `db_schema` ve `db_query` araçlarımız: yalnızca okuma yetkili veritabanı rolü (`demoapp_ro`); izin listesindeki şema/tablolar; tek `SELECT` (SQL ayrıştırıcıyla zorlanır), `statement_timeout` 5 sn, en fazla 100 satır; sonuçlar modele gitmeden PII maskelemesinden geçer. Genel amaçlı "her SQL'i çalıştıran" MCP sunucusu kullanılmaz.
+- Kod ve veri içeriği **güvenilmeyen girdi**dir (§5).
+
+**Akış:**
+1. Story + AC okunur; AI önce iç tutarlılığı inceler.
+2. AI, kod araçlarıyla ilgili modülleri (kampanya, sepet, sipariş kuralları) ve veri araçlarıyla ayar/tanım tablolarını inceler; dokümandaki her ölçülebilir iddiayı (tutar, oran, sınır, alan, durum, mesaj) kodla ve veriyle karşılaştırır.
+3. Çıktı şemalı: `consistency_finding{id, type: internal_contradiction|doc_vs_code|doc_vs_data|missing_in_doc|missing_in_code|ambiguous, doc_ref (AC no / cümle), evidence[{kind: code, repo, path, line, snippet} | {kind: data, query, result_digest}], severity: blocking|warning, suggested_doc_text}`.
+4. **Kanıt doğrulama (deterministik, LLM'siz):** kod kanıtı GitHub'dan yeniden çekilir, alıntı ilgili satırda birebir bulunmalı; veri kanıtı sorgusu yeniden çalıştırılır, sonuç özeti eşleşmeli. Doğrulanamayan bulgu gösterilmez (halüsinasyon önlemi, Constitution XI).
+5. **Analist kararı (bulgu başına):** `fix_doc` (önerilen metni düzenler/onaylar) · `code_defect` (bug taslağına gider, §8.12) · `accept_difference` (gerekçe zorunlu).
+6. **Jira güncelleme:** onaylanan `fix_doc` değişiklikleri tek seferde story açıklamasına/AC'ye yazılır (onaylanan içerik hash'i kontrol edilir; Jira geçmişi önceki sürümü saklar); değişiklik özeti Jira yorumu olarak eklenir; `requirement.kaynak_hash` güncellenir.
+7. **Yeniden kontrol:** güncellenen doküman tekrar denetlenir; `blocking` bulgu kalmayınca doküman "son hal" olur ve PO teyidine (adım 3) geçilir. Döngü en fazla 3 tur; sonra insan kararı.
+
+**Demoda bilerek konan uyumsuzluklar (örnek uygulamada):** story "6 al 1 bedava" der, kod 5+1 uygular (`doc_vs_code`) · story "min. sipariş 500 TL" der, ayar tablosunda 750 (`doc_vs_data`) · story "kredi limiti aşımı uyarısı" ister, kodda yok (`missing_in_code` → analist "kod hatalı" seçer → bug taslağı) · iki AC birbiriyle çelişir (`internal_contradiction`).
+
+**Ürün fazı notu:** müşteri ortamında veritabanı erişimi okuma replikası üzerinden, tablo/kolon izin listesiyle ve kişisel veri içeren kolonlar hariç tutularak yapılır; müşteri güvenlik ekibinin onayı gerekir (KVKK).
 
 ### 8.11 Kontrol Kulesi (adım 11)
 - **Girdi:** her koşunun JUnit XML'i (zorunlu) ve allure-results (artefakt linki); Sauce koşu linkleri.
@@ -539,9 +563,9 @@ Demo değerinin en hızlı görüneceği sıra: önce **case akışı** (CCI'ın
 
 | Gün | Hat A — Gökhan (çekirdek, Jira, portal) | Hat B — Hakan (uygulama, test, CI, Sauce) | Hat C — İsmail (AI) |
 |---|---|---|---|
-| 1 | F0: repo, Compose, `make up`; Postgres şeması, durum makinesi iskeleti | F1: örnek uygulama + page object'ler + iki kırılma bayrağı | Model geçidi (Claude, şema doğrulama, kayıt, maskeleme) |
-| 2 | Rovo okuma; Jira yazma (yorum, etiket, Test issue, Bug); PO etiketi sorgulama | F1: toolchain imajı, CI (PR, push, gece, deploy tetikleri), ruleset; JUnit + Allure reporter'ları | Ön inceleme (adım 2) ve case üretimi (adım 4) prompt/şemaları |
-| 3 | Portal: story, ön inceleme, case review, yayın önizlemesi; `submit_draft_cases` + `publish_test_cases` (Claude Code kanalı); **serbest metin gereksinim girişi** (portalda PO teyidi) | Sauce Labs job'u + Sauce Connect; elle yazılmış test PR'da yeşil; **erişilebilirlik denetimi** (`@axe-core/playwright`, sonuç JUnit'e) | Kod üretimi: Playwright MCP doğrulama + eşleme + şablon (adım 5) |
+| 1 | F0: repo, Compose, `make up`; Postgres şeması, durum makinesi iskeleti | F1: örnek uygulama + page object'ler + iki kırılma bayrağı; **uygulama veritabanı (Postgres) + salt okuma rolü + bilerek konan doküman uyumsuzlukları** | Model geçidi (Claude, şema doğrulama, kayıt, maskeleme) |
+| 2 | Rovo okuma; Jira yazma (yorum, etiket, Test issue, Bug); PO etiketi sorgulama | F1: toolchain imajı, CI (PR, push, gece, deploy tetikleri), ruleset; JUnit + Allure reporter'ları | Ön inceleme (adım 2) ve case üretimi (adım 4) prompt/şemaları; **tutarlılık denetimi ajanı** (GitHub MCP read-only + `db_query`) **ve kanıt doğrulayıcı** |
+| 3 | Portal: story, ön inceleme + **tutarlılık bulguları ekranı (karar, önerilen metin farkı) ve Jira açıklama/AC güncelleme**, case review, yayın önizlemesi; `submit_draft_cases` + `publish_test_cases` (Claude Code kanalı); **serbest metin gereksinim girişi** (portalda PO teyidi) | Sauce Labs job'u + Sauce Connect; elle yazılmış test PR'da yeşil; **erişilebilirlik denetimi** (`@axe-core/playwright`, sonuç JUnit'e) | Kod üretimi: Playwright MCP doğrulama + eşleme + şablon (adım 5) |
 | 4 | Sonuç alma (JUnit XML) + **Kontrol Kulesi** ekranı (erişilebilirlik ihlalleri dahil); "kırarak doğrula" ve "deploy" düğmeleri; **test yönetimi adaptör arayüzü + Xray Cloud arka ucu** | Kod taslağı PR akışı uçtan uca; kasıtlı kırma (a) | Triage: kurallar + JQL mükerrer + bug taslağı; locator onarımı + AST koruması |
 | 5 | Testçi kayıt açma ekranı + `publish_bug`; **uçtan uca prova ×2** | Prova; hazır PR'lar ve Sauce koşu linkleri (yedek) | Prova; REPLAY kayıtları (adım 4–5); yedek video |
 
