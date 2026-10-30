@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+
+# Sırlar
+.env
+.env.*
+!.env.example
+
+# Gizli / dahili belgeler (CCI RFI içeriği, iç notlar) — repoya girmez
+docs/outcome/
+docs/DAHILI-Notlar.md
+docs/AI-Testing-Probe-Cozum-Onerisi.*
+docs/sunumlar/
+docs/RFI-Ozeti.md
+
+# Araç çıktıları
+node_modules/
+.venv/
+__pycache__/

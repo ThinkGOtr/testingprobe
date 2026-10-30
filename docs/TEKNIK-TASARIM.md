@@ -1,0 +1,510 @@
+# AI Automation Testing (Test Engineering Suite) — Demo Teknik Tasarımı
+
+> **Sürüm:** v1.0 · 2026-10-30 · **Hazırlayan:** Gökhan Sipahi · **Gözden geçirecek:** Cengizhan Bey, Hakan, İsmail
+> **Bağlayıcı kaynak:** "AI Automation Testing — Geliştirme Ekibi için Ürün Brief'i" (Cengizhan Bey, 30.10.2026). Bu doküman o brief'in **demo dilimini** tarif eder. Brief'ten sapmalar §19'dadır.
+> **Spec Kit nedir:** GitHub'ın açık kaynak "spesifikasyon güdümlü geliştirme" aracı. Bu doküman önce projenin değişmez kurallarına (constitution, §3), sonra her kilometre taşı için ayrı spec → plan → görev → uygulama döngüsüne (§21) girdi olur.
+>
+> **v0.5 → v1.0:** Onayın doğruluk kaynağı Postgres (Update doğrulayıcı); test koşusu ayrı, izole `test-runner` servisinde; kırılma `demo-admin` bypass ile merge; CI imaj erişimi (izin, kimlik, çok mimarili build) ve `paths` çelişkisi giderildi; beklenen değer kontrolünde normalizasyon; Azure eşdeğerlik koşusuna sahip.
+> **Değerlendirme:** 6 rol (mimar, test otomasyon lideri, AI/LLM mühendisi, güvenlik, DevOps, ürün sahibi) × 4 tur. Son tur puanları 8–9.
+>
+> **v0.4 → v0.5:** Kırılma ve sıfırlama branch korumasıyla uyumlu hale getirildi; testId kanıtı DOM'dan okunuyor; yerel kontrol CI ile aynı mekanizmada; assertion değerleri onaylı case'e bağlandı; şablon enjeksiyonu kapatıldı; IDE kanalı kimliği ve `submit_draft_cases` eklendi; deterministik kimlikler ve REPLAY-MISS; değerlendirme protokolü; sahipler paralelleştirildi; onay koruması sadeleştirildi.
+>
+> **v0.3 → v0.4:** 6 rollü değerlendirme sonrası. Kırılma adımı CI'da gerçekten çalışacak şekilde commit'e dayandı; doğrulama ve kod üretimi ayrıldı, kod şablondan üretiliyor; tehdit modeli ve prompt injection savunması eklendi; model geçidi ajan döngüsünü kapsıyor; triage önce deterministik; ölçüm tanımları düzeltildi; Docker/CI somutlaştı; Copilot kanalı demoya girdi; teslimat sırası ve sahipler eklendi.
+
+---
+
+## 1. Amaç ve başarı tanımı
+
+**Amaç:** CCI'a, bir gereksinimin insan onaylı test case'lere ve CI'da AI olmadan koşan otomasyon koduna dönüştüğünü, ardından kırılan bir testin sınıflandırılıp onarıldığını **canlı ve uçtan uca** göstermek.
+
+**Demo başarılı sayılır, eğer:**
+1. Tek bir Jira story'sinden başlayan akış, yalnızca insan onay adımlarıyla müdahalesiz tamamlanır.
+2. Üretilen test PR'da CI tarafından **AI olmadan** koşar ve yeşildir.
+3. Kırılan locator sonrası kırmızı CI, ürünün açtığı ve **yalnızca locator değerini değiştiren** onarım PR'ı ile tekrar yeşile döner.
+4. Her AI çağrısı, araç çağrısı, onay ve ret kayıt altındadır; kaydın değiştirilmediği gösterilebilir.
+5. Ekranda case hazırlamanın gerçek süresi ve kabul oranı görünür (RFI'daki "%30–50 hazırlık süresi azalması" hedefinin somut karşılığı).
+6. Canlı akış aksarsa aynı adımlar "REPLAY" etiketiyle kayıtlı çıktılardan sürdürülür.
+
+**Süre:** 12–15 dakika canlı akış + 5 dakika soru.
+
+---
+
+## 2. Demo senaryosu
+
+| # | Adım | Kim | Sistem davranışı | Ekranda |
+|---|---|---|---|---|
+| 1 | Story seçimi | Analist | Rovo MCP ile story ve kabul kriterleri okunur; kabul kriteri eksikse story işaretlenir ve analiste soru gösterilir | Story, kabul kriterleri |
+| 2 | Case üretimi | AI | Şemaya uyan JSON: pozitif/negatif/sınır case'ler, her biri kabul kriterine bağlı, risk ve "AI-generated" etiketli | Case kartları + **sayaç: AI süresi** |
+| 3 | Review | Analist | Bir case ret (nedeniyle), biri düzeltme, gerisi onay; "review tamam" | Ret nedeni, düzeltme farkı, **kabul oranı** |
+| 4a | Yayınlama (portal) | Analist | `publish_test_cases` önce önizleme, sonra Jira'ya yazar; ikinci gönderimde yeni kayıt açmaz | Önizleme → Jira'da Test issue'ları, story'ye bağlı |
+| 4b | Copilot kanalı (brief "3. yol") | Analist | GitHub Copilot IDE'de case üretir → `submit_draft_cases` ile taslakları portala düşürür (Jira'ya yazmaz) → analist portalda onaylar → Copilot `publish_test_cases(ids)` çağırır | "Copilot'un yazdığını kim kontrol ediyor?" sorusunun cevabı; aynı denetim kaydı, kanal = IDE |
+| 5 | Kod üretimi | Mühendis + AI | Onaylı case seçilir; AI Playwright MCP ile her adımı canlı uygulamada doğrular ve adım→page object eşlemesi üretir; kod bu eşlemeden **şablonla** üretilir; yerel kontrol | Adım başına ekran görüntüsü canlı akar |
+| 6 | PR ve CI | Mühendis | Bot PR açar; CI AI'sız koşar; mühendis inceler ve merge eder | PR, yeşil CI |
+| 7 | Kırılma | Sunucu | `make break` hazır "UI refactor" PR'ını (`add-to-cart` → `cart-add`) açar ve `demo-admin` kimliğiyle ruleset bypass kullanarak merge eder (`gh pr merge --admin`; PR'ın CI'ı kırmızı olduğu için normal merge mümkün değil, bilinçli istisna kayda geçer); yerel demo uygulaması `main` HEAD'den yeniden derlenir; `main` push koşusu kırmızı → `FailureToFix` bu koşunun kimliğiyle başlar | Kırmızı CI |
+| 8 | Triage ve onarım | AI + mühendis | Deterministik kural "test bakımı / locator" der; yeni testId DOM'dan okunur; onarım AST korumasından geçer; bot onarım PR'ı açar; **etkilenen tüm testler** yeşil; mühendis onaylar | Eşleşen sinyaller, tek değerlik diff, yeşil CI |
+| 9 | Kayıt | — | Denetim kaydı ve zincir doğrulaması | AI/araç çağrıları, kararlar, maliyet, "zincir sağlam" |
+| (ops., zaman kalırsa) | Güvenlik | Sunucu | Zararlı talimat içeren hazır story işlenir; ajanın araç ve alan kısıtları nedeniyle etkisiz kaldığı gösterilir | Engellenen eylemler kaydı |
+
+Demo story'si mutlaka `add-to-cart` adımını içerir (adım 7–8 bunu kırar).
+
+**CI bekleme süreleri** (adım 6 ve 8) denetim ekranı ve mimari anlatımıyla doldurulur.
+
+---
+
+## 3. Değişmez kurallar (constitution) ve teknik karşılıkları
+
+| # | Kural (brief) | Teknik karşılık |
+|---|---|---|
+| 1 | AI üretir, insan onaylar | Onayın doğruluk kaynağı Postgres: core-api oturumdaki kullanıcıyla `review` satırını (`kullanıcı + nesne_id + içerik_hash`) yazar, ardından Temporal **Update** gönderir; iş akışının Update doğrulayıcısı Postgres'te eşleşen satır yoksa Update'i reddeder (Docker ağı içinden sahte Update etkisizdir). DB yazma kimliği yalnızca core-api ve core-worker'da. Yayın ve PR adımları güncel hash'i onaylanan hash ile karşılaştırır (onay sonrası değişiklik → red). Temporal gRPC ve UI yalnızca host'un `127.0.0.1`'inde; portal dışında onay yolu yok |
+| 2 | CI'da AI yok | CI'da model anahtarı, MCP sunucusu ve ajan bağımlılığı yok; workflow `permissions: contents: read`; `pull_request_target` kullanılmaz |
+| 3 | Yapılandırılmış çıktı | Claude'un yerel yapılandırılmış çıktı / strict tool kullanımı; Pydantic doğrulaması; şema hatasında hata mesajıyla en fazla 2 yeniden istek |
+| 4 | Kütüphaneye bağlı kod | Kod modelden değil, doğrulanmış adım→page object eşlemesinden **şablonla** üretilir; ayrıca ESLint (`--no-inline-config`) ve `tsc --strict` PR'da ve CI'da zorunlu |
+| 5 | Uygulamayı gerçekten gör | Her adım Playwright MCP snapshot'ında doğrulanmadan eşleme kabul edilmez; `--caps=vision` kapalı |
+| 6 | Onarım yalnızca locator | `locators.ts` saf veri; AST koruması: anahtar kümesi ve niyet değişmez, yalnızca ilgili `testId` değeri değişir; aynı kontrol CI'da zorunlu check |
+| 7 | Veri müşteride kalır | Model geçidinde ters çevrilebilir PII maskeleme (§8.9); demo yalnızca sentetik veri |
+| 8 | Her şey kayıt altında | `ai_call`, `tool_call`, `audit_event` append-only ve `prev_hash` zinciriyle; zincirin son hash'i her yayında Jira yorumuna ve her PR açıklamasına yazılarak dışarıya sabitlenir; her AI çağrısı onaylayan kişiye iş akışı üzerinden bağlı |
+| 9 | Ürün opsiyonel kalabilmeli | `rules/` altındaki prompt, kural ve şemalardan `CLAUDE.md` ve `.github/copilot-instructions.md` üretilir; `publish_test_cases` MCP aracı ürünsüz kanaldan da kullanılabilir |
+| 10 | Her çıktı ölçülür | §12 ölçüm tanımları; her karar ve düzeltme kaydedilir |
+
+---
+
+## 4. Mimari
+
+```
+            Analist · Mühendis (tarayıcı)          IDE: GitHub Copilot / Claude Code
+                       │                                         │ MCP
+          Review Portal (React, nginx) ── REST + SSE ──┐         │
+                                                       ▼         ▼
+┌──────────────────────── Çekirdek (Python 3.12, FastAPI) ─────────────────────────────────┐
+│  core-api: REST, SSE, kimlik, onay Update'leri, publish_test_cases MCP sunucusu           │
+│  core-worker (Temporal, kuyruk: tp-core): iş akışları, model geçidi, ajan döngüsü,        │
+│      Rovo okuma, Jira yazma, GitHub, triage, PII maskeleme (kütüphane)                    │
+│  toolchain-worker (Temporal, kuyruk: tp-toolchain; toolchain imajı):                      │
+│      checkout, sembol tablosu, şablonla kod üretimi, tsc, eslint, AST koruması,           │
+│      commit/push — DB kimliği ve model anahtarı yok                                       │
+│  test-runner (toolchain imajı): üretilen testleri ve demo uygulamasını koşturur —         │
+│      yalnızca demo ağı + toolchain-worker kontrol ağı; Temporal, DB, sır, internet yok    │
+├───────────────────────────────────────── Veri ───────────────────────────────────────────┤
+│  PostgreSQL (alan verisinin tek doğruluk kaynağı) · Temporal (yalnızca ID ve kapı durumu)│
+├──────────────────────────────────────── Araçlar ─────────────────────────────────────────┤
+│  Rovo MCP (salt okuma) · Jira REST · Playwright MCP (Docker, demo-app-web'e kısıtlı) ·    │
+│  GitHub App (PR açar, merge edemez)                                                        │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+                          │ PR (bot)
+              GitHub Actions: AI'sız test + lint + AST koruması + Semgrep → JSON rapor, trace
+              (çekirdek sonuçları GitHub API ile sorgular; Mac'e gelen bağlantı yok)
+```
+
+**Kararlar**
+- **Doğruluk kaynağı:** Alan varlıkları (story, case, review, script, run, failure) Postgres'te. Temporal yalnızca kimlikleri ve kapı durumunu taşır; iş akışı geçmişinde içerik tutulmaz.
+- **Gelen bağlantı yok:** CI durumu 5 sn aralıkla GitHub API'den sorgulanır.
+- **AI yalnızca core-worker'da:** Model anahtarı yalnızca core-worker'da; toolchain-worker ve CI'da yok.
+- **Okuma MCP ile, yazma kendi aracımızla** (brief).
+
+---
+
+## 5. Tehdit modeli ve prompt injection savunması
+
+**Güven sınırları:** (a) Güvenilmeyen girdi: Jira story/açıklama, Confluence, uygulama sayfa içeriği (snapshot), CI log'ları. (b) Ajan: tarayıcıyı yönetir, kod önerir. (c) Etkili eylemler: Jira'ya yazma, PR açma, kod çalıştırma.
+
+| Tehdit | Kontrol |
+|---|---|
+| Story'deki talimat ajanı kötüye kullanır ("şu URL'ye git", "testleri sil") | Güvenilmeyen içerik prompt'ta ayrı ve etiketli veri bloğunda; sistem kuralı: veri bloğundaki talimatlar uygulanmaz. Ajanın etkili eylemi yoktur: Jira yazma ve PR açma yalnızca onaylı kimliklerle, deterministik kodla yapılır |
+| Ajan uygulama dışına gider / veri sızdırır | Playwright MCP `--allowed-origins http://demo-app-web`; aşama başına araç izin listesi (§8.4); `browser_evaluate`, dosya ve ağ araçları kapalı |
+| Üretilen kod zararlı iş yapar | Kod şablonla üretilir (model serbest kod yazmaz); ESLint ile yalnızca `@playwright/test` ve `pages/` içe aktarımı; `fetch`, `process.env`, `child_process`, `eval`, dış URL yasak; kod yalnızca `test-runner`'da çalışır: Docker ağları `demo-net` (demo uygulaması) ve `runner-net` (yalnızca toolchain-worker'ın iş gönderdiği kontrol portu); Temporal, Postgres, sır ve internet erişimi yok. toolchain-worker'ın Temporal ve GitHub erişimi vardır ama kod çalıştırmaz ve DB kimliği yoktur |
+| Onay adımı atlanır / taklit edilir | Onay Postgres'teki oturumlu kullanıcı kaydına bağlı; Update doğrulayıcısı eşleşen `review` satırı olmadan reddeder; toolchain-worker ve test-runner'da DB kimliği yok; Temporal host'ta yalnızca localhost. **Güvenlik testi:** test-runner'dan Temporal'a ve core-api'ye erişim denemesi başarısız olmalı |
+| Şablona giren değerlerle kod enjeksiyonu | `args` değerleri yalnızca `JSON.stringify` ile string/number literal olarak basılır; metot imzasındaki türe göre doğrulanır; template literal ve birleştirme yok; enjeksiyon payload'ı ile birim testi |
+| IDE kanalından yetkisiz yayın | Portalın verdiği kullanıcıya özel, kısa ömürlü, yalnızca `publish`/`submit` kapsamlı bearer token; MCP sunucusu yalnızca `127.0.0.1`; IDE'de araç için otomatik onay kapalı; kayıtta kanal ve çağıran |
+| Onarım kılığında mantık değişikliği | AST koruması (§8.7) + CI'da zorunlu check + insan onayı |
+| Bot kendi PR'ını merge eder veya `main`'e push eder | Repository ruleset: `main`'e doğrudan push yok, merge için CI + 1 insan onayı, "enforce for admins"; bypass yalnızca `demo-admin` insan hesabında, bot App'te yok. GitHub Team planı **kesin ön koşul** (§18); prova listesinde "bot `main`'e push eder → reddedilir" testi |
+| Kayıt değiştirilir | `prev_hash` zinciri, append-only DB rolü, sıfırlamadan önce imzalı JSONL dışa aktarımı |
+| Tedarik zinciri | İmajlar digest ile, Action'lar SHA ile sabit; lockfile'lar; Dependabot; Semgrep |
+
+---
+
+## 6. Bileşenler ve teknoloji
+
+| Alan | Seçim |
+|---|---|
+| Çekirdek | Python 3.12, FastAPI, Pydantic v2, SQLAlchemy 2 + Alembic, resmi `mcp` Python SDK, `anthropic` SDK; bağımlılıklar `uv.lock` ile kilitli |
+| İş akışı | Temporal Python SDK; sunucu `temporalio/temporal` imajı, `server start-dev` (SQLite dosyası, named volume), UI 8233 |
+| Veri | PostgreSQL 16 |
+| Model | Claude; görev başına sabit model kimliği (§8.8) |
+| PII | Presidio **kütüphane olarak** core-worker içinde: TR regex tanıyıcıları (TCKN, IBAN, TR telefon, e-posta) + küçük spaCy modeli; ayrı servis yok |
+| Gereksinim okuma | Rovo MCP (`https://mcp.atlassian.com/v1/mcp`), API token (Basic), istemcide yalnızca okuma araçları; B planı `JiraRestReader` |
+| Test case yazma | `publish_test_cases` (Jira REST v3) + aynı servis MCP aracı olarak |
+| Web otomasyonu | `mcr.microsoft.com/playwright/mcp` (sürüm sabit) |
+| Üretilen kod | TypeScript + `@playwright/test` + `eslint-plugin-playwright` |
+| Sembol tablosu | `ts-morph` (toolchain-worker) |
+| Portal | React + Vite + TypeScript, build edilip nginx ile sunulur; SSE |
+| Kod ve CI | GitHub, GitHub Actions, GitHub App (bot) |
+| Örnek uygulama | FastAPI API + React web (nginx) |
+
+**Tek sürüm kaynağı:** `.playwright-version` dosyası; MCP imajı, toolchain imajı, CI container imajı ve `@playwright/test` aynı Playwright sürümüne sabitlenir.
+
+**Playwright Test Agents (Planner/Generator/Healer) neden demo hattında değil:** Generator serbest TypeScript ve ham locator yazar (kural 4 ile çelişir); Healer assertion değiştirebilir ve `test.fixme` ekleyebilir (kural 6 ile çelişir). Bu ajanlar **ürünsüz kanal** (kural 9) için `rules/` ile yapılandırılarak sunulur; ürün hattında kendi doğrulama döngümüz ve koruma katmanımız kullanılır. Karar demodan sonra ADR ile yeniden değerlendirilir.
+
+---
+
+## 7. Veri modeli
+
+| Tablo | Alanlar (özet) |
+|---|---|
+| `app_user` | id, ad, rol (`analyst`/`engineer`/`presenter`), parola hash'i |
+| `requirement` | id, jira_key, başlık, kabul kriterleri, kaynak_hash, çekim_zamanı, `ac_missing` |
+| `test_case` | id (deterministik: `uuid5(jira_key + case_sıra_no + üretim_no)`), requirement_id, kanal (`portal`/`ide`), sürüm, tür, risk, ön koşul, adımlar, beklenen sonuç, AC referansları, durum, `ai_generated`, içerik_hash, onaylanan_hash |
+| `review` | id, test_case_id, user_id, karar, ret_nedeni, önce/sonra, düzeltme_ölçüleri (§12), onaylanan_hash, zaman |
+| `api_token` | id, user_id, kapsam (`publish`/`submit`), son_kullanma, iptal |
+| `step_mapping` | id, test_case_id, adım_no, po_sınıfı, po_metodu, argümanlar, doğrulandı, ekran_görüntüsü_ref |
+| `script` | id, dosya_yolu, branch, pr_no, durum, pass@1, onarım_sonrası_sonuç, insan_review_sonucu |
+| `script_test_case` | script_id, test_case_id |
+| `run` | id, script_id, pr_no, commit, github_run_id, sonuç, artefaktlar, süre |
+| `failure` | id, run_id, test_adı, hata_imzası, sınıf, alt_tür, eşleşen_sinyaller, karar_kaynağı (`rule`/`llm`), öneri_türü, öneri_durumu |
+| `external_ref` | entity_id, sistem (`jira`/`github`), idempotency_key, external_key, durum (`intent`/`created`/`failed`) |
+| `workflow_instance` | id, tür, temporal_id, durum, başlatan |
+| `ai_call` | id, parent_call_id, workflow_id, amaç, sağlayıcı, model, sürüm, bundle_hash (§8.8), maskeli girdi, çıktı, şema_geçerli, deneme, token, maliyet, süre, `replay` (`live`/`replay`/`replay_miss`) |
+| `tool_call` | id, ai_call_id, kanal (`agent`/`ide`), çağıran_user_id, araç, argüman özeti, sonuç özeti, izin_verildi, zaman |
+| `audit_event` | id, aktör, eylem, nesne, önce/sonra özeti, zaman, `prev_hash`, `hash` |
+
+`ai_call`, `tool_call`, `audit_event` için uygulama rolünün yalnızca INSERT/SELECT yetkisi vardır.
+
+**Test case şeması:**
+```json
+{
+  "title": "string (≤120)",
+  "type": "positive | negative | boundary",
+  "risk": "high | medium | low",
+  "acceptance_criteria_refs": ["AC1"],
+  "preconditions": ["string"],
+  "steps": [{"id": "S1", "action": "string", "data": "string|null", "expected": "string"}],
+  "expected_result": "string",
+  "tags": ["AI-generated"]
+}
+```
+
+**Ret nedeni taksonomisi:** halüsinasyon adımı · eksik kabul kriteri · yanlış test verisi · kapsam dışı · tekrar · yanlış eleman/aksiyon.
+
+---
+
+## 8. Bileşen detayları
+
+### 8.1 İş akışları (Temporal)
+
+Her iş akışı **tek başına, kimliklerle başlatılabilir** (seed ve prova için).
+
+```
+RequirementToCases(jira_key)
+  fetch_requirement → generate_cases → [Update: case kararları (case başına)] → [Update: review tamam]
+  → publish_preview → [Update: yayınla(imzalı)] → publish_to_jira
+
+CasesToCode(case_ids)
+  verify_and_map (ajan, max 1 deneme) → render_test (şablon) → local_check
+  → open_pr (bot) → poll_ci → [insan: GitHub'da review + merge] → poll_ci(main)
+
+FailureToFix(run_id)
+  collect_artifacts → classify (kural → gerekirse LLM) → propose_locator_fix
+  → ast_guard → local_check → open_fix_pr (bot) → poll_ci → [insan: review + merge]
+```
+
+- **Ajan aktivitesi:** `maximum_attempts=1`, heartbeat 30 sn, `start_to_close` 10 dk; hata → otomatik yeniden deneme yok, insan kapısı.
+- **Diğer aktiviteler:** idempotent; dış etkili olanlar `external_ref` kaydına bağlı.
+- **Sürümleme:** iş akışı değişiklikleri `workflow.patched` ile.
+
+### 8.2 Gereksinim okuma
+- Rovo MCP, demo projesinde salt okuma kullanıcı + API token; istemci izin listesi yalnızca okuma araçları.
+- Çekilen: özet, açıklama, kabul kriterleri. (Confluence sayfası varsa özetlenir; demoda zorunlu değil.)
+- `ac_missing=true` → portalda uyarı ve analiste soru; story case üretimine gönderilmez.
+- İstek sınırı: çağrı sayacı, küçük JQL, 5 dk önbellek.
+- **B planı:** `JiraRestReader` (aynı arayüz). Demo günü Rovo bağlantısı prova edilir; sorun varsa B planı varsayılan olur.
+
+### 8.3 `publish_test_cases`
+- **Girdi:** yalnızca `approved` durumundaki case kimlikleri; içerik kabul etmez.
+- **Kontrol:** her case için `içerik_hash == onaylanan_hash`; değilse red.
+- **Eşleme:** issue türü `Test` (yoksa `Task` + `test-case` etiketi); özet, ADF tablo (adım/veri/beklenen), etiketler `AI-generated` ve `tp-<uuid>`, story bağlantısı (`is tested by`, yoksa `relates to`), açıklamada onaylayan ve kaynak story.
+- **Idempotency:** önce `external_ref` (`intent` yazılır → create → `created` + anahtar); yeniden denemede önce bu tablo, kayıt yoksa `tp-<uuid>` JQL'i. Aynı hash'te çağrı yapılmaz.
+- **Dry-run, hata yönetimi:** önizleme portalda; 429/5xx üstel geri çekilme (≤3); kısmi başarı raporlanır.
+- **MCP araçları (IDE kanalı):**
+  - `submit_draft_cases(requirement_key, cases[])`: IDE'deki Copilot'un ürettiği şemalı taslakları `draft` olarak portala düşürür; şema doğrulanır; Jira'ya yazmaz.
+  - `publish_test_cases(case_ids: list[uuid])`: yalnızca onaylı kimliklerle yayın.
+  - Kimlik: portalın kullanıcıya verdiği kısa ömürlü (8 saat), kapsamlı bearer token (`Authorization` başlığı); sunucu yalnızca `127.0.0.1`; kayıtta kanal = `ide`, çağıran ve onaylayan ayrı.
+
+### 8.4 Kod üretimi: doğrula → eşle → şablon
+1. **Bağlam:** onaylı case (≤5 adım demo için) + sembol tablosu (page object sınıfları, metotları, imzaları, locator niyetleri, `expect*` doğrulama metotları) + `rules/verify-and-map.md`.
+2. **Doğrulama döngüsü (ajan):** her adım için uygulamada eylemi yapar, snapshot'ta hedef elemanı bulur ve **sembol tablosundaki bir metoda** eşler. Çıktı şemalı:
+   `step_mapping[{step_id, po, method, args, verified, evidence_ref}]` ve `expects[{po, method, args}]`.
+3. **Deterministik kontroller:**
+   - her `po.method` sembol tablosunda var mı; argüman türleri imzaya uyuyor mu;
+   - her `expects.args` değeri onaylı case'in `expected` / `expected_result` metninde geçiyor mu (assertion değerini model uyduramaz); karşılaştırma öncesi sayı, para ve boşluk biçimi normalize edilir (`1.250,00 TL` ≡ `1250`).
+   Biri tutmazsa durur: eksik metot → mühendise "page object'te eksik metot"; kaynağı olmayan beklenen değer → insana.
+4. **Şablon:** test dosyası eşlemeden şablonla üretilir; model TypeScript yazmaz; değerler `JSON.stringify` ile literal basılır.
+5. **Yerel kontrol (toolchain-worker derler, `test-runner` koşturur; CI ile aynı mekanizma):** ilgili commit checkout edilir, uygulama `test-runner` içinde Playwright `webServer` ile o commit'ten başlatılır; `tsc --strict`, ESLint, `playwright test --repeat-each=3`.
+   - Kırmızı ve hata **locator/eşleme** kaynaklıysa 1 düzeltme turu (yeniden eşleme); düzeltme turu `expects`'i değiştiremez.
+   - Kırmızı ve hata **assertion** kaynaklıysa düzeltme yapılmaz; insana "defect adayı" olarak gider.
+6. **PR (bot):** branch `tp/case-<uuid>`; önce aynı branch için açık PR aranır; açıklamada case, Jira, doğrulama özeti, "AI-generated".
+
+**Ajan sınırları:** case başına en fazla 25 araç çağrısı ve ~150k girdi token'ı; bağlamda yalnızca son snapshot tutulur; sistem prompt'u ve sembol tablosu prompt önbelleğinde. **Araç izin listesi:** `browser_navigate`, `browser_snapshot`, `browser_click`, `browser_type`, `browser_select_option`, `browser_wait_for`, `browser_generate_locator`. Ekran görüntüsü aracı ajana **verilmez** (kural 5). **Gecikme bütçesi:** adım 5 için 120 sn; aşılırsa portal kullanıcıya REPLAY'e geçmeyi önerir.
+
+**Canlı görünürlük:** her ajan eyleminden sonra core-worker, model döngüsünün dışında ayrı bir MCP oturum çağrısıyla ekran görüntüsü alır ve SSE ile portala akıtır; görüntü modele gönderilmez.
+
+### 8.5 CI (AI'sız)
+- **Toolchain imajı:** ayrı `build-toolchain` workflow'u, `docker/build-push-action` ile `platforms: linux/amd64,linux/arm64` ve `cache-from/to: type=gha`; etiket `.playwright-version`'dan türetilir, kullanıldığı her yerde digest ile sabitlenir; GHCR paket ayarında `testingprobe` reposuna Actions erişimi verilir.
+- **Job:** `container: ghcr.io/thinkgotr/tp-toolchain@<digest>` (toolchain-worker ve test-runner ile aynı imaj: Playwright tarayıcıları + Node + Python + uv), `container.credentials: { username: ${{ github.actor }}, password: ${{ secrets.GITHUB_TOKEN }} }`; demo uygulaması her ortamda aynı yolla, Playwright `webServer` dizisiyle başlar: `uv run uvicorn` (API) ve `vite build && vite preview` (web); `BASE_URL` tek kaynaktan.
+- **Adımlar:** `npm ci` (önbellekli) → `tsc --strict` → `eslint --no-inline-config` → AST koruması → `playwright test --retries=1 --project=chromium` (JSON + HTML + trace) → artefakt.
+- **Zaman aşımları:** `actionTimeout` 5 sn, `expect.timeout` 5 sn, test 20 sn (kırık locator'lı kırmızı koşu < 60 sn).
+- **Ayrı job:** Semgrep (SAST).
+- **Zorunlu check'ler her PR'da koşar:** workflow düzeyinde `paths` filtresi **yok**; test, AST koruması ve Semgrep job'ları her PR'da tetiklenir, değişiklik tespiti job içinde (`dorny/paths-filter@<SHA>`) yapılır ve ilgisiz PR'da adımlar "no-op, başarılı" çıkar (atlanan zorunlu check PR'ı bekletir).
+- **Ayarlar:** `permissions: { contents: read, packages: read }`; `concurrency: cancel-in-progress`; Action'lar SHA ile; `npm ci --ignore-scripts` (lockfile sabit).
+- **Hedef süre:** koşu başına ≤ 2 dk.
+- **Ruleset:** `main`'e doğrudan push yok; merge için CI yeşil + 1 insan onayı + CODEOWNERS (`pages/**`, `.github/**`); "enforce for admins"; bypass yalnızca `demo-admin` (insan) hesabı. Ücretsiz planda private repoda kullanılamaz → GitHub Team (§18).
+
+### 8.6 Triage (önce kural)
+1. **Kanıt:** JSON rapor, `trace.zip` (DOM snapshot'ları dahil), hata anındaki aria snapshot (`error-context`, yalnızca rol ve ad içerir), koşu öncesi sağlık kontrolü sonucu.
+2. **Deterministik kurallar (sırayla):**
+   - Sağlık kontrolü başarısız veya ağ hatası → `environment`
+   - Playwright `flaky` durumu (retries ile) → `flaky`
+   - Locator 0 eleman döndürdü **ve** niyete uyan eleman (rol + ad, aria snapshot'tan) aynı sayfada var **ve** DOM'daki `data-testid` değeri farklı (§8.7'deki yöntemle okunur) → `test_maintenance/locator`
+   - Assertion farkı ve sayfa yapısı beklenen → `product_defect` adayı
+   - Test verisi ön koşulu sağlanamadı (seed/reset hatası) → `test_data`
+3. **LLM:** yalnızca hiçbir kural eşleşmezse; şemalı sınıf + gerekçe. Deterministik `environment` sonucunu ezemez.
+4. **Gösterim:** sayısal güven yerine eşleşen sinyaller listesi.
+5. **Brief'in 4 sınıfı ile ilişki:** `test_maintenance` brief'teki "kırılan locator için onarım önerisi" yoludur; dört kök neden sınıfının dışında, ayrı izlenir (§19, onaylandı).
+
+### 8.7 Locator onarımı
+- **`locators.ts` saf veri:** `export const cart = { addToCart: { testId: 'add-to-cart', role: 'button', name: 'Sepete ekle', intent: 'Ürün kartında sepete ekleme butonu' } } as const;`
+- **Aday üretimi (LLM'siz):** aria snapshot `data-testid` içermediği için testId DOM'dan okunur: toolchain-worker kırılan commit'te uygulamayı başlatır, kırılan testi hata adımına kadar koşturur ve `getByRole(role, { name }).getAttribute('data-testid')` değerini okur (alternatif kaynak: `trace.zip` içindeki DOM snapshot'ı). Rol + ad eşleşmesi 0 veya birden fazla eleman verirse öneri üretilmez, insana (veya LLM yorumuna) düşer. `browser_generate_locator` yalnızca çapraz kontrol.
+- **Doğrulama:** aday, son yeşil koşudaki aria snapshot'ının `role + name` değerleriyle eşleşmeli (yanlış butona "onarmayı" önler).
+- **AST koruması:** değişen dosyalar yalnızca `pages/**/locators.ts`; anahtar kümesi, `role`, `name`, `intent` değişmemiş; yalnızca ilgili `testId` string değeri değişmiş. Aynı kontrol CI'da zorunlu check.
+- **PR:** yerel kontrol **etkilenen tüm testlerde** yeşilse (AI'ın ürettikleri ve elle yazılmış olanlar) bot açar; insan onayı zorunlu.
+- **Birim testleri:** 0 eşleşme, çoklu eşleşme, anahtar/niyet değişikliği denemesi, test dosyasına dokunan yama.
+
+### 8.8 Model geçidi
+- **İki giriş:** `gateway.call(purpose, bundle, messages, schema, max_tokens, budget)` ve `gateway.run_agent(purpose, bundle, tools, max_turns, budget)`.
+- **Sağlayıcıdan bağımsız sözleşme:** girdiler (mesajlar, araç tanımları JSON Schema, çıktı şeması) ve çıktılar (yapılandırılmış sonuç, araç çağrıları, token) ortak tiptedir; sağlayıcıya özgü özellikler (Anthropic prompt caching, strict tool; Azure OpenAI structured outputs) yalnızca adaptörde. Değerlendirme seti her iki sağlayıcıda koşup kabul oranları yan yana raporlanır (Azure erişimi olduğunda).
+- **Ajan:** Anthropic SDK tool-use döngüsü (kendi döngümüz); her tur bir `ai_call` satırı, `parent_call_id` ile bağlı; her araç çağrısı `tool_call`.
+- **Görev başına model (sabit kimlik konfigürasyonda):** case üretimi ve doğrulama ajanı → Claude Sonnet sınıfı; triage ve özetleme → Claude Haiku sınıfı; `temperature` sabit (0–0,2).
+- **Hata politikası:** 429/529/5xx → üstel geri çekilme, ≤3; şema hatası → hata metniyle ≤2 yeniden istek. Aktivite yeniden denemesi `ai_call.id` ile idempotent (aynı çağrı iki kez faturalanmaz).
+- **Sürüm (bundle):** `bundle_hash` = kurallar + şema + few-shot örnekleri + model kimliği + parametrelerin birleşik hash'i.
+- **Maliyet tavanı:** iş akışı başına 2 USD, günlük 30 USD; aşılırsa duraklat ve insana sor.
+- **Replay:** anahtar `purpose + jira_key + case_sıra_no + input_hash + bundle_hash` (rastgele UUID içermez; `input_hash` zaman damgası ve snapshot ref'leri normalize edilmiş girdiden). Kod üretimi için dosya düzeyinde "golden" test dosyası ve doğrulama kaydı. Iskalama sessiz geçmez: portalda **REPLAY-MISS** gösterilir ve adlandırılmış golden kayda düşülür. Kayıtta `live`/`replay`/`replay_miss`.
+
+### 8.9 PII maskeleme
+- **Uygulanan yer:** gereksinim metni, Confluence, CI log'ları. **Uygulanmaz:** snapshot ve kod (yalnızca sentetik veri, `data-testid` ve rol adları korunur).
+- **Ters çevrilebilir yer tutucular:** `<<PII_EMAIL_1>>`; eşleme iş akışı kapsamında saklanır, model çıktısında geri açılır.
+- **İzin listesi:** sentetik test verisi alanları ve ürün/kampanya adları.
+- **Kayıt:** maskeleme farkı `ai_call`'a yazılır; birim testleri TCKN, IBAN, telefon, e-posta ve yanlış pozitifleri kapsar.
+
+### 8.10 Review Portal
+- **Ekranlar:** Story listesi · Case review (onay/düzelt/reddet, ret nedeni, fark, AI süresi, kabul oranı) · Yayın önizlemesi · Kod üretimi (adım ekran görüntüleri canlı, PR linki) · Koşu ve triage (sinyaller, öneri, PR linki, **denetim paneli** ve zincir doğrulaması).
+- **Kimlik (demo):** seed kullanıcılar (`analist`, `muhendis`), oturum çerezi; her karar kullanıcı adına imzalı.
+- **REPLAY rozeti** kayıtlı çıktı kullanıldığında görünür.
+
+---
+
+## 9. API sözleşmesi (özet)
+
+| Yöntem | Yol | Amaç |
+|---|---|---|
+| POST | `/api/auth/login` | Oturum |
+| GET | `/api/requirements?project=` | Story listesi (Rovo) |
+| POST | `/api/requirements/{key}/generate` | `RequirementToCases` başlat |
+| GET | `/api/cases?requirement=` | Case listesi |
+| POST | `/api/cases/{id}/decision` | Onay/düzelt/reddet (Update) |
+| POST | `/api/requirements/{key}/review-complete` | Review tamam (Update) |
+| GET | `/api/publish/preview?requirement=` | Dry-run gövdesi |
+| POST | `/api/publish` | Yayın (Update, imzalı) |
+| POST | `/api/code/generate` | `CasesToCode(case_ids)` başlat |
+| GET | `/api/runs/{id}` · `/api/failures/{id}` | Koşu ve triage |
+| POST | `/api/failures/{id}/fix` | `FailureToFix` başlat |
+| GET | `/api/audit?verify=true` | Denetim kaydı + zincir doğrulaması |
+| GET | `/api/events` (SSE) | `case.generated`, `agent.step`, `pr.opened`, `ci.status`, `failure.classified` |
+| POST | `/api/tokens` | IDE kanalı için kısa ömürlü kapsamlı token |
+| MCP | `submit_draft_cases(requirement_key, cases[])` | IDE kanalı: taslakları portala düşürür |
+| MCP | `publish_test_cases(case_ids)` | IDE kanalı: onaylıları yayınlar |
+
+---
+
+## 10. Örnek uygulama: Bayi Sipariş Portalı
+
+- **İşlevler:** giriş, katalog, sepet, kampanya ("6 al 1 bedava"), minimum sipariş tutarı uyarısı, sipariş onayı, geçmiş. CCI markası yok.
+- **Test edilebilirlik:** tüm etkileşimli elemanlarda `data-testid`, erişilebilir rol ve ad.
+- **Page object kütüphanesi:** `LoginPage`, `CatalogPage`, `CartPage`, `OrderPage`; her biri `locators.ts` (saf veri) + `*.page.ts` (eylem ve `expect*` metotları).
+- **Test verisi:** `/test/reset` API'si; worker başına kullanıcı; `storageState` ile oturum.
+- **Kırılma:** `demo/break-locator` dalında hazır commit; `make break` bu daldan PR açar ve `demo-admin` kimliğiyle ruleset bypass kullanarak merge eder (`gh pr merge --admin`), ardından compose'daki demo uygulamasını `main` HEAD'den yeniden derler (yerel ve CI aynı commit'te). Bypass kullanımı denetim kaydına "demo kırılması" olarak yazılır.
+- **Jira:** 4 story (biri kabul kriteri eksik, biri prompt injection içeren güvenlik gösterimi için).
+
+---
+
+## 11. Docker Compose ve yerel ortam
+
+| Servis | İmaj | Port (yalnızca 127.0.0.1) | Healthcheck |
+|---|---|---|---|
+| `postgres` | `postgres:16` | 5432 | `pg_isready -U tp` |
+| `temporal` | `temporalio/temporal` (`server start-dev --ip 0.0.0.0 --db-filename /data/t.db --ui-port 8233`) | 7233, 8233 | `temporal operator cluster health --address 127.0.0.1:7233` |
+| `migrate` | çekirdek imajı (tek seferlik) | — | `service_completed_successfully` |
+| `core-api` | çekirdek imajı | 8000 | `/health` |
+| `core-worker` | çekirdek imajı | — | Temporal bağlantısı |
+| `toolchain-worker` | toolchain imajı | — | Temporal bağlantısı |
+| `test-runner` | toolchain imajı; ağlar: `demo-net` + `runner-net`; bağımlılıklar imajda önceden kurulu, `uv run --frozen --offline` ve `npm --offline` | — (iç ağ) | Kontrol portu |
+| `playwright-mcp` | `mcr.microsoft.com/playwright/mcp` (`--headless --host 0.0.0.0 --port 8931 --allowed-hosts '*' --allowed-origins http://demo-app-web --isolated --caps=testing`), `shm_size: 1gb` | — (iç ağ) | TCP 8931 |
+| `review-portal` | nginx | 3000 | HTTP 200 |
+| `demo-app-api` | demo API imajı | 8080 | `/health` |
+| `demo-app-web` | toolchain imajı, `vite build && vite preview` (CI ile aynı; `preview.allowedHosts` ayarlı) | 8081 | HTTP 200 |
+
+- **Başlatma sırası:** `depends_on: condition: service_healthy`.
+- **Kaynak sınırları:** MCP 2 GB, toolchain-worker 3 GB; `node_modules` named volume.
+- **Disk:** Docker Desktop disk limiti 64 GB; `make prune`. Gerekli boş alan ~30 GB.
+- **Sabitleme:** tüm imajlar digest ile; `.env.example`: `ANTHROPIC_API_KEY`, `JIRA_SITE`, `JIRA_READ_EMAIL/TOKEN`, `JIRA_WRITE_EMAIL/TOKEN`, `GH_APP_ID`, `GH_APP_PRIVATE_KEY`, `BASE_URL`.
+
+**Make hedefleri:** `make up` · `make seed STEP=n` · `make break` · `make reset` · `make export-audit` · `make prune`.
+
+**`make reset`:** önce `make export-audit` (imzalı JSONL; imza anahtarı macOS Keychain'de, `.env`'de değil); sonra DB ve Temporal sıfırlanır; `tp/*` branch'leri silinir, açık PR'lar kapatılır; `main`, `demo-admin` kimliğiyle (ruleset bypass) `demo-baseline` etiketine revert commit ile döner; Jira'da `project = TPD AND labels = tp-demo` kayıtları silinir (yazma kullanıcısında "Delete issues" yetkisi); demo uygulaması yeniden derlenir; demo verisi yüklenir. Her yayında kayıtlara sabit `tp-demo` etiketi de eklenir (JQL'de etiket jokeri yok).
+
+---
+
+## 12. Ölçüm
+
+| Ölçü | Tanım | Brief kapısı |
+|---|---|---|
+| Case kabul oranı | "Küçük düzeltmeyle" onaylanan / üretilen case. **Küçük düzeltme:** alan bazlı normalize karakter düzenleme mesafesi ≤ 0,15 **ve** beklenen sonuç anlamca değişmemiş (öneri; onay bekliyor, §19) | ≥ %70 |
+| Script ilk review başarısı | İnsan review'unda değişiklik istenmeden kabul edilen ve CI'da geçen / üretilen script. **pass@1** (yerel düzeltme turu öncesi) ve **düzeltme sonrası** ayrı raporlanır | ≥ %60 |
+| Triage doğruluğu | İnsanla eşleşen sınıf / örneklem; kural ve LLM kararları ayrı | Faz 3 |
+| Hazırlık süresi | Story başına AI + review süresi (canlı ölçülür) ile manuel baz değer yan yana. **Baz değer:** İsmail, 4 demo story'si için manuel case hazırlama süresini F0 haftasında ölçer; ortalama demoda sayacın yanında gösterilir | %30–50 |
+| AI maliyeti | İş akışı başına token ve USD | Raporlanır |
+
+**Değerlendirme seti (demo):** 5 story, her biri 3 kez (~120 case); ortalama ve sapma. Prompt/kural değişikliğinde canlı modelle koşan değerlendirme işi (replay değil). Brief'teki 30 story'lik insan etiketli set demodan sonradır.
+
+**Etiketleme protokolü:** 1 analist, portal üzerinden kör review (case'in hangi koşudan geldiğini görmez); "beklenen sonuç anlamca değişmedi" yargısını insan verir; tahmini süre ~4 saat. Her story'den en az 1 case için kod üretimi koşar; pass@1 ve düzeltme sonrası sonuç bu setten ölçülür.
+
+---
+
+## 13. Demo güvenilirliği
+
+| Adım | Olası kırılma | Belirti | Geri dönüş |
+|---|---|---|---|
+| 1 | Rovo bağlantısı | Story listesi boş / 401 | `JiraRestReader`'a geç (konfigürasyon) |
+| 2 | Model gecikmesi / şema hatası | Sayaç 60 sn'yi aşar | REPLAY |
+| 4 | Jira 429 / yetki | Kısmi yayın | Yeniden dene; seed'li durumdan devam |
+| 5 | Eşleme başarısız / süre aşımı | "Eksik metot" veya 120 sn | Golden test + doğrulama kaydı (REPLAY) |
+| 6, 8 | CI yavaş / kırmızı | 2 dk'yı aşar | Önceden koşmuş PR'a geç (`make seed STEP=6`) |
+| 7 | `make break` başarısız (bypass merge reddi) | `main` CI'ı yeşil kalır | `demo-admin` yetkisini kontrol et; hazır kırmızı koşu kimliğiyle `FailureToFix` başlat |
+| 7–8 | Yerel uygulama eski commit'te kalır | Onarımın yerel kontrolü kırmızı | Yerel kontrol her zaman checkout edilen commit'ten `webServer` ile başlar; `make break` compose uygulamasını da yeniden derler |
+| 4b | Copilot aracı çağıramaz | MCP 401 / araç yok | Token yenile; yedek kanal Claude Code |
+
+**Prova kontrol listesi:** temiz `make reset` · bot `main`'e push dener → reddedilir · `make break` bypass merge'ü çalışır · test-runner'dan Temporal'a erişim reddedilir · Rovo bağlantısı · REPLAY-MISS olmadan replay · 3 ardışık tam koşu gerçek CI ile.
+
+- **Prova:** 3 ardışık sorunsuz prova, her biri temiz `make reset` sonrası ve gerçek CI ile.
+- **Ön ısıtma:** imajlar, tarayıcılar, npm/uv önbellekleri, Actions önbelleği.
+- **Yedek:** tam akışın videosu; bulut VM'de bir kez tam koşu (isteğe bağlı).
+
+---
+
+## 14. Güvenlik ve sırlar
+
+| Konu | Uygulama |
+|---|---|
+| Sırlar | `.env` (git dışı), Docker secrets; dizüstünde FileVault; demo sonrası tüm token'lar iptal edilir |
+| Jira | Okuma kullanıcısı (Rovo) ve yazma kullanıcısı, yalnızca demo projesinde |
+| GitHub | GitHub App: `contents:write`, `pull_requests:write`, `actions:read`; merge yetkisi kullanılmaz; branch koruması insan onayı ister |
+| Anthropic | Ayrı proje anahtarı, harcama limiti; API verisi model eğitiminde kullanılmaz; saklama süresi ve sıfır saklama (ZDR) seçeneği sözleşmeyle teyit edilir |
+| Ağ | Tüm portlar `127.0.0.1`; MCP ve toolchain-worker yalnızca iç ağ ve demo uygulamasına erişir |
+| Denetim | Zincirli hash, append-only, imzalı dışa aktarım |
+| Üretim notu | Ürün ortamında: Azure Key Vault, Entra kimliği, OAuth 2.1 (Rovo), Azure OpenAI veya AB bölgeli model; KVKK m.9 aktarım mekanizması |
+
+---
+
+## 15. Ürünün kendi testleri
+
+| Seviye | Kapsam |
+|---|---|
+| Birim | Şema, Jira eşleme, idempotency, AST koruması, PII maskeleme ve geri açma, düzeltme ölçüsü, onay hash kontrolü, hash zinciri, şablon enjeksiyonu, beklenen değer kaynağı kontrolü |
+| Entegrasyon | Temporal iş akışları (zaman atlamalı ortam), Jira sandbox projesi, GitHub test repo |
+| Uçtan uca | REPLAY ile tam demo akışı (model çağrısı yok) |
+| Değerlendirme | §12 değerlendirme seti, canlı model |
+| Güvenlik | Prompt injection story'si, izin dışı origin denemesi, onay atlatma denemesi |
+
+---
+
+## 16. Riskler
+
+| Risk | Olasılık | Etki | Önlem |
+|---|---|---|---|
+| Ücretsiz GitHub planında branch koruması yok | Kesin | Yüksek | GitHub Team planı (§18). B planı: kod ve veri sentetik olduğu için repo public yapılabilir (ücretsiz ruleset); ancak ürün kodu IP'mizdir, şirket kararı gerekir |
+| Kritik yol tek kişide | Orta | Yüksek | F1 ilk günden paralel (Hakan); İsmail F2a'da |
+| Rovo MCP ücretsiz plan / API token sorunu | Orta | Orta | Bugün test; B planı |
+| Kod üretim adımı demo süresini aşar | Orta | Yüksek | ≤5 adımlı case, 120 sn bütçe, REPLAY |
+| Eşleme başarısız | Orta | Yüksek | Story'ler page object kapsamına göre seçilir |
+| CI yavaş | Orta | Orta | Container job, önbellek, tek tarayıcı |
+| Disk yetersiz | Yüksek | Yüksek | Kurulum öncesi ~30 GB |
+| Docker Desktop lisansı | Düşük | Orta | Colima |
+
+---
+
+## 17. Sahipler ve teslimat sırası
+
+Demo değerinin en hızlı görüneceği sıra: önce **case akışı** (CCI'ın ilk sorusu), otomasyon hattı **ilk günden paralel**.
+
+| # | Özellik | Kabul kriteri | Sahip (öneri) | Tahmin | Paralel hat |
+|---|---|---|---|---|---|
+| F0 | Repo, Spec Kit, constitution, Compose iskeleti, `make up` | Tüm servisler sağlıklı | Gökhan | 1 gün | A |
+| F1 | Örnek uygulama + page object kütüphanesi + toolchain imajı + CI (Semgrep) + bot + ruleset | Elle yazılmış 1 test PR'da yeşil, ≤2 dk | Hakan | 3 gün | B (1. günden) |
+| F2a | Çekirdek: veri modeli, Temporal, kimlik (Gökhan); model geçidi, maskeleme, replay (İsmail) | Kayıtlı ve maskeli 1 uçtan uca çağrı | Gökhan + İsmail | 3 gün | A |
+| F3 | Rovo okuma + case üretimi + review portal + `publish_test_cases` + `submit_draft_cases` | Story → onaylı case'ler Jira'da; dry-run, idempotent, hash kontrollü; Copilot kanalı çalışır | Gökhan | 3 gün | A |
+| **Demo-A** | **Ara demo: story → case → onay → Jira; Copilot kanalı; AI + review süresi manuel baz değerle yan yana** | Cengizhan Bey'e gösterim | — | **≤ 7 iş günü (sabit)** | — |
+| F4 | Toolchain-worker + doğrulama ajanı + şablonla kod + PR | Onaylı case → PR → CI yeşil | Gökhan + Hakan | 4 gün | A+B |
+| F5 | Triage kuralları + locator onarımı + AST koruması | Kırılma → onarım PR'ı → etkilenen tüm testler yeşil | İsmail + Hakan | 3 gün | B |
+| F6 | Seed, REPLAY, prova, video; zaman kalırsa güvenlik gösterimi | 3 ardışık sorunsuz prova | Ekip | 2 gün | — |
+
+**Kural:** Demo-A ≤ 7 iş günü sabittir; bu tarihi tehdit eden her ek kapsam ertelenir. **İlk kesilecekler (sırasıyla):** Confluence özeti · `ac_missing` soru akışı (yalnızca uyarı kalır) · REPLAY'in Demo-A'daki kapsamı.
+**Azure eşdeğerlik koşusu (sapma 1 koşulu):** sahibi İsmail; Azure OpenAI erişimi sağlandıktan sonra, tam demo provasından önce değerlendirme seti her iki sağlayıcıda koşar. **Tam demo:** paralel hatlarla ~3 hafta. Tahminler ve sahipler ekip tarafından teyit edilecek.
+
+---
+
+## 18. Başlamadan önce gerekenler
+
+| # | Ne | Kimden | Not |
+|---|---|---|---|
+| 1 | ~30 GB disk | Gökhan | F0 öncesi |
+| 2 | Jira Cloud demo sitesi + Rovo MCP API token (admin etkinleştirme) | Gökhan | İlk test edilecek |
+| 3 | Anthropic API anahtarı (harcama limitli) | Gökhan | |
+| 4 | **GitHub Team planı** (`ThinkGOtr`) | Şirket | **Kesin ön koşul:** private repoda ruleset/branch koruması için; kullanıcı başına aylık ücret. Alınmazsa B planı §16 |
+| 5 | GitHub App (bot) + `demo-admin` insan hesabı (ruleset bypass) | Gökhan | Bot bypass listesinde yok |
+| 6 | **GitHub Copilot lisansı** (adım 4b) | Şirket | Demo için gerekli; Claude Code yalnızca yedek |
+| 6a | Jira yazma kullanıcısında "Delete issues" yetkisi (sıfırlama) | Gökhan | |
+| 6b | Manuel case hazırlama baz ölçümü (4 story) | İsmail | F0 haftasında |
+| 7 | Docker Desktop lisans durumu | Şirket | |
+| 8 | CCI test ortamındaki bir web uygulamasına erişim talebi | Cengizhan Bey | Demodan sonraki taşıma için |
+| 9 | §19 sapmalarının ve ölçü tanımının onayı | Cengizhan Bey | |
+
+---
+
+## 19. Brief'ten sapmalar ve onay bekleyen kararlar
+
+| # | Brief | Demo kararı | Gerekçe | Durum |
+|---|---|---|---|---|
+| 1 | Model: Azure OpenAI | **Claude**, görev başına sabit sürüm | Kod ve araç kullanımında kalite, yapılandırılmış çıktı desteği, geliştirme hızı; model geçidi soyut | Koşullu kabul (ürün sahibi): demo öncesi `AzureOpenAIProvider` ile bir koşu; CCI'a açıkça söylenir; Claude'un Azure üzerindeki erişilebilirliği ve veri bölgesi teyit edilir |
+| 2 | Gerçek CCI web uygulaması | **Kendi örnek uygulamamız** | Hemen başlanabilir | Koşullu kabul: CCI test ortamı erişim talebi şimdi açılır; demoda "sizin uygulamanıza taşıma" slaydı |
+| 3 | Azure AI Search | Demo için yok | Bilgi tabanı brief gereği page object'lerle sınırlı | Kabul |
+| 4 | Azure Container Apps | Yerel Docker Desktop | Demo bu Mac'te | Koşullu kabul: imajlar ACA'ya kurulabilir kalır |
+| 5 | "Agent Probe ile ortak çekirdek" | **Demo tamamen bağımsız**; ortak çekirdek kararı demodan sonra ADR ile ürün sahibinde | — | Demo için kabul |
+| 6 | Rovo MCP | Rovo; sorun olursa `JiraRestReader` | Ücretsiz planda teyit yok | Kabul |
+| 7 | Rovo OAuth 2.1 | Demo: API token (Basic) | Arka plan servisi için | Bilgi |
+| 8 | Key Vault | Demo: `.env` + Docker secrets | Yerel demo | Bilgi |
+| 9 | Test yönetimi Jira **veya** Octane | **Jira** | Demo hızı; aynı `publish_test_cases` arayüzünün Octane arka ucu demodan sonra | Demoda sözlü belirtilir |
+| 10 | Playwright Planner/Generator/Healer hazır | Ürün hattında kendi doğrulama + koruma katmanımız; Playwright ajanları ürünsüz kanalda | Kural 4 ve 6 ile uyum | Bilgi |
+| 11 | "Küçük düzeltme" tanımı | Normalize düzenleme mesafesi ≤ 0,15 + beklenen sonuç değişmemiş (insan yargısı) | Adım sayısı oranı küçük case'lerde kendini cezalandırıyor | **Onay bekliyor** |
+| 13 | Onay koruması | Oturumlu kullanıcı + içerik hash'i (HMAC imzası yok) | Demo için yeterli ve sade; kriptografik imza ürün fazında Entra kimliğiyle | Bilgi |
+| 12 | `test_maintenance` alt türü | Dört kök neden sınıfının dışında, locator onarım yolu | Brief iki ayrı çıktı istiyor | Kabul |
+
+---
+
+## 20. Demodan sonra (kapsam dışı, kayıtlı)
+
+Teams/Copilot Studio kanalı · Octane arka ucu · mobil (Appium MCP) · masaüstü (FlaUI-MCP) · API (OpenAPI) · 30 story'lik değerlendirme seti · Azure ortamı (ACA, Key Vault, Entra) · Azure AI Search ile framework indeksleyici · defect taslağı yayını · regresyon seçimi (öneri modu) · Power BI.
+
+---
+
+## 21. Spec Kit planı
+
+1. `specify init . --integration claude` (repo kökünde).
+2. `/speckit-constitution` ← §3 (10 kural) + §5 (tehdit kontrolleri) + "AI yalnızca core-worker'da" + "Postgres tek doğruluk kaynağı".
+3. Özellikler sırasıyla: `001-foundation` (F0) → `002-core` (F2a) → `003-requirement-to-cases` (F3) → `004-demo-app-and-ci` (F1) → `005-cases-to-code` (F4) → `006-failure-to-fix` (F5) → `007-demo-readiness` (F6). Her biri `/speckit-specify` → `/speckit-plan` → `/speckit-tasks` → `/speckit-implement` → `/speckit-converge`.
