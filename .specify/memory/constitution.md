@@ -1,6 +1,8 @@
 <!--
 Sync Impact Report
-- Version change: (template) → 1.0.0
+- Version change: 1.0.0 → 1.0.1 (PATCH: İlke I ve Doğruluk kaynağı maddesi iş akışı motorundan
+  bağımsız ifade edildi; demo Postgres durum makinesi, ürün Temporal — kural değişmedi)
+- Önceki: (template) → 1.0.0
 - Modified principles: tümü şablon yer tutucularından ilk kez tanımlandı
 - Added sections: Core Principles (I–XII), Güvenlik ve Mimari Kısıtlar, Geliştirme Akışı ve Kalite Kapıları, Governance
 - Removed sections: yok
@@ -17,7 +19,8 @@ Sync Impact Report
 Hiçbir AI çıktısı (test case, test kodu, locator onarımı, defect taslağı) insan onayından geçmeden test
 varlığına dönüşmez. Onay adımları iş akışı motorunda zorunludur ve atlanamaz. Onayın doğruluk kaynağı
 Postgres'tir: core-api, oturumdaki kullanıcıyla `kullanıcı + nesne_id + içerik_hash` kaydını yazar;
-Temporal Update doğrulayıcısı eşleşen kayıt olmadan reddeder. Yayın ve PR adımları güncel içerik hash'ini
+iş akışı motoru (demoda Postgres durum makinesi, ürün fazında Temporal) eşleşen kayıt olmadan kapıyı
+açmaz. Yayın ve PR adımları güncel içerik hash'ini
 onaylanan hash ile karşılaştırır; onaydan sonra değişen içerik reddedilir.
 
 ### II. CI'da AI Yok (NON-NEGOTIABLE)
@@ -81,8 +84,8 @@ bağımsız bir sözleşme sunar; sağlayıcıya özgü özellikler yalnızca ad
 
 ## Güvenlik ve Mimari Kısıtlar
 
-- **Doğruluk kaynağı:** Alan verisi yalnızca PostgreSQL'dedir; Temporal yalnızca kimlik ve kapı
-  durumu taşır.
+- **Doğruluk kaynağı:** Alan verisi yalnızca PostgreSQL'dedir; iş akışı motoru (Temporal kullanıldığında)
+  yalnızca kimlik ve kapı durumu taşır.
 - **Güvenilmeyen girdi:** Jira/Confluence içeriği, sayfa snapshot'ları ve CI log'ları güvenilmez
   kabul edilir; prompt'larda etiketli veri bloğunda taşınır ve içindeki talimatlar uygulanmaz.
 - **En az yetki:** Ajan aşama başına araç izin listesiyle çalışır; Playwright MCP yalnızca demo
@@ -121,4 +124,4 @@ ve etkisi yazılır ve teknik lider ile ürün sahibi tarafından onaylanır. S�
 kaldırma veya yeniden tanımlama MAJOR, yeni ilke veya bölüm MINOR, açıklama ve ifade düzeltmeleri
 PATCH. Çalışma zamanı rehberi için `docs/TEKNIK-TASARIM.md` ve `CLAUDE.md` kullanılır.
 
-**Version**: 1.0.0 | **Ratified**: 2026-10-30 | **Last Amended**: 2026-10-30
+**Version**: 1.0.1 | **Ratified**: 2026-10-30 | **Last Amended**: 2026-10-30
