@@ -1,0 +1,213 @@
+# AI Testing Probe — yerel geliştirme ve demo ortamı (F0)
+# Doğrudan değil `make up` ile çalıştırın (PLAYWRIGHT_VERSION .playwright-version'dan gelir).
+# Ağlar (bkz. specs/001-dev-foundation/research.md R5):
+#   core-net   : normal ağ; çekirdek servisler + host'a açılan arayüzler
+#   data-net   : internal; postgres <-> demo-app-api
+#   demo-net   : internal; örnek uygulama, playwright-mcp, test-runner
+#   runner-net : internal; toolchain-worker <-> test-runner
+# test-runner yalnızca demo-net + runner-net'te: postgres, core-api ve internete erişemez.
+
+name: testingprobe
+
+x-core-image: &core-image
+  image: testingprobe-core:local
+  build:
+    context: ./core
+  pull_policy: build
+
+x-toolchain-image: &toolchain-image
+  image: testingprobe-toolchain:local
+  build:
+    context: ./toolchain
+    args:
+      PLAYWRIGHT_VERSION: ${PLAYWRIGHT_VERSION:?make up ile çalıştırın}
+  pull_policy: build
+
+services:
+  postgres:
+    image: postgres:16-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      TP_OWNER_PASSWORD: ${TP_OWNER_PASSWORD:?}
+      TP_APP_PASSWORD: ${TP_APP_PASSWORD:?}
+      DEMOAPP_OWNER_PASSWORD: ${DEMOAPP_OWNER_PASSWORD:?}
+      DEMOAPP_PASSWORD: ${DEMOAPP_PASSWORD:?}
+    volumes:
+      - tp_pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:${PG_PORT:-55432}:5432"
+    networks: [core-net, data-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tp"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    deploy:
+      resources:
+        limits: { memory: 1g }
+
+  migrate:
+    <<: *core-image
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      TP_DATABASE_URL: postgresql+psycopg://tp_owner:${TP_OWNER_PASSWORD}@postgres:5432/tp
+    networks: [core-net]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  core-api:
+    <<: *core-image
+    command: ["uvicorn", "tp_core.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      TP_DATABASE_URL: postgresql+psycopg://tp_app:${TP_APP_PASSWORD}@postgres:5432/tp
+      SEED_USER_PASSWORD: ${SEED_USER_PASSWORD:?}
+    ports:
+      - "127.0.0.1:${TP_API_PORT:-8000}:8000"
+    networks: [core-net]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    deploy:
+      resources:
+        limits: { memory: 512m }
+
+  core-worker:
+    <<: *core-image
+    command: ["python", "-m", "tp_core.worker"]
+    environment:
+      TP_DATABASE_URL: postgresql+psycopg://tp_app:${TP_APP_PASSWORD}@postgres:5432/tp
+    networks: [core-net]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "python", "-m", "tp_core.worker.healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    deploy:
+      resources:
+        limits: { memory: 512m }
+
+  toolchain-worker:
+    <<: *toolchain-image
+    command: ["toolchain-worker"]
+    environment:
+      PLAYWRIGHT_VERSION: ${PLAYWRIGHT_VERSION}
+      TEST_RUNNER_URL: http://test-runner:8200
+    networks: [core-net, runner-net]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8100/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    shm_size: 1gb
+    deploy:
+      resources:
+        limits: { memory: 2g }
+
+  test-runner:
+    <<: *toolchain-image
+    command: ["test-runner"]
+    environment:
+      PLAYWRIGHT_VERSION: ${PLAYWRIGHT_VERSION}
+      BASE_URL: http://demo-app-web:8080
+    networks: [demo-net, runner-net]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8200/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    shm_size: 1gb
+    deploy:
+      resources:
+        limits: { memory: 3g }
+
+  playwright-mcp:
+    <<: *toolchain-image
+    command: ["playwright-mcp"]
+    environment:
+      MCP_ALLOWED_ORIGINS: http://demo-app-web:8080
+    ports:
+      - "127.0.0.1:${MCP_PORT:-8931}:8931"
+    networks: [core-net, demo-net]
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(8931,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    shm_size: 1gb
+    deploy:
+      resources:
+        limits: { memory: 2g }
+
+  review-portal:
+    image: testingprobe-review-portal:local
+    build:
+      context: ./review-portal
+    pull_policy: build
+    ports:
+      - "127.0.0.1:${TP_PORTAL_PORT:-8080}:8080"
+    networks: [core-net]
+    depends_on:
+      core-api: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    deploy:
+      resources:
+        limits: { memory: 128m }
+
+  demo-app-api:
+    image: testingprobe-demo-app-api:local
+    build:
+      context: ./demo-app/api
+    pull_policy: build
+    environment:
+      DEMOAPP_DATABASE_URL: postgresql+psycopg://demoapp:${DEMOAPP_PASSWORD}@postgres:5432/demoapp
+    networks: [data-net, demo-net]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    deploy:
+      resources:
+        limits: { memory: 256m }
+
+  demo-app-web:
+    image: testingprobe-demo-app-web:local
+    build:
+      context: ./demo-app/web
+    pull_policy: build
+    ports:
+      - "127.0.0.1:${DEMO_WEB_PORT:-8081}:8080"
+    networks: [core-net, demo-net]
+    depends_on:
+      demo-app-api: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    deploy:
+      resources:
+        limits: { memory: 128m }
+
+networks:
+  core-net: {}
+  data-net: { internal: true }
+  demo-net: { internal: true }
+  runner-net: { internal: true }
+
+volumes:
+  tp_pgdata: {}

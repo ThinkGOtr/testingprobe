@@ -1,0 +1,14 @@
+{
+  "name": "testingprobe-toolchain",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Playwright + Playwright MCP for the AI Testing Probe toolchain image",
+  "dependencies": {
+    "@playwright/mcp": "0.0.83",
+    "@playwright/test": "1.64.1"
+  },
+  "overrides": {
+    "playwright": "1.64.1",
+    "playwright-core": "1.64.1"
+  }
+}

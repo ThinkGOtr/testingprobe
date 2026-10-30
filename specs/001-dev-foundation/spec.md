@@ -51,7 +51,7 @@ dışa aktarım dosyası oluşmuş ve ortam ilk kurulumdaki duruma dönmüş olm
 **Acceptance Scenarios**:
 
 1. **Given** içinde veri ve iş akışı geçmişi olan çalışan ortam, **When** sıfırlama komutu çalışır,
-   **Then** önce denetim kaydı imzalı bir dosyaya dışa aktarılır, ardından uygulama verisi ve iş
+   **Then** önce denetim kaydı bütünlük özetli (sha256) bir dosyaya dışa aktarılır, ardından uygulama verisi ve iş
    akışı geçmişi temizlenir ve ortam sağlıklı biçimde yeniden başlar.
 2. **Given** denetim kaydı dışa aktarımı başarısız olur, **When** sıfırlama sürerken, **Then**
    sıfırlama hiçbir veriyi silmeden durur ve hatayı bildirir.
@@ -77,7 +77,7 @@ izole bileşenden yasaklı hedeflere erişim bulunmadığı raporlanır.
 
 1. **Given** çalışan ortam, **When** ağdaki başka bir makineden ortamın herhangi bir portuna
    bağlanılmaya çalışılır, **Then** bağlantı kurulamaz (tüm erişim yalnızca yerel makineden).
-2. **Given** çalışan ortam, **When** kod çalıştıran izole bileşenden iş akışı motoruna, veritabanına
+2. **Given** çalışan ortam, **When** kod çalıştıran izole bileşenden çekirdek servise, veritabanına
    veya internete bağlantı denenir, **Then** tüm denemeler başarısız olur.
 3. **Given** depo, **When** sır tarama kontrolü çalışır, **Then** depoda hiçbir gerçek sır bulunmaz;
    yalnızca örnek sırlar dosyası vardır.
@@ -123,8 +123,8 @@ kendi özelliğinin dizinini doğru bulur.
 
 ### Functional Requirements
 
-- **FR-001**: Sistem, ürünün ve demonun ihtiyaç duyduğu tüm yerel bileşenleri (iş akışı motoru,
-  veritabanı, çekirdek servis ve çalışan iş süreçleri, kod araç zinciri, izole test koşucusu,
+- **FR-001**: Sistem, ürünün ve demonun ihtiyaç duyduğu tüm yerel bileşenleri (veritabanı,
+  çekirdek servis ve veritabanı tabanlı iş kuyruğu worker'ı, kod araç zinciri, izole test koşucusu,
   tarayıcı otomasyon sunucusu, inceleme portalı, örnek uygulama) tek bir komutla başlatabilmelidir.
   F0 kapsamında henüz iş mantığı olmayan bileşenler, sağlık kontrolüne cevap veren iskelet olarak
   bulunur.
@@ -139,12 +139,12 @@ kendi özelliğinin dizinini doğru bulur.
 - **FR-006**: Ortamın dışarıya açtığı tüm erişim noktaları yalnızca yerel makineye (localhost)
   bağlanmalıdır.
 - **FR-007**: Kod çalıştıran izole test koşucusu yalnızca örnek uygulamaya ve kendisine iş gönderen
-  araç zinciri bileşenine erişebilmeli; iş akışı motoruna, veritabanına, sırlara ve internete
+  araç zinciri bileşenine erişebilmeli; çekirdek servise, veritabanına, sırlara ve internete
   erişememelidir.
 - **FR-008**: Veritabanında denetim kayıtları için kullanılan uygulama rolü yalnızca ekleme ve okuma
   yetkisine sahip olmalı; güncelleme ve silme yetkisine sahip olmamalıdır (constitution VIII).
 - **FR-009**: Sistem, ortamı temiz başlangıç durumuna döndüren bir sıfırlama komutu sunmalıdır.
-  Sıfırlama, herhangi bir veriyi silmeden önce denetim kaydını imzalı bir dosyaya dışa aktarmalı;
+  Sıfırlama, herhangi bir veriyi silmeden önce denetim kaydını bütünlük özetli (sha256) bir dosyaya dışa aktarmalı (imza ürün fazında, karar §0-23);
   dışa aktarım başarısızsa hiçbir şey silmeden durmalıdır. (Jira ve GitHub temizliği sonraki
   özelliklerde bu komuta eklenir.)
 - **FR-010**: Sistem, demo kullanıcılarını ve başlangıç verisini deterministik kimliklerle yükleyen
@@ -171,7 +171,7 @@ kendi özelliğinin dizinini doğru bulur.
   yerel erişim adresi vardır.
 - **Sırlar dosyası**: Depo dışında tutulan, ortamın ihtiyaç duyduğu anahtarların değerleri; örnek
   dosyası depoda anahtar listesi ve açıklamalarıyla durur.
-- **Denetim kaydı dışa aktarımı**: Sıfırlama öncesinde üretilen, imzalı ve zaman damgalı dosya.
+- **Denetim kaydı dışa aktarımı**: Sıfırlama öncesinde üretilen, sha256 bütünlük özetli ve zaman damgalı dosya.
 - **Başlangıç verisi**: Demo kullanıcıları (analist, mühendis, sunucu rolleri) ve deterministik
   kimlikli örnek kayıtlar.
 
@@ -197,9 +197,8 @@ kendi özelliğinin dizinini doğru bulur.
 - Ekip, Apple Silicon Mac'ler ve Docker Desktop kullanır; Docker Desktop lisans durumu şirketçe
   teyit edilecektir (alternatif: Colima).
 - Sırlar (model sağlayıcı anahtarı, Jira, GitHub uygulaması) F0 için zorunlu değildir; F0'da
-  yalnızca sağlık kontrolü için gereken yerel sırlar (veritabanı parolası, denetim imza anahtarı)
+  yalnızca sağlık kontrolü için gereken yerel sırlar (veritabanı rol parolaları, seed kullanıcı parolası)
   zorunludur. Diğerleri ilgili özelliklerde zorunlu hale gelir.
-- Denetim imza anahtarı macOS Keychain'de tutulur; giriş dokümanı bunu nasıl oluşturacağını anlatır.
 - Jira ve GitHub temizliğini kapsayan tam sıfırlama F3 ve F1/F5 ile genişletilir; F0'daki sıfırlama
   yalnızca yerel veriyi kapsar.
 - GitHub ruleset ve CI iş akışları F1 kapsamındadır (GitHub Team planına bağlı).

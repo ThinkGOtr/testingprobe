@@ -1,0 +1,112 @@
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --text: #1c2230;
+  --muted: #5d6677;
+  --border: #dde1e8;
+  --accent: #2f5bd3;
+  --ok-bg: #e3f5ea;
+  --ok-fg: #17663a;
+  --warn-bg: #fff3d6;
+  --warn-fg: #8a5a00;
+  --err-bg: #fde4e4;
+  --err-fg: #9b1c1c;
+  --idle-bg: #eceff4;
+  --idle-fg: #5d6677;
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12151c;
+    --surface: #1b2029;
+    --text: #e6e9ef;
+    --muted: #9aa3b2;
+    --border: #2c3340;
+    --accent: #7a9bff;
+    --ok-bg: #133524;
+    --ok-fg: #7fdca4;
+    --warn-bg: #3a2c0c;
+    --warn-fg: #f2c46b;
+    --err-bg: #3d1717;
+    --err-fg: #f5a3a3;
+    --idle-bg: #252b36;
+    --idle-fg: #9aa3b2;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.sayfa {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 32px 16px;
+}
+
+.ust h1 { margin: 0; font-size: 1.75rem; }
+.alt-baslik { margin: 4px 0 24px; color: var(--muted); }
+
+.kart {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+}
+
+.kart-baslik {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.kart-baslik h2 { margin: 0; font-size: 1.15rem; }
+
+button {
+  font: inherit;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+}
+button:disabled { opacity: 0.5; cursor: default; }
+
+.satir {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.servis-adi { font-family: ui-monospace, Menlo, monospace; }
+
+.rozet {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.rozet-ok { background: var(--ok-bg); color: var(--ok-fg); }
+.rozet-degraded { background: var(--warn-bg); color: var(--warn-fg); }
+.rozet-unreachable { background: var(--err-bg); color: var(--err-fg); }
+.rozet-yukleniyor { background: var(--idle-bg); color: var(--idle-fg); }
+
+.detay {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 16px;
+  margin: 12px 0 0;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+.detay-satir { display: contents; }
+.detay dd { margin: 0; overflow-wrap: anywhere; }

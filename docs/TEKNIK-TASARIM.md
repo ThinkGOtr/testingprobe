@@ -441,28 +441,30 @@ FailureToFix(run_id)
 
 ## 11. Docker Compose ve yerel ortam
 
-| Servis | İmaj | Port (yalnızca 127.0.0.1) | Healthcheck |
-|---|---|---|---|
-| `postgres` | `postgres:16` | 5432 | `pg_isready -U tp` |
-| `temporal` | `temporalio/temporal` (`server start-dev --ip 0.0.0.0 --db-filename /data/t.db --ui-port 8233`) | 7233, 8233 | `temporal operator cluster health --address 127.0.0.1:7233` |
-| `migrate` | çekirdek imajı (tek seferlik) | — | `service_completed_successfully` |
-| `core-api` | çekirdek imajı | 8000 | `/health` |
-| `core-worker` | çekirdek imajı | — | Temporal bağlantısı |
-| `toolchain-worker` | toolchain imajı | — | Temporal bağlantısı |
-| `test-runner` | toolchain imajı; ağlar: `demo-net` + `runner-net`; bağımlılıklar imajda önceden kurulu, `uv run --frozen --offline` ve `npm --offline` | — (iç ağ) | Kontrol portu |
-| `playwright-mcp` | `mcr.microsoft.com/playwright/mcp` (`--headless --host 0.0.0.0 --port 8931 --allowed-hosts '*' --allowed-origins http://demo-app-web --isolated --caps=testing`), `shm_size: 1gb` | — (iç ağ) | TCP 8931 |
-| `review-portal` | nginx | 3000 | HTTP 200 |
-| `demo-app-api` | demo API imajı | 8080 | `/health` |
-| `demo-app-web` | toolchain imajı, `vite build && vite preview` (CI ile aynı; `preview.allowedHosts` ayarlı) | 8081 | HTTP 200 |
+Tek doğruluk kaynağı repo kökündeki `docker-compose.yml`'dir; ayrıntılar `specs/001-dev-foundation/` (plan, research R1–R13, contracts). Temporal demoda yoktur (karar §0-25); iş akışı Postgres tabanlı kuyruk ve `core-worker` ile yürür.
 
-- **Başlatma sırası:** `depends_on: condition: service_healthy`.
-- **Kaynak sınırları:** MCP 2 GB, toolchain-worker 3 GB; `node_modules` named volume.
-- **Disk:** Docker Desktop disk limiti 64 GB; `make prune`. Gerekli boş alan ~30 GB.
-- **Sabitleme:** tüm imajlar digest ile; `.env.example`: `ANTHROPIC_API_KEY`, `JIRA_SITE`, `JIRA_READ_EMAIL/TOKEN`, `JIRA_WRITE_EMAIL/TOKEN`, `GH_APP_ID`, `GH_APP_PRIVATE_KEY`, `BASE_URL`.
+| Servis | İmaj | Host portu (yalnızca 127.0.0.1) | Ağlar | Healthcheck |
+|---|---|---|---|---|
+| `postgres` | `postgres:16-alpine@sha256:…` | 55432 | core-net, data-net | `pg_isready` |
+| `migrate` | çekirdek imajı (tek seferlik, `alembic upgrade head`, `tp_owner`) | — | core-net | `service_completed_successfully` |
+| `core-api` | çekirdek imajı | 8000 | core-net | `/health` (DB) |
+| `core-worker` | çekirdek imajı | — | core-net | `python -m tp_core.worker.healthcheck` |
+| `toolchain-worker` | toolchain imajı | — | core-net, runner-net | `/health` :8100 (node, Playwright sürümü) |
+| `test-runner` | toolchain imajı | — | demo-net, runner-net | `/health` :8200 |
+| `playwright-mcp` | toolchain imajı, `@playwright/mcp` 0.0.83 (playwright-core 1.64.1'e sabit), `--headless --browser chromium --isolated --caps=testing --allowed-origins http://demo-app-web:8080` | 8931 | core-net, demo-net | TCP 8931 |
+| `review-portal` | React + Vite → nginx (`/api/` → core-api) | 8080 | core-net | `/health` |
+| `demo-app-api` | FastAPI | — | data-net, demo-net | `/health` (DB) |
+| `demo-app-web` | React + Vite → nginx (`/api/` → demo-app-api) | 8081 | core-net, demo-net | `/health` |
 
-**Make hedefleri:** `make up` · `make seed STEP=n` · `make break` · `make reset` · `make export-audit` · `make prune`.
+- **Ağlar:** `data-net`, `demo-net`, `runner-net` `internal: true`. test-runner postgres'i, core-api'yi ve interneti göremez (`make security-check` doğrular).
+- **Toolchain imajı:** `mcr.microsoft.com/playwright:v<.playwright-version>-noble@sha256:…`; Playwright sürümü tek kaynaktan, uyuşmazlıkta build ve healthcheck başarısız.
+- **Başlatma sırası:** `depends_on: condition: service_healthy`; `make up` = önkoşul kontrolü + `docker compose up -d --build --wait`.
+- **Kaynak sınırları:** toplam ≤ ~9,6 GB (test-runner 3 GB, toolchain-worker ve MCP 2'şer GB, postgres 1 GB); Playwright içeren servislerde `shm_size: 1gb`.
+- **Sabitleme:** tüm dış imajlar digest ile; Python `uv.lock`, Node `package-lock.json` + `npm ci --ignore-scripts`.
 
-**`make reset`:** önce `make export-audit` (imzalı JSONL; imza anahtarı macOS Keychain'de, `.env`'de değil); sonra DB ve Temporal sıfırlanır; `tp/*` branch'leri silinir, açık PR'lar kapatılır; `main`, `demo-admin` kimliğiyle (ruleset bypass) `demo-baseline` etiketine revert commit ile döner; Jira'da `project = TPD AND labels = tp-demo` kayıtları silinir (yazma kullanıcısında "Delete issues" yetkisi); demo uygulaması yeniden derlenir; demo verisi yüklenir. Her yayında kayıtlara sabit `tp-demo` etiketi de eklenir (JQL'de etiket jokeri yok).
+**Make hedefleri (F0):** `env` · `up` · `status` · `seed` · `reset` · `export-audit` · `security-check` · `prune` · `logs` · `down`. Sonraki özelliklerde eklenecekler: `seed STEP=n`, `break` (F1/F4).
+
+**`make reset`:** önce `make export-audit` (JSONL + sha256 bütünlük özeti; imza ürün fazında, karar §0-23); başarısızsa hiçbir şey silinmez. Ardından yalnızca Postgres volume'ü silinir ve ortam yeniden başlatılır. Sonraki özelliklerde eklenecekler: `tp/*` branch'leri silinir, açık PR'lar kapatılır; `main`, `demo-admin` kimliğiyle (ruleset bypass) `demo-baseline` etiketine revert commit ile döner; Jira'da `project = TPD AND labels = tp-demo` kayıtları silinir; demo verisi yüklenir.
 
 ---
 

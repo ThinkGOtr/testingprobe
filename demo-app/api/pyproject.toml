@@ -1,0 +1,27 @@
+[project]
+name = "demoapp-api"
+version = "0.1.0"
+description = "Bayi Sipariş Portalı örnek uygulaması — API iskeleti (F0: yalnızca /health)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "httpx>=0.27",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/demoapp_api"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
