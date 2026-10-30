@@ -30,6 +30,7 @@
 | 9 | Playwright dili | **TypeScript** | Değişiklik yok |
 | 10 | Sahipler | F1 Hakan · F2a İsmail · çekirdek/Jira/portal Gökhan | §17 aynen |
 | 11 | Jira demo sitesi + Rovo token | **Recep Bey** açacak | §18 |
+| 13 | Test koşum platformu | **Sauce Labs (SaaS)**, Antrek hesabı, gerçek cihaz + bulut tarayıcı planı, 1–2 eşzamanlı oturum, hesabın bölgesi; kimlik (kullanıcı + access key) ekipten gelecek | §8.5 Sauce job'u; mobil fazda gerçek cihazlar; triage kanıtına Sauce video/log |
 | 12 | 1 haftalık kapsam | **Demo-A canlı + kısa otomasyon** | Case akışı (adım 1–4b) canlı; kod üretimi + CI tek akış (canlı veya hazır PR ile); kırılma ve locator onarımı (adım 7–8, F5) sonraki demoya |
 
 ---
@@ -275,7 +276,8 @@ FailureToFix(run_id)
 - **Ayrı job:** Semgrep (SAST).
 - **Zorunlu check'ler her PR'da koşar:** workflow düzeyinde `paths` filtresi **yok**; test, AST koruması ve Semgrep job'ları her PR'da tetiklenir, değişiklik tespiti job içinde (`dorny/paths-filter@<SHA>`) yapılır ve ilgisiz PR'da adımlar "no-op, başarılı" çıkar (atlanan zorunlu check PR'ı bekletir).
 - **Ayarlar:** `permissions: { contents: read, packages: read }`; `concurrency: cancel-in-progress`; Action'lar SHA ile; `npm ci --ignore-scripts` (lockfile sabit).
-- **Hedef süre:** koşu başına ≤ 2 dk.
+- **Hedef süre:** koşu başına ≤ 2 dk (yerel job).
+- **Sauce Labs job'u (demodaki ana gösterim, karar §0-13):** aynı onaylı testler `saucectl` ile Sauce Labs bulut tarayıcılarında (Chromium/Chrome) AI'sız koşar. Demo uygulaması CI runner'ında ayağa kalkar ve **Sauce Connect** tüneliyle yalnızca Sauce'a açılır. Kimlik: `SAUCE_USERNAME` ve `SAUCE_ACCESS_KEY` GitHub Actions secret'ı (Antrek hesabı; bölge hesabın bölgesi). Eşzamanlılık 1–2 oturum. Koşu sonucu, Sauce video ve log linki PR yorumuna yazılır; çekirdek sonucu GitHub API ve Sauce REST API'den alır. Yerel Chromium job'u **yedek** olarak koşmaya devam eder; Sauce veya tünel hatası PR'ı kilitlemez (Sauce job'u zorunlu check değildir, yerel test job'u zorunludur).
 - **Ruleset:** `main`'e doğrudan push yok; merge için CI yeşil + 1 insan onayı + CODEOWNERS (`pages/**`, `.github/**`); "enforce for admins"; bypass yalnızca `demo-admin` (insan) hesabı. Ücretsiz planda private repoda kullanılamaz → GitHub Team (§18).
 
 ### 8.6 Triage (önce kural)
@@ -451,6 +453,8 @@ FailureToFix(run_id)
 |---|---|---|---|
 | Ücretsiz GitHub planında branch koruması yok | Kesin | Yüksek | GitHub Team planı (§18). B planı: kod ve veri sentetik olduğu için repo public yapılabilir (ücretsiz ruleset); ancak ürün kodu IP'mizdir, şirket kararı gerekir |
 | Kritik yol tek kişide | Orta | Yüksek | F1 ilk günden paralel (Hakan); İsmail F2a'da |
+| Sauce Labs / Sauce Connect demoda aksar | Orta | Orta | Yerel CI job'u yedek ve zorunlu; Sauce job'u zorunlu değil; önceki yeşil Sauce koşusunun linki hazır |
+| Sauce kimliği geç gelir | Orta | Düşük | Demo yerel CI ile yapılabilir; Sauce eklentisi bağımsız |
 | Rovo MCP ücretsiz plan / API token sorunu | Orta | Orta | Bugün test; B planı |
 | Kod üretim adımı demo süresini aşar | Orta | Yüksek | ≤5 adımlı case, 120 sn bütçe, REPLAY |
 | Eşleme başarısız | Orta | Yüksek | Story'ler page object kapsamına göre seçilir |
@@ -483,7 +487,7 @@ Demo değerinin en hızlı görüneceği sıra: önce **case akışı** (CCI'ın
 | 2 | F2a: veri modeli, Temporal, model geçidi (İsmail: geçit, maskeleme) | F1: CI, toolchain imajı, ruleset (public repo) |
 | 3 | F3: Rovo okuma + case üretimi | F1 tamam: elle yazılmış test PR'da yeşil |
 | 4 | F3: review portal + `publish_test_cases` + `submit_draft_cases` (Claude Code) | F4-lite: doğrulama ajanı + şablonla kod (tek case) |
-| 5 | Prova (Demo-A canlı) + yedek video | F4-lite: PR + CI yeşil; hazır PR yedeği |
+| 5 | Prova (Demo-A canlı) + yedek video | F4-lite: PR + CI yeşil; **Sauce Labs koşusu + PR'a video linki** (+1 gün yük; zaman yetmezse yerel CI ile gösterilir); hazır PR yedeği |
 
 **1 haftada canlı:** adım 1–4b (story → case → onay → Jira; Claude kanalı). **Kısa otomasyon:** adım 5–6 tek case ile; canlı akış aksarsa hazır PR ve REPLAY. **Sonraki demoya:** adım 7–8 (kırılma, triage, locator onarımı — F5), denetim zinciri doğrulama ekranı.
 **Risk:** Plan sıkı; günlük durum kontrolü yapılır, takılan iş ilk gün sonunda kesilir (ilk kesilecekler aşağıda).
@@ -504,6 +508,7 @@ Demo değerinin en hızlı görüneceği sıra: önce **case akışı** (CCI'ın
 | 5 | GitHub App (bot) + `demo-admin` insan hesabı (ruleset bypass) | Gökhan | Bot bypass listesinde yok |
 | 6 | ~~GitHub Copilot lisansı~~ | — | Demo için gerekmez; 4b Claude Code ile (karar §0-5) |
 | 6a | Jira yazma kullanıcısında "Delete issues" yetkisi (sıfırlama) | Gökhan | |
+| 6c | **Sauce Labs kimliği** (kullanıcı adı + access key, Antrek hesabı) | Ekip | Geldiğinde GitHub Actions secret olarak eklenir; Playwright'ın hesapta açık olduğu ve sürüm uyumu teyit edilir |
 | 6b | Manuel case hazırlama baz ölçümü (4 story) | İsmail | F0 haftasında |
 | 7 | Docker Desktop lisans durumu | Şirket | |
 | 8 | CCI test ortamındaki bir web uygulamasına erişim talebi | Cengizhan Bey | Demodan sonraki taşıma için |
