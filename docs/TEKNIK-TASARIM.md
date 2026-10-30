@@ -1,6 +1,6 @@
 # AI Automation Testing (Test Engineering Suite) — Demo Teknik Tasarımı
 
-> **Sürüm:** v1.2 · 2026-10-30 · **Hazırlayan:** Gökhan Sipahi · **Gözden geçirecek:** Cengizhan Bey, Hakan, İsmail
+> **Sürüm:** v1.3 · 2026-10-30 · **Hazırlayan:** Gökhan Sipahi · **Gözden geçirecek:** Cengizhan Bey, Hakan, İsmail
 > **Bağlayıcı kaynak:** "AI Automation Testing — Geliştirme Ekibi için Ürün Brief'i" (Cengizhan Bey, 30.10.2026). Bu doküman o brief'in **demo dilimini** tarif eder. Brief'ten sapmalar §19'dadır.
 > **Spec Kit nedir:** GitHub'ın açık kaynak "spesifikasyon güdümlü geliştirme" aracı. Bu doküman önce projenin değişmez kurallarına (constitution, §3), sonra her kilometre taşı için ayrı spec → plan → görev → uygulama döngüsüne (§21) girdi olur.
 >
@@ -40,6 +40,7 @@
 | 17 | Kontrol Kulesi | **Bizim ürünümüzde, portalda bir ekran**: kalite, flaky, karne | §8.11 |
 | 18 | Jira bug "Faz 2 alanları" | Sonraki fazda; demoda temel bug alanları | §8.12 |
 | 19 | 1 hafta, tüm akış canlı | **Tüm 14 adım canlı**, ince sürümlerle | §2.1 |
+| 21 | Rakip analizinden (TheRafi) | **Demoya:** erişilebilirlik denetimi, serbest metin gereksinim girişi, Xray arka ucu. **Sonra:** TestRail, Zephyr. **Gerek yok:** tasarım dosyasından case üretimi, kurulum seçenekleri | §2.1, §17, §18, §20.1 |
 | 20 | Demo sadeleştirmeleri | **Onaylı** (Temporal yerine demoda Postgres durum makinesi; tek ekran Kontrol Kulesi; deploy tetiği elle; triage kural + mükerrer arama) | §2.1, §19 sapma 14 |
 
 ---
@@ -100,7 +101,9 @@ Demo story'si mutlaka `add-to-cart` ve kampanya hesabı adımlarını içerir.
 | Bug alanları | Faz 2 alanları dahil | Temel alanlar |
 | Denetim zinciri, REPLAY, Allure tarihçesi | Tam | Kayıt var; zincir doğrulama ekranı, tarihçe sonra; REPLAY yalnızca adım 4 ve 5 için |
 | Güvenlik gösterimi | Opsiyonel adım | Kapsam dışı |
-| Erişilebilirlik denetimi | WCAG 2.2 AA, CI'da her koşuda (§20.1) | **Yalnızca zaman kalırsa:** `@axe-core/playwright` ile demo story'sinin sayfalarında kontrol; ihlal sayısı Kontrol Kulesi'nde |
+| Erişilebilirlik denetimi | WCAG 2.2 AA, CI'da her koşuda (§20.1) | `@axe-core/playwright` ile demo story'sinin sayfalarında kontrol; ihlal sayısı Kontrol Kulesi'nde; kritik ihlal için bug taslağı |
+| Serbest metin gereksinim | Ürün özelliği (§20.1) | Portalda gereksinim kutusu; PO teyidi Jira yerine portalda (PO rolü); sonra aynı akış |
+| Test yönetimi arka uçları | Jira, Xray, TestRail, Zephyr, Octane | Jira + **Xray Cloud (deneme sürümü)**; TestRail ve Zephyr sonra |
 
 ---
 
@@ -538,8 +541,8 @@ Demo değerinin en hızlı görüneceği sıra: önce **case akışı** (CCI'ın
 |---|---|---|---|
 | 1 | F0: repo, Compose, `make up`; Postgres şeması, durum makinesi iskeleti | F1: örnek uygulama + page object'ler + iki kırılma bayrağı | Model geçidi (Claude, şema doğrulama, kayıt, maskeleme) |
 | 2 | Rovo okuma; Jira yazma (yorum, etiket, Test issue, Bug); PO etiketi sorgulama | F1: toolchain imajı, CI (PR, push, gece, deploy tetikleri), ruleset; JUnit + Allure reporter'ları | Ön inceleme (adım 2) ve case üretimi (adım 4) prompt/şemaları |
-| 3 | Portal: story, ön inceleme, case review, yayın önizlemesi; `submit_draft_cases` + `publish_test_cases` (Claude Code kanalı) | Sauce Labs job'u + Sauce Connect; elle yazılmış test PR'da yeşil | Kod üretimi: Playwright MCP doğrulama + eşleme + şablon (adım 5) |
-| 4 | Sonuç alma (JUnit XML) + **Kontrol Kulesi** ekranı; "kırarak doğrula" ve "deploy" düğmeleri | Kod taslağı PR akışı uçtan uca; kasıtlı kırma (a) | Triage: kurallar + JQL mükerrer + bug taslağı; locator onarımı + AST koruması |
+| 3 | Portal: story, ön inceleme, case review, yayın önizlemesi; `submit_draft_cases` + `publish_test_cases` (Claude Code kanalı); **serbest metin gereksinim girişi** (portalda PO teyidi) | Sauce Labs job'u + Sauce Connect; elle yazılmış test PR'da yeşil; **erişilebilirlik denetimi** (`@axe-core/playwright`, sonuç JUnit'e) | Kod üretimi: Playwright MCP doğrulama + eşleme + şablon (adım 5) |
+| 4 | Sonuç alma (JUnit XML) + **Kontrol Kulesi** ekranı (erişilebilirlik ihlalleri dahil); "kırarak doğrula" ve "deploy" düğmeleri; **test yönetimi adaptör arayüzü + Xray Cloud arka ucu** | Kod taslağı PR akışı uçtan uca; kasıtlı kırma (a) | Triage: kurallar + JQL mükerrer + bug taslağı; locator onarımı + AST koruması |
 | 5 | Testçi kayıt açma ekranı + `publish_bug`; **uçtan uca prova ×2** | Prova; hazır PR'lar ve Sauce koşu linkleri (yedek) | Prova; REPLAY kayıtları (adım 4–5); yedek video |
 
 **Günlük kesme kuralı:** her akşam 14 adımın durumu işaretlenir; bir adım ertesi gün öğlene kadar çalışmıyorsa o adım için yedeğe geçilir (hazır PR, REPLAY, önceden koşmuş Sauce linki) ve ekip sıradaki adıma geçer. Canlı gösterilemeyen adım demoda yedeğiyle gösterilir ve bu açıkça söylenir.
@@ -561,6 +564,7 @@ Demo değerinin en hızlı görüneceği sıra: önce **case akışı** (CCI'ın
 | 5 | GitHub App (bot) + `demo-admin` insan hesabı (ruleset bypass) | Gökhan | Bot bypass listesinde yok |
 | 6 | ~~GitHub Copilot lisansı~~ | — | Demo için gerekmez; 4b Claude Code ile (karar §0-5) |
 | 6a | Jira yazma kullanıcısında "Delete issues" yetkisi (sıfırlama) | Gökhan | |
+| 6d | **Xray Cloud deneme sürümü** demo Jira sitesine kurulu + Xray API kimliği (client id/secret) | Recep Bey | 30 günlük ücretsiz deneme; 2. gün hazır olmalı |
 | 6c | **Sauce Labs kimliği** (kullanıcı adı + access key, Antrek hesabı) | Ekip | Geldiğinde GitHub Actions secret olarak eklenir; Playwright'ın hesapta açık olduğu ve sürüm uyumu teyit edilir |
 | 6b | Manuel case hazırlama baz ölçümü (4 story) | İsmail | F0 haftasında |
 | 7 | Docker Desktop lisans durumu | Şirket | |
@@ -602,11 +606,9 @@ Kaynak: therafi.ai ve testinium.com pazarlama sayfaları (teknik doküman yok; i
 
 | Fikir | Kapsam | Uygulama | Gerekçe |
 |---|---|---|---|
-| **Erişilebilirlik denetimi** (RafiAccess karşılığı) | Demo: zaman kalırsa · Ürün: Faz 2 | `@axe-core/playwright` ile onaylı testlerin ziyaret ettiği sayfalarda WCAG 2.2 AA kontrolü; CI'da AI'sız; ihlaller JUnit/Allure'a ve Kontrol Kulesi'ne; kritik ihlal için aynı bug taslağı akışı | Rakipte var; RFI kapsam sorusu; düşük maliyet |
-| **Serbest metinle gereksinim girişi** | Ürün | Portalda Jira'sız gereksinim kutusu; aynı ön inceleme → (PO teyidi portalda) → case akışı; sonradan Jira'ya bağlanabilir | Brief'te "story seçer ya da gereksinim verir"; Jira'sız ekipler ve hızlı deneme |
-| **Çoklu test yönetimi arka ucu** | Ürün | `publish_test_cases` için Xray, TestRail, Zephyr Scale adaptörleri (Octane ile birlikte) | Başka müşterilere satış |
-| **Tasarımdan case üretimi** | Ürün (keşif) | Figma/Zeplin ekranlarından ön inceleme ve case taslağı | Story öncesi test hazırlığı; ayrıştırıcı |
-| **Kurulum seçenekleri** | Ürün / teklif | Müşteri tenant'ı (varsayılan), bizim bulutumuz (yönetilen), hibrit — açıkça belgelenir | Rakip üçünü sunuyor |
+| **Erişilebilirlik denetimi** (RafiAccess karşılığı) | **Demo** (karar §0-21) | `@axe-core/playwright` ile onaylı testlerin ziyaret ettiği sayfalarda WCAG 2.2 AA kontrolü; CI'da AI'sız; ihlaller JUnit/Allure'a ve Kontrol Kulesi'ne; kritik ihlal için aynı bug taslağı akışı | Rakipte var; RFI kapsam sorusu; düşük maliyet |
+| **Serbest metinle gereksinim girişi** | **Demo** (karar §0-21) | Portalda Jira'sız gereksinim kutusu; aynı ön inceleme → (PO teyidi portalda) → case akışı; sonradan Jira'ya bağlanabilir | Brief'te "story seçer ya da gereksinim verir"; Jira'sız ekipler ve hızlı deneme |
+| **Çoklu test yönetimi arka ucu** | **Demo: Xray** (canlı) · Ürün: TestRail, Zephyr Scale (karar §0-21) | `publish_test_cases` için adaptör arayüzü (`TestManagementBackend`: `upsert_case`, `link_to_story`, `find_by_key`); demoda Jira (yerel) ve **Xray Cloud** (GraphQL API ile Test issue + adımlar) arka uçları; hedef proje ayarıyla seçilir | Başka müşterilere satış; demoda "aynı onaylı case, farklı test yönetimi aracı" gösterimi |
 
 **Bilerek alınmayanlar:** koşu sırasında testi değiştiren "gerçek zamanlı AI self-healing" (Constitution II ve VI ile çelişir; gerçek hatayı gizleme riski) ve kapalı, kodsuz test formatı (taşınabilirlik ilkesiyle çelişir). Bu iki nokta teklifte ayrıştırıcı olarak kullanılır: **testler müşterinin repo'sunda, açık kaynak framework'te gerçek kod; koşuda AI yok; her değişiklik insan onaylı.**
 
