@@ -1,6 +1,8 @@
 <!--
 Sync Impact Report
-- Version change: 1.0.1 → 1.1.0 (MINOR: test edilen uygulamaya salt okuma erişim kısıtları ve kanıt
+- Version change: 1.1.0 → 1.2.0 (MINOR: İlke VII on-prem kurulum ve modelin müşteri ortamında
+  çalışması ile genişletildi; maskeleme müşteri verisi işlenen ortamlarda zorunlu)
+- Önceki: 1.0.1 → 1.1.0 (MINOR: test edilen uygulamaya salt okuma erişim kısıtları ve kanıt
   doğrulama kuralı eklendi)
 - Önceki: 1.0.0 → 1.0.1 (PATCH: İlke I ve Doğruluk kaynağı maddesi iş akışı motorundan
   bağımsız ifade edildi; demo Postgres durum makinesi, ürün Temporal — kural değişmedi)
@@ -53,9 +55,10 @@ Bu kural AST korumasıyla hem çekirdekte hem CI'da zorunlu check olarak uygulan
 her sapma defect adayıdır.
 
 ### VII. Veri Müşteride Kalır
-Gerçek müşteri verisi kullanılmaz; geliştirme ve demo yalnızca sentetik veriyle yapılır. Model
-geçidinde gereksinim metni, Confluence ve log'lar için ters çevrilebilir PII maskeleme uygulanır.
-Müşteri verisi model eğitimi veya ince ayar için kullanılmaz.
+Ürün müşteri ortamında (on-prem) çalışır; müşteri verisi müşteri ortamından çıkmaz. Ürün fazında model
+de müşteri ortamında (müşterinin bulut hesabı/tenant'ı veya on-prem) çalışır. Müşteri verisi işlenen
+her ortamda model geçidinde PII maskeleme zorunludur; yalnızca sentetik veriyle çalışan geliştirme ve
+demo ortamında maskeleme kapalı olabilir. Müşteri verisi model eğitimi veya ince ayar için kullanılmaz.
 
 ### VIII. Her Şey Kayıt Altında
 Her AI çağrısı, araç çağrısı, onay ve ret kaydedilir: model, sürüm, bundle hash'i, maskeli girdi,
@@ -130,4 +133,4 @@ ve etkisi yazılır ve teknik lider ile ürün sahibi tarafından onaylanır. S�
 kaldırma veya yeniden tanımlama MAJOR, yeni ilke veya bölüm MINOR, açıklama ve ifade düzeltmeleri
 PATCH. Çalışma zamanı rehberi için `docs/TEKNIK-TASARIM.md` ve `CLAUDE.md` kullanılır.
 
-**Version**: 1.1.0 | **Ratified**: 2026-10-30 | **Last Amended**: 2026-10-30
+**Version**: 1.2.0 | **Ratified**: 2026-10-30 | **Last Amended**: 2026-10-30

@@ -1,6 +1,6 @@
 # AI Automation Testing (Test Engineering Suite) — Demo Teknik Tasarımı
 
-> **Sürüm:** v1.4 · 2026-10-30 · **Hazırlayan:** Gökhan Sipahi · **Gözden geçirecek:** Cengizhan Bey, Hakan, İsmail
+> **Sürüm:** v1.5 · 2026-10-30 · **Hazırlayan:** Gökhan Sipahi · **Gözden geçirecek:** Cengizhan Bey, Hakan, İsmail
 > **Bağlayıcı kaynak:** "AI Automation Testing — Geliştirme Ekibi için Ürün Brief'i" (Cengizhan Bey, 30.10.2026). Bu doküman o brief'in **demo dilimini** tarif eder. Brief'ten sapmalar §19'dadır.
 > **Spec Kit nedir:** GitHub'ın açık kaynak "spesifikasyon güdümlü geliştirme" aracı. Bu doküman önce projenin değişmez kurallarına (constitution, §3), sonra her kilometre taşı için ayrı spec → plan → görev → uygulama döngüsüne (§21) girdi olur.
 >
@@ -21,7 +21,7 @@
 
 | # | Konu | Karar | Tasarıma etkisi |
 |---|---|---|---|
-| 1 | Demo tarihi | **1 hafta içinde** | Teslimat §17'deki "1 haftalık demo planı"na göre |
+| 1 | Demo tarihi | ~~1 hafta içinde~~ → **~3 hafta** (karar 24) | Teslimat §17'deki "1 haftalık demo planı"na göre |
 | 2 | Format | **Canlı**, katılımcılar iş birimi | Güvenlik gösterimi kapsam dışı; REPLAY ve video yedek kalır |
 | 3 | CCI Jira | **Jira Cloud** | Rovo MCP kullanılabilir (CCI ortamında da) |
 | 4 | CCI test yönetimi | **Jira (Xray'siz)** | Demodaki Jira yolu CCI'ın gerçek yolu; Octane öncelik dışı |
@@ -39,9 +39,12 @@
 | 16 | Kasıtlı kırma | **İkisi de**: (a) hata yakalama kanıtı — uygulamada bilerek hata açılır, test kırmızıya dönmeli; (b) locator kırılması ve onarımı | §2 adım 6, 13–14 |
 | 17 | Kontrol Kulesi | **Bizim ürünümüzde, portalda bir ekran**: kalite, flaky, karne | §8.11 |
 | 18 | Jira bug "Faz 2 alanları" | Sonraki fazda; demoda temel bug alanları | §8.12 |
-| 19 | 1 hafta, tüm akış canlı | **Tüm 14 adım canlı**, ince sürümlerle | §2.1 |
+| 19 | Tüm akış canlı | **Tüm 14 adım canlı**, ince sürümlerle | §2.1 |
 | 21 | Rakip analizinden (TheRafi) | **Demoya:** erişilebilirlik denetimi, serbest metin gereksinim girişi, Xray arka ucu. **Sonra:** TestRail, Zephyr. **Gerek yok:** tasarım dosyasından case üretimi, kurulum seçenekleri | §2.1, §17, §18, §20.1 |
 | 22 | Doküman tutarlılık denetimi | **Sistem, test edilen uygulamanın GitHub reposuna ve veritabanına salt okuma erişimle analistin dokümanını (Jira story açıklaması + AC) iç tutarlılık, kod ve veri açısından denetler**; AI düzeltme önerir, analist onaylar, sistem Jira'yı günceller; kod hatalıysa bug taslağı; engelleyici bulgu kalmayınca "son hal" → PO teyidi | §2 adım 2, §8.2b, §17 |
+| 23 | Kurulum ve veri güvenliği | **Uygulama on-prem çalışacak; veri dışarı çıkmayacak.** Demoda güvenlik sertleştirmesi öncelik değil (PII maskeleme, denetim zinciri doğrulama, tehdit gösterimi ürün fazına). Salt okuma erişim ve insan kapıları kalır. **İstisna:** model çağrıları — ürün fazında model müşteri ortamında olmalı (müşterinin bulut hesabında Claude / tenant'ta Azure OpenAI / on-prem açık model); demo sentetik veriyle Claude API | §2.1, Constitution VII |
+| 24 | Demo süresi | **~3 hafta**; haftalık ara demolar (Demo-A, Demo-B, tam demo) | §17 3 haftalık plan |
+| 25 | Sadeleştirmeler | **Kalıyor** (Postgres durum makinesi; Temporal ürün fazında) | §2.1 |
 | 20 | Demo sadeleştirmeleri | **Onaylı** (Temporal yerine demoda Postgres durum makinesi; tek ekran Kontrol Kulesi; deploy tetiği elle; triage kural + mükerrer arama) | §2.1, §19 sapma 14 |
 
 ---
@@ -101,6 +104,7 @@ Demo story'si mutlaka `add-to-cart` ve kampanya hesabı adımlarını içerir.
 | PO teyidi | Jira iş akışı/geçiş ile | Etiket (`tp-po-approved`) + 15 sn'de bir sorgulama |
 | Bug alanları | Faz 2 alanları dahil | Temel alanlar |
 | Denetim zinciri, REPLAY, Allure tarihçesi | Tam | Kayıt var; zincir doğrulama ekranı, tarihçe sonra; REPLAY yalnızca adım 4 ve 5 için |
+| PII maskeleme | Her model çağrısında | Demoda kapalı (sentetik veri, karar §0-23); geçitte kanca hazır, müşteri verisinde zorunlu |
 | Güvenlik gösterimi | Opsiyonel adım | Kapsam dışı |
 | Erişilebilirlik denetimi | WCAG 2.2 AA, CI'da her koşuda (§20.1) | `@axe-core/playwright` ile demo story'sinin sayfalarında kontrol; ihlal sayısı Kontrol Kulesi'nde; kritik ihlal için bug taslağı |
 | Serbest metin gereksinim | Ürün özelliği (§20.1) | Portalda gereksinim kutusu; PO teyidi Jira yerine portalda (PO rolü); sonra aynı akış |
@@ -557,22 +561,18 @@ Demo değerinin en hızlı görüneceği sıra: önce **case akışı** (CCI'ın
 | F5 | Triage kuralları + locator onarımı + AST koruması | Kırılma → onarım PR'ı → etkilenen tüm testler yeşil | İsmail + Hakan | 3 gün | B |
 | F6 | Seed, REPLAY, prova, video; zaman kalırsa güvenlik gösterimi | 3 ardışık sorunsuz prova | Ekip | 2 gün | — |
 
-### 1 haftalık demo planı (karar §0-1, §0-12)
+### 3 haftalık demo planı (karar §0-24)
 
-**Tüm 14 adım canlı (karar §0-19).** Üç hat paralel; Claude Code her hatta kod üretiminde kullanılır.
+**Tüm akış canlı (14 adım + tutarlılık denetimi + rakip analizi eklemeleri).** Üç hat paralel; Claude Code her hatta kod üretiminde kullanılır. Her haftanın sonunda Cengizhan Bey'e ara demo.
 
-| Gün | Hat A — Gökhan (çekirdek, Jira, portal) | Hat B — Hakan (uygulama, test, CI, Sauce) | Hat C — İsmail (AI) |
-|---|---|---|---|
-| 1 | F0: repo, Compose, `make up`; Postgres şeması, durum makinesi iskeleti | F1: örnek uygulama + page object'ler + iki kırılma bayrağı; **uygulama veritabanı (Postgres) + salt okuma rolü + bilerek konan doküman uyumsuzlukları** | Model geçidi (Claude, şema doğrulama, kayıt, maskeleme) |
-| 2 | Rovo okuma; Jira yazma (yorum, etiket, Test issue, Bug); PO etiketi sorgulama | F1: toolchain imajı, CI (PR, push, gece, deploy tetikleri), ruleset; JUnit + Allure reporter'ları | Ön inceleme (adım 2) ve case üretimi (adım 4) prompt/şemaları; **tutarlılık denetimi ajanı** (GitHub MCP read-only + `db_query`) **ve kanıt doğrulayıcı** |
-| 3 | Portal: story, ön inceleme + **tutarlılık bulguları ekranı (karar, önerilen metin farkı) ve Jira açıklama/AC güncelleme**, case review, yayın önizlemesi; `submit_draft_cases` + `publish_test_cases` (Claude Code kanalı); **serbest metin gereksinim girişi** (portalda PO teyidi) | Sauce Labs job'u + Sauce Connect; elle yazılmış test PR'da yeşil; **erişilebilirlik denetimi** (`@axe-core/playwright`, sonuç JUnit'e) | Kod üretimi: Playwright MCP doğrulama + eşleme + şablon (adım 5) |
-| 4 | Sonuç alma (JUnit XML) + **Kontrol Kulesi** ekranı (erişilebilirlik ihlalleri dahil); "kırarak doğrula" ve "deploy" düğmeleri; **test yönetimi adaptör arayüzü + Xray Cloud arka ucu** | Kod taslağı PR akışı uçtan uca; kasıtlı kırma (a) | Triage: kurallar + JQL mükerrer + bug taslağı; locator onarımı + AST koruması |
-| 5 | Testçi kayıt açma ekranı + `publish_bug`; **uçtan uca prova ×2** | Prova; hazır PR'lar ve Sauce koşu linkleri (yedek) | Prova; REPLAY kayıtları (adım 4–5); yedek video |
+| Hafta | Hat A — Gökhan (çekirdek, Jira, portal) | Hat B — Hakan (uygulama, test, CI, Sauce) | Hat C — İsmail (AI) | Hafta sonu ara demo |
+|---|---|---|---|---|
+| **1** | F0: repo, Compose, `make up`; Postgres şeması, durum makinesi; Rovo okuma; Jira yazma (yorum, etiket, açıklama/AC güncelleme, Test issue); PO etiketi sorgulama; portal: story, ön inceleme + tutarlılık bulguları, case review, yayın önizlemesi; serbest metin gereksinim girişi | F1: örnek uygulama + page object'ler + kırılma bayrakları; uygulama veritabanı + salt okuma rolü + bilerek konan doküman uyumsuzlukları; toolchain imajı; CI iskeleti (PR, push) | Model geçidi (Claude, şema doğrulama, kayıt); ön inceleme + **tutarlılık denetimi ajanı** (GitHub MCP read-only + `db_query`) + kanıt doğrulayıcı; case üretimi | **Demo-A:** Jira story → tutarlılık denetimi (kod/veri) → doküman düzeltme → PO teyidi → AI case → QA onayı → Jira; Claude Code kanalı |
+| **2** | `submit_draft_cases` + `publish_test_cases` (Claude Code); test yönetimi adaptör arayüzü + **Xray Cloud**; sonuç alma (JUnit XML); "kırarak doğrula" ve "deploy" düğmeleri | CI tetikleri (gece, deploy), ruleset; JUnit + Allure; **Sauce Labs** job'u + Sauce Connect; **erişilebilirlik denetimi**; kasıtlı kırma (a) | Kod üretimi: Playwright MCP doğrulama + eşleme + şablon; yerel kontrol; PR akışı | **Demo-B:** onaylı case → kod PR → review + kırarak doğrulama → merge → CI (yerel + Sauce) → JUnit/Allure |
+| **3** | **Kontrol Kulesi**; testçi kayıt açma ekranı + `publish_bug`; uçtan uca entegrasyon | Locator kırılması (`make break`) ve onarım PR akışı CI'da; hazır PR ve Sauce linkleri (yedek) | Triage: kurallar + JQL mükerrer + bug taslağı; locator onarımı + AST koruması; REPLAY kayıtları | **Tam demo provası ×3** (temiz sıfırlamayla); yedek video |
 
-**Günlük kesme kuralı:** her akşam 14 adımın durumu işaretlenir; bir adım ertesi gün öğlene kadar çalışmıyorsa o adım için yedeğe geçilir (hazır PR, REPLAY, önceden koşmuş Sauce linki) ve ekip sıradaki adıma geçer. Canlı gösterilemeyen adım demoda yedeğiyle gösterilir ve bu açıkça söylenir.
-**Risk:** Plan çok sıkı (≈ 3 haftalık işin 1 haftaya sıkıştırılmış hali); başarı, üç hattın 1. günden paralel başlamasına ve Jira sitesi + Sauce kimliğinin 1. gün hazır olmasına bağlı.
-
-**Kural:** Demo-A ≤ 7 iş günü sabittir; bu tarihi tehdit eden her ek kapsam ertelenir. **İlk kesilecekler (sırasıyla):** Confluence özeti · `ac_missing` soru akışı (yalnızca uyarı kalır) · REPLAY'in Demo-A'daki kapsamı.
+**Haftalık kontrol:** her ara demoda bir sonraki haftanın kapsamı gözden geçirilir; takılan iş yedeğiyle (hazır PR, REPLAY, önceden koşmuş Sauce linki) gösterilir ve bu açıkça söylenir.
+**Bağımlılıklar:** Jira sitesi + Rovo token ve uygulama veritabanı 1. haftanın başında; Sauce kimliği ve Xray deneme sürümü 2. haftanın başında hazır olmalı.
 **Azure eşdeğerlik koşusu (sapma 1 koşulu):** sahibi İsmail; Azure OpenAI erişimi sağlandıktan sonra, tam demo provasından önce değerlendirme seti her iki sağlayıcıda koşar. **Tam demo:** paralel hatlarla ~3 hafta. Tahminler ve sahipler ekip tarafından teyit edilecek.
 
 ---
