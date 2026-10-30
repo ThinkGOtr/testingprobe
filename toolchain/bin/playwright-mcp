@@ -3,12 +3,14 @@
 # request MCP_ALLOWED_ORIGINS (required: an empty value would mean "allow all").
 set -eu
 : "${MCP_ALLOWED_ORIGINS:?MCP_ALLOWED_ORIGINS must be set}"
+# Host header allowlist (DNS rebinding). Compose sets the in-network name; default stays local only.
+: "${MCP_ALLOWED_HOSTS:=localhost:8931,127.0.0.1:8931}"
 exec node /opt/toolchain/node_modules/@playwright/mcp/cli.js \
   --headless \
   --browser chromium \
   --host 0.0.0.0 \
   --port 8931 \
-  --allowed-hosts '*' \
+  --allowed-hosts "$MCP_ALLOWED_HOSTS" \
   --isolated \
   --caps=testing \
   --allowed-origins "$MCP_ALLOWED_ORIGINS" \

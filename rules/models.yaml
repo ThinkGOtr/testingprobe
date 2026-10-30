@@ -1,0 +1,53 @@
+# Görev başına model, parametre ve fiyat tablosu (TEKNIK-TASARIM §8.8).
+# Değişiklik bundle_hash'i değiştirir (model + params hash'e girer) → replay kayıtları yeniden üretilmeli.
+version: 1
+
+# USD / 1M token (Anthropic birinci taraf API fiyatları, 2026-10).
+# cache_write = 1.25 × input (5 dk ephemeral), cache_read = 0.1 × input.
+# Haiku 5.5 fiyatı ≤100K token'lık istekler içindir (üstü 0.50 / 2.50); demo istekleri bunun altında.
+pricing_usd_per_mtok:
+  claude-sonnet-5-5: { input: 2.00, output: 10.00, cache_read: 0.20, cache_write: 2.50 }
+  claude-haiku-5-5: { input: 0.10, output: 0.50, cache_read: 0.01, cache_write: 0.125 }
+
+defaults:
+  max_tokens: 4096
+  params:
+    # Tasarım: temperature 0–0,2. Anthropic API'si (2026-10-21) ve kurulu SDK örnekleme
+    # parametrelerini kabul etmez; Anthropic adaptörü göndermez. Diğer sağlayıcılar (Azure) kullanır.
+    temperature: 0
+
+purposes:
+  # Sonnet sınıfı: case üretimi ve ajanlar
+  requirement_review:
+    model: claude-sonnet-5-5
+    max_tokens: 4096
+    params: { effort: medium }
+  case_generation:
+    model: claude-sonnet-5-5
+    max_tokens: 16000
+    params: { effort: medium }
+  consistency_check:          # ajan: kod (GitHub MCP, salt okuma) + veri (db_query) araçları
+    model: claude-sonnet-5-5
+    max_tokens: 8192
+    max_input_tokens: 150000
+    # Ajan döngüsünde eski snapshot/sonuçlar bağlamdan çıkarılır (geçmiş düzenleme); thinking
+    # blokları geçmiş düzenlemeyle geçersizleşeceğinden ajanlarda araçlar arası düşünme kapalı.
+    params: { effort: medium, thinking: { type: between_tools } }
+  verify_and_map:             # ajan: Playwright MCP doğrulama döngüsü (§8.4)
+    model: claude-sonnet-5-5
+    max_tokens: 8192
+    max_input_tokens: 150000
+    params: { effort: medium, thinking: { type: between_tools } }
+  # Haiku sınıfı: triage ve özetleme
+  triage:
+    model: claude-haiku-5-5
+    max_tokens: 2048
+    params: { effort: low }
+  bug_draft:
+    model: claude-haiku-5-5
+    max_tokens: 4096
+    params: { effort: low }
+  dup_rank:
+    model: claude-haiku-5-5
+    max_tokens: 2048
+    params: { effort: low }

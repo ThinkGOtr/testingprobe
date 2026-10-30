@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # make reset — (1) denetim kaydını dışa aktar (başarısızsa hiçbir şey silinmez)
-#              (2) docker compose down + yalnızca Postgres volume'ünü sil
-#              (3) make up  → "ortam temiz"
+#              (2) docker compose down + Postgres ve artefakt volume'lerini sil
+#              (3) make up (forge-init'siz) → forge-init --force → jira-sim /sim/reset → durum tablosu
 # Yarıda kesilirse tekrar çalıştırmak güvenlidir: dışa aktarım her zaman silmeden önce yapılır.
 set -euo pipefail
 # shellcheck source=scripts/lib.sh
@@ -34,6 +34,31 @@ if docker volume inspect "$TP_PG_VOLUME" >/dev/null 2>&1; then
   docker volume rm "$TP_PG_VOLUME" >/dev/null
   echo "Çekirdek veri silindi ($TP_PG_VOLUME)."
 fi
+# Koşu artefaktları (trace, rapor, ekran görüntüsü) silinen koşulara aittir.
+if docker volume inspect "$TP_ARTIFACTS_VOLUME" >/dev/null 2>&1; then
+  docker volume rm "$TP_ARTIFACTS_VOLUME" >/dev/null
+  echo "Artefaktlar silindi ($TP_ARTIFACTS_VOLUME)."
+fi
 
-"$TP_REPO_ROOT/scripts/up.sh"
+# forge'u up.sh değil aşağıdaki --force kurar (iki kez kurulmasın); tablo en sonda yazılır.
+TP_SKIP_FORGE_INIT=1 TP_SKIP_STATUS=1 "$TP_REPO_ROOT/scripts/up.sh"
+
+# Çekirdek veri silindi → dış sistemlerin yerel simülasyonları da demo başlangıcına döner.
+echo "Yerel forge demo başlangıcına döndürülüyor (PR kaydı ve tp/* dalları silinir)..."
+"$TP_REPO_ROOT/scripts/forge-init.sh" --force >/dev/null || die "forge-init --force başarısız"
+JIRA_BASE="$(env_get JIRA_BASE_URL)"
+if [ -z "$JIRA_BASE" ]; then
+  # Gerçek Jira kullanılmıyor → jira-sim'i yeniden tohumla (TPD-1..TPD-7).
+  jira_port="$(env_get JIRA_SIM_PORT)"
+  if curl -fsS -X POST -H "X-Sim-Admin-Token: $(env_get JIRA_SIM_ADMIN_TOKEN)" \
+      "http://127.0.0.1:${jira_port:-8090}/sim/reset" >/dev/null; then
+    echo "jira-sim yeniden tohumlandı."
+  else
+    die "jira-sim sıfırlanamadı (POST /sim/reset)"
+  fi
+else
+  echo "Gerçek Jira yapılandırılmış ($JIRA_BASE); Jira verisine dokunulmadı."
+fi
+echo
+"$TP_REPO_ROOT/scripts/status.sh"
 echo "ortam temiz"

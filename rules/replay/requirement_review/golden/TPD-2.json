@@ -1,0 +1,30 @@
+{
+  "kind": "call",
+  "purpose": "requirement_review",
+  "golden": "TPD-2",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı; canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record).",
+  "output": {
+    "questions": [
+      {
+        "id": "Q1",
+        "type": "missing_ac",
+        "text": "Story'de kabul kriteri yok. Tarih aralığı hangi tarihe göre uygulanmalı (sipariş oluşturma tarihi mi?) ve başlangıç/bitiş günleri aralığa dahil mi?",
+        "ac_ref": null
+      },
+      {
+        "id": "Q2",
+        "type": "missing_ac",
+        "text": "Filtre seçilmediğinde hangi siparişler listelenmeli (tümü mü, son 30 gün mü)?",
+        "ac_ref": null
+      },
+      {
+        "id": "Q3",
+        "type": "missing_ac",
+        "text": "Aralıkta sipariş yoksa hangi mesaj gösterilmeli; başlangıç tarihi bitişten sonra girilirse ne olmalı?",
+        "ac_ref": null
+      }
+    ],
+    "verdict": "needs_po",
+    "summary": "Story'de kabul kriteri yok; test case üretilmeden önce PO'nun tarih filtresi kurallarını kabul kriteri olarak yazması gerekiyor."
+  }
+}

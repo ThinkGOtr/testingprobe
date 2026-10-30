@@ -1,0 +1,6 @@
+# golden-drift CI job'unun TAM bağımlılık listesi (anayasa II: model anahtarı, MCP sunucusu ve
+# ajan bağımlılığı yok). Sürümler core/uv.lock ile aynı. anthropic / mcp / tp_core buraya EKLENMEZ;
+# test_isolation.py ve CI'daki "ajan bağımlılığı yok" adımı eklenirse kırmızı olur.
+pytest==9.2.0
+jsonschema==4.26.0
+pyyaml==6.0.3

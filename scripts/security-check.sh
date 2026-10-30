@@ -1,10 +1,18 @@
 #!/usr/bin/env bash
-# make security-check — research R10'daki 4 güvenlik kontrolü (FR-015, SC-004).
-# Her kontrol PASS/FAIL yazar; özet "N/4"; herhangi bir FAIL → ≠0.
+# make security-check — research R10'daki 4 güvenlik kontrolü (FR-015, SC-004) + Faz 1'in 4 kontrolü.
+# Her kontrol PASS/FAIL yazar; özet "N/8"; herhangi bir FAIL → ≠0.
 #   1. Host'a açılan tüm portlar yalnızca 127.0.0.1'e bağlı
-#   2. test-runner'dan postgres, core-api ve internete erişim yok (demo-app-web'e var)
+#   2. test-runner'dan postgres, core-api, playwright-mcp ve internete erişim yok
+#      (demo-app-web ve demo-app-api'ye var)
 #   3. tp_app audit_event'i UPDATE/DELETE/TRUNCATE edemez
 #   4. Depoda sır yok (gitleaks; git geçmişi + commit edilmemiş izlenen/izlenmeyen dosyalar)
+#   5. demoapp_ro yalnızca izinli tablo/kolonları okur; yazamaz, parola özeti ve sipariş verisi kapalı
+#   6. Model anahtarı değişkeni yalnızca core-worker'da (anayasa); core-api'de tanımlı değil
+#   7. playwright-mcp (ajan tarayıcısı) core-api, jira-sim, postgres, demo-app-api (/test/*),
+#      test-runner ve internete erişemez; demo-app-web'e erişir; core-worker MCP'ye mcp-net
+#      üzerinden erişir
+#   8. Yazma yetkili dış sistem kimlikleri (Jira/Xray/GitHub) yalnızca core-worker'da;
+#      DEMOAPP_TEST_TOKEN yalnızca demo-app-api ve test-runner'da
 set -euo pipefail
 # shellcheck source=scripts/lib.sh
 . "$(dirname "$0")/lib.sh"
@@ -54,7 +62,7 @@ for name, svc in sorted((cfg.get("services") or {}).items()):
 # --- 2. test-runner ağ izolasyonu ----------------------------------------------
 NET_JS='
 const net = require("net");
-const targets = [["postgres",5432],["core-api",8000],["example.com",443],["demo-app-web",8080]];
+const targets = process.argv.slice(1).map((t) => { const i = t.lastIndexOf(":"); return [t.slice(0, i), Number(t.slice(i + 1))]; });
 let left = targets.length;
 setTimeout(() => process.exit(0), 8000);
 for (const [h, p] of targets) {
@@ -75,13 +83,15 @@ check_isolation() {
   if ! svc_running test-runner; then
     fail "2/izolasyon: test-runner çalışmıyor — kontrol yapılamadı"; return
   fi
-  if ! out="$(compose exec -T test-runner node -e "$NET_JS" 2>&1)"; then
+  local targets="postgres:5432 core-api:8000 playwright-mcp:8931 example.com:443 demo-app-web:8080 demo-app-api:8000"
+  # shellcheck disable=SC2086  # hedefler bilinçli olarak sözcüklere bölünür
+  if ! out="$(compose exec -T test-runner node -e "$NET_JS" $targets 2>&1)"; then
     fail "2/izolasyon: test-runner içinde node çalıştırılamadı"; info "$out"; return
   fi
-  for target in postgres:5432 core-api:8000 example.com:443 demo-app-web:8080; do
+  for target in $targets; do
     res="$(printf '%s\n' "$out" | awk -v t="$target" '$1 == t { print $2 }' | head -n 1)"
     [ -n "$res" ] || res="SONUÇ_YOK"
-    if [ "$target" = "demo-app-web:8080" ]; then
+    if [ "$target" = "demo-app-web:8080" ] || [ "$target" = "demo-app-api:8000" ]; then
       # pozitif kontrol: erişilmesi gereken hedef; erişilemiyorsa test anlamsız
       if [ "$res" = "OPEN" ]; then info "$target erişilebilir (beklenen)"; else ok=0; info "$target $res — erişilebilir olmalıydı (pozitif kontrol)"; fi
     else
@@ -89,7 +99,7 @@ check_isolation() {
     fi
   done
   if [ "$ok" -eq 1 ]; then
-    pass "2/izolasyon: test-runner postgres, core-api ve internete erişemiyor"
+    pass "2/izolasyon: test-runner postgres, core-api, playwright-mcp ve internete erişemiyor"
   else
     fail "2/izolasyon: test-runner ağ kısıtı beklendiği gibi değil"
   fi
@@ -153,10 +163,159 @@ check_secrets() {
   fi
 }
 
+# --- 5. demoapp_ro en az yetki -----------------------------------------------------
+# Pozitif: ayar/urun/kampanya ve bayi'nin izinli kolonları okunur.
+# Negatif: parola özeti, sipariş/sepet/oturum tabloları, her türlü yazma ve tablo oluşturma reddedilir.
+check_demoapp_ro() {
+  local ok=1 stmt out
+  if ! svc_healthy postgres; then
+    fail "5/salt-okuma: postgres çalışmıyor — kontrol yapılamadı"; return
+  fi
+  for stmt in "SELECT count(*) FROM ayar" "SELECT count(*) FROM urun" "SELECT count(*) FROM kampanya" \
+              "SELECT id, kullanici_adi, ad, kredi_limiti FROM bayi LIMIT 1"; do
+    if out="$(psql_demoapp_ro -v ON_ERROR_STOP=1 -At -c "$stmt" 2>&1)"; then
+      info "$stmt → okunabiliyor (beklenen)"
+    else
+      ok=0; info "$stmt → okunamadı (pozitif kontrol): $(printf '%s' "$out" | head -n 1)"
+    fi
+  done
+  for stmt in "SELECT parola_hash FROM bayi" "SELECT count(*) FROM siparis" "SELECT count(*) FROM sepet_satiri" \
+              "SELECT count(*) FROM oturum" "SELECT count(*) FROM test_kirilma" "UPDATE ayar SET deger = deger" "CREATE TABLE tp_probe(x int)"; do
+    if out="$(printf 'BEGIN;\n%s;\nROLLBACK;\n' "$stmt" | psql_demoapp_ro -v ON_ERROR_STOP=1 -q 2>&1)"; then
+      ok=0; info "$stmt → İZİN VERİLDİ (geri alındı)"
+    elif printf '%s' "$out" | grep -qiE "permission denied|read-only transaction"; then
+      info "$stmt → reddedildi"
+    else
+      ok=0; info "$stmt → beklenmeyen hata: $(printf '%s' "$out" | head -n 1)"
+    fi
+  done
+  if [ "$ok" -eq 1 ]; then
+    pass "5/salt-okuma: demoapp_ro yalnızca izinli verileri okuyabiliyor"
+  else
+    fail "5/salt-okuma: demoapp_ro yetkileri beklendiği gibi değil"
+  fi
+}
+
+# --- 6. Model anahtarı yalnızca core-worker'da ----------------------------------------
+# Değer yazdırılmaz; yalnızca değişkenin konteyner ortamında tanımlı olup olmadığına bakılır.
+check_model_key() {
+  local svc ok=1
+  if ! svc_running core-worker; then
+    fail "6/anahtar: core-worker çalışmıyor — kontrol yapılamadı"; return
+  fi
+  if compose exec -T core-worker sh -c 'env | grep -q "^ANTHROPIC_API_KEY="'; then
+    info "core-worker: ANTHROPIC_API_KEY tanımlı (beklenen; boş olabilir → REPLAY)"
+  else
+    ok=0; info "core-worker: ANTHROPIC_API_KEY tanımlı değil (beklenen: tanımlı)"
+  fi
+  for svc in core-api review-portal jira-sim toolchain-worker test-runner playwright-mcp demo-app-api demo-app-web; do
+    svc_running "$svc" || continue
+    if compose exec -T "$svc" sh -c 'env | grep -q "^ANTHROPIC_API_KEY="' 2>/dev/null; then
+      ok=0; info "$svc: ANTHROPIC_API_KEY tanımlı — olmamalı"
+    fi
+  done
+  if [ "$ok" -eq 1 ]; then
+    pass "6/anahtar: model anahtarı değişkeni yalnızca core-worker'da"
+  else
+    fail "6/anahtar: model anahtarı core-worker dışında tanımlı"
+  fi
+}
+
+# --- 7. playwright-mcp ağ izolasyonu --------------------------------------------------
+# MCP, sayfada kod çalıştıran araçları (browser_run_code_unsafe …) kapatmaya izin vermez; sınır ağdır.
+check_mcp_isolation() {
+  local out ok=1 target res
+  if ! svc_running playwright-mcp; then
+    fail "7/mcp: playwright-mcp çalışmıyor — kontrol yapılamadı"; return
+  fi
+  local targets="core-api:8000 jira-sim:8090 postgres:5432 toolchain-worker:8100 test-runner:8200 demo-app-api:8000 example.com:443 demo-app-web:8080"
+  # shellcheck disable=SC2086
+  if ! out="$(compose exec -T playwright-mcp node -e "$NET_JS" $targets 2>&1)"; then
+    fail "7/mcp: playwright-mcp içinde node çalıştırılamadı"; info "$out"; return
+  fi
+  for target in $targets; do
+    res="$(printf '%s\n' "$out" | awk -v t="$target" '$1 == t { print $2 }' | head -n 1)"
+    [ -n "$res" ] || res="SONUÇ_YOK"
+    if [ "$target" = "demo-app-web:8080" ]; then
+      if [ "$res" = "OPEN" ]; then info "$target erişilebilir (beklenen)"; else ok=0; info "$target $res — erişilebilir olmalıydı (pozitif kontrol)"; fi
+    else
+      if [ "$res" = "OPEN" ]; then ok=0; info "$target AÇIK — erişilememeliydi"; else info "$target engelli ($res)"; fi
+    fi
+  done
+  # Ajan tarayıcısı demo-app-web üzerinden test uçlarına (sıfırlama/kırılma) ulaşamaz: nginx 404.
+  local http_code
+  http_code="$(compose exec -T playwright-mcp node -e '
+    fetch("http://demo-app-web:8080/api/test/break", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kullanici_adi: "bayi1", kampanya: true }) })
+      .then((r) => console.log(r.status)).catch((e) => console.log("ERR_" + (e.cause?.code || e.message)));' 2>&1 | tail -n 1)"
+  if [ "$http_code" = "404" ]; then
+    info "demo-app-web /api/test/break → 404 (beklenen: test uçları dışarı kapalı)"
+  else
+    ok=0; info "demo-app-web /api/test/break → $http_code (beklenen 404)"
+  fi
+  # pozitif: core-worker (tek istemci) MCP'ye ulaşır
+  if svc_running core-worker && compose exec -T core-worker python -c \
+      "import socket; socket.create_connection(('playwright-mcp', 8931), 3).close()" >/dev/null 2>&1; then
+    info "core-worker → playwright-mcp:8931 erişilebilir (beklenen)"
+  else
+    ok=0; info "core-worker → playwright-mcp:8931 erişilemiyor (pozitif kontrol)"
+  fi
+  if [ "$ok" -eq 1 ]; then
+    pass "7/mcp: ajan tarayıcısı yalnızca demo uygulamasına erişiyor"
+  else
+    fail "7/mcp: playwright-mcp ağ kısıtı beklendiği gibi değil"
+  fi
+}
+
+# --- 8. Yazma kimlikleri yalnızca core-worker'da ----------------------------------------
+# Değerler yazdırılmaz; yalnızca değişkenin tanımlı olup olmadığına bakılır.
+WRITE_VARS="JIRA_WRITE_EMAIL JIRA_WRITE_TOKEN XRAY_CLIENT_ID XRAY_CLIENT_SECRET GITHUB_TOKEN GITHUB_MERGE_TOKEN GH_APP_ID GH_APP_PRIVATE_KEY GH_APP_PRIVATE_KEY_PATH GH_APP_INSTALLATION_ID"
+check_write_creds() {
+  local svc ok=1 found pattern
+  pattern="^($(printf '%s' "$WRITE_VARS" | tr ' ' '|'))="
+  if ! svc_running core-worker; then
+    fail "8/yazma: core-worker çalışmıyor — kontrol yapılamadı"; return
+  fi
+  if compose exec -T core-worker sh -c 'env | grep -q "^JIRA_WRITE_TOKEN="'; then
+    info "core-worker: yazma kimlikleri tanımlı (beklenen)"
+  else
+    ok=0; info "core-worker: JIRA_WRITE_TOKEN tanımlı değil (pozitif kontrol)"
+  fi
+  for svc in core-api review-portal jira-sim toolchain-worker test-runner playwright-mcp demo-app-api demo-app-web; do
+    svc_running "$svc" || continue
+    found="$(compose exec -T "$svc" sh -c 'env' 2>/dev/null | grep -E "$pattern" | cut -d= -f1 | tr '\n' ' ' || true)"
+    if [ -n "$found" ]; then
+      ok=0; info "${svc}: ${found}— olmamalı"
+    fi
+  done
+  # demo-app test belirteci (/test/reset, /test/break) yalnızca demo-app-api ve test-runner'da
+  for svc in demo-app-api test-runner; do
+    svc_running "$svc" || continue
+    if ! compose exec -T "$svc" sh -c 'test -n "$DEMOAPP_TEST_TOKEN"' 2>/dev/null; then
+      ok=0; info "${svc}: DEMOAPP_TEST_TOKEN tanımlı değil (pozitif kontrol)"
+    fi
+  done
+  for svc in core-api core-worker review-portal jira-sim toolchain-worker playwright-mcp demo-app-web; do
+    svc_running "$svc" || continue
+    if compose exec -T "$svc" sh -c 'env | grep -q "^DEMOAPP_TEST_TOKEN="' 2>/dev/null; then
+      ok=0; info "${svc}: DEMOAPP_TEST_TOKEN tanımlı — olmamalı"
+    fi
+  done
+  if [ "$ok" -eq 1 ]; then
+    pass "8/yazma: Jira/Xray/GitHub yazma kimlikleri yalnızca core-worker'da; demo test belirteci yalnızca demo-app-api + test-runner'da"
+  else
+    fail "8/yazma: yazma kimlikleri core-worker dışında tanımlı"
+  fi
+}
+
 echo "Güvenlik kontrolleri:"
 check_ports
 check_isolation
 check_audit_role
 check_secrets
-echo "Özet: $passed/4"
-[ "$passed" -eq 4 ]
+check_demoapp_ro
+check_model_key
+check_mcp_isolation
+check_write_creds
+echo "Özet: $passed/8"
+[ "$passed" -eq 8 ]

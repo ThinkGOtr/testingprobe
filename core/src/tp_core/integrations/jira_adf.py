@@ -1,0 +1,303 @@
+"""Atlassian Document Format (ADF) ↔ düz metin ve kabul kriteri (AC) ayrıştırma.
+
+Story açıklaması biçimi (docs/DEMO-VERISI.md): açıklama paragrafı, ardından "Kabul Kriterleri"
+başlığı ve ``AC<n>: ...`` satırları (madde listesi ya da paragraf). Gerçek Jira'daki öneksiz
+madde listeleri de başlık altında AC olarak okunur. Bu modül hem okuma
+(``parse_description``) hem yazma (``build_description``) yönünü sağlar; ikisi tur atlatıldığında
+aynı içeriği verir.
+"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Sequence
+from typing import Any
+
+AdfNode = dict[str, Any]
+
+AC_HEADING = "Kabul Kriterleri"
+_AC_HEADING_RE = re.compile(r"^\s*(kabul\s+kriterleri|acceptance\s+criteria)\s*:?\s*$", re.I)
+_AC_LINE_RE = re.compile(r"^\s*(?:[-*•]\s*|\d+[.)]\s+)?AC\s*(\d+)\s*[:.)\-–]\s*(.+?)\s*$", re.I)
+_BULLET = re.compile(r"^\s*[-*•]\s+(.*)$")
+_ORDERED = re.compile(r"^\s*(\d{1,9})[.)]\s+(.*)$")
+_HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
+
+
+# ------------------------------------------------------------------ metin → ADF
+
+
+def _inline(text: str) -> list[AdfNode]:
+    out: list[AdfNode] = []
+    for i, line in enumerate(text.split("\n")):
+        if i:
+            out.append({"type": "hardBreak"})
+        if line:
+            out.append({"type": "text", "text": line})
+    return out
+
+
+def paragraph(text: str) -> AdfNode:
+    return {"type": "paragraph", "content": _inline(text)}
+
+
+def heading(text: str, level: int = 3) -> AdfNode:
+    return {"type": "heading", "attrs": {"level": level}, "content": _inline(text)}
+
+
+def bullet_list(items: Sequence[str], ordered: bool = False, start: int = 1) -> AdfNode:
+    node: AdfNode = {
+        "type": "orderedList" if ordered else "bulletList",
+        "content": [{"type": "listItem", "content": [paragraph(it)]} for it in items],
+    }
+    if ordered:
+        node["attrs"] = {"order": start}
+    return node
+
+
+def _list_start(node: AdfNode) -> int:
+    order = (node.get("attrs") or {}).get("order", 1)
+    return order if isinstance(order, int) and order >= 0 else 1
+
+
+def table(header: Sequence[str], rows: Sequence[Sequence[str]]) -> AdfNode:
+    def cell(kind: str, text: str) -> AdfNode:
+        return {"type": kind, "attrs": {}, "content": [paragraph(text)]}
+
+    return {
+        "type": "table",
+        "attrs": {"isNumberColumnEnabled": False, "layout": "default"},
+        "content": [
+            {"type": "tableRow", "content": [cell("tableHeader", h) for h in header]},
+            *({"type": "tableRow", "content": [cell("tableCell", c) for c in row]} for row in rows),
+        ],
+    }
+
+
+def doc(content: Sequence[AdfNode]) -> AdfNode:
+    return {"type": "doc", "version": 1, "content": list(content)}
+
+
+def text_to_blocks(text: str) -> list[AdfNode]:
+    """Düz metni ADF bloklarına çevirir.
+
+    Boş satır paragraf ayırır, tek satır sonu ``hardBreak`` olur; ``# `` başlık, ``- `` madde
+    satırıdır. Numaralı liste yalnızca ``1. `` ile başlar ve ardışık numaralarla sürer
+    (``2. ``, ``3. `` ...); başka bir sayıyla başlayan satır (ör. ``1990. yılda``) paragraf
+    metni olarak kalır — ADF ``orderedList`` madde numarası taşımadığından yeniden
+    numaralandırılıp veri kaybolmasın.
+    """
+    blocks: list[AdfNode] = []
+    para: list[str] = []
+    items: list[str] = []
+    ordered = False
+    next_number = 0  # açık numaralı listede beklenen sıradaki numara
+
+    def flush() -> None:
+        nonlocal ordered, next_number
+        if para:
+            blocks.append(paragraph("\n".join(para)))
+            para.clear()
+        if items:
+            blocks.append(bullet_list(items, ordered))
+            items.clear()
+        next_number = 0
+
+    for raw in text.replace("\r\n", "\n").split("\n"):
+        line = raw.rstrip()
+        if not line.strip():
+            flush()
+            continue
+        if m := _HEADING.match(line):
+            flush()
+            blocks.append(heading(m.group(2).strip(), len(m.group(1))))
+            continue
+        if b := _BULLET.match(line):
+            if para or (items and ordered):
+                flush()
+            ordered = False
+            items.append(b.group(1).strip())
+            continue
+        o = _ORDERED.match(line)
+        if o:
+            number = int(o.group(1))
+            continues = bool(items) and ordered and number == next_number
+            if continues or number == 1:
+                if not continues:
+                    flush()
+                ordered = True
+                items.append(o.group(2).strip())
+                next_number = number + 1
+                continue
+        if items:
+            flush()
+        para.append(line)
+    flush()
+    return blocks
+
+
+def text_to_adf(text: str) -> AdfNode:
+    return doc(text_to_blocks(text))
+
+
+# ------------------------------------------------------------------ ADF → metin
+
+
+def inline_text(node: Any) -> str:
+    """Bir düğümün satır içi metni (hardBreak → ``\\n``)."""
+    if not isinstance(node, dict):
+        return ""
+    kind = node.get("type")
+    if kind == "text":
+        return str(node.get("text", ""))
+    if kind == "hardBreak":
+        return "\n"
+    attrs = node.get("attrs") or {}
+    if kind == "mention":
+        return str(attrs.get("text") or "")
+    if kind == "emoji":
+        return str(attrs.get("text") or attrs.get("shortName") or "")
+    if kind in ("status", "date"):
+        return str(attrs.get("text") or attrs.get("timestamp") or "")
+    if kind == "inlineCard":
+        return str(attrs.get("url") or "")
+    return "".join(inline_text(c) for c in node.get("content") or [])
+
+
+def _blocks(nodes: Sequence[Any]) -> list[tuple[str, str]]:
+    """Blokları ``(tür, metin)`` olarak düzleştirir; tür: paragraph | heading | item | other."""
+    out: list[tuple[str, str]] = []
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        kind = node.get("type")
+        if kind in ("bulletList", "orderedList"):
+            start = _list_start(node)
+            for n, item in enumerate(node.get("content") or [], start=start):
+                inner = _blocks(item.get("content") or [])
+                text = "\n".join(t for _, t in inner)
+                marker = "- " if kind == "bulletList" else f"{n}. "
+                out.append(("item", marker + text))
+        elif kind == "heading":
+            out.append(("heading", inline_text(node)))
+        elif kind == "paragraph":
+            out.append(("paragraph", inline_text(node)))
+        elif kind == "table":
+            rows = []
+            for row in node.get("content") or []:
+                cells = [inline_text(c).strip() for c in row.get("content") or []]
+                rows.append(" | ".join(cells))
+            out.append(("other", "\n".join(rows)))
+        elif kind in ("blockquote", "panel", "expand", "nestedExpand", "layoutSection"):
+            out.extend(_blocks(node.get("content") or []))
+        elif kind == "codeBlock":
+            out.append(("other", inline_text(node)))
+        elif kind == "rule":
+            continue
+        else:
+            text = inline_text(node)
+            if text:
+                out.append(("other", text))
+    return out
+
+
+def _join(blocks: list[tuple[str, str]]) -> str:
+    """Paragraflar boş satırla, ardışık maddeler tek satır sonuyla birleşir."""
+    parts: list[str] = []
+    prev = ""
+    for kind, text in blocks:
+        if not text.strip():
+            continue
+        if parts and not (kind == "item" and prev == "item"):
+            parts.append("\n\n")
+        elif parts:
+            parts.append("\n")
+        parts.append(text.strip("\n"))
+        prev = kind
+    return "".join(parts)
+
+
+def adf_to_text(adf: Any) -> str:
+    if adf is None:
+        return ""
+    if isinstance(adf, str):  # REST v2 / eski kayıtlar
+        return adf
+    if not isinstance(adf, dict):
+        return ""
+    return _join(_blocks(adf.get("content") or []))
+
+
+# ------------------------------------------------------------------- AC ayrıştırma
+
+
+def normalize_ac(ac: str, index: int) -> str:
+    """``AC<n>: metin`` biçimine getirir; numarası olmayan maddeye sıra numarası verir."""
+    if m := _AC_LINE_RE.match(ac):
+        return f"AC{int(m.group(1))}: {m.group(2).strip()}"
+    return f"AC{index}: {ac.strip()}"
+
+
+_ITEM_MARKER = re.compile(r"^\s*(?:[-*•]\s*|\d+[.)]\s+)")
+
+
+def parse_description(adf: Any) -> tuple[str, list[str]]:
+    """ADF açıklamasını (açıklama metni, ``["AC1: ...", ...]``) olarak ayırır.
+
+    "Kabul Kriterleri" (ya da "Acceptance Criteria") başlığından sonra, bir sonraki başlığa
+    kadar her madde ve her boş olmayan paragraf satırı bir AC'dir; ``AC<n>:`` öneki varsa o
+    numara korunur, yoksa sıradaki numara verilir (gerçek Jira story'leri çoğunlukla öneksiz
+    madde listesi kullanır). Başlık yoksa yalnızca ``AC<n>:`` ile başlayan satırlar AC sayılır.
+    Kalan her şey açıklama metnidir.
+    """
+    if isinstance(adf, str):
+        adf = text_to_adf(adf)
+    blocks = _blocks((adf or {}).get("content") or []) if isinstance(adf, dict) else []
+    desc: list[tuple[str, str]] = []
+    acs: list[str] = []
+    in_ac = False
+
+    def next_index() -> int:
+        # Öneksiz AC, şimdiye kadarki en büyük numaranın bir fazlasını alır (çakışma olmasın).
+        used = [int(m.group(1)) for a in acs if (m := _AC_LINE_RE.match(a))]
+        return max(used, default=0) + 1
+
+    for kind, text in blocks:
+        if kind == "heading" or (kind == "paragraph" and _AC_HEADING_RE.match(text)):
+            if _AC_HEADING_RE.match(text):
+                in_ac = True
+                continue
+            in_ac = False
+            desc.append((kind, text))
+            continue
+        if in_ac:
+            if kind == "item":
+                # Çok satırlı madde tek AC'dir.
+                body = " ".join(ln.strip() for ln in text.split("\n") if ln.strip())
+                body = _ITEM_MARKER.sub("", body, count=1).strip()
+                if body:
+                    acs.append(normalize_ac(body, next_index()))
+            else:
+                for line in text.split("\n"):
+                    line = _ITEM_MARKER.sub("", line, count=1).strip()
+                    if line:
+                        acs.append(normalize_ac(line, next_index()))
+            continue
+        rest: list[str] = []
+        for line in text.split("\n"):
+            m = _AC_LINE_RE.match(line)
+            if m:
+                acs.append(f"AC{int(m.group(1))}: {m.group(2).strip()}")
+            elif line.strip():
+                rest.append(line)
+        if rest:
+            desc.append((kind, "\n".join(rest)))
+    return _join(desc), acs
+
+
+def build_description(description: str, acceptance_criteria: Sequence[str]) -> AdfNode:
+    """Açıklama paragrafı + "Kabul Kriterleri" başlığı + AC maddeleri."""
+    content = text_to_blocks(description.strip()) if description.strip() else []
+    acs = [normalize_ac(ac, i) for i, ac in enumerate(acceptance_criteria, start=1) if ac.strip()]
+    if acs:
+        content.append(heading(AC_HEADING, 3))
+        content.append(bullet_list(acs))
+    return doc(content)

@@ -1,11 +1,12 @@
-"""Deterministik başlangıç verisi: 5 demo kullanıcısı + seed.applied denetim kaydı."""
+"""Deterministik başlangıç verisi: 5 demo kullanıcısı + zincirli `seed.applied` denetim kaydı."""
 
 import uuid
 from typing import Final
 
-from argon2 import PasswordHasher
 from sqlalchemy import text
 
+from tp_core.audit import append_audit
+from tp_core.auth.passwords import hash_password
 from tp_core.config import get_settings
 from tp_core.db import get_engine
 
@@ -28,13 +29,12 @@ def seed() -> int:
     parola = get_settings().seed_user_password
     if parola is None or not parola.get_secret_value():
         raise SystemExit("seed: SEED_USER_PASSWORD tanımlı değil")
-    hasher = PasswordHasher()
     satirlar = [
         {
             "id": tp_uuid("user", ad),
             "ad": ad,
             "rol": rol,
-            "hash": hasher.hash(parola.get_secret_value()),
+            "hash": hash_password(parola.get_secret_value()),
         }
         for ad, rol in KULLANICILAR
     ]
@@ -49,13 +49,7 @@ def seed() -> int:
             ).rowcount
             for satir in satirlar
         )
-        conn.execute(
-            text(
-                "INSERT INTO audit_event (aktor, eylem, ozet) "
-                "VALUES ('system', 'seed.applied', jsonb_build_object('yeni', CAST(:yeni AS int)))"
-            ),
-            {"yeni": yeni},
-        )
+        append_audit(conn, "system", "seed.applied", None, {"yeni": yeni})
     return yeni
 
 

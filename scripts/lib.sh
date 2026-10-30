@@ -9,9 +9,10 @@ cd "$TP_REPO_ROOT" || exit 1
 # Compose proje adı ve Postgres volume'ü (docker-compose.yml: name: testingprobe)
 TP_PROJECT="testingprobe"
 TP_PG_VOLUME="${TP_PROJECT}_tp_pgdata"
+TP_ARTIFACTS_VOLUME="${TP_PROJECT}_tp_artifacts"
 
 # F0'da zorunlu .env anahtarları (contracts/env.md)
-TP_F0_KEYS="POSTGRES_PASSWORD TP_OWNER_PASSWORD TP_APP_PASSWORD DEMOAPP_OWNER_PASSWORD DEMOAPP_PASSWORD SEED_USER_PASSWORD DEMOAPP_RO_PASSWORD TP_SESSION_SECRET"
+TP_F0_KEYS="POSTGRES_PASSWORD TP_OWNER_PASSWORD TP_APP_PASSWORD DEMOAPP_OWNER_PASSWORD DEMOAPP_PASSWORD SEED_USER_PASSWORD DEMOAPP_RO_PASSWORD TP_SESSION_SECRET JIRA_SIM_PO_PASSWORD JIRA_SIM_ADMIN_TOKEN DEMOAPP_TEST_TOKEN"
 
 # Tek sürüm kaynağı: compose `${PLAYWRIGHT_VERSION:?}` ister
 if [ -z "${PLAYWRIGHT_VERSION:-}" ] && [ -f .playwright-version ]; then
@@ -99,3 +100,5 @@ stack_published_ports() {
 
 # Postgres'te tp_app olarak psql (yerel soket: trust)
 psql_app() { compose exec -T postgres psql -X -U tp_app -d tp "$@"; }
+# Tutarlılık denetiminin salt okuma rolü (demoapp veritabanı)
+psql_demoapp_ro() { compose exec -T postgres psql -X -U demoapp_ro -d demoapp "$@"; }

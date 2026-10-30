@@ -55,5 +55,15 @@ if [ "$rc" -ne 0 ]; then
   echo "Uyarı: docker compose $rc ile döndü, ancak tüm servisler sağlıklı." >&2
 fi
 
-echo
-"$TP_REPO_ROOT/scripts/status.sh"
+# Yerel forge (bare git deposu) — idempotent: varsa dokunmaz, yalnızca izinleri düzeltir.
+if [ "${TP_SKIP_FORGE_INIT:-0}" != "1" ]; then
+  "$TP_REPO_ROOT/scripts/forge-init.sh" || die "forge-init başarısız (yerel forge deposu hazırlanamadı)"
+  # `up --build` demo-app-web'i çalışma ağacından derledi; forge main kırık demodaysa (make break)
+  # çalışan uygulama forge main'e geri getirilir — make up demoyu sessizce "onarmaz".
+  "$TP_REPO_ROOT/scripts/forge-init.sh" sync-web || die "demo-app-web forge main ile eşitlenemedi"
+fi
+
+if [ "${TP_SKIP_STATUS:-0}" != "1" ]; then
+  echo
+  "$TP_REPO_ROOT/scripts/status.sh"
+fi

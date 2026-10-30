@@ -1,123 +1,108 @@
-import { useCallback, useEffect, useState } from "react";
+import type { ReactNode } from "react";
+import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { OlayProvider } from "./api/events";
+import type { Rol } from "./api/types";
+import { OturumProvider, useOturum, varsayilanSayfa } from "./auth";
+import { BildirimProvider } from "./components/Bildirim";
+import { Kabuk } from "./components/Kabuk";
+import { BosDurum, Kart, Yukleniyor } from "./components/ui";
+import { BugTaslakDetay, BugTaslaklari } from "./pages/BugTaslaklari";
+import { CaseReview } from "./pages/CaseReview";
+import { ClaudeCode } from "./pages/ClaudeCode";
+import { Denetim } from "./pages/Denetim";
+import { GereksinimDetay } from "./pages/GereksinimDetay";
+import { Gereksinimler } from "./pages/Gereksinimler";
+import { Giris } from "./pages/Giris";
+import { HataDetay } from "./pages/HataDetay";
+import { Kod } from "./pages/Kod";
+import { KontrolKulesi } from "./pages/KontrolKulesi";
+import { KosuDetay, Kosular } from "./pages/Kosular";
+import { ScriptDetay } from "./pages/ScriptDetay";
+import { Yayin } from "./pages/Yayin";
+import { ROL } from "./lib/etiketler";
 
-type Durum = "yukleniyor" | "ok" | "degraded" | "unreachable";
-
-interface HealthBody {
-  service?: string;
-  status?: string;
-  version?: string;
-  checks?: Record<string, string>;
+function OturumGerekli({ children }: { children: ReactNode }) {
+  const { kullanici, yukleniyor } = useOturum();
+  const konum = useLocation();
+  if (yukleniyor) return <Yukleniyor metin="Oturum kontrol ediliyor…" />;
+  if (!kullanici) return <Navigate to="/giris" replace state={{ from: konum.pathname + konum.search }} />;
+  return <OlayProvider etkin>{children}</OlayProvider>;
 }
 
-interface Sonuc {
-  durum: Durum;
-  body?: HealthBody;
-  httpStatus?: number;
-  zaman?: Date;
-}
-
-const ETIKET: Record<Durum, string> = {
-  yukleniyor: "Kontrol ediliyor…",
-  ok: "Çalışıyor",
-  degraded: "Kısmi arıza",
-  unreachable: "Erişilemiyor",
-};
-
-async function saglikSorgula(): Promise<Sonuc> {
-  const zaman = new Date();
-  try {
-    const res = await fetch("/api/health", {
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-      signal: AbortSignal.timeout(5000),
-    });
-    let body: HealthBody | undefined;
-    try {
-      body = (await res.json()) as HealthBody;
-    } catch {
-      body = undefined;
-    }
-    if (res.ok && body?.status === "ok") {
-      return { durum: "ok", body, httpStatus: res.status, zaman };
-    }
-    // core-api cevap verdi ama sağlıksız (contract: 503 + status "degraded")
-    if (body?.status) {
-      return { durum: "degraded", body, httpStatus: res.status, zaman };
-    }
-    // 502/504 vb. — proxy core-api'ye ulaşamadı
-    return { durum: "unreachable", httpStatus: res.status, zaman };
-  } catch {
-    return { durum: "unreachable", zaman };
+function RolGerekli({ roller, children }: { roller: Rol[]; children: ReactNode }) {
+  const { kullanici } = useOturum();
+  if (!kullanici || !roller.includes(kullanici.rol)) {
+    return (
+      <Kart>
+        <BosDurum baslik="Bu ekran için yetkiniz yok.">Gereken rol: {roller.map((r) => ROL[r]).join(" / ")}</BosDurum>
+      </Kart>
+    );
   }
+  return <>{children}</>;
+}
+
+function AnaSayfa() {
+  const { kullanici } = useOturum();
+  return <Navigate to={kullanici ? varsayilanSayfa(kullanici.rol) : "/giris"} replace />;
+}
+
+function Bulunamadi() {
+  return (
+    <Kart>
+      <BosDurum baslik="Sayfa bulunamadı.">
+        <Link to="/">Ana sayfaya dön</Link>
+      </BosDurum>
+    </Kart>
+  );
+}
+
+export function Rotalar() {
+  return (
+    <Routes>
+      <Route path="/giris" element={<Giris />} />
+      <Route
+        element={
+          <OturumGerekli>
+            <Kabuk />
+          </OturumGerekli>
+        }
+      >
+        <Route index element={<AnaSayfa />} />
+        <Route path="gereksinimler" element={<Gereksinimler />} />
+        <Route path="gereksinimler/:id" element={<GereksinimDetay />} />
+        <Route path="gereksinimler/:id/caseler" element={<CaseReview />} />
+        <Route path="gereksinimler/:id/yayin" element={<Yayin />} />
+        <Route path="kod" element={<Kod />} />
+        <Route path="kod/:id" element={<ScriptDetay />} />
+        <Route path="kosular" element={<Kosular />} />
+        <Route path="kosular/:id" element={<KosuDetay />} />
+        <Route path="hatalar/:id" element={<HataDetay />} />
+        <Route path="bug-taslaklari" element={<BugTaslaklari />} />
+        <Route path="bug-taslaklari/:id" element={<BugTaslakDetay />} />
+        <Route path="kontrol-kulesi" element={<KontrolKulesi />} />
+        <Route path="denetim" element={<Denetim />} />
+        <Route
+          path="claude-code"
+          element={
+            <RolGerekli roller={["analyst"]}>
+              <ClaudeCode />
+            </RolGerekli>
+          }
+        />
+        <Route path="*" element={<Bulunamadi />} />
+      </Route>
+    </Routes>
+  );
 }
 
 export default function App() {
-  const [sonuc, setSonuc] = useState<Sonuc>({ durum: "yukleniyor" });
-
-  const yenile = useCallback(async () => {
-    setSonuc((s) => ({ ...s, durum: "yukleniyor" }));
-    setSonuc(await saglikSorgula());
-  }, []);
-
-  useEffect(() => {
-    void yenile();
-    const id = window.setInterval(() => void yenile(), 15000);
-    return () => window.clearInterval(id);
-  }, [yenile]);
-
-  const checks = sonuc.body?.checks ?? {};
-
   return (
-    <div className="sayfa">
-      <header className="ust">
-        <h1>AI Testing Probe</h1>
-        <p className="alt-baslik">Kontrol Kulesi</p>
-      </header>
-
-      <main>
-        <section className="kart" aria-labelledby="servis-durumu">
-          <div className="kart-baslik">
-            <h2 id="servis-durumu">Servis durumu</h2>
-            <button type="button" onClick={() => void yenile()} disabled={sonuc.durum === "yukleniyor"}>
-              Yenile
-            </button>
-          </div>
-
-          <div className="satir">
-            <span className="servis-adi">core-api</span>
-            <span className={`rozet rozet-${sonuc.durum}`} role="status">
-              {ETIKET[sonuc.durum]}
-            </span>
-          </div>
-
-          <dl className="detay">
-            {sonuc.body?.version && (
-              <>
-                <dt>Sürüm</dt>
-                <dd>{sonuc.body.version}</dd>
-              </>
-            )}
-            {Object.entries(checks).map(([ad, deger]) => (
-              <div key={ad} className="detay-satir">
-                <dt>Kontrol: {ad}</dt>
-                <dd>{deger}</dd>
-              </div>
-            ))}
-            {sonuc.httpStatus !== undefined && sonuc.durum !== "ok" && (
-              <>
-                <dt>HTTP</dt>
-                <dd>{sonuc.httpStatus}</dd>
-              </>
-            )}
-            {sonuc.zaman && (
-              <>
-                <dt>Son kontrol</dt>
-                <dd>{sonuc.zaman.toLocaleTimeString("tr-TR")}</dd>
-              </>
-            )}
-          </dl>
-        </section>
-      </main>
-    </div>
+    <BrowserRouter>
+      <OturumProvider>
+        <BildirimProvider>
+          <Rotalar />
+        </BildirimProvider>
+      </OturumProvider>
+    </BrowserRouter>
   );
 }

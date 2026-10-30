@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% macro status_badge(name) -%}
+<span class="status {% if name == 'Done' %}done{% elif name == 'In Progress' %}prog{% endif %}">{{ {'To Do': 'Yapılacak', 'In Progress': 'Sürüyor', 'Done': 'Tamamlandı'}.get(name, name) }}</span>
+{%- endmacro %}
+{% block content %}
+<h1>Kayıtlar</h1>
+<form class="panel row" method="get" action="/">
+  <label for="jql" class="muted">JQL</label>
+  <input id="jql" type="text" name="jql" value="{{ jql }}">
+  <button type="submit">Ara</button>
+</form>
+{% if error %}<div class="alert err" role="alert">JQL hatası: {{ error }}</div>{% endif %}
+<div class="panel table-wrap">
+  <table>
+    <thead><tr><th>Anahtar</th><th>Tür</th><th>Özet</th><th>Durum</th><th>Etiketler</th><th>Güncellenme</th></tr></thead>
+    <tbody>
+    {% for it in rows %}
+      <tr>
+        <td><a href="/browse/{{ it.key }}">{{ it.key }}</a></td>
+        <td>{{ it.issuetype }}</td>
+        <td>{{ it.summary }}</td>
+        <td>{{ status_badge(it.status) }}</td>
+        <td>{% for lb in it.labels %}<span class="chip">{{ lb }}</span>{% endfor %}</td>
+        <td class="muted">{{ it.updated | zaman }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">Sorguya uyan kayıt yok.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="muted">{{ rows | length }} kayıt</p>
+{% endblock %}

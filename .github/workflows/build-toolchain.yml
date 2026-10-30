@@ -1,0 +1,128 @@
+# Toolchain imajı (TEKNIK-TASARIM §8.5): toolchain-worker, test-runner, playwright-mcp ve CI
+# test-local job'unun ortak imajı. Etiket .playwright-version'dan türetilir; kullanıldığı her yerde
+# digest ile sabitlenir (repo değişkeni TP_TOOLCHAIN_IMAGE = ghcr.io/thinkgotr/tp-toolchain@sha256:…).
+#
+# packages: write YALNIZCA bu workflow'dadır. AI bağımlılığı yoktur (Constitution II).
+name: build-toolchain
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "toolchain/**"
+      - ".playwright-version"
+      - ".github/workflows/build-toolchain.yml"
+  pull_request:
+    # PR'da yalnızca derlenir (amd64, push yok).
+    paths:
+      - "toolchain/**"
+      - ".playwright-version"
+      - ".github/workflows/build-toolchain.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-toolchain-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/thinkgotr/tp-toolchain
+
+jobs:
+  build:
+    name: build-toolchain
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Sürüm ve hedefler
+        id: v
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < .playwright-version)"
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error file=.playwright-version::Geçersiz sürüm: '$version'"
+            exit 1
+          fi
+          if [ "$EVENT" = "pull_request" ]; then
+            push=false; platforms=linux/amd64
+          else
+            push=true; platforms=linux/amd64,linux/arm64
+          fi
+          short="${GITHUB_SHA::12}"
+          {
+            echo "version=$version"
+            echo "push=$push"
+            echo "platforms=$platforms"
+            echo "tags=$IMAGE:$version,$IMAGE:$version-$short"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: QEMU
+        if: steps.v.outputs.push == 'true'
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: arm64
+
+      - name: Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: GHCR girişi
+        if: steps.v.outputs.push == 'true'
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derle ve gönder
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: toolchain
+          file: toolchain/Dockerfile
+          platforms: ${{ steps.v.outputs.platforms }}
+          push: ${{ steps.v.outputs.push == 'true' }}
+          tags: ${{ steps.v.outputs.tags }}
+          build-args: |
+            PLAYWRIGHT_VERSION=${{ steps.v.outputs.version }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.v.outputs.version }}
+            io.testingprobe.playwright-version=${{ steps.v.outputs.version }}
+          cache-from: type=gha,scope=tp-toolchain
+          cache-to: type=gha,mode=max,scope=tp-toolchain
+          provenance: ${{ steps.v.outputs.push == 'true' }}
+          sbom: ${{ steps.v.outputs.push == 'true' }}
+
+      - name: Digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          PUSHED: ${{ steps.v.outputs.push }}
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          {
+            echo "### Toolchain imajı (Playwright $VERSION)"
+            if [ "$PUSHED" = "true" ]; then
+              echo "Gönderildi. CI'da kullanmak için repo değişkeni:"
+              echo
+              echo '```'
+              echo "TP_TOOLCHAIN_IMAGE=$IMAGE@$DIGEST"
+              echo '```'
+              echo
+              echo "\`gh variable set TP_TOOLCHAIN_IMAGE --body '$IMAGE@$DIGEST'\`"
+            else
+              echo "PR doğrulaması: derlendi, gönderilmedi (digest: \`$DIGEST\`)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

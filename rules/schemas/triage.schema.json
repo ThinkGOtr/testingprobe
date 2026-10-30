@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tp:triage",
+  "title": "LLM triage (§8.6; yalnızca kural eşleşmezse)",
+  "x-version": 1,
+  "type": "object",
+  "properties": {
+    "class": {
+      "type": "string",
+      "enum": [
+        "product_defect",
+        "test_maintenance",
+        "test_data",
+        "flaky",
+        "environment",
+        "unknown"
+      ]
+    },
+    "sub_type": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 800
+    },
+    "signals": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    }
+  },
+  "required": [
+    "class",
+    "sub_type",
+    "rationale",
+    "signals"
+  ],
+  "additionalProperties": false
+}

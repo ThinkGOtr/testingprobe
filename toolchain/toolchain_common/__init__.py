@@ -30,20 +30,29 @@ def check_playwright() -> str:
 
 def check_node() -> str:
     try:
-        out = subprocess.run(["node", "--version"], capture_output=True, text=True, timeout=3, check=True)
+        out = subprocess.run(
+            ["node", "--version"], capture_output=True, text=True, timeout=3, check=True
+        )
     except (OSError, subprocess.SubprocessError) as exc:
         return f"error: {exc}"
     return f"ok ({out.stdout.strip()})"
 
 
 def create_app(service: str, checks: dict) -> FastAPI:
-    app = FastAPI(title=service, version=APP_VERSION, docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(
+        title=service, version=APP_VERSION, docs_url=None, redoc_url=None, openapi_url=None
+    )
 
     @app.get("/health")
     def health() -> JSONResponse:
         results = {name: fn() for name, fn in checks.items()}
         healthy = all(r.startswith("ok") for r in results.values())
-        body = {"service": service, "status": "ok" if healthy else "degraded", "version": APP_VERSION, "checks": results}
+        body = {
+            "service": service,
+            "status": "ok" if healthy else "degraded",
+            "version": APP_VERSION,
+            "checks": results,
+        }
         return JSONResponse(body, status_code=200 if healthy else 503)
 
     return app

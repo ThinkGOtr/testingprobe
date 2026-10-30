@@ -1,0 +1,18 @@
+# CODEOWNERS (TEKNIK-TASARIM §8.5, Constitution "main'e merge koşulları").
+# Ruleset "require_code_owner_review" ile birlikte: aşağıdaki yollara dokunan her PR'da, bot PR'ları
+# dahil, kod sahibinin (insan) onayı zorunludur. Sahipler gerçek ve repoya yazma yetkisi olan
+# kullanıcı/takım olmalıdır; ekip netleşince bir org takımıyla değiştirin (ör. @ThinkGOtr/<takım>).
+# Son eşleşen satır kazanır.
+
+# Page object kütüphanesi ve locator'lar (onarım PR'ları buraya dokunur).
+/demo-app/e2e/pages/        @gokhansipahi
+
+# CI, workflow'lar ve bu dosya.
+/.github/                   @gokhansipahi
+
+# CI'da zorunlu check olan AST koruması ve Sauce yapılandırması.
+/toolchain/ast-guard/       @gokhansipahi
+/demo-app/.sauce/           @gokhansipahi
+
+# Ruleset betiği.
+/scripts/github-*.sh        @gokhansipahi

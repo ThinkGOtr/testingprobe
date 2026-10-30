@@ -1,0 +1,210 @@
+{
+  "kind": "agent",
+  "purpose": "verify_and_map",
+  "golden": "TPD-1-C8",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Model çıktısı (step_mapping/expects/missing_methods) elle hazırlandı; tarayıcı adımları çalışan Playwright MCP'ye (--isolated) karşı koşturulup kaydedildi; hedefler replay'de oturumdan bağımsız olsun diye snapshot ref'i yerine tekil seçici (data-testid) olarak yazıldı. Kampanyalı sepet (P-001) case'lerinde sepet snapshot özeti yalnızca satır/tutar satırlarını içerir: kayıt anındaki çalışan imaj AC6 kod değişikliğinden (pricing.min_aranir) önceydi; uyarı/onay durumu replay'de araçlar yeniden koşturulunca görülür. Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record).",
+  "case": {
+    "jira_key": "TPD-1",
+    "sira_no": 8,
+    "title": "Onaylanan siparişin numarası gösterilir ve sipariş geçmişinde listelenir"
+  },
+  "steps": [
+    {
+      "tool": "browser_navigate",
+      "args": {
+        "url": "http://demo-app-web:8080/giris"
+      },
+      "result_summary": "await page.goto('http://demo-app-web:8080/giris'); · URL /giris",
+      "allowed": true
+    },
+    {
+      "tool": "browser_snapshot",
+      "args": {},
+      "result_summary": "URL /giris | heading \"Bayi girişi\" [level=1] | textbox \"Kullanıcı adı\" | textbox \"Parola\" | button \"Giriş yap\" [disabled]",
+      "allowed": true
+    },
+    {
+      "tool": "browser_type",
+      "args": {
+        "element": "Kullanıcı adı",
+        "target": "[data-testid=\"login-username\"]",
+        "text": "bayi1"
+      },
+      "result_summary": "await page.locator('[data-testid=\"login-username\"]').fill('bayi1');",
+      "allowed": true
+    },
+    {
+      "tool": "browser_type",
+      "args": {
+        "element": "Parola",
+        "target": "[data-testid=\"login-password\"]",
+        "text": "Demo123!"
+      },
+      "result_summary": "await page.locator('[data-testid=\"login-password\"]').fill('Demo123!');",
+      "allowed": true
+    },
+    {
+      "tool": "browser_click",
+      "args": {
+        "element": "Giriş yap",
+        "target": "[data-testid=\"login-submit\"]"
+      },
+      "result_summary": "await page.locator('[data-testid=\"login-submit\"]').click(); · URL /katalog",
+      "allowed": true
+    },
+    {
+      "tool": "browser_snapshot",
+      "args": {},
+      "result_summary": "URL /katalog | link \"Sepet 0 ürün\": | generic: Merkez Bayi | paragraph: P-004",
+      "allowed": true
+    },
+    {
+      "tool": "browser_type",
+      "args": {
+        "element": "P-004 adet",
+        "target": "[data-testid=\"product-card-P-004\"] [data-testid=\"qty-input-P-004\"]",
+        "text": "25"
+      },
+      "result_summary": "await page.locator('[data-testid=\"product-card-P-004\"] [data-testid=\"qty-input-P-004\"]').fill('25');",
+      "allowed": true
+    },
+    {
+      "tool": "browser_click",
+      "args": {
+        "element": "P-004 kartında Sepete ekle",
+        "target": "[data-testid=\"product-card-P-004\"] [data-testid=\"add-to-cart\"]"
+      },
+      "result_summary": "await page.locator('[data-testid=\"product-card-P-004\"] [data-testid=\"add-to-cart\"]').click(); · URL /katalog",
+      "allowed": true
+    },
+    {
+      "tool": "browser_wait_for",
+      "args": {
+        "text": "25 ürün"
+      },
+      "result_summary": "await page.getByText(\"25 ürün\").first().waitFor({ state: 'visible' }); · URL /katalog",
+      "allowed": true
+    },
+    {
+      "tool": "browser_snapshot",
+      "args": {},
+      "result_summary": "URL /katalog | link \"Sepet 25 ürün\":",
+      "allowed": true
+    },
+    {
+      "tool": "browser_click",
+      "args": {
+        "element": "Sepet",
+        "target": "[data-testid=\"nav-cart\"]"
+      },
+      "result_summary": "await page.locator('[data-testid=\"nav-cart\"]').click(); · URL /sepet",
+      "allowed": true
+    },
+    {
+      "tool": "browser_snapshot",
+      "args": {},
+      "result_summary": "URL /sepet | cell \"30,00 TL\" | cell \"25\" | cell \"0\" | cell \"750,00 TL\" | cell: | term: Ara toplam | definition: 750,00 TL | term: Kampanya indirimi | definition: −0,00 TL | term: Genel toplam | definition: 750,00 TL | button \"Siparişi onayla\"",
+      "allowed": true
+    },
+    {
+      "tool": "browser_click",
+      "args": {
+        "element": "Siparişi onayla",
+        "target": "[data-testid=\"checkout-submit\"]"
+      },
+      "result_summary": "await page.locator('[data-testid=\"checkout-submit\"]').click(); · URL /siparis/SP-000003",
+      "allowed": true
+    },
+    {
+      "tool": "browser_snapshot",
+      "args": {},
+      "result_summary": "URL /siparis/SP-000003 | Page URL: http://demo-app-web:8080/siparis/SP-000003 | heading \"Siparişiniz alındı\" [level=1] | strong: SP-000003 | definition: 0,00 TL | definition: 750,00 TL",
+      "allowed": true
+    },
+    {
+      "tool": "browser_click",
+      "args": {
+        "element": "Siparişlerim",
+        "target": "[data-testid=\"nav-orders\"]"
+      },
+      "result_summary": "await page.locator('[data-testid=\"nav-orders\"]').click(); · URL /siparisler",
+      "allowed": true
+    },
+    {
+      "tool": "browser_snapshot",
+      "args": {},
+      "result_summary": "URL /siparisler | heading \"Siparişlerim\" [level=1] | rowgroup: | row: | rowgroup: | row: | rowheader: | link \"SP-000003\": | /url: /siparis/SP-000003",
+      "allowed": true
+    }
+  ],
+  "output": {
+    "step_mapping": [
+      {
+        "step_id": "S1",
+        "po": "LoginPage",
+        "method": "goto",
+        "args": [],
+        "verified": true,
+        "evidence_ref": "Giriş formu (textbox \"Kullanıcı adı\", \"Parola\", button \"Giriş yap\")"
+      },
+      {
+        "step_id": "S2",
+        "po": "LoginPage",
+        "method": "login",
+        "args": [
+          "bayi1",
+          "Demo123!"
+        ],
+        "verified": true,
+        "evidence_ref": "button \"Giriş yap\" → /katalog"
+      },
+      {
+        "step_id": "S3",
+        "po": "CatalogPage",
+        "method": "addToCart",
+        "args": [
+          "P-004",
+          25
+        ],
+        "verified": true,
+        "evidence_ref": "button \"Sepete ekle\" (ürün kartı) → sepet sayacı güncellendi"
+      },
+      {
+        "step_id": "S4",
+        "po": "CatalogPage",
+        "method": "openCart",
+        "args": [],
+        "verified": true,
+        "evidence_ref": "link \"Sepet\" → /sepet"
+      },
+      {
+        "step_id": "S5",
+        "po": "CartPage",
+        "method": "checkout",
+        "args": [],
+        "verified": true,
+        "evidence_ref": "button \"Siparişi onayla\" → /siparis/<no>"
+      }
+    ],
+    "expects": [
+      {
+        "po": "OrderPage",
+        "method": "expectConfirmation",
+        "args": []
+      },
+      {
+        "po": "OrderPage",
+        "method": "expectConfirmedTotal",
+        "args": [
+          "750,00 TL"
+        ]
+      },
+      {
+        "po": "OrderPage",
+        "method": "expectConfirmedOrderInHistory",
+        "args": []
+      }
+    ],
+    "missing_methods": []
+  }
+}

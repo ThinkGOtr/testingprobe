@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>PO girişi</h1>
+<div class="panel">
+  {% if error %}<div class="alert err" role="alert">{{ error }}</div>{% endif %}
+  <p class="muted">Yorum, onay etiketi (<code>tp-po-approved</code>) ve açıklama değişiklikleri
+    <strong>{{ po | kisi }}</strong> ({{ po }}) adına kaydedilir. Parola <code>.env</code> içindeki
+    <code>JIRA_SIM_PO_PASSWORD</code> değeridir.</p>
+  <form method="post" action="/giris">
+    <input type="hidden" name="sonra" value="{{ sonra }}">
+    <p><label for="po-parola" class="muted">Parola</label>
+      <input id="po-parola" type="password" name="password" autocomplete="current-password" required></p>
+    <p><button type="submit">Giriş yap</button></p>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,9 @@
+{
+  // Testler (+ uygulama kodu) için tip denetimi: uygulama ayarları + Node tipleri.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["vite/client", "node"]
+  },
+  "include": ["src"],
+  "exclude": []
+}

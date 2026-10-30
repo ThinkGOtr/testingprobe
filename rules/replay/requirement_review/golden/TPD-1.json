@@ -1,0 +1,36 @@
+{
+  "kind": "call",
+  "purpose": "requirement_review",
+  "golden": "TPD-1",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı; canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record).",
+  "output": {
+    "questions": [
+      {
+        "id": "Q1",
+        "type": "conflict",
+        "text": "AC3 tüm siparişlerde minimum sipariş tutarının 500,00 TL olduğunu, AC6 ise kampanyalı siparişlerde bu şartın aranmadığını söylüyor. Kampanyalı bir siparişte minimum tutar uyarısı gösterilmeli mi?",
+        "ac_ref": "AC6"
+      },
+      {
+        "id": "Q2",
+        "type": "ambiguity",
+        "text": "AC2'de \"her 6 adet alımda 1 adet bedava (7 adette 1 bedava)\" deniyor. 6 adet alındığında bedava ürün verilmemesi, 14 adette 2 bedava verilmesi doğru mu?",
+        "ac_ref": "AC2"
+      },
+      {
+        "id": "Q3",
+        "type": "missing_ac",
+        "text": "Kredi limiti kontrolü kampanya indirimi düşülmüş toplam tutar üzerinden mi, ara toplam üzerinden mi yapılmalı?",
+        "ac_ref": "AC4"
+      },
+      {
+        "id": "Q4",
+        "type": "untestable",
+        "text": "AC5'teki sipariş numarasının biçimi nedir (ör. önek, uzunluk)? Doğrulanabilir bir kural belirtilebilir mi?",
+        "ac_ref": "AC5"
+      }
+    ],
+    "verdict": "needs_po",
+    "summary": "AC3 ile AC6 çelişiyor; kampanya hesabı ve kredi limiti kontrolünün tutar tabanı netleştirilmeli. PO teyidi gerekli."
+  }
+}

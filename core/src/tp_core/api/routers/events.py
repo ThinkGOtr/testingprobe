@@ -1,0 +1,120 @@
+"""GET /events — SSE olay akışı (oturum gerekir).
+
+İlk olay `stream.open`'dır (abonelik hazır). Sonra Postgres NOTIFY ile gelen her olay
+`event: <ad>` + `data: <JSON>` olarak akar; 15 sn'de bir ping (nginx 30 sn okuma zaman aşımı).
+
+Oturum yalnızca bağlantı açılırken değil akış boyunca da denetlenir (MIMARI-SOZLESME §5: çıkış
+çerezin kopyalarını da geçersizleştirir): her olay teslim edilmeden önce ve boşta en geç
+`OTURUM_KONTROL_S` saniyede bir. Oturum iptal edilmiş, süresi dolmuş, parola değişmiş veya
+kullanıcı silinmişse son olarak `event: session.ended` gönderilir ve akış kapanır; bekleyen olay
+teslim edilmez. Portal bunu alınca kullanıcıyı /giris'e yönlendirir.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import time
+from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import Any
+
+from fastapi import APIRouter, HTTPException, Request
+from sse_starlette.sse import EventSourceResponse
+
+from tp_core.auth.deps import Codec, CurrentUser
+from tp_core.auth.sessions import COOKIE_NAME, SessionData, session_valid
+from tp_core.config import get_settings
+from tp_core.events.listener import Broadcaster, libpq_dsn
+from tp_core.models import new_session
+
+router = APIRouter(tags=["events"])
+log = logging.getLogger(__name__)
+
+PING_S = 15
+OTURUM_KONTROL_S = 15.0
+OTURUM_BITTI = "session.ended"
+
+OturumKontrol = Callable[[], Awaitable[bool]]
+
+
+def broadcaster_for(request: Request) -> Broadcaster:
+    b = getattr(request.app.state, "broadcaster", None)
+    if b is None:
+        b = Broadcaster(libpq_dsn(get_settings().database_url))
+        request.app.state.broadcaster = b
+    return b
+
+
+def _oturum_gecerli_mi(veri: SessionData) -> bool:
+    with new_session() as s:
+        return session_valid(s, veri) is not None
+
+
+def oturum_kontrolu(veri: SessionData) -> OturumKontrol:
+    """Oturumu veritabanından yeniden denetleyen eşzamansız kontrol (hata = geçersiz sayılır)."""
+
+    async def kontrol() -> bool:
+        try:
+            return await asyncio.to_thread(_oturum_gecerli_mi, veri)
+        except Exception:  # veritabanı erişilemiyorsa akış güvenli tarafta kapanır
+            log.warning("SSE oturum kontrolü başarısız; akış kapatılıyor", exc_info=True)
+            return False
+
+    return kontrol
+
+
+async def _akis(
+    request: Request,
+    b: Broadcaster,
+    q: asyncio.Queue[dict[str, Any]],
+    oturum_gecerli: OturumKontrol,
+    kontrol_s: float = OTURUM_KONTROL_S,
+) -> AsyncIterator[dict[str, str]]:
+    bitti = {"event": OTURUM_BITTI, "data": "{}"}
+    try:
+        yield {"event": "stream.open", "data": "{}"}
+        son_kontrol = time.monotonic()
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                olay = await asyncio.wait_for(q.get(), timeout=1.0)
+            except TimeoutError:
+                if time.monotonic() - son_kontrol >= kontrol_s:
+                    if not await oturum_gecerli():
+                        yield bitti
+                        break
+                    son_kontrol = time.monotonic()
+                continue
+            # Teslimden önce: çıkıştan sonra yayımlanan olay eski bağlantıya ulaşmamalı.
+            if not await oturum_gecerli():
+                yield bitti
+                break
+            son_kontrol = time.monotonic()
+            yield {
+                "event": str(olay.get("event")),
+                "data": json.dumps(
+                    {"data": olay.get("data"), "ts": olay.get("ts")}, ensure_ascii=False
+                ),
+            }
+    finally:
+        b.unsubscribe(q)
+
+
+@router.get("/events")
+async def events(request: Request, _user: CurrentUser, codec: Codec) -> EventSourceResponse:
+    veri = codec.loads(request.cookies.get(COOKIE_NAME, ""))
+    if veri is None:  # CurrentUser zaten doğruladı; yine de tür daraltma için
+        raise HTTPException(401, "Oturumunuz geçersiz veya süresi dolmuş")
+    b = broadcaster_for(request)
+    try:
+        await b.ensure_started()
+    except TimeoutError as exc:
+        raise HTTPException(503, "Olay akışı şu anda kullanılamıyor") from exc
+    q = b.subscribe()
+    return EventSourceResponse(
+        _akis(request, b, q, oturum_kontrolu(veri)),
+        ping=PING_S,
+        headers={"X-Accel-Buffering": "no"},
+    )

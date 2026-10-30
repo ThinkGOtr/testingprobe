@@ -42,3 +42,9 @@ for r in out:
 if bad:
     sys.stderr.write("Uyarı: sağlıklı olmayan servis(ler) var — make logs S=<servis>\n")
 '
+
+# Giriş bilgilerinin yeri (değerler yazdırılmaz).
+if printf '%s\n' "$rows" | awk -F '\t' '$1 == "jira-sim" && $2 == "running" { f = 1 } END { exit !f }'; then
+  echo
+  echo "jira-sim PO girişi: po@sim.local — parola .env'de JIRA_SIM_PO_PASSWORD"
+fi

@@ -21,7 +21,7 @@ Alternatives not taken: installing Chromium 1247 next to 1248 (disk, two browser
 
 ## playwright-mcp flags
 
-`bin/playwright-mcp`: `--headless --browser chromium --host 0.0.0.0 --port 8931 --allowed-hosts '*'
+`bin/playwright-mcp`: `--headless --browser chromium --host 0.0.0.0 --port 8931 --allowed-hosts "$MCP_ALLOWED_HOSTS"
 --isolated --caps=testing --allowed-origins "$MCP_ALLOWED_ORIGINS" --output-dir /tmp/playwright-mcp`.
 
 - `--browser chromium` is required: the default is the `chrome` channel (`/opt/google/chrome`), absent here.
@@ -31,6 +31,12 @@ Alternatives not taken: installing Chromium 1247 next to 1248 (disk, two browser
   fail with `net::ERR_BLOCKED_BY_CLIENT`; per upstream this is not a security boundary — network
   isolation (research R5) is.
 - Endpoint: Streamable HTTP at `/mcp` (legacy SSE at `/sse`).
+- `MCP_ALLOWED_HOSTS` (compose: `playwright-mcp:8931,playwright-mcp`; default
+  `localhost:8931,127.0.0.1:8931`): Host header allowlist against DNS rebinding.
+- Network: compose puts the service only on `demo-net` + `mcp-net` (shared with core-worker) and
+  publishes no host port. The MCP exposes tools that cannot be switched off
+  (`browser_run_code_unsafe`, `browser_evaluate`, ...); the network boundary limits what they can
+  reach, and the core gateway refuses to hand them to an agent (`FORBIDDEN_TOOLS`).
 
 ## Python
 

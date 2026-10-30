@@ -1,0 +1,18 @@
+# SHA ile sabitlenmiş Action'ları ve ast-guard bağımlılıklarını güncel tutar (PR açar, merge etmez;
+# PR'lar ruleset gereği insan onayı ister). Sürüm yorumları (# vX.Y.Z) Dependabot tarafından güncellenir.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /toolchain/ast-guard
+    schedule:
+      interval: monthly
+    groups:
+      ast-guard:
+        patterns: ["*"]

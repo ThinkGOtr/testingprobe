@@ -10,7 +10,7 @@ export PLAYWRIGHT_VERSION := $(strip $(shell cat .playwright-version 2>/dev/null
 
 S ?=
 
-.PHONY: help env up status seed reset export-audit security-check prune logs down
+.PHONY: help env up status seed reset forge-init break demo-baseline export-audit security-check e2e-smoke prune logs down
 
 help: ## Hedefleri listeler
 	@echo "Kullanım: make <hedef>"
@@ -32,11 +32,23 @@ seed: ## Deterministik başlangıç verisi (tekrar çalıştırmak güvenli)
 reset: ## Denetim kaydını dışa aktarır, çekirdek veriyi siler, yeniden başlatır
 	@scripts/reset.sh
 
+forge-init: ## Yerel forge deposunu hazırlar (varsa dokunmaz; yeniden kurmak için: make forge-init F=--force)
+	@scripts/forge-init.sh $(F)
+
+break: ## Demo locator kırılması: demo/break-locator PR'ı demo-admin bypass'ıyla merge + demo-app-web yeniden derlenir
+	@scripts/forge-init.sh break
+
+demo-baseline: ## Forge main → demo-baseline + demo-app-web yeniden derlenir (PR kaydı korunur)
+	@scripts/forge-init.sh baseline
+
 export-audit: ## Denetim kaydını exports/audit-*.jsonl + .sha256 olarak dışa aktarır
 	@scripts/export-audit.sh
 
-security-check: ## 4 güvenlik kontrolü (port, izolasyon, denetim rolü, sır taraması)
+security-check: ## 8 güvenlik kontrolü (port, izolasyon, denetim rolü, sır, demoapp_ro, model anahtarı, MCP ağı, yazma kimlikleri)
 	@scripts/security-check.sh
+
+e2e-smoke: ## demo-app e2e'yi test-runner içinden compose uygulamasına koşturur (E2E_BREAK_VERIFY=1: kırarak doğrula)
+	@scripts/e2e-smoke.sh
 
 prune: ## Kullanılmayan (dangling) imajları ve build önbelleğini temizler; volume'lere dokunmaz
 	@echo "İmajlar:";        docker image prune -f | tail -n 1

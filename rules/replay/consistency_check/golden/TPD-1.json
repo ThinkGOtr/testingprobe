@@ -1,0 +1,123 @@
+{
+  "kind": "agent",
+  "purpose": "consistency_check",
+  "golden": "TPD-1",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği), 1. kontrol turu. Elle hazırlandı; canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). F1 (AC3↔AC6) ve F3 (500 ↔ 750) birebir aynı AC3 metnini önerir: ikisi de kabul edilirse hangisi son yazılırsa yazılsın AC3 hem AC6 hem veriyle tutarlıdır. 2. ve sonraki turlar: TPD-1-r2 (golden_name(..., check_round=2)).",
+  "steps": [
+    {
+      "tool": "search_code",
+      "args": {
+        "query": "bedava"
+      },
+      "result_summary": "api/src/demoapp_api/campaign.py",
+      "allowed": true
+    },
+    {
+      "tool": "get_file_contents",
+      "args": {
+        "path": "api/src/demoapp_api/campaign.py"
+      },
+      "result_summary": "def bedava_adet(adet: int) -> int: … return adet // 6",
+      "allowed": true
+    },
+    {
+      "tool": "db_query",
+      "args": {
+        "sql": "SELECT anahtar, deger FROM ayar WHERE anahtar = 'min_siparis_tutari'"
+      },
+      "result_summary": "min_siparis_tutari | 750.00",
+      "allowed": true
+    },
+    {
+      "tool": "search_code",
+      "args": {
+        "query": "Kredi limiti aşıldı"
+      },
+      "result_summary": "eşleşme yok",
+      "allowed": true
+    },
+    {
+      "tool": "get_file_contents",
+      "args": {
+        "path": "api/src/demoapp_api/pricing.py"
+      },
+      "result_summary": "sepet_hesapla: min_aranir = not any(kampanyali) — kampanyalı sepette minimum aranmaz; yalnızca min_siparis uyarısı, kredi limiti kontrolü yok",
+      "allowed": true
+    }
+  ],
+  "output": {
+    "findings": [
+      {
+        "id": "F1",
+        "type": "internal_contradiction",
+        "doc_ref": "AC3 ↔ AC6",
+        "claim": "AC3: tüm siparişlerde minimum tutar 500,00 TL; AC6: kampanyalı siparişlerde minimum tutar aranmaz",
+        "observed": "İki kabul kriteri kampanyalı siparişler için birbirini dışlıyor; uygulama AC6'yı uyguluyor (kampanyalı sepette minimum tutar aranmıyor), yani AC3'teki \"tüm siparişlerde\" ifadesi hatalı",
+        "evidence": [
+          {
+            "kind": "code",
+            "repo": "demo-app",
+            "path": "api/src/demoapp_api/pricing.py",
+            "line": 94,
+            "snippet": "min_aranir = not any(s.kampanyali for s in satirlar)"
+          }
+        ],
+        "severity": "blocking",
+        "suggested_doc_text": "AC3: Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL'dir; altında \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur."
+      },
+      {
+        "id": "F2",
+        "type": "doc_vs_code",
+        "doc_ref": "AC2",
+        "claim": "Her 6 adet alımda 1 adet bedava (7 adette 1 bedava)",
+        "observed": "Kod her 6 adette 1 bedava veriyor (5 öde + 1 bedava)",
+        "evidence": [
+          {
+            "kind": "code",
+            "repo": "demo-app",
+            "path": "api/src/demoapp_api/campaign.py",
+            "line": 23,
+            "snippet": "return adet // 6"
+          }
+        ],
+        "severity": "blocking",
+        "suggested_doc_text": "AC2: \"6 al 1 bedava\" kampanyasında kampanyalı üründen her 6 adette 1 adet bedava verilir (6 adette 1 bedava)."
+      },
+      {
+        "id": "F3",
+        "type": "doc_vs_data",
+        "doc_ref": "AC3",
+        "claim": "Minimum sipariş tutarı 500,00 TL",
+        "observed": "ayar tablosunda min_siparis_tutari = 750.00",
+        "evidence": [
+          {
+            "kind": "data",
+            "query": "SELECT anahtar, deger FROM ayar WHERE anahtar = 'min_siparis_tutari'",
+            "result_digest": "min_siparis_tutari=750.00"
+          }
+        ],
+        "severity": "blocking",
+        "suggested_doc_text": "AC3: Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL'dir; altında \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur."
+      },
+      {
+        "id": "F4",
+        "type": "missing_in_code",
+        "doc_ref": "AC4",
+        "claim": "Kredi limiti aşılırsa \"Kredi limiti aşıldı\" uyarısı gösterilir ve sipariş onaylanamaz",
+        "observed": "Sepet hesabında yalnızca minimum sipariş uyarısı üretiliyor; kredi limiti kontrolü yok",
+        "evidence": [
+          {
+            "kind": "code",
+            "repo": "demo-app",
+            "path": "api/src/demoapp_api/pricing.py",
+            "line": 97,
+            "snippet": "uyarilar.append(Uyari(UYARI_MIN_SIPARIS, min_siparis_mesaji(min_tutar)))"
+          }
+        ],
+        "severity": "blocking",
+        "suggested_doc_text": null
+      }
+    ],
+    "notes": "Kod ve veri yalnızca salt okuma araçlarıyla incelendi."
+  }
+}

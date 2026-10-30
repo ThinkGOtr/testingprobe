@@ -1,0 +1,7 @@
+# PII maskelemesinin dokunmadığı değerler (TEKNIK-TASARIM §8.9): sentetik test verisi ve
+# simülatör kullanıcıları. Yalnızca sentetik değer eklenir; gerçek kişisel veri bu dosyaya girmez.
+version: 1
+values:
+  - reader@sim.local
+  - writer@sim.local
+  - po@sim.local

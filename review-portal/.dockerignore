@@ -6,3 +6,6 @@ dist
 .env*
 Dockerfile
 .dockerignore
+e2e
+playwright-report
+test-results

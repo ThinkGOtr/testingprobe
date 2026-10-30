@@ -1,0 +1,9 @@
+# saucectl'in Sauce'a yüklemediği dosyalar (kök: demo-app/e2e).
+node_modules/
+results/
+test-results/
+playwright-report/
+allure-results/
+*.log
+.env
+.env.*

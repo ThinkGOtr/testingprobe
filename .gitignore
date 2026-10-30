@@ -22,3 +22,10 @@ exports/
 .pytest_cache/
 .ruff_cache/
 dist/
+
+# Test çıktıları
+test-results/
+playwright-report/
+demo-app/results/
+demo-app/e2e/results/
+review-portal/e2e/ekranlar/

@@ -1,0 +1,30 @@
+{
+  "kind": "call",
+  "purpose": "bug_draft",
+  "golden": "credit-limit",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı; canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record).",
+  "output": {
+    "summary": "Sepet: Kredi limiti aşımında \"Kredi limiti aşıldı\" uyarısı gösterilmiyor",
+    "steps": [
+      "1. bayi2 / Demo123! (kredi limiti 500,00 TL) ile giriş yap",
+      "2. \"Şeftalili Soğuk Çay 1L\" için 25 adet gir ve sepete ekle (toplam 750,00 TL: minimum sipariş tutarını karşılar, kredi limitini aşar)",
+      "3. Sepete git",
+      "4. \"Siparişi onayla\" butonuna bas"
+    ],
+    "expected": "Sepette \"Kredi limiti aşıldı\" uyarısı gösterilir ve sipariş onaylanamaz",
+    "actual": "Uyarı gösterilmiyor, \"Siparişi onayla\" butonu aktif ve sipariş oluşturuluyor; kredi limiti kontrolü yapılmıyor",
+    "environment": "Yerel demo ortamı",
+    "evidence": [
+      {
+        "kind": "code",
+        "ref": "api/src/demoapp_api/pricing.py:97"
+      }
+    ],
+    "story_key": "TPD-1",
+    "test_case_key": null,
+    "severity_suggestion": "critical",
+    "labels": [
+      "AI-generated"
+    ]
+  }
+}

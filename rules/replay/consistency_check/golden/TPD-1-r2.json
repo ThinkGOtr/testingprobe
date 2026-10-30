@@ -1,0 +1,55 @@
+{
+  "kind": "agent",
+  "purpose": "consistency_check",
+  "golden": "TPD-1-r2",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği), 2. kontrol turu: F1–F3 için fix_doc, F4 için code_defect kararından sonra güncellenmiş TPD-1 metni. Engelleyici bulgu yoktur → doküman 'son hal', PO teyidine (adım 3) geçilir. Elle hazırlandı; canlı modelle yeniden kaydedilmeli.",
+  "steps": [
+    {
+      "tool": "get_file_contents",
+      "args": {
+        "path": "api/src/demoapp_api/campaign.py"
+      },
+      "result_summary": "def bedava_adet(adet: int) -> int: … return adet // 6",
+      "allowed": true
+    },
+    {
+      "tool": "db_query",
+      "args": {
+        "sql": "SELECT anahtar, deger FROM ayar WHERE anahtar = 'min_siparis_tutari'"
+      },
+      "result_summary": "min_siparis_tutari | 750.00",
+      "allowed": true
+    },
+    {
+      "tool": "get_file_contents",
+      "args": {
+        "path": "api/src/demoapp_api/pricing.py"
+      },
+      "result_summary": "sepet_hesapla: min_aranir = not any(kampanyali) (AC6 ile tutarlı); kredi limiti kontrolü yok",
+      "allowed": true
+    }
+  ],
+  "output": {
+    "findings": [
+      {
+        "id": "F1",
+        "type": "missing_in_code",
+        "doc_ref": "AC4",
+        "claim": "Kredi limiti aşılırsa \"Kredi limiti aşıldı\" uyarısı gösterilir ve sipariş onaylanamaz",
+        "observed": "Kodda kredi limiti kontrolü hâlâ yok; önceki turda analist bu farkı kod hatası (code_defect) olarak işaretledi, bug taslağı açık. Doküman doğru; yeni doküman değişikliği gerekmiyor",
+        "evidence": [
+          {
+            "kind": "code",
+            "repo": "demo-app",
+            "path": "api/src/demoapp_api/pricing.py",
+            "line": 97,
+            "snippet": "uyarilar.append(Uyari(UYARI_MIN_SIPARIS, min_siparis_mesaji(min_tutar)))"
+          }
+        ],
+        "severity": "warning",
+        "suggested_doc_text": null
+      }
+    ],
+    "notes": "AC2 (6 adette 1 bedava) kodla; AC3 (kampanyasız siparişlerde minimum 750,00 TL) kod ve veriyle; AC6 (kampanyalı siparişte minimum aranmaz) kodla tutarlı. Engelleyici bulgu kalmadı. Kod ve veri yalnızca salt okuma araçlarıyla incelendi."
+  }
+}

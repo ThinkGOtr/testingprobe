@@ -1,0 +1,28 @@
+{
+  "kind": "agent",
+  "purpose": "consistency_check",
+  "golden": "TPD-4",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı; canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Temiz story: kod ve veriyle tutarlı, bulgu yok.",
+  "steps": [
+    {
+      "tool": "search_code",
+      "args": {
+        "query": "Kullanıcı adı veya parola hatalı"
+      },
+      "result_summary": "api/src/demoapp_api/main.py",
+      "allowed": true
+    },
+    {
+      "tool": "get_file_contents",
+      "args": {
+        "path": "api/src/demoapp_api/main.py"
+      },
+      "result_summary": "HATALI_GIRIS = \"Kullanıcı adı veya parola hatalı\"; login hatalı parolada 401 + HATALI_GIRIS, oturum açılmaz",
+      "allowed": true
+    }
+  ],
+  "output": {
+    "findings": [],
+    "notes": "AC1 (geçerli giriş → katalog) ve AC2 (hatalı parolada \"Kullanıcı adı veya parola hatalı\" mesajı, giriş yapılmaz) kodla tutarlı. Engelleyici bulgu yok. Kod ve veri yalnızca salt okuma araçlarıyla incelendi."
+  }
+}

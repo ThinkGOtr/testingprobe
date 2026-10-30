@@ -48,10 +48,11 @@ Tüm servisler [`docker-compose.yml`](docker-compose.yml) içindedir. Host'a aç
 | `core-worker` | Arka plan worker (Postgres kuyruğu); AI ileride yalnızca burada çalışır | — |
 | `toolchain-worker` | Kod araç zinciri (Playwright + Node + Python); kod çalıştırmaz, DB kimliği yok | — |
 | `test-runner` | Üretilen testleri koşturan izole servis | — (iç ağ) |
-| `playwright-mcp` | Playwright MCP sunucusu; yalnızca demo uygulaması origin'ine izinli, `--caps=vision` yok | http://127.0.0.1:8931 |
+| `playwright-mcp` | Playwright MCP sunucusu; yalnızca demo uygulaması origin'ine izinli, `--caps=vision` yok; yalnızca demo-net + mcp-net (core-worker) | — (host'a açılmaz) |
 | `review-portal` | İnceleme portalı (React + nginx) | http://127.0.0.1:8080 |
 | `demo-app-api` | Örnek uygulama API'si (FastAPI) | — (iç ağ) |
 | `demo-app-web` | Örnek uygulama arayüzü (React + nginx) | http://127.0.0.1:8081 |
+| `jira-sim` | Jira Cloud REST v3 + Xray alt kümesi simülatörü (gerçek Jira yokken); PO girişi `po@sim.local`, parola `.env` → `JIRA_SIM_PO_PASSWORD` | http://127.0.0.1:8090 |
 
 `toolchain-worker`, `test-runner` ve `playwright-mcp` tek bir toolchain imajını paylaşır; Playwright
 sürümü tek kaynaktan, [`.playwright-version`](.playwright-version) dosyasından gelir.
@@ -60,14 +61,18 @@ sürümü tek kaynaktan, [`.playwright-version`](.playwright-version) dosyasınd
 
 | Ağ | Tür | Üyeler |
 |---|---|---|
-| `core-net` | normal | postgres, migrate, core-api, core-worker, toolchain-worker, playwright-mcp, review-portal, demo-app-web |
+| `core-net` | normal | postgres, migrate, core-api, core-worker, toolchain-worker, jira-sim, review-portal, demo-app-web |
 | `data-net` | `internal` | postgres, demo-app-api |
-| `demo-net` | `internal` | demo-app-api, demo-app-web, playwright-mcp, test-runner |
+| `demo-net` | `internal` | demo-app-api, demo-app-web, test-runner |
+| `agent-net` | `internal` | demo-app-web, playwright-mcp |
 | `runner-net` | `internal` | toolchain-worker, test-runner |
+| `mcp-net` | `internal` | core-worker, playwright-mcp |
 
 **İzolasyon kuralı:** `test-runner` yalnızca `demo-net` ve `runner-net`'tedir; Postgres'e,
-core-api'ye, sırlara ve internete erişemez (DNS düzeyinde bile göremez). `internal` ağlar internete
-çıkamaz. Bu kural `make security-check` ile otomatik doğrulanır.
+core-api'ye, playwright-mcp'ye, sırlara ve internete erişemez (DNS düzeyinde bile göremez). `internal`
+ağlar internete çıkamaz. `playwright-mcp` yalnızca `agent-net` ve `mcp-net`'tedir: ajan tarayıcısı
+yalnızca demo-app-web'e ulaşır (nginx `/api/test/*`'i kapatır); core-api'ye, jira-sim'e, Postgres'e,
+demo-app-api'ye, test-runner'a ve internete erişemez. Bu kurallar `make security-check` ile otomatik doğrulanır.
 
 ## Hızlı başlangıç
 
@@ -80,7 +85,8 @@ make env      # .env üretir, F0 parolalarını rastgele doldurur
 make up       # önkoşul kontrolü + tüm servisler sağlıklı olana kadar bekler
 make status   # servis, durum, sağlık, yerel adres tablosu
 make seed     # deterministik başlangıç verisi (5 demo kullanıcısı)
-make security-check   # 4/4 PASS beklenir
+make security-check   # 8/8 PASS beklenir
+make e2e-smoke        # demo-app e2e, test-runner içinden (E2E_BREAK_VERIFY=1: kırarak doğrula)
 ```
 
 ## Make hedefleri
@@ -96,7 +102,8 @@ Tüm hedefler repo kökünden çalışır; çıkış kodu `0` = başarı. Sözle
 | `make seed` | Deterministik başlangıç verisi; tekrar çalıştırmak güvenli (`seed: 5 kullanıcı (yeni: N)`) |
 | `make reset` | Denetim kaydını dışa aktarır → çekirdek veriyi siler → `make up`. Dışa aktarım başarısızsa hiçbir şey silinmez |
 | `make export-audit` | Denetim kaydını `exports/audit-*.jsonl` + `.sha256` olarak dışa aktarır |
-| `make security-check` | Port, izolasyon, denetim rolü ve sır taraması kontrolleri; her biri `PASS`, özet `4/4` |
+| `make security-check` | Port, test-runner izolasyonu, denetim rolü, sır taraması, demoapp_ro en az yetki, model anahtarı yeri, ajan tarayıcısı (MCP) izolasyonu, yazma kimlikleri + demo test belirteci yeri; her biri `PASS`, özet `8/8` |
+| `make e2e-smoke` | demo-app e2e testlerini forge main'den alıp test-runner içinden compose uygulamasına koşturur; `E2E_BREAK_VERIFY=1` ile yeşil → kırmızı → yeşil |
 | `make prune` | Kullanılmayan imaj ve build önbelleğini temizler (volume'lere dokunmaz) |
 | `make logs [S=servis]` | Logları izler (ör. `make logs S=core-api`) |
 | `make down` | Servisleri durdurur (veri korunur) |

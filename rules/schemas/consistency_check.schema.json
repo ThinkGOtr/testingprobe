@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tp:consistency_check",
+  "title": "Doküman tutarlılık bulguları (§8.2b)",
+  "x-version": 1,
+  "type": "object",
+  "properties": {
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^F[0-9]+$"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "internal_contradiction",
+              "doc_vs_code",
+              "doc_vs_data",
+              "missing_in_doc",
+              "missing_in_code",
+              "ambiguous"
+            ]
+          },
+          "doc_ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "claim": {
+            "type": "string"
+          },
+          "observed": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "code"
+                      ]
+                    },
+                    "repo": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "line": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "snippet": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "repo",
+                    "path",
+                    "line",
+                    "snippet"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "data"
+                      ]
+                    },
+                    "query": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "result_digest": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "query",
+                    "result_digest"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "blocking",
+              "warning"
+            ]
+          },
+          "suggested_doc_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "doc_ref",
+          "claim",
+          "observed",
+          "evidence",
+          "severity",
+          "suggested_doc_text"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "findings",
+    "notes"
+  ],
+  "additionalProperties": false
+}

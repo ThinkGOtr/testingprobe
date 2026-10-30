@@ -1,0 +1,25 @@
+{
+  "name": "tp-ast-guard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AST koruması: locator onarımının yalnızca pages/**/locators.ts içindeki testId değerlerini değiştirdiğini doğrular (Constitution VI).",
+  "type": "module",
+  "bin": {
+    "ast-guard": "dist/src/cli.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test --test-reporter=spec dist/test/*.test.js",
+    "ast-guard": "node dist/src/cli.js"
+  },
+  "dependencies": {
+    "ts-morph": "28.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "typescript": "5.9.3"
+  }
+}

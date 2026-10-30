@@ -1,0 +1,70 @@
+# Review Portal (Kontrol Kulesi)
+
+React 18 + Vite 8 + TypeScript (strict), react-router. Arayüz metinleri Türkçe.
+
+## Komutlar
+
+| Komut | Ne yapar |
+|---|---|
+| `npm run dev` | Geliştirme sunucusu; `/api` → `http://127.0.0.1:8000` (core-api) |
+| `npm run build` | `tsc --noEmit` (uygulama + `tsconfig.test.json` ile testler) + üretim derlemesi (Docker imajı bunu kullanır) |
+| `npm run typecheck` | Yalnızca tip denetimi (uygulama ve testler) |
+| `npm run build:mock` | Tamamen örnek veriyle çalışan derleme (`VITE_MOCK=1`, arka uç gerekmez) |
+| `npm test` | Vitest + Testing Library (API istemcisi, SSE, mock arka uç, bileşenler, ekranlar). `fixtures.test.ts` örnek veriyi repodaki kaynaklara karşı doğrular: demo-app dosya/satırları, golden REPLAY kayıtları, jira-sim seed'i, core durum makinesi ve olay adları; üretilen test kodu `demo-app/e2e` page object'lerine karşı tsc'den geçirilir (o dizinin `node_modules`'u yoksa bu tek test atlanır). |
+| `npm run e2e` | Playwright duman testi: mock derlemeyi `vite preview` ile açar, tüm rotaları gezer, ekran görüntülerini `e2e/ekranlar/` altına yazar; her rolde ölü iç bağlantı, 390 px taşma ve axe (WCAG 2 AA, açık/koyu tema) denetimi yapar (ilk seferde `npx playwright install chromium`) |
+
+## API sözleşmesi
+
+- `src/api/client.ts`: MIMARI-SOZLESME §5'teki her uç için türlü istemci.
+- `src/api/types.ts`: yanıt şemaları. Veritabanı kökenli alanlar Türkçe (`durum`, `olusturma`…),
+  AI şemalarından gelen yükler TEKNIK-TASARIM §7/§8'deki İngilizce adları taşır (`icerik.steps`,
+  `evidence[].kind`, `suggested_doc_text`…). core-api yanıtları bu tiplere uymalıdır.
+- `src/api/events.tsx`: `/api/events` SSE. EventSource adlı olayları yalnızca `addEventListener(ad)`
+  ile teslim eder; bu yüzden hem core'un bugün yayımladığı adlar (`CORE_OLAYLARI`: her durum
+  makinesi için `<varlık>.state` ve `review.recorded`, core `workflow/service.py`) hem portalın
+  ayrıntılı adları (`agent.step`, `ci.status`, …) dinlenir; `data.type` taşıyan varsayılan `message`
+  da işlenir. Sayfalar konu adına abone olur (`requirement.updated`, `case.updated`, …);
+  `olayKonulari` core adlarını bu konulara çevirir (`requirement.state` → `requirement.updated`,
+  `review.recorded` → `nesne_turu`'nun konusu, kimlik `nesne_id`). Hata halinde kapatıp üstel geri
+  çekilmeyle (1 sn → 30 sn) yeniden bağlanır. Bazı uçlar örnek veriden geliyorsa gerçek SSE'nin yanında
+  süreç içi olay yolu da dinlenir.
+- Gereksinim durumları core'un `REQUIREMENT` durum makinesiyle birebir aynıdır (`GEREKSINIM_DURUMLARI`);
+  14 adımlı akıştaki adım durumdan türetilir (`src/lib/akis.ts`). "Kabul kriteri yok" durum değil,
+  `ac_missing` bayrağıdır.
+- Bulgu, case, script ve bug taslağı durumları da core makineleriyle birebir aynıdır
+  (`BULGU_DURUMLARI`, `CASE_DURUMLARI`, `SCRIPT_DURUMLARI`, `BUG_DURUMLARI`). Türetilmiş arayüz
+  kavramları durum değildir: "merge'e hazır" (`pr_open` + CI + kırarak doğrulama), "zayıf test"
+  (`zayif_test`), "bağlandı" (`published` + `karar: "link"` + `link_key`), "Jira'ya yazıldı"
+  (`resolved` + `fix_doc`). `src/api/sozlesme.test.ts` birlikleri core'dan üretilmiş
+  `src/api/sozlesme/durum-makineleri.json` ile karşılaştırır; `uv` ve `../core` varsa dışa aktarımı
+  yeniden üretip güncelliğini de denetler. core makineleri değişince: `npm run sozlesme:durumlar`.
+- İnsan kararları (bulgu, case, bug taslağı, PO onayı, merge) ekranda görülen nesnenin
+  `icerik_hash`'ini gövdede gönderir; merge ayrıca incelenen `head_sha`'yı bağlar (MIMARI-SOZLESME §5).
+  409 gelirse ekran yeniden yüklenir ve "İçerik değişti, yeniden inceleyin." gösterilir. Mock arka uç
+  core gibi davranır: hash yoksa 422, eskiyse 409.
+- Bağlantılar `Baglanti` bileşeniyle çizilir: portal ekranı → uygulama içi, http(s) ve `/api/…` →
+  yeni sekme, adresi olmayan ya da portalın sunmadığı yol (artifact/forge sunucusu henüz yok) →
+  tıklanamaz metin. Ölü "Sayfa bulunamadı" bağlantısı üretilmez.
+
+## Örnek veri (mock) modu
+
+- `VITE_MOCK=1` (`npm run build:mock`): her uç süreç içi mock arka uçtan cevaplanır.
+- Varsayılan derlemede portal açılışta core'un uç listesini bir kez okur (`GET /api/openapi.json`).
+  Listede olmayan uçlar için **ağ isteği hiç yapılmaz**, doğrudan örnek veriye gidilir (DevTools'ta
+  404 seli yok). Liste okunamazsa eski yol: genel `{"detail":"Not Found"}` 404'ünde veya JSON olmayan
+  404'te **yalnızca o uç** mock'a düşer. Türkçe "kayıt bulunamadı" 404'leri hata olarak gösterilir.
+  `VITE_MOCK=0` keşfi ve geri düşüşü tamamen kapatır.
+- Mock'tan gelen veri üst çubukta **ÖRNEK VERİ** rozetiyle işaretlenir (hangi uçların mock olduğu
+  rozetin ipucunda). Mock arka uç rol kontrollerini ve insan kapılarını (PO teyidi, onay hash'i,
+  kırarak doğrulamadan önce merge yok, gerekçesiz bilinçli fark yok) gerçek API gibi uygular.
+- Veri `docs/DEMO-VERISI.md` ile aynıdır (TPD-1..4, 4 bilinçli uyumsuzluk, `add-to-cart → cart-add`).
+  Kanıt yolları/satırları ve case içerikleri golden REPLAY kayıtlarından gelir; TPD-1 case'leri
+  `src/api/mock/golden/tpd1-caseler.json` kopyasıdır (golden değişince yeniden kopyalayın — komut
+  `fixtures.ts` içinde; test farkı yakalar). Jira anahtarları jira-sim seed'iyle uyumludur
+  (mükerrer adayı TPD-5; ürünün oluşturduğu kayıtlar TPD-8'den).
+  Mock kullanıcıları: `analist`, `muhendis`, `sunucu`, `po`, `testci` (boş olmayan her parola).
+
+## REPLAY
+
+`mode: "replay"` → **REPLAY**, `mode: "replay_miss"` → **REPLAY-MISS** (uyarı renginde) rozeti;
+`live` için rozet yoktur.

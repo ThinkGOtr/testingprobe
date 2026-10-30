@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tp:dup_rank",
+  "title": "Mükerrer aday sıralaması (§8.12)",
+  "x-version": 1,
+  "type": "object",
+  "properties": {
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9]+-[0-9]+$"
+          },
+          "rank": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "likelihood": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "key",
+          "rank",
+          "likelihood",
+          "rationale"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "recommendation": {
+      "type": "string",
+      "enum": [
+        "new",
+        "link"
+      ]
+    },
+    "link_key": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9]+-[0-9]+$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "candidates",
+    "recommendation",
+    "link_key"
+  ],
+  "additionalProperties": false
+}

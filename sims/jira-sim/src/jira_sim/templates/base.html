@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }} · Jira Simülatörü</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #172b4d; --muted: #5e6c84; --line: #dfe1e6;
+    --accent: #0c66e4; --accent-text: #ffffff; --chip: #e9f2ff; --chip-text: #0055cc;
+    --warn-bg: #fff7d6; --warn-text: #7f5f01; --err-bg: #ffeceb; --err-text: #ae2e24;
+    --done: #216e4e; --done-bg: #dcfff1; --prog: #0055cc; --prog-bg: #e9f2ff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1d2125; --panel: #22272b; --text: #dee4ea; --muted: #9fadbc; --line: #38414a;
+      --accent: #579dff; --accent-text: #1d2125; --chip: #1c2b41; --chip-text: #85b8ff;
+      --warn-bg: #533f04; --warn-text: #f8e6a0; --err-bg: #5d1f1a; --err-text: #ffd5d2;
+      --done: #7ee2b8; --done-bg: #164b35; --prog: #85b8ff; --prog-bg: #1c2b41;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  header { background: var(--panel); border-bottom: 1px solid var(--line); padding: 10px 16px;
+           display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  header a.brand { font-weight: 700; color: var(--text); text-decoration: none; }
+  header .note { color: var(--muted); font-size: 13px; }
+  header .session { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  input[type=password] { width: 100%; padding: 8px; border: 1px solid var(--line);
+         border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px; }
+  a { color: var(--accent); }
+  h1 { font-size: 22px; margin: 4px 0 12px; }
+  h2 { font-size: 16px; margin: 0 0 10px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+           padding: 16px; margin-bottom: 16px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .chip { display: inline-block; background: var(--chip); color: var(--chip-text);
+          border-radius: 4px; padding: 1px 8px; font-size: 13px; margin: 2px 4px 2px 0; }
+  .status { display: inline-block; border-radius: 4px; padding: 1px 8px; font-size: 12px;
+            font-weight: 700; text-transform: uppercase; background: var(--line); }
+  .status.done { background: var(--done-bg); color: var(--done); }
+  .status.prog { background: var(--prog-bg); color: var(--prog); }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-size: 13px; font-weight: 600; }
+  .table-wrap { overflow-x: auto; }
+  table.adf-table th, table.adf-table td { border: 1px solid var(--line); }
+  input[type=text], textarea { width: 100%; padding: 8px; border: 1px solid var(--line);
+         border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+  textarea { min-height: 90px; }
+  button { background: var(--accent); color: var(--accent-text); border: 0; border-radius: 6px;
+           padding: 7px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+  button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+  button:disabled { opacity: .5; cursor: default; }
+  form + form, form + details { margin-top: 12px; }
+  button.link { background: none; color: var(--muted); padding: 0 2px; font-weight: 400; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .row input[type=text] { flex: 1 1 220px; width: auto; }
+  .grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; }
+  @media (max-width: 800px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+  .alert { border-radius: 6px; padding: 10px 12px; margin-bottom: 16px; }
+  .alert.err { background: var(--err-bg); color: var(--err-text); }
+  .alert.warn { background: var(--warn-bg); color: var(--warn-text); }
+  .comment { border-top: 1px solid var(--line); padding: 10px 0; }
+  .comment:first-of-type { border-top: 0; }
+  .desc p { margin: 0 0 8px; }
+  .history li { margin-bottom: 6px; }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; }
+  dt { color: var(--muted); font-size: 13px; }
+  dd { margin: 0; }
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" href="/">Jira Simülatörü</a>
+  <span class="note">Proje TPD · yerel demo ortamı (gerçek Jira değildir)</span>
+  <span class="session">
+    {% if po_logged_in %}
+      <span class="note" data-testid="po-oturum">PO olarak giriş yapıldı</span>
+      <form method="post" action="/cikis" style="display:inline">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button type="submit" class="secondary">Çıkış</button>
+      </form>
+    {% else %}
+      <a href="/giris?sonra={{ (here or '/') | urlencode }}" data-testid="po-giris">PO girişi</a>
+    {% endif %}
+  </span>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

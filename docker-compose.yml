@@ -3,20 +3,64 @@
 # Ağlar (bkz. specs/001-dev-foundation/research.md R5):
 #   core-net   : normal ağ; çekirdek servisler + host'a açılan arayüzler
 #   data-net   : internal; postgres <-> demo-app-api
-#   demo-net   : internal; örnek uygulama, playwright-mcp, test-runner
+#   demo-net   : internal; örnek uygulama (web + api) ve test-runner
+#   agent-net  : internal; yalnızca playwright-mcp <-> demo-app-web (ajan tarayıcısı)
 #   runner-net : internal; toolchain-worker <-> test-runner
-# test-runner yalnızca demo-net + runner-net'te: postgres, core-api ve internete erişemez.
+#   mcp-net    : internal; yalnızca core-worker <-> playwright-mcp
+# test-runner yalnızca demo-net + runner-net'te: postgres, core-api, playwright-mcp ve internete
+# erişemez; demo-app-web'e (UI) ve demo-app-api'ye (/test/* sıfırlama + kırılma, belirteçli) erişir.
+# playwright-mcp yalnızca agent-net + mcp-net'te: tarayıcısı (ve browser_run_code_unsafe gibi
+# kapatılamayan araçları) yalnızca demo-app-web'e ulaşır (nginx /api/test/*'i kapatır); core-api,
+# jira-sim, postgres, demo-app-api, test-runner ve internete erişemez; host'a port açmaz.
 
 name: testingprobe
 
+# İmajı yalnızca `migrate` derler; core-api/core-worker aynı yerel imajı kullanır (build yok,
+# pull_policy: never). Aynı imajı üç servisin ayrı ayrı derlemesi `make up`'ı idempotent olmaktan
+# çıkarıyordu (her çalıştırmada yeniden derleme → gereksiz yeniden oluşturma).
 x-core-image: &core-image
   image: testingprobe-core:local
-  build:
-    context: ./core
-  pull_policy: build
+  pull_policy: never
 
+# Ortak çekirdek ortamı (core-api + core-worker). Yazma yetkili kimlikler burada DEĞİL:
+# core-api yalnızca Postgres'e yazar (MIMARI-SOZLESME §2); Jira/Xray/forge yazma kimlikleri ve
+# model anahtarı yalnızca core-worker'da (make security-check 6 ve 8).
+x-core-env: &core-env
+  TP_SESSION_SECRET: ${TP_SESSION_SECRET:?}
+  # Durum değiştiren isteklerde izinli Origin'ler (CSRF); portal başka adresten sunulursa eklenir.
+  TP_ALLOWED_ORIGINS: ${TP_ALLOWED_ORIGINS:-http://127.0.0.1:${TP_PORTAL_PORT:-8080},http://localhost:${TP_PORTAL_PORT:-8080}}
+  # Giriş kısıtlaması gerçek istemci adresini yalnızca bu vekilden gelen XFF'den okur.
+  TP_TRUSTED_PROXIES: ${TP_TRUSTED_PROXIES:-review-portal}
+  TP_MODEL_MODE: ${TP_MODEL_MODE:-auto}
+  TP_RULES_DIR: /rules
+  JIRA_BASE_URL: ${JIRA_BASE_URL:-http://jira-sim:8090}
+  # Kullanıcıya gösterilen bağlantıların kökü (tarayıcıdan erişilebilir). Gerçek Jira'da boş
+  # bırakılır → JIRA_BASE_URL kullanılır.
+  JIRA_BROWSE_URL: ${JIRA_BROWSE_URL:-http://127.0.0.1:${JIRA_SIM_PORT:-8090}}
+  JIRA_PROJECT: ${JIRA_PROJECT:-TPD}
+  JIRA_READ_EMAIL: ${JIRA_READ_EMAIL:-reader@sim.local}
+  JIRA_READ_TOKEN: ${JIRA_READ_TOKEN:-sim}
+  TP_TEST_MGMT: ${TP_TEST_MGMT:-jira}
+  XRAY_BASE_URL: ${XRAY_BASE_URL:-http://jira-sim:8090/xray}
+  TP_FORGE: ${TP_FORGE:-local}
+  TP_FORGE_PATH: /forge/demo-app.git
+  TP_FORGE_PRS_PATH: /forge/tp-prs.json
+  GITHUB_REPO: ${GITHUB_REPO:-}
+  GITHUB_READ_TOKEN: ${GITHUB_READ_TOKEN:-}
+  GITHUB_API_URL: ${GITHUB_API_URL:-}
+  TOOLCHAIN_URL: http://toolchain-worker:8100
+  DEMOAPP_RO_DATABASE_URL: postgresql+psycopg://demoapp_ro:${DEMOAPP_RO_PASSWORD:?}@postgres:5432/demoapp
+  TP_ARTIFACTS_PATH: /artifacts
+  TP_MCP_PUBLIC_URL: http://127.0.0.1:${TP_API_PORT:-8000}/mcp
+  TP_DAILY_BUDGET_USD: ${TP_DAILY_BUDGET_USD:-30}
+  TP_WORKFLOW_BUDGET_USD: ${TP_WORKFLOW_BUDGET_USD:-2}
+
+# İmajı yalnızca toolchain-worker derler; test-runner ve playwright-mcp aynı yerel imajı kullanır.
 x-toolchain-image: &toolchain-image
   image: testingprobe-toolchain:local
+  pull_policy: never
+
+x-toolchain-build: &toolchain-build
   build:
     context: ./toolchain
     args:
@@ -39,6 +83,7 @@ services:
     ports:
       - "127.0.0.1:${PG_PORT:-55432}:5432"
     networks: [core-net, data-net]
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d tp"]
       interval: 3s
@@ -50,6 +95,9 @@ services:
 
   migrate:
     <<: *core-image
+    build:
+      context: ./core
+    pull_policy: build
     command: ["alembic", "upgrade", "head"]
     environment:
       TP_DATABASE_URL: postgresql+psycopg://tp_owner:${TP_OWNER_PASSWORD}@postgres:5432/tp
@@ -64,36 +112,15 @@ services:
     environment:
       TP_DATABASE_URL: postgresql+psycopg://tp_app:${TP_APP_PASSWORD}@postgres:5432/tp
       SEED_USER_PASSWORD: ${SEED_USER_PASSWORD:?}
-      <<: &core-env
-        TP_SESSION_SECRET: ${TP_SESSION_SECRET:?}
-        TP_MODEL_MODE: ${TP_MODEL_MODE:-auto}
-        ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-        JIRA_BASE_URL: ${JIRA_BASE_URL:-http://jira-sim:8090}
-        JIRA_PROJECT: ${JIRA_PROJECT:-TPD}
-        JIRA_READ_EMAIL: ${JIRA_READ_EMAIL:-reader@sim.local}
-        JIRA_READ_TOKEN: ${JIRA_READ_TOKEN:-sim}
-        JIRA_WRITE_EMAIL: ${JIRA_WRITE_EMAIL:-writer@sim.local}
-        JIRA_WRITE_TOKEN: ${JIRA_WRITE_TOKEN:-sim}
-        TP_TEST_MGMT: ${TP_TEST_MGMT:-jira}
-        XRAY_BASE_URL: ${XRAY_BASE_URL:-http://jira-sim:8090/xray}
-        XRAY_CLIENT_ID: ${XRAY_CLIENT_ID:-sim}
-        XRAY_CLIENT_SECRET: ${XRAY_CLIENT_SECRET:-sim}
-        TP_FORGE: ${TP_FORGE:-local}
-        TP_FORGE_PATH: /forge/demo-app.git
-        GITHUB_REPO: ${GITHUB_REPO:-}
-        GITHUB_READ_TOKEN: ${GITHUB_READ_TOKEN:-}
-        TOOLCHAIN_URL: http://toolchain-worker:8100
-        PLAYWRIGHT_MCP_URL: http://playwright-mcp:8931/mcp
-        DEMOAPP_RO_DATABASE_URL: postgresql+psycopg://demoapp_ro:${DEMOAPP_RO_PASSWORD:?}@postgres:5432/demoapp
-        TP_ARTIFACTS_PATH: /artifacts
-        TP_DAILY_BUDGET_USD: ${TP_DAILY_BUDGET_USD:-30}
-        TP_WORKFLOW_BUDGET_USD: ${TP_WORKFLOW_BUDGET_USD:-2}
+      <<: *core-env
     volumes:
       - tp_forge:/forge:ro
       - tp_artifacts:/artifacts:ro
+      - ./rules:/rules:ro
     ports:
       - "127.0.0.1:${TP_API_PORT:-8000}:8000"
     networks: [core-net]
+    restart: unless-stopped
     depends_on:
       migrate: { condition: service_completed_successfully }
     healthcheck:
@@ -107,14 +134,44 @@ services:
 
   core-worker:
     <<: *core-image
+    # Sabit hostname: release_orphans yeniden oluşturulan worker'ın eski işlerini adıyla bulur.
+    hostname: core-worker
     command: ["python", "-m", "tp_core.worker"]
     environment:
       TP_DATABASE_URL: postgresql+psycopg://tp_app:${TP_APP_PASSWORD}@postgres:5432/tp
+      # Model anahtarı ve model ayarları YALNIZCA core-worker'da (anayasa: anahtar core-worker'da).
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      TP_MODEL_PROVIDER: ${TP_MODEL_PROVIDER:-anthropic}
+      TP_PII_MASKING: ${TP_PII_MASKING:-0}
+      TP_REPLAY_STRICT: ${TP_REPLAY_STRICT:-0}
+      PLAYWRIGHT_MCP_URL: http://playwright-mcp:8931/mcp
+      # Yazma yetkili dış sistem kimlikleri — yalnızca core-worker.
+      JIRA_WRITE_EMAIL: ${JIRA_WRITE_EMAIL:-writer@sim.local}
+      JIRA_WRITE_TOKEN: ${JIRA_WRITE_TOKEN:-sim}
+      XRAY_CLIENT_ID: ${XRAY_CLIENT_ID:-sim}
+      XRAY_CLIENT_SECRET: ${XRAY_CLIENT_SECRET:-sim}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_MERGE_TOKEN: ${GITHUB_MERGE_TOKEN:-}
+      GH_APP_ID: ${GH_APP_ID:-}
+      GH_APP_PRIVATE_KEY: ${GH_APP_PRIVATE_KEY:-}
+      GH_APP_PRIVATE_KEY_PATH: ${GH_APP_PRIVATE_KEY_PATH:-}
+      GH_APP_INSTALLATION_ID: ${GH_APP_INSTALLATION_ID:-}
+      # Merge kapısının zorunlu check'leri (boş = adaptör varsayılanı: local-ci / ruleset listesi)
+      TP_REQUIRED_CHECKS: ${TP_REQUIRED_CHECKS:-}
+      # Jira kanalından PO onayı: izinli PO kimlikleri ve ürünün bot kimlikleri (MIMARI-SOZLESME §6)
+      JIRA_PO_ACCOUNT_IDS: ${JIRA_PO_ACCOUNT_IDS:-}
+      TP_PO_JIRA_USERS: ${TP_PO_JIRA_USERS:-}
+      TP_JIRA_BOT_ACCOUNT_IDS: ${TP_JIRA_BOT_ACCOUNT_IDS:-}
       <<: *core-env
     volumes:
       - tp_forge:/forge
       - tp_artifacts:/artifacts:ro
-    networks: [core-net]
+      # TP_MODEL_MODE=record konteyner içinde kullanılacaksa :ro kaldırılır.
+      - ./rules:/rules:ro
+    networks: [core-net, mcp-net]
+    restart: unless-stopped
+    # Worker SIGTERM'de elindeki işi bitirir; yeniden başlayınca kalan işleri bırakır (release_orphans).
+    stop_grace_period: 30s
     depends_on:
       migrate: { condition: service_completed_successfully }
     healthcheck:
@@ -127,7 +184,7 @@ services:
         limits: { memory: 512m }
 
   toolchain-worker:
-    <<: *toolchain-image
+    <<: [*toolchain-build, *toolchain-image]
     command: ["toolchain-worker"]
     environment:
       PLAYWRIGHT_VERSION: ${PLAYWRIGHT_VERSION}
@@ -138,6 +195,7 @@ services:
       - tp_forge:/forge
       - tp_artifacts:/artifacts
     networks: [core-net, runner-net]
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:8100/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 5s
@@ -155,10 +213,16 @@ services:
       PLAYWRIGHT_VERSION: ${PLAYWRIGHT_VERSION}
       TP_FORGE_PATH: /forge/demo-app.git
       TP_ARTIFACTS_PATH: /artifacts
+      # e2e hedefi: compose'daki demo uygulaması. Bayi kapsamlı sıfırlama ve kampanya kırılması
+      # (/test/reset, /test/break) doğrudan API'ye belirteçle gider; nginx /api/test/*'i kapatır.
+      BASE_URL: http://demo-app-web:8080
+      DEMO_API_URL: http://demo-app-api:8000
+      DEMOAPP_TEST_TOKEN: ${DEMOAPP_TEST_TOKEN:?make env çalıştırın}
     volumes:
       - tp_forge:/forge:ro
       - tp_artifacts:/artifacts
     networks: [demo-net, runner-net]
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:8200/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 5s
@@ -174,9 +238,11 @@ services:
     command: ["playwright-mcp"]
     environment:
       MCP_ALLOWED_ORIGINS: http://demo-app-web:8080
-    ports:
-      - "127.0.0.1:${MCP_PORT:-8931}:8931"
-    networks: [core-net, demo-net]
+      # Host başlığı denetimi (DNS rebinding): yalnızca core-worker'ın kullandığı ad.
+      MCP_ALLOWED_HOSTS: playwright-mcp:8931,playwright-mcp
+    # Host'a port açılmaz; hata ayıklama: docker compose exec playwright-mcp …
+    networks: [agent-net, mcp-net]
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "require('net').connect(8931,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
       interval: 5s
@@ -195,11 +261,15 @@ services:
     environment:
       JIRA_SIM_DATA: /data/jira.json
       JIRA_SIM_BASE_URL: http://127.0.0.1:${JIRA_SIM_PORT:-8090}
+      # PO girişi (po@sim.local) parolası ve /sim/* yönetim belirteci — make env üretir.
+      JIRA_SIM_PO_PASSWORD: ${JIRA_SIM_PO_PASSWORD:?make env çalıştırın}
+      JIRA_SIM_ADMIN_TOKEN: ${JIRA_SIM_ADMIN_TOKEN:?make env çalıştırın}
     volumes:
       - tp_jira:/data
     ports:
       - "127.0.0.1:${JIRA_SIM_PORT:-8090}:8090"
     networks: [core-net]
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/health', timeout=3)"]
       interval: 5s
@@ -217,6 +287,7 @@ services:
     ports:
       - "127.0.0.1:${TP_PORTAL_PORT:-8080}:8080"
     networks: [core-net]
+    restart: unless-stopped
     depends_on:
       core-api: { condition: service_healthy }
     healthcheck:
@@ -235,7 +306,14 @@ services:
     pull_policy: build
     environment:
       DEMOAPP_DATABASE_URL: postgresql+psycopg://demoapp:${DEMOAPP_PASSWORD}@postgres:5432/demoapp
+      # /test/reset ve /test/break (e2e fixture'ları) için; yalnızca demo ortamı. Uçlar yalnızca
+      # demo-net'ten (test-runner) ve DEMOAPP_TEST_TOKEN ile çağrılabilir.
+      DEMOAPP_TEST_MODE: "1"
+      DEMOAPP_TEST_TOKEN: ${DEMOAPP_TEST_TOKEN:?make env çalıştırın}
+      # Kampanya kırılması koşu başına ve bayi kapsamlıdır: POST /test/break (BREAK_CAMPAIGN
+      # süreç geneli ortam değişkeni compose'da kullanılmaz). Locator kırılması: make break.
     networks: [data-net, demo-net]
+    restart: unless-stopped
     depends_on:
       postgres: { condition: service_healthy }
     healthcheck:
@@ -254,7 +332,8 @@ services:
     pull_policy: build
     ports:
       - "127.0.0.1:${DEMO_WEB_PORT:-8081}:8080"
-    networks: [core-net, demo-net]
+    networks: [core-net, demo-net, agent-net]
+    restart: unless-stopped
     depends_on:
       demo-app-api: { condition: service_healthy }
     healthcheck:
@@ -270,7 +349,9 @@ networks:
   core-net: {}
   data-net: { internal: true }
   demo-net: { internal: true }
+  agent-net: { internal: true }
   runner-net: { internal: true }
+  mcp-net: { internal: true }
 
 volumes:
   tp_pgdata: {}

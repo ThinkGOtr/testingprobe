@@ -10,9 +10,13 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "isolatedModules": true,
+    "resolveJsonModule": true,
     "skipLibCheck": true,
     "noEmit": true,
     "types": ["vite/client"]
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "vite.config.ts", "vitest.config.ts"],
+  // Testler kaynak dosyaları (demo-app, golden, core) okumak için Node API'si kullanır; Node tipleri
+  // uygulama koduna sızmasın diye testler tsconfig.test.json ile ayrıca denetlenir.
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test"]
 }

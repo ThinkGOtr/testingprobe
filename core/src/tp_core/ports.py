@@ -80,7 +80,10 @@ class PublishedCase(BaseModel):
 
 @runtime_checkable
 class TestManagementPort(Protocol):
-    """Onaylı case'leri hedef sisteme yazar (Jira Test issue, Xray Cloud, ileride TestRail/Zephyr)."""
+    """Onaylı case'leri hedef sisteme yazar.
+
+    Jira Test issue, Xray Cloud; ileride TestRail/Zephyr.
+    """
 
     name: str
 
@@ -112,7 +115,7 @@ class CheckRun(BaseModel):
 
 @runtime_checkable
 class ForgePort(Protocol):
-    """Test edilen uygulamanın deposu. `local` (bare git + Postgres PR kaydı) veya `github`."""
+    """Test edilen uygulamanın deposu: `local` (bare git + /forge PR kaydı) veya `github`."""
 
     def head_sha(self, ref: str = "main") -> str: ...
     def read_file(self, path: str, ref: str = "main") -> str: ...
@@ -122,9 +125,12 @@ class ForgePort(Protocol):
         self, branch: str, files: Mapping[str, str], message: str, base: str = "main"
     ) -> str: ...  # yeni commit sha
     def find_open_pr(self, branch: str) -> PullRequest | None: ...
-    def open_pr(self, branch: str, title: str, body: str, labels: Sequence[str] = ()) -> PullRequest: ...
+    def open_pr(
+        self, branch: str, title: str, body: str, labels: Sequence[str] = ()
+    ) -> PullRequest: ...
     def get_pr(self, number: int) -> PullRequest: ...
-    def merge_pr(self, number: int, actor: str) -> str: ...  # merge commit sha
+    # merge commit sha. expected_head_sha: insanın onayladığı head; PR head'i farklıysa çakışma.
+    def merge_pr(self, number: int, actor: str, *, expected_head_sha: str | None = None) -> str: ...
     def comment_pr(self, number: int, body: str) -> None: ...
     def checks(self, sha: str) -> list[CheckRun]: ...
 
@@ -182,6 +188,7 @@ class ModelGateway(Protocol):
         replay_key: Mapping[str, Any],
         max_tokens: int = 4096,
         workflow_id: UUID | None = None,
+        call_id: UUID | None = None,  # deterministik (iş + adım) → yeniden denemede tek çağrı
     ) -> CallResult: ...
 
     def run_agent(
@@ -196,6 +203,7 @@ class ModelGateway(Protocol):
         replay_key: Mapping[str, Any],
         max_turns: int = 25,
         workflow_id: UUID | None = None,
+        call_id: UUID | None = None,
     ) -> AgentResult: ...
 
 

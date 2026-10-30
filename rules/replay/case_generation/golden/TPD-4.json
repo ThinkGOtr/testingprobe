@@ -1,0 +1,68 @@
+{
+  "kind": "call",
+  "purpose": "case_generation",
+  "golden": "TPD-4",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı; canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record).",
+  "output": {
+    "cases": [
+      {
+        "title": "Geçerli kullanıcı adı ve parola ile giriş yapılır",
+        "type": "positive",
+        "risk": "medium",
+        "acceptance_criteria_refs": [
+          "AC1"
+        ],
+        "preconditions": [
+          "Oturum açık değil"
+        ],
+        "steps": [
+          {
+            "id": "S1",
+            "action": "Giriş sayfasını aç",
+            "data": null,
+            "expected": "Giriş formu görüntülenir"
+          },
+          {
+            "id": "S2",
+            "action": "Kullanıcı adı ve parola gir, \"Giriş yap\" butonuna bas",
+            "data": "bayi1 / Demo123!",
+            "expected": "Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir"
+          }
+        ],
+        "expected_result": "Bayi başarıyla giriş yapar ve katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir",
+        "tags": [
+          "AI-generated"
+        ]
+      },
+      {
+        "title": "Hatalı parola ile girişte hata mesajı gösterilir",
+        "type": "negative",
+        "risk": "medium",
+        "acceptance_criteria_refs": [
+          "AC2"
+        ],
+        "preconditions": [
+          "Oturum açık değil"
+        ],
+        "steps": [
+          {
+            "id": "S1",
+            "action": "Giriş sayfasını aç",
+            "data": null,
+            "expected": "Giriş formu görüntülenir"
+          },
+          {
+            "id": "S2",
+            "action": "Kullanıcı adı ve hatalı parola gir, \"Giriş yap\" butonuna bas",
+            "data": "bayi1 / Yanlis123!",
+            "expected": "\"Kullanıcı adı veya parola hatalı\" mesajı görünür ve giriş sayfasında kalınır"
+          }
+        ],
+        "expected_result": "\"Kullanıcı adı veya parola hatalı\" mesajı gösterilir ve giriş yapılmaz",
+        "tags": [
+          "AI-generated"
+        ]
+      }
+    ]
+  }
+}

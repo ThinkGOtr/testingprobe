@@ -339,6 +339,12 @@ FailureToFix(run_id)
 - **`locators.ts` saf veri:** `export const cart = { addToCart: { testId: 'add-to-cart', role: 'button', name: 'Sepete ekle', intent: 'Ürün kartında sepete ekleme butonu' } } as const;`
 - **Aday üretimi (LLM'siz):** aria snapshot `data-testid` içermediği için testId DOM'dan okunur: toolchain-worker kırılan commit'te uygulamayı başlatır, kırılan testi hata adımına kadar koşturur ve `getByRole(role, { name }).getAttribute('data-testid')` değerini okur (alternatif kaynak: `trace.zip` içindeki DOM snapshot'ı). Rol + ad eşleşmesi 0 veya birden fazla eleman verirse öneri üretilmez, insana (veya LLM yorumuna) düşer. `browser_generate_locator` yalnızca çapraz kontrol.
 - **Doğrulama:** aday, son yeşil koşudaki aria snapshot'ının `role + name` değerleriyle eşleşmeli (yanlış butona "onarmayı" önler).
+- **Kapsam (`within`):** aynı rol + ad sayfada birden çok kez geçiyorsa (ör. her ürün kartında "Sepete ekle") locator metadata'sı
+  kapsayıcının testId önekini `within` alanında taşır (`within: 'product-card-'`). Aday üretimi `scope_test_id`
+  (`within` + başarısız adımdaki ürün kodu, ör. `product-card-P-001`) ile yalnızca o kapsayıcıdaki eşleşmeleri sayar;
+  kapsam yokken çoklu eşleşme yine öneri üretmez. `within` onarımda değiştirilemez (AST koruması `field_changed`).
+  demo-app `tests/locators.spec.ts`, `within`'siz çoklu eşleşen her adlı locator'ı reddeder.
+- **PR dalı ve etiket:** `tp/repair-<anahtar>` + `tp-repair` etiketi (CI AST koruması onarım modunu buna göre seçer).
 - **AST koruması:** değişen dosyalar yalnızca `pages/**/locators.ts`; anahtar kümesi, `role`, `name`, `intent` değişmemiş; yalnızca ilgili `testId` string değeri değişmiş. Aynı kontrol CI'da zorunlu check.
 - **PR:** yerel kontrol **etkilenen tüm testlerde** yeşilse (AI'ın ürettikleri ve elle yazılmış olanlar) bot açar; insan onayı zorunlu.
 - **Birim testleri:** 0 eşleşme, çoklu eşleşme, anahtar/niyet değişikliği denemesi, test dosyasına dokunan yama.
@@ -451,12 +457,12 @@ Tek doğruluk kaynağı repo kökündeki `docker-compose.yml`'dir; ayrıntılar 
 | `core-worker` | çekirdek imajı | — | core-net | `python -m tp_core.worker.healthcheck` |
 | `toolchain-worker` | toolchain imajı | — | core-net, runner-net | `/health` :8100 (node, Playwright sürümü) |
 | `test-runner` | toolchain imajı | — | demo-net, runner-net | `/health` :8200 |
-| `playwright-mcp` | toolchain imajı, `@playwright/mcp` 0.0.83 (playwright-core 1.64.1'e sabit), `--headless --browser chromium --isolated --caps=testing --allowed-origins http://demo-app-web:8080` | 8931 | core-net, demo-net | TCP 8931 |
+| `playwright-mcp` | toolchain imajı, `@playwright/mcp` 0.0.83 (playwright-core 1.64.1'e sabit), `--headless --browser chromium --isolated --caps=testing --allowed-origins http://demo-app-web:8080` | 8931 (host'a açılmaz) | agent-net, mcp-net | TCP 8931 |
 | `review-portal` | React + Vite → nginx (`/api/` → core-api) | 8080 | core-net | `/health` |
 | `demo-app-api` | FastAPI | — | data-net, demo-net | `/health` (DB) |
-| `demo-app-web` | React + Vite → nginx (`/api/` → demo-app-api) | 8081 | core-net, demo-net | `/health` |
+| `demo-app-web` | React + Vite → nginx (`/api/` → demo-app-api) | 8081 | core-net, demo-net, agent-net | `/health` |
 
-- **Ağlar:** `data-net`, `demo-net`, `runner-net` `internal: true`. test-runner postgres'i, core-api'yi ve interneti göremez (`make security-check` doğrular).
+- **Ağlar:** `data-net`, `demo-net`, `agent-net`, `runner-net`, `mcp-net` `internal: true`. test-runner postgres'i, core-api'yi, playwright-mcp'yi ve interneti göremez; ajan tarayıcısı (playwright-mcp, `agent-net` + `mcp-net`) yalnızca demo-app-web'e ulaşır (`make security-check` 2 ve 7 doğrular; ayrıntı MIMARI-SOZLESME §6).
 - **Toolchain imajı:** `mcr.microsoft.com/playwright:v<.playwright-version>-noble@sha256:…`; Playwright sürümü tek kaynaktan, uyuşmazlıkta build ve healthcheck başarısız.
 - **Başlatma sırası:** `depends_on: condition: service_healthy`; `make up` = önkoşul kontrolü + `docker compose up -d --build --wait`.
 - **Kaynak sınırları:** toplam ≤ ~9,6 GB (test-runner 3 GB, toolchain-worker ve MCP 2'şer GB, postgres 1 GB); Playwright içeren servislerde `shm_size: 1gb`.

@@ -1,10 +1,12 @@
 {
   "name": "demo-app-web",
   "private": true,
-  "version": "0.1.0",
-  "description": "Bayi Sipariş Portalı örnek uygulaması — web iskeleti (F0)",
+  "version": "0.2.0",
+  "description": "Bayi Sipariş Portalı örnek uygulaması — web arayüzü",
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -15,6 +17,7 @@
     "react-dom": "18.3.1"
   },
   "devDependencies": {
+    "@types/node": "22.20.5",
     "@types/react": "18.3.31",
     "@types/react-dom": "18.3.7",
     "@vitejs/plugin-react": "6.1.2",

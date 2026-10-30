@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="muted"><a href="/">Kayıtlar</a> / {{ it.key }}</p>
+<h1><span data-testid="issue-key">{{ it.key }}</span> · {{ it.summary }}</h1>
+{% if error %}<div class="alert err" role="alert">{{ error }}</div>{% endif %}
+
+<div class="grid">
+  <div>
+    <section class="panel desc" id="aciklama">
+      <h2>Açıklama</h2>
+      {% if it.description %}{{ it.description | adf }}{% else %}<p class="muted">Açıklama yok.</p>{% endif %}
+    </section>
+
+    {% if it.xray %}
+    <section class="panel" id="adimlar">
+      <h2>Test adımları <span class="muted">(Xray · {{ it.xray.testtype }})</span></h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Adım</th><th>Veri</th><th>Beklenen</th></tr></thead>
+          <tbody>
+          {% for s in it.xray.steps %}
+            <tr><td>{{ loop.index }}</td><td>{{ s.action }}</td><td>{{ s.data }}</td><td>{{ s.result }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    {% endif %}
+
+    <section class="panel" id="yorumlar">
+      <h2>Yorumlar ({{ it.comments | length }})</h2>
+      {% for c in it.comments %}
+        <div class="comment">
+          <div class="muted"><strong>{{ c.author | kisi }}</strong> · {{ c.created | zaman }}</div>
+          <div class="desc">{{ c.body | adf }}</div>
+        </div>
+      {% else %}
+        <p class="muted">Henüz yorum yok.</p>
+      {% endfor %}
+    </section>
+
+    <section class="panel" id="po">
+      <h2>PO olarak</h2>
+      {% if po_logged_in %}
+      <p class="muted">Bu bölümdeki işlemler <strong>{{ po | kisi }}</strong> ({{ po }}) adına kaydedilir.</p>
+      <form method="post" action="/browse/{{ it.key }}/comment">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label for="po-yorum" class="muted">Yorum yaz</label>
+        <textarea id="po-yorum" name="body" required placeholder="Sorulara cevabınızı yazın"></textarea>
+        <p><button type="submit">Yorumu gönder</button></p>
+      </form>
+      {% if approval_stale %}
+      <div class="alert err" role="status" data-testid="approval-stale">Onay eski: içerik onaydan sonra değişti. Yeni içeriği okuyup yeniden onaylayın.</div>
+      <form method="post" action="/browse/{{ it.key }}/reapprove" class="row">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button type="submit" data-testid="reapprove">Yeniden onayla</button>
+      </form>
+      {% else %}
+      <form method="post" action="/browse/{{ it.key }}/labels" class="row">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="action" value="add">
+        <input type="hidden" name="label" value="tp-po-approved">
+        <button type="submit" {% if 'tp-po-approved' in it.labels %}disabled{% endif %}>Onayla (tp-po-approved ekle)</button>
+      </form>
+      {% endif %}
+      <details>
+        <summary class="muted">Açıklamayı ve kabul kriterlerini düzenle</summary>
+        <form method="post" action="/browse/{{ it.key }}/description">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <p class="muted">Başlık için <code>### Kabul Kriterleri</code>, madde için <code>- AC1: ...</code> yazın.</p>
+          <textarea name="text" rows="12">{{ editable }}</textarea>
+          <p><button type="submit" class="secondary">Açıklamayı kaydet</button></p>
+        </form>
+      </details>
+      {% else %}
+      <p class="muted">Yorum yazmak, onay etiketi koymak ve açıklamayı düzenlemek PO onayıdır; önce
+        <a href="/giris?sonra={{ here | urlencode }}" data-testid="po-giris-detay">PO olarak giriş yapın</a>.</p>
+      {% endif %}
+    </section>
+
+    <section class="panel" id="gecmis">
+      <h2>Geçmiş</h2>
+      {% if history %}
+      <ul class="history">
+        {% for h in history %}
+          <li><strong>{{ h.author | kisi }}</strong> <span class="muted">· {{ h.created | zaman }}</span>
+            <ul>{% for ch in h.changes %}<li>{{ ch }}</li>{% endfor %}</ul>
+          </li>
+        {% endfor %}
+      </ul>
+      {% else %}<p class="muted">Değişiklik yok.</p>{% endif %}
+    </section>
+  </div>
+
+  <aside>
+    <section class="panel">
+      <h2>Ayrıntılar</h2>
+      <dl>
+        <dt>Tür</dt><dd>{{ it.issuetype }}</dd>
+        <dt>Durum</dt><dd><span class="status {% if it.status == 'Done' %}done{% elif it.status == 'In Progress' %}prog{% endif %}">{{ {'To Do': 'Yapılacak', 'In Progress': 'Sürüyor', 'Done': 'Tamamlandı'}.get(it.status, it.status) }}</span></dd>
+        <dt>Raporlayan</dt><dd>{{ it.reporter | kisi }}</dd>
+        <dt>Oluşturma</dt><dd>{{ it.created | zaman }}</dd>
+        <dt>Güncellenme</dt><dd>{{ it.updated | zaman }}</dd>
+      </dl>
+    </section>
+
+    <section class="panel" id="etiketler">
+      <h2>Etiketler</h2>
+      {% for lb in it.labels %}
+        {% if po_logged_in %}
+        <form method="post" action="/browse/{{ it.key }}/labels" style="display:inline">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="action" value="remove">
+          <input type="hidden" name="label" value="{{ lb }}">
+          <span class="chip">{{ lb }} <button type="submit" class="link" aria-label="{{ lb }} etiketini kaldır" title="Kaldır">×</button></span>
+        </form>
+        {% else %}<span class="chip">{{ lb }}</span>{% endif %}
+      {% else %}
+        <p class="muted">Etiket yok.</p>
+      {% endfor %}
+      {% if po_logged_in %}
+      <form method="post" action="/browse/{{ it.key }}/labels" class="row" style="margin-top:10px">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="action" value="add">
+        <input type="text" name="label" aria-label="Yeni etiket" placeholder="yeni-etiket" required pattern="\S+">
+        <button type="submit" class="secondary">Ekle</button>
+      </form>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <h2>Bağlantılar</h2>
+      {% for rel, other in links %}
+        <div>{{ rel }} <a href="/browse/{{ other.key }}">{{ other.key }}</a> <span class="muted">{{ other.fields.summary }}</span></div>
+      {% else %}
+        <p class="muted">Bağlantı yok.</p>
+      {% endfor %}
+    </section>
+  </aside>
+</div>
+{% endblock %}

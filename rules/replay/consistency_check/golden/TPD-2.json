@@ -1,0 +1,47 @@
+{
+  "kind": "agent",
+  "purpose": "consistency_check",
+  "golden": "TPD-2",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı; canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Story kabul kriteri içermez (ac_missing); kodda tarih filtresi yoktur. Story yeni bir özellik istediği için fark engelleyici değil, uyarıdır.",
+  "steps": [
+    {
+      "tool": "search_code",
+      "args": {
+        "query": "/orders"
+      },
+      "result_summary": "api/src/demoapp_api/main.py",
+      "allowed": true
+    },
+    {
+      "tool": "get_file_contents",
+      "args": {
+        "path": "api/src/demoapp_api/main.py"
+      },
+      "result_summary": "list_orders(s, bayi): bayinin siparişleri id'ye göre azalan; tarih parametresi yok",
+      "allowed": true
+    }
+  ],
+  "output": {
+    "findings": [
+      {
+        "id": "F1",
+        "type": "missing_in_code",
+        "doc_ref": "Açıklama",
+        "claim": "Bayi, sipariş geçmişini tarih aralığına göre filtreleyebilmelidir",
+        "observed": "Sipariş listesi ucu tarih parametresi almıyor; bayinin tüm siparişleri döner. Story henüz geliştirilmemiş bir özelliği tanımlıyor; bu bir doküman hatası değil",
+        "evidence": [
+          {
+            "kind": "code",
+            "repo": "demo-app",
+            "path": "api/src/demoapp_api/main.py",
+            "line": 429,
+            "snippet": "def list_orders(s: SessionDep, bayi: BayiDep) -> list[dict]:"
+          }
+        ],
+        "severity": "warning",
+        "suggested_doc_text": null
+      }
+    ],
+    "notes": "Story'de kabul kriteri yok; ölçülebilir iddia yalnızca açıklamada. Kabul kriterleri ön incelemede PO'ya soruldu. Kod ve veri yalnızca salt okuma araçlarıyla incelendi."
+  }
+}

@@ -1,0 +1,75 @@
+# saucectl yapılandırması — aynı onaylı Playwright testleri Sauce Labs bulut Chromium'unda (AI'sız).
+# Çalıştırma: demo-app/ dizininden `saucectl run --config .sauce/config.yml` (CI: .github/workflows/ci.yml
+# "sauce" job'u). Yollar saucectl'in çalıştığı dizine (demo-app/) görelidir; local-forge modunda
+# demo-app/ repo köküdür, yapı aynıdır.
+#
+# Uygulama Sauce VM'inde DEĞİL, CI runner'ında çalışır; tarayıcı ona Sauce Connect tüneliyle ulaşır.
+# Tünel adı, bölge ve BASE_URL CI'da komut satırından verilir (--tunnel-name, --region, -e).
+apiVersion: v1alpha
+kind: playwright
+
+sauce:
+  region: us-west-1          # CI'da --region ile ezilir (repo değişkeni SAUCE_REGION)
+  concurrency: 1             # Hesap: 1–2 eşzamanlı oturum (TEKNIK-TASARIM §0-13)
+  retries: 0                 # Test düzeyinde retry aşağıda (params.retries), CI ile aynı: 1
+  sauceignore: .sauce/.sauceignore
+  metadata:
+    tags:
+      - testing-probe
+      - demo-app
+      - ci
+  # tunnel: CI'da --tunnel-name / --tunnel-timeout ile verilir (şema, blok varsa adı zorunlu kılar).
+
+# Sauce'ta desteklenen en yeni Playwright sürümü. Repo .playwright-version = 1.64.1; Sauce bu sürümü
+# henüz desteklemediği için (saucectl v0.216.4 şeması: en fazla 1.61.1) burada sabit 1.61.1 kullanılır.
+# Sauce 1.64.x'i desteklediğinde `version: package.json` yapılmalıdır (.github/CI.md "Sauce").
+playwright:
+  version: 1.61.1
+  configFile: playwright.config.ts
+
+# Testlerin bulunduğu kök (demo-app/ altındaki e2e projesi).
+rootDir: e2e
+
+# Sauce kendi Playwright'ını kurar; package-lock'taki @playwright/test (1.64.1) kurulmaz.
+# Raporlayıcılar playwright.config.ts'te kullanıldığı için burada açıkça sabitlenir.
+npm:
+  packages:
+    allure-playwright: 3.14.0
+    "@axe-core/playwright": 4.14.0
+
+env:
+  CI: "true"
+  # Uygulama CI runner'ında koşar; config webServer'ı başlatmamalı (demo-app şeridi: TP_EXTERNAL_SERVER).
+  TP_EXTERNAL_SERVER: "1"
+
+defaults:
+  timeout: 15m
+
+suites:
+  - name: "Chromium — Windows 11"
+    platformName: "Windows 11"
+    screenResolution: "1920x1080"
+    testMatch: ["tests/.*\\.spec\\.ts"]
+    params:
+      browserName: chromium
+      project: chromium
+      headless: true
+      retries: 1
+      workers: 1
+
+artifacts:
+  download:
+    when: always
+    match:
+      - "*"
+    directory: results/sauce/artifacts
+
+reporters:
+  spotlight:
+    enabled: true
+  junit:
+    enabled: true
+    filename: results/sauce/saucectl-junit.xml
+  json:
+    enabled: true
+    filename: results/sauce/saucectl-report.json

@@ -1,0 +1,703 @@
+# CI — AI'sız (Constitution II, TEKNIK-TASARIM §8.5).
+#
+# Bu workflow'da model anahtarı, MCP sunucusu veya ajan bağımlılığı YOKTUR; yalnızca onaylanmış,
+# deterministik test kodu koşar. Test edilen uygulama GitHub modunda bu monorepo'nun demo-app/
+# dizinidir (local-forge modunda aynı dosyalar repo köküdür).
+#
+# Zorunlu check'ler (ruleset: scripts/github-ruleset.sh): test-local, ast-guard, semgrep.
+# Workflow düzeyinde `paths` filtresi YOKTUR: atlanan zorunlu check PR'ı bekletir. Değişiklik
+# tespiti `changes` job'unda yapılır; ilgisiz PR'da job'lar "no-op, başarılı" çıkar.
+# Ayrıntılar: .github/CI.md
+name: ci
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  push:
+    branches: [main]
+  schedule:
+    # Gece koşusu: 02:00 UTC = 05:00 TR
+    - cron: "0 2 * * *"
+  repository_dispatch:
+    types: [deploy]
+  workflow_dispatch:
+    inputs:
+      tetik:
+        description: "Tetik türü (sonuç kaydında görünür)"
+        type: choice
+        options: [manual, nightly, deploy]
+        default: manual
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  APP_ROOT: demo-app
+  E2E_ROOT: demo-app/e2e
+  NODE_VERSION: "22"
+  UV_VERSION: "0.8.24"
+  # Onarım PR'ları bu dal önekiyle (veya `tp-repair` etiketiyle) açılır → AST koruması repair modunda.
+  # Bot'un açtığı ve CASE_BRANCH_PREFIX ile başlamayan her PR da repair modundadır
+  # (scripts/github-ast-guard-mode.sh). Çekirdek sabitleriyle aynı olmalı.
+  REPAIR_BRANCH_PREFIX: tp/repair-
+  CASE_BRANCH_PREFIX: tp/case-
+
+jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run_tests: ${{ steps.decide.outputs.run_tests }}
+      pages: ${{ steps.decide.outputs.pages }}
+      guard_tool: ${{ steps.decide.outputs.guard_tool }}
+      goldens: ${{ steps.decide.outputs.goldens }}
+      trigger: ${{ steps.decide.outputs.trigger }}
+    steps:
+      - name: Değişiklikleri tespit et (yalnızca PR)
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            app:
+              - 'demo-app/**'
+              - '.playwright-version'
+              - '.github/workflows/ci.yml'
+              - 'toolchain/Dockerfile'
+              - 'toolchain/package.json'
+              - 'toolchain/package-lock.json'
+              - 'scripts/github-demo-serve.sh'
+            pages:
+              - 'demo-app/e2e/pages/**'
+            guard_tool:
+              - 'toolchain/ast-guard/**'
+              - 'scripts/github-ast-guard-mode.sh'
+            goldens:
+              - 'demo-app/**'
+              - 'rules/**'
+              - 'docs/DEMO-VERISI.md'
+              - '.github/golden-drift/**'
+
+      - name: Karar
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          APP: ${{ steps.filter.outputs.app }}
+          PAGES: ${{ steps.filter.outputs.pages }}
+          GUARD_TOOL: ${{ steps.filter.outputs.guard_tool }}
+          GOLDENS: ${{ steps.filter.outputs.goldens }}
+          DISPATCH_TETIK: ${{ inputs.tetik }}
+        run: |
+          set -euo pipefail
+          case "$EVENT" in
+            pull_request)        trigger="pr" ;;
+            push)                trigger=push ;;
+            schedule)            trigger=nightly ;;
+            repository_dispatch) trigger=deploy ;;
+            workflow_dispatch)   trigger="${DISPATCH_TETIK:-manual}" ;;
+            *)                   trigger="$EVENT" ;;
+          esac
+          if [ "$EVENT" = "pull_request" ]; then
+            run_tests="${APP:-false}"; pages="${PAGES:-false}"; guard_tool="${GUARD_TOOL:-false}"
+            goldens="${GOLDENS:-false}"
+          else
+            # push / gece / deploy / elle: testler her zaman koşar.
+            run_tests=true; pages=true; guard_tool=false; goldens=true
+          fi
+          {
+            echo "run_tests=$run_tests"
+            echo "goldens=$goldens"
+            echo "pages=$pages"
+            echo "guard_tool=$guard_tool"
+            echo "trigger=$trigger"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### Değişiklik tespiti"
+            echo "| tetik | testler | pages/** | ast-guard aracı |"
+            echo "|---|---|---|---|"
+            echo "| \`$trigger\` | $run_tests | $pages | $guard_tool |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  test-local:
+    # Zorunlu check. Yerel (GitHub runner) Chromium; Sauce job'unun yedeği.
+    name: test-local
+    needs: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      # Repo değişkeni: ghcr.io/thinkgotr/tp-toolchain@sha256:<digest> (build-toolchain.yml çıktısı).
+      # Boşsa runner üzerinde aynı sürümlerle kurulum yapılır (bkz. .github/CI.md "test-local").
+      TOOLCHAIN_IMAGE: ${{ vars.TP_TOOLCHAIN_IMAGE }}
+      RUN_TESTS: ${{ needs.changes.outputs.run_tests }}
+      TP_TRIGGER: ${{ needs.changes.outputs.trigger }}
+      TP_RESULTS_DIR: ${{ github.workspace }}/results
+      CI: "true"
+    steps:
+      - name: No-op (uygulama değişmedi)
+        if: env.RUN_TESTS != 'true'
+        run: echo "demo-app/** değişmedi; test-local no-op (başarılı)." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout
+        if: env.RUN_TESTS == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # deploy tetiğinde client_payload.ref (yoksa varsayılan dal)
+          ref: ${{ github.event.client_payload.ref || '' }}
+
+      - name: Sürüm tutarlılığı (.playwright-version ↔ e2e/package.json)
+        if: env.RUN_TESTS == 'true'
+        run: |
+          set -euo pipefail
+          want="$(tr -d '[:space:]' < .playwright-version)"
+          have="$(jq -r '.devDependencies["@playwright/test"] // .dependencies["@playwright/test"] // empty' "$E2E_ROOT/package.json")"
+          echo "PLAYWRIGHT_VERSION=$want" >> "$GITHUB_ENV"
+          if [ "$want" != "$have" ]; then
+            echo "::error file=$E2E_ROOT/package.json::@playwright/test ($have) != .playwright-version ($want)"
+            exit 1
+          fi
+          if [ ! -f "$APP_ROOT/ci/run-checks.sh" ]; then
+            echo "::error::$APP_ROOT/ci/run-checks.sh bulunamadı (demo-app şeridi sağlar)"
+            exit 1
+          fi
+          mkdir -p "$TP_RESULTS_DIR"
+          jq -n --arg trigger "$TP_TRIGGER" --arg sha "$GITHUB_SHA" --arg ref "$GITHUB_REF" \
+                --arg event "$GITHUB_EVENT_NAME" --arg run_id "$GITHUB_RUN_ID" \
+                --arg attempt "$GITHUB_RUN_ATTEMPT" --arg pw "$want" --arg image "${TOOLCHAIN_IMAGE:-}" \
+                '{kaynak:"github", tetik:$trigger, sha:$sha, ref:$ref, event:$event, run_id:$run_id,
+                  run_attempt:$attempt, playwright:$pw, toolchain_image:$image}' \
+                > "$TP_RESULTS_DIR/ci-meta.json"
+
+      # --- Yol A: toolchain imajı (digest ile sabit) — yerel kontrol ile aynı imaj ---------------
+      - name: GHCR girişi (toolchain imajı)
+        if: env.RUN_TESTS == 'true' && env.TOOLCHAIN_IMAGE != ''
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Toolchain imajı uv içermez (toolchain/Dockerfile: uv yalnızca build sırasında bağlanır), ama
+      # run-checks.sh API webServer'ı için `uv sync` / `uv run` ister. Runner'daki sabit sürümlü uv
+      # imaja salt-okunur bağlanır; Python imajdaki /usr/bin/python3.12'dir (UV_PYTHON).
+      # UV_PROJECT_ENVIRONMENT imajda toolchain venv'ini gösterir: demo-app API'si onu EZMESİN diye
+      # kendi .venv'ine yönlendirilir.
+      - name: uv kurulumu (toolchain imajına bağlanacak)
+        if: env.RUN_TESTS == 'true' && env.TOOLCHAIN_IMAGE != ''
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+
+      - name: Testler (toolchain imajında)
+        if: env.RUN_TESTS == 'true' && env.TOOLCHAIN_IMAGE != ''
+        run: |
+          set -euo pipefail
+          case "$TOOLCHAIN_IMAGE" in
+            *@sha256:*) ;;
+            *) echo "::error::TP_TOOLCHAIN_IMAGE digest ile sabitlenmeli (…@sha256:…): $TOOLCHAIN_IMAGE"; exit 1 ;;
+          esac
+          uv_bin="$(command -v uv)"
+          docker_args=(
+            --rm --user root --network host
+            -e CI -e TP_TRIGGER -e TP_RESULTS_DIR=/work/results -e TP_APP_ROOT=/work/demo-app
+            -e UV_PROJECT_ENVIRONMENT=/work/demo-app/api/.venv -e UV_CACHE_DIR=/tmp/uv-cache
+            -v "$uv_bin:/usr/local/bin/uv:ro"
+            -v "$GITHUB_WORKSPACE:/work" -w /work
+          )
+          # Ön kontrol: imajda uv (bağlanan) + Python 3.12 + node çalışıyor mu? Açık hata ile dur.
+          if ! docker run "${docker_args[@]}" "$TOOLCHAIN_IMAGE" \
+               bash -c 'uv --version && "$UV_PYTHON" --version && node --version'; then
+            echo "::error::Toolchain imajında uv/Python/node çalışmıyor ($TOOLCHAIN_IMAGE). TP_TOOLCHAIN_IMAGE repo değişkenini boşaltın (Yol B) veya imajı düzeltin."
+            exit 1
+          fi
+          docker run "${docker_args[@]}" "$TOOLCHAIN_IMAGE" \
+            bash demo-app/ci/run-checks.sh --retries=1
+
+      # --- Yol B: imaj yoksa runner üzerinde aynı sürümler ----------------------------------------
+      - name: Node kurulumu
+        if: env.RUN_TESTS == 'true' && env.TOOLCHAIN_IMAGE == ''
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            demo-app/e2e/package-lock.json
+            demo-app/web/package-lock.json
+
+      - name: uv kurulumu
+        if: env.RUN_TESTS == 'true' && env.TOOLCHAIN_IMAGE == ''
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: demo-app/api/uv.lock
+
+      - name: Playwright tarayıcı önbelleği
+        if: env.RUN_TESTS == 'true' && env.TOOLCHAIN_IMAGE == ''
+        id: pw-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.playwright-version') }}-chromium
+
+      - name: Chromium kurulumu (Playwright ${{ env.PLAYWRIGHT_VERSION }})
+        if: env.RUN_TESTS == 'true' && env.TOOLCHAIN_IMAGE == ''
+        env:
+          CACHE_HIT: ${{ steps.pw-cache.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          if [ "$CACHE_HIT" = "true" ]; then
+            npx --yes "playwright@${PLAYWRIGHT_VERSION}" install-deps chromium
+          else
+            npx --yes "playwright@${PLAYWRIGHT_VERSION}" install --with-deps chromium
+          fi
+
+      - name: Testler (runner üzerinde)
+        if: env.RUN_TESTS == 'true' && env.TOOLCHAIN_IMAGE == ''
+        env:
+          TP_APP_ROOT: ${{ github.workspace }}/demo-app
+        run: bash demo-app/ci/run-checks.sh --retries=1
+
+      # --- Sonuçlar -----------------------------------------------------------------------------
+      - name: Özet
+        if: always() && env.RUN_TESTS == 'true'
+        run: |
+          set -uo pipefail
+          json=""
+          for f in "$TP_RESULTS_DIR/results.json" "$E2E_ROOT/results/results.json"; do
+            [ -f "$f" ] && { json="$f"; break; }
+          done
+          {
+            echo "### test-local (tetik: \`$TP_TRIGGER\`)"
+            if [ -n "$json" ]; then
+              jq -r '.stats // {} | "| beklenen | beklenmeyen | flaky | atlanan | süre (sn) |\n|---|---|---|---|---|\n| \(.expected // 0) | \(.unexpected // 0) | \(.flaky // 0) | \(.skipped // 0) | \(((.duration // 0) / 1000) | floor) |"' "$json"
+            else
+              echo "results.json bulunamadı."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Artefaktlar
+        if: always() && env.RUN_TESTS == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          # Çekirdek bu adla arar (GitHub API): test-local-results
+          name: test-local-results
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            results/ci-meta.json
+            results/junit.xml
+            results/results.json
+            results/allure-results/
+            results/html/
+            results/**/trace.zip
+            demo-app/e2e/results/junit.xml
+            demo-app/e2e/results/results.json
+            demo-app/e2e/results/allure-results/
+            demo-app/e2e/results/html/
+            demo-app/e2e/results/**/trace.zip
+
+  ast-guard:
+    # Zorunlu check (Constitution VI). PR dışındaki olaylarda no-op.
+    name: ast-guard
+    needs: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      IS_PR: ${{ github.event_name == 'pull_request' }}
+      PAGES_CHANGED: ${{ needs.changes.outputs.pages }}
+      GUARD_TOOL_CHANGED: ${{ needs.changes.outputs.guard_tool }}
+      HEAD_REF: ${{ github.head_ref }}
+      HAS_REPAIR_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'tp-repair') }}
+      # Bot tespiti: GitHub App PR'larında user.type = "Bot"; ek olarak repo değişkeni TP_BOT_LOGINS
+      # (virgülle ayrılmış giriş adları; App adı "tp-bot" ise "tp-bot[bot]" de eşleşir).
+      PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+      PR_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+      TP_BOT_LOGINS: ${{ vars.TP_BOT_LOGINS }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Checkout (PR, tam geçmiş)
+        if: env.IS_PR == 'true' || env.GUARD_TOOL_CHANGED == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # Koruma aracı ve mod seçimi PR'ın kendisinden değil, taban daldan çalıştırılır: PR aracı veya
+      # mod betiğini değiştirerek kontrolü atlatamaz. Taban dalda yoksa (ilk kurulum) PR'daki sürüm
+      # uyarıyla kullanılır.
+      - name: Checkout (taban daldaki ast-guard + mod betiği)
+        if: env.IS_PR == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .guard-base
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /toolchain/ast-guard/
+            /scripts/github-ast-guard-mode.sh
+
+      - name: Mod
+        id: mode
+        run: |
+          set -euo pipefail
+          script=.guard-base/scripts/github-ast-guard-mode.sh
+          if [ "$IS_PR" = "true" ] && [ ! -f "$script" ]; then
+            echo "::warning::Taban dalda mod betiği yok; PR'daki sürüm kullanılıyor (ilk kurulum)."
+            script=scripts/github-ast-guard-mode.sh
+          fi
+          if [ "$IS_PR" != "true" ]; then
+            # PR dışı olaylarda checkout yok; karar sabit: no-op.
+            printf 'mode=pr\nrun=false\nreason=PR değil\n' | tee -a "$GITHUB_OUTPUT"
+          else
+            bash "$script"
+          fi
+          {
+            echo "### AST koruması: mod seçimi"
+            grep -E '^(mode|run|reason)=' "$GITHUB_OUTPUT" | tail -n 3 | sed 's/^/- /'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Node kurulumu
+        if: steps.mode.outputs.run == 'true' || env.GUARD_TOOL_CHANGED == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: ast-guard birim testleri (araç değiştiyse)
+        if: env.GUARD_TOOL_CHANGED == 'true'
+        working-directory: toolchain/ast-guard
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm test
+
+      - name: ast-guard derle
+        if: steps.mode.outputs.run == 'true'
+        id: tool
+        run: |
+          set -euo pipefail
+          dir=.guard-base/toolchain/ast-guard
+          if [ ! -f "$dir/package-lock.json" ]; then
+            echo "::warning::Taban dalda ast-guard yok; PR'daki sürüm kullanılıyor (ilk kurulum)."
+            dir=toolchain/ast-guard
+          fi
+          (cd "$dir" && npm ci --ignore-scripts --no-audit --no-fund && npm run build)
+          echo "cli=$GITHUB_WORKSPACE/$dir/dist/src/cli.js" >> "$GITHUB_OUTPUT"
+
+      - name: AST koruması (${{ steps.mode.outputs.mode }})
+        if: steps.mode.outputs.run == 'true'
+        env:
+          MODE: ${{ steps.mode.outputs.mode }}
+          CLI: ${{ steps.tool.outputs.cli }}
+        run: |
+          set -uo pipefail
+          base="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
+          node "$CLI" --repo . --root "$E2E_ROOT" --base "$base" --head "$HEAD_SHA" \
+            --mode "$MODE" --out ast-guard-report.json --quiet
+          code=$?
+          {
+            echo "### AST koruması (mod: \`$MODE\`)"
+            if [ -f ast-guard-report.json ]; then
+              jq -r '.summary // .error' ast-guard-report.json
+              jq -r 'if (.violations // []) | length > 0 then "\n| kod | dosya | açıklama |\n|---|---|---|", (.violations[] | "| `\(.code)` | `\(.file)`\(if .line then ":\(.line)" else "" end) | \(.message | gsub("\\|"; "\\\\|")) |") else empty end' ast-guard-report.json
+              jq -r 'if (.testid_changes // []) | length > 0 then "\n**Değişen testId'"'"'ler**\n\n| dosya | giriş | önce | sonra |\n|---|---|---|---|", (.testid_changes[] | "| `\(.file)` | `\(.entry)` | `\(.before)` | `\(.after)` |") else empty end' ast-guard-report.json
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$code"
+
+      - name: Rapor artefaktı
+        if: always() && steps.mode.outputs.run == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ast-guard-report
+          path: ast-guard-report.json
+          retention-days: 14
+          if-no-files-found: ignore
+
+  semgrep:
+    # SAST (Constitution: Semgrep her PR'da koşar). Token/hesap yok; kayıt defteri kuralları.
+    name: semgrep
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    container:
+      image: semgrep/semgrep:1.183.0@sha256:2e45517a85e13a9cca14a2a00df6bb48affd66b8ebfae1b0991cd57578362fb0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Semgrep (p/default + p/typescript)
+        # Kapsam: test edilen uygulama (demo-app/) ve CI aracı (toolchain/ast-guard/).
+        run: |
+          semgrep scan --config p/default --config p/typescript \
+            --metrics=off --error --disable-version-check \
+            --json-output=semgrep.json \
+            demo-app toolchain/ast-guard
+
+      - name: Semgrep raporu
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: semgrep-report
+          path: semgrep.json
+          retention-days: 14
+          if-no-files-found: ignore
+
+  demo-serve-smoke:
+    # Sauce job'unun uygulama başlatma yolunu (scripts/github-demo-serve.sh) kimlik gerektirmeden
+    # doğrular: API + vite preview ayağa kalkar, /api/health proxy üzerinden 200, izinli Host (tp-demo.test)
+    # kabul, izinsiz Host 403. Zorunlu check değildir; Sauce kimliği eklenmeden önce kırılmayı gösterir.
+    name: demo-serve-smoke
+    needs: changes
+    if: needs.changes.outputs.run_tests == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.client_payload.ref || '' }}
+
+      - name: Node kurulumu
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: demo-app/web/package-lock.json
+
+      - name: uv kurulumu
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: demo-app/api/uv.lock
+
+      - name: Duman testi
+        env:
+          PORT: "8081"
+          TP_ALLOWED_HOSTS: tp-demo.test
+        run: bash scripts/github-demo-serve.sh --smoke
+
+  golden-drift:
+    # AI'sız, deterministik, SAF VERİ: rules/replay golden kayıtlarının kanıt satırları, case
+    # beklentileri ve page object eşlemeleri demo-app kaynağıyla hâlâ tutarlı mı (demo-app
+    # düzenlemesi golden'ı sessizce eskitmesin). Anayasa II: core venv'i KURULMAZ; ortam yalnızca
+    # .github/golden-drift/requirements.txt (pytest + jsonschema + pyyaml). tp_core.gateway,
+    # anthropic ve mcp yoktur; ajan döngüsü (test_consistency_flow.py) yerel birim paketinde kalır.
+    name: golden-drift
+    needs: changes
+    if: needs.changes.outputs.goldens == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      UV_PYTHON: "3.12"
+      UV_NO_PROJECT: "1"
+    defaults:
+      run:
+        working-directory: .github/golden-drift
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.client_payload.ref || '' }}
+
+      - name: uv kurulumu
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: .github/golden-drift/requirements.txt
+
+      - name: Ajan bağımlılığı yok (anayasa II)
+        run: |
+          set -euo pipefail
+          uv run --no-project --with-requirements requirements.txt python - <<'PY'
+          import importlib.util
+          import sys
+
+          found = [m for m in ("anthropic", "mcp", "tp_core", "claude_agent_sdk")
+                   if importlib.util.find_spec(m) is not None]
+          if found:
+              sys.exit(f"golden-drift ortamında ajan bağımlılığı var: {found}")
+          print("ajan bağımlılığı yok: anthropic, mcp, tp_core, claude_agent_sdk içe aktarılamıyor")
+          PY
+
+      - name: Golden sürüklenme testleri
+        run: uv run --no-project --with-requirements requirements.txt pytest -q
+
+  sauce:
+    # Zorunlu DEĞİL (continue-on-error): Sauce veya tünel hatası PR'ı kilitlemez (§8.5).
+    name: sauce
+    needs: changes
+    if: needs.changes.outputs.run_tests == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    continue-on-error: true
+    env:
+      SAUCE_USERNAME: ${{ secrets.SAUCE_USERNAME }}
+      SAUCE_ACCESS_KEY: ${{ secrets.SAUCE_ACCESS_KEY }}
+      # saucectl bölge adı: us-west-1 | eu-central-1 | us-east-4 (repo değişkeni SAUCE_REGION)
+      SAUCE_REGION: ${{ vars.SAUCE_REGION || 'us-west-1' }}
+      SAUCECTL_VERSION: v0.216.4
+      # Sauce VM'deki tarayıcı uygulamaya tünel üzerinden bu adla ulaşır; ad runner'da 127.0.0.1'e
+      # çözülür (Sauce Connect DNS'i runner tarafında çözer). localhost doğrudan kullanılmaz çünkü
+      # Chromium localhost'u proxy'den geçirmez.
+      APP_HOST: tp-demo.test
+      APP_PORT: "8081"
+      TP_TRIGGER: ${{ needs.changes.outputs.trigger }}
+    steps:
+      - name: Sauce kimliği var mı?
+        id: creds
+        run: |
+          if [ -n "$SAUCE_USERNAME" ] && [ -n "$SAUCE_ACCESS_KEY" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Sauce kimliği (SAUCE_USERNAME / SAUCE_ACCESS_KEY secret'ları) tanımlı değil; Sauce job'u atlandı. Yerel test-local job'u geçerlidir." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Checkout
+        if: steps.creds.outputs.enabled == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.client_payload.ref || '' }}
+
+      - name: Node kurulumu
+        if: steps.creds.outputs.enabled == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: demo-app/web/package-lock.json
+
+      - name: uv kurulumu
+        if: steps.creds.outputs.enabled == 'true'
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: demo-app/api/uv.lock
+
+      # Uygulama scripts/github-demo-serve.sh ile başlar (API + vite preview; TP_ALLOWED_HOSTS ile
+      # tp-demo.test Host başlığına izin verilir). Hazırlık /api/health ile ölçülür: /health SPA geri
+      # dönüşüyle her zaman 200 döner, API'nin ayakta olduğunu kanıtlamaz.
+      - name: Uygulamayı runner'da başlat (QA ortamı)
+        if: steps.creds.outputs.enabled == 'true'
+        run: |
+          set -euo pipefail
+          echo "127.0.0.1 $APP_HOST" | sudo tee -a /etc/hosts >/dev/null
+          # Test uçlarının (/test/*) koşu başına sırrı: API ve Sauce'taki testler aynı değeri alır.
+          token="$(openssl rand -hex 24)"
+          echo "::add-mask::$token"
+          echo "DEMOAPP_TEST_TOKEN=$token" >> "$GITHUB_ENV"
+          mkdir -p results/sauce
+          PORT="$APP_PORT" TP_ALLOWED_HOSTS="$APP_HOST" DEMOAPP_TEST_TOKEN="$token" \
+            nohup bash scripts/github-demo-serve.sh > results/sauce/serve.log 2>&1 &
+          for _ in $(seq 1 90); do
+            if curl -fsS "http://$APP_HOST:$APP_PORT/api/health" >/dev/null 2>&1; then
+              echo "Uygulama hazır: http://$APP_HOST:$APP_PORT"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Uygulama 180 sn içinde hazır olmadı"
+          tail -n 100 results/sauce/serve.log
+          exit 1
+
+      - name: Bölge eşlemesi
+        if: steps.creds.outputs.enabled == 'true'
+        id: region
+        run: |
+          case "$SAUCE_REGION" in
+            us-west-1)    sc=us-west ;;
+            eu-central-1) sc=eu-central ;;
+            us-east-4)    sc=us-east ;;
+            *) echo "::error::Desteklenmeyen SAUCE_REGION: $SAUCE_REGION"; exit 1 ;;
+          esac
+          echo "sc=$sc" >> "$GITHUB_OUTPUT"
+          echo "tunnel=tp-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
+      - name: Sauce Connect tüneli
+        if: steps.creds.outputs.enabled == 'true'
+        uses: saucelabs/sauce-connect-action@fc54c8b087f2b4b6d4ccc42a2d4bbc64795dfde2 # v3.0.0
+        with:
+          username: ${{ secrets.SAUCE_USERNAME }}
+          accessKey: ${{ secrets.SAUCE_ACCESS_KEY }}
+          region: ${{ steps.region.outputs.sc }}
+          tunnelName: ${{ steps.region.outputs.tunnel }}
+          proxyLocalhost: allow
+
+      - name: saucectl kurulumu
+        if: steps.creds.outputs.enabled == 'true'
+        uses: saucelabs/saucectl-run-action@283660aa934c02723c497efa151d582a3acc5801 # v4.5.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          saucectl-version: ${{ env.SAUCECTL_VERSION }}
+          skip-run: "true"
+
+      - name: Sauce'ta Playwright (Chromium)
+        if: steps.creds.outputs.enabled == 'true'
+        id: run
+        working-directory: demo-app
+        env:
+          TUNNEL: ${{ steps.region.outputs.tunnel }}
+          BUILD: ${{ github.repository }}#${{ github.run_number }} (${{ needs.changes.outputs.trigger }})
+        run: |
+          set -o pipefail
+          saucectl run --config .sauce/config.yml \
+            --region "$SAUCE_REGION" \
+            --tunnel-name "$TUNNEL" \
+            --tunnel-timeout 2m \
+            --build "$BUILD" \
+            -e "BASE_URL=http://$APP_HOST:$APP_PORT" \
+            -e "TP_EXTERNAL_SERVER=1" \
+            -e "DEMOAPP_TEST_TOKEN=$DEMOAPP_TEST_TOKEN" \
+            -e "TP_TRIGGER=$TP_TRIGGER" \
+            2>&1 | tee ../results/sauce/saucectl.log
+
+      - name: Sauce özeti (job linkleri)
+        if: always() && steps.creds.outputs.enabled == 'true'
+        run: |
+          set -uo pipefail
+          {
+            echo "### Sauce Labs (tetik: \`$TP_TRIGGER\`, bölge: \`$SAUCE_REGION\`)"
+            urls=""
+            if [ -f demo-app/results/sauce/saucectl-report.json ]; then
+              urls="$(jq -r '.. | objects | select(has("url")) | .url | select(type == "string" and test("^https://"))' demo-app/results/sauce/saucectl-report.json | sort -u)"
+            fi
+            if [ -z "$urls" ] && [ -f results/sauce/saucectl.log ]; then
+              urls="$(grep -Eo 'https://app\.[a-z0-9.-]*saucelabs\.com/tests/[A-Za-z0-9]+' results/sauce/saucectl.log | sort -u)"
+            fi
+            if [ -n "$urls" ]; then
+              while IFS= read -r u; do echo "- $u"; done <<< "$urls"
+            else
+              echo "Sauce job linki bulunamadı (log artefaktına bakın)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Sauce artefaktları
+        if: always() && steps.creds.outputs.enabled == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sauce-results
+          retention-days: 14
+          if-no-files-found: ignore
+          path: |
+            results/sauce/
+            demo-app/results/sauce/

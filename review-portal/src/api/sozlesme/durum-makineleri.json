@@ -1,0 +1,241 @@
+{
+  "bug_draft": {
+    "initial": "draft",
+    "states": [
+      "approved",
+      "dismissed",
+      "draft",
+      "published"
+    ],
+    "transitions": {
+      "approved": [
+        "draft",
+        "published"
+      ],
+      "dismissed": [
+        "draft"
+      ],
+      "draft": [
+        "approved",
+        "dismissed"
+      ],
+      "published": []
+    }
+  },
+  "consistency_finding": {
+    "initial": "unverified",
+    "states": [
+      "decided",
+      "discarded",
+      "open",
+      "resolved",
+      "stale",
+      "unverified"
+    ],
+    "transitions": {
+      "decided": [
+        "open",
+        "resolved",
+        "stale"
+      ],
+      "discarded": [],
+      "open": [
+        "decided",
+        "stale"
+      ],
+      "resolved": [],
+      "stale": [],
+      "unverified": [
+        "discarded",
+        "open"
+      ]
+    }
+  },
+  "requirement": {
+    "initial": "new",
+    "states": [
+      "cases_ready",
+      "doc_final",
+      "done",
+      "failed",
+      "findings_open",
+      "generating",
+      "in_review",
+      "new",
+      "pending_po",
+      "po_approved"
+    ],
+    "transitions": {
+      "cases_ready": [
+        "done",
+        "generating",
+        "new"
+      ],
+      "doc_final": [
+        "in_review",
+        "new",
+        "pending_po"
+      ],
+      "done": [
+        "new"
+      ],
+      "failed": [
+        "generating",
+        "in_review",
+        "new"
+      ],
+      "findings_open": [
+        "doc_final",
+        "in_review",
+        "new"
+      ],
+      "generating": [
+        "cases_ready",
+        "failed"
+      ],
+      "in_review": [
+        "doc_final",
+        "failed",
+        "findings_open"
+      ],
+      "new": [
+        "failed",
+        "in_review"
+      ],
+      "pending_po": [
+        "in_review",
+        "new",
+        "po_approved"
+      ],
+      "po_approved": [
+        "generating",
+        "new"
+      ]
+    }
+  },
+  "requirement_review": {
+    "initial": "pending_po",
+    "states": [
+      "approved",
+      "pending_po",
+      "superseded"
+    ],
+    "transitions": {
+      "approved": [
+        "superseded"
+      ],
+      "pending_po": [
+        "approved",
+        "superseded"
+      ],
+      "superseded": []
+    }
+  },
+  "script": {
+    "initial": "pending",
+    "states": [
+      "blocked",
+      "checking",
+      "closed",
+      "failed",
+      "merged",
+      "pending",
+      "pr_open",
+      "verifying"
+    ],
+    "transitions": {
+      "blocked": [
+        "closed",
+        "verifying"
+      ],
+      "checking": [
+        "blocked",
+        "failed",
+        "pr_open",
+        "verifying"
+      ],
+      "closed": [],
+      "failed": [
+        "closed",
+        "pending"
+      ],
+      "merged": [],
+      "pending": [
+        "failed",
+        "verifying"
+      ],
+      "pr_open": [
+        "checking",
+        "closed",
+        "merged"
+      ],
+      "verifying": [
+        "blocked",
+        "checking",
+        "failed"
+      ]
+    }
+  },
+  "test_case": {
+    "initial": "draft",
+    "states": [
+      "approved",
+      "draft",
+      "published",
+      "rejected",
+      "superseded"
+    ],
+    "transitions": {
+      "approved": [
+        "draft",
+        "published",
+        "superseded"
+      ],
+      "draft": [
+        "approved",
+        "rejected",
+        "superseded"
+      ],
+      "published": [],
+      "rejected": [
+        "draft",
+        "superseded"
+      ],
+      "superseded": []
+    }
+  },
+  "workflow_instance": {
+    "initial": "running",
+    "states": [
+      "cancelled",
+      "done",
+      "failed",
+      "paused",
+      "running",
+      "waiting_human"
+    ],
+    "transitions": {
+      "cancelled": [],
+      "done": [],
+      "failed": [
+        "cancelled",
+        "running"
+      ],
+      "paused": [
+        "cancelled",
+        "running"
+      ],
+      "running": [
+        "cancelled",
+        "done",
+        "failed",
+        "paused",
+        "waiting_human"
+      ],
+      "waiting_human": [
+        "cancelled",
+        "running"
+      ]
+    }
+  }
+}

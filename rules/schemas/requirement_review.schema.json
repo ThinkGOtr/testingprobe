@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tp:requirement_review",
+  "title": "Ön inceleme (§8.2a)",
+  "x-version": 1,
+  "type": "object",
+  "properties": {
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^Q[0-9]+$"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "ambiguity",
+              "missing_ac",
+              "conflict",
+              "untestable"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "ac_ref": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^AC[0-9]+$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "text",
+          "ac_ref"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 10
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "ready",
+        "needs_po"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "maxLength": 600
+    }
+  },
+  "required": [
+    "questions",
+    "verdict",
+    "summary"
+  ],
+  "additionalProperties": false
+}

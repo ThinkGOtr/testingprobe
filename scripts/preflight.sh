@@ -82,7 +82,7 @@ if [ "$docker_ok" -eq 1 ]; then
   ours=" $(stack_published_ports | tr '\n' ' ')"
 fi
 seen=" "
-for spec in PG_PORT:55432 TP_API_PORT:8000 TP_PORTAL_PORT:8080 DEMO_WEB_PORT:8081 MCP_PORT:8931; do
+for spec in PG_PORT:55432 TP_API_PORT:8000 TP_PORTAL_PORT:8080 DEMO_WEB_PORT:8081 JIRA_SIM_PORT:8090; do
   key="${spec%%:*}"
   port="$(env_get "$key")"
   [ -n "$port" ] || port="${spec#*:}"

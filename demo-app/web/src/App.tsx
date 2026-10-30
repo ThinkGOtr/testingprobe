@@ -1,37 +1,95 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { api, setUnauthorizedHandler, type Cart, type User } from "./api";
+import { Layout } from "./components/Layout";
+import { Link } from "./components/Link";
+import { CartPage } from "./pages/CartPage";
+import { CatalogPage } from "./pages/CatalogPage";
+import { LoginPage } from "./pages/LoginPage";
+import { OrderConfirmationPage } from "./pages/OrderConfirmationPage";
+import { OrdersPage } from "./pages/OrdersPage";
+import { navigate, routes, usePath } from "./router";
 
-type ApiStatus = "bilinmiyor" | "kontrol ediliyor" | "çalışıyor" | "erişilemiyor";
-
-// F0 iskeleti: yalnızca yer tutucu sayfa. Giriş, katalog, sepet ve sipariş akışları F1'de gelir.
 // Kural: her etkileşimli elemanda data-testid bulunur (locator'lar e2e/pages/**/locators.ts içinde).
 export function App() {
-  const [apiStatus, setApiStatus] = useState<ApiStatus>("bilinmiyor");
+  const path = usePath();
+  // undefined: oturum kontrol ediliyor · null: giriş yapılmamış
+  const [user, setUser] = useState<User | null | undefined>(undefined);
+  const [cart, setCart] = useState<Cart | null>(null);
 
-  async function checkApi() {
-    setApiStatus("kontrol ediliyor");
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setUser(null);
+      setCart(null);
+    });
+    api
+      .me()
+      .then(setUser)
+      .catch(() => setUser(null));
+  }, []);
+
+  useEffect(() => {
+    if (user) api.cart().then(setCart).catch(() => setCart(null));
+  }, [user]);
+
+  // Yönlendirme kuralları: oturumsuz → giriş; oturumlu → giriş sayfası yerine katalog.
+  useEffect(() => {
+    if (user === undefined) return;
+    if (user === null && path !== routes.login) navigate(routes.login, true);
+    else if (user && (path === routes.login || path === "/")) navigate(routes.catalog, true);
+  }, [user, path]);
+
+  useEffect(() => {
+    const titles: Record<string, string> = {
+      [routes.login]: "Giriş",
+      [routes.catalog]: "Katalog",
+      [routes.cart]: "Sepet",
+      [routes.orders]: "Siparişlerim",
+    };
+    const t = titles[path] ?? (path.startsWith("/siparis/") ? "Sipariş onayı" : null);
+    document.title = t ? `${t} · Bayi Sipariş Portalı` : "Bayi Sipariş Portalı";
+  }, [path]);
+
+  const onCartChange = useCallback((c: Cart) => setCart(c), []);
+
+  async function logout() {
     try {
-      const resp = await fetch("/api/health");
-      setApiStatus(resp.ok ? "çalışıyor" : "erişilemiyor");
-    } catch {
-      setApiStatus("erişilemiyor");
+      await api.logout();
+    } finally {
+      setUser(null);
+      setCart(null);
     }
   }
 
-  return (
-    <main className="page" data-testid="home-page">
-      <h1 data-testid="home-title">Bayi Sipariş Portalı</h1>
-      <p data-testid="home-subtitle">
-        Örnek uygulama iskeleti. Giriş, katalog, sepet ve sipariş ekranları yakında eklenecek.
+  if (user === undefined) {
+    return (
+      <p className="boot muted" role="status">
+        Yükleniyor…
       </p>
-      <section aria-labelledby="api-status-heading">
-        <h2 id="api-status-heading">Sistem durumu</h2>
-        <button type="button" data-testid="home-check-api" onClick={checkApi}>
-          API durumunu kontrol et
-        </button>
-        <p role="status" aria-live="polite" data-testid="home-api-status">
-          API: {apiStatus}
-        </p>
-      </section>
-    </main>
+    );
+  }
+  if (user === null) return <LoginPage onLoggedIn={setUser} />;
+
+  let page;
+  if (path === routes.catalog) page = <CatalogPage onCartChange={onCartChange} />;
+  else if (path === routes.cart) page = <CartPage cart={cart} onCartChange={onCartChange} />;
+  else if (path === routes.orders) page = <OrdersPage />;
+  else if (path.startsWith("/siparis/")) {
+    const numara = decodeURIComponent(path.slice("/siparis/".length));
+    page = <OrderConfirmationPage key={numara} numara={numara} />;
+  } else if (path === "/" || path === routes.login) page = null;
+  else
+    page = (
+      <div className="empty">
+        <h1>Sayfa bulunamadı</h1>
+        <Link href={routes.catalog} className="btn btn-primary">
+          Kataloğa dön
+        </Link>
+      </div>
+    );
+
+  return (
+    <Layout user={user} cartCount={cart?.adet_toplam ?? 0} path={path} onLogout={logout}>
+      {page}
+    </Layout>
   );
 }

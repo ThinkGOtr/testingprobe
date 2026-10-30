@@ -1,7 +1,7 @@
 # Yeni ekip üyesi rehberi
 
 Hedef: repoyu hiç kurmamış biri, yardım almadan **30 dakika içinde** ortamı ayağa kaldırır ve
-`make security-check` ile **4/4 PASS** görür. İlk kurulumda imaj indirme ve build süresi ≤ 20 dk,
+`make security-check` ile **8/8 PASS** görür. İlk kurulumda imaj indirme ve build süresi ≤ 20 dk,
 ısınmış imajlarla `make up` ≤ 3 dk'dır.
 
 Genel bakış için önce [README](../README.md)'yi, çalışma kuralları için
@@ -62,8 +62,8 @@ make status
 |---|---|
 | http://127.0.0.1:8080 | Review portal |
 | http://127.0.0.1:8000/health | core-api sağlık |
-| http://127.0.0.1:8081 | Örnek uygulama |
-| http://127.0.0.1:8931 | Playwright MCP |
+| http://127.0.0.1:8081 | Örnek uygulama (`bayi1` / `Demo123!`, bkz. docs/DEMO-VERISI.md) |
+| http://127.0.0.1:8090 | Jira simülatörü (PO: `po@sim.local`, parola `.env` → `JIRA_SIM_PO_PASSWORD`) |
 | `127.0.0.1:55432` | Postgres |
 
 ### 2.4 Eksik sır senaryosu (opsiyonel doğrulama)
@@ -101,12 +101,16 @@ veriyi siler ve ortamı yeniden başlatır; `reset + seed` ≤ 2 dk.
 make security-check
 ```
 
-**Beklenen:** 4 kontrolün hepsi `PASS`, özet `4/4`:
+**Beklenen:** 8 kontrolün hepsi `PASS`, özet `8/8`:
 
 1. Host'a açılan tüm portlar yalnızca `127.0.0.1`.
-2. `test-runner` içinden Postgres, core-api ve internete bağlantı başarısız.
+2. `test-runner` içinden Postgres, core-api, playwright-mcp ve internete bağlantı başarısız (demo-app-web ve demo-app-api'ye başarılı).
 3. `tp_app` rolü `audit_event` tablosunu güncelleyemez/silemez.
 4. Depoda sır yok (gitleaks).
+5. `demoapp_ro` (tutarlılık denetimi) yalnızca izinli tablo/kolonları okur; yazamaz, parola özeti ve sipariş verisi kapalı.
+6. Model anahtarı değişkeni yalnızca `core-worker`'da tanımlı.
+7. Ajan tarayıcısı (`playwright-mcp`) yalnızca demo-app-web'e erişir; `/api/test/*` 404; yalnızca core-worker MCP'ye bağlanır.
+8. Jira/Xray/GitHub yazma kimlikleri yalnızca `core-worker`'da; `DEMOAPP_TEST_TOKEN` yalnızca demo-app-api ve test-runner'da.
 
 Herhangi biri `FAIL` ise komut ≠ 0 döner; çıktıdaki kontrol adıyla Sorun giderme bölümüne bakın.
 
@@ -149,7 +153,7 @@ Tüm hedeflerin sözleşmesi: [contracts/make-targets.md](../specs/001-dev-found
 
 | Belirti | Çözüm |
 |---|---|
-| `make up` port çakışması bildiriyor | Çakışan süreci kapatın (`lsof -iTCP:<port> -sTCP:LISTEN`) veya `.env`'de ilgili portu değiştirin (`PG_PORT`, `TP_API_PORT`, `TP_PORTAL_PORT`, `DEMO_WEB_PORT`, `MCP_PORT`) |
+| `make up` port çakışması bildiriyor | Çakışan süreci kapatın (`lsof -iTCP:<port> -sTCP:LISTEN`) veya `.env`'de ilgili portu değiştirin (`PG_PORT`, `TP_API_PORT`, `TP_PORTAL_PORT`, `DEMO_WEB_PORT`, `JIRA_SIM_PORT`) |
 | Bellek yetersiz uyarısı | Docker Desktop → Settings → Resources → Memory ≥ 8 GB, Apply & Restart |
 | Disk yetersiz (< 30 GB) | `make prune`; gerekirse Docker Desktop disk limitini artırın veya `docker system df` ile büyük öğelere bakın |
 | Bir servis `unhealthy` / `make up` süre aşımı | `make logs S=<servis>` ile log'a bakın; `make status` ile hangi servisin bağımlılığının bozuk olduğunu kontrol edin |

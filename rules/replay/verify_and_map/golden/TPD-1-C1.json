@@ -1,0 +1,133 @@
+{
+  "kind": "agent",
+  "purpose": "verify_and_map",
+  "golden": "TPD-1-C1",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Model çıktısı (step_mapping/expects/missing_methods) elle hazırlandı; tarayıcı adımları çalışan Playwright MCP'ye (--isolated) karşı koşturulup kaydedildi; hedefler replay'de oturumdan bağımsız olsun diye snapshot ref'i yerine tekil seçici (data-testid) olarak yazıldı. Kampanyalı sepet (P-001) case'lerinde sepet snapshot özeti yalnızca satır/tutar satırlarını içerir: kayıt anındaki çalışan imaj AC6 kod değişikliğinden (pricing.min_aranir) önceydi; uyarı/onay durumu replay'de araçlar yeniden koşturulunca görülür. Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record).",
+  "case": {
+    "jira_key": "TPD-1",
+    "sira_no": 1,
+    "title": "Sepete ekle ile ürün sepete eklenir ve sepet sayacı artar"
+  },
+  "steps": [
+    {
+      "tool": "browser_navigate",
+      "args": {
+        "url": "http://demo-app-web:8080/giris"
+      },
+      "result_summary": "await page.goto('http://demo-app-web:8080/giris'); · URL /giris",
+      "allowed": true
+    },
+    {
+      "tool": "browser_snapshot",
+      "args": {},
+      "result_summary": "URL /giris | heading \"Bayi girişi\" [level=1] | textbox \"Kullanıcı adı\" | textbox \"Parola\" | button \"Giriş yap\" [disabled]",
+      "allowed": true
+    },
+    {
+      "tool": "browser_type",
+      "args": {
+        "element": "Kullanıcı adı",
+        "target": "[data-testid=\"login-username\"]",
+        "text": "bayi1"
+      },
+      "result_summary": "await page.locator('[data-testid=\"login-username\"]').fill('bayi1');",
+      "allowed": true
+    },
+    {
+      "tool": "browser_type",
+      "args": {
+        "element": "Parola",
+        "target": "[data-testid=\"login-password\"]",
+        "text": "Demo123!"
+      },
+      "result_summary": "await page.locator('[data-testid=\"login-password\"]').fill('Demo123!');",
+      "allowed": true
+    },
+    {
+      "tool": "browser_click",
+      "args": {
+        "element": "Giriş yap",
+        "target": "[data-testid=\"login-submit\"]"
+      },
+      "result_summary": "await page.locator('[data-testid=\"login-submit\"]').click(); · URL /katalog",
+      "allowed": true
+    },
+    {
+      "tool": "browser_snapshot",
+      "args": {},
+      "result_summary": "URL /katalog | link \"Sepet 0 ürün\": | generic: Merkez Bayi | paragraph: P-001",
+      "allowed": true
+    },
+    {
+      "tool": "browser_type",
+      "args": {
+        "element": "P-001 adet",
+        "target": "[data-testid=\"product-card-P-001\"] [data-testid=\"qty-input-P-001\"]",
+        "text": "1"
+      },
+      "result_summary": "await page.locator('[data-testid=\"product-card-P-001\"] [data-testid=\"qty-input-P-001\"]').fill('1');",
+      "allowed": true
+    },
+    {
+      "tool": "browser_click",
+      "args": {
+        "element": "P-001 kartında Sepete ekle",
+        "target": "[data-testid=\"product-card-P-001\"] [data-testid=\"add-to-cart\"]"
+      },
+      "result_summary": "await page.locator('[data-testid=\"product-card-P-001\"] [data-testid=\"add-to-cart\"]').click(); · URL /katalog",
+      "allowed": true
+    },
+    {
+      "tool": "browser_wait_for",
+      "args": {
+        "text": "1 ürün"
+      },
+      "result_summary": "await page.getByText(\"1 ürün\").first().waitFor({ state: 'visible' }); · URL /katalog",
+      "allowed": true
+    }
+  ],
+  "output": {
+    "step_mapping": [
+      {
+        "step_id": "S1",
+        "po": "LoginPage",
+        "method": "goto",
+        "args": [],
+        "verified": true,
+        "evidence_ref": "Giriş formu (textbox \"Kullanıcı adı\", \"Parola\", button \"Giriş yap\")"
+      },
+      {
+        "step_id": "S2",
+        "po": "LoginPage",
+        "method": "login",
+        "args": [
+          "bayi1",
+          "Demo123!"
+        ],
+        "verified": true,
+        "evidence_ref": "button \"Giriş yap\" → /katalog"
+      },
+      {
+        "step_id": "S3",
+        "po": "CatalogPage",
+        "method": "addToCart",
+        "args": [
+          "P-001",
+          1
+        ],
+        "verified": true,
+        "evidence_ref": "button \"Sepete ekle\" (ürün kartı) → sepet sayacı güncellendi"
+      }
+    ],
+    "expects": [
+      {
+        "po": "CatalogPage",
+        "method": "expectCartCount",
+        "args": [
+          1
+        ]
+      }
+    ],
+    "missing_methods": []
+  }
+}

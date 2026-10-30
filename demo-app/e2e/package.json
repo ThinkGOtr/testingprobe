@@ -1,18 +1,26 @@
 {
   "name": "demo-app-e2e",
   "private": true,
-  "version": "0.1.0",
-  "description": "Bayi Sipariş Portalı — Playwright uçtan uca test projesi iskeleti (F0)",
+  "version": "0.2.0",
+  "description": "Bayi Sipariş Portalı — Playwright uçtan uca testleri ve page object kütüphanesi",
   "type": "module",
   "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint --no-inline-config --max-warnings=0 .",
     "test": "playwright test",
-    "typecheck": "tsc --noEmit"
+    "check": "bash ../ci/run-checks.sh",
+    "break-verify": "bash ../ci/break-verify.sh"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
+    "@eslint/js": "10.0.1",
     "@playwright/test": "1.64.1",
     "@types/node": "22.20.5",
     "allure-playwright": "3.14.0",
-    "typescript": "5.9.3"
+    "eslint": "10.14.0",
+    "eslint-plugin-playwright": "2.12.1",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.1"
   }
 }

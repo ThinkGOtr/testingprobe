@@ -1,0 +1,11 @@
+{
+  "kind": "call",
+  "purpose": "requirement_review",
+  "golden": "TPD-4",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı; canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record).",
+  "output": {
+    "questions": [],
+    "verdict": "ready",
+    "summary": "Başarılı giriş ve hatalı parola mesajı açık ve test edilebilir. PO teyidi yine de gereklidir."
+  }
+}

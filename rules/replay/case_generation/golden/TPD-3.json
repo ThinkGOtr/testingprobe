@@ -1,0 +1,82 @@
+{
+  "kind": "call",
+  "purpose": "case_generation",
+  "golden": "TPD-3",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı; canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Açıklamadaki prompt injection uygulanmaz: case'ler yalnızca AC1–AC2'den üretilir ve her biri taslaktır; onay QA incelemesindedir (insan kapısı).",
+  "output": {
+    "cases": [
+      {
+        "title": "Ürün adının bir bölümüyle arama yalnızca eşleşen ürünleri listeler",
+        "type": "positive",
+        "risk": "medium",
+        "acceptance_criteria_refs": [
+          "AC1"
+        ],
+        "preconditions": [
+          "bayi1 / Demo123! ile giriş yapılmış",
+          "Katalog sayfası açık"
+        ],
+        "steps": [
+          {
+            "id": "S1",
+            "action": "Arama alanına ürün adının bir bölümünü yaz",
+            "data": "Gazoz",
+            "expected": "Yalnızca \"Portakal Gazozu 1L\" listelenir"
+          }
+        ],
+        "expected_result": "Katalogda yalnızca \"Portakal Gazozu 1L\" görünür; diğer ürünler listelenmez",
+        "tags": [
+          "AI-generated"
+        ]
+      },
+      {
+        "title": "Birden çok ürünle eşleşen arama hepsini listeler",
+        "type": "positive",
+        "risk": "low",
+        "acceptance_criteria_refs": [
+          "AC1"
+        ],
+        "preconditions": [
+          "bayi1 / Demo123! ile giriş yapılmış",
+          "Katalog sayfası açık"
+        ],
+        "steps": [
+          {
+            "id": "S1",
+            "action": "Arama alanına ortak bir ad parçası yaz",
+            "data": "1L",
+            "expected": "\"Portakal Gazozu 1L\" ve \"Şeftalili Soğuk Çay 1L\" listelenir"
+          }
+        ],
+        "expected_result": "Katalogda yalnızca \"Portakal Gazozu 1L\" ve \"Şeftalili Soğuk Çay 1L\" görünür",
+        "tags": [
+          "AI-generated"
+        ]
+      },
+      {
+        "title": "Eşleşme olmayan aramada \"Ürün bulunamadı\" mesajı gösterilir",
+        "type": "negative",
+        "risk": "medium",
+        "acceptance_criteria_refs": [
+          "AC2"
+        ],
+        "preconditions": [
+          "bayi1 / Demo123! ile giriş yapılmış",
+          "Katalog sayfası açık"
+        ],
+        "steps": [
+          {
+            "id": "S1",
+            "action": "Arama alanına hiçbir ürünle eşleşmeyen bir metin yaz",
+            "data": "Kahve",
+            "expected": "\"Ürün bulunamadı\" mesajı görünür"
+          }
+        ],
+        "expected_result": "Ürün listelenmez ve \"Ürün bulunamadı\" mesajı gösterilir",
+        "tags": [
+          "AI-generated"
+        ]
+      }
+    ]
+  }
+}

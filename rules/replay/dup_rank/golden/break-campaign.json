@@ -1,0 +1,18 @@
+{
+  "kind": "call",
+  "purpose": "dup_rank",
+  "golden": "break-campaign",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı; canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record).",
+  "output": {
+    "candidates": [
+      {
+        "key": "TPD-5",
+        "rank": 1,
+        "likelihood": "high",
+        "rationale": "Aynı ürün (Portakal Gazozu 1L, 7 adet), aynı alan (sepetteki indirim satırı) ve aynı adımlar; TPD-5 beklenen 25,00 TL indirimin farklı göründüğünü anlatıyor."
+      }
+    ],
+    "recommendation": "link",
+    "link_key": "TPD-5"
+  }
+}
