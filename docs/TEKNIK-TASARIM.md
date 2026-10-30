@@ -100,6 +100,7 @@ Demo story'si mutlaka `add-to-cart` ve kampanya hesabı adımlarını içerir.
 | Bug alanları | Faz 2 alanları dahil | Temel alanlar |
 | Denetim zinciri, REPLAY, Allure tarihçesi | Tam | Kayıt var; zincir doğrulama ekranı, tarihçe sonra; REPLAY yalnızca adım 4 ve 5 için |
 | Güvenlik gösterimi | Opsiyonel adım | Kapsam dışı |
+| Erişilebilirlik denetimi | WCAG 2.2 AA, CI'da her koşuda (§20.1) | **Yalnızca zaman kalırsa:** `@axe-core/playwright` ile demo story'sinin sayfalarında kontrol; ihlal sayısı Kontrol Kulesi'nde |
 
 ---
 
@@ -593,7 +594,21 @@ Demo değerinin en hızlı görüneceği sıra: önce **case akışı** (CCI'ın
 
 ## 20. Demodan sonra (kapsam dışı, kayıtlı)
 
-Teams/Copilot Studio kanalı · Octane arka ucu · mobil (Appium MCP) · masaüstü (FlaUI-MCP) · API (OpenAPI) · 30 story'lik değerlendirme seti · Azure ortamı (ACA, Key Vault, Entra) · Azure AI Search ile framework indeksleyici · defect taslağı yayını · regresyon seçimi (öneri modu) · Power BI.
+Teams/Copilot Studio kanalı · Octane arka ucu · mobil (Appium MCP) · masaüstü (FlaUI-MCP) · API (OpenAPI) · 30 story'lik değerlendirme seti · Azure ortamı (ACA, Key Vault, Entra) · Azure AI Search ile framework indeksleyici · regresyon seçimi (öneri modu) · Power BI · Temporal (demodaki durum makinesinin yerine) · Jira bug Faz 2 alanları.
+
+### 20.1 Rakip analizinden alınanlar (Testinium TheRafi, 2026-10-30)
+
+Kaynak: therafi.ai ve testinium.com pazarlama sayfaları (teknik doküman yok; iddialar doğrulanmamış).
+
+| Fikir | Kapsam | Uygulama | Gerekçe |
+|---|---|---|---|
+| **Erişilebilirlik denetimi** (RafiAccess karşılığı) | Demo: zaman kalırsa · Ürün: Faz 2 | `@axe-core/playwright` ile onaylı testlerin ziyaret ettiği sayfalarda WCAG 2.2 AA kontrolü; CI'da AI'sız; ihlaller JUnit/Allure'a ve Kontrol Kulesi'ne; kritik ihlal için aynı bug taslağı akışı | Rakipte var; RFI kapsam sorusu; düşük maliyet |
+| **Serbest metinle gereksinim girişi** | Ürün | Portalda Jira'sız gereksinim kutusu; aynı ön inceleme → (PO teyidi portalda) → case akışı; sonradan Jira'ya bağlanabilir | Brief'te "story seçer ya da gereksinim verir"; Jira'sız ekipler ve hızlı deneme |
+| **Çoklu test yönetimi arka ucu** | Ürün | `publish_test_cases` için Xray, TestRail, Zephyr Scale adaptörleri (Octane ile birlikte) | Başka müşterilere satış |
+| **Tasarımdan case üretimi** | Ürün (keşif) | Figma/Zeplin ekranlarından ön inceleme ve case taslağı | Story öncesi test hazırlığı; ayrıştırıcı |
+| **Kurulum seçenekleri** | Ürün / teklif | Müşteri tenant'ı (varsayılan), bizim bulutumuz (yönetilen), hibrit — açıkça belgelenir | Rakip üçünü sunuyor |
+
+**Bilerek alınmayanlar:** koşu sırasında testi değiştiren "gerçek zamanlı AI self-healing" (Constitution II ve VI ile çelişir; gerçek hatayı gizleme riski) ve kapalı, kodsuz test formatı (taşınabilirlik ilkesiyle çelişir). Bu iki nokta teklifte ayrıştırıcı olarak kullanılır: **testler müşterinin repo'sunda, açık kaynak framework'te gerçek kod; koşuda AI yok; her değişiklik insan onaylı.**
 
 ---
 
