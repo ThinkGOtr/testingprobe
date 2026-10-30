@@ -32,6 +32,7 @@ services:
       TP_APP_PASSWORD: ${TP_APP_PASSWORD:?}
       DEMOAPP_OWNER_PASSWORD: ${DEMOAPP_OWNER_PASSWORD:?}
       DEMOAPP_PASSWORD: ${DEMOAPP_PASSWORD:?}
+      DEMOAPP_RO_PASSWORD: ${DEMOAPP_RO_PASSWORD:?}
     volumes:
       - tp_pgdata:/var/lib/postgresql/data
       - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
@@ -63,6 +64,33 @@ services:
     environment:
       TP_DATABASE_URL: postgresql+psycopg://tp_app:${TP_APP_PASSWORD}@postgres:5432/tp
       SEED_USER_PASSWORD: ${SEED_USER_PASSWORD:?}
+      <<: &core-env
+        TP_SESSION_SECRET: ${TP_SESSION_SECRET:?}
+        TP_MODEL_MODE: ${TP_MODEL_MODE:-auto}
+        ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+        JIRA_BASE_URL: ${JIRA_BASE_URL:-http://jira-sim:8090}
+        JIRA_PROJECT: ${JIRA_PROJECT:-TPD}
+        JIRA_READ_EMAIL: ${JIRA_READ_EMAIL:-reader@sim.local}
+        JIRA_READ_TOKEN: ${JIRA_READ_TOKEN:-sim}
+        JIRA_WRITE_EMAIL: ${JIRA_WRITE_EMAIL:-writer@sim.local}
+        JIRA_WRITE_TOKEN: ${JIRA_WRITE_TOKEN:-sim}
+        TP_TEST_MGMT: ${TP_TEST_MGMT:-jira}
+        XRAY_BASE_URL: ${XRAY_BASE_URL:-http://jira-sim:8090/xray}
+        XRAY_CLIENT_ID: ${XRAY_CLIENT_ID:-sim}
+        XRAY_CLIENT_SECRET: ${XRAY_CLIENT_SECRET:-sim}
+        TP_FORGE: ${TP_FORGE:-local}
+        TP_FORGE_PATH: /forge/demo-app.git
+        GITHUB_REPO: ${GITHUB_REPO:-}
+        GITHUB_READ_TOKEN: ${GITHUB_READ_TOKEN:-}
+        TOOLCHAIN_URL: http://toolchain-worker:8100
+        PLAYWRIGHT_MCP_URL: http://playwright-mcp:8931/mcp
+        DEMOAPP_RO_DATABASE_URL: postgresql+psycopg://demoapp_ro:${DEMOAPP_RO_PASSWORD:?}@postgres:5432/demoapp
+        TP_ARTIFACTS_PATH: /artifacts
+        TP_DAILY_BUDGET_USD: ${TP_DAILY_BUDGET_USD:-30}
+        TP_WORKFLOW_BUDGET_USD: ${TP_WORKFLOW_BUDGET_USD:-2}
+    volumes:
+      - tp_forge:/forge:ro
+      - tp_artifacts:/artifacts:ro
     ports:
       - "127.0.0.1:${TP_API_PORT:-8000}:8000"
     networks: [core-net]
@@ -82,6 +110,10 @@ services:
     command: ["python", "-m", "tp_core.worker"]
     environment:
       TP_DATABASE_URL: postgresql+psycopg://tp_app:${TP_APP_PASSWORD}@postgres:5432/tp
+      <<: *core-env
+    volumes:
+      - tp_forge:/forge
+      - tp_artifacts:/artifacts:ro
     networks: [core-net]
     depends_on:
       migrate: { condition: service_completed_successfully }
@@ -100,6 +132,11 @@ services:
     environment:
       PLAYWRIGHT_VERSION: ${PLAYWRIGHT_VERSION}
       TEST_RUNNER_URL: http://test-runner:8200
+      TP_FORGE_PATH: /forge/demo-app.git
+      TP_ARTIFACTS_PATH: /artifacts
+    volumes:
+      - tp_forge:/forge
+      - tp_artifacts:/artifacts
     networks: [core-net, runner-net]
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:8100/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
@@ -116,7 +153,11 @@ services:
     command: ["test-runner"]
     environment:
       PLAYWRIGHT_VERSION: ${PLAYWRIGHT_VERSION}
-      BASE_URL: http://demo-app-web:8080
+      TP_FORGE_PATH: /forge/demo-app.git
+      TP_ARTIFACTS_PATH: /artifacts
+    volumes:
+      - tp_forge:/forge:ro
+      - tp_artifacts:/artifacts
     networks: [demo-net, runner-net]
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:8200/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
@@ -145,6 +186,28 @@ services:
     deploy:
       resources:
         limits: { memory: 2g }
+
+  jira-sim:
+    image: testingprobe-jira-sim:local
+    build:
+      context: ./sims/jira-sim
+    pull_policy: build
+    environment:
+      JIRA_SIM_DATA: /data/jira.json
+      JIRA_SIM_BASE_URL: http://127.0.0.1:${JIRA_SIM_PORT:-8090}
+    volumes:
+      - tp_jira:/data
+    ports:
+      - "127.0.0.1:${JIRA_SIM_PORT:-8090}:8090"
+    networks: [core-net]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    deploy:
+      resources:
+        limits: { memory: 256m }
 
   review-portal:
     image: testingprobe-review-portal:local
@@ -211,3 +274,6 @@ networks:
 
 volumes:
   tp_pgdata: {}
+  tp_forge: {}
+  tp_artifacts: {}
+  tp_jira: {}
