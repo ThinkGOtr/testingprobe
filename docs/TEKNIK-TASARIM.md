@@ -1,8 +1,10 @@
 # AI Automation Testing (Test Engineering Suite) — Demo Teknik Tasarımı
 
-> **Sürüm:** v1.0 · 2026-10-30 · **Hazırlayan:** Gökhan Sipahi · **Gözden geçirecek:** Cengizhan Bey, Hakan, İsmail
+> **Sürüm:** v1.1 · 2026-10-30 · **Hazırlayan:** Gökhan Sipahi · **Gözden geçirecek:** Cengizhan Bey, Hakan, İsmail
 > **Bağlayıcı kaynak:** "AI Automation Testing — Geliştirme Ekibi için Ürün Brief'i" (Cengizhan Bey, 30.10.2026). Bu doküman o brief'in **demo dilimini** tarif eder. Brief'ten sapmalar §19'dadır.
 > **Spec Kit nedir:** GitHub'ın açık kaynak "spesifikasyon güdümlü geliştirme" aracı. Bu doküman önce projenin değişmez kurallarına (constitution, §3), sonra her kilometre taşı için ayrı spec → plan → görev → uygulama döngüsüne (§21) girdi olur.
+>
+> **v1.0 → v1.1 (2026-10-30 ekip toplantısı kararları, §0):** demo 1 hafta içinde ve canlı; kapsam Demo-A + kısa otomasyon akışı; 4b kanalı Claude; tüm sapmalar onaylı; repo public.
 >
 > **v0.5 → v1.0:** Onayın doğruluk kaynağı Postgres (Update doğrulayıcı); test koşusu ayrı, izole `test-runner` servisinde; kırılma `demo-admin` bypass ile merge; CI imaj erişimi (izin, kimlik, çok mimarili build) ve `paths` çelişkisi giderildi; beklenen değer kontrolünde normalizasyon; Azure eşdeğerlik koşusuna sahip.
 > **Değerlendirme:** 6 rol (mimar, test otomasyon lideri, AI/LLM mühendisi, güvenlik, DevOps, ürün sahibi) × 4 tur. Son tur puanları 8–9.
@@ -10,6 +12,25 @@
 > **v0.4 → v0.5:** Kırılma ve sıfırlama branch korumasıyla uyumlu hale getirildi; testId kanıtı DOM'dan okunuyor; yerel kontrol CI ile aynı mekanizmada; assertion değerleri onaylı case'e bağlandı; şablon enjeksiyonu kapatıldı; IDE kanalı kimliği ve `submit_draft_cases` eklendi; deterministik kimlikler ve REPLAY-MISS; değerlendirme protokolü; sahipler paralelleştirildi; onay koruması sadeleştirildi.
 >
 > **v0.3 → v0.4:** 6 rollü değerlendirme sonrası. Kırılma adımı CI'da gerçekten çalışacak şekilde commit'e dayandı; doğrulama ve kod üretimi ayrıldı, kod şablondan üretiliyor; tehdit modeli ve prompt injection savunması eklendi; model geçidi ajan döngüsünü kapsıyor; triage önce deterministik; ölçüm tanımları düzeltildi; Docker/CI somutlaştı; Copilot kanalı demoya girdi; teslimat sırası ve sahipler eklendi.
+
+---
+
+## 0. Karar kaydı — 2026-10-30 ekip toplantısı
+
+| # | Konu | Karar | Tasarıma etkisi |
+|---|---|---|---|
+| 1 | Demo tarihi | **1 hafta içinde** | Teslimat §17'deki "1 haftalık demo planı"na göre |
+| 2 | Format | **Canlı**, katılımcılar iş birimi | Güvenlik gösterimi kapsam dışı; REPLAY ve video yedek kalır |
+| 3 | CCI Jira | **Jira Cloud** | Rovo MCP kullanılabilir (CCI ortamında da) |
+| 4 | CCI test yönetimi | **Jira (Xray'siz)** | Demodaki Jira yolu CCI'ın gerçek yolu; Octane öncelik dışı |
+| 5 | Case üreten AI istemcisi (4b) | **Claude** (bizim kaynaklarımız; Claude Code) | Copilot lisansı demo için gerekmez; aynı MCP araçları |
+| 6 | Brief'ten sapmalar (§19) | **Hepsi onaylı** (Claude, kendi uygulamamız, Jira, yerel Docker) | §19 durumları "onaylandı" |
+| 7 | Agent Probe ilişkisi | **Tamamen bağımsız ürün** | Ortak çekirdek yok (ADR gerekmez) |
+| 8 | GitHub | **Repo public** (demo için); Team planı demodan sonra | Ruleset ve GHCR public olarak ücretsiz; tasarım belgelerinin public olması kabul edildi; gizli RFI belgeleri `.gitignore`'da |
+| 9 | Playwright dili | **TypeScript** | Değişiklik yok |
+| 10 | Sahipler | F1 Hakan · F2a İsmail · çekirdek/Jira/portal Gökhan | §17 aynen |
+| 11 | Jira demo sitesi + Rovo token | **Recep Bey** açacak | §18 |
+| 12 | 1 haftalık kapsam | **Demo-A canlı + kısa otomasyon** | Case akışı (adım 1–4b) canlı; kod üretimi + CI tek akış (canlı veya hazır PR ile); kırılma ve locator onarımı (adım 7–8, F5) sonraki demoya |
 
 ---
 
@@ -37,7 +58,7 @@
 | 2 | Case üretimi | AI | Şemaya uyan JSON: pozitif/negatif/sınır case'ler, her biri kabul kriterine bağlı, risk ve "AI-generated" etiketli | Case kartları + **sayaç: AI süresi** |
 | 3 | Review | Analist | Bir case ret (nedeniyle), biri düzeltme, gerisi onay; "review tamam" | Ret nedeni, düzeltme farkı, **kabul oranı** |
 | 4a | Yayınlama (portal) | Analist | `publish_test_cases` önce önizleme, sonra Jira'ya yazar; ikinci gönderimde yeni kayıt açmaz | Önizleme → Jira'da Test issue'ları, story'ye bağlı |
-| 4b | Copilot kanalı (brief "3. yol") | Analist | GitHub Copilot IDE'de case üretir → `submit_draft_cases` ile taslakları portala düşürür (Jira'ya yazmaz) → analist portalda onaylar → Copilot `publish_test_cases(ids)` çağırır | "Copilot'un yazdığını kim kontrol ediyor?" sorusunun cevabı; aynı denetim kaydı, kanal = IDE |
+| 4b | AI istemcisi kanalı (brief "3. yol") | Analist | Claude (Claude Code) case üretir → `submit_draft_cases` ile taslakları portala düşürür (Jira'ya yazmaz) → analist portalda onaylar → istemci `publish_test_cases(ids)` çağırır. Aynı araçlar GitHub Copilot'ta da çalışır | "AI istemcisinin yazdığını kim kontrol ediyor?" sorusunun cevabı; aynı denetim kaydı, kanal = IDE |
 | 5 | Kod üretimi | Mühendis + AI | Onaylı case seçilir; AI Playwright MCP ile her adımı canlı uygulamada doğrular ve adım→page object eşlemesi üretir; kod bu eşlemeden **şablonla** üretilir; yerel kontrol | Adım başına ekran görüntüsü canlı akar |
 | 6 | PR ve CI | Mühendis | Bot PR açar; CI AI'sız koşar; mühendis inceler ve merge eder | PR, yeşil CI |
 | 7 | Kırılma | Sunucu | `make break` hazır "UI refactor" PR'ını (`add-to-cart` → `cart-add`) açar ve `demo-admin` kimliğiyle ruleset bypass kullanarak merge eder (`gh pr merge --admin`; PR'ın CI'ı kırmızı olduğu için normal merge mümkün değil, bilinçli istisna kayda geçer); yerel demo uygulaması `main` HEAD'den yeniden derlenir; `main` push koşusu kırmızı → `FailureToFix` bu koşunun kimliğiyle başlar | Kırmızı CI |
@@ -454,6 +475,19 @@ Demo değerinin en hızlı görüneceği sıra: önce **case akışı** (CCI'ın
 | F5 | Triage kuralları + locator onarımı + AST koruması | Kırılma → onarım PR'ı → etkilenen tüm testler yeşil | İsmail + Hakan | 3 gün | B |
 | F6 | Seed, REPLAY, prova, video; zaman kalırsa güvenlik gösterimi | 3 ardışık sorunsuz prova | Ekip | 2 gün | — |
 
+### 1 haftalık demo planı (karar §0-1, §0-12)
+
+| Gün | Hat A (Gökhan, + İsmail F2a) | Hat B (Hakan) |
+|---|---|---|
+| 1 | F0: repo, Compose iskeleti, `make up` | F1: örnek uygulama + page object'ler başlar |
+| 2 | F2a: veri modeli, Temporal, model geçidi (İsmail: geçit, maskeleme) | F1: CI, toolchain imajı, ruleset (public repo) |
+| 3 | F3: Rovo okuma + case üretimi | F1 tamam: elle yazılmış test PR'da yeşil |
+| 4 | F3: review portal + `publish_test_cases` + `submit_draft_cases` (Claude Code) | F4-lite: doğrulama ajanı + şablonla kod (tek case) |
+| 5 | Prova (Demo-A canlı) + yedek video | F4-lite: PR + CI yeşil; hazır PR yedeği |
+
+**1 haftada canlı:** adım 1–4b (story → case → onay → Jira; Claude kanalı). **Kısa otomasyon:** adım 5–6 tek case ile; canlı akış aksarsa hazır PR ve REPLAY. **Sonraki demoya:** adım 7–8 (kırılma, triage, locator onarımı — F5), denetim zinciri doğrulama ekranı.
+**Risk:** Plan sıkı; günlük durum kontrolü yapılır, takılan iş ilk gün sonunda kesilir (ilk kesilecekler aşağıda).
+
 **Kural:** Demo-A ≤ 7 iş günü sabittir; bu tarihi tehdit eden her ek kapsam ertelenir. **İlk kesilecekler (sırasıyla):** Confluence özeti · `ac_missing` soru akışı (yalnızca uyarı kalır) · REPLAY'in Demo-A'daki kapsamı.
 **Azure eşdeğerlik koşusu (sapma 1 koşulu):** sahibi İsmail; Azure OpenAI erişimi sağlandıktan sonra, tam demo provasından önce değerlendirme seti her iki sağlayıcıda koşar. **Tam demo:** paralel hatlarla ~3 hafta. Tahminler ve sahipler ekip tarafından teyit edilecek.
 
@@ -464,11 +498,11 @@ Demo değerinin en hızlı görüneceği sıra: önce **case akışı** (CCI'ın
 | # | Ne | Kimden | Not |
 |---|---|---|---|
 | 1 | ~30 GB disk | Gökhan | F0 öncesi |
-| 2 | Jira Cloud demo sitesi + Rovo MCP API token (admin etkinleştirme) | Gökhan | İlk test edilecek |
+| 2 | Jira Cloud demo sitesi + Rovo MCP API token (admin etkinleştirme) | **Recep Bey** | İlk test edilecek |
 | 3 | Anthropic API anahtarı (harcama limitli) | Gökhan | |
-| 4 | **GitHub Team planı** (`ThinkGOtr`) | Şirket | **Kesin ön koşul:** private repoda ruleset/branch koruması için; kullanıcı başına aylık ücret. Alınmazsa B planı §16 |
+| 4 | ~~GitHub Team planı~~ → **Repo public** (karar §0-8) | Gökhan | Ruleset ve GHCR ücretsiz; Team planı demodan sonra, repo tekrar private yapılır |
 | 5 | GitHub App (bot) + `demo-admin` insan hesabı (ruleset bypass) | Gökhan | Bot bypass listesinde yok |
-| 6 | **GitHub Copilot lisansı** (adım 4b) | Şirket | Demo için gerekli; Claude Code yalnızca yedek |
+| 6 | ~~GitHub Copilot lisansı~~ | — | Demo için gerekmez; 4b Claude Code ile (karar §0-5) |
 | 6a | Jira yazma kullanıcısında "Delete issues" yetkisi (sıfırlama) | Gökhan | |
 | 6b | Manuel case hazırlama baz ölçümü (4 story) | İsmail | F0 haftasında |
 | 7 | Docker Desktop lisans durumu | Şirket | |
@@ -478,6 +512,8 @@ Demo değerinin en hızlı görüneceği sıra: önce **case akışı** (CCI'ın
 ---
 
 ## 19. Brief'ten sapmalar ve onay bekleyen kararlar
+
+> **2026-10-30:** Aşağıdaki sapmaların tamamı ve "küçük düzeltme" tanımı onaylandı (§0). "Durum" sütunundaki koşullar demodan sonra izlenir.
 
 | # | Brief | Demo kararı | Gerekçe | Durum |
 |---|---|---|---|---|
