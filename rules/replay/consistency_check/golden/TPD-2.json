@@ -2,7 +2,16 @@
   "kind": "agent",
   "purpose": "consistency_check",
   "golden": "TPD-2",
-  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı; canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Story kabul kriteri içermez (ac_missing); kodda tarih filtresi yoktur. Story yeni bir özellik istediği için fark engelleyici değil, uyarıdır.",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı; canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Story kabul kriteri içermez (ac_missing); kodda tarih filtresi yoktur. Story yeni bir özellik istediği için fark engelleyici değil, uyarıdır. Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), eşleşmezse REPLAY-MISS.",
+  "input_match": {
+    "sources": [
+      "jira:TPD-2"
+    ],
+    "acceptance_criteria": [],
+    "contains": [
+      "Bayi, sipariş geçmişi ekranında siparişlerini tarih aralığına göre filtreleyebilmelidir."
+    ]
+  },
   "steps": [
     {
       "tool": "search_code",

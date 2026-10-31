@@ -7,8 +7,13 @@ Sağlayıcıdan bağımsızdır; sağlayıcıya özgü her şey `providers/` alt
     maskeli_girdi, cikti, sema_gecerli, deneme, girdi_token, cikti_token, maliyet (USD), sure_ms,
     mod ('live'|'replay'|'replay_miss'), replay_anahtari, hata (şema hataları dahil),
     maskeleme_farki
-    `record_extras=True` ise ayrıca `ek` (jsonb): replay_kaynagi, sema_hatalari, yeniden_deneme,
+    `record_extras=True` ise ayrıca `ek` (jsonb): replay_kaynagi, replay_kokeni (recorded |
+    golden_promoted | golden_matched | golden | miss_neutral), cikti_kokeni (model_kaydi |
+    elle_hazirlanmis | notr_yedek), replay_eslesme (REPLAY-MISS'te golden'ın girdi
+    beyanıyla uyuşmazlıklar), sema_hatalari, yeniden_deneme,
     onbellek_okuma_token, onbellek_yazma_token. Kolon eklenene kadar varsayılan kapalı.
+    Replay satırında `model` çıktıyı GERÇEKTEN üreten modeldir: kayıt üst verisi olmayan
+    (elle hazırlanmış golden, nötr yedek) çıktıda `HAND_PREPARED_MODEL` ("golden-elle").
 `record_tool_call` satırı:
     id, ai_call_id, kanal ('agent'), cagiran_user_id, arac, arguman_ozeti (jsonb), sonuc_ozeti,
     izin_verildi
@@ -55,7 +60,7 @@ from tp_core.gateway.providers.base import (
     ToolCall,
     Usage,
 )
-from tp_core.gateway.replay import ReplayStore, replay_key
+from tp_core.gateway.replay import HAND_PREPARED_MODEL, ReplayStore, output_origin, replay_key
 from tp_core.ports import (
     AgentResult,
     AgentStep,
@@ -208,6 +213,8 @@ class _Turn:
 _EXTRA_KEYS = (
     "replay_kaynagi",
     "replay_kokeni",
+    "replay_eslesme",
+    "cikti_kokeni",
     "sema_hatalari",
     "yeniden_deneme",
     "onbellek_okuma_token",
@@ -521,6 +528,7 @@ class Gateway:
         first_id: UUID | None = call_id if root_id is None else None
         totals = Usage()
         total_cost = 0.0
+        call_started = self._clock()
         errors: list[str] = []
         output: Any = None
         for attempt in range(1, MAX_SCHEMA_REASKS + 2):
@@ -594,6 +602,12 @@ class Gateway:
                         "model": cfg.model,
                         "replay_key": dict(replay_key),
                         "input_hash": digest,
+                        "recording": _recording(
+                            cfg.model,
+                            self.provider_name,
+                            int((self._clock() - call_started) * 1000),
+                            totals,
+                        ),
                         "output": output,
                     },
                 )
@@ -635,7 +649,9 @@ class Gateway:
         root_id: UUID | None = None,
         parent_id: UUID | None = None,
     ) -> CallResult:
-        record, mode, path = self.replay_store.lookup(purpose, key, _golden_name(key_fields))
+        record, mode, path = self.replay_store.lookup(
+            purpose, key, _golden_name(key_fields), masked
+        )
         output = record["output"]
         errors = _schema_errors(validator, output)
         row = self._base_row(
@@ -648,9 +664,13 @@ class Gateway:
             key=key,
             row_id=root_id,
         )
+        origin, recorded_model = output_origin(record)
         row.update(
+            model=recorded_model or HAND_PREPARED_MODEL,
             replay_kaynagi=str(path.relative_to(self.replay_store.root)),
             replay_kokeni=_provenance(record, mode),
+            cikti_kokeni=origin,
+            **({"replay_eslesme": record["_mismatch"]} if record.get("_mismatch") else {}),
             maskeli_girdi=masked,
             maskeleme_farki=mask_diff,
             cikti=output,
@@ -742,6 +762,7 @@ class Gateway:
         )
         system = f"{bnd.system_prompt}\n\n{AGENT_ADDENDUM}"
         turns: list[_Turn] = []
+        agent_started = self._clock()
         steps: list[AgentStep] = []
         call_ids: list[UUID] = []
         first_id: UUID | None = call_id if root_id is None else None
@@ -882,6 +903,12 @@ class Gateway:
                             "model": cfg.model,
                             "replay_key": dict(replay_key),
                             "input_hash": digest,
+                            "recording": _recording(
+                                cfg.model,
+                                self.provider_name,
+                                int((self._clock() - agent_started) * 1000),
+                                _turns_usage(turns),
+                            ),
                             "output": final_output,
                             "steps": [s.model_dump() for s in steps],
                         },
@@ -982,7 +1009,9 @@ class Gateway:
         root_id: UUID | None = None,
         parent_id: UUID | None = None,
     ) -> AgentResult:
-        record, mode, path = self.replay_store.lookup(purpose, key, _golden_name(key_fields))
+        record, mode, path = self.replay_store.lookup(
+            purpose, key, _golden_name(key_fields), masked
+        )
         output = record["output"]
         errors = _schema_errors(validator, output)
         row = self._base_row(
@@ -995,9 +1024,13 @@ class Gateway:
             key=key,
             row_id=root_id,
         )
+        origin, recorded_model = output_origin(record)
         row.update(
+            model=recorded_model or HAND_PREPARED_MODEL,
             replay_kaynagi=str(path.relative_to(self.replay_store.root)),
             replay_kokeni=_provenance(record, mode),
+            cikti_kokeni=origin,
+            **({"replay_eslesme": record["_mismatch"]} if record.get("_mismatch") else {}),
             maskeli_girdi=masked,
             maskeleme_farki=mask_diff,
             cikti=output,
@@ -1049,10 +1082,29 @@ def _agent_bundle_schema(output_schema: Mapping[str, Any], tools: Sequence[ToolS
     return {"output": output_schema, "tools": [t.model_dump() for t in tools]}
 
 
+def _recording(model: str, provider: str, latency_ms: int, usage: Usage) -> dict[str, Any]:
+    """record modunun yazdığı kayıt üst verisi (kayıt zamanı `ReplayStore.save` ile eklenir)."""
+    return {
+        "model": model,
+        "provider": provider,
+        "latency_ms": latency_ms,
+        "input_tokens": usage.input_tokens,
+        "output_tokens": usage.output_tokens,
+    }
+
+
+def _turns_usage(turns: Sequence[_Turn]) -> Usage:
+    total = Usage()
+    for turn in turns:
+        total = _add_usage(total, turn.response.usage)
+    return total
+
+
 def _provenance(record: Mapping[str, Any], mode: str) -> str:
-    """Replay kaynağının kökeni (ai_call.ek): canlı kayıt, golden yedeği, yükseltilmiş golden."""
+    """Replay kaynağının kökeni (ai_call.ek): canlı kayıt, golden yedeği, yükseltilmiş golden,
+    nötr REPLAY-MISS yedeği."""
     if mode == "replay_miss":
-        return "golden"
+        return str(record.get("provenance") or "golden")
     return str(record.get("provenance") or "recorded")
 
 

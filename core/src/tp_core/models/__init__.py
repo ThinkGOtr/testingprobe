@@ -11,7 +11,9 @@ from contextlib import contextmanager
 from sqlalchemy.orm import Session
 
 from tp_core.models import guard as guard
+from tp_core.models import requirements_feature as requirements_feature
 from tp_core.models.base import Base
+from tp_core.models.cases_feature import CaseGoruntuleme as CaseGoruntuleme
 from tp_core.models.delivery import (
     BugDraft,
     ExternalRef,

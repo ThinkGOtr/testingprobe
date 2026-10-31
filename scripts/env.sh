@@ -49,6 +49,19 @@ for key in $TP_F0_KEYS; do
   filled="$filled $key"
 done
 
+# PLAYWRIGHT_VERSION: tek kaynak .playwright-version; .env'e yazılır ki `make` dışındaki düz
+# `docker compose ps/logs/exec/restart` da çalışsın (compose `:?` denetimi korunur).
+if [ -n "${PLAYWRIGHT_VERSION:-}" ] && [ "$(env_get PLAYWRIGHT_VERSION)" != "$PLAYWRIGHT_VERSION" ]; then
+  tmp="$(mktemp .env.tmp.XXXXXX)"
+  grep -Ev '^[[:space:]]*PLAYWRIGHT_VERSION[[:space:]]*=' .env > "$tmp" || true
+  if [ -s "$tmp" ] && [ "$(tail -c 1 "$tmp" | od -An -c | tr -d ' ')" != '\n' ]; then
+    printf '\n' >> "$tmp"
+  fi
+  printf 'PLAYWRIGHT_VERSION=%s\n' "$PLAYWRIGHT_VERSION" >> "$tmp"
+  mv "$tmp" .env
+  echo "PLAYWRIGHT_VERSION=$PLAYWRIGHT_VERSION .env'e yazıldı (.playwright-version)"
+fi
+
 chmod 600 .env
 
 if [ -n "$filled" ]; then

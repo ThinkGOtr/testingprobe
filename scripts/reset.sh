@@ -57,7 +57,20 @@ if [ -z "$JIRA_BASE" ]; then
     die "jira-sim sıfırlanamadı (POST /sim/reset)"
   fi
 else
-  echo "Gerçek Jira yapılandırılmış ($JIRA_BASE); Jira verisine dokunulmadı."
+  # Gerçek Jira: önce plan yazdırılır (yazmaz), operatör onaylarsa TPD-1..4 demo başlangıcına
+  # döner ve koşu issue'ları kapanır (yazma kimliği yalnızca core-worker'da).
+  echo "Gerçek Jira yapılandırılmış ($JIRA_BASE). jira-seed planı:"
+  compose exec -T core-worker python -m tp_core.integrations.jira_seed || true
+  c=""
+  if [ -t 0 ]; then
+    read -r -p "Gerçek Jira ($JIRA_BASE) demo başlangıcına döndürülsün mü? [e/H] " c || c=""
+  fi
+  if [ "$c" = e ] || [ "$c" = E ]; then
+    compose exec -T core-worker python -m tp_core.integrations.jira_seed --onay \
+      || die "jira-seed başarısız"
+  else
+    echo "Gerçek Jira verisine dokunulmadı (sonra: make jira-seed)."
+  fi
 fi
 echo
 "$TP_REPO_ROOT/scripts/status.sh"

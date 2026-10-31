@@ -79,10 +79,11 @@ res.mode   # "live" | "replay" | "replay_miss"  → portalda REPLAY / REPLAY-MIS
 |---|---|
 | `auto` (varsayılan) | `ANTHROPIC_API_KEY` varsa `live`, yoksa `replay` |
 | `live` | Anthropic API; anahtar yoksa açık hata |
-| `replay` | `replay/<purpose>/<key>.json`; yoksa `golden/<replay_key.name>.json` (**REPLAY-MISS**); o da yoksa hata |
+| `replay` | `replay/<purpose>/<key>.json`; yoksa `golden/<replay_key.name>.json`: girdi golden'ın `input_match` beyanına uyuyorsa **REPLAY** (köken `golden_matched`), uymuyorsa **REPLAY-MISS**; o da yoksa hata. Ayrıntı ve Demo-A metinleri: `replay/README.md` |
 | `record` | `live` + başarılı çıktıyı `replay/<purpose>/<key>.json`'a yazar. Başlangıçta dizin yazılabilir mi bakılır (compose `:ro` → hata); çalışırken yazma hatası ücretli sonucu kaybettirmez, `ai_call.hata`'ya `replay_kaydedilemedi` yazılır |
 
-`TP_REPLAY_STRICT=1` (prova kipi): replay'de golden'a düşmek yerine `ReplayMiss` hatası verir.
+`TP_REPLAY_STRICT=1` (prova kipi): girdisi beyana uymayan golden'a düşmek yerine `ReplayMiss` hatası
+verir. Beyanlı golden'lar senaryodaki Demo-A yolunu yükseltme gerekmeden REPLAY-MISS'siz koşturur.
 §13 prova listesindeki "REPLAY-MISS olmadan replay" maddesi demo yolu bu kipte koşturularak
 doğrulanır. Birebir kayıtlar iki yolla üretilir:
 
@@ -111,7 +112,8 @@ doğrulanır. Birebir kayıtlar iki yolla üretilir:
   story düzeyi `TPD-1`; case düzeyi (verify_and_map) `TPD-1-C<sira_no>`; tutarlılık denetiminin
   2. ve sonraki turları `TPD-1-r2` (düzeltilmiş doküman: engelleyici bulgu yok → "son hal");
   triage/bug için senaryo adı, ör. `break-campaign`.
-- TPD-1 golden'ları adım 2 sonrası **düzeltilmiş** dokümana göredir: AC2 "6 adette 1 bedava",
+- TPD-1 golden'ları adım 2 sonrası **düzeltilmiş** dokümana göredir: AC2 "her 6 adette 1 adet
+  bedava (5 öde + 1 bedava)",
   AC3 "kampanyasız siparişlerde minimum 750,00 TL", AC6 korunur (kod kampanyalı sepette minimumu
   aramaz), AC4 kod hatasıdır (case `expected-code-defect`, verify_and_map'te `missing_methods`).
 - verify_and_map golden'larının tarayıcı adımları çalışan Playwright MCP'ye karşı koşturulup
@@ -120,7 +122,13 @@ doğrulanır. Birebir kayıtlar iki yolla üretilir:
 - Ajan replay'inde kayıtlı adımlar **güncel izin listesine göre** yeniden çalıştırılır (portalda
   canlı görüntü için); listede olmayan araç replay'de de çalışmaz.
 - Mevcut golden kayıtlar elle hazırlanmıştır (`note` alanı). Canlı anahtar geldiğinde
-  `TP_MODEL_MODE=record` ile gerçek model çıktısıyla yenilenmelidir.
+  `TP_MODEL_MODE=record` ile gerçek model çıktısıyla yenilenmelidir. Kayıt üst verisi
+  (`recording`: model, provider, latency_ms, token'lar; `recorded_at`) olmayan replay çıktısı
+  `ai_call.model = "golden-elle"` ve `ek.cikti_kokeni = "elle_hazirlanmis"` ile yazılır; model
+  kaydı gibi sunulmaz. Kullanıcı etiketi için `tp_core.gateway.mode_label(mode, ai_call.model)`.
+- Nötr REPLAY-MISS yedeği: `replay/<amaç>/on_miss.json` (bugün yalnızca `requirement_review`).
+  Beyanlı golden girdiye uymazsa golden yerine bu çıktı döner (`ek.replay_kokeni = miss_neutral`);
+  ayrıntı `replay/README.md`.
 
 **Ajan araç izin listesi (geçitte, `ALLOWED_AGENT_TOOLS`):** `verify_and_map` yalnızca §8.4
 listesi (`browser_navigate`, `browser_snapshot`, `browser_click`, `browser_type`,

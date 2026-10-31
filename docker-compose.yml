@@ -1,5 +1,6 @@
 # AI Testing Probe — yerel geliştirme ve demo ortamı (F0)
-# Doğrudan değil `make up` ile çalıştırın (PLAYWRIGHT_VERSION .playwright-version'dan gelir).
+# Başlatma `make up` ile; PLAYWRIGHT_VERSION .playwright-version'dan gelir ve `make env` onu
+# .env'e de yazar (düz `docker compose ps/logs/exec/restart` bu sayede çalışır).
 # Ağlar (bkz. specs/001-dev-foundation/research.md R5):
 #   core-net   : normal ağ; çekirdek servisler + host'a açılan arayüzler
 #   data-net   : internal; postgres <-> demo-app-api
@@ -49,11 +50,18 @@ x-core-env: &core-env
   GITHUB_READ_TOKEN: ${GITHUB_READ_TOKEN:-}
   GITHUB_API_URL: ${GITHUB_API_URL:-}
   TOOLCHAIN_URL: http://toolchain-worker:8100
-  DEMOAPP_RO_DATABASE_URL: postgresql+psycopg://demoapp_ro:${DEMOAPP_RO_PASSWORD:?}@postgres:5432/demoapp
   TP_ARTIFACTS_PATH: /artifacts
   TP_MCP_PUBLIC_URL: http://127.0.0.1:${TP_API_PORT:-8000}/mcp
   TP_DAILY_BUDGET_USD: ${TP_DAILY_BUDGET_USD:-30}
   TP_WORKFLOW_BUDGET_USD: ${TP_WORKFLOW_BUDGET_USD:-2}
+  # Gereksinim akışı (Faz 2): PO etiket sorgu aralığı, tutarlılık turu üst sınırı (core-api de
+  # yeniden başlatmada tur sınırını uygular), kanıt deposu.
+  TP_PO_POLL_S: ${TP_PO_POLL_S:-15}
+  TP_CONSISTENCY_MAX_ROUNDS: ${TP_CONSISTENCY_MAX_ROUNDS:-3}
+  TP_FORGE_REPO_NAME: ${TP_FORGE_REPO_NAME:-demo-app}
+  TP_FORGE_CHECK_REF: ${TP_FORGE_CHECK_REF:-main}
+  # Story başına manuel test tasarımı baz süresi (saniye, F0 ölçümü); boşsa portal "ölçülmedi".
+  TP_MANUAL_BASELINE_S: ${TP_MANUAL_BASELINE_S:-}
 
 # İmajı yalnızca toolchain-worker derler; test-runner ve playwright-mcp aynı yerel imajı kullanır.
 x-toolchain-image: &toolchain-image
@@ -162,6 +170,8 @@ services:
       JIRA_PO_ACCOUNT_IDS: ${JIRA_PO_ACCOUNT_IDS:-}
       TP_PO_JIRA_USERS: ${TP_PO_JIRA_USERS:-}
       TP_JIRA_BOT_ACCOUNT_IDS: ${TP_JIRA_BOT_ACCOUNT_IDS:-}
+      # Tutarlılık denetiminin veri araçları (salt okuma rolü; core-api demoapp'e hiç bağlanmaz).
+      DEMOAPP_RO_DATABASE_URL: postgresql+psycopg://demoapp_ro:${DEMOAPP_RO_PASSWORD:?}@postgres:5432/demoapp
       <<: *core-env
     volumes:
       - tp_forge:/forge
@@ -190,9 +200,13 @@ services:
       PLAYWRIGHT_VERSION: ${PLAYWRIGHT_VERSION}
       TEST_RUNNER_URL: http://test-runner:8200
       TP_FORGE_PATH: /forge/demo-app.git
+      # Çalışan demo-app-web'in derlendiği forge commit'i (/locator-probe sha eşleşmesi); boşsa
+      # yanıt 'dogrulanamadi' + uyarı döner (öneri insana gider).
+      DEMO_APP_BUILD_SHA: ${DEMO_APP_BUILD_SHA:-}
       TP_ARTIFACTS_PATH: /artifacts
     volumes:
-      - tp_forge:/forge
+      # Forge'u yalnızca okur (git archive / ast-guard git-ref modu).
+      - tp_forge:/forge:ro
       - tp_artifacts:/artifacts
     networks: [core-net, runner-net]
     restart: unless-stopped
@@ -240,7 +254,8 @@ services:
       MCP_ALLOWED_ORIGINS: http://demo-app-web:8080
       # Host başlığı denetimi (DNS rebinding): yalnızca core-worker'ın kullandığı ad.
       MCP_ALLOWED_HOSTS: playwright-mcp:8931,playwright-mcp
-    # Host'a port açılmaz; hata ayıklama: docker compose exec playwright-mcp …
+    # Host'a port açılmaz; hata ayıklama: docker compose exec playwright-mcp … (.env'de
+    # PLAYWRIGHT_VERSION olmalı: make env yazar).
     networks: [agent-net, mcp-net]
     restart: unless-stopped
     healthcheck:

@@ -175,6 +175,29 @@ def run(dur: threading.Event, aralik: float = 1.0) -> int:
     return 0
 
 
+def acilis_kancalari(moduller: list[str]) -> list[str]:
+    """Özellik `jobs` modüllerindeki `on_worker_start(conn)` kancalarını bir kez çağırır.
+
+    Ör. kendini yeniden planlayan periyodik işler (PO etiket sorgusu) kuyruk silinse de worker
+    açılışında yeniden başlar. Kanca hatası worker'ı düşürmez (loglanır); her kanca kendi
+    işleminde koşar.
+    """
+    import importlib
+
+    calisan: list[str] = []
+    for ad in moduller:
+        kanca = getattr(importlib.import_module(ad), "on_worker_start", None)
+        if not callable(kanca):
+            continue
+        try:
+            with get_engine().begin() as conn:
+                kanca(conn)
+            calisan.append(ad)
+        except Exception:
+            log.exception("%s.on_worker_start başarısız", ad)
+    return calisan
+
+
 def main() -> None:
     from tp_core.config import get_settings
 
@@ -182,6 +205,7 @@ def main() -> None:
     yuklenen = discover()
     if yuklenen:
         log.info("özellik işleyici modülleri: %s", ", ".join(yuklenen))
+    acilis_kancalari(yuklenen)
     dur = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: dur.set())

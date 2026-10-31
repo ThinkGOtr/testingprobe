@@ -22,6 +22,15 @@ export const DURUM_ADIMI: Record<GereksinimDurumu, number | null> = {
 const SON_ADIM = AKIS_ADIMLARI.length;
 
 /**
+ * Akış adımının adı. 1. adım Jira story'sinde "Jira"; serbest metin gereksinimde Jira yoktur,
+ * o yüzden "Serbest metin" yazılır.
+ */
+export function adimAdi(no: number, kaynak: "jira" | "free_text" = "jira"): string {
+  if (no === 1 && kaynak !== "jira") return "Serbest metin";
+  return AKIS_ADIMLARI[no - 1]?.ad ?? "";
+}
+
+/**
  * Gösterilecek adım. Gereksinim makinesi `done` ile biter; sonraki adımlar (kod, CI, triage)
  * script/koşu nesnelerinde ilerler, bu yüzden `done` ve `failed` için API'nin verdiği ipucu
  * (varsa) kullanılır. Bilinmeyen durum adı 1. adım sayılır.

@@ -2,7 +2,23 @@
   "kind": "call",
   "purpose": "case_generation",
   "golden": "TPD-1",
-  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı; adım 2'de düzeltilmiş ve PO onaylı TPD-1 metnine göre (AC2: 6 adette 1 bedava; AC3: kampanyasız siparişlerde minimum 750,00 TL; AC6: kampanyalı siparişte minimum aranmaz). AC4 case'i bilinen kod hatasıdır (tutarlılık bulgusu F4 → code_defect), 'expected-code-defect' etiketlidir. Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record).",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı (model çıktısı değil; ai_call.model = golden-elle); adım 2'de düzeltilmiş ve PO onaylı TPD-1 metnine göre (AC2: her 6 adette 1 bedava, 5 öde + 1 bedava; AC3: kampanyasız siparişlerde minimum 750,00 TL; AC6: kampanyalı siparişte minimum aranmaz). AC4 case'i bilinen kod hatasıdır (tutarlılık bulgusu F4 → code_defect), 'expected-code-defect' etiketlidir. C10 BİLEREK C2'nin tekrarıdır (aynı sepet, aynı beklenen; yalnızca başlık farklı): QA incelemesindeki 'reddet' kararı keyfi değil gerçek bir karar olsun diye (gerekçe: C2 ile aynı). Reddedilmesi hiçbir AC'yi kapsamsız bırakmaz (AC2'yi C2–C4 kapsar). Canlı model böyle bir tekrar üretmeyebilir. Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), eşleşmezse REPLAY-MISS.",
+  "input_match": {
+    "sources": [
+      "jira:TPD-1"
+    ],
+    "acceptance_criteria": [
+      "AC1: Bayi katalogda bir ürün için \"Sepete ekle\" butonuna bastığında ürün sepete eklenir ve sepet sayacı artar.",
+      "AC2: Kampanyalı üründe her 6 adette 1 adet bedava verilir: bayi 5 adet öder, 1 adet bedava alır (6 adette 1, 12 adette 2 bedava).",
+      "AC3: Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL'dir; altında \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur.",
+      "AC4: Sipariş tutarı bayinin kredi limitini aşarsa \"Kredi limiti aşıldı\" uyarısı gösterilir ve sipariş onaylanamaz.",
+      "AC5: Sipariş onaylandığında sipariş numarası gösterilir ve sipariş, sipariş geçmişinde listelenir.",
+      "AC6: Kampanyalı siparişlerde minimum sipariş tutarı şartı aranmaz."
+    ],
+    "contains": [
+      "Bayi, katalogdan ürünleri sepete ekleyip kampanya indirimiyle siparişini onaylayabilmelidir."
+    ]
+  },
   "output": {
     "cases": [
       {
@@ -378,6 +394,48 @@
           }
         ],
         "expected_result": "Kampanyalı sepette toplam 150,00 TL olsa da minimum sipariş uyarısı gösterilmez ve sipariş onaylanabilir",
+        "tags": [
+          "AI-generated"
+        ]
+      },
+      {
+        "title": "Kampanyalı üründen 7 adet sepete eklenince bedava adet ve tutarlar doğru hesaplanır",
+        "type": "positive",
+        "risk": "medium",
+        "acceptance_criteria_refs": [
+          "AC2"
+        ],
+        "preconditions": [
+          "Sepet boş",
+          "P-001 \"6 al 1 bedava\" kampanyasında"
+        ],
+        "steps": [
+          {
+            "id": "S1",
+            "action": "Giriş sayfasını aç",
+            "data": null,
+            "expected": "Giriş formu görüntülenir"
+          },
+          {
+            "id": "S2",
+            "action": "Bayi kullanıcısıyla giriş yap",
+            "data": "bayi1 / Demo123!",
+            "expected": "Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir"
+          },
+          {
+            "id": "S3",
+            "action": "\"Portakal Gazozu 1L\" (P-001) kartında adedi 7 yapıp \"Sepete ekle\" butonuna bas",
+            "data": "P-001 × 7",
+            "expected": "Sepet sayacı 7 olur"
+          },
+          {
+            "id": "S4",
+            "action": "Üst menüden sepete git",
+            "data": null,
+            "expected": "P-001 satırında adet 7, bedava adet 1; ara toplam 175,00 TL, indirim 25,00 TL, toplam 150,00 TL"
+          }
+        ],
+        "expected_result": "7 adette 1 adet bedava verilir; indirim 25,00 TL, toplam 150,00 TL",
         "tags": [
           "AI-generated"
         ]

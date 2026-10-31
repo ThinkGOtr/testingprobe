@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { cakismaMesaji, hataMesaji, kararCakismasi } from "./api/http";
+import { ApiError, cakismaMesaji, hataMesaji, kararCakismasi } from "./api/http";
 
 export interface VeriDurumu<T> {
   veri: T | undefined;
   hata: string | null;
+  /** Son hatanın HTTP durum kodu (ApiError değilse null); ör. 403'te "Tekrar dene" anlamsızdır. */
+  hataKodu: number | null;
   yukleniyor: boolean;
   /** sessiz=true: mevcut veriyi koruyarak arka planda yenile (SSE olaylarında). */
   yenile: (sessiz?: boolean) => Promise<void>;
@@ -14,6 +16,7 @@ export interface VeriDurumu<T> {
 export function useVeri<T>(yukle: () => Promise<T>, bagimliliklar: readonly unknown[]): VeriDurumu<T> {
   const [veri, setVeri] = useState<T | undefined>(undefined);
   const [hata, setHata] = useState<string | null>(null);
+  const [hataKodu, setHataKodu] = useState<number | null>(null);
   const [yukleniyor, setYukleniyor] = useState(true);
   const sayac = useRef(0);
   const yukleRef = useRef(yukle);
@@ -27,9 +30,13 @@ export function useVeri<T>(yukle: () => Promise<T>, bagimliliklar: readonly unkn
       if (benim === sayac.current) {
         setVeri(v);
         setHata(null);
+        setHataKodu(null);
       }
     } catch (e) {
-      if (benim === sayac.current) setHata(hataMesaji(e));
+      if (benim === sayac.current) {
+        setHata(hataMesaji(e));
+        setHataKodu(e instanceof ApiError ? e.status : null);
+      }
     } finally {
       if (benim === sayac.current) setYukleniyor(false);
     }
@@ -43,7 +50,7 @@ export function useVeri<T>(yukle: () => Promise<T>, bagimliliklar: readonly unkn
     };
   }, bagimliliklar);
 
-  return { veri, hata, yukleniyor, yenile, setVeri };
+  return { veri, hata, hataKodu, yukleniyor, yenile, setVeri };
 }
 
 export interface IslemSecenegi {

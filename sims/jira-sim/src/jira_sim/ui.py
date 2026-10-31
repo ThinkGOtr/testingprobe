@@ -22,7 +22,7 @@ from fastapi.templating import Jinja2Templates
 from jira_sim import jql
 from jira_sim.adf import adf_to_html, adf_to_text, text_to_adf
 from jira_sim.api import get_store
-from jira_sim.ops import SimError, add_comment, issue_links, update_issue
+from jira_sim.ops import SimError, add_comment, issue_links, require_issue, update_issue
 from jira_sim.security import SESSION_COOKIE, SimSecurity
 from jira_sim.seed import USERS
 from jira_sim.store import Store
@@ -211,7 +211,12 @@ def adf_to_editable(doc: Any) -> str:
     return "\n\n".join(b for b in blocks if b)
 
 
-FIELD_NAMES = {"labels": "Etiketler", "description": "Açıklama", "summary": "Özet"}
+FIELD_NAMES = {
+    "labels": "Etiketler",
+    "description": "Açıklama",
+    "summary": "Özet",
+    "status": "Durum",
+}
 
 
 def history_rows(changelog: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -233,6 +238,14 @@ def history_rows(changelog: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 PO_APPROVED_LABEL = "tp-po-approved"
 CONTENT_FIELDS = {"summary", "description"}
+# PO onayı (TEKNİK-TASARIM §8.2b) yalnızca gereksinim story'leri için verilir; Test ve Bug
+# kayıtlarında onay düğmesi gösterilmez ve arayüzden onay etiketi konamaz.
+PO_APPROVABLE_TYPES = frozenset({"Story"})
+NOT_APPROVABLE = "PO onayı yalnızca story kayıtları için verilir."
+
+
+def po_approvable(it: dict[str, Any]) -> bool:
+    return it.get("issuetype") in PO_APPROVABLE_TYPES
 
 
 def approval_is_stale(changelog: list[dict[str, Any]], label: str = PO_APPROVED_LABEL) -> bool:
@@ -317,7 +330,9 @@ def issue_detail(request: Request, store: StoreDep, key: str) -> HTMLResponse:
             "po": PO_USER,
             "title": f"{it['key']} {it['summary']}",
             "history": history_rows(it["changelog"]),
-            "approval_stale": PO_APPROVED_LABEL in it.get("labels", [])
+            "approvable": po_approvable(it),
+            "approval_stale": po_approvable(it)
+            and PO_APPROVED_LABEL in it.get("labels", [])
             and approval_is_stale(it["changelog"]),
             "here": f"/browse/{quote(it['key'])}",
         }
@@ -403,6 +418,10 @@ def ui_labels(
         return _redirect(key, "etiketler", "Etiket boş olamaz.")
     op = "remove" if action == "remove" else "add"
     try:
+        if op == "add" and label == PO_APPROVED_LABEL:
+            with store.lock:
+                if not po_approvable(require_issue(store, key)):
+                    return _redirect(key, "etiketler", NOT_APPROVABLE)
         update_issue(store, key, {"update": {"labels": [{op: label}]}}, po)
     except SimError as exc:
         return _redirect(key, "etiketler", _error_text(exc))
@@ -419,6 +438,8 @@ def ui_reapprove(store: StoreDep, key: str, po: PoUser) -> RedirectResponse:
     """
     try:
         with store.tx():
+            if not po_approvable(require_issue(store, key)):
+                return _redirect(key, "po", NOT_APPROVABLE)
             update_issue(store, key, {"update": {"labels": [{"remove": PO_APPROVED_LABEL}]}}, po)
             update_issue(store, key, {"update": {"labels": [{"add": PO_APPROVED_LABEL}]}}, po)
     except SimError as exc:

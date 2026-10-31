@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { Rotalar } from "../App";
+import { KAYNAK } from "../api/mock/fixtures";
 import { mockOlayYayinla } from "../api/mock/olaylar";
 import { OturumProvider } from "../auth";
 import { BildirimProvider } from "../components/Bildirim";
@@ -96,7 +97,8 @@ describe("ekranlar", () => {
     await oturumAc("analist");
     uygulama("/gereksinimler/req-tpd-1");
     // Golden TPD-1 F2 "observed" metni aynen.
-    expect(await screen.findByText("Kod her 6 adette 1 bedava veriyor (5 öde + 1 bedava)")).toBeInTheDocument();
+    const f2 = KAYNAK.consistency_check["TPD-1"].findings.find((x) => x.id === "F2")!.observed;
+    expect(await screen.findByText(f2)).toBeInTheDocument();
     const bulgular = await screen.findAllByRole("article");
     expect(bulgular).toHaveLength(5);
     expect(screen.getByText("api/src/demoapp_api/campaign.py:23")).toBeInTheDocument();
@@ -181,6 +183,8 @@ describe("ekranlar", () => {
     expect(await screen.findByText("Test hata yakalıyor ✓")).toBeInTheDocument();
     expect(screen.getAllByRole("img", { name: /ekran görüntüsü/ })).toHaveLength(1);
     expect(screen.getByRole("button", { name: "Merge et" })).toBeEnabled();
+    // Olay yolu abonelikten önce yayınlanan olayı kaçırır: önce bağlantının kurulmasını bekle.
+    expect(await screen.findByText("Olaylar: örnek veri")).toBeInTheDocument();
     await act(async () => {
       mockOlayYayinla({
         type: "agent.step",

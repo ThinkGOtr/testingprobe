@@ -6,9 +6,10 @@ import type { Gereksinim } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
 import { BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
-import { akisAdimi } from "../lib/akis";
+import { adimAdi, akisAdimi } from "../lib/akis";
 import { AC_EKSIK, AKIS_ADIMLARI, gereksinimDurumu } from "../lib/etiketler";
 import { tarih } from "../lib/format";
+import { ORNEK_SERBEST_GEREKSINIM } from "../lib/ornekGereksinim";
 
 const PO_ETIKET = { not_requested: "—", pending: "Bekliyor", approved: "Onaylı" } as const;
 
@@ -58,7 +59,7 @@ export function Gereksinimler() {
       {formAcik && <SerbestMetinFormu kapat={() => setFormAcik(false)} />}
 
       <Kart
-        baslik="Story listesi"
+        baslik="Gereksinim listesi"
         eylemler={
           <div className="alan alan-satir">
             <label htmlFor="gereksinim-ara" className="gorunmez">
@@ -78,7 +79,7 @@ export function Gereksinimler() {
           </BosDurum>
         ) : (
           <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Gereksinimler tablosu">
-            <table className="tablo">
+            <table className="tablo tablo-yigin">
               <thead>
                 <tr>
                   <th scope="col">Anahtar</th>
@@ -114,34 +115,44 @@ function GereksinimSatiri({ g }: { g: Gereksinim }) {
   const adim = akisAdimi(g.durum, g.adim);
   return (
     <tr>
-      <td className="mono">
+      <td className="mono" data-etiket="Anahtar">
         {g.jira_key ?? (
           <Cip ton="vurgu" title="Serbest metin gereksinim">
             Serbest metin
           </Cip>
         )}
       </td>
-      <td>
+      <td data-etiket="Başlık">
         <Link to={`/gereksinimler/${encodeURIComponent(g.id)}`} className="satir-baglanti">
           {g.baslik}
         </Link>
         {g.ac_missing && <span className="soluk"> · kabul kriteri yok</span>}
       </td>
-      <td>
+      <td data-etiket="Durum">
         <Cip ton={d.ton}>{d.etiket}</Cip>
       </td>
-      <td>
+      <td data-etiket="Adım">
         <span className="mono">
           {adim}/{AKIS_ADIMLARI.length}
         </span>{" "}
-        <span className="soluk">{AKIS_ADIMLARI[adim - 1]?.ad}</span>
+        <span className="soluk">{adimAdi(adim, g.kaynak)}</span>
       </td>
-      <td>{PO_ETIKET[g.po.durum]}</td>
-      <td className="sayi">{g.sayaclar.bulgu_acik || "—"}</td>
-      <td className="sayi">
+      <td data-etiket="PO">{PO_ETIKET[g.po.durum]}</td>
+      <td className="sayi" data-etiket="Açık bulgu">
+        {!g.sayaclar.bulgu_acik ? (
+          "—"
+        ) : g.durum === "findings_open" || g.durum === "in_review" ? (
+          g.sayaclar.bulgu_acik
+        ) : (
+          <span className="soluk" title="Gereksinim bulgu kararı beklemiyor; kalan uyarılar bilgi amaçlıdır">
+            {g.sayaclar.bulgu_acik} uyarı
+          </span>
+        )}
+      </td>
+      <td className="sayi" data-etiket="Case (onaylı)">
         {g.sayaclar.case_toplam ? `${g.sayaclar.case_onayli}/${g.sayaclar.case_toplam}` : "—"}
       </td>
-      <td>{tarih(g.cekim_zamani)}</td>
+      <td data-etiket="Çekim">{tarih(g.cekim_zamani)}</td>
     </tr>
   );
 }
@@ -175,6 +186,25 @@ function SerbestMetinFormu({ kapat }: { kapat: () => void }) {
       <p className="soluk">
         Jira dışı gereksinimler için. PO teyidi bu yolda portalda (PO rolüyle) verilir; sonrası aynı akış.
       </p>
+      <div className="satir-ogeler">
+        <IslemDugmesi
+          roller={["analyst", "presenter"]}
+          tur="ikincil"
+          kucuk
+          onClick={() => {
+            setBaslik(ORNEK_SERBEST_GEREKSINIM.baslik);
+            setAciklama(ORNEK_SERBEST_GEREKSINIM.aciklama);
+            setAcler([...ORNEK_SERBEST_GEREKSINIM.ac]);
+            setDogrulama(null);
+          }}
+        >
+          Örnek gereksinimi doldur
+        </IslemDugmesi>
+        <span className="soluk kucuk">
+          Demo metni kayıtlı (REPLAY) çıktıyla birebir eşleşir. Metni değiştirirseniz AI adımları dürüstçe REPLAY-MISS olarak
+          işaretlenir.
+        </span>
+      </div>
       <form onSubmit={gonder} className="form" noValidate>
         <div className="alan">
           <label htmlFor="ft-baslik">Başlık</label>

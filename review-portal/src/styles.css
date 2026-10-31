@@ -850,6 +850,79 @@ td .cip + .cip {
 .tablo-sik td {
   padding: 6px 10px;
 }
+
+/*
+ * Dar ekranda (≤ 640 px) satırlar "etiket: değer" kartlarına dönüşür: sütun kırpılmaz, tablo yatay
+ * kaydırma gerektirmez. Başlık satırı ekran okuyucu için DOM'da kalır (görsel olarak gizli); her
+ * hücrenin etiketi `data-etiket`'ten gelir.
+ */
+@media (max-width: 640px) {
+  .tablo-yigin thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .tablo-yigin,
+  .tablo-yigin tbody,
+  .tablo-yigin tr,
+  .tablo-yigin td {
+    display: block;
+    width: 100%;
+  }
+  .tablo-yigin tr {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 10px;
+    margin-bottom: 10px;
+  }
+  .tablo-yigin tbody tr:hover {
+    background: transparent;
+  }
+  /* Etiket solda sabit sütunda (mutlak konum), içerik akışı bozulmadan sağda satır içi akar. */
+  .tablo-yigin td,
+  .tablo-yigin tbody tr:last-child td {
+    position: relative;
+    min-height: 1.6em;
+    padding: 4px 0 4px 36%;
+    border-bottom: none;
+    text-align: left;
+  }
+  .tablo-yigin td.sayi {
+    text-align: left;
+  }
+  .tablo-yigin td.mono,
+  .tablo-yigin td .mono {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  /* Adım kartı: adım no başlık gibi; boş "Veri" satırı yer kaplamaz. */
+  .tablo-yigin td.adim-no {
+    padding-left: 0;
+    font-weight: 650;
+  }
+  .tablo-yigin td.adim-no::before {
+    display: none;
+  }
+  .tablo-yigin td.bos-hucre {
+    display: none;
+  }
+  .tablo-yigin td[data-etiket]::before {
+    content: attr(data-etiket);
+    position: absolute;
+    left: 0;
+    top: 6px;
+    width: calc(36% - 10px);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    font-weight: 650;
+    font-family: var(--font, inherit);
+  }
+}
 .satir-hata td {
   background: var(--err-bg);
 }
@@ -1811,4 +1884,21 @@ fieldset:disabled select {
 /* Adresi olmayan bağlantı (artifact/forge sunucusu yok): tıklanamaz düz metin. */
 .baglanti-yok {
   color: var(--text-2);
+}
+
+/* Claude Code kanalı: numaralı kurulum adımları */
+.adim-liste {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: grid;
+  gap: 0.75rem;
+}
+.adim-liste .kod-blok {
+  margin: 0.25rem 0;
+}
+
+/* Düğme içindeki ikincil bilgi (ör. kontrol turu) */
+.dugme-ek {
+  font-weight: 400;
+  opacity: 0.85;
 }

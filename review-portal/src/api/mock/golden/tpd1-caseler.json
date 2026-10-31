@@ -375,5 +375,47 @@
     "tags": [
       "AI-generated"
     ]
+  },
+  {
+    "title": "Kampanyalı üründen 7 adet sepete eklenince bedava adet ve tutarlar doğru hesaplanır",
+    "type": "positive",
+    "risk": "medium",
+    "acceptance_criteria_refs": [
+      "AC2"
+    ],
+    "preconditions": [
+      "Sepet boş",
+      "P-001 \"6 al 1 bedava\" kampanyasında"
+    ],
+    "steps": [
+      {
+        "id": "S1",
+        "action": "Giriş sayfasını aç",
+        "data": null,
+        "expected": "Giriş formu görüntülenir"
+      },
+      {
+        "id": "S2",
+        "action": "Bayi kullanıcısıyla giriş yap",
+        "data": "bayi1 / Demo123!",
+        "expected": "Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir"
+      },
+      {
+        "id": "S3",
+        "action": "\"Portakal Gazozu 1L\" (P-001) kartında adedi 7 yapıp \"Sepete ekle\" butonuna bas",
+        "data": "P-001 × 7",
+        "expected": "Sepet sayacı 7 olur"
+      },
+      {
+        "id": "S4",
+        "action": "Üst menüden sepete git",
+        "data": null,
+        "expected": "P-001 satırında adet 7, bedava adet 1; ara toplam 175,00 TL, indirim 25,00 TL, toplam 150,00 TL"
+      }
+    ],
+    "expected_result": "7 adette 1 adet bedava verilir; indirim 25,00 TL, toplam 150,00 TL",
+    "tags": [
+      "AI-generated"
+    ]
   }
 ]

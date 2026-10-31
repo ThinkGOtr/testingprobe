@@ -1,0 +1,110 @@
+{
+  "kind": "agent",
+  "purpose": "consistency_check",
+  "golden": "SERBEST",
+  "note": "Adlandırılmış golden kayıt, serbest metin demo gereksinimi ('Sepetten ürün çıkarma'; metin rules/replay/README.md). Elle hazırlandı; canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), başka serbest metinlerde REPLAY-MISS. 1. kontrol turu; F2 ve F3 aynı AC3 metnini önerir (kabul sırası sonucu değiştirmez).",
+  "input_match": {
+    "sources": [
+      "serbest:*"
+    ],
+    "acceptance_criteria": [
+      "AC1: Satırdaki \"Kaldır\" butonuna basıldığında ürün sepetten çıkar ve sepet sayacı azalır.",
+      "AC2: Kaldırma sonrası kampanya indirimi her 7 adette 1 bedava kuralıyla yeniden hesaplanır.",
+      "AC3: Sepet tutarı 500,00 TL altına düşerse minimum tutar uyarısı gösterilir."
+    ],
+    "contains": [
+      "Bayi sepetteki bir ürün satırını kaldırabilmeli; toplamlar ve kampanya indirimi yeniden hesaplanmalıdır."
+    ]
+  },
+  "steps": [
+    {
+      "tool": "search_code",
+      "args": {
+        "query": "bedava"
+      },
+      "result_summary": "api/src/demoapp_api/campaign.py",
+      "allowed": true
+    },
+    {
+      "tool": "get_file_contents",
+      "args": {
+        "path": "api/src/demoapp_api/campaign.py"
+      },
+      "result_summary": "def bedava_adet(adet: int) -> int: … return adet // 6",
+      "allowed": true
+    },
+    {
+      "tool": "db_query",
+      "args": {
+        "sql": "SELECT anahtar, deger FROM ayar WHERE anahtar = 'min_siparis_tutari'"
+      },
+      "result_summary": "min_siparis_tutari=750.00",
+      "allowed": true
+    },
+    {
+      "tool": "get_file_contents",
+      "args": {
+        "path": "api/src/demoapp_api/pricing.py"
+      },
+      "result_summary": "sepet_hesapla: satır kaldırıldıktan sonra kalan satırlarla yeniden hesaplanır; min_aranir = not any(kampanyali) — kampanyalı sepette minimum aranmaz",
+      "allowed": true
+    }
+  ],
+  "output": {
+    "findings": [
+      {
+        "id": "F1",
+        "type": "doc_vs_code",
+        "doc_ref": "AC2",
+        "claim": "Kaldırma sonrası kampanya indirimi her 7 adette 1 bedava kuralıyla yeniden hesaplanır",
+        "observed": "Kod her 6 adette 1 bedava veriyor (5 öde + 1 bedava); kaldırma sonrası da aynı kuralla hesaplanıyor",
+        "evidence": [
+          {
+            "kind": "code",
+            "repo": "demo-app",
+            "path": "api/src/demoapp_api/campaign.py",
+            "line": 23,
+            "snippet": "return adet // 6"
+          }
+        ],
+        "severity": "blocking",
+        "suggested_doc_text": "AC2: Kaldırma sonrası kampanya indirimi her 6 adette 1 bedava kuralıyla yeniden hesaplanır."
+      },
+      {
+        "id": "F2",
+        "type": "doc_vs_data",
+        "doc_ref": "AC3",
+        "claim": "Minimum tutar 500,00 TL",
+        "observed": "ayar tablosunda min_siparis_tutari = 750.00; uygulama uyarıyı bu değerle veriyor",
+        "evidence": [
+          {
+            "kind": "data",
+            "query": "SELECT anahtar, deger FROM ayar WHERE anahtar = 'min_siparis_tutari'",
+            "result_digest": "min_siparis_tutari=750.00"
+          }
+        ],
+        "severity": "blocking",
+        "suggested_doc_text": "AC3: Sepette kampanyalı ürün yoksa ve sepet tutarı 750,00 TL altına düşerse \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur."
+      },
+      {
+        "id": "F3",
+        "type": "missing_in_doc",
+        "doc_ref": "AC3",
+        "claim": "Sepet tutarı minimumun altına düşerse uyarı gösterilir",
+        "observed": "Sepette kampanyalı ürün varsa minimum tutar aranmıyor ve uyarı gösterilmiyor; doküman bu istisnayı belirtmiyor",
+        "evidence": [
+          {
+            "kind": "code",
+            "repo": "demo-app",
+            "path": "api/src/demoapp_api/pricing.py",
+            "line": 94,
+            "snippet": "min_aranir = not any(s.kampanyali for s in satirlar)"
+          }
+        ],
+        "severity": "blocking",
+        "suggested_doc_text": "AC3: Sepette kampanyalı ürün yoksa ve sepet tutarı 750,00 TL altına düşerse \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur."
+      }
+    ],
+    "notes": "AC1 (Kaldır → satır silinir, sayaç azalır) kodla tutarlı. Kod ve veri yalnızca salt okuma araçlarıyla incelendi."
+  }
+}

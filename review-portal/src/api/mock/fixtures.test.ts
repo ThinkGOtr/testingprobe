@@ -10,7 +10,7 @@ import { api } from "../client";
 import { baglantiTuru, uygulamaRotasiMi } from "../../lib/rotalar";
 import type { Kanit } from "../types";
 import { mockVerisi } from "./handlers";
-import { ilkVeri, KAMPANYA_KOD, KAMPANYA_TEST_KODU, KAYNAK, MIN_SIPARIS_VERI, refsiz, SEPET_TEST_KODU, TPD1_GOLDEN_CASELER } from "./fixtures";
+import { goldenKoku, ilkVeri, KAMPANYA_KOD, KAMPANYA_TEST_KODU, KAYNAK, MIN_SIPARIS_VERI, refsiz, SEPET_TEST_KODU, TPD1_GOLDEN_CASELER } from "./fixtures";
 import { oturumAc } from "../../test/yardimci";
 
 const KOK = resolve(__dirname, "../../../..");
@@ -83,15 +83,18 @@ describe("örnek veri jira-sim seed'i ve golden çıktılarla çelişmez", () =>
     const tpd1 = jira.find((g) => g.jira_key === "TPD-1")!;
     const f = KAYNAK.consistency_check["TPD-1"].findings;
     expect(tpd1.kabul_kriterleri[1].metin).toBe(refsiz(f.find((x) => x.id === "F2")!.suggested_doc_text!));
-    expect(tpd1.kabul_kriterleri[1].metin).toContain("(6 adette 1 bedava)");
+    expect(tpd1.kabul_kriterleri[1].metin).toContain("(6 adette 1, 12 adette 2 bedava)");
     expect(tpd1.kabul_kriterleri[2].metin).toBe(refsiz(f.find((x) => x.id === "F3")!.suggested_doc_text!));
   });
 
-  it("ön inceleme soruları ve verdict golden ile aynı küme ve metin", () => {
-    for (const g of jira) {
+  it("ön inceleme soruları ve verdict golden ile aynı küme ve metin (serbest metin: SERBEST)", () => {
+    for (const g of v.gereksinimler) {
       if (!g.on_inceleme) continue;
-      const golden = KAYNAK.requirement_review[g.jira_key!];
-      expect(golden, g.jira_key!).toBeDefined();
+      const kok = goldenKoku(g);
+      const golden = kok ? KAYNAK.requirement_review[kok] : undefined;
+      // Golden'ı olmayan çıktı REPLAY-MISS olmalı; olan ise REPLAY.
+      expect(g.on_inceleme.mode, g.id).toBe(golden ? "replay" : "replay_miss");
+      if (!golden) continue;
       expect(g.on_inceleme.verdict).toBe(golden.verdict);
       expect(g.on_inceleme.questions.map(({ cevap: _c, ...q }) => q), g.jira_key!).toEqual(golden.questions);
     }
@@ -100,9 +103,10 @@ describe("örnek veri jira-sim seed'i ve golden çıktılarla çelişmez", () =>
   });
 
   it("her kontrol turunun bulguları o turun golden bulgularıyla aynı (bulgu yok demek de dahil)", () => {
-    for (const g of jira) {
+    for (const g of v.gereksinimler) {
+      const kok = goldenKoku(g) ?? `yok:${g.id}`;
       for (let tur = 1; tur <= g.kontrol_turu; tur++) {
-        const ad = tur === 1 ? g.jira_key! : `${g.jira_key}-r${tur}`;
+        const ad = tur === 1 ? kok : `${kok}-r${tur}`;
         const golden = KAYNAK.consistency_check[ad];
         const ornek = v.bulgular.filter((b) => b.requirement_id === g.id && b.kontrol_turu === tur);
         if (!golden) {

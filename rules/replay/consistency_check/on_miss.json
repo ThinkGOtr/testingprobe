@@ -1,0 +1,9 @@
+{
+  "kind": "agent",
+  "purpose": "consistency_check",
+  "note": "Nötr REPLAY-MISS yedeği (golden değildir, model çıktısı değildir). Girdi, adlandırılmış golden'ın girdi beyanına (input_match) uymadığında golden'ın bulguları başka bir dokümana aittir (olmayan AC'lere ve ilgisiz kod satırlarına atıf yapar; kod satırı var olduğu için kanıt doğrulamasından da geçebilir). Geçit onların yerine bu çıktıyı döner (ai_call.ek.replay_kokeni = miss_neutral). Bulgu üretilmez; gereksinim akışı REPLAY-MISS denetimini güvenilmez sayar ve belgeyi otomatik son hal yapmaz (analist açıkça karar verir). Bkz. rules/replay/README.md.",
+  "output": {
+    "findings": [],
+    "notes": "Bu girdi için kayıtlı model çıktısı yok (REPLAY-MISS); canlı model gerekir. Tutarlılık denetimi yapılmadı; doküman kodla/veriyle karşılaştırılmadı."
+  }
+}

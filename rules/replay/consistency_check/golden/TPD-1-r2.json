@@ -2,7 +2,23 @@
   "kind": "agent",
   "purpose": "consistency_check",
   "golden": "TPD-1-r2",
-  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği), 2. kontrol turu: F1–F3 için fix_doc, F4 için code_defect kararından sonra güncellenmiş TPD-1 metni. Engelleyici bulgu yoktur → doküman 'son hal', PO teyidine (adım 3) geçilir. Elle hazırlandı; canlı modelle yeniden kaydedilmeli.",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği), 2. kontrol turu: F1–F3 için fix_doc, F4 için code_defect kararından sonra güncellenmiş TPD-1 metni. Engelleyici bulgu yoktur → doküman 'son hal', PO teyidine (adım 3) geçilir. Elle hazırlandı; canlı modelle yeniden kaydedilmeli. Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), eşleşmezse REPLAY-MISS.",
+  "input_match": {
+    "sources": [
+      "jira:TPD-1"
+    ],
+    "acceptance_criteria": [
+      "AC1: Bayi katalogda bir ürün için \"Sepete ekle\" butonuna bastığında ürün sepete eklenir ve sepet sayacı artar.",
+      "AC2: Kampanyalı üründe her 6 adette 1 adet bedava verilir: bayi 5 adet öder, 1 adet bedava alır (6 adette 1, 12 adette 2 bedava).",
+      "AC3: Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL'dir; altında \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur.",
+      "AC4: Sipariş tutarı bayinin kredi limitini aşarsa \"Kredi limiti aşıldı\" uyarısı gösterilir ve sipariş onaylanamaz.",
+      "AC5: Sipariş onaylandığında sipariş numarası gösterilir ve sipariş, sipariş geçmişinde listelenir.",
+      "AC6: Kampanyalı siparişlerde minimum sipariş tutarı şartı aranmaz."
+    ],
+    "contains": [
+      "Bayi, katalogdan ürünleri sepete ekleyip kampanya indirimiyle siparişini onaylayabilmelidir."
+    ]
+  },
   "steps": [
     {
       "tool": "get_file_contents",
@@ -17,7 +33,7 @@
       "args": {
         "sql": "SELECT anahtar, deger FROM ayar WHERE anahtar = 'min_siparis_tutari'"
       },
-      "result_summary": "min_siparis_tutari | 750.00",
+      "result_summary": "min_siparis_tutari=750.00",
       "allowed": true
     },
     {
@@ -36,7 +52,7 @@
         "type": "missing_in_code",
         "doc_ref": "AC4",
         "claim": "Kredi limiti aşılırsa \"Kredi limiti aşıldı\" uyarısı gösterilir ve sipariş onaylanamaz",
-        "observed": "Kodda kredi limiti kontrolü hâlâ yok; önceki turda analist bu farkı kod hatası (code_defect) olarak işaretledi, bug taslağı açık. Doküman doğru; yeni doküman değişikliği gerekmiyor",
+        "observed": "Kodda kredi limiti kontrolü hâlâ yok (sipariş tutarı bayinin kredi limitiyle karşılaştırılmıyor); doküman kuralı açıkça tanımlıyor, fark kod tarafında",
         "evidence": [
           {
             "kind": "code",

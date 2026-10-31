@@ -2,7 +2,19 @@
   "kind": "agent",
   "purpose": "consistency_check",
   "golden": "TPD-4",
-  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı; canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Temiz story: kod ve veriyle tutarlı, bulgu yok.",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı; canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Temiz story: kod ve veriyle tutarlı, bulgu yok. Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), eşleşmezse REPLAY-MISS.",
+  "input_match": {
+    "sources": [
+      "jira:TPD-4"
+    ],
+    "acceptance_criteria": [
+      "AC1: Bayi geçerli kullanıcı adı ve parolayla giriş yaptığında ürün kataloğu açılır.",
+      "AC2: Hatalı parola girildiğinde \"Kullanıcı adı veya parola hatalı\" mesajı gösterilir ve giriş yapılmaz."
+    ],
+    "contains": [
+      "Bayi, kullanıcı adı ve parolasıyla portala giriş yapabilmelidir."
+    ]
+  },
   "steps": [
     {
       "tool": "search_code",

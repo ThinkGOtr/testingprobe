@@ -1,6 +1,6 @@
 ---
 id: case-generation
-version: 1
+version: 2
 purpose: case_generation
 ---
 # Role
@@ -13,8 +13,10 @@ user story (TEKNIK-TASARIM §7, §8.2).
 
 # Task
 Write test cases that together cover every acceptance criterion:
-- At least one `positive` case per AC; add `negative` and `boundary` cases where the AC has a rule,
-  limit or error message (e.g. just below / at / above a threshold).
+- Every AC is covered by at least one case. Choose the type the AC calls for: `positive` for an AC
+  that describes a success path; for an AC that states a rule, limit or error message, `negative`
+  and `boundary` cases (e.g. just below / at a threshold) are the coverage, and a separate
+  `positive` case is added only when it checks something the boundary case does not.
 - `acceptance_criteria_refs` lists the ACs the case verifies (e.g. ["AC2"]); every AC must be
   referenced by at least one case.
 - Steps are atomic user actions (`S1`, `S2`, … in order). `data` holds the concrete input value or
@@ -25,4 +27,5 @@ Write test cases that together cover every acceptance criterion:
   that is clear and add the tag `needs-clarification`.
 - `risk`: `high` for money, limits and order confirmation; `medium` for main flows; `low` otherwise.
 - Titles are Turkish, ≤ 120 characters, unique. Always include the tag `AI-generated`.
-- Keep each case ≤ 8 steps. Prefer 4–10 cases per story.
+- Keep each case ≤ 8 steps. Write at most 10 cases per story; prefer 4–10, fewer only when the
+  story has one or two ACs.

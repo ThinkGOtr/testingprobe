@@ -1,6 +1,7 @@
-import { useId, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { api } from "../api/client";
-import { caseKarariVerilebilir, GECIS_YOK, type CaseKarari } from "../api/sozlesme/durumMakinesi";
+import { caseKarariVerilebilir, GECIS_YOK, gecisVar, type CaseKarari } from "../api/sozlesme/durumMakinesi";
+import { useOturum } from "../auth";
 import type { RetNedeni, TestCase, TestCaseIcerik } from "../api/types";
 import { useIslem } from "../hooks";
 import { CASE_DURUMU, CASE_TURU, RET_NEDENI, RISK } from "../lib/etiketler";
@@ -9,6 +10,49 @@ import { Cip, IslemDugmesi, ReplayRozeti } from "./ui";
 
 type Mod = "goster" | "duzenle" | "reddet";
 
+const KARAR_ADI = { approve: "onay", edit: "düzeltme", reject: "ret" } as const;
+
+// Bu oturumda "görüntülendi" bildirilen case'ler (her case için tek istek).
+const goruntulenenler = new Set<string>();
+
+/** Testler için: görüntüleme kayıtlarını sıfırlar. */
+export function goruntulenenleriSifirla(): void {
+  goruntulenenler.clear();
+}
+
+/**
+ * Karar bekleyen case analistin ekranına ilk girdiğinde (kartın yarısı görünür olunca) core'a
+ * bildirilir; review süresi (`review_sure_ms`) sunucuda bu andan karara kadar ölçülür. Hata
+ * sessizce yutulur: ölçüm kararın önüne geçmez (uç yoksa süre ölçülmez, karar yine verilir).
+ */
+function useGoruntulemeBildir(tc: TestCase, etkin: boolean) {
+  const ref = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!etkin || tc.goruntulenme || goruntulenenler.has(tc.id)) return;
+    const bildir = () => {
+      if (goruntulenenler.has(tc.id)) return;
+      goruntulenenler.add(tc.id);
+      api.caseGoruntulendi(tc.id).catch(() => undefined);
+    };
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === "undefined") {
+      bildir();
+      return;
+    }
+    const g = new IntersectionObserver(
+      (kayitlar) => {
+        if (kayitlar.some((k) => k.isIntersecting)) {
+          bildir();
+          g.disconnect();
+        }
+      },
+      { threshold: 0.5 },
+    );
+    g.observe(el);
+    return () => g.disconnect();
+  }, [tc.id, tc.goruntulenme, etkin]);
+  return ref;
+}
 export function CaseKarti({
   tc,
   guncellendi,
@@ -22,6 +66,11 @@ export function CaseKarti({
   const [mod, setMod] = useState<Mod>("goster");
   const islem = useIslem();
   const id = useId();
+  const { kullanici } = useOturum();
+  // Yalnızca karar verecek rol (analist) ve karar bekleyen case için görüntüleme ölçülür.
+  const kartRef = useGoruntulemeBildir(tc, kullanici?.rol === "analyst" && tc.durum === "draft");
+  // core test_case: approved | rejected → draft (yeniden aç). Yayınlanmış case son durumdur.
+  const yenidenAcilabilir = gecisVar("test_case", tc.durum, "draft");
   const d = CASE_DURUMU[tc.durum];
   const r = RISK[tc.icerik.risk];
   // Son durumlar (core): yayınlanan ve yerini yenisi alan case'e karar verilmez.
@@ -47,7 +96,7 @@ export function CaseKarti({
   }
 
   return (
-    <article className={`case case-${tc.durum}`} aria-labelledby={`${id}-baslik`}>
+    <article ref={kartRef} className={`case case-${tc.durum}`} aria-labelledby={`${id}-baslik`}>
       <header className="case-baslik">
         <div className="satir-ogeler">
           <span className="mono soluk">#{tc.sira_no}</span>
@@ -84,7 +133,7 @@ export function CaseKarti({
             </p>
           )}
           <div className="tablo-sarici" tabIndex={0} role="region" aria-label={`Adımlar: ${tc.icerik.title}`}>
-            <table className="tablo tablo-sik">
+            <table className="tablo tablo-sik tablo-yigin">
               <caption className="gorunmez">Adımlar</caption>
               <thead>
                 <tr>
@@ -97,10 +146,14 @@ export function CaseKarti({
               <tbody>
                 {tc.icerik.steps.map((s) => (
                   <tr key={s.id}>
-                    <td className="mono">{s.id}</td>
-                    <td>{s.action}</td>
-                    <td className="mono">{s.data ?? "—"}</td>
-                    <td>{s.expected}</td>
+                    <td className="mono adim-no" data-etiket="#">
+                      {s.id}
+                    </td>
+                    <td data-etiket="Adım">{s.action}</td>
+                    <td className={`mono${s.data ? "" : " bos-hucre"}`} data-etiket="Veri">
+                      {s.data ?? "—"}
+                    </td>
+                    <td data-etiket="Beklenen">{s.expected}</td>
                   </tr>
                 ))}
               </tbody>
@@ -123,11 +176,13 @@ export function CaseKarti({
 
       <footer className="case-alt">
         <span className="soluk kucuk">
-          AI {sure(tc.ai_sure_ms)}
+          {tc.mode === "replay" || tc.mode === "replay_miss" ? "AI: REPLAY — ölçülmedi" : `AI ${sure(tc.ai_sure_ms)}`}
           {tc.review_sure_ms !== null && ` · review ${sure(tc.review_sure_ms)}`}
           {tc.karar_veren && ` · ${tc.karar_veren}, ${tarih(tc.karar_zamani)}`}
-          {tc.ret_nedeni && ` · ret: ${RET_NEDENI[tc.ret_nedeni]}`}
+          {tc.durum === "draft" && tc.karar && ` · taslağa alındı (önceki karar: ${KARAR_ADI[tc.karar]})`}
+          {tc.ret_nedeni && tc.durum === "rejected" && ` · ret: ${RET_NEDENI[tc.ret_nedeni]}`}
           {tc.duzeltme_olcusu !== null && tc.karar === "edit" && ` · düzeltme ölçüsü ${tc.duzeltme_olcusu.toLocaleString("tr-TR")}`}
+          {tc.durum === "draft" && tc.goruntulenme && ` · review ${tarih(tc.goruntulenme)} itibarıyla sürüyor`}
         </span>
         {mod === "goster" && !kilitli && (
           <div className="eylemler">
@@ -165,9 +220,29 @@ export function CaseKarti({
         )}
       </footer>
       {mod === "goster" && kararVerildi && (
-        <p className="soluk kucuk" data-testid="case-karar-kilit">
-          Karar verildi. Durum makinesi karar değişikliğini kabul etmez; karar yalnızca taslaktaki case için verilir.
-        </p>
+        <div className="satir-ogeler">
+          <p className="soluk kucuk" data-testid="case-karar-kilit">
+            Karar verildi. Karar yalnızca taslaktaki case için verilir; değiştirmek için case'i yeniden açın (yeniden review gerekir).
+          </p>
+          {yenidenAcilabilir && (
+            <IslemDugmesi
+              roller={["analyst"]}
+              kucuk
+              tur="ikincil"
+              calisiyor={islem.calisiyor}
+              onClick={() => karar(() => api.caseYenidenAc(tc))}
+            >
+              Yeniden aç
+            </IslemDugmesi>
+          )}
+        </div>
+      )}
+      {tc.uyarilar && tc.uyarilar.length > 0 && (
+        <ul className="duz-liste kucuk hata-metin">
+          {tc.uyarilar.map((u) => (
+            <li key={u}>{u}</li>
+          ))}
+        </ul>
       )}
       {mod === "goster" && islem.hata && (
         <p className="alan-hata" role="alert">

@@ -65,12 +65,18 @@ Xray: `POST /xray/api/v2/authenticate` boş olmayan her `client_id`/`client_secr
   `update.labels[add|remove|set]`; değişiklikler yazar bilgisiyle changelog'a), `DELETE`
 - `POST /rest/api/3/issue`
 - `GET /rest/api/3/issue/{key}/changelog`, `GET|POST /rest/api/3/issue/{key}/comment` (ADF gövde)
+- `GET|POST /rest/api/3/issue/{key}/transitions` (basit iş akışı: her durumdan To Do / In Progress /
+  Done'a; geçiş changelog'a `status` olarak yazılır)
 - `POST /rest/api/3/issueLink`, `GET /rest/api/3/issueLinkType` (`Test`: inward "is tested by",
   outward "tests"; `Relates`; `Blocks`; `Duplicate`)
 - `GET /rest/api/3/issue/createmeta/{project}/issuetypes`, `GET /rest/api/3/issue/createmeta?projectKeys=`,
   `GET /rest/api/3/project/{key}` (Story, Task, Bug, Test)
 - `POST /xray/api/v2/authenticate`, `POST /xray/api/v2/import/test/bulk`,
   `GET /xray/api/v2/import/test/bulk/{jobId}/status` (ilk sorguda `working`, sonra sonuç)
+
+Arayüzde "PO olarak" bölümündeki onay düğmesi (`tp-po-approved`) ve "Yeniden onayla" yalnızca
+**Story** kayıtlarında gösterilir; Test/Bug/Task kayıtlarında PO yalnızca yorum yazar, açıklama
+düzenler ve onay dışı etiket koyar (arayüzden bu kayıtlara onay etiketi eklenemez).
 
 Arayüz saatleri `Europe/Istanbul` yerel saatiyle gösterilir (API UTC `+0000` döner). Arayüzdeki
 hata iletileri Türkçedir; REST API Jira uyumu için İngilizce iletileri korur.
@@ -88,6 +94,18 @@ Yazma uçları köken denetimli; `JIRA_SIM_ADMIN_TOKEN` tanımlıysa `X-Sim-Admi
   site provası (adaptör `Task` + `test-case` etiketine, `Relates` bağlantısına düşer).
 - `POST /sim/faults` — `{"path_prefix", "status", "count", "retry_after"?, "method"?}`; 429/5xx
   yeniden deneme provası. Boş liste (`[]`) temizler.
+
+## Gerçek Jira'da demo başlangıcı (`jira-seed`)
+
+`/sim/reset` yalnızca simülatörde vardır. Gerçek sitede bir provadan sonra TPD-1..TPD-4'ü
+DEMO-VERISI içeriğine döndürmek, `tp-po-*`/`AI-generated`/`tp-<uuid>` etiketlerini kaldırmak ve
+`tp-<uuid>` etiketli Test/Bug kayıtlarını kapatmak için çekirdekteki komut kullanılır (yazma
+kullanıcısıyla, aynı `RestJira` kod yolu):
+
+```sh
+docker compose exec core python -m tp_core.integrations.jira_seed          # plan (kuru)
+docker compose exec core python -m tp_core.integrations.jira_seed --onay   # uygula (--sil: kapatmak yerine sil)
+```
 
 ## Geliştirme
 

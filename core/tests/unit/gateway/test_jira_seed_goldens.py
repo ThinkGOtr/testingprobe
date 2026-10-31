@@ -73,7 +73,9 @@ def _story_acs(sim: TestClient, key: str) -> dict[str, str]:
 
 # ------------------------------------------------------------------ requirement_review
 
-REVIEWS = list(goldens("requirement_review"))
+# Jira story golden'ları (serbest metin golden'ı `SERBEST` Jira'da yok; aynı kural aşağıda onun
+# girdi beyanına karşı denetlenir).
+REVIEWS = [r for r in goldens("requirement_review") if r[1].stem.startswith("TPD-")]
 
 
 @pytest.mark.parametrize(
@@ -91,6 +93,15 @@ def test_review_questions_respect_seed_acs(sim: TestClient, path: Path, golden: 
         asked = set(QUOTED.findall(q["text"]))
         if q["type"] == "missing_ac":
             assert not asked & defined_messages, f"{path.stem}/{q['id']}: AC'de zaten var"
+
+
+def test_free_text_review_questions_respect_declared_acs() -> None:
+    golden = load_golden("requirement_review", "SERBEST")
+    acs = {a.split(":", 1)[0] for a in golden["input_match"]["acceptance_criteria"]}
+    for q in golden["output"]["questions"]:
+        assert q["ac_ref"] is None or q["ac_ref"] in acs, q
+        if q["type"] in ("ambiguity", "conflict", "untestable"):
+            assert q["ac_ref"] is not None, q
 
 
 def test_tpd3_review_does_not_ask_what_ac2_specifies(sim: TestClient) -> None:

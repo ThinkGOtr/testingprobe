@@ -2,7 +2,22 @@
   "kind": "agent",
   "purpose": "verify_and_map",
   "golden": "TPD-1-C8",
-  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Model çıktısı (step_mapping/expects/missing_methods) elle hazırlandı; tarayıcı adımları çalışan Playwright MCP'ye (--isolated) karşı koşturulup kaydedildi; hedefler replay'de oturumdan bağımsız olsun diye snapshot ref'i yerine tekil seçici (data-testid) olarak yazıldı. Kampanyalı sepet (P-001) case'lerinde sepet snapshot özeti yalnızca satır/tutar satırlarını içerir: kayıt anındaki çalışan imaj AC6 kod değişikliğinden (pricing.min_aranir) önceydi; uyarı/onay durumu replay'de araçlar yeniden koşturulunca görülür. Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record).",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Model çıktısı (step_mapping/expects/missing_methods) elle hazırlandı; tarayıcı adımları çalışan Playwright MCP'ye (--isolated) karşı koşturulup kaydedildi; hedefler replay'de oturumdan bağımsız olsun diye snapshot ref'i yerine tekil seçici (data-testid) olarak yazıldı. Kampanyalı sepet (P-001) case'lerinde sepet snapshot özeti yalnızca satır/tutar satırlarını içerir: kayıt anındaki çalışan imaj AC6 kod değişikliğinden (pricing.min_aranir) önceydi; uyarı/onay durumu replay'de araçlar yeniden koşturulunca görülür. Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), eşleşmezse REPLAY-MISS.",
+  "input_match": {
+    "contains": [
+      "Onaylanan siparişin numarası gösterilir ve sipariş geçmişinde listelenir",
+      "Giriş sayfasını aç",
+      "Bayi kullanıcısıyla giriş yap",
+      "\"Şeftalili Soğuk Çay 1L\" (P-004) kartında adedi 25 yapıp \"Sepete ekle\" butonuna bas",
+      "Üst menüden sepete git",
+      "\"Siparişi onayla\" butonuna bas",
+      "Giriş formu görüntülenir",
+      "Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir",
+      "Sepet sayacı 25 olur",
+      "Toplam 750,00 TL ve \"Siparişi onayla\" butonu aktiftir",
+      "Sipariş onay sayfasında sipariş numarası ve toplam 750,00 TL gösterilir; sipariş, sipariş geçmişinde bu numarayla listelenir"
+    ]
+  },
   "case": {
     "jira_key": "TPD-1",
     "sira_no": 8,

@@ -11,6 +11,7 @@ React 18 + Vite 8 + TypeScript (strict), react-router. Arayüz metinleri Türkç
 | `npm run typecheck` | Yalnızca tip denetimi (uygulama ve testler) |
 | `npm run build:mock` | Tamamen örnek veriyle çalışan derleme (`VITE_MOCK=1`, arka uç gerekmez) |
 | `npm test` | Vitest + Testing Library (API istemcisi, SSE, mock arka uç, bileşenler, ekranlar). `fixtures.test.ts` örnek veriyi repodaki kaynaklara karşı doğrular: demo-app dosya/satırları, golden REPLAY kayıtları, jira-sim seed'i, core durum makinesi ve olay adları; üretilen test kodu `demo-app/e2e` page object'lerine karşı tsc'den geçirilir (o dizinin `node_modules`'u yoksa bu tek test atlanır). |
+| `PORTAL_LIVE=1 npx playwright test` | Canlı yığın testi (`e2e/canli.spec.ts`): çalışan portala (`PORTAL_URL`, varsayılan `http://127.0.0.1:8080`) analist olarak girer (`SEED_USER_PASSWORD`; `set -a; . ../.env; set +a`), gerekirse Jira'dan çeker, TPD-1'i açar; çekirdek `/requirements` sunmuyorsa açıkça başarısız olur (örnek veriye düşen sahte geçiş yok) |
 | `npm run e2e` | Playwright duman testi: mock derlemeyi `vite preview` ile açar, tüm rotaları gezer, ekran görüntülerini `e2e/ekranlar/` altına yazar; her rolde ölü iç bağlantı, 390 px taşma ve axe (WCAG 2 AA, açık/koyu tema) denetimi yapar (ilk seferde `npx playwright install chromium`) |
 
 ## API sözleşmesi
@@ -68,3 +69,21 @@ React 18 + Vite 8 + TypeScript (strict), react-router. Arayüz metinleri Türkç
 
 `mode: "replay"` → **REPLAY**, `mode: "replay_miss"` → **REPLAY-MISS** (uyarı renginde) rozeti;
 `live` için rozet yoktur.
+
+## Demo-A çekirdek bağlantısı (Faz 2)
+
+- Yanıtlar `src/api/uyum.ts` uyarlayıcılarından geçer: portal şekli (types.ts) aynen; veritabanı kolon
+  adları (`tur`, `kanitlar`, `onerilen_metin`, `analist_karari`, `uretim_modu`, `po_onaylayan` …) da
+  kabul edilir. Model modu bilinmiyorsa `null` (rozet yok; "live" uydurulmaz).
+- Case uçları cases şeridiyle aynı: `POST /cases/{id}/viewed` (ilk görüntüleme, review süresi
+  başlangıcı; analistin ekranına giren taslak case için bir kez), `POST /cases/{id}/decision
+  {karar: "reopen", icerik_hash}` ("Taslağa al"), `GET /requirements/{id}/case-metrics` (kabul oranı
+  ilk karara göre, AI + review süresi). Taslağa alınan case'te core'un son kararı (`karar`) önceki
+  karar olarak kalır; ekran "bekleyen"i durumdan (`draft`) sayar.
+- İşlem kaynağa bağlıdır (`istek(..., {kaynak})`): case listesi çekirdekten geliyorsa çekirdekte henüz
+  olmayan bir case işlemi örnek veriye **düşmez**, 501 "Bu işlem çekirdekte henüz yok." döner.
+- `POST /publish` 202 + `job_id` dönerse ekran `test_case.state` / `publish.*` olaylarıyla yenilenir.
+  Dış anahtar bağlantısı: sonuçtaki `url` > önizlemedeki `jira_browse_url` > story'nin `jira_url`'i.
+- Gereksinim ekranı `unverified` ve `discarded` bulguları göstermez, yalnızca sayar (`elenen_bulgu`).
+- Serbest metin örnek gereksinimi (`req-ft-1`) `SERBEST` golden'larının girdisiyle aynıdır: ön inceleme,
+  bulgular ve (öneriler aynen kabul edilirse) case'ler REPLAY; girdisi tutmayan serbest metin REPLAY-MISS.

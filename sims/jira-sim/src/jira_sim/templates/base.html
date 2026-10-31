@@ -66,6 +66,10 @@
   .comment { border-top: 1px solid var(--line); padding: 10px 0; }
   .comment:first-of-type { border-top: 0; }
   .desc p { margin: 0 0 8px; }
+  /* Uzun kesintisiz metin (denetim zinciri özetleri, URL'ler) dar ekranda yatay taşma yapmasın. */
+  .desc, .comment, h1, dd, .chip { overflow-wrap: anywhere; }
+  .desc pre { white-space: pre-wrap; }
+  .desc code { word-break: break-all; }
   .history li { margin-bottom: 6px; }
   dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; }
   dt { color: var(--muted); font-size: 13px; }

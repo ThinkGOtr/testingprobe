@@ -46,10 +46,12 @@
       <form method="post" action="/browse/{{ it.key }}/comment">
         <input type="hidden" name="csrf" value="{{ csrf }}">
         <label for="po-yorum" class="muted">Yorum yaz</label>
-        <textarea id="po-yorum" name="body" required placeholder="Sorulara cevabınızı yazın"></textarea>
+        <textarea id="po-yorum" name="body" required placeholder="{% if approvable %}Sorulara cevabınızı yazın{% else %}Yorumunuzu yazın{% endif %}"></textarea>
         <p><button type="submit">Yorumu gönder</button></p>
       </form>
-      {% if approval_stale %}
+      {% if not approvable %}
+      <p class="muted" data-testid="po-onay-yok">PO onayı yalnızca story kayıtları için verilir; bu kayıt bir {{ it.issuetype }}.</p>
+      {% elif approval_stale %}
       <div class="alert err" role="status" data-testid="approval-stale">Onay eski: içerik onaydan sonra değişti. Yeni içeriği okuyup yeniden onaylayın.</div>
       <form method="post" action="/browse/{{ it.key }}/reapprove" class="row">
         <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -60,7 +62,7 @@
         <input type="hidden" name="csrf" value="{{ csrf }}">
         <input type="hidden" name="action" value="add">
         <input type="hidden" name="label" value="tp-po-approved">
-        <button type="submit" {% if 'tp-po-approved' in it.labels %}disabled{% endif %}>Onayla (tp-po-approved ekle)</button>
+        <button type="submit" data-testid="po-onayla" {% if 'tp-po-approved' in it.labels %}disabled{% endif %}>Onayla (tp-po-approved ekle)</button>
       </form>
       {% endif %}
       <details>

@@ -1,0 +1,205 @@
+{
+  "kind": "agent",
+  "purpose": "verify_and_map",
+  "golden": "TPD-1-C10",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). C10, case_generation/TPD-1'de bilerek C2'nin tekrarıdır (QA reddi için); QA onaylarsa eşleme C2 ile aynıdır, tarayıcı adımları C2 kaydından kopyalandı. Model çıktısı (step_mapping/expects/missing_methods) elle hazırlandı; tarayıcı adımları çalışan Playwright MCP'ye (--isolated) karşı koşturulup kaydedildi; hedefler replay'de oturumdan bağımsız olsun diye snapshot ref'i yerine tekil seçici (data-testid) olarak yazıldı. Kampanyalı sepet (P-001) case'lerinde sepet snapshot özeti yalnızca satır/tutar satırlarını içerir: kayıt anındaki çalışan imaj AC6 kod değişikliğinden (pricing.min_aranir) önceydi; uyarı/onay durumu replay'de araçlar yeniden koşturulunca görülür. Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), eşleşmezse REPLAY-MISS.",
+  "input_match": {
+    "contains": [
+      "Kampanyalı üründen 7 adet sepete eklenince bedava adet ve tutarlar doğru hesaplanır",
+      "Giriş sayfasını aç",
+      "Bayi kullanıcısıyla giriş yap",
+      "\"Portakal Gazozu 1L\" (P-001) kartında adedi 7 yapıp \"Sepete ekle\" butonuna bas",
+      "Üst menüden sepete git",
+      "Giriş formu görüntülenir",
+      "Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir",
+      "Sepet sayacı 7 olur",
+      "P-001 satırında adet 7, bedava adet 1; ara toplam 175,00 TL, indirim 25,00 TL, toplam 150,00 TL"
+    ]
+  },
+  "case": {
+    "jira_key": "TPD-1",
+    "sira_no": 10,
+    "title": "Kampanyalı üründen 7 adet sepete eklenince bedava adet ve tutarlar doğru hesaplanır"
+  },
+  "steps": [
+    {
+      "tool": "browser_navigate",
+      "args": {
+        "url": "http://demo-app-web:8080/giris"
+      },
+      "result_summary": "await page.goto('http://demo-app-web:8080/giris'); · URL /giris",
+      "allowed": true
+    },
+    {
+      "tool": "browser_snapshot",
+      "args": {},
+      "result_summary": "URL /giris | heading \"Bayi girişi\" [level=1] | textbox \"Kullanıcı adı\" | textbox \"Parola\" | button \"Giriş yap\" [disabled]",
+      "allowed": true
+    },
+    {
+      "tool": "browser_type",
+      "args": {
+        "element": "Kullanıcı adı",
+        "target": "[data-testid=\"login-username\"]",
+        "text": "bayi1"
+      },
+      "result_summary": "await page.locator('[data-testid=\"login-username\"]').fill('bayi1');",
+      "allowed": true
+    },
+    {
+      "tool": "browser_type",
+      "args": {
+        "element": "Parola",
+        "target": "[data-testid=\"login-password\"]",
+        "text": "Demo123!"
+      },
+      "result_summary": "await page.locator('[data-testid=\"login-password\"]').fill('Demo123!');",
+      "allowed": true
+    },
+    {
+      "tool": "browser_click",
+      "args": {
+        "element": "Giriş yap",
+        "target": "[data-testid=\"login-submit\"]"
+      },
+      "result_summary": "await page.locator('[data-testid=\"login-submit\"]').click(); · URL /katalog",
+      "allowed": true
+    },
+    {
+      "tool": "browser_snapshot",
+      "args": {},
+      "result_summary": "URL /katalog | link \"Sepet 0 ürün\": | generic: Merkez Bayi | paragraph: P-001",
+      "allowed": true
+    },
+    {
+      "tool": "browser_type",
+      "args": {
+        "element": "P-001 adet",
+        "target": "[data-testid=\"product-card-P-001\"] [data-testid=\"qty-input-P-001\"]",
+        "text": "7"
+      },
+      "result_summary": "await page.locator('[data-testid=\"product-card-P-001\"] [data-testid=\"qty-input-P-001\"]').fill('7');",
+      "allowed": true
+    },
+    {
+      "tool": "browser_click",
+      "args": {
+        "element": "P-001 kartında Sepete ekle",
+        "target": "[data-testid=\"product-card-P-001\"] [data-testid=\"add-to-cart\"]"
+      },
+      "result_summary": "await page.locator('[data-testid=\"product-card-P-001\"] [data-testid=\"add-to-cart\"]').click(); · URL /katalog",
+      "allowed": true
+    },
+    {
+      "tool": "browser_wait_for",
+      "args": {
+        "text": "7 ürün"
+      },
+      "result_summary": "await page.getByText(\"7 ürün\").first().waitFor({ state: 'visible' }); · URL /katalog",
+      "allowed": true
+    },
+    {
+      "tool": "browser_snapshot",
+      "args": {},
+      "result_summary": "URL /katalog | link \"Sepet 7 ürün\":",
+      "allowed": true
+    },
+    {
+      "tool": "browser_click",
+      "args": {
+        "element": "Sepet",
+        "target": "[data-testid=\"nav-cart\"]"
+      },
+      "result_summary": "await page.locator('[data-testid=\"nav-cart\"]').click(); · URL /sepet",
+      "allowed": true
+    },
+    {
+      "tool": "browser_snapshot",
+      "args": {},
+      "result_summary": "URL /sepet | cell \"25,00 TL\" | cell \"7\" | cell \"1\" | cell \"150,00 TL\" | cell: | term: Ara toplam | definition: 175,00 TL | term: Kampanya indirimi | definition: −25,00 TL | term: Genel toplam | definition: 150,00 TL",
+      "allowed": true
+    }
+  ],
+  "output": {
+    "step_mapping": [
+      {
+        "step_id": "S1",
+        "po": "LoginPage",
+        "method": "goto",
+        "args": [],
+        "verified": true,
+        "evidence_ref": "Giriş formu (textbox \"Kullanıcı adı\", \"Parola\", button \"Giriş yap\")"
+      },
+      {
+        "step_id": "S2",
+        "po": "LoginPage",
+        "method": "login",
+        "args": [
+          "bayi1",
+          "Demo123!"
+        ],
+        "verified": true,
+        "evidence_ref": "button \"Giriş yap\" → /katalog"
+      },
+      {
+        "step_id": "S3",
+        "po": "CatalogPage",
+        "method": "addToCart",
+        "args": [
+          "P-001",
+          7
+        ],
+        "verified": true,
+        "evidence_ref": "button \"Sepete ekle\" (ürün kartı) → sepet sayacı güncellendi"
+      },
+      {
+        "step_id": "S4",
+        "po": "CatalogPage",
+        "method": "openCart",
+        "args": [],
+        "verified": true,
+        "evidence_ref": "link \"Sepet\" → /sepet"
+      }
+    ],
+    "expects": [
+      {
+        "po": "CartPage",
+        "method": "expectLineQuantity",
+        "args": [
+          "P-001",
+          7
+        ]
+      },
+      {
+        "po": "CartPage",
+        "method": "expectFreeQuantity",
+        "args": [
+          "P-001",
+          1
+        ]
+      },
+      {
+        "po": "CartPage",
+        "method": "expectSubtotal",
+        "args": [
+          "175,00 TL"
+        ]
+      },
+      {
+        "po": "CartPage",
+        "method": "expectDiscount",
+        "args": [
+          "25,00 TL"
+        ]
+      },
+      {
+        "po": "CartPage",
+        "method": "expectTotal",
+        "args": [
+          "150,00 TL"
+        ]
+      }
+    ],
+    "missing_methods": []
+  }
+}

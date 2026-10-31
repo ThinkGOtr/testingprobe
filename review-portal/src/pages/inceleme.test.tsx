@@ -1,0 +1,360 @@
+// İnceleme bulgularının düzeltmeleri: REPLAY/REPLAY-MISS tutarlılık kartı, son haldeki bulgularda
+// karar formu, serbest metin etiketleri, PO cevapları, case ölçümleri (REPLAY, baz değer), yayın
+// rolü, örnek gereksinim ve dar ekran tabloları.
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Rotalar } from "../App";
+import { api } from "../api/client";
+import { ApiError } from "../api/http";
+import { mockVerisi } from "../api/mock/handlers";
+import type { Bulgu, CaseMetrikleri, GereksinimDetay as Detay } from "../api/types";
+import { gereksinimDetayUyarla } from "../api/uyum";
+import { OturumProvider } from "../auth";
+import { BildirimProvider } from "../components/Bildirim";
+import { BulguKarti } from "../components/BulguKarti";
+import { goruntulenenleriSifirla } from "../components/CaseKarti";
+import { adimAdi } from "../lib/akis";
+import { ORNEK_SERBEST_GEREKSINIM } from "../lib/ornekGereksinim";
+import { oturumAc, sar } from "../test/yardimci";
+import { aiModu, caseOzeti, manuelBazMs } from "./CaseReview";
+import { bosBulguMetni } from "./GereksinimDetay";
+
+function uygulama(yol: string) {
+  return render(
+    <MemoryRouter initialEntries={[yol]}>
+      <OturumProvider>
+        <BildirimProvider>
+          <Rotalar />
+        </BildirimProvider>
+      </OturumProvider>
+    </MemoryRouter>,
+  );
+}
+
+const gereksinim = (id: string) => mockVerisi().gereksinimler.find((g) => g.id === id)! as Detay;
+
+beforeEach(() => goruntulenenleriSifirla());
+
+describe("tutarlılık kartı: REPLAY / REPLAY-MISS ve dürüst boş durum", () => {
+  it("REPLAY-MISS koşusunda bulgular elendiyse 'tutarlı' denmez, rozet gösterilir", async () => {
+    await oturumAc("analist");
+    const g = gereksinim("req-ft-1");
+    g.son_kontrol = { mode: "replay_miss", bulgu: 3, dogrulanan: 0, elenen: 3, zaman: null };
+    for (const b of mockVerisi().bulgular) if (b.requirement_id === "req-ft-1") b.durum = "discarded";
+    uygulama("/gereksinimler/req-ft-1");
+    const kart = await screen.findByRole("region", { name: /Tutarlılık bulguları/ });
+    expect(await within(kart).findByText("REPLAY-MISS")).toBeInTheDocument();
+    expect(within(kart).getByTestId("bulgu-bos")).toHaveTextContent(
+      "Gösterilecek doğrulanmış bulgu yok (REPLAY-MISS; 3 bulgu kanıtı doğrulanamadığı için elendi) — tutarlılık doğrulanmadı.",
+    );
+    expect(within(kart).queryByText(/doküman kod ve veriyle tutarlı/)).toBeNull();
+  });
+
+  it("temiz REPLAY koşusu: REPLAY rozeti ve 'Bulgu yok' birlikte görünür", async () => {
+    await oturumAc("analist");
+    const g = gereksinim("req-ft-1");
+    g.son_kontrol = { mode: "replay", bulgu: 0, dogrulanan: 0, elenen: 0, zaman: null };
+    mockVerisi().bulgular.splice(0, mockVerisi().bulgular.length, ...mockVerisi().bulgular.filter((b) => b.requirement_id !== "req-ft-1"));
+    uygulama("/gereksinimler/req-ft-1");
+    const kart = await screen.findByRole("region", { name: /Tutarlılık bulguları/ });
+    expect(await within(kart).findByText("Bulgu yok: doküman kod ve veriyle tutarlı.")).toBeInTheDocument();
+    expect(within(kart).getByText("REPLAY")).toBeInTheDocument();
+  });
+
+  it("boş durum metni: çalıştırılmadı / doğrulanıyor / elenen / REPLAY-MISS / tutarlı", () => {
+    const temel = { kontrol_turu: 1, son_kontrol: null } as unknown as Detay;
+    expect(bosBulguMetni({ ...temel, kontrol_turu: 0 }, 0, 0)).toBe("Denetim henüz çalıştırılmadı.");
+    expect(bosBulguMetni(temel, 0, 2)).toMatch(/doğrulanıyor/);
+    expect(bosBulguMetni(temel, 2, 0)).toBe(
+      "Gösterilecek doğrulanmış bulgu yok (2 bulgu kanıtı doğrulanamadığı için elendi) — tutarlılık doğrulanmadı.",
+    );
+    const miss = { ...temel, son_kontrol: { mode: "replay_miss" as const, bulgu: 0, dogrulanan: 0, elenen: 0, zaman: null } };
+    expect(bosBulguMetni(miss, 0, 0)).toBe("Gösterilecek doğrulanmış bulgu yok (REPLAY-MISS) — tutarlılık doğrulanmadı.");
+    // Önceki turda elenen bulgu, son temiz koşuyu "doğrulanmadı" yapmaz (son_kontrol esas).
+    const temiz = { ...temel, son_kontrol: { mode: "replay" as const, bulgu: 0, dogrulanan: 0, elenen: 0, zaman: null } };
+    expect(bosBulguMetni(temiz, 3, 0)).toBe("Bulgu yok: doküman kod ve veriyle tutarlı.");
+  });
+
+  it("çekirdek şekli: son_kontrol modu ve sayıları taşınır; null kalır", () => {
+    const d = gereksinimDetayUyarla({
+      id: "r1",
+      durum: "pending_po",
+      son_kontrol: { id: "k1", sira: 1, mode: "replay_miss", bulgu: 3, dogrulanan: 0, elenen: 3, zaman: "2026-10-30T10:00:00Z" },
+    });
+    expect(d.son_kontrol).toEqual({ mode: "replay_miss", bulgu: 3, dogrulanan: 0, elenen: 3, zaman: "2026-10-30T10:00:00Z" });
+    expect(d.elenen_bulgu).toBe(3);
+    expect(gereksinimDetayUyarla({ id: "r2", son_kontrol: null }).son_kontrol).toBeNull();
+    expect(gereksinimDetayUyarla({ id: "r3" }).son_kontrol).toBeUndefined();
+  });
+});
+
+describe("bulgu kararı yalnızca findings_open iken", () => {
+  const uyari = (): Bulgu => ({ ...mockVerisi().bulgular.find((b) => b.id === "fnd-8")! });
+
+  it("son haldeki gereksinimde açık uyarı salt okunur; form ve 'Kararı kaydet' yok", async () => {
+    await oturumAc("analist");
+    sar(<BulguKarti bulgu={uyari()} gereksinimDurumu="done" guncellendi={() => undefined} />);
+    expect(await screen.findByTestId("bulgu-salt-okunur")).toHaveTextContent("Uyarı — karar gerekmiyor; doküman son hal");
+    expect(screen.queryByRole("radio")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Kararı kaydet" })).toBeNull();
+  });
+
+  it("findings_open iken karar formu açık", async () => {
+    await oturumAc("analist");
+    sar(<BulguKarti bulgu={uyari()} gereksinimDurumu="findings_open" guncellendi={() => undefined} />);
+    expect(await screen.findByRole("button", { name: "Kararı kaydet" })).toBeInTheDocument();
+    expect(screen.getAllByRole("radio")).toHaveLength(3);
+  });
+
+  it("detay ekranı (TPD-3, PO teyidinde): açık uyarıda karar formu gösterilmez", async () => {
+    await oturumAc("analist");
+    uygulama("/gereksinimler/req-tpd-3");
+    expect(await screen.findByTestId("bulgu-salt-okunur")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Kararı kaydet" })).toBeNull();
+  });
+
+  it("listede karar beklemeyen gereksinimin açık bulgusu 'uyarı' olarak, bulgu sayısı olarak değil gösterilir", async () => {
+    await oturumAc("analist");
+    const g = gereksinim("req-tpd-3");
+    uygulama("/gereksinimler");
+    const satir = (await screen.findByRole("link", { name: g.baslik })).closest("tr")!;
+    const hucre = within(satir).getByText("1 uyarı");
+    expect(hucre.getAttribute("title")).toMatch(/kararı beklemiyor/);
+  });
+});
+
+describe("serbest metin etiketleri", () => {
+  const cozulmus = (): Bulgu => ({ ...mockVerisi().bulgular.find((b) => b.id === "fnd-1")! });
+
+  it("fix_doc çözüldüyse serbest metinde 'Dokümana uygulandı', Jira'da 'Jira'ya yazıldı'", async () => {
+    await oturumAc("analist");
+    const { unmount } = sar(<BulguKarti bulgu={cozulmus()} kaynak="free_text" guncellendi={() => undefined} />);
+    expect(screen.getByText("Dokümana uygulandı")).toBeInTheDocument();
+    expect(screen.queryByText("Jira'ya yazıldı")).toBeNull();
+    unmount();
+    sar(<BulguKarti bulgu={cozulmus()} kaynak="jira" guncellendi={() => undefined} />);
+    expect(screen.getByText("Jira'ya yazıldı")).toBeInTheDocument();
+  });
+
+  it("akışın 1. adımı serbest metinde 'Serbest metin', Jira'da 'Jira'", async () => {
+    expect(adimAdi(1, "free_text")).toBe("Serbest metin");
+    expect(adimAdi(1, "jira")).toBe("Jira");
+    expect(adimAdi(2, "free_text")).toBe("Ön inceleme");
+    await oturumAc("analist");
+    uygulama("/gereksinimler/req-ft-1");
+    const akis = await screen.findByRole("navigation", { name: /14 adımlı akış/ });
+    expect(within(akis).getByText("Serbest metin")).toBeInTheDocument();
+    expect(within(akis).queryByText("Jira")).toBeNull();
+  });
+
+  it("liste kartı 'Gereksinim listesi' adını taşır", async () => {
+    await oturumAc("analist");
+    uygulama("/gereksinimler");
+    expect(await screen.findByRole("heading", { name: "Gereksinim listesi" })).toBeInTheDocument();
+  });
+});
+
+describe("PO cevapları", () => {
+  it("çekirdek şekli: po_cevaplari yazar/metin/zaman ve Jira yorum adresiyle eşlenir", () => {
+    const d = gereksinimDetayUyarla({
+      id: "r1",
+      jira_url: "http://127.0.0.1:8090/browse/TPD-1",
+      po_cevaplari: [{ id: "10031", yazar: "po@sim.local", metin: "Q1: kampanyalı siparişte minimum aranmaz. Onaylıyorum.", zaman: "2026-10-30T10:00:00Z" }, { id: "x", metin: "  " }],
+    });
+    expect(d.po_cevaplari).toEqual([
+      {
+        id: "10031",
+        yazar: "po@sim.local",
+        metin: "Q1: kampanyalı siparişte minimum aranmaz. Onaylıyorum.",
+        zaman: "2026-10-30T10:00:00Z",
+        url: "http://127.0.0.1:8090/browse/TPD-1?focusedCommentId=10031#comment-10031",
+      },
+    ]);
+  });
+
+  it("PO onayladıysa sorular 'Cevap bekleniyor' demez; PO'nun Jira cevabı altta görünür", async () => {
+    await oturumAc("analist");
+    const g = gereksinim("req-tpd-1");
+    for (const s of g.on_inceleme!.questions) s.cevap = null; // çekirdek soru bazında cevap eşlemez
+    g.po_cevaplari = [
+      { id: "10031", yazar: "po@sim.local", metin: "Q1: kampanyalı siparişte minimum aranmaz. Onaylıyorum.", zaman: "2026-10-30T10:00:00Z", url: "http://127.0.0.1:8090/browse/TPD-1" },
+    ];
+    uygulama("/gereksinimler/req-tpd-1");
+    const cevaplar = await screen.findByTestId("po-cevaplari");
+    expect(within(cevaplar).getByText(/minimum aranmaz\. Onaylıyorum\./)).toBeInTheDocument();
+    expect(within(cevaplar).getByText("po@sim.local")).toBeInTheDocument();
+    expect(within(cevaplar).getByRole("link", { name: /Jira yorumu #10031/ })).toHaveAttribute("href", "http://127.0.0.1:8090/browse/TPD-1");
+    expect(screen.queryByText("Cevap bekleniyor")).toBeNull();
+    expect(screen.getAllByText("PO Jira'da yanıtladı (aşağıda)")).toHaveLength(g.on_inceleme!.questions.length);
+  });
+
+  it("PO henüz onaylamadıysa 'Cevap bekleniyor' kalır", async () => {
+    await oturumAc("analist");
+    uygulama("/gereksinimler/req-tpd-3");
+    expect((await screen.findAllByText("Cevap bekleniyor")).length).toBeGreaterThan(0);
+  });
+});
+
+const metrik = (ek: Partial<CaseMetrikleri> = {}): CaseMetrikleri => ({
+  requirement_id: "req-tpd-1",
+  uretilen: 5,
+  karar_verilen: 0,
+  bekleyen: 5,
+  kabul: 0,
+  kabul_orani: 0,
+  kabul_hedefi: 0.7,
+  ilk_kararlar: {},
+  ret_nedenleri: {},
+  ai_sure_ms: 0,
+  review_sure_ms: 0,
+  ort_review_sure_ms: null,
+  maliyet_usd: 0,
+  ai_cagri_modlari: { replay: 1 },
+  ...ek,
+});
+
+describe("case ölçümleri", () => {
+  it("hiç karar yokken kabul oranı '—' ve 'henüz karar yok'; hedefin altında denmez", async () => {
+    await oturumAc("analist");
+    vi.spyOn(api, "caseMetrikleri").mockResolvedValue(metrik());
+    uygulama("/gereksinimler/req-tpd-1/caseler");
+    expect(await screen.findByText(/henüz karar yok/)).toBeInTheDocument();
+    expect(screen.queryByText(/hedefin altında/)).toBeNull();
+    expect(caseOzeti([], metrik()).kabulOrani).toBeNull();
+    expect(caseOzeti([], metrik({ karar_verilen: 2, kabul_orani: 0.4 })).kabulOrani).toBe(0.4);
+  });
+
+  it("REPLAY üretiminde AI süresi/maliyeti '0 ms / $0,00' değil 'REPLAY — ölçülmedi'", async () => {
+    await oturumAc("analist");
+    vi.spyOn(api, "caseMetrikleri").mockResolvedValue(metrik({ karar_verilen: 5, kabul: 4, kabul_orani: 0.8, review_sure_ms: 369_000, ort_review_sure_ms: 73_800 }));
+    uygulama("/gereksinimler/req-tpd-1/caseler");
+    const ozet = await screen.findByRole("region", { name: "Özet" });
+    expect(await within(ozet).findAllByText("REPLAY — ölçülmedi")).toHaveLength(2);
+    expect(within(ozet).queryByText("0 ms")).toBeNull();
+    expect(within(ozet).queryByText("$0,00")).toBeNull();
+    expect(within(ozet).getAllByText("6 dk 09 sn").length).toBeGreaterThan(0);
+    expect(within(ozet).getByText(/yalnız review; AI süresi REPLAY'de ölçülmedi/)).toBeInTheDocument();
+    // Case kartlarında da (case mode=replay)
+    expect(screen.getAllByText(/AI: REPLAY — ölçülmedi/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/^AI 0 ms/)).toBeNull();
+  });
+
+  it("manuel baz değer varsa yan yana gösterilir ve kazanç hesaplanır; yoksa uydurulmaz", async () => {
+    await oturumAc("analist");
+    vi.spyOn(api, "caseMetrikleri").mockResolvedValue(
+      metrik({ karar_verilen: 5, bekleyen: 0, review_sure_ms: 6 * 60_000, ort_review_sure_ms: 72_000, manuel_baz_ms: 30 * 60_000 }),
+    );
+    uygulama("/gereksinimler/req-tpd-1/caseler");
+    const ozet = await screen.findByRole("region", { name: "Özet" });
+    expect(await within(ozet).findByText("30 dk 00 sn")).toBeInTheDocument();
+    // 1 − 6/30 = %80 (AI süresi REPLAY'de ölçülmediği için hariç; açıkça yazılır)
+    expect(within(ozet).getByText("%80")).toBeInTheDocument();
+    expect(within(ozet).getByText(/AI süresi hariç \(REPLAY\)/)).toBeInTheDocument();
+  });
+
+  it("manuelBazMs: çekirdek > ortam (dakika) > yok; aiModu canlı/replay/karışık", () => {
+    expect(manuelBazMs(metrik({ manuel_baz_ms: 1000 }), "45")).toBe(1000);
+    expect(manuelBazMs(metrik(), "45")).toBe(45 * 60_000);
+    expect(manuelBazMs(metrik(), "37,5")).toBe(37.5 * 60_000);
+    expect(manuelBazMs(metrik(), undefined)).toBeNull();
+    expect(manuelBazMs(null, "abc")).toBeNull();
+    expect(aiModu([], metrik({ ai_cagri_modlari: { replay: 2 } }))).toBe("replay");
+    expect(aiModu([], metrik({ ai_cagri_modlari: { replay: 1, replay_miss: 1 } }))).toBe("replay_miss");
+    expect(aiModu([], metrik({ ai_cagri_modlari: { live: 3 } }))).toBe("live");
+    expect(aiModu([], metrik({ ai_cagri_modlari: { live: 3, replay: 1 } }))).toBe("karisik");
+    expect(aiModu([], metrik({ ai_cagri_modlari: {} }))).toBeNull();
+  });
+
+  it("canlı üretimde ölçülen süre ve maliyet gösterilir", async () => {
+    await oturumAc("analist");
+    vi.spyOn(api, "caseMetrikleri").mockResolvedValue(metrik({ ai_cagri_modlari: { live: 1 }, ai_sure_ms: 6_800, maliyet_usd: 0.42 }));
+    uygulama("/gereksinimler/req-tpd-1/caseler");
+    const ozet = await screen.findByRole("region", { name: "Özet" });
+    expect((await within(ozet).findAllByText("6,8 sn")).length).toBeGreaterThan(0);
+    expect(within(ozet).queryByText("REPLAY — ölçülmedi")).toBeNull();
+  });
+});
+
+describe("yayın rolü", () => {
+  it("PO case review'da 'Yayın önizleme'yi pasif görür (gerekçesiyle)", async () => {
+    await oturumAc("po");
+    uygulama("/gereksinimler/req-tpd-1/caseler");
+    const d = await screen.findByRole("button", { name: "Yayın önizleme" });
+    expect(d).toBeDisabled();
+    expect(d).toHaveAttribute("title", "Yayın analist rolü gerektirir");
+    expect(screen.queryByRole("link", { name: "Yayın önizleme" })).toBeNull();
+  });
+
+  it("PO yayın ekranına gelirse önizleme istenmez; bilgi notu, 'Tekrar dene' yok", async () => {
+    await oturumAc("po");
+    const casus = vi.spyOn(api, "yayinOnizleme");
+    uygulama("/gereksinimler/req-tpd-1/yayin");
+    expect(await screen.findByText("Yayın analist rolü gerektirir")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Tekrar dene" })).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(casus).not.toHaveBeenCalled();
+  });
+
+  it("sunucu 403 dönerse bilgi notu gösterilir, yeniden deneme önerilmez", async () => {
+    await oturumAc("analist");
+    vi.spyOn(api, "yayinOnizleme").mockRejectedValue(new ApiError(403, "Bu işlem için yetkiniz yok."));
+    uygulama("/gereksinimler/req-tpd-1/yayin");
+    expect(await screen.findByText("Bu işlem için yetkiniz yok.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Tekrar dene" })).toBeNull();
+  });
+});
+
+describe("serbest metin örneği", () => {
+  it("örnek metin REPLAY golden girdi beyanıyla birebir aynı", () => {
+    const k = JSON.parse(readFileSync(resolve(__dirname, "../api/mock/golden/kaynaklar.json"), "utf8")) as {
+      serbest_girdi: { acceptance_criteria: string[]; contains: string[] };
+    };
+    expect(ORNEK_SERBEST_GEREKSINIM.ac.map((a, i) => `AC${i + 1}: ${a}`)).toEqual(k.serbest_girdi.acceptance_criteria);
+    expect(k.serbest_girdi.contains).toContain(ORNEK_SERBEST_GEREKSINIM.aciklama);
+  });
+
+  it("'Örnek gereksinimi doldur' formu doldurur; elle düzenleme açık kalır", async () => {
+    await oturumAc("analist");
+    const u = userEvent.setup();
+    const casus = vi.spyOn(api, "serbestMetin");
+    uygulama("/gereksinimler");
+    await u.click(await screen.findByRole("button", { name: "Serbest metin gereksinim" }));
+    await u.click(screen.getByRole("button", { name: "Örnek gereksinimi doldur" }));
+    expect(screen.getByLabelText("Başlık")).toHaveValue("Sepetten ürün çıkarma");
+    expect(screen.getByLabelText("Açıklama")).toHaveValue(ORNEK_SERBEST_GEREKSINIM.aciklama);
+    expect(screen.getByLabelText("AC3")).toHaveValue(ORNEK_SERBEST_GEREKSINIM.ac[2]);
+    await u.clear(screen.getByLabelText("AC3"));
+    await u.type(screen.getByLabelText("AC3"), "Elle girilen metin");
+    await u.click(screen.getByRole("button", { name: "Gereksinimi oluştur" }));
+    expect(casus).toHaveBeenCalledWith({
+      baslik: "Sepetten ürün çıkarma",
+      aciklama: ORNEK_SERBEST_GEREKSINIM.aciklama,
+      ac: [ORNEK_SERBEST_GEREKSINIM.ac[0], ORNEK_SERBEST_GEREKSINIM.ac[1], "Elle girilen metin"],
+    });
+  });
+});
+
+describe("dar ekran tabloları", () => {
+  it("gereksinim ve adım tablolarının her hücresi kart görünümü için etiket taşır", async () => {
+    await oturumAc("analist");
+    const { unmount } = uygulama("/gereksinimler");
+    const tablo = (await screen.findByRole("region", { name: "Gereksinimler tablosu" })).querySelector("table")!;
+    expect(tablo).toHaveClass("tablo-yigin");
+    for (const td of tablo.querySelectorAll("tbody td")) expect(td.getAttribute("data-etiket")).toBeTruthy();
+    unmount();
+    uygulama("/gereksinimler/req-tpd-1/caseler");
+    const adim = (await screen.findAllByRole("region", { name: /^Adımlar:/ }))[0].querySelector("table")!;
+    expect(adim).toHaveClass("tablo-yigin");
+    expect([...adim.querySelectorAll("tbody tr:first-child td")].map((td) => td.getAttribute("data-etiket"))).toEqual(["#", "Adım", "Veri", "Beklenen"]);
+  });
+
+  it("stil: 640 px altında yığın görünüm kuralı var", () => {
+    const css = readFileSync(resolve(__dirname, "../styles.css"), "utf8");
+    expect(css).toMatch(/@media \(max-width: 640px\) \{\s*\.tablo-yigin thead/);
+    expect(css).toMatch(/\.tablo-yigin td\[data-etiket\]::before \{\s*content: attr\(data-etiket\)/);
+  });
+});

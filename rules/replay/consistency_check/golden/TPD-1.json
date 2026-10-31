@@ -2,7 +2,23 @@
   "kind": "agent",
   "purpose": "consistency_check",
   "golden": "TPD-1",
-  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği), 1. kontrol turu. Elle hazırlandı; canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). F1 (AC3↔AC6) ve F3 (500 ↔ 750) birebir aynı AC3 metnini önerir: ikisi de kabul edilirse hangisi son yazılırsa yazılsın AC3 hem AC6 hem veriyle tutarlıdır. 2. ve sonraki turlar: TPD-1-r2 (golden_name(..., check_round=2)).",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği), 1. kontrol turu. Elle hazırlandı (model çıktısı değil; ai_call.model = golden-elle); canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). F2 önerisi kuralı adsız ve açık yazar (5 öde + 1 bedava); kampanya adının kuralla çeliştiği bulguda iş etkisiyle birlikte söylenir, karar analistindir. F1 (AC3↔AC6) ve F3 (500 ↔ 750) birebir aynı AC3 metnini önerir: ikisi de kabul edilirse hangisi son yazılırsa yazılsın AC3 hem AC6 hem veriyle tutarlıdır. 2. ve sonraki turlar: TPD-1-r2 (golden_name(..., check_round=2)). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), eşleşmezse REPLAY-MISS.",
+  "input_match": {
+    "sources": [
+      "jira:TPD-1"
+    ],
+    "acceptance_criteria": [
+      "AC1: Bayi katalogda bir ürün için \"Sepete ekle\" butonuna bastığında ürün sepete eklenir ve sepet sayacı artar.",
+      "AC2: \"6 al 1 bedava\" kampanyasında kampanyalı üründen her 6 adet alımda 1 adet bedava verilir (7 adette 1 bedava).",
+      "AC3: Tüm siparişlerde minimum sipariş tutarı 500,00 TL'dir; altında \"Minimum sipariş tutarı 500,00 TL\" uyarısı gösterilir ve onay butonu pasif olur.",
+      "AC4: Sipariş tutarı bayinin kredi limitini aşarsa \"Kredi limiti aşıldı\" uyarısı gösterilir ve sipariş onaylanamaz.",
+      "AC5: Sipariş onaylandığında sipariş numarası gösterilir ve sipariş, sipariş geçmişinde listelenir.",
+      "AC6: Kampanyalı siparişlerde minimum sipariş tutarı şartı aranmaz."
+    ],
+    "contains": [
+      "Bayi, katalogdan ürünleri sepete ekleyip kampanya indirimiyle siparişini onaylayabilmelidir."
+    ]
+  },
   "steps": [
     {
       "tool": "search_code",
@@ -25,7 +41,15 @@
       "args": {
         "sql": "SELECT anahtar, deger FROM ayar WHERE anahtar = 'min_siparis_tutari'"
       },
-      "result_summary": "min_siparis_tutari | 750.00",
+      "result_summary": "min_siparis_tutari=750.00",
+      "allowed": true
+    },
+    {
+      "tool": "db_query",
+      "args": {
+        "sql": "SELECT k.kod, u.kod FROM kampanya k JOIN urun u ON u.id = k.urun_id WHERE k.aktif"
+      },
+      "result_summary": "6AL1BEDAVA=P-001",
       "allowed": true
     },
     {
@@ -70,7 +94,7 @@
         "type": "doc_vs_code",
         "doc_ref": "AC2",
         "claim": "Her 6 adet alımda 1 adet bedava (7 adette 1 bedava)",
-        "observed": "Kod her 6 adette 1 bedava veriyor (5 öde + 1 bedava)",
+        "observed": "Kod her 6 adette 1 bedava veriyor (5 öde + 1 bedava); doküman 7 adette 1 bedava (6 öde + 1 bedava) diyor. İş etkisi: 6 adetlik siparişte bayi dokümana göre bedava ürün almaz, kodda 1 adet (25,00 TL) bedava alır; 42 adette doküman 6, kod 7 bedava verir. Ekranda görünen kampanya adı (\"6 al 1 bedava\") olağan anlamıyla dokümandaki kuralı (6 öde + 1 bedava) çağrıştırıyor; kodun hatalı olması da mümkün. Doküman koda uyarlanacaksa kampanya adı da gözden geçirilmeli; kod düzeltilecekse karar code_defect olmalı",
         "evidence": [
           {
             "kind": "code",
@@ -81,7 +105,7 @@
           }
         ],
         "severity": "blocking",
-        "suggested_doc_text": "AC2: \"6 al 1 bedava\" kampanyasında kampanyalı üründen her 6 adette 1 adet bedava verilir (6 adette 1 bedava)."
+        "suggested_doc_text": "AC2: Kampanyalı üründe her 6 adette 1 adet bedava verilir: bayi 5 adet öder, 1 adet bedava alır (6 adette 1, 12 adette 2 bedava)."
       },
       {
         "id": "F3",

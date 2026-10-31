@@ -10,7 +10,11 @@ export const OTURUM_BITTI = "session.ended";
 
 export type BaglantiDurumu = "baglaniyor" | "bagli" | "yeniden" | "mock" | "kapali";
 
-/** Portalın kendi konu adları (mock arka uç ve core'un ileride yayımlayacağı ayrıntılı olaylar). */
+/**
+ * Özellik şeritlerinin yayımladığı ayrıntılı olay adları (Demo-A: gereksinim, bulgu doğrulama, PO
+ * onayı, case üretimi, yayın) ve mock arka ucun aynı adları. EventSource joker kabul etmez; `publish.*`
+ * ailesi burada tek tek sayılır (yeni bir alt ad eklenirse buraya da eklenmeli).
+ */
 export const BILINEN_OLAYLAR = [
   "case.generated",
   "agent.step",
@@ -19,8 +23,23 @@ export const BILINEN_OLAYLAR = [
   "failure.classified",
   "requirement.updated",
   "finding.updated",
+  "finding.verified",
+  "po.approved",
+  "publish.started",
+  "publish.progress",
+  "publish.item",
+  "publish.completed",
+  "publish.done",
+  "publish.failed",
   "bug.published",
 ] as const;
+
+/** Ayrıntılı olayın ek konuları (sayfalar konuya abone olur, olay adına değil). */
+const EK_KONULAR: Record<string, string[]> = {
+  "finding.verified": ["finding.updated", "requirement.updated"],
+  "po.approved": ["requirement.updated"],
+  "case.generated": ["case.updated"],
+};
 
 /**
  * core-api'nin bugün gerçekten yayımladığı olay adları (MIMARI-SOZLESME §5 `GET /events`):
@@ -64,13 +83,20 @@ export function olayKonulari(o: PortalOlayi): string[] {
     const tur = typeof o.data.nesne_turu === "string" ? VARLIK_KONUSU[o.data.nesne_turu] : undefined;
     if (tur) konular.push(tur);
   }
-  return konular;
+  konular.push(...(EK_KONULAR[o.type] ?? []));
+  // Yayın ailesi (publish.started/progress/completed/failed …): case ve gereksinim ekranları yenilenir.
+  if (o.type.startsWith("publish.")) konular.push("publish.updated", "case.updated", "requirement.updated");
+  return [...new Set(konular)];
 }
 
-/** `useOlay` süzgeci: konu listesi (boşsa hepsi) ve isteğe bağlı nesne kimliği. */
+/**
+ * `useOlay` süzgeci: konu listesi (boşsa hepsi) ve isteğe bağlı nesne kimliği. Kimlik olayın kendi
+ * nesnesi ya da bağlı olduğu gereksinim (`data.requirement_id`) olabilir: bulgu/case olayları
+ * gereksinim ekranını da yeniler.
+ */
 export function olayEslesir(o: PortalOlayi, konular: ReadonlySet<string> | null, id?: string): boolean {
   if (konular && !olayKonulari(o).some((k) => konular.has(k))) return false;
-  return !id || o.id === id;
+  return !id || o.id === id || o.data.requirement_id === id;
 }
 
 /** EventSource'a dinleyici olarak kaydedilen tüm adlar. */

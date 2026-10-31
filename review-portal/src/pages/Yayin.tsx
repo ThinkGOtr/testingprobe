@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
+import { useOlay } from "../api/events";
 import type { YayinOnizlemeKalemi, YayinSonucu } from "../api/types";
+import { jiraKayitAdresi } from "../api/uyum";
+import { useOturum } from "../auth";
 import { useBildirim } from "../components/Bildirim";
-import { BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
-import { useIslem, useVeri } from "../hooks";
+import { Baglanti, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import type { Ton } from "../lib/etiketler";
 
 const ISLEM: Record<YayinOnizlemeKalemi["islem"], { etiket: string; ton: Ton }> = {
@@ -12,17 +15,64 @@ const ISLEM: Record<YayinOnizlemeKalemi["islem"], { etiket: string; ton: Ton }> 
   skip_existing: { etiket: "Zaten yayında", ton: "notr" },
   blocked_hash_mismatch: { etiket: "Engelli: onaydan sonra değişmiş", ton: "hata" },
   blocked_not_approved: { etiket: "Engelli: onaylı değil", ton: "uyari" },
+  blocked_no_story: { etiket: "Engelli: Jira story'si yok", ton: "uyari" },
+  blocked_requirement_changed: { etiket: "Engelli: story değişti, PO onayı yenilenmeli", ton: "hata" },
 };
 
 const HEDEF = { jira: "Jira (Test issue)", xray: "Xray Cloud" } as const;
 
+/** Yayın sonucunun özeti: oluşturulan / zaten var / başarısız; ikisi birden varsa kısmi başarı. */
+export function yayinOzeti(s: YayinSonucu) {
+  const olusan = s.sonuclar.filter((x) => x.durum === "created").length;
+  const vardi = s.sonuclar.filter((x) => x.durum === "exists").length;
+  const basarisiz = s.sonuclar.filter((x) => x.durum === "failed").length;
+  return { olusan, vardi, basarisiz, kismi: basarisiz > 0 && olusan + vardi > 0 };
+}
+
+/** Yayın önizleme ve yayın analist rolüne açıktır (core `GET /publish/preview` → 403). */
+export const YAYIN_ROLU_GEREKLI = "Yayın analist rolü gerektirir";
+
 export function Yayin() {
+  const { kullanici } = useOturum();
+  if (kullanici && kullanici.rol !== "analyst") return <YayinYetkisiz />;
+  return <YayinEkrani />;
+}
+
+function YayinYetkisiz() {
+  const { id = "" } = useParams();
+  return (
+    <>
+      <SayfaBasligi
+        ust={<Link to={`/gereksinimler/${encodeURIComponent(id)}/caseler`}>← Case review</Link>}
+        baslik="Yayın önizleme"
+      />
+      <Uyari ton="bilgi" baslik={YAYIN_ROLU_GEREKLI}>
+        Case'lerin test yönetimine yayını ve önizlemesi analist rolüyle yapılır. Case'lerin durumunu Case review ekranında
+        görebilirsiniz.
+      </Uyari>
+    </>
+  );
+}
+
+function YayinEkrani() {
   const { id = "" } = useParams();
   const onizleme = useVeri(() => api.yayinOnizleme(id), [id]);
+  const gereksinim = useVeri(() => api.gereksinim(id), [id]);
   const [secili, setSecili] = useState<Set<string>>(new Set());
   const [sonuc, setSonuc] = useState<YayinSonucu | null>(null);
+  /** POST /publish arka plan işi döndürdüyse: sonuç `publish.*` olaylarıyla gelir. */
+  const [bekleyenIs, setBekleyenIs] = useState<string | null>(null);
   const islem = useIslem();
   const bildir = useBildirim();
+  const sessiz = useGeciktirilmis(() => void onizleme.yenile(true));
+  useOlay(
+    (o) => {
+      if (typeof o.data.requirement_id === "string" && o.data.requirement_id !== id) return;
+      sessiz();
+      if (/^publish\.(completed|done|failed)$/.test(o.type)) setBekleyenIs(null);
+    },
+    ["publish.updated", "case.updated"],
+  );
 
   const kalemler = onizleme.veri?.kalemler ?? [];
   const olusturulabilir = kalemler.filter((k) => k.islem === "create");
@@ -41,15 +91,26 @@ export function Yayin() {
 
   async function yayinla() {
     const s = await islem.calistir(() => api.yayinla([...secili]));
-    if (s) {
+    if (!s) return;
+    if (s.sonuclar.length === 0 && s.job_id) {
+      setBekleyenIs(s.job_id);
+      bildir("Yayın başlatıldı; sonuçlar geldikçe tablo güncellenir.");
+    } else {
       setSonuc(s);
-      const n = s.sonuclar.filter((x) => x.durum === "created").length;
-      bildir(`${n} test ${HEDEF[s.hedef]} hedefine yayınlandı.`);
-      void onizleme.yenile(true);
+      const oz = yayinOzeti(s);
+      bildir(
+        oz.basarisiz
+          ? `${oz.olusan} test yayınlandı, ${oz.basarisiz} başarısız.`
+          : `${oz.olusan} test ${HEDEF[s.hedef]} hedefine yayınlandı.`,
+        oz.basarisiz ? "hata" : undefined,
+      );
     }
+    void onizleme.yenile(true);
   }
 
   const o = onizleme.veri;
+  const adres = (anahtar: string | null, url?: string | null) =>
+    jiraKayitAdresi(anahtar, { url, browseKoku: o?.jira_browse_url, storyAdresi: gereksinim.veri?.jira_url });
 
   return (
     <>
@@ -60,6 +121,10 @@ export function Yayin() {
       />
       {onizleme.yukleniyor && !o ? (
         <Yukleniyor />
+      ) : onizleme.hata && !o && onizleme.hataKodu === 403 ? (
+        <Uyari ton="bilgi" baslik={YAYIN_ROLU_GEREKLI}>
+          {onizleme.hata}
+        </Uyari>
       ) : onizleme.hata && !o ? (
         <HataKutusu hata={onizleme.hata} yenile={() => void onizleme.yenile()} />
       ) : o ? (
@@ -67,36 +132,38 @@ export function Yayin() {
           <Kart
             baslik="Hedef"
             eylemler={
-              <IslemDugmesi roller={["analyst"]} disabled={secili.size === 0} calisiyor={islem.calisiyor} onClick={yayinla}>
+              <IslemDugmesi
+                roller={["analyst"]}
+                disabled={secili.size === 0 || bekleyenIs !== null}
+                calisiyor={islem.calisiyor || bekleyenIs !== null}
+                onClick={yayinla}
+              >
                 Seçilenleri yayınla ({secili.size})
               </IslemDugmesi>
             }
           >
-            <p>
-              <strong>{HEDEF[o.hedef]}</strong> · proje <span className="mono">{o.proje}</span>
+            <p data-testid="yayin-hedefi">
+              <strong>{HEDEF[o.hedef]}</strong> · proje <span className="mono">{o.proje || "—"}</span>
+              {o.jira_browse_url && (
+                <>
+                  {" "}
+                  · <span className="mono kucuk">{o.jira_browse_url}</span>
+                </>
+              )}
               <span className="soluk"> · hedef sunucu yapılandırmasından gelir (TP_TEST_MGMT)</span>
             </p>
             {o.uyarilar.map((u) => (
               <Uyari key={u}>{u}</Uyari>
             ))}
+            {bekleyenIs && (
+              <p role="status" className="soluk">
+                Yayın işi sürüyor (<span className="mono">{bekleyenIs}</span>)…
+              </p>
+            )}
             {islem.hata && <HataKutusu hata={islem.hata} />}
           </Kart>
 
-          {sonuc && (
-            <Kart baslik="Yayın sonucu">
-              <ul className="duz-liste">
-                {sonuc.sonuclar.map((s) => (
-                  <li key={s.case_id}>
-                    <Cip ton={s.durum === "created" ? "basari" : s.durum === "exists" ? "notr" : "hata"}>
-                      {s.durum === "created" ? "Oluşturuldu" : s.durum === "exists" ? "Zaten vardı" : "Başarısız"}
-                    </Cip>{" "}
-                    <span className="mono">{s.external_key ?? s.case_id}</span>
-                    {s.hata && <span className="soluk"> · {s.hata}</span>}
-                  </li>
-                ))}
-              </ul>
-            </Kart>
-          )}
+          {sonuc && <YayinSonucKarti sonuc={sonuc} adres={adres} />}
 
           <Kart baslik="Oluşturulacak kayıtlar">
             {kalemler.length === 0 ? (
@@ -148,7 +215,14 @@ export function Yayin() {
                           <td className="sayi">{k.adim_sayisi}</td>
                           <td>
                             <Cip ton={i.ton}>{i.etiket}</Cip>
-                            {k.external_key && <span className="mono"> {k.external_key}</span>}
+                            {k.external_key && (
+                              <>
+                                {" "}
+                                <Baglanti href={adres(k.external_key)}>
+                                  <span className="mono">{k.external_key}</span>
+                                </Baglanti>
+                              </>
+                            )}
                           </td>
                         </tr>
                       );
@@ -161,5 +235,48 @@ export function Yayin() {
         </>
       ) : null}
     </>
+  );
+}
+
+function YayinSonucKarti({
+  sonuc,
+  adres,
+}: {
+  sonuc: YayinSonucu;
+  adres: (anahtar: string | null, url?: string | null) => string | null;
+}) {
+  const oz = yayinOzeti(sonuc);
+  return (
+    <Kart baslik="Yayın sonucu">
+      <p className="satir-ogeler" data-testid="yayin-ozeti">
+        <Cip ton="basari">{oz.olusan} oluşturuldu</Cip>
+        <Cip ton="notr">{oz.vardi} zaten vardı</Cip>
+        <Cip ton={oz.basarisiz ? "hata" : "notr"}>{oz.basarisiz} başarısız</Cip>
+        <span className="soluk">{HEDEF[sonuc.hedef]}</span>
+      </p>
+      {oz.kismi && (
+        <Uyari baslik="Kısmi başarı">
+          Bazı case'ler yayınlandı, bazıları yayınlanamadı. Yayınlananlar yeniden denemede tekrar oluşturulmaz (idempotent); başarısızları
+          düzeltip yeniden yayınlayabilirsiniz.
+        </Uyari>
+      )}
+      <ul className="duz-liste">
+        {sonuc.sonuclar.map((s) => (
+          <li key={s.case_id}>
+            <Cip ton={s.durum === "created" ? "basari" : s.durum === "exists" ? "notr" : "hata"}>
+              {s.durum === "created" ? "Oluşturuldu" : s.durum === "exists" ? "Zaten vardı" : "Başarısız"}
+            </Cip>{" "}
+            {s.external_key ? (
+              <Baglanti href={adres(s.external_key, s.url)}>
+                <span className="mono">{s.external_key}</span>
+              </Baglanti>
+            ) : (
+              <span className="mono">{s.case_id}</span>
+            )}
+            {s.hata && <span className="soluk"> · {s.hata}</span>}
+          </li>
+        ))}
+      </ul>
+    </Kart>
   );
 }

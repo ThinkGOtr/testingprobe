@@ -48,6 +48,8 @@ export interface PoDurumu {
   zaman: string | null;
   /** jira: etiket (tp-po-approved) · portal: serbest metin yolunda PO rolüyle */
   kanal: "jira" | "portal";
+  /** Onaylanan içerik hash'i (`requirement.onaylanan_hash`); PO'nun hangi metni onayladığını gösterir. */
+  onaylanan_hash?: string | null;
 }
 
 export interface Gereksinim {
@@ -77,14 +79,19 @@ export interface OnIncelemeSorusu {
   text: string;
   ac_ref: string | null;
   cevap: string | null;
+  /** Soru, doküman düzeltmesiyle metni değişen bir AC'ye ait (PO güncel metne göre cevaplar). */
+  duzeltmeyle_degisti?: boolean;
 }
 
 export interface OnInceleme {
   verdict: "ready" | "needs_po";
   questions: OnIncelemeSorusu[];
   jira_comment_id: string | null;
-  mode: CiktiModu;
+  /** null: çekirdek modu bildirmedi (rozet yok; "live" varsayılmaz). */
+  mode: CiktiModu | null;
   zaman: string;
+  /** Modelin inceleme özeti (enjeksiyon notları dahil); karar dayanağı değildir. */
+  ozet?: string | null;
 }
 
 export interface GereksinimDetay extends Gereksinim {
@@ -99,6 +106,42 @@ export interface GereksinimDetay extends Gereksinim {
   jira_url: string | null;
   /** Güvenilmeyen içerik uyarıları (ör. açıklamada talimat benzeri metin, §5). */
   uyarilar: string[];
+  /**
+   * Kanıtı deterministik olarak doğrulanamadığı için elenen (`discarded`) bulgu sayısı (bu tur dahil
+   * tüm turlar). Bulgular kullanıcıya gösterilmez; yalnızca sayısı (Constitution XI).
+   */
+  elenen_bulgu?: number;
+  /**
+   * Son tutarlılık kontrolü koşusu (`requirement_kontrol`): model modu ve bulgu sayıları. Mod
+   * REPLAY / REPLAY-MISS ise kartta rozet gösterilir; REPLAY-MISS'te "tutarlı" denmez.
+   */
+  son_kontrol?: SonKontrol | null;
+  /** PO'nun Jira'daki cevap yorumları (`requirement.po_cevaplari`); soru bazında eşlenmez. */
+  po_cevaplari?: PoCevabi[];
+  /**
+   * Son denetim güvenilmez (REPLAY-MISS ya da tüm bulgular elendi): belge otomatik son hal olmaz;
+   * analist açıkça "son hal" der (fail-closed). null: güvenilir.
+   */
+  denetim_guvenilmez?: string | null;
+  /** Gereksinim insan kararı bekliyor (tur sınırı ya da güvenilmez denetim). */
+  insan_karari_gerekli?: boolean;
+}
+
+export interface SonKontrol {
+  mode: CiktiModu | null;
+  bulgu: number;
+  dogrulanan: number;
+  elenen: number;
+  zaman: string | null;
+}
+
+export interface PoCevabi {
+  id: string;
+  yazar: string | null;
+  metin: string;
+  zaman: string | null;
+  /** Jira yorumunun adresi (yoksa story adresinden türetilir). */
+  url?: string | null;
 }
 
 export interface SerbestMetinGirdisi {
@@ -154,7 +197,20 @@ export interface Bulgu {
   bug_draft_id: string | null;
   /** Gösterilen bulgu içeriğinin (tür, ref, kanıt, metinler) hash'i; karar bunu geri gönderir. */
   icerik_hash: string;
-  mode: CiktiModu;
+  mode: CiktiModu | null;
+  /**
+   * Aynı fark önceki turda insan kararıyla kapandıysa o karar (bulgu `stale`, karar istenmez;
+   * `karar*` alanları bu karardan doldurulur).
+   */
+  onceki_karar?: {
+    finding_id: string;
+    bulgu_no: string | number | null;
+    kontrol_turu: number;
+    karar: BulguKarari | null;
+    gerekce: string | null;
+    karar_veren: string | null;
+    karar_zamani: string | null;
+  } | null;
 }
 
 export interface BulguKararGirdisi {
@@ -221,7 +277,42 @@ export interface TestCase {
   review_sure_ms: number | null;
   maliyet_usd: number;
   jira_test_key: string | null;
-  mode: CiktiModu;
+  /** Analistin case'i ilk görüntülediği an (`POST /cases/{id}/viewed`); review süresi buradan ölçülür. */
+  goruntulenme?: string | null;
+  /** Yayınlanan Test kaydının adresi (`external_ref.url`). */
+  jira_test_url?: string | null;
+  /** Düzeltme küçük mü (§12: ölçü ≤ eşik ve beklenen sonuç anlamca aynı) — kabul oranına girer. */
+  kucuk_duzeltme?: boolean | null;
+  /** Deterministik içerik uyarıları (ör. gereksinimde olmayan kabul kriteri referansı). */
+  uyarilar?: string[];
+  mode: CiktiModu | null;
+}
+
+/** `GET /requirements/{id}/case-metrics` (§12): ilk karara göre kabul oranı, süreler, maliyet. */
+export interface CaseMetrikleri {
+  requirement_id: string;
+  uretilen: number;
+  karar_verilen: number;
+  bekleyen: number;
+  kabul: number;
+  /** Kabul / üretilen; hiç case yoksa null. */
+  kabul_orani: number | null;
+  kabul_hedefi: number;
+  ilk_kararlar: Record<string, number>;
+  ret_nedenleri: Record<string, number>;
+  ai_sure_ms: number;
+  review_sure_ms: number;
+  ort_review_sure_ms: number | null;
+  maliyet_usd: number;
+  /** Case üretim çağrılarının model modu dağılımı ({replay: 1, live: 0, …}). */
+  ai_cagri_modlari: Record<string, number>;
+  /**
+   * Story başına manuel case hazırlama süresi (baz değer, §1.6/§12; F0'da ölçülür). Çekirdek
+   * yapılandırmadan verirse dolu; yoksa portal derleme ayarına (VITE_MANUEL_BAZ_DK) bakar.
+   */
+  manuel_baz_ms?: number | null;
+  /** Deterministik kapsam denetimi: hiçbir güncel (onaylı/taslak) case'in atıf yapmadığı AC'ler. */
+  kapsanmayan_ac?: string[];
 }
 
 export interface CaseKararGirdisi {
@@ -244,7 +335,13 @@ export interface YayinOnizlemeKalemi {
   labels: string[];
   link: { type: string; story_key: string | null };
   adim_sayisi: number;
-  islem: "create" | "skip_existing" | "blocked_hash_mismatch" | "blocked_not_approved";
+  islem:
+    | "create"
+    | "skip_existing"
+    | "blocked_hash_mismatch"
+    | "blocked_not_approved"
+    | "blocked_no_story"
+    | "blocked_requirement_changed";
   external_key: string | null;
 }
 
@@ -254,16 +351,22 @@ export interface YayinOnizleme {
   proje: string;
   kalemler: YayinOnizlemeKalemi[];
   uyarilar: string[];
+  /** Kullanıcıya gösterilen Jira bağlantı kökü (JIRA_BROWSE_URL; yerelde jira-sim). */
+  jira_browse_url?: string | null;
+}
+
+export interface YayinSonucKalemi {
+  case_id: string;
+  durum: "created" | "exists" | "failed";
+  external_key: string | null;
+  /** Hedef sistemdeki kaydın adresi (`PublishedCase.url`); yoksa portal browse kökünden türetir. */
+  url?: string | null;
+  hata: string | null;
 }
 
 export interface YayinSonucu {
   hedef: YayinHedefi;
-  sonuclar: {
-    case_id: string;
-    durum: "created" | "exists" | "failed";
-    external_key: string | null;
-    hata: string | null;
-  }[];
+  sonuclar: YayinSonucKalemi[];
 }
 
 // ---------------------------------------------------------------- Kod üretimi
@@ -557,10 +660,21 @@ export interface DenetimYaniti {
 export type TokenKapsami = "submit" | "publish";
 
 export interface McpToken {
+  id?: string;
   token: string;
   kapsam: TokenKapsami;
   son_kullanma: string;
   mcp_url: string;
+}
+
+/** `GET /tokens` satırı (ham token yok; yalnızca oluşturulduğu an bir kez gösterilir). */
+export interface McpTokenKaydi {
+  id: string;
+  kapsam: TokenKapsami;
+  son_kullanma: string;
+  iptal: boolean;
+  son_kullanim: string | null;
+  olusturma: string;
 }
 
 // ---------------------------------------------------------------- Genel işlem yanıtı
@@ -582,6 +696,12 @@ export type OlayTuru =
   | "failure.classified"
   | "requirement.updated"
   | "finding.updated"
+  | "finding.verified"
+  | "po.approved"
+  | "publish.started"
+  | "publish.progress"
+  | "publish.completed"
+  | "publish.failed"
   | "bug.published";
 
 export interface PortalOlayi {

@@ -2,7 +2,16 @@
   "kind": "call",
   "purpose": "requirement_review",
   "golden": "TPD-2",
-  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı; canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record).",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı; canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), eşleşmezse REPLAY-MISS.",
+  "input_match": {
+    "sources": [
+      "jira:TPD-2"
+    ],
+    "acceptance_criteria": [],
+    "contains": [
+      "Bayi, sipariş geçmişi ekranında siparişlerini tarih aralığına göre filtreleyebilmelidir."
+    ]
+  },
   "output": {
     "questions": [
       {

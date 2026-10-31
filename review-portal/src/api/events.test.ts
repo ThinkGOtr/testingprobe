@@ -188,6 +188,20 @@ describe("core-api olay adları (adlı SSE olayları)", () => {
     vi.useRealTimers();
   });
 
+  it("Demo-A ayrıntılı olayları dinlenir ve doğru konulara düşer", () => {
+    for (const ad of ["finding.verified", "po.approved", "case.generated", "publish.started", "publish.progress", "publish.completed", "publish.failed"]) {
+      expect(DINLENEN_OLAYLAR).toContain(ad);
+    }
+    const dogrulandi = olayiAyristir("finding.verified", JSON.stringify({ data: { id: "f-1", requirement_id: "req-1" }, ts: "t" }));
+    expect(olayKonulari(dogrulandi)).toEqual(["finding.verified", "finding.updated", "requirement.updated"]);
+    // Gereksinim ekranı kendi kimliğiyle abone: bulgunun gereksinim kimliği eşleşir, başkası eşleşmez.
+    expect(olayEslesir(dogrulandi, new Set(["finding.updated"]), "req-1")).toBe(true);
+    expect(olayEslesir(dogrulandi, new Set(["finding.updated"]), "req-2")).toBe(false);
+    expect(olayKonulari({ type: "po.approved", id: "req-1", data: {} })).toEqual(["po.approved", "requirement.updated"]);
+    expect(olayKonulari({ type: "case.generated", data: {} })).toEqual(["case.generated", "case.updated"]);
+    expect(olayKonulari({ type: "publish.completed", data: {} })).toEqual(["publish.completed", "publish.updated", "case.updated", "requirement.updated"]);
+  });
+
   it("review.recorded nesne kimliğiyle ve nesne türünün konusuyla eşleşir", () => {
     const o = olayiAyristir(
       "review.recorded",

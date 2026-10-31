@@ -1,12 +1,22 @@
 // MIMARI-SOZLESME §5'teki her uç için türlü istemci.
 import { istek } from "./http";
-import { denetimiUyarla } from "./uyum";
+import {
+  bulguUyarla,
+  caseUyarla,
+  denetimiUyarla,
+  gereksinimDetayUyarla,
+  gereksinimUyarla,
+  listeUyarla,
+  yayinOnizlemeUyarla,
+  yayinSonucuUyarla,
+} from "./uyum";
 import type {
   Bulgu,
   BulguKararGirdisi,
   BugKararGirdisi,
   BugTaslagi,
   CaseKararGirdisi,
+  CaseMetrikleri,
   DenetimYaniti,
   Gereksinim,
   GereksinimDetay,
@@ -18,6 +28,7 @@ import type {
   KosuDetay,
   Kullanici,
   McpToken,
+  McpTokenKaydi,
   PullRequest,
   Script,
   ScriptDetay,
@@ -29,6 +40,9 @@ import type {
 } from "./types";
 
 const yol = (s: string) => encodeURIComponent(s);
+const nesne = (x: unknown) => (x && typeof x === "object" ? (x as Record<string, unknown>) : {});
+/** Case işlemleri case listesine bağlıdır: liste çekirdekten geliyorsa işlem örnek veriye düşmez. */
+const CASE_KAYNAGI = ["GET", "/cases"] as const;
 
 export const api = {
   // Oturum
@@ -38,28 +52,56 @@ export const api = {
   me: () => istek<Kullanici>("GET", "/auth/me"),
 
   // Gereksinimler
-  gereksinimler: () => istek<Gereksinim[]>("GET", "/requirements"),
+  gereksinimler: async (): Promise<Gereksinim[]> => listeUyarla(await istek<unknown>("GET", "/requirements"), gereksinimUyarla),
   jiradanCek: () => istek<IsYaniti>("POST", "/requirements/sync"),
-  serbestMetin: (g: SerbestMetinGirdisi) => istek<Gereksinim>("POST", "/requirements/free-text", { govde: g }),
-  gereksinim: (id: string) => istek<GereksinimDetay>("GET", `/requirements/${yol(id)}`),
+  serbestMetin: async (g: SerbestMetinGirdisi): Promise<Gereksinim> =>
+    gereksinimUyarla(nesne(await istek<unknown>("POST", "/requirements/free-text", { govde: g }))),
+  gereksinim: async (id: string): Promise<GereksinimDetay> =>
+    gereksinimDetayUyarla(nesne(await istek<unknown>("GET", `/requirements/${yol(id)}`))),
   incelemeBaslat: (id: string) => istek<IsYaniti>("POST", `/requirements/${yol(id)}/review`),
-  bulgular: (id: string) => istek<Bulgu[]>("GET", `/requirements/${yol(id)}/findings`),
-  bulguKarari: (id: string, g: BulguKararGirdisi) => istek<Bulgu>("POST", `/findings/${yol(id)}/decision`, { govde: g }),
+  bulgular: async (id: string): Promise<Bulgu[]> =>
+    listeUyarla(await istek<unknown>("GET", `/requirements/${yol(id)}/findings`), bulguUyarla),
+  bulguKarari: async (id: string, g: BulguKararGirdisi): Promise<Bulgu> =>
+    bulguUyarla(nesne(await istek<unknown>("POST", `/findings/${yol(id)}/decision`, { govde: g }))),
   duzeltmeleriUygula: (id: string) => istek<IsYaniti>("POST", `/requirements/${yol(id)}/apply-doc-fixes`),
   /** `g`: ekranda görülen gereksinim; `icerik_hash` aynen gönderilir (TOCTOU bağı). */
-  poOnayla: (g: Pick<GereksinimDetay, "id" | "icerik_hash">) =>
-    istek<GereksinimDetay>("POST", `/requirements/${yol(g.id)}/po-approve`, { govde: { icerik_hash: g.icerik_hash } }),
+  poOnayla: async (g: Pick<GereksinimDetay, "id" | "icerik_hash">): Promise<GereksinimDetay> =>
+    gereksinimDetayUyarla(
+      nesne(await istek<unknown>("POST", `/requirements/${yol(g.id)}/po-approve`, { govde: { icerik_hash: g.icerik_hash } })),
+    ),
   caseUret: (id: string) => istek<IsYaniti>("POST", `/requirements/${yol(id)}/generate-cases`),
 
   // Case'ler
-  caseler: (requirementId?: string) =>
-    istek<TestCase[]>("GET", "/cases", { sorgu: { requirement_id: requirementId } }),
-  caseKarari: (id: string, g: CaseKararGirdisi) => istek<TestCase>("POST", `/cases/${yol(id)}/decision`, { govde: g }),
+  caseler: async (requirementId?: string): Promise<TestCase[]> =>
+    listeUyarla(await istek<unknown>("GET", "/cases", { sorgu: { requirement_id: requirementId } }), caseUyarla).sort(
+      (a, b) => a.sira_no - b.sira_no,
+    ),
+  caseKarari: async (id: string, g: CaseKararGirdisi): Promise<TestCase> =>
+    caseUyarla(nesne(await istek<unknown>("POST", `/cases/${yol(id)}/decision`, { govde: g, kaynak: CASE_KAYNAGI }))),
+  /**
+   * "Taslağa al": onaylı/reddedilmiş case'i yeniden taslağa alır (test_case: approved|rejected →
+   * draft; core karar ucunda `karar: "reopen"`). Gövde ekranda görülen içeriğin hash'ini taşır.
+   */
+  caseYenidenAc: async (tc: Pick<TestCase, "id" | "icerik_hash">): Promise<TestCase> =>
+    caseUyarla(
+      nesne(
+        await istek<unknown>("POST", `/cases/${yol(tc.id)}/decision`, {
+          govde: { karar: "reopen", icerik_hash: tc.icerik_hash },
+          kaynak: CASE_KAYNAGI,
+        }),
+      ),
+    ),
+  /** Analist case'i ilk kez gördü: review süresi (`review_sure_ms`) sunucuda bu andan ölçülür. */
+  caseGoruntulendi: (id: string) => istek<unknown>("POST", `/cases/${yol(id)}/viewed`, { kaynak: CASE_KAYNAGI }),
+  /** §12 ölçümleri (kabul oranı ilk karara göre, AI + review süresi, maliyet). */
+  caseMetrikleri: (requirementId: string) =>
+    istek<CaseMetrikleri>("GET", `/requirements/${yol(requirementId)}/case-metrics`, { kaynak: CASE_KAYNAGI }),
 
   // Yayın
-  yayinOnizleme: (requirementId: string) =>
-    istek<YayinOnizleme>("GET", "/publish/preview", { sorgu: { requirement_id: requirementId } }),
-  yayinla: (caseIds: string[]) => istek<YayinSonucu>("POST", "/publish", { govde: { case_ids: caseIds } }),
+  yayinOnizleme: async (requirementId: string): Promise<YayinOnizleme> =>
+    yayinOnizlemeUyarla(await istek<unknown>("GET", "/publish/preview", { sorgu: { requirement_id: requirementId } })),
+  yayinla: async (caseIds: string[]): Promise<YayinSonucu & { job_id?: string | null }> =>
+    yayinSonucuUyarla(await istek<unknown>("POST", "/publish", { govde: { case_ids: caseIds }, kaynak: CASE_KAYNAGI })),
 
   // Kod üretimi
   kodUret: (caseIds: string[]) => istek<IsYaniti>("POST", "/code/generate", { govde: { case_ids: caseIds } }),
@@ -92,6 +134,8 @@ export const api = {
 
   // Claude Code kanalı
   tokenOlustur: (kapsam: TokenKapsami) => istek<McpToken>("POST", "/tokens", { govde: { kapsam } }),
+  tokenlar: () => istek<McpTokenKaydi[]>("GET", "/tokens"),
+  tokenIptal: (id: string) => istek<void>("DELETE", `/tokens/${yol(id)}`, { kaynak: ["GET", "/tokens"] }),
 
   // Sunum
   demoKir: () => istek<IsYaniti>("POST", "/demo/break-locator"),

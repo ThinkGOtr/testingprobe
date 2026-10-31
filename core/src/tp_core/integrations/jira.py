@@ -704,6 +704,51 @@ class RestJira:
         ]
         return authorized_po_approvals(fresh, po_accounts, self.bot_identities())
 
+    def raw_fields(self, key: str, fields: Sequence[str]) -> dict[str, Any]:
+        """Kaydın ham (ADF dahil) alanları; ``JiraIssue``'ya dönüştürülmeden."""
+        raw = self._call("GET", f"/issue/{self._key(key)}", params={"fields": ",".join(fields)})
+        return dict(raw.get("fields") or {})
+
+    def edit_issue(
+        self,
+        key: str,
+        *,
+        fields: Mapping[str, Any] | None = None,
+        add_labels: Sequence[str] = (),
+        remove_labels: Sequence[str] = (),
+    ) -> None:
+        """Alanları ve etiketleri tek düzenlemede yazar (tek changelog kaydı).
+
+        Ayrılmış etiket (``tp-po-approved``) eklenemez, kaldırılabilir.
+        """
+        reserved = sorted(RESERVED_LABELS.intersection(add_labels))
+        if reserved:
+            raise ReservedLabelError(
+                f"Ayrılmış etiket yalnızca PO tarafından yazılır: {', '.join(reserved)}"
+            )
+        ops = [{"remove": lb} for lb in dict.fromkeys(remove_labels) if lb]
+        ops += [{"add": lb} for lb in dict.fromkeys(add_labels) if lb]
+        body: dict[str, Any] = {}
+        if fields:
+            body["fields"] = dict(fields)
+        if ops:
+            body["update"] = {"labels": ops}
+        if body:
+            self._call("PUT", f"/issue/{self._key(key)}", write=True, json=body)
+
+    def transitions(self, key: str) -> list[dict[str, Any]]:
+        """Kaydın şu an yapılabilecek durum geçişleri (``id``, ``name``, ``to``)."""
+        page = self._call("GET", f"/issue/{self._key(key)}/transitions")
+        return list(page.get("transitions") or [])
+
+    def transition(self, key: str, transition_id: str) -> None:
+        self._call(
+            "POST",
+            f"/issue/{self._key(key)}/transitions",
+            write=True,
+            json={"transition": {"id": str(transition_id)}},
+        )
+
     def delete_issue(self, key: str) -> None:
         self._call("DELETE", f"/issue/{self._key(key)}", write=True)
 

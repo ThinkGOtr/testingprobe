@@ -68,25 +68,38 @@ test("insan kapıları uçtan uca: bulgu kararı → düzeltme → PO teyidi", a
   await girisYap(page, "analist");
   await page.goto("/gereksinimler/req-ft-1");
   const bulgular = page.getByRole("article");
-  await expect(bulgular).toHaveCount(2);
-  await expect(page.getByText("REPLAY-MISS").first()).toBeVisible();
+  // Serbest metin golden'ı (SERBEST): 3 engelleyici bulgu, REPLAY etiketli; tur sayacı görünür.
+  await expect(bulgular).toHaveCount(3);
+  await expect(page.getByText("REPLAY", { exact: true }).first()).toBeVisible();
+  await expect(page.getByTestId("bulgu-sayaclari")).toContainText("Kontrol turu 1/3");
 
   const ilk = bulgular.nth(0);
   await ilk.getByLabel("Dokümanı düzelt").check();
   await expect(ilk.getByLabel("Önerilen değişiklik farkı").locator("ins")).toContainText("6");
   await ilk.getByRole("button", { name: "Kararı kaydet" }).click();
-  await expect(ilk.getByText("Yazılmayı bekliyor")).toBeVisible();
+  await expect(ilk.getByText("Uygulanmayı bekliyor")).toBeVisible();
 
   const ikinci = bulgular.nth(1);
-  await ikinci.getByLabel("Bilinçli fark").check();
+  await ikinci.getByLabel("Dokümanı düzelt").check();
   await ikinci.getByRole("button", { name: "Kararı kaydet" }).click();
-  await expect(ikinci.getByRole("alert")).toContainText("gerekçe zorunludur");
-  await ikinci.getByLabel(/Gerekçe/).fill("Ayar tablosu ürün kararıyla 750 TL");
-  await ikinci.getByRole("button", { name: "Kararı kaydet" }).click();
-  await expect(ikinci.getByText("Ayar tablosu ürün kararıyla 750 TL")).toBeVisible();
+  await expect(ikinci.getByText("Uygulanmayı bekliyor")).toBeVisible();
 
+  const ucuncu = bulgular.nth(2);
+  await ucuncu.getByLabel("Bilinçli fark").check();
+  await ucuncu.getByRole("button", { name: "Kararı kaydet" }).click();
+  await expect(ucuncu.getByRole("alert")).toContainText("gerekçe zorunludur");
+  await ucuncu.getByLabel(/Gerekçe/).fill("Aynı AC3 düzeltmesi bir önceki bulguda kabul edildi");
+  await ucuncu.getByRole("button", { name: "Kararı kaydet" }).click();
+  await expect(ucuncu.getByText("Aynı AC3 düzeltmesi bir önceki bulguda kabul edildi")).toBeVisible();
+
+  await expect(page.getByRole("button", { name: /Düzeltmeleri uygula \(2\) · tur 1\/3/ })).toBeEnabled();
+  await page.screenshot({ path: `${EKRAN_DIZINI}/19-akis-kararlar-tur-sayaci.png`, fullPage: true });
   await page.getByRole("button", { name: /Düzeltmeleri uygula/ }).click();
   await expect(page.locator(".sayfa-basligi").getByText("PO teyidi bekliyor")).toBeVisible();
+  // Serbest metinde Jira yok: düzeltme dokümana uygulanır; akışın 1. adımı "Serbest metin".
+  await expect(page.getByText("Dokümana uygulandı").first()).toBeVisible();
+  await expect(page.getByText("Jira'ya yazıldı")).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: /14 adımlı akış/ }).getByText("Serbest metin")).toBeVisible();
   await page.screenshot({ path: `${EKRAN_DIZINI}/20-akis-po-bekliyor.png`, fullPage: true });
 
   await page.getByRole("button", { name: "Çıkış" }).click();
@@ -99,6 +112,36 @@ test("insan kapıları uçtan uca: bulgu kararı → düzeltme → PO teyidi", a
   await page.screenshot({ path: `${EKRAN_DIZINI}/21-akis-po-onayli.png`, fullPage: true });
 });
 
+test("Demo-A: case taslağa alma, yayın (kısmi sonuç, jira-sim bağlantıları), Claude Code token'ı", async ({ page }) => {
+  await girisYap(page, "analist");
+  await page.goto("/gereksinimler/req-tpd-1/caseler");
+  const kart = (etiket: string) => page.getByRole("article").filter({ has: page.locator(".cip", { hasText: new RegExp(`^${etiket}$`) }) }).first();
+  const red = kart("Reddedildi");
+  // Golden C10 (C2 tekrarı) de reddedilmiş olarak gelir: biri yeniden açılınca 1 ret kalır.
+  await red.getByRole("button", { name: "Yeniden aç" }).click();
+  await expect(page.getByText("Reddedilen (1)")).toBeVisible();
+  // Taslağa alınan case'e yeniden karar verilir (ölçüm görüntülemeden yeniden başlar).
+  const taslak = page.getByRole("article").filter({ hasText: "taslağa alındı (önceki karar: ret)" });
+  await expect(taslak.getByRole("button", { name: "Onayla" })).toBeEnabled();
+  await taslak.getByRole("button", { name: "Onayla" }).click();
+  await expect(page.getByText("Reddedilen (1)")).toBeVisible();
+  await page.screenshot({ path: `${EKRAN_DIZINI}/26-case-taslaga-al.png`, fullPage: true });
+
+  await page.goto("/gereksinimler/req-tpd-1/yayin");
+  await expect(page.getByTestId("yayin-hedefi")).toContainText("Jira (Test issue) · proje TPD");
+  await expect(page.getByRole("link", { name: /TPD-9/ })).toHaveAttribute("href", "http://127.0.0.1:8090/browse/TPD-9");
+  await page.getByRole("button", { name: /Seçilenleri yayınla/ }).click();
+  await expect(page.getByTestId("yayin-ozeti")).toContainText("oluşturuldu");
+  await expect(page.getByTestId("yayin-ozeti").locator("..").getByRole("link").first()).toHaveAttribute("href", /^http:\/\/127\.0\.0\.1:8090\/browse\/TPD-\d+$/);
+  await page.screenshot({ path: `${EKRAN_DIZINI}/27-yayin-sonucu.png`, fullPage: true });
+
+  await page.goto("/claude-code");
+  await page.getByRole("button", { name: "8 saatlik token oluştur" }).click();
+  await expect(page.getByLabel(".mcp.json (ortam değişkeniyle)")).toContainText("${TP_MCP_TOKEN}");
+  await expect(page.getByRole("region", { name: "Token listesi" }).getByText("Etkin")).toBeVisible();
+  await page.screenshot({ path: `${EKRAN_DIZINI}/28-claude-code-token.png`, fullPage: true });
+});
+
 test("case kararları durum makinesine uyar: reddedilen onaylanamaz, onaylı reddedilemez", async ({ page }) => {
   await girisYap(page, "analist");
   await page.goto("/gereksinimler/req-tpd-1/caseler");
@@ -107,6 +150,8 @@ test("case kararları durum makinesine uyar: reddedilen onaylanamaz, onaylı red
   await expect(red).toBeVisible();
   for (const ad of ["Onayla", "Düzelt", "Reddet"]) await expect(red.getByRole("button", { name: ad })).toBeDisabled();
   await expect(red.getByTestId("case-karar-kilit")).toBeVisible();
+  // Karar değiştirmenin tek yolu taslağa almaktır (yeniden review).
+  await expect(red.getByRole("button", { name: "Yeniden aç" })).toBeEnabled();
   const onayli = kart("Onaylı");
   for (const ad of ["Onayla", "Düzelt", "Reddet"]) await expect(onayli.getByRole("button", { name: ad })).toBeDisabled();
   // Taslak case'te kararlar açık ve çalışır.
@@ -207,6 +252,34 @@ test("mobil gereksinim detayı: kanıt blokları yatay taşmaz", async ({ page }
   await page.screenshot({ path: `${EKRAN_DIZINI}/32-mobil-gereksinim-kanit.png`, fullPage: true });
 });
 
+test("mobil tablolar kart görünümünde: sütun kırpılmaz, adım metni dar sütuna sıkışmaz", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await girisYap(page, "analist");
+  await page.goto("/gereksinimler");
+  const satir = page.locator(".tablo-yigin tbody tr").first();
+  await expect(satir).toBeVisible();
+  // Her hücre görünür ve ekran içinde (yatay kaydırma gerekmez).
+  const hucreler = await page.evaluate(() =>
+    [...document.querySelectorAll(".tablo-yigin tbody td")].map((td) => {
+      const r = td.getBoundingClientRect();
+      return { etiket: td.getAttribute("data-etiket"), sag: r.right, gen: r.width };
+    }),
+  );
+  expect(hucreler.length).toBeGreaterThan(0);
+  expect(hucreler.filter((h) => h.sag > 391 || h.gen < 1)).toEqual([]);
+  expect(new Set(hucreler.map((h) => h.etiket))).toEqual(new Set(["Anahtar", "Başlık", "Durum", "Adım", "PO", "Açık bulgu", "Case (onaylı)", "Çekim"]));
+  await page.screenshot({ path: `${EKRAN_DIZINI}/33-mobil-gereksinim-listesi.png`, fullPage: true });
+
+  await page.goto("/gereksinimler/req-tpd-1/caseler");
+  await expect(page.locator(".tablo-yigin").first()).toBeVisible();
+  const adimGenislik = await page.evaluate(() =>
+    Math.min(...[...document.querySelectorAll('.tablo-yigin td[data-etiket="Adım"]')].map((td) => td.getBoundingClientRect().width)),
+  );
+  expect(adimGenislik).toBeGreaterThan(250);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: `${EKRAN_DIZINI}/34-mobil-case-adimlari.png`, fullPage: true });
+});
+
 for (const tema of ["light", "dark"] as const) {
   test(`erişilebilirlik (axe, WCAG 2 AA) — ${tema} tema`, async ({ page }) => {
     test.setTimeout(120_000);
@@ -219,6 +292,9 @@ for (const tema of ["light", "dark"] as const) {
       ["/kod/scr-2", "c2-kampanya-7-adet-1-bedava.spec.ts"],
       ["/denetim", "Zincir doğrulandı"],
       ["/kontrol-kulesi", "Karne (story ve uygulama alanı)"],
+      ["/gereksinimler/req-ft-1", "Kontrol turu"],
+      ["/gereksinimler/req-tpd-1/yayin", "Oluşturulacak kayıtlar"],
+      ["/claude-code", "Token oluştur"],
     ];
     const ihlaller: string[] = [];
     for (const genislik of [1440, 390]) {

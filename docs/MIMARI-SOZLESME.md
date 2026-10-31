@@ -31,7 +31,7 @@ REPLAY kullanılan her çıktı portalda **REPLAY** rozetiyle görünür (Consti
 | jira-sim | Jira Cloud REST v3 + Xray alt kümesi simülatörü (kalıcı: JSON dosyası) | `tp_jira` |
 | demo-app-api / web | Bayi Sipariş Portalı (Postgres `demoapp`) | Postgres `demoapp` |
 
-**Volume'ler:** `tp_forge` (core-worker rw, toolchain-worker rw, test-runner ro) · `tp_artifacts`
+**Volume'ler:** `tp_forge` (core-worker rw, toolchain-worker ro, test-runner ro) · `tp_artifacts`
 (toolchain-worker rw, test-runner rw, core-api ro, core-worker ro) · `tp_jira` (jira-sim).
 
 ### toolchain-worker HTTP API (:8100, runner-net + core-net)
@@ -43,6 +43,11 @@ REPLAY kullanılan her çıktı portalda **REPLAY** rozetiyle görünür (Consti
 - `POST /locator-probe {sha, role, name, url_path, scope_test_id?}` → `{matches:int, test_id|null}`.
   `scope_test_id` (ör. `product-card-P-001` = `within` + başarısız adımdaki ürün kodu) verilirse
   eşleşmeler yalnızca o kapsayıcı içinde sayılır. Kapsam yokken `matches > 1` → öneri yok.
+  Yanıt ayrıca `olculen:"calisan_uygulama"`, `uygulama_sha`, `sha_eslesmesi`
+  (`eslesiyor|farkli|dogrulanamadi`) ve `uyari` (Türkçe, ya da null) taşır: ölçüm istenen sha'da değil
+  çalışan demo-app-web'de yapılır. Çalışan uygulamanın commit'i `DEMO_APP_BUILD_SHA`'dan okunur;
+  `farkli` → `oneri_uretilebilir=false` (case insana gider), boş/çözülemezse `dogrulanamadi` + uyarı.
+  Faz 4 onarım kaydı bu dört alanı aynen saklar.
 
 ### test-runner HTTP API (:8200, yalnızca runner-net)
 - `POST /run {sha, grep?, repeat_each, retries, env:{BREAK_CAMPAIGN?}, run_id}` → `{status: passed|failed|error, junit, json, artifacts_dir, duration_ms}`
@@ -116,13 +121,16 @@ gönderilir ve akış kapanır. Portal bunu alınca yeniden bağlanmaz, giriş e
 | POST | `/requirements/{id}/review` | analyst | Ön inceleme + tutarlılık denetimi başlat |
 | GET | `/requirements/{id}/findings` | herkes | Tutarlılık bulguları (kanıtlı) |
 | POST | `/findings/{id}/decision` `{karar, metin?, gerekce?}` | analyst | fix_doc / code_defect / accept_difference |
-| POST | `/requirements/{id}/apply-doc-fixes` | analyst | Onaylı düzeltmeleri Jira'ya yaz + yeniden kontrol |
+| POST | `/requirements/{id}/apply-doc-fixes` | analyst | Onaylı düzeltmeleri Jira'ya yaz + yeniden kontrol; yazılacak düzeltme ve açık engelleyici yoksa belgeyi açıkça son hal yapar (portal: "Son hal olarak onayla") |
 | POST | `/requirements/{id}/po-approve` | po | Serbest metin yolunda PO teyidi (Jira yolunda etiket) |
 | POST | `/requirements/{id}/generate-cases` | analyst | Case üretimi |
-| GET | `/cases?requirement_id=` | herkes | |
-| POST | `/cases/{id}/decision` `{karar: approve\|edit\|reject, icerik?, ret_nedeni?}` | analyst | |
-| GET | `/publish/preview?requirement_id=` | analyst | Dry-run |
-| POST | `/publish` `{case_ids[]}` | analyst | Yayın |
+| GET | `/requirements/{id}/case-metrics` | herkes | Kabul oranı (ilk karara göre, hedef 0.70), ret nedenleri, AI/review süresi, maliyet, `ai_cagri_modlari`, `kapsanmayan_ac` (hiçbir güncel case'in atıf yapmadığı AC'ler), `manuel_baz_ms` (`TP_MANUAL_BASELINE_S`'den; yoksa null) |
+| POST | `/requirements/{id}/review-complete` | analyst | Taslak kalmadıysa review'ı kapatır (denetim olayı); taslak varsa 409 |
+| GET | `/cases?requirement_id=` · `/cases/{id}` | herkes | |
+| POST | `/cases/{id}/viewed` | analyst | Kartın ilk görüntülenmesi (review süresi ölçümü) |
+| POST | `/cases/{id}/decision` `{karar: approve\|edit\|reject\|reopen, icerik_hash, icerik?, ret_nedeni?, gerekce?, beklenen_anlam_degisti?}` | analyst | `reopen` ("Taslağa al"): approved/rejected → draft; kayıtlı, onaylamayan karar |
+| GET | `/publish/preview?requirement_id=` | analyst | Dry-run; `hedef`, `proje`, `jira_browse_url`, kalem başına `islem` (`create\|skip_existing\|blocked_not_approved\|blocked_hash_mismatch\|blocked_no_story\|blocked_requirement_changed`), `payload` (`mod_etiketi`, `mod_yorumu` dahil), `uretim_modu`, `icerik_hash`, `onaylayan` |
+| POST | `/publish` `{case_ids[]}` | analyst | Yayın: worker işi (`publish.cases`; yazma kimliği yalnızca worker'da), 45 sn beklenir → 200 `YayinSonucu`; bitmezse 202 `{job_id, durum, sonuclar: []}`; iş başarısızsa 502 |
 | POST | `/code/generate` `{case_ids[]}` | engineer | Kod üretimi (CasesToCode) |
 | GET | `/scripts` · `/scripts/{id}` | herkes | Üretilen test + PR + adım görüntüleri |
 | POST | `/scripts/{id}/break-verify` | engineer | Kırarak doğrula (BREAK_CAMPAIGN) |
@@ -136,9 +144,53 @@ gönderilir ve akış kapanır. Portal bunu alınca yeniden bağlanmaz, giriş e
 | GET | `/control-tower` | herkes | Kontrol Kulesi verisi |
 | GET | `/audit?verify=true` | herkes | Denetim + zincir doğrulaması |
 | GET | `/events` (SSE) | herkes | Olay akışı |
+| GET · DELETE | `/tokens` · `/tokens/{id}` | herkes (kendi token'ları) | Listeleme / iptal |
 | POST | `/tokens` `{kapsam}` → `{id, kapsam, son_kullanma, token, mcp_url}` | analyst | MCP (Claude Code) kanalı için 8 saatlik token; `mcp_url` = `TP_MCP_PUBLIC_URL`. `/mcp` bağlanana kadar **501** ("IDE (MCP) kanalı henüz etkin değil"); token parola değişince geçersizleşir |
-| MCP | `:8000/mcp` → `submit_draft_cases`, `publish_test_cases` | token | Claude Code kanalı |
+| MCP | `:8000/mcp` → `get_requirement(requirement_key)` (submit kapsamı; PO onaylı metin güvenilmeyen blokta + `onaylanan_hash`), `submit_draft_cases(requirement_key, cases, onaylanan_hash)` (hash zorunlu; bayatsa ret), `publish_test_cases` | token | Claude Code kanalı (streamable HTTP, durumsuz). Token tek kapsamlıdır (`submit` veya `publish`); iki araç için iki token. Yalnızca 127.0.0.1/localhost Host'u, `X-Forwarded-For` → 403, çerez okunmaz. Her çağrı `tool_call` (kanal `ide`). Ayrıntı: docs/CLAUDE-CODE-KANALI.md |
 | POST | `/demo/break-locator` · `/demo/reset` | presenter | Demo kırılması / sıfırlama |
+
+**Faz 2 uç ayrıntıları (Demo-A):** `POST /requirements/sync` → 200 `{durum:"done", mesaj, proje,
+sonuc:{<jira_key>: yeni|degismedi|guncellendi|yeniden_kontrol|sifirlandi|mesgul}}`. `review`,
+`apply-doc-fixes`, `generate-cases` → 202 `{job_id, workflow_id, durum, mesaj}` (apply-doc-fixes
+yazılacak düzeltme ve engelleyici bulgu yoksa belgeyi son hale getirip `durum:"done"` döner).
+`GET /requirements/{id}/findings` yalnızca kanıtı doğrulanmış bulguları döner; elenen sayısı
+`X-Elenen-Bulgu-Sayisi` başlığında ve detayda `bulgu_sayaclari.elenen`. Detay `po` nesnesi
+`{durum, onaylayan, zaman, kanal, onaylanan_hash}`. Jira yolunda `po-approve` 409'dur (onay Jira
+etiketiyle). Case `mode` IDE'den gelen case'lerde `null`'dur (model çağrısı yok; "live" yazılmaz).
+Serbest metin gereksinimin case'leri story olmadığı için yayınlanamaz (`blocked_no_story`).
+Gereksinimin PO onayı güncel değilse (durum `cases_ready|done` değil ya da `onaylanan_hash` güncel
+içerikle eşleşmiyor) case kararları 409, yayın önizlemesi `blocked_requirement_changed`, yayın
+(portal ve MCP) ret döner. Jira etiketiyle verilen PO onayında `generate-cases` ve IDE
+`submit_draft_cases` etiketin Jira'da hâlâ durduğunu eşzamanlı denetler (yoksa/okunamazsa 409);
+etiket sonradan kalkarsa PO sorgusu gereksinimi `new`'e döndürür (`requirement.po_withdrawn`).
+Son tutarlılık turu güvenilmezse (REPLAY-MISS ya da bulguların hepsi elendi) belge otomatik son hal
+olmaz: detayda `denetim_guvenilmez` (neden) + `insan_karari_gerekli=true`; analist apply-doc-fixes ile
+açıkça son hal yapar. Önceki turda `code_defect`/`accept_difference` ile kapanmış aynı fark yeniden
+raporlanırsa bulgu `stale` + `onceki_karar` ile döner (karar istenmez). PO soru yorumu Jira'ya belge
+son hal olduğunda (`requirements.po_request`) bir kez yazılır; üretim modu `mode_label` ile dürüstçe
+etiketlenir (elle hazırlanmış golden "kayıtlı model çıktısı" denmez; REPLAY-MISS'te "sorular var"
+denmez). `GET /bug-drafts[?requirement_id=]` · `/bug-drafts/{id}` (salt okuma) core'dadır; karar
+ucu Faz 4.
+
+**Faz 2 SSE olayları (core yayınlar):** `requirement.updated`, `finding.verified`, `po.approved`,
+`agent.step`, `case.generated`, `publish.completed` (`{job_id, requirement_id, requirement_ids,
+hedef, sonuclar}`), `publish.failed` (`{case_id, requirement_id, hedef, hata}`); her olay
+`requirement_id` taşır (portal konu eşlemesi).
+
+**Faz 2 iş türleri:** `requirements.review`, `requirements.consistency` (max_deneme 1),
+`requirements.apply_doc_fixes`, `requirements.po_request` (son halde PO soru yorumu + `tp-po-pending`),
+`requirements.po_poll` (kendini `TP_PO_POLL_S`'de bir yeniden
+planlar; worker açılışında `on_worker_start` kancasıyla kuyruğa girer), `cases.generate`,
+`publish.cases`. Özellik `jobs` modülü isteğe bağlı `on_worker_start(conn)` tanımlayabilir;
+worker açılışta her birini kendi işleminde bir kez çağırır (hata worker'ı düşürmez).
+
+**Faz 2 tablolar:** 0006 `requirement_kontrol`, `consistency_finding_ek` (`ref_metni`,
+`onceki_finding_id`), `requirement_akis`, `requirement_review_ek` (inceleme anı AC/açıklama
+görüntüsü + model özeti);
+0007 `case_goruntuleme` (tp_app SELECT/INSERT); 0008 `review_karar_ck`'ye `reopen` (test_case
+kararı; `APPROVING`'de değil → taslağa alınan case eski onayla yeniden onaylanamaz/yayınlanamaz).
+0008 downgrade `review` satırı silmez (append-only, Anayasa VIII): var olan `reopen` satırları kalır,
+eski kısıt `NOT VALID` olarak yalnızca yeni satırlara uygulanır.
 
 ## 6. Ortam değişkenleri (yeni)
 `TP_SESSION_SECRET`, `TP_MODEL_MODE`, `JIRA_BASE_URL`, `JIRA_PROJECT` (varsayılan `TPD`),
@@ -174,7 +226,19 @@ Faz 1 entegrasyonunda eklenenler (boş = yerel simülatör / güvenli varsayıla
   `check_jira_approver()`'dan geçirir; ham `label_history` onay sayılmaz.
 - Forge merge kapısı (yalnızca core-worker): `TP_REQUIRED_CHECKS` (virgülle; boş = `local-ci` /
   GitHub ruleset listesi `test-local,ast-guard,semgrep`).
-- Model geçidi: `TP_REPLAY_STRICT` (1 = prova: replay kaydı yoksa golden'a düşmez, hata verir).
+- Model geçidi: `TP_REPLAY_STRICT` (1 = prova: girdisi beyanla eşleşmeyen golden'a düşmez,
+  `ReplayMiss` verir; beyanı (`input_match`) eşleşen golden geçer).
+- Gereksinim akışı (Faz 2): `DEMOAPP_RO_DATABASE_URL` yalnızca core-worker'da (demoapp_ro; core-api
+  demoapp'e bağlanmaz — MCP `get_requirement`'ın test verisi bloğu bu yüzden core-api'de statik
+  bilgiye düşer). Ortak blokta (core-api + core-worker): `TP_PO_POLL_S` (15), `TP_CONSISTENCY_MAX_ROUNDS`
+  (3), `TP_FORGE_REPO_NAME` (`demo-app`; kod kanıtındaki `evidence.repo`), `TP_FORGE_CHECK_REF` (`main`),
+  `TP_MANUAL_BASELINE_S` (story başına manuel test tasarımı baz süresi, saniye; boş = ölçülmedi).
+- toolchain-worker: `DEMO_APP_BUILD_SHA` (çalışan demo-app-web'in forge commit'i; boş =
+  `/locator-probe` `dogrulanamadi`). Henüz otomatik doldurulmaz (forge-init/break sonrası elle).
+- `PLAYWRIGHT_VERSION`: tek kaynak `.playwright-version`; `make env` `.env`'e de yazar (düz
+  `docker compose ps/logs/exec` çalışsın). Gerçek Jira'da `make reset` önce `jira_seed` planını
+  yazdırır, onay (`e`) gelirse uygular; ayrıca `make jira-seed [ONAY=1]`.
+  `TP_TEST_MGMT` ortak bloktadır: core-api (`/publish/preview`) ve core-worker (yayın) aynı hedefi görür.
 - playwright-mcp: `MCP_ALLOWED_ORIGINS`, `MCP_ALLOWED_HOSTS` (Host başlığı izin listesi).
 
 **Ortam dağıtımı (compose):** `x-core-env` ortak bloğu core-api ve core-worker'a gider ve yazma
@@ -222,14 +286,16 @@ aşımının tek worker'da uygulanmadığını ve `make up`'ın idempotent olmad
   değişim anından yazar. `RestJira.po_approvals` içerik değişikliğinden önceki etiketleri saymaz; bot
   `tp-po-approved` etiketini kaldırabilir (yalnızca ekleyemez). Doküman düzeltmesi akışı
   `update_description` sonrasında `remove_labels([tp-po-approved])` + `add_labels([tp-po-pending])`
-  çağırır. **Henüz yazılmadı** (apply-doc-fixes iş akışı özellik şeridinde); yazılmazsa onay yine
-  sayılmaz (fail-closed), yalnızca panodaki etiket eski kalır.
+  çağırır. Faz 2'de yazıldı: son hal (`requirements.po_request`) ve PO sorgusu son halden önceki /
+  bayat onay etiketini kaldırıp `tp-po-pending` koyar; onay ancak son hal anından sonraki etiketse
+  sayılır (`fresh_approvals`).
 - **Deterministik case kimliği:** özellik kodu `test_case`'i `id=models.case_id(requirement, sira_no,
   uretim_no)` ile oluşturur (uuid5; varsayılan yok, `(requirement_id, sira_no, uretim_no)` UNIQUE).
 - **Denetim çapası:** `GET /audit?verify=true` yanıtında `verify.anchors` (`checked`, `broken`,
   `sabitsiz`, `eski`); herhangi bir ai_call/tool_call çapası tutmazsa `verify.ok=false`.
   `ai_call.ek` (jsonb, 0005): geçidin kolonu olmayan ayrıntıları (`replay_kaynagi`, `replay_kokeni`
-  = `recorded|golden_promoted`, `sema_hatalari`, …); `build_gateway` bunları varsayılan olarak yazar.
+  = `recorded|golden_promoted|golden_matched|golden`, `replay_eslesme` = REPLAY-MISS nedenleri,
+  `sema_hatalari`, …); `build_gateway` bunları varsayılan olarak yazar.
   `ek` çapaya yalnızca NULL değilse girer (0005'ten önceki çapalar geçerli kalır).
 - **Ajan araçları izin listesi:** `gateway.ALLOWED_AGENT_TOOLS` (amaç başına; verify_and_map = §8.4
   listesi, consistency_check = search_code/get_file_contents/db_schema/db_query). İş akışı ajana MCP
@@ -260,6 +326,19 @@ bayi kapsamlı `POST /test/break`'e taşındı, test-runner'ın hedefi compose'd
 Ayrıca CSRF kuralı (`OriginGuard`, `TP_ALLOWED_ORIGINS`) ve SSE `session.ended` sözleşmeye eklendi.
 demo-app'teki kırılma kodu satırları kaydırdığı için golden kanıt satırları güncellendi
 (DEMO-VERISI.md).
+
+**Neden değişti (Faz 2 entegrasyonu, Demo-A):** özellik şeritleri (requirements, cases/publish/MCP,
+goldens, toolchain, portal) birleşti. REPLAY anlamı genişledi: golden `input_match` beyanı gerçek
+girdiyle eşleşirse mod `replay` (köken `golden_matched`), eşleşmezse `replay_miss` (nedenler
+`ek.replay_eslesme`); mod asla `live` değildir (constitution VIII; küratörlü çıktı, girdisi
+doğrulanmış — `golden_promoted` ile aynı ilke). `POST /tokens` `/mcp`'yi `include_router`
+sarmalayıcılarının içinde de bulur (önceden 501 dönüyordu). Case "Taslağa al" kayıtlı karar oldu
+(0008). Yayın SSE olayları ve önizlemede `jira_browse_url` eklendi. toolchain-worker forge'u salt
+okur. Ajan araç adları `ALLOWED_AGENT_TOOLS` ile sabittir (consistency_check: search_code,
+get_file_contents (satır aralığı + dizin listesi), db_schema, db_query); PO kimliği yalnızca
+e-posta/accountId ile eşlenir (displayName asla). Gereksinim durum makinesinde
+`po_approved → pending_po` yoktur: PO etiketi geri alınırsa gereksinim `new`'e döner (tam yeniden
+inceleme; eski `po_approve` kaydı kapıyı yeniden açamaz — bilinçli tercih).
 
 ## 7. Kalite kapısı (her şerit)
 - Python: `uv run ruff check`, `uv run ruff format --check`, `uv run pytest` yeşil.

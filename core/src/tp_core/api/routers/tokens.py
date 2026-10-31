@@ -7,8 +7,9 @@ olmayan bir sunucu için çalışan kimlik bilgisi ve `.mcp.json` parçası dağ
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable, Iterator
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
@@ -49,13 +50,21 @@ class TokenCreated(BaseModel):
 MCP_YOLU = "/mcp"
 
 
+def _yollar(routes: Iterable[Any], onek: str = "") -> Iterator[str]:
+    """Tüm rota yolları; `include_router` sarmalayıcılarının (_IncludedRouter) içine de iner."""
+    for route in routes:
+        yield onek + (getattr(route, "path", "") or "")
+        alt = getattr(route, "original_router", None)
+        if alt is not None:
+            ek = getattr(getattr(route, "include_context", None), "prefix", "") or ""
+            yield from _yollar(alt.routes, onek + ek)
+
+
 def mcp_mounted(request: Request) -> bool:
     """Uygulamada `/mcp` (veya altı) yolunda bir uç/mount var mı?"""
-    for route in request.app.routes:
-        yol = getattr(route, "path", "")
-        if yol == MCP_YOLU or yol.startswith(MCP_YOLU + "/"):
-            return True
-    return False
+    return any(
+        yol == MCP_YOLU or yol.startswith(MCP_YOLU + "/") for yol in _yollar(request.app.routes)
+    )
 
 
 @router.post("", response_model=TokenCreated, status_code=201)

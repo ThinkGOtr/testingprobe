@@ -1,0 +1,10 @@
+{
+  "kind": "call",
+  "purpose": "requirement_review",
+  "note": "Nötr REPLAY-MISS yedeği (golden değildir, model çıktısı değildir). Girdi, adlandırılmış golden'ın girdi beyanına (input_match) uymadığında golden'ın soruları başka bir dokümana aittir (olmayan AC'lere atıf yapar); geçit onların yerine bu çıktıyı döner (ai_call.ek.replay_kokeni = miss_neutral, cikti_kokeni = notr_yedek, model = golden-elle). Soru üretilmez; verdict needs_po, çünkü AI incelemesi yapılmadı ve PO/analist elle incelemelidir. Bkz. rules/replay/README.md.",
+  "output": {
+    "questions": [],
+    "verdict": "needs_po",
+    "summary": "Bu girdi için kayıtlı model çıktısı yok (REPLAY-MISS); canlı model gerekir. AI ön incelemesi yapılmadı ve soru üretilmedi; gereksinimi PO/analist elle incelemelidir."
+  }
+}

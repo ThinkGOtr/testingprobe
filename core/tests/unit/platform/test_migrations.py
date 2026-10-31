@@ -273,3 +273,29 @@ def test_0004_mevcut_veriyle_yukselir_ve_geri_alinir(pg: PgServer) -> None:
     finally:
         with pg.super_conn() as c:
             c.execute(f'DROP DATABASE IF EXISTS "{ad}" WITH (FORCE)')
+
+
+def test_0008_downgrade_reopen_kararini_silmez(pg: PgServer) -> None:
+    """'reopen' insan kararı varken 0008 geri alınabilir ve kayıt korunur (review append-only,
+    Anayasa VIII); eski karar alanı yalnızca yeni satırlara uygulanır."""
+    ad = pg.create_empty_db()
+    owner = pg.url("tp_owner", ad)
+    dsn = owner.replace("+psycopg", "")
+    try:
+        run_alembic(owner, "0008")
+        with psycopg.connect(dsn, autocommit=True) as c:
+            c.execute(_REVIEW_INSERT.replace("'requirement'", "'test_case'").replace(
+                "'reject'", "'reopen'"))  # fmt: skip
+        run_alembic(owner, "0007", "downgrade")
+        with psycopg.connect(dsn, autocommit=True) as c:
+            assert c.execute("SELECT count(*) FROM review WHERE karar = 'reopen'").fetchone() == (
+                1,
+            )
+            with pytest.raises(psycopg.errors.CheckViolation):
+                c.execute(_REVIEW_INSERT.replace("'reject'", "'reopen'"))
+        run_alembic(owner, "head")  # yeniden yükseltilebilir
+        with psycopg.connect(dsn, autocommit=True) as c:
+            c.execute(_REVIEW_INSERT.replace("'reject'", "'reopen'"))
+    finally:
+        with pg.super_conn() as c:
+            c.execute(f'DROP DATABASE IF EXISTS "{ad}" WITH (FORCE)')

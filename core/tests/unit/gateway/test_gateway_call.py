@@ -4,6 +4,7 @@ from uuid import uuid4
 import pytest
 
 from tp_core.gateway import (
+    HAND_PREPARED_MODEL,
     Budget,
     BudgetExceeded,
     PiiMasker,
@@ -13,6 +14,7 @@ from tp_core.gateway import (
     SchemaValidationFailed,
     load_schema,
 )
+from tp_core.gateway.replay import MISS_FILE
 from tp_core.gateway.testing import text_response
 from tp_core.ports import ModelGateway, ModelMessage
 
@@ -53,7 +55,7 @@ def test_live_success_records_and_costs(make_gateway, rules_dir, recorder) -> No
     assert row["id"] == result.call_id
     assert row["mod"] == "live"
     assert row["model"] == "claude-sonnet-5-5"
-    assert row["surum"] == "requirement-review@v1"
+    assert row["surum"] == "requirement-review@v2"
     assert row["sema_gecerli"] is True
     assert row["deneme"] == 1
     assert len(row["bundle_hash"]) == 64
@@ -157,10 +159,16 @@ def test_record_then_replay_hit(make_gateway, rules_dir, recorder) -> None:
     gw, _ = make_gateway([text_response(VALID)], mode="record")
     live = call(gw, rules_dir)
     assert live.mode == "live"
-    files = list((rules_dir / "replay" / "requirement_review").glob("*.json"))
+    folder = rules_dir / "replay" / "requirement_review"
+    files = [f for f in folder.glob("*.json") if f.name != MISS_FILE]
     assert len(files) == 1
     stored = json.loads(files[0].read_text())
     assert stored["output"] == VALID and stored["kind"] == "call"
+    # Kayıt üst verisi: hangi model, ne zaman, ne kadar sürede, kaç token (constitution VIII/X).
+    assert stored["recording"]["model"] == "claude-sonnet-5-5"
+    assert stored["recording"]["provider"] == "fake"
+    assert {"latency_ms", "input_tokens", "output_tokens"} <= set(stored["recording"])
+    assert stored["recorded_at"]
 
     replay_gw, _ = make_gateway(mode="replay")
     # zaman damgası ve UUID'ler normalize edilir → aynı anahtar
@@ -172,6 +180,8 @@ def test_record_then_replay_hit(make_gateway, rules_dir, recorder) -> None:
     assert row["mod"] == "replay"
     assert row["saglayici"] == "replay"
     assert row["ek"]["replay_kaynagi"] == f"requirement_review/{files[0].name}"
+    # Gerçek model kaydı: ai_call.model kaydeden modeldir.
+    assert row["model"] == "claude-sonnet-5-5" and row["ek"]["cikti_kokeni"] == "model_kaydi"
 
 
 def test_replay_key_ignores_timestamps_and_uuids(make_gateway, rules_dir) -> None:
@@ -185,14 +195,54 @@ def test_replay_key_ignores_timestamps_and_uuids(make_gateway, rules_dir) -> Non
     assert result.mode == "replay"
 
 
-def test_replay_miss_falls_back_to_named_golden(make_gateway, rules_dir, recorder) -> None:
+def test_replay_miss_on_declared_golden_returns_neutral_output(
+    make_gateway, rules_dir, recorder
+) -> None:
+    """Golden başka girdi için (beyanı uymuyor): soruları gösterilmez, nötr yedek döner."""
     gw, _ = make_gateway(mode="replay")
     result = call(gw, rules_dir, messages=[ModelMessage(role="user", content="farklı girdi")])
     assert result.mode == "replay_miss"
-    golden = json.loads((rules_dir / "replay/requirement_review/golden/TPD-4.json").read_text())
+    neutral = json.loads((rules_dir / "replay/requirement_review" / MISS_FILE).read_text())
+    assert result.output == neutral["output"]
+    assert result.output["questions"] == [] and result.output["verdict"] == "needs_po"
+    assert "REPLAY-MISS" in result.output["summary"] and "canlı model" in result.output["summary"]
+    row = recorder.ai_calls[-1]
+    assert row["mod"] == "replay_miss" and row["cikti"] == neutral["output"]
+    assert row["ek"]["replay_kaynagi"] == f"requirement_review/{MISS_FILE}"
+    assert row["ek"]["replay_kokeni"] == "miss_neutral"
+    assert row["ek"]["cikti_kokeni"] == "notr_yedek"
+    assert row["ek"]["replay_eslesme"]  # nedenler kayıtta
+    assert row["model"] == HAND_PREPARED_MODEL
+
+
+def test_replay_miss_on_undeclared_golden_falls_back_to_golden(
+    make_gateway, rules_dir, recorder
+) -> None:
+    """Beyansız golden (senaryo adı) bilinçli yedektir: çıktısı döner, köken 'golden'."""
+    path = rules_dir / "replay/requirement_review/golden/TPD-4.json"
+    golden = json.loads(path.read_text())
+    golden.pop("input_match")
+    path.write_text(json.dumps(golden, ensure_ascii=False))
+    gw, _ = make_gateway(mode="replay")
+    result = call(gw, rules_dir, messages=[ModelMessage(role="user", content="farklı girdi")])
+    assert result.mode == "replay_miss"
     assert result.output == golden["output"]
-    assert recorder.ai_calls[-1]["mod"] == "replay_miss"
-    assert recorder.ai_calls[-1]["ek"]["replay_kaynagi"] == "requirement_review/golden/TPD-4.json"
+    row = recorder.ai_calls[-1]
+    assert row["ek"]["replay_kaynagi"] == "requirement_review/golden/TPD-4.json"
+    assert row["ek"]["replay_kokeni"] == "golden"
+    assert row["ek"]["cikti_kokeni"] == "elle_hazirlanmis" and row["model"] == HAND_PREPARED_MODEL
+
+
+def test_purpose_without_neutral_fallback_keeps_golden_output(
+    make_gateway, rules_dir, recorder
+) -> None:
+    neutral = rules_dir / "replay/requirement_review" / MISS_FILE
+    neutral.unlink()
+    gw, _ = make_gateway(mode="replay")
+    result = call(gw, rules_dir, messages=[ModelMessage(role="user", content="farklı girdi")])
+    golden = json.loads((rules_dir / "replay/requirement_review/golden/TPD-4.json").read_text())
+    assert result.mode == "replay_miss" and result.output == golden["output"]
+    assert recorder.ai_calls[-1]["ek"]["replay_kokeni"] == "golden"
 
 
 def test_bundle_change_causes_replay_miss(make_gateway, rules_dir) -> None:
@@ -279,3 +329,35 @@ def test_rows_match_platform_ai_call_columns(make_gateway, rules_dir, recorder) 
         assert set(row) <= set(AI_CALL_COLUMNS)
         assert all(row[k] for k in AI_CALL_REQUIRED)
     assert recorder.ai_calls[0]["hata"].startswith("şema:")
+
+
+@pytest.mark.parametrize(
+    ("mode", "model", "label"),
+    [
+        ("replay", HAND_PREPARED_MODEL, "REPLAY (hazırlanmış örnek çıktı; canlı model değil)"),
+        ("replay", None, "REPLAY (hazırlanmış örnek çıktı; canlı model değil)"),
+        ("replay", "claude-sonnet-5-5", "REPLAY (claude-sonnet-5-5 ile kaydedilmiş model çıktısı)"),
+        (
+            "replay_miss",
+            HAND_PREPARED_MODEL,
+            "REPLAY-MISS (bu girdi için kayıtlı model çıktısı yok; canlı model gerekir)",
+        ),
+        ("live", "claude-sonnet-5-5", "canlı model (claude-sonnet-5-5)"),
+    ],
+)
+def test_mode_label_never_calls_hand_written_output_a_recording(mode, model, label) -> None:
+    from tp_core.gateway import mode_label
+
+    assert mode_label(mode, model) == label
+    if model in (HAND_PREPARED_MODEL, None):
+        assert "kaydedilmiş model" not in mode_label(mode, model)
+
+
+def test_matched_golden_row_is_labelled_hand_prepared(make_gateway, rules_dir, recorder) -> None:
+    """Eşleşen golden da elle hazırlanmıştır: ai_call.model model adı taşımaz."""
+    from tp_core.gateway import output_origin
+
+    golden = json.loads((rules_dir / "replay/requirement_review/golden/TPD-4.json").read_text())
+    assert output_origin({**golden, "provenance": "golden_matched"}) == ("elle_hazirlanmis", None)
+    recorded = {**golden, "provenance": "golden_matched", "recording": {"model": "m-1"}}
+    assert output_origin(recorded) == ("model_kaydi", "m-1")

@@ -10,7 +10,7 @@ export PLAYWRIGHT_VERSION := $(strip $(shell cat .playwright-version 2>/dev/null
 
 S ?=
 
-.PHONY: help env up status seed reset forge-init break demo-baseline export-audit security-check e2e-smoke prune logs down
+.PHONY: help env up status seed reset jira-seed forge-init break demo-baseline export-audit security-check e2e-smoke prune logs down
 
 help: ## Hedefleri listeler
 	@echo "Kullanım: make <hedef>"
@@ -31,6 +31,9 @@ seed: ## Deterministik başlangıç verisi (tekrar çalıştırmak güvenli)
 
 reset: ## Denetim kaydını dışa aktarır, çekirdek veriyi siler, yeniden başlatır
 	@scripts/reset.sh
+
+jira-seed: ## Gerçek Jira'yı demo başlangıcına döndürür (önce plan; uygulamak için: make jira-seed ONAY=1)
+	@docker compose exec -T core-worker python -m tp_core.integrations.jira_seed $(if $(ONAY),--onay,)
 
 forge-init: ## Yerel forge deposunu hazırlar (varsa dokunmaz; yeniden kurmak için: make forge-init F=--force)
 	@scripts/forge-init.sh $(F)

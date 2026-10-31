@@ -16,6 +16,7 @@
 //   Allure/trace/PR adresleri null'dır (ekranda düz metin, ölü bağlantı yok).
 import type {
   AjanAdimi,
+  McpTokenKaydi,
   Bulgu,
   BulguTuru,
   BugTaslagi,
@@ -43,6 +44,8 @@ export interface MockVeri {
   hatalar: HataAnalizi[];
   bugTaslaklari: BugTaslagi[];
   denetim: { aktor: string; eylem: string; nesne: string; ozet: string; zaman: string }[];
+  /** MCP token kayıtları (ham token saklanmaz; core gibi yalnızca oluşturulduğunda döner). */
+  tokenlar?: McpTokenKaydi[];
   sayac: number;
 }
 
@@ -76,7 +79,38 @@ export const KAYNAK = kaynaklar as unknown as {
   jira_seed: Record<string, SeedStory>;
   requirement_review: Record<string, GoldenInceleme>;
   consistency_check: Record<string, { findings: GoldenBulgu[]; notes: string }>;
+  /** Serbest metin golden'ının (SERBEST) girdi beyanı: AC satırları ve açıklamada geçen metin. */
+  serbest_girdi: { acceptance_criteria?: string[]; contains?: string[] };
+  /** case_generation golden'ları: girdi AC satırları ("ACn: …") ve çıktı case'leri. */
+  case_generation: Record<string, { girdi_ac: string[]; cases: TestCaseIcerik[] }>;
 };
+
+/**
+ * Case üretimi golden'ı: kayıt kökü (goldenKoku) için kayıt varsa ve gereksinimin güncel AC'leri
+ * golden girdisiyle birebir aynıysa case'ler (REPLAY); değilse undefined (REPLAY-MISS).
+ */
+export function goldenCaseler(g: { jira_key: string | null; aciklama: string; kabul_kriterleri: { ref: string; metin: string }[] }): TestCaseIcerik[] | undefined {
+  const kok = goldenKoku(g);
+  const k = kok ? KAYNAK.case_generation[kok] : undefined;
+  if (!k) return undefined;
+  const acler = g.kabul_kriterleri.map((a) => `${a.ref}: ${a.metin}`);
+  if (acler.length !== k.girdi_ac.length || acler.some((a, i) => a !== k.girdi_ac[i])) return undefined;
+  return JSON.parse(JSON.stringify(k.cases)) as TestCaseIcerik[];
+}
+
+/** Serbest metin golden kaydının adı (rules/replay/<amaç>/golden/SERBEST.json). */
+export const SERBEST_GOLDEN = "SERBEST";
+
+/**
+ * Gereksinimin golden kayıt kökü: Jira story'sinde anahtarı; serbest metinde açıklaması golden'ın
+ * girdi beyanını içeriyorsa `SERBEST` (core: input_match → REPLAY), değilse yok (REPLAY-MISS).
+ * Açıklama düzeltmelerle değişmez (düzeltmeler AC'lere yazılır); 2. tur `SERBEST-r2` olur.
+ */
+export function goldenKoku(g: { jira_key: string | null; aciklama: string }): string | null {
+  if (g.jira_key) return g.jira_key;
+  const icerir = KAYNAK.serbest_girdi.contains ?? [];
+  return icerir.length > 0 && icerir.every((m) => g.aciklama.includes(m)) ? SERBEST_GOLDEN : null;
+}
 
 /** Golden önerilerindeki "AC2: " öneki atılır: portal AC referansını ayrı alanda (`ref`) tutar. */
 export const refsiz = (metin: string) => metin.replace(/^AC\d+:\s*/, "");
@@ -130,6 +164,13 @@ export function bulguCiktisi(f: GoldenBulgu, mevcutDocText: string | null) {
 }
 
 const acMetni = (acs: { ref: string; metin: string }[], ref: string) => acs.find((a) => a.ref === ref)?.metin ?? null;
+
+/** Serbest metin demo gereksiniminin AC'leri: golden girdi beyanının kendisi ("ACn: …" satırları). */
+const SERBEST_AC = (KAYNAK.serbest_girdi.acceptance_criteria ?? []).map((satir, i) => {
+  const m = /^(AC\d+):\s*(.*)$/.exec(satir);
+  return m ? { ref: m[1], metin: m[2] } : { ref: `AC${i + 1}`, metin: satir };
+});
+const SERBEST_ACIKLAMA = KAYNAK.serbest_girdi.contains?.[0] ?? "";
 
 // TPD-1 tutarlılık turu 1 (golden TPD-1): F1 AC3↔AC6, F2 AC2 kod, F3 AC3 veri, F4 AC4 kod eksik.
 const TPD1_SEED_AC = seedStory("TPD-1").ac;
@@ -245,31 +286,20 @@ function gereksinimler(): GereksinimDetay[] {
       kaynak: "free_text",
       jira_key: null,
       baslik: "Sepetten ürün çıkarma",
-      aciklama: "Bayi sepetteki bir ürün satırını kaldırabilmeli; toplamlar ve kampanya indirimi yeniden hesaplanmalıdır.",
-      kabul_kriterleri: [
-        { ref: "AC1", metin: "Satırdaki \"Kaldır\" butonuna basıldığında ürün sepetten çıkar ve sepet sayacı azalır." },
-        { ref: "AC2", metin: "Kaldırma sonrası kampanya indirimi her 7 adette 1 bedava kuralıyla yeniden hesaplanır." },
-        { ref: "AC3", metin: "Sepet tutarı 500,00 TL altına düşerse minimum tutar uyarısı gösterilir." },
-      ],
+      aciklama: SERBEST_ACIKLAMA,
+      kabul_kriterleri: kopyala(SERBEST_AC),
       ac_missing: false,
       durum: "findings_open",
       cekim_zamani: t(30, "11:40"),
       po: { durum: "not_requested", onaylayan: null, zaman: null, kanal: "portal" },
       sayaclar: { bulgu_acik: 2, case_toplam: 0, case_onayli: 0 },
+      // Serbest metin golden'ı (SERBEST, input_match bu metin): core REPLAY olarak gösterir.
       on_inceleme: {
-        verdict: "needs_po",
-        mode: "replay_miss",
+        verdict: goldenInceleme(SERBEST_GOLDEN)!.verdict,
+        mode: "replay",
         zaman: t(30, "11:42"),
         jira_comment_id: null,
-        questions: [
-          {
-            id: "Q1",
-            type: "missing_ac",
-            text: "Sepetteki son ürün kaldırıldığında boş sepet mesajı beklenmeli mi?",
-            ac_ref: null,
-            cevap: null,
-          },
-        ],
+        questions: goldenSorular(SERBEST_GOLDEN),
       },
       kontrol_turu: 1,
       kontrol_turu_ust_sinir: 3,
@@ -384,51 +414,33 @@ function bulgular(): Bulgu[] {
       icerik_hash: "",
       mode: "replay",
     },
-    // Serbest metin gereksinim: kararı bekleyen bulgular (karar düğmeleri burada denenir).
-    {
-      id: "fnd-5",
-      requirement_id: "req-ft-1",
-      type: "doc_vs_code",
-      doc_ref: "AC2",
-      ozet: "Doküman 7 adette 1 bedava diyor; kod her 6 adette 1 bedava uyguluyor.",
-      evidence: [KAMPANYA_KOD],
-      kanit_dogrulandi: true,
-      severity: "blocking",
-      mevcut_doc_text: "Kaldırma sonrası kampanya indirimi her 7 adette 1 bedava kuralıyla yeniden hesaplanır.",
-      suggested_doc_text: "Kaldırma sonrası kampanya indirimi her 6 adette 1 bedava kuralıyla yeniden hesaplanır.",
-      karar: null,
-      karar_metni: null,
-      gerekce: null,
-      karar_veren: null,
-      karar_zamani: null,
-      kontrol_turu: 1,
-      durum: "open",
-      bug_draft_id: null,
-      icerik_hash: "",
-      mode: "replay",
-    },
-    {
-      id: "fnd-6",
-      requirement_id: "req-ft-1",
-      type: "doc_vs_data",
-      doc_ref: "AC3",
-      ozet: "Doküman minimum tutarı 500,00 TL diyor; ayar tablosunda 750,00 TL.",
-      evidence: [MIN_SIPARIS_VERI],
-      kanit_dogrulandi: true,
-      severity: "warning",
-      mevcut_doc_text: "Sepet tutarı 500,00 TL altına düşerse minimum tutar uyarısı gösterilir.",
-      suggested_doc_text: "Sepet tutarı 750,00 TL altına düşerse minimum tutar uyarısı gösterilir.",
-      karar: null,
-      karar_metni: null,
-      gerekce: null,
-      karar_veren: null,
-      karar_zamani: null,
-      kontrol_turu: 1,
-      durum: "open",
-      bug_draft_id: null,
-      icerik_hash: "",
-      mode: "replay_miss",
-    },
+    // Serbest metin gereksinim (golden SERBEST, 1. tur): kararı bekleyen bulgular (karar düğmeleri
+    // burada denenir). F2 ve F3 aynı AC3 metnini önerir; hangisi kabul edilirse edilsin aynı sonuç.
+    ...([
+      ["fnd-5", "F1"],
+      ["fnd-6", "F2"],
+      ["fnd-9", "F3"],
+    ] as const).map(([id, f]): Bulgu => {
+      const gb = goldenBulgu(SERBEST_GOLDEN, f);
+      const mevcut = acMetni(SERBEST_AC, gb.doc_ref);
+      return {
+        ...bulguCiktisi(gb, mevcut),
+        ...(gb.evidence[0]?.kind === "data" ? { evidence: [MIN_SIPARIS_VERI] } : {}),
+        id,
+        requirement_id: "req-ft-1",
+        kanit_dogrulandi: true,
+        karar: null,
+        karar_metni: null,
+        gerekce: null,
+        karar_veren: null,
+        karar_zamani: null,
+        kontrol_turu: 1,
+        durum: "open",
+        bug_draft_id: null,
+        icerik_hash: "",
+        mode: "replay",
+      };
+    }),
   ];
 }
 
@@ -513,6 +525,8 @@ function caseler(): TestCase[] {
     karar("case-1-5", 7, G[6], { durum: "draft", kanal: "ide", mode: "replay" }),
     karar("case-1-8", 8, G[7], { durum: "draft" }),
     karar("case-1-9", 9, G[8], { durum: "draft" }),
+    // Golden C10 bilinçli olarak C2'nin tekrarı: analist "duplicate" gerekçesiyle reddeder.
+    karar("case-1-10", 10, G[9], { ...analist, durum: "rejected", karar: "reject", ret_nedeni: "duplicate", karar_zamani: t(30, "10:44"), review_sure_ms: 21000 }),
   ];
 }
 

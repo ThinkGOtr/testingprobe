@@ -57,6 +57,9 @@ PROMOTED_NOTE = (
 )
 
 
+NEUTRAL_REASON = "nötr REPLAY-MISS yedeği; yükseltilmez"
+
+
 def _load_golden(store: ReplayStore, purpose: str, name: str) -> dict[str, Any]:
     path = store.golden_path(purpose, name)
     if not path.is_file():
@@ -93,6 +96,10 @@ def write_promoted(
             replay_key=info.key_fields,
             input_hash=info.input_hash,
         )
+    if isinstance(golden.get("recording"), Mapping):
+        # Golden canlı modelle kaydedildiyse üst verisi taşınır; yoksa çıktı "elle hazırlanmış"
+        # olarak etiketlenir (`replay.output_origin`), `model` alanı kayıt değil anahtar bilgisidir.
+        record["recording"] = dict(golden["recording"])
     record["output"] = golden["output"]
     if golden.get("steps") is not None:
         record["steps"] = golden["steps"]
@@ -166,10 +173,13 @@ class PromoteOutcome:
 def promote_from_rows(
     store: ReplayStore, rows: Iterable[Mapping[str, Any]], *, dry_run: bool = False
 ) -> list[PromoteOutcome]:
-    """`ai_call` satırlarından (`amac`, `mod`, `replay_anahtari`, `cikti`, `bundle_hash`) yükseltir.
+    """`ai_call` satırlarından (`amac`, `mod`, `replay_anahtari`, `cikti`, `bundle_hash`, `ek`)
+    yükseltir.
 
     Yalnızca `mod = 'replay_miss'` satırları işlenir. Çıktı, amacın golden'larından birinin
     çıktısıyla kanonik olarak birebir eşleşmelidir; eşleşme yoksa veya birden fazlaysa yazılmaz.
+    Nötr REPLAY-MISS yedeği (`on_miss.json`) dönen satırlar yükseltilmez: golden o girdi için
+    hazırlanmamıştır (beyanı uymadı); onu bu girdiye bağlamak başka dokümanın cevabını kayıt yapar.
     """
     outcomes: list[PromoteOutcome] = []
     seen: set[tuple[str, str]] = set()
@@ -184,7 +194,16 @@ def promote_from_rows(
         index = by_purpose.get(purpose)
         if index is None:
             index = by_purpose[purpose] = _golden_index(store, purpose)
+        neutral = store.neutral_output(purpose)
+        if neutral is not None and canonical_json(row.get("cikti")) == canonical_json(neutral):
+            outcomes.append(PromoteOutcome(purpose, key, None, None, NEUTRAL_REASON))
+            continue
         matches = index.get(canonical_json(row.get("cikti")), [])
+        if len(matches) > 1:
+            # Aynı çıktılı golden'lar (ör. bilerek tekrar eden case'in eşlemesi): geçidin kayda
+            # yazdığı kaynak golden (`ek.replay_kaynagi`) belirleyicidir.
+            source = _golden_source(row, purpose)
+            matches = [m for m in matches if m[0] == source] if source else matches
         if len(matches) != 1:
             why = "golden eşleşmesi yok" if not matches else "birden fazla golden eşleşti"
             outcomes.append(PromoteOutcome(purpose, key, None, None, why))
@@ -200,6 +219,15 @@ def promote_from_rows(
         path = write_promoted(store, purpose, key, name, golden, bundle_hash=row.get("bundle_hash"))
         outcomes.append(PromoteOutcome(purpose, key, name, path, "yazıldı"))
     return outcomes
+
+
+def _golden_source(row: Mapping[str, Any], purpose: str) -> str | None:
+    ek = row.get("ek")
+    source = ek.get("replay_kaynagi") if isinstance(ek, Mapping) else None
+    prefix = f"{purpose}/golden/"
+    if isinstance(source, str) and source.startswith(prefix) and source.endswith(".json"):
+        return source[len(prefix) : -len(".json")]
+    return None
 
 
 def _golden_index(store: ReplayStore, purpose: str) -> dict[str, list[tuple[str, dict[str, Any]]]]:
@@ -222,7 +250,7 @@ def stale_promotions(store: ReplayStore) -> list[Path]:
 
 
 _MISS_SQL = (
-    "SELECT amac, mod, replay_anahtari, cikti, bundle_hash FROM ai_call "
+    "SELECT amac, mod, replay_anahtari, cikti, bundle_hash, ek FROM ai_call "
     "WHERE mod = 'replay_miss'{where} ORDER BY olusturma, id"
 )
 

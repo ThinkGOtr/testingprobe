@@ -87,7 +87,24 @@ export function OranSutunlari({ noktalar, baslik, hedef }: { noktalar: Nokta[]; 
 }
 
 /** Hedefe göre ölçer: değer çubuğu + hedef işareti + metin (renk tek başına anlam taşımaz). */
-export function HedefOlcer({ etiket, deger, hedef }: { etiket: string; deger: number; hedef: number }) {
+/** `deger` null: henüz ölçülecek bir şey yok (ör. hiç karar verilmedi) — "hedefin altında" denmez. */
+export function HedefOlcer({ etiket, deger, hedef, bosMetin = "henüz ölçüm yok" }: { etiket: string; deger: number | null; hedef: number; bosMetin?: string }) {
+  if (deger === null) {
+    return (
+      <div className="olcer">
+        <div className="olcer-ust">
+          <span>{etiket}</span>
+          <strong>—</strong>
+        </div>
+        <div className="ilerleme" aria-hidden="true">
+          <div className="ilerleme-hedef" style={{ left: `${hedef * 100}%` }} />
+        </div>
+        <div className="olcer-alt soluk">
+          Hedef ≥ {yuzde(hedef)} · {bosMetin}
+        </div>
+      </div>
+    );
+  }
   const tuttu = deger >= hedef;
   return (
     <div className="olcer">

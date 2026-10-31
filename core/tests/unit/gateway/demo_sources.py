@@ -10,6 +10,7 @@ import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
 from decimal import Decimal
+from functools import lru_cache
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -62,6 +63,35 @@ def seed_setting(key: str) -> str:
     m = re.search(rf'"anahtar":\s*"{re.escape(key)}",\s*"deger":\s*"([^"]+)"', text)
     assert m, f"seed.py içinde ayar yok: {key}"
     return m.group(1)
+
+
+@lru_cache(maxsize=1)
+def _demo_engine() -> Any:
+    """demo-app şeması + seed'i bellek içi SQLite'ta (Postgres ile aynı şema; models.py)."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from sqlalchemy.pool import StaticPool
+
+    models, seed_mod = demo_module("models"), demo_module("seed")
+    engine = create_engine("sqlite://", poolclass=StaticPool)
+    models.Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        seed_mod.seed(s)
+        s.commit()
+    return engine
+
+
+def demo_query(sql: str) -> list[Any]:
+    """Golden'daki salt okuma sorgusunu demo-app seed verisinde çalıştırır (§8.2b adım 4)."""
+    from sqlalchemy import text
+
+    with _demo_engine().connect() as conn:
+        return list(conn.execute(text(sql)))
+
+
+def readonly_tables() -> tuple[str, ...]:
+    """demo-app'in salt okuma rolüne açtığı tablolar (`db.RO_TABLES` + `bayi`)."""
+    return (*demo_module("db").RO_TABLES, "bayi")
 
 
 def cart(lines: list[tuple[str, int]]) -> Any:

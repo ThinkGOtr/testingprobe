@@ -86,8 +86,10 @@ describe("BulguKarti", () => {
     sar(<BulguKarti bulgu={mockVerisi().bulgular.find((b) => b.id === "fnd-6")!} guncellendi={() => {}} />);
     await u.click(await screen.findByLabelText("Dokümanı düzelt"));
     const alan = screen.getByLabelText(/Önerilen doküman metni/);
-    expect(alan).toHaveValue("Sepet tutarı 750,00 TL altına düşerse minimum tutar uyarısı gösterilir.");
-    expect(screen.getByLabelText("Önerilen değişiklik farkı").querySelector("ins")).toHaveTextContent("750,00");
+    // Golden SERBEST F2 önerisi (AC öneki atılmış) aynen.
+    expect(alan).toHaveValue(mockVerisi().bulgular.find((b) => b.id === "fnd-6")!.suggested_doc_text);
+    const eklenen = [...screen.getByLabelText("Önerilen değişiklik farkı").querySelectorAll("ins")].map((x) => x.textContent).join(" ");
+    expect(eklenen).toContain("750,00");
     await u.clear(alan);
     await u.type(alan, "Sepet tutarı 750,00 TL altındaysa uyarı gösterilir.");
     await waitFor(() => expect(screen.getByRole("button", { name: "Kararı kaydet" })).toBeEnabled());

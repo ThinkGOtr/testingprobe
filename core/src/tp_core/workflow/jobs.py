@@ -416,11 +416,35 @@ def reap_stale(
             hata = "zaman aşımı: worker yanıt vermedi (nabız kesildi)"
         else:
             continue
-        if _birak(conn, row.id, row.deneme, md, hata) == "failed" and row.workflow_id:
+        sonuc = _birak(conn, row.id, row.deneme, md, hata)
+        _birakma_logu(conn, row, sonuc, hata)
+        if sonuc == "failed" and row.workflow_id:
             akislar[row.workflow_id] = hata
         n += 1
     fail_workflows(conn, akislar)
     return n
+
+
+def _birakma_logu(conn: Connection, row: Any, sonuc: str, hata: str) -> None:
+    """Bırakılan işin kimliği, türü, denemesi ve iş akışının nesnesi (operatör hangi gereksinimin
+    takıldığını logdan görebilsin)."""
+    nesne = None
+    if row.workflow_id:
+        nesne = conn.execute(
+            text("SELECT nesne_turu, nesne_id FROM workflow_instance WHERE id = :w"),
+            {"w": row.workflow_id},
+        ).first()
+    log.warning(
+        "iş bırakıldı: job=%s tur=%s deneme=%s sonuc=%s workflow=%s nesne=%s:%s neden=%s",
+        row.id,
+        row.tur,
+        row.deneme,
+        sonuc,
+        row.workflow_id,
+        nesne.nesne_turu if nesne else None,
+        nesne.nesne_id if nesne else None,
+        hata,
+    )
 
 
 def release_orphans(
@@ -447,7 +471,9 @@ def release_orphans(
     hata = "worker yeniden başladı; iş yarıda kaldı"
     for row in rows:
         md, _ = _etkin(row, kayit, default_max_deneme)
-        if _birak(conn, row.id, row.deneme, md, hata) == "failed" and row.workflow_id:
+        sonuc = _birak(conn, row.id, row.deneme, md, hata)
+        _birakma_logu(conn, row, sonuc, hata)
+        if sonuc == "failed" and row.workflow_id:
             akislar[row.workflow_id] = hata
     fail_workflows(conn, akislar)
     return len(rows)

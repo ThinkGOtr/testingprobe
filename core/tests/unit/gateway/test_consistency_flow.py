@@ -17,11 +17,12 @@ from tests.unit.gateway.demo_sources import (
     apply_fix_doc,
     cart,
     demo_module,
+    demo_query,
     load_golden,
     seed_setting,
     story_acs,
 )
-from tp_core.gateway import golden_name, load_schema, wrap_untrusted
+from tp_core.gateway import digest_matches, golden_name, load_schema, requirement_block
 from tp_core.ports import ModelMessage, ToolSpec
 
 TOOLS = [
@@ -31,14 +32,19 @@ TOOLS = [
 MAX_ROUNDS = 3  # §8.2b adım 7
 
 
-def _doc(acs: dict[str, str]) -> str:
-    return "Kabul Kriterleri\n" + "\n".join(acs[k] for k in sorted(acs, key=lambda a: int(a[2:])))
+DESCRIPTION = (
+    "Bayi, katalogdan ürünleri sepete ekleyip kampanya indirimiyle siparişini onaylayabilmelidir."
+)
 
 
 def _check(gw, rules_dir, acs: dict[str, str], round_no: int) -> tuple[Any, str]:
-    msg = ModelMessage(
-        role="user", content=wrap_untrusted(_doc(acs), source="jira:TPD-1", kind="jira")
+    block = requirement_block(
+        summary="Kampanyalı sepet ve sipariş onayı",
+        description=DESCRIPTION,
+        acceptance_criteria=[acs[k] for k in sorted(acs, key=lambda a: int(a[2:]))],
+        jira_key="TPD-1",
     )
+    msg = ModelMessage(role="user", content=block)
     result = gw.run_agent(
         "consistency_check",
         "consistency-check",
@@ -58,10 +64,8 @@ def _verify_evidence(finding: dict[str, Any]) -> bool:
             lines = (DEMO_APP / ev["path"]).read_text(encoding="utf-8").splitlines()
             if ev["snippet"] not in lines[ev["line"] - 1]:
                 return False
-        else:
-            key, value = ev["result_digest"].split("=", 1)
-            if seed_setting(key) != value:
-                return False
+        elif not digest_matches(ev["result_digest"], demo_query(ev["query"])):
+            return False
     return True
 
 
@@ -70,7 +74,8 @@ def _run_loop(gw, rules_dir, decide) -> tuple[dict[str, str], list[dict[str, Any
     rounds = []
     for round_no in range(1, MAX_ROUNDS + 1):
         output, mode = _check(gw, rules_dir, acs, round_no)
-        assert mode == "replay_miss"  # golden kayıt: dürüst etiket
+        # Golden girdi beyanı (input_match) senaryodaki dokümanla eşleşir: REPLAY, asla "live".
+        assert mode == "replay"
         findings = [f for f in output["findings"] if _verify_evidence(f)]
         assert len(findings) == len(output["findings"]), "doğrulanamayan kanıt"
         blocking = [f for f in findings if f["severity"] == "blocking"]
@@ -130,10 +135,22 @@ def test_overlapping_fixes_are_order_independent(order: tuple[str, str]) -> None
 
 def test_round2_golden_selected_for_later_rounds(make_gateway, rules_dir, recorder) -> None:
     gw, _ = make_gateway(mode="replay")
+    final_acs, _ = _final_acs()
     for round_no in (2, 3):
-        output, _ = _check(gw, rules_dir, story_acs("TPD-1"), round_no)
+        output, _ = _check(gw, rules_dir, final_acs, round_no)
         assert not [f for f in output["findings"] if f["severity"] == "blocking"]
     assert recorder.ai_calls[-1]["ek"]["replay_kaynagi"] == "consistency_check/golden/TPD-1-r2.json"
+
+
+def test_round2_miss_returns_neutral_output_not_other_documents_findings(
+    make_gateway, rules_dir, recorder
+) -> None:
+    """2. tur girdisi r2 golden'ının beyanına uymazsa (ör. düzeltilmemiş ACs) golden'ın bulguları
+    başka bir metne aittir: nötr yedek döner (bulgu yok, REPLAY-MISS)."""
+    gw, _ = make_gateway(mode="replay")
+    output, _ = _check(gw, rules_dir, story_acs("TPD-1"), 2)
+    assert output["findings"] == [] and "REPLAY-MISS" in output["notes"]
+    assert recorder.ai_calls[-1]["ek"]["replay_kaynagi"] == "consistency_check/on_miss.json"
 
 
 def test_case_generation_golden_uses_final_document() -> None:

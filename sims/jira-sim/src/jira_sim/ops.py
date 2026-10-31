@@ -407,6 +407,52 @@ def create_issue(
     return it
 
 
+# Basit iş akışı: her durumdan diğer durumlara geçiş vardır (Jira'nın "Simplified workflow"u).
+TRANSITIONS = [
+    {"id": "11", "name": "To Do", "to": "To Do"},
+    {"id": "21", "name": "In Progress", "to": "In Progress"},
+    {"id": "31", "name": "Done", "to": "Done"},
+]
+
+
+def transitions_json(it: dict[str, Any], base: str) -> list[dict[str, Any]]:
+    """``GET /issue/{key}/transitions`` gövdesindeki ``transitions`` (mevcut durum hariç)."""
+    return [
+        {
+            "id": t["id"],
+            "name": t["name"],
+            "to": status_json(t["to"], base),
+            "hasScreen": False,
+            "isGlobal": True,
+            "isInitial": False,
+            "isAvailable": True,
+            "isConditional": False,
+        }
+        for t in TRANSITIONS
+        if t["to"] != it["status"]
+    ]
+
+
+def transition_issue(store: Store, key: str, body: dict[str, Any], author: str) -> None:
+    ref = body.get("transition")
+    tid = str(ref.get("id") or "") if isinstance(ref, dict) else ""
+    with store.tx():
+        it = require_issue(store, key)
+        target = next((t for t in TRANSITIONS if t["id"] == tid and t["to"] != it["status"]), None)
+        if target is None:
+            raise SimError(
+                400,
+                [
+                    f"Transition id '{tid}' is not valid for this issue."
+                    if tid
+                    else "Transition id must be specified."
+                ],
+            )
+        before = it["status"]
+        it["status"] = target["to"]
+        _record(store, it, author, [_text_item("status", before, target["to"])])
+
+
 def delete_issue(store: Store, key: str) -> None:
     with store.tx() as state:
         it = require_issue(store, key)

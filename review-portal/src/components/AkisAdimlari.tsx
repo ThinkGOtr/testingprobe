@@ -1,9 +1,10 @@
+import { adimAdi } from "../lib/akis";
 import { AKIS_ADIMLARI } from "../lib/etiketler";
 
 const TUR_ETIKETI = { sistem: "Sistem", ai: "AI adımı", insan: "İnsan kapısı", ai_insan: "AI + insan kapısı" } as const;
 
 /** 14 adımlı akış göstergesi (TEKNIK-TASARIM §2). `adim` = güncel adım (1–14). */
-export function AkisAdimlari({ adim }: { adim: number }) {
+export function AkisAdimlari({ adim, kaynak = "jira" }: { adim: number; kaynak?: "jira" | "free_text" }) {
   return (
     <nav aria-label="14 adımlı akıştaki ilerleme" className="akis">
       <ol>
@@ -15,7 +16,7 @@ export function AkisAdimlari({ adim }: { adim: number }) {
               <span className="akis-no" aria-hidden="true">
                 {durum === "tamam" ? "✓" : no}
               </span>
-              <span className="akis-ad">{a.ad}</span>
+              <span className="akis-ad">{adimAdi(no, kaynak)}</span>
               <span className="gorunmez">
                 {` — ${TUR_ETIKETI[a.tur]}, ${durum === "tamam" ? "tamamlandı" : durum === "simdi" ? "şu anki adım" : "bekliyor"}`}
               </span>

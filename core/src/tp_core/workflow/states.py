@@ -126,7 +126,9 @@ def _t(**kw: tuple[str, ...]) -> dict[str, frozenset[str]]:
 
 # --------------------------------------------------------------------- karar kümeleri
 
-TEST_CASE_KARARLARI = frozenset({"approve", "edit", "reject"})
+# `reopen` ("Taslağa al"): onaylı/reddedilmiş case'i taslağa döndüren kayıtlı karar. Onaylayan
+# değildir; son karar olduğu için eski bir `approve` kapıyı yeniden açamaz (Constitution I).
+TEST_CASE_KARARLARI = frozenset({"approve", "edit", "reject", "reopen"})
 REQUIREMENT_KARARLARI = frozenset({"po_approve"})
 BUG_DRAFT_KARARLARI = frozenset({"new", "link", "dismiss"})
 SCRIPT_KARARLARI = frozenset({"merge", "request_changes"})

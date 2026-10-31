@@ -213,6 +213,7 @@ const VARSAYILAN_HATA: Record<number, string> = {
   409: "İşlem mevcut durumla çakışıyor.",
   422: "Gönderilen veri doğrulanamadı.",
   429: "Çok fazla istek; biraz sonra tekrar deneyin.",
+  501: "Bu işlem çekirdekte henüz etkin değil.",
   502: "Çekirdek servise ulaşılamıyor.",
   503: "Servis şu anda kullanılamıyor.",
   504: "Çekirdek servis zamanında yanıt vermedi.",
@@ -225,10 +226,25 @@ async function mockaDus<T>(method: string, path: string, q: URLSearchParams, bod
   return (await handler(method, path, q, body)) as T;
 }
 
+/** Çekirdekte henüz olmayan bir işlem (kaynağı gerçek, işlem ucu yok): mock'a düşülmez. */
+export const UC_YOK = "Bu işlem çekirdekte henüz yok.";
+
+export interface IstekSecenegi {
+  sorgu?: Sorgu;
+  govde?: unknown;
+  signal?: AbortSignal;
+  /**
+   * İşlemin ait olduğu kaynak ucu (ör. `["GET", "/cases"]`). Kaynak çekirdekten geliyorsa bu
+   * işlem ucu çekirdekte yokken örnek veriye DÜŞÜLMEZ (gerçek bir case'in örnek veride karşılığı
+   * yoktur; sahte başarı gösterilmez), 501 `UC_YOK` döner. Kaynak da örnek veriyse işlem de oraya gider.
+   */
+  kaynak?: readonly [string, string];
+}
+
 export async function istek<T>(
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "DELETE",
   path: string,
-  secenek: { sorgu?: Sorgu; govde?: unknown; signal?: AbortSignal } = {},
+  secenek: IstekSecenegi = {},
 ): Promise<T> {
   const q = sorguMetni(secenek.sorgu);
   if (ayarlar.mockZorunlu) {
@@ -243,6 +259,7 @@ export async function istek<T>(
   // core bu ucu sunmuyorsa ağa hiç çıkmadan örnek veriye git (planlı karar, 404 değil).
   const yetenekler = await cekirdekYetenekleri();
   if (yetenekler && !ucVar(yetenekler, method, path)) {
+    if (secenek.kaynak && ucVar(yetenekler, ...secenek.kaynak)) throw new ApiError(501, UC_YOK);
     return mockaDus<T>(method, path, q, secenek.govde);
   }
 
@@ -277,6 +294,8 @@ export async function istek<T>(
 
   const { detail, json } = await detayOku(res);
   if (res.status === 404 && ayarlar.mockOtomatik && (detail === "Not Found" || !json)) {
+    // Kaynağı çekirdekten gelen bir işlem örnek veriye düşmez (bkz. IstekSecenegi.kaynak).
+    if (secenek.kaynak && !mockUclar.has(ucuNormallestir(...secenek.kaynak))) throw new ApiError(501, UC_YOK);
     return mockaDus<T>(method, path, q, secenek.govde);
   }
   if (res.status === 401 && !path.startsWith("/auth/")) yetkisizDinleyici?.();
@@ -293,11 +312,12 @@ export function kararCakismasi(e: unknown): e is ApiError {
 
 /**
  * 409 mesajı: içerik hash'i tutmadıysa (core: "içerik ... değişmiş", head sha farklı) sabit
- * Türkçe metin; başka bir durum çakışmasıysa (ör. "PR açık değil") metin + sunucunun gerekçesi.
+ * Türkçe metin; başka bir durum çakışmasıysa (ör. "PR açık değil", "Gereksinim karar beklemiyor")
+ * yalnızca sunucunun gerekçesi — içerik değişmediği için "İçerik değişti" denmez.
  */
 export function cakismaMesaji(e: ApiError): string {
   if (/[iİ]çerik[^.]*değiş|head sha|hash/.test(e.detail)) return ICERIK_DEGISTI;
-  return `${ICERIK_DEGISTI} ${e.detail}`;
+  return e.detail;
 }
 
 export function hataMesaji(e: unknown): string {

@@ -24,6 +24,8 @@ from jira_sim.ops import (
     link_type_json,
     require_issue,
     select_fields,
+    transition_issue,
+    transitions_json,
     update_issue,
     user_json,
 )
@@ -278,6 +280,20 @@ async def issue_put(request: Request, store: StoreDep, user: Writer, key: str) -
 @router.delete("/issue/{key}", status_code=204)
 def issue_delete(store: StoreDep, user: Writer, key: str) -> Response:
     delete_issue(store, key)
+    return Response(status_code=204)
+
+
+@router.get("/issue/{key}/transitions")
+def transitions(request: Request, store: StoreDep, user: Reader, key: str) -> dict:
+    with store.lock:
+        it = require_issue(store, key)
+        return {"expand": "transitions", "transitions": transitions_json(it, base_url(request))}
+
+
+@router.post("/issue/{key}/transitions", status_code=204)
+async def transition_post(request: Request, store: StoreDep, user: Writer, key: str) -> Response:
+    body = _dict_body(await json_body(request))
+    transition_issue(store, key, body, user)
     return Response(status_code=204)
 
 

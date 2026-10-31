@@ -1,0 +1,49 @@
+{
+  "kind": "agent",
+  "purpose": "consistency_check",
+  "golden": "SERBEST-r2",
+  "note": "Adlandırılmış golden kayıt, serbest metin demo gereksinimi ('Sepetten ürün çıkarma'; metin rules/replay/README.md). Elle hazırlandı; canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), başka serbest metinlerde REPLAY-MISS. 2. kontrol turu: F1–F3 fix_doc sonrası metin; engelleyici bulgu yok → son hal.",
+  "input_match": {
+    "sources": [
+      "serbest:*"
+    ],
+    "acceptance_criteria": [
+      "AC1: Satırdaki \"Kaldır\" butonuna basıldığında ürün sepetten çıkar ve sepet sayacı azalır.",
+      "AC2: Kaldırma sonrası kampanya indirimi her 6 adette 1 bedava kuralıyla yeniden hesaplanır.",
+      "AC3: Sepette kampanyalı ürün yoksa ve sepet tutarı 750,00 TL altına düşerse \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur."
+    ],
+    "contains": [
+      "Bayi sepetteki bir ürün satırını kaldırabilmeli; toplamlar ve kampanya indirimi yeniden hesaplanmalıdır."
+    ]
+  },
+  "steps": [
+    {
+      "tool": "get_file_contents",
+      "args": {
+        "path": "api/src/demoapp_api/campaign.py"
+      },
+      "result_summary": "def bedava_adet(adet: int) -> int: … return adet // 6",
+      "allowed": true
+    },
+    {
+      "tool": "db_query",
+      "args": {
+        "sql": "SELECT anahtar, deger FROM ayar WHERE anahtar = 'min_siparis_tutari'"
+      },
+      "result_summary": "min_siparis_tutari=750.00",
+      "allowed": true
+    },
+    {
+      "tool": "get_file_contents",
+      "args": {
+        "path": "api/src/demoapp_api/pricing.py"
+      },
+      "result_summary": "min_aranir = not any(kampanyali): kampanyasız sepette minimum 750,00 TL",
+      "allowed": true
+    }
+  ],
+  "output": {
+    "findings": [],
+    "notes": "AC2 (her 6 adette 1 bedava) kodla; AC3 (kampanyasız sepette minimum 750,00 TL ve \"Minimum sipariş tutarı 750,00 TL\" uyarısı) kod ve veriyle tutarlı. Engelleyici bulgu kalmadı. Kod ve veri yalnızca salt okuma araçlarıyla incelendi."
+  }
+}

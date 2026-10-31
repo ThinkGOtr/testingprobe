@@ -1,9 +1,9 @@
 import { useId, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
-import type { Bulgu, BulguKarari, Kanit } from "../api/types";
+import type { Bulgu, BulguKarari, Gereksinim, GereksinimDurumu, Kanit } from "../api/types";
 import { useIslem } from "../hooks";
-import { BULGU_DURUMU, BULGU_KARARI, BULGU_TURU } from "../lib/etiketler";
+import { BULGU_DURUMU, BULGU_KARARI, BULGU_TURU, gereksinimDurumu as durumEtiketi } from "../lib/etiketler";
 import { tarih } from "../lib/format";
 import { FarkGorunumu } from "./FarkGorunumu";
 import { KodGorunumu } from "./KodGorunumu";
@@ -42,12 +42,24 @@ function KanitGorunumu({ k }: { k: Kanit }) {
   );
 }
 
+/** Doküman "son hal"e ulaştıktan sonraki gereksinim durumları (uyarılar artık karar beklemez). */
+const SON_HAL_SONRASI = new Set<GereksinimDurumu>(["doc_final", "pending_po", "po_approved", "generating", "cases_ready", "done"]);
+
 export function BulguKarti({
   bulgu,
+  gereksinimDurumu,
+  kaynak = "jira",
   guncellendi,
   yenile,
 }: {
   bulgu: Bulgu;
+  /**
+   * Gereksinimin durumu: core bulgu kararını yalnızca `findings_open` iken kabul eder. Başka
+   * durumda (ör. son hal, PO teyidi, yayınlandı) karar formu gösterilmez. Verilmezse kısıtlanmaz.
+   */
+  gereksinimDurumu?: GereksinimDurumu;
+  /** Düzeltmenin nereye yazıldığı: Jira story'si ya da serbest metin doküman. */
+  kaynak?: Gereksinim["kaynak"];
   guncellendi: (b: Bulgu) => void;
   /** 409 (içerik siz görüntüledikten sonra değişti): bulguları yeniden yükler. */
   yenile?: () => void;
@@ -60,7 +72,9 @@ export function BulguKarti({
   const islem = useIslem();
   const id = useId();
   // core: kapı yalnızca open → decided; decided iken karar değiştirilebilir. Diğer durumlar kilitli.
-  const kararVerilebilir = bulgu.durum === "open" || bulgu.durum === "decided";
+  const bulguKarariAcik = bulgu.durum === "open" || bulgu.durum === "decided";
+  const gereksinimKararBekliyor = gereksinimDurumu === undefined || gereksinimDurumu === "findings_open";
+  const kararVerilebilir = bulguKarariAcik && gereksinimKararBekliyor;
   // `unverified` kanıt doğrulanmış gibi gösterilmez (bayrak ne derse desin).
   const kanitDogrulandi = bulgu.kanit_dogrulandi && bulgu.durum !== "unverified";
   const dd = BULGU_DURUMU[bulgu.durum] ?? { etiket: bulgu.durum, ton: "notr" as const };
@@ -122,8 +136,12 @@ export function BulguKarti({
         <div className="karar-ozet">
           <div>
             <strong>Karar:</strong> {BULGU_KARARI[bulgu.karar]}
-            {bulgu.durum === "resolved" && bulgu.karar === "fix_doc" && <Cip ton="basari">Jira'ya yazıldı</Cip>}
-            {bulgu.durum === "decided" && bulgu.karar === "fix_doc" && <Cip ton="uyari">Yazılmayı bekliyor</Cip>}
+            {bulgu.durum === "resolved" && bulgu.karar === "fix_doc" && (
+              <Cip ton="basari">{kaynak === "jira" ? "Jira'ya yazıldı" : "Dokümana uygulandı"}</Cip>
+            )}
+            {bulgu.durum === "decided" && bulgu.karar === "fix_doc" && (
+              <Cip ton="uyari">{kaynak === "jira" ? "Yazılmayı bekliyor" : "Uygulanmayı bekliyor"}</Cip>
+            )}
           </div>
           {bulgu.karar === "fix_doc" && bulgu.mevcut_doc_text && bulgu.karar_metni && (
             <FarkGorunumu eski={bulgu.mevcut_doc_text} yeni={bulgu.karar_metni} />
@@ -139,14 +157,26 @@ export function BulguKarti({
             </p>
           )}
           <p className="soluk kucuk">
-            {bulgu.karar_veren} · {tarih(bulgu.karar_zamani)} · kontrol turu {bulgu.kontrol_turu}
+            {bulgu.karar_veren} · {tarih(bulgu.karar_zamani)} · kontrol turu {bulgu.onceki_karar?.kontrol_turu ?? bulgu.kontrol_turu}
           </p>
+          {bulgu.onceki_karar && (
+            <p className="soluk kucuk" data-testid="onceki-karar">
+              Bu fark tur {bulgu.kontrol_turu}'de yeniden raporlandı; tur {bulgu.onceki_karar.kontrol_turu}'deki insan kararı devralındı
+              (yeniden karar gerekmiyor).
+            </p>
+          )}
           {kararVerilebilir && (
             <IslemDugmesi roller={["analyst"]} tur="ikincil" kucuk onClick={() => setDuzenle(true)}>
               Kararı değiştir
             </IslemDugmesi>
           )}
         </div>
+      ) : bulguKarariAcik && gereksinimDurumu && !gereksinimKararBekliyor ? (
+        <p className="soluk" role="status" data-testid="bulgu-salt-okunur">
+          {bulgu.severity === "warning" && SON_HAL_SONRASI.has(gereksinimDurumu)
+            ? `Uyarı — karar gerekmiyor; doküman son hal (${durumEtiketi(gereksinimDurumu).etiket}).`
+            : `Gereksinim şu an bulgu kararı beklemiyor (${durumEtiketi(gereksinimDurumu).etiket}).`}
+        </p>
       ) : !kararVerilebilir ? (
         <p className="soluk" role="status">
           {bulgu.durum === "unverified"

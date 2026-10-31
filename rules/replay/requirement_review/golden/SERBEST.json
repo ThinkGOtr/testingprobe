@@ -1,0 +1,49 @@
+{
+  "kind": "call",
+  "purpose": "requirement_review",
+  "golden": "SERBEST",
+  "note": "Adlandırılmış golden kayıt, serbest metin demo gereksinimi ('Sepetten ürün çıkarma'; metin rules/replay/README.md). Elle hazırlandı; canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), başka serbest metinlerde REPLAY-MISS.",
+  "input_match": {
+    "sources": [
+      "serbest:*"
+    ],
+    "acceptance_criteria": [
+      "AC1: Satırdaki \"Kaldır\" butonuna basıldığında ürün sepetten çıkar ve sepet sayacı azalır.",
+      "AC2: Kaldırma sonrası kampanya indirimi her 7 adette 1 bedava kuralıyla yeniden hesaplanır.",
+      "AC3: Sepet tutarı 500,00 TL altına düşerse minimum tutar uyarısı gösterilir."
+    ],
+    "contains": [
+      "Bayi sepetteki bir ürün satırını kaldırabilmeli; toplamlar ve kampanya indirimi yeniden hesaplanmalıdır."
+    ]
+  },
+  "output": {
+    "questions": [
+      {
+        "id": "Q1",
+        "type": "ambiguity",
+        "text": "AC2'de \"her 7 adette 1 bedava\" deniyor. 7 adette 1 adet mi bedava (6 öde + 1 bedava), yoksa her 7 ücretli adede 1 ek adet mi verilir? Kaldırma sonrası 14 adette bedava adet kaç olmalı?",
+        "ac_ref": "AC2"
+      },
+      {
+        "id": "Q2",
+        "type": "untestable",
+        "text": "AC3'teki minimum tutar uyarısının metni tanımlı değil. Ekranda tam olarak hangi mesaj gösterilmeli ve uyarı varken siparişi onayla butonu pasif mi olmalı?",
+        "ac_ref": "AC3"
+      },
+      {
+        "id": "Q3",
+        "type": "missing_ac",
+        "text": "Sepetteki son ürün satırı kaldırıldığında ne gösterilmeli (boş sepet mesajı, sayaç 0, onay butonunun durumu)?",
+        "ac_ref": null
+      },
+      {
+        "id": "Q4",
+        "type": "ambiguity",
+        "text": "AC1'de \"Kaldır\" butonuna basınca satır hemen mi silinmeli, yoksa önce onay mı istenmeli? Sayaç kaldırılan satırın adedi kadar mı azalmalı?",
+        "ac_ref": "AC1"
+      }
+    ],
+    "verdict": "needs_po",
+    "summary": "Kampanya kuralının sayımı (7 adette 1 bedava) ve minimum tutar uyarısının metni netleştirilmeli; son ürün kaldırıldığında beklenen davranış tanımlı değil. PO teyidi gerekli."
+  }
+}

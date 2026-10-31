@@ -30,7 +30,7 @@ from tp_core.gateway.promote import (
     promote_from_rows,
     stale_promotions,
 )
-from tp_core.gateway.replay import PROMOTED
+from tp_core.gateway.replay import MISS_FILE, PROMOTED
 from tp_core.ports import ModelMessage, ToolSpec
 
 JIRA = "TPD-1"
@@ -178,7 +178,8 @@ def test_demo_steps_cover_steps_2_4_5(rules_dir) -> None:
         "consistency_check",
         "case_generation",
     ]
-    assert purposes.count("verify_and_map") == 9
+    cases = load_golden("case_generation", JIRA)["output"]["cases"]
+    assert purposes.count("verify_and_map") == len(cases)
 
 
 def test_strict_without_promotion_fails_on_named_golden(strict_gateway, rules_dir) -> None:
@@ -237,6 +238,8 @@ def test_edited_golden_makes_promotion_stale(make_gateway, strict_gateway, rules
     golden_path = store.golden_path("requirement_review", JIRA)
     golden = json.loads(golden_path.read_text(encoding="utf-8"))
     golden["output"]["summary"] = "Değişti."
+    # Beyansız golden yolu (beyanlı golden'da uyuşmayan girdi nötr yedeğe düşer).
+    golden.pop("input_match")
     golden_path.write_text(json.dumps(golden, ensure_ascii=False), encoding="utf-8")
 
     assert len(stale_promotions(store)) == 1
@@ -248,10 +251,23 @@ def test_edited_golden_makes_promotion_stale(make_gateway, strict_gateway, rules
     assert main(["--rules", str(rules_dir), "--check-stale"]) == 1
 
 
+def _drop_input_match(rules_dir: Path) -> None:
+    """Golden girdi beyanı olmayan (veya girdisi beyana uymayan) kayıtlar için yükseltme yolu.
+
+    Beyanlı golden'lar senaryo girdisinde zaten REPLAY olur (test_replay_matching.py); yükseltme
+    beyansız/eşleşmeyen golden'ların prova yoludur. Burada beyanlar kaldırılarak o yol sınanır.
+    """
+    for path in (rules_dir / "replay").glob("*/golden/*.json"):
+        golden = json.loads(path.read_text(encoding="utf-8"))
+        if golden.pop("input_match", None) is not None:
+            path.write_text(json.dumps(golden, ensure_ascii=False), encoding="utf-8")
+
+
 def test_promote_from_audit_rows_then_strict_passes(
     make_gateway, strict_gateway, rules_dir, recorder
 ) -> None:
     """Prova akışı: gevşek koşu → ai_call replay_miss satırları → yükselt → sıkı koşu."""
+    _drop_input_match(rules_dir)
     steps = demo_steps(rules_dir)
     gw, _ = make_gateway(mode="replay")
     for step in steps:
@@ -260,7 +276,8 @@ def test_promote_from_audit_rows_then_strict_passes(
     store = ReplayStore(rules_dir / "replay")
     dry = promote_from_rows(store, recorder.ai_calls, dry_run=True)
     assert {o.reason for o in dry} == {"deneme"}
-    assert not list((rules_dir / "replay" / "requirement_review").glob("*.json"))
+    folder = rules_dir / "replay" / "requirement_review"
+    assert not [p for p in folder.glob("*.json") if p.name != MISS_FILE]
 
     outcomes = promote_from_rows(store, recorder.ai_calls)
     assert [o.reason for o in outcomes] == ["yazıldı"] * len(steps)
@@ -299,3 +316,41 @@ def test_repository_has_no_stale_promotions() -> None:
     from tp_core.gateway import find_rules_dir
 
     assert stale_promotions(ReplayStore(find_rules_dir() / "replay")) == []
+
+
+def test_neutral_miss_rows_are_not_promoted(make_gateway, rules_dir, recorder) -> None:
+    """Beyanı uymayan golden'ın nötr yedeği yükseltilmez: başka dokümanın soruları kayıt olmaz."""
+    from tp_core.gateway.promote import NEUTRAL_REASON
+
+    step = demo_steps(rules_dir)[0]
+    changed = {**step, "messages": _msg(_doc(story_acs(JIRA)) + "\nAC7: yeni kriter")}
+    gw, _ = make_gateway(mode="replay")
+    result = run_step(gw, changed)
+    assert result.mode == "replay_miss" and result.output["questions"] == []
+    outcomes = promote_from_rows(ReplayStore(rules_dir / "replay"), recorder.ai_calls)
+    assert [(o.golden, o.reason) for o in outcomes] == [(None, NEUTRAL_REASON)]
+
+
+def test_promotion_carries_recording_metadata_only_if_golden_has_it(
+    make_gateway, rules_dir, recorder
+) -> None:
+    from tp_core.gateway import HAND_PREPARED_MODEL
+
+    step = demo_steps(rules_dir)[0]
+    gw, _ = make_gateway(mode="replay")
+    record = json.loads(promote_step(gw, step).read_text(encoding="utf-8"))
+    assert "recording" not in record  # elle hazırlanmış golden
+    recorder.ai_calls.clear()
+    run_step(gw, step)
+    assert recorder.ai_calls[-1]["model"] == HAND_PREPARED_MODEL
+
+    path = ReplayStore(rules_dir / "replay").golden_path("requirement_review", JIRA)
+    golden = json.loads(path.read_text(encoding="utf-8"))
+    golden["recording"] = {"model": "claude-sonnet-5-5", "recorded_at": "2026-11-01T10:00:00Z"}
+    path.write_text(json.dumps(golden, ensure_ascii=False), encoding="utf-8")
+    record = json.loads(promote_step(gw, step).read_text(encoding="utf-8"))
+    assert record["recording"]["model"] == "claude-sonnet-5-5"
+    recorder.ai_calls.clear()
+    run_step(gw, step)
+    row = recorder.ai_calls[-1]
+    assert row["model"] == "claude-sonnet-5-5" and row["ek"]["cikti_kokeni"] == "model_kaydi"

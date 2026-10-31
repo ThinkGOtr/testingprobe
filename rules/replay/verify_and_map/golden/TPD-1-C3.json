@@ -2,7 +2,20 @@
   "kind": "agent",
   "purpose": "verify_and_map",
   "golden": "TPD-1-C3",
-  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Model çıktısı (step_mapping/expects/missing_methods) elle hazırlandı; tarayıcı adımları çalışan Playwright MCP'ye (--isolated) karşı koşturulup kaydedildi; hedefler replay'de oturumdan bağımsız olsun diye snapshot ref'i yerine tekil seçici (data-testid) olarak yazıldı. Kampanyalı sepet (P-001) case'lerinde sepet snapshot özeti yalnızca satır/tutar satırlarını içerir: kayıt anındaki çalışan imaj AC6 kod değişikliğinden (pricing.min_aranir) önceydi; uyarı/onay durumu replay'de araçlar yeniden koşturulunca görülür. Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record).",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Model çıktısı (step_mapping/expects/missing_methods) elle hazırlandı; tarayıcı adımları çalışan Playwright MCP'ye (--isolated) karşı koşturulup kaydedildi; hedefler replay'de oturumdan bağımsız olsun diye snapshot ref'i yerine tekil seçici (data-testid) olarak yazıldı. Kampanyalı sepet (P-001) case'lerinde sepet snapshot özeti yalnızca satır/tutar satırlarını içerir: kayıt anındaki çalışan imaj AC6 kod değişikliğinden (pricing.min_aranir) önceydi; uyarı/onay durumu replay'de araçlar yeniden koşturulunca görülür. Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), eşleşmezse REPLAY-MISS.",
+  "input_match": {
+    "contains": [
+      "6 adet kampanyalı üründe 1 adet bedava verilir",
+      "Giriş sayfasını aç",
+      "Bayi kullanıcısıyla giriş yap",
+      "\"Portakal Gazozu 1L\" (P-001) kartında adedi 6 yapıp \"Sepete ekle\" butonuna bas",
+      "Üst menüden sepete git",
+      "Giriş formu görüntülenir",
+      "Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir",
+      "Sepet sayacı 6 olur",
+      "P-001 satırında adet 6, bedava adet 1; ara toplam 150,00 TL, indirim 25,00 TL, toplam 125,00 TL"
+    ]
+  },
   "case": {
     "jira_key": "TPD-1",
     "sira_no": 3,

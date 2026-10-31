@@ -6,8 +6,20 @@
 - Yükseltilmiş golden (`tp_core.gateway.promote`): elle hazırlanmış golden çıktısı birebir anahtarla
   yazılır (`provenance: golden_promoted`, `golden_sha256`); mod `replay` olur, asla `live` değil.
   Golden sonradan değişirse kayıt bayattır ve kullanılmaz (golden'a düşer → REPLAY-MISS).
+- Golden eşleşmesi (`tp_core.gateway.matching`): golden `input_match` ile hazırlandığı girdiyi
+  beyan eder; gerçek girdi beyana uyuyorsa mod `replay` (köken `golden_matched`). Senaryodaki demo
+  yolu böylece REPLAY-MISS'siz koşar; story değiştiyse eşleşme bozulur ve dürüstçe REPLAY-MISS olur.
 - Iskalama sessiz geçmez: rules/replay/<purpose>/golden/<replay_key["name"]>.json bulunursa mod
   `replay_miss` olur (portalda REPLAY-MISS); o da yoksa `ReplayNotFound`.
+- Nötr REPLAY-MISS yedeği (`rules/replay/<amaç>/on_miss.json`): golden girdi beyanı (`input_match`)
+  taşıyor ve gerçek girdi buna UYMUYORSA golden başka bir dokümanın cevabıdır; o amaç için
+  `on_miss.json` varsa golden çıktısı yerine bu nötr çıktı döner (köken `miss_neutral`). Ör.
+  ön incelemede başka gereksinimin soruları (olmayan AC'lere atıflar) gösterilmez. Beyansız
+  golden'lar (senaryo adları: triage, bug_draft, dup_rank) eskisi gibi golden çıktısına düşer.
+- Çıktı kökeni (`output_origin`): golden'lar elle hazırlanmıştır; canlı modelle kaydedilmiş bir
+  çıktının `recording` üst verisi (model, kayıt zamanı, süre, token) vardır. Kayıt üst verisi
+  olmayan çıktı `ai_call.model = HAND_PREPARED_MODEL` ("golden-elle") ile yazılır, model adı
+  taşımaz (constitution VIII/X: hazırlanmış örnek, model kaydı gibi sunulmaz).
 - Golden adlandırma (`golden_name`): story düzeyi `<jira_key>` (ör. `TPD-1`), case düzeyi
   `<jira_key>-C<sira_no>` (ör. `TPD-1-C2`, verify_and_map), tutarlılık denetiminin 2. ve sonraki
   turları `<jira_key>-r2` (düzeltilmiş doküman). Çağıran `replay_key={"name": golden_name(...)}`
@@ -20,16 +32,25 @@ import json
 import os
 import re
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from tp_core.gateway.canonical import canonical_json, sha256_hex
+from tp_core.gateway.canonical import canonical_json, normalize, sha256_hex
 from tp_core.gateway.errors import GatewayConfigError, ReplayMiss, ReplayNotFound
+from tp_core.gateway.matching import MATCHED, input_mismatches
 
 ReplayMode = Literal["replay", "replay_miss"]
 PROMOTED = "golden_promoted"
+MISS_NEUTRAL = "miss_neutral"
+MISS_FILE = "on_miss.json"
+# Kayıt üst verisi olmayan (elle hazırlanmış) replay çıktısının `ai_call.model` değeri.
+HAND_PREPARED_MODEL = "golden-elle"
+# `ai_call.ek.cikti_kokeni`: çıktının gerçekte nereden geldiği.
+ORIGIN_MODEL_RECORDING = "model_kaydi"
+ORIGIN_HAND_PREPARED = "elle_hazirlanmis"
+ORIGIN_NEUTRAL = "notr_yedek"
 _GOLDEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _PURPOSE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
@@ -63,12 +84,14 @@ def golden_digest(golden: Mapping[str, Any]) -> str:
 def replay_key(
     purpose: str, bundle_hash: str, key_fields: Mapping[str, Any], input_digest: str
 ) -> str:
+    """Birebir replay anahtarı. `key_fields` de normalize edilir (çağıran yanlışlıkla zaman damgası
+    veya UUID koysa da anahtar koşudan koşuya değişmez)."""
     return sha256_hex(
         canonical_json(
             {
                 "purpose": purpose,
                 "bundle_hash": bundle_hash,
-                "replay_key": dict(key_fields),
+                "replay_key": normalize(dict(key_fields)),
                 "input_hash": input_digest,
             }
         )
@@ -98,8 +121,19 @@ class ReplayStore:
         return self._dir(purpose) / "golden" / f"{name}.json"
 
     def lookup(
-        self, purpose: str, key: str, golden_name: str | None
+        self,
+        purpose: str,
+        key: str,
+        golden_name: str | None,
+        messages: Sequence[Any] | None = None,
     ) -> tuple[dict[str, Any], ReplayMode, Path]:
+        """Birebir kayıt → eşleşen golden (`replay`) → eşleşmeyen golden (`replay_miss`).
+
+        Eşleşen golden'ın döndürülen kopyasında `provenance = "golden_matched"`; eşleşmeyen
+        golden'da `_mismatch` (neden listesi, `ai_call.ek.replay_eslesme`) bulunur. Golden girdi
+        beyanı taşıyıp girdiye uymuyorsa ve amacın nötr yedeği (`on_miss.json`) varsa onun çıktısı
+        döner (`provenance = "miss_neutral"`, adım yok, dönen yol nötr yedeğin yolu).
+        """
         exact = self.exact_path(purpose, key)
         if exact.is_file():
             record = _read(exact)
@@ -108,10 +142,47 @@ class ReplayStore:
         if golden_name:
             golden = self.golden_path(purpose, golden_name)
             if golden.is_file():
+                record = _read(golden)
+                reasons = self.golden_mismatches(record, messages)
+                if not reasons:
+                    return {**record, "provenance": MATCHED}, "replay", golden
                 if self.strict:
                     raise ReplayMiss(purpose, key, golden_name)
-                return _read(golden), "replay_miss", golden
+                neutral = self.miss_path(purpose)
+                if "input_match" in record and neutral.is_file():
+                    fallback = _read(neutral)
+                    return (
+                        {
+                            "kind": record.get("kind"),
+                            "purpose": purpose,
+                            "golden": golden_name,
+                            "provenance": MISS_NEUTRAL,
+                            "output": fallback["output"],
+                            "_mismatch": reasons,
+                        },
+                        "replay_miss",
+                        neutral,
+                    )
+                return {**record, "_mismatch": reasons}, "replay_miss", golden
         raise ReplayNotFound(purpose, key, golden_name)
+
+    def miss_path(self, purpose: str) -> Path:
+        """Amacın nötr REPLAY-MISS yedeği (yoksa eşleşmeyen golden çıktısı kullanılır)."""
+        return self._dir(purpose) / MISS_FILE
+
+    def neutral_output(self, purpose: str) -> Any | None:
+        path = self.miss_path(purpose)
+        return _read(path)["output"] if path.is_file() else None
+
+    @staticmethod
+    def golden_mismatches(record: Mapping[str, Any], messages: Sequence[Any] | None) -> list[str]:
+        """Golden'ın `input_match` beyanına göre uyuşmazlıklar (boş = eşleşir)."""
+        spec = record.get("input_match")
+        if not isinstance(spec, Mapping):
+            return ["golden girdi beyanı (input_match) içermiyor"]
+        if messages is None:
+            return ["girdi verilmedi"]
+        return input_mismatches(spec, messages)
 
     def is_stale(self, purpose: str, record: Mapping[str, Any]) -> bool:
         """Yükseltilmiş kayıt, kaynağı olan golden değiştiyse (veya silindiyse) bayattır."""
@@ -150,6 +221,47 @@ class ReplayStore:
         tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         tmp.replace(path)
         return path
+
+
+def output_origin(record: Mapping[str, Any]) -> tuple[str, str | None]:
+    """(cikti_kokeni, kayıtlı model). Model adı yalnızca kayıt üst verisi olan çıktıda verilir.
+
+    - nötr REPLAY-MISS yedeği → (`notr_yedek`, None)
+    - `recording.model` taşıyan kayıt/golden (canlı modelle kaydedilmiş) → (`model_kaydi`, model)
+    - `record` modunun birebir kaydı (`provenance` yok, `model` var) → (`model_kaydi`, model)
+    - diğer her şey (elle hazırlanmış golden, ondan yükseltilmiş kayıt) → (`elle_hazirlanmis`,
+      None)
+    """
+    if record.get("provenance") == MISS_NEUTRAL:
+        return ORIGIN_NEUTRAL, None
+    recording = record.get("recording")
+    if isinstance(recording, Mapping) and isinstance(recording.get("model"), str):
+        return ORIGIN_MODEL_RECORDING, recording["model"]
+    if record.get("provenance") is None and isinstance(record.get("model"), str):
+        return ORIGIN_MODEL_RECORDING, record["model"]
+    return ORIGIN_HAND_PREPARED, None
+
+
+def mode_label(mode: str, model: str | None = None) -> str:
+    """Kullanıcıya gösterilecek dürüst üretim modu etiketi (Jira yorumu, portal ipucu).
+
+    `model` çağrının `ai_call.model` değeridir. Replay çıktısı ancak gerçek bir model kaydıysa
+    "kayıtlı model çıktısı" denir; elle hazırlanmış golden "hazırlanmış örnek çıktı"dır.
+
+    >>> mode_label("replay", HAND_PREPARED_MODEL)
+    'REPLAY (hazırlanmış örnek çıktı; canlı model değil)'
+    >>> mode_label("replay", "claude-sonnet-5-5")
+    'REPLAY (claude-sonnet-5-5 ile kaydedilmiş model çıktısı)'
+    """
+    if mode == "live":
+        return f"canlı model ({model})" if model else "canlı model"
+    if mode == "replay_miss":
+        return "REPLAY-MISS (bu girdi için kayıtlı model çıktısı yok; canlı model gerekir)"
+    if mode == "replay" and model and model != HAND_PREPARED_MODEL:
+        return f"REPLAY ({model} ile kaydedilmiş model çıktısı)"
+    if mode == "replay":
+        return "REPLAY (hazırlanmış örnek çıktı; canlı model değil)"
+    return mode
 
 
 def _read(path: Path) -> dict[str, Any]:

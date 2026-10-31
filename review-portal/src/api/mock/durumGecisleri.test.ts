@@ -146,7 +146,7 @@ describe("requirement PO teyidi ↔ core requirement makinesi", () => {
 });
 
 describe("uçtan uca akışlar yalnızca izinli geçişlerden geçer", () => {
-  it("serbest metin: inceleme → bulgu kararları → düzeltme → PO → case → karar → yayın; her adım tabloda", async () => {
+  it("serbest metin: inceleme → bulgu kararları → düzeltme → PO → case → karar → (story'siz yayın engeli); her adım tabloda", async () => {
     const izlenen: [string, string, string][] = [];
     const gozle = () => {
       const v = mockVerisi();
@@ -189,7 +189,13 @@ describe("uçtan uca akışlar yalnızca izinli geçişlerden geçer", () => {
     const c = mockVerisi().caseler.find((x) => x.requirement_id === "req-ft-1")!;
     await api.caseKarari(c.id, { icerik_hash: c.icerik_hash, karar: "approve" });
     kaydet();
-    await api.yayinla([c.id]);
+    // core ile aynı: serbest metnin Jira story'si yok → Test issue bağlanamaz, yayın engellenir.
+    const engelli = await api.yayinla([c.id]);
+    expect(engelli.sonuclar[0]).toMatchObject({ durum: "failed", hata: expect.stringContaining("story'si yok") });
+    kaydet();
+    // Jira story'li gereksinimin onaylı case'i yayınlanır (approved → published).
+    const tpd = mockVerisi().caseler.find((x) => x.id === "case-1-4")!;
+    await api.yayinla([tpd.id]);
     kaydet();
 
     expect(izlenen.length).toBeGreaterThan(6);

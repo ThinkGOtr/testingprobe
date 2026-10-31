@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "./client";
-import { ApiError, cakismaMesaji, cekirdekYetenekleri, ICERIK_DEGISTI, kararCakismasi, istek, mockOturumuAyarla, mockUclari, ucuNormallestir, ucVar, yapilandir, yetenekleriAyristir, yetkisizOlunca } from "./http";
+import { ApiError, UC_YOK, cakismaMesaji, cekirdekYetenekleri, ICERIK_DEGISTI, kararCakismasi, istek, mockOturumuAyarla, mockUclari, ucuNormallestir, ucVar, yapilandir, yetenekleriAyristir, yetkisizOlunca } from "./http";
 
 function yanit(status: number, govde: unknown, json = true): Response {
   return new Response(json ? JSON.stringify(govde) : String(govde), {
@@ -141,6 +141,11 @@ describe("istemci ↔ sözleşme", () => {
       [() => api.kontrolKulesi(), "GET", "/api/control-tower"],
       [() => api.denetim(), "GET", "/api/audit?verify=true"],
       [() => api.tokenOlustur("submit"), "POST", "/api/tokens"],
+      [() => api.tokenlar(), "GET", "/api/tokens"],
+      [() => api.tokenIptal("t1"), "DELETE", "/api/tokens/t1"],
+      [() => api.caseYenidenAc({ id: "c1", icerik_hash: "sha256:h" }), "POST", "/api/cases/c1/decision"],
+      [() => api.caseGoruntulendi("c1"), "POST", "/api/cases/c1/viewed"],
+      [() => api.caseMetrikleri("r1"), "GET", "/api/requirements/r1/case-metrics"],
       [() => api.demoKir(), "POST", "/api/demo/break-locator"],
       [() => api.demoSifirla(), "POST", "/api/demo/reset"],
     ];
@@ -166,6 +171,9 @@ describe("istemci ↔ sözleşme", () => {
     expect(govde()).toEqual({ icerik_hash: "sha256:c", karar: "reject", ret_nedeni: "duplicate" });
     await api.bugKarari("b1", { icerik_hash: "sha256:g", karar: "dismiss" });
     expect(govde()).toEqual({ icerik_hash: "sha256:g", karar: "dismiss" });
+    // Yeniden açma da görülen içeriğe bağlıdır (TestCase nesnesinin tamamı verilse de yalnızca hash).
+    await api.caseYenidenAc({ id: "c1", icerik_hash: "sha256:y" });
+    expect(govde()).toEqual({ karar: "reopen", icerik_hash: "sha256:y" });
     // GereksinimDetay / PullRequest nesnesinin tamamı verilse de yalnızca bağ alanları gider.
     await api.poOnayla({ id: "r1", icerik_hash: "sha256:r" });
     expect(govde()).toEqual({ icerik_hash: "sha256:r" });
@@ -180,7 +188,9 @@ describe("istemci ↔ sözleşme", () => {
       ICERIK_DEGISTI,
     );
     expect(cakismaMesaji(new ApiError(409, "PR head sha'sı siz incelediğinizden beri değişmiş"))).toBe(ICERIK_DEGISTI);
-    expect(cakismaMesaji(new ApiError(409, "PR açık değil."))).toBe(`${ICERIK_DEGISTI} PR açık değil.`);
+    expect(cakismaMesaji(new ApiError(409, "PR açık değil."))).toBe("PR açık değil.");
+    // Durum çakışması (içerik değişmedi): "İçerik değişti" öneki yanıltıcı olurdu.
+    expect(cakismaMesaji(new ApiError(409, "Gereksinim karar beklemiyor (durum: done)"))).toBe("Gereksinim karar beklemiyor (durum: done)");
     expect(kararCakismasi(new ApiError(409, "x"))).toBe(true);
     expect(kararCakismasi(new ApiError(422, "x"))).toBe(false);
     expect(kararCakismasi(new Error("x"))).toBe(false);
@@ -248,6 +258,41 @@ describe("core uç keşfi (openapi.json) — örnek veri uçlarına ağ isteği 
     await expect(api.kosular()).rejects.toBeInstanceOf(ApiError);
     expect(f.mock.calls.map((c) => c[0])).toEqual(["/api/runs"]);
     expect(await cekirdekYetenekleri()).toBeNull();
+  });
+
+  it("kaynağı çekirdekte olan işlem, işlem ucu yoksa örnek veriye düşmez (501); kaynak örnek veriyse düşer", async () => {
+    yapilandir({ mockZorunlu: false, mockOtomatik: true, yetenekKesfi: true });
+    // core: GET /cases var; görüntüleme ve ölçüm uçları (henüz) yok.
+    const belge = { paths: { ...OPENAPI.paths, "/cases": { get: {} } } };
+    const f = vi.fn().mockImplementation((url: string) =>
+      url === "/api/openapi.json" ? Promise.resolve(yanit(200, belge)) : Promise.resolve(yanit(200, { id: "u1", kullanici_adi: "analist", rol: "analyst" })),
+    );
+    vi.stubGlobal("fetch", f);
+    mockOturumuAyarla(await api.login("analist", "Demo123!"));
+    await expect(api.caseYenidenAc({ id: "gercek-case", icerik_hash: "sha256:h" })).rejects.toMatchObject({ status: 501, detail: UC_YOK });
+    await expect(api.caseGoruntulendi("gercek-case")).rejects.toMatchObject({ status: 501 });
+    await expect(api.caseMetrikleri("gercek-req")).rejects.toMatchObject({ status: 501 });
+    expect(mockUclari()).toEqual([]);
+    expect(f.mock.calls.map((c) => c[0])).toEqual(["/api/openapi.json", "/api/auth/login"]);
+  });
+
+  it("case listesi örnek veriden geliyorsa yeniden açma da örnek veriye gider", async () => {
+    yapilandir({ mockZorunlu: false, mockOtomatik: true, yetenekKesfi: true });
+    vi.stubGlobal("fetch", sahteCore(OPENAPI));
+    mockOturumuAyarla(await api.login("analist", "Demo123!"));
+    const caseler = await api.caseler("req-tpd-1");
+    const red = caseler.find((c) => c.durum === "rejected")!;
+    const acildi = await api.caseYenidenAc(red);
+    // core gibi: durum draft; son karar kaydı (reject) değişmez.
+    expect(acildi).toMatchObject({ id: red.id, durum: "draft", karar: "reject" });
+    expect(mockUclari()).toEqual(["GET /cases", "POST /cases/:id/decision"]);
+  });
+
+  it("uç listesi yokken: kaynak çekirdekten gelmişse genel 404'te de örnek veriye düşülmez", async () => {
+    yapilandir({ mockZorunlu: false, mockOtomatik: true, yetenekKesfi: false });
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(yanit(404, { detail: "Not Found" }))));
+    await expect(api.caseYenidenAc({ id: "c1", icerik_hash: "sha256:h" })).rejects.toMatchObject({ status: 501 });
+    expect(mockUclari()).toEqual([]);
   });
 
   it("OpenAPI ayrıştırma: yol parametresi tek parça, 'parameters' yöntem sayılmaz", () => {

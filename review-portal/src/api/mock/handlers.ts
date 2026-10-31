@@ -8,6 +8,7 @@ import type {
   BugKararGirdisi,
   BugTaslagi,
   CaseKararGirdisi,
+  CaseMetrikleri,
   DenetimOlayi,
   DenetimYaniti,
   GereksinimDetay,
@@ -18,6 +19,7 @@ import type {
   Kullanici,
   PullRequest,
   McpToken,
+  McpTokenKaydi,
   Rol,
   ScriptDetay,
   SerbestMetinGirdisi,
@@ -33,7 +35,9 @@ import {
   bulguCiktisi,
   caseSayilari,
   goldenBulgular,
+  goldenCaseler,
   goldenInceleme,
+  goldenKoku,
   goldenSorular,
   hashleriTazele,
   icerikHash,
@@ -219,10 +223,20 @@ function gereksinimOlayi(g: GereksinimDetay): void {
 }
 
 /** Zamanlanmış arka plan işi (setTimeout zinciri). Hatalar yutulur ve denetime düşer. */
+let suredenIs = 0;
+/** Bitmemiş mock arka plan işi sayısı (testler sabit süre yerine bunu bekler). */
+export function bekleyenMockIs(): number {
+  return suredenIs;
+}
+
 function arkaPlan(adimlar: (() => void)[]): void {
   let i = 0;
+  suredenIs++;
   const sonraki = () => {
-    if (i >= adimlar.length) return;
+    if (i >= adimlar.length) {
+      suredenIs--;
+      return;
+    }
     try {
       adimlar[i++]();
       kaydet();
@@ -299,12 +313,14 @@ function serbestMetin(govde: unknown): GereksinimDetay {
 }
 
 /**
- * Jira story'si için kontrol turunun golden REPLAY bulguları (consistency_check/golden/<anahtar>
- * ya da 2. ve sonraki turlarda <anahtar>-r<tur>). Golden kaydı yoksa null (REPLAY-MISS).
+ * Kontrol turunun golden REPLAY bulguları (consistency_check/golden/<kök> ya da 2. ve sonraki
+ * turlarda <kök>-r<tur>; kök Jira anahtarı veya serbest metin golden'ı SERBEST). Golden kaydı
+ * yoksa null (REPLAY-MISS).
  */
 function goldenTurBulgulari(g: GereksinimDetay): Bulgu[] | null {
-  if (!g.jira_key) return null;
-  const kayit = goldenBulgular(g.kontrol_turu >= 2 ? `${g.jira_key}-r${g.kontrol_turu}` : g.jira_key);
+  const kok = goldenKoku(g);
+  if (!kok) return null;
+  const kayit = goldenBulgular(g.kontrol_turu >= 2 ? `${kok}-r${g.kontrol_turu}` : kok);
   if (!kayit) return null;
   return kayit.map((f) => {
     const tekAc = g.kabul_kriterleri.find((a) => a.ref === f.doc_ref);
@@ -347,7 +363,8 @@ function incelemeBulgulari(g: GereksinimDetay): Bulgu[] {
     durum: "open" as const,
     bug_draft_id: null,
     icerik_hash: "",
-    mode: "replay" as const,
+    // Golden kayıt yok: kural tabanlı yedek çıktı → REPLAY-MISS (canlı model çıktısı değil).
+    mode: "replay_miss" as const,
   };
   for (const ac of g.kabul_kriterleri) {
     if (/7 adet/i.test(ac.metin)) {
@@ -393,15 +410,16 @@ function incelemeBaslat(id: string): IsYaniti {
   gereksinimOlayi(g);
   arkaPlan([
     () => {
-      // Jira story'sinde golden REPLAY ön inceleme; serbest metinde kayıt yok → REPLAY-MISS.
-      const golden = g.jira_key ? goldenInceleme(g.jira_key) : undefined;
+      // Golden kaydı (Jira anahtarı ya da eşleşen serbest metin SERBEST) → REPLAY; yoksa REPLAY-MISS.
+      const kok = goldenKoku(g);
+      const golden = kok ? goldenInceleme(kok) : undefined;
       g.on_inceleme = {
         verdict: golden?.verdict ?? "needs_po",
         mode: golden ? "replay" : "replay_miss",
         zaman: simdi(),
         jira_comment_id: g.kaynak === "jira" ? yeniId("cmt") : null,
         questions: golden
-          ? goldenSorular(g.jira_key!)
+          ? goldenSorular(kok!)
           : [
               {
                 id: "Q1",
@@ -415,6 +433,8 @@ function incelemeBaslat(id: string): IsYaniti {
       const yeni = incelemeBulgulari(g);
       veri.bulgular = veri.bulgular.filter((b) => !(b.requirement_id === g.id && b.durum === "open"));
       veri.bulgular.push(...yeni);
+      // core: her bulgu unverified → open geçişinde (kanıt deterministik doğrulandı) olay yayımlar.
+      for (const b of yeni) mockOlayYayinla({ type: "finding.verified", id: b.id, data: { requirement_id: g.id } });
       if (yeni.some((b) => b.severity === "blocking")) {
         gecir("requirement", g, "findings_open");
       } else {
@@ -491,7 +511,7 @@ function bulguKarari(id: string, govde: unknown): Bulgu {
       onaylayan: null,
       onay_zamani: null,
       jira_key: null,
-      mode: b.mode,
+      mode: b.mode ?? "replay",
       olusturma: simdi(),
     };
     veri.bugTaslaklari.unshift(taslak);
@@ -523,6 +543,10 @@ function duzeltmeleriUygula(id: string): IsYaniti {
         gecir("consistency_finding", b, "resolved"); // core: decided → resolved (düzeltme dokümana yazıldı)
       }
       g.kontrol_turu += 1;
+      // Yeni tur önceki turun karar verilmemiş bulgularını geçersiz kılar (core: open → stale).
+      for (const b of veri.bulgular) {
+        if (b.requirement_id === id && b.durum === "open" && b.kontrol_turu < g.kontrol_turu) gecir("consistency_finding", b, "stale");
+      }
       // Yeniden kontrol: bu tur için golden kayıt varsa onun bulguları (ör. TPD-1-r2) eklenir.
       const yeniTur = goldenTurBulgulari(g);
       if (yeniTur) veri.bulgular.push(...yeniTur);
@@ -556,8 +580,10 @@ function poOnayla(id: string, govde: unknown): GereksinimDetay {
   if (g.durum !== "pending_po") throw new ApiError(409, "Gereksinim PO teyidi beklemiyor.");
   gecir("requirement", g, "po_approved");
   g.po = { durum: "approved", onaylayan: k.kullanici_adi, zaman: simdi(), kanal: "portal" };
+  g.po.onaylanan_hash = g.icerik_hash;
   denetimEkle("po.approve", g.id, `PO teyidi (portal) · ${g.icerik_hash}`);
   gereksinimOlayi(g);
+  mockOlayYayinla({ type: "po.approved", id: g.id, data: { onaylayan: k.kullanici_adi, kanal: "portal" } });
   return cikti(g);
 }
 
@@ -570,10 +596,16 @@ function caseUret(id: string): IsYaniti {
   gecir("requirement", g, "generating");
   gereksinimOlayi(g);
   const mevcut = veri.caseler.filter((c) => c.requirement_id === id).length;
-  const uretilecek = g.kabul_kriterleri.slice(0, 4);
+  // Golden kaydı güncel AC'lerle birebir eşleşirse onun case'leri (REPLAY); değilse kural tabanlı
+  // yedek iskelet (REPLAY-MISS: canlı model çıktısı değil, öyle de gösterilmez).
+  const golden = goldenCaseler(g);
+  const mod = golden ? ("replay" as const) : ("replay_miss" as const);
+  const uretilecek: { ref: string; metin: string; golden?: TestCaseIcerik }[] = golden
+    ? golden.map((c) => ({ ref: c.acceptance_criteria_refs[0] ?? "", metin: c.title, golden: c }))
+    : g.kabul_kriterleri.slice(0, 4);
   arkaPlan([
     ...uretilecek.map((ac, i) => () => {
-      const icerik: TestCaseIcerik = {
+      const icerik: TestCaseIcerik = ac.golden ?? {
         title: `${ac.ref}: ${ac.metin}`.slice(0, 120),
         type: i % 3 === 0 ? "positive" : i % 3 === 1 ? "negative" : "boundary",
         risk: i === 0 ? "high" : "medium",
@@ -607,14 +639,14 @@ function caseUret(id: string): IsYaniti {
         review_sure_ms: null,
         maliyet_usd: 0,
         jira_test_key: null,
-        mode: "replay",
+        mode: mod,
       };
       veri.caseler.push(tc);
       mockOlayYayinla({ type: "case.generated", id: tc.id, data: { requirement_id: id, title: icerik.title } });
     }),
     () => {
       gecir("requirement", g, "cases_ready");
-      denetimEkle("ai_call", g.id, `Case üretimi: ${uretilecek.length} case (replay)`, "core-worker");
+      denetimEkle("ai_call", g.id, `Case üretimi: ${uretilecek.length} case (${mod})`, "core-worker");
       gereksinimOlayi(g);
     },
   ]);
@@ -624,9 +656,11 @@ function caseUret(id: string): IsYaniti {
 function caseKarari(id: string, govde: unknown): TestCase {
   const k = rolGerekli("analyst");
   const c = bul(veri.caseler, id, "Case");
+  // core: "Taslağa al" aynı karar ucunda `karar: "reopen"` ile verilir.
+  if ((govde as { karar?: unknown } | null)?.karar === "reopen") return caseYenidenAc(id, govde);
   const g = (govde ?? {}) as Partial<CaseKararGirdisi>;
   if (!g.karar || !["approve", "edit", "reject"].includes(g.karar)) {
-    throw new ApiError(422, "Karar approve, edit veya reject olmalı.");
+    throw new ApiError(422, "Karar approve, edit, reject veya reopen olmalı.");
   }
   hashGerekli(govde, c.icerik_hash);
   if (c.durum === "published") throw new ApiError(409, "Yayınlanmış case değiştirilemez.");
@@ -659,12 +693,87 @@ function caseKarari(id: string, govde: unknown): TestCase {
   c.karar = g.karar;
   c.karar_veren = k.kullanici_adi;
   c.karar_zamani = simdi();
-  c.review_sure_ms = 20000 + Math.round(Math.random() * 40000);
+  // core gibi: review süresi ilk görüntülemeden (POST /cases/{id}/view) karara kadar ölçülür.
+  c.review_sure_ms = c.goruntulenme ? Math.max(0, Date.parse(c.karar_zamani) - Date.parse(c.goruntulenme)) : null;
   denetimEkle("case.decision", c.id, g.karar === "reject" ? `reject: ${g.ret_nedeni}` : g.karar);
   const req = veri.gereksinimler.find((r) => r.id === c.requirement_id);
   if (req) gereksinimOlayi(req);
   else kaydet();
   return cikti(c);
+}
+
+/**
+ * core `POST /cases/{id}/viewed`: kullanıcının son karardan sonraki ilk görüntülemesi (idempotent).
+ * Review süresi bu andan karara kadar ölçülür.
+ */
+function caseGoruntulendi(id: string): { case_id: string; ilk_goruntuleme: string; yeni: boolean } {
+  girisGerekli();
+  const c = bul(veri.caseler, id, "Case");
+  const yeni = !c.goruntulenme;
+  if (yeni) {
+    c.goruntulenme = simdi();
+    kaydet();
+  }
+  return { case_id: c.id, ilk_goruntuleme: c.goruntulenme!, yeni };
+}
+
+/**
+ * core "Taslağa al" (`karar: "reopen"`): approved | rejected → draft. İçerik değişmez, yeni karar
+ * gerekir. core karar kaydı yazmaz: son karar (`karar`) önceki karar olarak kalır; ekran durumdan
+ * (`draft`) karar beklediğini anlar.
+ */
+function caseYenidenAc(id: string, govde: unknown): TestCase {
+  rolGerekli("analyst");
+  const c = bul(veri.caseler, id, "Case");
+  if (c.durum !== "approved" && c.durum !== "rejected") {
+    throw new ApiError(409, `Yalnızca onaylı veya reddedilmiş case taslağa alınabilir (durum: ${c.durum})`);
+  }
+  hashGerekli(govde, c.icerik_hash);
+  gecir("test_case", c, "draft");
+  const onceki = c.karar;
+  c.onaylanan_hash = null;
+  c.goruntulenme = null;
+  denetimEkle("case.reopen", c.id, `Taslağa alındı (önceki karar: ${onceki ?? "—"})`);
+  const req = veri.gereksinimler.find((r) => r.id === c.requirement_id);
+  if (req) gereksinimOlayi(req);
+  else kaydet();
+  return cikti(c);
+}
+
+/** core `GET /requirements/{id}/case-metrics` ile aynı alanlar (mock son karara göre sayar). */
+function caseMetrikleri(rid: string): CaseMetrikleri {
+  girisGerekli();
+  bul(veri.gereksinimler, rid, "Gereksinim");
+  const cs = veri.caseler.filter((c) => c.requirement_id === rid && c.ai_generated && c.durum !== "superseded");
+  const kararli = cs.filter((c) => c.karar !== null);
+  const kabul = kararli.filter((c) => c.karar === "approve" || (c.karar === "edit" && (c.duzeltme_olcusu ?? 1) <= 0.15)).length;
+  const sureler = cs.map((c) => c.review_sure_ms).filter((x): x is number => x !== null);
+  const say = (anahtar: (c: TestCase) => string | null) =>
+    kararli.reduce<Record<string, number>>((a, c) => {
+      const k = anahtar(c);
+      if (k) a[k] = (a[k] ?? 0) + 1;
+      return a;
+    }, {});
+  return {
+    requirement_id: rid,
+    uretilen: cs.length,
+    karar_verilen: kararli.length,
+    bekleyen: cs.length - kararli.length,
+    kabul,
+    kabul_orani: cs.length ? kabul / cs.length : null,
+    kabul_hedefi: 0.7,
+    ilk_kararlar: say((c) => c.karar),
+    ret_nedenleri: say((c) => c.ret_nedeni),
+    ai_sure_ms: cs.reduce((a, c) => a + c.ai_sure_ms, 0),
+    review_sure_ms: sureler.reduce((a, x) => a + x, 0),
+    ort_review_sure_ms: sureler.length ? Math.round(sureler.reduce((a, x) => a + x, 0) / sureler.length) : null,
+    maliyet_usd: cs.reduce((a, c) => a + c.maliyet_usd, 0),
+    // Örnek veride her case üretimi golden kayıttan: yalnızca replay/replay_miss (asla live).
+    ai_cagri_modlari: cs.reduce<Record<string, number>>((a, c) => {
+      if (c.mode) a[c.mode] = (a[c.mode] ?? 0) + 1;
+      return a;
+    }, {}),
+  };
 }
 
 function yayinOnizleme(q: URLSearchParams): YayinOnizleme {
@@ -677,7 +786,9 @@ function yayinOnizleme(q: URLSearchParams): YayinOnizleme {
     requirement_id: rid,
     hedef: "jira",
     proje: "TPD",
-    uyarilar: g.kaynak === "free_text" ? ["Serbest metin gereksinim: Test issue'ları story bağlantısı olmadan oluşturulur."] : [],
+    jira_browse_url: "http://127.0.0.1:8090",
+    // core ile aynı: story'siz (serbest metin) gereksinimin Test issue'ı bağlanamaz; yayın engellenir.
+    uyarilar: g.jira_key ? [] : ["Serbest metin gereksinimin Jira story'si yok; Test issue story'ye bağlanamaz; yayın engellenir."],
     kalemler: caseler.map((c) => ({
       case_id: c.id,
       title: c.icerik.title,
@@ -693,7 +804,9 @@ function yayinOnizleme(q: URLSearchParams): YayinOnizleme {
             ? "blocked_not_approved"
             : c.onaylanan_hash !== c.icerik_hash
               ? "blocked_hash_mismatch"
-              : "create",
+              : !g.jira_key
+                ? "blocked_no_story"
+                : "create",
       external_key: c.jira_test_key,
     })),
   };
@@ -711,9 +824,13 @@ function yayinla(govde: unknown): YayinSonucu {
     if (c.onaylanan_hash !== c.icerik_hash) {
       return { case_id: id, durum: "failed" as const, external_key: null, hata: "İçerik onaydan sonra değişmiş" };
     }
+    if (!veri.gereksinimler.find((r) => r.id === c.requirement_id)?.jira_key) {
+      return { case_id: id, durum: "failed" as const, external_key: null, hata: "Serbest metin gereksinimin Jira story'si yok; Test issue story'ye bağlanamaz" };
+    }
     gecir("test_case", c, "published");
     c.jira_test_key = yeniJiraAnahtari();
-    return { case_id: id, durum: "created" as const, external_key: c.jira_test_key, hata: null };
+    mockOlayYayinla({ type: "publish.progress", id: c.id, data: { case_id: c.id, external_key: c.jira_test_key } });
+    return { case_id: id, durum: "created" as const, external_key: c.jira_test_key, url: `http://127.0.0.1:8090/browse/${c.jira_test_key}`, hata: null };
   });
   const olusan = sonuclar.filter((s) => s.durum === "created");
   for (const r of veri.gereksinimler) {
@@ -725,6 +842,10 @@ function yayinla(govde: unknown): YayinSonucu {
   }
   denetimEkle("publish", "jira", `${olusan.length} Test issue: ${olusan.map((s) => s.external_key).join(", ") || "—"}`);
   kaydet();
+  mockOlayYayinla({
+    type: "publish.completed",
+    data: { olusan: olusan.length, basarisiz: sonuclar.filter((s) => s.durum === "failed").length },
+  });
   return { hedef: "jira", sonuclar };
 }
 
@@ -1134,14 +1255,27 @@ function tokenOlustur(govde: unknown): McpToken {
   const rastgele = new Uint8Array(24);
   crypto.getRandomValues(rastgele);
   const token = `tpk_mock_${Array.from(rastgele, (b) => b.toString(16).padStart(2, "0")).join("")}`;
-  denetimEkle("token.create", kapsam, "8 saatlik MCP token'ı oluşturuldu");
-  kaydet();
-  return {
-    token,
+  const kayit: McpTokenKaydi = {
+    id: yeniId("tok"),
     kapsam,
     son_kullanma: new Date(Date.now() + 8 * 3600 * 1000).toISOString(),
-    mcp_url: "http://127.0.0.1:8000/mcp",
+    iptal: false,
+    son_kullanim: null,
+    olusturma: simdi(),
   };
+  veri.tokenlar = [kayit, ...(veri.tokenlar ?? [])];
+  denetimEkle("token.create", kapsam, "8 saatlik MCP token'ı oluşturuldu");
+  kaydet();
+  return { id: kayit.id, token, kapsam, son_kullanma: kayit.son_kullanma, mcp_url: "http://127.0.0.1:8000/mcp" };
+}
+
+function tokenIptal(id: string): void {
+  girisGerekli();
+  const t = (veri.tokenlar ?? []).find((x) => x.id === id);
+  if (!t) throw new ApiError(404, "Token bulunamadı");
+  t.iptal = true;
+  denetimEkle("token.revoke", t.kapsam, "MCP token'ı iptal edildi");
+  kaydet();
 }
 
 // ------------------------------------------------------------------ yönlendirme
@@ -1182,7 +1316,8 @@ const ROTALAR: Rota[] = [
       girisGerekli();
       const g = bul(veri.gereksinimler, decodeURIComponent(m[1]), "Gereksinim");
       sayaclariGuncelle(g);
-      return g;
+      // Kanıtı doğrulanamayıp elenen bulgular gösterilmez; yalnızca sayısı (core ile aynı alan).
+      return { ...g, elenen_bulgu: veri.bulgular.filter((b) => b.requirement_id === g.id && b.durum === "discarded").length };
     },
   ],
   ["POST", /^\/requirements\/([^/]+)\/review$/, (m) => incelemeBaslat(decodeURIComponent(m[1]))],
@@ -1210,6 +1345,8 @@ const ROTALAR: Rota[] = [
     },
   ],
   ["POST", /^\/cases\/([^/]+)\/decision$/, (m, _q, g) => caseKarari(decodeURIComponent(m[1]), g)],
+  ["POST", /^\/cases\/([^/]+)\/viewed$/, (m) => caseGoruntulendi(decodeURIComponent(m[1]))],
+  ["GET", /^\/requirements\/([^/]+)\/case-metrics$/, (m) => caseMetrikleri(decodeURIComponent(m[1]))],
   ["GET", /^\/publish\/preview$/, (_m, q) => yayinOnizleme(q)],
   ["POST", /^\/publish$/, (_m, _q, g) => yayinla(g)],
   ["POST", /^\/code\/generate$/, (_m, _q, g) => kodUret(g)],
@@ -1280,6 +1417,15 @@ const ROTALAR: Rota[] = [
   ["GET", /^\/control-tower$/, () => kontrolKulesi()],
   ["GET", /^\/audit$/, (_m, q) => denetim(q)],
   ["POST", /^\/tokens$/, (_m, _q, g) => tokenOlustur(g)],
+  [
+    "GET",
+    /^\/tokens$/,
+    () => {
+      girisGerekli();
+      return veri.tokenlar ?? [];
+    },
+  ],
+  ["DELETE", /^\/tokens\/([^/]+)$/, (m) => tokenIptal(decodeURIComponent(m[1]))],
   [
     "POST",
     /^\/demo\/break-locator$/,

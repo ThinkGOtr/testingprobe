@@ -159,7 +159,7 @@ Tüm hedeflerin sözleşmesi: [contracts/make-targets.md](../specs/001-dev-found
 | Bir servis `unhealthy` / `make up` süre aşımı | `make logs S=<servis>` ile log'a bakın; `make status` ile hangi servisin bağımlılığının bozuk olduğunu kontrol edin |
 | `migrate` başarısız, DB bozuk/tutarsız | `make reset` (önce denetim kaydını dışa aktarır), ardından `make seed` |
 | `make reset` dışa aktarımda duruyor | Bilerek: dışa aktarım başarısızsa hiçbir şey silinmez. `make logs S=postgres` ile Postgres'i kontrol edin, sonra tekrar deneyin. Yarıda kesilen reset tekrar çalıştırılabilir |
-| `PLAYWRIGHT_VERSION` hatası | `docker compose`'u doğrudan çalıştırmayın; her zaman `make` hedeflerini kullanın |
+| `PLAYWRIGHT_VERSION` hatası | `make env` çalıştırın (sürümü .playwright-version'dan .env'e yazar); başlatma için yine `make up` kullanın |
 | `make status` "çalışmıyor" | Ortam kapalı; `make up` |
 | Docker daemon'a bağlanılamıyor | Docker Desktop'ı (veya Colima'yı) başlatın, `docker info` ile doğrulayın |
 

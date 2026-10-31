@@ -406,10 +406,13 @@ def test_dogrulama_hatasi_tek_metin(client: TestClient) -> None:
 
 
 def test_mcp_ucu_yokken_token_uretilmez(
-    client: TestClient, make_user: MakeUser, engine: Engine
+    db: Db, make_user: MakeUser, engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _giris(client, make_user("analyst"))
-    r = client.post("/tokens", json={"kapsam": "submit"})
+    # Özellik router'ları (ve onlarla gelen /mcp) olmadan kurulan uygulama.
+    monkeypatch.setattr(registry, "discover_feature_routers", lambda *a, **k: [])
+    with TestClient(main.create_app()) as client:
+        _giris(client, make_user("analyst"))
+        r = client.post("/tokens", json={"kapsam": "submit"})
     assert r.status_code == 501
     assert "MCP" in r.json()["detail"]
     with engine.connect() as c:
@@ -657,3 +660,13 @@ def test_platform_uclari_kayitli() -> None:
         ("DELETE", "/tokens/{token_id}"),
     ]:
         assert beklenen in yollar
+
+
+def test_ozellik_router_icindeki_mcp_ucu_gorunur(
+    client: TestClient, make_user: MakeUser, engine: Engine
+) -> None:
+    """`/mcp` bir özellik router'ı içinden (include_router sarmalayıcısında) bağlanır; görülmeli."""
+    _giris(client, make_user("analyst"))
+    r = client.post("/tokens", json={"kapsam": "submit"})
+    assert r.status_code == 201, r.text
+    assert r.json()["mcp_url"].endswith("/mcp")

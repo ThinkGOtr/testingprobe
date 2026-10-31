@@ -9,7 +9,7 @@ import { baglantiTuru } from "../lib/rotalar";
 export function ReplayRozeti({ mode }: { mode: CiktiModu | null | undefined }) {
   if (mode === "replay") {
     return (
-      <span className="rozet rozet-replay" title="Bu çıktı canlı modelden değil, kayıtlı (golden) çıktıdan geldi.">
+      <span className="rozet rozet-replay" title="REPLAY: hazırlanmış örnek çıktı; canlı model değil.">
         REPLAY
       </span>
     );
@@ -18,7 +18,7 @@ export function ReplayRozeti({ mode }: { mode: CiktiModu | null | undefined }) {
     return (
       <span
         className="rozet rozet-replay-miss"
-        title="Kayıtlı çıktı bu girdiyle eşleşmedi; adlandırılmış yedek kayda düşüldü."
+        title="REPLAY-MISS: bu girdi için kayıtlı model çıktısı yok; canlı model gerekir."
       >
         REPLAY-MISS
       </span>

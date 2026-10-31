@@ -1,0 +1,238 @@
+{
+  "kind": "call",
+  "purpose": "case_generation",
+  "golden": "SERBEST",
+  "note": "Adlandırılmış golden kayıt, serbest metin demo gereksinimi ('Sepetten ürün çıkarma'; metin rules/replay/README.md). Elle hazırlandı (model çıktısı değil; ai_call.model = golden-elle); canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), başka serbest metinlerde REPLAY-MISS. Adım 2 düzeltmelerinden (AC2: 6 adette 1 bedava; AC3: kampanyasız sepette 750,00 TL) ve PO teyidinden sonraki metne göre.",
+  "input_match": {
+    "sources": [
+      "serbest:*"
+    ],
+    "acceptance_criteria": [
+      "AC1: Satırdaki \"Kaldır\" butonuna basıldığında ürün sepetten çıkar ve sepet sayacı azalır.",
+      "AC2: Kaldırma sonrası kampanya indirimi her 6 adette 1 bedava kuralıyla yeniden hesaplanır.",
+      "AC3: Sepette kampanyalı ürün yoksa ve sepet tutarı 750,00 TL altına düşerse \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur."
+    ],
+    "contains": [
+      "Bayi sepetteki bir ürün satırını kaldırabilmeli; toplamlar ve kampanya indirimi yeniden hesaplanmalıdır."
+    ]
+  },
+  "output": {
+    "cases": [
+      {
+        "title": "Kaldır ile ürün satırı sepetten çıkar ve sepet sayacı azalır",
+        "type": "positive",
+        "risk": "medium",
+        "acceptance_criteria_refs": [
+          "AC1"
+        ],
+        "preconditions": [
+          "Sepet boş"
+        ],
+        "steps": [
+          {
+            "id": "S1",
+            "action": "Giriş sayfasını aç ve bayi kullanıcısıyla giriş yap",
+            "data": "bayi1 / Demo123!",
+            "expected": "Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir"
+          },
+          {
+            "id": "S2",
+            "action": "\"Limonata 330ml\" (P-002) kartında adedi 2 yapıp \"Sepete ekle\" butonuna bas",
+            "data": "P-002 × 2",
+            "expected": "Sepet sayacı 2 olur"
+          },
+          {
+            "id": "S3",
+            "action": "\"Maden Suyu 200ml\" (P-003) kartında adedi 1 yapıp \"Sepete ekle\" butonuna bas",
+            "data": "P-003 × 1",
+            "expected": "Sepet sayacı 3 olur"
+          },
+          {
+            "id": "S4",
+            "action": "Üst menüden sepete git ve P-003 satırındaki \"Kaldır\" butonuna bas",
+            "data": "P-003",
+            "expected": "P-003 satırı sepetten kalkar ve sepet sayacı 2 olur"
+          }
+        ],
+        "expected_result": "Kaldırılan ürün sepetten çıkar ve sepet sayacı 2 olur",
+        "tags": [
+          "AI-generated"
+        ]
+      },
+      {
+        "title": "Kampanyalı satır kaldırılınca kampanya indirimi yeniden hesaplanır ve sıfırlanır",
+        "type": "positive",
+        "risk": "high",
+        "acceptance_criteria_refs": [
+          "AC2"
+        ],
+        "preconditions": [
+          "Sepet boş",
+          "P-001 \"6 al 1 bedava\" kampanyasında"
+        ],
+        "steps": [
+          {
+            "id": "S1",
+            "action": "Giriş sayfasını aç ve bayi kullanıcısıyla giriş yap",
+            "data": "bayi1 / Demo123!",
+            "expected": "Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir"
+          },
+          {
+            "id": "S2",
+            "action": "\"Portakal Gazozu 1L\" (P-001) kartında adedi 6 yapıp \"Sepete ekle\" butonuna bas",
+            "data": "P-001 × 6",
+            "expected": "Sepet sayacı 6 olur"
+          },
+          {
+            "id": "S3",
+            "action": "\"Şeftalili Soğuk Çay 1L\" (P-004) kartında adedi 30 yapıp \"Sepete ekle\" butonuna bas",
+            "data": "P-004 × 30",
+            "expected": "Sepet sayacı 36 olur"
+          },
+          {
+            "id": "S4",
+            "action": "Üst menüden sepete git",
+            "data": null,
+            "expected": "P-001 satırında adet 6, bedava adet 1; ara toplam 1.050,00 TL, indirim 25,00 TL, toplam 1.025,00 TL"
+          },
+          {
+            "id": "S5",
+            "action": "P-001 satırındaki \"Kaldır\" butonuna bas",
+            "data": "P-001",
+            "expected": "P-001 satırı sepetten kalkar ve sepet sayacı 30 olur; ara toplam 900,00 TL, indirim 0,00 TL, toplam 900,00 TL"
+          }
+        ],
+        "expected_result": "Kampanyalı satır kaldırılınca bedava adet kalmaz: indirim 0,00 TL, toplam 900,00 TL; minimum sipariş uyarısı gösterilmez",
+        "tags": [
+          "AI-generated"
+        ]
+      },
+      {
+        "title": "Kaldırma sonrası kampanyasız sepet minimum tutarın altına düşünce uyarı gösterilir ve onay pasif olur",
+        "type": "negative",
+        "risk": "high",
+        "acceptance_criteria_refs": [
+          "AC3"
+        ],
+        "preconditions": [
+          "Sepet boş",
+          "Sepette kampanyalı ürün yok"
+        ],
+        "steps": [
+          {
+            "id": "S1",
+            "action": "Giriş sayfasını aç ve bayi kullanıcısıyla giriş yap",
+            "data": "bayi1 / Demo123!",
+            "expected": "Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir"
+          },
+          {
+            "id": "S2",
+            "action": "\"Şeftalili Soğuk Çay 1L\" (P-004) kartında adedi 25 yapıp \"Sepete ekle\" butonuna bas",
+            "data": "P-004 × 25",
+            "expected": "Sepet sayacı 25 olur"
+          },
+          {
+            "id": "S3",
+            "action": "\"Limonata 330ml\" (P-002) kartında adedi 1 yapıp \"Sepete ekle\" butonuna bas",
+            "data": "P-002 × 1",
+            "expected": "Sepet sayacı 26 olur"
+          },
+          {
+            "id": "S4",
+            "action": "Üst menüden sepete git ve P-004 satırındaki \"Kaldır\" butonuna bas",
+            "data": "P-004",
+            "expected": "Toplam 15,00 TL; \"Minimum sipariş tutarı 750,00 TL\" uyarısı görünür ve \"Siparişi onayla\" butonu pasiftir"
+          }
+        ],
+        "expected_result": "\"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur",
+        "tags": [
+          "AI-generated"
+        ]
+      },
+      {
+        "title": "Kaldırma sonrası toplam minimum tutara eşit kalınca uyarı gösterilmez ve onay aktif olur",
+        "type": "boundary",
+        "risk": "high",
+        "acceptance_criteria_refs": [
+          "AC3"
+        ],
+        "preconditions": [
+          "Sepet boş",
+          "Sepette kampanyalı ürün yok"
+        ],
+        "steps": [
+          {
+            "id": "S1",
+            "action": "Giriş sayfasını aç ve bayi kullanıcısıyla giriş yap",
+            "data": "bayi1 / Demo123!",
+            "expected": "Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir"
+          },
+          {
+            "id": "S2",
+            "action": "\"Şeftalili Soğuk Çay 1L\" (P-004) kartında adedi 25 yapıp \"Sepete ekle\" butonuna bas",
+            "data": "P-004 × 25",
+            "expected": "Sepet sayacı 25 olur"
+          },
+          {
+            "id": "S3",
+            "action": "\"Maden Suyu 200ml\" (P-003) kartında adedi 1 yapıp \"Sepete ekle\" butonuna bas",
+            "data": "P-003 × 1",
+            "expected": "Sepet sayacı 26 olur"
+          },
+          {
+            "id": "S4",
+            "action": "Üst menüden sepete git ve P-003 satırındaki \"Kaldır\" butonuna bas",
+            "data": "P-003",
+            "expected": "Toplam 750,00 TL; minimum sipariş uyarısı görünmez ve \"Siparişi onayla\" butonu aktiftir"
+          }
+        ],
+        "expected_result": "Toplam 750,00 TL olduğunda uyarı gösterilmez ve sipariş onaylanabilir",
+        "tags": [
+          "AI-generated"
+        ]
+      },
+      {
+        "title": "Kaldırma sonrası kampanyalı sepette minimum tutar uyarısı gösterilmez",
+        "type": "boundary",
+        "risk": "medium",
+        "acceptance_criteria_refs": [
+          "AC3"
+        ],
+        "preconditions": [
+          "Sepet boş",
+          "P-001 \"6 al 1 bedava\" kampanyasında"
+        ],
+        "steps": [
+          {
+            "id": "S1",
+            "action": "Giriş sayfasını aç ve bayi kullanıcısıyla giriş yap",
+            "data": "bayi1 / Demo123!",
+            "expected": "Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir"
+          },
+          {
+            "id": "S2",
+            "action": "\"Portakal Gazozu 1L\" (P-001) kartında adedi 6 yapıp \"Sepete ekle\" butonuna bas",
+            "data": "P-001 × 6",
+            "expected": "Sepet sayacı 6 olur"
+          },
+          {
+            "id": "S3",
+            "action": "\"Şeftalili Soğuk Çay 1L\" (P-004) kartında adedi 25 yapıp \"Sepete ekle\" butonuna bas",
+            "data": "P-004 × 25",
+            "expected": "Sepet sayacı 31 olur"
+          },
+          {
+            "id": "S4",
+            "action": "Üst menüden sepete git ve P-004 satırındaki \"Kaldır\" butonuna bas",
+            "data": "P-004",
+            "expected": "Toplam 125,00 TL; minimum sipariş uyarısı görünmez ve \"Siparişi onayla\" butonu aktiftir"
+          }
+        ],
+        "expected_result": "Kampanyalı sepette toplam 125,00 TL olsa da minimum sipariş uyarısı gösterilmez ve sipariş onaylanabilir",
+        "tags": [
+          "AI-generated"
+        ]
+      }
+    ]
+  }
+}

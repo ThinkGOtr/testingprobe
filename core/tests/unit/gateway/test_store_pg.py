@@ -9,7 +9,6 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import Engine, text
 
-from tests.unit.platform.conftest import db, engine, pg  # noqa: F401  (pytest fikstürleri)
 from tp_core.audit.recorder import PgCallRecorder
 from tp_core.gateway import (
     Budget,
@@ -60,7 +59,7 @@ def _call(gw, rules_dir, *, workflow_id=None, call_id=None):
     )
 
 
-def test_spend_survives_a_new_gateway_instance(engine: Engine, rules_dir) -> None:  # noqa: F811
+def test_spend_survives_a_new_gateway_instance(engine: Engine, rules_dir) -> None:
     wf = uuid4()
     gw1, _ = _gateway(
         engine, rules_dir, [text_response(VALID, input_tokens=100_000, output_tokens=20_000)]
@@ -82,7 +81,7 @@ def test_spend_survives_a_new_gateway_instance(engine: Engine, rules_dir) -> Non
         _call(gw3, rules_dir, workflow_id=uuid4())
 
 
-def test_daily_spend_uses_utc_day(engine: Engine, rules_dir) -> None:  # noqa: F811
+def test_daily_spend_uses_utc_day(engine: Engine, rules_dir) -> None:
     gw, _ = _gateway(
         engine, rules_dir, [text_response(VALID, input_tokens=1_000_000, output_tokens=0)]
     )
@@ -93,7 +92,7 @@ def test_daily_spend_uses_utc_day(engine: Engine, rules_dir) -> None:  # noqa: F
     assert PgSpendLedger(engine, today=lambda: yarin).spent_today() == 0
 
 
-def test_call_id_dedups_across_instances(engine: Engine, rules_dir) -> None:  # noqa: F811
+def test_call_id_dedups_across_instances(engine: Engine, rules_dir) -> None:
     cid = deterministic_call_id(uuid4(), "requirement_review")
     wf = uuid4()
     gw1, p1 = _gateway(engine, rules_dir, [text_response(VALID, input_tokens=1000)])
@@ -113,7 +112,7 @@ def test_call_id_dedups_across_instances(engine: Engine, rules_dir) -> None:  # 
     assert PgSpendLedger(engine).spent_workflow(wf) == spent
 
 
-def test_build_gateway_with_engine_uses_pg(engine: Engine, rules_dir) -> None:  # noqa: F811
+def test_build_gateway_with_engine_uses_pg(engine: Engine, rules_dir) -> None:
     gw = build_gateway(
         PgCallRecorder(engine),
         settings=GatewaySettings(TP_RULES_DIR=str(rules_dir), TP_MODEL_MODE="replay"),
@@ -131,10 +130,19 @@ def test_build_gateway_with_engine_uses_pg(engine: Engine, rules_dir) -> None:  
     assert mod == "replay_miss" and isinstance(ek, dict)
 
 
-def test_promote_from_pg_audit_rows(engine: Engine, rules_dir) -> None:  # noqa: F811
+def test_promote_from_pg_audit_rows(engine: Engine, rules_dir) -> None:
     """Prova akışı gerçek ai_call ile: gevşek koşu → replay_miss satırları → yükselt → sıkı koşu."""
+    import json
+
     from tp_core.gateway import ReplayStore
     from tp_core.gateway.promote import fetch_replay_misses, main, promote_from_rows
+
+    # Beyansız golden yolu: beyanlı golden'a uymayan girdi nötr yedeğe düşer ve yükseltilmez
+    # (test_promote.py::test_neutral_miss_rows_are_not_promoted).
+    golden_path = rules_dir / "replay/requirement_review/golden/TPD-4.json"
+    golden = json.loads(golden_path.read_text(encoding="utf-8"))
+    golden.pop("input_match")
+    golden_path.write_text(json.dumps(golden, ensure_ascii=False), encoding="utf-8")
 
     wf = uuid4()
     loose = build_gateway(

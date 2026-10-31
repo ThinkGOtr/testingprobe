@@ -38,6 +38,14 @@ def check_node() -> str:
     return f"ok ({out.stdout.strip()})"
 
 
+def check_artifacts() -> str:
+    """TP_ARTIFACTS_PATH yazılabilir mi (checks/ ve runs/ buraya yazılır)."""
+    from toolchain_common.artifacts import check_writable
+    from toolchain_common.settings import settings
+
+    return check_writable(settings().artifacts_path)
+
+
 def create_app(service: str, checks: dict) -> FastAPI:
     app = FastAPI(
         title=service, version=APP_VERSION, docs_url=None, redoc_url=None, openapi_url=None
