@@ -173,8 +173,9 @@ def test_uydurma_kanit_elenir_ve_gosterilmez(
     d = api.get(f"/requirements/{rid}").json()
     assert d["bulgu_sayaclari"] == {"dogrulanan": 1, "elenen": 1, "acik": 1}
     assert d["son_kontrol"]["elenen"] == 1 and d["son_kontrol"]["mode"] == "live"
-    # Uydurma (engelleyici) bulgu elendiği için engelleyici yok → son hal, PO bekleniyor.
-    assert d["durum"] == "pending_po"
+    # Uydurma (engelleyici) bulgu elendi; doğrulanmış uyarı yine de analist kararı bekler
+    # (§8.2b adım 5): belge otomatik son hal olmaz.
+    assert d["durum"] == "findings_open"
     with new_session() as s:
         elenen = s.scalars(
             select(ConsistencyFinding).where(ConsistencyFinding.kanit_dogrulandi.is_(False))
@@ -185,7 +186,8 @@ def test_uydurma_kanit_elenir_ve_gosterilmez(
         f_id = s.scalars(
             select(ConsistencyFinding.id).where(ConsistencyFinding.kanit_dogrulandi.is_(True))
         ).one()
-    # Elenen bulguya karar verilemez (404); doğrulanmışa durum gereği (pending_po) 409.
+    # Elenen bulguya karar verilemez (404); doğrulanmış uyarıya karar verilir (veriye dayalı
+    # 750 TL düzeltmesi uygulanabilir), ardından belge düzeltilip yeniden denetlenir.
     r = api.post(
         f"/findings/{elenen.id}/decision", json={"karar": "code_defect", "icerik_hash": "x"}
     )
@@ -194,7 +196,8 @@ def test_uydurma_kanit_elenir_ve_gosterilmez(
     r = api.post(
         f"/findings/{f_id}/decision", json={"karar": "fix_doc", "icerik_hash": f["icerik_hash"]}
     )
-    assert r.status_code == 409
+    assert r.status_code == 200, r.text
+    assert api.get(f"/requirements/{rid}").json()["durum"] == "findings_open"  # düzeltme bekliyor
 
 
 def test_bilincli_fark_ve_tur_siniri(
@@ -271,7 +274,25 @@ def test_bilincli_fark_ve_tur_siniri(
     )
     assert r2.status_code == 200 and r2.json()["karar_metni"] == "AC2: Yeni metin."
     assert r2.json()["icerik_hash"] != eski_hash
-    assert api.post(f"/requirements/{rid}/apply-doc-fixes").status_code == 202
+    # F1 "bilinçli fark" ile AC1↔AC2'yi olduğu gibi bıraktı; F2'nin düzeltmesi AC2'yi yeniden
+    # yazıyor → sessizce uygulanmaz (409, Türkçe neden); analist çelişkiyi açıkça onaylar.
+    r = api.post(f"/requirements/{rid}/apply-doc-fixes")
+    assert r.status_code == 409, r.text
+    assert "bilinçli fark" in r.json()["detail"] and "AC2" in r.json()["detail"]
+    assert "F1 (tur 1)" in r.json()["detail"] and "F2 (tur 1)" in r.json()["detail"]
+    assert api.get(f"/requirements/{rid}").json()["durum"] == "findings_open"
+    r = api.post(f"/requirements/{rid}/apply-doc-fixes", json={"cakismayi_onayla": True})
+    assert r.status_code == 202, r.text
+    with engine.connect() as c:
+        assert (
+            c.execute(
+                text(
+                    "SELECT count(*) FROM audit_event "
+                    "WHERE eylem = 'requirement.decision_conflict_confirmed'"
+                )
+            ).scalar_one()
+            == 1
+        )
     run_jobs(engine)
     d = api.get(f"/requirements/{rid}").json()
     assert d["durum"] == "pending_po" and d["kontrol_turu"] == 1
@@ -549,3 +570,112 @@ def test_po_cevaplari_sorulara_eslenir_ve_mod_canli_varsayilmaz(engine: Engine) 
         s.flush()
         assert serialize.one_finding(s, cf)["mode"] is None
         s.rollback()
+
+
+def test_yeniden_denetim_degismeyen_belgede_bulgulari_dusurmez(
+    api: TestClient, analist: Any, engine: Engine
+) -> None:
+    """2. inceleme turu: içeriği değişmemiş belgede "Yeniden denetle" (REPLAY-MISS, nötr sonuç)
+    karar bekleyen engelleyici bulguları ve uygulanmamış fix_doc kararlarını bayatlatmaz; belge
+    insan kararı olmadan son hale alınamaz (409)."""
+    rid = api.post("/requirements/free-text", json=SERBEST).json()["id"]
+    api.post(f"/requirements/{rid}/review")
+    run_jobs(engine)
+    ilk = _findings(api, rid)
+    assert len(ilk) == 3 and all(f["kontrol_turu"] == 1 for f in ilk)
+    assert any(f["severity"] == "blocking" for f in ilk)
+    # Bir bulguya fix_doc kararı (henüz uygulanmadı), diğerleri kararsız.
+    karar_verilen = ilk[0]
+    r = api.post(
+        f"/findings/{karar_verilen['id']}/decision",
+        json={"karar": "fix_doc", "icerik_hash": karar_verilen["icerik_hash"]},
+    )
+    assert r.status_code == 200, r.text
+
+    # İki kez yeniden denetim: belge aynı → 2. ve 3. tur golden'ı yok, REPLAY-MISS.
+    for tur in (2, 3):
+        r = api.post(f"/requirements/{rid}/review")
+        assert r.status_code == 202, r.text
+        run_jobs(engine)
+        d = api.get(f"/requirements/{rid}").json()
+        assert d["kontrol_turu"] == tur and d["son_kontrol"]["mode"] == "replay_miss"
+        assert d["durum"] == "findings_open"
+        bulgular = {f["id"]: f for f in _findings(api, rid)}
+        assert set(bulgular) == {f["id"] for f in ilk}, "bulgular düşmemeli"
+        assert bulgular[karar_verilen["id"]]["durum"] == "decided"
+        assert d["bulgu_sayaclari"]["acik"] == 3
+
+    # Uygulanmamış fix_doc kararı da taşındı.
+    with new_session() as s:
+        f = s.get(ConsistencyFinding, karar_verilen["id"])
+        assert f.durum == "decided" and f.analist_karari == "fix_doc"
+    # Düzeltme kararı değiştirilir (accept_difference) → uygulanacak düzeltme kalmaz; kararsız
+    # engelleyiciler varken "Son hal olarak onayla" 409 döner (belge son hale alınmaz).
+    guncel = _findings(api, rid)
+    kf = next(x for x in guncel if x["id"] == karar_verilen["id"])
+    r = api.post(
+        f"/findings/{kf['id']}/decision",
+        json={"karar": "accept_difference", "icerik_hash": kf["icerik_hash"], "gerekce": "g"},
+    )
+    assert r.status_code == 200, r.text
+    r = api.post(f"/requirements/{rid}/apply-doc-fixes")
+    assert r.status_code == 409, r.text
+    assert "engelleyici bulgular karar bekliyor" in r.json()["detail"]
+    assert api.get(f"/requirements/{rid}").json()["durum"] == "findings_open"
+
+
+def test_yeniden_denetim_ayni_farki_tekrar_gostermez(
+    api: TestClient, analist: Any, engine: Engine, wired: dict[str, Any]
+) -> None:
+    """Belge değişmeden yeniden denetlenince model aynı farkı yeniden raporlarsa taşınan bulgu
+    tekil kalır (yeni turdaki tekrar bayatlatılır); karar taşınan bulguda verilir."""
+    bulgu = {
+        "id": "F1",
+        "type": "doc_vs_data",
+        "doc_ref": "AC1",
+        "claim": "Minimum 500,00 TL",
+        "observed": "ayar 750.00",
+        "evidence": [
+            {
+                "kind": "data",
+                "query": "SELECT anahtar, deger FROM ayar WHERE anahtar = 'min_siparis_tutari'",
+                "result_digest": "min_siparis_tutari=750.00",
+            }
+        ],
+        "severity": "blocking",
+        "suggested_doc_text": "AC1: Minimum sipariş tutarı 750,00 TL'dir.",
+    }
+    make, provider = fake_gateway(
+        [
+            text_response({"questions": [], "verdict": "ready", "summary": "Soru yok."}),
+            tool_response((FINAL_TOOL, {"findings": [bulgu], "notes": "1"})),
+            tool_response((FINAL_TOOL, {"findings": [bulgu], "notes": "2"})),
+        ]
+    )
+    wired["gateway"] = make
+    rid = api.post(
+        "/requirements/free-text",
+        json={"baslik": "Minimum tutar", "aciklama": "", "ac": ["Minimum sipariş 500,00 TL."]},
+    ).json()["id"]
+    api.post(f"/requirements/{rid}/review")
+    run_jobs(engine)
+    (ilk,) = _findings(api, rid)
+    assert api.post(f"/requirements/{rid}/review").status_code == 202
+    run_jobs(engine)
+    assert not provider.script
+    d = api.get(f"/requirements/{rid}").json()
+    assert d["kontrol_turu"] == 2 and d["durum"] == "findings_open"
+    (tasinan,) = _findings(api, rid)
+    assert tasinan["id"] == ilk["id"] and tasinan["kontrol_turu"] == 1
+    assert d["bulgu_sayaclari"]["acik"] == 1
+    with new_session() as s:
+        ikinci = s.scalars(
+            select(ConsistencyFinding).where(ConsistencyFinding.kontrol_turu == 2)
+        ).one()
+        assert ikinci.durum == "stale" and ikinci.kanit_dogrulandi
+    r = api.post(
+        f"/findings/{tasinan['id']}/decision",
+        json={"karar": "code_defect", "icerik_hash": tasinan["icerik_hash"]},
+    )
+    assert r.status_code == 200, r.text
+    assert api.get(f"/requirements/{rid}").json()["durum"] == "pending_po"

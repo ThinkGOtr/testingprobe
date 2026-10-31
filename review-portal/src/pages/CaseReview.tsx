@@ -157,12 +157,12 @@ export function CaseReview() {
           />
           <Metrik
             etiket="Review süresi"
-            deger={sure(ozet.reviewSure)}
+            deger={ozet.olculenReview ? sure(ozet.reviewSure) : "—"}
             alt={ozet.olculenReview ? `${ozet.olculenReview} case · ort. ${sure(ozet.ortReviewSure)}` : "henüz ölçülmedi"}
           />
           <Metrik
             etiket="AI + review"
-            deger={sure(hazirlik)}
+            deger={aiOlculmedi && !ozet.olculenReview ? "—" : sure(hazirlik)}
             alt={
               aiOlculmedi
                 ? "yalnız review; AI süresi REPLAY'de ölçülmedi"
@@ -204,6 +204,13 @@ export function CaseReview() {
             Hiçbir güncel case şu kabul kriterlerine atıf yapmıyor: {metrik.veri!.kapsanmayan_ac!.join(", ")}. Reddetmeden önce kapsamı
             kontrol edin.
           </Uyari>
+        )}
+        {(metrik.veri?.uyarilar?.length ?? 0) > 0 && (
+          <ul className="soluk kucuk" data-testid="metrik-uyarilari">
+            {metrik.veri!.uyarilar!.map((u) => (
+              <li key={u}>{u}</li>
+            ))}
+          </ul>
         )}
         <p className="soluk kucuk">
           Review süresi, case kartı ekranınıza ilk girdiği andan kararınıza kadar sunucuda ölçülür. Yeniden açılan case'in süresi yeniden

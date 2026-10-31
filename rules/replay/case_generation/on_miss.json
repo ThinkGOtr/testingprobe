@@ -1,0 +1,6 @@
+{
+  "kind": "call",
+  "purpose": "case_generation",
+  "policy": "raise",
+  "note": "REPLAY-MISS politikası (golden değildir, model çıktısı değildir). Case şeması en az bir case ister; nötr çıktı yoktur. Girdi, adlandırılmış golden'ın girdi beyanına (input_match) uymadığında veya bu anahtar için golden yoksa golden'ın case'leri başka bir dokümana aittir (başka özelliğin adımları, aynı numaralı ama farklı AC'ler). Geçit onları taslak olarak döndürmez; ReplayNoOutput fırlatır ('REPLAY-MISS: bu girdi için kayıtlı model çıktısı yok; canlı model gerekir'), ai_call'a mod replay_miss + hata yazılır, sıfır taslak oluşur. Case'ler elle girilebilir veya IDE kanalı kullanılabilir. Bkz. rules/replay/README.md."
+}

@@ -303,6 +303,24 @@ def issue_list(request: Request, store: StoreDep) -> HTMLResponse:
     return templates.TemplateResponse(request, "list.html", ctx)
 
 
+# Testing Probe'nun AI ön inceleme yorumunun başlık satırı (core: requirements.flow.review_comment).
+PRE_REVIEW_MARKER = "Testing Probe ön inceleme —"
+
+
+def superseded_comment_ids(comments: list[dict[str, Any]]) -> set[str]:
+    """Yeniden incelemelerde biriken AI ön inceleme yorumlarından sonuncusu dışındakiler.
+
+    Yorumlar silinmez ya da değiştirilmez (iz kaydı); arayüz yalnızca eskileri "(önceki tur)"
+    olarak işaretleyip katlar ki PO güncel olanı görsün.
+    """
+    ids = [
+        str(c.get("id"))
+        for c in comments
+        if PRE_REVIEW_MARKER in adf_to_text(c.get("body")).split("\n", 1)[0]
+    ]
+    return set(ids[:-1])
+
+
 @router.get("/browse/{key}", response_class=HTMLResponse)
 def issue_detail(request: Request, store: StoreDep, key: str) -> HTMLResponse:
     with store.lock:
@@ -325,6 +343,7 @@ def issue_detail(request: Request, store: StoreDep, key: str) -> HTMLResponse:
             **_page_ctx(request),
             "it": it,
             "links": link_rows,
+            "superseded": superseded_comment_ids(it.get("comments", [])),
             "editable": adf_to_editable(it.get("description")),
             "error": request.query_params.get("hata"),
             "po": PO_USER,

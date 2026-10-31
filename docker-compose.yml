@@ -171,7 +171,7 @@ services:
       TP_PO_JIRA_USERS: ${TP_PO_JIRA_USERS:-}
       TP_JIRA_BOT_ACCOUNT_IDS: ${TP_JIRA_BOT_ACCOUNT_IDS:-}
       # Tutarlılık denetiminin veri araçları (salt okuma rolü; core-api demoapp'e hiç bağlanmaz).
-      DEMOAPP_RO_DATABASE_URL: postgresql+psycopg://demoapp_ro:${DEMOAPP_RO_PASSWORD:?}@postgres:5432/demoapp
+      DEMOAPP_RO_DATABASE_URL: postgresql+psycopg://demoapp_ro:${DEMOAPP_RO_PASSWORD:?}@postgres:5432/demoapp?require_auth=scram-sha-256
       <<: *core-env
     volumes:
       - tp_forge:/forge
@@ -320,7 +320,7 @@ services:
       context: ./demo-app/api
     pull_policy: build
     environment:
-      DEMOAPP_DATABASE_URL: postgresql+psycopg://demoapp:${DEMOAPP_PASSWORD}@postgres:5432/demoapp
+      DEMOAPP_DATABASE_URL: postgresql+psycopg://demoapp:${DEMOAPP_PASSWORD}@postgres:5432/demoapp?require_auth=scram-sha-256
       # /test/reset ve /test/break (e2e fixture'ları) için; yalnızca demo ortamı. Uçlar yalnızca
       # demo-net'ten (test-runner) ve DEMOAPP_TEST_TOKEN ile çağrılabilir.
       DEMOAPP_TEST_MODE: "1"

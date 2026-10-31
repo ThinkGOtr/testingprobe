@@ -12,6 +12,19 @@ Sağlayıcıya özgü kararlar yalnızca burada:
 - Zorunlu araç seçimi (`tool_choice: tool/any`) Sonnet 5.5'te 400 döndüğü için kullanılmaz; ajan
   son çıktı aracını `auto` + talimatla çağırır.
 - SDK'nın kendi yeniden denemesi kapalıdır (`max_retries=0`); politika geçit çekirdeğindedir.
+  İstemci zaman aşımı `ProviderTransientError(timeout=True)` olur; geçit onu en çok bir kez
+  yeniden dener (uzun üretim her denemede yeniden faturalanır).
+- Zaman aşımı ve akış: `max_tokens >= STREAM_MIN_MAX_TOKENS` (case üretimi 16K, ajanlar 8K)
+  istekleri akışla gönderilir (`messages.stream(...).get_final_message()`); bekleme süresi tüm
+  yanıt yerine parçalar arasıdır, uzun üretim HTTP zaman aşımına takılmaz. İstek başına zaman
+  aşımı models.yaml `timeout_s`'den gelir (`ProviderRequest.timeout_s`).
+- Ret yedeği (constitution: insana düşmeden önce dürüst yedek): Claude API'de sunucu tarafı
+  `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`) yalnızca bunu kabul eden
+  modellerde gönderilir (Sonnet 5.5 yalnızca `"default"` biçimini kabul eder; Haiku 5.5'te
+  sunucu tarafı yedek yoktur). Ret kategorisine göre Anthropic'in önerdiği modele yönlendirir;
+  `between_tools` isteği yedek modelde düşünmesiz koşar. Yanıtı üreten model `response.model`'dir
+  ve `ai_call.model`'e yazılır (`ProviderResponse.fallback_from` asıl model). Zincirin tamamı
+  reddederse `stop_reason == "refusal"` → `ProviderRefusal` (insana düşer).
 """
 
 from __future__ import annotations
@@ -34,6 +47,17 @@ from tp_core.gateway.providers.base import (
 )
 
 _META_KEYS = {"$schema", "$id"}
+# Bu eşik ve üstünde akışlı istek (HTTP zaman aşımı tüm yanıt yerine parçalar arası beklemeye
+# uygulanır). models.yaml: case_generation 16000, consistency_check / verify_and_map 8192.
+STREAM_MIN_MAX_TOKENS = 8192
+DEFAULT_TIMEOUT_S = 120.0
+FALLBACK_BETA = "server-side-fallback-2026-07-01"
+# `fallbacks: "default"` kabul eden modeller (Claude API). Haiku 5.5: sunucu tarafı yedek yok.
+SERVER_FALLBACK_MODELS = frozenset(
+    {"claude-sonnet-5-5", "claude-opus-5-5", "claude-opus-5", "claude-fable-5-1"}
+)
+# Yedek geçişinden önceki bu bloklar geri gönderilmez (yalnızca metin süreklilik bağlamıdır).
+_PRE_FALLBACK_DROP = {"thinking", "redacted_thinking", "tool_use", "server_tool_use"}
 
 
 def strip_meta(schema: Any) -> Any:
@@ -57,6 +81,18 @@ _STOP: dict[str, StopReason] = {
 }
 
 
+_TRANSIENT_STREAM_ERRORS = {"overloaded_error", "api_error", "rate_limit_error", "timeout_error"}
+
+
+def _stream_error_type(exc: Any) -> str | None:
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        err = body.get("error") if isinstance(body.get("error"), dict) else body
+        kind = err.get("type")
+        return kind if isinstance(kind, str) else None
+    return None
+
+
 class AnthropicProvider:
     name = "anthropic"
 
@@ -65,8 +101,12 @@ class AnthropicProvider:
         api_key: str | None = None,
         *,
         client: Any | None = None,
-        timeout_s: float = 120.0,
+        timeout_s: float = DEFAULT_TIMEOUT_S,
+        server_fallback: bool = True,
     ) -> None:
+        # Sunucu tarafı ret yedeği yalnızca birinci taraf Claude API'de (Bedrock/Vertex/Foundry'de
+        # parametre yoktur; orada istemci tarafı ara katman gerekir).
+        self.server_fallback = server_fallback
         if client is not None:
             self._client = client
             return
@@ -105,6 +145,11 @@ class AnthropicProvider:
         thinking = request.params.get("thinking")
         if thinking:
             kwargs["thinking"] = thinking
+        if request.timeout_s:
+            kwargs["timeout"] = request.timeout_s
+        if self.uses_server_fallback(request):
+            kwargs["betas"] = [FALLBACK_BETA]
+            kwargs["fallbacks"] = "default"
         if request.tools:
             kwargs["tools"] = [
                 {
@@ -117,11 +162,26 @@ class AnthropicProvider:
             kwargs["tool_choice"] = {"type": "auto"}
         return kwargs
 
+    def uses_server_fallback(self, request: ProviderRequest) -> bool:
+        return self.server_fallback and request.model in SERVER_FALLBACK_MODELS
+
+    @staticmethod
+    def streams(request: ProviderRequest) -> bool:
+        return request.max_tokens >= STREAM_MIN_MAX_TOKENS
+
+    def _send(self, request: ProviderRequest) -> Any:
+        kwargs = self.build_kwargs(request)
+        api = self._client.beta.messages if "betas" in kwargs else self._client.messages
+        if self.streams(request):
+            with api.stream(**kwargs) as stream:
+                return stream.get_final_message()
+        return api.create(**kwargs)
+
     def complete(self, request: ProviderRequest) -> ProviderResponse:
         import anthropic
 
         try:
-            message = self._client.messages.create(**self.build_kwargs(request))
+            message = self._send(request)
         except anthropic.RateLimitError as exc:
             raise ProviderTransientError(f"429: {exc}", status=429) from exc
         except anthropic.InternalServerError as exc:  # ≥500, 529 (overloaded) dahil
@@ -136,9 +196,24 @@ class AnthropicProvider:
             raise ProviderPermanentError(
                 f"{exc.status_code}: {exc}", status=exc.status_code
             ) from exc
-        except anthropic.APIConnectionError as exc:  # zaman aşımı dahil
+        except anthropic.APITimeoutError as exc:
+            raise ProviderTransientError(
+                f"zaman aşımı ({request.timeout_s or 'varsayılan'} sn): {exc}", timeout=True
+            ) from exc
+        except anthropic.APIConnectionError as exc:
             raise ProviderTransientError(f"bağlantı: {exc}") from exc
-        return self.parse_message(message)
+        except anthropic.APIError as exc:  # akış ortasında gelen hata olayı
+            if _stream_error_type(exc) in _TRANSIENT_STREAM_ERRORS:
+                raise ProviderTransientError(f"akış: {exc}") from exc
+            raise ProviderPermanentError(f"akış: {exc}") from exc
+        response = self.parse_message(message)
+        if (
+            response.model
+            and response.model != request.model
+            and self.uses_server_fallback(request)
+        ):
+            response.fallback_from = request.model
+        return response
 
     # ------------------------------------------------------------------ yanıt
 
@@ -147,7 +222,16 @@ class AnthropicProvider:
         texts: list[str] = []
         calls: list[ToolCall] = []
         raw: list[dict[str, Any]] = []
-        for block in message.content:
+        blocks = list(message.content)
+        last_fallback = max(
+            (i for i, b in enumerate(blocks) if getattr(b, "type", None) == "fallback"),
+            default=-1,
+        )
+        for i, block in enumerate(blocks):
+            if block.type == "fallback":
+                continue  # denetim işareti; geri gönderilmesi gerekmez
+            if i < last_fallback and block.type in _PRE_FALLBACK_DROP:
+                continue  # reddeden modelin yarım kalan adımı: geri gönderilmez, çalıştırılmaz
             raw.append(block.model_dump(exclude_none=True))
             if block.type == "text":
                 texts.append(block.text)

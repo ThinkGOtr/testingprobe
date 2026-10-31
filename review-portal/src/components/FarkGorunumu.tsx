@@ -1,10 +1,28 @@
 import { useMemo } from "react";
-import { kelimeFarki } from "../lib/diff";
+import { degisimOrani, kelimeFarki, ONCE_SONRA_ESIGI } from "../lib/diff";
 
-/** Kelime düzeyinde fark: silinenler üstü çizili, eklenenler vurgulu. */
+/**
+ * Kelime düzeyinde fark: silinenler üstü çizili, eklenenler vurgulu. Metin büyük ölçüde yeniden
+ * yazıldıysa (değişim oranı > %50) kelime kelime karışım okunmaz; iki satırlı "Önce / Sonra" gösterilir.
+ */
 export function FarkGorunumu({ eski, yeni }: { eski: string; yeni: string }) {
   const parcalar = useMemo(() => kelimeFarki(eski, yeni), [eski, yeni]);
   const degisiklikYok = parcalar.every((p) => p.tur === "ayni");
+  const onceSonra = !degisiklikYok && degisimOrani(parcalar) > ONCE_SONRA_ESIGI;
+  if (onceSonra) {
+    return (
+      <dl className="fark fark-once-sonra" aria-label="Önerilen değişiklik: önce ve sonra" data-testid="fark-once-sonra">
+        <dt>Önce</dt>
+        <dd>
+          <del>{eski}</del>
+        </dd>
+        <dt>Sonra</dt>
+        <dd>
+          <ins>{yeni}</ins>
+        </dd>
+      </dl>
+    );
+  }
   return (
     <div className="fark" aria-label="Önerilen değişiklik farkı">
       {degisiklikYok ? (

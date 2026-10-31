@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import false, func, select
 from sqlalchemy.orm import Session
 
 from tp_core.features.requirements import services
@@ -21,7 +21,11 @@ from tp_core.features.requirements.flow import (
     active_reviews,
     bug_draft_for,
     counts_for,
+    cycle_start,
+    last_failure,
+    po_request_status,
     question_refs,
+    questions_resolved_by_findings,
     settings,
     untrusted_check,
 )
@@ -44,6 +48,15 @@ def _iso(value: Any) -> str | None:
 def po_status(req: Requirement) -> dict[str, Any]:
     kanal = "jira" if req.kaynak == "jira" else "portal"
     if req.durum in PO_ONAYLI and req.po_onaylayan:
+        durum = "approved"
+    elif (
+        req.durum == "failed"
+        and req.po_onaylayan
+        and req.onaylanan_hash is not None
+        and req.onaylanan_hash == content_hash_of(req)
+    ):
+        # Case üretimi hata ile bittiyse PO onayı hâlâ güncel içeriğe bağlıdır (portal "yeniden
+        # dene"de onaylayanı gösterir). İçerik değiştiyse onay bayat sayılır ve gösterilmez.
         durum = "approved"
     elif req.durum == "pending_po":
         durum = "pending"
@@ -127,6 +140,7 @@ def _on_inceleme(s: Session, req: Requirement) -> dict[str, Any] | None:
         if ek is not None
         else set()
     )
+    cozulen = questions_resolved_by_findings(s, req.id, list(rr.sorular))
     return {
         "id": str(rr.id),
         "verdict": rr.verdict,
@@ -136,6 +150,9 @@ def _on_inceleme(s: Session, req: Requirement) -> dict[str, Any] | None:
                 "cevap": cevaplar.get(str(q.get("id") or "").upper()),
                 # Soru ön incelemeden sonra doküman düzeltmesiyle değişen bir AC'ye ait mi?
                 "duzeltmeyle_degisti": bool(question_refs(q) & degisen),
+                # Tutarlılık bulgusunun insan kararıyla (fix_doc / accept_difference) kapandıysa
+                # açıklama ("doküman düzeltmesiyle cevaplandı: F2 (tur 1)"); PO'ya sorulmaz.
+                "kararla_cozuldu": cozulen.get(str(q.get("id") or "")),
             }
             for q in rr.sorular
         ],
@@ -150,11 +167,30 @@ def _on_inceleme(s: Session, req: Requirement) -> dict[str, Any] | None:
     }
 
 
-def finding_counts(s: Session, req_id: uuid.UUID) -> dict[str, int]:
+def _dongu_kosulu(s: Session, req_id: uuid.UUID) -> Any:
+    """Varsayılan görünümün kapsamı: güncel inceleme döngüsünün bulguları (`cycle_start`).
+
+    Döngü yoksa (ör. içerik değişip gereksinim `new`'e döndü) hiçbir bulgu güncel değildir.
+    """
+    bas = cycle_start(s, req_id)
+    if bas is None:
+        return false()
+    return ConsistencyFinding.olusturma >= bas
+
+
+def finding_counts(s: Session, req_id: uuid.UUID, *, tumu: bool = False) -> dict[str, int]:
+    """Bulgu sayaçları; varsayılan olarak `findings_for` ile aynı kapsam (güncel döngü)."""
+    q = select(ConsistencyFinding.kanit_dogrulandi, ConsistencyFinding.durum, func.count()).where(
+        ConsistencyFinding.requirement_id == req_id
+    )
+    if not tumu:
+        q = q.where(_dongu_kosulu(s, req_id))
+        # Varsayılan listeyle aynı: bayat (devralmayan) bulgular sayılmaz.
+        q = q.where(
+            (ConsistencyFinding.durum != "stale") | ConsistencyFinding.id.in_(_devralanlar())
+        )
     rows = s.execute(
-        select(ConsistencyFinding.kanit_dogrulandi, ConsistencyFinding.durum, func.count())
-        .where(ConsistencyFinding.requirement_id == req_id)
-        .group_by(ConsistencyFinding.kanit_dogrulandi, ConsistencyFinding.durum)
+        q.group_by(ConsistencyFinding.kanit_dogrulandi, ConsistencyFinding.durum)
     ).all()
     out = {"dogrulanan": 0, "elenen": 0, "acik": 0}
     for dogrulandi, durum, n in rows:
@@ -180,6 +216,16 @@ def requirement_detail(s: Session, req: Requirement) -> dict[str, Any]:
             "alınmadı. Bulguları inceleyip belgeyi açıkça son hale alın (apply-doc-fixes) ya da "
             "yeniden denetleyin."
         )
+    po_istegi = po_request_status(s, req)
+    if po_istegi is not None and po_istegi["durum"] == "basarisiz":
+        uyarilar.append(
+            "PO'ya soru yorumu Jira'ya yazılamadı "
+            f"({po_istegi['hata']}); PO sorgusu yorumu otomatik olarak yeniden dener. Yorum "
+            "yazılmadan konan onay etiketi sayılmaz."
+        )
+    son_hata = last_failure(s, req)
+    if son_hata is not None:
+        uyarilar.append(f"Son işlem başarısız: {son_hata['neden']} — {son_hata['oneri']}")
     son = s.scalars(
         select(RequirementKontrol)
         .where(RequirementKontrol.requirement_id == req.id)
@@ -215,10 +261,19 @@ def requirement_detail(s: Session, req: Requirement) -> dict[str, Any]:
                 "zaman": _iso(son.olusturma),
             },
             "son_hal_hash": akis.son_hal_hash if akis is not None else None,
+            # `failed` iken son hatanın nedeni + Türkçe öneri (yoksa null).
+            "son_hata": son_hata,
+            # Jira yolunda son haldeki PO soru yorumu: yazildi | bekliyor | basarisiz (yoksa null).
+            "po_istegi": po_istegi,
             "po_cevaplari": req.po_cevaplari or [],
         }
     )
     return out
+
+
+def finding_label(bulgu_no: str | None, f: ConsistencyFinding) -> str:
+    no = bulgu_no or str(f.id)[:8]
+    return f"{no} (tur {f.kontrol_turu})"
 
 
 def finding_out(
@@ -233,6 +288,9 @@ def finding_out(
         "id": str(f.id),
         "requirement_id": str(f.requirement_id),
         "bulgu_no": ek.bulgu_no if ek else None,
+        # Jira düzeltme yorumundaki etiketle aynı ("F2 (tur 1)"): turlar arası aynı numara
+        # (2. turun F1'i ≠ 1. turun F1'i) ve Jira yorumu ↔ portal kartı eşlemesi için.
+        "bulgu_etiketi": finding_label(ek.bulgu_no if ek else None, f),
         "type": f.tur,
         "doc_ref": f.doc_ref,
         "ozet": ozet,
@@ -275,27 +333,34 @@ def findings_for(
         ConsistencyFinding.kanit_dogrulandi.is_(True),
         ConsistencyFinding.durum != "discarded",
     )
-    if not tumu:
-        # Bayat bulgular gizlenir; önceki kararı devralan bulgu (son turun parçası) gösterilir.
-        devralan = select(ConsistencyFindingEk.finding_id).where(
-            ConsistencyFindingEk.onceki_finding_id.is_not(None)
+    elenen_q = (
+        select(func.count())
+        .select_from(ConsistencyFinding)
+        .where(
+            ConsistencyFinding.requirement_id == req_id,
+            ConsistencyFinding.kanit_dogrulandi.is_(False),
         )
-        q = q.where((ConsistencyFinding.durum != "stale") | ConsistencyFinding.id.in_(devralan))
+    )
+    if not tumu:
+        # Yalnızca güncel inceleme döngüsü (önceki döngülerin çözülmüş/bayat bulguları ve
+        # numaraları karışmaz). Döngü içinde bayat bulgular gizlenir; önceki kararı devralan
+        # bulgu (son turun parçası) gösterilir.
+        dongu = _dongu_kosulu(s, req_id)
+        q = q.where(dongu).where(
+            (ConsistencyFinding.durum != "stale") | ConsistencyFinding.id.in_(_devralanlar())
+        )
+        elenen_q = elenen_q.where(dongu)
     bulgular = list(
         s.scalars(q.order_by(ConsistencyFinding.kontrol_turu.desc(), ConsistencyFinding.olusturma))
     )
-    elenen = (
-        s.scalar(
-            select(func.count())
-            .select_from(ConsistencyFinding)
-            .where(
-                ConsistencyFinding.requirement_id == req_id,
-                ConsistencyFinding.kanit_dogrulandi.is_(False),
-            )
-        )
-        or 0
-    )
+    elenen = s.scalar(elenen_q) or 0
     return [one_finding(s, f) for f in bulgular], elenen
+
+
+def _devralanlar() -> Any:
+    return select(ConsistencyFindingEk.finding_id).where(
+        ConsistencyFindingEk.onceki_finding_id.is_not(None)
+    )
 
 
 def _veren(s: Session, f: ConsistencyFinding) -> str | None:

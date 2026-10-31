@@ -99,22 +99,34 @@ def test_replay_ile_uctan_uca_uretim(
 def test_replay_miss_duzgun_etiketlenir(
     api: TestClient, engine: Engine, make_user, make_requirement, replay_gateway
 ) -> None:
+    """REPLAY-MISS (case_generation/on_miss.json `raise`): başka dokümanın case'leri taslak
+    olmaz; iskalama ai_call'a `replay_miss` olarak yazılır, iş yeniden denenmeden biter ve
+    gereksinim Türkçe nedenle `failed` olur (canlı gibi gösterilmez)."""
     rid = make_requirement(acs=[*TPD4["acs"], "AC3: Yeni madde"])
     login(api, make_user("analyst"))
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
-    run_jobs(engine)
-    cases = latest_cases(api, rid)
-    assert cases and {c["mode"] for c in cases} == {"replay_miss"}
+    (is_,) = run_jobs(engine)
+    assert is_.durum == "failed" and "REPLAY-MISS" in (is_.hata or "")
+    assert latest_cases(api, rid) == []
+    with session_scope() as s:
+        assert s.get(Requirement, rid).durum == "failed"
+        modlar = set(s.scalars(select(AiCall.mod)))
+    assert modlar == {"replay_miss"}
 
 
 def test_tpd3_enjeksiyonu_hicbir_durumu_degistirmez(
     api: TestClient, engine: Engine, make_user, make_requirement, replay_gateway
 ) -> None:
+    # docs/DEMO-VERISI.md TPD-3 (golden input_match ile birebir: REPLAY çıktısı gelir).
     rid = make_requirement(
         jira_key="TPD-3",
         baslik="Ürün arama",
-        aciklama=f"Bayi katalogda ürün arayabilmelidir. {TPD3_INJECTION}",
-        acs=["AC1: Ürün adıyla arama yapılır.", "AC2: Sonuç yoksa bilgi mesajı gösterilir."],
+        aciklama=f"Bayi, katalogda ürün adına göre arama yapabilmelidir. {TPD3_INJECTION}",
+        acs=[
+            "AC1: Bayi katalogda ürün adının bir bölümünü yazdığında yalnızca eşleşen ürünler "
+            "listelenir.",
+            'AC2: Eşleşen ürün yoksa "Ürün bulunamadı" mesajı gösterilir.',
+        ],
     )
     login(api, make_user("analyst"))
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
@@ -322,3 +334,56 @@ def test_takili_generating_yeniden_baslatmada_kurtarilir(
     assert r.json()["uretim_no"] == 1
     run_jobs(engine)
     assert _durum(rid) == "cases_ready"
+
+
+def test_duzeltilip_onaylanan_ai_case_yeniden_uretimde_tekrar_sayilir(
+    api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway
+) -> None:
+    """Düzeltilen case'in AI özgün içeriği yeniden üretilince kopya taslak düşmez (TPD-4 C1)."""
+    a, b = case_icerik(), case_icerik(title="Hatalı parola mesajı", ref="AC2")
+    fake_gateway([text_response({"cases": [a, b]}), text_response({"cases": [a, b]})])
+    rid = make_requirement()
+    login(api, make_user("analyst"))
+    api.post(f"/requirements/{rid}/generate-cases")
+    run_jobs(engine)
+    c1, c2 = latest_cases(api, rid)
+    duzeltilmis = {**c1["icerik"], "expected_result": "Ürün kataloğu ve bayi adı görünür"}
+    r = api.post(
+        f"/cases/{c1['id']}/decision",
+        json={"karar": "edit", "icerik_hash": c1["icerik_hash"], "icerik": duzeltilmis},
+    )
+    assert r.status_code == 200, r.text
+    r = api.post(
+        f"/cases/{c2['id']}/decision", json={"karar": "approve", "icerik_hash": c2["icerik_hash"]}
+    )
+    assert r.status_code == 200, r.text
+
+    r = api.post(f"/requirements/{rid}/generate-cases")
+    assert r.status_code == 202 and r.json()["uretim_no"] == 2
+    (sonuc,) = run_jobs(engine)
+    # Aynı model çıktısı: düzeltilen C1'in özgünü de, düzeltilmeyen C2 de tekrar.
+    assert sonuc.deger["tekrar"] == [1, 2] and sonuc.deger["case_sayisi"] == 0
+    durum = {(x["uretim_no"], x["sira_no"]): x["durum"] for x in latest_cases(api, rid)}
+    assert durum == {(1, 1): "approved", (1, 2): "approved"}
+
+
+def test_case_metrics_baz_deger_ve_replay_suresi_uyarisi(
+    api: TestClient, engine: Engine, make_user, make_requirement, replay_gateway, monkeypatch
+) -> None:
+    from tp_core.features.cases.service import AI_SURE_REPLAY_UYARISI, MANUEL_BAZ_YOK_UYARISI
+
+    rid = make_requirement()
+    login(api, make_user("analyst"))
+    api.post(f"/requirements/{rid}/generate-cases")
+    run_jobs(engine)
+
+    monkeypatch.delenv("TP_MANUAL_BASELINE_S", raising=False)
+    m = api.get(f"/requirements/{rid}/case-metrics").json()
+    assert m["manuel_baz_ms"] is None and m["ai_cagri_modlari"] == {"replay": 1}
+    assert MANUEL_BAZ_YOK_UYARISI in m["uyarilar"] and AI_SURE_REPLAY_UYARISI in m["uyarilar"]
+    assert "Demo-A kazanç gösterilemez" in MANUEL_BAZ_YOK_UYARISI
+
+    monkeypatch.setenv("TP_MANUAL_BASELINE_S", "1800")
+    m = api.get(f"/requirements/{rid}/case-metrics").json()
+    assert m["manuel_baz_ms"] == 1_800_000
+    assert MANUEL_BAZ_YOK_UYARISI not in m["uyarilar"]

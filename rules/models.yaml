@@ -11,6 +11,10 @@ pricing_usd_per_mtok:
 
 defaults:
   max_tokens: 4096
+  # İstemci zaman aşımı (sn). Taşıma ayarıdır; bundle hash'ine girmez. max_tokens >= 8192 olan
+  # amaçlar akışla gönderilir (Anthropic adaptörü); zaman aşımı tek istek için üst sınırdır ve
+  # geçit zaman aşımını en çok bir kez yeniden dener.
+  timeout_s: 120
   params:
     # Tasarım: temperature 0–0,2. Anthropic API'si (2026-10-21) ve kurulu SDK örnekleme
     # parametrelerini kabul etmez; Anthropic adaptörü göndermez. Diğer sağlayıcılar (Azure) kullanır.
@@ -25,18 +29,25 @@ purposes:
   case_generation:
     model: claude-sonnet-5-5
     max_tokens: 16000
+    timeout_s: 600              # ~10K karakter Türkçe JSON + uyarlamalı düşünme: dakikalar sürebilir
     params: { effort: medium }
   consistency_check:          # ajan: kod (GitHub MCP, salt okuma) + veri (db_query) araçları
     model: claude-sonnet-5-5
     max_tokens: 8192
     max_input_tokens: 150000
-    # Ajan döngüsünde eski snapshot/sonuçlar bağlamdan çıkarılır (geçmiş düzenleme); thinking
-    # blokları geçmiş düzenlemeyle geçersizleşeceğinden ajanlarda araçlar arası düşünme kapalı.
+    timeout_s: 300              # tur başına
+    # `between_tools`: genişletilmiş düşünme kapalı; araçlar arası ilerleme notları yine
+    # `thinking` bloğu olarak döner. Ajan döngüsü eski snapshot'ları bağlamdan çıkarır (geçmiş
+    # düzenleme) ve bu, sonraki thinking bloklarını geçersizleştirir (yeni hesaplarda 400);
+    # `block_binding: drop_block` yalnızca adaptive ile çalışır. Bu yüzden geçit
+    # (`Gateway._agent_messages`) ilk düzenlenen mesajdan sonraki asistan turlarından
+    # thinking/redacted_thinking bloklarını çıkarır.
     params: { effort: medium, thinking: { type: between_tools } }
   verify_and_map:             # ajan: Playwright MCP doğrulama döngüsü (§8.4)
     model: claude-sonnet-5-5
     max_tokens: 8192
     max_input_tokens: 150000
+    timeout_s: 300              # tur başına
     params: { effort: medium, thinking: { type: between_tools } }
   # Haiku sınıfı: triage ve özetleme
   triage:

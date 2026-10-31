@@ -1,5 +1,6 @@
 import { useId, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { buFazdaYok } from "../api/http";
 import type { CiktiModu, Rol } from "../api/types";
 import { useOturum } from "../auth";
 import { ROL, type Ton } from "../lib/etiketler";
@@ -45,6 +46,15 @@ export function Yukleniyor({ metin = "Yükleniyor…" }: { metin?: string }) {
 }
 
 export function HataKutusu({ hata, yenile }: { hata: string; yenile?: () => void }) {
+  // Canlı derlemede core'un henüz sunmadığı ekran: hata değil, planlı "bu fazda yok" boş durumu.
+  if (buFazdaYok(hata)) {
+    return (
+      <div className="bos-durum" role="status" data-testid="bu-fazda-yok">
+        <p className="bos-baslik">Bu ekran bu fazda yok.</p>
+        <div className="soluk">Çekirdek bu veriyi henüz sunmuyor. Canlı portalda örnek veri gösterilmez.</div>
+      </div>
+    );
+  }
   return (
     <div className="uyari-kutusu uyari-hata" role="alert">
       <span>{hata}</span>

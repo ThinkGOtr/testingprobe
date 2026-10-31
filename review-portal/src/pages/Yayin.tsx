@@ -58,13 +58,18 @@ function YayinEkrani() {
   const { id = "" } = useParams();
   const onizleme = useVeri(() => api.yayinOnizleme(id), [id]);
   const gereksinim = useVeri(() => api.gereksinim(id), [id]);
+  // Kapsam denetimi (core case-metrics `kapsanmayan_ac`): yayında test edilmeyen AC kalmasın.
+  const metrik = useVeri(() => api.caseMetrikleri(id).catch(() => null), [id]);
   const [secili, setSecili] = useState<Set<string>>(new Set());
   const [sonuc, setSonuc] = useState<YayinSonucu | null>(null);
   /** POST /publish arka plan işi döndürdüyse: sonuç `publish.*` olaylarıyla gelir. */
   const [bekleyenIs, setBekleyenIs] = useState<string | null>(null);
   const islem = useIslem();
   const bildir = useBildirim();
-  const sessiz = useGeciktirilmis(() => void onizleme.yenile(true));
+  const sessiz = useGeciktirilmis(() => {
+    void onizleme.yenile(true);
+    void metrik.yenile(true);
+  });
   useOlay(
     (o) => {
       if (typeof o.data.requirement_id === "string" && o.data.requirement_id !== id) return;
@@ -109,6 +114,7 @@ function YayinEkrani() {
   }
 
   const o = onizleme.veri;
+  const kapsanmayan = metrik.veri?.kapsanmayan_ac ?? [];
   const adres = (anahtar: string | null, url?: string | null) =>
     jiraKayitAdresi(anahtar, { url, browseKoku: o?.jira_browse_url, storyAdresi: gereksinim.veri?.jira_url });
 
@@ -117,7 +123,7 @@ function YayinEkrani() {
       <SayfaBasligi
         ust={<Link to={`/gereksinimler/${encodeURIComponent(id)}/caseler`}>← Case review</Link>}
         baslik="Yayın önizleme"
-        aciklama="Dry-run: yalnızca onaylı ve onaydan sonra değişmemiş case'ler yayınlanır. Yayın idempotenttir (aynı içerik ikinci kez oluşturulmaz)."
+        aciklama="Önizleme: bu ekranda hiçbir kayıt oluşturulmaz. Yalnızca onaylı ve onaydan sonra değişmemiş case'ler yayınlanır; yayın tekrarlansa da aynı içerik ikinci kez oluşturulmaz."
       />
       {onizleme.yukleniyor && !o ? (
         <Yukleniyor />
@@ -155,6 +161,15 @@ function YayinEkrani() {
             {o.uyarilar.map((u) => (
               <Uyari key={u}>{u}</Uyari>
             ))}
+            {kapsanmayan.length > 0 && (
+              <div data-testid="yayin-kapsam-uyarisi">
+                <Uyari baslik="Kapsanmayan kabul kriteri">
+                  Hiçbir güncel case şu kabul kriterlerine atıf yapmıyor: <strong className="mono">{kapsanmayan.join(", ")}</strong>.
+                  Yayınlanırsa bu kriterler test edilmemiş kalır. Case review ekranında kapsamı tamamlayın ya da bilinçli olarak devam
+                  edin.
+                </Uyari>
+              </div>
+            )}
             {bekleyenIs && (
               <p role="status" className="soluk">
                 Yayın işi sürüyor (<span className="mono">{bekleyenIs}</span>)…
@@ -256,7 +271,7 @@ function YayinSonucKarti({
       </p>
       {oz.kismi && (
         <Uyari baslik="Kısmi başarı">
-          Bazı case'ler yayınlandı, bazıları yayınlanamadı. Yayınlananlar yeniden denemede tekrar oluşturulmaz (idempotent); başarısızları
+          Bazı case'ler yayınlandı, bazıları yayınlanamadı. Yayınlananlar yeniden denemede tekrar oluşturulmaz; başarısızları
           düzeltip yeniden yayınlayabilirsiniz.
         </Uyari>
       )}

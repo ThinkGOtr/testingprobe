@@ -426,6 +426,17 @@ code,
   color: var(--accent);
   font-weight: 600;
 }
+.menu-oge-pasif,
+.menu-oge-pasif:hover {
+  background: none;
+  color: var(--text-2);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+.menu-oge-not {
+  font-size: 0.75rem;
+  font-weight: 400;
+}
 .odak-isaret {
   width: 7px;
   height: 7px;
@@ -804,6 +815,10 @@ td .cip + .cip {
 /* ---------------------------------------------------------------- tablo */
 
 .tablo-sarici {
+  /* position: relative — içerideki görsel gizli (position: absolute) metinler kaydırma kabının
+   * dışına taşıp sayfayı yatay kaydırmasın (ör. dar ekranda yayın tablosu). */
+  position: relative;
+  max-width: 100%;
   overflow-x: auto;
   margin: 0 -4px;
 }
@@ -1233,6 +1248,22 @@ fieldset:disabled select {
     display: none;
   }
 }
+/* Telefon genişliği: 4 sütun; adım adları birbirine girmez, uzun sözcük satır içinde bölünür. */
+@media (max-width: 520px) {
+  .akis ol {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .akis-adim {
+    overflow-wrap: anywhere;
+    hyphens: auto;
+  }
+  .akis-adim:nth-child(8)::before {
+    display: block;
+  }
+  .akis-adim:nth-child(4n + 1)::before {
+    display: none;
+  }
+}
 
 /* ---------------------------------------------------------------- gereksinim detayı */
 
@@ -1359,6 +1390,25 @@ fieldset:disabled select {
   border-radius: 3px;
   padding: 1px 2px;
 }
+/* Büyük ölçüde yeniden yazılmış metin: iki satır (Önce / Sonra). */
+.fark-once-sonra {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 10px;
+  margin: 6px 0;
+}
+.fark-once-sonra dt {
+  font-size: 0.75rem;
+  font-weight: 650;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-top: 2px;
+}
+.fark-once-sonra dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
 
 /* ---------------------------------------------------------------- kod */
 
@@ -1473,14 +1523,30 @@ fieldset:disabled select {
   display: grid;
   grid-template-columns: 32px 2fr 1fr 2fr auto;
   gap: 6px;
-  align-items: center;
+  align-items: start;
   margin-bottom: 6px;
+}
+.adim-duzenle > .mono {
+  padding-top: 8px;
+}
+/* Uzun adım metni kırpılmaz: alan içeriğe göre uzar (JS yedeği: OtoMetin). */
+.oto-metin {
+  resize: vertical;
+  min-height: 2.4em;
+  overflow: hidden;
+  field-sizing: content;
+}
+.case-duzenle-ozellik {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0 12px;
 }
 @media (max-width: 760px) {
   .adim-duzenle {
     grid-template-columns: 32px 1fr;
   }
   .adim-duzenle > input,
+  .adim-duzenle > textarea,
   .adim-duzenle > button {
     grid-column: 2;
   }

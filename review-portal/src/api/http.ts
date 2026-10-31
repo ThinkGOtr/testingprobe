@@ -9,7 +9,10 @@
 //   3. Uç listesi okunamazsa (eski core, kapalı openapi) eski davranış: genel 404'te
 //      ({"detail":"Not Found"} veya JSON olmayan 404) o uç için mock'a düşülür. Gerçek "kayıt
 //      bulunamadı" 404'leri (Türkçe detail) mock'a düşmez, hata olarak gösterilir.
-// VITE_MOCK=0 ile derlenmişse 2 ve 3 kapalıdır: her istek core'a gider.
+// VITE_MOCK=0 ile derlenmişse (compose/canlı portal, Dockerfile varsayılanı) örnek veriye HİÇ
+// düşülmez: uç listesi yine okunur, core'un sunmadığı uca istek atılmaz ve `BU_FAZDA_YOK` (501)
+// döner; ekranlar "bu fazda yok" boş durumu gösterir, menüde o ekranlar pasiftir. Canlı demoda
+// uydurma KPI (kazanç yüzdesi, baz değer, geçme oranı) asla gerçek veri gibi görünmez.
 // Mock'tan gelen her veri arayüzde "ÖRNEK VERİ" olarak etiketlenir (sahte canlı gösterim yok).
 
 import type { Kullanici } from "./types";
@@ -91,7 +94,7 @@ export function ucVar(y: Yetenekler, method: string, path: string): boolean {
  * keşif kapalı ya da openapi okunamadı) — çağıran o zaman 404 geri düşüşüne güvenir.
  */
 export function cekirdekYetenekleri(): Promise<Yetenekler | null> {
-  if (ayarlar.mockZorunlu || !ayarlar.mockOtomatik || !ayarlar.yetenekKesfi) return Promise.resolve(null);
+  if (ayarlar.mockZorunlu || !ayarlar.yetenekKesfi) return Promise.resolve(null);
   yetenekSozu ??= fetch(`${ayarlar.temelYol}/openapi.json`, {
     credentials: "same-origin",
     headers: { Accept: "application/json" },
@@ -121,6 +124,11 @@ export function yapilandir(degisiklik: Partial<Ayarlar> & { mock?: MockHandler |
 
 export function mockZorunlu(): boolean {
   return ayarlar.mockZorunlu;
+}
+
+/** Canlı derleme (VITE_MOCK=0): örnek veriye hiç düşülmez. */
+export function canliDerleme(): boolean {
+  return !ayarlar.mockZorunlu && !ayarlar.mockOtomatik;
 }
 
 /** Mock'tan cevaplanmış uçlar (normalize edilmiş, ör. "GET /requirements/:id"). */
@@ -229,6 +237,13 @@ async function mockaDus<T>(method: string, path: string, q: URLSearchParams, bod
 /** Çekirdekte henüz olmayan bir işlem (kaynağı gerçek, işlem ucu yok): mock'a düşülmez. */
 export const UC_YOK = "Bu işlem çekirdekte henüz yok.";
 
+/** Canlı derlemede core'un sunmadığı ekran/uç (sonraki faz): örnek veri gösterilmez. */
+export const BU_FAZDA_YOK = "Bu ekran bu fazda yok: çekirdek bu veriyi henüz sunmuyor (örnek veri gösterilmez).";
+
+export function buFazdaYok(e: unknown): boolean {
+  return (e instanceof ApiError && e.status === 501 && e.detail === BU_FAZDA_YOK) || e === BU_FAZDA_YOK;
+}
+
 export interface IstekSecenegi {
   sorgu?: Sorgu;
   govde?: unknown;
@@ -260,6 +275,7 @@ export async function istek<T>(
   const yetenekler = await cekirdekYetenekleri();
   if (yetenekler && !ucVar(yetenekler, method, path)) {
     if (secenek.kaynak && ucVar(yetenekler, ...secenek.kaynak)) throw new ApiError(501, UC_YOK);
+    if (!ayarlar.mockOtomatik) throw new ApiError(501, BU_FAZDA_YOK);
     return mockaDus<T>(method, path, q, secenek.govde);
   }
 
@@ -298,6 +314,8 @@ export async function istek<T>(
     if (secenek.kaynak && !mockUclar.has(ucuNormallestir(...secenek.kaynak))) throw new ApiError(501, UC_YOK);
     return mockaDus<T>(method, path, q, secenek.govde);
   }
+  // Canlı derlemede genel 404 (FastAPI'de rota yok) "bu fazda yok" demektir; ham "Not Found" gösterilmez.
+  if (res.status === 404 && !ayarlar.mockOtomatik && (detail === "Not Found" || !json)) throw new ApiError(501, BU_FAZDA_YOK);
   if (res.status === 401 && !path.startsWith("/auth/")) yetkisizDinleyici?.();
   throw new ApiError(res.status, detail ?? VARSAYILAN_HATA[res.status] ?? `Beklenmeyen hata (HTTP ${res.status}).`);
 }

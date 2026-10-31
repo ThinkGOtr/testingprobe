@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
+import { ApiError } from "../api/http";
 import { useOlay } from "../api/events";
 import type { Bulgu, GereksinimDetay as Detay } from "../api/types";
 import { AkisAdimlari } from "../components/AkisAdimlari";
@@ -8,9 +9,26 @@ import { useBildirim } from "../components/Bildirim";
 import { BulguKarti } from "../components/BulguKarti";
 import { BosDurum, Cip, DisBaglanti, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
-import { akisAdimi } from "../lib/akis";
+import { akisAdimi, DENETIM_ISLERI, hataAdimi, URETIM_ISI } from "../lib/akis";
 import { AC_EKSIK, gereksinimDurumu, SORU_TURU } from "../lib/etiketler";
 import { tarih } from "../lib/format";
+
+/**
+ * Onaylı düzeltmeleri uygular. Düzeltme aynı döngüdeki 'bilinçli fark' kararıyla çelişirse core 409
+ * döner; analist çelişkiyi görüp onaylarsa `cakismayi_onayla` ile yeniden gönderilir (denetlenir).
+ */
+async function duzeltmeleriUygula(id: string) {
+  try {
+    return await api.duzeltmeleriUygula(id);
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 409 && e.detail.includes("bilinçli fark")) {
+      if (window.confirm(`${e.detail}\n\nDüzeltme yine de uygulansın mı? (Karar denetim kaydına yazılır.)`)) {
+        return api.duzeltmeleriUygula(id, true);
+      }
+    }
+    throw e;
+  }
+}
 
 /** "sha256:abcdef…" → kısa gösterim (ilk 12 hane). */
 function kisaHash(h: string): string {
@@ -52,10 +70,10 @@ export function GereksinimDetay() {
   const bosBulgu = bosBulguMetni(g, elenen, dogrulaniyor);
   const poCevaplari = g.po_cevaplari ?? [];
 
-  async function eylem(fn: () => Promise<unknown>, basari: string) {
+  async function eylem<T>(fn: () => Promise<T>, basari: string | ((sonuc: T) => string)) {
     const s = await islem.calistir(fn);
     if (s !== undefined) {
-      bildir(basari);
+      bildir(typeof basari === "function" ? basari(s as T) : basari);
       tumunuYenile();
     }
   }
@@ -65,8 +83,26 @@ export function GereksinimDetay() {
     void detay.yenile(true);
   };
 
-  const incelemeBaslatilabilir = ["new", "findings_open", "failed"].includes(g.durum) && !g.ac_missing;
-  const caseUretilebilir = g.po.durum === "approved" && ["po_approved", "cases_ready"].includes(g.durum);
+  // Kabul kriteri eksik story de ön incelemeye girer (TPD-2): ön inceleme eksik kriterleri PO'ya
+  // soru olarak sorar (TEKNIK-TASARIM §8.2). Yalnızca case üretimi kapalıdır (core 422).
+  const incelemeBaslatilabilir = ["new", "findings_open", "failed"].includes(g.durum);
+  // Case üretimi hata ile bittiyse (REPLAY-MISS, model zaman aşımı, düşen worker) core yeniden
+  // denemeye izin verir (failed → generating; PO onayının güncelliği sunucuda yeniden doğrulanır).
+  // Ön incelemeyi baştan başlatmak gerekmez — o yol Jira story'sinde yeni PO teyidi ister.
+  const uretimHatasi = uretimHatasiMi(g);
+  const poGuncel = poOnayiGuncel(g);
+  const caseUretilebilir =
+    !g.ac_missing &&
+    ((poGuncel && ["po_approved", "cases_ready"].includes(g.durum)) || (uretimHatasi && poYenidenDenemedeGecerli(g)));
+  const caseUretNedeni = caseUretilebilir
+    ? uretimHatasi
+      ? "Case üretimi hata ile bitti; yeniden dener. PO onayının güncelliği sunucuda yeniden doğrulanır."
+      : undefined
+    : g.ac_missing
+      ? AC_YOK_CASE_URETILEMEZ
+      : uretimHatasi
+        ? "İçerik PO onayından sonra değişti; yeniden PO teyidi gerekir"
+        : "Case üretimi için PO teyidi gerekir";
   const caseVar = g.sayaclar.case_toplam > 0;
 
   return (
@@ -90,21 +126,30 @@ export function GereksinimDetay() {
           <>
             <IslemDugmesi
               roller={["analyst"]}
-              tur={incelemeBaslatilabilir ? "birincil" : "ikincil"}
+              tur={incelemeBaslatilabilir && !(uretimHatasi && caseUretilebilir) ? "birincil" : "ikincil"}
               disabled={!incelemeBaslatilabilir}
               calisiyor={islem.calisiyor && g.durum === "in_review"}
-              title={incelemeBaslatilabilir ? undefined : "Bu durumda ön inceleme başlatılamaz"}
+              title={
+                incelemeBaslatilabilir
+                  ? uretimHatasi
+                    ? "Denetimi baştan başlatır; Jira story'sinde yeni PO teyidi gerekir. Yalnızca case üretimini yeniden denemek için 'Case üret'i kullanın."
+                    : g.ac_missing
+                    ? "Kabul kriteri yok: ön inceleme eksik kriterleri PO'ya sorar"
+                    : undefined
+                  : "Bu durumda ön inceleme başlatılamaz"
+              }
               onClick={() => eylem(() => api.incelemeBaslat(g.id), "Ön inceleme başlatıldı.")}
             >
               {g.kontrol_turu > 0 ? "Yeniden denetle" : "Ön incelemeyi başlat"}
             </IslemDugmesi>
             <IslemDugmesi
               roller={["analyst"]}
+              tur={uretimHatasi && caseUretilebilir ? "birincil" : undefined}
               disabled={!caseUretilebilir}
-              title={caseUretilebilir ? undefined : "Case üretimi için PO teyidi gerekir"}
-              onClick={() => eylem(() => api.caseUret(g.id), "Case üretimi başlatıldı.")}
+              title={caseUretNedeni}
+              onClick={() => eylem(() => api.caseUret(g.id).catch(caseUretHatasi), "Case üretimi başlatıldı.")}
             >
-              Case üret
+              {uretimHatasi ? "Case üretimini yeniden dene" : "Case üret"}
             </IslemDugmesi>
             {caseVar && (
               <Link className="dugme dugme-ikincil" to={`/gereksinimler/${encodeURIComponent(g.id)}/caseler`}>
@@ -117,10 +162,24 @@ export function GereksinimDetay() {
       {islem.hata && <HataKutusu hata={islem.hata} />}
 
       <Kart>
-        <AkisAdimlari adim={akisAdimi(g.durum, g.adim)} kaynak={g.kaynak} />
+        <AkisAdimlari adim={akisAdimi(g.durum, g.adim ?? hataAdimi(g.son_hata?.job_tur))} kaynak={g.kaynak} />
       </Kart>
 
-      {g.uyarilar.map((u) => (
+      {g.son_hata && (
+        <div data-testid="son-hata">
+          <Uyari ton="hata" baslik="Son işlem başarısız">
+            {g.son_hata.neden && <p>{g.son_hata.neden}</p>}
+            {g.son_hata.is_hatasi && g.son_hata.is_hatasi !== g.son_hata.neden && <p className="kucuk mono">{g.son_hata.is_hatasi}</p>}
+            {g.son_hata.oneri && <p className="kucuk">{g.son_hata.oneri}</p>}
+            <p className="soluk kucuk">
+              {g.son_hata.job_tur && <span className="mono">{g.son_hata.job_tur}</span>}
+              {g.son_hata.zaman && <> · {tarih(g.son_hata.zaman)}</>}
+            </p>
+          </Uyari>
+        </div>
+      )}
+      {/* son_hata ayrıntılı kutuda gösterilir; core'un aynı içerikli özet uyarısı tekrarlanmaz. */}
+      {g.uyarilar.filter((u) => !(g.son_hata && u.startsWith("Son işlem başarısız:"))).map((u) => (
         <Uyari key={u} baslik="Dikkat">
           {u}
         </Uyari>
@@ -130,7 +189,9 @@ export function GereksinimDetay() {
         <Kart baslik="Doküman">
           <p>{g.aciklama}</p>
           {g.kabul_kriterleri.length === 0 ? (
-            <Uyari>Kabul kriteri yok. Story case üretimine gönderilmez.</Uyari>
+            <Uyari>
+              Kabul kriteri yok. Story case üretimine gönderilmez; ön inceleme eksik kabul kriterlerini PO'ya soru olarak iletir.
+            </Uyari>
           ) : (
             <ol className="ac-liste">
               {g.kabul_kriterleri.map((ac) => (
@@ -178,7 +239,14 @@ export function GereksinimDetay() {
                     )}
                   </div>
                   <p>{s.text}</p>
-                  {s.cevap ? (
+                  {s.kararla_cozuldu && !s.cevap ? (
+                    <p className="kucuk" data-testid={`soru-cozuldu-${s.id}`}>
+                      <Cip ton="basari" title="Bu soru analistin bulgu kararıyla kapandı; PO'ya sorulmaz (bilgi için).">
+                        Çözüldü
+                      </Cip>{" "}
+                      {s.kararla_cozuldu}
+                    </p>
+                  ) : s.cevap ? (
                     <p className="cevap">↳ {s.cevap}</p>
                   ) : (
                     <p className="soluk kucuk">
@@ -238,9 +306,12 @@ export function GereksinimDetay() {
             }
             onClick={() =>
               eylem(
-                () => api.duzeltmeleriUygula(g.id),
+                () => duzeltmeleriUygula(g.id),
                 sonHalAcik
-                  ? "Belge son hal yapıldı; PO teyidi bekleniyor."
+                  ? (r) =>
+                      r?.kabul_edilen_uyarilar && r.kabul_edilen_uyarilar.length > 0
+                        ? `Belge son hal yapıldı; kararsız uyarılar bilinçli fark olarak kaydedildi (${r.kabul_edilen_uyarilar.join(", ")}). PO teyidi bekleniyor.`
+                        : "Belge son hal yapıldı; PO teyidi bekleniyor."
                   : g.kaynak === "jira"
                     ? "Düzeltmeler Jira'ya yazılıyor; ardından yeniden kontrol."
                     : "Düzeltmeler uygulanıyor; ardından yeniden kontrol.",
@@ -300,7 +371,7 @@ export function GereksinimDetay() {
           <HataKutusu hata={bulgular.hata} yenile={() => void bulgular.yenile()} />
         ) : turdakiBulgular.length === 0 ? (
           <div data-testid="bulgu-bos">
-            <BosDurum baslik={bosBulgu} />
+            {g.durum === "in_review" ? <Yukleniyor metin={bosBulgu} /> : <BosDurum baslik={bosBulgu} />}
           </div>
         ) : (
           <div className="bulgu-liste">
@@ -327,6 +398,15 @@ export function GereksinimDetay() {
  * kurulmamıştır (Constitution VIII, XI) ve bu açıkça yazılır.
  */
 export function bosBulguMetni(g: Detay, elenenToplam: number, dogrulaniyor: number): string {
+  // Denetim sürerken ya da hata ile bittiyse "tutarlı" denmez: tamamlanmamış denetim temiz sonuç değildir.
+  if (g.durum === "in_review") return DENETIM_SURUYOR;
+  // Yalnızca denetim işi (ön inceleme/tutarlılık) düştüyse "denetim tamamlanmadı" denir. Sonraki bir
+  // adım (ör. case üretimi) düştüyse denetim sonucu geçerlidir ve aşağıdaki kurallarla anlatılır.
+  // Hangi işin düştüğü bilinmiyorsa temkinli davranılır (tutarlı denmez).
+  if (g.durum === "failed") {
+    const tur = g.son_hata?.job_tur ?? null;
+    if (!tur || DENETIM_ISLERI.has(tur) || hataAdimi(tur) === null) return DENETIM_HATALI;
+  }
   if (!g.kontrol_turu && !g.son_kontrol) return "Denetim henüz çalıştırılmadı.";
   if (dogrulaniyor > 0) return "Bulguların kanıtı doğrulanıyor; doğrulanan bulgular burada görünecek.";
   const miss = g.son_kontrol?.mode === "replay_miss";
@@ -338,7 +418,50 @@ export function bosBulguMetni(g: Detay, elenenToplam: number, dogrulaniyor: numb
     ].filter(Boolean);
     return `Gösterilecek doğrulanmış bulgu yok (${nedenler.join("; ")}) — tutarlılık doğrulanmadı.`;
   }
+  // Tamamlanmış bir kontrol koşusu kaydı yoksa (son_kontrol yok) tutarlılık kurulmamıştır.
+  if (!g.son_kontrol) return DENETIM_TAMAMLANMADI;
   return "Bulgu yok: doküman kod ve veriyle tutarlı.";
+}
+
+export const DENETIM_SURUYOR = "Denetim sürüyor… Sonuç gelince bulgular burada görünecek.";
+export const DENETIM_TAMAMLANMADI = "Denetim tamamlanmadı — tutarlılık doğrulanmadı.";
+export const DENETIM_HATALI =
+  "Denetim tamamlanmadı (iş hata ile bitti) — tutarlılık doğrulanmadı. 'Yeniden denetle' ile tekrar başlatın.";
+
+export const AC_YOK_CASE_URETILEMEZ = "Kabul kriteri yok; case üretilemez";
+
+/** Gereksinim, case üretimi işi hata ile bittiği için mi `failed`? */
+export function uretimHatasiMi(g: Pick<Detay, "durum" | "son_hata">): boolean {
+  return g.durum === "failed" && g.son_hata?.job_tur === URETIM_ISI;
+}
+
+/** PO onayı var ve onaylanan içerik hâlâ ekrandaki içerik mi (hash'ler biliniyorsa)? */
+export function poOnayiGuncel(g: Pick<Detay, "po" | "icerik_hash">): boolean {
+  if (g.po.durum !== "approved") return false;
+  return !g.po.onaylanan_hash || !g.icerik_hash || g.po.onaylanan_hash === g.icerik_hash;
+}
+
+/**
+ * Case üretimi düşmüş gereksinimde PO onayı yeniden deneme için geçerli sayılır mı. Core onayı
+ * `approved` + hash ile bildiriyorsa güncellik burada da kontrol edilir; core `failed` durumunda
+ * onayı göstermiyorsa (eski sürüm: `not_requested`) karar sunucuya bırakılır — üretime yalnızca PO
+ * onayından sonra girilebildiği için düşen üretimin onayı vardı ve core yeniden denemede PO
+ * güncelliğini yeniden doğrular (Constitution I, sunucu tarafı). Bekleyen PO teyidi geçersizdir.
+ */
+export function poYenidenDenemedeGecerli(g: Pick<Detay, "po" | "icerik_hash">): boolean {
+  if (g.po.durum === "approved") return poOnayiGuncel(g);
+  return g.po.durum !== "pending";
+}
+
+/**
+ * core `generate-cases` kabul kriteri eksik story'ye 422 döner; ham mesaj ("requirement: …
+ * (ac_missing) …") alan öneki ve iç kod taşır. Kullanıcıya temiz Türkçe metin gösterilir.
+ */
+export function caseUretHatasi(e: unknown): never {
+  if (e instanceof ApiError && e.status === 422 && /ac_missing|kabul kriter/i.test(e.detail)) {
+    throw new ApiError(422, "Kabul kriteri olmayan gereksinimden case üretilemez. Önce PO'dan kabul kriterlerini alın.");
+  }
+  throw e;
 }
 
 function PoKarti({ g, yenile }: { g: Detay; yenile: () => void }) {
@@ -396,6 +519,10 @@ function PoKarti({ g, yenile }: { g: Detay; yenile: () => void }) {
           )}
           {islem.hata && <HataKutusu hata={islem.hata} />}
         </>
+      ) : uretimHatasiMi(g) ? (
+        <p className="soluk" data-testid="po-uretim-hatasi">
+          PO teyidi verilmişti; case üretimi hata ile bitti. Yeniden denemede onayın güncelliği sunucuda yeniden doğrulanır.
+        </p>
       ) : (
         <p className="soluk">Henüz istenmedi. Doküman "son hal" olunca PO teyidi istenir.</p>
       )}

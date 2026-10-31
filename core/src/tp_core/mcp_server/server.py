@@ -9,6 +9,7 @@ doğrulanır (iptal/parola değişimi anında etkili).
 from __future__ import annotations
 
 import json
+import threading
 import time
 import uuid
 from collections.abc import Mapping
@@ -242,6 +243,32 @@ def _enqueue_publish(
         return job_id
 
 
+def _publish_failed(sonuc: dict[str, Any]) -> bool:
+    """Yayın işi bitti ama case'lerden biri bile yayınlanmadıysa araç sonucu hatadır.
+
+    IDE istemcisi (Claude Code) `isError=false`'u başarı sayar; hiçbir şey yayınlanmamışken ya da
+    kısmi başarıda bunu göstermek yanıltıcıdır. Kalem ayrıntıları (`sonuclar`) korunur ve
+    `ozet` + Türkçe `mesaj` eklenir.
+    """
+    kalemler = [k for k in sonuc.get("sonuclar") or [] if isinstance(k, Mapping)]
+    sayim = {"created": 0, "exists": 0, "failed": 0}
+    for k in kalemler:
+        d = str(k.get("durum"))
+        sayim[d if d in sayim else "failed"] += 1
+    sonuc["ozet"] = sayim
+    basarili = sayim["created"] + sayim["exists"]
+    if not kalemler or basarili == 0:
+        sonuc["mesaj"] = "Hiçbir case yayınlanmadı; kalem ayrıntılarına bakın."
+        return True
+    if sayim["failed"]:
+        sonuc["mesaj"] = (
+            f"{sayim['failed']} case yayınlanamadı ({basarili} case yayınlandı/zaten vardı); "
+            "kalem ayrıntılarına bakın."
+        )
+        return True
+    return False
+
+
 async def _run_tool(caller: Principal, name: str, args: Mapping[str, Any]) -> types.CallToolResult:
     tool_call_id = uuid.uuid4()
     baslangic = time.monotonic()
@@ -263,6 +290,7 @@ async def _run_tool(caller: Principal, name: str, args: Mapping[str, Any]) -> ty
             durum, deger, son_hata = await publish.await_job(get_engine(), job_id)
             if durum == "done":
                 sonuc = {**(deger or {}), "job_id": str(job_id)}
+                hata = _publish_failed(sonuc)
             elif durum in ("failed", "cancelled"):
                 hata = True
                 sonuc = {"job_id": str(job_id), "durum": durum, "hata": son_hata}
@@ -317,6 +345,97 @@ def build_server() -> Server[Any]:
 # ------------------------------------------------------------------- ASGI uç noktası
 
 
+# Kimlik doğrulama reddi denetim kaydı (Anayasa VIII): aynı (neden, istemci, token izi) için
+# en fazla DENETIM_ARALIGI_S'de bir satır; arada bastırılanlar bir sonraki satırda sayılır.
+DENETIM_ARALIGI_S = 10.0
+_DENETIM_SINIRI = 1024
+_son_red: dict[tuple[str, str, str | None], tuple[float, int]] = {}
+_red_kilidi = threading.Lock()
+
+
+def _token_izi(raw: str | None) -> str | None:
+    """Ham token'ın kaydedilebilir izi: sha256'nın ilk 12 hanesi (ham token asla yazılmaz)."""
+    if not raw:
+        return None
+    from tp_core.auth.tokens import token_hash
+
+    return token_hash(raw)[:12]
+
+
+def _token_durumu(raw: str | None) -> dict[str, Any]:
+    """Token bilinen (iptal/süresi dolmuş/parolası değişmiş) bir ApiToken ise kimliği ve nedeni."""
+    from datetime import UTC, datetime
+
+    from sqlalchemy import select
+
+    from tp_core.auth.sessions import password_fingerprint
+    from tp_core.auth.tokens import PREFIX, token_hash
+    from tp_core.models import ApiToken, AppUser
+
+    if not raw or not raw.startswith(PREFIX):
+        return {"token_bilinen": False}
+    with session_scope() as s:
+        row = s.execute(
+            select(ApiToken, AppUser)
+            .join(AppUser, AppUser.id == ApiToken.user_id)
+            .where(ApiToken.token_hash == token_hash(raw))
+        ).first()
+        if row is None:
+            return {"token_bilinen": False}
+        tok, user = row
+        if tok.iptal:
+            durum = "iptal"
+        elif tok.son_kullanma <= datetime.now(UTC):
+            durum = "suresi_dolmus"
+        elif tok.parola_izi != password_fingerprint(user.parola_hash):
+            durum = "parola_degisti"
+        else:
+            durum = "gecerli"
+        return {
+            "token_bilinen": True,
+            "token_id": str(tok.id),
+            "token_sahibi": user.kullanici_adi,
+            "token_kapsam": tok.kapsam,
+            "token_durumu": durum,
+        }
+
+
+def _audit_rejection(kod: int, neden: str, raw: str | None, istemci: str) -> bool:
+    """Reddedilen MCP isteğini `mcp.auth_failed` olarak denetim zincirine yazar (hız sınırlı).
+
+    Hata yanıtı asla engellemez: kayıt başarısız olursa False döner.
+    """
+    from tp_core.audit import append_audit
+
+    iz = _token_izi(raw)
+    anahtar = (neden, istemci, iz)
+    simdi = time.monotonic()
+    with _red_kilidi:
+        onceki = _son_red.get(anahtar)
+        if onceki is not None and simdi - onceki[0] < DENETIM_ARALIGI_S:
+            _son_red[anahtar] = (onceki[0], onceki[1] + 1)
+            return False
+        bastirilan = onceki[1] if onceki is not None else 0
+        if len(_son_red) >= _DENETIM_SINIRI:
+            _son_red.clear()
+        _son_red[anahtar] = (simdi, 0)
+    try:
+        ozet: dict[str, Any] = {
+            "http_durum": kod,
+            "neden": neden,
+            "istemci": istemci,
+            "token_izi": iz,
+            "bastirilan_onceki": bastirilan,
+        }
+        if kod == 401:
+            ozet.update(_token_durumu(raw))
+        with get_engine().begin() as conn:
+            append_audit(conn, "anonim", "mcp.auth_failed", "mcp", ozet)
+        return True
+    except Exception:
+        return False
+
+
 def _authenticate(raw: str | None) -> Principal | None:
     with session_scope() as s:
         return verify_bearer(s, raw, "submit") or verify_bearer(s, raw, "publish")
@@ -359,16 +478,30 @@ class McpEndpoint:
         if scope["type"] != "http":
             return
         basliklar = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope["headers"]}
+        istemci = (scope.get("client") or ("?", 0))[0] or "?"
+        tur, _, deger = basliklar.get("authorization", "").partition(" ")
+        raw = deger.strip() if tur.lower() == "bearer" else None
         if _hostname(basliklar.get("host", "")) not in LOCAL_HOSTS:
+            await anyio.to_thread.run_sync(
+                _audit_rejection, 421, "yerel olmayan Host", raw, istemci
+            )
             await _json(send, 421, "MCP uç noktasına yalnızca localhost'tan erişilir")
             return
         if "x-forwarded-for" in basliklar:
+            await anyio.to_thread.run_sync(
+                _audit_rejection, 403, "X-Forwarded-For (vekil)", raw, istemci
+            )
             await _json(send, 403, "MCP uç noktası vekil (portal) üzerinden kullanılamaz")
             return
-        tur, _, deger = basliklar.get("authorization", "").partition(" ")
-        raw = deger.strip() if tur.lower() == "bearer" else None
         caller = await anyio.to_thread.run_sync(_authenticate, raw) if raw else None
         if caller is None:
+            await anyio.to_thread.run_sync(
+                _audit_rejection,
+                401,
+                "token yok" if not raw else "geçersiz/iptal/süresi dolmuş token",
+                raw,
+                istemci,
+            )
             await _json(
                 send,
                 401,

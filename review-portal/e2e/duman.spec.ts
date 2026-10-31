@@ -54,7 +54,9 @@ test("giriş ekranı", async ({ page }) => {
 test("analist tüm rotaları gezer (ekran görüntüleri)", async ({ page }) => {
   const hatalar = konsolHatalariniTopla(page);
   await girisYap(page, "analist");
-  await expect(page.getByText("ÖRNEK VERİ")).toBeVisible();
+  await expect(page.getByText("ÖRNEK VERİ", { exact: true })).toBeVisible();
+  // Örnek veri derlemesinde her ekranın üstünde tam genişlik "gerçek değil" bandı.
+  await expect(page.getByTestId("ornek-veri-bandi")).toContainText("ÖRNEK VERİ — gerçek değil");
   for (const r of ROTALAR) {
     await page.goto(r.yol);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(r.baslik);
@@ -148,12 +150,14 @@ test("case kararları durum makinesine uyar: reddedilen onaylanamaz, onaylı red
   const kart = (etiket: string) => page.getByRole("article").filter({ has: page.locator(".cip", { hasText: new RegExp(`^${etiket}$`) }) }).first();
   const red = kart("Reddedildi");
   await expect(red).toBeVisible();
-  for (const ad of ["Onayla", "Düzelt", "Reddet"]) await expect(red.getByRole("button", { name: ad })).toBeDisabled();
+  // Karar verilmiş case'te karar düğmeleri hiç gösterilmez (pasif düğme yerine kilit notu + "Yeniden aç").
   await expect(red.getByTestId("case-karar-kilit")).toBeVisible();
+  for (const ad of ["Onayla", "Düzelt", "Reddet"]) await expect(red.getByRole("button", { name: ad })).toHaveCount(0);
   // Karar değiştirmenin tek yolu taslağa almaktır (yeniden review).
   await expect(red.getByRole("button", { name: "Yeniden aç" })).toBeEnabled();
   const onayli = kart("Onaylı");
-  for (const ad of ["Onayla", "Düzelt", "Reddet"]) await expect(onayli.getByRole("button", { name: ad })).toBeDisabled();
+  await expect(onayli.getByTestId("case-karar-kilit")).toBeVisible();
+  for (const ad of ["Onayla", "Düzelt", "Reddet"]) await expect(onayli.getByRole("button", { name: ad })).toHaveCount(0);
   // Taslak case'te kararlar açık ve çalışır.
   const taslak = kart("Karar bekliyor");
   await expect(taslak.getByRole("button", { name: "Onayla" })).toBeEnabled();
@@ -229,7 +233,7 @@ test("hiçbir rolde ölü iç bağlantı yok (her href bir ekrana çıkar)", asy
     expect([...hrefler].filter((h) => /^\/(forge|artifacts)\//.test(h))).toEqual([]);
     for (const h of hrefler) {
       await page.goto(h);
-      await expect(page.getByText("Sayfa bulunamadı."), `${rol}: ${h}`).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: "Sayfa bulunamadı", level: 1 }), `${rol}: ${h}`).toHaveCount(0);
       await expect(page.getByRole("heading", { level: 1 }).or(page.getByText("Bu ekran için yetkiniz yok.")), `${rol}: ${h}`).toBeVisible();
     }
     await page.getByRole("button", { name: "Çıkış" }).click();
@@ -312,3 +316,38 @@ for (const tema of ["light", "dark"] as const) {
     expect(ihlaller).toEqual([]);
   });
 }
+
+test("mobil (375 px) yayın önizleme ve akış göstergesi: sayfa yatay kaymaz, adım adları çakışmaz", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await girisYap(page, "analist");
+  await page.goto("/gereksinimler/req-tpd-1/yayin");
+  await expect(page.getByTestId("yayin-hedefi")).toBeVisible();
+  await expect(page.locator(".tablo-sarici table")).toBeVisible();
+  // Tablo kendi kabında kayar; görsel gizli metinler dahil hiçbir şey sayfayı genişletmez.
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+  await page.screenshot({ path: `${EKRAN_DIZINI}/35-mobil-yayin.png`, fullPage: true });
+
+  await page.goto("/gereksinimler/req-tpd-1");
+  await expect(page.locator(".akis-ad").first()).toBeVisible();
+  const cakisanlar = await page.evaluate(() => {
+    const kutular = [...document.querySelectorAll(".akis-ad")].map((e) => ({ m: e.textContent, r: e.getBoundingClientRect() }));
+    const sonuc: string[] = [];
+    for (let i = 0; i < kutular.length; i++)
+      for (let j = i + 1; j < kutular.length; j++) {
+        const a = kutular[i].r;
+        const b = kutular[j].r;
+        if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) sonuc.push(`${kutular[i].m} ↔ ${kutular[j].m}`);
+      }
+    return sonuc;
+  });
+  expect(cakisanlar).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+});
+
+test("bilinmeyen sayfa: h1 başlığı var (axe page-has-heading-one)", async ({ page }) => {
+  await girisYap(page, "analist");
+  await page.goto("/yok-boyle");
+  await expect(page.getByRole("heading", { name: "Sayfa bulunamadı", level: 1 })).toBeVisible();
+  const sonuc = await new AxeBuilder({ page }).withRules(["page-has-heading-one"]).analyze();
+  expect(sonuc.violations.map((v) => v.id)).toEqual([]);
+});

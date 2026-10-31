@@ -72,10 +72,19 @@ def fake_playwright(
 class DemoApi:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
+        self.gets: list[str] = []
         self.status = 200
+        self.get_status: dict[str, int] = {}  # yol → durum (varsayılan 200)
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                outer.gets.append(self.path)
+                self.send_response(outer.get_status.get(self.path, 200))
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b"{}")
+
             def do_POST(self) -> None:
                 length = int(self.headers.get("Content-Length", "0"))
                 outer.calls.append(
@@ -99,15 +108,18 @@ class DemoApi:
 
 
 @pytest.fixture
-def demo_api(monkeypatch: pytest.MonkeyPatch) -> Iterator[DemoApi]:
+def demo_api(env: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[DemoApi]:
+    """Sahte demo uygulaması: hem web (`BASE_URL/`) hem API (`/health`, `/test/break`)."""
     api = DemoApi()
     monkeypatch.setenv("DEMO_API_URL", api.url)
+    monkeypatch.setenv("BASE_URL", f"{api.url}/web")
+    monkeypatch.setenv("TP_HEALTH_TIMEOUT_S", "2")
     yield api
     api.server.shutdown()
 
 
 @pytest.fixture
-def client(env: Path) -> TestClient:
+def client(env: Path, demo_api: DemoApi) -> TestClient:
     return TestClient(app)
 
 
@@ -124,7 +136,6 @@ def test_passed_run_layout_env_and_argv(
     demo_api: DemoApi,
 ) -> None:
     monkeypatch.setenv("TP_NODE", str(fake_playwright(tmp_path, report=REPORT_PASSED)))
-    monkeypatch.setenv("BASE_URL", "http://demo-app-web:8080")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sızmamalı")
     resp = _run(
         client,
@@ -165,7 +176,7 @@ def test_passed_run_layout_env_and_argv(
         "tests/cart.spec.ts",
     ]
     assert rec["env"] == {
-        "BASE_URL": "http://demo-app-web:8080",
+        "BASE_URL": f"{demo_api.url}/web",
         "DEMO_API_URL": demo_api.url,
         "DEMOAPP_TEST_TOKEN": "test-belirteci",
         "BREAK_CAMPAIGN": "",
@@ -174,6 +185,13 @@ def test_passed_run_layout_env_and_argv(
         "ANTHROPIC_API_KEY": None,
     }
     assert demo_api.calls == []  # kırılma istenmedi → /test/break çağrılmaz
+    # Koşu öncesi sağlık kontrolü raporda (Faz 4 triyaj kuralı 1'in deterministik sinyali).
+    assert demo_api.gets == ["/web/", "/health"]
+    saglik = data["saglik"]
+    assert saglik["ok"] is True and saglik["hata"] is None
+    assert saglik["web"]["status"] == 200 and saglik["api"]["status"] == 200
+    assert isinstance(saglik["web"]["ms"], int) and isinstance(saglik["api"]["ms"], int)
+    assert json.loads((run_dir / "run.json").read_text())["saglik"] == saglik
 
 
 def test_failed_run_and_break_restored(
@@ -317,3 +335,53 @@ def test_runs_are_serialized(
         runner.RUN_LOCK.release()
     assert resp.status_code == 409
     assert "sürüyor" in resp.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    ("bozuk", "beklenen"),
+    [("/health", "api"), ("/web/", "web")],
+)
+def test_unhealthy_app_skips_playwright(
+    client: TestClient,
+    forge: Forge,
+    env: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    demo_api: DemoApi,
+    bozuk: str,
+    beklenen: str,
+) -> None:
+    """Demo uygulaması sağlıksızsa Playwright başlatılmaz; koşu `error` + `saglik.ok=false`."""
+    demo_api.get_status[bozuk] = 503
+    monkeypatch.setenv("TP_NODE", str(fake_playwright(tmp_path, report=REPORT_PASSED)))
+    resp = _run(client, sha=forge.main, break_campaign=True)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["status"] == "error"
+    assert data["error"].startswith("Demo uygulaması sağlık kontrolü başarısız")
+    assert data["exit_code"] is None and data["tests"] == []
+    saglik = data["saglik"]
+    assert saglik["ok"] is False
+    assert saglik[beklenen]["status"] == 503 and saglik[beklenen]["hata"] == "HTTP 503"
+    assert saglik["hata"] == data["error"]
+    # Playwright hiç koşmadı: e2e kopyası/argv kaydı yok, kırılma uygulanmadığı için geri alma yok.
+    run_dir = env / "runs" / "r1"
+    assert not (run_dir / "src").exists()
+    assert not (run_dir / "runner.log").exists()
+    assert demo_api.calls == [] and data["break_restore"] is None
+    assert json.loads((run_dir / "run.json").read_text())["saglik"]["ok"] is False
+
+
+def test_unreachable_app_is_error(
+    client: TestClient, forge: Forge, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ağ hatası (bağlantı reddi) da sağlık başarısızlığıdır: status None, hata türü kaydedilir."""
+    monkeypatch.setenv("BASE_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("DEMO_API_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("TP_NODE", str(fake_playwright(tmp_path, report=REPORT_PASSED)))
+    data = _run(client, sha=forge.main).json()
+    assert data["status"] == "error"
+    assert data["saglik"]["ok"] is False
+    assert data["saglik"]["web"]["status"] is None and data["saglik"]["web"]["hata"]
+    assert data["saglik"]["api"]["status"] is None and data["saglik"]["api"]["hata"]
+    assert "sağlık kontrolü başarısız" in data["error"]

@@ -11,14 +11,30 @@ REPLAY / REPLAY-MISS rozetini `ai_call.mod`'dan gösterir.
 2. **Eşleşen golden** `<amaç>/golden/<ad>.json`: golden `input_match` ile hangi girdi için
    hazırlandığını beyan eder; gerçek girdi beyana uyarsa mod **`replay`**, köken
    `golden_matched` (`ai_call.ek.replay_kokeni`).
-3. **Eşleşmeyen golden**: mod **`replay_miss`**, nedenler `ai_call.ek.replay_eslesme`'de
-   (ör. `["AC2 metni farklı"]`). `TP_REPLAY_STRICT=1` (prova) bunu `ReplayMiss` hatasına çevirir.
-   - Golden girdi beyanı (`input_match`) taşıyorsa ve amacın **nötr yedeği**
-     (`<amaç>/on_miss.json`) varsa golden çıktısı **kullanılmaz** (başka bir dokümanın cevabıdır);
-     nötr yedeğin çıktısı döner, köken `miss_neutral`, `cikti_kokeni = notr_yedek`.
-   - Beyansız golden (senaryo adı: `triage`, `bug_draft`, `dup_rank`) veya nötr yedeği olmayan
-     amaç: golden çıktısı döner, köken `golden`.
-4. Golden de yoksa `ReplayNotFound`.
+3. **Aynı story'nin sonraki tur golden'ı**: 1. tur adı (`TPD-1`) uymazsa veya yoksa aynı önekli
+   `-rN` golden'ları (`TPD-1-r2`) içerikle denenir; uyan ilk golden `replay` / `golden_matched`
+   döner (`ek.replay_kaynagi` gerçekten kullanılan dosyadır). Böylece `make reset` olmadan ikinci
+   koşuda jira-sim'deki düzeltilmiş TPD-1 metni 1. turda da REPLAY olur. Geriye bakılmaz: r2 adı
+   uymazsa 1. tur golden'ı denenmez (düzeltilmemiş belgenin 2. turu dürüstçe REPLAY-MISS), case
+   düzeyi adlar (`TPD-1-C2`) bu aramaya girmez.
+4. **İskalama** (mod **`replay_miss`**, nedenler `ai_call.ek.replay_eslesme`'de, ör.
+   `["AC2 metni farklı"]` veya golden dosyası hiç yoksa `["bu anahtar için golden yok"]`).
+   `TP_REPLAY_STRICT=1` (prova) her iskalamayı `ReplayMiss` hatasına çevirir. Golden girdi beyanı
+   (`input_match`) taşıyorsa **veya golden hiç yoksa** (ör. demo sırasında jira-sim'de açılan
+   TPD-24) amacın `<amaç>/on_miss.json` politikası uygulanır:
+   - **nötr yedek** (`output` alanı; `requirement_review`, `consistency_check`): golden çıktısı
+     **kullanılmaz** (başka bir dokümanın cevabıdır); nötr yedeğin çıktısı döner, köken
+     `miss_neutral`, `cikti_kokeni = notr_yedek`. Yeni Jira story'si de serbest metin gibi bu
+     yoldan ilerler (gereksinim akışı: denetim güvenilmez, "Son hal olarak onayla").
+   - **`"policy": "raise"`** (`case_generation`): çıktı yoktur; geçit `ReplayNoOutput` fırlatır
+     ("REPLAY-MISS: bu girdi için kayıtlı model çıktısı yok; canlı model gerekir"), sıfır taslak.
+   - Beyansız golden (senaryo adı: `triage`, `bug_draft`, `dup_rank`) veya `on_miss.json`'u
+     olmayan amaç: golden varsa çıktısı döner, köken `golden`.
+5. Golden de iskalama politikası da yoksa `ReplayNotFound`.
+
+Bulunamayan/çıktısız her iskalama da `ai_call`'a yazılır (mod `replay_miss`, `cikti = NULL`,
+`hata = "ReplayNoOutput: …"` / `"ReplayMiss: …"` / `"ReplayNotFound: …"`, `ek.replay_kokeni =
+yok`; constitution VIII). `promote` bu çıktısız satırları atlar.
 
 ### REPLAY-MISS'te ön inceleme (`requirement_review/on_miss.json`)
 
@@ -46,8 +62,18 @@ olduğu için deterministik doğrulamadan bile geçebilir (ör. "Sipariş iptali
 golden'ının kampanya bulgusu). Bu yüzden denetim de REPLAY-MISS'te nötr çıktı verir
 (`{"findings": [], "notes": "… REPLAY-MISS …"}`); gereksinim akışı bu turu güvenilmez sayar ve
 belgeyi otomatik son hal yapmaz (analist açıkça "Son hal olarak onayla" der).
-Case üretiminin nötr yedeği yoktur (şema en az bir case ister): REPLAY-MISS case'leri
-`REPLAY-MISS` rozetiyle taslak olarak gelir, analist reddeder.
+
+### REPLAY-MISS'te case üretimi (`case_generation/on_miss.json`, `"policy": "raise"`)
+
+Case şeması en az bir case ister, nötr çıktı yoktur. Önceden eşleşmeyen golden'ın case'leri
+`replay_miss` taslağı olarak dönüyordu: "Fatura indirme" serbest metni "Kaldır ile ürün satırı
+sepetten çıkar…" case'lerini alıyordu; AC1/AC2/AC3 atıfları gereksinimde 3 AC olduğu için AC
+denetiminden de geçiyor, QA onayından Jira/Xray'e yayınlanabiliyordu. Analist SERBEST AC2'yi
+"7 adette" bırakırsa (code_defect) 6-adet kuralını doğrulayan case'ler gelip tutulan belgeyle
+çelişiyordu. Artık geçit başka dokümanın case'lerini **hiç döndürmez**: `ReplayNoOutput`
+(`ReplayNotFound` alt sınıfı), sıfır taslak; case'ler elle girilebilir veya IDE kanalı
+kullanılabilir. Gereksinim akışı bu hatayı "Bu girdi için kayıtlı REPLAY çıktısı yok…" olarak
+gösterir (iş kalıcı hatadır; yeniden denemek sonucu değiştirmez).
 
 ### Çıktının kökeni: hazırlanmış örnek mi, model kaydı mı
 
@@ -105,8 +131,8 @@ metinde `golden_name(FREE_TEXT_KEY)` → `SERBEST` / `SERBEST-r2`. `fix_doc` ön
 
 | Amaç | Golden | Hangi doküman |
 |---|---|---|
-| `requirement_review` | `TPD-1..4`, `SERBEST` | Özgün (jira-sim seed / girilen serbest metin). Düzeltmeden sonra yeniden ön inceleme yapılırsa REPLAY-MISS olur |
-| `consistency_check` | `TPD-1..4`, `SERBEST` (1. tur) | Özgün |
+| `requirement_review` | `TPD-1..4`, `SERBEST` | Özgün (jira-sim seed / girilen serbest metin). Düzeltmeden sonra yeniden ön inceleme yapılırsa nötr REPLAY-MISS olur (`make reset` önerilir) |
+| `consistency_check` | `TPD-1..4`, `SERBEST` (1. tur) | Özgün; düzeltilmiş metinle 1. tur `-r2`'ye düşer (arama sırası 3) |
 | `consistency_check` | `TPD-1-r2`, `SERBEST-r2` (2.+ tur) | Aşağıdaki düzeltilmiş metin |
 | `case_generation` | `TPD-1`, `SERBEST` | Düzeltilmiş metin; `TPD-3`, `TPD-4` özgün |
 | `verify_and_map` | `TPD-1-C1..C10`, `TPD-4-C1..C2` | case_generation golden'ındaki case (insan düzeltirse REPLAY-MISS) |
@@ -115,6 +141,9 @@ metinde `golden_name(FREE_TEXT_KEY)` → `SERBEST` / `SERBEST-r2`. `fix_doc` ön
 ## TPD-1: kararlar ve düzeltilmiş metin (golden'ların varsaydığı)
 
 1. tur bulguları (`consistency_check/golden/TPD-1.json`) docs/DEMO-VERISI.md'deki 4 uyumsuzluktur;
+şiddetler yönergenin risk tabanlı kuralına uyar (`prompts/consistency-check.md` v4: kod eksiği
+para, kredi/limit veya sipariş onayını koruyorsa `blocking`, henüz yapılmamış basit özellikse
+`warning` — TPD-2/TPD-3 böyledir);
 kanıtlar forge'daki demo-app kaynağının **güncel** satırlarıdır (yol depo içinde `demo-app/` köküne
 göre):
 
@@ -127,6 +156,10 @@ göre):
 
 F1 ve F3 aynı AC3 metnini önerir; hangi sırayla kabul edilirse edilsin sonuç aynıdır. 2. turda
 (`TPD-1-r2`) yalnızca F4 `warning` olarak kalır → engelleyici bulgu yok → "son hal" → PO teyidi.
+**Bilinen fark:** risk kuralına uyan canlı model 2. turda kredi limiti bulgusunu yine `blocking`
+diyebilir (girdide önceki karar yok). Bulgu 1. turdakiyle aynı tür, aynı AC4 metni ve aynı kanıttır
+(`pricing.py:97`); gereksinim akışı önceki `code_defect` kararını devralır ve yeni karar istemez —
+sonuç aynı (son hal), yalnızca şiddet etiketi farklı olur.
 
 **Düzeltilmiş TPD-1 kabul kriterleri** (jira-sim'e yazılan; `TPD-1-r2` ve `case_generation/TPD-1`
 bunu varsayar):
@@ -203,7 +236,8 @@ gerçekten sınanır (kampanyasız satırı kaldırmak bedava adedi değiştirme
 her adımın beklentisini o adımdaki sepet durumuyla demo-app fiyat fonksiyonlarına karşı denetler.
 
 Başka herhangi bir serbest metin `serbest:*` deseniyle bu golden'a düşer ve beyanına uymaz:
-ön inceleme nötr REPLAY-MISS çıktısı verir (yukarıda), soru göstermez.
+ön inceleme ve denetim nötr REPLAY-MISS çıktısı verir (yukarıda), soru/bulgu göstermez; case
+üretimi `ReplayNoOutput` ile sıfır taslak verir (başka özelliğin case'leri gelmez).
 
 ## Veri kanıtı özeti (`result_digest`)
 

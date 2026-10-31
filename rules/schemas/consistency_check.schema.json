@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "tp:consistency_check",
   "title": "Doküman tutarlılık bulguları (§8.2b)",
-  "x-version": 1,
+  "x-version": 2,
   "type": "object",
   "properties": {
     "findings": {
@@ -27,7 +27,9 @@
           },
           "doc_ref": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "pattern": "^(AC[1-9][0-9]*|Açıklama)(( ↔ |, )(AC[1-9][0-9]*|Açıklama))*$",
+            "description": "Belgedeki yer: kabul kriteri `AC<n>` (birden çoğu ` ↔ ` ya da `, ` ile), story açıklaması `Açıklama`. Örnek: `AC3`, `AC3 ↔ AC6`, `AC1, AC2`."
           },
           "claim": {
             "type": "string"
@@ -111,12 +113,14 @@
           "suggested_doc_text": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "minLength": 1
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "Belgeye yazılacak Türkçe tam yeni satır(lar): her kabul kriteri `AC<n>: ` önekiyle eksiksiz satır olarak; öneksiz metin yalnızca açıklamanın yerine geçer ve AC satırlarından önce gelir. Belge değişikliği yoksa null."
           }
         },
         "required": [

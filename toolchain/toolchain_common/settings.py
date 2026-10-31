@@ -39,6 +39,7 @@ class Settings:
     symbols_timeout_s: float
     probe_timeout_s: float
     run_timeout_s: float
+    health_timeout_s: float
     run_queue_wait_s: float
     check_queue_wait_s: float
 
@@ -89,6 +90,7 @@ def settings() -> Settings:
         symbols_timeout_s=_float("TP_SYMBOLS_TIMEOUT_S", 60),
         probe_timeout_s=_float("TP_PROBE_TIMEOUT_S", 60),
         run_timeout_s=_float("TP_RUN_TIMEOUT_S", 900),
+        health_timeout_s=_float("TP_HEALTH_TIMEOUT_S", 5),
         run_queue_wait_s=_float("TP_RUN_QUEUE_WAIT_S", 600),
         check_queue_wait_s=_float("TP_CHECK_QUEUE_WAIT_S", 900),
     )

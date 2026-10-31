@@ -30,7 +30,8 @@ Claude Code ──publish_test_cases──▶ core-api /mcp ──▶ worker: pu
   positive|negative|boundary, `risk`, `acceptance_criteria_refs` gereksinimde olan AC'ler,
   `steps[{id: S1…, action, data|null, expected}]` ≤ 8, `expected_result`, `tags` içinde
   `AI-generated`). Araç listesi (`tools/list`) şemanın tamamını döner.
-- Her çağrı `tool_call` tablosuna yazılır: kanal `ide`, çağıran kullanıcı, argüman özeti (taslak
+- Kimliği doğrulanmış her çağrı `tool_call` tablosuna yazılır (reddedilen istekler için bkz.
+  "Güvenlik sınırları"): kanal `ide`, çağıran kullanıcı, argüman özeti (taslak
   içerik hash'leri / case kimlikleri), sonuç özeti, izin. Yayında **onaylayanlar** ayrıca kaydedilir
   (çağıran ≠ onaylayan; `GET /audit?verify=true` ile zincir doğrulanır).
 
@@ -122,8 +123,31 @@ Onaylı case kimlikleriyle:
 
 > Şu onaylı case'leri yayınla: `publish_test_cases(["<case-id>", ...])`
 
-Yanıt her case için `created` (Jira anahtarı ve onaylayanla), `exists` ya da `failed` (neden) döner.
-İş 45 sn içinde bitmezse `job_id` ile "kuyrukta" döner; sonuç portalda görünür.
+Yanıt her case için `created` (Jira anahtarı ve onaylayanla), `exists` ya da `failed` (neden) döner;
+`ozet` `{created, exists, failed}` sayımını taşır. **Bir case bile yayınlanamadıysa araç sonucu
+hatadır (`isError: true`)**: hiçbiri yayınlanmadıysa "Hiçbir case yayınlanmadı", kısmi başarıda
+"N case yayınlanamadı" mesajıyla; kalem ayrıntıları (`sonuclar`) yine döner. Claude Code bu yanıtı
+başarı saymaz. İş 45 sn içinde bitmezse `job_id` ile "kuyrukta" döner; sonuç portalda görünür.
+
+Yayın, Jira etiketiyle verilmiş PO onayında `tp-po-approved` etiketinin Jira'da **hâlâ durduğunu**
+dış çağrıdan önce eşzamanlı denetler (gereksinim başına bir kez; Jira okunamazsa fail-closed). PO
+etiketi kaldırdıktan sonraki sorgu aralığında (`TP_PO_POLL_S`) yayın Jira'ya yazmaz.
+
+### Sıra: önce IDE taslakları mı, portal üretimi mi?
+
+İkisi aynı gereksinimde birlikte kullanılabilir. Portaldaki **"Case üret"** önceki **portal**
+üretimlerinin karar verilmemiş/reddedilmiş taslaklarını `superseded` yapar, ama **IDE'den gelen ve
+henüz karar verilmemiş taslakları korur**: iş sonucu `korunan_ide_taslak` sayısını ve "IDE'den
+(Claude Code) gelen N taslak korundu" uyarısını taşır; Case review ekranında ve `case-metrics`
+`kanallar` sayacında `ide` taslakları görünmeye devam eder. Model çıktısı bir IDE taslağıyla birebir
+aynıysa tekrar sayılır ve eklenmez. Sahnede önerilen sıra yine de: önce portal üretimi + review,
+sonra Claude Code ile ek taslaklar (IDE katkısı ayrı satırlar olarak düşer).
+
+Story içeriği değişip PO yeniden onayladığında eski metne ait taslak/onaylı case'ler `superseded`
+olur; **yayınlanmış** eski case'ler Jira'da kalır, `onceki_icerik: true` ve "önceki içerik için
+üretildi" uyarısıyla görünür. Yeni metin için üretilen/gönderilen case'ler bunlarla tekrar
+denetimine girmez (aynı içerik yeniden taslak olarak düşer, analist yeni metne göre gözden geçirir)
+ve AC kapsamı (`kapsanmayan_ac`) bunlardan hesaplanmaz.
 
 ## Güvenlik sınırları
 
@@ -133,6 +157,13 @@ Yanıt her case için `created` (Jira anahtarı ve onaylayanla), `exists` ya da 
 - **Yalnızca bearer:** oturum çerezi MCP'de kimlik sayılmaz (çerez-CSRF yüzeyi yok). Tarayıcıdan,
   başka kökenden gelen istekler (`Origin`/`Sec-Fetch-Site`) `OriginGuard` tarafından 403 alır.
   Geçersiz/iptal edilmiş/süresi dolmuş token → 401 (`WWW-Authenticate: Bearer`).
+- **Reddedilen istekler de kayıtlıdır (Constitution VIII):** 401/403/421 retleri `tool_call`
+  oluşturmaz (araç çalışmadı) ama denetim zincirine `mcp.auth_failed` (aktör `anonim`) olarak
+  yazılır: HTTP durumu, neden, istemci adresi, `token_izi` (token'ın sha256'sının ilk 12 hanesi;
+  ham token asla yazılmaz) ve 401'de token biliniyorsa `token_id`, sahibi, kapsamı ve durumu
+  (`iptal` / `suresi_dolmus` / `parola_degisti`). Aynı (neden, istemci, token izi) için en çok
+  10 sn'de bir satır yazılır; arada bastırılanlar bir sonraki satırda `bastirilan_onceki` ile
+  sayılır. İptal edilmiş ya da çalınmış token'ın kullanımı böylece görünür olur.
 - **Güvenilmeyen girdi:** IDE'den gelen case metni güvenilmeyen içeriktir; yalnızca şema ve AC
   referansı denetimiyle taslak olarak saklanır, hiçbir durumu kendisi değiştiremez.
 - Taşıma: streamable HTTP, durumsuz, JSON yanıt (her istek token'ı yeniden doğrular).
@@ -141,7 +172,9 @@ Yanıt her case için `created` (Jira anahtarı ve onaylayanla), `exists` ya da 
 
 | Belirti | Neden |
 |---|---|
-| 401 | Token yok/yanlış, süresi dolmuş, iptal edilmiş ya da parolanız değişmiş → yeni token. |
+| 401 | Token yok/yanlış, süresi dolmuş, iptal edilmiş ya da parolanız değişmiş → yeni token. Ret denetimde `mcp.auth_failed` olarak görünür. |
+| `publish_test_cases` `isError: true` | En az bir case yayınlanamadı; `sonuclar[].hata` nedeni söyler (onaysız, hash farklı, PO onayı güncel değil, PO etiketi Jira'da yok…). |
+| "PO onay etiketi (tp-po-approved) Jira'da artık yok" | PO etiketi kaldırdı; yayın yapılmadı. PO onayı yenilenmeli. |
 | 421 | `.mcp.json` adresi `127.0.0.1`/`localhost` değil. |
 | Araç hatası "kapsam" | `submit` token'ıyla yayın (ya da tersi) denendi. |
 | "PO onaylı gereksinime" / "PO onaylı değil" | Story henüz PO onaylı değil ya da PO onayından sonra değişti. |

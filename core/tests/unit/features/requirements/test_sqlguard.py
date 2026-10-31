@@ -138,12 +138,154 @@ def test_kanit_sorgusu_deger_uyduramaz(sql: str) -> None:
     "sql",
     [
         "SELECT anahtar, deger FROM ayar WHERE anahtar = 'min_siparis_tutari'",
-        "SELECT k.kod, u.kod FROM kampanya k JOIN urun u ON u.id = k.urun_id WHERE k.aktif",
+        "SELECT k.kod FROM kampanya k WHERE k.aktif",
         "SELECT count(*) AS n FROM urun",
-        "SELECT count(DISTINCT kod), max(fiyat), lower(ad), round(fiyat, 2) FROM urun "
-        "GROUP BY ad, fiyat",
+        "SELECT ad, lower(ad), count(DISTINCT kod) FROM urun GROUP BY ad",
+        "SELECT aktif, max(fiyat) FROM urun GROUP BY 1",
+        "SELECT kod, fiyat FROM urun GROUP BY kod, fiyat",
+        "SELECT max(fiyat) FROM urun",
+        "SELECT min(u.kod) AS ilk FROM urun u WHERE u.aktif",
         "SELECT cast(fiyat AS text) FROM urun WHERE fiyat > 10 AND aktif",
+        "SELECT anahtar, CAST(deger AS numeric) FROM ayar WHERE anahtar = 'min_siparis_tutari'",
+        "SELECT anahtar, deger::varchar FROM ayar",
+        "SELECT CAST(CAST(deger AS numeric) AS text) FROM ayar",
+        "SELECT upper(trim(kod)) FROM urun",
     ],
 )
 def test_kanit_sorgusu_kabul(sql: str) -> None:
     assert validate_select(sql, kanit=True).sql.startswith("SELECT")
+
+
+# 2. inceleme turu: kayıplı dönüşüm ve bağımsız toplamalar değer uydurur (canlı demoapp_ro'da
+# yeniden üretildi; gerçek min_siparis_tutari=750.00, P-001 fiyatı 25.00).
+KANIT_KAYIPLI = {
+    # "min_siparis_tutari=7"
+    "cast_varchar_n": (
+        "SELECT anahtar, CAST(deger AS varchar(1)) FROM ayar WHERE anahtar='min_siparis_tutari'"
+    ),
+    # "min_siparis_tutari=1000"
+    "round_negatif": (
+        "SELECT anahtar, round(CAST(deger AS numeric), -3) FROM ayar "
+        "WHERE anahtar='min_siparis_tutari'"
+    ),
+    "round_decimal": (
+        "SELECT anahtar, ROUND(CAST(deger AS DECIMAL), -3) FROM ayar "
+        "WHERE anahtar='min_siparis_tutari'"
+    ),
+    # "bayi1=0; bayi2=0"
+    "round_kredi": "SELECT kullanici_adi, round(kredi_limiti, -5) FROM bayi",
+    "round_basamaksiz": "SELECT kod, round(fiyat) FROM urun",
+    "round_pozitif": "SELECT kod, round(fiyat, 1) FROM urun",
+    "cast_numeric_ps": "SELECT anahtar, CAST(deger AS numeric(5,0)) FROM ayar",
+    "cast_int": "SELECT kullanici_adi, CAST(kredi_limiti AS INT) FROM bayi",
+    "cast_bigint": "SELECT kullanici_adi, kredi_limiti::bigint FROM bayi",
+    "cast_float": "SELECT kod, CAST(fiyat AS double precision) FROM urun",
+    "cast_char": "SELECT anahtar, CAST(deger AS char) FROM ayar",
+    "cast_tarih": "SELECT kullanici_adi, CAST(olusturma AS date) FROM bayi",
+    "length": "SELECT anahtar, length(deger) FROM ayar",
+    "abs": "SELECT kod, abs(fiyat) FROM urun",
+    "trim_karakter": "SELECT anahtar, trim(both '0' from deger) FROM ayar",
+    "sum": "SELECT sum(fiyat) FROM urun",
+    "avg": "SELECT avg(fiyat) FROM urun",
+    "toplama_icinde_donusum": "SELECT max(round(fiyat, -2)) FROM urun",
+    # "P-001=30.00" (farklı satırlar eşlenir)
+    "bagimsiz_toplamalar": "SELECT MIN(kod), MAX(fiyat) FROM urun",
+    "iki_toplama_gruplu": "SELECT aktif, min(kod), max(fiyat) FROM urun GROUP BY aktif",
+    "gruplanmamis_kolon": "SELECT kod, max(fiyat) FROM urun GROUP BY aktif",
+    "grupsuz_kolon": "SELECT kod, count(*) FROM urun",
+    "donusumlu_grup_disi": "SELECT lower(ad), max(fiyat) FROM urun GROUP BY kod",
+    "toplama_ustunde_cast": "SELECT kod, CAST(max(fiyat) AS text) FROM urun GROUP BY kod",
+}
+
+
+@pytest.mark.parametrize("ad", sorted(KANIT_KAYIPLI))
+def test_kanit_sorgusu_kayipli_donusum_ve_bagimsiz_toplama_reddedilir(ad: str) -> None:
+    with pytest.raises(QueryRejected):
+        validate_select(KANIT_KAYIPLI[ad], kanit=True)
+
+
+# ---------------------------------------------------------------- 1. inceleme turu (kaçaklar)
+
+GUARD_KACAKLARI = {
+    # Takma ad kolon listesi kolonları konumla yeniden adlandırır: b.ad = parola_hash.
+    "kolon_listesi": "SELECT b.ad FROM bayi AS b(id, kullanici_adi, ad, olusturma)",
+    "kolon_listesi_niteliksiz": "SELECT ad FROM bayi AS b(id, kullanici_adi, ad)",
+    # Tablo takma adı başka tablonun izinli kolon adı: alt sorguda tüm bayi satırı okunurdu.
+    "tum_satir_takma_ad": (
+        "SELECT (SELECT CAST(deger AS TEXT) FROM bayi deger LIMIT 1) AS x, "
+        "(SELECT count(deger) FROM ayar) AS y FROM urun"
+    ),
+    "takma_ad_kolon_adi": "SELECT kod FROM urun deger WHERE kod = 'P-001'",
+    "takma_ad_baska_tablo": "SELECT kod FROM urun bayi",
+    "projeksiyonda_alt_sorgu": "SELECT (SELECT max(fiyat) FROM urun) AS m FROM ayar",
+    "lateral": "SELECT kod FROM urun, LATERAL (SELECT 1 AS a) x",
+    "lateral_uydurma": (
+        "SELECT anahtar, deger FROM urun, LATERAL (SELECT 'min_siparis_tutari' AS anahtar, "
+        "'500.00' AS deger FROM ayar) x LIMIT 1"
+    ),
+    "cross_join_lateral": (
+        "SELECT anahtar FROM urun CROSS JOIN LATERAL (SELECT anahtar FROM ayar) x"
+    ),
+    "values": (
+        "SELECT deger FROM urun, (VALUES ('500.00')) AS v(deger) "
+        "WHERE kod NOT IN (SELECT anahtar FROM ayar) LIMIT 1"
+    ),
+    "tablesample": "SELECT kod FROM urun TABLESAMPLE SYSTEM (10)",
+    "pencere": "SELECT count(*) OVER () FROM urun",
+    "adlandirilmis_pencere": "SELECT count(*) OVER w FROM urun WINDOW w AS ()",
+    "join_on_alt_sorgu": (
+        "SELECT u.kod FROM urun u JOIN kampanya k ON k.urun_id IN (SELECT id FROM urun)"
+    ),
+    "order_by_alt_sorgu": "SELECT kod FROM urun ORDER BY (SELECT max(fiyat) FROM urun)",
+    # Nitelenmemiş kolon dış kapsama (bağıntı) örtük çözülmez.
+    "ortuk_baginti": (
+        "SELECT kod FROM urun WHERE kod IN (SELECT anahtar FROM ayar WHERE fiyat > 0)"
+    ),
+    "tum_satir_dis_kapsam": (
+        "SELECT kod FROM urun u WHERE kod IN (SELECT anahtar FROM ayar WHERE CAST(u AS text) <> '')"
+    ),
+    "kompozit_alan": "SELECT (u).kod FROM urun u",
+    "sema_nitelikli_kolon": "SELECT public.urun.ad FROM urun",
+}
+
+
+@pytest.mark.parametrize("ad", sorted(GUARD_KACAKLARI))
+def test_guard_kacaklari_reddedilir(ad: str) -> None:
+    with pytest.raises(QueryRejected):
+        validate_select(GUARD_KACAKLARI[ad])
+    with pytest.raises(QueryRejected):
+        validate_select(GUARD_KACAKLARI[ad], kanit=True)
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT kod FROM urun WHERE id IN "
+        "(SELECT k.urun_id FROM kampanya k WHERE k.urun_id = urun.id)",
+        "SELECT u.kod FROM urun u WHERE u.id = ANY (SELECT urun_id FROM kampanya)",
+        "SELECT kod FROM urun GROUP BY kod HAVING count(id) > (SELECT count(id) FROM kampanya)",
+        "SELECT u.kod, k.ad FROM urun u, kampanya k WHERE k.urun_id = u.id",
+        "SELECT urun.kod FROM urun urun",
+    ],
+)
+def test_kosulda_alt_sorgu_ve_birlestirme_kabul(sql: str) -> None:
+    assert validate_select(sql).sql.startswith("SELECT")
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        # Gerçek değer 750.00; çapraz birleştirme fiyatı anahtarla eşler (min_siparis_tutari=30.00).
+        "SELECT a.anahtar, u.fiyat FROM ayar a, urun u "
+        "WHERE a.anahtar = 'min_siparis_tutari' AND u.kod = 'P-004'",
+        "SELECT a.anahtar, u.fiyat FROM ayar a JOIN urun u ON TRUE",
+        "SELECT k.kod, u.kod FROM kampanya k JOIN urun u ON u.id = k.urun_id WHERE k.aktif",
+        # Kolon yeniden adlandırma: aciklama metni "deger" olarak görünürdü.
+        "SELECT anahtar, deger FROM ayar AS a(anahtar, aciklama, deger) "
+        "WHERE anahtar = 'min_siparis_tutari'",
+        "SELECT anahtar FROM ayar WHERE anahtar IN (SELECT kod FROM urun)",
+    ],
+)
+def test_kanit_sorgusu_tek_tablo(sql: str) -> None:
+    with pytest.raises(QueryRejected):
+        validate_select(sql, kanit=True)

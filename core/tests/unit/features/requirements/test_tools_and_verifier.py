@@ -173,6 +173,24 @@ def test_bozuk_kod_kaniti_elenir(
     assert any(neden in c["neden"] for c in v.checks if not c["ok"])
 
 
+@pytest.mark.parametrize("repo", ["demo-app", "antrek/demo-app", "demo-app@abc123", "", None])
+def test_kod_kaniti_depo_adi_normalize(verifier: EvidenceVerifier, repo: str | None) -> None:
+    # Prompt `tool:get_file_contents:<repo>@<commit>:<path>` kaynağını gösterir; model
+    # owner/ öneki ya da @commit ekleyebilir. Dosya her durumda denetim commit'inde okunur.
+    f2 = {f["id"]: f for f in golden("TPD-1")["output"]["findings"]}["F2"]
+    assert verifier.verify(_bozuk(f2, repo=repo), TPD1_ACS).ok
+
+
+@pytest.mark.parametrize("repo", ["baska-depo@abc", "antrek/baska-depo", "demo-app-2"])
+def test_kod_kaniti_baska_depo_normalize_sonrasi_elenir(
+    verifier: EvidenceVerifier, repo: str
+) -> None:
+    f2 = {f["id"]: f for f in golden("TPD-1")["output"]["findings"]}["F2"]
+    v = verifier.verify(_bozuk(f2, repo=repo), TPD1_ACS)
+    assert not v.ok
+    assert any("farklı depo" in c["neden"] for c in v.checks if not c["ok"])
+
+
 def test_bosluk_normalize_alinti_kabul(verifier: EvidenceVerifier) -> None:
     f2 = {f["id"]: f for f in golden("TPD-1")["output"]["findings"]}["F2"]
     assert verifier.verify(_bozuk(f2, snippet="return   adet //\t6"), TPD1_ACS).ok
@@ -220,3 +238,77 @@ def test_sabit_projeksiyonlu_uydurma_veri_kaniti_elenir(
     # FROM'suz sabit sorgu da kanıt olamaz.
     v = verifier.verify(_bozuk(f3, query="SELECT 'x'", result_digest="x"), TPD1_ACS)
     assert not v.ok
+
+
+@pytest.mark.parametrize(
+    ("query", "digest"),
+    [
+        # Çapraz birleştirme: gerçek kolon değeri başka satırın anahtarıyla eşlenir (gerçek 750.00).
+        (
+            "SELECT a.anahtar, u.fiyat FROM ayar a, urun u "
+            "WHERE a.anahtar = 'min_siparis_tutari' AND u.kod = 'P-004'",
+            "min_siparis_tutari=30.00",
+        ),
+        # Takma ad kolon listesi: aciklama metni "deger" olarak görünür.
+        (
+            "SELECT anahtar, deger FROM ayar AS a(anahtar, aciklama, deger) "
+            "WHERE anahtar = 'min_siparis_tutari'",
+            "min_siparis_tutari=Minimum sipariş tutarı",
+        ),
+        # LATERAL / VALUES: değer sorgu metninden gelir.
+        (
+            "SELECT anahtar, deger FROM urun, LATERAL (SELECT 'min_siparis_tutari' AS anahtar, "
+            "'500.00' AS deger FROM ayar) x LIMIT 1",
+            "min_siparis_tutari=500.00",
+        ),
+        (
+            "SELECT anahtar, deger FROM urun CROSS JOIN LATERAL (SELECT 'min_siparis_tutari' "
+            "AS anahtar, '500.00' AS deger FROM ayar) x LIMIT 1",
+            "min_siparis_tutari=500.00",
+        ),
+        (
+            "SELECT deger FROM urun, (VALUES ('500.00')) AS v(deger) "
+            "WHERE kod NOT IN (SELECT anahtar FROM ayar) LIMIT 1",
+            "500.00",
+        ),
+        # 2. inceleme turu: kayıplı dönüşüm / bağımsız toplamalar (gerçek 750.00; P-001 25.00).
+        (
+            "SELECT anahtar, CAST(deger AS varchar(1)) FROM ayar "
+            "WHERE anahtar='min_siparis_tutari'",
+            "min_siparis_tutari=7",
+        ),
+        (
+            "SELECT anahtar, round(CAST(deger AS numeric), -3) FROM ayar "
+            "WHERE anahtar='min_siparis_tutari'",
+            "min_siparis_tutari=1000",
+        ),
+        ("SELECT kullanici_adi, round(kredi_limiti, -5) FROM bayi", "bayi1=0; bayi2=0"),
+        ("SELECT kullanici_adi, CAST(kredi_limiti AS INT) FROM bayi", "bayi1=2000; bayi2=500"),
+        ("SELECT anahtar, CAST(deger AS numeric(5,0)) FROM ayar", "min_siparis_tutari=750"),
+        ("SELECT anahtar, length(deger) FROM ayar", "min_siparis_tutari=6"),
+        ("SELECT MIN(kod), MAX(fiyat) FROM urun", "P-001=30.00"),
+    ],
+)
+def test_birlestirme_ve_yeniden_adlandirma_kaniti_elenir(
+    verifier: EvidenceVerifier, query: str, digest: str
+) -> None:
+    ok, neden = verifier.check_data({"kind": "data", "query": query, "result_digest": digest})
+    assert not ok and neden.startswith("sorgu reddedildi"), neden
+    f3 = {f["id"]: f for f in golden("TPD-1")["output"]["findings"]}["F3"]
+    assert not verifier.verify(_bozuk(f3, query=query, result_digest=digest), TPD1_ACS).ok
+
+
+def test_veri_kaniti_dogrulanan_sorguyu_ve_bos_sonucu_gosterir(verifier: EvidenceVerifier) -> None:
+    q = "SELECT anahtar, deger FROM ayar WHERE anahtar = 'min_siparis_tutari'"
+    ok, neden = verifier.check_data(
+        {"kind": "data", "query": q, "result_digest": "min_siparis_tutari=750.00"}
+    )
+    assert ok and "1 satır" in neden and "FROM ayar" in neden
+    ok, neden = verifier.check_data(
+        {
+            "kind": "data",
+            "query": "SELECT anahtar FROM ayar WHERE anahtar = 'min_siparis_tutar'",
+            "result_digest": "(sonuç yok)",
+        }
+    )
+    assert ok and "boş sonuç" in neden and "min_siparis_tutar'" in neden

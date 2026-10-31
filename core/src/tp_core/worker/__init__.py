@@ -4,8 +4,14 @@ işleyicilere dağıtır. İşleyiciler `@tp_core.workflow.jobs.job_handler` ile
 
 Yeniden deneme/geri çekilme, zaman aşımı ve idempotency kuralları `tp_core.workflow.jobs`'tadır.
 
-Açılışta (ilk turda) aynı konteynerin önceki sürecinden kalan `running` işler bırakılır
-(`release_orphans`). Bir iş `zaman_asimi_s` içinde bitmezse iş `retry`/`failed` yazılır ve süreç
+Açılışta (ilk başarılı DB turunda) aynı konteynerin önceki sürecinden kalan `running` işler
+bırakılır (`release_orphans`): önceki sürecin kimliği `TP_WORKER_STATE_FILE` dosyasından okunur
+ve yalnızca onun işleri beklemeden bırakılır; aynı hostname'deki diğer işler ancak nabızları
+kesildiyse bırakılır (ölçeklenmiş kopyanın canlı işlerine dokunulmaz). Ardından özellik
+modüllerinin `on_worker_start` kancaları koşar; DB hazır değilken başarısız olan kanca sonraki
+turlarda başarılı olana dek yeniden denenir (Docker yeniden başlatma yarışı).
+
+Bir iş `zaman_asimi_s` içinde bitmezse iş `retry`/`failed` yazılır ve süreç
 `ZAMAN_ASIMI_CIKIS_KODU` ile çıkar (asılı iş parçacığı öldürülemez; compose yeniden başlatır).
 
 Canlılık: ana döngü (ve iş beklerken yürütücü) `TP_WORKER_LIVENESS_FILE` dosyasının zamanını
@@ -35,6 +41,7 @@ from sqlalchemy.exc import InterfaceError, OperationalError
 from tp_core.db import get_engine
 from tp_core.workflow import jobs
 from tp_core.workflow.jobs import (
+    HEARTBEAT_S,
     REGISTRY,
     ClaimedJob,
     HandlerSpec,
@@ -44,6 +51,7 @@ from tp_core.workflow.jobs import (
     process_one,
     reap_stale,
     release_orphans,
+    worker_id,
 )
 
 log = logging.getLogger("tp_core.worker")
@@ -54,6 +62,11 @@ REAP_ARALIGI_S = 30.0
 DB_BEKLEME_UST_S = 30.0
 ZAMAN_ASIMI_CIKIS_KODU = 70
 CANLILIK_ESIGI_S = 120.0
+# Açılışta başka bir sürecin (aynı hostname) işini "ölü" saymak için nabzın bu kadar eski olması
+# gerekir (nabız `HEARTBEAT_S`'de bir yazılır).
+SAHIPSIZ_NABIZ_S = 2 * HEARTBEAT_S
+# Başarısız açılış kancasının yeniden deneme aralığı (log selini önler).
+KANCA_TEKRAR_S = 10.0
 
 
 def canlilik_dosyasi() -> Path:
@@ -61,6 +74,27 @@ def canlilik_dosyasi() -> Path:
         os.environ.get("TP_WORKER_LIVENESS_FILE")
         or os.path.join(tempfile.gettempdir(), "tp-worker-canli")
     )
+
+
+def durum_dosyasi() -> Path:
+    """Bu konteynerdeki son worker sürecinin kimliğini (`kilitleyen`) tutan dosya."""
+    return Path(
+        os.environ.get("TP_WORKER_STATE_FILE")
+        or os.path.join(tempfile.gettempdir(), "tp-worker-surec")
+    )
+
+
+def onceki_surec() -> str | None:
+    with contextlib.suppress(OSError, UnicodeDecodeError):
+        return durum_dosyasi().read_text().strip() or None
+    return None
+
+
+def surec_kaydet(kimlik: str) -> None:
+    try:
+        durum_dosyasi().write_text(kimlik + "\n")
+    except OSError as exc:
+        log.warning("worker süreç kimliği yazılamadı (%s); sonraki açılış nabza düşer", exc)
 
 
 def canli() -> None:
@@ -114,19 +148,27 @@ def calistir(
 
 _son_reap = 0.0
 _sahipsizler_birakildi = False
+# Henüz başarıyla koşmamış `on_worker_start` kancalarının modülleri (main doldurur).
+_bekleyen_kancalar: list[str] = []
+_kanca_sonraki = 0.0
 
 
 def tek_tur() -> bool:
-    """İlk turda önceki süreçten kalan işleri bırakır; gerekirse zaman aşımına uğramış işleri
-    toplar, sonra bir iş işler; iş yoksa False."""
+    """İlk turda önceki süreçten kalan işleri bırakır ve açılış kancalarını koşar (başarısız
+    kancalar sonraki turlarda yeniden denenir); gerekirse zaman aşımına uğramış işleri toplar,
+    sonra bir iş işler; iş yoksa False."""
     global _son_reap, _sahipsizler_birakildi
     engine = get_engine()
     if not _sahipsizler_birakildi:
+        kendi = worker_id()
         with engine.begin() as conn:
-            n = release_orphans(conn)
+            n = release_orphans(conn, haric=kendi, onceki=onceki_surec(), taze_s=SAHIPSIZ_NABIZ_S)
+        surec_kaydet(kendi)
         _sahipsizler_birakildi = True
         if n:
             log.warning("önceki worker sürecinden kalan %d iş bırakıldı (retry/failed)", n)
+    if _bekleyen_kancalar:
+        kancalari_dene()
     if time.monotonic() - _son_reap >= REAP_ARALIGI_S:
         with engine.begin() as conn:
             n = reap_stale(conn)
@@ -175,27 +217,61 @@ def run(dur: threading.Event, aralik: float = 1.0) -> int:
     return 0
 
 
-def acilis_kancalari(moduller: list[str]) -> list[str]:
-    """Özellik `jobs` modüllerindeki `on_worker_start(conn)` kancalarını bir kez çağırır.
-
-    Ör. kendini yeniden planlayan periyodik işler (PO etiket sorgusu) kuyruk silinse de worker
-    açılışında yeniden başlar. Kanca hatası worker'ı düşürmez (loglanır); her kanca kendi
-    işleminde koşar.
-    """
+def _kanca(ad: str) -> Callable[..., Any] | None:
     import importlib
 
+    kanca = getattr(importlib.import_module(ad), "on_worker_start", None)
+    return kanca if callable(kanca) else None
+
+
+def acilis_kancalari(moduller: list[str]) -> list[str]:
+    """Özellik `jobs` modüllerindeki `on_worker_start(conn)` kancalarını çağırır; başarıyla
+    koşan modülleri döndürür.
+
+    Ör. kendini yeniden planlayan periyodik işler (PO etiket sorgusu) kuyruk silinse de worker
+    açılışında yeniden başlar. Kanca hatası worker'ı düşürmez (loglanır; DB erişilemiyorsa tek
+    satır uyarı); her kanca kendi işleminde koşar.
+    """
     calisan: list[str] = []
     for ad in moduller:
-        kanca = getattr(importlib.import_module(ad), "on_worker_start", None)
-        if not callable(kanca):
+        kanca = _kanca(ad)
+        if kanca is None:
             continue
         try:
             with get_engine().begin() as conn:
                 kanca(conn)
             calisan.append(ad)
+        except DB_HATALARI as exc:
+            log.warning("%s.on_worker_start: DB erişilemiyor: %s", ad, _kisa_hata(exc))
         except Exception:
             log.exception("%s.on_worker_start başarısız", ad)
     return calisan
+
+
+def kancalari_planla(moduller: list[str]) -> list[str]:
+    """`on_worker_start` kancası olan modülleri ilk DB turunda koşmak üzere sıraya alır."""
+    global _bekleyen_kancalar, _kanca_sonraki
+    _bekleyen_kancalar = [ad for ad in moduller if _kanca(ad) is not None]
+    _kanca_sonraki = 0.0
+    return list(_bekleyen_kancalar)
+
+
+def kancalari_dene() -> None:
+    """Bekleyen açılış kancalarını (aralık dolduysa) dener; başaranları listeden düşer."""
+    global _bekleyen_kancalar, _kanca_sonraki
+    if not _bekleyen_kancalar or time.monotonic() < _kanca_sonraki:
+        return
+    basarili = set(acilis_kancalari(_bekleyen_kancalar))
+    _bekleyen_kancalar = [ad for ad in _bekleyen_kancalar if ad not in basarili]
+    if _bekleyen_kancalar:
+        _kanca_sonraki = time.monotonic() + KANCA_TEKRAR_S
+        log.warning(
+            "açılış kancası bekliyor (%s); %.0f sn sonra yeniden denenecek",
+            ", ".join(_bekleyen_kancalar),
+            KANCA_TEKRAR_S,
+        )
+    elif basarili:
+        log.info("açılış kancaları koştu: %s", ", ".join(sorted(basarili)))
 
 
 def main() -> None:
@@ -205,7 +281,8 @@ def main() -> None:
     yuklenen = discover()
     if yuklenen:
         log.info("özellik işleyici modülleri: %s", ", ".join(yuklenen))
-    acilis_kancalari(yuklenen)
+    # Kancalar ilk başarılı DB turunda koşar (DB henüz hazır değilse yeniden denenir).
+    kancalari_planla(yuklenen)
     dur = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: dur.set())

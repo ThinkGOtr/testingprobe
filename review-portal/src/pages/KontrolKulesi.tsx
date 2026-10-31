@@ -76,7 +76,7 @@ export function KontrolKulesi() {
             <Metrik etiket="Case başına AI + review" deger={sure(toplamSure)} alt={`AI ${sure(ai.ort_ai_sure_ms)} · review ${sure(ai.ort_review_sure_ms)}`} />
             <Metrik
               etiket="Manuel baz değer"
-              deger={ai.manuel_baz_ms ? sure(ai.manuel_baz_ms) : "—"}
+              deger={ai.manuel_baz_ms ? sure(ai.manuel_baz_ms) : "ölçülmedi"}
               alt={ai.manuel_baz_ms && toplamSure ? `Kazanç ${yuzde(1 - toplamSure / ai.manuel_baz_ms)}` : undefined}
             />
             <Metrik etiket="Maliyet (toplam)" deger={dolar(ai.maliyet_usd_toplam)} alt={`${ai.cagri_sayisi} model çağrısı`} />

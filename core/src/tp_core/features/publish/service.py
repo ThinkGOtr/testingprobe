@@ -430,8 +430,48 @@ def _mod_isaretle(jira: JiraPort | None, key: str, mod: str) -> None:
         jira.add_comment(key, yorum)
 
 
+def _po_etiket_engelleri(ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, str]:
+    """Jira etiketiyle PO onaylı gereksinimlerde etiketin ŞU AN durduğunu denetler (case → engel).
+
+    Etiket kaldırıldıktan sonra PO sorgusu (`TP_PO_POLL_S`) gereksinimi `new`'e alana kadar DB
+    durumu hâlâ "onaylı" görünür; bu pencerede yayın, geri çekilmiş onayla Jira'ya Test issue
+    yazardı. Gereksinim başına bir kez, dış çağrıdan önce; Jira okunamazsa fail-closed.
+    """
+    from tp_core.features.cases.service import _jira_po_etiketi_denetle
+    from tp_core.workflow.service import WorkflowError
+
+    if not ids:
+        return {}
+    engeller: dict[uuid.UUID, str] = {}
+    with session_scope() as s:
+        satirlar = s.execute(
+            select(TestCase.id, TestCase.requirement_id).where(
+                TestCase.id.in_(ids), TestCase.durum == "approved"
+            )
+        ).all()
+        req_engeli: dict[uuid.UUID, str | None] = {}
+        for rid in sorted({r for _, r in satirlar}, key=str):
+            req = s.get(Requirement, rid)
+            if req is None or req.po_onay_kaynagi != "jira_label":
+                req_engeli[rid] = None
+                continue
+            try:
+                _jira_po_etiketi_denetle(req)
+                req_engeli[rid] = None
+            except WorkflowError as exc:
+                req_engeli[rid] = str(exc)
+        for cid, rid in satirlar:
+            if req_engeli.get(rid):
+                engeller[cid] = req_engeli[rid]  # type: ignore[assignment]
+    return engeller
+
+
 def _publish_one(
-    t: Targets, cid: uuid.UUID, aktor: str, job_id: uuid.UUID | None = None
+    t: Targets,
+    cid: uuid.UUID,
+    aktor: str,
+    job_id: uuid.UUID | None = None,
+    po_engeli: str | None = None,
 ) -> dict[str, Any]:
     tm = t.tm
     hedef = tm.name
@@ -444,7 +484,7 @@ def _publish_one(
             return _sonuc(
                 cid, "exists", ref.external_key if ref else None, url=ref.url if ref else None
             )
-        engel = _engel(s, tc)
+        engel = _engel(s, tc) or po_engeli
         if engel:
             return _sonuc(cid, "failed", hata=engel)
         req = s.get(Requirement, tc.requirement_id)
@@ -577,6 +617,23 @@ def _complete_requirements(req_ids: set[uuid.UUID], aktor: str) -> list[str]:
     return tamam
 
 
+def _unanchored(session: Session, case_ids: Sequence[str]) -> set[str]:
+    """Hiçbir `publish.anchored` kaydında geçmeyen case kimlikleri."""
+    if not case_ids:
+        return set()
+    sabit = set(
+        session.execute(
+            text(
+                "SELECT DISTINCT x FROM audit_event, "
+                "jsonb_array_elements_text(COALESCE(ozet -> 'case_ids', '[]'::jsonb)) AS x "
+                "WHERE eylem = 'publish.anchored' AND (ozet -> 'case_ids') ?| CAST(:ids AS text[])"
+            ),
+            {"ids": list(case_ids)},
+        ).scalars()
+    )
+    return {c for c in case_ids if c not in sabit}
+
+
 def _pin_chain(
     engine: Engine,
     jira: JiraPort | None,
@@ -588,6 +645,39 @@ def _pin_chain(
     if jira is None:
         return uyarilar
     for story, kalemler in story_keys.items():
+        case_ids = sorted(k["case_id"] for k in kalemler)
+        anahtarlar_l = [k["external_key"] for k in kalemler if k.get("external_key")]
+        if all(k.get("kurtarma") for k in kalemler):
+            # Önceki deneme yayınladı ama sabitleme kaydı yok: yorum yazılmış olabilir (yorumdan
+            # sonra çöküş). Jira'da bu anahtarları anan yayın yorumu varsa yalnızca kaydedilir.
+            try:
+                var = next(
+                    (
+                        c
+                        for c in jira.get_comments(story)
+                        if (c.body or "").startswith("Testing Probe:")
+                        and all(a in (c.body or "") for a in anahtarlar_l)
+                    ),
+                    None,
+                )
+            except Exception as exc:
+                uyarilar.append(f"{story} yorumları okunamadı: {exc}")
+                continue
+            if var is not None:
+                with session_scope() as s:
+                    audit_on_commit(
+                        s,
+                        aktor,
+                        "publish.anchored",
+                        f"jira:{story}",
+                        {
+                            "comment_id": var.id,
+                            "case_ids": case_ids,
+                            "external_keys": anahtarlar_l,
+                            "kurtarma": True,
+                        },
+                    )
+                continue
         with engine.connect() as c:
             tip = chain_tip(c)
         anahtarlar = ", ".join(k["external_key"] for k in kalemler if k.get("external_key"))
@@ -614,7 +704,13 @@ def _pin_chain(
                 aktor,
                 "publish.anchored",
                 f"jira:{story}",
-                {"comment_id": yorum_id, "zincir_hash": tip},
+                {
+                    "comment_id": yorum_id,
+                    "zincir_hash": tip,
+                    "case_ids": case_ids,
+                    "external_keys": anahtarlar_l,
+                    "kurtarma": any(k.get("kurtarma") for k in kalemler),
+                },
             )
     return uyarilar
 
@@ -632,13 +728,23 @@ def run_publish(ctx: JobContext, engine: Engine, targets: Targets | None = None)
     except ValueError as exc:
         raise PermanentJobError("geçersiz case kimliği") from exc
     t = targets or _targets_factory()
-    sonuclar = [_publish_one(t, cid, aktor, ctx.job_id) for cid in ids]
+    po_engelleri = _po_etiket_engelleri(ids)
+    sonuclar = [
+        _publish_one(t, cid, aktor, ctx.job_id, po_engeli=po_engelleri.get(cid)) for cid in ids
+    ]
 
     with session_scope() as s:
         req_ids = set(s.scalars(select(TestCase.requirement_id).where(TestCase.id.in_(ids))).all())
+        # Yayınlanmış ama hiç sabitlenmemiş case'ler (önceki deneme yayından sonra, story yorumundan
+        # önce çöktü): bu denemede 'exists' görünürler; sabitleme yine yapılır (§3/8).
+        sabitsiz = _unanchored(
+            s, [r["case_id"] for r in sonuclar if r["durum"] == "exists" and r["external_key"]]
+        )
         hikayeler: dict[str, list[dict[str, Any]]] = {}
         for r in sonuclar:
-            if r["durum"] != "created":
+            if r["durum"] == "exists" and r["case_id"] in sabitsiz:
+                r = {**r, "kurtarma": True}
+            elif r["durum"] != "created":
                 continue
             jk = s.scalar(
                 select(Requirement.jira_key)

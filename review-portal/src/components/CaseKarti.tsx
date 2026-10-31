@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type TextareaHTMLAttributes } from "react";
 import { api } from "../api/client";
 import { caseKarariVerilebilir, GECIS_YOK, gecisVar, type CaseKarari } from "../api/sozlesme/durumMakinesi";
 import { useOturum } from "../auth";
@@ -6,6 +6,7 @@ import type { RetNedeni, TestCase, TestCaseIcerik } from "../api/types";
 import { useIslem } from "../hooks";
 import { CASE_DURUMU, CASE_TURU, RET_NEDENI, RISK } from "../lib/etiketler";
 import { sure, tarih } from "../lib/format";
+import { FarkGorunumu } from "./FarkGorunumu";
 import { Cip, IslemDugmesi, ReplayRozeti } from "./ui";
 
 type Mod = "goster" | "duzenle" | "reddet";
@@ -120,7 +121,16 @@ export function CaseKarti({
           calisiyor={islem.calisiyor}
           hata={islem.hata}
           vazgec={() => setMod("goster")}
-          kaydet={(icerik) => karar(() => api.caseKarari(tc.id, { ...bag, karar: "edit", icerik }))}
+          kaydet={(icerik, beklenenAnlamDegisti) =>
+            karar(() =>
+              api.caseKarari(tc.id, {
+                ...bag,
+                karar: "edit",
+                icerik,
+                ...(beklenenAnlamDegisti !== undefined ? { beklenen_anlam_degisti: beklenenAnlamDegisti } : {}),
+              }),
+            )
+          }
         />
       ) : (
         <>
@@ -182,9 +192,11 @@ export function CaseKarti({
           {tc.durum === "draft" && tc.karar && ` · taslağa alındı (önceki karar: ${KARAR_ADI[tc.karar]})`}
           {tc.ret_nedeni && tc.durum === "rejected" && ` · ret: ${RET_NEDENI[tc.ret_nedeni]}`}
           {tc.duzeltme_olcusu !== null && tc.karar === "edit" && ` · düzeltme ölçüsü ${tc.duzeltme_olcusu.toLocaleString("tr-TR")}`}
+          {tc.karar === "edit" && <KucukDuzeltme tc={tc} />}
           {tc.durum === "draft" && tc.goruntulenme && ` · review ${tarih(tc.goruntulenme)} itibarıyla sürüyor`}
         </span>
-        {mod === "goster" && !kilitli && (
+        {/* Karar verilmiş case'te karar düğmeleri gösterilmez; yalnızca "Yeniden aç" (aşağıda). */}
+        {mod === "goster" && !kilitli && !kararVerildi && (
           <div className="eylemler">
             <IslemDugmesi
               roller={["analyst"]}
@@ -237,6 +249,18 @@ export function CaseKarti({
           )}
         </div>
       )}
+      {tc.fark && tc.fark.length > 0 && (
+        <details className="case-fark" data-testid="case-fark">
+          <summary className="kucuk">AI özgünü → insan düzeltmesi ({tc.fark.length} alan)</summary>
+          {tc.duzeltme_nedeni && <p className="soluk kucuk">{tc.duzeltme_nedeni}</p>}
+          {tc.fark.map((f, i) => (
+            <div key={`${f.alan}-${i}`} className="case-fark-alan">
+              <strong className="kucuk">{f.etiket}</strong>
+              <FarkGorunumu eski={f.once} yeni={f.sonra} />
+            </div>
+          ))}
+        </details>
+      )}
       {tc.uyarilar && tc.uyarilar.length > 0 && (
         <ul className="duz-liste kucuk hata-metin">
           {tc.uyarilar.map((u) => (
@@ -250,6 +274,38 @@ export function CaseKarti({
         </p>
       )}
     </article>
+  );
+}
+
+/** §12 eşiği: düzeltme ölçüsü bu değerin altındaysa (ve beklenen sonuç anlamca değişmediyse) küçük düzeltme. */
+export const KUCUK_DUZELTME_ESIGI = 0.15;
+
+/**
+ * Düzeltmenin "küçük düzeltme" (kabul oranına girer) sayılıp sayılmadığı ve nedeni. Core bayrağı
+ * (`kucuk_duzeltme`) ve gerekçesi (`duzeltme_nedeni`) varsa onlar; yoksa ölçüden türetilir.
+ */
+export function kucukDuzeltmeDurumu(tc: Pick<TestCase, "kucuk_duzeltme" | "duzeltme_olcusu" | "duzeltme_nedeni">): {
+  kucuk: boolean;
+  neden: string;
+} {
+  const olcu = tc.duzeltme_olcusu;
+  const olcuAsti = olcu !== null && olcu > KUCUK_DUZELTME_ESIGI;
+  const kucuk = tc.kucuk_duzeltme ?? (olcu !== null && !olcuAsti);
+  const esik = KUCUK_DUZELTME_ESIGI.toLocaleString("tr-TR");
+  let neden: string;
+  if (kucuk) neden = `ölçü ≤ ${esik} ve beklenen sonuç anlamca değişmedi`;
+  else if (olcuAsti) neden = `ölçü > ${esik}`;
+  else if (olcu === null) neden = "düzeltme ölçüsü yok";
+  else neden = "beklenen sonuç anlamca değişti";
+  return { kucuk, neden };
+}
+
+function KucukDuzeltme({ tc }: { tc: TestCase }) {
+  const { kucuk, neden } = kucukDuzeltmeDurumu(tc);
+  return (
+    <span data-testid="kucuk-duzeltme" title={tc.duzeltme_nedeni ?? undefined}>
+      {` · küçük düzeltme ${kucuk ? "✓" : "✗"} (${kucuk ? "kabul oranına girer" : `neden: ${neden}`})`}
+    </span>
   );
 }
 
@@ -303,14 +359,26 @@ function CaseDuzenleyici({
   hata,
 }: {
   ilk: TestCaseIcerik;
-  kaydet: (i: TestCaseIcerik) => void;
+  kaydet: (i: TestCaseIcerik, beklenenAnlamDegisti?: boolean) => void;
   vazgec: () => void;
   calisiyor: boolean;
   hata: string | null;
 }) {
   const [icerik, setIcerik] = useState<TestCaseIcerik>(() => JSON.parse(JSON.stringify(ilk)) as TestCaseIcerik);
   const [uyari, setUyari] = useState<string | null>(null);
+  // §12: beklenen sonuç metni değiştiyse "anlamca değişti mi?" kararını insan verir (zorunlu).
+  const [anlamDegisti, setAnlamDegisti] = useState<"evet" | "hayir" | "">("");
   const id = useId();
+  const beklenenDegisti = icerik.expected_result.trim() !== ilk.expected_result.trim();
+
+  const listeMetni = (l: string[]) => l.join("\n");
+  const listeyeCevir = (m: string) =>
+    m
+      .split("\n")
+      .map((x) => x.trim())
+      .filter(Boolean);
+  const [onKosulMetni, setOnKosulMetni] = useState(() => listeMetni(ilk.preconditions));
+  const [acMetni, setAcMetni] = useState(() => ilk.acceptance_criteria_refs.join(", "));
 
   const adimGuncelle = (i: number, alan: "action" | "data" | "expected", deger: string) =>
     setIcerik((c) => ({
@@ -326,8 +394,23 @@ function CaseDuzenleyici({
       return setUyari("Her adımın eylemi ve beklenen sonucu dolu olmalı.");
     }
     if (!icerik.expected_result.trim()) return setUyari("Beklenen sonuç boş olamaz.");
+    const acRefleri = acMetni
+      .split(/[,\s]+/)
+      .map((x) => x.trim().toUpperCase())
+      .filter(Boolean);
+    if (acRefleri.length === 0) return setUyari("En az bir kabul kriteri atfı gerekir (ör. AC1).");
+    if (beklenenDegisti && !anlamDegisti) return setUyari("Beklenen sonuç anlamca değişti mi? Evet ya da Hayır seçin.");
     setUyari(null);
-    kaydet({ ...icerik, steps: icerik.steps.map((s, i) => ({ ...s, id: `S${i + 1}` })) });
+    kaydet(
+      {
+        ...icerik,
+        preconditions: listeyeCevir(onKosulMetni),
+        acceptance_criteria_refs: [...new Set(acRefleri)],
+        steps: icerik.steps.map((s, i) => ({ ...s, id: `S${i + 1}` })),
+      },
+      // Metin değişmediyse anlam da değişmemiştir; değiştiyse insanın beyanı gönderilir.
+      beklenenDegisti ? anlamDegisti === "evet" : false,
+    );
   }
 
   return (
@@ -336,17 +419,69 @@ function CaseDuzenleyici({
         <label htmlFor={`${id}-baslik`}>Başlık</label>
         <input id={`${id}-baslik`} value={icerik.title} maxLength={120} onChange={(e) => setIcerik({ ...icerik, title: e.target.value })} />
       </div>
+      <div className="case-duzenle-ozellik">
+        <div className="alan">
+          <label htmlFor={`${id}-tur`}>Tür</label>
+          <select
+            id={`${id}-tur`}
+            value={icerik.type}
+            onChange={(e) => setIcerik({ ...icerik, type: e.target.value as TestCaseIcerik["type"] })}
+          >
+            {(["positive", "negative", "boundary"] as const).map((k) => (
+              <option key={k} value={k}>
+                {CASE_TURU[k]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="alan">
+          <label htmlFor={`${id}-risk`}>Risk</label>
+          <select
+            id={`${id}-risk`}
+            value={icerik.risk}
+            onChange={(e) => setIcerik({ ...icerik, risk: e.target.value as TestCaseIcerik["risk"] })}
+          >
+            {(["high", "medium", "low"] as const).map((k) => (
+              <option key={k} value={k}>
+                {RISK[k].etiket}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="alan">
+          <label htmlFor={`${id}-ac`}>Kabul kriteri atıfları</label>
+          <input
+            id={`${id}-ac`}
+            value={acMetni}
+            placeholder="AC1, AC2"
+            aria-describedby={`${id}-ac-ipucu`}
+            onChange={(e) => setAcMetni(e.target.value)}
+          />
+          <span id={`${id}-ac-ipucu`} className="soluk kucuk">
+            Virgülle ayırın; gereksinimde olmayan atıf sunucuda reddedilir.
+          </span>
+        </div>
+      </div>
+      <div className="alan">
+        <label htmlFor={`${id}-onkosul`}>Ön koşullar (her satır bir ön koşul)</label>
+        <OtoMetin id={`${id}-onkosul`} value={onKosulMetni} onChange={(e) => setOnKosulMetni(e.target.value)} />
+      </div>
       <fieldset className="alan">
         <legend>Adımlar</legend>
         {icerik.steps.map((s, i) => (
           <div key={i} className="adim-duzenle">
             <span className="mono">S{i + 1}</span>
             <label className="gorunmez" htmlFor={`${id}-a${i}`}>{`S${i + 1} eylem`}</label>
-            <input id={`${id}-a${i}`} placeholder="Eylem" value={s.action} onChange={(e) => adimGuncelle(i, "action", e.target.value)} />
+            <OtoMetin id={`${id}-a${i}`} placeholder="Eylem" value={s.action} onChange={(e) => adimGuncelle(i, "action", e.target.value)} />
             <label className="gorunmez" htmlFor={`${id}-d${i}`}>{`S${i + 1} veri`}</label>
-            <input id={`${id}-d${i}`} placeholder="Veri" value={s.data ?? ""} onChange={(e) => adimGuncelle(i, "data", e.target.value)} />
+            <OtoMetin id={`${id}-d${i}`} placeholder="Veri" value={s.data ?? ""} onChange={(e) => adimGuncelle(i, "data", e.target.value)} />
             <label className="gorunmez" htmlFor={`${id}-e${i}`}>{`S${i + 1} beklenen`}</label>
-            <input id={`${id}-e${i}`} placeholder="Beklenen" value={s.expected} onChange={(e) => adimGuncelle(i, "expected", e.target.value)} />
+            <OtoMetin
+              id={`${id}-e${i}`}
+              placeholder="Beklenen"
+              value={s.expected}
+              onChange={(e) => adimGuncelle(i, "expected", e.target.value)}
+            />
             <button
               type="button"
               className="dugme dugme-hayalet dugme-kucuk"
@@ -367,8 +502,41 @@ function CaseDuzenleyici({
       </fieldset>
       <div className="alan">
         <label htmlFor={`${id}-beklenen`}>Beklenen sonuç</label>
-        <textarea id={`${id}-beklenen`} rows={2} value={icerik.expected_result} onChange={(e) => setIcerik({ ...icerik, expected_result: e.target.value })} />
+        <OtoMetin id={`${id}-beklenen`} value={icerik.expected_result} onChange={(e) => setIcerik({ ...icerik, expected_result: e.target.value })} />
       </div>
+      {beklenenDegisti && (
+        <fieldset className="alan" data-testid="beklenen-anlam">
+          <legend>
+            Beklenen sonuç anlamca değişti mi? <span className="hata-metin">*</span>
+          </legend>
+          <p className="soluk kucuk" id={`${id}-anlam-ipucu`}>
+            Yazım/noktalama düzeltmesi ya da açıklama eklemek anlamı değiştirmez. Anlam değiştiyse düzeltme ölçüsü küçük olsa da "küçük
+            düzeltme" sayılmaz (§12) ve kabul oranına girmez.
+          </p>
+          <div className="satir-ogeler" role="radiogroup" aria-required="true" aria-describedby={`${id}-anlam-ipucu`}>
+            <label>
+              <input
+                type="radio"
+                name={`${id}-anlam`}
+                value="evet"
+                checked={anlamDegisti === "evet"}
+                onChange={() => setAnlamDegisti("evet")}
+              />{" "}
+              Evet, anlam değişti
+            </label>
+            <label>
+              <input
+                type="radio"
+                name={`${id}-anlam`}
+                value="hayir"
+                checked={anlamDegisti === "hayir"}
+                onChange={() => setAnlamDegisti("hayir")}
+              />{" "}
+              Hayır, yalnızca ifade düzeltildi
+            </label>
+          </div>
+        </fieldset>
+      )}
       {(uyari || hata) && (
         <p className="alan-hata" role="alert">
           {uyari ?? hata}
@@ -384,4 +552,16 @@ function CaseDuzenleyici({
       </div>
     </form>
   );
+}
+
+/** İçeriğe göre uzayan çok satırlı alan: uzun Türkçe adım metni kırpılmadan görünür. */
+function OtoMetin(props: TextareaHTMLAttributes<HTMLTextAreaElement> & { value: string }) {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    if (el.scrollHeight > 0) el.style.height = `${el.scrollHeight + 2}px`;
+  }, [props.value]);
+  return <textarea ref={ref} rows={1} className="oto-metin" {...props} />;
 }

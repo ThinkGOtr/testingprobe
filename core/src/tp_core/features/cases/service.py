@@ -10,7 +10,8 @@ Akış:
    modele gider (`gateway.call(purpose='case_generation')`); çıktı şemayla doğrulanmıştır.
    Case'ler `id = uuid5(jira_key|req id + sira_no + uretim_no)` ile `draft` olarak yazılır.
    Önce önceki üretimlerin karar verilmemiş/reddedilmiş case'leri `superseded` olur, sonra
-   onaylı/yayınlı case'lerle aynı içerik (aynı `icerik_hash`) tekrar eklenmez. Girdiye demo
+   onaylı/yayınlı case'lerle aynı içerik (aynı `icerik_hash` ya da düzeltilmiş case'in AI özgün
+   içeriğinin hash'i) tekrar eklenmez. Girdiye demo
    uygulamasının test verisi eklenir (`testdata`); çıktıdaki AC atıfları ve AC kapsamı
    deterministik denetlenir (bilinmeyen AC'li case düzeltilmeden onaylanamaz).
    Gereksinim `po_approved`'dan (yeni PO onayı) üretime geçerken eski case'ler `superseded` olur;
@@ -34,7 +35,7 @@ import json
 import uuid
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Engine, func, select, text
@@ -486,13 +487,19 @@ def store_cases(
     aynı içerik varsa case eklenmez. Aynı kimlik zaten yazılmışsa (iş yeniden denemesi) mevcut
     satır kullanılır.
     """
-    mevcut_hashler = set(
-        session.scalars(
-            select(TestCase.icerik_hash).where(
+    # Önceki (farklı içerikli) PO onayı altında üretilmiş case'ler tekrar sayılmaz: yeni metin
+    # için aynı içerik yeniden taslak olarak düşer ve analist onu yeni metne göre gözden geçirir.
+    eski = old_content_case_ids(session, req)
+    guncel = {
+        cid_: h
+        for cid_, h in session.execute(
+            select(TestCase.id, TestCase.icerik_hash).where(
                 TestCase.requirement_id == req.id, TestCase.durum != "superseded"
             )
-        )
-    )
+        ).all()
+        if cid_ not in eski
+    }
+    mevcut_hashler = set(guncel.values()) | _original_content_hashes(session, guncel)
     eklenen: list[TestCase] = []
     tekrar: list[int] = []
     for sira, icerik in enumerate(cases, start=1):
@@ -524,7 +531,97 @@ def store_cases(
     return eklenen, tekrar
 
 
-def _supersede_previous(session: Session, req: Requirement, uretim_no: int, aktor: str) -> int:
+def _original_content_hashes(session: Session, case_ids: Mapping[uuid.UUID, str]) -> set[str]:
+    """Düzeltilmiş case'lerin İLK (AI/IDE özgün) içeriklerinin hash'leri.
+
+    Analist bir case'i düzeltince `icerik_hash` düzeltilmiş içeriğe döner; aynı model çıktısı
+    yeniden üretildiğinde özgün içerik bu hash'le eşleşmez ve onaylı/yayınlı case'in kopyası
+    taslak olarak düşerdi (ikinci kez yayınlanabilirdi). Özgün içerik = case'in ilk `edit`
+    kararındaki `once.icerik`; tekrar denetimi bu hash'i de kapsar.
+    """
+    if not case_ids:
+        return set()
+    out: set[str] = set()
+    goruldu: set[uuid.UUID] = set()
+    for nesne_id, once in session.execute(
+        select(Review.nesne_id, Review.once)
+        .where(
+            Review.nesne_turu == "test_case",
+            Review.nesne_id.in_(list(case_ids)),
+            Review.karar == "edit",
+        )
+        .order_by(Review.zaman, Review.id)
+    ).all():
+        if nesne_id in goruldu:
+            continue
+        goruldu.add(nesne_id)
+        icerik = (once or {}).get("icerik") if isinstance(once, dict) else None
+        if isinstance(icerik, dict):
+            out.add(content_hash(dict(icerik)))
+    return out
+
+
+def _po_onaylari(session: Session, requirement_id: uuid.UUID) -> list[tuple[datetime, str]]:
+    """Gereksinimin PO onay kayıtları (zaman, onaylanan içerik hash'i), eskiden yeniye."""
+    return [
+        (z, h)
+        for z, h in session.execute(
+            select(Review.zaman, Review.onaylanan_hash)
+            .where(
+                Review.nesne_turu == "requirement",
+                Review.nesne_id == requirement_id,
+                Review.karar == "po_approve",
+            )
+            .order_by(Review.sira)
+        ).all()
+    ]
+
+
+def old_content_case_ids(session: Session, req: Requirement) -> set[uuid.UUID]:
+    """Gereksinimin GÜNCEL PO onaylı içeriğinden farklı bir içerik için üretilmiş case'ler.
+
+    Case'in üretildiği andaki PO onayı = oluşturma anından önceki son `po_approve` kaydı; onun
+    hash'i gereksinimin güncel `onaylanan_hash`'inden farklıysa case eski metne aittir (ör. story
+    değişip PO yeniden onayladı, eski case'ler yayınlanmıştı). Bu case'ler yeni üretimde tekrar
+    sayılmaz ve AC kapsamına girmez. Kayıt yoksa (onaysız üretim) case güncel sayılır.
+    """
+    onaylar = _po_onaylari(session, req.id)
+    if not onaylar:
+        return set()
+    out: set[uuid.UUID] = set()
+    for cid_, olusturma in session.execute(
+        select(TestCase.id, TestCase.olusturma).where(
+            TestCase.requirement_id == req.id, TestCase.durum != "superseded"
+        )
+    ).all():
+        onceki = [h for z, h in onaylar if z <= olusturma]
+        if onceki and onceki[-1] != req.onaylanan_hash:
+            out.add(cid_)
+    return out
+
+
+ONCEKI_ICERIK_UYARISI = (
+    "Önceki içerik için yayınlanmış {n} case var; yeni metne göre gözden geçirin "
+    "(AC kapsamına ve tekrar denetimine sayılmadı)."
+)
+
+
+def _old_content_warning(session: Session, req: Requirement) -> tuple[list[str], str | None]:
+    eski = old_content_case_ids(session, req)
+    if not eski:
+        return [], None
+    ids = sorted(str(i) for i in eski)
+    return ids, ONCEKI_ICERIK_UYARISI.format(n=len(ids))
+
+
+def _supersede_previous(
+    session: Session, req: Requirement, uretim_no: int, aktor: str
+) -> tuple[int, int]:
+    """Önceki portal üretimlerinin taslak/ret case'lerini `superseded` yapar; (sayı, korunan IDE).
+
+    IDE'den (Claude Code) gelen ve henüz karar verilmemiş taslaklar KORUNUR: onlar bir insanın
+    bilinçli katkısıdır, portal üretimi onları sessizce geçersiz kılmaz (analist karar verir).
+    """
     eskiler = session.scalars(
         select(TestCase).where(
             TestCase.requirement_id == req.id,
@@ -532,9 +629,15 @@ def _supersede_previous(session: Session, req: Requirement, uretim_no: int, akto
             TestCase.durum.in_(("draft", "rejected")),
         )
     ).all()
+    korunan = 0
+    n = 0
     for tc in eskiler:
+        if tc.kanal == "ide" and tc.durum == "draft":
+            korunan += 1
+            continue
         transition(session, tc, "superseded", aktor, tc.durum, sebep=f"yeniden üretim #{uretim_no}")
-    return len(eskiler)
+        n += 1
+    return n, korunan
 
 
 def _fail_requirement(engine: Engine, requirement_id: uuid.UUID, neden: str) -> None:
@@ -549,7 +652,12 @@ def run_generation(
 ) -> dict[str, Any]:
     """`cases.generate` işi: model çağrısı → case'ler → `cases_ready`."""
     from tp_core.gateway import deterministic_call_id
-    from tp_core.gateway.errors import BudgetExceeded, GatewayError
+    from tp_core.gateway.errors import (
+        BudgetExceeded,
+        GatewayError,
+        ReplayMiss,
+        ReplayNotFound,
+    )
 
     yuk = ctx.yuk or {}
     rid = uuid.UUID(str(yuk["requirement_id"]))
@@ -591,6 +699,16 @@ def run_generation(
     except BudgetExceeded as exc:
         _fail_requirement(engine, rid, f"bütçe aşıldı: {exc}")
         raise
+    except ReplayNotFound as exc:
+        # Deterministik: aynı girdiyle yeniden deneme yine iskalar (REPLAY-MISS 'raise' politikası,
+        # rules/replay/case_generation/on_miss.json). Başka dokümanın case'leri taslak olmaz.
+        neden = (
+            "REPLAY-MISS: bu girdi için kayıtlı model çıktısı yok; canlı model gerekir"
+            + (" (TP_REPLAY_STRICT=1, prova kipi)" if isinstance(exc, ReplayMiss) else "")
+            + ". Case'ler IDE (Claude Code) kanalından gönderilebilir."
+        )
+        _fail_requirement(engine, rid, neden)
+        raise PermanentJobError(neden) from exc
     except GatewayError as exc:
         if ctx.son_deneme:
             _fail_requirement(engine, rid, f"model geçidi: {exc}")
@@ -617,7 +735,7 @@ def run_generation(
         # Önce önceki üretimlerin taslak/ret case'leri bırakılır, sonra tekrar denetimi yalnızca
         # kalan (onaylı/yayınlı) case'lere karşı yapılır: aynı çıktıyla yeniden üretim (REPLAY'de
         # her zaman) taslakları silip sıfır case bırakmaz; aynı içerik yeni taslak olarak düşer.
-        superseded = _supersede_previous(s, req, uretim_no, "system")
+        superseded, korunan_ide = _supersede_previous(s, req, uretim_no, "system")
         eklenen, tekrar = store_cases(
             s,
             req,
@@ -634,6 +752,13 @@ def run_generation(
             if (refs := unknown_ac_refs(tc.icerik, req.kabul_kriterleri))
         }
         kapsanmayan = coverage_gaps(s, req)
+        onceki_icerik, onceki_uyari = _old_content_warning(s, req)
+        uyarilar = [onceki_uyari] if onceki_uyari else []
+        if korunan_ide:
+            uyarilar.append(
+                f"IDE'den (Claude Code) gelen {korunan_ide} taslak korundu; yeni üretimle "
+                "birlikte karar bekliyor."
+            )
         transition(
             s,
             req,
@@ -645,6 +770,7 @@ def run_generation(
                 "tekrar": len(tekrar),
                 "mode": result.mode,
                 "kapsanmayan_ac": kapsanmayan,
+                "onceki_icerik_case": len(onceki_icerik),
             },
         )
         if wf_id is not None:
@@ -661,10 +787,12 @@ def run_generation(
                 "case_ids": [tc.id for tc in eklenen],
                 "tekrar_sira": tekrar,
                 "superseded": superseded,
+                "korunan_ide_taslak": korunan_ide,
                 "ai_call_id": result.call_id,
                 "mode": result.mode,
                 "bilinmeyen_ac": {str(k): v for k, v in bilinmeyen.items()},
                 "kapsanmayan_ac": kapsanmayan,
+                "onceki_icerik_case_ids": onceki_icerik,
             },
         )
         for tc in eklenen:
@@ -683,22 +811,33 @@ def run_generation(
             "case_sayisi": len(eklenen),
             "tekrar": tekrar,
             "superseded": superseded,
+            "korunan_ide_taslak": korunan_ide,
             "mode": result.mode,
             "ai_call_id": str(result.call_id),
             "bilinmeyen_ac": {str(k): v for k, v in bilinmeyen.items()},
             "kapsanmayan_ac": kapsanmayan,
+            "onceki_icerik_case_ids": onceki_icerik,
+            "uyarilar": uyarilar,
         }
 
 
 def coverage_gaps(session: Session, req: Requirement) -> list[str]:
-    """Güncel (superseded/ret olmayan) case'lerin hiçbirinin atıf yapmadığı kabul kriterleri."""
-    icerikler = session.scalars(
-        select(TestCase.icerik).where(
-            TestCase.requirement_id == req.id,
-            TestCase.durum.notin_(("superseded", "rejected")),
-        )
-    ).all()
-    return uncovered_acs(list(icerikler), req.kabul_kriterleri)
+    """Güncel (superseded/ret olmayan) case'lerin hiçbirinin atıf yapmadığı kabul kriterleri.
+
+    Önceki PO onaylı içerik için üretilmiş case'ler (`old_content_case_ids`) kapsamı sağlamaz.
+    """
+    eski = old_content_case_ids(session, req)
+    icerikler = [
+        icerik
+        for cid_, icerik in session.execute(
+            select(TestCase.id, TestCase.icerik).where(
+                TestCase.requirement_id == req.id,
+                TestCase.durum.notin_(("superseded", "rejected")),
+            )
+        ).all()
+        if cid_ not in eski
+    ]
+    return uncovered_acs(icerikler, req.kabul_kriterleri)
 
 
 # ------------------------------------------------------------------ IDE taslakları
@@ -800,6 +939,7 @@ def submit_drafts(
         ai_call_id=None,
         uretim_modu=None,
     )
+    onceki_icerik, onceki_uyari = _old_content_warning(session, req)
     audit_on_commit(
         session,
         aktor,
@@ -810,6 +950,7 @@ def submit_drafts(
             "uretim_no": uretim_no,
             "case_ids": [tc.id for tc in eklenen],
             "tekrar_sira": tekrar,
+            "onceki_icerik_case_ids": onceki_icerik,
         },
     )
     for tc in eklenen:
@@ -833,7 +974,9 @@ def submit_drafts(
         "mesaj": (
             f"{len(eklenen)} taslak portala düştü; onay portalda analistindir."
             + (f" {len(tekrar)} tekrar case atlandı." if tekrar else "")
+            + (f" {onceki_uyari}" if onceki_uyari else "")
         ),
+        "uyarilar": [onceki_uyari] if onceki_uyari else [],
     }
 
 
@@ -1074,6 +1217,9 @@ def serialize_cases(session: Session, cases: Sequence[TestCase]) -> list[dict[st
         )
     }
     users = _usernames(session, {r.user_id for rs in reviews.values() for r in rs if r.user_id})
+    eski: set[uuid.UUID] = set()
+    for r in reqs.values():
+        eski |= old_content_case_ids(session, r)
     out = []
     for c in cases:
         rs = reviews.get(c.id, [])
@@ -1090,6 +1236,16 @@ def serialize_cases(session: Session, cases: Sequence[TestCase]) -> list[dict[st
             bilinmeyen = unknown_ac_refs(c.icerik, req.kabul_kriterleri)
             if bilinmeyen:
                 uyarilar.append("Gereksinimde olmayan kabul kriteri: " + ", ".join(bilinmeyen))
+        if c.id in eski:
+            uyarilar.append(
+                "Bu case gereksinimin önceki (PO onayı yenilenmiş) içeriği için üretildi; "
+                "yeni metne göre gözden geçirin."
+            )
+        # AI özgün içeriği = ilk düzeltme kararından ÖNCEKİ içerik (§8.10 "fark").
+        ilk_edit = next((r for r in rs if r.karar == "edit"), None)
+        ai_icerik = (
+            (ilk_edit.once or {}).get("icerik") if ilk_edit is not None and c.ai_generated else None
+        )
         out.append(
             {
                 "id": str(c.id),
@@ -1121,6 +1277,13 @@ def serialize_cases(session: Session, cases: Sequence[TestCase]) -> list[dict[st
                 # IDE taslakları geçitten geçmez: mod yok (asla "live" gösterilmez).
                 "mode": c.uretim_modu,
                 "uyarilar": uyarilar,
+                "onceki_icerik": c.id in eski,
+                # Düzeltilmiş case: AI özgün içeriği, alan bazlı fark ve küçük düzeltme gerekçesi.
+                "ai_icerik": ai_icerik,
+                "fark": metrics.field_diff(ai_icerik, c.icerik) if ai_icerik else [],
+                "duzeltme_nedeni": metrics.edit_reason(olcu)
+                if son and son.karar == "edit"
+                else None,
                 "olusturma": c.olusturma,
             }
         )
@@ -1152,6 +1315,7 @@ def requirement_metrics(session: Session, requirement_id: uuid.UUID) -> dict[str
     kabul = karar_verilen = 0
     mesafeler: list[float] = []
     review_sureleri: list[int] = []
+    araliklar: list[tuple[datetime, datetime]] = []
     for c in ai_cases:
         durumlar[c.durum] += 1
         kanallar[c.kanal] += 1
@@ -1160,6 +1324,7 @@ def requirement_metrics(session: Session, requirement_id: uuid.UUID) -> dict[str
             sure = (r.duzeltme_olculeri or {}).get("review_sure_ms")
             if isinstance(sure, int):
                 review_sureleri.append(sure)
+                araliklar.append((r.zaman - timedelta(milliseconds=sure), r.zaman))
         rs = [r for r in rs if r.karar != "reopen"]
         if not rs:
             continue
@@ -1188,6 +1353,14 @@ def requirement_metrics(session: Session, requirement_id: uuid.UUID) -> dict[str
         else {}
     )
     uretilen = len(ai_cases)
+    onceki_icerik, onceki_uyari = _old_content_warning(session, req)
+    manuel_baz = manual_baseline_ms()
+    ai_sure_ms = sum(v[0] for v in ai.values())
+    uyarilar = [onceki_uyari] if onceki_uyari else []
+    if manuel_baz is None:
+        uyarilar.append(MANUEL_BAZ_YOK_UYARISI)
+    if modlar and ai_sure_ms == 0 and all(str(k).startswith("replay") for k in modlar):
+        uyarilar.append(AI_SURE_REPLAY_UYARISI)
     return {
         "requirement_id": str(req.id),
         "jira_key": req.jira_key,
@@ -1204,18 +1377,35 @@ def requirement_metrics(session: Session, requirement_id: uuid.UUID) -> dict[str
         "ret_nedenleri": dict(ret),
         "durumlar": dict(durumlar),
         "kanallar": dict(kanallar),
-        "ai_sure_ms": sum(v[0] for v in ai.values()),
-        "review_sure_ms": sum(review_sureleri),
-        "ort_review_sure_ms": round(sum(review_sureleri) / len(review_sureleri))
+        "ai_sure_ms": ai_sure_ms,
+        # Review süresi = duvar saati: kartların [ilk görüntüleme, karar] aralıklarının BİRLEŞİMİ.
+        # Aynı anda ekranda olan kartların örtüşen süreleri bir kez sayılır (pencere boyundan
+        # bağımsız). Kart başına sürelerin toplamı yalnızca bilgi amaçlı `kart_sure_toplam_ms`.
+        "review_sure_ms": metrics.union_ms(araliklar),
+        "ort_review_sure_ms": round(metrics.union_ms(araliklar) / len(review_sureleri))
         if review_sureleri
         else None,
+        "kart_sure_toplam_ms": sum(review_sureleri),
+        "review_sure_yontemi": "aralik_birlesimi",
         "maliyet_usd": round(sum(v[1] for v in ai.values()), 6),
         "ai_cagri_modlari": {str(k): int(v) for k, v in modlar.items()},
         # Deterministik kapsam denetimi: hiçbir güncel case'in atıf yapmadığı AC'ler.
         "kapsanmayan_ac": coverage_gaps(session, req),
+        "onceki_icerik_case_ids": onceki_icerik,
+        "uyarilar": uyarilar,
         # Manuel test tasarımı baz süresi (story başına, F0 ölçümü); verilmemişse None (uydurulmaz).
-        "manuel_baz_ms": manual_baseline_ms(),
+        "manuel_baz_ms": manuel_baz,
     }
+
+
+# Demo-A (§17, başarı ölçütü 6): "AI + review süresi manuel baz değerle yan yana". Baz değer
+# uydurulmaz; eksikse ekranda ve /case-metrics'te açıkça söylenir.
+MANUEL_BAZ_YOK_UYARISI = (
+    "Manuel baz değer girilmedi (TP_MANUAL_BASELINE_S): Demo-A kazanç gösterilemez."
+)
+AI_SURE_REPLAY_UYARISI = (
+    "AI süresi REPLAY'de ölçülmez; 'AI + review' süresi yalnız review süresidir."
+)
 
 
 def manual_baseline_ms() -> int | None:

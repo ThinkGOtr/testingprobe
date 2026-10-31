@@ -10,7 +10,17 @@
   beyan eder; gerçek girdi beyana uyuyorsa mod `replay` (köken `golden_matched`). Senaryodaki demo
   yolu böylece REPLAY-MISS'siz koşar; story değiştiyse eşleşme bozulur ve dürüstçe REPLAY-MISS olur.
 - Iskalama sessiz geçmez: rules/replay/<purpose>/golden/<replay_key["name"]>.json bulunursa mod
-  `replay_miss` olur (portalda REPLAY-MISS); o da yoksa `ReplayNotFound`.
+  `replay_miss` olur (portalda REPLAY-MISS). Golden dosyası hiç yoksa (ör. demo sırasında
+  jira-sim'de açılan yeni story) ve amacın nötr yedeği varsa yine nötr REPLAY-MISS döner
+  (`_mismatch = ["bu anahtar için golden yok"]`); yedek de yoksa `ReplayNotFound`.
+- Aynı story'nin tur golden'ları (`TPD-1` → `TPD-1-r2`): 1. tur adı uymazsa ya da yoksa aynı
+  önekli `-rN` golden'ları da denenir; içeriği uyan ilk golden `golden_matched` döner (düzeltilmiş
+  TPD-1 metniyle `make reset` olmadan yeniden koşu REPLAY-MISS olmaz). Geriye (r2 → 1. tur)
+  bakılmaz: düzeltilmemiş belgenin 2. turu dürüstçe REPLAY-MISS kalır.
+- Iskalama politikası `on_miss.json` içinde `"policy": "raise"` ise (case üretimi: şema en az bir
+  case ister, nötr çıktı yoktur) başka dokümanın çıktısı **hiç döndürülmez**; `ReplayNoOutput`
+  fırlatılır ("REPLAY-MISS: bu girdi için kayıtlı model çıktısı yok; canlı model gerekir"), sıfır
+  taslak. Geçit bu durumu da `ai_call`'a (mod `replay_miss`, `hata`) yazar.
 - Nötr REPLAY-MISS yedeği (`rules/replay/<amaç>/on_miss.json`): golden girdi beyanı (`input_match`)
   taşıyor ve gerçek girdi buna UYMUYORSA golden başka bir dokümanın cevabıdır; o amaç için
   `on_miss.json` varsa golden çıktısı yerine bu nötr çıktı döner (köken `miss_neutral`). Ör.
@@ -38,13 +48,22 @@ from pathlib import Path
 from typing import Any, Literal
 
 from tp_core.gateway.canonical import canonical_json, normalize, sha256_hex
-from tp_core.gateway.errors import GatewayConfigError, ReplayMiss, ReplayNotFound
+from tp_core.gateway.errors import (
+    GatewayConfigError,
+    ReplayMiss,
+    ReplayNoOutput,
+    ReplayNotFound,
+)
 from tp_core.gateway.matching import MATCHED, input_mismatches
 
 ReplayMode = Literal["replay", "replay_miss"]
 PROMOTED = "golden_promoted"
 MISS_NEUTRAL = "miss_neutral"
 MISS_FILE = "on_miss.json"
+# `on_miss.json` politikaları: nötr çıktı döndür (varsayılan, `output` gerekir) / hiç çıktı verme.
+MISS_POLICY_NEUTRAL = "neutral"
+MISS_POLICY_RAISE = "raise"
+NO_GOLDEN_REASON = "bu anahtar için golden yok"
 # Kayıt üst verisi olmayan (elle hazırlanmış) replay çıktısının `ai_call.model` değeri.
 HAND_PREPARED_MODEL = "golden-elle"
 # `ai_call.ek.cikti_kokeni`: çıktının gerçekte nereden geldiği.
@@ -53,6 +72,8 @@ ORIGIN_HAND_PREPARED = "elle_hazirlanmis"
 ORIGIN_NEUTRAL = "notr_yedek"
 _GOLDEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _PURPOSE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+_ROUND_RE = re.compile(r"-r(\d+)$")
+_CASE_RE = re.compile(r"-C\d+$")
 
 
 def golden_name(jira_key: str, *, case_no: int | None = None, check_round: int = 1) -> str:
@@ -127,52 +148,96 @@ class ReplayStore:
         golden_name: str | None,
         messages: Sequence[Any] | None = None,
     ) -> tuple[dict[str, Any], ReplayMode, Path]:
-        """Birebir kayıt → eşleşen golden (`replay`) → eşleşmeyen golden (`replay_miss`).
+        """Birebir kayıt → eşleşen golden (`replay`) → aynı story'nin sonraki tur golden'ı
+        (`replay`) → iskalama (`replay_miss`).
 
         Eşleşen golden'ın döndürülen kopyasında `provenance = "golden_matched"`; eşleşmeyen
         golden'da `_mismatch` (neden listesi, `ai_call.ek.replay_eslesme`) bulunur. Golden girdi
-        beyanı taşıyıp girdiye uymuyorsa ve amacın nötr yedeği (`on_miss.json`) varsa onun çıktısı
-        döner (`provenance = "miss_neutral"`, adım yok, dönen yol nötr yedeğin yolu).
+        beyanı taşıyıp girdiye uymuyorsa ya da golden hiç yoksa amacın `on_miss.json` politikası
+        uygulanır: nötr çıktı (`provenance = "miss_neutral"`, adım yok, dönen yol nötr yedeğin yolu)
+        veya `ReplayNoOutput` (`"policy": "raise"`).
         """
         exact = self.exact_path(purpose, key)
         if exact.is_file():
             record = _read(exact)
             if not self.is_stale(purpose, record):
                 return record, "replay", exact
-        if golden_name:
-            golden = self.golden_path(purpose, golden_name)
-            if golden.is_file():
-                record = _read(golden)
-                reasons = self.golden_mismatches(record, messages)
-                if not reasons:
-                    return {**record, "provenance": MATCHED}, "replay", golden
-                if self.strict:
-                    raise ReplayMiss(purpose, key, golden_name)
-                neutral = self.miss_path(purpose)
-                if "input_match" in record and neutral.is_file():
-                    fallback = _read(neutral)
-                    return (
-                        {
-                            "kind": record.get("kind"),
-                            "purpose": purpose,
-                            "golden": golden_name,
-                            "provenance": MISS_NEUTRAL,
-                            "output": fallback["output"],
-                            "_mismatch": reasons,
-                        },
-                        "replay_miss",
-                        neutral,
-                    )
-                return {**record, "_mismatch": reasons}, "replay_miss", golden
+        if not golden_name:
+            raise ReplayNotFound(purpose, key, golden_name)
+        golden = self.golden_path(purpose, golden_name)
+        record = _read(golden) if golden.is_file() else None
+        reasons = self.golden_mismatches(record, messages) if record is not None else []
+        if record is not None and not reasons:
+            return {**record, "provenance": MATCHED}, "replay", golden
+        for name, path in self._later_rounds(purpose, golden_name):
+            sibling = _read(path)
+            if "input_match" in sibling and not self.golden_mismatches(sibling, messages):
+                return {**sibling, "provenance": MATCHED, "golden": name}, "replay", path
+        if self.strict:
+            raise ReplayMiss(purpose, key, golden_name)
+        if record is None:
+            reasons = [NO_GOLDEN_REASON]
+        declared = record is None or "input_match" in record
+        policy = self.miss_policy(purpose) if declared else None
+        if policy == MISS_POLICY_RAISE:
+            raise ReplayNoOutput(purpose, key, golden_name, reasons)
+        if policy == MISS_POLICY_NEUTRAL:
+            neutral = self.miss_path(purpose)
+            return (
+                {
+                    "kind": record.get("kind") if record else None,
+                    "purpose": purpose,
+                    "golden": golden_name,
+                    "provenance": MISS_NEUTRAL,
+                    "output": _read(neutral)["output"],
+                    "_mismatch": reasons,
+                },
+                "replay_miss",
+                neutral,
+            )
+        if record is not None:
+            # Beyansız golden (senaryo adı) veya iskalama yedeği olmayan amaç.
+            return {**record, "_mismatch": reasons}, "replay_miss", golden
         raise ReplayNotFound(purpose, key, golden_name)
 
+    def _later_rounds(self, purpose: str, golden_name: str) -> list[tuple[str, Path]]:
+        """1. tur story golden'ı (`TPD-1`) için aynı önekli sonraki tur golden'ları (`TPD-1-r2`…).
+
+        Case düzeyi (`TPD-1-C2`) ve zaten tur golden'ı olan adlar için boş: 2. turun belgesi
+        düzeltilmemişse 1. tur golden'ına geri düşülmez (dürüst REPLAY-MISS)."""
+        if _ROUND_RE.search(golden_name) or _CASE_RE.search(golden_name):
+            return []
+        folder = self._dir(purpose) / "golden"
+        if not folder.is_dir():
+            return []
+        found: list[tuple[int, str, Path]] = []
+        for path in folder.glob(f"{glob_escape(golden_name)}-r*.json"):
+            m = _ROUND_RE.search(path.stem)
+            if m and path.stem == f"{golden_name}-r{m.group(1)}":
+                found.append((int(m.group(1)), path.stem, path))
+        return [(name, path) for _, name, path in sorted(found)]
+
     def miss_path(self, purpose: str) -> Path:
-        """Amacın nötr REPLAY-MISS yedeği (yoksa eşleşmeyen golden çıktısı kullanılır)."""
+        """Amacın REPLAY-MISS politikası/nötr yedeği (yoksa eşleşmeyen golden çıktısı döner)."""
         return self._dir(purpose) / MISS_FILE
 
-    def neutral_output(self, purpose: str) -> Any | None:
+    def miss_policy(self, purpose: str) -> str | None:
+        """`on_miss.json` yoksa None; `"policy": "raise"` → çıktı yok; aksi hâlde nötr çıktı."""
         path = self.miss_path(purpose)
-        return _read(path)["output"] if path.is_file() else None
+        if not path.is_file():
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        policy = data.get("policy", MISS_POLICY_NEUTRAL) if isinstance(data, dict) else None
+        if policy == MISS_POLICY_RAISE:
+            return MISS_POLICY_RAISE
+        if policy != MISS_POLICY_NEUTRAL or "output" not in data:
+            raise GatewayConfigError(f"{path}: geçersiz iskalama politikası ({policy!r})")
+        return MISS_POLICY_NEUTRAL
+
+    def neutral_output(self, purpose: str) -> Any | None:
+        if self.miss_policy(purpose) != MISS_POLICY_NEUTRAL:
+            return None
+        return _read(self.miss_path(purpose))["output"]
 
     @staticmethod
     def golden_mismatches(record: Mapping[str, Any], messages: Sequence[Any] | None) -> list[str]:
@@ -262,6 +327,11 @@ def mode_label(mode: str, model: str | None = None) -> str:
     if mode == "replay":
         return "REPLAY (hazırlanmış örnek çıktı; canlı model değil)"
     return mode
+
+
+def glob_escape(name: str) -> str:
+    """`glob` özel karakterlerini kaçırır (golden adları `_GOLDEN_RE` ile sınırlı; yine de)."""
+    return re.sub(r"([*?\[])", r"[\1]", name)
 
 
 def _read(path: Path) -> dict[str, Any]:

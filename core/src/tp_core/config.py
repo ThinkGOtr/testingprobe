@@ -8,14 +8,34 @@ Oturum sırrı (`TP_SESSION_SECRET`) yalnızca oturum açan/okuyan uçlarda iste
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
+
+
+def libpq_auth_zorla(url: str, yontem: str | None) -> str:
+    """Postgres URL'sine `require_auth=<yontem>` ekler (URL kendi değerini taşıyorsa dokunmaz).
+
+    `postgres` adı çözülemediğinde (Docker yeniden başlatma yarışı, DB kapalı) Docker DNS'i adı
+    LAN/kurumsal çözücüye iletebilir; libpq sunucu ne isterse (cleartext dahil) parolayı verir.
+    SCRAM zorunluysa parola ağa hiç çıkmaz ve sahte sunucu kimlik doğrulamayı tamamlayamaz.
+    """
+    yontem = (yontem or "").strip()
+    if not yontem or not url.startswith("postgresql"):
+        return url
+    u = make_url(url)
+    if "require_auth" in u.query:
+        return url
+    return u.update_query_dict({"require_auth": yontem}).render_as_string(hide_password=False)
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore", populate_by_name=True)
 
     database_url: str = Field(validation_alias="TP_DATABASE_URL")
+    # libpq `require_auth`: varsayılan SCRAM (pg_hba scram-sha-256). Boş = zorlanmaz (ör. trust
+    # kullanan yerel bir geliştirme veritabanı). URL kendi `require_auth`'unu taşıyorsa o geçerli.
+    db_require_auth: str = Field(default="scram-sha-256", validation_alias="TP_DB_REQUIRE_AUTH")
     seed_user_password: SecretStr | None = Field(
         default=None, validation_alias="SEED_USER_PASSWORD"
     )
@@ -73,6 +93,11 @@ class Settings(BaseSettings):
 
     # --- Worker
     worker_poll_interval_s: float = Field(default=1.0, validation_alias="TP_WORKER_POLL_S")
+
+    @model_validator(mode="after")
+    def _db_auth(self) -> "Settings":
+        self.database_url = libpq_auth_zorla(self.database_url, self.db_require_auth)
+        return self
 
 
 @lru_cache

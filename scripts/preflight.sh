@@ -13,6 +13,7 @@ MIN_MEM_BYTES="${TP_MIN_MEM_BYTES:-8053063680}"
 
 fails=0
 ok()   { printf '  OK    %s\n' "$*"; }
+warn() { printf '  UYARI %s\n' "$*"; }
 fail() { printf '  HATA  %s\n' "$*"; fails=$((fails + 1)); }
 
 echo "Önkoşul kontrolü:"
@@ -107,6 +108,11 @@ for spec in PG_PORT:55432 TP_API_PORT:8000 TP_PORTAL_PORT:8080 DEMO_WEB_PORT:808
     ok "Port $port ($key) boş"
   fi
 done
+
+# Demo-A kazanç ölçümü (uyarı; başlatmayı engellemez): manuel baz değer yoksa kazanç gösterilemez.
+if [ -z "$(env_get TP_MANUAL_BASELINE_S)" ]; then
+  warn "Manuel baz değer girilmedi (TP_MANUAL_BASELINE_S): Demo-A kazanç gösterilemez"
+fi
 
 if [ "$fails" -gt 0 ]; then
   echo "Önkoşullar sağlanmadı ($fails hata); hiçbir servis başlatılmadı." >&2

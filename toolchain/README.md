@@ -102,7 +102,12 @@ safe ref name (`main`, `tp/case-…`); responses always carry the resolved full 
   test_files?, workers?}` → `{run_id, sha, status:"passed"|"failed"|"error", error, exit_code,
   duration_ms, junit, json, allure_dir, html_dir, traces_dir, log, artifacts_dir, artifacts_rel,
   stats:{expected,unexpected,flaky,skipped,duration_ms}, tests:[{title,file,line,project,status,
-  attempts,duration_ms,error,attachments}], report_errors, break_restore}`.
+  attempts,duration_ms,error,attachments}], report_errors, break_restore, saglik}`.
+- `saglik` = pre-run health check (TEKNIK-TASARIM §8.6, triage rule 1 → `environment`):
+  `{ok, zaman, web:{url,status,ms,hata}, api:{url,status,ms,hata}, hata}`; probes `GET BASE_URL/` and
+  `GET DEMO_API_URL/health` (`TP_HEALTH_TIMEOUT_S`, default 5 s; ok = both 2xx). On failure Playwright
+  is **not** started, `status:"error"`, `error` = `saglik.hata` (Turkish), `exit_code:null`, `tests:[]`,
+  no `src/` copy, no break restore (nothing was broken). `status:null` + `hata:<ExceptionName>` = network error.
 - One run at a time (bayi1/bayi2 are shared); a queued request waits ≤ `TP_RUN_QUEUE_WAIT_S`, then 409.
 - Layout: `runs/<run_id>/run.json` (summary; `running` while in progress), `runner.log`,
   `src/e2e/` = exact copy of the commit's `e2e/` (evidence), Playwright reports where the commit's
@@ -112,7 +117,7 @@ safe ref name (`main`, `tp/case-…`); responses always carry the resolved full 
   `BREAK_CAMPAIGN`, `TP_RUN_ID`. With `BREAK_CAMPAIGN=1` the e2e fixture breaks the campaign for the
   run's dealers via `/test/break`; afterwards the runner **always** (failure, timeout) calls
   `/test/break {kampanya:false}` for each of `TP_RUN_DEALERS` (bayi1,bayi2); if that fails the run is `error`.
-- Status: `failed` = some test unexpected; `error` = timeout, no/corrupt report, report-level errors,
+- Status: `failed` = some test unexpected; `error` = health check failed, timeout, no/corrupt report, report-level errors,
   no test ran, non-zero exit without failures, or break not restored; else `passed` (flaky counts as passed, see `stats.flaky`).
 
 ### Environment (defaults)
@@ -123,7 +128,7 @@ safe ref name (`main`, `tp/case-…`); responses always carry the resolved full 
 `TP_PROBE_USER`/`TP_PROBE_PASSWORD` (bayi1 / Demo123!, DEMO-VERISI.md), `TP_RUN_DEALERS`.
 Timeouts (s): `TP_GIT_TIMEOUT_S` 60, `TP_TSC_TIMEOUT_S` 180, `TP_ESLINT_TIMEOUT_S` 240,
 `TP_AST_GUARD_TIMEOUT_S` 60, `TP_SYMBOLS_TIMEOUT_S` 60, `TP_PROBE_TIMEOUT_S` 60,
-`TP_RUN_TIMEOUT_S` 900, `TP_RUN_QUEUE_WAIT_S` 600, `TP_CHECK_QUEUE_WAIT_S` 900.
+`TP_RUN_TIMEOUT_S` 900, `TP_HEALTH_TIMEOUT_S` 5, `TP_RUN_QUEUE_WAIT_S` 600, `TP_CHECK_QUEUE_WAIT_S` 900.
 
 ### Security notes
 

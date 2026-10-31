@@ -11,7 +11,8 @@ Bir bulgu yalnızca aşağıdakilerin hepsi sağlanırsa gösterilir (`kanit_dog
   normalize edilmiş) metninde birebir geçer. Anlamsız kısa alıntılar (8 karakterden kısa ve
   satırın tamamı olmayan) kabul edilmez.
 - **Veri kanıtı:** sorgu SQL korumasının kanıt kurallarından geçer (`validate_select(kanit=True)`:
-  her sütun tablodan okunur; `SELECT anahtar, '500.00' FROM ayar` gibi değer uyduran sabit
+  tek tablo — JOIN/virgüllü birleştirme/alt sorgu/LATERAL/VALUES yok, takma ad kolon listesi yok —
+  ve her sütun tablodan okunur; `SELECT anahtar, '500.00' FROM ayar` gibi değer uyduran sabit
   projeksiyonlar ve `1 = 0` gibi sabit koşullar reddedilir), salt okuma veritabanında yeniden
   çalıştırılır ve `result_digest` sonucun özetiyle eşleşir (`gateway.digest_matches`; maskeli biçim
   `datatools.masked_digest`).
@@ -62,7 +63,8 @@ class EvidenceVerifier:
         return self._files[path]
 
     def check_code(self, ev: dict[str, Any]) -> tuple[bool, str]:
-        if ev.get("repo") not in (self.repo, None, ""):
+        repo = str(ev.get("repo") or "").split("@", 1)[0].rsplit("/", 1)[-1]
+        if repo not in (self.repo, ""):
             return False, f"farklı depo: {ev.get('repo')}"
         path = str(ev.get("path") or "")
         line = ev.get("line")
@@ -87,15 +89,20 @@ class EvidenceVerifier:
         if not isinstance(query, str) or not isinstance(digest, str) or not digest.strip():
             return False, "eksik kanıt alanı"
         try:
-            validate_select(query, kanit=True)
-            res = self.db.query(query)
+            vq = validate_select(query, kanit=True)
+            res = self.db.query(vq.sql)
         except QueryRejected as exc:
             return False, f"sorgu reddedildi: {exc}"
         except DataToolError as exc:
             return False, f"sorgu yeniden çalıştırılamadı: {exc}"
         if not digest_matches_any(digest, res.rows):
             return False, "sonuç özeti eşleşmiyor"
-        return True, f"{len(res.rows)} satır, özet eşleşti"
+        if not res.rows:
+            # Boş sonuç yalnızca "bu koşulla satır yok" kanıtıdır (koşuldaki bir yazım hatası da
+            # boş döner); analist sorguyu görsün diye açıkça işaretlenir.
+            neden = "0 satır (boş sonuç; yalnızca bu koşulla satır olmadığını kanıtlar)"
+            return True, f"{neden}: {vq.sql}"
+        return True, f"{len(res.rows)} satır, özet eşleşti: {vq.sql}"
 
     def verify(self, finding: dict[str, Any], acs: Sequence[str]) -> Verification:
         checks: list[dict[str, Any]] = []

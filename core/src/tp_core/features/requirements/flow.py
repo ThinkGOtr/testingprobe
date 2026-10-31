@@ -21,6 +21,17 @@ ayrı listelenir. Son hal anından önce konmuş `tp-po-approved` etiketi onay s
 Denetim sonucu güvenilir değilse (REPLAY-MISS ya da dönen bulguların hepsi elendi) belge otomatik
 son hal olmaz: gereksinim `findings_open`'da kalır, analist açıkça son hale alır (apply-doc-fixes).
 
+Karar kuralı (§8.2b adım 5): doğrulanmış her bulgu — önem derecesinden bağımsız — insan kararı
+bekler; karar bekleyen bulgu varken belge otomatik son hal olmaz. Analist "son hal olarak onayla"
+(apply-doc-fixes, düzeltme yokken) ile kapatabilir: engelleyici bulgular kararsızsa reddedilir
+(409); kararsız uyarılar "bilinçli fark" (accept_difference) olarak kayda geçer ve PO yorumunda
+listelenir.
+
+Yeniden denetim (findings_open'da "Yeniden denetle"): belge içeriği bulgunun turundan beri
+değişmediyse karar bekleyen ve uygulanmamış (`fix_doc`) bulgular bayatlatılmaz, yeni tura
+taşınır; yeni turun aynı farkı (tür + AC kümesi + AC metni) yeniden raporlaması taşınan bulgunun
+tekrarı sayılır. REPLAY-MISS ya da modelin farkı tekrar raporlamaması insan kararını atlatamaz.
+
 Önceki turda insan kararıyla kapanmış (code_defect / accept_difference) aynı fark — aynı tür,
 aynı AC metni, aynı kanıt — sonraki turda yeniden karar istemez: bulgu bayatlatılır ve önceki
 karara bağlanır (`consistency_finding_ek.onceki_finding_id`).
@@ -52,6 +63,7 @@ from tp_core.events.bus import publish_tx
 from tp_core.features.requirements import services
 from tp_core.features.requirements.codetools import TOOL_SPECS, CodeTools
 from tp_core.features.requirements.content import (
+    DESC,
     DocFix,
     DocMergeConflict,
     DocMergeError,
@@ -60,10 +72,14 @@ from tp_core.features.requirements.content import (
     change_summary,
     changed_targets,
     current_doc_text,
+    hedef_ad,
     merge_fixes,
     normalize_acs,
+    parse_fix_text,
+    refers_to_description,
     replaced_doc_text,
     requirement_hash,
+    split_ac,
     validate_fix_text,
 )
 from tp_core.features.requirements.datatools import DataTools
@@ -207,6 +223,22 @@ def active_reviews(session: Session, req_id: uuid.UUID) -> list[RequirementRevie
     )
 
 
+def cycle_start(session: Session, req_id: uuid.UUID) -> datetime | None:
+    """Güncel inceleme döngüsünün başlangıcı: etkin (superseded olmayan) ön incelemenin anı.
+
+    Döngü tam incelemeyle (ön inceleme) başlar; içerik sıfırlaması (`new`) ve PO onayının geri
+    çekilmesi ön incelemeleri `superseded` yapar. Varsayılan bulgu listesi ve sayaçları bu andan
+    sonra oluşan bulgularla sınırlanır (önceki döngülerin bulguları yalnızca `tumu=true`'da).
+    Etkin ön inceleme yoksa güncel döngü yoktur (None).
+    """
+    return session.scalar(
+        select(func.min(RequirementReview.olusturma)).where(
+            RequirementReview.requirement_id == req_id,
+            RequirementReview.durum != "superseded",
+        )
+    )
+
+
 def supersede_reviews(session: Session, req_id: uuid.UUID, actor: Actor) -> None:
     for rr in active_reviews(session, req_id):
         transition(session, rr, "superseded", actor, rr.durum)
@@ -221,13 +253,35 @@ def findings_of(
     return list(session.scalars(q.order_by(ConsistencyFinding.olusturma)))
 
 
-def stale_findings(session: Session, req_id: uuid.UUID, actor: Actor, sebep: str) -> int:
-    """Açık (karar bekleyen) ve uygulanmamış `fix_doc` kararlı bulguları bayatlatır."""
+def stale_findings(
+    session: Session,
+    req_id: uuid.UUID,
+    actor: Actor,
+    sebep: str,
+    *,
+    belge_hash: str | None = None,
+) -> int:
+    """Açık (karar bekleyen) ve uygulanmamış `fix_doc` kararlı bulguları bayatlatır.
+
+    `belge_hash` verilirse yalnızca turu bu içerikten FARKLI bir belgeye ait bulgular bayatlar:
+    içerik değişmediyse bulgu hâlâ geçerlidir ve insan kararı bekler (yeni tura taşınır).
+    """
     n = 0
     for f in findings_of(session, req_id, ACIK_BULGU):
+        if belge_hash is not None and finding_doc_hash(session, f) == belge_hash:
+            continue
         transition(session, f, "stale", actor, f.durum, sebep=sebep)
         n += 1
     return n
+
+
+def finding_doc_hash(session: Session, f: ConsistencyFinding) -> str | None:
+    """Bulgunun üretildiği denetim turunda belgenin içerik hash'i."""
+    ek = session.get(ConsistencyFindingEk, f.id)
+    if ek is None or ek.kontrol_id is None:
+        return None
+    kontrol = session.get(RequirementKontrol, ek.kontrol_id)
+    return kontrol.belge_hash if kontrol is not None else None
 
 
 def finish_workflow(session: Session, wf_id: uuid.UUID | None) -> None:
@@ -455,7 +509,17 @@ def start_review(session: Session, req: Requirement, user: Principal) -> Started
         tam = tur <= 1 or not active_reviews(session, req.id)
     else:
         tur, tam = 1, True
-    stale_findings(session, req.id, user, "inceleme yeniden başlatıldı")
+    # Yeniden kontrolde içeriği değişmemiş belgenin bulguları geçerliliğini korur: karar
+    # bekleyenler ve uygulanmamış düzeltmeler yeni tura taşınır (REPLAY-MISS ya da modelin farkı
+    # yeniden raporlamaması insan kararını atlatamaz; §8.2b, Constitution I). Tam incelemede
+    # (yeni döngü) hepsi bayatlar.
+    stale_findings(
+        session,
+        req.id,
+        user,
+        "inceleme yeniden başlatıldı",
+        belge_hash=None if tam else content_hash_of(req),
+    )
     transition(session, req, "in_review", user, durum, sebep="inceleme başlatıldı")
     req.kontrol_turu = tur
     wf, job = start_workflow(
@@ -491,11 +555,16 @@ def jira_once(
     idempotency_key: str,
     action: Callable[[], str | None],
     find_existing: Callable[[], str | None],
+    still_present: Callable[[], bool] | None = None,
 ) -> str | None:
     """Dış etkiyi bir kez yapar: önce `intent`, sonra eylem, sonra `created` (§8.3).
 
     Önceki deneme `intent`'te kaldıysa (eylem yapıldı mı belirsiz) önce `find_existing` ile Jira'da
     aranır; bulunursa tekrar yapılmaz.
+
+    `still_present` (derinlemesine savunma): `created` kaydı varken etkinin Jira'da HÂLÂ durup
+    durmadığını denetler. Durmuyorsa (ör. story başkasınca geri alındı: A→B→A) kayıt bayattır;
+    eylem yeniden yapılır. Yalnızca durumu ölçülebilen etkiler (açıklama içeriği) için verilir.
     """
     with session_scope() as s:
         idempotency_lock(s.connection(), idempotency_key)
@@ -503,9 +572,26 @@ def jira_once(
             select(ExternalRef).where(ExternalRef.idempotency_key == idempotency_key)
         ).first()
         if ref is not None and ref.durum == "created":
-            return ref.external_key
+            if still_present is None or still_present():
+                return ref.external_key
+            log.warning("%s: kayıtlı dış etki Jira'da yok; yeniden yapılıyor", idempotency_key)
+            ref.durum, ref.hata = "intent", "created kaydı vardı ama etki Jira'da yoktu"
+            s.flush()
+            audit_on_commit(
+                s,
+                "system",
+                "external_ref.stale",
+                f"external_ref:{ref.id}",
+                {"idempotency_key": idempotency_key, "external_key": ref.external_key},
+            )
+            ref = None  # belirsiz değil: etkinin olmadığı ölçüldü → doğrudan yeniden yap
         belirsiz = ref is not None
-        if ref is None:
+        if (
+            ref is None
+            and not s.scalars(
+                select(ExternalRef.id).where(ExternalRef.idempotency_key == idempotency_key)
+            ).first()
+        ):
             s.add(
                 ExternalRef(
                     entity_turu=entity_turu,
@@ -565,13 +651,100 @@ def question_refs(q: dict[str, Any]) -> set[str]:
 
 
 def split_questions(
-    sorular: Sequence[dict[str, Any]], degisen: set[str]
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """(açık sorular, düzeltmeyle metni değişen AC'lere ait sorular)."""
-    acik, degisti = [], []
+    sorular: Sequence[dict[str, Any]],
+    degisen: set[str],
+    cozulen: dict[str, str] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """(açık sorular, düzeltmeyle metni değişen AC'lere ait sorular, tutarlılık bulgusunun insan
+    kararıyla kapanan sorular — `cozulen`: soru kimliği → açıklama)."""
+    acik, degisti, kapanan = [], [], []
+    cozulen = cozulen or {}
     for q in sorular:
-        (degisti if question_refs(q) & degisen else acik).append(q)
-    return acik, degisti
+        if str(q.get("id") or "") in cozulen:
+            kapanan.append(q)
+        elif question_refs(q) & degisen:
+            degisti.append(q)
+        else:
+            acik.append(q)
+    return acik, degisti, kapanan
+
+
+# Ön inceleme sorusunu kapatabilecek tutarlılık bulgusu türleri (soru türüne göre).
+_SORU_BULGU_TURLERI: dict[str, frozenset[str]] = {
+    "conflict": frozenset({"internal_contradiction", "doc_vs_code", "doc_vs_data"}),
+    "ambiguity": frozenset({"ambiguous", "internal_contradiction", "doc_vs_code", "doc_vs_data"}),
+    "missing_ac": frozenset({"missing_in_doc"}),
+    "untestable": frozenset({"ambiguous"}),
+}
+# Soruyu belge düzeyinde kapatan kararlar (code_defect kodu düzeltir: soru açık kalır).
+_SORU_KAPATAN_KARARLAR = ("fix_doc", "accept_difference")
+
+
+def _ref_kumesi(doc_ref: str) -> set[str]:
+    return set(ac_refs(doc_ref))
+
+
+def questions_resolved_by_findings(
+    s: Session, req_id: uuid.UUID, sorular: Sequence[dict[str, Any]]
+) -> dict[str, str]:
+    """Güncel döngüde `fix_doc` / `accept_difference` kararıyla kapanmış tutarlılık bulgularının
+    cevapladığı ön inceleme soruları (deterministik; soru kimliği → "doküman düzeltmesiyle
+    cevaplandı: F2 (tur 1)").
+
+    Eşleşme: sorunun türü bulgu türüyle uyumlu (`_SORU_BULGU_TURLERI`), sorunun AC kümesi boş değil
+    ve bu tür kapanmış bulguların AC kümelerinin birleşimince tamamen kapsanıyor (ör. "AC3 ↔ AC6"
+    çelişki bulgusu düzeltildiyse AC3/AC6 çelişki sorusu). AC'siz sorular hiç kapanmaz.
+    """
+    bas = cycle_start(s, req_id)
+    if bas is None or not sorular:
+        return {}
+    kapananlar = [
+        f
+        for f in findings_of(s, req_id, ("resolved",))
+        if f.kanit_dogrulandi and f.olusturma >= bas and f.analist_karari in _SORU_KAPATAN_KARARLAR
+    ]
+    out: dict[str, str] = {}
+    for q in sorular:
+        qid = str(q.get("id") or "")
+        refs = question_refs(q)
+        if not qid or not refs:
+            continue
+        turler = _SORU_BULGU_TURLERI.get(str(q.get("type") or ""), frozenset())
+        uygun = [f for f in kapananlar if f.tur in turler and _ref_kumesi(f.doc_ref) & refs]
+        kapsanan: set[str] = set()
+        for f in uygun:
+            kapsanan |= _ref_kumesi(f.doc_ref)
+        if not uygun or not refs <= kapsanan:
+            continue
+        parcalar = []
+        duzeltenler = [_bulgu_etiketi(s, f) for f in uygun if f.analist_karari == "fix_doc"]
+        farklar = [_bulgu_etiketi(s, f) for f in uygun if f.analist_karari == "accept_difference"]
+        if duzeltenler:
+            parcalar.append("doküman düzeltmesiyle cevaplandı: " + ", ".join(duzeltenler))
+        if farklar:
+            parcalar.append("bilinçli fark kararıyla kapandı: " + ", ".join(farklar))
+        out[qid] = "; ".join(parcalar)
+    return out
+
+
+def accepted_differences(s: Session, req_id: uuid.UUID) -> list[str]:
+    """Güncel döngüde 'bilinçli fark' (accept_difference) kararıyla kapanan doğrulanmış bulgular
+    (PO yorumu için satırlar: etiket, doc_ref, tür, gerekçe)."""
+    bas = cycle_start(s, req_id)
+    if bas is None:
+        return []
+    out = []
+    for f in findings_of(s, req_id, ("resolved",)):
+        if not f.kanit_dogrulandi or f.olusturma < bas or f.analist_karari != "accept_difference":
+            continue
+        gerekce = " ".join((f.gerekce or "-").split())[:300]
+        out.append(f"- {_bulgu_etiketi(s, f)} [{f.doc_ref} · {f.tur} · {f.severity}] {gerekce}")
+    return out
+
+
+def _hedef_anahtari(hedef: str) -> tuple[int, str]:
+    m = re.fullmatch(r"AC(\d+)", hedef)
+    return (int(m.group(1)), "") if m else (0, hedef)
 
 
 def review_comment(
@@ -585,13 +758,19 @@ def review_comment(
     degisen: set[str] | None = None,
     ozet: str | None = None,
     model: str | None = None,
+    cozulen: dict[str, str] | None = None,
+    kabul_edilen: Sequence[str] = (),
 ) -> str:
     """PO'ya giden tek yorum: belge son halindeyken kalan sorular (§2 adım 2, §8.2a).
 
     Üretim modu dürüst etiketlenir (`mode_label`: elle hazırlanmış golden "kayıtlı model çıktısı"
     diye sunulmaz). REPLAY-MISS'te AI ön incelemesi yapılmamıştır: "sorular var" denmez.
+    Tutarlılık bulgusunun insan kararıyla (düzeltme / bilinçli fark) kapattığı sorular PO'ya
+    sorulmaz, "Çözüldü" altında bilgi olarak listelenir (`cozulen`); bilinçli fark kararları da
+    PO'nun görmesi için listelenir (`kabul_edilen`).
     """
-    acik, degisti = split_questions(sorular, degisen or set())
+    cozulen = cozulen or {}
+    acik, degisti, kapanan = split_questions(sorular, degisen or set(), cozulen)
     satirlar = [
         f"[{AI_LABEL}] Testing Probe ön inceleme — {jira_key} için PO teyidi",
         f"Üretim modu: {mode_label(mode, model)}",
@@ -608,11 +787,20 @@ def review_comment(
         )
         satirlar.append(f"AI önerisi: {oneri} (PO teyidi her durumda gerekir).")
     if ozet:
-        satirlar.append(f"AI özeti (model çıktısı, karar dayanağı değildir): {ozet[:1000]}")
+        if degisen:
+            # Ön inceleme özgün metne göre yapıldı; düzeltilen maddeler için özet bayat olabilir.
+            maddeler = ", ".join(sorted(degisen, key=_hedef_anahtari))
+            satirlar.append(
+                "AI özeti (özgün metne göre, doküman düzeltmelerinden önce yazıldı; "
+                f"{maddeler} sonradan değişti; model çıktısı, karar dayanağı değildir): "
+                f"{ozet[:1000]}"
+            )
+        else:
+            satirlar.append(f"AI özeti (model çıktısı, karar dayanağı değildir): {ozet[:1000]}")
     satirlar.append("")
     if acik:
         satirlar += [_soru_satiri(i, q) for i, q in enumerate(acik, start=1)]
-    elif not degisti:
+    elif not degisti and not kapanan:
         satirlar.append("Soru yok.")
     else:
         satirlar.append("Açık soru kalmadı.")
@@ -624,12 +812,31 @@ def review_comment(
             "",
         ]
         satirlar += [_soru_satiri(i, q) for i, q in enumerate(degisti, start=1)]
+    if kapanan:
+        satirlar += [
+            "",
+            "Çözüldü — doküman tutarlılık denetiminde analist kararıyla kapanan sorular (bilgi "
+            "için; cevap gerekmez):",
+            "",
+        ]
+        satirlar += [
+            f"{_soru_satiri(i, q)} → {cozulen[str(q.get('id') or '')]}"
+            for i, q in enumerate(kapanan, start=1)
+        ]
+    if kabul_edilen:
+        satirlar += [
+            "",
+            "Analistin bilinçli fark olarak kabul ettiği doğrulanmış bulgular (belge bu haliyle "
+            "bırakıldı; itirazınız varsa yorum yazın):",
+            "",
+            *kabul_edilen,
+        ]
     satirlar += [
         "",
         "Cevaplarınızı bu story'ye yorum olarak, sorunun kimliğiyle yazın (ör. 'Q3: …'); gerekirse "
         "açıklamayı/kabul kriterlerini güncelleyin. "
         f"Onay için '{PO_APPROVED_LABEL}' etiketini ekleyin (bu yorumdan önce konmuş etiket onay "
-        "sayılmaz).",
+        "sayılmaz; böyle bir etiket kaldırılır ve size yorumla bildirilir).",
         f"Denetim zinciri: {tip}",
         f"Kayıt: {marker}",
     ]
@@ -681,6 +888,37 @@ class Snapshot:
         }
 
 
+def replay_key_for(gw: Any, purpose: str, snap: Snapshot, tur: int = 1) -> dict[str, Any]:
+    """REPLAY anahtarı; story'nin adlandırılmış golden'ı yoksa dürüst REPLAY-MISS yedeğine düşer.
+
+    Golden yalnızca seed story'leri (TPD-1…4) ve serbest metin için vardır. Başka bir story (ör.
+    sonradan açılan TPD-17) için adlandırılmış golden aranırsa geçit `ReplayNotFound` verir ve
+    gereksinim nedeni görünmeden `failed` olurdu; oysa amacın nötr yedeği (`on_miss.json`) vardır.
+    Sıra: bu turun golden'ı → story'nin 1. tur golden'ı (2+ turda) → girdi beyanı Jira story'leriyle
+    hiçbir zaman eşleşmeyen serbest metin golden'ı (`sources: serbest:*`). Sonuncusu her zaman
+    eşleşmez → geçit nötr yedeği döndürür: mod `replay_miss` (asla `replay`/`live` değil), nedenler
+    `ai_call.ek.replay_eslesme`'de; akış bu turu güvenilmez sayar (insan kararı). Sıkı kipte
+    (`TP_REPLAY_STRICT=1`) geçit yine `ReplayMiss` verir. Canlı modda ad kullanılmaz.
+    """
+    key = snap.replay_key(check_round=tur)
+    store = getattr(gw, "replay_store", None)
+    if not snap.jira_key or store is None:
+        return key
+    try:
+        adaylar = [golden_name(snap.jira_key, check_round=tur), golden_name(snap.jira_key)]
+        for ad in dict.fromkeys(adaylar):
+            if store.golden_path(purpose, ad).is_file():
+                return {**key, "name": ad}
+        if store.miss_path(purpose).is_file():
+            yedekler = [golden_name(FREE_TEXT_KEY, check_round=tur), golden_name(FREE_TEXT_KEY)]
+            for ad in dict.fromkeys(yedekler):
+                if store.golden_path(purpose, ad).is_file():
+                    return {**key, "name": ad, "golden_yok": snap.jira_key}
+    except Exception as exc:  # yapılandırma hatası: adlandırılmış anahtarla geçide bırak
+        log.warning("REPLAY yedek adı belirlenemedi (%s): %s", purpose, exc)
+    return key
+
+
 def snapshot(session: Session, req_id: uuid.UUID, beklenen: str = "in_review") -> Snapshot | None:
     req = session.get(Requirement, req_id, populate_existing=True)
     if req is None or req.durum != beklenen:
@@ -712,7 +950,7 @@ def run_pre_review(engine: Engine, job_id: uuid.UUID, yuk: dict[str, Any]) -> di
         "requirement-review",
         [snap.message()],
         schema,
-        replay_key=snap.replay_key(),
+        replay_key=replay_key_for(gw, "requirement_review", snap),
         workflow_id=wf_id,
         call_id=deterministic_call_id(job_id, "requirement_review"),
     )
@@ -786,6 +1024,8 @@ class PoRequest:
     son_hal_hash: str
     son_hal_zamani: datetime | None
     model: str | None = None
+    cozulen: dict[str, str] = field(default_factory=dict)
+    kabul_edilen: list[str] = field(default_factory=list)
 
 
 def po_request_snapshot(s: Session, req_id: uuid.UUID) -> PoRequest | None:
@@ -817,6 +1057,8 @@ def po_request_snapshot(s: Session, req_id: uuid.UUID) -> PoRequest | None:
         h,
         kayit.son_hal_zamani,
         (s.get(AiCall, rr.ai_call_id).model if rr is not None and rr.ai_call_id else None),
+        questions_resolved_by_findings(s, req.id, list(rr.sorular)) if rr is not None else {},
+        accepted_differences(s, req.id),
     )
 
 
@@ -833,11 +1075,16 @@ def run_po_request(engine: Engine, job_id: uuid.UUID, yuk: dict[str, Any]) -> di
     return {"jira_comment_id": yorum_id, "degisen": sorted(istek.degisen)}
 
 
+def po_request_key(sahip: uuid.UUID, son_hal_hash: str) -> str:
+    """PO soru yorumunun idempotency anahtarı (son hal + etkin ön inceleme başına bir yorum)."""
+    return f"jira:comment:po_request:{sahip}:{son_hal_hash}"
+
+
 def post_po_request(engine: Engine, istek: PoRequest) -> str | None:
     jira = services.jira()
     key = istek.key
     sahip = istek.rr_id or istek.req_id
-    anahtar = f"jira:comment:po_request:{sahip}:{istek.son_hal_hash}"
+    anahtar = po_request_key(sahip, istek.son_hal_hash)
     marker = _marker(anahtar)
     with engine.connect() as conn:
         tip = chain_tip(conn)
@@ -851,6 +1098,8 @@ def post_po_request(engine: Engine, istek: PoRequest) -> str | None:
         degisen=istek.degisen,
         ozet=istek.ozet,
         model=istek.model,
+        cozulen=istek.cozulen,
+        kabul_edilen=istek.kabul_edilen,
     )
     yorum_id = jira_once(
         engine,
@@ -860,12 +1109,16 @@ def post_po_request(engine: Engine, istek: PoRequest) -> str | None:
         action=lambda: jira.add_comment(key, govde),
         find_existing=lambda: _comment_with_marker(jira, key, marker),
     )
-    # Son halden önce konmuş onay etiketi bayattır (PO soruları/son hali görmeden kondu): kaldır.
-    # Son halden sonra konmuş geçerli bir onay varsa dokunulmaz (PO hızlı davranmış olabilir).
+    # Soru yorumundan önce konmuş onay etiketi bayattır (PO soruları/son hali görmeden kondu):
+    # kaldırılır. Yorumdan sonra konmuş geçerli bir onay varsa dokunulmaz (PO hızlı davranmış).
+    hesaplar = services.po_accounts()
+    esik = approval_threshold(jira, key, anahtar, istek.son_hal_zamani)
     if PO_APPROVED_LABEL in jira.get_issue(key).labels and not fresh_approvals(
-        jira, key, services.po_accounts(), istek.son_hal_zamani
+        jira, key, hesaplar, esik
     ):
-        jira.remove_labels(key, [PO_APPROVED_LABEL])
+        remove_stale_approval(
+            engine, jira, istek.req_id, key, esik, hesaplar, istek.son_hal_hash, ekle_bekleme=False
+        )
     jira.add_labels(key, [PO_PENDING_LABEL])
     with session_scope() as s:
         rr = s.get(RequirementReview, istek.rr_id) if istek.rr_id else None
@@ -883,22 +1136,194 @@ def post_po_request(engine: Engine, istek: PoRequest) -> str | None:
                 "requirement_review_id": istek.rr_id,
                 "son_hal_hash": istek.son_hal_hash,
                 "duzeltmeyle_degisen": sorted(istek.degisen),
+                "kararla_kapanan_sorular": istek.cozulen,
             },
         )
     return yorum_id
 
 
 def fresh_approvals(
-    jira: Any, key: str, hesaplar: frozenset[str], son_hal_zamani: datetime | None
+    jira: Any, key: str, hesaplar: frozenset[str], esik: datetime | None
 ) -> list[Any]:
-    """Son hal anından SONRA yetkili PO'nun koyduğu, içerik değişmeden geçerli onaylar."""
-    if son_hal_zamani is None:
+    """Eşikten (`approval_threshold`) SONRA yetkili PO'nun koyduğu, içerik değişmeden geçerli
+    onaylar. Eşik yoksa (soru yorumu henüz yazılmadı) hiçbir onay taze değildir."""
+    if esik is None:
         return []
-    return [
-        o
-        for o in jira.po_approvals(key, sorted(hesaplar))
-        if o.at is not None and o.at >= son_hal_zamani
-    ]
+    onaylar = jira.po_approvals(key, sorted(hesaplar))
+    return [o for o in onaylar if o.at is not None and o.at >= esik]
+
+
+def approval_threshold(
+    jira: Any, key: str, istek_anahtari: str, son_hal_zamani: datetime | None
+) -> datetime | None:
+    """PO onay etiketinin taze sayılacağı an: belge son hal anı ile PO soru yorumunun Jira'daki
+    yazılma anının geç olanı (yorum: "bu yorumdan önce konmuş etiket onay sayılmaz").
+
+    Soru yorumu henüz yazılmadıysa (son hal işi kuyrukta ya da Jira'ya erişilemedi) None: PO
+    soruları görmeden konan etiket onay sayılmaz; yorum yazılınca (PO sorgusu işi yeniden kuyruğa
+    alır) yeniden konmalıdır. Etiket ve yorum zamanları aynı saatten (Jira) gelir.
+    """
+    if son_hal_zamani is None:
+        return None
+    marker = _marker(istek_anahtari)
+    yorum = next((c for c in jira.get_comments(key) if marker in c.body), None)
+    if yorum is None:
+        return None
+    if yorum.created is None:
+        return son_hal_zamani
+    return max(son_hal_zamani, yorum.created)
+
+
+def _authorized_label_adds(jira: Any, key: str, hesaplar: frozenset[str]) -> list[Any]:
+    from tp_core.integrations.jira import authorized_po_approvals
+
+    botlar = getattr(jira, "bot_identities", None)
+    return authorized_po_approvals(
+        jira.label_history(key, PO_APPROVED_LABEL),
+        sorted(hesaplar),
+        botlar() if callable(botlar) else (),
+    )
+
+
+def remove_stale_approval(
+    engine: Engine,
+    jira: Any,
+    req_id: uuid.UUID,
+    key: str,
+    esik: datetime | None,
+    hesaplar: frozenset[str],
+    son_hal_hash: str | None,
+    *,
+    ekle_bekleme: bool = True,
+) -> str:
+    """Taze sayılmayan `tp-po-approved` etiketini kaldırır ve PO'ya Jira yorumuyla bildirir.
+
+    Okuma (taze onay yok) ile kaldırma ayrı Jira çağrılarıdır: arada PO geçerli bir etiket koymuş
+    olabilir (TOCTOU). Bot onay etiketini geri koyamaz (yalnızca PO yazar); bu yüzden kaldırmadan
+    sonra etiket geçmişi yeniden okunur, eşikten sonraki yetkili ekleme görülürse PO'dan etiketi
+    yeniden eklemesi açıkça istenir. Her durumda PO'ya etiketinin neden sayılmadığı yazılır.
+    """
+    jira.remove_labels(key, [PO_APPROVED_LABEL])
+    if ekle_bekleme:
+        jira.add_labels(key, [PO_PENDING_LABEL])
+    eklemeler = _authorized_label_adds(jira, key, hesaplar)
+    son = eklemeler[-1] if eklemeler else None
+    yarista = son is not None and esik is not None and son.at is not None and son.at >= esik
+    sonuc = "yarista_kaldirildi" if yarista else "bayat_kaldirildi"
+    if son is not None:
+        zaman = son.at.isoformat() if son.at is not None else "?"
+        if yarista:
+            neden = (
+                "etiketiniz, eski bir etiket temizlenirken aynı anda kaldırıldı (zamanlama "
+                "çakışması). Onayınız kaydedilmedi"
+            )
+        elif esik is None:
+            neden = "PO soru yorumu henüz yazılmadan konduğu için onay sayılmadı"
+        else:
+            neden = "belge son haline gelmeden / soru yorumundan önce konduğu için onay sayılmadı"
+        govde = (
+            f"[{AI_LABEL}] Testing Probe — {key}: '{PO_APPROVED_LABEL}' etiketi kaldırıldı "
+            f"({son.author}, {zaman}): {neden}. Onaylıyorsanız soru yorumunu okuduktan sonra "
+            f"etiketi yeniden ekleyin."
+        )
+        anahtar = f"jira:comment:po_label_removed:{req_id}:{son_hal_hash}:{zaman}"
+        notu = _marker(anahtar)
+        jira_once(
+            engine,
+            entity_turu="requirement",
+            entity_id=req_id,
+            idempotency_key=anahtar,
+            action=lambda: jira.add_comment(key, f"{govde}\nKayıt: {notu}"),
+            find_existing=lambda: _comment_with_marker(jira, key, notu),
+        )
+    with session_scope() as s:
+        audit_on_commit(
+            s,
+            "system",
+            "requirement.po_label_removed",
+            f"requirement:{req_id}",
+            {
+                "jira_key": key,
+                "esik": esik,
+                "sonuc": sonuc,
+                "son_ekleme": None
+                if son is None
+                else {"yazar": son.author, "zaman": son.at.isoformat() if son.at else None},
+            },
+        )
+    return sonuc
+
+
+def po_request_status(s: Session, req: Requirement) -> dict[str, Any] | None:
+    """Jira yolunda son haldeki PO soru yorumunun durumu (portal: "PO'ya soru yazılamadı").
+
+    `yazildi` (Jira'da), `bekliyor` (iş kuyrukta/çalışıyor ya da henüz kuyruğa girmedi; PO sorgusu
+    kuyruğa alır), `basarisiz` (son iş kalıcı hata verdi; PO sorgusu yeniden kuyruğa alır).
+    """
+    if req.kaynak != "jira" or req.durum != "pending_po":
+        return None
+    kayit = s.get(RequirementAkis, req.id)
+    if kayit is None or kayit.son_hal_hash is None or kayit.son_hal_hash != content_hash_of(req):
+        return None
+    aktif = active_reviews(s, req.id)
+    anahtar = po_request_key(aktif[-1].id if aktif else req.id, kayit.son_hal_hash)
+    ref = s.scalars(select(ExternalRef).where(ExternalRef.idempotency_key == anahtar)).first()
+    if ref is not None and ref.durum == "created":
+        return {"durum": "yazildi", "jira_comment_id": ref.external_key, "hata": None}
+    son_is = s.execute(
+        text(
+            "SELECT durum, son_hata FROM job WHERE tur = :t AND yuk->>'requirement_id' = :id "
+            "AND yuk->>'son_hal_hash' = :h ORDER BY olusturma DESC LIMIT 1"
+        ),
+        {"t": JOB_PO_REQUEST, "id": str(req.id), "h": kayit.son_hal_hash},
+    ).first()
+    if son_is is not None and son_is[0] in ("failed", "cancelled"):
+        hata = son_is[1] or (ref.hata if ref is not None else None) or "iş tamamlanamadı"
+        return {"durum": "basarisiz", "jira_comment_id": None, "hata": hata[:500]}
+    return {"durum": "bekliyor", "jira_comment_id": None, "hata": None}
+
+
+def ensure_po_request(engine: Engine, req_id: uuid.UUID) -> str | None:
+    """Son haldeki Jira gereksiniminin PO soru yorumu yazılmadıysa ve etkin işi yoksa
+    `requirements.po_request`'i yeniden kuyruğa alır (Jira bir süre erişilemediyse iş 5 denemede
+    kalıcı hata verir; gereksinim `pending_po`'da kaldığı için `mark_failed` ona dokunmaz)."""
+    with session_scope() as s:
+        req = s.get(Requirement, req_id)
+        if req is None:
+            return None
+        durum = po_request_status(s, req)
+        if durum is None or durum["durum"] == "yazildi":
+            return None
+        kayit = s.get(RequirementAkis, req_id)
+        conn = s.connection()
+        idempotency_lock(conn, f"{JOB_PO_REQUEST}:{req_id}")
+        etkin = conn.execute(
+            text(
+                "SELECT count(*) FROM job WHERE tur = :t AND yuk->>'requirement_id' = :id "
+                "AND durum IN ('queued', 'retry', 'running')"
+            ),
+            {"t": JOB_PO_REQUEST, "id": str(req_id)},
+        ).scalar_one()
+        if etkin:
+            return "kuyrukta"
+        onceki = conn.execute(
+            text("SELECT count(*) FROM job WHERE tur = :t AND yuk->>'requirement_id' = :id"),
+            {"t": JOB_PO_REQUEST, "id": str(req_id)},
+        ).scalar_one()
+        enqueue(
+            conn,
+            JOB_PO_REQUEST,
+            {"requirement_id": str(req_id), "son_hal_hash": kayit.son_hal_hash},
+            idempotency_key=f"{JOB_PO_REQUEST}:{req_id}:{kayit.son_hal_hash}:yeniden:{onceki}",
+        )
+        audit_on_commit(
+            s,
+            "system",
+            "requirement.po_request_requeued",
+            f"requirement:{req_id}",
+            {"onceki_is_sayisi": onceki, "onceki_durum": durum},
+        )
+        return "yeniden_kuyruga_alindi"
 
 
 # ----------------------------------------------------------- iş: tutarlılık denetimi
@@ -959,7 +1384,7 @@ def run_consistency(engine: Engine, job_id: uuid.UUID, yuk: dict[str, Any]) -> d
         list(TOOL_SPECS),
         _executor(code, data),
         load_schema(gw.rules_dir, "consistency_check"),
-        replay_key=snap.replay_key(check_round=tur),
+        replay_key=replay_key_for(gw, "consistency_check", snap, tur),
         workflow_id=wf_id,
         call_id=deterministic_call_id(job_id, "consistency_check"),
         on_step=adim,
@@ -1063,8 +1488,21 @@ def store_check(
         if v.ok:
             transition(s, cf, "open", SYSTEM, "unverified", sebep="kanıt doğrulandı")
             kontrol.dogrulanan += 1
-            onceki = previous_decision(s, cf, ref_metni)
-            if onceki is not None:
+            tasinan = carried_duplicate(s, cf, ref_metni)
+            onceki = None if tasinan is not None else previous_decision(s, cf, ref_metni)
+            if tasinan is not None:
+                # İçerik değişmeden yeniden denetlendi: aynı fark önceki turdan taşınan bulguda
+                # zaten açık (karar orada verilir); tekrar gösterilmez.
+                transition(
+                    s,
+                    cf,
+                    "stale",
+                    SYSTEM,
+                    "open",
+                    sebep=f"aynı bulgu önceki turdan açık: {_bulgu_etiketi(s, tasinan)} "
+                    f"(bulgu {tasinan.id})",
+                )
+            elif onceki is not None:
                 # Aynı fark önceki turda insan kararıyla kapandı: yeniden karar istenmez.
                 ek.onceki_finding_id = onceki.id
                 transition(
@@ -1129,6 +1567,26 @@ def _ref_anahtari(doc_ref: str) -> tuple[str, ...]:
     return tuple(sorted(set(refs))) if refs else (" ".join(doc_ref.lower().split()),)
 
 
+def carried_duplicate(
+    s: Session, cf: ConsistencyFinding, ref_metni: str | None
+) -> ConsistencyFinding | None:
+    """Önceki turdan taşınan (karar bekleyen / uygulanmamış) aynı fark: aynı tür, aynı AC kümesi,
+    bu AC'lerin metni aynı. Kanıt izi aranmaz: belge değişmediği için aynı farkın kanıtı (ör.
+    satır) değişse de bulgu aynıdır ve karar taşınan bulguda verilir."""
+    anahtar = _ref_anahtari(cf.doc_ref)
+    for aday in findings_of(s, cf.requirement_id, ACIK_BULGU):
+        if aday.id == cf.id or aday.tur != cf.tur or not aday.kanit_dogrulandi:
+            continue
+        if aday.kontrol_turu >= cf.kontrol_turu:
+            continue
+        ek = s.get(ConsistencyFindingEk, aday.id)
+        if ek is None or ek.ref_metni != ref_metni:
+            continue
+        if _ref_anahtari(aday.doc_ref) == anahtar:
+            return aday
+    return None
+
+
 def previous_decision(
     s: Session, cf: ConsistencyFinding, ref_metni: str | None
 ) -> ConsistencyFinding | None:
@@ -1167,6 +1625,11 @@ def blocking_unresolved(s: Session, req_id: uuid.UUID) -> list[ConsistencyFindin
     ]
 
 
+def undecided_findings(s: Session, req_id: uuid.UUID) -> list[ConsistencyFinding]:
+    """Doğrulanmış ve henüz insan kararı almamış bulgular (önem derecesinden bağımsız)."""
+    return [f for f in findings_of(s, req_id, ("open",)) if f.kanit_dogrulandi]
+
+
 def pending_fixes(s: Session, req_id: uuid.UUID) -> list[ConsistencyFinding]:
     return [f for f in findings_of(s, req_id, ("decided",)) if f.analist_karari == "fix_doc"]
 
@@ -1193,10 +1656,17 @@ def untrusted_check(s: Session, req_id: uuid.UUID) -> str | None:
 
 
 def conclude_round(s: Session, req: Requirement, actor: Actor) -> str:
-    """Tur sonucu: engelleyici bulgu varsa ya da denetim sonucu güvenilir değilse findings_open
-    (insan kararı), yoksa son hal → PO bekleniyor."""
+    """Tur sonucu: karar bekleyen bulgu (engelleyici ya da uyarı) / uygulanmamış düzeltme varsa ya
+    da denetim sonucu güvenilir değilse findings_open (insan kararı), yoksa son hal → PO."""
     if blocking_unresolved(s, req.id) or pending_fixes(s, req.id):
         transition(s, req, "findings_open", actor, "in_review", sebep="engelleyici bulgu var")
+        emit_requirement(s, req, olay="findings_open")
+        return "findings_open"
+    if undecided_findings(s, req.id):
+        # Uyarı da analist kararı ister (§8.2b adım 5): code_defect → bug taslağı yolu açık kalır.
+        transition(
+            s, req, "findings_open", actor, "in_review", sebep="karar bekleyen uyarı bulgusu var"
+        )
         emit_requirement(s, req, olay="findings_open")
         return "findings_open"
     neden = untrusted_check(s, req.id)
@@ -1250,7 +1720,7 @@ def finalize(s: Session, req: Requirement, actor: Actor, *, sebep: str | None = 
 def maybe_finalize(s: Session, req: Requirement, actor: Actor) -> bool:
     if req.durum != "findings_open":
         return False
-    if blocking_unresolved(s, req.id) or pending_fixes(s, req.id):
+    if blocking_unresolved(s, req.id) or pending_fixes(s, req.id) or undecided_findings(s, req.id):
         return False
     if untrusted_check(s, req.id) is not None:
         return False  # son hali analist açıkça verir (apply-doc-fixes, düzeltme yokken)
@@ -1291,8 +1761,21 @@ def decide_finding(
             raise FlowInputError("Düzeltilmiş doküman metni boş olamaz")
         try:
             validate_fix_text(son_metin, req.aciklama, req.kabul_kriterleri)
+            hedefler = parse_fix_text(son_metin)
         except DocMergeError as exc:
             raise FlowInputError(str(exc)) from exc
+        if (
+            son_metin == (finding.onerilen_metin or "").strip()
+            and DESC in hedefler
+            and not refers_to_description(finding.doc_ref)
+        ):
+            # Savunma derinliği (TPD-3): model önerisi "ACn: " önekisiz satırla açıklamanın
+            # tamamını değiştirirdi, oysa bulgu yalnızca AC'lere atıf yapıyor.
+            raise FlowInputError(
+                "Önerilen düzeltme açıklamayı değiştiriyor ama bulgu yalnızca kabul kriterlerine "
+                f"atıf yapıyor ({finding.doc_ref}); metni düzenleyip her satırı 'ACn: ' ile "
+                "başlatın"
+            )
         if son_metin != finding.onerilen_metin:
             degisiklik = {"onerilen_metin": son_metin}
 
@@ -1353,6 +1836,9 @@ def ensure_bug_draft(
 ) -> BugDraft:
     """`code_defect` → bug taslağı (Faz 4 özelliği tamamlar; burada asgari içerik).
 
+    İçerik şablonla, bulgunun doğrulanmış kanıtından üretilir (`icerik.uretim = "sablon"`); model
+    çağrısı yoktur, bu yüzden `uretim_modu`/`ai_call_id` boştur (portalda AI rozeti çıkmaz).
+
     Aynı gereksinimde aynı fark (tür + doc_ref) için açık (reddedilmemiş) taslak varsa yenisi
     açılmaz; o döner (ör. 2. turda aynı kredi limiti farkına yeniden "kod hatalı" denmesi).
     """
@@ -1365,23 +1851,32 @@ def ensure_bug_draft(
     iddia = ek.iddia if ek is not None else ""
     gozlem = ek.gozlem if ek is not None else ""
     kanitlar = []
+    adimlar: list[str] = []
     for ev in finding.kanitlar:
         if ev.get("kind") == "code":
-            kanitlar.append(
-                {
-                    "tur": "code",
-                    "url": None,
-                    "etiket": f"{ev.get('repo')} · {ev.get('path')}:{ev.get('line')}",
-                }
+            yer = f"{ev.get('repo')} · {ev.get('path')}:{ev.get('line')}"
+            kanitlar.append({"tur": "code", "url": None, "etiket": yer})
+            alinti = " ".join(str(ev.get("snippet") or "").split())[:200]
+            adimlar.append(
+                f"Kodda {yer} (commit {sha or 'main'}) satırını açın"
+                + (f": `{alinti}`" if alinti else "")
             )
         else:
             kanitlar.append({"tur": "data", "url": None, "etiket": str(ev.get("query"))})
+            adimlar.append(
+                f"Salt okuma veritabanında `{ev.get('query')}` sorgusunu çalıştırın; sonuç: "
+                f"{ev.get('result_digest') or '-'}"
+            )
+    belge = ek.mevcut_doc_text if ek is not None and ek.mevcut_doc_text else finding.doc_ref
+    adimlar.append(f"Dokümandaki beklenen davranışı ({belge[:300]}) uygulamada deneyin")
+    if gozlem:
+        adimlar.append(f"Gözlenen: {gozlem[:300]}")
     icerik = {
         "summary": f"{req.jira_key or req.baslik} {finding.doc_ref}: {iddia or finding.tur}"[:200],
-        "steps": [
-            "Tutarlılık bulgusundaki kanıtı inceleyin",
-            f"{finding.doc_ref} için dokümandaki davranışı uygulamada deneyin",
-        ],
+        # Şablonla (deterministik) üretildi: model çıktısı değil; adımlar bulgunun doğrulanmış
+        # kanıtından gelir (Faz 4 bug taslağı ajanı yerine geçmez).
+        "uretim": "sablon",
+        "steps": adimlar,
         "expected": (ek.mevcut_doc_text if ek is not None else None) or iddia,
         "actual": gozlem,
         "environment": f"Tutarlılık denetimi · {settings().forge_repo}@{sha or 'main'}",
@@ -1397,8 +1892,9 @@ def ensure_bug_draft(
         finding_id=finding.id,
         icerik=icerik,
         icerik_hash=content_hash(icerik),
-        ai_call_id=finding.ai_call_id,
-        uretim_modu=finding.uretim_modu,
+        # Taslak modelden değil şablondan gelir: bulgunun AI modu (replay/live) taşınmaz.
+        ai_call_id=None,
+        uretim_modu=None,
     )
     s.add(taslak)
     s.flush()
@@ -1418,11 +1914,8 @@ def ensure_bug_draft(
 def _fix_list(s: Session, fixes: Sequence[ConsistencyFinding]) -> list[DocFix]:
     out = []
     for f in fixes:
-        ek = s.get(ConsistencyFindingEk, f.id)
-        # Portaldaki etiketle aynı: "F2 (tur 1)".
-        no = ek.bulgu_no if ek is not None and ek.bulgu_no else str(f.id)[:8]
-        etiket = f"{no} (tur {f.kontrol_turu})"
-        out.append(DocFix(etiket, f.doc_ref, f.onerilen_metin or ""))
+        # Portaldaki etiketle aynı (`bulgu_etiketi`): "F2 (tur 1)".
+        out.append(DocFix(_bulgu_etiketi(s, f), f.doc_ref, f.onerilen_metin or ""))
     return out
 
 
@@ -1436,9 +1929,93 @@ def planned_merge(s: Session, req: Requirement) -> tuple[list[ConsistencyFinding
     return fixes, merge_fixes(req.aciklama, req.kabul_kriterleri, _fix_list(s, fixes))
 
 
-def start_apply(s: Session, req: Requirement, user: Principal) -> Started | None:
+def accept_difference_conflicts(
+    s: Session, req: Requirement, fixes: Sequence[ConsistencyFinding]
+) -> list[str]:
+    """Onaylı düzeltmelerden, güncel döngüde 'bilinçli fark' (accept_difference) kararıyla olduğu
+    gibi bırakılan bir maddeyi yeniden yazanlar (Türkçe açıklamalar; boş = çelişki yok).
+
+    Bilinçli fark kararı, kararın verildiği andaki madde metnine bağlıdır (`ref_metni`): metin o
+    zamandan beri değiştiyse karar artık o metni korumaz ve çelişki sayılmaz.
+    """
+    hedefler: dict[str, list[ConsistencyFinding]] = {}
+    by_ref = {split_ac(a)[0]: a for a in req.kabul_kriterleri}
+    for f in fixes:
+        try:
+            yeni = parse_fix_text(f.onerilen_metin or "")
+        except DocMergeError:
+            continue
+        for hedef, metin in yeni.items():
+            mevcut = req.aciklama if hedef == DESC else by_ref.get(hedef)
+            if mevcut is not None and " ".join(mevcut.split()) == " ".join(metin.split()):
+                continue  # madde değişmiyor
+            hedefler.setdefault(hedef, []).append(f)
+    if not hedefler:
+        return []
+    bas = cycle_start(s, req.id)
+    adaylar: list[tuple[ConsistencyFinding, ConsistencyFinding]] = []
+    for f in findings_of(s, req.id, ("resolved", "stale")):
+        if not f.kanit_dogrulandi or (bas is not None and f.olusturma < bas):
+            continue
+        karar_veren = f
+        if f.durum == "stale":
+            ek = s.get(ConsistencyFindingEk, f.id)
+            if ek is None or ek.onceki_finding_id is None:
+                continue
+            karar_veren = s.get(ConsistencyFinding, ek.onceki_finding_id) or f
+        if karar_veren.analist_karari == "accept_difference":
+            adaylar.append((f, karar_veren))
+    out: list[str] = []
+    for f, karar in adaylar:
+        ek = s.get(ConsistencyFindingEk, f.id)
+        guncel = current_doc_text(f.doc_ref, req.aciklama, req.kabul_kriterleri)
+        if ek is not None and ek.ref_metni is not None and ek.ref_metni != guncel:
+            continue
+        refs = set(ac_refs(f.doc_ref))
+        if not refs and refers_to_description(f.doc_ref):
+            refs = {DESC}
+        for hedef in sorted(refs & hedefler.keys(), key=str):
+            duzeltenler = ", ".join(_bulgu_etiketi(s, x) for x in hedefler[hedef])
+            out.append(
+                f"{hedef_ad(hedef)}: {_bulgu_etiketi(s, f)} 'bilinçli fark' kararıyla olduğu gibi "
+                f"bırakıldı (gerekçe: {karar.gerekce or '-'}), ama {duzeltenler} düzeltmesi bu "
+                "maddeyi yeniden yazıyor"
+            )
+    return out
+
+
+def _bulgu_etiketi(s: Session, f: ConsistencyFinding) -> str:
+    ek = s.get(ConsistencyFindingEk, f.id)
+    no = ek.bulgu_no if ek is not None and ek.bulgu_no else str(f.id)[:8]
+    return f"{no} (tur {f.kontrol_turu})"
+
+
+@dataclass(frozen=True)
+class Finalized:
+    """apply-doc-fixes düzeltme yokken belgeyi doğrudan son hale aldı."""
+
+    mesaj: str
+    kabul_edilen: list[str] = field(default_factory=list)
+
+
+IMPLICIT_ACCEPT_GEREKCE = (
+    "Analist belgeyi bu uyarıya ayrı karar vermeden son hale aldı (son hal onayı); bilinçli fark "
+    "olarak kabul edildi"
+)
+
+
+def start_apply(
+    s: Session, req: Requirement, user: Principal, *, cakismayi_onayla: bool = False
+) -> Started | Finalized:
     """POST /requirements/{id}/apply-doc-fixes. Düzeltme yoksa ve engelleyici kalmadıysa belgeyi
-    doğrudan son hale alır (None döner)."""
+    doğrudan son hale alır (`Finalized`). Karar bekleyen engelleyici bulgu varsa reddedilir (409);
+    karar bekleyen uyarılar analistin bu açık eylemiyle "bilinçli fark" (accept_difference) olarak
+    kayda geçer ve yanıt/PO yorumunda listelenir.
+
+    Bir düzeltme, aynı döngüde 'bilinçli fark' kararıyla olduğu gibi bırakılan maddeyi yeniden
+    yazıyorsa 409 döner; analist ya düzeltme kararını değiştirir ya da `cakismayi_onayla=true` ile
+    bilinçli olarak uygular (kayda geçer).
+    """
     if req.durum != "findings_open":
         raise FlowError(f"Bu durumda ({req.durum}) düzeltme uygulanamaz")
     try:
@@ -1447,18 +2024,60 @@ def start_apply(s: Session, req: Requirement, user: Principal) -> Started | None
         raise FlowError(str(exc)) from exc
     except DocMergeError as exc:
         raise FlowInputError(str(exc)) from exc
-    if not fixes:
-        if blocking_unresolved(s, req.id):
-            raise FlowError("Uygulanacak onaylı doküman düzeltmesi yok; bulgular karar bekliyor")
-        neden = untrusted_check(s, req.id)
-        finalize(
-            s,
-            req,
-            user,
-            sebep="analist belgeyi son hale aldı"
-            + (f" (denetim uyarısına rağmen: {neden})" if neden else ""),
+    cakismalar = accept_difference_conflicts(s, req, fixes)
+    if cakismalar and not cakismayi_onayla:
+        raise FlowError(
+            "Düzeltme, bilinçli fark kararıyla çelişiyor — "
+            + "; ".join(cakismalar)
+            + ". Düzeltme kararını değiştirin ya da çelişkiyi onaylayarak yeniden uygulayın "
+            "(cakismayi_onayla=true)."
         )
-        return None
+    if cakismalar:
+        audit_on_commit(
+            s,
+            user.kullanici_adi,
+            "requirement.decision_conflict_confirmed",
+            f"requirement:{req.id}",
+            {"cakismalar": cakismalar, "bulgu_ids": [f.id for f in fixes]},
+        )
+    if not fixes:
+        engelleyiciler = blocking_unresolved(s, req.id)
+        if engelleyiciler:
+            raise FlowError(
+                "Uygulanacak onaylı doküman düzeltmesi yok; engelleyici bulgular karar bekliyor: "
+                + ", ".join(_bulgu_etiketi(s, f) for f in engelleyiciler)
+            )
+        kabul_edilen: list[str] = []
+        for f in undecided_findings(s, req.id):
+            s.refresh(f, with_for_update=True)
+            if f.durum != "open":
+                continue
+            record_approval(
+                s,
+                f,
+                user,
+                "accept_difference",
+                gerekce=IMPLICIT_ACCEPT_GEREKCE,
+                beklenen_hash=content_hash_of(f),
+            )
+            transition(s, f, "decided", user, "open", sebep="son hal onayı")
+            transition(s, f, "resolved", user, "decided", sebep="accept_difference (son hal onayı)")
+            kabul_edilen.append(_bulgu_etiketi(s, f))
+        neden = untrusted_check(s, req.id)
+        sebep = "analist belgeyi son hale aldı"
+        if neden:
+            sebep += f" (denetim uyarısına rağmen: {neden})"
+        if kabul_edilen:
+            sebep += f"; karar verilmemiş uyarılar bilinçli fark sayıldı: {', '.join(kabul_edilen)}"
+        finalize(s, req, user, sebep=sebep)
+        mesaj = "Uygulanacak düzeltme yok; belge son haline alındı, PO teyidi bekleniyor."
+        if kabul_edilen:
+            mesaj += (
+                " Karar verilmemiş uyarı bulguları bilinçli fark olarak kaydedildi: "
+                + ", ".join(kabul_edilen)
+                + "."
+            )
+        return Finalized(mesaj, kabul_edilen)
     transition(s, req, "in_review", user, "findings_open", sebep="doküman düzeltmesi")
     wf, job = start_workflow(
         s.connection(),
@@ -1492,7 +2111,9 @@ def run_apply(engine: Engine, job_id: uuid.UUID, yuk: dict[str, Any]) -> dict[st
         fix_ids = [f.id for f in fixes]
 
     if key:
-        write_fix_to_jira(engine, req_id, key, baslik, onceki, yeni, merge)
+        write_fix_to_jira(
+            engine, req_id, key, baslik, onceki, yeni, merge, is_kimligi=wf_id or job_id
+        )
 
     with session_scope() as s:
         req = lock_requirement(s, req_id)
@@ -1546,7 +2167,16 @@ def write_fix_to_jira(
     onceki: str,
     yeni: str,
     merge: MergeResult,
+    *,
+    is_kimligi: uuid.UUID | str,
 ) -> None:
+    """Onaylı düzeltmeleri Jira'ya yazar (açıklama + özet yorumu + PO etiketleri).
+
+    Idempotency anahtarı düzeltme iş akışına (`is_kimligi`: workflow ya da iş kimliği) bağlıdır:
+    aynı işin yeniden denemesi Jira'ya ikinci kez yazmaz, ama story geri alınıp (A→B→A) aynı
+    düzeltme yeni bir akışla yeniden uygulanırsa yazım yeniden yapılır. Ayrıca `created` kaydı
+    varken açıklamanın Jira'da hâlâ hedef içerikte olduğu ölçülür (`still_present`).
+    """
     jira = services.jira()
 
     def jira_hash() -> str:
@@ -1564,15 +2194,16 @@ def write_fix_to_jira(
             engine,
             entity_turu="requirement",
             entity_id=req_id,
-            idempotency_key=f"jira:update_description:{req_id}:{yeni}",
+            idempotency_key=f"jira:update_description:{req_id}:{is_kimligi}:{onceki}->{yeni}",
             action=lambda: (
                 jira.update_description(key, merge.aciklama, merge.kabul_kriterleri) or key
             ),
             find_existing=lambda: key if jira_hash() == yeni else None,
+            still_present=lambda: jira_hash() == yeni,
         )
         if jira_hash() != yeni:
             raise FlowError(f"{key} Jira'ya yazılan içerik beklenen hash'le eşleşmiyor")
-    anahtar = f"jira:comment:doc_fix:{req_id}:{yeni}"
+    anahtar = f"jira:comment:doc_fix:{req_id}:{is_kimligi}:{yeni}"
     marker = _marker(anahtar)
     with engine.connect() as conn:
         tip = chain_tip(conn)
@@ -1878,6 +2509,7 @@ def po_check(engine: Engine, jira: Any, req_id: uuid.UUID, hesaplar: frozenset[s
         son_hal_zamani = kayit.son_hal_zamani if kayit is not None else None
         rr = active_reviews(s, req_id)
         soru_zamani = rr[-1].olusturma if rr else None
+        sahip = rr[-1].id if rr else req_id
 
     issue = jira.get_issue(key)
     jira_h = requirement_hash(issue.summary, issue.description, list(issue.acceptance_criteria))
@@ -1907,16 +2539,26 @@ def po_check(engine: Engine, jira: Any, req_id: uuid.UUID, hesaplar: frozenset[s
 
     if durum != "pending_po":
         return "bekliyor"
-    # Yalnızca belge son hal olduktan SONRA konmuş etiket onaydır (PO son hali ve soruları görmüş
-    # olmalı); daha önce konmuş (bayat ya da önceden duran) etiket kapıyı açmaz (Constitution I).
-    taze = [o for o in onaylar if o.at is not None and son_hal_zamani and o.at >= son_hal_zamani]
+    son_hal_guncel = son_hal is not None and son_hal == h
+    if son_hal_guncel:
+        # Son hal işi kalıcı hata verdiyse (Jira erişilemedi) PO'ya sorular hiç gitmezdi.
+        try:
+            ensure_po_request(engine, req_id)
+        except Exception as exc:
+            log.warning("%s: PO soru yorumu işi yeniden kuyruğa alınamadı: %s", key, exc)
+    # Yalnızca belge son hal olduktan ve PO soru yorumu yazıldıktan SONRA konmuş etiket onaydır (PO
+    # son hali ve soruları görmüş olmalı); daha önce konmuş etiket kapıyı açmaz (Constitution I).
+    esik: datetime | None = son_hal_zamani
+    if onaylar and son_hal_guncel and son_hal is not None:
+        esik = approval_threshold(jira, key, po_request_key(sahip, son_hal), son_hal_zamani)
+    taze = [o for o in onaylar if o.at is not None and esik is not None and o.at >= esik]
     if not taze:
         if etiket_var:
             try:
-                jira.remove_labels(key, [PO_APPROVED_LABEL])
-                jira.add_labels(key, [PO_PENDING_LABEL])
+                sonuc = remove_stale_approval(engine, jira, req_id, key, esik, hesaplar, son_hal)
             except Exception as exc:  # onay zaten sayılmadı; etiket temizliği kozmetik
                 log.warning("%s: bayat %s kaldırılamadı: %s", key, PO_APPROVED_LABEL, exc)
+                sonuc = "bayat_kaldirildi"
             with session_scope() as s:
                 audit_on_commit(
                     s,
@@ -1926,12 +2568,15 @@ def po_check(engine: Engine, jira: Any, req_id: uuid.UUID, hesaplar: frozenset[s
                     {
                         "jira_key": key,
                         "son_hal_zamani": son_hal_zamani,
+                        "esik": esik,
                         "onaylar": [
                             {"yazar": o.author, "zaman": o.at.isoformat() if o.at else None}
                             for o in onaylar
                         ],
                     },
                 )
+            if sonuc == "yarista_kaldirildi":
+                return "taze_etiket_yarista_kaldirildi"
             return "bayat_etiket_kaldirildi"
         return "bekliyor"
     onay = taze[-1]
@@ -1997,6 +2642,74 @@ def mark_failed(req_id: uuid.UUID, neden: str) -> None:
             return
         transition(s, req, "failed", SYSTEM, "in_review", sebep=neden[:500])
         emit_requirement(s, req, olay="failed", neden=neden[:300])
+
+
+_HATA_ONERILERI: tuple[tuple[tuple[str, ...], str, bool], ...] = (
+    (
+        ("REPLAY çıktısı yok", "REPLAY bu girdiyle eşleşmiyor", "ReplayNotFound", "ReplayMiss"),
+        "Bu girdi için kayıtlı REPLAY yok; canlı model (ANTHROPIC_API_KEY) gerekir — yeniden "
+        "denemek sonucu değiştirmez.",
+        False,
+    ),
+    (
+        ("bütçe", "Bütçe", "BudgetExceeded"),
+        "Model bütçesi aşıldı; bütçe yenilendiğinde ya da artırıldığında yeniden deneyin.",
+        True,
+    ),
+    (
+        ("yarıda kal", "yeniden başladı", "zaman aşımı", "Zaman aşımı", "bağlı iş bulunamadı"),
+        "İş yarıda kaldı; 'Yeniden denetle' ile yeniden başlatılabilir.",
+        True,
+    ),
+    (
+        ("Jira'da", "değişti", "değişmiş"),
+        "Story inceleme sırasında değişti; story'yi yeniden çekip incelemeyi tekrar başlatın.",
+        True,
+    ),
+)
+
+
+def last_failure(s: Session, req: Requirement) -> dict[str, Any] | None:
+    """`failed` gereksinimin son hata nedeni (portal "Hata" çipinin açıklaması).
+
+    Neden durum geçişinin denetim kaydındaki `sebep`'tir (`mark_failed`, takılı iş kurtarma, PO
+    onayının üretim sırasında geri çekilmesi); işin türü ve iş kaydındaki hata, gereksinime bağlı en
+    son başarısız işten gelir. Türkçe öneri, yeniden denemenin işe yarayıp yaramayacağını söyler.
+    """
+    if req.durum != "failed":
+        return None
+    gecis = s.execute(
+        text(
+            "SELECT zaman, ozet->>'sebep' FROM audit_event WHERE eylem = 'requirement.transition' "
+            "AND nesne = :n AND ozet->>'to' = 'failed' ORDER BY id DESC LIMIT 1"
+        ),
+        {"n": f"requirement:{req.id}"},
+    ).first()
+    is_ = s.execute(
+        text(
+            "SELECT j.tur, j.son_hata, COALESCE(j.bitis, j.guncelleme) FROM job j "
+            "JOIN workflow_instance w ON w.id = j.workflow_id "
+            "WHERE w.nesne_turu = 'requirement' AND w.nesne_id = :id AND j.durum = 'failed' "
+            "ORDER BY COALESCE(j.bitis, j.guncelleme) DESC LIMIT 1"
+        ),
+        {"id": req.id},
+    ).first()
+    neden = (gecis[1] if gecis is not None else None) or (is_[1] if is_ is not None else None)
+    neden = neden or "Hata nedeni kaydedilmemiş"
+    oneri, yeniden = "Ayrıntı iş kaydında; yeniden denemek işe yarayabilir.", True
+    for anahtarlar, metin, tekrar in _HATA_ONERILERI:
+        if any(a in neden for a in anahtarlar):
+            oneri, yeniden = metin, tekrar
+            break
+    zaman = gecis[0] if gecis is not None else (is_[2] if is_ is not None else None)
+    return {
+        "neden": neden[:1000],
+        "zaman": zaman.isoformat() if zaman is not None else None,
+        "job_tur": is_[0] if is_ is not None else None,
+        "is_hatasi": (is_[1] or None)[:1000] if is_ is not None and is_[1] else None,
+        "oneri": oneri,
+        "yeniden_denemek_ise_yarar": yeniden,
+    }
 
 
 def counts_for(s: Session, req_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, dict[str, int]]:

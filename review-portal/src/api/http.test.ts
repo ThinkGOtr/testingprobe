@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "./client";
-import { ApiError, UC_YOK, cakismaMesaji, cekirdekYetenekleri, ICERIK_DEGISTI, kararCakismasi, istek, mockOturumuAyarla, mockUclari, ucuNormallestir, ucVar, yapilandir, yetenekleriAyristir, yetkisizOlunca } from "./http";
+import { ApiError, BU_FAZDA_YOK, buFazdaYok, canliDerleme, UC_YOK, cakismaMesaji, ICERIK_DEGISTI, kararCakismasi, istek, mockOturumuAyarla, mockUclari, ucuNormallestir, ucVar, yapilandir, yetenekleriAyristir, yetkisizOlunca } from "./http";
 
 function yanit(status: number, govde: unknown, json = true): Response {
   return new Response(json ? JSON.stringify(govde) : String(govde), {
@@ -251,13 +251,29 @@ describe("core uç keşfi (openapi.json) — örnek veri uçlarına ağ isteği 
     expect(mockUclari()).toEqual(["GET /runs"]);
   });
 
-  it("VITE_MOCK=0 (otomatik mock kapalı) iken keşif yapılmaz, her istek core'a gider", async () => {
+  it("VITE_MOCK=0 (canlı derleme): core'da olmayan uca gidilmez, örnek veriye de düşülmez — 'bu fazda yok' (501)", async () => {
     yapilandir({ mockZorunlu: false, mockOtomatik: false, yetenekKesfi: true });
     const f = sahteCore(OPENAPI);
     vi.stubGlobal("fetch", f);
-    await expect(api.kosular()).rejects.toBeInstanceOf(ApiError);
-    expect(f.mock.calls.map((c) => c[0])).toEqual(["/api/runs"]);
-    expect(await cekirdekYetenekleri()).toBeNull();
+    await expect(api.kontrolKulesi()).rejects.toMatchObject({ status: 501, detail: BU_FAZDA_YOK });
+    await expect(api.kosular()).rejects.toMatchObject({ status: 501, detail: BU_FAZDA_YOK });
+    // Var olan uç core'a gider; gerçek 404 hata olarak kalır.
+    await expect(api.gereksinim("x")).rejects.toMatchObject({ status: 404 });
+    expect(f.mock.calls.map((c) => c[0])).toEqual(["/api/openapi.json", "/api/requirements/x"]);
+    expect(mockUclari()).toEqual([]);
+    expect(canliDerleme()).toBe(true);
+    expect(buFazdaYok(new ApiError(501, BU_FAZDA_YOK))).toBe(true);
+    expect(buFazdaYok(BU_FAZDA_YOK)).toBe(true);
+    expect(buFazdaYok(new ApiError(501, UC_YOK))).toBe(false);
+  });
+
+  it("VITE_MOCK=0 ve uç listesi okunamazsa: genel 404 de örnek veriye düşmez, 'bu fazda yok' olur", async () => {
+    yapilandir({ mockZorunlu: false, mockOtomatik: false, yetenekKesfi: true });
+    const f = sahteCore({ detail: "Not Found" }, 404);
+    vi.stubGlobal("fetch", f);
+    await expect(api.kontrolKulesi()).rejects.toMatchObject({ status: 501, detail: BU_FAZDA_YOK });
+    expect(f.mock.calls.map((c) => c[0])).toEqual(["/api/openapi.json", "/api/control-tower"]);
+    expect(mockUclari()).toEqual([]);
   });
 
   it("kaynağı çekirdekte olan işlem, işlem ucu yoksa örnek veriye düşmez (501); kaynak örnek veriyse düşer", async () => {

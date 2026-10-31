@@ -196,9 +196,12 @@ def test_publish_test_cases_portal_onayi_ve_hash_kapisi(
     )
     a_id, b_id = (e["case_id"] for e in eklenen.structured_content["eklenen"])
 
-    # Onaysız: yayınlanmaz (aynı sunucu yolu, worker'daki kontrol).
+    # Onaysız: yayınlanmaz (aynı sunucu yolu, worker'daki kontrol). Hiçbir şey yayınlanmadığı
+    # için araç sonucu hatadır (IDE bunu başarı saymaz); kalem ayrıntıları korunur.
     sonuc = _cagir(api, yayin, "publish_test_cases", {"case_ids": [a_id]})
-    assert sonuc.is_error is False
+    assert sonuc.is_error is True
+    assert sonuc.structured_content["ozet"] == {"created": 0, "exists": 0, "failed": 1}
+    assert "Hiçbir case yayınlanmadı" in sonuc.structured_content["mesaj"]
     assert sonuc.structured_content["sonuclar"][0]["durum"] == "failed"
     assert "Onaylı değil" in sonuc.structured_content["sonuclar"][0]["hata"]
 
@@ -219,6 +222,9 @@ def test_publish_test_cases_portal_onayi_ve_hash_kapisi(
     durum = {s["case_id"]: s for s in sonuc.structured_content["sonuclar"]}
     assert durum[a_id]["durum"] == "created" and durum[a_id]["onaylayan"] == "qa_onaylayan"
     assert durum[b_id]["durum"] == "failed"
+    # Kısmi başarı da hata olarak işaretlenir (yayınlanmayan case var).
+    assert sonuc.is_error is True
+    assert sonuc.structured_content["ozet"] == {"created": 1, "exists": 0, "failed": 1}
     key = durum[a_id]["external_key"]
     # IDE taslağı: üretim modu etiketi "ide" (REPLAY/canlı model değil).
     assert jira.get_issue(key).labels == ["AI-generated", f"tp-{a_id}", "tp-mod-ide"]

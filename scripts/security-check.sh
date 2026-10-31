@@ -189,6 +189,20 @@ check_demoapp_ro() {
       ok=0; info "$stmt → beklenmeyen hata: $(printf '%s' "$out" | head -n 1)"
     fi
   done
+  # Parola düz metin istenirse libpq göndermesin: demoapp URL'leri require_auth taşımalı
+  # (core'un TP_DATABASE_URL'ine tp_core.config ekler).
+  local urls
+  urls="$(compose config --format json | python3 -c '
+import json, sys
+cfg = json.load(sys.stdin)
+for name, svc in sorted((cfg.get("services") or {}).items()):
+    for k, v in (svc.get("environment") or {}).items():
+        if k in ("DEMOAPP_DATABASE_URL", "DEMOAPP_RO_DATABASE_URL") and "require_auth=scram-sha-256" not in str(v):
+            print("%s: %s" % (name, k))
+')" || urls="compose yapılandırması okunamadı"
+  if [ -n "$urls" ]; then
+    ok=0; printf '%s\n' "$urls" | while IFS= read -r l; do info "require_auth=scram-sha-256 yok: $l"; done
+  fi
   if [ "$ok" -eq 1 ]; then
     pass "5/salt-okuma: demoapp_ro yalnızca izinli verileri okuyabiliyor"
   else

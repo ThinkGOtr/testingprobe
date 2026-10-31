@@ -63,7 +63,9 @@ export const api = {
     listeUyarla(await istek<unknown>("GET", `/requirements/${yol(id)}/findings`), bulguUyarla),
   bulguKarari: async (id: string, g: BulguKararGirdisi): Promise<Bulgu> =>
     bulguUyarla(nesne(await istek<unknown>("POST", `/findings/${yol(id)}/decision`, { govde: g }))),
-  duzeltmeleriUygula: (id: string) => istek<IsYaniti>("POST", `/requirements/${yol(id)}/apply-doc-fixes`),
+  /** `cakismayiOnayla`: düzeltme bir 'bilinçli fark' kararıyla çelişiyorsa (409) yine de uygula (denetlenir). */
+  duzeltmeleriUygula: (id: string, cakismayiOnayla = false) =>
+    istek<IsYaniti>("POST", `/requirements/${yol(id)}/apply-doc-fixes`, cakismayiOnayla ? { govde: { cakismayi_onayla: true } } : {}),
   /** `g`: ekranda görülen gereksinim; `icerik_hash` aynen gönderilir (TOCTOU bağı). */
   poOnayla: async (g: Pick<GereksinimDetay, "id" | "icerik_hash">): Promise<GereksinimDetay> =>
     gereksinimDetayUyarla(

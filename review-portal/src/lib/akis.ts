@@ -44,3 +44,24 @@ export function akisAdimi(durum: string, ipucu?: number | null): number {
   if (durum === "done" && ipucuGecerli) return sinirla(Math.max(temel, ipucu));
   return temel;
 }
+
+/** Başarısız işin türü → akıştaki adımı (core job.tur; `son_hata.job_tur`). */
+export const HATA_ADIMI: Record<string, number> = {
+  "requirements.review": 2,
+  "requirements.consistency": 2,
+  "requirements.apply_doc_fixes": 2,
+  "requirements.po_request": 3,
+  "requirements.po_poll": 3,
+  "cases.generate": 4,
+};
+
+/** Denetim (ön inceleme/tutarlılık) aşamasının işleri: yalnızca bunlar düşünce "denetim tamamlanmadı" denir. */
+export const DENETIM_ISLERI = new Set(["requirements.review", "requirements.consistency", "requirements.apply_doc_fixes"]);
+
+/** Case üretimi işi (core `cases.generate`). */
+export const URETIM_ISI = "cases.generate";
+
+/** `failed` gereksinimde hangi adımın düştüğü: API ipucu yoksa başarısız işin türünden. */
+export function hataAdimi(jobTur: string | null | undefined): number | null {
+  return jobTur ? (HATA_ADIMI[jobTur] ?? null) : null;
+}

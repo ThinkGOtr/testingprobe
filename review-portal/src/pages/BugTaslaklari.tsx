@@ -56,6 +56,7 @@ export function BugTaslaklari() {
                           {b.icerik.summary}
                         </Link>{" "}
                         <ReplayRozeti mode={b.mode} />
+                        {b.icerik.uretim === "sablon" && <Cip ton="notr">Şablon</Cip>}
                       </td>
                       <td>{KAYNAK[b.kaynak]}</td>
                       <td className="mono">{b.icerik.story_key ?? "—"}</td>
@@ -161,6 +162,9 @@ export function BugTaslakDetay() {
             <Cip ton={d.ton}>{d.etiket}</Cip>
             <span>{KAYNAK[b.kaynak]}</span>
             <ReplayRozeti mode={b.mode} />
+            {b.icerik.uretim === "sablon" && (
+              <Cip ton="notr" title="Doğrulanmış kanıttan şablonla yazıldı; model çağrısı yok">Şablon</Cip>
+            )}
             {b.failure_id && <Link to={`/hatalar/${encodeURIComponent(b.failure_id)}`}>Triage sonucu</Link>}
             {b.onaylayan && (
               <span className="soluk">

@@ -2,6 +2,9 @@
 
 Akış (tek seferde bir koşu; bayi kullanıcıları bayi1/bayi2 koşular arasında paylaşılır):
   1. `runs/<run_id>/` oluşturulur (varsa 409: koşu kanıtı değiştirilemez).
+  1a. Koşu öncesi sağlık kontrolü: `GET BASE_URL/` ve `GET DEMO_API_URL/health` (kısa zaman aşımı).
+     Sonuç `saglik` alanında raporlanır (TEKNIK-TASARIM §8.6 triyaj kuralı 1: sağlık kontrolü
+     başarısız → `environment`). Başarısızsa Playwright hiç başlatılmaz, koşu `error` olur.
   2. Commit'in `e2e/` ağacı forge'dan `runs/<run_id>/src/e2e`'ye çıkarılır (koşan kodun birebir
      kopyası kanıt olarak kalır); commit'teki `results/` ve `node_modules` silinir, bağımlılıklar
      imajdan (`/opt/e2e/node_modules`) bağlanır.
@@ -18,6 +21,7 @@ from __future__ import annotations
 import os
 import shutil
 import threading
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -120,6 +124,52 @@ def restore_break(cfg: Settings, client: httpx.Client | None = None) -> dict[str
     return {"ok": all(v == "ok" for v in results.values()), "bayiler": results}
 
 
+def _probe(http: httpx.Client, url: str, timeout_s: float) -> dict[str, Any]:
+    t0 = time.monotonic()
+    try:
+        resp = http.get(url, timeout=timeout_s, follow_redirects=True)
+    except httpx.HTTPError as exc:
+        return {
+            "url": url,
+            "status": None,
+            "ms": int((time.monotonic() - t0) * 1000),
+            "hata": f"{type(exc).__name__}",
+        }
+    return {
+        "url": url,
+        "status": resp.status_code,
+        "ms": int((time.monotonic() - t0) * 1000),
+        "hata": None if resp.is_success else f"HTTP {resp.status_code}",
+    }
+
+
+def health_check(cfg: Settings, client: httpx.Client | None = None) -> dict[str, Any]:
+    """Koşu öncesi demo uygulaması sağlık kontrolü (deterministik `environment` sinyali).
+
+    `ok` yalnızca hem web (`BASE_URL/`) hem API (`DEMO_API_URL/health`) 2xx dönerse doğrudur.
+    """
+    own = client is None
+    http = client or httpx.Client()
+    try:
+        web = _probe(http, f"{cfg.base_url}/", cfg.health_timeout_s)
+        api = _probe(http, f"{cfg.demo_api_url}/health", cfg.health_timeout_s)
+    finally:
+        if own:
+            http.close()
+    problems = [
+        f"{name} ({p['url']}): {p['hata']}" for name, p in (("web", web), ("api", api)) if p["hata"]
+    ]
+    return {
+        "ok": not problems,
+        "zaman": now_iso(),
+        "web": web,
+        "api": api,
+        "hata": "Demo uygulaması sağlık kontrolü başarısız — " + "; ".join(problems)
+        if problems
+        else None,
+    }
+
+
 def _rel(cfg: Settings, path: Path) -> str:
     return str(path.relative_to(cfg.artifacts_path))
 
@@ -158,6 +208,7 @@ def _execute_locked(
         "baslangic": started,
     }
     atomic_write_json(dest / "run.json", {**base, "status": "running"})
+    saglik = health_check(cfg, http)
 
     e2e = dest / "src" / cfg.e2e_root
     results_dir = e2e / "results"
@@ -165,21 +216,26 @@ def _execute_locked(
     error: str | None = None
     restore: dict[str, Any] | None = None
     try:
-        try:
-            _export(cfg, full_sha, dest / "src")
-        except gitforge.ForgeError as exc:
-            error = str(exc)
+        if not saglik["ok"]:
+            # Ortam hazır değil: Playwright başlatılmaz (locator zaman aşımları yanıltıcı olurdu).
+            error = saglik["hata"]
         else:
-            shutil.rmtree(results_dir, ignore_errors=True)  # commit'e işlenmiş sahte rapor olamaz
-            gitforge.link_node_modules(e2e, cfg.e2e_node_modules)
-            res = proc.run(
-                playwright_argv(cfg, e2e, req),
-                cwd=e2e,
-                env=playwright_env(cfg, req),
-                timeout_s=cfg.run_timeout_s,
-            )
+            try:
+                _export(cfg, full_sha, dest / "src")
+            except gitforge.ForgeError as exc:
+                error = str(exc)
+            else:
+                shutil.rmtree(results_dir, ignore_errors=True)  # commit'teki sahte rapor silinir
+                gitforge.link_node_modules(e2e, cfg.e2e_node_modules)
+                res = proc.run(
+                    playwright_argv(cfg, e2e, req),
+                    cwd=e2e,
+                    env=playwright_env(cfg, req),
+                    timeout_s=cfg.run_timeout_s,
+                )
     finally:
-        if req.break_campaign:
+        # Playwright hiç başlamadıysa kırılma da uygulanmamıştır; geri alma gerekmez.
+        if req.break_campaign and saglik["ok"]:
             restore = restore_break(cfg, http)
         nm = e2e / "node_modules"
         if nm.is_symlink():
@@ -229,6 +285,7 @@ def _execute_locked(
         "log": str(dest / "runner.log"),
         "artifacts_rel": _rel(cfg, dest),
         "break_restore": restore,
+        "saglik": saglik,
         "stats": summary["stats"] if summary else None,
         "tests": summary["tests"] if summary else [],
         "report_errors": summary["errors"] if summary else [],

@@ -38,6 +38,11 @@ class BulguKarari(BaseModel):
     gerekce: str | None = Field(default=None, max_length=2000)
 
 
+class DuzeltmeUygulama(BaseModel):
+    # Düzeltme, aynı döngüdeki 'bilinçli fark' kararıyla çelişiyorsa (409) bilinçli uygulama.
+    cakismayi_onayla: bool = False
+
+
 class PoOnayi(BaseModel):
     icerik_hash: str | None = Field(default=None, max_length=128)
 
@@ -49,7 +54,15 @@ def _req(session: DbSession, req_id: uuid.UUID, kilit: bool = False) -> Requirem
     return req
 
 
-def _is(started: flow.Started | None, mesaj: str | None = None) -> dict[str, Any]:
+def _is(started: flow.Started | flow.Finalized | None, mesaj: str | None = None) -> dict[str, Any]:
+    if isinstance(started, flow.Finalized):
+        return {
+            "job_id": None,
+            "workflow_id": None,
+            "durum": "done",
+            "mesaj": started.mesaj,
+            "kabul_edilen_uyarilar": started.kabul_edilen,
+        }
     if started is None:
         return {"job_id": None, "workflow_id": None, "durum": "done", "mesaj": mesaj}
     return {
@@ -128,9 +141,19 @@ def decision(
 
 
 @router.post("/requirements/{req_id}/apply-doc-fixes", status_code=202)
-def apply_doc_fixes(req_id: uuid.UUID, session: DbSession, user: Analyst) -> dict[str, Any]:
-    started = flow.start_apply(session, _req(session, req_id, kilit=True), user)
-    return _is(started, "Uygulanacak düzeltme yok; belge son haline alındı, PO teyidi bekleniyor.")
+def apply_doc_fixes(
+    req_id: uuid.UUID,
+    session: DbSession,
+    user: Analyst,
+    body: DuzeltmeUygulama | None = None,
+) -> dict[str, Any]:
+    started = flow.start_apply(
+        session,
+        _req(session, req_id, kilit=True),
+        user,
+        cakismayi_onayla=bool(body and body.cakismayi_onayla),
+    )
+    return _is(started)
 
 
 @router.post("/requirements/{req_id}/po-approve")

@@ -29,7 +29,7 @@ from sqlalchemy.engine import Connection
 
 from tp_core.db import get_engine
 from tp_core.features.requirements import flow
-from tp_core.gateway import GatewayError, ReplayMiss, ReplayNotFound
+from tp_core.gateway import GatewayError, ReplayMiss, ReplayNoOutput, ReplayNotFound
 from tp_core.gateway.errors import BudgetExceeded
 from tp_core.workflow.jobs import JobContext, PermanentJobError, job_handler
 
@@ -54,6 +54,8 @@ def _hata_metni(exc: BaseException) -> str:
             "Kayıtlı REPLAY bu girdiyle eşleşmiyor (TP_REPLAY_STRICT=1, prova kipi); canlı model "
             "olmadan işlem yapılmadı"
         )
+    if isinstance(exc, ReplayNoOutput):
+        return str(exc).strip() or type(exc).__name__
     if isinstance(exc, ReplayNotFound):
         return (
             "Bu girdi için kayıtlı REPLAY çıktısı yok ve canlı model yapılandırılmamış "

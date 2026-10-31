@@ -55,6 +55,7 @@ from tp_core.gateway.errors import (
     ProviderRefusal,
     ProviderTransientError,
     ReplayMiss,
+    ReplayNoOutput,
     ReplayNotFound,
     SchemaValidationFailed,
 )
@@ -106,6 +107,7 @@ __all__ = [
     "ProviderTransientError",
     "ReplayKeyInfo",
     "ReplayMiss",
+    "ReplayNoOutput",
     "ReplayNotFound",
     "ReplayStore",
     "RetryPolicy",

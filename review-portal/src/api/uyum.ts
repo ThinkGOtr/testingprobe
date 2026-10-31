@@ -9,6 +9,7 @@ import type {
   BulguDurumu,
   BulguKarari,
   BulguTuru,
+  CaseAlanFarki,
   CaseDurumu,
   CiktiModu,
   Gereksinim,
@@ -20,7 +21,9 @@ import type {
   OnIncelemeSorusu,
   PoCevabi,
   PoDurumu,
+  PoIstegi,
   RetNedeni,
+  SonHata,
   SonKontrol,
   TestAdimi,
   TestCase,
@@ -190,6 +193,7 @@ function soruUyarla(x: Ham, i: number): OnIncelemeSorusu {
     ac_ref: metinYaDaNull(x.ac_ref),
     cevap: metinYaDaNull(x.cevap),
     ...("duzeltmeyle_degisti" in x ? { duzeltmeyle_degisti: x.duzeltmeyle_degisti === true } : {}),
+    ...("kararla_cozuldu" in x ? { kararla_cozuldu: metinYaDaNull(x.kararla_cozuldu) } : {}),
   };
 }
 
@@ -279,6 +283,28 @@ export function gereksinimDetayUyarla(g: Ham): GereksinimDetay {
       : {}),
     ...("denetim_guvenilmez" in g ? { denetim_guvenilmez: metinYaDaNull(g.denetim_guvenilmez) } : {}),
     ...("insan_karari_gerekli" in g ? { insan_karari_gerekli: g.insan_karari_gerekli === true } : {}),
+    ...(nesneMi(g.son_hata) ? { son_hata: sonHataUyarla(g.son_hata) } : {}),
+    ...(nesneMi(g.po_istegi) ? { po_istegi: poIstegiUyarla(g.po_istegi) } : {}),
+  };
+}
+
+function sonHataUyarla(h: Ham): SonHata {
+  return {
+    neden: metinYaDaNull(h.neden),
+    zaman: metinYaDaNull(h.zaman),
+    job_tur: metinYaDaNull(h.job_tur),
+    is_hatasi: metinYaDaNull(h.is_hatasi),
+    oneri: metinYaDaNull(h.oneri),
+    yeniden_denemek_ise_yarar: typeof h.yeniden_denemek_ise_yarar === "boolean" ? h.yeniden_denemek_ise_yarar : null,
+  };
+}
+
+function poIstegiUyarla(p: Ham): PoIstegi {
+  const d = metin(p.durum);
+  return {
+    durum: d === "yazildi" || d === "basarisiz" ? d : "bekliyor",
+    jira_comment_id: metinYaDaNull(p.jira_comment_id),
+    hata: metinYaDaNull(p.hata),
   };
 }
 
@@ -314,6 +340,7 @@ export function bulguUyarla(b: Ham): Bulgu {
   return {
     id: kimlik(b.id),
     requirement_id: kimlik(b.requirement_id),
+    ...(b.bulgu_etiketi !== undefined ? { bulgu_etiketi: metinYaDaNull(b.bulgu_etiketi) } : {}),
     type: metin(ilk(b, "type", "tur"), "ambiguous") as BulguTuru,
     doc_ref: metin(b.doc_ref),
     ozet: metin(ilk(b, "ozet", "observed", "aciklama")),
@@ -401,7 +428,15 @@ export function caseUyarla(c: Ham): TestCase {
     ...(typeof c.kucuk_duzeltme === "boolean" ? { kucuk_duzeltme: c.kucuk_duzeltme } : {}),
     ...(Array.isArray(c.uyarilar) ? { uyarilar: dizgeler(c.uyarilar) } : {}),
     mode: modUyarla(ilk(c, "mode", "uretim_modu")),
+    ...(nesneMi(c.ai_icerik) ? { ai_icerik: caseIcerikUyarla(c.ai_icerik) } : {}),
+    ...(Array.isArray(c.fark) ? { fark: c.fark.filter(nesneMi).map(farkUyarla) } : {}),
+    ...(c.duzeltme_nedeni !== undefined ? { duzeltme_nedeni: metinYaDaNull(c.duzeltme_nedeni) } : {}),
+    ...(c.onceki_icerik === true ? { onceki_icerik: true } : {}),
   };
+}
+
+function farkUyarla(f: Ham): CaseAlanFarki {
+  return { alan: metin(f.alan), etiket: metin(f.etiket, metin(f.alan)), once: metin(f.once), sonra: metin(f.sonra) };
 }
 
 const ONIZLEME_ISLEMLERI = new Set(["create", "skip_existing", "blocked_hash_mismatch", "blocked_not_approved", "blocked_no_story"]);

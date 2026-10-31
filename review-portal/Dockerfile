@@ -5,6 +5,10 @@ COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 COPY tsconfig.json tsconfig.test.json vite.config.ts index.html ./
 COPY src ./src
+# Compose/canlı portal örnek veriye HİÇ düşmez: core'un sunmadığı ekranlar "bu fazda yok" gösterir
+# (uydurma KPI canlı veri gibi görünmez). Tamamen örnek veriyle çalışan derleme: `npm run build:mock`.
+ARG VITE_MOCK=0
+ENV VITE_MOCK=${VITE_MOCK}
 RUN npm run build
 
 FROM nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10

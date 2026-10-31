@@ -108,6 +108,10 @@ class Machine:
     guards: dict[tuple[str, str], Guard] = field(default_factory=dict)
     # Bu geçişe girildiğinde nesnenin `onaylanan_hash` alanı güncel hash'e yazılır.
     approval_targets: frozenset[str] = frozenset()
+    # Bu durumlara giren kapılar nesnede kayıtlı `onaylanan_hash`'in güncel hash'e eşit olmasını
+    # da ister (yalnızca son review kaydı yetmez). Hedefe dönüş (`initial`) hash'i sildiği için
+    # geri çekilmiş bir onay kapıyı yeniden açamaz.
+    approval_consumers: frozenset[str] = frozenset()
 
     @property
     def states(self) -> frozenset[str]:
@@ -204,6 +208,7 @@ REQUIREMENT = Machine(
         ("failed", "generating"): Gate(REQUIREMENT_KARARLARI),
     },
     approval_targets=frozenset({"po_approved"}),
+    approval_consumers=frozenset({"generating"}),
     guards={
         ("po_approved", "generating"): Guard(
             "kabul kriteri eksik (ac_missing) gereksinim case üretimine gönderilmez",
@@ -257,6 +262,7 @@ TEST_CASE = Machine(
         ("approved", "published"): Gate(APPROVING["test_case"]),
     },
     approval_targets=frozenset({"approved"}),
+    approval_consumers=frozenset({"published"}),
 )
 
 SCRIPT = Machine(
@@ -291,6 +297,7 @@ BUG_DRAFT = Machine(
         ("approved", "published"): Gate(APPROVING["bug_draft"]),
     },
     approval_targets=frozenset({"approved"}),
+    approval_consumers=frozenset({"published"}),
 )
 
 WORKFLOW_INSTANCE = Machine(

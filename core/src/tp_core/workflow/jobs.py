@@ -26,7 +26,9 @@ Kullanım (özellik şeritleri)::
   `reap_stale()` süresi (`zaman_asimi_s`) dolan ya da nabzı `NABIZ_ZAMAN_ASIMI_S` boyunca gelmeyen
   `running` işleri (başka/çökmüş worker'lar), deneme hakkı varsa `retry`'a, yoksa `failed`'a
   (bitis=now) alır. `release_orphans()` worker açılışında aynı makinenin önceki sürecinden kalan
-  işleri aynı kuralla bırakır (konteyner yeniden başlatma / OOM).
+  işleri aynı kuralla bırakır (konteyner yeniden başlatma / OOM). `kilitleyen` =
+  `hostname:pid:açılış-kimliği`; açılış önceki sürecin kimliğini bilir ve yalnızca onu (ya da
+  nabzı kesilmiş işleri) bırakır — aynı hostname'i paylaşan canlı kopyanın işine dokunmaz.
 - Bir iş akışına bağlı iş `failed` olduğunda (işleyici hatası, bilinmeyen tür, zaman aşımı, nabız
   kaybı, sahipsiz iş) `workflow_instance` aynı işlemde `running → failed` olur (`sebep` = son
   hata; denetimli ve `workflow_instance.state` olayıyla) — iş akışı "insana düşer".
@@ -255,8 +257,14 @@ class ClaimedJob:
     zaman_asimi_s: int | None = None
 
 
+# Süreç başına açılış kimliği: konteynerler aynı hostname'i (compose `hostname: core-worker`) ve
+# PID 1'i paylaşabilir; `kilitleyen` yalnızca hostname:pid olsaydı ölçeklenen ikinci kopya
+# birincinin canlı işlerini "önceki süreç" sanıp bırakırdı.
+ACILIS_KIMLIGI = uuid.uuid4().hex[:12]
+
+
 def worker_id() -> str:
-    return f"{socket.gethostname()}:{os.getpid()}"
+    return f"{socket.gethostname()}:{os.getpid()}:{ACILIS_KIMLIGI}"
 
 
 def claim(conn: Connection, worker: str, turler: list[str] | None = None) -> ClaimedJob | None:
@@ -452,20 +460,38 @@ def release_orphans(
     host: str | None = None,
     default_max_deneme: int = DEFAULT_MAX_DENEME,
     registry: Mapping[str, HandlerSpec] | None = None,
+    *,
+    haric: str | None = None,
+    onceki: str | None = None,
+    taze_s: float | None = None,
 ) -> int:
     """Bu makinenin (konteyner) önceki worker sürecinden kalan `running` işleri bırakır.
 
-    Worker açılışında, henüz iş almadan çağrılır. Konteyner yeniden başlasa da hostname aynı kalır;
-    konteyner başına tek worker süreci varsayılır. Kural `reap_stale` ile aynıdır.
+    Kural `reap_stale` ile aynıdır (ajan işleri `failed`, diğerleri `retry`).
+
+    - `taze_s` None (varsayılan): `host`'un `haric` dışındaki tüm `running` işleri bırakılır
+      (teşhis / testler; sahibin öldüğü bilinir).
+    - Worker açılışı `taze_s` verir: kilitleyeni tam olarak `onceki` (aynı konteynerin önceki
+      süreci, durum dosyasından) olan işler beklemeden bırakılır; aynı hostname'deki diğer işler
+      yalnızca nabzı `taze_s`'den eskiyse bırakılır. Böylece aynı hostname'i paylaşan canlı bir
+      kopyanın (ör. `--scale core-worker=2`) nabız atan işlerine dokunulmaz.
     """
     kayit = REGISTRY if registry is None else registry
     makine = host or socket.gethostname()
+    kosul = "durum = 'running' AND kilitleyen LIKE :p AND kilitleyen IS DISTINCT FROM :haric"
+    if taze_s is not None:
+        kosul += " AND (kilitleyen = :onceki OR guncelleme < now() - make_interval(secs => :taze))"
     rows = conn.execute(
         text(
             "SELECT id, tur, deneme, max_deneme, zaman_asimi_s, workflow_id FROM job "
-            "WHERE durum = 'running' AND kilitleyen LIKE :p FOR UPDATE SKIP LOCKED"
+            f"WHERE {kosul} FOR UPDATE SKIP LOCKED"
         ),
-        {"p": makine.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + ":%"},
+        {
+            "p": makine.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + ":%",
+            "haric": haric,
+            "onceki": onceki,
+            "taze": float(taze_s or 0.0),
+        },
     ).all()
     akislar: dict[uuid.UUID, str] = {}
     hata = "worker yeniden başladı; iş yarıda kaldı"

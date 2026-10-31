@@ -209,7 +209,9 @@ def test_strict_replay_refuses_golden_fallback(rules_dir: Path) -> None:
     gw = build_gateway(recorder, settings=settings)
     with pytest.raises(ReplayMiss, match="REPLAY-MISS"):
         _call(gw, rules_dir)
-    assert recorder.ai_calls == []  # sessizce golden çıktısı üretilmedi
+    # Sessizce golden çıktısı üretilmedi; yapılamayan çağrı yine de denetimde (VIII).
+    assert [(r["mod"], r["cikti"]) for r in recorder.ai_calls] == [("replay_miss", None)]
+    assert recorder.ai_calls[0]["hata"].startswith("ReplayMiss")
 
 
 def test_strict_replay_serves_exact_recordings(make_gateway, rules_dir) -> None:

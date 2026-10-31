@@ -178,12 +178,31 @@ _BLOCK_TAGS = {
 }
 
 
-def adf_to_html(node: Any) -> Markup:
-    """ADF'yi kaçışlı HTML'e çizer. Ham HTML hiçbir zaman geçirilmez."""
+def adf_to_html(node: Any, *, parent_level: int = 2) -> Markup:
+    """ADF'yi kaçışlı HTML'e çizer. Ham HTML hiçbir zaman geçirilmez.
+
+    ``parent_level``: içeriği çevreleyen sayfa başlığının seviyesi (bölümler ``h2``). ADF
+    başlıkları bunun altına ve sırayla yerleştirilir: hiçbir başlık bir öncekinden birden fazla
+    seviye derine inmez (WCAG / axe ``heading-order``).
+    """
+    return _render(node, {"parent": parent_level, "prev": parent_level})
+
+
+def _heading_tag(level: Any, state: dict[str, int]) -> str:
+    level = level if isinstance(level, int) and 1 <= level <= 6 else 3
+    desired = state["parent"] + level
+    n = max(state["parent"] + 1, min(desired, state["prev"] + 1, 6))
+    state["prev"] = n
+    return f"h{n}"
+
+
+def _render(node: Any, state: dict[str, int]) -> Markup:
     if not isinstance(node, dict):
         return Markup("")
     kind = node.get("type")
-    children = Markup("").join(adf_to_html(c) for c in node.get("content") or [])
+    if kind == "heading":
+        tag = _heading_tag((node.get("attrs") or {}).get("level", 3), state)
+    children = Markup("").join(_render(c, state) for c in node.get("content") or [])
     if kind == "doc":
         return children
     if kind == "text":
@@ -193,9 +212,6 @@ def adf_to_html(node: Any) -> Markup:
     if kind == "rule":
         return Markup("<hr>")
     if kind == "heading":
-        level = (node.get("attrs") or {}).get("level", 3)
-        level = level if isinstance(level, int) and 1 <= level <= 6 else 3
-        tag = f"h{min(level + 1, 6)}"  # sayfa başlıkları h1/h2'yi kullanır
         return Markup(f"<{tag}>") + children + Markup(f"</{tag}>")
     if kind == "codeBlock":
         return Markup("<pre><code>%s</code></pre>") % escape(adf_to_text(node))

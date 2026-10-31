@@ -7,6 +7,8 @@ CORE = Path(__file__).resolve().parents[3]
 if str(CORE) not in sys.path:
     sys.path.insert(0, str(CORE))
 
+import pytest  # noqa: E402
+
 from tests.unit.features.cases.helpers import (  # noqa: E402, F401  (pytest fikstürleri)
     api,
     fake_gateway,
@@ -18,3 +20,13 @@ from tests.unit.features.cases.helpers import (  # noqa: E402, F401  (pytest fik
     targets,
     worker,
 )
+
+
+@pytest.fixture(autouse=True)
+def _red_hiz_siniri_sifirla():
+    """MCP kimlik reddi denetim kaydının hız sınırı süreç içi durumdur; her test temiz başlar."""
+    from tp_core.mcp_server import server
+
+    server._son_red.clear()
+    yield
+    server._son_red.clear()

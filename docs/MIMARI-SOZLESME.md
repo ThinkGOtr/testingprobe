@@ -50,7 +50,11 @@ REPLAY kullanılan her çıktı portalda **REPLAY** rozetiyle görünür (Consti
   Faz 4 onarım kaydı bu dört alanı aynen saklar.
 
 ### test-runner HTTP API (:8200, yalnızca runner-net)
-- `POST /run {sha, grep?, repeat_each, retries, env:{BREAK_CAMPAIGN?}, run_id}` → `{status: passed|failed|error, junit, json, artifacts_dir, duration_ms}`
+- `POST /run {sha, grep?, repeat_each, retries, env:{BREAK_CAMPAIGN?}, run_id}` → `{status: passed|failed|error, junit, json, artifacts_dir, duration_ms, saglik:{ok, zaman, web:{url,status,ms,hata}, api:{url,status,ms,hata}, hata}}`
+- Koşudan önce `GET BASE_URL/` ve `GET DEMO_API_URL/health` (`TP_HEALTH_TIMEOUT_S`, 5 sn) yoklanır.
+  `saglik.ok=false` → Playwright başlatılmaz, `status=error`, `tests=[]`. Faz 4 triage
+  `saglik.ok == false`'u (ya da `saglik`'sız `error` koşusunu) locator/test bakımı yolundan önce
+  deterministik `environment` sinyali sayar (TEKNIK-TASARIM §8.6 kural 1).
 - `env.BREAK_CAMPAIGN=1` Playwright sürecine geçer (API konteynerine değil): e2e fixture'ı koşunun
   bayisi için `POST /test/break {kullanici_adi, kampanya:true}` çağırır, teardown'da kapatır; diğer
   bayiler ve ajan tarayıcısı etkilenmez. Yeşil → kırmızı → yeşil kanıtı `demo-app/ci/break-verify.sh`.
@@ -121,7 +125,7 @@ gönderilir ve akış kapanır. Portal bunu alınca yeniden bağlanmaz, giriş e
 | POST | `/requirements/{id}/review` | analyst | Ön inceleme + tutarlılık denetimi başlat |
 | GET | `/requirements/{id}/findings` | herkes | Tutarlılık bulguları (kanıtlı) |
 | POST | `/findings/{id}/decision` `{karar, metin?, gerekce?}` | analyst | fix_doc / code_defect / accept_difference |
-| POST | `/requirements/{id}/apply-doc-fixes` | analyst | Onaylı düzeltmeleri Jira'ya yaz + yeniden kontrol; yazılacak düzeltme ve açık engelleyici yoksa belgeyi açıkça son hal yapar (portal: "Son hal olarak onayla") |
+| POST | `/requirements/{id}/apply-doc-fixes` `{cakismayi_onayla?}` | analyst | Onaylı düzeltmeleri Jira'ya yaz + yeniden kontrol; yazılacak düzeltme ve açık engelleyici yoksa belgeyi açıkça son hal yapar (portal: "Son hal olarak onayla"). Düzeltme güncel döngüdeki bir `accept_difference` kararının maddesini yeniden yazıyorsa 409 (Türkçe, `F1 (tur 1)` etiketli); `cakismayi_onayla:true` ile uygulanır (`requirement.decision_conflict_confirmed`) |
 | POST | `/requirements/{id}/po-approve` | po | Serbest metin yolunda PO teyidi (Jira yolunda etiket) |
 | POST | `/requirements/{id}/generate-cases` | analyst | Case üretimi |
 | GET | `/requirements/{id}/case-metrics` | herkes | Kabul oranı (ilk karara göre, hedef 0.70), ret nedenleri, AI/review süresi, maliyet, `ai_cagri_modlari`, `kapsanmayan_ac` (hiçbir güncel case'in atıf yapmadığı AC'ler), `manuel_baz_ms` (`TP_MANUAL_BASELINE_S`'den; yoksa null) |
@@ -166,7 +170,29 @@ etiket sonradan kalkarsa PO sorgusu gereksinimi `new`'e döndürür (`requiremen
 Son tutarlılık turu güvenilmezse (REPLAY-MISS ya da bulguların hepsi elendi) belge otomatik son hal
 olmaz: detayda `denetim_guvenilmez` (neden) + `insan_karari_gerekli=true`; analist apply-doc-fixes ile
 açıkça son hal yapar. Önceki turda `code_defect`/`accept_difference` ile kapanmış aynı fark yeniden
-raporlanırsa bulgu `stale` + `onceki_karar` ile döner (karar istenmez). PO soru yorumu Jira'ya belge
+raporlanırsa bulgu `stale` + `onceki_karar` ile döner (karar istenmez).
+**Bulgu kararı (tur 2):** kanıtı doğrulanmış her bulgu, önem derecesi ne olursa olsun (uyarı dahil)
+analist kararı ister; açık kararsız bulgu varken tur otomatik son hal olmaz (`findings_open`, neden
+"karar bekleyen uyarı bulgusu var"). `apply-doc-fixes` yazılacak düzeltme yokken kararsız
+engelleyici bulgu varsa 409 (mesaj bulguları listeler); yalnızca kararsız uyarılar varsa bunları
+`accept_difference` olarak kaydeder (portal kanalı, hash bağlı, gerekçe "son hal onayı"), belgeyi
+son hal yapar ve yanıta `kabul_edilen_uyarilar: string[]` (ör. `"F2 (tur 1)"`) ekler; PO yorumu
+güncel döngünün `accept_difference` bulgularını listeler. Model önerisi `ACn: ` öneki olmadan
+açıklamayı hedefliyorsa ve bulgunun `doc_ref`'i açıklamaya atıf yapmıyorsa `fix_doc` kararı 422
+döner (analist metni düzenleyerek verebilir). Değişmeyen içerikte yeniden denetim (re-check) açık
+ve uygulanmamış `fix_doc` bulgularını yeni tura taşır (tur belge hash'i güncel içerikle eşleşirse);
+yeni turda aynı fark tekrar raporlanırsa yeni kopya `stale` ("aynı bulgu önceki turdan açık") olur.
+Tam inceleme ve gerçek içerik değişikliği bulguları yine `stale` yapar. Detayda
+`on_inceleme.questions[].kararla_cozuldu: string|null`: soru güncel döngüde `fix_doc` /
+`accept_difference` kararıyla kapandıysa açıklama (ör. "doküman düzeltmesiyle cevaplandı: F1 (tur
+1)"); bu sorular PO yorumunda sorulmaz, "Çözüldü" başlığında bilgi için listelenir. `failed`
+gereksinimde (case üretimi hatası) PO onayı `onaylanan_hash` güncel içerikle eşleşiyorsa `po.durum`
+`approved` döner; eşleşmiyorsa `not_requested`. `case-metrics` yanıtında `uyarilar: string[]`
+(manuel baz değer yoksa "Manuel baz değer girilmedi…", tüm AI çağrıları REPLAY ve süre 0 ise "AI
+süresi REPLAY'de ölçülmez…"). Kanıt SQL'i (`sqlguard`, kanıt modu) yalnızca kayıpsız projeksiyon
+kabul eder: düz kolon, `lower/upper`, argümansız `trim`, `CAST` → TEXT/VARCHAR (uzunluksuz) /
+NUMERIC/DECIMAL (hassasiyetsiz); toplama yalnızca `count(*)`, `count([DISTINCT] col)`,
+`min(col)`, `max(col)` ve projeksiyonda en çok bir toplama, diğer öğeler GROUP BY kolonu. PO soru yorumu Jira'ya belge
 son hal olduğunda (`requirements.po_request`) bir kez yazılır; üretim modu `mode_label` ile dürüstçe
 etiketlenir (elle hazırlanmış golden "kayıtlı model çıktısı" denmez; REPLAY-MISS'te "sorular var"
 denmez). `GET /bug-drafts[?requirement_id=]` · `/bug-drafts/{id}` (salt okuma) core'dadır; karar
@@ -232,7 +258,9 @@ Faz 1 entegrasyonunda eklenenler (boş = yerel simülatör / güvenli varsayıla
   demoapp'e bağlanmaz — MCP `get_requirement`'ın test verisi bloğu bu yüzden core-api'de statik
   bilgiye düşer). Ortak blokta (core-api + core-worker): `TP_PO_POLL_S` (15), `TP_CONSISTENCY_MAX_ROUNDS`
   (3), `TP_FORGE_REPO_NAME` (`demo-app`; kod kanıtındaki `evidence.repo`), `TP_FORGE_CHECK_REF` (`main`),
-  `TP_MANUAL_BASELINE_S` (story başına manuel test tasarımı baz süresi, saniye; boş = ölçülmedi).
+  `TP_MANUAL_BASELINE_S` (story başına manuel test tasarımı baz süresi, saniye; boş = ölçülmedi;
+  `make up` önkoşulu ve `make status` boşken "Manuel baz değer girilmedi" uyarısı verir, değer
+  uydurulmaz — F0 ölçümünden girilir).
 - toolchain-worker: `DEMO_APP_BUILD_SHA` (çalışan demo-app-web'in forge commit'i; boş =
   `/locator-probe` `dogrulanamadi`). Henüz otomatik doldurulmaz (forge-init/break sonrası elle).
 - `PLAYWRIGHT_VERSION`: tek kaynak `.playwright-version`; `make env` `.env`'e de yazar (düz
@@ -310,6 +338,11 @@ aşımının tek worker'da uygulanmadığını ve `make up`'ın idempotent olmad
   derler; kardeş servisler aynı yerel imajı `pull_policy: never` ile kullanır (aynı imajın üç kez
   derlenmesi `make up`'ı idempotent olmaktan çıkarıyordu). `core-worker`'ın `hostname`'i sabittir
   (`release_orphans` yeniden oluşturulan worker'ın yarım işlerini adıyla bulur).
+- **Portal derlemesi (Faz 2 tur 2):** compose'daki portal imajı canlı derlemedir
+  (`review-portal/Dockerfile` `ARG VITE_MOCK=0`). Canlı derlemede core'un `openapi.json`'unda olmayan
+  uç istenmez, örnek veriye düşülmez: `ApiError(501, BU_FAZDA_YOK)` → ekran "Bu ekran bu fazda yok",
+  menü öğesi pasif (bugün `/scripts`, `/runs`, `/control-tower`). Örnek veri derlemesinde her sayfanın
+  üstünde "ÖRNEK VERİ — gerçek değil" bandı vardır.
 - **Paylaşılan sözleşme kopyaları:** `review-portal/src/api/sozlesme/durum-makineleri.json` (portal
   durum birlikleri) ve `.github/golden-drift/drift_sources.py` (CI golden-drift'in tp_core'suz
   kopyaları) çekirdekteki `tests/unit/test_cross_lane_contracts.py` ile `MACHINES` ve
@@ -339,6 +372,60 @@ get_file_contents (satır aralığı + dizin listesi), db_schema, db_query); PO 
 e-posta/accountId ile eşlenir (displayName asla). Gereksinim durum makinesinde
 `po_approved → pending_po` yoktur: PO etiketi geri alınırsa gereksinim `new`'e döner (tam yeniden
 inceleme; eski `po_approve` kaydı kapıyı yeniden açamaz — bilinçli tercih).
+
+**Neden değişti (Faz 2 entegrasyonu, 1. inceleme turu):** inceleme A→B→A düzeltmesinde bayat
+idempotens kaydının Jira yazımını atladığını, bulguların inceleme döngüleri arasında karıştığını, golden'ı
+olmayan story'nin nedensiz `failed` olduğunu, SQL korumasının (sütun takma adı listesi, LATERAL,
+VALUES, birleştirme) kanıt üretmeye açık olduğunu, kalıcı PO yorumu hatasının `pending_po`'yu sessizce
+kilitlediğini, yayının Jira PO etiketini yayın anında denetlemediğini ve portalın denetim sürerken
+"tutarlı" dediğini buldu. Sözleşmeye yansıyanlar:
+
+- **Gereksinim detayı:** `son_hata {neden, zaman, job_tur, is_hatasi, oneri, yeniden_denemek_ise_yarar}`
+  (son başarısız geçiş/iş; `uyarilar`'a da "Son işlem başarısız: …" girer), `po_istegi {durum:
+  yazildi|bekliyor|basarisiz, jira_comment_id, hata}` (kalıcı hatada PO sorgusu isteği yeni idempotens
+  anahtarıyla yeniden kuyruğa alır: `requirement.po_request_requeued`). Bulgu `bulgu_etiketi`
+  (`"F2 (tur 1)"`, Jira düzeltme yorumuyla aynı). Varsayılan `/findings`, `X-Elenen-Bulgu-Sayisi` ve
+  `bulgu_sayaclari` **güncel inceleme döngüsüyle** sınırlıdır (sıfırlama / PO geri çekmesi yeni döngü
+  açar); `?tumu=true` tüm geçmiş.
+- **Jira PO onayı tazeliği:** eşik `max(son hal anı, PO soru yorumunun Jira oluşturma anı)`; yorum
+  yokken hiçbir etiket sayılmaz. Bayat etiket kaldırılırken yarış (`remove_stale_approval`) Jira
+  yorumuyla PO'ya bildirilir ve `requirement.po_label_removed` (`sonuc=yarista_kaldirildi`) yazılır;
+  bot etiketi yeniden ekleyemez (§6).
+- **Kanıt SQL'i:** `kanit=True` sorgusu tek tablo, birleştirmesiz, alt sorgusuz olmalı; tablo takma
+  adı sütun listesi taşıyamaz ve sütun/tablo adıyla çakışamaz; LATERAL/VALUES/UNNEST/TABLESAMPLE/pencere
+  reddedilir. Doğrulayıcı yeniden üretilen SQL'i `dogrulama[].neden`'e yazar; boş sonuç
+  "yalnızca bu koşulla satır olmadığını kanıtlar" diye etiketlenir. Kod kanıtında `repo`
+  `owner/<repo>` ve `<repo>@<sha>` biçimleri `<repo>`'ya indirgenir (dosya yine denetim commit'inde okunur).
+- **Doküman düzeltmesi idempotensi:** açıklama yazım anahtarı
+  `jira:update_description:{req}:{workflow|job}:{önceki}->{yeni}`; `created` kaydı varken Jira hash'i
+  `yeni` değilse kayıt yeniden yazılır (`external_ref.stale`).
+- **Golden'sız story:** gateway, amacın `on_miss.json` çıktısını `replay_miss` (köken `miss_neutral`)
+  olarak döner (asla `replay`/`live` değil); `case_generation/on_miss.json` `policy: raise` →
+  `ReplayNoOutput` (sıfır taslak, iş kalıcı hata). Başarısız her REPLAY araması çıktısız bir
+  `ai_call` (`replay_miss`) satırı yazar (VIII). Aynı anahtar öneki için sonraki tur golden'ları
+  (`<KEY>-rN`) içerik eşleşmesine göre seçilir.
+- **Case'ler:** case nesnesi `ai_icerik`, `fark[{alan, etiket, once, sonra}]`, `duzeltme_nedeni`,
+  `onceki_icerik`; `case-metrics` `review_sure_ms` artık karar aralıklarının **birleşimi** (duvar saati;
+  `review_sure_yontemi='aralik_birlesimi'`), eski toplam `kart_sure_toplam_ms`; ayrıca
+  `onceki_icerik_case_ids`, `uyarilar`. Portal üretimi karar verilmemiş IDE taslaklarını korur
+  (`korunan_ide_taslak`). Bayat PO onaylı içeriğe ait yayınlı case'ler tekrar/kapsam sayılmaz.
+- **Yayın:** Jira etiketli PO onayında yayın, Jira'ya yazmadan önce etiketi yeniden okur (yoksa ya da
+  okunamazsa kalem `failed`, fail-closed). MCP `publish_test_cases` herhangi bir kalem
+  `created|exists` değilse `isError=true` + `ozet`. `publish.anchored` özeti `case_ids`,
+  `external_keys`, `kurtarma` taşır (yayın sonrası çöküşte çapa yeniden denemede tamamlanır).
+- **Denetim olayları (yeni):** `external_ref.stale`, `requirement.decision_conflict_confirmed`,
+  `requirement.po_request_requeued`, `requirement.po_label_removed`, `mcp.auth_failed` (401/403/421;
+  ham token yazılmaz, `token_izi`=sha256[:12], 10 sn'de bir hız sınırı).
+- **Platform:** PO onayı geri çekildikten sonra eski `po_approve` `failed → generating`'i açamaz
+  (`approval_consumers`). Worker açılış kancaları DB hazır olana kadar 10 sn'de bir yeniden denenir.
+  `kilitleyen` = `hostname:pid:açılış_kimliği`; `release_orphans` yalnızca önceki sürecin
+  (`TP_WORKER_STATE_FILE`) ve kalp atışı 30 sn'den eski işlerini bırakır (ölçeklenmiş kopyalara dokunmaz).
+- **Ortam:** core `TP_DATABASE_URL`'e `require_auth=scram-sha-256` ekler (`TP_DB_REQUIRE_AUTH`;
+  boş = kapalı); compose `DEMOAPP_DATABASE_URL` ve `DEMOAPP_RO_DATABASE_URL`'de aynısı vardır
+  (`make security-check` 5 denetler). `TP_HEALTH_TIMEOUT_S` (test-runner, 5).
+  `TP_MANUAL_BASELINE_S` `.env.example`'da belgelendi (boş = ölçülmedi). `rules/models.yaml` amaç
+  başına `timeout_s` (bundle hash'ine girmez). `make reset` sonunda `make seed` çalışır.
+- **Portal:** publish için nginx `location = /api/publish` 75 sn (`BEKLEME_S`+15); diğer `/api/` 30 sn.
 
 ## 7. Kalite kapısı (her şerit)
 - Python: `uv run ruff check`, `uv run ruff format --check`, `uv run pytest` yeşil.

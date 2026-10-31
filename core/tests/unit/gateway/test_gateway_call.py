@@ -254,12 +254,19 @@ def test_bundle_change_causes_replay_miss(make_gateway, rules_dir) -> None:
     assert call(replay_gw, rules_dir).mode == "replay_miss"
 
 
-def test_replay_not_found_is_loud(make_gateway, rules_dir) -> None:
+def test_replay_not_found_is_loud(make_gateway, rules_dir, recorder) -> None:
+    """Golden da iskalama yedeği de yoksa: yüksek sesle hata ve denetim satırı."""
+    (rules_dir / "replay/requirement_review" / MISS_FILE).unlink()
     gw, _ = make_gateway(mode="replay")
     with pytest.raises(ReplayNotFound):
         call(gw, rules_dir, key={"name": "TPD-999"})
     with pytest.raises(ReplayNotFound):
         call(gw, rules_dir, key={"jira_key": "TPD-4"})  # golden adı yok
+    # Yapılamayan çağrı da denetimde (constitution VIII): mod replay_miss, çıktı yok, hata var.
+    assert len(recorder.ai_calls) == 2
+    for row in recorder.ai_calls:
+        assert row["mod"] == "replay_miss" and row["cikti"] is None
+        assert row["hata"].startswith("ReplayNotFound") and row["sema_gecerli"] is False
 
 
 def test_masking_hook_always_called(make_gateway, rules_dir) -> None:

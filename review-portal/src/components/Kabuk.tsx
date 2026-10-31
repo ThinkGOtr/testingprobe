@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { mockDegisikligineAbone, mockUclari, mockZorunlu } from "../api/http";
+import { canliDerleme, cekirdekYetenekleri, mockDegisikligineAbone, mockUclari, mockZorunlu, ucVar, type Yetenekler } from "../api/http";
 import { useBaglantiDurumu, type BaglantiDurumu } from "../api/events";
 import type { Rol } from "../api/types";
 import { useOturum } from "../auth";
@@ -13,24 +13,26 @@ interface NavOgesi {
   gorunur?: Rol[];
   /** Bu rollerin asıl çalışma alanı (vurgulanır). */
   odak?: Rol[];
+  /** Ekranın core'daki veri ucu. Canlı derlemede core bu ucu sunmuyorsa öğe pasiftir ("bu fazda yok"). */
+  uc: readonly [string, string];
 }
 
 const NAV: { grup: string; ogeler: NavOgesi[] }[] = [
   {
     grup: "İş akışı",
     ogeler: [
-      { yol: "/gereksinimler", ad: "Gereksinimler", odak: ["analyst", "po"] },
-      { yol: "/kod", ad: "Kod üretimi", odak: ["engineer"] },
-      { yol: "/kosular", ad: "Koşular", odak: ["presenter", "engineer"] },
-      { yol: "/bug-taslaklari", ad: "Bug taslakları", odak: ["tester"] },
+      { yol: "/gereksinimler", ad: "Gereksinimler", odak: ["analyst", "po"], uc: ["GET", "/requirements"] },
+      { yol: "/kod", ad: "Kod üretimi", odak: ["engineer"], uc: ["GET", "/scripts"] },
+      { yol: "/kosular", ad: "Koşular", odak: ["presenter", "engineer"], uc: ["GET", "/runs"] },
+      { yol: "/bug-taslaklari", ad: "Bug taslakları", odak: ["tester"], uc: ["GET", "/bug-drafts"] },
     ],
   },
   {
     grup: "İzleme",
     ogeler: [
-      { yol: "/kontrol-kulesi", ad: "Kontrol Kulesi", odak: ["presenter"] },
-      { yol: "/denetim", ad: "Denetim" },
-      { yol: "/claude-code", ad: "Claude Code kanalı", gorunur: ["analyst"] },
+      { yol: "/kontrol-kulesi", ad: "Kontrol Kulesi", odak: ["presenter"], uc: ["GET", "/control-tower"] },
+      { yol: "/denetim", ad: "Denetim", uc: ["GET", "/audit"] },
+      { yol: "/claude-code", ad: "Claude Code kanalı", gorunur: ["analyst"], uc: ["GET", "/tokens"] },
     ],
   },
 ];
@@ -78,10 +80,30 @@ function useMockUclari(): string[] {
   return anlik ? anlik.split("|") : [];
 }
 
+/**
+ * Canlı derlemede (VITE_MOCK=0) core'un uç listesi: menüde core'un henüz sunmadığı ekranlar
+ * pasif gösterilir. Örnek veri derlemesinde ya da liste okunamazsa `null` (hepsi etkin).
+ */
+export function useCanliYetenekler(): Yetenekler | null {
+  const [y, setY] = useState<Yetenekler | null>(null);
+  useEffect(() => {
+    if (!canliDerleme()) return;
+    let iptal = false;
+    void cekirdekYetenekleri().then((v) => {
+      if (!iptal) setY(v);
+    });
+    return () => {
+      iptal = true;
+    };
+  }, []);
+  return y;
+}
+
 export function Kabuk() {
   const { kullanici, cikisYap } = useOturum();
   const baglanti = useBaglantiDurumu();
   const mockUclar = useMockUclari();
+  const yetenekler = useCanliYetenekler();
   const [tema, temaDegistir] = useTema();
   const [menuAcik, setMenuAcik] = useState(false);
   const konum = useLocation();
@@ -163,6 +185,16 @@ export function Kabuk() {
                 <ul>
                   {ogeler.map((o) => (
                     <li key={o.yol}>
+                      {yetenekler && !ucVar(yetenekler, ...o.uc) ? (
+                        <span
+                          className="menu-oge menu-oge-pasif"
+                          aria-disabled="true"
+                          title="Bu fazda yok: çekirdek bu ekranın verisini henüz sunmuyor (örnek veri gösterilmez)."
+                        >
+                          <span>{o.ad}</span>
+                          <span className="menu-oge-not">bu fazda yok</span>
+                        </span>
+                      ) : (
                       <NavLink to={o.yol} className={({ isActive }) => `menu-oge${isActive ? " aktif" : ""}`}>
                         <span>{o.ad}</span>
                         {kullanici && o.odak?.includes(kullanici.rol) && (
@@ -171,6 +203,7 @@ export function Kabuk() {
                           </span>
                         )}
                       </NavLink>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -179,6 +212,14 @@ export function Kabuk() {
           })}
         </nav>
         <main id="ana-icerik" className="icerik" tabIndex={-1}>
+          {mockAktif && (
+            <div className="uyari-kutusu uyari-uyari ornek-veri-bandi" role="note" data-testid="ornek-veri-bandi">
+              <strong>ÖRNEK VERİ — gerçek değil.</strong>{" "}
+              {mockZorunlu()
+                ? "Bu portal örnek veriyle derlendi; sayılar ve oranlar ölçüm değildir."
+                : "Bu ekrandaki verinin bir kısmı core'da henüz olmadığı için örnek veriden geliyor; sayılar ve oranlar ölçüm değildir."}
+            </div>
+          )}
           <Outlet />
         </main>
       </div>

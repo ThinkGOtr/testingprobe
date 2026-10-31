@@ -21,11 +21,15 @@ class ProviderNotConfigured(GatewayError):
 
 
 class ProviderTransientError(GatewayError):
-    """Yeniden denenebilir sağlayıcı hatası (429, 529, 5xx, bağlantı)."""
+    """Yeniden denenebilir sağlayıcı hatası (429, 529, 5xx, bağlantı).
 
-    def __init__(self, message: str, *, status: int | None = None) -> None:
+    `timeout=True`: istemci zaman aşımı. Uzun üretimde her deneme yeniden faturalanabilir ve
+    dakikalar sürer; geçit bunu en çok `RetryPolicy.max_timeout_retries` kez yeniden dener."""
+
+    def __init__(self, message: str, *, status: int | None = None, timeout: bool = False) -> None:
         super().__init__(message)
         self.status = status
+        self.timeout = timeout
 
 
 class ProviderPermanentError(GatewayError):
@@ -80,6 +84,27 @@ class ReplayMiss(ReplayNotFound):
         self.args = (
             f"REPLAY-MISS (prova kipi): purpose={purpose} key={key[:12]}… birebir kayıt yok; "
             f"golden '{golden_name}' kullanılmadı. Kayıt için TP_MODEL_MODE=record.",
+        )
+
+
+class ReplayNoOutput(ReplayNotFound):
+    """REPLAY-MISS, amacın iskalama politikası `raise` (ör. case üretimi): başka bir dokümanın
+    golden çıktısı döndürülmez, nötr çıktı da yoktur; sıfır taslak, canlı model gerekir."""
+
+    def __init__(
+        self,
+        purpose: str,
+        key: str,
+        golden_name: str | None,
+        reasons: list[str] | None = None,
+    ) -> None:
+        super().__init__(purpose, key, golden_name)
+        self.reasons = list(reasons or [])
+        neden = f" ({'; '.join(self.reasons)})" if self.reasons else ""
+        self.args = (
+            "REPLAY-MISS: bu girdi için kayıtlı model çıktısı yok; canlı model gerekir "
+            f"(amaç {purpose}, golden '{golden_name}'{neden}). Başka bir dokümanın kayıtlı "
+            "çıktısı kullanılmadı.",
         )
 
 

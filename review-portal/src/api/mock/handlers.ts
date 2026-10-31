@@ -9,6 +9,7 @@ import type {
   BugTaslagi,
   CaseKararGirdisi,
   CaseMetrikleri,
+  CiktiModu,
   DenetimOlayi,
   DenetimYaniti,
   GereksinimDetay,
@@ -400,7 +401,8 @@ function incelemeBulgulari(g: GereksinimDetay): Bulgu[] {
 function incelemeBaslat(id: string): IsYaniti {
   rolGerekli("analyst");
   const g = bul(veri.gereksinimler, id, "Gereksinim");
-  if (g.ac_missing) throw new ApiError(409, "Kabul kriteri olmayan story incelemeye alınmaz.");
+  // core flow.start_review kabul kriteri eksik story'yi de kabul eder: ön inceleme eksik AC'leri
+  // PO'ya sorar (TPD-2 golden'ı). Yalnızca case üretimi kapalıdır (generate-cases 422).
   if (!["new", "findings_open", "failed"].includes(g.durum)) {
     throw new ApiError(409, "Bu durumda ön inceleme başlatılamaz.");
   }
@@ -433,6 +435,7 @@ function incelemeBaslat(id: string): IsYaniti {
       const yeni = incelemeBulgulari(g);
       veri.bulgular = veri.bulgular.filter((b) => !(b.requirement_id === g.id && b.durum === "open"));
       veri.bulgular.push(...yeni);
+      sonKontrolYaz(g, yeni);
       // core: her bulgu unverified → open geçişinde (kanıt deterministik doğrulandı) olay yayımlar.
       for (const b of yeni) mockOlayYayinla({ type: "finding.verified", id: b.id, data: { requirement_id: g.id } });
       if (yeni.some((b) => b.severity === "blocking")) {
@@ -445,6 +448,18 @@ function incelemeBaslat(id: string): IsYaniti {
     },
   ]);
   return is("started", "Ön inceleme başlatıldı.");
+}
+
+/** core `requirement_kontrol` kaydı: tamamlanan kontrol koşusunun modu ve sayıları (`son_kontrol`). */
+function sonKontrolYaz(g: GereksinimDetay, yeni: Bulgu[], mod?: CiktiModu): void {
+  const dogrulanan = yeni.filter((b) => b.kanit_dogrulandi).length;
+  g.son_kontrol = {
+    mode: mod ?? (yeni.some((b) => b.mode === "replay_miss") || !goldenKoku(g) ? "replay_miss" : "replay"),
+    bulgu: yeni.length,
+    dogrulanan,
+    elenen: yeni.length - dogrulanan,
+    zaman: simdi(),
+  };
 }
 
 /** core: in_review → doc_final (bulgu kalmadı, doküman son hâlinde) → pending_po. */
@@ -550,6 +565,7 @@ function duzeltmeleriUygula(id: string): IsYaniti {
       // Yeniden kontrol: bu tur için golden kayıt varsa onun bulguları (ör. TPD-1-r2) eklenir.
       const yeniTur = goldenTurBulgulari(g);
       if (yeniTur) veri.bulgular.push(...yeniTur);
+      sonKontrolYaz(g, yeniTur ?? [], yeniTur ? "replay" : "replay_miss");
       const acikEngelleyici = veri.bulgular.some(
         (b) => b.requirement_id === id && b.severity === "blocking" && (b.durum === "open" || b.durum === "decided"),
       );
@@ -592,8 +608,14 @@ function caseUret(id: string): IsYaniti {
   const g = bul(veri.gereksinimler, id, "Gereksinim");
   if (g.po.durum !== "approved") throw new ApiError(409, "PO teyidi olmadan case üretilemez.");
   if (g.ac_missing) throw new ApiError(409, "Kabul kriteri olmayan story case üretimine gönderilmez.");
-  if (!["po_approved", "cases_ready"].includes(g.durum)) throw new ApiError(409, "Bu durumda case üretilemez.");
+  // core URETIM_BASLANGIC: düşen case üretimi (failed) yeniden denenebilir; PO güncelliği yukarıda.
+  const uretimHatasi = g.durum === "failed" && g.son_hata?.job_tur === "cases.generate";
+  if (!["po_approved", "cases_ready"].includes(g.durum) && !uretimHatasi) throw new ApiError(409, "Bu durumda case üretilemez.");
+  if (g.po.onaylanan_hash && g.icerik_hash && g.po.onaylanan_hash !== g.icerik_hash) {
+    throw new ApiError(409, "İçerik PO onayından sonra değişmiş; yeniden PO teyidi gerekir.");
+  }
   gecir("requirement", g, "generating");
+  delete g.son_hata;
   gereksinimOlayi(g);
   const mevcut = veri.caseler.filter((c) => c.requirement_id === id).length;
   // Golden kaydı güncel AC'lerle birebir eşleşirse onun case'leri (REPLAY); değilse kural tabanlı
@@ -677,11 +699,25 @@ function caseKarari(id: string, govde: unknown): TestCase {
     if (!g.icerik) throw new ApiError(422, "Düzeltme için içerik zorunludur.");
     if (!g.icerik.title.trim() || g.icerik.steps.length === 0) throw new ApiError(422, "Başlık ve en az bir adım zorunlu.");
     const once = kanonikJson(c.icerik);
+    // core metrics.edit_metrics: insan beyanı varsa o; yoksa beklenen sonuç metni karşılaştırılır.
+    const beklenenDegisti =
+      typeof g.beklenen_anlam_degisti === "boolean" ? g.beklenen_anlam_degisti : c.icerik.expected_result !== g.icerik.expected_result;
+    const kaynakInsan = typeof g.beklenen_anlam_degisti === "boolean";
     c.icerik = g.icerik;
     c.surum += 1;
     c.icerik_hash = icerikHash(g.icerik);
     c.onaylanan_hash = c.icerik_hash;
     c.duzeltme_olcusu = Math.round(duzeltmeOlcusu(once, kanonikJson(g.icerik)) * 100) / 100;
+    c.kucuk_duzeltme = c.duzeltme_olcusu <= 0.15 && !beklenenDegisti;
+    const olcuMetni = (x: number) => x.toFixed(3).replace(".", ",");
+    c.duzeltme_nedeni = c.kucuk_duzeltme
+      ? `Küçük düzeltme sayıldı: düzeltme ölçüsü ${olcuMetni(c.duzeltme_olcusu)} ≤ 0,150 ve beklenen sonuç değişmedi (ilk karar kabul sayılır).`
+      : `Küçük düzeltme sayılmadı: ${[
+          beklenenDegisti ? `beklenen sonuç anlamca değişti (${kaynakInsan ? "analistin beyanı" : "beklenen sonuç metni değişti"})` : null,
+          c.duzeltme_olcusu > 0.15 ? `düzeltme ölçüsü ${olcuMetni(c.duzeltme_olcusu)} > eşik 0,150` : null,
+        ]
+          .filter(Boolean)
+          .join(" ve ")} (ilk karar kabul oranına girmez).`;
     gecir("test_case", c, "approved");
     c.ret_nedeni = null;
   } else {
@@ -689,6 +725,10 @@ function caseKarari(id: string, govde: unknown): TestCase {
     c.onaylanan_hash = c.icerik_hash;
     c.duzeltme_olcusu = 0;
     c.ret_nedeni = null;
+  }
+  if (g.karar !== "edit") {
+    c.kucuk_duzeltme = null;
+    c.duzeltme_nedeni = null;
   }
   c.karar = g.karar;
   c.karar_veren = k.kullanici_adi;
@@ -740,13 +780,22 @@ function caseYenidenAc(id: string, govde: unknown): TestCase {
   return cikti(c);
 }
 
+const acAnahtari = (r: string) => r.replace(/\s/g, "").toUpperCase();
+
 /** core `GET /requirements/{id}/case-metrics` ile aynı alanlar (mock son karara göre sayar). */
 function caseMetrikleri(rid: string): CaseMetrikleri {
   girisGerekli();
-  bul(veri.gereksinimler, rid, "Gereksinim");
+  const g = bul(veri.gereksinimler, rid, "Gereksinim");
+  // core coverage_gaps: güncel (superseded/ret olmayan) case'lerin hiçbirinin atıf yapmadığı AC'ler.
+  const atiflar = new Set(
+    veri.caseler
+      .filter((c) => c.requirement_id === rid && c.durum !== "superseded" && c.durum !== "rejected")
+      .flatMap((c) => c.icerik.acceptance_criteria_refs.map(acAnahtari)),
+  );
+  const kapsanmayan = g.kabul_kriterleri.map((a) => a.ref).filter((r) => !atiflar.has(acAnahtari(r)));
   const cs = veri.caseler.filter((c) => c.requirement_id === rid && c.ai_generated && c.durum !== "superseded");
   const kararli = cs.filter((c) => c.karar !== null);
-  const kabul = kararli.filter((c) => c.karar === "approve" || (c.karar === "edit" && (c.duzeltme_olcusu ?? 1) <= 0.15)).length;
+  const kabul = kararli.filter((c) => c.karar === "approve" || (c.karar === "edit" && (c.kucuk_duzeltme ?? (c.duzeltme_olcusu ?? 1) <= 0.15))).length;
   const sureler = cs.map((c) => c.review_sure_ms).filter((x): x is number => x !== null);
   const say = (anahtar: (c: TestCase) => string | null) =>
     kararli.reduce<Record<string, number>>((a, c) => {
@@ -773,6 +822,7 @@ function caseMetrikleri(rid: string): CaseMetrikleri {
       if (c.mode) a[c.mode] = (a[c.mode] ?? 0) + 1;
       return a;
     }, {}),
+    kapsanmayan_ac: kapsanmayan,
   };
 }
 
@@ -1167,7 +1217,7 @@ function kontrolKulesi(): KontrolKulesi {
   }
   const caseler = veri.caseler;
   const karar = caseler.filter((c) => c.karar);
-  const kabul = karar.filter((c) => c.karar === "approve" || (c.karar === "edit" && (c.duzeltme_olcusu ?? 1) <= 0.15)).length;
+  const kabul = karar.filter((c) => c.karar === "approve" || (c.karar === "edit" && (c.kucuk_duzeltme ?? (c.duzeltme_olcusu ?? 1) <= 0.15))).length;
   const reviewlar = karar.filter((c) => c.review_sure_ms !== null);
   const scriptler = veri.scriptler.filter((s) => s.pass_at_1 !== null);
   return {
@@ -1210,7 +1260,8 @@ function kontrolKulesi(): KontrolKulesi {
       script_hedefi: 0.6,
       ort_ai_sure_ms: caseler.length ? caseler.reduce((a, c) => a + c.ai_sure_ms, 0) / caseler.length : 0,
       ort_review_sure_ms: reviewlar.length ? reviewlar.reduce((a, c) => a + (c.review_sure_ms ?? 0), 0) / reviewlar.length : 0,
-      manuel_baz_ms: 6 * 60 * 1000,
+      // Baz değer F0'da ölçülür; ölçülmemiş baz değer ve ondan türeyen "kazanç" uydurulmaz.
+      manuel_baz_ms: null,
       maliyet_usd_toplam: caseler.reduce((a, c) => a + c.maliyet_usd, 0),
       maliyet_usd_bugun: 0,
       gunluk_butce_usd: 30,

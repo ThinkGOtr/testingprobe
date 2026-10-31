@@ -81,6 +81,11 @@ export interface OnIncelemeSorusu {
   cevap: string | null;
   /** Soru, doküman düzeltmesiyle metni değişen bir AC'ye ait (PO güncel metne göre cevaplar). */
   duzeltmeyle_degisti?: boolean;
+  /**
+   * Soru güncel döngüdeki bulgu kararlarıyla (fix_doc / accept_difference) kapandıysa açıklama
+   * (ör. "doküman düzeltmesiyle cevaplandı: F1 (tur 1)"); kapanmadıysa null. PO'ya sorulmaz.
+   */
+  kararla_cozuldu?: string | null;
 }
 
 export interface OnInceleme {
@@ -125,6 +130,26 @@ export interface GereksinimDetay extends Gereksinim {
   denetim_guvenilmez?: string | null;
   /** Gereksinim insan kararı bekliyor (tur sınırı ya da güvenilmez denetim). */
   insan_karari_gerekli?: boolean;
+  /** Son başarısız işlemin nedeni (core `son_hata`); yoksa null. */
+  son_hata?: SonHata | null;
+  /** PO soru yorumunun Jira'ya yazılma durumu (core `po_istegi`). */
+  po_istegi?: PoIstegi | null;
+}
+
+export interface SonHata {
+  neden: string | null;
+  zaman: string | null;
+  job_tur: string | null;
+  is_hatasi: string | null;
+  /** Türkçe yönlendirme (ör. "yeniden denemek sonucu değiştirmez"). */
+  oneri: string | null;
+  yeniden_denemek_ise_yarar: boolean | null;
+}
+
+export interface PoIstegi {
+  durum: "yazildi" | "bekliyor" | "basarisiz";
+  jira_comment_id: string | null;
+  hata: string | null;
 }
 
 export interface SonKontrol {
@@ -178,6 +203,8 @@ export type BulguDurumu = (typeof BULGU_DURUMLARI)[number];
 export interface Bulgu {
   id: string;
   requirement_id: string;
+  /** Jira doküman düzeltme yorumundaki etiket, ör. "F2 (tur 1)". */
+  bulgu_etiketi?: string | null;
   type: BulguTuru;
   doc_ref: string;
   /** Model gerekçesinin kısa özeti (karar dayanağı değildir; kanıt esastır). */
@@ -286,6 +313,21 @@ export interface TestCase {
   /** Deterministik içerik uyarıları (ör. gereksinimde olmayan kabul kriteri referansı). */
   uyarilar?: string[];
   mode: CiktiModu | null;
+  /** AI'ın özgün içeriği (ilk düzeltme kararından önce); düzeltilmemişse yok. */
+  ai_icerik?: TestCaseIcerik | null;
+  /** AI özgünü → insan düzeltmesi alan farkları (core metriğinin değişti saydığı alanlar). */
+  fark?: CaseAlanFarki[];
+  /** Düzeltmenin küçük sayılıp sayılmadığının Türkçe gerekçesi. */
+  duzeltme_nedeni?: string | null;
+  /** Case gereksinimin önceki (PO onayı değişmiş) içeriğine ait. */
+  onceki_icerik?: boolean;
+}
+
+export interface CaseAlanFarki {
+  alan: string;
+  etiket: string;
+  once: string;
+  sonra: string;
 }
 
 /** `GET /requirements/{id}/case-metrics` (§12): ilk karara göre kabul oranı, süreler, maliyet. */
@@ -313,6 +355,8 @@ export interface CaseMetrikleri {
   manuel_baz_ms?: number | null;
   /** Deterministik kapsam denetimi: hiçbir güncel (onaylı/taslak) case'in atıf yapmadığı AC'ler. */
   kapsanmayan_ac?: string[];
+  /** Çekirdeğin ölçüm uyarıları (ör. manuel baz değer yok; REPLAY'de AI süresi ölçülmez). */
+  uyarilar?: string[];
 }
 
 export interface CaseKararGirdisi {
@@ -321,6 +365,11 @@ export interface CaseKararGirdisi {
   karar: "approve" | "edit" | "reject";
   icerik?: TestCaseIcerik;
   ret_nedeni?: RetNedeni;
+  /**
+   * §12 "küçük düzeltme": beklenen sonuç ANLAMCA değişti mi (insan kararı). Düzeltmede beklenen
+   * sonuç metni değiştiyse analist seçer; gönderilmezse core metin karşılaştırmasına düşer.
+   */
+  beklenen_anlam_degisti?: boolean;
 }
 
 // ---------------------------------------------------------------- Yayın
@@ -548,6 +597,8 @@ export interface BugTaslakIcerik {
   test_case_key: string | null;
   severity_suggestion: "critical" | "major" | "minor" | "trivial";
   labels: string[];
+  /** "sablon": doğrulanmış kanıttan deterministik şablonla yazıldı (model çağrısı yok, `mode` null). */
+  uretim?: string;
 }
 
 export interface MukerrerAday {
@@ -578,7 +629,8 @@ export interface BugTaslagi {
   onaylayan: string | null;
   onay_zamani: string | null;
   jira_key: string | null;
-  mode: CiktiModu;
+  /** null: model çağrısı yok (ör. şablon taslağı); "live" varsayılmaz. */
+  mode: CiktiModu | null;
   olusturma: string;
 }
 
@@ -684,6 +736,8 @@ export interface IsYaniti {
   job_id: string | null;
   durum: string;
   mesaj?: string;
+  /** apply-doc-fixes "son hal onayı": kararsız uyarıların accept_difference olarak kaydı (ör. "F2 (tur 1)"). */
+  kabul_edilen_uyarilar?: string[];
 }
 
 // ---------------------------------------------------------------- SSE

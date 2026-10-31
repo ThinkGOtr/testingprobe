@@ -105,6 +105,11 @@ export function BulguKarti({
       <header className="bulgu-baslik">
         <div className="satir-ogeler">
           <Cip ton={bulgu.severity === "blocking" ? "hata" : "uyari"}>{bulgu.severity === "blocking" ? "Engelleyici" : "Uyarı"}</Cip>
+          {bulgu.bulgu_etiketi && (
+            <span className="mono" data-testid="bulgu-etiketi" title="Jira düzeltme yorumundaki bulgu etiketi">
+              {bulgu.bulgu_etiketi}
+            </span>
+          )}
           <Cip ton="vurgu">{BULGU_TURU[bulgu.type] ?? bulgu.type}</Cip>
           <span className="mono">{bulgu.doc_ref}</span>
           <ReplayRozeti mode={bulgu.mode} />
@@ -192,7 +197,18 @@ export function BulguKarti({
             <div className="secenekler">
               {(["fix_doc", "code_defect", "accept_difference"] as const).map((k) => (
                 <label key={k} className={`secenek${karar === k ? " secili" : ""}`}>
-                  <input type="radio" name={`${id}-karar`} value={k} checked={karar === k} onChange={() => setKarar(k)} />
+                  <input
+                    type="radio"
+                    name={`${id}-karar`}
+                    value={k}
+                    checked={karar === k}
+                    onChange={() => {
+                      // Önceki karara ait doğrulama mesajı (ör. gerekçe zorunlu) yeni seçimde kalmaz.
+                      setKarar(k);
+                      setDogrulama(null);
+                      islem.temizle();
+                    }}
+                  />
                   {BULGU_KARARI[k]}
                 </label>
               ))}

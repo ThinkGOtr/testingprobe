@@ -88,7 +88,8 @@ describe("BulguKarti", () => {
     const alan = screen.getByLabelText(/Önerilen doküman metni/);
     // Golden SERBEST F2 önerisi (AC öneki atılmış) aynen.
     expect(alan).toHaveValue(mockVerisi().bulgular.find((b) => b.id === "fnd-6")!.suggested_doc_text);
-    const eklenen = [...screen.getByLabelText("Önerilen değişiklik farkı").querySelectorAll("ins")].map((x) => x.textContent).join(" ");
+    // Öneri metni büyük ölçüde yeniden yazdığı için fark "Önce / Sonra" görünümünde (eklenen: Sonra).
+    const eklenen = [...screen.getByLabelText(/^Önerilen değişiklik/).querySelectorAll("ins")].map((x) => x.textContent).join(" ");
     expect(eklenen).toContain("750,00");
     await u.clear(alan);
     await u.type(alan, "Sepet tutarı 750,00 TL altındaysa uyarı gösterilir.");
@@ -221,17 +222,15 @@ describe("CaseKarti", () => {
   it.each([
     ["rejected", "Reddedildi"],
     ["approved", "Onaylı"],
-  ] as const)("%s case: Onayla/Düzelt/Reddet pasif, nedeni söylenir, istek gitmez", async (durum, etiket) => {
+  ] as const)("%s case: Onayla/Düzelt/Reddet gösterilmez, yalnızca 'Yeniden aç'; istek gitmez", async (durum, etiket) => {
     await oturumAc("analist");
     const spy = vi.spyOn(api, "caseKarari");
-    const u = userEvent.setup();
     const tc = { ...mockVerisi().caseler.find((c) => c.id === "case-1-7")!, durum };
     sar(<CaseKarti tc={tc} guncellendi={() => {}} />);
     expect(screen.getByText(etiket)).toBeInTheDocument();
-    // Rol yüklendikten sonra bile pasif kalır (yalnızca rol eksikliği yüzünden değil).
-    await waitFor(() => expect(screen.getByRole("button", { name: "Onayla" })).toHaveAttribute("title", expect.stringContaining("Bu durumdan bu karara geçilemez")));
-    for (const ad of ["Onayla", "Düzelt", "Reddet"]) expect(screen.getByRole("button", { name: ad })).toBeDisabled();
-    await u.click(screen.getByRole("button", { name: "Onayla" }));
+    // Rol yüklendikten sonra da karar düğmeleri yok (pasif düğme "Yeniden aç"ın yanında kafa karıştırıyordu).
+    await waitFor(() => expect(screen.getByRole("button", { name: "Yeniden aç" })).toBeEnabled());
+    for (const ad of ["Onayla", "Düzelt", "Reddet"]) expect(screen.queryByRole("button", { name: ad })).toBeNull();
     expect(spy).not.toHaveBeenCalled();
     expect(screen.getByTestId("case-karar-kilit")).toHaveTextContent("Karar verildi");
   });

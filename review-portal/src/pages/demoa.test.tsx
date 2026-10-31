@@ -107,7 +107,7 @@ describe("case review", () => {
     uygulama("/gereksinimler/req-tpd-1/caseler");
     await screen.findByText("Reddedilen (2)");
     const red = screen.getAllByRole("article").find((a) => within(a).queryByText("Reddedildi"))!;
-    expect(within(red).getByRole("button", { name: "Onayla" })).toBeDisabled();
+    expect(within(red).queryByRole("button", { name: "Onayla" })).toBeNull();
     await u.click(within(red).getByRole("button", { name: "Yeniden aç" }));
     await waitFor(() => expect(within(red).getByRole("button", { name: "Onayla" })).toBeEnabled());
     expect(mockVerisi().caseler.find((c) => c.id === "case-1-6")).toMatchObject({ durum: "draft" });

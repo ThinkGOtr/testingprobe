@@ -280,12 +280,19 @@ def test_calisan_is_nabiz_yazar(engine: Engine, monkeypatch: pytest.MonkeyPatch)
     assert float(gozlem["fark"]) >= 0.2
 
 
+@pytest.fixture
+def surec_dosyasi(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    yol = tmp_path / "tp-worker-surec"
+    monkeypatch.setenv("TP_WORKER_STATE_FILE", str(yol))
+    return yol
+
+
 def test_worker_yeniden_baslayinca_kalan_isler_birakilir(
-    engine: Engine, monkeypatch: pytest.MonkeyPatch
+    engine: Engine, monkeypatch: pytest.MonkeyPatch, surec_dosyasi: Path
 ) -> None:
-    """Konteyner yeniden başladı: aynı hostname'in önceki sürecinin `running` işi beklemeden
-    bırakılır ve yeniden işlenir; başka makinenin işi ve ajan işi (max_deneme=1) yeniden
-    çalıştırılmaz."""
+    """Konteyner yeniden başladı: aynı hostname'in önceki sürecinin (durum dosyasındaki kimlik)
+    `running` işi beklemeden bırakılır ve yeniden işlenir; başka makinenin işi ve ajan işi
+    (max_deneme=1) yeniden çalıştırılmaz."""
     import socket
 
     calisan: list[str] = []
@@ -299,8 +306,13 @@ def test_worker_yeniden_baslayinca_kalan_isler_birakilir(
             ajan_id = enqueue(c, ajan)
             baska = enqueue(c, tur)
         host = socket.gethostname()
+        surec_dosyasi.write_text(f"{host}:1:onceki\n")
         with engine.begin() as c:
-            for jid, kim in ((yarim, f"{host}:1"), (ajan_id, f"{host}:1"), (baska, "baska:1")):
+            for jid, kim in (
+                (yarim, f"{host}:1:onceki"),
+                (ajan_id, f"{host}:1:onceki"),
+                (baska, "baska:1"),
+            ):
                 c.execute(
                     text(
                         "UPDATE job SET durum = 'running', deneme = 1, kilitleyen = :w, "
@@ -317,9 +329,128 @@ def test_worker_yeniden_baslayinca_kalan_isler_birakilir(
         assert (ajan_row.durum, ajan_row.bitis is not None) == ("failed", True)
         assert "yeniden başladı" in ajan_row.son_hata
         assert _job(engine, baska).durum == "running"
+        assert surec_dosyasi.read_text().strip() == jobs.worker_id()  # sonraki açılış için
     finally:
         jobs.REGISTRY.pop(tur, None)
         jobs.REGISTRY.pop(ajan, None)
+
+
+def _running_yap(engine: Engine, jid: uuid.UUID, kim: str, sessiz_s: int = 0) -> None:
+    with engine.begin() as c:
+        c.execute(
+            text(
+                "UPDATE job SET durum = 'running', deneme = 1, kilitleyen = :w, baslama = now(), "
+                "guncelleme = now() - make_interval(secs => :s) WHERE id = :i"
+            ),
+            {"w": kim, "i": jid, "s": sessiz_s},
+        )
+
+
+def test_olceklenmis_kopyanin_canli_isine_dokunulmaz(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch, surec_dosyasi: Path
+) -> None:
+    """Regresyon: `--scale core-worker=2` — iki kopya aynı hostname ve PID 1'i paylaşır. İkinci
+    kopyanın açılışı birincinin nabız atan işini bırakmamalı; yalnızca kendi konteynerinin önceki
+    sürecini (durum dosyası) ve nabzı kesilmiş işleri bırakır."""
+    import socket
+
+    host = socket.gethostname()
+    tur = f"agent.olcek.{uuid.uuid4().hex[:6]}"
+    job_handler(tur, max_deneme=1)(lambda _c: None)
+    try:
+        with engine.begin() as c:
+            canli_kopya, onceki, sessiz = (enqueue(c, tur) for _ in range(3))
+        _running_yap(engine, canli_kopya, f"{host}:1:kopyaA")
+        _running_yap(engine, onceki, f"{host}:1:benimeski")
+        _running_yap(engine, sessiz, f"{host}:1:olmus", sessiz_s=int(worker.SAHIPSIZ_NABIZ_S) + 5)
+        surec_dosyasi.write_text(f"{host}:1:benimeski\n")
+        monkeypatch.setattr(worker, "_sahipsizler_birakildi", False)
+        worker.tek_tur()
+        assert _job(engine, canli_kopya).durum == "running"
+        assert _job(engine, onceki).durum == "failed"
+        assert _job(engine, sessiz).durum == "failed"
+    finally:
+        jobs.REGISTRY.pop(tur, None)
+
+
+def test_kendi_isini_birakmaz_ve_kilitleyen_acilis_kimligi_tasir(engine: Engine) -> None:
+    import os
+    import socket
+
+    assert jobs.worker_id() == f"{socket.gethostname()}:{os.getpid()}:{jobs.ACILIS_KIMLIGI}"
+    with engine.begin() as c:
+        jid = enqueue(c, "kayitsiz.kendi")
+    _running_yap(engine, jid, jobs.worker_id(), sessiz_s=600)
+    with engine.begin() as c:
+        assert jobs.release_orphans(c, haric=jobs.worker_id(), taze_s=1.0) == 0
+    assert _job(engine, jid).durum == "running"
+    with engine.begin() as c:
+        assert jobs.complete(c, jid, jobs.worker_id())
+
+
+def _sahte_kanca_modulu(monkeypatch: pytest.MonkeyPatch, fn) -> str:
+    import types
+
+    ad = f"tp_sahte_kanca_{uuid.uuid4().hex[:6]}"
+    mod = types.ModuleType(ad)
+    mod.on_worker_start = fn  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, ad, mod)
+    return ad
+
+
+def test_db_hazir_degilken_acilis_kancalari_sonra_kosar(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch, surec_dosyasi: Path
+) -> None:
+    """Regresyon: Docker yeniden başlatmasında DB worker'dan sonra açılır. Kancalar ilk başarılı
+    DB turunda koşmalı; DB hatasıyla başarısız olan kanca sonraki turda yeniden denenmeli."""
+    from sqlalchemy.exc import OperationalError
+
+    cagri: list[str] = []
+    durum = {"db": False}
+
+    def kanca(_conn) -> None:
+        if not durum["db"]:
+            raise OperationalError("SELECT 1", {}, Exception("could not translate host name"))
+        cagri.append("koştu")
+
+    ad = _sahte_kanca_modulu(monkeypatch, kanca)
+    monkeypatch.setattr(worker, "KANCA_TEKRAR_S", 0.0)
+    monkeypatch.setattr(worker, "_sahipsizler_birakildi", False)
+    assert worker.kancalari_planla([ad, "tp_core.workflow.jobs"]) == [ad]  # kancasız modül düşer
+
+    gercek = worker.release_orphans
+
+    def db_yok(*_a, **_k):
+        raise OperationalError("SELECT", {}, Exception("connection refused"))
+
+    monkeypatch.setattr(worker, "release_orphans", db_yok)
+    with pytest.raises(OperationalError):
+        worker.tek_tur()  # DB yok: kanca hiç denenmedi, run() geri çekilir
+    assert cagri == [] and worker._bekleyen_kancalar == [ad]
+
+    monkeypatch.setattr(worker, "release_orphans", gercek)
+    worker.tek_tur()  # DB geldi ama kanca hâlâ DB hatası veriyor → beklemede kalır
+    assert cagri == [] and worker._bekleyen_kancalar == [ad]
+
+    durum["db"] = True
+    worker.tek_tur()
+    assert cagri == ["koştu"] and worker._bekleyen_kancalar == []
+    worker.tek_tur()
+    assert cagri == ["koştu"]  # başarılı kanca bir daha koşmaz
+
+
+def test_main_kancalari_dogrudan_cagirmaz(engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
+    """main() kancaları DB'ye erişmeden sıraya alır; run() döngüsü koşturur."""
+    planlanan: list[list[str]] = []
+    monkeypatch.setattr(worker, "discover", lambda: ["a.jobs"])
+    monkeypatch.setattr(worker, "kancalari_planla", lambda m: planlanan.append(m) or m)
+    monkeypatch.setattr(
+        worker, "acilis_kancalari", lambda _m: pytest.fail("kanca açılışta çağrıldı")
+    )
+    monkeypatch.setattr(worker, "run", lambda _dur, _aralik: 0)
+    monkeypatch.setattr(worker.signal, "signal", lambda *_a: None)
+    worker.main()
+    assert planlanan == [["a.jobs"]]
 
 
 def test_release_orphans_hostname_desenini_kacirir(engine: Engine) -> None:

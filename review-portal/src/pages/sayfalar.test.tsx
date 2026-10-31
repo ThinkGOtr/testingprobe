@@ -273,6 +273,8 @@ describe("ekranlar", () => {
   it("bilinmeyen sayfa", async () => {
     await oturumAc("analist");
     uygulama("/yok-boyle-bir-sayfa");
-    expect(await screen.findByText("Sayfa bulunamadı.")).toBeInTheDocument();
+    // axe page-has-heading-one: 404 sayfası da birinci düzey başlık taşır.
+    expect(await screen.findByRole("heading", { level: 1, name: "Sayfa bulunamadı" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Ana sayfaya dön" })).toHaveAttribute("href", "/");
   });
 });

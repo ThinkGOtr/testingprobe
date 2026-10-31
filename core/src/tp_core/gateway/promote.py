@@ -187,6 +187,10 @@ def promote_from_rows(
     for row in rows:
         if row.get("mod") != "replay_miss":
             continue
+        if row.get("cikti") is None:
+            # Çıktısız iskalama denetim satırı (ReplayNotFound/ReplayNoOutput/sıkı kip): yükseltecek
+            # bir şey yok; aynı anahtarın sonraki çıktılı satırını da gölgelemez (`seen`e girmez).
+            continue
         purpose, key = str(row["amac"]), row.get("replay_anahtari")
         if not key or (purpose, key) in seen:
             continue

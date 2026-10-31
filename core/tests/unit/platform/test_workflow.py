@@ -832,3 +832,22 @@ def test_case_kimliksiz_eklenemez(session: Session) -> None:
     with pytest.raises(IntegrityError, match='"id"'):
         session.flush()
     session.rollback()
+
+
+@pytest.mark.parametrize("yol", [["in_review", "failed"], ["failed"]])
+def test_po_onayi_geri_cekilince_eski_onay_failed_den_uretimi_acmaz(
+    session: Session, make_user: MakeUser, yol: list[str]
+) -> None:
+    """Regresyon: PO etiketi geri çekildi (→ new) → inceleme başarısız (→ failed). Son review
+    hâlâ aynı içerikte `po_approve` olsa da failed → generating kapısı açılmamalı."""
+    r = _po_onayli(session, make_user)
+    transition(session, r, "new", SYSTEM, "po_approved")  # geri çekme
+    assert r.onaylanan_hash is None
+    once = "new"
+    for hedef in yol:
+        transition(session, r, hedef, SYSTEM, once)
+        once = hedef
+    assert approved_hash_matches(session, r)  # eski onay kaydı içerikle hâlâ eşleşiyor
+    with pytest.raises(GateClosed, match="onay geri çekilmiş"):
+        transition(session, r, "generating", SYSTEM, "failed")
+    assert r.durum == "failed"

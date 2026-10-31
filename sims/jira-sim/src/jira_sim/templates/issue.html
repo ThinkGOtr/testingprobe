@@ -30,10 +30,19 @@
     <section class="panel" id="yorumlar">
       <h2>Yorumlar ({{ it.comments | length }})</h2>
       {% for c in it.comments %}
+        {% if c.id | string in superseded %}
+        <div class="comment superseded" data-testid="comment-superseded">
+          <details>
+            <summary class="muted"><strong>{{ c.author | kisi }}</strong> · {{ c.created | zaman }} · (önceki tur) AI ön incelemesi; güncel olanı aşağıda</summary>
+            <div class="desc">{{ c.body | adf }}</div>
+          </details>
+        </div>
+        {% else %}
         <div class="comment">
           <div class="muted"><strong>{{ c.author | kisi }}</strong> · {{ c.created | zaman }}</div>
           <div class="desc">{{ c.body | adf }}</div>
         </div>
+        {% endif %}
       {% else %}
         <p class="muted">Henüz yorum yok.</p>
       {% endfor %}

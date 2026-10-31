@@ -50,6 +50,7 @@ from tp_core.gateway.errors import (
     GatewayConfigError,
     ProviderNotConfigured,
     ProviderTransientError,
+    ReplayNotFound,
     SchemaValidationFailed,
 )
 from tp_core.gateway.masking import MaskingSession, PiiMasker
@@ -60,7 +61,13 @@ from tp_core.gateway.providers.base import (
     ToolCall,
     Usage,
 )
-from tp_core.gateway.replay import HAND_PREPARED_MODEL, ReplayStore, output_origin, replay_key
+from tp_core.gateway.replay import (
+    HAND_PREPARED_MODEL,
+    ReplayMode,
+    ReplayStore,
+    output_origin,
+    replay_key,
+)
 from tp_core.ports import (
     AgentResult,
     AgentStep,
@@ -175,6 +182,9 @@ AGENT_ADDENDUM = (
 @dataclass(frozen=True)
 class RetryPolicy:
     max_retries: int = 3  # 429/529/5xx için (ilk deneme hariç)
+    # İstemci zaman aşımı: uzun üretim (case üretimi 16K token) yeniden denemede yine sürer ve
+    # yeniden faturalanır; en çok bir kez daha denenir.
+    max_timeout_retries: int = 1
     base_delay_s: float = 1.0
     max_delay_s: float = 20.0
 
@@ -219,6 +229,7 @@ _EXTRA_KEYS = (
     "yeniden_deneme",
     "onbellek_okuma_token",
     "onbellek_yazma_token",
+    "yedek_model",
 )
 
 
@@ -337,8 +348,10 @@ class Gateway:
         while True:
             try:
                 return self.provider.complete(request), attempt
-            except ProviderTransientError:
+            except ProviderTransientError as exc:
                 if attempt >= self.retry.max_retries:
+                    raise
+                if getattr(exc, "timeout", False) and attempt >= self.retry.max_timeout_retries:
                     raise
                 self._sleep(self.retry.delay(attempt))
                 attempt += 1
@@ -542,6 +555,7 @@ class Gateway:
                 max_tokens=effective_max,
                 output_schema=schema,
                 params=cfg.params,
+                timeout_s=cfg.timeout_s,
             )
             row = self._base_row(
                 purpose=purpose,
@@ -571,7 +585,8 @@ class Gateway:
                 )
                 self._record(row)
                 raise
-            cost = self.models.cost(cfg.model, response.usage)
+            cost = _response_cost(self.models, cfg, response)
+            row.update(_fallback_fields(response))
             self.budget.charge(workflow_id, cost)
             total_cost += cost
             totals = _add_usage(totals, response.usage)
@@ -603,7 +618,7 @@ class Gateway:
                         "replay_key": dict(replay_key),
                         "input_hash": digest,
                         "recording": _recording(
-                            cfg.model,
+                            _served_model(cfg, response),
                             self.provider_name,
                             int((self._clock() - call_started) * 1000),
                             totals,
@@ -649,8 +664,17 @@ class Gateway:
         root_id: UUID | None = None,
         parent_id: UUID | None = None,
     ) -> CallResult:
-        record, mode, path = self.replay_store.lookup(
-            purpose, key, _golden_name(key_fields), masked
+        record, mode, path = self._lookup_audited(
+            purpose,
+            bnd,
+            cfg,
+            key,
+            key_fields,
+            masked,
+            mask_diff,
+            workflow_id,
+            root_id=root_id,
+            parent_id=parent_id,
         )
         output = record["output"]
         errors = _schema_errors(validator, output)
@@ -690,6 +714,55 @@ class Gateway:
                 f"replay kaydı şemaya uymuyor: {path}", errors=errors, last_output=output
             )
         return CallResult(output=session.unmask(output), call_id=row_id, mode=mode)
+
+    def _lookup_audited(
+        self,
+        purpose: str,
+        bnd: Bundle,
+        cfg: PurposeConfig,
+        key: str,
+        key_fields: Mapping[str, Any],
+        masked: Any,
+        mask_diff: dict[str, Any],
+        workflow_id: UUID | None,
+        *,
+        root_id: UUID | None,
+        parent_id: UUID | None,
+    ) -> tuple[dict[str, Any], ReplayMode, Path]:
+        """Replay araması; bulunamayan/çıktısız iskalama da `ai_call`'a yazılır (constitution
+        VIII: denetim izi yalnızca başarılı çağrıları değil, yapılamayanları da gösterir)."""
+        try:
+            return self.replay_store.lookup(purpose, key, _golden_name(key_fields), masked)
+        except ReplayNotFound as exc:
+            row = self._base_row(
+                purpose=purpose,
+                bundle=bnd,
+                cfg=cfg,
+                workflow_id=workflow_id,
+                parent_id=parent_id,
+                mode="replay_miss",
+                key=key,
+                row_id=root_id,
+            )
+            reasons = getattr(exc, "reasons", None)
+            row.update(
+                model=HAND_PREPARED_MODEL,
+                replay_kokeni="yok",
+                **({"replay_eslesme": reasons} if reasons else {}),
+                maskeli_girdi=masked,
+                maskeleme_farki=mask_diff,
+                cikti=None,
+                sema_gecerli=False,
+                deneme=1,
+                yeniden_deneme=0,
+                girdi_token=0,
+                cikti_token=0,
+                maliyet_usd=0.0,
+                sure_ms=0,
+                hata=f"{type(exc).__name__}: {exc}",
+            )
+            self._record(row)
+            raise
 
     # ---------------------------------------------------------------- run_agent
 
@@ -785,6 +858,7 @@ class Gateway:
                 max_tokens=cfg.max_tokens,
                 tools=[*tools, final_tool],
                 params=cfg.params,
+                timeout_s=cfg.timeout_s,
             )
             row = self._base_row(
                 purpose=purpose,
@@ -814,7 +888,8 @@ class Gateway:
                 )
                 self._record(row)
                 raise
-            cost = self.models.cost(cfg.model, response.usage)
+            cost = _response_cost(self.models, cfg, response)
+            row.update(_fallback_fields(response))
             self.budget.charge(workflow_id, cost)
             used_input_tokens += (
                 response.usage.input_tokens
@@ -904,7 +979,7 @@ class Gateway:
                             "replay_key": dict(replay_key),
                             "input_hash": digest,
                             "recording": _recording(
-                                cfg.model,
+                                _served_model(cfg, response),
                                 self.provider_name,
                                 int((self._clock() - agent_started) * 1000),
                                 _turns_usage(turns),
@@ -946,8 +1021,24 @@ class Gateway:
                 if not is_error and is_snapshot(turn.tool_names[ri], text):
                     last_snapshot = (ti, ri)
         conversation = list(initial)
+        # Geçmiş düzenleme (preserved thinking, §8.4): bir tool_result ELIDED_SNAPSHOT ile
+        # değiştirildiğinde ondan SONRA üretilmiş thinking blokları geçersizleşir (Sonnet 5.5
+        # `between_tools` ilerleme notları da `thinking` bloğudur; yeni hesaplarda 400).
+        # `between_tools` ile `block_binding: drop_block` kullanılamaz; bu yüzden ilk düzenlenen
+        # mesajdan sonraki asistan turlarından thinking/redacted_thinking blokları çıkarılır.
+        first_edited: int | None = None
         for ti, turn in enumerate(turns):
-            conversation.append(self.provider.assistant_message(turn.response))
+            if any(
+                c.id and not e and is_snapshot(turn.tool_names[ri], t) and (ti, ri) != last_snapshot
+                for ri, (c, t, e) in enumerate(turn.results)
+            ):
+                first_edited = ti
+                break
+        for ti, turn in enumerate(turns):
+            message = self.provider.assistant_message(turn.response)
+            if first_edited is not None and ti > first_edited:
+                message = _strip_thinking(message)
+            conversation.append(message)
             calls = [(c, t, e) for c, t, e in turn.results if c.id]
             nudges = [t for c, t, _ in turn.results if not c.id]
             if calls:
@@ -1009,8 +1100,17 @@ class Gateway:
         root_id: UUID | None = None,
         parent_id: UUID | None = None,
     ) -> AgentResult:
-        record, mode, path = self.replay_store.lookup(
-            purpose, key, _golden_name(key_fields), masked
+        record, mode, path = self._lookup_audited(
+            purpose,
+            bnd,
+            cfg,
+            key,
+            key_fields,
+            masked,
+            mask_diff,
+            workflow_id,
+            root_id=root_id,
+            parent_id=parent_id,
         )
         output = record["output"]
         errors = _schema_errors(validator, output)
@@ -1073,6 +1173,23 @@ class Gateway:
 # -------------------------------------------------------------------- yardımcılar
 
 
+_THINKING_BLOCKS = frozenset({"thinking", "redacted_thinking"})
+_THINKING_STRIPPED = "[ara not bağlamdan çıkarıldı]"
+
+
+def _strip_thinking(message: dict[str, Any]) -> dict[str, Any]:
+    """Asistan mesajından thinking/redacted_thinking bloklarını çıkarır (yeni sözlük döner)."""
+    content = message.get("content")
+    if not isinstance(content, list):
+        return message
+    kept = [b for b in content if not (isinstance(b, dict) and b.get("type") in _THINKING_BLOCKS)]
+    if len(kept) == len(content):
+        return message
+    if not kept:  # yalnızca thinking içeren tur: API boş asistan içeriğini kabul etmez
+        kept = [{"type": "text", "text": _THINKING_STRIPPED}]
+    return {**message, "content": kept}
+
+
 def _replay_key(purpose: str, bundle_hash: str, fields: Mapping[str, Any], digest: str) -> str:
     return replay_key(purpose, bundle_hash, fields, digest)
 
@@ -1090,6 +1207,27 @@ def _recording(model: str, provider: str, latency_ms: int, usage: Usage) -> dict
         "latency_ms": latency_ms,
         "input_tokens": usage.input_tokens,
         "output_tokens": usage.output_tokens,
+    }
+
+
+def _response_cost(models: ModelTable, cfg: PurposeConfig, response: ProviderResponse) -> float:
+    """Ret yedeği başka modelde koştuysa o modelin fiyatı (tabloda yoksa amacın modeli)."""
+    if response.fallback_from and response.model in models.prices:
+        return models.cost(response.model, response.usage)
+    return models.cost(cfg.model, response.usage)
+
+
+def _served_model(cfg: PurposeConfig, response: ProviderResponse) -> str:
+    return response.model if response.fallback_from and response.model else cfg.model
+
+
+def _fallback_fields(response: ProviderResponse) -> dict[str, Any]:
+    """Sağlayıcı tarafı ret yedeği: `ai_call.model` yanıtı üreten model, `ek.yedek_model` geçiş."""
+    if not response.fallback_from or not response.model:
+        return {}
+    return {
+        "model": response.model,
+        "yedek_model": {"istenen": response.fallback_from, "yanitlayan": response.model},
     }
 
 

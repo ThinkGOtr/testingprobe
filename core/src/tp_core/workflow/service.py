@@ -390,7 +390,16 @@ def transition[E](
             raise GateClosed(
                 f"{kind}: '{mevcut}' → '{to_state}' için güncel içerikle eşleşen insan onayı yok"
             )
-        if mevcut in machine.approval_targets and getattr(obj, "onaylanan_hash", None) != h:
+        # Onayı tüketen kapılar (requirement: → generating; case/bug: → published) nesnede kayıtlı
+        # onaylı hash'i de ister. `new`'e dönüş (PO etiketi geri çekildi) bu hash'i siler; böylece
+        # eski bir `po_approve` kaydı failed → generating kapısını açamaz (MIMARI-SOZLESME §5/§6).
+        if (
+            mevcut in machine.approval_targets or to_state in machine.approval_consumers
+        ) and getattr(obj, "onaylanan_hash", None) != h:
+            if getattr(obj, "onaylanan_hash", None) is None:
+                raise GateClosed(
+                    f"{kind}: geçerli bir onay yok (onay geri çekilmiş); yeniden onay gerekir"
+                )
             raise GateClosed(f"{kind}: onaydan sonra içerik değişmiş")
 
     with allow_state_write():

@@ -48,3 +48,9 @@ if printf '%s\n' "$rows" | awk -F '\t' '$1 == "jira-sim" && $2 == "running" { f 
   echo
   echo "jira-sim PO girişi: po@sim.local — parola .env'de JIRA_SIM_PO_PASSWORD"
 fi
+
+# Demo-A kazanç ölçümü: manuel baz değer yoksa portal kazanç oranı göstermez.
+if [ -z "$(env_get TP_MANUAL_BASELINE_S)" ]; then
+  echo
+  echo "Manuel baz değer girilmedi (TP_MANUAL_BASELINE_S): Demo-A kazanç gösterilemez."
+fi

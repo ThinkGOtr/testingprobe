@@ -443,3 +443,72 @@ def test_model_calling_tool_outside_request_is_denied(make_gateway, rules_dir, r
     assert all(name != "browser_drop" for name, _ in browser.calls)
     denied = [t for t in recorder.tool_calls if t["arac"] == "browser_drop"]
     assert denied and denied[0]["izin_verildi"] is False
+
+
+def _with_thinking(response):
+    """Sonnet 5.5 `between_tools`: araçlar arası ilerleme notu `thinking` bloğu olarak döner."""
+    blocks = [
+        {"type": "thinking", "thinking": "ilerleme notu", "signature": "sig"},
+        {"type": "redacted_thinking", "data": "gizli"},
+    ]
+    response.raw_assistant_content = blocks + response.raw_assistant_content
+    return response
+
+
+def _assert_no_thinking_after_edit(messages) -> None:
+    """Düzenlenen (ELIDED_SNAPSHOT) mesajdan sonra hiçbir asistan turu thinking taşımamalı."""
+    edited_seen = False
+    for m in messages:
+        content = m["content"] if isinstance(m["content"], list) else []
+        if m["role"] == "assistant" and edited_seen:
+            assert not [b for b in content if b.get("type") in {"thinking", "redacted_thinking"}]
+            assert content  # boş asistan içeriği gönderilmez
+        if m["role"] == "user" and any(b.get("content") == ELIDED_SNAPSHOT for b in content):
+            edited_seen = True
+
+
+def test_thinking_blocks_dropped_after_elided_snapshot(make_gateway, rules_dir) -> None:
+    gw, provider = make_gateway(
+        [
+            _with_thinking(tool_response(("browser_snapshot", {}))),
+            _with_thinking(tool_response(("browser_click", {"ref": "e1"}))),
+            _with_thinking(tool_response(("browser_snapshot", {}))),
+            _with_thinking(tool_response(("browser_click", {"ref": "e3"}))),
+            _with_thinking(tool_response(("browser_snapshot", {}))),
+            _with_thinking(tool_response((FINAL_TOOL, OUTPUT))),
+        ]
+    )
+    run(gw, rules_dir, Browser())
+    for request in provider.requests:
+        _assert_no_thinking_after_edit(request.messages)
+
+    def thinking_turns(messages):
+        return [
+            any(b.get("type") == "thinking" for b in m["content"])
+            for m in messages
+            if m["role"] == "assistant"
+        ]
+
+    # Browser her araç sonucunda snapshot döndürür (Playwright MCP gibi): yalnızca son tur
+    # snapshot'ı kalır. 2. istek: henüz düzenleme yok → geçmiş aynen (append-only).
+    assert thinking_turns(provider.requests[1].messages) == [True]
+    # 3. istek: 1. turun sonucu çıkarıldı → 1. tur korunur, sonrakilerden thinking düşer.
+    assert thinking_turns(provider.requests[2].messages) == [True, False]
+    assert thinking_turns(provider.requests[5].messages) == [True, False, False, False, False]
+
+
+def test_thinking_only_turn_after_edit_keeps_non_empty_content(make_gateway, rules_dir) -> None:
+    thinking_only = text_response("")
+    thinking_only.raw_assistant_content = [
+        {"type": "thinking", "thinking": "not", "signature": "sig"}
+    ]
+    gw, provider = make_gateway(
+        [
+            tool_response(("browser_snapshot", {})),
+            tool_response(("browser_snapshot", {})),
+            thinking_only,
+            tool_response((FINAL_TOOL, OUTPUT)),
+        ]
+    )
+    run(gw, rules_dir, Browser())
+    _assert_no_thinking_after_edit(provider.requests[3].messages)

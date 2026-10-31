@@ -5,7 +5,7 @@ import type { Rol } from "./api/types";
 import { OturumProvider, useOturum, varsayilanSayfa } from "./auth";
 import { BildirimProvider } from "./components/Bildirim";
 import { Kabuk } from "./components/Kabuk";
-import { BosDurum, Kart, Yukleniyor } from "./components/ui";
+import { BosDurum, Kart, SayfaBasligi, Yukleniyor } from "./components/ui";
 import { BugTaslakDetay, BugTaslaklari } from "./pages/BugTaslaklari";
 import { CaseReview } from "./pages/CaseReview";
 import { ClaudeCode } from "./pages/ClaudeCode";
@@ -48,11 +48,14 @@ function AnaSayfa() {
 
 function Bulunamadi() {
   return (
-    <Kart>
-      <BosDurum baslik="Sayfa bulunamadı.">
-        <Link to="/">Ana sayfaya dön</Link>
-      </BosDurum>
-    </Kart>
+    <>
+      <SayfaBasligi baslik="Sayfa bulunamadı" />
+      <Kart>
+        <BosDurum baslik="Aradığınız adres bu portalda yok.">
+          <Link to="/">Ana sayfaya dön</Link>
+        </BosDurum>
+      </Kart>
+    </>
   );
 }
 

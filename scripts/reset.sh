@@ -72,6 +72,8 @@ else
     echo "Gerçek Jira verisine dokunulmadı (sonra: make jira-seed)."
   fi
 fi
+# Kullanıcılar ve başlangıç verisi silindi; tohum idempotenttir.
+"$TP_REPO_ROOT/scripts/seed.sh" || die "seed başarısız (sonra: make seed)"
 echo
 "$TP_REPO_ROOT/scripts/status.sh"
 echo "ortam temiz"

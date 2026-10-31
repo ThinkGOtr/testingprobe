@@ -82,6 +82,8 @@ class PurposeConfig:
     max_tokens: int = 4096
     params: dict[str, Any] = field(default_factory=dict)
     max_input_tokens: int | None = None  # ajan için toplam girdi token tavanı
+    # İstemci zaman aşımı (sn). Taşıma ayarıdır, çıktıyı etkilemez: bundle hash'ine girmez.
+    timeout_s: float | None = None
 
 
 @dataclass(frozen=True)
@@ -130,8 +132,21 @@ def load_model_table(rules_dir: Path) -> ModelTable:
             max_tokens=int(spec.get("max_tokens", defaults.get("max_tokens", 4096))),
             params=merged_params,
             max_input_tokens=spec.get("max_input_tokens"),
+            timeout_s=_timeout(name, spec.get("timeout_s", defaults.get("timeout_s"))),
         )
         if cfg.model not in prices:
             raise GatewayConfigError(f"'{name}' amacının modeli '{cfg.model}' için fiyat yok")
         purposes[name] = cfg
     return ModelTable(version=int(data.get("version", 1)), prices=prices, purposes=purposes)
+
+
+def _timeout(purpose: str, value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        raise GatewayConfigError(f"'{purpose}' timeout_s sayı olmalı: {value!r}") from None
+    if seconds <= 0:
+        raise GatewayConfigError(f"'{purpose}' timeout_s pozitif olmalı: {value!r}")
+    return seconds

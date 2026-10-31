@@ -28,6 +28,8 @@ class ProviderRequest(BaseModel):
     output_schema: dict[str, Any] | None = None
     tools: list[ToolSpec] = Field(default_factory=list)
     params: dict[str, Any] = Field(default_factory=dict)  # models.yaml'daki amaç parametreleri
+    # İstek başına istemci zaman aşımı (sn; models.yaml `timeout_s`). None: adaptör varsayılanı.
+    timeout_s: float | None = None
 
 
 class Usage(BaseModel):
@@ -49,6 +51,8 @@ class ProviderResponse(BaseModel):
     # Sağlayıcının asistan mesajı (ör. Anthropic içerik blokları, thinking blokları dahil);
     # ajan döngüsünde değiştirilmeden geri gönderilir.
     raw_assistant_content: list[dict[str, Any]] = Field(default_factory=list)
+    # Sağlayıcı tarafı ret yedeği devreye girdiyse isteğin asıl modeli (yanıtı `model` üretti).
+    fallback_from: str | None = None
 
 
 @runtime_checkable

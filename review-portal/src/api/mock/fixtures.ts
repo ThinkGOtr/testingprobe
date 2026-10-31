@@ -221,6 +221,9 @@ function gereksinimler(): GereksinimDetay[] {
       },
       kontrol_turu: 2,
       kontrol_turu_ust_sinir: 3,
+      // core `requirement_kontrol`: son tamamlanan koşu (golden TPD-1-r2, 1 bulgu).
+      son_kontrol: { mode: "replay", bulgu: 1, dogrulanan: 1, elenen: 0, zaman: t(30, "09:52") },
+      elenen_bulgu: 0,
       icerik_hash: "", // hashleriTazele doldurur
       jira_url: `${JIRA}/TPD-1`,
       uyarilar: [],
@@ -259,6 +262,8 @@ function gereksinimler(): GereksinimDetay[] {
       },
       kontrol_turu: 1,
       kontrol_turu_ust_sinir: 3,
+      son_kontrol: { mode: "replay", bulgu: 1, dogrulanan: 1, elenen: 0, zaman: t(30, "09:31") },
+      elenen_bulgu: 0,
       icerik_hash: "", // hashleriTazele doldurur
       jira_url: `${JIRA}/TPD-3`,
       uyarilar: [
@@ -303,6 +308,8 @@ function gereksinimler(): GereksinimDetay[] {
       },
       kontrol_turu: 1,
       kontrol_turu_ust_sinir: 3,
+      son_kontrol: { mode: "replay", bulgu: 3, dogrulanan: 3, elenen: 0, zaman: t(30, "11:42") },
+      elenen_bulgu: 0,
       icerik_hash: "", // hashleriTazele doldurur
       jira_url: null,
       uyarilar: [],

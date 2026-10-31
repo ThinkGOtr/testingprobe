@@ -60,3 +60,26 @@ export function duzeltmeOlcusu(eski: string, yeni: string): number {
   }
   return onceki[b.length] / uzun;
 }
+
+/**
+ * Kelime farkında değişen metnin oranı (0 = aynı, 1 = tamamen yeniden yazılmış): silinen ve eklenen
+ * boşluksuz karakterlerin, iki metnin boşluksuz uzunlukları toplamına oranı. Oran yüksekse kelime
+ * kelime üstü çizili/eklenmiş karışık görünüm okunmaz; "Önce / Sonra" görünümüne geçilir.
+ */
+export function degisimOrani(parcalar: FarkParcasi[]): number {
+  const uzunluk = (s: string) => s.replace(/\s+/g, "").length;
+  let degisen = 0;
+  let toplam = 0;
+  for (const p of parcalar) {
+    const n = uzunluk(p.metin);
+    if (p.tur === "ayni") toplam += 2 * n;
+    else {
+      degisen += n;
+      toplam += n;
+    }
+  }
+  return toplam === 0 ? 0 : degisen / toplam;
+}
+
+/** Bu oranın üstünde fark "Önce / Sonra" olarak gösterilir. */
+export const ONCE_SONRA_ESIGI = 0.5;
