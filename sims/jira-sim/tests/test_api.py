@@ -275,6 +275,19 @@ def test_duplicate_candidates_search(client: TestClient) -> None:
     assert {i["key"] for i in open_bugs["issues"]} == {"TPD-5", "TPD-6"}
 
 
+def test_tpd5_seed_describes_6_adet_campaign_boundary(client: TestClient) -> None:
+    """Ana demo yolu: C3 (6 adet) bugünkü kodda defect adayı; TPD-5 bu belirtinin açık Bug'ı."""
+    issue = client.get(f"{R}/issue/TPD-5", auth=READER).json()
+    f = issue["fields"]
+    assert f["summary"] == "Kampanya indirimi sepette yanlış hesaplanıyor"
+    assert (f["issuetype"]["name"], f["status"]["name"]) == ("Bug", "To Do")
+    text = adf_to_text(f["description"])
+    assert "Portakal Gazozu 1L ürününden 6 adet sepete ekle" in text
+    assert "Beklenen: bedava 0 adet, indirim 0,00 TL, toplam 150,00 TL." in text
+    assert "Gerçekleşen: bedava 1 adet, indirim 25,00 TL, toplam 125,00 TL." in text
+    assert "7 adet sepete ekle" not in text
+
+
 def test_delete_issue(client: TestClient) -> None:
     assert client.delete(f"{R}/issue/TPD-7", auth=READER).status_code == 403
     assert client.delete(f"{R}/issue/TPD-7", auth=WRITER).status_code == 204

@@ -102,15 +102,23 @@ def kampanyali_urun_idleri(s: Session) -> set[int]:
     return set(s.scalars(select(Kampanya.urun_id).where(Kampanya.aktif.is_(True))))
 
 
-def mevcut_bayi(s: SessionDep, bayi_oturum: Annotated[str | None, Cookie()] = None) -> Bayi:
+def _oturumdaki_bayi(s: Session, bayi_oturum: str | None) -> tuple[Bayi | None, str]:
+    """Çerezdeki oturumun bayisini döndürür; yoksa (None, 401 gerekçesi)."""
     if not bayi_oturum:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Oturum açmanız gerekiyor")
+        return None, "Oturum açmanız gerekiyor"
     oturum = s.get(Oturum, token_hash(bayi_oturum))
     if oturum is None or _utc(oturum.son_kullanma) < datetime.now(UTC):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Oturumunuzun süresi doldu")
+        return None, "Oturumunuzun süresi doldu"
     bayi = s.get(Bayi, oturum.bayi_id)
     if bayi is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Oturum açmanız gerekiyor")
+        return None, "Oturum açmanız gerekiyor"
+    return bayi, ""
+
+
+def mevcut_bayi(s: SessionDep, bayi_oturum: Annotated[str | None, Cookie()] = None) -> Bayi:
+    bayi, gerekce = _oturumdaki_bayi(s, bayi_oturum)
+    if bayi is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, gerekce)
     return bayi
 
 
@@ -304,6 +312,19 @@ def logout(s: SessionDep, bayi_oturum: Annotated[str | None, Cookie()] = None) -
 @app.get("/auth/me")
 def me(bayi: BayiDep) -> dict:
     return {"kullanici_adi": bayi.kullanici_adi, "ad": bayi.ad}
+
+
+@app.get("/auth/session")
+def session_probe(s: SessionDep, bayi_oturum: Annotated[str | None, Cookie()] = None) -> dict:
+    """Sayfa açılışındaki oturum yoklaması: oturum yoksa da 200 döner.
+
+    Oturumsuz durum bir hata değil, beklenen başlangıç hâlidir; 401 dönseydi tarayıcı her sayfa
+    yüklemesinde konsola "Failed to load resource" yazardı (ajan çıktısında "Console: 1 errors").
+    """
+    bayi, _ = _oturumdaki_bayi(s, bayi_oturum)
+    if bayi is None:
+        return {"oturum": None}
+    return {"oturum": {"kullanici_adi": bayi.kullanici_adi, "ad": bayi.ad}}
 
 
 @app.get("/products")

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# make security-check — research R10'daki 4 güvenlik kontrolü (FR-015, SC-004) + Faz 1'in 4 kontrolü.
-# Her kontrol PASS/FAIL yazar; özet "N/8"; herhangi bir FAIL → ≠0.
+# make security-check — research R10'daki 4 güvenlik kontrolü (FR-015, SC-004) + Faz 1'in 4 kontrolü + Faz 3 kapı yalıtımı ve CI imajında ajan yok.
+# Her kontrol PASS/FAIL yazar; özet "N/10"; herhangi bir FAIL → ≠0.
 #   1. Host'a açılan tüm portlar yalnızca 127.0.0.1'e bağlı
 #   2. test-runner'dan postgres, core-api, playwright-mcp ve internete erişim yok
 #      (demo-app-web ve demo-app-api'ye var)
@@ -13,6 +13,11 @@
 #      üzerinden erişir
 #   8. Yazma yetkili dış sistem kimlikleri (Jira/Xray/GitHub) yalnızca core-worker'da;
 #      DEMOAPP_TEST_TOKEN yalnızca demo-app-api ve test-runner'da
+#   9. Merge kapısı (checks/<sha>.json) ayrı tp_checks volume'ünde: yalnızca toolchain-worker yazar,
+#      test-runner bağlamaz ve yazdığı kanarya kapıda görünmez; toolchain-worker belirteç ister,
+#      test-runner'da belirteç yok (toolchain/security/checks-isolation.sh)
+#  10. CI/test imajlarında ajan yok (Constitution II): test-runner ve toolchain-worker'da
+#      @playwright/mcp, mcp, anthropic, claude_agent_sdk çözülemez (toolchain/security/no-mcp-in-image.sh)
 set -euo pipefail
 # shellcheck source=scripts/lib.sh
 . "$(dirname "$0")/lib.sh"
@@ -27,6 +32,33 @@ info() { printf '      %s\n' "$*"; }
 docker info >/dev/null 2>&1 || die "Docker çalışmıyor"
 [ -f .env ] || die ".env bulunamadı — 'make env' çalıştırın"
 rows="$(ps_rows || true)"
+
+# --- 9. Merge kapısı yalıtımı ---------------------------------------------------
+check_gate_isolation() {
+  local out
+  if out="$("$TP_REPO_ROOT/toolchain/security/checks-isolation.sh" 2>&1)"; then
+    pass "9/kapı: checks/<sha>.json yalnızca toolchain-worker'da (tp_checks); test-runner ulaşamıyor"
+  else
+    fail "9/kapı: merge kapısı yalıtımı bozuk"
+    printf '%s\n' "$out" | while IFS= read -r l; do info "$l"; done
+  fi
+}
+
+# --- 10. CI imajında ajan yok --------------------------------------------------
+check_no_agent_in_ci() {
+  local out svc ok=1
+  for svc in test-runner toolchain-worker; do
+    if ! out="$("$TP_REPO_ROOT/toolchain/security/no-mcp-in-image.sh" compose "$svc" 2>&1)"; then
+      ok=0
+      printf '%s\n' "$out" | while IFS= read -r l; do info "${svc}: $l"; done
+    fi
+  done
+  if [ "$ok" -eq 1 ]; then
+    pass "10/CI'da AI yok: test-runner ve toolchain-worker imajında MCP/model istemcisi yok"
+  else
+    fail "10/CI'da AI yok: CI imajında ajan bağımlılığı bulundu"
+  fi
+}
 
 # --- 1. Port bağlama adresleri -------------------------------------------------
 # (a) statik: compose yapılandırmasındaki her port host_ip=127.0.0.1 olmalı
@@ -331,5 +363,7 @@ check_demoapp_ro
 check_model_key
 check_mcp_isolation
 check_write_creds
-echo "Özet: $passed/8"
-[ "$passed" -eq 8 ]
+check_gate_isolation
+check_no_agent_in_ci
+echo "Özet: $passed/10"
+[ "$passed" -eq 10 ]

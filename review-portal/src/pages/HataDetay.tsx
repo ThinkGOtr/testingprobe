@@ -40,7 +40,7 @@ function OnarimKarti({ o, hataId, yenile }: { o: LocatorOnarimi; hataId: string;
             onClick={async () => {
               const s = await islem.calistir(() => api.prBirlestir(o.pr!), { cakismada: yenile });
               if (s) {
-                bildir(`PR #${s.number} birleştirildi.`);
+                bildir(s.mesaj);
                 yenile();
               }
             }}

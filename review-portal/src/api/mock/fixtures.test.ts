@@ -10,7 +10,21 @@ import { api } from "../client";
 import { baglantiTuru, uygulamaRotasiMi } from "../../lib/rotalar";
 import type { Kanit } from "../types";
 import { mockVerisi } from "./handlers";
-import { goldenKoku, ilkVeri, KAMPANYA_KOD, KAMPANYA_TEST_KODU, KAYNAK, MIN_SIPARIS_VERI, refsiz, SEPET_TEST_KODU, TPD1_GOLDEN_CASELER } from "./fixtures";
+import {
+  goldenCaseler,
+  goldenKoku,
+  ilkVeri,
+  KAMPANYA_KOD,
+  KAMPANYA_TEST_KODU,
+  KAYNAK,
+  MIN_SIPARIS_TEST_KODU,
+  MIN_SIPARIS_VERI,
+  refsiz,
+  SEPET_TEST_KODU,
+  SINIR_TEST_KODU,
+  TPD1_GOLDEN_CASELER,
+  turGoldenAdi,
+} from "./fixtures";
 import { oturumAc } from "../../test/yardimci";
 
 const KOK = resolve(__dirname, "../../../..");
@@ -79,12 +93,39 @@ describe("örnek veri jira-sim seed'i ve golden çıktılarla çelişmez", () =>
     );
   });
 
-  it("TPD-1 AC2/AC3 düzeltmesi golden önerisinin kendisi", () => {
+  it("ana yol (f2-kod-hatasi): AC2 özgün kalır, yalnızca AC3 golden önerisiyle düzeltilir", () => {
     const tpd1 = jira.find((g) => g.jira_key === "TPD-1")!;
     const f = KAYNAK.consistency_check["TPD-1"].findings;
-    expect(tpd1.kabul_kriterleri[1].metin).toBe(refsiz(f.find((x) => x.id === "F2")!.suggested_doc_text!));
-    expect(tpd1.kabul_kriterleri[1].metin).toContain("(6 adette 1, 12 adette 2 bedava)");
+    expect(tpd1.kabul_kriterleri[1].metin).toBe(KAYNAK.jira_seed["TPD-1"].ac[1].metin);
+    expect(tpd1.kabul_kriterleri[1].metin).toContain("her 6 adet alımda 1 adet bedava verilir (7 adette 1 bedava)");
     expect(tpd1.kabul_kriterleri[2].metin).toBe(refsiz(f.find((x) => x.id === "F3")!.suggested_doc_text!));
+    // F1 (AC3↔AC6) aynı AC3 metnini önerir: iki fix_doc aynı sonuca varır.
+    expect(refsiz(f.find((x) => x.id === "F1")!.suggested_doc_text!)).toBe(tpd1.kabul_kriterleri[2].metin);
+  });
+
+  it("ana yol kararları: F2 kampanya ve F4 kredi limiti code_defect (bug taslaklı), F1/F3 fix_doc; PO cevabı story'yi esas alır", () => {
+    const tur1 = v.bulgular.filter((b) => b.requirement_id === "req-tpd-1" && b.kontrol_turu === 1);
+    const kararlar = Object.fromEntries(tur1.map((b) => [`${b.type}:${b.doc_ref}`, b.karar]));
+    expect(kararlar).toEqual({
+      "internal_contradiction:AC3 ↔ AC6": "fix_doc",
+      "doc_vs_code:AC2": "code_defect",
+      "doc_vs_data:AC3": "fix_doc",
+      "missing_in_code:AC4": "code_defect",
+    });
+    for (const b of v.bulgular.filter((x) => x.requirement_id === "req-tpd-1" && x.karar === "code_defect")) {
+      expect(b.bug_draft_id, b.id).not.toBeNull();
+      expect(v.bugTaslaklari.some((t) => t.id === b.bug_draft_id), b.id).toBe(true);
+    }
+    const kampanya = v.bugTaslaklari.find((t) => t.id === v.bulgular.find((b) => b.id === "fnd-1")!.bug_draft_id)!;
+    expect(kampanya).toMatchObject({ kaynak: "consistency", finding_id: "fnd-1", durum: "draft", mode: null });
+    expect(kampanya.icerik.expected).toBe(KAYNAK.jira_seed["TPD-1"].ac[1].metin);
+    const q2 = jira.find((g) => g.jira_key === "TPD-1")!.on_inceleme!.questions.find((q) => q.id === "Q2")!;
+    expect(q2.cevap).toMatch(/story doğru/);
+    expect(q2.cevap).not.toMatch(/AC2 .*düzeltilsin|Kod doğru/);
+    // 2. tur ana senaryonun golden'ı: kampanya farkı kodda kaldı.
+    const tpd1 = jira.find((g) => g.jira_key === "TPD-1")!;
+    expect(turGoldenAdi(tpd1, 2)).toBe("f2-kod-hatasi/TPD-1-r2");
+    expect(tpd1.son_kontrol).toMatchObject({ bulgu: 2, dogrulanan: 2 });
   });
 
   it("ön inceleme soruları ve verdict golden ile aynı küme ve metin (serbest metin: SERBEST)", () => {
@@ -106,7 +147,7 @@ describe("örnek veri jira-sim seed'i ve golden çıktılarla çelişmez", () =>
     for (const g of v.gereksinimler) {
       const kok = goldenKoku(g) ?? `yok:${g.id}`;
       for (let tur = 1; tur <= g.kontrol_turu; tur++) {
-        const ad = tur === 1 ? kok : `${kok}-r${tur}`;
+        const ad = turGoldenAdi(g, tur) ?? (tur === 1 ? kok : `${kok}-r${tur}`);
         const golden = KAYNAK.consistency_check[ad];
         const ornek = v.bulgular.filter((b) => b.requirement_id === g.id && b.kontrol_turu === tur);
         if (!golden) {
@@ -170,22 +211,32 @@ describe("kanıtlar demo-app kaynağına karşılık gelir", () => {
 
 describe("case ve bug taslakları golden kayıtlardan", () => {
   it.skipIf(!goldenVar)("TPD-1 case içerikleri case_generation golden çıktısıyla birebir", () => {
-    const g = json("rules/replay/case_generation/golden/TPD-1.json") as { output: { cases: unknown[] } };
+    // Ana demo yolu: senaryo golden'ı (AC2 özgün; C3 = 6 adet → bedava yok).
+    const g = json("rules/replay/case_generation/golden/f2-kod-hatasi/TPD-1.json") as { output: { cases: unknown[] } };
     expect(TPD1_GOLDEN_CASELER).toEqual(g.output.cases);
+    expect(TPD1_GOLDEN_CASELER[2].title).toBe("6 adet kampanyalı üründe bedava ürün verilmez");
+    const tpd1 = ilkVeri().gereksinimler.find((x) => x.jira_key === "TPD-1")!;
+    // Güncel AC'ler senaryonun girdi beyanına uyar: mock case üretimi de bu golden'ı seçer (REPLAY).
+    expect(goldenCaseler(tpd1)).toEqual(g.output.cases);
   });
 
-  it.skipIf(!goldenVar)("örnek veride TPD-1 case başlıklarının hepsi golden'dan; yalnızca insan düzeltmesi (edit) içerik değiştirir", () => {
+  it.skipIf(!goldenVar)("örnek veride TPD-1 case başlıklarının hepsi golden'dan; ana yolda düzenleme (edit) yok", () => {
     const basliklar = new Set(TPD1_GOLDEN_CASELER.map((c) => c.title));
     const caseler = ilkVeri().caseler.filter((c) => c.requirement_id === "req-tpd-1");
     expect(caseler).toHaveLength(TPD1_GOLDEN_CASELER.length);
-    for (const c of caseler) expect(basliklar.has(c.icerik.title), c.icerik.title).toBe(true);
+    // İnsan düzeltmesi (edit) başlığı da değiştirebilir (C3: Demo-B sınır case'i, story esas alındı).
+    for (const c of caseler) if (c.karar !== "edit") expect(basliklar.has(c.icerik.title), c.icerik.title).toBe(true);
     for (const c of caseler) {
       const g = TPD1_GOLDEN_CASELER[c.sira_no - 1];
-      expect(c.icerik.title).toBe(g.title);
-      if (c.karar === "edit") expect(c.icerik).not.toEqual(g);
-      else expect(c.icerik).toEqual(g);
+      if (c.karar === "edit") {
+        expect(c.icerik).not.toEqual(g);
+        expect(c.icerik.steps.map((x) => x.id)).toEqual(g.steps.map((x) => x.id));
+      } else {
+        expect(c.icerik.title).toBe(g.title);
+        expect(c.icerik).toEqual(g);
+      }
     }
-    expect(caseler.filter((c) => c.karar === "edit").map((c) => c.sira_no)).toEqual([3]);
+    expect(caseler.filter((c) => c.karar === "edit").map((c) => c.sira_no)).toEqual([]);
   });
 
   it.skipIf(!goldenVar)("bug taslakları bug_draft golden özet/adım/beklenen ile aynı", () => {
@@ -291,7 +342,11 @@ describe("iç bağlantılar ölü değil", () => {
       for (const c of s.case_ids) expect(kase.has(c)).toBe(true);
       expect(uygulamaRotasiMi(`/kod/${s.id}`)).toBe(true);
     }
+    for (const s of v.scriptler) {
+      if (s.yerel_kontrol?.run_id) expect(kosu.has(s.yerel_kontrol.run_id), `${s.id} → ${s.yerel_kontrol.run_id}`).toBe(true);
+    }
     for (const k of v.kosular) {
+      if (k.script_id) expect(v.scriptler.some((s) => s.id === k.script_id), k.script_id).toBe(true);
       for (const r of k.sonuclar) {
         if (r.failure_id) expect(hata.has(r.failure_id), r.failure_id).toBe(true);
         if (r.case_id) expect(kase.has(r.case_id), r.case_id).toBe(true);
@@ -346,6 +401,8 @@ describe("üretilen test kodu gerçek page object'lerle derlenir", () => {
     const sanal = new Map<string, string>([
       [resolve(e2e, "tests/tpd-1/__portal_ornek_c2.spec.ts"), KAMPANYA_TEST_KODU],
       [resolve(e2e, "tests/tpd-1/__portal_ornek_c1.spec.ts"), SEPET_TEST_KODU],
+      [resolve(e2e, "tests/tpd-1/__portal_ornek_c3.spec.ts"), SINIR_TEST_KODU],
+      [resolve(e2e, "tests/tpd-1/__portal_ornek_c5.spec.ts"), MIN_SIPARIS_TEST_KODU],
     ]);
     const secenekler: ts.CompilerOptions = {
       target: ts.ScriptTarget.ES2022,
@@ -405,4 +462,27 @@ describe("üretilen test kodu gerçek page object'lerle derlenir", () => {
     const mesajlar = ts.getPreEmitDiagnostics(program).map((d) => ts.flattenDiagnosticMessageText(d.messageText, "\n"));
     expect(mesajlar.some((m) => m.includes("loginAs"))).toBe(true);
   }, 60_000);
+});
+
+describe("Demo-B örnek verisi: assertion değerleri onaylı case metninden (§8.4 adım 3)", () => {
+  const normal = (x: string) => x.toLocaleLowerCase("tr-TR").replace(/\s+/g, " ").trim();
+  it("her script'in her doğrulama argümanı case'in beklenen metinlerinde geçer; kaynak_metin de geçer", () => {
+    const v = ilkVeri();
+    for (const s of v.scriptler) {
+      const c = v.caseler.find((x) => x.id === s.case_ids[0])!;
+      const metin = normal([c.icerik.expected_result, ...c.icerik.steps.map((a) => a.expected)].join(" | "));
+      for (const e of s.eslemeler.filter((x) => x.beklenen)) {
+        for (const a of e.args) {
+          if (typeof a === "string" && /^P-\d+$/.test(a)) continue; // ürün kodu: adım verisi
+          expect(metin, `${s.id} ${e.method}(${JSON.stringify(a)})`).toContain(normal(String(a)));
+        }
+        if (e.kaynak_metin) expect(metin, `${s.id} kaynak_metin`).toContain(normal(e.kaynak_metin));
+      }
+      // Üretilen kodda eşleme dışı bir assertion yok.
+      for (const m of (s.kod ?? "").matchAll(/\.(expect[A-Za-z]+)\(/g)) {
+        if (m[1] === "expectLoggedIn" || m[1] === "expectLineQuantity" || m[1] === "expectFreeQuantity" || m[1] === "expectSubtotal") continue;
+        expect(s.eslemeler.some((e) => e.method === m[1]), `${s.id}: ${m[1]}`).toBe(true);
+      }
+    }
+  });
 });

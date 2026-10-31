@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { describe, it } from "node:test";
@@ -97,8 +97,12 @@ describe("demo-app/e2e/pages", () => {
     assert.equal(catalog.locators["catalog.productCard"]?.prefix, true);
     // CatalogPage nav'ı da içe aktarır (common/locators.ts).
     assert.equal(catalog.locators["nav.cart"]?.testId, "nav-cart");
-    // CartPage nav'ı içe aktarmaz.
-    assert.equal(po(table, "CartPage").locators["nav.cart"], undefined);
+    // Bir sınıf yalnızca kendi dosyasının içe aktardığı locator export'larını görür: nav.* yalnızca
+    // cart.page.ts `nav`'ı içe aktarıyorsa vardır (demo-app'in güncel kaynağından türetilir).
+    const cartSrc = readFileSync(join(DEMO_E2E, "pages/cart/cart.page.ts"), "utf8");
+    const cartImportsNav = /import\s*\{[^}]*\bnav\b[^}]*\}\s*from\s*"\.\.\/common\/locators"/.test(cartSrc);
+    assert.equal(po(table, "CartPage").locators["nav.cart"] !== undefined, cartImportsNav);
+    assert.equal(po(table, "LoginPage").locators["cart.checkoutSubmit"], undefined);
     assert.equal(po(table, "CartPage").locators["cart.checkoutSubmit"]?.name, "Siparişi onayla");
   });
 

@@ -9,6 +9,12 @@ PR açıldığında okunan head sha'ya bağlıdır (`expected_head_sha`).
 
 İkisi de idempotenttir: durum zaten hedefteyse forge'a ve denetime dokunmaz (`changed=False`).
 
+`main` değiştiğinde ikisi de `main`'in yeni head'i için `push` tetikli CI koşusunu kuyruğa alır
+(`features.ci.enqueue_ci(sha, "push", isteyen=demo-admin)` — GitHub'daki `on: push` karşılığı;
+github modunda aynı çağrı Actions push koşusunu bekler). Böylece `make break` sonrası `main` CI'ı
+kendiliğinden kırmızıya döner ve FailureToFix triage'ı başlar (TEKNIK-TASARIM §13 adım 7).
+CI tetiği başarısız olursa forge değişikliği geri alınmaz; hata sonuca ve denetim özetine yazılır.
+
 CLI (core-worker içinde; forge rw + Postgres erişimi gerekir):
 
     python -m tp_core.integrations.forge_demo break       # JSON özet → stdout
@@ -25,7 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Protocol
 
 from pydantic import BaseModel
@@ -53,6 +59,10 @@ BREAK_PR_BODY = (
 BREAK_LABELS = ("demo",)
 AUDIT_BREAK = "demo kırılması"
 AUDIT_BASELINE = "demo sıfırlaması"
+CI_TRIGGER = "push"
+
+# (yeni main sha, aktör) → kuyruğa alınan CI koşusunun kimliği.
+CiTrigger = Callable[[str, str], Any]
 
 
 class DemoForge(ForgePort, Protocol):
@@ -72,6 +82,19 @@ class DemoOutcome(BaseModel):
     pr_number: int | None = None
     merge: MergeResult | None = None
     audit_id: int | None = None
+    ci_run_id: str | None = None  # main değiştiyse kuyruğa alınan push CI koşusu
+    ci_error: str | None = None
+
+
+def _trigger_push_ci(ci: CiTrigger | None, sha: str, actor: str) -> dict[str, Any]:
+    """`main`'in yeni head'i için push CI'ı; hata yutulmaz, sonuca yazılır (forge geri alınmaz)."""
+    if ci is None:
+        return {"tetik": CI_TRIGGER, "run_id": None, "hata": "CI tetikleyici verilmedi"}
+    try:
+        run_id = ci(sha, actor)
+    except Exception as exc:  # merge yapıldı; CI hatası denetime yazılır
+        return {"tetik": CI_TRIGGER, "run_id": None, "hata": f"{type(exc).__name__}: {exc}"[:500]}
+    return {"tetik": CI_TRIGGER, "run_id": None if run_id is None else str(run_id), "hata": None}
 
 
 def _quoted_hits(forge: ForgePort, value: str, ref: str) -> list[tuple[str, int, str]]:
@@ -96,7 +119,13 @@ def testid_state(forge: ForgePort, ref: str = "main") -> str:
     return "belirsiz"
 
 
-def break_locator(forge: DemoForge, audit: AuditLog, *, actor: str = BYPASS_ACTOR) -> DemoOutcome:
+def break_locator(
+    forge: DemoForge,
+    audit: AuditLog,
+    *,
+    actor: str = BYPASS_ACTOR,
+    ci: CiTrigger | None = None,
+) -> DemoOutcome:
     """Kırılma PR'ını açar, `actor` (demo-admin) bypass'ıyla merge eder, denetime yazar."""
     before = forge.head_sha("main")
     state = testid_state(forge, "main")
@@ -115,6 +144,7 @@ def break_locator(forge: DemoForge, audit: AuditLog, *, actor: str = BYPASS_ACTO
     result = forge.merge_pr_detailed(pr.number, actor, expected_head_sha=pr.head_sha)
     after = forge.head_sha("main")
     final = testid_state(forge, "main")
+    ci_info = _trigger_push_ci(ci, after, actor) if after != before else None
     ozet: dict[str, Any] = {
         "pr": pr.number,
         "dal": BREAK_BRANCH,
@@ -126,6 +156,7 @@ def break_locator(forge: DemoForge, audit: AuditLog, *, actor: str = BYPASS_ACTO
         "main_once": before,
         "main_sonra": after,
         "testid": {"once": OLD_TESTID, "sonra": final},
+        "ci": ci_info,
     }
     audit_id = audit.append(actor, AUDIT_BREAK, f"pr:{pr.number}", ozet)
     if final != NEW_TESTID:
@@ -139,10 +170,18 @@ def break_locator(forge: DemoForge, audit: AuditLog, *, actor: str = BYPASS_ACTO
         pr_number=pr.number,
         merge=result,
         audit_id=audit_id,
+        ci_run_id=ci_info["run_id"] if ci_info else None,
+        ci_error=ci_info["hata"] if ci_info else None,
     )
 
 
-def restore_baseline(forge: Any, audit: AuditLog, *, actor: str = BYPASS_ACTOR) -> DemoOutcome:
+def restore_baseline(
+    forge: Any,
+    audit: AuditLog,
+    *,
+    actor: str = BYPASS_ACTOR,
+    ci: CiTrigger | None = None,
+) -> DemoOutcome:
     """`main` → `demo-baseline` (yalnızca LocalForge; GitHub'da sıfırlama elle/revert PR ile)."""
     reset = getattr(forge, "reset_branch", None)
     if reset is None:
@@ -161,11 +200,18 @@ def restore_baseline(forge: Any, audit: AuditLog, *, actor: str = BYPASS_ACTOR) 
         )
     _old, after = reset("main", BASELINE_TAG, actor=actor)
     final = testid_state(forge, "main")
+    ci_info = _trigger_push_ci(ci, after, actor) if after != before else None
     audit_id = audit.append(
         actor,
         AUDIT_BASELINE,
         "forge:main",
-        {"main_once": before, "main_sonra": after, "hedef": BASELINE_TAG, "testid": final},
+        {
+            "main_once": before,
+            "main_sonra": after,
+            "hedef": BASELINE_TAG,
+            "testid": final,
+            "ci": ci_info,
+        },
     )
     return DemoOutcome(
         action="baseline",
@@ -174,6 +220,8 @@ def restore_baseline(forge: Any, audit: AuditLog, *, actor: str = BYPASS_ACTOR) 
         main_after=after,
         testid=final,
         audit_id=audit_id,
+        ci_run_id=ci_info["run_id"] if ci_info else None,
+        ci_error=ci_info["hata"] if ci_info else None,
     )
 
 
@@ -189,11 +237,21 @@ def _pg_audit() -> AuditLog:
     return PgAuditLog(get_engine())
 
 
+def _enqueue_push_ci(sha: str, actor: str) -> str:
+    """`features.ci.enqueue_ci(sha, "push")` kendi işleminde (commit edilir)."""
+    from tp_core.features.ci import enqueue_ci
+    from tp_core.models import session_scope
+
+    with session_scope() as s:
+        return str(enqueue_ci(s, sha, CI_TRIGGER, None, isteyen=actor))
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
     env: Mapping[str, str] | None = None,
     audit: AuditLog | None = None,
+    ci: CiTrigger | None = None,
 ) -> int:
     parser = argparse.ArgumentParser(prog="forge_demo", description="Demo kırılması / sıfırlama")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -236,7 +294,10 @@ def main(
                     print(f"HATA: denetim veritabanına erişilemiyor: {exc}", file=sys.stderr)
                     return 3
             fn = break_locator if args.cmd == "break" else restore_baseline
-            out = fn(forge, sink).model_dump(mode="json")  # type: ignore[arg-type]
+            res = fn(forge, sink, ci=ci or _enqueue_push_ci)  # type: ignore[arg-type]
+            if res.ci_error:
+                print(f"UYARI: main CI'ı kuyruğa alınamadı: {res.ci_error}", file=sys.stderr)
+            out = res.model_dump(mode="json")
     except ForgeError as exc:
         print(f"HATA: {exc}", file=sys.stderr)
         return 2

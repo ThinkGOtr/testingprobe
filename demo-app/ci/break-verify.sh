@@ -6,7 +6,9 @@
 #                              (fixture/kurulum hatası kırmızı sayılmaz); kampanyasız testler geçmeli
 #   3) normal koşu           → yine geçmeli (kırılma geri alındı, kalıcı iz yok)
 # Kırılma bayi kapsamlıdır (POST /test/break) ve yalnızca test süresince açıktır; paylaşılan
-# uygulama örneği bozulmaz. Kırmızı adım tek işçiyle koşar: yalnızca bayi1 etkilenir.
+# uygulama örneği bozulmaz. Kırmızı adım tek işçiyle koşar: yalnızca bayi1 (ve test.use ile
+# başka bir e2e bayisine sabitlenmiş testlerin bayisi, yalnızca o test süresince) etkilenir;
+# doğrulama ajanının bayisi (bayi3) hiçbir zaman.
 # Ortam: BASE_URL + DEMO_API_URL + DEMOAPP_TEST_TOKEN (çalışan ortam) ya da hiçbiri (webServer).
 set -euo pipefail
 
@@ -28,7 +30,7 @@ step "1/3 normal (yeşil beklenir)"
 run "" || { echo "HATA: kırılma olmadan kampanya testleri kırmızı" >&2; exit 1; }
 
 step "2/3 BREAK_CAMPAIGN=1 (kırmızı beklenir)"
-# Tek işçi → yalnızca bayi1 kırılır; bayi2 (ör. eşzamanlı MCP doğrulaması) hiç etkilenmez.
+# Tek işçi → yalnızca bayi1 kırılır (sabitlenmiş testler hariç); bayi3 (MCP doğrulaması) hiç etkilenmez.
 if run 1 --workers=1; then
   echo "HATA: kampanya kuralı bozukken testler yeşil — testler kuralı yakalamıyor" >&2
   exit 1

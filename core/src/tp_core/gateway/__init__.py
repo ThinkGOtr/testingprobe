@@ -15,6 +15,9 @@ Kullanım (core-worker):
 - `requirement_block(...)`: story/serbest metin → kanonik `<untrusted>` blok (golden eşleşmesi ve
   replay anahtarı kararlılığı için önerilen tek biçim); `FREE_TEXT_KEY` serbest metin golden kökü.
 - `wrap_tool_result(tool, text)`: ajan araç sonucu → türüne uygun `<untrusted>` blok.
+- Kod üretimi (verify_and_map): `approved_case_text` (golden `input_match.case_text` beyanı),
+  doğrulama bayisi `VERIFY_AGENT_DEALER`; araç kaydı sırları `mask_tool_args` / `scrub_secrets`;
+  rules/replay/README.md.
 - `result_digest(rows)` / `digest_matches(claimed, rows)`: veri kanıtı özeti (§8.2b adım 4);
   `db_query` aracı, golden'lar ve doğrulayıcı aynı fonksiyonu kullanır.
 - `normalize_text` / `input_hash`: replay anahtarının girdi normu (zaman damgası, UUID, sha …).
@@ -36,7 +39,9 @@ from tp_core.gateway.config import (
 from tp_core.gateway.core import (
     ALLOWED_AGENT_TOOLS,
     FINAL_TOOL,
+    FORBIDDEN_TOOL_ARGS,
     FORBIDDEN_TOOLS,
+    RESTRICTED_TOOL_ARGS,
     UNGRANTED_MCP_TOOLS,
     CallLookup,
     Gateway,
@@ -44,6 +49,8 @@ from tp_core.gateway.core import (
     RetryPolicy,
     default_is_snapshot,
     deterministic_call_id,
+    narrow_tool,
+    restricted_args,
 )
 from tp_core.gateway.errors import (
     AgentTurnLimit,
@@ -63,11 +70,21 @@ from tp_core.gateway.evidence import digest_matches, result_digest
 from tp_core.gateway.factory import build_gateway
 from tp_core.gateway.inputs import (
     FREE_TEXT_KEY,
+    VERIFY_AGENT_DEALER,
+    VERIFY_AGENT_DEALER_NAME,
+    VERIFY_BASE_URL,
+    approved_case_text,
     numbered_acceptance_criteria,
     requirement_block,
     wrap_tool_result,
 )
-from tp_core.gateway.masking import MaskingSession, PiiMasker
+from tp_core.gateway.masking import (
+    MaskingSession,
+    PiiMasker,
+    mask_tool_args,
+    scrub_secrets,
+    secret_tool_values,
+)
 from tp_core.gateway.matching import MATCHED, input_mismatches
 from tp_core.gateway.replay import (
     HAND_PREPARED_MODEL,
@@ -83,11 +100,16 @@ __all__ = [
     "ALLOWED_AGENT_TOOLS",
     "FINAL_TOOL",
     "FORBIDDEN_TOOLS",
+    "FORBIDDEN_TOOL_ARGS",
     "FREE_TEXT_KEY",
     "HAND_PREPARED_MODEL",
     "MATCHED",
     "MISS_NEUTRAL",
+    "RESTRICTED_TOOL_ARGS",
     "UNGRANTED_MCP_TOOLS",
+    "VERIFY_AGENT_DEALER",
+    "VERIFY_AGENT_DEALER_NAME",
+    "VERIFY_BASE_URL",
     "AgentTurnLimit",
     "Budget",
     "BudgetExceeded",
@@ -113,6 +135,7 @@ __all__ = [
     "RetryPolicy",
     "SchemaValidationFailed",
     "SpendLedger",
+    "approved_case_text",
     "build_gateway",
     "default_is_snapshot",
     "deterministic_call_id",
@@ -124,13 +147,18 @@ __all__ = [
     "load_bundle",
     "load_model_table",
     "load_schema",
+    "mask_tool_args",
     "mode_label",
+    "narrow_tool",
     "normalize_text",
     "numbered_acceptance_criteria",
     "output_origin",
     "requirement_block",
     "resolve_mode",
+    "restricted_args",
     "result_digest",
+    "scrub_secrets",
+    "secret_tool_values",
     "wrap_tool_result",
     "wrap_untrusted",
 ]

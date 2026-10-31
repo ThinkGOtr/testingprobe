@@ -1,127 +1,205 @@
+import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
-import { useBildirim } from "../components/Bildirim";
+import type { KontrolKulesi as Kule, KpiAnahtari } from "../api/types";
 import { HedefOlcer, OranSutunlari } from "../components/Grafikler";
-import { BosDurum, Cip, HataKutusu, Ilerleme, IslemDugmesi, Kart, Metrik, SayfaBasligi, Yukleniyor } from "../components/ui";
-import { useRol } from "../auth";
-import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
+import { BosDurum, Cip, HataKutusu, Ilerleme, Kart, Metrik, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { useGeciktirilmis, useVeri } from "../hooks";
 import { dolar, sure, tarih, yuzde } from "../lib/format";
 import { KosuTablosu } from "./Kosular";
 
+/** Ölçülmemiş değer: sayı uydurulmaz, açıkça "ölçülmedi" yazılır. */
+export function Olculmedi({ metin = "ölçülmedi" }: { metin?: string }) {
+  return <span className="olculmedi">{metin}</span>;
+}
+
+/** KPI'nın kaynağı (core `kaynaklar`): fareyle ya da klavye odağıyla ipucu, ekran okuyucuda etiket. */
+export function KaynakIpucu({ kaynak }: { kaynak: string | undefined }) {
+  const metin = kaynak ? `Kaynak: ${kaynak}` : "Kaynak: core bu ölçünün kaynağını bildirmedi";
+  return (
+    <span className="kaynak-ipucu" tabIndex={0} role="img" aria-label={metin} title={metin} data-testid="kaynak-ipucu">
+      i
+    </span>
+  );
+}
+
+function KpiBaslik({ ad, k, anahtar }: { ad: string; k: Kule; anahtar: KpiAnahtari }): ReactNode {
+  return (
+    <span className="kpi-baslik">
+      {ad} <KaynakIpucu kaynak={k.kaynaklar[anahtar]} />
+    </span>
+  );
+}
+
 export function KontrolKulesi() {
   const v = useVeri(() => api.kontrolKulesi(), []);
-  const sunucu = useRol("presenter");
-  const islem = useIslem();
-  const bildir = useBildirim();
   const sessiz = useGeciktirilmis(() => void v.yenile(true), 500);
-  useOlay(sessiz, ["ci.status", "failure.classified", "case.generated", "bug.published"]);
-
-  const demo = async (fn: () => Promise<{ mesaj?: string }>) => {
-    const s = await islem.calistir(fn);
-    if (s) {
-      bildir(s.mesaj ?? "Tamam.");
-      void v.yenile(true);
-    }
-  };
+  useOlay(sessiz, ["ci.status", "failure.classified", "case.generated", "bug.published", "script.updated"]);
 
   if (v.yukleniyor && !v.veri) return <Yukleniyor />;
   if (v.hata && !v.veri) return <HataKutusu hata={v.hata} yenile={() => void v.yenile()} />;
   const k = v.veri;
   if (!k) return null;
   const ai = k.ai_katkisi;
-  const toplamSure = ai.ort_ai_sure_ms + ai.ort_review_sure_ms;
+  const toplamSure = ai.ort_ai_sure_ms !== null && ai.ort_review_sure_ms !== null ? ai.ort_ai_sure_ms + ai.ort_review_sure_ms : null;
+  const kazanc = ai.manuel_baz_ms && toplamSure !== null ? 1 - toplamSure / ai.manuel_baz_ms : null;
+  const defectAdayi = k.karne.reduce((a, s) => a + s.acik_defect_adayi, 0);
 
   return (
     <>
       <SayfaBasligi
         baslik="Kontrol Kulesi"
-        aciklama="Kalite, flaky testler, karne ve AI katkısı tek ekranda. Kaynak: koşuların JUnit XML sonuçları."
-        eylemler={
-          sunucu && (
-            <>
-              <IslemDugmesi roller={["presenter"]} tur="ikincil" calisiyor={islem.calisiyor} onClick={() => demo(() => api.demoKir())}>
-                Locator'ı kır
-              </IslemDugmesi>
-              <IslemDugmesi roller={["presenter"]} tur="hayalet" calisiyor={islem.calisiyor} onClick={() => demo(() => api.demoSifirla())}>
-                Demoyu sıfırla
-              </IslemDugmesi>
-            </>
-          )
-        }
+        aciklama="Kalite, flaky testler, karne ve AI katkısı tek ekranda. Her ölçünün kaynağı yanındaki (i) ipucunda; ölçülmemiş değer “ölçülmedi” yazılır."
       />
-      {islem.hata && <HataKutusu hata={islem.hata} />}
+      {/*
+        "Locator'ı kır" / "Demoyu sıfırla" (POST /demo/break-locator, /demo/reset) core'da henüz yok
+        (Faz 4/5). Sahnede 404 göstermemek için düğmeler bu sayfada çizilmez; sıfırlama `make reset`.
+      */}
+      {k.uyarilar.length > 0 && (
+        <Uyari ton="bilgi">
+          <ul className="duz-liste kucuk">
+            {k.uyarilar.map((u) => (
+              <li key={u}>{u}</li>
+            ))}
+          </ul>
+        </Uyari>
+      )}
 
       <div className="kule-izgara">
-        <Kart baslik="Geçme oranı" className="kule-oran">
-          <div className="buyuk-sayi">{yuzde(k.gecme_orani.oran)}</div>
+        <Kart baslik="Geçme oranı" eylemler={<KaynakIpucu kaynak={k.kaynaklar.gecme_orani} />} className="kule-oran">
+          <div className="buyuk-sayi" data-testid="gecme-orani">
+            {k.gecme_orani.oran === null ? <Olculmedi metin="veri yok" /> : yuzde(k.gecme_orani.oran)}
+          </div>
           <p className="soluk">
-            Son {k.gecme_orani.donem_gun} gün · {k.gecme_orani.gecen}/{k.gecme_orani.toplam} test sonucu (kasıtlı kırma koşuları hariç)
+            {k.gecme_orani.toplam === 0
+              ? `Henüz sayılan ${k.gecme_orani.birim === "kosu" ? "CI koşusu" : "test sonucu"} yok (kasıtlı kırma koşuları sayılmaz).`
+              : k.gecme_orani.birim === "kosu"
+                ? `Son ${k.gecme_orani.son_n ?? k.gecme_orani.toplam} CI koşusundan ${k.gecme_orani.gecen}/${k.gecme_orani.toplam} geçti (kasıtlı kırma koşuları hariç)`
+                : `${k.gecme_orani.donem_gun ? `Son ${k.gecme_orani.donem_gun} gün · ` : ""}${k.gecme_orani.gecen}/${k.gecme_orani.toplam} test sonucu (kasıtlı kırma koşuları hariç)`}
           </p>
-          <OranSutunlari
-            baslik="Günlük geçme oranı"
-            hedef={0.95}
-            noktalar={k.gunluk_gecme.map((g) => ({
-              etiket: new Date(g.tarih).toLocaleDateString("tr-TR", { day: "2-digit", month: "2-digit" }),
-              oran: g.oran,
-              ek: `${g.kosu} koşu`,
-            }))}
-          />
-          <p className="kucuk soluk">Kesikli çizgi: %95 hedef.</p>
+          {defectAdayi > 0 && (
+            <p className="kucuk" data-testid="defect-adayi-ozet">
+              <Cip ton="uyari">⚠ {defectAdayi} açık defect adayı</Cip>{" "}
+              <span className="soluk">
+                Assertion kırmızı; PR açılmadı, main koşularına ve bu orana girmez.{" "}
+                <Link to="/kod">Kod üretiminde incele</Link>
+              </span>
+            </p>
+          )}
+          {k.gecme_orani.test && k.gecme_orani.test.toplam > 0 && (
+            <p className="kucuk">
+              Test bazında: {k.gecme_orani.test.oran === null ? "—" : yuzde(k.gecme_orani.test.oran)} ({k.gecme_orani.test.gecen}/{k.gecme_orani.test.toplam})
+            </p>
+          )}
+          {k.gunluk_gecme.length > 0 && (
+            <OranSutunlari
+              baslik="Günlük geçme oranı"
+              hedef={k.gecme_hedefi ?? undefined}
+              noktalar={k.gunluk_gecme.map((g) => ({
+                etiket: new Date(g.tarih).toLocaleDateString("tr-TR", { day: "2-digit", month: "2-digit" }),
+                oran: g.oran,
+                ek: `${g.kosu} koşu`,
+              }))}
+            />
+          )}
+          {k.gecme_hedefi !== null && <p className="kucuk soluk">Kesikli çizgi: {yuzde(k.gecme_hedefi)} hedef.</p>}
         </Kart>
 
         <Kart baslik="AI katkısı" className="kule-ai">
-          <HedefOlcer etiket="Case kabul oranı" deger={ai.kabul_orani} hedef={ai.kabul_hedefi} />
-          <HedefOlcer etiket="Script ilk review başarısı (pass@1)" deger={ai.script_ilk_review} hedef={ai.script_hedefi} />
-          <div className="metrik-izgara">
-            <Metrik etiket="Case başına AI + review" deger={sure(toplamSure)} alt={`AI ${sure(ai.ort_ai_sure_ms)} · review ${sure(ai.ort_review_sure_ms)}`} />
-            <Metrik
-              etiket="Manuel baz değer"
-              deger={ai.manuel_baz_ms ? sure(ai.manuel_baz_ms) : "ölçülmedi"}
-              alt={ai.manuel_baz_ms && toplamSure ? `Kazanç ${yuzde(1 - toplamSure / ai.manuel_baz_ms)}` : undefined}
-            />
-            <Metrik etiket="Maliyet (toplam)" deger={dolar(ai.maliyet_usd_toplam)} alt={`${ai.cagri_sayisi} model çağrısı`} />
-            <Metrik etiket="Bugün" deger={dolar(ai.maliyet_usd_bugun)} alt={`Günlük tavan ${dolar(ai.gunluk_butce_usd)}`} />
-          </div>
-          <Ilerleme oran={ai.maliyet_usd_bugun / ai.gunluk_butce_usd} etiket="Günlük bütçe kullanımı" />
-          {ai.replay_cagri > 0 && (
+          <HedefOlcer
+            etiket="Case kabul oranı"
+            deger={ai.kabul_orani}
+            hedef={ai.kabul_hedefi}
+            bosMetin="henüz karar yok"
+            ek={<KaynakIpucu kaynak={k.kaynaklar.kabul_orani} />}
+          />
+          <HedefOlcer
+            etiket="Script ilk review başarısı"
+            deger={ai.script_ilk_review}
+            hedef={ai.script_hedefi}
+            bosMetin="henüz merge/review yok"
+            ek={<KaynakIpucu kaynak={k.kaynaklar.script_ilk_review} />}
+          />
+          {(ai.pass_at_1 !== null || ai.duzeltme_sonrasi !== null) && (
             <p className="kucuk">
-              <span className="rozet rozet-replay">REPLAY</span> {ai.replay_cagri} çağrı kayıtlı çıktıdan karşılandı.
+              pass@1 {ai.pass_at_1 === null ? "—" : yuzde(ai.pass_at_1)} · düzeltme sonrası {ai.duzeltme_sonrasi === null ? "—" : yuzde(ai.duzeltme_sonrasi)}
+            </p>
+          )}
+          <div className="metrik-izgara">
+            <Metrik
+              etiket={<KpiBaslik ad="Case başına AI + review" k={k} anahtar="hazirlik_suresi" />}
+              deger={toplamSure === null ? <Olculmedi /> : sure(toplamSure)}
+              alt={toplamSure === null ? undefined : `AI ${sure(ai.ort_ai_sure_ms)} · review ${sure(ai.ort_review_sure_ms)}`}
+            />
+            <Metrik
+              etiket={<KpiBaslik ad="Manuel baz değer" k={k} anahtar="manuel_baz" />}
+              deger={ai.manuel_baz_ms ? sure(ai.manuel_baz_ms) : <Olculmedi metin="baz değer ölçülmedi" />}
+              alt={kazanc !== null ? `Kazanç ${yuzde(kazanc)}` : "Kazanç hesaplanmaz"}
+            />
+            <Metrik
+              etiket={<KpiBaslik ad="Maliyet (toplam)" k={k} anahtar="maliyet" />}
+              deger={ai.maliyet_usd_toplam === null ? <Olculmedi /> : dolar(ai.maliyet_usd_toplam)}
+              alt={ai.cagri_sayisi === null ? undefined : `${ai.cagri_sayisi} model çağrısı`}
+            />
+            <Metrik
+              etiket="Bugün"
+              deger={ai.maliyet_usd_bugun === null ? <Olculmedi /> : dolar(ai.maliyet_usd_bugun)}
+              alt={ai.gunluk_butce_usd === null ? undefined : `Günlük tavan ${dolar(ai.gunluk_butce_usd)}`}
+            />
+          </div>
+          {ai.maliyet_usd_bugun !== null && ai.gunluk_butce_usd ? (
+            <Ilerleme oran={ai.maliyet_usd_bugun / ai.gunluk_butce_usd} etiket="Günlük bütçe kullanımı" />
+          ) : null}
+          {ai.replay_cagri !== null && ai.replay_cagri > 0 && (
+            <p className="kucuk">
+              <span className="rozet rozet-replay">REPLAY</span> {ai.replay_cagri} çağrı kayıtlı çıktıdan karşılandı (süre ve maliyet ölçülmez).
             </p>
           )}
         </Kart>
 
-        <Kart baslik="Erişilebilirlik" className="kule-a11y">
-          <div className="metrik-izgara">
-            <Metrik etiket="İhlal" deger={k.a11y.ihlal} />
-            <Metrik etiket="Kritik" deger={k.a11y.kritik > 0 ? <span className="hata-metin">{k.a11y.kritik}</span> : 0} />
-          </div>
-          <table className="tablo tablo-sik">
-            <caption className="gorunmez">Sayfa bazında erişilebilirlik ihlalleri</caption>
-            <thead>
-              <tr>
-                <th scope="col">Sayfa</th>
-                <th scope="col" className="sayi">
-                  İhlal
-                </th>
-                <th scope="col" className="sayi">
-                  Kritik
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {k.a11y.sayfalar.map((s) => (
-                <tr key={s.yol}>
-                  <td className="mono">{s.yol}</td>
-                  <td className="sayi">{s.ihlal}</td>
-                  <td className="sayi">{s.kritik}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="kucuk soluk">axe-core · WCAG 2.2 AA · son tarama {tarih(k.a11y.son_tarama)}</p>
+        <Kart baslik="Erişilebilirlik" eylemler={<KaynakIpucu kaynak={k.kaynaklar.a11y} />} className="kule-a11y">
+          {k.a11y === null ? (
+            <BosDurum baslik="Erişilebilirlik taraması yapılmadı.">
+              <span className="soluk kucuk">İhlal sayısı ölçülmedi; sayı gösterilmez.</span>
+            </BosDurum>
+          ) : (
+            <>
+              <div className="metrik-izgara">
+                <Metrik etiket="İhlal" deger={<span data-testid="a11y-ihlal">{k.a11y.ihlal}</span>} />
+                <Metrik etiket="Kritik" deger={k.a11y.kritik > 0 ? <span className="hata-metin">{k.a11y.kritik}</span> : 0} />
+              </div>
+              {k.a11y.sayfalar.length > 0 && (
+                <table className="tablo tablo-sik">
+                  <caption className="gorunmez">Sayfa bazında erişilebilirlik ihlalleri</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Sayfa</th>
+                      <th scope="col" className="sayi">
+                        İhlal
+                      </th>
+                      <th scope="col" className="sayi">
+                        Kritik
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {k.a11y.sayfalar.map((s) => (
+                      <tr key={s.yol}>
+                        <td className="mono">{s.yol}</td>
+                        <td className="sayi">{s.ihlal}</td>
+                        <td className="sayi">{s.kritik}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              <p className="kucuk soluk">axe-core · WCAG 2.2 AA · son tarama {k.a11y.son_tarama ? tarih(k.a11y.son_tarama) : "—"}</p>
+            </>
+          )}
         </Kart>
 
-        <Kart baslik="Flaky testler" className="kule-flaky">
+        <Kart baslik="Flaky testler" eylemler={<KaynakIpucu kaynak={k.kaynaklar.flaky} />} className="kule-flaky">
           {k.flaky.length === 0 ? (
             <BosDurum baslik="Flaky test yok." />
           ) : (
@@ -130,7 +208,8 @@ export function KontrolKulesi() {
                 <li key={f.test_adi}>
                   <div>{f.test_adi}</div>
                   <div className="kucuk soluk">
-                    {f.neden === "retry" ? "Yeniden denemeyle geçti" : "Aynı commit'te sonuç değişti"} · {f.sayi} kez · son {tarih(f.son_gorulme)}
+                    {f.neden === "retry" ? "Yeniden denemeyle geçti" : "Aynı commit'te sonuç değişti"} · {f.sayi} kez
+                    {f.son_gorulme && ` · son ${tarih(f.son_gorulme)}`}
                   </div>
                 </li>
               ))}
@@ -139,54 +218,70 @@ export function KontrolKulesi() {
         </Kart>
       </div>
 
-      <Kart baslik="Karne (story ve uygulama alanı)">
-        <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Karne tablosu">
-          <table className="tablo">
-            <thead>
-              <tr>
-                <th scope="col">Story</th>
-                <th scope="col">Alan</th>
-                <th scope="col" className="sayi">
-                  Case
-                </th>
-                <th scope="col">Otomasyon kapsamı</th>
-                <th scope="col">Son sonuç</th>
-                <th scope="col" className="sayi">
-                  Açık bug
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {k.karne.map((s) => (
-                <tr key={s.story_key}>
-                  <td>
-                    <span className="mono">{s.story_key}</span> {s.baslik}
-                  </td>
-                  <td>{s.alan}</td>
-                  <td className="sayi">{s.case_sayisi}</td>
-                  <td>
-                    <div className="kapsam">
-                      <Ilerleme oran={s.otomasyon_kapsami} etiket={`${s.story_key} otomasyon kapsamı`} />
-                      <span className="mono kucuk">{yuzde(s.otomasyon_kapsami)}</span>
-                    </div>
-                  </td>
-                  <td>
-                    {s.son_sonuc === "none" ? (
-                      "—"
-                    ) : (
-                      <Cip ton={s.son_sonuc === "passed" ? "basari" : "hata"}>{s.son_sonuc === "passed" ? "Geçti" : "Başarısız"}</Cip>
-                    )}
-                  </td>
-                  <td className="sayi">{s.acik_bug || "—"}</td>
+      <Kart baslik="Karne (story ve uygulama alanı)" eylemler={<KaynakIpucu kaynak={k.kaynaklar.karne} />}>
+        {k.karne.length === 0 ? (
+          <BosDurum baslik="Karne için story yok." />
+        ) : (
+          <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Karne tablosu">
+            <table className="tablo">
+              <thead>
+                <tr>
+                  <th scope="col">Story</th>
+                  <th scope="col">Alan</th>
+                  <th scope="col" className="sayi">
+                    Case
+                  </th>
+                  <th scope="col">Otomasyon kapsamı</th>
+                  <th scope="col">Son sonuç (main)</th>
+                  <th scope="col" className="sayi">
+                    Açık bug
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {k.karne.map((s) => (
+                  <tr key={s.story_key}>
+                    <td>
+                      <span className="mono">{s.story_key}</span> {s.baslik}
+                    </td>
+                    <td>{s.alan ?? "—"}</td>
+                    <td className="sayi">{s.case_sayisi}</td>
+                    <td>
+                      {s.otomasyon_kapsami === null ? (
+                        <Olculmedi metin="case yok" />
+                      ) : (
+                        <div className="kapsam">
+                          <Ilerleme oran={s.otomasyon_kapsami} etiket={`${s.story_key} otomasyon kapsamı`} />
+                          <span className="mono kucuk">{yuzde(s.otomasyon_kapsami)}</span>
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      {s.son_sonuc === "none" ? (
+                        "—"
+                      ) : (
+                        <Cip ton={s.son_sonuc === "passed" ? "basari" : "hata"}>{s.son_sonuc === "passed" ? "Geçti" : "Başarısız"}</Cip>
+                      )}
+                      {s.acik_defect_adayi > 0 && (
+                        <>
+                          {" "}
+                          <Cip ton="uyari" title="Yerel kontrolde assertion kırmızı: uygulama onaylı case'in beklenen değerini vermiyor. PR açılmadı; main sonucuna girmez.">
+                            {s.acik_defect_adayi} defect adayı
+                          </Cip>
+                        </>
+                      )}
+                    </td>
+                    <td className="sayi">{s.acik_bug || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Kart>
 
-      <Kart baslik="Son koşular">
-        <KosuTablosu kosular={k.son_kosular} kompakt />
+      <Kart baslik="Son koşular" eylemler={<KaynakIpucu kaynak={k.kaynaklar.son_kosular} />}>
+        {k.son_kosular.length === 0 ? <BosDurum baslik="Henüz koşu yok." /> : <KosuTablosu kosular={k.son_kosular} kompakt />}
       </Kart>
     </>
   );

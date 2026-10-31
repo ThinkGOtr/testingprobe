@@ -1,0 +1,1 @@
+{"page": "sepet", "url": "http://demo-app-web:8080/sepet", "violations": 3, "nodes": 4, "byImpact": {"critical": 1, "serious": 3}, "details": [{"id": "button-name", "impact": "critical", "help": "b", "nodes": ["#x"]}]}

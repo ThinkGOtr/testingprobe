@@ -22,9 +22,13 @@ from demoapp_api.security import parola_hash
 
 DEMO_PAROLA = "Demo123!"
 
+# bayi1, bayi2: e2e işçileri (paralel işçi başına bir bayi).
+# bayi3: kod üretimindeki doğrulama ajanının (playwright-mcp) bayisi; e2e koşuları kullanmaz,
+# böylece ajanın sepeti ile eşzamanlı test koşuları birbirini bozmaz.
 BAYILER = [
     {"kullanici_adi": "bayi1", "ad": "Merkez Bayi", "kredi_limiti": Decimal("2000.00")},
     {"kullanici_adi": "bayi2", "ad": "Sahil Bayi", "kredi_limiti": Decimal("500.00")},
+    {"kullanici_adi": "bayi3", "ad": "Doğrulama Bayi", "kredi_limiti": Decimal("2000.00")},
 ]
 
 URUNLER = [

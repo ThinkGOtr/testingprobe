@@ -141,13 +141,14 @@ _ISSUES: list[dict[str, Any]] = [
         "type": "Bug",
         "summary": "Kampanya indirimi sepette yanlış hesaplanıyor",
         "description": text_to_adf(
-            '"6 al 1 bedava" kampanyalı üründe sepetteki bedava adet ve indirim tutarı '
-            "beklenenden farklı görünüyor.\n\n"
+            '"6 al 1 bedava" kampanyası bir adet erken başlıyor: 6 adet alımda bedava ürün '
+            "veriliyor. Kampanya 7. adette başlamalı (6 öde + 1 bedava).\n\n"
             "Adımlar:\n"
             "1. bayi1 ile giriş yap\n"
-            "2. Portakal Gazozu 1L ürününden 7 adet sepete ekle\n"
-            "3. Sepetteki indirim satırını kontrol et\n\n"
-            "Beklenen: 1 adet bedava, indirim 25,00 TL. Gerçekleşen: indirim tutarı farklı."
+            "2. Portakal Gazozu 1L ürününden 6 adet sepete ekle\n"
+            "3. Sepetteki bedava adet ve indirim satırını kontrol et\n\n"
+            "Beklenen: bedava 0 adet, indirim 0,00 TL, toplam 150,00 TL.\n"
+            "Gerçekleşen: bedava 1 adet, indirim 25,00 TL, toplam 125,00 TL."
         ),
         "labels": [],
         "status": "To Do",

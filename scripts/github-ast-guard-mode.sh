@@ -12,7 +12,8 @@
 #      Bot'un tek "test ekleme" yolu tp/case-* dalıdır; diğer her bot PR'ı onarım sayılır.
 #      Böylece dal adı farklı bir onarım PR'ı veya etiketi kaldırılan bot PR'ı zayıf kontrole düşmez.
 #
-# Kontrol koşar mı (run): PR'da ve (mod repair VEYA demo-app/e2e/pages/** değişti) ise.
+# Kontrol koşar mı (run): PR'da ve (mod repair VEYA demo-app/e2e/pages/** ya da
+# demo-app/e2e/tsconfig.json değişti — ci.yml `pages` filtresi → PAGES_CHANGED) ise.
 #
 # Girdi (ortam): IS_PR, HEAD_REF, HAS_REPAIR_LABEL, PAGES_CHANGED, PR_AUTHOR, PR_AUTHOR_TYPE,
 #                TP_BOT_LOGINS (virgülle ayrılmış, büyük/küçük harf duyarsız), REPAIR_BRANCH_PREFIX,
@@ -77,7 +78,7 @@ if [ "$IS_PR" = "true" ]; then
   if [ "$mode" = "repair" ] || [ "$PAGES_CHANGED" = "true" ]; then
     run=true
   else
-    reason="$reason; pages/** değişmedi"
+    reason="$reason; pages/** ve tsconfig.json değişmedi"
   fi
 else
   reason="PR değil"

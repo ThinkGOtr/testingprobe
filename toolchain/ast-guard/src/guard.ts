@@ -4,9 +4,11 @@
 //   role/name/intent (ve testId dışındaki tüm alanlar) aynı kalmalı; yalnızca testId string
 //   değerleri değişebilir. Dosya metni, testId literal'leri dışında bayt bayt aynı olmalı.
 // pr modu: değişen/eklenen locators.ts dosyalarının saf veri kaldığını doğrular ve değişen
-//   testId'leri raporlar; başka dosya değişikliklerine karışmaz.
+//   testId'leri raporlar; <root>/tsconfig.json değiştiyse tsc --strict kapısının gevşetilmediğini
+//   doğrular (tsconfig-gate.ts); başka dosya değişikliklerine karışmaz.
 import { parseLocators, type LocatorEntry, type ParsedLocators, type Violation } from "./locators.js";
 import type { Source } from "./sources.js";
+import { checkTsconfig, tsconfigPath } from "./tsconfig-gate.js";
 
 export type Mode = "repair" | "pr";
 export type ChangeStatus = "added" | "modified" | "deleted";
@@ -29,7 +31,7 @@ export interface Report {
   schema_version: 1;
   mode: Mode;
   ok: boolean;
-  /** pr modunda <root>/pages/** altında değişiklik yoksa true (no-op, başarılı) */
+  /** pr modunda <root>/pages/** ve <root>/tsconfig.json değişmediyse true (no-op, başarılı) */
   noop: boolean;
   base: string;
   head: string;
@@ -167,9 +169,16 @@ function checkRepair(base: Source, head: Source, changed: ChangedFile[], report:
 }
 
 function checkPr(base: Source, head: Source, changed: ChangedFile[], root: string, report: Report): void {
+  const tsconfig = tsconfigPath(root);
+  const tsChange = changed.find((cf) => cf.path === tsconfig);
+  if (tsChange) {
+    const baseText = tsChange.status === "added" ? undefined : base.read(tsconfig);
+    const headText = tsChange.status === "deleted" ? undefined : head.read(tsconfig);
+    report.violations.push(...checkTsconfig(tsconfig, baseText, headText));
+  }
   const pages = changed.filter((cf) => isPagesPath(cf.path, root));
   if (pages.length === 0) {
-    report.noop = true;
+    report.noop = tsChange === undefined;
     return;
   }
   const baseFiles = base.list();
@@ -277,7 +286,7 @@ function restoreTestIds(headText: string, after: ParsedLocators, before: ParsedL
 }
 
 function summarize(r: Report): string {
-  if (r.mode === "pr" && r.noop) return "pages/** altında değişiklik yok; AST koruması no-op (başarılı).";
+  if (r.mode === "pr" && r.noop) return "pages/** ve tsconfig.json değişmedi; AST koruması no-op (başarılı).";
   const head = r.ok ? "AST koruması geçti" : `AST koruması başarısız: ${r.violations.length} ihlal`;
   const parts = [
     `${head} (mod: ${r.mode})`,

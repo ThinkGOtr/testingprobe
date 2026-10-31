@@ -100,9 +100,9 @@ describe("örnek veri yalnızca core durumlarını üretir", () => {
       expect(kosul()).toBe(true);
     };
     await oturumAc("muhendis");
-    await api.kodUret(["case-1-2", "case-1-4"]);
-    const yeni = () => mockVerisi().scriptler.filter((s) => !["scr-1", "scr-2"].includes(s.id));
-    await izle(() => yeni().length === 2 && yeni().every((s) => s.durum === "pr_open" || s.durum === "failed"));
+    await api.kodUret(["case-1-2", "case-1-3", "case-1-1"]);
+    const yeni = () => mockVerisi().scriptler.filter((s) => !["scr-1", "scr-2", "scr-3"].includes(s.id));
+    await izle(() => yeni().length === 3 && yeni().every((s) => ["pr_open", "failed", "blocked"].includes(s.durum)));
     await api.kirarakDogrula("scr-2");
     await izle(() => mockVerisi().scriptler.find((s) => s.id === "scr-2")!.break_verify.durum === "passed");
     await api.prBirlestir((await api.script("scr-2")).pr!);
@@ -114,7 +114,7 @@ describe("örnek veri yalnızca core durumlarını üretir", () => {
       for (const d of kume) expect(M[ad].states, `${ad}: ${d}`).toContain(d);
     }
     // Ara durumlar gerçekten gözlendi (test boşa geçmiyor).
-    expect([...gorulen.script]).toEqual(expect.arrayContaining(["verifying", "checking", "pr_open", "merged", "failed"]));
+    expect([...gorulen.script]).toEqual(expect.arrayContaining(["verifying", "checking", "pr_open", "merged", "failed", "blocked"]));
     expect(gorulen.bug_draft.has("dismissed")).toBe(true);
   });
 });

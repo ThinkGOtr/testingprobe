@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { canliDerleme, cekirdekYetenekleri, ucVar, type Yetenekler } from "./api/http";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { OlayProvider } from "./api/events";
 import type { Rol } from "./api/types";
@@ -43,7 +44,21 @@ function RolGerekli({ roller, children }: { roller: Rol[]; children: ReactNode }
 
 function AnaSayfa() {
   const { kullanici } = useOturum();
-  return <Navigate to={kullanici ? varsayilanSayfa(kullanici.rol) : "/giris"} replace />;
+  const canli = canliDerleme();
+  const [yetenekler, setYetenekler] = useState<Yetenekler | null | undefined>(canli ? undefined : null);
+  useEffect(() => {
+    if (!canli) return;
+    let iptal = false;
+    void cekirdekYetenekleri().then((y) => !iptal && setYetenekler(y));
+    return () => {
+      iptal = true;
+    };
+  }, [canli]);
+  if (!kullanici) return <Navigate to="/giris" replace />;
+  // Canlı derlemede core'un uç listesi okunana kadar bekle (henüz olmayan ekrana yönlendirme yok).
+  if (yetenekler === undefined) return <Yukleniyor />;
+  const y = yetenekler;
+  return <Navigate to={varsayilanSayfa(kullanici.rol, y ? (m, yol) => ucVar(y, m, yol) : undefined)} replace />;
 }
 
 function Bulunamadi() {

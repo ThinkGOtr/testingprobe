@@ -13,7 +13,15 @@
 //   POST /test/break ile bozulur, test sonunda geri alınır (token gerekir). Paylaşılan uygulama
 //   örneği, diğer bayiler ve playwright-mcp etkilenmez.
 // - `signedIn` istenirse bayi API üzerinden oturum açar (çerez sayfa bağlamıyla paylaşılır).
-import { test as base, expect, type APIRequestContext } from "@playwright/test";
+// - `dealerUsername` (test.use ile, isteğe bağlı): testi işçinin bayisi yerine belirli bir e2e
+//   bayisine sabitler (ör. case metni "bayi2 / Demo123!" ile giriş yapıp bayiye özgü değer
+//   doğruluyorsa). Aynı bayi iki işçide aynı anda kullanılmasın diye her test, bayisini süreçler
+//   arası bir kilitle (dosya) alır ve bırakır; sabitlenmemiş testler de aynı kilidi kullanır.
+import { test as base, expect, type APIRequestContext, type TestInfo } from "@playwright/test";
+import { createHash } from "node:crypto";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { CartPage, CatalogPage, LoginPage, OrderPage } from "../pages";
 
 export interface Dealer {
@@ -22,11 +30,104 @@ export interface Dealer {
   name: string;
 }
 
-/** Demo bayi kullanıcıları. */
+/** e2e bayi kullanıcıları (paralel işçi başına bir bayi). */
 export const DEALERS: readonly Dealer[] = [
   { username: "bayi1", password: "Demo123!", name: "Merkez Bayi" },
   { username: "bayi2", password: "Demo123!", name: "Sahil Bayi" },
 ];
+
+/** Doğrulama ajanının (playwright-mcp) bayisi; e2e testleri bu bayiyi kullanamaz ve sıfırlamaz. */
+export const AGENT_DEALER = "bayi3";
+
+/** Testin bayisi: `dealerUsername` verilmişse o, yoksa paralel işçinin bayisi. */
+export function pickDealer(dealerUsername: string | undefined, parallelIndex: number): Dealer {
+  if (dealerUsername !== undefined) {
+    const pinned = DEALERS.find((d) => d.username === dealerUsername);
+    if (!pinned) {
+      const reserved = dealerUsername === AGENT_DEALER ? " (doğrulama ajanına ayrılmıştır)" : "";
+      throw new Error(
+        `dealerUsername '${dealerUsername}' bir e2e bayisi değil${reserved}; izinli: ${DEALERS.map((d) => d.username).join(", ")}`,
+      );
+    }
+    return pinned;
+  }
+  const dealer = DEALERS[parallelIndex];
+  if (!dealer) {
+    throw new Error(
+      `En fazla ${DEALERS.length} paralel işçi desteklenir (bayi kullanıcısı sayısı); --workers değerini düşürün.`,
+    );
+  }
+  return dealer;
+}
+
+const LOCK_POLL_MS = 25;
+const LOCK_WAIT_MS = 40_000;
+
+function lockDir(testInfo: TestInfo): string {
+  // Aynı uygulamaya (web + API adresi) karşı koşan işçiler aynı kilit dizinini paylaşır.
+  const target = `${String(testInfo.project.use.baseURL)}|${process.env.DEMO_API_URL ?? ""}`;
+  return join(tmpdir(), `demoapp-e2e-kilit-${createHash("sha256").update(target).digest("hex").slice(0, 12)}`);
+}
+
+function ownerOf(path: string): string | undefined {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+/** Kilit dosyasının sahibi süreç ölmüşse (çökmüş işçi) dosyayı kaldırır. */
+function clearIfStale(path: string): void {
+  const owner = ownerOf(path);
+  if (!owner) return;
+  try {
+    process.kill(Number(owner.split(":")[0]), 0);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ESRCH" && ownerOf(path) === owner) rmSync(path, { force: true });
+  }
+}
+
+function tryCreate(path: string, owner: string): boolean {
+  try {
+    writeFileSync(path, owner, { flag: "wx" });
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw err;
+  }
+}
+
+/**
+ * Bayiyi bu test için özel alır (süreçler arası dosya kilidi). Bekleyen süreç `.sira` dosyasıyla
+ * sırasını işaretler; kilidi bırakan işçi sıradaki varken kilidi yeniden alamaz (açlık yok).
+ * Dönen fonksiyon kilidi bırakır.
+ */
+export async function acquireDealer(dir: string, username: string, waitMs = LOCK_WAIT_MS): Promise<() => void> {
+  mkdirSync(dir, { recursive: true });
+  const lock = join(dir, `${username}.kilit`);
+  const queue = join(dir, `${username}.sira`);
+  const me = `${process.pid}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+  const deadline = Date.now() + waitMs;
+  let queued = false;
+  for (;;) {
+    const next = ownerOf(queue);
+    if ((next === undefined || next === me) && tryCreate(lock, me)) {
+      if (queued && ownerOf(queue) === me) rmSync(queue, { force: true });
+      return () => {
+        if (ownerOf(lock) === me) rmSync(lock, { force: true });
+      };
+    }
+    clearIfStale(lock);
+    clearIfStale(queue);
+    if (!queued) queued = tryCreate(queue, me);
+    if (Date.now() > deadline) {
+      if (ownerOf(queue) === me) rmSync(queue, { force: true });
+      throw new Error(`'${username}' bayisi ${waitMs / 1000} sn içinde serbest kalmadı (kilit: ${lock})`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, LOCK_POLL_MS));
+  }
+}
 
 /** "Kırarak doğrula": kampanya kuralı yalnızca bu koşunun bayileri için bozulur. */
 export const BREAK_CAMPAIGN = process.env.BREAK_CAMPAIGN === "1";
@@ -49,17 +150,33 @@ export function isolationMode(env: NodeJS.ProcessEnv = process.env): IsolationMo
   );
 }
 
-/** /test/<path> ucunu çağırır: DEMO_API_URL verilmişse doğrudan API'ye, yoksa web vekili üzerinden. */
-async function testApi(request: APIRequestContext, token: string, path: string, data: object): Promise<void> {
-  const url = process.env.DEMO_API_URL
-    ? `${process.env.DEMO_API_URL.replace(/\/$/, "")}/test/${path}`
-    : `/api/test/${path}`;
-  const resp = await request.post(url, { data, headers: { "X-Demoapp-Test-Token": token } });
+/**
+ * /test/<path> ucunu çağırır: DEMO_API_URL verilmişse doğrudan API'ye, yoksa web vekili üzerinden.
+ *
+ * Bilerek Playwright'ın `request` fikstürüyle DEĞİL, Node `fetch` ile gönderilir: `request`
+ * izlenir (trace: retain-on-failure) ve kırmızı testin trace.zip'i X-Demoapp-Test-Token başlığını
+ * ve değerini kaydeder; bu dosyalar koşu artefaktı olarak core'dan servis edilir. Token yalnızca
+ * demo-app-api ve test-runner'da bulunmalıdır (security-check 8). Bkz. tools/trace-token-selftest.js.
+ */
+export function testApiUrl(baseURL: string | undefined, path: string, apiUrl = process.env.DEMO_API_URL): string {
+  if (apiUrl) return `${apiUrl.replace(/\/$/, "")}/test/${path}`;
+  if (!baseURL) throw new Error("/test uçları için baseURL ya da DEMO_API_URL gerekir");
+  return new URL(`/api/test/${path}`, baseURL).toString();
+}
+
+async function testApi(baseURL: string | undefined, token: string, path: string, data: object): Promise<void> {
+  const resp = await fetch(testApiUrl(baseURL, path), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Demoapp-Test-Token": token },
+    body: JSON.stringify(data),
+    signal: AbortSignal.timeout(10_000),
+  });
+  await resp.arrayBuffer();
   const hint =
-    resp.status() === 404
+    resp.status === 404
       ? " (uç kapalı: API'de DEMOAPP_TEST_MODE=1 + DEMOAPP_TEST_TOKEN yok ya da web vekili /api/test/ yolunu açmıyor; DEMO_API_URL verin)"
       : "";
-  expect(resp.ok(), `POST /test/${path} başarısız: ${resp.status()}${hint}`).toBe(true);
+  expect(resp.ok, `POST /test/${path} başarısız: ${resp.status}${hint}`).toBe(true);
 }
 
 /** Token olmadan: bayinin sepetini herkese açık API ile boşaltır; oturumu kapatır. */
@@ -74,6 +191,11 @@ async function clearCartViaPublicApi(request: APIRequestContext, dealer: Dealer)
   await request.post("/api/auth/logout");
 }
 
+interface Options {
+  /** Testi belirli bir e2e bayisine sabitler (`test.use({ dealerUsername: "bayi2" })`). */
+  dealerUsername: string | undefined;
+}
+
 interface Fixtures {
   dealer: Dealer;
   signedIn: undefined;
@@ -83,30 +205,32 @@ interface Fixtures {
   orderPage: OrderPage;
 }
 
-export const test = base.extend<Fixtures>({
+export const test = base.extend<Fixtures & Options>({
+  dealerUsername: [undefined, { option: true }],
   dealer: [
-    async ({ request }, use, testInfo) => {
-      const dealer = DEALERS[testInfo.parallelIndex];
-      if (!dealer) {
-        throw new Error(
-          `En fazla ${DEALERS.length} paralel işçi desteklenir (bayi kullanıcısı sayısı); --workers değerini düşürün.`,
-        );
-      }
-      const mode = isolationMode();
-      if (mode.kind === "reset") {
-        await testApi(request, mode.token, "reset", { kullanici_adi: dealer.username });
-        if (BREAK_CAMPAIGN) {
-          await testApi(request, mode.token, "break", { kullanici_adi: dealer.username, kampanya: true });
+    async ({ request, dealerUsername, baseURL }, use, testInfo) => {
+      const dealer = pickDealer(dealerUsername, testInfo.parallelIndex);
+      const release = await acquireDealer(lockDir(testInfo), dealer.username);
+      try {
+        const mode = isolationMode();
+        if (mode.kind === "reset") {
+          await testApi(baseURL, mode.token, "reset", { kullanici_adi: dealer.username });
+          if (BREAK_CAMPAIGN) {
+            await testApi(baseURL, mode.token, "break", { kullanici_adi: dealer.username, kampanya: true });
+          }
+        } else {
+          await clearCartViaPublicApi(request, dealer);
         }
-      } else {
-        await clearCartViaPublicApi(request, dealer);
-      }
-      await use(dealer);
-      if (mode.kind === "reset" && BREAK_CAMPAIGN) {
-        await testApi(request, mode.token, "break", { kullanici_adi: dealer.username, kampanya: false });
+        await use(dealer);
+        if (mode.kind === "reset" && BREAK_CAMPAIGN) {
+          await testApi(baseURL, mode.token, "break", { kullanici_adi: dealer.username, kampanya: false });
+        }
+      } finally {
+        release();
       }
     },
-    { auto: true },
+    // Kilidi beklemek testin süresinden yemesin: fikstürün kendi zaman aşımı var.
+    { auto: true, timeout: LOCK_WAIT_MS + 15_000 },
   ],
   signedIn: async ({ page, dealer }, use) => {
     const resp = await page.request.post("/api/auth/login", {

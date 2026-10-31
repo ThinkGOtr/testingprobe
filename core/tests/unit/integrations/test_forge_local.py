@@ -416,7 +416,11 @@ def test_merge_fast_forward(forge: LocalForge, artifacts: Path) -> None:
         forge.merge_pr(pr.number, "ali")
 
 
-def test_merge_commit_ayrismis_main(forge: LocalForge, bare: Path, artifacts: Path) -> None:
+def test_merge_commit_ayrismis_main_kural_kapaliyken(
+    forge: LocalForge, bare: Path, artifacts: Path
+) -> None:
+    """`require_up_to_date=False`: eski davranış: test edilmemiş merge commit'i."""
+    forge.require_up_to_date = False
     a = forge.commit_files("tp/a", {"a.txt": "1"}, "a")
     b = forge.commit_files("tp/b", {"b.txt": "2"}, "b")
     ci_green(artifacts, a)
@@ -433,7 +437,105 @@ def test_merge_commit_ayrismis_main(forge: LocalForge, bare: Path, artifacts: Pa
     assert forge.read_file("b.txt") == "2"
 
 
+def test_bayat_dal_merge_edilmez_guncelle_ve_yeniden_ci(
+    forge: LocalForge, bare: Path, artifacts: Path
+) -> None:
+    """GitHub strict status checks: kontroller yalnızca head'de koştu; base ilerlediyse merge yok.
+
+    Bulgudaki senaryo: C1 PR'ı, C2 merge edilmeden önce dallanmış; local-ci yalnızca C1 head'inde
+    başarılı. Merge, hiç test edilmemiş C1+C2 ağacını main'e koyardı.
+    """
+    assert forge.require_up_to_date is True  # varsayılan açık
+    a = forge.commit_files("tp/a", {"a.txt": "1"}, "a")
+    b = forge.commit_files("tp/b", {"b.txt": "2"}, "b")
+    ci_green(artifacts, a)
+    ci_green(artifacts, b)
+    pr_a = forge.open_pr("tp/a", "A", "")
+    pr_b = forge.open_pr("tp/b", "B", "")
+    assert forge.merge_pr(pr_a.number, "ali") == a
+    main = forge.head_sha()
+    with pytest.raises(ForgeProtectionError, match="güncel değil"):
+        forge.merge_pr(pr_b.number, "ali", expected_head_sha=b)
+    assert forge.head_sha() == main  # main'e test edilmemiş birleşim girmedi
+    assert forge.get_pr(pr_b.number).state == "open"
+
+    # "Update branch": main → tp/b; yeni head, eski CI sonucu ona taşınmaz.
+    new_head = forge.update_branch(pr_b.number, "tp-bot")
+    assert new_head != b
+    assert git("log", "-1", "--format=%P", new_head, git_dir=bare) == f"{b} {a}"
+    assert forge.get_pr(pr_b.number).head_sha == new_head
+    assert forge.get_pr_record(pr_b.number)["head_sha"] == new_head
+    assert forge.update_branch(pr_b.number) == new_head  # idempotent: zaten güncel
+    with pytest.raises(ForgeConflictError):  # onay eski head'e bağlı → yeniden onay
+        forge.merge_pr(pr_b.number, "ali", expected_head_sha=b)
+    with pytest.raises(ForgeProtectionError, match="local-ci"):  # yeni head'de CI yok
+        forge.merge_pr(pr_b.number, "ali", expected_head_sha=new_head)
+    ci_green(artifacts, new_head)
+    result = forge.merge_pr_detailed(pr_b.number, "ali", expected_head_sha=new_head)
+    # main'e giren commit tam olarak local-ci'nin koştuğu commit.
+    assert (result.method, result.sha, result.bypass) == ("fast-forward", new_head, False)
+    assert forge.head_sha() == new_head
+    assert forge.read_file("a.txt") == "1" and forge.read_file("b.txt") == "2"
+
+
+def test_bayat_dal_demo_admin_bypass_nedeni_kayitli(forge: LocalForge, artifacts: Path) -> None:
+    a = forge.commit_files("tp/a", {"a.txt": "1"}, "a")
+    b = forge.commit_files("tp/b", {"b.txt": "2"}, "b")
+    ci_green(artifacts, a)
+    ci_green(artifacts, b)
+    forge.merge_pr(forge.open_pr("tp/a", "A", "").number, "ali")
+    pr_b = forge.open_pr("tp/b", "B", "")
+    result = forge.merge_pr_detailed(pr_b.number, "demo-admin")
+    assert result.method == "merge-commit" and result.bypass is True
+    assert "güncel değil" in (result.bypass_reason or "")
+    assert forge.get_pr_record(pr_b.number)["bypass_reason"] == result.bypass_reason
+
+
+def test_update_branch_kapali_ve_cakisan_pr(forge: LocalForge, artifacts: Path) -> None:
+    a = forge.commit_files("tp/a", {"README.md": "# A\n"}, "a")
+    b = forge.commit_files("tp/b", {"README.md": "# B\n"}, "b")
+    ci_green(artifacts, a)
+    forge.merge_pr(forge.open_pr("tp/a", "A", "").number, "ali")
+    pr_b = forge.open_pr("tp/b", "B", "")
+    with pytest.raises(ForgeConflictError, match=r"README\.md"):
+        forge.update_branch(pr_b.number)
+    assert forge.head_sha("tp/b") == b
+    forge.close_pr(pr_b.number)
+    with pytest.raises(ForgeStateError):
+        forge.update_branch(pr_b.number)
+
+
+def test_update_branch_beklenen_head_yabanci_commiti_reddeder(
+    forge: LocalForge, artifacts: Path
+) -> None:
+    """PR kilidi altında: dala yabancı commit girdiyse güncelleme hiçbir şey yazmaz."""
+    a = forge.commit_files("tp/a", {"a.txt": "1"}, "a")
+    b = forge.commit_files("tp/b", {"b.txt": "2"}, "b")
+    ci_green(artifacts, a)
+    forge.merge_pr(forge.open_pr("tp/a", "A", "").number, "ali")
+    pr_b = forge.open_pr("tp/b", "B", "")
+    yabanci = forge.commit_files("tp/b", {"b.txt": "mallory"}, "foreign")
+    with pytest.raises(ForgeStateError, match="beklenen head"):
+        forge.update_branch(pr_b.number, "tp-bot", expected_head_sha=b)
+    assert forge.head_sha("tp/b") == yabanci
+    with pytest.raises(ForgeValidationError):
+        forge.update_branch(pr_b.number, expected_head_sha="zz")
+    yeni = forge.update_branch(pr_b.number, "tp-bot", expected_head_sha=yabanci)
+    assert yeni != yabanci and forge.get_pr(pr_b.number).head_sha == yeni
+
+
+def test_require_up_to_date_env(bare: Path, artifacts: Path) -> None:
+    env = {"TP_FORGE_PATH": str(bare), "TP_ARTIFACTS_PATH": str(artifacts)}
+    assert LocalForge.from_env(env).require_up_to_date is True
+    assert (
+        LocalForge.from_env({**env, "TP_FORGE_REQUIRE_UP_TO_DATE": "0"}).require_up_to_date is False
+    )
+    with pytest.raises(ForgeValidationError):
+        LocalForge.from_env({**env, "TP_FORGE_REQUIRE_UP_TO_DATE": "belki"})
+
+
 def test_merge_cakisma_reddedilir(forge: LocalForge, artifacts: Path) -> None:
+    forge.require_up_to_date = False  # çakışma denetimini doğrudan merge yolunda sına
     a = forge.commit_files("tp/a", {"README.md": "# A\n"}, "a")
     b = forge.commit_files("tp/b", {"README.md": "# B\n"}, "b")
     ci_green(artifacts, a)
@@ -466,10 +568,10 @@ def test_merge_zaten_icerilen_dal(forge: LocalForge, artifacts: Path) -> None:
     pr_a = forge.open_pr("tp/a", "A", "")
     pr_b = forge.open_pr("tp/b", "B", "")
     forge.merge_pr(pr_a.number, "ali")
-    # tp/b'nin içeriği main'de; merge-tree temiz → merge commit (boş fark) ya da zaten içerilmiş
-    ci_green(artifacts, forge.head_sha("tp/b"))
+    # tp/b'nin içeriği main'de ama dal bayat → önce güncellenir, yeni head'de CI koşar
+    ci_green(artifacts, forge.update_branch(pr_b.number))
     result = forge.merge_pr_detailed(pr_b.number, "ali")
-    assert result.method in {"merge-commit", "already-merged"}
+    assert result.method in {"fast-forward", "already-merged"}
     assert forge.read_file("a.txt") == "1"
 
 
@@ -496,6 +598,33 @@ def test_checks_yok_liste_sozluk_ve_bozuk(forge: LocalForge, artifacts: Path) ->
 def test_checks_artifacts_yoksa_bos(bare: Path) -> None:
     f = LocalForge(bare, None)
     assert f.checks(f.head_sha()) == []
+
+
+def test_checks_ayri_kapi_dizininden_okunur(bare: Path, artifacts: Path, tmp_path: Path) -> None:
+    """TP_CHECKS_PATH (tp_checks volume'ü) verilince kapı `<checks>/<sha>.json`'dan okunur;
+    `<artifacts>/checks` (test-runner'ın yazabildiği yer) yok sayılır."""
+    kapi = tmp_path / "kapi"
+    kapi.mkdir()
+    f = get_forge(
+        {
+            "TP_FORGE": "local",
+            "TP_FORGE_PATH": str(bare),
+            "TP_ARTIFACTS_PATH": str(artifacts),
+            "TP_CHECKS_PATH": str(kapi),
+        }
+    )
+    assert isinstance(f, LocalForge)
+    sha = f.head_sha()
+    write_checks(
+        artifacts, sha, {"name": "local-ci", "status": "completed", "conclusion": "success"}
+    )
+    assert f.checks(sha) == []
+    (kapi / f"{sha}.json").write_text(
+        json.dumps(
+            {"checks": [{"name": "local-ci", "status": "completed", "conclusion": "failure"}]}
+        )
+    )
+    assert [c.conclusion for c in f.checks(sha)] == ["failure"]
 
 
 # ---------------------------------------------------------------------- fabrika
@@ -590,3 +719,10 @@ def test_reset_branch_yalnizca_demo_admin(forge: LocalForge) -> None:
     assert forge.reset_branch("main", "demo-baseline", actor="demo-admin") == (head, base)
     assert forge.head_sha() == base
     assert forge.reset_branch("main", "demo-baseline", actor="demo-admin") == (base, base)
+
+
+def test_changed_paths(forge: LocalForge) -> None:
+    a = forge.commit_files("tp/a", {"a.txt": "1", "b.txt": "2"}, "a")
+    b = forge.commit_files("tp/a", {"b.txt": "3", "c.txt": "4"}, "b", base="tp/a")
+    assert forge.changed_paths(a, b) == ["b.txt", "c.txt"]
+    assert forge.changed_paths(b, b) == []

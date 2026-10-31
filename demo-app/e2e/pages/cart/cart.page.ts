@@ -1,4 +1,5 @@
 import { expect, type Page } from "@playwright/test";
+import { nav } from "../common/locators";
 import { paths, testIdOf } from "../support";
 import { cart } from "./locators";
 
@@ -83,6 +84,11 @@ export class CartPage {
   /** Sepette ürünün bulunmadığını doğrular. */
   async expectProductNotInCart(productCode: string): Promise<void> {
     await expect(this.page.getByTestId(testIdOf(cart.line, productCode))).toHaveCount(0);
+  }
+
+  /** Üst menüdeki sepet sayacının verilen adet olduğunu doğrular (sepet sayfasında). */
+  async expectCartCount(count: number): Promise<void> {
+    await expect(this.page.getByTestId(nav.cartCount.testId)).toHaveText(String(count));
   }
 
   /** Sepetin boş olduğunu doğrular. */

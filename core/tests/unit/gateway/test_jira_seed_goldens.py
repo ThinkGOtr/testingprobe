@@ -5,8 +5,11 @@ ve bug'larla çelişirlerse demo yanlış hikâye anlatır:
 
 - requirement_review: `ac_ref` story'de gerçekten olan bir AC'yi gösterir; AC'lerin zaten
   tanımladığı bir mesajı soru olarak sormaz.
-- dup_rank (break-campaign): §2 adım 12–13'te mükerrer kontrolü, jira-sim seed'inin bug taslağı
-  için döndürdüğü açık Bug'ı (TPD-5) aday gösterir ve "mevcut kayda bağla" önerir.
+- TPD-5 (açık Bug, mükerrer adayı): ana demo yolunun (`f2-kod-hatasi`) defect adayını anlatır:
+  C3 "6 adet kampanyalı üründe bedava ürün verilmez" bugünkü kodda (`adet // 6`) kırmızıdır. TPD-5
+  aynı belirtiyi (6 adet → 1 bedava, 25,00 TL) ve C3'ün beklenenini (bedava 0, 0,00 TL, toplam
+  150,00 TL) yazar; bugün geçen 7 adet davranışını hata diye anlatmaz.
+- dup_rank (break-campaign): mükerrer aday listesi jira-sim aramasının döndürdüğü kayıtlardan çıkar.
 
 jira-sim süreç içinde (ağsız) koşar; arama gerçek JQL değerlendiricisinden geçer.
 """
@@ -127,16 +130,13 @@ def test_dup_search_terms_come_from_the_bug_draft() -> None:
     assert DUP_TERMS in summary.lower()
 
 
-def test_break_campaign_dup_rank_matches_sim_seed(sim: TestClient) -> None:
+def test_break_campaign_dup_candidates_come_from_sim_search(sim: TestClient) -> None:
     hits = _search(sim, DUP_JQL)
     assert "TPD-5" in hits, hits  # seed: kampanya hatasının açık Bug'ı
     out = load_golden("dup_rank", "break-campaign")["output"]
     keys = [c["key"] for c in out["candidates"]]
-    assert keys, "seed bir aday döndürüyor; golden boş aday listesi veremez"
     assert set(keys) <= set(hits), f"aramada olmayan aday uyduruldu: {set(keys) - set(hits)}"
-    assert "TPD-5" in keys
     assert sorted(c["rank"] for c in out["candidates"]) == list(range(1, len(keys) + 1))
-    assert (out["recommendation"], out["link_key"]) == ("link", "TPD-5")
 
 
 @pytest.mark.parametrize(("path", "golden"), [(p, g) for _, p, g in goldens("dup_rank")])
@@ -150,13 +150,49 @@ def test_dup_rank_recommendation_follows_prompt_rule(path: Path, golden: dict) -
         assert not high and out["link_key"] is None
 
 
-def test_break_campaign_dup_rationale_names_signals_in_tpd5(sim: TestClient) -> None:
+# ------------------------------------------------------------------ TPD-5 = ana yolun defect'i
+
+# C3'ün (f2-kod-hatasi) beklenen ve bugünkü kodda gerçekleşen değerleri.
+C3_TITLE = "6 adet kampanyalı üründe bedava ürün verilmez"
+TPD5_EXPECTED = ("bedava 0 adet", "indirim 0,00 TL", "toplam 150,00 TL")
+TPD5_ACTUAL = ("bedava 1 adet", "indirim 25,00 TL", "toplam 125,00 TL")
+CAMPAIGN_PY = REPO / "demo-app" / "api" / "src" / "demoapp_api" / "campaign.py"
+
+
+def _c3_case() -> dict:
+    cases = load_golden("case_generation", "f2-kod-hatasi/TPD-1")["output"]["cases"]
+    return next(c for c in cases if c["title"] == C3_TITLE)
+
+
+def test_tpd5_describes_the_main_path_6_adet_defect(sim: TestClient) -> None:
     tpd5 = _issue_text(sim, "TPD-5")
-    cand = next(
-        c
-        for c in load_golden("dup_rank", "break-campaign")["output"]["candidates"]
-        if c["key"] == "TPD-5"
-    )
-    for signal in ("Portakal Gazozu 1L", "7 adet", "25,00 TL"):
-        assert signal in tpd5, f"seed TPD-5'te yok: {signal}"
-        assert signal in cand["rationale"], f"gerekçede yok: {signal}"
+    assert "Portakal Gazozu 1L ürününden 6 adet sepete ekle" in tpd5
+    for value in TPD5_EXPECTED + TPD5_ACTUAL:
+        assert value in tpd5, f"seed TPD-5'te yok: {value}"
+    # Bugün geçen davranış (7 adette 1 bedava, C2) hata diye anlatılmaz.
+    assert "7 adet sepete ekle" not in tpd5
+    assert "Gerçekleşen: indirim tutarı farklı" not in tpd5
+
+
+def test_tpd5_expected_matches_c3_case_and_actual_matches_todays_code(sim: TestClient) -> None:
+    tpd5 = _issue_text(sim, "TPD-5")
+    c3 = _c3_case()
+    assert "bedava adet 0" in c3["steps"][-1]["expected"]
+    for amount in ("indirim 0,00 TL", "toplam 150,00 TL"):
+        assert amount in c3["steps"][-1]["expected"] and amount in tpd5, amount
+    # Bugünkü kod `adet // 6`: 6 adette 1 bedava (P-001 25,00 TL) → TPD-5'in "gerçekleşen"i.
+    assert "return adet // 6" in CAMPAIGN_PY.read_text(encoding="utf-8")
+    assert all(value in tpd5 for value in TPD5_ACTUAL)
+
+
+def test_main_path_dup_search_finds_tpd5(sim: TestClient) -> None:
+    # 6 adet bug taslağının özeti de kampanya indirimini anar; arama TPD-5'i döndürür.
+    assert "TPD-5" in _search(sim, DUP_JQL)
+
+
+def test_break_campaign_dup_rank_does_not_claim_tpd5_as_7_adet_duplicate() -> None:
+    out = load_golden("dup_rank", "break-campaign")["output"]
+    for c in out["candidates"]:
+        if c["key"] == "TPD-5":
+            assert c["likelihood"] != "high", c
+            assert "7 adet" not in c["rationale"], c

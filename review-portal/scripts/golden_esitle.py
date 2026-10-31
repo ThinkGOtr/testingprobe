@@ -7,6 +7,9 @@ Kaynaklar (docs/DEMO-VERISI.md):
 - rules/replay/consistency_check/golden/*.json → output (tutarlılık bulguları).
 - rules/replay/consistency_check/golden/SERBEST.json → input_match (serbest metin golden'ının girdisi).
 - rules/replay/case_generation/golden/*.json → input_match AC'leri + output.cases.
+- Senaryo golden'ları (`golden/<senaryo>/<ad>.json`, ör. ana demo yolu `f2-kod-hatasi/`): aynı
+  sözlüklerde `<senaryo>/<ad>` anahtarıyla. Core gibi örnek veri de ana golden'ın girdi beyanı
+  uymazsa senaryoları ada göre sıralı dener (`consistency_girdi` / `case_generation.girdi_ac`).
 
 Portal imajı yalnızca review-portal/ ile derlendiği için çıktı depoda tutulur
 (src/api/mock/golden/kaynaklar.json); fixtures.test.ts güncelliğini denetler. Yeniden üretmek:
@@ -73,11 +76,30 @@ def jira_seed() -> dict[str, Any]:
     return cikti
 
 
+def _dosyalar(amac: str) -> list[tuple[str, Path]]:
+    """Ana golden'lar (`<ad>`) ve senaryo golden'ları (`<senaryo>/<ad>`), ada göre sıralı."""
+    kok = REPLAY / amac / "golden"
+    ana = [(p.stem, p) for p in sorted(kok.glob("*.json"))]
+    senaryo = [
+        (f"{d.name}/{p.stem}", p)
+        for d in sorted(x for x in kok.iterdir() if x.is_dir())
+        for p in sorted(d.glob("*.json"))
+    ]
+    return ana + senaryo
+
+
 def goldenlar(amac: str) -> dict[str, Any]:
-    return {
-        p.stem: json.loads(p.read_text(encoding="utf-8"))["output"]
-        for p in sorted((REPLAY / amac / "golden").glob("*.json"))
-    }
+    return {ad: json.loads(p.read_text(encoding="utf-8"))["output"] for ad, p in _dosyalar(amac)}
+
+
+def girdi_aclari(amac: str) -> dict[str, list[str]]:
+    """Golden'ların girdi beyanındaki AC satırları (beyan yoksa golden listede yok)."""
+    out: dict[str, list[str]] = {}
+    for ad, p in _dosyalar(amac):
+        im = json.loads(p.read_text(encoding="utf-8")).get("input_match") or {}
+        if "acceptance_criteria" in im:
+            out[ad] = im["acceptance_criteria"]
+    return out
 
 
 def serbest_girdi() -> dict[str, Any]:
@@ -94,9 +116,9 @@ def case_goldenlari() -> dict[str, Any]:
     """case_generation golden'ları: girdi beyanındaki AC satırları + çıktı case'leri. Örnek veri
     case üretiminde yalnızca AC'ler birebir eşleşirse REPLAY der (core input_match ile aynı)."""
     out: dict[str, Any] = {}
-    for p in sorted((REPLAY / "case_generation" / "golden").glob("*.json")):
+    for ad, p in _dosyalar("case_generation"):
         d = json.loads(p.read_text(encoding="utf-8"))
-        out[p.stem] = {
+        out[ad] = {
             "girdi_ac": (d.get("input_match") or {}).get("acceptance_criteria", []),
             "cases": d["output"]["cases"],
         }
@@ -108,6 +130,7 @@ def main() -> None:
         "jira_seed": jira_seed(),
         "requirement_review": goldenlar("requirement_review"),
         "consistency_check": goldenlar("consistency_check"),
+        "consistency_girdi": girdi_aclari("consistency_check"),
         "serbest_girdi": serbest_girdi(),
         "case_generation": case_goldenlari(),
     }

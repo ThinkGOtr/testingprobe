@@ -128,7 +128,7 @@ describe("bulgu kararı yalnızca findings_open iken", () => {
 });
 
 describe("serbest metin etiketleri", () => {
-  const cozulmus = (): Bulgu => ({ ...mockVerisi().bulgular.find((b) => b.id === "fnd-1")! });
+  const cozulmus = (): Bulgu => ({ ...mockVerisi().bulgular.find((b) => b.id === "fnd-2")! }); // fix_doc, resolved
 
   it("fix_doc çözüldüyse serbest metinde 'Dokümana uygulandı', Jira'da 'Jira'ya yazıldı'", async () => {
     await oturumAc("analist");

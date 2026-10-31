@@ -10,7 +10,8 @@ ajan bağımlılığı **yoktur**; yalnızca onaylanmış, deterministik test ko
 
 | Dosya | Tetik | Yetki |
 |---|---|---|
-| `workflows/ci.yml` | `pull_request`, `push` (main), gece `0 2 * * *` (02:00 UTC = 05:00 TR), `repository_dispatch` `deploy`, `workflow_dispatch` | `contents: read`, `packages: read` (`changes` job'una ek olarak `pull-requests: read`) |
+| `workflows/ci.yml` | `pull_request`, `push` (main), gece `0 2 * * *` (02:00 UTC = 05:00 TR), `repository_dispatch` `deploy`, `workflow_dispatch` (`tetik`, `istek_id`) | `contents: read`, `packages: read` (`changes` job'una ek olarak `pull-requests: read`) |
+| `workflows/break-verify.yml` | yalnızca elle `workflow_dispatch` (`grep`, `istek_id`) — "kırarak doğrula" kanıtını GitHub Actions'ta üretir; çekirdek tetiklemez (aşağıda "Kırarak doğrula ve GitHub modu") | `contents: read` |
 | `workflows/build-toolchain.yml` | `toolchain/**`, `.playwright-version` değişikliği (main'e push → çok mimarili derleyip gönderir; PR → yalnızca amd64 derler), `workflow_dispatch` | `packages: write` **yalnızca burada** |
 
 Her üçüncü taraf Action tam 40 karakterlik commit SHA'sıyla, sürüm yorumuyla sabitlenmiştir;
@@ -21,12 +22,12 @@ Semgrep imajı sürüm + digest ile sabitlenmiştir. `dependabot.yml` bunları a
 | Job | Zorunlu | Ne yapar |
 |---|---|---|
 | `changes` | — | PR'da `dorny/paths-filter` ile `demo-app/**`, `demo-app/e2e/pages/**`, `toolchain/ast-guard/**` (ve ilgili `scripts/github-*.sh`) değişikliğini tespit eder; tetik türünü (`pr`/`push`/`nightly`/`deploy`/`manual`) belirler. PR dışı olaylarda testler her zaman koşar. |
-| `test-local` | **evet** | `demo-app/ci/run-checks.sh --retries=1`; sonuçları `test-local-results` artefaktına yükler. |
-| `ast-guard` | **evet** | PR'da `toolchain/ast-guard`'ı `merge-base(base, head)..head` aralığında çalıştırır. |
+| `test-local` | **evet** | `demo-app/ci/run-checks.sh --retries=1` (elle yazılmış + `e2e/tests/generated/**` üretilen testler); sonuçları yerel koşuyla aynı düzende `test-local-results` artefaktına, HTML raporunu ayrıca `playwright-report`'a yükler. |
+| `ast-guard` | **evet** | PR'da `toolchain/ast-guard`'ı `merge-base(base, head)..head` aralığında çalıştırır. `demo-app/e2e/tsconfig.json` değiştiyse tsc --strict kapısının gevşetilmediğini de doğrular (`strict: true`, strict ailesi kapatılamaz, `extends` yok, kapsam değişmez). |
 | `semgrep` | **evet** | `semgrep/semgrep` konteynerinde `p/default` + `p/typescript`, token/hesap yok, `--metrics=off`. Kapsam: `demo-app/`, `toolchain/ast-guard/`. |
 | `demo-serve-smoke` | hayır | Sauce'un uygulama başlatma yolunu (`scripts/github-demo-serve.sh --smoke`) kimliksiz doğrular: `/api/health` proxy üzerinden 200, izinli Host (`tp-demo.test`) kabul, izinsiz Host 403. |
 | `golden-drift` | hayır | AI'sız, **saf veri** (anayasa II): `rules/replay` golden kayıtlarının kanıt satırları, case beklentileri, page object eşlemeleri ve §8.2b düzeltme döngüsünün son hali demo-app kaynağıyla tutarlı mı. `.github/golden-drift/` paketini `uv run --no-project --with-requirements requirements.txt` ile koşar (yalnız pytest + jsonschema + pyyaml); core venv'i, `tp_core.gateway`, `anthropic` ve `mcp` kurulmaz, ayrı bir adım bunlardan biri içe aktarılabiliyorsa job'u kırar. Gateway üzerinden replay ajan döngüsünü koşan `core/tests/unit/gateway/test_consistency_flow.py` yerel birim paketinde kalır. `demo-app/**`, `rules/**`, `docs/DEMO-VERISI.md` veya `.github/golden-drift/**` değişince koşar. |
-| `sauce` | hayır (`continue-on-error`) | Aynı testleri Sauce Labs bulut Chromium'unda Sauce Connect tüneliyle koşar. |
+| `sauce` | hayır (`continue-on-error`) | Aynı testleri Sauce Labs bulut Chromium'unda Sauce Connect tüneliyle koşar; job linkini adım özetine ve `sauce-results/sauce.json`'a yazar (kimlik yoksa `durum: atlandi`). |
 
 **Workflow düzeyinde `paths` filtresi yoktur.** Atlanan zorunlu check PR'ı süresiz bekletir; bu
 yüzden zorunlu job'lar her PR'da çalışır ve ilgisiz PR'da "no-op, başarılı" çıkar.
@@ -68,8 +69,7 @@ GHCR paket ayarlarında bu repoya Actions erişimi verilmelidir.
   `demo-app/e2e/results/` altındaki aynı adlar da yüklenir.
 - Çıkış kodu: test başarısızsa ≠ 0.
 
-Workflow ayrıca `results/ci-meta.json` yazar (`kaynak`, `tetik`, `sha`, `ref`, `run_id`, Playwright
-sürümü, imaj). Çekirdek artefaktı GitHub API'den `test-local-results` adıyla alır.
+Sonuçlar `scripts/github-ci-results.sh` ile toplanır (aşağıda "Artefakt sözleşmesi").
 
 ### ast-guard
 
@@ -110,8 +110,83 @@ sürümü, imaj). Çekirdek artefaktı GitHub API'den `test-local-results` adıy
 - **Sürüm farkı:** Sauce şu an en fazla Playwright **1.61.1**'i destekliyor (saucectl v0.216.4 şeması);
   repo 1.64.1 kullanıyor. `config.yml` 1.61.1'e sabitlenmiştir. Sauce 1.64'ü desteklediğinde
   `version: package.json` yapılmalıdır.
-- Job linkleri (`saucectl-report.json` ve log'dan) adım özetine yazılır; artefakt: `sauce-results`.
+- Job linkleri (`saucectl-report.json`, yoksa log) `scripts/github-sauce-summary.sh` ile adım özetine
+  ve `sauce.json`'a yazılır; artefakt: `sauce-results` (aşağıda). Kimlik yoksa job yine checkout yapar
+  ve `durum: atlandi` kaydı yükler (çekirdek "Sauce koşmadı" ile "Sauce kırmızı"yı ayırır).
+- Testler `testMatch` ile `e2e/tests/**/*.spec.ts`; üretilen `tests/generated/**` açıkça listelidir.
 - Eşzamanlılık 1 (hesap 1–2 oturum).
+
+## Çekirdek bağlantısı (tetik ve koşu bulma)
+
+- **Deploy:** `POST /repos/{repo}/dispatches` `{event_type: "deploy", client_payload: {istek_id | tp_run_id,
+  ref?}}` (`GitHubForge.dispatch_deploy` / `repository_dispatch`). `ref` verilirse o dal/sha checkout
+  edilir (test-local, sauce, golden-drift). Koşu adı `ci deploy [<kimlik>]` olur.
+- **Gece / elle:** `POST /actions/workflows/ci.yml/dispatches` `{ref, inputs: {tetik: nightly|manual|deploy,
+  istek_id?}}` (`GitHubForge.workflow_dispatch`); koşu adı `ci <tetik> [<istek_id>]`. Zamanlanmış gece
+  koşusunun olayı `schedule`'dır.
+- **Koşuyu bulma:** `GitHubForge.find_dispatched_run(kimlik)` koşu adının sonundaki `[<kimlik>]`'i eşler
+  (GitHub dispatch yanıtında koşu kimliği dönmez). PR/push koşuları `list_workflow_runs(head_sha=…)`.
+  Kimlik biçimi `[A-Za-z0-9._-]{1,64}` (`changes` job'u doğrular; geçersizse koşu kırmızı).
+- **Eşzamanlılık:** yalnızca `pull_request` koşuları iptal edilir; dispatch koşuları kimlikle ayrı
+  gruptadır, çekirdeğin beklediği koşu iptal edilmez.
+- **Commit:** `repository_dispatch`/`schedule` koşusunun `head_sha`'sı varsayılan dalın ucudur; test
+  edilen commit `ci-meta.json` → `sha`'dır (checkout HEAD).
+- **Kontroller:** `GitHubForge.check_runs(sha)` (`details_url` → `workflow_run_id`, `job_id`); merge
+  kapısı `checks(sha)` ile aynıdır.
+- **Portal merge'ü (GitHub modu):** `GitHubForge.merge_pr_detailed` PUT'tan önce ruleset koşullarını
+  kendisi değerlendirir: zorunlu kontroller, head commit'ini onaylayan insan GitHub review'u,
+  `mergeable_state != blocked`. Tek `GITHUB_MERGE_TOKEN` bypass takımındaki demo-admin'e ait
+  olabileceği için GitHub eksikleri sessizce atlayabilir; bu yüzden eksik varsa yalnızca
+  `demo-admin` merge eder ve sonuç `bypass=True` + neden (+ GitHub'da merge eden token sahibi)
+  olarak döner. Diğer mühendisler önce PR'ı GitHub'da onaylamalı (Approve) ya da GitHub
+  arayüzünden merge etmelidir; portal kimse adına GitHub review'u göndermez.
+
+## Artefakt sözleşmesi (ci-runs alımı)
+
+Artefakt kökleri düzdür (tek dizin yüklenir); adlar yerel koşuyla (test-runner
+`runs/<id>/src/e2e/results/`) aynıdır. İndirme: `GitHubForge.download_run_artifact(run_id, ad, hedef)`
+(yönlendirme kimliksiz izlenir; `safe_extract_zip` zip-slip / sembolik bağ / boyut bombasını reddeder).
+
+| Artefakt | Job | Kökte |
+|---|---|---|
+| `test-local-results` | test-local | `ci-meta.json`, `junit.xml`, `results.json`, `allure-results/`, `playwright-report/` (yerelde `html/`), `artifacts/` (iz/ekran görüntüsü, yerelde `artifacts/`), `run-checks.log` |
+| `playwright-report` | test-local | Playwright HTML raporu (insanlar için; aynı içerik yukarıda da var) |
+| `sauce-results` | sauce | `sauce.json`, `junit.xml` (Sauce VM'deki Playwright raporu; yoksa saucectl'inki), `results.json` (varsa), `saucectl-report.json`, `saucectl-junit.xml`, `saucectl.log`, `serve.log`, `artifacts/` |
+| `break-verify-results` | break-verify | `break-verify.json`, `break-verify.log`, `results.json` (son adım) |
+| `ast-guard-report` · `semgrep-report` | ast-guard · semgrep | `ast-guard-report.json` · `semgrep.json` |
+
+**`ci-meta.json`** (`schema_version: 1`, `scripts/github-ci-results.sh`): `kaynak: "github"`, `job`,
+`tetik` (`pr|push|nightly|deploy|manual`), `istek_id`, `sha` (test edilen commit), `github_sha`, `ref`,
+`event`, `repo`, `run_id`, `run_attempt`, `run_url`, `playwright`, `toolchain_image`, `exit_code`,
+`durum` (`passed|failed|error` — `toolchain/runner/results.py` `decide_status` ile aynı kural: rapor yok /
+rapor hatası / hiç test koşmadı → `error`; beklenmeyen sonuç → `failed`), `hata`, `stats`
+(`expected, unexpected, flaky, skipped, duration_ms` — yerel `run.json` `stats` ile aynı), `results_kok`
+(`results.json` içindeki ek yollarının runner'daki kökü; alım bunu artefakt köküne eşler), `dosyalar`
+(`junit, json, allure, html, artifacts, log` → göreli yol | null), `generated_tests` (uygulama köküne
+göreli `e2e/tests/generated/**.spec.ts`).
+
+**`sauce.json`** (`scripts/github-sauce-summary.sh`): `kaynak: "sauce"`, `durum`
+(`passed|failed|error|atlandi`), `neden`, `tetik`, `istek_id`, `sha`, `run_id`, `run_attempt`, `run_url`,
+`bolge`, `tunel`, `saucectl_exit`, `job_url` (ilk Sauce job linki), `jobs[{id, url, ad, durum, tarayici,
+platform}]` (yalnızca `https://app.*saucelabs.com/tests/<id>` linkleri), `dosyalar{junit, junit_turu:
+playwright|saucectl, json, saucectl_report, log}`.
+
+**`break-verify.json`** (`scripts/github-break-verify-result.sh`): `sonuc`
+(`kanitlandi|zayif_test|hata`), `adim` (1–3), `neden`, `exit_code`, `grep`, `istek_id`, `sha`, `ref`,
+`run_id`, `run_url`. Betik `demo-app/ci/break-verify.sh`'dir (yerel test-runner ile aynı); sınıflandırmanın
+dayandığı satırlar `toolchain/ast-guard/test/ci-scripts.test.ts` ile sabitlenir.
+
+### Kırarak doğrula ve GitHub modu
+
+Portaldaki "Kırarak doğrula" (`POST /scripts/{id}/break-verify`) **her iki forge modunda da**
+toolchain-worker `/check` (`BREAK_CAMPAIGN`) yolunu kullanır; çekirdek `break-verify.yml`'yi
+tetiklemez ve `break-verify-results` artefaktını almaz. GitHub modunda (`TP_FORGE=github`) PR
+commit'i toolchain'in forge aynasına yalnızca `TP_FORGE_REMOTE_URL` (+ salt okunur
+`TP_FORGE_REMOTE_TOKEN`) verilmişse çekilir. Verilmemişse başlangıç koşusu "atlandı" olur,
+kırarak doğrulama "tamamlanamadı" (`failed`) biter ve merge açık kabul notu ister
+(`merge_kabul_gerekceleri`). `break-verify.yml` bir mühendisin aynı kanıtı GitHub üzerinde elle
+üretmesi içindir (Actions → break-verify → Run workflow, ref = `tp/case-*` dalı); sonucu
+`break-verify.json`'dadır ve portala yansımaz.
 
 ## Ruleset
 
@@ -128,10 +203,33 @@ uygulamasına sabit). Bypass yalnızca `demo-admin` org takımında (`bypass_mod
 ruleset'leri bypass listesine tek tek kullanıcı değil takım/rol/App alır, bu yüzden `demo-admin` insan
 hesabını içeren tek üyeli bir takım oluşturulmalıdır. Bot App bypass listesinde **yoktur**.
 
+### Bot App izinleri ve çoklu PR (dal güncelleme / kapatma)
+
+Bot GitHub App'i (`GH_APP_*`) depoda **Contents: write** (dal + commit) ve **Pull requests: write**
+(PR açma, yorum, dal güncelleme, kapatma) izni ister; merge izni kullanılmaz (bot merge etmez).
+`GitHubForge` LocalForge ile aynı sözleşmeyi sunar, kod üretimi aynı yoldan geçer:
+
+- Bir bot PR'ı merge edilince (`sync_prs`) diğer açık bot PR'ları "main'in gerisinde" işaretlenir ve
+  `codegen.update_branch` işi `PUT pulls/{n}/update-branch` (`expected_head_sha` = çekirdeğin bildiği
+  head) çağırır. GitHub bunu asenkron işler; yeni head `GET pulls/{n}`'den beklenir ve eski head'in
+  üstüne kurulmuş olmalıdır. Yeni head çekirdekte kaydedilir → PR CI yeniden koşar, insan onayı
+  yenilenir (ruleset "son push'tan sonra onay"), kırarak doğrulama yeni head'de yeniden yapılır.
+  Bu PR sonra GitHub'da merge edilirse "yabancı head" (`kabul_yabanci_head`) **sayılmaz**.
+- Mühendisin GitHub arayüzündeki "Update branch" düğmesi yerine portalın "Dalı güncelle" eylemi
+  kullanılmalıdır; GitHub arayüzünden yapılan güncelleme çekirdeğin üretmediği bir head'dir ve
+  merge'ü yabancı head olarak işaretlenir.
+- İnsan reddi / "değişiklik iste" ve yeniden üretimle yerine geçilen PR'lar `PATCH pulls/{n}
+  state=closed` ile kapatılır (önce PR'a yorum yazılır).
+
+Testler: `core/tests/unit/integrations/test_forge_github.py` (MockTransport) ve
+`test_forge_github_codegen.py` (gerçek Postgres; codegen `sync_prs → update_branch → merge` ve
+ret → kapatma yolları gerçek `GitHubForge` ile).
+
 ## Yerel doğrulama
 
 ```bash
 docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest -color
 docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:stable scripts/github-*.sh
-(cd toolchain/ast-guard && npm ci --ignore-scripts && npm test)
+(cd toolchain/ast-guard && npm ci --ignore-scripts && npm test)   # ci.yml + betik sözleşme testleri dahil
+(cd core && uv run pytest -q tests/unit/integrations/test_forge_github_actions.py)  # GitHubForge Actions (MockTransport)
 ```

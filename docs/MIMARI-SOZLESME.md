@@ -32,7 +32,15 @@ REPLAY kullanılan her çıktı portalda **REPLAY** rozetiyle görünür (Consti
 | demo-app-api / web | Bayi Sipariş Portalı (Postgres `demoapp`) | Postgres `demoapp` |
 
 **Volume'ler:** `tp_forge` (core-worker rw, toolchain-worker ro, test-runner ro) · `tp_artifacts`
-(toolchain-worker rw, test-runner rw, core-api ro, core-worker ro) · `tp_jira` (jira-sim).
+(toolchain-worker rw, test-runner rw, core-api ro, core-worker ro) · `tp_codegen` (Faz 3: kod
+üretimi ajan ekran görüntüleri `codegen/<script_id>/step-<n>.png`; core-worker rw, core-api ro;
+`TP_CODEGEN_ARTIFACTS_PATH=/codegen-artifacts`) · `tp_checks` (Faz 3 entegrasyonu: merge kapısı
+`checks/<sha>.json`; toolchain-worker rw, core-api/core-worker ro, **test-runner bağlamaz**;
+`TP_CHECKS_PATH=/checks`, toolchain-worker'da `TP_CHECKS_REQUIRE_MOUNT=1`) · `tp_forge_mirror`
+(GitHub modu aynası `/forge-mirror`; toolchain-worker rw, test-runner ro) · `tp_jira` (jira-sim).
+core-worker paylaşılan `tp_artifacts`'a yazamaz; merge kapısı dosyasının tek yazarı toolchain-worker
+`/check`'tir ve üretilen kodu koşturan test-runner kapıyı göremez (`make security-check` 9; CI imajında ajan yok: 10).
+`make reset` `tp_codegen`, `tp_checks` ve `tp_forge_mirror`'ı da siler.
 
 ### toolchain-worker HTTP API (:8100, runner-net + core-net)
 - `POST /symbols {sha}` → `{page_objects:[{class, file, methods:[{name, params:[{name,type}], returns, kind:"action"|"expect"}], locators:{key:{testId, role, name, intent}}}]}`
@@ -48,6 +56,52 @@ REPLAY kullanılan her çıktı portalda **REPLAY** rozetiyle görünür (Consti
   çalışan demo-app-web'de yapılır. Çalışan uygulamanın commit'i `DEMO_APP_BUILD_SHA`'dan okunur;
   `farkli` → `oneri_uretilebilir=false` (case insana gider), boş/çözülemezse `dogrulanamadi` + uyarı.
   Faz 4 onarım kaydı bu dört alanı aynen saklar.
+
+**Faz 3 `/check` ve `/run` (toolchain lane, ayrıntı `toolchain/README.md`):**
+- `/check` isteği ek alanlar: `retries`, `run_id`, `grep?`, `break`/`break_campaign` (ya da
+  `env.BREAK_CAMPAIGN="1"`), `record_check?: bool|null`, `keep?: bool`. Yanıt üst kümedir:
+  `deps`, `saglik`, `failures`, `failure_groups[{…, statuses, types, consistent}]`, `test_counts`,
+  `kapsam{tam}`, `check_recorded`, `checks_path` (alan çıkarılmadı).
+- `/check` `TP_CHECKS_PATH/<sha>.json`'ın (yoksa `TP_ARTIFACTS_PATH/checks/`) **tek yazarıdır**;
+  ilk adımı `app`: çalışan demo-app-web'in commit'i (`/forge/demo-app-web.sha`, forge-init /
+  break / baseline / sync-web yazar) ile istenen commit'in `web`+`api` ağaçları karşılaştırılır;
+  `farkli` → koşu yok, core `ortam` sayar (defect değil). Varsayılan (`record_check:
+  null`) yalnızca tam kapsamlı (test_files/grep yok), kırılmasız kontroller `local-ci` olarak
+  kaydedilir (GitHub PR CI'ının yerel eşi); `true` kapsamlı kontrolü de kaydeder, `false` hiç;
+  kırılmalı kontrol asla kaydedilmez (`record_check:true` + kırılma → 422). İstenen test dosyası
+  commit'te yoksa `deps` adımında `missing_test_files` ile erken başarısız.
+- Kod üretiminin yerel kontrolü kapsamlıdır (`test_files=[tests/generated/<dosya>]`,
+  `repeat_each=3`, `retries=0`, kaydedilmez); merge kapısı `local-ci`'ı PR açılınca kuyruğa giren
+  `ci.run` (tam kapsam, `retries=1`) yazar.
+- Hata girdileri (`failure.type`): `test_data|navigation|locator_ambiguous|locator_not_found|
+  locator_timeout|assertion|test_timeout|other` + `expected/received`, `location`, `test_location`
+  (üretilen spec satırı; üretilen testlerde `test.step` yasak), `evidence{trace,error_context,
+  screenshot,video}.rel`, `aria_snapshot`. Sınıflandırma (core): tutarlı `assertion` → `defect_adayi`
+  (onarım yok); `locator_*` → tek yeniden eşleme turu; tutarsız/flaky → kararsızlık.
+- `/run` isteğinde `keep?`; yanıtta `reports{html,junit,json,allure}`, `failures`,
+  `failure_groups`, `cleanup`, `tests[].failure/repeat_index/attempt_results/column/id`.
+  Saklama `TP_RUNS_KEEP` (test-runner, 50; 0 = kapalı). `.keep`li kanıt koşuları ayrı havuzdadır:
+  `TP_RUNS_KEEP_EVIDENCE_DAYS` (30) ve `TP_RUNS_KEEP_EVIDENCE_MAX` (200) dışındakiler silinir;
+  toolchain-worker `POST /runs/release {run_ids}` `.keep`'i kaldırır (belirteç ister).
+- **Kimlik:** toolchain-worker uçları (`/health` hariç) `Authorization: Bearer $TP_TOOLCHAIN_TOKEN`
+  ister (`TP_TOOLCHAIN_REQUIRE_TOKEN=1`: belirteçsiz başlatma 503). Belirteç core-api ve
+  core-worker'da vardır, test-runner'da YOKTUR: üretilen kod `/check` ile kapıyı yazamaz.
+  `record_check:true` + `test_files`/`grep` → 422 (kapsamlı kontrol asla `local-ci` olmaz); kayıtlı
+  her CheckRun `tam:true` taşır. Smoke koşusu (`make e2e-smoke`) `tp-run-lock` ile `/run` kilidini
+  paylaşır.
+- **İmajlar (Constitution II):** `toolchain/Dockerfile` `ci` hedefi (varsayılan; toolchain-worker,
+  test-runner, yayımlanan CI imajı) MCP içermez; `mcp` hedefi (`testingprobe-toolchain-mcp:local`)
+  yalnızca playwright-mcp servisidir. `make security-check` 10 ve ci.yml Yol A
+  `toolchain/security/no-mcp-in-image.sh` ile denetler.
+- GitHub modunda (`TP_FORGE=github`) sha önce yerel forge'da, sonra `TP_FORGE_MIRROR_PATH`
+  aynasında aranır; yoksa ve `TP_FORGE_REMOTE_URL` verilmişse salt okunur `git fetch` ile aynaya
+  çekilir (belirteç `http.extraHeader` ortamında, argv'de değil). Kod üretimi `/check` 404'ünü
+  yalnızca yerel olmayan forge'da "yerel kontrol atlandı" sayar; yerel forge'da 404 ortam hatasıdır.
+- Koşu raporları: test-runner her koşudan sonra statik, tek dosyalık Allure raporu üretir
+  (`reports.allure_html`). `GET /runs` `allure_url` önce bu raporu (`…/allure-report/index.html`),
+  yoksa ham `allure-results`'ı gösterir; ham dizin `allure_sonuclari_url`'dedir. Rapor CSP sandbox'ında
+  (allow-same-origin yok) açılır; core yanıtına bellek içi `localStorage` şimi ekler (Allure açılışta
+  depoyu okur; şimsiz boş sayfa kalıyordu).
 
 ### test-runner HTTP API (:8200, yalnızca runner-net)
 - `POST /run {sha, grep?, repeat_each, retries, env:{BREAK_CAMPAIGN?}, run_id}` → `{status: passed|failed|error, junit, json, artifacts_dir, duration_ms, saglik:{ok, zaman, web:{url,status,ms,hata}, api:{url,status,ms,hata}, hata}}`
@@ -85,6 +139,42 @@ TEKNIK-TASARIM §7'deki tablolar, Türkçe kolon adlarıyla (F0 stili: `kullanic
 (`local`/`github`/`sauce`). `ai_call`, `tool_call`, `audit_event` append-only; `audit_event` için
 `prev_hash`/`hash` zinciri (sha256(prev_hash + kanonik JSON)).
 
+**Faz 3 tablolar:** 0009 `script_codegen` (script başına üretim kaydı: case/onaylı hash,
+`story_key`, `sira_no`, eşleme `eslesme`, `uretim_modu`, `ai_call_ids`, `bundle_hash`,
+`engel_turu`/`engel_nedeni`, `kirma_dogrulama`, PR alanları), `script_adim` (ajan adımları:
+`sira`, `tur`, `arac`, `arguman` (parola maskeli), `ozet` (sarmalsız kısa özet), `izinli`,
+`ekran_goruntusu`), `script_kontrol` (yerel kontrol / kırma koşuları ve sınıfı). Durum makinesinde
+`defect_candidate` durumu yoktur: defect adayı = `script.durum='blocked'` +
+`script_codegen.engel_turu='defect_candidate'` (portal `yerel_sinif='defect_adayi'`). Grup: case
+başına bir script ve bir PR (dal `tp/case-<case uuid>[-n]`, dosya
+`e2e/tests/generated/<story>-c<sira>-<uuid8>.spec.ts`). **Yeniden üretim politikası (Faz 3
+entegrasyonu): her üretim yeni dal + yeni PR'dır.** Dal sembol tablosunun alındığı main sha'sından
+kesilir; önceki script `closed` olur, açık PR'ı her iki kipte yorumlanıp kapatılır (LocalForge
+`close_pr`; GitHub `PATCH pulls/{n} state=closed`). Kapatma başarısızsa yorum kalır, `sync_prs`
+izlemeye devam eder; sonradan merge edilirse `codegen.superseded_pr_merged`.
+Merge sonrası diğer açık bot PR'ları `script_codegen.dal.geride` işaretlenir ve `codegen.update_branch`
+işi (LocalForge ve GitHub: `PUT pulls/{n}/update-branch`) dalı main'e taşır: yeni head + yeni
+`icerik_hash`, kırma `not_started`, PR CI yeni head'de yeniden. Güncelleme yalnızca onaylı head
+üzerinde yapılır: forge'a `expected_head_sha` verilir (PR kilidi altında karşılaştırılır); dalda
+yabancı commit varsa iş reddedilir (`codegen.branch_foreign_commit`, `dal.yabanci=true`, merge 409)
+ve güncelleme sonrası içerik doğrulanır (spec dosyası birebir aynı; değişen her yol main'deki
+haliyle aynı; değişen yollar `changed_paths` ile — GitHub'da tek compare çağrısı). GitHub App
+izinleri: Contents: write, Pull requests: write. `script_codegen.dal` JSONB (`geride`,
+`guncelleme`, `neden`, `yabanci`).
+**Ajan bayisi kilidi:** ajan bayisinin (bayi3) sepeti paylaşılan durumdur; kod üretimi ve
+`replay_check` (`make demo-check`) aynı Postgres danışma kilidini
+(`pg_advisory_lock(hashtext('agent-dealer:bayi3'))`) tutarak sırayla koşar.
+**REPLAY sapması:** replay'de araç canlı koşar; `browser_generate_locator` locator'ı ya da eylem
+adımının sayfa yolu (`· URL /giris` ↔ canlı `Page URL`) kayıttakinden farklıysa adım özeti
+`REPLAY sapması:` ile başlar (sipariş no gibi oturuma özgü son segment `*` sayılır).
+Sınıflar: `script_kontrol.sinif` ∈ {…, `kararsiz`} (aynı test hem geçti hem kırmızı → flaky,
+`engel_turu='flaky'`, pass@1=False); `engel_turu` ayrıca `human_rejected` (insan "değişiklik iste"/
+"reddet").
+0010 `ci_tetik` (tekil `anahtar`, `run_id` FK SET NULL), `test_result_ek` (a11y sayıları, ekler,
+deneme sonuçları; test_result ile cascade), `test_result_commit_ix_ci`. `script.insan_review_sonucu`
+insan merge'ünde `kabul` (değişiklik istenmeden). `run.tetik` ayrıca `break_verify|local_check|manual`
+olabilir; Kontrol Kulesi kırma koşularını (`break_verify`, `ortam.break_campaign`) KPI'lara katmaz.
+
 ## 5. HTTP API (core-api, portal `/api/` önekiyle erişir)
 
 Tüm yanıtlar JSON; hata `{"detail": "..."}`. Oturum: `tp_session` çerezi (itsdangerous imzalı, HttpOnly,
@@ -108,7 +198,8 @@ bağımsızdır (giriş CSRF'i de kapsanır).
 `<entity>.state` (`requirement`, `consistency_finding`, `test_case`, `script`, `bug_draft`,
 `workflow_instance`) ve `review.recorded` (`nesne_turu`, `nesne_id`). Portalın ayrıntılı adları
 (`agent.step`, `ci.status`, `pr.opened`, `failure.classified`, `case.generated`, `bug.published`)
-henüz yalnızca örnek veri (mock) tarafından üretilir; core bunları ilgili özellik şeritleriyle ekler.
+Faz 2–3'te core'un yayınladıkları aşağıda listelenir; `failure.classified` ve `bug.published` henüz
+yalnızca örnek veri (mock) tarafından üretilir (Faz 4).
 Akış her olaydan önce ve boştayken 15 sn'de bir oturumu yeniden denetler; oturum kapatılmış, iptal
 edilmiş, süresi dolmuş, parola değişmiş veya kullanıcı silinmişse son olay `event: session.ended`
 gönderilir ve akış kapanır. Portal bunu alınca yeniden bağlanmaz, giriş ekranına (`/giris`) döner.
@@ -139,6 +230,8 @@ gönderilir ve akış kapanır. Portal bunu alınca yeniden bağlanmaz, giriş e
 | GET | `/scripts` · `/scripts/{id}` | herkes | Üretilen test + PR + adım görüntüleri |
 | POST | `/scripts/{id}/break-verify` | engineer | Kırarak doğrula (BREAK_CAMPAIGN) |
 | POST | `/prs/{number}/merge` | engineer | LocalForge'da insan onaylı merge |
+| POST | `/prs/{number}/review` `{karar: degisiklik_iste\|reddet, ret_nedeni, icerik_hash, head_sha, not?}` | engineer | Script review reddi; `ret_nedeni` sabit taksonomiden (422) |
+| POST | `/prs/{number}/update-branch` | engineer | Geride kalan bot PR dalını main'e taşır (202) |
 | POST | `/ci/trigger` `{tetik: deploy\|nightly}` | presenter | Deploy/gece tetiği |
 | GET | `/runs` · `/runs/{id}` | herkes | Koşular, test sonuçları |
 | GET | `/failures/{id}` | herkes | Triage sonucu |
@@ -218,6 +311,87 @@ kararı; `APPROVING`'de değil → taslağa alınan case eski onayla yeniden ona
 0008 downgrade `review` satırı silmez (append-only, Anayasa VIII): var olan `reopen` satırları kalır,
 eski kısıt `NOT VALID` olarak yalnızca yeni satırlara uygulanır.
 
+**Faz 3 uç ayrıntıları (Demo-B):**
+- `POST /code/generate {case_ids[]}` (engineer) → 202 `{job_id, workflow_id, durum, mesaj,
+  script_ids, sonuclar[{case_id, durum, script_id, job_id, workflow_id}]}`. Yalnızca onaylı/yayınlı,
+  içerik hash'i onaylı hash'e eşit ve gereksinimin PO onayı güncel case'ler (aksi 409; rol 403).
+  Aynı onaylı hash için açık/merge edilmiş PR varsa yeniden üretilmez; blocked/failed yeniden üretilir.
+- `GET /scripts` · `/scripts/{id}`: `engel{tur, neden}`, `adimlar[]` (`arguman`, `izinli`,
+  `ekran_goruntusu_url`), `eslemeler[]` (doğrulama satırında `verified` = değerin onaylı case
+  metninde bulunması, uygulamada gözlem değildir), `yerel_kontrol{…, atlandi}`, `dogrulama[]`,
+  `kontroller[]`, `uyarilar[]`, `case_ref`, `test_key`, `break_verify{durum, asamalar, neden}`,
+  `merge_engelleri[]` (PR yoksa ya da merge edildiyse `[]`), `merge_kabul_gerekli`,
+  `gecikme_butcesi_s`, `pr{…, govde (PR açıklaması: izlenebilirlik, eşleme, yerel kontrol,
+  denetim zinciri başı), dal{geride, guncelleme, neden}}`. Adım 5 gecikme bütçesi
+  `TP_CODEGEN_STEP5_BUDGET_S` (120) aşılırsa SSE `codegen.latency_budget {script_id, sure_s,
+  butce_s, oneri}` ve `uyarilar[0]` "REPLAY'e geçmeyi önerin".
+- Locator çapraz kontrolü (canlı + REPLAY): her `browser_generate_locator` sonucu page object
+  sembol tablosuyla karşılaştırılır; uyuşmazlık ya da gateway'in `REPLAY sapması` notu → adım
+  doğrulanmamış (`unverified_step`), PR yok, insana düşer. Ajan oturumu Postgres advisory lock
+  (`ajan_kilidi`) altında koşar.
+- `GET /scripts/{id}/screenshots/{n}` (giriş yapmış herkes): `tp_codegen` volume'ünden PNG; yol
+  doğrulanır. Ekran görüntüsü model döngüsü DIŞINDA ajanın kendi MCP oturumunda alınır (Playwright
+  MCP `--isolated` olduğundan ayrı oturum ajanın sayfasını göremez); çağrı ve görüntü modele/
+  `tool_call`'a girmez.
+- `POST /scripts/{id}/break-verify` (engineer) → 202; sonuç `passed` (yeşil → kırmızı → yeşil),
+  `weak` (kırılmada yeşil kaldı: `zayif_test`; kampanyayla ilgisiz testlerde beklenir) ya da `failed`
+  (koşu tamamlanamadı). Zayıf test kapı değil işarettir (TEKNIK-TASARIM §2 adım 6): `passed`
+  değilse merge isteği `onay_notu` (açık insan kabulü; `review.gerekce` + `codegen.merge_acknowledged`)
+  ister; kırma sürerken merge reddedilir. Üç aşama ayrı koşulardır (`run.tetik='break_verify'`).
+- `POST /prs/{number}/merge {icerik_hash, head_sha}` (engineer): insan onayı (review `merge`)
+  kaydedilir, `codegen.merge` işi `forge.merge_pr(actor, expected_head_sha)` çağırır; ≤20 sn
+  beklenir → 200 `PullRequest`, ret 409 (forge gerekçesi, denetim `codegen.merge_refused`), hâlâ
+  sürüyorsa 202 `{…PR, job_id, is_durumu}`. Merge sonrası `enqueue_ci(merge_sha, "push")`.
+  `head_sha` yoksa 422; PR zaten merge edildiyse 409. Bilinen engeller (kırmızı local-ci, geride
+  dal, süren kırma) review satırı YAZILMADAN reddedilir; forge'un öngörülemeyen reddi review
+  satırı bırakır (append-only), denetim `review_id` taşır.
+- `POST /ci/trigger {tetik: deploy|nightly}` (presenter) → 202 `{job_id, run_id, durum:
+  queued|zaten_kuyrukta, mesaj, kaynak, tetik}`. `GET /runs?tetik&kaynak&sonuc&pr_no&script_id&limit`
+  (≤200; süzgeçsiz listede açık defect adayının son kırmızı yerel kontrolü her zaman `sabit:true`
+  ile eklenir; koşu ayrıca `junit_url`), `GET /runs/{id}`. İmzalı kısa ömürlü bağlantı
+  `GET /artifacts/k/{exp}.{hmac}/runs/{run_id}/{path}` (çerezsiz; `TP_SESSION_SECRET`'tan türetilen
+  anahtar, `TP_ARTIFACT_LINK_TTL_S` 7200; `rapor_url` bunu kullanır ki sandbox'taki Playwright
+  raporu ekran görüntülerini yükleyebilsin). `GET /artifacts/runs/{run_id}/{path}` (giriş yapmış herkes; yalnızca
+  `src/**/results/**`, `run.json`, `runner.log`; HTML CSP sandbox ile; dizin → JSON liste; URL'ler
+  `/api` önekli). `GET /control-tower`: her KPI `kaynaklar`'da tablo/süzgeç/pencere; geçme oranı
+  **koşu bazlı** (son `TP_CT_SON_KOSU` CI koşusu) + `test` alt nesnesi; `gecme_hedefi=null`;
+  manuel baz yalnızca `TP_MANUAL_BASELINE_S` varsa. Karne satırı `alan`/`alanlar` (page object
+  sınıfından uygulama alanı; eşleme yoksa null = ölçülmedi), `acik_defect_adayi`; üst düzey
+  `alan_karnesi[]`. İlk review başarısı birim bazlıdır: birimdeki herhangi bir script'te
+  `degisiklik_istendi`/`reddedildi`/`kabul_yabanci_head` varsa birim kabul sayılmaz.
+- **Faz 3 SSE olayları (core yayınlar):** `agent.step {script_id, n, tur, tool, summary, izinli,
+  screenshot_url}`, `codegen.check {script_id, tur, sinif, sonuc, run_id}`, `codegen.break_verify
+  {script_id, durum, asama, sonuc}`, `pr.opened {script_id, case_id, requirement_id, pr_number, url,
+  branch, head_sha, guncellendi}`, `pr.merged {script_id, pr_number, merge_sha, aktor}`, `ci.status
+  {id, run_id, durum, tetik, kaynak, commit, pr_no, script_id, +sayılar}`, `codegen.latency_budget`,
+  `codegen.branch`, `codegen.reviewed`. CI koşusu son denemede hata verirse `error` olur; worker
+  açılışında ve yeni tetikte takılı koşular kapatılır (`recover_stuck_run`). GitHub modunda PR CI
+  sonucu core-worker tarafından PR'a tek (idempotent) yorum olarak yazılır.
+- **Faz 3 iş türleri:** `codegen.generate` (max_deneme 1; takılı kalanlar worker açılışında
+  kurtarılır), `codegen.break_verify`, `codegen.merge`, `ci.run`, `ci.github_poll`, `ci.nightly`
+  (`ci.nightly:<tarih>` tekil). `tp_core.features.ci.enqueue_ci(session, sha, trigger, pr_number=None,
+  *, isteyen, anahtar, ref, script_id)` çağıranın işleminde koşar.
+- **Doğrulama ajanı:** bayi `bayi3` (`TP_AGENT_DEALER`); tarayıcıya yazılan case bayisi araç
+  katmanında ajan bayisine çevrilir, üretilen test case'in bayisine `test.use({dealerUsername})` ile
+  sabitlenir. Her doğrulamadan önce core-worker ajan bayisinin sepetini uygulamanın herkese açık
+  API'siyle (`TP_DEMO_WEB_URL`/api: login → `DELETE /cart` → logout) boşaltır. Araçlar: MCP
+  `tools/list` ∩ izinli 7 araç (ekran görüntüsü/evaluate/run_code/dosya hiç verilmez), ≤25 çağrı,
+  navigasyon yalnızca demo origin'i. `rules/replay/verify_and_map/on_miss.json` `"policy":"raise"`:
+  girdi golden beyanına uymazsa başka case'in eşlemesi asla dönmez (script `replay_miss` ile insana).
+- **GitHub modunda arayüz merge'ü:** `codegen.pr_sync` (yalnızca `TP_FORGE=github`) GitHub'da insanın
+  yaptığı merge'ü çekirdeğe işler: `GitHubForge.pr_merge_info(n)` → `{merge_commit_sha,
+  merged_by:{login}}`; karar `review(kanal='github', user_id NULL, harici_onaylayan=<login>)` (0010
+  `review_kanal_ck`'ye `github` ekler), ardından push CI.
+- **Ajan adım kartı:** `adimlar[].aciklama` (tek satır Türkçe özet) ve `ham_cikti` (temizlenmiş,
+  parola maskeli; portalda "Ham çıktı" altında). `eslemeler[].dogrulama_notu`, `merge_kabul_gerekli[]`
+  (zayıf test / kırma yapılmadı: merge `onay_notu` ister; portal bu listeyi aynen gösterir).
+- **GitHub modu:** aynı kod yolu; `GitHubForge.request()` (genel) + Actions yardımcıları
+  (`list_workflow_runs`, `find_dispatched_run`, `download_run_artifact`/`safe_extract_zip`,
+  `repository_dispatch`, `workflow_dispatch`). Artefakt sözleşmesi (`test-local-results`,
+  `sauce-results`, `break-verify-results`; `ci-meta.json`/`sauce.json`/`break-verify.json`),
+  dispatch yükü (`istek_id` ≡ `tp_run_id`, `ref`) ve `run-name` korelasyonu: `.github/CI.md`.
+  Kimlik: Contents rw, Actions rw, Checks r. Yalnızca mock'larla doğrulandı.
+
 ## 6. Ortam değişkenleri (yeni)
 `TP_SESSION_SECRET`, `TP_MODEL_MODE`, `JIRA_BASE_URL`, `JIRA_PROJECT` (varsayılan `TPD`),
 `TP_TEST_MGMT`, `TP_FORGE`, `GITHUB_REPO`, `TP_DAILY_BUDGET_USD` (30), `TP_WORKFLOW_BUDGET_USD` (2).
@@ -261,8 +435,11 @@ Faz 1 entegrasyonunda eklenenler (boş = yerel simülatör / güvenli varsayıla
   `TP_MANUAL_BASELINE_S` (story başına manuel test tasarımı baz süresi, saniye; boş = ölçülmedi;
   `make up` önkoşulu ve `make status` boşken "Manuel baz değer girilmedi" uyarısı verir, değer
   uydurulmaz — F0 ölçümünden girilir).
-- toolchain-worker: `DEMO_APP_BUILD_SHA` (çalışan demo-app-web'in forge commit'i; boş =
-  `/locator-probe` `dogrulanamadi`). Henüz otomatik doldurulmaz (forge-init/break sonrası elle).
+- toolchain-worker: `TP_APP_BUILD_SHA_FILE` (`/forge/demo-app-web.sha`; forge-init, `make break`,
+  `make demo-baseline` ve `make up`'taki sync-web otomatik yazar), yedeği `DEMO_APP_BUILD_SHA`;
+  `TP_CHECK_REQUIRE_APP_SHA` (0), `TP_CHECKS_PATH` (/checks), `TP_CHECKS_REQUIRE_MOUNT` (1),
+  `TP_FORGE_REMOTE_URL`/`TP_FORGE_REMOTE_TOKEN` (GitHub modu, salt okunur; boş = kapalı),
+  `TP_FORGE_MIRROR_PATH` (/forge-mirror/demo-app.git). core ortak blokta `TP_CHECKS_PATH` (/checks).
 - `PLAYWRIGHT_VERSION`: tek kaynak `.playwright-version`; `make env` `.env`'e de yazar (düz
   `docker compose ps/logs/exec` çalışsın). Gerçek Jira'da `make reset` önce `jira_seed` planını
   yazdırır, onay (`e`) gelirse uygular; ayrıca `make jira-seed [ONAY=1]`.
@@ -426,6 +603,21 @@ kilitlediğini, yayının Jira PO etiketini yayın anında denetlemediğini ve p
   `TP_MANUAL_BASELINE_S` `.env.example`'da belgelendi (boş = ölçülmedi). `rules/models.yaml` amaç
   başına `timeout_s` (bundle hash'ine girmez). `make reset` sonunda `make seed` çalışır.
 - **Portal:** publish için nginx `location = /api/publish` 75 sn (`BEKLEME_S`+15); diğer `/api/` 30 sn.
+- **Faz 3:** core-worker `TP_AGENT_DEALER` (bayi3), `TP_AGENT_DEALER_PASSWORD` (Demo123!),
+  `TP_DEMO_WEB_URL` (http://demo-app-web:8080), `TP_CI_NIGHTLY_SAAT` (02:00 Europe/Istanbul;
+  `kapali` kapatır), `TP_CI_GITHUB_POLL_S` (30), `TP_CI_GITHUB_TIMEOUT_S` (5400); core ortak
+  `TP_CODEGEN_ARTIFACTS_PATH` (/codegen-artifacts; boşsa `TP_ARTIFACTS_PATH`), `TP_CT_SON_KOSU`
+  (20), `TP_CT_FLAKY_GUN` (30), `TP_CT_TREND_GUN` (14); test-runner `TP_RUNS_KEEP` (50, compose'da
+  verilmez = varsayılan).
+
+**Neden değişti (Faz 3 entegrasyonu, Demo-B):** inceleme, test-runner'ın (commit'ten gelen kodu
+koşturan servis) merge kapısı dosyasının bulunduğu `tp_artifacts`'a yazabildiğini, yerel kontrolün
+çalışan uygulamanın commit'ini denetlemediğini, GitHub arayüzünde yapılan merge'ün yanlış kanalla
+(`portal`) yazıldığını ve Allure bağlantısının ham JSON listesi olduğunu buldu. Sonuç: kapı ayrı
+`tp_checks` volume'üne taşındı (`make security-check` 10/10), `/forge/demo-app-web.sha` betiklerle
+yazılıyor ve `/check` `app` adımı uyuşmazlıkta koşmuyor (core: `ortam`), `review.kanal='github'`,
+statik Allure raporu. **Demo'nun ana yolu** `f2-kod-hatasi` REPLAY senaryosudur (F2 ve F4
+`code_defect`; docs/DEMO-VERISI.md); `make demo-check` sunumdan önce bunu doğrular.
 
 ## 7. Kalite kapısı (her şerit)
 - Python: `uv run ruff check`, `uv run ruff format --check`, `uv run pytest` yeşil.

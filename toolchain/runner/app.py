@@ -14,7 +14,13 @@ from fastapi import HTTPException
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
 
 from runner import run as runner
-from toolchain_common import check_artifacts, check_playwright, create_app, gitforge
+from toolchain_common import (
+    check_artifacts,
+    check_checks_hidden,
+    check_playwright,
+    create_app,
+    gitforge,
+)
 from toolchain_common.api import install_error_handlers
 from toolchain_common.settings import settings
 from toolchain_common.validation import (
@@ -26,7 +32,14 @@ from toolchain_common.validation import (
 
 ALLOWED_ENV = {"BREAK_CAMPAIGN"}
 
-app = create_app("test-runner", {"playwright": check_playwright, "artifacts": check_artifacts})
+app = create_app(
+    "test-runner",
+    {
+        "playwright": check_playwright,
+        "artifacts": check_artifacts,
+        "checks_hidden": check_checks_hidden,
+    },
+)
 install_error_handlers(app)
 
 
@@ -45,6 +58,8 @@ class RunBody(BaseModel):
         default_factory=list
     )
     workers: int | None = Field(None, ge=1, le=2)
+    # Kanıt olarak saklanacak koşu (kırarak doğrulama, triage): temizlikte silinmez (`.keep`).
+    keep: bool = False
 
     @field_validator("env")
     @classmethod
@@ -68,6 +83,7 @@ class RunBody(BaseModel):
             break_campaign=self.break_campaign or self.env.get("BREAK_CAMPAIGN") == "1",
             test_files=self.test_files,
             workers=self.workers,
+            keep=self.keep,
         )
 
 

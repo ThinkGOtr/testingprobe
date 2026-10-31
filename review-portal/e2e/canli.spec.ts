@@ -116,9 +116,12 @@ test("Demo-A: ön inceleme → 4 doğrulanmış bulgu → düzeltme → Jira PO 
   await expect(page.getByText(/^live$|CANLI/i)).toHaveCount(0);
   await ekran("01-bulgular");
 
+  // Ana demo yolu (REPLAY senaryosu `f2-kod-hatasi`, docs/DEMO-VERISI.md): F2 kampanya ve F4 kredi
+  // limiti kod hatasıdır; F1/F3 dokümanda düzeltilir. AC2 özgün kalır ("7 adette 1 bedava") →
+  // Demo-B'de 6 adet sınır case'i bugünkü kodda defect adayı olur.
   for (const [no, karar] of [
     ["F1", "Dokümanı düzelt"],
-    ["F2", "Dokümanı düzelt"],
+    ["F2", "Kod/veri hatalı"],
     ["F3", "Dokümanı düzelt"],
     ["F4", "Kod/veri hatalı"],
   ] as const) {
@@ -172,4 +175,136 @@ test("Demo-A: ön inceleme → 4 doğrulanmış bulgu → düzeltme → Jira PO 
   }).toPass({ timeout: 60_000 });
   await jira.screenshot({ path: `${EKRAN_DIZINI}/demoa-07-jira-baglantilar.png`, fullPage: true });
   expect(hatalar).toEqual([]);
+});
+
+// Demo-B uçtan uca (canlı yığın, REPLAY): onaylı TPD-1 case'lerinden kod üretimi → yerel kontrol →
+// PR (LocalForge) → kırarak doğrula (yeşil → kırmızı → yeşil) → merge; sınır case'i defect adayı;
+// sunucu: Kontrol Kulesi (KPI kaynakları) ve deploy tetiği. Demo-A tamamlanmış olmalı (onaylı case'ler):
+//   DEMOB_UI=1 set -a; . ../.env; set +a; PORTAL_LIVE=1 npx playwright test -g Demo-B
+async function girisCanli(page: Page, kullanici: string) {
+  await page.goto("/giris");
+  await page.getByLabel("Kullanıcı adı").fill(kullanici);
+  await page.getByLabel("Parola").fill(PAROLA);
+  await page.getByRole("button", { name: "Giriş yap" }).click();
+  await expect(page.getByRole("navigation", { name: "Ana menü" })).toBeVisible();
+}
+
+/** Liste satırı (script) bulunana ve koşul sağlanana kadar sayfayı yeniler. */
+async function bekleSatir(page: Page, baslik: RegExp, metin: RegExp, sure_ms: number) {
+  await expect(async () => {
+    await page.reload();
+    const satir = page.getByRole("row").filter({ has: page.getByRole("link", { name: baslik }) }).first();
+    await expect(satir).toContainText(metin, { timeout: 2_000 });
+  }).toPass({ timeout: sure_ms, intervals: [3_000] });
+}
+
+test("Demo-B: kod üretimi → yerel kontrol → PR → kırarak doğrula → merge; defect adayı; Kontrol Kulesi", async ({ page }) => {
+  test.skip(process.env.DEMOB_UI !== "1", "DEMOB_UI=1 ile, Demo-A (onaylı TPD-1 case'leri) sonrası koşar");
+  test.setTimeout(20 * 60_000);
+  const hatalar: string[] = [];
+  page.on("pageerror", (e) => hatalar.push(String(e)));
+  const uclar = await cekirdekUclari(page);
+  for (const u of ["/scripts", "/scripts/{}", "/code/generate", "/scripts/{}/break-verify", "/prs/{}/merge", "/runs", "/runs/{}", "/control-tower", "/ci/trigger"]) {
+    expect(uclar, `çekirdek ${u} sunmuyor (Demo-B şeritleri birleşmemiş)`).toContain(u);
+  }
+
+  // Mühendis: rol bazlı açılış Kod üretimi.
+  await girisCanli(page, "muhendis");
+  await expect(page).toHaveURL(/\/kod$/);
+  await expect(page.getByText("ÖRNEK VERİ")).toHaveCount(0);
+  const yedi = /7 adet kampanyalı üründe 1 adet bedava verilir/;
+  const alti = /6 adet kampanyalı üründe bedava ürün verilmez/;
+  for (const ad of [yedi, alti]) {
+    const kutu = page.getByRole("checkbox", { name: ad });
+    if ((await kutu.count()) > 0) await kutu.first().check();
+  }
+  const uret = page.getByRole("button", { name: /Seçilenler için kod üret \([1-9]/ });
+  if (await uret.isEnabled().catch(() => false)) {
+    await uret.click();
+    await expect(page.getByRole("status").filter({ hasText: /kod üretimi/i }).or(page.getByText(/kod üretimi/i).first())).toBeVisible();
+  }
+  await page.screenshot({ path: `${EKRAN_DIZINI}/demob-01-kod-uretimi.png`, fullPage: true });
+
+  // 7 adet: PR açılır (yerel kontrol yeşil).
+  await bekleSatir(page, yedi, /PR açık|Birleştirildi/, 8 * 60_000);
+  await page.getByRole("link", { name: yedi }).first().click();
+  await expect(page.getByText("REPLAY", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("region", { name: "Eşlenen adımlar tablosu" })).toContainText("expect");
+  await expect(page.getByRole("list", { name: "PR check'leri" })).toBeVisible();
+  const adimEkran = page.locator(".ajan-ekran img");
+  if ((await adimEkran.count()) > 0) await expect(adimEkran.first()).toHaveJSProperty("complete", true);
+  await page.screenshot({ path: `${EKRAN_DIZINI}/demob-02-script-pr.png`, fullPage: true });
+
+  const kir = page.getByRole("button", { name: /Kırarak doğrula|Yeniden doğrula/ });
+  if (await page.getByText("Test hata yakalıyor ✓").isHidden()) {
+    await kir.click();
+    await expect(page.getByText("Test hata yakalıyor ✓")).toBeVisible({ timeout: 8 * 60_000 });
+  }
+  await page.screenshot({ path: `${EKRAN_DIZINI}/demob-03-kirarak-dogrula.png`, fullPage: true });
+  const merge = page.getByRole("button", { name: "Merge et" });
+  // Yeniden koşuda PR zaten birleştirilmiş olabilir (düğme yok): beklemeden atlanır.
+  if ((await merge.count()) > 0 && (await merge.isEnabled())) {
+    await merge.click();
+    await expect(page.locator(".sayfa-basligi").getByText("Birleştirildi")).toBeVisible({ timeout: 90_000 });
+  }
+  await page.screenshot({ path: `${EKRAN_DIZINI}/demob-04-merge.png`, fullPage: true });
+
+  // 6 adet: assertion kırmızı → defect adayı, PR yok.
+  await page.goto("/kod");
+  await bekleSatir(page, alti, /Defect adayı|İnsana düştü/, 8 * 60_000);
+  await page.getByRole("link", { name: alti }).first().click();
+  await expect(page.getByTestId("yerel-sinif")).toContainText("Defect adayı");
+  await page.screenshot({ path: `${EKRAN_DIZINI}/demob-05-defect-adayi.png`, fullPage: true });
+  await page.getByRole("button", { name: "Çıkış" }).click();
+
+  // Sunucu: açılış Kontrol Kulesi; KPI kaynakları; uydurma yok; deploy tetiği.
+  await girisCanli(page, "sunucu");
+  await expect(page).toHaveURL(/\/kontrol-kulesi$/);
+  await expect(page.getByRole("img", { name: /^Kaynak: run\.sonuc/ })).toBeVisible();
+  await expect(page.getByText("ÖRNEK VERİ")).toHaveCount(0);
+  await page.screenshot({ path: `${EKRAN_DIZINI}/demob-06-kontrol-kulesi.png`, fullPage: true });
+  await page.goto("/kosular");
+  // Satır sayısı tablo yüklendikten sonra okunur (sayaç "N/M koşu" görünür); yeniden yüklemede de.
+  const sayac = page.getByRole("status").filter({ hasText: /\d+\/\d+ koşu/ });
+  const satirlar = page.getByRole("region", { name: "Koşular tablosu" }).getByRole("row");
+  await expect(sayac).toBeVisible();
+  const once = await satirlar.count();
+  await page.getByRole("button", { name: "Deploy tetikle" }).click();
+  // Önceki deploy koşusu hâlâ kuyruktaysa core yeni koşu açmaz ("zaten kuyrukta"): satır eklenmez.
+  const zatenKuyrukta = page.getByText(/zaten kuyrukta/).first();
+  await expect(page.getByText(/kuyruğa alındı|zaten kuyrukta/).first()).toBeVisible();
+  if (!(await zatenKuyrukta.isVisible())) {
+    await expect(async () => {
+      await page.reload();
+      await expect(sayac).toBeVisible({ timeout: 5_000 });
+      expect(await satirlar.count()).toBeGreaterThan(once);
+    }).toPass({ timeout: 90_000, intervals: [3_000] });
+  }
+  await page.screenshot({ path: `${EKRAN_DIZINI}/demob-07-kosular.png`, fullPage: true });
+  expect(hatalar).toEqual([]);
+});
+
+test("koşu raporu: Playwright HTML raporu tek CSP ile açılır ve çizilir (boş sayfa değil)", async ({ page }) => {
+  await page.goto("/giris");
+  await page.getByLabel("Kullanıcı adı").fill("sunucu");
+  await page.getByLabel("Parola").fill(PAROLA);
+  await page.getByRole("button", { name: "Giriş yap" }).click();
+  await expect(page.getByRole("navigation", { name: "Ana menü" })).toBeVisible();
+  const kosular = (await (await page.request.get("/api/runs")).json()) as { rapor_url: string | null }[];
+  const rapor = kosular.find((k) => k.rapor_url)?.rapor_url;
+  test.skip(!rapor, "HTML raporu olan koşu yok");
+  const csp: string[] = [];
+  const cspHatalari: string[] = [];
+  page.on("response", async (r) => {
+    if (r.url().endsWith(rapor!)) for (const h of await r.headersArray()) if (h.name.toLowerCase() === "content-security-policy") csp.push(h.value);
+  });
+  page.on("console", (m) => {
+    if (/Content Security Policy/i.test(m.text())) cspHatalari.push(m.text());
+  });
+  await page.goto(rapor!);
+  // Rapor satır içi betikle #root'u doldurur; portal CSP'si de gelirse betik engellenir ve #root boş kalır.
+  await expect(page.locator("#root > *").first()).toBeAttached({ timeout: 10_000 });
+  expect(csp, "artefakt yanıtında tek CSP (core sandbox) olmalı").toHaveLength(1);
+  expect(csp[0]).toMatch(/^sandbox /);
+  expect(cspHatalari).toEqual([]);
 });

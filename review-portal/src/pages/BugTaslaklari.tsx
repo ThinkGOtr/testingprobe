@@ -11,6 +11,14 @@ import { tarih } from "../lib/format";
 
 const KAYNAK = { triage: "Triage", consistency: "Tutarlılık denetimi", a11y: "Erişilebilirlik" } as const;
 
+/**
+ * Tutarlılık denetiminden doğan taslaklarda core henüz Jira mükerrer araması yapmıyor (§8.12 JQL +
+ * dup_rank Faz 4'te). Boş liste "bulunamadı" değil "arama yapılmadı" demektir; ekran bunu iddia etmez.
+ */
+export function mukerrerAramasiYapilmadi(b: Pick<BugTaslagi, "kaynak" | "mukerrer_adaylari">): boolean {
+  return b.kaynak === "consistency" && b.mukerrer_adaylari.length === 0;
+}
+
 /** Durum core `bug_draft` makinesinden; "bağlandı" ayrı durum değil, `published` + `karar === "link"`. */
 function durum(b: BugTaslagi): { etiket: string; ton: Ton } {
   if (b.durum === "published" && b.karar === "link") return { etiket: `Bağlandı: ${b.link_key ?? b.jira_key}`, ton: "bilgi" };
@@ -61,7 +69,9 @@ export function BugTaslaklari() {
                       <td>{KAYNAK[b.kaynak]}</td>
                       <td className="mono">{b.icerik.story_key ?? "—"}</td>
                       <td>{SEVERITY[b.icerik.severity_suggestion]}</td>
-                      <td className="mono">{b.mukerrer_adaylari.map((m) => m.key).join(", ") || "—"}</td>
+                      <td className={mukerrerAramasiYapilmadi(b) ? "soluk" : "mono"}>
+                        {mukerrerAramasiYapilmadi(b) ? "Arama yapılmadı" : b.mukerrer_adaylari.map((m) => m.key).join(", ") || "—"}
+                      </td>
                       <td>
                         <Cip ton={d.ton}>{d.etiket}</Cip>
                       </td>
@@ -176,7 +186,12 @@ export function BugTaslakDetay() {
       />
 
       <Kart baslik="Olası mükerrerler">
-        {b.mukerrer_adaylari.length === 0 ? (
+        {mukerrerAramasiYapilmadi(b) ? (
+          <BosDurum baslik="Mükerrer araması yapılmadı (Faz 4).">
+            Tutarlılık denetiminden gelen taslaklar için Jira'da benzer açık bug henüz aranmıyor; boş liste
+            "benzer kayıt yok" anlamına gelmez.
+          </BosDurum>
+        ) : b.mukerrer_adaylari.length === 0 ? (
           <BosDurum baslik="Jira'da benzer açık bug bulunamadı." />
         ) : (
           <ul className="mukerrer-liste">
@@ -253,6 +268,13 @@ export function BugTaslakDetay() {
             </ul>
           )}
 
+          {taslak && mukerrerAramasiYapilmadi(b) && (
+            <Uyari baslik="Onaylamadan önce Jira'yı kontrol edin">
+              Bu taslak için mükerrer araması yapılmadı. Aynı hata Jira'da açık olabilir; önce benzer açık bug'ları
+              arayın, varsa "Mevcut kayda bağla" ile bağlayın. Demo sunumunda bu taslağı "Onayla ve Jira'da aç" ile
+              onaylamayın (mükerrer kayıt açılır).
+            </Uyari>
+          )}
           {taslak && (
             <div className="karar-paneli">
               <div>

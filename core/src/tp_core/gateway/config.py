@@ -81,7 +81,7 @@ class PurposeConfig:
     model: str
     max_tokens: int = 4096
     params: dict[str, Any] = field(default_factory=dict)
-    max_input_tokens: int | None = None  # ajan için toplam girdi token tavanı
+    max_input_tokens: int | None = None  # ajan: önbelleksiz+yazma girdi toplamı tavanı
     # İstemci zaman aşımı (sn). Taşıma ayarıdır, çıktıyı etkilemez: bundle hash'ine girmez.
     timeout_s: float | None = None
 

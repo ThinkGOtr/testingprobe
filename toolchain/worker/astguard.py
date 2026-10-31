@@ -8,6 +8,7 @@ verilir. Çıkış kodları: 0 geçti · 1 ihlal · 2 kullanım/çalışma hatas
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from toolchain_common import gitforge, proc
@@ -20,7 +21,10 @@ class AstGuardError(RuntimeError):
     """ast-guard çalışamadı (çözülemeyen ref, süre aşımı, bozuk çıktı)."""
 
 
-def run_ast_guard(cfg: Settings, base_sha: str, head_sha: str, mode: str) -> dict[str, Any]:
+def run_ast_guard(
+    cfg: Settings, base_sha: str, head_sha: str, mode: str, repo: Path | None = None
+) -> dict[str, Any]:
+    """`repo` iki commit'i de içeren depo (varsayılan yerel forge; GitHub modunda ayna)."""
     if mode not in MODES:
         raise ValueError(f"mod yalnızca {MODES} olabilir")
     res = proc.run(
@@ -28,7 +32,7 @@ def run_ast_guard(cfg: Settings, base_sha: str, head_sha: str, mode: str) -> dic
             cfg.node,
             str(cfg.ast_guard_cli),
             "--repo",
-            str(cfg.forge_path),
+            str(repo or cfg.forge_path),
             "--base",
             base_sha,
             "--head",

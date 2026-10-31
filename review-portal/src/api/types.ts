@@ -428,9 +428,12 @@ export interface AjanAdimi {
   po: string | null;
   method: string | null;
   args: unknown[];
-  verified: boolean;
+  /** Adım snapshot'ta doğrulandı mı; ajan olayı bunu taşımıyorsa null (araç izni doğrulama değildir). */
+  verified: boolean | null;
   ekran_goruntusu_url: string | null;
   zaman: string;
+  /** Aracın temizlenmiş ham çıktısı (parola maskeli); kartta "Ham çıktı" altında. Yoksa null. */
+  ham_cikti?: string | null;
 }
 
 export interface PullRequest {
@@ -445,23 +448,66 @@ export interface PullRequest {
   icerik_hash: string;
   /** İncelenen head commit'i; merge yalnızca dal hâlâ bu commit'teyse yapılır. */
   head_sha: string;
+  /**
+   * PR'ın check'leri (LocalForge: `local-ci` = toolchain-worker + test-runner sonucu; GitHub:
+   * `test-local`, `ast-guard`, `semgrep`, isteğe bağlı Sauce). Yoksa yalnızca `ci` özeti gösterilir.
+   */
+  checks?: PrCheck[];
+  /** PR'ın yaşadığı forge (TP_FORGE). Bilinmiyorsa yok. */
+  forge?: "local" | "github" | null;
+  /** Birleştirildiyse: merge commit'i, birleştiren ve zaman (core `pull_request`); bilinmiyorsa yok. */
+  merge_sha?: string | null;
+  merge_eden?: string | null;
+  merge_zamani?: string | null;
+  /** PR açıklaması (core `pull_request.govde`: izlenebilirlik, eşleme, yerel kontrol, denetim zinciri). */
+  govde?: string | null;
+  /** Dal durumu: başka bir PR merge edilince bot dalı main'in gerisinde kalır. */
+  dal?: PrDalDurumu | null;
+}
+
+export interface PrDalDurumu {
+  geride: boolean;
+  /** `codegen.update_branch` işinin durumu (ör. "kuyrukta", "calisiyor", "basarisiz"); yoksa null. */
+  guncelleme: string | null;
+  neden: string | null;
+}
+
+export type CheckDurumu = "passed" | "failed" | "pending" | "skipped" | "error";
+
+export interface PrCheck {
+  ad: string;
+  durum: CheckDurumu;
+  /** Zorunlu check mi (merge kapısı; `TP_REQUIRED_CHECKS`). Bilinmiyorsa null. */
+  zorunlu: boolean | null;
+  url: string | null;
+  aciklama: string | null;
 }
 
 /** `POST /prs/{number}/merge` gövdesi: kullanıcının incelediği içerik ve head commit. */
 export interface MergeGirdisi {
   icerik_hash: string;
   head_sha: string;
+  /**
+   * İnsanın kabul ettiği uyarılar için not (ör. "Zayıf test olarak merge edildi"). Core onay kaydına
+   * yazar; eski core alanı yok sayar (pydantic extra=ignore).
+   */
+  onay_notu?: string | null;
 }
 
 export type BreakAsamasi = "baseline" | "broken" | "restored";
 
 export interface BreakVerify {
-  durum: "not_started" | "running" | "passed" | "weak";
+  /** `failed`: doğrulama tamamlanamadı (ör. bayraksız koşu kırmızı ya da ortam hatası). */
+  durum: "not_started" | "running" | "passed" | "weak" | "failed";
+  /** Tamamlanamadıysa ya da zayıfsa core'un nedeni. */
+  neden?: string | null;
   asamalar: {
     ad: BreakAsamasi;
     sonuc: "pending" | "running" | "passed" | "failed";
     run_id: string | null;
     zaman: string | null;
+    /** Koşunun yerel kontrol sınıfı (core gönderirse): kırık koşuda yalnızca `defect_adayi` (assertion) kanıttır. */
+    sinif?: YerelKontrolSinifi | null;
   }[];
 }
 
@@ -485,20 +531,102 @@ export interface Script {
   /** Kırarak doğrulamada uygulama kırıldığında da yeşil kaldı (core `script.zayif_test`). */
   zayif_test: boolean;
   break_verify: BreakVerify;
-  mode: CiktiModu;
+  /** İnsana düşme nedeni (core `script_codegen.engel_turu`/`engel_nedeni`), yoksa null. */
+  engel: { tur: string; neden: string | null } | null;
+  /** Yerel kontrolün sınıfı (liste rozeti: "defect adayı"); kontrol yapılmadıysa null. */
+  yerel_sinif: YerelKontrolSinifi | null;
+  /** null: model çağrısı yok ya da mod bilinmiyor ("live" uydurulmaz). */
+  mode: CiktiModu | null;
   olusturma: string;
+  hata: string | null;
+}
+
+/**
+ * Doğrulanmış adım → page object eşlemesi (core `step_mapping`, §8.4 adım 2–3). Kod yalnızca
+ * bu eşlemeden şablonla üretilir (model TypeScript yazmaz).
+ */
+export interface AdimEslemesi {
+  adim_no: number;
+  /** Case adımı referansı ("S1"); beklenen sonuç doğrulamasında null olabilir. */
+  step_id: string | null;
+  po: string;
+  method: string;
+  args: unknown[];
+  /** `expect*` doğrulama metodu (assertion). */
+  beklenen: boolean;
+  verified: boolean;
+  /** Assertion değerinin onaylı case metnindeki karşılığı (§8.4 adım 3); bilinmiyorsa null. */
+  kaynak_metin: string | null;
+  kanit_ref: string | null;
+  /** Doğrulama notu (ör. giriş adımı ajan bayisiyle doğrulandı; test case bayisiyle koşar). */
+  dogrulama_notu?: string | null;
+}
+
+/**
+ * Yerel kontrolün (toolchain-worker: tsc/eslint/AST koruması → test-runner: repeat-each) sonucu.
+ * `sinif` başarısızlığın deterministik sınıfıdır: `defect_adayi` = assertion hatası, otomatik
+ * onarım yok, insana gider (§8.4 adım 5); `locator` = eşleme/locator hatası (1 düzeltme turu).
+ */
+export type YerelKontrolSinifi = "gecti" | "defect_adayi" | "kararsiz" | "locator" | "derleme" | "ortam" | "bilinmiyor";
+
+export interface YerelKontrolHatasi {
+  /** Core aynı hatanın repeat-each tekrarlarını tek satıra toplar: kaç tekrarda görüldü (yoksa 1). */
+  tekrar?: number;
+  test_adi: string;
+  hata_mesaji: string | null;
+  beklenen: string | null;
+  gerceklesen: string | null;
+  /** Hatanın olduğu test adımı (Playwright step başlığı), biliniyorsa. */
+  adim: string | null;
+}
+
+export interface YerelKontrol {
+  tsc: boolean | null;
+  eslint: boolean | null;
+  ast_guard: boolean | null;
+  tekrar: number;
+  /** Playwright koşusunun sonucu; koşu yapılmadıysa null. */
+  sonuc: "passed" | "failed" | "error" | null;
+  sinif: YerelKontrolSinifi | null;
+  /** Sınıfın Türkçe açıklaması (core'dan); yoksa portal sınıfa göre metin gösterir. */
+  aciklama: string | null;
+  run_id: string | null;
+  /** Yapılan eşleme düzeltme turu sayısı (en fazla 1; assertion'a dokunmaz). */
+  duzeltme_turu: number;
+  basarisiz: YerelKontrolHatasi[];
+  /** Playwright tekrarlarında geçen / toplam test (repeat-each dahil); bilinmiyorsa null. */
+  gecen: number | null;
+  toplam: number | null;
+  /** Kısa hata özeti (ör. "Başarısız adım: tsc"). */
   hata: string | null;
 }
 
 export interface ScriptDetay extends Script {
   kod: string | null;
   adimlar: AjanAdimi[];
-  yerel_kontrol: { tsc: boolean | null; eslint: boolean | null; ast_guard: boolean | null; tekrar: number } | null;
+  /** Doğrulanmış adım eşlemesi; core sunmuyorsa boş. */
+  eslemeler: AdimEslemesi[];
+  yerel_kontrol: YerelKontrol | null;
+  /**
+   * Core'un merge kapısı gerekçeleri (boş = kapı açık). Core göndermiyorsa `null`: portal kapıyı
+   * PR/CI/kırma alanlarından türetir (karar yine core'da; buton yalnızca rehberdir).
+   */
+  merge_engelleri: string[] | null;
+  /**
+   * Merge'i engellemeyen ama açık insan kabulü (`onay_notu`) isteyen core gerekçeleri (zayıf test,
+   * kırarak doğrulama yapılmadı/tamamlanamadı). Core göndermiyorsa `null` (portal türetir).
+   */
+  merge_kabul_gerekli?: string[] | null;
+  /** core'un ekran uyarıları (REPLAY kaynağı, kırma yapılmadı …). */
+  uyarilar: string[];
+  /** Adım 5 (ajan) gecikme bütçesi, saniye (core `TP_CODEGEN_STEP5_BUDGET_S`); bilinmiyorsa yok. */
+  gecikme_butcesi_s?: number | null;
 }
 
 // ---------------------------------------------------------------- Koşular
 
-export type Tetik = "pr" | "push" | "nightly" | "deploy";
+/** core `run.tetik` (enums.RUN_TETIK; CI workflow `trigger` girdisiyle ortak liste). */
+export type Tetik = "pr" | "push" | "nightly" | "deploy" | "break_verify" | "local_check" | "manual";
 export type KosuKaynagi = "local" | "github" | "sauce";
 
 export interface Kosu {
@@ -515,10 +643,21 @@ export interface Kosu {
   basarisiz: number;
   flaky: number;
   atlanan: number;
+  /** Üretilmiş statik Allure raporu (yoksa allure-results artefaktı). */
   allure_url: string | null;
+  /** Ham allure-results dizini (JSON listesi); rapor varken ikincil bağlantı. */
+  allure_sonuclari_url?: string | null;
+  /** Playwright HTML raporu. */
+  rapor_url: string | null;
+  /** JUnit XML (core `junit_url`; yoksa yerel artefakt düzeninden türetilir). */
+  junit_url?: string | null;
   sauce_url: string | null;
   ci_url: string | null;
   break_campaign: boolean;
+  /** Koşunun ait olduğu üretilen test (yerel kontrol / kırarak doğrulama); yoksa null. */
+  script_id: string | null;
+  /** Koşu öncesi sağlık yoklaması başarısız (test-runner `saglik.ok=false`): Playwright başlamadı. */
+  saglik_hatasi: string | null;
 }
 
 export interface TestSonucu {
@@ -530,10 +669,16 @@ export interface TestSonucu {
   hata_mesaji: string | null;
   failure_id: string | null;
   case_id: string | null;
+  /** Playwright ekleri (trace, ekran görüntüsü, video); url core'un artefakt ucundan. */
+  ekler?: { ad: string; tur: string | null; url: string | null }[];
 }
 
 export interface KosuDetay extends Kosu {
   sonuclar: TestSonucu[];
+  /** Koşu günlüğü (test-runner stdout) ve core'un koşu uyarıları. */
+  log_url: string | null;
+  hata: string | null;
+  uyarilar: string[];
 }
 
 // ---------------------------------------------------------------- Triage
@@ -644,40 +789,87 @@ export interface BugKararGirdisi {
 
 // ---------------------------------------------------------------- Kontrol Kulesi
 
+/**
+ * Kontrol Kulesi KPI anahtarları: her KPI'nın kaynağı (`kaynaklar[anahtar]`) ipucunda gösterilir.
+ */
+export type KpiAnahtari =
+  | "gecme_orani"
+  | "flaky"
+  | "karne"
+  | "kabul_orani"
+  | "script_ilk_review"
+  | "hazirlik_suresi"
+  | "manuel_baz"
+  | "maliyet"
+  | "a11y"
+  | "son_kosular";
+
+/**
+ * Ölçülmemiş değerler `null`'dır: portal "ölçülmedi" / "veri yok" yazar, sayı uydurmaz
+ * (canlı modda örnek değer gösterilmez).
+ */
 export interface KontrolKulesi {
   son_kosular: Kosu[];
-  gecme_orani: { oran: number; toplam: number; gecen: number; donem_gun: number };
+  /**
+   * Geçme oranı: core'da son `son_n` tamamlanmış CI koşusundan geçenlerin oranı (`birim: "kosu"`);
+   * `test` aynı koşuların test bazında oranı. Örnek veri test bazındadır (`birim: "test"`).
+   */
+  gecme_orani: {
+    oran: number | null;
+    toplam: number;
+    gecen: number;
+    donem_gun: number | null;
+    son_n: number | null;
+    birim: "kosu" | "test";
+    test: { oran: number | null; toplam: number; gecen: number } | null;
+  };
+  /** Hedef çizgisi yalnızca core bir hedef bildirirse çizilir. */
+  gecme_hedefi: number | null;
   gunluk_gecme: { tarih: string; oran: number; kosu: number }[];
-  flaky: { test_adi: string; neden: "retry" | "same_commit"; sayi: number; son_gorulme: string }[];
+  flaky: { test_adi: string; neden: "retry" | "same_commit"; sayi: number; son_gorulme: string | null }[];
   karne: {
     story_key: string;
     baslik: string;
-    alan: string;
+    alan: string | null;
     case_sayisi: number;
-    otomasyon_kapsami: number;
+    otomasyon_kapsami: number | null;
     son_sonuc: "passed" | "failed" | "none";
     acik_bug: number;
+    /**
+     * Güncel case'lerden en son script'i defect adayı (yerel kontrolde assertion kırmızı; PR yok)
+     * olanların sayısı (core `_acik_defect_adayi`). "Son sonuç" yalnızca main koşularından gelir;
+     * defect adayı main'e girmediği için ayrıca gösterilir. Eski core vermezse 0.
+     */
+    acik_defect_adayi: number;
   }[];
   ai_katkisi: {
-    kabul_orani: number;
+    kabul_orani: number | null;
     kabul_hedefi: number;
-    script_ilk_review: number;
+    script_ilk_review: number | null;
     script_hedefi: number;
-    ort_ai_sure_ms: number;
-    ort_review_sure_ms: number;
+    /** pass@1 (yerel düzeltme turu öncesi) ve düzeltme sonrası ayrı (§12). */
+    pass_at_1: number | null;
+    duzeltme_sonrasi: number | null;
+    ort_ai_sure_ms: number | null;
+    ort_review_sure_ms: number | null;
     manuel_baz_ms: number | null;
-    maliyet_usd_toplam: number;
-    maliyet_usd_bugun: number;
-    gunluk_butce_usd: number;
-    cagri_sayisi: number;
-    replay_cagri: number;
+    maliyet_usd_toplam: number | null;
+    maliyet_usd_bugun: number | null;
+    gunluk_butce_usd: number | null;
+    cagri_sayisi: number | null;
+    replay_cagri: number | null;
   };
+  /** `null`: erişilebilirlik taraması hiç yapılmadı. */
   a11y: {
     ihlal: number;
     kritik: number;
     son_tarama: string | null;
     sayfalar: { yol: string; ihlal: number; kritik: number }[];
-  };
+  } | null;
+  /** KPI → kaynağı (ör. "test_result (JUnit XML), son 7 gün, kırma koşuları hariç"). */
+  kaynaklar: Partial<Record<KpiAnahtari, string>>;
+  /** Core'un dürüstlük uyarıları (ör. "Manuel baz değer girilmedi"). */
+  uyarilar: string[];
 }
 
 // ---------------------------------------------------------------- Denetim

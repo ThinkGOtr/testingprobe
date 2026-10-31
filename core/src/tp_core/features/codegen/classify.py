@@ -1,0 +1,276 @@
+"""Yerel kontrol sonucunun deterministik sınıfı (TEKNIK-TASARIM §8.4 adım 5; Constitution VI, XI).
+
+toolchain-worker `/check` raporu (`deps → tsc → eslint → ast_guard → run`) şu sınıflara ayrılır:
+
+| Sınıf | Koşul | Sonraki adım |
+|---|---|---|
+| `gecti` | `conclusion = success` | PR |
+| `derleme` | deps/tsc/eslint/AST koruması başarısız | insana |
+| `ortam` | sağlık, runner yok, rapor yok, uygulama≠commit (`app`) | insana (yeniden denenebilir) |
+| `locator` | locator bulunamadı / bulma zaman aşımı / strict mode | 1 yeniden eşleme turu |
+| `defect_adayi` | **tüm** tekrarlar aynı `expect(...)`'te farklı değer | onarım yok, insana |
+| `kararsiz` | tekrarların bir kısmı geçti, bir kısmı kırmızı (flaky) | insana; defect adayı değil |
+| `bilinmiyor` | diğer | insana |
+
+`--repeat-each=3` kararlı kırmızıyı kararsızdan ayırmak içindir: 3 tekrardan biri bile geçtiyse
+sonuç "uygulama onaylı case'in beklenen sonucunu vermedi" diye okunamaz (yarış, zamanlama ya da
+test kararsızlığı olabilir); `kararsiz` sınıfı ayrı tutulur ve pass@1'de geçmedi sayılır.
+
+Hata metinleri test kodunun çıktısıdır (güvenilmez): yalnızca kalıp eşlenir, kırpılarak saklanır.
+"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
+from typing import Any
+
+MAX_HATA = 600
+GECEN = ("passed", "expected", "flaky")
+
+_LOCATOR_KALIPLARI = (
+    re.compile(r"element\(s\) not found", re.I),
+    re.compile(r"strict mode violation", re.I),
+    re.compile(r"resolved to 0 elements", re.I),
+    re.compile(r"locator\.\w+: Timeout \d+ms exceeded", re.I),
+    re.compile(r"waiting for (getBy|locator)", re.I),
+    re.compile(r"\.waitFor: Timeout", re.I),
+)
+_ASSERTION = re.compile(r"expect\([^)]*\)\.\w+", re.I)
+_RECEIVED = re.compile(r"^\s*Received(?: string| value)?:\s*(?P<v>.+)$", re.I | re.M)
+_EXPECTED = re.compile(r"^\s*Expected(?: string| value| pattern)?:\s*(?P<v>.+)$", re.I | re.M)
+_ORTAM = re.compile(r"net::ERR_|ECONNREFUSED|ENOTFOUND|page\.goto: Timeout", re.I)
+
+ACIKLAMA = {
+    "gecti": "Yerel kontrol geçti (tsc, eslint, AST koruması, Playwright tekrarları yeşil).",
+    "derleme": "Derleme/lint/AST koruması başarısız: üretilen kod ya da kütüphane insan "
+    "incelemesi ister.",
+    "ortam": "Ortam hatası (uygulama/test-runner erişilemedi); test sonucu güvenilir değil, "
+    "yeniden denenebilir.",
+    "locator": "Locator/eşleme hatası: eleman bulunamadı ya da zaman aşımı (beklenen değerlere "
+    "dokunmadan tek yeniden eşleme turu yapılır).",
+    "defect_adayi": "Defect adayı: uygulama onaylı case'in beklenen sonucunu vermedi. Otomatik "
+    "onarım yapılmaz; insana gider.",
+    "kararsiz": "Kararsız (flaky): tekrarların bir kısmı geçti, bir kısmı kırmızı. Defect adayı "
+    "sayılmaz; yarış/zamanlama ya da test kararsızlığı için insan incelemesi gerekli.",
+    "bilinmiyor": "Sınıflandırılamayan kırmızı sonuç; insan incelemesi gerekli.",
+    "kirma_beklenen_kirmizi": "Beklenen kırmızı: BREAK_CAMPAIGN ile kırılmış uygulamada test "
+    "assertion ile kaldı (testin hata yakaladığının kanıtı; defect adayı değildir).",
+}
+
+
+def _kirp(metin: Any) -> str | None:
+    if metin is None:
+        return None
+    s = str(metin)
+    return s if len(s) <= MAX_HATA else s[:MAX_HATA] + "…"
+
+
+@dataclass
+class Siniflama:
+    sinif: str
+    sonuc: str  # success | failure | error
+    aciklama: str
+    run_status: str | None = None
+    run_id: str | None = None
+    basarisiz: list[dict[str, Any]] = field(default_factory=list)
+    adimlar: dict[str, bool | None] = field(default_factory=dict)
+    gecen: int = 0
+    toplam: int = 0
+    hata: str | None = None
+
+    def ozet(self) -> dict[str, Any]:
+        return {
+            "sinif": self.sinif,
+            "sonuc": self.sonuc,
+            "aciklama": self.aciklama,
+            "run_status": self.run_status,
+            "run_id": self.run_id,
+            "basarisiz": self.basarisiz,
+            "adimlar": self.adimlar,
+            "gecen": self.gecen,
+            "toplam": self.toplam,
+            "hata": self.hata,
+        }
+
+
+# test-runner `failure.type` (toolchain/runner/results.py `classify_error`) → kontrol türü.
+RUNNER_TURU = {
+    "locator_not_found": "locator",
+    "locator_ambiguous": "locator",
+    "locator_timeout": "locator",
+    "assertion": "assertion",
+    "navigation": "ortam",
+    "test_data": "ortam",
+}
+
+
+def test_error_kind(message: str | None, runner_type: str | None = None) -> str:
+    """Tek bir Playwright hatası: `locator` | `assertion` | `ortam` | `bilinmiyor`.
+
+    Önce test-runner'ın biçimsel türü (`failure.type`), yoksa/`other` ise mesaj kalıpları.
+    """
+    if runner_type in RUNNER_TURU:
+        return RUNNER_TURU[runner_type]
+    m = message or ""
+    if _ORTAM.search(m):
+        return "ortam"
+    # Assertion önce: Playwright'ın `expect(locator).toHaveText` zaman aşımı mesajı "Call log"
+    # bölümünde `- waiting for getByTestId(...)` satırı taşır; bu bir locator hatası değildir.
+    # Locator kalıpları "Call log" satırları dışında aranır.
+    if _ASSERTION.search(m) and _RECEIVED.search(m):
+        return "assertion"
+    if any(k.search(_cagri_kaydi_disi(m)) for k in _LOCATOR_KALIPLARI):
+        return "locator"
+    return "bilinmiyor"
+
+
+def _cagri_kaydi_disi(m: str) -> str:
+    """Hata mesajının "Call log:" bölümünden önceki kısmı (bölüm yoksa tamamı)."""
+    ana, _ayrac, _kayit = m.partition("Call log:")
+    return ana
+
+
+def _hata_satiri(test: Mapping[str, Any]) -> dict[str, Any]:
+    err = str(test.get("error") or "")
+    failure = test.get("failure") if isinstance(test.get("failure"), Mapping) else {}
+    failure = failure or {}
+    m_exp, m_rec = _EXPECTED.search(err), _RECEIVED.search(err)
+    exp = failure.get("expected") or (m_exp.group("v").strip() if m_exp else None)
+    rec = failure.get("received") or (m_rec.group("v").strip() if m_rec else None)
+    adim = failure.get("step") if isinstance(failure.get("step"), Mapping) else None
+    konum = failure.get("test_location") or failure.get("location")
+    satir = konum.get("line") if isinstance(konum, Mapping) else None
+    return {
+        "test_adi": _kirp(test.get("title")) or "",
+        "hata_mesaji": _kirp(err.splitlines()[0] if err else failure.get("first_line")),
+        "beklenen": _kirp(exp),
+        "gerceklesen": _kirp(rec),
+        "adim": _kirp(adim.get("title")) if adim else None,
+        "locator": _kirp(failure.get("locator")),
+        "tur": test_error_kind(err, failure.get("type")),
+        "satir": satir if isinstance(satir, int) and not isinstance(satir, bool) else None,
+    }
+
+
+def _tekrarlari_birlestir(satirlar: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """repeat-each tekrarlarında aynı hata tek satır olur (`tekrar`: kaç kez görüldü)."""
+    out: dict[tuple[Any, ...], dict[str, Any]] = {}
+    for s in satirlar:
+        anahtar = tuple(s.get(k) for k in ("test_adi", "hata_mesaji", "beklenen", "gerceklesen",
+                                            "locator", "satir"))  # fmt: skip
+        if anahtar in out:
+            out[anahtar]["tekrar"] += 1
+        else:
+            out[anahtar] = {**s, "tekrar": 1}
+    return list(out.values())
+
+
+def _adim_ok(report: Mapping[str, Any], ad: str) -> bool | None:
+    adim = report.get(ad)
+    if not isinstance(adim, Mapping) or adim.get("skipped"):
+        return None
+    return bool(adim.get("ok"))
+
+
+def classify(report: Mapping[str, Any]) -> Siniflama:
+    adimlar = {ad: _adim_ok(report, ad) for ad in ("deps", "tsc", "eslint", "ast_guard")}
+    run = report.get("run") if isinstance(report.get("run"), Mapping) else {}
+    run = run or {}
+    tests = [t for t in run.get("tests") or [] if isinstance(t, Mapping)]
+    gecen = sum(1 for t in tests if t.get("status") in GECEN)
+    ortak = {
+        "run_status": run.get("status"),
+        "run_id": run.get("run_id"),
+        "adimlar": adimlar,
+        "gecen": gecen,
+        "toplam": len(tests),
+    }
+    if report.get("conclusion") == "success":
+        return Siniflama("gecti", "success", ACIKLAMA["gecti"], **ortak)
+    app = report.get("app")
+    if isinstance(app, Mapping) and not app.get("skipped") and app.get("ok") is False:
+        # Çalışan uygulama commit'le eşleşmiyor (`sha_eslesmesi='farkli'`) ya da doğrulanamadı:
+        # koşu yapılmadı; bu bir test/ürün sonucu değil ortam sorunudur (Constitution XI).
+        return Siniflama(
+            "ortam",
+            "error",
+            ACIKLAMA["ortam"],
+            hata=_kirp(app.get("error") or f"uygulama eşleşmesi: {app.get('sha_eslesmesi')}"),
+            **ortak,
+        )
+    if any(v is False for v in adimlar.values()):
+        basarisiz = [ad for ad, v in adimlar.items() if v is False]
+        return Siniflama(
+            "derleme",
+            "failure",
+            ACIKLAMA["derleme"],
+            hata="Başarısız adım: " + ", ".join(basarisiz),
+            **ortak,
+        )
+    saglik = run.get("saglik")
+    if (
+        run.get("status") == "error"
+        or (isinstance(saglik, Mapping) and saglik.get("ok") is False)
+        or not run
+    ):
+        return Siniflama(
+            "ortam",
+            "error",
+            ACIKLAMA["ortam"],
+            hata=_kirp(run.get("error") or report.get("summary")),
+            **ortak,
+        )
+    kirmizi = [t for t in tests if t.get("status") not in (*GECEN, "skipped")]
+    satirlar = [_hata_satiri(t) for t in kirmizi]
+    turler = {s["tur"] for s in satirlar}
+    if "ortam" in turler:
+        sinif = "ortam"
+    elif "locator" in turler:
+        sinif = "locator"
+    elif _kararsiz_mi(tests):
+        # Aynı testin tekrarlarının bir kısmı geçti: kararlı kırmızı değil → defect adayı değil.
+        sinif = "kararsiz"
+    elif "assertion" in turler and _ayni_assertion(satirlar):
+        sinif = "defect_adayi"
+    else:
+        sinif = "bilinmiyor"
+    return Siniflama(
+        sinif,
+        "error" if sinif == "ortam" else "failure",
+        ACIKLAMA[sinif],
+        basarisiz=_tekrarlari_birlestir(satirlar)[:10],
+        hata=_kirp(report.get("summary")),
+        **ortak,
+    )
+
+
+def _kararsiz_mi(tests: list[Mapping[str, Any]]) -> bool:
+    """Aynı başlıklı testin (repeat-each tekrarları) hem geçen hem kırmızı koşusu var mı?"""
+    durumlar: dict[Any, set[bool]] = {}
+    for t in tests:
+        if t.get("status") == "skipped":
+            continue
+        durumlar.setdefault(t.get("title"), set()).add(t.get("status") in GECEN)
+    return any(d == {True, False} for d in durumlar.values())
+
+
+def _ayni_assertion(satirlar: list[dict[str, Any]]) -> bool:
+    """Kırmızı tekrarların hepsi assertion mı ve her test tüm tekrarlarında aynı doğrulamada
+    (satır, beklenen, gerçekleşen) mı kaldı?"""
+    if not satirlar or any(s["tur"] != "assertion" for s in satirlar):
+        return False
+    testler: dict[Any, set[tuple[Any, ...]]] = {}
+    for s in satirlar:
+        testler.setdefault(s.get("test_adi"), set()).add(
+            (s.get("satir"), s.get("beklenen"), s.get("gerceklesen"))
+        )
+    return all(len(a) == 1 for a in testler.values())
+
+
+def kirma_sinifi(s: Siniflama) -> Siniflama:
+    """Kırılmış (BREAK_CAMPAIGN) koşunun kayıt sınıfı: assertion kırmızısı beklenen kanıttır."""
+    if s.sinif != "defect_adayi":
+        return s
+    return replace(s, sinif="kirma_beklenen_kirmizi", aciklama=ACIKLAMA["kirma_beklenen_kirmizi"])

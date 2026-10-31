@@ -40,3 +40,45 @@ describe("nginx: POST /publish proxy okuma süresi core beklemesinden uzun", () 
     if (genel! < beklemeS) expect(nginx).toContain("location = /api/publish {");
   });
 });
+
+/** `location <eşleşme> { … }` bloğunun gövdesi (iç içe süslü parantez yok). */
+function blok(eslesme: string): string | null {
+  const bas = nginx.indexOf(`location ${eslesme} {`);
+  if (bas < 0) return null;
+  return nginx.slice(bas, nginx.indexOf("}", bas));
+}
+
+describe("nginx: koşu artefaktları tek CSP ile sunulur (Playwright HTML raporu boş açılmaz)", () => {
+  it("/api/artifacts/ kendi location'ında; portal CSP'si eklemez, kendi add_header'ı ile mirası keser", () => {
+    const b = blok("/api/artifacts/");
+    expect(b).not.toBeNull();
+    expect(b!).toContain("proxy_pass http://$upstream;");
+    expect(b!).toMatch(/rewrite \^\/api\/\(\.\*\)\$ \/\$1 break;/);
+    // add_header içeren location sunucu düzeyindeki başlıkları miras almaz: en az bir add_header şart.
+    expect(b!).toMatch(/add_header\s+/);
+    // Core sandbox CSP'si gönderir; ikinci (portal) CSP raporun satır içi betiklerini engeller.
+    expect(b!).not.toMatch(/Content-Security-Policy/);
+  });
+
+  it("genel /api/ bloğu add_header tanımlamaz (sunucu CSP'sini miras alır) — artefakt bloğu bu yüzden ayrı", () => {
+    expect(blok("/api/")!).not.toMatch(/add_header/);
+    expect(nginx).toMatch(/server \{[\s\S]*add_header Content-Security-Policy "default-src 'self'/);
+  });
+});
+
+describe("nginx: Playwright HTML raporu opak kökende çalışır (localStorage yedeği)", () => {
+  const bas = nginx.indexOf("location ~ ^/api/artifacts/runs/");
+  const b = bas >= 0 ? nginx.slice(bas, nginx.indexOf("\n    }", bas)) : "";
+  it("rapor index.html'i ayrı regex location'da; CSP eklemez, gövdeye Storage yedeği enjekte eder", () => {
+    expect(b).not.toBe("");
+    expect("/api/artifacts/runs/396f7376-108e-4706-b2b3-c15e67071894/src/e2e/results/html/index.html").toMatch(
+      new RegExp(/location ~ (\S+) \{/.exec(b)![1]),
+    );
+    expect(b).not.toMatch(/Content-Security-Policy/);
+    expect(b).toMatch(/proxy_set_header Accept-Encoding "";/);
+    expect(b).toMatch(/sub_filter '<head>' '<head><script>/);
+    // Köken gevşetilmez: yedek yalnızca erişim hata verirse tanımlanır, allow-same-origin eklenmez.
+    const direktifler = nginx.split("\n").filter((l) => !l.trim().startsWith("#")).join("\n");
+    expect(direktifler).not.toMatch(/allow-same-origin/);
+  });
+});

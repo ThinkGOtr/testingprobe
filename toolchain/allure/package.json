@@ -1,0 +1,9 @@
+{
+  "name": "testingprobe-allure",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Allure 3 CLI (Node) for static, single-file Allure HTML reports in test-runner. No AI, no network at run time.",
+  "dependencies": {
+    "allure": "3.20.1"
+  }
+}

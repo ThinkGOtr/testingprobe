@@ -12,12 +12,22 @@ kullanılırsa REPLAY golden eşleşmesi garanti edilir (rules/replay/README.md)
 - `FREE_TEXT_KEY`: serbest metin gereksinimlerinin golden adı kökü (`golden_name(FREE_TEXT_KEY)`
   → `SERBEST`, 2. tur `SERBEST-r2`). Golden, `input_match` ile yalnızca senaryodaki serbest metne
   eşleşir; başka metinler dürüstçe REPLAY-MISS olur.
+
+Kod üretimi (verify_and_map, TEKNIK-TASARIM §8.4) için:
+- Ajan girdisini TEK yer kurar: `features.codegen.service.mapping_messages` (case JSON'u
+  `case:<ref>` bloğunda, `SymbolTable.for_prompt()` `symbols:<sha>` bloğunda). Testler de onu
+  kullanır; burada ikinci bir girdi kurucusu yoktur (anahtar testleri gerçek girdiyi denesin).
+- `approved_case_text(case)`: onaylı case'in kanonik düz metni. Golden'ların
+  `input_match.case_text` beyanı budur; geçit JSON case bloğunu bu metne çevirip TAM karşılaştırır.
+- `VERIFY_AGENT_DEALER` = demo-app seed'indeki `bayi3` ("Doğrulama Bayi"); e2e bayileri bayi1/bayi2
+  ile çakışmaz. Case'teki giriş verisi eşleme argümanıdır; tarayıcıda bu bayi kullanılır.
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from tp_core.gateway.untrusted import UntrustedKind, wrap_untrusted
 
@@ -88,3 +98,43 @@ def wrap_tool_result(tool: str, text: str, *, ref: str | None = None) -> str:
     )
     source = f"tool:{tool}" + (f":{ref}" if ref else "")
     return wrap_untrusted(text, source=source, kind=kind)
+
+
+# ------------------------------------------------------------------ kod üretimi (§8.4)
+
+# Doğrulama ajanının (Playwright MCP) bayisi: demo-app seed'i `bayi3` ("Doğrulama Bayi"); e2e
+# koşuları bu bayiyi kullanmaz, ajanın sepeti test koşularını bozmaz (demo-app/e2e/tests/fixtures.ts
+# `AGENT_DEALER`). Kod üretimi her case'ten önce bu bayinin sepetini sıfırlamalıdır.
+VERIFY_AGENT_DEALER = "bayi3"
+VERIFY_AGENT_DEALER_NAME = "Doğrulama Bayi"
+VERIFY_BASE_URL = "http://demo-app-web:8080"
+
+
+def _text(value: Any) -> str:
+    return "" if value is None else str(value).strip()
+
+
+def approved_case_text(case: Mapping[str, Any]) -> str:
+    """Onaylı case'in kanonik düz metni (blok gövdesi). Alan adları case şemasınınkidir."""
+    lines = [f"Başlık: {_text(case.get('title'))}"]
+    kind, risk = _text(case.get("type")), _text(case.get("risk"))
+    if kind or risk:
+        lines.append(f"Tür: {kind or '-'} · Risk: {risk or '-'}")
+    refs = [str(r) for r in case.get("acceptance_criteria_refs") or []]
+    if refs:
+        lines.append(f"Kabul kriterleri: {', '.join(refs)}")
+    pre = [_text(p) for p in case.get("preconditions") or [] if _text(p)]
+    lines.append("Ön koşullar:" if pre else "Ön koşullar: (yok)")
+    lines += [f"- {p}" for p in pre]
+    lines.append("Adımlar:")
+    for step in case.get("steps") or []:
+        sid = _text(step.get("id"))
+        lines.append(f"{sid}: {_text(step.get('action'))}")
+        data = _text(step.get("data"))
+        lines.append(f"  Veri: {data}" if data else "  Veri: (yok)")
+        lines.append(f"  Beklenen: {_text(step.get('expected'))}")
+    lines.append(f"Beklenen sonuç: {_text(case.get('expected_result'))}")
+    tags = [str(t) for t in case.get("tags") or []]
+    if tags:
+        lines.append(f"Etiketler: {', '.join(tags)}")
+    return "\n".join(lines)

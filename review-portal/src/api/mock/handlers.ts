@@ -3,6 +3,7 @@
 // demo edilebilir ve ekran testine girebilir. Tüm üretilen çıktılar mode alanıyla işaretlidir.
 import { ApiError, mockOturumu, mockOturumuAyarla } from "../http";
 import type {
+  AjanAdimi,
   Bulgu,
   BulguKararGirdisi,
   BugKararGirdisi,
@@ -37,6 +38,7 @@ import {
   caseSayilari,
   goldenBulgular,
   goldenCaseler,
+  turGoldenAdi,
   goldenInceleme,
   goldenKoku,
   goldenSorular,
@@ -46,9 +48,16 @@ import {
   KAMPANYA_KOD,
   kampanyaAdimlari,
   KAMPANYA_TEST_KODU,
+  C2_KAYNAK_METINLERI,
+  eslemeler,
+  MIN_SIPARIS_KAYNAK,
+  MIN_SIPARIS_TEST_KODU,
   MIN_SIPARIS_VERI,
+  minSiparisAdimlari,
+  SINIR_TEST_KODU,
+  sinirAdimlari,
   TEST_C1,
-  TEST_C2,
+  yerelGecti,
   type MockVeri,
 } from "./fixtures";
 import { mockOlayYayinla } from "./olaylar";
@@ -63,7 +72,7 @@ const KULLANICILAR: Record<string, Kullanici> = {
 
 const OTURUM_ANAHTARI = "tp-mock-oturum";
 // v3: örnek veri simülatör seed'i ve golden çıktılarla hizalandı (eski oturum verisi okunmaz).
-const VERI_ANAHTARI = "tp-mock-veri-v4";
+const VERI_ANAHTARI = "tp-mock-veri-v5";
 
 const testModu = import.meta.env.MODE === "test";
 const GECIKME_MS = testModu ? 0 : 120;
@@ -152,6 +161,19 @@ const simdi = () => new Date().toISOString();
 const kopya = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 
 /** Yanıt: içerik değişmiş olabilir, hash'ler güncel içerikten yeniden hesaplanıp kopya döner. */
+/**
+ * core `merge_kabul_gerekceleri` ile aynı metinler: merge'i engellemeyen ama açık insan kabulü
+ * (`onay_notu`) isteyen gerekçeler. Yalnızca `pr_open` script'te; durum değişince yeniden hesaplanır.
+ */
+export function mergeKabulGerekli(s: Pick<ScriptDetay, "durum" | "zayif_test" | "break_verify">): string[] {
+  if (s.durum !== "pr_open") return [];
+  const bv = s.break_verify.durum;
+  if (bv === "weak" || s.zayif_test) return ["Zayıf test: BREAK_CAMPAIGN ile kırılan uygulamada da yeşil kaldı (açık kabul gerekir)."];
+  if (bv === "failed") return ["Kırarak doğrulama tamamlanamadı: testin hata yakaladığına dair kanıt yok."];
+  if (bv === "not_started") return ["Kırarak doğrulama yapılmadı (yeşil → kırmızı → yeşil kanıtı yok)."];
+  return [];
+}
+
 function cikti<T>(x: T): T {
   hashleriTazele(veri);
   return kopya(x);
@@ -319,9 +341,10 @@ function serbestMetin(govde: unknown): GereksinimDetay {
  * yoksa null (REPLAY-MISS).
  */
 function goldenTurBulgulari(g: GereksinimDetay): Bulgu[] | null {
-  const kok = goldenKoku(g);
-  if (!kok) return null;
-  const kayit = goldenBulgular(g.kontrol_turu >= 2 ? `${kok}-r${g.kontrol_turu}` : kok);
+  // Ana golden'ın girdisi uymazsa girdisi uyan senaryo golden'ı (ör. f2-kod-hatasi/TPD-1-r2).
+  const ad = turGoldenAdi(g, g.kontrol_turu);
+  if (!ad) return null;
+  const kayit = goldenBulgular(ad);
   if (!kayit) return null;
   return kayit.map((f) => {
     const tekAc = g.kabul_kriterleri.find((a) => a.ref === f.doc_ref);
@@ -899,6 +922,21 @@ function yayinla(govde: unknown): YayinSonucu {
   return { hedef: "jira", sonuclar };
 }
 
+/**
+ * Örnek veride golden'ı olan case'ler (TPD-1): ajan adımları, eşleme kaynağı, şablon çıktısı ve
+ * yerel kontrolün sonucu. C3 (6 adet sınır) bugünkü koda karşı assertion'da kırmızıdır → defect adayı.
+ */
+const KOD_GOLDEN: Record<string, { adimlar: () => AjanAdimi[]; kaynak: Record<string, string>; kod: string; defect: boolean }> = {
+  "case-1-2": { adimlar: kampanyaAdimlari, kaynak: C2_KAYNAK_METINLERI, kod: KAMPANYA_TEST_KODU, defect: false },
+  "case-1-3": {
+    adimlar: sinirAdimlari,
+    kaynak: { "6": "Sepet sayacı 6 olur", "0,00 TL": "indirim 0,00 TL", "150,00 TL": "toplam 150,00 TL" },
+    kod: SINIR_TEST_KODU,
+    defect: true,
+  },
+  "case-1-4": { adimlar: minSiparisAdimlari, kaynak: MIN_SIPARIS_KAYNAK, kod: MIN_SIPARIS_TEST_KODU, defect: false },
+};
+
 function kodUret(govde: unknown): IsYaniti {
   rolGerekli("engineer");
   const ids = ((govde ?? {}) as { case_ids?: string[] }).case_ids ?? [];
@@ -909,6 +947,7 @@ function kodUret(govde: unknown): IsYaniti {
   for (const c of caseler) {
     const id = yeniId("scr");
     const branch = `tp/case-${sha256Hex(c.id).slice(0, 8)}`;
+    const golden = KOD_GOLDEN[c.id];
     const s: ScriptDetay = {
       id,
       case_ids: [c.id],
@@ -924,17 +963,34 @@ function kodUret(govde: unknown): IsYaniti {
         durum: "not_started",
         asamalar: (["baseline", "broken", "restored"] as const).map((ad) => ({ ad, sonuc: "pending", run_id: null, zaman: null })),
       },
-      // Tek golden kayıt (TPD-1 C2 kampanya testi) var; diğer case'ler için replay ıskalar ve
-      // adlandırılmış golden kayda düşülür — bu sessiz geçmez, REPLAY-MISS olarak işaretlenir (§8.8).
-      mode: c.id === "case-1-2" ? "replay" : "replay_miss",
+      yerel_sinif: null,
+      // Golden kaydı olmayan case'te replay ıskalar: sessiz geçmez, REPLAY-MISS olarak işaretlenir (§8.8).
+      mode: golden ? "replay" : "replay_miss",
       olusturma: simdi(),
       hata: null,
       kod: null,
       adimlar: [],
+      eslemeler: [],
       yerel_kontrol: null,
+      merge_engelleri: null,
+      uyarilar: [],
+      engel: null,
     };
     veri.scriptler.unshift(s);
-    const adimlar = kampanyaAdimlari();
+    if (!golden) {
+      arkaPlan([
+        () => {
+          gecir("script", s, "failed");
+          s.hata =
+            "REPLAY-MISS: bu case için kayıtlı doğrulama/eşleme çıktısı yok; kod üretilmedi, PR açılmadı. Canlı model (ANTHROPIC_API_KEY) gerekir.";
+          denetimEkle("code.generate", s.id, "REPLAY-MISS: kod üretilmedi", "core-worker");
+          mockOlayYayinla({ type: "ci.status", id: s.id, data: { durum: "failed" } });
+        },
+      ]);
+      continue;
+    }
+    const adimlar = golden.adimlar();
+    let kontrolKosusu: KosuDetay | null = null;
     arkaPlan([
       ...adimlar.map((a) => () => {
         if (s.durum !== "verifying") gecir("script", s, "verifying");
@@ -943,23 +999,41 @@ function kodUret(govde: unknown): IsYaniti {
         mockOlayYayinla({ type: "agent.step", id: s.id, data: { ...yeniAdim } });
       }),
       () => {
+        // Deterministik kontroller geçti: eşleme kaydı + şablondan kod; yerel kontrol başlar.
         gecir("script", s, "checking");
-        s.kod = KAMPANYA_TEST_KODU;
-        if (s.mode === "replay_miss") {
-          s.hata =
-            "REPLAY-MISS: bu case için kayıtlı çıktı yok; adlandırılmış golden kayıt (TPD-1 C2) yalnızca referans olarak gösteriliyor. PR açılmadı; canlı model gerekir.";
-        }
-        s.yerel_kontrol = { tsc: true, eslint: true, ast_guard: true, tekrar: 3 };
+        s.eslemeler = eslemeler(adimlar, golden.kaynak);
+        s.kod = golden.kod;
+        kontrolKosusu = kosuOlustur("local_check", "local", false, null);
+        kontrolKosusu.script_id = s.id;
+        kontrolKosusu.durum = "running";
+        s.yerel_kontrol = { ...yerelGecti(kontrolKosusu.id), sonuc: null, sinif: null };
         mockOlayYayinla({ type: "ci.status", id: s.id, data: { durum: "checking" } });
       },
       () => {
-        if (s.mode === "replay_miss") {
-          // Golden kayıt başka bir case'e ait: PR açılmaz, insana düşer (sahte başarı yok).
-          gecir("script", s, "failed");
-          denetimEkle("code.generate", s.id, "REPLAY-MISS: PR açılmadı", "core-worker");
-          mockOlayYayinla({ type: "ci.status", id: s.id, data: { durum: "failed" } });
+        const k = kontrolKosusu;
+        if (k) kosuBitir(k, !golden.defect, `${c.jira_key ?? "FT"} C${c.sira_no} · ${c.icerik.title}`, golden.defect ? "Beklenen: \"0\" · Gerçekleşen: \"1\" (bedava adet)" : undefined);
+        if (golden.defect) {
+          s.pass_at_1 = false;
+          s.yerel_sinif = "defect_adayi";
+          s.yerel_kontrol = {
+            ...yerelGecti(k?.id ?? ""),
+            sonuc: "failed",
+            sinif: "defect_adayi",
+            gecen: 0,
+            aciklama:
+              "Assertion hatası: uygulama onaylı case'in beklenen değerini vermiyor (3/3 tekrarda aynı). Otomatik düzeltme yapılmaz; insan incelemesine gider.",
+            basarisiz: [
+              { test_adi: c.icerik.title, hata_mesaji: "toHaveText(\"0\") · bedava adet", beklenen: "bedava adet 0 · indirim 0,00 TL", gerceklesen: "bedava adet 1 · indirim 25,00 TL", adim: "S4" },
+            ],
+          };
+          s.engel = { tur: "defect_candidate", neden: "Yerel kontrolde assertion kırmızı: defect adayı (onarım yok)." };
+          gecir("script", s, "blocked");
+          denetimEkle("code.local_check", s.id, "Assertion kırmızı: defect adayı, insana düştü (PR açılmadı)", "core-worker");
+          mockOlayYayinla({ type: "ci.status", id: s.id, data: { durum: "blocked" } });
           return;
         }
+        s.yerel_kontrol = yerelGecti(k?.id ?? "");
+        s.yerel_sinif = "gecti";
         const prNo = yeniPrNo();
         gecir("script", s, "pr_open");
         s.pass_at_1 = true;
@@ -972,6 +1046,8 @@ function kodUret(govde: unknown): IsYaniti {
           ci: "passed",
           icerik_hash: "", // hashleriTazele: dosya + kod
           head_sha: "",
+          checks: [{ ad: "local-ci", durum: "passed", zorunlu: true, url: null, aciklama: "tsc ✓ · eslint ✓ · AST koruması ✓ · Playwright 3/3" }],
+          forge: "local",
         };
         denetimEkle("pr.open", `PR #${prNo}`, branch, "core-worker");
         mockOlayYayinla({ type: "pr.opened", id: s.id, data: { number: prNo } });
@@ -1005,16 +1081,22 @@ function kosuOlustur(tetik: Kosu["tetik"], kaynak: Kosu["kaynak"], break_campaig
     flaky: 0,
     atlanan: 0,
     allure_url: null,
+    rapor_url: null,
     sauce_url: null,
     ci_url: null,
     break_campaign,
+    script_id: null,
+    saglik_hatasi: null,
+    log_url: null,
+    hata: null,
+    uyarilar: [],
     sonuclar: [],
   };
   veri.kosular.unshift(k);
   return k;
 }
 
-function kosuBitir(k: KosuDetay, gecti: boolean, testAdi: string): void {
+function kosuBitir(k: KosuDetay, gecti: boolean, testAdi: string, hata?: string): void {
   k.durum = gecti ? "passed" : "failed";
   k.sure_ms = 48000 + Math.round(Math.random() * 20000);
   k.sonuclar = [
@@ -1024,7 +1106,7 @@ function kosuBitir(k: KosuDetay, gecti: boolean, testAdi: string): void {
       durum: gecti ? "passed" : "failed",
       sure_ms: 6000,
       retry: 0,
-      hata_mesaji: gecti ? null : "Beklenen: \"25,00 TL\" · Gerçekleşen: \"0,00 TL\" (BREAK_CAMPAIGN=1)",
+      hata_mesaji: gecti ? null : (hata ?? "Beklenen: \"25,00 TL\" · Gerçekleşen: \"0,00 TL\" (BREAK_CAMPAIGN=1)"),
       failure_id: null,
       case_id: null,
     },
@@ -1047,7 +1129,8 @@ function kirarakDogrula(id: string): IsYaniti {
   kaydet();
   const asama = (i: number, kir: boolean) => [
     () => {
-      const k = kosuOlustur("pr", "local", kir, s.pr?.number ?? null);
+      const k = kosuOlustur("break_verify", "local", kir, s.pr?.number ?? null);
+      k.script_id = s.id;
       k.durum = "running";
       bv.asamalar[i] = { ...bv.asamalar[i], sonuc: "running", run_id: k.id, zaman: simdi() };
       mockOlayYayinla({ type: "ci.status", id: s.id, data: { asama: bv.asamalar[i].ad, sonuc: "running" } });
@@ -1089,15 +1172,22 @@ function prBirlestir(no: number, govde: unknown) {
   if (s?.pr) {
     mergeBagi(govde, s.pr);
     if (s.pr.durum !== "open") throw new ApiError(409, "PR açık değil.");
-    if (s.zayif_test) throw new ApiError(409, "Zayıf test: kırarak doğrulamada hata yakalamadı; merge kapalı.");
-    if (s.break_verify.durum !== "passed") {
-      throw new ApiError(409, "Merge için önce \"Kırarak doğrula\" yeşil → kırmızı → yeşil tamamlanmalı.");
-    }
-    if (s.pr.ci !== "passed") throw new ApiError(409, "CI yeşil değil.");
+    // core request_merge ile aynı kapı: zayıf test / kırma yapılmadı kapı değil (insan kabulüyle
+    // merge, not denetime yazılır); yalnızca sürmekte olan kırarak doğrulama ve zorunlu check engeller.
+    if (s.break_verify.durum === "running") throw new ApiError(409, "Kırarak doğrulama sürüyor; bitince merge edin");
+    if (s.pr.ci !== "passed") throw new ApiError(409, "Zorunlu kontrol 'local-ci' yeşil değil.");
     if (!yolGecerli("script", s.durum, ["merged"])) throw new ApiError(409, GECIS_YOK);
+    const not = (govde as { onay_notu?: unknown } | null | undefined)?.onay_notu;
     s.pr.durum = "merged";
+    s.pr.merge_sha = `m${s.pr.head_sha.slice(0, 6)}`;
+    s.pr.merge_eden = oturum()?.kullanici_adi ?? null;
+    s.pr.merge_zamani = simdi();
     gecir("script", s, "merged");
-    denetimEkle("pr.merge", `PR #${no}`, `İnsan onaylı merge (LocalForge) · head ${s.pr.head_sha.slice(0, 7)}`);
+    denetimEkle(
+      "pr.merge",
+      `PR #${no}`,
+      `İnsan onaylı merge (LocalForge) · head ${s.pr.head_sha.slice(0, 7)}${typeof not === "string" && not ? ` · ${not.slice(0, 200)}` : ""}`,
+    );
     kaydet();
     return cikti(s.pr);
   }
@@ -1111,6 +1201,38 @@ function prBirlestir(no: number, govde: unknown) {
     return cikti(h.oneri.pr);
   }
   throw new ApiError(404, `PR bulunamadı: #${no}`);
+}
+
+const RET_NEDENLERI = new Set(["hallucinated_step", "missing_ac", "wrong_test_data", "out_of_scope", "duplicate", "wrong_element"]);
+
+/** core POST /prs/{n}/review: değişiklik iste / reddet → script kapanır, PR kapatılır. */
+function prReview(no: number, govde: unknown) {
+  rolGerekli("engineer");
+  const s = veri.scriptler.find((x) => x.pr?.number === no);
+  if (!s?.pr) throw new ApiError(404, `PR bulunamadı: #${no}`);
+  const g = (govde ?? {}) as { karar?: unknown; ret_nedeni?: unknown; not?: unknown };
+  if (g.karar !== "degisiklik_iste" && g.karar !== "reddet") throw new ApiError(422, "karar degisiklik_iste veya reddet olmalı.");
+  if (typeof g.ret_nedeni !== "string" || !RET_NEDENLERI.has(g.ret_nedeni)) throw new ApiError(422, "ret nedeni sabit taksonomiden olmalı.");
+  mergeBagi(govde, s.pr);
+  if (s.pr.durum !== "open") throw new ApiError(409, `PR #${no} açık değil.`);
+  s.pr.durum = "closed";
+  const sonuc = g.karar === "reddet" ? "reddedildi" : "degisiklik_istendi";
+  s.engel = { tur: "human_rejected", neden: `İnsan review: ${g.karar} (${g.ret_nedeni})` };
+  gecir("script", s, "closed");
+  denetimEkle("codegen.review_rejected", `PR #${no}`, `${g.karar} · ${g.ret_nedeni}${typeof g.not === "string" && g.not ? ` · ${g.not.slice(0, 200)}` : ""}`);
+  kaydet();
+  return { ...cikti(s.pr), insan_review_sonucu: sonuc };
+}
+
+/** core POST /prs/{n}/update-branch: geride kalan bot dalını main'e taşır (202). */
+function prDaliGuncelle(no: number): IsYaniti {
+  rolGerekli("engineer");
+  const s = veri.scriptler.find((x) => x.pr?.number === no);
+  if (!s?.pr) throw new ApiError(404, `PR bulunamadı: #${no}`);
+  if (s.pr.durum !== "open") throw new ApiError(409, `PR #${no} açık değil.`);
+  s.pr.dal = { geride: false, guncelleme: null, neden: null };
+  kaydet();
+  return { job_id: `job-dal-${no}`, durum: "queued", mesaj: "Dal güncellemesi kuyruğa alındı." };
 }
 
 function ciTetikle(govde: unknown): IsYaniti {
@@ -1201,9 +1323,25 @@ function bugKarari(id: string, govde: unknown): BugTaslagi {
   return cikti(b);
 }
 
+/** Kontrol Kulesi KPI kaynakları (core'un `kaynaklar` alanıyla aynı biçim). */
+const KULE_KAYNAKLARI: KontrolKulesi["kaynaklar"] = {
+  gecme_orani: "test_result (JUnit XML) · son 7 gün · kasıtlı kırma (BREAK_CAMPAIGN) koşuları hariç",
+  flaky: "test_result: retry ile geçen ya da aynı commit'te sonucu değişen testler",
+  karne: "requirement + test_case + script (merge edilmiş) + son koşu sonucu + yayınlanmış bug",
+  kabul_orani: "review: ilk karar approve ya da küçük düzeltmeli edit / üretilen case (§12)",
+  script_ilk_review: "script: değişiklik istenmeden kabul edilen ve CI'da geçen / üretilen (pass@1 ayrı)",
+  hazirlik_suresi: "ai_call.sure_ms (AI) + case_goruntuleme→karar aralıkları (review)",
+  manuel_baz: "TP_MANUAL_BASELINE_S (F0 ölçümü); boşsa ölçülmedi",
+  maliyet: "ai_call.maliyet_usd (REPLAY çağrıları 0)",
+  a11y: "@axe-core/playwright · WCAG 2.2 AA · demo story sayfaları",
+  son_kosular: "run tablosu (yerel test-runner, GitHub Actions, Sauce Labs)",
+};
+
 function kontrolKulesi(): KontrolKulesi {
   girisGerekli();
-  const sonuclar = veri.kosular.flatMap((k) => k.sonuclar.map((s) => ({ ...s, kosu: k })));
+  // core gibi: Kontrol Kulesi yalnızca CI koşularını sayar (yerel kontrol ve kırarak doğrula hariç).
+  const ciKosulari = veri.kosular.filter((k) => ["pr", "push", "nightly", "deploy", "manual"].includes(k.tetik));
+  const sonuclar = ciKosulari.flatMap((k) => k.sonuclar.map((s) => ({ ...s, kosu: k })));
   const sayilan = sonuclar.filter((s) => s.durum !== "skipped" && !s.kosu.break_campaign);
   const gecen = sayilan.filter((s) => s.durum === "passed" || s.durum === "flaky").length;
   const gunler = new Map<string, { g: number; t: number; k: Set<string> }>();
@@ -1220,21 +1358,23 @@ function kontrolKulesi(): KontrolKulesi {
   const kabul = karar.filter((c) => c.karar === "approve" || (c.karar === "edit" && (c.kucuk_duzeltme ?? (c.duzeltme_olcusu ?? 1) <= 0.15))).length;
   const reviewlar = karar.filter((c) => c.review_sure_ms !== null);
   const scriptler = veri.scriptler.filter((s) => s.pass_at_1 !== null);
+  const flaky = new Map<string, { sayi: number; son: string }>();
+  for (const s of sonuclar.filter((x) => x.durum === "flaky")) {
+    const e = flaky.get(s.test_adi) ?? { sayi: 0, son: s.kosu.baslangic };
+    e.sayi += 1;
+    if (s.kosu.baslangic > e.son) e.son = s.kosu.baslangic;
+    flaky.set(s.test_adi, e);
+  }
   return {
-    son_kosular: veri.kosular.slice(0, 6).map(ozetKosu),
-    gecme_orani: { oran: sayilan.length ? gecen / sayilan.length : 0, toplam: sayilan.length, gecen, donem_gun: 7 },
-    gunluk_gecme: [
-      { tarih: "2026-10-24", oran: 1, kosu: 2 },
-      { tarih: "2026-10-25", oran: 1, kosu: 1 },
-      { tarih: "2026-10-26", oran: 0.9, kosu: 3 },
-      { tarih: "2026-10-27", oran: 1, kosu: 2 },
-      ...[...gunler.entries()]
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([tarih, e]) => ({ tarih, oran: e.t ? e.g / e.t : 0, kosu: e.k.size })),
-    ].slice(-7),
-    flaky: [
-      { test_adi: TEST_C2, neden: "retry", sayi: 1, son_gorulme: "2026-10-29T02:00:00+03:00" },
-    ],
+    son_kosular: ciKosulari.slice(0, 6).map(ozetKosu),
+    gecme_orani: { oran: sayilan.length ? gecen / sayilan.length : null, toplam: sayilan.length, gecen, donem_gun: 7, son_n: null, birim: "test", test: null },
+    // Hedef çizgisi yalnızca core bir hedef bildirirse çizilir (tasarımda geçme oranı hedefi yok).
+    gecme_hedefi: null,
+    gunluk_gecme: [...gunler.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([tarih, e]) => ({ tarih, oran: e.t ? e.g / e.t : 0, kosu: e.k.size }))
+      .slice(-7),
+    flaky: [...flaky.entries()].map(([test_adi, e]) => ({ test_adi, neden: "retry" as const, sayi: e.sayi, son_gorulme: e.son })),
     karne: veri.gereksinimler
       .filter((g) => g.jira_key)
       .map((g) => {
@@ -1248,18 +1388,27 @@ function kontrolKulesi(): KontrolKulesi {
           baslik: g.baslik,
           alan: g.jira_key === "TPD-4" ? "Giriş" : g.jira_key === "TPD-2" ? "Sipariş geçmişi" : g.jira_key === "TPD-3" ? "Katalog" : "Sepet ve sipariş",
           case_sayisi: caseSayilari(caseler, g.id).toplam,
-          otomasyon_kapsami: gc.length ? otomatik / gc.length : 0,
+          otomasyon_kapsami: gc.length ? otomatik / gc.length : null,
           son_sonuc: son ? (son.durum === "failed" ? "failed" : "passed") : "none",
           acik_bug: veri.bugTaslaklari.filter((b) => b.icerik.story_key === g.jira_key && b.durum === "published").length,
+          // core `_acik_defect_adayi`: case'in en son script'i defect adayı (blocked) ise sayılır.
+          acik_defect_adayi: gc.filter((c) => {
+            const son = veri.scriptler
+              .filter((s) => s.case_ids.includes(c.id))
+              .sort((a, b) => b.olusturma.localeCompare(a.olusturma))[0];
+            return son?.durum === "blocked" && son.engel?.tur === "defect_candidate";
+          }).length,
         };
       }),
     ai_katkisi: {
-      kabul_orani: karar.length ? kabul / caseler.length : 0,
+      kabul_orani: caseler.length && karar.length ? kabul / caseler.length : null,
       kabul_hedefi: 0.7,
-      script_ilk_review: scriptler.length ? scriptler.filter((s) => s.pass_at_1).length / scriptler.length : 0,
+      script_ilk_review: null,
       script_hedefi: 0.6,
-      ort_ai_sure_ms: caseler.length ? caseler.reduce((a, c) => a + c.ai_sure_ms, 0) / caseler.length : 0,
-      ort_review_sure_ms: reviewlar.length ? reviewlar.reduce((a, c) => a + (c.review_sure_ms ?? 0), 0) / reviewlar.length : 0,
+      pass_at_1: scriptler.length ? scriptler.filter((s) => s.pass_at_1).length / scriptler.length : null,
+      duzeltme_sonrasi: null,
+      ort_ai_sure_ms: caseler.length ? caseler.reduce((a, c) => a + c.ai_sure_ms, 0) / caseler.length : null,
+      ort_review_sure_ms: reviewlar.length ? reviewlar.reduce((a, c) => a + (c.review_sure_ms ?? 0), 0) / reviewlar.length : null,
       // Baz değer F0'da ölçülür; ölçülmemiş baz değer ve ondan türeyen "kazanç" uydurulmaz.
       manuel_baz_ms: null,
       maliyet_usd_toplam: caseler.reduce((a, c) => a + c.maliyet_usd, 0),
@@ -1278,6 +1427,8 @@ function kontrolKulesi(): KontrolKulesi {
         { yol: "/siparisler", ihlal: 0, kritik: 0 },
       ],
     },
+    kaynaklar: KULE_KAYNAKLARI,
+    uyarilar: ["Manuel baz değer girilmedi (TP_MANUAL_BASELINE_S); hazırlık süresi kazancı hesaplanmaz.", "AI süresi REPLAY'de ölçülmez (kayıtlı çıktı, süre 0)."],
   };
 }
 
@@ -1417,11 +1568,14 @@ const ROTALAR: Rota[] = [
     /^\/scripts\/([^/]+)$/,
     (m) => {
       girisGerekli();
-      return bul(veri.scriptler, decodeURIComponent(m[1]), "Script");
+      const s = bul(veri.scriptler, decodeURIComponent(m[1]), "Script");
+      return { ...s, merge_kabul_gerekli: mergeKabulGerekli(s) };
     },
   ],
   ["POST", /^\/scripts\/([^/]+)\/break-verify$/, (m) => kirarakDogrula(decodeURIComponent(m[1]))],
   ["POST", /^\/prs\/(\d+)\/merge$/, (m, _q, g) => prBirlestir(Number(m[1]), g)],
+  ["POST", /^\/prs\/(\d+)\/review$/, (m, _q, g) => prReview(Number(m[1]), g)],
+  ["POST", /^\/prs\/(\d+)\/update-branch$/, (m) => prDaliGuncelle(Number(m[1]))],
   ["POST", /^\/ci\/trigger$/, (_m, _q, g) => ciTetikle(g)],
   [
     "GET",

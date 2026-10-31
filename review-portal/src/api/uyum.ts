@@ -60,7 +60,7 @@ interface CoreDenetimYaniti {
   } | null;
 }
 
-function nesneMi(x: unknown): x is Record<string, unknown> {
+export function nesneMi(x: unknown): x is Record<string, unknown> {
   return typeof x === "object" && x !== null && !Array.isArray(x);
 }
 
@@ -116,15 +116,15 @@ export function denetimiUyarla(govde: unknown, simdi: () => Date = () => new Dat
 // Çıktı modu bilinmiyorsa `null` kalır: rozet gösterilmez ama "live" da uydurulmaz.
 
 
-type Ham = Record<string, unknown>;
+export type Ham = Record<string, unknown>;
 
-const metin = (x: unknown, varsayilan = ""): string => (typeof x === "string" ? x : varsayilan);
-const metinYaDaNull = (x: unknown): string | null => (typeof x === "string" && x !== "" ? x : null);
-const sayi = (x: unknown, varsayilan = 0): number => (typeof x === "number" && Number.isFinite(x) ? x : varsayilan);
-const sayiYaDaNull = (x: unknown): number | null => (typeof x === "number" && Number.isFinite(x) ? x : null);
-const kimlik = (x: unknown): string => (typeof x === "string" || typeof x === "number" ? String(x) : "");
+export const metin = (x: unknown, varsayilan = ""): string => (typeof x === "string" ? x : varsayilan);
+export const metinYaDaNull = (x: unknown): string | null => (typeof x === "string" && x !== "" ? x : null);
+export const sayi = (x: unknown, varsayilan = 0): number => (typeof x === "number" && Number.isFinite(x) ? x : varsayilan);
+export const sayiYaDaNull = (x: unknown): number | null => (typeof x === "number" && Number.isFinite(x) ? x : null);
+export const kimlik = (x: unknown): string => (typeof x === "string" || typeof x === "number" ? String(x) : "");
 /** İlk tanımlı (undefined olmayan) alan. */
-const ilk = (o: Ham, ...adlar: string[]): unknown => {
+export const ilk = (o: Ham, ...adlar: string[]): unknown => {
   for (const a of adlar) if (o[a] !== undefined) return o[a];
   return undefined;
 };
@@ -383,7 +383,7 @@ function adimUyarla(x: unknown, i: number): TestAdimi | null {
   return { id: metin(x.id, `S${i + 1}`), action: metin(x.action), data: metinYaDaNull(x.data), expected: metin(x.expected) };
 }
 
-const dizgeler = (x: unknown): string[] => (Array.isArray(x) ? x.filter((y): y is string => typeof y === "string") : []);
+export const dizgeler = (x: unknown): string[] => (Array.isArray(x) ? x.filter((y): y is string => typeof y === "string") : []);
 
 /** Case içeriği (şema §7). Eksik dizi alanları boş diziye tamamlanır (ekran çökmesin). */
 export function caseIcerikUyarla(x: unknown): TestCaseIcerik {

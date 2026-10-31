@@ -123,6 +123,26 @@ def env(
     monkeypatch.setenv("DEMOAPP_TEST_TOKEN", "test-belirteci")
     monkeypatch.setenv("TP_RUN_QUEUE_WAIT_S", "5")
     monkeypatch.setenv("TP_CHECK_QUEUE_WAIT_S", "5")
+    # Ana makinedeki olası /forge, /opt/allure vb. testlere sızmasın.
+    monkeypatch.setenv("TP_FORGE_MIRROR_PATH", str(tmp_path / "forge-mirror" / "demo-app.git"))
+    monkeypatch.setenv("TP_APP_BUILD_SHA_FILE", str(tmp_path / "yok" / "demo-app-web.sha"))
+    monkeypatch.setenv("TP_ALLURE_CLI", str(tmp_path / "yok" / "allure-cli.js"))
+    monkeypatch.setenv("TP_ALLURE_CONFIG", str(tmp_path / "yok" / "allurerc.mjs"))
+    # Süreçler arası koşu kilidi testler arasında paylaşılmasın.
+    monkeypatch.setenv("TP_RUN_LOCK_PATH", str(tmp_path / "run.lock"))
+    for name in (
+        "DEMO_APP_BUILD_SHA",
+        "TP_FORGE_REMOTE_URL",
+        "TP_FORGE_REMOTE_TOKEN",
+        "TP_CHECKS_PATH",
+        "TP_CHECKS_REQUIRE_MOUNT",
+        "TP_CHECK_REQUIRE_APP_SHA",
+        "TP_TOOLCHAIN_TOKEN",
+        "TP_TOOLCHAIN_REQUIRE_TOKEN",
+        "TP_RUNS_KEEP_EVIDENCE_DAYS",
+        "TP_RUNS_KEEP_EVIDENCE_MAX",
+    ):
+        monkeypatch.delenv(name, raising=False)
     yield artifacts
 
 

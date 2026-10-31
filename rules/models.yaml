@@ -46,6 +46,9 @@ purposes:
   verify_and_map:             # ajan: Playwright MCP doğrulama döngüsü (§8.4)
     model: claude-sonnet-5-5
     max_tokens: 8192
+    # Ajan girdi tavanı: turlar boyunca önbelleksiz girdi + önbelleğe yazma toplamı (önbellekten
+    # okunan önek sayılmaz; gateway/core.py `_budgeted_input_tokens`). 15 turluk gerçekçi yörünge
+    # ~70k; tavan kaçak bağlam büyümesini durdurur. USD tavanı ayrıca Budget ile uygulanır.
     max_input_tokens: 150000
     timeout_s: 300              # tur başına
     params: { effort: medium, thinking: { type: between_tools } }

@@ -72,6 +72,25 @@ def test_oturumsuz_uclar_401(client):
     assert client.get("/cart").status_code == 401
 
 
+def test_oturum_yoklamasi_oturumsuzken_200_null(client):
+    """Sayfa açılışı yoklaması hata durum kodu dönmemeli (tarayıcı konsol hatası üretmesin)."""
+    resp = client.get("/auth/session")
+    assert resp.status_code == 200
+    assert resp.json() == {"oturum": None}
+    client.cookies.set("bayi_oturum", "uydurma")
+    resp = client.get("/auth/session")
+    assert resp.status_code == 200
+    assert resp.json() == {"oturum": None}
+
+
+def test_oturum_yoklamasi_oturumluyken_bayiyi_dondurur(bayi1):
+    resp = bayi1.get("/auth/session")
+    assert resp.status_code == 200
+    assert resp.json() == {"oturum": bayi1.get("/auth/me").json()}
+    assert bayi1.post("/auth/logout").status_code == 204
+    assert bayi1.get("/auth/session").json() == {"oturum": None}
+
+
 def test_cikis_oturumu_gecersiz_kilar(bayi1):
     token = bayi1.cookies.get("bayi_oturum")
     assert bayi1.post("/auth/logout").status_code == 204
@@ -197,17 +216,17 @@ def test_kampanyali_siparis_min_altinda_onaylanir(bayi1):
 
 def test_siparis_onayi_ve_gecmis(bayi1):
     bayi1.post("/cart/lines", json={"urun_kod": "P-004", "adet": 30})
-    bayi1.post("/cart/lines", json={"urun_kod": "P-001", "adet": 6})
+    bayi1.post("/cart/lines", json={"urun_kod": "P-001", "adet": 7})
     resp = bayi1.post("/orders")
     assert resp.status_code == 201
     order = resp.json()
     assert order["numara"].startswith("SP-")
     assert (order["ara_toplam"], order["indirim"], order["toplam"]) == (
-        "1050.00",
+        "1075.00",
         "25.00",
-        "1025.00",
+        "1050.00",
     )
-    assert order["adet_toplam"] == 36
+    assert order["adet_toplam"] == 37
     assert {x["urun_kod"]: x["bedava_adet"] for x in order["satirlar"]} == {
         "P-001": 1,
         "P-004": 0,
@@ -215,7 +234,7 @@ def test_siparis_onayi_ve_gecmis(bayi1):
     assert bayi1.get("/cart").json()["satirlar"] == []
     history = bayi1.get("/orders").json()
     assert [o["numara"] for o in history] == [order["numara"]]
-    assert bayi1.get(f"/orders/{order['numara']}").json()["toplam"] == "1025.00"
+    assert bayi1.get(f"/orders/{order['numara']}").json()["toplam"] == "1050.00"
 
 
 def test_sepet_yalnizca_min_siparis_uyarisi_uretir(bayi1):
@@ -297,10 +316,34 @@ def test_tohum_idempotent_ve_belgedeki_veri():
     db.init_db()
     with db.session_scope() as s:
         bayiler = {b.kullanici_adi: b for b in s.scalars(select(Bayi))}
-    assert set(bayiler) == {"bayi1", "bayi2"}
+    assert set(bayiler) == {"bayi1", "bayi2", "bayi3"}
     assert bayiler["bayi1"].ad == "Merkez Bayi"
     assert bayiler["bayi1"].kredi_limiti == Decimal("2000.00")
     assert bayiler["bayi2"].kredi_limiti == Decimal("500.00")
+    assert bayiler["bayi3"].ad == "Doğrulama Bayi"
+    assert bayiler["bayi3"].kredi_limiti == Decimal("2000.00")
+
+
+def test_dogrulama_bayisi_giris_yapar_ve_bayi_kapsaminda_sifirlanir(client):
+    """bayi3 (doğrulama ajanı) diğer bayilerden bağımsız sıfırlanır; tam sıfırlama onu kurar."""
+    resp = giris(client, "bayi3")
+    assert resp.status_code == 200
+    assert resp.json() == {"kullanici_adi": "bayi3", "ad": "Doğrulama Bayi"}
+    client.post("/cart/lines", json={"urun_kod": "P-001", "adet": 7})
+    client.cookies.clear()
+    giris(client, "bayi1")
+    client.post("/cart/lines", json={"urun_kod": "P-002", "adet": 1})
+    resp = client.post("/test/reset", json={"kullanici_adi": "bayi3"}, headers=TEST_HEADERS)
+    assert resp.json() == {"status": "ok", "kapsam": "bayi3"}
+    assert len(client.get("/cart").json()["satirlar"]) == 1  # bayi1'in sepeti yerinde
+    client.cookies.clear()
+    giris(client, "bayi3")
+    assert client.get("/cart").json()["satirlar"] == []
+    assert client.post("/auth/logout").status_code == 204
+    with db.session_scope() as s:
+        s.delete(s.scalar(select(Bayi).where(Bayi.kullanici_adi == "bayi3")))
+    assert client.post("/test/reset", headers=TEST_HEADERS).json()["kapsam"] == "tumu"
+    assert giris(client, "bayi3").status_code == 200
 
 
 def test_grant_readonly_sqlite_atlar():

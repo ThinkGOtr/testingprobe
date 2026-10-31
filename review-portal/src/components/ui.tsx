@@ -157,7 +157,7 @@ export function Ilerleme({ oran, etiket, hedef }: { oran: number; etiket: string
   );
 }
 
-export function Metrik({ etiket, deger, alt }: { etiket: string; deger: ReactNode; alt?: ReactNode }) {
+export function Metrik({ etiket, deger, alt }: { etiket: ReactNode; deger: ReactNode; alt?: ReactNode }) {
   return (
     <div className="metrik">
       <div className="metrik-etiket">{etiket}</div>

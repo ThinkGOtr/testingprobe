@@ -6,27 +6,41 @@ import { useBildirim } from "../components/Bildirim";
 import { BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { SCRIPT_DURUMU, scriptIsareti } from "../lib/etiketler";
+import { YEREL_SINIF } from "../lib/kapi";
 import { tarih } from "../lib/format";
 
 export function Kod() {
   const scriptler = useVeri(() => api.scriptler(), []);
   const caseler = useVeri(() => api.caseler(), []);
   const [secili, setSecili] = useState<Set<string>>(new Set());
+  const [kapatilanlar, setKapatilanlar] = useState(false);
   const islem = useIslem();
   const bildir = useBildirim();
   const sessiz = useGeciktirilmis(() => {
     void scriptler.yenile(true);
   });
-  useOlay(sessiz, ["agent.step", "pr.opened", "ci.status"]);
+  useOlay(sessiz, ["agent.step", "pr.opened", "ci.status", "script.updated", "case.updated"]);
 
   const scriptliCaseler = new Set((scriptler.veri ?? []).flatMap((s) => s.case_ids));
   const adaylar = (caseler.veri ?? []).filter((c) => (c.durum === "approved" || c.durum === "published") && !scriptliCaseler.has(c.id));
+  const tumScriptler = scriptler.veri ?? [];
+  const kapaliSayisi = tumScriptler.filter((s) => s.durum === "closed").length;
+  // Yeniden üretimle kapatılan eski kayıtlar varsayılan olarak gizlenir (aynı test iki kez görünmesin).
+  const gorunen = kapatilanlar ? tumScriptler : tumScriptler.filter((s) => s.durum !== "closed");
+
+  const yenidenUret = async (caseIds: string[]) => {
+    const s = await islem.calistir(() => api.kodUret(caseIds));
+    if (s) {
+      bildir(s.mesaj ?? "Yeniden üretim başladı; eski kayıt kapatılır.");
+      void scriptler.yenile(true);
+    }
+  };
 
   return (
     <>
       <SayfaBasligi
         baslik="Kod üretimi"
-        aciklama="Onaylı case'ler uygulamada adım adım doğrulanır, page object'lere eşlenir ve şablondan TypeScript teste dönüşür. Model kod yazmaz."
+        aciklama="Onaylı case'ler uygulamada adım adım doğrulanır (Playwright MCP), page object'lere eşlenir ve şablondan TypeScript teste dönüşür. Model kod yazmaz; yerel kontrol yeşilse bot ayrı dalda PR açar."
       />
 
       <Kart
@@ -76,19 +90,31 @@ export function Kod() {
                   />
                   <span className="mono">{c.jira_test_key ?? `${c.jira_key ?? "FT"} #${c.sira_no}`}</span> {c.icerik.title}
                 </label>
+                <div className="kucuk soluk secim-alt">Beklenen: {c.icerik.expected_result}</div>
               </li>
             ))}
           </ul>
         )}
       </Kart>
 
-      <Kart baslik="Üretilen testler">
+      <Kart
+        baslik="Üretilen testler"
+        eylemler={
+          kapaliSayisi > 0 && (
+            <label className="kucuk">
+              <input type="checkbox" checked={kapatilanlar} onChange={(e) => setKapatilanlar(e.target.checked)} /> Kapatılanları göster ({kapaliSayisi})
+            </label>
+          )
+        }
+      >
         {scriptler.yukleniyor && !scriptler.veri ? (
           <Yukleniyor />
         ) : scriptler.hata && !scriptler.veri ? (
           <HataKutusu hata={scriptler.hata} yenile={() => void scriptler.yenile()} />
-        ) : (scriptler.veri ?? []).length === 0 ? (
+        ) : tumScriptler.length === 0 ? (
           <BosDurum baslik="Henüz üretilen test yok." />
+        ) : gorunen.length === 0 ? (
+          <BosDurum baslik="Açık üretilen test yok; kapatılanlar gizli." />
         ) : (
           <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Üretilen testler tablosu">
             <table className="tablo">
@@ -99,12 +125,16 @@ export function Kod() {
                   <th scope="col">PR</th>
                   <th scope="col">Kırarak doğrula</th>
                   <th scope="col">Oluşturma</th>
+                  <th scope="col">
+                    <span className="gorunmez">Eylem</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {(scriptler.veri ?? []).map((s) => {
+                {gorunen.map((s) => {
                   const d = SCRIPT_DURUMU[s.durum] ?? { etiket: s.durum, ton: "notr" as const };
                   const isaret = scriptIsareti(s);
+                  const sinif = s.yerel_sinif && s.yerel_sinif !== "gecti" ? YEREL_SINIF[s.yerel_sinif] : null;
                   return (
                     <tr key={s.id}>
                       <td>
@@ -116,7 +146,16 @@ export function Kod() {
                       <td>
                         <span className="satir-ogeler">
                           <Cip ton={d.ton}>{d.etiket}</Cip>
-                          {isaret && <Cip ton={isaret.ton}>{isaret.etiket}</Cip>}
+                          {isaret && (
+                            <Cip ton={isaret.ton} title={isaret.aciklama}>
+                              {isaret.etiket}
+                            </Cip>
+                          )}
+                          {sinif && (
+                            <Cip ton={sinif.ton} title={sinif.aciklama}>
+                              {sinif.etiket}
+                            </Cip>
+                          )}
                           <ReplayRozeti mode={s.mode} />
                         </span>
                       </td>
@@ -125,12 +164,27 @@ export function Kod() {
                         {s.break_verify.durum === "passed"
                           ? "✓ hata yakalıyor"
                           : s.break_verify.durum === "weak"
-                            ? "✗ zayıf test"
+                            ? "Kırma etkilemedi · kabul gerekli"
                             : s.break_verify.durum === "running"
                               ? "Sürüyor…"
-                              : "—"}
+                              : s.break_verify.durum === "failed"
+                                ? "Tamamlanamadı"
+                                : "—"}
                       </td>
                       <td>{tarih(s.olusturma)}</td>
+                      <td>
+                        {(s.durum === "blocked" || s.durum === "failed") && s.case_ids.length > 0 && (
+                          <IslemDugmesi
+                            roller={["engineer"]}
+                            tur="ikincil"
+                            calisiyor={islem.calisiyor}
+                            title="Aynı onaylı case için kodu yeniden üretir; bu kayıt kapatılır."
+                            onClick={() => yenidenUret(s.case_ids)}
+                          >
+                            Yeniden üret
+                          </IslemDugmesi>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}

@@ -93,19 +93,20 @@ describe("ekranlar", () => {
     expect(screen.getByText("Serbest metin gereksinim")).toBeInTheDocument();
   });
 
-  it("TPD-1 detayı: 4 bilinçli uyumsuzluk (+2. tur uyarısı) kanıtlı ve kararlı görünür", async () => {
+  it("TPD-1 detayı: 4 bilinçli uyumsuzluk (+2. tur: kampanya ve kredi limiti kodda) kanıtlı ve kararlı görünür", async () => {
     await oturumAc("analist");
     uygulama("/gereksinimler/req-tpd-1");
     // Golden TPD-1 F2 "observed" metni aynen.
     const f2 = KAYNAK.consistency_check["TPD-1"].findings.find((x) => x.id === "F2")!.observed;
     expect(await screen.findByText(f2)).toBeInTheDocument();
     const bulgular = await screen.findAllByRole("article");
-    expect(bulgular).toHaveLength(5);
-    expect(screen.getByText("api/src/demoapp_api/campaign.py:23")).toBeInTheDocument();
+    expect(bulgular).toHaveLength(6);
+    expect(screen.getAllByText("api/src/demoapp_api/campaign.py:23").length).toBeGreaterThan(0);
     expect(screen.getAllByText("api/src/demoapp_api/pricing.py:97").length).toBeGreaterThan(0);
     expect(screen.getAllByText("SELECT anahtar, deger FROM ayar WHERE anahtar = 'min_siparis_tutari'").length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/kanıt doğrulandı/)).toHaveLength(5);
-    expect(screen.getByText("Doküman ↔ kod")).toBeInTheDocument();
+    expect(screen.getAllByText(/kanıt doğrulandı/)).toHaveLength(6);
+    // Ana yol: kampanya farkı iki turda da doküman ↔ kod (F2 code_defect, AC2 değişmedi).
+    expect(screen.getAllByText("Doküman ↔ kod")).toHaveLength(2);
     expect(screen.getByText("Doküman ↔ veri")).toBeInTheDocument();
     expect(screen.getAllByText("Kodda eksik")).toHaveLength(2);
     expect(screen.getByText("İç çelişki")).toBeInTheDocument();
@@ -159,7 +160,11 @@ describe("ekranlar", () => {
     expect(within(hazir).getByText("Merge'e hazır")).toBeInTheDocument();
     const zayif = screen.getByRole("link", { name: /sepet sayacı/ }).closest("tr")!;
     expect(within(zayif).getByText("PR açık")).toBeInTheDocument();
-    expect(within(zayif).getByText("Zayıf test")).toBeInTheDocument();
+    // Kampanya kırılması sepet sayacını etkilemez: liste olguyu söyler, "AI zayıf test yazdı" demez.
+    const isaret = within(zayif).getByText("Kırma etkilemedi");
+    expect(isaret).toHaveAttribute("title", expect.stringMatching(/Kampanya dışı davranışı .* beklenir/));
+    expect(within(zayif).getByText("Kırma etkilemedi · kabul gerekli")).toBeInTheDocument();
+    expect(within(zayif).queryByText(/zayıf test/i)).toBeNull();
   });
 
   it("merge: PR incelendikten sonra koda commit geldiyse 409 → yeniden yükler, merge olmaz", async () => {
@@ -238,11 +243,13 @@ describe("ekranlar", () => {
   it("Kontrol Kulesi: kabul oranı, flaky, karne, erişilebilirlik", async () => {
     await oturumAc("sunucu");
     uygulama("/kontrol-kulesi");
-    expect(await screen.findByText("Case kabul oranı")).toBeInTheDocument();
+    expect(await screen.findByRole("meter", { name: "Case kabul oranı" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Flaky testler" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /Karne/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Erişilebilirlik" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Demoyu sıfırla" })).toBeInTheDocument();
+    // POST /demo/break-locator ve /demo/reset core'da yok (Faz 4/5): sahnede 404 vermesin diye çizilmez.
+    expect(screen.queryByRole("button", { name: "Demoyu sıfırla" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Locator'ı kır" })).toBeNull();
   });
 
   it("denetim: zincir doğrulama sonucu", async () => {
@@ -267,7 +274,7 @@ describe("ekranlar", () => {
     uygulama("/kosular/run-107");
     expect(await screen.findByText(/Gerçekleşen: "0,00 TL"/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Triage sonucu" })).toHaveAttribute("href", "/hatalar/fail-1");
-    await waitFor(() => expect(screen.getByText(/BREAK_CAMPAIGN=1 ile açıldı/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/BREAK_CAMPAIGN ile bozuldu \(kasıtlı kırma\)/)).toBeInTheDocument());
   });
 
   it("bilinmeyen sayfa", async () => {

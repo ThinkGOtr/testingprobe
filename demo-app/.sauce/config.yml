@@ -49,7 +49,9 @@ suites:
   - name: "Chromium — Windows 11"
     platformName: "Windows 11"
     screenResolution: "1920x1080"
-    testMatch: ["tests/.*\\.spec\\.ts"]
+    # Elle yazılmış testler + kod üretiminin (CasesToCode) şablondan yazdığı tests/generated/**.
+    # (İlk desen alt dizinleri de kapsar; ikincisi sözleşmeyi görünür kılar — test-local ile aynı küme.)
+    testMatch: ["tests/.*\\.spec\\.ts", "tests/generated/.*\\.spec\\.ts"]
     params:
       browserName: chromium
       project: chromium

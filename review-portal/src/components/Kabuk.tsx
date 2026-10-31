@@ -133,7 +133,7 @@ export function Kabuk() {
         <NavLink to="/" className="marka">
           <span className="marka-isaret" aria-hidden="true" />
           <span>
-            AI Testing Probe <span className="marka-alt">Kontrol Kulesi</span>
+            AI Testing Probe <span className="marka-alt">İnceleme portalı</span>
           </span>
         </NavLink>
         <div className="ust-sag">

@@ -204,15 +204,43 @@ def test_locator_probe_app_build_sha_matches(
 def test_locator_probe_app_build_sha_differs_blocks_suggestion(
     client: TestClient, forge: Forge, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    other = forge.commit("tp/case-x", {"e2e/x.txt": "x"})
+    other = forge.commit("tp/case-x", {"web/src/x.tsx": "x"})
     monkeypatch.setenv("TP_NODE", str(fake_probe(tmp_path, SINGLE_MATCH)))
     monkeypatch.setenv("DEMO_APP_BUILD_SHA", forge.main)
     data = client.post("/locator-probe", json={**PROBE_BODY, "sha": other}).json()
     assert data["sha"] == other and data["uygulama_sha"] == forge.main
-    assert data["sha_eslesmesi"] == "farkli"
-    # Ölçüm başka commit'te yapıldı: tek eşleşme olsa bile öneri üretilmez, insana gider.
+    assert data["sha_eslesmesi"] == "farkli" and data["farkli_yollar"] == ["web"]
+    # Ölçüm başka uygulama ağacında yapıldı: tek eşleşme olsa bile öneri üretilmez, insana gider.
     assert data["matches"] == 1 and data["test_id"] == "cart-add"
     assert data["oneri_uretilebilir"] is False and other[:12] in data["uyari"]
+
+
+def test_locator_probe_e2e_only_branch_matches_running_app(
+    client: TestClient, forge: Forge, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Kod üretimi/onarım dalı yalnızca e2e/ değiştirir: uygulama ağacı aynı → `eslesiyor`."""
+    other = forge.commit("tp/case-y", {"e2e/x.txt": "x"})
+    monkeypatch.setenv("TP_NODE", str(fake_probe(tmp_path, SINGLE_MATCH)))
+    monkeypatch.setenv("DEMO_APP_BUILD_SHA", forge.main)
+    data = client.post("/locator-probe", json={**PROBE_BODY, "sha": other}).json()
+    assert data["sha_eslesmesi"] == "eslesiyor" and data["uygulama_sha"] == forge.main
+    assert data["oneri_uretilebilir"] is True and data["uyari"] is None
+
+
+def test_locator_probe_build_sha_file_wins_over_env(
+    client: TestClient, forge: Forge, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """forge-init/sync-web'in yazdığı dosya konteyner yeniden oluşturmadan güncel sha'yı verir."""
+    web = forge.commit("tp/web", {"web/src/x.tsx": "y"})
+    sha_file = tmp_path / "demo-app-web.sha"
+    sha_file.write_text(f"{web}\n")
+    monkeypatch.setenv("TP_APP_BUILD_SHA_FILE", str(sha_file))
+    monkeypatch.setenv("DEMO_APP_BUILD_SHA", forge.main)
+    monkeypatch.setenv("TP_NODE", str(fake_probe(tmp_path, SINGLE_MATCH)))
+    data = client.post("/locator-probe", json={**PROBE_BODY, "sha": web}).json()
+    assert data["sha_eslesmesi"] == "eslesiyor" and data["uygulama_sha"] == web
+    data = client.post("/locator-probe", json=PROBE_BODY).json()  # main: web farklı
+    assert data["sha_eslesmesi"] == "farkli"
 
 
 def test_locator_probe_app_build_sha_unknown_in_forge(

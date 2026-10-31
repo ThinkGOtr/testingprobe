@@ -42,15 +42,50 @@ OUTPUT = {
 }
 
 
+MCP_OUT = json.loads(
+    (Path(__file__).parent / "fixtures" / "playwright_mcp_outputs.json").read_text("utf-8")
+)
+
+
+def mcp_snapshot(n: int) -> str:
+    """Playwright MCP 1.64 `browser_snapshot` çıktısı (satır içi ```yaml```)."""
+    return (
+        "### Page\n- Page URL: http://demo-app-web:8080/giris\n### Snapshot\n```yaml\n"
+        f'- button "Giriş" [ref=e{n}]\n```'
+    )
+
+
+def mcp_action(code: str, *, inline: int | None = None) -> str:
+    """1.64 eylem çıktısı: snapshot YALNIZCA dosya bağlantısıdır (`inline` → satır içi YAML)."""
+    snap = (
+        f'```yaml\n- button "Giriş" [ref=e{inline}]\n```'
+        if inline is not None
+        else "- [Snapshot](../../tmp/playwright-mcp/page-2026-10-31T13-38-48-249Z.yml)"
+    )
+    return (
+        f"### Ran Playwright code\n```js\n{code}\n```\n### Page\n"
+        "- Page URL: http://demo-app-web:8080/katalog\n"
+        f"### Snapshot\n{snap}\n### Events\n"
+        "- New console entries: ../../tmp/playwright-mcp/console-2026-10-31T13-38-47-078Z.log#L1"
+    )
+
+
 class Browser:
-    def __init__(self) -> None:
+    """Playwright MCP 1.64 biçiminde yanıt veren sahte tarayıcı (`inline`: eylemler YAML'ı satır
+    içi verir — bir MCP seçeneği öyle yaparsa eski snapshot'lar yine bağlamdan çıkmalı)."""
+
+    def __init__(self, *, inline: bool = False) -> None:
         self.calls: list[tuple[str, dict]] = []
+        self.inline = inline
 
     def __call__(self, name: str, args: dict) -> str:
         self.calls.append((name, args))
+        n = len(self.calls)
         if name == "browser_click" and args.get("ref") == "boom":
             raise RuntimeError("eleman yok")
-        return f"- Page Snapshot\n  - button 'Giriş' [ref=e{len(self.calls)}]"
+        if name == "browser_snapshot":
+            return mcp_snapshot(n)
+        return mcp_action(f"// {name}", inline=n if self.inline else None)
 
 
 def run(gw, rules_dir, execute, **kw):
@@ -113,7 +148,18 @@ def test_agent_loop_with_allowlist_denial(make_gateway, rules_dir, recorder) -> 
     assert "submit_result" in provider.requests[0].system
 
 
-def test_only_last_snapshot_kept(make_gateway, rules_dir) -> None:
+def _tool_results(messages) -> list[str]:
+    return [
+        block["content"]
+        for m in messages
+        if m["role"] == "user" and isinstance(m["content"], list)
+        for block in m["content"]
+    ]
+
+
+def test_only_last_snapshot_kept_when_actions_inline_the_snapshot(make_gateway, rules_dir) -> None:
+    """Eylem sonucu snapshot YAML'ını satır içi taşırsa (MCP seçeneği) o da snapshot sayılır:
+    yalnızca en son snapshot bağlamda kalır."""
     gw, provider = make_gateway(
         [
             tool_response(("browser_navigate", {"url": "/"})),
@@ -122,17 +168,47 @@ def test_only_last_snapshot_kept(make_gateway, rules_dir) -> None:
             tool_response((FINAL_TOOL, OUTPUT)),
         ]
     )
-    run(gw, rules_dir, Browser())
-    last = provider.requests[3].messages
-    results = [
-        block["content"]
-        for m in last
-        if m["role"] == "user" and isinstance(m["content"], list)
-        for block in m["content"]
-    ]
+    run(gw, rules_dir, Browser(inline=True))
+    results = _tool_results(provider.requests[3].messages)
     assert results[:2] == [ELIDED_SNAPSHOT, ELIDED_SNAPSHOT]
-    assert "Page Snapshot" in results[2]
-    assert sum("Page Snapshot" in r for r in results) == 1
+    assert "```yaml" in results[2]
+    assert sum("```yaml" in r for r in results) == 1
+
+
+def test_real_mcp_actions_are_not_snapshots_and_file_links_are_dropped(
+    make_gateway, rules_dir, recorder
+) -> None:
+    """Playwright MCP 1.64 (fixtures/playwright_mcp_outputs.json, gerçek çıktı): eylemler
+    snapshot'ı dosya bağlantısı olarak verir → snapshot sayılmaz, ayıklanmaz; sunucu dosya
+    yolları (`- [Snapshot](…yml)`, `New console entries: …log`) modele ve denetime gitmez."""
+    gw, provider = make_gateway(
+        [
+            tool_response(("browser_snapshot", {})),
+            tool_response(("browser_navigate", {"url": "/"})),
+            tool_response(("browser_snapshot", {})),
+            tool_response(("browser_click", {"ref": "e2"})),
+            tool_response((FINAL_TOOL, OUTPUT)),
+        ]
+    )
+    real = {
+        "browser_navigate": MCP_OUT["browser_navigate"],
+        "browser_click": MCP_OUT["browser_click"],
+    }
+    snaps = iter([MCP_OUT["browser_snapshot_login"], MCP_OUT["browser_snapshot_catalog"]])
+
+    def browser(name: str, args: dict) -> str:
+        return next(snaps) if name == "browser_snapshot" else real[name]
+
+    run(gw, rules_dir, browser)
+    results = _tool_results(provider.requests[4].messages)
+    assert results[0] == ELIDED_SNAPSHOT  # eski snapshot
+    assert "page.goto(" in results[1] and "Page URL:" in results[1]  # eylem, ayıklanmadı
+    assert "Ürün kataloğu" in results[2]  # son snapshot kaldı
+    assert "login-submit" in results[3]
+    for text in [*results, *(t["sonuc_ozeti"] for t in recorder.tool_calls)]:
+        assert "/tmp/playwright-mcp" not in text and ".yml)" not in text
+        assert "New console entries" not in text
+        assert "### Snapshot\n### " not in text  # boş kalan başlık da gider
 
 
 def test_tool_exception_returned_as_error(make_gateway, rules_dir, recorder) -> None:
@@ -234,7 +310,11 @@ def test_record_then_replay_reexecutes_allowed_steps(make_gateway, rules_dir, re
         mode="record",
     )
     run(gw, rules_dir, Browser())
-    files = list((rules_dir / "replay" / "verify_and_map").glob("*.json"))
+    files = [
+        f
+        for f in (rules_dir / "replay" / "verify_and_map").glob("*.json")
+        if f.name != "on_miss.json"
+    ]
     assert len(files) == 1 and json.loads(files[0].read_text())["kind"] == "agent"
 
     browser = Browser()
@@ -478,7 +558,7 @@ def test_thinking_blocks_dropped_after_elided_snapshot(make_gateway, rules_dir) 
             _with_thinking(tool_response((FINAL_TOOL, OUTPUT))),
         ]
     )
-    run(gw, rules_dir, Browser())
+    run(gw, rules_dir, Browser(inline=True))
     for request in provider.requests:
         _assert_no_thinking_after_edit(request.messages)
 
@@ -489,7 +569,7 @@ def test_thinking_blocks_dropped_after_elided_snapshot(make_gateway, rules_dir) 
             if m["role"] == "assistant"
         ]
 
-    # Browser her araç sonucunda snapshot döndürür (Playwright MCP gibi): yalnızca son tur
+    # Browser her araç sonucunda satır içi snapshot döndürür (inline): yalnızca son tur
     # snapshot'ı kalır. 2. istek: henüz düzenleme yok → geçmiş aynen (append-only).
     assert thinking_turns(provider.requests[1].messages) == [True]
     # 3. istek: 1. turun sonucu çıkarıldı → 1. tur korunur, sonrakilerden thinking düşer.

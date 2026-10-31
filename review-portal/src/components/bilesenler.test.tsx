@@ -131,7 +131,8 @@ describe("BulguKarti", () => {
 
   it("fix_doc yazılmış (resolved) bulgu 'Jira'ya yazıldı' gösterir, karar değiştirilemez", async () => {
     await oturumAc("analist");
-    sar(<BulguKarti bulgu={mockVerisi().bulgular.find((b) => b.id === "fnd-1")!} guncellendi={() => {}} />);
+    // fnd-2 (F3 min tutar): ana yolda fix_doc kararı Jira'ya yazılmış bulgu.
+    sar(<BulguKarti bulgu={mockVerisi().bulgular.find((b) => b.id === "fnd-2")!} guncellendi={() => {}} />);
     expect(screen.getByText("Jira'ya yazıldı")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Kararı değiştir" })).toBeNull();
   });

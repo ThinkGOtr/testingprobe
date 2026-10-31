@@ -91,6 +91,8 @@ jobs:
         with:
           context: toolchain
           file: toolchain/Dockerfile
+          # CI imajı: MCP sunucusu yok (Constitution II); playwright-mcp `mcp` hedefi yerelde derlenir.
+          target: ci
           platforms: ${{ steps.v.outputs.platforms }}
           push: ${{ steps.v.outputs.push == 'true' }}
           tags: ${{ steps.v.outputs.tags }}

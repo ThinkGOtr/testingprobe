@@ -9,6 +9,11 @@
 - Dal koruması: `main`'e doğrudan commit yok; merge yalnızca `merge_pr` ile ve `local-ci`
   kontrolü başarılıysa yapılır. `demo-admin` bu şartı bypass edebilir; bypass PR kaydına ve
   `MergeResult`'a yazılır. Bot (`tp-bot`) merge edemez.
+- Güncel dal kuralı (GitHub "require branches to be up to date" / strict status checks): PR dalı
+  `main`'in güncel head'ini içermiyorsa merge reddedilir — aksi halde hiçbir kontrolün koşmadığı
+  bir birleşim ağacı `main`'e girerdi. Dal `update_branch` ile güncellenir (yeni head → PR CI'ı
+  ve onay yeniden). `demo-admin` bypass'ı bu kuralı da aşar ve nedeni kayda yazılır.
+  `TP_FORGE_REQUIRE_UP_TO_DATE=0` kuralı kapatır (varsayılan açık).
 - `merge_pr(..., expected_head_sha=...)`: PR kilidi altında dal head'i onaylanan sha değilse
   `ForgeConflictError` (anayasa I: yalnızca onaylanan içerik merge edilir).
 - Kontroller `TP_ARTIFACTS_PATH/checks/<sha>.json` dosyasından okunur (yerel CI runner'ı yazar).
@@ -61,6 +66,7 @@ from tp_core.ports import CheckRun, PullRequest
 DEFAULT_FORGE_PATH = "/forge/demo-app.git"
 DEFAULT_ARTIFACTS_PATH = "/artifacts"
 PRS_FILE_NAME = "tp-prs.json"
+REQUIRE_UP_TO_DATE_ENV = "TP_FORGE_REQUIRE_UP_TO_DATE"
 
 _GIT_TIMEOUT_S = 60
 _MAX_FILE_BYTES = 5 * 1024 * 1024
@@ -71,6 +77,17 @@ _MAX_BODY_LEN = 65536
 
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def _env_flag(value: str | None, *, default: bool) -> bool:
+    if value is None or not value.strip():
+        return default
+    v = value.strip().lower()
+    if v in ("1", "true", "yes", "on", "evet"):
+        return True
+    if v in ("0", "false", "no", "off", "hayir", "hayır"):
+        return False
+    raise ForgeValidationError(f"{REQUIRE_UP_TO_DATE_ENV} geçersiz: {value!r} (1 | 0)")
 
 
 class _PRStore:
@@ -137,12 +154,17 @@ class LocalForge:
         *,
         git_binary: str = "git",
         required_checks: Sequence[str] = LOCAL_REQUIRED_CHECKS,
+        require_up_to_date: bool = True,
+        checks_path: str | os.PathLike[str] | None = None,
     ) -> None:
         self.path = Path(repo_path)
         self.artifacts_path = Path(artifacts_path) if artifacts_path else None
+        # Kapı dizini: ayrı volume (`TP_CHECKS_PATH`, tp_checks) ya da `<artifacts>/checks`.
+        self.checks_path = Path(checks_path) if checks_path else None
         self._prs = _PRStore(Path(prs_path) if prs_path else self.path.parent / PRS_FILE_NAME)
         self._git_binary = git_binary
         self.required_checks = validate_required_checks(required_checks)
+        self.require_up_to_date = bool(require_up_to_date)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> LocalForge:
@@ -151,6 +173,8 @@ class LocalForge:
             env.get("TP_FORGE_PATH") or DEFAULT_FORGE_PATH,
             env.get("TP_ARTIFACTS_PATH") or DEFAULT_ARTIFACTS_PATH,
             env.get("TP_FORGE_PRS_PATH") or None,
+            require_up_to_date=_env_flag(env.get(REQUIRE_UP_TO_DATE_ENV), default=True),
+            checks_path=env.get("TP_CHECKS_PATH") or None,
         )
 
     # ------------------------------------------------------------------ git çekirdeği
@@ -270,6 +294,12 @@ class LocalForge:
         if size > _MAX_FILE_BYTES:
             raise ForgeError(f"dosya çok büyük ({size} bayt): {path}")
         return self._git("cat-file", "blob", spec).stdout.decode("utf-8", "replace")
+
+    def changed_paths(self, base: str, head: str) -> list[str]:
+        """`base`..`head` arasında değişen (eklenen/silinen/değişen) dosya yolları."""
+        a, b = self._resolve(base), self._resolve(head)
+        raw = self._git("diff", "--name-only", "-z", "--no-renames", a, b).stdout
+        return sorted({n.decode("utf-8", "surrogateescape") for n in raw.split(b"\0") if n})
 
     def list_files(self, prefix: str = "", ref: str = "main") -> list[str]:
         validate_prefix(prefix)
@@ -505,14 +535,33 @@ class LocalForge:
 
             checks = self.checks(head)
             verdict = evaluate_required_checks(checks, self.required_checks)
-            bypass, reason = False, None
+            ihlaller: list[str] = []
             if not verdict.passed:
                 if actor != BYPASS_ACTOR:
                     raise ForgeProtectionError(
                         f"merge için zorunlu kontroller başarılı olmalı ({verdict.reason()})"
                     )
-                bypass = True
-                reason = f"{verdict.reason()}; {BYPASS_ACTOR} kural bypass'ı"
+                ihlaller.append(verdict.reason())
+            # Güncel dal kuralı: kontroller yalnızca `head` üzerinde koştu; base ilerlemişse
+            # merge ağacı (head + yeni base) hiç test edilmemiştir.
+            if (
+                self.require_up_to_date
+                and not self._is_ancestor(base_head, head)
+                and not self._is_ancestor(head, base_head)
+            ):
+                stale = (
+                    f"PR dalı '{rec['base']}'e göre güncel değil "
+                    f"(dal tabanı {self._merge_base(base_head, head)[:12]}, "
+                    f"{rec['base']} {base_head[:12]})"
+                )
+                if actor != BYPASS_ACTOR:
+                    raise ForgeProtectionError(
+                        f"{stale}; önce dalı güncelleyin (update_branch) ve local-ci'yi "
+                        "yeni head üzerinde yeniden koşturun"
+                    )
+                ihlaller.append(stale)
+            bypass = bool(ihlaller)
+            reason = f"{'; '.join(ihlaller)}; {BYPASS_ACTOR} kural bypass'ı" if bypass else None
 
             if self._is_ancestor(head, base_head):
                 method, new = "already-merged", base_head
@@ -546,7 +595,70 @@ class LocalForge:
             checks=checks,
         )
 
+    def _merge_base(self, a: str, b: str) -> str:
+        proc = self._git("merge-base", a, b, ok=(0, 1))
+        return proc.stdout.decode().strip() or "?"
+
+    def update_branch(
+        self, number: int, actor: str = BOT_NAME, *, expected_head_sha: str | None = None
+    ) -> str:
+        """GitHub "Update branch": temel dalı PR dalına merge eder; yeni (veya aynı) head döner.
+
+        Dal zaten güncelse hiçbir şey yazılmaz. Yeni head üzerinde PR CI'ı yeniden koşmalı ve
+        (head sha'ya bağlı) insan onayı yenilenmelidir. Çakışmada `ForgeConflictError`.
+        `expected_head_sha` verilirse PR kilidi altında dal head'i tam o commit değilse (dala
+        yabancı commit girmişse) hiçbir şey yazılmaz, `ForgeStateError` (GitHub 422 eşdeğeri).
+        """
+        validate_actor(actor)
+        if expected_head_sha is not None and not is_sha(expected_head_sha):
+            raise ForgeValidationError(f"geçersiz beklenen head sha: {expected_head_sha!r}")
+        with self._prs.transaction() as data:
+            rec = self._find(data, number)
+            if rec["state"] != "open":
+                raise ForgeStateError(f"PR #{number} açık değil ({rec['state']})")
+            head = self._branch_head(rec["branch"])
+            if head is None:
+                raise ForgeNotFoundError(f"PR dalı bulunamadı: {rec['branch']}")
+            if expected_head_sha is not None and head != expected_head_sha:
+                raise ForgeStateError(
+                    f"PR #{number} dalı beklenen head'de değil "
+                    f"(beklenen {expected_head_sha[:12]}, güncel {head[:12]})"
+                    "; güncelleme reddedildi"
+                )
+            base_head = self._branch_head(rec["base"])
+            if base_head is None:
+                raise ForgeNotFoundError(f"temel dal bulunamadı: {rec['base']}")
+            if self._is_ancestor(base_head, head):
+                return head
+            new = self._merge_tree_commit(
+                number,
+                base_head,
+                head,
+                actor,
+                f"Merge {rec['base']} into {rec['branch']}\n\nPR #{number} dalı güncellendi.\n",
+                parents=(head, base_head),
+            )
+            self._update_ref(rec["branch"], new, head, f"tp: update PR #{number} ({actor})")
+            rec["head_sha"] = new
+            rec["updated_at"] = _now()
+        return new
+
     def _merge_commit(self, rec: Mapping[str, Any], base_head: str, head: str, actor: str) -> str:
+        message = f"Merge PR #{rec['number']} from {rec['branch']}\n\n{rec['title']}\n"
+        return self._merge_tree_commit(
+            rec["number"], base_head, head, actor, message, parents=(base_head, head)
+        )
+
+    def _merge_tree_commit(
+        self,
+        number: int,
+        base_head: str,
+        head: str,
+        actor: str,
+        message: str,
+        *,
+        parents: tuple[str, str],
+    ) -> str:
         proc = self._git(
             "merge-tree",
             "--write-tree",
@@ -560,10 +672,9 @@ class LocalForge:
         if proc.returncode == 1:
             conflicted = sorted({ln for ln in lines[1:] if ln})
             raise ForgeConflictError(
-                f"PR #{rec['number']} çakışıyor: {', '.join(conflicted) or 'bilinmeyen dosya'}"
+                f"PR #{number} çakışıyor: {', '.join(conflicted) or 'bilinmeyen dosya'}"
             )
         tree = lines[0].strip()
-        message = f"Merge PR #{rec['number']} from {rec['branch']}\n\n{rec['title']}\n"
         who = {
             "GIT_AUTHOR_NAME": actor,
             "GIT_AUTHOR_EMAIL": f"{actor}@testingprobe.local",
@@ -571,7 +682,7 @@ class LocalForge:
             "GIT_COMMITTER_EMAIL": f"{actor}@testingprobe.local",
         }
         return self._out(
-            "commit-tree", tree, "-p", base_head, "-p", head, "-F", "-",
+            "commit-tree", tree, "-p", parents[0], "-p", parents[1], "-F", "-",
             stdin=message.encode(), env=who,
         )  # fmt: skip
 
@@ -612,11 +723,15 @@ class LocalForge:
     # ------------------------------------------------------------------ kontroller
 
     def checks(self, sha: str) -> list[CheckRun]:
-        """`<artifacts>/checks/<sha>.json`: CheckRun listesi veya {"checks": [...]}; yoksa []."""
+        """`<checks>/<sha>.json` (`TP_CHECKS_PATH`, yoksa `<artifacts>/checks`): CheckRun listesi
+        veya {"checks": [...]}; yoksa []."""
         full = sha if is_sha(sha) else self._resolve(sha)
-        if self.artifacts_path is None:
+        if self.checks_path is not None:
+            path = self.checks_path / f"{full}.json"
+        elif self.artifacts_path is not None:
+            path = self.artifacts_path / "checks" / f"{full}.json"
+        else:
             return []
-        path = self.artifacts_path / "checks" / f"{full}.json"
         try:
             raw = path.read_text(encoding="utf-8")
         except FileNotFoundError:

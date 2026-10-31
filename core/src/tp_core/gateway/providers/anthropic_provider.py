@@ -5,7 +5,13 @@ Sağlayıcıya özgü kararlar yalnızca burada:
   SDK'nın `transform_schema` yardımcısıyla API'nin desteklediği alt kümeye indirgenir; tam şema
   (maxLength, pattern …) geçitte jsonschema ile ayrıca doğrulanır.
 - Prompt caching: sistem prompt'u tek metin bloğu, `cache_control: ephemeral` (araç tanımları
-  sistemden önce işlendiği için önbelleğe onlar da girer).
+  sistemden önce işlendiği için önbelleğe onlar da girer). Ajan isteklerinde (araç verilmişse)
+  ilk kullanıcı mesajının son içerik bloğu da kırılma noktasıdır (§8.4: case + sembol tablosu
+  önbellekte): her tur yeniden gönderilen en büyük kararlı önek odur; snapshot ayıklama yalnızca
+  sonraki tool_result mesajlarını değiştirdiği için bu önek turlar boyunca geçerli kalır. Üçüncü,
+  kayan kırılma noktası son mesajın son bloğudur (genelde tool_result): snapshot değişmeyen
+  turlarda geçmiş yalnızca sona eklenir ve bir önceki turun tamamı önbellekten okunur. Tek
+  çağrılık (`call`) isteklerde mesaj önbelleklenmez (okuma olmadan yazma 1.25× fiyatlanır).
 - Örnekleme parametreleri: kurulu SDK/API sürümünde `temperature` yoktur (API 2026-10-21 örnekleme
   parametrelerini kaldırdı); `params.temperature` gönderilmez, determinizm replay ile sağlanır.
   Çaba (`effort`) ve `thinking` models.yaml'dan gelir.
@@ -93,6 +99,62 @@ def _stream_error_type(exc: Any) -> str | None:
     return None
 
 
+def with_prefix_cache(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """İlk kullanıcı mesajının son içerik bloğuna `cache_control: ephemeral` ekler (kopya).
+
+    Diğer mesajlara dokunulmaz; özgün liste/sözlükler değiştirilmez.
+    """
+    if not messages or messages[0].get("role") != "user":
+        return messages
+    first = dict(messages[0])
+    content = first.get("content")
+    if isinstance(content, str):
+        blocks: list[Any] = [{"type": "text", "text": content}]
+    elif isinstance(content, list) and content:
+        blocks = list(content)
+    else:
+        return messages
+    last = blocks[-1]
+    if not isinstance(last, dict):
+        return messages
+    blocks[-1] = {**last, "cache_control": {"type": "ephemeral"}}
+    first["content"] = blocks
+    return [first, *messages[1:]]
+
+
+def with_rolling_cache(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Ajan isteği: ilk kullanıcı mesajı (kararlı önek) + SON mesajın son içerik bloğu kırılma
+    noktasıdır (kopya; özgün liste/sözlükler değiştirilmez).
+
+    Son snapshot değişmediği sürece sohbet yalnızca sona eklenir; kayan kırılma noktası bir
+    sonraki turda önceki tool_use/tool_result geçmişinin önbellekten (~0.1×) okunmasını sağlar.
+    Kırılma noktası sayısı: sistem + ilk mesaj + son mesaj = 3 (API sınırı 4). Tek mesajlı ilk
+    turda yalnızca önek kırılma noktası konur.
+    """
+    out = with_prefix_cache(messages)
+    if len(out) < 2:
+        return out
+    last = _with_block_cache(out[-1])
+    return out if last is None else [*out[:-1], last]
+
+
+def _with_block_cache(message: dict[str, Any]) -> dict[str, Any] | None:
+    content = message.get("content")
+    if isinstance(content, str):
+        if not content:
+            return None
+        blocks: list[Any] = [{"type": "text", "text": content}]
+    elif isinstance(content, list) and content:
+        blocks = list(content)
+    else:
+        return None
+    tail = blocks[-1]
+    if not isinstance(tail, dict) or tail.get("type") in {"thinking", "redacted_thinking"}:
+        return None  # thinking bloğuna cache_control konamaz
+    blocks[-1] = {**tail, "cache_control": {"type": "ephemeral"}}
+    return {**message, "content": blocks}
+
+
 class AnthropicProvider:
     name = "anthropic"
 
@@ -129,7 +191,9 @@ class AnthropicProvider:
             "system": [
                 {"type": "text", "text": request.system, "cache_control": {"type": "ephemeral"}}
             ],
-            "messages": request.messages,
+            # Ajan döngüsü: ilk mesaj (case + sembol tablosu) her tur aynıdır → önbellek önekine;
+            # son mesaj kayan kırılma noktasıdır (büyüyen geçmiş sonraki turda önbellekten okunur).
+            "messages": with_rolling_cache(request.messages) if request.tools else request.messages,
         }
         output_config: dict[str, Any] = {}
         effort = request.params.get("effort")

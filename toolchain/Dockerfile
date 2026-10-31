@@ -1,5 +1,10 @@
 # syntax=docker/dockerfile:1
-# Toolchain image shared by toolchain-worker, test-runner and playwright-mcp (research R4).
+# Toolchain imajı (research R4), iki hedef:
+#   ci  (varsayılan, son aşama): toolchain-worker, test-runner ve GitHub CI Yol A (test-local).
+#        Playwright MCP sunucusu YOKTUR — anayasa II: "CI ortamında model anahtarı, MCP sunucusu ve
+#        ajan bağımlılığı bulunamaz". security/no-mcp-in-image.sh bunu imaj üzerinde denetler.
+#   mcp : ci + /opt/mcp (@playwright/mcp, mcp/package-lock.json). Yalnızca playwright-mcp servisi.
+#   docker build --target mcp -t testingprobe-toolchain-mcp:local toolchain
 # PLAYWRIGHT_VERSION comes from .playwright-version (make up); the digest pins v1.64.1-noble.
 ARG PLAYWRIGHT_VERSION
 
@@ -23,7 +28,7 @@ COPY symbols/src ./src
 COPY symbols/test ./test
 RUN npm run build && npm prune --omit=dev --no-audit --no-fund
 
-FROM base
+FROM base AS ci
 ARG PLAYWRIGHT_VERSION
 LABEL org.opencontainers.image.title="testingprobe-toolchain" \
       io.testingprobe.playwright-version="${PLAYWRIGHT_VERSION}"
@@ -37,9 +42,17 @@ ENV UV_PYTHON=/usr/bin/python3.12 \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     PATH=/opt/toolchain/bin:/opt/toolchain/.venv/bin:$PATH
 
+# PID 1 = tini (-s alt biçici, -g sinyal süreç grubuna): Chromium yardımcı süreçleri PID 1'e
+# devredilir; Python/node PID 1 onları biçmez (zombi birikimi). Compose `init: true` gerekmez.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends tini \
+ && rm -rf /var/lib/apt/lists/* \
+ && /usr/bin/tini --version
+
 WORKDIR /opt/toolchain
 
-# Node: @playwright/mcp + @playwright/test; overrides force a single playwright-core (= image browsers).
+# Node: @playwright/test (+ axe, allure) — MCP sunucusu yok (mcp hedefi ekler); overrides force a
+# single playwright-core (= image browsers).
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts --omit=dev --no-audit --no-fund \
  && npm cache clean --force
@@ -51,7 +64,8 @@ RUN installed="$(node -p "require('playwright-core/package.json').version")"; \
 # package.json + package-lock.json'ının birebir kopyası (e2e-deps/; tests/test_e2e_deps.py denetler).
 # eslint.config.js buradaki güvenilir kopyadır: toolchain-worker yalnızca bununla aynı olanı yükler.
 WORKDIR /opt/e2e
-COPY e2e-deps/package.json e2e-deps/package-lock.json e2e-deps/eslint.config.js ./
+# e2e-deps/ = manifestler + eslint.config.js (+ içe aktardığı yerel modüller, varsa tools/).
+COPY e2e-deps/ ./
 RUN npm ci --ignore-scripts --no-audit --no-fund \
  && npm cache clean --force \
  && installed="$(node -p "require('playwright-core/package.json').version")" \
@@ -68,6 +82,17 @@ COPY --from=nodebuild /build/symbols/dist ./symbols/dist
 COPY --from=nodebuild /build/symbols/node_modules ./symbols/node_modules
 COPY probe ./probe
 
+# Allure 3 CLI (Node, sabit sürüm): test-runner her koşudan sonra statik tek dosyalık Allure
+# raporu üretir (allure2 eklentisi, ALLURE_NO_ANALYTICS; ağ yok, AI yok). Yapılandırma güvenilir
+# kopyadır; commit'teki allurerc okunmaz.
+WORKDIR /opt/allure
+COPY allure/package.json allure/package-lock.json allure/allurerc.mjs ./
+RUN npm ci --ignore-scripts --omit=dev --no-audit --no-fund \
+ && npm cache clean --force \
+ && node node_modules/allure/cli.js --version \
+ && chmod -R a-w /opt/allure
+WORKDIR /opt/toolchain
+
 # Python: dependencies first (cache), then the project itself.
 COPY pyproject.toml uv.lock ./
 # uv is only mounted at build time; it is not shipped in the image.
@@ -81,9 +106,34 @@ RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
 
 COPY bin ./bin
 
-# Artefakt bağlama noktası pwuser'ın: boş bir named volume ilk bağlamada bu sahipliği alır.
-RUN mkdir -p /artifacts && chown pwuser:pwuser /artifacts
+# Bağlama noktaları pwuser'ın: boş bir named volume ilk bağlamada bu sahipliği alır.
+# /checks = merge kapısı volume'ü (tp_checks; yalnızca toolchain-worker rw, test-runner bağlamaz).
+# /forge-mirror = GitHub modu aynası (tp_forge_mirror; toolchain-worker rw, test-runner ro).
+RUN mkdir -p /artifacts /checks /forge-mirror \
+ && chown pwuser:pwuser /artifacts /checks /forge-mirror
 
 USER pwuser
 WORKDIR /home/pwuser
-EXPOSE 8100 8200 8931
+EXPOSE 8100 8200
+ENTRYPOINT ["/usr/bin/tini", "-s", "-g", "--"]
+
+# ---------------------------------------------------------------------------------------- mcp
+# Playwright MCP sunucusu (ajanın tarayıcısı; core-worker → mcp-net). CI/test-runner imajına girmez.
+FROM ci AS mcp
+ARG PLAYWRIGHT_VERSION
+LABEL org.opencontainers.image.title="testingprobe-toolchain-mcp"
+USER root
+WORKDIR /opt/mcp
+COPY mcp/package.json mcp/package-lock.json ./
+RUN npm ci --ignore-scripts --omit=dev --no-audit --no-fund \
+ && npm cache clean --force \
+ && installed="$(node -p "require('playwright-core/package.json').version")" \
+ && { [ "$installed" = "$PLAYWRIGHT_VERSION" ] || { \
+      echo "mcp playwright-core $installed != PLAYWRIGHT_VERSION $PLAYWRIGHT_VERSION" >&2; exit 1; }; } \
+ && chmod -R a-w /opt/mcp
+USER pwuser
+WORKDIR /home/pwuser
+EXPOSE 8931
+
+# Varsayılan hedef (hedef verilmeyen `docker build`): MCP'siz ci imajı.
+FROM ci

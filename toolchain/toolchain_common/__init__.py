@@ -46,6 +46,34 @@ def check_artifacts() -> str:
     return check_writable(settings().artifacts_path)
 
 
+def check_checks_volume() -> str:
+    """toolchain-worker: `checks/` (merge kapısı) ayrı volume mü (test-runner onu bağlamaz).
+
+    Ayrı değilse test-runner'ın koşturduğu commit kodu (aynı uid) kapı dosyasını yazabilir.
+    `TP_CHECKS_REQUIRE_MOUNT=1` iken bu bir hatadır; değilse uyarıyla `ok` döner.
+    """
+    from toolchain_common.settings import settings
+
+    cfg = settings()
+    if os.path.ismount(cfg.checks_dir):
+        return "ok (ayrı volume)"
+    msg = f"{cfg.checks_dir} ayrı bir volume değil: test-runner merge kapısı dosyasını yazabilir"
+    return f"error: {msg}" if cfg.checks_require_mount else f"ok (uyarı: {msg})"
+
+
+def check_checks_hidden() -> str:
+    """test-runner: merge kapısı volume'ü bu konteynere bağlanmamış olmalı."""
+    from toolchain_common.settings import settings
+
+    cfg = settings()
+    if os.path.ismount(cfg.checks_dir):
+        return (
+            f"error: {cfg.checks_dir} test-runner'a bağlı "
+            "(merge kapısı yalnızca toolchain-worker'da)"
+        )
+    return "ok"
+
+
 def create_app(service: str, checks: dict) -> FastAPI:
     app = FastAPI(
         title=service, version=APP_VERSION, docs_url=None, redoc_url=None, openapi_url=None

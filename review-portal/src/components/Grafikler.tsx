@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { yuzde } from "../lib/format";
 
 interface Nokta {
@@ -88,12 +88,27 @@ export function OranSutunlari({ noktalar, baslik, hedef }: { noktalar: Nokta[]; 
 
 /** Hedefe göre ölçer: değer çubuğu + hedef işareti + metin (renk tek başına anlam taşımaz). */
 /** `deger` null: henüz ölçülecek bir şey yok (ör. hiç karar verilmedi) — "hedefin altında" denmez. */
-export function HedefOlcer({ etiket, deger, hedef, bosMetin = "henüz ölçüm yok" }: { etiket: string; deger: number | null; hedef: number; bosMetin?: string }) {
+export function HedefOlcer({
+  etiket,
+  deger,
+  hedef,
+  bosMetin = "henüz ölçüm yok",
+  ek,
+}: {
+  etiket: string;
+  deger: number | null;
+  hedef: number;
+  bosMetin?: string;
+  /** Etiketin yanında (ör. KPI kaynağı ipucu). */
+  ek?: ReactNode;
+}) {
   if (deger === null) {
     return (
       <div className="olcer">
         <div className="olcer-ust">
-          <span>{etiket}</span>
+          <span>
+            {etiket} {ek}
+          </span>
           <strong>—</strong>
         </div>
         <div className="ilerleme" aria-hidden="true">
@@ -109,7 +124,9 @@ export function HedefOlcer({ etiket, deger, hedef, bosMetin = "henüz ölçüm y
   return (
     <div className="olcer">
       <div className="olcer-ust">
-        <span>{etiket}</span>
+        <span>
+            {etiket} {ek}
+          </span>
         <strong>{yuzde(deger)}</strong>
       </div>
       <div className="ilerleme" role="meter" aria-label={etiket} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(deger * 100)}>

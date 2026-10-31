@@ -71,16 +71,30 @@ export function useRol(...roller: Rol[]): boolean {
   return !!kullanici && roller.includes(kullanici.rol);
 }
 
-/** Rol bazlı varsayılan açılış ekranı. */
-export function varsayilanSayfa(rol: Rol): string {
-  switch (rol) {
-    case "engineer":
-      return "/kod";
-    case "presenter":
-      return "/kontrol-kulesi";
-    case "tester":
-      return "/bug-taslaklari";
-    default:
-      return "/gereksinimler";
-  }
+/** Ekranın core'daki veri ucu (canlı derlemede ekran ancak uç varsa açılış sayfası olur). */
+const EKRAN_UCU: Record<string, readonly [string, string]> = {
+  "/kod": ["GET", "/scripts"],
+  "/kosular": ["GET", "/runs"],
+  "/kontrol-kulesi": ["GET", "/control-tower"],
+  "/bug-taslaklari": ["GET", "/bug-drafts"],
+  "/gereksinimler": ["GET", "/requirements"],
+};
+
+const ROL_SAYFALARI: Record<Rol, string[]> = {
+  engineer: ["/kod", "/kosular", "/gereksinimler"],
+  presenter: ["/kontrol-kulesi", "/kosular", "/gereksinimler"],
+  tester: ["/bug-taslaklari", "/kosular", "/gereksinimler"],
+  analyst: ["/gereksinimler"],
+  po: ["/gereksinimler"],
+};
+
+/**
+ * Rol bazlı varsayılan açılış ekranı: sunucu → Kontrol Kulesi, mühendis → Kod üretimi, testçi →
+ * Bug taslakları. `ucVar` verilirse (canlı derleme, core'un uç listesi) core'un henüz sunmadığı
+ * ekran atlanır — kullanıcı "bu fazda yok" ekranına düşmez, sıradaki ekrana gider.
+ */
+export function varsayilanSayfa(rol: Rol, ucVar?: (method: string, yol: string) => boolean): string {
+  const adaylar = ROL_SAYFALARI[rol] ?? ["/gereksinimler"];
+  if (!ucVar) return adaylar[0];
+  return adaylar.find((y) => !EKRAN_UCU[y] || ucVar(...EKRAN_UCU[y])) ?? "/gereksinimler";
 }

@@ -10,7 +10,8 @@ CASE_TUR = frozenset({"positive", "negative", "boundary"})
 RISK = frozenset({"high", "medium", "low"})
 REVIEW_NESNE = frozenset(KARARLAR)
 REVIEW_KARAR = frozenset().union(*KARARLAR.values())
-REVIEW_KANAL = frozenset({"portal", "jira"})
+# github: GitHub arayüzünde insanın yaptığı merge (GitHub kipi; çekirdeğe senkronla işlenir, 0010).
+REVIEW_KANAL = frozenset({"portal", "jira", "github"})
 RET_NEDENI = RET_NEDENLERI
 TOKEN_KAPSAM = frozenset({"publish", "submit"})
 PO_ONAY_KAYNAGI = frozenset({"jira_label", "portal"})

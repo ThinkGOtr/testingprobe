@@ -6,6 +6,7 @@ Oturum sırrı (`TP_SESSION_SECRET`) yalnızca oturum açan/okuyan uçlarda iste
 """
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, SecretStr, model_validator
@@ -78,10 +79,31 @@ class Settings(BaseSettings):
     toolchain_url: str = Field(
         default="http://toolchain-worker:8100", validation_alias="TOOLCHAIN_URL"
     )
+    # toolchain-worker belirteci (`Authorization: Bearer`); test-runner'da TANIMLI DEĞİL: üretilen
+    # kod /check ile merge kapısını yazamaz (security-check 4/5). Boş = başlık gönderilmez.
+    toolchain_token: str = Field(default="", validation_alias="TP_TOOLCHAIN_TOKEN")
     playwright_mcp_url: str = Field(
         default="http://playwright-mcp:8931/mcp", validation_alias="PLAYWRIGHT_MCP_URL"
     )
     artifacts_path: str = Field(default="/artifacts", validation_alias="TP_ARTIFACTS_PATH")
+    # Kod üretimi ajan ekran görüntüleri (core-worker rw, core-api ro; ayrı volume `tp_codegen`):
+    # core-worker paylaşılan `tp_artifacts`'a (checks/<sha>.json merge kapısı) yazamaz. Boşsa
+    # TP_ARTIFACTS_PATH kullanılır (testler/yerel geliştirme).
+    codegen_artifacts_path: str = Field(default="", validation_alias="TP_CODEGEN_ARTIFACTS_PATH")
+
+    # Merge kapısı dosyaları `checks/<sha>.json` (tek yazar toolchain-worker `/check`; ayrı volume
+    # `tp_checks`, core-api/core-worker salt okur, test-runner hiç görmez). Boşsa
+    # TP_ARTIFACTS_PATH/checks (testler/yerel geliştirme).
+    checks_path: str = Field(default="", validation_alias="TP_CHECKS_PATH")
+
+    @property
+    def screenshot_root(self) -> str:
+        return self.codegen_artifacts_path or self.artifacts_path
+
+    @property
+    def checks_dir(self) -> str:
+        return self.checks_path or str(Path(self.artifacts_path) / "checks")
+
     # IDE (Claude Code) kanalının kullanıcıya gösterilen MCP adresi (tarayıcı/IDE'den erişilebilir).
     mcp_public_url: str = Field(
         default="http://127.0.0.1:8000/mcp", validation_alias="TP_MCP_PUBLIC_URL"

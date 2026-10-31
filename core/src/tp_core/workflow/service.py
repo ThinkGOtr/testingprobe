@@ -286,8 +286,12 @@ def record_approval(
         raise ApprovalNotAllowed(f"geçersiz onay kanalı: {kanal}")
     if karar == "reject" and ret_nedeni not in RET_NEDENLERI:
         raise InvalidDecision(f"ret nedeni taksonomiden olmalı: {sorted(RET_NEDENLERI)}")
-    if karar != "reject" and ret_nedeni is not None:
-        raise InvalidDecision("ret nedeni yalnızca 'reject' kararında verilir")
+    # Script review'da "değişiklik iste" de taksonomik ret nedeni taşır (TEKNIK-TASARIM §8.4,
+    # Constitution X: ret nedenleri ölçülür).
+    if ret_nedeni is not None and karar not in ("reject", "request_changes"):
+        raise InvalidDecision("ret nedeni yalnızca 'reject' / 'request_changes' kararında verilir")
+    if ret_nedeni is not None and ret_nedeni not in RET_NEDENLERI:
+        raise InvalidDecision(f"ret nedeni taksonomiden olmalı: {sorted(RET_NEDENLERI)}")
     if (
         kind == "consistency_finding"
         and karar == "accept_difference"

@@ -22,7 +22,7 @@ export function App() {
       setCart(null);
     });
     api
-      .me()
+      .session()
       .then(setUser)
       .catch(() => setUser(null));
   }, []);

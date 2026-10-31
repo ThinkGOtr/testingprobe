@@ -14,16 +14,16 @@ test.describe("Sipariş onayı ve geçmiş (TPD-1 AC5)", () => {
   }) => {
     await catalogPage.goto();
     await catalogPage.addToCart("P-004", 30);
-    await catalogPage.addToCart("P-001", 6);
+    await catalogPage.addToCart("P-001", 7);
     await catalogPage.openCart();
-    await cartPage.expectTotal("1.025,00 TL");
+    await cartPage.expectTotal("1.050,00 TL");
     await cartPage.checkout();
     await orderPage.expectConfirmation();
-    await orderPage.expectConfirmedTotal("1.025,00 TL");
+    await orderPage.expectConfirmedTotal("1.050,00 TL");
     await catalogPage.expectCartCount(0);
     const orderNumber = await orderPage.readOrderNumber();
     await orderPage.expectConfirmedOrderInHistory();
-    await orderPage.expectOrderTotalInHistory(orderNumber, "1.025,00 TL");
+    await orderPage.expectOrderTotalInHistory(orderNumber, "1.050,00 TL");
   });
 
   test("minimum tutarın altındaki sepet API'de de reddedilir", async ({ page, catalogPage }) => {

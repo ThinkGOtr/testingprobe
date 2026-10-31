@@ -55,6 +55,18 @@ CATALOG = """export function Card() {
 E2E_LOCATORS = "export const catalog = { addToCart: 'add-to-cart' };\n"
 
 
+class FakeCi:
+    def __init__(self, fail: bool = False) -> None:
+        self.calls: list[tuple[str, str]] = []
+        self.fail = fail
+
+    def __call__(self, sha: str, actor: str) -> str:
+        self.calls.append((sha, actor))
+        if self.fail:
+            raise OSError("db yok")
+        return f"run-{len(self.calls)}"
+
+
 class FakeAudit:
     def __init__(self) -> None:
         self.rows: list[tuple[str, str, str | None, dict[str, Any]]] = []
@@ -236,3 +248,80 @@ def test_cli_denetim_yoksa_forgea_dokunmaz(
     assert b"denetim" in capfdbinary.readouterr().err
     assert forge.head_sha() == main
     assert forge.find_open_pr(BREAK_BRANCH) is None
+
+
+# ---------------------------------------------------------------------- push CI (on: push)
+
+
+def test_break_ve_baseline_main_icin_push_ci_tetikler(forge: LocalForge) -> None:
+    audit, ci = FakeAudit(), FakeCi()
+    out = break_locator(forge, audit, ci=ci)
+    assert ci.calls == [(out.main_after, "demo-admin")]
+    assert (out.ci_run_id, out.ci_error) == ("run-1", None)
+    assert audit.rows[0][3]["ci"] == {"tetik": "push", "run_id": "run-1", "hata": None}
+    # idempotent tekrar: main değişmedi → CI yok
+    break_locator(forge, audit, ci=ci)
+    assert len(ci.calls) == 1
+    base = restore_baseline(forge, audit, ci=ci)
+    assert ci.calls[-1] == (base.main_after, "demo-admin") and base.ci_run_id == "run-2"
+    assert audit.rows[-1][3]["ci"]["run_id"] == "run-2"
+    restore_baseline(forge, audit, ci=ci)
+    assert len(ci.calls) == 2
+
+
+def test_break_ci_hatasi_merge_geri_alinmaz_denetime_yazilir(forge: LocalForge) -> None:
+    audit = FakeAudit()
+    out = break_locator(forge, audit, ci=FakeCi(fail=True))
+    assert out.changed is True and forge_demo.testid_state(forge) == "cart-add"
+    assert out.ci_run_id is None and "db yok" in (out.ci_error or "")
+    assert "db yok" in audit.rows[0][3]["ci"]["hata"]
+
+
+def test_break_bayat_dal_demo_admin_ile_merge_commit(forge: LocalForge, demo_bare: Path) -> None:
+    """main ilerlemişken (codegen merge'leri) kırılma dalı bayat: demo-admin bypass'ı nedeniyle."""
+    forge.commit_files("tp/case-x", {"e2e/tests/x.spec.ts": "// x\n"}, "x")
+    forge.require_up_to_date = False
+    forge.merge_pr(forge.open_pr("tp/case-x", "x", "").number, "demo-admin")
+    forge.require_up_to_date = True
+    audit, ci = FakeAudit(), FakeCi()
+    out = break_locator(forge, audit, ci=ci)
+    assert out.merge is not None and out.merge.method == "merge-commit"
+    assert "güncel değil" in (out.merge.bypass_reason or "")
+    assert ci.calls == [(out.main_after, "demo-admin")]
+
+
+def test_cli_break_push_ci_kosusu_postgresde(
+    forge: LocalForge,
+    demo_bare: Path,
+    tmp_path: Path,
+    engine: Any,
+    capfdbinary: pytest.CaptureFixture[bytes],
+) -> None:
+    """make break → push `run` satırı (main'in yeni sha'sı, isteyen demo-admin) + ci.run işi."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session
+
+    from tp_core.models import Job, Run
+
+    env = {
+        "TP_FORGE": "local",
+        "TP_FORGE_PATH": str(demo_bare),
+        "TP_ARTIFACTS_PATH": str(tmp_path / "artifacts"),
+    }
+    assert forge_demo.main(["break"], env=env, audit=FakeAudit()) == 0
+    out = json.loads(capfdbinary.readouterr().out)
+    assert out["ci_error"] is None and out["ci_run_id"]
+    with Session(engine) as s:
+        runs = s.scalars(select(Run)).all()
+        assert len(runs) == 1
+        run = runs[0]
+        assert str(run.id) == out["ci_run_id"]
+        assert (run.tetik, run.commit, run.sonuc, run.kaynak) == (
+            "push",
+            forge.head_sha(),
+            "queued",
+            "local",
+        )
+        assert run.pr_no is None and run.ortam["isteyen"] == "demo-admin"
+        isler = s.scalars(select(Job).where(Job.idempotency_key == f"ci.run:{run.id}")).all()
+        assert len(isler) == 1

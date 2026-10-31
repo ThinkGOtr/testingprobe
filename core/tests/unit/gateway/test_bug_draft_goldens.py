@@ -22,6 +22,7 @@ from tests.unit.gateway.demo_sources import (
     goldens,
     seed_setting,
 )
+from tp_core.gateway import VERIFY_AGENT_DEALER
 
 BUG_DRAFTS = list(goldens("bug_draft"))
 SEED = (DEMO_API_SRC / "demoapp_api" / "seed.py").read_text(encoding="utf-8")
@@ -62,7 +63,9 @@ def _ids(items: list[tuple[str, Path, Any]]) -> list[str]:
 
 
 def test_seed_parsing_matches_demo_data() -> None:
-    assert {"bayi1": Decimal("2000.00"), "bayi2": Decimal("500.00")} == DEALERS
+    # e2e bayileri; seed'de ayrıca doğrulama ajanının bayisi (bayi3) vardır, bug adımları onu anmaz.
+    assert {"bayi1": Decimal("2000.00"), "bayi2": Decimal("500.00")}.items() <= DEALERS.items()
+    assert DEALERS.get(VERIFY_AGENT_DEALER) is not None
     assert PRODUCT_CODES["Şeftalili Soğuk Çay 1L"] == "P-004"
 
 

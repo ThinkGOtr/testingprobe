@@ -33,12 +33,10 @@ test.describe("Sepet (TPD-1)", () => {
     await cartPage.expectTotal("150,00 TL");
   });
 
-  test("kampanya: 6 adet P-001 → 1 bedava", async ({ catalogPage, cartPage }) => {
-    await catalogPage.addToCart("P-001", 6);
-    await catalogPage.openCart();
-    await cartPage.expectFreeQuantity("P-001", 1);
-    await cartPage.expectTotal("125,00 TL");
-  });
+  // 6 adet sınırı burada bilerek doğrulanmaz: "6 adette bedava var mı?" demo senaryosuna bağlıdır
+  // (DEMO-VERISI Demo-B: ana yolda C3 "6 → 1 bedava", `f2-kod-hatasi`'nda "6 → bedava yok" ve
+  // defect adayı). El yazımı testler yalnızca iki senaryoda da doğru olan davranışı (7 → 1) doğrular;
+  // tools/scenario-neutral-check.js bunu denetler.
 
   test("kampanyasız üründe bedava adet verilmez", async ({ catalogPage, cartPage }) => {
     await catalogPage.addToCart("P-002", 12);

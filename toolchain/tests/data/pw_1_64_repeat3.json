@@ -1,0 +1,417 @@
+{
+ "config": {
+  "note": "kırpıldı"
+ },
+ "suites": [
+  {
+   "title": "generated/tpd-1.spec.ts",
+   "file": "generated/tpd-1.spec.ts",
+   "column": 0,
+   "line": 0,
+   "specs": [
+    {
+     "title": "TPD-1 › 6 adet → bedava yok",
+     "ok": false,
+     "tags": [
+      "TPD-1",
+      "case:c1"
+     ],
+     "tests": [
+      {
+       "timeout": 6000,
+       "annotations": [],
+       "expectedStatus": "passed",
+       "projectId": "",
+       "projectName": "",
+       "results": [
+        {
+         "workerIndex": 0,
+         "parallelIndex": 0,
+         "status": "failed",
+         "duration": 1220,
+         "error": {
+          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByTestId('cart-line-free-P-001')\nExpected: \u001b[32m\"0\"\u001b[39m\nReceived: \u001b[31m\"1\"\u001b[39m\nTimeout:  1000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" getByTestId('cart-line-free-P-001') with timeout 1000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('cart-line-free-P-001')\u001b[22m\n\u001b[2m    11 × locator resolved to <span data-testid=\"cart-line-free-P-001\">1</span>\u001b[22m\n\u001b[2m       - unexpected value \"1\"\u001b[22m\n",
+          "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByTestId('cart-line-free-P-001')\nExpected: \u001b[32m\"0\"\u001b[39m\nReceived: \u001b[31m\"1\"\u001b[39m\nTimeout:  1000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" getByTestId('cart-line-free-P-001') with timeout 1000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('cart-line-free-P-001')\u001b[22m\n\u001b[2m    11 × locator resolved to <span data-testid=\"cart-line-free-P-001\">1</span>\u001b[22m\n\u001b[2m       - unexpected value \"1\"\u001b[22m\n\n    at CartPage.expectFreeQuantity ({E2E}/pages/cart.page.ts:5:65)\n    at {E2E}/tests/generated/tpd-1.spec.ts:5:20\n    at {E2E}/tests/generated/tpd-1.spec.ts:4:3",
+          "location": {
+           "file": "{E2E}/pages/cart.page.ts",
+           "column": 65,
+           "line": 5
+          },
+          "snippet": "   at ../pages/cart.page.ts:5\n\n  3 |   constructor(private readonly page: Page) {}\n  4 |   async expectFreeQuantity(quantity: number): Promise<void> {\n> 5 |     await expect(this.page.getByTestId(\"cart-line-free-P-001\")).toHaveText(String(quantity));\n    |                                                                 ^\n  6 |   }\n  7 |   async addToCart(): Promise<void> {\n  8 |     await this.page.getByTestId(\"add-to-cart\").click();"
+         },
+         "errors": [
+          {
+           "location": {
+            "file": "{E2E}/pages/cart.page.ts",
+            "column": 65,
+            "line": 5
+           },
+           "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByTestId('cart-line-free-P-001')\nExpected: \u001b[32m\"0\"\u001b[39m\nReceived: \u001b[31m\"1\"\u001b[39m\nTimeout:  1000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" getByTestId('cart-line-free-P-001') with timeout 1000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('cart-line-free-P-001')\u001b[22m\n\u001b[2m    11 × locator resolved to <span data-testid=\"cart-line-free-P-001\">1</span>\u001b[22m\n\u001b[2m       - unexpected value \"1\"\u001b[22m\n\n\n   at ../pages/cart.page.ts:5\n\n  3 |   constructor(private readonly page: Page) {}\n  4 |   async expectFreeQuantity(quantity: number): Promise<void> {\n> 5 |     await expect(this.page.getByTestId(\"cart-line-free-P-001\")).toHaveText(String(quantity));\n    |                                                                 ^\n  6 |   }\n  7 |   async addToCart(): Promise<void> {\n  8 |     await this.page.getByTestId(\"add-to-cart\").click();\n    at CartPage.expectFreeQuantity ({E2E}/pages/cart.page.ts:5:65)\n    at {E2E}/tests/generated/tpd-1.spec.ts:5:20\n    at {E2E}/tests/generated/tpd-1.spec.ts:4:3"
+          }
+         ],
+         "stdout": [],
+         "stderr": [],
+         "retry": 0,
+         "steps": [
+          {
+           "title": "Adım 1: sepete 6 adet ekle",
+           "duration": 0
+          },
+          {
+           "title": "Beklenen: bedava adet 0",
+           "duration": 1007,
+           "error": {
+            "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByTestId('cart-line-free-P-001')\nExpected: \u001b[32m\"0\"\u001b[39m\nReceived: \u001b[31m\"1\"\u001b[39m\nTimeout:  1000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" getByTestId('cart-line-free-P-001') with timeout 1000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('cart-line-free-P-001')\u001b[22m\n\u001b[2m    11 × locator resolved to <span data-testid=\"cart-line-free-P-001\">1</span>\u001b[22m\n\u001b[2m       - unexpected value \"1\"\u001b[22m\n",
+            "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByTestId('cart-line-free-P-001')\nExpected: \u001b[32m\"0\"\u001b[39m\nReceived: \u001b[31m\"1\"\u001b[39m\nTimeout:  1000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" getByTestId('cart-line-free-P-001') with timeout 1000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('cart-line-free-P-001')\u001b[22m\n\u001b[2m    11 × locator resolved to <span data-testid=\"cart-line-free-P-001\">1</span>\u001b[22m\n\u001b[2m       - unexpected value \"1\"\u001b[22m\n\n    at CartPage.expectFreeQuantity ({E2E}/pages/cart.page.ts:5:65)\n    at {E2E}/tests/generated/tpd-1.spec.ts:5:20\n    at {E2E}/tests/generated/tpd-1.spec.ts:4:3",
+            "location": {
+             "file": "{E2E}/pages/cart.page.ts",
+             "column": 65,
+             "line": 5
+            },
+            "snippet": "   at ../pages/cart.page.ts:5\n\n  3 |   constructor(private readonly page: Page) {}\n  4 |   async expectFreeQuantity(quantity: number): Promise<void> {\n> 5 |     await expect(this.page.getByTestId(\"cart-line-free-P-001\")).toHaveText(String(quantity));\n    |                                                                 ^\n  6 |   }\n  7 |   async addToCart(): Promise<void> {\n  8 |     await this.page.getByTestId(\"add-to-cart\").click();"
+           }
+          }
+         ],
+         "startTime": "2026-10-31T09:11:07.226Z",
+         "annotations": [],
+         "attachments": [
+          {
+           "name": "screenshot",
+           "contentType": "image/png",
+           "path": "{E2E}/results/artifacts/generated-tpd-1-TPD-1-›-6-adet-→-bedava-yok/test-failed-1.png"
+          },
+          {
+           "name": "error-context",
+           "contentType": "text/markdown",
+           "path": "{E2E}/results/artifacts/generated-tpd-1-TPD-1-›-6-adet-→-bedava-yok/error-context.md"
+          },
+          {
+           "name": "trace",
+           "contentType": "application/zip",
+           "path": "{E2E}/results/artifacts/generated-tpd-1-TPD-1-›-6-adet-→-bedava-yok/trace.zip"
+          }
+         ],
+         "errorLocation": {
+          "file": "{E2E}/pages/cart.page.ts",
+          "column": 65,
+          "line": 5
+         }
+        }
+       ],
+       "status": "unexpected"
+      }
+     ],
+     "id": "1f8efba6d476eef887f6-6dcc077b2789cb6a5f20",
+     "file": "generated/tpd-1.spec.ts",
+     "line": 2,
+     "column": 5
+    },
+    {
+     "title": "geçer",
+     "ok": true,
+     "tags": [],
+     "tests": [
+      {
+       "timeout": 6000,
+       "annotations": [],
+       "expectedStatus": "passed",
+       "projectId": "",
+       "projectName": "",
+       "results": [
+        {
+         "workerIndex": 2,
+         "parallelIndex": 0,
+         "status": "passed",
+         "duration": 85,
+         "errors": [],
+         "stdout": [],
+         "stderr": [],
+         "retry": 0,
+         "startTime": "2026-10-31T09:11:08.969Z",
+         "annotations": [],
+         "attachments": []
+        }
+       ],
+       "status": "expected"
+      }
+     ],
+     "id": "1f8efba6d476eef887f6-6ad95d0cf95d1e854692",
+     "file": "generated/tpd-1.spec.ts",
+     "line": 36,
+     "column": 5
+    },
+    {
+     "title": "TPD-1 › 6 adet → bedava yok",
+     "ok": false,
+     "tags": [
+      "TPD-1",
+      "case:c1"
+     ],
+     "tests": [
+      {
+       "timeout": 6000,
+       "annotations": [],
+       "expectedStatus": "passed",
+       "projectId": "",
+       "projectName": "",
+       "results": [
+        {
+         "workerIndex": 1,
+         "parallelIndex": 1,
+         "status": "failed",
+         "duration": 1220,
+         "error": {
+          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByTestId('cart-line-free-P-001')\nExpected: \u001b[32m\"0\"\u001b[39m\nReceived: \u001b[31m\"1\"\u001b[39m\nTimeout:  1000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" getByTestId('cart-line-free-P-001') with timeout 1000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('cart-line-free-P-001')\u001b[22m\n\u001b[2m    11 × locator resolved to <span data-testid=\"cart-line-free-P-001\">1</span>\u001b[22m\n\u001b[2m       - unexpected value \"1\"\u001b[22m\n",
+          "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByTestId('cart-line-free-P-001')\nExpected: \u001b[32m\"0\"\u001b[39m\nReceived: \u001b[31m\"1\"\u001b[39m\nTimeout:  1000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" getByTestId('cart-line-free-P-001') with timeout 1000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('cart-line-free-P-001')\u001b[22m\n\u001b[2m    11 × locator resolved to <span data-testid=\"cart-line-free-P-001\">1</span>\u001b[22m\n\u001b[2m       - unexpected value \"1\"\u001b[22m\n\n    at CartPage.expectFreeQuantity ({E2E}/pages/cart.page.ts:5:65)\n    at {E2E}/tests/generated/tpd-1.spec.ts:5:20\n    at {E2E}/tests/generated/tpd-1.spec.ts:4:3",
+          "location": {
+           "file": "{E2E}/pages/cart.page.ts",
+           "column": 65,
+           "line": 5
+          },
+          "snippet": "   at ../pages/cart.page.ts:5\n\n  3 |   constructor(private readonly page: Page) {}\n  4 |   async expectFreeQuantity(quantity: number): Promise<void> {\n> 5 |     await expect(this.page.getByTestId(\"cart-line-free-P-001\")).toHaveText(String(quantity));\n    |                                                                 ^\n  6 |   }\n  7 |   async addToCart(): Promise<void> {\n  8 |     await this.page.getByTestId(\"add-to-cart\").click();"
+         },
+         "errors": [
+          {
+           "location": {
+            "file": "{E2E}/pages/cart.page.ts",
+            "column": 65,
+            "line": 5
+           },
+           "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByTestId('cart-line-free-P-001')\nExpected: \u001b[32m\"0\"\u001b[39m\nReceived: \u001b[31m\"1\"\u001b[39m\nTimeout:  1000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" getByTestId('cart-line-free-P-001') with timeout 1000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('cart-line-free-P-001')\u001b[22m\n\u001b[2m    11 × locator resolved to <span data-testid=\"cart-line-free-P-001\">1</span>\u001b[22m\n\u001b[2m       - unexpected value \"1\"\u001b[22m\n\n\n   at ../pages/cart.page.ts:5\n\n  3 |   constructor(private readonly page: Page) {}\n  4 |   async expectFreeQuantity(quantity: number): Promise<void> {\n> 5 |     await expect(this.page.getByTestId(\"cart-line-free-P-001\")).toHaveText(String(quantity));\n    |                                                                 ^\n  6 |   }\n  7 |   async addToCart(): Promise<void> {\n  8 |     await this.page.getByTestId(\"add-to-cart\").click();\n    at CartPage.expectFreeQuantity ({E2E}/pages/cart.page.ts:5:65)\n    at {E2E}/tests/generated/tpd-1.spec.ts:5:20\n    at {E2E}/tests/generated/tpd-1.spec.ts:4:3"
+          }
+         ],
+         "stdout": [],
+         "stderr": [],
+         "retry": 0,
+         "steps": [
+          {
+           "title": "Adım 1: sepete 6 adet ekle",
+           "duration": 0
+          },
+          {
+           "title": "Beklenen: bedava adet 0",
+           "duration": 1007,
+           "error": {
+            "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByTestId('cart-line-free-P-001')\nExpected: \u001b[32m\"0\"\u001b[39m\nReceived: \u001b[31m\"1\"\u001b[39m\nTimeout:  1000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" getByTestId('cart-line-free-P-001') with timeout 1000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('cart-line-free-P-001')\u001b[22m\n\u001b[2m    11 × locator resolved to <span data-testid=\"cart-line-free-P-001\">1</span>\u001b[22m\n\u001b[2m       - unexpected value \"1\"\u001b[22m\n",
+            "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByTestId('cart-line-free-P-001')\nExpected: \u001b[32m\"0\"\u001b[39m\nReceived: \u001b[31m\"1\"\u001b[39m\nTimeout:  1000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" getByTestId('cart-line-free-P-001') with timeout 1000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('cart-line-free-P-001')\u001b[22m\n\u001b[2m    11 × locator resolved to <span data-testid=\"cart-line-free-P-001\">1</span>\u001b[22m\n\u001b[2m       - unexpected value \"1\"\u001b[22m\n\n    at CartPage.expectFreeQuantity ({E2E}/pages/cart.page.ts:5:65)\n    at {E2E}/tests/generated/tpd-1.spec.ts:5:20\n    at {E2E}/tests/generated/tpd-1.spec.ts:4:3",
+            "location": {
+             "file": "{E2E}/pages/cart.page.ts",
+             "column": 65,
+             "line": 5
+            },
+            "snippet": "   at ../pages/cart.page.ts:5\n\n  3 |   constructor(private readonly page: Page) {}\n  4 |   async expectFreeQuantity(quantity: number): Promise<void> {\n> 5 |     await expect(this.page.getByTestId(\"cart-line-free-P-001\")).toHaveText(String(quantity));\n    |                                                                 ^\n  6 |   }\n  7 |   async addToCart(): Promise<void> {\n  8 |     await this.page.getByTestId(\"add-to-cart\").click();"
+           }
+          }
+         ],
+         "startTime": "2026-10-31T09:11:07.226Z",
+         "annotations": [],
+         "attachments": [
+          {
+           "name": "screenshot",
+           "contentType": "image/png",
+           "path": "{E2E}/results/artifacts/generated-tpd-1-TPD-1-›-6-adet-→-bedava-yok-repeat1/test-failed-1.png"
+          },
+          {
+           "name": "error-context",
+           "contentType": "text/markdown",
+           "path": "{E2E}/results/artifacts/generated-tpd-1-TPD-1-›-6-adet-→-bedava-yok-repeat1/error-context.md"
+          },
+          {
+           "name": "trace",
+           "contentType": "application/zip",
+           "path": "{E2E}/results/artifacts/generated-tpd-1-TPD-1-›-6-adet-→-bedava-yok-repeat1/trace.zip"
+          }
+         ],
+         "errorLocation": {
+          "file": "{E2E}/pages/cart.page.ts",
+          "column": 65,
+          "line": 5
+         }
+        }
+       ],
+       "status": "unexpected"
+      }
+     ],
+     "id": "1f8efba6d476eef887f6-d4631f97c4e7e9e1883f",
+     "file": "generated/tpd-1.spec.ts",
+     "line": 2,
+     "column": 5
+    },
+    {
+     "title": "geçer",
+     "ok": true,
+     "tags": [],
+     "tests": [
+      {
+       "timeout": 6000,
+       "annotations": [],
+       "expectedStatus": "passed",
+       "projectId": "",
+       "projectName": "",
+       "results": [
+        {
+         "workerIndex": 3,
+         "parallelIndex": 1,
+         "status": "passed",
+         "duration": 85,
+         "errors": [],
+         "stdout": [],
+         "stderr": [],
+         "retry": 0,
+         "startTime": "2026-10-31T09:11:08.969Z",
+         "annotations": [],
+         "attachments": []
+        }
+       ],
+       "status": "expected"
+      }
+     ],
+     "id": "1f8efba6d476eef887f6-16bf051a79bd98eb5121",
+     "file": "generated/tpd-1.spec.ts",
+     "line": 36,
+     "column": 5
+    },
+    {
+     "title": "TPD-1 › 6 adet → bedava yok",
+     "ok": false,
+     "tags": [
+      "TPD-1",
+      "case:c1"
+     ],
+     "tests": [
+      {
+       "timeout": 6000,
+       "annotations": [],
+       "expectedStatus": "passed",
+       "projectId": "",
+       "projectName": "",
+       "results": [
+        {
+         "workerIndex": 4,
+         "parallelIndex": 0,
+         "status": "failed",
+         "duration": 1082,
+         "error": {
+          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByTestId('cart-line-free-P-001')\nExpected: \u001b[32m\"0\"\u001b[39m\nReceived: \u001b[31m\"1\"\u001b[39m\nTimeout:  1000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" getByTestId('cart-line-free-P-001') with timeout 1000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('cart-line-free-P-001')\u001b[22m\n\u001b[2m    11 × locator resolved to <span data-testid=\"cart-line-free-P-001\">1</span>\u001b[22m\n\u001b[2m       - unexpected value \"1\"\u001b[22m\n",
+          "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByTestId('cart-line-free-P-001')\nExpected: \u001b[32m\"0\"\u001b[39m\nReceived: \u001b[31m\"1\"\u001b[39m\nTimeout:  1000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" getByTestId('cart-line-free-P-001') with timeout 1000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('cart-line-free-P-001')\u001b[22m\n\u001b[2m    11 × locator resolved to <span data-testid=\"cart-line-free-P-001\">1</span>\u001b[22m\n\u001b[2m       - unexpected value \"1\"\u001b[22m\n\n    at CartPage.expectFreeQuantity ({E2E}/pages/cart.page.ts:5:65)\n    at {E2E}/tests/generated/tpd-1.spec.ts:5:20\n    at {E2E}/tests/generated/tpd-1.spec.ts:4:3",
+          "location": {
+           "file": "{E2E}/pages/cart.page.ts",
+           "column": 65,
+           "line": 5
+          },
+          "snippet": "   at ../pages/cart.page.ts:5\n\n  3 |   constructor(private readonly page: Page) {}\n  4 |   async expectFreeQuantity(quantity: number): Promise<void> {\n> 5 |     await expect(this.page.getByTestId(\"cart-line-free-P-001\")).toHaveText(String(quantity));\n    |                                                                 ^\n  6 |   }\n  7 |   async addToCart(): Promise<void> {\n  8 |     await this.page.getByTestId(\"add-to-cart\").click();"
+         },
+         "errors": [
+          {
+           "location": {
+            "file": "{E2E}/pages/cart.page.ts",
+            "column": 65,
+            "line": 5
+           },
+           "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByTestId('cart-line-free-P-001')\nExpected: \u001b[32m\"0\"\u001b[39m\nReceived: \u001b[31m\"1\"\u001b[39m\nTimeout:  1000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" getByTestId('cart-line-free-P-001') with timeout 1000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('cart-line-free-P-001')\u001b[22m\n\u001b[2m    11 × locator resolved to <span data-testid=\"cart-line-free-P-001\">1</span>\u001b[22m\n\u001b[2m       - unexpected value \"1\"\u001b[22m\n\n\n   at ../pages/cart.page.ts:5\n\n  3 |   constructor(private readonly page: Page) {}\n  4 |   async expectFreeQuantity(quantity: number): Promise<void> {\n> 5 |     await expect(this.page.getByTestId(\"cart-line-free-P-001\")).toHaveText(String(quantity));\n    |                                                                 ^\n  6 |   }\n  7 |   async addToCart(): Promise<void> {\n  8 |     await this.page.getByTestId(\"add-to-cart\").click();\n    at CartPage.expectFreeQuantity ({E2E}/pages/cart.page.ts:5:65)\n    at {E2E}/tests/generated/tpd-1.spec.ts:5:20\n    at {E2E}/tests/generated/tpd-1.spec.ts:4:3"
+          }
+         ],
+         "stdout": [],
+         "stderr": [],
+         "retry": 0,
+         "steps": [
+          {
+           "title": "Adım 1: sepete 6 adet ekle",
+           "duration": 0
+          },
+          {
+           "title": "Beklenen: bedava adet 0",
+           "duration": 1006,
+           "error": {
+            "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByTestId('cart-line-free-P-001')\nExpected: \u001b[32m\"0\"\u001b[39m\nReceived: \u001b[31m\"1\"\u001b[39m\nTimeout:  1000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" getByTestId('cart-line-free-P-001') with timeout 1000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('cart-line-free-P-001')\u001b[22m\n\u001b[2m    11 × locator resolved to <span data-testid=\"cart-line-free-P-001\">1</span>\u001b[22m\n\u001b[2m       - unexpected value \"1\"\u001b[22m\n",
+            "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByTestId('cart-line-free-P-001')\nExpected: \u001b[32m\"0\"\u001b[39m\nReceived: \u001b[31m\"1\"\u001b[39m\nTimeout:  1000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" getByTestId('cart-line-free-P-001') with timeout 1000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('cart-line-free-P-001')\u001b[22m\n\u001b[2m    11 × locator resolved to <span data-testid=\"cart-line-free-P-001\">1</span>\u001b[22m\n\u001b[2m       - unexpected value \"1\"\u001b[22m\n\n    at CartPage.expectFreeQuantity ({E2E}/pages/cart.page.ts:5:65)\n    at {E2E}/tests/generated/tpd-1.spec.ts:5:20\n    at {E2E}/tests/generated/tpd-1.spec.ts:4:3",
+            "location": {
+             "file": "{E2E}/pages/cart.page.ts",
+             "column": 65,
+             "line": 5
+            },
+            "snippet": "   at ../pages/cart.page.ts:5\n\n  3 |   constructor(private readonly page: Page) {}\n  4 |   async expectFreeQuantity(quantity: number): Promise<void> {\n> 5 |     await expect(this.page.getByTestId(\"cart-line-free-P-001\")).toHaveText(String(quantity));\n    |                                                                 ^\n  6 |   }\n  7 |   async addToCart(): Promise<void> {\n  8 |     await this.page.getByTestId(\"add-to-cart\").click();"
+           }
+          }
+         ],
+         "startTime": "2026-10-31T09:11:09.437Z",
+         "annotations": [],
+         "attachments": [
+          {
+           "name": "screenshot",
+           "contentType": "image/png",
+           "path": "{E2E}/results/artifacts/generated-tpd-1-TPD-1-›-6-adet-→-bedava-yok-repeat2/test-failed-1.png"
+          },
+          {
+           "name": "error-context",
+           "contentType": "text/markdown",
+           "path": "{E2E}/results/artifacts/generated-tpd-1-TPD-1-›-6-adet-→-bedava-yok-repeat2/error-context.md"
+          },
+          {
+           "name": "trace",
+           "contentType": "application/zip",
+           "path": "{E2E}/results/artifacts/generated-tpd-1-TPD-1-›-6-adet-→-bedava-yok-repeat2/trace.zip"
+          }
+         ],
+         "errorLocation": {
+          "file": "{E2E}/pages/cart.page.ts",
+          "column": 65,
+          "line": 5
+         }
+        }
+       ],
+       "status": "unexpected"
+      }
+     ],
+     "id": "1f8efba6d476eef887f6-469a38df39469a03534a",
+     "file": "generated/tpd-1.spec.ts",
+     "line": 2,
+     "column": 5
+    },
+    {
+     "title": "geçer",
+     "ok": true,
+     "tags": [],
+     "tests": [
+      {
+       "timeout": 6000,
+       "annotations": [],
+       "expectedStatus": "passed",
+       "projectId": "",
+       "projectName": "",
+       "results": [
+        {
+         "workerIndex": 5,
+         "parallelIndex": 0,
+         "status": "passed",
+         "duration": 97,
+         "errors": [],
+         "stdout": [],
+         "stderr": [],
+         "retry": 0,
+         "startTime": "2026-10-31T09:11:10.899Z",
+         "annotations": [],
+         "attachments": []
+        }
+       ],
+       "status": "expected"
+      }
+     ],
+     "id": "1f8efba6d476eef887f6-cb44fe79fb602c017ee0",
+     "file": "generated/tpd-1.spec.ts",
+     "line": 36,
+     "column": 5
+    }
+   ]
+  }
+ ],
+ "errors": [],
+ "stats": {
+  "startTime": "2026-10-31T09:11:06.967Z",
+  "duration": 4147.209,
+  "expected": 3,
+  "skipped": 0,
+  "unexpected": 3,
+  "flaky": 0
+ }
+}

@@ -1,0 +1,59 @@
+# Prompt paketlerinin canlı değerlendirme durumu (constitution X).
+#
+# "Prompt/kural değişikliği değerlendirme setini canlı modelle koşturmadan birleştirilmez."
+# Her prompt dosyası (rules/prompts/<ad>.md, `_guardrails` dahil) için bir kayıt zorunludur ve
+# kaydın `version` alanı prompt ön bilgisindeki `version` ile aynı olmalıdır (prompt sürümü
+# yükseltilip bu dosya güncellenmezse kayıt bayat sayılır, birleştirme kapısı kapanır).
+#
+# status:
+#   pending    canlı değerlendirme bekliyor (yalnızca REPLAY; golden çıktıları elle hazırlanmış)
+#   evaluated  değerlendirme seti canlı modelle koşturuldu; `evaluation` zorunlu
+#              {date: YYYY-MM-DD, model, provider, results: <rapor yolu/bağlantısı>}
+#   waived     sahibin onayladığı, tarihli yönetişim istisnası; `waiver` zorunlu
+#              {approved_by, approved_at: YYYY-MM-DD, reason, until: <koşul veya tarih>}
+#
+# Birleştirme kapısı: `cd core && uv run python -m tp_core.gateway.evaluation --check`
+# `pending` kayıt varsa veya kayıt bayatsa çıkış kodu 1'dir. İstisna kaydı YALNIZCA sahip onayıyla
+# yazılır; ajanlar/otomasyon `waived` kaydı oluşturmaz.
+#
+# Bugünkü durum (2026-10-31): bu depoda hiçbir prompt paketi canlı modelle değerlendirilmedi
+# (API kimlik bilgisi yok; replay kayıtlarında `recording` üst verisi yok). Onaylı istisna yok.
+version: 1
+
+bundles:
+  guardrails:
+    version: 1
+    status: pending
+    note: Her prompt'a eklenen ortak güvenlik kuralları; canlı değerlendirme yapılmadı.
+  requirement-review:
+    version: 2
+    status: pending
+    note: Golden çıktıları elle hazırlandı; canlı değerlendirme yapılmadı.
+  consistency-check:
+    version: 4
+    status: pending
+    note: Golden çıktıları elle hazırlandı; araç adımları demo-app kaynağına karşı denetlenir.
+  case-generation:
+    version: 2
+    status: pending
+    note: Golden çıktıları elle hazırlandı; canlı değerlendirme yapılmadı.
+  verify-and-map:
+    version: 3
+    status: pending
+    note: >-
+      Faz 3: v3 (eylemdeki her locator'a ilk dayanmadan önce browser_generate_locator) ve
+      verify_and_map golden'ları yeniden kaydedildi. Tarayıcı adımları gerçek Playwright MCP'de
+      kaydedildi ve replay_check ile tekrarlandı; model çıktısı elle hazırlandı. Bu model
+      değerlendirmesi değildir.
+  triage:
+    version: 1
+    status: pending
+    note: Golden çıktıları elle hazırlandı; canlı değerlendirme yapılmadı.
+  bug-draft:
+    version: 1
+    status: pending
+    note: Golden çıktıları elle hazırlandı; canlı değerlendirme yapılmadı.
+  dup-rank:
+    version: 1
+    status: pending
+    note: Golden çıktıları elle hazırlandı; canlı değerlendirme yapılmadı.

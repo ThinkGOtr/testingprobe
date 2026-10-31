@@ -70,7 +70,15 @@ def test_golden_matches_schema_and_name(purpose: str, path: Path, golden: dict) 
     )
     assert not errors, [e.message for e in errors]
     for step in golden.get("steps", []):
-        assert set(step) == {"tool", "args", "result_summary", "allowed"}
+        # `hedef` (isteğe bağlı): ref alan adımın yapılandırılmış hedefi; REPLAY ref'i canlı
+        # snapshot'tan bununla çözer (tp_core.gateway.snapshot_refs.Hedef).
+        assert {"tool", "args", "result_summary", "allowed"} <= set(step) <= {
+            "tool", "args", "result_summary", "allowed", "hedef"
+        }
+        if "hedef" in step:
+            h = step["hedef"]
+            assert isinstance(h, dict) and isinstance(h.get("rol"), str) and h["rol"], step
+            assert set(h) <= {"rol", "ad", "kapsam"}, h
 
 
 # ------------------------------------------------------------------ kanıt sürüklenmesi

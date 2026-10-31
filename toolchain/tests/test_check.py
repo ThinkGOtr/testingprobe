@@ -91,7 +91,8 @@ def _localforge_parse(path: Path) -> list[dict[str, Any]]:
         assert item["status"] in ("queued", "in_progress", "completed")
         assert item.get("conclusion") in (None, "success", "failure", "cancelled", "skipped")
         assert item.get("url") is None or isinstance(item["url"], str)
-    return data
+    # pydantic CheckRun ek alanları (ör. `tam`) yok sayar.
+    return [{k: item.get(k) for k in ("name", "status", "conclusion", "url")} for item in data]
 
 
 def test_success_writes_local_ci_success(
@@ -102,12 +103,13 @@ def test_success_writes_local_ci_success(
     client, calls = runner_client()
     report = checks.execute(
         settings(),
-        checks.CheckRequest(sha=head[:12], test_files=["tests/yeni.spec.ts"], repeat_each=3),
+        checks.CheckRequest(sha=head[:12], repeat_each=3, record_check=True),
         runner_client=client,
     )
     assert report["conclusion"] == "success"
+    assert report["kapsam"]["tam"] is True and report["check_recorded"] is True
     assert report["sha"] == head
-    assert [report[s]["ok"] for s in checks.STEPS] == [True] * 5
+    assert [report[s]["ok"] for s in checks.STEPS] == [True] * len(checks.STEPS)
     assert report["run"]["junit_path"] == RUN_OK["junit"]
     path = env / "checks" / f"{head}.json"
     assert report["checks_path"] == str(path)
@@ -125,7 +127,7 @@ def test_success_writes_local_ci_success(
     (call,) = calls
     assert call["url"].endswith("/run")
     assert call["body"]["sha"] == head
-    assert call["body"]["test_files"] == ["tests/yeni.spec.ts"]
+    assert call["body"]["test_files"] == []
     assert call["body"]["repeat_each"] == 3
     assert call["body"]["env"] == {}
     assert call["body"]["run_id"].startswith(f"check-{head[:12]}-")
@@ -251,6 +253,7 @@ def test_unexpected_exception_still_closes_checks_file(
         "status": "completed",
         "conclusion": "failure",
         "url": None,
+        "tam": True,
     }
     assert "beklenmeyen hata" in doc["report"]["summary"]
 
@@ -258,6 +261,7 @@ def test_unexpected_exception_still_closes_checks_file(
 def test_aggregate_requires_every_step() -> None:
     ok = {"ok": True}
     full = {
+        "app": ok,
         "deps": ok,
         "tsc": ok,
         "eslint": ok,

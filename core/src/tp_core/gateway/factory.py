@@ -13,6 +13,7 @@ korunur) ve `call_id` idempotency'si için `PgCallLookup` kullanılır. Verilmez
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import yaml
@@ -38,6 +39,14 @@ def load_pii_allowlist(rules_dir: Path) -> list[str]:
         return []
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return [str(v) for v in data.get("values", [])]
+
+
+# Ajan araç kaydından (tool_call) her zaman silinen sırların ortam değişkenleri (değer boşsa yok).
+SECRET_ENV_VARS = ("TP_AGENT_DEALER_PASSWORD",)
+
+
+def known_secret_values() -> list[str]:
+    return [v for v in (os.environ.get(name, "") for name in SECRET_ENV_VARS) if v]
 
 
 def build_provider(settings: GatewaySettings) -> Provider:
@@ -90,4 +99,5 @@ def build_gateway(
         call_lookup=call_lookup,
         # ai_call.ek (0005): replay_kokeni ile yükseltilmiş golden ↔ kayıt ayrımı denetimde görünür
         record_extras=record_extras,
+        secret_values=known_secret_values(),
     )

@@ -1,0 +1,89 @@
+{
+  "kind": "agent",
+  "purpose": "consistency_check",
+  "golden": "f2-kod-hatasi/TPD-1-r2",
+  "note": "Senaryo golden'ı (f2-kod-hatasi), 2. kontrol turu: analist F1 ve F3 için fix_doc, F2 (kampanya) ve F4 (kredi limiti) için code_defect seçti; AC2 özgün metinde kalır (7 adette 1 bedava), AC3 düzeltilmiştir. Kampanya farkı ve kredi limiti eksikliği yeniden raporlanır; ikisi de önceki turun code_defect kararıyla aynı fark (aynı tür, AC metni ve kanıt) olduğundan gereksinim akışı bunları 'önceki karar geçerli' ile stale yapar, yeni karar istemez → engelleyici açık bulgu yok → son hal → PO teyidi. Bu yol Demo-B'deki 'defect adayı' anını üretir (6 adet → bedava yok case'i bugünkü kodda kırmızı). Elle hazırlandı (model çıktısı değil; ai_call.model = golden-elle); canlı modelle yeniden kaydedilmeli. Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), eşleşmezse REPLAY-MISS.",
+  "input_match": {
+    "sources": [
+      "jira:TPD-1"
+    ],
+    "acceptance_criteria": [
+      "AC1: Bayi katalogda bir ürün için \"Sepete ekle\" butonuna bastığında ürün sepete eklenir ve sepet sayacı artar.",
+      "AC2: \"6 al 1 bedava\" kampanyasında kampanyalı üründen her 6 adet alımda 1 adet bedava verilir (7 adette 1 bedava).",
+      "AC3: Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL'dir; altında \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur.",
+      "AC4: Sipariş tutarı bayinin kredi limitini aşarsa \"Kredi limiti aşıldı\" uyarısı gösterilir ve sipariş onaylanamaz.",
+      "AC5: Sipariş onaylandığında sipariş numarası gösterilir ve sipariş, sipariş geçmişinde listelenir.",
+      "AC6: Kampanyalı siparişlerde minimum sipariş tutarı şartı aranmaz."
+    ],
+    "contains": [
+      "Bayi, katalogdan ürünleri sepete ekleyip kampanya indirimiyle siparişini onaylayabilmelidir."
+    ]
+  },
+  "steps": [
+    {
+      "tool": "get_file_contents",
+      "args": {
+        "path": "api/src/demoapp_api/campaign.py"
+      },
+      "result_summary": "def bedava_adet(adet: int) -> int: … return adet // 6",
+      "allowed": true
+    },
+    {
+      "tool": "db_query",
+      "args": {
+        "sql": "SELECT anahtar, deger FROM ayar WHERE anahtar = 'min_siparis_tutari'"
+      },
+      "result_summary": "min_siparis_tutari=750.00",
+      "allowed": true
+    },
+    {
+      "tool": "get_file_contents",
+      "args": {
+        "path": "api/src/demoapp_api/pricing.py"
+      },
+      "result_summary": "sepet_hesapla: min_aranir = not any(kampanyali) (AC6 ile tutarlı); kredi limiti kontrolü yok",
+      "allowed": true
+    }
+  ],
+  "output": {
+    "findings": [
+      {
+        "id": "F1",
+        "type": "doc_vs_code",
+        "doc_ref": "AC2",
+        "claim": "Her 6 adet alımda 1 adet bedava (7 adette 1 bedava)",
+        "observed": "Kod hâlâ her 6 adette 1 bedava veriyor (5 öde + 1 bedava; campaign.py `return adet // 6`); doküman 7 adette 1 bedava (6 öde + 1 bedava) diyor. İş etkisi aynı: 6 adetlik siparişte dokümana göre bedava yok, kodda 1 adet (25,00 TL) bedava. Doküman bu turda değişmedi; fark kod tarafında kalıyorsa karar code_defect'tir",
+        "evidence": [
+          {
+            "kind": "code",
+            "repo": "demo-app",
+            "path": "api/src/demoapp_api/campaign.py",
+            "line": 23,
+            "snippet": "return adet // 6"
+          }
+        ],
+        "severity": "blocking",
+        "suggested_doc_text": "AC2: Kampanyalı üründe her 6 adette 1 adet bedava verilir: bayi 5 adet öder, 1 adet bedava alır (6 adette 1, 12 adette 2 bedava)."
+      },
+      {
+        "id": "F2",
+        "type": "missing_in_code",
+        "doc_ref": "AC4",
+        "claim": "Kredi limiti aşılırsa \"Kredi limiti aşıldı\" uyarısı gösterilir ve sipariş onaylanamaz",
+        "observed": "Kodda kredi limiti kontrolü hâlâ yok (sipariş tutarı bayinin kredi limitiyle karşılaştırılmıyor); doküman kuralı açıkça tanımlıyor, fark kod tarafında",
+        "evidence": [
+          {
+            "kind": "code",
+            "repo": "demo-app",
+            "path": "api/src/demoapp_api/pricing.py",
+            "line": 97,
+            "snippet": "uyarilar.append(Uyari(UYARI_MIN_SIPARIS, min_siparis_mesaji(min_tutar)))"
+          }
+        ],
+        "severity": "warning",
+        "suggested_doc_text": null
+      }
+    ],
+    "notes": "AC2 kodla hâlâ çelişiyor (kod 6 adette 1 bedava, doküman 7 adette 1 bedava); fark önceki turda kod hatası olarak işaretlendiyse kod düzeltmesi beklenir. AC3 (kampanyasız siparişlerde minimum 750,00 TL) kod ve veriyle, AC6 kodla tutarlı. Kredi limiti kontrolü kodda yok. Kod ve veri yalnızca salt okuma araçlarıyla incelendi."
+  }
+}

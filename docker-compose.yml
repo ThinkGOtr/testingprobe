@@ -50,7 +50,12 @@ x-core-env: &core-env
   GITHUB_READ_TOKEN: ${GITHUB_READ_TOKEN:-}
   GITHUB_API_URL: ${GITHUB_API_URL:-}
   TOOLCHAIN_URL: http://toolchain-worker:8100
+  # toolchain-worker belirteci: core → toolchain-worker. test-runner'a VERİLMEZ (security-check 4/5).
+  TP_TOOLCHAIN_TOKEN: ${TP_TOOLCHAIN_TOKEN:?make env çalıştırın}
   TP_ARTIFACTS_PATH: /artifacts
+  # Merge kapısı dosyaları checks/<sha>.json: ayrı `tp_checks` volume'ü (tek yazar toolchain-worker
+  # /check; core-api/core-worker salt okur; test-runner hiç bağlamaz).
+  TP_CHECKS_PATH: /checks
   TP_MCP_PUBLIC_URL: http://127.0.0.1:${TP_API_PORT:-8000}/mcp
   TP_DAILY_BUDGET_USD: ${TP_DAILY_BUDGET_USD:-30}
   TP_WORKFLOW_BUDGET_USD: ${TP_WORKFLOW_BUDGET_USD:-2}
@@ -62,8 +67,15 @@ x-core-env: &core-env
   TP_FORGE_CHECK_REF: ${TP_FORGE_CHECK_REF:-main}
   # Story başına manuel test tasarımı baz süresi (saniye, F0 ölçümü); boşsa portal "ölçülmedi".
   TP_MANUAL_BASELINE_S: ${TP_MANUAL_BASELINE_S:-}
+  # Kod üretimi ekran görüntüleri (`tp_codegen`: core-worker rw, core-api ro).
+  TP_CODEGEN_ARTIFACTS_PATH: /codegen-artifacts
+  # Kontrol Kulesi pencereleri: son N koşu, flaky ve trend gün sayısı.
+  TP_CT_SON_KOSU: ${TP_CT_SON_KOSU:-20}
+  TP_CT_FLAKY_GUN: ${TP_CT_FLAKY_GUN:-30}
+  TP_CT_TREND_GUN: ${TP_CT_TREND_GUN:-14}
 
-# İmajı yalnızca toolchain-worker derler; test-runner ve playwright-mcp aynı yerel imajı kullanır.
+# İmajı yalnızca toolchain-worker derler (`ci` hedefi, MCP yok); test-runner aynı yerel imajı
+# kullanır. playwright-mcp ayrı `mcp` hedefini derler (Constitution II: CI imajında ajan yok).
 x-toolchain-image: &toolchain-image
   image: testingprobe-toolchain:local
   pull_policy: never
@@ -71,6 +83,7 @@ x-toolchain-image: &toolchain-image
 x-toolchain-build: &toolchain-build
   build:
     context: ./toolchain
+    target: ci
     args:
       PLAYWRIGHT_VERSION: ${PLAYWRIGHT_VERSION:?make up ile çalıştırın}
   pull_policy: build
@@ -124,6 +137,8 @@ services:
     volumes:
       - tp_forge:/forge:ro
       - tp_artifacts:/artifacts:ro
+      - tp_checks:/checks:ro
+      - tp_codegen:/codegen-artifacts:ro
       - ./rules:/rules:ro
     ports:
       - "127.0.0.1:${TP_API_PORT:-8000}:8000"
@@ -172,10 +187,24 @@ services:
       TP_JIRA_BOT_ACCOUNT_IDS: ${TP_JIRA_BOT_ACCOUNT_IDS:-}
       # Tutarlılık denetiminin veri araçları (salt okuma rolü; core-api demoapp'e hiç bağlanmaz).
       DEMOAPP_RO_DATABASE_URL: postgresql+psycopg://demoapp_ro:${DEMOAPP_RO_PASSWORD:?}@postgres:5432/demoapp?require_auth=scram-sha-256
+      # Kod üretimi doğrulama ajanı (Faz 3): ajanın bayisi (e2e bayileriyle çakışmaz) ve uygulama kökü.
+      # Ajan sepeti her doğrulamadan önce uygulamanın herkese açık API'siyle (core-net) boşaltılır.
+      TP_AGENT_DEALER: ${TP_AGENT_DEALER:-bayi3}
+      TP_AGENT_DEALER_PASSWORD: ${TP_AGENT_DEALER_PASSWORD:-Demo123!}
+      TP_DEMO_WEB_URL: http://demo-app-web:8080
+      # Yerel CI (Faz 3): gece koşusu saati (Europe/Istanbul; "kapali" kapatır), GitHub yoklama aralığı
+      # ve zaman aşımı.
+      TP_CI_NIGHTLY_SAAT: ${TP_CI_NIGHTLY_SAAT:-02:00}
+      TP_CI_GITHUB_POLL_S: ${TP_CI_GITHUB_POLL_S:-30}
+      TP_CI_GITHUB_TIMEOUT_S: ${TP_CI_GITHUB_TIMEOUT_S:-5400}
       <<: *core-env
     volumes:
       - tp_forge:/forge
+      # Paylaşılan artefaktlar salt okunur: checks/<sha>.json (merge kapısı) yalnızca toolchain-worker
+      # /check yazar. Ajan ekran görüntüleri ayrı volume'e (core-api ro).
       - tp_artifacts:/artifacts:ro
+      - tp_checks:/checks:ro
+      - tp_codegen:/codegen-artifacts
       # TP_MODEL_MODE=record konteyner içinde kullanılacaksa :ro kaldırılır.
       - ./rules:/rules:ro
     networks: [core-net, mcp-net]
@@ -202,12 +231,29 @@ services:
       TP_FORGE_PATH: /forge/demo-app.git
       # Çalışan demo-app-web'in derlendiği forge commit'i (/locator-probe sha eşleşmesi); boşsa
       # yanıt 'dogrulanamadi' + uyarı döner (öneri insana gider).
+      # Asıl kaynak forge-init/break/sync-web'in yazdığı /forge/demo-app-web.sha dosyasıdır
+      # (TP_APP_BUILD_SHA_FILE); bu değişken yalnızca dosya yokken kullanılır.
       DEMO_APP_BUILD_SHA: ${DEMO_APP_BUILD_SHA:-}
       TP_ARTIFACTS_PATH: /artifacts
+      # Merge kapısı ayrı volume'de; bağlama noktası değilse /check kapı dosyasını yazmaz (503).
+      TP_CHECKS_PATH: /checks
+      TP_CHECKS_REQUIRE_MOUNT: "1"
+      # GitHub modu: yerel forge'da olmayan sha'lar salt okunur belirteçle aynaya çekilir (boş = kapalı).
+      TP_FORGE_REMOTE_URL: ${TP_FORGE_REMOTE_URL:-}
+      TP_FORGE_REMOTE_TOKEN: ${TP_FORGE_REMOTE_TOKEN:-}
+      TP_FORGE_MIRROR_PATH: /forge-mirror/demo-app.git
+      # Uç noktalar (/health hariç) Bearer belirteç ister; belirteçsiz başlatma 503 + degraded.
+      TP_TOOLCHAIN_TOKEN: ${TP_TOOLCHAIN_TOKEN:?make env çalıştırın}
+      TP_TOOLCHAIN_REQUIRE_TOKEN: "1"
+      # Forge deposunda e2e kökü: LocalForge 'e2e'; TP_FORGE=github iken 'demo-app/e2e'
+      # (core TP_FORGE_APP_ROOT varsayılanı 'demo-app' ile eşleşmeli).
+      TP_E2E_ROOT: ${TP_E2E_ROOT:-e2e}
     volumes:
       # Forge'u yalnızca okur (git archive / ast-guard git-ref modu).
       - tp_forge:/forge:ro
       - tp_artifacts:/artifacts
+      - tp_checks:/checks
+      - tp_forge_mirror:/forge-mirror
     networks: [core-net, runner-net]
     restart: unless-stopped
     healthcheck:
@@ -232,9 +278,13 @@ services:
       BASE_URL: http://demo-app-web:8080
       DEMO_API_URL: http://demo-app-api:8000
       DEMOAPP_TEST_TOKEN: ${DEMOAPP_TEST_TOKEN:?make env çalıştırın}
+      TP_FORGE_MIRROR_PATH: /forge-mirror/demo-app.git
+      TP_E2E_ROOT: ${TP_E2E_ROOT:-e2e}
     volumes:
       - tp_forge:/forge:ro
       - tp_artifacts:/artifacts
+      # tp_checks BAĞLANMAZ: üretilen kod merge kapısı dosyasını göremez/yazamaz.
+      - tp_forge_mirror:/forge-mirror:ro
     networks: [demo-net, runner-net]
     restart: unless-stopped
     healthcheck:
@@ -248,7 +298,13 @@ services:
         limits: { memory: 3g }
 
   playwright-mcp:
-    <<: *toolchain-image
+    image: testingprobe-toolchain-mcp:local
+    build:
+      context: ./toolchain
+      target: mcp
+      args:
+        PLAYWRIGHT_VERSION: ${PLAYWRIGHT_VERSION:?make up ile çalıştırın}
+    pull_policy: build
     command: ["playwright-mcp"]
     environment:
       MCP_ALLOWED_ORIGINS: http://demo-app-web:8080
@@ -372,4 +428,7 @@ volumes:
   tp_pgdata: {}
   tp_forge: {}
   tp_artifacts: {}
+  tp_codegen: {}
+  tp_checks: {}
+  tp_forge_mirror: {}
   tp_jira: {}

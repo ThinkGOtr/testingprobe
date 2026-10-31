@@ -134,24 +134,44 @@ def parse_eslint(stdout: str, e2e: Path) -> list[dict[str, Any]] | None:
     return out
 
 
+# ESLint'in kod olarak yüklediği yerel dosyalar: yapılandırma ve (varsa) onun içe aktardığı yerel
+# modüller (`/opt/e2e/tools/**.js`). Her biri imajdaki güvenilir kopyayla bayt bayt aynı olmalıdır;
+# aksi halde commit, içe aktarılan bir modül üzerinden toolchain-worker'da kod çalıştırabilirdi.
+# Yapılandırmanın göreli içe aktarmalarının bu kümede olduğunu tests/test_e2e_deps.py denetler.
+CONFIG_FILE = "eslint.config.js"
+TRUSTED_TOOLS_DIR = "tools"
+
+
+def trusted_config_files(e2e_deps: Path) -> list[str]:
+    tools = e2e_deps / TRUSTED_TOOLS_DIR
+    extra = (
+        sorted(str(p.relative_to(e2e_deps)) for p in tools.rglob("*.js") if p.is_file())
+        if tools.is_dir()
+        else []
+    )
+    return [CONFIG_FILE, *extra]
+
+
 def run_eslint(cfg: Settings, e2e: Path) -> dict[str, Any]:
-    trusted = _sha256(cfg.e2e_deps / "eslint.config.js")
-    have = _sha256(e2e / "eslint.config.js")
-    if trusted is None:
-        return {
-            "ok": False,
-            "error": "İmajda güvenilir eslint.config.js yok (toolchain imajı hatalı).",
-        }
-    if have != trusted:
-        return {
-            "ok": False,
-            "error": (
-                "eslint.config.js güvenilir kopyadan farklı; yapılandırma kod olarak "
-                "yüklendiği için toolchain-worker değiştirilmiş yapılandırmayı çalıştırmaz "
-                "(imaj güncellenmeli)."
-            ),
-            "config_sha256": have,
-        }
+    for rel in trusted_config_files(cfg.e2e_deps):
+        trusted = _sha256(cfg.e2e_deps / rel)
+        have = _sha256(e2e / rel)
+        if trusted is None:
+            return {
+                "ok": False,
+                "error": f"İmajda güvenilir {rel} yok (toolchain imajı hatalı).",
+            }
+        if have != trusted:
+            return {
+                "ok": False,
+                "error": (
+                    f"{rel} güvenilir kopyadan farklı; yapılandırma kod olarak "
+                    "yüklendiği için toolchain-worker değiştirilmiş yapılandırmayı çalıştırmaz "
+                    "(imaj güncellenmeli)."
+                ),
+                "config_file": rel,
+                "config_sha256": have,
+            }
     eslint = e2e / "node_modules" / "eslint" / "bin" / "eslint.js"
     res = proc.run(
         [

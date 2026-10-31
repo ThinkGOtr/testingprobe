@@ -2,20 +2,18 @@
   "kind": "agent",
   "purpose": "verify_and_map",
   "golden": "TPD-4-C2",
-  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Model çıktısı (step_mapping/expects/missing_methods) elle hazırlandı; tarayıcı adımları çalışan Playwright MCP'ye (--isolated) karşı koşturulup kaydedildi; hedefler replay'de oturumdan bağımsız olsun diye snapshot ref'i yerine tekil seçici (data-testid) olarak yazıldı. Kampanyalı sepet (P-001) case'lerinde sepet snapshot özeti yalnızca satır/tutar satırlarını içerir: kayıt anındaki çalışan imaj AC6 kod değişikliğinden (pricing.min_aranir) önceydi; uyarı/onay durumu replay'de araçlar yeniden koşturulunca görülür. Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), eşleşmezse REPLAY-MISS.",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Model çıktısı (step_mapping/expects/missing_methods) elle hazırlandı (canlı model çıktısı değil; ai_call.model = golden-elle). Tarayıcı adımları demo-app'in güncel kaynağına (e2e webServer yolu) karşı Playwright MCP 1.64.1 (compose yığını: playwright-mcp + demo-app-web/demo-app-api) (--isolated, --caps=testing) ile koşturulup kaydedildi (core/tests/unit/gateway/record_verify_goldens.py); yerel kök http://demo-app-web:8080 ile değiştirildi. Ajan tarayıcısı doğrulama bayisiyle (bayi3) girer; case'teki giriş verisi eşleme argümanıdır. Locator doğrulaması: eylemde kullanılan her locator ilk kullanımından önce doğrulanır — eleman son snapshot'ta sembol tablosundaki rol/adla bulunur, browser_generate_locator o snapshot ref'iyle çağrılır ve dönen getByTestId page object'in testId'siyle karşılaştırılır; eylemler testId seçicisiyle yapılır. Snapshot ref'leri oturuma özgüdür ve aynı yörüngede bile koşudan koşuya kayabilir: kayıttaki ref yalnızca o kaydın gözlemidir; adımın `hedef` alanı (rol/ad/kapsam) REPLAY'de ref'in canlı son snapshot'tan yeniden çözülmesi içindir (gateway.snapshot_refs). evidence_ref'teki 'kayıttaki not' değerleri kayıt anındaki sayfadandır; REPLAY koşusunda yeniden ölçülmez. Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), eşleşmezse REPLAY-MISS.",
   "input_match": {
-    "contains": [
-      "Hatalı parola ile girişte hata mesajı gösterilir",
-      "Giriş sayfasını aç",
-      "Kullanıcı adı ve hatalı parola gir, \"Giriş yap\" butonuna bas",
-      "Giriş formu görüntülenir",
-      "\"Kullanıcı adı veya parola hatalı\" mesajı görünür ve giriş sayfasında kalınır"
-    ]
+    "sources": [
+      "case:TPD-4-C2"
+    ],
+    "case_text": "Başlık: Hatalı parola ile girişte hata mesajı gösterilir\nTür: negative · Risk: medium\nKabul kriterleri: AC2\nÖn koşullar:\n- Oturum açık değil\nAdımlar:\nS1: Giriş sayfasını aç\n  Veri: (yok)\n  Beklenen: Giriş formu görüntülenir\nS2: Kullanıcı adı ve hatalı parola gir, \"Giriş yap\" butonuna bas\n  Veri: bayi1 / Yanlis123!\n  Beklenen: \"Kullanıcı adı veya parola hatalı\" mesajı görünür ve giriş sayfasında kalınır\nBeklenen sonuç: \"Kullanıcı adı veya parola hatalı\" mesajı gösterilir ve giriş yapılmaz\nEtiketler: AI-generated"
   },
   "case": {
     "jira_key": "TPD-4",
     "sira_no": 2,
-    "title": "Hatalı parola ile girişte hata mesajı gösterilir"
+    "title": "Hatalı parola ile girişte hata mesajı gösterilir",
+    "case_golden": "TPD-4"
   },
   "steps": [
     {
@@ -29,17 +27,56 @@
     {
       "tool": "browser_snapshot",
       "args": {},
-      "result_summary": "URL /giris | heading \"Bayi girişi\" [level=1] | textbox \"Kullanıcı adı\" | textbox \"Parola\" | button \"Giriş yap\" [disabled]",
+      "result_summary": "URL /giris | heading \"Bayi girişi\" [level=1] | textbox \"Kullanıcı adı\" [ref=e17] | textbox \"Parola\" [ref=e20] | button \"Giriş yap\" [disabled] [ref=e21]",
       "allowed": true
+    },
+    {
+      "tool": "browser_generate_locator",
+      "args": {
+        "element": "textbox \"Kullanıcı adı\" (login.username)",
+        "target": "e17"
+      },
+      "result_summary": "getByTestId('login-username')",
+      "allowed": true,
+      "hedef": {
+        "rol": "textbox",
+        "ad": "Kullanıcı adı"
+      }
+    },
+    {
+      "tool": "browser_generate_locator",
+      "args": {
+        "element": "textbox \"Parola\" (login.password)",
+        "target": "e20"
+      },
+      "result_summary": "getByTestId('login-password')",
+      "allowed": true,
+      "hedef": {
+        "rol": "textbox",
+        "ad": "Parola"
+      }
+    },
+    {
+      "tool": "browser_generate_locator",
+      "args": {
+        "element": "button \"Giriş yap\" (login.submit)",
+        "target": "e21"
+      },
+      "result_summary": "getByTestId('login-submit')",
+      "allowed": true,
+      "hedef": {
+        "rol": "button",
+        "ad": "Giriş yap"
+      }
     },
     {
       "tool": "browser_type",
       "args": {
         "element": "Kullanıcı adı",
         "target": "[data-testid=\"login-username\"]",
-        "text": "bayi1"
+        "text": "bayi3"
       },
-      "result_summary": "await page.locator('[data-testid=\"login-username\"]').fill('bayi1');",
+      "result_summary": "await page.locator('[data-testid=\"login-username\"]').fill('bayi3');",
       "allowed": true
     },
     {
@@ -64,7 +101,7 @@
     {
       "tool": "browser_snapshot",
       "args": {},
-      "result_summary": "URL /giris | heading \"Bayi girişi\" [level=1] | alert: Kullanıcı adı veya parola hatalı | button \"Giriş yap\"",
+      "result_summary": "URL /giris | heading \"Bayi girişi\" [level=1] | textbox \"Kullanıcı adı\" [ref=e17]: bayi3 | textbox \"Parola\" [ref=e20]: Yanlis123! | alert [ref=e22]: Kullanıcı adı veya parola hatalı | button \"Giriş yap\" [ref=e21]",
       "allowed": true
     }
   ],
@@ -76,7 +113,7 @@
         "method": "goto",
         "args": [],
         "verified": true,
-        "evidence_ref": "Giriş formu (textbox \"Kullanıcı adı\", \"Parola\", button \"Giriş yap\")"
+        "evidence_ref": "Giriş formu (textbox \"Kullanıcı adı\", \"Parola\", button \"Giriş yap\") · /giris"
       },
       {
         "step_id": "S2",
@@ -87,7 +124,7 @@
           "Yanlis123!"
         ],
         "verified": true,
-        "evidence_ref": "button \"Giriş yap\" → /giris'te kalındı, hata mesajı görüldü"
+        "evidence_ref": "button \"Giriş yap\" → /giris kalındı; alert \"Kullanıcı adı veya parola hatalı\" (doğrulama bayisiyle denendi)"
       }
     ],
     "expects": [

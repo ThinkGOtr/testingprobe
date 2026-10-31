@@ -31,6 +31,7 @@ const ROTALAR: { yol: string; ad: string; baslik: RegExp }[] = [
   { yol: "/gereksinimler/req-tpd-1/yayin", ad: "06-yayin-onizleme", baslik: /^Yayın önizleme$/ },
   { yol: "/kod", ad: "07-kod-uretimi", baslik: /^Kod üretimi$/ },
   { yol: "/kod/scr-2", ad: "08-script-detay", baslik: /7 adet kampanyalı/ },
+  { yol: "/kod/scr-3", ad: "08b-script-defect-adayi", baslik: /6 adet kampanyalı/ },
   { yol: "/kosular", ad: "09-kosular", baslik: /^Koşular$/ },
   { yol: "/kosular/run-107", ad: "10-kosu-detay", baslik: /run-107/ },
   { yol: "/hatalar/fail-2", ad: "11-triage-locator", baslik: /^Triage sonucu$/ },
@@ -169,32 +170,69 @@ test("TPD-3: seed metni, golden soruları ve golden uyarı bulgusu görünür ('
   await page.goto("/gereksinimler/req-tpd-3");
   await expect(page.getByText("Bayi katalogda ürün adının bir bölümünü yazdığında yalnızca eşleşen ürünler listelenir.").first()).toBeVisible();
   await expect(page.getByText(/Aramanın başlaması için en az kaç karakter girilmeli/)).toBeVisible();
-  await expect(page.getByText("api/src/demoapp_api/main.py:310")).toBeVisible();
+  await expect(page.getByText("api/src/demoapp_api/main.py:331")).toBeVisible();
   await expect(page.getByText("Bulgu yok: doküman kod ve veriyle tutarlı.")).toHaveCount(0);
   await page.screenshot({ path: `${EKRAN_DIZINI}/25-tpd3-golden.png`, fullPage: true });
 });
 
 test("mühendis: kod üretimi canlı adımlar ve kırarak doğrulama", async ({ page }) => {
+  const hatalar = konsolHatalariniTopla(page);
   await girisYap(page, "muhendis");
-  await page.goto("/kod");
+  // Rol bazlı açılış: mühendis → Kod üretimi.
+  await expect(page).toHaveURL(/\/kod$/);
   await page.getByRole("checkbox", { name: /Kampanyasız siparişte minimum tutarın altında/ }).check();
   await page.getByRole("button", { name: /Seçilenler için kod üret/ }).click();
   await page.getByRole("link", { name: /Kampanyasız siparişte minimum tutarın altında/ }).first().click();
   await expect(page.getByText("Ajan çalışıyor…")).toBeVisible();
   await page.waitForTimeout(2500);
   await page.screenshot({ path: `${EKRAN_DIZINI}/22-kod-uretimi-canli.png`, fullPage: true });
-  // Golden kayıt yalnızca TPD-1 C2 için var: bu case REPLAY-MISS olur ve PR açılmaz.
-  await expect(page.locator(".sayfa-basligi").getByText("Başarısız")).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText("REPLAY-MISS", { exact: true })).toBeVisible();
-  await expect(page.getByText("PR henüz açılmadı.")).toBeVisible();
+  // Golden'lı case: adımlar doğrulanır, eşleme + şablon, yerel kontrol yeşil → PR (LocalForge, local-ci).
+  await expect(page.getByRole("list", { name: "PR check'leri" })).toContainText("local-ci", { timeout: 20_000 });
+  await expect(page.getByRole("region", { name: "Eşlenen adımlar tablosu" })).toContainText('CartPage.expectMinOrderWarning("Minimum sipariş tutarı 750,00 TL")');
+  // Kırma yapılmadı: kapı değil, açık kabul isteyen uyarı (TEKNIK-TASARIM §2 adım 6).
+  await expect(page.getByTestId("merge-kapisi")).toContainText("açık ✓");
+  await expect(page.getByTestId("merge-uyarilari")).toContainText("Kırarak doğrulama yapılmadı");
+  await expect(page.getByRole("button", { name: "Merge et" })).toBeDisabled();
+  await page.getByRole("checkbox", { name: /kırarak doğrulama kanıtı olmadan merge et/ }).check();
+  await expect(page.getByRole("button", { name: "Merge et" })).toBeEnabled();
+  await page.getByRole("checkbox", { name: /kırarak doğrulama kanıtı olmadan merge et/ }).uncheck();
+  await page.screenshot({ path: `${EKRAN_DIZINI}/24-kod-pr-acik.png`, fullPage: true });
+
+  // Defect adayı: assertion kırmızı, PR yok, insana düştü.
+  await page.goto("/kod/scr-3");
+  await expect(page.getByTestId("yerel-sinif")).toContainText("Defect adayı");
+  await expect(page.getByText("PR açılmadı: defect adayı insana düştü.")).toBeVisible();
+  await page.screenshot({ path: `${EKRAN_DIZINI}/25-kod-defect-adayi.png`, fullPage: true });
 
   await page.goto("/kod/scr-2");
   await page.getByRole("button", { name: "Yeniden doğrula" }).click();
   await expect(page.getByText("Koşuyor").first()).toBeVisible();
   await expect(page.getByText("Test hata yakalıyor ✓")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("merge-kapisi")).toContainText("açık ✓");
   await page.getByRole("button", { name: "Merge et" }).click();
   await expect(page.getByText("Birleşti")).toBeVisible();
   await page.screenshot({ path: `${EKRAN_DIZINI}/23-kirarak-dogrula-merge.png`, fullPage: true });
+  expect(hatalar).toEqual([]);
+});
+
+test("sunucu: açılış Kontrol Kulesi (KPI kaynağı), koşu süzgeci ve deploy tetiği", async ({ page }) => {
+  const hatalar = konsolHatalariniTopla(page);
+  await girisYap(page, "sunucu");
+  await expect(page).toHaveURL(/\/kontrol-kulesi$/);
+  await expect(page.getByRole("img", { name: /^Kaynak: run tablosu|^Kaynak: test_result/ }).first()).toBeVisible();
+  await page.getByRole("img", { name: /^Kaynak: test_result \(JUnit XML\)/ }).first().focus();
+  await expect(page.getByText("baz değer ölçülmedi")).toBeVisible();
+  await page.screenshot({ path: `${EKRAN_DIZINI}/26-kontrol-kulesi-kaynak.png`, fullPage: true });
+  await page.goto("/kosular");
+  await page.getByRole("combobox", { name: "Tetik" }).selectOption("break_verify");
+  await expect(page).toHaveURL(/tetik=break_verify/);
+  await page.getByRole("button", { name: "Deploy tetikle" }).click();
+  await expect(page.getByText(/Deploy koşusu sıraya alındı/).first()).toBeVisible();
+  await page.screenshot({ path: `${EKRAN_DIZINI}/27-kosular-suzgec.png`, fullPage: true });
+  await page.goto("/kosular/run-108");
+  await expect(page.getByRole("region", { name: "Raporlar ve bağlantılar" })).toContainText("Playwright HTML raporu");
+  await page.screenshot({ path: `${EKRAN_DIZINI}/28-kosu-yerel-kontrol.png`, fullPage: true });
+  expect(hatalar).toEqual([]);
 });
 
 test("mobil görünüm ve koyu tema", async ({ page }) => {

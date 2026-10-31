@@ -17,6 +17,14 @@ REPLAY / REPLAY-MISS rozetini `ai_call.mod`'dan gösterir.
    koşuda jira-sim'deki düzeltilmiş TPD-1 metni 1. turda da REPLAY olur. Geriye bakılmaz: r2 adı
    uymazsa 1. tur golden'ı denenmez (düzeltilmemiş belgenin 2. turu dürüstçe REPLAY-MISS), case
    düzeyi adlar (`TPD-1-C2`) bu aramaya girmez.
+3b. **Senaryo golden'ı** `<amaç>/golden/<senaryo>/<ad>.json` (ör. `f2-kod-hatasi/`): analistin
+   başka bir kararla vardığı belge için aynı adlı golden. Ana golden ve tur golden'ları uymazsa
+   senaryo dizinleri ada göre sıralı denenir (1. tur story adında senaryonun `-rN` dosyaları da);
+   yalnızca `input_match` taşıyan ve girdiye **uyan** senaryo golden'ı `replay` / `golden_matched`
+   döner (`ek.replay_kaynagi` = `…/golden/<senaryo>/<ad>.json`, kayıttaki `golden` =
+   `<senaryo>/<ad>`). Beyansız ya da uymayan senaryo golden'ı hiçbir zaman döndürülmez; iskalama
+   ana adın politikasıyla olur. Ana golden'lar, CI kopyası (`.github/golden-drift`) ve portal
+   kopyası (`golden/*.json`) bu dizinleri görmez; senaryolar çekirdek testlerinde denetlenir.
 4. **İskalama** (mod **`replay_miss`**, nedenler `ai_call.ek.replay_eslesme`'de, ör.
    `["AC2 metni farklı"]` veya golden dosyası hiç yoksa `["bu anahtar için golden yok"]`).
    `TP_REPLAY_STRICT=1` (prova) her iskalamayı `ReplayMiss` hatasına çevirir. Golden girdi beyanı
@@ -136,6 +144,9 @@ metinde `golden_name(FREE_TEXT_KEY)` → `SERBEST` / `SERBEST-r2`. `fix_doc` ön
 | `consistency_check` | `TPD-1-r2`, `SERBEST-r2` (2.+ tur) | Aşağıdaki düzeltilmiş metin |
 | `case_generation` | `TPD-1`, `SERBEST` | Düzeltilmiş metin; `TPD-3`, `TPD-4` özgün |
 | `verify_and_map` | `TPD-1-C1..C10`, `TPD-4-C1..C2` | case_generation golden'ındaki case (insan düzeltirse REPLAY-MISS) |
+| `consistency_check` | `f2-kod-hatasi/TPD-1-r2` | F2 `code_defect` yolu: AC2 özgün, AC3 düzeltilmiş (aşağıda "Demo-B") |
+| `case_generation` | `f2-kod-hatasi/TPD-1` | Aynı belge; ana golden'dan tek farkı C3 (6 adette bedava yok) |
+| `verify_and_map` | `f2-kod-hatasi/TPD-1-C3` | Senaryonun C3'ü; diğer case'ler ana golden'larla birebir aynı, ana golden eşleşir |
 | `triage`, `bug_draft`, `dup_rank` | senaryo adları | Beyan yok → her zaman REPLAY-MISS (Demo-A dışında; `promote` ile birebir kayda yükseltilebilir) |
 
 ## TPD-1: kararlar ve düzeltilmiş metin (golden'ların varsaydığı)
@@ -182,7 +193,8 @@ yerine 7) ve kampanya adının kuralla çeliştiğini söyler, kodun hatalı ola
 kararın `code_defect` olması gerektiğini belirtir. Ekrandaki ad (demo-app `KAMPANYA_ADI`) kod/veri
 değişikliğidir; `fix_doc` kapsamı dışındadır.
 
-**Neden kampanya farkı `fix_doc` (doküman koda uyar) ve `code_defect` değil:** DEMO-VERISI ve
+**Tarihçe — ana golden'lar neden `fix_doc` yolunda:** (Faz 3 kararıyla demo'nun ana yolu
+`f2-kod-hatasi` senaryosudur; bkz. docs/DEMO-VERISI.md. Ana golden'lar alternatif yol olarak kalır.) DEMO-VERISI ve
 1. faz entegrasyonu bu kararı bağlar (2. turda engelleyici bulgu kalmaz; portal örnek verisi,
 verify_and_map golden'ları ve CI golden-drift kopyası buna göre). Demo'da "AI case'i hikâyeyi
 doğrular, kod tutmaz" anını iki yer üretir:
@@ -192,7 +204,9 @@ doğrular, kod tutmaz" anını iki yer üretir:
 - **Kırarak doğrula** (adım 6): `BREAK_CAMPAIGN` ile bedava = 0; `6 adet … 1 adet bedava`,
   `7 adet … 1 adet bedava` case'leri kırmızıya döner (`test_campaign_scripts_catch_break_campaign`).
 
-Analist F2 için `code_defect` seçerse doküman değişmez; 2. tur girdisi `TPD-1-r2` beyanına uymaz ve
+Analist F2 için `code_defect` seçerse doküman değişmez (AC2 özgün kalır); 2. tur girdisi `TPD-1-r2`
+beyanına uymaz, `f2-kod-hatasi/TPD-1-r2` senaryo golden'ına uyar (REPLAY). Bu yol Demo-B'nin
+"defect adayı" anını üretir (aşağıda). F1/F3'ten biri de reddedilirse belge iki golden'a da uymaz ve
 dürüstçe REPLAY-MISS olur (canlı modelde gerçek cevap gelir).
 
 ### case_generation/TPD-1
@@ -212,6 +226,127 @@ bağlı); `TPD-1-C10` verify_and_map golden'ı C2'nin kaydından türetilmiştir
 denetler): her AC en az bir case ile kapsanır (kural/limit/hata mesajı içeren AC'de negatif/sınır
 case'ler kapsamdır; ayrı pozitif zorunlu değil — TPD-1 AC3/AC4, SERBEST AC3 böyledir), case başına
 ≤ 8 adım, story başına ≤ 10 case (1–2 AC'li story'de 4'ten az olabilir).
+
+## Kod üretimi (Demo-B): verify_and_map golden'ları
+
+### REPLAY'de ajan nasıl oynatılır (tüm yörünge, tur başına değil)
+
+Bir verify_and_map golden'ı **tek bir ajan koşusunun tamamıdır**: `steps` (araç çağrıları, sırasıyla)
+ve son yapılandırılmış çıktı (`output`: `step_mapping`, `expects`, `missing_methods`). Model turları
+ayrı ayrı kaydedilmez (canlıda modelin her turu bir `ai_call`; REPLAY'de model yoktur). Geçit
+`run_agent` REPLAY'de:
+
+1. golden'ı bulur (arama sırası yukarıda; ad `golden_name(<KEY>, case_no=n)`), çıktıyı şemayla
+   doğrular ve **tek** `ai_call` satırı yazar (`mod = replay`, `model = golden-elle`);
+2. kayıtlı her adımı **aynı sırayla** çağıranın `execute`'una verir
+   (`replay_executes_tools=True`, varsayılan): Playwright MCP'de gerçekten yürütülür
+   (anayasa V — ajan uygulamayı gerçekten görür), her adım bir `tool_call` satırı ve bir
+   `on_step(AgentStep)` olayıdır (portal adım akışı / kod üretimi şeridi bunu gösterir). Adımın
+   `result_summary`'si canlı yürütmenin sonucudur; golden'daki özet kayıt anında görüleni gösterir.
+   İzin listesi REPLAY'de de geçerlidir (listede olmayan kayıtlı araç yürütülmez).
+   **Snapshot ref'leri deterministik değildir:** ref'ler (`[ref=e21]`) Playwright MCP oturumuna
+   özgüdür ve aynı yörüngede bile koşudan koşuya kayar (`browser_navigate` SPA henüz çizilirken
+   örtük snapshot alır ve bazen fazladan bir ref harcar; sayfa +1 kayar — canlı yığında aynı giriş
+   sayfası için `button "Giriş yap" [ref=e20]` ve `[ref=e21]` gözlendi). Bu yüzden ref alan her
+   kayıtlı adım (`browser_generate_locator`) yapılandırılmış bir **`hedef`** taşır
+   (`{"rol", "ad", "kapsam"?}`; ör. `{"rol": "button", "ad": "Sepete ekle", "kapsam":
+   "paragraph: P-002"}`) ve geçit ref'i **bu oturumun son snapshot'ından** rol/ad/kapsamla yeniden
+   çözer (`tp_core.gateway.snapshot_refs`); çağrı canlı ref'le yapılır, adım/denetim de onu taşır.
+   Eleman canlı snapshot'ta bulunamazsa adım **çalıştırılmaz** ve `Araç hatası (ReplayHedefYok)`
+   olarak akar (kod üretimi REPLAY'de başarısız adımı insana düşürür). Canlı `generate_locator`
+   sonucu kayıttakinden farklıysa adım özeti `REPLAY sapması: kayıtta …, bu oturumda …` ile başlar.
+   Eylem sonuçlarındaki MCP sunucu dosyası bağlantıları (`- [Snapshot](…yml)`,
+   `New console entries: …log`) modele ve denetime gitmez;
+3. golden çıktısını döndürür. Araç dizisi kayıttaki gibidir; ref'ler ve canlı sonuç özetleri bu
+   oturumun sayfasından gelir.
+
+**Yığın kontrolü:** `python -m tp_core.gateway.replay_check --runs 5` (core-worker içinde, yığın
+ayakta) her verify_and_map golden'ını üretimdeki `AgentBrowser`/`McpBrowserSession` ve geçidin
+REPLAY yoluyla N kez oynatır; her izinli adımın başarılı olduğunu ve her `generate_locator`
+sonucunun kayıttaki locator'la aynı olduğunu doğrular (çıkış kodu 0/1).
+
+**Önkoşul (kod üretimi şeridi):** ajan tarayıcısı **doğrulama bayisiyle** (`bayi3`, "Doğrulama
+Bayi"; `tp_core.gateway.VERIFY_AGENT_DEALER`, demo-app seed'i ve `e2e/tests/fixtures.ts`
+`AGENT_DEALER`) girer; e2e bayileri (bayi1/bayi2) ajan tarafından kullanılmaz. Kayıtlı yörüngeler
+boş sepet varsayar ("Sepet 0 ürün" snapshot'ta görülür): kod üretimi **her case'ten önce** bayi3'ü
+`POST /test/reset {kullanici_adi: "bayi3"}` ile sıfırlamalıdır (core-worker demo-app-api'ye
+erişemez; test-runner/toolchain üzerinden). Bekleme metni durumdan bağımsızdır ("7 adet sepete
+eklendi."), sepet dolu olsa da yörünge takılmaz ama snapshot özeti farklı sayıları gösterir.
+
+### Girdi ve anahtar kararlılığı
+
+Kod üretimi girdisini şu yardımcılarla kurmalıdır (`tp_core.gateway`):
+
+- `approved_case_block(case, jira_key=…, sira_no=…)` — onaylı case, kaynak `case:<KEY>-C<n>`;
+  golden'ların `input_match.contains` beyanı (başlık, adım eylemleri, beklenenler) bu metinde birebir
+  geçer (`test_canonical_case_block_satisfies_the_golden_declaration`). Case insan düzeltmesiyle
+  değişirse dürüst REPLAY-MISS.
+- `symbol_table_block(table)` — `POST /symbols` çıktısı; checkout kökü (`root`), `line` ve boş
+  `errors` atılır, sınıf/locator sıralanır: aynı page object kaynağı aynı birebir anahtarı verir.
+- `verification_context_block()` — uygulama kökü + doğrulama bayisi (parola case verisinden
+  yazılır; hatalı parola case'i böyle yeniden üretilir). Kod üretimi şeridinin araç katmanı
+  giriş alanına yazılan e2e bayi adını bayi3'e çevirir; golden yörüngeleri doğrudan `bayi3`
+  yazar, çeviri onları değiştirmez (iki yol aynı tarayıcı oturumunu verir).
+- Case'i JSON olarak (`json.dumps(case)`) bloğa koymak da eşleşir (`input_match` JSON görünümünü
+  okur); sembol tablosu kaynağındaki kısa sha (`symbols:<sha12>`) anahtar normunda `<SHA>` olur.
+- Diğer oynak değerler (zaman damgası, UUID, sha, snapshot `ref=eN`) `normalize_text` ile zaten
+  anahtar dışıdır.
+
+### Yönerge (`prompts/verify-and-map.md` v3 — canlı değerlendirme bekliyor, bkz. rules/README.md)
+
+Tarayıcıda doğrulama bayisi; hedefler page object locator'larının `data-testid` seçicileri (kapsamlı
+locator'da `within` + ürün kodu); eylemde kullanılan **her** locator'a ilk kez dayanmadan önce
+`browser_generate_locator` (golden yörüngeleri de böyledir: kullanıcı adı, parola, giriş butonu,
+ürün kartındaki adet alanı ve sepete ekle, sepet bağlantısı, minimum uyarısı, onay butonu,
+Siparişlerim bağlantısı);
+her sayfa değişiminden sonra snapshot; eşleme argümanları case'in `action`/`data`'sından; `expects`
+son adımdan sonra koşar ve argümanları case'in beklenen metninde **literal** geçer (normalize:
+`1.250,00 TL` ≡ `1250`; aritmetik yok, sayfadan kopya yok). Sayfa case'ten farklı değer gösterirse
+beklenti **değişmez**: adım `verified` kalır, `evidence_ref` "gözlenen: … · beklenen: …" notunu
+taşır; yerel kontrol o assertion'da kırmızı olur ve case insana **defect adayı** olarak gider
+(otomatik onarım yok, §8.4 adım 5). Golden'larda bu not **"kayıttaki not — gözlenen: …"** diye
+etiketlidir: değerler kayıt anındaki sayfadandır ve REPLAY koşusunda yeniden ölçülmez (portal bunu
+ajan kanıtı olarak gösterir; etiket bunun kayıt olduğunu söyler). Defect adayı kararı
+(`demo_check`) serbest metinden değil golden'ın yapılandırılmış **`defect_adayi`** alanından
+(`{"step_id", "beklenen", "kayittaki_gozlem"}`) okunur; alan eşlemedeki bir adımı göstermelidir. Expect metodu olmayan beklenti → `missing_methods` (uydurma yok).
+
+### Demo-B hikâyesi ve iki yol
+
+| Yol | Analist kararı (F2) | Kod üretimi sonucu |
+|---|---|---|
+| Alternatif | `fix_doc` (AC2 koda uyar: 6'da 1) | Kampanya case'leri (C2 7→1, C3 6→1, C4 5→0) bugün yeşil, BREAK_CAMPAIGN'da C2/C3 kırmızı (kırarak doğrula ✓). Assertion'da kırmızı case yok; tek kod hatası AC4 (C7) `missing_methods`'ta durur |
+| **Ana demo yolu** `f2-kod-hatasi` | `code_defect` (AC2 özgün: 7'de 1) | C2 "7 adet → 1 bedava" bugün yeşil, BREAK_CAMPAIGN'da kırmızı; **C3 "6 adet → bedava yok"** eşlenir ve kod üretilir, yerel kontrolde `expectFreeQuantity("P-001", 0)` kırmızı (kod 1 verir: `adet // 6`) → **defect adayı** (Faz 4 triage → bug taslağı); C5 "Minimum sipariş tutarı 750,00 TL", C1 sepet sayacı, C8 sipariş onayı yeşil |
+
+`test_codegen_goldens.py` her iki yolu demo-app'in saf fiyat fonksiyonlarıyla (yerel kontrolün
+sonucunu öngörerek) ve geçidin gerçek kod yoluyla (jira-sim → F1/F3 fix_doc → 2. tur → case üretimi
+→ her case için `run_agent`, sıkı kip) denetler.
+
+### Kayıt (gerçek Playwright MCP)
+
+`steps` gerçek Playwright MCP'de (compose imajı 1.64.1, bayraklar: `--isolated`, `--caps=testing`,
+vision yok) compose yığınındaki demo-app'e (demo-app-web/demo-app-api) karşı core-worker içinden
+koşturulup kaydedildi (2026-10-31). Kayıt aracı: `core/tests/unit/gateway/record_verify_goldens.py`
+(kullanım dosya başında; her case'ten önce bayi3'ün sepeti boşaltılır). Kayıt **bayt bayt
+tekrarlanabilir değildir**: snapshot ref'leri koşudan koşuya kayabilir, compose yığınında sipariş
+numarası (C8: `SP-000056`) ve bayi3'ün sipariş geçmişi yığının durumuna bağlıdır. Ref'ler yalnızca o
+kaydın gözlemidir; REPLAY `hedef`'ten çözer. Araç `output`'u **elle
+hazırlanmış eşleme olarak korur** (yeni senaryo case'i için önce elle yazılır); yalnızca adımları ve
+`evidence_ref`'teki gözlemleri günceller. demo-app UI'ı veya page object'ler değişince yeniden
+koşturulur.
+
+### Sürüklenme denetimi (`test_codegen_goldens.py`)
+
+- Her eşlenen `po.method` güncel `pages/**/*.page.ts`'te doğru arity/türle var; regex ayrıştırıcı
+  toolchain'in gerçek sembol çıkarıcısıyla (`toolchain/symbols/dist`, node varsa) aynı tabloyu verir.
+- Her `expects` argümanı, golden'ın `case.case_golden`'ındaki (yoksa `<KEY>`) onaylı case metninde
+  normalize edilerek geçer; `login` eşlemesi case verisidir.
+- Tarayıcı adımları: izin listesi, ≤ 25, yalnızca demo kökü, hedef/generate_locator testId'leri
+  locators.ts'te var, tarayıcıya yazılan kullanıcı yalnızca bayi3, sayfa değişiminden sonra snapshot.
+- Eylemde (click/type) kullanılan her testId ilk kullanımından önce bir `generate_locator`
+  sonucunda görülmüştür (prompt v3); ref alan her adım `hedef` taşır ve hedef kayıttaki snapshot'ta
+  tam o ref'e çözülür.
+- Gözlenen ≠ beklenen olduğunda (ve yalnızca o zaman) sepet adımının `evidence_ref`'i "beklenen:"
+  taşır ve golden `defect_adayi` beyanı içerir; değerler "kayıttaki not" etiketlidir.
 
 ## Serbest metin örneği (`SERBEST`)
 

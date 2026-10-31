@@ -270,3 +270,31 @@ describe("OlayYolu session.ended", () => {
     }
   });
 });
+
+describe("Demo-B core olay adları (codegen + ci şeritleri)", () => {
+  const kok = resolve(__dirname, "../../..");
+  const dosyalar = ["core/src/tp_core/features/codegen/service.py", "core/src/tp_core/features/ci/service.py"].map((d) => resolve(kok, d));
+
+  it.skipIf(!dosyalar.every((d) => existsSync(d)))("core'un Demo-B'de yayımladığı her olay adı dinlenir ve script/koşu konusuna düşer", () => {
+    const adlar = new Set<string>();
+    for (const d of dosyalar) {
+      const kaynak = readFileSync(d, "utf8");
+      for (const m of kaynak.matchAll(/(?:_olay|publish_tx)\(\s*[\w.()]+,\s*"([a-z_]+\.[a-z_.]+)"/g)) adlar.add(m[1]);
+    }
+    expect(adlar.size).toBeGreaterThanOrEqual(4);
+    for (const ad of adlar) {
+      expect(DINLENEN_OLAYLAR, ad).toContain(ad);
+      const konular = olayKonulari({ type: ad, data: {} });
+      expect(konular.some((k) => k === "script.updated" || k === "ci.status"), `${ad} → ${konular.join(",")}`).toBe(true);
+    }
+  });
+
+  it("agent.step core şekli (script_id, n, tool, summary, screenshot_url) script ekranına eşleşir", () => {
+    const o = olayiAyristir("agent.step", JSON.stringify({ data: { script_id: "s-1", n: 3, tool: "browser_click", summary: "x" }, ts: "t" }));
+    expect(olayEslesir(o, new Set(["agent.step"]), "s-1")).toBe(true);
+    expect(olayEslesir(o, new Set(["agent.step"]), "s-2")).toBe(false);
+    const ci = olayiAyristir("ci.status", JSON.stringify({ data: { id: "r-1", run_id: "r-1", script_id: "s-1", durum: "running" }, ts: "t" }));
+    expect(olayEslesir(ci, new Set(["ci.status"]), "s-1")).toBe(true);
+    expect(olayEslesir(ci, new Set(["ci.status"]), "r-1")).toBe(true);
+  });
+});

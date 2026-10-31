@@ -8,6 +8,7 @@
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "lint": "eslint --no-inline-config --max-warnings=0 .",
+    "lint:generated-selftest": "node tools/generated-lint-selftest.js",
     "test": "playwright test",
     "check": "bash ../ci/run-checks.sh",
     "break-verify": "bash ../ci/break-verify.sh"

@@ -1,0 +1,119 @@
+# "Kırarak doğrula" (yeşil → kırmızı → yeşil) — GitHub Actions'ta ELLE kanıt. AI'sız (Constitution II).
+#
+# ÇEKİRDEK BU WORKFLOW'U TETİKLEMEZ ve break-verify-results artefaktını okumaz. Portaldaki
+# "Kırarak doğrula" (POST /scripts/{id}/break-verify) her iki forge modunda da toolchain-worker
+# /check (BREAK_CAMPAIGN) yolunu kullanır. GitHub modunda (TP_FORGE=github) PR commit'i toolchain'in
+# forge aynasına yalnızca TP_FORGE_REMOTE_URL (+ salt okunur TP_FORGE_REMOTE_TOKEN) verilmişse
+# çekilir; verilmemişse başlangıç koşusu "atlandı" olur, kırarak doğrulama "tamamlanamadı" (failed)
+# biter ve merge açık kabul notu ister. Bu workflow, bir mühendisin aynı kanıtı GitHub üzerinde
+# (Actions → break-verify → Run workflow, ref = tp/case-* dalı) üretmesi içindir; sonuç
+# break-verify-results artefaktındaki break-verify.json'dadır, çekirdeğe alınmaz.
+# Betik aynıdır: demo-app/ci/break-verify.sh. Zorunlu check DEĞİLDİR.
+name: break-verify
+run-name: >-
+  break-verify ${{ github.ref_name }} [${{ inputs.istek_id || 'elle' }}]
+
+on:
+  workflow_dispatch:
+    inputs:
+      grep:
+        description: "Kırılmadan etkilenmesi beklenen testlerin --grep ifadesi"
+        type: string
+        required: false
+        default: kampanya
+      istek_id:
+        description: "İsteğe bağlı izleme kimliği ([A-Za-z0-9._-], ≤64; koşu adında görünür)"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: break-verify-${{ github.ref }}-${{ inputs.istek_id || github.run_id }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "22"
+  UV_VERSION: "0.8.24"
+  E2E_ROOT: demo-app/e2e
+
+jobs:
+  break-verify:
+    name: break-verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      TP_ISTEK_ID: ${{ inputs.istek_id }}
+      BREAK_VERIFY_GREP: ${{ inputs.grep || 'kampanya' }}
+      CI: "true"
+    steps:
+      - name: Girdi doğrulama
+        run: |
+          set -euo pipefail
+          if [ -n "$TP_ISTEK_ID" ] && ! [[ "$TP_ISTEK_ID" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
+            echo "::error::istek_id biçimi geçersiz"; exit 1
+          fi
+          # grep yalnızca ortamdan, tırnaklı argüman olarak geçer; burada uzunluk/satır sınırı.
+          if [ "${#BREAK_VERIFY_GREP}" -gt 120 ] || [ "$(printf '%s' "$BREAK_VERIFY_GREP" | wc -l)" -ne 0 ]; then
+            echo "::error::grep ifadesi tek satır ve en çok 120 karakter olmalı"; exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Node kurulumu
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            demo-app/e2e/package-lock.json
+            demo-app/web/package-lock.json
+
+      - name: uv kurulumu
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: demo-app/api/uv.lock
+
+      - name: Bağımlılıklar ve Chromium
+        run: |
+          set -euo pipefail
+          pw="$(tr -d '[:space:]' < .playwright-version)"
+          (cd demo-app/e2e && npm ci --ignore-scripts --no-audit --no-fund)
+          (cd demo-app/web && npm ci --ignore-scripts --no-audit --no-fund)
+          (cd demo-app/api && uv sync --frozen --no-dev)
+          npx --yes "playwright@${pw}" install --with-deps chromium
+
+      # webServer modu: uygulama koşu başına yeni başlar, DEMOAPP_TEST_TOKEN'ı config üretir.
+      - name: Kırarak doğrula (yeşil → kırmızı → yeşil)
+        id: verify
+        run: |
+          set -euo pipefail
+          rc=0
+          bash demo-app/ci/break-verify.sh 2>&1 | tee break-verify.log || rc=${PIPESTATUS[0]}
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          exit "$rc"
+
+      - name: break-verify.json
+        if: always()
+        env:
+          RC: ${{ steps.verify.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          bash scripts/github-break-verify-result.sh --out tp-break --log break-verify.log \
+            --results "$E2E_ROOT/results/results.json" --exit-code "${RC:-}" --grep "$BREAK_VERIFY_GREP"
+
+      - name: Artefakt
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: break-verify-results
+          retention-days: 14
+          if-no-files-found: warn
+          path: tp-break/

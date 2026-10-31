@@ -9,6 +9,15 @@
 # tespiti `changes` job'unda yapılır; ilgisiz PR'da job'lar "no-op, başarılı" çıkar.
 # Ayrıntılar: .github/CI.md
 name: ci
+# Çekirdeğin tetiklediği koşular (repository_dispatch deploy / workflow_dispatch) istek kimliğini
+# koşu adında taşır: çekirdek koşuyu `GET /actions/workflows/ci.yml/runs` listesinde `[<istek_id>]`
+# ile bulur (GitHubForge.find_dispatched_run). Diğer olaylarda GitHub'ın varsayılan başlığı kalır.
+run-name: >-
+  ${{ github.event_name == 'repository_dispatch'
+      && format('ci deploy [{0}]', github.event.client_payload.istek_id || github.event.client_payload.tp_run_id || 'elle')
+    || github.event_name == 'workflow_dispatch'
+      && format('ci {0} [{1}]', inputs.tetik, inputs.istek_id || 'elle')
+    || github.event.pull_request.title || github.event.head_commit.message || 'ci' }}
 
 on:
   pull_request:
@@ -18,6 +27,8 @@ on:
   schedule:
     # Gece koşusu: 02:00 UTC = 05:00 TR
     - cron: "0 2 * * *"
+  # client_payload: {ref?: test edilecek dal/sha (yoksa varsayılan dal), istek_id? | tp_run_id?:
+  # çekirdeğin istek/koşu kimliği (ikisi eşdeğer; koşu adına ve ci-meta.json'a girer), tetik?}
   repository_dispatch:
     types: [deploy]
   workflow_dispatch:
@@ -27,14 +38,21 @@ on:
         type: choice
         options: [manual, nightly, deploy]
         default: manual
+      istek_id:
+        description: "Çekirdeğin istek kimliği (koşu adında görünür; [A-Za-z0-9._-], ≤64)"
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
   packages: read
 
+# PR'da yeni push eski koşuyu iptal eder. Çekirdeğin tetiklediği koşular (deploy/elle) istek
+# kimliğiyle ayrı gruptadır ve iptal edilmez: çekirdek beklediği koşunun sonucunu her zaman alır.
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.client_payload.istek_id || github.event.client_payload.tp_run_id || inputs.istek_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   APP_ROOT: demo-app
@@ -46,6 +64,11 @@ env:
   # (scripts/github-ast-guard-mode.sh). Çekirdek sabitleriyle aynı olmalı.
   REPAIR_BRANCH_PREFIX: tp/repair-
   CASE_BRANCH_PREFIX: tp/case-
+  # Kod üretimi (CasesToCode) testleri şablondan bu dizine yazar; testDir ("./tests") altında olduğu
+  # için run-checks.sh ve Sauce aynı koşuda çalıştırır.
+  GENERATED_TESTS: demo-app/e2e/tests/generated
+  # Çekirdeğin istek kimliği (deploy / elle tetik); `changes` job'u biçimini doğrular.
+  TP_ISTEK_ID: ${{ github.event.client_payload.istek_id || github.event.client_payload.tp_run_id || inputs.istek_id || '' }}
 
 jobs:
   changes:
@@ -60,6 +83,7 @@ jobs:
       pages: ${{ steps.decide.outputs.pages }}
       guard_tool: ${{ steps.decide.outputs.guard_tool }}
       goldens: ${{ steps.decide.outputs.goldens }}
+      generated: ${{ steps.decide.outputs.generated }}
       trigger: ${{ steps.decide.outputs.trigger }}
     steps:
       - name: Değişiklikleri tespit et (yalnızca PR)
@@ -76,8 +100,13 @@ jobs:
               - 'toolchain/package.json'
               - 'toolchain/package-lock.json'
               - 'scripts/github-demo-serve.sh'
+            # ast-guard'ın denetlediği yollar: locator'lar + tsc --strict kapısının dayandığı
+            # tsconfig.json (toolchain/ast-guard/src/tsconfig-gate.ts, Constitution IV).
             pages:
               - 'demo-app/e2e/pages/**'
+              - 'demo-app/e2e/tsconfig.json'
+            generated:
+              - 'demo-app/e2e/tests/generated/**'
             guard_tool:
               - 'toolchain/ast-guard/**'
               - 'scripts/github-ast-guard-mode.sh'
@@ -95,9 +124,14 @@ jobs:
           PAGES: ${{ steps.filter.outputs.pages }}
           GUARD_TOOL: ${{ steps.filter.outputs.guard_tool }}
           GOLDENS: ${{ steps.filter.outputs.goldens }}
+          GENERATED: ${{ steps.filter.outputs.generated }}
           DISPATCH_TETIK: ${{ inputs.tetik }}
         run: |
           set -euo pipefail
+          if [ -n "$TP_ISTEK_ID" ] && ! [[ "$TP_ISTEK_ID" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
+            echo "::error::istek_id biçimi geçersiz ([A-Za-z0-9._-], en çok 64 karakter)"
+            exit 1
+          fi
           case "$EVENT" in
             pull_request)        trigger="pr" ;;
             push)                trigger=push ;;
@@ -108,23 +142,24 @@ jobs:
           esac
           if [ "$EVENT" = "pull_request" ]; then
             run_tests="${APP:-false}"; pages="${PAGES:-false}"; guard_tool="${GUARD_TOOL:-false}"
-            goldens="${GOLDENS:-false}"
+            goldens="${GOLDENS:-false}"; generated="${GENERATED:-false}"
           else
             # push / gece / deploy / elle: testler her zaman koşar.
-            run_tests=true; pages=true; guard_tool=false; goldens=true
+            run_tests=true; pages=true; guard_tool=false; goldens=true; generated=false
           fi
           {
             echo "run_tests=$run_tests"
             echo "goldens=$goldens"
+            echo "generated=$generated"
             echo "pages=$pages"
             echo "guard_tool=$guard_tool"
             echo "trigger=$trigger"
           } >> "$GITHUB_OUTPUT"
           {
             echo "### Değişiklik tespiti"
-            echo "| tetik | testler | pages/** | ast-guard aracı |"
-            echo "|---|---|---|---|"
-            echo "| \`$trigger\` | $run_tests | $pages | $guard_tool |"
+            echo "| tetik | istek | testler | pages/** | tests/generated/** | ast-guard aracı |"
+            echo "|---|---|---|---|---|---|"
+            echo "| \`$trigger\` | \`${TP_ISTEK_ID:--}\` | $run_tests | $pages | $generated | $guard_tool |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   test-local:
@@ -170,12 +205,11 @@ jobs:
             exit 1
           fi
           mkdir -p "$TP_RESULTS_DIR"
-          jq -n --arg trigger "$TP_TRIGGER" --arg sha "$GITHUB_SHA" --arg ref "$GITHUB_REF" \
-                --arg event "$GITHUB_EVENT_NAME" --arg run_id "$GITHUB_RUN_ID" \
-                --arg attempt "$GITHUB_RUN_ATTEMPT" --arg pw "$want" --arg image "${TOOLCHAIN_IMAGE:-}" \
-                '{kaynak:"github", tetik:$trigger, sha:$sha, ref:$ref, event:$event, run_id:$run_id,
-                  run_attempt:$attempt, playwright:$pw, toolchain_image:$image}' \
-                > "$TP_RESULTS_DIR/ci-meta.json"
+          # Üretilen testler (CasesToCode) testDir altında olmalı: aynı koşuda çalışırlar.
+          if [ -d "$GENERATED_TESTS" ]; then
+            n="$(find "$GENERATED_TESTS" -type f -name '*.spec.ts' | wc -l | tr -d ' ')"
+            echo "Üretilen test dosyası ($GENERATED_TESTS): $n"
+          fi
 
       # --- Yol A: toolchain imajı (digest ile sabit) — yerel kontrol ile aynı imaj ---------------
       - name: GHCR girişi (toolchain imajı)
@@ -200,6 +234,7 @@ jobs:
 
       - name: Testler (toolchain imajında)
         if: env.RUN_TESTS == 'true' && env.TOOLCHAIN_IMAGE != ''
+        id: tests_a
         run: |
           set -euo pipefail
           case "$TOOLCHAIN_IMAGE" in
@@ -220,8 +255,13 @@ jobs:
             echo "::error::Toolchain imajında uv/Python/node çalışmıyor ($TOOLCHAIN_IMAGE). TP_TOOLCHAIN_IMAGE repo değişkenini boşaltın (Yol B) veya imajı düzeltin."
             exit 1
           fi
+          # Constitution II: yayımlanan imaj `ci` hedefi olmalı (MCP/model istemcisi yok).
+          bash toolchain/security/no-mcp-in-image.sh image "$TOOLCHAIN_IMAGE"
+          rc=0
           docker run "${docker_args[@]}" "$TOOLCHAIN_IMAGE" \
-            bash demo-app/ci/run-checks.sh --retries=1
+            bash demo-app/ci/run-checks.sh --retries=1 2>&1 | tee run-checks.log || rc=${PIPESTATUS[0]}
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          exit "$rc"
 
       # --- Yol B: imaj yoksa runner üzerinde aynı sürümler ----------------------------------------
       - name: Node kurulumu
@@ -264,25 +304,44 @@ jobs:
 
       - name: Testler (runner üzerinde)
         if: env.RUN_TESTS == 'true' && env.TOOLCHAIN_IMAGE == ''
+        id: tests_b
         env:
           TP_APP_ROOT: ${{ github.workspace }}/demo-app
-        run: bash demo-app/ci/run-checks.sh --retries=1
+        run: |
+          set -euo pipefail
+          rc=0
+          bash demo-app/ci/run-checks.sh --retries=1 2>&1 | tee run-checks.log || rc=${PIPESTATUS[0]}
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          exit "$rc"
 
       # --- Sonuçlar -----------------------------------------------------------------------------
+      # Yerel koşuyla (test-runner `src/e2e/results/`) aynı ad ve biçim; tek düz artefakt kökü:
+      # ci-meta.json, junit.xml, results.json, allure-results/, playwright-report/, artifacts/,
+      # run-checks.log. Düzen ve ci-meta.json alanları: scripts/github-ci-results.sh, .github/CI.md.
+      - name: Sonuçları topla (yerel koşu biçimi)
+        if: always() && env.RUN_TESTS == 'true'
+        env:
+          EXIT_A: ${{ steps.tests_a.outputs.exit_code }}
+          EXIT_B: ${{ steps.tests_b.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          bash scripts/github-ci-results.sh --out tp-results \
+            --src "$TP_RESULTS_DIR" --src "$E2E_ROOT/results" --app-root "$APP_ROOT" \
+            --exit-code "${EXIT_A:-${EXIT_B:-}}" --log run-checks.log --job test-local
+
       - name: Özet
         if: always() && env.RUN_TESTS == 'true'
         run: |
           set -uo pipefail
-          json=""
-          for f in "$TP_RESULTS_DIR/results.json" "$E2E_ROOT/results/results.json"; do
-            [ -f "$f" ] && { json="$f"; break; }
-          done
+          meta=tp-results/ci-meta.json
           {
             echo "### test-local (tetik: \`$TP_TRIGGER\`)"
-            if [ -n "$json" ]; then
-              jq -r '.stats // {} | "| beklenen | beklenmeyen | flaky | atlanan | süre (sn) |\n|---|---|---|---|---|\n| \(.expected // 0) | \(.unexpected // 0) | \(.flaky // 0) | \(.skipped // 0) | \(((.duration // 0) / 1000) | floor) |"' "$json"
+            if [ -f "$meta" ]; then
+              jq -r '"Durum: **\(.durum)**\(if .hata then " — \(.hata | gsub("\n"; " "))" else "" end) · commit `\((.sha // "?")[0:12])`"' "$meta"
+              jq -r 'if .stats then .stats | "\n| beklenen | beklenmeyen | flaky | atlanan | süre (sn) |\n|---|---|---|---|---|\n| \(.expected) | \(.unexpected) | \(.flaky) | \(.skipped) | \((.duration_ms / 1000) | floor) |" else "\nresults.json bulunamadı." end' "$meta"
+              jq -r 'if (.generated_tests | length) > 0 then "\nÜretilen testler: \(.generated_tests | length) dosya (`\(env.GENERATED_TESTS)`)" else empty end' "$meta"
             else
-              echo "results.json bulunamadı."
+              echo "ci-meta.json yazılamadı."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -290,22 +349,23 @@ jobs:
         if: always() && env.RUN_TESTS == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          # Çekirdek bu adla arar (GitHub API): test-local-results
+          # Çekirdek bu adla arar (GitHub API, GitHubForge.list_run_artifacts): test-local-results.
+          # Artefakt kökü tp-results/ dizininin içidir (tek yol → ortak üst dizin kırpılır).
           name: test-local-results
           retention-days: 14
-          if-no-files-found: warn
-          path: |
-            results/ci-meta.json
-            results/junit.xml
-            results/results.json
-            results/allure-results/
-            results/html/
-            results/**/trace.zip
-            demo-app/e2e/results/junit.xml
-            demo-app/e2e/results/results.json
-            demo-app/e2e/results/allure-results/
-            demo-app/e2e/results/html/
-            demo-app/e2e/results/**/trace.zip
+          if-no-files-found: error
+          include-hidden-files: false
+          path: tp-results/
+
+      - name: Playwright HTML raporu
+        if: always() && env.RUN_TESTS == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          # İnsanlar için ayrı indirme (aynı içerik test-local-results/playwright-report/ altında da var).
+          name: playwright-report
+          retention-days: 14
+          if-no-files-found: ignore
+          path: tp-results/playwright-report/
 
   ast-guard:
     # Zorunlu check (Constitution VI). PR dışındaki olaylarda no-op.
@@ -541,6 +601,8 @@ jobs:
 
   sauce:
     # Zorunlu DEĞİL (continue-on-error): Sauce veya tünel hatası PR'ı kilitlemez (§8.5).
+    # Her durumda (kimlik yoksa da) `sauce-results` artefaktına sauce.json yazılır: çekirdek
+    # "atlandı" / "kırmızı" / "hata"yı ayırır ve Sauce job linkini (job_url) buradan okur.
     name: sauce
     needs: changes
     if: needs.changes.outputs.run_tests == 'true'
@@ -567,11 +629,10 @@ jobs:
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "Sauce kimliği (SAUCE_USERNAME / SAUCE_ACCESS_KEY secret'ları) tanımlı değil; Sauce job'u atlandı. Yerel test-local job'u geçerlidir." | tee -a "$GITHUB_STEP_SUMMARY"
           fi
 
+      # Kimlik yoksa da checkout yapılır: sauce.json'u yazan betik ve test edilen commit gerekir.
       - name: Checkout
-        if: steps.creds.outputs.enabled == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -651,6 +712,8 @@ jobs:
           saucectl-version: ${{ env.SAUCECTL_VERSION }}
           skip-run: "true"
 
+      # Testler: e2e/tests/**/*.spec.ts — üretilen testler (e2e/tests/generated/) dahil
+      # (.sauce/config.yml testMatch).
       - name: Sauce'ta Playwright (Chromium)
         if: steps.creds.outputs.enabled == 'true'
         id: run
@@ -659,7 +722,8 @@ jobs:
           TUNNEL: ${{ steps.region.outputs.tunnel }}
           BUILD: ${{ github.repository }}#${{ github.run_number }} (${{ needs.changes.outputs.trigger }})
         run: |
-          set -o pipefail
+          set -euo pipefail
+          rc=0
           saucectl run --config .sauce/config.yml \
             --region "$SAUCE_REGION" \
             --tunnel-name "$TUNNEL" \
@@ -669,35 +733,37 @@ jobs:
             -e "TP_EXTERNAL_SERVER=1" \
             -e "DEMOAPP_TEST_TOKEN=$DEMOAPP_TEST_TOKEN" \
             -e "TP_TRIGGER=$TP_TRIGGER" \
-            2>&1 | tee ../results/sauce/saucectl.log
+            2>&1 | tee ../results/sauce/saucectl.log || rc=${PIPESTATUS[0]}
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          exit "$rc"
 
-      - name: Sauce özeti (job linkleri)
-        if: always() && steps.creds.outputs.enabled == 'true'
+      # Sauce job linki adım özetine VE sauce.json'a (artefakt) yazılır. Kimlik yoksa "atlandi".
+      - name: Sauce özeti ve sauce.json
+        if: always()
+        env:
+          ENABLED: ${{ steps.creds.outputs.enabled }}
+          SAUCE_EXIT: ${{ steps.run.outputs.exit_code }}
+          TUNNEL: ${{ steps.region.outputs.tunnel }}
         run: |
-          set -uo pipefail
-          {
-            echo "### Sauce Labs (tetik: \`$TP_TRIGGER\`, bölge: \`$SAUCE_REGION\`)"
-            urls=""
-            if [ -f demo-app/results/sauce/saucectl-report.json ]; then
-              urls="$(jq -r '.. | objects | select(has("url")) | .url | select(type == "string" and test("^https://"))' demo-app/results/sauce/saucectl-report.json | sort -u)"
-            fi
-            if [ -z "$urls" ] && [ -f results/sauce/saucectl.log ]; then
-              urls="$(grep -Eo 'https://app\.[a-z0-9.-]*saucelabs\.com/tests/[A-Za-z0-9]+' results/sauce/saucectl.log | sort -u)"
-            fi
-            if [ -n "$urls" ]; then
-              while IFS= read -r u; do echo "- $u"; done <<< "$urls"
-            else
-              echo "Sauce job linki bulunamadı (log artefaktına bakın)."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          if [ "$ENABLED" != "true" ]; then
+            bash scripts/github-sauce-summary.sh --out tp-sauce --region "$SAUCE_REGION" \
+              --skipped "Sauce kimliği (SAUCE_USERNAME / SAUCE_ACCESS_KEY secret'ları) tanımlı değil"
+            exit 0
+          fi
+          bash scripts/github-sauce-summary.sh --out tp-sauce \
+            --report demo-app/results/sauce/saucectl-report.json \
+            --junit demo-app/results/sauce/saucectl-junit.xml \
+            --artifacts demo-app/results/sauce/artifacts \
+            --log results/sauce/saucectl.log --serve-log results/sauce/serve.log \
+            --exit-code "${SAUCE_EXIT:-}" --region "$SAUCE_REGION" --tunnel "${TUNNEL:-}"
 
       - name: Sauce artefaktları
-        if: always() && steps.creds.outputs.enabled == 'true'
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
+          # Çekirdek bu adla arar: sauce-results (kökte sauce.json).
           name: sauce-results
           retention-days: 14
-          if-no-files-found: ignore
-          path: |
-            results/sauce/
-            demo-app/results/sauce/
+          if-no-files-found: warn
+          path: tp-sauce/

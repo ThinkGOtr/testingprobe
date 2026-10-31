@@ -1,5 +1,9 @@
 """toolchain-worker HTTP API'si (:8100, core-net + runner-net) — MIMARI-SOZLESME §2.
 
+**Kimlik doğrulaması:** `/health` dışındaki her uç `Authorization: Bearer TP_TOOLCHAIN_TOKEN`
+ister (belirteç yalnızca core-api/core-worker'da; test-runner'da yok — toolchain_common/auth.py).
+runner-net'teki test-runner commit kodunu koşturur; belirteç olmadan `/check`'i çağıramaz.
+
 Uçlar eşzamanlıdır (senkron) ve sınırlıdır; her alt süreç kendi süre sınırıyla koşar
 (`TP_*_TIMEOUT_S`). `/check` test-runner'ı bekler: istemci zaman aşımı en az
 `TP_RUN_TIMEOUT_S + TP_RUN_QUEUE_WAIT_S` + statik adımlar (~25 dk) olmalıdır.
@@ -11,21 +15,35 @@ from __future__ import annotations
 import json
 import threading
 from collections import OrderedDict
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import uvicorn
-from fastapi import HTTPException
-from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field, field_validator
+from fastapi import Depends, HTTPException
+from pydantic import (
+    AfterValidator,
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from toolchain_common import (
+    appsha,
     check_artifacts,
+    check_checks_volume,
     check_node,
     check_playwright,
     create_app,
     gitforge,
     proc,
+    repos,
 )
 from toolchain_common.api import install_error_handlers
+from toolchain_common.artifacts import release_keep
+from toolchain_common.auth import check_auth, require_token
 from toolchain_common.settings import Settings, settings
 from toolchain_common.validation import (
     TESTID_RE,
@@ -43,16 +61,25 @@ from worker.astguard import AstGuardError, run_ast_guard
 
 app = create_app(
     "toolchain-worker",
-    {"node": check_node, "playwright": check_playwright, "artifacts": check_artifacts},
+    {
+        "node": check_node,
+        "playwright": check_playwright,
+        "artifacts": check_artifacts,
+        "checks_volume": check_checks_volume,
+        "auth": check_auth,
+    },
 )
 install_error_handlers(app)
 
 Ref = Annotated[str, AfterValidator(validate_ref)]
+# `/health` dışındaki her uç (toolchain_common/auth.py).
+AUTH = [Depends(require_token)]
 
 
-def _resolve(cfg: Settings, ref: str) -> str:
+def _resolve(cfg: Settings, ref: str, prefer: Path | None = None) -> repos.Located:
+    """Yerel forge ya da (GitHub modunda) aynadan; eksik commit uzak depodan çekilir."""
     try:
-        return gitforge.resolve_commit(cfg.forge_path, ref, cfg.git_timeout_s)
+        return repos.locate(cfg, ref, fetch=True, prefer=prefer)
     except gitforge.CommitNotFound as exc:
         raise HTTPException(404, f"Commit forge'da bulunamadı: {ref}") from exc
     except gitforge.ForgeError as exc:
@@ -71,14 +98,15 @@ class SymbolsBody(BaseModel):
     sha: Ref
 
 
-def extract_symbols(cfg: Settings, full_sha: str) -> dict[str, Any]:
+def extract_symbols(cfg: Settings, full_sha: str, repo: Path | None = None) -> dict[str, Any]:
     """Commit'in e2e/pages ağacından sembol tablosu (commit değişmez → önbellekli)."""
-    key = (str(cfg.forge_path), full_sha)
+    repo = repo or cfg.forge_path
+    key = (str(repo), full_sha)
     with _SYMBOL_CACHE_LOCK:
         if key in _SYMBOL_CACHE:
             _SYMBOL_CACHE.move_to_end(key)
             return _SYMBOL_CACHE[key]
-    with gitforge.checkout(cfg.forge_path, full_sha, cfg.e2e_root, cfg.git_timeout_s) as e2e:
+    with gitforge.checkout(repo, full_sha, cfg.e2e_root, cfg.git_timeout_s) as e2e:
         res = proc.run(
             [cfg.node, str(cfg.symbols_cli), "--root", str(e2e)],
             timeout_s=cfg.symbols_timeout_s,
@@ -102,12 +130,12 @@ def extract_symbols(cfg: Settings, full_sha: str) -> dict[str, Any]:
     return table
 
 
-@app.post("/symbols")
+@app.post("/symbols", dependencies=AUTH)
 def symbols(body: SymbolsBody) -> dict[str, Any]:
     cfg = settings()
-    full = _resolve(cfg, body.sha)
+    loc = _resolve(cfg, body.sha)
     try:
-        return extract_symbols(cfg, full)
+        return {**extract_symbols(cfg, loc.sha, loc.repo), "kaynak": loc.kaynak}
     except gitforge.ForgeError as exc:
         raise HTTPException(503, f"Forge okunamadı: {exc}") from exc
 
@@ -123,13 +151,18 @@ class AstGuardBody(BaseModel):
     mode: Literal["repair", "pr"] = "repair"
 
 
-@app.post("/ast-guard")
+@app.post("/ast-guard", dependencies=AUTH)
 def ast_guard(body: AstGuardBody) -> dict[str, Any]:
     cfg = settings()
-    base = _resolve(cfg, body.base_sha)
-    head = _resolve(cfg, body.head_sha)
+    head_loc = _resolve(cfg, body.head_sha)
+    base_loc = _resolve(cfg, body.base_sha, prefer=head_loc.repo)
+    head, base = head_loc.sha, base_loc.sha
+    if base_loc.repo != head_loc.repo:
+        raise HTTPException(
+            422, "base ve head aynı depoda değil (yerel forge / GitHub aynası); karşılaştırılamaz."
+        )
     try:
-        report = run_ast_guard(cfg, base, head, body.mode)
+        report = run_ast_guard(cfg, base, head, body.mode, head_loc.repo)
     except AstGuardError as exc:
         raise HTTPException(422, str(exc)) from exc
     return {
@@ -160,6 +193,25 @@ class CheckBody(BaseModel):
     base_sha: Annotated[str | None, AfterValidator(lambda v: v and validate_ref(v))] = None
     ast_guard_mode: Literal["pr", "repair"] = "pr"
     run_id: Annotated[str | None, AfterValidator(lambda v: v and validate_run_id(v))] = None
+    # `local-ci` kaydı (checks/<sha>.json): None = yalnızca tam kapsamlı kontrol (worker/check.py).
+    # Kapsamlı (test_files/grep) ya da kırılmalı kontrol ASLA kayıt olamaz: true verilemez.
+    record_check: bool | None = None
+    # Koşu dizini temizlikte silinmez (kanıt).
+    keep: bool = False
+
+    @model_validator(mode="after")
+    def _record(self) -> CheckBody:
+        if self.record_check and (self.break_campaign or self.env.get("BREAK_CAMPAIGN") == "1"):
+            raise ValueError(
+                "kırarak doğrulama local-ci kaydı olamaz (record_check=true verilemez)"
+            )
+        if self.record_check and (self.test_files or self.grep):
+            # Merge kapısı tüm testlerin sonucunu ister; kapsamlı yeşil bir head'i geçirmemeli.
+            raise ValueError(
+                "kapsamlı kontrol (test_files/grep) local-ci kaydı olamaz "
+                "(record_check=true yalnızca tam kapsamlı kontrolde)"
+            )
+        return self
 
     @field_validator("env")
     @classmethod
@@ -171,7 +223,7 @@ class CheckBody(BaseModel):
         return v
 
 
-@app.post("/check")
+@app.post("/check", dependencies=AUTH)
 def check(body: CheckBody) -> dict[str, Any]:
     cfg = settings()
     req = checks.CheckRequest(
@@ -184,11 +236,15 @@ def check(body: CheckBody) -> dict[str, Any]:
         base_sha=body.base_sha,
         ast_guard_mode=body.ast_guard_mode,
         run_id=body.run_id,
+        record_check=body.record_check,
+        keep=body.keep,
     )
     try:
         return checks.execute(cfg, req)
     except gitforge.CommitNotFound as exc:
         raise HTTPException(404, str(exc)) from exc
+    except checks.ChecksNotIsolated as exc:
+        raise HTTPException(503, str(exc)) from exc
     except checks.CheckBusy as exc:
         raise HTTPException(409, str(exc)) from exc
     except gitforge.ForgeError as exc:
@@ -242,50 +298,22 @@ def run_probe(cfg: Settings, body: LocatorProbeBody) -> dict[str, Any]:
     return out
 
 
-ShaMatch = Literal["eslesiyor", "farkli", "dogrulanamadi"]
-
-
-def _app_sha_match(cfg: Settings, requested: str) -> tuple[str | None, ShaMatch, str | None]:
-    """Çalışan uygulamanın derleme sha'sını (DEMO_APP_BUILD_SHA) istenen sha ile kıyaslar."""
-    if not cfg.probe_app_sha:
-        return (
-            None,
-            "dogrulanamadi",
-            "Ölçüm çalışan demo uygulamasında yapıldı; uygulamanın derlendiği commit bilinmiyor, "
-            "sonuç istenen sha'ya ait olmayabilir.",
-        )
-    try:
-        app_full = gitforge.resolve_commit(cfg.forge_path, cfg.probe_app_sha, cfg.git_timeout_s)
-    except (gitforge.ForgeError, gitforge.CommitNotFound, ValueError):
-        return (
-            cfg.probe_app_sha[:64],
-            "dogrulanamadi",
-            "Çalışan uygulamanın derleme sha'sı forge'da bulunamadı; sonuç istenen sha'ya ait "
-            "olmayabilir.",
-        )
-    if app_full == requested:
-        return app_full, "eslesiyor", None
-    return (
-        app_full,
-        "farkli",
-        f"Çalışan uygulama {app_full[:12]} commit'inden derlenmiş, istenen sha {requested[:12]}; "
-        "öneri üretilmedi.",
-    )
-
-
-@app.post("/locator-probe")
+@app.post("/locator-probe", dependencies=AUTH)
 def locator_probe(body: LocatorProbeBody) -> dict[str, Any]:
     """Demo uygulamasında getByRole(role, {name}) eşleşmelerini sayar, data-testid'yi okur.
 
     Yoklama compose'da ÇALIŞAN demo uygulamasına (DEMO_WEB_URL) yapılır, `sha`'nın ağacına değil.
     Yanıt bunu `olculen="calisan_uygulama"` ile, sha uyumunu `sha_eslesmesi` ile açıkça bildirir:
-    `DEMO_APP_BUILD_SHA` verilmişse istenen sha ile karşılaştırılır; farklıysa öneri üretilmez
-    (`oneri_uretilebilir=false`), bilinmiyorsa `dogrulanamadi` + `uyari` döner. Faz 4 onarım
-    kaydı bu alanları olduğu gibi saklamalıdır.
+    çalışan uygulamanın commit'i (`TP_APP_BUILD_SHA_FILE` > `DEMO_APP_BUILD_SHA`) biliniyorsa
+    uygulama ağaçları (`web`, `api`) istenen sha'nınkiyle karşılaştırılır; farklıysa öneri
+    üretilmez (`oneri_uretilebilir=false`), bilinmiyorsa `dogrulanamadi` + `uyari` döner.
+    Faz 4 onarım kaydı bu alanları olduğu gibi saklamalıdır.
     """
     cfg = settings()
-    full = _resolve(cfg, body.sha)
-    app_sha, sha_eslesmesi, uyari = _app_sha_match(cfg, full)
+    loc = _resolve(cfg, body.sha)
+    full = loc.sha
+    uyum = appsha.match(cfg, loc)
+    app_sha, sha_eslesmesi, uyari = uyum.uygulama_sha, uyum.eslesme, uyum.uyari
     out = run_probe(cfg, body)
     matches = int(out.get("matches") or 0)
     raw = out.get("test_id")
@@ -310,7 +338,32 @@ def locator_probe(body: LocatorProbeBody) -> dict[str, Any]:
         "uygulama_sha": app_sha,
         "sha_eslesmesi": sha_eslesmesi,
         "uyari": uyari,
+        "farkli_yollar": uyum.farkli_yollar,
     }
+
+
+# ------------------------------------------------------------------------------ /runs/release
+
+
+class ReleaseBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    run_ids: Annotated[list[str], Field(min_length=1, max_length=100)]
+
+    @field_validator("run_ids")
+    @classmethod
+    def _ids(cls, v: list[str]) -> list[str]:
+        return [validate_run_id(r) for r in v]
+
+
+@app.post("/runs/release", dependencies=AUTH)
+def release_runs(body: ReleaseBody) -> dict[str, Any]:
+    """Kanıt koşularının `.keep` işaretini kaldırır (sahibi script kapandı/başarısız oldu).
+
+    Koşu dizini silinmez; test-runner'ın sıradaki temizliği onu `TP_RUNS_KEEP` sırasına göre
+    eler. Bilinmeyen / zaten işaretsiz koşular hata değildir (idempotent).
+    """
+    cfg = settings()
+    return {"released": [r for r in body.run_ids if release_keep(cfg.artifacts_path, r)]}
 
 
 def main() -> None:

@@ -60,7 +60,7 @@ log() { printf '[demo-serve] %s\n' "$*" >&2; }
 run_dir="$(mktemp -d "${TMPDIR:-/tmp}/tp-demo-serve.XXXXXX")"
 api_pid=""
 web_pid=""
-# shellcheck disable=SC2317  # trap ile çağrılır
+# shellcheck disable=SC2317,SC2329  # trap ile çağrılır
 cleanup() {
   local code=$?
   trap - EXIT INT TERM

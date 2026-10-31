@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { hataMesaji, mockZorunlu } from "../api/http";
-import { useOturum, varsayilanSayfa } from "../auth";
+import { useOturum } from "../auth";
 
 export function Giris() {
   const { kullanici, girisYap } = useOturum();
@@ -13,7 +13,8 @@ export function Giris() {
   const konum = useLocation();
   const hedef = (konum.state as { from?: string } | null)?.from;
 
-  if (kullanici) return <Navigate to={hedef ?? varsayilanSayfa(kullanici.rol)} replace />;
+  // Rol bazlı açılış "/" (AnaSayfa) üzerinden: canlı derlemede core'un sunduğu ekranlara göre seçilir.
+  if (kullanici) return <Navigate to={hedef ?? "/"} replace />;
 
   async function gonder(e: FormEvent) {
     e.preventDefault();
@@ -24,8 +25,8 @@ export function Giris() {
     setGonderiliyor(true);
     setHata(null);
     try {
-      const k = await girisYap(ad.trim(), parola);
-      git(hedef ?? varsayilanSayfa(k.rol), { replace: true });
+      await girisYap(ad.trim(), parola);
+      git(hedef ?? "/", { replace: true });
     } catch (err) {
       setHata(hataMesaji(err));
     } finally {
@@ -39,7 +40,7 @@ export function Giris() {
         <div className="marka marka-buyuk">
           <span className="marka-isaret" aria-hidden="true" />
           <span>
-            AI Testing Probe <span className="marka-alt">Kontrol Kulesi</span>
+            AI Testing Probe <span className="marka-alt">İnceleme portalı</span>
           </span>
         </div>
         <h1>Oturum aç</h1>

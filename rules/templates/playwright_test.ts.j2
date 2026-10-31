@@ -1,0 +1,40 @@
+{#-
+  CasesToCode şablonu (TEKNIK-TASARIM §8.4 adım 4; Constitution IV).
+
+  Model TypeScript yazmaz: bu dosya yalnızca uygulamada doğrulanmış ve deterministik kontrollerden
+  geçmiş adım → page object eşlemesinden render edilir (tp_core.features.codegen.render).
+  - Her değer `ts` süzgecinden geçer: JSON literal (tür doğrulanmış str/sayı/bool; NaN yok).
+  - Fikstür/metot adları `ident` süzgecinden geçer (tanımlayıcı dilbilgisi + sembol tablosu).
+  - Yorum satırları `comment` süzgecinden geçer (tek satır, kontrol karakteri yok).
+  - Çıktı deterministiktir: zaman damgası, rastgele değer yok (golden testi:
+    core/tests/unit/features/codegen/golden/).
+  - demo-app/e2e/eslint.config.js "tests/generated/**" sözleşmesi: yalnızca ../fixtures'tan
+    `test`; ham page/expect yok; dal/döngü/şablon dizesi/test.step yok; `test.use` yalnızca
+    `dealerUsername`.
+-#}
+// AI-generated — AI Testing Probe (CasesToCode). Elle düzenlemeyin; değişiklik case'in yeniden
+// onayı ve yeniden üretimle yapılır.
+// Case: {{ case_ref | comment }} ({{ case_id | comment }}) · Story: {{ story_key | comment }} · Jira Test: {{ test_key | comment }}
+// Onaylı case hash: {{ case_hash | comment }}
+// Eşleme: verify_and_map · mod: {{ mode | comment }} · bundle: {{ bundle_hash | comment }}
+// Eşleme hash: {{ mapping_hash | comment }} · şablon: {{ template_hash | comment }}
+import { test } from "../fixtures";
+{% if dealer %}
+
+test.use({ dealerUsername: {{ dealer | ts }} });
+{% endif %}
+
+test.describe({{ describe | ts }}, () => {
+  test({{ title | ts }}, { tag: {{ tags | ts }} }, async ({ {{ fixtures | join(", ") }} }) => {
+{% for step in steps %}
+    // {{ step.label | comment }}
+{% for call in step.calls %}
+    await {{ call.fixture | ident }}.{{ call.method | ident }}({{ call.args | args }});
+{% endfor %}
+{% endfor %}
+    // Beklenen sonuç (değerler onaylı case metninden)
+{% for call in expects %}
+    await {{ call.fixture | ident }}.{{ call.method | ident }}({{ call.args | args }});
+{% endfor %}
+  });
+});

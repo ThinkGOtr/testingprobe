@@ -2,10 +2,17 @@
 # Playwright MCP (Streamable HTTP on :8931). No vision caps (constitution V); the browser may only
 # request MCP_ALLOWED_ORIGINS (required: an empty value would mean "allow all").
 set -eu
+# Sunucu yalnızca imajın `mcp` hedefinde vardır (/opt/mcp); ci hedefinde (toolchain-worker,
+# test-runner, CI) bilerek yoktur — anayasa II.
+MCP_CLI="${TP_MCP_CLI:-/opt/mcp/node_modules/@playwright/mcp/cli.js}"
+[ -f "$MCP_CLI" ] || {
+  echo "Playwright MCP bu imajda yok ($MCP_CLI): playwright-mcp servisi imajın 'mcp' hedefinden derlenmeli (docker build --target mcp)." >&2
+  exit 1
+}
 : "${MCP_ALLOWED_ORIGINS:?MCP_ALLOWED_ORIGINS must be set}"
 # Host header allowlist (DNS rebinding). Compose sets the in-network name; default stays local only.
 : "${MCP_ALLOWED_HOSTS:=localhost:8931,127.0.0.1:8931}"
-exec node /opt/toolchain/node_modules/@playwright/mcp/cli.js \
+exec node "$MCP_CLI" \
   --headless \
   --browser chromium \
   --host 0.0.0.0 \

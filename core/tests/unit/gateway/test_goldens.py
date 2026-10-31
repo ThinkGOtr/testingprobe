@@ -77,7 +77,20 @@ def test_golden_matches_schema_and_name(purpose: str, path: Path, golden: dict) 
     )
     assert not errors, [e.message for e in errors]
     for step in golden.get("steps", []):
-        assert set(step) == {"tool", "args", "result_summary", "allowed"}
+        # `hedef`: ref alan adımın rol/ad/kapsamı (REPLAY ref'i canlı snapshot'tan çözer).
+        assert (
+            {"tool", "args", "result_summary", "allowed"}
+            <= set(step)
+            <= {
+                "tool",
+                "args",
+                "result_summary",
+                "allowed",
+                "hedef",
+            }
+        )
+        if "hedef" in step:
+            assert set(step["hedef"]) <= {"rol", "ad", "kapsam"} and step["hedef"]["rol"]
 
 
 # ------------------------------------------------------------------ kanıt sürüklenmesi
@@ -524,8 +537,16 @@ def test_demo_a_goldens_declare_their_input() -> None:
 @pytest.mark.parametrize(("purpose", "path", "golden"), DECLARED, ids=_ids(DECLARED))
 def test_input_match_declarations_are_well_formed(purpose: str, path: Path, golden: dict) -> None:
     spec = golden["input_match"]
-    assert set(spec) <= {"sources", "acceptance_criteria", "contains"}, spec
-    assert spec.get("acceptance_criteria") is not None or spec.get("contains"), "boş beyan"
+    assert set(spec) <= {"sources", "acceptance_criteria", "contains", "case_text"}, spec
+    assert (
+        spec.get("acceptance_criteria") is not None or spec.get("contains") or spec.get("case_text")
+    ), "boş beyan"
+    if purpose == "verify_and_map":
+        # Kod üretimi golden'ı yalnızca kendi case bloğunun TAM metnine eşleşir (contains değil).
+        case = golden["case"]
+        assert spec["sources"] == [f"case:{case['jira_key']}-C{case['sira_no']}"], spec
+        assert spec["case_text"].startswith(f"Başlık: {case['title']}\n"), spec
+        assert "contains" not in spec
     for ac in spec.get("acceptance_criteria") or []:
         assert re.match(r"AC\d+: \S", ac), ac
     if path.stem.startswith("TPD-") and purpose != "verify_and_map":

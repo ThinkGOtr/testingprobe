@@ -18,7 +18,9 @@ REF="${E2E_REF:-main}"
 svc_running test-runner || die "test-runner çalışmıyor (make up)"
 
 # shellcheck disable=SC2016  # $… konteyner içindeki kabukta açılır
-compose exec -T -e E2E_REF="$REF" -e E2E_BREAK_VERIFY="${E2E_BREAK_VERIFY:-0}" test-runner bash -euo pipefail -c '
+# tp-run-lock: test-runner /run ile aynı süreçler arası kilit; smoke koşusu boyunca /run sırada bekler.
+compose exec -T -e E2E_REF="$REF" -e E2E_BREAK_VERIFY="${E2E_BREAK_VERIFY:-0}" test-runner \
+  /opt/toolchain/bin/tp-run-lock --wait 600 -- bash -euo pipefail -c '
   W="$(mktemp -d /tmp/tp-e2e-smoke.XXXXXX)"
   trap "rm -rf \"$W\"" EXIT
   git -c safe.directory="*" --git-dir="$TP_FORGE_PATH" archive "$E2E_REF" e2e | tar -C "$W" -xf -

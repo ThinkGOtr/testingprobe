@@ -7,6 +7,19 @@
 # Page object kütüphanesi ve locator'lar (onarım PR'ları buraya dokunur).
 /demo-app/e2e/pages/        @gokhansipahi
 
+# Kod üretiminin (CasesToCode) şablondan yazdığı testler: bot PR'ı → insan kod sahibi onayı.
+/demo-app/e2e/tests/generated/  @gokhansipahi
+
+# Kalite kapılarının dayandığı yapılandırma (Constitution IV: tsc --strict, eslint
+# --no-inline-config; testDir/proje ayarları). PR bu dosyaları değiştirerek kapıyı gevşetemesin.
+# tsconfig.json ayrıca ast-guard'da (pr modu) strict için denetlenir.
+/demo-app/e2e/tsconfig.json          @gokhansipahi
+/demo-app/e2e/eslint.config.js       @gokhansipahi
+/demo-app/e2e/playwright.config.ts   @gokhansipahi
+/demo-app/e2e/package.json           @gokhansipahi
+/demo-app/e2e/package-lock.json      @gokhansipahi
+/demo-app/ci/                        @gokhansipahi
+
 # CI, workflow'lar ve bu dosya.
 /.github/                   @gokhansipahi
 

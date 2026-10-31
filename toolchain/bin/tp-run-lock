@@ -1,0 +1,60 @@
+#!/opt/toolchain/.venv/bin/python
+"""tp-run-lock [--wait SN] -- KOMUT [ARG…]
+
+Komutu test-runner'ın koşu kilidi (TP_RUN_LOCK_PATH, flock) altında çalıştırır: test-runner'ın
+/run koşularıyla (yerel CI, gece koşusu, kod üretimi kontrolleri) aynı anda koşmaz. Aynı bayiler
+(bayi1/bayi2) paylaşıldığı için `make e2e-smoke` gibi elle başlatılan koşular bunu kullanmalıdır:
+
+  docker compose exec -T test-runner tp-run-lock --wait 600 -- bash -c '…playwright test…'
+
+Kilit dosya tanımlayıcısı komuta devredilir (exec): komut bitene dek tutulur, süreç ölünce düşer.
+Çıkış: komutun çıkış kodu; kilit alınamazsa 75 (EX_TEMPFAIL), kullanım hatası 64.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+
+from toolchain_common import runlock
+from toolchain_common.settings import settings
+
+
+def main(argv: list[str]) -> int:
+    wait = settings().run_queue_wait_s
+    args = list(argv)
+    if args[:1] == ["--wait"] and len(args) >= 2:
+        try:
+            wait = float(args[1])
+        except ValueError:
+            print("tp-run-lock: --wait sayı olmalı", file=sys.stderr)
+            return 64
+        args = args[2:]
+    if args[:1] == ["--"]:
+        args = args[1:]
+    if not args:
+        print(__doc__, file=sys.stderr)
+        return 64
+    path = settings().run_lock_path
+    print(f"tp-run-lock: koşu kilidi bekleniyor ({path}, en çok {int(wait)} sn)…", file=sys.stderr)
+    try:
+        fd = runlock.acquire(path, wait)
+    except runlock.RunLockTimeout:
+        print(
+            "tp-run-lock: başka bir test koşusu sürüyor (yerel CI / kod üretimi); "
+            "daha sonra yeniden deneyin.",
+            file=sys.stderr,
+        )
+        return 75
+    os.set_inheritable(fd, True)
+    os.environ["TP_RUN_LOCK_HELD"] = "1"
+    try:
+        os.execvp(args[0], args)
+    except OSError as exc:
+        print(f"tp-run-lock: {args[0]} çalıştırılamadı: {exc}", file=sys.stderr)
+        return 127
+    return 0  # pragma: no cover
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

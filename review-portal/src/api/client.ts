@@ -10,6 +10,7 @@ import {
   yayinOnizlemeUyarla,
   yayinSonucuUyarla,
 } from "./uyum";
+import { kontrolKulesiUyarla, kosuDetayUyarla, kosuUyarla, scriptDetayUyarla, scriptUyarla } from "./uyumDemoB";
 import type {
   Bulgu,
   BulguKararGirdisi,
@@ -21,6 +22,7 @@ import type {
   Gereksinim,
   GereksinimDetay,
   MergeGirdisi,
+  RetNedeni,
   HataAnalizi,
   IsYaniti,
   KontrolKulesi,
@@ -43,6 +45,8 @@ const yol = (s: string) => encodeURIComponent(s);
 const nesne = (x: unknown) => (x && typeof x === "object" ? (x as Record<string, unknown>) : {});
 /** Case işlemleri case listesine bağlıdır: liste çekirdekten geliyorsa işlem örnek veriye düşmez. */
 const CASE_KAYNAGI = ["GET", "/cases"] as const;
+/** Script işlemleri (kırarak doğrula, merge) script listesine bağlıdır (gerçek script örnek veriye düşmez). */
+const SCRIPT_KAYNAGI = ["GET", "/scripts"] as const;
 
 export const api = {
   // Oturum
@@ -107,17 +111,43 @@ export const api = {
 
   // Kod üretimi
   kodUret: (caseIds: string[]) => istek<IsYaniti>("POST", "/code/generate", { govde: { case_ids: caseIds } }),
-  scriptler: () => istek<Script[]>("GET", "/scripts"),
-  script: (id: string) => istek<ScriptDetay>("GET", `/scripts/${yol(id)}`),
-  kirarakDogrula: (id: string) => istek<IsYaniti>("POST", `/scripts/${yol(id)}/break-verify`),
+  scriptler: async (): Promise<Script[]> => listeUyarla(await istek<unknown>("GET", "/scripts"), scriptUyarla),
+  script: async (id: string): Promise<ScriptDetay> => scriptDetayUyarla(nesne(await istek<unknown>("GET", `/scripts/${yol(id)}`))),
+  kirarakDogrula: (id: string) => istek<IsYaniti>("POST", `/scripts/${yol(id)}/break-verify`, { kaynak: SCRIPT_KAYNAGI }),
   /** `pr`: incelenen PR; içerik hash'i ve head sha'sı merge'e bağlanır. */
-  prBirlestir: (pr: Pick<PullRequest, "number"> & MergeGirdisi) =>
-    istek<PullRequest>("POST", `/prs/${pr.number}/merge`, { govde: { icerik_hash: pr.icerik_hash, head_sha: pr.head_sha } }),
+  /**
+   * İnsan onaylı merge. core merge'i iş olarak yapar (`codegen.merge`; 202 `{job_id, durum, mesaj}`)
+   * ya da PR'ı döner; ikisi de `{number, birlesti, mesaj}`'a indirgenir. "Birleştirildi" yalnızca
+   * yanıt PR'ın merged olduğunu söylüyorsa denir; iş kuyruğa alındıysa SSE `pr.merged` beklenir.
+   */
+  /** Geride kalan bot PR dalını main'e taşır (`codegen.update_branch`; 202). */
+  prDaliGuncelle: (number: number) => istek<IsYaniti>("POST", `/prs/${number}/update-branch`, { kaynak: SCRIPT_KAYNAGI }),
+  /** Script review reddi: değişiklik iste / reddet (ret nedeni sabit taksonomiden). */
+  prReview: (
+    number: number,
+    g: { karar: "degisiklik_iste" | "reddet"; ret_nedeni: RetNedeni; icerik_hash: string; head_sha: string; not?: string | null },
+  ) => istek<unknown>("POST", `/prs/${number}/review`, { govde: g, kaynak: SCRIPT_KAYNAGI }),
+  prBirlestir: async (pr: Pick<PullRequest, "number"> & MergeGirdisi): Promise<{ number: number; birlesti: boolean; mesaj: string }> => {
+    const g = nesne(
+      await istek<unknown>("POST", `/prs/${pr.number}/merge`, {
+        govde: { icerik_hash: pr.icerik_hash, head_sha: pr.head_sha, ...(pr.onay_notu ? { onay_notu: pr.onay_notu } : {}) },
+        kaynak: SCRIPT_KAYNAGI,
+      }),
+    );
+    const ham = nesne(g.pr).number !== undefined ? nesne(g.pr) : g;
+    const birlesti = ham.durum === "merged" || ham.state === "merged" || g.durum === "merged";
+    const mesaj = typeof g.mesaj === "string" && g.mesaj
+      ? g.mesaj
+      : birlesti
+        ? `PR #${pr.number} birleştirildi.`
+        : `PR #${pr.number} için merge isteği alındı; forge birleştirince ekran güncellenir.`;
+    return { number: pr.number, birlesti, mesaj };
+  },
 
   // CI ve koşular
   ciTetikle: (tetik: "deploy" | "nightly") => istek<IsYaniti>("POST", "/ci/trigger", { govde: { tetik } }),
-  kosular: () => istek<Kosu[]>("GET", "/runs"),
-  kosu: (id: string) => istek<KosuDetay>("GET", `/runs/${yol(id)}`),
+  kosular: async (): Promise<Kosu[]> => listeUyarla(await istek<unknown>("GET", "/runs"), kosuUyarla),
+  kosu: async (id: string): Promise<KosuDetay> => kosuDetayUyarla(nesne(await istek<unknown>("GET", `/runs/${yol(id)}`))),
 
   // Triage
   hata: (id: string) => istek<HataAnalizi>("GET", `/failures/${yol(id)}`),
@@ -130,7 +160,7 @@ export const api = {
     istek<BugTaslagi>("POST", `/bug-drafts/${yol(id)}/decision`, { govde: g }),
 
   // Kontrol Kulesi ve denetim
-  kontrolKulesi: () => istek<KontrolKulesi>("GET", "/control-tower"),
+  kontrolKulesi: async (): Promise<KontrolKulesi> => kontrolKulesiUyarla(await istek<unknown>("GET", "/control-tower")),
   denetim: async (dogrula = true): Promise<DenetimYaniti> =>
     denetimiUyarla(await istek<unknown>("GET", "/audit", { sorgu: { verify: dogrula } })),
 

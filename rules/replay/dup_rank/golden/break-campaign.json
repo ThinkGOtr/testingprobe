@@ -8,11 +8,11 @@
       {
         "key": "TPD-5",
         "rank": 1,
-        "likelihood": "high",
-        "rationale": "Aynı ürün (Portakal Gazozu 1L, 7 adet), aynı alan (sepetteki indirim satırı) ve aynı adımlar; TPD-5 beklenen 25,00 TL indirimin farklı göründüğünü anlatıyor."
+        "likelihood": "medium",
+        "rationale": "Aynı ürün (Portakal Gazozu 1L) ve aynı alan (sepetteki kampanya/indirim satırı), ama farklı belirti: TPD-5 6 adette erken verilen bedavayı (bedava 1 adet, indirim 25,00 TL) anlatıyor; bu koşuda kampanya hiç uygulanmıyor (bedava 0 adet, indirim 0,00 TL). İlişkili olabilir, aynı hata değil."
       }
     ],
-    "recommendation": "link",
-    "link_key": "TPD-5"
+    "recommendation": "new",
+    "link_key": null
   }
 }

@@ -259,7 +259,8 @@ def test_verify_and_map_matches_the_approved_case_even_as_ascii_json(rules_dir) 
     cases = load_golden("case_generation", "TPD-1")["output"]["cases"]
     for n, case in enumerate(cases, start=1):
         # json.dumps varsayılanı ensure_ascii=True: "ü" → "ü"; eşleşme yine bulmalı.
-        msg = ModelMessage(role="user", content=f"Onaylı case:\n{json.dumps(case)}")
+        block = wrap_untrusted(json.dumps(case), source=f"case:TPD-1-C{n}")
+        msg = ModelMessage(role="user", content=f"Onaylı case:\n{block}")
         result = gw.run_agent(
             "verify_and_map",
             "verify-and-map",

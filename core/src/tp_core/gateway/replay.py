@@ -34,6 +34,14 @@
   `<jira_key>-C<sira_no>` (ör. `TPD-1-C2`, verify_and_map), tutarlılık denetiminin 2. ve sonraki
   turları `<jira_key>-r2` (düzeltilmiş doküman). Çağıran `replay_key={"name": golden_name(...)}`
   verir.
+- Senaryo golden'ları (`golden/<senaryo>/<ad>.json`): aynı ad için analistin başka bir kararla
+  vardığı belge (ör. `f2-kod-hatasi/`: F2 `code_defect`, AC2 değişmez). Ana golden ve tur
+  golden'ları uymazsa senaryo dizinleri ada göre sıralı denenir; yalnızca girdi beyanı
+  (`input_match`) taşıyan ve girdiye UYAN senaryo golden'ı döner (`golden_matched`; kayıttaki
+  `golden` = `<senaryo>/<ad>`, `ek.replay_kaynagi` gerçek dosya). Beyansız ya da uymayan senaryo
+  golden'ı hiçbir zaman döndürülmez (iskalama yine ana golden'ın politikasıyla). `f2-kod-hatasi`
+  demo'nun ANA senaryosudur (Demo-B'nin "defect adayı" anı); `golden/*.json` F2 `fix_doc`
+  alternatifini ve senaryonun değişmeyen case'lerini taşır, CI/portal kopyaları değişmez.
 """
 
 from __future__ import annotations
@@ -71,6 +79,8 @@ ORIGIN_MODEL_RECORDING = "model_kaydi"
 ORIGIN_HAND_PREPARED = "elle_hazirlanmis"
 ORIGIN_NEUTRAL = "notr_yedek"
 _GOLDEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+# Senaryo golden'ı adı: `<senaryo>/<ad>` (tek düzey alt dizin).
+_SCENARIO_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _PURPOSE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 _ROUND_RE = re.compile(r"-r(\d+)$")
 _CASE_RE = re.compile(r"-C\d+$")
@@ -137,9 +147,17 @@ class ReplayStore:
         return self._dir(purpose) / f"{key}.json"
 
     def golden_path(self, purpose: str, name: str) -> Path:
-        if not _GOLDEN_RE.match(name) or ".." in name:
+        """Golden dosyası; `name` düz (`TPD-1-C3`) ya da senaryo adı (`f2-kod-hatasi/TPD-1-C3`)."""
+        if not (_GOLDEN_RE.match(name) or _SCENARIO_NAME_RE.match(name)) or ".." in name:
             raise GatewayConfigError(f"Geçersiz golden adı: {name!r}")
         return self._dir(purpose) / "golden" / f"{name}.json"
+
+    def scenarios(self, purpose: str) -> list[str]:
+        """Amacın senaryo dizinleri (`golden/<senaryo>/`), ada göre sıralı."""
+        folder = self._dir(purpose) / "golden"
+        if not folder.is_dir():
+            return []
+        return sorted(p.name for p in folder.iterdir() if p.is_dir() and _GOLDEN_RE.match(p.name))
 
     def lookup(
         self,
@@ -149,7 +167,8 @@ class ReplayStore:
         messages: Sequence[Any] | None = None,
     ) -> tuple[dict[str, Any], ReplayMode, Path]:
         """Birebir kayıt → eşleşen golden (`replay`) → aynı story'nin sonraki tur golden'ı
-        (`replay`) → iskalama (`replay_miss`).
+        (`replay`) → girdiye uyan senaryo golden'ı (`golden/<senaryo>/`, `replay`) → iskalama
+        (`replay_miss`).
 
         Eşleşen golden'ın döndürülen kopyasında `provenance = "golden_matched"`; eşleşmeyen
         golden'da `_mismatch` (neden listesi, `ai_call.ek.replay_eslesme`) bulunur. Golden girdi
@@ -173,6 +192,10 @@ class ReplayStore:
             sibling = _read(path)
             if "input_match" in sibling and not self.golden_mismatches(sibling, messages):
                 return {**sibling, "provenance": MATCHED, "golden": name}, "replay", path
+        for name, path in self._scenario_candidates(purpose, golden_name):
+            variant = _read(path)
+            if "input_match" in variant and not self.golden_mismatches(variant, messages):
+                return {**variant, "provenance": MATCHED, "golden": name}, "replay", path
         if self.strict:
             raise ReplayMiss(purpose, key, golden_name)
         if record is None:
@@ -205,17 +228,24 @@ class ReplayStore:
 
         Case düzeyi (`TPD-1-C2`) ve zaten tur golden'ı olan adlar için boş: 2. turun belgesi
         düzeltilmemişse 1. tur golden'ına geri düşülmez (dürüst REPLAY-MISS)."""
-        if _ROUND_RE.search(golden_name) or _CASE_RE.search(golden_name):
+        return _round_files(self._dir(purpose) / "golden", golden_name)
+
+    def _scenario_candidates(self, purpose: str, golden_name: str) -> list[tuple[str, Path]]:
+        """Senaryo dizinlerindeki aynı adlı golden'lar ve (1. tur story adı için) onların tur
+        golden'ları: `[(<senaryo>/<ad>, yol), …]`, senaryo sırasıyla.
+
+        Senaryo adı (`f2-kod-hatasi/TPD-1`) ile çağrılırsa aday yoktur: senaryolar iç içe geçmez."""
+        if "/" in golden_name:
             return []
-        folder = self._dir(purpose) / "golden"
-        if not folder.is_dir():
-            return []
-        found: list[tuple[int, str, Path]] = []
-        for path in folder.glob(f"{glob_escape(golden_name)}-r*.json"):
-            m = _ROUND_RE.search(path.stem)
-            if m and path.stem == f"{golden_name}-r{m.group(1)}":
-                found.append((int(m.group(1)), path.stem, path))
-        return [(name, path) for _, name, path in sorted(found)]
+        out: list[tuple[str, Path]] = []
+        for scenario in self.scenarios(purpose):
+            folder = self._dir(purpose) / "golden" / scenario
+            direct = folder / f"{golden_name}.json"
+            if direct.is_file():
+                out.append((f"{scenario}/{golden_name}", direct))
+            for name, path in _round_files(folder, golden_name):
+                out.append((f"{scenario}/{name}", path))
+        return out
 
     def miss_path(self, purpose: str) -> Path:
         """Amacın REPLAY-MISS politikası/nötr yedeği (yoksa eşleşmeyen golden çıktısı döner)."""
@@ -327,6 +357,24 @@ def mode_label(mode: str, model: str | None = None) -> str:
     if mode == "replay":
         return "REPLAY (hazırlanmış örnek çıktı; canlı model değil)"
     return mode
+
+
+def _round_files(folder: Path, golden_name: str) -> list[tuple[str, Path]]:
+    """`folder` içindeki `<golden_name>-rN.json` dosyaları, N sırasıyla. Tur ya da case adı (veya
+    senaryo adı) için boş: geriye ya da case'ler arasında atlanmaz."""
+    if (
+        "/" in golden_name
+        or _ROUND_RE.search(golden_name)
+        or _CASE_RE.search(golden_name)
+        or not folder.is_dir()
+    ):
+        return []
+    found: list[tuple[int, str, Path]] = []
+    for path in folder.glob(f"{glob_escape(golden_name)}-r*.json"):
+        m = _ROUND_RE.search(path.stem)
+        if m and path.stem == f"{golden_name}-r{m.group(1)}":
+            found.append((int(m.group(1)), path.stem, path))
+    return [(name, path) for _, name, path in sorted(found)]
 
 
 def glob_escape(name: str) -> str:

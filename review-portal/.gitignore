@@ -4,3 +4,4 @@ dist/
 e2e/ekranlar/
 e2e/sonuclar/
 playwright-report/
+*.tsbuildinfo

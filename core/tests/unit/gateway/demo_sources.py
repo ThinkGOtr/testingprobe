@@ -42,8 +42,25 @@ def goldens(purpose: str | None = None) -> Iterator[tuple[str, Path, dict[str, A
 
 
 def load_golden(purpose: str, name: str) -> dict[str, Any]:
+    """`name` düz ad (`TPD-1`) ya da senaryo adı (`f2-kod-hatasi/TPD-1`)."""
     path = RULES / "replay" / purpose / "golden" / f"{name}.json"
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def scenario_goldens(purpose: str | None = None) -> Iterator[tuple[str, Path, dict[str, Any]]]:
+    """Senaryo golden'ları (`<amaç>/golden/<senaryo>/<ad>.json`); `goldens()` bunları içermez
+    (CI/portal kopyaları yalnızca ana golden'ları okur)."""
+    root = RULES / "replay"
+    for path in sorted(root.glob("*/golden/*/*.json")):
+        p = path.parent.parent.parent.name
+        if purpose is None or p == purpose:
+            yield p, path, json.loads(path.read_text(encoding="utf-8"))
+
+
+def golden_ref(path: Path) -> str:
+    """Golden dosyasının geçitteki adı: `TPD-1-C3` ya da `f2-kod-hatasi/TPD-1-C3`."""
+    folder = next(p for p in path.parents if p.name == "golden")
+    return path.relative_to(folder).with_suffix("").as_posix()
 
 
 # ------------------------------------------------------------------ demo-app API (saf fonksiyonlar)

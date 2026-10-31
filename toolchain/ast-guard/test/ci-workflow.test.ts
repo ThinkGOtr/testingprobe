@@ -1,7 +1,7 @@
 // .github/workflows/ci.yml sözleşme testleri: workflow'un başka şeritlerin dosyalarıyla uyumu.
 // (GitHub Actions burada koşturulamaz; kayma — rapor yolu, betik adı, imaj ön koşulu — yakalanır.)
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -25,25 +25,148 @@ function job(name: string): string {
   return ci.slice(start, next < 0 ? undefined : start + 1 + next);
 }
 
-describe("ci.yml ↔ Playwright raporlayıcı yolları", () => {
-  it("HTML raporu, playwright.config.ts'teki outputFolder ile aynı yoldan yüklenir", () => {
-    const cfg = readFileSync(join(REPO_ROOT, "demo-app", "e2e", "playwright.config.ts"), "utf8");
-    const m = /\["html",\s*\{\s*outputFolder:\s*"([^"]+)"/.exec(cfg);
-    assert.ok(m?.[1], "playwright.config.ts html raporlayıcısı outputFolder tanımlamalı");
-    const folder = m[1].replace(/^\.\//, "").replace(/\/$/, "");
+describe("ci.yml ↔ yerel koşu ile aynı artefakt düzeni (ci-runs alımı)", () => {
+  it("sonuçlar github-ci-results.sh ile e2e/results'tan toplanır; artefakt kökü tp-results/", () => {
+    const collect = step("Sonuçları topla (yerel koşu biçimi)");
+    assert.match(collect, /if: always\(\) && env\.RUN_TESTS == 'true'/);
+    assert.match(collect, /bash scripts\/github-ci-results\.sh --out tp-results/);
+    assert.match(collect, /--src "\$E2E_ROOT\/results"/);
+    assert.match(collect, /--exit-code "\$\{EXIT_A:-\$\{EXIT_B:-\}\}"/);
+    assert.match(ci, /E2E_ROOT: demo-app\/e2e\n/);
     const upload = step("Artefaktlar");
-    assert.ok(upload.includes(`demo-app/e2e/${folder}/`), `artefakt yolları demo-app/e2e/${folder}/ içermeli`);
-    assert.ok(!upload.includes("playwright-report/"), "eski (yanlış) playwright-report/ yolu kalmamalı");
+    assert.match(upload, /name: test-local-results/);
+    assert.match(upload, /path: tp-results\/\n/);
+    assert.match(upload, /if-no-files-found: error/);
+    assert.ok(!upload.includes("demo-app/e2e/results"), "ham yol yüklenmez (artefakt kökü düz olmalı)");
+    assert.match(step("Playwright HTML raporu"), /name: playwright-report[\s\S]*path: tp-results\/playwright-report\//);
   });
 
-  it("junit ve json çıktıları da aynı adlarla yüklenir", () => {
-    const cfg = readFileSync(join(REPO_ROOT, "demo-app", "e2e", "playwright.config.ts"), "utf8");
-    const upload = step("Artefaktlar");
-    for (const re of [/\["junit",\s*\{\s*outputFile:\s*"([^"]+)"/, /\["json",\s*\{\s*outputFile:\s*"([^"]+)"/]) {
-      const out = re.exec(cfg)?.[1];
-      assert.ok(out, re.source);
-      assert.ok(upload.includes(`demo-app/e2e/${out}`), out);
+  it("test adımları çıkış kodunu çıktı olarak verir (Yol A ve B)", () => {
+    for (const name of ["Testler (toolchain imajında)", "Testler (runner üzerinde)"]) {
+      const s = step(name);
+      assert.match(s, /tee run-checks\.log \|\| rc=\$\{PIPESTATUS\[0\]\}/, name);
+      assert.match(s, /echo "exit_code=\$rc" >> "\$GITHUB_OUTPUT"/, name);
+      assert.match(s, /exit "\$rc"/, name);
     }
+    assert.match(step("Testler (toolchain imajında)"), /id: tests_a/);
+    assert.match(step("Testler (runner üzerinde)"), /id: tests_b/);
+  });
+});
+
+describe("ci.yml tetikler ve çekirdek bağlantısı", () => {
+  const on = ci.slice(ci.indexOf("\non:\n"), ci.indexOf("\npermissions:\n"));
+
+  it("pull_request, push, schedule, repository_dispatch[deploy], workflow_dispatch", () => {
+    for (const t of ["pull_request:", "push:", "schedule:", "repository_dispatch:", "workflow_dispatch:"]) {
+      assert.ok(on.includes(`\n  ${t}`), t);
+    }
+    assert.match(on, /repository_dispatch:\n {4}types: \[deploy\]/);
+    assert.match(on, /- cron: "0 2 \* \* \*"/);
+    assert.match(on, /tetik:[\s\S]*options: \[manual, nightly, deploy\]/);
+    assert.match(on, /istek_id:/);
+  });
+
+  it("istek kimliği koşu adında; biçimi doğrulanır; çekirdek koşuları iptal edilmez", () => {
+    assert.match(ci, /run-name: >-[\s\S]*format\('ci deploy \[\{0\}\]', github\.event\.client_payload\.istek_id/);
+    assert.match(ci, /format\('ci \{0\} \[\{1\}\]', inputs\.tetik, inputs\.istek_id/);
+    assert.match(ci, /TP_ISTEK_ID: \$\{\{ github\.event\.client_payload\.istek_id \|\| github\.event\.client_payload\.tp_run_id \|\| inputs\.istek_id \|\| '' \}\}/);
+    assert.match(step("Karar"), /\^\[A-Za-z0-9\._-\]\{1,64\}\$/);
+    assert.match(ci, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/);
+  });
+
+  it("deploy tetiğinde client_payload.ref checkout edilir (test-local, sauce)", () => {
+    for (const j of ["test-local", "sauce"]) {
+      assert.match(job(j), /ref: \$\{\{ github\.event\.client_payload\.ref \|\| '' \}\}/, j);
+    }
+  });
+
+  it("üretilen testler (e2e/tests/generated) değişiklik tespitinde ve özette", () => {
+    assert.match(ci, /GENERATED_TESTS: demo-app\/e2e\/tests\/generated\n/);
+    assert.match(job("changes"), /generated:\n\s+- 'demo-app\/e2e\/tests\/generated\/\*\*'/);
+    assert.match(job("changes"), /- 'demo-app\/\*\*'/, "demo-app/** test-local'i tetikler (generated dahil)");
+  });
+
+  it("CI'da model/ajan yok (anayasa II)", () => {
+    const code = ci.replace(/^\s*#.*$/gm, "");
+    assert.doesNotMatch(code, /ANTHROPIC_API_KEY|TP_MODEL_MODE|playwright-mcp|PLAYWRIGHT_MCP_URL/);
+  });
+});
+
+describe("ci.yml Sauce → sauce.json", () => {
+  const j = job("sauce");
+
+  it("kimlik yoksa da checkout + sauce.json (atlandi) + artefakt", () => {
+    const co = j.slice(j.indexOf("- name: Checkout"));
+    assert.doesNotMatch(co.slice(0, co.indexOf("\n      - name: ", 1)), /if:/, "checkout koşulsuz");
+    const s = step("Sauce özeti ve sauce.json");
+    assert.match(s, /if: always\(\)/);
+    assert.match(s, /bash scripts\/github-sauce-summary\.sh --out tp-sauce/);
+    assert.match(s, /--skipped "Sauce kimliği/);
+    assert.match(s, /--report demo-app\/results\/sauce\/saucectl-report\.json/);
+    assert.match(s, /--exit-code "\$\{SAUCE_EXIT:-\}"/);
+    const up = step("Sauce artefaktları");
+    assert.match(up, /if: always\(\)/);
+    assert.match(up, /name: sauce-results/);
+    assert.match(up, /path: tp-sauce\/\n/);
+  });
+
+  it("saucectl raporu config'teki yola yazılır; üretilen testler testMatch'te", () => {
+    const sc = readFileSync(join(REPO_ROOT, "demo-app", ".sauce", "config.yml"), "utf8");
+    assert.match(sc, /filename: results\/sauce\/saucectl-report\.json/);
+    assert.match(sc, /filename: results\/sauce\/saucectl-junit\.xml/);
+    assert.match(sc, /directory: results\/sauce\/artifacts/);
+    assert.match(sc, /testMatch: \[[^\]]*"tests\/generated\/\.\*\\\\\.spec\\\\\.ts"/);
+    assert.match(step("Sauce'ta Playwright (Chromium)"), /working-directory: demo-app/);
+    assert.match(step("Sauce'ta Playwright (Chromium)"), /echo "exit_code=\$rc" >> "\$GITHUB_OUTPUT"/);
+  });
+});
+
+describe("break-verify.yml (GitHub modunda kırarak doğrula)", () => {
+  const bv = readFileSync(join(REPO_ROOT, ".github", "workflows", "break-verify.yml"), "utf8");
+
+  it("yalnızca workflow_dispatch; aynı betik; break-verify.json artefaktı; yazma yetkisi yok", () => {
+    const on = bv.slice(bv.indexOf("\non:\n"), bv.indexOf("\npermissions:\n"));
+    assert.deepEqual([...on.matchAll(/\n {2}([a-z_]+):/g)].map((m) => m[1]), ["workflow_dispatch"]);
+    assert.match(bv, /bash demo-app\/ci\/break-verify\.sh/);
+    assert.match(bv, /bash scripts\/github-break-verify-result\.sh --out tp-break/);
+    assert.match(bv, /name: break-verify-results/);
+    assert.match(bv, /permissions:\n {2}contents: read\n\n/);
+    assert.doesNotMatch(bv.replace(/^\s*#.*$/gm, ""), /secrets\.|ANTHROPIC/);
+  });
+
+  // Belge gerçek kod yolunu anlatmalı: çekirdek bu workflow'u tetiklemez; GitHub modunda kırarak
+  // doğrulama toolchain /check + TP_FORGE_REMOTE_URL aynasıyla yapılır. Biri çekirdeği bu
+  // workflow'a bağlarsa ikinci test kırılır ve başlık/CI.md birlikte güncellenmelidir.
+  it("başlık ve CI.md çekirdeğin bu workflow'u tetiklemediğini ve ayna şartını söyler", () => {
+    const header = bv.slice(0, bv.indexOf("\nname: break-verify\n"));
+    assert.match(header, /ÇEKİRDEK BU WORKFLOW'U TETİKLEMEZ/);
+    assert.match(header, /TP_FORGE_REMOTE_URL/);
+    assert.doesNotMatch(header, /çekirdek bu workflow'u `?workflow_dispatch`? ile/i);
+    const doc = readFileSync(join(REPO_ROOT, ".github", "CI.md"), "utf8");
+    const row = doc.split("\n").find((l) => l.startsWith("| `workflows/break-verify.yml`"));
+    assert.ok(row, "CI.md break-verify satırı yok");
+    assert.match(row, /elle/);
+    assert.match(row, /çekirdek tetiklemez/);
+    assert.match(doc, /### Kırarak doğrula ve GitHub modu[\s\S]*TP_FORGE_REMOTE_URL/);
+  });
+
+  it("çekirdek kodu break-verify.yml'yi dispatch etmez / artefaktını almaz (belge ile tutarlı)", () => {
+    const src = join(REPO_ROOT, "core", "src", "tp_core");
+    const hits: string[] = [];
+    const walk = (dir: string): void => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, e.name);
+        if (e.isDirectory()) walk(p);
+        else if (e.name.endsWith(".py") && !p.endsWith(join("integrations", "forge_github.py"))) {
+          const t = readFileSync(p, "utf8");
+          if (/BREAK_VERIFY_WORKFLOW|ARTIFACT_BREAK_VERIFY|break-verify\.yml|break-verify-results/.test(t)) {
+            hits.push(p.slice(REPO_ROOT.length + 1));
+          }
+        }
+      }
+    };
+    walk(src);
+    assert.deepEqual(hits, [], "çekirdek break-verify.yml'ye bağlandı: başlığı ve CI.md'yi güncelle");
   });
 });
 
@@ -144,5 +267,36 @@ describe("ci.yml golden-drift (anayasa II: ajan bağımlılığı yok)", () => {
     assert.match(job("changes"), /- '\.github\/golden-drift\/\*\*'/);
     assert.doesNotMatch(j, /secrets\./);
     assert.doesNotMatch(j, /ANTHROPIC/);
+  });
+});
+
+describe("tsc --strict kapısının yapılandırması korunur (Constitution IV)", () => {
+  it("ast-guard tsconfig.json değişiminde de koşar (changes.pages filtresi)", () => {
+    const changes = job("changes");
+    const start = changes.indexOf("\n            pages:\n");
+    assert.ok(start >= 0, "paths-filter pages girdisi yok");
+    const pages = changes.slice(start, changes.indexOf("\n            generated:\n", start));
+    assert.match(pages, /- 'demo-app\/e2e\/pages\/\*\*'/);
+    assert.match(pages, /- 'demo-app\/e2e\/tsconfig\.json'/);
+  });
+
+  it("CODEOWNERS kalite kapısı yapılandırma dosyalarını kapsar", () => {
+    const owners = readFileSync(join(REPO_ROOT, ".github", "CODEOWNERS"), "utf8")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith("#"))
+      .map((l) => l.split(/\s+/));
+    const paths = new Set(owners.map((p) => p[0]));
+    for (const p of [
+      "/demo-app/e2e/tsconfig.json",
+      "/demo-app/e2e/eslint.config.js",
+      "/demo-app/e2e/playwright.config.ts",
+      "/demo-app/ci/",
+    ]) {
+      assert.ok(paths.has(p), `CODEOWNERS kapsamıyor: ${p}`);
+      const rel = p.replace(/^\//, "").replace(/\/$/, "");
+      assert.ok(existsSync(join(REPO_ROOT, rel)), `CODEOWNERS yolu repoda yok: ${p}`);
+    }
+    for (const o of owners) assert.ok(o.length >= 2 && o.slice(1).every((x) => x.startsWith("@")), `sahipsiz satır: ${o.join(" ")}`);
   });
 });

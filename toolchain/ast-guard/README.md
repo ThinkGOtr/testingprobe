@@ -22,7 +22,11 @@ node dist/src/cli.js --base <dizin|git-ref> --head <dizin|git-ref> \
   `role`, `name`, `intent` ve `testId` dışındaki tüm alanlar aynı kalmalı; dosya metni `testId`
   literal'leri dışında bayt bayt aynı olmalı (yorum, sıra, biçim değişikliği de reddedilir).
 - `--mode pr`: yalnızca değişen/eklenen `locators.ts` dosyalarının saf veri olduğunu doğrular ve
-  değişen `testId`'leri, eklenen/kaldırılan girişleri raporlar. `<root>/pages/**` değişmediyse no-op.
+  değişen `testId`'leri, eklenen/kaldırılan girişleri raporlar. `<root>/tsconfig.json` değiştiyse
+  tsc --strict kapısının gevşetilmediğini doğrular (Constitution IV): dosya silinemez, JSONC olarak
+  ayrışmalı, `compilerOptions.strict: true` açıkça yazılı olmalı, strict ailesinden bayrak `false`
+  yapılamaz, `extends` yasak, `files`/`include`/`exclude` tabandakiyle aynı kalmalı.
+  `<root>/pages/**` ve `<root>/tsconfig.json` değişmediyse no-op.
 
 CI'da mod `scripts/github-ast-guard-mode.sh` ile seçilir (taban daldan): `tp/repair-*` dalı, `tp-repair`
 etiketi veya `tp/case-*` dışındaki her bot PR'ı → `repair`; diğerleri → `pr`. Ayrıntı: `.github/CI.md`.
@@ -69,7 +73,8 @@ export const cart = {
 `export_added`, `export_removed`, `key_added`, `key_removed`, `field_added`, `field_removed`,
 `field_changed`, `non_testid_change`, `invalid_testid`, `parse_error`, `forbidden_statement`,
 `missing_as_const`, `non_literal_value`, `computed_key`, `spread`, `shorthand_property`, `method`,
-`mixed_object`, `entry_missing_testid`, `duplicate_key`.
+`mixed_object`, `entry_missing_testid`, `duplicate_key`, `tsconfig_deleted`, `tsconfig_invalid`,
+`tsconfig_extends`, `tsconfig_not_strict`, `tsconfig_strict_weakened`, `tsconfig_scope_changed`.
 
 ## Geliştirme
 

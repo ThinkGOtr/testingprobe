@@ -59,9 +59,10 @@ React 18 + Vite 8 + TypeScript (strict), react-router. Arayüz metinleri Türkç
   rozetin ipucunda). Mock arka uç rol kontrollerini ve insan kapılarını (PO teyidi, onay hash'i,
   kırarak doğrulamadan önce merge yok, gerekçesiz bilinçli fark yok) gerçek API gibi uygular.
 - Veri `docs/DEMO-VERISI.md` ile aynıdır (TPD-1..4, 4 bilinçli uyumsuzluk, `add-to-cart → cart-add`).
-  Kanıt yolları/satırları ve case içerikleri golden REPLAY kayıtlarından gelir; TPD-1 case'leri
-  `src/api/mock/golden/tpd1-caseler.json` kopyasıdır (golden değişince yeniden kopyalayın — komut
-  `fixtures.ts` içinde; test farkı yakalar). Jira anahtarları jira-sim seed'iyle uyumludur
+  Kanıt yolları/satırları ve case içerikleri golden REPLAY kayıtlarından gelir
+  (`src/api/mock/golden/kaynaklar.json`, `npm run sozlesme:golden`; test farkı yakalar). Örnek veri
+  ana demo yolunu (REPLAY senaryosu `f2-kod-hatasi`) gösterir: F2 kampanya ve F4 kredi limiti
+  "Kod hatalı", F1/F3 "Dokümanı düzelt"; AC2 özgün kalır, C3 (6 adet) defect adayıdır. Jira anahtarları jira-sim seed'iyle uyumludur
   (mükerrer adayı TPD-5; ürünün oluşturduğu kayıtlar TPD-8'den).
   Mock kullanıcıları: `analist`, `muhendis`, `sunucu`, `po`, `testci` (boş olmayan her parola).
 
@@ -85,5 +86,12 @@ React 18 + Vite 8 + TypeScript (strict), react-router. Arayüz metinleri Türkç
 - `POST /publish` 202 + `job_id` dönerse ekran `test_case.state` / `publish.*` olaylarıyla yenilenir.
   Dış anahtar bağlantısı: sonuçtaki `url` > önizlemedeki `jira_browse_url` > story'nin `jira_url`'i.
 - Gereksinim ekranı `unverified` ve `discarded` bulguları göstermez, yalnızca sayar (`elenen_bulgu`).
+- Bug taslağı "Olası mükerrerler": tutarlılık denetiminden (`kaynak: consistency`) gelen taslakta core
+  henüz Jira mükerrer araması yapmıyor (§8.12 JQL + dup_rank Faz 4). Aday listesi boşsa ekran "Jira'da
+  benzer açık bug bulunamadı" demez; "Mükerrer araması yapılmadı (Faz 4)" yazar, listede "Arama yapılmadı"
+  görünür ve onay panelinin üstünde Jira'yı kontrol etme uyarısı çıkar. **Sunum notu:** Demo-A'da F2
+  (kampanya) için açılan taslak, jira-sim'deki açık TPD-5'in ("Kampanya indirimi sepette yanlış
+  hesaplanıyor") mükerreridir. Sahnede "Onayla ve Jira'da aç" ile onaylamayın; mükerrer kayıt açılır.
+  Gerekirse "Mevcut kayda bağla" ile TPD-5'e bağlayın.
 - Serbest metin örnek gereksinimi (`req-ft-1`) `SERBEST` golden'larının girdisiyle aynıdır: ön inceleme,
   bulgular ve (öneriler aynen kabul edilirse) case'ler REPLAY; girdisi tutmayan serbest metin REPLAY-MISS.

@@ -116,9 +116,12 @@ doğrulanır. Birebir kayıtlar iki yolla üretilir:
   bedava (5 öde + 1 bedava)",
   AC3 "kampanyasız siparişlerde minimum 750,00 TL", AC6 korunur (kod kampanyalı sepette minimumu
   aramaz), AC4 kod hatasıdır (case `expected-code-defect`, verify_and_map'te `missing_methods`).
-- verify_and_map golden'larının tarayıcı adımları çalışan Playwright MCP'ye karşı koşturulup
-  kaydedilmiştir; hedefler oturumdan bağımsız `data-testid` seçicileridir (snapshot `ref`'leri
-  oturumlar arasında değişir). Model çıktısı kısmı elle hazırlanmıştır.
+- verify_and_map golden'larının tarayıcı adımları gerçek Playwright MCP'ye karşı (doğrulama bayisi
+  `bayi3`, `core/tests/unit/gateway/record_verify_goldens.py`) koşturulup kaydedilmiştir; hedefler
+  oturumdan bağımsız `data-testid` seçicileridir (snapshot `ref`'leri oturumlar arasında değişir).
+  Model çıktısı kısmı elle hazırlanmıştır. Analistin farklı kararıyla varılan belge için senaryo
+  golden'ları `golden/<senaryo>/` altındadır (ör. `f2-kod-hatasi/`, Demo-B'nin "defect adayı" yolu);
+  ayrıntı `replay/README.md`.
 - Ajan replay'inde kayıtlı adımlar **güncel izin listesine göre** yeniden çalıştırılır (portalda
   canlı görüntü için); listede olmayan araç replay'de de çalışmaz.
 - Mevcut golden kayıtlar elle hazırlanmıştır (`note` alanı). Canlı anahtar geldiğinde
@@ -168,6 +171,40 @@ replay adımları da yeniden çalışır.
   (`id@vN`) ve `ai_call.bundle_hash`'i yazar (constitution VIII).
 - Prompt veya kural değişikliği, değerlendirme seti canlı modelle koşturulmadan birleştirilmez
   (constitution X).
+
+## Canlı değerlendirme durumu
+
+Makine okunur kayıt: [`evaluations.yaml`](evaluations.yaml) (her prompt paketi için `version` +
+`status`: `pending` / `evaluated` / `waived`). Prompt sürümü yükseltilip kayıt güncellenmezse kayıt
+**bayat** sayılır. Birleştirme kapısı (constitution X):
+`cd core && uv run python -m tp_core.gateway.evaluation --check` → bekleyen, bayat veya eksik kayıt
+varsa çıkış 1. Bu tablo kayıtla aynı olmalıdır (`test_evaluation_status.py`).
+
+| Prompt paketi | Sürüm | Durum |
+|---|---|---|
+| `guardrails` (ortak güvenlik kuralları) | v1 | **canlı değerlendirme bekliyor** |
+| `requirement-review` | v2 | **canlı değerlendirme bekliyor** |
+| `consistency-check` | v4 | **canlı değerlendirme bekliyor** |
+| `case-generation` | v2 | **canlı değerlendirme bekliyor** |
+| `verify-and-map` (+ `verify_and_map` golden'ları) | v3 | **canlı değerlendirme bekliyor** |
+| `triage` | v1 | **canlı değerlendirme bekliyor** |
+| `bug-draft` | v1 | **canlı değerlendirme bekliyor** |
+| `dup-rank` | v1 | **canlı değerlendirme bekliyor** |
+
+Bu depoda hiçbir prompt paketi canlı modelle değerlendirilmedi (replay kayıtlarında `recording`
+üst verisi yok); Faz 3'te değişen paket `verify-and-map` v3'tür.
+
+`prompts/verify-and-map.md` v3 ve verify_and_map golden'ları bu ortamda canlı modelle
+değerlendirilmedi: API kimlik bilgisi yok (yalnızca REPLAY; golden çıktıları elle hazırlanmıştır,
+`ai_call.model = golden-elle`). Golden'ların **tarayıcı adımları** gerçek Playwright MCP'de
+kaydedildi ve `python -m tp_core.gateway.replay_check --runs 5` ile canlı yığında tekrarlandı;
+bu model değerlendirmesi değildir. Constitution X gereği bu değişiklik `main`'e ancak
+(a) değerlendirme seti canlı modelle koşturulduktan sonra ya da (b) onaylı ve kayıtlı bir yönetişim
+istisnasıyla birleştirilir. İstisna bu depoda **onaylanmış değildir**; onay yalnızca sahip tarafından,
+`evaluations.yaml`'a `status: waived` + `waiver: {approved_by, approved_at, reason, until}` olarak
+yazılır (ajanlar/otomasyon istisna yazmaz) ve bu tablo güncellenir. Kimlik bilgisi gelince: `TP_MODEL_MODE=record` ile verify_and_map
+yeniden kaydedilir, `usage.cache_read_input_tokens` ile ajan önbelleği doğrulanır ve kayıt
+`status: evaluated` + `evaluation: {date, model, provider, results}` olarak güncellenir.
 - Güvenilmeyen girdi prompt'larda yalnızca etiketli veri bloğunda taşınır; içindeki talimatlar
   uygulanmaz.
 - Sağlayıcıya özgü ayrıntı bu dosyalara girmez; sağlayıcı farkları geçit adaptörlerindedir

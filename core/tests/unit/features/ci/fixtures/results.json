@@ -1,0 +1,413 @@
+{
+ "config": {
+  "rootDir": "/x/tests"
+ },
+ "errors": [],
+ "stats": {
+  "startTime": "2026-10-31T10:00:00.000Z",
+  "duration": 12500.5,
+  "expected": 4,
+  "skipped": 1,
+  "unexpected": 3,
+  "flaky": 1
+ },
+ "suites": [
+  {
+   "title": "generated/tpd-1-kampanya.spec.ts",
+   "file": "generated/tpd-1-kampanya.spec.ts",
+   "line": 0,
+   "column": 0,
+   "specs": [],
+   "suites": [
+    {
+     "title": "TPD-1",
+     "file": "generated/tpd-1-kampanya.spec.ts",
+     "line": 5,
+     "column": 1,
+     "specs": [
+      {
+       "title": "7 adet Portakal Gazozu → 1 adet bedava",
+       "ok": true,
+       "tags": [],
+       "id": "7 adet P",
+       "file": "generated/tpd-1-kampanya.spec.ts",
+       "line": 10,
+       "column": 3,
+       "tests": [
+        {
+         "timeout": 20000,
+         "annotations": [],
+         "expectedStatus": "passed",
+         "projectId": "chromium",
+         "projectName": "chromium",
+         "results": [
+          {
+           "workerIndex": 0,
+           "status": "passed",
+           "duration": 900,
+           "errors": [],
+           "stdout": [],
+           "stderr": [],
+           "retry": 0,
+           "startTime": "2026-10-31T10:00:00.000Z",
+           "attachments": []
+          }
+         ],
+         "status": "expected"
+        }
+       ]
+      },
+      {
+       "title": "6 adet → bedava yok",
+       "ok": false,
+       "tags": [],
+       "id": "6 adet →",
+       "file": "generated/tpd-1-kampanya.spec.ts",
+       "line": 20,
+       "column": 3,
+       "tests": [
+        {
+         "timeout": 20000,
+         "annotations": [],
+         "expectedStatus": "passed",
+         "projectId": "chromium",
+         "projectName": "chromium",
+         "results": [
+          {
+           "workerIndex": 0,
+           "status": "failed",
+           "duration": 1100,
+           "errors": [
+            {
+             "message": "\u001b[31mError: expect(locator).toHaveText(expected) failed\u001b[39m\n\nLocator: getByTestId('cart-line-free-P-001')\nExpected: \"0\"\nReceived: \"1\""
+            }
+           ],
+           "stdout": [],
+           "stderr": [],
+           "retry": 0,
+           "startTime": "2026-10-31T10:00:00.000Z",
+           "attachments": [
+            {
+             "name": "screenshot",
+             "contentType": "image/png",
+             "path": "{KOSU}/src/e2e/results/artifacts/kampanya-6/test-failed-1.png"
+            },
+            {
+             "name": "trace",
+             "contentType": "application/zip",
+             "path": "{KOSU}/src/e2e/results/artifacts/kampanya-6/trace.zip"
+            }
+           ],
+           "error": {
+            "message": "\u001b[31mError: expect(locator).toHaveText(expected) failed\u001b[39m\n\nLocator: getByTestId('cart-line-free-P-001')\nExpected: \"0\"\nReceived: \"1\""
+           }
+          },
+          {
+           "workerIndex": 0,
+           "status": "failed",
+           "duration": 1000,
+           "errors": [
+            {
+             "message": "Error: expect(locator).toHaveText(expected) failed\nExpected: \"0\"\nReceived: \"1\""
+            }
+           ],
+           "stdout": [],
+           "stderr": [],
+           "retry": 1,
+           "startTime": "2026-10-31T10:00:00.000Z",
+           "attachments": [],
+           "error": {
+            "message": "Error: expect(locator).toHaveText(expected) failed\nExpected: \"0\"\nReceived: \"1\""
+           }
+          }
+         ],
+         "status": "unexpected"
+        }
+       ]
+      },
+      {
+       "title": "Minimum sipariş tutarı 750,00 TL uyarısı",
+       "ok": true,
+       "tags": [],
+       "id": "Minimum ",
+       "file": "generated/tpd-1-kampanya.spec.ts",
+       "line": 30,
+       "column": 3,
+       "tests": [
+        {
+         "timeout": 20000,
+         "annotations": [],
+         "expectedStatus": "passed",
+         "projectId": "chromium",
+         "projectName": "chromium",
+         "results": [
+          {
+           "workerIndex": 0,
+           "status": "passed",
+           "duration": 800,
+           "errors": [],
+           "stdout": [],
+           "stderr": [],
+           "retry": 0,
+           "startTime": "2026-10-31T10:00:00.000Z",
+           "attachments": []
+          }
+         ],
+         "status": "expected"
+        }
+       ]
+      },
+      {
+       "title": "Sepete ekle sepet sayacını artırır",
+       "ok": true,
+       "tags": [],
+       "id": "Sepete e",
+       "file": "generated/tpd-1-kampanya.spec.ts",
+       "line": 40,
+       "column": 3,
+       "tests": [
+        {
+         "timeout": 20000,
+         "annotations": [],
+         "expectedStatus": "passed",
+         "projectId": "chromium",
+         "projectName": "chromium",
+         "results": [
+          {
+           "workerIndex": 0,
+           "status": "failed",
+           "duration": 5200,
+           "errors": [
+            {
+             "message": "TimeoutError: locator.click: Timeout 5000ms exceeded."
+            }
+           ],
+           "stdout": [],
+           "stderr": [],
+           "retry": 0,
+           "startTime": "2026-10-31T10:00:00.000Z",
+           "attachments": [],
+           "error": {
+            "message": "TimeoutError: locator.click: Timeout 5000ms exceeded."
+           }
+          },
+          {
+           "workerIndex": 0,
+           "status": "passed",
+           "duration": 1400,
+           "errors": [],
+           "stdout": [],
+           "stderr": [],
+           "retry": 1,
+           "startTime": "2026-10-31T10:00:00.000Z",
+           "attachments": []
+          }
+         ],
+         "status": "flaky"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "title": "a11y.spec.ts",
+   "file": "a11y.spec.ts",
+   "line": 0,
+   "column": 0,
+   "specs": [],
+   "suites": [
+    {
+     "title": "Erişilebilirlik @a11y",
+     "file": "a11y.spec.ts",
+     "line": 38,
+     "column": 1,
+     "specs": [
+      {
+       "title": "katalog sayfası",
+       "ok": true,
+       "tags": [],
+       "id": "katalog ",
+       "file": "a11y.spec.ts",
+       "line": 39,
+       "column": 3,
+       "tests": [
+        {
+         "timeout": 20000,
+         "annotations": [],
+         "expectedStatus": "passed",
+         "projectId": "chromium",
+         "projectName": "chromium",
+         "results": [
+          {
+           "workerIndex": 0,
+           "status": "passed",
+           "duration": 1200,
+           "errors": [],
+           "stdout": [],
+           "stderr": [],
+           "retry": 0,
+           "startTime": "2026-10-31T10:00:00.000Z",
+           "attachments": [
+            {
+             "name": "axe-katalog.json",
+             "contentType": "application/json",
+             "body": "eyJwYWdlIjogImthdGFsb2ciLCAidXJsIjogImh0dHA6Ly9kZW1vLWFwcC13ZWI6ODA4MC9rYXRhbG9nIiwgInZpb2xhdGlvbnMiOiAyLCAibm9kZXMiOiAzLCAiYnlJbXBhY3QiOiB7InNlcmlvdXMiOiAyLCAibW9kZXJhdGUiOiAxfSwgImRldGFpbHMiOiBbeyJpZCI6ICJjb2xvci1jb250cmFzdCIsICJpbXBhY3QiOiAic2VyaW91cyIsICJoZWxwIjogIngiLCAibm9kZXMiOiBbImEiLCAiYiJdfSwgeyJpZCI6ICJyZWdpb24iLCAiaW1wYWN0IjogIm1vZGVyYXRlIiwgImhlbHAiOiAieSIsICJub2RlcyI6IFsiYyJdfV19"
+            }
+           ]
+          }
+         ],
+         "status": "expected"
+        }
+       ]
+      },
+      {
+       "title": "sepet sayfası (uyarı ve satırlarla)",
+       "ok": false,
+       "tags": [],
+       "id": "sepet sa",
+       "file": "a11y.spec.ts",
+       "line": 44,
+       "column": 3,
+       "tests": [
+        {
+         "timeout": 20000,
+         "annotations": [],
+         "expectedStatus": "passed",
+         "projectId": "chromium",
+         "projectName": "chromium",
+         "results": [
+          {
+           "workerIndex": 0,
+           "status": "failed",
+           "duration": 1800,
+           "errors": [
+            {
+             "message": "kritik erişilebilirlik ihlali: button-name"
+            }
+           ],
+           "stdout": [],
+           "stderr": [],
+           "retry": 0,
+           "startTime": "2026-10-31T10:00:00.000Z",
+           "attachments": [
+            {
+             "name": "axe-sepet.json",
+             "contentType": "application/json",
+             "path": "{KOSU}/src/e2e/results/artifacts/a11y-sepet/axe-sepet.json"
+            },
+            {
+             "name": "kacak",
+             "contentType": "text/plain",
+             "path": "/etc/passwd"
+            },
+            {
+             "name": "kacak2",
+             "contentType": "text/plain",
+             "path": "{KOSU}/../../etc/passwd"
+            }
+           ],
+           "error": {
+            "message": "kritik erişilebilirlik ihlali: button-name"
+           }
+          }
+         ],
+         "status": "unexpected"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "title": "order.spec.ts",
+   "file": "order.spec.ts",
+   "line": 0,
+   "column": 0,
+   "specs": [],
+   "suites": [
+    {
+     "title": "Sipariş",
+     "file": "order.spec.ts",
+     "line": 3,
+     "column": 1,
+     "specs": [
+      {
+       "title": "geçmiş listelenir",
+       "ok": true,
+       "tags": [],
+       "id": "geçmiş l",
+       "file": "order.spec.ts",
+       "line": 5,
+       "column": 3,
+       "tests": [
+        {
+         "timeout": 20000,
+         "annotations": [],
+         "expectedStatus": "skipped",
+         "projectId": "chromium",
+         "projectName": "chromium",
+         "results": [
+          {
+           "workerIndex": 0,
+           "status": "skipped",
+           "duration": 0,
+           "errors": [],
+           "stdout": [],
+           "stderr": [],
+           "retry": 0,
+           "startTime": "2026-10-31T10:00:00.000Z",
+           "attachments": []
+          }
+         ],
+         "status": "skipped"
+        }
+       ]
+      },
+      {
+       "title": "onay numarası",
+       "ok": false,
+       "tags": [],
+       "id": "onay num",
+       "file": "order.spec.ts",
+       "line": 9,
+       "column": 3,
+       "tests": [
+        {
+         "timeout": 20000,
+         "annotations": [],
+         "expectedStatus": "passed",
+         "projectId": "chromium",
+         "projectName": "chromium",
+         "results": [
+          {
+           "workerIndex": 0,
+           "status": "timedOut",
+           "duration": 20000,
+           "errors": [
+            {
+             "message": "Test timeout of 20000ms exceeded."
+            }
+           ],
+           "stdout": [],
+           "stderr": [],
+           "retry": 0,
+           "startTime": "2026-10-31T10:00:00.000Z",
+           "attachments": [],
+           "error": {
+            "message": "Test timeout of 20000ms exceeded."
+           }
+          }
+         ],
+         "status": "unexpected"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

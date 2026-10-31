@@ -47,7 +47,7 @@
             "kind": "code",
             "repo": "demo-app",
             "path": "api/src/demoapp_api/main.py",
-            "line": 310,
+            "line": 331,
             "snippet": "def products(s: SessionDep, _bayi: BayiDep) -> list[dict]:"
           }
         ],

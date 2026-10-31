@@ -1,12 +1,25 @@
-import { Link, useParams } from "react-router-dom";
+import { useMemo, useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
-import type { Kosu } from "../api/types";
+import type { Kosu, KosuKaynagi, Tetik } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
 import { BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, Metrik, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { KAYNAK, KOSU_DURUMU, TETIK } from "../lib/etiketler";
 import { sure, tarih } from "../lib/format";
+
+const TETIK_TONU: Partial<Record<Tetik, "notr" | "bilgi" | "vurgu" | "uyari">> = {
+  nightly: "bilgi",
+  deploy: "vurgu",
+  break_verify: "uyari",
+  local_check: "notr",
+};
+
+/** İş kullanıcısına kısa koşu adı: UUID'nin ilk 8 hanesi (tamamı ipucunda). */
+export function kisaKosuAdi(id: string): string {
+  return /^[0-9a-f]{8}-/i.test(id) ? id.slice(0, 8) : id;
+}
 
 function DurumCipi({ d }: { d: string }) {
   const x = KOSU_DURUMU[d] ?? { etiket: d, ton: "notr" as const };
@@ -35,8 +48,8 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
           {kosular.map((k) => (
             <tr key={k.id}>
               <td>
-                <Link to={`/kosular/${encodeURIComponent(k.id)}`} className="satir-baglanti mono">
-                  {k.id}
+                <Link to={`/kosular/${encodeURIComponent(k.id)}`} className="satir-baglanti mono" title={`Koşu kimliği: ${k.id}`}>
+                  {kisaKosuAdi(k.id)}
                 </Link>
                 {k.break_campaign && (
                   <Cip ton="uyari" title="Uygulama BREAK_CAMPAIGN=1 ile koştu (kasıtlı kırma)">
@@ -45,10 +58,14 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
                 )}
               </td>
               <td>
-                {TETIK[k.tetik]}
+                <Cip ton={TETIK_TONU[k.tetik] ?? "notr"}>{TETIK[k.tetik] ?? k.tetik}</Cip>
                 {k.pr_no !== null && <span className="mono"> #{k.pr_no}</span>}
               </td>
-              {!kompakt && <td>{KAYNAK[k.kaynak]}</td>}
+              {!kompakt && (
+                <td>
+                  <Cip ton={k.kaynak === "sauce" ? "vurgu" : k.kaynak === "github" ? "bilgi" : "notr"}>{KAYNAK[k.kaynak] ?? k.kaynak}</Cip>
+                </td>
+              )}
               <td>
                 <DurumCipi d={k.durum} />
                 {k.flaky > 0 && (
@@ -71,17 +88,52 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
   );
 }
 
+type Filtre = { tetik: Tetik | ""; kaynak: KosuKaynagi | ""; durum: Kosu["durum"] | ""; kirma: boolean };
+
+/** Koşu listesinin süzgeci (adres çubuğunda: ?tetik=&kaynak=&durum=&kirma=1). */
+export function kosulariSuz(kosular: Kosu[], f: Filtre): Kosu[] {
+  return kosular.filter(
+    (k) =>
+      (!f.tetik || k.tetik === f.tetik) &&
+      (!f.kaynak || k.kaynak === f.kaynak) &&
+      (!f.durum || k.durum === f.durum) &&
+      (f.kirma || !k.break_campaign || f.tetik === "break_verify"),
+  );
+}
+
 export function Kosular() {
   const v = useVeri(() => api.kosular(), []);
   const islem = useIslem();
   const bildir = useBildirim();
   const sessiz = useGeciktirilmis(() => void v.yenile(true));
   useOlay(sessiz, ["ci.status", "failure.classified"]);
+  const [sorgu, setSorgu] = useSearchParams();
+  const [sonTetik, setSonTetik] = useState<string | null>(null);
+  const filtre: Filtre = {
+    tetik: (sorgu.get("tetik") ?? "") as Filtre["tetik"],
+    kaynak: (sorgu.get("kaynak") ?? "") as Filtre["kaynak"],
+    durum: (sorgu.get("durum") ?? "") as Filtre["durum"],
+    kirma: sorgu.get("kirma") !== "0",
+  };
+  const ayarla = (anahtar: string, deger: string) => {
+    const y = new URLSearchParams(sorgu);
+    if (deger) y.set(anahtar, deger);
+    else y.delete(anahtar);
+    setSorgu(y, { replace: true });
+  };
+  const tum = v.veri ?? [];
+  const suzulen = useMemo(() => kosulariSuz(tum, filtre), [tum, filtre.tetik, filtre.kaynak, filtre.durum, filtre.kirma]);
+  const tetikler = [...new Set(tum.map((k) => k.tetik))];
+  // Kırma koşusu yoksa süzgeç işe yaramaz: gösterilmez (yerel kontrol / kırarak doğrulama koşuları
+  // koşu tablosuna alındığında görünür hale gelir).
+  const kirmaVar = tum.some((k) => k.break_campaign);
+  const kaynaklar = [...new Set(tum.map((k) => k.kaynak))];
 
   const tetikle = async (tetik: "deploy" | "nightly") => {
     const s = await islem.calistir(() => api.ciTetikle(tetik));
     if (s) {
       bildir(s.mesaj ?? "Koşu tetiklendi.");
+      setSonTetik(s.mesaj ?? `${tetik === "deploy" ? "Deploy" : "Gece"} koşusu tetiklendi.`);
       void v.yenile(true);
     }
   };
@@ -90,7 +142,7 @@ export function Kosular() {
     <>
       <SayfaBasligi
         baslik="Koşular"
-        aciklama="CI yalnızca onaylı, deterministik test kodunu koşturur; CI'da AI yoktur. Sauce Labs ana gösterim, yerel Chromium yedektir."
+        aciklama="CI yalnızca onaylı, deterministik test kodunu koşturur; CI'da AI yoktur. Yerel test-runner her zaman koşar; GitHub Actions ve Sauce Labs kimlik bilgileri varsa aynı testleri koşturur."
         eylemler={
           <>
             <IslemDugmesi roller={["presenter"]} tur="ikincil" calisiyor={islem.calisiyor} onClick={() => tetikle("nightly")}>
@@ -103,15 +155,63 @@ export function Kosular() {
         }
       />
       {islem.hata && <HataKutusu hata={islem.hata} />}
+      {sonTetik && !islem.hata && <Uyari ton="bilgi">{sonTetik}</Uyari>}
       <Kart>
         {v.yukleniyor && !v.veri ? (
           <Yukleniyor />
         ) : v.hata && !v.veri ? (
           <HataKutusu hata={v.hata} yenile={() => void v.yenile()} />
-        ) : (v.veri ?? []).length === 0 ? (
+        ) : tum.length === 0 ? (
           <BosDurum baslik="Henüz koşu yok." />
         ) : (
-          <KosuTablosu kosular={v.veri ?? []} />
+          <>
+            <div className="filtre-cubugu" role="group" aria-label="Koşu süzgeci">
+              <label>
+                Tetik
+                <select value={filtre.tetik} onChange={(e) => ayarla("tetik", e.target.value)}>
+                  <option value="">Tümü</option>
+                  {tetikler.map((t) => (
+                    <option key={t} value={t}>
+                      {TETIK[t] ?? t}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Kaynak
+                <select value={filtre.kaynak} onChange={(e) => ayarla("kaynak", e.target.value)}>
+                  <option value="">Tümü</option>
+                  {kaynaklar.map((k) => (
+                    <option key={k} value={k}>
+                      {KAYNAK[k] ?? k}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Durum
+                <select value={filtre.durum} onChange={(e) => ayarla("durum", e.target.value)}>
+                  <option value="">Tümü</option>
+                  {(["queued", "running", "passed", "failed", "error"] as const).map((d) => (
+                    <option key={d} value={d}>
+                      {KOSU_DURUMU[d].etiket}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {kirmaVar && (
+                <label className="satir-ogeler">
+                  <span>
+                    <input type="checkbox" checked={filtre.kirma} onChange={(e) => ayarla("kirma", e.target.checked ? "" : "0")} /> Kasıtlı kırma koşuları
+                  </span>
+                </label>
+              )}
+              <span className="soluk kucuk" role="status">
+                {suzulen.length}/{tum.length} koşu
+              </span>
+            </div>
+            {suzulen.length ? <KosuTablosu kosular={suzulen} /> : <BosDurum baslik="Süzgece uyan koşu yok." />}
+          </>
         )}
       </Kart>
     </>
@@ -133,39 +233,70 @@ export function KosuDetay() {
     <>
       <SayfaBasligi
         ust={<Link to="/kosular">← Koşular</Link>}
-        baslik={<span className="mono">{k.id}</span>}
+        baslik={
+          <span title={`Koşu kimliği: ${k.id}`}>
+            {TETIK[k.tetik] ?? k.tetik} koşusu <span className="mono">{kisaKosuAdi(k.id)}</span>
+          </span>
+        }
         aciklama={
           <span className="satir-ogeler">
             <DurumCipi d={k.durum} />
-            <span>
-              {TETIK[k.tetik]}
-              {k.pr_no !== null && ` #${k.pr_no}`} · {KAYNAK[k.kaynak]}
-            </span>
+            <Cip ton={TETIK_TONU[k.tetik] ?? "notr"}>
+              {TETIK[k.tetik] ?? k.tetik}
+              {k.pr_no !== null && ` #${k.pr_no}`}
+            </Cip>
+            <Cip ton={k.kaynak === "sauce" ? "vurgu" : k.kaynak === "github" ? "bilgi" : "notr"}>{KAYNAK[k.kaynak] ?? k.kaynak}</Cip>
             <span className="mono">{k.commit}</span>
             <span className="soluk">{tarih(k.baslangic)}</span>
           </span>
         }
-        eylemler={
-          <>
-            {k.allure_url && (
-              <Baglanti href={k.allure_url} yokNedeni="artifact sunucusu yok">
-                Allure raporu
-              </Baglanti>
-            )}
-            {k.sauce_url && (
-              <Baglanti href={k.sauce_url} yokNedeni="bağlantı yok">
-                Sauce Labs
-              </Baglanti>
-            )}
-            {k.ci_url && (
-              <Baglanti href={k.ci_url} yokNedeni="bağlantı yok">
-                CI işi
-              </Baglanti>
-            )}
-          </>
-        }
       />
-      {k.break_campaign && <Uyari>Bu koşuda uygulama BREAK_CAMPAIGN=1 ile açıldı (kasıtlı kırma); başarısızlık beklenir.</Uyari>}
+      {k.break_campaign && <Uyari>Bu koşuda kampanya kuralı koşunun bayisi için BREAK_CAMPAIGN ile bozuldu (kasıtlı kırma); başarısızlık beklenir.</Uyari>}
+      {k.saglik_hatasi && (
+        <Uyari ton="hata" baslik="Ortam sorunu">
+          Koşu öncesi sağlık yoklaması başarısız; Playwright başlatılmadı: {k.saglik_hatasi}
+        </Uyari>
+      )}
+      <Kart baslik="Raporlar ve bağlantılar">
+        <div className="artefakt-baglantilari">
+          <Baglanti href={k.rapor_url} yokNedeni="koşu bu raporu üretmedi ya da core sunmuyor">
+            Playwright HTML raporu
+          </Baglanti>
+          <Baglanti href={k.junit_url ?? null} yokNedeni="koşu JUnit XML üretmedi">
+            JUnit XML
+          </Baglanti>
+          <Baglanti href={k.allure_url} yokNedeni="yok">
+            {k.allure_url && /allure-results\/?$/.test(k.allure_url) ? "Allure ham sonuçları (JSON listesi)" : "Allure raporu"}
+          </Baglanti>
+          {k.allure_sonuclari_url && k.allure_sonuclari_url !== k.allure_url && (
+            <Baglanti href={k.allure_sonuclari_url} yokNedeni="yok">
+              Allure ham sonuçları (JSON listesi)
+            </Baglanti>
+          )}
+          {(k.kaynak === "sauce" || k.sauce_url) && (
+            <Baglanti href={k.sauce_url} yokNedeni="Sauce bağlantısı yok">
+              Sauce Labs videosu
+            </Baglanti>
+          )}
+          {(k.kaynak !== "local" || k.ci_url) && (
+            <Baglanti href={k.ci_url} yokNedeni="yok">
+              CI işi
+            </Baglanti>
+          )}
+          <Baglanti href={k.log_url} yokNedeni="yok">
+            Koşu günlüğü
+          </Baglanti>
+          {k.script_id && <Link to={`/kod/${encodeURIComponent(k.script_id)}`}>Üretilen test</Link>}
+        </div>
+        {k.hata && <p className="kucuk hata-metin">{k.hata}</p>}
+        {k.uyarilar.length > 0 && (
+          <ul className="kucuk duz-liste">
+            {k.uyarilar.map((u) => (
+              <li key={u}>{u}</li>
+            ))}
+          </ul>
+        )}
+      </Kart>
       <Kart>
         <div className="metrik-izgara">
           <Metrik etiket="Toplam" deger={k.toplam} />
@@ -198,6 +329,15 @@ export function KosuDetay() {
                     <td>
                       {s.test_adi}
                       {s.hata_mesaji && <pre className="hata-mesaji">{s.hata_mesaji}</pre>}
+                      {s.ekler && s.ekler.length > 0 && (
+                        <div className="satir-ogeler kucuk">
+                          {s.ekler.map((e, i) => (
+                            <Baglanti key={`${e.ad}-${i}`} href={e.url}>
+                              {e.ad}
+                            </Baglanti>
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td>
                       <DurumCipi d={s.durum} />

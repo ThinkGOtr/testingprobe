@@ -2,10 +2,9 @@
   "name": "testingprobe-toolchain",
   "version": "0.1.0",
   "private": true,
-  "description": "Playwright, Playwright MCP and the demo-app e2e runtime deps (axe, allure) for the toolchain image",
+  "description": "Playwright and the demo-app e2e runtime deps (axe, allure) for the CI/test-runner toolchain image. No MCP server here (constitution II): it lives in mcp/ and only the playwright-mcp image target installs it.",
   "dependencies": {
     "@axe-core/playwright": "4.14.0",
-    "@playwright/mcp": "0.0.83",
     "@playwright/test": "1.64.1",
     "allure-playwright": "3.14.0"
   },

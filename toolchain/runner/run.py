@@ -14,12 +14,29 @@ Akış (tek seferde bir koşu; bayi kullanıcıları bayi1/bayi2 koşular arası
      `/test/break {kampanya:false}` ile geri alınır (fixture teardown'ı koşmamış olabilir).
   5. Raporlar config'teki yerlerinde kalır: `src/e2e/results/{junit.xml,results.json,
      allure-results/,html/,artifacts/}`; özet `run.json`, süreç çıktısı `runner.log`.
+  5a. `allure-results/`'tan statik, tek dosyalık Allure raporu üretilir
+     (`src/e2e/results/allure-report/index.html`; imajdaki sabit Allure 3 CLI, allure2 eklentisi,
+     analitik kapalı, ağ yok, AI yok). Üretilemezse koşu sonucu değişmez; `allure_report.error`.
+     Başarısız/kararsız her test için `failure` (hata türü, konum, adım, kanıt yolları) ve
+     `failures` listesi: Faz 3 yerel kontrolü ve Faz 4 triage'ının deterministik girdileri.
+  6. Temizlik: en yeni `TP_RUNS_KEEP` (50) koşu dizini kalır; süren koşular silinmez. `.keep`
+     işaretli kanıt koşuları (istekte `keep: true`) bu sayıma girmez, ama sınırsız da büyümez:
+     `TP_RUNS_KEEP_EVIDENCE_DAYS` (30) günden eskiler ve en yeni `TP_RUNS_KEEP_EVIDENCE_MAX` (200)
+     dışındakiler silinir. Core, sahibi script kapanınca işareti toolchain-worker
+     `POST /runs/release` ile daha erken kaldırabilir (ekran görüntüsü saklamasıyla aynı yaşam).
+
+Eşzamanlılık: süreç içi `RUN_LOCK` + süreçler arası dosya kilidi (`TP_RUN_LOCK_PATH`, flock;
+toolchain_common/runlock.py). Konteynerde elle başlatılan koşular (`make e2e-smoke`) aynı kilidi
+`tp-run-lock` ile alır; böylece aynı bayilerle iki koşu asla üst üste binmez.
 """
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import shutil
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
@@ -29,15 +46,30 @@ from typing import Any
 
 import httpx
 
-from runner.results import decide_status, summarize
-from toolchain_common import gitforge, proc
-from toolchain_common.artifacts import atomic_write_json, run_dir
+from runner.results import decide_status, failure_groups, failures_of, summarize
+from toolchain_common import gitforge, proc, repos, runlock
+from toolchain_common.artifacts import KEEP_MARKER, atomic_write_json, ensure_inside, run_dir
 from toolchain_common.settings import Settings
+from toolchain_common.validation import RUN_ID_RE
 
 # Tek koşu: aynı bayi kullanıcılarıyla eşzamanlı iki koşu birbirinin verisini sıfırlar.
 RUN_LOCK = threading.Lock()
 
 PASS_ENV = ("PATH", "HOME", "LANG", "LC_ALL", "TZ", "PLAYWRIGHT_BROWSERS_PATH", "TMPDIR")
+DAY_S = 86_400
+# Rapor türü → config'teki yer (`results/` altında) ve varlığının işareti olan dosya.
+REPORTS = {
+    "html": ("html", "index.html"),
+    "junit": ("junit.xml", None),
+    "json": ("results.json", None),
+    "allure": ("allure-results", None),
+    "allure_html": ("allure-report", "index.html"),
+}
+ALLURE_REPORT_DIR = "allure-report"
+# Üretilen raporda dış kaynak yüklemesi (analitik vb.) olmamalı: varsa rapor silinir.
+EXTERNAL_LOAD = re.compile(
+    rb"<(?:script|link|img|iframe)\b[^>]*\b(?:src|href)\s*=\s*[\"']?(?:https?:)?//", re.I
+)
 
 
 class RunConflict(RuntimeError):
@@ -62,6 +94,7 @@ class RunRequest:
     break_campaign: bool = False
     test_files: list[str] = field(default_factory=list)
     workers: int | None = None
+    keep: bool = False
 
 
 def now_iso() -> str:
@@ -174,21 +207,185 @@ def _rel(cfg: Settings, path: Path) -> str:
     return str(path.relative_to(cfg.artifacts_path))
 
 
+def reports_of(cfg: Settings, results_dir: Path) -> dict[str, dict[str, Any]]:
+    """Playwright raporları: yol, artefakt köküne göre yol ve üretilip üretilmediği."""
+    out: dict[str, dict[str, Any]] = {}
+    for name, (sub, marker) in REPORTS.items():
+        path = results_dir / sub
+        probe = path / marker if marker else path
+        out[name] = {"path": str(path), "rel": _rel(cfg, path), "exists": probe.exists()}
+    return out
+
+
+def generate_allure(cfg: Settings, results_dir: Path) -> dict[str, Any]:
+    """`allure-results/`'tan statik tek dosyalık Allure raporu (`allure-report/index.html`).
+
+    Deterministik araç adımı (AI yok): imajdaki sabit sürüm Allure CLI'ı, güvenilir yapılandırma
+    (`TP_ALLURE_CONFIG`, commit'ten değil) ve geçici bir çalışma dizini (commit'teki olası
+    `allurerc` okunmaz). Analitik kapalıdır (ALLURE_NO_ANALYTICS); çıktıda yine de dış kaynak
+    yüklemesi varsa rapor silinir. Hata koşu sonucunu değiştirmez.
+    """
+    source = results_dir / "allure-results"
+    out = results_dir / ALLURE_REPORT_DIR
+    base: dict[str, Any] = {"ok": False, "index": str(out / "index.html"), "error": None}
+    if results_dir.is_symlink() or not results_dir.is_dir():
+        return {**base, "error": "results/ dizini yok ya da bağlantı; rapor üretilmedi."}
+    # Koşan test kodu `results/` altına (bağlantı dahil) bir şey bırakmış olabilir: çıktı yolu
+    # önce temizlenir, böylece rapor bir symlink üzerinden başka yere yazılamaz.
+    if out.is_symlink() or out.is_file():
+        out.unlink()
+    elif out.is_dir():
+        shutil.rmtree(out)
+    if not source.is_dir() or source.is_symlink() or not any(source.iterdir()):
+        return {**base, "error": "allure-results boş ya da yok; rapor üretilmedi."}
+    if not cfg.allure_cli.is_file() or not cfg.allure_config.is_file():
+        return {**base, "error": "Allure CLI imajda yok (toolchain imajı yeniden derlenmeli)."}
+    env = {k: os.environ[k] for k in ("PATH", "HOME", "LANG", "TZ") if k in os.environ}
+    env.update({"ALLURE_NO_ANALYTICS": "true", "CI": "1", "FORCE_COLOR": "0", "NO_COLOR": "1"})
+    with tempfile.TemporaryDirectory(prefix="tp-allure-") as work:
+        res = proc.run(
+            [
+                cfg.node,
+                str(cfg.allure_cli),
+                "generate",
+                "--config",
+                str(cfg.allure_config),
+                "--output",
+                str(out),
+                str(source),
+            ],
+            cwd=Path(work),
+            env=env,
+            timeout_s=cfg.allure_timeout_s,
+        )
+    index = out / "index.html"
+    if res.timed_out:
+        error = f"Allure raporu süre sınırını aştı ({int(cfg.allure_timeout_s)} sn)."
+    elif res.exit_code != 0 or not index.is_file():
+        error = f"Allure raporu üretilemedi: {(res.stderr or res.stdout).strip()[:300]}"
+    else:
+        try:
+            external = EXTERNAL_LOAD.search(index.read_bytes()) is not None
+        except OSError as exc:
+            external, error = False, f"Allure raporu okunamadı: {type(exc).__name__}"
+        else:
+            error = (
+                "Allure raporu dış kaynak yüklüyor (analitik?); rapor silindi."
+                if external
+                else None
+            )
+    if error is not None:
+        shutil.rmtree(out, ignore_errors=True)
+        return {**base, "error": error, "duration_ms": res.duration_ms}
+    return {
+        **base,
+        "ok": True,
+        "rel": _rel(cfg, index),
+        "duration_ms": res.duration_ms,
+    }
+
+
+def prune_runs(cfg: Settings, current: str) -> dict[str, Any]:
+    """Eski koşu dizinlerini siler (`run.json` zamanına göre); iki ayrı havuz:
+
+    - işaretsiz koşular: en yeni `cfg.runs_keep` kalır (0 = bu havuzun temizliği kapalı);
+    - `.keep` işaretli kanıt koşuları: `cfg.runs_keep_evidence_days` günden eskiler ve en yeni
+      `cfg.runs_keep_evidence_max` dışındakiler silinir (her biri 0 = o sınır kapalı).
+
+    Silinmeyenler: bu koşu, `running` durumundaki ve süre sınırının iki katından genç olanlar
+    (çökmüş koşu ancak bundan sonra silinir), adı koşu kimliği olmayan ya da bağlantı (symlink)
+    olan girdiler. Hata koşuyu düşürmez; raporlanır.
+    """
+    keep_days, keep_max = cfg.runs_keep_evidence_days, cfg.runs_keep_evidence_max
+    out: dict[str, Any] = {
+        "keep": cfg.runs_keep,
+        "keep_evidence_days": keep_days,
+        "keep_evidence_max": keep_max,
+        "deleted": [],
+        "deleted_evidence": [],
+        "errors": [],
+    }
+    if cfg.runs_keep <= 0 and keep_days <= 0 and keep_max <= 0:
+        return out
+    root = cfg.artifacts_path / "runs"
+    now = time.time()
+    candidates: list[tuple[float, Path]] = []
+    evidence: list[tuple[float, Path]] = []
+    try:
+        entries = list(root.iterdir())
+    except OSError as exc:
+        out["errors"].append(f"{type(exc).__name__}")
+        return out
+    for d in entries:
+        if d.name == current or d.is_symlink() or not d.is_dir() or not RUN_ID_RE.match(d.name):
+            continue
+        kept = (d / KEEP_MARKER).exists()
+        meta = d / "run.json"
+        try:
+            mtime = (meta if meta.exists() else d).stat().st_mtime
+        except OSError:
+            continue
+        try:
+            status = json.loads(meta.read_text(encoding="utf-8")).get("status")
+        except (OSError, ValueError, AttributeError):
+            status = None
+        if status == "running" and now - mtime < 2 * cfg.run_timeout_s:
+            continue
+        (evidence if kept else candidates).append((mtime, d))
+
+    doomed: list[Path] = []
+    if cfg.runs_keep > 0:
+        candidates.sort(key=lambda c: c[0], reverse=True)
+        # Bu koşu da sayılır: toplamda en çok `runs_keep` (işaretsiz) koşu kalır.
+        doomed += [d for _m, d in candidates[max(0, cfg.runs_keep - 1) :]]
+    doomed_evidence: list[Path] = []
+    if keep_days > 0 or keep_max > 0:
+        evidence.sort(key=lambda c: c[0], reverse=True)
+        for i, (mtime, d) in enumerate(evidence):
+            too_old = keep_days > 0 and now - mtime > keep_days * DAY_S
+            # Bu koşu da kanıt olabilir; sayım yaklaşıktır (bu koşu en yenidir ve hiç silinmez).
+            too_many = keep_max > 0 and i >= keep_max
+            if too_old or too_many:
+                doomed_evidence.append(d)
+    for d in [*doomed, *doomed_evidence]:
+        try:
+            ensure_inside(root, d)
+            shutil.rmtree(d)
+            out["deleted_evidence" if d in doomed_evidence else "deleted"].append(d.name)
+        except (OSError, ValueError) as exc:
+            out["errors"].append(f"{d.name}: {type(exc).__name__}")
+    return out
+
+
 def execute(cfg: Settings, req: RunRequest, *, http: httpx.Client | None = None) -> dict[str, Any]:
     if req.break_campaign and not cfg.demoapp_test_token:
         raise RunRejected("Kırarak doğrulama için DEMOAPP_TEST_TOKEN gerekir (test-runner ortamı).")
-    full_sha = gitforge.resolve_commit(cfg.forge_path, req.sha, cfg.git_timeout_s)
+    # Yerel forge ya da (GitHub modunda toolchain-worker'ın çektiği) ayna; test-runner çekmez.
+    loc = repos.locate(cfg, req.sha)
+    deadline = time.monotonic() + cfg.run_queue_wait_s
     if not RUN_LOCK.acquire(timeout=cfg.run_queue_wait_s):
         raise RunnerBusy("Başka bir test koşusu sürüyor; daha sonra yeniden deneyin.")
     try:
-        return _execute_locked(cfg, req, full_sha, http)
+        # Süreçler arası kilit: konteynerde elle başlatılan koşu (`tp-run-lock`, make e2e-smoke).
+        try:
+            fd = runlock.acquire(cfg.run_lock_path, deadline - time.monotonic())
+        except runlock.RunLockTimeout as exc:
+            raise RunnerBusy(
+                "Başka bir test koşusu sürüyor (konteynerde elle başlatılmış olabilir: "
+                "make e2e-smoke); daha sonra yeniden deneyin."
+            ) from exc
+        try:
+            return _execute_locked(cfg, req, loc, http)
+        finally:
+            runlock.release(fd)
     finally:
         RUN_LOCK.release()
 
 
 def _execute_locked(
-    cfg: Settings, req: RunRequest, full_sha: str, http: httpx.Client | None
+    cfg: Settings, req: RunRequest, loc: repos.Located, http: httpx.Client | None
 ) -> dict[str, Any]:
+    full_sha = loc.sha
     dest = run_dir(cfg.artifacts_path, req.run_id)
     try:
         dest.mkdir(parents=True, exist_ok=False)
@@ -203,10 +400,14 @@ def _execute_locked(
         "repeat_each": req.repeat_each,
         "retries": req.retries,
         "break_campaign": req.break_campaign,
+        "workers": req.workers,
+        "keep": req.keep,
         "base_url": cfg.base_url,
         "artifacts_dir": str(dest),
         "baslangic": started,
     }
+    if req.keep:
+        (dest / KEEP_MARKER).write_text(f"{started}\n", encoding="utf-8")
     atomic_write_json(dest / "run.json", {**base, "status": "running"})
     saglik = health_check(cfg, http)
 
@@ -221,7 +422,7 @@ def _execute_locked(
             error = saglik["hata"]
         else:
             try:
-                _export(cfg, full_sha, dest / "src")
+                _export(cfg, loc, dest / "src")
             except gitforge.ForgeError as exc:
                 error = str(exc)
             else:
@@ -242,13 +443,17 @@ def _execute_locked(
             nm.unlink()
 
     summary: dict[str, Any] | None = None
+    allure_report: dict[str, Any] | None = None
     if res is not None:
+        allure_report = generate_allure(cfg, results_dir)
         (dest / "runner.log").write_text(
             f"$ {' '.join(res.argv)}\n\n--- stdout ---\n{res.stdout}\n--- stderr ---\n{res.stderr}",
             encoding="utf-8",
         )
         try:
-            summary = summarize(results_dir / "results.json", dest)
+            summary = summarize(
+                results_dir / "results.json", dest, e2e_dir=e2e, rel_root=cfg.artifacts_path
+            )
         except ValueError as exc:
             error = str(exc)
         if res.timed_out:
@@ -288,15 +493,28 @@ def _execute_locked(
         "saglik": saglik,
         "stats": summary["stats"] if summary else None,
         "tests": summary["tests"] if summary else [],
+        "failures": failures_of(summary["tests"]) if summary else [],
+        "failure_groups": failure_groups(summary["tests"]) if summary else [],
         "report_errors": summary["errors"] if summary else [],
+        "reports": reports_of(cfg, results_dir),
+        "allure_report": allure_report,
     }
     atomic_write_json(dest / "run.json", report)
+    try:
+        report["cleanup"] = prune_runs(cfg, req.run_id)
+    except OSError as exc:  # temizlik koşu sonucunu değiştirmez
+        report["cleanup"] = {
+            "keep": cfg.runs_keep,
+            "deleted": [],
+            "deleted_evidence": [],
+            "errors": [str(exc)],
+        }
     return report
 
 
-def _export(cfg: Settings, sha: str, into: Path) -> None:
+def _export(cfg: Settings, loc: repos.Located, into: Path) -> None:
     """Commit'in e2e ağacını `into/<e2e_root>`'a çıkarır (kalıcı; koşu kanıtı)."""
-    with gitforge.checkout(cfg.forge_path, sha, cfg.e2e_root, cfg.git_timeout_s) as e2e:
+    with gitforge.checkout(loc.repo, loc.sha, cfg.e2e_root, cfg.git_timeout_s) as e2e:
         target = into / cfg.e2e_root
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(e2e, target, symlinks=True)

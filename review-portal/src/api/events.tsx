@@ -32,6 +32,14 @@ export const BILINEN_OLAYLAR = [
   "publish.done",
   "publish.failed",
   "bug.published",
+  // Demo-B (core codegen + ci şeritleri): yerel kontrol, kırarak doğrulama, merge.
+  "codegen.check",
+  "codegen.break_verify",
+  // Adım 5 gecikme bütçesi aşıldı (core öneri: REPLAY'e geç); script ekranı yenilenir.
+  "codegen.latency_budget",
+  "codegen.branch",
+  "codegen.reviewed",
+  "pr.merged",
 ] as const;
 
 /** Ayrıntılı olayın ek konuları (sayfalar konuya abone olur, olay adına değil). */
@@ -39,6 +47,14 @@ const EK_KONULAR: Record<string, string[]> = {
   "finding.verified": ["finding.updated", "requirement.updated"],
   "po.approved": ["requirement.updated"],
   "case.generated": ["case.updated"],
+  "codegen.check": ["script.updated", "ci.status"],
+  "codegen.break_verify": ["script.updated", "ci.status"],
+  "codegen.latency_budget": ["script.updated"],
+  "codegen.branch": ["script.updated"],
+  "codegen.reviewed": ["script.updated"],
+  "pr.opened": ["script.updated"],
+  "pr.merged": ["script.updated", "ci.status"],
+  "agent.step": ["script.updated"],
 };
 
 /**
@@ -96,7 +112,8 @@ export function olayKonulari(o: PortalOlayi): string[] {
  */
 export function olayEslesir(o: PortalOlayi, konular: ReadonlySet<string> | null, id?: string): boolean {
   if (konular && !olayKonulari(o).some((k) => konular.has(k))) return false;
-  return !id || o.id === id || o.data.requirement_id === id;
+  // Demo-B olayları nesnesini `script_id` / `run_id` alanında taşır (ajan adımı, koşu, kırma aşaması).
+  return !id || o.id === id || o.data.requirement_id === id || o.data.script_id === id || o.data.run_id === id;
 }
 
 /** EventSource'a dinleyici olarak kaydedilen tüm adlar. */

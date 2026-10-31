@@ -49,7 +49,11 @@ SORGULAR: dict[str, str] = {
         "urun.id = kampanya.urun_id WHERE kampanya.aktif ORDER BY kampanya.kod"
     ),
     "ayar": "SELECT anahtar, deger FROM ayar ORDER BY anahtar",
-    "bayi": "SELECT kullanici_adi, ad, kredi_limiti FROM bayi ORDER BY kullanici_adi",
+    # bayi3 yalnızca doğrulama ajanının bayisidir (e2e fixture'ları reddeder): case'lere girmez.
+    "bayi": (
+        "SELECT kullanici_adi, ad, kredi_limiti FROM bayi WHERE kullanici_adi <> 'bayi3' "
+        "ORDER BY kullanici_adi"
+    ),
 }
 
 Sorgu = Callable[[str], Sequence[Sequence[Any]]]

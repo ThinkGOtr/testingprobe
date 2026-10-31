@@ -13,7 +13,8 @@ beyanla karşılaştırır. Eşleşirse mod `replay` (köken `golden_matched`, `
 "input_match": {
   "sources": ["jira:TPD-1"],            // isteğe bağlı: yalnızca bu kaynaklı <untrusted> blokları
   "acceptance_criteria": ["AC1: …", …], // isteğe bağlı: bloklardaki ACn satırları TAM bu küme
-  "contains": ["…"]                     // isteğe bağlı: her metin girdide geçmeli
+  "contains": ["…"],                    // isteğe bağlı: her metin girdide geçmeli
+  "case_text": "Başlık: …\nAdımlar: …"   // isteğe bağlı (`sources` zorunlu): onaylı case TAM bu
 }
 ```
 
@@ -23,6 +24,11 @@ beyanla karşılaştırır. Eşleşirse mod `replay` (köken `golden_matched`, `
 - `acceptance_criteria`: bloklardaki `ACn: metin` satırları (madde imli `- AC1: …` ve JSON
   gövdeli bloklardaki dizgeler dahil) beyan edilen kümeye eşit olmalı: AC eklenmesi, silinmesi
   veya tek kelime değişmesi REPLAY-MISS'tir. `[]` = hiç AC yok (ör. TPD-2).
+- `case_text`: kod üretimi (verify_and_map) golden'ları için onaylı case'in kanonik metni
+  (`inputs.approved_case_text`). `sources` bloklarının HER biri — gövde JSON case ise kanonik
+  metne çevrilerek — bu metne eşit olmalıdır: case'e tek kelime eklenmesi bile REPLAY-MISS'tir
+  (`contains` yalnızca varlık denetler; eklenen beklenen değer onu geçerdi). Yalnızca case
+  bloğuna bakılır; sembol tablosu ve geri bildirim bloğu karşılaştırmaya girmez.
 - Karşılaştırma NFC + boşluk daraltma ile yapılır; başka gevşetme yoktur.
 """
 
@@ -158,9 +164,25 @@ def acceptance_criteria(texts: Sequence[str]) -> tuple[dict[str, str], list[str]
     return found, sorted(set(conflicts))
 
 
+def case_block_text(body: str) -> str:
+    """Case bloğunun kanonik metni: JSON case gövdesi `approved_case_text`'e çevrilir."""
+    from tp_core.gateway.inputs import approved_case_text
+
+    stripped = body.strip()
+    if stripped.startswith("{"):
+        with contextlib.suppress(ValueError):
+            data = json.loads(stripped)
+            if isinstance(data, Mapping):
+                return approved_case_text(data)
+    return body
+
+
 def input_mismatches(spec: Mapping[str, Any], messages: Sequence[Any]) -> list[str]:
     """Girdinin golden beyanına uymadığı noktalar (boş liste = eşleşir). Türkçe, kısa."""
     sources = spec.get("sources")
+    case_text = spec.get("case_text")
+    if case_text is not None and not sources:
+        raise ValueError("input_match.case_text için input_match.sources gerekli")
     if sources:
         blocks = [
             b for b in untrusted_blocks(messages) if any(fnmatchcase(b.source, p) for p in sources)
@@ -172,6 +194,10 @@ def input_mismatches(spec: Mapping[str, Any], messages: Sequence[Any]) -> list[s
         texts = message_texts(messages)
 
     reasons: list[str] = []
+    if case_text is not None:
+        want_case = norm(str(case_text))
+        if any(norm(case_block_text(t)) != want_case for t in texts):
+            reasons.append("onaylı case metni golden'ın beyan ettiğinden farklı")
     expected_acs = spec.get("acceptance_criteria")
     if expected_acs is not None:
         want, bad = acceptance_criteria(expected_acs)

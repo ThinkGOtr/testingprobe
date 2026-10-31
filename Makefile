@@ -10,7 +10,7 @@ export PLAYWRIGHT_VERSION := $(strip $(shell cat .playwright-version 2>/dev/null
 
 S ?=
 
-.PHONY: help env up status seed reset jira-seed forge-init break demo-baseline export-audit security-check e2e-smoke prune logs down
+.PHONY: help env up status seed reset jira-seed forge-init break demo-baseline export-audit security-check e2e-smoke demo-check prune logs down
 
 help: ## Hedefleri listeler
 	@echo "Kullanım: make <hedef>"
@@ -47,11 +47,15 @@ demo-baseline: ## Forge main → demo-baseline + demo-app-web yeniden derlenir (
 export-audit: ## Denetim kaydını exports/audit-*.jsonl + .sha256 olarak dışa aktarır
 	@scripts/export-audit.sh
 
-security-check: ## 8 güvenlik kontrolü (port, izolasyon, denetim rolü, sır, demoapp_ro, model anahtarı, MCP ağı, yazma kimlikleri)
+security-check: ## 10 güvenlik kontrolü (port, izolasyon, denetim rolü, sır, demoapp_ro, model anahtarı, MCP ağı, yazma kimlikleri, merge kapısı, CI imajında ajan yok)
 	@scripts/security-check.sh
 
 e2e-smoke: ## demo-app e2e'yi test-runner içinden compose uygulamasına koşturur (E2E_BREAK_VERIFY=1: kırarak doğrula)
 	@scripts/e2e-smoke.sh
+
+demo-check: ## Demo-B ön kontrolü: REPLAY golden'larında defect adayı anı hazır mı (STORY=TPD-1) + REPLAY ref çözümü (RUNS=5)
+	@docker compose exec -T core-worker python -m tp_core.gateway.demo_check --story $(or $(STORY),TPD-1)
+	@docker compose exec -T core-worker python -m tp_core.gateway.replay_check --runs $(or $(RUNS),5)
 
 prune: ## Kullanılmayan (dangling) imajları ve build önbelleğini temizler; volume'lere dokunmaz
 	@echo "İmajlar:";        docker image prune -f | tail -n 1

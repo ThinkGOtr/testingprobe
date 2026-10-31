@@ -140,3 +140,61 @@ def link_node_modules(e2e_dir: Path, node_modules: Path) -> None:
     elif target.exists():
         shutil.rmtree(target)
     target.symlink_to(node_modules, target_is_directory=True)
+
+
+def tree_id(repo: Path, sha: str, path: str, timeout_s: float = 60) -> str | None:
+    """`sha:path` ağacının (ya da dosyasının) nesne kimliği; yol yoksa None.
+
+    Nesne kimlikleri içerikten türetilir: iki farklı depodaki aynı içerik aynı kimliği verir
+    (yerel forge ile GitHub aynası karşılaştırılabilir).
+    """
+    res = proc.run(
+        _git_argv(repo, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{sha}:{path}"),
+        env=git_env(),
+        timeout_s=timeout_s,
+    )
+    if res.timed_out:
+        raise ForgeError("git rev-parse süre aşımı")
+    oid = res.stdout.strip()
+    return oid if res.exit_code == 0 and oid else None
+
+
+def init_mirror(repo: Path, timeout_s: float = 60) -> None:
+    """Ayna bare deposunu (yoksa) oluşturur."""
+    if (repo / "HEAD").is_file():
+        return
+    repo.parent.mkdir(parents=True, exist_ok=True)
+    res = proc.run(
+        ["git", "init", "--bare", "-q", "-b", "main", str(repo)], env=git_env(), timeout_s=timeout_s
+    )
+    if not res.ok:
+        raise ForgeError(f"ayna deposu oluşturulamadı: {res.stderr.strip()[:300]}")
+
+
+def fetch_env(token: str = "") -> dict[str, str]:
+    """Salt okuma fetch ortamı: yalnızca https/file, istem yok; belirteç argv'ye girmez."""
+    env = git_env()
+    env["GIT_ALLOW_PROTOCOL"] = "https:file"
+    if token:
+        import base64
+
+        basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+        n = int(env.get("GIT_CONFIG_COUNT", "0"))
+        env[f"GIT_CONFIG_KEY_{n}"] = "http.extraHeader"
+        env[f"GIT_CONFIG_VALUE_{n}"] = f"Authorization: Basic {basic}"
+        env["GIT_CONFIG_COUNT"] = str(n + 1)
+    return env
+
+
+def fetch(
+    repo: Path, url: str, refspecs: list[str], token: str = "", timeout_s: float = 120
+) -> bool:
+    """`url`'den `refspecs`'i aynaya çeker (etiket yok). Başarılıysa True."""
+    res = proc.run(
+        _git_argv(repo, "fetch", "--no-tags", "--quiet", "--end-of-options", url, *refspecs),
+        env=fetch_env(token),
+        timeout_s=timeout_s,
+    )
+    if res.timed_out:
+        raise ForgeError("git fetch süre aşımı")
+    return res.ok

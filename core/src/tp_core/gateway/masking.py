@@ -161,3 +161,82 @@ class PiiMasker:
 
     def new_session(self) -> MaskingSession:
         return MaskingSession(enabled=self.enabled, allowlist=self.allowlist)
+
+
+# ------------------------------------------------------------------ araç argümanı sırları
+#
+# PII maskelemesinden AYRI ve her zaman açık: ajanın parola alanına yazdığı metin (ör.
+# `browser_type {element: "Parola", text: "Demo123!"}`) append-only `tool_call` tablosuna ham
+# yazılmaz; sonradan silinemeyeceği için kayıttan ÖNCE gizlenir. Alan, hedefi tanımlayan
+# argümanlardan (element / target / ref / selector / name) tanınır — kod üretimindeki
+# `features.codegen.browser.mask_args` ile aynı kural. Aynı çalıştırmada gizlenen değerler
+# araç sonuç özetinden de (`fill('Demo123!')`) silinir.
+
+SECRET_FIELD_RE = re.compile(r"parola|password|passwd|şifre|sifre", re.IGNORECASE)
+SECRET_MASK = "***"
+_TARGET_KEYS = ("element", "target", "ref", "selector", "name", "label")
+_VALUE_KEYS = ("text", "value")
+_MIN_SECRET_LEN = 3  # daha kısa "sır" özetlerde rastgele eşleşir; gizlenmez
+
+
+def _is_secret_target(args: dict[str, Any]) -> bool:
+    target = " ".join(str(args.get(k) or "") for k in _TARGET_KEYS)
+    return bool(SECRET_FIELD_RE.search(target)) or str(args.get("type") or "") == "password"
+
+
+def secret_tool_values(args: Any) -> list[str]:
+    """Araç argümanlarında parola alanına yazılan değerler (`browser_fill_form` alanları dahil)."""
+    out: list[str] = []
+    if isinstance(args, dict):
+        if _is_secret_target(args):
+            out += [str(args[k]) for k in _VALUE_KEYS if isinstance(args.get(k), str | int)]
+        for v in args.values():
+            if isinstance(v, dict | list):
+                out += secret_tool_values(v)
+    elif isinstance(args, list):
+        for v in args:
+            out += secret_tool_values(v)
+    return [v for v in out if v and v != SECRET_MASK]
+
+
+def mask_tool_args(args: Any) -> Any:
+    """Kayıt için araç argümanları: parola alanına yazılan değer `***` olur (kopya döner).
+
+    >>> mask_tool_args({"element": "Parola", "target": "[data-testid=\\"login-password\\"]",
+    ...                 "text": "Demo123!"})["text"]
+    '***'
+    >>> mask_tool_args({"element": "Kullanıcı adı", "text": "bayi3"})["text"]
+    'bayi3'
+    """
+    if isinstance(args, dict):
+        secret = _is_secret_target(args)
+        return {
+            k: (
+                SECRET_MASK
+                if secret and k in _VALUE_KEYS and isinstance(v, str | int)
+                else mask_tool_args(v)
+            )
+            for k, v in args.items()
+        }
+    if isinstance(args, list):
+        return [mask_tool_args(v) for v in args]
+    return args
+
+
+def scrub_secrets(text: str, secrets: Iterable[str]) -> str:
+    """Metindeki bilinen sır değerlerini `***` ile değiştirir (uzundan kısaya)."""
+    for value in sorted({s for s in secrets if len(s) >= _MIN_SECRET_LEN}, key=len, reverse=True):
+        text = text.replace(value, SECRET_MASK)
+    return text
+
+
+def scrub_secrets_in(value: Any, secrets: Iterable[str]) -> Any:
+    """`scrub_secrets`'in JSON değerlerine (dizgeler, iç içe dict/list) uygulanmış hâli."""
+    known = list(secrets)
+    if isinstance(value, str):
+        return scrub_secrets(value, known)
+    if isinstance(value, dict):
+        return {k: scrub_secrets_in(v, known) for k, v in value.items()}
+    if isinstance(value, list):
+        return [scrub_secrets_in(v, known) for v in value]
+    return value

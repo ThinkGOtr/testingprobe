@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -53,7 +54,14 @@ from tp_core.gateway.errors import (
     ReplayNotFound,
     SchemaValidationFailed,
 )
-from tp_core.gateway.masking import MaskingSession, PiiMasker
+from tp_core.gateway.masking import (
+    MaskingSession,
+    PiiMasker,
+    mask_tool_args,
+    scrub_secrets,
+    scrub_secrets_in,
+    secret_tool_values,
+)
 from tp_core.gateway.providers.base import (
     Provider,
     ProviderRequest,
@@ -67,6 +75,15 @@ from tp_core.gateway.replay import (
     ReplayStore,
     output_origin,
     replay_key,
+)
+from tp_core.gateway.snapshot_refs import (
+    SNAPSHOT_TOOL,
+    Hedef,
+    is_inline_snapshot,
+    locate_ref,
+    ref_arg,
+    snapshot_lines,
+    strip_mcp_file_links,
 )
 from tp_core.ports import (
     AgentResult,
@@ -121,6 +138,39 @@ FORBIDDEN_TOOLS = frozenset(
         "browser_pdf_save",
     }
 )
+# Verilen araçların bile hiçbir zaman sunulmayan/kabul edilmeyen argümanları (en az yetki,
+# anayasa V). `filename`: Playwright MCP sonucu modele döndürmek yerine MCP çalışma alanına dosya
+# YAZAR (browser_snapshot dahil); `boxes`: snapshot'a piksel koordinatları ekler (görsel düzen
+# bilgisi; ajan role/ad ile çalışır). Şemadan çıkarılır (model görmez) ve çağrıda gelirse araç
+# çalıştırılmadan reddedilir (canlı ve replay). Kayıtlı tools/list fikstürüyle test edilir.
+FORBIDDEN_TOOL_ARGS = frozenset({"filename"})
+RESTRICTED_TOOL_ARGS: Mapping[str, frozenset[str]] = MappingProxyType(
+    {"browser_snapshot": frozenset({"filename", "boxes"})}
+)
+
+
+def restricted_args(tool: str) -> frozenset[str]:
+    """`tool` için şemadan çıkarılan ve çağrıda reddedilen argüman adları."""
+    return FORBIDDEN_TOOL_ARGS | RESTRICTED_TOOL_ARGS.get(tool, frozenset())
+
+
+def narrow_tool(spec: ToolSpec) -> ToolSpec:
+    """Girdi şemasından yasak argümanları (`properties` ve `required`) çıkarır (kopya)."""
+    banned = restricted_args(spec.name)
+    schema = dict(spec.input_schema or {})
+    props = schema.get("properties")
+    if not isinstance(props, Mapping) or not banned & set(props):
+        return spec
+    schema["properties"] = {k: v for k, v in props.items() if k not in banned}
+    if isinstance(schema.get("required"), list):
+        schema["required"] = [r for r in schema["required"] if r not in banned]
+    return spec.model_copy(update={"input_schema": schema})
+
+
+def _banned_args(tool: str, args: Any) -> list[str]:
+    return sorted(set(args) & restricted_args(tool)) if isinstance(args, Mapping) else []
+
+
 # İncelenmiş, zararsız ama §8.4 izin listesinde olmadığı için hiçbir aşamaya verilmeyen Playwright
 # MCP araçları. Yalnızca sınıflandırma kaydıdır (izin listesi zaten reddeder); kayıtlı tools/list
 # fikstürüyle test edilir: MCP yükseltmesi yeni araç eklerse test kırmızı olur ve araç bilinçli
@@ -209,8 +259,10 @@ SnapshotPredicate = Callable[[str, str], bool]  # (araç adı, sonuç metni) -> 
 
 
 def default_is_snapshot(tool: str, text: str) -> bool:
-    """Playwright MCP araçları eylemden sonra sayfa snapshot'ı döndürür."""
-    return tool == "browser_snapshot" or "Page Snapshot" in text or "- Page Snapshot" in text
+    """Sonuç sayfa snapshot'ı mı? `browser_snapshot` ya da satır içi snapshot YAML'ı taşıyan
+    eylem sonucu (Playwright MCP 1.64: `### Snapshot` + ```yaml```; eski `- Page Snapshot`).
+    Eylemlerin dosya bağlantılı snapshot'ı (`- [Snapshot](…yml)`) snapshot sayılmaz."""
+    return tool == SNAPSHOT_TOOL or is_inline_snapshot(text)
 
 
 @dataclass
@@ -231,6 +283,20 @@ _EXTRA_KEYS = (
     "onbellek_yazma_token",
     "yedek_model",
 )
+
+
+def _budgeted_input_tokens(usage: Usage) -> int:
+    """Ajan girdi token tavanının (`max_input_tokens`) saydığı tur girdisi: önbelleksiz girdi +
+    önbelleğe yazılan girdi (ikisi de ≥1× fiyatlanır).
+
+    Önbellekten okunan önek (`cache_read_tokens`: sistem prompt'u, araç şemaları, case + sembol
+    tablosu; ~0.1× fiyat) her tur yeniden gönderilir ve SAYILMAZ: saysaydık 15 turluk gerçekçi bir
+    doğrulama yörüngesi (~10k token'lık önek × 15) yalnızca önekten ~150k'ye varır ve tavan
+    sözleşmenin amacı olan kaçak bağlam büyümesi yerine yörünge uzunluğunu cezalandırırdı.
+    Tavan böylece "tur başına yeni bağlam" birikimini (geçmiş, son snapshot, önbellek ıskası)
+    sınırlar; USD harcaması ayrıca `Budget` ile (okuma dahil, gerçek fiyatla) sınırlanır.
+    """
+    return usage.input_tokens + usage.cache_write_tokens
 
 
 def _args_summary(args: Any, limit: int = 2000) -> Any:
@@ -285,6 +351,7 @@ class Gateway:
         record_extras: bool = False,
         call_lookup: CallLookup | None = None,
         agent_tools: Mapping[str, Collection[str]] | None = None,
+        secret_values: Collection[str] = (),
     ) -> None:
         if mode in ("live", "record") and provider is None:
             raise ProviderNotConfigured(f"'{mode}' modu için sağlayıcı gerekli")
@@ -313,6 +380,8 @@ class Gateway:
                 raise GatewayConfigError(
                     f"'{purpose_name}' izin listesinde yasak araç: {', '.join(bad)}"
                 )
+        # Araç kaydından (tool_call) her zaman silinen bilinen sırlar (ör. ajan bayisinin parolası).
+        self.secret_values = frozenset(v for v in secret_values if v)
         self._sessions: dict[UUID, MaskingSession] = {}
         self._bundles: dict[tuple[str, str, str], Bundle] = {}
 
@@ -463,6 +532,7 @@ class Gateway:
     ) -> ReplayKeyInfo:
         """`run_agent()` aynı girdiyle hangi birebir replay anahtarını arardı."""
         self._check_agent_tools(purpose, tools)
+        tools = [narrow_tool(t) for t in tools]
         cfg = self.models.purpose(purpose)
         bnd, _, _, _, digest, key = self._key_material(
             purpose,
@@ -783,6 +853,8 @@ class Gateway:
         call_id: UUID | None = None,
     ) -> AgentResult:
         self._check_agent_tools(purpose, tools)
+        # Model yasak argümanları (dosya yazma vb.) hiç görmez; anahtar da daraltılmış şemadandır.
+        tools = [narrow_tool(t) for t in tools]
         cfg = self.models.purpose(purpose)
         bnd, session, masked, mask_diff, digest, key = self._key_material(
             purpose,
@@ -843,6 +915,7 @@ class Gateway:
         used_input_tokens = 0
         last_errors: list[str] = []
         last_output: Any = None
+        secrets = set(self.secret_values)
 
         for turn_no in range(1, max_turns + 1):
             conversation = self._agent_messages(masked, turns, snapshot)
@@ -891,11 +964,7 @@ class Gateway:
             cost = _response_cost(self.models, cfg, response)
             row.update(_fallback_fields(response))
             self.budget.charge(workflow_id, cost)
-            used_input_tokens += (
-                response.usage.input_tokens
-                + response.usage.cache_read_tokens
-                + response.usage.cache_write_tokens
-            )
+            used_input_tokens += _budgeted_input_tokens(response.usage)
             row.update(
                 cikti={
                     "text": response.text,
@@ -941,25 +1010,46 @@ class Gateway:
                         else:
                             final_ok, final_output = True, tc.args
                             result, is_error = "Sonuç kabul edildi.", False
-                    self._record_tool(row_id, tc.name, tc.args, result, allowed_flag=True)
-                elif tc.name not in allowed:
-                    result = f"Araç izinli değil: {tc.name}. İzinli araçlar: {sorted(allowed)}"
+                    self._record_tool(
+                        row_id, tc.name, tc.args, result, allowed_flag=True, secrets=secrets
+                    )
+                elif tc.name not in allowed or _banned_args(tc.name, tc.args):
+                    banned = _banned_args(tc.name, tc.args)
+                    result = (
+                        f"Argüman izinli değil: {tc.name}({', '.join(banned)}). Bu argümanlar "
+                        "(dosyaya yazma, koordinat) verilmez; argümansız tekrar çağır."
+                        if tc.name in allowed
+                        else f"Araç izinli değil: {tc.name}. İzinli araçlar: {sorted(allowed)}"
+                    )
                     is_error = True
                     step = AgentStep(
-                        tool=tc.name, args=tc.args, result_summary=_summary(result), allowed=False
+                        tool=tc.name,
+                        args=tc.args,
+                        result_summary=_summary(scrub_secrets(result, secrets)),
+                        allowed=False,
                     )
                     steps.append(step)
-                    self._record_tool(row_id, tc.name, tc.args, result, allowed_flag=False)
+                    self._record_tool(
+                        row_id, tc.name, tc.args, result, allowed_flag=False, secrets=secrets
+                    )
                     if on_step:
                         on_step(step)
                 else:
                     result, is_error = self._execute(execute, tc.name, session.unmask(tc.args))
+                    # MCP sunucu dosyası bağlantıları (snapshot .yml, konsol .log) modele gitmez.
+                    result = strip_mcp_file_links(result)
                     result, _ = session.mask(result) if self._mask_tool_results else (result, [])
+                    secrets.update(secret_tool_values(tc.args))
                     step = AgentStep(
-                        tool=tc.name, args=tc.args, result_summary=_summary(result), allowed=True
+                        tool=tc.name,
+                        args=tc.args,
+                        result_summary=_summary(scrub_secrets(result, secrets)),
+                        allowed=True,
                     )
                     steps.append(step)
-                    self._record_tool(row_id, tc.name, tc.args, result, allowed_flag=True)
+                    self._record_tool(
+                        row_id, tc.name, tc.args, result, allowed_flag=True, secrets=secrets
+                    )
                     if on_step:
                         on_step(step)
                 turn.results.append((tc, result, is_error))
@@ -990,7 +1080,9 @@ class Gateway:
                     )
                     if failure:
                         # Tur satırı zaten yazıldı (append-only); iz tool_call olarak kalır.
-                        self._record_tool(row_id, "replay_kaydet", {}, failure, allowed_flag=True)
+                        self._record_tool(
+                            row_id, "replay_kaydet", {}, failure, allowed_flag=True, secrets=secrets
+                        )
                 return AgentResult(
                     output=session.unmask(final_output),
                     steps=steps,
@@ -1066,8 +1158,19 @@ class Gateway:
             return f"Araç hatası ({type(exc).__name__}): {exc}", True
 
     def _record_tool(
-        self, ai_call_id: UUID, tool: str, args: Any, result: str, *, allowed_flag: bool
+        self,
+        ai_call_id: UUID,
+        tool: str,
+        args: Any,
+        result: str,
+        *,
+        allowed_flag: bool,
+        secrets: set[str] | None = None,
     ) -> UUID:
+        """`tool_call` append-only'dir: parola alanı argümanı ve bilinen sırlar kayıttan ÖNCE
+        gizlenir (sonradan silinemez). `secrets` çalıştırma boyunca birikir."""
+        known = secrets if secrets is not None else set(self.secret_values)
+        known.update(secret_tool_values(args))
         return self.recorder.record_tool_call(
             {
                 "id": uuid4(),
@@ -1075,8 +1178,8 @@ class Gateway:
                 "kanal": "agent",
                 "cagiran_user_id": None,
                 "arac": tool,
-                "arguman_ozeti": _args_summary(args),
-                "sonuc_ozeti": _summary(result),
+                "arguman_ozeti": _args_summary(scrub_secrets_in(mask_tool_args(args), known)),
+                "sonuc_ozeti": _summary(scrub_secrets(result, known)),
                 "izin_verildi": allowed_flag,
             }
         )
@@ -1150,27 +1253,133 @@ class Gateway:
                 f"replay kaydı şemaya uymuyor: {path}", errors=errors, last_output=output
             )
         steps: list[AgentStep] = []
+        secrets = set(self.secret_values)
+        live_lines: list[str] | None = None  # bu oturumdaki son snapshot (ref çözümü için)
         for raw in record.get("steps") or []:
             recorded = AgentStep.model_validate(raw)
+            secrets.update(secret_tool_values(recorded.args))
             # İzin listesi replay'de de geçerlidir: kayıtta olsa bile listede olmayan araç koşmaz.
-            is_allowed = recorded.allowed and recorded.tool in allowed
+            is_allowed = (
+                recorded.allowed
+                and recorded.tool in allowed
+                and not _banned_args(recorded.tool, recorded.args)
+            )
             summary = recorded.result_summary
+            args = recorded.args
             if is_allowed and self.replay_executes_tools:
-                result, _ = self._execute(execute, recorded.tool, session.unmask(recorded.args))
-                summary = _summary(result)
+                args, unresolved = _resolve_recorded_ref(raw, recorded.args, live_lines)
+                if unresolved is not None:
+                    # Eleman bu oturumun sayfasında yok: kayıttaki ref'i körlemesine göndermek
+                    # yanlış elemanı doğrulayabilir. Adım çalıştırılmaz, hata olarak akar.
+                    summary = unresolved
+                else:
+                    result, is_error = self._execute(execute, recorded.tool, session.unmask(args))
+                    result = strip_mcp_file_links(result)
+                    if not is_error and self._is_snapshot(recorded.tool, result):
+                        live_lines = snapshot_lines(result) or live_lines
+                    summary = _summary(result)
+                    if not is_error:
+                        drift = _replay_drift(recorded, result)
+                        if drift:
+                            summary = _summary(f"{drift}\n{result}")
             elif not is_allowed:
-                summary = f"Araç izinli değil: {recorded.tool}"
+                banned = _banned_args(recorded.tool, recorded.args)
+                summary = (
+                    f"Argüman izinli değil: {recorded.tool}({', '.join(banned)})"
+                    if banned and recorded.tool in allowed
+                    else f"Araç izinli değil: {recorded.tool}"
+                )
             step = AgentStep(
-                tool=recorded.tool, args=recorded.args, result_summary=summary, allowed=is_allowed
+                tool=recorded.tool,
+                args=args,
+                result_summary=scrub_secrets(summary, secrets),
+                allowed=is_allowed,
             )
             steps.append(step)
-            self._record_tool(row_id, step.tool, step.args, summary, allowed_flag=is_allowed)
+            self._record_tool(
+                row_id, step.tool, step.args, summary, allowed_flag=is_allowed, secrets=secrets
+            )
             if on_step:
                 on_step(step)
         return AgentResult(output=session.unmask(output), steps=steps, call_ids=[row_id], mode=mode)
 
 
 # -------------------------------------------------------------------- yardımcılar
+
+REPLAY_UNRESOLVED = "Araç hatası (ReplayHedefYok)"
+REPLAY_DRIFT = "REPLAY sapması"
+_GENERATED_LOCATOR = re.compile(r"getBy[A-Za-z]+\([^)]*\)(?:\.getBy[A-Za-z]+\([^)]*\))*")
+
+
+def _resolve_recorded_ref(
+    raw: Mapping[str, Any], args: dict[str, Any], live_lines: list[str] | None
+) -> tuple[dict[str, Any], str | None]:
+    """Kayıttaki snapshot ref'ini (`e21`) bu oturumun son snapshot'ından çözer.
+
+    Ref'ler oturuma özgüdür ve aynı yörüngede bile kayabilir (snapshot_refs modül notu). Adım
+    yapılandırılmış hedef (`hedef`: rol/ad/kapsam) taşıyorsa ref canlı snapshot'tan bulunur;
+    bulunamazsa adım çalıştırılmaz ve `(args, hata metni)` döner. Hedefsiz eski kayıtlar
+    değiştirilmeden gönderilir (geriye uyum; golden sürüklenme testi hedefi zorunlu tutar).
+    """
+    key = ref_arg(args)
+    hedef = Hedef.from_raw(raw.get("hedef"))
+    if key is None or hedef is None:
+        return args, None
+    if live_lines is None:
+        return args, (
+            f"{REPLAY_UNRESOLVED}: {hedef.describe()} için bu oturumda snapshot alınmadı; "
+            f"kayıttaki ref {args[key]} gönderilmedi."
+        )
+    ref = locate_ref(live_lines, hedef)
+    if ref is None:
+        return args, (
+            f"{REPLAY_UNRESOLVED}: {hedef.describe()} bu oturumun son snapshot'ında bulunamadı; "
+            f"kayıttaki ref {args[key]} gönderilmedi."
+        )
+    return {**args, key: ref}, None
+
+
+_PAGE_URL = re.compile(r"(?:Page URL:\s*|\bURL\s+)(\S+)")
+
+
+def _url_path(text: str | None) -> str | None:
+    """Araç çıktısındaki sayfa yolu (`Page URL: http://h/sepet` ve `· URL /sepet` → `/sepet`)."""
+    m = _PAGE_URL.search(text or "")
+    if m is None:
+        return None
+    url = m.group(1).rstrip(".,;)|")
+    if "://" in url:
+        url = "/" + url.split("://", 1)[1].partition("/")[2]
+    return url.split("?", 1)[0].split("#", 1)[0] or "/"
+
+
+def _url_class(path: str) -> str:
+    """Oturuma özgü kimlik (sipariş no) her koşuda farklıdır: `/siparis/SP-1` → `/siparis/*`."""
+    head, sep, _ = path.rstrip("/").rpartition("/")
+    return f"{head}/*" if sep and head and re.search(r"\d", path.rsplit("/", 1)[-1]) else path
+
+
+def _replay_drift(recorded: AgentStep, result: str) -> str | None:
+    """Canlı adım kayıttakinden saptıysa sapma notu (yoksa None).
+
+    - `browser_generate_locator`: canlı locator kayıttakinden farklıysa — kayıttaki doğrulama
+      başka bir elemanı göstermişse 'doğrulandı' işareti bu oturumda tekrarlanmamıştır.
+    - Eylem/gezinti adımları: kayıttaki sayfa yolu (`· URL /katalog`) ile canlı sayfa yolu farklıysa
+      (örn. hatalı parola girişte kalmalıyken katalog açıldı) yörünge artık kanıt değildir.
+    Not adım özetinin başına yazılır (denetim + insan)."""
+    if recorded.tool != "browser_generate_locator":
+        want_url = _url_path(recorded.result_summary)
+        got_url = _url_path(result)
+        if want_url and got_url and _url_class(want_url) != _url_class(got_url):
+            return f"{REPLAY_DRIFT}: kayıtta sayfa {want_url}, bu oturumda {got_url}"
+        return None
+    want = _GENERATED_LOCATOR.findall(recorded.result_summary or "")
+    if not want:
+        return None
+    got = _GENERATED_LOCATOR.findall(result)
+    if want[-1] in got:
+        return None
+    return f"{REPLAY_DRIFT}: kayıtta {want[-1]}, bu oturumda {got[-1] if got else '(locator yok)'}"
 
 
 _THINKING_BLOCKS = frozenset({"thinking", "redacted_thinking"})

@@ -39,6 +39,18 @@ if docker volume inspect "$TP_ARTIFACTS_VOLUME" >/dev/null 2>&1; then
   docker volume rm "$TP_ARTIFACTS_VOLUME" >/dev/null
   echo "Artefaktlar silindi ($TP_ARTIFACTS_VOLUME)."
 fi
+# Kod üretimi ajan ekran görüntüleri silinen script'lere aittir.
+if docker volume inspect "$TP_CODEGEN_VOLUME" >/dev/null 2>&1; then
+  docker volume rm "$TP_CODEGEN_VOLUME" >/dev/null
+  echo "Kod üretimi ekran görüntüleri silindi ($TP_CODEGEN_VOLUME)."
+fi
+# Merge kapısı sonuçları ve GitHub aynası silinen koşulara/PR'lara aittir.
+for vol in "$TP_CHECKS_VOLUME" "$TP_MIRROR_VOLUME"; do
+  if docker volume inspect "$vol" >/dev/null 2>&1; then
+    docker volume rm "$vol" >/dev/null
+    echo "Silindi ($vol)."
+  fi
+done
 
 # forge'u up.sh değil aşağıdaki --force kurar (iki kez kurulmasın); tablo en sonda yazılır.
 TP_SKIP_FORGE_INIT=1 TP_SKIP_STATUS=1 "$TP_REPO_ROOT/scripts/up.sh"

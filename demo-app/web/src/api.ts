@@ -118,6 +118,9 @@ export const api = {
     request<User>("POST", "/auth/login", { kullanici_adi, parola }),
   logout: () => request<void>("POST", "/auth/logout"),
   me: () => request<User>("GET", "/auth/me"),
+  /** Oturum yoklaması: oturum yoksa 200 + null döner (401 → tarayıcı konsol hatası üretmez). */
+  session: () =>
+    request<{ oturum: User | null }>("GET", "/auth/session").then((r) => r.oturum),
   products: () => request<Product[]>("GET", "/products"),
   cart: () => request<Cart>("GET", "/cart"),
   addToCart: (urun_kod: string, adet: number) =>

@@ -61,11 +61,24 @@ if [ "$MODE" != init ]; then
   if [ "$MODE" = status ]; then
     exec "${EXEC[@]}" python -m tp_core.integrations.forge_demo status
   fi
+  # Çalışan demo-app-web'in forge commit'i → /forge/demo-app-web.sha (toolchain /check 'app' adımı
+  # ve /locator-probe bunu okur; konteyner yeniden oluşturmadan güncellenir).
+  write_web_sha() {
+    local sha
+    sha="$("${EXEC[@]}" python -m tp_core.integrations.forge_demo status \
+      | python3 -c 'import json,sys; print(json.load(sys.stdin)["main"])')" \
+      || die "forge main sha okunamadı"
+    # shellcheck disable=SC2016  # $1 iç kabukta genişler
+    "${EXEC[@]}" sh -c 'umask 022; printf "%s\n" "$1" > /forge/demo-app-web.sha.tmp && mv -f /forge/demo-app-web.sha.tmp /forge/demo-app-web.sha' _ "$sha" \
+      || die "/forge/demo-app-web.sha yazılamadı"
+    echo "demo-app-web commit'i: $sha"
+  }
   if [ "$MODE" = sync-web ]; then
     st="$("${EXEC[@]}" python -m tp_core.integrations.forge_demo status)" \
       || die "forge durumu okunamadı"
     if printf '%s' "$st" | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if d.get("baseline") is None or d.get("main_baseline_mi") else 1)'; then
       echo "forge main = demo-baseline; demo-app-web çalışma ağacından derlendiği gibi kalır."
+      write_web_sha
       exit 0
     fi
     echo "forge main demo-baseline'dan farklı (ör. make break sonrası); demo-app-web forge main'den derlenecek."
@@ -89,6 +102,7 @@ if [ "$MODE" != init ]; then
   if [ "${TP_DEMO_WEB_DEPLOY:-1}" != 0 ]; then
     compose up -d --no-build --no-deps --force-recreate --wait demo-app-web \
       || die "demo-app-web yeniden başlatılamadı"
+    write_web_sha
   fi
   echo "Tamam: $MODE (demo-app-web = forge main)."
   exit 0
@@ -163,6 +177,11 @@ if [ -e "$REPO" ]; then
     now_tree="$(cd "$C" && git init -q . && git add -A && git write-tree)"
     rm -rf "$C"
     base_tree="$(git -c safe.directory='*' --git-dir="$REPO" rev-parse 'demo-baseline^{tree}')"
+    if [ "$now_tree" = "$base_tree" ] && [ ! -s /forge/demo-app-web.sha ]; then
+      # make up demo-app-web'i çalışma ağacından derler (= demo-baseline); sync-web gerekirse ezer.
+      git -c safe.directory='*' --git-dir="$REPO" rev-parse demo-baseline > /forge/demo-app-web.sha
+      chmod 0644 /forge/demo-app-web.sha
+    fi
     if [ "$now_tree" != "$base_tree" ]; then
       echo "UYARI: forge demo-baseline'ı demo-app/ dizininin bugünkü içeriğinden ESKİ." >&2
       echo "       Ajanlar ve test-runner eski kodu görür; güncellemek için: make reset" >&2
@@ -172,7 +191,7 @@ if [ -e "$REPO" ]; then
     exit 0
   fi
   echo "--force: mevcut forge deposu ve PR kaydı siliniyor."
-  rm -rf "$REPO" /forge/tp-prs.json /forge/tp-prs.json.lock
+  rm -rf "$REPO" /forge/tp-prs.json /forge/tp-prs.json.lock /forge/demo-app-web.sha
   rm -f /forge/.tp-prs.*.tmp
 fi
 
@@ -217,7 +236,10 @@ git commit -q -am "demo: Sepete ekle butonunun data-testid'si değişti (add-to-
 
 git init -q --bare --shared=0666 -b main "$REPO"
 git push -q "$REPO" main demo/break-locator refs/tags/demo-baseline
+# Çalışan demo-app-web çalışma ağacından (= demo-baseline) derlenir; toolchain /check 'app' adımı okur.
+git -c safe.directory='*' --git-dir="$REPO" rev-parse demo-baseline > /forge/demo-app-web.sha
 fix_perms
+chmod 0644 /forge/demo-app-web.sha
 echo "forge deposu oluşturuldu ($(printf '%s\n' "$FILES" | wc -l | tr -d ' ') dosyada testid değişti)."
 summary
 INNER

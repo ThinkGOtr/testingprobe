@@ -168,37 +168,66 @@ describe("mock arka uç: kod, kırma, merge, onarım, bug", () => {
   it("replay ıskalanan case için PR açılmaz (REPLAY-MISS, sahte başarı yok)", async () => {
     await girisYap("muhendis");
     await expect(api.kodUret(["case-1-5"])).rejects.toMatchObject({ status: 409 });
-    await api.kodUret(["case-1-4"]);
+    // case-1-1'in örnek veride doğrulama/eşleme golden'ı yok: başka case'in adımları gösterilmez.
+    await api.kodUret(["case-1-1"]);
     for (let i = 0; i < 14; i++) await bekleIsler();
-    const s = (await api.scriptler()).find((x) => x.case_ids.includes("case-1-4"))!;
+    const s = (await api.scriptler()).find((x) => x.case_ids.includes("case-1-1") && x.id !== "scr-1")!;
     const detay = await api.script(s.id);
-    expect(detay.adimlar.map((a) => a.sira)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
-    expect(detay).toMatchObject({ mode: "replay_miss", durum: "failed", pr: null, zayif_test: false });
+    expect(detay.adimlar).toEqual([]);
+    expect(detay).toMatchObject({ mode: "replay_miss", durum: "failed", pr: null, zayif_test: false, kod: null, eslemeler: [] });
     expect(detay.hata).toContain("REPLAY-MISS");
   });
 
-  it("merge kırarak doğrulamadan önce reddedilir; sonra kabul edilir", async () => {
+  it("Demo-B: assertion kırmızısı defect adayıdır (PR yok, insana düşer); minimum sipariş case'i PR açar", async () => {
+    await girisYap("muhendis");
+    await api.kodUret(["case-1-4"]);
+    for (let i = 0; i < 20; i++) await bekleIsler();
+    const yeni = (await api.scriptler()).find((x) => x.case_ids.includes("case-1-4"))!;
+    const d4 = await api.script(yeni.id);
+    expect(d4).toMatchObject({ mode: "replay", durum: "pr_open", yerel_sinif: "gecti", pass_at_1: true });
+    expect(d4.pr?.checks).toEqual([expect.objectContaining({ ad: "local-ci", durum: "passed", zorunlu: true })]);
+    expect(d4.eslemeler.find((e) => e.method === "expectMinOrderWarning")).toMatchObject({
+      beklenen: true,
+      verified: true,
+      args: ["Minimum sipariş tutarı 750,00 TL"],
+    });
+    expect(d4.kod).toContain('expectMinOrderWarning("Minimum sipariş tutarı 750,00 TL")');
+    const kontrol = await api.kosu(d4.yerel_kontrol!.run_id!);
+    expect(kontrol).toMatchObject({ tetik: "local_check", durum: "passed", script_id: yeni.id });
+
+    const d3 = await api.script("scr-3");
+    expect(d3).toMatchObject({ durum: "blocked", pr: null, yerel_sinif: "defect_adayi" });
+    expect(d3.yerel_kontrol).toMatchObject({ sonuc: "failed", sinif: "defect_adayi", duzeltme_turu: 0 });
+  });
+
+  it("kırarak doğrulama sürerken merge reddedilir (core request_merge); bitince kabul edilir", async () => {
     await girisYap("muhendis");
     const s = mockVerisi().scriptler.find((x) => x.id === "scr-2")!;
     s.break_verify = { durum: "not_started", asamalar: [] };
     s.durum = "pr_open";
-    await expect(api.prBirlestir(scriptPr("scr-2"))).rejects.toMatchObject({ status: 409 });
     await api.kirarakDogrula("scr-2");
+    expect((await api.script("scr-2")).break_verify.durum).toBe("running");
+    await expect(api.prBirlestir(scriptPr("scr-2"))).rejects.toMatchObject({ status: 409 });
     for (let i = 0; i < 10; i++) await bekleIsler();
     const sonra = await api.script("scr-2");
     expect(sonra.break_verify.asamalar.map((a) => a.sonuc)).toEqual(["passed", "failed", "passed"]);
     // core durumu pr_open kalır; "merge'e hazır" türetilir (scriptIsareti).
     expect(sonra).toMatchObject({ durum: "pr_open", zayif_test: false });
-    expect((await api.prBirlestir(sonra.pr!)).durum).toBe("merged");
+    expect(await api.prBirlestir(sonra.pr!)).toMatchObject({ birlesti: true, mesaj: "PR #12 birleştirildi." });
     expect((await api.script("scr-2")).durum).toBe("merged");
     await expect(api.prBirlestir(sonra.pr!)).rejects.toMatchObject({ status: 409 });
   });
 
-  it("zayıf test işaretli PR merge edilemez", async () => {
+  it("zayıf test işaretli PR merge edilebilir (işaret, kapı değil); kabul notu denetime yazılır", async () => {
     await girisYap("muhendis");
     const s = await api.script("scr-1");
     expect(s).toMatchObject({ durum: "pr_open", zayif_test: true });
-    await expect(api.prBirlestir(s.pr!)).rejects.toMatchObject({ status: 409 });
+    expect(await api.prBirlestir({ ...s.pr!, onay_notu: "Zayıf test olarak merge edildi (insan kabulü)." })).toMatchObject({ birlesti: true });
+    const sonra = await api.script("scr-1");
+    expect(sonra.durum).toBe("merged");
+    expect(sonra.pr).toMatchObject({ durum: "merged", merge_eden: "muhendis" });
+    expect(sonra.pr?.merge_sha).toBeTruthy();
+    expect(mockVerisi().denetim.at(-1)).toMatchObject({ eylem: "pr.merge", ozet: expect.stringContaining("Zayıf test olarak merge edildi") });
   });
 
   it("locator onarım PR'ı yalnızca bir kez açılır", async () => {
@@ -323,7 +352,7 @@ describe("mock arka uç: karar içerik bağı (icerik_hash, TOCTOU — MIMARI-SO
     expect(v().scriptler.find((s) => s.id === "scr-2")!.durum).toBe("pr_open");
     const guncel = (await api.script("scr-2")).pr!;
     expect(guncel.head_sha).not.toBe(pr.head_sha);
-    await expect(api.prBirlestir(guncel)).resolves.toMatchObject({ durum: "merged" });
+    await expect(api.prBirlestir(guncel)).resolves.toMatchObject({ birlesti: true });
   });
 
   it("locator onarım PR'ı da içerik + head ile birleştirilir", async () => {
@@ -334,7 +363,7 @@ describe("mock arka uç: karar içerik bağı (icerik_hash, TOCTOU — MIMARI-SO
     const pr = h.oneri?.tur === "locator_fix" ? h.oneri.pr! : null;
     expect(pr?.icerik_hash).toMatch(/^sha256:/);
     await expect(api.prBirlestir({ number: pr!.number } as never)).rejects.toMatchObject({ status: 422 });
-    await expect(api.prBirlestir(pr!)).resolves.toMatchObject({ durum: "merged" });
+    await expect(api.prBirlestir(pr!)).resolves.toMatchObject({ birlesti: true });
   });
 });
 
@@ -406,6 +435,7 @@ describe("mock arka uç: Demo-A ölçüm, yeniden açma, token, olaylar", () => 
   it("case ölçümleri core alanlarıyla döner; kabul oranı hedefle", async () => {
     await girisYap("analist");
     const m = await api.caseMetrikleri("req-tpd-1");
+    // Ana yol (f2-kod-hatasi): C3 golden'ı story'yi esas alır, analist düzenlemeden onaylar.
     expect(m).toMatchObject({ uretilen: 10, karar_verilen: 6, bekleyen: 4, kabul: 4, kabul_hedefi: 0.7 });
     expect(m.kabul_orani).toBeCloseTo(4 / 10);
     expect(Object.keys(m.ai_cagri_modlari).every((k) => k === "replay" || k === "replay_miss")).toBe(true);
@@ -464,6 +494,8 @@ describe("mock arka uç: Demo-A ölçüm, yeniden açma, token, olaylar", () => 
     };
     tara(v());
     expect(modlar.length).toBeGreaterThan(10);
-    expect(modlar.every((m) => m === "replay" || m === "replay_miss")).toBe(true);
+    // null: model çağrısı yok (ör. code_defect bulgusunun şablon bug taslağı); "live" hiç yok.
+    expect(modlar.every((m) => m === "replay" || m === "replay_miss" || m === null)).toBe(true);
+    expect(modlar.filter((m) => m !== null).length).toBeGreaterThan(10);
   });
 });

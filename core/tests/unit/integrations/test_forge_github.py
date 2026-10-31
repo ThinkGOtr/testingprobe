@@ -18,10 +18,16 @@ from tp_core.integrations.forge import (
     ForgeError,
     ForgeNotFoundError,
     ForgeProtectionError,
+    ForgeStateError,
     ForgeValidationError,
     get_forge,
 )
-from tp_core.integrations.forge_github import AppAuth, GitHubForge, TokenAuth
+from tp_core.integrations.forge_github import (
+    AppAuth,
+    GitHubForge,
+    TokenAuth,
+    qualifying_approvals,
+)
 from tp_core.ports import ForgePort
 
 REPO = "acme/demo-app"
@@ -268,10 +274,166 @@ def test_get_pr_durumlari(forge: GitHubForge, gh: FakeGitHub) -> None:
     assert forge.get_pr(8).state == "closed"
 
 
+def test_pr_merge_info(forge: GitHubForge, gh: FakeGitHub) -> None:
+    """GitHub arayüzünde merge edilen PR'ın merge commit'i ve merge eden (çekirdek senkronu)."""
+    merged = pr_json(state="closed", merged_at="2026-01-01T00:00:00Z")
+    merged.update(merged=True, merge_commit_sha="f" * 40, merged_by={"login": "engineer1"})
+    gh.on("GET", f"{R}/pulls/7", merged)
+    assert forge.pr_merge_info(7) == {
+        "merge_commit_sha": "f" * 40,
+        "merged_by": {"login": "engineer1"},
+    }
+    acik = pr_json(8)
+    acik.update(merge_commit_sha="a" * 40)  # GitHub test merge commit'i: merge sayılmaz
+    gh.on("GET", f"{R}/pulls/8", acik)
+    assert forge.pr_merge_info(8) == {"merge_commit_sha": None, "merged_by": None}
+
+
 def test_comment_pr(forge: GitHubForge, gh: FakeGitHub) -> None:
     gh.on("POST", f"{R}/issues/7/comments", {"id": 1})
     forge.comment_pr(7, "CI kırmızı")
     assert gh.body("POST", f"{R}/issues/7/comments") == {"body": "CI kırmızı"}
+
+
+# ------------------------------------------- dal güncelleme / kapatma (LocalForge ile eşlik)
+
+UPDATED = "d" * 40
+
+
+def update_routes(
+    gh: FakeGitHub, *, behind: int = 2, gecikme: int = 1, parents: list[str] | None = None
+) -> list[float]:
+    """PR #7 (head BRANCH_HEAD) main'in `behind` commit gerisinde; PUT 202 sonrası head
+    `gecikme` okuma sonra UPDATED olur (GitHub update-branch asenkrondur)."""
+    okuma = {"n": 0}
+
+    def pr(_r: httpx.Request) -> dict[str, Any]:
+        okuma["n"] += 1
+        guncel = gh.count("PUT", f"{R}/pulls/7/update-branch") and okuma["n"] > 1 + gecikme
+        return pr_json(7, head={"ref": "tp/fix", "sha": UPDATED if guncel else BRANCH_HEAD})
+
+    gh.on("GET", f"{R}/pulls/7", pr)
+    gh.on("GET", f"{R}/compare/main...{BRANCH_HEAD}", {"behind_by": behind, "ahead_by": 1})
+    gh.on(
+        "PUT",
+        f"{R}/pulls/7/update-branch",
+        lambda _r: httpx.Response(202, json={"message": "Updating pull request branch."}),
+    )
+    gh.on(
+        "GET",
+        f"{R}/commits/{UPDATED}",
+        {"sha": UPDATED, "parents": [{"sha": s} for s in (parents or [BRANCH_HEAD, MAIN])]},
+    )
+    uykular: list[float] = []
+    return uykular
+
+
+def update_forge(gh: FakeGitHub, uykular: list[float], **kw: Any) -> GitHubForge:
+    return GitHubForge(
+        REPO, TokenAuth("tok-123"), transport=httpx.MockTransport(gh), sleep=uykular.append,
+        poll_interval_s=0.5, **kw,
+    )  # fmt: skip
+
+
+def test_update_branch_main_ile_gunceller_ve_yeni_head_doner(gh: FakeGitHub) -> None:
+    uykular = update_routes(gh)
+    forge = update_forge(gh, uykular)
+    assert callable(getattr(forge, "update_branch", None))  # codegen._dal_guncellenebilir
+    assert forge.update_branch(7) == UPDATED
+    assert gh.body("PUT", f"{R}/pulls/7/update-branch") == {"expected_head_sha": BRANCH_HEAD}
+    assert uykular == [0.5]  # 202 sonrası yeni head beklendi
+    put = next(r for r in gh.calls if r.method == "PUT")
+    assert put.headers["Authorization"] == "Bearer tok-123"  # bot (App) kimliği
+
+
+def test_update_branch_beklenen_head_ile(gh: FakeGitHub) -> None:
+    uykular = update_routes(gh)
+    forge = update_forge(gh, uykular)
+    with pytest.raises(ForgeStateError, match="beklenenden farklı"):
+        forge.update_branch(7, expected_head_sha="e" * 40)
+    assert gh.count("PUT", f"{R}/pulls/7/update-branch") == 0
+    with pytest.raises(ForgeValidationError):
+        forge.update_branch(7, expected_head_sha="abc")
+    assert forge.update_branch(7, expected_head_sha=BRANCH_HEAD) == UPDATED
+
+
+def test_update_branch_dal_gunceldeyse_yazmaz(gh: FakeGitHub) -> None:
+    uykular = update_routes(gh, behind=0)
+    forge = update_forge(gh, uykular)
+    assert forge.update_branch(7) == BRANCH_HEAD
+    assert gh.count("PUT", f"{R}/pulls/7/update-branch") == 0
+
+
+@pytest.mark.parametrize(
+    ("mesaj", "hata"),
+    [
+        ("merge conflict between base and head", ForgeConflictError),
+        ("expected head sha didn't match current head ref.", ForgeStateError),
+    ],
+)
+def test_update_branch_github_422_eslemesi(
+    gh: FakeGitHub, mesaj: str, hata: type[Exception]
+) -> None:
+    uykular = update_routes(gh)
+    gh.on("PUT", f"{R}/pulls/7/update-branch",
+          lambda _r: httpx.Response(422, json={"message": mesaj}))  # fmt: skip
+    with pytest.raises(hata):
+        update_forge(gh, uykular).update_branch(7)
+
+
+def test_update_branch_yaris_no_new_commits_ayni_head(gh: FakeGitHub) -> None:
+    uykular = update_routes(gh)
+    gh.on("PUT", f"{R}/pulls/7/update-branch",
+          lambda _r: httpx.Response(422, json={"message": "There are no new commits on the "
+                                                          "base branch."}))  # fmt: skip
+    assert update_forge(gh, uykular).update_branch(7) == BRANCH_HEAD
+
+
+def test_update_branch_yabanci_yeni_head_kabul_edilmez(gh: FakeGitHub) -> None:
+    uykular = update_routes(gh, parents=["e" * 40, MAIN])  # eski head ebeveyn değil
+    with pytest.raises(ForgeStateError, match="başka biri"):
+        update_forge(gh, uykular).update_branch(7)
+
+
+def test_update_branch_yeni_head_gelmezse_zaman_asimi(gh: FakeGitHub) -> None:
+    uykular = update_routes(gh, gecikme=10_000)
+    with pytest.raises(ForgeError, match="görünmedi"):
+        update_forge(gh, uykular, update_wait_s=0).update_branch(7)
+
+
+def test_update_branch_kapali_pr_ve_gecersiz_girdi(gh: FakeGitHub) -> None:
+    gh.on("GET", f"{R}/pulls/7", pr_json(7, state="closed"))
+    forge = update_forge(gh, [])
+    with pytest.raises(ForgeStateError, match="açık değil"):
+        forge.update_branch(7)
+    with pytest.raises(ForgeValidationError):
+        forge.update_branch(0)
+    with pytest.raises(ForgeValidationError):
+        forge.update_branch(7, actor="kötü aktör;")
+
+
+def test_close_pr(forge: GitHubForge, gh: FakeGitHub) -> None:
+    gh.on("GET", f"{R}/pulls/7", pr_json(7))
+    gh.on("PATCH", f"{R}/pulls/7", pr_json(7, state="closed"))
+    forge.close_pr(7)
+    assert gh.body("PATCH", f"{R}/pulls/7") == {"state": "closed"}
+
+
+@pytest.mark.parametrize("ek", [{"state": "closed"}, {"merged_at": "2026-10-31T10:00:00Z"}])
+def test_close_pr_acik_degilse_reddeder(
+    forge: GitHubForge, gh: FakeGitHub, ek: dict[str, Any]
+) -> None:
+    gh.on("GET", f"{R}/pulls/7", pr_json(7, **ek))
+    with pytest.raises(ForgeStateError, match="açık değil"):
+        forge.close_pr(7)
+    assert gh.count("PATCH", f"{R}/pulls/7") == 0
+
+
+def test_close_pr_yanit_kapali_degilse_hata(forge: GitHubForge, gh: FakeGitHub) -> None:
+    gh.on("GET", f"{R}/pulls/7", pr_json(7))
+    gh.on("PATCH", f"{R}/pulls/7", pr_json(7))
+    with pytest.raises(ForgeError, match="kapatılamadı"):
+        forge.close_pr(7)
 
 
 def test_merge_bot_ve_token_yoksa_reddedilir(forge: GitHubForge, gh: FakeGitHub) -> None:
@@ -292,10 +454,23 @@ def ruleset_checks(**overrides: str) -> dict[str, Any]:
     }
 
 
+def review(
+    login: str, state: str = "APPROVED", commit: str = BRANCH_HEAD, **user: Any
+) -> dict[str, Any]:
+    return {"user": {"login": login, "type": "User", **user}, "state": state, "commit_id": commit}
+
+
+def approved_routes(gh: FakeGitHub, *reviews: dict[str, Any]) -> None:
+    """Ruleset'in istediği insan GitHub onayı (varsayılan: engineer1 head'i onayladı)."""
+    gh.on("GET", f"{R}/pulls/7/reviews", list(reviews) or [review("engineer1")])
+    gh.on("GET", "/user", {"login": "demo-admin-gh"})
+
+
 @pytest.fixture
 def merge_forge(gh: FakeGitHub) -> GitHubForge:
     gh.on("GET", f"{R}/pulls/7", pr_json())
     gh.on("PUT", f"{R}/pulls/7/merge", {"merged": True, "sha": NEW_COMMIT})
+    approved_routes(gh)
     return GitHubForge(
         REPO, TokenAuth("bot"), merge_auth=TokenAuth("human"), transport=httpx.MockTransport(gh)
     )
@@ -308,6 +483,8 @@ def test_merge_insan_tokeni_ile(merge_forge: GitHubForge, gh: FakeGitHub) -> Non
     # Gerçek CI kontrolleri (test-local, ast-guard, semgrep) yeşil → bypass DEĞİL.
     assert result.bypass is False
     assert result.bypass_reason is None
+    assert result.github_onaylayanlar == ["engineer1"]
+    assert result.github_merge_eden == "demo-admin-gh"
     put = next(r for r in gh.calls if r.method == "PUT")
     assert put.headers["Authorization"] == "Bearer human"
     assert json.loads(put.content) == {"merge_method": "merge", "sha": BRANCH_HEAD}
@@ -332,7 +509,9 @@ def test_merge_bir_kontrol_kirmiziysa_bypass(merge_forge: GitHubForge, gh: FakeG
     gh.on("GET", f"{R}/commits/{BRANCH_HEAD}/check-runs", ruleset_checks(semgrep="failure"))
     result = merge_forge.merge_pr_detailed(7, "demo-admin")
     assert result.bypass is True
-    assert result.bypass_reason == "'semgrep' durumu: failure (ruleset bypass)"
+    assert result.bypass_reason == (
+        "'semgrep' durumu: failure (ruleset bypass; GitHub'da merge eden: demo-admin-gh)"
+    )
 
 
 @pytest.mark.parametrize(
@@ -427,6 +606,7 @@ def test_merge_ruleset_reddi(gh: FakeGitHub) -> None:
         REPO, TokenAuth("bot"), merge_auth=TokenAuth("human"), transport=httpx.MockTransport(gh)
     )
     gh.on("GET", f"{R}/pulls/7", pr_json())
+    approved_routes(gh)
     gh.on("GET", f"{R}/commits/{BRANCH_HEAD}/check-runs", {"check_runs": []})
     gh.on(
         "PUT",
@@ -555,3 +735,127 @@ def test_from_env(rsa_pem: tuple[str, Any]) -> None:
         GitHubForge.from_env({"GITHUB_TOKEN": "t"})
     with pytest.raises(ForgeValidationError):
         GitHubForge.from_env({"GITHUB_REPO": "../x", "GITHUB_TOKEN": "t"})
+
+
+# ------------------------------------------------- GitHub review'u (ruleset: 1 insan onayı)
+
+
+def test_onay_sayimi_kullanici_basina_son_karar() -> None:
+    reviews = [
+        review("ayse"),
+        review("ayse", "COMMENTED"),  # yorum kararı değiştirmez
+        review("mehmet"),
+        review("mehmet", "CHANGES_REQUESTED"),  # sonra değişiklik istedi
+        review("eski", commit="e" * 40),  # bayat commit (dismiss_stale_reviews_on_push)
+        review("tp-bot[bot]", type="Bot"),
+        review("tp-bot"),
+        review("geri", "APPROVED"),
+        review("geri", "DISMISSED"),
+        {"user": None, "state": "APPROVED", "commit_id": BRANCH_HEAD},
+    ]
+    assert qualifying_approvals(reviews, BRANCH_HEAD) == ["ayse"]
+
+
+@pytest.mark.parametrize(
+    "reviews",
+    [
+        [],
+        [review("engineer1", commit="e" * 40)],
+        [review("tp-bot[bot]", type="Bot")],
+        [review("engineer1", "CHANGES_REQUESTED")],
+    ],
+)
+def test_github_onayi_yoksa_muhendis_merge_edemez(
+    merge_forge: GitHubForge, gh: FakeGitHub, reviews: list[dict[str, Any]]
+) -> None:
+    """Bypass token'ı review gereksinimini sessizce atlatamaz: PUT gönderilmez."""
+    gh.on("GET", f"{R}/commits/{BRANCH_HEAD}/check-runs", ruleset_checks())
+    gh.on("GET", f"{R}/pulls/7/reviews", reviews)
+    with pytest.raises(ForgeProtectionError, match="onaylı insan review'u yok") as exc:
+        merge_forge.merge_pr_detailed(7, "engineer1", expected_head_sha=BRANCH_HEAD)
+    assert "GitHub'da onaylayın" in str(exc.value)
+    assert gh.count("PUT", f"{R}/pulls/7/merge") == 0
+
+
+def test_github_onayi_yoksa_demo_admin_merge_eder_ve_bypass_kaydedilir(
+    merge_forge: GitHubForge, gh: FakeGitHub
+) -> None:
+    gh.on("GET", f"{R}/commits/{BRANCH_HEAD}/check-runs", ruleset_checks())
+    gh.on("GET", f"{R}/pulls/7/reviews", [])
+    result = merge_forge.merge_pr_detailed(7, "demo-admin", expected_head_sha=BRANCH_HEAD)
+    assert result.bypass is True
+    assert result.bypass_reason == (
+        f"GitHub'da head {BRANCH_HEAD[:12]} için onaylı insan review'u yok "
+        "(ruleset bypass; GitHub'da merge eden: demo-admin-gh)"
+    )
+    assert result.github_onaylayanlar == []
+    # sha-only port da aynı yoldan geçer
+    assert merge_forge.merge_pr(7, "demo-admin") == NEW_COMMIT
+
+
+def test_github_onayi_varsa_muhendis_merge_eder_bypass_degil(
+    merge_forge: GitHubForge, gh: FakeGitHub
+) -> None:
+    gh.on("GET", f"{R}/commits/{BRANCH_HEAD}/check-runs", ruleset_checks())
+    result = merge_forge.merge_pr_detailed(7, "engineer1", expected_head_sha=BRANCH_HEAD)
+    assert result.bypass is False and result.bypass_reason is None
+    assert result.github_onaylayanlar == ["engineer1"]
+    reviews_req = next(r for r in gh.calls if r.url.path.endswith("/reviews"))
+    assert reviews_req.headers["Authorization"] == "Bearer bot"
+    user_req = next(r for r in gh.calls if r.url.path == "/user")
+    assert user_req.headers["Authorization"] == "Bearer human"
+    # Portal kimseye adına GitHub review'u göndermez.
+    assert gh.count("POST", f"{R}/pulls/7/reviews") == 0
+
+
+def test_mergeable_state_blocked_bypass_sayilir(merge_forge: GitHubForge, gh: FakeGitHub) -> None:
+    """Kontroller ve onay var ama GitHub başka bir kural (ör. CODEOWNERS) nedeniyle engelliyor."""
+    gh.on("GET", f"{R}/pulls/7", pr_json(mergeable_state="blocked"))
+    gh.on("GET", f"{R}/commits/{BRANCH_HEAD}/check-runs", ruleset_checks())
+    with pytest.raises(ForgeProtectionError, match="mergeable_state=blocked"):
+        merge_forge.merge_pr_detailed(7, "engineer1", expected_head_sha=BRANCH_HEAD)
+    assert gh.count("PUT", f"{R}/pulls/7/merge") == 0
+    result = merge_forge.merge_pr_detailed(7, "demo-admin", expected_head_sha=BRANCH_HEAD)
+    assert result.bypass is True
+    assert "mergeable_state=blocked" in (result.bypass_reason or "")
+
+
+def test_review_listesi_okunamazsa_merge_yapilmaz(merge_forge: GitHubForge, gh: FakeGitHub) -> None:
+    gh.on("GET", f"{R}/commits/{BRANCH_HEAD}/check-runs", ruleset_checks())
+    gh.on("GET", f"{R}/pulls/7/reviews", lambda _r: httpx.Response(403, json={"message": "x"}))
+    with pytest.raises(ForgeError):
+        merge_forge.merge_pr_detailed(7, "demo-admin", expected_head_sha=BRANCH_HEAD)
+    assert gh.count("PUT", f"{R}/pulls/7/merge") == 0
+
+
+def test_merge_token_kimligi_alinamazsa_bilinmiyor(
+    merge_forge: GitHubForge, gh: FakeGitHub
+) -> None:
+    gh.on("GET", f"{R}/commits/{BRANCH_HEAD}/check-runs", ruleset_checks())
+    gh.on("GET", f"{R}/pulls/7/reviews", [])
+    gh.on("GET", "/user", lambda _r: httpx.Response(403, json={"message": "x"}))
+    result = merge_forge.merge_pr_detailed(7, "demo-admin", expected_head_sha=BRANCH_HEAD)
+    assert result.github_merge_eden is None
+    assert "GitHub'da merge eden: bilinmiyor" in (result.bypass_reason or "")
+
+
+def test_review_sayfalama(merge_forge: GitHubForge, gh: FakeGitHub) -> None:
+    first = [review(f"u{i}", "COMMENTED") for i in range(100)]
+
+    def pages(req: httpx.Request) -> list[dict[str, Any]]:
+        return first if req.url.params["page"] == "1" else [review("son")]
+
+    gh.on("GET", f"{R}/pulls/7/reviews", pages)
+    assert len(merge_forge.pr_reviews(7)) == 101
+
+
+def test_changed_paths_tek_compare_cagrisi(forge: GitHubForge, gh: FakeGitHub) -> None:
+    a, b = "a" * 40, "b" * 40
+    gh.on(
+        "GET",
+        f"{R}/compare/{a}...{b}",
+        {"files": [{"filename": "x.ts"}, {"filename": "y/z.ts", "previous_filename": "y/old.ts"}]},
+    )
+    assert forge.changed_paths(a, b) == ["x.ts", "y/old.ts", "y/z.ts"]
+    gh.on("GET", f"{R}/compare/{a}...{b}", {"files": [{"filename": f"f{i}"} for i in range(300)]})
+    assert forge.changed_paths(a, b) is None  # GitHub listesi kesilmiş olabilir → tam karşılaştırma

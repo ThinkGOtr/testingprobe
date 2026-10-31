@@ -6,7 +6,11 @@
 //   rules/replay/requirement_review/golden; tutarlılık bulguları (tür, ref, gözlem, kanıt, önerilen
 //   metin): rules/replay/consistency_check/golden. Hepsi golden/kaynaklar.json kopyasından okunur
 //   (`npm run sozlesme:golden`); elle yazılmış model çıktısı yoktur.
-// - Case içerikleri: rules/replay/case_generation/golden/TPD-1.json (başlık, AC, adımlar).
+// - Ana demo yolu REPLAY senaryosu `f2-kod-hatasi` (docs/DEMO-VERISI.md): analist F2 kampanya ve F4
+//   kredi limitini "Kod hatalı" (code_defect), F1/F3'ü "Dokümanı düzelt" (fix_doc) seçer; AC2 özgün
+//   kalır ("… (7 adette 1 bedava)"). 2. tur golden'ı f2-kod-hatasi/TPD-1-r2, case'ler
+//   f2-kod-hatasi/TPD-1 (C3 = "6 adet … bedava ürün verilmez": Demo-B'nin defect adayı).
+// - Case içerikleri: rules/replay/case_generation/golden/f2-kod-hatasi/TPD-1.json (başlık, AC, adımlar).
 // - Bug taslakları: rules/replay/bug_draft/golden/*.json.
 // - Jira anahtarları: sims/jira-sim seed (TPD-1..TPD-7 mevcut; kampanya mükerrer adayı TPD-5;
 //   ürünün oluşturduğu ilk kayıt TPD-8).
@@ -15,7 +19,10 @@
 // - Bağlantılar: her iç bağlantı bir portal ekranına çıkar; artifact/forge sunucusu olmadığı için
 //   Allure/trace/PR adresleri null'dır (ekranda düz metin, ölü bağlantı yok).
 import type {
+  AdimEslemesi,
   AjanAdimi,
+  PrCheck,
+  YerelKontrol,
   McpTokenKaydi,
   Bulgu,
   BulguTuru,
@@ -33,7 +40,6 @@ import type {
 import { kanonikJson, sha256Hex } from "../../lib/sha256";
 import { ekranGoruntusu } from "./ekran";
 import kaynaklar from "./golden/kaynaklar.json";
-import tpd1GoldenCaseler from "./golden/tpd1-caseler.json";
 
 export interface MockVeri {
   gereksinimler: GereksinimDetay[];
@@ -79,6 +85,8 @@ export const KAYNAK = kaynaklar as unknown as {
   jira_seed: Record<string, SeedStory>;
   requirement_review: Record<string, GoldenInceleme>;
   consistency_check: Record<string, { findings: GoldenBulgu[]; notes: string }>;
+  /** consistency_check golden'larının girdi beyanındaki AC satırları (beyanı olanlar). */
+  consistency_girdi: Record<string, string[]>;
   /** Serbest metin golden'ının (SERBEST) girdi beyanı: AC satırları ve açıklamada geçen metin. */
   serbest_girdi: { acceptance_criteria?: string[]; contains?: string[] };
   /** case_generation golden'ları: girdi AC satırları ("ACn: …") ve çıktı case'leri. */
@@ -91,11 +99,44 @@ export const KAYNAK = kaynaklar as unknown as {
  */
 export function goldenCaseler(g: { jira_key: string | null; aciklama: string; kabul_kriterleri: { ref: string; metin: string }[] }): TestCaseIcerik[] | undefined {
   const kok = goldenKoku(g);
-  const k = kok ? KAYNAK.case_generation[kok] : undefined;
-  if (!k) return undefined;
-  const acler = g.kabul_kriterleri.map((a) => `${a.ref}: ${a.metin}`);
-  if (acler.length !== k.girdi_ac.length || acler.some((a, i) => a !== k.girdi_ac[i])) return undefined;
-  return JSON.parse(JSON.stringify(k.cases)) as TestCaseIcerik[];
+  if (!kok) return undefined;
+  const acler = acSatirlari(g.kabul_kriterleri);
+  const ad = adaylar(kok, KAYNAK.case_generation).find((a) => ayniAc(KAYNAK.case_generation[a].girdi_ac, acler));
+  return ad ? kopyala(KAYNAK.case_generation[ad].cases) : undefined;
+}
+
+/** Senaryo golden dizinleri (ör. `f2-kod-hatasi`), ada göre sıralı — core `ReplayStore` sırası. */
+export const SENARYOLAR: string[] = [
+  ...new Set(
+    [...Object.keys(KAYNAK.consistency_check), ...Object.keys(KAYNAK.case_generation)].filter((a) => a.includes("/")).map((a) => a.split("/")[0]),
+  ),
+].sort();
+
+/** Bir golden adı için aday kayıtlar: önce ana golden, sonra her senaryodaki aynı ad (core sırası). */
+function adaylar(ad: string, kayitlar: Record<string, unknown>): string[] {
+  return [ad, ...SENARYOLAR.map((s) => `${s}/${ad}`)].filter((a) => a in kayitlar);
+}
+
+const acSatirlari = (acs: { ref: string; metin: string }[]) => acs.map((a) => `${a.ref}: ${a.metin}`);
+const ayniAc = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+
+/**
+ * Kontrol turunun golden kayıt adı (core `golden_name` + senaryo seçimi): 1. tur `<kök>`, sonraki
+ * turlar `<kök>-r<tur>`. Ana golden'ın girdi beyanı güncel AC'lere uymazsa girdisi uyan senaryo
+ * golden'ı (ör. `f2-kod-hatasi/TPD-1-r2`: F2 code_defect, AC2 değişmedi) seçilir; hiçbiri uymazsa
+ * ana ad döner (örnek veri eski davranışı korur). Kayıt yoksa undefined (REPLAY-MISS).
+ */
+export function turGoldenAdi(
+  g: { jira_key: string | null; aciklama: string; kabul_kriterleri: { ref: string; metin: string }[] },
+  tur: number,
+): string | undefined {
+  const kok = goldenKoku(g);
+  if (!kok) return undefined;
+  const ad = tur >= 2 ? `${kok}-r${tur}` : kok;
+  const liste = adaylar(ad, KAYNAK.consistency_check);
+  if (liste.length === 0) return undefined;
+  const acler = acSatirlari(g.kabul_kriterleri);
+  return liste.find((a) => KAYNAK.consistency_girdi[a] && ayniAc(KAYNAK.consistency_girdi[a], acler)) ?? liste[0];
 }
 
 /** Serbest metin golden kaydının adı (rules/replay/<amaç>/golden/SERBEST.json). */
@@ -174,6 +215,8 @@ const SERBEST_ACIKLAMA = KAYNAK.serbest_girdi.contains?.[0] ?? "";
 
 // TPD-1 tutarlılık turu 1 (golden TPD-1): F1 AC3↔AC6, F2 AC2 kod, F3 AC3 veri, F4 AC4 kod eksik.
 const TPD1_SEED_AC = seedStory("TPD-1").ac;
+/** Ana demo yolunun REPLAY senaryosu (docs/DEMO-VERISI.md). */
+export const ANA_SENARYO = "f2-kod-hatasi";
 const TPD1_F = {
   celiski: goldenBulgu("TPD-1", "F1"),
   kampanya: goldenBulgu("TPD-1", "F2"),
@@ -181,9 +224,12 @@ const TPD1_F = {
   krediLimiti: goldenBulgu("TPD-1", "F4"),
 };
 
-/** Seed AC'leri + kabul edilen (fix_doc) golden önerileri: TPD-1'in Jira'ya yazılmış son hâli. */
+/**
+ * Seed AC'leri + kabul edilen (fix_doc) golden önerileri: TPD-1'in Jira'ya yazılmış son hâli. Ana
+ * yolda yalnızca F1/F3 (ikisi de aynı AC3 metnini önerir) dokümana yazılır; F2 kampanya code_defect
+ * olduğundan AC2 özgün kalır: "… her 6 adet alımda 1 adet bedava verilir (7 adette 1 bedava)".
+ */
 const TPD1_AC = TPD1_SEED_AC.map((ac) => {
-  if (ac.ref === "AC2") return { ...ac, metin: refsiz(TPD1_F.kampanya.suggested_doc_text!) };
   if (ac.ref === "AC3") return { ...ac, metin: refsiz(TPD1_F.minTutar.suggested_doc_text!) };
   return ac;
 });
@@ -215,14 +261,15 @@ function gereksinimler(): GereksinimDetay[] {
         // Sorular golden'dan aynen; cevaplar PO'nun Jira yorumundaki yanıtlarıdır.
         questions: goldenSorular("TPD-1", {
           Q1: "Kampanyalı siparişler muaf; AC3 kampanyasız siparişler için geçerli. (PO)",
-          Q2: "Kod doğru: her 6 adette 1 bedava. AC2 buna göre düzeltilsin. (PO)",
+          Q2: "Evet, story doğru: 6 adet öder, 7. adet bedava; 6 adette bedava yok, 14 adette 2 bedava. Kod farklıysa kod düzeltilsin. (PO)",
           Q3: "İndirim düşülmüş toplam tutar üzerinden. (PO)",
         }),
       },
       kontrol_turu: 2,
       kontrol_turu_ust_sinir: 3,
-      // core `requirement_kontrol`: son tamamlanan koşu (golden TPD-1-r2, 1 bulgu).
-      son_kontrol: { mode: "replay", bulgu: 1, dogrulanan: 1, elenen: 0, zaman: t(30, "09:52") },
+      // core `requirement_kontrol`: son tamamlanan koşu (golden f2-kod-hatasi/TPD-1-r2, 2 bulgu:
+      // kampanya ve kredi limiti farkı kod tarafında kaldı; ikisi de önceki turda code_defect).
+      son_kontrol: { mode: "replay", bulgu: 2, dogrulanan: 2, elenen: 0, zaman: t(30, "09:52") },
       elenen_bulgu: 0,
       icerik_hash: "", // hashleriTazele doldurur
       jira_url: `${JIRA}/TPD-1`,
@@ -336,7 +383,9 @@ function bulgular(): Bulgu[] {
     karar_veren: "analist",
     mode: "replay" as const,
   };
-  const r2 = goldenBulgu("TPD-1-r2", "F1");
+  // 2. tur: ana yolun senaryo golden'ı (AC2 değişmedi → kampanya farkı kodda kaldı).
+  const r2Kampanya = goldenBulgu(`${ANA_SENARYO}/TPD-1-r2`, "F1");
+  const r2Kredi = goldenBulgu(`${ANA_SENARYO}/TPD-1-r2`, "F2");
   const tpd3 = goldenBulgu("TPD-3", "F1");
   return [
     {
@@ -344,12 +393,13 @@ function bulgular(): Bulgu[] {
       ...bulguCiktisi(TPD1_F.kampanya, acMetni(TPD1_SEED_AC, "AC2")),
       evidence: [KAMPANYA_KOD],
       id: "fnd-1",
-      karar: "fix_doc",
-      karar_metni: acMetni(TPD1_AC, "AC2"),
-      gerekce: null,
+      // Ana yol: story doğru (PO, Q2), kod hatalı → bug taslağı; AC2 değişmez.
+      karar: "code_defect",
+      karar_metni: null,
+      gerekce: "PO cevabı (Q2): story doğru, 7 adette 1 bedava. Kod 6 adette bedava veriyor; kod düzeltilmeli.",
       karar_zamani: t(30, "09:41"),
-      durum: "resolved", // fix_doc yazıldı (core: decided → resolved)
-      bug_draft_id: null,
+      durum: "resolved",
+      bug_draft_id: "bug-3",
       icerik_hash: "",
     },
     {
@@ -389,11 +439,25 @@ function bulgular(): Bulgu[] {
       bug_draft_id: null,
       icerik_hash: "",
     },
-    // 2. kontrol turu (golden TPD-1-r2): yalnızca kredi limiti uyarısı kalır; önceki turun
-    // code_defect kararı (bug-2) geçerli olduğu için analist aynı kararı verdi.
+    // 2. kontrol turu (golden f2-kod-hatasi/TPD-1-r2): kampanya ve kredi limiti farkı kodda kaldı;
+    // önceki turun code_defect kararları (bug-3, bug-2) geçerli, analist aynı kararı verdi.
     {
       ...ortak,
-      ...bulguCiktisi(r2, acMetni(TPD1_AC, "AC4")),
+      ...bulguCiktisi(r2Kampanya, acMetni(TPD1_AC, "AC2")),
+      evidence: [KAMPANYA_KOD],
+      id: "fnd-10",
+      kontrol_turu: 2,
+      karar: "code_defect",
+      karar_metni: null,
+      gerekce: "Önceki turdaki kod hatası kararı geçerli; kampanya bug taslağı (bug-3) açık.",
+      karar_zamani: t(30, "09:54"),
+      durum: "resolved",
+      bug_draft_id: "bug-3",
+      icerik_hash: "",
+    },
+    {
+      ...ortak,
+      ...bulguCiktisi(r2Kredi, acMetni(TPD1_AC, "AC4")),
       id: "fnd-7",
       kontrol_turu: 2,
       karar: "code_defect",
@@ -454,23 +518,16 @@ function bulgular(): Bulgu[] {
 // ------------------------------------------------------------------ test case'ler
 
 /**
- * TPD-1 case üretiminin golden çıktısı (rules/replay/case_generation/golden/TPD-1.json → output.cases),
- * sırasıyla. Portal imajı yalnızca review-portal/ ile derlendiği için kopya tutulur; fixtures.test.ts
- * kaynakla birebir aynı olduğunu doğrular. Golden değişince:
- *   python3 -c "import json;json.dump(json.load(open('rules/replay/case_generation/golden/TPD-1.json'))['output']['cases'],open('review-portal/src/api/mock/golden/tpd1-caseler.json','w'),ensure_ascii=False,indent=2)"
+ * TPD-1 case üretiminin ana demo yolundaki golden çıktısı
+ * (rules/replay/case_generation/golden/f2-kod-hatasi/TPD-1.json → output.cases), sırasıyla. Girdi
+ * beyanı AC2'nin özgün hâlidir (F2 code_defect). golden/kaynaklar.json kopyasından okunur
+ * (`npm run sozlesme:golden`); fixtures.test.ts kaynakla birebir aynı olduğunu doğrular.
  */
-export const TPD1_GOLDEN_CASELER: TestCaseIcerik[] = tpd1GoldenCaseler as TestCaseIcerik[];
+export const TPD1_GOLDEN_CASELER: TestCaseIcerik[] = KAYNAK.case_generation[`${ANA_SENARYO}/TPD-1`].cases;
 
 /** Case içerik hash'i (handlers ile aynı biçim): onay kapısı bu değeri karşılaştırır. */
 export function icerikHash(icerik: TestCaseIcerik): string {
   return `sha256:${sha256Hex(kanonikJson(icerik)).slice(0, 16)}`;
-}
-
-/** Analistin C3'te yaptığı küçük düzeltme (edit kararı): beklenen sonuca satır etiketi eklendi. */
-function c3Duzeltilmis(): TestCaseIcerik {
-  const g = JSON.parse(JSON.stringify(TPD1_GOLDEN_CASELER[2])) as TestCaseIcerik;
-  g.expected_result = `${g.expected_result}; satırda "1 bedava" etiketi görünür`;
-  return g;
 }
 
 function caseler(): TestCase[] {
@@ -514,16 +571,9 @@ function caseler(): TestCase[] {
   return [
     karar("case-1-1", 1, G[0], { ...analist, durum: "published", karar: "approve", karar_zamani: t(30, "10:31"), duzeltme_olcusu: 0, review_sure_ms: 41000, jira_test_key: "TPD-9" }),
     karar("case-1-2", 2, G[1], { ...analist, durum: "published", karar: "approve", karar_zamani: t(30, "10:34"), duzeltme_olcusu: 0, review_sure_ms: 58000, jira_test_key: "TPD-10" }),
-    karar("case-1-3", 3, c3Duzeltilmis(), {
-      ...analist,
-      durum: "published",
-      karar: "edit",
-      surum: 2,
-      karar_zamani: t(30, "10:37"),
-      duzeltme_olcusu: 0.05,
-      review_sure_ms: 95000,
-      jira_test_key: "TPD-11",
-    }),
+    // C3: 6 adet sınırı (senaryo golden'ı story'yi esas alır: bedava 0). Bugünkü kod 1 bedava
+    // verdiğinden Demo-B'de assertion kırmızı → defect adayı (scr-3).
+    karar("case-1-3", 3, G[2], { ...analist, durum: "published", karar: "approve", karar_zamani: t(30, "10:37"), duzeltme_olcusu: 0, review_sure_ms: 64000, jira_test_key: "TPD-11" }),
     // İnsan kararı: 6 ve 7 adet case'leri kampanya sınırını zaten kapsıyor.
     karar("case-1-6", 4, G[3], { ...analist, durum: "rejected", karar: "reject", ret_nedeni: "duplicate", karar_zamani: t(30, "10:38"), review_sure_ms: 30000 }),
     karar("case-1-4", 5, G[4], { ...analist, durum: "approved", karar: "approve", karar_zamani: t(30, "10:41"), duzeltme_olcusu: 0, review_sure_ms: 52000 }),
@@ -596,6 +646,60 @@ test("TPD-1 C1 · Sepete ekle ile ürün sepete eklenir ve sepet sayacı artar",
 });
 `;
 
+export const SINIR_TEST_KODU = `import { test } from "@playwright/test";
+import { CartPage, CatalogPage, LoginPage } from "../../pages";
+
+// AI-generated · TPD-1 · case 3 (onaylayan: analist)
+// Şablondan üretildi; değerler onaylı case metninden JSON.stringify ile basıldı.
+test("TPD-1 C3 · 6 adet kampanyalı üründe bedava ürün verilmez", async ({ page }) => {
+  const login = new LoginPage(page);
+  const catalog = new CatalogPage(page);
+  const cart = new CartPage(page);
+
+  // S1: Giriş sayfasını aç
+  await login.goto();
+  // S2: Bayi kullanıcısıyla giriş yap
+  await login.login("bayi1", "Demo123!");
+  await login.expectLoggedIn("Merkez Bayi");
+  // S3: "Portakal Gazozu 1L" (P-001) kartında adedi 6 yapıp "Sepete ekle" butonuna bas
+  await catalog.addToCart("P-001", 6);
+  await catalog.expectCartCount(6);
+  // S4: Üst menüden sepete git
+  await catalog.openCart();
+  await cart.expectLineQuantity("P-001", 6);
+  await cart.expectFreeQuantity("P-001", 0);
+  await cart.expectSubtotal("150,00 TL");
+  await cart.expectDiscount("0,00 TL");
+  await cart.expectTotal("150,00 TL");
+});
+`;
+
+export const MIN_SIPARIS_TEST_KODU = `import { test } from "@playwright/test";
+import { CartPage, CatalogPage, LoginPage } from "../../pages";
+
+// AI-generated · TPD-1 · case 5 (onaylayan: analist)
+// Şablondan üretildi; değerler onaylı case metninden JSON.stringify ile basıldı.
+test("TPD-1 C5 · Kampanyasız siparişte minimum tutarın altında uyarı gösterilir ve onay pasif olur", async ({ page }) => {
+  const login = new LoginPage(page);
+  const catalog = new CatalogPage(page);
+  const cart = new CartPage(page);
+
+  // S1: Giriş sayfasını aç
+  await login.goto();
+  // S2: Bayi kullanıcısıyla giriş yap
+  await login.login("bayi1", "Demo123!");
+  await login.expectLoggedIn("Merkez Bayi");
+  // S3: "Limonata 330ml" (P-002) kartında adedi 10 yapıp "Sepete ekle" butonuna bas
+  await catalog.addToCart("P-002", 10);
+  await catalog.expectCartCount(10);
+  // S4: Üst menüden sepete git
+  await catalog.openCart();
+  await cart.expectTotal("150,00 TL");
+  await cart.expectMinOrderWarning("Minimum sipariş tutarı 750,00 TL");
+  await cart.expectCheckoutDisabled();
+});
+`;
+
 function adim(
   sira: number,
   step_id: string,
@@ -617,8 +721,24 @@ function adim(
     verified: true,
     ekran_goruntusu_url: ekran,
     zaman: t(30, `11:${String(sira).padStart(2, "0")}`),
+    ham_cikti: hamCikti(arac, method, args),
   };
 }
+
+/**
+ * Aracın temizlenmiş ham çıktısı (core `_adim`: temizlenir, parola maskelenir). Ajan uygulamayı
+ * yalnızca MCP erişilebilirlik ağacı (snapshot) olarak görür; ekran görüntüsü modele gitmez.
+ */
+function hamCikti(arac: string, method: string | null, args: unknown[]): string {
+  const deger = args.length ? String(args[args.length - 1]) : "";
+  if (arac === "browser_navigate") return "- Page URL: http://demo-web:8080/login\n- Page Title: Bayi Portalı · Giriş";
+  if (arac === "browser_type") return `- textbox "Kullanıcı adı" [ref=e3]: ${AJAN_BAYI}\n- textbox "Parola" [ref=e4]: ••••••\n- button "Giriş yap" [ref=e5] [cursor=pointer]`;
+  if (arac === "browser_click") return `- button "${method === "openCart" ? "Sepet" : "Sepete ekle"}" [ref=e12] [cursor=pointer]\n- generic [ref=e14]: ${deger}`;
+  return `- generic [ref=e21]: ${deger}`;
+}
+
+/** Kod üretimindeki doğrulama ajanının bayisi (docs/DEMO-VERISI.md); testler case bayisiyle koşar. */
+const AJAN_BAYI = "bayi3";
 
 /** C2 için ajan adımları: `sira` ajanın sıralı adım numarası, `step_id` case adımı referansı. */
 export function kampanyaAdimlari(): AjanAdimi[] {
@@ -643,8 +763,137 @@ function sepetAdimlari(): AjanAdimi[] {
   ];
 }
 
+/** Ajan adımlarından doğrulanmış eşleme tablosu (core `step_mapping` şekli). */
+export function eslemeler(adimlar: AjanAdimi[], kaynak: Record<string, string> = {}): AdimEslemesi[] {
+  return adimlar
+    .filter((a) => a.po && a.method)
+    .map((a, i) => ({
+      adim_no: i + 1,
+      step_id: a.step_id || null,
+      po: a.po!,
+      method: a.method!,
+      args: a.args,
+      beklenen: a.method!.startsWith("expect"),
+      verified: a.verified === true,
+      kaynak_metin: a.method!.startsWith("expect") ? (kaynak[String(a.args[a.args.length - 1])] ?? null) : null,
+      kanit_ref: `snapshot:${a.sira}`,
+      // core `_dogrulama_notu`: giriş satırı ajan bayisiyle doğrulandı, test case bayisiyle koşar.
+      dogrulama_notu:
+        a.method === "login" && typeof a.args[0] === "string" ? `doğrulandı (ajan bayisi ${AJAN_BAYI} ile; test ${a.args[0]} ile koşar)` : null,
+    }));
+}
+
+const C2_KAYNAK = {
+  "7": "Sepet sayacı 7 olur",
+  "175,00 TL": "ara toplam 175,00 TL",
+  "25,00 TL": "indirim 25,00 TL",
+  "150,00 TL": "toplam 150,00 TL",
+};
+
+/** C3 (6 adet, sınır) için ajan adımları: uygulamada adımlar doğrulanır, değerler case metninden. */
+export function sinirAdimlari(): AjanAdimi[] {
+  return [
+    adim(1, "S1", "browser_navigate", "Giriş sayfası açıldı", "LoginPage", "goto", [], ekranGoruntusu("login", "login-username")),
+    adim(2, "S2", "browser_type", "bayi1 ile giriş yapıldı", "LoginPage", "login", ["bayi1", "Demo123!"], ekranGoruntusu("login", "login-submit")),
+    adim(3, "S3", "browser_click", "P-001 adedi 6 girildi ve \"Sepete ekle\" tıklandı", "CatalogPage", "addToCart", ["P-001", 6], ekranGoruntusu("catalog", "add-to-cart", 6)),
+    adim(4, "S3", "browser_snapshot", "Sepet sayacı elemanı bulundu (beklenen 6)", "CatalogPage", "expectCartCount", [6], ekranGoruntusu("catalog", "qty-input-P-001", 6)),
+    adim(5, "S4", "browser_click", "Üst menüden sepete gidildi", "CatalogPage", "openCart", [], ekranGoruntusu("cart", "cart-line-P-001", 6)),
+    adim(6, "S4", "browser_snapshot", "İndirim satırı elemanı bulundu (beklenen 0,00 TL)", "CartPage", "expectDiscount", ["0,00 TL"], ekranGoruntusu("cart", "cart-discount", 6)),
+    adim(7, "S4", "browser_snapshot", "Toplam elemanı bulundu (beklenen 150,00 TL)", "CartPage", "expectTotal", ["150,00 TL"], ekranGoruntusu("cart", "cart-total", 6)),
+  ];
+}
+
+/** C5 (minimum sipariş, doküman düzeltmesi sonrası 750,00 TL) için ajan adımları. */
+export function minSiparisAdimlari(): AjanAdimi[] {
+  return [
+    adim(1, "S1", "browser_navigate", "Giriş sayfası açıldı", "LoginPage", "goto", [], ekranGoruntusu("login", "login-username")),
+    adim(2, "S2", "browser_type", "bayi1 ile giriş yapıldı", "LoginPage", "login", ["bayi1", "Demo123!"], ekranGoruntusu("login", "login-submit")),
+    adim(3, "S3", "browser_click", "P-002 adedi 10 girildi ve \"Sepete ekle\" tıklandı", "CatalogPage", "addToCart", ["P-002", 10], ekranGoruntusu("catalog", "add-to-cart", 10)),
+    adim(4, "S4", "browser_click", "Üst menüden sepete gidildi", "CatalogPage", "openCart", [], ekranGoruntusu("cart", "cart-total", 10)),
+    adim(5, "S4", "browser_snapshot", "Minimum sipariş uyarısı doğrulandı", "CartPage", "expectMinOrderWarning", ["Minimum sipariş tutarı 750,00 TL"], ekranGoruntusu("cart", "cart-total", 10)),
+    adim(6, "S4", "browser_snapshot", "\"Siparişi onayla\" pasif doğrulandı", "CartPage", "expectCheckoutDisabled", [], ekranGoruntusu("cart", "cart-total", 10)),
+  ];
+}
+
+export const MIN_SIPARIS_KAYNAK = { "Minimum sipariş tutarı 750,00 TL": "\"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir" };
+export const C2_KAYNAK_METINLERI = C2_KAYNAK;
+
+export function yerelGecti(run_id: string): YerelKontrol {
+  return {
+    tsc: true,
+    eslint: true,
+    ast_guard: true,
+    tekrar: 3,
+    sonuc: "passed",
+    sinif: "gecti",
+    aciklama: null,
+    run_id,
+    duzeltme_turu: 0,
+    basarisiz: [],
+    gecen: 3,
+    toplam: 3,
+    hata: null,
+  };
+}
+
+/** LocalForge PR'ının check'leri: merge kapısı `local-ci` (TP_REQUIRED_CHECKS boş). */
+function localCi(durum: PrCheck["durum"], aciklama: string): PrCheck[] {
+  return [{ ad: "local-ci", durum, zorunlu: true, url: null, aciklama }];
+}
+
 function scriptler(): ScriptDetay[] {
   return [
+    {
+      id: "scr-3",
+      case_ids: ["case-1-3"],
+      requirement_key: "TPD-1",
+      baslik: "6 adet kampanyalı üründe bedava ürün verilmez",
+      dosya_yolu: "demo-app/e2e/tests/tpd-1/c3-kampanya-6-adet-bedava-yok.spec.ts",
+      branch: "tp/case-9e0c51d2",
+      // Assertion kırmızı → otomatik onarım yok, PR açılmaz, insana düşer (script: checking → blocked).
+      durum: "blocked",
+      pr: null,
+      pass_at_1: false,
+      zayif_test: false,
+      break_verify: {
+        durum: "not_started",
+        asamalar: (["baseline", "broken", "restored"] as const).map((ad) => ({ ad, sonuc: "pending" as const, run_id: null, zaman: null })),
+      },
+      yerel_sinif: "defect_adayi",
+      mode: "replay",
+      olusturma: t(30, "11:35"),
+      hata: null,
+      kod: SINIR_TEST_KODU,
+      adimlar: sinirAdimlari(),
+      eslemeler: eslemeler(sinirAdimlari(), { "6": "Sepet sayacı 6 olur", "0,00 TL": "indirim 0,00 TL", "150,00 TL": "toplam 150,00 TL" }),
+      yerel_kontrol: {
+        tsc: true,
+        eslint: true,
+        ast_guard: true,
+        tekrar: 3,
+        sonuc: "failed",
+        sinif: "defect_adayi",
+        aciklama:
+          "Assertion hatası: uygulama onaylı case'in beklenen değerini vermiyor (3/3 tekrarda aynı). Locator ve eşleme doğru; otomatik düzeltme yapılmaz, beklenen değer değiştirilmez. İnsan incelemesine gider; Faz 4 triage bunu bug taslağına çevirir.",
+        run_id: "run-108",
+        duzeltme_turu: 0,
+        basarisiz: [
+          {
+            test_adi: "TPD-1 C3 · 6 adet kampanyalı üründe bedava ürün verilmez",
+            hata_mesaji: "expect(getByTestId('cart-line-P-001').getByTestId('free-qty')).toHaveText(\"0\")",
+            beklenen: "bedava adet 0 · indirim 0,00 TL",
+            gerceklesen: "bedava adet 1 · indirim 25,00 TL",
+            adim: "S4: Üst menüden sepete git",
+          },
+        ],
+        gecen: 0,
+        toplam: 3,
+        hata: null,
+      },
+      merge_engelleri: null,
+      uyarilar: [],
+      engel: { tur: "defect_candidate", neden: "Yerel kontrolde assertion kırmızı: defect adayı (onarım yok)." },
+    },
     {
       id: "scr-2",
       case_ids: ["case-1-2"],
@@ -664,6 +913,25 @@ function scriptler(): ScriptDetay[] {
         ci: "passed",
         icerik_hash: "",
         head_sha: "",
+        checks: localCi("passed", "tsc ✓ · eslint ✓ · AST koruması ✓ · Playwright 3/3"),
+        forge: "local",
+        // core `pull_request.govde` (codegen prbody): izlenebilirlik, eşleme, yerel kontrol, denetim.
+        govde: [
+          "## İzlenebilirlik",
+          "- Story: `TPD-1` · Case: C2 (onaylı hash `3f2a9c1e`)",
+          "- Üretim: **REPLAY** (golden `f2-kod-hatasi/TPD-1-C2`)",
+          "## Eşleme",
+          "| Adım | Page object | Metot |",
+          "|---|---|---|",
+          "| S1 | LoginPage | login |",
+          "| S2 | CatalogPage | addToCart |",
+          "| S3 | CartPage | expectFreeQuantity |",
+          "## Yerel kontrol",
+          "- tsc ✓ · eslint ✓ · AST koruması ✓ · Playwright `--repeat-each=3` 3/3",
+          "## Denetim",
+          "- Zincir başı: `9c1e3f2a…`",
+        ].join("\n"),
+        dal: { geride: false, guncelleme: null, neden: null },
       },
       pass_at_1: true,
       zayif_test: false,
@@ -675,12 +943,17 @@ function scriptler(): ScriptDetay[] {
           { ad: "restored", sonuc: "passed", run_id: "run-103", zaman: t(30, "11:24") },
         ],
       },
+      yerel_sinif: "gecti",
       mode: "replay",
       olusturma: t(30, "11:05"),
       hata: null,
       kod: KAMPANYA_TEST_KODU,
       adimlar: kampanyaAdimlari(),
-      yerel_kontrol: { tsc: true, eslint: true, ast_guard: true, tekrar: 3 },
+      eslemeler: eslemeler(kampanyaAdimlari(), C2_KAYNAK),
+      yerel_kontrol: yerelGecti("run-100"),
+      merge_engelleri: null,
+      uyarilar: [],
+      engel: null,
     },
     {
       id: "scr-1",
@@ -701,6 +974,8 @@ function scriptler(): ScriptDetay[] {
         ci: "passed",
         icerik_hash: "",
         head_sha: "",
+        checks: localCi("passed", "tsc ✓ · eslint ✓ · AST koruması ✓ · Playwright 3/3"),
+        forge: "local",
       },
       pass_at_1: true,
       zayif_test: true,
@@ -712,12 +987,17 @@ function scriptler(): ScriptDetay[] {
           { ad: "restored", sonuc: "passed", run_id: "run-099", zaman: t(30, "10:54") },
         ],
       },
+      yerel_sinif: "gecti",
       mode: "replay",
       olusturma: t(30, "10:45"),
-      hata: "Zayıf test: BREAK_CAMPAIGN=1 ile uygulama kırıldığında da test yeşil kaldı (bu kırılma sepete eklemeyi etkilemiyor). Merge kapısı kapalı; mühendis kararı gerekir.",
+      hata: null,
       kod: SEPET_TEST_KODU,
       adimlar: sepetAdimlari(),
-      yerel_kontrol: { tsc: true, eslint: true, ast_guard: true, tekrar: 3 },
+      eslemeler: eslemeler(sepetAdimlari(), { "1": "Sepet sayacı 1 olur" }),
+      yerel_kontrol: yerelGecti("run-096"),
+      merge_engelleri: null,
+      uyarilar: [],
+      engel: null,
     },
   ];
 }
@@ -730,6 +1010,7 @@ function sonuc(id: string, test_adi: string, durum: KosuDetay["sonuclar"][number
 
 export const TEST_C1 = `TPD-1 C1 · ${TPD1_GOLDEN_CASELER[0].title}`;
 export const TEST_C2 = `TPD-1 C2 · ${TPD1_GOLDEN_CASELER[1].title}`;
+export const TEST_C3 = "TPD-1 C3 · 6 adet kampanyalı üründe bedava ürün verilmez";
 const TEST_LOGIN = "Bayi girişi · hatalı parola mesajı (elle yazılmış)";
 
 function kosu(
@@ -757,9 +1038,15 @@ function kosu(
     atlanan: sonuclar.filter((s) => s.durum === "skipped").length,
     // Artifact (Allure/trace) sunucusu ve Sauce hesabı henüz yok: sahte adres verilmez.
     allure_url: null,
+    rapor_url: null,
     sauce_url: null,
     ci_url: null,
     break_campaign: false,
+    script_id: null,
+    saglik_hatasi: null,
+    log_url: null,
+    hata: null,
+    uyarilar: [],
     sonuclar,
     ...ek,
   };
@@ -820,13 +1107,29 @@ function kosular(): KosuDetay[] {
     kosu("run-104", "push", "local", t(28, "16:12"), [sonuc("r104-1", TEST_C1, "passed", 3000, { case_id: "case-1-1" }), sonuc("r104-2", TEST_LOGIN, "passed", 2100)], {
       commit: "9c41e2b",
     }),
-    kosu("run-103", "pr", "local", t(30, "11:24"), [sonuc("r103-1", TEST_C2, "passed", 5900, { case_id: "case-1-2" })], {
+    // Yerel kontrol (toolchain-worker + test-runner, repeat-each 3): C3 assertion'da kırmızı → defect adayı.
+    kosu(
+      "run-108",
+      "local_check",
+      "local",
+      t(30, "11:38"),
+      [
+        sonuc("r108-1", TEST_C3, "failed", 6400, {
+          hata_mesaji:
+            "expect(getByTestId('cart-line-P-001').getByTestId('free-qty')).toHaveText(\"0\")\nBeklenen: \"0\"\nGerçekleşen: \"1\"",
+          case_id: "case-1-3",
+        }),
+      ],
+      { commit: "9e0c51d", script_id: "scr-3" },
+    ),
+    kosu("run-103", "break_verify", "local", t(30, "11:24"), [sonuc("r103-1", TEST_C2, "passed", 5900, { case_id: "case-1-2" })], {
       commit: "4ac0e11",
       pr_no: 12,
+      script_id: "scr-2",
     }),
     kosu(
       "run-102",
-      "pr",
+      "break_verify",
       "local",
       t(30, "11:22"),
       [
@@ -835,25 +1138,37 @@ function kosular(): KosuDetay[] {
           case_id: "case-1-2",
         }),
       ],
-      { commit: "4ac0e11", pr_no: 12, break_campaign: true },
+      { commit: "4ac0e11", pr_no: 12, break_campaign: true, script_id: "scr-2" },
     ),
-    kosu("run-101", "pr", "local", t(30, "11:20"), [sonuc("r101-1", TEST_C2, "passed", 5800, { case_id: "case-1-2" })], {
+    kosu("run-101", "break_verify", "local", t(30, "11:20"), [sonuc("r101-1", TEST_C2, "passed", 5800, { case_id: "case-1-2" })], {
       commit: "4ac0e11",
       pr_no: 12,
+      script_id: "scr-2",
+    }),
+    kosu("run-100", "local_check", "local", t(30, "11:12"), [sonuc("r100-1", TEST_C2, "passed", 5700, { case_id: "case-1-2" })], {
+      commit: "4ac0e11",
+      script_id: "scr-2",
     }),
     // PR #11 (scr-1) kırarak doğrulama koşuları: kırılmada da yeşil → zayıf test.
-    kosu("run-099", "pr", "local", t(30, "10:54"), [sonuc("r099-1", TEST_C1, "passed", 3200, { case_id: "case-1-1" })], {
+    kosu("run-099", "break_verify", "local", t(30, "10:54"), [sonuc("r099-1", TEST_C1, "passed", 3200, { case_id: "case-1-1" })], {
       commit: "1b7d40a",
       pr_no: 11,
+      script_id: "scr-1",
     }),
-    kosu("run-098", "pr", "local", t(30, "10:52"), [sonuc("r098-1", TEST_C1, "passed", 3300, { case_id: "case-1-1" })], {
+    kosu("run-098", "break_verify", "local", t(30, "10:52"), [sonuc("r098-1", TEST_C1, "passed", 3300, { case_id: "case-1-1" })], {
       commit: "1b7d40a",
       pr_no: 11,
       break_campaign: true,
+      script_id: "scr-1",
     }),
-    kosu("run-097", "pr", "local", t(30, "10:50"), [sonuc("r097-1", TEST_C1, "passed", 3100, { case_id: "case-1-1" })], {
+    kosu("run-097", "break_verify", "local", t(30, "10:50"), [sonuc("r097-1", TEST_C1, "passed", 3100, { case_id: "case-1-1" })], {
       commit: "1b7d40a",
       pr_no: 11,
+      script_id: "scr-1",
+    }),
+    kosu("run-096", "local_check", "local", t(30, "10:47"), [sonuc("r096-1", TEST_C1, "passed", 3000, { case_id: "case-1-1" })], {
+      commit: "1b7d40a",
+      script_id: "scr-1",
     }),
   ];
 }
@@ -955,15 +1270,16 @@ function bugTaslaklari(): BugTaslagi[] {
         severity_suggestion: "critical",
         labels: ["AI-generated"],
       },
-      // jira-sim seed: TPD-5 aynı kampanya hatasını anlatan açık Bug (JQL araması bunu döndürür).
+      // jira-sim seed: TPD-5 6 adet sınır hatasını anlatan açık Bug (JQL "kampanya indirimi" bunu döndürür).
       mukerrer_adaylari: [
         {
           key: "TPD-5",
           summary: "Kampanya indirimi sepette yanlış hesaplanıyor",
           durum: "To Do",
+          // rules/replay/dup_rank/golden/break-campaign.json: medium + öneri new (farklı belirti).
           gerekce:
-            "Aynı ürün (Portakal Gazozu 1L, 7 adet) ve aynı alan (sepetteki indirim satırı); TPD-5 beklenen 25,00 TL indirimin farklı göründüğünü anlatıyor.",
-          sinyaller: ["Aynı ürün: P-001", "Aynı alan: cart-discount", "Aynı adımlar: 7 adet sepete ekle"],
+            "Aynı ürün (Portakal Gazozu 1L) ve aynı alan (sepetteki kampanya/indirim satırı), ama farklı belirti: TPD-5 6 adette erken verilen bedavayı (bedava 1 adet, indirim 25,00 TL) anlatıyor; bu koşuda kampanya hiç uygulanmıyor (bedava 0 adet, indirim 0,00 TL). İlişkili olabilir, aynı hata değil.",
+          sinyaller: ["Aynı ürün: P-001", "Aynı alan: cart-discount", "Farklı belirti: TPD-5 6 adette bedava 1 (beklenen 0) anlatıyor"],
         },
       ],
       karar: null,
@@ -1014,14 +1330,59 @@ function bugTaslaklari(): BugTaslagi[] {
       mode: "replay",
       olusturma: t(30, "09:46"),
     },
+    kampanyaKodHatasiTaslagi(),
   ];
+}
+
+/**
+ * Ana yol: F2 kampanya bulgusuna "Kod hatalı" (fnd-1) → bug taslağı. Core `ensure_bug_draft` gibi
+ * şablonla, bulgunun doğrulanmış kanıtından üretilir (model çağrısı yok: `mode: null`). Taslak onay
+ * bekler; Faz 4'te C3 defect adayının triage taslağı ise jira-sim TPD-5'i mükerrer adayı bulur.
+ */
+function kampanyaKodHatasiTaslagi(): BugTaslagi {
+  const f = TPD1_F.kampanya;
+  const kod = KAMPANYA_KOD.kind === "code" ? KAMPANYA_KOD : null;
+  const yer = kod ? `${kod.repo} · ${kod.path}:${kod.line}` : "kanıt";
+  const ac2 = acMetni(TPD1_SEED_AC, "AC2") ?? "AC2";
+  return {
+    id: "bug-3",
+    kaynak: "consistency",
+    failure_id: null,
+    finding_id: "fnd-1",
+    icerik: {
+      summary: `TPD-1 AC2: ${f.claim}`.slice(0, 200),
+      steps: [
+        `Kodda ${yer} (commit main) satırını açın${kod ? `: \`${kod.snippet.trim()}\`` : ""}`,
+        `Dokümandaki beklenen davranışı (${ac2}) uygulamada deneyin`,
+        `Gözlenen: ${f.observed.slice(0, 300)}`,
+      ],
+      expected: ac2,
+      actual: f.observed,
+      environment: "Tutarlılık denetimi · demo-app@main",
+      evidence: [{ tur: "code", url: null, etiket: yer }],
+      story_key: "TPD-1",
+      test_case_key: null,
+      severity_suggestion: "major",
+      labels: ["AI-generated"],
+    },
+    mukerrer_adaylari: [],
+    karar: null,
+    durum: "draft",
+    link_key: null,
+    icerik_hash: "",
+    onaylayan: null,
+    onay_zamani: null,
+    jira_key: null,
+    mode: null,
+    olusturma: t(30, "09:41"),
+  };
 }
 
 function denetim(): MockVeri["denetim"] {
   return [
     { aktor: "analist", eylem: "requirements.sync", nesne: "TPD", ozet: "Jira'dan 4 story çekildi", zaman: t(30, "09:12") },
     { aktor: "core-worker", eylem: "ai_call", nesne: "req-tpd-1", ozet: "Ön inceleme + tutarlılık (claude-sonnet, REPLAY, 0 USD)", zaman: t(30, "09:20") },
-    { aktor: "analist", eylem: "finding.decision", nesne: "fnd-1", ozet: "fix_doc", zaman: t(30, "09:41") },
+    { aktor: "analist", eylem: "finding.decision", nesne: "fnd-1", ozet: "code_defect → bug-3", zaman: t(30, "09:41") },
     { aktor: "analist", eylem: "finding.decision", nesne: "fnd-2", ozet: "fix_doc", zaman: t(30, "09:43") },
     { aktor: "analist", eylem: "finding.decision", nesne: "fnd-3", ozet: "code_defect → bug-2", zaman: t(30, "09:45") },
     { aktor: "analist", eylem: "finding.decision", nesne: "fnd-4", ozet: "fix_doc", zaman: t(30, "09:47") },
@@ -1031,7 +1392,7 @@ function denetim(): MockVeri["denetim"] {
     { aktor: "core-worker", eylem: "ai_call", nesne: "req-tpd-1", ozet: "Case üretimi: 9 case (REPLAY, 0 USD)", zaman: t(30, "10:20") },
     { aktor: "analist", eylem: "case.decision", nesne: "case-1-1", ozet: "approve", zaman: t(30, "10:31") },
     { aktor: "analist", eylem: "case.decision", nesne: "case-1-2", ozet: "approve", zaman: t(30, "10:34") },
-    { aktor: "analist", eylem: "case.decision", nesne: "case-1-3", ozet: "edit (ölçü 0,05)", zaman: t(30, "10:37") },
+    { aktor: "analist", eylem: "case.decision", nesne: "case-1-3", ozet: "approve", zaman: t(30, "10:37") },
     { aktor: "analist", eylem: "case.decision", nesne: "case-1-6", ozet: "reject: duplicate", zaman: t(30, "10:38") },
     { aktor: "analist", eylem: "case.decision", nesne: "case-1-4", ozet: "approve", zaman: t(30, "10:41") },
     { aktor: "analist", eylem: "publish", nesne: "TPD-1", ozet: "3 Test issue: TPD-9, TPD-10, TPD-11", zaman: t(30, "10:44") },

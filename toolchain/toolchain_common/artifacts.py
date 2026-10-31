@@ -25,10 +25,27 @@ def run_dir(root: Path, run_id: str) -> Path:
     return ensure_inside(root, root / "runs" / run_id)
 
 
-def checks_file(root: Path, sha: str) -> Path:
+KEEP_MARKER = ".keep"
+
+
+def release_keep(root: Path, run_id: str) -> bool:
+    """`runs/<run_id>/.keep` işaretini kaldırır; kaldırıldıysa True (yoksa False)."""
+    d = run_dir(root, run_id)
+    if d.is_symlink() or not d.is_dir():
+        return False
+    marker = d / KEEP_MARKER
+    if not (marker.is_symlink() or marker.exists()):
+        return False
+    marker.unlink()
+    return True
+
+
+def checks_file(root: Path, sha: str, checks_dir: Path | None = None) -> Path:
+    """Merge kapısı dosyası: `checks_dir/<sha>.json` (varsayılan `root/checks`)."""
     if not SHA_RE.match(sha) or len(sha) < 40:
         raise ValueError(f"checks dosyası için tam sha gerekir: {sha!r}")
-    return ensure_inside(root, root / "checks" / f"{sha}.json")
+    base = checks_dir if checks_dir is not None else root / "checks"
+    return ensure_inside(base, base / f"{sha}.json")
 
 
 def atomic_write_json(path: Path, data: Any) -> None:

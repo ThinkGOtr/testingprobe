@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # demo-app e2e kontrolleri — GitHub CI ve yerel test-runner AYNI betiği kullanır (AI yok).
-#   npm ci --ignore-scripts → tsc --strict → eslint --no-inline-config → playwright test
+#   npm ci --ignore-scripts → tsc --strict → eslint --no-inline-config → senaryo bağımsızlığı → playwright test
 # Ek argümanlar `playwright test`'e aynen geçer (ör. --retries=1 --repeat-each=3 --grep ...).
 #
 # BASE_URL tanımlı değilse Playwright uygulamayı webServer ile kendisi başlatır; bunun için
@@ -33,6 +33,9 @@ npx --no-install tsc --noEmit
 
 step "eslint --no-inline-config"
 npx --no-install eslint --no-inline-config --max-warnings=0 .
+
+step "el yazımı testler senaryodan bağımsız (6. adet kampanya sınırı doğrulanmaz)"
+node tools/scenario-neutral-check.js
 
 step "playwright test $*"
 exec npx --no-install playwright test "$@"

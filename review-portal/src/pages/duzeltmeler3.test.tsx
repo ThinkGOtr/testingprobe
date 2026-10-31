@@ -186,8 +186,8 @@ describe("canlı derleme (VITE_MOCK=0): uydurma KPI yok", () => {
     await oturumAc("sunucu");
     sar(<KontrolKulesi />);
     const kart = await screen.findByRole("region", { name: "AI katkısı" });
-    expect(within(kart).getByText("Manuel baz değer").parentElement).toHaveTextContent("ölçülmedi");
-    expect(kart).not.toHaveTextContent(/Kazanç/);
+    expect(within(kart).getByText("baz değer ölçülmedi")).toBeInTheDocument();
+    expect(kart).not.toHaveTextContent(/Kazanç %/);
   });
 
   it("örnek veri modunda her ekranın üstünde 'ÖRNEK VERİ — gerçek değil' bandı", async () => {

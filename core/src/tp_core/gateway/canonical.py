@@ -27,7 +27,8 @@ def sha256_hex(data: str | bytes) -> str:
 #   koşudan koşuya değişir (içeriğin kendisi aşağıdaki kurallarla zaten normalize edilir);
 # - ISO zaman damgaları (Jira `2026-10-01T09:00:00.000+0000` dahil), UUID'ler;
 # - git sha'ları (40 hex), sha256 özetleri (64 hex) ve kısa sha'lar (7–12 hex, en az bir harf ve
-#   bir rakam: forge her `make reset`'te yeni commit kimliği üretir);
+#   bir rakam: forge her `make reset`'te yeni commit kimliği üretir); sembol tablosu bloğunun
+#   `source="symbols:<sha>"` önekinde harf/rakam koşulu yoktur (tamamı rakam sha da normalize);
 # - Playwright snapshot ref'leri (ör. [ref=e12]).
 # Sıra önemlidir: sınır kimliği ve uzun hex'ler kısa sha kuralından önce.
 _NORMALIZERS: tuple[tuple[re.Pattern[str], str], ...] = (
@@ -35,6 +36,9 @@ _NORMALIZERS: tuple[tuple[re.Pattern[str], str], ...] = (
         re.compile(r'(<\s*/?\s*untrusted\b[^>]*?\bid=")[0-9a-f]{8,64}(")'),
         r"\1<B>\2",
     ),
+    # Sembol tablosu bloğunun kaynağındaki commit öneki (`symbols:<sha[:12]>`): tamamı rakam
+    # (veya tamamı harf) olsa da sha'dır; tablo içeriği anahtarı zaten belirler.
+    (re.compile(r'(\bsource="symbols:)[0-9a-f]{4,64}(")'), r"\1<SHA>\2"),
     (re.compile(r"\b[0-9a-f]{64}\b"), "<SHA>"),
     (re.compile(r"\b[0-9a-f]{40}\b"), "<SHA>"),
     (

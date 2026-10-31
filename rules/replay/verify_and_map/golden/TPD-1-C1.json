@@ -2,22 +2,18 @@
   "kind": "agent",
   "purpose": "verify_and_map",
   "golden": "TPD-1-C1",
-  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Model çıktısı (step_mapping/expects/missing_methods) elle hazırlandı; tarayıcı adımları çalışan Playwright MCP'ye (--isolated) karşı koşturulup kaydedildi; hedefler replay'de oturumdan bağımsız olsun diye snapshot ref'i yerine tekil seçici (data-testid) olarak yazıldı. Kampanyalı sepet (P-001) case'lerinde sepet snapshot özeti yalnızca satır/tutar satırlarını içerir: kayıt anındaki çalışan imaj AC6 kod değişikliğinden (pricing.min_aranir) önceydi; uyarı/onay durumu replay'de araçlar yeniden koşturulunca görülür. Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), eşleşmezse REPLAY-MISS.",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Model çıktısı (step_mapping/expects/missing_methods) elle hazırlandı (canlı model çıktısı değil; ai_call.model = golden-elle). Tarayıcı adımları demo-app'in güncel kaynağına (e2e webServer yolu) karşı Playwright MCP 1.64.1 (compose yığını: playwright-mcp + demo-app-web/demo-app-api) (--isolated, --caps=testing) ile koşturulup kaydedildi (core/tests/unit/gateway/record_verify_goldens.py); yerel kök http://demo-app-web:8080 ile değiştirildi. Ajan tarayıcısı doğrulama bayisiyle (bayi3) girer; case'teki giriş verisi eşleme argümanıdır. Locator doğrulaması: eylemde kullanılan her locator ilk kullanımından önce doğrulanır — eleman son snapshot'ta sembol tablosundaki rol/adla bulunur, browser_generate_locator o snapshot ref'iyle çağrılır ve dönen getByTestId page object'in testId'siyle karşılaştırılır; eylemler testId seçicisiyle yapılır. Snapshot ref'leri oturuma özgüdür ve aynı yörüngede bile koşudan koşuya kayabilir: kayıttaki ref yalnızca o kaydın gözlemidir; adımın `hedef` alanı (rol/ad/kapsam) REPLAY'de ref'in canlı son snapshot'tan yeniden çözülmesi içindir (gateway.snapshot_refs). evidence_ref'teki 'kayıttaki not' değerleri kayıt anındaki sayfadandır; REPLAY koşusunda yeniden ölçülmez. Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), eşleşmezse REPLAY-MISS.",
   "input_match": {
-    "contains": [
-      "Sepete ekle ile ürün sepete eklenir ve sepet sayacı artar",
-      "Giriş sayfasını aç",
-      "Bayi kullanıcısıyla giriş yap",
-      "\"Portakal Gazozu 1L\" (P-001) kartında adedi 1 yapıp \"Sepete ekle\" butonuna bas",
-      "Giriş formu görüntülenir",
-      "Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir",
-      "Sepet sayacı 1 olur"
-    ]
+    "sources": [
+      "case:TPD-1-C1"
+    ],
+    "case_text": "Başlık: Sepete ekle ile ürün sepete eklenir ve sepet sayacı artar\nTür: positive · Risk: medium\nKabul kriterleri: AC1\nÖn koşullar:\n- Sepet boş\nAdımlar:\nS1: Giriş sayfasını aç\n  Veri: (yok)\n  Beklenen: Giriş formu görüntülenir\nS2: Bayi kullanıcısıyla giriş yap\n  Veri: bayi1 / Demo123!\n  Beklenen: Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir\nS3: \"Portakal Gazozu 1L\" (P-001) kartında adedi 1 yapıp \"Sepete ekle\" butonuna bas\n  Veri: P-001 × 1\n  Beklenen: Sepet sayacı 1 olur\nBeklenen sonuç: Ürün sepete eklenir ve sepet sayacı 1 olur\nEtiketler: AI-generated"
   },
   "case": {
     "jira_key": "TPD-1",
     "sira_no": 1,
-    "title": "Sepete ekle ile ürün sepete eklenir ve sepet sayacı artar"
+    "title": "Sepete ekle ile ürün sepete eklenir ve sepet sayacı artar",
+    "case_golden": "TPD-1"
   },
   "steps": [
     {
@@ -31,17 +27,56 @@
     {
       "tool": "browser_snapshot",
       "args": {},
-      "result_summary": "URL /giris | heading \"Bayi girişi\" [level=1] | textbox \"Kullanıcı adı\" | textbox \"Parola\" | button \"Giriş yap\" [disabled]",
+      "result_summary": "URL /giris | heading \"Bayi girişi\" [level=1] | textbox \"Kullanıcı adı\" [ref=e16] | textbox \"Parola\" [ref=e19] | button \"Giriş yap\" [disabled] [ref=e20]",
       "allowed": true
+    },
+    {
+      "tool": "browser_generate_locator",
+      "args": {
+        "element": "textbox \"Kullanıcı adı\" (login.username)",
+        "target": "e16"
+      },
+      "result_summary": "getByTestId('login-username')",
+      "allowed": true,
+      "hedef": {
+        "rol": "textbox",
+        "ad": "Kullanıcı adı"
+      }
+    },
+    {
+      "tool": "browser_generate_locator",
+      "args": {
+        "element": "textbox \"Parola\" (login.password)",
+        "target": "e19"
+      },
+      "result_summary": "getByTestId('login-password')",
+      "allowed": true,
+      "hedef": {
+        "rol": "textbox",
+        "ad": "Parola"
+      }
+    },
+    {
+      "tool": "browser_generate_locator",
+      "args": {
+        "element": "button \"Giriş yap\" (login.submit)",
+        "target": "e20"
+      },
+      "result_summary": "getByTestId('login-submit')",
+      "allowed": true,
+      "hedef": {
+        "rol": "button",
+        "ad": "Giriş yap"
+      }
     },
     {
       "tool": "browser_type",
       "args": {
         "element": "Kullanıcı adı",
         "target": "[data-testid=\"login-username\"]",
-        "text": "bayi1"
+        "text": "bayi3"
       },
-      "result_summary": "await page.locator('[data-testid=\"login-username\"]').fill('bayi1');",
+      "result_summary": "await page.locator('[data-testid=\"login-username\"]').fill('bayi3');",
       "allowed": true
     },
     {
@@ -66,8 +101,36 @@
     {
       "tool": "browser_snapshot",
       "args": {},
-      "result_summary": "URL /katalog | link \"Sepet 0 ürün\": | generic: Merkez Bayi | paragraph: P-001",
+      "result_summary": "URL /katalog | heading \"Ürün kataloğu\" [level=1] | link \"Sepet 0 ürün\" [ref=e33] | generic: Doğrulama Bayi | paragraph: P-001 | heading \"Portakal Gazozu 1L\" [level=2] | paragraph: \"Kampanya: 6 al 1 bedava\" | paragraph: 25,00 TL | spinbutton \"Adet\" [ref=e56]: \"1\" | button \"Sepete ekle\" [ref=e57] | status",
       "allowed": true
+    },
+    {
+      "tool": "browser_generate_locator",
+      "args": {
+        "element": "P-001 kartında spinbutton \"Adet\" (catalog.quantityInput)",
+        "target": "e56"
+      },
+      "result_summary": "getByTestId('qty-input-P-001')",
+      "allowed": true,
+      "hedef": {
+        "rol": "spinbutton",
+        "ad": "Adet",
+        "kapsam": "paragraph: P-001"
+      }
+    },
+    {
+      "tool": "browser_generate_locator",
+      "args": {
+        "element": "P-001 kartında button \"Sepete ekle\" (catalog.addToCart)",
+        "target": "e57"
+      },
+      "result_summary": "getByTestId('product-card-P-001').getByTestId('add-to-cart')",
+      "allowed": true,
+      "hedef": {
+        "rol": "button",
+        "ad": "Sepete ekle",
+        "kapsam": "paragraph: P-001"
+      }
     },
     {
       "tool": "browser_type",
@@ -91,10 +154,29 @@
     {
       "tool": "browser_wait_for",
       "args": {
-        "text": "1 ürün"
+        "text": "1 adet sepete eklendi."
       },
-      "result_summary": "await page.getByText(\"1 ürün\").first().waitFor({ state: 'visible' }); · URL /katalog",
+      "result_summary": "await page.getByText(\"1 adet sepete eklendi.\").first().waitFor({ state: 'visible' }); · URL /katalog",
       "allowed": true
+    },
+    {
+      "tool": "browser_snapshot",
+      "args": {},
+      "result_summary": "URL /katalog | heading \"Ürün kataloğu\" [level=1] | link \"Sepet 1 ürün\" [ref=e99] | generic: Doğrulama Bayi | paragraph: P-001 | heading \"Portakal Gazozu 1L\" [level=2] | paragraph: \"Kampanya: 6 al 1 bedava\" | paragraph: 25,00 TL | spinbutton \"Adet\" [ref=e56]: \"1\" | button \"Sepete ekle\" [ref=e57] | status: 1 adet sepete eklendi.",
+      "allowed": true
+    },
+    {
+      "tool": "browser_generate_locator",
+      "args": {
+        "element": "link \"Sepet\" (nav.cart; sayaç içinde)",
+        "target": "e99"
+      },
+      "result_summary": "getByTestId('nav-cart')",
+      "allowed": true,
+      "hedef": {
+        "rol": "link",
+        "ad": "Sepet"
+      }
     }
   ],
   "output": {
@@ -105,7 +187,7 @@
         "method": "goto",
         "args": [],
         "verified": true,
-        "evidence_ref": "Giriş formu (textbox \"Kullanıcı adı\", \"Parola\", button \"Giriş yap\")"
+        "evidence_ref": "Giriş formu (textbox \"Kullanıcı adı\", \"Parola\", button \"Giriş yap\") · /giris"
       },
       {
         "step_id": "S2",
@@ -116,7 +198,7 @@
           "Demo123!"
         ],
         "verified": true,
-        "evidence_ref": "button \"Giriş yap\" → /katalog"
+        "evidence_ref": "button \"Giriş yap\" → /katalog; oturum \"Doğrulama Bayi\" (doğrulama bayisi bayi3; case'in bayisi bayi1 eşleme argümanıdır)"
       },
       {
         "step_id": "S3",
@@ -127,7 +209,7 @@
           1
         ],
         "verified": true,
-        "evidence_ref": "button \"Sepete ekle\" (ürün kartı) → sepet sayacı güncellendi"
+        "evidence_ref": "button \"Sepete ekle\" (product-card-P-001) → status \"1 adet sepete eklendi.\"; sepet bağlantısı \"Sepet 1 ürün\""
       }
     ],
     "expects": [

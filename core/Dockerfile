@@ -24,7 +24,10 @@ COPY alembic.ini ./
 COPY alembic ./alembic
 COPY src ./src
 RUN uv sync --frozen --no-dev --no-editable \
- && useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin tp
+ && useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin tp \
+ && mkdir -p /codegen-artifacts && chown 10001 /codegen-artifacts
+# /codegen-artifacts: `tp_codegen` volume'ünün bağlama noktası (kod üretimi ajan ekran görüntüleri;
+# core-worker rw, core-api ro). Boş adlandırılmış volume ilk bağlamada bu sahipliği devralır.
 
 USER 10001
 EXPOSE 8000

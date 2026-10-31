@@ -237,9 +237,12 @@ def _golden_source(row: Mapping[str, Any], purpose: str) -> str | None:
 def _golden_index(store: ReplayStore, purpose: str) -> dict[str, list[tuple[str, dict[str, Any]]]]:
     index: dict[str, list[tuple[str, dict[str, Any]]]] = {}
     folder = store.root / purpose / "golden"
-    for path in sorted(folder.glob("*.json")):
+    # Ana ve senaryo golden'ları (`<senaryo>/<ad>`: `ReplayStore.golden_path` ile aynı ad).
+    paths = [*sorted(folder.glob("*.json")), *sorted(folder.glob("*/*.json"))]
+    for path in paths:
         golden = json.loads(path.read_text(encoding="utf-8"))
-        index.setdefault(canonical_json(golden.get("output")), []).append((path.stem, golden))
+        name = path.relative_to(folder).with_suffix("").as_posix()
+        index.setdefault(canonical_json(golden.get("output")), []).append((name, golden))
     return index
 
 

@@ -138,6 +138,10 @@ export function scriptUretiliyor(d: ScriptDurumu): boolean {
   return d === "pending" || d === "verifying";
 }
 
+/** Kırarak doğrulamada yeşil kalan (`weak` / `zayif_test`) testin liste ipucu. */
+export const ZAYIF_TEST_ACIKLAMA =
+  "Kampanya kırılması (BREAK_CAMPAIGN) bu testi kırmızıya çevirmedi. Kampanya dışı davranışı (ör. sepet sayacı, minimum sipariş) doğrulayan testte beklenir; kampanya testinde zayıf test demektir. Merge engellenmez, açık insan kabulü ister.";
+
 /**
  * Durumdan ayrı, türetilmiş script işareti: `pr_open` iken kırarak doğrulama sonucu.
  * Zayıf test durumu değil `zayif_test` alanıdır; merge'e hazırlık PR + CI + kırma sonucundan çıkar.
@@ -147,8 +151,11 @@ export function scriptIsareti(s: {
   zayif_test: boolean;
   break_verify: { durum: string };
   pr: { durum: string; ci: string | null } | null;
-}): { etiket: string; ton: Ton } | null {
-  if (s.zayif_test) return { etiket: "Zayıf test", ton: "hata" };
+}): { etiket: string; ton: Ton; aciklama?: string } | null {
+  // Zayıf test bir işarettir, kapı değil (TEKNIK-TASARIM §2 adım 6): uyarı tonunda. Liste kopyası
+  // olguyu söyler ("kırma etkilemedi"): BREAK_CAMPAIGN yalnızca kampanyayı bozar; kampanya dışı
+  // testlerde (sepet sayacı, minimum sipariş) bu beklenir, "AI zayıf test yazdı" anlamına gelmez.
+  if (s.zayif_test || s.break_verify.durum === "weak") return { etiket: "Kırma etkilemedi", ton: "uyari", aciklama: ZAYIF_TEST_ACIKLAMA };
   if (s.durum === "pr_open" && s.pr?.durum === "open" && s.pr.ci === "passed" && s.break_verify.durum === "passed") {
     return { etiket: "Merge'e hazır", ton: "basari" };
   }
@@ -163,7 +170,15 @@ export const BUG_DURUMU: Record<BugDurumu, { etiket: string; ton: Ton }> = {
   published: { etiket: "Jira'da", ton: "basari" },
 };
 
-export const TETIK: Record<Tetik, string> = { pr: "PR", push: "Push (main)", nightly: "Gece", deploy: "Deploy" };
+export const TETIK: Record<Tetik, string> = {
+  pr: "PR",
+  push: "Push (main)",
+  nightly: "Gece",
+  deploy: "Deploy",
+  break_verify: "Kırarak doğrula",
+  local_check: "Yerel kontrol",
+  manual: "Elle",
+};
 export const KAYNAK: Record<KosuKaynagi, string> = { local: "Yerel Chromium", github: "GitHub Actions", sauce: "Sauce Labs" };
 
 export const HATA_SINIFI: Record<HataSinifi, { etiket: string; ton: Ton }> = {
