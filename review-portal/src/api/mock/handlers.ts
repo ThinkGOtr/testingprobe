@@ -65,12 +65,25 @@ import { mockOlayYayinla } from "./olaylar";
 import { kirmaTaslagiMi } from "../../lib/yolHaritasi";
 import { BAZ_NOT_EN_AZ, BAZ_NOT_EN_COK, BAZ_UST_SINIR_S, kazancOzeti } from "../uyumFaz5";
 
+// core `auth/display.py` + `seed.GORUNEN_ADLAR` demo varsayılanlarıyla aynı (yalnızca gösterim).
+const KISILER: Record<string, string> = {
+  analist: "Cengizhan Gunaydin · Analist",
+  muhendis: "Gokhan Sipahi · Mühendis",
+  sunucu: "Sunucu",
+  po: "Cengizhan Gunaydin · PO",
+  testci: "Fatih Arslan · Testçi",
+};
+
+function mockKullanici(kullanici_adi: string, rol: Kullanici["rol"], ad_soyad: string | null): Kullanici {
+  return { id: `u-${kullanici_adi}`, kullanici_adi, rol, gorunen_ad: KISILER[kullanici_adi], ad_soyad, kisiler: KISILER };
+}
+
 const KULLANICILAR: Record<string, Kullanici> = {
-  analist: { id: "u-analist", kullanici_adi: "analist", rol: "analyst" },
-  muhendis: { id: "u-muhendis", kullanici_adi: "muhendis", rol: "engineer" },
-  sunucu: { id: "u-sunucu", kullanici_adi: "sunucu", rol: "presenter" },
-  po: { id: "u-po", kullanici_adi: "po", rol: "po" },
-  testci: { id: "u-testci", kullanici_adi: "testci", rol: "tester" },
+  analist: mockKullanici("analist", "analyst", "Cengizhan Gunaydin"),
+  muhendis: mockKullanici("muhendis", "engineer", "Gokhan Sipahi"),
+  sunucu: mockKullanici("sunucu", "presenter", null),
+  po: mockKullanici("po", "po", "Cengizhan Gunaydin"),
+  testci: mockKullanici("testci", "tester", "Fatih Arslan"),
 };
 
 const OTURUM_ANAHTARI = "tp-mock-oturum";

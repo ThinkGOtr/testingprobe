@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,9 +13,16 @@ from tests.unit.features.publish.test_publish import _ctx, _label_count
 from tests.unit.features.publish.test_publish import hazir as hazir_fikstur
 from tp_core.features.publish import service as publish
 from tp_core.integrations.jira import RestJira
+from tp_core.integrations.jira_adf import strip_bot_header
 from tp_core.models import AuditEvent, Requirement, TestCase, session_scope
 
 hazir = hazir_fikstur  # aynı fikstür (iki case'li TPD-4; ilki onaylı)
+
+
+def _yayin_yorumlari(jira: Any) -> list[Any]:
+    """Story'deki yayın özeti yorumları (bot imi satırından sonraki metin "Testing Probe:")."""
+    yorumlar = jira.get_comments("TPD-4")
+    return [c for c in yorumlar if strip_bot_header(c.body).startswith("Testing Probe:")]
 
 
 def _jira_etiketli(rid: uuid.UUID) -> None:
@@ -107,13 +115,13 @@ def test_yayin_sonrasi_cokmede_yeniden_denemede_sabitlenir(
     (ev,) = _anchored()
     assert ev.ozet["case_ids"] == [a["id"]] and ev.ozet["kurtarma"] is True
     assert ev.ozet["external_keys"] == [ilk["external_key"]]
-    yorumlar = [c for c in jira.get_comments("TPD-4") if c.body.startswith("Testing Probe:")]
+    yorumlar = _yayin_yorumlari(jira)
     assert len(yorumlar) == 1 and ilk["external_key"] in yorumlar[0].body
 
     # Üçüncü deneme: zaten sabitlenmiş → yeni yorum ve kayıt yok.
     publish.run_publish(_ctx([a["id"]]), engine)
     assert len(_anchored()) == 1
-    assert len([c for c in jira.get_comments("TPD-4") if c.body.startswith("Testing Probe:")]) == 1
+    assert len(_yayin_yorumlari(jira)) == 1
 
 
 def test_yorumdan_sonra_cokmede_yorum_tekrarlanmaz_kayit_tamamlanir(
@@ -127,7 +135,7 @@ def test_yorumdan_sonra_cokmede_yorum_tekrarlanmaz_kayit_tamamlanir(
     publish.run_publish(_ctx([a["id"]]), engine)
     (ev,) = _anchored()
     assert ev.ozet["comment_id"] == yorum_id and ev.ozet["kurtarma"] is True
-    assert len([c for c in jira.get_comments("TPD-4") if c.body.startswith("Testing Probe:")]) == 1
+    assert len(_yayin_yorumlari(jira)) == 1
 
 
 def test_normal_yayin_sabitleme_kaydi_case_kimliklerini_tasir(

@@ -13,6 +13,8 @@
 | `PG_PORT`, `TP_API_PORT`, `TP_PORTAL_PORT`, `DEMO_WEB_PORT`, `MCP_PORT` | — (varsayılan 55432/8000/8080/8081/8931) | Host portları, yalnızca 127.0.0.1 |
 | `ANTHROPIC_API_KEY` | — (F2a) | Model geçidi |
 | `JIRA_SITE`, `JIRA_READ_EMAIL`, `JIRA_READ_TOKEN`, `JIRA_WRITE_EMAIL`, `JIRA_WRITE_TOKEN` | — (F3) | Rovo okuma ve Jira yazma |
+| `JIRA_HESAP_ANALIST`, `JIRA_HESAP_PO`, `JIRA_HESAP_MUHENDIS`, `JIRA_HESAP_TESTCI` | — (boş = bahsetme yok) | Rol → Jira accountId; ürün yorumlarında @bahsetme (yalnızca bildirim, yalnızca core-worker) |
+| `TP_GORUNEN_ADLAR` | — (boş = seed demo varsayılanları) | Portal kişi adları `kullanici_adi=Ad Soyad,…` (yalnızca gösterim; yalnızca core-api) |
 | `XRAY_CLIENT_ID`, `XRAY_CLIENT_SECRET` | — (hafta 2) | Xray Cloud |
 | `GITHUB_READ_TOKEN` | — (hafta 1, tutarlılık denetimi) | Test edilen uygulama reposu, `contents:read` |
 | `GH_APP_ID`, `GH_APP_PRIVATE_KEY_PATH` | — (F1) | PR açan bot |

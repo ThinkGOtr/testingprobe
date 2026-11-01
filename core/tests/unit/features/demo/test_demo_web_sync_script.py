@@ -52,10 +52,32 @@ if os.path.exists(os.path.join(st, "exec_down")):
 if a[:2] == ["sh", "-c"]:
     script = a[2].replace("/forge/", forge + "/")
     sys.exit(subprocess.run(["sh", "-c", script, *a[3:]]).returncode)
+if a[:3] == ["python", "-m", "toolchain_common.mirror_export"]:
+    log("mirror_export " + " ".join(a[3:]))
+    if a[3] == "tree":
+        print(os.environ.get("FAKE_TREE", "d" * 40))
+    else:
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w") as t:
+            data = b"FROM scratch\n"
+            ti = tarfile.TarInfo("Dockerfile"); ti.size = len(data)
+            t.addfile(ti, io.BytesIO(data))
+        sys.stdout.buffer.write(buf.getvalue())
+    sys.exit(0)
+if a[:3] == ["python", "-m", "tp_core.features.demo"]:
+    log("demo " + " ".join(a[3:]))
+    req = {"istek_id": "9" * 32, "eylem": "sync", "sha": os.environ.get("FAKE_MAIN", "b" * 40),
+           "zaman": "t", "isteyen": "x"}
+    open(os.path.join(forge, "demo-web-refresh.json"), "w").write(json.dumps(req))
+    print(json.dumps(req))
+    sys.exit(0)
 if a[:3] == ["python", "-m", "tp_core.integrations.forge_demo"]:
     cmd = a[3]
     log("forge_demo " + " ".join(a[3:]))
-    if cmd == "web-state":
+    if cmd == "web-path":
+        yol = os.environ.get("FAKE_WEB_YOLU", "demo-app/web")
+        print(json.dumps({"kip": "github", "web_yolu": yol}))
+    elif cmd == "web-state":
         p = os.path.join(st, "running_sha")
         sha = open(p).read().strip() if os.path.exists(p) else None
         print(json.dumps({"calisan": {"sha": sha}}))
@@ -352,3 +374,56 @@ def test_tek_sefer_ve_wait_core_worker_ulasilamazsa_hata_verir(h: Harness) -> No
     # --wait: istek okunamaz → hata (sessizce beklemez).
     res = h.run("--wait", "break", env={"TP_DEMO_SYNC_WAIT_S": "2"})
     assert res.returncode != 0
+
+
+# ------------------------------------------------------------- GitHub kipi (TP_FORGE=github)
+
+
+def _gh_env(h: Harness, **extra: str) -> dict[str, str]:
+    return {
+        "TP_FORGE": "github",
+        "TP_TOOLCHAIN_EXEC": str(h.bin / "fake-exec"),
+        "TP_FORGE_REMOTE_URL": "https://github.com/ThinkGOtr/testingprobe-demo-app.git",
+        **extra,
+    }
+
+
+def _exec_log(h: Harness) -> str:
+    p = h.state / "exec.log"
+    return p.read_text() if p.exists() else ""
+
+
+def test_github_kipinde_web_aynadan_derlenir(h: Harness) -> None:
+    h.istek("2" * 32)
+    r = h.run(env=_gh_env(h))
+    assert r.returncode == 0, r.stderr
+    log = _exec_log(h)
+    assert f"mirror_export archive --ref {MAIN} --path demo-app/web" in log
+    assert f"mirror_export tree --ref {MAIN} --path demo-app/web" in log
+    assert "forge_demo archive" not in log  # yerel forge arşivi kullanılmaz
+    docker = (h.state / "docker.log").read_text()
+    assert f"DEMO_APP_BUILD_SHA={MAIN}" in docker and "DEMO_APP_WEB_TREE=" + "d" * 40 in docker
+    assert h.recreates() == 1 and h.done() == "2" * 32
+    assert (h.forge / "demo-app-web.sha").read_text().strip() == MAIN
+    assert "GitHub aynası" in r.stdout
+
+
+def test_github_kipinde_uzak_depo_yoksa_acik_hata(h: Harness) -> None:
+    h.istek("3" * 32)
+    r = h.run(env=_gh_env(h, TP_FORGE_REMOTE_URL=""))
+    assert r.returncode != 0 and "TP_FORGE_REMOTE_URL" in r.stderr
+    assert h.recreates() == 0 and h.done() == ""
+
+
+def test_github_kipinde_gecersiz_web_yolu_reddedilir(h: Harness) -> None:
+    h.istek("4" * 32)
+    r = h.run(env=_gh_env(h, FAKE_WEB_YOLU="../x"))
+    assert r.returncode != 0 and "geçersiz web yolu" in r.stderr
+    assert "mirror_export" not in _exec_log(h)
+
+
+def test_main_secenegi_guncel_main_icin_istek_yazar_ve_uygular(h: Harness) -> None:
+    r = h.run("--main", env=_gh_env(h))
+    assert r.returncode == 0, r.stderr
+    assert "demo web-istek --eylem sync" in _exec_log(h)
+    assert h.done() == "9" * 32 and h.recreates() == 1

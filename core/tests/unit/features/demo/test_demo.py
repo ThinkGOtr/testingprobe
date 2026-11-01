@@ -564,7 +564,7 @@ def test_sifirlama_gercek_jiraya_dokunmaz(
     assert reset["jira"]["durum"] == "atlandi" and "gerçek Jira" in reset["jira"]["neden"]
 
 
-# ------------------------------------------------------- GitHub kipi: locator demosu yok
+# ------------------------------------- GitHub kipi: insan kimliğiyle PR (bot asla yazmaz/merge)
 
 
 class _GithubGibi:
@@ -579,42 +579,108 @@ class _GithubGibi:
         return getattr(self._ic, ad)
 
 
-def test_github_kipinde_kirilma_reddedilir(
+def _gh_forge(gh: Any, *, merge: bool = True) -> Any:
+    import httpx
+
+    from tests.unit.integrations.github_repo_fake import BOT_TOKEN, HUMAN_TOKEN, REPO
+    from tp_core.integrations.forge_github import GitHubForge, TokenAuth
+
+    return GitHubForge(
+        REPO,
+        TokenAuth(BOT_TOKEN),
+        merge_auth=TokenAuth(HUMAN_TOKEN) if merge else None,
+        transport=httpx.MockTransport(gh),
+    )
+
+
+@pytest.fixture
+def github_ortam(ortam: Ortam, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Ortam, Any]]:
+    from tests.unit.integrations.github_repo_fake import FakeGitHubRepo
+    from tp_core.integrations import forge_demo
+
+    monkeypatch.delenv(forge_demo.APP_ROOT_ENV, raising=False)
+    forge_demo.clear_cache()
+    gh = FakeGitHubRepo()
+    forge = _gh_forge(gh)
+    service.set_factories(
+        forge=lambda: forge,
+        calisan=lambda: web.CalisanUygulama(ortam.calisan_sha, ortam.calisan_kaynak),
+        sha_dosyasi=lambda: ortam.dosya_sha,
+        jira_reset=lambda: {"durum": "atlandi"},
+        simdi=lambda: ortam.saat,
+    )
+    yield ortam, gh
+    forge_demo.clear_cache()
+
+
+def test_github_kipinde_kirilma_ve_sifirlama_insan_kimligiyle(
     engine: Engine,
-    ortam: Ortam,
+    github_ortam: tuple[Ortam, Any],
     api: Any,  # noqa: F811
     make_user: Any,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from tp_core.features.demo import api as demo_api
+    from tests.unit.integrations.github_repo_fake import BOT_TOKEN, HUMAN_LOGIN
 
-    monkeypatch.setattr(demo_api, "BEKLEME_S", 0.3)
-    gh = _GithubGibi(ortam.forge)
+    ortam, gh = github_ortam
+    login(api, make_user("presenter"))
+    d = api.get("/demo/status").json()
+    assert d["locator_demo"]["destekleniyor"] is True and d["locator_demo"]["kip"] == "github"
+    assert d["forge"]["main_baseline_mi"] is True and d["locator_durumu"] == "baseline"
+
+    sunucu = make_user("presenter")
+    once = gh.refs["heads/main"]
+    with session_scope() as s:
+        out = service.request_break(s, sunucu)
+    assert "GitHub" in out["mesaj"]
+    assert [x.durum for x in run_jobs(engine, 1)] == ["done"]
+    main = gh.refs["heads/main"]
+    assert main != once and gh.writes_by(BOT_TOKEN) == []
+    kirilma_pr = next(pr for pr in gh.prs.values() if pr["branch"].startswith(BREAK_BRANCH))
+    assert kirilma_pr["merged_by"] == HUMAN_LOGIN
+    demo = next(oz for _, e, oz in _eylemler(engine) if e == "demo.break")
+    assert demo["kip"] == "github" and demo["main_sonra"] == main
+    # GitHub CI (Actions push) doğrudan izlenir; çalışan uygulama için yenileme isteği yazılır.
+    assert [(c["sha"], c["trigger"]) for c in ortam.ci] == [(main, "push")]
+    istek = json.loads(ortam.istek_dosyasi.read_text())
+    assert (istek["eylem"], istek["sha"]) == ("break", main)
+    assert _bekleyen_is(engine, service.AWAIT_JOB) == []
+    assert api.get("/demo/status").json()["locator_durumu"] == "kirik"
+
+    # Açık bir tp/* PR'ı (bot) sıfırlamada kapatılır.
+    forge = service._forge()
+    forge.commit_files("tp/case-x", {"demo-app/e2e/tests/generated/x.spec.ts": "x\n"}, "m")
+    acik = forge.open_pr("tp/case-x", "case", "gövde")
+    with session_scope() as s:
+        service.request_reset(s, sunucu)
+    assert [x.durum for x in run_jobs(engine, 1)] == ["done"]
+    assert gh.files_at("main") == gh.files_at("demo-baseline")
+    assert main in gh.ancestors(gh.refs["heads/main"])  # force-push yok
+    assert gh.prs[acik.number]["state"] == "closed"
+    reset = next(oz for _, e, oz in _eylemler(engine) if e == "demo.reset")
+    assert reset["kip"] == "github" and reset["forge"]["degisti"] is True
+    assert reset["kapanan_prlar"] == [{"pr": acik.number, "dal": "tp/case-x", "hata": None}]
+    sifirlama_pr = gh.prs[reset["forge"]["pr"]]
+    assert sifirlama_pr["author"] == HUMAN_LOGIN and sifirlama_pr["merged_by"] == HUMAN_LOGIN
+    assert api.get("/demo/status").json()["forge"]["main_baseline_mi"] is True
+
+
+def test_github_kipinde_insan_kimligi_yoksa_is_duser(
+    engine: Engine, github_ortam: tuple[Ortam, Any], make_user: Any
+) -> None:
+    ortam, gh = github_ortam
     service.set_factories(
-        forge=lambda: gh,
+        forge=lambda: _gh_forge(gh, merge=False),
         calisan=lambda: web.CalisanUygulama(ortam.calisan_sha, ortam.calisan_kaynak),
         simdi=lambda: ortam.saat,
     )
-    once = ortam.forge.head_sha("main")
-    login(api, make_user("presenter"))
-    d = api.get("/demo/status").json()
-    assert d["locator_demo"]["destekleniyor"] is False
-    assert "TP_FORGE=local" in d["locator_demo"]["neden"]
-    for yol in ("/demo/break-locator", "/demo/break-locator?zorla=true"):
-        r = api.post(yol)
-        assert r.status_code == 409, r.text
-        assert "yalnızca yerel forge" in r.json()["detail"]
-    assert _bekleyen_is(engine, service.BREAK_JOB) == []
-    assert ortam.forge.head_sha("main") == once
-    assert [e for _, e, _ in _eylemler(engine)].count("demo.break_refused") == 2
-
-    # Kuyruğa başka yoldan girmiş bir kırılma işi de forge'a dokunmaz.
-    from tp_core.workflow.jobs import enqueue
-
-    with engine.begin() as c:
-        enqueue(c, service.BREAK_JOB, {"isteyen": "x"}, max_deneme=1)
+    once = gh.refs["heads/main"]
+    with session_scope() as s:
+        service.request_break(s, make_user("presenter"))
     assert [x.durum for x in run_jobs(engine, 1)] == ["failed"]
-    assert ortam.forge.head_sha("main") == once
+    assert gh.refs["heads/main"] == once and gh.prs == {}
+    hata = next(oz for _, e, oz in _eylemler(engine) if e == "demo.break_failed")
+    assert hata["kip"] == "github" and "GITHUB_MERGE_TOKEN" in hata["yonerge"]
+    assert ortam.ci == []
 
 
 def test_yerel_kipte_locator_demo_destekli(ortam: Ortam) -> None:
@@ -625,7 +691,10 @@ def test_yerel_kipte_locator_demo_destekli(ortam: Ortam) -> None:
 
 
 def test_make_break_on_denetimi(
-    engine: Engine, ortam: Ortam, capsys: pytest.CaptureFixture[str]
+    engine: Engine,
+    ortam: Ortam,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`scripts/demo-break.sh --make` (make break) core API'sini atlar; aynı ön koşul burada."""
     from tp_core.features.demo import __main__ as cli
@@ -646,9 +715,13 @@ def test_make_break_on_denetimi(
     assert "son yeşil yok" in json.loads(capsys.readouterr().out)["uyari"]
     assert "demo.break_forced" in [e for _, e, _ in _eylemler(engine)]
 
+    # GitHub kipi: insan kimliği (GITHUB_MERGE_TOKEN) yoksa make break de kırmaz.
     service.set_factories(forge=lambda: _GithubGibi(ortam.forge))
+    monkeypatch.delenv("GITHUB_MERGE_TOKEN", raising=False)
     assert cli.main(["on-kosul", "--zorla"]) == cli.RED_KODU
-    assert "TP_FORGE=local" in json.loads(capsys.readouterr().out)["neden"]
+    assert "GITHUB_MERGE_TOKEN" in json.loads(capsys.readouterr().out)["neden"]
+    monkeypatch.setenv("GITHUB_MERGE_TOKEN", "insan")
+    assert cli.main(["on-kosul", "--zorla"]) == 0  # insan kimliği var: GitHub kipi engel değil
 
 
 def test_demo_break_betigi_make_yolunda_on_denetim_ister() -> None:

@@ -246,7 +246,7 @@ gönderilir ve akış kapanır. Portal bunu alınca yeniden bağlanmaz, giriş e
 |---|---|---|---|
 | POST | `/auth/login` `{kullanici_adi, parola}` | — | Oturum |
 | POST | `/auth/logout` | herkes | |
-| GET | `/auth/me` | herkes | `{id, kullanici_adi, rol}` |
+| GET | `/auth/me` | herkes | `{id, kullanici_adi, rol, gorunen_ad, ad_soyad, kisiler}` — `gorunen_ad` ("Cengizhan Gunaydin · Analist"), `kisiler` (`{kullanici_adi: gorunen_ad}`) yalnızca gösterim; yetki `rol` ile (`TP_GORUNEN_ADLAR`) |
 | GET | `/requirements` | herkes | Story listesi (Jira'dan çekilmiş + durum) |
 | POST | `/requirements/sync` | analyst | Jira'dan çek |
 | POST | `/requirements/free-text` `{baslik, aciklama, ac[]}` | analyst | Serbest metin gereksinim |
@@ -288,7 +288,7 @@ gönderilir ve akış kapanır. Portal bunu alınca yeniden bağlanmaz, giriş e
 | GET · DELETE | `/tokens` · `/tokens/{id}` | herkes (kendi token'ları) | Listeleme / iptal |
 | POST | `/tokens` `{kapsam}` → `{id, kapsam, son_kullanma, token, mcp_url}` | analyst | MCP (Claude Code) kanalı için 8 saatlik token; `mcp_url` = `TP_MCP_PUBLIC_URL`. `/mcp` bağlanana kadar **501** ("IDE (MCP) kanalı henüz etkin değil"); token parola değişince geçersizleşir |
 | MCP | `:8000/mcp` → `get_requirement(requirement_key)` (submit kapsamı; PO onaylı metin güvenilmeyen blokta + `onaylanan_hash`), `submit_draft_cases(requirement_key, cases, onaylanan_hash)` (hash zorunlu; bayatsa ret), `publish_test_cases` | token | Claude Code kanalı (streamable HTTP, durumsuz). Token tek kapsamlıdır (`submit` veya `publish`); iki araç için iki token. Yalnızca 127.0.0.1/localhost Host'u, `X-Forwarded-For` → 403, çerez okunmaz. Her çağrı `tool_call` (kanal `ide`). Ayrıntı: docs/CLAUDE-CODE-KANALI.md |
-| POST | `/demo/break-locator` · `/demo/reset` | presenter | Demo kırılması / sıfırlama (200 done / 202 sürüyor / 409). Kırılma main için yeşil koşu ister (yoksa 409 + `demo.break_refused`); `?zorla=true` bilerek atlar. Locator demosu yalnızca `TP_FORGE=local`: GitHub kipinde kırılma her zaman 409 (`zorla` dahil). Sıfırlama jira-sim'i sıfırlamaz; yalnızca `AI-generated` + `tp-<uuid>` etiketli Bug'ları siler |
+| POST | `/demo/break-locator` · `/demo/reset` | presenter | Demo kırılması / sıfırlama (200 done / 202 sürüyor / 409). Kırılma main için yeşil koşu ister (yoksa 409 + `demo.break_refused`); `?zorla=true` bilerek atlar. GitHub kipinde kırılma/sıfırlama insan kimliğiyle (`GITHUB_MERGE_TOKEN`, demo-admin bypass) PR olarak yapılır (sıfırlama: main üstüne `demo-baseline` ağacı); token yoksa iş düşer → 409 (GERCEK-SISTEMLER §5.7). Sıfırlama jira-sim'i sıfırlamaz; yalnızca `AI-generated` + `tp-<uuid>` etiketli Bug'ları siler |
 | GET | `/demo/status` | herkes | Faz 5: `model {ayar, mod, replay_strict, anahtar_var, calisma_alani_var, saglayici, aciklama, zaman}` (core-worker'ın son açılış bildirimi, `worker.model_mode` denetimi; kayıt yoksa null = bilinmiyor; anahtar değeri asla) ve `degerlendirme [{paket, surum, durum, etiket}]` (rules/evaluations.yaml; `pending` → "canlı değerlendirme bekliyor"; okunamazsa `{hata}`). main, `forge.testid` (web/src) + `forge.e2e_testid` (e2e page object), `locator_durumu` (`baseline`\|`kirik`\|`onarildi`\|null), baseline, çalışan uygulama sha'sı ve main ile eşleşmesi, `web_yenileme_istegi`, `onarim_on_kosulu {hazir, son_yesil_kosu, yonerge}`, `locator_demo {destekleniyor, neden}` |
 
 **Faz 2 uç ayrıntıları (Demo-A):** `POST /requirements/sync` → 200 `{durum:"done", mesaj, proje,
@@ -625,6 +625,15 @@ Faz 1 entegrasyonunda eklenenler (boş = yerel simülatör / güvenli varsayıla
   `TP_JIRA_BOT_ACCOUNT_IDS` (ürünün bot accountId'leri; onay sayılmaz). Jira kanalındaki onayı kaydeden
   kod `RestJira.po_approvals(key, settings.po_accounts)` sonucunu kullanır ve her onayı
   `check_jira_approver()`'dan geçirir; ham `label_history` onay sayılmaz.
+- Jira yorumları (yalnızca core-worker): ürünün her yorumu `🤖 AI Testing Probe:` imiyle başlar
+  (`RestJira.add_comment`/`add_comment_adf`; yeni Bug açıklamasının ilk satırı da). Rol bahsetmeleri
+  `JIRA_HESAP_ANALIST`, `JIRA_HESAP_PO`, `JIRA_HESAP_MUHENDIS`, `JIRA_HESAP_TESTCI` (accountId; boş = o
+  rol bahsedilmez) ile ADF `mention` düğümü olarak aynı satıra yazılır: PO soru yorumu → PO + Analist;
+  onay etiketi kaldırıldı / doküman düzeltmesi → PO; yayın özeti (story) → Testçi; mevcut Bug'a bağlama
+  yorumu ve yeni Bug → Mühendis + Testçi (`integrations/jira_notify.py`). Bahsetme yalnızca bildirimdir:
+  yetki vermez, onay sayılmaz; idempotency işaretleri gövdede aynen kalır.
+- Portal görünen adları (core-api): `TP_GORUNEN_ADLAR` (`kullanici_adi=Ad Soyad`, virgülle; boş = seed
+  demo varsayılanları; boş ad = yalnızca rol etiketi). Yalnızca gösterim; yetki kararları roldedir.
 - Forge merge kapısı (yalnızca core-worker): `TP_REQUIRED_CHECKS` (virgülle; boş = `local-ci` /
   GitHub ruleset listesi `test-local,ast-guard,semgrep`).
 - Model geçidi: `TP_REPLAY_STRICT` (1 = prova: girdisi beyanla eşleşmeyen golden'a düşmez,
@@ -643,6 +652,7 @@ Faz 1 entegrasyonunda eklenenler (boş = yerel simülatör / güvenli varsayıla
   `make demo-baseline` ve `make up`'taki sync-web otomatik yazar), yedeği `DEMO_APP_BUILD_SHA`;
   `TP_CHECK_REQUIRE_APP_SHA` (0), `TP_CHECKS_PATH` (/checks), `TP_CHECKS_REQUIRE_MOUNT` (1),
   `TP_FORGE_REMOTE_URL`/`TP_FORGE_REMOTE_TOKEN` (GitHub modu, salt okunur; boş = kapalı),
+  `TP_APP_PATHS` (uygulama eşleşmesi yolları; GitHub düzeni `demo-app/web,demo-app/api`),
   `TP_FORGE_MIRROR_PATH` (/forge-mirror/demo-app.git). core ortak blokta `TP_CHECKS_PATH` (/checks).
 - `PLAYWRIGHT_VERSION`: tek kaynak `.playwright-version`; `make env` `.env`'e de yazar (düz
   `docker compose ps/logs/exec` çalışsın). Gerçek Jira'da `make reset` önce `jira_seed` planını

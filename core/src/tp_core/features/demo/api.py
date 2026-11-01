@@ -7,8 +7,9 @@
 | GET  | `/demo/status` | herkes — forge main/testid, uygulama commit'i, `onarim_on_kosulu` |
 
 Kırılmadan önce yeşil temel koşu yoksa kırılma 409 + yönerge döner (`zorla=true` bilerek atlar):
-locator onarımı "son yeşil" kanıt ister. GitHub kipinde (TP_FORGE=github) kırılma her zaman 409:
-locator demosu yalnızca yerel forge'dadır (`/demo/status` → `locator_demo`).
+locator onarımı "son yeşil" kanıt ister. GitHub kipinde (TP_FORGE=github) kırılma/sıfırlama insan
+kimliğiyle (`GITHUB_MERGE_TOKEN`, demo-admin bypass) PR olarak yapılır; token yoksa iş başarısız
+olur ve 409 Türkçe neden döner (`/demo/status` → `locator_demo.kip`).
 
 Forge yazımı yalnızca core-worker'dadır: uçlar işi kuyruğa alır ve en çok `BEKLEME_S` bekler
 (bitti → 200 sonuç, sürüyor → 202 `{job_id}`, başarısız → 409 Türkçe neden).

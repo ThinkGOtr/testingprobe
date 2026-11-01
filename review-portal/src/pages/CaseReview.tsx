@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import type { BazKaynagi, CaseMetrikleri, ManuelBaz, TestCase } from "../api/types";
 import { bazKaynagiUyarla, manuelBazUyarla } from "../api/uyumFaz5";
-import { useOturum } from "../auth";
+import { useKisiAdi, useOturum } from "../auth";
 import { BAZ_KAYNAGI } from "../components/BazDegerKarti";
 import { CaseKarti } from "../components/CaseKarti";
 import { BosDurum, Cip, HataKutusu, Kart, Metrik, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
@@ -143,6 +143,7 @@ export function CaseReview() {
   // Çekirdek ölçümü yoksa (uç henüz yok / hata) sayaçlar listeden hesaplanır.
   const metrik = useVeri(() => api.caseMetrikleri(id).catch(() => null), [id]);
   const [filtre, setFiltre] = useState<Filtre>("hepsi");
+  const kisiAdi = useKisiAdi();
   const sessiz = useGeciktirilmis(() => {
     void caseler.yenile(true);
     void metrik.yenile(true);
@@ -243,7 +244,7 @@ export function CaseReview() {
             alt={
               <span data-testid="case-baz-aciklama">
                 {baz.kaynak === "olcum"
-                  ? `ölçüm${baz.giren ? ` · ${baz.giren}` : ""}${baz.not ? ` · ${baz.not}` : ""}`
+                  ? `ölçüm${baz.giren ? ` · ${kisiAdi(baz.giren)}` : ""}${baz.not ? ` · ${baz.not}` : ""}`
                   : baz.kaynak === "varsayilan"
                     ? "varsayılan (TP_MANUAL_BASELINE_S) — bu story için ölçülmedi, kazanca girmez"
                     : "ölçülmedi — bu story için baz değer girilmedi"}

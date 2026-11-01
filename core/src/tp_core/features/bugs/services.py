@@ -8,7 +8,7 @@ verir. Kod yolu aynıdır.
 from __future__ import annotations
 
 import os
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any
 
@@ -96,26 +96,33 @@ def code_url(path: str, line: Any, sha: str | None) -> str | None:
     return f"{web}/{repo}/blob/{sha}/{path.lstrip('/')}{satir}"
 
 
-def add_adf_comment(jira_client: Any, key: str, body: dict[str, Any]) -> str:
+def add_adf_comment(
+    jira_client: Any, key: str, body: dict[str, Any], *, mentions: Sequence[str] = ()
+) -> str:
     """ADF gövdeli Jira yorumu (bağlantı işaretleri korunur); yorum id'si.
 
     `JiraPort.add_comment` düz metin alır (`text_to_adf`; bağlantılar tıklanamaz). İstemci ADF
     yorumu sunuyorsa (`add_comment_adf`) o; `RestJira` ise aynı uç (`POST /issue/{key}/comment`)
-    ADF gövdeyle yazma kimliğiyle çağrılır; ikisi de yoksa düz metne düşülür.
+    ADF gövdeyle yazma kimliğiyle çağrılır; ikisi de yoksa düz metne düşülür. `mentions`
+    (accountId) yorumun bot imi satırında @bahsedilir (yalnızca bildirim); boşsa istemciye hiç
+    geçirilmez.
     """
+    from tp_core.integrations.jira_adf import adf_to_text, with_bot_header
+
     fn = getattr(jira_client, "add_comment_adf", None)
     if callable(fn):
-        return str(fn(key, body))
+        return str(fn(key, body, mentions=list(mentions)) if mentions else fn(key, body))
     call = getattr(jira_client, "_call", None)
     if callable(call):
         from urllib.parse import quote
 
         created = call(
-            "POST", f"/issue/{quote(key, safe='')}/comment", write=True, json={"body": body}
+            "POST",
+            f"/issue/{quote(key, safe='')}/comment",
+            write=True,
+            json={"body": with_bot_header(body, mentions)},
         )
         return str(created["id"])
-    from tp_core.integrations.jira_adf import adf_to_text
-
     return str(jira_client.add_comment(key, adf_to_text(body)))
 
 

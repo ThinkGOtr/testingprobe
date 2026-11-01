@@ -260,7 +260,7 @@ describe("case ölçümleri", () => {
     const ozet = await screen.findByRole("region", { name: "Özet" });
     expect(await within(ozet).findByText("30 dk 00 sn")).toBeInTheDocument();
     expect(within(ozet).getByTestId("case-baz")).toHaveTextContent("Ölçüm");
-    expect(within(ozet).getByTestId("case-baz-aciklama")).toHaveTextContent("ölçüm · analist · F0 kronometre");
+    expect(within(ozet).getByTestId("case-baz-aciklama")).toHaveTextContent("ölçüm · Cengizhan Gunaydin · Analist · F0 kronometre");
     // REPLAY: AI süresi ölçülmedi → yalnız review süresiyle oran (1 − 6/30 = %80) verimlilik iddiası
     // değildir; hedef %30–50'ye karşı gösterilmez (core `kazanca_girer`, Kontrol Kulesi ile aynı kural).
     expect(within(ozet).getByTestId("case-kazanc")).toHaveTextContent("—");

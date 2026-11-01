@@ -37,6 +37,8 @@ from tp_core.integrations.jira_adf import (
     build_description,
     parse_description,
     text_to_adf,
+    valid_account_id,
+    with_bot_header,
 )
 from tp_core.ports import JiraComment, JiraIssue, LabelChange
 
@@ -97,6 +99,17 @@ class JiraSettings(BaseSettings):
     # PO onayını verebilecek Jira hesapları (virgülle; Jira Cloud'da accountId). Boşsa
     # simülatörde ``po@sim.local``, gerçek Jira'da hiç kimse (onay etiketi kabul edilmez).
     jira_po_account_ids: str = Field(default="", validation_alias="JIRA_PO_ACCOUNT_IDS")
+    # Rol → Jira accountId: ürün yorumlarında ilgili kişiyi @bahseder (yalnızca bildirim; yetki
+    # vermez, onay sayılmaz). Boş = o rol için bahsetme yok.
+    jira_hesap_analist: str = Field(default="", validation_alias="JIRA_HESAP_ANALIST")
+    jira_hesap_po: str = Field(default="", validation_alias="JIRA_HESAP_PO")
+    jira_hesap_muhendis: str = Field(default="", validation_alias="JIRA_HESAP_MUHENDIS")
+    jira_hesap_testci: str = Field(default="", validation_alias="JIRA_HESAP_TESTCI")
+
+    def role_account(self, rol: str) -> str:
+        """``analist`` | ``po`` | ``muhendis`` | ``testci`` → accountId (geçersiz/boş → "")."""
+        deger = str(getattr(self, f"jira_hesap_{rol}", "") or "").strip()
+        return deger if valid_account_id(deger) else ""
 
     @property
     def po_accounts(self) -> frozenset[str]:
@@ -334,6 +347,18 @@ def person_id(user: Any) -> str:
     return str(user.get("emailAddress") or user.get("accountId") or "")
 
 
+def person_ids(user: Any) -> list[str]:
+    """Yetki eşlemesi için kişinin tüm kimlikleri: görünürse e-posta, ve accountId.
+
+    PO izin listesi accountId ile (önerilen) ya da e-postayla yapılandırılabilir; Jira e-postayı
+    gösterse de gizlese de ikisinden biri eşleşmelidir. Görünen ad hiçbir zaman dahil edilmez.
+    """
+    if not isinstance(user, dict):
+        return []
+    ids = (str(user.get("emailAddress") or ""), str(user.get("accountId") or ""))
+    return [i for i in ids if i]
+
+
 def authorized_po_approvals(
     changes: Iterable[LabelChange],
     po_accounts: Iterable[str],
@@ -348,8 +373,9 @@ def authorized_po_approvals(
     denied = {b.strip().lower() for b in bot_accounts if b and b.strip()}
     out = []
     for ch in changes:
-        who = (ch.author or "").strip().lower()
-        if who and who in allowed and who not in denied:
+        # Yazarın herhangi bir kimliği (e-posta ya da accountId) izinliyse ve hiçbiri bot değilse.
+        who = {i.strip().lower() for i in (ch.author, *ch.author_ids) if i and i.strip()}
+        if who & allowed and not who & denied:
             out.append(ch)
     return out
 
@@ -487,6 +513,7 @@ class RestJira:
                 JiraComment(
                     id=str(c["id"]),
                     author=person(c.get("author")),
+                    author_ids=person_ids(c.get("author")),
                     body=adf_to_text(c.get("body")),
                     created=parse_jira_datetime(c.get("created")),
                 )
@@ -564,6 +591,7 @@ class RestJira:
                     label=label,
                     # Yetki için: e-posta ya da accountId; görünen ad asla.
                     author=person_id(h.get("author")),
+                    author_ids=person_ids(h.get("author")),
                     at=parse_jira_datetime(h.get("created")),
                 )
                 events.append((change, last_content > i, last_removal > i))
@@ -593,22 +621,20 @@ class RestJira:
         return [str(t["name"]) for t in page.get("issueLinkTypes") or []]
 
     # ----------------------------------------------------------------- yazma
-    def add_comment(self, key: str, body: str) -> str:
-        created = self._call(
-            "POST",
-            f"/issue/{self._key(key)}/comment",
-            write=True,
-            json={"body": text_to_adf(body)},
-        )
-        return str(created["id"])
+    def add_comment(self, key: str, body: str, *, mentions: Sequence[str] = ()) -> str:
+        """Düz metin yorum. Her yorum bot imiyle (``🤖 AI Testing Probe:``) başlar; ``mentions``
+        (accountId) aynı satırda @bahsedilir (yalnızca bildirim)."""
+        return self.add_comment_adf(key, text_to_adf(body), mentions=mentions)
 
-    def add_comment_adf(self, key: str, adf: Mapping[str, Any]) -> str:
-        """Hazır ADF gövdesiyle yorum (bağlantı işaretli kanıt listeleri için)."""
+    def add_comment_adf(
+        self, key: str, adf: Mapping[str, Any], *, mentions: Sequence[str] = ()
+    ) -> str:
+        """Hazır ADF gövdesiyle yorum (bağlantı işaretli kanıt listeleri için); bot imi eklenir."""
         created = self._call(
             "POST",
             f"/issue/{self._key(key)}/comment",
             write=True,
-            json={"body": dict(adf)},
+            json={"body": with_bot_header(dict(adf), mentions)},
         )
         return str(created["id"])
 

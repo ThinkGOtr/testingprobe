@@ -161,6 +161,10 @@ JIRA_WRITE_TOKEN=<yazma API token'ı>
 JIRA_PO_ACCOUNT_IDS=<PO accountId>[,<ikinci PO>]  # boşsa gerçek Jira'da hiçbir onay kabul edilmez
 TP_JIRA_BOT_ACCOUNT_IDS=<yazma kullanıcısının accountId'si>  # bot etiketi onay sayılmaz
 TP_PO_JIRA_USERS=                                 # isteğe bağlı ek izin listesi
+JIRA_HESAP_ANALIST=<accountId>                    # yorumlarda @bahsetme (boş = yok; 2.7)
+JIRA_HESAP_PO=<accountId>
+JIRA_HESAP_MUHENDIS=<accountId>
+JIRA_HESAP_TESTCI=<accountId>
 ```
 
 PO onayı yalnızca e-posta/accountId ile eşlenir (görünen ad asla); ürün `tp-po-approved` etiketini
@@ -221,6 +225,69 @@ kullanıcısı koyarsa onay **sayılmaz**.
 > Not: Tasarım belgesindeki Rovo MCP okuma yolu bu sürümde yoktur; okuma da Jira REST v3 ve API
 > token'ıyla yapılır.
 
+### 2.6 Gerçek Jira Cloud'da gözlenenler (2026-11-01, iyzitrace.atlassian.net / TPD)
+
+Doğrulama koşusu: TPD **team-managed** proje, Xray kurulu (Xray'in `Test` iş türü ve `Test`
+bağlantı türü mevcut), REPLAY. Sonuçlar:
+
+| Adım | Sonuç |
+|---|---|
+| `make jira-seed ONAY=1` | TPD-1..4 DEMO-VERISI içeriğine döndü, `tp-demo` eklendi |
+| A1–A4 (çek → ön inceleme → F1/F3 `fix_doc`, F2/F4 `code_defect` → düzeltme Jira'ya → 2. tur) | Geçti: TPD-1 AC3 güncellendi, düzeltme ve PO soru yorumu yazıldı, `tp-po-pending` kondu |
+| A5 PO etiketi (PO = yazma hesabı) | **Beklendiği gibi reddedildi**; etiket ürün tarafından kaldırıldı (aşağıdaki 1. madde) |
+| F2 taslağı → mükerrer araması → TPD-5 | Geçti: JQL `text ~` yalnızca TPD-5'i buldu (high); testçi "bağla" → TPD-5'e kanıt yorumu + `Relates` TPD-1 |
+| F4 → yeni Bug | Geçti: yeni Bug (`AI-generated`, `tp-<uuid>`, `tp-mod-replay`), `Relates` TPD-1 |
+| Yayın adaptörü (`jira` ve `xray`), ürün akışı dışında doğrudan | Geçti: `jira` → Xray'in `Test` türünde issue (Xray'de Manual, Xray adımı yok; adımlar açıklama tablosunda); `xray` → Manual Test + Xray adımları; ikisi de story'ye `Test` bağlantısıyla bağlandı |
+
+1. **PO, ürünün okuma ve yazma hesaplarından farklı bir Atlassian hesabı olmalıdır.** Ürün bot
+   kimliğini `TP_JIRA_BOT_ACCOUNT_IDS`'ten değil, öncelikle **yazma kimliğinin `/myself`
+   yanıtından** (e-posta + accountId) çıkarır; `TP_JIRA_BOT_ACCOUNT_IDS` yalnızca ek liste. Ayrıca
+   `check_jira_approver` okuma/yazma e-postalarını ayrılmış sayar. PO = yazma (ya da okuma)
+   hesabıyken PO'nun koyduğu `tp-po-approved` onay sayılmaz ve bir sonraki PO sorgusunda etiket
+   (yorum yazılmadan, yalnızca denetim kaydıyla) kaldırılır. Bu doğru davranıştır (constitution I:
+   ürün kendi onayını veremez); tek hesapla gerçek Jira'da Demo-A 3. adımdan ileri gidilemez.
+   Çözüm: ürün için ayrı bir bot hesabı açın (okuma + yazma), PO insan hesabı olarak kalsın.
+2. **E-posta görünürlüğü:** Jira Cloud, kullanıcının e-postasını (ör. kendi hesabı ya da aynı
+   kuruluş) gösterebilir; o zaman changelog/yorum yazarı e-postadır. PO izin listesi accountId ile
+   yazılmışsa eşleşme eskiden başarısız oluyordu. Düzeltildi: yetki eşlemesi yazarın e-postasına
+   **ve** accountId'sine bakar (görünen ad asla); bot denetimi de her ikisine.
+3. **Test iş türü:** Xray kurulu projede `Test` türü Xray'e aittir. `TP_TEST_MGMT=jira` bu türde
+   issue açar; Xray onu adımsız Manual test olarak görür (adımlar yalnızca açıklama tablosunda).
+   Adımların Xray'de görünmesi için `TP_TEST_MGMT=xray`. `Task` yedeği (`test-case` etiketi)
+   yalnızca projede `Test` türü yoksa devreye girer; TPD'de devreye girmedi.
+4. **Arama indeksi gecikmesi:** Jira Cloud'da yeni açılan bir issue JQL aramasında birkaç saniye
+   görünmez. Yayının asıl idempotency'si veritabanındaki `external_ref` kaydıdır (ikinci "Yayınla"
+   yeni kayıt açmaz); `tp-<uuid>` etiket araması yalnızca çökme/yeniden deneme yedeğidir. Bir
+   yayın denemesi Jira'da oluşturup başarısız sayıldıysa, yeniden denemeyi birkaç saniye sonra
+   yapın; aksi halde aynı case için ikinci issue açılabilir (adaptör düzeyinde gözlendi).
+5. `make jira-seed ONAY=1` koşu kayıtlarını (`tp-<uuid>` etiketli Test/Bug) kapatır; story'lerdeki
+   bağlantılar ve yorumlar kalır (kapalı kayıtlara bağlantı olarak görünür).
+
+### 2.7 Yorum imi ve rol @bahsetmeleri
+
+Ürün Jira'ya bir insan hesabının token'ıyla yazabilir (pilotta yazma kimliği Gokhan Sipahi); yorumlar
+Jira'da o kişinin adıyla görünür. Bu yüzden ürünün **her yorumu** `🤖 AI Testing Probe:` satırıyla
+başlar; yeni açılan Bug'ın açıklamasının ilk satırı da aynıdır. Rol hesapları `.env`'de accountId
+olarak verilir ve ilgili kişiler aynı satırda ADF `mention` düğümüyle **@bahsedilir** (Jira bildirim
+gönderir). Anahtar boşsa o rol bahsedilmez; aynı kişi iki rolde ise bir kez bahsedilir.
+
+| Yorum (yer) | Bahsedilen |
+|---|---|
+| PO soru yorumu (story; ön inceleme son hal) | PO + Analist |
+| Onay etiketi kaldırıldı bildirimi (story) | PO |
+| Onaylı doküman düzeltmesi yazıldı, yeniden teyit (story) | PO |
+| Onaylı case'ler Jira/Xray'e yayınlandı — zincir hash yorumu (story) | Testçi |
+| Hata mevcut Bug'a bağlandı — kanıt yorumu (Bug) | Mühendis + Testçi |
+| Yeni Bug açıldı (açıklamanın ilk satırı; ayrı yorum yazılmaz) | Mühendis + Testçi |
+
+Test issue'sundaki üretim modu yorumu yalnızca imlidir (bahsetme yok). Locator onarımı Jira'ya yazmaz
+(PR yorumları forge'dadır); bu yüzden onarım için Jira bahsetmesi yoktur.
+
+Bahsetme **yalnızca bildirimdir**: yetki vermez, PO onayı sayılmaz; `tp-po-approved` etiketini yine
+yalnızca PO kendisi koyar (constitution I). Idempotency işaretleri (`Kayıt: …`, `tp-<uuid>`, hash
+satırları) gövdede aynen kalır; im yalnızca başa eklendiği için yeniden denemeler aynı yorumu bulur.
+accountId'yi bulmak için 2.3'teki komut kullanılır.
+
 ## 3. Xray Cloud
 
 Önkoşul: 2. bölüm (Xray, story bağlantısını Jira REST ile kurar) ve demo sitesinde kurulu Xray Cloud
@@ -247,8 +314,28 @@ docker compose exec -T core-worker python -c \
 ```
 
 Portalda **Yayın → "Yayın önizleme"** hedefi `xray` göstermeli; ilk yayından sonra Jira'da adımlı bir
-*Test* issue'su ve story bağlantısı görünür. **Dürüst not:** Xray adaptörü bugüne kadar yalnızca
-jira-sim'in Xray alt kümesine karşı test edildi; ilk gerçek koşuyu bir deneme projesinde yapın.
+*Test* issue'su ve story bağlantısı görünür. **Durum (2026-11-01):** Xray adaptörü gerçek Xray
+Cloud'a karşı doğrudan doğrulandı (TPD, team-managed): toplu içe aktarım Manual Test + adımlar
+oluşturdu, story'ye `Test` bağlantısı kuruldu; Xray GraphQL `getTests(jql: "project = TPD")` →
+`testType.name = Manual`, adımlar dolu. Ürün akışı üzerinden (onaylı case → Yayınla) gerçek Xray
+yayını henüz yapılmadı: PO kapısı ayrı PO hesabı ister (2.6, madde 1).
+
+Xray tarafını doğrulamak (sır basmadan; `XRAY_*` `.env`'den okunur):
+
+```bash
+python3 - <<'PY'
+import json, urllib.request
+env = dict(l.split("=", 1) for l in open(".env").read().splitlines() if "=" in l and not l.startswith("#"))
+base = env.get("XRAY_BASE_URL", "https://xray.cloud.getxray.app").rstrip("/")
+def post(path, body, tok=None):
+    h = {"Content-Type": "application/json", **({"Authorization": "Bearer " + tok} if tok else {})}
+    return json.loads(urllib.request.urlopen(urllib.request.Request(base + path, json.dumps(body).encode(), h)).read())
+tok = post("/api/v2/authenticate", {"client_id": env["XRAY_CLIENT_ID"], "client_secret": env["XRAY_CLIENT_SECRET"]})
+q = 'query { getTests(jql: "project = TPD", limit: 50) { total results { testType { name } steps { action } jira(fields: ["key"]) } } }'
+for t in post("/api/v2/graphql", {"query": q}, tok)["data"]["getTests"]["results"]:
+    print(t["jira"]["key"], t["testType"]["name"], len(t["steps"]), "adım")
+PY
+```
 
 ## 4. Sauce Labs
 
@@ -278,57 +365,126 @@ fazla **1.61.1**'i desteklediği için `demo-app/.sauce/config.yml` bu sürüme 
 
 ## 5. GitHub modu (forge + CI)
 
-### 5.1 GitHub tarafı
+Hedef depo: **`ThinkGOtr/testingprobe-demo-app`** (özel). Kimlikler — anayasa gereği bot PR açar ama
+**asla merge etmez**; ruleset bypass yalnızca insan `demo-admin` takımındadır:
 
-1. Repo: `demo-app/` bu repodaki düzenle (forge kökü `demo-app`, e2e kökü `demo-app/e2e`).
-2. **Bot GitHub App**: Contents *read & write*, Pull requests *read & write*, Actions *read & write*,
-   Checks *read*. Repoya kurun. Merge izni kullanılmaz; bot ruleset bypass listesine **eklenmez**.
-3. **`demo-admin`**: insan hesabı + org'da onu içeren tek üyeli `demo-admin` takımı (ruleset bypass).
-4. Ruleset (varsayılan kuru çalışma; uygulamak için `--apply`, `gh` org yöneticisi oturumuyla):
+| Kimlik | Ne yapar | `.env` / nerede |
+|---|---|---|
+| **Bot: GitHub App** (ör. `tp-bot`) | Kod üretimi ve **locator onarımı** dalı + PR, PR yorumu, PR kapatma, "Update branch", Actions tetikleme ve artefakt okuma | `GH_APP_ID`, `GH_APP_PRIVATE_KEY`, `GH_APP_INSTALLATION_ID` (yalnızca core-worker) |
+| **İnsan: Gokhan** (`gokhansipahi`, `demo-admin` takımının tek üyesi) | Portal merge'ü; demo **kırılması** ve **sıfırlaması** (dal + commit + PR + bypass merge) | `GITHUB_MERGE_TOKEN` (yalnızca core-worker) |
+| Salt okuma token'ı | Tutarlılık denetiminin kod okuması | `GITHUB_READ_TOKEN` (core) |
+| Salt okuma token'ı | toolchain-worker aynası: GitHub commit'lerini çeker (kırarak doğrula, demo-app-web eşitleme) | `TP_FORGE_REMOTE_TOKEN` (yalnızca toolchain-worker) |
+
+### 5.1 Demo deposunu kurun (bir kez)
+
+1. GitHub'da **boş, özel** `ThinkGOtr/testingprobe-demo-app` deposunu açın (README/.gitignore
+   eklemeden).
+2. İçeriği hazırlayın ve gözden geçirin — varsayılan **kuru çalışma**dır, ağa çıkmaz:
 
    ```bash
-   scripts/github-ruleset.sh --repo <sahip>/<repo>            # gövdeyi yazdırır, API çağırmaz
-   scripts/github-ruleset.sh --repo <sahip>/<repo> --apply    # tp-main: PR zorunlu, 1 onay + CODEOWNERS,
-                                                               # zorunlu check: test-local, ast-guard, semgrep
+   scripts/github-demo-repo-init.sh                      # ağacı geçici dizinde kurar, özet + komutları yazar
+   scripts/github-demo-repo-init.sh --out ~/tp-demo-repo # aynı, incelemek için kalıcı dizine
    ```
 
-5. İsteğe bağlı repo değişkenleri: `TP_BOT_LOGINS` (bot giriş adları, AST koruması modu),
-   `TP_TOOLCHAIN_IMAGE` (digest'li toolchain imajı; boşsa runner kurulumu).
+   Düzen (ürünün GitHub kipinin beklediği): `demo-app/` (uygulama; `TP_FORGE_APP_ROOT` varsayılanı
+   `demo-app`, `TP_E2E_ROOT=demo-app/e2e`), `.github/workflows/ci.yml` (zorunlu check'ler
+   `test-local`, `ast-guard`, `semgrep`; GitHub-hosted `ubuntu-24.04`; ürün deposundaki ci.yml'den
+   golden-drift job'u çıkarılmış — golden kayıtlar ve `rules/` ürün deposunda kalır),
+   `break-verify.yml`, `CODEOWNERS` (`@gokhansipahi`; `--codeowner` ile değişir), `dependabot.yml`,
+   `scripts/github-*.sh` (CI yardımcıları), `toolchain/ast-guard/`, `.playwright-version`. Tek ve
+   deterministik bir ilk commit ve onun üzerinde **`demo-baseline`** etiketi oluşturulur (GitHub
+   kipindeki demo sıfırlamasının hedef ağacı). `.env*` ve anahtar/token kalıpları bulunursa betik durur.
+3. Gönderin (sizin git kimlik bilgilerinizle; ör. `gh auth setup-git` — workflow dosyaları için
+   token'da `workflow` izni gerekir; betik token okumaz):
 
-### 5.2 `.env`
+   ```bash
+   scripts/github-demo-repo-init.sh --push            # boş depoya: main + demo-baseline
+   ```
+
+   Depo doluysa betik durur. Ürün deposundaki değişiklikleri sonradan taşımak için
+   `--push --update`: yeni ağaç uzak main'in üstüne tek commit olarak `tp/bootstrap-<zaman>`
+   dalına gider; PR'ı siz açar, insan olarak merge edersiniz. `demo-baseline`'ı yeni içeriğe
+   taşımak ayrı, bilinçli bir yönetici adımıdır (betik komutu yazdırır).
+
+### 5.2 GitHub App (bot)
+
+1. Org ayarları → Developer settings → **GitHub Apps → New GitHub App**: ad (ör. `tp-bot`),
+   webhook **kapalı**. *Repository permissions*:
+   - **Contents: Read and write** (dal + commit; "Update branch")
+   - **Pull requests: Read and write** (PR açma/kapatma, yorum, etiket)
+   - **Actions: Read and write** (`repository_dispatch`/`workflow_dispatch`, koşu ve artefakt okuma)
+   - **Checks: Read-only**, **Metadata: Read-only** (zorunlu)
+   - *Workflows* izni **vermeyin** (bot `.github/**` değiştiremez). Merge için ayrı izin yoktur;
+     ruleset bot'u bypass listesine **eklemez**, CODEOWNERS insan onayı ister.
+2. Private key oluşturun (`.pem`). App'i **yalnızca** `testingprobe-demo-app` deposuna kurun
+   (*Only select repositories*). Kurulum kimliği kurulum sayfasının URL'sindedir (boş bırakılırsa
+   core depodan bulur).
+3. Depo → Settings → *Variables → Actions*: `TP_BOT_LOGINS=tp-bot[bot]` (App adına göre; AST
+   koruması bot PR'larını onarım/üretim kipine alır). `TP_TOOLCHAIN_IMAGE` **boş** kalsın
+   (runner kurulumu; ürünün GHCR imajı başka depodan çekilemez). Sauce isteğe bağlı:
+   `SAUCE_USERNAME`/`SAUCE_ACCESS_KEY` secret'ları yoksa `sauce` job'u "atlandi" yazar.
+
+### 5.3 `demo-admin` takımı ve insan token'ı
+
+1. Org → Teams → **`demo-admin`** (slug tam bu) takımı; tek üye **`gokhansipahi`**. Takıma depoda
+   **Write** (ya da Maintain) yetkisi verin.
+2. Gokhan'ın **ince ayarlı kişisel token'ı** (`GITHUB_MERGE_TOKEN`): *Resource owner* ThinkGOtr,
+   *Only select repositories* → `testingprobe-demo-app`; **Contents: Read and write**, **Pull
+   requests: Read and write**, Metadata: Read. Org ince ayarlı token onayı istiyorsa org yöneticisi
+   onaylar. Bu token yalnızca core-worker'a verilir; bypass yetkisi token'dan değil, sahibinin
+   `demo-admin` üyeliğinden gelir.
+3. Salt okuma token'ları (`GITHUB_READ_TOKEN`, `TP_FORGE_REMOTE_TOKEN`): aynı depo, yalnızca
+   **Contents: Read-only** (aynı token iki değişkene de yazılabilir).
+
+### 5.4 Ruleset
+
+Varsayılan kuru çalışma; uygulamak için `--apply` (`gh` org yöneticisi oturumuyla; takım 5.3'te
+oluşturulmuş olmalı):
+
+```bash
+scripts/github-ruleset.sh --repo ThinkGOtr/testingprobe-demo-app            # gövdeyi yazdırır
+scripts/github-ruleset.sh --repo ThinkGOtr/testingprobe-demo-app --apply    # tp-main
+```
+
+`tp-main`: main'e yalnızca PR; 1 onay + CODEOWNERS + son push onayı; zorunlu check'ler
+`test-local`, `ast-guard`, `semgrep` (kaynak GitHub Actions'a sabit); force-push ve silme yok;
+bypass yalnızca `demo-admin` takımı (`always`). İlk `--push` ruleset'ten ÖNCE yapılır (boş depo).
+
+### 5.5 `.env`
 
 ```dotenv
 TP_FORGE=github
-GITHUB_REPO=<sahip>/<repo>
-# Kimlik: App (önerilen) ...
+GITHUB_REPO=ThinkGOtr/testingprobe-demo-app
+# Bot: GitHub App (5.2)
 GH_APP_ID=<app id>
 GH_APP_PRIVATE_KEY=<PEM, satır sonları \n kaçışlı tek satır>
 GH_APP_INSTALLATION_ID=                 # boşsa repodan bulunur
-# ... ya da geliştirme için ince ayarlı token (aynı izinler)
-GITHUB_TOKEN=
-# Portal merge'ü: demo-admin'in (insan) token'ı. Bot asla merge etmez.
-GITHUB_MERGE_TOKEN=<demo-admin token'ı>
-# Tutarlılık denetiminin kod okuması (yalnızca contents:read)
-GITHUB_READ_TOKEN=<salt okuma token'ı>
-# toolchain-worker'ın PR commit'lerini çektiği salt okunur ayna (kırarak doğrulama için gerekli)
-TP_FORGE_REMOTE_URL=https://github.com/<sahip>/<repo>.git
-TP_FORGE_REMOTE_TOKEN=<salt okuma token'ı>
+GITHUB_TOKEN=                           # App varken boş (yalnızca geliştirme yedeği)
+# İnsan: demo-admin üyesinin token'ı (5.3). Portal merge'ü + demo kırılması/sıfırlaması.
+GITHUB_MERGE_TOKEN=<gokhansipahi ince ayarlı token>
+GITHUB_READ_TOKEN=<salt okuma>
+# toolchain-worker aynası (kırarak doğrula + demo-app-web'in GitHub main'inden derlenmesi)
+TP_FORGE_REMOTE_URL=https://github.com/ThinkGOtr/testingprobe-demo-app.git
+TP_FORGE_REMOTE_TOKEN=<salt okuma>
 TP_E2E_ROOT=demo-app/e2e
+TP_APP_PATHS=demo-app/web,demo-app/api
 TP_REQUIRED_CHECKS=                     # boş = test-local,ast-guard,semgrep
 ```
 
 - `GH_APP_PRIVATE_KEY_PATH` yalnızca dosya core-worker konteynerinde görünürse işe yarar; compose
   böyle bir bağlama içermez, bu yüzden tek satırlık `GH_APP_PRIVATE_KEY` kullanın.
-- `TP_FORGE_REMOTE_URL` boşsa GitHub modunda "Kırarak doğrula" tamamlanamaz ve merge açık kabul notu
-  ister.
-- **Locator kırma/onarım demosu yalnızca `TP_FORGE=local`'dır**: GitHub kipinde "Locator'ı kır" ve
-  `make break` 409 `GITHUB_KIRILMA_YOK` ile reddeder (çalışan demo-app-web GitHub main'inden
-  derlenmez).
-- Portal merge'ü ruleset koşullarını kendisi değerlendirir; eksik varsa yalnızca `demo-admin` merge
-  eder ve sonuç `bypass` olarak kaydedilir. Diğer mühendisler önce PR'ı GitHub'da onaylamalı ya da
-  GitHub arayüzünden merge etmelidir (core bunu `review.kanal='github'` ile işler).
+- `TP_FORGE_REMOTE_URL` boşsa GitHub modunda "Kırarak doğrula" tamamlanamaz (merge açık kabul notu
+  ister) ve `scripts/demo-web-sync.sh` GitHub kipinde açık hatayla durur.
+- `TP_APP_PATHS`, toolchain'in "çalışan uygulama istenen commit'in uygulamasını mı taşıyor"
+  karşılaştırmasıdır (`/check` `app` adımı, `/locator-probe`); GitHub düzeninde `demo-app/...`
+  olmalıdır, yoksa karşılaştırma var olmayan `web/` yolunu kıyaslar.
+- Portal merge'ü ruleset koşullarını kendisi değerlendirir; eksik varsa yalnızca `demo-admin`
+  merge eder ve sonuç `bypass` olarak kaydedilir. Diğer mühendisler önce PR'ı GitHub'da onaylamalı
+  ya da GitHub arayüzünden merge etmelidir (core bunu `review.kanal='github'` ile işler).
+- `make security-check`: `GH_APP_*`, `GITHUB_TOKEN`, `GITHUB_MERGE_TOKEN` yalnızca core-worker'da;
+  `TP_FORGE_REMOTE_TOKEN` yalnızca toolchain-worker'da (salt okuma).
 
-### 5.3 Tetikler
+### 5.6 Tetikler
 
 | Portal | GitHub |
 |---|---|
@@ -339,22 +495,62 @@ TP_REQUIRED_CHECKS=                     # boş = test-local,ast-guard,semgrep
 Core koşuyu adındaki `[<kimlik>]` ile bulur, artefaktları (`test-local-results`, `sauce-results`)
 indirir; PR CI sonucu PR'a tek yorum olarak yazılır.
 
-### 5.4 Doğrulama
+### 5.7 Locator kırılması/onarımı GitHub kipinde
+
+Kırılma ve sıfırlama **bot ile değil, insan kimliğiyle** (`GITHUB_MERGE_TOKEN`) yapılır;
+onarımı bot önerir, insan merge eder:
+
+1. **Kır** (Sunucu · "Locator'ı kır" ya da `make break`): core-worker, main'in o anki head'inden
+   `demo/break-locator-<main12>` dalına tek commit yazar (yalnızca `demo-app/web/src` altındaki
+   tırnaklı `add-to-cart` → `cart-add`), PR'ı açar, farkı yerel kipteki aynı kuralla doğrular
+   (yalnızca `web/src`, satır sayısı aynı, yalnızca testid) ve PR head'ine bağlı olarak
+   **demo-admin bypass**'ıyla merge eder. Denetim: "demo kırılması" (`kimlik.github_login`,
+   `bypass`, fark özeti) + `demo.break`. Token yoksa iş düşer (`demo.break_failed`, yönerge).
+2. GitHub `push` koşusu main'de **kırmızı** olur; core onu doğrudan izler (Actions koşusu,
+   `test-local-results` artefaktı). Aynı anda çalışan **demo-app-web**'in GitHub main'inden
+   derlenmesi istenir: `make demo-break` / `make break` bunu kendisi uygular
+   (`scripts/demo-web-sync.sh`; web arşivi toolchain-worker aynasından). Portal düğmesi
+   kullanılıyorsa sunum boyunca `make demo-web-sync A=--watch` açık olsun.
+3. Triage `test_maintenance/locator` → mühendis "Onarım PR'ı aç": **bot** (App) `tp/repair-*`
+   dalında yalnızca `demo-app/e2e/pages/catalog/locators.ts` testId'sini değiştiren PR'ı açar;
+   `ast-guard` onarım kipinde koşar.
+4. **İnsan merge eder**: portalda "Merge et" (`GITHUB_MERGE_TOKEN`) ya da GitHub arayüzünde onay +
+   merge. `push` CI'ı **yeşil**.
+5. **Sıfırla** (Sunucu · "Demoyu sıfırla" / `make demo-reset`): force-push YOK. Insan kimliğiyle
+   main'in üstüne ağacı `demo-baseline` etiketinin ağacıyla birebir aynı tek commit
+   (`demo/reset-baseline-<main12>`), PR ve bypass merge. Böylece kırılma, onarım ve üretilen
+   testler birlikte geri alınır (yalnızca kırılmayı `git revert` etmek onarılmış e2e'yi bırakır ve
+   ters yönde kırık bir main üretirdi); geçmiş korunur, denetlenir. Merge sonrası main ağacı
+   baseline ağacına eşit değilse iş hata verir. Açık `tp/*`, `demo/*` PR'ları yorumlanıp kapatılır.
+   Sonra demo-app-web baseline'a eşitlenir ve push CI izlenir.
+
+`make up` GitHub kipinde demo-app-web'i çalışma ağacından derler; main baseline ağacında değilse
+`forge-init.sh sync-web` onu `scripts/demo-web-sync.sh --main` ile GitHub main'ine eşitler
+(eşitleyemezse uyarır, `make up`'ı düşürmez).
+
+### 5.8 Doğrulama
 
 ```bash
 docker compose exec -T core-worker python -c \
   "from tp_core.integrations.forge import get_forge; print(type(get_forge()).__name__)"
 # Beklenen: GitHubForge
+docker compose exec -T core-worker python -m tp_core.integrations.forge_demo status
+# Beklenen: "kip": "github", "web_yolu": "demo-app/web", "testid": "add-to-cart", "main_baseline_mi": true
 
-gh api repos/<sahip>/<repo>/rulesets --jq '.[].name'      # Beklenen: tp-main
-make security-check                                         # 10/10; GH_APP_*, GITHUB_TOKEN yalnızca core-worker'da
+gh api repos/ThinkGOtr/testingprobe-demo-app/rulesets --jq '.[].name'   # Beklenen: tp-main
+gh api repos/ThinkGOtr/testingprobe-demo-app/git/ref/tags/demo-baseline --jq .object.sha
+make security-check                                          # GH_APP_*, GITHUB_TOKEN yalnızca core-worker'da
+
+scripts/demo-web-sync.sh --main     # demo-app-web = GitHub main (toolchain aynası); "GitHub aynası" yazmalı
 ```
 
-Uçtan uca: mühendis bir onaylı case için kod üretir → GitHub'da `tp/case-*` dalında PR → `test-local`,
-`ast-guard`, `semgrep` koşar → portalda merge kapısı → merge → `push` koşusu. Sunucu "Deploy tetikle"
-→ `gh run list --repo <sahip>/<repo> --workflow ci.yml --limit 3` listesinde `ci deploy [...]`. Prova
-listesindeki "bot main'e push dener → reddedilir" maddesi ruleset uygulandıktan sonra bot
-kimliğiyle denenir.
+Uçtan uca: (1) mühendis bir onaylı case için kod üretir → `tp/case-*` dalında bot PR'ı →
+`test-local`, `ast-guard`, `semgrep` → portalda merge kapısı → insan merge → `push` koşusu.
+(2) Locator yolu 5.7 adımlarıyla: yeşil temel `push` koşusu → kır → kırmızı → onarım PR'ı (bot)
+→ insan merge → yeşil → sıfırla. Sunucu "Deploy tetikle" →
+`gh run list --repo ThinkGOtr/testingprobe-demo-app --workflow ci.yml --limit 3` listesinde
+`ci deploy [...]`. Prova listesindeki "bot main'e push dener → reddedilir" maddesi ruleset
+uygulandıktan sonra bot kimliğiyle denenir.
 
 ## 6. Simülatöre geri dönmek
 

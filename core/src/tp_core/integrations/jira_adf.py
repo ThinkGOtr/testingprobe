@@ -139,6 +139,66 @@ def text_to_adf(text: str) -> AdfNode:
     return doc(text_to_blocks(text))
 
 
+# ------------------------------------------------------------- bot imi ve @bahsetme
+
+# Ürünün yazdığı her Jira yorumunun ilk satırı. Yorumlar insan bir hesabın token'ıyla yazılabilir
+# (Jira'da o kişinin adıyla görünür); bu im, yorumu ürünün yazdığını açıkça gösterir.
+BOT_PREFIX = "🤖 AI Testing Probe:"
+_ACCOUNT_ID = re.compile(r"^[A-Za-z0-9:_\-]{1,128}$")
+
+
+def valid_account_id(value: str) -> bool:
+    """Jira Cloud accountId biçimi (ör. ``712020:1a2b3c4d-…``); e-posta/görünen ad değildir."""
+    return bool(_ACCOUNT_ID.match(value or ""))
+
+
+def mention(account_id: str) -> AdfNode:
+    """ADF bahsetme düğümü. Görünen ad gönderilmez: Jira onu accountId'den kendisi çözer."""
+    return {"type": "mention", "attrs": {"id": account_id}}
+
+
+def unique_mentions(account_ids: Sequence[str]) -> list[str]:
+    """Boş/geçersiz kimlikleri atar, sırayı koruyarak tekilleştirir."""
+    out: list[str] = []
+    for a in account_ids:
+        a = (a or "").strip()
+        if a and valid_account_id(a) and a not in out:
+            out.append(a)
+    return out
+
+
+def bot_header(mentions: Sequence[str] = ()) -> AdfNode:
+    """``🤖 AI Testing Probe: @Kişi @Kişi`` paragrafı (bahsetme yoksa yalnızca im)."""
+    content: list[AdfNode] = [{"type": "text", "text": BOT_PREFIX}]
+    for a in unique_mentions(mentions):
+        content += [{"type": "text", "text": " "}, mention(a)]
+    return {"type": "paragraph", "content": content}
+
+
+def has_bot_header(adf: Any) -> bool:
+    blocks = (adf or {}).get("content") if isinstance(adf, dict) else None
+    if not blocks:
+        return False
+    return inline_text(blocks[0]).startswith(BOT_PREFIX)
+
+
+def with_bot_header(adf: AdfNode, mentions: Sequence[str] = ()) -> AdfNode:
+    """ADF gövdesinin başına bot imi (+ bahsetmeler) ekler; zaten varsa gövde aynen döner."""
+    if has_bot_header(adf):
+        return adf
+    out = dict(adf)
+    out["content"] = [bot_header(mentions), *list(adf.get("content") or [])]
+    return out
+
+
+def strip_bot_header(text: str) -> str:
+    """Okunan yorum metninden bot imi satırını atar (eski, imsiz yorumlar aynen döner)."""
+    if not text.startswith(BOT_PREFIX):
+        return text
+    _, _, rest = text.partition("\n")
+    return rest.lstrip("\n")
+
+
 # ------------------------------------------------------------------ ADF → metin
 
 
@@ -153,7 +213,8 @@ def inline_text(node: Any) -> str:
         return "\n"
     attrs = node.get("attrs") or {}
     if kind == "mention":
-        return str(attrs.get("text") or "")
+        # Jira okumada görünen adı (``@Ad Soyad``) doldurur; yeni yazılmış düğümde yalnızca id var.
+        return str(attrs.get("text") or (f"@{attrs['id']}" if attrs.get("id") else ""))
     if kind == "emoji":
         return str(attrs.get("text") or attrs.get("shortName") or "")
     if kind in ("status", "date"):

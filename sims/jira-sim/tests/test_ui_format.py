@@ -145,3 +145,52 @@ def test_single_pre_review_comment_not_superseded(client: TestClient) -> None:
     client.post("/rest/api/3/issue/TPD-3/comment", json={"body": _pre_review(1)}, auth=WRITER)
     page = client.get("/browse/TPD-3").text
     assert "(önceki tur)" not in page
+
+
+BOT = "🤖 AI Testing Probe:"
+
+
+def _bot_comment(text: str, *account_ids: str) -> dict:
+    """Core'un yazdığı biçim: ilk paragraf bot imi + @bahsetmeler, ardından gövde."""
+    doc = text_to_adf(text)
+    head: list[dict] = [{"type": "text", "text": BOT}]
+    for a in account_ids:
+        head += [{"type": "text", "text": " "}, {"type": "mention", "attrs": {"id": a}}]
+    doc["content"].insert(0, {"type": "paragraph", "content": head})
+    return doc
+
+
+def test_mention_nodes_stored_and_rendered_with_name(client: TestClient) -> None:
+    body = _bot_comment("Testing Probe: yayın", "sim-po-0003", "712020:bilinmeyen-hesap")
+    r = client.post("/rest/api/3/issue/TPD-2/comment", json={"body": body}, auth=WRITER)
+    assert r.status_code == 201
+    # Jira Cloud gibi: bahsetme düğümü saklanır, görünen ad `attrs.text`'e yazılır.
+    mentions = [n for n in r.json()["body"]["content"][0]["content"] if n["type"] == "mention"]
+    assert mentions[0]["attrs"] == {"id": "sim-po-0003", "text": "@Ürün Sahibi (PO)"}
+    assert mentions[1]["attrs"] == {
+        "id": "712020:bilinmeyen-hesap",
+        "text": "@712020:bilinmeyen-hesap",
+    }
+    page = client.get("/browse/TPD-2").text
+    assert page.count('data-testid="mention"') == 2
+    assert "@Ürün Sahibi (PO)" in page and "@712020:bilinmeyen-hesap" in page
+    assert BOT in page
+
+
+def test_mention_without_text_rendered_as_account_id() -> None:
+    html = str(adf_to_html({"type": "mention", "attrs": {"id": "abc:1"}}))
+    assert html == '<span class="mention" data-testid="mention">@abc:1</span>'
+    # Görünen ad kaçışlanır (ham HTML geçmez).
+    html = str(adf_to_html({"type": "mention", "attrs": {"id": "x", "text": "@<b>x</b>"}}))
+    assert "<b>" not in html and "&lt;b&gt;" in html
+
+
+def test_pre_review_with_bot_header_still_superseded(client: TestClient) -> None:
+    for n in (1, 2):
+        body = _bot_comment(
+            f"[AI-generated] Testing Probe ön inceleme — TPD-3 için PO teyidi\n\nTur {n}",
+            "sim-po-0003",
+        )
+        client.post("/rest/api/3/issue/TPD-3/comment", json={"body": body}, auth=WRITER)
+    page = client.get("/browse/TPD-3").text
+    assert page.count('data-testid="comment-superseded"') == 1

@@ -65,6 +65,22 @@ export function useOturum(): OturumBaglami {
   return b;
 }
 
+/**
+ * Kullanıcı adını (denetim aktörü, onaylayan, karar veren …) görünen ada çevirir:
+ * "analist" → "Cengizhan Gunaydin · Analist". Eşlemede olmayan değer ("system", Jira hesabı) aynen
+ * döner. Yalnızca gösterim içindir; yetki kararları `rol` ile verilir.
+ */
+export function kisiAdiCevir(kisiler: Record<string, string> | undefined, ad: string | null | undefined): string {
+  if (!ad) return "";
+  return kisiler?.[ad] ?? kisiler?.[ad.trim().toLowerCase()] ?? ad;
+}
+
+export function useKisiAdi(): (ad: string | null | undefined) => string {
+  // Sağlayıcı dışında (bileşen testleri) eşleme yok: ad aynen gösterilir.
+  const kisiler = useContext(Baglam)?.kullanici?.kisiler;
+  return useCallback((ad: string | null | undefined) => kisiAdiCevir(kisiler, ad), [kisiler]);
+}
+
 /** Kullanıcı verilen rollerden birine sahip mi? */
 export function useRol(...roller: Rol[]): boolean {
   const { kullanici } = useOturum();

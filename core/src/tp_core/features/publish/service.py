@@ -41,7 +41,9 @@ from sqlalchemy.orm import Session
 from tp_core.audit import audit_on_commit, chain_tip
 from tp_core.events.bus import publish_tx
 from tp_core.features.cases.service import get_requirement, requirement_change_reason
+from tp_core.integrations import jira_notify
 from tp_core.integrations.jira import get_jira_settings
+from tp_core.integrations.jira_adf import strip_bot_header
 from tp_core.integrations.testmgmt import (
     AI_LABEL,
     RELATES_LINK,
@@ -655,7 +657,7 @@ def _pin_chain(
                     (
                         c
                         for c in jira.get_comments(story)
-                        if (c.body or "").startswith("Testing Probe:")
+                        if strip_bot_header(c.body or "").startswith("Testing Probe:")
                         and all(a in (c.body or "") for a in anahtarlar_l)
                     ),
                     None,
@@ -694,7 +696,7 @@ def _pin_chain(
             f"Yayınlayan: {aktor}. Denetim zinciri son hash: {tip}"
         )
         try:
-            yorum_id = jira.add_comment(story, govde)
+            yorum_id = jira_notify.post_comment(jira, story, govde, jira_notify.YAYIN)
         except Exception as exc:
             uyarilar.append(f"{story} yorumuna zincir hash'i yazılamadı: {exc}")
             continue

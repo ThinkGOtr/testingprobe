@@ -7,6 +7,7 @@ import type { BazKaynagi, GereksinimDetay, ManuelBaz } from "../api/types";
 import { BAZ_NOT_EN_AZ, BAZ_NOT_EN_COK, BAZ_UST_SINIR_S } from "../api/uyumFaz5";
 import { useRol } from "../auth";
 import { useIslem } from "../hooks";
+import { KisiAdi } from "./KisiAdi";
 import { sure, tarih } from "../lib/format";
 import type { Ton } from "../lib/etiketler";
 import { useBildirim } from "./Bildirim";
@@ -56,7 +57,7 @@ function BazDegeri({ b }: { b: ManuelBaz }) {
       {b.kaynak === "olcum" && (
         <dl className="tanim-izgara kucuk">
           <dt>Giren</dt>
-          <dd>{b.giren ?? "—"}</dd>
+          <dd>{b.giren ? <KisiAdi ad={b.giren} /> : "—"}</dd>
           <dt>Zaman</dt>
           <dd>{tarih(b.zaman)}</dd>
           <dt>Not</dt>

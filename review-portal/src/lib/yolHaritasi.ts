@@ -222,7 +222,8 @@ export function sonrakiAdimlar(x: SonrakiGirdi): YolAdimi[] {
   const ss = storyScriptleri(g, x.scriptler, cs);
   const ssIds = new Set(ss.map((s) => s.id));
   const jiraSim = jiraSimMi({ gereksinim: g, bugTaslaklari: x.bugTaslaklari }) === true ? JIRA_SIM : null;
-  const forgeSim = x.demo?.locator_demo?.destekleniyor === true ? FORGE_SIM : null;
+  // GitHub kipinde locator demosu da destekli (`kip: "github"`): forge simülatör DEĞİLDİR.
+  const forgeSim = x.demo?.locator_demo?.destekleniyor === true && x.demo.locator_demo.kip !== "github" ? FORGE_SIM : null;
 
   // 5 — Kod taslağı
   const prli = ss.filter((s) => s.pr);

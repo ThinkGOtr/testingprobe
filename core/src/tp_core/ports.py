@@ -34,12 +34,18 @@ class JiraComment(BaseModel):
     author: str
     body: str
     created: datetime | None = None
+    # Yetki eşlemesi için yazarın tüm kimlikleri (e-posta ve accountId; görünen ad asla).
+    author_ids: list[str] = Field(default_factory=list)
 
 
 class LabelChange(BaseModel):
     label: str
     author: str  # etiketi koyan (changelog'dan)
     at: datetime | None = None
+    # Yetki eşlemesi için yazarın tüm kimlikleri (e-posta ve accountId; görünen ad asla). Jira
+    # Cloud e-postayı gösterdiğinde ``author`` e-postadır; accountId ile yapılandırılmış PO listesi
+    # yine eşleşmelidir.
+    author_ids: list[str] = Field(default_factory=list)
 
 
 @runtime_checkable

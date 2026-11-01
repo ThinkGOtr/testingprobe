@@ -160,7 +160,9 @@ export function Kabuk() {
           </button>
           {kullanici && (
             <div className="kullanici">
-              <span className="kullanici-ad">{kullanici.kullanici_adi}</span>
+              <span className="kullanici-ad" title={`${kullanici.gorunen_ad ?? ROL[kullanici.rol]} (${kullanici.kullanici_adi})`}>
+                {kullanici.ad_soyad || kullanici.kullanici_adi}
+              </span>
               <span className="kullanici-rol">{ROL[kullanici.rol]}</span>
             </div>
           )}

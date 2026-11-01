@@ -75,7 +75,15 @@ def test_giris_cerez_ve_me(client: TestClient, make_user: MakeUser, engine: Engi
     u = make_user("analyst")
     r = client.post("/auth/login", json={"kullanici_adi": u.kullanici_adi, "parola": PAROLA})
     assert r.status_code == 200
-    assert r.json() == {"id": str(u.id), "kullanici_adi": u.kullanici_adi, "rol": "analyst"}
+    govde = r.json()
+    assert {k: govde[k] for k in ("id", "kullanici_adi", "rol")} == {
+        "id": str(u.id),
+        "kullanici_adi": u.kullanici_adi,
+        "rol": "analyst",
+    }
+    # Eşlemede olmayan kullanıcı: kullanıcı adı · rol etiketi (yalnızca gösterim).
+    assert govde["gorunen_ad"] == f"{u.kullanici_adi} · Analist"
+    assert govde["ad_soyad"] is None
     cerez = r.headers["set-cookie"]
     assert cerez.startswith(f"{COOKIE_NAME}=")
     assert "HttpOnly" in cerez and "SameSite=lax" in cerez and "Path=/" in cerez
@@ -670,3 +678,46 @@ def test_ozellik_router_icindeki_mcp_ucu_gorunur(
     r = client.post("/tokens", json={"kapsam": "submit"})
     assert r.status_code == 201, r.text
     assert r.json()["mcp_url"].endswith("/mcp")
+
+
+# ------------------------------------------------------------------ görünen adlar
+
+
+def test_me_gorunen_ad_ve_kisi_eslemesi(
+    client: TestClient, make_user: MakeUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tp_core.config import get_settings
+
+    analist = make_user("analyst", ad="analist")
+    make_user("presenter", ad="sunucu")
+    make_user("tester", ad="testci")
+    _giris(client, analist)
+    me = client.get("/auth/me").json()
+    assert me["rol"] == "analyst"
+    assert me["gorunen_ad"] == "Cengizhan Gunaydin · Analist"
+    assert me["ad_soyad"] == "Cengizhan Gunaydin"
+    assert me["kisiler"]["sunucu"] == "Sunucu"
+    assert me["kisiler"]["testci"] == "Fatih Arslan · Testçi"
+
+    # TP_GORUNEN_ADLAR demo varsayılanlarını geçersiz kılar; rol değişmez.
+    monkeypatch.setenv("TP_GORUNEN_ADLAR", "analist=Ayşe  Yılmaz,testci=")
+    get_settings.cache_clear()
+    try:
+        me = client.get("/auth/me").json()
+    finally:
+        monkeypatch.delenv("TP_GORUNEN_ADLAR")
+        get_settings.cache_clear()
+    assert me["gorunen_ad"] == "Ayşe Yılmaz · Analist" and me["rol"] == "analyst"
+    assert me["kisiler"]["testci"] == "Testçi"
+
+
+def test_yetki_ada_degil_role_bakar(client: TestClient, make_user: MakeUser) -> None:
+    """Görünen ad yalnızca gösterimdir: "po" adlı bir analistin rolü analist kalır."""
+    from tp_core.auth.display import display_name
+
+    assert display_name("po", "analyst", {"po": "Cengizhan Gunaydin"}) == (
+        "Cengizhan Gunaydin · Analist"
+    )
+    u = make_user("analyst", ad="po")
+    _giris(client, u)
+    assert client.get("/auth/me").json()["rol"] == "analyst"

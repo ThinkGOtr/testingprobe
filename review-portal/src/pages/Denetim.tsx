@@ -1,17 +1,21 @@
 import { useMemo, useState } from "react";
 import { api } from "../api/client";
 import { BosDurum, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { useKisiAdi } from "../auth";
 import { useVeri } from "../hooks";
 import { kisaHash, tarih } from "../lib/format";
 
 export function Denetim() {
   const v = useVeri(() => api.denetim(true), []);
   const [ara, setAra] = useState("");
+  const kisiAdi = useKisiAdi();
   const olaylar = useMemo(() => {
     const q = ara.trim().toLocaleLowerCase("tr-TR");
     const l = v.veri?.olaylar ?? [];
-    return q ? l.filter((o) => `${o.aktor} ${o.eylem} ${o.nesne} ${o.ozet}`.toLocaleLowerCase("tr-TR").includes(q)) : l;
-  }, [v.veri, ara]);
+    return q
+      ? l.filter((o) => `${o.aktor} ${kisiAdi(o.aktor)} ${o.eylem} ${o.nesne} ${o.ozet}`.toLocaleLowerCase("tr-TR").includes(q))
+      : l;
+  }, [v.veri, ara, kisiAdi]);
   const dg = v.veri?.dogrulama;
 
   return (
@@ -78,7 +82,7 @@ export function Denetim() {
                       <tr key={o.id} className={dg && !dg.gecerli && dg.ilk_kirik_id === o.id ? "satir-hata" : undefined}>
                         <td className="sayi mono">{o.sira}</td>
                         <td>{tarih(o.zaman)}</td>
-                        <td>{o.aktor}</td>
+                        <td title={kisiAdi(o.aktor) !== o.aktor ? o.aktor : undefined}>{kisiAdi(o.aktor)}</td>
                         <td className="mono">{o.eylem}</td>
                         <td className="mono">{o.nesne}</td>
                         <td>{o.ozet}</td>

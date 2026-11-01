@@ -8,10 +8,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from tp_core.audit import audit_on_commit
 from tp_core.auth.client_ip import client_address
 from tp_core.auth.deps import Codec, CurrentUser, DbSession, session_codec
+from tp_core.auth.display import display_name, display_names, person_name
 from tp_core.auth.login import THROTTLE, authenticate
 from tp_core.auth.sessions import (
     COOKIE_NAME,
@@ -36,6 +39,24 @@ class Me(BaseModel):
     id: uuid.UUID
     kullanici_adi: str
     rol: str
+    # Yalnızca gösterim (yetki rolle): "Cengizhan Gunaydin · Analist"; ad tanımsızsa rol etiketi.
+    gorunen_ad: str
+    ad_soyad: str | None = None
+    # Portalın denetim/onay görünümlerinde kullanıcı adlarını çevirmesi için tüm portal
+    # kullanıcılarının görünen adları ({kullanici_adi: gorunen_ad}).
+    kisiler: dict[str, str] = Field(default_factory=dict)
+
+
+def me_of(session: Session, user_id: uuid.UUID, kullanici_adi: str, rol: str) -> Me:
+    kullanicilar = session.execute(select(AppUser.kullanici_adi, AppUser.rol)).all()
+    return Me(
+        id=user_id,
+        kullanici_adi=kullanici_adi,
+        rol=rol,
+        gorunen_ad=display_name(kullanici_adi, rol),
+        ad_soyad=person_name(kullanici_adi),
+        kisiler=display_names((k, r) for k, r in kullanicilar),
+    )
 
 
 def throttle_key(request: Request, kullanici_adi: str, codec: SessionCodec) -> str:
@@ -72,7 +93,7 @@ def login(body: LoginIn, request: Request, session: DbSession, codec: Codec) -> 
     THROTTLE.success(anahtar)
     sid = open_session(session, user.id, codec.max_age_s)
     yanit = JSONResponse(
-        Me(id=user.id, kullanici_adi=user.kullanici_adi, rol=user.rol).model_dump(mode="json")
+        me_of(session, user.id, user.kullanici_adi, user.rol).model_dump(mode="json")
     )
     yanit.set_cookie(
         COOKIE_NAME,
@@ -119,6 +140,6 @@ def logout(
 
 
 @router.get("/me", response_model=Me)
-def me(user: CurrentUser) -> Me:
+def me(user: CurrentUser, session: DbSession) -> Me:
     assert user.id is not None
-    return Me(id=user.id, kullanici_adi=user.kullanici_adi, rol=user.rol)
+    return me_of(session, user.id, user.kullanici_adi, user.rol)

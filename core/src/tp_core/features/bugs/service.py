@@ -48,6 +48,8 @@ from tp_core.audit import audit_on_commit, chain_tip, content_hash
 from tp_core.events.bus import publish_tx
 from tp_core.features.bugs import content, jql, services
 from tp_core.features.bugs.context import BugContext, failure_context, finding_context
+from tp_core.integrations import jira_notify
+from tp_core.integrations.jira_adf import with_bot_header
 from tp_core.integrations.testmgmt import AI_LABEL, RELATES_LINK, TEST_LINK, tp_label
 from tp_core.models import (
     AiCall,
@@ -1120,12 +1122,17 @@ def publish_bug(
                             key,
                         )
                 else:
+                    # Yeni Bug: açıklamanın ilk satırı bot imi + @Mühendis @Testçi (yorum yazılmaz;
+                    # Jira açıklamadaki bahsetmeyi de bildirir). Onaylanan içerik/hash aynıdır.
                     key = _create_bug(
                         jira,
                         proje,
                         icerik,
                         [AI_LABEL, etiket, mod_etiketi],
-                        content.description_adf(icerik, **ortak),
+                        with_bot_header(
+                            content.description_adf(icerik, **ortak),
+                            jira_notify.role_mentions(jira_notify.BUG),
+                        ),
                     )
             else:
                 assert link_key is not None
@@ -1142,7 +1149,10 @@ def publish_bug(
                     var.id
                     if var is not None
                     else services.add_adf_comment(
-                        jira, link_key, content.link_comment(icerik, **ortak)
+                        jira,
+                        link_key,
+                        content.link_comment(icerik, **ortak),
+                        mentions=jira_notify.role_mentions(jira_notify.BUG),
                     )
                 )
             bag = _links(jira, key, icerik)

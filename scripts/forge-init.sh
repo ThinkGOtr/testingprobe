@@ -9,6 +9,10 @@
 #   scripts/forge-init.sh sync-web   # forge main ≠ demo-baseline ise demo-app-web'i forge main'den
 #                                    # yeniden derler (make up, kırık demoyu çalışma ağacıyla ezmesin)
 #
+# GitHub kipi (TP_FORGE=github): break/baseline core-worker'da insan kimliğiyle (GITHUB_MERGE_TOKEN,
+#   demo-admin bypass) PR olarak yapılır (bot kullanılmaz); demo-app-web ardından
+#   `scripts/demo-web-sync.sh --main` ile GitHub main'inden (toolchain-worker aynası) derlenir.
+#
 # break: core-worker içinde `python -m tp_core.integrations.forge_demo break` çalışır:
 #   demo/break-locator → main PR'ı açılır, demo-admin kural bypass'ıyla (PR head sha'sına bağlı)
 #   merge edilir, denetim kaydına "demo kırılması" yazılır. Ardından demo-app-web imajı forge
@@ -51,7 +55,7 @@ for arg in "$@"; do
   case "$arg" in
     --force) FORCE=1 ;;
     break|baseline|status|sync-web) MODE="$arg" ;;
-    -h|--help) sed -n '2,43p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,47p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "bilinmeyen argüman: $arg (kullanım: forge-init.sh [--force] | break | baseline | status | sync-web)" ;;
   esac
 done
@@ -118,11 +122,20 @@ else:
     "${EXEC[@]}" python -m tp_core.integrations.forge_demo "$MODE" \
       || die "forge_demo $MODE başarısız"
   fi
+  # shellcheck disable=SC2016  # TP_FORGE konteynerde (iç kabukta) genişler
   forge_kind="$("${EXEC[@]}" sh -c 'printf %s "${TP_FORGE:-local}"')"
   if [ "$forge_kind" != local ]; then
-    echo "Not: TP_FORGE=$forge_kind — demo-app-web yerel forge arşivinden derlenmez;"
-    echo "     GitHub main HEAD'i CI/Sauce ortamına kendi akışıyla dağıtılır."
-    exit 0
+    # GitHub kipi: kırılma/sıfırlama yukarıda insan kimliğiyle PR olarak yapıldı (forge_demo);
+    # GitHub CI kendi runner'ında koşar. Çalışan demo-app-web (locator onarımının ölçtüğü uygulama)
+    # GitHub main'inden, toolchain-worker aynası üzerinden derlenir (TP_FORGE_REMOTE_URL).
+    echo "TP_FORGE=$forge_kind: demo-app-web GitHub main'inden (toolchain aynası) eşitleniyor..."
+    if [ "$MODE" = sync-web ]; then
+      # make up'ı düşürmez (ör. TP_FORGE_REMOTE_URL henüz yok): uyarır, elle yolu yazar.
+      "$(dirname "$0")/demo-web-sync.sh" --main \
+        || err "UYARI: demo-app-web GitHub main'iyle eşitlenemedi; düzeltip 'scripts/demo-web-sync.sh --main' çalıştırın."
+      exit 0
+    fi
+    exec "$(dirname "$0")/demo-web-sync.sh" --main
   fi
   [ "$MODE" = sync-web ] || web_state
   main_sha="$(ws_get main)"

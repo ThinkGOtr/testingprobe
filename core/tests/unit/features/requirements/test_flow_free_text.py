@@ -679,3 +679,22 @@ def test_yeniden_denetim_ayni_farki_tekrar_gostermez(
     )
     assert r.status_code == 200, r.text
     assert api.get(f"/requirements/{rid}").json()["durum"] == "pending_po"
+
+
+def test_po_cevaplari_account_id_listesiyle_eslesir() -> None:
+    """Gerçek Jira'da yorum yazarı görünen ad/e-postadır; accountId'li PO listesi yine eşleşmeli,
+    görünen ad tek başına asla eşleşmemeli."""
+    from tp_core.features.requirements import flow
+    from tp_core.ports import JiraComment
+
+    class _Jira:
+        def get_comments(self, key: str) -> list[JiraComment]:
+            return [
+                JiraComment(id="1", author="PO Kişi", body="Q1: evet", author_ids=["acc-po"]),
+                JiraComment(id="2", author="acc-po", body="sahte", author_ids=[]),
+                JiraComment(id="3", author="Başkası", body="hayır", author_ids=["acc-x"]),
+            ]
+
+    out = flow._po_cevaplari(_Jira(), "TPD-1", frozenset({"acc-po"}), None)
+    assert [c["id"] for c in out] == ["1", "2"]
+    assert flow._po_cevaplari(_Jira(), "TPD-1", frozenset({"po kişi"}), None) == []

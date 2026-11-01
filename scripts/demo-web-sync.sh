@@ -4,6 +4,8 @@
 #   scripts/demo-web-sync.sh                 # bekleyen istek varsa bir kez uygular
 #   scripts/demo-web-sync.sh --wait break    # 'break' isteği gelene kadar (≤ TP_DEMO_SYNC_WAIT_S) bekler
 #   scripts/demo-web-sync.sh --watch         # sürekli izler (sunum boyunca ayrı terminalde)
+#   scripts/demo-web-sync.sh --main          # forge main'in güncel head'i için istek yazar ve uygular
+#                                            # (ör. GitHub kipinde make up sonrası GitHub main'i)
 #
 # Neden: toolchain /check testleri compose'da ÇALIŞAN demo-app-web'e karşı koşar; uygulama main'in
 # web/ ağacını yansıtmazsa koşu yapılmaz (ortam). core-worker imaj derleyemez; `POST
@@ -14,6 +16,13 @@
 # /forge/demo-app-web.sha'yı yazar. core'daki `demo.await_web` işi bunu görünce push CI'ını
 # kuyruğa alır. Uygulanan istek /forge/demo-web-refresh.done'a yazılır (idempotent).
 #
+# GitHub kipi (TP_FORGE=github): yerel forge arşivi yerine web ağacı toolchain-worker'ın salt
+# okunur forge aynasından alınır — `python -m toolchain_common.mirror_export archive|tree --ref
+# <sha> --path <web yolu>` (commit aynada yoksa TP_FORGE_REMOTE_URL'den salt okunur belirteçle
+# çekilir; belirteç yalnızca toolchain-worker'dadır, bu betik görmez). Web yolu core-worker'dan
+# (`forge_demo web-path`; GitHub'da varsayılan demo-app/web). TP_FORGE_REMOTE_URL boşsa açık
+# hatayla durur. Derlenen imaj, istek ve .done akışı yerel kiple aynıdır.
+#
 # Kilit: aynı anda birden çok kopya çalışabilir (sunum boyunca açık --watch + make demo-break /
 # demo-reset'in kendi --wait'i). Derleme + yeniden oluşturma forge volume'ünde atomik
 # `mkdir /forge/demo-web-sync.lock` kilidi altında yapılır; kilidi tutan kopya isteği uygular,
@@ -21,6 +30,7 @@
 # TP_DEMO_SYNC_LOCK_STALE_S (600) sn'den eskiyse (çöken kopya) devralınır.
 #
 # Ortam: TP_FORGE_EXEC (varsayılan "docker compose exec -T core-worker"),
+#        TP_TOOLCHAIN_EXEC (GitHub kipi; varsayılan "docker compose exec -T toolchain-worker"),
 #        TP_DEMO_WEB_IMAGE (varsayılan testingprobe-demo-app-web:local),
 #        TP_DEMO_SYNC_WAIT_S (--wait / tek sefer kilit beklemesi, varsayılan 120),
 #        TP_DEMO_SYNC_POLL_S (3), TP_DEMO_SYNC_LOCK_STALE_S (600).
@@ -39,7 +49,8 @@ while [ $# -gt 0 ]; do
         die "--wait bir eylem ister (break|baseline). Kullanım: demo-web-sync.sh --wait <eylem>"
       fi
       MODE="wait"; WAIT_EYLEM="$2"; shift ;;
-    -h|--help) sed -n '2,26p' "$SELF" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --main) MODE="main" ;;
+    -h|--help) sed -n '2,36p' "$SELF" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "bilinmeyen argüman: $1" ;;
   esac
   shift
@@ -47,6 +58,8 @@ done
 
 command -v docker >/dev/null 2>&1 || die "docker bulunamadı"
 demo_exec_init
+# shellcheck disable=SC2206  # komut öneki bilerek kelimelere bölünür
+TOOLCHAIN_EXEC=(${TP_TOOLCHAIN_EXEC:-docker compose exec -T toolchain-worker})
 WEB_IMAGE="${TP_DEMO_WEB_IMAGE:-testingprobe-demo-app-web:local}"
 POLL="${TP_DEMO_SYNC_POLL_S:-3}"
 WAIT_LIMIT="${TP_DEMO_SYNC_WAIT_S:-120}"
@@ -170,14 +183,37 @@ except ValueError: print("?")' 2>/dev/null || echo "?")"
   else
     # shellcheck disable=SC2016  # TP_FORGE konteynerde (iç kabukta) genişler
     forge_kind="$("${DEMO_EXEC[@]}" sh -c 'printf %s "${TP_FORGE:-local}"')"
-    [ "$forge_kind" = local ] || die "TP_FORGE=$forge_kind: demo-app-web yerel forge'dan derlenmez"
     tmp="$(mktemp "${TMPDIR:-/tmp}/tp-demo-web.XXXXXX")"
-    "${DEMO_EXEC[@]}" python -m tp_core.integrations.forge_demo archive --ref "$sha" --path web >"$tmp" \
-      || { rm -f "$tmp"; die "forge arşivi alınamadı ($sha)"; }
-    tar -tf "$tmp" | grep -qx 'Dockerfile' || { rm -f "$tmp"; die "arşivde web/Dockerfile yok"; }
-    web_tree="$("${DEMO_EXEC[@]}" git -c safe.directory='*' --git-dir=/forge/demo-app.git \
-      rev-parse "$sha:web" | tr -d '[:space:]')"
-    echo "demo-app-web derleniyor: $eylem @ ${sha:0:12} (web ağacı ${web_tree:0:12})"
+    case "$forge_kind" in
+      local)
+        "${DEMO_EXEC[@]}" python -m tp_core.integrations.forge_demo archive --ref "$sha" --path web >"$tmp" \
+          || { rm -f "$tmp"; die "forge arşivi alınamadı ($sha)"; }
+        tar -tf "$tmp" | grep -qx 'Dockerfile' || { rm -f "$tmp"; die "arşivde web/Dockerfile yok"; }
+        web_tree="$("${DEMO_EXEC[@]}" git -c safe.directory='*' --git-dir=/forge/demo-app.git \
+          rev-parse "$sha:web" | tr -d '[:space:]')"
+        kaynak="yerel forge"
+        ;;
+      github)
+        web_yolu="$("${DEMO_EXEC[@]}" python -m tp_core.integrations.forge_demo web-path | json_get web_yolu)"
+        case "$web_yolu" in
+          ""|/*|*..*|*[!A-Za-z0-9._/-]*) rm -f "$tmp"; die "geçersiz web yolu: '$web_yolu' (forge_demo web-path)" ;;
+        esac
+        # shellcheck disable=SC2016  # TP_FORGE_REMOTE_URL konteynerde (iç kabukta) genişler
+        uzak="$("${TOOLCHAIN_EXEC[@]}" sh -c 'printf %s "${TP_FORGE_REMOTE_URL:-}"')" \
+          || { rm -f "$tmp"; die "toolchain-worker'a erişilemiyor (make up?)"; }
+        [ -n "$uzak" ] || { rm -f "$tmp"; die "TP_FORGE=github: toolchain-worker'da TP_FORGE_REMOTE_URL boş; GitHub main aynaya çekilemez (docs/GERCEK-SISTEMLER.md §5)"; }
+        "${TOOLCHAIN_EXEC[@]}" python -m toolchain_common.mirror_export archive --ref "$sha" --path "$web_yolu" >"$tmp" \
+          || { rm -f "$tmp"; die "GitHub aynasından web arşivi alınamadı ($sha:$web_yolu)"; }
+        tar -tf "$tmp" | grep -qx 'Dockerfile' || { rm -f "$tmp"; die "arşivde $web_yolu/Dockerfile yok"; }
+        web_tree="$("${TOOLCHAIN_EXEC[@]}" python -m toolchain_common.mirror_export tree --ref "$sha" --path "$web_yolu" | tr -d '[:space:]')"
+        kaynak="GitHub aynası"
+        ;;
+      *) rm -f "$tmp"; die "bilinmeyen TP_FORGE: $forge_kind (local | github)" ;;
+    esac
+    case "$web_tree" in
+      *[!0-9a-f]*|"") rm -f "$tmp"; die "web ağacı kimliği okunamadı ($sha)" ;;
+    esac
+    echo "demo-app-web derleniyor ($kaynak): $eylem @ ${sha:0:12} (web ağacı ${web_tree:0:12})"
     eski_imaj="$(docker image inspect -f '{{.Id}}' "$WEB_IMAGE" 2>/dev/null || true)"
     docker build -q --build-arg "DEMO_APP_BUILD_SHA=$sha" --build-arg "DEMO_APP_WEB_TREE=$web_tree" \
       -t "$WEB_IMAGE" - <"$tmp" >/dev/null || { rm -f "$tmp"; die "demo-app-web derlenemedi"; }
@@ -191,13 +227,22 @@ except ValueError: print("?")' 2>/dev/null || echo "?")"
     if [ -n "$eski_imaj" ] && [ "$eski_imaj" != "$yeni_imaj" ]; then
       docker image rm "$eski_imaj" >/dev/null 2>&1 || true  # kullanımdaysa sessizce kalır
     fi
-    echo "demo-app-web = forge $sha"
+    echo "demo-app-web = forge $sha ($kaynak)"
   fi
   # shellcheck disable=SC2016
   "${DEMO_EXEC[@]}" sh -c 'umask 022; printf "%s\n" "$1" > /forge/demo-web-refresh.done' _ "$istek_id" \
     || die "/forge/demo-web-refresh.done yazılamadı"
   return 0
 }
+
+if [ "$MODE" = main ]; then
+  # Forge main'in güncel head'i için istek (core-worker yazar; GitHub'da main GitHub'dan okunur),
+  # sonra tek sefer uygulanır.
+  "${DEMO_EXEC[@]}" python -m tp_core.features.demo web-istek --eylem sync \
+    --isteyen "demo-web-sync:${USER:-host}" >/dev/null \
+    || die "yenileme isteği yazılamadı (core-worker / forge erişimi)"
+  MODE=once
+fi
 
 case "$MODE" in
   once)

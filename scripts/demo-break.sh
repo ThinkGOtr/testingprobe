@@ -12,8 +12,9 @@
 # `make demo-reset` (baseline push CI kuyruğa alınır) ve koşu yeşile dönünce kırın. API yolu bunu
 # denetler (409 + yönerge). --make yolu aynı denetimi core-worker'da veritabanından yapar
 # (`python -m tp_core.features.demo on-kosul`; ret `demo.break_refused` olarak denetlenir) ve
-# denetlenemezse (core-worker yok) KIRMAZ. Locator demosu yalnızca TP_FORGE=local'dır: GitHub
-# kipinde iki yol da reddeder (çalışan demo-app-web GitHub main'inden derlenmez).
+# denetlenemezse (core-worker yok) KIRMAZ. GitHub kipinde (TP_FORGE=github) kırılma bot ile değil
+# insan kimliğiyle (GITHUB_MERGE_TOKEN, demo-admin bypass) PR olarak yapılır; token yoksa iki yol
+# da reddeder. demo-app-web GitHub main'inden toolchain aynasıyla derlenir (TP_FORGE_REMOTE_URL).
 #
 # API yolu: core-worker `demo/break-locator` dalını demo-admin bypass'ıyla merge eder (denetim:
 # "demo kırılması" + isteyen sunucu `demo.break`), uygulama yenileme isteği yazar; bu betik isteği
@@ -72,7 +73,7 @@ if [ "$MAKE" = 1 ]; then
       ;;
     3)
       neden="$(printf '%s' "$cikti" | json_get neden)"
-      if printf '%s' "$neden" | grep -q "TP_FORGE=local"; then
+      if printf '%s' "$neden" | grep -q "GITHUB_MERGE_TOKEN"; then
         die "$neden"
       fi
       die "${neden:-kırılma yapılmadı (yeşil temel koşu yok).} Bilerek atlamak için: scripts/demo-break.sh --make --zorla"

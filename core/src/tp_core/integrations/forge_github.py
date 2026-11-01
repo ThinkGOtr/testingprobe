@@ -519,6 +519,14 @@ def qualifying_approvals(reviews: Sequence[Mapping[str, Any]], head_sha: str) ->
 class GitHubForge:
     """GitHub REST ile `ForgePort`."""
 
+    # Kod araması yalnızca varsayılan dalın (gecikmeli) dizinini tarar: başka ref'teki ya da yeni
+    # merge edilmiş içerik bulunamayabilir. Deterministik okuma gereken yerler (demo testid
+    # durumu) aramaya değil ağaç listesine dayanır (`integrations.forge_demo`).
+    code_search_is_indexed = True
+    # Depo düzeni: GitHub kipinde test edilen uygulama `demo-app/` altındadır (ci.yml `APP_ROOT`,
+    # CODEOWNERS `/demo-app/...`). `TP_FORGE_APP_ROOT` ortam değişkeni bunu ezer (codegen ile aynı).
+    default_app_root = "demo-app"
+
     def __init__(
         self,
         repo: str,
@@ -544,6 +552,9 @@ class GitHubForge:
         self._update_wait_s = max(0.0, float(update_wait_s))
         self._poll_interval_s = max(0.01, float(poll_interval_s))
         self._sleep = sleep
+        self._api_url = api_url
+        self._transport = transport
+        self._timeout = timeout
         self._client = httpx.Client(
             base_url=api_url.rstrip("/"),
             transport=transport,
@@ -592,6 +603,36 @@ class GitHubForge:
 
     def close(self) -> None:
         self._client.close()
+
+    def human_forge(self) -> GitHubForge:
+        """Aynı depo, İNSAN kimliğiyle (`GITHUB_MERGE_TOKEN`, ör. demo-admin üyesi mühendis).
+
+        Yalnızca demo kırılması/sıfırlaması gibi insanın kendi adına yaptığı, ruleset bypass'ı
+        gerektiren işlemler içindir: dal, commit, PR ve merge bu kimlikle yapılır; bot (App)
+        kimliği kullanılmaz (anayasa: bot merge etmez, bypass yalnızca demo-admin'de). Merge
+        token'ı yoksa `ForgeProtectionError`.
+        """
+        if self._merge_auth is None:
+            raise ForgeProtectionError(
+                "İnsan kimliği yok: GITHUB_MERGE_TOKEN (demo-admin takımındaki mühendisin "
+                "token'ı) tanımlı değil; demo kırılması/sıfırlaması bot kimliğiyle yapılmaz"
+            )
+        return GitHubForge(
+            self.repo,
+            self._merge_auth,
+            api_url=self._api_url,
+            merge_auth=self._merge_auth,
+            required_checks=self.required_checks,
+            transport=self._transport,
+            timeout=self._timeout,
+            update_wait_s=self._update_wait_s,
+            poll_interval_s=self._poll_interval_s,
+            sleep=self._sleep,
+        )
+
+    @property
+    def has_merge_identity(self) -> bool:
+        return self._merge_auth is not None
 
     # ------------------------------------------------------------------ HTTP
 
@@ -699,6 +740,67 @@ class GitHubForge:
         if tree.get("truncated"):
             raise ForgeError("GitHub ağaç listesi kesildi (depo çok büyük)")
         return list(tree.get("tree", []))
+
+    def tree_sha(self, ref: str = "main", path: str = "") -> str | None:
+        """`ref`'teki `path` dizininin git ağaç sha'sı (boş yol = kök); yoksa / dizin değilse None.
+
+        Ağaç kimliği içerikten türetilir: yerel forge, GitHub ve toolchain aynasında aynı içerik
+        aynı sha'yı verir (çalışan demo-app-web'in `/build.json` `web_tree` karşılaştırması)."""
+        validate_ref(ref)
+        sha = ref if is_sha(ref) else self.head_sha(ref)
+        commit = self._get(f"{self._r}/git/commits/{sha}", "commit")
+        root = commit["tree"]["sha"]
+        if not path:
+            return str(root)
+        validate_path(path)
+        for e in self._tree(sha):
+            if e.get("path") == path:
+                return str(e["sha"]) if e.get("type") == "tree" and e.get("sha") else None
+        return None
+
+    def commit_tree(self, branch: str, tree: str, message: str, parent: str) -> str:
+        """`parent` üstüne ağacı tam olarak `tree` olan tek commit yazar ve `branch`'i ona taşır.
+
+        Demo sıfırlaması (GitHub): main'in üstüne demo-baseline ağacını geri getiren commit
+        (geçmiş silinmez, force-push yok). Dal yoksa oluşturulur; varsa yalnızca fast-forward
+        ile güncellenir. Korunan dala yazılmaz."""
+        validate_branch(branch)
+        if branch in PROTECTED_BRANCHES:
+            raise ForgeProtectionError(f"'{branch}' korunan dal: doğrudan commit yok, PR açın")
+        validate_message(message)
+        if not is_sha(tree) or not is_sha(parent):
+            raise ForgeValidationError("commit_tree: ağaç ve ebeveyn tam sha olmalı")
+        try:
+            ref = self._get(f"{self._r}/git/ref/heads/{_q(branch)}", f"dal {branch}")
+            old: str | None = ref["object"]["sha"]
+        except ForgeNotFoundError:
+            old = None
+        if old is not None:
+            mevcut = self._get(f"{self._r}/git/commits/{old}", "commit")
+            ebeveynler = [p.get("sha") for p in mevcut.get("parents") or []]
+            if mevcut["tree"]["sha"] == tree and ebeveynler == [parent]:
+                return str(old)  # aynı commit zaten dalda: idempotent
+        commit = self._post(
+            f"{self._r}/git/commits",
+            "commit oluşturma",
+            {"message": message, "tree": tree, "parents": [parent]},
+        )
+        new = str(commit["sha"])
+        if old is None:
+            self._post(
+                f"{self._r}/git/refs", "dal oluşturma", {"ref": f"refs/heads/{branch}", "sha": new}
+            )
+        else:
+            try:
+                self._request(
+                    "PATCH",
+                    f"{self._r}/git/refs/heads/{_q(branch)}",
+                    "dal güncelleme",
+                    json={"sha": new, "force": False},
+                )
+            except ForgeValidationError as exc:
+                raise ForgeConflictError(f"'{branch}' eşzamanlı değişti: {exc}") from exc
+        return new
 
     def list_files(self, prefix: str = "", ref: str = "main") -> list[str]:
         validate_prefix(prefix)
@@ -842,6 +944,30 @@ class GitHubForge:
             self._post(f"{self._r}/issues/{pr.number}/labels", "etiket", {"labels": clean})
             pr = pr.model_copy(update={"labels": list(dict.fromkeys([*pr.labels, *clean]))})
         return pr
+
+    def list_prs(self, state: str | None = None) -> list[PullRequest]:
+        """PR listesi (LocalForge ile aynı sözleşme; `state`: open | closed | None = hepsi).
+
+        Demo sıfırlaması açık `tp/*` ve `demo/*` PR'larını kapatmak için kullanır; en çok 10 sayfa
+        (1000 PR). `merged` PR'lar GitHub'da `closed` listesindedir ve `merged` döner."""
+        if state not in (None, "open", "closed", "merged"):
+            raise ForgeValidationError(f"geçersiz PR durumu: {state!r}")
+        api_state = "open" if state == "open" else ("all" if state is None else "closed")
+        out: list[PullRequest] = []
+        for page in range(1, 11):
+            items = self._get(
+                f"{self._r}/pulls",
+                "PR listesi",
+                params={"state": api_state, "per_page": 100, "page": page},
+            )
+            if not isinstance(items, list):
+                raise ForgeError("GitHub PR listesi: beklenmeyen yanıt")
+            out.extend(self._pr(i) for i in items if isinstance(i, dict))
+            if len(items) < 100:
+                break
+        if state in ("closed", "merged"):
+            out = [p for p in out if p.state == state]
+        return out
 
     def get_pr(self, number: int) -> PullRequest:
         return self._pr(self._get(f"{self._r}/pulls/{int(number)}", f"PR #{number}"))

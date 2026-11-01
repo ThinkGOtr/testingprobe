@@ -13,6 +13,12 @@ export interface Kullanici {
   id: string;
   kullanici_adi: string;
   rol: Rol;
+  /** Yalnızca gösterim (yetki her zaman `rol`): "Cengizhan Gunaydin · Analist"; ad yoksa rol etiketi. */
+  gorunen_ad?: string;
+  /** Kişi adı (rol etiketsiz); tanımsızsa null. */
+  ad_soyad?: string | null;
+  /** Tüm portal kullanıcılarının görünen adları ({kullanici_adi: gorunen_ad}); denetim/onay görünümleri için. */
+  kisiler?: Record<string, string>;
 }
 
 // ---------------------------------------------------------------- Gereksinimler
@@ -1001,8 +1007,8 @@ export interface DemoDurumu {
   locator_durumu?: "baseline" | "kirik" | "onarildi" | null;
   uygulama: { sha?: string | null; kaynak?: string | null; main_ile_eslesiyor?: boolean; neden?: string | null; yonerge?: string | null };
   web_yenileme_istegi: unknown;
-  /** Locator demosu bu kipte destekleniyor mu (GitHub kipinde hayır). Core vermezse yok. */
-  locator_demo?: { destekleniyor: boolean; neden: string | null } | null;
+  /** Locator demosu bu kipte destekleniyor mu. GitHub kipinde de evet (`kip: "github"`: kırılma insan kimliğiyle PR). Core vermezse yok. */
+  locator_demo?: { destekleniyor: boolean; neden: string | null; kip?: string | null } | null;
   /** Kırma ön koşulu: main için yeşil temel koşu (yoksa core 409 + yönerge). Bilinmiyorsa `hazir: null`. */
   onarim_on_kosulu?: {
     hazir: boolean | null;

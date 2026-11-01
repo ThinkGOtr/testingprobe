@@ -305,6 +305,16 @@ def issue_list(request: Request, store: StoreDep) -> HTMLResponse:
 
 # Testing Probe'nun AI ön inceleme yorumunun başlık satırı (core: requirements.flow.review_comment).
 PRE_REVIEW_MARKER = "Testing Probe ön inceleme —"
+# Ürünün her yorumunun ilk satırı (core: integrations.jira_adf.BOT_PREFIX); varsa başlık bir sonraki
+# satırdır.
+BOT_PREFIX = "🤖 AI Testing Probe:"
+
+
+def _title_line(body: Any) -> str:
+    lines = [ln for ln in adf_to_text(body).split("\n") if ln.strip()]
+    if lines and lines[0].startswith(BOT_PREFIX):
+        lines = lines[1:]
+    return lines[0] if lines else ""
 
 
 def superseded_comment_ids(comments: list[dict[str, Any]]) -> set[str]:
@@ -313,11 +323,7 @@ def superseded_comment_ids(comments: list[dict[str, Any]]) -> set[str]:
     Yorumlar silinmez ya da değiştirilmez (iz kaydı); arayüz yalnızca eskileri "(önceki tur)"
     olarak işaretleyip katlar ki PO güncel olanı görsün.
     """
-    ids = [
-        str(c.get("id"))
-        for c in comments
-        if PRE_REVIEW_MARKER in adf_to_text(c.get("body")).split("\n", 1)[0]
-    ]
+    ids = [str(c.get("id")) for c in comments if PRE_REVIEW_MARKER in _title_line(c.get("body"))]
     return set(ids[:-1])
 
 

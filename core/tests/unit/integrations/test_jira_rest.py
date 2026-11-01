@@ -26,9 +26,11 @@ from tp_core.integrations.jira import (
     get_jira,
     parse_jira_datetime,
     person_id,
+    person_ids,
     retry_after_seconds,
     send_with_retry,
 )
+from tp_core.integrations.jira_adf import BOT_PREFIX, strip_bot_header
 from tp_core.ports import JiraPort, LabelChange
 
 SIM_SRC = Path(__file__).resolve().parents[4] / "sims" / "jira-sim" / "src"
@@ -156,7 +158,8 @@ def test_comments_roundtrip(jira: RestJira) -> None:
     comments = jira.get_comments("TPD-1")
     assert [c.id for c in comments] == [cid]
     assert comments[0].author == "writer@sim.local"
-    assert comments[0].body == "1. Soru bir?\n2. Soru iki?\n\nAI-generated"
+    # Ürünün her yorumu bot imiyle başlar (yorumlar insan hesabı adıyla görünebilir).
+    assert comments[0].body == f"{BOT_PREFIX}\n\n1. Soru bir?\n2. Soru iki?\n\nAI-generated"
     assert comments[0].created is not None
 
 
@@ -330,7 +333,8 @@ def test_post_is_retried_on_429_and_503_with_retry_after(
         },
     )
     jira.add_comment("TPD-1", "bakım")
-    assert [c.body for c in jira.get_comments("TPD-1")] == ["hız sınırı", "bakım"]
+    govdeler = [strip_bot_header(c.body) for c in jira.get_comments("TPD-1")]
+    assert govdeler == ["hız sınırı", "bakım"]
     assert sleeps == [2.0, 1.0]
 
 
@@ -649,6 +653,50 @@ def test_label_history_author_is_account_id_when_email_hidden() -> None:
     assert authorized_po_approvals(hist, ["acc-real-po"]) == []
     assert authorized_po_approvals(hist, ["Ürün Sahibi"]) == []
     assert authorized_po_approvals(hist, ["acc-impostor"]) == hist
+
+
+def test_po_allowlist_by_account_id_matches_when_email_visible() -> None:
+    """Gerçek Jira Cloud e-postayı gösterebilir (ör. aynı kuruluş): yazar e-postadır, ama
+    accountId ile yapılandırılmış PO listesi yine eşleşmeli; bot denetimi her iki kimliğe bakar."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "values": [
+                    {
+                        "author": {
+                            "accountId": "acc-po",
+                            "emailAddress": "po@example.com",
+                            "displayName": "PO",
+                        },
+                        "created": "2026-10-30T10:00:00.000+0000",
+                        "items": [
+                            {"field": "labels", "fromString": "", "toString": "tp-po-approved"}
+                        ],
+                    }
+                ],
+                "isLast": True,
+            },
+        )
+
+    j = RestJira(BASE, ("r", "t"), http=httpx.Client(transport=httpx.MockTransport(handler)))
+    hist = j.label_history("TPD-1", PO_APPROVED_LABEL)
+    assert [h.author for h in hist] == ["po@example.com"]
+    assert hist[0].author_ids == ["po@example.com", "acc-po"]
+    assert authorized_po_approvals(hist, ["acc-po"]) == hist
+    assert authorized_po_approvals(hist, ["PO@example.com"]) == hist
+    assert authorized_po_approvals(hist, ["PO"]) == []  # görünen ad asla
+    # PO ile bot aynı hesapsa (kimliklerden biri bot) onay sayılmaz.
+    assert authorized_po_approvals(hist, ["acc-po"], ["po@example.com"]) == []
+    assert authorized_po_approvals(hist, ["po@example.com"], ["acc-po"]) == []
+
+
+def test_person_ids_never_include_display_name() -> None:
+    assert person_ids({"displayName": "PO"}) == []
+    assert person_ids({"displayName": "PO", "accountId": "a1"}) == ["a1"]
+    assert person_ids({"emailAddress": "e@x", "accountId": "a1"}) == ["e@x", "a1"]
+    assert person_ids(None) == []
 
 
 def test_authorized_po_approvals_filters_bot_and_unknown() -> None:

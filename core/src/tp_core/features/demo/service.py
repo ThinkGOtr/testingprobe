@@ -15,10 +15,16 @@
   etiketli) silinir; sayaç ilerlemeye devam eder, mükerrer aramasında TPD-5 yine ilk adaydır.
   Çekirdek veritabanı silinmez (denetim append-only); tam sıfırlama (jira-sim dahil) `make reset`.
 
-Locator kırılma/onarım demosu yalnızca yerel forge'da (TP_FORGE=local): `/locator-probe` ve onarımın
-`/check`'i compose'da ÇALIŞAN demo-app-web'i ölçer ve onu yalnızca `scripts/demo-web-sync.sh` yerel
-forge arşivinden yeniden derler. GitHub kipinde kırılma `409` + Türkçe neden ile reddedilir (yoksa
-uygulama eski testid'yi sunar → `sha_eslesmesi=farkli` → öneri yok → onarılamaz kırılma).
+GitHub kipi (TP_FORGE=github): kırılma ve sıfırlama bot ile DEĞİL, insan kimliğiyle
+(`GITHUB_MERGE_TOKEN`, `demo-admin` takımındaki mühendis) yapılır:
+`forge_demo.break_locator_github` (dal + commit + PR + bypass merge) ve
+`restore_baseline_github` (main üstüne demo-baseline ağacı, PR, bypass merge; force-push yok).
+Merge token'ı yoksa iş `GITHUB_INSAN_KIMLIGI_YOK` ile düşer ve denetime yazılır. CI, GitHub
+Actions'ın `push` koşusudur (doğrudan izlenir). Ayrıca çalışan demo-app-web için yenileme isteği
+yazılır: `/locator-probe` ve onarımın `/check`'i compose'da ÇALIŞAN uygulamayı ölçer;
+`scripts/demo-web-sync.sh` GitHub kipinde web arşivini toolchain-worker aynasından
+(`TP_FORGE_REMOTE_URL`) alır. Onarım PR'ını bot açar, insan merge eder (portal merge token'ı ya
+da GitHub arayüzü).
 
 Ön koşul (locator onarımı): kırılmadan ÖNCE en az bir yeşil koşu (push/deploy/baseline…) olmalı;
 onarım rol + adı "son yeşil" kanıtla doğrular. Yoksa `POST /demo/break-locator` 409 ile yönerge
@@ -78,12 +84,17 @@ class DemoRejected(WorkflowError):
     pass
 
 
-GITHUB_KIRILMA_YOK = (
-    "Locator kırılma/onarım demosu yalnızca yerel forge'da çalışır (TP_FORGE=local). GitHub "
-    "kipinde çalışan demo-app-web GitHub main'inden yeniden derlenmez; locator ölçümü ve onarım "
-    "kontrolü eski uygulamayı görür ('sha_eslesmesi=farkli') ve onarım önerisi üretilemez. "
-    "Sunum için TP_FORGE=local kullanın; GitHub'da kırılmayı elle yapacaksanız demo-app-web'i "
-    "GitHub main sha'sından elle derleyip /forge/demo-app-web.sha'yı güncelleyin."
+GITHUB_INSAN_KIMLIGI_YOK = (
+    "GitHub kipinde demo kırılması/sıfırlaması insan kimliğiyle yapılır: core-worker'da "
+    "GITHUB_MERGE_TOKEN (demo-admin takımındaki mühendisin token'ı; Contents + Pull requests "
+    "yazma) tanımlı olmalı. Bot (App) bu işlemleri yapmaz. Ayrıca demo-app-web'in GitHub "
+    "main'inden derlenmesi için toolchain-worker'da TP_FORGE_REMOTE_URL (+ salt okunur "
+    "TP_FORGE_REMOTE_TOKEN) gerekir (docs/GERCEK-SISTEMLER.md §5)."
+)
+GITHUB_LOCATOR_NOTU = (
+    "GitHub kipi: kırılma/sıfırlama insan kimliğiyle (GITHUB_MERGE_TOKEN, demo-admin bypass) PR "
+    "olarak yapılır; demo-app-web GitHub main'inden scripts/demo-web-sync.sh ile derlenir "
+    "(TP_FORGE_REMOTE_URL aynası)."
 )
 
 
@@ -236,16 +247,8 @@ def onarim_on_kosulu(session: Session) -> dict[str, Any]:
 
 
 def request_break(session: Session, user: Principal, *, zorla: bool = False) -> dict[str, Any]:
-    if not _yerel_forge_kipi():
-        # `zorla` yalnızca yeşil-koşu ön koşulunu atlar; GitHub kipindeki kırılma her durumda
-        # onarılamaz olurdu (çalışan uygulama main'i yansıtmaz).
-        audit_on_commit(
-            session, user.kullanici_adi, "demo.break_refused", "forge:main",
-            {"neden": "GitHub kipi: locator demosu yalnızca yerel forge", "yonerge":
-             GITHUB_KIRILMA_YOK},
-        )  # fmt: skip
-        session.commit()
-        raise DemoRejected(f"Kırılma yapılmadı. {GITHUB_KIRILMA_YOK}")
+    # GitHub kipinde insan kimliği (GITHUB_MERGE_TOKEN) yalnızca core-worker'dadır: core-api
+    # denetleyemez; eksikse iş açık Türkçe nedenle düşer ve denetime yazılır (run_break).
     on = onarim_on_kosulu(session)
     if not on["hazir"] and not zorla:
         audit_on_commit(
@@ -257,7 +260,8 @@ def request_break(session: Session, user: Principal, *, zorla: bool = False) -> 
     out = _is_iste(session, BREAK_JOB, user, "break")
     return {
         **out,
-        "mesaj": "Demo locator kırılması kuyruğa alındı (demo-admin bypass'ı)."
+        "mesaj": "Demo locator kırılması kuyruğa alındı (demo-admin bypass'ı"
+        + (")." if _yerel_forge_kipi() else "; GitHub: insan kimliğiyle PR).")
         + ("" if on["hazir"] else " UYARI: yeşil temel koşu yok; onarım engellenecek."),
         "onarim_on_kosulu": on,
     }
@@ -416,17 +420,27 @@ def _push_ci_zaten(s: Session, sha: str) -> str | None:
     return str(row.id) if row else None
 
 
+def github_ci_ve_web(engine: Engine, sha: str, eylem: str, isteyen: str) -> dict[str, Any]:
+    """GitHub kipi: main'in Actions `push` koşusu doğrudan izlenir (runner uygulamayı checkout'tan
+    başlatır; çalışan uygulamayı beklemez) + demo-app-web yenileme isteği (onarım ölçümü için)."""
+    from tp_core.features.ci import enqueue_ci
+
+    with session_scope() as s:
+        run_id = enqueue_ci(
+            s, sha, "push", None, isteyen=isteyen,
+            anahtar=f"demo:{eylem}:{sha}:{_simdi().isoformat()}",
+        )  # fmt: skip
+    try:
+        istek = _yenileyici().iste(sha, eylem, isteyen)
+    except Exception as exc:  # yenileme isteği yazılamadı: CI yine izlenir
+        istek = {"durum": "hata", "hata": f"{type(exc).__name__}: {exc}"[:300]}
+    return {"web": istek, "ci_run_id": str(run_id)}
+
+
 def _web_ve_ci(engine: Engine, forge: Any, sha: str, eylem: str, isteyen: str) -> dict[str, Any]:
     """Uygulama yenileme isteği + CI kapısı işi. GitHub kipinde CI doğrudan (Actions)."""
     if not _yerel_forge_mu(forge):
-        from tp_core.features.ci import enqueue_ci
-
-        with session_scope() as s:
-            run_id = enqueue_ci(
-                s, sha, "push", None, isteyen=isteyen,
-                anahtar=f"demo:{eylem}:{sha}:{_simdi().isoformat()}",
-            )  # fmt: skip
-        return {"web": {"yontem": "kapali", "durum": "atlandi"}, "ci_run_id": str(run_id)}
+        return github_ci_ve_web(engine, sha, eylem, isteyen)
     try:
         istek = _yenileyici().iste(sha, eylem, isteyen)
     except Exception as exc:  # yenileme isteği yazılamadı: CI yine beklemeye alınır
@@ -442,31 +456,35 @@ def _web_ve_ci(engine: Engine, forge: Any, sha: str, eylem: str, isteyen: str) -
 def run_break(ctx: JobContext, engine: Engine) -> dict[str, Any]:
     isteyen = str((ctx.yuk or {}).get("isteyen") or "presenter")
     forge = _forge()
-    if not _yerel_forge_mu(forge):
-        raise PermanentJobError(f"Kırılma yapılmadı. {GITHUB_KIRILMA_YOK}")
     if not callable(getattr(forge, "merge_pr_detailed", None)):
         raise PermanentJobError("forge demo kırılmasını desteklemiyor (merge_pr_detailed yok)")
+    yerel = _yerel_forge_mu(forge)
     try:
-        sonuc = forge_demo.break_locator(
-            forge,  # type: ignore[arg-type]
+        sonuc = forge_demo.demo_break(
+            forge,
             PgAuditLog(engine),
             actor=BYPASS_ACTOR,
-            ci=lambda _sha, _actor: None,  # CI uygulama yenilenince (demo.await_web)
+            ci=lambda _sha, _actor: None,  # CI: yerelde demo.await_web, GitHub'da _web_ve_ci
         )
     except ForgeError as exc:
+        yonerge = (
+            "demo-admin yetkisini ve forge'u denetleyin" if yerel else GITHUB_INSAN_KIMLIGI_YOK
+        )
         with engine.begin() as conn:
             append_audit(
                 conn,
                 isteyen,
                 "demo.break_failed",
                 "forge:main",
-                {"hata": str(exc)[:500], "yonerge": "demo-admin yetkisini ve forge'u denetleyin"},
-            )
+                {"hata": str(exc)[:500], "kip": "local" if yerel else "github",
+                 "yonerge": yonerge},
+            )  # fmt: skip
         raise PermanentJobError(f"Demo kırılması başarısız: {exc}") from exc
     ek = _web_ve_ci(engine, forge, sonuc.main_after, "break", isteyen)
     ozet = {
         "isteyen": isteyen,
         "bypass_aktoru": BYPASS_ACTOR,
+        "kip": "local" if yerel else "github",
         "degisti": sonuc.changed,
         "pr": sonuc.pr_number,
         "main_once": sonuc.main_before,
@@ -607,16 +625,18 @@ def _prlari_kapat(engine: Engine, forge: Any, isteyen: str) -> list[dict[str, An
 def run_reset(ctx: JobContext, engine: Engine) -> dict[str, Any]:
     isteyen = str((ctx.yuk or {}).get("isteyen") or "presenter")
     forge = _forge()
-    if not _yerel_forge_mu(forge):
-        raise PermanentJobError(
-            "Demo sıfırlaması yalnızca yerel forge'da (TP_FORGE=local); GitHub'da revert PR'ı "
-            "ve make jira-seed kullanın."
-        )
+    yerel = _yerel_forge_mu(forge)
     try:
-        sonuc = forge_demo.restore_baseline(
+        sonuc = forge_demo.demo_baseline(
             forge, PgAuditLog(engine), actor=BYPASS_ACTOR, ci=lambda _s, _a: None
         )
     except ForgeError as exc:
+        if not yerel:
+            with engine.begin() as conn:
+                append_audit(
+                    conn, isteyen, "demo.reset_failed", "forge:main",
+                    {"hata": str(exc)[:500], "kip": "github", "yonerge": GITHUB_INSAN_KIMLIGI_YOK},
+                )  # fmt: skip
         raise PermanentJobError(f"main demo-baseline'a döndürülemedi: {exc}") from exc
     kapanan = _prlari_kapat(engine, forge, isteyen)
     ek = _web_ve_ci(engine, forge, sonuc.main_after, "baseline", isteyen)
@@ -625,7 +645,9 @@ def run_reset(ctx: JobContext, engine: Engine) -> dict[str, Any]:
     ozet = {
         "isteyen": isteyen,
         "bypass_aktoru": BYPASS_ACTOR,
+        "kip": "local" if yerel else "github",
         "forge": {
+            "pr": sonuc.pr_number,
             "degisti": sonuc.changed,
             "main_once": sonuc.main_before,
             "main_sonra": sonuc.main_after,
@@ -720,7 +742,11 @@ def durum(forge: Any | None = None, session: Session | None = None) -> dict[str,
     out: dict[str, Any] = {"forge": {}, "uygulama": {}, "web_yenileme_istegi": None}
     out["degerlendirme"] = degerlendirme_durumu()
     yerel = _yerel_forge_mu(forge)
-    out["locator_demo"] = {"destekleniyor": yerel, "neden": None if yerel else GITHUB_KIRILMA_YOK}
+    out["locator_demo"] = (
+        {"destekleniyor": True, "neden": None}
+        if yerel
+        else {"destekleniyor": True, "neden": None, "kip": "github", "not": GITHUB_LOCATOR_NOTU}
+    )
     if session is not None:
         try:
             out["model"] = model_durumu_oku(session)
@@ -740,7 +766,9 @@ def durum(forge: Any | None = None, session: Session | None = None) -> dict[str,
             baseline = forge.head_sha(forge_demo.BASELINE_TAG)
         except ForgeError:
             baseline = None
-        out["forge"].update(baseline=baseline, main_baseline_mi=baseline == main)
+        out["forge"].update(
+            baseline=baseline, main_baseline_mi=forge_demo.main_is_baseline(forge, main, baseline)
+        )
     except ForgeError as exc:
         out["forge"] = {"hata": str(exc)[:300]}
         main = None

@@ -244,6 +244,25 @@ yapılmadıysa (yalnız yedek yol) **19 kırmızı, 18 kardeş hata, tam paket 3
 | L3 | Mühendis · hata detayı | "Onarım PR'ı aç" | Onarım: yalnızca `e2e/pages/catalog/locators.ts` içinde **1 satır** testId; AST koruması (onarım modu: yalnızca testId değeri) ✓; tam paket yerel kontrol **36/36** ✓; PR gövdesinde sinyaller, diff, yoklama, aria doğrulaması, "AI üretimi: hayır"; **21 kardeş hata** aynı PR'ı paylaşır (22 hatanın tümü tek onarımda) | "Onarım deterministik, modelsiz. Yalnızca locator değeri değişebilir: test dosyası ve assertion asla otomatik değişmez — bunu AST koruması hem burada hem CI'da zorunlu kılıyor. Beklenen sonuçtaki her sapma defect adayıdır, onarılmaz." | 1 dk | 27,2 sn / 28,9 sn | — | Onarım "engellendi" derse nedeni okuyun (ör. sha farklı); bu, ürünün doğru reddidir |
 | L4 | Mühendis · onarım PR'ı | "Merge et" | Merge → push CI → **36/36 yeşil**; kırmızı hataların durumu `merged` | "Tek insan onayıyla 22 kırmızı yeşile döndü; ve bunu yapan kod değişikliği tek satır, gözden geçirilmesi saniyeler." | 1 dk | 25,7 sn / 31,3 sn | — | CI uzun sürerse bu arada **Denetim** ekranını gösterin (aşağıda) |
 
+#### GitHub kipinde bakım yolu (TP_FORGE=github)
+
+Ekranlar ve sözler aynıdır; arkadaki mekanizma farklıdır (ayrıntı: `docs/GERCEK-SISTEMLER.md` §5.7):
+
+- **L1 "Locator'ı kır"**: bot DEĞİL, insan kimliği (`GITHUB_MERGE_TOKEN`, `demo-admin`) GitHub'da
+  `demo/break-locator-<main12>` dalını, PR'ı açar ve bypass ile merge eder. GitHub'da PR'ı gösterin:
+  yazar ve merge eden Gokhan, fark tek satır `data-testid`. Sunum boyunca ayrı terminalde
+  `make demo-web-sync A=--watch` açık olmalı (demo-app-web GitHub main'inden, toolchain aynası
+  üzerinden derlenir; `TP_FORGE_REMOTE_URL` gerekli).
+- **L2 kırmızı koşu**: GitHub Actions `push` koşusu (`ci.yml`); portal onu izler. Süre Actions'a
+  bağlıdır (runner kurulumu dahil birkaç dakika) — bekleme sırasında Denetim ekranını gösterin.
+- **L3 "Onarım PR'ı aç"**: PR'ı **bot (GitHub App)** açar; `ast-guard` onarım kipinde koşar.
+- **L4 merge**: portalda "Merge et" (insan token'ı) ya da GitHub arayüzünde onay + merge; bot merge
+  edemez. Ardından `push` koşusu yeşil.
+- **Sıfırlama**: force-push yok; insan kimliğiyle main'e `demo-baseline` ağacını geri getiren PR
+  (`demo/reset-baseline-<main12>`) merge edilir; geçmiş korunur.
+- Yedek: GitHub erişimi koparsa `.env`'de `TP_FORGE=local` + `make up` ile yerel forge'a dönün
+  (§1.5).
+
 ### Kapanış (≈1 dk)
 
 1. Sunucu · **Demo yol haritası**: 14 adım işaretli; Sauce adımı "yerel yedek", model kipi REPLAY,

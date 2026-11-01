@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from jira_sim.adf import adf_to_text, is_adf_doc
+from jira_sim.adf import adf_to_text, is_adf_doc, resolve_mentions
 from jira_sim.seed import ISSUE_TYPES, LINK_TYPES, PROJECT, STATUSES, USERS
 from jira_sim.store import Store, now_jira
 
@@ -241,7 +241,12 @@ def _check_description(value: Any) -> dict[str, Any] | None:
         return None
     if not is_adf_doc(value):
         raise SimError(400, errors={"description": "Operation value must be an Atlassian Document"})
-    return value
+    return resolve_mentions(value, mention_names())
+
+
+def mention_names() -> dict[str, str]:
+    """Simülatör kullanıcılarının accountId → görünen ad eşlemesi (bahsetme çizimi için)."""
+    return {u["accountId"]: u["displayName"] for u in USERS.values()}
 
 
 def _record(store: Store, it: dict[str, Any], author: str, items: list[dict[str, Any]]) -> None:
@@ -469,6 +474,7 @@ def add_comment(store: Store, key: str, body: Any, author: str) -> dict[str, Any
         raise SimError(400, errors={"comment": "Comment body can not be empty!"})
     with store.tx():
         it = require_issue(store, key)
+        body = resolve_mentions(body, mention_names())
         c = {"id": store.next_id(), "author": author, "body": body, "created": now_jira()}
         it["comments"].append(c)
         it["updated"] = c["created"]

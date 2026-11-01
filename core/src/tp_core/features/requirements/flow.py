@@ -98,6 +98,7 @@ from tp_core.gateway import (
     mode_label,
     requirement_block,
 )
+from tp_core.integrations import jira_notify
 from tp_core.models import (
     AiCall,
     BugDraft,
@@ -1129,7 +1130,7 @@ def post_po_request(engine: Engine, istek: PoRequest) -> str | None:
         entity_turu="requirement_review" if istek.rr_id else "requirement",
         entity_id=sahip,
         idempotency_key=anahtar,
-        action=lambda: jira.add_comment(key, govde),
+        action=lambda: jira_notify.post_comment(jira, key, govde, jira_notify.PO_SORU),
         find_existing=lambda: _comment_with_marker(jira, key, marker),
     )
     # Soru yorumundan önce konmuş onay etiketi bayattır (PO soruları/son hali görmeden kondu):
@@ -1256,7 +1257,9 @@ def remove_stale_approval(
             entity_turu="requirement",
             entity_id=req_id,
             idempotency_key=anahtar,
-            action=lambda: jira.add_comment(key, f"{govde}\nKayıt: {notu}"),
+            action=lambda: jira_notify.post_comment(
+                jira, key, f"{govde}\nKayıt: {notu}", jira_notify.PO_ETIKET_KALDIRILDI
+            ),
             find_existing=lambda: _comment_with_marker(jira, key, notu),
         )
     with session_scope() as s:
@@ -2240,7 +2243,7 @@ def write_fix_to_jira(
         entity_turu="requirement",
         entity_id=req_id,
         idempotency_key=anahtar,
-        action=lambda: jira.add_comment(key, govde),
+        action=lambda: jira_notify.post_comment(jira, key, govde, jira_notify.DOKUMAN_DUZELTME),
         find_existing=lambda: _comment_with_marker(jira, key, marker),
     )
     # Bayat PO onayını geri çek, yeniden teyit iste (MIMARI-SOZLESME §6, 2. inceleme turu).
@@ -2509,7 +2512,10 @@ def sweep_stuck(engine: Engine) -> list[str]:
 def _po_cevaplari(jira: Any, key: str, hesaplar: frozenset[str], sonra: datetime | None) -> list:
     out = []
     for c in jira.get_comments(key):
-        if services.normalize_identity(c.author or "") not in hesaplar:
+        # Yetki kimlikleri (e-posta/accountId); görünen ad değil. Kimlik listesi olmayan
+        # (eski/sahte) kayıtta yazar alanı kullanılır.
+        kimlikler = {services.normalize_identity(i) for i in (c.author_ids or [c.author or ""])}
+        if not kimlikler & hesaplar:
             continue
         if sonra is not None and c.created is not None and c.created < sonra:
             continue

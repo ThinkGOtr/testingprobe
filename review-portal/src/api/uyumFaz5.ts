@@ -219,7 +219,7 @@ export function demoDurumuUyarla(x: unknown): DemoDurumu {
     forge: nesneMi(d.forge) ? (d.forge as DemoDurumu["forge"]) : {},
     uygulama: nesneMi(d.uygulama) ? (d.uygulama as DemoDurumu["uygulama"]) : {},
     web_yenileme_istegi: d.web_yenileme_istegi ?? null,
-    locator_demo: ld ? { destekleniyor: ld.destekleniyor !== false, neden: metinYaDaNull(ld.neden) } : null,
+    locator_demo: ld ? { destekleniyor: ld.destekleniyor !== false, neden: metinYaDaNull(ld.neden), kip: metinYaDaNull(ld.kip) } : null,
     onarim_on_kosulu: on
       ? {
           hazir: typeof on.hazir === "boolean" ? on.hazir : null,

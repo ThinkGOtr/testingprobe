@@ -20,6 +20,16 @@ KULLANICILAR: Final[tuple[tuple[str, str], ...]] = (
     ("testci", "tester"),
 )
 
+# Portalda gösterilen kişi adları (demo varsayılanı; `TP_GORUNEN_ADLAR` ile değiştirilir). Ad
+# yalnızca gösterim içindir: yetki her zaman roldedir. Boş ad = yalnızca rol etiketi ("Sunucu").
+GORUNEN_ADLAR: Final[dict[str, str]] = {
+    "analist": "Cengizhan Gunaydin",
+    "po": "Cengizhan Gunaydin",
+    "muhendis": "Gokhan Sipahi",
+    "testci": "Fatih Arslan",
+    "sunucu": "",
+}
+
 
 def tp_uuid(tur: str, anahtar: str) -> uuid.UUID:
     return uuid.uuid5(NAMESPACE_TP, f"{tur}:{anahtar}")

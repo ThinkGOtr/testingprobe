@@ -133,6 +133,8 @@ services:
     environment:
       TP_DATABASE_URL: postgresql+psycopg://tp_app:${TP_APP_PASSWORD}@postgres:5432/tp
       SEED_USER_PASSWORD: ${SEED_USER_PASSWORD:?}
+      # Portal kişi adları (yalnızca gösterim; yetki roldedir). Boş = seed demo varsayılanları.
+      TP_GORUNEN_ADLAR: ${TP_GORUNEN_ADLAR:-}
       <<: *core-env
     volumes:
       - tp_forge:/forge:ro
@@ -187,6 +189,11 @@ services:
       JIRA_PO_ACCOUNT_IDS: ${JIRA_PO_ACCOUNT_IDS:-}
       TP_PO_JIRA_USERS: ${TP_PO_JIRA_USERS:-}
       TP_JIRA_BOT_ACCOUNT_IDS: ${TP_JIRA_BOT_ACCOUNT_IDS:-}
+      # Jira yorumlarında rol @bahsetmeleri (accountId; boş = yok). Yalnızca bildirim, yetki değil.
+      JIRA_HESAP_ANALIST: ${JIRA_HESAP_ANALIST:-}
+      JIRA_HESAP_PO: ${JIRA_HESAP_PO:-}
+      JIRA_HESAP_MUHENDIS: ${JIRA_HESAP_MUHENDIS:-}
+      JIRA_HESAP_TESTCI: ${JIRA_HESAP_TESTCI:-}
       # Tutarlılık denetiminin veri araçları (salt okuma rolü; core-api demoapp'e hiç bağlanmaz).
       DEMOAPP_RO_DATABASE_URL: postgresql+psycopg://demoapp_ro:${DEMOAPP_RO_PASSWORD:?}@postgres:5432/demoapp?require_auth=scram-sha-256
       # Kod üretimi doğrulama ajanı (Faz 3): ajanın bayisi (e2e bayileriyle çakışmaz) ve uygulama kökü.
@@ -252,6 +259,9 @@ services:
       # Forge deposunda e2e kökü: LocalForge 'e2e'; TP_FORGE=github iken 'demo-app/e2e'
       # (core TP_FORGE_APP_ROOT varsayılanı 'demo-app' ile eşleşmeli).
       TP_E2E_ROOT: ${TP_E2E_ROOT:-e2e}
+      # Çalışan uygulamanın commit eşleşmesinde karşılaştırılan uygulama yolları (/check `app`,
+      # /locator-probe): LocalForge 'web,api'; TP_FORGE=github iken 'demo-app/web,demo-app/api'.
+      TP_APP_PATHS: ${TP_APP_PATHS:-web,api}
     volumes:
       # Forge'u yalnızca okur (git archive / ast-guard git-ref modu).
       - tp_forge:/forge:ro

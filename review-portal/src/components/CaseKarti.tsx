@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type TextareaHTMLAttributes } from "react";
 import { api } from "../api/client";
 import { caseKarariVerilebilir, GECIS_YOK, gecisVar, type CaseKarari } from "../api/sozlesme/durumMakinesi";
-import { useOturum } from "../auth";
+import { useKisiAdi, useOturum } from "../auth";
 import type { RetNedeni, TestCase, TestCaseIcerik } from "../api/types";
 import { useIslem } from "../hooks";
 import { CASE_DURUMU, CASE_TURU, RET_NEDENI, RISK } from "../lib/etiketler";
@@ -68,6 +68,7 @@ export function CaseKarti({
   const islem = useIslem();
   const id = useId();
   const { kullanici } = useOturum();
+  const kisiAdi = useKisiAdi();
   // Yalnızca karar verecek rol (analist) ve karar bekleyen case için görüntüleme ölçülür.
   const kartRef = useGoruntulemeBildir(tc, kullanici?.rol === "analyst" && tc.durum === "draft");
   // core test_case: approved | rejected → draft (yeniden aç). Yayınlanmış case son durumdur.
@@ -188,7 +189,7 @@ export function CaseKarti({
         <span className="soluk kucuk">
           {tc.mode === "replay" || tc.mode === "replay_miss" ? "AI: REPLAY — ölçülmedi" : `AI ${sure(tc.ai_sure_ms)}`}
           {tc.review_sure_ms !== null && ` · review ${sure(tc.review_sure_ms)}`}
-          {tc.karar_veren && ` · ${tc.karar_veren}, ${tarih(tc.karar_zamani)}`}
+          {tc.karar_veren && ` · ${kisiAdi(tc.karar_veren)}, ${tarih(tc.karar_zamani)}`}
           {tc.durum === "draft" && tc.karar && ` · taslağa alındı (önceki karar: ${KARAR_ADI[tc.karar]})`}
           {tc.ret_nedeni && tc.durum === "rejected" && ` · ret: ${RET_NEDENI[tc.ret_nedeni]}`}
           {tc.duzeltme_olcusu !== null && tc.karar === "edit" && ` · düzeltme ölçüsü ${tc.duzeltme_olcusu.toLocaleString("tr-TR")}`}

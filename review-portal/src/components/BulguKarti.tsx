@@ -6,6 +6,7 @@ import { useIslem } from "../hooks";
 import { BULGU_DURUMU, BULGU_KARARI, BULGU_TURU, gereksinimDurumu as durumEtiketi } from "../lib/etiketler";
 import { tarih } from "../lib/format";
 import { FarkGorunumu } from "./FarkGorunumu";
+import { KisiAdi } from "./KisiAdi";
 import { KodGorunumu } from "./KodGorunumu";
 import { Cip, IslemDugmesi, ReplayRozeti } from "./ui";
 
@@ -162,7 +163,7 @@ export function BulguKarti({
             </p>
           )}
           <p className="soluk kucuk">
-            {bulgu.karar_veren} · {tarih(bulgu.karar_zamani)} · kontrol turu {bulgu.onceki_karar?.kontrol_turu ?? bulgu.kontrol_turu}
+            <KisiAdi ad={bulgu.karar_veren} /> · {tarih(bulgu.karar_zamani)} · kontrol turu {bulgu.onceki_karar?.kontrol_turu ?? bulgu.kontrol_turu}
           </p>
           {bulgu.onceki_karar && (
             <p className="soluk kucuk" data-testid="onceki-karar">

@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     # Yerel demo http üzerinden çalışır; TLS arkasında True yapılır.
     session_cookie_secure: bool = Field(default=False, validation_alias="TP_SESSION_COOKIE_SECURE")
     api_token_ttl_s: int = Field(default=8 * 3600, validation_alias="TP_API_TOKEN_TTL_S")
+    # Portalda gösterilen kişi adları: `kullanici_adi=Ad Soyad` virgülle (ör.
+    # `analist=Ayşe Yılmaz,sunucu=`). Boş = seed.GORUNEN_ADLAR demo varsayılanları. Yalnızca
+    # gösterim; yetki kararları rolle verilir.
+    gorunen_adlar: str = Field(default="", validation_alias="TP_GORUNEN_ADLAR")
     # Gerçek istemci adresini X-Forwarded-For'dan almaya yetkili ters proxy'ler (virgülle: IP,
     # CIDR veya ad; ad DNS'te çözülür). Yalnızca bağlantı bu adreslerden geliyorsa XFF'nin EN SAĞ
     # öğesi (proxy'nin gördüğü eş) kullanılır; 127.0.0.1:8000'e doğrudan gelen XFF yok sayılır.

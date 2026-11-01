@@ -127,7 +127,11 @@ def adf_to_text(node: Any) -> str:
         return str(node.get("text", ""))
     if kind == "hardBreak":
         return "\n"
-    if kind in ("mention", "emoji", "status", "date"):
+    if kind == "mention":
+        # Jira Cloud gibi: görünen ad ``attrs.text``'te; çözülemeyen hesapta ``@<accountId>``.
+        attrs = node.get("attrs") or {}
+        return str(attrs.get("text") or (f"@{attrs['id']}" if attrs.get("id") else ""))
+    if kind in ("emoji", "status", "date"):
         attrs = node.get("attrs") or {}
         return str(attrs.get("text") or attrs.get("shortName") or "")
     if kind == "inlineCard":
@@ -225,6 +229,28 @@ def _render(node: Any, state: dict[str, int]) -> Markup:
     if kind in _BLOCK_TAGS:
         tag = _BLOCK_TAGS[kind]
         return Markup(f"<{tag}>") + children + Markup(f"</{tag}>")
-    if kind in ("mention", "emoji", "status", "date", "inlineCard"):
+    if kind == "mention":
+        return Markup('<span class="mention" data-testid="mention">%s</span>') % adf_to_text(node)
+    if kind in ("emoji", "status", "date", "inlineCard"):
         return escape(adf_to_text(node))
     return children
+
+
+def resolve_mentions(node: Any, names: dict[str, str]) -> Any:
+    """Bahsetme düğümlerine görünen adı yazar (Jira Cloud yazımda ``attrs.text``'i doldurur).
+
+    ``names``: accountId → görünen ad. Bilinmeyen hesap ``@<accountId>`` olarak kalır. Girdi
+    değiştirilmez; yeni bir ağaç döner.
+    """
+    if isinstance(node, list):
+        return [resolve_mentions(n, names) for n in node]
+    if not isinstance(node, dict):
+        return node
+    out = {k: resolve_mentions(v, names) if k == "content" else v for k, v in node.items()}
+    if node.get("type") == "mention":
+        attrs = dict(node.get("attrs") or {})
+        hid = str(attrs.get("id") or "")
+        if hid and not attrs.get("text"):
+            attrs["text"] = "@" + names.get(hid, hid)
+        out["attrs"] = attrs
+    return out

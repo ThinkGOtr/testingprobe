@@ -1,6 +1,6 @@
 import uuid
 
-from tp_core.seed import KULLANICILAR, NAMESPACE_TP, tp_uuid
+from tp_core.seed import GORUNEN_ADLAR, KULLANICILAR, NAMESPACE_TP, tp_uuid
 
 
 def test_uuid_deterministik() -> None:
@@ -23,3 +23,25 @@ def test_seed_kullanicilari() -> None:
         "testci": "tester",
     }
     assert len({tp_uuid("user", ad) for ad, _ in KULLANICILAR}) == 5
+
+
+def test_seed_gorunen_adlari() -> None:
+    from tp_core.auth.display import configured_names, display_name, parse_names
+
+    assert set(GORUNEN_ADLAR) == {ad for ad, _ in KULLANICILAR}
+    adlar = configured_names("")
+    beklenen = {
+        "analist": "Cengizhan Gunaydin · Analist",
+        "po": "Cengizhan Gunaydin · PO",
+        "muhendis": "Gokhan Sipahi · Mühendis",
+        "testci": "Fatih Arslan · Testçi",
+        "sunucu": "Sunucu",
+    }
+    assert {ad: display_name(ad, rol, adlar) for ad, rol in KULLANICILAR} == beklenen
+    # Geçersiz kılma: boş ad → yalnızca rol; bozuk parça atlanır; büyük/küçük harf duyarsız.
+    assert parse_names("Analist=Ayşe Yılmaz, sunucu=Gokhan Sipahi,bozuk,=x") == {
+        "analist": "Ayşe Yılmaz",
+        "sunucu": "Gokhan Sipahi",
+    }
+    assert configured_names("muhendis=")["muhendis"] == ""
+    assert display_name("muhendis", "engineer", configured_names("muhendis=")) == "Mühendis"

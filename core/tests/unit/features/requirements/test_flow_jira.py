@@ -18,6 +18,7 @@ from tp_core.features.requirements import flow
 from tp_core.gateway import FINAL_TOOL
 from tp_core.gateway.testing import tool_response
 from tp_core.integrations.jira import RestJira
+from tp_core.integrations.jira_adf import BOT_PREFIX, strip_bot_header
 from tp_core.models import BugDraft, ExternalRef, Requirement, Review, new_session
 
 from .conftest import PO_AUTH, PoActions, fake_gateway, login, run_jobs
@@ -275,6 +276,9 @@ def test_tam_akis_tpd1(
     inceleme = [c for c in jira.get_comments("TPD-1") if "ön inceleme" in c.body]
     assert len(inceleme) == 1
     govde = inceleme[0].body
+    # Ürün yorumu bot imiyle başlar; gövde imden sonra gelir.
+    assert govde.startswith(BOT_PREFIX)
+    govde = strip_bot_header(govde)
     assert govde.startswith("[AI-generated]") and "Üretim modu: REPLAY" in govde
     assert "AI özeti" in govde and "son haline geldi" in govde
     # Ön inceleme özeti özgün metne göre yazıldı; düzeltilen maddeler belirtilir (bayat özet).

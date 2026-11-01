@@ -159,7 +159,8 @@ describe("manuel baz değer uyarlayıcısı", () => {
     expect(d.model).toMatchObject({ mod: "replay", replay_strict: true });
     expect(d.degerlendirme).toEqual([{ paket: "triage", surum: 2, durum: "pending", etiket: "canlı değerlendirme bekliyor" }]);
     expect(d.onarim_on_kosulu).toMatchObject({ hazir: false, yonerge: "make demo-reset" });
-    expect(d.locator_demo).toEqual({ destekleniyor: false, neden: "GitHub kipi" });
+    expect(d.locator_demo).toEqual({ destekleniyor: false, neden: "GitHub kipi", kip: null });
+    expect(demoDurumuUyarla({ forge: {}, uygulama: {}, locator_demo: { destekleniyor: true, neden: null, kip: "github" } }).locator_demo?.kip).toBe("github");
     expect(demoDurumuUyarla({}).model).toBeNull();
   });
 });
@@ -186,7 +187,8 @@ describe("Gereksinim detayı: manuel baz değer", () => {
     await u.click(within(form).getByRole("button", { name: "Kaydet" }));
     await waitFor(() => expect(within(kart).getByTestId("baz-deger-sure")).toHaveTextContent("45 dk 00 sn"));
     expect(within(kart).getByText("Ölçüm")).toBeInTheDocument();
-    expect(kart).toHaveTextContent("analist");
+    // Giren kullanıcı görünen adıyla gösterilir (yalnızca gösterim; kayıtta kullanıcı adı).
+    expect(kart).toHaveTextContent("Cengizhan Gunaydin · Analist");
     expect(kart).toHaveTextContent("İsmail, F0 haftası kronometre");
     expect(mockVerisi().manuelBazlar?.["req-tpd-1"]).toMatchObject({ deger_s: 2700, kaynak: "olcum", giren: "analist" });
     expect(mockVerisi().denetim.at(-1)).toMatchObject({ eylem: "requirement.baseline_set", nesne: "TPD-1" });

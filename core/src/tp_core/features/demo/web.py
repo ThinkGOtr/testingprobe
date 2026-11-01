@@ -17,7 +17,11 @@ locator onarım yolu hiç başlamaz. core-worker imaj derleyemez (Docker soketi 
      dosyasını yazar. `scripts/demo-break.sh` / `demo-reset.sh` bunu kendiliğinden çağırır.
    - `toolchain` (`TP_DEMO_WEB_REFRESH=toolchain`): toolchain-worker `POST /demo/web-sync {sha,
      eylem}` (entegrasyon isteği: web'i forge'dan derleyip paylaşılan volume'den sunmak).
-   - `kapali`: yenileme istenmez (GitHub kipi: CI uygulamayı checkout'tan kendisi başlatır).
+   - `kapali`: yenileme istenmez.
+   GitHub kipinde de `istek` kullanılır: CI uygulamayı GitHub runner'ında checkout'tan kendisi
+   başlatır, ama locator onarımının `/locator-probe` ve `/check` ölçümü compose'da ÇALIŞAN
+   demo-app-web'e karşıdır; `scripts/demo-web-sync.sh` GitHub kipinde web arşivini
+   toolchain-worker'ın salt okunur aynasından (`TP_FORGE_REMOTE_URL`) alır.
 2. CI kapısı — `demo.await_web` işi: çalışan uygulama main'i yansıtana kadar (önce demo-app-web
    `GET /build.json`, yoksa `/forge/demo-app-web.sha`; sha eşit ya da `web`/`api` ağaçları aynı)
    `TP_DEMO_WEB_POLL_S` (5 sn) aralıkla bekler, sonra `enqueue_ci(main, "push")`. Süre
@@ -47,7 +51,8 @@ VARSAYILAN_ISTEK_FILE = "/forge/demo-web-refresh.json"
 UYGULAMA_YOLLARI = ("web", "api")
 YONERGE = (
     "Demo uygulaması forge main'den yeniden derlenmeli: host'ta `scripts/demo-web-sync.sh` "
-    "(ya da `make break` / `make demo-baseline`) çalıştırın."
+    "(ya da `make break` / `make demo-baseline`) çalıştırın. GitHub kipinde güncel main için: "
+    "`scripts/demo-web-sync.sh --main` (TP_FORGE_REMOTE_URL aynası gerekir)."
 )
 
 
@@ -137,7 +142,13 @@ def uygulama_eslesiyor(forge: Any, hedef_sha: str, uygulama_sha: str | None) -> 
         yollar = degisen(uygulama_sha, hedef_sha)
     except Exception as exc:  # bilinmeyen sha vb.
         return False, f"karşılaştırılamadı: {exc}"[:200]
-    farkli = sorted({y.split("/", 1)[0] for y in yollar if y.split("/", 1)[0] in UYGULAMA_YOLLARI})
+    from tp_core.integrations.forge_demo import app_path
+
+    # GitHub kipinde uygulama `demo-app/` altındadır: `demo-app/web/...` uygulama yoludur.
+    kokler = {k: app_path(forge, k) for k in UYGULAMA_YOLLARI}
+    farkli = sorted(
+        {k for y in yollar for k, kok in kokler.items() if y == kok or y.startswith(kok + "/")}
+    )
     if farkli:
         return False, f"uygulama kodu farklı ({', '.join(farkli)})"
     return True, "uygulama ağaçları aynı (yalnızca e2e/diğer yollar farklı)"

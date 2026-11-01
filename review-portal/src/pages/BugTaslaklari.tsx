@@ -6,6 +6,7 @@ import type { BugTaslagi, BugTaslakIcerik, MukerrerAday, MukerrerArama } from ".
 import { useBildirim } from "../components/Bildirim";
 import { BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
+import { KisiAdi } from "../components/KisiAdi";
 import { BUG_DURUMU, SEVERITY, type Ton } from "../lib/etiketler";
 import { tarih } from "../lib/format";
 import { kirmaTaslagiMi } from "../lib/yolHaritasi";
@@ -516,7 +517,7 @@ export function BugTaslakDetay() {
             {b.failure_id && <Link to={`/hatalar/${encodeURIComponent(b.failure_id)}`}>Triage sonucu</Link>}
             {b.onaylayan && (
               <span className="soluk">
-                {b.onaylayan}
+                <KisiAdi ad={b.onaylayan} />
                 {b.onay_zamani && ` · ${tarih(b.onay_zamani)}`}
               </span>
             )}
