@@ -166,6 +166,9 @@ def reserved_jira_identities() -> frozenset[str]:
     """Ürünün kendi Jira kimlikleri (küçük harf): okuma/yazma e-postaları ve bot accountId'leri."""
     ayar = get_settings()
     kimlikler = set(SIM_BOT_KIMLIKLERI)
+    if ayar.test_tek_hesap:
+        # TP_TEST_TEK_HESAP=1 (yalnız test): ürünün hesabı PO olarak da kabul edilir.
+        return frozenset(kimlikler)
     kimlikler |= _liste(ayar.jira_write_email) | _liste(ayar.jira_read_email)
     kimlikler |= _liste(ayar.jira_bot_account_ids)
     return frozenset(kimlikler)

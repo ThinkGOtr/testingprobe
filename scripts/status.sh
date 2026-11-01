@@ -72,4 +72,8 @@ if printf '%s\n' "$rows" | awk -F '\t' '$1 == "core-worker" && $2 == "running" {
     live) echo "Model kipi: CANLI (live) — model anahtarı: $anahtar. Demo provası (make demo-prova) yalnızca REPLAY'de koşar." ;;
     *) echo "Model kipi: ${mod:-auto} (anahtar varsa canlı, yoksa REPLAY) — model anahtarı: $anahtar. Sunum için .env'de TP_MODEL_MODE=replay önerilir." ;;
   esac
+  tek="$(docker compose exec -T core-worker printenv TP_TEST_TEK_HESAP 2>/dev/null | tr -d '\r' || true)"
+  if [ "$tek" = "1" ]; then
+    echo "UYARI: TP_TEST_TEK_HESAP=1 — ürünün Jira hesabının PO etiketi onay sayılıyor (YALNIZ TEST; sunumda kapatın)"
+  fi
 fi

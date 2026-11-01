@@ -740,6 +740,25 @@ def test_po_approvals_ignores_bot_authored_label(sim: TestClient, jira: RestJira
     assert [a.author for a in approvals] == ["po@sim.local"]
 
 
+def test_tek_hesap_test_kipi_bot_etiketini_onay_sayar(
+    sim: TestClient, jira: RestJira, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # TP_TEST_TEK_HESAP=1 (yalnız test): bot dışlaması kapanır; kapalıyken aynı etiket sayılmaz.
+    sim.put(
+        "/rest/api/3/issue/TPD-2",
+        json={"update": {"labels": [{"add": PO_APPROVED_LABEL}]}},
+        auth=("writer@sim.local", "sim"),
+    )
+    assert jira.po_approvals("TPD-2", ["writer@sim.local"]) == []
+    monkeypatch.setenv("TP_TEST_TEK_HESAP", "1")
+    assert jira.bot_identities() == frozenset()
+    assert [a.author for a in jira.po_approvals("TPD-2", ["writer@sim.local"])] == [
+        "writer@sim.local"
+    ]
+    monkeypatch.setenv("TP_TEST_TEK_HESAP", "0")
+    assert jira.po_approvals("TPD-2", ["writer@sim.local"]) == []
+
+
 def test_po_account_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("JIRA_BASE_URL", "")
     monkeypatch.setenv("JIRA_PO_ACCOUNT_IDS", "")

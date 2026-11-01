@@ -74,6 +74,9 @@ class Settings(BaseSettings):
     jira_write_email: str | None = Field(default=None, validation_alias="JIRA_WRITE_EMAIL")
     # Virgülle ayrılmış bot accountId'leri (gerçek Jira changelog'u e-posta değil accountId verir).
     jira_bot_account_ids: str = Field(default="", validation_alias="TP_JIRA_BOT_ACCOUNT_IDS")
+    # YALNIZ TEST: tek Jira hesabıyla uçtan uca deneme. Açıkken ürünün okuma/yazma hesabının koyduğu
+    # PO etiketi de onay sayılır (bot dışlaması kapanır). Varsayılan kapalı; sunumda kapalı olmalı.
+    test_tek_hesap: bool = Field(default=False, validation_alias="TP_TEST_TEK_HESAP")
     # Virgülle ayrılmış PO Jira kimlikleri (e-posta/accountId); boş = liste denetimi yok.
     po_jira_users: str = Field(default="", validation_alias="TP_PO_JIRA_USERS")
     test_mgmt: Literal["jira", "xray"] = Field(default="jira", validation_alias="TP_TEST_MGMT")

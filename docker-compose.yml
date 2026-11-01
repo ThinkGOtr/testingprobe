@@ -189,6 +189,8 @@ services:
       JIRA_PO_ACCOUNT_IDS: ${JIRA_PO_ACCOUNT_IDS:-}
       TP_PO_JIRA_USERS: ${TP_PO_JIRA_USERS:-}
       TP_JIRA_BOT_ACCOUNT_IDS: ${TP_JIRA_BOT_ACCOUNT_IDS:-}
+      # YALNIZ TEST: 1 = ürünün Jira hesabının PO etiketi de onay sayılır (varsayılan kapalı)
+      TP_TEST_TEK_HESAP: ${TP_TEST_TEK_HESAP:-0}
       # Jira yorumlarında rol @bahsetmeleri (accountId; boş = yok). Yalnızca bildirim, yetki değil.
       JIRA_HESAP_ANALIST: ${JIRA_HESAP_ANALIST:-}
       JIRA_HESAP_PO: ${JIRA_HESAP_PO:-}

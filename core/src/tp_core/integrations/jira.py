@@ -21,6 +21,8 @@ sayılamaz.
 from __future__ import annotations
 
 import email.utils
+import logging
+import os
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, datetime
@@ -41,6 +43,8 @@ from tp_core.integrations.jira_adf import (
     with_bot_header,
 )
 from tp_core.ports import JiraComment, JiraIssue, LabelChange
+
+log = logging.getLogger(__name__)
 
 SIM_BASE_URL = "http://jira-sim:8090"
 SIM_XRAY_BASE_URL = "http://jira-sim:8090/xray"
@@ -357,6 +361,14 @@ def person_ids(user: Any) -> list[str]:
         return []
     ids = (str(user.get("emailAddress") or ""), str(user.get("accountId") or ""))
     return [i for i in ids if i]
+
+
+def test_single_account() -> bool:
+    """``TP_TEST_TEK_HESAP=1``: yalnız test için bot dışlaması kapalı (tek hesapla PO onayı)."""
+    on = os.environ.get("TP_TEST_TEK_HESAP", "").strip().lower() in {"1", "true", "yes"}
+    if on:
+        log.warning("TP_TEST_TEK_HESAP açık: bot hesabının PO etiketi onay sayılıyor (YALNIZ TEST)")
+    return on
 
 
 def authorized_po_approvals(
@@ -715,7 +727,7 @@ class RestJira:
 
         ``authorized_po_approvals`` için: bot'un koyduğu onay etiketi PO onayı sayılmaz.
         """
-        if self._write_auth is None:
+        if self._write_auth is None or test_single_account():
             return frozenset()
         me = self.myself(write=True)
         ids = {str(me.get("emailAddress") or ""), str(me.get("accountId") or "")}
