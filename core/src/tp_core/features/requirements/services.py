@@ -40,9 +40,10 @@ def forge() -> Any:
     f = _overrides.get("forge")
     if f is not None:
         return f()
+    from tp_core.features.requirements.approot import app_root_view
     from tp_core.integrations.forge import get_forge
 
-    return get_forge()
+    return app_root_view(get_forge())
 
 
 def gateway(engine: Engine) -> Any:
