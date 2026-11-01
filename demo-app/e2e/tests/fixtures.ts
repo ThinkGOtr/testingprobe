@@ -17,7 +17,7 @@
 //   bayisine sabitler (ör. case metni "bayi2 / Demo123!" ile giriş yapıp bayiye özgü değer
 //   doğruluyorsa). Aynı bayi iki işçide aynı anda kullanılmasın diye her test, bayisini süreçler
 //   arası bir kilitle (dosya) alır ve bırakır; sabitlenmemiş testler de aynı kilidi kullanır.
-import { test as base, expect, type APIRequestContext, type TestInfo } from "@playwright/test";
+import { test as base, expect, type APIRequestContext, type Browser, type TestInfo } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -164,7 +164,51 @@ export function testApiUrl(baseURL: string | undefined, path: string, apiUrl = p
   return new URL(`/api/test/${path}`, baseURL).toString();
 }
 
-async function testApi(baseURL: string | undefined, token: string, path: string, data: object): Promise<void> {
+/**
+ * Sauce VM'inde yalnızca tarayıcı Sauce Connect tünelini kullanır; Node `fetch` uygulamaya ulaşamaz.
+ * Orada çağrı ayrı bir bağlamda, uygulamayla aynı kökenden tarayıcı içinde yapılır. Token koşu
+ * başına üretilir ve uygulama koşu sonunda kapanır (ci.yml sauce job'u), bu yüzden trace'e düşmesi
+ * kalıcı bir sır sızdırmaz.
+ */
+async function testApiViaBrowser(
+  browser: Browser,
+  baseURL: string | undefined,
+  token: string,
+  path: string,
+  data: object,
+): Promise<void> {
+  if (!baseURL) throw new Error("Sauce'ta /test uçları için baseURL gerekir");
+  const context = await browser.newContext({ baseURL });
+  try {
+    const page = await context.newPage();
+    await page.goto("/");
+    const result = await page.evaluate(
+      async ({ url, token, data }) => {
+        const r = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Demoapp-Test-Token": token },
+          body: JSON.stringify(data),
+        });
+        return { ok: r.ok, status: r.status };
+      },
+      { url: `/api/test/${path}`, token, data },
+    );
+    expect(result.ok, `POST /test/${path} başarısız (Sauce, tarayıcı içinden): ${result.status}`).toBe(true);
+  } finally {
+    await context.close();
+  }
+}
+
+async function testApi(
+  baseURL: string | undefined,
+  token: string,
+  path: string,
+  data: object,
+  browser?: Browser,
+): Promise<void> {
+  if (browser && process.env.TP_SAUCE === "1") {
+    return testApiViaBrowser(browser, baseURL, token, path, data);
+  }
   const resp = await fetch(testApiUrl(baseURL, path), {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Demoapp-Test-Token": token },
@@ -208,22 +252,22 @@ interface Fixtures {
 export const test = base.extend<Fixtures & Options>({
   dealerUsername: [undefined, { option: true }],
   dealer: [
-    async ({ request, dealerUsername, baseURL }, use, testInfo) => {
+    async ({ request, browser, dealerUsername, baseURL }, use, testInfo) => {
       const dealer = pickDealer(dealerUsername, testInfo.parallelIndex);
       const release = await acquireDealer(lockDir(testInfo), dealer.username);
       try {
         const mode = isolationMode();
         if (mode.kind === "reset") {
-          await testApi(baseURL, mode.token, "reset", { kullanici_adi: dealer.username });
+          await testApi(baseURL, mode.token, "reset", { kullanici_adi: dealer.username }, browser);
           if (BREAK_CAMPAIGN) {
-            await testApi(baseURL, mode.token, "break", { kullanici_adi: dealer.username, kampanya: true });
+            await testApi(baseURL, mode.token, "break", { kullanici_adi: dealer.username, kampanya: true }, browser);
           }
         } else {
           await clearCartViaPublicApi(request, dealer);
         }
         await use(dealer);
         if (mode.kind === "reset" && BREAK_CAMPAIGN) {
-          await testApi(baseURL, mode.token, "break", { kullanici_adi: dealer.username, kampanya: false });
+          await testApi(baseURL, mode.token, "break", { kullanici_adi: dealer.username, kampanya: false }, browser);
         }
       } finally {
         release();

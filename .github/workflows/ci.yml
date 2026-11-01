@@ -732,6 +732,7 @@ jobs:
             -e "BASE_URL=http://$APP_HOST:$APP_PORT" \
             -e "TP_EXTERNAL_SERVER=1" \
             -e "DEMOAPP_TEST_TOKEN=$DEMOAPP_TEST_TOKEN" \
+            -e "TP_SAUCE=1" \
             -e "TP_TRIGGER=$TP_TRIGGER" \
             2>&1 | tee ../results/sauce/saucectl.log || rc=${PIPESTATUS[0]}
           echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
