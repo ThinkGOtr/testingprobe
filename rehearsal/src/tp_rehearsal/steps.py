@@ -747,8 +747,16 @@ def _pr_hazir(b: Baglam, sid: str, eski_head: str | None) -> dict[str, Any] | No
     if eski_head and pr.get("head_sha") == eski_head:
         return None  # dal main'e taşınmadı (codegen.update_branch bekleniyor)
     dal = pr.get("dal") or {}
-    checks = [c.get("durum") for c in pr.get("checks") or []]
-    if dal.get("geride") or dal.get("yabanci") or checks != ["passed"] or s.get("merge_engelleri"):
+    # Zorunlu kontrollerin hepsi yeşil (LocalForge'da tek `local-ci`; GitHub'da test-local,
+    # ast-guard, semgrep — zorunlu olmayan sauce beklenmez).
+    zorunlu = [c.get("durum") for c in pr.get("checks") or [] if c.get("zorunlu")]
+    if (
+        dal.get("geride")
+        or dal.get("yabanci")
+        or not zorunlu
+        or any(d != "passed" for d in zorunlu)
+        or s.get("merge_engelleri")
+    ):
         return None
     return s
 

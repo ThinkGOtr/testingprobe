@@ -76,7 +76,7 @@ def _script(head="h1", checks=("passed",), geride=False, engeller=(), durum="ope
             "durum": durum,
             "head_sha": head,
             "dal": {"geride": geride},
-            "checks": [{"ad": "local-ci", "durum": c} for c in checks],
+            "checks": [{"ad": "local-ci", "durum": c, "zorunlu": True} for c in checks],
         },
         "merge_engelleri": list(engeller),
     }
@@ -98,6 +98,17 @@ def test_pr_hazir(baglam):
     assert hazir(_script(geride=True)) is None
     assert hazir(_script(engeller=("Zorunlu kontrol 'local-ci': pending",))) is None
     assert hazir(_script(durum="merged"))
+    # GitHub: birden çok zorunlu kontrol; zorunlu olmayan sauce kırmızı olsa da beklenmez.
+    gh = _script()
+    gh["pr"]["checks"] = [
+        {"ad": "test-local", "durum": "passed", "zorunlu": True},
+        {"ad": "ast-guard", "durum": "passed", "zorunlu": True},
+        {"ad": "semgrep", "durum": "passed", "zorunlu": True},
+        {"ad": "sauce", "durum": "failed", "zorunlu": False},
+    ]
+    assert hazir(gh)
+    gh["pr"]["checks"][1]["durum"] = "pending"
+    assert hazir(gh) is None
     assert hazir(_script(durum="closed")) is None
 
 
