@@ -56,6 +56,24 @@ core-worker paylaşılan `tp_artifacts`'a yazamaz; merge kapısı dosyasının t
   çalışan demo-app-web'de yapılır. Çalışan uygulamanın commit'i `DEMO_APP_BUILD_SHA`'dan okunur;
   `farkli` → `oneri_uretilebilir=false` (case insana gider), boş/çözülemezse `dogrulanamadi` + uyarı.
   Faz 4 onarım kaydı bu dört alanı aynen saklar.
+- **Faz 4 ekleri (geriye uyumlu):** `/locator-probe` isteğe bağlı `candidate_test_id` (takma ad
+  `test_id`) ve `aria_snapshot_rel` (runs/ altında referans snapshot; geçersiz yol tarayıcı açılmadan
+  422) alır; yanıt ayrıca `aday{test_id, matches, rol_ad_eslesen, gecerli, yoklanan_ile_ayni}`,
+  `aria_dogrulama`, `page_matches`, `aria_snapshot`, `aria_snapshot_scope`, `engeller[]` (Türkçe)
+  taşır; `oneri_uretilebilir = engeller == []`. sha eşleşmesi commit değil `web`+`api` ağaçlarıyla
+  yapılır (onarım merge'ü yalnızca e2e'yi değiştirir). Yeni uçlar: `POST /aria-match {role, name,
+  aria_snapshot_rel|aria_snapshot, scope_role?, scope_name?}`, `POST /trace-summary {trace_rel, role?,
+  name?, scope_test_id?}` (zip diske açılmaz; boyut/üye/oran sınırlı; rol+ad `yaklasik:true`),
+  `POST /affected-tests {sha, changed?|base_sha?}`. `/check` `affected_by` (`[yollar]` ya da
+  `"@diff"`) → `kapsam.etkilenen`; `test_files`/`grep`/`record_check:true` ile birlikte 422; bilinmeyen
+  dosyada tam paket (demo'da her spec pages/index.ts'i içe aktardığı için locators.ts değişikliği tam
+  pakettir). Hata girdileri ek alanlar: `locator_test_ids`, `locator_test_id`, `locator_scope_test_id`,
+  `locator_role`, `locator_name`, `aria_snapshot_rel`, `trace_rel`, `page_location`. `/ast-guard`
+  repair modu gerçek forge commit'inde doğrulandı (ad/rol/within değişimi, page object düzenlemesi,
+  anahtar/dosya ekleme reddedilir).
+- **Çalışan uygulamanın commit'i:** demo-app-web `GET /build.json` → `{service, sha, web_tree}`
+  (`DEMO_APP_BUILD_SHA`/`DEMO_APP_WEB_TREE` build arg'ları; hex dışı değer derlemeyi düşürür; boş =
+  `""`). `scripts/forge-init.sh` (break/baseline/sync-web) ve `scripts/demo-web-sync.sh` bunları geçirir.
 
 **Faz 3 `/check` ve `/run` (toolchain lane, ayrıntı `toolchain/README.md`):**
 - `/check` isteği ek alanlar: `retries`, `run_id`, `grep?`, `break`/`break_campaign` (ya da
@@ -175,6 +193,18 @@ deneme sonuçları; test_result ile cascade), `test_result_commit_ix_ci`. `scrip
 insan merge'ünde `kabul` (değişiklik istenmeden). `run.tetik` ayrıca `break_verify|local_check|manual`
 olabilir; Kontrol Kulesi kırma koşularını (`break_verify`, `ortam.break_campaign`) KPI'lara katmaz.
 
+**Faz 4 tablolar:** 0011 `failure_ek` (failure ile 1:1, cascade: `anahtar` (koşu+test, tekil),
+`kaynak` ∈ ci|codegen|kirma, `script_id`, `kanit` (özet + toolchain ham kaydı `ham{failure, statuses,
+consistent}`), `kanit_linkleri`, `oneri` (locator önerisi: `locator_key, old_testid, new_testid, dosya,
+rol, ad, within, scope_test_id, url_path, sha, probe{dört sha alanı dahil}, aria_satirlari,
+son_yesil_run_id`), `oneri_yok_nedeni`, `llm`), `triage_kosu` (koşu başına `done|skipped` + neden).
+`failure.id` uuid5(koşu+test) — aynı koşu iki kez sınıflandırılmaz. 0012 `bug_draft_ek` (bug_draft ile
+1:1; hash'lenen içeriğin dışında kalanlar: hata imzası, JQL + arama sonucu, dup_rank çağrısı/modu/önerisi,
+hazırlık durumu, ham AI taslağı ve uygulanan düzeltmeler, düzenleyen, `ilgili_failure_ids` (aynı imzalı
+açık taslağa eklenen hatalar), yayın sonucu). Onarım ayrıntısı ayrı tabloda değil, hash zincirli denetim
+özetlerindedir (`repair.proposed/checked/pr_opened/blocked`); script satırı `tur='locator_fix'`,
+`failure_id`, `branch`, `head_sha`, `pr_no` taşır.
+
 ## 5. HTTP API (core-api, portal `/api/` önekiyle erişir)
 
 Tüm yanıtlar JSON; hata `{"detail": "..."}`. Oturum: `tp_session` çerezi (itsdangerous imzalı, HttpOnly,
@@ -198,8 +228,8 @@ bağımsızdır (giriş CSRF'i de kapsanır).
 `<entity>.state` (`requirement`, `consistency_finding`, `test_case`, `script`, `bug_draft`,
 `workflow_instance`) ve `review.recorded` (`nesne_turu`, `nesne_id`). Portalın ayrıntılı adları
 (`agent.step`, `ci.status`, `pr.opened`, `failure.classified`, `case.generated`, `bug.published`)
-Faz 2–3'te core'un yayınladıkları aşağıda listelenir; `failure.classified` ve `bug.published` henüz
-yalnızca örnek veri (mock) tarafından üretilir (Faz 4).
+Faz 2–4'te core'un yayınladıkları aşağıda listelenir (Faz 4'ten beri `failure.classified` ve
+`bug.published` de core'dan gelir).
 Akış her olaydan önce ve boştayken 15 sn'de bir oturumu yeniden denetler; oturum kapatılmış, iptal
 edilmiş, süresi dolmuş, parola değişmiş veya kullanıcı silinmişse son olay `event: session.ended`
 gönderilir ve akış kapanır. Portal bunu alınca yeniden bağlanmaz, giriş ekranına (`/giris`) döner.
@@ -234,17 +264,19 @@ gönderilir ve akış kapanır. Portal bunu alınca yeniden bağlanmaz, giriş e
 | POST | `/prs/{number}/update-branch` | engineer | Geride kalan bot PR dalını main'e taşır (202) |
 | POST | `/ci/trigger` `{tetik: deploy\|nightly}` | presenter | Deploy/gece tetiği |
 | GET | `/runs` · `/runs/{id}` | herkes | Koşular, test sonuçları |
-| GET | `/failures/{id}` | herkes | Triage sonucu |
-| POST | `/failures/{id}/fix` | engineer | Locator onarım PR'ı |
-| GET | `/bug-drafts` · `/bug-drafts/{id}` | herkes | |
-| POST | `/bug-drafts/{id}/decision` `{karar: new\|link, icerik?, link_key?}` | tester | Onay → `publish_bug` |
+| GET | `/failures?run_id&sinif&karar_kaynagi&oneri_turu&oneri_durumu&script_id&kaynak&limit` · `/failures/{id}` | herkes | Triage sonuçları (limit ≤200) / tekil (`HataAnalizi`) |
+| POST · GET | `/failures/{id}/fix` | engineer · herkes | Locator onarım PR'ı (202; başarısız/engellenmiş denemede aynı script'le yeniden deneme) · onarım durumu (`LocatorOnarimi`: `yama` (unified diff), `engellendi`, `deneme`, kardeş hatada `paylasilan`/`paylasilan_failure_id`/`paylasilan_mesaj`, `yerel_kontrol.kirmizi_testler`/`flaky_testler`) |
+| GET | `/bug-drafts[?requirement_id]` · `/bug-drafts/{id}` · `/bug-drafts/{id}/detail` | herkes | `bug_draft_view` (Faz 2 `bug_draft_out` üst kümesi; triage kaynaklılar da gereksinim süzgecinde). `jira_silindi: bool` — açtığı Bug demo sıfırlamasında silindiyse `true`, `jira_url` null |
+| POST | `/bug-drafts/{id}/decision` `{karar: new\|link\|edit\|dismiss\|reopen, icerik_hash, icerik?, link_key?, gerekce?}` | tester | new/link: onay → `publish_bug` (≤20 sn beklenir, `yayin_sonucu`; yoksa 202); edit: yeni hash, onay değil; dismiss gerekçe ister (422) |
+| POST | `/bug-drafts/{id}/prepare` · `/bug-drafts/{id}/publish` | tester | Mükerrer arama + AI taslağı yeniden (202) · onaylı taslağın yayınını yeniden dene |
 | GET | `/control-tower` | herkes | Kontrol Kulesi verisi |
 | GET | `/audit?verify=true` | herkes | Denetim + zincir doğrulaması |
 | GET | `/events` (SSE) | herkes | Olay akışı |
 | GET · DELETE | `/tokens` · `/tokens/{id}` | herkes (kendi token'ları) | Listeleme / iptal |
 | POST | `/tokens` `{kapsam}` → `{id, kapsam, son_kullanma, token, mcp_url}` | analyst | MCP (Claude Code) kanalı için 8 saatlik token; `mcp_url` = `TP_MCP_PUBLIC_URL`. `/mcp` bağlanana kadar **501** ("IDE (MCP) kanalı henüz etkin değil"); token parola değişince geçersizleşir |
 | MCP | `:8000/mcp` → `get_requirement(requirement_key)` (submit kapsamı; PO onaylı metin güvenilmeyen blokta + `onaylanan_hash`), `submit_draft_cases(requirement_key, cases, onaylanan_hash)` (hash zorunlu; bayatsa ret), `publish_test_cases` | token | Claude Code kanalı (streamable HTTP, durumsuz). Token tek kapsamlıdır (`submit` veya `publish`); iki araç için iki token. Yalnızca 127.0.0.1/localhost Host'u, `X-Forwarded-For` → 403, çerez okunmaz. Her çağrı `tool_call` (kanal `ide`). Ayrıntı: docs/CLAUDE-CODE-KANALI.md |
-| POST | `/demo/break-locator` · `/demo/reset` | presenter | Demo kırılması / sıfırlama |
+| POST | `/demo/break-locator` · `/demo/reset` | presenter | Demo kırılması / sıfırlama (200 done / 202 sürüyor / 409). Kırılma main için yeşil koşu ister (yoksa 409 + `demo.break_refused`); `?zorla=true` bilerek atlar. Locator demosu yalnızca `TP_FORGE=local`: GitHub kipinde kırılma her zaman 409 (`zorla` dahil). Sıfırlama jira-sim'i sıfırlamaz; yalnızca `AI-generated` + `tp-<uuid>` etiketli Bug'ları siler |
+| GET | `/demo/status` | herkes | main, `forge.testid` (web/src) + `forge.e2e_testid` (e2e page object), `locator_durumu` (`baseline`\|`kirik`\|`onarildi`\|null), baseline, çalışan uygulama sha'sı ve main ile eşleşmesi, `web_yenileme_istegi`, `onarim_on_kosulu {hazir, son_yesil_kosu, yonerge}`, `locator_demo {destekleniyor, neden}` |
 
 **Faz 2 uç ayrıntıları (Demo-A):** `POST /requirements/sync` → 200 `{durum:"done", mesaj, proje,
 sonuc:{<jira_key>: yeni|degismedi|guncellendi|yeniden_kontrol|sifirlandi|mesgul}}`. `review`,
@@ -391,6 +423,85 @@ eski kısıt `NOT VALID` olarak yalnızca yeni satırlara uygulanır.
   `sauce-results`, `break-verify-results`; `ci-meta.json`/`sauce.json`/`break-verify.json`),
   dispatch yükü (`istek_id` ≡ `tp_run_id`, `ref`) ve `run-name` korelasyonu: `.github/CI.md`.
   Kimlik: Contents rw, Actions rw, Checks r. Yalnızca mock'larla doğrulandı.
+
+**Faz 4 uç ayrıntıları (FailureToFix, bug, demo kırılması):**
+- **Triage (`tp_core.features.triage`):** `ci.service._bitir` her koşu sonunda
+  `triage.on_run_finished(session, run)` çağırır (kırmızıysa `triage.classify:<run_id>`); kendini
+  `TP_TRIAGE_SWEEP_S`'de yeniden planlayan `triage.sweep` son 2 günün kaçan kırmızı koşularını toplar.
+  Kapsam: CI koşuları; `local_check` yalnızca `script_kontrol.sinif='defect_adayi'` (diğer sınıflar kod
+  üretiminin insan yolunda kalır; onarımın kendi yerel kontrolü — `run.ortam.onarim=true` — hiç
+  sınıflandırılmaz); `break_verify` kırmızıları `kaynak='kirma'` + `kasitli_kirilma` sinyaliyle
+  (`TP_TRIAGE_KIRMA=0` kapatır). Kurallar sırayla: environment (`saglik.ok=false`, sağlıksız `error`,
+  `/check` `app` adımı farkı, ağ/navigasyon) → flaky → test_maintenance/locator (0 eleman + sembol
+  tablosundaki niyet rol+ad aria'da + `/locator-probe` kapsamda tek eşleşme farklı testId + sha
+  `farkli` değil) → product_defect (expected/received'lı assertion, eleman bulundu, tekrarlar tutarlı)
+  → test_data. Kural eşleşmezse LLM yedeği (`gateway.defects` girdileri, REPLAY golden `HATA`);
+  LLM `environment`'ı ezemez ve `test_maintenance` dese de onarım önerisi üretmez. Neutral REPLAY-MISS
+  → `unknown`, `karar_kaynagi='rule'`, mod `replay_miss`. Her product_defect için
+  `bugs.create_draft_from_failure`. Sinyal listesi `{kod, aciklama, kaynak, kanit}`; güven puanı yok.
+- **Bug (`tp_core.features.bugs`):** taslak şablonla başlar, `bugs.prepare` imza → güvenli JQL
+  (`project = "TPD" AND issuetype = "Bug" AND statusCategory != "Done" AND (text ~ …)`, ≤8 terim,
+  kaçışlı) → `dup_rank` → `bug_draft` (yalnızca `gateway.defects` kurucuları, `defect_replay_key`).
+  Deterministik korumalar: `actual`/`expected` gerçek literal değerleri içermeli, kanıt yalnızca
+  koşunun kendi artefaktı ya da bulgunun kod/veri referansı, uydurma aday anahtarı (`invented_dup_keys`)
+  ve diğer sıralama değişmezleri (`dup_rank_problems`: her aday tam bir kez, sıra 1..n, gerekçe
+  ≤200) bozulursa tüm sıralama düşer, `link` önerisi yalnızca `high` adayda. İnsan düzenlemesi
+  (`edit`/`new`/`link`) story/Test anahtarını ve kanıt kökenini değiştiremez (422); bağlanacak hedef
+  karar anında denetlenir (TPD anahtarı, var, Bug, Done değil → aksi 422; Jira erişilemezse 503).
+  Jira'ya yazılan kanıt bağlantıları `TP_PUBLIC_BASE_URL` köküyle mutlaktır, kod kanıtı commit'e
+  sabittir. Tutarlılık `code_defect` taslakları
+  karar anında `adopt_draft` ile aynı hatta girer (açılışta `bugs.adopt_sweep`). `publish_bug`:
+  `approved` + onaylı hash eşleşmesi; `external_ref` niyeti önce; `new` → `tp-<uuid>` etiket araması
+  (yeniden denemede ikinci Bug yok), ADF açıklama (REPLAY etiketi, onaylayan, hash, zincir başı),
+  etiketler `AI-generated`, `tp-<uuid>`, `tp-mod-<mod>`; `link` → hedefin Bug olduğu denetlenir, tek
+  kanıt yorumu. İkisinde de story'ye `Relates`, Test issue'ya `Test` (yoksa `Relates`). jira-sim
+  `priority` kabul etmez → alan olmadan yeniden denenir.
+- **Onarım (`tp_core.features.repair`):** `POST /failures/{id}/fix` uygunluğu önce denetler (environment,
+  sağlıksız koşu, locator dışı sınıf → 409 + `repair.refused`); aynı koşuda aynı locator değişikliğini
+  öneren kardeş hatalar tek onarımı paylaşır (ikinci PR açılmaz; PR/merge durumu kardeşlere yazılır).
+  `repair.fix` deterministiktir (model çağrısı yok): öneri → `/symbols` → kapsamlı `/locator-probe` →
+  son yeşil kanıtıyla rol+ad doğrulaması (sıra: öneri aria'sı, son yeşil koşunun
+  `<sayfa>.aria.yml` dosyaları — `locators.spec.ts` sözleşme geçince yazar, önce geçerli sayfanınki —,
+  kod üretimi ajan snapshot'ları; `sozlesme_testi` geri dönüşü yalnızca
+  `TP_REPAIR_ARIA_FALLBACK=sozlesme` ile ve son yeşilde hiç aria dosyası yoksa; kaynak kayıtta ve
+  PR'da yazılıdır) → yalnızca
+  `pages/**/locators.ts` testId dizgesi (satır farkı ile yeniden denetlenir) → `/ast-guard` repair →
+  tam paket `/check` (`local_check`, `ortam.onarim=true`, `retries=1`; etkilenen her spec koşmalı)
+  → bot PR (`tp/repair-<failure>`, etiket
+  `tp-repair`, gövdede sinyaller/diff/yoklama/aria/AST/kontrol/"AI üretimi: hayır"/zincir başı).
+  `/prs/{n}/merge` onarım PR'larını repair şeridine yönlendirir (hash + head bağlı insan onayı →
+  `repair.merge` → push CI).
+- **Demo kırılması (`tp_core.features.demo`):** `POST /demo/break-locator` `demo/break-locator`'ı
+  demo-admin bypass'ıyla merge eder (denetim "demo kırılması" + `fark` özeti + `demo.break` isteyen
+  sunucu; bypass yalnızca doğrulanmış head'de, `web/src/**` altında ≤5 dosyada birebir
+  `add-to-cart`→`cart-add` değişimine izin verir, merge o head'e sabitlenir), forge
+  volume'üne `/forge/demo-web-refresh.json` yazar ve `demo.await_web` işini planlar. core-worker imaj
+  derleyemez: host'ta `scripts/demo-web-sync.sh` (`make demo-break` / `make demo-web-sync A=--watch`)
+  isteği uygular. `demo.await_web` push CI'ı ancak çalışan uygulama (`/build.json`) **ve** toolchain'in
+  okuduğu `/forge/demo-app-web.sha` main'i yansıtınca kuyruğa alır (aksi `/check` `app=farkli` →
+  environment koşusu); aynı forge değişikliği için ikinci CI açılmaz; `TP_DEMO_WEB_WAIT_S` dolarsa CI
+  yok + `demo.web_timeout`. `make break`/`make demo-baseline` (forge_demo CLI) de aynı işi kullanır.
+  `POST /demo/reset` main'i demo-baseline'a döndürür, açık `tp/*`/`demo/*` PR'larını kapatır, uygulama
+  yenileme + baseline CI ister; veritabanına dokunmaz (tam: `make reset`) — tek istisna: silinen AI
+  Bug'larını açmış taslaklar `bugs.mark_jira_deleted` ile `bug_draft_ek.yayin.jira_silindi` işareti alır
+  (durum/onay değişmez; denetim `bug_draft.jira_deleted`).
+- **Koşu ayrıntısı:** `GET /runs/{id}` sonuç başına `triage_sinifi`/`triage_alt_tur`, koşu düzeyinde
+  `hatalar[{id, test_adi, sinif, alt_tur, test_result_id}]`; sağlık kontrolü başarısız koşuda rapor
+  bağlantıları (`rapor_url`, `junit_url`, `allure_url`) null. `GET /scripts/{id}` `failure_id`
+  (defect adayının triage sonucu).
+- **Faz 4 SSE:** `failure.classified {id, failure_id, run_id, script_id, test_adi, sinif, alt_tur,
+  kural, karar_kaynagi, oneri_turu, mode}`, `repair.requested|started|step|blocked|pr_opened|merged`,
+  `bug.draft_created|draft_ready|prepare_failed|draft_edited|dismissed|reopened|published|publish_failed`,
+  `demo.break|reset|web_waiting|web_ready|web_timeout`.
+- **Faz 4 iş türleri:** `triage.classify`, `triage.sweep`, `bugs.prepare`, `bugs.publish` (3 deneme),
+  `bugs.adopt_sweep`, `repair.fix`, `repair.merge`, `demo.break_locator`, `demo.reset`,
+  `demo.await_web`.
+- **Model girdisi (Faz 4):** triage/bug_draft/dup_rank girdisi yalnızca `tp_core.gateway.defects`
+  kurucularıyla (`failure_block`, `case_block`, `finding_block`, `*_messages`, `defect_replay_key`)
+  kurulur; değişken değerler (koşu kimliği, yol, test dosyası soneki, aday sırası…) metne girmez, kanıt
+  `kanit:<ad>` yer tutucusudur (`resolve_evidence`). Her `ai_call.ek.degerlendirme` prompt paketinin
+  değerlendirme durumunu taşır (`{paket, surum, durum, etiket}`; bugün üçü de "canlı değerlendirme
+  bekliyor"). Golden adı `HATA`, senaryo dizinleri içerik beyanıyla seçilir.
 
 ## 6. Ortam değişkenleri (yeni)
 `TP_SESSION_SECRET`, `TP_MODEL_MODE`, `JIRA_BASE_URL`, `JIRA_PROJECT` (varsayılan `TPD`),
@@ -618,6 +729,41 @@ koşturan servis) merge kapısı dosyasının bulunduğu `tp_artifacts`'a yazabi
 yazılıyor ve `/check` `app` adımı uyuşmazlıkta koşmuyor (core: `ortam`), `review.kanal='github'`,
 statik Allure raporu. **Demo'nun ana yolu** `f2-kod-hatasi` REPLAY senaryosudur (F2 ve F4
 `code_defect`; docs/DEMO-VERISI.md); `make demo-check` sunumdan önce bunu doğrular.
+
+**Faz 4 ortam değişkenleri (hepsi isteğe bağlı; compose'da verilmez = varsayılan):** core-worker
+`TP_TRIAGE_SWEEP_S` (30; 0 kapalı), `TP_TRIAGE_KIRMA` (1; 0 = kırma koşuları triage edilmez),
+`TP_DEMO_WEB_REFRESH` (`istek`; `toolchain` henüz uç yok), `TP_DEMO_WEB_WAIT_S` (900),
+`TP_DEMO_WEB_POLL_S` (5), `TP_REPAIR_ARIA_FALLBACK` (boş; `sozlesme` = aria dosyası yoksa sözleşme
+testi geri dönüşü), `TP_PUBLIC_BASE_URL` (compose'da verilir; varsayılan
+`http://127.0.0.1:${TP_PORTAL_PORT:-8080}`), `TP_WORKER_UZUN_SERIT` (1; uzun işler — `ci.run`,
+`repair.fix`, `codegen.generate|break_verify`, `demo.break_locator|reset` — ayrı worker şeridinde,
+`TP_WORKER_UZUN_TURLER` ile değişir). CI koşu dizini test-runner tarafından budanmışsa koşu
+`artefakt_budandi` ile işaretlenir ve bağlantıları null döner. Yeni sır yok; `JIRA_SIM_ADMIN_TOKEN`
+core-worker'a verilmedi (jira-sim'i silme yetkisi ajan sürecinde olmasın). `/demo/reset` jira-sim'i
+sıfırlamaz (anahtar sayacı geri sarılırsa `external_ref` anahtarları çakışır); yalnızca bu sistemin
+açtığı Bug'ları (`AI-generated` + `tp-<uuid>`) `RestJira.delete_issue` ile siler, gerçek Jira'ya dokunmaz.
+`publish_bug` Jira'ya yazmadan önce Story/Test issue'larının varlığını denetler (yoksa kalıcı ret,
+taslak karara döner). Triage öneri bloğu `{tur:'bug_draft', bug_draft_id, taslak_durumu, jira_key,
+karar, sonuc_metni}` taşır. `make break` = `scripts/demo-break.sh --make` (core-worker'da
+`python -m tp_core.features.demo on-kosul` ön denetimi; `Z=1` atlar).
+
+**Neden değişti (Faz 4 entegrasyonu, FailureToFix):** triage, repair, bugs, goldens, toolchain,
+portal ve demo-app şeritleri birleşti. Entegrasyonda bulunan ve düzeltilenler: (1) `make break` push
+CI'ı demo-app-web yeniden derlenmeden kuyruğa alıyordu → koşu `app=farkli` ile environment oluyor,
+locator yolu hiç başlamıyordu; şimdi `demo.await_web` bekler. (2) `/build.json` yeni commit'i
+beyan ederken `/forge/demo-app-web.sha` birkaç saniye geride kalıyordu (canlıda gözlendi: CI yine
+environment) → bekleme her ikisini ister. (3) Aynı kırılma için iki kez basılan "kır" iki push CI
+açıyordu. (4) `scripts/demo-common.sh` HTTP kodunu alt kabukta kaybediyordu (`demo-break.sh` ilk
+çağrıda düşüyordu). (5) Onarım PR'ları `/prs/{n}/merge`'de 404 veriyordu (codegen yalnızca `tur='test'`
+arıyordu). (6) Kırık bir testId'den doğan 19 hata için 19 ayrı onarım açılabiliyordu. (7) Sağlık
+kontrolü başarısız koşu var olmayan HTML raporuna bağlantı veriyordu. (8) Portal bug kanıtlarını
+(`{ref, kind}`) "bağlantı yok" diye gösteriyordu. Tutarlılık taslakları artık karar anında mükerrer
+hattına girer; `GET /bug-drafts` Faz 4 görünümünü döner.
+
+**Neden değişti (Faz 4 son entegrasyon, 2026-11-01):** canlı kanıtta `make demo-reset` jira-sim'den
+TPD-18/19'u sildikten sonra taslaklar ve triage öneri bloğu hâlâ "Jira'da açıldı: TPD-19" + ölü bağlantı
+gösteriyordu (portal adaptörü `jira_url` null olsa da browse kökünden bağlantıyı yeniden kuruyordu).
+Şimdi silinen anahtarlar taslakta işaretlenir (`jira_silindi`), görünüm ve portal bağlantı vermez.
 
 ## 7. Kalite kapısı (her şerit)
 - Python: `uv run ruff check`, `uv run ruff format --check`, `uv run pytest` yeşil.

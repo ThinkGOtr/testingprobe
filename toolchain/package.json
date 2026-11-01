@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "Playwright and the demo-app e2e runtime deps (axe, allure) for the CI/test-runner toolchain image. No MCP server here (constitution II): it lives in mcp/ and only the playwright-mcp image target installs it.",
+  "scripts": {
+    "test": "node --test \"probe/test/*.test.mjs\""
+  },
   "dependencies": {
     "@axe-core/playwright": "4.14.0",
     "@playwright/test": "1.64.1",

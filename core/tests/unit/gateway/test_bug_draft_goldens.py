@@ -17,14 +17,17 @@ import pytest
 
 from tests.unit.gateway.demo_sources import (
     DEMO_API_SRC,
+    PRODUCTS,
     cart,
     demo_module,
+    golden_ref,
     goldens,
+    scenario_goldens,
     seed_setting,
 )
 from tp_core.gateway import VERIFY_AGENT_DEALER
 
-BUG_DRAFTS = list(goldens("bug_draft"))
+BUG_DRAFTS = [*goldens("bug_draft"), *scenario_goldens("bug_draft")]
 SEED = (DEMO_API_SRC / "demoapp_api" / "seed.py").read_text(encoding="utf-8")
 
 
@@ -59,7 +62,7 @@ def _repro(output: dict[str, Any]) -> tuple[str, list[tuple[str, int]]]:
 
 
 def _ids(items: list[tuple[str, Path, Any]]) -> list[str]:
-    return [path.stem for _, path, _ in items]
+    return [golden_ref(path) for _, path, _ in items]
 
 
 def test_seed_parsing_matches_demo_data() -> None:
@@ -89,15 +92,61 @@ def test_bug_draft_steps_reproduce_the_bug(
         stated = re.search(r"toplam ([\d.]+,\d{2} TL)", " ".join(out["steps"]))
         if stated:
             assert stated.group(1) == money.format_tl(result.toplam)
-    elif "Kampanya indirimi" in out["expected"]:
-        expected = re.search(r"Kampanya indirimi ([\d.]+,\d{2} TL)", out["expected"])
-        actual = re.search(r"Kampanya indirimi ([\d.]+,\d{2} TL)", out["actual"])
-        assert expected and actual
-        assert money.format_tl(cart(lines).indirim) == expected.group(1)
-        monkeypatch.setenv("BREAK_CAMPAIGN", "1")
-        assert money.format_tl(cart(lines).indirim) == actual.group(1)
+    elif "bedava adet" in out["expected"]:
+        _check_campaign(out, lines, monkeypatch)
     else:
         pytest.fail(f"{path.stem}: yeniden üretim kontrolü tanımlanmamış bug türü")
+
+
+def _amounts(text: str) -> dict[str, str]:
+    """ "bedava adet N", "indirim X TL", "toplam X TL" değerleri (metinde geçenler)."""
+    out = {}
+    for name, pattern in (
+        ("bedava", r"bedava adet (\d+)"),
+        ("indirim", r"indirim ([\d.]+,\d{2} TL)"),
+        ("toplam", r"toplam ([\d.]+,\d{2} TL)"),
+    ):
+        m = re.search(pattern, text)
+        if m:
+            out[name] = m.group(1)
+    return out
+
+
+def _check_campaign(
+    out: dict[str, Any], lines: list[tuple[str, int]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Beklenen: TPD-1 AC2'nin özgün kuralı (7 adette 1 bedava = adet // 7). Gerçekleşen: bugünkü
+    kod (`adet // 6`) ya da ortam satırı kırılmayı söylüyorsa BREAK_CAMPAIGN (bedava 0)."""
+    money = demo_module("money")
+    ((code, qty),) = lines
+    price, campaign = PRODUCTS[code]
+    assert campaign, f"{code} kampanyalı değil"
+    doc_free = qty // 7
+    doc = {
+        "bedava": str(doc_free),
+        "indirim": money.format_tl(price * doc_free),
+        "toplam": money.format_tl(price * (qty - doc_free)),
+    }
+    expected = _amounts(out["expected"])
+    assert expected.get("bedava") is not None, out["expected"]
+    assert expected == {k: doc[k] for k in expected}, (expected, doc)
+
+    broken = "BREAK_CAMPAIGN" in out["environment"] and "açık" in out["environment"]
+    if broken:
+        monkeypatch.setenv("BREAK_CAMPAIGN", "1")
+    else:
+        monkeypatch.delenv("BREAK_CAMPAIGN", raising=False)
+    result = cart(lines)
+    real = {
+        "bedava": str(result.satirlar[0].bedava_adet),
+        "indirim": money.format_tl(result.indirim),
+        "toplam": money.format_tl(result.toplam),
+    }
+    actual = _amounts(out["actual"])
+    assert actual.get("bedava") is not None, out["actual"]
+    assert actual == {k: real[k] for k in actual}, (actual, real)
+    # Hata gerçekten görünür: aynı adımlarda beklenen ≠ gerçekleşen.
+    assert expected["bedava"] != actual["bedava"]
 
 
 def test_old_credit_limit_steps_would_not_reproduce() -> None:

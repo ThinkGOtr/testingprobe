@@ -58,6 +58,11 @@ export interface MockVeri {
 /** Kanıtlardaki depo adı (golden kayıtlarla aynı: forge'daki demo-app deposu). */
 const REPO = "demo-app";
 const JIRA = "http://127.0.0.1:8090/browse";
+/** jira-sim seed'indeki açık Bug'lar (mükerrer araması bunları döndürür). */
+const SEED_BUG: Record<string, string> = {
+  "TPD-5": "Kampanya indirimi sepette yanlış hesaplanıyor",
+  "TPD-6": "Sipariş geçmişinde tarih sıralaması ters görünüyor",
+};
 
 export const t = (gun: number, saat: string) => `2026-10-${String(gun).padStart(2, "0")}T${saat}:00+03:00`;
 
@@ -853,6 +858,7 @@ function scriptler(): ScriptDetay[] {
       // Assertion kırmızı → otomatik onarım yok, PR açılmaz, insana düşer (script: checking → blocked).
       durum: "blocked",
       pr: null,
+      failure_id: "fail-4",
       pass_at_1: false,
       zayif_test: false,
       break_verify: {
@@ -1063,8 +1069,10 @@ function kosular(): KosuDetay[] {
         sonuc("r107-1", TEST_C1, "passed", 3100, { case_id: "case-1-1" }),
         sonuc("r107-2", TEST_C2, "failed", 6200, {
           hata_mesaji:
-            "expect(getByTestId('cart-discount')).toHaveText(\"25,00 TL\")\nBeklenen: \"25,00 TL\"\nGerçekleşen: \"0,00 TL\"",
+            "expect(getByTestId('cart-line-free-P-001')).toHaveText(\"1\")\nBeklenen: \"1\"\nGerçekleşen: \"0\"",
           failure_id: "fail-1",
+          triage_sinifi: "product_defect",
+          triage_alt_tur: "assertion",
           case_id: "case-1-2",
         }),
         sonuc("r107-3", TEST_LOGIN, "passed", 2200),
@@ -1081,11 +1089,15 @@ function kosular(): KosuDetay[] {
           hata_mesaji:
             "locator.click: Timeout 5000ms exceeded.\nwaiting for getByTestId('product-card-P-001').getByTestId('add-to-cart')",
           failure_id: "fail-2",
+          triage_sinifi: "test_maintenance",
+          triage_alt_tur: "locator",
           case_id: "case-1-1",
         }),
         sonuc("r106-2", TEST_C2, "failed", 9800, {
           hata_mesaji: "locator.click: Timeout 5000ms exceeded. (aynı imza: add-to-cart)",
           failure_id: "fail-2",
+          triage_sinifi: "test_maintenance",
+          triage_alt_tur: "locator",
           case_id: "case-1-2",
         }),
         sonuc("r106-3", TEST_LOGIN, "passed", 2600),
@@ -1117,11 +1129,21 @@ function kosular(): KosuDetay[] {
         sonuc("r108-1", TEST_C3, "failed", 6400, {
           hata_mesaji:
             "expect(getByTestId('cart-line-P-001').getByTestId('free-qty')).toHaveText(\"0\")\nBeklenen: \"0\"\nGerçekleşen: \"1\"",
+          failure_id: "fail-4",
+          triage_sinifi: "product_defect",
+          triage_alt_tur: "assertion",
           case_id: "case-1-3",
         }),
       ],
       { commit: "9e0c51d", script_id: "scr-3" },
     ),
+    // Ortam hatası: sağlık yoklaması başarısız, Playwright başlamadı (tests=[]); triage environment.
+    kosu("run-109", "manual", "local", t(30, "03:00"), [], {
+      commit: "9c41e2b",
+      durum: "error",
+      saglik_hatasi: "web yanıt vermedi (http://demo-web:8080/: bağlantı reddedildi)",
+      hatalar: [{ id: "fail-3", test_adi: "Koşu öncesi sağlık yoklaması", sinif: "environment", alt_tur: "saglik", ozet: "Onarım/bug yok" }],
+    }),
     kosu("run-103", "break_verify", "local", t(30, "11:24"), [sonuc("r103-1", TEST_C2, "passed", 5900, { case_id: "case-1-2" })], {
       commit: "4ac0e11",
       pr_no: 12,
@@ -1173,30 +1195,49 @@ function kosular(): KosuDetay[] {
   ];
 }
 
+const SAGLIK_OK = {
+  ok: true,
+  zaman: t(30, "02:00"),
+  web: { url: "http://demo-web:8080/", status: 200, ms: 41, hata: null },
+  api: { url: "http://demo-api:8000/health", status: 200, ms: 12, hata: null },
+  hata: null,
+};
+
 function hatalar(): HataAnalizi[] {
   return [
     {
       id: "fail-1",
       run_id: "run-107",
       test_adi: TEST_C2,
-      hata_imzasi: "assertion:cart-discount:expected=25,00 TL:actual=0,00 TL",
-      hata_mesaji: "Beklenen: \"25,00 TL\" · Gerçekleşen: \"0,00 TL\"",
+      hata_imzasi: "assertion:cart-line-free-P-001:expected=1:actual=0",
+      hata_mesaji: "Beklenen: \"1\" · Gerçekleşen: \"0\"",
       sinif: "product_defect",
       alt_tur: "assertion",
+      kural: "product_defect",
       eslesen_sinyaller: [
-        { kod: "health_ok", aciklama: "Koşu öncesi sağlık kontrolü başarılı (ortam sorunu değil)", kaynak: "health" },
-        { kod: "not_flaky", aciklama: "Yeniden denemede de aynı sonuç (flaky değil)", kaynak: "playwright-json" },
-        { kod: "locator_resolved", aciklama: "Locator tek eleman buldu; sayfa yapısı beklenen", kaynak: "aria-snapshot" },
-        { kod: "assertion_mismatch", aciklama: "cart-discount metni beklenen \"25,00 TL\", gerçekleşen \"0,00 TL\"", kaynak: "trace" },
+        { kod: "health_ok", aciklama: "Koşu öncesi sağlık kontrolü başarılı (ortam sorunu değil)", kaynak: "saglik", kanit: "web 200 · api 200" },
+        { kod: "not_flaky", aciklama: "Yeniden denemede de aynı sonuç (flaky değil)", kaynak: "playwright-json", kanit: "retry 1: failed · retry 2: failed" },
+        { kod: "locator_resolved", aciklama: "Locator tek eleman buldu; sayfa yapısı beklenen", kaynak: "aria-snapshot", kanit: '- row "Portakal Gazozu 1L 7 adet":\n  - status "Bedava": 0 adet' },
+        { kod: "assertion_mismatch", aciklama: "cart-line-free-P-001 beklenen \"1\", gerçekleşen \"0\"", kaynak: "trace", kanit: "expect(getByTestId('cart-line-free-P-001')).toHaveText('1')" },
       ],
       karar_kaynagi: "rule",
       llm_yorumu: null,
       oneri: { tur: "bug_draft", bug_draft_id: "bug-1" },
+      kanit: {
+        hata_mesaji: "Error: expect(locator).toHaveText(expected)\n\nLocator: getByTestId('cart-line-free-P-001')\nExpected: \"1\"\nReceived: \"0\"",
+        beklenen: "1",
+        gerceklesen: "0",
+        konum: "tests/generated/kampanya-7-adet.spec.ts:24",
+        aria_snippet: '- region "Sepet":\n  - row "Portakal Gazozu 1L 7 adet"\n  - status "Bedava": 0 adet\n  - status "Kampanya indirimi": 0,00 TL',
+        locator_probe: null,
+        saglik: SAGLIK_OK,
+      },
       kanit_linkleri: [
         { etiket: "Allure raporu (run-107)", url: null },
         { etiket: "Playwright trace (run-107)", url: null },
       ],
-      mode: "replay",
+      // Kural kararı: model çağrısı yok ("live"/"replay" yazılmaz).
+      mode: null,
       zaman: t(30, "02:06"),
     },
     {
@@ -1207,11 +1248,12 @@ function hatalar(): HataAnalizi[] {
       hata_mesaji: "locator.click: Timeout 5000ms exceeded. waiting for getByTestId('add-to-cart')",
       sinif: "test_maintenance",
       alt_tur: "locator",
+      kural: "test_maintenance/locator",
       eslesen_sinyaller: [
-        { kod: "health_ok", aciklama: "Koşu öncesi sağlık kontrolü başarılı", kaynak: "health" },
-        { kod: "locator_zero", aciklama: "getByTestId('add-to-cart') 0 eleman döndürdü", kaynak: "playwright-json" },
-        { kod: "intent_present", aciklama: "Niyete uyan eleman sayfada var: button \"Sepete ekle\"", kaynak: "aria-snapshot" },
-        { kod: "testid_changed", aciklama: "DOM'daki data-testid farklı: cart-add", kaynak: "locator-probe" },
+        { kod: "health_ok", aciklama: "Koşu öncesi sağlık kontrolü başarılı", kaynak: "saglik", kanit: "web 200 · api 200" },
+        { kod: "locator_zero", aciklama: "getByTestId('add-to-cart') 0 eleman döndürdü", kaynak: "playwright-json", kanit: "waiting for getByTestId('add-to-cart')" },
+        { kod: "intent_present", aciklama: "Niyete uyan eleman ürün kartında var: button \"Sepete ekle\"", kaynak: "aria-snapshot", kanit: '- article "Portakal Gazozu 1L":\n  - button "Sepete ekle"' },
+        { kod: "testid_changed", aciklama: "DOM'daki data-testid farklı: cart-add", kaynak: "locator-probe", kanit: "matches=1 · test_id=cart-add · scope=product-card-P-001" },
       ],
       karar_kaynagi: "rule",
       llm_yorumu: null,
@@ -1223,20 +1265,122 @@ function hatalar(): HataAnalizi[] {
         yeni_test_id: "cart-add",
         rol: "button",
         ad: "Sepete ekle",
+        within: "product-card-",
+        scope_test_id: "product-card-P-001",
         dogrulama: [
-          "Rol + ad eşleşmesi tek eleman verdi",
+          "Rol + ad eşleşmesi kapsayıcıda (product-card-P-001) tek eleman verdi",
           "Son yeşil koşunun aria snapshot'ındaki rol + ad ile aynı",
-          "AST koruması: yalnızca testId değeri değişiyor",
+          "Ölçüm çalışan uygulamada, commit eşleşiyor",
         ],
+        aria_dogrulama: { eslesti: true, aciklama: "run-105 (son yeşil): button \"Sepete ekle\" ürün kartında mevcut", run_id: "run-105" },
+        ast_guard: null,
+        yerel_kontrol: null,
+        etkilenen_testler: [
+          { test_adi: TEST_C1, durum: null },
+          { test_adi: TEST_C2, durum: null },
+          { test_adi: "Sepete ekle · sepet sayacı artar (elle yazılmış)", durum: null },
+        ],
+        degisen_dosyalar: [],
+        yama: null,
+        neden: null,
         durum: "proposed",
         pr: null,
+      },
+      kanit: {
+        hata_mesaji: "locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for getByTestId('product-card-P-001').getByTestId('add-to-cart')",
+        beklenen: null,
+        gerceklesen: null,
+        konum: "e2e/pages/catalog/CatalogPage.ts:18",
+        aria_snippet: '- article "Portakal Gazozu 1L":\n  - heading "Portakal Gazozu 1L" [level=3]\n  - spinbutton "Adet"\n  - button "Sepete ekle"',
+        locator_probe: {
+          rol: "button",
+          ad: "Sepete ekle",
+          scope_test_id: "product-card-P-001",
+          matches: 1,
+          test_id: "cart-add",
+          olculen: "calisan_uygulama",
+          uygulama_sha: "9c1e44b2a7d0",
+          sha_eslesmesi: "eslesiyor",
+          uyari: null,
+          oneri_uretilebilir: true,
+        },
+        saglik: SAGLIK_OK,
       },
       kanit_linkleri: [
         { etiket: "Sauce video (run-106)", url: null },
         { etiket: "Allure raporu (run-106)", url: null },
       ],
-      mode: "replay",
+      mode: null,
       zaman: t(29, "17:36"),
+    },
+    {
+      // Ana yol (f2-kod-hatasi): kod üretiminin C3 defect adayı. Test onaylı case'i (6 adette bedava
+      // yok) doğruluyor, uygulama bedava veriyor → assertion farkı, sayfa yapısı beklenen.
+      id: "fail-4",
+      run_id: "run-108",
+      test_adi: TEST_C3,
+      hata_imzasi: "assertion:cart-line-free-P-001:expected=0:actual=1",
+      hata_mesaji: "Beklenen: \"0\" · Gerçekleşen: \"1\"",
+      sinif: "product_defect",
+      alt_tur: "assertion",
+      kural: "product_defect",
+      eslesen_sinyaller: [
+        { kod: "health_ok", aciklama: "Koşu öncesi sağlık kontrolü başarılı", kaynak: "saglik", kanit: "web 200 · api 200" },
+        { kod: "consistent", aciklama: "3 tekrarın 3'ünde aynı assertion farkı (flaky değil)", kaynak: "playwright-json", kanit: "repeat-each 3: failed ×3" },
+        { kod: "locator_resolved", aciklama: "Locator tek eleman buldu; sayfa yapısı beklenen", kaynak: "aria-snapshot", kanit: '- row "Portakal Gazozu 1L 6 adet":\n  - status "Bedava": 1 adet' },
+        { kod: "assertion_mismatch", aciklama: "cart-line-free-P-001 beklenen \"0\", gerçekleşen \"1\"", kaynak: "trace", kanit: "expect(getByTestId('cart-line-free-P-001')).toHaveText('0')" },
+      ],
+      karar_kaynagi: "rule",
+      llm_yorumu: null,
+      oneri: { tur: "bug_draft", bug_draft_id: "bug-4" },
+      kanit: {
+        hata_mesaji: "Error: expect(locator).toHaveText(expected)\n\nLocator: getByTestId('cart-line-free-P-001')\nExpected: \"0\"\nReceived: \"1\"",
+        beklenen: "0",
+        gerceklesen: "1",
+        konum: "tests/generated/kampanya-6-adet.spec.ts:21",
+        aria_snippet: '- row "Portakal Gazozu 1L 6 adet":\n  - status "Bedava": 1 adet\n  - status "Kampanya indirimi": 25,00 TL',
+        locator_probe: null,
+        saglik: SAGLIK_OK,
+      },
+      kanit_linkleri: [{ etiket: "Yerel kontrol koşusu (run-108)", url: null }],
+      mode: null,
+      zaman: t(30, "11:39"),
+      script_id: "scr-3",
+    },
+    {
+      // Ortam: sağlık yoklaması başarısız → kural 1, onarım/bug yok (LLM ezemez).
+      id: "fail-3",
+      run_id: "run-109",
+      test_adi: TEST_C1,
+      hata_imzasi: "environment:saglik:web",
+      hata_mesaji: "Koşu öncesi sağlık yoklaması başarısız: http://demo-web:8080/ yanıt vermedi",
+      sinif: "environment",
+      alt_tur: "saglik",
+      kural: "environment",
+      eslesen_sinyaller: [
+        { kod: "health_failed", aciklama: "Sağlık yoklaması başarısız (saglik.ok=false); Playwright başlatılmadı", kaynak: "saglik", kanit: "web: bağlantı reddedildi · api 200" },
+      ],
+      karar_kaynagi: "rule",
+      llm_yorumu: null,
+      oneri: null,
+      kanit: {
+        hata_mesaji: null,
+        beklenen: null,
+        gerceklesen: null,
+        konum: null,
+        aria_snippet: null,
+        locator_probe: null,
+        saglik: {
+          ok: false,
+          zaman: t(30, "03:00"),
+          web: { url: "http://demo-web:8080/", status: null, ms: 5000, hata: "bağlantı reddedildi" },
+          api: { url: "http://demo-api:8000/health", status: 200, ms: 14, hata: null },
+          hata: "web yanıt vermedi",
+        },
+      },
+      kanit_linkleri: [{ etiket: "Koşu günlüğü (run-109)", url: null }],
+      mode: null,
+      zaman: t(30, "03:00"),
     },
   ];
 }
@@ -1246,20 +1390,16 @@ function hatalar(): HataAnalizi[] {
 function bugTaslaklari(): BugTaslagi[] {
   return [
     {
-      // rules/replay/bug_draft/golden/break-campaign.json
+      // rules/replay/bug_draft/golden/kirma-kampanya/HATA.json
       id: "bug-1",
       kaynak: "triage",
       failure_id: "fail-1",
       finding_id: null,
       icerik: {
-        summary: "Sepet: \"6 al 1 bedava\" kampanya indirimi uygulanmıyor",
-        steps: [
-          "bayi1 / Demo123! ile giriş yap",
-          "\"Portakal Gazozu 1L\" için 7 adet gir ve sepete ekle",
-          "Sepete git ve indirim tutarını kontrol et",
-        ],
-        expected: "Kampanya indirimi 25,00 TL",
-        actual: "Kampanya indirimi 0,00 TL",
+        summary: "Sepet: 7 adet Portakal Gazozu sepete eklendiğinde bedava adet 1 beklenirken 0 görünüyor",
+        steps: ["bayi1 / Demo123! ile giriş yap", "\"Portakal Gazozu 1L\" için 7 adet gir ve \"Sepete ekle\" butonuna bas", "Üst menüden sepete git", "P-001 satırındaki bedava adedi kontrol et"],
+        expected: "P-001 satırında bedava adet 1 (TPD-1 AC2: 7 adette 1 bedava)",
+        actual: "P-001 satırında bedava adet 0 görünüyor (assertion: beklenen \"1\", gerçekleşen \"0\")",
         environment: "Yerel demo ortamı, Chromium · gece koşusu run-107 · commit b7d1f05",
         evidence: [
           { tur: "trace", url: null, etiket: "Playwright trace (run-107)" },
@@ -1271,15 +1411,37 @@ function bugTaslaklari(): BugTaslagi[] {
         labels: ["AI-generated"],
       },
       // jira-sim seed: TPD-5 6 adet sınır hatasını anlatan açık Bug (JQL "kampanya indirimi" bunu döndürür).
+      mukerrer_arama: {
+        durum: "yapildi",
+        jql: 'project = TPD AND issuetype = Bug AND statusCategory != Done AND text ~ "kampanya indirimi"',
+        oneri: "new",
+        oneri_link_key: null,
+        mode: "replay",
+        degerlendirme: { durum: "pending", etiket: "canlı değerlendirme bekliyor" },
+        hata: null,
+      },
+      jira_browse_url: JIRA,
+      degerlendirme: { durum: "pending", etiket: "canlı değerlendirme bekliyor" },
       mukerrer_adaylari: [
         {
           key: "TPD-5",
-          summary: "Kampanya indirimi sepette yanlış hesaplanıyor",
+          summary: SEED_BUG["TPD-5"],
           durum: "To Do",
-          // rules/replay/dup_rank/golden/break-campaign.json: medium + öneri new (farklı belirti).
-          gerekce:
-            "Aynı ürün (Portakal Gazozu 1L) ve aynı alan (sepetteki kampanya/indirim satırı), ama farklı belirti: TPD-5 6 adette erken verilen bedavayı (bedava 1 adet, indirim 25,00 TL) anlatıyor; bu koşuda kampanya hiç uygulanmıyor (bedava 0 adet, indirim 0,00 TL). İlişkili olabilir, aynı hata değil.",
-          sinyaller: ["Aynı ürün: P-001", "Aynı alan: cart-discount", "Farklı belirti: TPD-5 6 adette bedava 1 (beklenen 0) anlatıyor"],
+          olasilik: "medium",
+          sira: 1,
+          url: `${JIRA}/TPD-5`,
+          gerekce: "Aynı ürün ve aynı kampanya satırı ama ters belirti: TPD-5'te 6 adette erken bedava var, bu koşuda 7 adette bedava hiç verilmiyor (kampanya kırılması açık).",
+          sinyaller: [],
+        },
+        {
+          key: "TPD-6",
+          summary: SEED_BUG["TPD-6"],
+          durum: "In Progress",
+          olasilik: "low",
+          sira: 2,
+          url: `${JIRA}/TPD-6`,
+          gerekce: "Farklı alan: sipariş geçmişindeki tarih sıralaması; sepet ve kampanya hesabıyla ilgisi yok.",
+          sinyaller: [],
         },
       ],
       karar: null,
@@ -1293,21 +1455,16 @@ function bugTaslaklari(): BugTaslagi[] {
       olusturma: t(30, "02:07"),
     },
     {
-      // rules/replay/bug_draft/golden/credit-limit.json
+      // rules/replay/bug_draft/golden/f4-kredi-limiti/HATA.json
       id: "bug-2",
       kaynak: "consistency",
       failure_id: null,
       finding_id: "fnd-3",
       icerik: {
-        summary: "Sepet: Kredi limiti aşımında \"Kredi limiti aşıldı\" uyarısı gösterilmiyor",
-        steps: [
-          "bayi2 / Demo123! (kredi limiti 500,00 TL) ile giriş yap",
-          "\"Şeftalili Soğuk Çay 1L\" için 25 adet gir ve sepete ekle (toplam 750,00 TL: minimum sipariş tutarını karşılar, kredi limitini aşar)",
-          "Sepete git",
-          "\"Siparişi onayla\" butonuna bas",
-        ],
-        expected: "Sepette \"Kredi limiti aşıldı\" uyarısı gösterilir ve sipariş onaylanamaz",
-        actual: "Uyarı gösterilmiyor, \"Siparişi onayla\" butonu aktif ve sipariş oluşturuluyor; kredi limiti kontrolü yapılmıyor",
+        summary: "Sepet: Kredi limiti aşıldığında \"Kredi limiti aşıldı\" uyarısı gösterilmiyor ve sipariş onaylanabiliyor",
+        steps: ["bayi2 / Demo123! (kredi limiti 500,00 TL) ile giriş yap", "\"Şeftalili Soğuk Çay 1L\" için 25 adet gir ve \"Sepete ekle\" butonuna bas (toplam 750,00 TL: minimum sipariş tutarını karşılar, kredi limitini aşar)", "Üst menüden sepete git", "Uyarıları ve \"Siparişi onayla\" butonunu kontrol et"],
+        expected: "Sepette \"Kredi limiti aşıldı\" uyarısı gösterilir ve sipariş onaylanamaz (TPD-1 AC4)",
+        actual: "Kredi limiti uyarısı yok ve \"Siparişi onayla\" butonu aktif; sepet hesabı yalnızca minimum sipariş uyarısı üretiyor, kredi limiti kontrolü yok (pricing.py:97)",
         environment: "Yerel demo ortamı · tutarlılık denetimi",
         evidence: [
           { tur: "code", url: null, etiket: `${REPO} · api/src/demoapp_api/pricing.py:97` },
@@ -1327,10 +1484,14 @@ function bugTaslaklari(): BugTaslagi[] {
       onay_zamani: t(30, "09:58"),
       // Simülatörde ürünün oluşturduğu ilk kayıt (seed TPD-1..TPD-7).
       jira_key: "TPD-8",
+      jira_url: `${JIRA}/TPD-8`,
+      jira_browse_url: JIRA,
+      mukerrer_arama: { durum: "yapildi", jql: 'project = TPD AND issuetype = Bug AND statusCategory != Done AND text ~ "kredi limiti"', oneri: "new", oneri_link_key: null, mode: "replay", hata: null },
       mode: "replay",
       olusturma: t(30, "09:46"),
     },
     kampanyaKodHatasiTaslagi(),
+    c3DefectTaslagi(),
   ];
 }
 
@@ -1365,7 +1526,40 @@ function kampanyaKodHatasiTaslagi(): BugTaslagi {
       severity_suggestion: "major",
       labels: ["AI-generated"],
     },
-    mukerrer_adaylari: [],
+    // Faz 4: tutarlılık taslakları da aynı JQL + dup_rank aramasından geçer. F2 (6 adette erken
+    // bedava) jira-sim TPD-5'in ta kendisidir: öneri "bağla".
+    mukerrer_arama: {
+      durum: "yapildi",
+      jql: 'project = TPD AND issuetype = Bug AND statusCategory != Done AND text ~ "kampanya"',
+      oneri: "link",
+      oneri_link_key: "TPD-5",
+      mode: "replay",
+      degerlendirme: { durum: "pending", etiket: "canlı değerlendirme bekliyor" },
+      hata: null,
+    },
+    mukerrer_adaylari: [
+        {
+          key: "TPD-5",
+          summary: SEED_BUG["TPD-5"],
+          durum: "To Do",
+          olasilik: "high",
+          sira: 1,
+          url: `${JIRA}/TPD-5`,
+          gerekce: "Aynı kural farkı: bulgu kodun 6 adette 1 bedava verdiğini (campaign.py:23) söylüyor; TPD-5 de kampanyanın bir adet erken, 6. adette başladığını anlatıyor.",
+          sinyaller: [],
+        },
+        {
+          key: "TPD-6",
+          summary: SEED_BUG["TPD-6"],
+          durum: "In Progress",
+          olasilik: "low",
+          sira: 2,
+          url: `${JIRA}/TPD-6`,
+          gerekce: "Farklı alan: sipariş geçmişindeki tarih sıralaması; sepet ve kampanya hesabıyla ilgisi yok.",
+          sinyaller: [],
+        },
+      ],
+    jira_browse_url: JIRA,
     karar: null,
     durum: "draft",
     link_key: null,
@@ -1375,6 +1569,73 @@ function kampanyaKodHatasiTaslagi(): BugTaslagi {
     jira_key: null,
     mode: null,
     olusturma: t(30, "09:41"),
+  };
+}
+
+/** C3 defect adayının triage taslağı: JQL + dup_rank TPD-5'i en olası aday bulur (öneri: bağla). */
+function c3DefectTaslagi(): BugTaslagi {
+  return {
+    id: "bug-4",
+    kaynak: "triage",
+    failure_id: "fail-4",
+    finding_id: null,
+    icerik: {
+      summary: "Sepet: 6 adet Portakal Gazozu sepete eklendiğinde bedava adet 0 beklenirken 1 görünüyor",
+        steps: ["bayi1 / Demo123! ile giriş yap", "\"Portakal Gazozu 1L\" için 6 adet gir ve \"Sepete ekle\" butonuna bas", "Üst menüden sepete git", "P-001 satırındaki bedava adedi, indirimi ve toplamı kontrol et"],
+        expected: "P-001 satırında bedava adet 0; indirim 0,00 TL, toplam 150,00 TL (TPD-1 AC2: bedava 7. adette başlar)",
+        actual: "P-001 satırında bedava adet 1 görünüyor (assertion: beklenen \"0\", gerçekleşen \"1\")",
+        environment: "Yerel demo ortamı, Chromium · yerel kontrol run-108 · commit 9e0c51d",
+      evidence: [
+        { tur: "trace", url: null, etiket: "Playwright trace (run-108)" },
+        { tur: "screenshot", url: null, etiket: "Hata anı ekran görüntüsü (run-108)" },
+      ],
+      story_key: "TPD-1",
+      test_case_key: "TPD-11",
+      severity_suggestion: "critical",
+      labels: ["AI-generated"],
+    },
+    mukerrer_arama: {
+      durum: "yapildi",
+      jql: 'project = TPD AND issuetype = Bug AND statusCategory != Done AND text ~ "kampanya indirimi"',
+      oneri: "link",
+      oneri_link_key: "TPD-5",
+      mode: "replay",
+      degerlendirme: { durum: "pending", etiket: "canlı değerlendirme bekliyor" },
+      hata: null,
+    },
+    mukerrer_adaylari: [
+        {
+          key: "TPD-5",
+          summary: SEED_BUG["TPD-5"],
+          durum: "To Do",
+          olasilik: "high",
+          sira: 1,
+          url: `${JIRA}/TPD-5`,
+          gerekce: "Aynı belirti: TPD-5 de Portakal Gazozu 1L'de 6 adette 1 bedava verildiğini, beklenenin bedava 0 / toplam 150,00 TL olduğunu anlatıyor.",
+          sinyaller: [],
+        },
+        {
+          key: "TPD-6",
+          summary: SEED_BUG["TPD-6"],
+          durum: "In Progress",
+          olasilik: "low",
+          sira: 2,
+          url: `${JIRA}/TPD-6`,
+          gerekce: "Farklı alan: sipariş geçmişindeki tarih sıralaması; sepet ve kampanya hesabıyla ilgisi yok.",
+          sinyaller: [],
+        },
+      ],
+    jira_browse_url: JIRA,
+    karar: null,
+    durum: "draft",
+    link_key: null,
+    icerik_hash: "",
+    onaylayan: null,
+    onay_zamani: null,
+    jira_key: null,
+    mode: "replay",
+    degerlendirme: { durum: "pending", etiket: "canlı değerlendirme bekliyor" },
+    olusturma: t(30, "11:40"),
   };
 }
 

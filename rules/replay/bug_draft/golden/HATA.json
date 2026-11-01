@@ -1,0 +1,56 @@
+{
+  "kind": "call",
+  "purpose": "bug_draft",
+  "golden": "HATA",
+  "note": "Elle hazırlandı (canlı model çıktısı değil; ai_call.model = golden-elle). Girdi beyanı (input_match) tp_core.gateway.defects kurucularının ürettiği kanonik metne göredir; uymayan girdi amacın on_miss.json politikasına düşer. Canlı anahtar gelince TP_MODEL_MODE=record ile yeniden kaydedilmeli. Ana demo yolu (f2-kod-hatasi): C3 '6 adet → bedava yok' yerel kontrolünde expectFreeQuantity(\"P-001\", 0) kırmızı (kod adet // 6). Kanıt yer tutucuları (kanit:*) çalışma anında resolve_evidence ile bağlantıya çevrilir; test_case_key şerit tarafından yazılır.",
+  "input_match": {
+    "sources": [
+      "failure:*",
+      "case:*"
+    ],
+    "contains": [
+      "Locator: getByTestId('cart-line-free-P-001')",
+      "Beklenen: \"0\"",
+      "Gerçekleşen: \"1\"",
+      "Kampanya kırılması (BREAK_CAMPAIGN): kapalı",
+      "6 adet kampanyalı üründe bedava ürün verilmez",
+      "bedava 7. adette başlar"
+    ]
+  },
+  "output": {
+    "summary": "Sepet: 6 adet Portakal Gazozu sepete eklendiğinde bedava adet 0 beklenirken 1 görünüyor",
+    "steps": [
+      "1. bayi1 / Demo123! ile giriş yap",
+      "2. \"Portakal Gazozu 1L\" için 6 adet gir ve \"Sepete ekle\" butonuna bas",
+      "3. Üst menüden sepete git",
+      "4. P-001 satırındaki bedava adedi, indirimi ve toplamı kontrol et"
+    ],
+    "expected": "P-001 satırında bedava adet 0; indirim 0,00 TL, toplam 150,00 TL (TPD-1 AC2: bedava 7. adette başlar)",
+    "actual": "P-001 satırında bedava adet 1 görünüyor (assertion: beklenen \"0\", gerçekleşen \"1\")",
+    "environment": "Yerel demo ortamı (demo-app main); kampanya kırılması (BREAK_CAMPAIGN) kapalı",
+    "evidence": [
+      {
+        "kind": "trace",
+        "ref": "kanit:trace"
+      },
+      {
+        "kind": "screenshot",
+        "ref": "kanit:screenshot"
+      },
+      {
+        "kind": "log",
+        "ref": "kanit:error_context"
+      },
+      {
+        "kind": "allure",
+        "ref": "kanit:allure"
+      }
+    ],
+    "story_key": "TPD-1",
+    "test_case_key": null,
+    "severity_suggestion": "critical",
+    "labels": [
+      "AI-generated"
+    ]
+  }
+}

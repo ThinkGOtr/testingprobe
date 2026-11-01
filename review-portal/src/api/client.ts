@@ -1,5 +1,5 @@
 // MIMARI-SOZLESME §5'teki her uç için türlü istemci.
-import { istek } from "./http";
+import { ApiError, istek } from "./http";
 import {
   bulguUyarla,
   caseUyarla,
@@ -10,6 +10,8 @@ import {
   yayinOnizlemeUyarla,
   yayinSonucuUyarla,
 } from "./uyum";
+import { bugIcerikCoreBicimi, bugTaslagiUyarla, hataAnaliziUyarla } from "./uyumTriage";
+import { nesneMi } from "./uyum";
 import { kontrolKulesiUyarla, kosuDetayUyarla, kosuUyarla, scriptDetayUyarla, scriptUyarla } from "./uyumDemoB";
 import type {
   Bulgu,
@@ -18,6 +20,7 @@ import type {
   BugTaslagi,
   CaseKararGirdisi,
   CaseMetrikleri,
+  DemoDurumu,
   DenetimYaniti,
   Gereksinim,
   GereksinimDetay,
@@ -42,11 +45,16 @@ import type {
 } from "./types";
 
 const yol = (s: string) => encodeURIComponent(s);
+export const HATA_BULUNAMADI = "Hata kaydı bulunamadı: bağlantı geçersiz ya da kayıt silinmiş.";
 const nesne = (x: unknown) => (x && typeof x === "object" ? (x as Record<string, unknown>) : {});
 /** Case işlemleri case listesine bağlıdır: liste çekirdekten geliyorsa işlem örnek veriye düşmez. */
 const CASE_KAYNAGI = ["GET", "/cases"] as const;
 /** Script işlemleri (kırarak doğrula, merge) script listesine bağlıdır (gerçek script örnek veriye düşmez). */
 const SCRIPT_KAYNAGI = ["GET", "/scripts"] as const;
+/** Onarım işlemi triage sonucuna bağlıdır ("1": herhangi bir kimlik; yol kalıbı ve mock anahtarı ":id" ile eşleşir). */
+const HATA_KAYNAGI = ["GET", "/failures/1"] as const;
+/** Bug kararı taslak listesine bağlıdır. */
+const BUG_KAYNAGI = ["GET", "/bug-drafts"] as const;
 
 export const api = {
   // Oturum
@@ -150,14 +158,58 @@ export const api = {
   kosu: async (id: string): Promise<KosuDetay> => kosuDetayUyarla(nesne(await istek<unknown>("GET", `/runs/${yol(id)}`))),
 
   // Triage
-  hata: (id: string) => istek<HataAnalizi>("GET", `/failures/${yol(id)}`),
-  onarimPrAc: (id: string) => istek<IsYaniti>("POST", `/failures/${yol(id)}/fix`),
+  /**
+   * Triage sonucu. Locator önerisinde onarım başladıysa repair şeridinin kaydı (`GET /failures/{id}/fix`:
+   * AST koruması, etkilenen testler, PR) öneriyle birleştirilir; uç yoksa/onarım yoksa triage önerisi kalır.
+   */
+  hata: async (id: string): Promise<HataAnalizi> => {
+    let ham: Record<string, unknown>;
+    try {
+      ham = nesne(await istek<unknown>("GET", `/failures/${yol(id)}`));
+    } catch (e) {
+      // Geçersiz kimlik (core 422: pydantic UUID metni) ya da yok (404): "bulunamadı" (ham doğrulama metni gösterilmez).
+      if (e instanceof ApiError && (e.status === 422 || e.status === 404)) throw new ApiError(404, HATA_BULUNAMADI);
+      throw e;
+    }
+    const oneri = nesne(ham.oneri);
+    // Core triage yanıtı onarım kaydını zaten `oneri`ye katar (`script_durumu`) ve `oneri_durumu` taşır:
+    // o zaman ayrı `GET /fix` gereksizdir (onarım yokken 404 → konsol hatası). Yalnızca eski biçimde çağrılır.
+    const birlesik = "script_durumu" in oneri || typeof ham.oneri_durumu === "string";
+    if (oneri.tur === "locator_fix" && !nesneMi(oneri.pr) && !birlesik) {
+      try {
+        const fix = nesne(await istek<unknown>("GET", `/failures/${yol(id)}/fix`, { kaynak: HATA_KAYNAGI }));
+        const dolu = Object.fromEntries(Object.entries(fix).filter(([, v]) => v !== null && v !== undefined && !(Array.isArray(v) && v.length === 0)));
+        ham.oneri = { ...oneri, ...dolu };
+      } catch {
+        /* onarım başlamadı (404) ya da uç yok: triage önerisi gösterilir */
+      }
+    }
+    return hataAnaliziUyarla(ham);
+  },
+  /**
+   * Locator onarım PR'ı (engineer): core `FailureToFix` işi → AST koruması → etkilenen tüm testlerde
+   * yerel kontrol → bot PR (202). Kaynağı (triage sonucu) çekirdekteyse uç yokken örnek veriye düşülmez.
+   */
+  onarimPrAc: (id: string) => istek<IsYaniti>("POST", `/failures/${yol(id)}/fix`, { kaynak: HATA_KAYNAGI }),
 
   // Bug taslakları
-  bugTaslaklari: () => istek<BugTaslagi[]>("GET", "/bug-drafts"),
-  bugTaslagi: (id: string) => istek<BugTaslagi>("GET", `/bug-drafts/${yol(id)}`),
-  bugKarari: (id: string, g: BugKararGirdisi) =>
-    istek<BugTaslagi>("POST", `/bug-drafts/${yol(id)}/decision`, { govde: g }),
+  bugTaslaklari: async (): Promise<BugTaslagi[]> => listeUyarla(await istek<unknown>("GET", "/bug-drafts"), bugTaslagiUyarla),
+  bugTaslagi: async (id: string): Promise<BugTaslagi> => bugTaslagiUyarla(nesne(await istek<unknown>("GET", `/bug-drafts/${yol(id)}`))),
+  /** Testçi kararı → `publish_bug` (yeni kayıt / mevcut kayda bağla) ya da ret; içerik hash'ine bağlı. */
+  /** Mükerrer aramasını ve AI taslağını yeniden hazırla (tester; 202). */
+  bugHazirla: (id: string) => istek<IsYaniti>("POST", `/bug-drafts/${yol(id)}/prepare`, { kaynak: BUG_KAYNAGI }),
+  /** Onaylı taslağın Jira yayınını yeniden dene (tester). */
+  bugYayiniYinele: async (id: string): Promise<BugTaslagi> =>
+    bugTaslagiUyarla(nesne(await istek<unknown>("POST", `/bug-drafts/${yol(id)}/publish`, { kaynak: BUG_KAYNAGI }))),
+  bugKarari: async (id: string, g: BugKararGirdisi): Promise<BugTaslagi> => {
+    const govde = g.icerik ? { ...g, icerik: bugIcerikCoreBicimi(g.icerik) } : g;
+    const y = await istek<unknown>("POST", `/bug-drafts/${yol(id)}/decision`, { govde, kaynak: BUG_KAYNAGI });
+    const n = nesne(y);
+    // Core taslağı ya da 202 `{job_id, durum, taslak?}` döndürebilir: taslak yoksa yeniden okunur.
+    if (n.id !== undefined && n.icerik !== undefined) return bugTaslagiUyarla(n);
+    if (nesneMi(n.taslak)) return bugTaslagiUyarla(n.taslak);
+    return bugTaslagiUyarla(nesne(await istek<unknown>("GET", `/bug-drafts/${yol(id)}`)));
+  },
 
   // Kontrol Kulesi ve denetim
   kontrolKulesi: async (): Promise<KontrolKulesi> => kontrolKulesiUyarla(await istek<unknown>("GET", "/control-tower")),
@@ -172,6 +224,8 @@ export const api = {
   // Sunum
   demoKir: () => istek<IsYaniti>("POST", "/demo/break-locator"),
   demoSifirla: () => istek<IsYaniti>("POST", "/demo/reset"),
+  /** Forge main / çalışan demo uygulaması eşleşmesi (salt okuma). */
+  demoDurumu: () => istek<DemoDurumu>("GET", "/demo/status"),
 };
 
 export type Api = typeof api;

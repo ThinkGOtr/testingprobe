@@ -1,0 +1,56 @@
+{
+  "kind": "call",
+  "purpose": "bug_draft",
+  "golden": "kirma-kampanya/HATA",
+  "note": "Elle hazırlandı (canlı model çıktısı değil; ai_call.model = golden-elle). Girdi beyanı (input_match) tp_core.gateway.defects kurucularının ürettiği kanonik metne göredir; uymayan girdi amacın on_miss.json politikasına düşer. Canlı anahtar gelince TP_MODEL_MODE=record ile yeniden kaydedilmeli. Kırma senaryosu (adım 6/12): BREAK_CAMPAIGN açık koşuda 7 adet kampanya testleri (el yazımı cart/page-objects ve üretilen C2) aynı assertion'da kırmızı. Taslak kırılmanın kasıtlı olduğunu ortam satırında söyler.",
+  "input_match": {
+    "sources": [
+      "failure:*",
+      "testdata:*"
+    ],
+    "contains": [
+      "Locator: getByTestId('cart-line-free-P-001')",
+      "Beklenen: \"1\"",
+      "Gerçekleşen: \"0\"",
+      "Kampanya kırılması (BREAK_CAMPAIGN): açık",
+      "7 adet",
+      "- P-001 · \"Portakal Gazozu 1L\" · 25,00 TL"
+    ]
+  },
+  "output": {
+    "summary": "Sepet: 7 adet Portakal Gazozu sepete eklendiğinde bedava adet 1 beklenirken 0 görünüyor",
+    "steps": [
+      "1. bayi1 / Demo123! ile giriş yap",
+      "2. \"Portakal Gazozu 1L\" için 7 adet gir ve \"Sepete ekle\" butonuna bas",
+      "3. Üst menüden sepete git",
+      "4. P-001 satırındaki bedava adedi kontrol et"
+    ],
+    "expected": "P-001 satırında bedava adet 1 (TPD-1 AC2: 7 adette 1 bedava)",
+    "actual": "P-001 satırında bedava adet 0 görünüyor (assertion: beklenen \"1\", gerçekleşen \"0\")",
+    "environment": "Yerel demo ortamı; kampanya kırılması (BREAK_CAMPAIGN) açık — kasıtlı demo kırılması",
+    "evidence": [
+      {
+        "kind": "trace",
+        "ref": "kanit:trace"
+      },
+      {
+        "kind": "screenshot",
+        "ref": "kanit:screenshot"
+      },
+      {
+        "kind": "log",
+        "ref": "kanit:error_context"
+      },
+      {
+        "kind": "allure",
+        "ref": "kanit:allure"
+      }
+    ],
+    "story_key": "TPD-1",
+    "test_case_key": null,
+    "severity_suggestion": "critical",
+    "labels": [
+      "AI-generated"
+    ]
+  }
+}

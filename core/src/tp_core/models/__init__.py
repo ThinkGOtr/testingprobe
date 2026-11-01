@@ -10,10 +10,12 @@ from contextlib import contextmanager
 
 from sqlalchemy.orm import Session
 
+from tp_core.models import bugs_feature as bugs_feature
 from tp_core.models import ci_feature as ci_feature
 from tp_core.models import codegen_feature as codegen_feature
 from tp_core.models import guard as guard
 from tp_core.models import requirements_feature as requirements_feature
+from tp_core.models import triage_feature as triage_feature
 from tp_core.models.base import Base
 from tp_core.models.cases_feature import CaseGoruntuleme as CaseGoruntuleme
 from tp_core.models.delivery import (

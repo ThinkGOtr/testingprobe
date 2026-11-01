@@ -32,6 +32,7 @@ from pydantic import (
 
 from toolchain_common import (
     appsha,
+    aria,
     check_artifacts,
     check_checks_volume,
     check_node,
@@ -40,6 +41,7 @@ from toolchain_common import (
     gitforge,
     proc,
     repos,
+    trace,
 )
 from toolchain_common.api import install_error_handlers
 from toolchain_common.artifacts import release_keep
@@ -56,6 +58,7 @@ from toolchain_common.validation import (
     validate_test_id,
     validate_url_path,
 )
+from worker import affected
 from worker import check as checks
 from worker.astguard import AstGuardError, run_ast_guard
 
@@ -198,9 +201,28 @@ class CheckBody(BaseModel):
     record_check: bool | None = None
     # Koşu dizini temizlikte silinmez (kanıt).
     keep: bool = False
+    # Etkilenen testler (Faz 4 onarımı): e2e köküne göre değişen kaynaklar (pages/…/locators.ts)
+    # ya da "@diff" (base_sha..sha). Kapsamlıdır: asla local-ci kaydı olmaz.
+    affected_by: Annotated[list[str], Field(max_length=50)] = Field(default_factory=list)
+
+    @field_validator("affected_by")
+    @classmethod
+    def _affected(cls, v: list[str]) -> list[str]:
+        return list(
+            dict.fromkeys(
+                x if x == checks.DIFF_MARKER else affected.validate_source_path(x) for x in v
+            )
+        )
 
     @model_validator(mode="after")
     def _record(self) -> CheckBody:
+        if self.affected_by and (self.test_files or self.grep):
+            raise ValueError("affected_by, test_files ve grep ile birlikte verilemez")
+        if self.record_check and self.affected_by:
+            raise ValueError(
+                "etkilenen testlerle kapsamlı kontrol local-ci kaydı olamaz "
+                "(record_check=true yalnızca tam kapsamlı kontrolde)"
+            )
         if self.record_check and (self.break_campaign or self.env.get("BREAK_CAMPAIGN") == "1"):
             raise ValueError(
                 "kırarak doğrulama local-ci kaydı olamaz (record_check=true verilemez)"
@@ -238,6 +260,7 @@ def check(body: CheckBody) -> dict[str, Any]:
         run_id=body.run_id,
         record_check=body.record_check,
         keep=body.keep,
+        affected_by=body.affected_by,
     )
     try:
         return checks.execute(cfg, req)
@@ -264,6 +287,19 @@ class LocatorProbeBody(BaseModel):
     scope_test_id: Annotated[
         str | None, AfterValidator(lambda v: validate_test_id(v, "scope_test_id"))
     ] = Field(None, validation_alias=AliasChoices("scope_test_id", "within_test_id"))
+    # Onarım adayı (ör. "cart-add"): kapsamda tek elemana çözülmeli ve o eleman rol + adı taşımalı.
+    candidate_test_id: Annotated[
+        str | None, AfterValidator(lambda v: validate_test_id(v, "candidate_test_id"))
+    ] = Field(None, validation_alias=AliasChoices("candidate_test_id", "test_id"))
+    # Referans aria snapshot'ı (TP_ARTIFACTS_PATH'e göre, runs/ altında: error-context.md ya da
+    # .yml): rol + ad orada da var mı (§8.7 doğrulaması; ör. son yeşil/ilk kırmızı koşunun kanıtı).
+    aria_snapshot_rel: Annotated[str | None, AfterValidator(lambda v: v and _rel(v))] = None
+
+
+def _rel(value: str) -> str:
+    if len(value) > 500 or any(ord(c) < 32 for c in value):
+        raise ValueError("geçersiz kanıt yolu")
+    return value
 
 
 LOGIN_PATH = "/giris"
@@ -276,6 +312,7 @@ def run_probe(cfg: Settings, body: LocatorProbeBody) -> dict[str, Any]:
         "role": body.role,
         "name": body.name,
         "scope_test_id": body.scope_test_id,
+        "candidate_test_id": body.candidate_test_id,
         "nav_timeout_ms": 15_000,
         "wait_ms": 5_000,
     }
@@ -314,11 +351,50 @@ def locator_probe(body: LocatorProbeBody) -> dict[str, Any]:
     full = loc.sha
     uyum = appsha.match(cfg, loc)
     app_sha, sha_eslesmesi, uyari = uyum.uygulama_sha, uyum.eslesme, uyum.uyari
+    aria_ref = None
+    if body.aria_snapshot_rel:
+        # Yoklamadan önce: geçersiz yol tarayıcı açılmadan 422 olur.
+        try:
+            text = aria.load_snapshot(cfg.artifacts_path, body.aria_snapshot_rel)
+        except aria.AriaSourceError as exc:
+            raise HTTPException(422, f"Aria snapshot okunamadı: {exc}") from exc
+        aria_ref = {
+            "kaynak_rel": body.aria_snapshot_rel,
+            **aria.match(text, body.role, body.name),
+        }
     out = run_probe(cfg, body)
     matches = int(out.get("matches") or 0)
     raw = out.get("test_id")
     test_id = raw if isinstance(raw, str) and TESTID_RE.match(raw) and len(raw) <= 200 else None
     test_ids = [t if isinstance(t, str) else None for t in out.get("test_ids") or []]
+    cand_raw = out.get("candidate") if isinstance(out.get("candidate"), dict) else None
+    aday = None
+    if body.candidate_test_id:
+        c_matches = int((cand_raw or {}).get("matches") or 0)
+        c_role = int((cand_raw or {}).get("role_name_matches") or 0)
+        aday = {
+            "test_id": body.candidate_test_id,
+            "matches": c_matches,
+            "rol_ad_eslesen": c_role,
+            # Aday kapsamda tek elemana çözülüyor ve o eleman aynı rol + adı taşıyor.
+            "gecerli": c_matches == 1 and c_role == 1,
+            "yoklanan_ile_ayni": test_id is not None and test_id == body.candidate_test_id,
+        }
+    aria_text = out.get("aria_snapshot")
+    # Öneriyi engelleyen deterministik nedenler (Türkçe; boş = engel yok).
+    engeller: list[str] = []
+    if matches == 0:
+        engeller.append("rol + ad çalışan uygulamada bulunamadı")
+    elif matches > 1:
+        engeller.append(f"rol + ad {matches} elemana eşleşti (kapsam gerekli)")
+    elif test_id is None:
+        engeller.append("eşleşen elemanda geçerli data-testid yok")
+    if sha_eslesmesi == "farkli":
+        engeller.append("çalışan uygulama istenen commit'le eşleşmiyor")
+    if aria_ref is not None and not aria_ref["var"]:
+        engeller.append("rol + ad referans aria snapshot'ında yok")
+    if aday is not None and not aday["gecerli"]:
+        engeller.append("aday testId kapsamda tek ve aynı rol + adlı elemana çözülmüyor")
     return {
         "matches": matches,
         "test_id": test_id if matches == 1 else None,
@@ -326,13 +402,22 @@ def locator_probe(body: LocatorProbeBody) -> dict[str, Any]:
         "test_id_raw": raw[:200] if isinstance(raw, str) and raw != test_id else None,
         "scope_test_id": body.scope_test_id,
         "scope_matches": out.get("scope_matches"),
+        "page_matches": out.get("page_matches"),
+        "aday": aday,
+        "aria_dogrulama": aria_ref,
+        # Çalışan uygulamadaki kapsayıcının (yoksa sayfanın) aria snapshot'ı: güvenilmeyen veri,
+        # kanıt olarak saklanabilir (rol + ad; testId içermez).
+        "aria_snapshot": aria_text[:8000] if isinstance(aria_text, str) else None,
+        "aria_snapshot_scope": out.get("aria_snapshot_scope"),
         "sha": full,
         "app_url": cfg.probe_base_url,
         "url_path": body.url_path,
         "final_path": out.get("final_path"),
         "http_status": out.get("http_status"),
         # §8.7: yalnızca tek eşleşme ve geçerli testId öneri üretir; 0 / çoklu → insana.
-        "oneri_uretilebilir": matches == 1 and test_id is not None and sha_eslesmesi != "farkli",
+        # Referans aria snapshot'ı ya da aday verildiyse onların doğrulaması da gerekir.
+        "oneri_uretilebilir": not engeller,
+        "engeller": engeller,
         # Ölçüm çalışan uygulamada yapılır; istenen sha ile ilişkisi aşağıda (MIMARI-SOZLESME §2).
         "olculen": "calisan_uygulama",
         "uygulama_sha": app_sha,
@@ -340,6 +425,137 @@ def locator_probe(body: LocatorProbeBody) -> dict[str, Any]:
         "uyari": uyari,
         "farkli_yollar": uyum.farkli_yollar,
     }
+
+
+# ---------------------------------------------------------------------------- /aria-match
+
+
+class AriaMatchBody(BaseModel):
+    """Aria snapshot'ında rol + ad araması (§8.6 kural 3, §8.7 doğrulama). Model yok."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: Annotated[str, AfterValidator(validate_role)]
+    name: Annotated[str, AfterValidator(validate_name)]
+    aria_snapshot_rel: Annotated[str | None, AfterValidator(lambda v: v and _rel(v))] = None
+    aria_snapshot: Annotated[str | None, Field(max_length=200_000)] = None
+    scope_role: Annotated[str | None, AfterValidator(lambda v: v and validate_role(v))] = None
+    scope_name: Annotated[str | None, AfterValidator(lambda v: v and validate_name(v))] = None
+
+    @model_validator(mode="after")
+    def _one_source(self) -> AriaMatchBody:
+        if (self.aria_snapshot_rel is None) == (self.aria_snapshot is None):
+            raise ValueError("aria_snapshot_rel ya da aria_snapshot'tan yalnızca biri verilmeli")
+        return self
+
+
+@app.post("/aria-match", dependencies=AUTH)
+def aria_match(body: AriaMatchBody) -> dict[str, Any]:
+    cfg = settings()
+    if body.aria_snapshot_rel is not None:
+        try:
+            text = aria.load_snapshot(cfg.artifacts_path, body.aria_snapshot_rel)
+        except aria.AriaSourceError as exc:
+            raise HTTPException(422, f"Aria snapshot okunamadı: {exc}") from exc
+    else:
+        text = body.aria_snapshot or ""
+    return {
+        "kaynak_rel": body.aria_snapshot_rel,
+        **aria.match(
+            text, body.role, body.name, scope_role=body.scope_role, scope_name=body.scope_name
+        ),
+    }
+
+
+# ------------------------------------------------------------------------- /trace-summary
+
+
+class TraceSummaryBody(BaseModel):
+    """`trace.zip` özeti (§8.7 alternatif kaynak: DOM snapshot'ından testId). Model yok."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    trace_rel: Annotated[str, AfterValidator(_rel)]
+    role: Annotated[str | None, AfterValidator(lambda v: v and validate_role(v))] = None
+    name: Annotated[str | None, AfterValidator(lambda v: v if v is None else validate_name(v))] = (
+        None
+    )
+    scope_test_id: Annotated[
+        str | None, AfterValidator(lambda v: validate_test_id(v, "scope_test_id"))
+    ] = None
+
+
+@app.post("/trace-summary", dependencies=AUTH)
+def trace_summary(body: TraceSummaryBody) -> dict[str, Any]:
+    cfg = settings()
+    try:
+        return trace.load_and_summarize(
+            cfg.artifacts_path,
+            body.trace_rel,
+            role=body.role,
+            name=body.name,
+            scope_test_id=body.scope_test_id,
+        )
+    except trace.TraceError as exc:
+        raise HTTPException(422, f"Trace okunamadı: {exc}") from exc
+
+
+# ------------------------------------------------------------------------ /affected-tests
+
+
+class AffectedBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sha: Ref
+    changed: Annotated[list[str], Field(max_length=50)] = Field(default_factory=list)
+    base_sha: Annotated[str | None, AfterValidator(lambda v: v and validate_ref(v))] = None
+
+    @field_validator("changed")
+    @classmethod
+    def _changed(cls, v: list[str]) -> list[str]:
+        return [affected.validate_source_path(x) for x in v]
+
+    @model_validator(mode="after")
+    def _source(self) -> AffectedBody:
+        if not self.changed and not self.base_sha:
+            raise ValueError("changed ya da base_sha verilmeli")
+        return self
+
+
+@app.post("/affected-tests", dependencies=AUTH)
+def affected_tests(body: AffectedBody) -> dict[str, Any]:
+    """Değişen e2e kaynaklarından etkilenen spec dosyaları (yalnızca önizleme; koşu yok).
+
+    `/check {affected_by}` aynı hesabı koşudan hemen önce, aynı commit'te yeniden yapar.
+    """
+    cfg = settings()
+    head = _resolve(cfg, body.sha)
+    changed = list(body.changed)
+    try:
+        if body.base_sha:
+            base = _resolve(cfg, body.base_sha, prefer=head.repo)
+            if base.repo != head.repo:
+                raise HTTPException(422, "base ve head aynı depoda değil; karşılaştırılamaz.")
+            changed += affected.changed_files(
+                head.repo, base.sha, head.sha, cfg.e2e_root, cfg.git_timeout_s
+            )
+        changed = list(dict.fromkeys(changed))
+        with gitforge.checkout(head.repo, head.sha, cfg.e2e_root, cfg.git_timeout_s) as e2e:
+            result = (
+                affected.affected_tests(e2e, changed)
+                if changed
+                else {
+                    "yontem": "import_grafi",
+                    "kaynak": [],
+                    "test_files": [],
+                    "tam_kapsam": True,
+                    "tam_kapsam_nedeni": "değişen e2e dosyası yok",
+                    "dosya_sayisi": 0,
+                }
+            )
+    except gitforge.ForgeError as exc:
+        raise HTTPException(503, f"Forge okunamadı: {exc}") from exc
+    return {"sha": head.sha, **result}
 
 
 # ------------------------------------------------------------------------------ /runs/release

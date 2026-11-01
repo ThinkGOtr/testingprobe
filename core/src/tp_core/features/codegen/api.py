@@ -125,9 +125,16 @@ async def merge(
     number: int, body: MergeGirdisi, user: Engineer, response: Response
 ) -> dict[str, Any]:
     from tp_core.features.publish.service import await_job
+    from tp_core.features.repair import service as repair_service
+    from tp_core.features.repair import views as repair_views
 
     def kuyruga_al() -> uuid.UUID:
         with session_scope() as s:
+            # Faz 4: locator onarım PR'ları (`tp/repair-*`) repair şeridinin merge yoluna gider.
+            if repair_service.repair_script_for_pr(s, number) is not None:
+                return repair_service.request_merge(
+                    s, number, user, body.icerik_hash, body.head_sha
+                )
             return service.request_merge(
                 s, number, user, body.icerik_hash, body.head_sha, body.onay_notu
             )
@@ -139,6 +146,9 @@ async def merge(
 
     def pr() -> dict[str, Any] | None:
         with session_scope() as s:
+            onarim_pr = repair_views.pr_response(s, number)
+            if onarim_pr is not None:
+                return onarim_pr
             sc = service.script_for_pr(s, number)
             return views.pr_response(s, number, [sc])
 

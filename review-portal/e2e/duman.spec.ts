@@ -37,10 +37,15 @@ const ROTALAR: { yol: string; ad: string; baslik: RegExp }[] = [
   { yol: "/hatalar/fail-2", ad: "11-triage-locator", baslik: /^Triage sonucu$/ },
   { yol: "/hatalar/fail-1", ad: "12-triage-defect", baslik: /^Triage sonucu$/ },
   { yol: "/bug-taslaklari", ad: "13-bug-taslaklari", baslik: /^Bug taslakları$/ },
-  { yol: "/bug-taslaklari/bug-1", ad: "14-bug-taslak-detay", baslik: /indirimi uygulanmıyor/ },
+  { yol: "/bug-taslaklari/bug-1", ad: "14-bug-taslak-detay", baslik: /7 adet Portakal Gazozu/ },
   { yol: "/kontrol-kulesi", ad: "15-kontrol-kulesi", baslik: /^Kontrol Kulesi$/ },
   { yol: "/denetim", ad: "16-denetim", baslik: /^Denetim$/ },
   { yol: "/claude-code", ad: "17-claude-code", baslik: /^Claude Code kanalı$/ },
+  { yol: "/hatalar/fail-4", ad: "40-triage-c3-defect", baslik: /^Triage sonucu$/ },
+  { yol: "/hatalar/fail-3", ad: "41-triage-ortam", baslik: /^Triage sonucu$/ },
+  { yol: "/bug-taslaklari/bug-4", ad: "42-bug-c3-taslak", baslik: /6 adet Portakal Gazozu/ },
+  { yol: "/bug-taslaklari/bug-3", ad: "43-bug-f2-tutarlilik", baslik: /TPD-1 AC2/ },
+  { yol: "/kosular/run-109", ad: "44-kosu-ortam-hatasi", baslik: /run-109/ },
 ];
 
 test("giriş ekranı", async ({ page }) => {
@@ -337,6 +342,8 @@ for (const tema of ["light", "dark"] as const) {
       ["/gereksinimler/req-ft-1", "Kontrol turu"],
       ["/gereksinimler/req-tpd-1/yayin", "Oluşturulacak kayıtlar"],
       ["/claude-code", "Token oluştur"],
+      ["/hatalar/fail-2", "Locator yoklaması (locator-probe)"],
+      ["/bug-taslaklari/bug-4", "Olası mükerrerler"],
     ];
     const ihlaller: string[] = [];
     for (const genislik of [1440, 390]) {
@@ -388,4 +395,65 @@ test("bilinmeyen sayfa: h1 başlığı var (axe page-has-heading-one)", async ({
   await expect(page.getByRole("heading", { name: "Sayfa bulunamadı", level: 1 })).toBeVisible();
   const sonuc = await new AxeBuilder({ page }).withRules(["page-has-heading-one"]).analyze();
   expect(sonuc.violations.map((v) => v.id)).toEqual([]);
+});
+
+// ---------------------------------------------------------------- Faz 4
+
+test("Faz 4 locator yolu: sunucu kırar → CI kırmızı → triage → mühendis onarım PR'ı → merge", async ({ page }) => {
+  test.setTimeout(120_000);
+  const hatalar = konsolHatalariniTopla(page);
+  await girisYap(page, "sunucu");
+  await page.getByRole("link", { name: "Demo kontrolleri" }).click();
+  await expect(page.getByRole("heading", { name: "Demo kontrolleri", level: 1 })).toBeVisible();
+  await page.getByRole("button", { name: "Locator'ı kır" }).click();
+  await expect(page.getByRole("group", { name: "Locator kırma onayı" })).toBeVisible();
+  await page.screenshot({ path: `${EKRAN_DIZINI}/45-demo-kir-onay.png`, fullPage: true });
+  await page.getByRole("button", { name: "Evet, locator'ı kır" }).click();
+  const ilerleme = page.getByRole("list", { name: "Locator kırılması ilerlemesi" });
+  await expect(ilerleme.getByRole("link", { name: "onarım önerisini aç" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("list", { name: "Demo olay günlüğü" })).toContainText("demo-admin bypass");
+  await page.screenshot({ path: `${EKRAN_DIZINI}/46-demo-kir-ilerleme.png`, fullPage: true });
+  await page.getByRole("button", { name: "Çıkış" }).click();
+  await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
+
+  await girisYap(page, "muhendis");
+  await page.goto("/hatalar/fail-2");
+  await expect(page.getByTestId("triage-sinif")).toContainText("Karar kaynağı: kural");
+  await expect(page.getByRole("region", { name: "Locator yoklaması (locator-probe)" })).toContainText("commit eşleşiyor");
+  await page.screenshot({ path: `${EKRAN_DIZINI}/47-triage-locator-oneri.png`, fullPage: true });
+  await page.getByRole("button", { name: "Onarım PR'ı aç" }).click();
+  const merge = page.getByRole("button", { name: "Onarımı onayla ve merge et" });
+  await expect(merge).toBeEnabled({ timeout: 30_000 });
+  await expect(page.getByRole("list", { name: "Onarım hattı" })).toContainText("3/3 geçti");
+  await page.screenshot({ path: `${EKRAN_DIZINI}/48-onarim-pr-acik.png`, fullPage: true });
+  await merge.click();
+  await expect(page.getByText(/Onarım birleşti/)).toBeVisible();
+  await page.screenshot({ path: `${EKRAN_DIZINI}/49-onarim-birlesti.png`, fullPage: true });
+  expect(hatalar).toEqual([]);
+});
+
+test("Faz 4 bug yolu: C3 defect → triage → TPD-5 mükerrer → testçi bağlar → Jira bağlantısı", async ({ page }) => {
+  const hatalar = konsolHatalariniTopla(page);
+  await girisYap(page, "muhendis");
+  await page.goto("/kod/scr-3");
+  await expect(page.getByRole("button", { name: "Kırarak doğrula" })).toBeDisabled();
+  await page.getByRole("link", { name: "Triage sonucu ve bug taslağı" }).click();
+  await expect(page.getByTestId("triage-sinif")).toContainText("Ürün hatası");
+  await page.getByRole("button", { name: "Çıkış" }).click();
+  await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
+
+  await girisYap(page, "testci");
+  await page.goto("/hatalar/fail-4");
+  await page.getByRole("link", { name: "Bug taslağına git" }).click();
+  const aday = page.getByRole("list", { name: "Mükerrer adayları" }).getByRole("listitem").first();
+  await expect(aday).toContainText("yüksek olasılık");
+  await expect(aday).toContainText("AI gerekçesi");
+  await expect(page.getByText("canlı değerlendirme bekliyor").first()).toBeVisible();
+  await page.screenshot({ path: `${EKRAN_DIZINI}/50-bug-mukerrer-tpd5.png`, fullPage: true });
+  await aday.getByRole("button", { name: "TPD-5 kaydına bağla" }).click();
+  const sonuc = page.getByTestId("yayin-sonucu");
+  await expect(sonuc).toContainText("kaydına bağlandı");
+  await expect(sonuc.getByRole("link")).toHaveAttribute("href", /\/browse\/TPD-5$/);
+  await page.screenshot({ path: `${EKRAN_DIZINI}/51-bug-baglandi.png`, fullPage: true });
+  expect(hatalar).toEqual([]);
 });

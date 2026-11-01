@@ -360,7 +360,7 @@ def test_output_less_miss_row_does_not_shadow_later_row(rules_dir) -> None:
     """Sıkı kipin/ReplayNoOutput'un çıktısız denetim satırı aynı anahtarın sonraki satırını
     yükseltmekten alıkoymaz."""
     store = ReplayStore(rules_dir / "replay")
-    golden = json.loads((rules_dir / "replay/triage/golden/break-campaign.json").read_text())
+    golden = json.loads((rules_dir / "replay/triage/golden/HATA.json").read_text())
     key = "c" * 64
     rows = [
         {
@@ -373,4 +373,4 @@ def test_output_less_miss_row_does_not_shadow_later_row(rules_dir) -> None:
         {"amac": "triage", "mod": "replay_miss", "replay_anahtari": key, "cikti": golden["output"]},
     ]
     outcomes = promote_from_rows(store, rows, dry_run=True)
-    assert [(o.golden, o.reason) for o in outcomes] == [("break-campaign", "deneme")]
+    assert [(o.golden, o.reason) for o in outcomes] == [("HATA", "deneme")]

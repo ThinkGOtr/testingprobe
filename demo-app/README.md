@@ -67,6 +67,10 @@ oturum tabloları ve parola özeti kapalıdır.
   (`addToCart`, `quantityInput`) eleman `within` + ürün kodu kapsayıcısında aranır
   (`product-card-P-001` içinde "Sepete ekle"). `tests/locators.spec.ts`, sayfada birden fazla
   elemana uyan her rol + adın `within` taşıdığını ve her kapsayıcıda tam olarak bir elemana uyduğunu doğrular.
+  Sözleşme bir sayfada geçtikten sonra o sayfanın aria snapshot'ı koşu çıktısına
+  `results/artifacts/<test>/<sayfa>.aria.yml` (`giris`, `katalog`, `sepet`, `siparis`,
+  `siparis-gecmisi`) olarak yazılır: locator onarımı (TEKNIK-TASARIM §8.7) aday rol + adı son yeşil
+  koşunun bu dosyasına karşı doğrular. Kırık koşuda sözleşme önce düştüğü için dosya yazılmaz.
 - Sınıflar: `LoginPage`, `CatalogPage`, `CartPage`, `OrderPage` (`pages/index.ts`). Eylem metotları
   ve `expect*` doğrulama metotları; parametreler `string`/`number`, dönüş `Promise<void>`
   (`OrderPage.readOrderNumber()` hariç). Her public metodun JSDoc'u vardır. Kod üretimi bu imzaları
@@ -169,6 +173,51 @@ Bir doğrulama yanlış değerde Playwright `expect(...)... failed` assertion ha
 hatası değil); yerel kontrol bu ayrımla "defect adayı"nı locator/eşleme hatasından ayırır.
 `npm run break-verify` (`BREAK_VERIFY_GREP` ile) üretilen testlere de aynen uygulanır.
 
+## Locator kırılması ve onarımı (`make break`, Faz 4)
+
+- **Kırılma:** forge'daki `demo/break-locator` dalı `main` + tek commit'tir ve yalnızca
+  `web/src/pages/CatalogPage.tsx`'teki "Sepete ekle" butonunun `data-testid` değerini
+  `add-to-cart` → `cart-add` yapar (rol `button`, ad "Sepete ekle", ürün kartı `product-card-<kod>`
+  aynı kalır). Dal `scripts/forge-init.sh` tarafından üretilir ve doğrulanır (web/src dışı ya da bu
+  değer dışı fark reddedilir). `web/src` içinde `"add-to-cart"` tam olarak bir yerde geçmelidir.
+- **Kırmızı:** butona basan her test `CatalogPage.addToCart` içinde
+  `locator.click: Timeout … waiting for getByTestId('product-card-P-00x').getByTestId('add-to-cart')`
+  ile kalır (toolchain türü `locator_timeout`). `tests/locators.spec.ts` rol/ad karşılaştırmasından önce
+  testId'nin kendisini arar; kırık testId orada da assertion değil
+  `expect(locator).toBeAttached() … getByTestId('product-card-P-001').getByTestId('add-to-cart') …
+  element(s) not found` olarak görünür (`locator_not_found`). Kırılma yüzünden **assertion türünde
+  kırmızı test oluşmaz**; triage bunu ürün hatası değil test bakımı sayar.
+- **Aday:** `catalog.addToCart` `within: "product-card-"` taşır; `/locator-probe {role:"button",
+  name:"Sepete ekle", url_path:"/katalog", scope_test_id:"product-card-P-001"}` kırık uygulamada
+  `matches: 1, test_id: "cart-add"` döner (kapsamsız 4 eşleşme → öneri yok).
+- **Onarım:** yalnızca `e2e/pages/catalog/locators.ts` → `addToCart.testId: "cart-add"`
+  (ast-guard `--mode repair` geçer; başka dosya/alan değişmez). Onarımdan sonra tüm e2e yeşildir.
+- `ci/locator-break-verify.sh` bu dört adımı çalışma ağacına dokunmadan (geçici kopyada, webServer
+  ile) uçtan uca sınar.
+
+### Çalışan uygulamayı forge `main`'den servis etmek
+
+Compose `demo-app-web`'i çalışma ağacındaki `demo-app/web`'den derler (= `demo-baseline`). `make break`,
+`make demo-baseline` ve `make up` içindeki `sync-web`, imajı bunun yerine forge `main` HEAD'inin `web/`
+arşivinden derler (`scripts/forge-init.sh`: `forge_demo archive --ref main --path web | docker build -`)
+ve servisi yeniden oluşturur; derlenen commit `/forge/demo-app-web.sha`'ya yazılır (toolchain
+`TP_APP_BUILD_SHA_FILE`). `web/Dockerfile` bağımsızdır: bağlam yalnızca `web/` dizinidir, yani herhangi
+bir commit'in `web/` arşivi doğrudan derlenebilir:
+
+```bash
+git --git-dir=/forge/demo-app.git archive <sha> web | tar -x --strip-components=1 -C /tmp/web
+docker build -t testingprobe-demo-app-web:local \
+  --build-arg DEMO_APP_BUILD_SHA=<sha> \
+  --build-arg DEMO_APP_WEB_TREE="$(git --git-dir=/forge/demo-app.git rev-parse <sha>:web)" /tmp/web
+docker compose up -d --no-build --no-deps --force-recreate demo-app-web
+```
+
+İsteğe bağlı derleme argümanları `DEMO_APP_BUILD_SHA` ve `DEMO_APP_WEB_TREE` (yalnızca onaltılık; boş
+varsayılan) çalışan uygulamada `GET /build.json` → `{"service":"demo-app-web","sha":"…","web_tree":"…"}`
+olarak döner (`Cache-Control: no-store`). Compose'un çalışma ağacı derlemesinde ikisi de `""`'dir.
+Onarım PR'ı yalnızca `e2e/` değiştirdiği için `web/` ağacı (ve dolayısıyla çalışan uygulama) aynı kalır:
+`web_tree` karşılaştırması merge sonrası yeniden derlemeye gerek olmadığını gösterir.
+
 ## Yerel çalıştırma
 
 ```bash
@@ -182,6 +231,8 @@ DEMOAPP_TEST_PG_RO_URL=postgresql+psycopg://demoapp_ro:…@127.0.0.1:55432/demoa
 cd e2e && npx playwright install chromium
 bash ../ci/run-checks.sh                       # web önizleme portu 18081 (compose'un 8081'iyle çakışmaz)
 npm run break-verify                           # yeşil → kırmızı (yalnızca kampanya testleri, assertion ile) → yeşil
+bash ../ci/locator-break-verify.sh             # locator kırılması: kırmızı (yalnızca getByTestId('add-to-cart')
+                                               # locator hatası) → locators.ts testId onarımı → tamamı yeşil
 npm run lint:generated-selftest                # üretilen test ESLint sözleşmesinin öz denetimi
 node tools/scenario-neutral-check.js [--selftest]  # el yazımı testler 6. adet kampanya sınırını doğrulamaz
                                                # (senaryoya bağlı: ana yol vs f2-kod-hatasi; run-checks.sh koşar)

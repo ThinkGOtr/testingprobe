@@ -28,13 +28,50 @@ ajan); sunum sırasında `make demo-check` koşturmak kod üretimini bozmaz, yal
 | Kırarak doğrula (C2) | bayraksız → `BREAK_CAMPAIGN=1` → bayrak kaldırıldı | yeşil → kırmızı (assertion; `kirma_beklenen_kirmizi`) → yeşil = "Test hata yakalıyor ✓" |
 | Kırarak doğrula (C1, C5) | Kampanya dışı davranış | `weak` (zayıf test): merge engellenmez, açık insan kabulü (`onay_notu`) ister |
 | Merge | İnsan (muhendis) portalda; zorunlu `local-ci` yeşil | push CI koşusu (main) otomatik; deploy/nightly sunucu tetikler |
-| Faz 4 (sonraki) | C3 defect adayı triage → bug taslağı; yinelenen adayı jira-sim **TPD-5** "Kampanya indirimi sepette yanlış hesaplanıyor" | TPD-5 6 adet sınır hatasını anlatır: beklenen bedava 0 adet / indirim 0,00 TL / toplam 150,00 TL; gerçekleşen bedava 1 adet / 25,00 TL / 125,00 TL (C3 golden'ıyla aynı değerler). Faz 4 golden'ları (`triage`/`bug_draft`/`dup_rank` 6-adet senaryosu) henüz yok; `dup_rank/break-campaign` (kırma koşusu: 7 adette indirim 0,00 TL) TPD-5'i yalnızca `medium` + öneri `new` gösterir (farklı belirti). Açık karar: Demo-A'nın F2 `code_defect` bug taslağı da aynı hatadır; Faz 4 dup_rank iç taslakları da sıralamalı ya da o taslak TPD-5'e bağlanmalı |
+| Faz 4: C3 → bug | C3 defect adayı → triage `product_defect` (kural; sinyaller assertion_farki, eleman_bulundu, sayfa_yapisi_beklenen, tutarli_tekrar) → bug taslağı (REPLAY `bug_draft/HATA`) → JQL araması yalnızca **TPD-5**'i bulur → dup_rank `high` + öneri **bağla** | Canlı yığında doğrulandı (2026-10-31): testci "TPD-5 kaydına bağla" → TPD-5'e tek kanıt yorumu, `Relates` TPD-1, `Test` TPD-10 (C3'ün Test issue'su); yeni Bug yok; ikinci karar/yayın 409 (idempotent) |
+| Faz 4: F2/F4 taslakları | Demo-A `code_defect` kararı taslağı hemen mükerrer hattına alır | F2 → TPD-5 `high`/bağla (golden `f2-kampanya`); F4 → tohum Bug'larında JQL aday bulmaz (`aday yok`, dup_rank çağrılmaz), öneri `new`; demo sırasında açılmış kampanya Bug'ları aramaya girerse golden `f4-kredi-limiti` (`optional`/`by_summary`) bunları `low` sıralar (REPLAY-MISS değil); "Onayla ve Jira'da aç" yeni Bug açar (`Relates` TPD-1). Canlı yığında doğrulandı (2026-11-01): F2 → TPD-5'e ikinci kanıt yorumu, bağlantılar tekrarlanmaz; F4 → yeni Bug + `Relates` TPD-1 |
+| Faz 4: kırma koşusu | C2 "Kırarak doğrula" kırmızı aşaması → `product_defect` (`kaynak=kirma`, `kasitli_kirilma`) → taslak (golden `kirma-kampanya`) | dup_rank golden'ları aday kümesini `required`/`optional` + demo sırasında açılabilecek Bug'ların özetleriyle (`by_summary`) beyan eder: TPD-5 ters belirtidir (6 adette erken bedava; kırmada 7 adette bedava yok) → `medium`, öneri **yeni kayıt** (`new`); testçi "Onayla ve Jira'da aç" ile Bug açar (`Relates` TPD-1, `Test` TPD-9 — C2'nin Test issue'su). Önceki kırma Bug'ı aramadaysa o `high`/bağla önerilir. Canlı yığında doğrulandı (2026-11-01). Sıra kısıtı yok. Tek istisna: testçi yayınlanmış bir Bug'ın özetini Jira'da değiştirirse o aday beyan dışı kalır → dürüst REPLAY-MISS |
+| Faz 4: locator | `make break` (ya da sunucu "Locator'ı kır" + `make demo-web-sync`) → demo-app-web main'den derlenir → push CI 19 kırmızı (Demo-B'de C1/C2/C5 merge edildiyse 22), hepsi `test_maintenance/locator` (`catalog.addToCart` add-to-cart → cart-add, kapsam `product-card-P-00x`, sha eşleşiyor) | muhendis "Onarım PR'ı aç" → yalnızca `e2e/pages/catalog/locators.ts` testId (1 satır), AST repair ✓, tam paket 33/33 ✓ → PR → merge (hash + head bağlı) → push CI 33/33 yeşil; 18 kardeş hata aynı PR'la `merged` |
+| Faz 4: ortam | demo-app-web durdurulup CI tetiklenir | `saglik.ok=false` → `environment` (kural, AI çağrısı yok); "Onarım PR'ı aç" 409 |
 
 **Sahne notu (F2 bug taslağı):** Demo-A'da F2 `code_defect` kararı bir tutarlılık bug taslağı
-üretir; bu taslak açık **TPD-5** ile aynı hatadır. Faz 3'te tutarlılık taslakları için mükerrer
-araması yapılmaz; portal "Mükerrer araması yapılmadı (Faz 4)" der ve onay öncesi uyarır. Sahnede
-**"Onayla ve Jira'da aç"a basılmaz** (Jira'da mükerrer kayıt açar); gerekirse "Mevcut kayda bağla"
-ile TPD-5'e bağlanır.
+üretir; bu taslak açık **TPD-5** ile aynı hatadır. Faz 4'te taslak karar anında mükerrer aramasına
+girer ve AI TPD-5'i `high` + "bağla" önerir; sahnede "TPD-5 kaydına bağla" seçilir (yeni kayıt açılmaz).
+
+**Sahne notu (locator):** `make break`'i önceki push/baseline CI koşusu bittikten sonra çalıştırın:
+uygulama koşu ortasında yeniden derlenirse o koşunun kalan testleri yeni testId'yi görür ve dürüstçe
+`unknown`/`environment` sınıflanır (onarım önerisi üretilmez). Sunucu düğmesi kullanılıyorsa host'ta
+`make demo-web-sync A=--watch` açık olmalıdır (core-worker imaj derleyemez). Yeşil koşularda
+`locators.spec.ts` her sayfanın aria snapshot'ını `results/artifacts/<test>/<sayfa>.aria.yml` olarak
+yazar (yalnızca sözleşme geçtiyse); onarımın rol+ad doğrulaması son yeşil koşunun `katalog.aria.yml`
+dosyasıyla yapılır ve kaynak PR'da yazılıdır. `sozlesme_testi` geri dönüşü yalnızca
+`TP_REPAIR_ARIA_FALLBACK=sozlesme` ile ve son yeşil koşuda hiç aria dosyası yoksa kullanılır.
+**Ön koşul:** `make break` / `POST /demo/break-locator` main için yeşil bir koşu ister; yoksa 409 ve
+Türkçe yönerge (`make demo-reset`, yeşil koşu sonra kırma) döner, ret `demo.break_refused` olarak
+denetlenir. Bilerek atlamak için `?zorla=true` / `scripts/demo-break.sh --zorla`. `GET /demo/status`
+`onarim_on_kosulu` alanında durumu gösterir.
+
+**Sahne notu (REPLAY kod üretimi locator demosundan sonra):** REPLAY kod üretimi forge main'in
+başlangıç testId'sinde (`add-to-cart`) olmasını ister. `make break` + onarım merge'inden sonra Demo-B'yi
+tekrar oynatmadan önce `make demo-baseline` (ya da demo sıfırlaması) çalıştırın; aksi halde
+`POST /code/generate` erken ve Türkçe bir mesajla reddeder (canlı modda engel yok).
+
+**Sahne notu (`make demo-reset`):** sunucu sıfırlaması forge'u, açık PR'ları ve demo uygulamasını
+başlangıca döndürür, veritabanını korur. jira-sim **sıfırlanmaz** (anahtar sayacı geri sarılsaydı yeni
+Bug'lar veritabanındaki eski `external_ref` anahtarlarıyla çakışırdı): yalnızca bu sistemin açtığı
+Bug'lar (issuetype Bug + `AI-generated` + `tp-<uuid>` etiketi) silinir; TPD-5, Story/Test issue'ları ve
+insan Bug'ları kalır. Silinen anahtarlar `demo.reset` denetiminde (`sonuc.jira.silinen`). Bu Bug'ları açmış (`karar=new`) taslaklar silinmez ve durumları değişmez; `bug_draft_ek.yayin.jira_silindi` ile işaretlenir (`bug_draft.jira_deleted` denetimi, özet `veritabani.jira_silindi_isaretlenen_taslaklar`): portal ölü bağlantı yerine "Silindi: TPD-n" gösterir. Sonraki yayın yeni anahtar alır (canlıda: TPD-18/19 silindi → yeni Bug TPD-20). Gerçek Jira'ya
+dokunulmaz. Yayından önce Story/Test issue'larının Jira'da varlığı denetlenir; jira-sim elle
+sıfırlandıysa yayın hiçbir şey yazmadan Türkçe hatayla durur ve taslak karara döner (`make reset`).
+
+**Sahne notu (GitHub kipi):** locator kırma/onarım demosu yalnızca `TP_FORGE=local`'dır (çalışan
+demo-app-web GitHub main'inden derlenmez). GitHub kipinde `POST /demo/break-locator` (zorla dahil) 409
+`GITHUB_KIRILMA_YOK` döner, `make break` de reddeder; `GET /demo/status` → `locator_demo.destekleniyor=false`.
+
+**`make break` ön denetimi:** `make break` artık `scripts/demo-break.sh --make` çalıştırır: yeşil temel
+koşu yoksa (ya da core-worker'a ulaşılamazsa) kırmaz; bilerek atlamak için `make break Z=1` (denetim
+`demo.break_forced`). `GET /demo/status` → `forge.e2e_testid` + `locator_durumu`
+(`baseline` | `kirik` | `onarildi`).
 
 Sunum öncesi: `make reset` → Demo-A (yukarıdaki kararlar) → `make demo-check` (çıkış 0 olmalı;
 değilse F2 yanlış karar verilmiştir — ipucunu yazdırır). Alternatif yol (F2 `fix_doc`): AC2 koda uyar

@@ -192,6 +192,8 @@ services:
       TP_AGENT_DEALER: ${TP_AGENT_DEALER:-bayi3}
       TP_AGENT_DEALER_PASSWORD: ${TP_AGENT_DEALER_PASSWORD:-Demo123!}
       TP_DEMO_WEB_URL: http://demo-app-web:8080
+      # Jira'ya yazılan kanıt bağlantılarının kökü (portal nginx /api/artifacts sunar; Faz 4).
+      TP_PUBLIC_BASE_URL: ${TP_PUBLIC_BASE_URL:-http://127.0.0.1:${TP_PORTAL_PORT:-8080}}
       # Yerel CI (Faz 3): gece koşusu saati (Europe/Istanbul; "kapali" kapatır), GitHub yoklama aralığı
       # ve zaman aşımı.
       TP_CI_NIGHTLY_SAAT: ${TP_CI_NIGHTLY_SAAT:-02:00}

@@ -380,6 +380,35 @@ def _mevcut_scriptler(session: Session, case_id: uuid.UUID) -> list[tuple[Script
     )
 
 
+REPLAY_TEMEL_ENGELI = (
+    "REPLAY: kayıtlı tarayıcı adımları demo temel durumundaki uygulamayla (Sepete ekle "
+    "data-testid='add-to-cart') kaydedildi; main'de şu an 'cart-add' var (locator kırılması/"
+    "onarımı merge edilmiş). Kayıtlı adımlar bu uygulamada tekrarlanamaz. Kod üretiminden önce "
+    "main'i temel duruma döndürün: `make demo-baseline` (ya da demo sıfırlama)."
+)
+
+
+def replay_temel_durum_engeli() -> str | None:
+    """REPLAY kipinde main temel durumda değilse (testid `cart-add`) Türkçe engel; yoksa None.
+
+    REPLAY golden'larındaki tarayıcı adımları `[data-testid="add-to-cart"]` ile kaydedildi;
+    locator demosundan (`make break` + onarım merge) sonra çalışan uygulama `cart-add` sunar ve
+    her üretim "kayıtlı adım tekrarlanamadı" ile engellenir (Constitution V doğru davranış).
+    Bu kontrol aynı sonucu üretimi başlatmadan, yapılacak işi söyleyerek verir. Durum
+    belirlenemezse (forge erişilemez, `belirsiz`) engellenmez: işteki doğrulama yine korur.
+    """
+    if beklenen_uretim_modu() != "replay":
+        return None
+    try:
+        from tp_core.integrations.forge_demo import NEW_TESTID, testid_state
+
+        durum = testid_state(_forge(), "main")
+    except Exception as exc:  # forge okunamazsa ön kontrol atlanır
+        log.warning("REPLAY temel durum kontrolü yapılamadı: %s", exc)
+        return None
+    return REPLAY_TEMEL_ENGELI if durum == NEW_TESTID else None
+
+
 def start_generation(
     session: Session, case_ids: Sequence[uuid.UUID], user: Principal
 ) -> dict[str, Any]:
@@ -389,6 +418,9 @@ def start_generation(
         raise CodegenRejected("En az bir case seçin")
     if len(ids) > MAX_CASE:
         raise CodegenRejected(f"Tek istekte en çok {MAX_CASE} case")
+    engel_replay = replay_temel_durum_engeli()
+    if engel_replay:
+        raise CodegenRejected(engel_replay)
     sonuclar: list[dict[str, Any]] = []
     for cid in ids:
         tc = session.get(TestCase, cid, with_for_update=True)
@@ -3091,18 +3123,26 @@ def sync_prs(engine: Engine, forge: ForgePort | None = None) -> dict[str, Any]:
       izlenir (kapatma başarısız olabilir): biri GitHub'da merge edilirse PR kaydı `merged` olur,
       `codegen.superseded_pr_merged` denetime yazılır ve merge sonrası `push` CI'ı tetiklenir;
       script'in durumu değişmez (son durum), merge'ü ilk review başarısına girmez.
+    - Locator onarım PR'ları (`tur='locator_fix'`) onarım semantiğiyle işlenir (`repair_sync`:
+      dış review, hata/kardeş `oneri_durumu`, `repair.merged`, push CI); `ScriptCodegen` aranmaz.
+    - Bir satırın senkronu patlarsa sayılır (`hata`), `codegen.pr_sync_failed` denetime yazılır,
+      diğer PR'lar yine işlenir.
     """
     forge = forge or _forge()
     sonuc_eski = _eski_pr_senkronu(engine, forge)
     with session_scope() as s:
         acik = [
-            (sc.id, sc.pr_no, sc.head_sha)
+            (sc.id, sc.pr_no, sc.head_sha, sc.tur)
             for sc in s.scalars(
-                select(Script).where(Script.durum == "pr_open", Script.pr_no.is_not(None))
+                select(Script).where(
+                    Script.durum == "pr_open",
+                    Script.pr_no.is_not(None),
+                    Script.tur.in_(("test", "locator_fix")),
+                )
             )
         ]
     sonuc = {"bakilan": 0, "merged": 0, "closed": 0, "hata": 0, **sonuc_eski}
-    for sid, no, head in acik:
+    for sid, no, head, tur in acik:
         sonuc["bakilan"] += 1
         try:
             pr = forge.get_pr(int(no))
@@ -3110,26 +3150,72 @@ def sync_prs(engine: Engine, forge: ForgePort | None = None) -> dict[str, Any]:
             log.warning("PR #%s durumu alınamadı: %s", no, exc)
             sonuc["hata"] += 1
             continue
-        if pr.state == "merged":
-            merge_sha, kim = _merge_ayrintisi(forge, int(no))
-            _merged_isaretle(
-                engine, sid, int(no), pr.head_sha or str(head), merge_sha,
-                f"github:{kim}" if kim else "github", kaynak="forge",
-            )  # fmt: skip
-            sonuc["merged"] += 1
-        elif pr.state == "closed":
-            with session_scope() as s:
-                sc, _ = _yukle(s, sid, lock=True)
-                if sc.durum == "pr_open":
-                    transition(s, sc, "closed", SYSTEM, "pr_open", sebep="PR forge'da kapatıldı")
-                    kayit = s.get(PullRequest, int(no))
-                    if kayit is not None:
-                        kayit.durum = "closed"
-                    audit_on_commit(
-                        s, "system", "codegen.pr_closed_external", f"script:{sid}", {"pr": no}
-                    )
-            sonuc["closed"] += 1
+        if pr.state not in ("merged", "closed"):
+            continue
+        try:
+            if tur == "locator_fix":
+                _onarim_pr_senkronu(engine, forge, sid, int(no), pr.state, pr.head_sha or head)
+            else:
+                _test_pr_senkronu(engine, forge, sid, int(no), pr.state, pr.head_sha or head)
+        except Exception as exc:
+            # Tek bozuk satır senkronun geri kalanını durdurmaz; hata denetime yazılır.
+            log.exception("PR #%s senkronu başarısız (script %s)", no, sid)
+            sonuc["hata"] += 1
+            _senkron_hatasi_denetle(engine, sid, int(no), tur, exc)
+            continue
+        sonuc[pr.state] += 1
     return sonuc
+
+
+def _test_pr_senkronu(
+    engine: Engine, forge: ForgePort, sid: uuid.UUID, no: int, state: str, head: str | None
+) -> None:
+    if state == "merged":
+        merge_sha, kim = _merge_ayrintisi(forge, no)
+        _merged_isaretle(
+            engine, sid, no, str(head or ""), merge_sha,
+            f"github:{kim}" if kim else "github", kaynak="forge",
+        )  # fmt: skip
+        return
+    with session_scope() as s:
+        sc, _ = _yukle(s, sid, lock=True)
+        if sc.durum == "pr_open":
+            transition(s, sc, "closed", SYSTEM, "pr_open", sebep="PR forge'da kapatıldı")
+            kayit = s.get(PullRequest, no)
+            if kayit is not None:
+                kayit.durum = "closed"
+            audit_on_commit(s, "system", "codegen.pr_closed_external", f"script:{sid}", {"pr": no})
+
+
+def _onarim_pr_senkronu(
+    engine: Engine, forge: ForgePort, sid: uuid.UUID, no: int, state: str, head: str | None
+) -> None:
+    """Locator onarım PR'ı: onarım semantiğiyle (`repair_sync`), codegen semantiğiyle değil."""
+    from tp_core.features.codegen import repair_sync
+
+    if state == "merged":
+        merge_sha, kim = _merge_ayrintisi(forge, no)
+        repair_sync.merged_isaretle(
+            engine, sid, no, str(head or ""), merge_sha, f"github:{kim}" if kim else "github"
+        )
+    else:
+        repair_sync.closed_isaretle(sid, no)
+
+
+def _senkron_hatasi_denetle(
+    engine: Engine, sid: uuid.UUID, no: int, tur: str, exc: BaseException
+) -> None:
+    try:
+        with engine.begin() as conn:
+            append_audit(
+                conn,
+                "system",
+                "codegen.pr_sync_failed",
+                f"script:{sid}",
+                {"pr": no, "tur": tur, "hata": f"{type(exc).__name__}: {exc}"[:500]},
+            )
+    except Exception:  # pragma: no cover - denetim yazılamazsa günlük yeter
+        log.exception("PR senkron hatası denetime yazılamadı")
 
 
 def _eski_pr_senkronu(engine: Engine, forge: ForgePort) -> dict[str, int]:
@@ -3139,7 +3225,11 @@ def _eski_pr_senkronu(engine: Engine, forge: ForgePort) -> dict[str, int]:
             for sid, no in s.execute(
                 select(Script.id, PullRequest.number)
                 .join(PullRequest, PullRequest.number == Script.pr_no)
-                .where(Script.durum == "closed", PullRequest.durum == "open")
+                .where(
+                    Script.durum == "closed",
+                    Script.tur == "test",
+                    PullRequest.durum == "open",
+                )
             ).all()
         ]
     out = {"eski_bakilan": 0, "eski_merged": 0, "eski_closed": 0}

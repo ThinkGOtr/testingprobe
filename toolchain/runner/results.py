@@ -79,6 +79,65 @@ _TEST_DATA_RE = re.compile(
 )
 FIXTURE_FILES = ("tests/fixtures.ts",)
 
+# Playwright locator metni: `getByTestId('product-card-P-001').getByTestId('add-to-cart')`,
+# `getByRole('button', { name: 'Sepete ekle' })`, `locator('[data-testid="x"]')`.
+_Q = r"""(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)")"""
+_TESTID_CALL_RE = re.compile(r"getByTestId\(\s*" + _Q + r"\s*\)")
+_TESTID_ATTR_RE = re.compile(r"""\[data-testid=(?:\\?["'])([^"'\\\]]+)(?:\\?["'])s?\]""")
+_ROLE_CALL_RE = re.compile(
+    r"getByRole\(\s*" + _Q + r"(?:\s*,\s*\{[^}]*?\bname:\s*" + _Q + r"[^}]*\})?\s*\)"
+)
+MAX_LOCATOR_IDS = 10
+
+
+def _unquote(single: str | None, double: str | None) -> str | None:
+    raw = single if single is not None else double
+    if raw is None:
+        return None
+    return re.sub(r"\\(.)", r"\1", raw)
+
+
+def parse_locator(locator: str | None) -> dict[str, Any]:
+    """Locator metninden testId zinciri ve rol + ad (biçimsel çıkarım, karar değil).
+
+    `locator_test_id` zincirdeki son testId'dir (aranan eleman); `locator_scope_test_id` ondan
+    önceki testId'dir (kapsayıcı, ör. `product-card-P-001` — `within` + ürün kodu). Locator
+    getByRole ise `locator_role`/`locator_name` dolar. Metin güvenilmeyen veridir: kırpılır.
+    """
+    out: dict[str, Any] = {
+        "locator_test_ids": [],
+        "locator_test_id": None,
+        "locator_scope_test_id": None,
+        "locator_role": None,
+        "locator_name": None,
+    }
+    if not locator:
+        return out
+    found: list[tuple[int, str]] = []
+    for m in _TESTID_CALL_RE.finditer(locator):
+        v = _unquote(m.group(1), m.group(2))
+        if v is not None:
+            found.append((m.start(), v))
+    for m in _TESTID_ATTR_RE.finditer(locator):
+        found.append((m.start(), m.group(1)))
+    found.sort()
+    ids = [_clip(v, 200) for _, v in found][:MAX_LOCATOR_IDS]
+    out["locator_test_ids"] = ids
+    roles = list(_ROLE_CALL_RE.finditer(locator))
+    role_last = bool(roles) and (not found or roles[-1].start() > found[-1][0])
+    if ids and role_last:
+        # getByTestId(kapsayıcı).getByRole(...): aranan eleman rol + adla bulunur.
+        out["locator_scope_test_id"] = ids[-1]
+    elif ids:
+        out["locator_test_id"] = ids[-1]
+        out["locator_scope_test_id"] = ids[-2] if len(ids) > 1 else None
+    if role_last:
+        m = roles[-1]
+        out["locator_role"] = _clip(_unquote(m.group(1), m.group(2)), 40)
+        name = _unquote(m.group(3), m.group(4))
+        out["locator_name"] = _clip(name, 200) if name is not None else None
+    return out
+
 
 def strip_ansi(text: str) -> str:
     return ANSI_RE.sub("", text)
@@ -244,6 +303,7 @@ def classify_error(messages: list[str], location_file: str | None = None) -> dic
         "matcher": matcher,
         "action": action,
         "locator": locator,
+        **parse_locator(locator),
         "expected": expected,
         "received": received,
         "timeout_ms": timeout_ms,
@@ -326,6 +386,14 @@ def failure_inputs(
         evidence[key] = {"path": str(p), "rel": rel, "exists": p.is_file()}
     ctx = evidence["error_context"]
     aria, aria_scope = _aria_snapshot(Path(ctx["path"])) if ctx and ctx["exists"] else (None, None)
+    page_location = next(
+        (
+            f
+            for f in ([location] if location else []) + frames
+            if f and f["file"].startswith("pages/")
+        ),
+        None,
+    )
 
     return {
         **info,
@@ -339,6 +407,11 @@ def failure_inputs(
         "evidence": evidence,
         "aria_snapshot": aria,
         "aria_snapshot_scope": aria_scope,
+        # Kısayollar (Faz 4 triage): kanıt dosyalarının TP_ARTIFACTS_PATH'e göre yolları ve
+        # hatanın page object konumu (`pages/catalog/catalog.page.ts`; onarım kapsamı için).
+        "aria_snapshot_rel": ctx["rel"] if ctx and ctx["exists"] and aria is not None else None,
+        "trace_rel": (evidence["trace"] or {}).get("rel") if evidence["trace"] else None,
+        "page_location": page_location,
     }
 
 

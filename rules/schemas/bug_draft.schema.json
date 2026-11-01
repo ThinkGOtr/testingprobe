@@ -73,7 +73,8 @@
     "test_case_key": {
       "anyOf": [
         {
-          "type": "string"
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]+-[0-9]+$"
         },
         {
           "type": "null"

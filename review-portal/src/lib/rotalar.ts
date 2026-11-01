@@ -18,6 +18,7 @@ const ROTA_KALIPLARI: RegExp[] = [
   /^\/kontrol-kulesi$/,
   /^\/denetim$/,
   /^\/claude-code$/,
+  /^\/demo$/,
 ];
 
 export function uygulamaRotasiMi(yol: string): boolean {

@@ -62,7 +62,7 @@ from tp_core.gateway.errors import (
     ReplayNoOutput,
     ReplayNotFound,
 )
-from tp_core.gateway.matching import MATCHED, input_mismatches
+from tp_core.gateway.matching import MATCHED, input_mismatches, matched_output
 
 ReplayMode = Literal["replay", "replay_miss"]
 PROMOTED = "golden_promoted"
@@ -187,15 +187,15 @@ class ReplayStore:
         record = _read(golden) if golden.is_file() else None
         reasons = self.golden_mismatches(record, messages) if record is not None else []
         if record is not None and not reasons:
-            return {**record, "provenance": MATCHED}, "replay", golden
+            return _matched(record, messages, golden), "replay", golden
         for name, path in self._later_rounds(purpose, golden_name):
             sibling = _read(path)
             if "input_match" in sibling and not self.golden_mismatches(sibling, messages):
-                return {**sibling, "provenance": MATCHED, "golden": name}, "replay", path
+                return _matched(sibling, messages, path, golden=name), "replay", path
         for name, path in self._scenario_candidates(purpose, golden_name):
             variant = _read(path)
             if "input_match" in variant and not self.golden_mismatches(variant, messages):
-                return {**variant, "provenance": MATCHED, "golden": name}, "replay", path
+                return _matched(variant, messages, path, golden=name), "replay", path
         if self.strict:
             raise ReplayMiss(purpose, key, golden_name)
         if record is None:
@@ -380,6 +380,19 @@ def _round_files(folder: Path, golden_name: str) -> list[tuple[str, Path]]:
 def glob_escape(name: str) -> str:
     """`glob` özel karakterlerini kaçırır (golden adları `_GOLDEN_RE` ile sınırlı; yine de)."""
     return re.sub(r"([*?\[])", r"[\1]", name)
+
+
+def _matched(
+    record: Mapping[str, Any], messages: Sequence[Any] | None, path: Path, **extra: Any
+) -> dict[str, Any]:
+    """Girdiye uyan golden'ın döndürülen kopyası: `provenance = golden_matched`; aday kümesi
+    beyan eden (dup_rank) golden'ın çıktısı girdideki gerçek kümeye göre kurulur
+    (`matching.matched_output`)."""
+    try:
+        output = matched_output(record, messages)
+    except ValueError as exc:
+        raise GatewayConfigError(f"{path}: {exc}") from exc
+    return {**record, "provenance": MATCHED, **extra, "output": output}
 
 
 def _read(path: Path) -> dict[str, Any]:

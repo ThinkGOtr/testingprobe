@@ -402,11 +402,15 @@ def test_only_declared_sources_are_read() -> None:
 
 
 def test_golden_without_declaration_stays_replay_miss(rules_dir) -> None:
+    """Beyansız golden (Faz 4'ten beri depoda yok) girdiyi bilmez: her zaman REPLAY-MISS."""
+    folder = rules_dir / "replay" / "triage" / "golden"
+    (folder / "beyansiz.json").write_text(
+        json.dumps({"kind": "call", "purpose": "triage", "golden": "beyansiz", "output": {}}),
+        encoding="utf-8",
+    )
     store = ReplayStore(rules_dir / "replay")
-    record, mode, _ = store.lookup("triage", "0" * 64, "break-campaign", [])
+    record, mode, _ = store.lookup("triage", "0" * 64, "beyansiz", [])
     assert mode == "replay_miss"
     assert record["_mismatch"] == ["golden girdi beyanı (input_match) içermiyor"]
     with pytest.raises(ReplayMiss):
-        ReplayStore(rules_dir / "replay", strict=True).lookup(
-            "triage", "0" * 64, "break-campaign", []
-        )
+        ReplayStore(rules_dir / "replay", strict=True).lookup("triage", "0" * 64, "beyansiz", [])

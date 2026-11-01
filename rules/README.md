@@ -111,7 +111,8 @@ doğrulanır. Birebir kayıtlar iki yolla üretilir:
 - **Golden adı** çağıranın verdiği `replay_key["name"]`'dir; `golden_name()` ile üretilir:
   story düzeyi `TPD-1`; case düzeyi (verify_and_map) `TPD-1-C<sira_no>`; tutarlılık denetiminin
   2. ve sonraki turları `TPD-1-r2` (düzeltilmiş doküman: engelleyici bulgu yok → "son hal");
-  triage/bug için senaryo adı, ör. `break-campaign`.
+  triage / bug_draft / dup_rank için sabit kök `HATA` (`defect_replay_key(story_key)`); hangi hata
+  olduğu adla değil girdi beyanıyla seçilir (`replay/README.md` "Faz 4").
 - TPD-1 golden'ları adım 2 sonrası **düzeltilmiş** dokümana göredir: AC2 "her 6 adette 1 adet
   bedava (5 öde + 1 bedava)",
   AC3 "kampanyasız siparişlerde minimum 750,00 TL", AC6 korunur (kod kampanyalı sepette minimumu
@@ -129,7 +130,9 @@ doğrulanır. Birebir kayıtlar iki yolla üretilir:
   (`recording`: model, provider, latency_ms, token'lar; `recorded_at`) olmayan replay çıktısı
   `ai_call.model = "golden-elle"` ve `ek.cikti_kokeni = "elle_hazirlanmis"` ile yazılır; model
   kaydı gibi sunulmaz. Kullanıcı etiketi için `tp_core.gateway.mode_label(mode, ai_call.model)`.
-- Nötr REPLAY-MISS yedeği: `replay/<amaç>/on_miss.json` (bugün yalnızca `requirement_review`).
+- REPLAY-MISS politikası: `replay/<amaç>/on_miss.json` — nötr yedek (`requirement_review`,
+  `consistency_check`, `triage` → `unknown`) ya da `"policy": "raise"` (`case_generation`,
+  `verify_and_map`, `bug_draft`, `dup_rank`).
   Beyanlı golden girdiye uymazsa golden yerine bu çıktı döner (`ek.replay_kokeni = miss_neutral`);
   ayrıntı `replay/README.md`.
 
@@ -187,12 +190,16 @@ varsa çıkış 1. Bu tablo kayıtla aynı olmalıdır (`test_evaluation_status.
 | `consistency-check` | v4 | **canlı değerlendirme bekliyor** |
 | `case-generation` | v2 | **canlı değerlendirme bekliyor** |
 | `verify-and-map` (+ `verify_and_map` golden'ları) | v3 | **canlı değerlendirme bekliyor** |
-| `triage` | v1 | **canlı değerlendirme bekliyor** |
-| `bug-draft` | v1 | **canlı değerlendirme bekliyor** |
-| `dup-rank` | v1 | **canlı değerlendirme bekliyor** |
+| `triage` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirme bekliyor** |
+| `bug-draft` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirme bekliyor** |
+| `dup-rank` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirme bekliyor** |
 
 Bu depoda hiçbir prompt paketi canlı modelle değerlendirilmedi (replay kayıtlarında `recording`
-üst verisi yok); Faz 3'te değişen paket `verify-and-map` v3'tür.
+üst verisi yok); Faz 3'te değişen paket `verify-and-map` v3'tür, Faz 4'te `triage`, `bug-draft`
+ve `dup-rank` v2'dir (kanonik girdi kurucuları `tp_core.gateway.defects`, yeni golden'lar; ayrıntı
+`replay/README.md` "Faz 4"). Geçit her `ai_call.ek.degerlendirme`'ye paketin durumunu yazar
+(`{paket, surum, durum, etiket}`; `etiket` = "canlı değerlendirme bekliyor"); portal bunu AI
+çıktısının yanında gösterebilir (`tp_core.gateway.evaluation_summary`).
 
 `prompts/verify-and-map.md` v3 ve verify_and_map golden'ları bu ortamda canlı modelle
 değerlendirilmedi: API kimlik bilgisi yok (yalnızca REPLAY; golden çıktıları elle hazırlanmıştır,

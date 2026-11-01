@@ -11,6 +11,13 @@ kesildiyse bırakılır (ölçeklenmiş kopyanın canlı işlerine dokunulmaz). 
 modüllerinin `on_worker_start` kancaları koşar; DB hazır değilken başarısız olan kanca sonraki
 turlarda başarılı olana dek yeniden denenir (Docker yeniden başlatma yarışı).
 
+İki yürütme yuvası (şerit): uzun işler (`ci.run`, `repair.fix`, kod üretimi, demo kırılması …;
+`uzun_serit_turleri()`) ayrı bir iş parçacığında, geri kalan her şey ana döngüde koşar. Böylece
+20 dakikalık bir CI koşusu ya da onarımın tam yerel kontrolü PO etiket sorgusunu
+(`requirements.po_poll`) ve triage taramasını bekletmez. Uzun şerit kendi içinde sıralıdır
+(toolchain `/check` zaten tek kilitli). `TP_WORKER_UZUN_SERIT=0` eski tek yuvalı davranışa döner;
+o durumda uzun bir iş süresince diğer işler (PO onayı alımı dahil) iş bitene kadar gecikir.
+
 Bir iş `zaman_asimi_s` içinde bitmezse iş `retry`/`failed` yazılır ve süreç
 `ZAMAN_ASIMI_CIKIS_KODU` ile çıkar (asılı iş parçacığı öldürülemez; compose yeniden başlatır).
 
@@ -31,7 +38,7 @@ import tempfile
 import threading
 import time
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -51,6 +58,7 @@ from tp_core.workflow.jobs import (
     process_one,
     reap_stale,
     release_orphans,
+    uzun_turler,
     worker_id,
 )
 
@@ -151,6 +159,18 @@ _sahipsizler_birakildi = False
 # Henüz başarıyla koşmamış `on_worker_start` kancalarının modülleri (main doldurur).
 _bekleyen_kancalar: list[str] = []
 _kanca_sonraki = 0.0
+# Ana (genel) döngünün almayacağı türler: uzun şerit açıkken `run()` doldurur.
+_genel_haric: list[str] | None = None
+
+
+def uzun_serit_turleri() -> frozenset[str]:
+    """Ayrı yuvada koşacak türler (boş = tek yuva). Yapılandırma + `serit="uzun"` kayıtları."""
+    from tp_core.config import get_settings
+
+    ayar = get_settings()
+    if not ayar.worker_uzun_serit:
+        return frozenset()
+    return uzun_turler(ayar.worker_uzun_turler.split(","))
 
 
 def tek_tur() -> bool:
@@ -175,7 +195,7 @@ def tek_tur() -> bool:
         _son_reap = time.monotonic()
         if n:
             log.warning("%d zaman aşımına uğramış iş yeniden kuyruğa alındı", n)
-    sonuc = process_one(engine, canli=canli)
+    sonuc = process_one(engine, canli=canli, haric=_genel_haric)
     if sonuc is not None and sonuc.zaman_asimi:
         raise ZamanAsimiCikisi(sonuc.hata or "iş zaman aşımına uğradı")
     return sonuc is not None
@@ -187,16 +207,57 @@ def _kisa_hata(exc: BaseException) -> str:
     return (satirlar[0] if satirlar else type(kok).__name__)[:200]
 
 
-def run(dur: threading.Event, aralik: float = 1.0) -> int:
-    """Kuyruk döngüsü; çıkış kodu döndürür (0 = durduruldu, `ZAMAN_ASIMI_CIKIS_KODU`)."""
+def uzun_tur(turler: Collection[str]) -> bool:
+    """Uzun şeritten bir iş işler (yalnızca `turler`); iş yoksa False."""
+    sonuc = process_one(get_engine(), canli=canli, turler=sorted(turler))
+    if sonuc is not None and sonuc.zaman_asimi:
+        raise ZamanAsimiCikisi(sonuc.hata or "iş zaman aşımına uğradı")
+    return sonuc is not None
+
+
+def run(dur: threading.Event, aralik: float = 1.0, *, uzun: Collection[str] | None = None) -> int:
+    """Kuyruk döngüsü; çıkış kodu döndürür (0 = durduruldu, `ZAMAN_ASIMI_CIKIS_KODU`).
+
+    `uzun` boş değilse bu türler ayrı bir iş parçacığında (uzun şerit) koşar, ana döngü onları
+    almaz. Herhangi bir şeritte zaman aşımı tüm süreci `ZAMAN_ASIMI_CIKIS_KODU` ile durdurur.
+    """
+    global _genel_haric
     log.info("worker başladı; işleyiciler: %s", ", ".join(sorted(REGISTRY)))
+    if not uzun:
+        return _dongu(dur, aralik, lambda: tek_tur(), "genel")
+    log.info("uzun şerit ayrı yuvada: %s", ", ".join(sorted(uzun)))
+    _genel_haric = sorted(uzun)
+    kodlar: list[int] = []
+
+    def serit() -> None:
+        kod = _dongu(dur, aralik, lambda: uzun_tur(uzun), "uzun")
+        if kod:
+            kodlar.append(kod)
+        dur.set()  # uzun şerit zaman aşımıyla çıktıysa ana döngü de durur
+
+    t = threading.Thread(target=serit, name="serit-uzun", daemon=True)
+    t.start()
+    try:
+        kod = _dongu(dur, aralik, lambda: tek_tur(), "genel")
+    finally:
+        dur.set()
+        _genel_haric = None
+    # Uzun şerit bir işin ortasındaysa beklenmez: süreç çıkınca iş sahipsiz kalır ve sonraki
+    # açılışta `release_orphans` ile bırakılır (tek yuvalı çıkışla aynı sonuç).
+    t.join(timeout=5)
+    if t.is_alive():
+        log.warning("uzun şerit bir işin ortasında; iş sonraki açılışta bırakılacak")
+    return kod or (kodlar[0] if kodlar else 0)
+
+
+def _dongu(dur: threading.Event, aralik: float, adim: Callable[[], bool], ad: str) -> int:
     db_bekleme: float | None = None  # None = bağlantı sağlıklı
     while not dur.is_set():
         canli()
         try:
-            calisti = tek_tur()
+            calisti = adim()
         except ZamanAsimiCikisi as exc:
-            log.error("worker yeniden başlatılmak üzere çıkıyor: %s", exc)
+            log.error("worker yeniden başlatılmak üzere çıkıyor (%s şeridi): %s", ad, exc)
             return ZAMAN_ASIMI_CIKIS_KODU
         except DB_HATALARI as exc:
             db_bekleme = aralik if db_bekleme is None else min(db_bekleme * 2, DB_BEKLEME_UST_S)
@@ -205,7 +266,7 @@ def run(dur: threading.Event, aralik: float = 1.0) -> int:
             dur.wait(db_bekleme)
             continue
         except Exception:
-            log.exception("kuyruk turu başarısız; yeniden denenecek")
+            log.exception("kuyruk turu başarısız (%s şeridi); yeniden denenecek", ad)
             dur.wait(aralik)
             continue
         if db_bekleme is not None:
@@ -213,7 +274,7 @@ def run(dur: threading.Event, aralik: float = 1.0) -> int:
             db_bekleme = None
         if not calisti:
             dur.wait(aralik)
-    log.info("worker durdu")
+    log.info("worker durdu" if ad == "genel" else f"{ad} şeridi durdu")
     return 0
 
 
@@ -286,7 +347,7 @@ def main() -> None:
     dur = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: dur.set())
-    kod = run(dur, get_settings().worker_poll_interval_s)
+    kod = run(dur, get_settings().worker_poll_interval_s, uzun=uzun_serit_turleri())
     if kod:
         # Asılı işleyici iş parçacığı normal çıkışı bekletebilir; süreç hemen sonlanır.
         logging.shutdown()

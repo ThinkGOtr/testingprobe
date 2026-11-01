@@ -108,7 +108,7 @@ describe("örnek veri yalnızca core durumlarını üretir", () => {
     await api.prBirlestir((await api.script("scr-2")).pr!);
     await api.logout();
     await oturumAc("testci");
-    await api.bugKarari("bug-1", { icerik_hash: (await api.bugTaslagi("bug-1")).icerik_hash, karar: "dismiss" });
+    await api.bugKarari("bug-1", { icerik_hash: (await api.bugTaslagi("bug-1")).icerik_hash, karar: "dismiss", gerekce: "hata değil" });
     topla();
     for (const [ad, kume] of Object.entries(gorulen)) {
       for (const d of kume) expect(M[ad].states, `${ad}: ${d}`).toContain(d);

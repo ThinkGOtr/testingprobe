@@ -1857,6 +1857,134 @@ mark.kaynak-deger {
   }
 }
 
+/* ---------------------------------------------------------------- triage (Faz 4) */
+
+.rozet-degerlendirme {
+  background: var(--surface-3);
+  color: var(--text-2);
+  border-color: var(--border-strong);
+  letter-spacing: 0;
+  font-weight: 600;
+}
+.kanit-izgara {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 20px;
+  margin-bottom: 8px;
+}
+.kanit-izgara > section {
+  min-width: 0;
+}
+@media (max-width: 760px) {
+  .kanit-izgara {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.kanit-baslik {
+  font-size: 0.9rem;
+  margin: 0 0 6px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.tanim-izgara {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 14px;
+  margin: 0 0 8px;
+  font-size: 0.875rem;
+}
+.tanim-izgara dt {
+  color: var(--muted);
+}
+.tanim-izgara dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.sinyal-kanit {
+  margin-top: 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.onarim-asamalari {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.onarim-asamalari li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+.onarim-asamalari li:first-child {
+  border-top: none;
+}
+.asama-isaret {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 50%;
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+.onarim-merge {
+  border-top: 1px dashed var(--border);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+.etkilenen-testler summary {
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+.aday-olasilik {
+  font-size: 0.75rem;
+}
+.mukerrer-liste li.aday-oneri {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.aday-eylemler {
+  margin-top: 8px;
+}
+.demo-adimlari {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+.demo-adimlari li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+.demo-adimlari li:first-child {
+  border-top: none;
+}
+.karar-paneli-uclu {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@media (max-width: 960px) {
+  .karar-paneli-uclu {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.onay-kutusu {
+  border: 1px solid var(--warn);
+  background: var(--warn-bg);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin-top: 12px;
+}
+
 /* ---------------------------------------------------------------- kontrol kulesi */
 
 .kule-izgara {

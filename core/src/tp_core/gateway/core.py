@@ -54,6 +54,7 @@ from tp_core.gateway.errors import (
     ReplayNotFound,
     SchemaValidationFailed,
 )
+from tp_core.gateway.evaluation import evaluation_summary
 from tp_core.gateway.masking import (
     MaskingSession,
     PiiMasker,
@@ -282,6 +283,7 @@ _EXTRA_KEYS = (
     "onbellek_okuma_token",
     "onbellek_yazma_token",
     "yedek_model",
+    "degerlendirme",
 )
 
 
@@ -384,8 +386,20 @@ class Gateway:
         self.secret_values = frozenset(v for v in secret_values if v)
         self._sessions: dict[UUID, MaskingSession] = {}
         self._bundles: dict[tuple[str, str, str], Bundle] = {}
+        self._evaluations: dict[str, dict[str, Any]] = {}
 
     # ---------------------------------------------------------------- yardımcılar
+
+    def evaluation_of(self, bundle_id: str) -> dict[str, Any]:
+        """Paketin canlı değerlendirme durumu (`rules/evaluations.yaml`, constitution X).
+
+        `{"paket", "surum", "durum": pending|evaluated|waived|stale|missing, "etiket"}`; geçit
+        her `ai_call` satırının `ek.degerlendirme` alanına yazar. Süreç başına önbelleklenir.
+        """
+        cached = self._evaluations.get(bundle_id)
+        if cached is None:
+            cached = self._evaluations[bundle_id] = evaluation_summary(self.rules_dir, bundle_id)
+        return dict(cached)
 
     @property
     def provider_name(self) -> str:
@@ -448,6 +462,9 @@ class Gateway:
             "bundle_hash": bundle.hash,
             "replay": mode,
             "replay_anahtari": key,
+            # Constitution X: paketin canlı değerlendirme durumu (portal "canlı değerlendirme
+            # bekliyor" etiketini buradan gösterir; `ek.degerlendirme`).
+            "degerlendirme": self.evaluation_of(bundle.id),
         }
 
     def _record(self, row: dict[str, Any]) -> UUID:

@@ -537,7 +537,11 @@ def test_demo_a_goldens_declare_their_input() -> None:
 @pytest.mark.parametrize(("purpose", "path", "golden"), DECLARED, ids=_ids(DECLARED))
 def test_input_match_declarations_are_well_formed(purpose: str, path: Path, golden: dict) -> None:
     spec = golden["input_match"]
-    assert set(spec) <= {"sources", "acceptance_criteria", "contains", "case_text"}, spec
+    assert set(spec) <= {"sources", "acceptance_criteria", "contains", "case_text", "candidates"}
+    # Aday kümesi beyanı yalnızca mükerrer sıralamasında (arama sonucu bloğuyla birlikte).
+    assert "candidates" not in spec or (
+        purpose == "dup_rank" and "jira-arama:*" in spec["sources"]
+    ), spec
     assert (
         spec.get("acceptance_criteria") is not None or spec.get("contains") or spec.get("case_text")
     ), "boş beyan"

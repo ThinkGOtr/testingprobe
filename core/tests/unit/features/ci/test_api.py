@@ -78,7 +78,11 @@ def test_runs_listesi_ve_detay(
     d = api.get(f"/runs/{rid}").json()
     t = {x["test_adi"]: x for x in d["sonuclar"]}
     alti = t["TPD-1 › 6 adet → bedava yok"]
-    assert alti["durum"] == "failed" and alti["retry"] == 1 and alti["failure_id"] is None
+    assert alti["durum"] == "failed" and alti["retry"] == 1
+    # Faz 4: kırmızı koşu triage'a gider; worker işledikten sonra failure_id + sınıf dolar.
+    if alti["failure_id"] is not None:
+        assert alti["triage_sinifi"] is not None
+        assert alti["failure_id"] in {h["id"] for h in d["hatalar"]}
     assert [e["url"] for e in alti["ekler"]] == [
         f"/api/artifacts/runs/{rid}/src/e2e/results/artifacts/kampanya-6/test-failed-1.png",
         f"/api/artifacts/runs/{rid}/src/e2e/results/artifacts/kampanya-6/trace.zip",

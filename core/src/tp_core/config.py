@@ -115,6 +115,18 @@ class Settings(BaseSettings):
 
     # --- Worker
     worker_poll_interval_s: float = Field(default=1.0, validation_alias="TP_WORKER_POLL_S")
+    # Uzun işler (tam `/check` koşan CI koşusu, onarım yerel kontrolü, kod üretimi/kırma
+    # doğrulaması, demo kırılması/sıfırlaması) ayrı bir yürütme yuvasında koşar; genel şerit
+    # (PO etiket sorgusu, triage taraması, onay/yayın işleri) onları beklemez. Liste,
+    # `serit="uzun"` ile kaydolan işleyicilere eklenir. `TP_WORKER_UZUN_SERIT=0` tek yuvaya döner
+    # (tüm işler sırayla; uzun bir CI koşusu süresince PO sorgusu ve triage taraması gecikir).
+    worker_uzun_serit: bool = Field(default=True, validation_alias="TP_WORKER_UZUN_SERIT")
+    worker_uzun_turler: str = Field(
+        default=(
+            "ci.run,repair.fix,codegen.generate,codegen.break_verify,demo.break_locator,demo.reset"
+        ),
+        validation_alias="TP_WORKER_UZUN_TURLER",
+    )
 
     @model_validator(mode="after")
     def _db_auth(self) -> "Settings":

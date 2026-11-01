@@ -40,6 +40,32 @@ export const BILINEN_OLAYLAR = [
   "codegen.branch",
   "codegen.reviewed",
   "pr.merged",
+  // Faz 4 (triage, onarım, bug, demo): core adları sözleşmede sabitlenince burada kalır; mock aynı adları üretir.
+  "failure.updated",
+  "repair.started",
+  "repair.step",
+  "repair.proposed",
+  "repair.checked",
+  "repair.pr_opened",
+  "repair.blocked",
+  "repair.ci_failed",
+  "repair.merged",
+  "bug.draft_created",
+  "bug.draft_ready",
+  "bug.draft_edited",
+  "bug.prepare_failed",
+  "bug.publish_failed",
+  "bug.dismissed",
+  "bug.reopened",
+  "demo.break",
+  "demo.break_failed",
+  "demo.web_waiting",
+  "demo.web_ready",
+  "demo.web_timeout",
+  "demo.ci_enqueued",
+  "demo.ci_skipped",
+  "demo.reset",
+  "demo.progress",
 ] as const;
 
 /** Ayrıntılı olayın ek konuları (sayfalar konuya abone olur, olay adına değil). */
@@ -55,7 +81,16 @@ const EK_KONULAR: Record<string, string[]> = {
   "pr.opened": ["script.updated"],
   "pr.merged": ["script.updated", "ci.status"],
   "agent.step": ["script.updated"],
+  "failure.classified": ["failure.updated"],
+  "bug.published": ["bug.updated"],
 };
+
+/** Ailenin her olayı aynı konuya gider (repair.* → failure.updated, bug.* → bug.updated, demo.* → demo.updated). */
+const AILE_KONUSU: [string, string][] = [
+  ["repair.", "failure.updated"],
+  ["bug.", "bug.updated"],
+  ["demo.", "demo.updated"],
+];
 
 /**
  * core-api'nin bugün gerçekten yayımladığı olay adları (MIMARI-SOZLESME §5 `GET /events`):
@@ -100,6 +135,9 @@ export function olayKonulari(o: PortalOlayi): string[] {
     if (tur) konular.push(tur);
   }
   konular.push(...(EK_KONULAR[o.type] ?? []));
+  for (const [onek, konu] of AILE_KONUSU) if (o.type.startsWith(onek)) konular.push(konu);
+  // Onarım PR'ı olayları (pr.opened / pr.merged) `failure_id` taşıyorsa triage ekranı da yenilenir.
+  if (o.type.startsWith("pr.") && typeof o.data.failure_id === "string") konular.push("failure.updated");
   // Yayın ailesi (publish.started/progress/completed/failed …): case ve gereksinim ekranları yenilenir.
   if (o.type.startsWith("publish.")) konular.push("publish.updated", "case.updated", "requirement.updated");
   return [...new Set(konular)];
@@ -113,7 +151,16 @@ export function olayKonulari(o: PortalOlayi): string[] {
 export function olayEslesir(o: PortalOlayi, konular: ReadonlySet<string> | null, id?: string): boolean {
   if (konular && !olayKonulari(o).some((k) => konular.has(k))) return false;
   // Demo-B olayları nesnesini `script_id` / `run_id` alanında taşır (ajan adımı, koşu, kırma aşaması).
-  return !id || o.id === id || o.data.requirement_id === id || o.data.script_id === id || o.data.run_id === id;
+  // Faz 4: triage/onarım olayları `failure_id`, bug olayları `bug_draft_id` taşır.
+  return (
+    !id ||
+    o.id === id ||
+    o.data.requirement_id === id ||
+    o.data.script_id === id ||
+    o.data.run_id === id ||
+    o.data.failure_id === id ||
+    o.data.bug_draft_id === id
+  );
 }
 
 /** EventSource'a dinleyici olarak kaydedilen tüm adlar. */

@@ -1,0 +1,13 @@
+{
+  "kind": "call",
+  "purpose": "triage",
+  "note": "Nötr REPLAY-MISS yedeği (golden değildir, model çıktısı değildir). Triage modeli yalnızca deterministik kurallar eşleşmediğinde çağrılır (TEKNIK-TASARIM §8.6); bu hata için kayıtlı çıktı yoksa ya da girdi golden beyanına uymuyorsa başka bir hatanın sınıfı dönmez: sınıf 'unknown' (insana; onarım ve bug taslağı tetiklenmez). ai_call.ek.replay_kokeni = miss_neutral, cikti_kokeni = notr_yedek, model = golden-elle. Bkz. rules/replay/README.md.",
+  "output": {
+    "class": "unknown",
+    "sub_type": null,
+    "rationale": "Bu hata için kayıtlı model çıktısı yok (REPLAY-MISS); canlı model gerekir. AI sınıflandırması yapılmadı; hatayı testçi sınıflandırmalıdır.",
+    "signals": [
+      "REPLAY-MISS: bu girdi için kayıtlı triage çıktısı yok"
+    ]
+  }
+}

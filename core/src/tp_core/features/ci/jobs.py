@@ -33,7 +33,24 @@ def _run_id(ctx: JobContext) -> uuid.UUID:
     service.JOB_RUN, max_deneme=5, backoff_s=30.0, zaman_asimi_s=int(check_timeout_s()) + 300
 )
 def ci_run(ctx: JobContext) -> dict[str, Any]:
-    return service.run_job(get_engine(), _run_id(ctx), deneme=ctx.deneme, son_deneme=ctx.son_deneme)
+    engine = get_engine()
+    sonuc = service.run_job(engine, _run_id(ctx), deneme=ctx.deneme, son_deneme=ctx.son_deneme)
+    # test-runner her koşuda eski koşu dizinlerini siler (`TP_RUNS_KEEP`): kayıtlar hemen uydurulur.
+    _budananlari_isle(engine)
+    return sonuc
+
+
+def _budananlari_isle(engine: Any) -> int:
+    """Silinmiş koşu dizinlerini işaretler; hata işi/açılışı düşürmez."""
+    try:
+        with Session(engine) as session, session.begin():
+            n = service.mark_pruned_runs(session)
+    except Exception:
+        logging.getLogger(__name__).exception("budanmış koşu dizinleri işaretlenemedi")
+        return 0
+    if n:
+        logging.getLogger(__name__).info("%d koşunun artefakt dizini silinmiş: işaretlendi", n)
+    return n
 
 
 @job_handler(service.JOB_GITHUB_POLL, max_deneme=5, backoff_s=15.0, zaman_asimi_s=600)
@@ -66,3 +83,13 @@ def on_worker_start(conn: Connection) -> None:
     if n:
         logging.getLogger(__name__).info("yarıda kalan %d CI koşusu error olarak kapatıldı", n)
     service.plan_nightly(conn)
+    # Kendi savepoint'inde: hata açılışın diğer işlerini (tarama, gece planı) geri almaz.
+    try:
+        with Session(bind=conn, join_transaction_mode="create_savepoint") as session:
+            n = service.mark_pruned_runs(session)
+            session.commit()
+    except Exception:
+        logging.getLogger(__name__).exception("budanmış koşu dizinleri işaretlenemedi")
+        n = 0
+    if n:
+        logging.getLogger(__name__).info("%d koşunun artefakt dizini silinmiş: işaretlendi", n)

@@ -1,8 +1,14 @@
 """Demo locator kırılması ve sıfırlaması (TEKNIK-TASARIM §2 adım 12, §10, §13).
 
 `break_locator`: `demo/break-locator` dalından PR açar (varsa açık olanı kullanır), `demo-admin`
-kimliğiyle kural bypass'ı ile merge eder ve denetim kaydına "demo kırılması" yazar. Merge,
-PR açıldığında okunan head sha'ya bağlıdır (`expected_head_sha`).
+kimliğiyle kural bypass'ı ile merge eder ve denetim kaydına "demo kırılması" yazar.
+
+Bypass yalnızca demo kırılmasının kendisi içindir (anayasa): PR açılmadan ÖNCE dalın head'i
+(`H`) okunur ve `ortak-ata(main, H)..H` farkı doğrulanır — değişen her dosya `web/src/` altında
+olmalı, satır sayısı aynı kalmalı ve değişen her satır yalnızca tırnaklı `add-to-cart` →
+`cart-add` dönüşümü olmalıdır (ekleme/silme/yeniden adlandırma/kip değişikliği/ikili içerik
+reddedilir). Merge `H`'ye bağlıdır (`expected_head_sha=H`); PR head'i `H` değilse merge edilmez.
+Doğrulanan fark özeti denetim kaydına (`fark`) yazılır.
 
 `restore_baseline` (yalnızca LocalForge): `main`'i `demo-baseline` etiketine geri taşır ve
 "demo sıfırlaması" denetim olayını yazar.
@@ -21,15 +27,21 @@ CLI (core-worker içinde; forge rw + Postgres erişimi gerekir):
     python -m tp_core.integrations.forge_demo baseline    # JSON özet → stdout
     python -m tp_core.integrations.forge_demo status      # JSON: main sha + testid durumu
     python -m tp_core.integrations.forge_demo archive [--ref main] [--path web]  # tar → stdout
+    python -m tp_core.integrations.forge_demo web-state   # JSON: çalışan demo-app-web main mi?
 
-`scripts/forge-init.sh break|baseline` bu CLI'ı çağırır ve demo-app-web imajını `archive`
-çıktısından (forge `main` HEAD) yeniden derler.
+`scripts/forge-init.sh break|baseline|sync-web` bu CLI'ı çağırır ve demo-app-web imajını
+`archive` çıktısından (forge `main` HEAD) yeniden derler — ama yalnızca `web-state` çalışan
+uygulamanın main'i yansıtmadığını söylerse (`guncel=false`). Yansıtıyorsa derleme ve yeniden
+oluşturma atlanır: ikinci bir `make break` süren push CI'ının altındaki uygulamayı öldürmez.
+`mesgul` (koşan `ci.run`/`repair.fix` işleri) doluysa betik zorlanmadıkça yeniden oluşturmaz.
 """
 
 from __future__ import annotations
 
 import argparse
+import functools
 import json
+import re
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Protocol
@@ -65,12 +77,20 @@ CI_TRIGGER = "push"
 CiTrigger = Callable[[str, str], Any]
 
 
+# Kırılma dalında değişebilecek en fazla dosya (demo-app'te 1; sınır savunma amaçlı).
+MAX_BREAK_FILES = 5
+
+
 class DemoForge(ForgePort, Protocol):
-    """`merge_pr_detailed` ayrıntısını da sunan forge (LocalForge ve GitHubForge)."""
+    """`merge_pr_detailed`, `merge_base`, `changed_paths` sunan forge (LocalForge, GitHubForge)."""
 
     def merge_pr_detailed(
         self, number: int, actor: str, *, expected_head_sha: str | None = None
     ) -> MergeResult: ...
+
+    def merge_base(self, a: str, b: str) -> str: ...
+
+    def changed_paths(self, base: str, head: str) -> list[str] | None: ...
 
 
 class DemoOutcome(BaseModel):
@@ -119,6 +139,92 @@ def testid_state(forge: ForgePort, ref: str = "main") -> str:
     return "belirsiz"
 
 
+E2E_LOCATOR_PATH = "e2e/pages/catalog/locators.ts"
+_E2E_ADD_TO_CART = re.compile(r"addToCart\s*:\s*\{[^}]*?testId\s*:\s*[\"'`]([^\"'`]+)[\"'`]")
+
+
+def e2e_testid_state(forge: ForgePort, ref: str = "main") -> str | None:
+    """`ref`'teki e2e page object'inin (catalog.addToCart) testId değeri; okunamazsa None."""
+    try:
+        metin = forge.read_file(E2E_LOCATOR_PATH, ref)
+    except Exception:
+        return None
+    m = _E2E_ADD_TO_CART.search(metin or "")
+    return m.group(1) if m else None
+
+
+def locator_durumu(web_testid: str | None, e2e_testid: str | None) -> str | None:
+    """Locator demosunun evresi: baseline · kirik (uygulama değişti, test eski) · onarildi."""
+    if web_testid == OLD_TESTID and e2e_testid == OLD_TESTID:
+        return "baseline"
+    if web_testid == NEW_TESTID and e2e_testid == OLD_TESTID:
+        return "kirik"
+    if web_testid == NEW_TESTID and e2e_testid == NEW_TESTID:
+        return "onarildi"
+    return None
+
+
+def _swap_testid(line: str) -> str:
+    for q in ("'", '"', "`"):
+        line = line.replace(f"{q}{OLD_TESTID}{q}", f"{q}{NEW_TESTID}{q}")
+    return line
+
+
+def verify_break_diff(forge: DemoForge, head_sha: str, base_ref: str = "main") -> dict[str, Any]:
+    """`ortak-ata(base_ref, head_sha)..head_sha` farkı yalnızca testid değişimi mi? Değilse hata.
+
+    Dönen değer denetim için fark özetidir: {head, taban, dosyalar, degisen_satir}.
+    """
+    merge_base = getattr(forge, "merge_base", None)
+    changed_paths = getattr(forge, "changed_paths", None)
+    if not callable(merge_base) or not callable(changed_paths):
+        raise ForgeValidationError(
+            "forge kırılma farkını doğrulayamıyor (merge_base/changed_paths)"
+        )
+    base = merge_base(base_ref, head_sha)
+    paths = changed_paths(base, head_sha)
+    if paths is None:
+        raise ForgeError(f"'{BREAK_BRANCH}' farkı okunamadı (liste kesilmiş olabilir)")
+    if not paths:
+        raise ForgeError(f"'{BREAK_BRANCH}' dalında {base_ref}'e göre değişiklik yok")
+    if len(paths) > MAX_BREAK_FILES:
+        raise ForgeError(
+            f"'{BREAK_BRANCH}' beklenenden çok dosya değiştiriyor "
+            f"({len(paths)} > {MAX_BREAK_FILES})"
+        )
+    disari = [p for p in paths if not p.startswith(WEB_SRC_PREFIX)]
+    if disari:
+        raise ForgeError(f"'{BREAK_BRANCH}' {WEB_SRC_PREFIX} dışını değiştiriyor: {disari[:5]}")
+    satir = 0
+    for path in paths:
+        try:
+            old = forge.read_file(path, base)
+            new = forge.read_file(path, head_sha)
+        except ForgeError as exc:  # ekleme/silme/yeniden adlandırma
+            raise ForgeError(
+                f"'{BREAK_BRANCH}' yalnızca mevcut dosyada testid değiştirebilir: {path} ({exc})"
+            ) from exc
+        if "\ufffd" in old or "\ufffd" in new:
+            raise ForgeError(f"'{BREAK_BRANCH}' metin olmayan içerik değiştiriyor: {path}")
+        old_lines, new_lines = old.split("\n"), new.split("\n")
+        if len(old_lines) != len(new_lines):
+            raise ForgeError(f"'{BREAK_BRANCH}' satır ekliyor/siliyor: {path}")
+        degisen = 0
+        for no, (a, b) in enumerate(zip(old_lines, new_lines, strict=True), start=1):
+            if a == b:
+                continue
+            if _swap_testid(a) != b:
+                raise ForgeError(
+                    f"'{BREAK_BRANCH}' beklenmeyen değişiklik içeriyor: {path}:{no} "
+                    f"(yalnızca '{OLD_TESTID}' → '{NEW_TESTID}' izinli)"
+                )
+            degisen += 1
+        if degisen == 0:  # yalnızca kip/ikili değişiklik
+            raise ForgeError(f"'{BREAK_BRANCH}' içerik dışı değişiklik içeriyor: {path}")
+        satir += degisen
+    return {"head": head_sha, "taban": base, "dosyalar": paths, "degisen_satir": satir}
+
+
 def break_locator(
     forge: DemoForge,
     audit: AuditLog,
@@ -135,13 +241,21 @@ def break_locator(
         )
     if state != OLD_TESTID:
         raise ForgeError(f"main'de '{OLD_TESTID}' testid'i bulunamadı (durum: {state})")
-    if testid_state(forge, BREAK_BRANCH) != NEW_TESTID:
+    head = forge.head_sha(BREAK_BRANCH)
+    if testid_state(forge, head) != NEW_TESTID:
         raise ForgeError(f"'{BREAK_BRANCH}' dalı beklenen kırılmayı ({NEW_TESTID}) içermiyor")
+    # Bypass yalnızca doğrulanmış testid değişimi için: fark PR açılmadan önce, head'e bağlı.
+    fark = verify_break_diff(forge, head, "main")
 
     pr = forge.find_open_pr(BREAK_BRANCH) or forge.open_pr(
         BREAK_BRANCH, BREAK_PR_TITLE, BREAK_PR_BODY, BREAK_LABELS
     )
-    result = forge.merge_pr_detailed(pr.number, actor, expected_head_sha=pr.head_sha)
+    if pr.head_sha != head:
+        raise ForgeError(
+            f"'{BREAK_BRANCH}' PR head'i ({pr.head_sha[:12]}) doğrulanan head'den ({head[:12]}) "
+            "farklı; merge edilmedi"
+        )
+    result = forge.merge_pr_detailed(pr.number, actor, expected_head_sha=head)
     after = forge.head_sha("main")
     final = testid_state(forge, "main")
     ci_info = _trigger_push_ci(ci, after, actor) if after != before else None
@@ -156,6 +270,7 @@ def break_locator(
         "main_once": before,
         "main_sonra": after,
         "testid": {"once": OLD_TESTID, "sonra": final},
+        "fark": fark,
         "ci": ci_info,
     }
     audit_id = audit.append(actor, AUDIT_BREAK, f"pr:{pr.number}", ozet)
@@ -225,6 +340,89 @@ def restore_baseline(
     )
 
 
+# ------------------------------------------------------------- çalışan demo-app-web
+
+# Çalışırken demo-app-web'i yeniden oluşturmak bu işleri öldürür (bağlantı / `app` uyuşmazlığı →
+# kalan testler environment/unknown sınıflanır).
+WEB_BUSY_JOBS = ("ci.run", "repair.fix")
+
+
+def _hex(value: Any) -> str | None:
+    ok = isinstance(value, str) and 7 <= len(value) <= 64
+    return value if ok and all(c in "0123456789abcdef" for c in value) else None
+
+
+def web_state(
+    forge: ForgePort,
+    *,
+    build_json: Mapping[str, Any] | None,
+    sha_file: str | None,
+    busy: Sequence[Mapping[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Çalışan demo-app-web forge `main`'i yansıtıyor mu (yeniden derleme gerekli mi)?
+
+    `guncel`: çalışan konteynerin `/build.json` beyanı main'in commit'i ya da main'in `web/` ağacı.
+    Çalışma ağacından (compose) derlenmiş imajın `sha`'sı boştur → güncel sayılmaz (bilinmiyor).
+    `sha_dosyasi_guncel`: `/forge/demo-app-web.sha` main mi (değilse yalnızca dosya yazılır,
+    konteyner yeniden oluşturulmaz). `mesgul`: koşan `ci.run`/`repair.fix` işleri
+    (None = okunamadı).
+    """
+    main = forge.head_sha("main")
+    tree_fn = getattr(forge, "tree_sha", None)
+    main_tree: str | None = None
+    if tree_fn is not None:
+        try:
+            main_tree = tree_fn(main, "web")
+        except ForgeError:
+            main_tree = None
+    bj = build_json or {}
+    run_sha, run_tree = _hex(bj.get("sha")), _hex(bj.get("web_tree"))
+    if run_sha is not None and (run_sha == main or main.startswith(run_sha)):
+        guncel, neden = True, "aynı commit"
+    elif run_tree is not None and main_tree is not None and run_tree == main_tree:
+        guncel, neden = True, "aynı web/ ağacı"
+    elif not bj:
+        guncel, neden = False, "çalışan uygulamanın /build.json'u okunamadı"
+    elif run_sha is None:
+        guncel, neden = False, "çalışan imaj çalışma ağacından derlenmiş (sha yok)"
+    else:
+        guncel, neden = False, f"çalışan uygulama {run_sha[:12]}, main {main[:12]}"
+    dosya = _hex((sha_file or "").strip())
+    return {
+        "main": main,
+        "main_web_tree": main_tree,
+        "calisan": {"sha": run_sha, "web_tree": run_tree} if bj else None,
+        "sha_dosyasi": dosya,
+        "guncel": guncel,
+        "neden": neden,
+        "sha_dosyasi_guncel": dosya is not None and (dosya == main or main.startswith(dosya)),
+        "mesgul": None if busy is None else [dict(b) for b in busy],
+    }
+
+
+def _busy_jobs() -> list[dict[str, Any]]:
+    """Koşan `ci.run` / `repair.fix` işleri (Postgres)."""
+    from sqlalchemy import text
+
+    from tp_core.db import get_engine
+
+    with get_engine().connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT id, tur FROM job WHERE tur IN (:a, :b) AND durum = 'running' "
+                "ORDER BY olusturma"
+            ),
+            {"a": WEB_BUSY_JOBS[0], "b": WEB_BUSY_JOBS[1]},
+        ).all()
+    return [{"id": str(r[0]), "tur": str(r[1])} for r in rows]
+
+
+def _web_inputs() -> tuple[dict[str, Any] | None, str | None]:
+    from tp_core.features.demo import web
+
+    return web.build_json(), web.sha_dosyasindaki()
+
+
 # ---------------------------------------------------------------------- CLI
 
 
@@ -237,13 +435,21 @@ def _pg_audit() -> AuditLog:
     return PgAuditLog(get_engine())
 
 
-def _enqueue_push_ci(sha: str, actor: str) -> str:
-    """`features.ci.enqueue_ci(sha, "push")` kendi işleminde (commit edilir)."""
-    from tp_core.features.ci import enqueue_ci
-    from tp_core.models import session_scope
+def _enqueue_push_ci(sha: str, actor: str, eylem: str = "make") -> str:
+    """`sha` için push CI'ı — çalışan demo-app-web onu yansıtınca (Faz 4 entegrasyonu).
 
-    with session_scope() as s:
-        return str(enqueue_ci(s, sha, CI_TRIGGER, None, isteyen=actor))
+    `make break`/`make demo-baseline` merge'den SONRA demo-app-web'i yeniden derler; CI hemen
+    kuyruğa girerse toolchain `/check` `app=farkli` görür ve koşu `environment` olur (locator
+    onarım yolu hiç başlamaz). Bu yüzden `demo.await_web` işi planlanır: uygulama main'i
+    yansıtınca `enqueue_ci(sha, "push")` çağrılır. Dönen değer bekleme işinin kimliğidir
+    (`await-web:<job_id>`); koşu kimliği iş sonucundadır.
+    """
+    from tp_core.db import get_engine
+    from tp_core.features.demo.service import ci_after_web
+
+    with get_engine().begin() as conn:
+        job_id = ci_after_web(conn, sha, eylem, actor)
+    return f"await-web:{job_id}"
 
 
 def main(
@@ -261,6 +467,7 @@ def main(
     arc = sub.add_parser("archive", help="ref'teki dizinin tar arşivi (stdout)")
     arc.add_argument("--ref", default="main")
     arc.add_argument("--path", default="web")
+    sub.add_parser("web-state", help="çalışan demo-app-web main'i yansıtıyor mu (JSON)")
     args = parser.parse_args(argv)
 
     forge = get_forge(env)
@@ -272,7 +479,15 @@ def main(
             sys.stdout.buffer.write(archive(args.ref, args.path))
             sys.stdout.buffer.flush()
             return 0
-        if args.cmd == "status":
+        if args.cmd == "web-state":
+            build, sha_file = _web_inputs()
+            try:
+                busy: list[dict[str, Any]] | None = _busy_jobs()
+            except Exception as exc:  # DB yoksa: yalnızca uyarı (meşguliyet bilinmiyor)
+                print(f"UYARI: koşan işler okunamadı: {exc}"[:300], file=sys.stderr)
+                busy = None
+            out = web_state(forge, build_json=build, sha_file=sha_file, busy=busy)
+        elif args.cmd == "status":
             out: dict[str, Any] = {
                 "main": forge.head_sha("main"),
                 "testid": testid_state(forge, "main"),
@@ -294,7 +509,8 @@ def main(
                     print(f"HATA: denetim veritabanına erişilemiyor: {exc}", file=sys.stderr)
                     return 3
             fn = break_locator if args.cmd == "break" else restore_baseline
-            res = fn(forge, sink, ci=ci or _enqueue_push_ci)  # type: ignore[arg-type]
+            varsayilan_ci = functools.partial(_enqueue_push_ci, eylem=args.cmd)
+            res = fn(forge, sink, ci=ci or varsayilan_ci)  # type: ignore[arg-type]
             if res.ci_error:
                 print(f"UYARI: main CI'ı kuyruğa alınamadı: {res.ci_error}", file=sys.stderr)
             out = res.model_dump(mode="json")

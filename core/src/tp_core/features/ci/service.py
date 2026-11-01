@@ -36,7 +36,7 @@ from datetime import UTC, datetime, time, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import Session
 
@@ -362,6 +362,10 @@ def _bitir(
             **sayac,
         },
     )
+    # Faz 4: kırmızı koşu → triage.classify (çağıranın işleminde; yeşilde no-op).
+    from tp_core.features.triage import on_run_finished
+
+    on_run_finished(session, run)
 
 
 def _case_eslemesi(
@@ -1306,6 +1310,10 @@ def serialize_runs(session: Session, runs: Sequence[Run]) -> list[dict[str, Any]
         o = r.ortam or {}
         saglik = o.get("saglik") if isinstance(o.get("saglik"), dict) else None
         dizin = a.get("dizin")
+        if saglik is not None and saglik.get("ok") is False:
+            # Sağlık kontrolü başarısız: Playwright başlatılmadı, rapor dosyaları yok
+            # (toolchain yolları yine bildirir; kırık bağlantı gösterilmez).
+            a = {k: v for k, v in a.items() if k not in ("html", "allure", "allure_html", "junit")}
         sauce = a.get("sauce") if isinstance(a.get("sauce"), dict) else {}
         out.append(
             {
@@ -1347,6 +1355,8 @@ def serialize_runs(session: Session, runs: Sequence[Run]) -> list[dict[str, Any]
                 "hata": a.get("hata") or a.get("runner_hata"),
                 "ozet": a.get("ozet"),
                 "isteyen": o.get("isteyen"),
+                # Koşu dizini saklama nedeniyle silindi (test-runner `prune_runs`): bağlantı yok.
+                "artefakt_budandi": a.get("artefakt_budandi"),
             }
         )
     return out
@@ -1427,13 +1437,13 @@ def run_detail(session: Session, run_id: uuid.UUID) -> dict[str, Any] | None:
         .where(TestResult.run_id == run.id)
         .order_by(TestResult.dosya, TestResult.test_adi)
     ).all()
-    failures = {
-        tr_id: f_id
-        for tr_id, f_id in session.execute(
-            select(Failure.test_result_id, Failure.id).where(Failure.run_id == run.id)
-        )
-        if tr_id is not None
-    }
+    f_rows = session.execute(
+        select(Failure.test_result_id, Failure.id, Failure.test_adi, Failure.sinif, Failure.alt_tur)
+        .where(Failure.run_id == run.id)
+        .order_by(Failure.test_adi)
+    ).all()
+    failures = {r.test_result_id: r.id for r in f_rows if r.test_result_id is not None}
+    triage = {r.test_result_id: r for r in f_rows if r.test_result_id is not None}
     a = run.artefaktlar or {}
     dizin = a.get("dizin")
     sonuclar = []
@@ -1454,6 +1464,9 @@ def run_detail(session: Session, run_id: uuid.UUID) -> dict[str, Any] | None:
                 "retry": tr.retry,
                 "hata_mesaji": tr.hata_mesaji,
                 "failure_id": str(failures[tr.id]) if tr.id in failures else None,
+                # Faz 4 triage sınıfı (sınıflandırılmadıysa null).
+                "triage_sinifi": triage[tr.id].sinif if tr.id in triage else None,
+                "triage_alt_tur": triage[tr.id].alt_tur if tr.id in triage else None,
                 "case_id": str(tr.test_case_id) if tr.test_case_id else None,
                 "a11y": {"ihlal": ek.a11y_ihlal, "kritik": ek.a11y_kritik, "sayfalar": ek.a11y}
                 if ek and ek.a11y
@@ -1465,6 +1478,17 @@ def run_detail(session: Session, run_id: uuid.UUID) -> dict[str, Any] | None:
     return {
         **temel,
         "sonuclar": sonuclar,
+        # Koşunun triage sonuçları (test sonucu olmayan ortam hataları dahil).
+        "hatalar": [
+            {
+                "id": str(r.id),
+                "test_adi": r.test_adi,
+                "sinif": r.sinif,
+                "alt_tur": r.alt_tur,
+                "test_result_id": str(r.test_result_id) if r.test_result_id else None,
+            }
+            for r in f_rows
+        ],
         "adimlar": a.get("adimlar"),
         "uyarilar": a.get("uyarilar") or [],
         "raporlar": a.get("raporlar"),
@@ -1485,3 +1509,52 @@ def artifact_dir(session: Session, run_id: uuid.UUID) -> Path | None:
     if not isinstance(dizin, str) or not RUN_DIR_RE.match(dizin):
         return None
     return services.artifacts_root() / dizin
+
+
+# ------------------------------------------------------------------- artefakt saklama
+
+
+def mark_pruned_runs(session: Session, *, en_cok: int = 500) -> int:
+    """Koşu dizini artık volume'de olmayan bitmiş koşuları `artefakt_budandi` olarak işaretler.
+
+    Dizinleri silen çekirdek değildir: core-worker artefakt volume'ünü salt okur; saklama
+    test-runner'dadır (`prune_runs`: en yeni `TP_RUNS_KEEP` işaretsiz koşu, `.keep` kanıtları
+    `TP_RUNS_KEEP_EVIDENCE_DAYS`/`_MAX`). Bu geçiş koşu kaydını buna uydurur: `dizin` boşaltılır
+    (eski değer `budanan_dizin`), böylece portal/triage/bug bağlamı silinmiş dosyaya bağlantı
+    üretmez. Volume bağlı değilse (`<kök>/runs` yok) hiçbir şey işaretlenmez. Dönen: işaretlenen.
+    """
+    kok = services.artifacts_root()
+    try:
+        if not (kok / "runs").is_dir():
+            return 0
+    except OSError:
+        return 0
+    adaylar = session.execute(
+        select(Run.id, Run.artefaktlar["dizin"].astext)
+        .where(Run.sonuc.in_(BITMIS), Run.artefaktlar["dizin"].astext.isnot(None))
+        .order_by(Run.olusturma)
+        .limit(max(1, en_cok))
+    ).all()
+    zaman = services.now().isoformat()
+    n = 0
+    for run_id, dizin in adaylar:
+        if not dizin or not RUN_DIR_RE.match(dizin):
+            continue
+        try:
+            if (kok / dizin).is_dir():
+                continue
+        except OSError:
+            continue
+        n += (
+            session.execute(
+                text(
+                    "UPDATE run SET artefaktlar = artefaktlar || jsonb_build_object("
+                    "'dizin', NULL, 'budanan_dizin', CAST(:d AS text), "
+                    "'artefakt_budandi', CAST(:z AS text)) "
+                    "WHERE id = :id AND artefaktlar->>'dizin' = :d"
+                ),
+                {"id": run_id, "d": dizin, "z": zaman},
+            ).rowcount
+            or 0
+        )
+    return n

@@ -77,7 +77,12 @@ def _run_ekle(
 
 
 @pytest.fixture
-def senaryo(engine: Engine, make_requirement_case):
+def senaryo(engine: Engine, make_requirement_case, monkeypatch: pytest.MonkeyPatch):
+    # Faz 4 triage kancası kırmızı A koşusunu sınıflandırır (kural dışı zaman aşımı → LLM yedeği,
+    # ek ai_call satırları); bu senaryo yalnızca CI/AI katkısı sayılarını sabit girdilerle ölçer.
+    import tp_core.features.triage as triage
+
+    monkeypatch.setattr(triage, "on_run_finished", lambda session, run: None)
     c1 = make_requirement_case(title="7 adet Portakal Gazozu → 1 adet bedava")
     c2 = make_requirement_case(title="6 adet → bedava yok")
     c3 = make_requirement_case(title="Minimum sipariş tutarı 750,00 TL uyarısı")

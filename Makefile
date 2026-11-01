@@ -10,7 +10,7 @@ export PLAYWRIGHT_VERSION := $(strip $(shell cat .playwright-version 2>/dev/null
 
 S ?=
 
-.PHONY: help env up status seed reset jira-seed forge-init break demo-baseline export-audit security-check e2e-smoke demo-check prune logs down
+.PHONY: help env up status seed reset jira-seed forge-init break demo-break demo-reset demo-web-sync locator-break-verify demo-baseline export-audit security-check e2e-smoke demo-check prune logs down
 
 help: ## Hedefleri listeler
 	@echo "Kullanım: make <hedef>"
@@ -38,8 +38,20 @@ jira-seed: ## Gerçek Jira'yı demo başlangıcına döndürür (önce plan; uyg
 forge-init: ## Yerel forge deposunu hazırlar (varsa dokunmaz; yeniden kurmak için: make forge-init F=--force)
 	@scripts/forge-init.sh $(F)
 
-break: ## Demo locator kırılması: demo/break-locator PR'ı demo-admin bypass'ıyla merge + demo-app-web yeniden derlenir
-	@scripts/forge-init.sh break
+break: ## Demo locator kırılması: yeşil temel koşu ön denetimi + demo/break-locator demo-admin bypass merge + demo-app-web (Z=1: denetimi atla)
+	@scripts/demo-break.sh --make $(if $(Z),--zorla,)
+
+demo-break: ## Sunucu düğmesinin eşi: POST /demo/break-locator (sunucu, denetimli) + demo-app-web eşitleme
+	@scripts/demo-break.sh
+
+demo-reset: ## Sunucu sıfırlaması: POST /demo/reset + demo-app-web eşitleme + AI Bug temizliği (jira-sim sıfırlanmaz; tam: make reset)
+	@scripts/demo-reset.sh
+
+demo-web-sync: ## core'un istediği forge commit'inden demo-app-web'i derler (A=--watch: sunum boyunca izle)
+	@scripts/demo-web-sync.sh $(A)
+
+locator-break-verify: ## Çevrimdışı ön kontrol: kırılma → yalnızca add-to-cart locator hatası → testId onarımı → yeşil
+	@bash demo-app/ci/locator-break-verify.sh
 
 demo-baseline: ## Forge main → demo-baseline + demo-app-web yeniden derlenir (PR kaydı korunur)
 	@scripts/forge-init.sh baseline

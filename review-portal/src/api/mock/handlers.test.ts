@@ -1,3 +1,4 @@
+import type { LocatorOnarimi } from "../types";
 import { beforeEach, describe, expect, it } from "vitest";
 import { api } from "../client";
 import { ApiError } from "../http";
@@ -233,10 +234,20 @@ describe("mock arka uç: kod, kırma, merge, onarım, bug", () => {
   it("locator onarım PR'ı yalnızca bir kez açılır", async () => {
     await girisYap("muhendis");
     await api.onarimPrAc("fail-2");
+    // İş sürerken (AST koruması → yerel kontrol → bot PR) ikinci istek de reddedilir.
+    expect((await api.hata("fail-2")).oneri).toMatchObject({ durum: "checking" });
     await expect(api.onarimPrAc("fail-2")).rejects.toMatchObject({ status: 409 });
     await expect(api.onarimPrAc("fail-1")).rejects.toMatchObject({ status: 409 });
+    // Ortam hatası için onarım yok.
+    await expect(api.onarimPrAc("fail-3")).rejects.toMatchObject({ status: 409 });
+    await bekleIsler();
     const h = await api.hata("fail-2");
     expect(h.oneri).toMatchObject({ tur: "locator_fix", durum: "pr_open", eski_test_id: "add-to-cart", yeni_test_id: "cart-add" });
+    const o = h.oneri as LocatorOnarimi;
+    expect(o.ast_guard).toEqual({ ok: true, ihlaller: [] });
+    expect(o.yerel_kontrol).toMatchObject({ sonuc: "passed", gecen: 3, toplam: 3 });
+    expect(o.degisen_dosyalar).toEqual(["demo-app/e2e/pages/catalog/locators.ts"]);
+    expect(o.pr).toMatchObject({ branch: "tp/repair-addToCart", ci: "passed" });
   });
 
   it("bug taslağı: link anahtarı doğrulanır, karar bir kez verilir", async () => {
@@ -253,8 +264,15 @@ describe("mock arka uç: kod, kırma, merge, onarım, bug", () => {
 
   it("bug taslağı reddedilebilir (dismiss → dismissed); Jira'ya yazılmaz", async () => {
     await girisYap("testci");
-    const b = await api.bugKarari("bug-1", { ...bugH("bug-1"), karar: "dismiss" });
-    expect(b).toMatchObject({ durum: "dismissed", karar: "dismiss", jira_key: null, link_key: null });
+    // core: ret gerekçesi zorunlu (422).
+    await expect(api.bugKarari("bug-1", { ...bugH("bug-1"), karar: "dismiss" })).rejects.toMatchObject({ status: 422 });
+    const b = await api.bugKarari("bug-1", { ...bugH("bug-1"), karar: "dismiss", gerekce: "kasıtlı kırma koşusu" });
+    expect(b).toMatchObject({ durum: "dismissed", karar: "dismiss", jira_key: null, link_key: null, ret_gerekcesi: "kasıtlı kırma koşusu" });
+    // Taslağa al (reopen) → yeniden karar bekler.
+    const r = await api.bugKarari("bug-1", { ...bugH("bug-1"), karar: "reopen" });
+    expect(r).toMatchObject({ durum: "draft", karar: null });
+    // Reddedilmişken taslağa alınmadan karar verilemez; taslağa alınca yeniden karar verilebilir.
+    await api.bugKarari("bug-1", { ...bugH("bug-1"), karar: "dismiss", gerekce: "yine değil" });
     await expect(api.bugKarari("bug-1", { ...bugH("bug-1"), karar: "new" })).rejects.toMatchObject({ status: 409 });
   });
 });

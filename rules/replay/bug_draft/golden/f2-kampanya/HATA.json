@@ -1,0 +1,42 @@
+{
+  "kind": "call",
+  "purpose": "bug_draft",
+  "golden": "f2-kampanya/HATA",
+  "note": "Elle hazırlandı (canlı model çıktısı değil; ai_call.model = golden-elle). Girdi beyanı (input_match) tp_core.gateway.defects kurucularının ürettiği kanonik metne göredir; uymayan girdi amacın on_miss.json politikasına düşer. Canlı anahtar gelince TP_MODEL_MODE=record ile yeniden kaydedilmeli. Demo-A F2 kampanya bulgusu (analist: Kod/veri hatalı). 1. tur (TPD-1 F2) ve senaryonun 2. turu (f2-kod-hatasi/TPD-1-r2 F1) aynı farkı farklı gözlem metniyle raporlar; beyan ikisine de uyar. Açık TPD-5 ile aynı hatadır (dup_rank bağla önerir).",
+  "input_match": {
+    "sources": [
+      "finding:*",
+      "testdata:*"
+    ],
+    "contains": [
+      "Bulgu türü: doc_vs_code",
+      "Doküman maddesi: AC2",
+      "kod: api/src/demoapp_api/campaign.py:23",
+      "- P-001 · \"Portakal Gazozu 1L\" · 25,00 TL"
+    ]
+  },
+  "output": {
+    "summary": "Sepet: 6 adet Portakal Gazozu sepete eklendiğinde bedava adet 0 beklenirken 1 veriliyor",
+    "steps": [
+      "1. bayi1 / Demo123! ile giriş yap",
+      "2. \"Portakal Gazozu 1L\" için 6 adet gir ve \"Sepete ekle\" butonuna bas",
+      "3. Üst menüden sepete git",
+      "4. P-001 satırındaki bedava adedi, indirimi ve toplamı kontrol et"
+    ],
+    "expected": "TPD-1 AC2'ye göre 7 adette 1 bedava: 6 adette bedava adet 0, indirim 0,00 TL, toplam 150,00 TL",
+    "actual": "Kod her 6 adette 1 bedava veriyor (campaign.py:23 `return adet // 6`): bedava adet 1, indirim 25,00 TL, toplam 125,00 TL",
+    "environment": "Tutarlılık denetimi (demo-app kaynağı, salt okuma)",
+    "evidence": [
+      {
+        "kind": "code",
+        "ref": "api/src/demoapp_api/campaign.py:23"
+      }
+    ],
+    "story_key": "TPD-1",
+    "test_case_key": null,
+    "severity_suggestion": "critical",
+    "labels": [
+      "AI-generated"
+    ]
+  }
+}

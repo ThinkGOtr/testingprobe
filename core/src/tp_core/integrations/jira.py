@@ -602,6 +602,16 @@ class RestJira:
         )
         return str(created["id"])
 
+    def add_comment_adf(self, key: str, adf: Mapping[str, Any]) -> str:
+        """Hazır ADF gövdesiyle yorum (bağlantı işaretli kanıt listeleri için)."""
+        created = self._call(
+            "POST",
+            f"/issue/{self._key(key)}/comment",
+            write=True,
+            json={"body": dict(adf)},
+        )
+        return str(created["id"])
+
     def _labels(self, key: str, op: str, labels: Sequence[str]) -> None:
         # Ayrılmış etiket bot tarafından eklenemez; kaldırılabilir (bayat onayı geri çekmek).
         reserved = sorted(RESERVED_LABELS.intersection(labels)) if op == "add" else []

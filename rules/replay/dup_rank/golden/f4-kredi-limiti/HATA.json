@@ -1,0 +1,61 @@
+{
+  "kind": "call",
+  "purpose": "dup_rank",
+  "golden": "f4-kredi-limiti/HATA",
+  "note": "Elle hazırlandı (canlı model çıktısı değil; ai_call.model = golden-elle). Girdi beyanı (input_match) tp_core.gateway.defects kurucularının ürettiği kanonik metne göredir; uymayan girdi amacın on_miss.json politikasına düşer. Canlı anahtar gelince TP_MODEL_MODE=record ile yeniden kaydedilmeli. Demo-A F4 kredi limiti bulgusu (missing_in_code, AC4, pricing.py:97): seed Bug'larının hiçbiri bu hata değil (TPD-5 kampanya, TPD-6 sipariş geçmişi) → öneri yeni kayıt. 1. tur F4 ve senaryonun 2. turu (TPD-1-r2 F2) aynı imzayı taşır. Aday kümesi beyanı (input_match.candidates): hiçbir anahtar zorunlu, TPD-6 isteğe bağlı; demo sırasında açılabilen ve özeti golden taslaklarından bilinen Bug'lar (6 adet / 7 adet kampanya, kredi limiti) by_summary ile tanınır ve extra_candidates gerekçesiyle sıralanır. Beyan dışı aday REPLAY-MISS'tir. `output` seed kümesinin [TPD-5, TPD-6] sıralamasıdır; geçit çıktıyı girdideki gerçek kümeye göre kurar (yalnızca aramadaki anahtarlar, sıra 1..n, öneri: ilk high aday → link).",
+  "input_match": {
+    "sources": [
+      "finding:*",
+      "jira-arama:*"
+    ],
+    "contains": [
+      "Bulgu türü: missing_in_code",
+      "Doküman maddesi: AC4",
+      "kod: api/src/demoapp_api/pricing.py:97"
+    ],
+    "candidates": {
+      "required": [],
+      "optional": [
+        "TPD-5",
+        "TPD-6"
+      ],
+      "by_summary": {
+        "alti-adet-yeni": "6 adet Portakal Gazozu sepete eklendiğinde bedava adet 0 beklenirken 1",
+        "kirma-yeni": "7 adet Portakal Gazozu sepete eklendiğinde bedava adet 1 beklenirken 0",
+        "kredi-limiti-yeni": "Kredi limiti aşıldığında"
+      }
+    }
+  },
+  "extra_candidates": {
+    "alti-adet-yeni": {
+      "likelihood": "low",
+      "rationale": "Farklı alan: kampanyanın 6 adette bedava hesabı; kredi limiti kontrolüyle ilgisi yok."
+    },
+    "kirma-yeni": {
+      "likelihood": "low",
+      "rationale": "Farklı alan: kampanyanın 7 adette bedava hesabı; kredi limiti kontrolüyle ilgisi yok."
+    },
+    "kredi-limiti-yeni": {
+      "likelihood": "high",
+      "rationale": "Aynı belirti: bu kayıt da kredi limiti aşıldığında uyarı gösterilmediğini ve siparişin onaylanabildiğini anlatıyor (AC4)."
+    }
+  },
+  "output": {
+    "candidates": [
+      {
+        "key": "TPD-5",
+        "rank": 1,
+        "likelihood": "low",
+        "rationale": "Farklı alan: TPD-5 kampanyanın bedava adet hesabını anlatıyor; kredi limiti uyarısı ve sipariş onayıyla ilgisi yok."
+      },
+      {
+        "key": "TPD-6",
+        "rank": 2,
+        "likelihood": "low",
+        "rationale": "Farklı alan: sipariş geçmişindeki tarih sıralaması; kredi limiti kontrolüyle ilgisi yok."
+      }
+    ],
+    "recommendation": "new",
+    "link_key": null
+  }
+}

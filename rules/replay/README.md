@@ -30,14 +30,16 @@ REPLAY / REPLAY-MISS rozetini `ai_call.mod`'dan gösterir.
    `TP_REPLAY_STRICT=1` (prova) her iskalamayı `ReplayMiss` hatasına çevirir. Golden girdi beyanı
    (`input_match`) taşıyorsa **veya golden hiç yoksa** (ör. demo sırasında jira-sim'de açılan
    TPD-24) amacın `<amaç>/on_miss.json` politikası uygulanır:
-   - **nötr yedek** (`output` alanı; `requirement_review`, `consistency_check`): golden çıktısı
+   - **nötr yedek** (`output` alanı; `requirement_review`, `consistency_check`, `triage` →
+     sınıf `unknown`): golden çıktısı
      **kullanılmaz** (başka bir dokümanın cevabıdır); nötr yedeğin çıktısı döner, köken
      `miss_neutral`, `cikti_kokeni = notr_yedek`. Yeni Jira story'si de serbest metin gibi bu
      yoldan ilerler (gereksinim akışı: denetim güvenilmez, "Son hal olarak onayla").
-   - **`"policy": "raise"`** (`case_generation`): çıktı yoktur; geçit `ReplayNoOutput` fırlatır
+   - **`"policy": "raise"`** (`case_generation`, `verify_and_map`, `bug_draft`, `dup_rank`):
+     çıktı yoktur; geçit `ReplayNoOutput` fırlatır
      ("REPLAY-MISS: bu girdi için kayıtlı model çıktısı yok; canlı model gerekir"), sıfır taslak.
-   - Beyansız golden (senaryo adı: `triage`, `bug_draft`, `dup_rank`) veya `on_miss.json`'u
-     olmayan amaç: golden varsa çıktısı döner, köken `golden`.
+   - Beyansız golden veya `on_miss.json`'u olmayan amaç: golden varsa çıktısı döner, köken
+     `golden` (Faz 4'ten beri depoda beyansız golden yoktur).
 5. Golden de iskalama politikası da yoksa `ReplayNotFound`.
 
 Bulunamayan/çıktısız her iskalama da `ai_call`'a yazılır (mod `replay_miss`, `cikti = NULL`,
@@ -147,7 +149,7 @@ metinde `golden_name(FREE_TEXT_KEY)` → `SERBEST` / `SERBEST-r2`. `fix_doc` ön
 | `consistency_check` | `f2-kod-hatasi/TPD-1-r2` | F2 `code_defect` yolu: AC2 özgün, AC3 düzeltilmiş (aşağıda "Demo-B") |
 | `case_generation` | `f2-kod-hatasi/TPD-1` | Aynı belge; ana golden'dan tek farkı C3 (6 adette bedava yok) |
 | `verify_and_map` | `f2-kod-hatasi/TPD-1-C3` | Senaryonun C3'ü; diğer case'ler ana golden'larla birebir aynı, ana golden eşleşir |
-| `triage`, `bug_draft`, `dup_rank` | senaryo adları | Beyan yok → her zaman REPLAY-MISS (Demo-A dışında; `promote` ile birebir kayda yükseltilebilir) |
+| `triage`, `bug_draft`, `dup_rank` | `HATA` + senaryo dizinleri | Faz 4 (aşağıda "Faz 4"): kanonik hata/bulgu bloğuna göre beyanlı |
 
 ## TPD-1: kararlar ve düzeltilmiş metin (golden'ların varsaydığı)
 
@@ -347,6 +349,98 @@ koşturulur.
   tam o ref'e çözülür.
 - Gözlenen ≠ beklenen olduğunda (ve yalnızca o zaman) sepet adımının `evidence_ref`'i "beklenen:"
   taşır ve golden `defect_adayi` beyanı içerir; değerler "kayıttaki not" etiketlidir.
+
+## Faz 4: triage → bug taslağı → mükerrer sıralaması
+
+### Girdi sözleşmesi (triage ve bug şeritleri)
+
+Golden beyanları ve birebir anahtar ancak girdi tek biçimde kurulursa tutar. Şeritler model
+mesajlarını YALNIZCA `tp_core.gateway.defects` kurucularıyla kurar (testlerdeki örnek:
+`core/tests/unit/gateway/defect_inputs.py`):
+
+| Amaç | Mesajlar | Bloklar |
+|---|---|---|
+| `triage` (yalnızca kural eşleşmezse) | `triage_messages(failure_block(f, …, rule_signals=…, include_aria=True))` | `failure:<case_ref\|e2e>` |
+| `bug_draft` | `bug_draft_messages(sources, testdata=cases.testdata.block(), story_key, test_case_key)` | hata: `failure_block` + varsa `case_block(case, "TPD-1-C3")`; bulgu: `finding_block(...)`; `testdata:demo-app` |
+| `dup_rank` | `dup_rank_messages(sources, draft=<taslak içeriği>, candidates=<JiraPort.search sonucu>, jql=…)` | aynı `sources` + `taslak:` + `jira-arama:Bug` |
+
+- `failure_block(failure, test_title=…, test_file=…, story_key=…, case_ref=…, saglik=…,
+  statuses=…, consistent=…, break_campaign=…)`: `failure` toolchain `/check` / test-runner
+  `failure_groups[].failure` nesnesidir (toolchain/README.md "Failure inputs"); `statuses` /
+  `consistent` grubun alanları, `saglik` koşunun sağlık bloğu, `break_campaign`
+  `run.ortam.break_campaign` / kırma koşusu.
+- `finding_block(story_key, finding_type, doc_ref, doc_text, claim, observed, evidence)`: bulgu
+  (`consistency_finding` + `_ek.iddia/gozlem/mevcut_doc_text`), kanıtlar bulgunun `kanitlar`'ı.
+- `replay_key=defect_replay_key(story_key)` → `{"name": "HATA", "jira_key": …}`; çağrı kimliği
+  `deterministic_call_id(job_id, "<amaç>")`.
+- Anahtar dışı tutulanlar: koşu kimliği, artefakt yolları (kanıtlar yalnızca `kanit:trace`,
+  `kanit:error_context`, `kanit:screenshot` … adıyla anılır), üretilen dosyanın uuid8 soneki,
+  başlıktaki `@etiket`ler ve describe yolu, tam Playwright mesajı (çağrı günlüğündeki tekrar sayısı
+  koşuya göre değişir), aday kayıtların `updated` zamanı, bulgu etiketi (`F2 (tur 1)`), depo adı ve
+  denetim commit'i. `test_defect_inputs.py` iki farklı koşunun aynı anahtarı verdiğini sınar.
+- **Çıktıdan sonra (şerit):** `resolve_evidence(output, links={"trace": url, …},
+  literal_refs=literal_evidence_refs(bulgu_kanitlari))` `kanit:<ad>`'ı gerçek bağlantıya çevirir,
+  bağlantısızları ve girdide olmayan referansları (uydurma URL/yol) atar. `story_key` ve
+  `test_case_key` şeridin kendi verisinden yazılır (golden'da `test_case_key = null`; Jira Test
+  anahtarı yayında oluşur). `dup_rank_problems(output, candidates)` boş değilse sıralama
+  gösterilmez (canlı modelde de): aramada olmayan anahtar (`invented_dup_keys`), aynı adayın iki
+  kez ya da aramadaki adayın hiç sıralanmaması, 1..n olmayan sıra, 200 karakteri aşan gerekçe,
+  `high` olmayan adaya `link`. Şema da gerekçeyi `maxLength: 200` ile sınırlar.
+- Adaylar: açık Bug'lar (`statusCategory != Done`; TPD-7 kapalıdır, aday olmaz). Aday yoksa
+  `dup_rank` çağrılmaz (`dup_rank_messages` en az bir aday ister).
+
+### Golden'lar (ad `HATA`; içerikle seçilir)
+
+| Amaç | Golden | Beyan (özet) | Çıktı |
+|---|---|---|---|
+| `triage` | `HATA` | `Hata türü: test_timeout`, sipariş testi, sağlık başarılı | `unknown` (kuralsız zaman aşımı; insana) |
+| `bug_draft` | `HATA` (ana yol) | C3: `cart-line-free-P-001` beklenen "0" gerçekleşen "1", kırılma kapalı, case başlığı | "Sepet: 6 adet Portakal Gazozu sepete eklendiğinde bedava adet 0 beklenirken 1 görünüyor" |
+| `bug_draft` | `kirma-kampanya/HATA` | beklenen "1" gerçekleşen "0", kırılma açık, "7 adet", test verisi | 7 adette bedava 0; ortam "kasıtlı demo kırılması" |
+| `bug_draft` | `f2-kampanya/HATA` | bulgu `doc_vs_code` AC2, `campaign.py:23` | 6 adette bedava 1 (TPD-5 ile aynı hata) |
+| `bug_draft` | `f4-kredi-limiti/HATA` | bulgu `missing_in_code` AC4, `pricing.py:97`, bayi2 500,00 TL, P-004 | bayi2 + 25 × P-004 = 750,00 TL: minimumu geçer, limiti aşar |
+| `dup_rank` | `HATA` (ana yol) | C3 imzası + aday kümesi (aşağıda) | TPD-5 `high` → `link` TPD-5; TPD-6 `low` |
+| `dup_rank` | `f2-kampanya/HATA` | F2 bulgusu + aday kümesi | TPD-5 `high` → `link` |
+| `dup_rank` | `f4-kredi-limiti/HATA` | F4 bulgusu (`missing_in_code` AC4, `pricing.py:97`) + aday kümesi | TPD-5 ve TPD-6 `low` → `new`; aramada önceki F4 Bug'ı varsa o `high` → `link` |
+| `dup_rank` | `kirma-kampanya/HATA` | kırma imzası + aday kümesi | TPD-5 `medium` (ters belirti) → `new`; aramada önceki kırma Bug'ı varsa o `high` → `link` |
+
+**Aday kümesi beyanı (`input_match.candidates`).** Mükerrer araması genel terimlerle (ör.
+`adette`, `kampanyalı`) yapılır; demo sırasında "Yeni kayıt" ile açılan her Bug sonraki aramalara
+girer (canlı yığında F4 → TPD-8 açıldıktan sonra C3/F2 araması `[TPD-5, TPD-8]` döndü). Bu yüzden
+golden sabit bir `Aday anahtarları: [...]` satırına değil kümeye bağlıdır: `required: [TPD-5]`
+(F4'te boş), `optional: [TPD-6]`, `by_summary`: özeti golden taslaklarından bilinen ve demo
+sırasında açılabilen Bug'lar (`6 adet … 0 beklenirken 1`, `7 adet … 1 beklenirken 0`,
+`Kredi limiti aşıldığında`). Bunların olasılık/gerekçesi golden'ın `extra_candidates` alanındadır.
+Geçit çıktıyı girdideki GERÇEK kümeye göre kurar (`matching.matched_output`): yalnızca aramadaki
+anahtarlar, her biri bir kez, sıra 1..n (önce olasılık, sonra golden sırası), öneri prompt kuralıyla
+(ilk `high` aday → `link`, yoksa `new`). Beyan dışı aday (özeti tanınmayan Bug, ör. testçinin
+özeti değiştirdiği kayıt) dürüstçe REPLAY-MISS'tir: golden bilmediği kaydı sıralamaz.
+
+Sahne sırası: F4 "Yeni kayıt", C3 ve kırma taslaklarından önce de verilebilir; C3/F2 sıralaması
+yine TPD-5 `high` + bağla, F4 Bug'ı `low` olur. Kırma "Yeni kayıt" sonrası ikinci bir kırma koşusu
+önceki kırma Bug'ını aynı belirti olarak (`high` → bağla) önerir. Testçi Jira'da özeti
+değiştirirse o kayıt beyan dışı kalır ve sıralama REPLAY-MISS olur (adaylar sırasız; karar yine
+testçinin).
+
+Senaryo yolundaki triage kararları kuraldır (C3/kırma assertion → `product_defect`,
+`add-to-cart` → `cart-add` → `test_maintenance/locator`, sağlık hatası → `environment`); modele
+gitmez, golden'ı yoktur. İskalama: `triage/on_miss.json` nötr `unknown`; `bug_draft` ve `dup_rank`
+`"policy": "raise"` → `ReplayNoOutput` (şerit şablon taslağa / sıralamasız aday listesine düşer).
+
+**Sürüklenme denetimi:** `test_defect_goldens.py` (her senaryo girdisi tam olarak kendi golden'ına
+düşer, başka hata REPLAY-MISS olur, şema, yönerge kuralları; mükerrer sıralaması yayımlanmış Bug'larla
+genişleyen kümelerde de yalnızca aramadaki anahtarları sıralar),
+`test_bug_draft_goldens.py` (adımlar demo-app fiyat fonksiyonlarıyla hatayı gerçekten gösterir:
+6 adette kodda 1 bedava, kırmada 7 adette 0, bayi2 limiti 750,00 TL ile aşılır ve başka kural
+onayı engellemez), `test_jira_seed_goldens.py` (adaylar jira-sim aramasından, TPD-5 C3'ün
+değerleriyle aynı hatayı anlatır; F4 ve kırma Bug'ları jira-sim'de açıldıktan sonra üretimin JQL
+araması ile C3/F2 TPD-5'i yine `high` + bağla alır).
+
+**Değerlendirme setleri (constitution X):** `rules/evaluation/{triage,bug-draft,dup-rank}.json`
+kanonik kurucularla üretilir (`core/tests/unit/gateway/build_eval_sets.py`; `test_eval_sets`
+bayatlığı yakalar). Canlı anahtar sahibi `cd core && uv run python -m tp_core.gateway.eval_set
+--bundle <paket> --update-status` ile koşturur; tüm vakalar geçerse `rules/evaluations.yaml`
+kaydı `evaluated` olur ve rapor `rules/evaluation/results/` altına yazılır. REPLAY koşusu
+(`--allow-replay`) yalnızca duman testidir, durumu değiştirmez.
 
 ## Serbest metin örneği (`SERBEST`)
 

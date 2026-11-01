@@ -301,6 +301,15 @@ class LocalForge:
         raw = self._git("diff", "--name-only", "-z", "--no-renames", a, b).stdout
         return sorted({n.decode("utf-8", "surrogateescape") for n in raw.split(b"\0") if n})
 
+    def merge_base(self, a: str, b: str) -> str:
+        """`a` ve `b`'nin ortak atası (üç noktalı fark tabanı); yoksa ForgeError."""
+        ra, rb = self._resolve(a), self._resolve(b)
+        proc = self._git("merge-base", ra, rb, ok=(0, 1))
+        sha = proc.stdout.decode().strip()
+        if proc.returncode != 0 or not is_sha(sha):
+            raise ForgeError(f"ortak ata yok: {a} / {b}")
+        return sha
+
     def list_files(self, prefix: str = "", ref: str = "main") -> list[str]:
         validate_prefix(prefix)
         sha = self._resolve(ref)
@@ -687,6 +696,16 @@ class LocalForge:
         )  # fmt: skip
 
     # ------------------------------------------------------------------ demo yönetimi
+
+    def tree_sha(self, ref: str = "main", path: str = "web") -> str | None:
+        """`ref`'teki `path` dizininin git ağaç sha'sı (yoksa / dizin değilse None)."""
+        sha = self._resolve(ref)
+        validate_path(path)
+        spec = f"{sha}:{path}"
+        typ = self._git("cat-file", "-t", spec, ok=(0, 1, 128))
+        if typ.returncode != 0 or typ.stdout.decode().strip() != "tree":
+            return None
+        return self._rev(spec)
 
     def archive(self, ref: str = "main", path: str = "") -> bytes:
         """`ref`'teki ağacın (veya `path` alt dizininin) tar arşivi; kök = `path`.

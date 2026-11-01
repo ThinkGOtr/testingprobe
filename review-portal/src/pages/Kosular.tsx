@@ -2,11 +2,11 @@ import { useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
-import type { Kosu, KosuKaynagi, Tetik } from "../api/types";
+import type { HataSinifi, Kosu, KosuDetay as KosuDetayTuru, KosuHatasi, KosuKaynagi, Tetik } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
 import { BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, Metrik, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
-import { KAYNAK, KOSU_DURUMU, TETIK } from "../lib/etiketler";
+import { HATA_SINIFI, KAYNAK, KOSU_DURUMU, TETIK } from "../lib/etiketler";
 import { sure, tarih } from "../lib/format";
 
 const TETIK_TONU: Partial<Record<Tetik, "notr" | "bilgi" | "vurgu" | "uyari">> = {
@@ -218,6 +218,52 @@ export function Kosular() {
   );
 }
 
+function SinifCipi({ sinif, alt }: { sinif: HataSinifi | null; alt: string | null }) {
+  if (!sinif) return <Cip ton="notr">sınıflandırılıyor</Cip>;
+  const x = HATA_SINIFI[sinif] ?? { etiket: sinif, ton: "notr" as const };
+  return (
+    <Cip ton={x.ton}>
+      {x.etiket}
+      {alt ? ` · ${alt}` : ""}
+    </Cip>
+  );
+}
+
+/**
+ * Koşunun triage kayıtları: core `hatalar` listesi (test sonucuna bağlı olmayan ortam hatası dahil)
+ * ya da sonuçlardaki `failure_id`'ler (aynı imzalı başarısızlıklar tek kayıtta toplanır).
+ */
+export function kosuHatalari(k: Pick<KosuDetayTuru, "hatalar" | "sonuclar">): KosuHatasi[] {
+  if (k.hatalar) return k.hatalar;
+  const gorulen = new Map<string, KosuHatasi>();
+  for (const s of k.sonuclar) {
+    if (!s.failure_id) continue;
+    const var_ = gorulen.get(s.failure_id);
+    if (var_) var_.test_adi = `${var_.test_adi} · ${s.test_adi}`;
+    else gorulen.set(s.failure_id, { id: s.failure_id, test_adi: s.test_adi, sinif: s.triage_sinifi ?? null, alt_tur: s.triage_alt_tur ?? null, ozet: null });
+  }
+  return [...gorulen.values()];
+}
+
+function HataListesi({ k }: { k: KosuDetayTuru }) {
+  const hatalar = kosuHatalari(k);
+  if (hatalar.length === 0) return null;
+  return (
+    <Kart baslik="Başarısızlıklar ve triage">
+      <ul className="duz-liste" aria-label="Triage kayıtları">
+        {hatalar.map((h) => (
+          <li key={h.id} className="satir-ogeler">
+            <SinifCipi sinif={h.sinif} alt={h.alt_tur} />
+            <span>{h.test_adi}</span>
+            {h.ozet && <span className="kucuk soluk">{h.ozet}</span>}
+            <Link to={`/hatalar/${encodeURIComponent(h.id)}`}>Triage sonucunu aç</Link>
+          </li>
+        ))}
+      </ul>
+    </Kart>
+  );
+}
+
 export function KosuDetay() {
   const { id = "" } = useParams();
   const v = useVeri(() => api.kosu(id), [id]);
@@ -306,6 +352,7 @@ export function KosuDetay() {
           <Metrik etiket="Süre" deger={sure(k.sure_ms)} />
         </div>
       </Kart>
+      <HataListesi k={k} />
       <Kart baslik="Test sonuçları">
         {k.sonuclar.length === 0 ? (
           <BosDurum baslik={k.durum === "queued" || k.durum === "running" ? "Koşu sürüyor…" : "Sonuç yok."} />
@@ -344,7 +391,18 @@ export function KosuDetay() {
                     </td>
                     <td className="sayi">{s.retry}</td>
                     <td>{sure(s.sure_ms)}</td>
-                    <td>{s.failure_id ? <Link to={`/hatalar/${encodeURIComponent(s.failure_id)}`}>Triage sonucu</Link> : "—"}</td>
+                    <td>
+                      {s.failure_id ? (
+                        <span className="satir-ogeler">
+                          {s.triage_sinifi && <SinifCipi sinif={s.triage_sinifi} alt={s.triage_alt_tur ?? null} />}
+                          <Link to={`/hatalar/${encodeURIComponent(s.failure_id)}`}>Triage sonucu</Link>
+                        </span>
+                      ) : s.durum === "failed" ? (
+                        <span className="soluk kucuk">sınıflandırılıyor</span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

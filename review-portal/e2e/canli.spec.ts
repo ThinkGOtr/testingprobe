@@ -214,6 +214,8 @@ test("Demo-B: kod üretimi → yerel kontrol → PR → kırarak doğrula → me
   await expect(page.getByText("ÖRNEK VERİ")).toHaveCount(0);
   const yedi = /7 adet kampanyalı üründe 1 adet bedava verilir/;
   const alti = /6 adet kampanyalı üründe bedava ürün verilmez/;
+  // Onaylı case listesi yüklenmeden sayılırsa (count() beklemez) hiçbir kutu işaretlenmez.
+  await expect(page.getByRole("checkbox").or(page.getByRole("row")).first()).toBeVisible({ timeout: 30_000 });
   for (const ad of [yedi, alti]) {
     const kutu = page.getByRole("checkbox", { name: ad });
     if ((await kutu.count()) > 0) await kutu.first().check();
@@ -230,7 +232,11 @@ test("Demo-B: kod üretimi → yerel kontrol → PR → kırarak doğrula → me
   await page.getByRole("link", { name: yedi }).first().click();
   await expect(page.getByText("REPLAY", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("region", { name: "Eşlenen adımlar tablosu" })).toContainText("expect");
-  await expect(page.getByRole("list", { name: "PR check'leri" })).toBeVisible();
+  // PR CI işi PR açıldıktan sonra kuyruğa alınır: check satırı (bekliyor/geçti) birkaç saniye sonra gelir.
+  await expect(async () => {
+    await page.reload();
+    await expect(page.getByRole("list", { name: "PR check'leri" })).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 120_000, intervals: [3_000] });
   const adimEkran = page.locator(".ajan-ekran img");
   if ((await adimEkran.count()) > 0) await expect(adimEkran.first()).toHaveJSProperty("complete", true);
   await page.screenshot({ path: `${EKRAN_DIZINI}/demob-02-script-pr.png`, fullPage: true });
@@ -307,4 +313,47 @@ test("koşu raporu: Playwright HTML raporu tek CSP ile açılır ve çizilir (bo
   expect(csp, "artefakt yanıtında tek CSP (core sandbox) olmalı").toHaveLength(1);
   expect(csp[0]).toMatch(/^sandbox /);
   expect(cspHatalari).toEqual([]);
+});
+
+// Faz 4 bug yolu (canlı): testçi açık bir bug taslağını açar, mükerrer adaylarını (jira-sim araması +
+// dup_rank, REPLAY) görür ve karar verir: AI "bağla" öneriyorsa önerilen kayda bağlar, değilse yeni
+// kayıt açar. Sonuç Jira (jira-sim) bağlantısıyla görünmelidir. Yığını değiştirir (jira-sim'e yazar);
+// karar bekleyen taslak yoksa atlanır (`make reset` ve demo akışıyla taslak oluşur).
+test("testçi: bug taslağı → mükerrer adayları → karar → jira-sim bağlantısı", async ({ page }) => {
+  test.setTimeout(120_000);
+  const hatalar: string[] = [];
+  page.on("pageerror", (e) => hatalar.push(String(e)));
+  const uclar = await cekirdekUclari(page);
+  test.skip(!uclar.includes("/bug-drafts/{}/decision"), "çekirdek POST /bug-drafts/{id}/decision sunmuyor (Faz 4 bugs şeridi yığında değil)");
+
+  await page.goto("/giris");
+  await page.getByLabel("Kullanıcı adı").fill("testci");
+  await page.getByLabel("Parola").fill(PAROLA);
+  await page.getByRole("button", { name: "Giriş yap" }).click();
+  await expect(page.getByRole("navigation", { name: "Ana menü" })).toBeVisible();
+  await page.goto("/bug-taslaklari");
+  await expect(page.getByRole("heading", { name: "Bug taslakları", level: 1 })).toBeVisible();
+  // Liste yüklenene kadar bekle (ilk görüntüde tablo boş olabilir; aksi hâlde test yanlışlıkla atlanır).
+  await expect(page.getByRole("row").nth(1)).toBeVisible({ timeout: 15_000 }).catch(() => undefined);
+  const bekleyen = page.getByRole("row").filter({ hasText: "Onay bekliyor" }).first();
+  test.skip(!(await bekleyen.isVisible().catch(() => false)), "karar bekleyen bug taslağı yok");
+  await page.screenshot({ path: `${EKRAN_DIZINI}/10-bug-taslaklari.png`, fullPage: true });
+  await bekleyen.getByRole("link").first().click();
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  // Arama sürüyorsa bitmesini bekle (SSE ya da yenileme).
+  await expect(page.getByText("Jira'da benzer açık bug'lar aranıyor…")).toHaveCount(0, { timeout: 60_000 });
+  await page.screenshot({ path: `${EKRAN_DIZINI}/11-bug-taslak.png`, fullPage: true });
+
+  const oneri = page.getByTestId("mukerrer-onerisi");
+  const bagla = (await oneri.isVisible().catch(() => false)) && /mevcut kayda bağla \((TPD-\d+)\)/.exec((await oneri.textContent()) ?? "");
+  if (bagla) {
+    await page.getByRole("button", { name: `${bagla[1]} kaydına bağla` }).click();
+  } else {
+    await page.getByRole("button", { name: "Onayla ve Jira'da aç" }).click();
+  }
+  const sonuc = page.getByTestId("yayin-sonucu");
+  await expect(sonuc).toBeVisible({ timeout: 60_000 });
+  await expect(sonuc.getByRole("link").first()).toHaveAttribute("href", /\/browse\/TPD-\d+$/);
+  await page.screenshot({ path: `${EKRAN_DIZINI}/12-bug-yayinlandi.png`, fullPage: true });
+  expect(hatalar).toEqual([]);
 });

@@ -19,7 +19,12 @@
     "sub_type": {
       "anyOf": [
         {
-          "type": "string"
+          "type": "string",
+          "enum": [
+            "locator",
+            "wait",
+            "flow"
+          ]
         },
         {
           "type": "null"

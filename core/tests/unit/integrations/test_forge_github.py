@@ -859,3 +859,13 @@ def test_changed_paths_tek_compare_cagrisi(forge: GitHubForge, gh: FakeGitHub) -
     assert forge.changed_paths(a, b) == ["x.ts", "y/old.ts", "y/z.ts"]
     gh.on("GET", f"{R}/compare/{a}...{b}", {"files": [{"filename": f"f{i}"} for i in range(300)]})
     assert forge.changed_paths(a, b) is None  # GitHub listesi kesilmiş olabilir → tam karşılaştırma
+
+
+def test_merge_base_compare_cagrisindan(forge: GitHubForge, gh: FakeGitHub) -> None:
+    """Demo kırılma farkı doğrulaması ortak atayı compare `merge_base_commit`'ten alır."""
+    b = "b" * 40
+    gh.on("GET", f"{R}/compare/main...{b}", {"merge_base_commit": {"sha": "c" * 40}})
+    assert forge.merge_base("main", b) == "c" * 40
+    gh.on("GET", f"{R}/compare/main...{b}", {"merge_base_commit": None})
+    with pytest.raises(ForgeError, match="ortak ata"):
+        forge.merge_base("main", b)

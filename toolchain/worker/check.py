@@ -50,7 +50,7 @@ import httpx
 from toolchain_common import appsha, gitforge, repos
 from toolchain_common.artifacts import atomic_write_json, checks_file
 from toolchain_common.settings import Settings
-from worker import static
+from worker import affected, static
 from worker.astguard import AstGuardError, run_ast_guard
 
 CHECK_NAME = "local-ci"
@@ -79,10 +79,13 @@ class CheckRequest:
     run_id: str | None = None
     record_check: bool | None = None
     keep: bool = False
+    # Etkilenen testler (Faz 4 onarım): e2e köküne göre değişen kaynaklar ya da ["@diff"]
+    # (base_sha..sha farkı). İçe aktarma grafiğiyle spec dosyalarına çevrilir (worker/affected.py).
+    affected_by: list[str] = field(default_factory=list)
 
     @property
     def full_scope(self) -> bool:
-        return not self.test_files and not self.grep
+        return not self.test_files and not self.grep and not self.affected_by
 
     def records_check(self) -> bool:
         # Merge kapısına yalnızca tam kapsamlı, kırılmasız kontrol yazılır (record_check ne olursa).
@@ -98,6 +101,7 @@ class CheckRequest:
             "repeat_each": self.repeat_each,
             "retries": self.retries,
             "break_campaign": self.break_campaign,
+            "affected_by": list(self.affected_by),
         }
 
 
@@ -263,7 +267,7 @@ def _execute_locked(
             report["duration_ms"] = int((time.monotonic() - started) * 1000)
             report["checks_path"] = str(path) if path is not None else None
             report["break_campaign"] = req.break_campaign
-            report["kapsam"] = req.scope()
+            report["kapsam"] = {**req.scope(), "etkilenen": steps.get("affected")}
             report["check_recorded"] = path is not None
             report["kaynak"] = head.kaynak
             if path is not None:
@@ -290,6 +294,32 @@ def app_step(cfg: Settings, head: repos.Located) -> dict[str, Any]:
     return {"ok": ok, **uyum.as_dict(), "error": error}
 
 
+DIFF_MARKER = "@diff"
+
+
+def _affected(
+    cfg: Settings, req: CheckRequest, head: repos.Located, base: str | None, e2e: Any
+) -> dict[str, Any]:
+    changed = [c for c in req.affected_by if c != DIFF_MARKER]
+    if DIFF_MARKER in req.affected_by:
+        base_sha = base or gitforge.merge_base(head.repo, head.sha, "main", cfg.git_timeout_s)
+        if base_sha:
+            changed += affected.changed_files(
+                head.repo, base_sha, head.sha, cfg.e2e_root, cfg.git_timeout_s
+            )
+    changed = list(dict.fromkeys(changed))
+    if not changed:
+        return {
+            "yontem": "import_grafi",
+            "kaynak": [],
+            "test_files": [],
+            "tam_kapsam": True,
+            "tam_kapsam_nedeni": "değişen e2e dosyası yok",
+            "dosya_sayisi": 0,
+        }
+    return affected.affected_tests(e2e, changed)
+
+
 def _run_steps(
     cfg: Settings,
     req: CheckRequest,
@@ -303,8 +333,13 @@ def _run_steps(
     steps["app"] = app_step(cfg, head)
     if not steps["app"]["ok"]:
         return steps
+    test_files = list(req.test_files)
     with gitforge.checkout(head.repo, full, cfg.e2e_root, cfg.git_timeout_s) as e2e:
-        missing = [f for f in req.test_files if not (e2e / f).is_file()]
+        if req.affected_by:
+            steps["affected"] = _affected(cfg, req, head, base, e2e)
+            # Belirsizse (tam_kapsam) tüm testler koşar: yanlış yeşil yerine fazla test.
+            test_files = [] if steps["affected"]["tam_kapsam"] else steps["affected"]["test_files"]
+        missing = [f for f in test_files if not (e2e / f).is_file()]
         if missing:
             # Playwright "No tests found" ile `error` dönerdi; neden burada açıkça söylenir.
             steps["deps"] = {
@@ -343,7 +378,7 @@ def _run_steps(
         "run_id": req.run_id or default_run_id(full),
         "repeat_each": req.repeat_each,
         "retries": req.retries,
-        "test_files": req.test_files,
+        "test_files": test_files,
         "env": {"BREAK_CAMPAIGN": "1"} if req.break_campaign else {},
         "keep": req.keep,
     }

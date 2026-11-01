@@ -176,7 +176,11 @@ def bug_drafts(
     _u: Herkes,
     requirement_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> list[dict[str, Any]]:
-    return serialize.bug_drafts(session, requirement_id)
+    from tp_core.features.bugs import serialize as bugs_serialize
+
+    # Faz 4: `bug_draft_view` Faz 2 `bug_draft_out`'un üst kümesidir; triage kaynaklı
+    # taslaklar da gereksinim süzgecine girer.
+    return bugs_serialize.bug_draft_list(session, requirement_id)
 
 
 @router.get("/bug-drafts/{draft_id}")
@@ -184,4 +188,6 @@ def bug_draft(draft_id: uuid.UUID, session: DbSession, _u: Herkes) -> dict[str, 
     b = session.get(BugDraft, draft_id)
     if b is None:
         raise HTTPException(404, "Bug taslağı bulunamadı")
-    return serialize.bug_draft_out(session, b)
+    from tp_core.features.bugs import serialize as bugs_serialize
+
+    return bugs_serialize.bug_draft_view(session, b)

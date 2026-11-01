@@ -162,7 +162,9 @@ describe("istemci ↔ sözleşme", () => {
     yapilandir({ mockZorunlu: false });
     const f = vi.fn().mockImplementation(() => Promise.resolve(yanit(200, {})));
     vi.stubGlobal("fetch", f);
-    const govde = () => JSON.parse(String((f.mock.calls.at(-1)![1] as RequestInit).body)) as Record<string, unknown>;
+    // Son POST'un gövdesi (bug kararı yanıtta taslak yoksa taslağı GET ile yeniden okur).
+    const govde = () =>
+      JSON.parse(String((f.mock.calls.filter((c) => (c[1] as RequestInit).method === "POST").at(-1)![1] as RequestInit).body)) as Record<string, unknown>;
     const head = "0123456789abcdef0123456789abcdef01234567";
 
     await api.bulguKarari("f1", { icerik_hash: "sha256:b", karar: "accept_difference", gerekce: "g" });

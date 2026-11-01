@@ -46,6 +46,7 @@ from tp_core.gateway.canonical import canonical_json
 from tp_core.gateway.config import find_rules_dir
 from tp_core.gateway.core import Gateway, ReplayKeyInfo
 from tp_core.gateway.errors import GatewayConfigError
+from tp_core.gateway.matching import matched_output
 from tp_core.gateway.replay import PROMOTED, ReplayStore, golden_digest
 from tp_core.ports import ModelMessage, ToolSpec
 
@@ -79,7 +80,10 @@ def write_promoted(
     *,
     info: ReplayKeyInfo | None = None,
     bundle_hash: str | None = None,
+    output: Any = None,
 ) -> Path:
+    """`output` verilirse golden çıktısı yerine yazılır (aday kümesine göre kurulan dup_rank
+    çıktısı); `golden_sha256` yine golden dosyasının özetidir (bayatlık denetimi)."""
     record: dict[str, Any] = {
         "kind": golden.get("kind", "call"),
         "purpose": purpose,
@@ -100,7 +104,7 @@ def write_promoted(
         # Golden canlı modelle kaydedildiyse üst verisi taşınır; yoksa çıktı "elle hazırlanmış"
         # olarak etiketlenir (`replay.output_origin`), `model` alanı kayıt değil anahtar bilgisidir.
         record["recording"] = dict(golden["recording"])
-    record["output"] = golden["output"]
+    record["output"] = golden["output"] if output is None else output
     if golden.get("steps") is not None:
         record["steps"] = golden["steps"]
     return store.save(purpose, key, record)
@@ -129,7 +133,13 @@ def promote_call(
     info = gw.replay_key_for_call(
         purpose, bundle, messages, schema, replay_key=replay_key, workflow_id=workflow_id
     )
-    return write_promoted(gw.replay_store, purpose, info.key, name, golden, info=info)
+    try:
+        output = matched_output(golden, messages)
+    except ValueError as exc:
+        raise GatewayConfigError(f"golden {name}: {exc}") from exc
+    return write_promoted(
+        gw.replay_store, purpose, info.key, name, golden, info=info, output=output
+    )
 
 
 def promote_agent(

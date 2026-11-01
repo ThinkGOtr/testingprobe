@@ -1,31 +1,48 @@
 import { useId, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { buFazdaYok } from "../api/http";
-import type { CiktiModu, Rol } from "../api/types";
+import type { CiktiModu, Degerlendirme, Rol } from "../api/types";
 import { useOturum } from "../auth";
 import { ROL, type Ton } from "../lib/etiketler";
 import { baglantiTuru } from "../lib/rotalar";
 
 /** Kayıtlı (replay) çıktı rozeti. live için hiçbir şey göstermez (Constitution VIII). */
-export function ReplayRozeti({ mode }: { mode: CiktiModu | null | undefined }) {
-  if (mode === "replay") {
-    return (
+export function ReplayRozeti({ mode, degerlendirme }: { mode: CiktiModu | null | undefined; degerlendirme?: Degerlendirme | null }) {
+  const rozet =
+    mode === "replay" ? (
       <span className="rozet rozet-replay" title="REPLAY: hazırlanmış örnek çıktı; canlı model değil.">
         REPLAY
       </span>
-    );
-  }
-  if (mode === "replay_miss") {
-    return (
+    ) : mode === "replay_miss" ? (
       <span
         className="rozet rozet-replay-miss"
         title="REPLAY-MISS: bu girdi için kayıtlı model çıktısı yok; canlı model gerekir."
       >
         REPLAY-MISS
       </span>
-    );
-  }
-  return null;
+    ) : null;
+  if (!rozet) return null;
+  return (
+    <>
+      {rozet}
+      <DegerlendirmeNotu d={degerlendirme} />
+    </>
+  );
+}
+
+/**
+ * Prompt paketinin canlı değerlendirme durumu (Anayasa X). Yalnızca core gönderdiyse gösterilir;
+ * değerlendirilmiş paket için not yoktur.
+ */
+export function DegerlendirmeNotu({ d }: { d: Degerlendirme | null | undefined }) {
+  if (!d || d.durum === "evaluated") return null;
+  const metin =
+    d.durum === "waived" ? "onaylı istisna (canlı değerlendirme yok)" : d.durum === "pending" ? "canlı değerlendirme bekliyor" : (d.etiket ?? "canlı değerlendirme bekliyor");
+  return (
+    <span className="rozet rozet-degerlendirme" title={d.etiket ?? "Prompt paketi canlı modelle değerlendirilmedi (rules/evaluations.yaml)."}>
+      {metin}
+    </span>
+  );
 }
 
 export function Cip({ ton = "notr", children, title }: { ton?: Ton; children: ReactNode; title?: string }) {

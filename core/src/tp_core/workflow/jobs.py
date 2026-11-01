@@ -32,6 +32,10 @@ Kullanım (özellik şeritleri)::
 - Bir iş akışına bağlı iş `failed` olduğunda (işleyici hatası, bilinmeyen tür, zaman aşımı, nabız
   kaybı, sahipsiz iş) `workflow_instance` aynı işlemde `running → failed` olur (`sebep` = son
   hata; denetimli ve `workflow_instance.state` olayıyla) — iş akışı "insana düşer".
+- Şeritler: `job_handler(..., serit=UZUN_SERIT)` uzun süren (tam `/check` koşan) işleri işaretler.
+  Worker bunları ayrı bir yürütme yuvasında koşar; genel şerit (PO sorgusu, triage taraması, onay
+  işleri) uzun bir CI koşusu/onarım kontrolü bitene kadar beklemez. `claim`/`process_one`
+  `turler` (yalnızca bunlar) ve `haric` (bunlar dışında) süzgeçlerini alır.
 - `idempotency_key` verilirse aynı anahtarla ikinci ekleme yeni iş açmaz, mevcut işi döndürür.
   Karar işlem kapsamlı bir advisory lock altında verilir (eşzamanlı çağrılar yarışmaz).
 """
@@ -49,7 +53,7 @@ import socket
 import threading
 import time
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -65,6 +69,8 @@ log = logging.getLogger("tp_core.worker")
 DEFAULT_MAX_DENEME = 3
 DEFAULT_ZAMAN_ASIMI_S = 900
 HEARTBEAT_S = 15.0
+GENEL_SERIT = "genel"
+UZUN_SERIT = "uzun"
 NABIZ_ZAMAN_ASIMI_S = 60.0
 NOTIFY_CHANNEL = "tp_jobs"
 # İki argümanlı advisory lock ad alanı (denetim zincirinin tek argümanlı kilidiyle çakışmaz).
@@ -109,6 +115,7 @@ class HandlerSpec:
     backoff_s: float = 5.0
     max_backoff_s: float = 300.0
     zaman_asimi_s: int = DEFAULT_ZAMAN_ASIMI_S
+    serit: str = GENEL_SERIT
 
     def backoff(self, deneme: int) -> float:
         return min(self.backoff_s * (2 ** max(deneme - 1, 0)), self.max_backoff_s)
@@ -125,7 +132,10 @@ def job_handler(
     max_backoff_s: float = 300.0,
     zaman_asimi_s: int = DEFAULT_ZAMAN_ASIMI_S,
     registry: dict[str, HandlerSpec] | None = None,
+    serit: str = GENEL_SERIT,
 ) -> Callable[[Handler], Handler]:
+    if serit not in (GENEL_SERIT, UZUN_SERIT):
+        raise ValueError(f"bilinmeyen şerit: {serit}")
     if max_deneme < 1:
         raise ValueError("max_deneme en az 1 olmalı")
     if zaman_asimi_s < 1:
@@ -136,7 +146,9 @@ def job_handler(
         mevcut = hedef.get(tur)
         if mevcut is not None and mevcut.fn is not fn:
             raise ValueError(f"iş türü iki kez kaydedildi: {tur}")
-        hedef[tur] = HandlerSpec(tur, fn, max_deneme, backoff_s, max_backoff_s, zaman_asimi_s)
+        hedef[tur] = HandlerSpec(
+            tur, fn, max_deneme, backoff_s, max_backoff_s, zaman_asimi_s, serit
+        )
         return fn
 
     return kaydet
@@ -263,13 +275,32 @@ class ClaimedJob:
 ACILIS_KIMLIGI = uuid.uuid4().hex[:12]
 
 
+def uzun_turler(
+    ek: Iterable[str] = (), registry: Mapping[str, HandlerSpec] | None = None
+) -> frozenset[str]:
+    """Uzun şerit türleri: `serit=UZUN_SERIT` ile kaydolan işleyiciler + `ek` (yapılandırma)."""
+    kayit = REGISTRY if registry is None else registry
+    return frozenset(t for t, s in kayit.items() if s.serit == UZUN_SERIT) | {
+        t.strip() for t in ek if t and t.strip()
+    }
+
+
 def worker_id() -> str:
     return f"{socket.gethostname()}:{os.getpid()}:{ACILIS_KIMLIGI}"
 
 
-def claim(conn: Connection, worker: str, turler: list[str] | None = None) -> ClaimedJob | None:
-    """Zamanı gelmiş en eski işi `running` yapar (SKIP LOCKED); `turler` ile süzülebilir."""
+def claim(
+    conn: Connection,
+    worker: str,
+    turler: list[str] | None = None,
+    *,
+    haric: list[str] | None = None,
+) -> ClaimedJob | None:
+    """Zamanı gelmiş en eski işi `running` yapar (SKIP LOCKED); `turler` (yalnızca bunlar) ve
+    `haric` (bunlar dışında) ile süzülebilir."""
     filtre = "AND tur = ANY(:turler)" if turler is not None else ""
+    if haric:
+        filtre += " AND NOT (tur = ANY(:haric))"
     row = conn.execute(
         text(
             "UPDATE job SET durum = 'running', deneme = deneme + 1, baslama = now(), "
@@ -279,7 +310,7 @@ def claim(conn: Connection, worker: str, turler: list[str] | None = None) -> Cla
             "FOR UPDATE SKIP LOCKED) "
             "RETURNING id, tur, yuk, deneme, max_deneme, workflow_id, zaman_asimi_s"
         ),
-        {"w": worker, "turler": turler},
+        {"w": worker, "turler": turler, "haric": list(haric or [])},
     ).first()
     if row is None:
         return None
@@ -695,15 +726,18 @@ def process_one(
     registry: Mapping[str, HandlerSpec] | None = None,
     *,
     canli: Callable[[], None] | None = None,
+    turler: list[str] | None = None,
+    haric: list[str] | None = None,
 ) -> Sonuc | None:
-    """Bir iş sahiplenir, `zaman_asimi_s` sınırıyla yürütür, sonucu yazar. İş yoksa None.
+    """Bir iş sahiplenir (`turler`/`haric` süzgeçleriyle, bkz. `claim`), `zaman_asimi_s`
+    sınırıyla yürütür, sonucu yazar. İş yoksa None.
 
     İş `failed` biterse bağlı iş akışı aynı işlemde `failed` olur (bütçe aşımında `paused`).
     Sonuç `zaman_asimi=True` ise işleyici iş parçacığı asılı kalmıştır; çağıran çıkmalıdır.
     """
     w = worker or worker_id()
     with engine.begin() as conn:
-        job = claim(conn, w)
+        job = claim(conn, w, turler, haric=haric)
     if job is None:
         return None
     dur = threading.Event()

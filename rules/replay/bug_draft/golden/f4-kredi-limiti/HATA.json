@@ -1,0 +1,43 @@
+{
+  "kind": "call",
+  "purpose": "bug_draft",
+  "golden": "f4-kredi-limiti/HATA",
+  "note": "Elle hazırlandı (canlı model çıktısı değil; ai_call.model = golden-elle). Girdi beyanı (input_match) tp_core.gateway.defects kurucularının ürettiği kanonik metne göredir; uymayan girdi amacın on_miss.json politikasına düşer. Canlı anahtar gelince TP_MODEL_MODE=record ile yeniden kaydedilmeli. Demo-A F4 kredi limiti bulgusu (missing_in_code, analist: Kod/veri hatalı). Adımlar boşluğu gerçekten gösterir: bayi2 (500,00 TL limit) 750,00 TL'lik sepetle minimum tutarı geçer, limiti aşar; başka kural onayı engellemez (test_bug_draft_goldens).",
+  "input_match": {
+    "sources": [
+      "finding:*",
+      "testdata:*"
+    ],
+    "contains": [
+      "Bulgu türü: missing_in_code",
+      "Doküman maddesi: AC4",
+      "kod: api/src/demoapp_api/pricing.py:97",
+      "- bayi2 / Demo123! — bayi adı \"Sahil Bayi\", kredi limiti 500,00 TL",
+      "- P-004 · \"Şeftalili Soğuk Çay 1L\" · 30,00 TL"
+    ]
+  },
+  "output": {
+    "summary": "Sepet: Kredi limiti aşıldığında \"Kredi limiti aşıldı\" uyarısı gösterilmiyor ve sipariş onaylanabiliyor",
+    "steps": [
+      "1. bayi2 / Demo123! (kredi limiti 500,00 TL) ile giriş yap",
+      "2. \"Şeftalili Soğuk Çay 1L\" için 25 adet gir ve \"Sepete ekle\" butonuna bas (toplam 750,00 TL: minimum sipariş tutarını karşılar, kredi limitini aşar)",
+      "3. Üst menüden sepete git",
+      "4. Uyarıları ve \"Siparişi onayla\" butonunu kontrol et"
+    ],
+    "expected": "Sepette \"Kredi limiti aşıldı\" uyarısı gösterilir ve sipariş onaylanamaz (TPD-1 AC4)",
+    "actual": "Kredi limiti uyarısı yok ve \"Siparişi onayla\" butonu aktif; sepet hesabı yalnızca minimum sipariş uyarısı üretiyor, kredi limiti kontrolü yok (pricing.py:97)",
+    "environment": "Tutarlılık denetimi (demo-app kaynağı, salt okuma)",
+    "evidence": [
+      {
+        "kind": "code",
+        "ref": "api/src/demoapp_api/pricing.py:97"
+      }
+    ],
+    "story_key": "TPD-1",
+    "test_case_key": null,
+    "severity_suggestion": "critical",
+    "labels": [
+      "AI-generated"
+    ]
+  }
+}

@@ -569,6 +569,8 @@ export function ScriptDetay() {
   const d = SCRIPT_DURUMU[s.durum] ?? { etiket: s.durum, ton: "notr" as const };
   const prAcik = s.pr?.durum === "open";
   const prBirlesti = s.pr?.durum === "merged";
+  /** Kod üretiminin defect adayı (tutarlı assertion farkı): kırarak doğrulama kapalıdır (§2 adım 6, 12). */
+  const defectAdayi = s.yerel_sinif === "defect_adayi";
   const engeller = mergeEngelleri(s);
   const uyarilar = mergeUyarilari(s);
   const kabul = !!s.pr && kabulHead === s.pr.head_sha;
@@ -718,7 +720,11 @@ export function ScriptDetay() {
               {s.pass_at_1 !== null && <p className="kucuk">pass@1 (düzeltme turu öncesi): {s.pass_at_1 ? "✓" : "✗"}</p>}
             </>
           ) : (
-            <BosDurum baslik={s.yerel_sinif === "defect_adayi" ? "PR açılmadı: defect adayı insana düştü." : "PR henüz açılmadı."} />
+            <BosDurum baslik={s.yerel_sinif === "defect_adayi" ? "PR açılmadı: defect adayı insana düştü." : "PR henüz açılmadı."}>
+              {s.yerel_sinif === "defect_adayi" && s.failure_id && (
+                <Link to={`/hatalar/${encodeURIComponent(s.failure_id)}`}>Triage sonucu ve bug taslağı</Link>
+              )}
+            </BosDurum>
           )}
           {prBirlesti && s.pr ? (
             <div className="merge-kapisi" data-testid="merge-kapisi">
@@ -850,9 +856,15 @@ export function ScriptDetay() {
             <IslemDugmesi
               roller={["engineer"]}
               tur="ikincil"
-              disabled={!prAcik || s.break_verify.durum === "running"}
+              disabled={!prAcik || defectAdayi || s.break_verify.durum === "running"}
               calisiyor={s.break_verify.durum === "running"}
-              title={prAcik ? undefined : "Kırarak doğrulama için açık PR gerekir"}
+              title={
+                defectAdayi
+                  ? "Defect adayı: test zaten kırmızı (ürün hatası şüphesi). Kırarak doğrulama anlamsız; karar triage/bug taslağında."
+                  : prAcik
+                    ? undefined
+                    : "Kırarak doğrulama için açık PR gerekir"
+              }
               onClick={() => eylem(() => api.kirarakDogrula(s.id), (r) => (r as { mesaj?: string }).mesaj ?? "Kırarak doğrulama başladı.")}
             >
               {s.break_verify.durum === "not_started" ? "Kırarak doğrula" : "Yeniden doğrula"}
@@ -863,6 +875,12 @@ export function ScriptDetay() {
           <p className="soluk kucuk">
             Koşunun bayisi için kampanya kuralı BREAK_CAMPAIGN ile bozulur (diğer bayiler ve ajan etkilenmez); test kırmızıya dönmezse "zayıf test" sayılır.
           </p>
+          {defectAdayi && (
+            <Uyari ton="bilgi" baslik="Kırarak doğrulama kapalı">
+              Yerel kontrol bu testi assertion farkıyla kırmızı buldu (defect adayı). Uygulama zaten beklenenden farklı davranıyor; kırma
+              kanıt üretmez. Hata triage'a gitti; bug taslağı ve testçi kararı triage sayfasında.
+            </Uyari>
+          )}
           <KirmaZaman bv={s.break_verify} />
           {s.break_verify.durum === "passed" && <Uyari ton="basari">Test hata yakalıyor ✓</Uyari>}
           {(s.zayif_test || s.break_verify.durum === "weak") && (

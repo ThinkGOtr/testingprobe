@@ -447,10 +447,12 @@ def test_main_kancalari_dogrudan_cagirmaz(engine: Engine, monkeypatch: pytest.Mo
     monkeypatch.setattr(
         worker, "acilis_kancalari", lambda _m: pytest.fail("kanca açılışta çağrıldı")
     )
-    monkeypatch.setattr(worker, "run", lambda _dur, _aralik: 0)
+    seritler: list[frozenset[str]] = []
+    monkeypatch.setattr(worker, "run", lambda _dur, _aralik, *, uzun: seritler.append(uzun) or 0)
     monkeypatch.setattr(worker.signal, "signal", lambda *_a: None)
     worker.main()
     assert planlanan == [["a.jobs"]]
+    assert len(seritler) == 1 and "ci.run" in seritler[0]  # uzun şerit varsayılan açık
 
 
 def test_release_orphans_hostname_desenini_kacirir(engine: Engine) -> None:

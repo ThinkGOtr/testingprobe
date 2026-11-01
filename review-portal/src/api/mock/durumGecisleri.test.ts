@@ -90,7 +90,7 @@ describe("bug_draft kararları ↔ core bug_draft makinesi", () => {
         await oturumAc("testci");
         const b = mockVerisi().bugTaslaklari.find((x) => x.id === "bug-1")!;
         b.durum = durum;
-        const r = await sonuc(api.bugKarari(b.id, { icerik_hash: b.icerik_hash, karar, ...(karar === "link" ? { link_key: "TPD-5" } : {}) }));
+        const r = await sonuc(api.bugKarari(b.id, { icerik_hash: b.icerik_hash, karar, ...(karar === "link" ? { link_key: "TPD-5" } : {}), ...(karar === "dismiss" ? { gerekce: "hata değil" } : {}) }));
         const yol = karar === "dismiss" ? ["dismissed"] : ["approved", "published"];
         if (yolGecerli("bug_draft", durum, yol)) {
           expect(r.ok, JSON.stringify(r)).toBe(true);

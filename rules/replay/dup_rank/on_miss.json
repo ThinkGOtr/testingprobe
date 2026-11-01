@@ -1,0 +1,6 @@
+{
+  "kind": "call",
+  "purpose": "dup_rank",
+  "policy": "raise",
+  "note": "REPLAY-MISS politikası (golden değildir, model çıktısı değildir). Başka bir aday kümesinin sıralaması aramada olmayan anahtarları içerebilir (uydurma aday) ve yanlış 'bağla' önerisi verebilir. Girdi hiçbir golden beyanına uymazsa geçit ReplayNoOutput fırlatır; bug şeridi Jira aramasının adaylarını AI sıralaması OLMADAN gösterir ('Mükerrer sıralaması yapılamadı (REPLAY-MISS)'), karar yine testçinindir. Bkz. rules/replay/README.md."
+}

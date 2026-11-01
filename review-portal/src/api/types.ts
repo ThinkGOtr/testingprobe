@@ -535,6 +535,8 @@ export interface Script {
   engel: { tur: string; neden: string | null } | null;
   /** Yerel kontrolün sınıfı (liste rozeti: "defect adayı"); kontrol yapılmadıysa null. */
   yerel_sinif: YerelKontrolSinifi | null;
+  /** Defect adayının triage kaydı (core `script.failure_id`); yoksa null/yok. */
+  failure_id?: string | null;
   /** null: model çağrısı yok ya da mod bilinmiyor ("live" uydurulmaz). */
   mode: CiktiModu | null;
   olusturma: string;
@@ -668,13 +670,28 @@ export interface TestSonucu {
   retry: number;
   hata_mesaji: string | null;
   failure_id: string | null;
+  /** Triage sınıfı (core koşu detayında gönderirse); sınıflandırma sürüyorsa/yoksa null. */
+  triage_sinifi?: HataSinifi | null;
+  triage_alt_tur?: string | null;
   case_id: string | null;
   /** Playwright ekleri (trace, ekran görüntüsü, video); url core'un artefakt ucundan. */
   ekler?: { ad: string; tur: string | null; url: string | null }[];
 }
 
+/** Koşunun triage kayıtları (core `failure`; test sonucuna bağlı olmayan ortam hatası dahil). */
+export interface KosuHatasi {
+  id: string;
+  test_adi: string;
+  sinif: HataSinifi | null;
+  alt_tur: string | null;
+  /** Bağlı bug taslağı / onarım durumu kısa özeti; yoksa null. */
+  ozet: string | null;
+}
+
 export interface KosuDetay extends Kosu {
   sonuclar: TestSonucu[];
+  /** Triage kayıtları (core göndermiyorsa sonuçlardaki `failure_id`'lerden türetilir). */
+  hatalar?: KosuHatasi[];
   /** Koşu günlüğü (test-runner stdout) ve core'un koşu uyarıları. */
   log_url: string | null;
   hata: string | null;
@@ -691,23 +708,106 @@ export type HataSinifi =
   | "test_data"
   | "unknown";
 
+/**
+ * Prompt paketinin canlı değerlendirme durumu (rules/evaluations.yaml, Anayasa X). Core bunu
+ * gönderiyorsa REPLAY rozetinin yanında "canlı değerlendirme bekliyor" yazılır; göndermiyorsa hiçbir
+ * şey uydurulmaz.
+ */
+export interface Degerlendirme {
+  durum: "pending" | "evaluated" | "waived" | "stale" | "missing";
+  etiket: string | null;
+}
+
 export interface EslesenSinyal {
   kod: string;
   aciklama: string;
   kaynak: string;
+  /** Sinyalin dayandığı ham kanıt parçası (hata metni, aria satırı, probe sonucu …); yoksa null. */
+  kanit?: string | null;
 }
+
+/** test-runner koşu öncesi sağlık yoklaması (`saglik`; MIMARI-SOZLESME §2). */
+export interface SaglikSonucu {
+  ok: boolean | null;
+  zaman: string | null;
+  web: SaglikUcu | null;
+  api: SaglikUcu | null;
+  hata: string | null;
+}
+
+export interface SaglikUcu {
+  url: string | null;
+  status: number | null;
+  ms: number | null;
+  hata: string | null;
+}
+
+/** toolchain-worker `POST /locator-probe` sonucu (çalışan demo-app-web üzerinde ölçülür). */
+export interface LocatorProbeSonucu {
+  rol: string | null;
+  ad: string | null;
+  scope_test_id: string | null;
+  matches: number | null;
+  test_id: string | null;
+  olculen: string | null;
+  uygulama_sha: string | null;
+  sha_eslesmesi: "eslesiyor" | "farkli" | "dogrulanamadi" | null;
+  uyari: string | null;
+  oneri_uretilebilir: boolean | null;
+}
+
+/** Triage'ın baktığı kanıt (§8.6 adım 1); her parça yoksa null. */
+export interface TriageKaniti {
+  hata_mesaji: string | null;
+  beklenen: string | null;
+  gerceklesen: string | null;
+  /** Başarısız adım / test konumu (Playwright `location`). */
+  konum: string | null;
+  /** Hata anındaki aria snapshot'ından ilgili kısım (yalnızca rol + ad). */
+  aria_snippet: string | null;
+  locator_probe: LocatorProbeSonucu | null;
+  saglik: SaglikSonucu | null;
+  /** Tekrar/deneme sonuçları (repeat-each, retry), ör. ["failed", "failed", "failed"]. */
+  tekrarlar?: string[];
+  /** Kanıt toplama uyarıları (ör. "trace okunamadı"). */
+  uyarilar?: string[];
+}
+
+export type OnarimDurumu = "proposed" | "checking" | "pr_open" | "merged" | "rejected" | "failed";
 
 export interface LocatorOnarimi {
   tur: "locator_fix";
   dosya: string;
   anahtar: string;
-  eski_test_id: string;
-  yeni_test_id: string;
+  /** null: öneri üretilmedi (onarım engellendi); portal boş "" → "" farkı göstermez. */
+  eski_test_id: string | null;
+  yeni_test_id: string | null;
   rol: string;
   ad: string;
+  /** Kapsayıcı testId öneki (`within`, ör. "product-card-"); onarımda değişmez. */
+  within?: string | null;
+  scope_test_id?: string | null;
   dogrulama: string[];
-  durum: "proposed" | "pr_open" | "merged" | "rejected";
+  /**
+   * `dogrulama` kimin: triage gözlemleri (eşleşen sinyaller; onay işareti taşımaz) ya da onarım
+   * işinin kontrolleri (her satır kendi sonucuna göre ✓/✗/!). Bilinmiyorsa triage sayılır.
+   */
+  dogrulama_kaynagi?: "triage" | "onarim";
+  durum: OnarimDurumu;
   pr: PullRequest | null;
+  /** Son yeşil koşunun aria snapshot'ıyla rol + ad karşılaştırması. */
+  aria_dogrulama?: { eslesti: boolean | null; aciklama: string | null; run_id: string | null; kaynak?: string | null } | null;
+  /** AST koruması (onarım modu): yalnızca testId değeri değişti mi. */
+  ast_guard?: { ok: boolean | null; ihlaller: string[] } | null;
+  /** Yerel kontrol: etkilenen TÜM testler (üretilen + elle yazılmış). */
+  yerel_kontrol?: { sonuc: "passed" | "failed" | "error" | "pending" | null; run_id: string | null; gecen: number | null; toplam: number | null } | null;
+  etkilenen_testler?: { test_adi: string; durum: "passed" | "failed" | "pending" | null }[];
+  /** Değişen dosyalar (yama yalnızca `pages/**\/locators.ts`). */
+  degisen_dosyalar?: string[];
+  /** Yama (unified diff); varsa gösterilir. */
+  yama?: string | null;
+  /** Öneri neden PR'a dönüşmedi/başarısız (core'un Türkçe gerekçesi). */
+  neden?: string | null;
 }
 
 export interface HataAnalizi {
@@ -720,12 +820,23 @@ export interface HataAnalizi {
   alt_tur: string | null;
   eslesen_sinyaller: EslesenSinyal[];
   karar_kaynagi: "rule" | "llm";
+  /** Eşleşen kuralın adı (ör. "product_defect", "test_maintenance/locator"); yoksa null. */
+  kural?: string | null;
+  /** Kuralın/LLM'in Türkçe gerekçesi (core `failure.gerekce`); yoksa null. */
+  gerekce?: string | null;
   llm_yorumu: string | null;
   oneri: LocatorOnarimi | { tur: "bug_draft"; bug_draft_id: string } | null;
+  /** Öneri üretilmediyse nedeni (ör. "rol + ad 2 eleman buldu", "uygulama sha'sı farklı"). */
+  oneri_yok_nedeni?: string | null;
+  kanit?: TriageKaniti | null;
   /** url null: artifact henüz sunulmuyor (etiket düz metin gösterilir). */
   kanit_linkleri: { etiket: string; url: string | null }[];
-  mode: CiktiModu;
+  /** null: model çağrısı yok (kural kararı); "live" uydurulmaz. */
+  mode: CiktiModu | null;
+  degerlendirme?: Degerlendirme | null;
   zaman: string;
+  /** Kaynak script (kod üretimi defect adayı) varsa. */
+  script_id?: string | null;
 }
 
 // ---------------------------------------------------------------- Bug taslakları
@@ -737,7 +848,8 @@ export interface BugTaslakIcerik {
   actual: string;
   environment: string;
   /** url null: kanıtın açılabilir adresi yok (ör. artifact sunucusu yok); "#…" sayfa içi referans. */
-  evidence: { tur: "sauce_video" | "allure" | "trace" | "screenshot" | "code" | "data"; url: string | null; etiket: string }[];
+  /** `ref`: core şemasındaki ham referans (bağlantı ya da `dosya:satır`); karar gövdesine geri yazılır. */
+  evidence: { tur: "sauce_video" | "allure" | "trace" | "screenshot" | "log" | "code" | "data"; url: string | null; etiket: string; ref?: string }[];
   story_key: string | null;
   test_case_key: string | null;
   severity_suggestion: "critical" | "major" | "minor" | "trivial";
@@ -752,6 +864,30 @@ export interface MukerrerAday {
   durum: string;
   gerekce: string;
   sinyaller: string[];
+  /** AI sıralaması (dup_rank): high | medium | low; yoksa null. */
+  olasilik?: "high" | "medium" | "low" | null;
+  sira?: number | null;
+  /** Jira kaydının tarayıcı adresi; yoksa null. */
+  url?: string | null;
+}
+
+/** Jira mükerrer araması (JQL + dup_rank) durumu. */
+export interface MukerrerArama {
+  durum: "yapildi" | "yapilmadi" | "suruyor" | "basarisiz";
+  jql: string | null;
+  /** AI önerisi: yeni kayıt mı, bağla mı (karar testçinin). */
+  oneri: "new" | "link" | null;
+  oneri_link_key: string | null;
+  /** Öneri neden "new"e düştü / arama neden atlandı (core gerekçesi). */
+  neden?: string | null;
+  mode: CiktiModu | null;
+  degerlendirme?: Degerlendirme | null;
+  hata: string | null;
+  /**
+   * Model sıralaması yapılamadıysa (REPLAY-MISS, gateway hatası, uydurulan anahtar) neden AI önerisi
+   * olmadığı (Türkçe); bu durumda `oneri` null'dır — model karşılaştırmadıysa "yeni kayıt" denmez.
+   */
+  ai_onerisi_yok?: string | null;
 }
 
 /** Bug taslağı durumları — core `bug_draft` makinesiyle birebir aynı küme. */
@@ -765,6 +901,8 @@ export interface BugTaslagi {
   finding_id: string | null;
   icerik: BugTaslakIcerik;
   mukerrer_adaylari: MukerrerAday[];
+  /** Arama durumu (core gönderiyorsa); yoksa adaylardan ve kaynaktan türetilir. */
+  mukerrer_arama?: MukerrerArama | null;
   karar: "new" | "link" | "dismiss" | null;
   durum: BugDurumu;
   /** `karar === "link"`: bağlanan mevcut Jira kaydı. */
@@ -774,17 +912,55 @@ export interface BugTaslagi {
   onaylayan: string | null;
   onay_zamani: string | null;
   jira_key: string | null;
+  /** Yayınlanan/bağlanan kaydın tarayıcı adresi; yoksa null. */
+  jira_url?: string | null;
+  /** Jira browse kökü (story/test bağlantıları için); yoksa null. */
+  jira_browse_url?: string | null;
+  /** Yayın hatası (publish_bug başarısız); yoksa null. */
+  yayin_hatasi?: string | null;
+  /** Yayın işi kuyrukta / sürüyor (core `yayin.durum`). */
+  yayin_suruyor?: boolean;
+  /** Ret gerekçesi (dismissed). */
+  ret_gerekcesi?: string | null;
+  /** Core'un Türkçe sonuç metni ("Mevcut kayda bağlandı: TPD-5", "Jira'da açıldı: TPD-n" …). */
+  sonuc_metni?: string | null;
+  /** Testçi taslağı yeniden açabilir (reddedilmiş ya da yayını kalıcı başarısız). */
+  yeniden_acilabilir?: boolean;
+  /** Bu sistemin açtığı Bug demo sıfırlamasında Jira'dan silindi (`jira_url` null). */
+  jira_silindi?: boolean;
   /** null: model çağrısı yok (ör. şablon taslağı); "live" varsayılmaz. */
   mode: CiktiModu | null;
+  degerlendirme?: Degerlendirme | null;
   olusturma: string;
 }
 
 export interface BugKararGirdisi {
   /** Ekranda görülen taslak içeriğinin hash'i (düzenleme öncesi). */
   icerik_hash: string;
-  karar: "new" | "link" | "dismiss";
+  /** `edit`: düzenlemeyi kaydet (onay değil) · `reopen`: reddedilmişi taslağa al. */
+  karar: "new" | "link" | "dismiss" | "edit" | "reopen";
   icerik?: BugTaslakIcerik;
   link_key?: string;
+  /** Ret gerekçesi (dismiss için zorunlu). */
+  gerekce?: string;
+}
+
+/** `GET /demo/status`: forge main ve çalışan demo uygulamasının durumu. */
+export interface DemoDurumu {
+  forge: {
+    main?: string | null;
+    /** Uygulama tarafı (web/src) "Sepete ekle" testId'si. */
+    testid?: unknown;
+    /** Test tarafı (e2e/pages/catalog/locators.ts `catalog.addToCart.testId`) main'de; core verirse. */
+    e2e_testid?: string | null;
+    baseline?: string | null;
+    main_baseline_mi?: boolean;
+    hata?: string;
+  };
+  /** Core açıkça verirse locator senaryosunun durumu (yoksa portal forge + koşulardan türetir). */
+  locator_durumu?: "baseline" | "kirik" | "onarildi" | null;
+  uygulama: { sha?: string | null; kaynak?: string | null; main_ile_eslesiyor?: boolean; neden?: string | null; yonerge?: string | null };
+  web_yenileme_istegi: unknown;
 }
 
 // ---------------------------------------------------------------- Kontrol Kulesi

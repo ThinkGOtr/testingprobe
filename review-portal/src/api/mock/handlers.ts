@@ -102,6 +102,7 @@ function kaydet(): void {
 /** Testler için: mock durumunu ilk haline getirir. */
 export function mockSifirla(): void {
   veri = ilkVeri();
+  demoKirik = false;
   mockOturumuAyarla(null);
   try {
     sessionStorage.removeItem(VERI_ANAHTARI);
@@ -1252,44 +1253,121 @@ function ciTetikle(govde: unknown): IsYaniti {
   return is("queued", `${tetik === "deploy" ? "Deploy" : "Gece"} koşusu sıraya alındı (${k.id}).`);
 }
 
+/**
+ * core POST /demo/break-locator: demo/break-locator dalı demo-admin bypass'ıyla main'e merge edilir
+ * (denetim: "demo kırılması"), çalışan demo uygulaması main'den yeniden kurulur, CI koşar → kırmızı →
+ * triage test_maintenance/locator. Mock aynı sırayı olaylarla canlandırır.
+ */
+let demoKirik = false;
+
+function demoKir(): IsYaniti {
+  rolGerekli("presenter");
+  if (demoKirik) throw new ApiError(409, "Locator zaten kırık (main'de cart-add); önce demoyu sıfırlayın.");
+  demoKirik = true;
+  denetimEkle("demo.break_locator", "demo-app-web", "demo kırılması: demo/break-locator merge (demo-admin bypass) · add-to-cart → cart-add");
+  const k = kosuOlustur("push", "local", false, null);
+  kaydet();
+  const ilerleme = (asama: string, mesaj: string) => mockOlayYayinla({ type: "demo.progress", id: "demo", data: { asama, mesaj, run_id: k.id } });
+  arkaPlan([
+    () => ilerleme("merge", "demo/break-locator main'e merge edildi (demo-admin bypass, denetlendi)."),
+    () => ilerleme("deploy", "Demo uygulaması main'den yeniden kuruldu."),
+    () => {
+      k.durum = "running";
+      mockOlayYayinla({ type: "ci.status", id: k.id, data: { durum: "running" } });
+      ilerleme("ci", "CI koşusu başladı.");
+    },
+    () => {
+      kosuBitir(k, false, TEST_C1, "locator.click: Timeout 5000ms exceeded.\nwaiting for getByTestId('product-card-P-001').getByTestId('add-to-cart')");
+      const h = veri.hatalar.find((x) => x.id === "fail-2");
+      if (h?.oneri?.tur === "locator_fix") {
+        k.sonuclar[0].failure_id = h.id;
+        k.sonuclar[0].triage_sinifi = "test_maintenance";
+        k.sonuclar[0].triage_alt_tur = "locator";
+      }
+      mockOlayYayinla({ type: "failure.classified", id: "fail-2", data: { failure_id: "fail-2", run_id: k.id, sinif: "test_maintenance" } });
+      ilerleme("triage", "Triage: test bakımı / locator; onarım önerisi hazır.");
+    },
+  ]);
+  return is("started", `Locator kırılması başladı: merge → yeniden kurulum → CI (${k.id}).`);
+}
+
 function onarimPr(id: string): IsYaniti {
   rolGerekli("engineer");
   const h = bul(veri.hatalar, id, "Hata analizi");
+  if (h.sinif === "environment") throw new ApiError(409, "Ortam hatası için onarım yapılmaz.");
   if (h.oneri?.tur !== "locator_fix") throw new ApiError(409, "Bu hata için locator onarım önerisi yok.");
   const o = h.oneri;
   if (o.durum !== "proposed") throw new ApiError(409, "Onarım PR'ı zaten açılmış.");
-  const prNo = yeniPrNo();
-  o.durum = "pr_open";
-  o.pr = {
-    number: prNo,
-    url: null,
-    baslik: `fix(locators): ${o.anahtar} testId ${o.eski_test_id} → ${o.yeni_test_id}`,
-    branch: `tp/repair-${o.anahtar}`,
-    durum: "open",
-    ci: "pending",
-    icerik_hash: "", // hashleriTazele: dosya + anahtar + eski/yeni testId
-    head_sha: "",
-  };
-  denetimEkle("failure.fix", h.id, `Onarım PR #${prNo} (yalnızca locators.ts testId)`);
+  // core FailureToFix: yama → AST koruması (onarım modu) → etkilenen tüm testlerde yerel kontrol → bot PR.
+  o.durum = "checking";
+  o.yerel_kontrol = { sonuc: "pending", run_id: null, gecen: null, toplam: null };
+  denetimEkle("failure.fix", h.id, `Onarım işi başladı (yalnızca ${o.dosya} testId)`);
   kaydet();
+  const olay = () => mockOlayYayinla({ type: "failure.updated", id: h.id, data: { failure_id: h.id, durum: o.durum } });
   arkaPlan([
     () => {
+      o.degisen_dosyalar = [o.dosya];
+      o.yama = `--- a/${o.dosya}\n+++ b/${o.dosya}\n@@\n   ${o.anahtar}: {\n-    testId: '${o.eski_test_id}',\n+    testId: '${o.yeni_test_id}',\n     role: '${o.rol}',\n     name: '${o.ad}',`;
+      o.ast_guard = { ok: true, ihlaller: [] };
+      olay();
+    },
+    () => {
+      const testler = o.etkilenen_testler ?? [];
+      o.etkilenen_testler = testler.map((t) => ({ ...t, durum: "passed" as const }));
+      o.yerel_kontrol = { sonuc: "passed", run_id: "run-108", gecen: testler.length, toplam: testler.length };
+      olay();
+    },
+    () => {
+      const prNo = yeniPrNo();
+      o.durum = "pr_open";
+      o.pr = {
+        number: prNo,
+        url: null,
+        baslik: `fix(locators): ${o.anahtar} testId ${o.eski_test_id} → ${o.yeni_test_id}`,
+        branch: `tp/repair-${o.anahtar}`,
+        durum: "open",
+        ci: "pending",
+        icerik_hash: "", // hashleriTazele: dosya + anahtar + eski/yeni testId
+        head_sha: "",
+      };
+      denetimEkle("pr.open", `PR #${prNo}`, `tp/repair-${o.anahtar} (tp-repair)`, "core-worker");
+      olay();
+    },
+    () => {
       if (o.pr) o.pr.ci = "passed";
-      mockOlayYayinla({ type: "ci.status", id: h.id, data: { pr: o.pr?.number, ci: "passed" } });
+      mockOlayYayinla({ type: "ci.status", id: h.id, data: { failure_id: h.id, pr: o.pr?.number, ci: "passed" } });
     },
   ]);
-  return is("started", `Onarım PR'ı #${prNo} açıldı.`);
+  return is("started", "Onarım işi başladı: AST koruması ve etkilenen testlerde yerel kontrol sonrası bot PR açılır.");
 }
 
 function bugKarari(id: string, govde: unknown): BugTaslagi {
   const k = rolGerekli("tester");
   const b = bul(veri.bugTaslaklari, id, "Bug taslağı");
   const g = (govde ?? {}) as Partial<BugKararGirdisi>;
-  if (g.karar !== "new" && g.karar !== "link" && g.karar !== "dismiss") {
-    throw new ApiError(422, "Karar new, link veya dismiss olmalı.");
+  if (!["new", "link", "dismiss", "edit", "reopen"].includes(g.karar ?? "")) {
+    throw new ApiError(422, "Karar new, link, edit, dismiss veya reopen olmalı.");
   }
   hashGerekli(govde, b.icerik_hash);
+  if (g.karar === "reopen") {
+    if (b.durum !== "dismissed") throw new ApiError(409, `Yalnızca reddedilmiş taslak taslağa alınır (${b.durum})`);
+    gecir("bug_draft", b, "draft");
+    b.karar = null;
+    b.ret_gerekcesi = null;
+    denetimEkle("bug.reopen", b.id, "Taslağa alındı");
+    kaydet();
+    return cikti(b);
+  }
   if (b.durum !== "draft") throw new ApiError(409, "Taslak için karar zaten verilmiş.");
+  if (g.karar === "edit") {
+    if (!g.icerik || !g.icerik.summary.trim()) throw new ApiError(422, "Düzenleme kararı değişmiş içerik ister");
+    b.icerik = g.icerik;
+    denetimEkle("bug_draft.edited", b.id, "Taslak düzenlendi (onay değil)");
+    kaydet();
+    mockOlayYayinla({ type: "bug.draft_edited", id: b.id, data: { bug_draft_id: b.id } });
+    return cikti(b);
+  }
+  if (g.karar === "dismiss" && !(g.gerekce ?? "").trim()) throw new ApiError(422, "Taslağı reddetmek için gerekçe zorunludur");
   if (!yolGecerli("bug_draft", b.durum, g.karar === "dismiss" ? ["dismissed"] : ["approved", "published"])) {
     throw new ApiError(409, GECIS_YOK);
   }
@@ -1300,6 +1378,7 @@ function bugKarari(id: string, govde: unknown): BugTaslagi {
     gecir("bug_draft", b, "approved", "published");
     b.link_key = anahtar;
     b.jira_key = anahtar;
+    b.jira_url = b.jira_browse_url ? `${b.jira_browse_url}/${anahtar}` : null;
   } else if (g.karar === "new") {
     if (g.icerik) {
       if (!g.icerik.summary.trim()) throw new ApiError(422, "Özet boş olamaz.");
@@ -1307,10 +1386,12 @@ function bugKarari(id: string, govde: unknown): BugTaslagi {
     }
     gecir("bug_draft", b, "approved", "published");
     b.jira_key = yeniJiraAnahtari();
+    b.jira_url = b.jira_browse_url ? `${b.jira_browse_url}/${b.jira_key}` : null;
   } else {
     gecir("bug_draft", b, "dismissed");
+    b.ret_gerekcesi = (g.gerekce ?? "").trim();
   }
-  b.karar = g.karar;
+  b.karar = g.karar as "new" | "link" | "dismiss";
   b.onaylayan = k.kullanici_adi;
   b.onay_zamani = simdi();
   if (g.karar === "dismiss") {
@@ -1619,6 +1700,26 @@ const ROTALAR: Rota[] = [
     },
   ],
   ["POST", /^\/bug-drafts\/([^/]+)\/decision$/, (m, _q, g) => bugKarari(decodeURIComponent(m[1]), g)],
+  [
+    "POST",
+    /^\/bug-drafts\/([^/]+)\/prepare$/,
+    (m) => {
+      rolGerekli("tester");
+      const b = bul(veri.bugTaslaklari, decodeURIComponent(m[1]), "Bug taslağı");
+      if (b.durum !== "draft") throw new ApiError(409, "Taslak karar beklemiyor");
+      const onceki = b.mukerrer_arama ?? null;
+      b.mukerrer_arama = { durum: "suruyor", jql: onceki?.jql ?? null, oneri: null, oneri_link_key: null, mode: null, hata: null };
+      kaydet();
+      arkaPlan([
+        () => {
+          b.mukerrer_arama = onceki ?? { durum: "yapildi", jql: null, oneri: "new", oneri_link_key: null, mode: "replay", hata: null };
+          if (b.mukerrer_arama.durum !== "yapildi") b.mukerrer_arama = { ...b.mukerrer_arama, durum: "yapildi" };
+          mockOlayYayinla({ type: "bug.draft_ready", id: b.id, data: { bug_draft_id: b.id } });
+        },
+      ]);
+      return is("queued", "Mükerrer araması ve taslak hazırlanıyor");
+    },
+  ],
   ["GET", /^\/control-tower$/, () => kontrolKulesi()],
   ["GET", /^\/audit$/, (_m, q) => denetim(q)],
   ["POST", /^\/tokens$/, (_m, _q, g) => tokenOlustur(g)],
@@ -1634,12 +1735,7 @@ const ROTALAR: Rota[] = [
   [
     "POST",
     /^\/demo\/break-locator$/,
-    () => {
-      rolGerekli("presenter");
-      denetimEkle("demo.break_locator", "demo-app-web", "add-to-cart → cart-add");
-      kaydet();
-      return is("done", "Locator kırıldı: add-to-cart → cart-add (örnek veri).");
-    },
+    () => demoKir(),
   ],
   [
     "POST",
@@ -1647,9 +1743,23 @@ const ROTALAR: Rota[] = [
     () => {
       const k = rolGerekli("presenter");
       veri = ilkVeri();
+      demoKirik = false;
       mockOturumuAyarla(k);
       kaydet();
+      mockOlayYayinla({ type: "demo.reset", id: "demo", data: { eylem: "reset" } });
       return is("done", "Demo verisi sıfırlandı.");
+    },
+  ],
+  [
+    "GET",
+    /^\/demo\/status$/,
+    () => {
+      girisGerekli();
+      return {
+        forge: { main: demoKirik ? "d3b1c0ffee42" : "9c41e2b07a11", testid: demoKirik ? "cart-add" : "add-to-cart", baseline: "9c41e2b07a11", main_baseline_mi: !demoKirik },
+        uygulama: { sha: demoKirik ? "d3b1c0ffee42" : "9c41e2b07a11", kaynak: "build.json", main_ile_eslesiyor: true, neden: null },
+        web_yenileme_istegi: null,
+      };
     },
   ],
 ];

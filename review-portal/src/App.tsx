@@ -11,6 +11,7 @@ import { BugTaslakDetay, BugTaslaklari } from "./pages/BugTaslaklari";
 import { CaseReview } from "./pages/CaseReview";
 import { ClaudeCode } from "./pages/ClaudeCode";
 import { Denetim } from "./pages/Denetim";
+import { DemoKontrolleri } from "./pages/DemoKontrolleri";
 import { GereksinimDetay } from "./pages/GereksinimDetay";
 import { Gereksinimler } from "./pages/Gereksinimler";
 import { Giris } from "./pages/Giris";
@@ -104,6 +105,14 @@ export function Rotalar() {
           element={
             <RolGerekli roller={["analyst"]}>
               <ClaudeCode />
+            </RolGerekli>
+          }
+        />
+        <Route
+          path="demo"
+          element={
+            <RolGerekli roller={["presenter"]}>
+              <DemoKontrolleri />
             </RolGerekli>
           }
         />

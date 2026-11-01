@@ -1,0 +1,6 @@
+{
+  "kind": "call",
+  "purpose": "bug_draft",
+  "policy": "raise",
+  "note": "REPLAY-MISS politikası (golden değildir, model çıktısı değildir). Bug taslağının nötr bir hali yoktur: başka bir hatanın adımları/beklenen-gerçekleşen değerleri bu hataya yazılırsa testçi yanlış kaydı onaylayabilir. Girdi hiçbir golden beyanına uymazsa geçit ReplayNoOutput fırlatır ('REPLAY-MISS: bu girdi için kayıtlı model çıktısı yok; canlı model gerekir'), ai_call'a mod replay_miss + hata yazılır. Bug şeridi deterministik şablon taslağa düşer (AI rozeti yok) ve testçi düzenler. Bkz. rules/replay/README.md."
+}

@@ -159,6 +159,38 @@ def evaluation_status(rules_dir: Path, bundle_id: str) -> EvaluationStatus:
         raise GatewayConfigError(f"bilinmeyen prompt paketi: {bundle_id!r}") from None
 
 
+def evaluation_summary(rules_dir: Path, bundle_id: str) -> dict[str, Any]:
+    """Bir paketin kullanıcıya gösterilecek durum özeti (`ai_call.ek.degerlendirme`, portal).
+
+    `{"paket", "surum", "durum", "etiket"}`; ortak `guardrails` paketi birleştirilebilir değilse
+    `guardrails_durum` da eklenir. Kayıt okunamazsa çağrı düşmez: `durum = "missing"` ve `hata`.
+    Etiket: `pending` → "canlı değerlendirme bekliyor" (portal bunu aynen gösterir).
+    """
+    try:
+        statuses = evaluation_statuses(rules_dir)
+    except GatewayConfigError as exc:
+        return {
+            "paket": bundle_id,
+            "surum": None,
+            "durum": "missing",
+            "etiket": _LABELS["missing"],
+            "hata": str(exc)[:300],
+        }
+    st = statuses.get(bundle_id)
+    if st is None:
+        return {"paket": bundle_id, "surum": None, "durum": "missing", "etiket": _LABELS["missing"]}
+    out: dict[str, Any] = {
+        "paket": bundle_id,
+        "surum": st.prompt_version,
+        "durum": st.status,
+        "etiket": st.label,
+    }
+    guard = statuses.get("guardrails")
+    if guard is not None and bundle_id != "guardrails" and not guard.mergeable:
+        out["guardrails_durum"] = guard.status
+    return out
+
+
 def blocking(rules_dir: Path) -> list[EvaluationStatus]:
     """Constitution X kapısını kapatan paketler (bekleyen, bayat veya kaydı olmayan)."""
     return [s for s in evaluation_statuses(rules_dir).values() if not s.mergeable]

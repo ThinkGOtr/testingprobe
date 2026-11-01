@@ -77,7 +77,10 @@ from tp_core.ports import AgentStep, ModelMessage
 
 SCENARIO = "f2-kod-hatasi"
 VERIFY = [*goldens("verify_and_map"), *scenario_goldens("verify_and_map")]
-SCENARIOS = list(scenario_goldens())
+# Demo-A/B senaryo golden'ları (f2-kod-hatasi). Faz 4 amaçlarının (triage, bug_draft, dup_rank)
+# senaryo dizinleri hata türüne göredir; test_defect_goldens.py denetler.
+DEFECT_PURPOSES = ("triage", "bug_draft", "dup_rank")
+SCENARIOS = [g for g in scenario_goldens() if g[0] not in DEFECT_PURPOSES]
 METHODS = page_object_methods()
 E2E_DEALERS = ("bayi1", "bayi2")
 SYMBOLS_CLI = REPO / "toolchain" / "symbols" / "dist" / "src" / "cli.js"

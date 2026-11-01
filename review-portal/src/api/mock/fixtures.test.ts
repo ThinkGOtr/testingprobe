@@ -2,7 +2,7 @@
 // jira-sim seed'i, page object'ler ve portal rotaları. Kaynak değişip örnek veri geride kalırsa
 // (ör. campaign.py satırı kayarsa) bu testler kırılır.
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import ts from "typescript";
@@ -239,19 +239,31 @@ describe("case ve bug taslakları golden kayıtlardan", () => {
     expect(caseler.filter((c) => c.karar === "edit").map((c) => c.sira_no)).toEqual([]);
   });
 
-  it.skipIf(!goldenVar)("bug taslakları bug_draft golden özet/adım/beklenen ile aynı", () => {
+  it.skipIf(!goldenVar)("bug taslakları bug_draft / dup_rank golden'larıyla aynı (özet, adım, beklenen, aday gerekçesi)", () => {
+    type Golden = { output: Record<string, unknown> };
+    // Golden düzeni (golden/<senaryo>/<ad>.json) şeritçe değişebilir: dizin taranır, özetle eşlenir.
+    const tara = (dizin: string): Golden[] =>
+      existsSync(yol(dizin))
+        ? readdirSync(yol(dizin), { recursive: true, encoding: "utf8" })
+            .filter((f) => f.endsWith(".json"))
+            .map((f) => json(`${dizin}/${f}`) as Golden)
+        : [];
+    const bugGoldenleri = tara("rules/replay/bug_draft/golden");
+    const dupGoldenleri = tara("rules/replay/dup_rank/golden");
     const v = ilkVeri();
-    const eslesme: [string, string][] = [
-      ["bug-1", "rules/replay/bug_draft/golden/break-campaign.json"],
-      ["bug-2", "rules/replay/bug_draft/golden/credit-limit.json"],
-    ];
-    for (const [id, dosya] of eslesme) {
-      const g = (json(dosya) as { output: { summary: string; steps: string[]; expected: string; actual: string; severity_suggestion: string } }).output;
+    for (const id of ["bug-1", "bug-2", "bug-4"]) {
       const b = v.bugTaslaklari.find((x) => x.id === id)!;
-      expect(b.icerik.summary).toBe(g.summary);
-      expect(b.icerik.steps).toEqual(g.steps.map((s) => s.replace(/^\d+\.\s*/, "")));
-      expect([b.icerik.expected, b.icerik.actual, b.icerik.severity_suggestion]).toEqual([g.expected, g.actual, g.severity_suggestion]);
+      const g = bugGoldenleri.find((x) => x.output.summary === b.icerik.summary)?.output as
+        | { summary: string; steps: string[]; expected: string; actual: string; severity_suggestion: string }
+        | undefined;
+      expect(g, `${id}: bug_draft golden'ı yok (${b.icerik.summary})`).toBeDefined();
+      expect(b.icerik.steps).toEqual(g!.steps.map((s) => s.replace(/^\d+\.\s*/, "")));
+      expect([b.icerik.expected, b.icerik.actual, b.icerik.severity_suggestion]).toEqual([g!.expected, g!.actual, g!.severity_suggestion]);
     }
+    const gerekceler = new Set(
+      dupGoldenleri.flatMap((d) => ((d.output.candidates ?? []) as { rationale: string }[]).map((c) => c.rationale)),
+    );
+    for (const b of v.bugTaslaklari) for (const m of b.mukerrer_adaylari) if (m.olasilik) expect(gerekceler.has(m.gerekce), `${b.id} ${m.key}`).toBe(true);
   });
 });
 
@@ -272,7 +284,8 @@ describe("Jira anahtarları jira-sim seed'iyle uyumlu", () => {
         expect(seed.get(a.key), a.key).toBe(a.summary);
       }
     }
-    expect(v.bugTaslaklari.find((b) => b.id === "bug-1")!.mukerrer_adaylari.map((a) => a.key)).toEqual(["TPD-5"]);
+    // dup_rank golden'ı (kirma-kampanya): jira-sim'deki iki açık Bug, TPD-5 ilk sırada.
+    expect(v.bugTaslaklari.find((b) => b.id === "bug-1")!.mukerrer_adaylari.map((a) => a.key)).toEqual(["TPD-5", "TPD-6"]);
     for (const g of v.gereksinimler) if (g.jira_key) expect(seed.has(g.jira_key), g.jira_key).toBe(true);
     // Ürünün oluşturduğu kayıtlar (Test issue'ları, yayınlanan bug'lar) zaman sırasıyla TPD-8, 9, …
     const olusan = [

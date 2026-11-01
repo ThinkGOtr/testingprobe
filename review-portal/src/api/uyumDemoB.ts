@@ -360,6 +360,7 @@ export function scriptUyarla(s: Ham): Script {
     break_verify: kirmaUyarla(ilk(s, "break_verify", "kirma_dogrulama"), zayif),
     engel: nesneMi(s.engel) && typeof s.engel.tur === "string" ? { tur: s.engel.tur, neden: metinYaDaNull(s.engel.neden) } : null,
     yerel_sinif: SINIF[sinifHam] ?? yk?.sinif ?? null,
+    failure_id: metinYaDaNull(kimlik(s.failure_id)),
     mode: modUyarla(ilk(s, "mode", "uretim_modu")),
     olusturma: metin(s.olusturma),
     hata: metinYaDaNull(ilk(s, "hata", "son_hata")),
@@ -406,6 +407,20 @@ function testSonucDurumu(x: unknown): TestSonucu["durum"] {
   return "failed";
 }
 
+const TRIAGE_SINIFLARI = new Set<string>(["environment", "flaky", "test_maintenance", "product_defect", "test_data", "unknown"]);
+
+/** Koşu detayındaki triage özeti (`triage_sinifi` ya da `triage{sinif, alt_tur}`); yoksa alan eklenmez. */
+function triageOzeti(t: Ham): Pick<TestSonucu, "triage_sinifi" | "triage_alt_tur"> {
+  const tr = nesne(ilk(t, "triage", "failure"));
+  const ham = metin(ilk(t, "triage_sinifi", "sinif") ?? ilk(tr, "sinif", "class")).toLowerCase();
+  if (!ham) return {};
+  const [kok, alt] = ham.split("/", 2);
+  return {
+    triage_sinifi: (TRIAGE_SINIFLARI.has(kok) ? kok : "unknown") as TestSonucu["triage_sinifi"],
+    triage_alt_tur: metinYaDaNull(ilk(t, "triage_alt_tur") ?? ilk(tr, "alt_tur")) ?? (alt || null),
+  };
+}
+
 export function testSonucuUyarla(t: Ham): TestSonucu {
   const ekler = dizi(t.ekler).map((e) => ({
     ad: metin(ilk(e, "ad", "name"), "ek"),
@@ -420,7 +435,8 @@ export function testSonucuUyarla(t: Ham): TestSonucu {
     sure_ms: sayi(ilk(t, "sure_ms", "duration_ms")),
     retry: sayi(t.retry),
     hata_mesaji: metinYaDaNull(t.hata_mesaji),
-    failure_id: metinYaDaNull(kimlik(t.failure_id)),
+    failure_id: metinYaDaNull(kimlik(t.failure_id ?? nesne(t.triage).failure_id ?? nesne(t.triage).id)),
+    ...triageOzeti(t),
     case_id: metinYaDaNull(kimlik(ilk(t, "case_id", "test_case_id"))),
   };
 }
@@ -477,9 +493,28 @@ export function kosuUyarla(k: Ham): Kosu {
   };
 }
 
+function kosuHatalari(x: unknown): KosuDetay["hatalar"] {
+  if (!Array.isArray(x)) return undefined;
+  return dizi(x)
+    .map((h) => {
+      const ham = metin(ilk(h, "sinif", "class")).toLowerCase();
+      const [kok, alt] = ham.split("/", 2);
+      return {
+        id: kimlik(ilk(h, "id", "failure_id")),
+        test_adi: metin(h.test_adi),
+        sinif: ham ? ((TRIAGE_SINIFLARI.has(kok) ? kok : "unknown") as NonNullable<KosuDetay["hatalar"]>[number]["sinif"]) : null,
+        alt_tur: metinYaDaNull(h.alt_tur) ?? (alt || null),
+        ozet: metinYaDaNull(ilk(h, "ozet", "oneri_ozeti")),
+      };
+    })
+    .filter((h) => h.id !== "");
+}
+
 export function kosuDetayUyarla(k: Ham): KosuDetay {
+  const hatalar = kosuHatalari(ilk(k, "hatalar", "failures"));
   return {
     ...kosuUyarla(k),
+    ...(hatalar ? { hatalar } : {}),
     sonuclar: dizi(k.sonuclar).map(testSonucuUyarla),
     log_url: adresUyarla(k.log_url),
     hata: metinYaDaNull(k.hata),

@@ -31,6 +31,7 @@ const NAV: { grup: string; ogeler: NavOgesi[] }[] = [
     grup: "İzleme",
     ogeler: [
       { yol: "/kontrol-kulesi", ad: "Kontrol Kulesi", odak: ["presenter"], uc: ["GET", "/control-tower"] },
+      { yol: "/demo", ad: "Demo kontrolleri", gorunur: ["presenter"], odak: ["presenter"], uc: ["POST", "/demo/break-locator"] },
       { yol: "/denetim", ad: "Denetim", uc: ["GET", "/audit"] },
       { yol: "/claude-code", ad: "Claude Code kanalı", gorunur: ["analyst"], uc: ["GET", "/tokens"] },
     ],

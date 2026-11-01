@@ -679,6 +679,17 @@ class GitHubForge:
                 yollar.add(f["previous_filename"])
         return sorted(yollar)
 
+    def merge_base(self, a: str, b: str) -> str:
+        """`a`...`b` karşılaştırmasının ortak atası (compare `merge_base_commit`)."""
+        validate_ref(a)
+        validate_ref(b)
+        cmp = self._get(f"{self._r}/compare/{_q(a)}...{_q(b)}", f"{a}...{b} ortak atası")
+        base = cmp.get("merge_base_commit") if isinstance(cmp, dict) else None
+        sha = base.get("sha") if isinstance(base, dict) else None
+        if not isinstance(sha, str) or not is_sha(sha):
+            raise ForgeError(f"GitHub {a}...{b}: ortak ata okunamadı")
+        return sha
+
     def _tree(self, ref: str) -> list[dict[str, Any]]:
         sha = ref if is_sha(ref) else self.head_sha(ref)
         commit = self._get(f"{self._r}/git/commits/{sha}", "commit")

@@ -68,6 +68,8 @@ def test_scoped_check_is_not_recorded_by_default(
         "repeat_each": 3,
         "retries": 0,
         "break_campaign": False,
+        "affected_by": [],
+        "etkilenen": None,
     }
     assert not (env / "checks").exists()
     assert calls[0]["body"]["test_files"] == [GEN]

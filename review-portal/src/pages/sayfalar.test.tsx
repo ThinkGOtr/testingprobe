@@ -230,13 +230,17 @@ describe("ekranlar", () => {
     const u = userEvent.setup();
     uygulama("/bug-taslaklari/bug-1");
     const dugme = await screen.findByRole("button", { name: "Taslağı reddet" });
+    // Ret gerekçesi zorunlu (core 422): yazılmadan düğme kapalı.
+    expect(dugme).toBeDisabled();
+    await u.type(screen.getByLabelText("Ret gerekçesi"), "Kasıtlı kırma koşusu; ürün hatası değil");
     await waitFor(() => expect(dugme).toBeEnabled());
     mockVerisi().bugTaslaklari.find((b) => b.id === "bug-1")!.icerik.actual = "Triage yeniden çalıştı: indirim 5,00 TL";
     await u.click(dugme);
     expect(await screen.findByRole("alert")).toHaveTextContent("İçerik değişti, yeniden inceleyin.");
     expect(await screen.findByDisplayValue("Triage yeniden çalıştı: indirim 5,00 TL")).toBeInTheDocument();
     await u.click(screen.getByRole("button", { name: "Taslağı reddet" }));
-    expect(await screen.findByText("Reddedildi")).toBeInTheDocument();
+    expect(await screen.findByText("Taslak reddedildi")).toBeInTheDocument();
+    expect(screen.getByText(/Gerekçe: Kasıtlı kırma koşusu/)).toBeInTheDocument();
     expect(mockVerisi().bugTaslaklari.find((b) => b.id === "bug-1")!).toMatchObject({ durum: "dismissed", jira_key: null });
   });
 
@@ -272,8 +276,12 @@ describe("ekranlar", () => {
   it("koşu detayı test sonuçlarını ve triage bağlantısını gösterir", async () => {
     await oturumAc("analist");
     uygulama("/kosular/run-107");
-    expect(await screen.findByText(/Gerçekleşen: "0,00 TL"/)).toBeInTheDocument();
+    expect(await screen.findByText(/Gerçekleşen: "0"/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Triage sonucu" })).toHaveAttribute("href", "/hatalar/fail-1");
+    // Başarısızlıklar kartı: sınıf çipi + triage bağlantısı.
+    const liste = screen.getByRole("list", { name: "Triage kayıtları" });
+    expect(liste).toHaveTextContent("Ürün hatası · assertion");
+    expect(within(liste).getByRole("link", { name: "Triage sonucunu aç" })).toHaveAttribute("href", "/hatalar/fail-1");
     await waitFor(() => expect(screen.getByText(/BREAK_CAMPAIGN ile bozuldu \(kasıtlı kırma\)/)).toBeInTheDocument());
   });
 

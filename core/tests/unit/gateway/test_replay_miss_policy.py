@@ -141,16 +141,45 @@ def test_unknown_jira_key_is_still_replay_miss_in_strict_mode(rules_dir) -> None
 
 
 def test_unknown_key_without_fallback_still_raises_not_found(rules_dir) -> None:
+    (rules_dir / "replay" / "triage" / "on_miss.json").unlink()  # iskalama yedeği yok
     gw = _gateway(rules_dir, InMemoryCallRecorder())
-    for purpose in ("triage",):  # iskalama yedeği yok, golden yok
-        with pytest.raises(ReplayNotFound):
-            gw.call(
-                purpose,
-                "triage",
-                [ModelMessage(role="user", content="x")],
-                load_schema(rules_dir, purpose),
-                replay_key={"name": "olmayan-senaryo"},
-            )
+    with pytest.raises(ReplayNotFound):
+        gw.call(
+            "triage",
+            "triage",
+            [ModelMessage(role="user", content="x")],
+            load_schema(rules_dir, "triage"),
+            replay_key={"name": "olmayan-senaryo"},
+        )
+
+
+@pytest.mark.parametrize(
+    ("purpose", "bundle"), [("bug_draft", "bug-draft"), ("dup_rank", "dup-rank")]
+)
+def test_defect_purposes_never_return_another_errors_output(rules_dir, purpose, bundle) -> None:
+    """Faz 4: bug taslağı ve mükerrer sıralamasının nötr hali yok; golden'sız ad da çıktı vermez."""
+    recorder = InMemoryCallRecorder()
+    gw = _gateway(rules_dir, recorder)
+    with pytest.raises(ReplayNoOutput):
+        gw.call(
+            purpose,
+            bundle,
+            [ModelMessage(role="user", content="x")],
+            load_schema(rules_dir, purpose),
+            replay_key={"name": "olmayan-senaryo"},
+        )
+    assert recorder.ai_calls[-1]["mod"] == "replay_miss"
+
+
+def test_triage_without_golden_is_neutral_unknown(rules_dir) -> None:
+    result = _gateway(rules_dir, InMemoryCallRecorder()).call(
+        "triage",
+        "triage",
+        [ModelMessage(role="user", content="x")],
+        load_schema(rules_dir, "triage"),
+        replay_key={"name": "olmayan-senaryo"},
+    )
+    assert result.mode == "replay_miss" and result.output["class"] == "unknown"
 
 
 # ------------------------------------------------------------ case üretimi: çıktı yok

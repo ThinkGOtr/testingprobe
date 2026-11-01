@@ -175,6 +175,8 @@ def serialize(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any]
         "dosya_yolu": sc.dosya_yolu,
         "branch": sc.branch or "",
         "durum": sc.durum,
+        # Faz 4: defect adayı script'in triage sonucu (portal "Triage sonucuna git").
+        "failure_id": _triage_failure_id(session, sc),
         "pr": _pr(session, sc, cg),
         "pass_at_1": sc.pass_at_1,
         "zayif_test": sc.zayif_test,
@@ -425,3 +427,18 @@ def pr_response(session: Session, number: int, scripts: Sequence[Script]) -> dic
         if cg is not None:
             return _pr(session, sc, cg)
     return None
+
+
+def _triage_failure_id(session: Session, sc: Script) -> str | None:
+    """Script'e bağlı en yeni triage kaydı (`failure_ek.script_id`), yoksa `script.failure_id`."""
+    from tp_core.models.triage_feature import FailureEk
+
+    fid = session.scalars(
+        select(FailureEk.failure_id)
+        .where(FailureEk.script_id == sc.id)
+        .order_by(FailureEk.olusturma.desc())
+        .limit(1)
+    ).first()
+    if fid is None:
+        fid = sc.failure_id
+    return str(fid) if fid else None

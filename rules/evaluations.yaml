@@ -16,7 +16,7 @@
 # `pending` kayıt varsa veya kayıt bayatsa çıkış kodu 1'dir. İstisna kaydı YALNIZCA sahip onayıyla
 # yazılır; ajanlar/otomasyon `waived` kaydı oluşturmaz.
 #
-# Bugünkü durum (2026-10-31): bu depoda hiçbir prompt paketi canlı modelle değerlendirilmedi
+# Bugünkü durum (2026-10-31, Faz 4): bu depoda hiçbir prompt paketi canlı modelle değerlendirilmedi
 # (API kimlik bilgisi yok; replay kayıtlarında `recording` üst verisi yok). Onaylı istisna yok.
 version: 1
 
@@ -46,14 +46,29 @@ bundles:
       kaydedildi ve replay_check ile tekrarlandı; model çıktısı elle hazırlandı. Bu model
       değerlendirmesi değildir.
   triage:
-    version: 1
+    version: 2
     status: pending
-    note: Golden çıktıları elle hazırlandı; canlı değerlendirme yapılmadı.
+    note: >-
+      Faz 4: v2 (yalnızca kural eşleşmeyince çağrılır; kanonik hata bloğu, `unknown`'u tahmine
+      tercih eder). Tek golden (HATA: kuralsız test zaman aşımı → unknown) ve nötr REPLAY-MISS
+      yedeği elle hazırlandı. Değerlendirme seti: rules/evaluation/triage.json (zaman aşımı →
+      unknown, sağlıklı/ağsız → ortam değil, sağlık bilinmiyor + bağlantı reddi → environment,
+      eksik bayi → test_data); koşturucu `python -m tp_core.gateway.eval_set --bundle triage`.
+      API kimlik bilgisi yok; canlı değerlendirme yapılmadı. Onaylı istisna yok.
   bug-draft:
-    version: 1
+    version: 2
     status: pending
-    note: Golden çıktıları elle hazırlandı; canlı değerlendirme yapılmadı.
+    note: >-
+      Faz 4: v2 (kanonik hata/bulgu + test verisi blokları, `kanit:<ad>` kanıt yer tutucuları,
+      gerçek boşluğu gösteren yeniden üretim adımları). Golden'lar (C3 6 adet, kırma 7 adet, F2
+      kampanya, F4 kredi limiti) elle hazırlandı; adımlar demo-app fiyat fonksiyonlarıyla sınanır
+      (test_bug_draft_goldens). Değerlendirme seti: rules/evaluation/bug-draft.json. Canlı
+      değerlendirme yapılmadı; onaylı istisna yok.
   dup-rank:
-    version: 1
+    version: 2
     status: pending
-    note: Golden çıktıları elle hazırlandı; canlı değerlendirme yapılmadı.
+    note: >-
+      Faz 4: v2 (aday kümesi sabit, her aday tek kez sıralanır). Golden'lar (C3, F2 → TPD-5 high +
+      bağla; kırma → TPD-5 medium + yeni; F4 → TPD-5/TPD-6 low + yeni) elle hazırlandı; aday kümesi
+      beyanı demo sırasında açılan Bug'ları özetle tanır (test_jira_seed_goldens). Değerlendirme
+      seti: rules/evaluation/dup-rank.json. Canlı değerlendirme yapılmadı; onaylı istisna yok.

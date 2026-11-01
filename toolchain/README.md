@@ -87,7 +87,8 @@ written. Empty token → endpoints open and `/health` `auth: ok (uyarı: …)`; 
   head_sha, mode, report}` (`report` = full ast-guard JSON). Runs the CLI in git-ref mode directly on
   the bare forge (`--repo $TP_FORGE_PATH --root e2e`), which reads the same trees two checkouts would.
 - `POST /check {sha, test_files?, repeat_each=3, retries=0, env?:{BREAK_CAMPAIGN}, break?, grep?,
-  base_sha?, ast_guard_mode="pr", run_id?, record_check?: bool|null, keep?: bool}` → `{sha,
+  base_sha?, ast_guard_mode="pr", run_id?, record_check?: bool|null, keep?: bool, affected_by?:
+  [e2e-relative paths | "@diff"]}` → `{sha,
   conclusion:"success"|"failure", ok, failed_steps, summary, saglik, failures, failure_groups,
   test_counts, deps, tsc, eslint, ast_guard, run:{…/run response…, junit_path, json_path}, kapsam,
   check_recorded, checks_path, break_campaign, duration_ms}`. Steps, stopping at the first failure
@@ -113,6 +114,14 @@ written. Empty token → endpoints open and `/health` `auth: ok (uyarı: …)`; 
     `repeat_each=3, record_check=false` to decide, then a full check (`repeat_each=1, retries=1`,
     CI parity) on the PR head for the merge gate.
   Client timeout: ≥ `TP_RUN_TIMEOUT_S + TP_RUN_QUEUE_WAIT_S` + static steps (~25 min with defaults).
+  - **Affected tests (Phase 4 repair, §8.7 "local check on all affected tests"):** `affected_by`
+    lists changed e2e sources (`pages/catalog/locators.ts`) or `"@diff"` (`base_sha`, default
+    merge-base with `main`, `..sha`). Inside the checkout it is turned into `test_files` with the
+    same import graph as `/affected-tests` (unknown → full suite). Result in
+    `kapsam.etkilenen`. Scoped like `test_files`: never recorded as `local-ci`; 422 together with
+    `test_files`, `grep` or `record_check:true`. Recommended repair use: `{sha: <tp/repair-* head>,
+    base_sha: <main>, ast_guard_mode: "repair", affected_by: ["@diff"], repeat_each: 1,
+    record_check: false}`; the PR's full `ci.run` then writes the gate.
 - `POST /runs/release {run_ids:[…]}` → `{released:[…]}`: removes the `.keep` marker of evidence runs
   whose owner (codegen script) is closed/failed; the run then ages out with `TP_RUNS_KEEP`.
   Idempotent; unknown ids are ignored.
@@ -130,6 +139,48 @@ written. Empty token → endpoints open and `/health` `auth: ok (uyarı: …)`; 
   still allowed). Phase 4 repair records must store `olculen`, `uygulama_sha`,
   `sha_eslesmesi`, `uyari` verbatim. Pages
   whose target only exists after earlier steps (e.g. a filled cart) yield 0 matches.
+  **Phase 4 additions** (optional request fields, response superset):
+  - `candidate_test_id` (alias `test_id`): the repair candidate (e.g. `cart-add`). Response `aday =
+    {test_id, matches, rol_ad_eslesen, gecerli, yoklanan_ile_ayni}`: `gecerli` = the candidate
+    resolves to exactly one element inside the scope **and** that element has the same role + name
+    (`getByTestId(c).and(getByRole(role,{name}))`).
+  - `aria_snapshot_rel`: a reference aria snapshot under `TP_ARTIFACTS_PATH/runs/` (an
+    `error-context.md` or a `.yml/.yaml/.aria` file, e.g. stored from a green run). Response
+    `aria_dogrulama` = `/aria-match` result for `role`+`name` (§8.7 validation: the candidate must
+    match role + name of the last green snapshot). Invalid path → 422 before the browser starts.
+  - Always: `page_matches` (role + name count on the whole page when scoped: tells "wrong
+    container" from "element missing"), `aria_snapshot` (≤ 8000 chars, of the scope container when
+    it resolved to one element, else of `body`; `aria_snapshot_scope: scope|page`; untrusted data,
+    may be stored as evidence), `engeller` (Turkish reasons that block a suggestion).
+  - `oneri_uretilebilir` = `engeller == []`: exactly one match with a valid testId, sha not
+    `farkli`, and — only when requested — `aria_dogrulama.var` and `aday.gecerli`.
+- `POST /aria-match {role, name, aria_snapshot_rel | aria_snapshot, scope_role?, scope_name?}` →
+  `{kaynak_rel, rol, ad, kapsam, eslesen, tam_eslesen, var, yollar, dugum_sayisi}`. Deterministic
+  search of Playwright aria YAML (`toolchain_common/aria.py`): `eslesen` uses `getByRole`'s default
+  name rule (whitespace-normalised, case-insensitive substring), `tam_eslesen` exact; `scope_*`
+  restricts to descendants of a container node (e.g. `article "Portakal Gazozu"`). Triage rule 3
+  input ("element with role + name exists on the page"). Exactly one source; files only under
+  `runs/`, no symlinks, ≤ 2 MB.
+- `POST /trace-summary {trace_rel, role?, name?, scope_test_id?}` → `{trace_rel, test_id_ozniteligi,
+  uyeler, eylemler[{call_id, metot, secici, secici_test_ids, hata}], basarisiz_eylem{…, log},
+  dom{call_id, faz, cerceve_url, kismi, yaklasik, elemanlar[{test_id, tag, rol, ad,
+  kapsam_test_ids}]}, rol_ad{eslesen, test_ids, test_id, yaklasik}}`. §8.7 alternative source:
+  reads the DOM snapshot of the failing action from `trace.zip` (no re-run) and lists the
+  `data-testid` elements with their container chain, so `button "Sepete ekle"` inside
+  `product-card-P-001` → `cart-add` can be found offline. Role/name are an **approximation**
+  (implicit-role table + aria-label/labelledby/label[for]/text), marked `yaklasik:true`; the
+  running-app probe stays primary. Safety: the zip is never extracted to disk; only top-level
+  `*.trace` members are read, with limits on archive size (200 MB), members (5000), member size
+  (64 MB), compression ratio (200), events (200k), DOM nodes (100k) and depth; self-references in
+  the compressed snapshot format are ignored (`kismi:true`). Output strings are clipped.
+- `POST /affected-tests {sha, changed?:[e2e-relative paths], base_sha?}` → `{sha, yontem:
+  "import_grafi", kaynak, test_files, tam_kapsam, tam_kapsam_nedeni, dosya_sayisi}`: spec files that
+  import the changed sources directly or transitively (`worker/affected.py`; text parse of
+  `import/export … from`, `import()`, `require()`, relative specifiers only, `.js`→`.ts`,
+  `index.ts`). `base_sha` adds `git diff base..sha` under the e2e root. If a changed file is unknown
+  or nothing imports it → `tam_kapsam:true` (callers run everything: more tests, never a false
+  green). With today's demo e2e every spec imports `tests/fixtures.ts` → `pages/index.ts`, so a
+  `locators.ts` change affects all specs.
 
 ### test-runner (:8200)
 
@@ -224,6 +275,14 @@ the formal shape of the error, the class (defect candidate / maintenance / envir
   - `evidence = {trace, error_context, screenshot, video}`, each `{path, rel, exists}` or null.
   - `aria_snapshot`: YAML from `error-context.md` (≤ 8000 chars), scope `page` ("# Page snapshot")
     or `error_details` (expect failures embed it under the error).
+  - Phase 4 shortcuts: `locator_test_ids` (all testIds in the locator chain), `locator_test_id`
+    (the last one = the element looked for; `null` when the chain ends in `getByRole`),
+    `locator_scope_test_id` (the one before = container, e.g. `product-card-P-001`),
+    `locator_role`/`locator_name` (final `getByRole`), `aria_snapshot_rel` / `trace_rel`
+    (`TP_ARTIFACTS_PATH`-relative, ready for `/aria-match`, `/trace-summary`), `page_location`
+    (first frame under `pages/`, e.g. `pages/catalog/catalog.page.ts` → repair scope). After
+    `make break` the add-to-cart step yields `type: locator_timeout`, `locator_test_id:
+    "add-to-cart"`, `locator_scope_test_id: "product-card-P-001"`.
 - `failures` = `unexpected`/`flaky` entries (one per repetition). `failure_groups` = repetitions
   merged by file+line+column+title+project: `{ids, title, file, line, project, tags, repeats,
   statuses:{expected:n,…}, types[], failure, consistent}`; `consistent` = every repetition
@@ -273,7 +332,16 @@ Run lock: `TP_RUN_LOCK_PATH` (/tmp/testingprobe-run.lock). Auth: `TP_TOOLCHAIN_T
 uv run ruff check && uv run ruff format --check && uv run pytest   # Python (real git, fake/real node)
 cd symbols && npm ci --ignore-scripts && npm test                   # extractor, node:test on demo-app/e2e/pages
 cd ast-guard && npm ci --ignore-scripts && npm test
+npm ci --ignore-scripts && npm test                                  # locator-probe.mjs, real Chromium
 ```
+
+`probe/test/locator-probe.test.mjs` serves a local copy of the catalog markup after `make break`
+(`cart-add`) and runs the real probe: scoped single match, unscoped double match, stale candidate,
+wrong-role candidate, missing container, failed login. pytest runs it too when
+`toolchain/node_modules` exists (`test_locator_probe_script_with_real_browser`). In the image:
+`docker run --rm testingprobe-toolchain:local sh -c 'cd /opt/toolchain && node --test probe/test/*.test.mjs'`.
+`tests/data/pw_1_64_trace_locator.zip` is a real Playwright 1.64.1 trace of the same failure
+(scoped click on `add-to-cart` after the rename; local paths replaced).
 
 The pytest suite builds a temporary bare forge from `demo-app/e2e`. With `node`, built `ast-guard`/
 `symbols` and `demo-app/e2e/node_modules` present, it also runs real tsc/eslint/ast-guard/extractor

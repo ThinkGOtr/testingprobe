@@ -187,6 +187,8 @@ def test_saglik_hatasi_error_ve_serilestirmede_gorunur(
         k = service.list_runs(s)[0]
     assert k["id"] == str(rid) and k["durum"] == "error"
     assert "sağlık" in k["saglik_hatasi"]
+    # Playwright başlatılmadı: kırık rapor bağlantısı verilmez.
+    assert k["rapor_url"] is None and k["junit_url"] is None
 
 
 def test_gecici_toolchain_hatasi_yeniden_denenir_son_denemede_error(
@@ -524,3 +526,62 @@ def test_acik_defect_adayinin_kirmizi_kosusu_listeden_dusmez(
     assert len(ids) == 3 and ids[-1] == kanit_id  # en eski: sona sıralı
     assert [x["sabit"] for x in liste] == [False, False, True]
     assert kanit_id not in [x["id"] for x in filtreli]
+
+
+def test_silinmis_kosu_dizini_budandi_isaretlenir_baglanti_uretilmez(
+    engine: Engine, artefakt_kok: Path
+) -> None:
+    """test-runner `prune_runs` eski koşu dizinini silince kayıt uydurulur: portal kırık
+    bağlantı göstermez; volume'de duran koşulara dokunulmaz."""
+    import shutil
+
+    from tp_core.features.ci import jobs as ci_jobs
+
+    eski = _enqueue(engine, pr=31)
+    run_jobs(engine)
+    yeni = _enqueue(engine, pr=32)
+    run_jobs(engine)
+    assert _run(engine, eski).artefaktlar["dizin"] == f"runs/ci-{eski}-1"
+    shutil.rmtree(artefakt_kok / "runs" / f"ci-{eski}-1")
+
+    with engine.begin() as conn:
+        ci_jobs.on_worker_start(conn)
+    a = _run(engine, eski).artefaktlar
+    assert a["dizin"] is None
+    assert a["budanan_dizin"] == f"runs/ci-{eski}-1" and a["artefakt_budandi"]
+    assert a["sayilar"]["toplam"] == 9  # sonuçlar kalır
+    assert _run(engine, yeni).artefaktlar["dizin"] == f"runs/ci-{yeni}-1"
+
+    with Session(engine) as s:
+        d = service.run_detail(s, eski)
+        assert d is not None and d["artefakt_budandi"]
+        for k in ("rapor_url", "junit_url", "log_url", "allure_url", "artefakt_kok"):
+            assert d[k] is None, k
+        assert all(not e.get("url") for r in d["sonuclar"] for e in r["ekler"])
+        assert service.artifact_dir(s, eski) is None
+        assert service.run_detail(s, yeni)["rapor_url"]
+        # İkinci geçiş bir şey değiştirmez (idempotent).
+        assert service.mark_pruned_runs(s) == 0
+
+
+def test_ci_isi_sonrasi_budananlar_isaretlenir(engine: Engine, artefakt_kok: Path) -> None:
+    import shutil
+
+    eski = _enqueue(engine, pr=33)
+    run_jobs(engine)
+    shutil.rmtree(artefakt_kok / "runs" / f"ci-{eski}-1")
+    yeni = _enqueue(engine, pr=34)
+    run_jobs(engine)  # ci.run sonrası geçiş (test-runner bu koşuda eskileri siler)
+    assert _run(engine, eski).artefaktlar["dizin"] is None
+    assert _run(engine, yeni).artefaktlar["dizin"] == f"runs/ci-{yeni}-1"
+
+
+def test_artefakt_volume_yoksa_hicbir_kosu_budanmaz(engine: Engine, artefakt_kok: Path) -> None:
+    import shutil
+
+    rid = _enqueue(engine, pr=35)
+    run_jobs(engine)
+    shutil.rmtree(artefakt_kok / "runs")  # volume bağlı değil / boş kök: toplu işaretleme yok
+    with Session(engine) as s, s.begin():
+        assert service.mark_pruned_runs(s) == 0
+    assert _run(engine, rid).artefaktlar["dizin"] == f"runs/ci-{rid}-1"

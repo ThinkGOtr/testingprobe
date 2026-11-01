@@ -2,17 +2,24 @@
 // Locator yoklaması (TEKNIK-TASARIM §8.7, MIMARI-SOZLESME §2 `POST /locator-probe`).
 //
 //   node locator-probe.mjs '<json>'
-//   json: {base_url, url_path, role, name, scope_test_id?, login?: {kullanici_adi, parola},
-//          nav_timeout_ms, wait_ms}
+//   json: {base_url, url_path, role, name, scope_test_id?, candidate_test_id?,
+//          login?: {kullanici_adi, parola}, nav_timeout_ms, wait_ms}
 //
 // Demo uygulamasında `url_path`'i açar, getByRole(role, {name}) eşleşmelerini sayar (scope_test_id
 // verilirse yalnızca o data-testid'li kapsayıcının içinde) ve tek eşleşmede data-testid'yi okur.
+// Ek olarak:
+// - `page_matches`: kapsam verildiyse aynı rol + adın sayfanın tamamındaki sayısı (kapsayıcı
+//   yanlış mı, eleman mı yok ayrımı için),
+// - `candidate`: `candidate_test_id` verilirse o testId'nin kapsamda kaç elemana çözüldüğü ve
+//   bunlardan kaçının aynı rol + ada sahip olduğu (onarım adayının doğrulaması, §8.7),
+// - `aria_snapshot`: kapsayıcının (yoksa sayfanın) aria snapshot'ı (rol + ad; ≤ 8000 karakter).
 // Tarayıcı yalnızca base_url kaynağına istek atabilir (diğerleri iptal). Sayfa içeriği güvenilmeyen
 // veridir; yalnızca sayılar ve öznitelik değerleri döner. Çıktı: tek satır JSON (stdout).
 // Çıkış: 0 = yoklama yapıldı, 2 = hata ({"ok": false, "error": "..."}).
 import { chromium } from "playwright";
 
 const MAX_IDS = 20;
+const MAX_ARIA = 8000;
 
 function fail(message) {
   process.stdout.write(`${JSON.stringify({ ok: false, error: message })}\n`);
@@ -61,12 +68,31 @@ async function probe(input) {
       }
       const count = scopeMatches === 0 ? 0 : await matches.count();
       const ids = count === 0 ? [] : await matches.evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")));
+      const pageMatches = input.scope_test_id ? await page.getByRole(input.role, { name: input.name }).count() : count;
+      let candidate = null;
+      if (input.candidate_test_id) {
+        const cand = (scopeMatches === 0 ? page : root).getByTestId(input.candidate_test_id);
+        const candCount = scopeMatches === 0 ? 0 : await cand.count();
+        const withRole = candCount === 0 ? 0 : await cand.and(page.getByRole(input.role, { name: input.name })).count();
+        candidate = { test_id: input.candidate_test_id, matches: candCount, role_name_matches: withRole };
+      }
+      let aria = null;
+      try {
+        const target = input.scope_test_id && scopeMatches === 1 ? root.first() : page.locator("body");
+        aria = await target.ariaSnapshot({ timeout: input.wait_ms });
+      } catch {
+        aria = null;
+      }
       return {
         ok: true,
         matches: count,
         test_id: count === 1 ? (ids[0] ?? null) : null,
         test_ids: ids.slice(0, MAX_IDS),
         scope_matches: scopeMatches,
+        page_matches: pageMatches,
+        candidate,
+        aria_snapshot: typeof aria === "string" ? aria.slice(0, MAX_ARIA) : null,
+        aria_snapshot_scope: aria === null ? null : input.scope_test_id && scopeMatches === 1 ? "scope" : "page",
         http_status: nav ? nav.status() : null,
         final_path: new URL(page.url()).pathname,
       };

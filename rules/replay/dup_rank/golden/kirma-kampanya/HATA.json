@@ -1,0 +1,64 @@
+{
+  "kind": "call",
+  "purpose": "dup_rank",
+  "golden": "kirma-kampanya/HATA",
+  "note": "Elle hazırlandı (canlı model çıktısı değil; ai_call.model = golden-elle). Girdi beyanı (input_match) tp_core.gateway.defects kurucularının ürettiği kanonik metne göredir; uymayan girdi amacın on_miss.json politikasına düşer. Canlı anahtar gelince TP_MODEL_MODE=record ile yeniden kaydedilmeli. Kırma koşusu (7 adet → bedava 0): TPD-5 farklı belirti (medium) → öneri yeni kayıt; karar testçinin. Önceki kırma koşusundan açılmış 7 adet Bug'ı aramada varsa o aynı belirtidir (high → bağla). Aday kümesi beyanı (input_match.candidates): TPD-5 zorunlu, TPD-6 isteğe bağlı; demo sırasında açılabilen ve özeti golden taslaklarından bilinen Bug'lar (6 adet / 7 adet kampanya, kredi limiti) by_summary ile tanınır ve extra_candidates gerekçesiyle sıralanır. Beyan dışı aday REPLAY-MISS'tir. `output` seed kümesinin [TPD-5, TPD-6] sıralamasıdır; geçit çıktıyı girdideki gerçek kümeye göre kurar (yalnızca aramadaki anahtarlar, sıra 1..n, öneri: ilk high aday → link).",
+  "input_match": {
+    "sources": [
+      "failure:*",
+      "jira-arama:*"
+    ],
+    "contains": [
+      "Locator: getByTestId('cart-line-free-P-001')",
+      "Beklenen: \"1\"",
+      "Gerçekleşen: \"0\"",
+      "Kampanya kırılması (BREAK_CAMPAIGN): açık",
+      "7 adet"
+    ],
+    "candidates": {
+      "required": [
+        "TPD-5"
+      ],
+      "optional": [
+        "TPD-6"
+      ],
+      "by_summary": {
+        "alti-adet-yeni": "6 adet Portakal Gazozu sepete eklendiğinde bedava adet 0 beklenirken 1",
+        "kirma-yeni": "7 adet Portakal Gazozu sepete eklendiğinde bedava adet 1 beklenirken 0",
+        "kredi-limiti-yeni": "Kredi limiti aşıldığında"
+      }
+    }
+  },
+  "extra_candidates": {
+    "alti-adet-yeni": {
+      "likelihood": "medium",
+      "rationale": "Aynı ürün ve kampanya satırı ama ters belirti: bu kayıtta 6 adette erken bedava var, bu koşuda 7 adette bedava hiç verilmiyor."
+    },
+    "kirma-yeni": {
+      "likelihood": "high",
+      "rationale": "Aynı belirti: bu kayıt da 7 adet Portakal Gazozu'nda bedava adet 1 beklenirken 0 görüldüğünü anlatıyor (önceki kırma koşusundan açılmış)."
+    },
+    "kredi-limiti-yeni": {
+      "likelihood": "low",
+      "rationale": "Farklı alan: kredi limiti uyarısı ve sipariş onayı; kampanya bedava adet hesabıyla ilgisi yok."
+    }
+  },
+  "output": {
+    "candidates": [
+      {
+        "key": "TPD-5",
+        "rank": 1,
+        "likelihood": "medium",
+        "rationale": "Aynı ürün ve aynı kampanya satırı ama ters belirti: TPD-5'te 6 adette erken bedava var, bu koşuda 7 adette bedava hiç verilmiyor (kampanya kırılması açık)."
+      },
+      {
+        "key": "TPD-6",
+        "rank": 2,
+        "likelihood": "low",
+        "rationale": "Farklı alan: sipariş geçmişindeki tarih sıralaması; sepet ve kampanya hesabıyla ilgisi yok."
+      }
+    ],
+    "recommendation": "new",
+    "link_key": null
+  }
+}

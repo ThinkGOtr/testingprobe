@@ -14,7 +14,11 @@ beyanla karşılaştırır. Eşleşirse mod `replay` (köken `golden_matched`, `
   "sources": ["jira:TPD-1"],            // isteğe bağlı: yalnızca bu kaynaklı <untrusted> blokları
   "acceptance_criteria": ["AC1: …", …], // isteğe bağlı: bloklardaki ACn satırları TAM bu küme
   "contains": ["…"],                    // isteğe bağlı: her metin girdide geçmeli
-  "case_text": "Başlık: …\nAdımlar: …"   // isteğe bağlı (`sources` zorunlu): onaylı case TAM bu
+  "case_text": "Başlık: …\nAdımlar: …",  // isteğe bağlı (`sources` zorunlu): onaylı case TAM bu
+  "candidates": {                         // isteğe bağlı (dup_rank): Jira aramasının aday kümesi
+    "required": ["TPD-5"], "optional": ["TPD-6"],
+    "by_summary": {"kredi-limiti-yeni": "Kredi limiti aşıldığında"}
+  }
 }
 ```
 
@@ -29,7 +33,17 @@ beyanla karşılaştırır. Eşleşirse mod `replay` (köken `golden_matched`, `
   metne çevrilerek — bu metne eşit olmalıdır: case'e tek kelime eklenmesi bile REPLAY-MISS'tir
   (`contains` yalnızca varlık denetler; eklenen beklenen değer onu geçerdi). Yalnızca case
   bloğuna bakılır; sembol tablosu ve geri bildirim bloğu karşılaştırmaya girmez.
-- Karşılaştırma NFC + boşluk daraltma ile yapılır; başka gevşetme yoktur.
+- `candidates` (mükerrer sıralaması): aday kümesi `jira-arama:*` bloğundaki
+  `Aday anahtarları: [...]` satırından okunur. `required` anahtarların hepsi kümede olmalı;
+  kümedeki her anahtar ya `required`/`optional` listesindedir ya da özeti (`- KEY · durum: … ·
+  özet: …`) `by_summary` içindeki BİR metni içerir (demo sırasında açılabilen, özeti golden
+  taslaklarından bilinen Bug'lar: F4 "Yeni kayıt" → yeni kredi limiti Bug'ı). Beyan dışı her aday
+  REPLAY-MISS'tir (golden bilmediği bir kaydı sıralamaz). Çıktı `matched_output` ile girdideki
+  GERÇEK kümeye göre kurulur: yalnızca aramadaki anahtarlar, her biri bir kez, sıra 1..n; özetle
+  tanınan adayın olasılığı/gerekçesi golden'ın `extra_candidates.<ad>` alanından gelir; öneri
+  prompt kuralıyla (ilk `high` aday → `link`, yoksa `new`) hesaplanır.
+- Karşılaştırma NFC + boşluk daraltma ile yapılır; başka gevşetme yoktur (`by_summary` ayrıca
+  büyük/küçük harf duyarsızdır).
 """
 
 from __future__ import annotations
@@ -218,4 +232,127 @@ def input_mismatches(spec: Mapping[str, Any], messages: Sequence[Any]) -> list[s
     for needle in spec.get("contains") or []:
         if norm(needle) not in haystack:
             reasons.append(f"girdide yok: {needle[:60]}")
+    cand_spec = spec.get("candidates")
+    if cand_spec is not None:
+        found = search_candidates(texts)
+        if found is None:
+            reasons.append("aday listesi (Aday anahtarları) girdide yok")
+        else:
+            reasons.extend(assign_candidates(cand_spec, found)[1])
     return reasons
+
+
+# ------------------------------------------------------------------ mükerrer aday kümesi
+
+_KEY_RE = re.compile(r"^[A-Z][A-Z0-9]*-\d+$")
+_CANDIDATE_KEYS_RE = re.compile(r"^Aday anahtarları: \[(?P<keys>[^\]]*)\]\s*$", re.MULTILINE)
+_CANDIDATE_LINE_RE = re.compile(
+    r"^- (?P<key>[A-Z][A-Z0-9]*-\d+) · durum: .*? · özet: (?P<summary>.*)$", re.MULTILINE
+)
+LIKELIHOOD_ORDER = {"high": 0, "medium": 1, "low": 2}
+
+
+def search_candidates(texts: Sequence[str]) -> dict[str, str] | None:
+    """`defects.candidates_text` biçimindeki arama sonucundan {anahtar: özet} (yoksa None)."""
+    for text in texts:
+        m = _CANDIDATE_KEYS_RE.search(text)
+        if not m:
+            continue
+        keys = [k.strip() for k in m.group("keys").split(",") if k.strip()]
+        summaries = {c.group("key"): c.group("summary") for c in _CANDIDATE_LINE_RE.finditer(text)}
+        return {k: summaries.get(k, "") for k in keys}
+    return None
+
+
+def _candidate_spec(spec: Any) -> tuple[list[str], list[str], dict[str, str]]:
+    if not isinstance(spec, Mapping) or set(spec) - {"required", "optional", "by_summary"}:
+        raise ValueError(f"input_match.candidates geçersiz: {spec!r}")
+    required = list(spec.get("required") or [])
+    optional = list(spec.get("optional") or [])
+    by_summary = dict(spec.get("by_summary") or {})
+    keys = required + optional
+    if any(not isinstance(k, str) or not _KEY_RE.match(k) for k in keys) or len(set(keys)) != len(
+        keys
+    ):
+        raise ValueError(f"input_match.candidates anahtarları geçersiz: {keys!r}")
+    if not keys and not by_summary:
+        raise ValueError("input_match.candidates boş")
+    if any(not isinstance(v, str) or not v.strip() for v in by_summary.values()):
+        raise ValueError(f"input_match.candidates.by_summary geçersiz: {by_summary!r}")
+    return required, optional, by_summary
+
+
+def assign_candidates(
+    spec: Any, found: Mapping[str, str]
+) -> tuple[dict[str, str | None], list[str]]:
+    """Aramadaki her adayın beyandaki karşılığı: {anahtar: None (anahtarla beyan) | by_summary adı}
+    ve uyuşmazlık nedenleri (boş = küme beyana uyar)."""
+    required, optional, by_summary = _candidate_spec(spec)
+    reasons = [f"zorunlu aday aramada yok: {k}" for k in required if k not in found]
+    if not found:
+        reasons.append("aramada aday yok")
+    assigned: dict[str, str | None] = {}
+    for key, summary in found.items():
+        if key in required or key in optional:
+            assigned[key] = None
+            continue
+        folded = norm(summary).casefold()
+        name = next((n for n, sub in by_summary.items() if norm(sub).casefold() in folded), None)
+        if name is None:
+            reasons.append(f"beyan dışı aday: {key} ({norm(summary)[:50]})")
+        else:
+            assigned[key] = name
+    return assigned, reasons
+
+
+def _key_order(key: str) -> tuple[str, int]:
+    prefix, _, num = key.rpartition("-")
+    return prefix, int(num) if num.isdigit() else 0
+
+
+def matched_output(record: Mapping[str, Any], messages: Sequence[Any] | None) -> Any:
+    """Eşleşen golden'ın girdiye göre çıktısı. `input_match.candidates` yoksa golden çıktısı
+    aynen; varsa sıralama girdideki GERÇEK aday kümesinden kurulur (yukarıdaki kural)."""
+    spec = record.get("input_match")
+    cand_spec = spec.get("candidates") if isinstance(spec, Mapping) else None
+    if cand_spec is None:
+        return record["output"]
+    sources = spec.get("sources")
+    blocks = untrusted_blocks(messages or [])
+    if sources:
+        blocks = [b for b in blocks if any(fnmatchcase(b.source, p) for p in sources)]
+    found = search_candidates([b.body for b in blocks])
+    if found is None:
+        raise ValueError("aday listesi girdide yok; golden eşleşmemeliydi")
+    assigned, reasons = assign_candidates(cand_spec, found)
+    if reasons:
+        raise ValueError(f"aday kümesi beyana uymuyor: {reasons}")
+    output = record["output"]
+    base = {str(c["key"]): (i, c) for i, c in enumerate(output.get("candidates") or [])}
+    extras = record.get("extra_candidates") or {}
+    extra_names = list(extras)
+    rows: list[tuple[tuple[int, int, int, tuple[str, int]], dict[str, Any]]] = []
+    for key in sorted(found, key=_key_order):
+        name = assigned[key]
+        if name is None:
+            if key not in base:
+                raise ValueError(f"golden çıktısında beyan edilen aday yok: {key}")
+            idx, src = base[key]
+            origin = (0, idx)
+        else:
+            if name not in extras:
+                raise ValueError(f"extra_candidates.{name} yok")
+            src, origin = extras[name], (1, extra_names.index(name))
+        likelihood = str(src["likelihood"])
+        entry = {"key": key, "likelihood": likelihood, "rationale": src["rationale"]}
+        rows.append(((LIKELIHOOD_ORDER[likelihood], *origin, _key_order(key)), entry))
+    ranked = [
+        {"key": e["key"], "rank": i, "likelihood": e["likelihood"], "rationale": e["rationale"]}
+        for i, (_, e) in enumerate(sorted(rows, key=lambda r: r[0]), start=1)
+    ]
+    link = next((c["key"] for c in ranked if c["likelihood"] == "high"), None)
+    return {
+        "candidates": ranked,
+        "recommendation": "link" if link else "new",
+        "link_key": link,
+    }

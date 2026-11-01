@@ -1,0 +1,29 @@
+{
+  "kind": "call",
+  "purpose": "triage",
+  "golden": "HATA",
+  "note": "Elle hazırlandı (canlı model çıktısı değil; ai_call.model = golden-elle). Girdi beyanı (input_match) tp_core.gateway.defects kurucularının ürettiği kanonik metne göredir; uymayan girdi amacın on_miss.json politikasına düşer. Canlı anahtar gelince TP_MODEL_MODE=record ile yeniden kaydedilmeli. Yalnızca LLM yedeği (TEKNIK-TASARIM §8.6 adım 3): senaryodaki hatalar (C3/BREAK assertion → product_defect, add-to-cart → cart-add locator, sağlık hatası → environment) kurallarla sınıflanır ve modele gitmez. Bu golden hiçbir kuralın eşleşmediği bir test zaman aşımı içindir; çıktı bilerek 'unknown' (insana).",
+  "input_match": {
+    "sources": [
+      "failure:*"
+    ],
+    "contains": [
+      "Test: onaylanan sipariş numarasıyla gösterilir ve geçmişte listelenir",
+      "Hata türü: test_timeout",
+      "Sağlık kontrolü: başarılı",
+      "Tutarlı: evet"
+    ]
+  },
+  "output": {
+    "class": "unknown",
+    "sub_type": null,
+    "rationale": "Test sipariş akışında 30 sn'lik test zaman aşımına uğradı; hata beklenen/gerçekleşen değer ya da bulunamayan eleman içermiyor ve sağlık kontrolü başarılı. Kanıt ürün hatasını yavaş yanıttan veya test akışı sorunundan ayırmaya yetmiyor; trace incelenmeli ve test yeniden koşturulmalı.",
+    "signals": [
+      "Hata türü: test_timeout (Test timeout of 30000ms exceeded.)",
+      "Tekrarlar: timedOut=2 (iki denemede de aynı)",
+      "Sağlık kontrolü: başarılı",
+      "Locator/assertion sinyali yok",
+      "Aria snapshot: sepet sayfası, \"Siparişi onayla\" butonu görünüyor"
+    ]
+  }
+}

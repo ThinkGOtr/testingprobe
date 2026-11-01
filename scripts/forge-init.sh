@@ -14,9 +14,15 @@
 #   merge edilir, denetim kaydına "demo kırılması" yazılır. Ardından demo-app-web imajı forge
 #   main HEAD'inin web/ arşivinden (çalışma ağacından değil) derlenir ve servis yeniden
 #   oluşturulur. İkisi de idempotenttir (zaten kırıksa/baseline'daysa forge'a dokunulmaz).
+#   Derleme de idempotenttir: `forge_demo web-state` çalışan uygulamanın /build.json'u main'i
+#   (commit ya da web/ ağacı) yansıtıyor derse "demo-app-web zaten <sha>" yazılır, derleme ve
+#   yeniden oluşturma atlanır (yalnızca /forge/demo-app-web.sha gerekirse düzeltilir) — süren
+#   push CI'ı öldürülmez. Yeniden oluşturma gerekiyorsa ve ci.run/repair.fix işi koşuyorsa
+#   betik durur (--force ya da TP_DEMO_WEB_FORCE=1 zorlar; bitince `sync-web`).
 #   Ortam: TP_FORGE_EXEC (varsayılan "docker compose exec -T core-worker"),
 #          TP_DEMO_WEB_IMAGE (varsayılan testingprobe-demo-app-web:local),
-#          TP_DEMO_WEB_DEPLOY=0 → yalnızca imajı derler, servisi yeniden oluşturmaz.
+#          TP_DEMO_WEB_DEPLOY=0 → yalnızca imajı derler, servisi yeniden oluşturmaz,
+#          TP_DEMO_WEB_FORCE=1 (ya da --force) → güncel olsa / iş koşsa da derler + oluşturur.
 #
 # Oluşan içerik (/forge/demo-app.git):
 #   main                 ← demo-app/ dizininin ŞU ANKİ içeriği (api/, web/, e2e/, ci/, README) kök olarak
@@ -45,7 +51,7 @@ for arg in "$@"; do
   case "$arg" in
     --force) FORCE=1 ;;
     break|baseline|status|sync-web) MODE="$arg" ;;
-    -h|--help) sed -n '2,38p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,43p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "bilinmeyen argüman: $arg (kullanım: forge-init.sh [--force] | break | baseline | status | sync-web)" ;;
   esac
 done
@@ -73,15 +79,41 @@ if [ "$MODE" != init ]; then
       || die "/forge/demo-app-web.sha yazılamadı"
     echo "demo-app-web commit'i: $sha"
   }
+  # Çalışan demo-app-web forge main'i yansıtıyor mu? (forge_demo web-state; JSON alanını yazdırır)
+  ws_get() {
+    printf '%s' "$WS" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+k = sys.argv[1]
+if k == "mesgul":
+    m = d.get("mesgul")
+    print("?" if m is None else ", ".join("%s %s" % (j.get("tur"), j.get("id")) for j in m))
+elif k == "calisan_sha":
+    c = d.get("calisan")
+    print("-" if c is None else (c.get("sha") or ""))
+else:
+    v = d.get(k)
+    print("true" if v is True else "false" if v is False else ("" if v is None else v))' "$1"
+  }
+  web_state() {
+    WS="$("${EXEC[@]}" python -m tp_core.integrations.forge_demo web-state)" \
+      || die "demo-app-web durumu okunamadı (forge_demo web-state)"
+  }
   if [ "$MODE" = sync-web ]; then
-    st="$("${EXEC[@]}" python -m tp_core.integrations.forge_demo status)" \
-      || die "forge durumu okunamadı"
-    if printf '%s' "$st" | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if d.get("baseline") is None or d.get("main_baseline_mi") else 1)'; then
-      echo "forge main = demo-baseline; demo-app-web çalışma ağacından derlendiği gibi kalır."
-      write_web_sha
-      exit 0
+    web_state
+    if "${EXEC[@]}" python -m tp_core.integrations.forge_demo status \
+      | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if d.get("baseline") is None or d.get("main_baseline_mi") else 1)'; then
+      # main = demo-baseline: make up imajı çalışma ağacından derledi (build.json sha'sı boş) → kalır.
+      # Çalışan imaj başka bir forge commit'inden derlenmişse (ör. kırık imaj) aşağıda yeniden derlenir.
+      if [ "$(ws_get guncel)" = true ] || [ -z "$(ws_get calisan_sha)" ] || [ "$(ws_get calisan_sha)" = - ]; then
+        echo "forge main = demo-baseline; demo-app-web çalışma ağacından derlendiği gibi kalır."
+        [ "$(ws_get sha_dosyasi_guncel)" = true ] || write_web_sha
+        exit 0
+      fi
+      echo "forge main = demo-baseline ama çalışan demo-app-web başka bir forge commit'inden; yeniden derlenecek."
+    else
+      echo "forge main demo-baseline'dan farklı (ör. make break sonrası); demo-app-web forge main'den derlenecek."
     fi
-    echo "forge main demo-baseline'dan farklı (ör. make break sonrası); demo-app-web forge main'den derlenecek."
   else
     "${EXEC[@]}" python -m tp_core.integrations.forge_demo "$MODE" \
       || die "forge_demo $MODE başarısız"
@@ -92,17 +124,49 @@ if [ "$MODE" != init ]; then
     echo "     GitHub main HEAD'i CI/Sauce ortamına kendi akışıyla dağıtılır."
     exit 0
   fi
+  [ "$MODE" = sync-web ] || web_state
+  main_sha="$(ws_get main)"
+  [ -n "$main_sha" ] || die "forge main sha okunamadı"
+  WEB_FORCE=0
+  if [ "$FORCE" = 1 ] || [ "${TP_DEMO_WEB_FORCE:-0}" = 1 ]; then WEB_FORCE=1; fi
+  # İdempotentlik: çalışan uygulama zaten main'i (commit ya da web/ ağacı) yansıtıyorsa ne derleme
+  # ne yeniden oluşturma — ikinci bir `make break` süren push CI'ının altındaki uygulamayı öldürmez.
+  if [ "$WEB_FORCE" != 1 ] && [ "$(ws_get guncel)" = true ]; then
+    echo "demo-app-web zaten $main_sha ($(ws_get neden)); derleme ve yeniden oluşturma atlandı."
+    [ "$(ws_get sha_dosyasi_guncel)" = true ] || write_web_sha
+    echo "Tamam: $MODE (demo-app-web = forge main)."
+    exit 0
+  fi
+  DEPLOY="${TP_DEMO_WEB_DEPLOY:-1}"
+  if [ "$DEPLOY" != 0 ] && [ "$WEB_FORCE" != 1 ]; then
+    busy="$(ws_get mesgul)"
+    if [ "$busy" = "?" ]; then
+      err "UYARI: koşan CI/onarım işleri okunamadı; demo-app-web yine de yeniden oluşturuluyor."
+    elif [ -n "$busy" ]; then
+      die "koşan iş(ler) var ($busy): demo-app-web şimdi yeniden oluşturulursa koşu ortam hatasıyla düşer. Bitince 'scripts/forge-init.sh sync-web' çalıştırın (zorlamak için: --force ya da TP_DEMO_WEB_FORCE=1)."
+    fi
+  fi
   TMP_TAR="$(mktemp "${TMPDIR:-/tmp}/tp-demo-web.XXXXXX")"
   trap 'rm -f "$TMP_TAR"' EXIT
-  "${EXEC[@]}" python -m tp_core.integrations.forge_demo archive --ref main --path web >"$TMP_TAR" \
+  "${EXEC[@]}" python -m tp_core.integrations.forge_demo archive --ref "$main_sha" --path web >"$TMP_TAR" \
     || die "forge main arşivi alınamadı"
   tar -tf "$TMP_TAR" | grep -qx 'Dockerfile' || die "arşivde web/Dockerfile yok"
-  echo "demo-app-web forge main HEAD'inden derleniyor: $WEB_IMAGE"
-  docker build -q -t "$WEB_IMAGE" - <"$TMP_TAR" >/dev/null || die "demo-app-web derlenemedi"
-  if [ "${TP_DEMO_WEB_DEPLOY:-1}" != 0 ]; then
+  # Derlenen commit ve web/ ağacı GET /build.json'da görünür (demo-app/web/Dockerfile build arg'ları).
+  web_tree="$(ws_get main_web_tree)"
+  old_image="$(docker image inspect -f '{{.Id}}' "$WEB_IMAGE" 2>/dev/null || true)"
+  echo "demo-app-web forge main HEAD'inden derleniyor: $WEB_IMAGE ($main_sha; $(ws_get neden))"
+  docker build -q -t "$WEB_IMAGE" \
+    --build-arg "DEMO_APP_BUILD_SHA=$main_sha" --build-arg "DEMO_APP_WEB_TREE=$web_tree" \
+    - <"$TMP_TAR" >/dev/null || die "demo-app-web derlenemedi"
+  if [ "$DEPLOY" != 0 ]; then
     compose up -d --no-build --no-deps --force-recreate --wait demo-app-web \
       || die "demo-app-web yeniden başlatılamadı"
     write_web_sha
+  fi
+  # Eski imaj artık etiketsiz (dangling) kalır: kullanılmıyorsa silinir (kullanımdaysa sessizce kalır).
+  new_image="$(docker image inspect -f '{{.Id}}' "$WEB_IMAGE" 2>/dev/null || true)"
+  if [ -n "$old_image" ] && [ "$old_image" != "$new_image" ]; then
+    docker image rm "$old_image" >/dev/null 2>&1 || true
   fi
   echo "Tamam: $MODE (demo-app-web = forge main)."
   exit 0
@@ -191,7 +255,8 @@ if [ -e "$REPO" ]; then
     exit 0
   fi
   echo "--force: mevcut forge deposu ve PR kaydı siliniyor."
-  rm -rf "$REPO" /forge/tp-prs.json /forge/tp-prs.json.lock /forge/demo-app-web.sha
+  rm -rf "$REPO" /forge/tp-prs.json /forge/tp-prs.json.lock /forge/demo-app-web.sha \
+    /forge/demo-web-refresh.json /forge/demo-web-refresh.done
   rm -f /forge/.tp-prs.*.tmp
 fi
 

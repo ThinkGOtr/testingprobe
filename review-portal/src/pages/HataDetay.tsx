@@ -1,89 +1,503 @@
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
+import { ARIA_KAYNAKLARI } from "../api/uyumTriage";
 import { useOlay } from "../api/events";
-import type { LocatorOnarimi } from "../api/types";
+import type { BugTaslagi, HataAnalizi, LocatorOnarimi, LocatorProbeSonucu, SaglikSonucu, SaglikUcu, TriageKaniti } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
-import { Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { Baglanti, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
-import { HATA_SINIFI } from "../lib/etiketler";
+import { HATA_SINIFI, type Ton } from "../lib/etiketler";
 import { tarih } from "../lib/format";
+import { kisaKosuAdi } from "./Kosular";
 
-const ONARIM_DURUMU = { proposed: "Önerildi", pr_open: "PR açık", merged: "Birleşti", rejected: "Reddedildi" } as const;
+const ONARIM_DURUMU: Record<LocatorOnarimi["durum"], { etiket: string; ton: Ton }> = {
+  proposed: { etiket: "Önerildi", ton: "notr" },
+  checking: { etiket: "Kontrol ediliyor", ton: "bilgi" },
+  pr_open: { etiket: "PR açık", ton: "vurgu" },
+  merged: { etiket: "Birleşti", ton: "basari" },
+  rejected: { etiket: "Reddedildi", ton: "notr" },
+  failed: { etiket: "Başarısız", ton: "hata" },
+};
+
+const SHA_ESLESMESI: Record<NonNullable<LocatorProbeSonucu["sha_eslesmesi"]>, { etiket: string; ton: Ton }> = {
+  eslesiyor: { etiket: "commit eşleşiyor", ton: "basari" },
+  farkli: { etiket: "commit farklı", ton: "hata" },
+  dogrulanamadi: { etiket: "commit doğrulanamadı", ton: "uyari" },
+};
+
+/** Karar kaynağı: deterministik kural (adıyla) ya da LLM yorumu (yalnızca kural eşleşmediyse). */
+export function kararKaynagiMetni(h: Pick<HataAnalizi, "karar_kaynagi" | "kural">): string {
+  if (h.karar_kaynagi === "llm") return "Karar kaynağı: LLM (kural eşleşmedi)";
+  return h.kural ? `Karar kaynağı: kural · ${h.kural}` : "Karar kaynağı: deterministik kural";
+}
+
+type Asama = { ad: string; durum: "tamam" | "hata" | "bekliyor" | "suruyor"; ayrinti?: string | null };
+
+const ASAMA_ISARETI: Record<Asama["durum"], { isaret: string; ton: Ton; metin: string }> = {
+  tamam: { isaret: "✓", ton: "basari", metin: "tamam" },
+  hata: { isaret: "✗", ton: "hata", metin: "başarısız" },
+  bekliyor: { isaret: "○", ton: "notr", metin: "bekliyor" },
+  suruyor: { isaret: "…", ton: "bilgi", metin: "sürüyor" },
+};
+
+/** Aria doğrulama aşamasının etiketi: kanıtın gerçek kaynağı (aria dosyası yoksa "aria" denmez). */
+export function ariaAsamaAdi(o: Pick<LocatorOnarimi, "aria_dogrulama">): string {
+  const k = o.aria_dogrulama?.kaynak;
+  return (k && ARIA_KAYNAKLARI[k]) || "Son yeşil kanıtla rol + ad doğrulaması";
+}
+
+/**
+ * Onarım hattı (§8.7): öneri → aria doğrulaması → AST koruması → etkilenen tüm testlerde yerel
+ * kontrol → bot PR → insan merge'ü → CI. Durum bilinmiyorsa "bekliyor" (uydurma yeşil yok).
+ */
+export function onarimAsamalari(o: LocatorOnarimi): Asama[] {
+  const yk = o.yerel_kontrol;
+  const etk = o.etkilenen_testler ?? [];
+  const ast = o.ast_guard;
+  const ileri = o.durum === "pr_open" || o.durum === "merged";
+  const oneriVar = Boolean(o.eski_test_id && o.yeni_test_id);
+  return [
+    {
+      ad: "Öneri (LLM'siz: DOM'dan okunan testId)",
+      durum: oneriVar ? "tamam" : o.durum === "failed" ? "hata" : "bekliyor",
+      ayrinti: oneriVar ? `${o.eski_test_id} → ${o.yeni_test_id}` : "öneri üretilmedi",
+    },
+    {
+      // Yalnızca onarım işinin kaydettiği sonuçtan: triage gözlemleri bu aşamayı tamamlamaz.
+      ad: ariaAsamaAdi(o),
+      durum: o.aria_dogrulama?.eslesti === true ? "tamam" : o.aria_dogrulama?.eslesti === false ? "hata" : "bekliyor",
+      ayrinti: o.aria_dogrulama?.aciklama ?? null,
+    },
+    {
+      ad: "AST koruması (onarım modu: yalnızca testId değeri)",
+      durum: ast?.ok === true ? "tamam" : ast?.ok === false ? "hata" : ileri ? "tamam" : o.durum === "checking" ? "suruyor" : "bekliyor",
+      ayrinti: ast?.ihlaller.length ? ast.ihlaller.join(" · ") : null,
+    },
+    {
+      ad: `Yerel kontrol: etkilenen tüm testler${etk.length ? ` (${etk.length})` : ""}`,
+      durum:
+        yk?.sonuc === "passed" ? "tamam" : yk?.sonuc === "failed" || yk?.sonuc === "error" ? "hata" : yk?.sonuc === "pending" || o.durum === "checking" ? "suruyor" : ileri ? "tamam" : "bekliyor",
+      ayrinti: yk && yk.gecen !== null && yk.toplam !== null ? `${yk.gecen}/${yk.toplam} geçti` : null,
+    },
+    { ad: "Bot PR (tp-repair etiketi)", durum: o.pr ? "tamam" : o.durum === "failed" ? "hata" : "bekliyor", ayrinti: o.pr ? `#${o.pr.number} · ${o.pr.branch}` : null },
+    { ad: "İnsan onayı (merge)", durum: o.durum === "merged" ? "tamam" : o.durum === "rejected" ? "hata" : "bekliyor" },
+  ];
+}
+
+/**
+ * Onarım işinin kontrol satırı → işaret. Engel, sha "farkli", AST ihlali, kırmızı kontrol başarı
+ * yeşiliyle gösterilmez; "dogrulanamadi" uyarıdır.
+ */
+export function dogrulamaIsareti(x: string): { isaret: string; ton: Ton; metin: string } {
+  if (/^Engellendi|ihlal|kırmızı|:\s*farkli\b|başarısız/i.test(x)) return { isaret: "✗", ton: "hata", metin: "olumsuz" };
+  if (/dogrulanamadi|doğrulanamadı|bilinmiyor/i.test(x)) return { isaret: "!", ton: "uyari", metin: "doğrulanamadı" };
+  return { isaret: "✓", ton: "basari", metin: "geçti" };
+}
 
 function OnarimKarti({ o, hataId, yenile }: { o: LocatorOnarimi; hataId: string; yenile: () => void }) {
   const islem = useIslem();
   const bildir = useBildirim();
+  const d = ONARIM_DURUMU[o.durum];
+  const asamalar = onarimAsamalari(o);
+  const astHata = o.ast_guard?.ok === false;
+  const kontrolKirmizi = o.yerel_kontrol?.sonuc === "failed" || o.yerel_kontrol?.sonuc === "error";
+  const pr = o.pr;
+  const oneriVar = Boolean(o.eski_test_id && o.yeni_test_id);
+  // Kardeş hata: onarım aynı koşudaki başka bir hata üzerinden yürüyor (bu hatanın onarım kaydı yok).
+  const kardes = o.dogrulama_kaynagi !== "onarim" && (o.durum === "pr_open" || o.durum === "merged") && !pr;
+  const mergeEngeli = !pr
+    ? null
+    : astHata
+      ? "AST koruması başarısız: merge edilemez"
+      : kontrolKirmizi
+        ? "Etkilenen testlerde yerel kontrol kırmızı"
+        : pr.ci === "failed"
+          ? "CI kırmızı: merge edilemez"
+          : pr.ci === "pending"
+            ? "CI sürüyor; yeşil olunca merge edilebilir"
+            : null; // CI özeti yoksa kapıyı core uygular (409 gerekçesi gösterilir)
   return (
     <Kart
       baslik="Locator onarım önerisi"
       eylemler={
-        o.durum === "proposed" ? (
+        o.durum === "proposed" && oneriVar ? (
           <IslemDugmesi
             roller={["engineer"]}
             calisiyor={islem.calisiyor}
             onClick={async () => {
               const s = await islem.calistir(() => api.onarimPrAc(hataId));
               if (s) {
-                bildir(s.mesaj ?? "Onarım PR'ı açıldı.");
+                bildir(s.mesaj ?? "Onarım işi başladı: AST koruması ve yerel kontrol sonrası bot PR açar.");
                 yenile();
               }
             }}
           >
             Onarım PR'ı aç
           </IslemDugmesi>
-        ) : o.pr?.durum === "open" ? (
+        ) : o.durum === "failed" ? (
           <IslemDugmesi
             roller={["engineer"]}
-            disabled={o.pr.ci !== "passed"}
-            title={o.pr.ci !== "passed" ? "CI yeşil olmadan merge edilemez" : undefined}
+            tur="ikincil"
             calisiyor={islem.calisiyor}
+            title="Core sağlık ve commit eşleşmesini yeniden denetler; ortam hâlâ sağlıksızsa reddeder."
             onClick={async () => {
-              const s = await islem.calistir(() => api.prBirlestir(o.pr!), { cakismada: yenile });
+              const s = await islem.calistir(() => api.onarimPrAc(hataId));
               if (s) {
-                bildir(s.mesaj);
+                bildir(s.mesaj ?? "Onarım yeniden denendi: yoklama, AST koruması ve yerel kontrol baştan çalışır.");
                 yenile();
               }
             }}
           >
-            Merge et
+            Yeniden dene
           </IslemDugmesi>
         ) : null
       }
     >
       <p className="soluk kucuk">
         Onarım yalnızca <span className="mono">{o.dosya}</span> içindeki ilgili <span className="mono">testId</span> değerini değiştirir;
-        anahtar, rol, ad ve niyet değişmez (AST koruması).
+        anahtar, rol, ad, niyet{o.within ? " ve kapsam (within)" : ""} değişmez (AST koruması). Merge insan onayı ister.
       </p>
-      <div className="locator-fark" aria-label="Locator değişikliği">
-        <span className="mono">{o.anahtar}.testId</span>
-        <del className="mono">"{o.eski_test_id}"</del>
-        <span aria-hidden="true">→</span>
-        <span className="gorunmez">yeni değer</span>
-        <ins className="mono">"{o.yeni_test_id}"</ins>
-      </div>
+      {oneriVar ? (
+        <div className="locator-fark" aria-label="Locator değişikliği">
+          <span className="mono">{o.anahtar}.testId</span>
+          <del className="mono">"{o.eski_test_id}"</del>
+          <span aria-hidden="true">→</span>
+          <span className="gorunmez">yeni değer</span>
+          <ins className="mono">"{o.yeni_test_id}"</ins>
+        </div>
+      ) : (
+        <p className="kucuk" data-testid="oneri-yok">
+          <span className="mono">{o.anahtar || "locator"}.testId</span> için değişiklik önerisi üretilmedi; yama yok.
+        </p>
+      )}
       <p className="kucuk">
-        Rol <span className="mono">{o.rol}</span> · ad <span className="mono">"{o.ad}"</span> (değişmez)
-      </p>
-      <ul className="kontrol-liste">
-        {o.dogrulama.map((d) => (
-          <li key={d}>✓ {d}</li>
-        ))}
-      </ul>
-      <p className="satir-ogeler">
-        <Cip ton={o.durum === "merged" ? "basari" : o.durum === "pr_open" ? "vurgu" : "notr"}>{ONARIM_DURUMU[o.durum]}</Cip>
-        {o.pr && (
+        Rol <span className="mono">{o.rol}</span> · ad <span className="mono">"{o.ad}"</span>
+        {o.within && (
           <>
-            <span className="mono">#{o.pr.number}</span>
-            <Cip ton={o.pr.ci === "passed" ? "basari" : o.pr.ci === "failed" ? "hata" : "bilgi"}>
-              CI: {o.pr.ci === "passed" ? "yeşil" : o.pr.ci === "failed" ? "kırmızı" : "bekliyor"}
-            </Cip>
-            <Baglanti href={o.pr.url} yokNedeni="forge adresi yok">
-              {o.pr.url ? "PR'ı aç" : `PR #${o.pr.number} · ${o.pr.branch}`}
+            {" "}
+            · kapsam <span className="mono">{o.within}</span>
+            {o.scope_test_id && (
+              <>
+                {" "}
+                (<span className="mono">{o.scope_test_id}</span>)
+              </>
+            )}
+          </>
+        )}{" "}
+        (değişmez)
+      </p>
+      {o.yama && (
+        <pre className="kod-blok" aria-label="Onarım yaması" tabIndex={0}>
+          {o.yama}
+        </pre>
+      )}
+      {o.dogrulama.length > 0 &&
+        (o.dogrulama_kaynagi === "onarim" ? (
+          <ul className="kontrol-liste" aria-label="Onarım kontrolleri">
+            {o.dogrulama.map((x) => {
+              const i = dogrulamaIsareti(x);
+              return (
+                <li key={x} className={i.ton === "basari" ? undefined : `${i.ton}-metin`}>
+                  <span className={`cip-${i.ton}`} aria-hidden="true">
+                    {i.isaret}
+                  </span>{" "}
+                  {x} <span className="gorunmez">({i.metin})</span>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          // Triage gözlemleri: onarım henüz bir şey denetlemedi; onay işareti taşımaz.
+          <>
+            <p className="kucuk soluk">Triage gözlemleri (onarım kontrolü değil):</p>
+            <ul className="duz-liste kucuk" aria-label="Triage gözlemleri">
+              {o.dogrulama.map((x) => (
+                <li key={x}>{x}</li>
+              ))}
+            </ul>
+          </>
+        ))}
+      {kardes && (
+        <Uyari ton="bilgi" baslik="Onarım kardeş hata üzerinden yürüyor">
+          Aynı koşuda aynı locator değişikliğini isteyen başka bir hata için onarım başlatıldı; PR ve kontroller o hatanın
+          triage ekranında görünür. Bu hata için ayrı PR açılmaz.
+        </Uyari>
+      )}
+
+      <ol className="onarim-asamalari" aria-label="Onarım hattı">
+        {asamalar.map((a) => {
+          const i = ASAMA_ISARETI[a.durum];
+          return (
+            <li key={a.ad} className={`asama-${a.durum}`}>
+              <span className={`asama-isaret cip-${i.ton}`} aria-hidden="true">
+                {i.isaret}
+              </span>
+              <div>
+                <div>
+                  {a.ad} <span className="gorunmez">({i.metin})</span>
+                </div>
+                {a.ayrinti && <div className="kucuk soluk mono">{a.ayrinti}</div>}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+
+      {(o.etkilenen_testler ?? []).length > 0 && (
+        <details className="etkilenen-testler">
+          <summary>Etkilenen testler ({o.etkilenen_testler!.length})</summary>
+          <ul className="duz-liste kucuk">
+            {o.etkilenen_testler!.map((t) => (
+              <li key={t.test_adi} className="satir-ogeler">
+                <Cip ton={t.durum === "passed" ? "basari" : t.durum === "failed" ? "hata" : "notr"}>
+                  {t.durum === "passed" ? "geçti" : t.durum === "failed" ? "kırmızı" : "bekliyor"}
+                </Cip>
+                <span>{t.test_adi}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {o.yerel_kontrol?.run_id && (
+        <p className="kucuk">
+          Yerel kontrol koşusu: <Link to={`/kosular/${encodeURIComponent(o.yerel_kontrol.run_id)}`}>{kisaKosuAdi(o.yerel_kontrol.run_id)}</Link>
+        </p>
+      )}
+      {o.neden && (
+        <Uyari ton={o.durum === "failed" ? "hata" : "uyari"} baslik={o.durum === "failed" ? "Onarım PR'ı açılamadı" : undefined}>
+          {o.neden}
+        </Uyari>
+      )}
+
+      <div className="satir-ogeler">
+        <Cip ton={d.ton}>{d.etiket}</Cip>
+        {pr && (
+          <>
+            <span className="mono">#{pr.number}</span>
+            {pr.ci && (
+              <Cip ton={pr.ci === "passed" ? "basari" : pr.ci === "failed" ? "hata" : "bilgi"}>
+                CI: {pr.ci === "passed" ? "yeşil" : pr.ci === "failed" ? "kırmızı" : "bekliyor"}
+              </Cip>
+            )}
+            {o.ast_guard && (
+              <Cip ton={o.ast_guard.ok ? "basari" : o.ast_guard.ok === false ? "hata" : "notr"}>
+                AST koruması: {o.ast_guard.ok ? "geçti" : o.ast_guard.ok === false ? "ihlal" : "bilinmiyor"}
+              </Cip>
+            )}
+            <Baglanti href={pr.url} yokNedeni="LocalForge'un web arayüzü yok">
+              {pr.url ? "PR'ı aç" : `PR #${pr.number} · ${pr.branch}`}
             </Baglanti>
           </>
         )}
-      </p>
+      </div>
+
+      {pr?.durum === "open" && (
+        <div className="onarim-merge" data-testid="onarim-merge">
+          <p className="kucuk soluk">
+            Bot PR'ı yalnızca locator dosyasındaki testId değerini değiştirir. Merge insan kararıdır ve denetim kaydına yazılır.
+          </p>
+          <IslemDugmesi
+            roller={["engineer"]}
+            disabled={mergeEngeli !== null}
+            title={mergeEngeli ?? undefined}
+            calisiyor={islem.calisiyor}
+            onClick={async () => {
+              const s = await islem.calistir(() => api.prBirlestir(pr), { cakismada: yenile });
+              if (s) {
+                bildir(s.mesaj);
+                yenile();
+              }
+            }}
+          >
+            Onarımı onayla ve merge et
+          </IslemDugmesi>
+          {mergeEngeli && <p className="kucuk soluk">{mergeEngeli}.</p>}
+        </div>
+      )}
+      {o.durum === "merged" && <Uyari ton="basari">Onarım birleşti; main üzerindeki CI koşusu testin yeniden yeşile döndüğünü gösterir.</Uyari>}
       {islem.hata && <HataKutusu hata={islem.hata} />}
+    </Kart>
+  );
+}
+
+function SaglikUcuSatiri({ ad, u }: { ad: string; u: SaglikUcu | null }) {
+  if (!u) return null;
+  return (
+    <li className="satir-ogeler">
+      <span className="mono">{ad}</span>
+      <Cip ton={u.hata ? "hata" : u.status !== null && u.status < 400 ? "basari" : "notr"}>{u.status ?? "yanıt yok"}</Cip>
+      {u.ms !== null && <span className="kucuk soluk">{u.ms} ms</span>}
+      {u.url && <span className="kucuk mono soluk">{u.url}</span>}
+      {u.hata && <span className="kucuk hata-metin">{u.hata}</span>}
+    </li>
+  );
+}
+
+function SaglikBolumu({ s }: { s: SaglikSonucu }) {
+  return (
+    <section aria-labelledby="kanit-saglik">
+      <h3 id="kanit-saglik" className="kanit-baslik">
+        Sağlık yoklaması{" "}
+        <Cip ton={s.ok === true ? "basari" : s.ok === false ? "hata" : "notr"}>{s.ok === true ? "başarılı" : s.ok === false ? "başarısız" : "bilinmiyor"}</Cip>
+      </h3>
+      <ul className="duz-liste">
+        <SaglikUcuSatiri ad="web" u={s.web} />
+        <SaglikUcuSatiri ad="api" u={s.api} />
+      </ul>
+      {s.hata && <p className="kucuk hata-metin">{s.hata}</p>}
+      {s.zaman && <p className="kucuk soluk">{tarih(s.zaman)}</p>}
+    </section>
+  );
+}
+
+function ProbeBolumu({ p }: { p: LocatorProbeSonucu }) {
+  const sha = p.sha_eslesmesi ? SHA_ESLESMESI[p.sha_eslesmesi] : null;
+  return (
+    <section aria-labelledby="kanit-probe">
+      <h3 id="kanit-probe" className="kanit-baslik">
+        Locator yoklaması (locator-probe)
+      </h3>
+      <dl className="tanim-izgara">
+        <dt>Niyet (rol + ad)</dt>
+        <dd className="mono">
+          {p.rol ?? "—"} "{p.ad ?? "—"}"
+        </dd>
+        {p.scope_test_id && (
+          <>
+            <dt>Kapsam</dt>
+            <dd className="mono">{p.scope_test_id}</dd>
+          </>
+        )}
+        <dt>Eşleşen eleman</dt>
+        <dd>{p.matches ?? "ölçülmedi"}</dd>
+        <dt>DOM'daki data-testid</dt>
+        <dd className="mono">{p.test_id ?? "—"}</dd>
+        <dt>Ölçüm</dt>
+        <dd>
+          {p.olculen === "calisan_uygulama" ? "çalışan demo uygulaması" : (p.olculen ?? "—")}
+          {p.uygulama_sha && <span className="mono"> · {p.uygulama_sha.slice(0, 12)}</span>} {sha && <Cip ton={sha.ton}>{sha.etiket}</Cip>}
+        </dd>
+      </dl>
+      {p.uyari && <Uyari ton="uyari">{p.uyari}</Uyari>}
+      {p.oneri_uretilebilir === false && <p className="kucuk soluk">Bu ölçümden onarım önerisi üretilmez; karar insana düşer.</p>}
+    </section>
+  );
+}
+
+/** Aynı adrese giden kanıt bağlantıları bir kez (en açıklayıcı etiketle) gösterilir. */
+export function tekilLinkler(linkler: HataAnalizi["kanit_linkleri"]): HataAnalizi["kanit_linkleri"] {
+  const sira: string[] = [];
+  const secilen = new Map<string, HataAnalizi["kanit_linkleri"][number]>();
+  for (const l of linkler) {
+    const anahtar = l.url ? `u:${l.url}` : `e:${l.etiket}`;
+    const var_ = secilen.get(anahtar);
+    if (!var_) {
+      sira.push(anahtar);
+      secilen.set(anahtar, l);
+    } else if (l.etiket.length > var_.etiket.length) {
+      secilen.set(anahtar, l);
+    }
+  }
+  return sira.map((k) => secilen.get(k)!);
+}
+
+/** Ürün hatası: bug taslağındaki en olası mükerrer adayı (§2 adım 12: "olası mükerrer: XYZ-12"). */
+function MukerrerSatiri({ id }: { id: string }) {
+  const v = useVeri(() => api.bugTaslagi(id), [id]);
+  if (!v.veri) return null;
+  const b = v.veri;
+  const karara = b.durum === "published" || b.durum === "dismissed" || b.durum === "approved";
+  return (
+    <>
+      {karara && b.sonuc_metni && (
+        <p data-testid="bug-taslagi-sonucu">
+          <strong>{b.sonuc_metni}</strong>
+          {b.durum === "published" && b.jira_url && (
+            <>
+              {" "}
+              <a href={b.jira_url} target="_blank" rel="noreferrer">
+                Jira'da aç
+              </a>
+            </>
+          )}
+        </p>
+      )}
+      <p className="kucuk" data-testid="olasi-mukerrer">
+        {olasiMukerrerMetni(b)}
+      </p>
+    </>
+  );
+}
+
+const OLASILIK_METNI = { high: "yüksek olasılık", medium: "orta olasılık", low: "düşük olasılık" } as const;
+
+export function olasiMukerrerMetni(b: Pick<BugTaslagi, "mukerrer_adaylari" | "mukerrer_arama">): string {
+  const a = b.mukerrer_arama;
+  if (a?.durum === "suruyor") return "Olası mükerrer: Jira'da aranıyor…";
+  if (a?.durum === "basarisiz") return "Olası mükerrer: arama başarısız (Jira'yı elle kontrol edin).";
+  if (a?.durum === "yapilmadi") return "Olası mükerrer: arama yapılmadı.";
+  const ilk = b.mukerrer_adaylari[0];
+  if (!ilk) return "Olası mükerrer: Jira'da benzer açık bug bulunamadı.";
+  const ai = ilk.olasilik || ilk.gerekce;
+  const ek = ai
+    ? `${ilk.olasilik ? OLASILIK_METNI[ilk.olasilik] : "olasılık yok"}, AI sıralaması${a?.mode === "replay" ? " (REPLAY)" : ""}`
+    : `AI sıralaması yok${a?.mode === "replay_miss" ? " (REPLAY-MISS)" : ""}; Jira arama sırası`;
+  return `Olası mükerrer: ${ilk.key}${ilk.summary ? ` — ${ilk.summary}` : ""} (${ek})`;
+}
+
+function KanitKarti({ k, linkler }: { k: TriageKaniti | null | undefined; linkler: HataAnalizi["kanit_linkleri"] }) {
+  if (!k && linkler.length === 0) return null;
+  return (
+    <Kart baslik="Kanıt">
+      <div className="kanit-izgara">
+        {k?.hata_mesaji && (
+          <section aria-labelledby="kanit-hata">
+            <h3 id="kanit-hata" className="kanit-baslik">
+              Hata mesajı
+            </h3>
+            <pre className="hata-mesaji" tabIndex={0}>
+              {k.hata_mesaji}
+            </pre>
+            {(k.beklenen || k.gerceklesen) && (
+              <p className="kucuk">
+                Beklenen <span className="mono">{k.beklenen ?? "—"}</span> · Gerçekleşen <span className="mono">{k.gerceklesen ?? "—"}</span>
+              </p>
+            )}
+            {k.konum && <p className="kucuk mono soluk">{k.konum}</p>}
+            {k.tekrarlar && k.tekrarlar.length > 0 && <p className="kucuk">Tekrarlar: {k.tekrarlar.join(" · ")}</p>}
+          </section>
+        )}
+        {k?.aria_snippet && (
+          <section aria-labelledby="kanit-aria">
+            <h3 id="kanit-aria" className="kanit-baslik">
+              Aria snapshot (hata anı, yalnızca rol + ad)
+            </h3>
+            <pre className="kod-blok" tabIndex={0}>
+              {k.aria_snippet}
+            </pre>
+          </section>
+        )}
+        {k?.locator_probe && <ProbeBolumu p={k.locator_probe} />}
+        {k?.saglik && <SaglikBolumu s={k.saglik} />}
+      </div>
+      {k?.uyarilar && k.uyarilar.length > 0 && (
+        <ul className="kucuk duz-liste" aria-label="Kanıt uyarıları">
+          {k.uyarilar.map((x) => (
+            <li key={x}>{x}</li>
+          ))}
+        </ul>
+      )}
+      {linkler.length > 0 && (
+        <ul className="duz-liste" aria-label="Kanıt bağlantıları">
+          {tekilLinkler(linkler).map((l) => (
+            <li key={`${l.etiket}-${l.url ?? ""}`}>
+              <Baglanti href={l.url} yokNedeni="dosya sunucusu yok">
+                {l.etiket}
+              </Baglanti>
+            </li>
+          ))}
+        </ul>
+      )}
     </Kart>
   );
 }
@@ -92,51 +506,77 @@ export function HataDetay() {
   const { id = "" } = useParams();
   const v = useVeri(() => api.hata(id), [id]);
   const sessiz = useGeciktirilmis(() => void v.yenile(true));
-  useOlay(sessiz, ["failure.classified", "ci.status", "pr.opened"], id);
+  useOlay(sessiz, ["failure.classified", "failure.updated", "ci.status", "pr.opened", "pr.merged"], id);
 
   if (v.yukleniyor && !v.veri) return <Yukleniyor />;
   if (v.hata && !v.veri) return <HataKutusu hata={v.hata} yenile={() => void v.yenile()} />;
   const h = v.veri;
   if (!h) return null;
   const s = HATA_SINIFI[h.sinif] ?? { etiket: h.sinif, ton: "notr" as const };
+  const ortam = h.sinif === "environment";
 
   return (
     <>
       <SayfaBasligi
-        ust={<Link to={`/kosular/${encodeURIComponent(h.run_id)}`}>← {h.run_id}</Link>}
+        ust={<Link to={`/kosular/${encodeURIComponent(h.run_id)}`}>← Koşu {kisaKosuAdi(h.run_id)}</Link>}
         baslik="Triage sonucu"
         aciklama={h.test_adi}
       />
       <div className="iki-sutun">
         <Kart baslik="Sınıf">
-          <p className="satir-ogeler">
+          <p className="satir-ogeler" data-testid="triage-sinif">
             <Cip ton={s.ton}>{s.etiket}</Cip>
             {h.alt_tur && <span className="mono">{h.alt_tur}</span>}
-            <Cip ton="notr">{h.karar_kaynagi === "rule" ? "Deterministik kural" : "LLM yorumu"}</Cip>
-            <ReplayRozeti mode={h.mode} />
+            <Cip ton={h.karar_kaynagi === "rule" ? "notr" : "vurgu"}>{kararKaynagiMetni(h)}</Cip>
+            <ReplayRozeti mode={h.mode} degerlendirme={h.degerlendirme} />
           </p>
           <p className="soluk kucuk">
             Önce kural seti uygulanır; LLM yalnızca hiçbir kural eşleşmezse devreye girer ve ortam kararını ezemez. Sayısal güven yerine
             eşleşen sinyaller gösterilir.
           </p>
-          <pre className="hata-mesaji">{h.hata_mesaji}</pre>
-          <p className="kucuk mono soluk">imza: {h.hata_imzasi}</p>
-          <p className="kucuk soluk">{tarih(h.zaman)}</p>
+          {ortam && (
+            <Uyari ton="bilgi" baslik="Ortam sorunu">
+              Test koşmadan önce ortam sağlıksızdı ya da ağ hatası oluştu. Bu başarısızlık için onarım PR'ı ya da bug taslağı üretilmez.
+            </Uyari>
+          )}
+          {h.gerekce && <p className="kucuk">{h.gerekce}</p>}
+          {/* Kanıt kartı tam hata metnini gösteriyorsa burada tekrar edilmez. */}
+          {h.hata_mesaji && !h.kanit?.hata_mesaji && <pre className="hata-mesaji">{h.hata_mesaji}</pre>}
+          {h.hata_imzasi && <p className="kucuk mono soluk">imza: {h.hata_imzasi}</p>}
+          <p className="kucuk soluk">
+            {tarih(h.zaman)}
+            {h.script_id && (
+              <>
+                {" · "}
+                <Link to={`/kod/${encodeURIComponent(h.script_id)}`}>Üretilen test</Link>
+              </>
+            )}
+          </p>
         </Kart>
         <Kart baslik="Eşleşen sinyaller">
-          <ul className="sinyal-liste">
-            {h.eslesen_sinyaller.map((sg) => (
-              <li key={sg.kod}>
-                <span aria-hidden="true">✓</span>
-                <div>
-                  <div>{sg.aciklama}</div>
-                  <div className="kucuk soluk mono">
-                    {sg.kod} · {sg.kaynak}
+          {h.eslesen_sinyaller.length === 0 ? (
+            <BosDurum baslik="Sinyal kaydı yok." />
+          ) : (
+            <ul className="sinyal-liste" aria-label="Eşleşen sinyaller">
+              {h.eslesen_sinyaller.map((sg) => (
+                <li key={sg.kod}>
+                  <span aria-hidden="true">✓</span>
+                  <div>
+                    <div>{sg.aciklama}</div>
+                    <div className="kucuk soluk mono">
+                      {sg.kod}
+                      {sg.kaynak && ` · ${sg.kaynak}`}
+                    </div>
+                    {sg.kanit && (
+                      <pre className="kod-blok sinyal-kanit" tabIndex={0}>
+                        {sg.kanit}
+                      </pre>
+                    )}
                   </div>
-                </div>
-              </li>
-            ))}
-          </ul>
+                </li>
+              ))}
+            </ul>
+          )}
           {h.llm_yorumu && (
             <Uyari ton="bilgi" baslik="LLM yorumu">
               {h.llm_yorumu}
@@ -145,31 +585,25 @@ export function HataDetay() {
         </Kart>
       </div>
 
-      {h.oneri?.tur === "locator_fix" && <OnarimKarti o={h.oneri} hataId={h.id} yenile={() => void v.yenile(true)} />}
-      {h.oneri?.tur === "bug_draft" && (
+      {!ortam && h.oneri?.tur === "locator_fix" && <OnarimKarti o={h.oneri} hataId={h.id} yenile={() => void v.yenile(true)} />}
+      {!ortam && h.oneri?.tur === "bug_draft" && (
         <Kart baslik="Öneri">
           <p>
-            Ürün hatası adayı: bug taslağı hazırlandı.{" "}
+            Ürün hatası adayı: bug taslağı hazırlandı ve Jira'da mükerrer araması yapıldı. Kayıt yalnızca testçi onayıyla açılır.{" "}
             <Link className="dugme dugme-birincil dugme-kucuk" to={`/bug-taslaklari/${encodeURIComponent(h.oneri.bug_draft_id)}`}>
               Bug taslağına git
             </Link>
           </p>
+          <MukerrerSatiri id={h.oneri.bug_draft_id} />
         </Kart>
+      )}
+      {!h.oneri && h.oneri_yok_nedeni && (
+        <Uyari ton="uyari" baslik="Öneri üretilmedi">
+          {h.oneri_yok_nedeni}
+        </Uyari>
       )}
 
-      {h.kanit_linkleri.length > 0 && (
-        <Kart baslik="Kanıt">
-          <ul className="duz-liste">
-            {h.kanit_linkleri.map((k) => (
-              <li key={`${k.etiket}-${k.url ?? ""}`}>
-                <Baglanti href={k.url} yokNedeni="dosya sunucusu yok">
-                  {k.etiket}
-                </Baglanti>
-              </li>
-            ))}
-          </ul>
-        </Kart>
-      )}
+      <KanitKarti k={h.kanit} linkler={h.kanit_linkleri} />
     </>
   );
 }

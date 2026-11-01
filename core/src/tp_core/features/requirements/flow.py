@@ -1801,6 +1801,10 @@ def decide_finding(
     taslak: BugDraft | None = None
     if karar == "code_defect":
         taslak = ensure_bug_draft(s, finding, req, user)
+        # Faz 4: taslak hemen mükerrer arama + AI taslak hattına girer (bugs.prepare).
+        from tp_core.features.bugs import adopt_draft
+
+        adopt_draft(s, taslak.id, aktor=user.kullanici_adi)
     if karar != "fix_doc":
         transition(s, finding, "resolved", user, "decided", sebep=karar)
     maybe_finalize(s, req, user)
