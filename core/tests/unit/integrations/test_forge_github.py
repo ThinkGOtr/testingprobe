@@ -869,3 +869,17 @@ def test_merge_base_compare_cagrisindan(forge: GitHubForge, gh: FakeGitHub) -> N
     gh.on("GET", f"{R}/compare/main...{b}", {"merge_base_commit": None})
     with pytest.raises(ForgeError, match="ortak ata"):
         forge.merge_base("main", b)
+
+
+def test_olmayan_dal_head_sha_bulunamadi_sayilir(forge: GitHubForge, gh: FakeGitHub) -> None:
+    # GitHub var olmayan ref için 404 değil 422 "No commit found" döner (codegen dal seçimi).
+    gh.on(
+        "GET",
+        f"{R}/commits/tp/case-yok",
+        lambda _r: httpx.Response(422, json={"message": "No commit found for SHA: tp/case-yok"}),
+    )
+    gh.on("GET", f"{R}/commits/kotu", lambda _r: httpx.Response(422, json={"message": "Bad"}))
+    with pytest.raises(ForgeNotFoundError):
+        forge.head_sha("tp/case-yok")
+    with pytest.raises(ForgeValidationError):
+        forge.head_sha("kotu")

@@ -685,7 +685,13 @@ class GitHubForge:
 
     def head_sha(self, ref: str = "main") -> str:
         validate_ref(ref)
-        return self._get(f"{self._r}/commits/{_q(ref)}", f"ref {ref}")["sha"]
+        try:
+            return self._get(f"{self._r}/commits/{_q(ref)}", f"ref {ref}")["sha"]
+        except ForgeValidationError as exc:
+            # Var olmayan dal/ref için GitHub 404 değil 422 "No commit found for SHA" döner.
+            if "No commit found" in str(exc):
+                raise ForgeNotFoundError(str(exc)) from exc
+            raise
 
     def read_file(self, path: str, ref: str = "main") -> str:
         validate_path(path)

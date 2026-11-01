@@ -42,6 +42,13 @@ x-core-env: &core-env
   JIRA_READ_EMAIL: ${JIRA_READ_EMAIL:-reader@sim.local}
   JIRA_READ_TOKEN: ${JIRA_READ_TOKEN:-sim}
   TP_TEST_MGMT: ${TP_TEST_MGMT:-jira}
+  # Jira kanalından PO onayı: izinli PO kimlikleri ve ürünün bot kimlikleri (MIMARI-SOZLESME §6).
+  # core-api de okur (case üretimi öncesi etiketin hâlâ geçerli olduğu denetimi); sır değildir.
+  JIRA_PO_ACCOUNT_IDS: ${JIRA_PO_ACCOUNT_IDS:-}
+  TP_PO_JIRA_USERS: ${TP_PO_JIRA_USERS:-}
+  TP_JIRA_BOT_ACCOUNT_IDS: ${TP_JIRA_BOT_ACCOUNT_IDS:-}
+  # YALNIZ TEST: 1 = ürünün Jira hesabının PO etiketi de onay sayılır (varsayılan kapalı)
+  TP_TEST_TEK_HESAP: ${TP_TEST_TEK_HESAP:-0}
   XRAY_BASE_URL: ${XRAY_BASE_URL:-http://jira-sim:8090/xray}
   TP_FORGE: ${TP_FORGE:-local}
   TP_FORGE_PATH: /forge/demo-app.git
@@ -185,12 +192,6 @@ services:
       GH_APP_INSTALLATION_ID: ${GH_APP_INSTALLATION_ID:-}
       # Merge kapısının zorunlu check'leri (boş = adaptör varsayılanı: local-ci / ruleset listesi)
       TP_REQUIRED_CHECKS: ${TP_REQUIRED_CHECKS:-}
-      # Jira kanalından PO onayı: izinli PO kimlikleri ve ürünün bot kimlikleri (MIMARI-SOZLESME §6)
-      JIRA_PO_ACCOUNT_IDS: ${JIRA_PO_ACCOUNT_IDS:-}
-      TP_PO_JIRA_USERS: ${TP_PO_JIRA_USERS:-}
-      TP_JIRA_BOT_ACCOUNT_IDS: ${TP_JIRA_BOT_ACCOUNT_IDS:-}
-      # YALNIZ TEST: 1 = ürünün Jira hesabının PO etiketi de onay sayılır (varsayılan kapalı)
-      TP_TEST_TEK_HESAP: ${TP_TEST_TEK_HESAP:-0}
       # Jira yorumlarında rol @bahsetmeleri (accountId; boş = yok). Yalnızca bildirim, yetki değil.
       JIRA_HESAP_ANALIST: ${JIRA_HESAP_ANALIST:-}
       JIRA_HESAP_PO: ${JIRA_HESAP_PO:-}
