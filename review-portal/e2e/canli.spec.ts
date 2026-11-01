@@ -263,9 +263,10 @@ test("Demo-B: kod üretimi → yerel kontrol → PR → kırarak doğrula → me
   await page.screenshot({ path: `${EKRAN_DIZINI}/demob-05-defect-adayi.png`, fullPage: true });
   await page.getByRole("button", { name: "Çıkış" }).click();
 
-  // Sunucu: açılış Kontrol Kulesi; KPI kaynakları; uydurma yok; deploy tetiği.
+  // Sunucu: açılış Demo yol haritası (Faz 5); Kontrol Kulesi KPI kaynakları; uydurma yok; deploy tetiği.
   await girisCanli(page, "sunucu");
-  await expect(page).toHaveURL(/\/kontrol-kulesi$/);
+  await expect(page).toHaveURL(/\/yol-haritasi$/);
+  await page.goto("/kontrol-kulesi");
   await expect(page.getByRole("img", { name: /^Kaynak: run\.sonuc/ })).toBeVisible();
   await expect(page.getByText("ÖRNEK VERİ")).toHaveCount(0);
   await page.screenshot({ path: `${EKRAN_DIZINI}/demob-06-kontrol-kulesi.png`, fullPage: true });
@@ -355,5 +356,52 @@ test("testçi: bug taslağı → mükerrer adayları → karar → jira-sim bağ
   await expect(sonuc).toBeVisible({ timeout: 60_000 });
   await expect(sonuc.getByRole("link").first()).toHaveAttribute("href", /\/browse\/TPD-\d+$/);
   await page.screenshot({ path: `${EKRAN_DIZINI}/12-bug-yayinlandi.png`, fullPage: true });
+  expect(hatalar).toEqual([]);
+});
+
+// Faz 5: sunucunun açılış ekranı (Demo yol haritası) gerçek çekirdek durumundan türetilir; kip
+// bilinmiyorsa "canlı" yazılmaz. Gereksinim detayındaki baz değer kartı çekirdek alanı sunmuyorsa
+// "bilinmiyor" der (değer uydurulmaz). Salt okuma: yığının durumunu değiştirmez.
+test("sunucu: Demo yol haritası (çekirdek durumu) ve TPD-1 baz değer kartı", async ({ page }) => {
+  const hatalar: string[] = [];
+  page.on("pageerror", (e) => hatalar.push(String(e)));
+  await page.goto("/giris");
+  await page.getByLabel("Kullanıcı adı").fill("sunucu");
+  await page.getByLabel("Parola").fill(PAROLA);
+  await page.getByRole("button", { name: "Giriş yap" }).click();
+  await expect(page).toHaveURL(/\/yol-haritasi$/);
+  const liste = page.getByRole("list", { name: "14 adımlı demo akışı" });
+  await expect(liste.getByRole("listitem")).toHaveCount(14);
+  await expect(page.getByText("ÖRNEK VERİ — gerçek değil")).toHaveCount(0);
+  // .env TP_MODEL_MODE=replay: kip "canlı" olarak gösterilmemeli.
+  await expect(page.getByTestId("yh-mod")).not.toContainText(/^canlı/);
+  await page.screenshot({ path: `${EKRAN_DIZINI}/faz5-01-yol-haritasi.png`, fullPage: true });
+
+  const tpd1 = liste.getByTestId("yh-adim-1");
+  if ((await tpd1.getAttribute("data-hal")) === "tamam") {
+    await tpd1.getByRole("link", { name: /Story'yi aç/ }).click();
+    const kart = page.getByRole("region", { name: "Manuel baz değer" });
+    await expect(kart).toBeVisible();
+    await expect(kart.getByTestId("baz-deger").or(kart.getByTestId("baz-deger-yok"))).toBeVisible();
+    await kart.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `${EKRAN_DIZINI}/faz5-02-tpd1-baz-deger.png`, fullPage: true });
+  }
+  // Locator triage ekranı: deneme kopyaları tek satırda (aynı etiket iki kez listelenmez).
+  const r = await page.request.get("/api/failures?sinif=test_maintenance&limit=1");
+  const loc = r.ok() ? ((await r.json()) as { id: string }[])[0] : undefined;
+  if (loc) {
+    await page.goto(`/hatalar/${loc.id}`);
+    const kanit = page.getByRole("list", { name: "Kanıt bağlantıları" });
+    await expect(kanit).toBeVisible();
+    const satirlar = await kanit.locator(":scope > li").allTextContents();
+    const etiketler = satirlar.map((t) => t.split(":")[0].trim());
+    expect(new Set(etiketler).size, satirlar.join(" | ")).toBe(etiketler.length);
+    await kanit.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `${EKRAN_DIZINI}/faz5-04-locator-kanit.png`, fullPage: true });
+  }
+  await page.goto("/demo");
+  await expect(page.getByRole("heading", { name: "Demo kontrolleri", level: 1 })).toBeVisible();
+  await expect(page.getByText("Kırma ön koşulu")).toBeVisible();
+  await page.screenshot({ path: `${EKRAN_DIZINI}/faz5-03-demo-kontrolleri.png`, fullPage: true });
   expect(hatalar).toEqual([]);
 });

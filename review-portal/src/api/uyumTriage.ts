@@ -312,7 +312,8 @@ function kanitLinkleri(h: Ham): HataAnalizi["kanit_linkleri"] {
       if (!nesneMi(l)) return null;
       const etiket = metin(ilk(l, "etiket", "label", "ad"));
       if (!etiket) return null;
-      return { etiket, url: adresUyarla(l.url) };
+      const tur = metinYaDaNull(ilk(l, "tur", "ad", "kind"));
+      return { etiket, url: adresUyarla(l.url), ...(tur ? { tur } : {}) };
     })
     .filter((l): l is NonNullable<typeof l> => l !== null);
 }

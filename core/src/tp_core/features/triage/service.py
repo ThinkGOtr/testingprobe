@@ -6,8 +6,10 @@ Akış (`triage.classify` işi, yalnızca core-worker; AI yalnızca kural eşle�
    yalnızca kontrol sınıfı `defect_adayi` ise triage'a girer (locator/derleme/ortam sınıfları kod
    üretiminin kendi akışındadır); kırarak doğrulama koşuları (`break_verify`) girer —
    `BREAK_CAMPAIGN` kırmızısı "hata yakalama" senaryosunun (TEKNIK-TASARIM §2 adım 6, 12–14)
-   girdisidir ve `kasitli_kirilma` sinyaliyle işaretlenir. Statik adımda (tsc/eslint/AST) kalan
-   ve test sonucu üretmeyen koşu test hatası değildir (`skipped`).
+   girdisidir ve `kasitli_kirilma` sinyaliyle işaretlenir; varsayılan olarak taslak istenir
+   (testçi kararına bırakılır, Jira'ya yalnızca insan onayıyla yazılır). `TP_TRIAGE_KIRMA_TASLAK=0`
+   taslağı kapatır (`oneri_turu='none'`, `jira_yazilmaz`). Statik adımda
+   (tsc/eslint/AST) kalan ve test sonucu üretmeyen koşu test hatası değildir (`skipped`).
 2. **Kanıt.** test-runner'ın koşu dizinindeki `run.json` (`saglik`, `failures[].failure`:
    tür, mesaj, beklenen/gerçekleşen, locator, adım, konum, kanıt yolları, aria snapshot), gerekirse
    `error-context.md` ve `trace.zip` (güvenli, sınırlı okuma; `evidence`). JSON rapor yoksa (GitHub
@@ -20,9 +22,10 @@ Akış (`triage.classify` işi, yalnızca core-worker; AI yalnızca kural eşle�
    eşleşen golden yoksa sınıf `unknown` kalır (uydurulmaz; `ai_call` `replay_miss` yazılır).
 5. **Kayıt.** `failure` + `failure_ek` (idempotens anahtarı `<run>:<test>`), `triage_kosu`,
    SSE `failure.classified`, denetim `triage.classified`. Sayısal güven yok: eşleşen sinyaller.
-6. **Öneriler.** `product_defect` → bugs şeridinin `create_draft_from_failure(session,
-   failure_id)` (insan onayı orada; yoksa sessizce atlanır). `test_maintenance/locator` → öneri
-   `failure_ek.oneri`'de saklanır; onarımı `POST /failures/{id}/fix` (repair şeridi) başlatır.
+6. **Öneriler.** `product_defect` (kasıtlı kırılma hariç) → bugs şeridinin
+   `create_draft_from_failure(session, failure_id)` (insan onayı orada; yoksa sessizce
+   atlanır). `test_maintenance/locator` → öneri `failure_ek.oneri`'de saklanır;
+   onarımı `POST /failures/{id}/fix` (repair şeridi) başlatır.
 """
 
 from __future__ import annotations
@@ -65,6 +68,11 @@ JOB_CLASSIFY = "triage.classify"
 JOB_SWEEP = "triage.sweep"
 NS = uuid.UUID("0b7f6d1e-6a43-5c2e-9d0e-747269616765")
 KIRMIZI = ("failed", "error")
+# Kasıtlı kırılma kırmızısı: hata yakalama kanıtıdır, Jira'ya yazılacak bir hata değildir.
+KIRMA_TASLAK_YOK = (
+    "Kasıtlı kırılma (BREAK_CAMPAIGN): kırarak doğrulamanın beklenen sonucu — test hatayı "
+    "yakaladı. Bug taslağı açılmaz, Jira'ya yazılmaz."
+)
 KIRMIZI_TEST = ("failed", "timedout", "flaky")
 STATIK_ADIMLAR = ("deps", "tsc", "eslint", "ast_guard")
 MAX_TEST = 50
@@ -1146,6 +1154,11 @@ def _kanit_ozeti(tk: TestKaniti, karar: Karar) -> dict[str, Any]:
     }
 
 
+def _kasitli_taslaksiz(u: Uygunluk, k: Karar) -> bool:
+    """Kasıtlı kırılmanın gerçek defect kararı taslağa gitmez (varsayılan; `kirma_taslak`)."""
+    return u.kirma and k.sinif == "product_defect" and not services.kirma_taslak()
+
+
 def _kaydet(session: Session, run: Run, u: Uygunluk, sonuclar: list[Sonuc]) -> list[Failure]:
     yeni: list[Failure] = []
     for s in sonuclar:
@@ -1153,6 +1166,11 @@ def _kaydet(session: Session, run: Run, u: Uygunluk, sonuclar: list[Sonuc]) -> l
         if session.get(Failure, fid) is not None:
             continue
         k = s.karar
+        kasitli = _kasitli_taslaksiz(u, k)
+        oneri_turu = "none" if kasitli else k.oneri_turu
+        if kasitli:
+            onceki = k.oneri_yok_nedeni
+            k.oneri_yok_nedeni = f"{KIRMA_TASLAK_YOK} {onceki}" if onceki else KIRMA_TASLAK_YOK
         f = Failure(
             id=fid,
             run_id=run.id,
@@ -1163,9 +1181,11 @@ def _kaydet(session: Session, run: Run, u: Uygunluk, sonuclar: list[Sonuc]) -> l
             alt_tur=k.alt_tur,
             eslesen_sinyaller=k.sinyaller,
             karar_kaynagi=k.karar_kaynagi,
-            gerekce=k.gerekce or k.oneri_yok_nedeni,
-            oneri_turu=k.oneri_turu,
-            oneri_durumu="proposed" if k.oneri_turu != "none" else "none",
+            gerekce=(f"{k.gerekce} {KIRMA_TASLAK_YOK}" if kasitli and k.gerekce else None)
+            or k.gerekce
+            or k.oneri_yok_nedeni,
+            oneri_turu=oneri_turu,
+            oneri_durumu="proposed" if oneri_turu != "none" else "none",
             ai_call_id=s.ai_call_id,
             uretim_modu=s.mod,
         )
@@ -1230,6 +1250,7 @@ def _kaydet(session: Session, run: Run, u: Uygunluk, sonuclar: list[Sonuc]) -> l
                 "mode": s.mod,
                 "kaynak": u.kaynak,
                 "kirma": u.kirma,
+                "bug_taslagi": "kasitli_kirilma_yazilmaz" if kasitli else None,
             },
         )
     return yeni
@@ -1326,22 +1347,27 @@ def _bug_taslaklari(run_id: uuid.UUID) -> dict[str, Any]:
     """
     from tp_core.models import session_scope
 
+    kirma_taslak = services.kirma_taslak()
     with session_scope() as s:
+        satirlar = s.execute(
+            select(Failure.id, FailureEk.kirma)
+            .outerjoin(FailureEk, FailureEk.failure_id == Failure.id)
+            .where(Failure.run_id == run_id, Failure.sinif == "product_defect")
+        ).all()
+        # Kasıtlı kırılmanın kırmızısı beklenen sonuçtur: Jira'ya yazılacak taslak istenmez.
+        kasitli = sum(1 for _, kirma in satirlar if kirma and not kirma_taslak)
         adaylar = [
             fid
-            for fid in s.scalars(
-                select(Failure.id).where(
-                    Failure.run_id == run_id, Failure.sinif == "product_defect"
-                )
-            )
-            if bug_taslagi_id(s, fid) is None
+            for fid, kirma in satirlar
+            if not (kirma and not kirma_taslak) and bug_taslagi_id(s, fid) is None
         ]
+    ek_bilgi: dict[str, Any] = {"bug_taslagi_atlanan_kasitli": kasitli} if kasitli else {}
     if not adaylar:
-        return {"bug_taslagi_istenen": 0}
+        return {"bug_taslagi_istenen": 0, **ek_bilgi}
     try:
         from tp_core.features.bugs import create_draft_from_failure  # type: ignore[attr-defined]
     except ImportError:
-        return {"bug_taslagi_istenen": 0, "bug_taslagi": "bugs şeridi yok"}
+        return {"bug_taslagi_istenen": 0, "bug_taslagi": "bugs şeridi yok", **ek_bilgi}
     istenen = 0
     for fid in adaylar:
         try:
@@ -1361,7 +1387,7 @@ def _bug_taslaklari(run_id: uuid.UUID) -> dict[str, Any]:
                     )
             except Exception:  # pragma: no cover - denetim de yazılamazsa yalnızca log
                 log.exception("denetim yazılamadı")
-    return {"bug_taslagi_istenen": istenen}
+    return {"bug_taslagi_istenen": istenen, **ek_bilgi}
 
 
 # ============================================================================= süpürme
@@ -1601,6 +1627,10 @@ def serialize(session: Session, f: Failure, ek: FailureEk | None, run: Run | Non
         else (str(run.script_id) if run and run.script_id else None),
         "kaynak": ek.kaynak if ek else None,
         "kirma": bool(ek.kirma) if ek else False,
+        # Kasıtlı kırılma kırmızısı Jira'ya yazılmaz (beklenen kırarak doğrulama sonucu).
+        "jira_yazilmaz": bool(
+            ek and ek.kirma and f.sinif == "product_defect" and f.oneri_turu == "none"
+        ),
         "commit": run.commit if run else None,
         "tetik": run.tetik if run else None,
         "pr_no": run.pr_no if run else None,

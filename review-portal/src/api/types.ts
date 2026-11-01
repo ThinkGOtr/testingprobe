@@ -134,6 +134,37 @@ export interface GereksinimDetay extends Gereksinim {
   son_hata?: SonHata | null;
   /** PO soru yorumunun Jira'ya yazılma durumu (core `po_istegi`). */
   po_istegi?: PoIstegi | null;
+  /**
+   * Story başına manuel test tasarımı baz değeri (Faz 5). `undefined`: çekirdek bu bilgiyi
+   * sunmuyor (eski core) — ekran "bilinmiyor" der, değer uydurulmaz.
+   */
+  manuel_baz?: ManuelBaz;
+}
+
+// ---------------------------------------------------------------- Manuel baz değer (Faz 5)
+
+/**
+ * Baz değerin kaynağı: `olcum` story için elle girilmiş gerçek ölçüm (kim/ne zaman/not ile),
+ * `varsayilan` `TP_MANUAL_BASELINE_S` (story için ölçülmedi), `olculmedi` hiçbiri.
+ * Kazanç yalnızca `olcum` story'lerde hesaplanır.
+ */
+export type BazKaynagi = "olcum" | "varsayilan" | "olculmedi";
+
+export interface ManuelBaz {
+  /** Saniye; ölçülmediyse null (sayı uydurulmaz). */
+  deger_s: number | null;
+  kaynak: BazKaynagi;
+  /** Ölçümü giren portal kullanıcısı (yalnızca `olcum`). */
+  giren: string | null;
+  zaman: string | null;
+  /** Ölçüm notu (kim, nasıl ölçtü). */
+  not: string | null;
+}
+
+/** `PUT /requirements/{id}/baseline` gövdesi. */
+export interface BazDegerGirdisi {
+  deger_s: number;
+  not: string;
 }
 
 export interface SonHata {
@@ -349,10 +380,16 @@ export interface CaseMetrikleri {
   /** Case üretim çağrılarının model modu dağılımı ({replay: 1, live: 0, …}). */
   ai_cagri_modlari: Record<string, number>;
   /**
-   * Story başına manuel case hazırlama süresi (baz değer, §1.6/§12; F0'da ölçülür). Çekirdek
-   * yapılandırmadan verirse dolu; yoksa portal derleme ayarına (VITE_MANUEL_BAZ_DK) bakar.
+   * Story başına manuel case hazırlama süresi (baz değer, §1.6/§12). Çekirdek: story ölçümü →
+   * yoksa TP_MANUAL_BASELINE_S (`manuel_baz_kaynagi='varsayilan'`, kazanca GİRMEZ) → yoksa null.
    */
   manuel_baz_ms?: number | null;
+  /** `olcum` | `varsayilan` | null (ölçülmedi). Kazanç yalnızca `olcum` ile hesaplanır. */
+  manuel_baz_kaynagi?: string | null;
+  /** Ayrıntılı baz değer nesnesi (`deger_s`, `kaynak`, `giren`, `zaman`, `not`). */
+  manuel_baz?: unknown;
+  /** İnsan review süresi tabanı (ms; core TP_CT_REVIEW_MIN_S). Yoksa portal 5 sn varsayar. */
+  review_tabani_ms?: number;
   /** Deterministik kapsam denetimi: hiçbir güncel (onaylı/taslak) case'in atıf yapmadığı AC'ler. */
   kapsanmayan_ac?: string[];
   /** Çekirdeğin ölçüm uyarıları (ör. manuel baz değer yok; REPLAY'de AI süresi ölçülmez). */
@@ -829,8 +866,11 @@ export interface HataAnalizi {
   /** Öneri üretilmediyse nedeni (ör. "rol + ad 2 eleman buldu", "uygulama sha'sı farklı"). */
   oneri_yok_nedeni?: string | null;
   kanit?: TriageKaniti | null;
-  /** url null: artifact henüz sunulmuyor (etiket düz metin gösterilir). */
-  kanit_linkleri: { etiket: string; url: string | null }[];
+  /**
+   * url null: artifact henüz sunulmuyor (etiket düz metin gösterilir). `tur`: kanıt türü (core
+   * `trace|screenshot|error_context|video` ya da Playwright ek adı); yoksa etiketten türetilir.
+   */
+  kanit_linkleri: { etiket: string; url: string | null; tur?: string | null }[];
   /** null: model çağrısı yok (kural kararı); "live" uydurulmaz. */
   mode: CiktiModu | null;
   degerlendirme?: Degerlendirme | null;
@@ -961,6 +1001,37 @@ export interface DemoDurumu {
   locator_durumu?: "baseline" | "kirik" | "onarildi" | null;
   uygulama: { sha?: string | null; kaynak?: string | null; main_ile_eslesiyor?: boolean; neden?: string | null; yonerge?: string | null };
   web_yenileme_istegi: unknown;
+  /** Locator demosu bu kipte destekleniyor mu (GitHub kipinde hayır). Core vermezse yok. */
+  locator_demo?: { destekleniyor: boolean; neden: string | null } | null;
+  /** Kırma ön koşulu: main için yeşil temel koşu (yoksa core 409 + yönerge). Bilinmiyorsa `hazir: null`. */
+  onarim_on_kosulu?: {
+    hazir: boolean | null;
+    son_yesil_kosu: { run_id: string; commit: string | null; tetik: string | null; zaman: string | null } | null;
+    yonerge: string | null;
+    hata?: string | null;
+  } | null;
+  /**
+   * Model geçidinin kipi (core verirse): `mod` etkin kip, `replay_strict` prova kipi. Yoksa portal
+   * gözlenen çağrı modlarından türetir ve "çekirdek bildirmiyor" der ("live" uydurulmaz).
+   */
+  model?: ModelDurumu | null;
+  /** Prompt paketlerinin canlı değerlendirme durumu (rules/evaluations.yaml); core verirse. */
+  degerlendirme?: PaketDegerlendirmesi[] | null;
+}
+
+export interface ModelDurumu {
+  mod: "live" | "replay" | "record" | "auto" | string | null;
+  replay_strict: boolean | null;
+  /** Model anahtarı tanımlı mı (değer asla gönderilmez). */
+  anahtar_var?: boolean | null;
+  aciklama?: string | null;
+}
+
+export interface PaketDegerlendirmesi {
+  paket: string;
+  surum: number | null;
+  durum: Degerlendirme["durum"];
+  etiket: string | null;
 }
 
 // ---------------------------------------------------------------- Kontrol Kulesi
@@ -976,6 +1047,7 @@ export type KpiAnahtari =
   | "script_ilk_review"
   | "hazirlik_suresi"
   | "manuel_baz"
+  | "kazanc_orani"
   | "maliyet"
   | "a11y"
   | "son_kosular";
@@ -998,6 +1070,10 @@ export interface KontrolKulesi {
     son_n: number | null;
     birim: "kosu" | "test";
     test: { oran: number | null; toplam: number; gecen: number } | null;
+    /** Core'un hazır Türkçe cümlesi (pencere + hariç tutulan kasıtlı kırma koşuları); yoksa portal kurar. */
+    metin?: string | null;
+    /** Penceredeki kasıtlı kırma koşusu sayısı (orana girmez). */
+    haric_kirma?: number | null;
   };
   /** Hedef çizgisi yalnızca core bir hedef bildirirse çizilir. */
   gecme_hedefi: number | null;
@@ -1010,7 +1086,10 @@ export interface KontrolKulesi {
     case_sayisi: number;
     otomasyon_kapsami: number | null;
     son_sonuc: "passed" | "failed" | "none";
+    /** Story'ye bağlı, yayınlanmış (Jira'da açılmış) farklı Jira anahtarı sayısı; kırma koşusu taslakları hariç (core `_acik_bug`). */
     acik_bug: number;
+    /** Henüz yayınlanmamış (taslak/onaylı), kırma koşusundan gelmeyen bug taslağı sayısı. Eski core vermezse 0. */
+    bug_taslagi: number;
     /**
      * Güncel case'lerden en son script'i defect adayı (yerel kontrolde assertion kırmızı; PR yok)
      * olanların sayısı (core `_acik_defect_adayi`). "Son sonuç" yalnızca main koşularından gelir;
@@ -1035,6 +1114,11 @@ export interface KontrolKulesi {
     cagri_sayisi: number | null;
     replay_cagri: number | null;
   };
+  /**
+   * Story bazında hazırlık süresi ve baz değer (core `hazirlik`). Kazanç yalnızca baz değeri
+   * ölçülmüş (`baz_kaynagi === "olcum"`) story'lerde gösterilir. Core vermezse boş.
+   */
+  hazirlik: HazirlikSatiri[];
   /** `null`: erişilebilirlik taraması hiç yapılmadı. */
   a11y: {
     ihlal: number;
@@ -1046,6 +1130,23 @@ export interface KontrolKulesi {
   kaynaklar: Partial<Record<KpiAnahtari, string>>;
   /** Core'un dürüstlük uyarıları (ör. "Manuel baz değer girilmedi"). */
   uyarilar: string[];
+}
+
+export interface HazirlikSatiri {
+  requirement_id: string;
+  story_key: string | null;
+  ai_sure_ms: number | null;
+  review_sure_ms: number | null;
+  /** AI + review; REPLAY'de AI süresi ölçülmez (yalnız review — `ai_olculmedi`). */
+  toplam_ms: number | null;
+  ai_olculmedi: boolean;
+  review_olculmedi: boolean;
+  manuel_baz_ms: number | null;
+  baz_kaynagi: BazKaynagi;
+  /** Core'un kazanç oranı; portal yalnızca `olcum` satırlarında kullanır. */
+  kazanc_orani: number | null;
+  /** Core: başlık kazancına girer mi (ölçülmüş baz + AI + review; REPLAY yalnız-review hariç). */
+  kazanca_girer?: boolean;
 }
 
 // ---------------------------------------------------------------- Denetim

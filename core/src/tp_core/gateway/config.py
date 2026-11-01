@@ -26,12 +26,30 @@ class GatewaySettings(BaseSettings):
         default="anthropic", validation_alias="TP_MODEL_PROVIDER"
     )
     anthropic_api_key: SecretStr | None = Field(default=None, validation_alias="ANTHROPIC_API_KEY")
+    # Çalışma alanına bağlı anahtarlar için `anthropic-workspace-id` başlığı (boş = gönderilmez).
+    # Sır gibi ele alınır: loglanmaz, yazdırılmaz (SecretStr).
+    anthropic_workspace_id: SecretStr | None = Field(
+        default=None, validation_alias="ANTHROPIC_WORKSPACE_ID"
+    )
     daily_budget_usd: float = Field(default=30.0, validation_alias="TP_DAILY_BUDGET_USD")
     workflow_budget_usd: float = Field(default=2.0, validation_alias="TP_WORKFLOW_BUDGET_USD")
     pii_masking: bool = Field(default=False, validation_alias="TP_PII_MASKING")
     rules_dir: Path | None = Field(default=None, validation_alias="TP_RULES_DIR")
     # Prova kipi: replay'de golden'a (REPLAY-MISS) düşmek yerine hata (§13 prova listesi).
     replay_strict: bool = Field(default=False, validation_alias="TP_REPLAY_STRICT")
+    # Kriter 7 (TEKNIK-TASARIM §1, §13): canlı çağrı sağlayıcı hatası/zaman aşımıyla düşerse aynı
+    # çağrı REPLAY golden'ından (etiketli `replay`/`replay_miss`) sürdürülür. Boş = `auto` kipinde
+    # açık, açık `live`/`record` kipinde kapalı (değerlendirme/kayıt sahte başarı üretmesin).
+    replay_fallback: bool | None = Field(default=None, validation_alias="TP_REPLAY_FALLBACK")
+
+
+def resolve_replay_fallback(settings: GatewaySettings) -> bool:
+    """Canlı hata → REPLAY yedeği açık mı? `record` kipinde hiçbir zaman (kayıt sahte olmasın)."""
+    if settings.model_mode in ("record", "replay"):
+        return False
+    if settings.replay_fallback is not None:
+        return settings.replay_fallback
+    return settings.model_mode == "auto"
 
 
 def resolve_mode(settings: GatewaySettings) -> EffectiveMode:
@@ -108,6 +126,18 @@ class ModelTable:
 
     def cost(self, model: str, usage: Usage) -> float:
         return self.price(model).cost(usage)
+
+    def max_price(self) -> ModelPrice:
+        """Tablodaki her kalemin en yükseği: fiyatsız bir yedek model için üst sınır tahmini."""
+        if not self.prices:
+            raise GatewayConfigError("rules/models.yaml içinde fiyat yok")
+        values = list(self.prices.values())
+        return ModelPrice(
+            input=max(p.input for p in values),
+            output=max(p.output for p in values),
+            cache_read=max(p.cache_read for p in values),
+            cache_write=max(p.cache_write for p in values),
+        )
 
 
 def load_model_table(rules_dir: Path) -> ModelTable:

@@ -102,6 +102,9 @@ describe("Demo-B uyarlayıcıları", () => {
   it("Kontrol Kulesi: eksik ölçüler null; kaynaklar metin ya da {kaynak}", () => {
     const k = kontrolKulesiUyarla({ gecme_orani: 0.8, ai_katkisi: {}, kaynaklar: { flaky: "test_result", a11y: { kaynak: "axe" }, bilinmeyen: "x" } });
     expect(k.gecme_orani.oran).toBe(0.8);
+    expect(k.gecme_orani.metin).toBeNull();
+    const m = kontrolKulesiUyarla({ gecme_orani: { oran: 1, toplam: 12, gecen: 12, son_n: 20, haric_kirma: 1, metin: "Son 12 CI koşusundan 12'si geçti (pencere: son 20; 1 kasıtlı kırma koşusu hariç)" } });
+    expect(m.gecme_orani).toMatchObject({ haric_kirma: 1, metin: expect.stringMatching(/1 kasıtlı kırma koşusu hariç/) });
     expect(k.ai_katkisi).toMatchObject({ kabul_orani: null, manuel_baz_ms: null, maliyet_usd_toplam: null, kabul_hedefi: 0.7 });
     expect(k.a11y).toBeNull();
     expect(k.kaynaklar).toEqual({ flaky: "test_result", a11y: "axe" });

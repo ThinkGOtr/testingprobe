@@ -50,6 +50,8 @@ from tp_core.gateway.errors import (
     BudgetExceeded,
     GatewayConfigError,
     ProviderNotConfigured,
+    ProviderPermanentError,
+    ProviderRefusal,
     ProviderTransientError,
     ReplayNotFound,
     SchemaValidationFailed,
@@ -283,6 +285,8 @@ _EXTRA_KEYS = (
     "onbellek_okuma_token",
     "onbellek_yazma_token",
     "yedek_model",
+    "maliyet_tahmini",
+    "canli_hata_yedegi",
     "degerlendirme",
 )
 
@@ -354,6 +358,7 @@ class Gateway:
         call_lookup: CallLookup | None = None,
         agent_tools: Mapping[str, Collection[str]] | None = None,
         secret_values: Collection[str] = (),
+        replay_fallback: bool = False,
     ) -> None:
         if mode in ("live", "record") and provider is None:
             raise ProviderNotConfigured(f"'{mode}' modu için sağlayıcı gerekli")
@@ -384,6 +389,9 @@ class Gateway:
                 )
         # Araç kaydından (tool_call) her zaman silinen bilinen sırlar (ör. ajan bayisinin parolası).
         self.secret_values = frozenset(v for v in secret_values if v)
+        # Kriter 7: canlı çağrı sağlayıcı hatasıyla düşerse REPLAY golden'ına (etiketli) devam.
+        # `record` kipinde hiçbir zaman (kayıt dizinine sahte canlı sonuç yazılmasın).
+        self.replay_fallback = bool(replay_fallback) and mode == "live"
         self._sessions: dict[UUID, MaskingSession] = {}
         self._bundles: dict[tuple[str, str, str], Bundle] = {}
         self._evaluations: dict[str, dict[str, Any]] = {}
@@ -438,6 +446,15 @@ class Gateway:
                     raise
                 self._sleep(self.retry.delay(attempt))
                 attempt += 1
+
+    def _falls_back(self, exc: BaseException) -> bool:
+        """Kriter 7: canlı çağrı sağlayıcı hatası/zaman aşımıyla düştü, REPLAY'e devam edilir mi?
+
+        Yalnızca sağlayıcı hataları (zaman aşımı, 429/5xx tükenmesi, 4xx). Model reddi
+        (`ProviderRefusal`) insana düşer, golden'la örtülmez; bütçe/şema hataları da öyle."""
+        if not self.replay_fallback or isinstance(exc, ProviderRefusal):
+            return False
+        return isinstance(exc, ProviderTransientError | ProviderPermanentError)
 
     def _base_row(
         self,
@@ -670,10 +687,25 @@ class Gateway:
                     sure_ms=int((self._clock() - started) * 1000),
                     maliyet_usd=0.0,
                 )
-                self._record(row)
-                raise
+                failed_id = self._record(row)
+                if not self._falls_back(exc):
+                    raise
+                return self._replay_call(
+                    purpose,
+                    bnd,
+                    cfg,
+                    validator,
+                    session,
+                    masked,
+                    mask_diff,
+                    key,
+                    replay_key,
+                    workflow_id,
+                    parent_id=first_id or failed_id,
+                    live_failure=_live_failure(exc, failed_id),
+                )
             cost = _response_cost(self.models, cfg, response)
-            row.update(_fallback_fields(response))
+            row.update(_fallback_fields(response, self.models))
             self.budget.charge(workflow_id, cost)
             total_cost += cost
             totals = _add_usage(totals, response.usage)
@@ -750,6 +782,7 @@ class Gateway:
         *,
         root_id: UUID | None = None,
         parent_id: UUID | None = None,
+        live_failure: dict[str, Any] | None = None,
     ) -> CallResult:
         record, mode, path = self._lookup_audited(
             purpose,
@@ -762,6 +795,7 @@ class Gateway:
             workflow_id,
             root_id=root_id,
             parent_id=parent_id,
+            live_failure=live_failure,
         )
         output = record["output"]
         errors = _schema_errors(validator, output)
@@ -775,6 +809,8 @@ class Gateway:
             key=key,
             row_id=root_id,
         )
+        if live_failure is not None:
+            row["canli_hata_yedegi"] = live_failure
         origin, recorded_model = output_origin(record)
         row.update(
             model=recorded_model or HAND_PREPARED_MODEL,
@@ -815,6 +851,7 @@ class Gateway:
         *,
         root_id: UUID | None,
         parent_id: UUID | None,
+        live_failure: dict[str, Any] | None = None,
     ) -> tuple[dict[str, Any], ReplayMode, Path]:
         """Replay araması; bulunamayan/çıktısız iskalama da `ai_call`'a yazılır (constitution
         VIII: denetim izi yalnızca başarılı çağrıları değil, yapılamayanları da gösterir)."""
@@ -832,6 +869,8 @@ class Gateway:
                 row_id=root_id,
             )
             reasons = getattr(exc, "reasons", None)
+            if live_failure is not None:
+                row["canli_hata_yedegi"] = live_failure
             row.update(
                 model=HAND_PREPARED_MODEL,
                 replay_kokeni="yok",
@@ -976,10 +1015,30 @@ class Gateway:
                     sure_ms=int((self._clock() - started) * 1000),
                     maliyet_usd=0.0,
                 )
-                self._record(row)
-                raise
+                failed_id = self._record(row)
+                if not self._falls_back(exc):
+                    raise
+                # Kayıtlı yörünge baştan (REPLAY araç adımlarıyla) yürür; canlı turların araç
+                # adımları denetimde kalır, sonuç REPLAY etiketlidir.
+                return self._replay_agent(
+                    purpose,
+                    bnd,
+                    cfg,
+                    validator,
+                    session,
+                    masked,
+                    mask_diff,
+                    key,
+                    replay_key,
+                    workflow_id,
+                    allowed,
+                    execute,
+                    on_step,
+                    parent_id=first_id or failed_id,
+                    live_failure=_live_failure(exc, failed_id, turn=turn_no),
+                )
             cost = _response_cost(self.models, cfg, response)
-            row.update(_fallback_fields(response))
+            row.update(_fallback_fields(response, self.models))
             self.budget.charge(workflow_id, cost)
             used_input_tokens += _budgeted_input_tokens(response.usage)
             row.update(
@@ -1219,6 +1278,7 @@ class Gateway:
         *,
         root_id: UUID | None = None,
         parent_id: UUID | None = None,
+        live_failure: dict[str, Any] | None = None,
     ) -> AgentResult:
         record, mode, path = self._lookup_audited(
             purpose,
@@ -1231,6 +1291,7 @@ class Gateway:
             workflow_id,
             root_id=root_id,
             parent_id=parent_id,
+            live_failure=live_failure,
         )
         output = record["output"]
         errors = _schema_errors(validator, output)
@@ -1244,6 +1305,8 @@ class Gateway:
             key=key,
             row_id=root_id,
         )
+        if live_failure is not None:
+            row["canli_hata_yedegi"] = live_failure
         origin, recorded_model = output_origin(record)
         row.update(
             model=recorded_model or HAND_PREPARED_MODEL,
@@ -1437,24 +1500,64 @@ def _recording(model: str, provider: str, latency_ms: int, usage: Usage) -> dict
 
 
 def _response_cost(models: ModelTable, cfg: PurposeConfig, response: ProviderResponse) -> float:
-    """Ret yedeği başka modelde koştuysa o modelin fiyatı (tabloda yoksa amacın modeli)."""
-    if response.fallback_from and response.model in models.prices:
-        return models.cost(response.model, response.usage)
+    """Ret yedeği başka modelde koştuysa o modelin fiyatı.
+
+    Yedek model fiyat tablosunda yoksa EKSİK sayılmaz: tablodaki en pahalı fiyat uygulanır
+    (`_unpriced_fallback` → `ek.maliyet_tahmini`); istenen modelin (daha ucuz) fiyatıyla iş akışı
+    ve günlük bütçe olduğundan az doldurulmaz."""
+    if response.fallback_from and response.model:
+        if response.model in models.prices:
+            return models.cost(response.model, response.usage)
+        return models.max_price().cost(response.usage)
     return models.cost(cfg.model, response.usage)
+
+
+def _unpriced_fallback(models: ModelTable, response: ProviderResponse) -> bool:
+    return bool(response.fallback_from and response.model and response.model not in models.prices)
 
 
 def _served_model(cfg: PurposeConfig, response: ProviderResponse) -> str:
     return response.model if response.fallback_from and response.model else cfg.model
 
 
-def _fallback_fields(response: ProviderResponse) -> dict[str, Any]:
-    """Sağlayıcı tarafı ret yedeği: `ai_call.model` yanıtı üreten model, `ek.yedek_model` geçiş."""
+def _fallback_fields(
+    response: ProviderResponse, models: ModelTable | None = None
+) -> dict[str, Any]:
+    """Sağlayıcı tarafı ret yedeği: `ai_call.model` yanıtı üreten model, `ek.yedek_model` geçiş.
+
+    Yedek model fiyatsızsa `ek.maliyet_tahmini` (en pahalı tablo fiyatıyla üst sınır tahmini)."""
     if not response.fallback_from or not response.model:
         return {}
-    return {
+    out: dict[str, Any] = {
         "model": response.model,
         "yedek_model": {"istenen": response.fallback_from, "yanitlayan": response.model},
     }
+    if models is not None and _unpriced_fallback(models, response):
+        out["maliyet_tahmini"] = {
+            "neden": f"'{response.model}' fiyat tablosunda yok (rules/models.yaml)",
+            "uygulanan": "tablodaki en pahalı fiyat (üst sınır)",
+        }
+        log.warning(
+            "ret yedeği fiyatsız modelde koştu (%s); maliyet en pahalı fiyatla tahmin edildi",
+            response.model,
+        )
+    return out
+
+
+def _live_failure(
+    exc: BaseException, failed_id: UUID, *, turn: int | None = None
+) -> dict[str, Any]:
+    """`ek.canli_hata_yedegi`: canlı çağrı düştü, çıktı REPLAY golden'ından (etiketli)."""
+    out: dict[str, Any] = {
+        "neden": type(exc).__name__,
+        "zaman_asimi": bool(getattr(exc, "timeout", False)),
+        "durum": getattr(exc, "status", None),
+        "canli_cagri": str(failed_id),
+        "etiket": "canlı çağrı başarısız; REPLAY ile sürdürüldü",
+    }
+    if turn is not None:
+        out["tur"] = turn
+    return out
 
 
 def _turns_usage(turns: Sequence[_Turn]) -> Usage:

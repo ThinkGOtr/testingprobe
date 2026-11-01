@@ -439,9 +439,41 @@ def test_c3_defect_adayi_product_defect_ve_bug_taslagi_istenir(
 def test_kirma_kosusu_kampanya_kirmizisi_product_defect_kasitli(
     engine: Engine, artefakt_kok: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _bugs_modulu(monkeypatch)
+    from tp_core.features.triage import services
+
+    cagrilar = _bugs_modulu(monkeypatch)
     sid = script_kur(engine)
-    rid = kosu_kur(
+    rid = _kirma_kosusu(engine, artefakt_kok, sid)
+    # TP_TRIAGE_KIRMA_TASLAK=0: kırma kırmızısından taslak istenmez.
+    with services.override(kirma_taslak=lambda: False):
+        sonuc = classify_run(engine, rid)
+    [(f, ek)] = _failures(engine, rid)
+    assert f.sinif == "product_defect" and "kasitli_kirilma" in _kodlar(f)
+    assert (ek.kaynak, ek.kirma) == ("kirma", True)
+    # Kasıtlı kırılma beklenen sonuçtur: bug taslağı istenmez, Jira'ya yazılmaz.
+    assert cagrilar == []
+    assert sonuc["bug_taslagi_istenen"] == 0 and sonuc["bug_taslagi_atlanan_kasitli"] == 1
+    assert (f.oneri_turu, f.oneri_durumu) == ("none", "none")
+    assert ek.oneri_yok_nedeni == service.KIRMA_TASLAK_YOK
+    assert "Jira'ya yazılmaz" in (f.gerekce or "")
+    with Session(engine) as s:
+        g = get_failure(s, f.id)
+        denetim = s.scalars(
+            select(AuditEvent).where(
+                AuditEvent.eylem == "triage.classified", AuditEvent.nesne == f"failure:{f.id}"
+            )
+        ).one()
+    assert g is not None and g["jira_yazilmaz"] is True and g["bug_draft_id"] is None
+    assert g["oneri"] is None
+    assert denetim.ozet["bug_taslagi"] == "kasitli_kirilma_yazilmaz"
+    # Yeniden çalıştırma da taslak istemez.
+    with services.override(kirma_taslak=lambda: False):
+        tekrar = classify_run(engine, rid)
+    assert tekrar["durum"] == "zaten_yapildi" and cagrilar == []
+
+
+def _kirma_kosusu(engine: Engine, artefakt_kok: Path, sid: uuid.UUID | None = None) -> uuid.UUID:
+    return kosu_kur(
         engine,
         artefakt_kok,
         tetik="break_verify",
@@ -454,10 +486,30 @@ def test_kirma_kosusu_kampanya_kirmizisi_product_defect_kasitli(
             )
         ],
     )
-    classify_run(engine, rid)
-    [(f, ek)] = _failures(engine, rid)
-    assert f.sinif == "product_defect" and "kasitli_kirilma" in _kodlar(f)
-    assert (ek.kaynak, ek.kirma) == ("kirma", True)
+
+
+def test_kirma_taslagi_varsayilan_acik_istenir(
+    engine: Engine, artefakt_kok: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+
+    cagrilar = _bugs_modulu(monkeypatch)
+    rid = _kirma_kosusu(engine, artefakt_kok, script_kur(engine))
+    # Varsayılan (TEKNİK-TASARIM §2): kırma kırmızısı → taslak → testçi kararı.
+    sonuc = classify_run(engine, rid)
+    [(f, _ek)] = _failures(engine, rid)
+    assert sonuc["bug_taslagi_istenen"] == 1 and cagrilar == [f.id]
+    assert (f.oneri_turu, f.oneri_durumu) == ("bug_draft", "proposed")
+
+
+def test_kirma_taslak_ayari_varsayilan_acik(monkeypatch: pytest.MonkeyPatch) -> None:
+    from tp_core.features.triage import services
+
+    monkeypatch.delenv("TP_TRIAGE_KIRMA_TASLAK", raising=False)
+    assert services.kirma_taslak() is True
+    monkeypatch.setenv("TP_TRIAGE_KIRMA_TASLAK", "0")
+    assert services.kirma_taslak() is False
+    monkeypatch.setenv("TP_TRIAGE_KIRMA_TASLAK", "1")
+    assert services.kirma_taslak() is True
 
 
 def test_kirma_triage_kapatilabilir(engine: Engine, artefakt_kok: Path) -> None:

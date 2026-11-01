@@ -186,7 +186,7 @@ describe("canlı derleme (VITE_MOCK=0): uydurma KPI yok", () => {
     await oturumAc("sunucu");
     sar(<KontrolKulesi />);
     const kart = await screen.findByRole("region", { name: "AI katkısı" });
-    expect(within(kart).getByText("baz değer ölçülmedi")).toBeInTheDocument();
+    expect(within(kart).getByText("ölçülmüş baz yok")).toBeInTheDocument();
     expect(kart).not.toHaveTextContent(/Kazanç %/);
   });
 

@@ -32,6 +32,7 @@ import type {
 } from "./types";
 import { SCRIPT_DURUMLARI } from "./types";
 import { dizgeler, ilk, kimlik, metin, metinYaDaNull, modUyarla, nesneMi, sayi, sayiYaDaNull, type Ham } from "./uyum";
+import { hazirlikUyarla } from "./uyumFaz5";
 
 const nesne = (x: unknown): Ham => (nesneMi(x) ? x : {});
 const dizi = (x: unknown): Ham[] => (Array.isArray(x) ? x.filter(nesneMi) : []);
@@ -532,6 +533,7 @@ const KPI_ANAHTARLARI: KpiAnahtari[] = [
   "script_ilk_review",
   "hazirlik_suresi",
   "manuel_baz",
+  "kazanc_orani",
   "maliyet",
   "a11y",
   "son_kosular",
@@ -566,6 +568,8 @@ export function kontrolKulesiUyarla(govde: unknown): KontrolKulesi {
       // core: son_n koşu bazında; test alt nesnesi test bazında. Eski/örnek şekil test bazında.
       birim: goN.birim === "test" || goN.birim === "kosu" ? goN.birim : typeof goN.son_n === "number" || nesneMi(goN.test) ? "kosu" : "test",
       test: nesneMi(goN.test) ? { oran: sayiYaDaNull(goN.test.oran), toplam: sayi(goN.test.toplam), gecen: sayi(goN.test.gecen) } : null,
+      metin: typeof goN.metin === "string" && goN.metin.trim() ? goN.metin : null,
+      haric_kirma: sayiYaDaNull(goN.haric_kirma),
     },
     gecme_hedefi: sayiYaDaNull(g.gecme_hedefi),
     gunluk_gecme: dizi(g.gunluk_gecme).map((x) => ({ tarih: metin(x.tarih), oran: sayi(x.oran), kosu: sayi(x.kosu) })),
@@ -585,6 +589,7 @@ export function kontrolKulesiUyarla(govde: unknown): KontrolKulesi {
         otomasyon_kapsami: sayiYaDaNull(s.otomasyon_kapsami),
         son_sonuc: son === "passed" || son === "failed" ? son : "none",
         acik_bug: sayi(s.acik_bug),
+        bug_taslagi: sayi(s.bug_taslagi),
         acik_defect_adayi: sayi(s.acik_defect_adayi),
       };
     }),
@@ -604,6 +609,7 @@ export function kontrolKulesiUyarla(govde: unknown): KontrolKulesi {
       cagri_sayisi: sayiYaDaNull(ai.cagri_sayisi),
       replay_cagri: sayiYaDaNull(ai.replay_cagri),
     },
+    hazirlik: hazirlikUyarla(g.hazirlik),
     a11y:
       a && typeof a.ihlal === "number"
         ? {

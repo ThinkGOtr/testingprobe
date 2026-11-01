@@ -6,6 +6,12 @@ TP_MODEL_MODE=replay → rules/replay kayıtları (REPLAY / REPLAY-MISS)
 TP_MODEL_MODE=record → live + başarılı çıktıyı rules/replay/<purpose>/<key>.json'a yazar
                        (replay dizini yazılamıyorsa başlangıçta GatewayConfigError)
 
+Kriter 7 (canlı akış düşerse REPLAY'den devam): `auto` kipinde (anahtar varken live) bir çağrı
+sağlayıcı hatası ya da zaman aşımıyla düşerse geçit aynı çağrıyı REPLAY golden'ından sürdürür;
+satır `replay`/`replay_miss` etiketlidir, `ek.canli_hata_yedegi` düşen canlı çağrıyı gösterir.
+`TP_REPLAY_FALLBACK=1/0` bunu açıkça açar/kapatır (açık `live` kipinde varsayılan kapalı);
+`record` kipinde hiçbir zaman açılmaz. Model reddi (refusal) yedeğe düşmez, insana gider.
+
 `engine` verilirse (core-worker): harcama defteri `PgSpendLedger` (tavanlar yeniden başlatmada
 korunur) ve `call_id` idempotency'si için `PgCallLookup` kullanılır. Verilmezse süreç içi defter
 (yalnızca testler/araçlar için).
@@ -25,6 +31,7 @@ from tp_core.gateway.config import (
     find_rules_dir,
     load_model_table,
     resolve_mode,
+    resolve_replay_fallback,
 )
 from tp_core.gateway.core import CallLookup, Gateway
 from tp_core.gateway.masking import PiiMasker
@@ -57,7 +64,12 @@ def build_provider(settings: GatewaySettings) -> Provider:
     from tp_core.gateway.providers.anthropic_provider import AnthropicProvider
 
     key = settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else None
-    return AnthropicProvider(api_key=key)
+    workspace = (
+        settings.anthropic_workspace_id.get_secret_value()
+        if settings.anthropic_workspace_id
+        else None
+    )
+    return AnthropicProvider(api_key=key, workspace_id=workspace)
 
 
 def build_gateway(
@@ -100,4 +112,6 @@ def build_gateway(
         # ai_call.ek (0005): replay_kokeni ile yükseltilmiş golden ↔ kayıt ayrımı denetimde görünür
         record_extras=record_extras,
         secret_values=known_secret_values(),
+        # Kriter 7: `auto` kipinde canlı çağrı düşerse REPLAY golden'ıyla (etiketli) devam.
+        replay_fallback=resolve_replay_fallback(settings),
     )

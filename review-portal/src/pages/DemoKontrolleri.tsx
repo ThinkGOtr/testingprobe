@@ -6,7 +6,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import { hataMesaji } from "../api/http";
-import type { DemoDurumu, HataSinifi, IsYaniti, Kosu, KosuHatasi, PortalOlayi } from "../api/types";
+import type { DemoDurumu, HataAnalizi, HataSinifi, IsYaniti, Kosu, KosuHatasi, PortalOlayi } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
 import { Cip, IslemDugmesi, Kart, SayfaBasligi, Uyari } from "../components/ui";
 import { HATA_SINIFI, KOSU_DURUMU, TETIK } from "../lib/etiketler";
@@ -126,6 +126,7 @@ export function kirmaGeriYukle(d: DemoDurumu | null): KirmaDurumu | null {
   if (Number.isNaN(basladi)) return null;
   // Main artık kırık değilse (sıfırlandı/onarıldı) eski kırılma ilerlemesi gösterilmez.
   if (d?.forge?.main_baseline_mi === true) return null;
+  if (d?.locator_durumu === "baseline") return null;
   return {
     basladi,
     yanit: { job_id: null, durum: "done", mesaj: "Kırılma daha önce başlatıldı." },
@@ -134,6 +135,17 @@ export function kirmaGeriYukle(d: DemoDurumu | null): KirmaDurumu | null {
     bitti: false,
     geriYuklendi: true,
   };
+}
+
+/**
+ * Onarım PR numarası triage kaydından (`oneri.pr`, core `/failures/{id}/fix` birleşik): en son merge
+ * edilen locator onarımı. Yoksa null (koşulardan çıkarıma düşülür; numara uydurulmaz).
+ */
+export function onarimPrHatalardan(hatalar: HataAnalizi[]): number | null {
+  const mergeli = hatalar
+    .filter((h) => h.oneri?.tur === "locator_fix" && h.oneri.durum === "merged" && h.oneri.pr?.number)
+    .sort((a, b) => b.zaman.localeCompare(a.zaman))[0];
+  return mergeli?.oneri?.tur === "locator_fix" ? (mergeli.oneri.pr?.number ?? null) : null;
 }
 
 /** Kırmadan sonra başlayan ilk CI koşusu (yerel kontrol ve kırarak doğrulama hariç). */
@@ -260,11 +272,60 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
   useOlay(() => void kosulariYukle(), ["ci.status", "pr.merged"]);
 
   // Sayfaya dönüşte ilerlemeyi `/demo/status`'tan kur (bu oturumda başlatılmış bir kırılma yoksa).
+  // Koşular (ve kırmızı koşunun triage'ı) okunmadan kurulmaz: yoksa onarılmış senaryoda yeşil
+  // "onarıldı" ile birlikte "CI bekleniyor / uygulama kurulmadı / triage bekleniyor" bir an görünür.
+  const geriYukleniyor = useRef(false);
   useEffect(() => {
-    if (d) return;
+    if (d || kosular === null || geriYukleniyor.current) return;
     const g = kirmaGeriYukle(durum);
-    if (g) setD(g);
-  }, [durum, d]);
+    if (!g) return;
+    geriYukleniyor.current = true;
+    let iptal = false;
+    void (async () => {
+      const k = kirmaKosusu(kosular, g.basladi);
+      let hatalar: KosuHatasi[] | null = null;
+      if (k && (k.durum === "failed" || k.durum === "error")) {
+        try {
+          hatalar = kosuHatalari(await api.kosu(k.id));
+        } catch {
+          /* yoklama yeniden dener */
+        }
+      }
+      const bitti = (k?.durum === "passed") || (!!hatalar && hatalar.length > 0 && hatalar.every((h) => h.sinif !== null));
+      if (!iptal) setD((x) => x ?? { ...g, kosu: k, hatalar, bitti });
+      geriYukleniyor.current = false;
+    })();
+    return () => {
+      iptal = true;
+      geriYukleniyor.current = false;
+    };
+  }, [durum, d, kosular]);
+
+  // Onarım PR numarası triage kaydından (koşulardan çıkarım yalnızca yedek).
+  const [onarimPrKaydi, setOnarimPrKaydi] = useState<number | null>(null);
+  const onarildi = locatorDurumu(durum, kosular).hal === "onarildi";
+  useEffect(() => {
+    if (!onarildi) return;
+    let iptal = false;
+    void (async () => {
+      try {
+        const hatalar = await api.hatalar({ sinif: "test_maintenance" });
+        let no = onarimPrHatalardan(hatalar);
+        if (no === null) {
+          const aday = hatalar
+            .filter((h) => h.oneri?.tur === "locator_fix" && h.oneri.durum === "merged")
+            .sort((a, b) => b.zaman.localeCompare(a.zaman))[0];
+          if (aday) no = onarimPrHatalardan([await api.hata(aday.id)]);
+        }
+        if (!iptal) setOnarimPrKaydi(no);
+      } catch {
+        /* triage okunamadı: koşulardan çıkarım kalır */
+      }
+    })();
+    return () => {
+      iptal = true;
+    };
+  }, [onarildi]);
 
 
   // core'un ilerleme olayları (varsa): günlüğe yazılır, koşu kimliği yakalanır.
@@ -339,15 +400,20 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
   const k = d?.kosu ?? null;
   const kd = k ? (KOSU_DURUMU[k.durum] ?? { etiket: k.durum, ton: "notr" as const }) : null;
   const locator = d?.hatalar?.find((h) => h.sinif === "test_maintenance") ?? null;
-  const ld = locatorDurumu(durum, kosular);
+  const ldHam = locatorDurumu(durum, kosular);
+  const ld = ldHam.hal === "onarildi" && onarimPrKaydi ? { ...ldHam, onarimPr: onarimPrKaydi } : ldHam;
   const kirik = ld.hal === "kirik";
-  const engelli = ld.hal !== "baseline";
+  const desteksiz = durum?.locator_demo?.destekleniyor === false;
+  const onKosul = durum?.onarim_on_kosulu ?? null;
+  // Yeşil temel koşu yoksa core kırılmayı 409 ile reddeder (onarım "son yeşil yok" der): düğme pasif, yönerge görünür.
+  const onKosulYok = onKosul?.hazir === false && ld.hal === "baseline";
+  const engelli = ld.hal !== "baseline" || desteksiz || onKosulYok;
   const mk = ld.mainKosusu;
   // Kırılmanın kendi koşusu main'in son koşusuysa (henüz onarım yok) ayrıca "son adım" olarak gösterilmez.
   const onarimAdimlari = ld.hal === "onarildi" && mk && (!k || mk.id !== k.id);
   // CI koşusu henüz yokken web yenilemesi beklenir: ~20 sn sonra host komutu hatırlatılır.
   const beklemeBasi = webBekliyor?.basladi ?? (d && !d.bitti && !k ? d.basladi : null);
-  const uzunBekleme = beklemeBasi !== null && !k && simdi - beklemeBasi >= WEB_BEKLEME_UYARI_MS;
+  const uzunBekleme = beklemeBasi !== null && !k && ld.hal !== "onarildi" && simdi - beklemeBasi >= WEB_BEKLEME_UYARI_MS;
   const yonerge = webBekliyor?.yonerge ?? durum?.uygulama?.yonerge ?? null;
 
   // Bekleme başlayınca sayaç da çalışsın (olay gelmese de).
@@ -368,7 +434,11 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
             calisiyor={calisiyor}
             disabled={(!!d && !d.bitti) || engelli}
             title={
-              ld.hal === "kirik"
+              desteksiz
+                ? (durum?.locator_demo?.neden ?? "Locator demosu bu kipte desteklenmiyor.")
+                : onKosulYok
+                  ? (onKosul?.yonerge ?? "Önce main için yeşil bir temel koşu gerekir.")
+                  : ld.hal === "kirik"
                 ? "Main zaten kırık (testId cart-add): önce onarımı merge edin ya da demoyu sıfırlayın."
                 : ld.hal === "onarildi"
                   ? "Kırıldı ve onarıldı: yeniden kırmak için önce demoyu sıfırlayın (kırılma baseline'dan yapılır)."
@@ -378,7 +448,17 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
             }
             onClick={() => setOnay(true)}
           >
-            {ld.hal === "kirik" ? "Locator zaten kırık" : ld.hal === "onarildi" ? "Önce demoyu sıfırlayın" : ld.hal === "dogrulaniyor" ? "CI sürüyor" : "Locator'ı kır"}
+            {desteksiz
+              ? "Bu kipte yok"
+              : onKosulYok
+                ? "Önce yeşil temel koşu"
+                : ld.hal === "kirik"
+                  ? "Locator zaten kırık"
+                  : ld.hal === "onarildi"
+                    ? "Önce demoyu sıfırlayın"
+                    : ld.hal === "dogrulaniyor"
+                      ? "CI sürüyor"
+                      : "Locator'ı kır"}
           </IslemDugmesi>
         )
       }
@@ -389,6 +469,33 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
         merge edilir; işlem denetime "demo kırılması" olarak yazılır. Çalışan demo uygulaması main'den yeniden kurulur, CI kırmızıya
         döner, triage "test bakımı / locator" der ve onarım önerir. Onarım PR'ını mühendis açar ve onaylar.
       </p>
+      {desteksiz && (
+        <Uyari ton="hata" baslik="Locator demosu bu kipte yok">
+          <span data-testid="locator-desteksiz">{durum?.locator_demo?.neden ?? "Yalnızca yerel forge'da (TP_FORGE=local) desteklenir."}</span>
+        </Uyari>
+      )}
+      {!desteksiz && onKosulYok && (
+        <Uyari ton="uyari" baslik="Önce yeşil temel koşu">
+          <span data-testid="on-kosul-yok">
+            {onKosul?.yonerge ?? "Main için yeşil bir koşu olmadan kırılırsa onarım 'son yeşil yok' diye engellenir."}{" "}
+            <Link to="/kosular">Koşular</Link>
+          </span>
+        </Uyari>
+      )}
+      {!desteksiz && onKosul?.hazir === true && ld.hal === "baseline" && (
+        <p className="kucuk" data-testid="on-kosul-hazir">
+          <Cip ton="basari">ön koşul ✓</Cip> Son yeşil koşu{" "}
+          {onKosul.son_yesil_kosu?.run_id ? (
+            <Link to={`/kosular/${encodeURIComponent(onKosul.son_yesil_kosu.run_id)}`} className="mono">
+              {kisaKosuAdi(onKosul.son_yesil_kosu.run_id)}
+            </Link>
+          ) : (
+            "var"
+          )}
+          {onKosul.son_yesil_kosu?.tetik && <span className="soluk"> ({TETIK[onKosul.son_yesil_kosu.tetik as keyof typeof TETIK] ?? onKosul.son_yesil_kosu.tetik})</span>}: onarımın rol + ad
+          doğrulaması bu koşunun aria kanıtıyla yapılır.
+        </p>
+      )}
       {onay && (
         <div className="onay-kutusu" role="group" aria-label="Locator kırma onayı">
           <p>
@@ -482,7 +589,7 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
                 <Cip ton="basari">merge edildi</Cip>
                 <span>
                   Onarım PR'ı{" "}
-                  {ld.onarimPr ? <span className="mono">#{ld.onarimPr}</span> : <span className="soluk kucuk">(numara koşulardan bulunamadı)</span>}{" "}
+                  {ld.onarimPr ? <span className="mono">#{ld.onarimPr}</span> : <span className="soluk kucuk">(numara bulunamadı)</span>}{" "}
                   <span className="soluk kucuk">· main {mk.commit.slice(0, 10)}</span>
                 </span>
               </li>
@@ -679,6 +786,30 @@ function DurumKarti({ d }: { d: DemoDurumu | null }) {
             <dd className="mono">{testid}</dd>
           </>
         )}
+        {d.locator_durumu && (
+          <>
+            <dt>Locator durumu</dt>
+            <dd>
+              <Cip ton={d.locator_durumu === "baseline" ? "basari" : d.locator_durumu === "kirik" ? "hata" : "vurgu"}>
+                {d.locator_durumu === "baseline" ? "başlangıç" : d.locator_durumu === "kirik" ? "kırık" : "onarıldı"}
+              </Cip>
+            </dd>
+          </>
+        )}
+        {d.onarim_on_kosulu && (
+          <>
+            <dt>Kırma ön koşulu</dt>
+            <dd>
+              {d.onarim_on_kosulu.hazir === true ? (
+                <Cip ton="basari">yeşil temel koşu var</Cip>
+              ) : d.onarim_on_kosulu.hazir === false ? (
+                <Cip ton="uyari">yeşil temel koşu yok</Cip>
+              ) : (
+                <Cip ton="notr">bilinmiyor</Cip>
+              )}
+            </dd>
+          </>
+        )}
         <dt>Çalışan uygulama</dt>
         <dd className="mono">
           {(u.sha ?? "—").slice(0, 12)}{" "}
@@ -698,7 +829,12 @@ export function DemoKontrolleri() {
     <>
       <SayfaBasligi
         baslik="Demo kontrolleri"
-        aciklama="Sunum için kırılma senaryoları. Hata yakalama (BREAK_CAMPAIGN) kod üretiminde 'Kırarak doğrula' ile, locator kırılması buradan başlatılır."
+        aciklama={
+          <>
+            Sunum için kırılma senaryoları. Hata yakalama (BREAK_CAMPAIGN) kod üretiminde 'Kırarak doğrula' ile, locator kırılması buradan
+            başlatılır. Adım adım ilerleme: <Link to="/yol-haritasi">Demo yol haritası</Link>.
+          </>
+        }
       />
       <div className="iki-sutun">
         <LocatorKirmaKarti durum={durum} />

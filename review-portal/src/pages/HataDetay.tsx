@@ -401,6 +401,70 @@ export function tekilLinkler(linkler: HataAnalizi["kanit_linkleri"]): HataAnaliz
   return sira.map((k) => secilen.get(k)!);
 }
 
+type KanitLinki = HataAnalizi["kanit_linkleri"][number];
+
+const KANIT_TURU_ETIKETI: Record<string, string> = {
+  trace: "Playwright trace",
+  screenshot: "Ekran görüntüsü",
+  error_context: "Hata anı sayfa snapshot'ı (error-context)",
+  video: "Video",
+};
+
+/** Kanıt türü: core `tur` (trace|screenshot|error_context|video ya da Playwright ek adı) ya da etiketten. */
+export function kanitTuru(l: KanitLinki): string {
+  const ham = `${l.tur ?? ""} ${l.etiket}`.toLowerCase();
+  if (/trace/.test(ham)) return "trace";
+  if (/error[-_ ]?context|hata anı/.test(ham)) return "error_context";
+  if (/screenshot|ekran görüntüsü|image\//.test(ham)) return "screenshot";
+  if (/video/.test(ham)) return "video";
+  return `etiket:${l.etiket}`;
+}
+
+/** Playwright yeniden deneme dizini (`…-retry1/…`) → "2. deneme"; bilinmiyorsa null. */
+export function denemeEtiketi(url: string | null): string | null {
+  const m = url?.match(/-retry(\d+)(?:\/|$)/);
+  return m ? `${Number(m[1]) + 1}. deneme` : url ? "1. deneme" : null;
+}
+
+export interface KanitGrubu {
+  etiket: string;
+  linkler: { etiket: string; url: string | null }[];
+}
+
+/**
+ * Kanıt bağlantıları türe göre tek satırda: aynı dosya (aynı adres) bir kez; aynı türün farklı
+ * denemelerden gelen kopyaları ("Playwright trace" + ek adı "trace") ayrı satır olarak tekrar
+ * edilmez, deneme numarasıyla aynı satırda gösterilir.
+ */
+export function kanitGruplari(linkler: KanitLinki[]): KanitGrubu[] {
+  const sira: string[] = [];
+  const gruplar = new Map<string, KanitLinki[]>();
+  for (const l of tekilLinkler(linkler)) {
+    const t = kanitTuru(l);
+    if (!gruplar.has(t)) {
+      sira.push(t);
+      gruplar.set(t, []);
+    }
+    gruplar.get(t)!.push(l);
+  }
+  return sira.map((t) => {
+    const ls = gruplar.get(t)!;
+    const etiket = KANIT_TURU_ETIKETI[t] ?? ls.reduce((a, l) => (l.etiket.length > a.length ? l.etiket : a), ls[0].etiket);
+    if (ls.length === 1) return { etiket, linkler: [{ etiket, url: ls[0].url }] };
+    const adresli = ls.filter((l) => l.url);
+    // Adresi olmayan kopya, adresli bir kopya varken tekrar gösterilmez.
+    const gosterilen = adresli.length ? adresli : ls.slice(0, 1);
+    const etiketler = gosterilen.map((l) => denemeEtiketi(l.url));
+    const benzersiz = new Set(etiketler).size === etiketler.length && etiketler.every(Boolean);
+    return {
+      etiket,
+      linkler: gosterilen
+        .map((l, i) => ({ etiket: gosterilen.length === 1 ? etiket : benzersiz ? etiketler[i]! : `${i + 1}. kopya`, url: l.url }))
+        .sort((a, b) => a.etiket.localeCompare(b.etiket, "tr")),
+    };
+  });
+}
+
 /** Ürün hatası: bug taslağındaki en olası mükerrer adayı (§2 adım 12: "olası mükerrer: XYZ-12"). */
 function MukerrerSatiri({ id }: { id: string }) {
   const v = useVeri(() => api.bugTaslagi(id), [id]);
@@ -488,12 +552,24 @@ function KanitKarti({ k, linkler }: { k: TriageKaniti | null | undefined; linkle
         </ul>
       )}
       {linkler.length > 0 && (
-        <ul className="duz-liste" aria-label="Kanıt bağlantıları">
-          {tekilLinkler(linkler).map((l) => (
-            <li key={`${l.etiket}-${l.url ?? ""}`}>
-              <Baglanti href={l.url} yokNedeni="dosya sunucusu yok">
-                {l.etiket}
-              </Baglanti>
+        <ul className="duz-liste kanit-gruplari" aria-label="Kanıt bağlantıları">
+          {kanitGruplari(linkler).map((g) => (
+            <li key={g.etiket} className="kanit-grubu">
+              {g.linkler.length === 1 ? (
+                <Baglanti href={g.linkler[0].url} yokNedeni="dosya sunucusu yok">
+                  {g.etiket}
+                </Baglanti>
+              ) : (
+                <>
+                  <span>{g.etiket}:</span>
+                  {g.linkler.map((l) => (
+                    <Baglanti key={`${l.etiket}-${l.url ?? ""}`} href={l.url} yokNedeni="dosya sunucusu yok">
+                      <span className="gorunmez">{g.etiket}, </span>
+                      {l.etiket}
+                    </Baglanti>
+                  ))}
+                </>
+              )}
             </li>
           ))}
         </ul>

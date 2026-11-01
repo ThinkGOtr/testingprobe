@@ -7,6 +7,7 @@ import { useBildirim } from "../components/Bildirim";
 import { BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { adimAdi, akisAdimi } from "../lib/akis";
+import { akisKanitlari, guncelAdim, type SonrakiGirdi } from "../lib/yolHaritasi";
 import { AC_EKSIK, AKIS_ADIMLARI, gereksinimDurumu } from "../lib/etiketler";
 import { tarih } from "../lib/format";
 import { ORNEK_SERBEST_GEREKSINIM } from "../lib/ornekGereksinim";
@@ -15,6 +16,9 @@ const PO_ETIKET = { not_requested: "—", pending: "Bekliyor", approved: "Onayl�
 
 export function Gereksinimler() {
   const { veri, hata, yukleniyor, yenile } = useVeri(() => api.gereksinimler(), []);
+  // `done` story'lerin kod → bug adımları (5–14) yol haritasıyla aynı kanıtlardan okunur.
+  const tamamVar = (veri ?? []).some((g) => g.durum === "done");
+  const kanit = useVeri(() => (tamamVar ? akisKanitlari() : Promise.resolve(null)), [tamamVar]);
   const [formAcik, setFormAcik] = useState(false);
   const [filtre, setFiltre] = useState("");
   const cek = useIslem();
@@ -98,7 +102,7 @@ export function Gereksinimler() {
               </thead>
               <tbody>
                 {liste.map((g) => (
-                  <GereksinimSatiri key={g.id} g={g} />
+                  <GereksinimSatiri key={g.id} g={g} kanit={kanit.veri ?? null} />
                 ))}
               </tbody>
             </table>
@@ -109,10 +113,11 @@ export function Gereksinimler() {
   );
 }
 
-function GereksinimSatiri({ g }: { g: Gereksinim }) {
+function GereksinimSatiri({ g, kanit }: { g: Gereksinim; kanit: Omit<SonrakiGirdi, "gereksinim"> | null }) {
   // Kabul kriteri yoksa core durumu `new` kalır; asıl engel AC eksikliği olduğu için o gösterilir.
   const d = g.ac_missing && g.durum === "new" ? AC_EKSIK : gereksinimDurumu(g.durum);
-  const adim = akisAdimi(g.durum, g.adim);
+  const adim = guncelAdim(g, kanit, akisAdimi(g.durum, g.adim));
+  const akisTamam = adim > AKIS_ADIMLARI.length;
   return (
     <tr>
       <td className="mono" data-etiket="Anahtar">
@@ -133,9 +138,9 @@ function GereksinimSatiri({ g }: { g: Gereksinim }) {
       </td>
       <td data-etiket="Adım">
         <span className="mono">
-          {adim}/{AKIS_ADIMLARI.length}
+          {Math.min(adim, AKIS_ADIMLARI.length)}/{AKIS_ADIMLARI.length}
         </span>{" "}
-        <span className="soluk">{adimAdi(adim, g.kaynak)}</span>
+        <span className="soluk">{akisTamam ? "akış tamam" : adimAdi(adim, g.kaynak)}</span>
       </td>
       <td data-etiket="PO">{PO_ETIKET[g.po.durum]}</td>
       <td className="sayi" data-etiket="Açık bulgu">

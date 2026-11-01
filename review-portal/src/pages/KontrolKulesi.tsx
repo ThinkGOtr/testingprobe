@@ -6,6 +6,8 @@ import type { KontrolKulesi as Kule, KpiAnahtari } from "../api/types";
 import { HedefOlcer, OranSutunlari } from "../components/Grafikler";
 import { BosDurum, Cip, HataKutusu, Ilerleme, Kart, Metrik, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useVeri } from "../hooks";
+import { kazancOzeti, type KazancOzeti } from "../api/uyumFaz5";
+import { BAZ_KAYNAGI } from "../components/BazDegerKarti";
 import { dolar, sure, tarih, yuzde } from "../lib/format";
 import { KosuTablosu } from "./Kosular";
 
@@ -43,7 +45,8 @@ export function KontrolKulesi() {
   if (!k) return null;
   const ai = k.ai_katkisi;
   const toplamSure = ai.ort_ai_sure_ms !== null && ai.ort_review_sure_ms !== null ? ai.ort_ai_sure_ms + ai.ort_review_sure_ms : null;
-  const kazanc = ai.manuel_baz_ms && toplamSure !== null ? 1 - toplamSure / ai.manuel_baz_ms : null;
+  // Kazanç yalnızca baz değeri story için ölçülmüş satırlardan (varsayılan baz değer kazanca girmez).
+  const kazanc = kazancOzeti(k.hazirlik);
   const defectAdayi = k.karne.reduce((a, s) => a + s.acik_defect_adayi, 0);
 
   return (
@@ -72,7 +75,9 @@ export function KontrolKulesi() {
             {k.gecme_orani.oran === null ? <Olculmedi metin="veri yok" /> : yuzde(k.gecme_orani.oran)}
           </div>
           <p className="soluk">
-            {k.gecme_orani.toplam === 0
+            {k.gecme_orani.metin
+              ? k.gecme_orani.metin
+              : k.gecme_orani.toplam === 0
               ? `Henüz sayılan ${k.gecme_orani.birim === "kosu" ? "CI koşusu" : "test sonucu"} yok (kasıtlı kırma koşuları sayılmaz).`
               : k.gecme_orani.birim === "kosu"
                 ? `Son ${k.gecme_orani.son_n ?? k.gecme_orani.toplam} CI koşusundan ${k.gecme_orani.gecen}/${k.gecme_orani.toplam} geçti (kasıtlı kırma koşuları hariç)`
@@ -133,9 +138,9 @@ export function KontrolKulesi() {
               alt={toplamSure === null ? undefined : `AI ${sure(ai.ort_ai_sure_ms)} · review ${sure(ai.ort_review_sure_ms)}`}
             />
             <Metrik
-              etiket={<KpiBaslik ad="Manuel baz değer" k={k} anahtar="manuel_baz" />}
-              deger={ai.manuel_baz_ms ? sure(ai.manuel_baz_ms) : <Olculmedi metin="baz değer ölçülmedi" />}
-              alt={kazanc !== null ? `Kazanç ${yuzde(kazanc)}` : "Kazanç hesaplanmaz"}
+              etiket={<KpiBaslik ad="Hazırlık kazancı" k={k} anahtar="kazanc_orani" />}
+              deger={<span data-testid="hazirlik-kazanci">{kazanc.oran === null ? <Olculmedi metin={kazanc.replay_haric > 0 ? "REPLAY: hesaplanmaz" : "ölçülmüş baz yok"} /> : yuzde(kazanc.oran)}</span>}
+              alt={<span data-testid="kazanc-kapsam">{kazanc.kapsam}</span>}
             />
             <Metrik
               etiket={<KpiBaslik ad="Maliyet (toplam)" k={k} anahtar="maliyet" />}
@@ -153,7 +158,7 @@ export function KontrolKulesi() {
           ) : null}
           {ai.replay_cagri !== null && ai.replay_cagri > 0 && (
             <p className="kucuk">
-              <span className="rozet rozet-replay">REPLAY</span> {ai.replay_cagri} çağrı kayıtlı çıktıdan karşılandı (süre ve maliyet ölçülmez).
+              <span className="rozet rozet-replay">REPLAY</span> {ai.replay_cagri} çağrı girdisi doğrulanmış hazır (golden) çıktıdan karşılandı (süre ve maliyet ölçülmez).
             </p>
           )}
         </Kart>
@@ -218,6 +223,8 @@ export function KontrolKulesi() {
         </Kart>
       </div>
 
+      {k.hazirlik.length > 0 && <HazirlikKarti k={k} kazanc={kazanc} />}
+
       <Kart baslik="Karne (story ve uygulama alanı)" eylemler={<KaynakIpucu kaynak={k.kaynaklar.karne} />}>
         {k.karne.length === 0 ? (
           <BosDurum baslik="Karne için story yok." />
@@ -271,7 +278,17 @@ export function KontrolKulesi() {
                         </>
                       )}
                     </td>
-                    <td className="sayi">{s.acik_bug || "—"}</td>
+                    <td className="sayi" data-testid={`karne-bug-${s.story_key}`}>
+                      {s.acik_bug || "—"}
+                      {s.bug_taslagi > 0 && (
+                        <>
+                          {" "}
+                          <span className="kucuk" title="Henüz Jira'da açılmamış (taslak/onaylı) bug taslağı; kasıtlı kırma koşusu taslakları hariç.">
+                            · taslak {s.bug_taslagi}
+                          </span>
+                        </>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -284,5 +301,68 @@ export function KontrolKulesi() {
         {k.son_kosular.length === 0 ? <BosDurum baslik="Henüz koşu yok." /> : <KosuTablosu kosular={k.son_kosular} kompakt />}
       </Kart>
     </>
+  );
+}
+
+/** Story bazında hazırlık süresi ve baz değer; kazanç yalnızca ölçülmüş baz değerli satırlarda. */
+function HazirlikKarti({ k, kazanc }: { k: Kule; kazanc: KazancOzeti }) {
+  return (
+    <Kart baslik="Hazırlık süresi (story bazında)" eylemler={<KaynakIpucu kaynak={k.kaynaklar.hazirlik_suresi} />}>
+      <p className="soluk kucuk">
+        AI + review süresi story'nin ölçülmüş manuel baz değeriyle karşılaştırılır. Baz değer story ekranından (Gereksinim detayı →
+        Manuel baz değer) girilir; varsayılan ya da ölçülmemiş baz değerle kazanç hesaplanmaz.
+      </p>
+      <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Story bazında hazırlık tablosu">
+        <table className="tablo hazirlik-tablo">
+          <thead>
+            <tr>
+              <th scope="col">Story</th>
+              <th scope="col">AI + review</th>
+              <th scope="col">
+                Manuel baz <KaynakIpucu kaynak={k.kaynaklar.manuel_baz} />
+              </th>
+              <th scope="col" className="sayi">
+                Kazanç
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {kazanc.storyler.map(({ satir: h, sure_ms, yalniz_review, kazanc: oran }) => {
+              const bk = BAZ_KAYNAGI[h.baz_kaynagi];
+              return (
+                <tr key={h.requirement_id || h.story_key || ""} data-testid={`hazirlik-${h.story_key ?? h.requirement_id}`}>
+                  <td>
+                    {h.requirement_id ? (
+                      <Link to={`/gereksinimler/${encodeURIComponent(h.requirement_id)}`} className="mono">
+                        {h.story_key ?? "serbest metin"}
+                      </Link>
+                    ) : (
+                      <span className="mono">{h.story_key ?? "—"}</span>
+                    )}
+                  </td>
+                  <td>
+                    {sure_ms === null ? <Olculmedi /> : sure(sure_ms)}
+                    {yalniz_review && sure_ms !== null && (
+                      <span className="kucuk soluk" title="REPLAY: AI süresi ölçülmez; süre yalnız insan review süresidir.">
+                        {" "}
+                        (REPLAY: yalnız review)
+                      </span>
+                    )}
+                  </td>
+                  <td>
+                    {h.manuel_baz_ms === null ? <Olculmedi /> : sure(h.manuel_baz_ms)}
+                    <Cip ton={bk.ton} title={bk.aciklama}>
+                      {bk.etiket}
+                    </Cip>
+                  </td>
+                  <td className="sayi">{oran === null ? "—" : yuzde(oran)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="kucuk">{kazanc.kapsam}</p>
+    </Kart>
   );
 }

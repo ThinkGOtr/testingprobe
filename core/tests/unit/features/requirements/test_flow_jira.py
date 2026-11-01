@@ -210,6 +210,11 @@ def test_tam_akis_tpd1(
     assert d["son_kontrol"]["mode"] == "replay_miss"
     assert d["durum"] == "findings_open", d
     assert d["insan_karari_gerekli"] is True and "REPLAY-MISS" in d["denetim_guvenilmez"]
+    # Elle hazırlanmış golden "kayıtlı çıktı" diye sunulmaz (replay.py ifade kuralı).
+    assert d["denetim_guvenilmez"] == (
+        "son denetim REPLAY-MISS (REPLAY örnek çıktısı bu belgeye ait değil)"
+    )
+    assert "kayıtlı" not in d["denetim_guvenilmez"]
     assert any("güvenilir değil" in u for u in d["uyarilar"])
     assert d["po"]["durum"] == "not_requested"
     issue = jira.get_issue("TPD-1")

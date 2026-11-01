@@ -27,6 +27,7 @@ from sqlalchemy import ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
+from tp_core.models import baseline_feature as baseline_feature  # Faz 5 tablosu (kayıt)
 from tp_core.models import enums
 from tp_core.models.base import Base, guncelleme_col, in_check, olusturma_col, uuid_pk
 from tp_core.models.requirements import EMPTY_LIST

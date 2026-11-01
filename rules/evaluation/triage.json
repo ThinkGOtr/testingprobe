@@ -6,7 +6,7 @@
     "name": "HATA",
     "jira_key": "TPD-1"
   },
-  "note": "Üretildi: core/tests/unit/gateway/build_eval_sets.py (elle düzenlemeyin). Canlı koşu: python -m tp_core.gateway.eval_set --bundle triage",
+  "note": "Üretildi: core/tests/unit/gateway/build_eval_sets.py (elle düzenlemeyin). Canlı koşu: make eval-live A='--bundle triage'",
   "cases": [
     {
       "id": "zaman-asimi-kuralsiz",

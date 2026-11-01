@@ -1,0 +1,105 @@
+{
+  "bundle": "triage",
+  "version": 2,
+  "date": "2026-11-01",
+  "model": "claude-haiku-5-5",
+  "provider": "anthropic",
+  "mode": "live",
+  "passed": 4,
+  "total": 4,
+  "runs": 1,
+  "cases": [
+    {
+      "id": "zaman-asimi-kuralsiz",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "class": "unknown",
+        "sub_type": null,
+        "rationale": "Hata yalnızca 30000 ms zaman aşımı olarak raporlanıyor; beklenen ve gerçekleşen değer, bulunamayan eleman veya adım bilgisi yok. Aria snapshot'ta 'Siparişi onayla' düğmesi görünüyor ancak onaylanan sipariş numarasının gösterilmediği veya geçmişte listelenmediği kanıtlanamıyor; ürün hatası mı, test akışı bakımı mı yoksa zamanlama mı olduğu bu kanıtla ayrıştırılamaz.",
+        "signals": [
+          "Hata türü: test_timeout",
+          "Zaman aşımı (ms): 30000",
+          "Tekrarlar: timedOut=2",
+          "Tutarlı: evet",
+          "Sağlık kontrolü: başarılı",
+          "Beklenen: (yok)",
+          "Gerçekleşen: (yok)"
+        ]
+      },
+      "mode": "live",
+      "error": null
+    },
+    {
+      "id": "saglikli-agsiz-eleman-gorunmedi",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "class": "unknown",
+        "sub_type": null,
+        "rationale": "Hata, 'Siparişi onayla' butonuna tıklamada 5000 ms içinde görünürlük/erişilebilirlik sağlanamamasıdır; sağlık kontrolü başarılı ve sonuçlar tutarlı (2 deneme de kırmızı), dolayısıyla ortam hatası değildir. Ancak aria snapshot'ta 'Sepet yükleniyor' durumu görünmekte, bu da sayfanın yükleme beklentisi nedeniyle zamanlama kaynaklı bir durum olabileceğini düşündürmekte; beklenen/gerçekleşen değer olmadığı için ürün hatası veya test bakımı ayrımı yapılamıyor.",
+        "signals": [
+          "Hata türü: locator_timeout",
+          "Biçimsel sinyaller: eleman görünür olmadı",
+          "Sağlık kontrolü: başarılı",
+          "Tekrarlar: unexpected=2",
+          "Tutarlı: evet",
+          "Gerçekleşen: (yok)"
+        ]
+      },
+      "mode": "live",
+      "error": null
+    },
+    {
+      "id": "saglik-bilinmiyor-baglanti-reddedildi",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "class": "environment",
+        "sub_type": null,
+        "rationale": "Hata metni upstream demo-app-api servisinin bağlantıyı reddettiğini (503 Service Unavailable, connection refused) açıkça gösteriyor ve hata tutarlı biçimde iki denemede de tekrarlanıyor. Sağlık kontrolü bilgisi koşuda bulunmadığından servis durumu doğrulanamıyor; ürün davranışı hakkında bu kanıttan bir sonuç çıkarılamaz.",
+        "signals": [
+          "Hata türü: other",
+          "Hata: Error: apiRequestContext.post: 503 Service Unavailable — upstream demo-app-api bağlantıyı reddetti (connection refused)",
+          "Tekrarlar: unexpected=2",
+          "Tutarlı: evet",
+          "Sağlık kontrolü: bilinmiyor (koşu sağlık bilgisi taşımıyor)"
+        ]
+      },
+      "mode": "live",
+      "error": null
+    },
+    {
+      "id": "test-verisi-eksik-bayi",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "class": "test_data",
+        "sub_type": null,
+        "rationale": "Hata, 'bayi9' adlı bayi kullanıcısının bulunamadığını ve girişin 401 ile reddedildiğini gösteriyor; bu, testin ihtiyaç duyduğu veri ön koşulunun sağlanmadığına işaret ediyor. Sağlık kontrolü başarılı ve ağ hatası yok, bu nedenle ortam sınıfı uygun değil; ancak kullanıcının ortamda olması gerekip gerekmediği ve veri kurulumunun neden başarısız olduğu kanıtlarda yer almıyor.",
+        "signals": [
+          "Hata türü: other",
+          "Hata: Error: giriş başarısız: 'bayi9' adlı bayi kullanıcısı bulunamadı (401)",
+          "Sağlık kontrolü: başarılı",
+          "Tutarlı: evet",
+          "Tekrarlar: unexpected=2",
+          "kural 1 (ortam): sağlık kontrolü başarılı, ağ hatası yok",
+          "kural 5 (test verisi): fixture hatası yok"
+        ]
+      },
+      "mode": "live",
+      "error": null
+    }
+  ],
+  "tamamlandi": true,
+  "set_vaka_sayisi": 4,
+  "kosu_sayisi": 4,
+  "maliyet_usd": 0.00137,
+  "butce_usd": 1.5,
+  "calisma_alani_basligi": true,
+  "guardrails_version": 1,
+  "kayit_adaylari": null,
+  "cagri_kaydi": "triage-v2-2026-11-01.calls.jsonl",
+  "cagri_sayisi": 4,
+  "cagri_defteri": "/Users/gokhansipahi/projects/agent-probe/testing-probe/exports/eval-live/ai_call.jsonl"
+}

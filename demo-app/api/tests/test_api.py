@@ -420,3 +420,17 @@ def test_break_test_modu_kapaninca_etkisiz(bayi1, monkeypatch):
     _kir(bayi1, "bayi1", True)
     monkeypatch.delenv("DEMOAPP_TEST_MODE")
     assert _yedi_p001(bayi1)["indirim"] == "25.00"
+
+
+def test_oturum_kaydi_yanittan_once_commit_edilir() -> None:
+    """Giriş yanıtı (çerez) tarayıcıya ulaştığında oturum satırı commit edilmiş olmalı.
+
+    Varsayılan (`scope="request"`) yield bağımlılığı commit'i yanıt gönderildikten SONRA yapar;
+    tarayıcı hemen ardından /cart isterse yük altında 401 alır (e2e'de gözlendi: giriş 200 →
+    5 ms sonra /cart 401 → uygulama giriş sayfasına döner).
+    """
+    from demoapp_api import main
+
+    dep = main.SessionDep.__metadata__[0]
+    assert dep.dependency is main.db.get_session
+    assert dep.scope == "function"

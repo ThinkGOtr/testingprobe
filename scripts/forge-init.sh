@@ -147,7 +147,44 @@ else:
     fi
   fi
   TMP_TAR="$(mktemp "${TMPDIR:-/tmp}/tp-demo-web.XXXXXX")"
-  trap 'rm -f "$TMP_TAR"' EXIT
+  # Derleme + yeniden oluşturma, scripts/demo-web-sync.sh ile AYNI kilit altında yapılır
+  # (/forge/demo-web-sync.lock, owner "<epoch> <sahip>"): --watch kopyası aynı anda force-recreate
+  # yaparsa Docker konteyner adı çakışır. Eski (TP_DEMO_SYNC_LOCK_STALE_S, 600 sn) kilit devralınır.
+  WEB_KILIT=""
+  web_kilit_birak() {
+    [ -n "$WEB_KILIT" ] || return 0
+    # shellcheck disable=SC2016  # $1 iç kabukta genişler
+    "${EXEC[@]}" sh -c 'L=/forge/demo-web-sync.lock; o=$(cat "$L/owner" 2>/dev/null || true); [ "${o#* }" = "$1" ] && rm -rf "$L"; exit 0' _ "$WEB_KILIT" >/dev/null 2>&1 || true
+    WEB_KILIT=""
+  }
+  trap 'rm -f "$TMP_TAR"; web_kilit_birak' EXIT
+  kilit_token="forge-init:$(hostname 2>/dev/null || echo host):$$:${RANDOM}"
+  kilit_bekle="${TP_DEMO_SYNC_WAIT_S:-120}"
+  kilit_stale="${TP_DEMO_SYNC_LOCK_STALE_S:-600}"
+  kilit_bas=$SECONDS
+  bildirildi=0
+  while :; do
+    krc=0
+    # shellcheck disable=SC2016  # $1/$2 iç kabukta genişler
+    kout="$("${EXEC[@]}" sh -c '
+L=/forge/demo-web-sync.lock
+now=$(date +%s)
+if mkdir "$L" 2>/dev/null; then printf "%s %s\n" "$now" "$1" > "$L/owner"; exit 0; fi
+o=$(cat "$L/owner" 2>/dev/null || true); t=${o%% *}
+case "$t" in ""|*[!0-9]*) t=$(stat -c %Y "$L" 2>/dev/null || echo "$now") ;; esac
+yas=$((now - t))
+if [ "$yas" -ge "$2" ]; then rm -rf "$L"; if mkdir "$L" 2>/dev/null; then printf "%s %s\n" "$now" "$1" > "$L/owner"; echo "eski kilit devralındı (${yas} sn)"; exit 0; fi; fi
+echo "sahip: ${o#* } · ${yas} sn"; exit 3' _ "$kilit_token" "$kilit_stale")" || krc=$?
+    if [ "$krc" = 0 ]; then WEB_KILIT="$kilit_token"; [ -z "$kout" ] || err "UYARI: $kout"; break; fi
+    [ "$krc" = 3 ] || die "eşitleme kilidi alınamadı (/forge/demo-web-sync.lock, çıkış $krc)"
+    if [ "$bildirildi" = 0 ]; then
+      err "demo-app-web başka bir eşitleyici tarafından güncelleniyor ($kout); bekleniyor…"
+      bildirildi=1
+    fi
+    [ $((SECONDS - kilit_bas)) -lt "$kilit_bekle" ] \
+      || die "eşitleme kilidi ${kilit_bekle} sn içinde boşalmadı ($kout). Takılı kaldıysa: docker compose exec core-worker rm -rf /forge/demo-web-sync.lock"
+    sleep 2
+  done
   "${EXEC[@]}" python -m tp_core.integrations.forge_demo archive --ref "$main_sha" --path web >"$TMP_TAR" \
     || die "forge main arşivi alınamadı"
   tar -tf "$TMP_TAR" | grep -qx 'Dockerfile' || die "arşivde web/Dockerfile yok"
@@ -163,6 +200,7 @@ else:
       || die "demo-app-web yeniden başlatılamadı"
     write_web_sha
   fi
+  web_kilit_birak
   # Eski imaj artık etiketsiz (dangling) kalır: kullanılmıyorsa silinir (kullanımdaysa sessizce kalır).
   new_image="$(docker image inspect -f '{{.Id}}' "$WEB_IMAGE" 2>/dev/null || true)"
   if [ -n "$old_image" ] && [ "$old_image" != "$new_image" ]; then

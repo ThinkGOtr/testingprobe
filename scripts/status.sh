@@ -52,5 +52,24 @@ fi
 # Demo-A kazanç ölçümü: manuel baz değer yoksa portal kazanç oranı göstermez.
 if [ -z "$(env_get TP_MANUAL_BASELINE_S)" ]; then
   echo
-  echo "Manuel baz değer girilmedi (TP_MANUAL_BASELINE_S): Demo-A kazanç gösterilemez."
+  echo "Varsayılan manuel baz değer yok (TP_MANUAL_BASELINE_S); story başına ölçüm portaldan / PUT /requirements/{id}/baseline ile girilir (ölçülmeyen story'de kazanç gösterilmez)."
+fi
+
+# Etkin model kipi: core-worker'ın gerçekten gördüğü TP_MODEL_MODE (compose: .env yoksa auto).
+# Anahtar değerleri ASLA yazdırılmaz; yalnızca tanımlı olup olmadığı.
+if printf '%s\n' "$rows" | awk -F '\t' '$1 == "core-worker" && $2 == "running" { f = 1 } END { exit !f }'; then
+  mod="$(docker compose exec -T core-worker printenv TP_MODEL_MODE 2>/dev/null | tr -d '\r' || true)"
+  anahtar="yok"
+  if docker compose exec -T core-worker sh -c 'test -n "${ANTHROPIC_API_KEY:-}"' >/dev/null 2>&1; then
+    anahtar="tanımlı"
+    if docker compose exec -T core-worker sh -c 'test -n "${ANTHROPIC_WORKSPACE_ID:-}"' >/dev/null 2>&1; then
+      anahtar="tanımlı (çalışma alanı kimliği var)"
+    fi
+  fi
+  echo
+  case "${mod:-auto}" in
+    replay) echo "Model kipi: REPLAY (kayıtlı golden yanıtlar; canlı model çağrısı yok) — model anahtarı: $anahtar" ;;
+    live) echo "Model kipi: CANLI (live) — model anahtarı: $anahtar. Demo provası (make demo-prova) yalnızca REPLAY'de koşar." ;;
+    *) echo "Model kipi: ${mod:-auto} (anahtar varsa canlı, yoksa REPLAY) — model anahtarı: $anahtar. Sunum için .env'de TP_MODEL_MODE=replay önerilir." ;;
+  esac
 fi

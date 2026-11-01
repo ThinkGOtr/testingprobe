@@ -254,11 +254,14 @@ check_model_key() {
   else
     ok=0; info "core-worker: ANTHROPIC_API_KEY tanımlı değil (beklenen: tanımlı)"
   fi
+  # Çalışma alanı kimliği de anahtarla aynı sınıftadır (sır; yalnızca core-worker).
   for svc in core-api review-portal jira-sim toolchain-worker test-runner playwright-mcp demo-app-api demo-app-web; do
     svc_running "$svc" || continue
-    if compose exec -T "$svc" sh -c 'env | grep -q "^ANTHROPIC_API_KEY="' 2>/dev/null; then
-      ok=0; info "$svc: ANTHROPIC_API_KEY tanımlı — olmamalı"
-    fi
+    for var in ANTHROPIC_API_KEY ANTHROPIC_WORKSPACE_ID; do
+      if compose exec -T "$svc" sh -c "env | grep -q '^${var}='" 2>/dev/null; then
+        ok=0; info "$svc: $var tanımlı — olmamalı"
+      fi
+    done
   done
   if [ "$ok" -eq 1 ]; then
     pass "6/anahtar: model anahtarı değişkeni yalnızca core-worker'da"

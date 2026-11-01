@@ -10,7 +10,7 @@ from typing import Any
 from sqlalchemy import false, func, select
 from sqlalchemy.orm import Session
 
-from tp_core.features.requirements import services
+from tp_core.features.requirements import baseline, services
 from tp_core.features.requirements.content import (
     AC_MISSING_UYARISI,
     ac_items,
@@ -97,7 +97,8 @@ def list_requirements(s: Session) -> list[dict[str, Any]]:
         )
     )
     sayac = counts_for(s, [r.id for r in reqs])
-    return [requirement_summary(r, sayac[r.id]) for r in reqs]
+    bazlar = baseline.baselines_for(s, [r.id for r in reqs])
+    return [{**requirement_summary(r, sayac[r.id]), "baseline": bazlar[r.id]} for r in reqs]
 
 
 _SORU_ETIKETI = re.compile(r"(?<![\w])Q(\d{1,2})\s*[:.)\-–]\s*", re.IGNORECASE)
@@ -266,6 +267,9 @@ def requirement_detail(s: Session, req: Requirement) -> dict[str, Any]:
             # Jira yolunda son haldeki PO soru yorumu: yazildi | bekliyor | basarisiz (yoksa null).
             "po_istegi": po_istegi,
             "po_cevaplari": req.po_cevaplari or [],
+            # Story başına manuel baz değer: {deger_s, kaynak: olcum|varsayilan|null, giren,
+            # zaman, not, …}; kaynak null = ölçülmedi (sayı yok, uydurulmaz).
+            "baseline": baseline.baseline_for(s, req.id),
         }
     )
     return out

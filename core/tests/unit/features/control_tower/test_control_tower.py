@@ -8,7 +8,7 @@ from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
@@ -163,6 +163,9 @@ def test_kontrol_kulesi_sayilari_satirlardan(engine: Engine, senaryo) -> None:
     # Geçme oranı: A failed + C passed (B hariç).
     g = k["gecme_orani"]
     assert (g["oran"], g["toplam"], g["gecen"]) == (0.5, 2, 1)
+    # B (break_verify) CI tetiği değildir: pencereye de girmez.
+    assert g["haric_kirma"] == 0
+    assert g["metin"] == "Son 2 CI koşusundan 1'i geçti (pencere: son 20)"
     assert g["test"]["toplam"] == 10 and g["test"]["gecen"] == 7
     assert k["gecme_hedefi"] is None
     assert sum(x["kosu"] for x in k["gunluk_gecme"]) == 2
@@ -211,9 +214,15 @@ def test_manuel_baz_verilirse_kullanilir(
     monkeypatch.setenv("TP_MANUAL_BASELINE_S", "3600")
     with Session(engine) as s:
         k = ct.control_tower(s)
-    assert k["ai_katkisi"]["manuel_baz_ms"] == 3_600_000
-    assert k["ai_katkisi"]["baz_deger_olculmedi"] is False
-    assert not any("baz değer" in u for u in k["uyarilar"])
+    # Story'ye özel ölçüm yok: ortam değeri ölçüm sayılmaz, sayı olarak gösterilmez.
+    assert k["ai_katkisi"]["manuel_baz_ms"] is None
+    assert k["ai_katkisi"]["baz_deger_olculmedi"] is True
+    assert ct.BAZ_YOK in k["uyarilar"]
+    assert k["ai_katkisi"]["manuel_baz_varsayilan_ms"] == 3_600_000
+    assert {x["manuel_baz_kaynagi"] for x in k["hazirlik"]} == {"varsayilan"}
+    assert all(x["manuel_baz_ms"] is None for x in k["hazirlik"])
+    assert {x["manuel_baz"]["varsayilan_ms"] for x in k["hazirlik"]} == {3_600_000}
+    assert any("varsayılan (TP_MANUAL_BASELINE_S) ölçüm sayılmadı" in u for u in k["uyarilar"])
 
 
 def test_bos_veritabaninda_uydurma_yok(engine: Engine) -> None:
@@ -492,3 +501,104 @@ def test_eksik_metot_ve_replay_miss_review_paydasina_girmez(
     assert (so["script_eksik_metot"], so["script_replay_miss"]) == (1, 1)
     assert (so["script_ortam_hatasi"], so["script_defect_adayi"]) == (0, 0)
     assert (so["pass_at_1"], so["pass_at_1_sayisi"]) == (1.0, 3)
+
+
+def test_demo_kirma_commiti_gecme_oranina_girmez(engine: Engine) -> None:
+    """`make demo-break` locator kırmasının main commit'indeki push koşusu bilerek kırmızıdır."""
+    from tp_core.audit import append_audit
+    from tp_core.integrations.forge_demo import AUDIT_BREAK
+
+    kirik = "d" * 40
+    simdi = datetime.now(UTC)
+    with Session(engine) as s, s.begin(), allow_state_write():
+        for i in range(12):
+            _run_ekle(s, "push", "passed", simdi - timedelta(minutes=30 + i), [])
+        r = _run_ekle(s, "push", "failed", simdi - timedelta(minutes=5), [])
+        s.execute(update(Run).where(Run.id == r).values(commit=kirik))
+        _run_ekle(s, "nightly", "failed", simdi - timedelta(minutes=6), [], break_campaign=True)
+    with Session(engine) as s:
+        g = ct.gecme_orani(s, 20)
+    # Kırma kaydı yokken locator kırması koşusu sayılır; BREAK_CAMPAIGN koşusu zaten hariç.
+    assert (g["toplam"], g["gecen"], g["haric_kirma"]) == (13, 12, 1)
+    assert g["metin"] == (
+        "Son 13 CI koşusundan 12'si geçti (pencere: son 20; 1 kasıtlı kırma koşusu hariç)"
+    )
+    with engine.begin() as c:
+        append_audit(c, "demo-admin", AUDIT_BREAK, "pr:7", {"main_sonra": kirik})
+        append_audit(c, "demo-admin", AUDIT_BREAK, "pr:8", {"main_sonra": None})
+    with Session(engine) as s:
+        g = ct.gecme_orani(s, 20)
+        gunluk = ct.gunluk_gecme(s, 14)
+    assert (g["oran"], g["toplam"], g["gecen"], g["haric_kirma"]) == (1.0, 12, 12, 2)
+    assert g["metin"] == (
+        "Son 12 CI koşusundan 12'si geçti (pencere: son 20; 2 kasıtlı kırma koşusu hariç)"
+    )
+    assert sum(x["kosu"] for x in gunluk) == 12
+
+
+def test_iyelik_ekleri() -> None:
+    assert ct._iyelik(1) == "i" and ct._iyelik(3) == "ü" and ct._iyelik(6) == "sı"
+    assert ct._iyelik(10) == "u" and ct._iyelik(0) == "ı" and ct._iyelik(12) == "si"
+
+
+def test_karne_acik_bug_farkli_jira_anahtari_kirma_taslagi_haric(
+    engine: Engine, make_requirement_case
+) -> None:
+    """C3 bulgusu + F2 hatası aynı TPD-5'e bağlı, F4 yeni TPD-18, kırma koşusu taslağı bekliyor:
+    açık bug 2 (farklı anahtar), bekleyen taslak 0 (kırma taslağı sayılmaz)."""
+    from tp_core.models import BugDraft, ConsistencyFinding, Failure, Requirement
+    from tp_core.models.bugs_feature import BugDraftEk
+
+    c1 = make_requirement_case(title="7 adet Portakal Gazozu → 1 adet bedava")
+    simdi = datetime.now(UTC)
+    with Session(engine) as s, s.begin(), allow_state_write():
+        req_id = s.scalars(select(Requirement.id).where(Requirement.jira_key == "TPD-1")).one()
+        bulgu = ConsistencyFinding(
+            requirement_id=req_id, tur="doc_vs_code", doc_ref="C3", severity="blocking"
+        )
+        s.add(bulgu)
+        s.flush()
+
+        def _hata(tetik: str, **ortam) -> uuid.UUID:
+            rid = _run_ekle(s, tetik, "failed", simdi, [(f"t-{tetik}", "failed", c1)], **ortam)
+            tr = s.scalars(select(TestResult.id).where(TestResult.run_id == rid)).one()
+            f = Failure(
+                run_id=rid, test_result_id=tr, test_adi="t", hata_imzasi="x",
+                sinif="product_defect",
+            )  # fmt: skip
+            s.add(f)
+            s.flush()
+            return f.id
+
+        f2, f4 = _hata("push"), _hata("nightly")
+        kirma = _hata("break_verify", break_campaign=True)
+
+        def _taslak(durum: str, karar: str | None, key: str | None, **bag) -> BugDraft:
+            d = BugDraft(
+                icerik={}, icerik_hash=uuid.uuid4().hex, durum=durum, karar=karar,
+                link_key=key if karar == "link" else None, jira_key=key, **bag,
+            )  # fmt: skip
+            s.add(d)
+            return d
+
+        _taslak("published", "link", "TPD-5", finding_id=bulgu.id)
+        _taslak("published", "link", "TPD-5", failure_id=f2)
+        _taslak("published", "new", "TPD-18", failure_id=f4)
+        _taslak("draft", None, None, failure_id=kirma)
+        _taslak("dismissed", None, None, failure_id=f4)
+        silinen = _taslak("published", "new", "TPD-19", failure_id=f4)
+        s.flush()
+        s.add(BugDraftEk(bug_draft_id=silinen.id, kaynak="failure",
+                         yayin={"jira_silindi": {"key": "TPD-19"}}))  # fmt: skip
+
+    with Session(engine) as s:
+        tpd1 = {x["story_key"]: x for x in ct.karne(s)}["TPD-1"]
+    assert (tpd1["acik_bug"], tpd1["bug_taslagi"]) == (2, 0)
+
+    # Kırma olmayan koşudan gelen bekleyen taslak ayrı sayılır, açık bug'ı değiştirmez.
+    with Session(engine) as s, s.begin(), allow_state_write():
+        s.add(BugDraft(icerik={}, icerik_hash="h", durum="approved", karar="new", failure_id=f2))
+        s.flush()
+    with Session(engine) as s:
+        tpd1 = {x["story_key"]: x for x in ct.karne(s)}["TPD-1"]
+    assert (tpd1["acik_bug"], tpd1["bug_taslagi"]) == (2, 1)

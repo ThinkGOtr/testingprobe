@@ -186,16 +186,20 @@ varsa çıkış 1. Bu tablo kayıtla aynı olmalıdır (`test_evaluation_status.
 | Prompt paketi | Sürüm | Durum |
 |---|---|---|
 | `guardrails` (ortak güvenlik kuralları) | v1 | **canlı değerlendirme bekliyor** |
-| `requirement-review` | v2 | **canlı değerlendirme bekliyor** |
+| `requirement-review` | v3 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `consistency-check` | v4 | **canlı değerlendirme bekliyor** |
 | `case-generation` | v2 | **canlı değerlendirme bekliyor** |
 | `verify-and-map` (+ `verify_and_map` golden'ları) | v3 | **canlı değerlendirme bekliyor** |
-| `triage` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirme bekliyor** |
-| `bug-draft` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirme bekliyor** |
-| `dup-rank` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirme bekliyor** |
+| `triage` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
+| `bug-draft` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
+| `dup-rank` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 
-Bu depoda hiçbir prompt paketi canlı modelle değerlendirilmedi (replay kayıtlarında `recording`
-üst verisi yok); Faz 3'te değişen paket `verify-and-map` v3'tür, Faz 4'te `triage`, `bug-draft`
+2026-11-01'de `requirement-review` v3, `triage`, `bug-draft` ve `dup-rank` v2 canlı modelle
+(`make eval-live A='--bundle … --update-status'`, sert bütçe tavanı 1,50 USD, gerçek harcama
+≈0,05 USD) değerlendirildi; raporlar ve çağrı defterleri `evaluation/results/` altındadır. Ajan
+paketleri (`consistency-check`, `verify-and-map`), `case-generation` ve bunlara bağlı olarak
+geçişli `guardrails` **hâlâ canlı değerlendirme bekliyor**. Golden'lar (REPLAY) değişmedi: demo
+çıktısı yine elle hazırlanmış kayıtlardan gelir (replay kayıtlarında `recording` üst verisi yok); Faz 3'te değişen paket `verify-and-map` v3'tür, Faz 4'te `triage`, `bug-draft`
 ve `dup-rank` v2'dir (kanonik girdi kurucuları `tp_core.gateway.defects`, yeni golden'lar; ayrıntı
 `replay/README.md` "Faz 4"). Geçit her `ai_call.ek.degerlendirme`'ye paketin durumunu yazar
 (`{paket, surum, durum, etiket}`; `etiket` = "canlı değerlendirme bekliyor"); portal bunu AI
@@ -212,6 +216,60 @@ istisnasıyla birleştirilir. İstisna bu depoda **onaylanmış değildir**; ona
 yazılır (ajanlar/otomasyon istisna yazmaz) ve bu tablo güncellenir. Kimlik bilgisi gelince: `TP_MODEL_MODE=record` ile verify_and_map
 yeniden kaydedilir, `usage.cache_read_input_tokens` ile ajan önbelleği doğrulanır ve kayıt
 `status: evaluated` + `evaluation: {date, model, provider, results}` olarak güncellenir.
+
+### Canlı değerlendirmeyi koşturmak (`make eval-live`)
+
+`make eval-live` (`scripts/eval-live.sh` → `python -m tp_core.gateway.eval_live`) host'ta, `uv` ile
+koşar; `.env`'den yalnızca `ANTHROPIC_API_KEY`, `ANTHROPIC_WORKSPACE_ID`, `TP_EVAL_BUDGET_USD`,
+`TP_MODEL_PROVIDER`, `TP_PII_MASKING`'i okur ve hiçbirini yazdırmaz. `TP_MODEL_MODE`'u okumaz: komutun
+kendisi canlı çağrı isteğidir; demo yolunun kipi (`.env`'de `replay`) değişmez.
+
+```bash
+scripts/eval-live.sh --ping                          # tek küçük çağrı: OK ya da API hata türü/iletisi
+scripts/eval-live.sh --dry-run                       # API yok: setler + tahmini maliyet
+scripts/eval-live.sh --bundle triage --update-status # set TAMAMEN geçerse evaluations.yaml → evaluated
+scripts/eval-live.sh --record                        # kayıt adayları exports/eval-live/<zaman>/replay-adaylari/
+```
+
+- Setler (`evaluation/<paket>.json`, `core/tests/unit/gateway/build_eval_sets.py` üretir; elle
+  düzenlenmez): `triage`, `bug-draft`, `dup-rank`, `requirement-review` (demo'nun 5 gereksinimi,
+  Jira'daki ilk halleriyle: karar, soru türü, belgede olmayan AC'ye soru yok), `case-generation`
+  (§12: 5 story × 3 koşu, `runs: 3`; her AC en az bir case'te, uydurma AC yok, düzeltilmiş tutarlar),
+  ajanlar `consistency-check` (TPD-1 ve serbest metin 1. tur + tutarlı TPD-4; beklenen belge
+  yerleri ve kanıtın üretimin `EvidenceVerifier`'ıyla yeniden doğrulanması) ve `verify-and-map`
+  (TPD-1-C3, TPD-4-C1/C2; her adım eşlenmiş, metotlar gerçek sembol tablosunda, beklenen
+  assertion'lar). Ajan setleri `"agent": {"tool_env", "max_turns"}` taşır ve araçları ÜRETİMİN
+  araç uygulamalarıyla yürütür (`tp_core.gateway.eval_agents`: forge + demo-app salt okuma
+  veritabanı; Playwright MCP). Araç ortamı kurulamazsa (yığın kapalı) paket ATLANIR ve durumu
+  değişmez — bu ortamlar `make up` ister; host'tan erişilemiyorsa komut core-worker içinde koşar.
+- `guardrails`'in ayrı seti yoktur: guardrails'i içeren HER paket aynı guardrails sürümüyle
+  (`evaluation.guardrails_version`) `evaluated` olunca `--update-status` onu da geçişli olarak
+  `evaluated` yazar (`eval_set.guardrails_coverage`). Bu komut kayıt uydurmaz ve `waived` yazmaz.
+  `--update-status` yalnızca set TAMAMEN koşup her vaka geçtiyse yazar; kaydın `note`'u üretilmiş
+  satırla değişir ("Canlı değerlendirme <tarih>, <model>, <geçen>/<toplam>: <rapor>").
+- `--dry-run` tahmini: token = karakter/3 (yukarı), girdi önbelleğe yazma fiyatıyla (1,25×), çıktı
+  tam `max_tokens`; "en kötü durum" şema yeniden istemlerini (2) de sayar; ajanlarda `max_turns` ×
+  tam çıktı + amacın girdi tavanı. Yedi setin toplam en kötü durumu ~22 USD'dir (varsayılan 5 USD
+  tavanı aşılır; komut `--budget-usd` önerir); hata setleri < 0,10 USD.
+- Denetim (constitution VIII): host'ta veritabanı yoktur. Her canlı çağrı (vakalar ve `--ping`)
+  geçidin `ai_call` satırı biçiminde, sırlar temizlenmiş olarak ekle-yalnız, hash zincirli deftere
+  yazılır: `exports/eval-live/ai_call.jsonl` (`--ledger`; `CallLedger.verify`). Paketin çağrıları
+  ayrıca raporun yanına `<rapor>.calls.jsonl` olarak yazılır ve `evaluations.yaml` kaydındaki
+  `evaluation.calls` onu gösterir; "evaluated" iddiası rapor + çağrı dosyasıyla birlikte PR'a girer.
+- Sert bütçe tavanı `TP_EVAL_BUDGET_USD` (varsayılan 5): her vakadan önce en kötü durum maliyeti
+  eklenir, tavan aşılacaksa koşu durur. Rapor `evaluation/results/<paket>-v<n>-<tarih>.json`.
+- `--record` commit'li golden'lara (`replay/**`) asla yazmaz (dizin onun içindeyse reddeder); aday
+  dizininde `INDEX.json` (vaka → girdi beyanına göre hedef golden) ve `README.md` (inceleme adımları)
+  bulunur. Adaylar insan incelemesinden sonra PR ile taşınır; `evaluations.yaml` değişikliği de PR
+  ile gelir.
+- `--ping` triage modeline `max_tokens` 16'lık tek çağrıdır; çıktı `OK …` ya da
+  `HATA: <tür> (HTTP <kod>): <ileti>`; yalnızca "çalışma alanı başlığı gönderildi/gönderilmedi"
+  yazılır, değerler asla.
+- Anahtar API'de `400` + `anthropic-workspace-id` isterse `ANTHROPIC_WORKSPACE_ID` verilir; geçit bu
+  başlığı ekler (değer loglanmaz). Ayrıntı: `docs/GERCEK-SISTEMLER.md` §1.
+
+### Diğer kurallar
+
 - Güvenilmeyen girdi prompt'larda yalnızca etiketli veri bloğunda taşınır; içindeki talimatlar
   uygulanmaz.
 - Sağlayıcıya özgü ayrıntı bu dosyalara girmez; sağlayıcı farkları geçit adaptörlerindedir

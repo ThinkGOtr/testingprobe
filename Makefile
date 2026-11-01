@@ -10,7 +10,7 @@ export PLAYWRIGHT_VERSION := $(strip $(shell cat .playwright-version 2>/dev/null
 
 S ?=
 
-.PHONY: help env up status seed reset jira-seed forge-init break demo-break demo-reset demo-web-sync locator-break-verify demo-baseline export-audit security-check e2e-smoke demo-check prune logs down
+.PHONY: help env up status seed reset jira-seed forge-init break demo-break demo-reset demo-web-sync locator-break-verify demo-baseline export-audit security-check e2e-smoke demo-check demo-prova prova-temizle eval-live prune logs down
 
 help: ## Hedefleri listeler
 	@echo "Kullanım: make <hedef>"
@@ -68,6 +68,15 @@ e2e-smoke: ## demo-app e2e'yi test-runner içinden compose uygulamasına koştur
 demo-check: ## Demo-B ön kontrolü: REPLAY golden'larında defect adayı anı hazır mı (STORY=TPD-1) + REPLAY ref çözümü (RUNS=5)
 	@docker compose exec -T core-worker python -m tp_core.gateway.demo_check --story $(or $(STORY),TPD-1)
 	@docker compose exec -T core-worker python -m tp_core.gateway.replay_check --runs $(or $(RUNS),5)
+
+demo-prova: ## Tam demo provası: make reset → 14 adım + locator kırma/onarım, strict REPLAY (RUNS=n, varsayılan 1; §13 için RUNS=3; UI=1: arayüzden; UITUR=1: salt okuma arayüz turu + video; KIRMA=1: kırma taslağını yayınla; SAKLA=n: son n rapor)
+	@scripts/demo-prova.sh --runs $(or $(RUNS),1) $(if $(UI),--ui,) $(if $(UITUR),--ui-tur,) $(if $(KIRMA),--kirma-yayinla,) $(if $(SAKLA),--sakla $(SAKLA),)
+
+prova-temizle: ## Eski prova raporlarını temizle (N=10: son N koşu klasörü kalır)
+	@scripts/demo-prova.sh --temizle $(or $(N),10)
+
+eval-live: ## Prompt değerlendirme setini CANLI modelle koşturur, sert bütçe TP_EVAL_BUDGET_USD (5) (A='--ping' | '--dry-run' | '--bundle triage --update-status' | '--record')
+	@scripts/eval-live.sh $(A)
 
 prune: ## Kullanılmayan (dangling) imajları ve build önbelleğini temizler; volume'lere dokunmaz
 	@echo "İmajlar:";        docker image prune -f | tail -n 1

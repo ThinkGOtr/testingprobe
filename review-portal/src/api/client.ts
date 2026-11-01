@@ -13,7 +13,9 @@ import {
 import { bugIcerikCoreBicimi, bugTaslagiUyarla, hataAnaliziUyarla } from "./uyumTriage";
 import { nesneMi } from "./uyum";
 import { kontrolKulesiUyarla, kosuDetayUyarla, kosuUyarla, scriptDetayUyarla, scriptUyarla } from "./uyumDemoB";
+import { bazYanitiUyarla, demoDurumuUyarla, gereksinimBazi } from "./uyumFaz5";
 import type {
+  BazDegerGirdisi,
   Bulgu,
   BulguKararGirdisi,
   BugKararGirdisi,
@@ -24,6 +26,7 @@ import type {
   DenetimYaniti,
   Gereksinim,
   GereksinimDetay,
+  ManuelBaz,
   MergeGirdisi,
   RetNedeni,
   HataAnalizi,
@@ -45,6 +48,13 @@ import type {
 } from "./types";
 
 const yol = (s: string) => encodeURIComponent(s);
+/** Gereksinim detayı + Faz 5 baz değeri (alan yoksa eklenmez: "çekirdek sunmuyor"). */
+function detayUyarla(ham: Record<string, unknown>): GereksinimDetay {
+  const baz = gereksinimBazi(ham);
+  return { ...gereksinimDetayUyarla(ham), ...(baz !== undefined ? { manuel_baz: baz } : {}) };
+}
+/** Baz değer işlemleri gereksinime bağlıdır: gereksinim çekirdekten geliyorsa uç yokken örnek veriye düşülmez. */
+const GEREKSINIM_KAYNAGI = ["GET", "/requirements"] as const;
 export const HATA_BULUNAMADI = "Hata kaydı bulunamadı: bağlantı geçersiz ya da kayıt silinmiş.";
 const nesne = (x: unknown) => (x && typeof x === "object" ? (x as Record<string, unknown>) : {});
 /** Case işlemleri case listesine bağlıdır: liste çekirdekten geliyorsa işlem örnek veriye düşmez. */
@@ -68,8 +78,7 @@ export const api = {
   jiradanCek: () => istek<IsYaniti>("POST", "/requirements/sync"),
   serbestMetin: async (g: SerbestMetinGirdisi): Promise<Gereksinim> =>
     gereksinimUyarla(nesne(await istek<unknown>("POST", "/requirements/free-text", { govde: g }))),
-  gereksinim: async (id: string): Promise<GereksinimDetay> =>
-    gereksinimDetayUyarla(nesne(await istek<unknown>("GET", `/requirements/${yol(id)}`))),
+  gereksinim: async (id: string): Promise<GereksinimDetay> => detayUyarla(nesne(await istek<unknown>("GET", `/requirements/${yol(id)}`))),
   incelemeBaslat: (id: string) => istek<IsYaniti>("POST", `/requirements/${yol(id)}/review`),
   bulgular: async (id: string): Promise<Bulgu[]> =>
     listeUyarla(await istek<unknown>("GET", `/requirements/${yol(id)}/findings`), bulguUyarla),
@@ -80,10 +89,18 @@ export const api = {
     istek<IsYaniti>("POST", `/requirements/${yol(id)}/apply-doc-fixes`, cakismayiOnayla ? { govde: { cakismayi_onayla: true } } : {}),
   /** `g`: ekranda görülen gereksinim; `icerik_hash` aynen gönderilir (TOCTOU bağı). */
   poOnayla: async (g: Pick<GereksinimDetay, "id" | "icerik_hash">): Promise<GereksinimDetay> =>
-    gereksinimDetayUyarla(
+    detayUyarla(
       nesne(await istek<unknown>("POST", `/requirements/${yol(g.id)}/po-approve`, { govde: { icerik_hash: g.icerik_hash } })),
     ),
   caseUret: (id: string) => istek<IsYaniti>("POST", `/requirements/${yol(id)}/generate-cases`),
+  /**
+   * Story başına manuel baz değer (Faz 5; analyst | po). Yanıt baz değer ya da gereksinim
+   * detayıdır; ikisi de yoksa `undefined` (çağıran detayı yeniden okur).
+   */
+  bazDegerKaydet: async (id: string, g: BazDegerGirdisi): Promise<ManuelBaz | undefined> =>
+    bazYanitiUyarla(await istek<unknown>("PUT", `/requirements/${yol(id)}/baseline`, { govde: g, kaynak: GEREKSINIM_KAYNAGI })),
+  bazDegerSil: async (id: string): Promise<ManuelBaz | undefined> =>
+    bazYanitiUyarla(await istek<unknown>("DELETE", `/requirements/${yol(id)}/baseline`, { kaynak: GEREKSINIM_KAYNAGI })),
 
   // Case'ler
   caseler: async (requirementId?: string): Promise<TestCase[]> =>
@@ -157,6 +174,10 @@ export const api = {
   kosular: async (): Promise<Kosu[]> => listeUyarla(await istek<unknown>("GET", "/runs"), kosuUyarla),
   kosu: async (id: string): Promise<KosuDetay> => kosuDetayUyarla(nesne(await istek<unknown>("GET", `/runs/${yol(id)}`))),
 
+  /** Triage sonuçları listesi (`GET /failures`, limit ≤200; core her satırı tekil görünümle döner). */
+  hatalar: async (sorgu: { script_id?: string; sinif?: string; kaynak?: string; limit?: number } = {}): Promise<HataAnalizi[]> =>
+    listeUyarla(await istek<unknown>("GET", "/failures", { sorgu: { limit: 200, ...sorgu } }), hataAnaliziUyarla),
+
   // Triage
   /**
    * Triage sonucu. Locator önerisinde onarım başladıysa repair şeridinin kaydı (`GET /failures/{id}/fix`:
@@ -225,7 +246,7 @@ export const api = {
   demoKir: () => istek<IsYaniti>("POST", "/demo/break-locator"),
   demoSifirla: () => istek<IsYaniti>("POST", "/demo/reset"),
   /** Forge main / çalışan demo uygulaması eşleşmesi (salt okuma). */
-  demoDurumu: () => istek<DemoDurumu>("GET", "/demo/status"),
+  demoDurumu: async (): Promise<DemoDurumu> => demoDurumuUyarla(await istek<unknown>("GET", "/demo/status")),
 };
 
 export type Api = typeof api;

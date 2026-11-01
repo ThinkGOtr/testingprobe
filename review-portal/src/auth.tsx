@@ -78,18 +78,19 @@ const EKRAN_UCU: Record<string, readonly [string, string]> = {
   "/kontrol-kulesi": ["GET", "/control-tower"],
   "/bug-taslaklari": ["GET", "/bug-drafts"],
   "/gereksinimler": ["GET", "/requirements"],
+  "/yol-haritasi": ["GET", "/requirements"],
 };
 
 const ROL_SAYFALARI: Record<Rol, string[]> = {
   engineer: ["/kod", "/kosular", "/gereksinimler"],
-  presenter: ["/kontrol-kulesi", "/kosular", "/gereksinimler"],
+  presenter: ["/yol-haritasi", "/kontrol-kulesi", "/kosular", "/gereksinimler"],
   tester: ["/bug-taslaklari", "/kosular", "/gereksinimler"],
   analyst: ["/gereksinimler"],
   po: ["/gereksinimler"],
 };
 
 /**
- * Rol bazlı varsayılan açılış ekranı: sunucu → Kontrol Kulesi, mühendis → Kod üretimi, testçi →
+ * Rol bazlı varsayılan açılış ekranı: sunucu → Demo yol haritası, mühendis → Kod üretimi, testçi →
  * Bug taslakları. `ucVar` verilirse (canlı derleme, core'un uç listesi) core'un henüz sunmadığı
  * ekran atlanır — kullanıcı "bu fazda yok" ekranına düşmez, sıradaki ekrana gider.
  */

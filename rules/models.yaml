@@ -8,6 +8,11 @@ version: 1
 pricing_usd_per_mtok:
   claude-sonnet-5-5: { input: 2.00, output: 10.00, cache_read: 0.20, cache_write: 2.50 }
   claude-haiku-5-5: { input: 0.10, output: 0.50, cache_read: 0.01, cache_write: 0.125 }
+  # Ret yedeği hedefleri (hiçbir amaç bunları seçmez). Sonnet 5.5 isteklerine `fallbacks: "default"`
+  # gider; sunucu ret kategorisine göre başka modele yönlendirebilir (ör. Opus 5.5). Yanıtı üreten
+  # model bu tabloda yoksa geçit en pahalı satırı uygular ve `ek.maliyet_tahmini` yazar.
+  claude-opus-5-5: { input: 4.00, output: 20.00, cache_read: 0.20, cache_write: 5.00 }
+  claude-opus-5: { input: 5.00, output: 25.00, cache_read: 0.50, cache_write: 6.25 }
 
 defaults:
   max_tokens: 4096

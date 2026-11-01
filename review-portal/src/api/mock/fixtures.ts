@@ -23,6 +23,7 @@ import type {
   AjanAdimi,
   PrCheck,
   YerelKontrol,
+  ManuelBaz,
   McpTokenKaydi,
   Bulgu,
   BulguTuru,
@@ -52,6 +53,11 @@ export interface MockVeri {
   denetim: { aktor: string; eylem: string; nesne: string; ozet: string; zaman: string }[];
   /** MCP token kayıtları (ham token saklanmaz; core gibi yalnızca oluşturulduğunda döner). */
   tokenlar?: McpTokenKaydi[];
+  /**
+   * Story başına ölçülmüş manuel baz değerler (gereksinim kimliği → kayıt). Örnek veri hiçbir
+   * story için değer uydurmaz: başlangıçta boştur, yalnızca portaldan girilen değer saklanır.
+   */
+  manuelBazlar?: Record<string, ManuelBaz>;
   sayac: number;
 }
 

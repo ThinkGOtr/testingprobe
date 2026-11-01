@@ -260,6 +260,19 @@ def fake_gateway(script: list[Any]) -> tuple[Callable[[Engine], Gateway], FakePr
 # ------------------------------------------------------------------ bağlama
 
 
+@pytest.fixture(autouse=True)
+def _baz_dosyasi_yok(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Testler depodaki rules/baz-degerler.yaml'dan etkilenmesin: varsayılan olarak dosya yok.
+
+    Dosyayla çalışan test bu yola yazar (`_baz_dosyasi_yok.write_text(...)`)."""
+    from tp_core.features.requirements import baseline_dosya
+
+    yol = tmp_path / "rules-baz" / baseline_dosya.DOSYA_ADI
+    yol.parent.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(baseline_dosya, "dosya_yolu", lambda rules_dir=None: yol)
+    return yol
+
+
 @pytest.fixture
 def req_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setenv("JIRA_PROJECT", "TPD")

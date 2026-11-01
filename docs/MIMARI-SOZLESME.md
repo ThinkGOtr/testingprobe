@@ -205,6 +205,14 @@ açık taslağa eklenen hatalar), yayın sonucu). Onarım ayrıntısı ayrı tab
 özetlerindedir (`repair.proposed/checked/pr_opened/blocked`); script satırı `tur='locator_fix'`,
 `failure_id`, `branch`, `head_sha`, `pr_no` taşır.
 
+**Faz 5 tablolar:** 0013 `requirement_baz_deger` (story başına manuel baz değer girişleri,
+append-only: `sira`, `islem set|clear`, `deger_s` (`set`'te 0 < x ≤ 144000, `clear`'da NULL),
+`onceki_s`, `giren`, `giren_rol`, `not_metni`, `zaman`; güncel değer = en büyük `sira`; tp_app
+yalnızca SELECT/INSERT; requirement silinince cascade). Denetim: `requirement.baseline_set` |
+`requirement.baseline_cleared` (`once`/`sonra`: `deger_s, kaynak, giren, not, sira` + `jira_key`,
+`rol`). Model kipi denetimi: `worker.model_mode` (core-worker açılışında, değiştiyse; `{ayar, mod,
+replay_strict, anahtar_var, calisma_alani_var, saglayici}` — anahtar/çalışma alanı DEĞERİ asla).
+
 ## 5. HTTP API (core-api, portal `/api/` önekiyle erişir)
 
 Tüm yanıtlar JSON; hata `{"detail": "..."}`. Oturum: `tp_session` çerezi (itsdangerous imzalı, HttpOnly,
@@ -242,14 +250,19 @@ gönderilir ve akış kapanır. Portal bunu alınca yeniden bağlanmaz, giriş e
 | GET | `/requirements` | herkes | Story listesi (Jira'dan çekilmiş + durum) |
 | POST | `/requirements/sync` | analyst | Jira'dan çek |
 | POST | `/requirements/free-text` `{baslik, aciklama, ac[]}` | analyst | Serbest metin gereksinim |
-| GET | `/requirements/{id}` | herkes | Detay + durum makinesi durumu |
+| GET | `/requirements/{id}` | herkes | Detay + durum makinesi durumu + `baseline` (aşağıda) |
+| GET | `/requirements/{id}/baseline` | herkes | Story başına manuel baz değer + geçmiş (`gecmis[]`, en yeniden eskiye) |
+| PUT | `/requirements/{id}/baseline` `{deger_s: int (saniye, 0 < x ≤ 144000), not: str (zorunlu kaynak notu, ≤500, ör. "F0 ölçümü – İsmail")}` | analyst · po | Ölçüm girer (katı tam sayı; dizge/ondalık/bool 422); aynı değer + not → `degisti:false`, kayıt/denetim yok |
+| DELETE | `/requirements/{id}/baseline?not=` | analyst · po | Ölçümü kaldırır (geçmiş kalır; `not` isteğe bağlı) → story varsayılana / ölçülmedi'ye düşer |
+| GET | `/baseline-file` | herkes | `rules/baz-degerler.yaml` durumu: `{yol, var, girdi, hatalar[], girdiler[{story, deger_s, giren, not, requirement_id, etkin_kaynak, etkin_etiket, etkin_deger_s, etkin_giren_rol}]}` (demo öncesi "TPD-1 ölçüm okuyor mu" kontrolü) |
+| POST | `/baseline-file/apply` | analyst · po | Dosyayı yeniden uygular (düzenlemeden sonra); portal girişini ezmez (`portal_girisi`) |
 | POST | `/requirements/{id}/review` | analyst | Ön inceleme + tutarlılık denetimi başlat |
 | GET | `/requirements/{id}/findings` | herkes | Tutarlılık bulguları (kanıtlı) |
 | POST | `/findings/{id}/decision` `{karar, metin?, gerekce?}` | analyst | fix_doc / code_defect / accept_difference |
 | POST | `/requirements/{id}/apply-doc-fixes` `{cakismayi_onayla?}` | analyst | Onaylı düzeltmeleri Jira'ya yaz + yeniden kontrol; yazılacak düzeltme ve açık engelleyici yoksa belgeyi açıkça son hal yapar (portal: "Son hal olarak onayla"). Düzeltme güncel döngüdeki bir `accept_difference` kararının maddesini yeniden yazıyorsa 409 (Türkçe, `F1 (tur 1)` etiketli); `cakismayi_onayla:true` ile uygulanır (`requirement.decision_conflict_confirmed`) |
 | POST | `/requirements/{id}/po-approve` | po | Serbest metin yolunda PO teyidi (Jira yolunda etiket) |
 | POST | `/requirements/{id}/generate-cases` | analyst | Case üretimi |
-| GET | `/requirements/{id}/case-metrics` | herkes | Kabul oranı (ilk karara göre, hedef 0.70), ret nedenleri, AI/review süresi, maliyet, `ai_cagri_modlari`, `kapsanmayan_ac` (hiçbir güncel case'in atıf yapmadığı AC'ler), `manuel_baz_ms` (`TP_MANUAL_BASELINE_S`'den; yoksa null) |
+| GET | `/requirements/{id}/case-metrics` | herkes | Kabul oranı (ilk karara göre, hedef 0.70), ret nedenleri, AI/review süresi, maliyet, `ai_cagri_modlari`, `kapsanmayan_ac` (hiçbir güncel case'in atıf yapmadığı AC'ler), `manuel_baz_ms` (**yalnızca** story'nin kendi ölçümü; varsayılanda ve ölçülmediğinde null — env değeri yalnız `manuel_baz.varsayilan_s/varsayilan_ms` + `aciklama`'da), `manuel_baz_kaynagi` (`olcum\|varsayilan\|null`), `manuel_baz` (baseline nesnesi), `review_tabani_ms` |
 | POST | `/requirements/{id}/review-complete` | analyst | Taslak kalmadıysa review'ı kapatır (denetim olayı); taslak varsa 409 |
 | GET | `/cases?requirement_id=` · `/cases/{id}` | herkes | |
 | POST | `/cases/{id}/viewed` | analyst | Kartın ilk görüntülenmesi (review süresi ölçümü) |
@@ -276,7 +289,7 @@ gönderilir ve akış kapanır. Portal bunu alınca yeniden bağlanmaz, giriş e
 | POST | `/tokens` `{kapsam}` → `{id, kapsam, son_kullanma, token, mcp_url}` | analyst | MCP (Claude Code) kanalı için 8 saatlik token; `mcp_url` = `TP_MCP_PUBLIC_URL`. `/mcp` bağlanana kadar **501** ("IDE (MCP) kanalı henüz etkin değil"); token parola değişince geçersizleşir |
 | MCP | `:8000/mcp` → `get_requirement(requirement_key)` (submit kapsamı; PO onaylı metin güvenilmeyen blokta + `onaylanan_hash`), `submit_draft_cases(requirement_key, cases, onaylanan_hash)` (hash zorunlu; bayatsa ret), `publish_test_cases` | token | Claude Code kanalı (streamable HTTP, durumsuz). Token tek kapsamlıdır (`submit` veya `publish`); iki araç için iki token. Yalnızca 127.0.0.1/localhost Host'u, `X-Forwarded-For` → 403, çerez okunmaz. Her çağrı `tool_call` (kanal `ide`). Ayrıntı: docs/CLAUDE-CODE-KANALI.md |
 | POST | `/demo/break-locator` · `/demo/reset` | presenter | Demo kırılması / sıfırlama (200 done / 202 sürüyor / 409). Kırılma main için yeşil koşu ister (yoksa 409 + `demo.break_refused`); `?zorla=true` bilerek atlar. Locator demosu yalnızca `TP_FORGE=local`: GitHub kipinde kırılma her zaman 409 (`zorla` dahil). Sıfırlama jira-sim'i sıfırlamaz; yalnızca `AI-generated` + `tp-<uuid>` etiketli Bug'ları siler |
-| GET | `/demo/status` | herkes | main, `forge.testid` (web/src) + `forge.e2e_testid` (e2e page object), `locator_durumu` (`baseline`\|`kirik`\|`onarildi`\|null), baseline, çalışan uygulama sha'sı ve main ile eşleşmesi, `web_yenileme_istegi`, `onarim_on_kosulu {hazir, son_yesil_kosu, yonerge}`, `locator_demo {destekleniyor, neden}` |
+| GET | `/demo/status` | herkes | Faz 5: `model {ayar, mod, replay_strict, anahtar_var, calisma_alani_var, saglayici, aciklama, zaman}` (core-worker'ın son açılış bildirimi, `worker.model_mode` denetimi; kayıt yoksa null = bilinmiyor; anahtar değeri asla) ve `degerlendirme [{paket, surum, durum, etiket}]` (rules/evaluations.yaml; `pending` → "canlı değerlendirme bekliyor"; okunamazsa `{hata}`). main, `forge.testid` (web/src) + `forge.e2e_testid` (e2e page object), `locator_durumu` (`baseline`\|`kirik`\|`onarildi`\|null), baseline, çalışan uygulama sha'sı ve main ile eşleşmesi, `web_yenileme_istegi`, `onarim_on_kosulu {hazir, son_yesil_kosu, yonerge}`, `locator_demo {destekleniyor, neden}` |
 
 **Faz 2 uç ayrıntıları (Demo-A):** `POST /requirements/sync` → 200 `{durum:"done", mesaj, proje,
 sonuc:{<jira_key>: yeni|degismedi|guncellendi|yeniden_kontrol|sifirlandi|mesgul}}`. `review`,
@@ -313,8 +326,10 @@ Tam inceleme ve gerçek içerik değişikliği bulguları yine `stale` yapar. De
 1)"); bu sorular PO yorumunda sorulmaz, "Çözüldü" başlığında bilgi için listelenir. `failed`
 gereksinimde (case üretimi hatası) PO onayı `onaylanan_hash` güncel içerikle eşleşiyorsa `po.durum`
 `approved` döner; eşleşmiyorsa `not_requested`. `case-metrics` yanıtında `uyarilar: string[]`
-(manuel baz değer yoksa "Manuel baz değer girilmedi…", tüm AI çağrıları REPLAY ve süre 0 ise "AI
-süresi REPLAY'de ölçülmez…"). Kanıt SQL'i (`sqlguard`, kanıt modu) yalnızca kayıpsız projeksiyon
+(Faz 5: ölçüm de varsayılan da yoksa "Manuel baz değer girilmedi (bu story için ölçüm yok,
+TP_MANUAL_BASELINE_S de boş): Demo-A kazanç gösterilemez."; varsayılan kullanıldıysa "Bu story için
+manuel baz ölçümü girilmedi; varsayılan değer (TP_MANUAL_BASELINE_S) kullanıldı — story'ye özel
+ölçüm değil."; tüm AI çağrıları REPLAY ve süre 0 ise "AI süresi REPLAY'de ölçülmez…"). Kanıt SQL'i (`sqlguard`, kanıt modu) yalnızca kayıpsız projeksiyon
 kabul eder: düz kolon, `lower/upper`, argümansız `trim`, `CAST` → TEXT/VARCHAR (uzunluksuz) /
 NUMERIC/DECIMAL (hassasiyetsiz); toplama yalnızca `count(*)`, `count([DISTINCT] col)`,
 `min(col)`, `max(col)` ve projeksiyonda en çok bir toplama, diğer öğeler GROUP BY kolonu. PO soru yorumu Jira'ya belge
@@ -387,7 +402,7 @@ eski kısıt `NOT VALID` olarak yalnızca yeni satırlara uygulanır.
   `src/**/results/**`, `run.json`, `runner.log`; HTML CSP sandbox ile; dizin → JSON liste; URL'ler
   `/api` önekli). `GET /control-tower`: her KPI `kaynaklar`'da tablo/süzgeç/pencere; geçme oranı
   **koşu bazlı** (son `TP_CT_SON_KOSU` CI koşusu) + `test` alt nesnesi; `gecme_hedefi=null`;
-  manuel baz yalnızca `TP_MANUAL_BASELINE_S` varsa. Karne satırı `alan`/`alanlar` (page object
+  manuel baz story başınadır (Faz 5; aşağıda). Karne satırı `alan`/`alanlar` (page object
   sınıfından uygulama alanı; eşleme yoksa null = ölçülmedi), `acik_defect_adayi`; üst düzey
   `alan_karnesi[]`. İlk review başarısı birim bazlıdır: birimdeki herhangi bir script'te
   `degisiklik_istendi`/`reddedildi`/`kabul_yabanci_head` varsa birim kabul sayılmaz.
@@ -431,7 +446,9 @@ eski kısıt `NOT VALID` olarak yalnızca yeni satırlara uygulanır.
   Kapsam: CI koşuları; `local_check` yalnızca `script_kontrol.sinif='defect_adayi'` (diğer sınıflar kod
   üretiminin insan yolunda kalır; onarımın kendi yerel kontrolü — `run.ortam.onarim=true` — hiç
   sınıflandırılmaz); `break_verify` kırmızıları `kaynak='kirma'` + `kasitli_kirilma` sinyaliyle
-  (`TP_TRIAGE_KIRMA=0` kapatır). Kurallar sırayla: environment (`saglik.ok=false`, sağlıksız `error`,
+  (`TP_TRIAGE_KIRMA=0` kapatır); bunların `product_defect`'i için taslak `TP_TRIAGE_KIRMA_TASLAK`
+  (varsayılan 1) ile istenir, 0'da `oneri_turu='none'` ve `/failures` öğesi `jira_yazilmaz: true`; yol
+  haritası adım 13 kırma taslağını saymaz (bilerek karara bırakılır). Kurallar sırayla: environment (`saglik.ok=false`, sağlıksız `error`,
   `/check` `app` adımı farkı, ağ/navigasyon) → flaky → test_maintenance/locator (0 eleman + sembol
   tablosundaki niyet rol+ad aria'da + `/locator-probe` kapsamda tek eşleşme farklı testId + sha
   `farkli` değil) → product_defect (expected/received'lı assertion, eleman bulundu, tekrarlar tutarlı)
@@ -479,7 +496,11 @@ eski kısıt `NOT VALID` olarak yalnızca yeni satırlara uygulanır.
   derleyemez: host'ta `scripts/demo-web-sync.sh` (`make demo-break` / `make demo-web-sync A=--watch`)
   isteği uygular. `demo.await_web` push CI'ı ancak çalışan uygulama (`/build.json`) **ve** toolchain'in
   okuduğu `/forge/demo-app-web.sha` main'i yansıtınca kuyruğa alır (aksi `/check` `app=farkli` →
-  environment koşusu); aynı forge değişikliği için ikinci CI açılmaz; `TP_DEMO_WEB_WAIT_S` dolarsa CI
+  environment koşusu). Uygulama hedef commit'i zaten yansıtsa bile bu commit için yazılmış ve
+  host betiğince henüz uygulanmamış (`/forge/demo-web-refresh.done` ≠ `istek_id`) yenileme isteği
+  varsa CI `TP_DEMO_WEB_ISTEK_BEKLEME_S` (vars. 180 sn) boyunca bekler: betik konteyneri yeniden
+  oluştururken koşan CI sağlıkta düşmesin (Faz 5 prova bulgusu); süre dolunca (betik çalışmıyorsa) CI
+  açılır. Aynı forge değişikliği için ikinci CI açılmaz; `TP_DEMO_WEB_WAIT_S` dolarsa CI
   yok + `demo.web_timeout`. `make break`/`make demo-baseline` (forge_demo CLI) de aynı işi kullanır.
   `POST /demo/reset` main'i demo-baseline'a döndürür, açık `tp/*`/`demo/*` PR'larını kapatır, uygulama
   yenileme + baseline CI ister; veritabanına dokunmaz (tam: `make reset`) — tek istisna: silinen AI
@@ -503,15 +524,84 @@ eski kısıt `NOT VALID` olarak yalnızca yeni satırlara uygulanır.
   değerlendirme durumunu taşır (`{paket, surum, durum, etiket}`; bugün üçü de "canlı değerlendirme
   bekliyor"). Golden adı `HATA`, senaryo dizinleri içerik beyanıyla seçilir.
 
+**Faz 5 uç ayrıntıları (manuel baz, prova, canlı değerlendirme):**
+- **Story başına manuel baz (`tp_core.features.requirements.baseline`):** kaynak sırası story'nin
+  kendi ölçümü (`olcum`) → `TP_MANUAL_BASELINE_S` (`varsayilan`, "story'ye özel değer değil" notuyla)
+  → hiçbiri (`kaynak: null`, "ölçülmedi", sayı yok). `GET /requirements/{id}` ve `GET /requirements`
+  öğeleri `baseline {deger_s, deger_ms, kaynak: 'olcum'|'varsayilan'|null, etiket:
+  'ölçüm'|'varsayılan'|'ölçülmedi', giren, giren_rol, zaman, not, sira, ust_sinir_s}` taşır.
+  PUT/DELETE yanıtı `{requirement_id, jira_key, baseline, degisti, gecmis}`; diğer roller 403,
+  oturumsuz 401, bilinmeyen kimlik 404. Kaynak notu PUT'ta zorunludur (boşluklar sadeleşir), DELETE'te
+  isteğe bağlıdır. Değişiklikte SSE `requirement.updated {alan:'baseline', baseline{deger_s, kaynak,
+  giren, not, sira}}`. Kaynak notu en az 3 boşluk dışı karakter (`NOT_EN_AZ`; portal da aynı kural +
+  "gerçek ölçüm" onay kutusu). **Varsayılanda `deger_s/deger_ms` null'dır** (env değeri yalnız
+  `varsayilan_s/varsayilan_ms` + `aciklama` "ölçülmedi; varsayılan … ölçüm değil"): başlık sayı değildir.
+- **Reset'e dayanıklı baz değer (`baseline_dosya`):** `requirement_baz_deger` gereksinim kimliğine
+  bağlıdır (cascade) ve `make reset` gereksinimleri yeni kimlikle yeniden kurar; kalıcı kopya gözden
+  geçirilmiş, commit'li `rules/baz-degerler.yaml`'dır (`degerler: [{story, deger_s, giren, not}]`; katı
+  tam sayı 0 < x ≤ 144000, adı yazılı `giren`, not ≥3; bilinmeyen alan/geçersiz/mükerrer girdi Türkçe
+  hatayla atlanır, eşitleme durmaz). `flow.sync_from_jira` dosyayı her eşitlenen story'ye uygular:
+  append-only satır (`giren=<kişi>`, `giren_rol='dosya'`) + hash zincirli `requirement.baseline_set`
+  denetimi (aktör `seed`, `{kaynak:'dosya', dosya, tetikleyen}`); portal girişi ezilmez; eşitleme yanıtı
+  ve denetimi `baz_dosyasi` taşır. Dosyada olmayan story "ölçülmedi" kalır — değer uydurulmaz.
+- **Kontrol Kulesi:** `hazirlik[]` satırı `manuel_baz_kaynagi` + `manuel_baz`, `toplam_yontemi`
+  (`ai_arti_review` | `yalniz_review` — REPLAY'de AI süresi ölçülmez, hazırlık süresi yalnız review
+  süresidir (DEMO-VERISI) | null) ve `kazanc_orani` (**yalnızca kaynak `olcum`** ve hazırlık süresi
+  > 0 ise; varsayılan baz kazanca girmez; `hazirlik[].manuel_baz_ms` varsayılanda null),
+  `kazanca_girer` (ölçülmüş baz + `ai_arti_review`). `ai_katkisi.manuel_baz_ms` = **yalnızca ölçülmüş**
+  story'lerin ortalaması (`manuel_baz_yontemi='story_ortalamasi'`; hiç ölçüm yoksa null +
+  `baz_deger_olculmedi=true`), `manuel_baz_varsayilan_ms` (env; ölçüm sayılmaz), `baz_kapsami{story, olcum, varsayilan,
+  olculmedi, metin}` (ör. "4 story'den 3'ünde ölçüm var, 1'inde ölçülmedi"), `kazanc_orani` =
+  1 − Σ(hazırlık süresi) / Σ(ölçülmüş baz) yalnızca `kazanca_girer` story'ler üzerinden (REPLAY
+  `yalniz_review` satırları başlığa girmez: `kazanc_replay_haric` sayısı + `kazanc_notu` "sunumdaki
+  yüzde verimlilik iddiası değildir"; story oranı satırda etiketli kalır), `kazanc_story_sayisi`.
+  `kaynaklar` yeni anahtarlar `kazanc_orani`, `baz_kapsami`. Portal aynı kuralı `hazirlik[]`'tan
+  yeniden hesaplar (aynı sonuç; başlık REPLAY'de "REPLAY: hesaplanmaz").
+- **Geçme oranı:** `gecme_orani` penceresi son n bitmiş CI koşusu; `make demo-break`'in main'e
+  merge ettiği commit'lerdeki koşular (`demo kırılması` denetimi → `ozet.main_sonra`) ve kırma
+  kampanyası hariç (`haric_kirma`); hazır Türkçe cümle `metin` (portal bunu gösterir). `gunluk_gecme`
+  aynı dışlamayı uygular; karne/flaky main'in gerçek durumunu göstermeye devam eder.
+- **Canlı değerlendirme (`tp_core.gateway.eval_live`, `make eval-live` / `scripts/eval-live.sh`):**
+  host'ta `uv run --frozen`; sert bütçe `TP_EVAL_BUDGET_USD` (5; her vakadan önce en kötü durum
+  maliyeti eklenir, aşacaksa durur; 7 setin tamamı için en kötü durum ≈21,5 USD → `--budget-usd 22`),
+  `--ping` (tek çağrı, sır maskeli). **Anayasa VIII denetimi (karar):** host tarafı değerlendirme
+  araçları PG `ai_call` tablosuna değil, hash zincirli append-only `exports/eval-live/ai_call.jsonl`
+  defterine (`--ledger`; `CallLedger.verify` düzenleme/silme yakalar) ve rapor yanındaki commit'li
+  `<rapor>.calls.jsonl` dosyalarına yazar (her vaka çağrısı ve her `--ping`, başarılı ya da hatalı),
+  `--dry-run`, `--bundle`, `--update-status` (yalnızca tüm set koştu ve geçtiyse `evaluated`; asla
+  `waived`), `--record` (aday golden'lar `exports/eval-live/<UTC>/replay-adaylari/`; `rules/replay`
+  altına yazmayı reddeder). Değerlendirme setleri 8 paketin 7'si için vardır (requirement-review,
+  case-generation, consistency-check, verify-and-map, triage, bug-draft, dup-rank;
+  `core/tests/unit/gateway/build_eval_sets.py` üretir); ajan setleri (`agent: {tool_env, max_turns}`)
+  üretim araçlarıyla koşar (`eval_agents`), ortam açılamazsa paket atlanır ve `pending` kalır.
+  guardrails geçişli kapsanır (diğer hepsi güncel sürümde `evaluated` + aynı guardrails sürümü). Durum
+  (2026-11-01): `requirement-review` v3, `triage`/`bug-draft`/`dup-rank` v2 `evaluated` (canlı,
+  `rules/evaluation/results/`); `consistency-check`, `verify-and-map`, `case-generation` ve geçişli
+  `guardrails` `pending` ("canlı değerlendirme bekliyor"). Tek doğruluk kaynağı `rules/evaluations.yaml`.
+- **Canlı hata → REPLAY yedeği (`TP_REPLAY_FALLBACK`):** `Gateway.call`/`run_agent`'ta
+  geçici/kalıcı sağlayıcı hatası ya da zaman aşımında (ret, bütçe, şema hatası hariç) başarısız canlı
+  satır yazılır, aynı çağrı golden'dan sürer; satır `replay`/`replay_miss` etiketlidir (asla `live`),
+  `ek.canli_hata_yedegi {neden, zaman_asimi, durum, canli_cagri, tur}` + `parent_call_id`. `auto`
+  kipinde varsayılan açık, `live`'da kapalı, `record`/`replay`'de hiç; eval-live kapatır.
+- **Prova (`rehearsal/`, `make demo-prova` / `scripts/demo-prova.sh`):** `make reset` → core-worker
+  `TP_REPLAY_STRICT=1` ile yeniden oluşturulur → 25 adım (P0, A1–A8, B1–B5, C1–C5, D1–D5, Z1) API
+  üzerinden, her biri beklenen durumu doğrular ve süre bütçesi taşır (ajan adımı ≤120 sn, toplam 25
+  dk); Z1 `ai_call` modlarında REPLAY-MISS ya da sahte `live` olmadığını ve denetim zincirini doğrular.
+  `--runs N` ardışık koşu, `--ui` portal + jira-sim arayüzüyle (Playwright, video), `--ui-tur` salt
+  okuma tur. Raporlar `rehearsal/reports/` (git dışı).
+
 ## 6. Ortam değişkenleri (yeni)
 `TP_SESSION_SECRET`, `TP_MODEL_MODE`, `JIRA_BASE_URL`, `JIRA_PROJECT` (varsayılan `TPD`),
 `TP_TEST_MGMT`, `TP_FORGE`, `GITHUB_REPO`, `TP_DAILY_BUDGET_USD` (30), `TP_WORKFLOW_BUDGET_USD` (2).
 
 Faz 1 entegrasyonunda eklenenler (boş = yerel simülatör / güvenli varsayılan):
 - Jira/Xray: `JIRA_READ_EMAIL`/`JIRA_READ_TOKEN`, `JIRA_WRITE_EMAIL`/`JIRA_WRITE_TOKEN`,
-  `JIRA_BROWSE_URL` (kullanıcıya gösterilen bağlantı kökü; compose varsayılanı jira-sim'in yerel adresi,
-  gerçek Jira'da boş → `JIRA_BASE_URL`), `JIRA_TIMEOUT_S` (10), `XRAY_BASE_URL`, `XRAY_CLIENT_ID`/`XRAY_CLIENT_SECRET`.
-- Model (yalnızca core-worker): `ANTHROPIC_API_KEY`, `TP_MODEL_PROVIDER` (anthropic), `TP_PII_MASKING` (0);
+  `JIRA_BROWSE_URL` (kullanıcıya gösterilen bağlantı kökü; compose varsayılanı jira-sim'in yerel adresi —
+  gerçek Jira'da site adresi AÇIKÇA verilmelidir, boş bırakılırsa bağlantılar jira-sim'e gider), `JIRA_TIMEOUT_S` (10), `XRAY_BASE_URL`, `XRAY_CLIENT_ID`/`XRAY_CLIENT_SECRET`.
+- Model (yalnızca core-worker): `ANTHROPIC_API_KEY`, `ANTHROPIC_WORKSPACE_ID` (Faz 5; doluysa Anthropic
+  adaptörü `anthropic-workspace-id` başlığını gönderir; sır sayılır, `make security-check` 6 anahtarla
+  aynı denetler), `TP_MODEL_PROVIDER` (anthropic), `TP_PII_MASKING` (0); yalnızca host (compose değil):
+  `TP_EVAL_BUDGET_USD` (5, `make eval-live`);
   core-api ve core-worker: `TP_RULES_DIR` (`/rules`, `./rules` salt okunur bağlanır).
 - Forge: `GITHUB_TOKEN`, `GITHUB_MERGE_TOKEN` (insan token'ı; bot asla merge etmez), `GITHUB_API_URL`,
   `GH_APP_ID`, `GH_APP_PRIVATE_KEY` / `GH_APP_PRIVATE_KEY_PATH`, `GH_APP_INSTALLATION_ID`, `TP_FORGE_PRS_PATH`.
@@ -543,9 +633,12 @@ Faz 1 entegrasyonunda eklenenler (boş = yerel simülatör / güvenli varsayıla
   demoapp'e bağlanmaz — MCP `get_requirement`'ın test verisi bloğu bu yüzden core-api'de statik
   bilgiye düşer). Ortak blokta (core-api + core-worker): `TP_PO_POLL_S` (15), `TP_CONSISTENCY_MAX_ROUNDS`
   (3), `TP_FORGE_REPO_NAME` (`demo-app`; kod kanıtındaki `evidence.repo`), `TP_FORGE_CHECK_REF` (`main`),
-  `TP_MANUAL_BASELINE_S` (story başına manuel test tasarımı baz süresi, saniye; boş = ölçülmedi;
-  `make up` önkoşulu ve `make status` boşken "Manuel baz değer girilmedi" uyarısı verir, değer
-  uydurulmaz — F0 ölçümünden girilir).
+  `TP_MANUAL_BASELINE_S` (Faz 5'ten beri yalnızca story başına ölçümü olmayan story'lerin
+  **varsayılanı**, saniye; her yerde "varsayılan" etiketli, kazanca girmez; boş = ölçülmedi; `make up`
+  önkoşulu ve `make status` boşken bilgi verir; değer uydurulmaz — story başına ölçüm portaldan /
+  `PUT /requirements/{id}/baseline` ile girilir; reset'e dayanıklı kopya `rules/baz-degerler.yaml`).
+- Faz 5 integrasyonu: `TP_REPLAY_FALLBACK` (boş = kipe göre; yukarıda), `TP_TRIAGE_KIRMA_TASLAK`
+  (1 varsayılan: kırma kırmızısı → taslak → testçi kararı; 0: taslak yok, failure `jira_yazilmaz`).
 - toolchain-worker: `TP_APP_BUILD_SHA_FILE` (`/forge/demo-app-web.sha`; forge-init, `make break`,
   `make demo-baseline` ve `make up`'taki sync-web otomatik yazar), yedeği `DEMO_APP_BUILD_SHA`;
   `TP_CHECK_REQUIRE_APP_SHA` (0), `TP_CHECKS_PATH` (/checks), `TP_CHECKS_REQUIRE_MOUNT` (1),
@@ -764,6 +857,20 @@ hattına girer; `GET /bug-drafts` Faz 4 görünümünü döner.
 TPD-18/19'u sildikten sonra taslaklar ve triage öneri bloğu hâlâ "Jira'da açıldı: TPD-19" + ölü bağlantı
 gösteriyordu (portal adaptörü `jira_url` null olsa da browse kökünden bağlantıyı yeniden kuruyordu).
 Şimdi silinen anahtarlar taslakta işaretlenir (`jira_silindi`), görünüm ve portal bağlantı vermez.
+
+**Neden değişti (Faz 5 entegrasyonu, 2026-11-01):** baseline, live, rehearsal, docs ve portal şeritleri
+birleşti. Entegrasyonda kararlaştırılanlar: (1) kazanç kuralı tekleşti — core ve portal yalnızca
+story'ye özel **ölçülmüş** baz değerli story'leri sayar, formül 1 − Σ süre / Σ baz (portal önceden
+oranların ortalamasını alıyordu; core varsayılanı da sayıyordu). (2) REPLAY'de hazırlık süresi yalnız
+review süresidir (`toplam_yontemi='yalniz_review'`; core önceden null döndürüyordu). (3) core-api model
+ayarlarını görmediği için `GET /demo/status` → `model` core-worker'ın açılış bildirimini (denetim
+`worker.model_mode`) okur; portal "canlı"yı kanıtsız göstermez. (4) `ANTHROPIC_WORKSPACE_ID` yalnızca
+core-worker'a verildi. (5) `make demo-prova` ve `make eval-live` hedefleri eklendi. (6) 3'lü provanın 3. koşusunda push CI
+35/36 (1 flaky) kaldı: demo-app-api'nin istek başına DB oturumu (FastAPI 0.162 yield bağımlılığı,
+varsayılan `scope="request"`) commit'i yanıt gönderildikten SONRA yapıyordu; tarayıcı giriş yanıtından
+5 ms sonra `/cart` isteyince oturum satırı henüz commit edilmemişti → 401 → uygulama giriş sayfasına
+döndü. `SessionDep` artık `scope="function"` (commit yanıttan önce); satır numaraları değişmedi
+(golden kanıt satırları aynı).
 
 ## 7. Kalite kapısı (her şerit)
 - Python: `uv run ruff check`, `uv run ruff format --check`, `uv run pytest` yeşil.

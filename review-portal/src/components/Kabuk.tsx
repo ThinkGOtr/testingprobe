@@ -30,6 +30,7 @@ const NAV: { grup: string; ogeler: NavOgesi[] }[] = [
   {
     grup: "İzleme",
     ogeler: [
+      { yol: "/yol-haritasi", ad: "Demo yol haritası", odak: ["presenter"], uc: ["GET", "/requirements"] },
       { yol: "/kontrol-kulesi", ad: "Kontrol Kulesi", odak: ["presenter"], uc: ["GET", "/control-tower"] },
       { yol: "/demo", ad: "Demo kontrolleri", gorunur: ["presenter"], odak: ["presenter"], uc: ["POST", "/demo/break-locator"] },
       { yol: "/denetim", ad: "Denetim", uc: ["GET", "/audit"] },

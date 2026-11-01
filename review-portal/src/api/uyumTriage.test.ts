@@ -98,7 +98,7 @@ describe("triage dönüştürücüsü (core serialize şekli)", () => {
     expect(h.kanit?.konum).toBe("CatalogPage.addToCart");
     expect(h.kanit?.tekrarlar).toEqual(["failed", "failed"]);
     expect(h.kanit?.uyarilar).toEqual(["trace okunamadı"]);
-    expect(h.kanit_linkleri).toEqual([{ etiket: "Trace", url: "/api/artifacts/runs/x/trace.zip" }]);
+    expect(h.kanit_linkleri).toEqual([{ etiket: "Trace", url: "/api/artifacts/runs/x/trace.zip", tur: "trace" }]);
     expect(h.oneri).toMatchObject({ tur: "locator_fix", eski_test_id: "add-to-cart", yeni_test_id: "cart-add", within: "product-card-", durum: "proposed" });
   });
 

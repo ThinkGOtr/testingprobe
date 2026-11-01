@@ -16,59 +16,80 @@
 # `pending` kayıt varsa veya kayıt bayatsa çıkış kodu 1'dir. İstisna kaydı YALNIZCA sahip onayıyla
 # yazılır; ajanlar/otomasyon `waived` kaydı oluşturmaz.
 #
-# Bugünkü durum (2026-10-31, Faz 4): bu depoda hiçbir prompt paketi canlı modelle değerlendirilmedi
-# (API kimlik bilgisi yok; replay kayıtlarında `recording` üst verisi yok). Onaylı istisna yok.
+# `guardrails` (ortak `_guardrails.md`) kendi başına çağrılmaz, her prompt'a eklenir: guardrails'i
+# içeren HER paket güncel sürümüyle ve `evaluation.guardrails_version` = güncel guardrails sürümüyle
+# `evaluated` olunca `make eval-live A=--update-status` guardrails'i de geçişli olarak `evaluated`
+# yazar (`eval_set.guardrails_coverage`).
+#
+# Güncel durum her kaydın `status`/`note` alanındadır (bu başlık tarih taşımaz; `--update-status`
+# başlığı korur, kaydın `note`'unu yeniden yazar).
 version: 1
-
 bundles:
   guardrails:
     version: 1
     status: pending
-    note: Her prompt'a eklenen ortak güvenlik kuralları; canlı değerlendirme yapılmadı.
+    note: Her prompt'a eklenen ortak güvenlik kuralları; ayrı değerlendirme seti yoktur, kapsam geçişlidir
+      (diğer 7 paket aynı guardrails sürümüyle canlı değerlendirilince). Canlı değerlendirme yapılmadı.
   requirement-review:
-    version: 2
-    status: pending
-    note: Golden çıktıları elle hazırlandı; canlı değerlendirme yapılmadı.
+    version: 3
+    status: evaluated
+    note: 'Canlı değerlendirme 2026-11-01, claude-sonnet-5-5 (anthropic), 5/5 vaka geçti: evaluation/results/requirement-review-v3-2026-11-01.json'
+    evaluation:
+      date: '2026-11-01'
+      model: claude-sonnet-5-5
+      provider: anthropic
+      results: evaluation/results/requirement-review-v3-2026-11-01.json
+      guardrails_version: 1
+      calls: evaluation/results/requirement-review-v3-2026-11-01.calls.jsonl
   consistency-check:
     version: 4
     status: pending
-    note: Golden çıktıları elle hazırlandı; araç adımları demo-app kaynağına karşı denetlenir.
+    note: 'Golden çıktıları elle hazırlandı; araç adımları demo-app kaynağına karşı denetlenir. Değerlendirme
+      seti: rules/evaluation/consistency-check.json (ajan; araç ortamı `consistency`, kanıt yeniden doğrulanır).
+      Canlı değerlendirme yapılmadı; onaylı istisna yok.'
   case-generation:
     version: 2
     status: pending
-    note: Golden çıktıları elle hazırlandı; canlı değerlendirme yapılmadı.
+    note: 'Golden çıktıları elle hazırlandı. Değerlendirme seti: rules/evaluation/case-generation.json
+      (§12: 5 story × 3 koşu, AC kapsamı). Canlı değerlendirme yapılmadı; onaylı istisna yok.'
   verify-and-map:
     version: 3
     status: pending
-    note: >-
-      Faz 3: v3 (eylemdeki her locator'a ilk dayanmadan önce browser_generate_locator) ve
-      verify_and_map golden'ları yeniden kaydedildi. Tarayıcı adımları gerçek Playwright MCP'de
-      kaydedildi ve replay_check ile tekrarlandı; model çıktısı elle hazırlandı. Bu model
-      değerlendirmesi değildir.
+    note: 'Faz 3: v3 (eylemdeki her locator''a ilk dayanmadan önce browser_generate_locator) ve verify_and_map
+      golden''ları yeniden kaydedildi. Tarayıcı adımları gerçek Playwright MCP''de kaydedildi ve replay_check
+      ile tekrarlandı; model çıktısı elle hazırlandı. Bu model değerlendirmesi değildir. Değerlendirme
+      seti: rules/evaluation/verify-and-map.json (ajan; araç ortamı `browser`, Playwright MCP). Canlı
+      değerlendirme yapılmadı; onaylı istisna yok.'
   triage:
     version: 2
-    status: pending
-    note: >-
-      Faz 4: v2 (yalnızca kural eşleşmeyince çağrılır; kanonik hata bloğu, `unknown`'u tahmine
-      tercih eder). Tek golden (HATA: kuralsız test zaman aşımı → unknown) ve nötr REPLAY-MISS
-      yedeği elle hazırlandı. Değerlendirme seti: rules/evaluation/triage.json (zaman aşımı →
-      unknown, sağlıklı/ağsız → ortam değil, sağlık bilinmiyor + bağlantı reddi → environment,
-      eksik bayi → test_data); koşturucu `python -m tp_core.gateway.eval_set --bundle triage`.
-      API kimlik bilgisi yok; canlı değerlendirme yapılmadı. Onaylı istisna yok.
+    status: evaluated
+    note: 'Canlı değerlendirme 2026-11-01, claude-haiku-5-5 (anthropic), 4/4 vaka geçti: evaluation/results/triage-v2-2026-11-01.json'
+    evaluation:
+      date: '2026-11-01'
+      model: claude-haiku-5-5
+      provider: anthropic
+      results: evaluation/results/triage-v2-2026-11-01.json
+      guardrails_version: 1
+      calls: evaluation/results/triage-v2-2026-11-01.calls.jsonl
   bug-draft:
     version: 2
-    status: pending
-    note: >-
-      Faz 4: v2 (kanonik hata/bulgu + test verisi blokları, `kanit:<ad>` kanıt yer tutucuları,
-      gerçek boşluğu gösteren yeniden üretim adımları). Golden'lar (C3 6 adet, kırma 7 adet, F2
-      kampanya, F4 kredi limiti) elle hazırlandı; adımlar demo-app fiyat fonksiyonlarıyla sınanır
-      (test_bug_draft_goldens). Değerlendirme seti: rules/evaluation/bug-draft.json. Canlı
-      değerlendirme yapılmadı; onaylı istisna yok.
+    status: evaluated
+    note: 'Canlı değerlendirme 2026-11-01, claude-haiku-5-5 (anthropic), 4/4 vaka geçti: evaluation/results/bug-draft-v2-2026-11-01.json'
+    evaluation:
+      date: '2026-11-01'
+      model: claude-haiku-5-5
+      provider: anthropic
+      results: evaluation/results/bug-draft-v2-2026-11-01.json
+      guardrails_version: 1
+      calls: evaluation/results/bug-draft-v2-2026-11-01.calls.jsonl
   dup-rank:
     version: 2
-    status: pending
-    note: >-
-      Faz 4: v2 (aday kümesi sabit, her aday tek kez sıralanır). Golden'lar (C3, F2 → TPD-5 high +
-      bağla; kırma → TPD-5 medium + yeni; F4 → TPD-5/TPD-6 low + yeni) elle hazırlandı; aday kümesi
-      beyanı demo sırasında açılan Bug'ları özetle tanır (test_jira_seed_goldens). Değerlendirme
-      seti: rules/evaluation/dup-rank.json. Canlı değerlendirme yapılmadı; onaylı istisna yok.
+    status: evaluated
+    note: 'Canlı değerlendirme 2026-11-01, claude-haiku-5-5 (anthropic), 6/6 vaka geçti: evaluation/results/dup-rank-v2-2026-11-01.json'
+    evaluation:
+      date: '2026-11-01'
+      model: claude-haiku-5-5
+      provider: anthropic
+      results: evaluation/results/dup-rank-v2-2026-11-01.json
+      guardrails_version: 1
+      calls: evaluation/results/dup-rank-v2-2026-11-01.calls.jsonl

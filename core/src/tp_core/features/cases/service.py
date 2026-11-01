@@ -1354,11 +1354,14 @@ def requirement_metrics(session: Session, requirement_id: uuid.UUID) -> dict[str
     )
     uretilen = len(ai_cases)
     onceki_icerik, onceki_uyari = _old_content_warning(session, req)
-    manuel_baz = manual_baseline_ms()
+    baz = story_baseline(session, req.id)
+    manuel_baz = baz["deger_ms"]
     ai_sure_ms = sum(v[0] for v in ai.values())
     uyarilar = [onceki_uyari] if onceki_uyari else []
-    if manuel_baz is None:
+    if baz["kaynak"] is None:
         uyarilar.append(MANUEL_BAZ_YOK_UYARISI)
+    elif baz["kaynak"] == "varsayilan":
+        uyarilar.append(MANUEL_BAZ_VARSAYILAN_UYARISI)
     if modlar and ai_sure_ms == 0 and all(str(k).startswith("replay") for k in modlar):
         uyarilar.append(AI_SURE_REPLAY_UYARISI)
     return {
@@ -1393,15 +1396,25 @@ def requirement_metrics(session: Session, requirement_id: uuid.UUID) -> dict[str
         "kapsanmayan_ac": coverage_gaps(session, req),
         "onceki_icerik_case_ids": onceki_icerik,
         "uyarilar": uyarilar,
-        # Manuel test tasarımı baz süresi (story başına, F0 ölçümü); verilmemişse None (uydurulmaz).
+        # Manuel test tasarımı baz süresi: yalnızca story'nin kendi ölçümü (F0; portal ya da
+        # rules/baz-degerler.yaml). TP_MANUAL_BASELINE_S ölçüm değildir: kaynak 'varsayilan' olur
+        # ama `manuel_baz_ms` null kalır (değer yalnız manuel_baz.varsayilan_ms'te, ikincil).
         "manuel_baz_ms": manuel_baz,
+        "manuel_baz_kaynagi": baz["kaynak"],
+        "manuel_baz": baz,
     }
 
 
 # Demo-A (§17, başarı ölçütü 6): "AI + review süresi manuel baz değerle yan yana". Baz değer
-# uydurulmaz; eksikse ekranda ve /case-metrics'te açıkça söylenir.
+# uydurulmaz; eksikse ekranda ve /case-metrics'te açıkça söylenir. Varsayılan (ortam) değer
+# kullanıldıysa bu da ayrıca söylenir: story'ye özel ölçüm değildir.
 MANUEL_BAZ_YOK_UYARISI = (
-    "Manuel baz değer girilmedi (TP_MANUAL_BASELINE_S): Demo-A kazanç gösterilemez."
+    "Manuel baz değer girilmedi (bu story için ölçüm yok, TP_MANUAL_BASELINE_S de boş): "
+    "Demo-A kazanç gösterilemez."
+)
+MANUEL_BAZ_VARSAYILAN_UYARISI = (
+    "Bu story için manuel baz ölçümü girilmedi; varsayılan değer (TP_MANUAL_BASELINE_S) ölçüm "
+    "değildir — baz değer olarak gösterilmez, Demo-A kazanç gösterilemez."
 )
 AI_SURE_REPLAY_UYARISI = (
     "AI süresi REPLAY'de ölçülmez; 'AI + review' süresi yalnız review süresidir."
@@ -1409,15 +1422,21 @@ AI_SURE_REPLAY_UYARISI = (
 
 
 def manual_baseline_ms() -> int | None:
-    """`TP_MANUAL_BASELINE_S` (story başına manuel test tasarımı, saniye) → ms; yoksa None."""
-    import os
+    """Varsayılan baz değer: `TP_MANUAL_BASELINE_S` (saniye) → ms; yoksa None.
 
-    ham = (os.environ.get("TP_MANUAL_BASELINE_S") or "").strip()
-    try:
-        deger = int(float(ham)) if ham else 0
-    except ValueError:
-        return None
-    return deger * 1000 if deger > 0 else None
+    Story'nin kendi ölçümü için `story_baseline()` kullanılır; bu yalnızca yedektir.
+    """
+    from tp_core.features.requirements import baseline
+
+    deger = baseline.varsayilan_s()
+    return deger * 1000 if deger is not None else None
+
+
+def story_baseline(session: Session, requirement_id: uuid.UUID) -> dict[str, Any]:
+    """Story'nin etkin manuel baz değeri (ölçüm → varsayılan → ölçülmedi)."""
+    from tp_core.features.requirements import baseline
+
+    return baseline.baseline_for(session, requirement_id)
 
 
 def review_complete(session: Session, requirement_id: uuid.UUID, user: Principal) -> dict[str, Any]:

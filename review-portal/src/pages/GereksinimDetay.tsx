@@ -5,11 +5,13 @@ import { ApiError } from "../api/http";
 import { useOlay } from "../api/events";
 import type { Bulgu, GereksinimDetay as Detay } from "../api/types";
 import { AkisAdimlari } from "../components/AkisAdimlari";
+import { BazDegerKarti } from "../components/BazDegerKarti";
 import { useBildirim } from "../components/Bildirim";
 import { BulguKarti } from "../components/BulguKarti";
 import { BosDurum, Cip, DisBaglanti, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { akisAdimi, DENETIM_ISLERI, hataAdimi, URETIM_ISI } from "../lib/akis";
+import { akisKanitlari, guncelAdim } from "../lib/yolHaritasi";
 import { AC_EKSIK, gereksinimDurumu, SORU_TURU } from "../lib/etiketler";
 import { tarih } from "../lib/format";
 
@@ -40,6 +42,9 @@ export function GereksinimDetay() {
   const { id = "" } = useParams();
   const detay = useVeri(() => api.gereksinim(id), [id]);
   const bulgular = useVeri(() => api.bulgular(id), [id]);
+  // Gereksinim makinesi `done` ile biter; kod → bug adımları (5–14) yol haritasıyla aynı kanıtlardan.
+  const tamamMi = detay.veri?.durum === "done";
+  const kanit = useVeri(() => (tamamMi ? akisKanitlari(id) : Promise.resolve(null)), [id, tamamMi]);
   const islem = useIslem();
   const bildir = useBildirim();
 
@@ -162,7 +167,7 @@ export function GereksinimDetay() {
       {islem.hata && <HataKutusu hata={islem.hata} />}
 
       <Kart>
-        <AkisAdimlari adim={akisAdimi(g.durum, g.adim ?? hataAdimi(g.son_hata?.job_tur))} kaynak={g.kaynak} />
+        <AkisAdimlari adim={guncelAdim(g, kanit.veri ?? null, akisAdimi(g.durum, g.adim ?? hataAdimi(g.son_hata?.job_tur)))} kaynak={g.kaynak} />
       </Kart>
 
       {g.son_hata && (
@@ -205,6 +210,14 @@ export function GereksinimDetay() {
 
         <PoKarti g={g} yenile={tumunuYenile} />
       </div>
+
+      <BazDegerKarti
+        g={g}
+        guncellendi={(b) => {
+          if (b !== undefined) detay.setVeri({ ...g, manuel_baz: b });
+          void detay.yenile(true);
+        }}
+      />
 
       <Kart
         baslik="Ön inceleme soruları"

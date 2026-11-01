@@ -95,3 +95,25 @@ React 18 + Vite 8 + TypeScript (strict), react-router. Arayüz metinleri Türkç
   Gerekirse "Mevcut kayda bağla" ile TPD-5'e bağlayın.
 - Serbest metin örnek gereksinimi (`req-ft-1`) `SERBEST` golden'larının girdisiyle aynıdır: ön inceleme,
   bulgular ve (öneriler aynen kabul edilirse) case'ler REPLAY; girdisi tutmayan serbest metin REPLAY-MISS.
+
+## Faz 5 (portal)
+
+- **Manuel baz değer (Gereksinim detayı):** story başına ölçülmüş manuel case hazırlama süresi.
+  Kaynak `olcum` (portaldan girilen gerçek ölçüm: giren, zaman, not) · `varsayilan`
+  (`TP_MANUAL_BASELINE_S`; story için ölçülmedi) · `olculmedi`. Analist/PO `PUT
+  /requirements/{id}/baseline {deger_s, not}` ile girer (1 sn – 40 saat, not 3–500 karakter, "gerçek
+  ölçüm" onayı zorunlu), `DELETE` ile siler. Çekirdek alanı sunmuyorsa kart "bilinmiyor" der ve form
+  çizilmez. Uyarlayıcı: `src/api/uyumFaz5.ts`.
+- **Kontrol Kulesi kazancı:** yalnızca baz değeri `olcum` olan story'lerden (core `hazirlik[]`);
+  kapsam metni kaç story'nin hesaba girdiğini ve dışarıda kalanları söyler. REPLAY'de AI süresi
+  ölçülmediği için süre yalnız review süresidir (etiketli). Kaynak bildirmeyen eski core satırı
+  varsayılan sayılır (kazanç yok).
+- **Demo yol haritası (`/yol-haritasi`, sunucunun açılış ekranı):** 14 adım + locator yolu, TPD-1
+  için gerçek API durumundan (`src/lib/yolHaritasi.ts`); her adım ilgili ekrana bağlanır. Sauce
+  kimliği yokken 9. adım "yerel yedek" yazar. Model kipi / REPLAY strict / prompt değerlendirmesi
+  `/demo/status` `model`, `degerlendirme` alanlarından; yoksa gözlenen çıktı modlarından türetilir ve
+  "çekirdek bildirmiyor" denir ("canlı" uydurulmaz). Okunamayan uçlar listelenir, adımları "tamam" sayılmaz.
+- **Triage kanıt bağlantıları:** aynı türün deneme kopyaları (Playwright `-retryN` dizinleri) tek
+  satırda "1. deneme · 2. deneme" olarak gösterilir.
+- **Demo kontrolleri:** `onarim_on_kosulu` (yeşil temel koşu yoksa "Locator'ı kır" pasif + yönerge)
+  ve `locator_demo.destekleniyor` (GitHub kipinde neden) ipuçları.

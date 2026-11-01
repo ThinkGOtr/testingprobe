@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
@@ -8,6 +8,7 @@ import { BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, 
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { BUG_DURUMU, SEVERITY, type Ton } from "../lib/etiketler";
 import { tarih } from "../lib/format";
+import { kirmaTaslagiMi } from "../lib/yolHaritasi";
 
 const KAYNAK = { triage: "Triage", consistency: "Tutarlılık denetimi", a11y: "Erişilebilirlik" } as const;
 
@@ -58,8 +59,44 @@ function aramaOzeti(b: BugTaslagi): string {
   return b.mukerrer_adaylari.map((m) => m.key).join(", ") || "—";
 }
 
+export const KIRMA_CIPI = "Kasıtlı kırma koşusu (BREAK_CAMPAIGN)";
+const KIRMA_ACIKLAMA = "Bu taslak bilerek bozulmuş (BREAK_CAMPAIGN / kırarak doğrula) koşudan geldi; gerçek hata değildir.";
+
+/**
+ * Kasıtlı kırma koşusunun kırmızısından gelen taslakların kimlikleri (taslak → triage hatası → koşu;
+ * `break_verify` tetiği ya da `break_campaign`). Yol haritasıyla aynı kural (`kirmaTaslagiMi`).
+ * Hata/koşu listesi okunamazsa boş küme: işaret konmaz (yanlış "kasıtlı" denmez).
+ */
+export function useKirmaTaslaklari(buglar: BugTaslagi[] | null | undefined): Set<string> {
+  const anahtar = (buglar ?? [])
+    .map((b) => b.failure_id)
+    .filter(Boolean)
+    .sort()
+    .join(",");
+  const v = useVeri(async () => {
+    if (!anahtar) return { hatalar: [], kosular: [] };
+    const [hatalar, kosular] = await Promise.all([api.hatalar().catch(() => []), api.kosular().catch(() => [])]);
+    return { hatalar, kosular };
+  }, [anahtar]);
+  return useMemo(() => {
+    const k = new Set<string>();
+    if (!v.veri) return k;
+    for (const b of buglar ?? []) if (kirmaTaslagiMi(b, v.veri.hatalar, v.veri.kosular)) k.add(b.id);
+    return k;
+  }, [buglar, v.veri]);
+}
+
+function KirmaCipi() {
+  return (
+    <Cip ton="uyari" title={KIRMA_ACIKLAMA}>
+      {KIRMA_CIPI}
+    </Cip>
+  );
+}
+
 export function BugTaslaklari() {
   const v = useVeri(() => api.bugTaslaklari(), []);
+  const kirmaIds = useKirmaTaslaklari(v.veri);
   const sessiz = useGeciktirilmis(() => void v.yenile(true));
   useOlay(sessiz, ["bug.published", "bug.updated", "failure.classified", "finding.updated"]);
   return (
@@ -98,6 +135,12 @@ export function BugTaslaklari() {
                         </Link>{" "}
                         <ReplayRozeti mode={b.mode} degerlendirme={b.degerlendirme} />
                         {b.icerik.uretim === "sablon" && <Cip ton="notr">Şablon</Cip>}
+                        {kirmaIds.has(b.id) && (
+                          <span data-testid="kirma-cipi">
+                            {" "}
+                            <KirmaCipi />
+                          </span>
+                        )}
                       </td>
                       <td>{KAYNAK[b.kaynak]}</td>
                       <td className="mono">{b.icerik.story_key ?? "—"}</td>
@@ -340,6 +383,8 @@ export function BugTaslakDetay() {
   const [retGerekcesi, setRetGerekcesi] = useState("");
   const islem = useIslem();
   const bildir = useBildirim();
+  const tekil = useMemo(() => (v.veri ? [v.veri] : []), [v.veri]);
+  const kirma = useKirmaTaslaklari(tekil).has(v.veri?.id ?? "");
 
   useEffect(() => {
     if (v.veri) {
@@ -467,6 +512,7 @@ export function BugTaslakDetay() {
             {b.icerik.uretim === "sablon" && (
               <Cip ton="notr" title="Doğrulanmış kanıttan şablonla yazıldı; model çağrısı yok">Şablon</Cip>
             )}
+            {kirma && <KirmaCipi />}
             {b.failure_id && <Link to={`/hatalar/${encodeURIComponent(b.failure_id)}`}>Triage sonucu</Link>}
             {b.onaylayan && (
               <span className="soluk">
@@ -478,6 +524,16 @@ export function BugTaslakDetay() {
         }
       />
 
+      {kirma && (
+        <div data-testid="kirma-uyarisi">
+          <Uyari baslik={KIRMA_CIPI}>
+            {KIRMA_ACIKLAMA}{" "}
+            {taslak
+              ? "Önerilen karar: gerekçeyle reddedin (Jira'ya hiçbir şey yazılmaz). \"Onayla ve Jira'da aç\" sahte bir Bug açar; AI önerisi bu bilgiyi bilmez."
+              : "Demo sırasında bu taslağa dokunulmaz."}
+          </Uyari>
+        </div>
+      )}
       <YayinDurumu b={b} />
       {b.yayin_hatasi && b.durum !== "published" && (
         <p>
@@ -593,7 +649,13 @@ export function BugTaslakDetay() {
               <div>
                 <h3>Yeni kayıt</h3>
                 <p className="soluk kucuk">Düzenlenmiş taslak onaylanan içerik hash'iyle Jira'ya Bug olarak yazılır; story ve teste bağlanır.</p>
-                <IslemDugmesi roller={["tester"]} type="submit" calisiyor={islem.calisiyor}>
+                <IslemDugmesi
+                  roller={["tester"]}
+                  type="submit"
+                  tur={kirma ? "ikincil" : "birincil"}
+                  calisiyor={islem.calisiyor}
+                  title={kirma ? "Kasıtlı kırma koşusu: gerçek hata değil; önerilen karar Reddet" : undefined}
+                >
                   Onayla ve Jira'da aç
                 </IslemDugmesi>
               </div>
@@ -620,11 +682,24 @@ export function BugTaslakDetay() {
                 </IslemDugmesi>
               </div>
               <div>
-                <h3>Kayıt açma</h3>
+                <h3>
+                  Kayıt açma{" "}
+                  {kirma && (
+                    <Cip ton="uyari" title={KIRMA_ACIKLAMA}>
+                      Önerilen
+                    </Cip>
+                  )}
+                </h3>
                 <p className="soluk kucuk">Taslak hata değilse gerekçeyle reddedin; Jira'ya hiçbir şey yazılmaz.</p>
                 <div className="alan">
                   <label htmlFor="bug-ret">Ret gerekçesi</label>
-                  <textarea id="bug-ret" rows={2} value={retGerekcesi} onChange={(e) => setRetGerekcesi(e.target.value)} />
+                  <textarea
+                    id="bug-ret"
+                    rows={2}
+                    value={retGerekcesi}
+                    placeholder={kirma ? "ör. Kasıtlı kırma (BREAK_CAMPAIGN) koşusu; gerçek hata değil." : undefined}
+                    onChange={(e) => setRetGerekcesi(e.target.value)}
+                  />
                 </div>
                 <IslemDugmesi
                   roller={["tester"]}

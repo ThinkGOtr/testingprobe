@@ -20,7 +20,8 @@ export default defineConfig({
   ...(CANLI ? { testMatch: /canli\.spec\.ts$/ } : { testIgnore: /canli\.spec\.ts$/ }),
   use: {
     baseURL: BASE_URL,
-    trace: "retain-on-failure",
+    // Canlı modda iz (trace) KAPALI: iz dosyası doldurulan parolayı düz metin taşır (sır sızıntısı).
+    trace: CANLI ? "off" : "retain-on-failure",
     actionTimeout: 10_000,
     locale: "tr-TR",
     timezoneId: "Europe/Istanbul",

@@ -302,7 +302,7 @@ describe("Koşular", () => {
 });
 
 describe("Kontrol Kulesi", () => {
-  it("her KPI'nın kaynak ipucu var; baz değer 'ölçülmedi'; uyarılar görünür", async () => {
+  it("her KPI'nın kaynak ipucu var; ölçülmüş baz değer yoksa kazanç yok; uyarılar görünür", async () => {
     await oturumAc("sunucu");
     uygulama("/kontrol-kulesi");
     await screen.findByRole("heading", { name: "Geçme oranı" });
@@ -310,8 +310,8 @@ describe("Kontrol Kulesi", () => {
     expect(ipuclari.length).toBeGreaterThanOrEqual(9);
     for (const i of ipuclari) expect(i.getAttribute("aria-label")).toMatch(/^Kaynak: /);
     expect(screen.getByRole("img", { name: /Kaynak: test_result \(JUnit XML\)/ })).toBeInTheDocument();
-    expect(screen.getByText("baz değer ölçülmedi")).toBeInTheDocument();
-    expect(screen.getByText(/Manuel baz değer girilmedi/)).toBeInTheDocument();
+    expect(screen.getByText("ölçülmüş baz yok")).toBeInTheDocument();
+    expect(screen.getByText(/ölçülmüş manuel baz değer yok/)).toBeInTheDocument();
     // Tasarımda geçme oranı hedefi yok: hedef çizgisi uydurulmaz.
     expect(screen.queryByText(/Kesikli çizgi/)).not.toBeInTheDocument();
   });
@@ -334,18 +334,19 @@ describe("Kontrol Kulesi", () => {
 });
 
 describe("rol bazlı açılış", () => {
-  it("varsayilanSayfa: sunucu → Kontrol Kulesi, mühendis → Kod üretimi; uç yoksa sıradaki ekran", () => {
-    expect(varsayilanSayfa("presenter")).toBe("/kontrol-kulesi");
+  it("varsayilanSayfa: sunucu → Demo yol haritası, mühendis → Kod üretimi; uç yoksa sıradaki ekran", () => {
+    expect(varsayilanSayfa("presenter")).toBe("/yol-haritasi");
     expect(varsayilanSayfa("engineer")).toBe("/kod");
     const yalnizGereksinim = (_m: string, y: string) => y === "/requirements";
     expect(varsayilanSayfa("engineer", yalnizGereksinim)).toBe("/gereksinimler");
-    expect(varsayilanSayfa("presenter", (_m, y) => y === "/runs" || y === "/requirements")).toBe("/kosular");
+    expect(varsayilanSayfa("presenter", (_m, y) => y === "/runs" || y === "/requirements")).toBe("/yol-haritasi");
+    expect(varsayilanSayfa("presenter", (_m, y) => y === "/runs")).toBe("/kosular");
   });
 
-  it("örnek veri: sunucu girişte Kontrol Kulesi'ne, mühendis Kod üretimine düşer", async () => {
+  it("örnek veri: sunucu girişte Demo yol haritasına, mühendis Kod üretimine düşer", async () => {
     await oturumAc("sunucu");
     uygulama("/");
-    await waitFor(() => expect(screen.getByTestId("konum")).toHaveTextContent("/kontrol-kulesi"));
+    await waitFor(() => expect(screen.getByTestId("konum")).toHaveTextContent("/yol-haritasi"));
   });
 });
 
@@ -390,12 +391,11 @@ describe("canlı derleme: core şekilli Demo-B yanıtları", () => {
         },
       }),
     );
-    uygulama("/");
-    await waitFor(() => expect(screen.getByTestId("konum")).toHaveTextContent("/kontrol-kulesi"));
+    uygulama("/kontrol-kulesi");
     expect(await screen.findByTestId("gecme-orani")).toHaveTextContent("veri yok");
     expect(screen.getByText("Erişilebilirlik taraması yapılmadı.")).toBeInTheDocument();
     expect(screen.getByText(/henüz karar yok/)).toBeInTheDocument();
-    expect(screen.getByText("baz değer ölçülmedi")).toBeInTheDocument();
+    expect(screen.getByText("ölçülmüş baz yok")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Kaynak: test_result (JUnit XML)" })).toBeInTheDocument();
     expect(screen.getAllByRole("img", { name: /core bu ölçünün kaynağını bildirmedi/ }).length).toBeGreaterThan(0);
     expect(screen.queryByText("ÖRNEK VERİ")).not.toBeInTheDocument();
@@ -412,7 +412,7 @@ describe("canlı derleme: core şekilli Demo-B yanıtları", () => {
           son_kosular: [],
           gecme_orani: { oran: 1, toplam: 3, gecen: 3, son_n: 20, birim: "kosu" },
           flaky: [],
-          karne: [{ story_key: "TPD-1", baslik: "Sepet", case_sayisi: 4, otomasyon_kapsami: 0.75, son_sonuc: "passed", acik_bug: 2, acik_defect_adayi: 1 }],
+          karne: [{ story_key: "TPD-1", baslik: "Sepet", case_sayisi: 4, otomasyon_kapsami: 0.75, son_sonuc: "passed", acik_bug: 2, bug_taslagi: 1, acik_defect_adayi: 1 }],
           ai_katkisi: {},
           a11y: null,
           kaynaklar: {},
@@ -426,6 +426,8 @@ describe("canlı derleme: core şekilli Demo-B yanıtları", () => {
     expect(within(satir).getByText("Geçti")).toBeInTheDocument();
     expect(within(satir).getByText("1 defect adayı")).toHaveClass("cip-uyari");
     expect(screen.getByTestId("defect-adayi-ozet")).toHaveTextContent("1 açık defect adayı");
+    // core karnesi: acik_bug = yayınlanmış farklı Jira anahtarı; bug_taslagi = yayınlanmamış (kırma hariç) taslak.
+    expect(screen.getByTestId("karne-bug-TPD-1")).toHaveTextContent("2 · taslak 1");
   });
 
   it("script detayı DB kolon adlarıyla (kirma_dogrulama, uretim_modu, step_mapping, pull_request.checks) çizilir", async () => {

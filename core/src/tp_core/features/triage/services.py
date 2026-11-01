@@ -113,14 +113,35 @@ def sweep_s() -> float:
 def kirma_triage() -> bool:
     """Kasıtlı kırılma (`BREAK_CAMPAIGN`) koşularının kırmızısı triage'a girer mi?
 
-    Varsayılan evet (`TP_TRIAGE_KIRMA=1`): demo'nun "hata yakalama" senaryosu (TEKNIK-TASARIM §2
-    adım 6 ve 12–14) kırma koşusunun kampanya kırmızısını gerçek defect → bug taslağı yolundan
-    geçirir; `0` yalnızca kod üretimi kanıtı sayar.
+    Varsayılan evet (`TP_TRIAGE_KIRMA=1`): kırma koşusunun kampanya kırmızısı `product_defect` +
+    `kasitli_kirilma` olarak sınıflandırılır (hata yakalama kanıtı); bug taslağı ayrıca
+    `kirma_taslak` ile yönetilir (varsayılan kapalı). `0` yalnızca kod üretimi kanıtı sayar.
     """
     f = _overrides.get("kirma_triage")
     if f is not None:
         return bool(f())
     return (os.environ.get("TP_TRIAGE_KIRMA") or "1").strip() not in ("0", "false", "hayir")
+
+
+def kirma_taslak() -> bool:
+    """Kasıtlı kırılma koşusunun `product_defect`'i için bug taslağı istenir mi?
+
+    Varsayılan EVET (`TP_TRIAGE_KIRMA_TASLAK=1`): bağlayıcı tasarım (TEKNİK-TASARIM §2 "Demoda iki
+    kırılma senaryosu", DEMO-VERISI "Faz 4: kırma koşusu") kırma kırmızısının triage → mükerrer
+    kontrolü → taslak → testçi onayı yolunu gösterir; taslak Jira'ya ancak testçi kararıyla yazılır
+    (insan kapısı). Sahnede bu taslak bilerek karara bırakılır (yol haritası adım 13 saymaz).
+    `0` bu taslakları kapatır: failure yine `product_defect` + `kasitli_kirilma` sinyaliyle
+    kaydedilir (hata yakalama kanıtı), `oneri_turu='none'` + `jira_yazilmaz` olur ve bugs
+    şeridinden taslak istenmez.
+    """
+    f = _overrides.get("kirma_taslak")
+    if f is not None:
+        return bool(f())
+    return (os.environ.get("TP_TRIAGE_KIRMA_TASLAK") or "1").strip().lower() not in (
+        "0",
+        "false",
+        "hayir",
+    )
 
 
 @contextmanager

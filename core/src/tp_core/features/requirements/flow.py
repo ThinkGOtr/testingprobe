@@ -308,6 +308,8 @@ def _wf_id(yuk: Any) -> uuid.UUID | None:
 class SyncReport:
     proje: str
     sonuc: dict[str, str] = field(default_factory=dict)  # jira_key → yeni|guncellendi|…
+    # rules/baz-degerler.yaml uygulama özeti (baseline_dosya.uygula_hepsi).
+    baz_dosyasi: dict[str, Any] = field(default_factory=dict)
 
     def sayac(self, deger: str) -> int:
         return sum(1 for v in self.sonuc.values() if v == deger)
@@ -324,6 +326,12 @@ class SyncReport:
             n = self.sayac(ad)
             if n:
                 parcalar.append(f"{n} {etiket}")
+        baz = self.baz_dosyasi.get("sonuc") or {}
+        uygulanan = sum(1 for v in baz.values() if v == "uygulandi")
+        if uygulanan:
+            parcalar.append(f"{uygulanan} story'ye baz değer ölçümü dosyadan uygulandı")
+        if self.baz_dosyasi.get("hatalar"):
+            parcalar.append(f"baz değer dosyasında {len(self.baz_dosyasi['hatalar'])} hata")
         return ", ".join(parcalar)
 
 
@@ -335,8 +343,23 @@ def sync_from_jira(session: Session, jira: Any, actor: Principal) -> SyncReport:
     rapor = SyncReport(proje)
     for issue in issues:
         rapor.sonuc[issue.key] = upsert_issue(session, issue, actor)
+    # Story başına F0 ölçümleri `make reset`'ten sağ çıkan rules/baz-degerler.yaml'dadır: eşitlenen
+    # (yeni UUID'li) gereksinimlere burada uygulanır. Dosya hatası eşitlemeyi durdurmaz.
+    from tp_core.features.requirements import baseline_dosya
+
+    keys = list(rapor.sonuc)
+    reqs = (
+        session.scalars(select(Requirement).where(Requirement.jira_key.in_(keys))).all()
+        if keys
+        else []
+    )
+    rapor.baz_dosyasi = baseline_dosya.uygula_hepsi(session, actor_name(actor), reqs)
     audit_on_commit(
-        session, actor.kullanici_adi, "requirements.sync", f"jira:{proje}", {"sonuc": rapor.sonuc}
+        session,
+        actor.kullanici_adi,
+        "requirements.sync",
+        f"jira:{proje}",
+        {"sonuc": rapor.sonuc, "baz_dosyasi": rapor.baz_dosyasi},
     )
     return rapor
 
@@ -1637,7 +1660,7 @@ def pending_fixes(s: Session, req_id: uuid.UUID) -> list[ConsistencyFinding]:
 def untrusted_check(s: Session, req_id: uuid.UUID) -> str | None:
     """Son denetim sonucu "tutarlı" demeye yetmiyorsa nedeni (fail-closed; Constitution VIII/XI).
 
-    - REPLAY-MISS: kayıtlı çıktı bu girdiye ait değil (başka bir golden'dan).
+    - REPLAY-MISS: REPLAY örnek çıktısı bu girdiye ait değil (başka bir golden'dan).
     - Dönen bulguların hiçbiri doğrulanamadı: çıktı belgeyle/kodla ilgisiz olabilir.
     """
     son = s.scalars(
@@ -1649,7 +1672,7 @@ def untrusted_check(s: Session, req_id: uuid.UUID) -> str | None:
     if son is None:
         return None
     if son.uretim_modu == "replay_miss":
-        return "son denetim REPLAY-MISS (kayıtlı çıktı bu belgeye ait değil)"
+        return "son denetim REPLAY-MISS (REPLAY örnek çıktısı bu belgeye ait değil)"
     if son.bulgu_toplam > 0 and son.dogrulanan == 0:
         return f"son denetimin {son.bulgu_toplam} bulgusunun hiçbiri doğrulanamadı"
     return None

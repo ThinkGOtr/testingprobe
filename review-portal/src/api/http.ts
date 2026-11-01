@@ -257,7 +257,7 @@ export interface IstekSecenegi {
 }
 
 export async function istek<T>(
-  method: "GET" | "POST" | "DELETE",
+  method: "GET" | "POST" | "PUT" | "DELETE",
   path: string,
   secenek: IstekSecenegi = {},
 ): Promise<T> {

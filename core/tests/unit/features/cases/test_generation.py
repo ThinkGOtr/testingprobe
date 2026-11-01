@@ -385,5 +385,7 @@ def test_case_metrics_baz_deger_ve_replay_suresi_uyarisi(
 
     monkeypatch.setenv("TP_MANUAL_BASELINE_S", "1800")
     m = api.get(f"/requirements/{rid}/case-metrics").json()
-    assert m["manuel_baz_ms"] == 1_800_000
+    # Varsayılan ölçüm değildir: manuel_baz_ms boş, değer yalnızca ikincil alanda.
+    assert m["manuel_baz_ms"] is None and m["manuel_baz_kaynagi"] == "varsayilan"
+    assert m["manuel_baz"]["varsayilan_ms"] == 1_800_000
     assert MANUEL_BAZ_YOK_UYARISI not in m["uyarilar"]

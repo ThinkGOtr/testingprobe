@@ -65,6 +65,9 @@ RESET_JOB = "demo.reset"
 AWAIT_JOB = "demo.await_web"
 POLL_ENV = "TP_DEMO_WEB_POLL_S"
 WAIT_ENV = "TP_DEMO_WEB_WAIT_S"
+# Uygulama hedef commit'i zaten yansıtsa da bu süre boyunca uygulanmamış yenileme isteği beklenir
+# (demo-web-sync konteyneri yeniden oluştururken CI sağlıkta düşmesin); süre dolunca CI açılır.
+ISTEK_GRACE_ENV = "TP_DEMO_WEB_ISTEK_BEKLEME_S"
 KAPATILACAK_ONEKLER = ("tp/", "demo/")
 KAPANIS_YORUMU = (
     "Demo sıfırlaması: main demo-baseline'a döndü; bu PR kapatıldı (sunucu isteği, denetimli)."
@@ -129,6 +132,11 @@ def _yenileyici() -> web.WebYenileyici:
 def _calisan() -> web.CalisanUygulama:
     f = _factories.get("calisan")
     return f() if f is not None else web.calisan_uygulama()
+
+
+def _uygulanmamis_istek(sha: str, en_erken: datetime) -> dict[str, Any] | None:
+    f = _factories.get("uygulanmamis_istek")
+    return f(sha, en_erken) if f is not None else web.uygulanmamis_istek(sha, en_erken)
 
 
 def _sha_dosyasi() -> str | None:
@@ -315,6 +323,16 @@ def run_await_web(ctx: JobContext, engine: Engine) -> dict[str, Any]:
             if not dosya_ok:
                 eslesiyor = False
                 neden = f"/forge/demo-app-web.sha henüz güncel değil ({dosya_neden})"
+    if eslesiyor:
+        gecen_s = (_simdi() - baslangic).total_seconds()
+        if gecen_s < _ortam_int(ISTEK_GRACE_ENV, 180):
+            istek = _uygulanmamis_istek(sha, baslangic - timedelta(seconds=60))
+            if istek is not None:
+                eslesiyor = False
+                neden = (
+                    "demo-app-web yenileme isteği henüz uygulanmadı (demo-web-sync konteyneri "
+                    "yeniden oluşturuyor olabilir); CI uygulama hazır olunca açılır"
+                )
     if eslesiyor:
         from tp_core.features.ci import enqueue_ci
 
@@ -635,12 +653,79 @@ def run_reset(ctx: JobContext, engine: Engine) -> dict[str, Any]:
 # ------------------------------------------------------------------------- durum
 
 
+MODEL_DURUMU_EYLEM = "worker.model_mode"
+
+
+def model_durumu_hesapla() -> dict[str, Any]:
+    """core-worker'ın etkin model kipi; anahtarın yalnızca VARLIĞI (değer asla) yazılır."""
+    from tp_core.gateway.config import GatewaySettings, resolve_mode
+
+    gs = GatewaySettings()
+    key = gs.anthropic_api_key.get_secret_value() if gs.anthropic_api_key else ""
+    ws = gs.anthropic_workspace_id.get_secret_value() if gs.anthropic_workspace_id else ""
+    return {
+        "ayar": gs.model_mode,
+        "mod": resolve_mode(gs),
+        "replay_strict": bool(gs.replay_strict),
+        "anahtar_var": bool(key),
+        "calisma_alani_var": bool(ws),
+        "saglayici": gs.model_provider,
+    }
+
+
+def model_durumunu_kaydet(conn: Any) -> None:
+    """Worker açılışında model kipini denetime yazar (son kayıtla aynıysa yazmaz)."""
+    yeni = model_durumu_hesapla()
+    son = conn.execute(
+        text("SELECT ozet FROM audit_event WHERE eylem = :e ORDER BY id DESC LIMIT 1"),
+        {"e": MODEL_DURUMU_EYLEM},
+    ).scalar()
+    if isinstance(son, dict) and {k: son.get(k) for k in yeni} == yeni:
+        return
+    append_audit(conn, "system", MODEL_DURUMU_EYLEM, "core-worker", yeni)
+
+
+def model_durumu_oku(session: Session) -> dict[str, Any] | None:
+    """`/demo/status` → `model`: core-worker'ın son açılış bildirimi (yoksa null = bilinmiyor)."""
+    row = session.execute(
+        text("SELECT ozet, zaman FROM audit_event WHERE eylem = :e ORDER BY id DESC LIMIT 1"),
+        {"e": MODEL_DURUMU_EYLEM},
+    ).first()
+    if row is None or not isinstance(row[0], dict):
+        return None
+    ozet = dict(row[0])
+    ozet["aciklama"] = f"core-worker açılışında bildirdi ({row[1].isoformat()})"
+    ozet["zaman"] = row[1].isoformat()
+    return ozet
+
+
+def degerlendirme_durumu() -> list[dict[str, Any]] | dict[str, Any]:
+    """Prompt paketlerinin değerlendirme durumu (rules/evaluations.yaml; "canlı değerlendirme
+    bekliyor" dürüst etiketiyle). Okunamazsa `{hata}` (portal "bilinmiyor" gösterir)."""
+    from tp_core.gateway.config import find_rules_dir
+    from tp_core.gateway.evaluation import evaluation_statuses
+
+    try:
+        st = evaluation_statuses(find_rules_dir())
+    except Exception as exc:
+        return {"hata": str(exc)[:200]}
+    return [
+        {"paket": s.bundle_id, "surum": s.prompt_version, "durum": s.status, "etiket": s.label}
+        for s in sorted(st.values(), key=lambda s: s.bundle_id)
+    ]
+
+
 def durum(forge: Any | None = None, session: Session | None = None) -> dict[str, Any]:
     forge = forge or _forge()
     out: dict[str, Any] = {"forge": {}, "uygulama": {}, "web_yenileme_istegi": None}
+    out["degerlendirme"] = degerlendirme_durumu()
     yerel = _yerel_forge_mu(forge)
     out["locator_demo"] = {"destekleniyor": yerel, "neden": None if yerel else GITHUB_KIRILMA_YOK}
     if session is not None:
+        try:
+            out["model"] = model_durumu_oku(session)
+        except Exception:  # durum ucu yine yanıt verir; model bilinmiyor
+            out["model"] = None
         try:
             out["onarim_on_kosulu"] = onarim_on_kosulu(session)
         except Exception as exc:  # durum ucu yine yanıt verir

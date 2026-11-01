@@ -1,0 +1,186 @@
+{
+  "bundle": "bug-draft",
+  "version": 2,
+  "date": "2026-11-01",
+  "model": "claude-haiku-5-5",
+  "provider": "anthropic",
+  "mode": "live",
+  "passed": 4,
+  "total": 4,
+  "runs": 1,
+  "cases": [
+    {
+      "id": "c3-6-adet",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "summary": "Sepet: 6 adet Portakal Gazozu 1L sepete eklendiğinde bedava adet 0 beklenirken 1 görünüyor",
+        "steps": [
+          "1. Giriş sayfasını aç.",
+          "2. bayi1 / Demo123! ile giriş yap; katalog sayfasında \"Merkez Bayi\" oturumu görüntülenmeli.",
+          "3. \"Portakal Gazozu 1L\" (P-001) için 6 adet gir ve \"Sepete ekle\" butonuna bas; sepet sayacı 6 olmalı.",
+          "4. Üst menüden Sepetim sayfasına git.",
+          "5. P-001 satırındaki bedava adet değerini kontrol et; 6 adette 0 beklenir, ancak 1 görünmektedir."
+        ],
+        "expected": "P-001 satırında adet 6, bedava adet 0; ara toplam 150,00 TL, indirim 0,00 TL, toplam 150,00 TL",
+        "actual": "P-001 satırında bedava adet 1 görüntülendi (beklenen: 0). Gerçekleşen değer test assertion'ında \"1\" olarak alındı; tutar değerleri bu koşuda ölçülmedi.",
+        "environment": "Kampanya kırılması (BREAK_CAMPAIGN): kapalı. Demo uygulaması, kullanıcı bayi1 (Merkez Bayi), tekrarlı koşularda tutarlı (unexpected=3), sağlık kontrolü başarılı.",
+        "evidence": [
+          {
+            "kind": "trace",
+            "ref": "kanit:trace"
+          },
+          {
+            "kind": "screenshot",
+            "ref": "kanit:screenshot"
+          },
+          {
+            "kind": "log",
+            "ref": "kanit:error_context"
+          },
+          {
+            "kind": "code",
+            "ref": "pages/cart/cart.page.ts:39"
+          },
+          {
+            "kind": "code",
+            "ref": "tests/generated/tpd-1-c3.spec.ts:22"
+          }
+        ],
+        "story_key": "TPD-1",
+        "test_case_key": null,
+        "severity_suggestion": "critical",
+        "labels": [
+          "AI-generated"
+        ]
+      },
+      "mode": "live",
+      "error": null
+    },
+    {
+      "id": "kirma-7-adet",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "summary": "Sepet: 7 adet Portakal Gazozu 1L (P-001) için 6 al 1 bedava kampanyasında bedava satır adedi 0 görünüyor, 1 bekleniyordu",
+        "steps": [
+          "Bayi giriş ekranında bayi1 / Demo123! ile giriş yapılır (kredi limiti 2.000,00 TL, kampanya kontrolü için yeterli limit).",
+          "Katalogda \"Portakal Gazozu 1L\" (P-001) ürünü için 7 adet girilip \"Sepete ekle\" ile sepete eklenir.",
+          "\"Sepetim\" ekranı açılır ve P-001 satırındaki bedava adet (cart-line-free-P-001) kontrol edilir.",
+          "Not: Test verisinde min_siparis_tutari 750,00 TL olarak tanımlı; sepet tutarı bu eşiğin altında kalabilir, bu adım yalnızca sepet satırındaki bedava adedi doğrulamak içindir."
+        ],
+        "expected": "\"1\"",
+        "actual": "\"0\"",
+        "environment": "Demo uygulaması (testdata:demo-app); test verisi bayi1 / Demo123!; zaman aşımı 5000 ms; hata 2 kez tekrarlandı ve tutarlı. Kampanya kırılması (BREAK_CAMPAIGN) açık iken üretilen hata. Test adındaki toplam 150,00 TL ile test verisindeki birim fiyat (25,00 TL x 7 = 175,00 TL) uyuşmuyor; tester doğrulamalı.",
+        "evidence": [
+          {
+            "kind": "trace",
+            "ref": "kanit:trace"
+          },
+          {
+            "kind": "screenshot",
+            "ref": "kanit:screenshot"
+          },
+          {
+            "kind": "log",
+            "ref": "kanit:error_context"
+          },
+          {
+            "kind": "code",
+            "ref": "tests/cart.spec.ts:28"
+          },
+          {
+            "kind": "code",
+            "ref": "pages/cart/cart.page.ts:39"
+          }
+        ],
+        "story_key": "TPD-1",
+        "test_case_key": null,
+        "severity_suggestion": "critical",
+        "labels": [
+          "AI-generated"
+        ]
+      },
+      "mode": "live",
+      "error": null
+    },
+    {
+      "id": "f2-kampanya-bulgusu",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "summary": "Kampanya: 6 adet P-001 alımında bedava adet 1 beklenirken kod 6 adette 1 bedava veriyor, doküman 7 adette 1 bedava diyor",
+        "steps": [
+          "Giriş sayfasında bayi1 / Demo123! ile oturum açın.",
+          "Katalogdan \"Portakal Gazozu 1L\" için 6 adet seçip Sepete ekleyin.",
+          "Sepetim sayfasında \"6 al 1 bedava\" kampanyasının bedava adet alanını kontrol edin.",
+          "Not: Bayi1 kredi limiti (2.000,00 TL) ve min_siparis_tutari (750,00 TL) aşılmadığı için sipariş kuralları engel oluşturmaz; 6 adet x 25,00 TL = 150,00 TL sepet tutarı."
+        ],
+        "expected": "Doküman AC2 kuralına göre 6 adet alımda bedava adet 0 (7 adette 1 bedava)",
+        "actual": "Kod 6 adet alımda 1 adet bedava veriyor (5 öde + 1 bedava); bulgu kod kaynağına göre 6 adetlik siparişte 1 adet (25,00 TL) bedava ürün veriliyor",
+        "environment": "Demo uygulaması (test verisi: bayi1, P-001, kampanya 6AL1BEDAVA, min_siparis_tutari 750,00 TL). Kampanya kırılması (BREAK_CAMPAIGN) durumu girdide belirtilmedi.",
+        "evidence": [
+          {
+            "kind": "code",
+            "ref": "api/src/demoapp_api/campaign.py:23"
+          }
+        ],
+        "story_key": "TPD-1",
+        "test_case_key": null,
+        "severity_suggestion": "major",
+        "labels": [
+          "AI-generated"
+        ]
+      },
+      "mode": "live",
+      "error": null
+    },
+    {
+      "id": "f4-kredi-limiti-bulgusu",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "summary": "Sepet: sipariş tutarı kredi limitini aşınca \"Kredi limiti aşıldı\" uyarısı üretilmiyor, sipariş onaylanabiliyor",
+        "steps": [
+          "1. Giriş yap ekranında bayi2 / Demo123! ile giriş yapılır (kredi limiti 500,00 TL; ayarlarda min_siparis_tutari 750,00 TL).",
+          "2. Katalog ekranında \"Şeftalili Soğuk Çay 1L\" için 30 adet sepete eklenir (30 x 30,00 TL = 900,00 TL; minimum tutarı geçer, kredi limitini aşar).",
+          "3. Sepetim ekranında sepet tutarı ve uyarı mesajları kontrol edilir.",
+          "4. Siparişi onayla butonuna basılır.",
+          "Neden: Adım 2'deki tutar minimum sipariş tutarını (750,00 TL) geçtiği için minimum sipariş kuralı engel olmaz; sepetteki tek kural kredi limiti kontrolü olmalıdır."
+        ],
+        "expected": "Sepet tutarı (900,00 TL) bayi kredi limitini (500,00 TL) aştığı için \"Kredi limiti aşıldı\" uyarısı gösterilir ve sipariş onaylanamaz.",
+        "actual": "Kod incelemesinde sepet hesabında yalnızca minimum sipariş uyarısı üretildiği görüldü; kredi limiti kontrolü bulunmuyor (api/src/demoapp_api/pricing.py:97 yalnızca UYARI_MIN_SIPARIS uyarısını ekliyor). Bu bulgu kod incelemesine dayanır; UI üzerinde çalıştırılarak doğrulanmamıştır.",
+        "environment": "Demo uygulaması test verisi: bayi2 (Sahil Bayi, kredi limiti 500,00 TL), min_siparis_tutari 750,00 TL. Kampanya kırılması (BREAK_CAMPAIGN) durumu girdide belirtilmemiştir.",
+        "evidence": [
+          {
+            "kind": "code",
+            "ref": "api/src/demoapp_api/pricing.py:97"
+          },
+          {
+            "kind": "data",
+            "ref": "testdata:demo-app"
+          }
+        ],
+        "story_key": "TPD-1",
+        "test_case_key": null,
+        "severity_suggestion": "critical",
+        "labels": [
+          "AI-generated"
+        ]
+      },
+      "mode": "live",
+      "error": null
+    }
+  ],
+  "tamamlandi": true,
+  "set_vaka_sayisi": 4,
+  "kosu_sayisi": 4,
+  "maliyet_usd": 0.002864,
+  "butce_usd": 1.5,
+  "calisma_alani_basligi": true,
+  "guardrails_version": 1,
+  "kayit_adaylari": null,
+  "cagri_kaydi": "bug-draft-v2-2026-11-01.calls.jsonl",
+  "cagri_sayisi": 4,
+  "cagri_defteri": "/Users/gokhansipahi/projects/agent-probe/testing-probe/exports/eval-live/ai_call.jsonl"
+}

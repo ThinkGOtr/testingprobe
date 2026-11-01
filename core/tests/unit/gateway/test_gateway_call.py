@@ -55,7 +55,7 @@ def test_live_success_records_and_costs(make_gateway, rules_dir, recorder) -> No
     assert row["id"] == result.call_id
     assert row["mod"] == "live"
     assert row["model"] == "claude-sonnet-5-5"
-    assert row["surum"] == "requirement-review@v2"
+    assert row["surum"] == "requirement-review@v3"
     assert row["sema_gecerli"] is True
     assert row["deneme"] == 1
     assert len(row["bundle_hash"]) == 64

@@ -2247,3 +2247,151 @@ mark.kaynak-deger {
   width: 100%;
   box-sizing: border-box;
 }
+
+/* ---------------------------------------------------------------- Faz 5: manuel baz değer */
+.buyuk-sayi-kucuk {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.baz-form {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 8px;
+}
+.baz-sure {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0;
+}
+.baz-sure label,
+.baz-not-alani {
+  display: grid;
+  gap: 4px;
+}
+.baz-sure label {
+  width: 7.5rem;
+}
+.baz-not {
+  white-space: pre-wrap;
+}
+.hazirlik-tablo td .cip {
+  margin-left: 4px;
+}
+
+/* ---------------------------------------------------------------- Faz 5: demo yol haritası */
+.yh-durum-izgara {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 960px) {
+  .yh-durum-izgara {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.yh-adimlar {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: none;
+}
+.yh-adim {
+  display: grid;
+  grid-template-columns: 2.2rem minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  align-items: start;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.yh-adim:first-child {
+  border-top: none;
+}
+.yh-no {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  border: 2px solid var(--border-strong);
+  color: var(--text-2);
+  background: var(--surface);
+}
+.yh-adim.yh-tamam .yh-no {
+  border-color: var(--ok);
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.yh-adim.yh-suruyor .yh-no {
+  border-color: var(--info);
+  background: var(--info-bg);
+  color: var(--info);
+}
+.yh-adim.yh-engel .yh-no {
+  border-color: var(--err);
+  background: var(--err-bg);
+  color: var(--err);
+}
+.yh-adim.yh-yedek .yh-no {
+  border-color: var(--warn);
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.yh-baslik {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  font-weight: 600;
+}
+.yh-tur {
+  font-weight: 500;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.yh-kanit {
+  margin: 2px 0 0;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+.yh-ipucu {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+  color: var(--text-2);
+}
+.yh-baglanti {
+  white-space: nowrap;
+  font-size: 0.875rem;
+}
+@media (max-width: 640px) {
+  .yh-adim {
+    grid-template-columns: 2.2rem minmax(0, 1fr);
+  }
+  .yh-baglanti {
+    grid-column: 2;
+    white-space: normal;
+  }
+}
+.yh-ozet {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+}
+.kanit-gruplari {
+  display: grid;
+  gap: 4px;
+}
+.kanit-grubu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+}

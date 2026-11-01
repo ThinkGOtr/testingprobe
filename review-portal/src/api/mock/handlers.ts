@@ -19,6 +19,7 @@ import type {
   Kosu,
   KosuDetay,
   Kullanici,
+  ManuelBaz,
   PullRequest,
   McpToken,
   McpTokenKaydi,
@@ -61,6 +62,8 @@ import {
   type MockVeri,
 } from "./fixtures";
 import { mockOlayYayinla } from "./olaylar";
+import { kirmaTaslagiMi } from "../../lib/yolHaritasi";
+import { BAZ_NOT_EN_AZ, BAZ_NOT_EN_COK, BAZ_UST_SINIR_S, kazancOzeti } from "../uyumFaz5";
 
 const KULLANICILAR: Record<string, Kullanici> = {
   analist: { id: "u-analist", kullanici_adi: "analist", rol: "analyst" },
@@ -847,6 +850,15 @@ function caseMetrikleri(rid: string): CaseMetrikleri {
       return a;
     }, {}),
     kapsanmayan_ac: kapsanmayan,
+    // core ile aynı: story ölçümü → (mock'ta varsayılan yok) → ölçülmedi; kaynak her zaman bildirilir.
+    ...(() => {
+      const b = manuelBaz(rid);
+      return {
+        manuel_baz_ms: b.deger_s === null ? null : b.deger_s * 1000,
+        manuel_baz_kaynagi: b.kaynak === "olculmedi" ? null : b.kaynak,
+        manuel_baz: b,
+      };
+    })(),
   };
 }
 
@@ -1412,7 +1424,8 @@ const KULE_KAYNAKLARI: KontrolKulesi["kaynaklar"] = {
   kabul_orani: "review: ilk karar approve ya da küçük düzeltmeli edit / üretilen case (§12)",
   script_ilk_review: "script: değişiklik istenmeden kabul edilen ve CI'da geçen / üretilen (pass@1 ayrı)",
   hazirlik_suresi: "ai_call.sure_ms (AI) + case_goruntuleme→karar aralıkları (review)",
-  manuel_baz: "TP_MANUAL_BASELINE_S (F0 ölçümü); boşsa ölçülmedi",
+  manuel_baz: "story başına requirement_baz_deger (giren, zaman, not) → yoksa TP_MANUAL_BASELINE_S 'varsayılan' etiketiyle → ikisi de yoksa ölçülmedi",
+  kazanc_orani: "1 − Σ(AI + review süresi) / Σ(manuel baz), yalnızca story'ye özel ölçülmüş baz değerli (kaynak 'olcum'; varsayılan kazanca girmez) story'ler",
   maliyet: "ai_call.maliyet_usd (REPLAY çağrıları 0)",
   a11y: "@axe-core/playwright · WCAG 2.2 AA · demo story sayfaları",
   son_kosular: "run tablosu (yerel test-runner, GitHub Actions, Sauce Labs)",
@@ -1472,6 +1485,13 @@ function kontrolKulesi(): KontrolKulesi {
           otomasyon_kapsami: gc.length ? otomatik / gc.length : null,
           son_sonuc: son ? (son.durum === "failed" ? "failed" : "passed") : "none",
           acik_bug: veri.bugTaslaklari.filter((b) => b.icerik.story_key === g.jira_key && b.durum === "published").length,
+          // core: yayınlanmamış (taslak/onaylı), kasıtlı kırma koşusundan gelmeyen taslaklar.
+          bug_taslagi: veri.bugTaslaklari.filter(
+            (b) =>
+              b.icerik.story_key === g.jira_key &&
+              (b.durum === "draft" || b.durum === "approved") &&
+              !kirmaTaslagiMi(b, veri.hatalar, veri.kosular),
+          ).length,
           // core `_acik_defect_adayi`: case'in en son script'i defect adayı (blocked) ise sayılır.
           acik_defect_adayi: gc.filter((c) => {
             const son = veri.scriptler
@@ -1498,6 +1518,7 @@ function kontrolKulesi(): KontrolKulesi {
       cagri_sayisi: 14 + caseler.length,
       replay_cagri: caseler.filter((c) => c.mode !== "live").length + 14,
     },
+    hazirlik: hazirlikSatirlari(),
     a11y: {
       ihlal: 3,
       kritik: 1,
@@ -1509,8 +1530,81 @@ function kontrolKulesi(): KontrolKulesi {
       ],
     },
     kaynaklar: KULE_KAYNAKLARI,
-    uyarilar: ["Manuel baz değer girilmedi (TP_MANUAL_BASELINE_S); hazırlık süresi kazancı hesaplanmaz.", "AI süresi REPLAY'de ölçülmez (kayıtlı çıktı, süre 0)."],
+    uyarilar: [
+      kazancOzeti(hazirlikSatirlari()).hesaplanan
+        ? "Kazanç yalnızca story için ölçülmüş baz değerden hesaplanır."
+        : "Story için ölçülmüş manuel baz değer yok; hazırlık süresi kazancı hesaplanmaz.",
+      "AI süresi REPLAY'de ölçülmez; 'AI + review' süresi yalnız review süresidir.",
+    ],
   };
+}
+
+// ------------------------------------------------------------------ manuel baz değer (Faz 5)
+
+/** Story'nin baz değeri: yalnızca portaldan girilmiş ölçüm; örnek veride varsayılan (ortam) değer yok. */
+function manuelBaz(id: string): ManuelBaz {
+  return veri.manuelBazlar?.[id] ?? { deger_s: null, kaynak: "olculmedi", giren: null, zaman: null, not: null };
+}
+
+function bazDegerKaydet(id: string, govde: unknown): ManuelBaz {
+  const k = rolGerekli("analyst", "po");
+  const g = bul(veri.gereksinimler, id, "Gereksinim");
+  const b = (govde && typeof govde === "object" ? govde : {}) as Record<string, unknown>;
+  const deger = b.deger_s;
+  if (typeof deger !== "number" || !Number.isInteger(deger) || deger < 1 || deger > BAZ_UST_SINIR_S) {
+    throw new ApiError(422, `Baz değer 1 sn ile ${BAZ_UST_SINIR_S / 3600} saat arasında tam saniye olmalı.`);
+  }
+  const not = typeof b.not === "string" ? b.not.trim() : "";
+  if (not.replace(/\s/g, "").length < BAZ_NOT_EN_AZ || not.length > BAZ_NOT_EN_COK) {
+    throw new ApiError(422, `Ölçüm notu ${BAZ_NOT_EN_AZ}–${BAZ_NOT_EN_COK} karakter olmalı (kim, nasıl ölçtü).`);
+  }
+  const kayit: ManuelBaz = { deger_s: deger, kaynak: "olcum", giren: k.kullanici_adi, zaman: simdi(), not };
+  veri.manuelBazlar = { ...(veri.manuelBazlar ?? {}), [g.id]: kayit };
+  denetimEkle("requirement.baseline_set", g.jira_key ?? g.id, `Manuel baz değer: ${deger} sn (${not})`);
+  kaydet();
+  mockOlayYayinla({ type: "requirement.updated", id: g.id, data: { requirement_id: g.id } });
+  return kayit;
+}
+
+function bazDegerSil(id: string): ManuelBaz {
+  rolGerekli("analyst", "po");
+  const g = bul(veri.gereksinimler, id, "Gereksinim");
+  if (!veri.manuelBazlar?.[g.id]) throw new ApiError(404, "Bu story için girilmiş baz değer yok.");
+  const { [g.id]: _silinen, ...kalan } = veri.manuelBazlar;
+  veri.manuelBazlar = kalan;
+  denetimEkle("requirement.baseline_cleared", g.jira_key ?? g.id, "Manuel baz değer silindi");
+  kaydet();
+  mockOlayYayinla({ type: "requirement.updated", id: g.id, data: { requirement_id: g.id } });
+  return manuelBaz(g.id);
+}
+
+/** core `hazirlik` eşi: case üretilmiş her story için AI + review süresi ve baz değer. */
+function hazirlikSatirlari(): KontrolKulesi["hazirlik"] {
+  return veri.gereksinimler
+    .filter((g) => veri.caseler.some((c) => c.requirement_id === g.id && c.ai_generated))
+    .map((g) => {
+      const cs = veri.caseler.filter((c) => c.requirement_id === g.id && c.ai_generated);
+      const replay = cs.every((c) => c.mode !== "live");
+      const ai = replay ? null : cs.reduce((a, c) => a + c.ai_sure_ms, 0);
+      const rv = cs.some((c) => c.review_sure_ms !== null) ? cs.reduce((a, c) => a + (c.review_sure_ms ?? 0), 0) : null;
+      const b = manuelBaz(g.id);
+      const baz = b.deger_s !== null ? b.deger_s * 1000 : null;
+      const toplam = ai !== null && rv !== null ? ai + rv : null;
+      return {
+        requirement_id: g.id,
+        story_key: g.jira_key,
+        ai_sure_ms: ai,
+        review_sure_ms: rv,
+        toplam_ms: toplam,
+        ai_olculmedi: ai === null,
+        review_olculmedi: rv === null,
+        manuel_baz_ms: baz,
+        baz_kaynagi: b.kaynak,
+        kazanc_orani: baz && toplam !== null ? 1 - toplam / baz : null,
+        // Core ile aynı: yalnızca ölçülmüş baz + AI + review başlık kazancına girer (REPLAY girmez).
+        kazanca_girer: !!(baz && b.kaynak === "olcum" && toplam !== null && !replay),
+      };
+    });
 }
 
 function denetim(q: URLSearchParams): DenetimYaniti {
@@ -1600,9 +1694,15 @@ const ROTALAR: Rota[] = [
       const g = bul(veri.gereksinimler, decodeURIComponent(m[1]), "Gereksinim");
       sayaclariGuncelle(g);
       // Kanıtı doğrulanamayıp elenen bulgular gösterilmez; yalnızca sayısı (core ile aynı alan).
-      return { ...g, elenen_bulgu: veri.bulgular.filter((b) => b.requirement_id === g.id && b.durum === "discarded").length };
+      return {
+        ...g,
+        elenen_bulgu: veri.bulgular.filter((b) => b.requirement_id === g.id && b.durum === "discarded").length,
+        manuel_baz: manuelBaz(g.id),
+      };
     },
   ],
+  ["PUT", /^\/requirements\/([^/]+)\/baseline$/, (m, _q, g) => bazDegerKaydet(decodeURIComponent(m[1]), g)],
+  ["DELETE", /^\/requirements\/([^/]+)\/baseline$/, (m) => bazDegerSil(decodeURIComponent(m[1]))],
   ["POST", /^\/requirements\/([^/]+)\/review$/, (m) => incelemeBaslat(decodeURIComponent(m[1]))],
   [
     "GET",
@@ -1672,6 +1772,20 @@ const ROTALAR: Rota[] = [
     (m) => {
       girisGerekli();
       return bul(veri.kosular, decodeURIComponent(m[1]), "Koşu");
+    },
+  ],
+  [
+    "GET",
+    /^\/failures$/,
+    (_m, q) => {
+      girisGerekli();
+      const sinif = q.get("sinif");
+      const script = q.get("script_id");
+      const limit = Math.min(200, Number(q.get("limit") ?? 50) || 50);
+      return veri.hatalar
+        .filter((h) => (!sinif || h.sinif === sinif) && (!script || h.script_id === script))
+        .sort((a, b) => b.zaman.localeCompare(a.zaman))
+        .slice(0, limit);
     },
   ],
   [
@@ -1759,6 +1873,16 @@ const ROTALAR: Rota[] = [
         forge: { main: demoKirik ? "d3b1c0ffee42" : "9c41e2b07a11", testid: demoKirik ? "cart-add" : "add-to-cart", baseline: "9c41e2b07a11", main_baseline_mi: !demoKirik },
         uygulama: { sha: demoKirik ? "d3b1c0ffee42" : "9c41e2b07a11", kaynak: "build.json", main_ile_eslesiyor: true, neden: null },
         web_yenileme_istegi: null,
+        locator_demo: { destekleniyor: true, neden: null },
+        onarim_on_kosulu: { hazir: true, son_yesil_kosu: null, yonerge: null },
+        // Örnek veri: model çağrısı yok; tüm çıktılar kayıtlı (REPLAY) golden'lardan.
+        model: { mod: "replay", replay_strict: false, anahtar_var: false, aciklama: "Örnek veri: model çağrısı yapılmaz." },
+        degerlendirme: ["requirement-review", "consistency-check", "case-generation", "verify-and-map", "triage", "bug-draft", "dup-rank"].map((paket) => ({
+          paket,
+          surum: null,
+          durum: "pending",
+          etiket: "canlı değerlendirme bekliyor",
+        })),
       };
     },
   ],

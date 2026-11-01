@@ -59,7 +59,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="Bayi Sipariş Portalı API", version=__version__, lifespan=lifespan)
 
-SessionDep = Annotated[Session, Depends(db.get_session)]
+SessionDep = Annotated[Session, Depends(db.get_session, scope="function")]  # commit yanıttan önce
 
 
 # --------------------------------------------------------------------------- yardımcılar

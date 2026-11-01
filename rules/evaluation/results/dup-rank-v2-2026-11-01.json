@@ -1,0 +1,174 @@
+{
+  "bundle": "dup-rank",
+  "version": 2,
+  "date": "2026-11-01",
+  "model": "claude-haiku-5-5",
+  "provider": "anthropic",
+  "mode": "live",
+  "passed": 6,
+  "total": 6,
+  "runs": 1,
+  "cases": [
+    {
+      "id": "c3-seed",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "candidates": [
+          {
+            "key": "TPD-5",
+            "rank": 1,
+            "likelihood": "high",
+            "rationale": "Aynı ürün (P-001), aynı 6 adet koşulu ve aynı kampanya; beklenen bedava 0 ile gerçekleşen 1 karşıt durumu aynı semptomu gösteriyor."
+          },
+          {
+            "key": "TPD-6",
+            "rank": 2,
+            "likelihood": "low",
+            "rationale": "Sipariş geçmişi tarih sıralaması; kampanya ve sepet hesaplamasıyla ilgisi yok."
+          }
+        ],
+        "recommendation": "link",
+        "link_key": "TPD-5"
+      },
+      "mode": "live",
+      "error": null
+    },
+    {
+      "id": "c3-f4-yayimlandi",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "candidates": [
+          {
+            "key": "TPD-5",
+            "rank": 1,
+            "likelihood": "high",
+            "rationale": "Aynı kampanya (6 al 1 bedava), aynı ürün P-001 ve 6 adet; beklenen 0 bedava adet ile gerçekleşen 1 bedava adet aynı semptom."
+          },
+          {
+            "key": "TPD-8",
+            "rank": 2,
+            "likelihood": "low",
+            "rationale": "Sepetle ilgili olsa da kredi limiti uyarısı konusu; kampanya ve bedava ürün hesabıyla ilgisi yok."
+          }
+        ],
+        "recommendation": "link",
+        "link_key": "TPD-5"
+      },
+      "mode": "live",
+      "error": null
+    },
+    {
+      "id": "f2-seed",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "candidates": [
+          {
+            "key": "TPD-5",
+            "rank": 1,
+            "likelihood": "high",
+            "rationale": "Aynı kampanya (6 al 1 bedava), aynı ürün ve 6 adet; her ikisi de bedava adedin erken verilmesini bildiriyor, aynı semptom."
+          },
+          {
+            "key": "TPD-6",
+            "rank": 2,
+            "likelihood": "low",
+            "rationale": "Sipariş geçmişi tarih sıralaması; kampanya indirimi ile ilgisiz farklı alan."
+          }
+        ],
+        "recommendation": "link",
+        "link_key": "TPD-5"
+      },
+      "mode": "live",
+      "error": null
+    },
+    {
+      "id": "kirma-seed",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "candidates": [
+          {
+            "key": "TPD-5",
+            "rank": 1,
+            "likelihood": "medium",
+            "rationale": "Aynı kampanya alanı (bedava ürün), ancak farklı miktar (6 adet, 7 yerine) ve ters belirti: TPD-5 erken bedava veriyor, bu hatada bedava satır beklenen 1 yerine 0."
+          },
+          {
+            "key": "TPD-6",
+            "rank": 2,
+            "likelihood": "low",
+            "rationale": "Sipariş geçmişi tarih sıralaması, kampanya ve sepet hesaplamasıyla ilgisiz farklı bir sayfa."
+          }
+        ],
+        "recommendation": "new",
+        "link_key": null
+      },
+      "mode": "live",
+      "error": null
+    },
+    {
+      "id": "kirma-onceki-kirma-bug",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "candidates": [
+          {
+            "key": "TPD-12",
+            "rank": 1,
+            "likelihood": "high",
+            "rationale": "Aynı ürün (Portakal Gazozu), aynı adet (7) ve aynı beklenti: bedava 1 bekleniyor, 0 görünüyor."
+          },
+          {
+            "key": "TPD-5",
+            "rank": 2,
+            "likelihood": "medium",
+            "rationale": "Aynı kampanya alanı ama farklı durum: 6 adette bedava 1 verilmesi (ters belirti) ve farklı adet koşulu."
+          }
+        ],
+        "recommendation": "link",
+        "link_key": "TPD-12"
+      },
+      "mode": "live",
+      "error": null
+    },
+    {
+      "id": "f4-seed",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "candidates": [
+          {
+            "key": "TPD-5",
+            "rank": 1,
+            "likelihood": "low",
+            "rationale": "Kampanya sepet hesabı ile ilgili ama farklı belirti: bedava ürün erken veriliyor; kredi limiti uyarısı yok."
+          },
+          {
+            "key": "TPD-6",
+            "rank": 2,
+            "likelihood": "low",
+            "rationale": "Sipariş geçmişi tarih sıralaması; kredi limiti kontrolü ve sepet uyarısıyla ilgisi yok."
+          }
+        ],
+        "recommendation": "new",
+        "link_key": null
+      },
+      "mode": "live",
+      "error": null
+    }
+  ],
+  "tamamlandi": true,
+  "set_vaka_sayisi": 6,
+  "kosu_sayisi": 6,
+  "maliyet_usd": 0.002001,
+  "butce_usd": 1.5,
+  "calisma_alani_basligi": true,
+  "guardrails_version": 1,
+  "kayit_adaylari": null,
+  "cagri_kaydi": "dup-rank-v2-2026-11-01.calls.jsonl",
+  "cagri_sayisi": 6,
+  "cagri_defteri": "/Users/gokhansipahi/projects/agent-probe/testing-probe/exports/eval-live/ai_call.jsonl"
+}

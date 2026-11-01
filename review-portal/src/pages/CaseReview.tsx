@@ -2,10 +2,12 @@ import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
-import type { CaseMetrikleri, TestCase } from "../api/types";
+import type { BazKaynagi, CaseMetrikleri, ManuelBaz, TestCase } from "../api/types";
+import { bazKaynagiUyarla, manuelBazUyarla } from "../api/uyumFaz5";
 import { useOturum } from "../auth";
+import { BAZ_KAYNAGI } from "../components/BazDegerKarti";
 import { CaseKarti } from "../components/CaseKarti";
-import { BosDurum, HataKutusu, Kart, Metrik, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { BosDurum, Cip, HataKutusu, Kart, Metrik, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { HedefOlcer } from "../components/Grafikler";
 import { useGeciktirilmis, useVeri } from "../hooks";
 import { dolar, sure, yuzde } from "../lib/format";
@@ -21,15 +23,62 @@ const kucukMu = (c: TestCase) => c.kucuk_duzeltme ?? (c.duzeltme_olcusu ?? 1) <=
  * kaydı (`karar`) önceki kararı göstermeye devam eder — bu yüzden bekleyen = `draft`.
  * §12 kabul = onay + küçük düzeltmeyle onay / üretilen (yerel yaklaşık; çekirdek ölçümü varsa o).
  */
+/** Core `TP_CT_REVIEW_MIN_S` varsayılanı (5 sn): bunun altındaki review süresi betik/API onayıdır, insan review'u sayılmaz. */
+export const REVIEW_TABANI_MS = 5000;
+
+export interface CaseBazi extends ManuelBaz {
+  /** Baz değer (ms); ölçülmediyse null. Varsayılan (ortam) değer de burada durur ama kazanca girmez. */
+  ms: number | null;
+}
+
 /**
- * Story başına manuel case hazırlama süresi (baz değer, TEKNIK-TASARIM §1.6/§12). Önce çekirdeğin
- * `manuel_baz_ms`'i; yoksa portal derleme ayarı `VITE_MANUEL_BAZ_DK` (dakika). İkisi de yoksa
- * null: baz değer uydurulmaz, "ölçülmedi" yazılır.
+ * Story başına manuel case hazırlama süresi (baz değer, TEKNIK-TASARIM §1.6/§12) ve KAYNAĞI.
+ * Çekirdek `case-metrics` → `manuel_baz {deger_s, kaynak, giren, zaman, not}` (yoksa
+ * `manuel_baz_ms` + `manuel_baz_kaynagi`). Kaynak bildirmeyen değer ölçüm sayılmaz (varsayılan).
+ * Portal kendi baz değerini üretmez (derleme ayarı yok): değer yoksa "ölçülmedi".
  */
-export function manuelBazMs(m?: CaseMetrikleri | null, ortam: string | undefined = import.meta.env.VITE_MANUEL_BAZ_DK): number | null {
-  if (m && typeof m.manuel_baz_ms === "number" && m.manuel_baz_ms > 0) return m.manuel_baz_ms;
-  const dk = ortam ? Number(ortam.replace(",", ".")) : NaN;
-  return Number.isFinite(dk) && dk > 0 ? Math.round(dk * 60_000) : null;
+export function caseBazi(m?: CaseMetrikleri | null): CaseBazi {
+  const yok: CaseBazi = { ms: null, deger_s: null, kaynak: "olculmedi", giren: null, zaman: null, not: null };
+  if (!m) return yok;
+  const ic = m.manuel_baz !== undefined && m.manuel_baz !== null ? manuelBazUyarla(m.manuel_baz) : undefined;
+  if (ic) return { ...ic, ms: ic.deger_s === null ? null : Math.round(ic.deger_s * 1000) };
+  const ms = typeof m.manuel_baz_ms === "number" && m.manuel_baz_ms > 0 ? m.manuel_baz_ms : null;
+  if (ms === null) return yok;
+  const ham = m.manuel_baz_kaynagi;
+  const kaynak: BazKaynagi = ham === undefined || ham === null ? "varsayilan" : bazKaynagiUyarla(ham);
+  if (kaynak === "olculmedi") return yok;
+  return { ms, deger_s: ms / 1000, kaynak, giren: null, zaman: null, not: null };
+}
+
+export const KAZANC_REPLAY_NEDENI = "REPLAY: AI süresi ölçülmedi — kazanç hesaplanmaz (verimlilik iddiası değil)";
+
+/**
+ * Story kazancı (Kontrol Kulesi / core `kazanc_orani` ile aynı kural): yalnızca story'ye özel
+ * ÖLÇÜLMÜŞ baz değerle (`olcum`) ve insan review süresi ölçülmüşse (≥ taban) hesaplanır.
+ * Varsayılan baz değer kazanca girmez; 5 sn altı (betik/API) review ölçüm sayılmaz; AI süresi
+ * ölçülmemişse (REPLAY) oran hesaplanmaz.
+ */
+export function caseKazanci(
+  baz: CaseBazi,
+  ozet: { aiSure: number; reviewSure: number; olculenReview: number },
+  aiOlculmedi: boolean,
+  taban = REVIEW_TABANI_MS,
+): { oran: number | null; reviewOlculdu: boolean; hazirlikMs: number | null; neden: string | null } {
+  const reviewOlculdu = ozet.olculenReview > 0 && ozet.reviewSure >= taban;
+  const hazirlikMs = reviewOlculdu ? (aiOlculmedi ? ozet.reviewSure : ozet.aiSure + ozet.reviewSure) : null;
+  let neden: string | null = null;
+  if (baz.kaynak === "olculmedi" || baz.ms === null) neden = "baz değer ölçülmedi — kazanç hesaplanmaz";
+  else if (baz.kaynak !== "olcum") neden = "ölçülmedi — varsayılan baz değer kazanca girmez";
+  else if (!reviewOlculdu)
+    neden =
+      ozet.olculenReview > 0
+        ? `review ${taban / 1000} sn altı (betik/API onayı) — kazanç hesaplanmaz`
+        : "henüz review süresi ölçülmedi";
+  // REPLAY: AI süresi ölçülmedi → yalnız review süresiyle oran, verimlilik iddiası değildir
+  // (core `kazanca_girer`, Kontrol Kulesi `kazancOzeti` ile aynı kural; hedef %30–50'ye karşı gösterilmez).
+  else if (aiOlculmedi) neden = KAZANC_REPLAY_NEDENI;
+  const oran = neden === null && baz.ms && hazirlikMs ? 1 - hazirlikMs / baz.ms : null;
+  return { oran, reviewOlculdu, hazirlikMs, neden: oran === null && neden === null ? "hazırlık süresi ölçülmedi" : neden };
 }
 
 /**
@@ -120,9 +169,13 @@ export function CaseReview() {
   const yayinYetkili = kullanici?.rol === "analyst";
   const mod = aiModu(liste, metrik.veri);
   const aiOlculmedi = mod === "replay" || mod === "replay_miss";
-  const baz = manuelBazMs(metrik.veri);
+  const baz = caseBazi(metrik.veri);
+  const bazEtiket = BAZ_KAYNAGI[baz.kaynak];
+  const taban = metrik.veri?.review_tabani_ms ?? REVIEW_TABANI_MS;
+  const kz = caseKazanci(baz, ozet, aiOlculmedi, taban);
+  const kazanc = kz.oran;
   const hazirlik = aiOlculmedi ? ozet.reviewSure : ozet.aiSure + ozet.reviewSure;
-  const kazanc = baz && ozet.olculenReview > 0 ? 1 - hazirlik / baz : null;
+  const reviewBetik = ozet.olculenReview > 0 && !kz.reviewOlculdu;
 
   return (
     <>
@@ -157,12 +210,18 @@ export function CaseReview() {
           />
           <Metrik
             etiket="Review süresi"
-            deger={ozet.olculenReview ? sure(ozet.reviewSure) : "—"}
-            alt={ozet.olculenReview ? `${ozet.olculenReview} case · ort. ${sure(ozet.ortReviewSure)}` : "henüz ölçülmedi"}
+            deger={kz.reviewOlculdu ? sure(ozet.reviewSure) : "—"}
+            alt={
+              kz.reviewOlculdu
+                ? `${ozet.olculenReview} case · ort. ${sure(ozet.ortReviewSure)}`
+                : reviewBetik
+                  ? `ölçülmedi — ${taban / 1000} sn altı (${sure(ozet.reviewSure)}): betik/API onayı, insan review'u sayılmaz`
+                  : "henüz ölçülmedi"
+            }
           />
           <Metrik
             etiket="AI + review"
-            deger={aiOlculmedi && !ozet.olculenReview ? "—" : sure(hazirlik)}
+            deger={aiOlculmedi && !kz.reviewOlculdu ? "—" : sure(kz.hazirlikMs ?? hazirlik)}
             alt={
               aiOlculmedi
                 ? "yalnız review; AI süresi REPLAY'de ölçülmedi"
@@ -173,18 +232,31 @@ export function CaseReview() {
           />
           <Metrik
             etiket="Manuel baz (story başına)"
-            deger={baz ? sure(baz) : "—"}
-            alt={baz ? "elle hazırlama, F0 ölçümü" : "ölçülmedi — baz değer girilmedi (F0 ölçümü)"}
+            deger={
+              <span data-testid="case-baz">
+                {baz.ms === null ? "—" : sure(baz.ms)}{" "}
+                <Cip ton={bazEtiket.ton} title={bazEtiket.aciklama}>
+                  {bazEtiket.etiket}
+                </Cip>
+              </span>
+            }
+            alt={
+              <span data-testid="case-baz-aciklama">
+                {baz.kaynak === "olcum"
+                  ? `ölçüm${baz.giren ? ` · ${baz.giren}` : ""}${baz.not ? ` · ${baz.not}` : ""}`
+                  : baz.kaynak === "varsayilan"
+                    ? "varsayılan (TP_MANUAL_BASELINE_S) — bu story için ölçülmedi, kazanca girmez"
+                    : "ölçülmedi — bu story için baz değer girilmedi"}
+              </span>
+            }
           />
           <Metrik
             etiket="Kazanç"
-            deger={kazanc === null ? "—" : yuzde(kazanc)}
+            deger={<span data-testid="case-kazanc">{kazanc === null ? "—" : yuzde(kazanc)}</span>}
             alt={
               kazanc === null
-                ? baz
-                  ? "henüz review süresi ölçülmedi"
-                  : "baz değer olmadan hesaplanmaz"
-                : `hedef %30–50${aiOlculmedi ? " · AI süresi hariç (REPLAY)" : ""}${ozet.bekleyen > 0 ? ` · ara değer, ${ozet.bekleyen} case bekliyor` : ""}`
+                ? kz.neden
+                : `hedef %30–50 · ölçülmüş baz${ozet.bekleyen > 0 ? ` · ara değer, ${ozet.bekleyen} case bekliyor` : ""}`
             }
           />
           <Metrik etiket="AI maliyeti" deger={aiOlculmedi ? "—" : dolar(ozet.maliyet)} alt={aiOlculmedi ? "REPLAY — ölçülmedi" : undefined} />

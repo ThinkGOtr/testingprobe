@@ -173,7 +173,10 @@ export function Kod() {
                       </td>
                       <td>{tarih(s.olusturma)}</td>
                       <td>
-                        {(s.durum === "blocked" || s.durum === "failed") && s.case_ids.length > 0 && (
+                        {/* Defect adayının testi doğru (uygulama farklı davranıyor): yeniden üretim önerilmez, karar triage'da. */}
+                        {(s.durum === "blocked" || s.durum === "failed") &&
+                          s.case_ids.length > 0 &&
+                          !(s.yerel_sinif === "defect_adayi" || s.engel?.tur === "defect_candidate") && (
                           <IslemDugmesi
                             roller={["engineer"]}
                             tur="ikincil"

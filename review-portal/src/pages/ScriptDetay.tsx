@@ -51,10 +51,24 @@ function kirikSinifi(a: BreakVerify["asamalar"][number], bv: BreakVerify): Yerel
   return null;
 }
 
-export function KirmaZaman({ bv }: { bv: BreakVerify }) {
+export function KirmaZaman({ bv, uygulanmaz = false }: { bv: BreakVerify; uygulanmaz?: boolean }) {
   return (
     <ol className="kirma-zaman" aria-label="Kırarak doğrulama zaman çizelgesi">
       {bv.asamalar.map((a) => {
+        // Defect adayında kırarak doğrulama koşmaz: başlamamış aşama "Bekliyor" (koşacak) değil "Uygulanmaz".
+        if (uygulanmaz && a.sonuc === "pending") {
+          return (
+            <li key={a.ad} className="kirma-asama kirma-uygulanmaz" data-testid="kirma-uygulanmaz">
+              <span className="kirma-ikon" aria-hidden="true">
+                –
+              </span>
+              <div>
+                <div className="kirma-ad">{ASAMA_ADI[a.ad]}</div>
+                <div className="kucuk soluk">Uygulanmaz (defect adayı)</div>
+              </div>
+            </li>
+          );
+        }
         const beklenen = a.ad === "broken" ? "failed" : "passed";
         const uyumlu = a.sonuc === beklenen;
         const sinif = a.ad === "broken" && a.sonuc === "failed" ? kirikSinifi(a, bv) : null;
@@ -881,7 +895,7 @@ export function ScriptDetay() {
               kanıt üretmez. Hata triage'a gitti; bug taslağı ve testçi kararı triage sayfasında.
             </Uyari>
           )}
-          <KirmaZaman bv={s.break_verify} />
+          <KirmaZaman bv={s.break_verify} uygulanmaz={defectAdayi} />
           {s.break_verify.durum === "passed" && <Uyari ton="basari">Test hata yakalıyor ✓</Uyari>}
           {(s.zayif_test || s.break_verify.durum === "weak") && (
             <Uyari ton="uyari">

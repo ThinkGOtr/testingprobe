@@ -16,6 +16,7 @@ const ROTA_KALIPLARI: RegExp[] = [
   /^\/bug-taslaklari$/,
   /^\/bug-taslaklari\/[^/]+$/,
   /^\/kontrol-kulesi$/,
+  /^\/yol-haritasi$/,
   /^\/denetim$/,
   /^\/claude-code$/,
   /^\/demo$/,

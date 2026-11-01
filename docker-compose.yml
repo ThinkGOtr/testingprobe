@@ -164,6 +164,8 @@ services:
       TP_DATABASE_URL: postgresql+psycopg://tp_app:${TP_APP_PASSWORD}@postgres:5432/tp
       # Model anahtarı ve model ayarları YALNIZCA core-worker'da (anayasa: anahtar core-worker'da).
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Çalışma alanına bağlı anahtar için `anthropic-workspace-id` başlığı (sır; yalnızca core-worker).
+      ANTHROPIC_WORKSPACE_ID: ${ANTHROPIC_WORKSPACE_ID:-}
       TP_MODEL_PROVIDER: ${TP_MODEL_PROVIDER:-anthropic}
       TP_PII_MASKING: ${TP_PII_MASKING:-0}
       TP_REPLAY_STRICT: ${TP_REPLAY_STRICT:-0}

@@ -34,7 +34,7 @@ copy e2e
 ln -s "$root/api" "$tmp/api"
 
 step "1/4 web: data-testid $OLD → $NEW (yalnızca web/src)"
-files="$(cd "$tmp/web" && grep -rlE --exclude='*.test.*' --exclude='*.spec.*' "[\"'\`]$OLD[\"'\`]" src || true)"
+files="$(cd "$tmp/web" && grep -rlE --exclude='*.test.*' --exclude='*.spec.*' "[\"'\`]${OLD}[\"'\`]" src || true)"
 [[ "$(printf '%s\n' "$files" | grep -c .)" == 1 ]] \
   || { echo "HATA: '$OLD' tam olarak bir web/src dosyasında beklenir: ${files:-yok}" >&2; exit 1; }
 sed -i.bak -E "s/([\"'\`])$OLD([\"'\`])/\\1$NEW\\2/g" "$tmp/web/$files" && rm -f "$tmp/web/$files.bak"

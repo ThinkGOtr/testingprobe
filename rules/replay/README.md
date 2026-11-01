@@ -151,6 +151,39 @@ metinde `golden_name(FREE_TEXT_KEY)` → `SERBEST` / `SERBEST-r2`. `fix_doc` ön
 | `verify_and_map` | `f2-kod-hatasi/TPD-1-C3` | Senaryonun C3'ü; diğer case'ler ana golden'larla birebir aynı, ana golden eşleşir |
 | `triage`, `bug_draft`, `dup_rank` | `HATA` + senaryo dizinleri | Faz 4 (aşağıda "Faz 4"): kanonik hata/bulgu bloğuna göre beyanlı |
 
+## Prova kipi (`TP_REPLAY_STRICT=1`): ana yol tam
+
+§13 prova listesindeki "REPLAY-MISS olmadan replay" maddesi sunumun ANA yolu (`f2-kod-hatasi`,
+docs/DEMO-VERISI.md) için `core/tests/unit/gateway/test_rehearsal_strict.py` ile doğrulanır: geçit
+ortamdan kurulur (`build_gateway`, `TP_MODEL_MODE=replay`, `TP_REPLAY_STRICT=1`), girdiler
+üretimin kurucularıdır (`Snapshot.message()` + `replay_key_for`, `generation_messages` PO cevabı ve
+test verisi blokları dahil, `mapping_messages`, `gateway.defects`). Sıra: ön inceleme → 1. tur →
+F1/F3 Jira'da düzeltilir (F2/F4 `code_defect`) → 2. tur → 10 case → her case için doğrulama ajanı →
+F2 taslak + TPD-5 bağla → F4 taslak (aday yok, sıralama yok) → C3 taslak + TPD-5 bağla → kırma
+taslağı + yeni kayıt. Her çağrı `replay` / `golden_matched` döner; test kullanılan golden kümesini
+de sabitler (eksik veya fazla golden kırmızıdır):
+
+| Amaç | Golden |
+|---|---|
+| requirement_review | `TPD-1` |
+| consistency_check | `TPD-1`, `f2-kod-hatasi/TPD-1-r2` |
+| case_generation | `f2-kod-hatasi/TPD-1` |
+| verify_and_map | `TPD-1-C1`…`C10` (C3 hariç), `f2-kod-hatasi/TPD-1-C3` |
+| bug_draft | `f2-kampanya/HATA`, `f4-kredi-limiti/HATA`, `HATA` (C3), `kirma-kampanya/HATA` |
+| dup_rank | `f2-kampanya/HATA`, `HATA` (C3), `kirma-kampanya/HATA` |
+
+Triage ana yolda modele gitmez (C3, kırma, locator ve ortam kurallarla sınıflanır); `triage/HATA`
+yalnızca kuralsız zaman aşımı içindir (`test_defect_goldens.py`). TPD-2/3/4 ön inceleme +
+tutarlılık (+ TPD-3/4 case üretimi) da prova kipinde REPLAY'dir. Eksik golden bulunmadı (2026-11-01).
+
+Bilinen sınır (prova yolu dışında): `make reset` olmadan Demo-A ikinci kez başlatılırsa jira-sim'deki
+TPD-1 metni düzeltilmiş hâldedir; tutarlılık turları tur/senaryo golden'larıyla REPLAY olur, ama ön
+incelemenin düzeltilmiş metin için golden'ı yoktur → gevşek kipte dürüst REPLAY-MISS (nötr), sıkı
+kipte `ReplayMiss`. Prova her zaman temiz `make reset` ile başlar (§13).
+
+Her satırın etiketi dürüsttür: mod `replay` (asla `live`), `ai_call.model = golden-elle`,
+`ek.degerlendirme.etiket = "canlı değerlendirme bekliyor"`.
+
 ## TPD-1: kararlar ve düzeltilmiş metin (golden'ların varsaydığı)
 
 1. tur bulguları (`consistency_check/golden/TPD-1.json`) docs/DEMO-VERISI.md'deki 4 uyumsuzluktur;

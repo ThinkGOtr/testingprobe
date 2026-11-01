@@ -46,6 +46,7 @@ const ROTALAR: { yol: string; ad: string; baslik: RegExp }[] = [
   { yol: "/bug-taslaklari/bug-4", ad: "42-bug-c3-taslak", baslik: /6 adet Portakal Gazozu/ },
   { yol: "/bug-taslaklari/bug-3", ad: "43-bug-f2-tutarlilik", baslik: /TPD-1 AC2/ },
   { yol: "/kosular/run-109", ad: "44-kosu-ortam-hatasi", baslik: /run-109/ },
+  { yol: "/yol-haritasi", ad: "52-yol-haritasi", baslik: /^Demo yol haritası$/ },
 ];
 
 test("giriş ekranı", async ({ page }) => {
@@ -220,13 +221,15 @@ test("mühendis: kod üretimi canlı adımlar ve kırarak doğrulama", async ({ 
   expect(hatalar).toEqual([]);
 });
 
-test("sunucu: açılış Kontrol Kulesi (KPI kaynağı), koşu süzgeci ve deploy tetiği", async ({ page }) => {
+test("sunucu: açılış Demo yol haritası; Kontrol Kulesi (KPI kaynağı), koşu süzgeci ve deploy tetiği", async ({ page }) => {
   const hatalar = konsolHatalariniTopla(page);
   await girisYap(page, "sunucu");
-  await expect(page).toHaveURL(/\/kontrol-kulesi$/);
+  await expect(page).toHaveURL(/\/yol-haritasi$/);
+  await expect(page.getByRole("list", { name: "14 adımlı demo akışı" }).getByRole("listitem")).toHaveCount(14);
+  await page.goto("/kontrol-kulesi");
   await expect(page.getByRole("img", { name: /^Kaynak: run tablosu|^Kaynak: test_result/ }).first()).toBeVisible();
   await page.getByRole("img", { name: /^Kaynak: test_result \(JUnit XML\)/ }).first().focus();
-  await expect(page.getByText("baz değer ölçülmedi")).toBeVisible();
+  await expect(page.getByText("ölçülmüş baz yok")).toBeVisible();
   await page.screenshot({ path: `${EKRAN_DIZINI}/26-kontrol-kulesi-kaynak.png`, fullPage: true });
   await page.goto("/kosular");
   await page.getByRole("combobox", { name: "Tetik" }).selectOption("break_verify");
@@ -244,6 +247,7 @@ test("mobil görünüm ve koyu tema", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ colorScheme: "dark" });
   await girisYap(page, "sunucu");
+  await page.goto("/kontrol-kulesi");
   await expect(page.getByRole("heading", { name: "Kontrol Kulesi", level: 1 })).toBeVisible();
   const tasanlar = await page.evaluate(() =>
     [...document.querySelectorAll("body *")]
@@ -344,6 +348,7 @@ for (const tema of ["light", "dark"] as const) {
       ["/claude-code", "Token oluştur"],
       ["/hatalar/fail-2", "Locator yoklaması (locator-probe)"],
       ["/bug-taslaklari/bug-4", "Olası mükerrerler"],
+      ["/yol-haritasi", "Locator kırılma yolu"],
     ];
     const ihlaller: string[] = [];
     for (const genislik of [1440, 390]) {
@@ -455,5 +460,57 @@ test("Faz 4 bug yolu: C3 defect → triage → TPD-5 mükerrer → testçi bağl
   await expect(sonuc).toContainText("kaydına bağlandı");
   await expect(sonuc.getByRole("link")).toHaveAttribute("href", /\/browse\/TPD-5$/);
   await page.screenshot({ path: `${EKRAN_DIZINI}/51-bug-baglandi.png`, fullPage: true });
+  expect(hatalar).toEqual([]);
+});
+
+test("Faz 5: analist TPD-1'e ölçülmüş baz değer girer → Kontrol Kulesi kazancı yalnız o story'den; yol haritası", async ({ page }) => {
+  const hatalar = konsolHatalariniTopla(page);
+  await girisYap(page, "analist");
+  // Ölçüm girilmeden önce case review özeti kazanç göstermez (baz değer uydurulmaz).
+  await page.goto("/gereksinimler/req-tpd-1/caseler");
+  await expect(page.getByTestId("case-baz")).toContainText("Ölçülmedi");
+  await expect(page.getByTestId("case-kazanc")).toHaveText("—");
+  await expect(page.getByText(/F0 ölçümü/)).toHaveCount(0);
+  await page.goto("/gereksinimler/req-tpd-1");
+  const kart = page.getByRole("region", { name: "Manuel baz değer" });
+  await expect(kart.getByText("Ölçülmedi", { exact: true })).toBeVisible();
+  await kart.getByRole("button", { name: "Ölçüm gir" }).click();
+  await kart.getByLabel("Dakika").fill("45");
+  await kart.getByRole("button", { name: "Kaydet" }).click();
+  await expect(kart.getByRole("alert")).toContainText("Ölçüm notu gerekli");
+  await kart.getByLabel("Ölçüm notu (kim, nasıl ölçtü)").fill("İsmail, F0 haftası, kronometre");
+  await kart.getByRole("checkbox").check();
+  await kart.screenshot({ path: `${EKRAN_DIZINI}/53-baz-deger-formu.png` });
+  await kart.getByRole("button", { name: "Kaydet" }).click();
+  await expect(kart.getByTestId("baz-deger-sure")).toHaveText("45 dk 00 sn");
+  await expect(kart.getByText("Ölçüm", { exact: true })).toBeVisible();
+  await kart.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: `${EKRAN_DIZINI}/54-baz-deger-olcum.png`, fullPage: true });
+  // Case review özeti: baz değer "Ölçüm" etiketli, girenin adıyla.
+  await page.goto("/gereksinimler/req-tpd-1/caseler");
+  await expect(page.getByTestId("case-baz")).toContainText("45 dk 00 sn");
+  await expect(page.getByTestId("case-baz")).toContainText("Ölçüm");
+  await expect(page.getByTestId("case-baz-aciklama")).toContainText("ölçüm · analist");
+  await page.getByRole("button", { name: "Çıkış" }).click();
+
+  await girisYap(page, "sunucu");
+  await page.goto("/kontrol-kulesi");
+  // Örnek veri REPLAY: ölçüm girilse de başlık yüzdesi yok (yalnız review; verimlilik iddiası değil).
+  await expect(page.getByTestId("hazirlik-kazanci")).toHaveText("REPLAY: hesaplanmaz");
+  await expect(page.getByTestId("kazanc-kapsam")).toContainText("Kazanç hesaplanmaz (REPLAY)");
+  await expect(page.getByTestId("hazirlik-TPD-1")).toContainText("REPLAY: yalnız review");
+  await expect(page.getByTestId("hazirlik-TPD-1")).toContainText("Ölçüm");
+  await page.getByRole("heading", { name: "Hazırlık süresi (story bazında)" }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: `${EKRAN_DIZINI}/55-kontrol-kulesi-kazanc.png`, fullPage: true });
+
+  await page.goto("/yol-haritasi");
+  await expect(page.getByTestId("yh-mod")).toContainText("REPLAY");
+  await expect(page.getByTestId("yh-adim-1")).toHaveAttribute("data-hal", "tamam");
+  await page.screenshot({ path: `${EKRAN_DIZINI}/52-yol-haritasi.png`, fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await expect(page.getByRole("list", { name: "14 adımlı demo akışı" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: `${EKRAN_DIZINI}/56-mobil-yol-haritasi.png`, fullPage: true });
   expect(hatalar).toEqual([]);
 });

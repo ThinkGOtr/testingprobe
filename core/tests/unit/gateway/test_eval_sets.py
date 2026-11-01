@@ -86,7 +86,7 @@ def _gateway(rules_dir: Path, mode: str, script: list[Any] | None = None) -> Gat
     )
 
 
-@pytest.mark.parametrize("bundle", sorted(BUILT))
+@pytest.mark.parametrize("bundle", sorted(bes.DEFECT_SETS))
 def test_replay_goldens_pass_their_own_eval_cases(rules_dir: Path, bundle: str) -> None:
     """Beklentiler golden çıktılarıyla çelişmez: REPLAY duman koşusunda golden'ı olan her vaka
     geçer (REPLAY koşusu `evaluated` sayılmaz; aşağıda)."""

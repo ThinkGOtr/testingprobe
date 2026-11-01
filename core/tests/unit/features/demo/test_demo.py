@@ -152,6 +152,12 @@ def ortam(
     get_settings.cache_clear()
 
 
+def _istegi_uygula(o: Any) -> None:
+    """Host betiğinin (`scripts/demo-web-sync.sh`) uyguladığı isteği `.done`'a yazması."""
+    istek = json.loads(o.istek_dosyasi.read_text())
+    o.istek_dosyasi.with_suffix(".done").write_text(istek["istek_id"] + "\n")
+
+
 def run_jobs(engine: Engine, limit: int = 10) -> list[Any]:
     out = []
     for _ in range(limit):
@@ -225,8 +231,14 @@ def test_kirilma_bypass_denetim_ve_ci_uygulamayi_bekler(
     assert [x.durum for x in run_jobs(engine, 1)] == ["done"]
     assert ortam.ci == []
 
-    # Uygulama main'den derlendi ve sha dosyası yazıldı → push CI.
+    # Uygulama main'den derlendi ve sha dosyası yazıldı ama demo-web-sync isteği henüz `.done`
+    # yazmadı (konteyner yeniden oluşturuluyor olabilir): CI hâlâ beklemede.
     ortam.dosya_sha = main
+    _hemen(engine)
+    assert [x.durum for x in run_jobs(engine, 1)] == ["done"]
+    assert ortam.ci == []
+    # demo-web-sync isteği uyguladı (.done) → push CI.
+    _istegi_uygula(ortam)
     _hemen(engine)
     assert [x.durum for x in run_jobs(engine, 1)] == ["done"]
     assert ortam.ci == [
@@ -323,7 +335,39 @@ def test_sifirlama(engine: Engine, ortam: Ortam, make_user: Any) -> None:
     reset = next(oz for _, e, oz in eylemler if e == "demo.reset")
     assert reset["veritabani"]["durum"] == "dokunulmadi"
     assert [k["pr"] for k in reset["kapanan_prlar"]] == [pr.number]
-    # Uygulama zaten baseline'da → baseline CI kuyruğa.
+    # Uygulama zaten baseline'da; ama demo-web-sync yenileme isteğini henüz uygulamadı (konteyneri
+    # yeniden oluştururken koşan CI sağlıkta düşerdi — prova P0 yarışı): CI bekler.
+    onceki = len(ortam.ci)
+    run_jobs(engine, 1)
+    assert len(ortam.ci) == onceki
+    assert len(_bekleyen_is(engine, service.AWAIT_JOB)) == 1
+    # İstek uygulandı (.done) → baseline CI kuyruğa.
+    _istegi_uygula(ortam)
+    _hemen(engine)
+    run_jobs(engine, 1)
+    assert ortam.ci and ortam.ci[-1]["sha"] == base
+
+
+def test_uygulanmamis_istek_bekleme_suresi_dolunca_ci_acilir(
+    engine: Engine, ortam: Ortam, make_user: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Host'ta demo-web-sync çalışmıyorsa ve uygulama zaten hedef commit'teyse CI sonsuza dek
+    beklemez: istek bekleme süresi (TP_DEMO_WEB_ISTEK_BEKLEME_S) dolunca açılır."""
+    monkeypatch.setenv(service.ISTEK_GRACE_ENV, "30")
+    sunucu = make_user("presenter")
+    with session_scope() as s:
+        service.request_break(s, sunucu)
+    run_jobs(engine, 1)
+    with engine.begin() as c:
+        c.execute(text("DELETE FROM job WHERE tur = :t"), {"t": service.AWAIT_JOB})
+    with session_scope() as s:
+        service.request_reset(s, sunucu)
+    run_jobs(engine, 1)
+    base = ortam.forge.head_sha("demo-baseline")
+    run_jobs(engine, 1)
+    assert ortam.ci == []
+    ortam.saat += timedelta(seconds=45)
+    _hemen(engine)
     run_jobs(engine, 1)
     assert ortam.ci and ortam.ci[-1]["sha"] == base
 

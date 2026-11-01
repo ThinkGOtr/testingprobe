@@ -21,6 +21,7 @@ import { KontrolKulesi } from "./pages/KontrolKulesi";
 import { KosuDetay, Kosular } from "./pages/Kosular";
 import { ScriptDetay } from "./pages/ScriptDetay";
 import { Yayin } from "./pages/Yayin";
+import { YolHaritasi } from "./pages/YolHaritasi";
 import { ROL } from "./lib/etiketler";
 
 function OturumGerekli({ children }: { children: ReactNode }) {
@@ -99,6 +100,7 @@ export function Rotalar() {
         <Route path="bug-taslaklari" element={<BugTaslaklari />} />
         <Route path="bug-taslaklari/:id" element={<BugTaslakDetay />} />
         <Route path="kontrol-kulesi" element={<KontrolKulesi />} />
+        <Route path="yol-haritasi" element={<YolHaritasi />} />
         <Route path="denetim" element={<Denetim />} />
         <Route
           path="claude-code"

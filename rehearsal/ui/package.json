@@ -1,0 +1,19 @@
+{
+  "name": "testingprobe-rehearsal-ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Demo provası (arayüz): portal + jira-sim üzerinden akış, Playwright videosu ve adım ekran görüntüleri",
+  "scripts": {
+    "tur": "UI_KIP=tur playwright test",
+    "canli": "UI_KIP=canli playwright test",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit",
+    "birim": "playwright test -c birim.config.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@types/node": "22.20.4",
+    "typescript": "5.9.3"
+  }
+}

@@ -14,9 +14,16 @@
 # /forge/demo-app-web.sha'yı yazar. core'daki `demo.await_web` işi bunu görünce push CI'ını
 # kuyruğa alır. Uygulanan istek /forge/demo-web-refresh.done'a yazılır (idempotent).
 #
+# Kilit: aynı anda birden çok kopya çalışabilir (sunum boyunca açık --watch + make demo-break /
+# demo-reset'in kendi --wait'i). Derleme + yeniden oluşturma forge volume'ünde atomik
+# `mkdir /forge/demo-web-sync.lock` kilidi altında yapılır; kilidi tutan kopya isteği uygular,
+# diğeri bekler. --wait, isteği başka bir kopya uyguladıysa (.done) başarıyla çıkar. Kilit
+# TP_DEMO_SYNC_LOCK_STALE_S (600) sn'den eskiyse (çöken kopya) devralınır.
+#
 # Ortam: TP_FORGE_EXEC (varsayılan "docker compose exec -T core-worker"),
 #        TP_DEMO_WEB_IMAGE (varsayılan testingprobe-demo-app-web:local),
-#        TP_DEMO_SYNC_WAIT_S (--wait için, varsayılan 120), TP_DEMO_SYNC_POLL_S (3).
+#        TP_DEMO_SYNC_WAIT_S (--wait / tek sefer kilit beklemesi, varsayılan 120),
+#        TP_DEMO_SYNC_POLL_S (3), TP_DEMO_SYNC_LOCK_STALE_S (600).
 set -euo pipefail
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 # shellcheck source=scripts/demo-common.sh
@@ -32,7 +39,7 @@ while [ $# -gt 0 ]; do
         die "--wait bir eylem ister (break|baseline). Kullanım: demo-web-sync.sh --wait <eylem>"
       fi
       MODE="wait"; WAIT_EYLEM="$2"; shift ;;
-    -h|--help) sed -n '2,22p' "$SELF" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,26p' "$SELF" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "bilinmeyen argüman: $1" ;;
   esac
   shift
@@ -42,16 +49,99 @@ command -v docker >/dev/null 2>&1 || die "docker bulunamadı"
 demo_exec_init
 WEB_IMAGE="${TP_DEMO_WEB_IMAGE:-testingprobe-demo-app-web:local}"
 POLL="${TP_DEMO_SYNC_POLL_S:-3}"
+WAIT_LIMIT="${TP_DEMO_SYNC_WAIT_S:-120}"
+KILIT_STALE="${TP_DEMO_SYNC_LOCK_STALE_S:-600}"
+case "$KILIT_STALE" in ""|*[!0-9]*) die "TP_DEMO_SYNC_LOCK_STALE_S sayı olmalı" ;; esac
+
+# sync_once / sync_kilitli dönüş kodları (1 = die: hata).
+RC_ISTEK_YOK=10
+RC_KILIT_MESGUL=11
+# core-worker'a ulaşılamadı (exec başarısız: konteyner yeniden oluşturuluyor / yeniden başlıyor,
+# Docker kısa süre yanıt vermiyor). --watch bunu loglayıp yeniden dener; tek sefer / --wait hata verir.
+RC_GECICI=12
 
 istek_oku() {
   "${DEMO_EXEC[@]}" sh -c 'cat /forge/demo-web-refresh.json 2>/dev/null || true'
 }
 
-# İsteği uygular. 0: uygulandı/zaten güncel · 1: bekleyen istek yok.
+done_oku() {
+  "${DEMO_EXEC[@]}" sh -c 'cat /forge/demo-web-refresh.done 2>/dev/null || true' | tr -d '[:space:]'
+}
+
+# --- Kilit (forge volume'ünde; tüm kopyalar aynı core-worker volume'ünü görür) -------------------
+# /forge/demo-web-sync.lock/owner: "<epoch> <sahip>". Zaman konteyner saatinden okunur (host ile
+# saat kayması eskime hesabını bozmasın). Sahip yoksa dizinin mtime'ı kullanılır.
+# Dönüş: 0 alındı · 1 meşgul (KILIT_MESAJ) · 2 exec başarısız (KILIT_MESAJ; geçici, çağıran karar verir).
+KILIT_SAHIBI=""
+KILIT_MESAJ=""
+
+kilit_al() {
+  local token out rc=0
+  token="$(hostname 2>/dev/null || echo host):$$:$(date +%s):${RANDOM}"
+  # shellcheck disable=SC2016  # $1/$2 iç kabukta genişler
+  out="$("${DEMO_EXEC[@]}" sh -c '
+L=/forge/demo-web-sync.lock
+now=$(date +%s)
+if mkdir "$L" 2>/dev/null; then printf "%s %s\n" "$now" "$1" > "$L/owner"; exit 0; fi
+o=$(cat "$L/owner" 2>/dev/null || true)
+t=${o%% *}
+case "$t" in ""|*[!0-9]*) t=$(stat -c %Y "$L" 2>/dev/null || stat -f %m "$L" 2>/dev/null || echo "$now") ;; esac
+yas=$((now - t))
+if [ "$yas" -ge "$2" ]; then
+  rm -rf "$L"
+  if mkdir "$L" 2>/dev/null; then printf "%s %s\n" "$now" "$1" > "$L/owner"; echo "eski kilit devralındı (${yas} sn, ${o#* })"; exit 0; fi
+  exit 3
+fi
+echo "sahip: ${o#* } · ${yas} sn"
+exit 3' _ "$token" "$KILIT_STALE")" || rc=$?
+  case "$rc" in
+    0) KILIT_SAHIBI="$token"; [ -z "$out" ] || err "UYARI: $out"; return 0 ;;
+    3) KILIT_MESAJ="$out"; return 1 ;;
+    *) KILIT_MESAJ="eşitleme kilidi alınamadı (/forge/demo-web-sync.lock, çıkış $rc)"; return 2 ;;
+  esac
+}
+
+kilit_birak() {
+  [ -n "$KILIT_SAHIBI" ] || return 0
+  # Yalnızca kendi kilidimizi siler (devralınmışsa dokunmaz).
+  # shellcheck disable=SC2016  # $1 iç kabukta genişler
+  "${DEMO_EXEC[@]}" sh -c '
+L=/forge/demo-web-sync.lock
+o=$(cat "$L/owner" 2>/dev/null || true)
+[ "${o#* }" = "$1" ] && rm -rf "$L"
+exit 0' _ "$KILIT_SAHIBI" >/dev/null 2>&1 || true
+  KILIT_SAHIBI=""
+}
+
+trap 'kilit_birak' EXIT
+trap 'exit 130' INT TERM
+
+# Kilit altında sync_once. 0 · RC_ISTEK_YOK · RC_KILIT_MESGUL · RC_GECICI · 1 (hata).
+sync_kilitli() {
+  local rc=0
+  kilit_al || rc=$?
+  case "$rc" in
+    0) ;;
+    1) return "$RC_KILIT_MESGUL" ;;
+    *) return "$RC_GECICI" ;;
+  esac
+  # sync_once hatada `die` (exit 1) çağırır: alt kabukta koşar ki kilit her durumda bırakılsın.
+  ( sync_once ) || rc=$?
+  kilit_birak
+  return "$rc"
+}
+
+kilit_mesgul_bildir() {
+  err "Başka bir demo-web-sync kopyası demo-app-web'i derliyor (${KILIT_MESAJ:-?}); bitmesi bekleniyor..."
+  err "  (takılı kaldıysa: docker compose exec core-worker rm -rf /forge/demo-web-sync.lock)"
+}
+
+# İsteği uygular (kilit altında çağrılmalı: sync_kilitli). 0: uygulandı/zaten güncel ·
+# RC_ISTEK_YOK: bekleyen istek yok (ya da başka kopya zaten uyguladı).
 sync_once() {
   local req sha eylem istek_id done_id current calisan web_tree tmp eski_imaj yeni_imaj
   req="$(istek_oku)"
-  [ -n "$req" ] || return 1
+  [ -n "$req" ] || return "$RC_ISTEK_YOK"
   sha="$(printf '%s' "$req" | python3 -c '
 import json, re, sys
 d = json.load(sys.stdin)
@@ -61,8 +151,8 @@ print(s if re.fullmatch(r"[0-9a-f]{40}", s) else "")')"
   eylem="$(printf '%s' "$req" | json_get eylem)"
   istek_id="$(printf '%s' "$req" | json_get istek_id)"
   case "$istek_id" in *[!0-9a-f]*|"") die "geçersiz istek kimliği" ;; esac
-  done_id="$("${DEMO_EXEC[@]}" sh -c 'cat /forge/demo-web-refresh.done 2>/dev/null || true' | tr -d '[:space:]')"
-  [ "$done_id" != "$istek_id" ] || return 1
+  done_id="$(done_oku)"
+  [ "$done_id" != "$istek_id" ] || return "$RC_ISTEK_YOK"
   current="$("${DEMO_EXEC[@]}" sh -c 'head -n 1 /forge/demo-app-web.sha 2>/dev/null || true' | tr -d '[:space:]')"
   # Çalışan uygulamanın kendi beyanı (/build.json) esas: sha dosyası tek başına yetmez (eski imaj
   # çalışırken dosya güncel kalmış olabilir). web-state okunamazsa sha dosyasına düşülür.
@@ -111,29 +201,83 @@ except ValueError: print("?")' 2>/dev/null || echo "?")"
 
 case "$MODE" in
   once)
-    sync_once || echo "Bekleyen demo uygulaması yenileme isteği yok."
+    start="$(date +%s)"; bildirildi=0
+    while :; do
+      rc=0; sync_kilitli || rc=$?
+      case "$rc" in
+        0) exit 0 ;;
+        "$RC_ISTEK_YOK") echo "Bekleyen demo uygulaması yenileme isteği yok."; exit 0 ;;
+        "$RC_KILIT_MESGUL") ;;
+        "$RC_GECICI") die "$KILIT_MESAJ" ;;
+        *) exit "$rc" ;;
+      esac
+      [ "$bildirildi" = 1 ] || { kilit_mesgul_bildir; bildirildi=1; }
+      [ $(( $(date +%s) - start )) -lt "$WAIT_LIMIT" ] \
+        || die "${WAIT_LIMIT} sn içinde eşitleme kilidi boşalmadı (${KILIT_MESAJ:-?})"
+      sleep "$POLL"
+    done
     ;;
   wait)
-    limit="${TP_DEMO_SYNC_WAIT_S:-120}"
-    start="$(date +%s)"
+    start="$(date +%s)"; bildirildi=0
+    # Başlarken zaten uygulanmış istek eski istektir (önceki kırılma/sıfırlama): beklenmez.
+    # Bundan sonra gelen istek ya bu kopya tarafından (kilit altında) ya da başka bir kopya
+    # (ör. --watch) tarafından uygulanır; ikisi de başarıdır.
+    eski_id=""
+    req="$(istek_oku)"
+    if [ -n "$req" ]; then
+      id0="$(printf '%s' "$req" | json_get istek_id)"
+      [ -z "$id0" ] || [ "$(done_oku)" != "$id0" ] || eski_id="$id0"
+    fi
     while :; do
       req="$(istek_oku)"
       if [ -n "$req" ] && { [ -z "$WAIT_EYLEM" ] || [ "$(printf '%s' "$req" | json_get eylem)" = "$WAIT_EYLEM" ]; }; then
-        sync_once && exit 0
+        istek_id="$(printf '%s' "$req" | json_get istek_id)"
+        if [ -n "$istek_id" ] && [ "$istek_id" != "$eski_id" ]; then
+          if [ "$(done_oku)" = "$istek_id" ]; then
+            echo "demo-app-web '${WAIT_EYLEM:-istek}' için başka bir eşitleyici tarafından güncellendi."
+            exit 0
+          fi
+          rc=0; sync_kilitli || rc=$?
+          case "$rc" in
+            0) exit 0 ;;
+            "$RC_ISTEK_YOK") continue ;;  # bu arada başka kopya uyguladı: .done yeniden okunur
+            "$RC_KILIT_MESGUL")
+              [ "$bildirildi" = 1 ] || { kilit_mesgul_bildir; bildirildi=1; } ;;
+            "$RC_GECICI") die "$KILIT_MESAJ" ;;
+            *) exit "$rc" ;;
+          esac
+        fi
       fi
-      [ $(( $(date +%s) - start )) -lt "$limit" ] || die "${limit} sn içinde '${WAIT_EYLEM:-herhangi}' isteği gelmedi"
+      [ $(( $(date +%s) - start )) -lt "$WAIT_LIMIT" ] || die "${WAIT_LIMIT} sn içinde '${WAIT_EYLEM:-herhangi}' isteği uygulanmadı"
       sleep "$POLL"
     done
     ;;
   watch)
     echo "demo-app-web yenileme istekleri izleniyor (Ctrl-C ile çıkış)..."
+    ulasilamadi=0
     while :; do
-      # sync_once hatada `die` (exit 1) çağırır: alt kabukta koşar ki tek bir geçici hata
-      # (docker build, arşiv, yeniden oluşturma) sunum boyunca açık izleyiciyi öldürmesin.
-      # Çıkış 1 hem "istek yok" hem hata olabilir; hata mesajı zaten stderr'e yazılır.
+      # Tek bir geçici hata (docker build, arşiv, yeniden oluşturma) sunum boyunca açık izleyiciyi
+      # öldürmesin: sync_once alt kabukta koşar, hata mesajı zaten stderr'e yazılır. Kilit
+      # meşgulse (make demo-break/demo-reset'in --wait'i derliyor) bir sonraki turda bakılır.
+      # core-worker'a ulaşılamıyorsa (make demo-prova / make reset / make up yeniden oluşturuyor,
+      # çökme sonrası yeniden başlıyor) izleyici çıkmaz: bir kez uyarır, gelince bildirir.
       rc=0
-      ( sync_once ) || rc=$?
-      [ "$rc" -le 1 ] || err "eşitleme başarısız (çıkış $rc); ${POLL} sn sonra yeniden denenecek"
+      sync_kilitli || rc=$?
+      if [ "$rc" = "$RC_GECICI" ]; then
+        if [ "$ulasilamadi" = 0 ]; then
+          err "UYARI: core-worker'a ulaşılamıyor ($KILIT_MESAJ); her ${POLL} sn yeniden denenecek (izleyici açık kalır)"
+          ulasilamadi=1
+        fi
+      else
+        if [ "$ulasilamadi" = 1 ]; then
+          err "core-worker yeniden erişilebilir; izleme sürüyor."
+          ulasilamadi=0
+        fi
+        case "$rc" in
+          0|"$RC_ISTEK_YOK"|"$RC_KILIT_MESGUL") ;;
+          *) err "eşitleme başarısız (çıkış $rc); ${POLL} sn sonra yeniden denenecek" ;;
+        esac
+      fi
       sleep "$POLL"
     done
     ;;

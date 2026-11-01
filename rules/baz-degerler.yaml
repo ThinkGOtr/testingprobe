@@ -1,0 +1,13 @@
+# Story başına manuel baz değer (F0 ölçümü) — `make reset` sonrasında da kalan, gözden geçirilmiş kopya.
+#
+# Biçim (her girdi; bilinmeyen alan reddedilir):
+#   - story: TPD-1          # Jira story anahtarı
+#     deger_s: 2700         # saniye, tam sayı, 0 < x ≤ 144000
+#     giren: "Ad Soyad"     # değeri ölçen/giren kişi (adı yazılı insan)
+#     not: "F0 ölçümü, 2026-10-xx, kronometre"   # kaynak notu, en az 3 karakter
+#
+# KURAL: Buraya yalnızca GERÇEK F0 ölçümü yazılır. Değer uydurulmaz, tahmin yazılmaz.
+# Dosyada olmayan story "ölçülmedi" kalır ve kazanca girmez. Portal'dan girilen değer bu dosyayla
+# ezilmez. Dosya Jira eşitlemesinde (Demo-A adım 1) uygulanır; elle yeniden uygulamak için
+# POST /baseline-file/apply (analist/PO). Kontrol: GET /baseline-file.
+degerler: []

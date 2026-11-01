@@ -109,9 +109,9 @@ for spec in PG_PORT:55432 TP_API_PORT:8000 TP_PORTAL_PORT:8080 DEMO_WEB_PORT:808
   fi
 done
 
-# Demo-A kazanç ölçümü (uyarı; başlatmayı engellemez): manuel baz değer yoksa kazanç gösterilemez.
+# Demo-A kazanç ölçümü (uyarı; başlatmayı engellemez): varsayılan manuel baz yoksa bilgi verir.
 if [ -z "$(env_get TP_MANUAL_BASELINE_S)" ]; then
-  warn "Manuel baz değer girilmedi (TP_MANUAL_BASELINE_S): Demo-A kazanç gösterilemez"
+  warn "Varsayılan manuel baz değer yok (TP_MANUAL_BASELINE_S); story başına ölçüm portaldan / PUT /requirements/{id}/baseline ile girilir (ölçülmeyen story'de kazanç gösterilmez)"
 fi
 
 if [ "$fails" -gt 0 ]; then

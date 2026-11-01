@@ -20,7 +20,7 @@ import { goruntulenenleriSifirla } from "../components/CaseKarti";
 import { adimAdi } from "../lib/akis";
 import { ORNEK_SERBEST_GEREKSINIM } from "../lib/ornekGereksinim";
 import { oturumAc, sar } from "../test/yardimci";
-import { aiModu, caseOzeti, manuelBazMs } from "./CaseReview";
+import { aiModu, caseBazi, caseKazanci, caseOzeti } from "./CaseReview";
 import { bosBulguMetni } from "./GereksinimDetay";
 
 function uygulama(yol: string) {
@@ -243,25 +243,88 @@ describe("case ölçümleri", () => {
     expect(screen.queryByText(/^AI 0 ms/)).toBeNull();
   });
 
-  it("manuel baz değer varsa yan yana gösterilir ve kazanç hesaplanır; yoksa uydurulmaz", async () => {
+  it("ÖLÇÜLMÜŞ manuel baz değer yan yana gösterilir ve kazanç hesaplanır (kaynak: ölçüm, giren, not)", async () => {
     await oturumAc("analist");
     vi.spyOn(api, "caseMetrikleri").mockResolvedValue(
-      metrik({ karar_verilen: 5, bekleyen: 0, review_sure_ms: 6 * 60_000, ort_review_sure_ms: 72_000, manuel_baz_ms: 30 * 60_000 }),
+      metrik({
+        karar_verilen: 5,
+        bekleyen: 0,
+        review_sure_ms: 6 * 60_000,
+        ort_review_sure_ms: 72_000,
+        manuel_baz_ms: 30 * 60_000,
+        manuel_baz_kaynagi: "olcum",
+        manuel_baz: { deger_s: 1800, deger_ms: 1_800_000, kaynak: "olcum", giren: "analist", zaman: "2026-10-30T10:00:00Z", not: "F0 kronometre" },
+      }),
     );
     uygulama("/gereksinimler/req-tpd-1/caseler");
     const ozet = await screen.findByRole("region", { name: "Özet" });
     expect(await within(ozet).findByText("30 dk 00 sn")).toBeInTheDocument();
-    // 1 − 6/30 = %80 (AI süresi REPLAY'de ölçülmediği için hariç; açıkça yazılır)
-    expect(within(ozet).getByText("%80")).toBeInTheDocument();
-    expect(within(ozet).getByText(/AI süresi hariç \(REPLAY\)/)).toBeInTheDocument();
+    expect(within(ozet).getByTestId("case-baz")).toHaveTextContent("Ölçüm");
+    expect(within(ozet).getByTestId("case-baz-aciklama")).toHaveTextContent("ölçüm · analist · F0 kronometre");
+    // REPLAY: AI süresi ölçülmedi → yalnız review süresiyle oran (1 − 6/30 = %80) verimlilik iddiası
+    // değildir; hedef %30–50'ye karşı gösterilmez (core `kazanca_girer`, Kontrol Kulesi ile aynı kural).
+    expect(within(ozet).getByTestId("case-kazanc")).toHaveTextContent("—");
+    expect(within(ozet).queryByText("%80")).toBeNull();
+    expect(within(ozet).queryByText(/hedef %30–50/)).toBeNull();
+    expect(within(ozet).getByText(/REPLAY: AI süresi ölçülmedi — kazanç hesaplanmaz \(verimlilik iddiası değil\)/)).toBeInTheDocument();
+    expect(within(ozet).queryByText(/F0 ölçümü/)).toBeNull();
   });
 
-  it("manuelBazMs: çekirdek > ortam (dakika) > yok; aiModu canlı/replay/karışık", () => {
-    expect(manuelBazMs(metrik({ manuel_baz_ms: 1000 }), "45")).toBe(1000);
-    expect(manuelBazMs(metrik(), "45")).toBe(45 * 60_000);
-    expect(manuelBazMs(metrik(), "37,5")).toBe(37.5 * 60_000);
-    expect(manuelBazMs(metrik(), undefined)).toBeNull();
-    expect(manuelBazMs(null, "abc")).toBeNull();
+  it("VARSAYILAN baz değer (TP_MANUAL_BASELINE_S) gösterilir ama 'Varsayılan' etiketli ve kazanç hesaplanmaz", async () => {
+    await oturumAc("analist");
+    vi.spyOn(api, "caseMetrikleri").mockResolvedValue(
+      metrik({
+        karar_verilen: 5,
+        bekleyen: 0,
+        review_sure_ms: 6 * 60_000,
+        ort_review_sure_ms: 72_000,
+        manuel_baz_ms: 2_700_000,
+        manuel_baz_kaynagi: "varsayilan",
+        manuel_baz: { deger_s: 2700, deger_ms: 2_700_000, kaynak: "varsayilan", giren: null, zaman: null, not: "TP_MANUAL_BASELINE_S" },
+      }),
+    );
+    uygulama("/gereksinimler/req-tpd-1/caseler");
+    const ozet = await screen.findByRole("region", { name: "Özet" });
+    expect(await within(ozet).findByTestId("case-baz")).toHaveTextContent("45 dk 00 sn");
+    expect(within(ozet).getByTestId("case-baz")).toHaveTextContent("Varsayılan");
+    expect(within(ozet).getByTestId("case-baz-aciklama")).toHaveTextContent("kazanca girmez");
+    expect(within(ozet).getByTestId("case-kazanc")).toHaveTextContent("—");
+    expect(within(ozet).queryByText(/hedef %30–50/)).toBeNull();
+    expect(within(ozet).queryByText(/F0 ölçümü/)).toBeNull();
+    expect(within(ozet).getByText(/varsayılan baz değer kazanca girmez/)).toBeInTheDocument();
+  });
+
+  it("ölçülmüş baz olsa da 5 sn altı (betik/API) review süresiyle kazanç hesaplanmaz; review 'ölçülmedi'", async () => {
+    await oturumAc("analist");
+    vi.spyOn(api, "caseMetrikleri").mockResolvedValue(
+      metrik({ karar_verilen: 5, bekleyen: 0, review_sure_ms: 45, ort_review_sure_ms: 9, manuel_baz_ms: 2_700_000, manuel_baz_kaynagi: "olcum" }),
+    );
+    uygulama("/gereksinimler/req-tpd-1/caseler");
+    const ozet = await screen.findByRole("region", { name: "Özet" });
+    expect(await within(ozet).findByTestId("case-kazanc")).toHaveTextContent("—");
+    expect(within(ozet).getByText(/5 sn altı \(betik\/API onayı\) — kazanç hesaplanmaz/)).toBeInTheDocument();
+    expect(within(ozet).getByText(/betik\/API onayı, insan review'u sayılmaz/)).toBeInTheDocument();
+  });
+
+  it("caseBazi / caseKazanci: kaynak esastır; ortam (derleme) yedeği yok; aiModu canlı/replay/karışık", () => {
+    // Kaynak bildirmeyen eski core değeri ölçüm sayılmaz.
+    expect(caseBazi(metrik({ manuel_baz_ms: 1000 }))).toMatchObject({ ms: 1000, kaynak: "varsayilan" });
+    expect(caseBazi(metrik({ manuel_baz_ms: 1000, manuel_baz_kaynagi: "olcum" }))).toMatchObject({ ms: 1000, kaynak: "olcum" });
+    expect(caseBazi(metrik({ manuel_baz: { deger_s: 60, kaynak: "varsayilan" }, manuel_baz_ms: 60_000, manuel_baz_kaynagi: "olcum" }))).toMatchObject({ ms: 60_000, kaynak: "varsayilan" });
+    expect(caseBazi(metrik({ manuel_baz_ms: null, manuel_baz_kaynagi: null }))).toMatchObject({ ms: null, kaynak: "olculmedi" });
+    expect(caseBazi(metrik())).toMatchObject({ ms: null, kaynak: "olculmedi" });
+    expect(caseBazi(null)).toMatchObject({ ms: null, kaynak: "olculmedi" });
+    const olcum = caseBazi(metrik({ manuel_baz_ms: 1_800_000, manuel_baz_kaynagi: "olcum" }));
+    const vars = caseBazi(metrik({ manuel_baz_ms: 1_800_000, manuel_baz_kaynagi: "varsayilan" }));
+    const ozet = { aiSure: 0, reviewSure: 360_000, olculenReview: 5 };
+    // REPLAY (AI süresi ölçülmedi): ölçülmüş baz + ≥ 5 sn review olsa da oran yok.
+    expect(caseKazanci(olcum, ozet, true)).toMatchObject({ oran: null, reviewOlculdu: true, neden: expect.stringMatching(/^REPLAY: AI süresi ölçülmedi/) });
+    expect(caseKazanci(vars, ozet, true).oran).toBeNull();
+    expect(caseKazanci(olcum, { ...ozet, reviewSure: 4_999 }, true).oran).toBeNull();
+    expect(caseKazanci(olcum, { ...ozet, reviewSure: 4_999 }, true).reviewOlculdu).toBe(false);
+    expect(caseKazanci(olcum, { ...ozet, olculenReview: 0 }, true).oran).toBeNull();
+    // Canlı: AI + review
+    expect(caseKazanci(olcum, { aiSure: 180_000, reviewSure: 360_000, olculenReview: 5 }, false).oran).toBeCloseTo(0.7);
     expect(aiModu([], metrik({ ai_cagri_modlari: { replay: 2 } }))).toBe("replay");
     expect(aiModu([], metrik({ ai_cagri_modlari: { replay: 1, replay_miss: 1 } }))).toBe("replay_miss");
     expect(aiModu([], metrik({ ai_cagri_modlari: { live: 3 } }))).toBe("live");

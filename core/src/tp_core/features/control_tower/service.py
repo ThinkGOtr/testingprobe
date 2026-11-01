@@ -1,11 +1,19 @@
 """Kontrol Kulesi (TEKNIK-TASARIM §8.11, §12; adım 11). AI yok; her sayı DB satırlarından türer.
 
 Her KPI'nin yanında `kaynaklar[<kpi>]` hangi tablo/filtre/pencereden geldiğini söyler. Ölçülmeyen
-değer uydurulmaz: manuel baz değer (`TP_MANUAL_BASELINE_S`) yoksa `manuel_baz_ms=null` +
-`baz_deger_olculmedi=true` + uyarı; geçme hedefi tanımlı değilse `gecme_hedefi=null`.
+değer uydurulmaz: manuel baz değer story başınadır (`requirement_baz_deger` ölçümü). Ölçüm yoksa
+`TP_MANUAL_BASELINE_S` yalnızca "varsayılan" kaynağı olarak bildirilir, sayı olarak gösterilmez
+(`manuel_baz_ms=null`; ortam değeri yalnızca `manuel_baz.varsayilan_ms`/`manuel_baz_varsayilan_ms`).
+Toplam kazanç yalnızca ölçülmüş baz değerli **ve** AI + review süresi ölçülmüş (`ai_arti_review`)
+story'ler üzerinden hesaplanır: REPLAY'de hazırlık süresi yalnız sunumdaki review tıklamalarıdır,
+verimlilik iddiası değildir; bu satırlar toplam kazanca girmez (`kazanc_replay_haric`). Hiçbir
+story'de ölçüm yoksa `manuel_baz_ms=null` + `baz_deger_olculmedi=true` + uyarı. Geçme hedefi tanımlı
+değilse `gecme_hedefi=null`.
 
 Kırma koşuları (tetik `break_verify` ya da `ortam.break_campaign=true`) bilerek kırmızıdır; geçme
-oranına, flaky'ye, karneye ve a11y'ye girmez.
+oranına, flaky'ye, karneye ve a11y'ye girmez. `make demo-break` locator kırmasının main
+commit'indeki koşular (`audit_event` "demo kırılması" → `main_sonra`) da geçme oranına ve günlük
+trende girmez.
 """
 
 from __future__ import annotations
@@ -22,8 +30,10 @@ from sqlalchemy.orm import Session
 from tp_core.config import get_settings
 from tp_core.features.ci import service as ci
 from tp_core.features.ci import services as ci_services
+from tp_core.integrations.forge_demo import AUDIT_BREAK
 from tp_core.models import (
     AiCall,
+    AuditEvent,
     BugDraft,
     ConsistencyFinding,
     Failure,
@@ -36,6 +46,7 @@ from tp_core.models import (
     TestCase,
     TestResult,
 )
+from tp_core.models.bugs_feature import BugDraftEk
 from tp_core.models.ci_feature import TestResultEk
 from tp_core.models.codegen_feature import ScriptCodegen, ScriptKontrol
 
@@ -52,7 +63,14 @@ GECTI = ("passed", "flaky")
 # yeniden üretilip sonra kabul edilen birim ilk review başarısı değildir.
 SCRIPT_ILK_REVIEW_BOZAR = frozenset({"degisiklik_istendi", "reddedildi", "kabul_yabanci_head"})
 KALDI = ("failed", "timedout")
-BAZ_YOK = "Manuel baz değer ölçülmedi (TP_MANUAL_BASELINE_S boş): kazanç oranı gösterilmez."
+BAZ_YOK = (
+    "Manuel baz değer ölçülmedi (hiçbir story'de ölçüm yok; TP_MANUAL_BASELINE_S varsayılanı ölçüm "
+    "sayılmaz): kazanç oranı gösterilmez."
+)
+KAZANC_REPLAY = (
+    "REPLAY: hazırlık süresi yalnız review süresidir (AI süresi ölçülmez); {n} story toplam "
+    "kazanca girmedi — sunumdaki yüzde verimlilik iddiası değildir."
+)
 # Script birimi = (case, onaylı case hash'i): aynı onaylı içerikten yeniden üretimler tek birimdir.
 AKTIF_SCRIPT = frozenset({"pending", "verifying", "checking"})
 # Bu eşiğin altındaki örneklemle verilen oranların yanında uyarı yazılır (n küçük).
@@ -76,6 +94,16 @@ def _kirma_degil() -> Any:
     )
 
 
+def _demo_kirma_shalari() -> Any:
+    """`make demo-break` locator kırmasının merge ettiği main commit'leri (bilerek kırmızı)."""
+    sha = AuditEvent.ozet["main_sonra"].astext
+    return select(sha).where(AuditEvent.eylem == AUDIT_BREAK, sha.is_not(None))
+
+
+def _demo_kirmasi_degil() -> Any:
+    return or_(Run.commit.is_(None), Run.commit.not_in(_demo_kirma_shalari()))
+
+
 def _oran(pay: int, payda: int) -> float | None:
     return round(pay / payda, 4) if payda else None
 
@@ -91,12 +119,16 @@ def son_kosular(session: Session, n: int) -> list[dict[str, Any]]:
 
 
 def gecme_orani(session: Session, n: int) -> dict[str, Any]:
-    runs = session.execute(
-        select(Run.id, Run.sonuc)
-        .where(Run.tetik.in_(CI_TETIKLER), Run.sonuc.in_(ci.BITMIS), _kirma_degil())
+    # Pencere: son n tamamlanmış CI koşusu (kırma koşuları dahil sayılır, sonra ayıklanır) —
+    # böylece "son 20" penceresi ve içinden kaçının hariç tutulduğu açıkça söylenebilir.
+    pencere = session.execute(
+        select(Run.id, Run.sonuc, _kirma_degil() & _demo_kirmasi_degil())
+        .where(Run.tetik.in_(CI_TETIKLER), Run.sonuc.in_(ci.BITMIS))
         .order_by(Run.olusturma.desc())
         .limit(n)
     ).all()
+    runs = [(r, s) for r, s, sayilir in pencere if sayilir]
+    haric = len(pencere) - len(runs)
     gecen = sum(1 for _, s in runs if s == "passed")
     ids = [r for r, _ in runs]
     test_gecen = test_toplam = 0
@@ -109,10 +141,18 @@ def gecme_orani(session: Session, n: int) -> dict[str, Any]:
             test_toplam += int(adet)
             if sonuc in GECTI:
                 test_gecen += int(adet)
+    if runs:
+        metin = f"Son {len(runs)} CI koşusundan {gecen}'{_iyelik(gecen)} geçti (pencere: son {n}"
+        metin += f"; {haric} kasıtlı kırma koşusu hariç)" if haric else ")"
+    else:
+        metin = f"Henüz sayılan CI koşusu yok (pencere: son {n}; kasıtlı kırma koşuları sayılmaz)"
     return {
         "oran": _oran(gecen, len(runs)),
         "toplam": len(runs),
         "gecen": gecen,
+        # Penceredeki kasıtlı kırma koşuları (break_verify, BREAK_CAMPAIGN, demo locator kırması).
+        "haric_kirma": haric,
+        "metin": metin,
         "donem_gun": None,
         "son_n": n,
         "test": {
@@ -121,6 +161,13 @@ def gecme_orani(session: Session, n: int) -> dict[str, Any]:
             "gecen": test_gecen,
         },
     }
+
+
+def _iyelik(n: int) -> str:
+    """Sayının iyelik eki: 12'si, 3'ü, 6'sı, 10'u (bulunma ekinden türetilir)."""
+    from tp_core.features.requirements.baseline import bulunma_eki
+
+    return bulunma_eki(n).removesuffix("nde").removesuffix("nda")
 
 
 def gunluk_gecme(session: Session, gun: int) -> list[dict[str, Any]]:
@@ -134,6 +181,7 @@ def gunluk_gecme(session: Session, gun: int) -> list[dict[str, Any]]:
             Run.sonuc.in_(ci.BITMIS),
             Run.olusturma >= bas,
             _kirma_degil(),
+            _demo_kirmasi_degil(),
         )
     ):
         g = zaman.astimezone(tz).date().isoformat()
@@ -327,7 +375,7 @@ def karne(session: Session) -> list[dict[str, Any]]:
                 "otomasyon_kapsami": _oran(len(otomatik), len(guncel)),
                 **_son_sonuc(session, guncel),
                 **_son_sonuc(session, guncel, tetikler=("pr",), onek="pr_"),
-                "acik_bug": _acik_bug(session, req.id),
+                **_acik_bug(session, req.id),
                 "acik_defect_adayi": _acik_defect_adayi(session, guncel),
             }
         )
@@ -388,23 +436,49 @@ def _acik_defect_adayi(session: Session, case_ids: list[uuid.UUID]) -> int:
     return adet
 
 
-def _acik_bug(session: Session, req_id: uuid.UUID) -> int:
+def _bug_taslaklari(session: Session, req_id: uuid.UUID) -> list[Any]:
+    """Story'ye bağlı, dismissed olmayan ve kırma koşusundan gelmeyen bug taslakları.
+
+    Bulgudan (consistency_finding) gelen taslak koşuya bağlı değildir, her zaman sayılır.
+    Hata (failure) kaynaklı taslak, failure'ın koşusu kırma koşusuysa (`_kirma_degil()` ile aynı
+    kural: tetik `break_verify` ya da `ortam.break_campaign=true`) sayılmaz: bilerek açık bırakılır.
+    """
     bulgu = select(ConsistencyFinding.id).where(ConsistencyFinding.requirement_id == req_id)
     hata = (
         select(Failure.id)
         .join(TestResult, TestResult.id == Failure.test_result_id)
         .join(TestCase, TestCase.id == TestResult.test_case_id)
-        .where(TestCase.requirement_id == req_id)
+        .join(Run, Run.id == Failure.run_id)
+        .where(TestCase.requirement_id == req_id, _kirma_degil())
     )
-    return int(
-        session.scalar(
-            select(func.count()).where(
+    return list(
+        session.execute(
+            select(BugDraft.durum, BugDraft.jira_key, BugDraft.link_key, BugDraftEk.yayin)
+            .outerjoin(BugDraftEk, BugDraftEk.bug_draft_id == BugDraft.id)
+            .where(
                 BugDraft.durum != "dismissed",
                 or_(BugDraft.finding_id.in_(bulgu), BugDraft.failure_id.in_(hata)),
             )
-        )
-        or 0
+        ).all()
     )
+
+
+def _acik_bug(session: Session, req_id: uuid.UUID) -> dict[str, int]:
+    """`acik_bug`: yayınlanmış taslakların **farklı** Jira anahtarları (yeni açılan ya da mevcut
+    kayda bağlanan; aynı TPD-5'e bağlanan iki taslak tek bug'dır). Demo sıfırlamasında Jira'dan
+    silinen kayıt (`bug_draft_ek.yayin.jira_silindi`) sayılmaz. `bug_taslagi`: henüz yayınlanmamış
+    (draft/approved) taslaklar, ayrı sayı. Kırma koşusu taslakları ikisine de girmez. Jira'daki
+    kaydın durumu (kapalı mı) okunmaz."""
+    anahtarlar: set[str] = set()
+    bekleyen = 0
+    for durum, jira_key, link_key, yayin in _bug_taslaklari(session, req_id):
+        if durum == "published":
+            key = jira_key or link_key
+            if key and not (yayin or {}).get("jira_silindi"):
+                anahtarlar.add(key)
+        else:
+            bekleyen += 1
+    return {"acik_bug": len(anahtarlar), "bug_taslagi": bekleyen}
 
 
 # ------------------------------------------------------------------------------ AI katkısı
@@ -565,6 +639,7 @@ def script_olculeri(session: Session) -> dict[str, Any]:
 
 def ai_katkisi(session: Session) -> tuple[dict[str, Any], list[dict[str, Any]], list[str]]:
     from tp_core.features.cases import service as cases
+    from tp_core.features.requirements import baseline
 
     uyarilar: list[str] = []
     req_ids = session.scalars(
@@ -576,7 +651,8 @@ def ai_katkisi(session: Session) -> tuple[dict[str, Any], list[dict[str, Any]], 
     ai_sureleri: list[int] = []
     review_sureleri: list[int] = []
     hazirlik: list[dict[str, Any]] = []
-    baz = cases.manual_baseline_ms()
+    varsayilan_ms = cases.manual_baseline_ms()
+    bazlar = baseline.baselines_for(session, req_ids)
     taban = _review_tabani_ms()
     review_olculmedi = ai_olculmedi = 0
     for rid in req_ids:
@@ -601,7 +677,17 @@ def ai_katkisi(session: Session) -> tuple[dict[str, Any], list[dict[str, Any]], 
                 ai_sureleri.append(ai)
             if rv is not None:
                 review_sureleri.append(rv)
-            toplam = ai + rv if ai is not None and rv is not None else None
+            # REPLAY'de AI süresi ölçülmez: "AI + review" yalnız review süresidir (DEMO-VERISI).
+            toplam_yontemi: str | None = None
+            toplam: int | None = None
+            if ai is not None and rv is not None:
+                toplam, toplam_yontemi = ai + rv, "ai_arti_review"
+            elif ai is None and rv is not None:
+                toplam, toplam_yontemi = rv, "yalniz_review"
+            bz = bazlar[rid]
+            # Yalnızca ölçüm sayıdır; varsayılan (TP_MANUAL_BASELINE_S) deger_ms'te gelmez.
+            baz: int | None = bz["deger_ms"] if bz["kaynak"] == baseline.KAYNAK_OLCUM else None
+            olculmus_baz = baz
             hazirlik.append(
                 {
                     "requirement_id": str(rid),
@@ -611,8 +697,19 @@ def ai_katkisi(session: Session) -> tuple[dict[str, Any], list[dict[str, Any]], 
                     "ai_olculmedi": ai is None,
                     "review_olculmedi": rv is None,
                     "toplam_ms": toplam,
+                    # ai_arti_review | yalniz_review (REPLAY: AI süresi ölçülmedi) | null
+                    "toplam_yontemi": toplam_yontemi,
                     "manuel_baz_ms": baz,
-                    "kazanc_orani": round(1 - toplam / baz, 4) if baz and toplam else None,
+                    # olcum / varsayilan / null (ölçülmedi); ayrıntı manuel_baz'da
+                    "manuel_baz_kaynagi": bz["kaynak"],
+                    "manuel_baz": bz,
+                    "kazanc_orani": round(1 - toplam / olculmus_baz, 4)
+                    if olculmus_baz and toplam
+                    else None,
+                    # Toplam kazanca girer mi: ölçülmüş baz + AI + review (REPLAY değil)
+                    "kazanca_girer": bool(
+                        olculmus_baz and toplam and toplam_yontemi == "ai_arti_review"
+                    ),
                     "ai_cagri_modlari": modlar,
                 }
             )
@@ -637,8 +734,20 @@ def ai_katkisi(session: Session) -> tuple[dict[str, Any], list[dict[str, Any]], 
             )
         )
     }
-    if baz is None:
+    kapsam = _baz_kapsami(hazirlik)
+    if kapsam["baz_deger_olculmedi"]:
         uyarilar.append(BAZ_YOK)
+    elif kapsam["olculmedi"]:
+        uyarilar.append(
+            f"{kapsam['metin']}: ölçülmeyen story'ler manuel baz ortalamasına ve kazanca girmedi."
+        )
+    if kapsam["varsayilan"]:
+        uyarilar.append(
+            f"{kapsam['varsayilan']} story'de story'ye özel ölçüm yok; varsayılan "
+            "(TP_MANUAL_BASELINE_S) ölçüm sayılmadı: baz değer olarak gösterilmez, kazanca girmez."
+        )
+    if kapsam["replay_haric"]:
+        uyarilar.append(KAZANC_REPLAY.format(n=kapsam["replay_haric"]))
     if review_olculmedi:
         uyarilar.append(
             f"{review_olculmedi} story'de review süresi {taban // 1000} sn altında ya da yok "
@@ -674,8 +783,22 @@ def ai_katkisi(session: Session) -> tuple[dict[str, Any], list[dict[str, Any]], 
         "ai_sure_olculen_story": len(ai_sureleri),
         "review_sure_olculen_story": len(review_sureleri),
         "review_sure_taban_ms": taban,
-        "manuel_baz_ms": baz,
-        "baz_deger_olculmedi": baz is None,
+        # Ölçülmüş story'lerin manuel baz ortalaması (varsayılan girmez); yoksa null.
+        "manuel_baz_ms": kapsam["ort_ms"],
+        "manuel_baz_yontemi": "story_ortalamasi",
+        "manuel_baz_varsayilan_ms": varsayilan_ms,
+        "baz_deger_olculmedi": kapsam["baz_deger_olculmedi"],
+        "baz_kapsami": {
+            k: kapsam[k] for k in ("story", "olcum", "varsayilan", "olculmedi", "metin")
+        },
+        # 1 − Σ(AI + review) / Σ(ölçülmüş manuel baz): yalnızca ai_arti_review story'ler.
+        "kazanc_orani": kapsam["kazanc_orani"],
+        "kazanc_story_sayisi": kapsam["kazanc_story"],
+        # Ölçülmüş bazı olup REPLAY (yalnız review) olduğu için toplam kazanca girmeyen story.
+        "kazanc_replay_haric": kapsam["replay_haric"],
+        "kazanc_notu": KAZANC_REPLAY.format(n=kapsam["replay_haric"])
+        if kapsam["replay_haric"] and kapsam["kazanc_orani"] is None
+        else None,
         "maliyet_usd_toplam": round(float(toplam_maliyet), 6),
         "maliyet_usd_bugun": round(float(bugun or 0), 6),
         "gunluk_butce_usd": get_settings().daily_budget_usd,
@@ -684,6 +807,49 @@ def ai_katkisi(session: Session) -> tuple[dict[str, Any], list[dict[str, Any]], 
         "amaclar": amaclar,
     }
     return katki, hazirlik, uyarilar
+
+
+def _baz_kapsami(hazirlik: list[dict[str, Any]]) -> dict[str, Any]:
+    from tp_core.features.requirements import baseline
+
+    olcum = sum(1 for h in hazirlik if h["manuel_baz_kaynagi"] == baseline.KAYNAK_OLCUM)
+    vars_ = sum(1 for h in hazirlik if h["manuel_baz_kaynagi"] == baseline.KAYNAK_VARSAYILAN)
+    olculmedi = len(hazirlik) - olcum - vars_
+    degerler = [
+        int(h["manuel_baz_ms"])
+        for h in hazirlik
+        if h["manuel_baz_kaynagi"] == baseline.KAYNAK_OLCUM and h["manuel_baz_ms"] is not None
+    ]
+    olculmus = [
+        h
+        for h in hazirlik
+        if h["manuel_baz_kaynagi"] == baseline.KAYNAK_OLCUM
+        and h["manuel_baz_ms"]
+        and h["toplam_ms"]  # 0 ms hazırlık ölçüm değildir (satır kazancıyla aynı kural)
+    ]
+    # Toplam kazanç yalnızca AI + review ölçülmüş story'lerden: REPLAY'de süre yalnız sunumdaki
+    # review tıklamalarıdır (verimlilik iddiası değil), toplam kazanca girmez.
+    ciftler = [
+        (int(h["toplam_ms"]), int(h["manuel_baz_ms"]))
+        for h in olculmus
+        if h["toplam_yontemi"] == "ai_arti_review"
+    ]
+    baz_toplam = sum(b for _, b in ciftler)
+    return {
+        "story": len(hazirlik),
+        "olcum": olcum,
+        "varsayilan": vars_,
+        "olculmedi": olculmedi,
+        "metin": baseline.kapsam_metni(len(hazirlik), olcum, vars_, olculmedi),
+        "ort_ms": round(sum(degerler) / len(degerler)) if degerler else None,
+        # Varsayılan (TP_MANUAL_BASELINE_S) ölçüm sayılmaz: yalnızca ölçüm varsa false.
+        "baz_deger_olculmedi": not degerler,
+        "kazanc_orani": round(1 - sum(t for t, _ in ciftler) / baz_toplam, 4)
+        if baz_toplam
+        else None,
+        "kazanc_story": len(ciftler),
+        "replay_haric": len(olculmus) - len(ciftler),
+    }
 
 
 # ------------------------------------------------------------------------------ a11y
@@ -752,8 +918,11 @@ def control_tower(session: Session) -> dict[str, Any]:
         "kaynaklar": {
             "son_kosular": f"run tablosu, son {n} CI koşusu (tetik pr/push/nightly/deploy/manual)",
             "gecme_orani": (
-                f"run.sonuc, son {n} tamamlanmış CI koşusu (passed / passed+failed+error); kırma "
-                "koşuları (break_verify, BREAK_CAMPAIGN) hariç. Test oranı: aynı koşuların "
+                f"run.sonuc, son {n} tamamlanmış CI koşusu penceresi (passed / "
+                "passed+failed+error); kasıtlı kırma koşuları (break_verify, BREAK_CAMPAIGN ve "
+                "make demo-break locator kırmasının main commit'i — audit_event 'demo "
+                "kırılması'.main_sonra) pencerede sayılır ama orana girmez "
+                "(gecme_orani.haric_kirma). Test oranı: aynı koşuların "
                 "test_result satırları (passed+flaky / atlanmayanlar)"
             ),
             "flaky": (
@@ -765,7 +934,11 @@ def control_tower(session: Session) -> dict[str, Any]:
                 "durum=merged) = otomatik · son sonuç: case'e bağlı test_result'ların main "
                 "üzerindeki (push/nightly/deploy/manual) en son kırma olmayan koşusu; PR koşusu "
                 "ayrı (pr_son_sonuc) · açık defect adayı: son script'i blocked + defect_candidate "
-                "· açık bug: bug_draft (dismissed hariç; Jira durumu okunmaz) · alan: case "
+                "· açık bug: yayınlanmış bug_draft'ların farklı Jira anahtarları (yeni ya da "
+                "bağlanan; aynı kayda bağlanan taslaklar tek bug; Jira'dan silinen hariç; Jira "
+                "durumu okunmaz) · bug taslağı: yayınlanmamış (draft/approved) taslaklar; "
+                "dismissed ve kırma koşusu (break_verify, BREAK_CAMPAIGN) taslakları ikisine de "
+                "girmez · alan: case "
                 "adımlarının step_mapping.po_sinifi'ndan (page object → uygulama "
                 "alanı); eşleme yoksa alan ölçülmedi (—)"
             ),
@@ -799,7 +972,25 @@ def control_tower(session: Session) -> dict[str, Any]:
                 "süresi (karar aralıklarının birleşimi; TP_CT_REVIEW_MIN_S=5 sn altı betik/API "
                 "onayı sayılır, ölçülmedi); ortalama yalnızca ölçülen story'ler üzerinden"
             ),
-            "manuel_baz": "TP_MANUAL_BASELINE_S (F0 ölçümü); boşsa ölçülmedi, değer uydurulmaz",
+            "manuel_baz": (
+                "story başına requirement_baz_deger (PUT /requirements/{id}/baseline ya da Jira "
+                "eşitlemesinde rules/baz-degerler.yaml; giren, zaman, kaynak notu — ör. F0 "
+                "ölçümü). Ölçüm yoksa sayı yok: TP_MANUAL_BASELINE_S yalnızca 'varsayılan' "
+                "kaynağı olarak bildirilir, ölçüm sayılmaz (manuel_baz_ms=null). Ortalama "
+                "yalnızca ölçülmüş story'ler üzerinden; kapsam baz_kapsami'nda"
+            ),
+            "kazanc_orani": (
+                "1 − Σ(AI + review süresi) / Σ(manuel baz), yalnızca story'ye özel ölçülmüş "
+                "manuel baz değeri (kaynak 'olcum'; varsayılan kazanca girmez) ve AI + review "
+                "süresi ölçülmüş (toplam_yontemi='ai_arti_review') story'ler. REPLAY'de AI süresi "
+                "ölçülmez, hazırlık süresi yalnız sunumdaki review süresidir "
+                "(toplam_yontemi='yalniz_review'): bu story'ler toplam kazanca girmez "
+                "(kazanc_replay_haric); story başına hazirlik[].kazanc_orani etiketiyle kalır"
+            ),
+            "baz_kapsami": (
+                "hazırlık süresi satırı olan (AI case'i üretilmiş) story'lerin manuel baz kaynağı "
+                "sayımı: ölçüm / varsayılan / ölçülmedi"
+            ),
             "maliyet": "ai_call.maliyet toplamı (tüm amaçlar); bugün: Europe/Istanbul gün başından",
             "a11y": (
                 "test_result_ek.a11y: Playwright JSON raporundaki axe-<sayfa>.json ekleri, "

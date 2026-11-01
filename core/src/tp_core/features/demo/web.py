@@ -243,3 +243,34 @@ def bekleyen_istek() -> dict[str, Any] | None:
     except (OSError, ValueError):
         return None
     return veri if isinstance(veri, dict) else None
+
+
+def uygulanan_istek_id() -> str | None:
+    """`scripts/demo-web-sync.sh`'in son uyguladığı isteğin kimliği (`demo-web-refresh.done`)."""
+    try:
+        deger = istek_dosyasi().with_suffix(".done").read_text(encoding="utf-8")[:200].strip()
+    except OSError:
+        return None
+    return deger or None
+
+
+def uygulanmamis_istek(sha: str, en_erken: datetime) -> dict[str, Any] | None:
+    """`sha` için `en_erken`den sonra yazılmış ve host betiğince henüz uygulanmamış istek.
+
+    Uygulama aynı commit'i zaten yansıtsa bile betik konteyneri yeniden oluşturur; bu sırada
+    koşan CI sağlık kontrolünde düşer (ortam koşusu). CI kapısı bu isteği bekler.
+    """
+    istek = bekleyen_istek()
+    if not istek or istek.get("sha") != sha:
+        return None
+    try:
+        zaman = datetime.fromisoformat(str(istek.get("zaman")))
+    except ValueError:
+        return None
+    if zaman.tzinfo is None:
+        zaman = zaman.replace(tzinfo=UTC)
+    if zaman < en_erken:
+        return None
+    if istek.get("istek_id") and istek.get("istek_id") == uygulanan_istek_id():
+        return None
+    return istek

@@ -18,10 +18,17 @@ from pathlib import Path
 from typing import Any
 
 from tests.unit.gateway import defect_inputs as di
-from tests.unit.gateway.demo_sources import RULES
-from tp_core.gateway import defect_replay_key, failure_block, triage_messages
+from tests.unit.gateway.demo_sources import RULES, load_golden
+from tp_core.gateway import (
+    defect_replay_key,
+    failure_block,
+    golden_name,
+    requirement_block,
+    triage_messages,
+)
 from tp_core.gateway.eval_set import EVAL_DIR
 from tp_core.gateway.evaluation import prompt_versions
+from tp_core.gateway.inputs import FREE_TEXT_KEY, numbered_acceptance_criteria
 from tp_core.ports import ModelMessage
 
 NO_MONEY = {"actual": ["TL"]}
@@ -274,31 +281,292 @@ def dup_rank_cases() -> list[dict[str, Any]]:
     ]
 
 
+# ------------------------------------------------------------------ Demo-A / Demo-B prompt'ları
+
+# Serbest metin gereksiniminin set içindeki sabit kimliği (üretimde gereksinim UUID'si; golden
+# `input_match.sources` = `serbest:*`).
+FREE_TEXT_ID = "00000000-0000-4000-8000-0000000000e1"
+FREE_TEXT = {
+    "summary": "Sepetten ürün çıkarma",
+    "description": (
+        "Bayi sepetteki bir ürün satırını kaldırabilmeli; toplamlar ve kampanya indirimi yeniden "
+        "hesaplanmalıdır."
+    ),
+    "acs": [
+        'Satırdaki "Kaldır" butonuna basıldığında ürün sepetten çıkar ve sepet sayacı azalır.',
+        "Kaldırma sonrası kampanya indirimi her 7 adette 1 bedava kuralıyla yeniden hesaplanır.",
+        "Sepet tutarı 500,00 TL altına düşerse minimum tutar uyarısı gösterilir.",
+    ],
+}
+SYMBOLS_FIXTURE = Path(__file__).resolve().parents[1] / "features" / "codegen" / "symbols.json"
+
+
+def _stories() -> dict[str, dict[str, Any]]:
+    """Jira tohumu (`jira_seed.DEMO_STORIES`, DEMO-VERISI ile aynı) + serbest metin örneği."""
+    from tp_core.integrations.jira_seed import DEMO_STORIES
+
+    out = {
+        f"TPD-{s.number}": {
+            "summary": s.summary,
+            "description": s.paragraph,
+            "acs": list(s.acceptance_criteria),
+        }
+        for s in DEMO_STORIES
+    }
+    out["SERBEST"] = {**FREE_TEXT, "acs": numbered_acceptance_criteria(FREE_TEXT["acs"])}
+    return out
+
+
+def _block(key: str, summary: str, description: str, acs: list[str]) -> str:
+    if key == "SERBEST":
+        return requirement_block(
+            summary=summary,
+            description=description,
+            acceptance_criteria=acs,
+            requirement_id=FREE_TEXT_ID,
+        )
+    return requirement_block(
+        summary=summary, description=description, acceptance_criteria=acs, jira_key=key
+    )
+
+
+def _key(key: str, **kw: Any) -> dict[str, str]:
+    if key == "SERBEST":
+        return {"name": golden_name(FREE_TEXT_KEY, **kw), "jira_key": FREE_TEXT_ID}
+    return {"name": golden_name(key, **kw), "jira_key": key}
+
+
+def _refs(acs: list[str]) -> list[str]:
+    return [a.split(":", 1)[0].strip() for a in acs]
+
+
+def requirement_review_cases() -> list[dict[str, Any]]:
+    """Adım 2 ön inceleme: demo'nun 5 gereksinimi, Jira'daki ilk (düzeltilmemiş) halleriyle."""
+    stories = _stories()
+    expects: dict[str, dict[str, Any]] = {
+        # AC3 ↔ AC6 çelişkisi ve 6/7 belirsizliği PO'ya sorulmalı.
+        "TPD-1": {"verdict": "needs_po", "ac_refs_any": ["AC3", "AC6"]},
+        # Kabul kriteri yok: PO teyidi (missing_ac); case üretimine geçilmez.
+        "TPD-2": {"verdict": "needs_po", "question_types": ["missing_ac"]},
+        # Açıklamadaki talimat veri olarak kalır; uydurma AC'ye soru yok.
+        "TPD-3": {},
+        # İki net AC: hazır.
+        "TPD-4": {"verdict": "ready"},
+        # "7 adette 1" ve 500 TL demo verisiyle çelişir: PO'ya sorulmalı.
+        "SERBEST": {"verdict": "needs_po"},
+    }
+    out = []
+    for key, exp in expects.items():
+        st = stories[key]
+        out.append(
+            {
+                "id": key.lower(),
+                "description": f"{key}: {st['summary']}",
+                "replay_key": _key(key),
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": _block(key, st["summary"], st["description"], st["acs"]),
+                    }
+                ],
+                "expect": {"ac_refs_within": _refs(st["acs"]), **exp},
+            }
+        )
+    return out
+
+
+def _golden_acs(purpose: str, name: str) -> list[str]:
+    return list(load_golden(purpose, name)["input_match"]["acceptance_criteria"])
+
+
+def _test_data_block() -> str:
+    """Üretimin test verisi bloğu (`cases.testdata`), demo-app seed'inden (bellek içi SQLite)."""
+    from tests.unit.gateway.demo_sources import demo_query
+    from tp_core.features.cases import testdata
+    from tp_core.gateway import wrap_untrusted
+
+    text = testdata.build_text(lambda sql: [tuple(r) for r in demo_query(sql)])
+    return wrap_untrusted(text, source=testdata.KAYNAK, kind="data")
+
+
+def case_generation_cases() -> list[dict[str, Any]]:
+    """Adım 4 (§12): 5 story × 3 koşu. PO onaylı (son hal) belgeler golden girdi beyanlarından;
+    girdi üretimin `generation_messages` kurucusuyla (story bloğu + test verisi)."""
+    from types import SimpleNamespace
+
+    from tp_core.features.cases.service import generation_messages
+
+    stories = _stories()
+    data_block = _test_data_block()
+    min_tl = "Minimum sipariş tutarı 750,00 TL"
+    # 500,00 TL bayi2'nin kredi limitidir (geçerli); eski (düzeltilmemiş) minimum tutar olmamalı.
+    old_min = "Minimum sipariş tutarı 500,00 TL"
+    plan = [
+        (
+            "tpd-1-son-hal",
+            "TPD-1",
+            "TPD-1",
+            {"contains": [min_tl, "Kredi limiti aşıldı"], "not_contains": [old_min]},
+        ),
+        (
+            "tpd-1-f2-kod-hatasi",
+            "TPD-1",
+            "f2-kod-hatasi/TPD-1",
+            {"contains": [min_tl], "not_contains": [old_min]},
+        ),
+        ("tpd-3-arama", "TPD-3", "TPD-3", {"contains": ["Ürün bulunamadı"]}),
+        ("tpd-4-giris", "TPD-4", "TPD-4", {"contains": ["Kullanıcı adı veya parola hatalı"]}),
+        (
+            "serbest-son-hal",
+            "SERBEST",
+            "SERBEST",
+            {"contains": ["750,00 TL"], "not_contains": [old_min]},
+        ),
+    ]
+    out = []
+    for case_id, key, golden, exp in plan:
+        st = stories[key]
+        acs = _golden_acs("case_generation", golden)
+        req = SimpleNamespace(
+            id=FREE_TEXT_ID,
+            jira_key=None if key == "SERBEST" else key,
+            baslik=st["summary"],
+            aciklama=st["description"],
+            kabul_kriterleri=acs,
+            po_cevaplari=[],
+        )
+        out.append(
+            {
+                "id": case_id,
+                "description": f"{key} ({golden}): son hal belgeden case üretimi",
+                "replay_key": _key(key),
+                "messages": _msgs(generation_messages(req, [], test_verisi=data_block)),
+                "expect": {
+                    "ac_coverage": _refs(acs),
+                    "min_cases": len(acs),
+                    **exp,
+                },
+            }
+        )
+    return out
+
+
+def consistency_check_cases() -> list[dict[str, Any]]:
+    """Adım 2 tutarlılık (ajan): kod + veri araçları; kanıt yeniden doğrulanır (§8.2b adım 4)."""
+    stories = _stories()
+    plan = [
+        # Dört gömülü tutarsızlık: AC2 (kod), AC3 (veri + AC6 çelişkisi), AC4 (kodda yok).
+        ("tpd-1-tur-1", "TPD-1", {"doc_refs_include": ["AC2", "AC3", "AC4"], "min_blocking": 2}),
+        ("serbest-tur-1", "SERBEST", {"doc_refs_include": ["AC2", "AC3"], "min_blocking": 1}),
+        # Giriş story'si kodla tutarlı: engelleyici bulgu yok.
+        ("tpd-4-tutarli", "TPD-4", {"max_blocking": 0}),
+    ]
+    out = []
+    for case_id, key, exp in plan:
+        st = stories[key]
+        out.append(
+            {
+                "id": case_id,
+                "description": f"{key}: 1. kontrol turu",
+                "replay_key": _key(key, check_round=1),
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": _block(key, st["summary"], st["description"], st["acs"]),
+                    }
+                ],
+                "expect": {"acs": st["acs"], **exp},
+            }
+        )
+    return out
+
+
+def verify_and_map_cases() -> list[dict[str, Any]]:
+    """Kod üretimi doğrulama ajanı (Playwright MCP): üretimin `mapping_messages` kurucusu, gerçek
+    page object sembol tablosu (toolchain çıkarımı, codegen fikstürü)."""
+    from tp_core.features.codegen.checks import SymbolTable
+    from tp_core.features.codegen.service import case_ref, mapping_messages
+    from tp_core.gateway.inputs import VERIFY_AGENT_DEALER, VERIFY_BASE_URL
+
+    symbols = json.loads(SYMBOLS_FIXTURE.read_text(encoding="utf-8"))
+    table = SymbolTable(symbols)
+    methods = sorted(
+        f"{po['class']}.{m['name']}" for po in symbols["page_objects"] for m in po["methods"]
+    )
+    out = []
+    for key, n, title in (
+        ("TPD-1", 3, "6 adette 1 bedava (ana senaryo F2 case'i)"),
+        ("TPD-4", 1, "geçerli kullanıcıyla giriş"),
+        ("TPD-4", 2, "hatalı parola"),
+    ):
+        case = load_golden("case_generation", key)["output"]["cases"][n - 1]
+        golden = load_golden("verify_and_map", golden_name(key, case_no=n))["output"]
+        out.append(
+            {
+                "id": f"{key.lower()}-c{n}",
+                "description": f"{key}-C{n}: {title}",
+                "replay_key": _key(key, case_no=n),
+                "messages": _msgs(
+                    mapping_messages(
+                        case,
+                        case_ref(key, n),
+                        table,
+                        agent_dealer=VERIFY_AGENT_DEALER,
+                        demo_web_url=VERIFY_BASE_URL,
+                    )
+                ),
+                "expect": {
+                    "steps": [s["id"] for s in case["steps"]],
+                    "methods": methods,
+                    # Golden'daki case'e özgü assertion'lar (en azından son beklenen değer).
+                    "expects_include": [f"{e['po']}.{e['method']}" for e in golden["expects"]],
+                    "no_missing_methods": True,
+                    "all_verified": True,
+                },
+            }
+        )
+    return out
+
+
 SETS: dict[str, tuple[str, Callable[[], list[dict[str, Any]]]]] = {
     "triage": ("triage", triage_cases),
     "bug-draft": ("bug_draft", bug_draft_cases),
     "dup-rank": ("dup_rank", dup_rank_cases),
+    "requirement-review": ("requirement_review", requirement_review_cases),
+    "case-generation": ("case_generation", case_generation_cases),
+    "consistency-check": ("consistency_check", consistency_check_cases),
+    "verify-and-map": ("verify_and_map", verify_and_map_cases),
 }
+# Set düzeyi ek alanlar: §12 koşu sayısı, ajan araç ortamı (`tp_core.gateway.eval_agents`).
+EXTRA: dict[str, dict[str, Any]] = {
+    "case-generation": {"runs": 3},
+    "consistency-check": {"agent": {"tool_env": "consistency", "max_turns": 15}},
+    "verify-and-map": {"agent": {"tool_env": "browser", "max_turns": 20}},
+}
+DEFECT_SETS = ("triage", "bug-draft", "dup-rank")
 
 
 def build_sets() -> dict[str, dict[str, Any]]:
     versions = prompt_versions(RULES)
-    return {
-        bundle: {
+    out = {}
+    for bundle, (purpose, build) in SETS.items():
+        data: dict[str, Any] = {
             "bundle": bundle,
             "purpose": purpose,
             "version": versions[bundle],
-            # Geçidin golden kökü: REPLAY duman koşusu golden'ları kullanır, `record` kipi
-            # demo girdileriyle aynı anahtarı yazar.
-            "replay_key": defect_replay_key("TPD-1"),
-            "note": (
-                "Üretildi: core/tests/unit/gateway/build_eval_sets.py (elle düzenlemeyin). "
-                "Canlı koşu: python -m tp_core.gateway.eval_set --bundle " + bundle
-            ),
-            "cases": build(),
         }
-        for bundle, (purpose, build) in SETS.items()
-    }
+        if bundle in DEFECT_SETS:
+            # Geçidin golden kökü: REPLAY duman koşusu golden'ları kullanır, `record` kipi
+            # demo girdileriyle aynı anahtarı yazar. Diğer setlerde vaka düzeyindedir.
+            data["replay_key"] = defect_replay_key("TPD-1")
+        data.update(EXTRA.get(bundle, {}))
+        data["note"] = (
+            "Üretildi: core/tests/unit/gateway/build_eval_sets.py (elle düzenlemeyin). "
+            "Canlı koşu: make eval-live A='--bundle " + bundle + "'"
+        )
+        data["cases"] = build()
+        out[bundle] = data
+    return out
 
 
 def dump(data: Mapping[str, Any]) -> str:

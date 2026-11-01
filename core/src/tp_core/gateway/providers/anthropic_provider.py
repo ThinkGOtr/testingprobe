@@ -17,6 +17,9 @@ Sağlayıcıya özgü kararlar yalnızca burada:
   Çaba (`effort`) ve `thinking` models.yaml'dan gelir.
 - Zorunlu araç seçimi (`tool_choice: tool/any`) Sonnet 5.5'te 400 döndüğü için kullanılmaz; ajan
   son çıktı aracını `auto` + talimatla çağırır.
+- Çalışma alanı: `ANTHROPIC_WORKSPACE_ID` verilirse her istek `anthropic-workspace-id` başlığını
+  taşır (istemci düzeyi `default_headers`; çalışma alanına bağlı anahtar başlıksız 400 döner). Değer
+  ve anahtar hiçbir zaman loglanmaz; yalnızca "başlık var/yok" bilgisi dışarı verilir.
 - SDK'nın kendi yeniden denemesi kapalıdır (`max_retries=0`); politika geçit çekirdeğindedir.
   İstemci zaman aşımı `ProviderTransientError(timeout=True)` olur; geçit onu en çok bir kez
   yeniden dener (uzun üretim her denemede yeniden faturalanır).
@@ -57,6 +60,7 @@ _META_KEYS = {"$schema", "$id"}
 # uygulanır). models.yaml: case_generation 16000, consistency_check / verify_and_map 8192.
 STREAM_MIN_MAX_TOKENS = 8192
 DEFAULT_TIMEOUT_S = 120.0
+WORKSPACE_HEADER = "anthropic-workspace-id"
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 # `fallbacks: "default"` kabul eden modeller (Claude API). Haiku 5.5: sunucu tarafı yedek yok.
 SERVER_FALLBACK_MODELS = frozenset(
@@ -165,10 +169,15 @@ class AnthropicProvider:
         client: Any | None = None,
         timeout_s: float = DEFAULT_TIMEOUT_S,
         server_fallback: bool = True,
+        workspace_id: str | None = None,
+        http_client: Any | None = None,
     ) -> None:
         # Sunucu tarafı ret yedeği yalnızca birinci taraf Claude API'de (Bedrock/Vertex/Foundry'de
         # parametre yoktur; orada istemci tarafı ara katman gerekir).
         self.server_fallback = server_fallback
+        workspace = (workspace_id or "").strip()
+        # Yalnızca var/yok bilgisi (değer asla saklanmaz/yazdırılmaz; bkz. eval_live --ping).
+        self.workspace_header = bool(workspace)
         if client is not None:
             self._client = client
             return
@@ -178,7 +187,17 @@ class AnthropicProvider:
             )
         import anthropic
 
-        self._client = anthropic.Anthropic(api_key=api_key, max_retries=0, timeout=timeout_s)
+        options: dict[str, Any] = {}
+        if workspace:
+            options["default_headers"] = {WORKSPACE_HEADER: workspace}
+        if http_client is not None:  # testler: httpx2.MockTransport
+            options["http_client"] = http_client
+        self._client = anthropic.Anthropic(
+            api_key=api_key, max_retries=0, timeout=timeout_s, **options
+        )
+
+    def __repr__(self) -> str:  # anahtar/çalışma alanı değeri asla görünmez
+        return f"AnthropicProvider(workspace_header={self.workspace_header})"
 
     # ------------------------------------------------------------------ istek
 

@@ -10,10 +10,10 @@ import uuid
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictInt
 
 from tp_core.api.deps import DbSession, Principal, current_user, require_role
-from tp_core.features.requirements import flow, serialize, services
+from tp_core.features.requirements import baseline, flow, serialize, services
 from tp_core.models import BugDraft, ConsistencyFinding, Requirement
 
 router = APIRouter(tags=["requirements"])
@@ -21,6 +21,7 @@ router = APIRouter(tags=["requirements"])
 Analyst = Annotated[Principal, Depends(require_role("analyst"))]
 Po = Annotated[Principal, Depends(require_role("po"))]
 Herkes = Annotated[Principal, Depends(current_user)]
+AnalystVeyaPo = Annotated[Principal, Depends(require_role("analyst", "po"))]
 
 ELENEN_BASLIGI = "X-Elenen-Bulgu-Sayisi"
 
@@ -45,6 +46,16 @@ class DuzeltmeUygulama(BaseModel):
 
 class PoOnayi(BaseModel):
     icerik_hash: str | None = Field(default=None, max_length=128)
+
+
+class BazDeger(BaseModel):
+    """Story başına manuel test tasarımı süresi (saniye) + kaynak notu ('F0 ölçümü – İsmail')."""
+
+    model_config = {"populate_by_name": True}
+
+    # Katı tam sayı: "3600" ya da 3600.5 kabul edilmez (birim karışıklığı sessizce yutulmaz).
+    deger_s: StrictInt
+    not_metni: str = Field(alias="not", max_length=baseline.NOT_UST_SINIR)
 
 
 def _req(session: DbSession, req_id: uuid.UUID, kilit: bool = False) -> Requirement:
@@ -93,6 +104,7 @@ def sync(session: DbSession, user: Analyst) -> dict[str, Any]:
         "mesaj": rapor.mesaj(),
         "proje": rapor.proje,
         "sonuc": rapor.sonuc,
+        "baz_dosyasi": rapor.baz_dosyasi,
     }
 
 
@@ -162,6 +174,78 @@ def po_approve(req_id: uuid.UUID, body: PoOnayi, session: DbSession, user: Po) -
     flow.po_approve_portal(session, req, user, body.icerik_hash)
     session.flush()
     return serialize.requirement_detail(session, req)
+
+
+# ------------------------------------------------------------- manuel baz değer (Faz 5)
+# Story başına manuel test tasarımı süresi. Analist ya da PO girer; her giriş geçmişte kalır ve
+# hash zincirli denetim olayı yazar. Ölçüm yoksa TP_MANUAL_BASELINE_S "varsayılan" olarak
+# kullanılır; ikisi de yoksa "ölçülmedi" (değer uydurulmaz).
+
+
+def _baz_yanit(
+    session: DbSession, req: Requirement, v: dict[str, Any], degisti: bool
+) -> dict[str, Any]:
+    return {
+        "requirement_id": str(req.id),
+        "jira_key": req.jira_key,
+        "baseline": v,
+        "degisti": degisti,
+        "gecmis": baseline.history(session, req.id),
+    }
+
+
+@router.get("/requirements/{req_id}/baseline")
+def get_baseline(req_id: uuid.UUID, session: DbSession, _u: Herkes) -> dict[str, Any]:
+    req = _req(session, req_id)
+    return _baz_yanit(session, req, baseline.baseline_for(session, req.id), False)
+
+
+@router.put("/requirements/{req_id}/baseline")
+def put_baseline(
+    req_id: uuid.UUID, body: BazDeger, session: DbSession, user: AnalystVeyaPo
+) -> dict[str, Any]:
+    req = _req(session, req_id, kilit=True)
+    try:
+        v, degisti = baseline.set_baseline(session, req, user, body.deger_s, body.not_metni)
+    except baseline.BaselineError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return _baz_yanit(session, req, v, degisti)
+
+
+@router.delete("/requirements/{req_id}/baseline")
+def delete_baseline(
+    req_id: uuid.UUID,
+    session: DbSession,
+    user: AnalystVeyaPo,
+    not_metni: Annotated[str | None, Query(alias="not", max_length=baseline.NOT_UST_SINIR)] = None,
+) -> dict[str, Any]:
+    req = _req(session, req_id, kilit=True)
+    try:
+        v, degisti = baseline.clear_baseline(session, req, user, not_metni)
+    except baseline.BaselineError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return _baz_yanit(session, req, v, degisti)
+
+
+# rules/baz-degerler.yaml: `make reset`'ten sağ çıkan, story anahtarlı F0 ölçümleri. Eşitlemede
+# kendiliğinden uygulanır; buradaki uçlar demo öncesi denetim ve dosya düzenlendikten sonra
+# yeniden uygulama içindir (portal girişini ezmez).
+
+
+@router.get("/baseline-file")
+def baseline_file_status(session: DbSession, _u: Herkes) -> dict[str, Any]:
+    from tp_core.features.requirements import baseline_dosya
+
+    return baseline_dosya.durum(session)
+
+
+@router.post("/baseline-file/apply")
+def baseline_file_apply(session: DbSession, user: AnalystVeyaPo) -> dict[str, Any]:
+    from tp_core.features.requirements import baseline_dosya
+
+    sonuc = baseline_dosya.uygula_hepsi(session, user.kullanici_adi)
+    session.flush()
+    return {**sonuc, "durum": baseline_dosya.durum(session)["girdiler"]}
 
 
 # ----------------------------------------------------------- bug taslakları (salt okuma)
