@@ -684,10 +684,9 @@ jobs:
         if: steps.creds.outputs.enabled == 'true'
         id: region
         run: |
+          # Sauce Connect v5 de saucectl ile aynı bölge adlarını ister (us-west-1, eu-central-1, us-east-4).
           case "$SAUCE_REGION" in
-            us-west-1)    sc=us-west ;;
-            eu-central-1) sc=eu-central ;;
-            us-east-4)    sc=us-east ;;
+            us-west-1|eu-central-1|us-east-4) sc="$SAUCE_REGION" ;;
             *) echo "::error::Desteklenmeyen SAUCE_REGION: $SAUCE_REGION"; exit 1 ;;
           esac
           echo "sc=$sc" >> "$GITHUB_OUTPUT"
