@@ -1,9 +1,10 @@
 """`/scripts` yanıtları (portal `Script` / `ScriptDetay` tipleri, review-portal/src/api/types.ts).
 
 core-api forge'a erişmez (`tp_forge` yalnızca core-worker'da): PR bilgisi çekirdeğin
-`pull_request` kaydından, check'ler `TP_ARTIFACTS_PATH/checks/<sha>.json`'dan (LocalForge'un yerel
-CI sonucu, core-api'de salt okunur bağlı) okunur. GitHub forge'unda check'ler bu dosyada yoktur
-(ci-runs şeridi GitHub sonucunu ayrıca kaydeder); o zaman `ci = null`.
+`pull_request` kaydından okunur. Check'ler LocalForge kipinde `TP_ARTIFACTS_PATH/checks/<sha>.json`
+dosyasından (yerel CI sonucu, core-api'de salt okunur bağlı), GitHub kipinde core-worker PR
+senkronunun (`service.sync_prs`) `pull_request.checks` kolonuna yazdığı kopyadan okunur. GitHub
+kopyası yoksa ya da güncel head'e ait değilse (bayat) zorunlu check'ler `pending` sayılır.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from tp_core.config import get_settings
 from tp_core.features.codegen.browser import AgentConfig, sayfa_adresi
@@ -62,8 +63,29 @@ def read_checks(sha: str | None) -> list[dict[str, Any]]:
         veri = json.loads(yol.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return []
-    liste = veri.get("checks", []) if isinstance(veri, dict) else veri
+    return _gecerli_checkler(veri.get("checks", []) if isinstance(veri, dict) else veri)
+
+
+def _gecerli_checkler(liste: Any) -> list[dict[str, Any]]:
+    if not isinstance(liste, list):
+        return []
     return [c for c in liste if isinstance(c, dict) and isinstance(c.get("name"), str)]
+
+
+def github_checks(sha: str | None, kayit: PullRequest | None) -> list[dict[str, Any]] | None:
+    """GitHub kipi: core-worker'ın `pull_request.checks` kopyası. Kopya yoksa ya da `checks_sha`
+    istenen head değilse (dal güncellendi, senkron henüz koşmadı) None: durum bilinmiyor."""
+    if not sha or kayit is None or kayit.checks is None or kayit.checks_sha != sha:
+        return None
+    return _gecerli_checkler(kayit.checks)
+
+
+def script_pr_kaydi(sc: Script) -> PullRequest | None:
+    """Script'in PR kaydı (script'in bağlı olduğu oturumdan); oturum yoksa None."""
+    if sc.pr_no is None:
+        return None
+    s = object_session(sc)
+    return s.get(PullRequest, sc.pr_no) if s is not None else None
 
 
 def _check_durumu(c: dict[str, Any]) -> str:
@@ -72,11 +94,34 @@ def _check_durumu(c: dict[str, Any]) -> str:
     return {"success": "passed", "skipped": "skipped"}.get(str(c.get("conclusion")), "failed")
 
 
-def pr_checks(sha: str | None) -> tuple[list[dict[str, Any]], str | None, list[str]]:
-    """(portal check listesi, ci özeti, zorunlu check engelleri)."""
+def pr_checks(
+    sha: str | None, kayit: PullRequest | None = None
+) -> tuple[list[dict[str, Any]], str | None, list[str]]:
+    """(portal check listesi, ci özeti, zorunlu check engelleri).
+
+    LocalForge: `checks/<sha>.json`. GitHub: `kayit` (PR kaydı) üzerindeki worker kopyası; kopya
+    yok/bayatsa zorunlu check'ler `pending` (asla `passed` değil)."""
     zorunlu = required_checks()
+    if get_settings().forge == "github":
+        ham = github_checks(sha, kayit)
+        if ham is None:
+            if not sha:
+                return [], None, [f"Zorunlu kontrol '{ad}': yok" for ad in zorunlu]
+            bekleyen = [
+                {
+                    "ad": ad,
+                    "durum": "pending",
+                    "zorunlu": True,
+                    "url": None,
+                    "aciklama": "GitHub check durumu henüz alınmadı (PR senkronu bekleniyor)",
+                }
+                for ad in zorunlu
+            ]
+            return bekleyen, "pending", [f"Zorunlu kontrol '{ad}': pending" for ad in zorunlu]
+    else:
+        ham = read_checks(sha)
     son: dict[str, dict[str, Any]] = {}
-    for c in read_checks(sha):
+    for c in ham:
         son[c["name"]] = c
     liste = [
         {
@@ -111,7 +156,7 @@ def _pr(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any] | Non
     if sc.pr_no is None:
         return None
     kayit = session.get(PullRequest, sc.pr_no)
-    checks, ci, _ = pr_checks(sc.head_sha)
+    checks, ci, _ = pr_checks(sc.head_sha, kayit)
     return {
         "number": sc.pr_no,
         "url": cg.pr_url,
@@ -247,9 +292,8 @@ def merge_engelleri(sc: Script, cg: ScriptCodegen) -> list[str]:
     dal = dal_engeli(cg)
     if dal:
         engeller.append(dal)
-    _, _, check_engelleri = pr_checks(sc.head_sha)
-    if get_settings().forge == "local":
-        engeller += check_engelleri
+    _, _, check_engelleri = pr_checks(sc.head_sha, script_pr_kaydi(sc))
+    engeller += check_engelleri
     return engeller
 
 

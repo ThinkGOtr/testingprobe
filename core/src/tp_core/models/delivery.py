@@ -89,7 +89,7 @@ class StepMapping(Base):
 
 
 class PullRequest(Base):
-    """LocalForge PR kaydı (TP_FORGE=local); GitHub'da PR GitHub'dadır."""
+    """Çekirdeğin açtığı PR kaydı (LocalForge'da tek kaynak; GitHub'da forge kopyası)."""
 
     __tablename__ = "pull_request"
     __table_args__ = (in_check("durum", enums.PR_DURUM, "pull_request_durum_ck"),)
@@ -106,6 +106,12 @@ class PullRequest(Base):
     yorumlar: Mapped[list[Any]] = mapped_column(JSONB, server_default=EMPTY_LIST, default=list)
     acan: Mapped[str]
     merge_eden: Mapped[str | None]
+    # GitHub kipi: core-worker PR senkronunun (`sync_prs`) forge'dan okuduğu check'ler
+    # (LocalForge `checks/<sha>.json` biçimi: [{name, status, conclusion, url}]). core-api GitHub'a
+    # erişmez; portal check'leri ve merge kapısı bu kopyadan okunur (`checks_sha` = okunan head).
+    checks: Mapped[list[Any] | None] = mapped_column(JSONB)
+    checks_sha: Mapped[str | None]
+    checks_zaman: Mapped[datetime | None]
     olusturma: Mapped[datetime] = olusturma_col()
     guncelleme: Mapped[datetime] = guncelleme_col()
 

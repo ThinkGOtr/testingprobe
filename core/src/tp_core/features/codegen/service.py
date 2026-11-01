@@ -3141,7 +3141,7 @@ def sync_prs(engine: Engine, forge: ForgePort | None = None) -> dict[str, Any]:
                 )
             )
         ]
-    sonuc = {"bakilan": 0, "merged": 0, "closed": 0, "hata": 0, **sonuc_eski}
+    sonuc = {"bakilan": 0, "merged": 0, "closed": 0, "hata": 0, "checks": 0, **sonuc_eski}
     for sid, no, head, tur in acik:
         sonuc["bakilan"] += 1
         try:
@@ -3151,6 +3151,8 @@ def sync_prs(engine: Engine, forge: ForgePort | None = None) -> dict[str, Any]:
             sonuc["hata"] += 1
             continue
         if pr.state not in ("merged", "closed"):
+            if _pr_checklerini_kaydet(forge, int(no), pr.head_sha or head):
+                sonuc["checks"] += 1
             continue
         try:
             if tur == "locator_fix":
@@ -3165,6 +3167,28 @@ def sync_prs(engine: Engine, forge: ForgePort | None = None) -> dict[str, Any]:
             continue
         sonuc[pr.state] += 1
     return sonuc
+
+
+def _pr_checklerini_kaydet(forge: ForgePort, no: int, head: str | None) -> bool:
+    """Açık PR'ın head check'lerini forge'dan okuyup `pull_request.checks`'e yazar (GitHub kipi:
+    core-api GitHub'a erişmez; portal check listesi ve merge kapısı bu kopyayı okur). Biçim
+    LocalForge'un `checks/<sha>.json` listesiyle aynıdır. Yalnızca değişince yazılır; okuma
+    hatası durum senkronunu durdurmaz (kopya bayat kalır → görünüm `pending`). Yazıldıysa True."""
+    if not head:
+        return False
+    try:
+        liste = [c.model_dump(mode="json") for c in forge.checks(head)]
+    except Exception as exc:
+        log.warning("PR #%s check'leri alınamadı (%s): %s", no, head[:12], exc)
+        return False
+    with session_scope() as s:
+        kayit = s.get(PullRequest, no, with_for_update=True)
+        if kayit is None or (kayit.checks_sha == head and kayit.checks == liste):
+            return False
+        kayit.checks = liste
+        kayit.checks_sha = head
+        kayit.checks_zaman = datetime.now(UTC)
+    return True
 
 
 def _test_pr_senkronu(
