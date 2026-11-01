@@ -46,7 +46,7 @@ defaults:
   timeout: 15m
 
 suites:
-  - name: "Chromium — Windows 11"
+  - name: "Chromium-Windows-11"
     platformName: "Windows 11"
     screenResolution: "1920x1080"
     # Elle yazılmış testler + kod üretiminin (CasesToCode) şablondan yazdığı tests/generated/**.

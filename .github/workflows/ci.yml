@@ -719,7 +719,8 @@ jobs:
         working-directory: demo-app
         env:
           TUNNEL: ${{ steps.region.outputs.tunnel }}
-          BUILD: ${{ github.repository }}#${{ github.run_number }} (${{ needs.changes.outputs.trigger }})
+          # Sauce adlarında yalnız A-Z a-z 0-9 - _ kabul edilir
+          BUILD: ${{ github.event.repository.name }}-${{ github.run_number }}-${{ needs.changes.outputs.trigger }}
         run: |
           set -euo pipefail
           rc=0

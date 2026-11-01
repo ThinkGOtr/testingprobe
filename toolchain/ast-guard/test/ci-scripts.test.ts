@@ -177,14 +177,14 @@ describe("github-sauce-summary.sh (sauce.json)", () => {
     writeTree(dir, {
       "demo-app/results/sauce/saucectl-report.json": JSON.stringify({
         testResults: [
-          { name: "Chromium — Windows 11", status: "passed", url: SAUCE_URL, browser: "chromium", platform: "Windows 11" },
+          { name: "Chromium-Windows-11", status: "passed", url: SAUCE_URL, browser: "chromium", platform: "Windows 11" },
           { name: "kötü | ad", status: "passed", url: "https://evil.example.com/tests/abc" },
         ],
       }),
       "demo-app/results/sauce/saucectl-junit.xml": "<testsuites name='saucectl'/>",
-      "demo-app/results/sauce/artifacts/Chromium — Windows 11/results/junit.xml": "<testsuites name='pw'/>",
-      "demo-app/results/sauce/artifacts/Chromium — Windows 11/results/results.json": pwReport({ expected: 1 }),
-      "demo-app/results/sauce/artifacts/Chromium — Windows 11/video.mp4": "mp4",
+      "demo-app/results/sauce/artifacts/Chromium-Windows-11/results/junit.xml": "<testsuites name='pw'/>",
+      "demo-app/results/sauce/artifacts/Chromium-Windows-11/results/results.json": pwReport({ expected: 1 }),
+      "demo-app/results/sauce/artifacts/Chromium-Windows-11/video.mp4": "mp4",
       "results/sauce/saucectl.log": "log",
     });
     const r = run(
@@ -200,7 +200,7 @@ describe("github-sauce-summary.sh (sauce.json)", () => {
     assert.equal(j["durum"], "passed");
     assert.equal(j["job_url"], SAUCE_URL);
     assert.deepEqual(j["jobs"], [
-      { id: "0123456789abcdef0123456789abcdef", url: SAUCE_URL, ad: "Chromium — Windows 11", durum: "passed",
+      { id: "0123456789abcdef0123456789abcdef", url: SAUCE_URL, ad: "Chromium-Windows-11", durum: "passed",
         tarayici: "chromium", platform: "Windows 11" },
     ]);
     assert.equal(j["saucectl_exit"], 0);
@@ -209,7 +209,7 @@ describe("github-sauce-summary.sh (sauce.json)", () => {
     assert.equal(files["junit_turu"], "playwright");
     assert.equal(readFileSync(join(dir, "s/junit.xml"), "utf8"), "<testsuites name='pw'/>");
     assert.ok(existsSync(join(dir, "s/results.json")));
-    assert.ok(existsSync(join(dir, "s/artifacts/Chromium — Windows 11/video.mp4")));
+    assert.ok(existsSync(join(dir, "s/artifacts/Chromium-Windows-11/video.mp4")));
     assert.match(r.summary, new RegExp(SAUCE_URL.replace(/[.]/g, "\\.")));
     assert.doesNotMatch(r.summary, /evil\.example/);
   });
