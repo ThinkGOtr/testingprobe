@@ -625,10 +625,16 @@ jobs:
       - name: Sauce kimliği var mı?
         id: creds
         run: |
-          if [ -n "$SAUCE_USERNAME" ] && [ -n "$SAUCE_ACCESS_KEY" ]; then
+          # PR koşularında Sauce atlanır: hesap tek eşzamanlı oturumla PR'ları sıraya sokar ve merge
+          # kapısı (zorunlu olmayan) Sauce'u beklemez. push / deploy / nightly'de koşar.
+          if [ "$TP_TRIGGER" = "pr" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "reason=PR koşusu: Sauce yalnızca push, deploy ve gece koşusunda çalışır" >> "$GITHUB_OUTPUT"
+          elif [ -n "$SAUCE_USERNAME" ] && [ -n "$SAUCE_ACCESS_KEY" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "reason=Sauce kimliği (SAUCE_USERNAME / SAUCE_ACCESS_KEY secret'ları) tanımlı değil" >> "$GITHUB_OUTPUT"
           fi
 
       # Kimlik yoksa da checkout yapılır: sauce.json'u yazan betik ve test edilen commit gerekir.
@@ -743,13 +749,14 @@ jobs:
         if: always()
         env:
           ENABLED: ${{ steps.creds.outputs.enabled }}
+          SKIP_REASON: ${{ steps.creds.outputs.reason }}
           SAUCE_EXIT: ${{ steps.run.outputs.exit_code }}
           TUNNEL: ${{ steps.region.outputs.tunnel }}
         run: |
           set -euo pipefail
           if [ "$ENABLED" != "true" ]; then
             bash scripts/github-sauce-summary.sh --out tp-sauce --region "$SAUCE_REGION" \
-              --skipped "Sauce kimliği (SAUCE_USERNAME / SAUCE_ACCESS_KEY secret'ları) tanımlı değil"
+              --skipped "$SKIP_REASON"
             exit 0
           fi
           bash scripts/github-sauce-summary.sh --out tp-sauce \
