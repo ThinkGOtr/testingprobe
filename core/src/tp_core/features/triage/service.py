@@ -368,6 +368,12 @@ def _girdi_olustur(
     if aria is None and kosu is not None and kosu_rel:
         ctx_rel = ev.kanit_yolu(kosu_rel, ev.mapping(kanitlar.get("error_context")).get("rel"))
         aria, kapsam = ev.aria_oku(kosu, ctx_rel)
+    if aria is None and ek is not None:
+        # GitHub kipi: yerel koşu dizini yok; içe aktarımda artefakttaki error-context.md'den
+        # okunan hata anı snapshot'ı (`test_result_ek.hata_baglami`, ci `github_ingest`).
+        hb = ev.mapping(ek.hata_baglami)
+        aria = ev.temiz_or_none(hb.get("aria_snapshot"), ev.MAX_ARIA)
+        kapsam = ev.temiz_or_none(hb.get("aria_snapshot_scope"), 40) if aria else None
     trace_rel = None
     if kosu_rel:
         trace_rel = ev.kanit_yolu(
@@ -1680,3 +1686,45 @@ def list_failures(
         q = q.where(and_(*kosullar))
     q = q.order_by(Failure.olusturma.desc(), Failure.test_adi).limit(limit)
     return [serialize(session, f, ek, run) for f, ek, run in session.execute(q).all()]
+
+
+# ============================================================================= yeniden triage
+
+
+class YenidenTriageReddi(ValueError):
+    """Koşunun triage sonuçları başka kayıtlara bağlı; silinip yeniden sınıflandırılamaz."""
+
+
+def triage_sifirla(session: Session, run_id: uuid.UUID, isteyen: str) -> dict[str, Any]:
+    """Koşunun triage çıktılarını (failure + failure_ek + triage_kosu) siler; operatör aracı.
+
+    Kanıt sonradan düzeldiğinde (ör. GitHub koşusunun hata bağlamı 0015 ile geri dolduruldu)
+    `classify_run` yeniden çalışabilsin diye. Bir failure bug taslağına, onarım script'ine ya da
+    başka bir taslağın `ilgili_failure_ids`'ine bağlıysa hiçbir şey silinmez (reddedilir). Denetim
+    kaydı (`triage.reset`) yazılır; önceki `triage.classified` kayıtları append-only olarak kalır.
+    """
+    from tp_core.models import Script
+
+    ids = list(session.scalars(select(Failure.id).where(Failure.run_id == run_id)))
+    if ids:
+        bagli = session.scalar(
+            select(BugDraft.id).where(BugDraft.failure_id.in_(ids)).limit(1)
+        ) or session.scalar(select(Script.id).where(Script.failure_id.in_(ids)).limit(1))
+        if bagli is None:
+            bagli = session.execute(
+                text(
+                    "SELECT 1 FROM bug_draft_ek WHERE ilgili_failure_ids ?| CAST(:ids AS text[]) "
+                    "LIMIT 1"
+                ),
+                {"ids": [str(i) for i in ids]},
+            ).scalar()
+        if bagli is not None:
+            raise YenidenTriageReddi(
+                "koşunun failure kayıtları bug taslağına / onarım script'ine bağlı; sıfırlanmadı"
+            )
+        session.execute(Failure.__table__.delete().where(Failure.run_id == run_id))
+    session.execute(TriageKosu.__table__.delete().where(TriageKosu.run_id == run_id))
+    audit_on_commit(
+        session, isteyen, "triage.reset", f"run:{run_id}", {"silinen_failure": len(ids)}
+    )
+    return {"run_id": str(run_id), "silinen_failure": len(ids)}

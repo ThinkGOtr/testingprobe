@@ -1,0 +1,331 @@
+{
+ "config": {
+  "rootDir": "/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/tests"
+ },
+ "suites": [
+  {
+   "title": "cart.spec.ts",
+   "file": "cart.spec.ts",
+   "column": 0,
+   "line": 0,
+   "specs": [],
+   "suites": [
+    {
+     "title": "Sepet (TPD-1)",
+     "file": "cart.spec.ts",
+     "column": 6,
+     "line": 3,
+     "specs": [
+      {
+       "title": "AC1: Sepete ekle ürünü sepete ekler ve sepet sayacı artar",
+       "ok": false,
+       "tags": [],
+       "id": "1981448f0b79506fb670-fe20c81eafbd7a80267a",
+       "file": "cart.spec.ts",
+       "line": 16,
+       "column": 3,
+       "tests": [
+        {
+         "timeout": 20000,
+         "annotations": [],
+         "expectedStatus": "passed",
+         "projectId": "chromium",
+         "projectName": "chromium",
+         "status": "unexpected",
+         "results": [
+          {
+           "workerIndex": 0,
+           "status": "failed",
+           "duration": 5346,
+           "error": {
+            "message": "TimeoutError: locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByTestId('product-card-P-002').getByTestId('add-to-cart')\u001b[22m\n",
+            "location": {
+             "file": "/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/pages/catalog/catalog.page.ts",
+             "column": 8,
+             "line": 46
+            }
+           },
+           "errors": [
+            {
+             "message": "TimeoutError: locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByTestId('product-card-P-002').getByTestId('add-to-cart')\u001b[22m\n\n\n   at ../pages/catalog/catalog.page.ts:46\n\n  44 |       .getByTestId(scopeTestIdOf(catalog.addToCart, productCode))\n  45 |       .getByTestId(catalog.addToCart.testId)\n> 46 |       .click();\n     |        ^\n  47 |     const response = await updated;\n  48 |     if (response instanceof Error) throw response;\n  49 |     expect(response.ok(), `sepete ekleme isteği başarısız: ${response.status()}`).toBe(true);\n    at CatalogPage.addToCart (/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/pages/catalog/catalog.page.ts:46:8)\n    at /home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/tests/cart.spec.ts:18:5",
+             "location": {
+              "file": "/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/pages/catalog/catalog.page.ts",
+              "column": 8,
+              "line": 46
+             }
+            }
+           ],
+           "retry": 0,
+           "startTime": "2026-11-02T00:38:02.827Z",
+           "attachments": [
+            {
+             "name": "screenshot",
+             "contentType": "image/png",
+             "path": "/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/results/artifacts/cart-Sepet-TPD-1-AC1-Sepet-5f8e1-ekler-ve-sepet-sayacı-artar-chromium/test-failed-1.png"
+            },
+            {
+             "name": "error-context",
+             "contentType": "text/markdown",
+             "path": "/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/results/artifacts/cart-Sepet-TPD-1-AC1-Sepet-5f8e1-ekler-ve-sepet-sayacı-artar-chromium/error-context.md"
+            },
+            {
+             "name": "trace",
+             "contentType": "application/zip",
+             "path": "/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/results/artifacts/cart-Sepet-TPD-1-AC1-Sepet-5f8e1-ekler-ve-sepet-sayacı-artar-chromium/trace.zip"
+            }
+           ],
+           "errorLocation": {
+            "file": "/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/pages/catalog/catalog.page.ts",
+            "column": 8,
+            "line": 46
+           },
+           "steps": []
+          },
+          {
+           "workerIndex": 3,
+           "status": "failed",
+           "duration": 5456,
+           "error": {
+            "message": "TimeoutError: locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByTestId('product-card-P-002').getByTestId('add-to-cart')\u001b[22m\n",
+            "location": {
+             "file": "/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/pages/catalog/catalog.page.ts",
+             "column": 8,
+             "line": 46
+            }
+           },
+           "errors": [
+            {
+             "message": "TimeoutError: locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByTestId('product-card-P-002').getByTestId('add-to-cart')\u001b[22m\n\n\n   at ../pages/catalog/catalog.page.ts:46\n\n  44 |       .getByTestId(scopeTestIdOf(catalog.addToCart, productCode))\n  45 |       .getByTestId(catalog.addToCart.testId)\n> 46 |       .click();\n     |        ^\n  47 |     const response = await updated;\n  48 |     if (response instanceof Error) throw response;\n  49 |     expect(response.ok(), `sepete ekleme isteği başarısız: ${response.status()}`).toBe(true);\n    at CatalogPage.addToCart (/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/pages/catalog/catalog.page.ts:46:8)\n    at /home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/tests/cart.spec.ts:18:5",
+             "location": {
+              "file": "/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/pages/catalog/catalog.page.ts",
+              "column": 8,
+              "line": 46
+             }
+            }
+           ],
+           "retry": 1,
+           "startTime": "2026-11-02T00:38:08.730Z",
+           "attachments": [
+            {
+             "name": "screenshot",
+             "contentType": "image/png",
+             "path": "/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/results/artifacts/cart-Sepet-TPD-1-AC1-Sepet-5f8e1-ekler-ve-sepet-sayacı-artar-chromium-retry1/test-failed-1.png"
+            },
+            {
+             "name": "error-context",
+             "contentType": "text/markdown",
+             "path": "/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/results/artifacts/cart-Sepet-TPD-1-AC1-Sepet-5f8e1-ekler-ve-sepet-sayacı-artar-chromium-retry1/error-context.md"
+            },
+            {
+             "name": "trace",
+             "contentType": "application/zip",
+             "path": "/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/results/artifacts/cart-Sepet-TPD-1-AC1-Sepet-5f8e1-ekler-ve-sepet-sayacı-artar-chromium-retry1/trace.zip"
+            }
+           ],
+           "errorLocation": {
+            "file": "/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/pages/catalog/catalog.page.ts",
+            "column": 8,
+            "line": 46
+           },
+           "steps": []
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "title": "locators.spec.ts",
+   "file": "locators.spec.ts",
+   "column": 0,
+   "line": 0,
+   "specs": [],
+   "suites": [
+    {
+     "title": "locators.ts rol/ad sözleşmesi",
+     "file": "locators.spec.ts",
+     "column": 6,
+     "line": 99,
+     "specs": [
+      {
+       "title": "menü, katalog, sepet ve sipariş sayfaları",
+       "ok": false,
+       "tags": [],
+       "id": "abbba80301da790c63e3-f194c14e68efe4c2337a",
+       "file": "locators.spec.ts",
+       "line": 108,
+       "column": 3,
+       "tests": [
+        {
+         "timeout": 20000,
+         "annotations": [],
+         "expectedStatus": "passed",
+         "projectId": "chromium",
+         "projectName": "chromium",
+         "status": "unexpected",
+         "results": [
+          {
+           "workerIndex": 24,
+           "status": "failed",
+           "duration": 5527,
+           "error": {
+            "message": "Error: addToCart: testId 'add-to-cart' sayfada bulunamadı\n\n\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeAttached\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByTestId('product-card-P-001').getByTestId('add-to-cart').first()\nExpected: attached\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - addToCart: testId 'add-to-cart' sayfada bulunamadı getByTestId('product-card-P-001').getByTestId('add-to-cart').first() with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('product-card-P-001').getByTestId('add-to-cart').first()\u001b[22m\n",
+            "location": {
+             "file": "/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/tests/locators.spec.ts",
+             "column": 86,
+             "line": 34
+            }
+           },
+           "errors": [
+            {
+             "message": "Error: addToCart: testId 'add-to-cart' sayfada bulunamadı\n\n\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeAttached\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByTestId('product-card-P-001').getByTestId('add-to-cart').first()\nExpected: attached\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - addToCart: testId 'add-to-cart' sayfada bulunamadı getByTestId('product-card-P-001').getByTestId('add-to-cart').first() with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('product-card-P-001').getByTestId('add-to-cart').first()\u001b[22m\n\n\n  32 |     target = isPrefix ? page.locator(`[data-testid^=\"${spec.testId}\"]`).first() : page.getByTestId(spec.testId);\n  33 |   }\n> 34 |   await expect(target.first(), `${key}: testId '${spec.testId}' sayfada bulunamadı`).toBeAttached();\n     |                                                                                      ^\n  35 | }\n  36 |\n  37 | async function expectRoleNameMatchesTestId(page: Page, group: Record<string, LocatorSpec>): Promise<void> {\n    at expectTestIdPresent (/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/tests/locators.spec.ts:34:86)\n    at expectRoleNameMatchesTestId (/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/tests/locators.spec.ts:40:5)\n    at /home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/tests/locators.spec.ts:113:7",
+             "location": {
+              "file": "/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/tests/locators.spec.ts",
+              "column": 86,
+              "line": 34
+             }
+            }
+           ],
+           "retry": 0,
+           "startTime": "2026-11-02T00:39:32.601Z",
+           "attachments": [
+            {
+             "name": "screenshot",
+             "contentType": "image/png",
+             "path": "/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/results/artifacts/locators-locators-ts-rol-a-97cb9--sepet-ve-sipariş-sayfaları-chromium/test-failed-1.png"
+            },
+            {
+             "name": "error-context",
+             "contentType": "text/markdown",
+             "path": "/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/results/artifacts/locators-locators-ts-rol-a-97cb9--sepet-ve-sipariş-sayfaları-chromium/error-context.md"
+            },
+            {
+             "name": "trace",
+             "contentType": "application/zip",
+             "path": "/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/results/artifacts/locators-locators-ts-rol-a-97cb9--sepet-ve-sipariş-sayfaları-chromium/trace.zip"
+            }
+           ],
+           "errorLocation": {
+            "file": "/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/tests/locators.spec.ts",
+            "column": 86,
+            "line": 34
+           },
+           "steps": []
+          },
+          {
+           "workerIndex": 26,
+           "status": "failed",
+           "duration": 5803,
+           "error": {
+            "message": "Error: addToCart: testId 'add-to-cart' sayfada bulunamadı\n\n\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeAttached\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByTestId('product-card-P-001').getByTestId('add-to-cart').first()\nExpected: attached\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - addToCart: testId 'add-to-cart' sayfada bulunamadı getByTestId('product-card-P-001').getByTestId('add-to-cart').first() with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('product-card-P-001').getByTestId('add-to-cart').first()\u001b[22m\n",
+            "location": {
+             "file": "/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/tests/locators.spec.ts",
+             "column": 86,
+             "line": 34
+            }
+           },
+           "errors": [
+            {
+             "message": "Error: addToCart: testId 'add-to-cart' sayfada bulunamadı\n\n\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeAttached\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByTestId('product-card-P-001').getByTestId('add-to-cart').first()\nExpected: attached\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - addToCart: testId 'add-to-cart' sayfada bulunamadı getByTestId('product-card-P-001').getByTestId('add-to-cart').first() with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('product-card-P-001').getByTestId('add-to-cart').first()\u001b[22m\n\n\n  32 |     target = isPrefix ? page.locator(`[data-testid^=\"${spec.testId}\"]`).first() : page.getByTestId(spec.testId);\n  33 |   }\n> 34 |   await expect(target.first(), `${key}: testId '${spec.testId}' sayfada bulunamadı`).toBeAttached();\n     |                                                                                      ^\n  35 | }\n  36 |\n  37 | async function expectRoleNameMatchesTestId(page: Page, group: Record<string, LocatorSpec>): Promise<void> {\n    at expectTestIdPresent (/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/tests/locators.spec.ts:34:86)\n    at expectRoleNameMatchesTestId (/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/tests/locators.spec.ts:40:5)\n    at /home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/tests/locators.spec.ts:113:7",
+             "location": {
+              "file": "/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/tests/locators.spec.ts",
+              "column": 86,
+              "line": 34
+             }
+            }
+           ],
+           "retry": 1,
+           "startTime": "2026-11-02T00:39:38.852Z",
+           "attachments": [
+            {
+             "name": "screenshot",
+             "contentType": "image/png",
+             "path": "/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/results/artifacts/locators-locators-ts-rol-a-97cb9--sepet-ve-sipariş-sayfaları-chromium-retry1/test-failed-1.png"
+            },
+            {
+             "name": "error-context",
+             "contentType": "text/markdown",
+             "path": "/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/results/artifacts/locators-locators-ts-rol-a-97cb9--sepet-ve-sipariş-sayfaları-chromium-retry1/error-context.md"
+            },
+            {
+             "name": "trace",
+             "contentType": "application/zip",
+             "path": "/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/results/artifacts/locators-locators-ts-rol-a-97cb9--sepet-ve-sipariş-sayfaları-chromium-retry1/trace.zip"
+            }
+           ],
+           "errorLocation": {
+            "file": "/home/runner/work/testingprobe-demo-app/testingprobe-demo-app/demo-app/e2e/tests/locators.spec.ts",
+            "column": 86,
+            "line": 34
+           },
+           "steps": []
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "title": "login.spec.ts",
+   "file": "login.spec.ts",
+   "column": 0,
+   "line": 0,
+   "specs": [],
+   "suites": [
+    {
+     "title": "Bayi girişi (TPD-4)",
+     "file": "login.spec.ts",
+     "column": 6,
+     "line": 4,
+     "specs": [
+      {
+       "title": "doğru bilgilerle giriş yapılır ve katalog açılır",
+       "ok": true,
+       "tags": [],
+       "id": "41d3fd2474a19feb00a1-b1545431a5d1b4cae6ab",
+       "file": "login.spec.ts",
+       "line": 5,
+       "column": 3,
+       "tests": [
+        {
+         "timeout": 20000,
+         "annotations": [],
+         "expectedStatus": "passed",
+         "projectId": "chromium",
+         "projectName": "chromium",
+         "status": "expected",
+         "results": [
+          {
+           "workerIndex": 25,
+           "status": "passed",
+           "duration": 490,
+           "errors": [],
+           "retry": 0,
+           "startTime": "2026-11-02T00:39:37.283Z",
+           "attachments": [],
+           "steps": []
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "errors": [],
+ "stats": {
+  "expected": 1,
+  "unexpected": 2,
+  "flaky": 0,
+  "skipped": 0,
+  "duration": 12000.0
+ }
+}

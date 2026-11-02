@@ -51,6 +51,8 @@ from tp_core.features.ci.clients import (
     parse_gh_time,
 )
 from tp_core.features.ci.parse import (
+    ERROR_CONTEXT_AD,
+    ArtefaktEkleri,
     Ayristirma,
     KosuDizini,
     RaporHatasi,
@@ -439,6 +441,7 @@ def record_results(session: Session, run: Run, ayr: Ayristirma) -> dict[str, int
     """Ayrıştırılmış testleri koşuya yazar. Koşunun satırları zaten varsa yeniden yazılmaz."""
     var = session.scalar(select(func.count()).where(TestResult.run_id == run.id)) or 0
     if var:
+        hata_baglami_doldur(session, run, ayr)
         return sayilar(
             {"sonuc": s}
             for (s,) in session.execute(select(TestResult.sonuc).where(TestResult.run_id == run.id))
@@ -475,10 +478,34 @@ def record_results(session: Session, run: Run, ayr: Ayristirma) -> dict[str, int
                 denemeler=t.denemeler,
                 proje=t.proje,
                 satir=t.satir,
+                hata_baglami=t.hata_baglami,
             )
         )
     session.flush()
     return sayilar(ayr.testler)
+
+
+def hata_baglami_doldur(session: Session, run: Run, ayr: Ayristirma) -> int:
+    """Koşunun mevcut satırlarına eksik hata bağlamını yazar (yeniden içe aktarma / geri doldurma).
+
+    Yalnızca `hata_baglami` boş olan `test_result_ek` satırları güncellenir; eşleşme (dosya, ad)
+    iledir. Güncellenen satır sayısı döner.
+    """
+    bagl = {t.anahtar: t.hata_baglami for t in ayr.testler if t.hata_baglami}
+    if not bagl:
+        return 0
+    n = 0
+    for tr, ek in session.execute(
+        select(TestResult, TestResultEk)
+        .join(TestResultEk, TestResultEk.test_result_id == TestResult.id)
+        .where(TestResult.run_id == run.id, TestResultEk.hata_baglami.is_(None))
+    ):
+        hb = bagl.get((tr.dosya or "", tr.test_adi))
+        if hb:
+            ek.hata_baglami = hb
+            n += 1
+    session.flush()
+    return n
 
 
 # ------------------------------------------------------------------------------ yerel koşu
@@ -991,6 +1018,47 @@ def _sec_dosya(dosyalar: Mapping[str, bytes], ad: str) -> bytes | None:
     return dosyalar[adaylar[0]] if adaylar else None
 
 
+def _artefakt_ekleri(dosyalar: Mapping[str, bytes]) -> ArtefaktEkleri:
+    """GitHub artefaktındaki `error-context.md` kopyaları: triage'ın hata anı aria snapshot'ı.
+
+    GitHub kipinde yerel koşu dizini (`run.json`, kanıt dosyaları) yoktur; snapshot içe aktarımda
+    `test_result_ek.hata_baglami`'na yazılmazsa triage locator kuralı (kural 3) hiç çalışamaz.
+    """
+    return ArtefaktEkleri(
+        {y: v for y, v in dosyalar.items() if y.rsplit("/", 1)[-1] == ERROR_CONTEXT_AD}
+    )
+
+
+def github_hata_baglami_doldur(session: Session, run: Run) -> dict[str, Any]:
+    """Önceden içe aktarılmış GitHub koşusunun hata bağlamını artefakttan yeniden okur.
+
+    0015 öncesi içe aktarılan koşular için (artefakt GitHub'da saklama süresi içindeyken).
+    Test satırları yeniden yazılmaz; yalnızca boş `hata_baglami` doldurulur.
+    """
+    if run.kaynak != "github" or not run.github_run_id:
+        raise CiError("koşu GitHub kaynaklı değil ya da GitHub koşu kimliği yok")
+    gh = services.github()
+    art = next(
+        (a for a in gh.artifacts(run.github_run_id) if a.get("name") == RESULTS_ARTIFACT), None
+    )
+    if art is None:
+        raise CiError(f"'{RESULTS_ARTIFACT}' artefaktı yok")
+    dosyalar = gh.artifact_files(art, ("results.json",), (ERROR_CONTEXT_AD,))
+    ayr = parse_reports(
+        None, _sec_dosya(dosyalar, "results.json"), ekler=_artefakt_ekleri(dosyalar)
+    )
+    bulunan = sum(1 for t in ayr.testler if t.hata_baglami)
+    n = hata_baglami_doldur(session, run, ayr)
+    audit_on_commit(
+        session,
+        "system",
+        "ci.failure_context_backfilled",
+        f"run:{run.id}",
+        {"github_run_id": run.github_run_id, "bulunan": bulunan, "guncellenen": n},
+    )
+    return {"run_id": str(run.id), "bulunan": bulunan, "guncellenen": n}
+
+
 def github_ingest(session: Session, run: Run, wr: Mapping[str, Any]) -> str:
     """Tamamlanmış GitHub workflow koşusunu koşu kaydına işler."""
     gh = services.github()
@@ -1004,9 +1072,13 @@ def github_ingest(session: Session, run: Run, wr: Mapping[str, Any]) -> str:
         uyarilar.append(f"'{RESULTS_ARTIFACT}' artefaktı yok (testler no-op olabilir).")
     else:
         try:
-            dosyalar = gh.artifact_files(sonuc_art, ("junit.xml", "results.json", "ci-meta.json"))
+            dosyalar = gh.artifact_files(
+                sonuc_art, ("junit.xml", "results.json", "ci-meta.json"), (ERROR_CONTEXT_AD,)
+            )
             ayr = parse_reports(
-                _sec_dosya(dosyalar, "junit.xml"), _sec_dosya(dosyalar, "results.json")
+                _sec_dosya(dosyalar, "junit.xml"),
+                _sec_dosya(dosyalar, "results.json"),
+                ekler=_artefakt_ekleri(dosyalar),
             )
             uyarilar.extend(ayr.uyarilar)
             ham_meta = _sec_dosya(dosyalar, "ci-meta.json")

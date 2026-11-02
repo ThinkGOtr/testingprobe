@@ -53,3 +53,18 @@ def test_downgrade_upgrade(db: Db) -> None:
         assert var == (0,)
     run_alembic(db.owner_url, "head")
     assert _farklar(db.owner_url) == []
+
+
+def test_0015_hata_baglami_downgrade_upgrade(db: Db) -> None:
+    def kolon_var() -> bool:
+        with psycopg.connect(db.owner_url.replace("+psycopg", ""), autocommit=True) as c:
+            return c.execute(
+                "SELECT count(*) FROM information_schema.columns "
+                "WHERE table_name = 'test_result_ek' AND column_name = 'hata_baglami'"
+            ).fetchone() == (1,)
+
+    assert kolon_var()
+    run_alembic(db.owner_url, "0014", "downgrade")
+    assert not kolon_var()
+    run_alembic(db.owner_url, "head")
+    assert kolon_var() and _farklar(db.owner_url) == []

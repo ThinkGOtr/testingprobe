@@ -72,6 +72,10 @@ class TestResultEk(Base):
     denemeler: Mapped[list[Any]] = mapped_column(JSONB, server_default=EMPTY_LIST, default=list)
     proje: Mapped[str | None]
     satir: Mapped[int | None] = mapped_column(Integer)
+    # GitHub kipi (0015): artefakttaki error-context.md'den hata anı bağlamı (yerel koşu dizini
+    # yok). {aria_snapshot, aria_snapshot_scope, deneme, kaynak}; yerel kipte boş.
+    # none_as_null: Python None → SQL NULL (JSON `null` değil); geri doldurma `IS NULL` arar.
+    hata_baglami: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     olusturma: Mapped[datetime] = olusturma_col()
 
 

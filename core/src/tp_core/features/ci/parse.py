@@ -26,6 +26,7 @@ import json
 import os
 import re
 import stat
+import unicodedata
 import xml.etree.ElementTree as ET
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -43,6 +44,13 @@ MAX_EK = 20
 AYIRAC = " › "
 A11Y_EK_RE = re.compile(r"^axe-([A-Za-z0-9_.-]{1,80})\.json$")
 ETKILER = ("critical", "serious", "moderate", "minor", "unknown")
+# GitHub kipi: artefakttaki Playwright `error-context.md` (hata anı aria snapshot'ı). Sınırlar
+# triage'ın yerel okumasıyla aynıdır (`triage.evidence.MAX_ERROR_CONTEXT` / `MAX_ARIA`).
+ERROR_CONTEXT_AD = "error-context.md"
+MAX_ERROR_CONTEXT = 2 * 1024 * 1024
+MAX_ARIA = 20_000
+_PAGE_SNAPSHOT_RE = re.compile(r"^# Page snapshot\s*\n+```(?:yaml)?\n(.*?)\n```", re.S | re.M)
+_YAML_RE = re.compile(r"^```yaml\n(.*?)\n```", re.S | re.M)
 
 
 class RaporHatasi(ValueError):
@@ -77,6 +85,8 @@ class TestSatiri:
     ekler: list[dict[str, Any]] = field(default_factory=list)
     denemeler: list[dict[str, Any]] = field(default_factory=list)
     kaynak_rapor: str = "json"
+    # GitHub kipi: hata anı bağlamı (artefakttaki error-context.md; `_hata_baglami`).
+    hata_baglami: dict[str, Any] | None = None
 
     @property
     def anahtar(self) -> tuple[str, str]:
@@ -330,12 +340,96 @@ def _a11y_ozeti(
     }
 
 
+def aria_ayikla(veri: bytes | None) -> tuple[str | None, str | None]:
+    """`error-context.md` → (aria snapshot, kapsam `page` | `error_details`). Güvenilmeyen veri.
+
+    toolchain `runner/results._aria_snapshot` ve triage `evidence.aria_oku` ile aynı kural:
+    `# Page snapshot` bölümü sayfanın tamamıdır; yoksa hata ayrıntısındaki başlıksız YAML.
+    """
+    if not veri or len(veri) > MAX_ERROR_CONTEXT:
+        return None, None
+    metin = veri[:400_000].decode("utf-8", "replace")
+    m = _PAGE_SNAPSHOT_RE.search(metin)
+    if m:
+        return temiz(m.group(1), MAX_ARIA), "page"
+    m = _YAML_RE.search(metin)
+    if m:
+        return temiz(m.group(1), MAX_ARIA), "error_details"
+    return None, None
+
+
+def _nfc(yol: str) -> str:
+    return unicodedata.normalize("NFC", yol)
+
+
+@dataclass(frozen=True)
+class ArtefaktEkleri:
+    """GitHub artefakt zip'inden okunan ek dosyaları (zip içi yol → içerik).
+
+    Playwright ek yolu runner'daki mutlak yoldur
+    (`/home/runner/work/<repo>/<repo>/demo-app/e2e/results/artifacts/<test>/error-context.md`);
+    artefakt kökü `results/` dizininin içidir (`artifacts/<test>/error-context.md`). Eşleşme
+    yol öğelerinin ortak sonekiyledir (en uzun kazanır, en az `<test dizini>/<dosya>`): uygulama
+    kökü öneki (`demo-app/`), artefakt kökü ya da runner dizini bilinmek zorunda değildir. Kökteki
+    tek bir `error-context.md` hiçbir teste uymaz; mutlak / `..` içeren yollar yok sayılır. Türkçe
+    karakterli dizin adları için iki taraf da NFC'ye normalleştirilir.
+    """
+
+    dosyalar: Mapping[str, bytes]
+
+    def bul(self, ham_yol: Any) -> bytes | None:
+        if not isinstance(ham_yol, str) or not ham_yol or "\x00" in ham_yol:
+            return None
+        hedef = PurePosixPath(_nfc(ham_yol.replace("\\", "/"))).parts
+        en_iyi: tuple[int, bytes] | None = None
+        for ad in sorted(self.dosyalar):
+            p = PurePosixPath(_nfc(ad))
+            if p.is_absolute() or ".." in p.parts or len(p.parts) < 2:
+                continue
+            # Ortak son öğe sayısı (dosya + en az test dizini); en uzun ortak sonek kazanır.
+            ortak = 0
+            for a, b in zip(reversed(p.parts), reversed(hedef), strict=False):
+                if a != b:
+                    break
+                ortak += 1
+            if ortak >= 2 and (en_iyi is None or ortak > en_iyi[0]):
+                en_iyi = (ortak, self.dosyalar[ad])
+        return en_iyi[1] if en_iyi else None
+
+
+def _hata_baglami(
+    sonuclar: list[Mapping[str, Any]], ekler: ArtefaktEkleri | None
+) -> dict[str, Any] | None:
+    """Kırmızı denemelerin ilkinden başlayarak aria snapshot'ı olan ilk `error-context` eki.
+
+    toolchain `failures[].failure` ilk kırmızı denemeden kurulur; aynı sıra izlenir.
+    """
+    if ekler is None:
+        return None
+    for r in sonuclar:
+        if r.get("status") in ("passed", "skipped"):
+            continue
+        for ek in r.get("attachments") or []:
+            if not isinstance(ek, Mapping) or ek.get("name") != "error-context":
+                continue
+            aria, kapsam = aria_ayikla(ekler.bul(ek.get("path")))
+            if aria:
+                return {
+                    "aria_snapshot": aria,
+                    "aria_snapshot_scope": kapsam,
+                    "deneme": _int(r.get("retry")),
+                    "kaynak": ERROR_CONTEXT_AD,
+                }
+    return None
+
+
 def _json_testleri(
     suite: Mapping[str, Any],
     basliklar: list[str],
     dosya: str | None,
     out: list[TestSatiri],
     kosu_dizini: KosuDizini | None,
+    ekler: ArtefaktEkleri | None = None,
 ) -> None:
     baslik = suite.get("title")
     # En üst suite dosyanın kendisidir (başlığı dosya adı); başlık yoluna girmez.
@@ -352,10 +446,10 @@ def _json_testleri(
         for test in spec.get("tests") or []:
             if not isinstance(test, Mapping) or len(out) >= MAX_TEST:
                 continue
-            out.append(_json_test(ad, spec_dosya, spec, test, kosu_dizini))
+            out.append(_json_test(ad, spec_dosya, spec, test, kosu_dizini, ekler))
     for alt in suite.get("suites") or []:
         if isinstance(alt, Mapping):
-            _json_testleri(alt, burada, dosya, out, kosu_dizini)
+            _json_testleri(alt, burada, dosya, out, kosu_dizini, ekler)
 
 
 def _json_test(
@@ -364,6 +458,7 @@ def _json_test(
     spec: Mapping[str, Any],
     test: Mapping[str, Any],
     kosu_dizini: KosuDizini | None,
+    artefakt_ekleri: ArtefaktEkleri | None = None,
 ) -> TestSatiri:
     sonuclar = [r for r in test.get("results") or [] if isinstance(r, Mapping)]
     durum = str(test.get("status") or "")
@@ -432,11 +527,14 @@ def _json_test(
         ekler=ekler,
         denemeler=denemeler,
         kaynak_rapor="json",
+        hata_baglami=(
+            _hata_baglami(sonuclar, artefakt_ekleri) if sonuc not in ("passed", "skipped") else None
+        ),
     )
 
 
 def parse_json_report(
-    veri: bytes, kosu_dizini: KosuDizini | None = None
+    veri: bytes, kosu_dizini: KosuDizini | None = None, ekler: ArtefaktEkleri | None = None
 ) -> tuple[list[TestSatiri], dict[str, int], list[str]]:
     if len(veri) > MAX_RAPOR_BAYT:
         raise RaporHatasi("JSON rapor çok büyük")
@@ -452,7 +550,7 @@ def parse_json_report(
     out: list[TestSatiri] = []
     for suite in data.get("suites") or []:
         if isinstance(suite, Mapping):
-            _json_testleri(suite, [], None, out, kosu_dizini)
+            _json_testleri(suite, [], None, out, kosu_dizini, ekler)
     hatalar = [
         temiz(e.get("message") if isinstance(e, Mapping) else e) for e in data.get("errors") or []
     ][:20]
@@ -514,8 +612,12 @@ def merge(junit: Iterable[TestSatiri] | None, jsn: Iterable[TestSatiri] | None) 
 
 
 def parse_reports(
-    junit_xml: bytes | None, results_json: bytes | None, kosu_dizini: KosuDizini | None = None
+    junit_xml: bytes | None,
+    results_json: bytes | None,
+    kosu_dizini: KosuDizini | None = None,
+    ekler: ArtefaktEkleri | None = None,
 ) -> Ayristirma:
+    """`ekler`: GitHub kipinde artefakt zip'inden okunan `error-context.md` dosyaları."""
     uyarilar: list[str] = []
     junit: list[TestSatiri] | None = None
     jsn: list[TestSatiri] | None = None
@@ -531,7 +633,7 @@ def parse_reports(
         uyarilar.append("JUnit XML (junit.xml) bulunamadı.")
     if results_json is not None:
         try:
-            jsn, stats, hatalar = parse_json_report(results_json, kosu_dizini)
+            jsn, stats, hatalar = parse_json_report(results_json, kosu_dizini, ekler)
             uyarilar.extend(f"Rapor hatası: {h}" for h in hatalar)
         except RaporHatasi as exc:
             uyarilar.append(str(exc))

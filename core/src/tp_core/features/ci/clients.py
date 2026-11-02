@@ -21,7 +21,7 @@ from urllib.parse import quote
 
 import httpx
 
-from tp_core.features.ci.parse import MAX_RAPOR_BAYT
+from tp_core.features.ci.parse import MAX_ERROR_CONTEXT, MAX_RAPOR_BAYT
 
 # toolchain /check en kötü zinciri (MIMARI-SOZLESME §2): /check kilidi bekleme + git + statik
 # adımlar (tsc, eslint, AST koruması) + test-runner kilidi bekleme + koşu. Varsayılanlar
@@ -59,6 +59,9 @@ WORKFLOW_FILE = "ci.yml"
 RESULTS_ARTIFACT = "test-local-results"
 SAUCE_ARTIFACT = "sauce-results"
 MAX_ZIP_BAYT = 200 * 1024 * 1024
+# Rapor dışı küçük ekler (error-context.md): dosya başına ve toplam sınır (zip bombasına karşı).
+MAX_EK_TOPLAM_BAYT = 32 * 1024 * 1024
+MAX_EK_DOSYA = 2000
 
 
 class ToolchainError(RuntimeError):
@@ -115,9 +118,18 @@ class GitHubCiError(RuntimeError):
     pass
 
 
-def _zip_dosyalari(veri: bytes, adlar: tuple[str, ...]) -> dict[str, bytes]:
-    """Zip içinden adı (yolun son öğesi) `adlar`'da olan dosyaları okur (sınırlı boyut)."""
+def _zip_dosyalari(
+    veri: bytes, adlar: tuple[str, ...], ekler: tuple[str, ...] = ()
+) -> dict[str, bytes]:
+    """Zip içinden adı (yolun son öğesi) `adlar`'da olan dosyaları okur (sınırlı boyut).
+
+    `ekler`: test başına çok sayıda olabilen küçük ek dosyaları (`error-context.md`); her biri
+    `MAX_ERROR_CONTEXT`, toplamı `MAX_EK_TOPLAM_BAYT`, sayısı `MAX_EK_DOSYA` ile sınırlıdır.
+    Aynı ada sahip her kopya (farklı test dizinleri) ayrı anahtar olarak döner.
+    """
     out: dict[str, bytes] = {}
+    ek_toplam = 0
+    ek_sayi = 0
     try:
         zf = zipfile.ZipFile(io.BytesIO(veri))
     except zipfile.BadZipFile as exc:
@@ -127,6 +139,19 @@ def _zip_dosyalari(veri: bytes, adlar: tuple[str, ...]) -> dict[str, bytes]:
             if info.is_dir():
                 continue
             ad = info.filename.rsplit("/", 1)[-1]
+            if ad in ekler and ad not in adlar:
+                if (
+                    info.file_size > MAX_ERROR_CONTEXT
+                    or ek_sayi >= MAX_EK_DOSYA
+                    or ek_toplam + info.file_size > MAX_EK_TOPLAM_BAYT
+                    or info.filename in out
+                ):
+                    continue
+                icerik = zf.read(info)
+                ek_toplam += len(icerik)
+                ek_sayi += 1
+                out[info.filename] = icerik
+                continue
             if ad not in adlar or info.file_size > MAX_RAPOR_BAYT:
                 continue
             # Aynı ad birden çok yerde olabilir (results/ ve demo-app/e2e/results/): ilk bulunan.
@@ -190,7 +215,7 @@ class GitHubCi:
         return [a for a in (data.get("artifacts") or []) if isinstance(a, dict)]
 
     def artifact_files(
-        self, artifact: Mapping[str, Any], adlar: tuple[str, ...]
+        self, artifact: Mapping[str, Any], adlar: tuple[str, ...], ekler: tuple[str, ...] = ()
     ) -> dict[str, bytes]:
         if artifact.get("expired"):
             raise GitHubCiError(f"artefakt süresi dolmuş: {artifact.get('name')}")
@@ -203,7 +228,7 @@ class GitHubCi:
             "artefakt indirme",
             follow_redirects=True,
         )
-        return _zip_dosyalari(resp.content, adlar)
+        return _zip_dosyalari(resp.content, adlar, ekler)
 
     def repository_dispatch(self, event_type: str, payload: Mapping[str, Any]) -> None:
         self._istek(
