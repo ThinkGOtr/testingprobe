@@ -21,8 +21,7 @@ Dış dünyaya yalnızca bir **dış kapı** açılır: Caddy (`deploy/gcp/docke
 
 - 443 (HTTPS) ve 80 (yalnızca Let's Encrypt doğrulaması + https'e yönlendirme).
 - Sertifika Let's Encrypt'ten otomatik alınır ve yenilenir.
-- Önüne **ikinci kat temel kimlik doğrulama** (kullanıcı/parola) konur; portal ve bayi uygulamasının
-  kendi girişleri arkada aynen kalır.
+- Kapıda ayrı bir kimlik doğrulama yoktur; giriş portal ve bayi uygulamasının kendi ekranlarıyla yapılır.
 - Diğer bütün portlar (Postgres, core-api, jira-sim…) yerelde olduğu gibi yalnızca `127.0.0.1`'dedir.
   `make security-check` bunu denetler (yalnızca `edge` 80/443 istisnadır).
 
@@ -233,16 +232,7 @@ PORTAL=testing-probe.antreklabs.com
 BAYI=bayi.testing-probe.antreklabs.com
 ```
 
-Dış kapı parolasını belirle (ekrana ve geçmişe yazılmaz) ve hash'le:
-
-```bash
-read -rs -p "Dış kapı parolası: " EDGE_PW; echo
-EDGE_HASH="$(docker run --rm caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d \
-  caddy hash-password --plaintext "$EDGE_PW")"
-unset EDGE_PW
-```
-
-Ayarları ekle (`TP_ACME_EMAIL` ve `TP_EDGE_USER`'ı kendine göre değiştir):
+Ayarları ekle (`TP_ACME_EMAIL`'i kendine göre değiştir):
 
 ```bash
 sed -i '/^TP_TRUSTED_PROXIES=/d' .env
@@ -253,20 +243,15 @@ COMPOSE_FILE=docker-compose.yml:deploy/gcp/docker-compose.gcp.yml
 TP_PORTAL_HOST=${PORTAL}
 TP_DEMO_HOST=${BAYI}
 TP_ACME_EMAIL=gokhan.sipahi@antreklabs.com
-TP_EDGE_USER=antrek
-TP_EDGE_HASH='${EDGE_HASH}'
 TP_ALLOWED_ORIGINS=https://${PORTAL}
 TP_PUBLIC_BASE_URL=https://${PORTAL}
 TP_MCP_PUBLIC_URL=https://${PORTAL}/api/mcp
 TP_SESSION_COOKIE_SECURE=true
 TP_TRUSTED_PROXIES=review-portal,edge
 EOF
-unset EDGE_HASH
-grep -E '^(COMPOSE_FILE|TP_PORTAL_HOST|TP_DEMO_HOST|TP_EDGE_USER|TP_ALLOWED_ORIGINS|TP_SESSION_COOKIE_SECURE)=' .env
+grep -E '^(COMPOSE_FILE|TP_PORTAL_HOST|TP_DEMO_HOST|TP_ALLOWED_ORIGINS|TP_SESSION_COOKIE_SECURE)=' .env
 ```
 
-- `TP_EDGE_HASH` tek tırnak içindedir; hash'teki `$` işaretleri böylece compose tarafından
-  değişken sanılmaz.
 - `COMPOSE_FILE` satırı sayesinde `docker compose` ve bütün `make` hedefleri GCP katmanını
   (Caddy) otomatik kullanır.
 
@@ -314,9 +299,9 @@ systemctl status tp-demo-web-sync --no-pager | head -5
 
 ## 9. Tarayıcıdan doğrula
 
-1. `https://testing-probe.antreklabs.com` → tarayıcı dış kapı kullanıcı/parolasını sorar → portal girişi
+1. `https://testing-probe.antreklabs.com` → portal girişi
    (`sunucu` / `.env`'deki `SEED_USER_PASSWORD`) → **Demo yol haritası** açılır, "0/14".
-2. `https://bayi.testing-probe.antreklabs.com` → dış kapı → bayi girişi (`bayi1` / `Demo123!`).
+2. `https://bayi.testing-probe.antreklabs.com` → bayi girişi (`bayi1` / `Demo123!`).
 3. Portalda **Koşular** ekranında `make demo-reset`'in kuyruğa aldığı GitHub koşusunun yeşil
    bittiğini gör.
 

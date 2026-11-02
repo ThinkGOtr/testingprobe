@@ -13,8 +13,6 @@ services:
       TP_PORTAL_HOST: "${TP_PORTAL_HOST:?GCP: TP_PORTAL_HOST (ör. portal.<ip>.sslip.io)}"
       TP_DEMO_HOST: "${TP_DEMO_HOST:?GCP: TP_DEMO_HOST (ör. bayi.<ip>.sslip.io)}"
       TP_ACME_EMAIL: "${TP_ACME_EMAIL:?GCP: TP_ACME_EMAIL (Let's Encrypt bildirimleri)}"
-      TP_EDGE_USER: "${TP_EDGE_USER:?GCP: TP_EDGE_USER (dış kapı kullanıcısı)}"
-      TP_EDGE_HASH: "${TP_EDGE_HASH:?GCP: TP_EDGE_HASH (caddy hash-password çıktısı)}"
     volumes:
       - ./deploy/gcp/Caddyfile:/etc/caddy/Caddyfile:ro
       - tp_caddy_data:/data

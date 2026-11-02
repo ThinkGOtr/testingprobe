@@ -1,13 +1,10 @@
-# Dış kapı (GCP): otomatik HTTPS (Let's Encrypt) + ikinci kat temel kimlik doğrulama.
-# Uygulamaların kendi girişleri (portal kullanıcıları, bayi girişi) bunun arkasında aynen kalır.
+# Dış kapı (GCP): otomatik HTTPS (Let's Encrypt). Kimlik doğrulama uygulamaların kendi girişlerindedir
+# (portal kullanıcıları, bayi girişi); kapıda ayrıca basic auth yoktur.
 {
 	email {$TP_ACME_EMAIL}
 }
 
 (dis_kapi) {
-	basic_auth {
-		{$TP_EDGE_USER} {$TP_EDGE_HASH}
-	}
 	header {
 		Strict-Transport-Security "max-age=31536000"
 		-Server
