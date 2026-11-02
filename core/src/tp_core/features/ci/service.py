@@ -230,6 +230,32 @@ def _enqueue(
     # kalmış koşu yeni tetiği sonsuza dek engellemesin: önce `error` ile kapatılır.
     if aktif is not None and anahtar is None and recover_stuck_run(session, aktif):
         aktif = None
+    if (
+        aktif is not None
+        and anahtar is None
+        and dispatch
+        and kaynak == "github"
+        and not (aktif.ortam or {}).get("dispatch")
+    ):
+        # GitHub cron'unu (02:00 UTC) bekleyen sistem gece koşusu varken sunucu elle tetikledi:
+        # aynı kayıt tetiklemeye yükseltilir (yeni koşu açılmaz, istek GitHub'a gider).
+        aktif.ortam = {**(aktif.ortam or {}), "dispatch": trigger, "isteyen": isteyen}
+        session.flush()
+        # Yoklama işi her turda `_dispatch` çağırır: hemen bir tur kuyruğa alınır.
+        job_id = jobq.enqueue(
+            conn,
+            JOB_GITHUB_POLL,
+            {"run_id": str(aktif.id), "tur": 0},
+            idempotency_key=f"ci.github_poll:{aktif.id}:dispatch",
+        )
+        audit_on_commit(
+            session,
+            isteyen,
+            "ci.dispatch_requested",
+            f"run:{aktif.id}",
+            {"tetik": trigger, "kaynak": kaynak, "job_id": str(job_id)},
+        )
+        return {"run_id": aktif.id, "job_id": job_id, "yeni": True}
     if aktif is not None and anahtar is None:
         return {"run_id": aktif.id, "job_id": None, "yeni": False}
 

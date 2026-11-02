@@ -320,6 +320,26 @@ def test_elle_gece_workflow_dispatch(engine: Engine, gh: FakeGitHub) -> None:
     assert service.github_poll(engine, rid, 2)["durum"] == "passed"
 
 
+def test_cron_bekleyen_gece_kosusu_elle_tetiklenince_dispatch_edilir(
+    engine: Engine, gh: FakeGitHub
+) -> None:
+    # Sistem gece koşusu GitHub cron'unu bekliyor (dispatch yok); sunucu elle tetikleyince aynı
+    # kayıt tetiklemeye yükseltilir ve workflow_dispatch gider (yeni koşu açılmaz).
+    rid = uuid.UUID(service.nightly_job(engine, "2026-11-02")["run_id"])
+    run_jobs(engine)
+    assert gh.dispatchler == []
+    with Session(engine) as s, s.begin():
+        sonuc = service.trigger_manual(s, "nightly", "sunucu")
+    assert (sonuc["run_id"], sonuc["durum"]) == (rid, "queued")
+    run_jobs(engine)
+    assert gh.dispatchler == [
+        ("workflow_dispatch", {"ref": "main", "inputs": {"tetik": "nightly"}})
+    ]
+    assert _run(engine, rid).ortam["dispatch"] == "nightly"
+    with Session(engine) as s, s.begin():
+        assert service.trigger_manual(s, "nightly", "sunucu")["durum"] == "zaten_kuyrukta"
+
+
 def test_github_kosusu_bulunamazsa_sure_sonunda_error(engine: Engine, gh: FakeGitHub) -> None:
     with Session(engine) as s, s.begin():
         rid = enqueue_ci(s, SHA, "push")
