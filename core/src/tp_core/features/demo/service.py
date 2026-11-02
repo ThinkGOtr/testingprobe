@@ -75,6 +75,8 @@ WAIT_ENV = "TP_DEMO_WEB_WAIT_S"
 # (demo-web-sync konteyneri yeniden oluştururken CI sağlıkta düşmesin); süre dolunca CI açılır.
 ISTEK_GRACE_ENV = "TP_DEMO_WEB_ISTEK_BEKLEME_S"
 KAPATILACAK_ONEKLER = ("tp/", "demo/")
+# Altyapı (demo deposu kurulum/CI) dalları sıfırlamada kapatılmaz.
+KORUNAN_ONEKLER = ("tp/bootstrap-", "altyapi/")
 KAPANIS_YORUMU = (
     "Demo sıfırlaması: main demo-baseline'a döndü; bu PR kapatıldı (sunucu isteği, denetimli)."
 )
@@ -609,7 +611,7 @@ def _prlari_kapat(engine: Engine, forge: Any, isteyen: str) -> list[dict[str, An
         return []
     kapanan: list[dict[str, Any]] = []
     for pr in listele("open"):
-        if not pr.branch.startswith(KAPATILACAK_ONEKLER):
+        if not pr.branch.startswith(KAPATILACAK_ONEKLER) or pr.branch.startswith(KORUNAN_ONEKLER):
             continue
         with contextlib.suppress(ForgeError):
             forge.comment_pr(pr.number, KAPANIS_YORUMU)

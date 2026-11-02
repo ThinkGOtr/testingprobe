@@ -402,7 +402,7 @@ Hedef depo: **`ThinkGOtr/testingprobe-demo-app`** (özel). Kimlikler — anayasa
    ```
 
    Depo doluysa betik durur. Ürün deposundaki değişiklikleri sonradan taşımak için
-   `--push --update`: yeni ağaç uzak main'in üstüne tek commit olarak `tp/bootstrap-<zaman>`
+   `--push --update`: yeni ağaç uzak main'in üstüne tek commit olarak `altyapi/bootstrap-<zaman>`
    dalına gider; PR'ı siz açar, insan olarak merge edersiniz. `demo-baseline`'ı yeni içeriğe
    taşımak ayrı, bilinçli bir yönetici adımıdır (betik komutu yazdırır).
 

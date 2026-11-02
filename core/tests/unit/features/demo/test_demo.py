@@ -650,12 +650,19 @@ def test_github_kipinde_kirilma_ve_sifirlama_insan_kimligiyle(
     forge = service._forge()
     forge.commit_files("tp/case-x", {"demo-app/e2e/tests/generated/x.spec.ts": "x\n"}, "m")
     acik = forge.open_pr("tp/case-x", "case", "gövde")
+    # Altyapı (demo deposu kurulum/CI) PR'ları sıfırlamada kapatılmaz.
+    forge.commit_files("altyapi/bootstrap-1", {".github/x.txt": "x\n"}, "m")
+    altyapi = forge.open_pr("altyapi/bootstrap-1", "ci", "gövde")
+    forge.commit_files("tp/bootstrap-1", {".github/y.txt": "y\n"}, "m")
+    eski_altyapi = forge.open_pr("tp/bootstrap-1", "ci", "gövde")
     with session_scope() as s:
         service.request_reset(s, sunucu)
     assert [x.durum for x in run_jobs(engine, 1)] == ["done"]
     assert gh.files_at("main") == gh.files_at("demo-baseline")
     assert main in gh.ancestors(gh.refs["heads/main"])  # force-push yok
     assert gh.prs[acik.number]["state"] == "closed"
+    assert gh.prs[altyapi.number]["state"] == "open"
+    assert gh.prs[eski_altyapi.number]["state"] == "open"
     reset = next(oz for _, e, oz in _eylemler(engine) if e == "demo.reset")
     assert reset["kip"] == "github" and reset["forge"]["degisti"] is True
     assert reset["kapanan_prlar"] == [{"pr": acik.number, "dal": "tp/case-x", "hata": None}]

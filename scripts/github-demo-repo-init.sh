@@ -35,7 +35,7 @@
 #
 # --push: kimlik sizin git kimlik bilgilerinizdir (ör. `gh auth setup-git`; workflow dosyaları için
 # token'da `workflow` izni gerekir). Betik token okumaz/yazmaz. Uzak depoda main varsa --update
-# olmadan durur: --update yeni ağacı uzak main'in üstüne tek commit olarak `tp/bootstrap-<zaman>`
+# olmadan durur: --update yeni ağacı uzak main'in üstüne tek commit olarak `altyapi/bootstrap-<zaman>`
 # dalına gönderir; PR'ı siz açar ve insan olarak merge edersiniz (ruleset). Etiketin taşınması
 # ayrı ve bilinçli bir yönetici adımıdır (yazdırılır).
 set -euo pipefail
@@ -272,7 +272,7 @@ if [ -z "$remote_main" ]; then
 fi
 
 [ "$UPDATE" = 1 ] || die "uzak depoda main zaten var (${remote_main:0:12}); güncellemek için --push --update (PR dalı)"
-BRANCH="tp/bootstrap-$(date -u +%Y%m%d%H%M%S)"
+BRANCH="altyapi/bootstrap-$(date -u +%Y%m%d%H%M%S)"
 gnet fetch -q "$URL" "+refs/heads/main:refs/remotes/uzak/main"
 PARENT="$(g rev-parse refs/remotes/uzak/main)"
 if [ "$(g rev-parse "$PARENT^{tree}")" = "$TREE_SHA" ]; then
