@@ -354,6 +354,7 @@ def test_watch_core_worker_ulasilamazken_cikmaz_ve_geri_gelince_uygular(h: Harne
         while h.done() != "8" * 32 and time.time() < deadline:
             assert watch.poll() is None, _durdur(watch)
             time.sleep(0.1)
+        time.sleep(1.5)  # "yeniden erişilebilir" bildirimi uygulamadan sonraki turda yazılır
         assert watch.poll() is None
     finally:
         out, err = _durdur(watch)
