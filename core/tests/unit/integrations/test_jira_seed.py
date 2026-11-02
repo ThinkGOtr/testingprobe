@@ -2,7 +2,8 @@
 
 Gerçek sitede ``/sim/reset`` yoktur; komut aynı ``RestJira`` kod yoluyla çalışır. Burada provanın
 bıraktığı izler (yeniden yazılmış AC'ler, ``tp-po-*`` etiketleri, PO onayı, ``tp-<uuid>`` etiketli
-Test/Bug kayıtları) simülatörde üretilir ve komutun hepsini geri aldığı doğrulanır.
+Test/Bug kayıtları, tohum kayıtlarındaki yorumlar) simülatörde üretilir ve komutun hepsini geri
+aldığı doğrulanır.
 """
 
 from __future__ import annotations
@@ -134,6 +135,17 @@ def _rehearse(sim: TestClient) -> dict[str, str]:
         "bug": create("Bug", ["AI-generated", f"tp-{uuid.uuid4()}"]),
         "foreign": create("Task", ["musteri-isi"]),  # ürünün olmayan kayıt: dokunulmaz
     }
+    # Ürünün yorumları (PO sorusu, kanıt yorumu) ve PO cevabı; koşu kaydının yorumu tohum dışı.
+    for key, auth, text in (
+        ("TPD-1", WRITER, "🤖 AI Testing Probe: PO teyidi"),
+        ("TPD-1", PO_AUTH, "Onaylıyorum."),
+        ("TPD-5", WRITER, "🤖 AI Testing Probe: kanıt"),
+        (keys["bug"], WRITER, "🤖 AI Testing Probe: koşu"),
+    ):
+        r = sim.post(
+            f"/rest/api/3/issue/{key}/comment", json={"body": text_to_adf(text)}, auth=auth
+        )
+        assert r.status_code == 201, r.text
     # Tohum Bug'ına koşu etiketi düşmüş olsa bile tohum kaydı kapatılmaz.
     r = sim.put("/rest/api/3/issue/TPD-5", json={"update": {"labels": [{"add": run}]}}, auth=WRITER)
     assert r.status_code == 204, r.text
@@ -194,6 +206,9 @@ def test_dry_run_reports_plan_and_writes_nothing(
     )
     assert not by_key["TPD-2"].needed
     assert by_key["TPD-4"].add_demo_label and not by_key["TPD-4"].restore_content
+    assert {k: len(v) for k, v in p.comments.items()} == {"TPD-1": 2, "TPD-5": 1}
+    assert "Silinecek yorumlar: TPD-1 (2), TPD-5 (1)" in out
+    assert len(jira.get_comments("TPD-1")) == 2
 
 
 def test_apply_restores_demo_start_and_is_idempotent(
@@ -207,6 +222,10 @@ def test_apply_restores_demo_start_and_is_idempotent(
     assert main(["--onay"], jira=jira) == 0
     out = capsys.readouterr().out
     assert "Döndürülen story'ler: TPD-1, TPD-4" in out
+    assert "Silinen yorumlar: 3" in out
+    for n in range(1, 8):
+        assert jira.get_comments(f"TPD-{n}") == []
+    assert len(jira.get_comments(keys["bug"])) == 1  # koşu kaydı kapanır, yorumuna dokunulmaz
 
     for n in (1, 2, 3, 4):
         f = _fields(sim, f"TPD-{n}")
@@ -269,6 +288,25 @@ def test_edit_issue_refuses_reserved_label_but_removes_it(sim: TestClient, jira:
     )
     jira.edit_issue("TPD-1", remove_labels=[PO_APPROVED_LABEL])
     assert PO_APPROVED_LABEL not in jira.get_issue("TPD-1").labels
+
+
+def test_failed_comment_delete_is_reported(
+    sim: TestClient, jira: RestJira, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _rehearse(sim)
+    p = plan(jira, "TPD")
+
+    def refuse(key: str, comment_id: str) -> None:
+        raise jira_seed.JiraError("403 yetki yok", status=403)
+
+    monkeypatch.setattr(jira, "delete_comment", refuse)
+    r = apply(jira, p)
+    assert r.comments_deleted == 0
+    assert len([f for f in r.failed if " yorum " in f]) == 3
+
+
+def test_sim_comment_delete_unknown_id_is_404(sim: TestClient) -> None:
+    assert sim.delete("/rest/api/3/issue/TPD-1/comment/999999", auth=WRITER).status_code == 404
 
 
 def test_transitions_round_trip(jira: RestJira) -> None:

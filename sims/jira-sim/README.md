@@ -64,7 +64,7 @@ Xray: `POST /xray/api/v2/authenticate` boş olmayan her `client_id`/`client_secr
 - `GET /rest/api/3/issue/{key}` (`fields`, `expand=changelog`), `PUT` (`fields.summary|description|labels`,
   `update.labels[add|remove|set]`; değişiklikler yazar bilgisiyle changelog'a), `DELETE`
 - `POST /rest/api/3/issue`
-- `GET /rest/api/3/issue/{key}/changelog`, `GET|POST /rest/api/3/issue/{key}/comment` (ADF gövde)
+- `GET /rest/api/3/issue/{key}/changelog`, `GET|POST /rest/api/3/issue/{key}/comment` (ADF gövde), `DELETE /rest/api/3/issue/{key}/comment/{id}`
 - `GET|POST /rest/api/3/issue/{key}/transitions` (basit iş akışı: her durumdan To Do / In Progress /
   Done'a; geçiş changelog'a `status` olarak yazılır)
 - `POST /rest/api/3/issueLink`, `GET /rest/api/3/issueLinkType` (`Test`: inward "is tested by",

@@ -802,6 +802,11 @@ class RestJira:
             json={"transition": {"id": str(transition_id)}},
         )
 
+    def delete_comment(self, key: str, comment_id: str) -> None:
+        self._call(
+            "DELETE", f"/issue/{self._key(key)}/comment/{quote(comment_id, safe='')}", write=True
+        )
+
     def delete_issue(self, key: str) -> None:
         self._call("DELETE", f"/issue/{self._key(key)}", write=True)
 

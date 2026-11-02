@@ -17,6 +17,7 @@ from jira_sim.ops import (
     comment_json,
     create_issue,
     create_link,
+    delete_comment,
     delete_issue,
     history_json,
     issue_json,
@@ -350,6 +351,12 @@ async def comment_add(request: Request, store: StoreDep, user: Writer, key: str)
     c = add_comment(store, key, body.get("body"), user)
     it = require_issue(store, key)
     return comment_json(c, it["key"], it["id"], base_url(request))
+
+
+@router.delete("/issue/{key}/comment/{comment_id}", status_code=204)
+def comment_delete(store: StoreDep, user: Writer, key: str, comment_id: str) -> Response:
+    delete_comment(store, key, comment_id)
+    return Response(status_code=204)
 
 
 @router.post("/issueLink", status_code=201)

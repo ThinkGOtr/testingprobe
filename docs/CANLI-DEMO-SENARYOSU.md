@@ -49,6 +49,7 @@ ekran, neye tıklanır, ne yazılır, ekranda ne görülür, ne söylenir.
 gcloud compute ssh tp-demo --project testingprobe --zone europe-west3-a --tunnel-through-iap
 cd /opt/testingprobe
 make reset && make seed && make demo-reset   # reset gerçek Jira temizlik planını gösterir → "e"
+                                             # (TPD-1..7 yorumları da silinir; bağlantılar kalır)
 make status                                  # hepsi healthy, son satır "Model kipi: REPLAY"
 make security-check                          # Özet: 10/10
 systemctl is-active tp-demo-web-sync         # active (locator demosu için şart)

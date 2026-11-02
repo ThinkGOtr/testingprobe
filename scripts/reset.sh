@@ -70,7 +70,8 @@ if [ -z "$JIRA_BASE" ]; then
   fi
 else
   # Gerçek Jira: önce plan yazdırılır (yazmaz), operatör onaylarsa TPD-1..4 demo başlangıcına
-  # döner ve koşu issue'ları kapanır (yazma kimliği yalnızca core-worker'da).
+  # döner, koşu issue'ları kapanır ve TPD-1..7'deki yorumlar silinir (yazma kimliği yalnızca
+  # core-worker'da).
   echo "Gerçek Jira yapılandırılmış ($JIRA_BASE). jira-seed planı:"
   compose exec -T core-worker python -m tp_core.integrations.jira_seed || true
   c=""

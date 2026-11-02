@@ -12,10 +12,11 @@ kullanıcısıyla (``JIRA_WRITE_EMAIL``/``JIRA_WRITE_TOKEN``) ve aynı ``RestJir
    ``tp-demo`` etiketini garanti eder (kaldırma bayat PO onayını da geçersiz kılar: onay ancak son
    kaldırmadan sonra eklenirse sayılır);
 3. ``tp-<uuid>`` etiketli, story olmayan (Test/Task/Bug) açık kayıtları "Done" kategorisindeki bir
-   duruma geçirerek kapatır (``--sil`` ile siler). Tohum kayıtlarına (TPD-1..TPD-7) dokunmaz.
-
-Yorumlar silinmez: PO cevapları inceleme yorumundan *sonraki* yorumlardan okunur, eski koşuların
-yorumları yeni koşunun girdisine girmez.
+   duruma geçirerek kapatır (``--sil`` ile siler). Tohum kayıtlarını (TPD-1..TPD-7) kapatmaz;
+4. tohum kayıtlarındaki (TPD-1..TPD-7) **tüm yorumları** siler. Tohumda yorum yoktur; ürünün
+   yorumları (PO sorusu, yayın özeti, kanıt yorumları) ve PO cevapları koşunun izidir. Akış için
+   şart değildir (PO cevapları inceleme yorumundan *sonraki* yorumlardan okunur), ama sunumda eski
+   koşuların yorumları izleyicinin önüne düşmesin diye kaldırılır.
 
 Varsayılan kuru çalıştırmadır (yalnızca plan yazdırılır); yazmak için ``--onay`` gerekir.
 Kullanım (çekirdek konteynerinde)::
@@ -154,10 +155,11 @@ class SeedPlan:
     stories: list[StoryPlan] = field(default_factory=list)
     missing: list[str] = field(default_factory=list)
     run_issues: list[str] = field(default_factory=list)  # kapatılacak/silinecek
+    comments: dict[str, list[str]] = field(default_factory=dict)  # tohum kaydı → yorum kimlikleri
 
     @property
     def empty(self) -> bool:
-        return not self.run_issues and not any(s.needed for s in self.stories)
+        return not self.run_issues and not self.comments and not any(s.needed for s in self.stories)
 
     def lines(self, delete: bool = False) -> list[str]:
         out = []
@@ -180,6 +182,13 @@ class SeedPlan:
             out.append(f"  Koşu kayıtları ({verb}): " + ", ".join(self.run_issues))
         else:
             out.append("  Açık koşu kaydı (tp-<uuid> etiketli Test/Bug) yok")
+        if self.comments:
+            out.append(
+                "  Silinecek yorumlar: "
+                + ", ".join(f"{k} ({len(ids)})" for k, ids in self.comments.items())
+            )
+        else:
+            out.append(f"  Tohum kayıtlarında (TPD-1..TPD-{SEED_ISSUE_COUNT}) yorum yok")
         return out
 
 
@@ -188,6 +197,7 @@ class SeedResult:
     restored: list[str] = field(default_factory=list)
     closed: list[str] = field(default_factory=list)
     deleted: list[str] = field(default_factory=list)
+    comments_deleted: int = 0
     failed: list[str] = field(default_factory=list)  # "KEY: neden"
 
 
@@ -223,6 +233,16 @@ def plan(jira: RestJira, project: str = "TPD") -> SeedPlan:
             continue
         if any(TP_UUID_LABEL.match(lb) for lb in issue.labels):
             result.run_issues.append(issue.key)
+    for n in range(1, SEED_ISSUE_COUNT + 1):
+        key = f"{project}-{n}"
+        if key in result.missing:
+            continue
+        try:
+            ids = [c.id for c in jira.get_comments(key)]
+        except JiraNotFound:
+            continue
+        if ids:
+            result.comments[key] = ids
     return result
 
 
@@ -267,13 +287,21 @@ def apply(jira: RestJira, seed_plan: SeedPlan, *, delete: bool = False) -> SeedR
             result.closed.append(key)
         except JiraError as exc:
             result.failed.append(f"{key}: {exc}")
+    for key, ids in seed_plan.comments.items():
+        for cid in ids:
+            try:
+                jira.delete_comment(key, cid)
+                result.comments_deleted += 1
+            except JiraError as exc:
+                result.failed.append(f"{key} yorum {cid}: {exc}")
     return result
 
 
 def main(argv: Sequence[str] | None = None, *, jira: RestJira | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="jira-seed",
-        description="Jira projesini demo başlangıcına döndürür (TPD-1..TPD-4, koşu kayıtları).",
+        description="Jira projesini demo başlangıcına döndürür (TPD-1..TPD-4, koşu kayıtları, "
+        "tohum kayıtlarındaki yorumlar).",
     )
     parser.add_argument("--onay", action="store_true", help="planı uygula (yoksa kuru çalışma)")
     parser.add_argument(
@@ -305,6 +333,8 @@ def main(argv: Sequence[str] | None = None, *, jira: RestJira | None = None) -> 
         print("Kapatılan koşu kayıtları: " + ", ".join(r.closed))
     if r.deleted:
         print("Silinen koşu kayıtları: " + ", ".join(r.deleted))
+    if r.comments_deleted:
+        print(f"Silinen yorumlar: {r.comments_deleted}")
     for f in r.failed:
         print(f"HATA {f}", file=sys.stderr)
     return 1 if (r.failed or p.missing) else 0

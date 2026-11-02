@@ -481,6 +481,15 @@ def add_comment(store: Store, key: str, body: Any, author: str) -> dict[str, Any
     return c
 
 
+def delete_comment(store: Store, key: str, comment_id: str) -> None:
+    with store.tx():
+        it = require_issue(store, key)
+        kept = [c for c in it["comments"] if str(c["id"]) != comment_id]
+        if len(kept) == len(it["comments"]):
+            raise SimError(404, [f"Can not find a comment for the id: {comment_id}."])
+        it["comments"] = kept
+
+
 def create_link(store: Store, body: dict[str, Any]) -> None:
     ltype = body.get("type") or {}
     enabled = store.state["config"]["link_types"]

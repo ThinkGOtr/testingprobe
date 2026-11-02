@@ -143,7 +143,7 @@ cd core && uv run python -m tp_core.gateway.evaluation --check   # birleştirme 
 | Kullanıcı | Yetki | `.env` |
 |---|---|---|
 | Okuma | Yalnızca TPD'de *Browse projects* | `JIRA_READ_EMAIL`, `JIRA_READ_TOKEN` |
-| Yazma (ürünün bot kullanıcısı) | Yalnızca TPD'de: *Browse*, *Create issues*, *Edit issues*, *Add comments*, *Link issues*, *Transition issues*; *Delete issues* yalnızca `jira_seed --sil` için | `JIRA_WRITE_EMAIL`, `JIRA_WRITE_TOKEN` |
+| Yazma (ürünün bot kullanıcısı) | Yalnızca TPD'de: *Browse*, *Create issues*, *Edit issues*, *Add comments*, *Link issues*, *Transition issues*, *Delete all comments* (`jira-seed` yorum temizliği); *Delete issues* yalnızca `jira_seed --sil` için | `JIRA_WRITE_EMAIL`, `JIRA_WRITE_TOKEN` |
 | PO (insan) | Story'lere yorum ve etiket | `JIRA_PO_ACCOUNT_IDS` (accountId) |
 
 API token'ları: id.atlassian.com → Security → API tokens (her kullanıcı kendi token'ını üretir).
@@ -206,7 +206,9 @@ curl -fsS -G -u "$(envv JIRA_READ_EMAIL):$(envv JIRA_READ_TOKEN)" \
 
 3. Provalar arasında: `make reset` gerçek Jira'da önce planı yazdırır ve onay (`e`) ister; ya da
    doğrudan `make jira-seed ONAY=1` (tp-<uuid> etiketli Test/Bug kayıtları "Done"a geçirilerek
-   kapatılır; silmek için `--sil`). `make demo-reset` **gerçek Jira'ya dokunmaz**.
+   kapatılır; silmek için `--sil`; TPD-1..7'deki **tüm yorumlar** silinir — tohumda yorum yoktur,
+   hepsi koşuların izidir, elle yazılmış PO cevapları dahil). Kayıtlar arası bağlantılar
+   (`Test`, `Relates`) kalır. `make demo-reset` **gerçek Jira'ya dokunmaz**.
 
 ### 2.5 Doğrulama
 
@@ -260,8 +262,10 @@ bağlantı türü mevcut), REPLAY. Sonuçlar:
    yeni kayıt açmaz); `tp-<uuid>` etiket araması yalnızca çökme/yeniden deneme yedeğidir. Bir
    yayın denemesi Jira'da oluşturup başarısız sayıldıysa, yeniden denemeyi birkaç saniye sonra
    yapın; aksi halde aynı case için ikinci issue açılabilir (adaptör düzeyinde gözlendi).
-5. `make jira-seed ONAY=1` koşu kayıtlarını (`tp-<uuid>` etiketli Test/Bug) kapatır; story'lerdeki
-   bağlantılar ve yorumlar kalır (kapalı kayıtlara bağlantı olarak görünür).
+5. `make jira-seed ONAY=1` koşu kayıtlarını (`tp-<uuid>` etiketli Test/Bug) kapatır ve TPD-1..7'deki
+   yorumları siler; story'lerdeki bağlantılar kalır (kapalı kayıtlara bağlantı olarak görünür).
+   Yorum silme yazma hesabının *Delete all comments* iznini ister; izin yoksa her yorum `HATA`
+   satırıyla raporlanır.
 
 ### 2.7 Yorum imi ve rol @bahsetmeleri
 
