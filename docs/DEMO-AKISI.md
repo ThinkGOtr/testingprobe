@@ -84,6 +84,21 @@ make security-check # Özet: 10/10
 - Docker Desktop bellek ≥ 8 GB; sunum makinesinde güç kablosu takılı, uyku kapalı, bildirimler
   kapalı.
 
+#### Gerçek sistemlerle (Jira Cloud + Xray + GitHub) sunuluyorsa
+
+- **`.env` test anahtarları kapalı:** `TP_TEST_TEK_HESAP=0` ve `JIRA_PO_ACCOUNT_IDS` yalnızca PO'nun
+  (Cengizhan) accountId'si. `make status` "UYARI: TP_TEST_TEK_HESAP=1" satırı göstermemeli.
+- **PO onayı insandan:** TPD-1'deki "PO teyidi" yorumu düştükten SONRA PO kendi oturumundan
+  `tp-po-approved` etiketini ekler (önce konmuş etiket bayat sayılıp kaldırılır).
+- **Merge süreleri (ölçülen):** her case PR'ı için GitHub'da insan **Approve** gerekir (ruleset).
+  Bir merge main'i ilerletir; ürün kalan PR dallarını günceller, CI yeniden koşar (~1,5 dk) ve
+  ruleset önceki onayları düşürür → kalan PR'lar **yeniden onaylanır**. Sahnede yalnızca C2'yi
+  merge edin; C1/C5'i sunumdan önce merge etmiş olun.
+- **Sauce süresi:** Sauce hesabı tek eşzamanlı oturum; push koşusundaki Sauce adımı ~11 dk sürer ve
+  ürün push koşusunun bitmesini bekler. Sunum için demo reposunda
+  `gh variable set SAUCE_TETIKLER --repo ThinkGOtr/testingprobe-demo-app --body deploy,nightly`
+  (Sauce'u "Deploy tetikle" ve gece koşusunda gösterin); sunumdan sonra değişkeni silin.
+
 ### 1.3 Tarayıcı ve oturumlar
 
 Portal oturumu tarayıcı başına tek kullanıcıdır; her rol için **ayrı bir tarayıcı profili**
