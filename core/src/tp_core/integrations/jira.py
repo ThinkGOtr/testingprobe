@@ -363,10 +363,15 @@ def person_ids(user: Any) -> list[str]:
     return [i for i in ids if i]
 
 
+_tek_hesap_uyarildi = False
+
+
 def test_single_account() -> bool:
     """``TP_TEST_TEK_HESAP=1``: yalnız test için bot dışlaması kapalı (tek hesapla PO onayı)."""
+    global _tek_hesap_uyarildi
     on = os.environ.get("TP_TEST_TEK_HESAP", "").strip().lower() in {"1", "true", "yes"}
-    if on:
+    if on and not _tek_hesap_uyarildi:
+        _tek_hesap_uyarildi = True  # süreç başına bir kez; `make status` her seferinde uyarır
         log.warning("TP_TEST_TEK_HESAP açık: bot hesabının PO etiketi onay sayılıyor (YALNIZ TEST)")
     return on
 
