@@ -288,7 +288,7 @@ if [ -e "$REPO" ]; then
       --exclude=node_modules --exclude=.venv --exclude=__pycache__ --exclude=.pytest_cache \
       --exclude=.ruff_cache --exclude=dist --exclude=test-results --exclude=playwright-report \
       --exclude=blob-report --exclude=.DS_Store --exclude=.git --exclude='.env' --exclude='.env.*' \
-      --exclude='*.db' --exclude='*.sqlite' -cf - . | tar -C "$C" -xf -
+      --exclude='*.db' --exclude='*.sqlite' -cf - . | tar --no-same-owner -C "$C" -xf -
     now_tree="$(cd "$C" && git init -q . && git add -A && git write-tree)"
     rm -rf "$C"
     base_tree="$(git -c safe.directory='*' --git-dir="$REPO" rev-parse 'demo-baseline^{tree}')"
@@ -318,7 +318,7 @@ tar -C /src \
   --exclude=node_modules --exclude=.venv --exclude=__pycache__ --exclude=.pytest_cache \
   --exclude=.ruff_cache --exclude=dist --exclude=test-results --exclude=playwright-report \
   --exclude=blob-report --exclude=.DS_Store --exclude=.git --exclude='.env' --exclude='.env.*' \
-  --exclude='*.db' --exclude='*.sqlite' -cf - . | tar -C "$W" -xf -
+  --exclude='*.db' --exclude='*.sqlite' -cf - . | tar --no-same-owner -C "$W" -xf -
 cd "$W"
 
 git init -q -b main .

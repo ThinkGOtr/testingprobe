@@ -83,7 +83,7 @@ for name, svc in sorted((cfg.get("services") or {}).items()):
   live_count="$(printf '%s\n' "$rows" | cut -f5 | tr ',' '\n' | grep -c -- '->' || true)"
   live_bad="$(printf '%s\n' "$rows" | awk -F '\t' '$5 != "-" && $5 != "" {
       n = split($5, a, ","); for (i = 1; i <= n; i++) {
-        if ($1 == "edge" && a[i] ~ /^(0\.0\.0\.0|\[::\]|::):(80|443)->(80|443)\/tcp$/) continue
+        if ($1 == "edge" && a[i] ~ /^(0\.0\.0\.0|\[::\]|::):(80|443)->(80|443)(\/tcp)?$/) continue
         if (a[i] !~ /^127\.0\.0\.1:/) print $1 ": " a[i] } }')"
   if [ -n "$cfg_bad" ] || [ -n "$live_bad" ]; then
     fail "1/port: 127.0.0.1 dışına açılan port var"
