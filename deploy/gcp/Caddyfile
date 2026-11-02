@@ -1,0 +1,28 @@
+# Dış kapı (GCP): otomatik HTTPS (Let's Encrypt) + ikinci kat temel kimlik doğrulama.
+# Uygulamaların kendi girişleri (portal kullanıcıları, bayi girişi) bunun arkasında aynen kalır.
+{
+	email {$TP_ACME_EMAIL}
+}
+
+(dis_kapi) {
+	basic_auth {
+		{$TP_EDGE_USER} {$TP_EDGE_HASH}
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+}
+
+{$TP_PORTAL_HOST} {
+	import dis_kapi
+	# SSE (/api/events) akışı tamponlanmadan geçer.
+	reverse_proxy review-portal:8080 {
+		flush_interval -1
+	}
+}
+
+{$TP_DEMO_HOST} {
+	import dis_kapi
+	reverse_proxy demo-app-web:8080
+}

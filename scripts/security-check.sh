@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # make security-check — research R10'daki 4 güvenlik kontrolü (FR-015, SC-004) + Faz 1'in 4 kontrolü + Faz 3 kapı yalıtımı ve CI imajında ajan yok.
 # Her kontrol PASS/FAIL yazar; özet "N/10"; herhangi bir FAIL → ≠0.
-#   1. Host'a açılan tüm portlar yalnızca 127.0.0.1'e bağlı
+#   1. Host'a açılan tüm portlar yalnızca 127.0.0.1'e bağlı (istisna: GCP katmanında edge 80/443)
 #   2. test-runner'dan postgres, core-api, playwright-mcp ve internete erişim yok
 #      (demo-app-web ve demo-app-api'ye var)
 #   3. tp_app audit_event'i UPDATE/DELETE/TRUNCATE edemez
@@ -72,6 +72,9 @@ for name, svc in sorted((cfg.get("services") or {}).items()):
     for p in svc.get("ports") or []:
         if isinstance(p, dict):
             ip = p.get("host_ip") or "0.0.0.0"
+            # GCP dış kapısı (deploy/gcp): yalnızca edge/Caddy 80 ve 443 dışa açılabilir.
+            if name == "edge" and str(p.get("published")) in ("80", "443") and p.get("target") in (80, 443):
+                continue
             if p.get("published") and ip != "127.0.0.1":
                 print("%s: %s:%s" % (name, ip, p.get("published")))
         else:
@@ -79,7 +82,9 @@ for name, svc in sorted((cfg.get("services") or {}).items()):
 ')" || { fail "1/port: compose yapılandırması okunamadı"; return; }
   live_count="$(printf '%s\n' "$rows" | cut -f5 | tr ',' '\n' | grep -c -- '->' || true)"
   live_bad="$(printf '%s\n' "$rows" | awk -F '\t' '$5 != "-" && $5 != "" {
-      n = split($5, a, ","); for (i = 1; i <= n; i++) if (a[i] !~ /^127\.0\.0\.1:/) print $1 ": " a[i] }')"
+      n = split($5, a, ","); for (i = 1; i <= n; i++) {
+        if ($1 == "edge" && a[i] ~ /^(0\.0\.0\.0|\[::\]|::):(80|443)->(80|443)\/tcp$/) continue
+        if (a[i] !~ /^127\.0\.0\.1:/) print $1 ": " a[i] } }')"
   if [ -n "$cfg_bad" ] || [ -n "$live_bad" ]; then
     fail "1/port: 127.0.0.1 dışına açılan port var"
     [ -z "$cfg_bad" ] || printf '%s\n' "$cfg_bad" | while IFS= read -r l; do info "yapılandırma  $l"; done

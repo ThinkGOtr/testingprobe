@@ -1,0 +1,16 @@
+# Locator kır / demo sıfırla sonrası demo-app-web'i yeniden derleyen host izleyicisi (sunum boyunca açık).
+# Kurulum: docs/GCP-KURULUM.md §8
+[Unit]
+Description=AI Testing Probe demo-app-web izleyicisi
+After=docker.service
+Requires=docker.service
+
+[Service]
+User=__KULLANICI__
+WorkingDirectory=/opt/testingprobe
+ExecStart=/usr/bin/make demo-web-sync A=--watch
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

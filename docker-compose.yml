@@ -63,7 +63,9 @@ x-core-env: &core-env
   # Merge kapısı dosyaları checks/<sha>.json: ayrı `tp_checks` volume'ü (tek yazar toolchain-worker
   # /check; core-api/core-worker salt okur; test-runner hiç bağlamaz).
   TP_CHECKS_PATH: /checks
-  TP_MCP_PUBLIC_URL: http://127.0.0.1:${TP_API_PORT:-8000}/mcp
+  TP_MCP_PUBLIC_URL: ${TP_MCP_PUBLIC_URL:-http://127.0.0.1:${TP_API_PORT:-8000}/mcp}
+  # HTTPS arkasında (GCP dış kapısı) oturum çerezi Secure olur; yerelde http → false.
+  TP_SESSION_COOKIE_SECURE: ${TP_SESSION_COOKIE_SECURE:-false}
   TP_DAILY_BUDGET_USD: ${TP_DAILY_BUDGET_USD:-30}
   TP_WORKFLOW_BUDGET_USD: ${TP_WORKFLOW_BUDGET_USD:-2}
   # Gereksinim akışı (Faz 2): PO etiket sorgu aralığı, tutarlılık turu üst sınırı (core-api de

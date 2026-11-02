@@ -1,0 +1,33 @@
+# GCP (tek VM) katmanı: dış dünyaya yalnızca `edge` (Caddy) açılır — 80 (ACME + https yönlendirme)
+# ve 443. Diğer tüm portlar ana dosyadaki gibi 127.0.0.1'de kalır (make security-check 1 yalnızca
+# bu iki portu istisna tutar). Etkinleştirme: VM'deki .env'de
+#   COMPOSE_FILE=docker-compose.yml:deploy/gcp/docker-compose.gcp.yml
+# (docker compose ve tüm make hedefleri bu katmanı otomatik kullanır). Kurulum: docs/GCP-KURULUM.md
+services:
+  edge:
+    image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      TP_PORTAL_HOST: "${TP_PORTAL_HOST:?GCP: TP_PORTAL_HOST (ör. portal.<ip>.sslip.io)}"
+      TP_DEMO_HOST: "${TP_DEMO_HOST:?GCP: TP_DEMO_HOST (ör. bayi.<ip>.sslip.io)}"
+      TP_ACME_EMAIL: "${TP_ACME_EMAIL:?GCP: TP_ACME_EMAIL (Let's Encrypt bildirimleri)}"
+      TP_EDGE_USER: "${TP_EDGE_USER:?GCP: TP_EDGE_USER (dış kapı kullanıcısı)}"
+      TP_EDGE_HASH: "${TP_EDGE_HASH:?GCP: TP_EDGE_HASH (caddy hash-password çıktısı)}"
+    volumes:
+      - ./deploy/gcp/Caddyfile:/etc/caddy/Caddyfile:ro
+      - tp_caddy_data:/data
+      - tp_caddy_config:/config
+    networks: [core-net]
+    restart: unless-stopped
+    depends_on:
+      review-portal: { condition: service_started }
+      demo-app-web: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { memory: 128m }
+
+volumes:
+  tp_caddy_data: {}
+  tp_caddy_config: {}
