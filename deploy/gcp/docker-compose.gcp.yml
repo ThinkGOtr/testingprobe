@@ -21,6 +21,13 @@ services:
       - tp_caddy_config:/config
     networks: [core-net]
     restart: unless-stopped
+    # make up / make status her servisi "healthy" bekler; Caddy'nin yerel yönetim ucu (yalnız konteyner içi)
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     depends_on:
       review-portal: { condition: service_started }
       demo-app-web: { condition: service_healthy }
