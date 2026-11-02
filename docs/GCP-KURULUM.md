@@ -201,7 +201,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ```bash
 sudo mkdir -p /opt/testingprobe && sudo chown "$USER": /opt/testingprobe
-git clone --branch 001-dev-foundation https://github.com/ThinkGOtr/testingprobe.git /opt/testingprobe
+git clone --branch main https://github.com/ThinkGOtr/testingprobe.git /opt/testingprobe
 cd /opt/testingprobe && git log --oneline -1
 ```
 

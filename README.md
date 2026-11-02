@@ -115,7 +115,7 @@ Sunum makinesinde ayrıca `uv` (zorunlu `make demo-prova` ve `make eval-live` i�
 Adım adım rehber ve sorun giderme: [docs/ONBOARDING.md](docs/ONBOARDING.md).
 
 ```bash
-git clone -b 001-dev-foundation git@github.com:ThinkGOtr/testingprobe.git && cd testingprobe   # ürün bu dalda; main yalnızca README
+git clone git@github.com:ThinkGOtr/testingprobe.git && cd testingprobe   # main = kararlı sürüm; geliştirme dev dalında
 make env              # .env üretir, yerel parolaları/belirteçleri rastgele doldurur
 make up               # önkoşul kontrolü + tüm servisler sağlıklı olana kadar bekler (forge hazırlanır)
 make seed             # deterministik başlangıç verisi (5 portal kullanıcısı)

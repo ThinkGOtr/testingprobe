@@ -32,21 +32,16 @@ docker info --format '{{.MemTotal}}'   # ≥ 8000000000 (yaklaşık 8 GB) olmal�
 ### 2.1 Clone ve sırlar dosyası
 
 ```bash
-git clone -b 001-dev-foundation git@github.com:ThinkGOtr/testingprobe.git && cd testingprobe
+git clone git@github.com:ThinkGOtr/testingprobe.git && cd testingprobe
 make env
 ```
 
-> **Dal:** ürün `001-dev-foundation` dalındadır; `-b` olmadan yapılan clone `main`'e düşer ve orada
-> yalnızca bir README vardır (`Makefile` yok, `make env` hemen hata verir). Varsayılan dal
-> değiştirilene ya da `main`'e birleştirilene kadar `-b 001-dev-foundation` zorunludur.
+> **Dal:** `main` kararlı sürümdür ve varsayılan clone onu getirir. Geliştirme `dev` dalında yürür;
+> en son değişiklikler için `git switch dev`. `main`, `dev`'den fast-forward ile güncellenir.
 >
-> **Bilinen durum (2026-11-01):** GitHub'daki `001-dev-foundation` dalı yerel geliştirme dalının
-> gerisindedir (Faz 1–5 commit'leri ve Faz 5 çalışma ağacı henüz push edilmedi). Push edilene kadar
-> bu rehber GitHub'dan yeniden üretilemez; bir yedek sunum makinesi kurmadan önce
-> `git ls-remote origin 001-dev-foundation` ile yerel `git rev-parse HEAD`'i karşılaştırın. Push sonrası
-> bu rehber bir kez gerçek bir clone'dan (ikinci makinede ya da `docker system prune -a` sonrası)
-> baştan sona süre tutularak izlenmelidir; ≤ 30 dk / ≤ 20 dk hedefleri soğuk clone'dan henüz
-> ölçülmedi.
+> **Bilinen durum (2026-11-02):** ≤ 30 dk / ≤ 20 dk hedefleri soğuk clone'dan (ikinci makinede ya da
+> `docker system prune -a` sonrası) henüz ölçülmedi; bu rehber bir kez baştan sona süre tutularak
+> izlenmelidir.
 
 **Beklenen:** `.env hazır`. `make env`, `.env.example`'dan `.env` üretir ve "F0: zorunlu" bloğundaki
 yerel parola ve belirteçleri (Postgres rolleri, `SEED_USER_PASSWORD`, `TP_SESSION_SECRET`,
