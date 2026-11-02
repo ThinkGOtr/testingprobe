@@ -772,6 +772,14 @@ def sweep_stuck_runs(session: Session) -> int:
 # ------------------------------------------------------------------------------ GitHub
 
 
+def _zaman_capasi(run: Run) -> datetime:
+    """Süre sınırı ve koşu eşlemesi için başlangıç: koşu kaydı ya da (sonradan elle tetiklenen
+    gece koşusunda) dispatch denemesi anı — hangisi daha yeniyse."""
+    capa = run.olusturma
+    deneme = parse_gh_time((run.ortam or {}).get("dispatch_deneme_zamani"))
+    return max(capa, deneme) if deneme is not None else capa
+
+
 def _dispatch(engine: Engine, run_id: uuid.UUID) -> None:
     """GitHub kipinde deploy/elle gece için dispatch — tek seferlik (`external_ref`).
 
@@ -909,7 +917,7 @@ def _aday_sec(
             select(Run.github_run_id).where(Run.github_run_id.is_not(None), Run.id != run.id)
         )
     )
-    alt_sinir = run.olusturma - timedelta(seconds=120)
+    alt_sinir = _zaman_capasi(run) - timedelta(seconds=120)
     secilen: list[dict[str, Any]] = []
     for a in adaylar:
         if str(a.get("id")) in kullanilan:
@@ -1127,7 +1135,7 @@ def _bekle(
     sinir = _int_env("TP_CI_GITHUB_TIMEOUT_S", 5400)
     if run.tetik == "nightly" and not (run.ortam or {}).get("dispatch"):
         sinir = max(sinir, 12 * 3600)
-    if services.now() - run.olusturma > timedelta(seconds=sinir):
+    if services.now() - _zaman_capasi(run) > timedelta(seconds=sinir):
         neden = "GitHub koşusu bitmedi" if wr is not None else "GitHub koşusu bulunamadı"
         _bitir(session, run, "error", hata=f"{neden} ({sinir} sn süre sınırı aşıldı).")
         return {"durum": "error"}

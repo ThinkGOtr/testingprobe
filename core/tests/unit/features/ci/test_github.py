@@ -12,7 +12,7 @@ from typing import Any
 
 import httpx
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
@@ -338,6 +338,15 @@ def test_cron_bekleyen_gece_kosusu_elle_tetiklenince_dispatch_edilir(
     assert _run(engine, rid).ortam["dispatch"] == "nightly"
     with Session(engine) as s, s.begin():
         assert service.trigger_manual(s, "nightly", "sunucu")["durum"] == "zaten_kuyrukta"
+    # Kayıt saatler önce açılmış olsa da süre sınırı ve eşleme dispatch anından sayılır.
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE run SET olusturma = olusturma - interval '3 hours' WHERE id = :i"),
+            {"i": rid},
+        )
+    gh.wr(301, "workflow_dispatch", conclusion="success")
+    assert service.github_poll(engine, rid, 1)["durum"] == "passed"
+    assert _run(engine, rid).github_run_id == "301"
 
 
 def test_github_kosusu_bulunamazsa_sure_sonunda_error(engine: Engine, gh: FakeGitHub) -> None:

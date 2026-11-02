@@ -733,3 +733,18 @@ def test_demo_break_betigi_make_yolunda_on_denetim_ister() -> None:
     assert "kırılma yapılmadı" in make_blogu.split("*)")[-1]
     reset = (CORE.parent / "scripts" / "demo-reset.sh").read_text()
     assert '/sim/reset"' not in reset and "curl" not in reset
+
+
+def test_durum_forge_kurulamazsa_500_degil_hata_doner() -> None:
+    # GitHub kipinde core-api'de okuma token'ı yoksa forge kurulamaz: durum yine yanıt verir.
+    from tp_core.integrations.forge import ForgeValidationError
+
+    def kurulamaz() -> Any:
+        raise ForgeValidationError("GitHub kimliği yok")
+
+    service.set_factories(forge=kurulamaz, calisan=lambda: web.CalisanUygulama(None, "dosya"))
+    try:
+        out = service.durum()
+    finally:
+        service.reset_factories()
+    assert "GitHub kimliği yok" in out["forge"]["hata"]

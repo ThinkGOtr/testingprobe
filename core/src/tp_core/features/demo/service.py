@@ -135,6 +135,19 @@ def _forge() -> ForgePort:
     return get_forge()
 
 
+class _ForgeYok:
+    """Forge kurulamadı (ör. GitHub kimliği yok): her okuma `ForgeError` verir."""
+
+    def __init__(self, neden: str) -> None:
+        self.neden = neden
+
+    def __getattr__(self, name: str) -> Any:
+        def _hata(*_a: Any, **_k: Any) -> Any:
+            raise ForgeError(f"forge kullanılamıyor: {self.neden}")
+
+        return _hata
+
+
 def _yenileyici() -> web.WebYenileyici:
     f = _factories.get("yenileyici")
     return f() if f is not None else web.varsayilan_yenileyici()
@@ -738,8 +751,14 @@ def degerlendirme_durumu() -> list[dict[str, Any]] | dict[str, Any]:
 
 
 def durum(forge: Any | None = None, session: Session | None = None) -> dict[str, Any]:
-    forge = forge or _forge()
     out: dict[str, Any] = {"forge": {}, "uygulama": {}, "web_yenileme_istegi": None}
+    if forge is None:
+        try:
+            forge = _forge()
+        except ForgeError as exc:
+            # GitHub kipinde core-api yalnız salt okuma token'ıyla (GITHUB_READ_TOKEN) okur;
+            # tanımlı değilse durum ucu 500 vermez, forge bilgisi hata olarak döner.
+            forge = _ForgeYok(str(exc))
     out["degerlendirme"] = degerlendirme_durumu()
     yerel = _yerel_forge_mu(forge)
     out["locator_demo"] = (
