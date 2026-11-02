@@ -26,12 +26,12 @@ Dış dünyaya yalnızca bir **dış kapı** açılır: Caddy (`deploy/gcp/docke
 - Diğer bütün portlar (Postgres, core-api, jira-sim…) yerelde olduğu gibi yalnızca `127.0.0.1`'dedir.
   `make security-check` bunu denetler (yalnızca `edge` 80/443 istisnadır).
 
-Yayına çıkan adresler (alan adı gerekmez; `sslip.io` IP'yi adrese çevirir):
+Yayına çıkan adresler (`antreklabs.com` DNS'i odeaweb cPanel'de; §3.3'te iki `A` kaydı eklenir):
 
 | Adres | Ne |
 |---|---|
-| `https://portal.<IP>.sslip.io` | Review portal (analist, PO, mühendis, testçi, sunucu) |
-| `https://bayi.<IP>.sslip.io` | Demo uygulaması (Bayi Sipariş Portalı) |
+| `https://testing-probe.antreklabs.com` | Review portal (analist, PO, mühendis, testçi, sunucu) |
+| `https://bayi.testing-probe.antreklabs.com` | Demo uygulaması (Bayi Sipariş Portalı) |
 
 Jira (iyzitrace.atlassian.net), Xray, GitHub (ThinkGOtr/testingprobe-demo-app + Actions), Sauce ve
 Anthropic zaten bulutta; VM onlara yalnızca dışarı doğru bağlanır.
@@ -60,7 +60,7 @@ Anthropic zaten bulutta; VM onlara yalnızca dışarı doğru bağlanır.
 Bu terminal oturumu boyunca kullanılacak. `PROJECT_ID`'yi kendi projenle değiştir.
 
 ```bash
-export PROJECT_ID="<gcp-proje-kimligi>"
+export PROJECT_ID="antreklabs-main-project"   # gcloud projects list ile doğrula
 export REGION="europe-west3"          # Frankfurt
 export ZONE="europe-west3-a"
 export VM="tp-demo"
@@ -102,6 +102,27 @@ gcloud compute firewall-rules create tp-demo-ssh-iap \
 
 > `default` ağında projeyle gelen `default-allow-ssh` kuralı 22'yi herkese açar. Bu projede başka
 > makine yoksa kapatman önerilir: `gcloud compute firewall-rules delete default-allow-ssh`
+
+### 3.3 DNS kayıtları (cPanel — tarayıcı)
+
+`antreklabs.com`'un ad sunucuları `de1/de2.odeaweb.com`; kayıtlar cPanel'den eklenir. **"Domains →
+Create A New Domain" kullanma** (o, cPanel sunucusunda site açar); yalnızca DNS kaydı eklenecek.
+
+1. cPanel → **Zone Editor** (Tools araması: "Zone") → `antreklabs.com` satırında **Manage**.
+2. **Add Record** → **A**:
+   - Name: `testing-probe` (cPanel sonuna `.antreklabs.com.` ekler)
+   - TTL: `300`
+   - Record: §3.1'de yazdırılan `$IP`
+3. Bir **A** kaydı daha:
+   - Name: `bayi.testing-probe`
+   - TTL: `300`
+   - Record: aynı `$IP`
+4. Doğrula (Mac; birkaç dakika sürebilir):
+   ```bash
+   dig +short A testing-probe.antreklabs.com @de1.odeaweb.com
+   dig +short A bayi.testing-probe.antreklabs.com @de1.odeaweb.com
+   ```
+   İkisi de `$IP`'yi göstermeden §8'e (ilk `make up`) geçme: Caddy sertifikayı ilk açılışta ister.
 
 ---
 
@@ -208,9 +229,8 @@ mv /tmp/tp.env /opt/testingprobe/.env && chmod 600 /opt/testingprobe/.env
 
 ```bash
 cd /opt/testingprobe
-IP="$(curl -s -H 'Metadata-Flavor: Google' \
-  http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip)"
-echo "$IP"
+PORTAL=testing-probe.antreklabs.com
+BAYI=bayi.testing-probe.antreklabs.com
 ```
 
 Dış kapı parolasını belirle (ekrana ve geçmişe yazılmaz) ve hash'le:
@@ -230,14 +250,14 @@ cat >> .env <<EOF
 
 # --- GCP yayını (docs/GCP-KURULUM.md) ---
 COMPOSE_FILE=docker-compose.yml:deploy/gcp/docker-compose.gcp.yml
-TP_PORTAL_HOST=portal.${IP}.sslip.io
-TP_DEMO_HOST=bayi.${IP}.sslip.io
+TP_PORTAL_HOST=${PORTAL}
+TP_DEMO_HOST=${BAYI}
 TP_ACME_EMAIL=gokhan.sipahi@antreklabs.com
 TP_EDGE_USER=antrek
 TP_EDGE_HASH='${EDGE_HASH}'
-TP_ALLOWED_ORIGINS=https://portal.${IP}.sslip.io
-TP_PUBLIC_BASE_URL=https://portal.${IP}.sslip.io
-TP_MCP_PUBLIC_URL=https://portal.${IP}.sslip.io/api/mcp
+TP_ALLOWED_ORIGINS=https://${PORTAL}
+TP_PUBLIC_BASE_URL=https://${PORTAL}
+TP_MCP_PUBLIC_URL=https://${PORTAL}/api/mcp
 TP_SESSION_COOKIE_SECURE=true
 TP_TRUSTED_PROXIES=review-portal,edge
 EOF
@@ -294,9 +314,9 @@ systemctl status tp-demo-web-sync --no-pager | head -5
 
 ## 9. Tarayıcıdan doğrula
 
-1. `https://portal.<IP>.sslip.io` → tarayıcı dış kapı kullanıcı/parolasını sorar → portal girişi
+1. `https://testing-probe.antreklabs.com` → tarayıcı dış kapı kullanıcı/parolasını sorar → portal girişi
    (`sunucu` / `.env`'deki `SEED_USER_PASSWORD`) → **Demo yol haritası** açılır, "0/14".
-2. `https://bayi.<IP>.sslip.io` → dış kapı → bayi girişi (`bayi1` / `Demo123!`).
+2. `https://bayi.testing-probe.antreklabs.com` → dış kapı → bayi girişi (`bayi1` / `Demo123!`).
 3. Portalda **Koşular** ekranında `make demo-reset`'in kuyruğa aldığı GitHub koşusunun yeşil
    bittiğini gör.
 
@@ -340,19 +360,19 @@ Budgets'tan bir bütçe uyarısı (ör. 50 USD) kurman önerilir.
 
 | Belirti | Neden / çözüm |
 |---|---|
-| Tarayıcı "sertifika geçersiz", `edge` logunda `challenge failed` | 80 portu kapalı ya da IP değişti. `tp-demo-web` kuralını ve `TP_PORTAL_HOST`'taki IP'yi kontrol et; `docker compose restart edge`. |
-| Logda `rateLimited` | sslip.io paylaşılan bir alan; Let's Encrypt sınırına takıldıysa birkaç saat sonra tekrar dene ya da kendi alan adını kullan (aşağıda). |
+| Tarayıcı "sertifika geçersiz", `edge` logunda `challenge failed` / `NXDOMAIN` | DNS kaydı henüz yayılmadı ya da yanlış IP'yi gösteriyor (§3.3 `dig` ile kontrol), veya 80 portu kapalı (`tp-demo-web` kuralı). Düzelince `docker compose restart edge`. |
+| Logda `rateLimited` | Çok sayıda başarısız deneme; Let's Encrypt bir saat bekletir. DNS'i düzeltip bekle, sonra `docker compose restart edge`. |
 | Portal girişi olmuyor (yeniden giriş sayfasına dönüyor) | `TP_SESSION_COOKIE_SECURE=true` ve adresin `https://` ile açıldığından emin ol. |
-| Kaydet/onay işlemlerinde 403 | `TP_ALLOWED_ORIGINS` portalın tam adresi olmalı (`https://portal.<IP>.sslip.io`, sonda `/` yok); değiştirince `make up`. |
+| Kaydet/onay işlemlerinde 403 | `TP_ALLOWED_ORIGINS` portalın tam adresi olmalı (`https://testing-probe.antreklabs.com`, sonda `/` yok); değiştirince `make up`. |
 | Portaldaki canlı güncellemeler gelmiyor | SSE akışı; Caddyfile'da `flush_interval -1` olmalı. `docker compose logs edge`. |
 | `make up` bellek/disk hatası | `make up` önce önkoşulları denetler; makine tipi en az e2-standard-4, disk en az 100 GB olmalı. |
 | Locator kırıldı ama bayi uygulaması değişmedi | `systemctl status tp-demo-web-sync`; `journalctl -u tp-demo-web-sync -n 50`. |
 
-### Kendi alan adını kullanmak (isteğe bağlı)
+### Alan adı olmadan (yedek: sslip.io)
 
-DNS'te iki `A` kaydı aç (`portal.<alan>` ve `bayi.<alan>` → `$IP`), sonra VM'de `.env`'deki
-`TP_PORTAL_HOST`, `TP_DEMO_HOST`, `TP_ALLOWED_ORIGINS`, `TP_PUBLIC_BASE_URL`, `TP_MCP_PUBLIC_URL`
-değerlerini yeni adlarla değiştirip `make up`.
+DNS'e erişim yoksa `testing-probe.antreklabs.com` yerine `portal.<IP>.sslip.io`,
+`bayi.testing-probe.antreklabs.com` yerine `bayi.<IP>.sslip.io` kullanılabilir (sslip.io IP'yi adrese
+çevirir, DNS kaydı gerekmez): §7'de `PORTAL` ve `BAYI` değişkenlerini bu adlarla verip `make up`.
 
 ### Erişimi IP ile daraltmak (isteğe bağlı)
 
@@ -383,7 +403,7 @@ Kod ve yapılandırma yerelde doğrulandı: compose katmanı geçerli, Caddyfile
 geçiyor, `make security-check` 10/10 ve port denetimi yalnızca `edge` 80/443'e izin veriyor. Ama şu
 üçü ancak ilk GCP kurulumunda görülecek:
 
-- sslip.io adına Let's Encrypt sertifikasının alınması (§8.1).
+- `testing-probe.antreklabs.com` ve `bayi.testing-probe.antreklabs.com` için Let's Encrypt sertifikasının alınması (§8.1).
 - Portalın canlı güncelleme akışının (SSE) Caddy üzerinden kesintisiz geçmesi.
-- IDE'nin MCP kanalının `https://portal.<IP>.sslip.io/api/mcp` üzerinden çalışması (demo akışı bunu
+- IDE'nin MCP kanalının `https://testing-probe.antreklabs.com/api/mcp` üzerinden çalışması (demo akışı bunu
   kullanmaz; yalnızca IDE entegrasyonu için).
