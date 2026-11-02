@@ -285,7 +285,7 @@ FailureToFix(run_id)
 ### 8.3 `publish_test_cases`
 - **Girdi:** yalnızca `approved` durumundaki case kimlikleri; içerik kabul etmez.
 - **Kontrol:** her case için `içerik_hash == onaylanan_hash`; değilse red.
-- **Eşleme:** issue türü `Test` (yoksa `Task` + `test-case` etiketi); özet, ADF tablo (adım/veri/beklenen), etiketler `AI-generated` ve `tp-<uuid>`, story bağlantısı (`is tested by`, yoksa `relates to`), açıklamada onaylayan ve kaynak story.
+- **Eşleme:** issue türü `Test` (yoksa `Task` + `test-case` etiketi); özet, etiketler `AI-generated` ve `tp-<uuid>`, story bağlantısı (`is tested by`, yoksa `relates to`). Açıklama müşterinin **Jira görev şablonundadır** (`jira_adf.template_doc`; başlıklar iki dilli, içerik Türkçe): 🎯 Objective (doğrulanan davranış, onaylayan) · 🚀 Scope (tür, risk, kapsanan AC) · 🔄 User Flow (ön koşullar + ADF adım tablosu; Xray'de adımlar Xray adım alanında) · 🔗 Dependencies & Integration (kaynak story) · ℹ️ Other Information & Assets (üretim modu) · 🔑 Acceptance Criteria (beklenen sonuç) · 🧪 QA Checklist (adım başına beklenen); son satır `Kimlik: tp-<uuid> · onaylanan içerik hash: …` (idempotency işareti). Boş bölüm "Not applicable". Ürünün açtığı Bug da aynı şablondadır (`bugs/content.py description_adf`: amaç = özet + beklenen/gerçekleşen, akış = adımlar, bağımlılık = story/test, diğer = ortam/önem/kanıt).
 - **Idempotency:** önce `external_ref` (`intent` yazılır → create → `created` + anahtar); yeniden denemede önce bu tablo, kayıt yoksa `tp-<uuid>` JQL'i. Aynı hash'te çağrı yapılmaz.
 - **Dry-run, hata yönetimi:** önizleme portalda; 429/5xx üstel geri çekilme (≤3); kısmi başarı raporlanır.
 - **MCP araçları (IDE kanalı):**

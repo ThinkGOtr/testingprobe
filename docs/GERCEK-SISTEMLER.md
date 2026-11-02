@@ -136,7 +136,7 @@ cd core && uv run python -m tp_core.gateway.evaluation --check   # birleştirme 
 | Issue türleri | `Story`, `Bug`; `Test` önerilir (yoksa Test yerine `Task` açılır) |
 | Bağlantı türleri | `Relates` (varsayılan Jira'da var); `Test` bağlantı türü önerilir (yoksa `Relates` kullanılır) |
 | İş akışı | "Done" kategorisinde bir durum (koşu kayıtlarını kapatmak için) |
-| Kabul kriterleri | Açıklamada "Kabul Kriterleri" başlığı + `AC<n>: ...` satırları. Sitede AC ayrı bir özel alandaysa kod uyarlaması gerekir (`RestJira(content_fields=...)`) |
+| Kabul kriterleri | Açıklamada "Kabul Kriterleri" başlığı + `AC<n>: ...` satırları, ya da görev şablonunun "🔑 Acceptance Criteria (Kabul Kriterleri)" bölümü (başlık Jira başlığı ya da düz satır olabilir; bölümdeki öneksiz maddeler de AC'dir, "Not applicable" değildir). Sitede AC ayrı bir özel alandaysa kod uyarlaması gerekir (`RestJira(content_fields=...)`) |
 
 ### 2.2 Kullanıcılar (en az yetki)
 

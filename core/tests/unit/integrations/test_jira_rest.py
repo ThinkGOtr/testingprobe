@@ -95,10 +95,13 @@ def test_get_issue_parses_description_and_acs(jira: RestJira) -> None:
     assert it.key == "TPD-1"
     assert it.issue_type == "Story"
     assert it.summary == "Kampanyalı sepet ve sipariş onayı"
-    assert it.description == (
-        "Bayi, katalogdan ürünleri sepete ekleyip kampanya indirimiyle siparişini "
-        "onaylayabilmelidir."
+    # Görev şablonu: AC bölümü dışındaki bölümler (başlık satırlarıyla) açıklamada kalır.
+    assert it.description.startswith(
+        "🎯 Objective (Amaç)\n\nBayi, katalogdan ürünleri sepete ekleyip kampanya indirimiyle "
+        "siparişini onaylayabilmelidir.\n\n🚀 Scope (Kapsam)\n"
     )
+    assert "🧪 QA Checklist" in it.description
+    assert "Acceptance Criteria" not in it.description and "AC1:" not in it.description
     assert len(it.acceptance_criteria) == 6
     assert it.acceptance_criteria[0].startswith('AC1: Bayi katalogda bir ürün için "Sepete ekle"')
     assert it.acceptance_criteria[5] == (

@@ -1,9 +1,10 @@
 """Test yönetimi adaptörleri (``TestManagementPort``): Jira Test issue ve fabrika.
 
 Eşleme (TEKNIK-TASARIM §8.3): issue türü ``Test`` (projede yoksa ``Task`` + ``test-case`` etiketi);
-özet; açıklamada ADF tablo (adım / veri / beklenen), onaylayan ve kaynak story; etiketler
-``AI-generated`` ve ``tp-<uuid>``; story bağlantısı ``is tested by`` (``Test`` bağlantı türü),
-yoksa ``Relates``. Idempotency: yayından önce ``labels = tp-<uuid>`` araması.
+özet; açıklama Jira görev şablonunda (``case_description_adf``: ADF adım tablosu, onaylayan,
+kaynak story, kimlik/hash izi); etiketler ``AI-generated`` ve ``tp-<uuid>``; story bağlantısı
+``is tested by`` (``Test`` bağlantı türü), yoksa ``Relates``.
+Idempotency: yayından önce ``labels = tp-<uuid>`` araması.
 
 Bu katman yalnızca **onaylı** case'leri yazar; onay ve içerik hash kontrolü çağıranın (yayın
 iş akışının) sorumluluğundadır.
@@ -81,6 +82,8 @@ class CaseContent(BaseModel):
         default=None,
         validation_alias=AliasChoices("content_hash", "approved_hash", "onaylanan_hash"),
     )
+    # Üretim modunun görünen adı (ör. "REPLAY (…)"); yayın iş akışı verir, içerik hash'ine girmez.
+    uretim_modu: str | None = None
 
     @classmethod
     def from_mapping(cls, case: Mapping[str, Any]) -> CaseContent:
@@ -104,42 +107,81 @@ def tp_label(case_id: UUID) -> str:
     return f"tp-{case_id}"
 
 
-def case_description_adf(case: CaseContent, story_key: str) -> dict[str, Any]:
-    """Jira Test issue açıklaması: köken, ön koşullar, adım tablosu, beklenen sonuç."""
-    meta = [f"Kaynak story: {story_key}"]
-    if case.acceptance_criteria_refs:
-        meta.append("Kabul kriterleri: " + ", ".join(case.acceptance_criteria_refs))
-    if case.type:
-        meta.append(f"Tür: {case.type}")
-    if case.risk:
-        meta.append(f"Risk: {case.risk}")
-    origin = "Bu test case AI tarafından üretildi ve insan onayından geçti."
+# Şema değerleri (rules/schemas/case_generation.schema.json) → Jira açıklamasındaki Türkçe karşılık.
+CASE_TYPE_TR = {"positive": "pozitif", "negative": "negatif", "boundary": "sınır değer"}
+CASE_RISK_TR = {"high": "yüksek", "medium": "orta", "low": "düşük"}
+
+
+def case_description_adf(
+    case: CaseContent, story_key: str, *, steps_table: bool = True
+) -> dict[str, Any]:
+    """Jira Test issue açıklaması, görev şablonunda (``jira_adf.TEMPLATE_SECTIONS``).
+
+    Objective: case başlığı + köken · Scope: tür, risk, kapsanan AC'ler · User Flow: ön koşullar +
+    adım tablosu (#, Adım, Veri, Beklenen) · Dependencies: kaynak story · Other: üretim modu ·
+    Acceptance Criteria: beklenen sonuç + AC'ler · QA Checklist: adım başına beklenen. Son satır
+    kimlik/hash izidir (``Kimlik: tp-… · onaylanan içerik hash: …``); yayın, mevcut issue'nun
+    içeriğini bu satırdan doğrular. Xray yolu (``steps_table=False``) adımları Xray adım
+    alanında taşır; açıklamada tablo yerine adım sayısı yazılır.
+    """
+    origin = "AI tarafından üretildi, insan onayından geçti."
     if case.approved_by:
-        origin = f"Bu test case AI tarafından üretildi; onaylayan: {case.approved_by}."
-    content: list[dict[str, Any]] = [adf.paragraph(origin), adf.paragraph(" · ".join(meta))]
+        origin = f"AI tarafından üretildi; onaylayan: {case.approved_by}."
+    refs = ", ".join(case.acceptance_criteria_refs)
+
+    scope = []
+    if case.type:
+        scope.append(f"Test türü: {CASE_TYPE_TR.get(case.type, case.type)}")
+    if case.risk:
+        scope.append(f"Risk: {CASE_RISK_TR.get(case.risk, case.risk)}")
+    if refs:
+        scope.append(f"Kapsanan kabul kriterleri: {refs}")
+
+    flow: list[dict[str, Any]] = []
     if case.preconditions:
-        content += [adf.heading("Ön koşullar", 3), adf.bullet_list(case.preconditions)]
-    content.append(adf.heading("Adımlar", 3))
-    content.append(
-        adf.table(
-            ["#", "Adım", "Veri", "Beklenen"],
-            [
-                [str(i), s.action, s.data or "—", s.expected or "—"]
-                for i, s in enumerate(case.steps, start=1)
-            ],
+        flow += [adf.paragraph("Ön koşullar:"), adf.bullet_list(case.preconditions)]
+    if case.steps and steps_table:
+        flow.append(
+            adf.table(
+                ["#", "Adım", "Veri", "Beklenen"],
+                [
+                    [str(i), s.action, s.data or "—", s.expected or "—"]
+                    for i, s in enumerate(case.steps, start=1)
+                ],
+            )
         )
-    )
+    elif case.steps:
+        flow.append(adf.paragraph(f"Adımlar Xray test adımlarında ({len(case.steps)} adım)."))
+
+    criteria: list[dict[str, Any]] = []
     if case.expected_result:
-        content += [adf.heading("Beklenen sonuç", 3), adf.paragraph(case.expected_result)]
+        criteria.append(adf.paragraph(case.expected_result))
+    if refs:
+        criteria.append(adf.paragraph(f"Karşılanan story kriterleri: {refs}"))
+
+    checks = [
+        f"Adım {i}: {s.expected}" for i, s in enumerate(case.steps, start=1) if s.expected.strip()
+    ]
+
     trail = f"Kimlik: {case.tp_label}"
     if case.content_hash:
         trail += f" · onaylanan içerik hash: {case.content_hash}"
-    content.append(adf.paragraph(trail))
-    return adf.doc(content)
+    return adf.template_doc(
+        {
+            "objective": [adf.paragraph(f"Doğrulanan: {case.title}"), adf.paragraph(origin)],
+            "scope": [adf.bullet_list(scope)] if scope else None,
+            "user_flow": flow,
+            "dependencies": f"Kaynak story: {story_key}" if story_key else None,
+            "other": f"Üretim modu: {case.uretim_modu}" if case.uretim_modu else None,
+            "acceptance_criteria": criteria,
+            "qa_checklist": [adf.bullet_list(checks)] if checks else None,
+        },
+        trailer=[adf.paragraph(trail)],
+    )
 
 
-def case_description_text(case: CaseContent, story_key: str) -> str:
-    return adf.adf_to_text(case_description_adf(case, story_key))
+def case_description_text(case: CaseContent, story_key: str, *, steps_table: bool = True) -> str:
+    return adf.adf_to_text(case_description_adf(case, story_key, steps_table=steps_table))
 
 
 # ------------------------------------------------------------- ortak yardımcılar

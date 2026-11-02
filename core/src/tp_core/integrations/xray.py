@@ -167,7 +167,7 @@ class XrayTestManagement:
             "fields": {
                 "project": {"key": self.project},
                 "summary": case.title[:255],
-                "description": case_description_text(case, story_key),
+                "description": case_description_text(case, story_key, steps_table=False),
                 "labels": [AI_LABEL, case.tp_label],
             },
             "steps": [

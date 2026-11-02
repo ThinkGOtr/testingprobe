@@ -1,22 +1,62 @@
 """Atlassian Document Format (ADF) ↔ düz metin ve kabul kriteri (AC) ayrıştırma.
 
-Story açıklaması biçimi (docs/DEMO-VERISI.md): açıklama paragrafı, ardından "Kabul Kriterleri"
-başlığı ve ``AC<n>: ...`` satırları (madde listesi ya da paragraf). Gerçek Jira'daki öneksiz
-madde listeleri de başlık altında AC olarak okunur. Bu modül hem okuma
+Story açıklaması iki biçimde okunur: (1) açıklama paragrafı, ardından "Kabul Kriterleri"
+başlığı ve ``AC<n>: ...`` satırları (madde listesi ya da paragraf); (2) görev şablonu (demo
+story'leri, docs/DEMO-VERISI.md) — AC'ler "🔑 Acceptance Criteria" bölümündedir. Gerçek
+Jira'daki öneksiz madde listeleri de başlık altında AC olarak okunur. Bu modül hem okuma
 (``parse_description``) hem yazma (``build_description``) yönünü sağlar; ikisi tur atlatıldığında
 aynı içeriği verir.
+
+Jira görev şablonu (``TEMPLATE_SECTIONS``): Objective, Scope, User Flow, Dependencies &
+Integration, Other Information & Assets, Acceptance Criteria, QA Checklist. Ürünün açtığı Bug ve
+Test kayıtları ``template_doc`` ile bu şablonda yazılır; şablonlu story'de AC bölümü
+"🔑 Acceptance Criteria" başlığından okunur ve yeniden yazımda diğer bölümler yerinde kalır.
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 AdfNode = dict[str, Any]
 
 AC_HEADING = "Kabul Kriterleri"
-_AC_HEADING_RE = re.compile(r"^\s*(kabul\s+kriterleri|acceptance\s+criteria)\s*:?\s*$", re.I)
+# Başlık önünde emoji/simge, sonunda parantezli ikinci dil olabilir ("🔑 Acceptance Criteria
+# (Kabul Kriterleri)"). Önek harf olmayan her şeydir ("ℹ" gibi simgeler Python'da \w sayılır)
+# ya da metni olmayan ADF emoji düğümünün kısa adı (":key:").
+_LEAD = r"^(?::[a-z0-9_+-]+:|[^A-Za-zÇĞİÖŞÜçğıöşü])*"
+_AC_HEADING_RE = re.compile(
+    _LEAD + r"(kabul\s+kriterleri|acceptance\s+criteria)\s*(?:\([^)]*\))?\s*:?\s*$", re.I
+)
+
+# Görev şablonu: (anahtar, başlık, tanınan adlar). Başlıklar şablondaki gibi iki dillidir.
+TEMPLATE_SECTIONS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("objective", "🎯 Objective (Amaç)", ("objective", "amaç")),
+    ("scope", "🚀 Scope (Kapsam)", ("scope", "kapsam")),
+    ("user_flow", "🔄 User Flow (Kullanıcı Akışı)", ("user flow", "kullanıcı akışı")),
+    (
+        "dependencies",
+        "🔗 Dependencies & Integration (Bağımlılıklar ve Entegrasyon)",
+        ("dependencies & integration", "dependencies", "bağımlılıklar ve entegrasyon"),
+    ),
+    (
+        "other",
+        "ℹ️ Other Information & Assets (Diğer Bilgiler & Kaynaklar)",
+        ("other information & assets", "other information", "diğer bilgiler & kaynaklar"),
+    ),
+    (
+        "acceptance_criteria",
+        "🔑 Acceptance Criteria (Kabul Kriterleri)",
+        ("acceptance criteria", "kabul kriterleri"),
+    ),
+    ("qa_checklist", "🧪 QA Checklist", ("qa checklist", "qa kontrol listesi")),
+)
+TEMPLATE_AC_HEADING = next(t for k, t, _ in TEMPLATE_SECTIONS if k == "acceptance_criteria")
+NOT_APPLICABLE = "Not applicable"
+# AC bölümünde "boş bölüm" işaretleri: AC sayılmaz.
+_EMPTY_MARKERS = frozenset({"not applicable", "n/a", "na", "yok", "uygulanamaz", "-", "—", "–"})
+_SECTION_NAME_RE = re.compile(_LEAD + r"(.+?)\s*(?:\([^)]*\))?\s*:?\s*$")
 _AC_LINE_RE = re.compile(r"^\s*(?:[-*•]\s*|\d+[.)]\s+)?AC\s*(\d+)\s*[:.)\-–]\s*(.+?)\s*$", re.I)
 _BULLET = re.compile(r"^\s*[-*•]\s+(.*)$")
 _ORDERED = re.compile(r"^\s*(\d{1,9})[.)]\s+(.*)$")
@@ -137,6 +177,63 @@ def text_to_blocks(text: str) -> list[AdfNode]:
 
 def text_to_adf(text: str) -> AdfNode:
     return doc(text_to_blocks(text))
+
+
+# ------------------------------------------------------------------ görev şablonu
+
+
+def template_section(text: str) -> str | None:
+    """Satır bir şablon bölüm başlığıysa bölüm anahtarı (ör. ``"scope"``), değilse ``None``."""
+    if "\n" in text or len(text) > 120:
+        return None
+    m = _SECTION_NAME_RE.match(text.strip())
+    if not m:
+        return None
+    adaylar = _name_keys(m.group(1))
+    for key, _, names in TEMPLATE_SECTIONS:
+        if adaylar & {k for n in names for k in _name_keys(n)}:
+            return key
+    return None
+
+
+def _name_keys(name: str) -> set[str]:
+    """Karşılaştırma anahtarları: hem varsayılan hem Türkçe küçük harf ("KULLANICI" → "kullanıcı",
+    "Integration" → "integration"); "&"/"and"/"ve" ve boşluk farkı yok sayılır."""
+    out = set()
+    for low in (name.lower(), name.replace("I", "ı").replace("İ", "i").lower()):
+        out.add(" ".join("&" if w in ("and", "ve") else w for w in low.split()))
+    return out
+
+
+def is_template(blocks: Sequence[tuple[str, str]]) -> bool:
+    """Belge görev şablonunda mı: en az iki farklı şablon bölüm başlığı (tek "Kapsam" satırı
+    şablon sayılmaz)."""
+    keys = {template_section(text) for kind, text in blocks if kind in ("heading", "paragraph")}
+    keys.discard(None)
+    return len(keys) >= 2
+
+
+def template_doc(
+    sections: Mapping[str, Sequence[AdfNode] | str | None],
+    *,
+    preamble: Sequence[AdfNode] = (),
+    trailer: Sequence[AdfNode] = (),
+) -> AdfNode:
+    """Görev şablonunda ADF belgesi: her bölüm seviye-3 başlık + içerik, şablon sırasıyla.
+
+    Değer düz metinse ``text_to_blocks`` ile, blok listesiyse olduğu gibi yazılır; boş ya da
+    verilmemiş bölüm ``Not applicable`` olur (şablon her bölümü ister); ``parse_description`` AC
+    bölümündeki ``Not applicable``'ı AC saymaz. ``preamble`` ilk bölümden
+    önce (ör. ürün imi), ``trailer`` son bölümden sonra (ör. kimlik/hash satırı) gelir.
+    """
+    content: list[AdfNode] = list(preamble)
+    for key, title, _ in TEMPLATE_SECTIONS:
+        value = sections.get(key)
+        blocks = text_to_blocks(value.strip()) if isinstance(value, str) else list(value or [])
+        content.append(heading(title, 3))
+        content.extend(blocks or [paragraph(NOT_APPLICABLE)])
+    content.extend(trailer)
+    return doc(content)
 
 
 # ------------------------------------------------------------- bot imi ve @bahsetme
@@ -315,6 +412,9 @@ def parse_description(adf: Any) -> tuple[str, list[str]]:
     desc: list[tuple[str, str]] = []
     acs: list[str] = []
     in_ac = False
+    # Şablonda AC yalnızca AC bölümündedir: QA Checklist'teki "- AC1: … doğrulanır" maddesi AC
+    # değildir (yoksa çift AC1 olur ve geri yazımda checklist'ten silinir).
+    template = is_template(blocks)
 
     def next_index() -> int:
         # Öneksiz AC, şimdiye kadarki en büyük numaranın bir fazlasını alır (çakışma olmasın).
@@ -322,7 +422,13 @@ def parse_description(adf: Any) -> tuple[str, list[str]]:
         return max(used, default=0) + 1
 
     for kind, text in blocks:
-        if kind == "heading" or (kind == "paragraph" and _AC_HEADING_RE.match(text)):
+        # Şablon bölüm başlığı gerçek Jira'da çoğu zaman düz paragraf satırıdır ("🧪 QA
+        # Checklist"); AC bölümünü o da bitirir.
+        if (
+            kind == "heading"
+            or (kind == "paragraph" and _AC_HEADING_RE.match(text))
+            or (kind == "paragraph" and in_ac and template_section(text))
+        ):
             if _AC_HEADING_RE.match(text):
                 in_ac = True
                 continue
@@ -330,6 +436,8 @@ def parse_description(adf: Any) -> tuple[str, list[str]]:
             desc.append((kind, text))
             continue
         if in_ac:
+            if _ITEM_MARKER.sub("", text.strip()).rstrip(".").strip().casefold() in _EMPTY_MARKERS:
+                continue  # şablonun "boş bölüm" işareti, AC değil
             if kind == "item":
                 # Çok satırlı madde tek AC'dir.
                 body = " ".join(ln.strip() for ln in text.split("\n") if ln.strip())
@@ -341,6 +449,9 @@ def parse_description(adf: Any) -> tuple[str, list[str]]:
                     line = _ITEM_MARKER.sub("", line, count=1).strip()
                     if line:
                         acs.append(normalize_ac(line, next_index()))
+            continue
+        if template:
+            desc.append((kind, text))
             continue
         rest: list[str] = []
         for line in text.split("\n"):
@@ -355,10 +466,34 @@ def parse_description(adf: Any) -> tuple[str, list[str]]:
 
 
 def build_description(description: str, acceptance_criteria: Sequence[str]) -> AdfNode:
-    """Açıklama paragrafı + "Kabul Kriterleri" başlığı + AC maddeleri."""
+    """Açıklama paragrafı + "Kabul Kriterleri" başlığı + AC maddeleri.
+
+    Açıklama görev şablonundaysa (``parse_description`` şablon başlıklarını kendi satırlarında
+    bırakır) başlıklar yeniden başlık olur ve AC bölümü şablondaki yerine ("🔑 Acceptance
+    Criteria", QA Checklist'ten önce) yazılır; böylece doküman düzeltmesi diğer bölümleri bozmaz.
+    """
     content = text_to_blocks(description.strip()) if description.strip() else []
     acs = [normalize_ac(ac, i) for i, ac in enumerate(acceptance_criteria, start=1) if ac.strip()]
-    if acs:
-        content.append(heading(AC_HEADING, 3))
-        content.append(bullet_list(acs))
+    keys = [_block_section(b) for b in content]
+    if not is_template([(b["type"], inline_text(b)) for b in content]):
+        if acs:
+            content.append(heading(AC_HEADING, 3))
+            content.append(bullet_list(acs))
+        return doc(content)
+    # Başlık metni olduğu gibi kalır (yalnızca düğüm türü başlık olur): içerik hash'i değişmesin.
+    content = [heading(inline_text(b), 3) if k else b for b, k in zip(content, keys, strict=True)]
+    # AC'siz şablon story'sinde de bölüm kalır (şablon her bölümü ister; "Not applicable" AC
+    # sayılmaz, tur atlatma aynı içeriği verir).
+    order = [k for k, _, _ in TEMPLATE_SECTIONS]
+    after_ac = order[order.index("acceptance_criteria") + 1 :]
+    at = next((i for i, k in enumerate(keys) if k in after_ac), len(content))
+    body = bullet_list(acs) if acs else paragraph(NOT_APPLICABLE)
+    content[at:at] = [heading(TEMPLATE_AC_HEADING, 3), body]
     return doc(content)
+
+
+def _block_section(block: AdfNode) -> str | None:
+    if block.get("type") not in ("heading", "paragraph"):
+        return None
+    key = template_section(inline_text(block))
+    return None if key == "acceptance_criteria" else key

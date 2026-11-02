@@ -64,7 +64,13 @@ DURAK = frozenset(
         "yok var değil daha çok her hiç sonra önce kadar göre üzerinde içinde sayfa sayfası "
         "butonu buton bas basar basıldığında gösterilir görünür beklenen gerçekleşen test "
         "testi adet tutarı the and for with not was are expect expected received tohavetext "
-        "tobe toequal tocontain locator getbytestid getbyrole timeout error hata page"
+        "tobe toequal tocontain locator getbytestid getbyrole timeout error hata page "
+        # Görev şablonunun her Bug'da geçen başlık sözcükleri (bugs/content.py description_adf):
+        # ortak isabet üretmesin. Kalıp cümlelerdeki alan sözcükleri ("kullanıcı", "hatalı")
+        # bilinçli olarak dışarıda: gerçek hata metninde ayırt edicidirler.
+        "objective amaç scope kapsam flow akışı dependencies integration bağımlılıklar "
+        "entegrasyon information assets kaynaklar acceptance criteria kriterleri checklist "
+        "applicable regresyon gözlenmez izlenir"
     )
 )
 

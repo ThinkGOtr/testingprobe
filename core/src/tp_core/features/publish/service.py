@@ -134,12 +134,14 @@ def approver_of(session: Session, tc: TestCase) -> str | None:
 
 
 def case_mapping(session: Session, tc: TestCase) -> dict[str, Any]:
-    """Adaptöre giden case (şema + kimlik + onaylayan + onaylanan hash)."""
+    """Adaptöre giden case (şema + kimlik + onaylayan + onaylanan hash + üretim modu)."""
+    mod = mode_of(tc)
     return {
         **tc.icerik,
         "id": str(tc.id),
         "onaylayan": approver_of(session, tc),
         "onaylanan_hash": tc.onaylanan_hash,
+        "uretim_modu": MOD_ETIKETI.get(mod, mod.upper()),
     }
 
 

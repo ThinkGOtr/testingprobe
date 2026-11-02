@@ -213,3 +213,69 @@ def test_po_yorumundaki_soru_kimligi_cevap_eslemesiyle_ayni() -> None:
     assert map_po_answers(sorular, [{"metin": "Q3: indirimli toplam"}]) == {
         "Q3": "indirimli toplam"
     }
+
+
+# ------------------------------------------------------- Jira görev şablonundaki story (TPD-1..4)
+
+
+def _template_story(number: int) -> tuple[str, list[str], str]:
+    from tp_core.integrations.jira_adf import parse_description
+    from tp_core.integrations.jira_seed import DEMO_STORIES
+
+    story = next(s for s in DEMO_STORIES if s.number == number)
+    aciklama, acs = parse_description(story.adf())
+    return aciklama, acs, story.paragraph
+
+
+def test_description_target_of_template_story_is_objective() -> None:
+    """Şablonda "Açıklama" = Objective bölümü; QA Checklist vb. fark/ref metnine girmez."""
+    aciklama, acs, amac = _template_story(2)
+    assert current_doc_text("Açıklama", aciklama, acs) == amac
+    assert replaced_doc_text("Yeni amaç.", "Açıklama", aciklama, acs) == amac
+    # Şablonsuz (eski/serbest) açıklama: hedef açıklamanın tamamı (davranış değişmedi).
+    assert current_doc_text("Açıklama", "d", TPD1_ACS) == "d"
+
+
+@pytest.mark.parametrize("number", [1, 2, 3, 4])
+def test_desc_fix_on_template_story_rewrites_only_objective_and_round_trips(number: int) -> None:
+    """DESC düzeltmesi yalnızca Objective'i değiştirir; Jira'ya yazılıp okununca hash aynı kalır
+    (`write_fix_to_jira`: ``jira_hash() == yeni``)."""
+    from tp_core.integrations.jira_adf import build_description, parse_description
+
+    aciklama, acs, amac = _template_story(number)
+    yeni_amac = "Bayi, ürün kataloğunda yeni bir davranışı kullanabilmelidir.\nİkinci satır."
+    fixes = [DocFix("F1", "Açıklama", yeni_amac)]
+    if acs:
+        fixes.append(DocFix("F2", acs[0].split(":", 1)[0], f"{acs[0]} (düzeltildi)"))
+    m = merge_fixes(aciklama, acs, fixes)
+    assert m.degisiklikler[0] == {
+        "hedef": "Açıklama",
+        "once": amac,
+        "sonra": yeni_amac,
+        "bulgular": ["F1"],
+    }
+    assert yeni_amac in m.aciklama and amac not in m.aciklama
+    # Objective dışındaki her bölüm (başlıklarıyla) aynen kalır.
+    assert m.aciklama.split("🚀 Scope (Kapsam)", 1)[1] == aciklama.split("🚀 Scope (Kapsam)", 1)[1]
+    yeni = requirement_hash("özet", m.aciklama, m.kabul_kriterleri)
+    okunan, okunan_acs = parse_description(build_description(m.aciklama, m.kabul_kriterleri))
+    assert requirement_hash("özet", okunan, okunan_acs) == yeni
+    assert changed_targets(aciklama, acs, okunan, okunan_acs) == (
+        {"DESC", "AC1"} if acs else {"DESC"}
+    )
+
+
+def test_desc_fix_with_template_headings_is_rejected() -> None:
+    """Modelin "Açıklama" önerisi şablonun tamamıysa Objective'e eklenmez (bölümler ikilenirdi)."""
+    aciklama, acs, _ = _template_story(1)
+    with pytest.raises(DocMergeError, match="bölüm başlığı"):
+        merge_fixes(
+            aciklama, acs, [DocFix("F1", "Açıklama", "Yeni amaç.\n\n🚀 Scope (Kapsam)\n\n- x")]
+        )
+
+
+def test_fix_that_would_not_round_trip_is_rejected_before_jira_write() -> None:
+    """Yazılacak belge geri okunduğunda farklı çıkacaksa düzeltme baştan reddedilir."""
+    with pytest.raises(DocMergeError, match="aynı içerikle yazılamıyor"):
+        # Şablonsuz story'de açıklama "Kabul Kriterleri" satırı olursa AC bölümü sanılır.
+        merge_fixes("Açıklama.", ["AC1: x"], [DocFix("F1", "Açıklama", "Kabul Kriterleri")])

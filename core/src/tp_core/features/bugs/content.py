@@ -391,6 +391,18 @@ def _kanit_listesi(satirlar: Sequence[KanitSatiri]) -> dict[str, Any]:
 
 # ------------------------------------------------------------------- Jira gövdesi
 
+_ADIM_NO = re.compile(r"^\s*\d{1,3}[.)]\s+")
+
+
+def _etiketli(etiket: str, metin: str) -> str:
+    """`Etiket: metin`; metin zaten etiketle başlıyorsa ("Gerçekleşen değer: 1") tekrar yazılmaz.
+
+    Etiketten sonra bir sözcük sınırı aranır: "Beklenenden fazla…" etiketsiz kalmaz.
+    """
+    if re.match(re.escape(etiket) + r"(?:\s|:|$)", metin, re.IGNORECASE):
+        return metin
+    return f"{etiket}: {metin}"
+
 
 def description_adf(
     icerik: Mapping[str, Any],
@@ -402,28 +414,70 @@ def description_adf(
     zincir_hash: str | None,
     kanit: Sequence[KanitSatiri] | None = None,
 ) -> dict[str, Any]:
+    """Yeni Bug açıklaması: görev şablonunda (`jira_adf.template_doc`), içerik Türkçe ve kısa.
+
+    Köken cümlesi şablondan önce, kimlik/hash satırı sonra gelir; `Kimlik:` ve `onaylanan içerik
+    hash:` metni idempotens denetimi (`publish_bug` mevcut kaydı bu satırla tanır) için aynı kalır.
+    Bot imi (🤖) burada değil, `with_bot_header` ile ilk satıra eklenir. Bölüm içerikleri düz
+    metin ayrıştırılmadan blok olarak yazılır (testçi metnindeki `-`/`#` biçim sayılmaz).
+    """
+    story = icerik.get("story_key")
+    test = icerik.get("test_case_key")
+    beklenen, gerceklesen = str(icerik["expected"]), str(icerik["actual"])
     kokeni = (
         f"Bu kayıt Testing Probe tarafından taslaklandı (üretim: {mod_etiketi}) ve "
         f"testçi onayıyla açıldı; onaylayan: {onaylayan or '?'}."
     )
-    content: list[dict[str, Any]] = [adf.paragraph(kokeni)]
-    content += [adf.heading("Adımlar", 3), adf.bullet_list(list(icerik["steps"]), ordered=True)]
-    content += [adf.heading("Beklenen", 3), adf.paragraph(str(icerik["expected"]))]
-    content += [adf.heading("Gerçekleşen", 3), adf.paragraph(str(icerik["actual"]))]
-    content += [adf.heading("Ortam", 3), adf.paragraph(str(icerik["environment"]))]
+    bagimlilik = []
+    if story:
+        bagimlilik.append(f"Story: {story} (hatanın bağlı olduğu gereksinim)")
+    if test:
+        bagimlilik.append(f"Test: {test} (hatayı yakalayan test case)")
+    diger: list[dict[str, Any]] = [adf.paragraph(f"Ortam: {icerik['environment']}")]
+    if icerik.get("severity_suggestion"):
+        diger.append(adf.paragraph(f"Önem önerisi: {icerik['severity_suggestion']}"))
     satirlar = _kanit_satirlari(icerik, kanit)
     if satirlar:
-        content += [adf.heading("Kanıt", 3), _kanit_listesi(satirlar)]
-    iz = [f"Story: {icerik.get('story_key') or '-'}"]
-    if icerik.get("test_case_key"):
-        iz.append(f"Test: {icerik['test_case_key']}")
-    iz.append(f"Önem önerisi: {icerik.get('severity_suggestion')}")
-    iz.append(f"Kimlik: {draft_label}")
-    iz.append(f"onaylanan içerik hash: {icerik_hash}")
+        diger += [adf.paragraph("Kanıt:"), _kanit_listesi(satirlar)]
+    kontrol = ["Kullanıcı akışındaki adımlar yeniden izlenir; beklenen sonuç doğrulanır"]
+    if test:
+        kontrol.append(f"İlgili otomatik test ({test}) yeşil geçer")
+    if story:
+        kontrol.append(f"{story} kabul kriterleri regresyon için yeniden kontrol edilir")
+    bolumler: dict[str, list[dict[str, Any]]] = {
+        "objective": [
+            adf.paragraph(str(icerik["summary"])),
+            adf.paragraph(_etiketli("Beklenen", beklenen)),
+            adf.paragraph(_etiketli("Gerçekleşen", gerceklesen)),
+        ],
+        "scope": [
+            adf.paragraph(
+                "Hatalı davranışı düzeltip sonucu beklenen sonuçla uyumlu hale getirmek"
+                + (f" ({story} kapsamında)." if story else ".")
+            )
+        ],
+        # Adımlar içerikte "1. …" numaralı; sıralı liste numarayı kendisi verir.
+        "user_flow": [
+            adf.bullet_list([_ADIM_NO.sub("", str(a)) for a in icerik["steps"]], ordered=True)
+        ],
+        "dependencies": [adf.bullet_list(bagimlilik)] if bagimlilik else [],
+        "other": diger,
+        "acceptance_criteria": [
+            adf.bullet_list(
+                [
+                    f"Beklenen davranış sağlanır: {beklenen}",
+                    f"Hatalı sonuç artık gözlenmez ({gerceklesen})",
+                ]
+            )
+        ],
+        "qa_checklist": [adf.bullet_list(kontrol)],
+    }
+    iz = [f"Kimlik: {draft_label}", f"onaylanan içerik hash: {icerik_hash}"]
     if zincir_hash:
         iz.append(f"denetim zinciri son hash: {zincir_hash}")
-    content.append(adf.paragraph(" · ".join(iz)))
-    return adf.doc(content)
+    return adf.template_doc(
+        bolumler, preamble=[adf.paragraph(kokeni)], trailer=[adf.paragraph(" · ".join(iz))]
+    )
 
 
 def link_comment(

@@ -15,7 +15,9 @@ sayılır) ve satırlar hedeflere dağıtılır:
    o kabul kriterinin metninin tamamını değiştirir. Saklanan biçim ``"ACn: <metin>"``dir.
 2. Bir AC satırını izleyen, AC ile başlamayan satırlar o AC'nin devamıdır (tek boşlukla eklenir).
 3. Metnin başında (ilk AC satırından önce) gelen satırlar **açıklamayı** hedefler ve açıklamanın
-   tamamını değiştirir (satırlar ``\\n`` ile birleşir).
+   tamamını değiştirir (satırlar ``\\n`` ile birleşir). Açıklama Jira görev şablonundaysa
+   ("🎯 Objective (Amaç)" bölümü var) "açıklama" Objective bölümüdür: yalnızca onun içeriği
+   değişir, diğer bölümler (Scope, User Flow, QA Checklist …) ve başlıkları yerinde kalır.
 4. ``n`` mevcut AC sayısından büyükse yeni AC eklenir; eklenenler boşluksuz ardışık olmalıdır
    (AC sayısı 6 iken AC7 eklenebilir, AC9 eklenemez).
 5. İki düzeltme aynı hedefe **farklı** metin yazıyorsa birleştirme reddedilir
@@ -34,6 +36,16 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from tp_core.audit import content_hash
+from tp_core.integrations.jira_adf import (
+    adf_to_text,
+    build_description,
+    doc,
+    inline_text,
+    is_template,
+    parse_description,
+    template_section,
+    text_to_blocks,
+)
 
 AC_LINE_RE = re.compile(r"^\s*AC\s*(\d+)\s*[:.)\-]\s*(.*)$", re.IGNORECASE)
 AC_REF_RE = re.compile(r"\bAC\s*(\d+)\b", re.IGNORECASE)
@@ -110,6 +122,44 @@ def doc_ref_valid(doc_ref: str, acs: Sequence[str]) -> bool:
     return refers_to_description(doc_ref)
 
 
+def _objective_span(aciklama: str) -> tuple[list[Any], int, int] | None:
+    """Şablonlu açıklamada Objective bölümünün blokları: (bloklar, başlık indeksi, bitiş)."""
+    blocks = text_to_blocks(aciklama) if aciklama.strip() else []
+    pairs = [(str(b.get("type")), inline_text(b)) for b in blocks]
+    keys = [template_section(t) if k in ("heading", "paragraph") else None for k, t in pairs]
+    if "objective" not in keys or not is_template(pairs):
+        return None
+    start = keys.index("objective")
+    end = next((i for i in range(start + 1, len(keys)) if keys[i]), len(keys))
+    return blocks, start, end
+
+
+def description_target(aciklama: str) -> str:
+    """Açıklama hedefinin metni: şablonlu story'de Objective bölümü, değilse açıklamanın tamamı."""
+    span = _objective_span(aciklama)
+    if span is None:
+        return aciklama
+    blocks, start, end = span
+    return adf_to_text(doc(blocks[start + 1 : end]))
+
+
+def replace_description(aciklama: str, metin: str) -> str:
+    """Açıklama hedefini ``metin`` ile değiştirir (şablonda yalnızca Objective bölümü)."""
+    span = _objective_span(aciklama)
+    if span is None:
+        return metin
+    blocks, start, end = span
+    yeni_bloklar = text_to_blocks(metin)
+    if any(template_section(satir) for satir in metin.splitlines() if satir.strip()):
+        # Modelin önerisi şablonun tamamıysa Objective'e eklemek bölümleri ikiler.
+        raise DocMergeError(
+            "Açıklama düzeltmesi şablonlu story'de yalnızca Objective (Amaç) bölümünün metni "
+            "olmalı; bölüm başlığı içeremez"
+        )
+    yeni = [*blocks[: start + 1], *yeni_bloklar, *blocks[end:]]
+    return adf_to_text(doc(yeni))
+
+
 def current_doc_text(doc_ref: str, aciklama: str, acs: Sequence[str]) -> str | None:
     """Bulgunun işaret ettiği belge metni (AC satırları ya da açıklama)."""
     by_ref = {split_ac(a)[0]: a for a in acs}
@@ -117,7 +167,7 @@ def current_doc_text(doc_ref: str, aciklama: str, acs: Sequence[str]) -> str | N
     if secilen:
         return "\n".join(secilen)
     if refers_to_description(doc_ref):
-        return aciklama
+        return description_target(aciklama)
     return None
 
 
@@ -142,7 +192,7 @@ def replaced_doc_text(
     for hedef in sorted(hedefler, key=_hedef_sirasi):
         if hedef == DESC:
             if aciklama:
-                parcalar.append(aciklama)
+                parcalar.append(description_target(aciklama))
         elif hedef in by_ref:
             parcalar.append(by_ref[hedef])
     return "\n".join(parcalar)
@@ -267,7 +317,7 @@ def merge_fixes(aciklama: str, acs: Sequence[str], fixes: Sequence[DocFix]) -> M
     for hedef in sorted(hedef_metin, key=_hedef_sirasi):
         metin = hedef_metin[hedef]
         if hedef == DESC:
-            once, yeni_aciklama = aciklama, metin
+            once, yeni_aciklama = description_target(aciklama), replace_description(aciklama, metin)
         else:
             once = mevcut.get(hedef)
             sonuc[hedef] = metin
@@ -280,6 +330,14 @@ def merge_fixes(aciklama: str, acs: Sequence[str], fixes: Sequence[DocFix]) -> M
             }
         )
     yeni_acs = [sonuc[k] for k in sorted(sonuc, key=lambda r: int(r[2:]))]
+    # Jira'ya yazılacak belge geri okunduğunda aynı içerik çıkmalı; çıkmazsa yazım sonrası hash
+    # denetimi (write_fix_to_jira) Jira değiştikten SONRA düşerdi — düzeltmeyi baştan reddet.
+    yazilacak = build_description(yeni_aciklama, yeni_acs)
+    if parse_description(yazilacak) != (yeni_aciklama.strip(), yeni_acs):
+        raise DocMergeError(
+            "Düzeltilmiş doküman Jira'ya aynı içerikle yazılamıyor (metin bir bölüm başlığı ya da "
+            "kabul kriteri satırı gibi okunuyor); düzeltme metnini sadeleştirin"
+        )
     return MergeResult(yeni_aciklama, yeni_acs, degisiklikler)
 
 

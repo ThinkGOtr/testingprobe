@@ -9,6 +9,7 @@ aldığı doğrulanır.
 from __future__ import annotations
 
 import copy
+import json
 import sys
 import uuid
 from collections.abc import Iterator
@@ -18,16 +19,29 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from tp_core.features.requirements.content import requirement_hash
+from tp_core.gateway import requirement_block
+from tp_core.gateway.matching import input_mismatches
 from tp_core.integrations import jira_seed
 from tp_core.integrations.jira import (
     PO_APPROVED_LABEL,
     ReservedLabelError,
     RestJira,
 )
-from tp_core.integrations.jira_adf import build_description, text_to_adf
+from tp_core.integrations.jira_adf import (
+    TEMPLATE_AC_HEADING,
+    TEMPLATE_SECTIONS,
+    adf_to_text,
+    build_description,
+    bullet_list,
+    parse_description,
+    template_doc,
+    text_to_adf,
+)
 from tp_core.integrations.jira_seed import DEMO_STORIES, apply, is_run_label, main, plan
 
-SIM_SRC = Path(__file__).resolve().parents[4] / "sims" / "jira-sim" / "src"
+REPO = Path(__file__).resolve().parents[4]
+SIM_SRC = REPO / "sims" / "jira-sim" / "src"
 if str(SIM_SRC) not in sys.path:
     sys.path.insert(0, str(SIM_SRC))
 
@@ -93,7 +107,8 @@ def _rehearse(sim: TestClient) -> dict[str, str]:
     r = sim.put(
         "/rest/api/3/issue/TPD-1",
         json={
-            "fields": {"description": build_description(tpd1.paragraph, acs)},
+            # apply-doc-fixes gibi: şablonun diğer bölümleri yerinde, yalnızca AC'ler değişir.
+            "fields": {"description": build_description(parse_description(tpd1.adf())[0], acs)},
             "update": {"labels": [{"add": "tp-po-pending"}, {"add": "AI-generated"}]},
         },
         auth=WRITER,
@@ -322,3 +337,123 @@ def test_text_content_compare_ignores_adf_attrs(sim: TestClient, jira: RestJira)
     adf = copy.deepcopy(text_to_adf(DEMO_STORIES[3].text()))
     adf["content"][0]["attrs"] = {"localId": "abc"}
     assert jira_seed.adf_to_text(adf) == jira_seed.adf_to_text(DEMO_STORIES[3].adf())
+
+
+# ------------------------------------------------------------- görev şablonu (TPD-1..TPD-4)
+
+
+def test_demo_stories_follow_the_task_template() -> None:
+    """Her story şablonun 7 bölümünü sırasıyla taşır; AC'li story ``template_doc`` ile aynı ADF."""
+    titles = [title for _, title, _ in TEMPLATE_SECTIONS]
+    for story in DEMO_STORIES:
+        adf = story.adf()
+        headings = [adf_to_text({"content": [n]}) for n in adf["content"] if n["type"] == "heading"]
+        assert headings == titles, story.number
+        desc, acs = parse_description(adf)
+        assert acs == list(story.acceptance_criteria)
+        assert story.paragraph in desc  # golden ``contains`` beyanı (Objective)
+        if story.acceptance_criteria:
+            sections = {**story.sections(), "acceptance_criteria": [bullet_list(acs)]}
+            assert adf == template_doc(sections), story.number
+    # TPD-2 (ac_missing): AC bölümü boş; "Not applicable" AC1 diye okunmaz.
+    assert parse_description(DEMO_STORIES[1].adf())[1] == []
+
+
+def test_demo_verisi_lists_every_story_template_verbatim() -> None:
+    """docs/DEMO-VERISI.md, jira-sim tohumu ve jira_seed aynı içerik (üç yer)."""
+    doc = (REPO / "docs" / "DEMO-VERISI.md").read_text(encoding="utf-8")
+    for story in DEMO_STORIES:
+        block = doc.split(f"**TPD-{story.number} açıklaması (görev şablonu):**", 1)[1]
+        body = block.split("```text\n", 1)[1].split("\n```", 1)[0]
+        assert body == story.text(), story.number
+
+
+def _golden_specs() -> list[tuple[str, dict]]:
+    out = []
+    for path in sorted((REPO / "rules" / "replay").glob("*/golden/**/TPD-*.json")):
+        spec = json.loads(path.read_text(encoding="utf-8")).get("input_match") or {}
+        if any(src.startswith("jira:") for src in spec.get("sources") or []):
+            out.append((str(path.relative_to(REPO / "rules" / "replay")), spec))
+    return out
+
+
+GOLDEN_SPECS = _golden_specs()
+
+
+def test_golden_specs_cover_every_round_and_scenario() -> None:
+    names = {n for n, _ in GOLDEN_SPECS}
+    assert "consistency_check/golden/TPD-1-r2.json" in names
+    assert "consistency_check/golden/f2-kod-hatasi/TPD-1-r2.json" in names
+    assert "case_generation/golden/f2-kod-hatasi/TPD-1.json" in names
+    assert len(names) == 14
+
+
+@pytest.mark.parametrize(("name", "spec"), GOLDEN_SPECS, ids=[n for n, _ in GOLDEN_SPECS])
+def test_template_story_still_matches_golden_input(
+    name: str, spec: dict, sim: TestClient, jira: RestJira
+) -> None:
+    """Şablonlu story, golden'ın beyan ettiği AC'lerle (1. tur: tohum; 2. tur/senaryo: düzeltilmiş)
+    Jira'ya ``update_description`` ile yazılıp geri okununca girdi beyanına birebir uyar.
+
+    Yol üretimdekiyle aynıdır: jira-sim → ``RestJira.get_issue`` (``parse_description``) →
+    ``requirement_block``; düzeltme ``build_description`` ile şablonun AC bölümüne yazılır.
+    """
+    key = spec["sources"][0].removeprefix("jira:")
+    story = next(s for s in DEMO_STORIES if f"TPD-{s.number}" == key)
+    before = jira.get_issue(key)
+    declared = list(spec["acceptance_criteria"])
+    if declared != list(before.acceptance_criteria):
+        jira.update_description(key, before.description, declared)
+    it = jira.get_issue(key)
+    assert it.description == before.description  # diğer bölümler (QA Checklist dahil) yerinde
+    assert list(it.acceptance_criteria) == declared
+    block = requirement_block(
+        summary=it.summary,
+        description=it.description,
+        acceptance_criteria=it.acceptance_criteria,
+        jira_key=key,
+    )
+    assert input_mismatches(spec, [{"role": "user", "content": block}]) == [], name
+    assert story.paragraph in it.description
+
+
+def test_doc_fix_round_trip_keeps_template_and_hash(sim: TestClient, jira: RestJira) -> None:
+    """apply-doc-fixes (F1/F3 → AC3): yazılan içerik yeniden okununca aynı hash'i verir; AC bölümü
+    şablondaki yerinde (QA Checklist'ten önce) kalır, diğer bölümler değişmez."""
+    before = jira.get_issue("TPD-1")
+    acs = list(before.acceptance_criteria)
+    acs[2] = (
+        "AC3: Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL'dir; altında "
+        '"Minimum sipariş tutarı 750,00 TL" uyarısı gösterilir ve onay butonu pasif olur.'
+    )
+    beklenen = requirement_hash(before.summary, before.description, acs)
+    jira.update_description("TPD-1", before.description, acs)
+    after = jira.get_issue("TPD-1")
+    assert requirement_hash(after.summary, after.description, list(after.acceptance_criteria)) == (
+        beklenen
+    )
+    assert after.description == before.description
+    headings = [
+        adf_to_text({"content": [n]})
+        for n in _fields(sim, "TPD-1")["description"]["content"]
+        if n["type"] == "heading"
+    ]
+    assert headings == [title for _, title, _ in TEMPLATE_SECTIONS]
+    assert headings.index(TEMPLATE_AC_HEADING) == len(headings) - 2
+    # İkinci düzeltme turu da aynı yapıyı korur (idempotent yeniden yazım).
+    jira.update_description("TPD-1", after.description, list(after.acceptance_criteria))
+    again = jira.get_issue("TPD-1")
+    assert (again.description, list(again.acceptance_criteria)) == (after.description, acs)
+
+
+def test_old_format_story_is_planned_for_rewrite(sim: TestClient, jira: RestJira) -> None:
+    """Şablon öncesi biçimdeki TPD-1 (ör. eski tohum) ilk ``make reset``'te şablona döndürülür."""
+    tpd1 = next(s for s in DEMO_STORIES if s.number == 1)
+    eski = build_description(tpd1.paragraph, list(tpd1.acceptance_criteria))
+    r = sim.put("/rest/api/3/issue/TPD-1", json={"fields": {"description": eski}}, auth=WRITER)
+    assert r.status_code == 204, r.text
+    p = plan(jira, "TPD")
+    assert {s.key: s.restore_content for s in p.stories}["TPD-1"]
+    apply(jira, p)
+    assert _fields(sim, "TPD-1")["description"] == tpd1.adf()
+    assert plan(jira, "TPD").empty

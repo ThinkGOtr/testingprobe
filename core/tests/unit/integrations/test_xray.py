@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from tp_core import ports
 from tp_core.integrations.jira import JiraSettings, RestJira
+from tp_core.integrations.jira_adf import adf_to_text
 from tp_core.integrations.xray import XrayClient, XrayError, XrayTestManagement, get_xray_client
 
 SIM_SRC = Path(__file__).resolve().parents[4] / "sims" / "jira-sim" / "src"
@@ -119,6 +120,10 @@ def test_publish_via_bulk_import_polls_and_links(
     assert raw["labels"] == ["AI-generated", f"tp-{c['case_id']}"]
     page = sim.get(f"/browse/{pub.external_key}").text
     assert "Kullanıcı adı veya parola hatalı" in page  # Xray adımları kaydedildi
+    desc = adf_to_text(raw["description"])
+    assert desc.index("🎯 Objective (Amaç)") < desc.index("🧪 QA Checklist")
+    assert "Kaynak story: TPD-4" in desc and f"Kimlik: tp-{c['case_id']}" in desc
+    assert "Adımlar Xray test adımlarında (2 adım)." in desc  # adımlar açıklamada tekrarlanmaz
     link = sim.get("/rest/api/3/issue/TPD-4", auth=READ).json()["fields"]["issuelinks"][0]
     assert link["type"]["name"] == "Test"
     assert link["inwardIssue"]["key"] == pub.external_key

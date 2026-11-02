@@ -104,11 +104,53 @@ def test_jira_govdesi_ve_yorum() -> None:
         "icerik_hash": "h123",
         "zincir_hash": "z456",
     }
-    metin = jira_adf.adf_to_text(content.description_adf(ICERIK, **ortak))
-    for parca in ("Adımlar", "Beklenen", "Gerçekleşen", "Kanıt", "REPLAY", "testci",
-                  "onaylanan içerik hash: h123", "denetim zinciri son hash: z456",
-                  "Test: TPD-12", "Kimlik: tp-abc"):  # fmt: skip
+    govde = content.description_adf(ICERIK, **ortak)
+    metin = jira_adf.adf_to_text(govde)
+    for parca in ("Beklenen: bedava adet 0", "Gerçekleşen: bedava adet 1", "Kanıt", "REPLAY",
+                  "testci", "onaylanan içerik hash: h123", "denetim zinciri son hash: z456",
+                  "Story: TPD-1", "Test: TPD-12", "Kimlik: tp-abc", "Önem önerisi: critical",
+                  "Ortam: Yerel demo ortamı"):  # fmt: skip
         assert parca in metin, parca
+    # Görev şablonu: köken cümlesi, yedi bölüm şablon sırasıyla, en sonda kimlik/hash satırı.
+    bloklar = govde["content"]
+    basliklar = [jira_adf.inline_text(b) for b in bloklar if b["type"] == "heading"]
+    assert basliklar == [baslik for _, baslik, _ in jira_adf.TEMPLATE_SECTIONS]
+    assert jira_adf.inline_text(bloklar[0]).startswith("Bu kayıt Testing Probe")
+    assert jira_adf.inline_text(bloklar[-1]) == (
+        "Kimlik: tp-abc · onaylanan içerik hash: h123 · denetim zinciri son hash: z456"
+    )
+
+    def bolum(baslik: str) -> str:
+        i = basliklar.index(baslik)
+        bas = metin.index(baslik) + len(baslik)
+        son = metin.index(basliklar[i + 1]) if i + 1 < len(basliklar) else len(metin)
+        return metin[bas:son]
+
+    akis = next(b for b in bloklar if b["type"] == "orderedList")
+    assert [jira_adf.inline_text(li["content"][0]) for li in akis["content"]] == [
+        "Giriş yap",
+        "6 adet ekle",
+    ]  # adımlar sıralı liste; içerikteki "1." önekleri tekrarlanmaz
+    assert "Sepet: 6 adette bedava ürün veriliyor" in bolum("🎯 Objective (Amaç)")
+    assert "Beklenen davranış sağlanır: bedava adet 0" in bolum(
+        "🔑 Acceptance Criteria (Kabul Kriterleri)"
+    )
+    qa = bolum("🧪 QA Checklist")
+    assert "TPD-12" in qa and "TPD-1 kabul kriterleri" in qa
+    assert "Not applicable" not in metin
+    # Bot imi açıklamanın ilk satırına `with_bot_header` ile eklenir (köken cümlesi ikinci).
+    imli = jira_adf.with_bot_header(govde)
+    assert jira_adf.has_bot_header(imli) and imli["content"][1] == bloklar[0]
+    # Bağ yoksa Bağımlılıklar bölümü "Not applicable"; QA listesi test/story maddesi içermez.
+    yalin = {**ICERIK, "story_key": None, "test_case_key": None, "evidence": []}
+    yalin_metin = jira_adf.adf_to_text(content.description_adf(yalin, **ortak))
+    assert "Bağımlılıklar ve Entegrasyon)\n\nNot applicable" in yalin_metin
+    assert "Kanıt" not in yalin_metin and "yeşil geçer" not in yalin_metin
+    # "Gerçekleşen değer: 1" gibi etiketli içerik etiketi tekrar etmez.
+    etiketli = {**ICERIK, "actual": "Gerçekleşen değer: 1"}
+    assert "Gerçekleşen: Gerçekleşen" not in jira_adf.adf_to_text(
+        content.description_adf(etiketli, **ortak)
+    )
     yorum = jira_adf.adf_to_text(content.link_comment(ICERIK, **ortak))
     assert "tp-abc" in yorum and "yeni kayıt açılmadı" in yorum and "h123" in yorum
     assert "Testçi (testci) taslağı bu kayda bağladı" in yorum
