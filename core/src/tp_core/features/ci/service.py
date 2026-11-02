@@ -51,12 +51,14 @@ from tp_core.features.ci.clients import (
     parse_gh_time,
 )
 from tp_core.features.ci.parse import (
+    ARIA_DOSYA_KALIPLARI,
     ERROR_CONTEXT_AD,
     ArtefaktEkleri,
     Ayristirma,
     KosuDizini,
     RaporHatasi,
     TestSatiri,
+    aria_dosyalari,
     parse_files,
     parse_reports,
     sayilar,
@@ -72,7 +74,7 @@ from tp_core.models import (
     TestCase,
     TestResult,
 )
-from tp_core.models.ci_feature import CI_TETIK, CiTetik, TestResultEk
+from tp_core.models.ci_feature import CI_TETIK, CiTetik, RunAria, TestResultEk
 from tp_core.workflow import jobs as jobq
 
 log = logging.getLogger(__name__)
@@ -1029,12 +1031,46 @@ def _artefakt_ekleri(dosyalar: Mapping[str, bytes]) -> ArtefaktEkleri:
     )
 
 
-def github_hata_baglami_doldur(session: Session, run: Run) -> dict[str, Any]:
-    """Önceden içe aktarılmış GitHub koşusunun hata bağlamını artefakttan yeniden okur.
+# Sonuç artefaktından rapor dışı okunan ek dosyalarının ad kalıpları: hata anı bağlamı (0015) ve
+# yeşil koşunun sayfa başına aria snapshot'ları (0016).
+EK_KALIPLARI = (ERROR_CONTEXT_AD, *ARIA_DOSYA_KALIPLARI)
+ARIA_KAYNAK_INGEST = "github_artefakt"
+ARIA_KAYNAK_GERI_DOLDURMA = "github_artefakt_geri_doldurma"
 
-    0015 öncesi içe aktarılan koşular için (artefakt GitHub'da saklama süresi içindeyken).
-    Test satırları yeniden yazılmaz; yalnızca boş `hata_baglami` doldurulur.
+
+def aria_kaydet(
+    session: Session, run: Run, dosyalar: Mapping[str, bytes], kaynak: str = ARIA_KAYNAK_INGEST
+) -> dict[str, int]:
+    """Artefakttaki `<sayfa>.aria.yml` dosyalarını `run_aria`'ya yazar (GitHub kipi, 0016).
+
+    GitHub kipinde yerel koşu dizini yoktur; locator onarımının son yeşil aria kanıtı
+    (`repair.service.aria_kaniti`) bu kopyayı okur. İdempotent: koşuda aynı yol zaten varsa
+    yeniden yazılmaz. {bulunan, eklenen} döner.
     """
+    adaylar = aria_dosyalari(dosyalar)
+    if not adaylar:
+        return {"bulunan": 0, "eklenen": 0}
+    var = set(session.scalars(select(RunAria.yol).where(RunAria.run_id == run.id)))
+    eklenen = 0
+    for yol, metin in adaylar:
+        if yol in var:
+            continue
+        session.add(
+            RunAria(
+                run_id=run.id,
+                yol=yol,
+                ad=yol.rsplit("/", 1)[-1],
+                icerik=metin,
+                boyut=len(metin.encode("utf-8")),
+                kaynak=kaynak,
+            )
+        )
+        eklenen += 1
+    session.flush()
+    return {"bulunan": len(adaylar), "eklenen": eklenen}
+
+
+def _sonuc_artefakti(run: Run) -> tuple[Any, Mapping[str, Any]]:
     if run.kaynak != "github" or not run.github_run_id:
         raise CiError("koşu GitHub kaynaklı değil ya da GitHub koşu kimliği yok")
     gh = services.github()
@@ -1043,6 +1079,36 @@ def github_hata_baglami_doldur(session: Session, run: Run) -> dict[str, Any]:
     )
     if art is None:
         raise CiError(f"'{RESULTS_ARTIFACT}' artefaktı yok")
+    return gh, art
+
+
+def github_aria_doldur(session: Session, run: Run, isteyen: str = "system") -> dict[str, Any]:
+    """Önceden içe aktarılmış GitHub koşusunun aria snapshot'larını artefakttan geri doldurur.
+
+    0016 öncesi içe aktarılan koşular için (artefakt GitHub'da saklama süresi içindeyken).
+    Yalnızca core-worker'da çalışır (GitHub kimlik bilgisi). İdempotent: var olan yollar yeniden
+    yazılmaz. Denetim kaydı `ci.aria_snapshots_backfilled`.
+    """
+    gh, art = _sonuc_artefakti(run)
+    dosyalar = gh.artifact_files(art, (), ARIA_DOSYA_KALIPLARI)
+    sonuc = aria_kaydet(session, run, dosyalar, kaynak=ARIA_KAYNAK_GERI_DOLDURMA)
+    audit_on_commit(
+        session,
+        isteyen,
+        "ci.aria_snapshots_backfilled",
+        f"run:{run.id}",
+        {"github_run_id": run.github_run_id, **sonuc},
+    )
+    return {"run_id": str(run.id), "github_run_id": run.github_run_id, **sonuc}
+
+
+def github_hata_baglami_doldur(session: Session, run: Run) -> dict[str, Any]:
+    """Önceden içe aktarılmış GitHub koşusunun hata bağlamını artefakttan yeniden okur.
+
+    0015 öncesi içe aktarılan koşular için (artefakt GitHub'da saklama süresi içindeyken).
+    Test satırları yeniden yazılmaz; yalnızca boş `hata_baglami` doldurulur.
+    """
+    gh, art = _sonuc_artefakti(run)
     dosyalar = gh.artifact_files(art, ("results.json",), (ERROR_CONTEXT_AD,))
     ayr = parse_reports(
         None, _sec_dosya(dosyalar, "results.json"), ekler=_artefakt_ekleri(dosyalar)
@@ -1067,13 +1133,14 @@ def github_ingest(session: Session, run: Run, wr: Mapping[str, Any]) -> str:
     uyarilar: list[str] = []
     ayr: Ayristirma | None = None
     meta: dict[str, Any] = {}
+    dosyalar: Mapping[str, bytes] = {}
     sonuc_art = next((a for a in artefaktlar if a.get("name") == RESULTS_ARTIFACT), None)
     if sonuc_art is None:
         uyarilar.append(f"'{RESULTS_ARTIFACT}' artefaktı yok (testler no-op olabilir).")
     else:
         try:
             dosyalar = gh.artifact_files(
-                sonuc_art, ("junit.xml", "results.json", "ci-meta.json"), (ERROR_CONTEXT_AD,)
+                sonuc_art, ("junit.xml", "results.json", "ci-meta.json"), EK_KALIPLARI
             )
             ayr = parse_reports(
                 _sec_dosya(dosyalar, "junit.xml"),
@@ -1100,6 +1167,8 @@ def github_ingest(session: Session, run: Run, wr: Mapping[str, Any]) -> str:
     if wr.get("head_sha") and SHA_RE.match(str(wr["head_sha"])):
         run.commit = str(wr["head_sha"])
     sayac = record_results(session, run, ayr) if ayr is not None else sayilar([])
+    # Yeşil koşunun sayfa başına aria snapshot'ları: GitHub kipinde onarımın son yeşil kanıtı.
+    aria_kayit = aria_kaydet(session, run, dosyalar)
     sauce = _sauce_bilgisi(gh, artefaktlar, isler)
     html = str(wr.get("html_url") or "") or None
     sonuc = GITHUB_SONUC.get(str(wr.get("conclusion") or ""), "error")
@@ -1130,6 +1199,7 @@ def github_ingest(session: Session, run: Run, wr: Mapping[str, Any]) -> str:
                 for a in artefaktlar[:30]
             ],
             "meta": meta,
+            "aria_dosya": aria_kayit["bulunan"],
         },
         "sauce": sauce,
         "raporlar": ayr.raporlar if ayr else {"junit": False, "json": False},

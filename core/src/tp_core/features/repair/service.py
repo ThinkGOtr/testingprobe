@@ -11,7 +11,8 @@ Akış (`POST /failures/{id}/fix` → iş `repair.fix`, model çağrısı YOK �
 5. Doğrulama: son yeşil durumun aria snapshot'ında rol + ad tek elemana (kapsamlıysa her
    kapsayıcıda tek elemana) karşılık gelmeli. Kaynaklar sırayla: triage önerisindeki son yeşil
    snapshot → son yeşil koşunun artefaktlarındaki aria dosyaları (`locators.spec.ts` yeşil
-   koşuda `<sayfa>.aria.yml` yazar) → insan onaylı (merge edilmiş) kod üretiminin ajan
+   koşuda `<sayfa>.aria.yml` yazar; GitHub kipinde koşu dizini yoktur, içe aktarımda artefakttan
+   alınan `run_aria` kopyası okunur) → insan onaylı (merge edilmiş) kod üretiminin ajan
    snapshot'ları → yalnızca `TP_REPAIR_ARIA_FALLBACK=sozlesme` ile açıkça istenirse ve son yeşil
    koşuda HİÇ aria dosyası yoksa: o koşuda geçen ve bu locator'ın grubunu gerçekten sınayan
    `locators.spec.ts` sözleşme testi (etiketli yedek). Hiçbiri yoksa PR açılmaz.
@@ -71,6 +72,7 @@ from tp_core.models import (
     TestResult,
     session_scope,
 )
+from tp_core.models.ci_feature import RunAria
 from tp_core.ports import ForgePort
 from tp_core.workflow.jobs import JobContext, PermanentJobError, enqueue
 from tp_core.workflow.service import (
@@ -634,6 +636,38 @@ def _aria_dosyalari(run: Run, sayfa_ipucu: str | None = None) -> list[Path]:
     return out
 
 
+def _aria_metinleri(
+    session: Session, run: Run, sayfa_ipucu: str | None = None
+) -> list[tuple[str, str, str]]:
+    """Son yeşil koşunun aria snapshot'ları: [(dosya adı, depo, metin)].
+
+    Yerel kip: koşu dizinindeki dosyalar (`_aria_dosyalari`; depo `artefakt_dizini`). Koşu dizini
+    yoksa (GitHub kipi) core-worker'ın içe aktarımda artefakttan aldığı kopya (`run_aria`, 0016;
+    depo `run_aria`). Sayfa ipucunu adında taşıyanlar önce.
+    """
+    out: list[tuple[str, str, str]] = []
+    for p in _aria_dosyalari(run, sayfa_ipucu):
+        try:
+            out.append((p.name, "artefakt_dizini", _aria_oku(p.read_bytes())))
+        except OSError:
+            continue
+    if out:
+        return out
+    satirlar = session.execute(
+        select(RunAria.ad, RunAria.yol, RunAria.icerik)
+        .where(RunAria.run_id == run.id)
+        .order_by(RunAria.yol)
+        .limit(MAX_ARIA_DOSYA)
+    ).all()
+    if sayfa_ipucu:
+        satirlar = sorted(satirlar, key=lambda r: (sayfa_ipucu not in r.ad.lower(), r.yol))
+    return [(r.ad, "run_aria", r.icerik[: aria.MAX_BYTES]) for r in satirlar]
+
+
+def _aria_oku(veri: bytes) -> str:
+    return veri[: aria.MAX_BYTES].decode("utf-8", "replace")
+
+
 def _ajan_snapshotlari(
     session: Session, loc: locators.LocatorRef, once: datetime | None
 ) -> list[tuple[str, str]]:
@@ -751,15 +785,12 @@ def aria_kaniti(
     yesil = _son_yesil_run(session, f, oneri)
     aria_dosyasi_vardi = False
     if yesil is not None:
-        for p in _aria_dosyalari(yesil, _sayfa_ipucu(url_path)):
-            try:
-                metin = p.read_bytes()[: aria.MAX_BYTES].decode("utf-8", "replace")
-            except OSError:
-                continue
+        for ad, depo, metin in _aria_metinleri(session, yesil, _sayfa_ipucu(url_path)):
             aria_dosyasi_vardi = True
             bulunan = dene(
-                "son_yesil_kosu", metin, run_id=str(yesil.id), dosya=p.name, commit=yesil.commit
-            )
+                "son_yesil_kosu", metin, run_id=str(yesil.id), dosya=ad, depo=depo,
+                commit=yesil.commit,
+            )  # fmt: skip
             if bulunan:
                 return {"gecerli": True, **bulunan, "denenen": denenen}
     for kaynak, metin in _ajan_snapshotlari(session, loc, kirik.olusturma if kirik else None):

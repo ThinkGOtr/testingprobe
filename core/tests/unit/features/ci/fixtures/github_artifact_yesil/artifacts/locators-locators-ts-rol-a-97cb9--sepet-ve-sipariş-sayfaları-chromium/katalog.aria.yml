@@ -1,0 +1,51 @@
+- link "İçeriğe geç":
+  - /url: "#icerik"
+- banner:
+  - link "Bayi Sipariş Portalı":
+    - /url: /katalog
+  - navigation "Ana menü":
+    - link "Katalog":
+      - /url: /katalog
+    - link "Sepet 0 ürün":
+      - /url: /sepet
+    - link "Siparişlerim":
+      - /url: /siparisler
+  - text: Merkez Bayi
+  - button "Çıkış yap"
+- main:
+  - heading "Ürün kataloğu" [level=1]
+  - paragraph: Adet seçip ürünleri sepetinize ekleyin. Fiyatlara KDV dahildir.
+  - article "Portakal Gazozu 1L":
+    - paragraph: P-001
+    - heading "Portakal Gazozu 1L" [level=2]
+    - paragraph: "Kampanya: 6 al 1 bedava"
+    - paragraph: 25,00 TL
+    - text: Adet
+    - spinbutton "Adet": "1"
+    - button "Sepete ekle"
+    - status
+  - article "Limonata 330ml":
+    - paragraph: P-002
+    - heading "Limonata 330ml" [level=2]
+    - paragraph: 15,00 TL
+    - text: Adet
+    - spinbutton "Adet": "1"
+    - button "Sepete ekle"
+    - status
+  - article "Maden Suyu 200ml":
+    - paragraph: P-003
+    - heading "Maden Suyu 200ml" [level=2]
+    - paragraph: 8,00 TL
+    - text: Adet
+    - spinbutton "Adet": "1"
+    - button "Sepete ekle"
+    - status
+  - article "Şeftalili Soğuk Çay 1L":
+    - paragraph: P-004
+    - heading "Şeftalili Soğuk Çay 1L" [level=2]
+    - paragraph: 30,00 TL
+    - text: Adet
+    - spinbutton "Adet": "1"
+    - button "Sepete ekle"
+    - status
+- contentinfo: Bayi Sipariş Portalı · Örnek uygulama · Tüm veriler sentetiktir

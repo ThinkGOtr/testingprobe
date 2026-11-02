@@ -1,0 +1,46 @@
+- link "İçeriğe geç":
+  - /url: "#icerik"
+- banner:
+  - link "Bayi Sipariş Portalı":
+    - /url: /katalog
+  - navigation "Ana menü":
+    - link "Katalog":
+      - /url: /katalog
+    - link "Sepet 30 ürün":
+      - /url: /sepet
+    - link "Siparişlerim":
+      - /url: /siparisler
+  - text: Merkez Bayi
+  - button "Çıkış yap"
+- main:
+  - heading "Sepetim" [level=1]
+  - paragraph: Kampanya indirimleri sepet toplamına otomatik uygulanır.
+  - table "Sepetteki ürünler":
+    - caption: Sepetteki ürünler
+    - rowgroup:
+      - row "Ürün Birim fiyat Adet Bedava Tutar İşlem":
+        - columnheader "Ürün"
+        - columnheader "Birim fiyat"
+        - columnheader "Adet"
+        - columnheader "Bedava"
+        - columnheader "Tutar"
+        - columnheader "İşlem"
+    - rowgroup:
+      - row "Şeftalili Soğuk Çay 1L P-004 30,00 TL 30 0 900,00 TL Şeftalili Soğuk Çay 1L ürününü sepetten kaldır":
+        - rowheader "Şeftalili Soğuk Çay 1L P-004"
+        - cell "30,00 TL"
+        - cell "30"
+        - cell "0"
+        - cell "900,00 TL"
+        - cell "Şeftalili Soğuk Çay 1L ürününü sepetten kaldır":
+          - button "Şeftalili Soğuk Çay 1L ürününü sepetten kaldır": Kaldır
+  - complementary "Sipariş özeti":
+    - heading "Sipariş özeti" [level=2]
+    - term: Ara toplam
+    - definition: 900,00 TL
+    - term: Kampanya indirimi
+    - definition: 0,00 TL
+    - term: Genel toplam
+    - definition: 900,00 TL
+    - button "Siparişi onayla"
+- contentinfo: Bayi Sipariş Portalı · Örnek uygulama · Tüm veriler sentetiktir

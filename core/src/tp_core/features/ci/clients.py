@@ -11,6 +11,7 @@ httpx çapraz-köken yönlendirmede `Authorization` başlığını düşürür.
 
 from __future__ import annotations
 
+import fnmatch
 import io
 import os
 import zipfile
@@ -123,7 +124,8 @@ def _zip_dosyalari(
 ) -> dict[str, bytes]:
     """Zip içinden adı (yolun son öğesi) `adlar`'da olan dosyaları okur (sınırlı boyut).
 
-    `ekler`: test başına çok sayıda olabilen küçük ek dosyaları (`error-context.md`); her biri
+    `ekler`: test başına çok sayıda olabilen küçük ek dosyalarının ad kalıpları (`fnmatch`;
+    `error-context.md`, `*aria*.yml`); her biri
     `MAX_ERROR_CONTEXT`, toplamı `MAX_EK_TOPLAM_BAYT`, sayısı `MAX_EK_DOSYA` ile sınırlıdır.
     Aynı ada sahip her kopya (farklı test dizinleri) ayrı anahtar olarak döner.
     """
@@ -139,7 +141,7 @@ def _zip_dosyalari(
             if info.is_dir():
                 continue
             ad = info.filename.rsplit("/", 1)[-1]
-            if ad in ekler and ad not in adlar:
+            if ad not in adlar and any(fnmatch.fnmatchcase(ad, k) for k in ekler):
                 if (
                     info.file_size > MAX_ERROR_CONTEXT
                     or ek_sayi >= MAX_EK_DOSYA

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import fnmatch
 import json
 import os
 import re
@@ -51,6 +52,12 @@ MAX_ERROR_CONTEXT = 2 * 1024 * 1024
 MAX_ARIA = 20_000
 _PAGE_SNAPSHOT_RE = re.compile(r"^# Page snapshot\s*\n+```(?:yaml)?\n(.*?)\n```", re.S | re.M)
 _YAML_RE = re.compile(r"^```yaml\n(.*?)\n```", re.S | re.M)
+# GitHub kipi: yeşil koşuda `locators.spec.ts`'in sayfa başına yazdığı `<sayfa>.aria.yml`
+# (locator onarımının son yeşil aria kanıtı; repair `ARIA_DOSYA_KALIPLARI` ile aynı kalıplar,
+# hata anı `error-context.md` hariç). Sınırı aşan dosya kesilmez, hiç alınmaz.
+ARIA_DOSYA_KALIPLARI = ("*aria*.yml", "*aria*.yaml", "*.aria")
+MAX_ARIA_DOSYA_BAYT = 512 * 1024
+MAX_ARIA_DOSYA_SAYI = 50
 
 
 class RaporHatasi(ValueError):
@@ -360,6 +367,41 @@ def aria_ayikla(veri: bytes | None) -> tuple[str | None, str | None]:
 
 def _nfc(yol: str) -> str:
     return unicodedata.normalize("NFC", yol)
+
+
+def aria_dosyasi_mi(ad: str) -> bool:
+    """Dosya adı (yolun son öğesi) son yeşil aria snapshot dosyası kalıbına uyuyor mu?"""
+    return any(fnmatch.fnmatchcase(ad, k) for k in ARIA_DOSYA_KALIPLARI)
+
+
+def aria_dosyalari(dosyalar: Mapping[str, bytes]) -> list[tuple[str, str]]:
+    """Artefakt zip'indeki aria dosyaları → [(göreli yol (NFC), metin)]; güvenilmeyen veri.
+
+    Mutlak / `..` içeren yollar, `MAX_ARIA_DOSYA_BAYT`'ı aşan ya da UTF-8 olmayan dosyalar
+    alınmaz; yola göre sıralı ilk `MAX_ARIA_DOSYA_SAYI` dosya döner. Metinden ANSI / denetim
+    karakterleri (NUL dahil) temizlenir; satır sonları korunur.
+    """
+    out: dict[str, str] = {}
+    for ham in sorted(dosyalar):
+        if not isinstance(ham, str) or "\x00" in ham:
+            continue
+        p = PurePosixPath(_nfc(ham.replace("\\", "/")))
+        if p.is_absolute() or ".." in p.parts or not p.parts or not aria_dosyasi_mi(p.name):
+            continue
+        veri = dosyalar[ham]
+        if not veri or len(veri) > MAX_ARIA_DOSYA_BAYT:
+            continue
+        try:
+            metin = veri.decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        yol = p.as_posix()
+        if yol in out:
+            continue
+        out[yol] = CTRL_RE.sub("", ANSI_RE.sub("", metin))
+        if len(out) >= MAX_ARIA_DOSYA_SAYI:
+            break
+    return list(out.items())
 
 
 @dataclass(frozen=True)

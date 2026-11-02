@@ -10,6 +10,8 @@ ayrı tablolardadır:
 - `test_result_ek`: JSON raporundan (Playwright) test başına ek bilgi: erişilebilirlik (axe)
   ihlal sayıları ve sayfa dökümü, koşu dizinine göre göreli ek dosya yolları (trace, ekran
   görüntüsü), deneme sonuçları. Kontrol Kulesi'nin a11y sayıları yalnızca bu satırlardan türetilir.
+- `run_aria` (0016): GitHub kipinde koşunun `test-local-results` artefaktındaki `<sayfa>.aria.yml`
+  kopyaları (yerel koşu dizini yok); locator onarımının son yeşil aria kanıtı.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ForeignKey, Index, Integer
+from sqlalchemy import ForeignKey, Index, Integer, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -81,3 +83,26 @@ class TestResultEk(Base):
 
 # Kontrol Kulesi "aynı commit'te değişen sonuç" sorgusu için (platform tablosuna yalnızca indeks).
 TEST_RESULT_COMMIT_IX = Index("test_result_commit_ix_ci", TestResult.commit, TestResult.test_adi)
+
+
+class RunAria(Base):
+    """GitHub koşusunun artefaktındaki aria snapshot dosyasının kopyası (0016).
+
+    Yeşil koşuda `locators.spec.ts` sayfa başına `<sayfa>.aria.yml` yazar; GitHub kipinde bu
+    dosyalar yalnızca artefakttadır. core-worker içe aktarımda (ve geri doldurmada) buraya yazar;
+    locator onarımı (`repair.service.aria_kaniti`) koşu dizini yokken bu kopyayı okur.
+    """
+
+    __tablename__ = "run_aria"
+    __table_args__ = (UniqueConstraint("run_id", "yol", name="run_aria_run_yol_key"),)
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("run.id", ondelete="CASCADE"))
+    # Artefakt zip'i içindeki göreli yol (NFC) ve dosya adı.
+    yol: Mapped[str]
+    ad: Mapped[str]
+    icerik: Mapped[str]
+    boyut: Mapped[int] = mapped_column(Integer)
+    # "github_artefakt" (içe aktarım) | "github_artefakt_geri_doldurma"
+    kaynak: Mapped[str]
+    olusturma: Mapped[datetime] = olusturma_col()
