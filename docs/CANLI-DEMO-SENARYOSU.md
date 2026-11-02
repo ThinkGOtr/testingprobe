@@ -45,11 +45,23 @@ ekran, neye tıklanır, ne yazılır, ekranda ne görülür, ne söylenir.
 
 ### 1.2 Toplantıdan 30 dk önce (VM'de)
 
+Önce Mac'te bağlan ve sunucunun komut satırını (`…@tp-demo:~$`) bekle. Bağlantı komutunu
+aşağıdakilerle birlikte yapıştırma; sonraki satırlar bağlanırken kaybolur:
+
 ```bash
 gcloud compute ssh tp-demo --project testingprobe --zone europe-west3-a --tunnel-through-iap
+```
+
+Sonra sunucuda (`make reset` tek başına: soruyu yanıtlayabilmek için):
+
+```bash
 cd /opt/testingprobe
-make reset && make seed && make demo-reset   # reset gerçek Jira temizlik planını gösterir → "e"
-                                             # (TPD-1..7 yorumları da silinir; bağlantılar kalır)
+make reset          # Jira temizlik planını gösterir, "[e/H]" sorusuna → e
+                    # (TPD-1..7 yorumları da silinir; bağlantılar kalır; seed'i de kendisi çalıştırır)
+```
+
+```bash
+make demo-reset
 make status                                  # hepsi healthy, son satır "Model kipi: REPLAY"
 make security-check                          # Özet: 10/10
 systemctl is-active tp-demo-web-sync         # active (locator demosu için şart)
