@@ -194,8 +194,11 @@ export function GereksinimDetay() {
         </Uyari>
       ))}
 
+      <div className="bolum-duzen">
+      <BolumGezgini />
+      <div className="bolum-govde">
       <div className="iki-sutun">
-        <Kart baslik="Doküman">
+        <Kart baslik="Doküman" id={BOLUM_ID.dokuman}>
           <Dokuman g={g} />
         </Kart>
 
@@ -203,6 +206,7 @@ export function GereksinimDetay() {
       </div>
 
       <BazDegerKarti
+        id={BOLUM_ID.baz}
         g={g}
         guncellendi={(b) => {
           if (b !== undefined) detay.setVeri({ ...g, manuel_baz: b });
@@ -211,6 +215,7 @@ export function GereksinimDetay() {
       />
 
       <Kart
+        id={BOLUM_ID.sorular}
         baslik="Ön inceleme soruları"
         eylemler={g.on_inceleme && <ReplayRozeti mode={g.on_inceleme.mode} />}
       >
@@ -289,6 +294,7 @@ export function GereksinimDetay() {
       </Kart>
 
       <Kart
+        id={BOLUM_ID.bulgular}
         baslik={`Tutarlılık bulguları${g.kontrol_turu ? ` · kontrol turu ${g.kontrol_turu}/${g.kontrol_turu_ust_sinir}` : ""}`}
         eylemler={
           <>
@@ -408,7 +414,43 @@ export function GereksinimDetay() {
           </div>
         )}
       </Kart>
+      </div>
+      </div>
     </>
+  );
+}
+
+/** Bölüm gezgini hedefleri (F4). Kart başlıklarıyla aynı adlar; yeni görünür metin eklenmez. */
+export const BOLUM_ID = {
+  dokuman: "bolum-dokuman",
+  po: "bolum-po",
+  baz: "bolum-baz",
+  sorular: "bolum-sorular",
+  bulgular: "bolum-bulgular",
+} as const;
+
+const BOLUMLER: { id: string; ad: string }[] = [
+  { id: BOLUM_ID.dokuman, ad: "Doküman" },
+  { id: BOLUM_ID.po, ad: "PO teyidi" },
+  { id: BOLUM_ID.baz, ad: "Manuel baz değer" },
+  { id: BOLUM_ID.sorular, ad: "Ön inceleme soruları" },
+  { id: BOLUM_ID.bulgular, ad: "Tutarlılık bulguları" },
+];
+
+/**
+ * Uzun sayfada yön bulma (G8): ≥1280 px'te sağda yapışkan; daha dar ekranda CSS ile gizlenir
+ * (display: none → erişilebilirlik ağacında da yok). Liste rolü bilinçli olarak kullanılmaz (§9 rol
+ * sayımları); düz bağlantılar. DOM'da içerikten önce: klavyede bölümlere atlama yolu.
+ */
+function BolumGezgini() {
+  return (
+    <nav className="bolum-gezgini" aria-label="Sayfa bölümleri">
+      {BOLUMLER.map((b) => (
+        <a key={b.id} href={`#${b.id}`}>
+          {b.ad}
+        </a>
+      ))}
+    </nav>
   );
 }
 
@@ -493,7 +535,7 @@ function PoKarti({ g, yenile }: { g: Detay; yenile: () => void }) {
   const kapiGecildi =
     po.durum === "approved" && !(po.onaylanan_hash && g.icerik_hash && po.onaylanan_hash !== g.icerik_hash);
   return (
-    <Kart baslik="PO teyidi">
+    <Kart baslik="PO teyidi" id={BOLUM_ID.po}>
       {po.durum === "approved" ? (
         <>
           <p>

@@ -3711,6 +3711,57 @@ details.soluk > summary {
    (paralel şerit birleştirmesi için çapa — silinmez)
    ================================================================== */
 
+/* Gereksinim detayı bölüm gezgini (§5, F4): ≥1280 px'te içeriğin sağında yapışkan sütun; daha dar
+   ekranda display: none (akışta yer kaplamaz, erişilebilirlik ağacında yok). Yapışma payı:
+   üst çubuk 56 px + 16 px = 72 px; html scroll-padding-top (72 px) ile aynı — ÖRNEK VERİ bandı
+   yapışkan değil, toplama girmez. Kart başlıkları gezginin bağlantı hedefidir. */
+.bolum-gezgini {
+  display: none;
+}
+@media (min-width: 1280px) {
+  .bolum-duzen {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 184px;
+    column-gap: 24px;
+    align-items: start;
+  }
+  .bolum-govde {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+  }
+  .bolum-gezgini {
+    grid-column: 2;
+    grid-row: 1;
+    position: sticky;
+    top: 72px;
+    max-height: calc(100vh - 88px);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px 0;
+    border-left: 1px solid var(--border-soft);
+    font-size: 0.85rem;
+  }
+  .bolum-gezgini a {
+    display: block;
+    margin-left: -1px;
+    padding: 6px 12px;
+    border-left: 2px solid transparent;
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    color: var(--text-2);
+    font-weight: 500;
+    line-height: 1.35;
+    text-decoration: none;
+  }
+  .bolum-gezgini a:hover {
+    color: var(--text);
+    border-left-color: var(--accent);
+    background: var(--accent-soft);
+  }
+}
+
 
 
 
