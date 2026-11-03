@@ -10,4 +10,8 @@
 # Dosyada olmayan story "ölçülmedi" kalır ve kazanca girmez. Portal'dan girilen değer bu dosyayla
 # ezilmez. Dosya Jira eşitlemesinde (Demo-A adım 1) uygulanır; elle yeniden uygulamak için
 # POST /baseline-file/apply (analist/PO). Kontrol: GET /baseline-file.
-degerler: []
+degerler:
+  - story: TPD-1
+    deger_s: 2700
+    giren: "Gokhan Sipahi"
+    not: "F0 ölçümü, 2026-11-03, kronometre"
