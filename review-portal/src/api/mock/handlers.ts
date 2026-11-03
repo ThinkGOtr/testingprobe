@@ -63,6 +63,7 @@ import {
 } from "./fixtures";
 import { mockOlayYayinla } from "./olaylar";
 import { asistanMockSifirla, asistanRotalari } from "./asistan";
+import { oneriMockSifirla, oneriRotalari } from "./oneri";
 import { kirmaTaslagiMi } from "../../lib/yolHaritasi";
 import { BAZ_NOT_EN_AZ, BAZ_NOT_EN_COK, BAZ_UST_SINIR_S, kazancOzeti } from "../uyumFaz5";
 
@@ -121,6 +122,7 @@ export function mockSifirla(): void {
   veri = ilkVeri();
   demoKirik = false;
   asistanMockSifirla();
+  oneriMockSifirla();
   mockOturumuAyarla(null);
   try {
     sessionStorage.removeItem(VERI_ANAHTARI);
@@ -1677,6 +1679,8 @@ type Rota = [string, RegExp, (m: RegExpMatchArray, q: URLSearchParams, govde: un
 const ROTALAR: Rota[] = [
   // Portal asistanı (AI-ASISTAN-PLANI §9): api/mock/asistan.ts.
   ...asistanRotalari(girisGerekli),
+  // Öneri düğmesi (§17, uç 10–11): api/mock/oneri.ts.
+  ...oneriRotalari(girisGerekli, () => veri),
   ["POST", /^\/auth\/login$/, (_m, _q, g) => login(g)],
   ["POST", /^\/auth\/logout$/, () => logout()],
   ["GET", /^\/auth\/me$/, () => girisGerekli()],

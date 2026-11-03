@@ -34,8 +34,11 @@ Kullanım (özellik şeritleri)::
   hata; denetimli ve `workflow_instance.state` olayıyla) — iş akışı "insana düşer".
 - Şeritler: `job_handler(..., serit=UZUN_SERIT)` uzun süren (tam `/check` koşan) işleri işaretler.
   Worker bunları ayrı bir yürütme yuvasında koşar; genel şerit (PO sorgusu, triage taraması, onay
-  işleri) uzun bir CI koşusu/onarım kontrolü bitene kadar beklemez. `claim`/`process_one`
-  `turler` (yalnızca bunlar) ve `haric` (bunlar dışında) süzgeçlerini alır.
+  işleri) uzun bir CI koşusu/onarım kontrolü bitene kadar beklemez. `serit=ASISTAN_SERIT` portal
+  asistanının kısa, paralel işlerini (`assistant.answer`) işaretler: worker onları birkaç iş
+  parçacığında koşar ve zaman aşımında süreci kapatmaz (AI-ASISTAN-PLANI §10.1). `serit_turleri`
+  bir şeridin kayıtlı türlerini verir. `claim`/`process_one` `turler` (yalnızca bunlar) ve `haric`
+  (bunlar dışında) süzgeçlerini alır.
 - `idempotency_key` verilirse aynı anahtarla ikinci ekleme yeni iş açmaz, mevcut işi döndürür.
   Karar işlem kapsamlı bir advisory lock altında verilir (eşzamanlı çağrılar yarışmaz).
 """
@@ -71,6 +74,8 @@ DEFAULT_ZAMAN_ASIMI_S = 900
 HEARTBEAT_S = 15.0
 GENEL_SERIT = "genel"
 UZUN_SERIT = "uzun"
+ASISTAN_SERIT = "asistan"
+SERITLER: frozenset[str] = frozenset({GENEL_SERIT, UZUN_SERIT, ASISTAN_SERIT})
 NABIZ_ZAMAN_ASIMI_S = 60.0
 NOTIFY_CHANNEL = "tp_jobs"
 # İki argümanlı advisory lock ad alanı (denetim zincirinin tek argümanlı kilidiyle çakışmaz).
@@ -134,7 +139,7 @@ def job_handler(
     registry: dict[str, HandlerSpec] | None = None,
     serit: str = GENEL_SERIT,
 ) -> Callable[[Handler], Handler]:
-    if serit not in (GENEL_SERIT, UZUN_SERIT):
+    if serit not in SERITLER:
         raise ValueError(f"bilinmeyen şerit: {serit}")
     if max_deneme < 1:
         raise ValueError("max_deneme en az 1 olmalı")
@@ -275,14 +280,23 @@ class ClaimedJob:
 ACILIS_KIMLIGI = uuid.uuid4().hex[:12]
 
 
+def serit_turleri(
+    serit: str, ek: Iterable[str] = (), registry: Mapping[str, HandlerSpec] | None = None
+) -> frozenset[str]:
+    """`serit` ile kaydolan işleyicilerin türleri + `ek` (yapılandırma)."""
+    if serit not in SERITLER:
+        raise ValueError(f"bilinmeyen şerit: {serit}")
+    kayit = REGISTRY if registry is None else registry
+    return frozenset(t for t, s in kayit.items() if s.serit == serit) | {
+        t.strip() for t in ek if t and t.strip()
+    }
+
+
 def uzun_turler(
     ek: Iterable[str] = (), registry: Mapping[str, HandlerSpec] | None = None
 ) -> frozenset[str]:
     """Uzun şerit türleri: `serit=UZUN_SERIT` ile kaydolan işleyiciler + `ek` (yapılandırma)."""
-    kayit = REGISTRY if registry is None else registry
-    return frozenset(t for t, s in kayit.items() if s.serit == UZUN_SERIT) | {
-        t.strip() for t in ek if t and t.strip()
-    }
+    return serit_turleri(UZUN_SERIT, ek, registry)
 
 
 def worker_id() -> str:

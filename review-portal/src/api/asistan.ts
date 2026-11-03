@@ -256,3 +256,103 @@ export function baglamiSigdir(baglam: Record<string, unknown>, azami = BAGLAM_AZ
   }
   return { rota_kalibi: baglam.rota_kalibi ?? null };
 }
+
+// ------------------------------------------------------------------ Öneri düğmesi (§17, uç 10–11)
+
+/** Kural kartının eylem türü (§17.2). `bilgi` düğmesizdir ("Neden? Sor" her kartta var). */
+export type OneriEylemTuru = "rota" | "jira_taslak" | "jira_yorum" | "jira_kaydi" | "bilgi";
+
+/** Jira taslağı: düz metin; kullanıcı kopyalar, kaydı kendisi açar (İlke I). */
+export interface OneriTaslagi {
+  proje?: string | null;
+  /** Task | Bug | Story | yorum */
+  tur: string;
+  ozet: string;
+  aciklama: string;
+  etiketler?: string[];
+}
+
+/** Kartın eylemi. `baglanti`'yı yalnız sunucu kurar (§17.4); taslak metni URL'e konmaz. */
+export interface OneriEylemi {
+  tur: OneriEylemTuru;
+  /** `rota`: iç portal yolu (`:id` sunucuda doldurulmuş). */
+  rota?: string | null;
+  /** Sayfa içi bölüm (ör. `bulgular`, `po-onay`). */
+  capa?: string | null;
+  anahtar?: string | null;
+  taslak?: OneriTaslagi | null;
+  baglanti?: string | null;
+  /** "Proje: TPD, Tür: Task seçin; metni yapıştırın." */
+  adim_notu?: string | null;
+  /** "Bu bir öneridir; kaydı siz açarsınız." */
+  not?: string | null;
+  /** Simülatörde kayıt oluşturma sayfası yok: "Demo Jira'sında kayıt oluşturma sayfası yok". */
+  baglanti_yok_nedeni?: string | null;
+}
+
+export interface KuralOnerisi {
+  kural_id: string;
+  baslik: string;
+  neden: string;
+  /** "Açıklamayı göster" (model kapalı) uzun metni. */
+  aciklama?: string | null;
+  oncelik: number;
+  eylem: OneriEylemi;
+}
+
+/** "Yaptım" ile bastırılan kural: kartın yerinde "{kisi} yaptım dedi · TPD-12 · 2 sa önce". */
+export interface BastirilanOneri {
+  kural_id: string;
+  baslik: string;
+  kisi: string;
+  jira_anahtari?: string | null;
+  zaman: string;
+}
+
+/** `GET /assistant/suggestions` gövdesi. */
+export interface OneriListesi {
+  oneriler: KuralOnerisi[];
+  /** false: bu (rota × rol) için kural yok → düğme gizli. */
+  ekranda_kural_var: boolean;
+  bastirilan: BastirilanOneri[];
+  /** "Diğer ekranlarda sizi bekleyen N iş" (rozete sayılmaz); henüz hesaplanmıyorsa null. */
+  diger_ekranlar: { sayi: number; rota?: string | null } | null;
+  hesaplandi: string;
+  rota_kalibi?: string | null;
+}
+
+export interface OneriSorgusu {
+  /** Gerçek yol ya da kalıp; sunucu `rotalar.json` kalıbına indirger. */
+  rota: string;
+  varlik_tur?: string | null;
+  varlik_id?: string | null;
+}
+
+/** Gizle (-1) / Faydalı (1) / Yaptım (2). */
+export type OneriGeriBildirimDegeri = -1 | 1 | 2;
+
+export interface OneriGeriBildirimGovdesi {
+  deger: OneriGeriBildirimDegeri;
+  varlik_id?: string | null;
+  jira_anahtari?: string | null;
+}
+
+/** "Yaptım" alanındaki isteğe bağlı Jira anahtarı (sunucu aynı regex'le doğrular). */
+export const JIRA_ANAHTARI = /^[A-Z][A-Z0-9]+-\d+$/;
+
+export const oneriApi = {
+  liste: (s: OneriSorgusu) =>
+    istek<OneriListesi>("GET", "/assistant/suggestions", {
+      sorgu: { rota: s.rota, varlik_tur: s.varlik_tur ?? null, varlik_id: s.varlik_id ?? null },
+    }),
+  geriBildirim: (kuralId: string, govde: OneriGeriBildirimGovdesi) =>
+    istek<unknown>("POST", `/assistant/suggestions/${yol(kuralId)}/feedback`, { govde }),
+};
+
+/** Öneri geri bildirimi hatası → kullanıcı metni. */
+export function oneriHataMetni(e: unknown): string {
+  if (!(e instanceof ApiError)) return e instanceof Error ? e.message : "İşlem yapılamadı.";
+  if (e.status === 429) return "Çok sık istek gönderildi; biraz sonra yeniden deneyin.";
+  if (e.status === 404) return "Bu kayıt artık bulunamıyor ya da rolünüze kapalı.";
+  return e.detail;
+}

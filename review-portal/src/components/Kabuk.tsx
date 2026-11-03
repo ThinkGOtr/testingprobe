@@ -5,6 +5,7 @@ import { useBaglantiDurumu, type BaglantiDurumu } from "../api/events";
 import type { Rol } from "../api/types";
 import { useOturum } from "../auth";
 import { ROL } from "../lib/etiketler";
+import { OneriDugmesi } from "./asistan/OneriDugmesi";
 
 interface NavOgesi {
   yol: string;
@@ -151,6 +152,7 @@ export function Kabuk() {
               ÖRNEK VERİ
             </span>
           )}
+          <OneriDugmesi />
           <span className={`baglanti baglanti-${b.sinif}`} role="status">
             <span className="nokta" aria-hidden="true" />
             <span className="baglanti-metin">{b.etiket}</span>
