@@ -433,6 +433,9 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
             tur="tehlike"
             calisiyor={calisiyor}
             disabled={(!!d && !d.bitti) || engelli}
+            // Her pasif hâlin (kipte yok, ön koşul yok, zaten kırık, CI sürüyor, onarıldı) kartta kendi
+            // görünür notu var; düğme etiketi de hâli söyler. Neden tekrarlanmaz.
+            nedenGizli
             title={
               desteksiz
                 ? (durum?.locator_demo?.neden ?? "Test bakımı demosu bu kipte desteklenmiyor.")

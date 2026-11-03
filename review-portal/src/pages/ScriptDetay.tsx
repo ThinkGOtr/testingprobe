@@ -790,6 +790,8 @@ export function ScriptDetay() {
                 roller={["engineer"]}
                 disabled={!mergeHazir}
                 calisiyor={islem.calisiyor}
+                // Merge engelleri hemen üstte (kapi-nedenleri) görünür yazılı; tekrarlanmaz.
+                nedenGizli={!mergeHazir && engeller.length > 0}
                 title={
                   mergeHazir
                     ? "İnsan onaylı merge: incelediğiniz içerik ve head commit'e bağlanır"
@@ -875,6 +877,8 @@ export function ScriptDetay() {
               tur="ikincil"
               disabled={!prAcik || defectAdayi || s.break_verify.durum === "running"}
               calisiyor={s.break_verify.durum === "running"}
+              // Defect adayında "Kırarak doğrulama kapalı" kutusu nedeni zaten görünür yazar.
+              nedenGizli={defectAdayi}
               title={
                 defectAdayi
                   ? "Defect adayı: test zaten kırmızı (ürün hatası şüphesi). Kırarak doğrulama anlamsız; karar triage/bug taslağında."

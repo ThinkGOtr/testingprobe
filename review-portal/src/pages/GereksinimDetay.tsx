@@ -304,6 +304,8 @@ export function GereksinimDetay() {
             roller={["analyst"]}
             disabled={sonHalAcik ? false : yazilacak === 0 || turSiniri}
             calisiyor={islem.calisiyor && g.durum === "in_review"}
+            // Tur sınırı nedeni aşağıdaki uyarı kutusunda zaten görünür yazılı.
+            nedenGizli={turSiniri}
             title={
               sonHalAcik
                 ? g.denetim_guvenilmez

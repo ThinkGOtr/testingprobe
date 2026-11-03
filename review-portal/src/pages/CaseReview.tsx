@@ -7,7 +7,7 @@ import { bazKaynagiUyarla, manuelBazUyarla } from "../api/uyumFaz5";
 import { useKisiAdi, useOturum } from "../auth";
 import { BAZ_KAYNAGI } from "../components/BazDegerKarti";
 import { CaseKarti } from "../components/CaseKarti";
-import { BosDurum, Cip, HataKutusu, Kart, Metrik, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, Metrik, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { HedefOlcer } from "../components/Grafikler";
 import { useGeciktirilmis, useVeri } from "../hooks";
 import { dolar, sure, yuzde } from "../lib/format";
@@ -190,9 +190,9 @@ export function CaseReview() {
               Yayın önizleme
             </Link>
           ) : (
-            <button type="button" className="dugme dugme-ikincil" disabled title={YAYIN_ROLU_GEREKLI}>
+            <IslemDugmesi tur="ikincil" disabled title={YAYIN_ROLU_GEREKLI}>
               Yayın önizleme
-            </button>
+            </IslemDugmesi>
           )
         }
       />
