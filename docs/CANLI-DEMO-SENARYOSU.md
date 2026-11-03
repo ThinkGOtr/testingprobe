@@ -497,8 +497,8 @@ ve **Kaynak** sütunuyla tanı. Her satırı aç (özete tıkla) ve kararı ver:
 
 | Ekrandaki özet (başı) | Kaynak | Nedir | Karar |
 |---|---|---|---|
-| "Sepet: **6 adet** … bedava adet 0 beklenirken 1 veriliyor" | **Triage** | C3 testi (kod üretiminde yakalanan) | **"TPD-5 kaydına bağla"** |
-| "Sepet: **6 adet** … bedava adet 0 beklenirken 1 veriliyor" | **Tutarlılık denetimi** | F2 — Bölüm A'da analistin "kod hatalı" dediği kampanya bulgusu | **"TPD-5 kaydına bağla"** |
+| "Sepet: **6 adet** … bedava adet 0 beklenirken 1 **görünüyor**" | **Triage** | C3 testi (kod üretiminde yakalanan) | **"TPD-5 kaydına bağla"** |
+| "Sepet: **6 adet** … bedava adet 0 beklenirken 1 **veriliyor**" | **Tutarlılık denetimi** | F2 — Bölüm A'da analistin "kod hatalı" dediği kampanya bulgusu | **"TPD-5 kaydına bağla"** |
 | "Sepet: **Kredi limiti** aşıldığında … uyarısı gösterilmiyor" | **Tutarlılık denetimi** | F4 — kredi limiti bulgusu; mükerrer adayı yok | **"Onayla ve Jira'da aç"** |
 | "Sepet: **7 adet** … bedava adet 1 beklenirken 0 görünüyor" + **"Kasıtlı kırma koşusu"** etiketi | Triage | Adım 6'da bilerek bozduğumuz koşu | **Dokunma** |
 
