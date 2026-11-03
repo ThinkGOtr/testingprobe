@@ -459,17 +459,22 @@ sabah onlarca kırmızı test demek."
 
 ### L2 · Kırmızı koşu (0,5 dk)
 
-**Profil: Sunucu** → **Koşular** → kırmızı koşu
+**Profil: Sunucu** → sol menü **Koşular**:
+
+1. Üstteki **"Kasıtlı kırma koşuları"** kutusunun işaretini kaldır (kırarak doğrulama koşuları gizlenir).
+2. En üstteki **Push (main) · Başarısız** koşusuna tıkla (ör. `7acd95ba` · 14/36).
+3. **"Başarısızlıklar ve triage"** kartını göster.
 
 - Görülen: çok sayıda kırmızı; hepsi **test_maintenance / locator** (`catalog.addToCart`).
-  Ekrandaki sayıyı oku (merge ettiğin case sayısına göre değişir).
+  Ekrandaki sayıyı oku (merge ettiğin case sayısına göre değişir; ör. 22/36 kırmızı).
 
 **Söyle:** "Ürün kırmızıları tek tek bug açmıyor. Kural, elemanın niyetinin — rol + ad — sayfada
 durduğunu ve tek bir farklı testId'ye çözüldüğünü kanıtlıyor: bu ürün hatası değil, test bakımı."
 
 ### L3 · Onarım PR'ı (1,5 dk)
 
-**Profil: Mühendis** → kırmızı hatalardan biri → **"Onarım PR'ı aç"**
+1. Aynı kartta kırmızılardan birinin **"Triage sonucu"** bağlantısına tıkla → hata detayı açılır.
+2. **Profili Mühendis'e geçir** (onarımı mühendis açar) → **"Onarım PR'ı aç"**.
 
 - Görülen: yalnızca `e2e/pages/catalog/locators.ts` içinde **1 satır** testId; AST koruması (onarım
   modu) ✓; tam paket yerel kontrol ✓; PR gövdesinde sinyaller, diff, aria doğrulaması,
@@ -481,7 +486,10 @@ sonuçtaki her sapma defect adayıdır, onarılmaz."
 
 ### L4 · Merge → yeşil (1,5 dk)
 
-GitHub'da **Approve** → portalda **"Merge et"** → push koşusu → **tamamı yeşil**.
+1. Hata detayındaki onarım PR'ı bağlantısı → GitHub'da **Files changed** (tek satır) → **Review
+   changes** → **Approve** → **Submit review**.
+2. Portala dön (yenile) → **"Merge et"**.
+3. **Koşular** → yeni **Push (main)** koşusu → **tamamı yeşil** (ör. 36/36).
 
 **Söyle:** "Tek insan onayıyla bütün kırmızılar yeşile döndü; değişiklik tek satır, gözden geçirmesi
 saniyeler." (CI beklerken **Denetim** ekranını göster — §8.)
