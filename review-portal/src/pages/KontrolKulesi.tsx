@@ -44,6 +44,9 @@ export function KontrolKulesi() {
   const k = v.veri;
   if (!k) return null;
   const ai = k.ai_katkisi;
+  // Tüm AI çağrıları REPLAY'den karşılandıysa ücret ölçülmez: "$0,00" ölçüm gibi okunmasın (§4.12, K5).
+  // null koruması: çağrı sayısı bilinmiyorsa REPLAY sayılmaz (yolHaritasi.ts modOzeti ile aynı mantık).
+  const tumuReplay = ai.cagri_sayisi != null && ai.cagri_sayisi > 0 && ai.replay_cagri === ai.cagri_sayisi;
   const toplamSure = ai.ort_ai_sure_ms !== null && ai.ort_review_sure_ms !== null ? ai.ort_ai_sure_ms + ai.ort_review_sure_ms : null;
   // Kazanç yalnızca baz değeri story için ölçülmüş satırlardan (varsayılan baz değer kazanca girmez).
   const kazanc = kazancOzeti(k.hazirlik);
@@ -144,12 +147,12 @@ export function KontrolKulesi() {
             />
             <Metrik
               etiket={<KpiBaslik ad="Maliyet (toplam)" k={k} anahtar="maliyet" />}
-              deger={ai.maliyet_usd_toplam === null ? <Olculmedi /> : dolar(ai.maliyet_usd_toplam)}
+              deger={tumuReplay ? <Olculmedi metin="REPLAY — ölçülmedi" /> : ai.maliyet_usd_toplam === null ? <Olculmedi /> : dolar(ai.maliyet_usd_toplam)}
               alt={ai.cagri_sayisi === null ? undefined : `${ai.cagri_sayisi} model çağrısı`}
             />
             <Metrik
               etiket="Bugün"
-              deger={ai.maliyet_usd_bugun === null ? <Olculmedi /> : dolar(ai.maliyet_usd_bugun)}
+              deger={tumuReplay ? <Olculmedi metin="REPLAY — ölçülmedi" /> : ai.maliyet_usd_bugun === null ? <Olculmedi /> : dolar(ai.maliyet_usd_bugun)}
               alt={ai.gunluk_butce_usd === null ? undefined : `Günlük tavan ${dolar(ai.gunluk_butce_usd)}`}
             />
           </div>
