@@ -241,6 +241,18 @@ def test_publish_is_idempotent(sim: TestClient, jira: RestJira) -> None:
     assert len(links) == 1
 
 
+def test_closed_issue_from_earlier_run_is_not_reused(sim: TestClient, jira: RestJira) -> None:
+    """Case kimliği içerikten türer: önceki provanın kapatılmış Test'i yeniden kullanılmaz."""
+    case = make_case()
+    eski = JiraTestManagement(jira, "TPD").publish_case(case, "TPD-1").external_key
+    done = next(t for t in jira.transitions(eski) if t["to"]["statusCategory"]["key"] == "done")
+    jira.transition(eski, done["id"])
+    tm = JiraTestManagement(jira, "TPD")
+    assert tm.find_existing(UUID(case["id"])) is None
+    yeni = tm.publish_case(case, "TPD-1").external_key
+    assert yeni != eski
+
+
 def test_fallback_to_task_and_relates(sim: TestClient, jira: RestJira) -> None:
     sim.post(
         "/sim/config",

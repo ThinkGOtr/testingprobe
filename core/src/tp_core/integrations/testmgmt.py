@@ -188,7 +188,13 @@ def case_description_text(case: CaseContent, story_key: str, *, steps_table: boo
 
 
 def find_by_label(jira: JiraPort, project: str, case_id: UUID) -> str | None:
-    hits = jira.search(f'project = "{project}" AND labels = "{tp_label(case_id)}"', max_results=1)
+    """Bu case için açık Test issue'su. Case kimliği içerikten türetildiği için aynı demo case'i
+    her provada aynı ``tp-<uuid>`` etiketini alır; kapatılmış (önceki koşudan kalan) issue
+    yeniden kullanılmaz — yeni koşu kendi issue'sunu açar."""
+    hits = jira.search(
+        f'project = "{project}" AND labels = "{tp_label(case_id)}" AND statusCategory != Done',
+        max_results=1,
+    )
     return hits[0].key if hits else None
 
 

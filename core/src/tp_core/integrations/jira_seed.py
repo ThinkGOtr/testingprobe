@@ -12,7 +12,10 @@ kullanıcısıyla (``JIRA_WRITE_EMAIL``/``JIRA_WRITE_TOKEN``) ve aynı ``RestJir
    ``tp-demo`` etiketini garanti eder (kaldırma bayat PO onayını da geçersiz kılar: onay ancak son
    kaldırmadan sonra eklenirse sayılır);
 3. ``tp-<uuid>`` etiketli, story olmayan (Test/Task/Bug) açık kayıtları "Done" kategorisindeki bir
-   duruma geçirerek kapatır (``--sil`` ile siler). Tohum kayıtlarını (TPD-1..TPD-7) kapatmaz;
+   duruma geçirerek kapatır (``--sil`` ile siler) ve ``tp-<uuid>`` etiketini kaldırır; önceden
+   kapatılmış ama etiketini taşıyan kayıtlardan da kaldırır. Case kimliği içerikten türediği
+   için aynı demo case'i her provada aynı etiketi alır; etiket kalırsa yayın eski kaydı bulur.
+   Tohum kayıtlarını (TPD-1..TPD-7) kapatmaz;
 4. tohum kayıtlarındaki (TPD-1..TPD-7) **tüm yorumları** siler. Tohumda yorum yoktur; ürünün
    yorumları (PO sorusu, yayın özeti, kanıt yorumları) ve PO cevapları koşunun izidir. Akış için
    şart değildir (PO cevapları inceleme yorumundan *sonraki* yorumlardan okunur), ama sunumda eski
@@ -232,11 +235,18 @@ class SeedPlan:
     stories: list[StoryPlan] = field(default_factory=list)
     missing: list[str] = field(default_factory=list)
     run_issues: list[str] = field(default_factory=list)  # kapatılacak/silinecek
+    # koşu kaydı → kaldırılacak tp-<uuid> etiketleri (açık olanlar kapatılırken de kaldırılır)
+    run_labels: dict[str, list[str]] = field(default_factory=dict)
     comments: dict[str, list[str]] = field(default_factory=dict)  # tohum kaydı → yorum kimlikleri
 
     @property
     def empty(self) -> bool:
-        return not self.run_issues and not self.comments and not any(s.needed for s in self.stories)
+        return (
+            not self.run_issues
+            and not self.run_labels
+            and not self.comments
+            and not any(s.needed for s in self.stories)
+        )
 
     def lines(self, delete: bool = False) -> list[str]:
         out = []
@@ -259,6 +269,11 @@ class SeedPlan:
             out.append(f"  Koşu kayıtları ({verb}): " + ", ".join(self.run_issues))
         else:
             out.append("  Açık koşu kaydı (tp-<uuid> etiketli Test/Bug) yok")
+        kapali = [k for k in self.run_labels if k not in self.run_issues]
+        if kapali and not delete:
+            out.append(
+                "  Kapalı koşu kayıtlarından tp-<uuid> etiketi kaldırılacak: " + ", ".join(kapali)
+            )
         if self.comments:
             out.append(
                 "  Silinecek yorumlar: "
@@ -274,6 +289,7 @@ class SeedResult:
     restored: list[str] = field(default_factory=list)
     closed: list[str] = field(default_factory=list)
     deleted: list[str] = field(default_factory=list)
+    unlabeled: list[str] = field(default_factory=list)
     comments_deleted: int = 0
     failed: list[str] = field(default_factory=list)  # "KEY: neden"
 
@@ -301,14 +317,24 @@ def plan(jira: RestJira, project: str = "TPD") -> SeedPlan:
                 add_demo_label=DEMO_LABEL not in labels,
             )
         )
-    jql = f'project = "{project}" AND statusCategory != Done ORDER BY key ASC'
+    acik = {
+        i.key
+        for i in jira.search(
+            f'project = "{project}" AND statusCategory != Done ORDER BY key ASC', max_results=1000
+        )
+    }
+    jql = f'project = "{project}" AND labels = "{AI_LABEL}" ORDER BY key ASC'
     for issue in jira.search(jql, max_results=1000):
         number = _issue_number(issue.key, project)
         if number is not None and number <= SEED_ISSUE_COUNT:
             continue  # tohum kayıtları asla kapatılmaz
         if issue.issue_type == "Story":
             continue
-        if any(TP_UUID_LABEL.match(lb) for lb in issue.labels):
+        etiketler = [lb for lb in issue.labels if TP_UUID_LABEL.match(lb)]
+        if not etiketler:
+            continue
+        result.run_labels[issue.key] = etiketler
+        if issue.key in acik:
             result.run_issues.append(issue.key)
     for n in range(1, SEED_ISSUE_COUNT + 1):
         key = f"{project}-{n}"
@@ -364,6 +390,13 @@ def apply(jira: RestJira, seed_plan: SeedPlan, *, delete: bool = False) -> SeedR
             result.closed.append(key)
         except JiraError as exc:
             result.failed.append(f"{key}: {exc}")
+    if not delete:
+        for key, etiketler in seed_plan.run_labels.items():
+            try:
+                jira.edit_issue(key, remove_labels=etiketler)
+                result.unlabeled.append(key)
+            except JiraError as exc:
+                result.failed.append(f"{key} etiket: {exc}")
     for key, ids in seed_plan.comments.items():
         for cid in ids:
             try:
@@ -410,6 +443,8 @@ def main(argv: Sequence[str] | None = None, *, jira: RestJira | None = None) -> 
         print("Kapatılan koşu kayıtları: " + ", ".join(r.closed))
     if r.deleted:
         print("Silinen koşu kayıtları: " + ", ".join(r.deleted))
+    if r.unlabeled:
+        print("tp-<uuid> etiketi kaldırılan koşu kayıtları: " + ", ".join(r.unlabeled))
     if r.comments_deleted:
         print(f"Silinen yorumlar: {r.comments_deleted}")
     for f in r.failed:

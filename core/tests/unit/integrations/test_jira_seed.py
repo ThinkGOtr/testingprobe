@@ -457,3 +457,26 @@ def test_old_format_story_is_planned_for_rewrite(sim: TestClient, jira: RestJira
     apply(jira, p)
     assert _fields(sim, "TPD-1")["description"] == tpd1.adf()
     assert plan(jira, "TPD").empty
+
+
+def test_run_labels_are_stripped_from_closed_and_newly_closed_issues(
+    sim: TestClient, jira: RestJira, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Önceki provadan kapalı kalan Test'in tp-<uuid> etiketi de kaldırılır (yayın onu bulmasın)."""
+    keys = _rehearse(sim)
+    # Önceki bir reset'in etiketini bırakarak kapattığı kayıt.
+    done = next(
+        t for t in jira.transitions(keys["test"]) if t["to"]["statusCategory"]["key"] == "done"
+    )
+    jira.transition(keys["test"], done["id"])
+    p = plan(jira, "TPD")
+    assert keys["test"] not in p.run_issues and keys["test"] in p.run_labels
+    assert main(["--onay"], jira=jira) == 0
+    out = capsys.readouterr().out
+    assert f"Kapalı koşu kayıtlarından tp-<uuid> etiketi kaldırılacak: {keys['test']}" in out
+    for k in ("test", "task_case", "bug"):
+        labels = _fields(sim, keys[k])["labels"]
+        assert "AI-generated" in labels
+        assert not any(jira_seed.TP_UUID_LABEL.match(lb) for lb in labels)
+    assert "musteri-isi" in _fields(sim, keys["foreign"])["labels"]  # ürünün olmayan kayıt
+    assert plan(jira, "TPD").empty
