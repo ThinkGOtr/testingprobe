@@ -405,3 +405,37 @@ test("sunucu: Demo yol haritası (çekirdek durumu) ve TPD-1 baz değer kartı",
   await page.screenshot({ path: `${EKRAN_DIZINI}/faz5-03-demo-kontrolleri.png`, fullPage: true });
   expect(hatalar).toEqual([]);
 });
+
+// Tasarım planı §8 "CSP + font" kapısı: nginx CSP'si (default-src 'self', font-src yok → 'self') altında
+// self-host Inter yüklenir; hiçbir ekranda CSP ihlali (ör. data: font, satır içi betik) konsola düşmez.
+// Salt okuma.
+test("CSP + font: konsolda CSP ihlali yok, Inter Variable yüklendi", async ({ page }) => {
+  const cspHatalari: string[] = [];
+  page.on("console", (m) => {
+    if (/Content Security Policy/i.test(m.text())) cspHatalari.push(m.text());
+  });
+  const fontDurumu = () =>
+    page.evaluate(async () => {
+      await document.fonts.ready;
+      const inter = [...document.fonts].filter((f) => f.family.replace(/["']/g, "") === "Inter Variable");
+      return { kontrol: document.fonts.check('16px "Inter Variable"'), yuklenen: inter.filter((f) => f.status === "loaded").length };
+    });
+  await page.goto("/giris");
+  await expect(page.getByRole("button", { name: "Giriş yap" })).toBeVisible();
+  // Giriş ekranı Kabuk dışında: font ve tema main.tsx'te yüklenir.
+  const giris = await fontDurumu();
+  expect(giris.kontrol).toBe(true);
+  expect(giris.yuklenen, "Inter Variable yüz(ler)i yüklenmedi").toBeGreaterThan(0);
+  await page.getByLabel("Kullanıcı adı").fill("sunucu");
+  await page.getByLabel("Parola").fill(PAROLA);
+  await page.getByRole("button", { name: "Giriş yap" }).click();
+  await expect(page.getByRole("navigation", { name: "Ana menü" })).toBeVisible();
+  for (const yol of ["/yol-haritasi", "/gereksinimler", "/kosular", "/kontrol-kulesi", "/demo"]) {
+    await page.goto(yol);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    const d = await fontDurumu();
+    expect(d.kontrol, yol).toBe(true);
+    expect(d.yuklenen, yol).toBeGreaterThan(0);
+  }
+  expect(cspHatalari).toEqual([]);
+});

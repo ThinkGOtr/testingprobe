@@ -18,6 +18,10 @@
 // - Durumlar: core-api durum makinesi adları (tp_core/workflow/states.py).
 // - Bağlantılar: her iç bağlantı bir portal ekranına çıkar; artifact/forge sunucusu olmadığı için
 //   Allure/trace/PR adresleri null'dır (ekranda düz metin, ölü bağlantı yok).
+// Örnek ek (ekran görüntüsü): data:image URI olarak gömülür (?inline). Ayrı dosya (/assets/…) olamaz:
+// koşu uyarlayıcısı (uyumDemoB adresUyarla) "/" ile başlayan ek adresini core'un /api altına çevirir;
+// data:image/ adresini olduğu gibi bırakır. CSP img-src 'self' data: buna izin verir (CSP değişmez).
+import ORNEK_EK_EKRANI from "./ornek-ek-ekran.png?inline";
 import type {
   AdimEslemesi,
   AjanAdimi,
@@ -1064,6 +1068,67 @@ function kosu(
   };
 }
 
+/**
+ * Koşu detayının okunur test sonucu ekranı (KosuSonuclari) için örnek ayrıntı: iki deneme, Playwright
+ * adım ağacı (hatalı yol), hata konumu/snippet/stack, stdout ve ekler (gömülü küçük bir ekran
+ * görüntüsü; trace dosyası sunulmuyor). Yalnız görünüm verisi: sayımlar (retry hariç
+ * durum/süre) değişmez. Tasarım planı Ek B2.
+ */
+function r107C2Ayrintisi(): Partial<KosuDetay["sonuclar"][number]> {
+  const HATA = "expect(getByTestId('cart-line-free-P-001')).toHaveText(\"1\")\nBeklenen: \"1\"\nGerçekleşen: \"0\"";
+  const KONUM = "tests/tpd-1/c2-kampanya-7-adet-1-bedava.spec.ts:24:5";
+  const deneme = (n: number, sure_ms: number) => ({
+    deneme: n,
+    sonuc: "failed",
+    sure_ms,
+    hata: {
+      mesaj: HATA,
+      konum: KONUM,
+      snippet: "  22 |   await cart.open();\n  23 |   // 7 adette 1 bedava (AC2)\n> 24 |   await cart.expectFreeQty(\"P-001\", \"1\");\n     |     ^",
+      stack: `Error: ${HATA.split("\n")[0]}\n    at CartPage.expectFreeQty (pages/CartPage.ts:41:7)\n    at ${KONUM}`,
+    },
+    adimlar: [
+      { baslik: "Bayi olarak giriş yap", sure_ms: 820 },
+      { baslik: "Kataloğu aç", sure_ms: 410 },
+      {
+        baslik: "Kampanyalı üründen 7 adet sepete ekle",
+        sure_ms: 1900,
+        adimlar: [
+          { baslik: "Adet: 7", sure_ms: 300 },
+          { baslik: "Sepete ekle", sure_ms: 1600 },
+        ],
+      },
+      {
+        baslik: "Sepette bedava ürün satırını doğrula",
+        sure_ms: sure_ms - 3130,
+        adimlar: [{ baslik: "expect.toHaveText", sure_ms: sure_ms - 3130, hata: HATA }],
+      },
+    ],
+    stdout: n === 0 ? "[sepet] P-001 × 7 eklendi\n[sepet] bedava satırı: 0 adet" : null,
+    stderr: null,
+  });
+  return {
+    retry: 1,
+    dosya: "tests/tpd-1/c2-kampanya-7-adet-1-bedava.spec.ts",
+    denemeler: [deneme(0, 6200), deneme(1, 6150)],
+    ekler: [
+      { ad: "screenshot", tur: "image/png", url: ORNEK_EK_EKRANI, deneme: 1 },
+      { ad: "trace", tur: "application/zip", url: null, deneme: 1 },
+    ],
+  };
+}
+
+/** Yerel CI adımları (toolchain `/check` şekli): run kırmızı, AST koruması bu koşuda atlandı. */
+function r107CiAdimlari(): KosuDetay["adimlar"] {
+  return {
+    deps: { ok: true, atlandi: false },
+    tsc: { ok: true, atlandi: false },
+    eslint: { ok: true, atlandi: false },
+    ast_guard: { ok: true, atlandi: true, reason: "gece koşusunda kod değişikliği yok" },
+    run: { ok: false, atlandi: false, error: "1 test başarısız (TPD-1 C2)" },
+  };
+}
+
 function kosular(): KosuDetay[] {
   return [
     kosu(
@@ -1080,10 +1145,11 @@ function kosular(): KosuDetay[] {
           triage_sinifi: "product_defect",
           triage_alt_tur: "assertion",
           case_id: "case-1-2",
+          ...r107C2Ayrintisi(),
         }),
         sonuc("r107-3", TEST_LOGIN, "passed", 2200),
       ],
-      { commit: "b7d1f05", break_campaign: true },
+      { commit: "b7d1f05", break_campaign: true, adimlar: r107CiAdimlari() },
     ),
     kosu(
       "run-106",
@@ -1141,7 +1207,9 @@ function kosular(): KosuDetay[] {
           case_id: "case-1-3",
         }),
       ],
-      { commit: "9e0c51d", script_id: "scr-3" },
+      // Sauce çipi örneği (tasarım planı Ek B2): run-107'ye konamaz — gece koşusu CI tetiği olduğundan yol
+      // haritasının 9. adımını (Sauce/yerel yedek) değiştirirdi; yerel kontrol CI sayımına girmez.
+      { commit: "9e0c51d", script_id: "scr-3", sauce_durum: "error", sauce_neden: "oturum sınırı dolu" },
     ),
     // Ortam hatası: sağlık yoklaması başarısız, Playwright başlamadı (tests=[]); triage environment.
     kosu("run-109", "manual", "local", t(30, "03:00"), [], {

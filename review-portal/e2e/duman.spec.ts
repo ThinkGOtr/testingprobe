@@ -3,14 +3,24 @@ import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
 const EKRAN_DIZINI = "e2e/ekranlar";
-mkdirSync(EKRAN_DIZINI, { recursive: true });
+const ACIK_EKRAN_DIZINI = `${EKRAN_DIZINI}/acik`;
+mkdirSync(ACIK_EKRAN_DIZINI, { recursive: true });
+
+/** Web fontları yüklenene dek bekler: boyut/taşma ölçümleri ve ekran görüntüleri yedek fontla alınmasın. */
+async function fontlariBekle(page: Page) {
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+  });
+}
 
 async function girisYap(page: Page, kullanici: string) {
   await page.goto("/giris");
+  await fontlariBekle(page);
   await page.getByLabel("Kullanıcı adı").fill(kullanici);
   await page.getByLabel("Parola").fill("Demo123!");
   await page.getByRole("button", { name: "Giriş yap" }).click();
   await expect(page.getByRole("navigation", { name: "Ana menü" })).toBeVisible();
+  await fontlariBekle(page);
 }
 
 function konsolHatalariniTopla(page: Page): string[] {
@@ -245,10 +255,13 @@ test("sunucu: açılış Demo yol haritası; Kontrol Kulesi (KPI kaynağı), ko�
 
 test("mobil görünüm ve koyu tema", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.emulateMedia({ colorScheme: "dark" });
+  // İşletim sistemi açık temada olsa da varsayılan koyudur (tema seçilmemiş, depolama boş).
+  await page.emulateMedia({ colorScheme: "light" });
   await girisYap(page, "sunucu");
   await page.goto("/kontrol-kulesi");
   await expect(page.getByRole("heading", { name: "Kontrol Kulesi", level: 1 })).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await fontlariBekle(page);
   const tasanlar = await page.evaluate(() =>
     [...document.querySelectorAll("body *")]
       .filter((e) => e.getBoundingClientRect().right > window.innerWidth + 1 && !e.closest(".tablo-sarici, .yan-menu, pre, .gorunmez"))
@@ -293,6 +306,7 @@ test("mobil gereksinim detayı: kanıt blokları yatay taşmaz", async ({ page }
   await girisYap(page, "analist");
   await page.goto("/gereksinimler/req-tpd-1");
   await expect(page.getByText("api/src/demoapp_api/pricing.py:97").first()).toBeVisible();
+  await fontlariBekle(page);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   const tasanlar = await page.evaluate(() =>
     [...document.querySelectorAll(".kanit, .kanit-baslik, .kanit-baslik *")]
@@ -309,6 +323,7 @@ test("mobil tablolar kart görünümünde: sütun kırpılmaz, adım metni dar s
   await page.goto("/gereksinimler");
   const satir = page.locator(".tablo-yigin tbody tr").first();
   await expect(satir).toBeVisible();
+  await fontlariBekle(page);
   // Her hücre görünür ve ekran içinde (yatay kaydırma gerekmez).
   const hucreler = await page.evaluate(() =>
     [...document.querySelectorAll(".tablo-yigin tbody td")].map((td) => {
@@ -323,6 +338,7 @@ test("mobil tablolar kart görünümünde: sütun kırpılmaz, adım metni dar s
 
   await page.goto("/gereksinimler/req-tpd-1/caseler");
   await expect(page.locator(".tablo-yigin").first()).toBeVisible();
+  await fontlariBekle(page);
   const adimGenislik = await page.evaluate(() =>
     Math.min(...[...document.querySelectorAll('.tablo-yigin td[data-etiket="Adım"]')].map((td) => td.getBoundingClientRect().width)),
   );
@@ -331,41 +347,191 @@ test("mobil tablolar kart görünümünde: sütun kırpılmaz, adım metni dar s
   await page.screenshot({ path: `${EKRAN_DIZINI}/34-mobil-case-adimlari.png`, fullPage: true });
 });
 
-for (const tema of ["light", "dark"] as const) {
-  test(`erişilebilirlik (axe, WCAG 2 AA) — ${tema} tema`, async ({ page }) => {
-    test.setTimeout(120_000);
-    await page.emulateMedia({ colorScheme: tema });
-    await girisYap(page, "analist");
-    // Her sayfa için içeriğin (ayrı istekle gelen bölümler dahil) yüklendiğini gösteren metin.
-    const sayfalar: [string, string][] = [
-      ["/gereksinimler/req-tpd-1", "api/src/demoapp_api/pricing.py:94"],
-      ["/gereksinimler/req-tpd-1/caseler", "5 adet kampanyalı üründe bedava ürün verilmez"],
-      ["/kod/scr-2", "c2-kampanya-7-adet-1-bedava.spec.ts"],
-      ["/denetim", "Zincir doğrulandı"],
-      ["/kontrol-kulesi", "Karne (story ve uygulama alanı)"],
-      ["/gereksinimler/req-ft-1", "Kontrol turu"],
-      ["/gereksinimler/req-tpd-1/yayin", "Oluşturulacak kayıtlar"],
-      ["/claude-code", "Token oluştur"],
-      ["/hatalar/fail-2", "Locator yoklaması (locator-probe)"],
-      ["/bug-taslaklari/bug-4", "Olası mükerrerler"],
-      ["/yol-haritasi", "Test bakımı yolu"],
-    ];
+// ---------------------------------------------------------------- erişilebilirlik (axe) — tasarım planı §8
+
+type TemaTuru = {
+  tema: "koyu" | "acik" | "sistem";
+  /** Beklenen hesaplanmış `color-scheme` (html). */
+  colorScheme: "dark" | "light";
+  /** Beklenen `html[data-theme]`; null = nitelik yok (sistem kipi). */
+  dataTheme: "dark" | "light" | null;
+  /** İşletim sistemi tercihi: acik/koyu turunda bilerek ters seçilir (seçilen tema OS'u ezmeli). */
+  os: "dark" | "light";
+  genislikler: number[];
+};
+
+const TEMA_TURLARI: TemaTuru[] = [
+  { tema: "koyu", colorScheme: "dark", dataTheme: "dark", os: "light", genislikler: [1440, 390] },
+  { tema: "acik", colorScheme: "light", dataTheme: "light", os: "dark", genislikler: [1440, 390] },
+  { tema: "sistem", colorScheme: "light", dataTheme: null, os: "light", genislikler: [1440] },
+];
+
+/** axe sayfaları: yol, ekran görüntüsü adı (açık tema, 1440 px) ve içeriğin yüklendiğini gösteren bekleme. */
+const AXE_SAYFALARI: { yol: string; ad: string; hazir: (p: Page) => Promise<void> }[] = [
+  { yol: "/gereksinimler", ad: "01-gereksinimler", hazir: (p) => expect(p.getByRole("region", { name: "Gereksinimler tablosu" })).toBeVisible() },
+  { yol: "/gereksinimler/req-tpd-1", ad: "02-gereksinim-tpd1", hazir: (p) => expect(p.getByText("api/src/demoapp_api/pricing.py:94").first()).toBeVisible() },
+  { yol: "/gereksinimler/req-ft-1", ad: "03-gereksinim-serbest-metin", hazir: (p) => expect(p.getByText("Kontrol turu").first()).toBeVisible() },
+  {
+    yol: "/gereksinimler/req-tpd-1/caseler",
+    ad: "05-case-review",
+    hazir: (p) => expect(p.getByText("5 adet kampanyalı üründe bedava ürün verilmez").first()).toBeVisible(),
+  },
+  { yol: "/gereksinimler/req-tpd-1/yayin", ad: "06-yayin-onizleme", hazir: (p) => expect(p.getByText("Oluşturulacak kayıtlar").first()).toBeVisible() },
+  { yol: "/kod", ad: "07-kod-uretimi", hazir: (p) => expect(p.getByRole("region", { name: "Üretilen testler tablosu" })).toBeVisible() },
+  { yol: "/kod/scr-2", ad: "08-script-detay", hazir: (p) => expect(p.getByText("c2-kampanya-7-adet-1-bedava.spec.ts").first()).toBeVisible() },
+  { yol: "/kosular", ad: "09-kosular", hazir: (p) => expect(p.getByRole("region", { name: "Koşular tablosu" })).toBeVisible() },
+  {
+    yol: "/kosular/run-107",
+    ad: "10-kosu-detay-ayrinti",
+    // Örnek veride (Ek B2) ilk satır başarısız C2: açılınca denemeler, adım ağacı, ekran görüntüsü eki.
+    hazir: async (p) => {
+      await expect(p.getByRole("region", { name: "Raporlar ve bağlantılar" })).toBeVisible();
+      await p.getByRole("region", { name: "Test sonuçları tablosu" }).getByRole("button").first().click();
+      await expect(p.getByRole("region", { name: /^Test ayrıntısı: / })).toBeVisible();
+      await expect(p.getByRole("img", { name: /^Ekran görüntüsü: / }).first()).toBeVisible();
+    },
+  },
+  {
+    yol: "/kosular/run-108",
+    ad: "28-kosu-yerel-kontrol-sauce",
+    hazir: (p) => expect(p.getByText("Sauce koşmadı: oturum sınırı dolu")).toBeVisible(),
+  },
+  { yol: "/hatalar/fail-2", ad: "11-triage-locator", hazir: (p) => expect(p.getByText("Locator yoklaması (locator-probe)").first()).toBeVisible() },
+  { yol: "/bug-taslaklari", ad: "13-bug-taslaklari", hazir: (p) => expect(p.getByRole("heading", { name: "Bug taslakları" })).toBeVisible() },
+  { yol: "/bug-taslaklari/bug-4", ad: "42-bug-c3-taslak", hazir: (p) => expect(p.getByText("Olası mükerrerler").first()).toBeVisible() },
+  { yol: "/kontrol-kulesi", ad: "15-kontrol-kulesi", hazir: (p) => expect(p.getByText("Karne (story ve uygulama alanı)").first()).toBeVisible() },
+  { yol: "/denetim", ad: "16-denetim", hazir: (p) => expect(p.getByText("Zincir doğrulandı").first()).toBeVisible() },
+  { yol: "/claude-code", ad: "17-claude-code", hazir: (p) => expect(p.getByText("Token oluştur").first()).toBeVisible() },
+  { yol: "/yol-haritasi", ad: "52-yol-haritasi", hazir: (p) => expect(p.getByText("Test bakımı yolu").first()).toBeVisible() },
+];
+
+/**
+ * F0 tabanı (e2e/F0-TABAN.md, Ek B2 fikstürü dahil): sayfa başına axe `color-contrast` **incomplete** düğüm
+ * sayısı. Sıra: koyu 1440, koyu 390, açık 1440, açık 390, sistem 1440. Tasarım değişikliği bu sayıları
+ * aşamaz (§8 sayısal kapı); azalırsa taban düşürülür.
+ */
+const F0_INCOMPLETE: Record<string, [number, number, number, number, number]> = {
+  "/giris": [0, 0, 0, 0, 0],
+  "/gereksinimler/req-tpd-1": [13, 11, 12, 10, 13],
+  "/gereksinimler/req-tpd-1/caseler": [4, 2, 3, 1, 4],
+  "/kod/scr-2": [13, 31, 12, 30, 13],
+  "/denetim": [3, 73, 2, 72, 3],
+  "/kontrol-kulesi": [5, 22, 4, 21, 5],
+  "/gereksinimler/req-ft-1": [7, 5, 6, 4, 7],
+  "/gereksinimler/req-tpd-1/yayin": [4, 24, 3, 23, 4],
+  "/claude-code": [3, 2, 2, 1, 3],
+  "/hatalar/fail-2": [15, 13, 14, 12, 15],
+  "/bug-taslaklari/bug-4": [5, 2, 4, 1, 5],
+  "/yol-haritasi": [12, 10, 11, 9, 12],
+  "/gereksinimler": [3, 2, 2, 1, 3],
+  "/kod": [3, 17, 2, 16, 3],
+  "/kosular": [7, 63, 6, 62, 7],
+  "/kosular/run-107": [23, 20, 22, 19, 23],
+  "/kosular/run-108": [7, 5, 6, 4, 7],
+  "/bug-taslaklari": [3, 17, 2, 16, 3],
+  "/demo": [4, 2, 3, 1, 4],
+};
+
+function f0Taban(yol: string, tema: TemaTuru["tema"], genislik: number): number {
+  const SIRA: Record<string, number> = { "koyu 1440": 0, "koyu 390": 1, "acik 1440": 2, "acik 390": 3, "sistem 1440": 4 };
+  const sira = SIRA[`${tema} ${genislik}`];
+  const satir = F0_INCOMPLETE[yol];
+  if (!satir || sira === undefined) throw new Error(`F0 tabanı yok: ${tema} ${genislik} ${yol}`);
+  return satir[sira];
+}
+
+/** Tema gerçekten uygulandı mı: hesaplanmış color-scheme ve html[data-theme] (OS tercihinden bağımsız). */
+async function temaDogrula(page: Page, tur: TemaTuru) {
+  await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).toBe(tur.colorScheme);
+  if (tur.dataTheme) await expect(page.locator("html")).toHaveAttribute("data-theme", tur.dataTheme);
+  else await expect(page.locator("html")).not.toHaveAttribute("data-theme");
+}
+
+for (const tur of TEMA_TURLARI) {
+  test(`erişilebilirlik (axe, WCAG 2 AA) — ${tur.tema} tema`, async ({ page }) => {
+    test.setTimeout(300_000);
+    // Tema emulateMedia ile değil, kullanıcının seçimiyle: her belge yüklenmeden önce depolamaya yazılır.
+    await page.addInitScript((t) => {
+      localStorage.setItem("tp-tema-v", "2");
+      localStorage.setItem("tp-tema", t);
+    }, tur.tema);
+    await page.emulateMedia({ colorScheme: tur.os });
     const ihlaller: string[] = [];
-    for (const genislik of [1440, 390]) {
-      await page.setViewportSize({ width: genislik, height: 900 });
-      for (const [yol, hazir] of sayfalar) {
-        await page.goto(yol);
-        await expect(page.getByText(hazir).first()).toBeVisible();
-        await expect(page.getByRole("status").filter({ hasText: "Yükleniyor" })).toHaveCount(0);
-        const sonuc = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
-        for (const v of sonuc.violations.filter((x) => x.impact === "serious" || x.impact === "critical")) {
-          ihlaller.push(`${genislik}px ${yol}: ${v.id} → ${v.nodes.map((n) => n.target.join(" ")).slice(0, 3).join(", ")}`);
-        }
+    const asimlar: string[] = [];
+    const sayilar: string[] = [];
+
+    const denetle = async (yol: string, genislik: number, ad: string | null) => {
+      await expect(page.getByRole("status").filter({ hasText: "Yükleniyor" })).toHaveCount(0);
+      await temaDogrula(page, tur);
+      await fontlariBekle(page);
+      if (ad && tur.tema === "acik" && genislik === 1440) {
+        await page.screenshot({ path: `${ACIK_EKRAN_DIZINI}/${ad}.png`, fullPage: true, animations: "disabled" });
       }
+      // Büyük dekoratif pseudo zeminler (ortam ışıması, giriş ızgarası) kontrastı "incomplete"e düşürmesin.
+      await page.addStyleTag({ content: ".kabuk::before,.giris-sayfa::before,.giris-sayfa::after{display:none}" });
+      const sonuc = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze();
+      for (const v of sonuc.violations.filter((x) => x.impact === "serious" || x.impact === "critical")) {
+        ihlaller.push(`${genislik}px ${yol}: ${v.id} → ${v.nodes.map((n) => n.target.join(" ")).slice(0, 3).join(", ")}`);
+      }
+      const eksik = sonuc.incomplete.find((x) => x.id === "color-contrast")?.nodes ?? [];
+      const taban = f0Taban(yol, tur.tema, genislik);
+      sayilar.push(`${genislik}px ${yol}: ${eksik.length} (F0 ${taban})`);
+      if (eksik.length > taban) {
+        asimlar.push(`${genislik}px ${yol}: color-contrast incomplete ${eksik.length} > F0 ${taban} → ${eksik.map((n) => n.target.join(" ")).slice(0, 5).join(", ")}`);
+      }
+    };
+
+    for (const genislik of tur.genislikler) {
+      await page.setViewportSize({ width: genislik, height: 900 });
+      // Giriş ekranı oturum açmadan önce.
+      await page.goto("/giris");
+      await expect(page.getByRole("button", { name: "Giriş yap" })).toBeVisible();
+      await denetle("/giris", genislik, "00-giris");
+
+      await girisYap(page, "analist");
+      for (const s of AXE_SAYFALARI) {
+        await page.goto(s.yol);
+        await s.hazir(page);
+        await denetle(s.yol, genislik, s.ad);
+      }
+      await page.getByRole("button", { name: "Çıkış" }).click();
+      await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
+
+      // Demo kontrolleri yalnız sunucu rolünde (App.tsx RolGerekli presenter); onay grubu açık haliyle.
+      await girisYap(page, "sunucu");
+      await page.goto("/demo");
+      await page.getByRole("button", { name: "Buton kimliğini değiştir" }).click();
+      await expect(page.getByRole("group", { name: "Buton kimliği değiştirme onayı" })).toBeVisible();
+      await denetle("/demo", genislik, "45-demo-kontrolleri-onay");
+      await page.getByRole("button", { name: "Çıkış" }).click();
+      await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
     }
+    await test.info().attach(`color-contrast incomplete (${tur.tema})`, { body: sayilar.join("\n"), contentType: "text/plain" });
     expect(ihlaller).toEqual([]);
+    expect(asimlar).toEqual([]);
   });
 }
+
+test("%125 zoom eşdeğeri (1152×720): Script detayında Kırarak doğrula kartı PR kartının sağında", async ({ page }) => {
+  await page.setViewportSize({ width: 1152, height: 720 });
+  await girisYap(page, "muhendis");
+  await page.goto("/kod/scr-2");
+  // Aynı adlı bir düğme de var: kart bölgesi rolüyle seçilir.
+  const pr = page.getByRole("region", { name: "Pull request" });
+  const kirma = page.getByRole("region", { name: "Kırarak doğrula" });
+  await expect(pr).toBeVisible();
+  await expect(kirma).toBeVisible();
+  await fontlariBekle(page);
+  const a = await pr.boundingBox();
+  const b = await kirma.boundingBox();
+  expect(a && b).toBeTruthy();
+  // Sağında: soldan PR kartının sağ kenarından sonra başlar ve aynı satırdadır (dikey örtüşme).
+  expect(b!.x).toBeGreaterThanOrEqual(a!.x + a!.width - 1);
+  expect(b!.y).toBeLessThan(a!.y + a!.height);
+  expect(a!.y).toBeLessThan(b!.y + b!.height);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1152);
+  await page.screenshot({ path: `${EKRAN_DIZINI}/57-script-detay-1152.png`, fullPage: true });
+});
 
 test("mobil (375 px) yayın önizleme ve akış göstergesi: sayfa yatay kaymaz, adım adları çakışmaz", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
@@ -373,12 +539,14 @@ test("mobil (375 px) yayın önizleme ve akış göstergesi: sayfa yatay kaymaz,
   await page.goto("/gereksinimler/req-tpd-1/yayin");
   await expect(page.getByTestId("yayin-hedefi")).toBeVisible();
   await expect(page.locator(".tablo-sarici table")).toBeVisible();
+  await fontlariBekle(page);
   // Tablo kendi kabında kayar; görsel gizli metinler dahil hiçbir şey sayfayı genişletmez.
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
   await page.screenshot({ path: `${EKRAN_DIZINI}/35-mobil-yayin.png`, fullPage: true });
 
   await page.goto("/gereksinimler/req-tpd-1");
   await expect(page.locator(".akis-ad").first()).toBeVisible();
+  await fontlariBekle(page);
   const cakisanlar = await page.evaluate(() => {
     const kutular = [...document.querySelectorAll(".akis-ad")].map((e) => ({ m: e.textContent, r: e.getBoundingClientRect() }));
     const sonuc: string[] = [];
