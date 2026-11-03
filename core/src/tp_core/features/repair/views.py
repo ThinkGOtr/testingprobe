@@ -87,6 +87,24 @@ def _dogrulama(k: Mapping[str, Any]) -> list[str]:
     return out
 
 
+def pr_web_url(number: int) -> str | None:
+    """Onarım PR'ının tarayıcı adresi: GitHub kipinde depo adından; LocalForge'da web arayüzü yok.
+
+    Onarım PR'ı açılırken forge'un döndürdüğü adres saklanmaz; adres depo + numaradan
+    deterministiktir (GitHub Enterprise'da web kökü `GITHUB_API_URL`'den türetilir).
+    """
+    import os
+
+    from tp_core.config import get_settings
+
+    ayar = get_settings()
+    if ayar.forge != "github" or not ayar.github_repo:
+        return None
+    api = (os.environ.get("GITHUB_API_URL") or "https://api.github.com").rstrip("/")
+    web = "https://github.com" if api == "https://api.github.com" else api.removesuffix("/api/v3")
+    return f"{web}/{ayar.github_repo}/pull/{number}"
+
+
 def pr_response(session: Session, number: int) -> dict[str, Any] | None:
     sc = repair_script_for_pr(session, number)
     if sc is None:
@@ -94,7 +112,7 @@ def pr_response(session: Session, number: int) -> dict[str, Any] | None:
     satir = session.get(PullRequest, number)
     return {
         "number": number,
-        "url": None,
+        "url": pr_web_url(number),
         "baslik": satir.baslik if satir else None,
         "branch": sc.branch,
         "durum": satir.durum if satir else ("merged" if sc.durum == "merged" else "open"),
