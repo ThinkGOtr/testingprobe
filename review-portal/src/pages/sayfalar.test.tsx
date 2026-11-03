@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
@@ -283,6 +283,25 @@ describe("ekranlar", () => {
     expect(liste).toHaveTextContent("Ürün hatası · assertion");
     expect(within(liste).getByRole("link", { name: "Triage sonucunu aç" })).toHaveAttribute("href", "/hatalar/fail-1");
     await waitFor(() => expect(screen.getByText(/BREAK_CAMPAIGN ile bozuldu \(kasıtlı kırma\)/)).toBeInTheDocument());
+  });
+
+  it("örnek veride koşu detayı ayrıntısı dolu: denemeler, adım ağacı, ekran görüntüsü eki, CI adımları; Sauce çipi run-108'de", async () => {
+    await oturumAc("analist");
+    const u = userEvent.setup();
+    uygulama("/kosular/run-107");
+    const ci = await screen.findByRole("region", { name: "CI adımları" });
+    expect(within(ci).getByRole("list", { name: "Yerel CI adımları" })).toHaveTextContent("1 test başarısız (TPD-1 C2)");
+    const tablo = screen.getByRole("region", { name: "Test sonuçları tablosu" });
+    await u.click(within(tablo).getAllByRole("button")[0]);
+    const ayrinti = screen.getByRole("region", { name: /^Test ayrıntısı: TPD-1 C2 · / });
+    expect(within(ayrinti).getByText("Deneme 1")).toBeInTheDocument();
+    expect(within(ayrinti).getByText("Deneme 2")).toBeInTheDocument();
+    expect(within(ayrinti).getByRole("region", { name: "Adımlar (deneme 2)" }).querySelectorAll("[data-hatali='1']").length).toBeGreaterThan(0);
+    expect(within(ayrinti).getByRole("img", { name: "Ekran görüntüsü: screenshot" }).getAttribute("src")).toMatch(/^data:image\/png;base64,/);
+    expect(within(ayrinti).getByText("trace (dosya sunulmuyor)")).toBeInTheDocument();
+    cleanup();
+    uygulama("/kosular/run-108");
+    expect(await screen.findByText("Sauce koşmadı: oturum sınırı dolu")).toBeInTheDocument();
   });
 
   it("bilinmeyen sayfa", async () => {
