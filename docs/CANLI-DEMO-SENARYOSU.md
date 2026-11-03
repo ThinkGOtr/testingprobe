@@ -20,6 +20,24 @@ ekran, neye tıklanır, ne yazılır, ekranda ne görülür, ne söylenir.
 | Cihaz bulutu | **Sauce Labs** job'u (Actions içinde) | koşu detayındaki Sauce bağlantısı |
 | Model | **REPLAY** (küratörlü golden kayıtlar) | portalda her AI çıktısında REPLAY rozeti |
 
+### Jira'da demonun ihtiyaç duyduğu kayıtlar (TPD projesi)
+
+Yalnızca bu yedi kayıt gerekir; **anahtarları sabittir** (REPLAY kayıtları bunlara bağlı), silinmez:
+
+| Anahtar | Tür | Başlık | Durum | Rolü |
+|---|---|---|---|---|
+| TPD-1 | Story | Kampanyalı sepet ve sipariş onayı | To Do | Ana senaryo |
+| TPD-2 | Story | Sipariş geçmişini tarihe göre filtreleme | To Do | Kabul kriteri olmayan story |
+| TPD-3 | Story | Ürün arama | To Do | Bilerek konmuş prompt-injection cümlesi |
+| TPD-4 | Story | Bayi girişi | To Do | İkinci küçük story |
+| TPD-5 | Bug | Kampanya indirimi sepette yanlış hesaplanıyor | To Do (açık) | Mükerrer aramanın bağladığı kayıt (Bölüm C) |
+| TPD-6 | Bug | Sipariş geçmişinde tarih sıralaması ters görünüyor | In Progress | Benzer ama farklı açık bug |
+| TPD-7 | Bug | Giriş sayfasında hata mesajı İngilizce görünüyor | Done | Kapalı bug (aday sayılmaz) |
+
+TPD-8 ve sonrası (Test kayıtları, yeni Bug'lar) demo sırasında ürünce açılır; `make reset` onları
+kapatır ve kimlik etiketini kaldırır — gerekmezler. Projede ayrıca: Xray (`Test` iş türü), bağlantı
+türleri `Test` ve `Relates`, ürünün yazma hesabı ve **ayrı** PO hesabı.
+
 > **Altın kurallar (sunum boyunca)**
 > 1. **"REPLAY" her AI adımında söylenir.** Doğru cümle: *"Bu adımın AI çıktısı REPLAY: önceden
 >    hazırlanmış, girdisi doğrulanmış bir kayıttan geliyor. Kayıt, şema doğrulama, kanıt doğrulama
