@@ -23,6 +23,7 @@ açma `safe_extract_zip` ile yapılır (zip-slip, sembolik bağ, dosya sayısı/
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -232,11 +233,18 @@ def hazirla(
                 ensure_ascii=False,
             )
         )
+        # Eşzamanlı ikinci alım (yeniden alım / geri doldurma) bu arada tamamlanmış bir kopya
+        # koymuş olabilir: işaretliyse ona dokunulmaz, bu kopya atılır.
+        if (var := mevcut(dizin)) is not None:
+            shutil.rmtree(gecici, ignore_errors=True)
+            return {"dizin": dizin, "durum": "mevcut", "yollar": yollari_bul(var), "indirilen": []}
         if hedef.exists():  # işaretsiz (yarım) eski kopya
             shutil.rmtree(hedef)
         gecici.rename(hedef)
     except Exception as exc:  # yerel kopya alımı asla düşürmez
         shutil.rmtree(gecici, ignore_errors=True)
+        if (var := mevcut(dizin)) is not None:  # yarışı başka alım kazandı: geçerli kopya var
+            return {"dizin": dizin, "durum": "mevcut", "yollar": yollari_bul(var), "indirilen": []}
         log.warning("GitHub artefaktı yerel kopyaya alınamadı (%s): %s", dizin, exc)
         return {
             "dizin": dizin,
@@ -260,12 +268,35 @@ def saklama_sayisi() -> int:
         return 30
 
 
-def budama(koru: Sequence[str] = (), en_cok: int | None = None) -> list[str]:
-    """En yeni `TP_GITHUB_ARTIFACTS_KEEP` kopya dışındakileri siler; silinen dizin adlarını döner.
+def disk_butcesi() -> int:
+    """Yerel kopyaların toplam bayt sınırı (`TP_GITHUB_ARTIFACTS_MAX_GB`, varsayılan 5 GB)."""
+    try:
+        gb = float((os.environ.get("TP_GITHUB_ARTIFACTS_MAX_GB") or "").strip() or 5)
+    except ValueError:
+        gb = 5.0
+    return max(1, int(gb * 1024**3))
 
-    `koru`: az önce hazırlanan dizin(ler) — sayıya girer ama asla silinmez.
+
+def _boyut(p: Path) -> int:
+    toplam = 0
+    for kok_, _, dosyalar in os.walk(p):
+        for ad in dosyalar:
+            with contextlib.suppress(OSError):
+                toplam += (Path(kok_) / ad).lstat().st_size
+    return toplam
+
+
+def budama(
+    koru: Sequence[str] = (), en_cok: int | None = None, butce: int | None = None
+) -> list[str]:
+    """En yeni `TP_GITHUB_ARTIFACTS_KEEP` kopya dışındakileri, ayrıca toplam boyut
+    `TP_GITHUB_ARTIFACTS_MAX_GB`'yi aşıyorsa en eskilerden başlayarak fazlasını siler; silinen
+    dizin adlarını döner (tek VM diski Postgres'le paylaşılır).
+
+    `koru`: az önce hazırlanan dizin(ler) — sayıya ve boyuta girer ama asla silinmez.
     """
     sinir = en_cok if en_cok is not None else saklama_sayisi()
+    butce_ = butce if butce is not None else disk_butcesi()
     gh_kok = kok() / "gh"
     try:
         adaylar = [
@@ -284,9 +315,12 @@ def budama(koru: Sequence[str] = (), en_cok: int | None = None) -> list[str]:
 
     adaylar.sort(key=lambda p: (f"gh/{p.name}" in koru, zaman(p)), reverse=True)
     silinen: list[str] = []
-    for p in adaylar[sinir:]:
+    kullanilan = 0
+    for i, p in enumerate(adaylar):
         ad = f"gh/{p.name}"
-        if ad in koru:
+        boyut = _boyut(p)
+        if ad in koru or (i < sinir and kullanilan + boyut <= butce_):
+            kullanilan += boyut
             continue
         shutil.rmtree(p, ignore_errors=True)
         silinen.append(ad)

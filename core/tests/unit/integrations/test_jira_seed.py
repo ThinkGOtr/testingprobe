@@ -337,6 +337,8 @@ def test_missing_story_and_failed_transition_are_reported(
     r = apply(jira, p)
     assert r.closed == []
     assert any(f.startswith(keys["test"]) for f in r.failed)
+    # Kapatılamayan açık kayıt etiketini korur: sonraki reset/--sil onu yine tanır.
+    assert any(jira_seed.TP_UUID_LABEL.match(lb) for lb in _fields(sim, keys["test"])["labels"])
     assert main(["--onay"], jira=jira) == 1
 
 

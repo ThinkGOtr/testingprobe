@@ -2550,6 +2550,16 @@ def _review_gerekcesi(s: Session, review_id: object) -> str | None:
     return r.gerekce if r is not None else None
 
 
+def _guvenli_not(notu: str | None) -> str:
+    """Kabul notunu PR yorumuna güvenli taşır: tek satır, @bahsetme / HTML / Markdown etkisiz."""
+    metin = " ".join((notu or "").split())[:500]
+    if not metin:
+        return "—"
+    metin = metin.replace("`", "ˋ").replace("<", "‹").replace(">", "›")
+    metin = re.sub(r"@(?=\w)", "@\u200b", metin)  # kimseyi bahsetmez/bildirim göndermez
+    return f"`{metin}`"
+
+
 def _kabul_yorumu(
     forge: ForgePort,
     engine: Engine,
@@ -2560,29 +2570,31 @@ def _kabul_yorumu(
     kabul: Sequence[str],
     notu: str | None,
     break_durum: str | None,
+    merge_sha: str | None = None,
 ) -> None:
-    """Zayıf test / kanıtsız merge kabulünü PR'a yorum olarak yazar (merge'den önce).
+    """Zayıf test / kanıtsız merge kabulünü, merge'den sonra PR'a yorum olarak yazar.
 
     Kabul çekirdekte `codegen.merge_acknowledged` denetim kaydındadır; review GitHub'da yapıldığı
     için PR'a bakan da testin hata yakaladığının kanıtlanmadığını ve bunu kimin kabul ettiğini
-    görsün. Yorum yazılamazsa merge yine yapılır (kabul denetimde), başarısızlık denetime yazılır.
+    görsün. Yorum en iyi çabadır: yazılamazsa merge kaydı etkilenmez, başarısızlık denetime yazılır.
     """
     govde = "\n".join(
         [
-            "### Testing Probe — açık kabulle merge",
+            "### Testing Probe — açık kabulle merge edildi",
             "",
             *[f"⚠️ {k}" for k in kabul],
             "",
             f"- Kabul eden: `{actor}` (Testing Probe portalı)",
-            f"- Kabul notu: {notu or '—'}",
-            f"- Kırarak doğrulama: `{break_durum or '—'}` · head `{head[:12]}`",
+            f"- Kabul notu: {_guvenli_not(notu)}",
+            f"- Kırarak doğrulama: `{break_durum or '—'}` · head `{head[:12]}`"
+            + (f" · merge `{merge_sha[:12]}`" if merge_sha else ""),
             "",
             "_Kabul Testing Probe denetim kaydında da var (`codegen.merge_acknowledged`)._",
         ]
     )
     try:
         forge.comment_pr(number, govde)
-    except ForgeError as exc:
+    except Exception as exc:  # en iyi çaba: ağ hatası dahil
         log.warning("PR #%s kabul yorumu yazılamadı: %s", number, exc)
         with engine.begin() as conn:
             append_audit(
@@ -2631,8 +2643,6 @@ def run_merge(ctx: JobContext, engine: Engine) -> dict[str, Any]:
             )
         raise PermanentJobError(f"Merge reddedildi: {engel}")
     forge = _forge()
-    if kabul:
-        _kabul_yorumu(forge, engine, sid, number, actor, head, kabul, kabul_notu, break_durum)
     try:
         merge_sha: str | None = forge.merge_pr(number, actor, expected_head_sha=head)
     except (ForgeProtectionError, ForgeConflictError, ForgeStateError, ForgeError) as exc:
@@ -2673,6 +2683,12 @@ def run_merge(ctx: JobContext, engine: Engine) -> dict[str, Any]:
                     "inceleyip merge edin."
                 ) from exc
             raise PermanentJobError(f"Merge reddedildi: {exc}") from exc
+    if kabul:
+        # Merge yapıldıktan SONRA: reddedilen merge için "kabulle merge" yorumu düşmez. İş tek
+        # denemelidir ve birleşmiş PR'ın yeniden işlenmesi erken döner: yorum ikinci kez yazılmaz.
+        _kabul_yorumu(
+            forge, engine, sid, number, actor, head, kabul, kabul_notu, break_durum, merge_sha
+        )
     return _merged_isaretle(engine, sid, number, head, merge_sha, actor, kaynak="core")
 
 

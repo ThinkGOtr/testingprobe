@@ -987,7 +987,9 @@ def _sauce_bilgisi(
                     veri = json.loads(icerik.decode("utf-8"))
                 except (UnicodeDecodeError, ValueError):
                     continue
-                if str(ad).endswith("sauce.json") and isinstance(veri, dict):
+                # Yalnız artefakt kökündeki sauce.json (özet betiği); artifacts/** altındaki
+                # Sauce VM çıktısı güvenilmez test çıktısıdır.
+                if str(ad) == "sauce.json" and isinstance(veri, dict):
                     ozet = veri
                     if veri.get("job_url"):
                         urls.append(str(veri["job_url"]))
@@ -1257,10 +1259,16 @@ def github_ingest(session: Session, run: Run, wr: Mapping[str, Any]) -> str:
     else:
         try:
             adlar = ("junit.xml", "results.json", "ci-meta.json")
+            dosyalar = None
             if yerel_kopya is not None:
-                # Yeniden alım (iş yeniden denemesi): yerel kopya varsa yeniden indirilmez.
-                dosyalar = github_artifacts.disk_dosyalari(yerel_kopya, adlar, EK_KALIPLARI)
-            else:
+                # Yeniden alım (iş yeniden denemesi): yerel kopya varsa yeniden indirilmez. Kopya
+                # okunamazsa (ör. budama sildi) zip'e düşülür; yerel kopya alımı düşürmez.
+                try:
+                    dosyalar = github_artifacts.disk_dosyalari(yerel_kopya, adlar, EK_KALIPLARI)
+                except OSError as exc:
+                    log.warning("yerel artefakt kopyası okunamadı, indiriliyor: %s", exc)
+                    yerel_kopya = None
+            if dosyalar is None:
                 sonuc_zip = gh.artifact_zip(sonuc_art)
                 dosyalar = _zip_dosyalari(sonuc_zip, adlar, EK_KALIPLARI)
             okundu = True

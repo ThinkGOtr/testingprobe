@@ -612,14 +612,14 @@ jobs:
     needs: changes
     if: needs.changes.outputs.run_tests == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # Oturum sınırında yeniden deneme (aşağıda) için 30 dk + bekleme payı.
+    timeout-minutes: 45
     continue-on-error: ${{ needs.changes.outputs.trigger != 'deploy' && needs.changes.outputs.trigger != 'nightly' }}
-    # Sauce hesabı tek eşzamanlı oturum: iki koşunun Sauce job'u aynı anda başlarsa ikincisi
-    # "concurrent session limit" ile düşer. Repo genelinde sıraya girer; süren job iptal edilmez.
-    # (GitHub bekleyen tek job tutar: üçüncü gelirse bekleyen eski job iptal olur.)
-    concurrency:
-      group: sauce-${{ github.repository }}
-      cancel-in-progress: false
+    # Sauce hesabı tek eşzamanlı oturum: ikinci koşunun saucectl'i "concurrent session limit" ile
+    # reddedilir; Sauce adımı bu durumda dakikada bir yeniden dener (concurrency grubu kullanılmaz:
+    # GitHub bekleyen tek job tutar, üçüncüsü bekleyen deploy/gece job'unu iptal ederdi).
+    # Altyapı adımları (Node/uv, uygulama, bölge, tünel, saucectl kurulumu) job'u tek başına
+    # düşürmez (continue-on-error); karar yalnızca son "Sauce sonucu" adımındadır.
     env:
       SAUCE_USERNAME: ${{ secrets.SAUCE_USERNAME }}
       SAUCE_ACCESS_KEY: ${{ secrets.SAUCE_ACCESS_KEY }}
@@ -660,6 +660,8 @@ jobs:
 
       - name: Node kurulumu
         if: steps.creds.outputs.enabled == 'true'
+        id: node
+        continue-on-error: true
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -668,6 +670,8 @@ jobs:
 
       - name: uv kurulumu
         if: steps.creds.outputs.enabled == 'true'
+        id: uv
+        continue-on-error: true
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: ${{ env.UV_VERSION }}
@@ -679,6 +683,8 @@ jobs:
       # dönüşüyle her zaman 200 döner, API'nin ayakta olduğunu kanıtlamaz.
       - name: Uygulamayı runner'da başlat (QA ortamı)
         if: steps.creds.outputs.enabled == 'true'
+        id: app
+        continue-on-error: true
         run: |
           set -euo pipefail
           echo "127.0.0.1 $APP_HOST" | sudo tee -a /etc/hosts >/dev/null
@@ -703,6 +709,7 @@ jobs:
       - name: Bölge eşlemesi
         if: steps.creds.outputs.enabled == 'true'
         id: region
+        continue-on-error: true
         run: |
           # Sauce Connect v5 de saucectl ile aynı bölge adlarını ister (us-west-1, eu-central-1, us-east-4).
           case "$SAUCE_REGION" in
@@ -714,6 +721,8 @@ jobs:
 
       - name: Sauce Connect tüneli
         if: steps.creds.outputs.enabled == 'true'
+        id: tunnel
+        continue-on-error: true
         uses: saucelabs/sauce-connect-action@fc54c8b087f2b4b6d4ccc42a2d4bbc64795dfde2 # v3.0.0
         with:
           username: ${{ secrets.SAUCE_USERNAME }}
@@ -724,6 +733,8 @@ jobs:
 
       - name: saucectl kurulumu
         if: steps.creds.outputs.enabled == 'true'
+        id: saucectl
+        continue-on-error: true
         uses: saucelabs/saucectl-run-action@283660aa934c02723c497efa151d582a3acc5801 # v4.5.0
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -734,7 +745,10 @@ jobs:
       # Testler: e2e/tests/**/*.spec.ts — üretilen testler (e2e/tests/generated/) dahil
       # (.sauce/config.yml testMatch).
       - name: Sauce'ta Playwright (Chromium)
-        if: steps.creds.outputs.enabled == 'true'
+        if: >-
+          steps.creds.outputs.enabled == 'true' && steps.node.outcome == 'success'
+          && steps.app.outcome == 'success' && steps.region.outcome == 'success'
+          && steps.tunnel.outcome == 'success' && steps.saucectl.outcome == 'success'
         id: run
         working-directory: demo-app
         env:
@@ -743,18 +757,27 @@ jobs:
           BUILD: ${{ github.event.repository.name }}-${{ github.run_number }}-${{ needs.changes.outputs.trigger }}
         run: |
           set -euo pipefail
-          rc=0
-          saucectl run --config .sauce/config.yml \
-            --region "$SAUCE_REGION" \
-            --tunnel-name "$TUNNEL" \
-            --tunnel-timeout 2m \
-            --build "$BUILD" \
-            -e "BASE_URL=http://$APP_HOST:$APP_PORT" \
-            -e "TP_EXTERNAL_SERVER=1" \
-            -e "DEMOAPP_TEST_TOKEN=$DEMOAPP_TEST_TOKEN" \
-            -e "TP_SAUCE=1" \
-            -e "TP_TRIGGER=$TP_TRIGGER" \
-            2>&1 | tee ../results/sauce/saucectl.log || rc=${PIPESTATUS[0]}
+          # Hesap tek eşzamanlı oturum: başka koşunun Sauce job'u sürüyorsa saucectl "concurrent
+          # session limit" ile döner; 60 sn arayla en çok 20 kez yeniden denenir (~20 dk).
+          for deneme in $(seq 1 20); do
+            rc=0
+            saucectl run --config .sauce/config.yml \
+              --region "$SAUCE_REGION" \
+              --tunnel-name "$TUNNEL" \
+              --tunnel-timeout 2m \
+              --build "$BUILD" \
+              -e "BASE_URL=http://$APP_HOST:$APP_PORT" \
+              -e "TP_EXTERNAL_SERVER=1" \
+              -e "DEMOAPP_TEST_TOKEN=$DEMOAPP_TEST_TOKEN" \
+              -e "TP_SAUCE=1" \
+              -e "TP_TRIGGER=$TP_TRIGGER" \
+              2>&1 | tee ../results/sauce/saucectl.log || rc=${PIPESTATUS[0]}
+            if [ "$rc" = 0 ] || ! grep -q "concurrent session limit" ../results/sauce/saucectl.log; then
+              break
+            fi
+            echo "::notice::Sauce oturum sınırı dolu (başka koşu sürüyor); 60 sn sonra yeniden ($deneme/20)"
+            sleep 60
+          done
           # Karar burada değil, son adımda (sauce.json): altyapı hatası testi kırmızıya boyamasın.
           echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
 
@@ -766,6 +789,9 @@ jobs:
           SKIP_REASON: ${{ steps.creds.outputs.reason }}
           SAUCE_EXIT: ${{ steps.run.outputs.exit_code }}
           TUNNEL: ${{ steps.region.outputs.tunnel }}
+          # Başarısız altyapı adımları (saucectl hiç koşmadıysa özetin nedeni).
+          TP_SAUCE_ALTYAPI: >-
+            ${{ steps.node.outcome == 'failure' && 'Node kurulumu ' || '' }}${{ steps.uv.outcome == 'failure' && 'uv kurulumu ' || '' }}${{ steps.app.outcome == 'failure' && 'uygulama başlatma ' || '' }}${{ steps.region.outcome == 'failure' && 'bölge eşlemesi ' || '' }}${{ steps.tunnel.outcome == 'failure' && 'Sauce Connect tüneli ' || '' }}${{ steps.saucectl.outcome == 'failure' && 'saucectl kurulumu' || '' }}
         run: |
           set -euo pipefail
           if [ "$ENABLED" != "true" ]; then
@@ -801,6 +827,7 @@ jobs:
             failed)
               echo "::error title=Sauce: testler kırmızı::Aynı testler Sauce tarayıcısında kırmızı ($TP_TRIGGER). $neden"
               exit 1 ;;
+            atlandi) echo "::notice title=Sauce atlandı::${neden:-bu tetikte koşmaz}" ;;
             *)
               echo "::warning title=Sauce koşmadı::${neden:-Sauce sonucu okunamadı} — test koşmadı; uygulama hatası sayılmaz."
               { echo; echo "> ⚠️ **Sauce koşmadı:** ${neden:-sonuç okunamadı}. Testler Sauce'ta çalışmadı; bu uygulama ya da test hatası değildir."; } >> "$GITHUB_STEP_SUMMARY" ;;

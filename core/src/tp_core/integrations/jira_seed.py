@@ -494,7 +494,12 @@ def apply(jira: RestJira, seed_plan: SeedPlan, *, delete: bool = False) -> SeedR
         except JiraError as exc:
             result.failed.append(f"{key}: {exc}")
     if not delete:
+        # Etiket yalnız kapalı kayıttan kaldırılır: kapatılamayan açık kayıt etiketini kaybederse
+        # ne sonraki --sil ne yayın onu tanır (yetim açık kayıt kalır).
+        kapali = set(result.closed) | (set(seed_plan.run_labels) - set(seed_plan.run_issues))
         for key, etiketler in seed_plan.run_labels.items():
+            if key not in kapali:
+                continue
             try:
                 jira.edit_issue(key, remove_labels=etiketler)
                 result.unlabeled.append(key)

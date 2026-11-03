@@ -118,7 +118,8 @@ def test_acik_kabulle_merge_pr_ye_yorum_yazar(
     yorumlar = [c["body"] for c in codegen.forge.get_pr_record(a.pr_no).get("comments", [])]
     (kabul,) = [y for y in yorumlar if "açık kabulle merge" in y]
     assert "⚠️ Kırarak doğrulama yapılmadı" in kabul
-    assert "Kabul notu: Sepet sayacı testi, kampanya değil." in kabul
+    assert "Kabul notu: `Sepet sayacı testi, kampanya değil.`" in kabul
+    assert "merge `" in kabul  # merge'den sonra yazıldı: merge sha'sı yorumda
     assert f"Kabul eden: `{muhendis.kullanici_adi}`" in kabul
     assert "codegen.merge_acknowledged" in kabul
 
@@ -630,3 +631,11 @@ def test_uygulama_koku_github_varsayilani(monkeypatch: pytest.MonkeyPatch) -> No
     assert service.fixtures_path() == "e2e/tests/fixtures.ts"
     monkeypatch.setenv(service.APP_ROOT_ENV, "/uygulama/")
     assert service.e2e_root() == "uygulama/e2e"
+
+
+def test_kabul_notu_pr_yorumunda_etkisizlestirilir() -> None:
+    """Serbest metin not: @bahsetme, HTML yorumu, Markdown ve satır sonu PR'da etki etmez."""
+    not_ = service._guvenli_not("@ekip bak\n<!-- gizle --> `kod` # başlık")
+    assert "\n" not in not_ and "<!--" not in not_ and "@ekip" not in not_
+    assert not_.startswith("`") and not_.endswith("`") and not_.count("`") == 2
+    assert service._guvenli_not("  ") == "—"

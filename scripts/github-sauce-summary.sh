@@ -120,7 +120,8 @@ elif [ -n "$exit_code" ] && [ "$exit_code" != "0" ]; then
   fi
 elif [ -z "$exit_code" ]; then
   durum=error
-  neden="saucectl çalışmadı (önceki adım başarısız; serve.log)"
+  altyapi="$(echo "${TP_SAUCE_ALTYAPI:-}" | xargs)"
+  neden="saucectl çalışmadı (${altyapi:+başarısız altyapı adımı: $altyapi; }önceki adım başarısız; serve.log)"
 elif [ "$jobs" = "[]" ]; then
   durum=error
   neden="Sauce job linki bulunamadı"

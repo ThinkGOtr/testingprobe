@@ -368,3 +368,25 @@ def test_cli_artefakt_indir(
         s.flush()
         yid = yerel.id
     assert ci_cli.main(["artefakt-indir", str(yid)]) == ci_cli.RED_KODU
+
+
+def test_budama_disk_butcesini_asinca_en_eskiyi_siler(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sayı sınırının altında olsa da toplam boyut bütçeyi aşarsa en eski kopyalar silinir."""
+    import os
+    import time as _time
+
+    from tp_core.features.ci import github_artifacts as ga
+
+    monkeypatch.setattr(ga, "kok", lambda: tmp_path)
+    for i, ad in enumerate(("1-1", "2-1", "3-1")):
+        d = tmp_path / "gh" / ad
+        d.mkdir(parents=True)
+        (d / "veri.bin").write_bytes(b"x" * 1000)
+        os.utime(d, (_time.time() - 100 + i, _time.time() - 100 + i))
+    silinen = ga.budama(en_cok=30, butce=2500)
+    assert silinen == ["gh/1-1"]  # en eski; kalan iki kopya 2000 bayt ≤ 2500
+    assert sorted(p.name for p in (tmp_path / "gh").iterdir()) == ["2-1", "3-1"]
+    # Az önce hazırlanan (koru) bütçeyi aşsa da silinmez.
+    assert ga.budama(koru=["gh/2-1"], en_cok=30, butce=500) == ["gh/3-1"]

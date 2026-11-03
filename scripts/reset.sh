@@ -44,8 +44,9 @@ if docker volume inspect "$TP_CODEGEN_VOLUME" >/dev/null 2>&1; then
   docker volume rm "$TP_CODEGEN_VOLUME" >/dev/null
   echo "Kod üretimi ekran görüntüleri silindi ($TP_CODEGEN_VOLUME)."
 fi
-# Merge kapısı sonuçları ve GitHub aynası silinen koşulara/PR'lara aittir.
-for vol in "$TP_CHECKS_VOLUME" "$TP_MIRROR_VOLUME"; do
+# Merge kapısı sonuçları, GitHub aynası ve GitHub koşu artefaktlarının yerel kopyası silinen
+# koşulara/PR'lara aittir (kalan kopya aynı GitHub koşu kimliği yeniden işlenirse yeniden kullanılırdı).
+for vol in "$TP_CHECKS_VOLUME" "$TP_MIRROR_VOLUME" "$TP_GH_ARTIFACTS_VOLUME"; do
   if docker volume inspect "$vol" >/dev/null 2>&1; then
     docker volume rm "$vol" >/dev/null
     echo "Silindi ($vol)."
