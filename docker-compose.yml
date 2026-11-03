@@ -82,6 +82,7 @@ x-core-env: &core-env
   # portal Playwright/JUnit/Allure/günlük bağlantılarını GitHub'a gitmeden core'dan sunar.
   TP_GITHUB_ARTIFACTS_PATH: /github-artifacts
   TP_GITHUB_ARTIFACTS_KEEP: ${TP_GITHUB_ARTIFACTS_KEEP:-30}
+  TP_GITHUB_ARTIFACTS_MAX_GB: ${TP_GITHUB_ARTIFACTS_MAX_GB:-5}
   # Kontrol Kulesi pencereleri: son N koşu, flaky ve trend gün sayısı.
   TP_CT_SON_KOSU: ${TP_CT_SON_KOSU:-20}
   TP_CT_FLAKY_GUN: ${TP_CT_FLAKY_GUN:-30}

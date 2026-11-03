@@ -2643,8 +2643,10 @@ def run_merge(ctx: JobContext, engine: Engine) -> dict[str, Any]:
             )
         raise PermanentJobError(f"Merge reddedildi: {engel}")
     forge = _forge()
+    bu_is_merge_etti = False
     try:
         merge_sha: str | None = forge.merge_pr(number, actor, expected_head_sha=head)
+        bu_is_merge_etti = True
     except (ForgeProtectionError, ForgeConflictError, ForgeStateError, ForgeError) as exc:
         merge_sha = None
         try:
@@ -2683,13 +2685,18 @@ def run_merge(ctx: JobContext, engine: Engine) -> dict[str, Any]:
                     "inceleyip merge edin."
                 ) from exc
             raise PermanentJobError(f"Merge reddedildi: {exc}") from exc
-    if kabul:
-        # Merge yapıldıktan SONRA: reddedilen merge için "kabulle merge" yorumu düşmez. İş tek
-        # denemelidir ve birleşmiş PR'ın yeniden işlenmesi erken döner: yorum ikinci kez yazılmaz.
-        _kabul_yorumu(
-            forge, engine, sid, number, actor, head, kabul, kabul_notu, break_durum, merge_sha
-        )
-    return _merged_isaretle(engine, sid, number, head, merge_sha, actor, kaynak="core")
+    sonuc = _merged_isaretle(engine, sid, number, head, merge_sha, actor, kaynak="core")
+    if kabul and bu_is_merge_etti:
+        # Merge bu işte yapıldı ve çekirdekte işlendi: yorum en sonda, en iyi çabayla. Reddedilen ya
+        # da başka yoldan (GitHub arayüzü, eşzamanlı iş) yapılan merge için yazılmaz; iş tek
+        # denemelidir ve birleşmiş PR'ın yeniden işlenmesi erken döner (ikinci yorum yok).
+        try:
+            _kabul_yorumu(
+                forge, engine, sid, number, actor, head, kabul, kabul_notu, break_durum, merge_sha
+            )
+        except Exception as exc:  # denetim yazımı dahil: merge kaydı etkilenmez
+            log.warning("PR #%s kabul yorumu adımı başarısız: %s", number, exc)
+    return sonuc
 
 
 # ------------------------------------------------------- dal güncelleme (main ilerledi)

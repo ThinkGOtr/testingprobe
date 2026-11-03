@@ -321,6 +321,7 @@ export function sonrakiAdimlar(x: SonrakiGirdi): YolAdimi[] {
   const ghCi = ci.filter((k) => k.kaynak === "github");
   const sauceSirada = ghCi.filter((k) => !k.sauce_durum && (k.durum === "queued" || k.durum === "running"));
   const sauceAtlandi = ghCi.length > 0 && ghCi.every((k) => k.sauce_durum === "atlandi");
+  const bitenGh = ghCi.filter((k) => ["passed", "failed"].includes(k.durum));
   const a9 =
     sauce.length > 0
       ? adim(9, {
@@ -350,10 +351,10 @@ export function sonrakiAdimlar(x: SonrakiGirdi): YolAdimi[] {
                 ipucu: "Sahnede açıkça söyleyin: Sauce bu koşularda bilerek atlandı (SAUCE_TETIKLER).",
                 baglanti: { yol: "/kosular", etiket: "Koşular" },
               })
-            : bitenYerel.length > 0
+            : bitenGh.length > 0
               ? adim(9, {
                   hal: "yedek",
-                  kanit: `Sauce sonucu koşulara yazılmadı — testler GitHub Actions'ta koştu (${bitenYerel.length} koşu).`,
+                  kanit: `Sauce sonucu koşulara yazılmadı — testler GitHub Actions'ta koştu (${bitenGh.length} koşu).`,
                   ipucu: "GitHub Actions'ta koşunun sauce job'una bakın.",
                   baglanti: { yol: "/kosular", etiket: "Koşular" },
                 })
@@ -469,7 +470,7 @@ export function sonrakiAdimlar(x: SonrakiGirdi): YolAdimi[] {
 export function locatorAdimlari(x: Pick<YolGirdisi, "demo" | "hatalar" | "kosular">): YolAdimi[] {
   const d = x.demo;
   const destek = d?.locator_demo?.destekleniyor !== false;
-  const neden = d?.locator_demo?.neden ?? "Locator demosu yalnızca yerel forge'da (TP_FORGE=local).";
+  const neden = d?.locator_demo?.neden ?? "Test bakımı demosu bu kipte desteklenmiyor.";
   const ld = d?.locator_durumu ?? null;
   const kirildi = ld === "kirik" || ld === "onarildi";
   const loc = x.hatalar.filter((h) => h.sinif === "test_maintenance");
@@ -478,7 +479,7 @@ export function locatorAdimlari(x: Pick<YolGirdisi, "demo" | "hatalar" | "kosula
   const on = d?.onarim_on_kosulu ?? null;
   const yap = (no: string, ad: string, tur: YolAdimi["tur"], a: Omit<YolAdimi, "no" | "ad" | "tur">): YolAdimi => ({ no, ad, tur, ...a });
   if (!destek) {
-    return [yap("L", "Locator demosu", "sistem", { hal: "engel", kanit: neden })];
+    return [yap("L", "Test bakımı demosu", "sistem", { hal: "engel", kanit: neden })];
   }
   const ilkLoc = enYeni(loc, (h) => h.zaman);
   return [

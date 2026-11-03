@@ -270,11 +270,15 @@ def saklama_sayisi() -> int:
 
 def disk_butcesi() -> int:
     """Yerel kopyaların toplam bayt sınırı (`TP_GITHUB_ARTIFACTS_MAX_GB`, varsayılan 5 GB)."""
+    import math
+
     try:
         gb = float((os.environ.get("TP_GITHUB_ARTIFACTS_MAX_GB") or "").strip() or 5)
     except ValueError:
         gb = 5.0
-    return max(1, int(gb * 1024**3))
+    if not math.isfinite(gb) or gb <= 0:
+        gb = 5.0
+    return int(gb * 1024**3)
 
 
 def _boyut(p: Path) -> int:
@@ -316,12 +320,17 @@ def budama(
     adaylar.sort(key=lambda p: (f"gh/{p.name}" in koru, zaman(p)), reverse=True)
     silinen: list[str] = []
     kullanilan = 0
+    dolu = False  # sayı ya da bütçe bir kez dolunca daha eskilerin hepsi silinir (en eskiden)
     for i, p in enumerate(adaylar):
         ad = f"gh/{p.name}"
         boyut = _boyut(p)
-        if ad in koru or (i < sinir and kullanilan + boyut <= butce_):
+        if ad in koru:
             kullanilan += boyut
             continue
+        if not dolu and i < sinir and kullanilan + boyut <= butce_:
+            kullanilan += boyut
+            continue
+        dolu = True
         shutil.rmtree(p, ignore_errors=True)
         silinen.append(ad)
     return silinen

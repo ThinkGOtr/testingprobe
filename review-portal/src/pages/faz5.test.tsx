@@ -322,6 +322,14 @@ describe("demo yol haritası: türetme", () => {
     const ulasilamadi = demoAdimlari({ ...yerelGirdi, kosular: ghKosu("error") })[8];
     expect(ulasilamadi).toMatchObject({ hal: "yedek", kanit: expect.stringMatching(/ulaşılamadı \(oturum sınırı dolu\)/) });
     expect(ulasilamadi.kanit).not.toMatch(/kimliği yok/);
+    // Karışık veri: başka story'nin GitHub koşusu var ama bu story'nin biten koşuları yerel →
+    // GitHub sayımı yerel koşuları saymaz, "kimlik yok" da denmez.
+    const karisik = demoAdimlari({
+      ...yerelGirdi,
+      kosular: [...yerelGirdi.kosular, { ...yerelGirdi.kosular[0], id: "gh-baska", kaynak: "github" as const, commit: "baska", baslangic: "2020-01-01T00:00:00Z" }],
+    })[8];
+    expect(karisik.kanit).not.toMatch(/kimliği yok/);
+    expect(karisik.kanit).not.toMatch(/GitHub Actions'ta koştu \(\d+ koşu\)/);
     // GitHub kipinde Sauce sonucu henüz yoksa ve koşu sıradaysa "sürüyor"; hepsi atlandıysa nedeniyle yedek.
     const ghSirada = yerelGirdi.kosular.map((k, i) => (i === 0 ? { ...k, kaynak: "github" as const, durum: "running" as const, sauce_durum: null } : k));
     const sirada = demoAdimlari({ ...yerelGirdi, kosular: ghSirada })[8];

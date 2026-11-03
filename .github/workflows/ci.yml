@@ -612,8 +612,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.run_tests == 'true'
     runs-on: ubuntu-24.04
-    # Oturum sınırında yeniden deneme (aşağıda) için 30 dk + bekleme payı.
-    timeout-minutes: 45
+    # Oturum sınırında yeniden deneme (en çok 20 dk, aşağıda) + kurulum + gerçek koşu payı.
+    timeout-minutes: 55
     continue-on-error: ${{ needs.changes.outputs.trigger != 'deploy' && needs.changes.outputs.trigger != 'nightly' }}
     # Sauce hesabı tek eşzamanlı oturum: ikinci koşunun saucectl'i "concurrent session limit" ile
     # reddedilir; Sauce adımı bu durumda dakikada bir yeniden dener (concurrency grubu kullanılmaz:
@@ -747,7 +747,7 @@ jobs:
       - name: Sauce'ta Playwright (Chromium)
         if: >-
           steps.creds.outputs.enabled == 'true' && steps.node.outcome == 'success'
-          && steps.app.outcome == 'success' && steps.region.outcome == 'success'
+          && steps.uv.outcome == 'success' && steps.app.outcome == 'success' && steps.region.outcome == 'success'
           && steps.tunnel.outcome == 'success' && steps.saucectl.outcome == 'success'
         id: run
         working-directory: demo-app
@@ -758,8 +758,12 @@ jobs:
         run: |
           set -euo pipefail
           # Hesap tek eşzamanlı oturum: başka koşunun Sauce job'u sürüyorsa saucectl "concurrent
-          # session limit" ile döner; 60 sn arayla en çok 20 kez yeniden denenir (~20 dk).
-          for deneme in $(seq 1 20); do
+          # session limit" ile döner; 60 sn arayla yeniden denenir, en çok 20 dk (süre sınırlı:
+          # job zaman aşımına düşmesin, exit_code ve neden her durumda yazılsın).
+          bitis=$((SECONDS + 20 * 60))
+          deneme=0
+          while :; do
+            deneme=$((deneme + 1))
             rc=0
             saucectl run --config .sauce/config.yml \
               --region "$SAUCE_REGION" \
@@ -775,7 +779,11 @@ jobs:
             if [ "$rc" = 0 ] || ! grep -q "concurrent session limit" ../results/sauce/saucectl.log; then
               break
             fi
-            echo "::notice::Sauce oturum sınırı dolu (başka koşu sürüyor); 60 sn sonra yeniden ($deneme/20)"
+            if [ "$SECONDS" -ge "$bitis" ]; then
+              echo "::warning::Sauce oturum sınırı 20 dk boyunca dolu kaldı; vazgeçildi"
+              break
+            fi
+            echo "::notice::Sauce oturum sınırı dolu (başka koşu sürüyor); 60 sn sonra yeniden (deneme $deneme)"
             sleep 60
           done
           # Karar burada değil, son adımda (sauce.json): altyapı hatası testi kırmızıya boyamasın.

@@ -134,7 +134,7 @@ Portalın sağ üstündeki **Canlı olaylar** göstergesi yeşil olmalı.
 | F4 | Kredi limiti uyarısı kodda yok | **Kod/veri hatalı** |
 
 Bug taslaklarında: **C3 → "TPD-5 kaydına bağla"**, **F2 → "TPD-5 kaydına bağla"**, **F4 → "Onayla ve
-Jira'da aç"**, **C2 kırma koşusu taslağı → dokunma** (ekranda "önerilen karar Reddet" yazar; sahnede
+Jira'da aç"**, **C2 kırma koşusu taslağı → dokunma** (düğmenin üzerine gelince "önerilen karar Reddet" görünür; sahnede
 basma).
 
 ---
@@ -396,7 +396,7 @@ sizin deploy hattınız gönderir; burada düğmeyle taklit ediyoruz."
 
 **Sauce sonucu (push/deploy/gece):** koşu detayının başlığında Sauce çipi görünür: **"Sauce: geçti"**,
 **"Sauce: kırmızı"**, **"Sauce koşmadı: …"**, **"Sauce atlandı: …"** ya da koşu sürerken **"Sauce:
-sırada/sürüyor"**. Sauce'ta testler kırmızıysa koşu kırmızı olur. Sauce koşamadıysa (ör. altyapı
+sırada/sürüyor"**. Sauce'ta testler kırmızıysa deploy/gece koşusu kırmızı olur; push'ta koşu yeşil kalır, çip "Sauce: kırmızı" der. Sauce koşamadıysa (ör. altyapı
 adımı başarısız) koşu yeşil kalır, GitHub özetinde **"Sauce koşmadı: saucectl çalışmadı (başarısız
 altyapı adımı: …)"** yazar — test koşmadığı için uygulama hatası sayılmaz. PR koşularında Sauce
 atlanır; özette uyarı değil **"Sauce atlandı"** notu görünür.
@@ -547,7 +547,7 @@ ve **Kaynak** sütunuyla tanı. Her satırı aç (özete tıkla) ve kararı ver:
 | "Sepet: **6 adet** … bedava adet 0 beklenirken 1 **görünüyor**" | **Triage** | C3 testi (kod üretiminde yakalanan) | **"TPD-5 kaydına bağla"** |
 | "Sepet: **6 adet** … bedava adet 0 beklenirken 1 **veriliyor**" | **Tutarlılık denetimi** | F2 — Bölüm A'da analistin "kod hatalı" dediği kampanya bulgusu | **"TPD-5 kaydına bağla"** |
 | "Sepet: **Kredi limiti** aşıldığında … uyarısı gösterilmiyor" | **Tutarlılık denetimi** | F4 — kredi limiti bulgusu; mükerrer adayı yok | **"Onayla ve Jira'da aç"** |
-| "Sepet: **7 adet** … bedava adet 1 beklenirken 0 görünüyor" + **"Kasıtlı kırma koşusu (BREAK_CAMPAIGN)"** etiketi | Triage | Adım 6'da bilerek bozduğumuz koşu | **Dokunma** (ekranda "önerilen karar Reddet" yazar; sahnede basma, yol haritasını etkilemez) |
+| "Sepet: **7 adet** … bedava adet 1 beklenirken 0 görünüyor" + **"Kasıtlı kırma koşusu (BREAK_CAMPAIGN)"** etiketi | Triage | Adım 6'da bilerek bozduğumuz koşu | **Dokunma** (düğmenin üzerine gelince "önerilen karar Reddet" görünür; sahnede basma, yol haritasını etkilemez) |
 
 (C3 kodu üretilmediyse ilk satır yoktur; diğer üçüyle devam et.)
 

@@ -1267,6 +1267,16 @@ def github_ingest(session: Session, run: Run, wr: Mapping[str, Any]) -> str:
                     dosyalar = github_artifacts.disk_dosyalari(yerel_kopya, adlar, EK_KALIPLARI)
                 except OSError as exc:
                     log.warning("yerel artefakt kopyası okunamadı, indiriliyor: %s", exc)
+                    dosyalar = None
+                # os.walk hataları yutar: kopya okuma sırasında silindiyse sonuç boş/eksik gelir.
+                if (
+                    dosyalar is None
+                    or github_artifacts.mevcut(gh_dizin) is None
+                    or not any(
+                        k.rsplit("/", 1)[-1] in ("junit.xml", "results.json") for k in dosyalar
+                    )
+                ):
+                    dosyalar = None
                     yerel_kopya = None
             if dosyalar is None:
                 sonuc_zip = gh.artifact_zip(sonuc_art)
