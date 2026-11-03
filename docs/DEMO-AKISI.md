@@ -76,7 +76,7 @@ make security-check # Özet: 10/10
 
 - **Manuel baz değer (reset'e dayanıklı kopya):** `make reset` portaldan girilen baz değerleri siler
   (gereksinimler yeni kimlikle kurulur). Kalıcı kopya gözden geçirilmiş `rules/baz-degerler.yaml`'dır
-  (yalnızca gerçek F0 ölçümü; bugün boş). Demo-A adım 1 eşitlemesinden sonra `GET /baseline-file`
+  (yalnızca gerçek F0 ölçümü; TPD-1: 2700 sn, Gokhan Sipahi, 2026-11-03). Demo-A adım 1 eşitlemesinden sonra `GET /baseline-file`
   (ya da TPD-1 gereksinim detayı) ile TPD-1'in `etkin_etiket='ölçüm'` okuduğunu doğrulayın;
   dosyada değer yoksa "ölçülmedi" doğrudur — sahnede değer uydurulmaz.
 - İkinci terminal yedek komutlar için hazır dursun (`make status`, `make demo-check`, `make break`).
