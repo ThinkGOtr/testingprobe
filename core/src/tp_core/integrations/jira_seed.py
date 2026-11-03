@@ -412,7 +412,8 @@ def plan(jira: RestJira, project: str = "TPD") -> SeedPlan:
     acik = {
         i.key
         for i in jira.search(
-            f'project = "{project}" AND statusCategory != Done ORDER BY key ASC', max_results=1000
+            f'project = "{project}" AND statusCategory != Done ORDER BY key ASC',  # gitleaks:allow
+            max_results=1000,
         )
     }
     jql = f'project = "{project}" AND labels = "{AI_LABEL}" ORDER BY key ASC'

@@ -1,0 +1,3 @@
+# gitleaks yanlış alarmları (parmak izi: commit:dosya:kural:satır). Gerçek sır buraya eklenmez.
+# jira_seed.py: Jira JQL sorgu metni generic-api-key sanıldı (sır değil).
+8a53787099461605735e70f84cb1020be02478b0:core/src/tp_core/integrations/jira_seed.py:generic-api-key:323
