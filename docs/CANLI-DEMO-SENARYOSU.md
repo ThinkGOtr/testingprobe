@@ -474,7 +474,12 @@ saniyeler." (CI beklerken **Denetim** ekranını göster — §8.)
 
 ### Adım 12 · Triage (1,5 dk)
 
-**Profil: Testçi** (ya da Mühendis) → C3'ün triage bağlantısı / **Bug taslakları** → C3
+Göstermelik adım — karar yok. Anlatılan: kırmızı C3 testini ürün nasıl sınıflıyor (ürün hatası mı,
+test bakımı mı, ortam mı, flaky mi) ve hazır bug taslağını nasıl çıkarıyor.
+
+**Profil: Testçi** → sol menü **Bug taslakları** → **C3** satırı ("6 adet kampanyalı üründe bedava
+ürün verilmez") → detay açılır. (C3 kodu üretilmediyse — ör. C3 düzeltildiyse — bu satır yoktur;
+adımı atla, 13'e geç.)
 
 - Görülen: sınıf **product_defect**, "Karar kaynağı: deterministik kural"; eşleşen sinyaller
   (assertion farkı, eleman bulundu, sayfa yapısı beklenen, tutarlı tekrar); hazır bug taslağı;
