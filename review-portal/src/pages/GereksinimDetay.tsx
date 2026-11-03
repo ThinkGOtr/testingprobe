@@ -7,7 +7,7 @@ import type { Bulgu, GereksinimDetay as Detay } from "../api/types";
 import { AkisAdimlari } from "../components/AkisAdimlari";
 import { BazDegerKarti } from "../components/BazDegerKarti";
 import { useBildirim } from "../components/Bildirim";
-import { BulguKarti } from "../components/BulguKarti";
+import { BulguKarti, SON_HAL_SONRASI } from "../components/BulguKarti";
 import { BosDurum, Cip, DisBaglanti, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { akisAdimi, DENETIM_ISLERI, hataAdimi, URETIM_ISI } from "../lib/akis";
@@ -73,6 +73,9 @@ export function GereksinimDetay() {
   // Yazılacak düzeltme ve açık engelleyici yokken analist belgeyi açıkça son hal yapar (ör.
   // güvenilmez denetim sonrası otomatik son hal olmaz; core apply-doc-fixes'i düzeltmesiz kabul eder).
   const sonHalAcik = g.durum === "findings_open" && yazilacak === 0 && acikEngelleyici === 0;
+  // Belge son hale geçtiyse düzeltme düğmesi artık işlevsiz: soluk düğme "takıldı" sanılmasın,
+  // yerine gereksinimin güncel durumu yazılır.
+  const sonHalSonrasi = SON_HAL_SONRASI.has(g.durum);
   const bosBulgu = bosBulguMetni(g, elenen, dogrulaniyor);
   const poCevaplari = g.po_cevaplari ?? [];
 
@@ -290,6 +293,11 @@ export function GereksinimDetay() {
         eylemler={
           <>
           {g.son_kontrol && <ReplayRozeti mode={g.son_kontrol.mode} />}
+          {sonHalSonrasi ? (
+            <span data-testid="son-hal-durumu">
+              <Cip ton={d.ton}>✓ Doküman son hal · {d.etiket}</Cip>
+            </span>
+          ) : (
           <IslemDugmesi
             roller={["analyst"]}
             disabled={sonHalAcik ? false : yazilacak === 0 || turSiniri}
@@ -328,6 +336,7 @@ export function GereksinimDetay() {
               </span>
             )}
           </IslemDugmesi>
+          )}
           </>
         }
       >
@@ -335,6 +344,12 @@ export function GereksinimDetay() {
           Doküman kodla (salt okuma repo) ve veriyle (salt okuma sorgu) karşılaştırılır. Yalnızca kanıtı deterministik olarak yeniden
           doğrulanan bulgular gösterilir.
         </p>
+        {sonHalSonrasi && (
+          <p className="kucuk" data-testid="son-hal-notu">
+            Düzeltmeler Jira'ya yazıldı ve son kontrol turunda engelleyici bulgu kalmadı. Aşağıdaki kartlar bu turun kaydıdır;
+            karar gerekmez.
+          </p>
+        )}
         {g.kontrol_turu > 0 && (
           <p className="satir-ogeler kucuk" data-testid="bulgu-sayaclari">
             <span>

@@ -174,10 +174,13 @@ doğrulaması canlı."
 4. Kararları **§1.4 tablosundan okuyarak** ver:
    **F1 → "Dokümanı düzelt"**, **F2 → "Kod/veri hatalı"**, **F3 → "Dokümanı düzelt"**,
    **F4 → "Kod/veri hatalı"**
-5. **"Düzeltmeleri Jira'ya yaz"**
+5. **"Düzeltmeleri Jira'ya yaz"** — **bir kez** tıkla; birkaç saniye sürer (Jira'ya yazım +
+   2. kontrol turu + PO sorusu).
 
 - Görülen: önerilen metin farkı (AC3 → "Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL…");
-  "Belge son hal yapıldı; PO teyidi bekleniyor."
+  "Belge son hal yapıldı; PO teyidi bekleniyor." Tutarlılık kartının sağ üstünde düğmenin yerine
+  **"✓ Doküman son hal · PO teyidi bekliyor"** çıkar; altındaki kartlar 2. turun kaydıdır
+  ("Güncelliğini yitirdi" etiketi normaldir), karar gerekmez.
 6. **Jira sekmesine geç** (TPD-1'i yenile): açıklama güncellenmiş, `🤖 AI Testing Probe:` ile
    başlayan PO soru yorumu, `tp-po-pending` etiketi.
 

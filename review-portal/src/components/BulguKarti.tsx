@@ -44,7 +44,7 @@ function KanitGorunumu({ k }: { k: Kanit }) {
 }
 
 /** Doküman "son hal"e ulaştıktan sonraki gereksinim durumları (uyarılar artık karar beklemez). */
-const SON_HAL_SONRASI = new Set<GereksinimDurumu>(["doc_final", "pending_po", "po_approved", "generating", "cases_ready", "done"]);
+export const SON_HAL_SONRASI = new Set<GereksinimDurumu>(["doc_final", "pending_po", "po_approved", "generating", "cases_ready", "done"]);
 
 export function BulguKarti({
   bulgu,
