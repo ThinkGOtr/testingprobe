@@ -492,12 +492,17 @@ değeri içermeyen taslak otomatik reddedilir."
 
 ### Adım 13 · Testçi kararı (1,5 dk)
 
-**Bug taslakları** listesinde dört taslak var. Sırayla:
+**Profil: Testçi** → sol menü **Bug taslakları**. Ekranda C/F numarası yazmaz; satırları **özet**
+ve **Kaynak** sütunuyla tanı. Her satırı aç (özete tıkla) ve kararı ver:
 
-1. **C3** taslağı → **"TPD-5 kaydına bağla"**
-2. **F2** (kampanya, Bölüm A'dan) → **"TPD-5 kaydına bağla"**
-3. **F4** (kredi limiti) → **"Onayla ve Jira'da aç"**
-4. **C2 kırma koşusu** taslağı → **dokunma** (bilerek bozduğumuz koşudan geldi)
+| Ekrandaki özet (başı) | Kaynak | Nedir | Karar |
+|---|---|---|---|
+| "Sepet: **6 adet** … bedava adet 0 beklenirken 1 veriliyor" | **Triage** | C3 testi (kod üretiminde yakalanan) | **"TPD-5 kaydına bağla"** |
+| "Sepet: **6 adet** … bedava adet 0 beklenirken 1 veriliyor" | **Tutarlılık denetimi** | F2 — Bölüm A'da analistin "kod hatalı" dediği kampanya bulgusu | **"TPD-5 kaydına bağla"** |
+| "Sepet: **Kredi limiti** aşıldığında … uyarısı gösterilmiyor" | **Tutarlılık denetimi** | F4 — kredi limiti bulgusu; mükerrer adayı yok | **"Onayla ve Jira'da aç"** |
+| "Sepet: **7 adet** … bedava adet 1 beklenirken 0 görünüyor" + **"Kasıtlı kırma koşusu"** etiketi | Triage | Adım 6'da bilerek bozduğumuz koşu | **Dokunma** |
+
+(C3 kodu üretilmediyse ilk satır yoktur; diğer üçüyle devam et.)
 
 **Söyle:** "Kayıt açma kararı testçinin. Mükerrerse mevcut kayda kanıt eklenir, yeni kayıt açılmaz.
 Analistin dokümandan bulduğu hata ile testin yakaladığı hata **aynı Jira kaydında buluştu.**"
