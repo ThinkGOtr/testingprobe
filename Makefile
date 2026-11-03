@@ -32,8 +32,8 @@ seed: ## Deterministik başlangıç verisi (tekrar çalıştırmak güvenli)
 reset: ## Denetim kaydını dışa aktarır, çekirdek veriyi siler, yeniden başlatır
 	@scripts/reset.sh
 
-jira-seed: ## Gerçek Jira'yı demo başlangıcına döndürür (önce plan; uygulamak için: make jira-seed ONAY=1)
-	@docker compose exec -T core-worker python -m tp_core.integrations.jira_seed $(if $(ONAY),--onay,)
+jira-seed: ## Gerçek Jira'yı demo başlangıcına döndürür (önce plan; uygula: ONAY=1; koşu kayıtlarını sil: SIL=1 — make reset siler)
+	@docker compose exec -T core-worker python -m tp_core.integrations.jira_seed $(if $(ONAY),--onay,) $(if $(SIL),--sil,)
 
 forge-init: ## Yerel forge deposunu hazırlar (varsa dokunmaz; yeniden kurmak için: make forge-init F=--force)
 	@scripts/forge-init.sh $(F)

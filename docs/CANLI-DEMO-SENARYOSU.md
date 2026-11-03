@@ -35,7 +35,7 @@ Yalnızca bu yedi kayıt gerekir; **anahtarları sabittir** (REPLAY kayıtları 
 | TPD-7 | Bug | Giriş sayfasında hata mesajı İngilizce görünüyor | Done | Kapalı bug (aday sayılmaz) |
 
 TPD-8 ve sonrası (Test kayıtları, yeni Bug'lar) demo sırasında ürünce açılır; `make reset` onları
-kapatır ve kimlik etiketini kaldırır — gerekmezler. Projede ayrıca: Xray (`Test` iş türü), bağlantı
+**siler** (yazma hesabı "Delete issues" izni ister) — gerekmezler. Projede ayrıca: Xray (`Test` iş türü), bağlantı
 türleri `Test` ve `Relates`, ürünün yazma hesabı ve **ayrı** PO hesabı.
 
 > **Altın kurallar (sunum boyunca)**
@@ -94,7 +94,7 @@ Sonra sunucuda (`make reset` tek başına: soruyu yanıtlayabilmek için):
 ```bash
 cd /opt/testingprobe
 make reset          # Jira temizlik planını gösterir, "[e/H]" sorusuna → e
-                    # (TPD-1..7 yorumları da silinir; bağlantılar kalır; seed'i de kendisi çalıştırır)
+                    # (TPD-8 ve sonrası koşu kayıtları SİLİNİR, TPD-1..7 yorumları silinir; seed'i de kendisi çalıştırır)
 ```
 
 ```bash
