@@ -412,6 +412,16 @@ süresi."
 
 ## 6. Bakım — locator kırılması ve tek satırlık onarım (4 dk)
 
+**Ne anlatılıyor:** test otomasyonunun en pahalı kısmı yazmak değil **bakımı**. Geliştirici
+"Sepete ekle" butonunun teknik kimliğini değiştirir (`data-testid` `add-to-cart` → `cart-add`);
+işlev aynı, uygulama sağlam — ama o butona tıklayan bütün testler kırmızı olur. Ürün: (1) kural
+tabanlı, AI'sız ayırt eder — butonun rolü + adı sayfada duruyor, yalnız kimlik değişmiş → **ürün
+hatası değil, test bakımı** (22 kırmızı için 22 bug açmaz); (2) **tek satırlık onarım PR'ı** açar,
+AST koruması assertion'lara dokunulamayacağını garanti eder (gerçek hata testi değiştirerek
+gizlenemez); (3) insan bir satırı görüp merge eder, hepsi yeşile döner. **"Locator'ı kır"**
+düğmesi o geliştiriciyi taklit eder: kimliği değiştiren commit'i main'e alır, uygulamayı yeniden
+derler, CI'ı başlatır.
+
 > **Zamanlama:** Adım 7–8'in koşuları **bittikten sonra** L1'i başlat, sonra hemen Bölüm C'ye geç;
 > kırmızı koşu Bölüm C sırasında oluşur (GitHub Actions birkaç dakika sürer). Push koşusu bitmeden
 > kırma: koşu ortasında uygulama değişirse sonuçlar `environment` sınıflanır, onarım önerilmez.
