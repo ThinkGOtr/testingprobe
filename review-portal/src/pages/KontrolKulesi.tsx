@@ -72,11 +72,50 @@ export function KontrolKulesi() {
         </Uyari>
       )}
 
+      {/*
+        KPI şeridi (§5 F4, §4.12 stat şeridi): öğeler kartlardan taşındı (kopya değil); testid ve (i) ipucu
+        öğeyle birlikte. Maliyet şeride girmez (AI katkısı kartında kalır). "Geçme oranı" h2 kartta tek.
+      */}
+      <div className="metrik-izgara kule-kpi" data-testid="kule-kpi">
+        <Metrik
+          etiket={<KpiBaslik ad="Geçme oranı" k={k} anahtar="gecme_orani" />}
+          deger={<span data-testid="gecme-orani">{k.gecme_orani.oran === null ? <Olculmedi metin="veri yok" /> : yuzde(k.gecme_orani.oran)}</span>}
+        />
+        {/* DOM sırası "⚠ n açık defect adayı" okunur; etiket görsel olarak üstte (CSS order). */}
+        <div className="metrik kule-kpi-defect" data-testid="defect-adayi-ozet">
+          <div className={`metrik-deger${defectAdayi > 0 ? " kule-kpi-uyari" : ""}`}>
+            {k.karne.length === 0 ? "—" : defectAdayi > 0 ? `⚠ ${defectAdayi}` : defectAdayi}
+          </div>{" "}
+          <div className="metrik-etiket">açık defect adayı</div>
+          {defectAdayi > 0 && (
+            <div className="metrik-alt">
+              Assertion kırmızı; PR açılmadı, main koşularına ve bu orana girmez. <Link to="/kod">Kod üretiminde incele</Link>
+            </div>
+          )}
+        </div>
+        <HedefOlcer
+          etiket="Case kabul oranı"
+          deger={ai.kabul_orani}
+          hedef={ai.kabul_hedefi}
+          bosMetin="henüz karar yok"
+          ek={<KaynakIpucu kaynak={k.kaynaklar.kabul_orani} />}
+        />
+        <HedefOlcer
+          etiket="Script ilk review başarısı"
+          deger={ai.script_ilk_review}
+          hedef={ai.script_hedefi}
+          bosMetin="henüz merge/review yok"
+          ek={<KaynakIpucu kaynak={k.kaynaklar.script_ilk_review} />}
+        />
+        <Metrik
+          etiket={<KpiBaslik ad="Hazırlık kazancı" k={k} anahtar="kazanc_orani" />}
+          deger={<span data-testid="hazirlik-kazanci">{kazanc.oran === null ? <Olculmedi metin={kazanc.replay_haric > 0 ? "REPLAY: hesaplanmaz" : "ölçülmüş baz yok"} /> : yuzde(kazanc.oran)}</span>}
+          alt={<span data-testid="kazanc-kapsam">{kazanc.kapsam}</span>}
+        />
+      </div>
+
       <div className="kule-izgara">
-        <Kart baslik="Geçme oranı" eylemler={<KaynakIpucu kaynak={k.kaynaklar.gecme_orani} />} className="kule-oran">
-          <div className="buyuk-sayi" data-testid="gecme-orani">
-            {k.gecme_orani.oran === null ? <Olculmedi metin="veri yok" /> : yuzde(k.gecme_orani.oran)}
-          </div>
+        <Kart baslik="Geçme oranı" className="kule-oran">
           <p className="soluk">
             {k.gecme_orani.metin
               ? k.gecme_orani.metin
@@ -86,15 +125,6 @@ export function KontrolKulesi() {
                 ? `Son ${k.gecme_orani.son_n ?? k.gecme_orani.toplam} CI koşusundan ${k.gecme_orani.gecen}/${k.gecme_orani.toplam} geçti (kasıtlı kırma koşuları hariç)`
                 : `${k.gecme_orani.donem_gun ? `Son ${k.gecme_orani.donem_gun} gün · ` : ""}${k.gecme_orani.gecen}/${k.gecme_orani.toplam} test sonucu (kasıtlı kırma koşuları hariç)`}
           </p>
-          {defectAdayi > 0 && (
-            <p className="kucuk" data-testid="defect-adayi-ozet">
-              <Cip ton="uyari">⚠ {defectAdayi} açık defect adayı</Cip>{" "}
-              <span className="soluk">
-                Assertion kırmızı; PR açılmadı, main koşularına ve bu orana girmez.{" "}
-                <Link to="/kod">Kod üretiminde incele</Link>
-              </span>
-            </p>
-          )}
           {k.gecme_orani.test && k.gecme_orani.test.toplam > 0 && (
             <p className="kucuk">
               Test bazında: {k.gecme_orani.test.oran === null ? "—" : yuzde(k.gecme_orani.test.oran)} ({k.gecme_orani.test.gecen}/{k.gecme_orani.test.toplam})
@@ -115,20 +145,6 @@ export function KontrolKulesi() {
         </Kart>
 
         <Kart baslik="AI katkısı" className="kule-ai">
-          <HedefOlcer
-            etiket="Case kabul oranı"
-            deger={ai.kabul_orani}
-            hedef={ai.kabul_hedefi}
-            bosMetin="henüz karar yok"
-            ek={<KaynakIpucu kaynak={k.kaynaklar.kabul_orani} />}
-          />
-          <HedefOlcer
-            etiket="Script ilk review başarısı"
-            deger={ai.script_ilk_review}
-            hedef={ai.script_hedefi}
-            bosMetin="henüz merge/review yok"
-            ek={<KaynakIpucu kaynak={k.kaynaklar.script_ilk_review} />}
-          />
           {(ai.pass_at_1 !== null || ai.duzeltme_sonrasi !== null) && (
             <p className="kucuk">
               pass@1 {ai.pass_at_1 === null ? "—" : yuzde(ai.pass_at_1)} · düzeltme sonrası {ai.duzeltme_sonrasi === null ? "—" : yuzde(ai.duzeltme_sonrasi)}
@@ -139,11 +155,6 @@ export function KontrolKulesi() {
               etiket={<KpiBaslik ad="Case başına AI + review" k={k} anahtar="hazirlik_suresi" />}
               deger={toplamSure === null ? <Olculmedi /> : sure(toplamSure)}
               alt={toplamSure === null ? undefined : `AI ${sure(ai.ort_ai_sure_ms)} · review ${sure(ai.ort_review_sure_ms)}`}
-            />
-            <Metrik
-              etiket={<KpiBaslik ad="Hazırlık kazancı" k={k} anahtar="kazanc_orani" />}
-              deger={<span data-testid="hazirlik-kazanci">{kazanc.oran === null ? <Olculmedi metin={kazanc.replay_haric > 0 ? "REPLAY: hesaplanmaz" : "ölçülmüş baz yok"} /> : yuzde(kazanc.oran)}</span>}
-              alt={<span data-testid="kazanc-kapsam">{kazanc.kapsam}</span>}
             />
             <Metrik
               etiket={<KpiBaslik ad="Maliyet (toplam)" k={k} anahtar="maliyet" />}

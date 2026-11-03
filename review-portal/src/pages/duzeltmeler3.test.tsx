@@ -185,9 +185,11 @@ describe("canlı derleme (VITE_MOCK=0): uydurma KPI yok", () => {
   it("örnek veri modunda da manuel baz değer uydurulmaz: 'ölçülmedi', kazanç yüzdesi yok; tam genişlik ÖRNEK VERİ bandı", async () => {
     await oturumAc("sunucu");
     sar(<KontrolKulesi />);
-    const kart = await screen.findByRole("region", { name: "AI katkısı" });
-    expect(within(kart).getByText("ölçülmüş baz yok")).toBeInTheDocument();
-    expect(kart).not.toHaveTextContent(/Kazanç %/);
+    // F4: Hazırlık kazancı AI katkısı kartından KPI şeridine taşındı (§5); bölge "AI katkısı" kalır.
+    expect(await screen.findByRole("region", { name: "AI katkısı" })).toBeInTheDocument();
+    const serit = screen.getByTestId("kule-kpi");
+    expect(within(serit).getByText("ölçülmüş baz yok")).toBeInTheDocument();
+    expect(serit).not.toHaveTextContent(/Kazanç %/);
   });
 
   it("örnek veri modunda her ekranın üstünde 'ÖRNEK VERİ — gerçek değil' bandı", async () => {

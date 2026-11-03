@@ -342,6 +342,30 @@ describe("Kontrol Kulesi", () => {
   });
 });
 
+describe("Kontrol Kulesi: KPI şeridi (F4)", () => {
+  it("beş öğe şeritte; testid ve (i) ipucu öğeyle taşındı, kartlarda kopya yok; maliyet şeritte değil", async () => {
+    await oturumAc("sunucu");
+    uygulama("/kontrol-kulesi");
+    const serit = await screen.findByTestId("kule-kpi");
+    for (const id of ["gecme-orani", "defect-adayi-ozet", "hazirlik-kazanci", "kazanc-kapsam"]) {
+      expect(screen.getAllByTestId(id)).toHaveLength(1);
+      expect(serit).toContainElement(screen.getByTestId(id));
+    }
+    expect(within(serit).getByRole("meter", { name: "Case kabul oranı" })).toBeInTheDocument();
+    expect(screen.getAllByRole("meter", { name: "Case kabul oranı" })).toHaveLength(1);
+    expect(within(serit).getByText("Script ilk review başarısı")).toBeInTheDocument();
+    for (const ad of [/^Kaynak: test_result/, /1 − Σ/]) expect(within(serit).getAllByRole("img", { name: ad })).toHaveLength(1);
+    expect(serit).not.toHaveTextContent(/Maliyet|Bugün/);
+    expect(screen.getAllByRole("heading", { name: "Geçme oranı" })).toHaveLength(1);
+    expect(within(serit).queryByRole("heading")).toBeNull();
+    const ai = screen.getByRole("region", { name: "AI katkısı" });
+    expect(within(ai).getByText("Maliyet (toplam)")).toBeInTheDocument();
+    expect(within(ai).queryByTestId("hazirlik-kazanci")).toBeNull();
+    expect(within(screen.getByRole("region", { name: "Geçme oranı" })).queryByTestId("gecme-orani")).toBeNull();
+    expect(screen.getAllByText("ölçülmüş baz yok")).toHaveLength(1);
+  });
+});
+
 describe("rol bazlı açılış", () => {
   it("varsayilanSayfa: sunucu → Demo yol haritası, mühendis → Kod üretimi; uç yoksa sıradaki ekran", () => {
     expect(varsayilanSayfa("presenter")).toBe("/yol-haritasi");
