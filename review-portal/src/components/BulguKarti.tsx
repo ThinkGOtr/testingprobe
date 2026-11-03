@@ -102,7 +102,7 @@ export function BulguKarti({
   }
 
   return (
-    <article className={`bulgu bulgu-${bulgu.severity}`} aria-labelledby={`${id}-baslik`}>
+    <article className={`bulgu bulgu-${bulgu.severity}`} data-durum={bulgu.durum} aria-labelledby={`${id}-baslik`}>
       <header className="bulgu-baslik">
         <div className="satir-ogeler">
           <Cip ton={bulgu.severity === "blocking" ? "hata" : "uyari"}>{bulgu.severity === "blocking" ? "Engelleyici" : "Uyarı"}</Cip>

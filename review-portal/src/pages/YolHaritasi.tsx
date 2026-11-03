@@ -69,7 +69,7 @@ async function yukle(): Promise<Yuklenen> {
 function AdimSatiri({ a }: { a: YolAdimi }) {
   const h = HAL[a.hal];
   return (
-    <li className={`yh-adim yh-${a.hal}`} data-testid={`yh-adim-${a.no}`} data-hal={a.hal}>
+    <li className={`yh-adim yh-${a.hal}`} data-testid={`yh-adim-${a.no}`} data-hal={a.hal} data-tur={a.tur}>
       <span className="yh-no" aria-hidden="true">
         {a.hal === "tamam" ? h.isaret : a.no}
       </span>
