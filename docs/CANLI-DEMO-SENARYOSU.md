@@ -160,7 +160,11 @@ hesapla ve yalnızca insan onaylı içerikle yapılır."
    - **F2** kampanya kuralı — kanıt `campaign.py:23` → `return adet // 6`
    - **F3** minimum tutar — kanıt SQL: `ayar.min_siparis_tutari = 750.00`
    - **F4** kredi limiti uyarısı kodda yok
-3. Bir kartın **kanıtını** aç (dosya:satır / SQL + sonuç).
+3. Kanıtı göster — tıklama gerekmez, kartın başlığının altında açık durur:
+   - **F2** kartı: gri **"Kod"** kutusu, `campaign.py:23`, vurgulu satır `return adet // 6`.
+   - **F3** kartı: **"Veri"** kutusu, SQL sorgusu ve altında sonucu (`750.00`).
+   - **F1**'de kanıt kutusu yoktur ("Kanıt dokümanın kendisi"): çelişki dokümanın içinde.
+   - Her kartın sağ üstündeki yeşil **"✓ kanıt doğrulandı"** rozetini işaret et.
 
 **Söyle:** "AI dokümanı yalnızca kendi içinde okumadı; uygulamanın **koduyla ve veritabanıyla**
 karşılaştırdı, salt okunur. Her bulgunun kanıtı var ve kanıt ekrana gelmeden önce deterministik
