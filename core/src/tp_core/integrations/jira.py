@@ -25,6 +25,7 @@ import logging
 import os
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Any
@@ -37,7 +38,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from tp_core.integrations.jira_adf import (
     adf_to_text,
     build_description,
+    has_bot_header,
     parse_description,
+    strip_bot_header,
     text_to_adf,
     valid_account_id,
     with_bot_header,
@@ -842,4 +845,327 @@ def get_jira(settings: JiraSettings | None = None, *, http: httpx.Client | None 
         http=http,
         timeout_s=s.jira_timeout_s,
         browse_url=s.jira_browse_url,
+    )
+
+
+# ------------------------------------------------------------ asistan: dar okuyucu
+#
+# AI-ASISTAN-PLANI §5.6. Asistanın `jira_issue` aracı `RestJira`'yı hiç görmez; yalnızca bu
+# okuyucuyu alır: üç okuma yöntemi (`get_issue`, `son_yorumlar`, `issue_url`), yazma yöntemi yok.
+# En az yetki üç katmanlıdır: (1) sınıfta yazma yöntemi yok, (2) httpx istemcisinin transport'u
+# GET dışındaki her isteği gönderilmeden reddeder, (3) kimlik `JIRA_READ_*` okuma hesabıdır
+# (`security-check` gerçek Jira'da bu hesabın yorum/issue yazma izni taşımadığını denetler).
+#
+# Kişi verisi modele gitmez: yorumlar ham ADF üzerinde tek geçişte işlenir — kısıtlı yorumlar
+# (`visibility` dolu ya da `jsdPublic=false`) elenir, bot yorumu `has_bot_header` ile tanınır,
+# yazar ve ADF mention'ları rol etiketine ("PO", "analyst" …) ya da mesaj içi takma ada
+# ("Kişi-1") çevrilir; ad/e-posta/accountId metne hiç girmez.
+
+BOT_ETIKETI = "Testing Probe botu"
+PO_ETIKETI = "PO"
+TAKMA_AD_ONEKI = "Kişi"
+# `JIRA_HESAP_*` (ürün yorumlarında @bahsedilen rol hesapları) → portal rol kodu.
+HESAP_ROLLERI: tuple[tuple[str, str], ...] = (
+    ("analist", "analyst"),
+    ("po", "po"),
+    ("muhendis", "engineer"),
+    ("testci", "tester"),
+)
+OKUMA_MAX_YENIDEN_DENEME = 1
+
+
+class JiraYalnizOkuma(JiraError):
+    """Okuyucunun HTTP katmanı GET dışında bir istek göndermeye çalıştı (gönderilmedi)."""
+
+
+class JiraSureAsimi(JiraUnavailable):
+    """Araç süresi doldu ya da ``Retry-After`` kalan süreden uzun (beklenmedi)."""
+
+
+class YalnizGetTransport(httpx.BaseTransport):
+    """GET dışındaki her isteği ağa çıkmadan reddeden transport sarmalayıcısı."""
+
+    def __init__(self, ic: httpx.BaseTransport) -> None:
+        self._ic = ic
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        if request.method.upper() != "GET":
+            raise JiraYalnizOkuma(f"Jira okuyucusu yalnızca GET gönderir ({request.method})")
+        return self._ic.handle_request(request)
+
+    def close(self) -> None:
+        self._ic.close()
+
+
+@dataclass(frozen=True)
+class OkunanYorum:
+    """Modele gidebilecek yorum: yazar yalnız etiket (rol/bot/takma ad), metin düz."""
+
+    id: str
+    yazar: str
+    tarih: datetime | None
+    metin: str
+
+
+@dataclass(frozen=True)
+class YorumSayfasi:
+    toplam: int  # kayıttaki tüm yorumlar (kısıtlılar dahil)
+    yorumlar: list[OkunanYorum]  # en eskiden en yeniye, kısıtlılar elenmiş
+    kisitli: int  # okunan aralıkta elenen kısıtlı yorum sayısı
+
+
+@dataclass(frozen=True)
+class OkunanIssue:
+    """``JiraIssue``'nun kişi verisi ayıklanmış hâli (raporlayan/ad yok)."""
+
+    key: str
+    issue_type: str
+    summary: str
+    description: str
+    acceptance_criteria: list[str]
+    labels: list[str]
+    status: str
+    updated: datetime | None
+
+
+def kisitli_yorum_mu(c: Mapping[str, Any]) -> bool:
+    """Rol/grup kısıtlı (``visibility``) ya da iç not (``jsdPublic=false``) yorum."""
+    return bool(c.get("visibility")) or c.get("jsdPublic") is False
+
+
+class KisiEtiketleyici:
+    """Jira kimliklerini modele gidebilecek etiketlere çevirir (mesaj içi tutarlı).
+
+    Sıra: PO izin listesi (``JiraSettings.po_accounts``) → "PO"; ``JIRA_HESAP_*`` eşlemesi →
+    portal rol kodu; diğerleri → "Kişi-N" (aynı kişi aynı mesajda hep aynı takma adı alır;
+    ``takma_adlar`` sözlüğü çağıran tarafından mesaj boyunca paylaşılabilir).
+    """
+
+    def __init__(
+        self,
+        po_hesaplari: Iterable[str] = (),
+        rol_hesaplari: Mapping[str, str] | None = None,
+        takma_adlar: dict[str, str] | None = None,
+    ) -> None:
+        self._po = {a.strip().lower() for a in po_hesaplari if a and a.strip()}
+        self._roller = {
+            k.strip().lower(): v for k, v in (rol_hesaplari or {}).items() if k and k.strip()
+        }
+        self.takma_adlar = takma_adlar if takma_adlar is not None else {}
+
+    @classmethod
+    def ayarlardan(
+        cls, s: JiraSettings, takma_adlar: dict[str, str] | None = None
+    ) -> KisiEtiketleyici:
+        roller: dict[str, str] = {}
+        for jira_rol, portal_rol in HESAP_ROLLERI:
+            hesap = s.role_account(jira_rol)
+            if hesap:
+                roller.setdefault(hesap, portal_rol)
+        return cls(s.po_accounts, roller, takma_adlar)
+
+    def etiket(self, kimlikler: Iterable[str]) -> str:
+        ids = [i.strip().lower() for i in kimlikler if i and i.strip()]
+        if not ids:
+            return f"{TAKMA_AD_ONEKI}-?"
+        if any(i in self._po for i in ids):
+            return PO_ETIKETI
+        for i in ids:
+            if i in self._roller:
+                return self._roller[i]
+        anahtar = min(ids)  # e-posta/accountId hangisi görünürse görünsün aynı kişi
+        for i in ids:
+            if i in self.takma_adlar:
+                return self.takma_adlar[i]
+        ad = f"{TAKMA_AD_ONEKI}-{len(set(self.takma_adlar.values())) + 1}"
+        for i in {anahtar, *ids}:
+            self.takma_adlar[i] = ad
+        return ad
+
+    def mentionlari_degistir(self, adf: Any) -> Any:
+        """ADF ağacının kopyası: her ``mention`` düğümü ``@<etiket>`` metnine çevrilir.
+
+        Jira okumada mention'ın ``attrs.text`` alanı görünen adı taşır; o alan hiç okunmaz.
+        """
+        if isinstance(adf, list):
+            return [self.mentionlari_degistir(x) for x in adf]
+        if not isinstance(adf, dict):
+            return adf
+        if adf.get("type") == "mention":
+            attrs = adf.get("attrs") if isinstance(adf.get("attrs"), dict) else {}
+            return {"type": "text", "text": "@" + self.etiket([str(attrs.get("id") or "")])}
+        out = {k: v for k, v in adf.items() if k != "content"}
+        if "content" in adf:
+            out["content"] = self.mentionlari_degistir(adf["content"])
+        return out
+
+
+class JiraOkuyucu:
+    """Asistanın Jira'ya tek kapısı: yalnız okuma, süre sınırlı, kişi verisi ayıklanmış.
+
+    ``toplam_sure_s`` okuyucunun ömrü boyunca tüm isteklerin (yeniden denemeler ve beklemeler
+    dahil) sığması gereken süredir; istek başı zaman aşımı ``min(timeout_s, kalan)``. Yeniden
+    deneme beklemesi kalan süreyi aşacaksa beklenmez, ``JiraSureAsimi`` fırlar.
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        read_auth: tuple[str, str],
+        *,
+        timeout_s: float,
+        toplam_sure_s: float,
+        transport: httpx.BaseTransport | None = None,
+        browse_url: str | None = None,
+        etiketleyici: KisiEtiketleyici | None = None,
+        max_retries: int = OKUMA_MAX_YENIDEN_DENEME,
+        backoff_s: float = 0.5,
+        sleep: Sleep = time.sleep,
+        saat: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._base_url = base_url.rstrip("/")
+        self._browse_url = (browse_url or base_url).rstrip("/")
+        self._timeout_s = max(0.1, float(timeout_s))
+        self._saat = saat
+        self._bitis = saat() + max(0.0, float(toplam_sure_s))
+        self._uyku_ic = sleep
+        self._max_retries = max(0, int(max_retries))
+        self._backoff_s = backoff_s
+        self._etiketleyici = etiketleyici or KisiEtiketleyici()
+        self._http = httpx.Client(
+            transport=YalnizGetTransport(transport or httpx.HTTPTransport()),
+            auth=httpx.BasicAuth(*read_auth),
+            headers={"Accept": "application/json"},
+            follow_redirects=False,
+        )
+
+    # ----------------------------------------------------------------- HTTP
+    def kalan_s(self) -> float:
+        return max(0.0, self._bitis - self._saat())
+
+    def _uyku(self, sure: float) -> None:
+        if sure >= self.kalan_s():
+            raise JiraSureAsimi("Jira yeniden deneme beklemesi kalan süreyi aşıyor")
+        self._uyku_ic(sure)
+
+    def _get(self, path: str, params: Mapping[str, Any] | None = None) -> Any:
+        kalan = self.kalan_s()
+        if kalan <= 0.05:
+            raise JiraSureAsimi("Jira araç süresi doldu")
+        sure = min(self._timeout_s, kalan)
+        what = f"Jira GET {path}"
+        resp = send_with_retry(
+            self._http,
+            "GET",
+            f"{self._base_url}/rest/api/3{path}",
+            what=what,
+            max_retries=self._max_retries,
+            backoff_s=self._backoff_s,
+            sleep=self._uyku,
+            timeout=httpx.Timeout(sure, connect=min(sure, 5.0)),
+            params=params,
+        )
+        if resp.status_code >= 400:
+            raise _error_from(resp, what)
+        try:
+            return resp.json()
+        except ValueError as exc:
+            raise JiraError(f"{what}: JSON olmayan yanıt", status=resp.status_code) from exc
+
+    # ----------------------------------------------------------------- okuma
+    def issue_url(self, key: str) -> str:
+        """Yalnız sunucunun bağlantı kurması içindir; modele verilmez (§7.3)."""
+        return f"{self._browse_url}/browse/{key}"
+
+    def get_issue(self, key: str) -> OkunanIssue:
+        raw = self._get(f"/issue/{quote(key, safe='')}", {"fields": ",".join(ISSUE_FIELDS)})
+        f = raw.get("fields") if isinstance(raw, dict) else None
+        f = f if isinstance(f, dict) else {}
+        aciklama, acs = parse_description(
+            self._etiketleyici.mentionlari_degistir(f.get("description"))
+        )
+        return OkunanIssue(
+            key=str(raw.get("key") or key),
+            issue_type=str((f.get("issuetype") or {}).get("name") or ""),
+            summary=str(f.get("summary") or ""),
+            description=aciklama,
+            acceptance_criteria=acs,
+            labels=[str(lb) for lb in f.get("labels") or []],
+            status=str((f.get("status") or {}).get("name") or ""),
+            updated=parse_jira_datetime(f.get("updated")),
+        )
+
+    def _yorum(self, c: Mapping[str, Any]) -> OkunanYorum:
+        govde = c.get("body")
+        if has_bot_header(govde):
+            yazar = BOT_ETIKETI
+        else:
+            yazar = self._etiketleyici.etiket(person_ids(c.get("author")))
+        metin = adf_to_text(self._etiketleyici.mentionlari_degistir(govde))
+        if yazar == BOT_ETIKETI:
+            metin = strip_bot_header(metin)
+        return OkunanYorum(
+            id=str(c.get("id") or ""),
+            yazar=yazar,
+            tarih=parse_jira_datetime(c.get("created")),
+            metin=metin,
+        )
+
+    def son_yorumlar(self, key: str, n: int) -> YorumSayfasi:
+        """Son ``n`` yorum, en çok 2 istekle: önce ``maxResults=1`` ile ``total``, sonra
+        ``startAt=max(0, total-n)``. (``get_comments`` tüm sayfaları gezer; kullanılmaz.)"""
+        n = max(1, int(n))
+        yol = f"/issue/{quote(key, safe='')}/comment"
+        ilk = self._get(yol, {"startAt": 0, "maxResults": 1})
+        toplam = int((ilk or {}).get("total") or 0)
+        if toplam <= 0:
+            return YorumSayfasi(0, [], 0)
+        if toplam == 1:
+            ham = (ilk or {}).get("comments") or []
+        else:
+            bas = max(0, toplam - n)
+            sayfa = self._get(yol, {"startAt": bas, "maxResults": n})
+            ham = (sayfa or {}).get("comments") or []
+        ham = [c for c in ham if isinstance(c, dict)][-n:]
+        kisitli = sum(1 for c in ham if kisitli_yorum_mu(c))
+        yorumlar = [self._yorum(c) for c in ham if not kisitli_yorum_mu(c)]
+        return YorumSayfasi(toplam, yorumlar, kisitli)
+
+    def close(self) -> None:
+        self._http.close()
+
+    def __enter__(self) -> JiraOkuyucu:
+        return self
+
+    def __exit__(self, *_: Any) -> None:
+        self.close()
+
+
+def get_jira_okuma(
+    timeout_s: float,
+    toplam_sure_s: float,
+    *,
+    settings: JiraSettings | None = None,
+    transport: httpx.BaseTransport | None = None,
+    takma_adlar: dict[str, str] | None = None,
+    sleep: Sleep = time.sleep,
+    saat: Callable[[], float] = time.monotonic,
+) -> JiraOkuyucu:
+    """Okuma kimliğiyle (``JIRA_READ_*``; simülatörde sim okuma kullanıcısı) ``JiraOkuyucu``.
+
+    Araç çağrısı başına kurulur; ``max_retries=1``. Yazma kimliği hiç okunmaz.
+    """
+    s = settings or get_jira_settings()
+    read = _creds(s.jira_read_email, s.jira_read_token, SIM_READ, s.is_simulator, "read")
+    assert read is not None
+    return JiraOkuyucu(
+        s.jira_base_url,
+        read,
+        timeout_s=timeout_s,
+        toplam_sure_s=toplam_sure_s,
+        transport=transport,
+        browse_url=s.jira_browse_url,
+        etiketleyici=KisiEtiketleyici.ayarlardan(s, takma_adlar),
+        sleep=sleep,
+        saat=saat,
     )

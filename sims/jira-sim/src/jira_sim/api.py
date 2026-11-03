@@ -348,7 +348,14 @@ def comments(
 @router.post("/issue/{key}/comment", status_code=201)
 async def comment_add(request: Request, store: StoreDep, user: Writer, key: str) -> dict:
     body = _dict_body(await json_body(request))
-    c = add_comment(store, key, body.get("body"), user)
+    c = add_comment(
+        store,
+        key,
+        body.get("body"),
+        user,
+        visibility=body.get("visibility"),
+        jsd_public=body.get("jsdPublic"),
+    )
     it = require_issue(store, key)
     return comment_json(c, it["key"], it["id"], base_url(request))
 

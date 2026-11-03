@@ -49,6 +49,34 @@ class FaultMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+ISTEK_KAYIT_UST = 1000
+
+
+class IstekSayaci(BaseHTTPMiddleware):
+    """Jira/Xray API'sine gelen istekleri yöntem ve yola göre sayar (``GET /sim/istekler``).
+
+    Yan etkisizlik provası içindir (AI-ASISTAN-PLANI §13): asistan akışı öncesi/sonrası yalnız GET
+    görülmelidir. ``/sim/*``, ``/health`` ve arayüz statikleri sayılmaz; sorgu dizgisi ve gövde
+    kaydedilmez (yalnız yöntem + yol). Son ``ISTEK_KAYIT_UST`` istek tutulur.
+    """
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        path = request.url.path
+        if path.startswith(("/rest/", "/xray/")):
+            sayac: dict[str, Any] = request.app.state.istekler
+            with request.app.state.store.lock:
+                yontem = request.method.upper()
+                sayac["toplam"] += 1
+                sayac["yontemler"][yontem] = sayac["yontemler"].get(yontem, 0) + 1
+                sayac["son"].append({"yontem": yontem, "yol": path[:300]})
+                del sayac["son"][:-ISTEK_KAYIT_UST]
+        return await call_next(request)
+
+
+def _bos_sayac() -> dict[str, Any]:
+    return {"toplam": 0, "yontemler": {}, "son": []}
+
+
 def admin_guard(request: Request) -> None:
     """``/sim/*`` yazma uçları: tarayıcıdan başka kökenli istek ve yanlış yönetim belirteci → 403.
 
@@ -80,6 +108,7 @@ def create_app(
         base_url if base_url is not None else os.environ.get("JIRA_SIM_BASE_URL", "")
     ).rstrip("/")
     app.state.security = SimSecurity.from_env(po_password, admin_token)
+    app.state.istekler = _bos_sayac()
     admin = [Depends(admin_guard)]
 
     @app.exception_handler(SimError)
@@ -107,6 +136,8 @@ def create_app(
     @app.post("/sim/reset", dependencies=admin)
     def sim_reset() -> dict[str, Any]:
         app.state.store.reset()
+        with app.state.store.lock:
+            app.state.istekler = _bos_sayac()
         return {"status": "reset", "issues": len(app.state.store.state["issues"])}
 
     @app.get("/sim/config")
@@ -126,6 +157,23 @@ def create_app(
                         raise SimError(400, [f"'{key}' must be a list of names."])
                     state["config"][key] = value
             return state["config"]
+
+    @app.get("/sim/istekler")
+    def sim_istekler() -> dict[str, Any]:
+        """Sayılan API istekleri: ``{toplam, yontemler: {GET: n, …}, son: [{yontem, yol}]}``."""
+        with app.state.store.lock:
+            s = app.state.istekler
+            return {
+                "toplam": s["toplam"],
+                "yontemler": dict(s["yontemler"]),
+                "son": list(s["son"]),
+            }
+
+    @app.post("/sim/istekler/sifirla", dependencies=admin)
+    def sim_istekler_sifirla() -> dict[str, Any]:
+        with app.state.store.lock:
+            app.state.istekler = _bos_sayac()
+        return {"toplam": 0}
 
     @app.post("/sim/faults", dependencies=admin)
     async def sim_faults(request: Request) -> dict[str, Any]:
@@ -153,6 +201,8 @@ def create_app(
     app.include_router(xray.router)
     app.include_router(ui.router)
     app.add_middleware(FaultMiddleware)
+    # Son eklenen en dışta koşar: hata enjeksiyonuyla reddedilen istekler de sayılır.
+    app.add_middleware(IstekSayaci)
     return app
 
 

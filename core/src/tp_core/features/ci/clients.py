@@ -14,8 +14,10 @@ from __future__ import annotations
 import fnmatch
 import io
 import os
+import time
 import zipfile
 from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 from urllib.parse import quote
@@ -275,3 +277,125 @@ def parse_gh_time(deger: Any) -> datetime | None:
         return datetime.fromisoformat(deger.replace("Z", "+00:00"))
     except ValueError:
         return None
+
+
+# ------------------------------------------------------------- asistan: yalnız-okuma CI logu
+
+LOG_KUYRUK_BAYT = 256 * 1024  # yalnızca logun son 256 KB'ı tutulur (halka tampon)
+LOG_EN_COK_BAYT = 20 * 1024 * 1024  # akıştan en çok bu kadar okunur (Content-Length'e güvenilmez)
+LOG_SURE_S = 10.0
+ACTIONS_READ_TOKEN_ENV = "GITHUB_ACTIONS_READ_TOKEN"
+
+
+@dataclass(frozen=True)
+class LogKuyrugu:
+    """Akıştan okunan logun kuyruğu.
+
+    `kirpildi`: baştan bayt atıldı (ilk satır yarım olabilir). `kesildi`: akış sonuna
+    varılmadan durduruldu (`boyut` = 20 MB, `sure` = süre doldu); kuyruk o ana kadarki sondur.
+    """
+
+    veri: bytes
+    okunan: int
+    kirpildi: bool
+    kesildi: str | None = None
+
+
+class GitHubCiOkuyucu:
+    """Asistanın `ci_log` aracına verilen dar GitHub Actions okuyucusu (AI-ASISTAN-PLANI §5.7).
+
+    Yalnız `jobs` ve `job_logs`; `GitHubCi`'nin dispatch/indirme yöntemleri yoktur. Kimlik: ayrı
+    `actions:read` token'ı (`GITHUB_ACTIONS_READ_TOKEN`) varsa o, yoksa okuma token'ı
+    (`GITHUB_READ_TOKEN`), o da yoksa mevcut forge kimliği.
+    `forge`: `request` ve akışlı `akis` yöntemleri olan `GitHubForge`.
+    """
+
+    def __init__(self, forge: Any, *, saat: Callable[[], float] = time.monotonic) -> None:
+        self._forge = forge
+        self._repo: str = forge.repo
+        self._saat = saat
+
+    @classmethod
+    def kur(
+        cls,
+        env: Mapping[str, str] | None = None,
+        *,
+        transport: httpx.BaseTransport | None = None,
+    ) -> GitHubCiOkuyucu:
+        env = os.environ if env is None else env
+        # En az yetki: ayrı actions:read token'ı, yoksa okuma token'ı; ikisi de yoksa forge kimliği.
+        token = (env.get(ACTIONS_READ_TOKEN_ENV) or env.get("GITHUB_READ_TOKEN") or "").strip()
+        if token:
+            from tp_core.integrations.forge_github import DEFAULT_API_URL, GitHubForge, TokenAuth
+
+            forge = GitHubForge(
+                (env.get("GITHUB_REPO") or "").strip(),
+                TokenAuth(token),
+                api_url=env.get("GITHUB_API_URL") or DEFAULT_API_URL,
+                transport=transport,
+            )
+            return cls(forge)
+        from tp_core.features.ci import services
+
+        return cls(services.forge())
+
+    @property
+    def _r(self) -> str:
+        return f"/repos/{self._repo}"
+
+    def jobs(
+        self, github_run_id: int | str, *, timeout: float = LOG_SURE_S
+    ) -> list[dict[str, Any]]:
+        """Koşunun (GitHub koşu kimliği; Probe UUID'si değil) son denemesindeki job'lar."""
+        try:
+            data = self._forge.request(
+                "GET",
+                f"{self._r}/actions/runs/{int(github_run_id)}/jobs",
+                "koşu işleri",
+                params={"filter": "latest", "per_page": 100},
+                timeout=timeout,
+            ).json()
+        except Exception as exc:  # ForgeError ailesi + httpx
+            raise GitHubCiError(f"GitHub koşu işleri: {type(exc).__name__}") from exc
+        jobs = data.get("jobs") if isinstance(data, dict) else None
+        return [j for j in jobs or [] if isinstance(j, dict)]
+
+    def job_logs(
+        self,
+        job_id: int | str,
+        *,
+        sure_s: float = LOG_SURE_S,
+        kuyruk_bayt: int = LOG_KUYRUK_BAYT,
+        en_cok_bayt: int = LOG_EN_COK_BAYT,
+    ) -> LogKuyrugu:
+        """`GET /actions/jobs/{id}/logs` akışla okunur; yalnızca son `kuyruk_bayt` tutulur.
+
+        Toplam `en_cok_bayt` ya da `sure_s` aşılınca okuma durur (Content-Length'siz sonsuz
+        akışa karşı); o ana kadarki kuyruk döner. Kurulum token'ı alımı da süreye dahildir.
+        """
+        bitis = self._saat() + max(0.1, float(sure_s))
+        tampon = bytearray()
+        okunan = 0
+        kirpildi = False
+        kesildi: str | None = None
+        try:
+            with self._forge.akis(
+                f"{self._r}/actions/jobs/{int(job_id)}/logs",
+                "job logu",
+                timeout=max(0.1, min(float(sure_s), bitis - self._saat())),
+            ) as resp:
+                for parca in resp.iter_bytes():
+                    okunan += len(parca)
+                    tampon.extend(parca)
+                    if len(tampon) > kuyruk_bayt:
+                        del tampon[: len(tampon) - kuyruk_bayt]
+                        kirpildi = True
+                    if okunan >= en_cok_bayt:
+                        kesildi = "boyut"
+                        break
+                    if self._saat() >= bitis:
+                        kesildi = "sure"
+                        break
+        except Exception as exc:  # ForgeError ailesi + httpx (zaman aşımı dahil)
+            raise GitHubCiError(f"GitHub job logu: {type(exc).__name__}") from exc
+        return LogKuyrugu(bytes(tampon), okunan, kirpildi, kesildi)

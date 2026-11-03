@@ -64,6 +64,7 @@ Artefakt düzeni (`.github/CI.md` "Artefakt sözleşmesi"): `test-local-results`
 from __future__ import annotations
 
 import base64
+import contextlib
 import io
 import json
 import os
@@ -73,7 +74,7 @@ import stat
 import threading
 import time
 import zipfile
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
@@ -1493,3 +1494,36 @@ class GitHubForge:
             shutil.rmtree(dest, ignore_errors=True)  # yarım açılmış güvenilmeyen içerik kalmaz
             raise
         return art
+
+    # ------------------------------------------------------------ akışlı okuma (asistan ci_log)
+
+    @contextlib.contextmanager
+    def akis(self, path: str, what: str, *, timeout: float, **kw: Any) -> Iterator[httpx.Response]:
+        """Kimlikli, akışlı GET: gövde belleğe alınmaz, çağıran `iter_bytes` ile okur.
+
+        `_request` gövdeyi tümüyle okuduğundan büyük job logları (`/actions/jobs/{id}/logs`) için
+        ayrı yoldur. Yönlendirme izlenir (`follow_redirects=True`); GitHub logu kısa ömürlü imzalı
+        bir adrese yönlendirir ve httpx çapraz köken yönlendirmede `Authorization` başlığını
+        düşürür (token blob deposuna gitmez). 401'de kurulum token'ı bir kez yenilenir. Başarısız
+        yanıtın gövdesinden en çok 64 KB okunur (hata iletisi için).
+        """
+        for attempt in range(2):
+            headers = {"Authorization": f"Bearer {self._auth.token(self._client)}"}
+            with self._client.stream(
+                "GET", path, headers=headers, follow_redirects=True, timeout=timeout, **kw
+            ) as resp:
+                if resp.status_code == 401 and attempt == 0:
+                    self._auth.invalidate()  # süresi dolmuş kurulum token'ı → bir kez yenile
+                    continue
+                if not resp.is_success:
+                    govde = bytearray()
+                    for parca in resp.iter_bytes():
+                        govde.extend(parca)
+                        if len(govde) >= 64 * 1024:
+                            break
+                    _raise_for(
+                        httpx.Response(resp.status_code, content=bytes(govde[: 64 * 1024])), what
+                    )
+                yield resp
+                return
+        raise ForgeError(f"GitHub {what}: kimlik doğrulanamadı")  # pragma: no cover

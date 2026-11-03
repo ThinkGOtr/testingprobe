@@ -8,6 +8,10 @@ Oturum yalnızca bağlantı açılırken değil akış boyunca da denetlenir (MI
 `OTURUM_KONTROL_S` saniyede bir. Oturum iptal edilmiş, süresi dolmuş, parola değişmiş veya
 kullanıcı silinmişse son olarak `event: session.ended` gönderilir ve akış kapanır; bekleyen olay
 teslim edilmez. Portal bunu alınca kullanıcıyı /giris'e yönlendirir.
+
+Kişiye özel olaylar (AI-ASISTAN-PLANI §9): `assistant.*` olayları yalnız `data.kullanici_id`'si
+oturum kullanıcısı olan akışa teslim edilir. Kimlik yoksa, eşleşmiyorsa ya da akışın kullanıcısı
+bilinmiyorsa olay hiç gönderilmez (fail-closed). Diğer olaylar önceki gibi herkese gider.
 """
 
 from __future__ import annotations
@@ -16,7 +20,7 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -36,6 +40,23 @@ OTURUM_KONTROL_S = 15.0
 OTURUM_BITTI = "session.ended"
 
 OturumKontrol = Callable[[], Awaitable[bool]]
+
+# Yalnız sahibine teslim edilen olay ad önekleri (yük `kullanici_id` taşımalı).
+KISIYE_OZEL_ONEKLER = ("assistant.",)
+
+
+def teslim_edilir_mi(olay: Mapping[str, Any], kullanici_id: object | None) -> bool:
+    """Olay bu akışa gidebilir mi? Kişiye özel olayda kimlik eksik/uyuşmaz → hayır."""
+    ad = str(olay.get("event") or "")
+    if not ad.startswith(KISIYE_OZEL_ONEKLER):
+        return True
+    if kullanici_id is None:
+        return False
+    veri = olay.get("data")
+    sahip = veri.get("kullanici_id") if isinstance(veri, Mapping) else None
+    if not isinstance(sahip, str) or not sahip:
+        return False
+    return sahip.strip().lower() == str(kullanici_id).strip().lower()
 
 
 def broadcaster_for(request: Request) -> Broadcaster:
@@ -70,6 +91,8 @@ async def _akis(
     q: asyncio.Queue[dict[str, Any]],
     oturum_gecerli: OturumKontrol,
     kontrol_s: float = OTURUM_KONTROL_S,
+    *,
+    kullanici_id: object | None = None,
 ) -> AsyncIterator[dict[str, str]]:
     bitti = {"event": OTURUM_BITTI, "data": "{}"}
     try:
@@ -87,6 +110,8 @@ async def _akis(
                         break
                     son_kontrol = time.monotonic()
                 continue
+            if not teslim_edilir_mi(olay, kullanici_id):
+                continue
             # Teslimden önce: çıkıştan sonra yayımlanan olay eski bağlantıya ulaşmamalı.
             if not await oturum_gecerli():
                 yield bitti
@@ -103,7 +128,7 @@ async def _akis(
 
 
 @router.get("/events")
-async def events(request: Request, _user: CurrentUser, codec: Codec) -> EventSourceResponse:
+async def events(request: Request, user: CurrentUser, codec: Codec) -> EventSourceResponse:
     veri = codec.loads(request.cookies.get(COOKIE_NAME, ""))
     if veri is None:  # CurrentUser zaten doğruladı; yine de tür daraltma için
         raise HTTPException(401, "Oturumunuz geçersiz veya süresi dolmuş")
@@ -114,7 +139,7 @@ async def events(request: Request, _user: CurrentUser, codec: Codec) -> EventSou
         raise HTTPException(503, "Olay akışı şu anda kullanılamıyor") from exc
     q = b.subscribe()
     return EventSourceResponse(
-        _akis(request, b, q, oturum_kontrolu(veri)),
+        _akis(request, b, q, oturum_kontrolu(veri), kullanici_id=user.id),
         ping=PING_S,
         headers={"X-Accel-Buffering": "no"},
     )

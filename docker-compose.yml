@@ -87,6 +87,15 @@ x-core-env: &core-env
   TP_CT_SON_KOSU: ${TP_CT_SON_KOSU:-20}
   TP_CT_FLAKY_GUN: ${TP_CT_FLAKY_GUN:-30}
   TP_CT_TREND_GUN: ${TP_CT_TREND_GUN:-14}
+  # Portal asistanı ve Öneri (specs/008-ai-asistan/contracts/env.md). Gizli değildir; model kipi ve
+  # anahtar burada YOK (yalnız core-worker). 0 = öneri uçları ve düğmesi kapalı (geri alma).
+  TP_ASISTAN_ONERI: ${TP_ASISTAN_ONERI:-1}
+  # Sohbet/mesaj/öneri geri bildirimi saklama süresi (gün).
+  TP_ASISTAN_SAKLAMA_GUN: ${TP_ASISTAN_SAKLAMA_GUN:-90}
+  # Asistan şeridi iş parçacığı; global bekleyen sınırı = 2 × bu (core-api sayacı da okur).
+  TP_WORKER_ASISTAN_PARALEL: ${TP_WORKER_ASISTAN_PARALEL:-3}
+  # Öneri "Jira'yı aç" (yeni kayıt) adresi; kökeni JIRA_BROWSE_URL ile aynı olmalı. Boş = varsayılan.
+  JIRA_CREATE_URL: ${JIRA_CREATE_URL:-}
 
 # İmajı yalnızca toolchain-worker derler (`ci` hedefi, MCP yok); test-runner aynı yerel imajı
 # kullanır. playwright-mcp ayrı `mcp` hedefini derler (Constitution II: CI imajında ajan yok).
@@ -219,6 +228,20 @@ services:
       TP_CI_NIGHTLY_SAAT: ${TP_CI_NIGHTLY_SAAT:-02:00}
       TP_CI_GITHUB_POLL_S: ${TP_CI_GITHUB_POLL_S:-30}
       TP_CI_GITHUB_TIMEOUT_S: ${TP_CI_GITHUB_TIMEOUT_S:-5400}
+      # Portal asistanı (yalnız core-worker; core-api kipi bilmez, durumu asistan_durum'dan okur).
+      # Model kipi pipeline'dan bağımsız: live | off (kod varsayılanı off). Anahtar yukarıdaki
+      # ANTHROPIC_API_KEY'dir.
+      TP_ASISTAN_MODEL_MODE: ${TP_ASISTAN_MODEL_MODE:-off}
+      # 0 = otomatik Sonnet yükseltmesi kapalı ("Daha ayrıntılı incele" düğmesi kalır).
+      TP_ASISTAN_OTOMATIK_DERIN: ${TP_ASISTAN_OTOMATIK_DERIN:-1}
+      # 1 = müşteri verisi kurulumu: TP_PII_MASKING kapalıysa asistan kapalı (maskeleme_kapali).
+      TP_ASISTAN_MUSTERI_VERISI: ${TP_ASISTAN_MUSTERI_VERISI:-0}
+      # db_schema/db_query izinli roller (virgülle; boş = tüm roller).
+      TP_ASISTAN_VERI_ROLLERI: ${TP_ASISTAN_VERI_ROLLERI:-}
+      # 0 = asistan şeridi ve kalp atışı yok → asistan etkin=false (worker_yok).
+      TP_WORKER_ASISTAN_SERIT: ${TP_WORKER_ASISTAN_SERIT:-1}
+      # ci_log için yalnız actions:read token (sır; boş = mevcut okuma kimliği).
+      GITHUB_ACTIONS_READ_TOKEN: ${GITHUB_ACTIONS_READ_TOKEN:-}
       <<: *core-env
     volumes:
       - tp_forge:/forge
