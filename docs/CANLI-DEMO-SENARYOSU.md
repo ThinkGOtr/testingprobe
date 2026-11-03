@@ -216,8 +216,11 @@ Akış göstergesinde 4. adımın kesikli halkası "AI adımı" demektir; AI sen
 
 1. TPD-1 → **"Case üret"** → 10 case kartı (pozitif/negatif/sınır), her biri bir AC'ye bağlı.
    **C3** = "6 adet kampanyalı üründe bedava ürün verilmez" — bunu göster, sonra lazım olacak.
-2. Sol menü **Case review** → birkaç case'i **"Onayla"**; birinde **"Düzelt"** → küçük bir metin
-   değişikliği → onay; kalanları onayla.
+2. Sol menü **Case review** → birkaç case'i **"Onayla"**; **yalnızca C8**'de ("Onaylanan siparişin
+   numarası gösterilir…") **"Düzelt"** → küçük bir metin değişikliği → onay; kalanları onayla.
+   > ⚠️ **C1, C2, C3, C5'i düzeltme.** Bunlar Bölüm B'de koda dönüşür; REPLAY kaydı case metnine
+   > bağlıdır, değişen case kod üretiminde REPLAY-MISS verir. C3 değişirse "defect adayı" anı
+   > (5b) ve Bölüm C'deki TPD-5 bağlantısı kaybolur.
    - Görülen: sayaç, **kabul oranı**, düzeltmede alan bazlı fark.
 3. Sol menü **Yayın** → **"Yayın önizleme"** (hedef: `xray`) → **"Seçilenleri yayınla (n)"**
 4. **Jira sekmesi** → TPD-1'e `Test` bağlantısıyla bağlı yeni Test issue'ları; birini aç → Xray'de
