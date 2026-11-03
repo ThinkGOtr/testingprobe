@@ -1267,6 +1267,29 @@ fieldset:disabled select {
 
 /* ---------------------------------------------------------------- gereksinim detayı */
 
+/* Story açıklaması Jira'daki gibi (lib/dokuman.ts): şablon başlıkları, maddeler, numaralı akış. */
+.dokuman h4 {
+  font-size: 0.95rem;
+  margin: 18px 0 6px;
+}
+.dokuman h4:first-child {
+  margin-top: 0;
+}
+.dokuman p {
+  margin: 0 0 8px;
+}
+.dokuman ul,
+.dokuman ol:not(.ac-liste) {
+  margin: 0 0 8px;
+  padding-left: 22px;
+}
+.dokuman li + li {
+  margin-top: 3px;
+}
+.dokuman .ac-liste {
+  margin-top: 4px;
+}
+
 .ac-liste {
   padding-left: 0;
   list-style: none;

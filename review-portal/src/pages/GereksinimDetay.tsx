@@ -14,6 +14,7 @@ import { akisAdimi, DENETIM_ISLERI, hataAdimi, URETIM_ISI } from "../lib/akis";
 import { akisKanitlari, guncelAdim } from "../lib/yolHaritasi";
 import { AC_EKSIK, gereksinimDurumu, SORU_TURU } from "../lib/etiketler";
 import { tarih } from "../lib/format";
+import { dokumanBloklari } from "../lib/dokuman";
 
 /**
  * Onaylı düzeltmeleri uygular. Düzeltme aynı döngüdeki 'bilinçli fark' kararıyla çelişirse core 409
@@ -192,20 +193,7 @@ export function GereksinimDetay() {
 
       <div className="iki-sutun">
         <Kart baslik="Doküman">
-          <p>{g.aciklama}</p>
-          {g.kabul_kriterleri.length === 0 ? (
-            <Uyari>
-              Kabul kriteri yok. Story case üretimine gönderilmez; ön inceleme eksik kabul kriterlerini PO'ya soru olarak iletir.
-            </Uyari>
-          ) : (
-            <ol className="ac-liste">
-              {g.kabul_kriterleri.map((ac) => (
-                <li key={ac.ref}>
-                  <span className="mono ac-ref">{ac.ref}</span> {ac.metin}
-                </li>
-              ))}
-            </ol>
-          )}
+          <Dokuman g={g} />
         </Kart>
 
         <PoKarti g={g} yenile={tumunuYenile} />
@@ -541,5 +529,67 @@ function PoKarti({ g, yenile }: { g: Detay; yenile: () => void }) {
       )}
       <p className="soluk kucuk">İnsan kapısı: PO teyidi olmadan case üretimine geçilmez.</p>
     </Kart>
+  );
+}
+
+
+const AC_BASLIGI = "🔑 Acceptance Criteria (Kabul Kriterleri)";
+
+/** Story açıklaması Jira'daki gibi: şablon başlıkları, maddeler, numaralı akış; AC'ler şablondaki
+ *  yerinde (QA Checklist'ten önce). Şablonsuz açıklamada AC listesi açıklamanın altındadır. */
+function Dokuman({ g }: { g: Detay }) {
+  const { bloklar, sablon } = dokumanBloklari(g.aciklama);
+  const acler =
+    g.kabul_kriterleri.length === 0 ? (
+      <Uyari>
+        Kabul kriteri yok. Story case üretimine gönderilmez; ön inceleme eksik kabul kriterlerini PO'ya soru olarak iletir.
+      </Uyari>
+    ) : (
+      <ol className="ac-liste">
+        {g.kabul_kriterleri.map((ac) => (
+          <li key={ac.ref}>
+            <span className="mono ac-ref">{ac.ref}</span> {ac.metin}
+          </li>
+        ))}
+      </ol>
+    );
+  return (
+    <div className="dokuman">
+      {bloklar.map((b, i) => {
+        switch (b.tur) {
+          case "baslik":
+            return <h4 key={i}>{b.metin}</h4>;
+          case "liste": {
+            const Liste = b.numarali ? "ol" : "ul";
+            return (
+              <Liste key={i}>
+                {b.maddeler.map((m, j) => (
+                  <li key={j}>{m}</li>
+                ))}
+              </Liste>
+            );
+          }
+          case "paragraf":
+            return (
+              <p key={i}>
+                {b.satirlar.map((s, j) => (
+                  <span key={j}>
+                    {j > 0 && <br />}
+                    {s}
+                  </span>
+                ))}
+              </p>
+            );
+          case "ac":
+            return (
+              <section key={i}>
+                <h4>{AC_BASLIGI}</h4>
+                {acler}
+              </section>
+            );
+        }
+      })}
+      {!sablon && acler}
+    </div>
   );
 }
