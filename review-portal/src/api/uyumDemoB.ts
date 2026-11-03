@@ -402,6 +402,7 @@ export function scriptDetayUyarla(s: Ham): ScriptDetay {
 
 const TETIKLER = new Set<Tetik>(["pr", "push", "nightly", "deploy", "break_verify", "local_check", "manual"]);
 const KAYNAKLAR = new Set<KosuKaynagi>(["local", "github", "sauce"]);
+const SAUCE_DURUMLARI = new Set(["passed", "failed", "error", "atlandi"]);
 const KOSU_DURUMLARI = new Set<Kosu["durum"]>(["queued", "running", "passed", "failed", "error"]);
 
 function testSonucDurumu(x: unknown): TestSonucu["durum"] {
@@ -521,6 +522,8 @@ export function kosuUyarla(k: Ham): Kosu {
     rapor_url: adresUyarla(ilk(k, "rapor_url", "html_url", "playwright_report_url") ?? ilk(art, "rapor_url", "html_url", "html", "report")),
     junit_url: junitAdresi(k, art),
     sauce_url: adresUyarla(ilk(k, "sauce_url") ?? ilk(art, "sauce_url", "sauce")),
+    sauce_durum: SAUCE_DURUMLARI.has(metin(k.sauce_durum)) ? (metin(k.sauce_durum) as Kosu["sauce_durum"]) : null,
+    sauce_neden: metinYaDaNull(k.sauce_neden),
     ci_url: adresUyarla(ilk(k, "ci_url", "github_url") ?? ilk(art, "ci_url", "github")),
     break_campaign: bc === true || ortamKirma === true || ortamKirma === "1",
     script_id: metinYaDaNull(kimlik(k.script_id)),

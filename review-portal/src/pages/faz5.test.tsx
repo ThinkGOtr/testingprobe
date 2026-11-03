@@ -311,9 +311,17 @@ describe("demo yol haritası: türetme", () => {
     expect(a[0]).toMatchObject({ hal: "tamam", baglanti: { yol: "/gereksinimler/req-tpd-1" } });
     // 9. adım yalnızca gerçek bir Sauce koşusu varsa "tamam"; yoksa yerel yedek açıkça yazılır.
     const sauce = girdi.kosular.some((k) => k.kaynak === "sauce");
-    if (sauce) expect(a[8]).toMatchObject({ hal: "tamam", kanit: expect.stringMatching(/Sauce Labs koşusu/) });
+    if (sauce) expect(a[8]).toMatchObject({ hal: "tamam", kanit: expect.stringMatching(/Sauce Labs'ta da koştu/) });
     const yerelGirdi = { ...girdi, kosular: girdi.kosular.filter((k) => k.kaynak !== "sauce") };
     expect(demoAdimlari(yerelGirdi)[8]).toMatchObject({ hal: "yedek", kanit: expect.stringMatching(/Sauce Labs kimliği yok/) });
+    // GitHub kipi: Sauce, GitHub koşusunun içinde bir job (sauce_durum). Koştuysa tamam; ulaşılamadıysa
+    // nedeniyle yedek — "kimlik yok" denmez.
+    const ghKosu = (d: "passed" | "error") =>
+      yerelGirdi.kosular.map((k, i) => (i === 0 ? { ...k, kaynak: "github" as const, sauce_durum: d, sauce_neden: d === "error" ? "oturum sınırı dolu" : null } : k));
+    expect(demoAdimlari({ ...yerelGirdi, kosular: ghKosu("passed") })[8]).toMatchObject({ hal: "tamam", kanit: expect.stringMatching(/Sauce Labs'ta da koştu/) });
+    const ulasilamadi = demoAdimlari({ ...yerelGirdi, kosular: ghKosu("error") })[8];
+    expect(ulasilamadi).toMatchObject({ hal: "yedek", kanit: expect.stringMatching(/ulaşılamadı \(oturum sınırı dolu\)/) });
+    expect(ulasilamadi.kanit).not.toMatch(/kimliği yok/);
     // Her bağlantı portal içi bir ekrana çıkar.
     for (const x of a) if (x.baglanti) expect(x.baglanti.yol.startsWith("/")).toBe(true);
     expect(v.gereksinimler.length).toBeGreaterThan(0);

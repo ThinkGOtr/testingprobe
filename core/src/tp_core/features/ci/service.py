@@ -973,27 +973,39 @@ def _sauce_bilgisi(
 ) -> dict[str, Any] | None:
     is_ = next((j for j in isler if str(j.get("name") or "").lower() == "sauce"), None)
     urls: list[str] = []
+    # sauce.json (scripts/github-sauce-summary.sh): passed | failed | error (Sauce'a ulaşılamadı) |
+    # atlandi. Job sonucu tek başına yetmez: altyapı hatasında job bilerek yeşil biter.
+    ozet: dict[str, Any] = {}
     art = next((a for a in artefaktlar if a.get("name") == SAUCE_ARTIFACT), None)
     if art is not None:
         try:
             import json
 
-            for icerik in gh.artifact_files(art, ("saucectl-report.json",)).values():
+            dosyalar = gh.artifact_files(art, ("saucectl-report.json", "sauce.json"))
+            for ad, icerik in dosyalar.items():
                 try:
                     veri = json.loads(icerik.decode("utf-8"))
                 except (UnicodeDecodeError, ValueError):
                     continue
-                urls.extend(_urlleri_topla(veri))
+                if str(ad).endswith("sauce.json") and isinstance(veri, dict):
+                    ozet = veri
+                    if veri.get("job_url"):
+                        urls.append(str(veri["job_url"]))
+                else:
+                    urls.extend(_urlleri_topla(veri))
         except GitHubCiError as exc:
             log.warning("sauce artefaktı okunamadı: %s", exc)
     urls = sorted({u for u in urls if SAUCE_URL_RE.match(u)})[:20]
-    if is_ is None and not urls:
+    if is_ is None and not urls and not ozet:
         return None
+    durum = ozet.get("durum")
     return {
         "url": urls[0] if urls else None,
         "urls": urls,
         "is_sonucu": (is_ or {}).get("conclusion"),
         "is_url": (is_ or {}).get("html_url"),
+        "durum": durum if durum in ("passed", "failed", "error", "atlandi") else None,
+        "neden": temiz(ozet.get("neden"), 300) if ozet.get("neden") else None,
     }
 
 
@@ -1638,6 +1650,8 @@ def serialize_runs(session: Session, runs: Sequence[Run]) -> list[dict[str, Any]
                 or a.get("rapor_url"),
                 "junit_url": _url(r.id, a.get("junit"), dizin),
                 "sauce_url": sauce.get("url"),
+                "sauce_durum": sauce.get("durum"),
+                "sauce_neden": sauce.get("neden"),
                 "ci_url": a.get("ci_url"),
                 "log_url": _url(r.id, a.get("log"), dizin),
                 "break_campaign": bool(o.get("break_campaign")),

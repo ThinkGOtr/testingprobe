@@ -697,6 +697,9 @@ export interface Kosu {
   /** JUnit XML (core `junit_url`; yoksa yerel artefakt düzeninden türetilir). */
   junit_url?: string | null;
   sauce_url: string | null;
+  /** GitHub koşusunun Sauce job'u (sauce.json): koştu mu, ulaşılamadı mı, kimlik yok mu. */
+  sauce_durum?: "passed" | "failed" | "error" | "atlandi" | null;
+  sauce_neden?: string | null;
   ci_url: string | null;
   break_campaign: boolean;
   /** Koşunun ait olduğu üretilen test (yerel kontrol / kırarak doğrulama); yoksa null. */

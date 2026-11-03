@@ -76,7 +76,10 @@ class FakeGitHub:
                                     {"url": "javascript:alert(1)"},
                                 ]
                             }
-                        ).encode()
+                        ).encode(),
+                        "sauce.json": json.dumps(
+                            {"durum": "passed", "neden": None, "job_url": None}
+                        ).encode(),
                     }
                 ),
             )
@@ -234,6 +237,7 @@ def test_pr_kosusu_github_dan_alinir(engine: Engine, gh: FakeGitHub) -> None:
         assert len(rows) == 9 and {r.kaynak for r in rows} == {"github"}
         detay = service.run_detail(s, rid)
     assert detay["sauce_url"].startswith("https://app.eu-central-1.saucelabs.com/")
+    assert detay["sauce_durum"] == "passed"  # sauce.json: Sauce gerçekten koştu
     # Artefakt Playwright HTML raporu taşımıyor: rapor bağlantısı GitHub'a düşer; JUnit ve kök
     # core'un yerel kopyasından (bkz. test_github_artifacts.py).
     assert detay["rapor_url"] == f"https://github.com/{REPO}/actions/runs/101#artifacts"

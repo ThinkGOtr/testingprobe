@@ -309,12 +309,26 @@ export function sonrakiAdimlar(x: SonrakiGirdi): YolAdimi[] {
           simulator: ciSim,
         });
 
-  // 9 — Sauce + QA (Sauce kimliği yok: yerel Chromium job'u zorunlu yedek)
-  const sauce = ci.filter((k) => k.kaynak === "sauce");
+  // 9 — Sauce + QA. GitHub kipinde Sauce, GitHub koşusunun içinde bir job'dur (sauce_durum,
+  // sauce.json); yerel kipte ayrı "sauce" kaynaklı koşu. Kimlik yoksa yerel Chromium job'u yedektir.
+  const sauce = ci.filter((k) => k.kaynak === "sauce" || k.sauce_durum === "passed" || k.sauce_durum === "failed");
+  const sauceKirmizi = ci.filter((k) => k.sauce_durum === "failed").length;
+  const sauceUlasilamadi = ci.filter((k) => k.sauce_durum === "error");
   const bitenYerel = ci.filter((k) => k.kaynak !== "sauce" && ["passed", "failed"].includes(k.durum));
   const a9 =
     sauce.length > 0
-      ? adim(9, { hal: "tamam", kanit: `${sauce.length} Sauce Labs koşusu`, baglanti: { yol: "/kosular", etiket: "Koşular" } })
+      ? adim(9, {
+          hal: "tamam",
+          kanit: `${sauce.length} koşu Sauce Labs'ta da koştu${sauceKirmizi ? ` (${sauceKirmizi} kırmızı)` : ""}.`,
+          baglanti: { yol: "/kosular", etiket: "Koşular" },
+        })
+      : sauceUlasilamadi.length > 0
+        ? adim(9, {
+            hal: "yedek",
+            kanit: `Sauce Labs'a ulaşılamadı (${sauceUlasilamadi[0].sauce_neden ?? "altyapı hatası"}) — testler yerel Chromium job'unda koştu.`,
+            ipucu: "Sahnede açıkça söyleyin: Sauce bu koşularda çalışmadı; bir sonraki koşuda (deploy/gece) yeniden denenir.",
+            baglanti: { yol: "/kosular", etiket: "Koşular" },
+          })
       : bitenYerel.length > 0
         ? adim(9, {
             hal: "yedek",
@@ -355,7 +369,9 @@ export function sonrakiAdimlar(x: SonrakiGirdi): YolAdimi[] {
   const storyHatalari = x.hatalar.filter((h) => (h.script_id && ssIds.has(h.script_id)) || (h.oneri?.tur === "bug_draft" && x.bugTaslaklari.some((b) => b.id === (h.oneri as { bug_draft_id: string }).bug_draft_id && b.icerik.story_key === g?.jira_key)));
   // Ana yolun anı C3 defect adayıdır (kırma koşusunun kasıtlı kırmızısı değil): önce defect adayı script'lerinin hatası.
   const defectIds = new Set(ss.filter((s) => s.yerel_sinif === "defect_adayi" || s.engel?.tur === "defect_candidate").map((s) => s.id));
-  const urunHatalari = storyHatalari.filter((h) => h.sinif === "product_defect");
+  // Kasıtlı kırma koşusunun (BREAK_CAMPAIGN) kırmızısı ürün hatası anı değildir.
+  const kirmaKosulari = new Set(x.kosular.filter(kirmaKosusuMu).map((k) => k.id));
+  const urunHatalari = storyHatalari.filter((h) => h.sinif === "product_defect" && !kirmaKosulari.has(h.run_id));
   const urunHatasi =
     enYeni(
       urunHatalari.filter((h) => h.script_id && defectIds.has(h.script_id)),
