@@ -9,6 +9,11 @@ import react from "@vitejs/plugin-react";
 export default defineConfig(({ mode }) => ({
   plugins: [react()],
   define: mode === "mock" ? { "import.meta.env.VITE_MOCK": JSON.stringify("1") } : {},
+  build: {
+    // Font dosyaları asla data: URI olarak gömülmez: nginx CSP'si (default-src 'self', font-src yok)
+    // data: fontu engeller. JetBrains Mono'nun 2 KB'lık alt kümesi aksi halde 4 KB sınırının altında kalır.
+    assetsInlineLimit: (dosya: string) => (/\.woff2?$/.test(dosya) ? false : undefined),
+  },
   server: {
     proxy: {
       "/api": {
