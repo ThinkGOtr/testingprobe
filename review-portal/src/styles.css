@@ -431,7 +431,7 @@ code,
   left: 8px;
   top: -40px;
   z-index: 100;
-  background: var(--accent);
+  background: var(--accent-solid);
   color: var(--accent-text);
   padding: 8px 12px;
   border-radius: var(--radius-sm);
@@ -440,12 +440,32 @@ code,
   top: 8px;
 }
 
+/* Yapışkan üst çubuğun altında kalmasın diye çapa/odak kaydırması (WCAG 2.4.11) */
+html {
+  scroll-padding-top: 72px;
+}
+
+/* Statik ortam ışıması (§4.1): isolation olmadan body'nin opak zemini z-index:-1 katmanı örter.
+   background-attachment: fixed kullanılmaz; katmanın kendisi sabittir. */
 .kabuk {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  isolation: isolate;
+}
+.kabuk::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: var(--ortam);
+  pointer-events: none;
+  z-index: -1;
 }
 
+/* Üst çubuk: .92 opak + bulanıklık; opak yedek token düzeyinde (--ust-cubuk-opak, saydamlık azaltma ve
+   backdrop-filter desteği yokken). Alt kenarda dashboard imzası 2 px gradyan çizgi (statik). Çizgi
+   ::after yerine border-image: zeminli pseudo öğe axe'ın çubuktaki tüm metinleri color-contrast
+   "incomplete"e düşürmesine yol açıyordu (sayfa başına +7). Kenarın altındaki ince ayraç gölgeyle. */
 .ust-cubuk {
   position: sticky;
   top: 0;
@@ -455,15 +475,20 @@ code,
   gap: 12px;
   height: 56px;
   padding: 0 16px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  background: var(--ust-cubuk-bg);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  border-bottom: 2px solid transparent;
+  border-image: var(--marka-cizgi) 1;
+  box-shadow: 0 1px 0 var(--border-soft);
 }
 
 .marka {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  font-weight: 650;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   color: var(--text);
   text-decoration: none;
   white-space: nowrap;
@@ -474,19 +499,36 @@ code,
 .marka-alt {
   color: var(--muted);
   font-weight: 500;
+  letter-spacing: 0;
   margin-left: 4px;
 }
+/* Marka işareti: altıgen (dekoratif gradyan — §3.2 kural 5). Altıgen ::before'da kırpılır; ışıma kutunun
+   drop-shadow'u ile altıgenin biçimini izler (clip-path aynı öğedeki gölgeyi de keserdi). */
 .marka-isaret {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
+  position: relative;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  filter: drop-shadow(0 0 6px rgb(99 102 241 / 0.45));
+}
+.marka-isaret::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(50% 0, 93.3% 25%, 93.3% 75%, 50% 100%, 6.7% 75%, 6.7% 25%);
   background:
-    radial-gradient(circle at 50% 50%, var(--surface) 0 3px, transparent 4px),
-    conic-gradient(from 45deg, var(--accent) 0 25%, var(--vurgu) 0 50%, var(--accent) 0 75%, var(--vurgu) 0);
+    radial-gradient(circle at 50% 50%, var(--surface) 0 18%, transparent 21%),
+    linear-gradient(135deg, #6366f1, #8b5cf6);
 }
 .marka-buyuk {
-  font-size: 1.15rem;
-  margin-bottom: 20px;
+  font-size: 1.25rem;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.marka-buyuk .marka-isaret {
+  width: 40px;
+  height: 40px;
+  filter: drop-shadow(0 0 12px rgb(99 102 241 / 0.4));
 }
 
 .ust-sag {
@@ -519,31 +561,80 @@ code,
   color: var(--muted);
   white-space: nowrap;
 }
+/* Bağlantı göstergesi: bağlı = yeşil nabız, bağlanıyor/yeniden = amber, kapalı = kırmızı,
+   örnek veri = --muted (mor değil: mor yalnız AI). Nabız box-shadow + opacity ile (transform yok → taşma
+   üretmez); hareket azaltmada statik (hareket azaltma bloğu). */
 .baglanti .nokta {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--muted);
+  flex-shrink: 0;
 }
 .baglanti-bagli .nokta {
   background: var(--ok);
+  color: var(--ok);
+  animation: nabiz 2s ease-out infinite;
 }
+.baglanti-bekliyor .nokta,
 .baglanti-uyari .nokta {
   background: var(--warn);
 }
+.baglanti-kapali .nokta {
+  background: var(--err);
+}
 .baglanti-mock .nokta {
-  background: var(--replay);
+  background: var(--muted);
+}
+@keyframes nabiz {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 55%, transparent);
+    opacity: 1;
+  }
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+    opacity: 0.75;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    opacity: 1;
+  }
 }
 
+/* Üst çubuktaki ÖRNEK VERİ rozeti: amber section-badge kalıbı (renkler .rozet-mock'tan) */
+.ust-sag > .rozet-mock {
+  padding: 3px 10px;
+  border-radius: var(--radius-hap);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+/* Kabuk glifleri (☰ ◐ ☾ ☀): SVG'ye geçişe (F3) kadar tek tip kutu ve yazı tipi */
+.menu-dugmesi,
+.ust-sag > .dugme-hayalet {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--text-2);
+}
 .menu-dugmesi {
   display: none;
   background: none;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  font-size: 1.1rem;
-  padding: 4px 10px;
+  border-radius: var(--radius-kontrol);
   cursor: pointer;
+}
+.menu-dugmesi:hover,
+.ust-sag > .dugme-hayalet:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
 }
 
 .govde {
@@ -552,16 +643,20 @@ code,
   min-height: 0;
 }
 @media (min-width: 861px) {
-  /* Kenar çubuğu yüzeyini sayfa boyunca sürdür (uzun sayfalarda da). */
+  /* Kenar çubuğu yüzeyini sayfa boyunca sürdür (uzun sayfalarda da). Gradyan zemin yerine iç gölge:
+     axe, gradyanlı ata zemin üstündeki her metni (yarı saydam *-bg kutuları, h1, açıklama) color-contrast
+     "incomplete"e düşürüyordu; gölge zemin hesabına girmez. */
   .govde {
-    background: linear-gradient(to right, var(--surface) 231px, var(--border) 231px 232px, transparent 232px);
+    box-shadow:
+      inset 239px 0 0 var(--surface),
+      inset 240px 0 0 var(--border);
   }
 }
 
 .yan-menu {
-  width: 232px;
+  width: 240px;
   flex-shrink: 0;
-  padding: 16px 12px;
+  padding: 20px 12px;
   border-right: 1px solid var(--border);
   background: var(--surface);
   position: sticky;
@@ -570,50 +665,63 @@ code,
   overflow-y: auto;
 }
 .menu-grup + .menu-grup {
-  margin-top: 18px;
+  margin-top: 20px;
 }
+/* Grup başlığı: eyebrow (§3.4) */
 .menu-grup-baslik {
-  font-size: 0.72rem;
-  font-weight: 650;
+  font-size: 0.75rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   color: var(--muted);
-  padding: 0 10px 6px;
+  padding: 0 12px 6px;
 }
 .yan-menu ul {
   list-style: none;
   margin: 0;
   padding: 0;
+  display: grid;
+  gap: 2px;
 }
 .menu-oge {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 7px 10px;
-  border-radius: var(--radius-sm);
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 12px;
+  border-radius: var(--radius-kontrol);
   color: var(--text-2);
   text-decoration: none;
   font-weight: 500;
 }
 .menu-oge:hover {
-  background: var(--surface-3);
+  background: var(--hover);
   color: var(--text);
 }
+/* Aktif: zemin + metin rengi + solda 2 px şerit (şerit tek gösterge değil — §3.2 kural 4) */
 .menu-oge.aktif {
   background: var(--accent-soft);
   color: var(--accent);
   font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--accent-solid);
 }
+/* Pasif ("bu fazda yok"): opaklık yok (AA'yı düşürüyordu), --muted metin, kesik kenarlı not hapı */
 .menu-oge-pasif,
 .menu-oge-pasif:hover {
   background: none;
-  color: var(--text-2);
+  color: var(--muted);
   cursor: not-allowed;
-  opacity: 0.7;
 }
 .menu-oge-not {
+  flex-shrink: 0;
   font-size: 0.75rem;
-  font-weight: 400;
+  font-weight: 500;
+  line-height: 1.3;
+  padding: 1px 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-hap);
+  white-space: nowrap;
 }
 .odak-isaret {
   width: 7px;
@@ -642,7 +750,7 @@ code,
 
 @media (max-width: 860px) {
   .menu-dugmesi {
-    display: inline-block;
+    display: inline-flex;
   }
   .yan-menu {
     position: fixed;
@@ -654,8 +762,12 @@ code,
     transition: transform 0.18s ease;
     box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
   }
+  /* Açık menüde perde: yalnız görsel (tıklamayı yakalamaz, taşma üretmez), mevcut gölgeyle birleşik */
   .yan-menu.acik {
     transform: none;
+    box-shadow:
+      0 8px 24px rgb(0 0 0 / 0.18),
+      0 0 0 100vmax rgb(0 0 0 / 0.5);
   }
   .icerik {
     padding: 16px 16px 48px;
@@ -1579,25 +1691,49 @@ fieldset:disabled select {
 /* ---------------------------------------------------------------- giriş */
 
 .giris-sayfa {
+  position: relative;
+  isolation: isolate;
   min-height: 100vh;
   display: grid;
   place-items: center;
   padding: 16px;
-  background:
-    radial-gradient(1200px 500px at 10% -10%, var(--accent-soft), transparent 60%),
-    var(--bg);
+  background: var(--bg);
+}
+/* 60 px ızgara ve iki statik radyal ışıma (animasyonsuz). Yalnız dekor: tıklamayı yakalamaz. */
+.giris-sayfa::before,
+.giris-sayfa::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+.giris-sayfa::before {
+  background-image:
+    linear-gradient(var(--giris-izgara) 1px, transparent 1px),
+    linear-gradient(90deg, var(--giris-izgara) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
+.giris-sayfa::after {
+  background: var(--ortam);
 }
 .giris-kart {
   width: 100%;
   max-width: 400px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 28px;
-  box-shadow: 0 10px 30px rgb(16 24 40 / 0.08);
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border: 1px solid color-mix(in srgb, var(--accent-solid) 30%, transparent);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  box-shadow: var(--shadow);
 }
+/* "AI Testing Probe" gradyan metni MVT'de yok: background-clip:text axe color-contrast'ı "incomplete"e
+   düşürüyor (/giris F0 tabanı 0 → 2). F3'te <strong>Probe</strong> ile yeniden değerlendirilir. */
 .giris-kart h1 {
-  font-size: 1.35rem;
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 .giris-kart form {
   margin-top: 18px;
@@ -2602,13 +2738,18 @@ mark.kaynak-deger {
   gap: 10px;
   align-items: flex-start;
   justify-content: space-between;
-  padding: 10px 12px;
+  padding: 10px 8px 10px 14px;
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--surface-2);
+  color: var(--text);
   border: 1px solid var(--border-strong);
-  border-left: 4px solid var(--ok);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.14);
+  border-left: 3px solid var(--ok);
+  box-shadow: var(--shadow);
   font-size: 0.9rem;
+  animation: bildirim-gir 150ms ease-out;
+}
+.bildirim > span {
+  padding-top: 2px;
 }
 .bildirim-hata {
   border-left-color: var(--err);
@@ -2616,14 +2757,96 @@ mark.kaynak-deger {
 .bildirim-bilgi {
   border-left-color: var(--info);
 }
+/* Kapat: en az 24×24 hedef (WCAG 2.5.8) */
 .bildirim .kapat {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   background: none;
   border: none;
-  font-size: 1.1rem;
-  color: var(--muted);
-  cursor: pointer;
+  border-radius: var(--radius-sm);
+  font-size: 1.15rem;
   line-height: 1;
-  padding: 0 4px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.bildirim .kapat:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+@keyframes bildirim-gir {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* ÖRNEK VERİ bandı (§4.2): amber ton zemini korunur (dürüstlük etiketi zayıflatılmaz), sol 3 px şerit,
+   metin --text. Başlık satır içinde kalır; 390 px'te gövde alt satıra sarar. Seçici iki sınıflı:
+   sonraki .uyari-kutusu tekrar tanımları ezmesin. */
+.uyari-kutusu.ornek-veri-bandi {
+  align-items: baseline;
+  justify-content: flex-start;
+  column-gap: 0.5em;
+  row-gap: 2px;
+  min-height: 36px;
+  margin: 0 0 20px;
+  padding: 8px 14px;
+  background: var(--warn-bg);
+  color: var(--text);
+  border: 1px solid color-mix(in srgb, var(--warn) 25%, transparent);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+}
+.uyari-kutusu.ornek-veri-bandi > strong {
+  display: inline;
+  flex-basis: auto;
+  color: var(--warn);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* Sayfa başlığı (§4.3) — Şerit B. Temel .sayfa-basligi kuralları "sayfa yapısı" bölümünde; bu blok
+   onlardan sonra geldiği için aynı özgüllükle kazanır. Alt boşluk 18 → 24 px: Koşular'daki
+   .tetik-aciklamalari negatif üst marjı (-10px) buna yaslıdır → aynı görsel aralık için -16px olmalı. */
+.sayfa-basligi {
+  margin-bottom: 24px;
+}
+.sayfa-basligi h1 {
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.sayfa-basligi p {
+  color: var(--text-2);
+  max-width: 72ch;
+}
+/* Geri bağlantısı: section-badge hapı */
+.ust-baglanti {
+  margin-bottom: 10px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+.ust-baglanti a {
+  display: inline-block;
+  padding: 3px 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent-solid) 30%, transparent);
+  border-radius: var(--radius-hap);
+  text-decoration: none;
+}
+.ust-baglanti a:hover {
+  color: var(--accent-hover);
+  border-color: var(--accent);
 }
 
 .dis-baglanti {
