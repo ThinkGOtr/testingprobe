@@ -66,33 +66,48 @@ Actor = Principal | str
 
 
 class WorkflowError(Exception):
-    """Durum makinesi/onay hatası; API 409 (veya alt sınıfın kodu) döner."""
+    """Durum makinesi/onay hatası; API 409 (veya alt sınıfın kodu) döner.
+
+    `kod`: yanıta yazılan sabit, makinece okunur hata kodu (MIMARI-SOZLESME §5). Sınıf başına
+    sabittir; mesaj metninden asla türetilmez. `None` ise API durum kodundan genel kodu üretir
+    (409 → `cakisma`, 404 → `bulunamadi` …).
+    """
 
     status_code = 409
+    kod: str | None = None
 
 
 class InvalidTransition(WorkflowError):
-    pass
+    kod = "gecersiz_gecis"
 
 
 class ConcurrentTransition(WorkflowError):
-    pass
+    kod = "eszamanli_gecis"
 
 
 class GateClosed(WorkflowError):
-    pass
+    kod = "kapi_kapali"
+
+
+class OnayHashUyusmuyor(GateClosed):
+    """Karar verilen içerik, kullanıcının gördüğü içerikten (icerik_hash) farklı."""
+
+    kod = "onay_hash_uyusmuyor"
 
 
 class GuardFailed(WorkflowError):
     status_code = 422
+    kod = "kosul_saglanmadi"
 
 
 class ApprovalNotAllowed(WorkflowError):
     status_code = 403
+    kod = "onay_yetkisi_yok"
 
 
 class InvalidDecision(WorkflowError):
     status_code = 422
+    kod = "gecersiz_karar"
 
 
 def actor_name(actor: Actor) -> str:
@@ -310,7 +325,7 @@ def record_approval(
         if beklenen_hash is None:
             raise InvalidDecision("karar, görüntülenen içeriğin hash'ini (icerik_hash) taşımalı")
         if beklenen_hash != gorulen:
-            raise GateClosed(
+            raise OnayHashUyusmuyor(
                 f"{kind}: içerik siz görüntüledikten sonra değişmiş; yenileyip tekrar karar verin"
             )
 

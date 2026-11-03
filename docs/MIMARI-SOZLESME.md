@@ -213,9 +213,19 @@ yalnızca SELECT/INSERT; requirement silinince cascade). Denetim: `requirement.b
 `rol`). Model kipi denetimi: `worker.model_mode` (core-worker açılışında, değiştiyse; `{ayar, mod,
 replay_strict, anahtar_var, calisma_alani_var, saglayici}` — anahtar/çalışma alanı DEĞERİ asla).
 
+**Asistan tabloları (0017 `asistan`, ayrıntı `specs/008-ai-asistan/data-model.md`):** `asistan_sohbet`,
+`asistan_mesaj` (kısmi tekil indeksler: `unique(ust_mesaj_id)`, kullanıcı başı tek bekleyen
+`WHERE rol='assistant' AND tetik='kullanici' AND durum IN ('pending','running')`; `check(tetik='kullanici'
+OR (ust_mesaj_id IS NOT NULL AND amac='assistant_deep'))`), `asistan_durum` (tekil satır `id = 1`;
+yalnız worker yazar), `asistan_oneri_geri_bildirim`, `asistan_hiz` (`unique nulls not distinct`).
+`tool_call.kanal` ∈ `agent|ide|asistan`. `ai_call`'a kolon eklenmez: asistan çağrısının kişi bağı
+`ai_call.ek = {kanal:"asistan", kullanici_id, mesaj_id}`. `asistan_mesaj.durum` durum makinesinde değildir
+(insan kapısı yok). Saklama 90 gün (`TP_ASISTAN_SAKLAMA_GUN`); `ai_call`/`tool_call` etkilenmez.
+
 ## 5. HTTP API (core-api, portal `/api/` önekiyle erişir)
 
-Tüm yanıtlar JSON; hata `{"detail": "..."}`. Oturum: `tp_session` çerezi (itsdangerous imzalı, HttpOnly,
+Tüm yanıtlar JSON; hata `{"detail": "...", "kod": "..."}` (`kod` sabit enum, aşağıda "Hata `kod`
+alanı"; `detail` insan içindir ve korunur). Oturum: `tp_session` çerezi (itsdangerous imzalı, HttpOnly,
 SameSite=Lax). Rol yetkisi her uçta kontrol edilir. Oturum sunucu tarafındadır (`oturum` tablosu):
 çıkış o tarayıcının oturumunu iptal eder, kopyalanan çerez de geçersizleşir.
 
@@ -229,7 +239,7 @@ onaylanan head sha'sını `ForgePort.merge_pr(..., expected_head_sha=...)` ile b
 **CSRF / Origin (`OriginGuard`, tüm uçlar):** POST/PUT/PATCH/DELETE isteklerinde `Sec-Fetch-Site`
 varsa `same-origin` veya `none` olmalı; yoksa `Origin` varsa `TP_ALLOWED_ORIGINS` listesinde olmalı
 (`null` reddedilir). İkisi de yoksa istek tarayıcı dışı istemci (curl, MCP bearer) sayılır ve geçer.
-Ret: 403 `{"detail": "İstek başka bir kaynaktan geldi; işlem reddedildi"}`. Kural oturum çerezinden
+Ret: 403 `{"detail": "İstek başka bir kaynaktan geldi; işlem reddedildi", "kod": "kaynak_reddi"}`. Kural oturum çerezinden
 bağımsızdır (giriş CSRF'i de kapsanır).
 
 **SSE olayları (`GET /events`):** zarf `{data, ts}`. Olay adları: her durum makinesi için
@@ -290,6 +300,68 @@ gönderilir ve akış kapanır. Portal bunu alınca yeniden bağlanmaz, giriş e
 | MCP | `:8000/mcp` → `get_requirement(requirement_key)` (submit kapsamı; PO onaylı metin güvenilmeyen blokta + `onaylanan_hash`), `submit_draft_cases(requirement_key, cases, onaylanan_hash)` (hash zorunlu; bayatsa ret), `publish_test_cases` | token | Claude Code kanalı (streamable HTTP, durumsuz). Token tek kapsamlıdır (`submit` veya `publish`); iki araç için iki token. Yalnızca 127.0.0.1/localhost Host'u, `X-Forwarded-For` → 403, çerez okunmaz. Her çağrı `tool_call` (kanal `ide`). Ayrıntı: docs/CLAUDE-CODE-KANALI.md |
 | POST | `/demo/break-locator` · `/demo/reset` | presenter | Demo kırılması / sıfırlama (200 done / 202 sürüyor / 409). Kırılma main için yeşil koşu ister (yoksa 409 + `demo.break_refused`); `?zorla=true` bilerek atlar. GitHub kipinde kırılma/sıfırlama insan kimliğiyle (`GITHUB_MERGE_TOKEN`, demo-admin bypass) PR olarak yapılır (sıfırlama: main üstüne `demo-baseline` ağacı); token yoksa iş düşer → 409 (GERCEK-SISTEMLER §5.7). Sıfırlama jira-sim'i sıfırlamaz; yalnızca `AI-generated` + `tp-<uuid>` etiketli Bug'ları siler |
 | GET | `/demo/status` | herkes | Faz 5: `model {ayar, mod, replay_strict, anahtar_var, calisma_alani_var, saglayici, aciklama, zaman}` (core-worker'ın son açılış bildirimi, `worker.model_mode` denetimi; kayıt yoksa null = bilinmiyor; anahtar değeri asla) ve `degerlendirme [{paket, surum, durum, etiket}]` (rules/evaluations.yaml; `pending` → "canlı değerlendirme bekliyor"; okunamazsa `{hata}`). main, `forge.testid` (web/src) + `forge.e2e_testid` (e2e page object), `locator_durumu` (`baseline`\|`kirik`\|`onarildi`\|null), baseline, çalışan uygulama sha'sı ve main ile eşleşmesi, `web_yenileme_istegi`, `onarim_on_kosulu {hazir, son_yesil_kosu, yonerge}`, `locator_demo {destekleniyor, neden}` |
+| GET | `/assistant/status` | herkes | `{etkin, neden?, mod, varsayilan_model, degerlendirme, paket_commit, kalan_soru}` — `asistan_durum` satırından (core-api kipi/anahtarı bilmez); kalp atışı > 2 dk → `etkin=false, neden=worker_yok` |
+| GET · POST | `/assistant/conversations` | herkes (kendi) | Son 50 sohbet · yeni sohbet |
+| DELETE | `/assistant/conversations/{id}` | herkes (kendi) | Yumuşak silme |
+| GET | `/assistant/conversations/{id}/messages` | herkes (kendi) | Mesajlar (bekleyen dahil) |
+| POST | `/assistant/conversations/{id}/messages` `{soru ≤ 2000, baglam ≤ 2 KB, kip?: soru\|oneri, oneri_kural_id?}` veya `{ust_mesaj_id}` | herkes (kendi) | 202 `{mesaj_id}`; 422 `gecersiz_istek`/`sir_icerik`, 404, 409 `bekleyen_var`/`zaten_derin`/`oneri_gecersiz`, 429 `hiz_siniri`/`mesgul`, 402 `butce_asildi`, 503 `asistan_kapali` (+`neden`: `worker_yok`\|`maskeleme_kapali`) |
+| GET | `/assistant/messages/{id}` | herkes (kendi) | Tek mesaj (SSE yokken yoklama) |
+| POST | `/assistant/messages/{id}/cancel` · `/feedback` `{deger: -1\|1}` | herkes (kendi) | İptal (`pending` ücretsiz; `running` harcanan yazılır) · 👍/👎 |
+| GET | `/assistant/suggestions?rota=&varlik_tur=&varlik_id=` | herkes | Kural tabanlı öneriler (modelsiz, `ai_call` yazmaz): `{oneriler[{kural_id, baslik, neden, oncelik, eylem}], hesaplandi, ekranda_kural_var, bastirilan, diger_ekranlar}`; varlık yok/role kapalı 404; 60/dk |
+| POST | `/assistant/suggestions/{kural_id}/feedback` `{deger: -1\|1\|2, varlik_id?, jira_anahtari?}` | herkes | Gizle/Faydalı/Yaptım; bilinmeyen kural 422, erişilemeyen varlık 404, `varlik_durum` sunucuda; 30/dk |
+
+**Asistan uç ayrıntıları (`features/assistant/api.py`; sözleşme `specs/008-ai-asistan/contracts/api.md`):**
+yalnız çerez oturumu (`tpt_` bearer → 401); başkasının sohbet/mesajına (cancel, feedback, `ust_mesaj_id`
+dahil) her uç 404. `{ust_mesaj_id}` ("Daha ayrıntılı incele"): aynı sohbette, `rol='assistant'`,
+`durum='done'`, `amac IS DISTINCT FROM 'assistant_deep'`, tekil; soru ve amaç sunucuda üst mesajdan
+türetilir. Global bekleyen sınırı 2 × `TP_WORKER_ASISTAN_PARALEL` (varsayılan 6), `job` tablosundaki
+bitmemiş `assistant.answer` işlerinden `pg_advisory_xact_lock` altında; kullanıcı başı tek bekleyen
+kısmi tekil indeksle atomik (eşzamanlı POST'ta kısıt adına göre 409 `bekleyen_var`); saatlik 30 soru
+(iptal/hata dahil, otomatik yükseltme çocukları hariç, `assistant_deep` 2 sayılır). İş yükü daima
+`{mesaj_id, kullanici_id, tetik}`. Bütçe: asistan günlük $10, kullanıcı günlük $1, kök soru başı $0.50
+(çocuklar dahil). Hız sınırı `asistan_hiz` sabit pencere sayacıyla (`oneri_liste` 60/dk,
+`oneri_geri_bildirim` 30/dk, `jira_global` 30/dk). Öneri ucu `TP_ASISTAN_ONERI=0` iken 404.
+SSE: `assistant.step {mesaj_id, kullanici_id, adim_kodu}`, `assistant.answered {mesaj_id, kullanici_id,
+durum, derin_bekliyor}` — `events/bus.py` `KIMLIK_ALANLARI` += `mesaj_id`, `kullanici_id`; `_akis`
+`assistant.*` olayını yalnız `kullanici_id`'si oturum kullanıcısı olan akışa teslim eder (yoksa hiç;
+fail-closed); yükte soru/cevap metni yok.
+
+**Hata `kod` alanı (sabit enum; makinece okunur):** `api/errors.py` her hata yanıtına `kod` yazar;
+`kod` asla istisna adından veya `str(exc)`'ten türetilmez; 5xx'te `detail` "Sunucu hatası" ve `kod`
+`ic_hata` (tek istisna: bilinçli hizmet durumu `asistan_kapali`). Başlıklar (401 `WWW-Authenticate`)
+korunur. Yeni değer yalnız bu tabloya eklenerek kullanılır; asistanın hata sözlüğü
+(`rules/assistant/hata-sozlugu.yaml`) ve portal `ApiError.kod` bu enum'u kullanır.
+
+| `kod` | HTTP | Kaynak |
+|---|---|---|
+| `gecersiz_istek` | 400, 415, 422 | genel (durum kodundan; `RequestValidationError` dahil) |
+| `yetkisiz` | 401 | genel |
+| `yasak` | 403 | genel (`require_role` reddi) |
+| `bulunamadi` | 404, 410 | genel |
+| `yontem_desteklenmiyor` | 405 | genel |
+| `cakisma` | 409 | genel (`kod`'suz `WorkflowError` dahil) |
+| `govde_cok_buyuk` | 413 | genel |
+| `hiz_siniri` | 429 | genel; asistan saatlik soru ve öneri kovaları |
+| `istek_hatasi` | diğer 4xx | genel |
+| `ic_hata` | 5xx | genel |
+| `gecersiz_gecis` | 409 | `InvalidTransition` |
+| `eszamanli_gecis` | 409 | `ConcurrentTransition` |
+| `kapi_kapali` | 409 | `GateClosed` |
+| `onay_hash_uyusmuyor` | 409 | `OnayHashUyusmuyor` (karar verilen içerik ekranda görülenden farklı) |
+| `kosul_saglanmadi` | 422 | `GuardFailed` |
+| `onay_yetkisi_yok` | 403 | `ApprovalNotAllowed` |
+| `gecersiz_karar` | 422 | `InvalidDecision` |
+| `butce_asildi` | 402 | `BudgetExceeded`; asistan bütçe ön kontrolü |
+| `kaynak_reddi` | 403 | CSRF/Origin reddi (`api/csrf.py`, ara katman) |
+| `sir_icerik` | 422 | asistan: soru/bağlamda sır deseni (değer yanıtta tekrarlanmaz) |
+| `bekleyen_var` | 409 | asistan: kullanıcının yanıt bekleyen sorusu var |
+| `zaten_derin` | 409 | asistan: bu mesaj için ayrıntılı inceleme zaten var |
+| `oneri_gecersiz` | 409 | asistan: `oneri_kural_id` artık geçerli değil |
+| `mesgul` | 429 | asistan: global bekleyen sınırı dolu |
+| `asistan_kapali` | 503 | asistan: `neden` = `worker_yok` \| `maskeleme_kapali` |
+
+`asistan_mesaj.hata_kodu` (yanıt değil, mesaj kaydı): `butce_asildi`, `girdi_tavani`, `zaman_asimi`,
+`model_hatasi`.
 
 **Faz 2 uç ayrıntıları (Demo-A):** `POST /requirements/sync` → 200 `{durum:"done", mesaj, proje,
 sonuc:{<jira_key>: yeni|degismedi|guncellendi|yeniden_kontrol|sifirlandi|mesgul}}`. `review`,
@@ -659,11 +731,26 @@ Faz 1 entegrasyonunda eklenenler (boş = yerel simülatör / güvenli varsayıla
   yazdırır, onay (`e`) gelirse uygular; ayrıca `make jira-seed [ONAY=1]`.
   `TP_TEST_MGMT` ortak bloktadır: core-api (`/publish/preview`) ve core-worker (yayın) aynı hedefi görür.
 - playwright-mcp: `MCP_ALLOWED_ORIGINS`, `MCP_ALLOWED_HOSTS` (Host başlığı izin listesi).
+- Portal asistanı ve Öneri (hepsi isteğe bağlı; ayrıntı `specs/008-ai-asistan/contracts/env.md`):
+  `TP_ASISTAN_MODEL_MODE` (`off`; `live` veya `off`, pipeline `TP_MODEL_MODE`'dan bağımsız — **yalnızca
+  core-worker**, core-api kipi bilmez), `TP_ASISTAN_OTOMATIK_DERIN` (1; yalnızca core-worker),
+  `TP_ASISTAN_MUSTERI_VERISI` (0; 1 iken `TP_PII_MASKING` kapalıysa asistan kapalı — yalnızca
+  core-worker), `TP_ASISTAN_VERI_ROLLERI` (boş = tüm roller; `db_schema`/`db_query` — yalnızca
+  core-worker), `TP_WORKER_ASISTAN_SERIT` (1; 0 → şerit ve kalp atışı yok → `worker_yok` — yalnızca
+  core-worker), `GITHUB_ACTIONS_READ_TOKEN` (**sır**, yalnızca core-worker; `ci_log` için yalnız
+  `actions:read`, boşsa mevcut okuma kimliği; `make security-check` 6 aynı denetler). Ortak blokta
+  (core-api + core-worker): `TP_ASISTAN_ONERI` (1; 0 → öneri uçları/düğmesi kapalı),
+  `TP_ASISTAN_SAKLAMA_GUN` (90), `TP_WORKER_ASISTAN_PARALEL` (3; global bekleyen sınırı = 2 × bu),
+  `JIRA_CREATE_URL` (boş; "Jira'yı aç" yeni kayıt adresi — `https` (simülatörde `http://127.0.0.1`) ve
+  kökeni `JIRA_BROWSE_URL` ile aynı olmalı, değilse yok sayılır + uyarı; boşsa gerçek Jira'da
+  `JIRA_BROWSE_URL` + `/secure/CreateIssue!default.jspa`, simülatörde bağlantı yok). Asistan model
+  anahtarı mevcut `ANTHROPIC_API_KEY`'dir (yeni anahtar yok). Bütçe/hız tavanları v1'de kod sabitidir.
 
 **Ortam dağıtımı (compose):** `x-core-env` ortak bloğu core-api ve core-worker'a gider ve yazma
 kimliği içermez. `JIRA_WRITE_*`, `XRAY_CLIENT_*`, `GITHUB_TOKEN`, `GITHUB_MERGE_TOKEN`, `GH_APP_*`,
-`ANTHROPIC_API_KEY`, `PLAYWRIGHT_MCP_URL` ve yukarıdaki PO/merge ayarları **yalnızca core-worker**'dadır
-(`make security-check` 6 ve 8).
+`ANTHROPIC_API_KEY`, `PLAYWRIGHT_MCP_URL`, `GITHUB_ACTIONS_READ_TOKEN`, `TP_ASISTAN_MODEL_MODE` ve yukarıdaki
+PO/merge ayarları **yalnızca core-worker**'dadır (`make security-check` 6 ve 8). Asistan bilgi paketi
+(`./var/tp-bilgi:/opt/tp-bilgi:ro`) yalnızca core-worker'a bağlanır.
 
 **Ağlar:** `playwright-mcp` yalnızca `agent-net` + `mcp-net`'tedir (`agent-net`: internal, yalnızca
 demo-app-web ile; `mcp-net`: internal, yalnızca core-worker ile paylaşılır) ve host'a port açmaz.

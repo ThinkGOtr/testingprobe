@@ -240,3 +240,157 @@ def scrub_secrets_in(value: Any, secrets: Iterable[str]) -> Any:
     if isinstance(value, list):
         return [scrub_secrets_in(v, known) for v in value]
     return value
+
+
+# ------------------------------------------------------------------ biçimden sır temizliği
+#
+# Asistan araç çıktıları (ürün bilgisi, CI logu, Jira, probe verisi) ve bilgi paketi üretim
+# taraması için (AI-ASISTAN-PLANI §5.1, §10.3 Şerit C1). PII maskelemesinden AYRI ve her zaman
+# açık; geri açılmaz. Değeri bilinmeyen ama biçimi tanınan sırlar (token önekleri, JWT, özel
+# anahtar, URL içi kimlik, Authorization başlığı, `AD=değer` ataması) ile çalışma anı sır
+# değerleri (`gateway.factory.known_secret_values`) temizlenir.
+#
+# Kesme sınırı: araç çıktıları kırpılır (ör. log kuyruğu, 400 satır), bu yüzden metnin SONUNDA
+# kalan yarım token (öneki tanınan, gövdesi kısa) ve bilinen sır değerinin metnin başında/sonunda
+# kalan ≥ 8 karakterlik parçası da temizlenir.
+
+SECRET_VALUE_MIN_LEN = 8  # çalışma anı sır değerleri: daha kısası rastgele eşleşir
+
+
+def _onekli(onek: str, govde: str, en_az: int) -> str:
+    """Önekli token: tam gövde ya da metin sonunda (kesme) kısa gövde."""
+    return rf"{onek}(?:{govde}{{{en_az},}}|{govde}+\Z)"
+
+
+@dataclass(frozen=True)
+class SecretPattern:
+    name: str
+    pattern: re.Pattern[str]
+    # Eşleşmenin korunan kısmı (ör. başlık adı); geri kalanı `***` olur.
+    keep_group: str | None = None
+
+
+SECRET_PATTERNS: tuple[SecretPattern, ...] = (
+    # Özel anahtar bloğu (kesikse metin sonuna kadar); BEGIN'i kesilmiş blok aşağıda ayrıca.
+    SecretPattern(
+        "private_key",
+        re.compile(
+            r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?"
+            r"(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|\Z)"
+        ),
+    ),
+    SecretPattern(
+        "private_key_tail",
+        re.compile(r"\A[A-Za-z0-9+/=\s]*-----END [A-Z0-9 ]*PRIVATE KEY-----"),
+    ),
+    SecretPattern(
+        "authorization",
+        re.compile(
+            r"(?P<keep>\bAuthorization\s*:\s*(?:Bearer|Basic|token)\s+)[^\s'\"`,;]+",
+            re.IGNORECASE,
+        ),
+        keep_group="keep",
+    ),
+    SecretPattern(
+        "env_assignment",
+        re.compile(
+            r"(?P<keep>\b(?:SEED_USER_PASSWORD|TP_SESSION_SECRET|JIRA_[A-Z_]*TOKEN"
+            r"|[A-Z][A-Z0-9_]*(?:_PASSWORD|_SECRET|_API_KEY|_PRIVATE_KEY|_TOKEN))\s*=\s*)"
+            r"(?![<${'\"`*])[^\s'\"`]+"
+        ),
+        keep_group="keep",
+    ),
+    SecretPattern(
+        "url_credentials",
+        re.compile(r"(?P<keep>\b[a-z][a-z0-9+.-]*://)[^/\s:@]+:[^@\s]+(?=@)", re.IGNORECASE),
+        keep_group="keep",
+    ),
+    SecretPattern("github_pat", re.compile(_onekli(r"\bgithub_pat_", r"[A-Za-z0-9_]", 20))),
+    SecretPattern("github_token", re.compile(_onekli(r"\bgh[pousr]_", r"[A-Za-z0-9]", 20))),
+    SecretPattern("anthropic_key", re.compile(_onekli(r"\bsk-ant-", r"[A-Za-z0-9_-]", 8))),
+    SecretPattern("atlassian_token", re.compile(_onekli(r"\bATATT", r"[A-Za-z0-9_=+/-]", 16))),
+    SecretPattern("google_api_key", re.compile(_onekli(r"\bAIza", r"[0-9A-Za-z_-]", 20))),
+    SecretPattern("aws_access_key", re.compile(r"\bAKIA(?:[0-9A-Z]{16}|[0-9A-Z]+\Z)")),
+    SecretPattern("slack_token", re.compile(_onekli(r"\bxox[abposr]-", r"[A-Za-z0-9-]", 8))),
+    SecretPattern("npm_token", re.compile(_onekli(r"\bnpm_", r"[A-Za-z0-9]", 20))),
+    SecretPattern(
+        "jwt",
+        re.compile(r"\beyJ[\w-]+\.[\w-]+\.[\w-]+|\beyJ[\w-]{8,}(?:\.[\w-]*){0,2}\Z"),
+    ),
+    SecretPattern("tp_token", re.compile(_onekli(r"\btpt_", r"[A-Za-z0-9]", 8))),
+    SecretPattern("tp_mcp_token", re.compile(_onekli(r"\btpk_", r"[A-Za-z0-9_]", 8))),
+)
+
+
+@dataclass(frozen=True)
+class SecretFinding:
+    """Bulunan sır: tür ve konum (değer TAŞINMAZ; rapora/kayda yalnız bunlar yazılır)."""
+
+    name: str
+    start: int
+    end: int
+
+
+def _sir_degerleri(values: Iterable[str]) -> list[str]:
+    return sorted(
+        {v for v in values if isinstance(v, str) and len(v) >= SECRET_VALUE_MIN_LEN},
+        key=len,
+        reverse=True,
+    )
+
+
+def find_secret_patterns(text: str, values: Iterable[str] = ()) -> list[SecretFinding]:
+    """Metindeki biçimden tanınan sırlar ve bilinen sır değerleri (≥ 8 karakter), konumlarıyla."""
+    if not text:
+        return []
+    found: list[SecretFinding] = []
+    for sp in SECRET_PATTERNS:
+        for m in sp.pattern.finditer(text):
+            start = m.end(sp.keep_group) if sp.keep_group else m.start()
+            if m.end() > start:
+                found.append(SecretFinding(sp.name, start, m.end()))
+    for value in _sir_degerleri(values):
+        i = text.find(value)
+        while i != -1:
+            found.append(SecretFinding("known_value", i, i + len(value)))
+            i = text.find(value, i + len(value))
+        # Kesme sınırı: metnin sonunda değerin başı, başında değerin sonu kalmış olabilir.
+        for n in range(len(value) - 1, SECRET_VALUE_MIN_LEN - 1, -1):
+            if text.endswith(value[:n]):
+                found.append(SecretFinding("known_value_partial", len(text) - n, len(text)))
+                break
+        for n in range(len(value) - 1, SECRET_VALUE_MIN_LEN - 1, -1):
+            if text.startswith(value[-n:]):
+                found.append(SecretFinding("known_value_partial", 0, n))
+                break
+    return sorted(found, key=lambda f: (f.start, -f.end))
+
+
+def scrub_secret_patterns(text: str, values: Iterable[str] = ()) -> str:
+    """Biçimden tanınan sırları ve bilinen sır değerlerini (≥ 8 karakter) `***` ile değiştirir.
+
+    >>> scrub_secret_patterns("Authorization: Bearer ornek.token-123")
+    'Authorization: Bearer ***'
+    >>> scrub_secret_patterns("klon: https://ornek:parola@forge.local/x.git")
+    'klon: https://***@forge.local/x.git'
+    """
+    if not text:
+        return text
+    findings = find_secret_patterns(text, values)
+    if not findings:
+        return text
+    # Çakışan aralıkları birleştir, sonra tek geçişte değiştir (konumlar kaymaz).
+    araliklar: list[list[int]] = []
+    for f in findings:
+        if araliklar and f.start <= araliklar[-1][1]:
+            araliklar[-1][1] = max(araliklar[-1][1], f.end)
+        else:
+            araliklar.append([f.start, f.end])
+    parcalar: list[str] = []
+    konum = 0
+    for bas, son in araliklar:
+        parcalar.append(text[konum:bas])
+        parcalar.append(SECRET_MASK)
+        konum = son
+    parcalar.append(text[konum:])
+    return "".join(parcalar)

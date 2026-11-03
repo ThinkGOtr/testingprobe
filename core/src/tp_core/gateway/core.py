@@ -15,8 +15,10 @@ Sağlayıcıdan bağımsızdır; sağlayıcıya özgü her şey `providers/` alt
     Replay satırında `model` çıktıyı GERÇEKTEN üreten modeldir: kayıt üst verisi olmayan
     (elle hazırlanmış golden, nötr yedek) çıktıda `HAND_PREPARED_MODEL` ("golden-elle").
 `record_tool_call` satırı:
-    id, ai_call_id, kanal ('agent'), cagiran_user_id, arac, arguman_ozeti (jsonb), sonuc_ozeti,
-    izin_verildi
+    id, ai_call_id, kanal ('agent' | `run_agent(tool_channel=)`, ör. 'asistan'), cagiran_user_id
+    (`run_agent(caller_user_id=)`), arac, arguman_ozeti (jsonb), sonuc_ozeti, izin_verildi
+`run_agent(ek=)` verilirse çağıranın alanları (ör. asistan `kullanici_id`) ajanın her `ai_call`
+satırının `ek`ine yazılır; geçidin kendi `ek` alanları çakışmada önceliklidir.
 
 İdempotency (§8.8 "aktivite yeniden denemesi ai_call.id ile idempotent"): `call()` ve `run_agent()`
 isteğe bağlı `call_id` alır (iş kimliği + adımdan `uuid5`, bkz. `deterministic_call_id`). Mantıksal
@@ -46,6 +48,8 @@ from tp_core.gateway.bundle import Bundle, load_bundle
 from tp_core.gateway.canonical import canonical_json, input_hash, sha256_hex
 from tp_core.gateway.config import EffectiveMode, ModelTable, PurposeConfig
 from tp_core.gateway.errors import (
+    AgentDeadlineExceeded,
+    AgentStopped,
     AgentTurnLimit,
     BudgetExceeded,
     GatewayConfigError,
@@ -104,6 +108,25 @@ FINAL_TOOL = "submit_result"
 # Aşama başına araç İZİN listesi (anayasa "En az yetki"; TEKNIK-TASARIM §8.4, §8.2b). Birincil
 # kontrol budur: listede olmayan her araç (MCP'nin yeni sürümlerinin eklediği araçlar dahil)
 # reddedilir. Listesi olmayan amaç ajan olarak koşamaz.
+# Asistan araçları (§5.1–5.3, 5.6, 5.7): ürün paketi, probe verisi, canlı Jira okuma, CI logu ve
+# test edilen uygulamanın mevcut kod/veri araçları. Hepsi salt okumadır.
+ASSISTANT_TOOLS = frozenset(
+    {
+        "product_search",
+        "product_read",
+        "probe_get",
+        "probe_list",
+        "probe_jobs",
+        "probe_audit",
+        "probe_my_queue",
+        "jira_issue",
+        "ci_log",
+        "search_code",
+        "get_file_contents",
+        "db_schema",
+        "db_query",
+    }
+)
 ALLOWED_AGENT_TOOLS: Mapping[str, frozenset[str]] = MappingProxyType(
     {
         # §8.4 doğrulama ve eşleme: yalnızca gezinme, okuma ve form etkileşimi.
@@ -122,6 +145,10 @@ ALLOWED_AGENT_TOOLS: Mapping[str, frozenset[str]] = MappingProxyType(
         "consistency_check": frozenset(
             {"search_code", "get_file_contents", "db_schema", "db_query"}
         ),
+        # Portal asistanı (AI-ASISTAN-PLANI §5): iki kademe aynı salt okuma araç listesini görür;
+        # rol kısıtı araç uygulamasındadır (iş yükündeki kullanıcı/rol, asla argüman).
+        "assistant": ASSISTANT_TOOLS,
+        "assistant_deep": ASSISTANT_TOOLS,
     }
 )
 # İkinci kontrol: hiçbir aşamada verilemeyen araçlar (kod çalıştırma, dosya, ağ, ekran görüntüsü;
@@ -199,6 +226,9 @@ UNGRANTED_MCP_TOOLS = frozenset(
     }
 )
 REPLAY_SAVE_FAILED = "replay_kaydedilemedi"
+# İç satırda çağıranın `ek` alanlarını taşıyan anahtar (`_record` `ek` jsonb'sine birleştirir).
+_CALLER_EK = "_cagiran_ek"
+DEFAULT_TOOL_CHANNEL = "agent"
 _CALL_ID_NAMESPACE = uuid5(NAMESPACE_URL, "tp:ai_call")
 
 
@@ -222,6 +252,14 @@ MAX_SCHEMA_REASKS = 2  # constitution III
 DEFAULT_MAX_TOKENS = 4096  # ports.ModelGateway.call varsayılanı
 SUMMARY_LIMIT = 500
 ELIDED_SNAPSHOT = "[önceki sayfa snapshot'ı bağlamdan çıkarıldı; yalnızca son snapshot tutulur]"
+
+# Toparlama (§6.4; yalnız `run_agent(toparlama=True)`): girdi tavanının bu oranı geçildiğinde
+# ya da sondan bir önceki tur bittiğinde model eldekiyle son çıktıyı vermeye yönlendirilir.
+TOPARLAMA_ORANI = 0.75
+TOPARLAMA_NUDGE = (
+    f"Süre/bağlam sınırına yaklaşıldı: başka araç kullanma; eldeki bilgiyle hemen `{FINAL_TOOL}` "
+    "çağır (guven=dusuk)."
+)
 
 AGENT_ADDENDUM = (
     "## Tool use protocol\n"
@@ -288,6 +326,7 @@ _EXTRA_KEYS = (
     "maliyet_tahmini",
     "canli_hata_yedegi",
     "degerlendirme",
+    "toparlama",
 )
 
 
@@ -433,18 +472,52 @@ class Gateway:
         approx_tokens = (len(system) + len(canonical_json(messages))) // 4
         return self.models.cost(cfg.model, Usage(input_tokens=approx_tokens))
 
-    def _complete(self, request: ProviderRequest) -> tuple[ProviderResponse, int]:
+    def _complete(
+        self,
+        request: ProviderRequest,
+        cfg: PurposeConfig | None = None,
+        *,
+        bitis: float | None = None,
+    ) -> tuple[ProviderResponse, int]:
+        """Sağlayıcı çağrısı + yeniden deneme. Deneme sayıları amaç ayarından (`cfg.max_retries`,
+        `cfg.max_timeout_retries`; None → `RetryPolicy`). `bitis` (geçit saatinde mutlak an)
+        verilirse istek zaman aşımı ve yeniden deneme beklemesi kalan süreyle sınırlanır; süre
+        yetmezse `AgentDeadlineExceeded`."""
         assert self.provider is not None
+        max_retries = self.retry.max_retries
+        max_timeout_retries = self.retry.max_timeout_retries
+        if cfg is not None and cfg.max_retries is not None:
+            max_retries = cfg.max_retries
+        if cfg is not None and cfg.max_timeout_retries is not None:
+            max_timeout_retries = cfg.max_timeout_retries
         attempt = 0
         while True:
+            sent, capped = request, False
+            if bitis is not None:
+                remaining = bitis - self._clock()
+                if remaining <= 0:
+                    raise AgentDeadlineExceeded("ajan süresi doldu (sağlayıcı isteğinden önce)")
+                if request.timeout_s is None or remaining < request.timeout_s:
+                    sent = request.model_copy(update={"timeout_s": remaining})
+                    capped = True
             try:
-                return self.provider.complete(request), attempt
+                return self.provider.complete(sent), attempt
             except ProviderTransientError as exc:
-                if attempt >= self.retry.max_retries:
+                timed_out = bool(getattr(exc, "timeout", False))
+                if bitis is not None and (self._clock() >= bitis or (timed_out and capped)):
+                    raise AgentDeadlineExceeded(
+                        "ajan süresi doldu (sağlayıcı yanıtı süre içinde gelmedi)"
+                    ) from exc
+                if attempt >= max_retries:
                     raise
-                if getattr(exc, "timeout", False) and attempt >= self.retry.max_timeout_retries:
+                if timed_out and attempt >= max_timeout_retries:
                     raise
-                self._sleep(self.retry.delay(attempt))
+                delay = self.retry.delay(attempt)
+                if bitis is not None and self._clock() + delay >= bitis:
+                    raise AgentDeadlineExceeded(
+                        "ajan süresi doldu (yeniden deneme beklemesi kalan süreye sığmıyor)"
+                    ) from exc
+                self._sleep(delay)
                 attempt += 1
 
     def _falls_back(self, exc: BaseException) -> bool:
@@ -467,8 +540,9 @@ class Gateway:
         mode: str,
         key: str,
         row_id: UUID | None = None,
+        ek: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
-        return {
+        row: dict[str, Any] = {
             "id": row_id or uuid4(),
             "parent_call_id": parent_id,
             "workflow_id": workflow_id,
@@ -483,17 +557,24 @@ class Gateway:
             # bekliyor" etiketini buradan gösterir; `ek.degerlendirme`).
             "degerlendirme": self.evaluation_of(bundle.id),
         }
+        if ek:
+            row[_CALLER_EK] = dict(ek)
+        return row
 
     def _record(self, row: dict[str, Any]) -> UUID:
         """İç satırı `ai_call` kolonlarına çevirir; kolonu olmayan alanlar `ek`e gider."""
         extras = {k: row.pop(k) for k in _EXTRA_KEYS if k in row}
+        caller_ek = row.pop(_CALLER_EK, None)
         row["mod"] = row.pop("replay")
         row["maliyet"] = row.pop("maliyet_usd", 0.0)
         schema_errors = extras.get("sema_hatalari")
         if schema_errors and not row.get("hata"):
             row["hata"] = "şema: " + "; ".join(schema_errors)
         if self.record_extras:
-            row["ek"] = extras
+            row["ek"] = {**(caller_ek or {}), **extras}
+        elif caller_ek:
+            # Çağıranın alanları (ör. bütçe sorgusunun okuduğu `kullanici_id`) her zaman yazılır.
+            row["ek"] = dict(caller_ek)
         return self.recorder.record_ai_call(row)
 
     def _prior(self, call_id: UUID | None) -> list[Mapping[str, Any]]:
@@ -525,10 +606,15 @@ class Gateway:
         messages: Sequence[ModelMessage],
         replay_key_fields: Mapping[str, Any],
         workflow_id: UUID | None,
+        session: MaskingSession | None = None,
     ) -> tuple[Bundle, MaskingSession, Any, dict[str, Any], str, str]:
-        """call/run_agent ve golden yükseltme (`promote`) için TEK anahtar hesabı."""
+        """call/run_agent ve golden yükseltme (`promote`) için TEK anahtar hesabı.
+
+        `session` dışarıdan verilirse (asistan: mesaj başına tek oturum, araçlarla paylaşılır)
+        iş akışı oturumu yerine o kullanılır."""
         bnd = self.bundle(bundle, bundle_schema, cfg)
-        session = self.masking_session(workflow_id)
+        if session is None:
+            session = self.masking_session(workflow_id)
         raw_messages = [m.model_dump(mode="json") for m in messages]
         masked, hits = session.mask(raw_messages)
         mask_diff = session.diff(hits)
@@ -660,6 +746,7 @@ class Gateway:
                 output_schema=schema,
                 params=cfg.params,
                 timeout_s=cfg.timeout_s,
+                fallbacks=cfg.fallbacks,
             )
             row = self._base_row(
                 purpose=purpose,
@@ -678,7 +765,7 @@ class Gateway:
             )
             started = self._clock()
             try:
-                response, retries = self._complete(request)
+                response, retries = self._complete(request, cfg)
             except Exception as exc:
                 row.update(
                     cikti=None,
@@ -852,6 +939,7 @@ class Gateway:
         root_id: UUID | None,
         parent_id: UUID | None,
         live_failure: dict[str, Any] | None = None,
+        ek: Mapping[str, Any] | None = None,
     ) -> tuple[dict[str, Any], ReplayMode, Path]:
         """Replay araması; bulunamayan/çıktısız iskalama da `ai_call`'a yazılır (constitution
         VIII: denetim izi yalnızca başarılı çağrıları değil, yapılamayanları da gösterir)."""
@@ -867,6 +955,7 @@ class Gateway:
                 mode="replay_miss",
                 key=key,
                 row_id=root_id,
+                ek=ek,
             )
             reasons = getattr(exc, "reasons", None)
             if live_failure is not None:
@@ -907,7 +996,27 @@ class Gateway:
         on_step: Callable[[AgentStep], None] | None = None,
         is_snapshot: SnapshotPredicate | None = None,
         call_id: UUID | None = None,
+        tool_channel: str = DEFAULT_TOOL_CHANNEL,
+        caller_user_id: UUID | None = None,
+        ek: Mapping[str, Any] | None = None,
+        masking_session: MaskingSession | None = None,
+        bitis: float | None = None,
+        should_stop: Callable[[], bool] | None = None,
+        toparlama: bool = False,
     ) -> AgentResult:
+        """Araçlı ajan döngüsü.
+
+        Asistan için eklenen parametrelerin (AI-ASISTAN-PLANI §10.3) varsayılanı eski davranıştır:
+        - `tool_channel`, `caller_user_id`: `tool_call.kanal` / `cagiran_user_id`.
+        - `ek`: her `ai_call` satırının `ek`ine eklenen çağıran alanları.
+        - `masking_session`: dışarıdan maskeleme oturumu (araçlarla aynı yer tutucular).
+        - `bitis`: geçit saatinde (`clock`, varsayılan `time.monotonic`) mutlak bitiş anı; her tur
+          başında aşıldıysa `AgentDeadlineExceeded`; sağlayıcı zaman aşımı ve yeniden deneme
+          beklemesi kalan süreyle sınırlı.
+        - `should_stop`: her tur başında doğruysa `AgentStopped` (yazılmış turlar kayıtta kalır).
+        - `toparlama`: girdi tavanının %75'i aşılınca ya da sondan bir önceki tur bitince model
+          eldekiyle `submit_result` çağırmaya yönlendirilir (nudge geçmişte kalıcıdır).
+        """
         self._check_agent_tools(purpose, tools)
         # Model yasak argümanları (dosya yazma vb.) hiç görmez; anahtar da daraltılmış şemadandır.
         tools = [narrow_tool(t) for t in tools]
@@ -920,7 +1029,9 @@ class Gateway:
             messages,
             replay_key,
             workflow_id,
+            masking_session,
         )
+        channel = {"kanal": tool_channel, "cagiran_user_id": caller_user_id}
         validator = Draft202012Validator(output_schema)
         allowed = {t.name for t in tools}
 
@@ -953,6 +1064,8 @@ class Gateway:
                 on_step,
                 root_id=root_id,
                 parent_id=call_id if root_id is None else None,
+                ek=ek,
+                channel=channel,
             )
 
         snapshot = is_snapshot or self._is_snapshot
@@ -972,8 +1085,14 @@ class Gateway:
         last_errors: list[str] = []
         last_output: Any = None
         secrets = set(self.secret_values)
+        wrapping_up = False  # toparlama nudge'ı verildi mi
 
         for turn_no in range(1, max_turns + 1):
+            # Tur başı: çağıran durdurduysa ya da süre dolduysa yeni (ücretli) tur açılmaz.
+            if should_stop is not None and should_stop():
+                raise AgentStopped(f"'{purpose}' ajanı çağıranın isteğiyle durduruldu")
+            if bitis is not None and self._clock() >= bitis:
+                raise AgentDeadlineExceeded(f"'{purpose}' ajanının süresi doldu (tur {turn_no})")
             conversation = self._agent_messages(masked, turns, snapshot)
             self.budget.check(workflow_id, self._estimate_input_cost(cfg, system, conversation))
             if cfg.max_input_tokens and used_input_tokens >= cfg.max_input_tokens:
@@ -988,6 +1107,7 @@ class Gateway:
                 tools=[*tools, final_tool],
                 params=cfg.params,
                 timeout_s=cfg.timeout_s,
+                fallbacks=cfg.fallbacks,
             )
             row = self._base_row(
                 purpose=purpose,
@@ -998,15 +1118,18 @@ class Gateway:
                 mode="live",
                 key=key,
                 row_id=root_id if turn_no == 1 else None,
+                ek=ek,
             )
             row.update(
                 maskeli_girdi=masked if turn_no == 1 else _last_results(turns),
                 maskeleme_farki=mask_diff,
                 deneme=turn_no,
             )
+            if wrapping_up:
+                row["toparlama"] = True
             started = self._clock()
             try:
-                response, retries = self._complete(request)
+                response, retries = self._complete(request, cfg, bitis=bitis)
             except Exception as exc:
                 row.update(
                     cikti=None,
@@ -1036,6 +1159,8 @@ class Gateway:
                     on_step,
                     parent_id=first_id or failed_id,
                     live_failure=_live_failure(exc, failed_id, turn=turn_no),
+                    ek=ek,
+                    channel=channel,
                 )
             cost = _response_cost(self.models, cfg, response)
             row.update(_fallback_fields(response, self.models))
@@ -1069,6 +1194,12 @@ class Gateway:
                     (nudge, f"Sonucu `{FINAL_TOOL}` aracıyla ver; düz metin kabul edilmez.", True)
                 )
                 turn.tool_names.append("")
+                if (
+                    toparlama
+                    and not wrapping_up
+                    and self._should_wrap_up(cfg, used_input_tokens, turn_no, max_turns)
+                ):
+                    wrapping_up = _add_wrap_up_nudge(turn)
                 continue
 
             final_output: Any = None
@@ -1087,7 +1218,13 @@ class Gateway:
                             final_ok, final_output = True, tc.args
                             result, is_error = "Sonuç kabul edildi.", False
                     self._record_tool(
-                        row_id, tc.name, tc.args, result, allowed_flag=True, secrets=secrets
+                        row_id,
+                        tc.name,
+                        tc.args,
+                        result,
+                        allowed_flag=True,
+                        secrets=secrets,
+                        **channel,
                     )
                 elif tc.name not in allowed or _banned_args(tc.name, tc.args):
                     banned = _banned_args(tc.name, tc.args)
@@ -1106,7 +1243,13 @@ class Gateway:
                     )
                     steps.append(step)
                     self._record_tool(
-                        row_id, tc.name, tc.args, result, allowed_flag=False, secrets=secrets
+                        row_id,
+                        tc.name,
+                        tc.args,
+                        result,
+                        allowed_flag=False,
+                        secrets=secrets,
+                        **channel,
                     )
                     if on_step:
                         on_step(step)
@@ -1124,7 +1267,13 @@ class Gateway:
                     )
                     steps.append(step)
                     self._record_tool(
-                        row_id, tc.name, tc.args, result, allowed_flag=True, secrets=secrets
+                        row_id,
+                        tc.name,
+                        tc.args,
+                        result,
+                        allowed_flag=True,
+                        secrets=secrets,
+                        **channel,
                     )
                     if on_step:
                         on_step(step)
@@ -1157,7 +1306,13 @@ class Gateway:
                     if failure:
                         # Tur satırı zaten yazıldı (append-only); iz tool_call olarak kalır.
                         self._record_tool(
-                            row_id, "replay_kaydet", {}, failure, allowed_flag=True, secrets=secrets
+                            row_id,
+                            "replay_kaydet",
+                            {},
+                            failure,
+                            allowed_flag=True,
+                            secrets=secrets,
+                            **channel,
                         )
                 return AgentResult(
                     output=session.unmask(final_output),
@@ -1172,7 +1327,23 @@ class Gateway:
                     errors=last_errors,
                     last_output=last_output,
                 )
+            if (
+                toparlama
+                and not wrapping_up
+                and self._should_wrap_up(cfg, used_input_tokens, turn_no, max_turns)
+            ):
+                wrapping_up = _add_wrap_up_nudge(turn)
         raise AgentTurnLimit(f"'{purpose}' ajanı {max_turns} turda sonuç vermedi")
+
+    @staticmethod
+    def _should_wrap_up(
+        cfg: PurposeConfig, used_input_tokens: int, turn_no: int, max_turns: int
+    ) -> bool:
+        """Toparlama koşulu (§6.4): önbelleksiz girdi tavanın %75'ini geçti ya da sondan bir
+        önceki tur bitti (son tur modelin eldekiyle son çıktıyı vermesine kalır)."""
+        if cfg.max_input_tokens and used_input_tokens > TOPARLAMA_ORANI * cfg.max_input_tokens:
+            return True
+        return turn_no >= max_turns - 1
 
     # Gateway politikası: araç sonuçları (snapshot, kod) maskelenmez (§8.9); veri sorgusu
     # sonuçlarını maskelemek aracın sorumluluğudur (gateway.masking_session ile).
@@ -1221,7 +1392,17 @@ class Gateway:
                     ):
                         text = ELIDED_SNAPSHOT
                     rendered.append((call, text, is_error))
-                conversation.append(self.provider.tool_result_message(rendered))
+                message = self.provider.tool_result_message(rendered)
+                content = message.get("content")
+                if nudges and isinstance(content, list):
+                    # Toparlama nudge'ı araç sonuçlarıyla aynı kullanıcı mesajında (art arda iki
+                    # kullanıcı mesajı yerine): sonuç bloklarından sonra metin bloğu.
+                    message = {
+                        **message,
+                        "content": [*content, {"type": "text", "text": "\n".join(nudges)}],
+                    }
+                    nudges = []
+                conversation.append(message)
             if nudges:
                 conversation.append({"role": "user", "content": "\n".join(nudges)})
         return conversation
@@ -1242,6 +1423,8 @@ class Gateway:
         *,
         allowed_flag: bool,
         secrets: set[str] | None = None,
+        kanal: str = DEFAULT_TOOL_CHANNEL,
+        cagiran_user_id: UUID | None = None,
     ) -> UUID:
         """`tool_call` append-only'dir: parola alanı argümanı ve bilinen sırlar kayıttan ÖNCE
         gizlenir (sonradan silinemez). `secrets` çalıştırma boyunca birikir."""
@@ -1251,8 +1434,8 @@ class Gateway:
             {
                 "id": uuid4(),
                 "ai_call_id": ai_call_id,
-                "kanal": "agent",
-                "cagiran_user_id": None,
+                "kanal": kanal,
+                "cagiran_user_id": cagiran_user_id,
                 "arac": tool,
                 "arguman_ozeti": _args_summary(scrub_secrets_in(mask_tool_args(args), known)),
                 "sonuc_ozeti": _summary(scrub_secrets(result, known)),
@@ -1279,7 +1462,10 @@ class Gateway:
         root_id: UUID | None = None,
         parent_id: UUID | None = None,
         live_failure: dict[str, Any] | None = None,
+        ek: Mapping[str, Any] | None = None,
+        channel: Mapping[str, Any] | None = None,
     ) -> AgentResult:
+        channel = dict(channel or {})
         record, mode, path = self._lookup_audited(
             purpose,
             bnd,
@@ -1292,6 +1478,7 @@ class Gateway:
             root_id=root_id,
             parent_id=parent_id,
             live_failure=live_failure,
+            ek=ek,
         )
         output = record["output"]
         errors = _schema_errors(validator, output)
@@ -1304,6 +1491,7 @@ class Gateway:
             mode=mode,
             key=key,
             row_id=root_id,
+            ek=ek,
         )
         if live_failure is not None:
             row["canli_hata_yedegi"] = live_failure
@@ -1377,7 +1565,13 @@ class Gateway:
             )
             steps.append(step)
             self._record_tool(
-                row_id, step.tool, step.args, summary, allowed_flag=is_allowed, secrets=secrets
+                row_id,
+                step.tool,
+                step.args,
+                summary,
+                allowed_flag=is_allowed,
+                secrets=secrets,
+                **channel,
             )
             if on_step:
                 on_step(step)
@@ -1464,6 +1658,13 @@ def _replay_drift(recorded: AgentStep, result: str) -> str | None:
 
 _THINKING_BLOCKS = frozenset({"thinking", "redacted_thinking"})
 _THINKING_STRIPPED = "[ara not bağlamdan çıkarıldı]"
+
+
+def _add_wrap_up_nudge(turn: _Turn) -> bool:
+    """Toparlama nudge'ını turun sonuçlarına ekler (geçmişte kalıcı; bir kez)."""
+    turn.results.append((ToolCall(id="", name="", args={}), TOPARLAMA_NUDGE, True))
+    turn.tool_names.append("")
+    return True
 
 
 def _strip_thinking(message: dict[str, Any]) -> dict[str, Any]:

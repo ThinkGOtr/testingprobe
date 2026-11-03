@@ -1,10 +1,12 @@
-import { useId, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { useEffect, useId, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { buFazdaYok } from "../api/http";
 import type { CiktiModu, Degerlendirme, Rol } from "../api/types";
 import { useOturum } from "../auth";
 import { ROL, type Ton } from "../lib/etiketler";
 import { baglantiTuru } from "../lib/rotalar";
+import { hataGosterildi } from "../lib/sonHata";
+import { asistanaSor, useAsistanHazir } from "./asistan/kontrol";
 
 /** Kayıtlı (replay) çıktı rozeti. live için hiçbir şey göstermez (Constitution VIII). */
 export function ReplayRozeti({ mode, degerlendirme }: { mode: CiktiModu | null | undefined; degerlendirme?: Degerlendirme | null }) {
@@ -62,9 +64,20 @@ export function Yukleniyor({ metin = "Yükleniyor…" }: { metin?: string }) {
   );
 }
 
-export function HataKutusu({ hata, yenile }: { hata: string; yenile?: () => void }) {
+/**
+ * Hata kutusu. Gösterilen hata "son hata" deposuna yazılır (asistan bağlamı, AI-ASISTAN-PLANI §5.5):
+ * `kaynak` (useVeri/useIslem `hataNesnesi`) verilirse o kayıt, verilmezse metinle eşleşen ya da
+ * yeni açılan kayıt. `kaynak` verildiğinde ve asistan kullanılabilirken "Asistana sor" görünür.
+ */
+export function HataKutusu({ hata, yenile, kaynak }: { hata: string; yenile?: () => void; kaynak?: unknown }) {
+  const planli = buFazdaYok(hata) || buFazdaYok(kaynak);
+  const [kayitId, setKayitId] = useState<string | null>(null);
+  const asistanHazir = useAsistanHazir();
+  useEffect(() => {
+    setKayitId(planli ? null : hataGosterildi(kaynak, hata));
+  }, [kaynak, hata, planli]);
   // Canlı derlemede core'un henüz sunmadığı ekran: hata değil, planlı "bu fazda yok" boş durumu.
-  if (buFazdaYok(hata)) {
+  if (planli) {
     return (
       <div className="bos-durum" role="status" data-testid="bu-fazda-yok">
         <p className="bos-baslik">Bu ekran bu fazda yok.</p>
@@ -78,6 +91,11 @@ export function HataKutusu({ hata, yenile }: { hata: string; yenile?: () => void
       {yenile && (
         <button type="button" className="dugme dugme-ikincil dugme-kucuk" onClick={yenile}>
           Tekrar dene
+        </button>
+      )}
+      {kaynak !== undefined && asistanHazir && kayitId && (
+        <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => asistanaSor(kayitId)}>
+          Asistana sor
         </button>
       )}
     </div>

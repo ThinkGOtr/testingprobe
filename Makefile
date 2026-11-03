@@ -10,7 +10,7 @@ export PLAYWRIGHT_VERSION := $(strip $(shell cat .playwright-version 2>/dev/null
 
 S ?=
 
-.PHONY: help env up status seed reset jira-seed forge-init break demo-break demo-reset demo-web-sync locator-break-verify demo-baseline export-audit security-check e2e-smoke demo-check demo-prova prova-temizle eval-live prune logs down
+.PHONY: help env up asistan-paket status seed reset jira-seed forge-init break demo-break demo-reset demo-web-sync locator-break-verify demo-baseline export-audit security-check e2e-smoke demo-check demo-prova prova-temizle eval-live prune logs down
 
 help: ## Hedefleri listeler
 	@echo "Kullanım: make <hedef>"
@@ -20,8 +20,13 @@ help: ## Hedefleri listeler
 env: ## .env'i üretir, boş F0 parolalarını rastgele doldurur (var olanlara dokunmaz)
 	@scripts/env.sh
 
-up: ## Önkoşul kontrolü + tüm servisleri sağlıklı başlatır (idempotent)
+up: ## Asistan bilgi paketi + önkoşul kontrolü + tüm servisleri sağlıklı başlatır (idempotent; paketi atla: TP_SKIP_ASISTAN_PAKET=1)
+	@mkdir -p var/tp-bilgi  # bağlama noktası yoksa docker root sahipli oluşturmasın
+	@if [ "$${TP_SKIP_ASISTAN_PAKET:-0}" != "1" ]; then scripts/asistan-bilgi-paketi.sh; fi
 	@scripts/up.sh
+
+asistan-paket: ## Asistanın ürün bilgi paketini üretir: var/tp-bilgi/ (core imajında; sır taraması bulgusunda ≠0)
+	@scripts/asistan-bilgi-paketi.sh
 
 status: ## Servis / durum / sağlık / yerel adres tablosu
 	@scripts/status.sh

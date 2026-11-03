@@ -29,7 +29,7 @@ bundles:
     version: 1
     status: pending
     note: Her prompt'a eklenen ortak güvenlik kuralları; ayrı değerlendirme seti yoktur, kapsam geçişlidir
-      (diğer 7 paket aynı guardrails sürümüyle canlı değerlendirilince). Canlı değerlendirme yapılmadı.
+      (diğer 8 paket aynı guardrails sürümüyle canlı değerlendirilince). Canlı değerlendirme yapılmadı.
   requirement-review:
     version: 3
     status: evaluated
@@ -93,3 +93,10 @@ bundles:
       results: evaluation/results/dup-rank-v2-2026-11-01.json
       guardrails_version: 1
       calls: evaluation/results/dup-rank-v2-2026-11-01.calls.jsonl
+  assistant:
+    version: 1
+    status: pending
+    note: 'Portal asistanı (AI-ASISTAN-PLANI §6.1, §13): `assistant` (Haiku 5.5) ve `assistant_deep` (Sonnet
+      5.5) amaçları aynı paketi kullanır. Golden''lar yalnız test/eval amaçlı ve elle hazırlandı; asistan
+      çalışma zamanında golden kullanmaz. Değerlendirme seti: rules/evaluation/assistant.json (iskelet;
+      tam set ve düzenek Şerit H). Canlı değerlendirme yapılmadı; onaylı istisna yok.'

@@ -1,8 +1,10 @@
 # AI Automation Testing (Test Engineering Suite) — Demo Teknik Tasarımı
 
-> **Sürüm:** v1.5 · 2026-10-30 · **Hazırlayan:** Gökhan Sipahi · **Gözden geçirecek:** Cengizhan Bey, Hakan, İsmail
+> **Sürüm:** v1.6 · 2026-11-03 · **Hazırlayan:** Gökhan Sipahi · **Gözden geçirecek:** Cengizhan Bey, Hakan, İsmail
 > **Bağlayıcı kaynak:** "AI Automation Testing — Geliştirme Ekibi için Ürün Brief'i" (Cengizhan Bey, 30.10.2026). Bu doküman o brief'in **demo dilimini** tarif eder. Brief'ten sapmalar §19'dadır.
 > **Spec Kit nedir:** GitHub'ın açık kaynak "spesifikasyon güdümlü geliştirme" aracı. Bu doküman önce projenin değişmez kurallarına (constitution, §3), sonra her kilometre taşı için ayrı spec → plan → görev → uygulama döngüsüne (§21) girdi olur.
+>
+> **v1.5 → v1.6 (2026-11-03, ürün sahibi kararları K1–K10):** portal içi **salt okuma asistan** ve kural tabanlı **Öneri** düğmesi eklendi (§8.13; §4, §7, §8.8, §9 güncellendi). Constitution v1.3.0: İlke II'ye "salt okuma bilgi ve yönlendirme asistanı; eylem yok; çıktısı karar dayanağı değildir". Ayrıntılı plan `docs/AI-ASISTAN-PLANI.md` v6, spec `specs/008-ai-asistan/`.
 >
 > **v1.1 → v1.2:** Ekibin istediği 14 adımlı uçtan uca akış (ön inceleme + PO teyidi, kasıtlı kırma, gece/deploy CI, JUnit XML + Allure, Kontrol Kulesi, mükerrer tespitli triage, testçinin onaylı taslaktan kayıt açması) demo senaryosu oldu; **tüm akış canlı**; demo için sadeleştirmeler §2.1'de (Temporal yerine Postgres durum makinesi dahil). Sauce Labs eklendi (§0-13).
 >
@@ -137,9 +139,11 @@ Demo story'si mutlaka `add-to-cart` ve kampanya hesabı adımlarını içerir.
           Review Portal (React, nginx) ── REST + SSE ──┐         │
                                                        ▼         ▼
 ┌──────────────────────── Çekirdek (Python 3.12, FastAPI) ─────────────────────────────────┐
-│  core-api: REST, SSE, kimlik, onay Update'leri, publish_test_cases MCP sunucusu           │
+│  core-api: REST, SSE, kimlik, onay Update'leri, publish_test_cases MCP sunucusu,          │
+│      asistan mesaj/öneri uçları (modelsiz; model kipini ve anahtarı bilmez)               │
 │  core-worker (Temporal, kuyruk: tp-core): iş akışları, model geçidi, ajan döngüsü,        │
-│      Rovo okuma, Jira yazma, GitHub, triage, PII maskeleme (kütüphane)                    │
+│      Rovo okuma, Jira yazma, GitHub, triage, PII maskeleme (kütüphane),                   │
+│      asistan şeridi (salt okuma araçlar, ayrı iş parçacıkları, kalp atışı)                │
 │  toolchain-worker (Temporal, kuyruk: tp-toolchain; toolchain imajı):                      │
 │      checkout, sembol tablosu, şablonla kod üretimi, tsc, eslint, AST koruması,           │
 │      commit/push — DB kimliği ve model anahtarı yok                                       │
@@ -160,6 +164,7 @@ Demo story'si mutlaka `add-to-cart` ve kampanya hesabı adımlarını içerir.
 - **Doğruluk kaynağı:** Alan varlıkları (story, case, review, script, run, failure) Postgres'te. Temporal yalnızca kimlikleri ve kapı durumunu taşır; iş akışı geçmişinde içerik tutulmaz.
 - **Gelen bağlantı yok:** CI durumu 5 sn aralıkla GitHub API'den sorgulanır.
 - **AI yalnızca core-worker'da:** Model anahtarı yalnızca core-worker'da; toolchain-worker ve CI'da yok.
+- **Portal asistanı salt okumadır (§8.13, constitution v1.3.0 İlke II):** eylem aracı yok; çıktısı karar dayanağı değildir ve hiçbir karar alanına girmez. core-api asistanın model durumunu worker'ın yazdığı `asistan_durum` satırından okur.
 - **Okuma MCP ile, yazma kendi aracımızla** (brief).
 
 ---
@@ -228,10 +233,15 @@ Demo story'si mutlaka `add-to-cart` ve kampanya hesabı adımlarını içerir.
 | `external_ref` | entity_id, sistem (`jira`/`github`), idempotency_key, external_key, durum (`intent`/`created`/`failed`) |
 | `workflow_instance` | id, tür, temporal_id, durum, başlatan |
 | `ai_call` | id, parent_call_id, workflow_id, amaç, sağlayıcı, model, sürüm, bundle_hash (§8.8), maskeli girdi, çıktı, şema_geçerli, deneme, token, maliyet, süre, `replay` (`live`/`replay`/`replay_miss`) |
-| `tool_call` | id, ai_call_id, kanal (`agent`/`ide`), çağıran_user_id, araç, argüman özeti, sonuç özeti, izin_verildi, zaman |
+| `tool_call` | id, ai_call_id, kanal (`agent`/`ide`/`asistan`), çağıran_user_id, araç, argüman özeti, sonuç özeti, izin_verildi, zaman |
 | `audit_event` | id, aktör, eylem, nesne, önce/sonra özeti, zaman, `prev_hash`, `hash` |
+| `asistan_sohbet` | id, kullanici_id, başlık, oneri_kural_id, silindi/silinme, oluşturma/güncelleme (§8.13) |
+| `asistan_mesaj` | id, sohbet_id, kullanici_id, sıra, rol (`user`/`assistant`), ust_mesaj_id, içerik, bağlam, cevap, durum (`pending`/`running`/`done`/`error`/`iptal`), hata_kodu, kaynak (`model`/`sozluk`/`sablon`/`kapali`), amaç, kip (`soru`/`oneri`), tetik (`kullanici`/`otomatik`), job_id, ai_call_id, maliyet, token, süre, geri_bildirim |
+| `asistan_durum` | tekil satır, yalnız worker yazar: mod (`live`/`off`), model_hazir, maskeleme, müşteri_verisi, paket_commit, kalp_atışı |
+| `asistan_oneri_geri_bildirim` | id, kullanici_id, kural_id, varlik_id, varlik_durum, değer (`-1` gizle / `1` faydalı / `2` yaptım), jira_anahtari |
+| `asistan_hiz` | kullanici_id (null = global), kova, pencere_başlangıç, sayı (sabit pencere hız sınırı) |
 
-`ai_call`, `tool_call`, `audit_event` için uygulama rolünün yalnızca INSERT/SELECT yetkisi vardır.
+`ai_call`, `tool_call`, `audit_event` için uygulama rolünün yalnızca INSERT/SELECT yetkisi vardır. Asistan tabloları append-only değildir (sohbet 90 gün saklanır); asistanın denetim izi `ai_call.ek` (`{kanal:"asistan", kullanici_id, mesaj_id}`) ve `tool_call` (`kanal='asistan'`) üzerinden kalıcıdır.
 
 **Test case şeması:**
 ```json
@@ -353,7 +363,8 @@ FailureToFix(run_id)
 - **İki giriş:** `gateway.call(purpose, bundle, messages, schema, max_tokens, budget)` ve `gateway.run_agent(purpose, bundle, tools, max_turns, budget)`.
 - **Sağlayıcıdan bağımsız sözleşme:** girdiler (mesajlar, araç tanımları JSON Schema, çıktı şeması) ve çıktılar (yapılandırılmış sonuç, araç çağrıları, token) ortak tiptedir; sağlayıcıya özgü özellikler (Anthropic prompt caching, strict tool; Azure OpenAI structured outputs) yalnızca adaptörde. Değerlendirme seti her iki sağlayıcıda koşup kabul oranları yan yana raporlanır (Azure erişimi olduğunda).
 - **Ajan:** Anthropic SDK tool-use döngüsü (kendi döngümüz); her tur bir `ai_call` satırı, `parent_call_id` ile bağlı; her araç çağrısı `tool_call`.
-- **Görev başına model (sabit kimlik konfigürasyonda):** case üretimi ve doğrulama ajanı → Claude Sonnet sınıfı; triage ve özetleme → Claude Haiku sınıfı; `temperature` sabit (0–0,2).
+- **Görev başına model (sabit kimlik konfigürasyonda):** case üretimi ve doğrulama ajanı → Claude Sonnet sınıfı; triage ve özetleme → Claude Haiku sınıfı; **portal asistanı (`assistant`) → Haiku sınıfı, otomatik ("Emin değil") veya istek üzerine ("Daha ayrıntılı incele") `assistant_deep` → Sonnet sınıfı** (§8.13); `temperature` sabit (0–0,2).
+- **Asistan kipi pipeline'dan bağımsız:** `TP_ASISTAN_MODEL_MODE=live|off` (varsayılan `off`); asistan geçidi `build_gateway(mode_override="live", replay_fallback=False, budget=AsistanBudget)` ile kurulur, `record` kipine girmez, golden kullanmaz. `run_agent`'ın yeni parametreleri (`tool_channel`, `caller_user_id`, `ek`, `masking_session`, `bitis`, `should_stop`, `toparlama`) varsayılanda eski davranışı korur.
 - **Hata politikası:** 429/529/5xx → üstel geri çekilme, ≤3; şema hatası → hata metniyle ≤2 yeniden istek. Aktivite yeniden denemesi `ai_call.id` ile idempotent (aynı çağrı iki kez faturalanmaz).
 - **Sürüm (bundle):** `bundle_hash` = kurallar + şema + few-shot örnekleri + model kimliği + parametrelerin birleşik hash'i.
 - **Maliyet tavanı:** iş akışı başına 2 USD, günlük 30 USD; aşılırsa duraklat ve insana sor.
@@ -411,6 +422,35 @@ FailureToFix(run_id)
 - **Taslak:** şemalı `bug_draft{summary, steps, expected, actual, environment, evidence[sauce_video, allure, trace], story_key, test_case_key, severity_suggestion}`; "AI-generated" etiketi.
 - **Onay ve yayın:** testçi portalda düzeltir ve onaylar; `publish_bug(draft_id)` yalnızca onaylı taslağı, onaylanan içerik hash'iyle yayınlar (idempotent, `external_ref`). Story ve Test issue'larına bağlanır. Faz 2 alanları sonraki fazda.
 
+### 8.13 Portal asistanı ve Öneri
+
+**Amaç:** Portalın her ekranında Türkçe soru-cevap ("Bu buton neden gri?", "Bu hata ne demek?", "TPD-3 neden bekliyor?") ve o ekranda, o rolün **şimdi yapması gereken** işleri gerekçesiyle listeleyen Öneri düğmesi. Ayrıntılı plan `docs/AI-ASISTAN-PLANI.md` v6; spec ve sözleşmeler `specs/008-ai-asistan/`; bağlayıcı uçlar ve `kod` enum'u MIMARI-SOZLESME §5.
+
+**Değişmez sınırlar (constitution v1.3.0 İlke II):** asistan **salt okuma bilgi ve yönlendirme asistanıdır**; eylem yapmaz (yazma aracı, onay, yayın, Jira kaydı/yorumu yok — eylem isteğinde `eylem_reddi` + ilgili ekrana bağlantı); çıktısı karar dayanağı değildir ve hiçbir karar alanına veya başka AI adımına girdi olmaz; model yalnızca core-worker'da.
+
+**Bilgi kaynakları (13 salt okuma araç, `ALLOWED_AGENT_TOOLS["assistant"|"assistant_deep"]`):**
+- Ürünün kendisi: `product_search`, `product_read` — imaja değil, `make up` ön adımında üretilen ve yalnız core-worker'a `:ro` bağlanan **bilgi paketinden** (`var/tp-bilgi/`, izin listeli portal/core kaynakları ve dokümanlar, MANIFEST + sha256 + üretim sır taraması).
+- Testing Probe verisi: `probe_get`, `probe_list`, `probe_jobs`, `probe_audit`, `probe_my_queue` — mevcut GET servis fonksiyonları, uç-düzeyi rol kısıtları aynen.
+- Test edilen uygulama: mevcut `search_code`, `get_file_contents`, `db_schema`, `db_query` (§8.2b erişim kuralları).
+- Canlı Jira: `jira_issue` — yalnız Testing Probe'da kaydı olan anahtarlar, dar `JiraOkuyucu` (yazma metodu yok, httpx katmanında yalnız GET), kısıtlı yorumlar elenir, kişi kimlikleri modele gitmez; global Jira kovası 30/dk.
+- CI: `ci_log` — DB adım özeti → güvenli açılan yerel log (`O_NOFOLLOW` + inode) → GitHub iş logu (`actions:read`); ≤ 16 KB, sır temizliği + maskeleme.
+
+**Güvenlik:** tüm araç sonuçları, ekran bağlamı, Jira yorumları, CI logu, öneri metni ve sohbet geçmişi `<untrusted>` (§5); her araç çıktısı `scrub_secret_patterns` + çalışma anı sır değerleri ile temizlenir; mesaj başına **tek maskeleme oturumu** (§8.9); müşteri verisi kurulumunda maskeleme kapalıysa asistan kapalı; soru/bağlam sır deseni içerirse 422 `sir_icerik`.
+
+**Akış (worker, `assistant.answer`, ayrı `asistan` şeridi, 3 iş parçacığı, 75 sn bütçe):** hata sözlüğü (modelsiz) → şablonlar (Probe durumu, "bugün ne yapmalıyım"; modelsiz) → model kapalıysa sabit cevap → canlı ajan (`run_agent`, `max_turns=6`, toparlama) → **deterministik son işlem**: URL düzleştirme; link yalnız `rotalar.json` iç rotaları ve bilinen Jira anahtarları (bağlantıyı sunucu kurar); kaynak doğrulama (dosya:satır alıntısı, SQL yeniden çalıştırma + digest, `kN` kanıt kimliği); güven gösterimi (`Kaynakla doğrulandı` / `Kısmen` / `Emin değil` / `Genel bilgi`).
+
+**Otomatik yükseltme:** Haiku cevabı ürüne özgü soruda "Emin değil" (veya "Kısmen"/toparlama) ise ve bütçe ön koşulları tutarsa (kalanlar ≥ $0.20, global sayaç) aynı transaction'da **ayrı çocuk mesaj** (`assistant_deep`, `tetik='otomatik'`) açılır; zincir yok; `unique(ust_mesaj_id)` elle basışla yarışı çözer.
+
+**Öneri:** `rules/assistant/oneriler.yaml` kural dosyası (İlke IX), kapalı olgu ve operatör kümesi, ifade değerlendirme yok (İlke XI); modelsiz `GET /assistant/suggestions` (model kapalıyken de çalışır, `ai_call` yazmaz). Eylem: iç rota ("Git"), Jira yorum/kayıt taslağı (kullanıcı kopyalar ve kendisi açar; "Jira'yı aç" bağlantısını yalnız sunucu kurar), Jira kaydı, bilgi. Testing Probe'un kendi onaylı hattı olan işlerde (bug taslağı, case yayını, tutarlılık bulgusu) Jira eylemi yasak. Rol hizalama testi: `rota` eylemli kuralın rolleri, ilgili ucun `require_role` kümesinin alt kümesi. "Neden? Sor" öneriyi sohbete bağlam olarak taşır; "Başka ne yapabilirim?" model destekli ≤ 3 ek öneri ("AI önerisi · doğrulanmadı").
+
+**Bütçe ve hız (K3):** asistan günlük $10, kullanıcı günlük $1, kök soru başı $0.50 (çocuklar dahil); kullanıcı saatte 30 soru, kullanıcı başı 1 bekleyen (kısmi tekil indeks), global 6 bekleyen (advisory lock). Beklenen ≈ $0.03/soru.
+
+**Kayıt (İlke VIII):** her model çağrısı `ai_call` (`ek` = kişi + mesaj), her araç çağrısı `tool_call` (`kanal='asistan'`, `cagiran_user_id`); sohbet 90 gün saklanır, `ai_call`/`tool_call` kalıcıdır.
+
+**Ölçüm (İlke X):** paket `pending` girer; `main` öncesi ≥ 30 soruluk canlı set (eylem reddi ve injection direnci %100, doğrulanmış kaynak ≥ %70, otomatik yükseltme ≤ %35, medyan maliyet ve p90 süre eşikleri) → `evaluated`, `evaluations.yaml`'da içerik hash'i.
+
+**Portal:** sağ altta panel (bindirme, mobilde modal; `role="complementary"`), bağlam çipleri (ekran, son hata, "? Bu ne?"), `HataKutusu`'nda "Asistana sor", üst çubukta tek Öneri düğmesi (sayı rozeti), kapalı kipte "HAZIR CEVAPLAR" rozeti (canlı kipte "CANLI" yazılmaz).
+
 ## 9. API sözleşmesi (özet)
 
 | Yöntem | Yol | Amaç |
@@ -427,10 +467,17 @@ FailureToFix(run_id)
 | GET | `/api/runs/{id}` · `/api/failures/{id}` | Koşu ve triage |
 | POST | `/api/failures/{id}/fix` | `FailureToFix` başlat |
 | GET | `/api/audit?verify=true` | Denetim kaydı + zincir doğrulaması |
-| GET | `/api/events` (SSE) | `case.generated`, `agent.step`, `pr.opened`, `ci.status`, `failure.classified` |
+| GET | `/api/events` (SSE) | `case.generated`, `agent.step`, `pr.opened`, `ci.status`, `failure.classified`; `assistant.step`, `assistant.answered` yalnız sahibi olan oturuma |
 | POST | `/api/tokens` | IDE kanalı için kısa ömürlü kapsamlı token |
+| GET | `/api/assistant/status` | Asistan durumu (`asistan_durum`'dan; kalp atışı yoksa `worker_yok`) |
+| GET · POST · DELETE | `/api/assistant/conversations[/{id}]` | Kendi sohbetleri; yumuşak silme |
+| GET · POST | `/api/assistant/conversations/{id}/messages` | Mesajlar · soru / öneri modu / "Daha ayrıntılı incele" (`ust_mesaj_id`) → 202 |
+| GET · POST | `/api/assistant/messages/{id}` · `/cancel` · `/feedback` | Yoklama · iptal · 👍/👎 |
+| GET · POST | `/api/assistant/suggestions` · `/{kural_id}/feedback` | Kural tabanlı öneriler (modelsiz) · Gizle/Faydalı/Yaptım |
 | MCP | `submit_draft_cases(requirement_key, cases[])` | IDE kanalı: taslakları portala düşürür |
 | MCP | `publish_test_cases(case_ids)` | IDE kanalı: onaylıları yayınlar |
+
+Hata gövdesi `{"detail", "kod"}`; `kod` sabit enum'dan (MIMARI-SOZLESME §5), 5xx'te `ic_hata`.
 
 ---
 

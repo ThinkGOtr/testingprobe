@@ -1,0 +1,231 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tp:assistant",
+  "title": "Portal asistanı cevabı (AI-ASISTAN-PLANI §7.2)",
+  "description": "assistant ve assistant_deep amaçlarının ortak çıktısı; iki şema dosyası birebir aynıdır. Tüm alanlar zorunludur; 'yok' değeri yalnızca null ile (anyOf) verilir. Uzunluk ve adet sınırları şemada değil, worker son işlemindedir (§7.3).",
+  "x-version": 1,
+  "type": "object",
+  "properties": {
+    "cevap_bloklari": {
+      "type": "array",
+      "description": "Cevap metni, düz metin bloklar (Markdown ve URL yok). Toplam en çok 2500 karakter hedeflenir.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "tur": {
+            "type": "string",
+            "enum": [
+              "baslik",
+              "paragraf",
+              "liste",
+              "kod"
+            ]
+          },
+          "metin": {
+            "type": "string",
+            "description": "Bloğun metni; 'liste' bloğunda kısa giriş ya da boş metin."
+          },
+          "maddeler": {
+            "type": "array",
+            "description": "Yalnız 'liste' bloğunda dolu; diğerlerinde boş dizi.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "tur",
+          "metin",
+          "maddeler"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "guven": {
+      "type": "string",
+      "enum": [
+        "yuksek",
+        "orta",
+        "dusuk"
+      ]
+    },
+    "kaynaklar": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "tur": {
+            "type": "string",
+            "enum": [
+              "urun_kodu",
+              "uygulama_kodu",
+              "uygulama_verisi",
+              "probe_verisi",
+              "jira",
+              "ci_log",
+              "dokuman",
+              "genel_bilgi"
+            ]
+          },
+          "ref": {
+            "type": "string",
+            "description": "urun_kodu/dokuman: yol:satır veya yol:başlangıç-bitiş; uygulama_kodu: yol:satır; uygulama_verisi/probe_verisi/jira/ci_log: kanıt kimliği kN; genel_bilgi: boş."
+          },
+          "alinti": {
+            "type": "string",
+            "description": "Kaynaktan birebir alıntı, en çok 300 karakter."
+          }
+        },
+        "required": [
+          "tur",
+          "ref",
+          "alinti"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "yonlendirmeler": {
+      "type": "array",
+      "description": "Portal içi ekranlar; yalnız rotalar.json kalıbına uyan rota bağlantı olur.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "etiket": {
+            "type": "string"
+          },
+          "rota": {
+            "type": "string",
+            "description": "Portal iç rotası, ör. /gereksinimler/<id>/caseler (URL değil)."
+          }
+        },
+        "required": [
+          "etiket",
+          "rota"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "jira_anahtarlari": {
+      "type": "array",
+      "description": "Cevapta anılan Jira kayıt anahtarları (ör. TPD-3); bağlantıyı sunucu kurar.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "eylem_reddi": {
+      "type": "boolean",
+      "description": "Kullanıcı bir eylem istediyse true: asistan eylem yapmaz, yönlendirir."
+    },
+    "oneriler": {
+      "type": "array",
+      "description": "Soru-cevapta boş dizi; öneri kipinde en çok 3 ek öneri.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "baslik": {
+            "type": "string",
+            "description": "En çok 80 karakter."
+          },
+          "neden": {
+            "type": "string",
+            "description": "En çok 400 karakter; iş akışındaki etkisi."
+          },
+          "eylem": {
+            "type": "object",
+            "properties": {
+              "tur": {
+                "type": "string",
+                "enum": [
+                  "rota",
+                  "jira_taslak",
+                  "jira_yorum",
+                  "jira_kaydi",
+                  "bilgi"
+                ]
+              },
+              "rota": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Yalnız tur=rota iken portal iç rotası; diğerlerinde null."
+              },
+              "anahtar": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "İlgili bilinen Jira anahtarı; jira_yorum ve jira_kaydi için zorunlu, yoksa null."
+              },
+              "taslak": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "tur": {
+                        "type": "string",
+                        "enum": [
+                          "Task",
+                          "Bug",
+                          "Story",
+                          "yorum"
+                        ]
+                      },
+                      "ozet": {
+                        "type": "string"
+                      },
+                      "aciklama": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "tur",
+                      "ozet",
+                      "aciklama"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "jira_taslak (Task|Bug|Story) ve jira_yorum (yorum) için taslak; diğerlerinde null. URL ve mention yazılmaz."
+              }
+            },
+            "required": [
+              "tur",
+              "rota",
+              "anahtar",
+              "taslak"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "baslik",
+          "neden",
+          "eylem"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "cevap_bloklari",
+    "guven",
+    "kaynaklar",
+    "yonlendirmeler",
+    "jira_anahtarlari",
+    "eylem_reddi",
+    "oneriler"
+  ],
+  "additionalProperties": false
+}

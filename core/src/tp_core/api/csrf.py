@@ -12,8 +12,8 @@ jira-sim arayüzü ya da makinedeki başka bir geliştirme sunucusu portal ile *
    arası çağrı): tarayıcılar güvensiz yöntemlerde her zaman en az `Origin` gönderir, dolayısıyla
    bu yol bir CSRF saldırısına açılmaz.
 
-Reddedilen istek 403 `{"detail": "..."}` alır ve uygulamaya hiç ulaşmaz. Kural çerez olsun
-olmasın uygulanır (giriş CSRF'ine karşı da).
+Reddedilen istek 403 `{"detail": "...", "kod": "kaynak_reddi"}` alır ve uygulamaya hiç
+ulaşmaz. Kural çerez olsun olmasın uygulanır (giriş CSRF'ine karşı da).
 """
 
 from __future__ import annotations
@@ -25,6 +25,8 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 GUVENSIZ = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 GUVENLI_FETCH_SITE = frozenset({"same-origin", "none"})
 RED_MESAJI = "İstek başka bir kaynaktan geldi; işlem reddedildi"
+# Ara katman uygulamanın hata işleyicilerinden önce yanıt verir; kodu burada yazılır (errors.py).
+RED_KODU = "kaynak_reddi"
 
 
 def parse_origins(deger: str) -> frozenset[str]:
@@ -67,7 +69,9 @@ class OriginGuard:
         ):
             await self.app(scope, receive, send)
             return
-        govde = json.dumps({"detail": RED_MESAJI}, ensure_ascii=False).encode("utf-8")
+        govde = json.dumps({"detail": RED_MESAJI, "kod": RED_KODU}, ensure_ascii=False).encode(
+            "utf-8"
+        )
         await send(
             {
                 "type": "http.response.start",

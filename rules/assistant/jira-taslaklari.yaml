@@ -1,0 +1,62 @@
+# Öneri kartlarının Jira taslak şablonları (AI-ASISTAN-PLANI §17.2, §17.4; modelsiz).
+#
+# Asistan Jira'ya YAZMAZ: taslak kartta düz metin gösterilir, "Kopyala" ile panoya alınır ve kaydı
+# kullanıcı açar. Proje her zaman sunucudaki `JIRA_PROJECT`'tir (şablonda proje yok); "Jira'yı aç"
+# bağlantısını yalnız sunucu kurar ve taslak metni URL'e konmaz.
+#
+# Alanlar: `id` (tekil, kebab-case; `oneriler.yaml` `eylem.sablon`), `tur` (Task | Bug | Story |
+# yorum — `yorum` yalnız `jira_yorum` eyleminde, diğerleri `jira_taslak`'ta), `ozet` (yorumda boş),
+# `aciklama`, `etiketler` (yalnız bilgi; kullanıcı ekler).
+# Yer tutucular `oneriler.yaml` olgu sözleşmesindeki `yer_tutucu: true` olgular ve türevleridir;
+# şablonu kullanan her kuralın varlığında hesaplanabilmelidir. Eksik olgu boş metinle doldurulur.
+# Metinlerde URL, wiki bağlantısı (`[..|..]`), mention (`[~..]`, `@..`), HTML ve Markdown yoktur
+# (kural testi). Kişi adı ya da e-posta yazılmaz.
+version: 1
+taslaklar:
+  - id: po-hatirlatma
+    tur: yorum
+    ozet: ""
+    aciklama: |-
+      Merhaba, {jira_key} kaydının PO onayı {po_bekleme_gun} gündür bekliyor.
+      Case üretimi PO onayından sonra başlayabiliyor. Uygunsanız güncel içeriği gözden geçirip onayınızı verebilir misiniz?
+      Değişiklik gerekiyorsa lütfen bu kayda yorum olarak yazın.
+    etiketler: []
+
+  - id: ac-eksik
+    tur: yorum
+    ozet: ""
+    aciklama: |-
+      Merhaba, {jira_key} kaydında kabul kriterleri eksik görünüyor.
+      Kabul kriterleri olmadan test case'leri üretilemiyor. Beklenen davranışı ölçülebilir kriterler olarak (ör. tutar, sınır, mesaj) ekleyebilir misiniz?
+      Kriterler eklenince gereksinim yeniden incelenecek.
+    etiketler: []
+
+  - id: flaky-task
+    tur: Task
+    ozet: Kararsız (flaky) test incelenmeli
+    aciklama: |-
+      Bir otomasyon testi son 10 koşuda {flaky_tekrar} kez kararsız sonuç verdi (aynı kodla bazen geçti, bazen kırmızı oldu).
+      İstenen: kararsızlığın nedenini (zamanlama, test verisi, ortam ya da sıralama bağımlılığı) bulmak ve kalıcı olarak gidermek.
+      Kabul: test aynı ortamda art arda tekrarlarda tutarlı sonuç verir.
+      Ayrıntı: Testing Probe hata detay ekranındaki kanıtlar ve koşu geçmişi.
+    etiketler: [flaky, otomasyon]
+
+  - id: ortam-hatasi-task
+    tur: Task
+    ozet: CI ortam hatası testlerin koşmasını engelliyor
+    aciklama: |-
+      Son CI koşusu testler çalışmadan ortam hatasıyla bitti; bu koşunun test sonucu yok.
+      İstenen: başarısız adımın (ör. kurulum, lint ya da sağlık yoklaması) nedenini bulmak ve düzeltmek.
+      Kabul: yeni bir koşuda testler çalışır ve sonuç üretir.
+      Ayrıntı: Testing Probe koşu detay ekranındaki adım özetleri ve log.
+    etiketler: [ci, ortam]
+
+  - id: test-verisi-task
+    tur: Task
+    ozet: Test verisi ön koşulu sağlanmalı
+    aciklama: |-
+      Bir otomasyon testi, ön koşul verisi ortamda olmadığı ya da beklenenden farklı olduğu için başarısız oldu (triage sınıfı: test verisi).
+      İstenen: testin ihtiyaç duyduğu veriyi test ortamında hazırlamak ya da veri kurulumunu düzeltmek.
+      Kabul: test aynı ortamda veri hatası olmadan koşar.
+      Ayrıntı: Testing Probe hata detay ekranındaki kanıtlar.
+    etiketler: [test-verisi]

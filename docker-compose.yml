@@ -230,6 +230,8 @@ services:
       - tp_gh_artifacts:/github-artifacts
       # TP_MODEL_MODE=record konteyner içinde kullanılacaksa :ro kaldırılır.
       - ./rules:/rules:ro
+      # Asistanın ürün bilgi paketi (make asistan-paket; yalnızca core-worker, salt okunur).
+      - ./var/tp-bilgi:/opt/tp-bilgi:ro
     networks: [core-net, mcp-net]
     restart: unless-stopped
     # Worker SIGTERM'de elindeki işi bitirir; yeniden başlayınca kalan işleri bırakır (release_orphans).

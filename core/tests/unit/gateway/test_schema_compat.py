@@ -38,7 +38,7 @@ from tp_core.ports import ToolSpec
 
 RULES = find_rules_dir()
 PURPOSES = sorted(p.name.removesuffix(".schema.json") for p in (RULES / "schemas").glob("*.json"))
-AGENT_PURPOSES = ("consistency_check", "verify_and_map")
+AGENT_PURPOSES = ("consistency_check", "verify_and_map", "assistant", "assistant_deep")
 TOOL_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
 # Structured outputs'un kabul ettiği anahtarlar (transform_schema sonrası).
@@ -125,6 +125,9 @@ def test_source_schema_is_valid_and_closed(purpose: str) -> None:
             assert props, f"{purpose} {path}: özelliksiz nesne"
             # Tüm alanlar zorunlu; isteğe bağlılık `anyOf [..., null]` ile (structured outputs).
             assert set(sub.get("required", [])) == props, f"{purpose} {path}: required eksik"
+        # "Yok" değeri yalnız `anyOf [..., {type: null}]` ile: tip dizisi (`["string", "null"]`)
+        # SDK'nın `transform_schema`'sını çökertir (AI-ASISTAN-PLANI §7.2).
+        assert not isinstance(sub.get("type"), list), f"{purpose} {path}: tip dizisi yasak (anyOf)"
         if "enum" in sub:
             assert sub["enum"] and len(set(map(str, sub["enum"]))) == len(sub["enum"]), path
             assert all(isinstance(v, PRIMITIVES) for v in sub["enum"]), path
@@ -211,6 +214,23 @@ def test_agent_tool_definitions_are_valid(purpose: str) -> None:
         assert not {k for k, _ in _walk_keys(schema) if k.startswith("x-")}
         Draft202012Validator.check_schema(schema)
     json.dumps(kwargs)
+
+
+def test_type_array_is_rejected_by_the_closed_schema_rule() -> None:
+    """Kural kendini denetler: tip dizisi taşıyan alt şema yakalanır, `anyOf` ile null geçer."""
+    bad = {"type": "object", "properties": {"a": {"type": ["string", "null"]}}}
+    good = {
+        "type": "object",
+        "properties": {"a": {"anyOf": [{"type": "string"}, {"type": "null"}]}},
+    }
+    assert [p for p, s in _subschemas(bad) if isinstance(s.get("type"), list)] == ["#/properties/a"]
+    assert not [p for p, s in _subschemas(good) if isinstance(s.get("type"), list)]
+
+
+def test_assistant_schemas_are_identical() -> None:
+    """`assistant` paketi iki amaçta ortak; şema amaç adıyla aranır → iki dosya birebir aynı."""
+    deep = (RULES / "schemas" / "assistant_deep.schema.json").read_bytes()
+    assert (RULES / "schemas" / "assistant.schema.json").read_bytes() == deep
 
 
 def test_allowed_agent_tool_names_are_valid() -> None:

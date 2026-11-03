@@ -160,6 +160,28 @@ make demo-web-sync A=--watch   # ayrı terminalde, portaldaki "Buton kimliğini 
 
 Bütün AI çıktıları **REPLAY** rozetlidir; bu, dış hesap bağlanana kadar beklenen durumdur.
 
+### 3.1 Portal asistanı ve Öneri
+
+Her ekranda sağ altta **Asistan**, üst çubukta **Öneri** düğmesi vardır (ayrıntı:
+[TEKNIK-TASARIM.md](TEKNIK-TASARIM.md) §8.13, spec `specs/008-ai-asistan/`).
+
+- **Asistan salt okumadır** (constitution v1.3.0 İlke II): soruları ürünün kodu/dokümanı, Testing Probe
+  verisi, test edilen uygulama, Jira kaydı ve CI logu üzerinden kaynak göstererek cevaplar; hiçbir
+  eylem yapmaz, çıktısı karar dayanağı değildir. "Bu case'i onayla" gibi isteklere ekran bağlantısı verir.
+- **Model kipi pipeline'dan bağımsızdır:** varsayılan `TP_ASISTAN_MODEL_MODE=off` — yalnız hata sözlüğü,
+  durum şablonları ("TPD-3 neden bekliyor?", "Bugün ne yapmalıyım?") ve Öneri kuralları çalışır;
+  başlıkta "HAZIR CEVAPLAR" rozeti görünür, maliyet yoktur. Canlı için `.env`'ye
+  `TP_ASISTAN_MODEL_MODE=live` ekleyip `make up` (anahtar mevcut `ANTHROPIC_API_KEY`; yalnız
+  core-worker'a gider). Pipeline `TP_MODEL_MODE=replay`'de kalabilir.
+- **Öneri** kural tabanlıdır (`rules/assistant/oneriler.yaml`), modelsizdir ve model kapalıyken de
+  çalışır. Jira'ya asla yazmaz: taslağı "Kopyala" ile alıp kaydı kendiniz açarsınız.
+- **"? Bu ne?"** ile ekrandaki bir öğeyi seçip sorabilirsiniz; parola/token alanları ve `pre`/`code`
+  blokları yakalanmaz. Soruda sır deseni varsa istek 422 ile reddedilir.
+- `make up` asistan **bilgi paketini** (`var/tp-bilgi/`, git dışı) her seferinde yeniden üretir; elle:
+  `make asistan-paket`.
+- Sorular denetim kaydına girer (`ai_call`, `tool_call` kalıcı); sohbetler 90 gün saklanır.
+- Geri alma: `TP_ASISTAN_MODEL_MODE=off`, `TP_ASISTAN_ONERI=0`, `TP_ASISTAN_OTOMATIK_DERIN=0` (`make up`).
+
 ## 4. Günlük çalışma
 
 | Ne zaman | Komut |
@@ -231,6 +253,10 @@ Konteyner dışında test (paket başına kalite kapısı, MIMARI-SOZLESME §7):
 | Yayın "Jira'da story yok" hatasıyla duruyor | jira-sim elle sıfırlanmış; `make reset` |
 | GitHub kipinde locator kırma 409 | Bilerek: locator demosu yalnızca `TP_FORGE=local` |
 | `make eval-live`: "uv bulunamadı" | Host'a `uv` kurun (komut host'ta koşar; compose'da `rules/` salt okunurdur) |
+| Asistan pasif, "worker yok" | core-worker çalışmıyor ya da `TP_WORKER_ASISTAN_SERIT=0`: `make logs S=core-worker`, `make up` |
+| Asistan pasif, "maskeleme kapalı" | `TP_ASISTAN_MUSTERI_VERISI=1` iken `TP_PII_MASKING` kapalı; müşteri verisi kurulumunda maskeleme zorunludur |
+| Asistan "Canlı model kapalı" diyor | Beklenen (`TP_ASISTAN_MODEL_MODE=off`); hata/durum soruları ve Öneri yine çalışır. Canlı için §3.1 |
+| Öneri düğmesi görünmüyor | Bu ekran × rol için kural yok (bilinçli) ya da `TP_ASISTAN_ONERI=0` |
 | `scripts/eval-live.sh --ping`: HTTP 400 `anthropic-workspace-id` | `.env`'e `ANTHROPIC_WORKSPACE_ID` ekleyin ya da çalışma alanı anahtarı kullanın (GERCEK-SISTEMLER §1) |
 
 **Colima:** Docker Desktop yerine Colima kullanılabilir; compose dosyası Docker Desktop'a özgü özellik

@@ -46,7 +46,21 @@ EXTERNAL_DURUM = frozenset({"intent", "created", "failed"})
 PR_DURUM = frozenset({"open", "merged", "closed"})
 JOB_DURUM = frozenset({"queued", "running", "retry", "done", "failed", "cancelled"})
 AI_MOD = URETIM_MODU
-TOOL_KANAL = frozenset({"agent", "ide"})
+# asistan (0017): portal içi sohbet asistanının araç çağrıları.
+TOOL_KANAL = frozenset({"agent", "ide", "asistan"})
+
+# AI Asistan (0017, AI-ASISTAN-PLANI §8). `asistan_mesaj.durum` workflow.MACHINES'e konmaz.
+ASISTAN_ROL = frozenset({"user", "assistant"})
+ASISTAN_MESAJ_DURUM = frozenset({"pending", "running", "done", "error", "iptal"})
+ASISTAN_BEKLEYEN_DURUM = frozenset({"pending", "running"})
+ASISTAN_KAYNAK = frozenset({"model", "sozluk", "sablon", "kapali"})
+ASISTAN_AMAC = frozenset({"assistant", "assistant_deep"})
+ASISTAN_KIP = frozenset({"soru", "oneri"})
+ASISTAN_TETIK = frozenset({"kullanici", "otomatik"})
+ASISTAN_MOD = frozenset({"live", "off"})
+ASISTAN_GERI_BILDIRIM = frozenset({-1, 1})
+# Öneri geri bildirimi: -1 gizle, 1 faydalı, 2 yaptım (§17).
+ASISTAN_ONERI_DEGER = frozenset({-1, 1, 2})
 
 
 def durumlar(entity: str) -> frozenset[str]:
