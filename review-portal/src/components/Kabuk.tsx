@@ -5,6 +5,7 @@ import { useBaglantiDurumu, type BaglantiDurumu } from "../api/events";
 import type { Rol } from "../api/types";
 import { useOturum } from "../auth";
 import { ROL } from "../lib/etiketler";
+import { TEMA_ETIKETI, useTema } from "../lib/tema";
 
 interface NavOgesi {
   yol: string;
@@ -46,36 +47,6 @@ const BAGLANTI: Record<BaglantiDurumu, { etiket: string; sinif: string }> = {
   mock: { etiket: "Olaylar: örnek veri", sinif: "mock" },
   kapali: { etiket: "Olay akışı kapalı", sinif: "kapali" },
 };
-
-type Tema = "sistem" | "acik" | "koyu";
-
-function temaOku(): Tema {
-  try {
-    const t = localStorage.getItem("tp-tema");
-    if (t === "acik" || t === "koyu") return t;
-  } catch {
-    /* depolama yok */
-  }
-  return "sistem";
-}
-
-function useTema(): [Tema, () => void] {
-  const [tema, setTema] = useState<Tema>(temaOku);
-  useEffect(() => {
-    const kok = document.documentElement;
-    if (tema === "sistem") kok.removeAttribute("data-theme");
-    else kok.setAttribute("data-theme", tema === "acik" ? "light" : "dark");
-    try {
-      localStorage.setItem("tp-tema", tema);
-    } catch {
-      /* yoksay */
-    }
-  }, [tema]);
-  const degistir = () => setTema((t) => (t === "sistem" ? "koyu" : t === "koyu" ? "acik" : "sistem"));
-  return [tema, degistir];
-}
-
-const TEMA_ETIKETI: Record<Tema, string> = { sistem: "Tema: sistem", acik: "Tema: açık", koyu: "Tema: koyu" };
 
 function useMockUclari(): string[] {
   const anlik = useSyncExternalStore(mockDegisikligineAbone, () => mockUclari().join("|"));
