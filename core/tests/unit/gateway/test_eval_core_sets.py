@@ -42,6 +42,7 @@ from tp_core.gateway.evaluation import (
     EVALUATIONS_FILE,
     evaluation_status,
     evaluation_statuses,
+    icerik_hash,
     prompt_versions,
 )
 from tp_core.gateway.testing import (
@@ -401,6 +402,7 @@ def _mark_all(rules_dir: Path, guard: int) -> None:
             results=f"evaluation/results/{bundle}.json",
             today=TODAY,
             guardrails_version=guard,
+            icerik_hash=icerik_hash(rules_dir, bundle),
         )
 
 

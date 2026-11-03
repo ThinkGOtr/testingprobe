@@ -6,6 +6,8 @@ import type { Rol } from "../api/types";
 import { useOturum } from "../auth";
 import { ROL } from "../lib/etiketler";
 import { OneriDugmesi } from "./asistan/OneriDugmesi";
+import { paneliAc, sekmeSec, useAsistanHazir } from "./asistan/kontrol";
+import { KabukDurumuSaglayici, useKabukDurumu } from "./KabukDurumu";
 
 interface NavOgesi {
   yol: string;
@@ -102,17 +104,63 @@ export function useCanliYetenekler(): Yetenekler | null {
   return y;
 }
 
+/** Panel çizilince içindeki ilk odaklanabilir öğeye (yoksa panele) odak verir; birkaç kare bekler. */
+function paneleOdaklan(kalan = 10): void {
+  const panel = document.querySelector<HTMLElement>('[data-testid="asistan-paneli"]');
+  if (!panel) {
+    if (kalan > 0) setTimeout(() => paneleOdaklan(kalan - 1), 16);
+    return;
+  }
+  const hedef = panel.querySelector<HTMLElement>("textarea:not([disabled]), input:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex='-1'])");
+  if (hedef) hedef.focus();
+  else {
+    panel.tabIndex = -1;
+    panel.focus();
+  }
+}
+
+/** `.atla` yanında "Asistanı aç" atlama düğmesi: yalnız asistan kullanılabilirken. */
+function AsistanaAtla() {
+  const hazir = useAsistanHazir();
+  if (!hazir) return null;
+  return (
+    <button
+      type="button"
+      className="atla atla-asistan"
+      aria-label="Asistanı aç (panele atla)"
+      onClick={() => {
+        sekmeSec("sohbet");
+        paneliAc();
+        paneleOdaklan();
+      }}
+    >
+      Asistanı aç
+    </button>
+  );
+}
+
+/** Kabuk; App düzeyinde `KabukDurumuSaglayici` yoksa kendi sağlayıcısını kurar. */
 export function Kabuk() {
+  const durum = useKabukDurumu();
+  if (durum) return <KabukIcerik />;
+  return (
+    <KabukDurumuSaglayici>
+      <KabukIcerik />
+    </KabukDurumuSaglayici>
+  );
+}
+
+function KabukIcerik() {
   const { kullanici, cikisYap } = useOturum();
   const baglanti = useBaglantiDurumu();
   const mockUclar = useMockUclari();
   const yetenekler = useCanliYetenekler();
   const [tema, temaDegistir] = useTema();
-  const [menuAcik, setMenuAcik] = useState(false);
+  const { menuAcik, menuAyarla: setMenuAcik } = useKabukDurumu()!;
   const konum = useLocation();
   const git = useNavigate();
 
-  useEffect(() => setMenuAcik(false), [konum.pathname]);
+  useEffect(() => setMenuAcik(false), [konum.pathname, setMenuAcik]);
 
   const mockAktif = mockZorunlu() || mockUclar.length > 0;
   const b = BAGLANTI[baglanti];
@@ -122,6 +170,7 @@ export function Kabuk() {
       <a className="atla" href="#ana-icerik">
         İçeriğe atla
       </a>
+      <AsistanaAtla />
       <header className="ust-cubuk">
         <button
           type="button"

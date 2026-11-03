@@ -12,10 +12,13 @@ import yaml
 from tests.unit.gateway.demo_sources import RULES
 from tp_core.gateway.errors import GatewayConfigError
 from tp_core.gateway.evaluation import (
+    ICERIK_KAYNAKLARI,
     PENDING_LABEL,
     blocking,
     evaluation_status,
     evaluation_statuses,
+    icerik_dosyalari,
+    icerik_hash,
     load_evaluations,
     main,
     prompt_versions,
@@ -159,6 +162,8 @@ def test_gate_opens_only_when_every_bundle_is_evaluated_or_waived(rules_copy: Pa
                 "model": "claude-sonnet-5-5",
                 "provider": "anthropic",
                 "results": "docs/outcome/eval.md",
+                # İçerik hash'i tutulan paketlerde (asistan) kayıt güncel hash'i taşımalı.
+                **({"icerik_hash": h} if (h := icerik_hash(rules_copy, bundle_id)) else {}),
             },
         )
     assert blocking(rules_copy) == []
@@ -185,3 +190,120 @@ def test_missing_manifest_is_config_error(tmp_path: Path) -> None:
     with pytest.raises(GatewayConfigError, match=r"evaluations\.yaml"):
         load_evaluations(tmp_path)
     assert main(["--rules-dir", str(tmp_path)]) == 2
+
+
+# --- İçerik hash'i (AI-ASISTAN-PLANI §4.2 X) ------------------------------------------------
+
+
+def test_asistan_icerik_hash_sabit_dosya_listesi() -> None:
+    assert "assistant" in ICERIK_KAYNAKLARI
+    dosyalar = icerik_dosyalari(RULES, "assistant")
+    assert {
+        "prompts/assistant.md",
+        "schemas/assistant.schema.json",
+        "schemas/assistant_deep.schema.json",
+    } <= set(dosyalar)
+    kural = {p for p in dosyalar if p.startswith("assistant/")}
+    assert kural == {f"assistant/{p.name}" for p in (RULES / "assistant").glob("*.yaml")}
+    assert all((RULES / p).is_file() for p in dosyalar)
+    h = icerik_hash(RULES, "assistant")
+    assert h and h.startswith("sha256:") and h == icerik_hash(RULES, "assistant")
+    assert icerik_hash(RULES, "triage") is None  # hash yalnız kayıtlı paketlerde
+
+
+def _hash_ile(rules_dir: Path, rel: str, ek: str) -> str | None:
+    path = rules_dir / rel
+    path.write_text(path.read_text(encoding="utf-8") + ek, encoding="utf-8")
+    return icerik_hash(rules_dir, "assistant")
+
+
+def test_icerik_hash_degisiklikleri_yakalar(rules_dir: Path) -> None:
+    ilk = icerik_hash(rules_dir, "assistant")
+    # Şema, prompt ve kural dosyası değişikliği hash'i değiştirir.
+    h1 = _hash_ile(rules_dir, "schemas/assistant_deep.schema.json", "\n")
+    assert _hash_ile(rules_dir, "assistant/oneriler.yaml", "# not\n") != h1
+    h1 = icerik_hash(rules_dir, "assistant")
+    assert h1 != ilk
+    (rules_dir / "assistant" / "yeni.yaml").write_text("version: 1\n", encoding="utf-8")
+    h2 = icerik_hash(rules_dir, "assistant")
+    assert h2 != h1
+    # CRLF ↔ LF farkı içerik değişikliği değildir.
+    prompt = rules_dir / "prompts" / "assistant.md"
+    prompt.write_bytes(prompt.read_bytes().replace(b"\n", b"\r\n"))
+    assert icerik_hash(rules_dir, "assistant") == h2
+    # models.yaml: yalnız asistan amaç blokları; yorum ve başka amaç hash'i değiştirmez.
+    models = rules_dir / "models.yaml"
+    metin = models.read_text(encoding="utf-8")
+    models.write_text(
+        "# yeni yorum\n" + metin.replace("max_tokens: 3000", "max_tokens: 3000 "), encoding="utf-8"
+    )
+    assert icerik_hash(rules_dir, "assistant") == h2
+    data = yaml.safe_load(metin)
+    data["purposes"]["triage"]["max_tokens"] = 123
+    models.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    assert icerik_hash(rules_dir, "assistant") == h2
+    data["purposes"]["assistant_deep"]["params"]["effort"] = "medium"
+    models.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    assert icerik_hash(rules_dir, "assistant") != h2
+    # Silinen dosya da değişikliktir.
+    h3 = icerik_hash(rules_dir, "assistant")
+    (rules_dir / "schemas" / "assistant.schema.json").unlink()
+    assert icerik_hash(rules_dir, "assistant") != h3
+
+
+def _evaluated(rules_dir: Path, **ek) -> None:
+    _set(
+        rules_dir,
+        "assistant",
+        version=prompt_versions(rules_dir)["assistant"],
+        status="evaluated",
+        evaluation={
+            "date": "2026-11-03",
+            "model": "assistant=claude-haiku-5-5, assistant_deep=claude-sonnet-5-5",
+            "provider": "anthropic",
+            "results": "evaluation/results/assistant-v1-assistant-2026-11-03.json",
+            **ek,
+        },
+    )
+
+
+def test_evaluated_asistan_kaydi_hashsiz_ya_da_bayat_hashle_kapiyi_kapatir(
+    rules_dir: Path, capsys
+) -> None:
+    _evaluated(rules_dir)  # hash yok
+    st = evaluation_status(rules_dir, "assistant")
+    assert st.status == "icerik_degisti" and not st.mergeable
+    assert "içerik değişti" in st.label
+    _evaluated(rules_dir, icerik_hash=icerik_hash(rules_dir, "assistant"))
+    assert evaluation_status(rules_dir, "assistant").status == "evaluated"
+    assert "assistant" not in {s.bundle_id for s in blocking(rules_dir)}
+    sema = rules_dir / "schemas" / "assistant.schema.json"
+    sema.write_text(sema.read_text(encoding="utf-8") + " ", encoding="utf-8")
+    assert evaluation_status(rules_dir, "assistant").status == "icerik_degisti"
+    capsys.readouterr()
+    assert main(["--rules-dir", str(rules_dir), "--check"]) == 1
+    out = capsys.readouterr()
+    assert "assistant@v1\ticerik_degisti" in out.out and "içerik hash'i: kayıtlı sha256:" in out.out
+    assert "assistant@v1 (değerlendirme sonrası içerik değişti" in out.err
+
+
+def test_waived_asistan_kaydinda_hash_denetlenmez(rules_dir: Path) -> None:
+    _set(
+        rules_dir,
+        "assistant",
+        version=1,
+        status="waived",
+        waiver={
+            "approved_by": "Sahip",
+            "approved_at": "2026-11-03",
+            "reason": "test",
+            "until": "ilk canlı koşu",
+        },
+    )
+    assert evaluation_status(rules_dir, "assistant").status == "waived"
+
+
+def test_hash_komutu(capsys) -> None:
+    assert main(["--rules-dir", str(RULES), "--hash"]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith("assistant\tsha256:") and "  schemas/assistant.schema.json" in out

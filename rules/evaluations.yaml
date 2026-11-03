@@ -98,5 +98,8 @@ bundles:
     status: pending
     note: 'Portal asistanı (AI-ASISTAN-PLANI §6.1, §13): `assistant` (Haiku 5.5) ve `assistant_deep` (Sonnet
       5.5) amaçları aynı paketi kullanır. Golden''lar yalnız test/eval amaçlı ve elle hazırlandı; asistan
-      çalışma zamanında golden kullanmaz. Değerlendirme seti: rules/evaluation/assistant.json (iskelet;
-      tam set ve düzenek Şerit H). Canlı değerlendirme yapılmadı; onaylı istisna yok.'
+      çalışma zamanında golden kullanmaz. Değerlendirme seti: rules/evaluation/assistant.json (40 vaka,
+      iki amaç, §13 eşikleri); işleyici üzerinden koşar: `make eval-live A="--bundle assistant --via-flow
+      --budget-usd 15 --update-status"` (tohumlu yığın). Kayıt `evaluation.icerik_hash` (prompt, iki şema,
+      models.yaml asistan amaçları, rules/assistant/*.yaml) ve `evaluation.amaclar` taşır; içerik sonradan
+      değişirse `--check` düşer. Canlı değerlendirme yapılmadı; onaylı istisna yok.'

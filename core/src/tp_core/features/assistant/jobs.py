@@ -26,7 +26,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session, sessionmaker
 
 from tp_core.db import get_engine
-from tp_core.features.assistant import durum, flow
+from tp_core.features.assistant import durum, flow, temizlik
 from tp_core.features.assistant.budget import ASISTAN_IS_TURU
 from tp_core.gateway.errors import BudgetExceeded
 from tp_core.workflow.jobs import ASISTAN_SERIT, JobContext, PermanentJobError, job_handler
@@ -78,5 +78,6 @@ def _hata_isaretle(mesaj_id: uuid.UUID, kod: str) -> None:
 
 def on_worker_start(conn: Connection) -> None:
     """Asistan şeridi açıksa ilk durum satırı/kalp atışı (sonrası worker zamanlayıcısında)."""
+    temizlik.planla(conn)  # saklama temizliği (§8): şeritten bağımsız, genel şeritte koşar
     if durum.asistan_serit_acik():
         durum.durum_yaz(conn)

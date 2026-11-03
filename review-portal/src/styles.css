@@ -248,6 +248,10 @@ code,
 
 /* ---------------------------------------------------------------- kabuk */
 
+/* Katmanlar (AI-ASISTAN-PLANI §11): üst çubuk 20, yan menü 30, asistan paneli 40 ("Bu ne?" bindirmesi 39,
+   panel içi modal 45), bildirimler 50, atlama bağlantıları (.atla) 100. Yeni sabit öğe bu sıraya oturtulur. */
+
+/* "İçeriğe atla" ve "Asistanı aç": odak alana kadar görünmez; ikisi aynı yerde, sırayla odak alır. */
 .atla {
   position: absolute;
   left: 8px;
@@ -260,6 +264,11 @@ code,
 }
 .atla:focus {
   top: 8px;
+}
+button.atla {
+  border: 0;
+  font: inherit;
+  cursor: pointer;
 }
 
 .kabuk {
@@ -381,6 +390,7 @@ code,
 }
 
 .yan-menu {
+  z-index: 30;
   width: 232px;
   flex-shrink: 0;
   padding: 16px 12px;
@@ -2102,6 +2112,10 @@ mark.kaynak-deger {
   flex-direction: column;
   gap: 8px;
   max-width: min(420px, calc(100vw - 32px));
+}
+/* Sağ alttaki "Asistan" düğmesi görünürken bildirimler onun üstünde durur (düğmeyi örtmez). */
+body:has(.asistan-baslatici) .bildirimler {
+  bottom: 72px;
 }
 .bildirim {
   display: flex;

@@ -80,7 +80,7 @@ demo-prova: ## Tam demo provası: make reset → 14 adım + locator kırma/onar�
 prova-temizle: ## Eski prova raporlarını temizle (N=10: son N koşu klasörü kalır)
 	@scripts/demo-prova.sh --temizle $(or $(N),10)
 
-eval-live: ## Prompt değerlendirme setini CANLI modelle koşturur, sert bütçe TP_EVAL_BUDGET_USD (5) (A='--ping' | '--dry-run' | '--bundle triage --update-status' | '--record')
+eval-live: ## Prompt değerlendirme setini CANLI modelle koşturur, sert bütçe TP_EVAL_BUDGET_USD (5) (A='--ping' | '--dry-run' | '--bundle triage --update-status' | '--record' | '--bundle assistant --via-flow')
 	@scripts/eval-live.sh $(A)
 
 prune: ## Kullanılmayan (dangling) imajları ve build önbelleğini temizler; volume'lere dokunmaz

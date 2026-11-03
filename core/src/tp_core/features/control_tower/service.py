@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 from tp_core.config import get_settings
 from tp_core.features.ci import service as ci
 from tp_core.features.ci import services as ci_services
+from tp_core.features.control_tower import asistan
 from tp_core.integrations.forge_demo import AUDIT_BREAK
 from tp_core.models import (
     AiCall,
@@ -805,6 +806,8 @@ def ai_katkisi(session: Session) -> tuple[dict[str, Any], list[dict[str, Any]], 
         "cagri_sayisi": int(cagri),
         "replay_cagri": int(replay),
         "amaclar": amaclar,
+        # §6.4: assistant* amaçları ayrı grup (asistan / diğer); toplamlar yukarıdakilerle aynı.
+        "amac_gruplari": asistan.maliyet_gruplari(session, gun_basi),
     }
     return katki, hazirlik, uyarilar
 
@@ -915,6 +918,7 @@ def control_tower(session: Session) -> dict[str, Any]:
         "ai_katkisi": katki,
         "hazirlik": hazirlik,
         "a11y": a,
+        "asistan": asistan.asistan_olcumu(session, katki["amac_gruplari"]),
         "kaynaklar": {
             "son_kosular": f"run tablosu, son {n} CI koşusu (tetik pr/push/nightly/deploy/manual)",
             "gecme_orani": (
@@ -991,7 +995,11 @@ def control_tower(session: Session) -> dict[str, Any]:
                 "hazırlık süresi satırı olan (AI case'i üretilmiş) story'lerin manuel baz kaynağı "
                 "sayımı: ölçüm / varsayılan / ölçülmedi"
             ),
-            "maliyet": "ai_call.maliyet toplamı (tüm amaçlar); bugün: Europe/Istanbul gün başından",
+            "maliyet": (
+                "ai_call.maliyet toplamı (tüm amaçlar); bugün: Europe/Istanbul gün başından; "
+                "amac_gruplari: 'assistant*' amaçları (asistan) ve diğerleri ayrı"
+            ),
+            "asistan": asistan.KAYNAK,
             "a11y": (
                 "test_result_ek.a11y: Playwright JSON raporundaki axe-<sayfa>.json ekleri, "
                 "a11y verisi olan en son kırma olmayan koşu"

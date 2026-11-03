@@ -192,6 +192,11 @@ export function Ilerleme({ oran, etiket, hedef }: { oran: number; etiket: string
   );
 }
 
+/** Ölçülmemiş değer: sayı uydurulmaz, açıkça "ölçülmedi" yazılır. */
+export function Olculmedi({ metin = "ölçülmedi" }: { metin?: string }) {
+  return <span className="olculmedi">{metin}</span>;
+}
+
 export function Metrik({ etiket, deger, alt }: { etiket: ReactNode; deger: ReactNode; alt?: ReactNode }) {
   return (
     <div className="metrik">

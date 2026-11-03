@@ -18,6 +18,17 @@ kendisi canlı çağrı isteğidir. Üç kip:
                koşup her vaka geçtiyse `rules/evaluations.yaml` kaydını `evaluated` yapar; aksi
                hâlde durum "canlı değerlendirme bekliyor" kalır.
 
+`--via-flow` (AI-ASISTAN-PLANI §13): asistan seti (`agent.tool_env = "assistant"`) geçide doğrudan
+değil, worker'ın işleyicisi `flow.cevapla` üzerinden koşar (sözlük/şablon dalları, üretim araçları,
+§7.3 son işlem; rol ortamı `eval_agents.ENVS["assistant:<rol>"]`, tohumlu Testing Probe veritabanı).
+Geçidi `flow_gateway_factory` kurar (bu komutun sağlayıcısı, canlı, REPLAY yedeği yok, `ai_call`
+satırları çağrı defterine); bayrak yoksa asistan seti atlanır. `--purpose` (tekrarlanabilir):
+setin amaçlarından yalnız bunlar (asistan seti `assistant` ve `assistant_deep`; varsayılan ikisi).
+Çok amaçlı sette rapor amaç başınadır (`<paket>-v<n>-<amaç>-<tarih>.json`) ve `--update-status`
+yalnız tüm amaçlar `esikler`'i geçince kaydı `evaluated` yapar (`evaluation.amaclar`,
+`evaluation.icerik_hash`).
+Her rapor vaka başına maliyet ve uçtan uca sürenin medyan/p90'ını (`dagilim`) taşır.
+
 `--record`: aynı koşu `record` kipinde, birebir kayıtları AYRI bir dizine yazar (varsayılan
 `exports/eval-live/<zaman>/replay-adaylari/`, git'e girmez). Commit'li golden'lar
 (`rules/replay/**`) asla yazılmaz; dizin `rules/replay` içindeyse komut reddeder. Dizindeki
@@ -43,6 +54,8 @@ Değerlendirme koşusu REPLAY yedeğine hiçbir zaman düşmez (`replay_fallback
     cd core && uv run python -m tp_core.gateway.eval_live --ping
     cd core && uv run python -m tp_core.gateway.eval_live --dry-run
     cd core && uv run python -m tp_core.gateway.eval_live --bundle triage --record --update-status
+    cd core && uv run python -m tp_core.gateway.eval_live --bundle assistant --via-flow \\
+        --budget-usd 15 --update-status
 """
 
 from __future__ import annotations
@@ -75,20 +88,27 @@ from tp_core.gateway.eval_agents import EnvFactory, ToolEnv, ToolEnvUnavailable,
 from tp_core.gateway.eval_set import (
     GUARDRAILS,
     CaseResult,
+    asistan_olcumleri,
     case_messages,
     case_replay_key,
+    flow_env_name,
     guardrails_coverage,
+    is_flow_set,
     load_set,
     mark_evaluated,
     mark_guardrails_if_covered,
+    report_stem,
     run_case,
+    run_flow_case,
     run_id,
     runs_of,
+    set_passed,
     set_path,
+    set_purposes,
     write_report,
 )
-from tp_core.gateway.evaluation import PENDING_LABEL, prompt_versions
-from tp_core.gateway.factory import build_provider, load_pii_allowlist
+from tp_core.gateway.evaluation import PENDING_LABEL, icerik_hash, prompt_versions
+from tp_core.gateway.factory import build_provider, known_secret_values, load_pii_allowlist
 from tp_core.gateway.masking import PiiMasker
 from tp_core.gateway.providers.base import Provider, ProviderRequest
 from tp_core.gateway.replay import ReplayStore
@@ -394,13 +414,23 @@ class BundlePlan:
     prompt_version: int
     data: dict[str, Any] | None = None
     skip_reason: str | None = None
+    purposes: list[str] = field(default_factory=list)
 
 
-def plan_bundles(rules_dir: Path, only: Sequence[str] = ()) -> list[BundlePlan]:
+def plan_bundles(
+    rules_dir: Path, only: Sequence[str] = (), purposes: Sequence[str] = ()
+) -> list[BundlePlan]:
+    """Koşturulacak paketler. `purposes` (`--purpose`): yalnız bu amaçlar; seti bu amaçları
+    taşımayan paket atlanır (asistan seti `assistant` ve `assistant_deep` ile koşabilir)."""
     versions = prompt_versions(rules_dir)
     unknown = sorted(set(only) - set(versions))
     if unknown:
         raise GatewayConfigError(f"bilinmeyen prompt paketi: {', '.join(unknown)}")
+    if purposes:
+        models = load_model_table(rules_dir)
+        bad = sorted(p for p in purposes if p not in models.purposes)
+        if bad:
+            raise GatewayConfigError(f"bilinmeyen amaç: {', '.join(bad)}")
     plans = []
     for bundle, version in versions.items():
         if only and bundle not in only:
@@ -423,7 +453,15 @@ def plan_bundles(rules_dir: Path, only: Sequence[str] = ()) -> list[BundlePlan]:
                     "(core/tests/unit/gateway/build_eval_sets.py)"
                 )
             else:
-                plan.data = data
+                allowed = set_purposes(data)
+                chosen = [p for p in allowed if p in purposes] if purposes else allowed
+                if not chosen:
+                    plan.skip_reason = (
+                        f"amaç {', '.join(purposes)} bu sette yok (setin amaçları: "
+                        f"{', '.join(allowed)})"
+                    )
+                else:
+                    plan.data, plan.purposes = data, chosen
         plans.append(plan)
     return plans
 
@@ -433,12 +471,21 @@ def plan_bundles(rules_dir: Path, only: Sequence[str] = ()) -> list[BundlePlan]:
 
 @dataclass
 class BundleRun:
+    """Bir paketin bir amaçla koşusu (çok amaçlı setlerde amaç başına bir koşu)."""
+
     bundle: str
     results: list[CaseResult] = field(default_factory=list)
     cost_usd: float = 0.0
     complete: bool = True
     report: Path | None = None
     marked: bool = False
+    purpose: str | None = None
+    tag: str | None = None  # rapor adındaki amaç etiketi (çok amaçlı set)
+    rows: list[dict[str, Any]] = field(default_factory=list)
+    model: str | None = None
+    olcum: dict[str, Any] | None = None
+    calls_rel: str | None = None
+    passed: bool = False
 
     @staticmethod
     def report_calls_name(data: Mapping[str, Any], today: dt.date | None) -> str:
@@ -467,22 +514,29 @@ def dry_run(
         if plan.data is None:
             out(f"  {plan.bundle}@v{plan.prompt_version}: ATLANIR — {plan.skip_reason}")
             continue
-        model = gw.models.purpose(str(plan.data["purpose"])).model
-        runs = runs_of(plan.data)
-        ests = [estimate_case(gw, plan.data, c) for c in plan.data["cases"]] * runs
-        single, worst = sum(e.single_usd for e in ests), sum(e.worst_usd for e in ests)
-        total_single += single
-        total_worst += worst
-        agent = plan.data.get("agent")
-        extra = f" × {runs} koşu" if runs > 1 else ""
-        if agent:
-            env_name, turns = agent.get("tool_env"), agent.get("max_turns")
-            extra += f", ajan (araç ortamı '{env_name}', ≤{turns} tur)"
-        out(
-            f"  {plan.bundle}@v{plan.prompt_version}: {len(plan.data['cases'])} vaka{extra}, "
-            f"{model}, ~{sum(e.input_tokens for e in ests)} girdi token; tek deneme "
-            f"≤{single:.4f} USD, en kötü durum ≤{worst:.4f} USD"
-        )
+        for purpose in plan.purposes:
+            pdata = {**plan.data, "purpose": purpose}
+            model = gw.models.purpose(purpose).model
+            runs = runs_of(pdata)
+            ests = [estimate_case(gw, pdata, c) for c in pdata["cases"]] * runs
+            single, worst = sum(e.single_usd for e in ests), sum(e.worst_usd for e in ests)
+            total_single += single
+            total_worst += worst
+            agent = pdata.get("agent")
+            extra = f" × {runs} koşu" if runs > 1 else ""
+            if is_flow_set(pdata):
+                extra += ", işleyici üzerinden (--via-flow; araç ortamı 'assistant:<rol>')"
+            elif agent:
+                env_name, turns = agent.get("tool_env"), agent.get("max_turns")
+                extra += f", ajan (araç ortamı '{env_name}', ≤{turns} tur)"
+            label = f"{plan.bundle}@v{plan.prompt_version}"
+            if _tag(pdata, purpose):
+                label += f" [{purpose}]"
+            out(
+                f"  {label}: {len(pdata['cases'])} vaka{extra}, "
+                f"{model}, ~{sum(e.input_tokens for e in ests)} girdi token; tek deneme "
+                f"≤{single:.4f} USD, en kötü durum ≤{worst:.4f} USD"
+            )
     verdict = (
         "tavanın altında"
         if total_worst <= budget
@@ -544,6 +598,61 @@ def _write_candidate_index(record_dir: Path, entries: list[dict[str, Any]], prov
     )
 
 
+def flow_gateway_factory(
+    provider: Provider,
+    recorder: InMemoryCallRecorder,
+    rules_dir: Path,
+    masker: PiiMasker,
+) -> Callable[..., Gateway]:
+    """İşleyicinin (`flow.cevapla`) `gateway_factory`'si: eval sağlayıcısı + bellek içi kayıtçı.
+
+    Üretimdeki `varsayilan_gecit_fabrikasi` ile aynı ayarlar (canlı, REPLAY yedeği yok, asla
+    `record`, bütçe işleyicinin `AsistanBudget`'ı); farkı: `ai_call` satırları Postgres yerine
+    eval kayıtçısına (çağrı defteri ve `<rapor>.calls.jsonl`) yazılır. Yalnız `run_live` (açık
+    `make eval-live A=--via-flow` çağrısı) kurar; CI ve worker bunu hiç çağırmaz."""
+    models = load_model_table(rules_dir)
+
+    def kur(*, budget: Budget) -> Gateway:
+        return Gateway(
+            provider=provider,
+            recorder=recorder,
+            mode="live",
+            models=models,
+            rules_dir=rules_dir,
+            budget=budget,
+            masker=masker,
+            replay_store=ReplayStore(rules_dir / "replay"),
+            record_extras=True,
+            secret_values=known_secret_values(),
+            replay_fallback=False,
+        )
+
+    return kur
+
+
+def _flow_env(
+    cache: dict[str, ToolEnv | None],
+    case: Mapping[str, Any],
+    envs: Mapping[str, EnvFactory] | None,
+    out: Callable[[str], None],
+    bundle: str,
+    secrets: Sequence[str],
+) -> ToolEnv | None:
+    """Vakanın rol ortamı (`assistant:<rol>`), paket koşusu boyunca rol başına bir kez açılır."""
+    name = flow_env_name(case)
+    if name not in cache:
+        try:
+            cache[name] = open_env(name, envs)
+        except ToolEnvUnavailable as exc:
+            cache[name] = None
+            out(f"  {bundle}: araç ortamı yok ({name}): {redact(exc, secrets)}")
+    return cache[name]
+
+
+def _tag(data: Mapping[str, Any], purpose: str) -> str | None:
+    return purpose if len(set_purposes(data)) > 1 else None
+
+
 def run_live(
     settings: GatewaySettings,
     rules_dir: Path,
@@ -557,6 +666,8 @@ def run_live(
     today: dt.date | None = None,
     ledger: CallLedger | None = None,
     envs: Mapping[str, EnvFactory] | None = None,
+    via_flow: bool = False,
+    clock: Callable[[], float] = time.monotonic,
 ) -> int:
     secrets = secret_values(settings)
     if record_dir is not None:
@@ -572,6 +683,7 @@ def run_live(
     if record_dir is not None:
         replay_store.ensure_writable()
     recorder = InMemoryCallRecorder()
+    masker = PiiMasker(enabled=settings.pii_masking, allowlist=load_pii_allowlist(rules_dir))
     gw = Gateway(
         provider=provider,
         recorder=recorder,
@@ -580,12 +692,13 @@ def run_live(
         rules_dir=rules_dir,
         # İkinci savunma: geçidin kendi tavanı (çağrı öncesi girdi tahmini) aynı bütçeyle.
         budget=Budget(workflow_cap_usd=budget, daily_cap_usd=budget, ledger=InMemorySpendLedger()),
-        masker=PiiMasker(enabled=settings.pii_masking, allowlist=load_pii_allowlist(rules_dir)),
+        masker=masker,
         replay_store=replay_store,
         record_extras=True,
         # Değerlendirme REPLAY'e asla düşmez (canlı hata vakayı düşürür; sahte başarı olmaz).
         replay_fallback=False,
     )
+    flow_factory = flow_gateway_factory(provider, recorder, rules_dir, masker)
     guard_version = prompt_versions(rules_dir).get(GUARDRAILS)
     header = "gönderildi" if getattr(provider, "workspace_header", False) else "gönderilmedi"
     out(
@@ -603,145 +716,208 @@ def run_live(
             out(f"  {plan.bundle}@v{plan.prompt_version}: ATLANDI — {plan.skip_reason}")
             continue
         data = plan.data
-        purpose = str(data["purpose"])
-        schema = load_schema(rules_dir, purpose)
-        run = BundleRun(plan.bundle)
+        flow = is_flow_set(data)
+        if flow and not via_flow:
+            out(
+                f"  {plan.bundle}@v{plan.prompt_version}: ATLANDI — set işleyici üzerinden koşar "
+                f"(--via-flow); durum değişmedi: {PENDING_LABEL}"
+            )
+            continue
         if stopped:
-            run.complete = False
+            run = BundleRun(plan.bundle, complete=False)
             out(f"  {plan.bundle}: ATLANDI — bütçe tavanı")
             runs.append(run)
             continue
+        hash_before = icerik_hash(rules_dir, plan.bundle)
         env: ToolEnv | None = None
+        flow_envs: dict[str, ToolEnv | None] = {}
         agent = data.get("agent")
-        if agent:
+        if agent and not flow:
             try:
                 env = open_env(str(agent.get("tool_env")), envs)
             except ToolEnvUnavailable as exc:
-                run.complete = False
                 failed_any = True
                 out(
                     f"  {plan.bundle}@v{plan.prompt_version}: ATLANDI — araç ortamı yok: "
                     f"{redact(exc, secrets)}; durum değişmedi: {PENDING_LABEL}"
                 )
-                runs.append(run)
+                runs.append(BundleRun(plan.bundle, complete=False))
                 continue
-        bundle_rows: list[dict[str, Any]] = []
+
+        bundle_runs: list[BundleRun] = []
         repeat = runs_of(data)
         try:
-            for case in data["cases"]:
-                for k in range(1, repeat + 1):
-                    cid = run_id(case, k, repeat)
-                    est = estimate_case(gw, data, case)
-                    if spent + est.worst_usd > budget:
-                        stopped, run.complete = True, False
-                        out(
-                            f"  DURDU: {plan.bundle}/{cid} en kötü durumda {est.worst_usd:.4f} "
-                            f"USD; harcanan {spent:.4f} + bu > tavan {budget:.2f} USD"
-                        )
-                        break
-                    before = len(recorder.ai_calls)
-                    result = run_case(gw, data, case, schema, env=env, case_id=cid)
-                    rows = recorder.ai_calls[before:]
-                    for r in rows:
-                        r.setdefault("eval_vaka", cid)
-                    bundle_rows += rows
-                    ledger.append(
-                        "eval-live", rows, paket=plan.bundle, surum=plan.prompt_version, vaka=cid
-                    )
-                    cost = round(sum(float(r.get("maliyet") or 0.0) for r in rows), 6)
-                    spent += cost
-                    run.cost_usd += cost
-                    if result.error:
-                        result.error = redact(result.error, secrets)
-                    result.failures = [redact(f, secrets) for f in result.failures]
-                    run.results.append(result)
-                    out(
-                        f"  {'GEÇTİ' if result.ok else 'KALDI'}\t{plan.bundle}/{result.id}\t"
-                        f"{cost:.4f} USD\t{'; '.join(result.failures)}"
-                        + (f"\t{result.error}" if result.error else "")
-                    )
-                    if record_dir is not None and result.mode == "live" and not agent:
-                        info = gw.replay_key_for_call(
-                            purpose,
-                            str(data["bundle"]),
-                            case_messages(case),
-                            schema,
-                            replay_key=case_replay_key(data, case),
-                        )
-                        path = replay_store.exact_path(purpose, info.key)
-                        if path.is_file():
-                            candidates.append(
-                                {
-                                    "paket": plan.bundle,
-                                    "vaka": cid,
-                                    "gecti": result.ok,
-                                    "kayit": str(path.relative_to(record_dir)),
-                                    "golden": _golden_target(rules_dir, data, case),
-                                }
-                            )
+            for purpose in plan.purposes:
+                pdata = {**data, "purpose": purpose}
+                schema = load_schema(rules_dir, purpose)
+                run = BundleRun(plan.bundle, purpose=purpose, tag=_tag(data, purpose))
+                bundle_runs.append(run)
                 if stopped:
-                    break
+                    run.complete = False
+                    continue
+                for case in data["cases"]:
+                    for k in range(1, repeat + 1):
+                        cid = run_id(case, k, repeat)
+                        est = estimate_case(gw, pdata, case)
+                        if spent + est.worst_usd > budget:
+                            stopped, run.complete = True, False
+                            out(
+                                f"  DURDU: {plan.bundle}/{cid} en kötü durumda "
+                                f"{est.worst_usd:.4f} USD; harcanan {spent:.4f} + bu > tavan "
+                                f"{budget:.2f} USD"
+                            )
+                            break
+                        before = len(recorder.ai_calls)
+                        started = clock()
+                        if flow:
+                            case_env = _flow_env(flow_envs, case, envs, out, plan.bundle, secrets)
+                            if case_env is None:
+                                run.complete = False
+                            result = run_flow_case(
+                                case_env, case, purpose, flow_factory, case_id=cid, clock=clock
+                            )
+                        else:
+                            result = run_case(gw, pdata, case, schema, env=env, case_id=cid)
+                            result.sure_ms = int((clock() - started) * 1000)
+                        rows = recorder.ai_calls[before:]
+                        for r in rows:
+                            r.setdefault("eval_vaka", cid)
+                        run.rows += rows
+                        ledger.append(
+                            "eval-live",
+                            rows,
+                            paket=plan.bundle,
+                            surum=plan.prompt_version,
+                            vaka=cid,
+                            amac=purpose if run.tag else None,
+                        )
+                        cost = round(sum(float(r.get("maliyet") or 0.0) for r in rows), 6)
+                        if result.cost_usd is None:
+                            result.cost_usd = cost
+                        spent += cost
+                        run.cost_usd += cost
+                        if result.error:
+                            result.error = redact(result.error, secrets)
+                        result.failures = [redact(f, secrets) for f in result.failures]
+                        run.results.append(result)
+                        label = f"{plan.bundle}[{purpose}]" if run.tag else plan.bundle
+                        out(
+                            f"  {'GEÇTİ' if result.ok else 'KALDI'}\t{label}/{result.id}\t"
+                            f"{cost:.4f} USD\t{'; '.join(result.failures)}"
+                            + (f"\t{result.error}" if result.error else "")
+                        )
+                        if record_dir is not None and result.mode == "live" and not agent:
+                            info = gw.replay_key_for_call(
+                                purpose,
+                                str(data["bundle"]),
+                                case_messages(case),
+                                schema,
+                                replay_key=case_replay_key(data, case),
+                            )
+                            path = replay_store.exact_path(purpose, info.key)
+                            if path.is_file():
+                                candidates.append(
+                                    {
+                                        "paket": plan.bundle,
+                                        "vaka": cid,
+                                        "gecti": result.ok,
+                                        "kayit": str(path.relative_to(record_dir)),
+                                        "golden": _golden_target(rules_dir, data, case),
+                                    }
+                                )
+                    if stopped:
+                        break
+                _finish_run(
+                    run,
+                    rules_dir,
+                    pdata,
+                    gw,
+                    mode,
+                    today,
+                    budget,
+                    header,
+                    guard_version,
+                    record_dir,
+                    ledger,
+                    secrets,
+                    flow,
+                )
+                models_used.add(run.model or "")
         finally:
             if env is not None:
                 env.close()
-        model = gw.models.purpose(purpose).model
-        models_used.add(model)
+            for e in flow_envs.values():
+                if e is not None:
+                    e.close()
         total = len(data["cases"]) * repeat
-        calls_rel: str | None = None
-        if run.results:
-            run.report = write_report(
-                rules_dir,
-                data,
-                run.results,
-                model=model,
-                provider=gw.provider_name,
-                mode=mode,
-                today=today,
-                extra={
-                    "tamamlandi": run.complete,
-                    "set_vaka_sayisi": len(data["cases"]),
-                    "kosu_sayisi": total,
-                    "maliyet_usd": round(run.cost_usd, 6),
-                    "butce_usd": budget,
-                    "calisma_alani_basligi": header == "gönderildi",
-                    "guardrails_version": guard_version,
-                    "kayit_adaylari": str(record_dir) if record_dir is not None else None,
-                    "cagri_kaydi": run.report_calls_name(data, today),
-                    "cagri_sayisi": len(bundle_rows),
-                    "cagri_defteri": str(ledger.path),
-                },
-            )
-            calls = write_calls_file(run.report.with_suffix(".calls.jsonl"), bundle_rows, secrets)
-            calls_rel = str(calls.relative_to(rules_dir))
-        passed = bool(run.results) and all(r.ok for r in run.results)
-        complete = run.complete and len(run.results) == total
-        failed_any = failed_any or not passed or not complete
-        if update_status and passed and complete and run.report is not None:
+        all_ok = bool(bundle_runs) and all(
+            r.passed and r.complete and len(r.results) == total for r in bundle_runs
+        )
+        failed_any = failed_any or not all_ok
+        covered = {r.purpose for r in bundle_runs} == set(set_purposes(data))
+        hash_after = icerik_hash(rules_dir, plan.bundle)
+        note = ""
+        if update_status and all_ok and not covered:
+            note = " (setin tüm amaçları koşmadı: " + ", ".join(set_purposes(data)) + ")"
+        elif update_status and all_ok and hash_before != hash_after:
+            note = " (koşu sırasında içerik değişti; yeniden koşturun)"
+        elif update_status and all_ok:
+            first = bundle_runs[0]
+            multi = len(bundle_runs) > 1 or first.tag is not None
             mark_evaluated(
                 rules_dir,
                 plan.bundle,
                 int(data["version"]),
-                model=model,
+                model=(
+                    ", ".join(f"{r.purpose}={r.model}" for r in bundle_runs)
+                    if multi
+                    else str(first.model)
+                ),
                 provider=gw.provider_name,
-                results=str(run.report.relative_to(rules_dir)),
+                results=str(first.report.relative_to(rules_dir)) if first.report else "",
                 today=today,
-                passed=sum(r.ok for r in run.results),
-                total=total,
+                passed=sum(sum(r.ok for r in b.results) for b in bundle_runs),
+                total=total * len(bundle_runs),
                 guardrails_version=guard_version,
-                calls=calls_rel,
+                calls=first.calls_rel,
+                icerik_hash=hash_before,
+                amaclar=(
+                    {
+                        str(r.purpose): {
+                            "model": r.model,
+                            "results": str(r.report.relative_to(rules_dir)) if r.report else None,
+                            "calls": r.calls_rel,
+                            "passed": sum(x.ok for x in r.results),
+                            "total": total,
+                            **({"olcumler": _olcum_ozeti(r.olcum)} if r.olcum else {}),
+                        }
+                        for r in bundle_runs
+                    }
+                    if multi
+                    else None
+                ),
             )
-            run.marked = True
-        status = "evaluated yazıldı" if run.marked else ("durum değişmedi: " + PENDING_LABEL)
-        out(
-            f"  {plan.bundle}: {sum(r.ok for r in run.results)}/{total} geçti, "
-            f"{run.cost_usd:.4f} USD, {status}"
-            + (f" → {run.report.relative_to(rules_dir)}" if run.report else "")
-        )
-        runs.append(run)
+            for r in bundle_runs:
+                r.marked = True
+        for r in bundle_runs:
+            status = "evaluated yazıldı" if r.marked else ("durum değişmedi: " + PENDING_LABEL)
+            label = f"{plan.bundle}[{r.purpose}]" if r.tag else plan.bundle
+            out(
+                f"  {label}: {sum(x.ok for x in r.results)}/{total} geçti, "
+                f"{r.cost_usd:.4f} USD, {status}{note}"
+                + (f" → {r.report.relative_to(rules_dir)}" if r.report else "")
+            )
+            if r.olcum:
+                for e in r.olcum.get("esikler") or []:
+                    out(
+                        f"    eşik {e['ad']}: {e['deger']} (sınır {e['esik']}) "
+                        f"{'tamam' if e['gecti'] else 'AŞILDI'}"
+                    )
+        runs += bundle_runs
     if update_status and any(r.marked for r in runs):
         if mark_guardrails_if_covered(
             rules_dir,
-            model=", ".join(sorted(models_used)),
+            model=", ".join(sorted(m for m in models_used if m)),
             provider=gw.provider_name,
             today=today,
         ):
@@ -756,6 +932,95 @@ def run_live(
     if not any(r.results for r in runs):
         return 1
     return 1 if failed_any or stopped else 0
+
+
+def _olcum_ozeti(olcum: Mapping[str, Any]) -> dict[str, Any]:
+    """`evaluations.yaml`'a yazılan kısa ölçüm (rapordaki tam ölçümün özeti)."""
+    return {
+        k: olcum.get(k)
+        for k in (
+            "beklenti_gecis_orani",
+            "dogrulanmis_kaynak_orani",
+            "eylem_ve_injection_orani",
+            "otomatik_derin_orani",
+            "maliyet_usd",
+            "sure_s",
+        )
+        if olcum.get(k) is not None
+    }
+
+
+def _finish_run(
+    run: BundleRun,
+    rules_dir: Path,
+    data: Mapping[str, Any],
+    gw: Gateway,
+    mode: str,
+    today: dt.date | None,
+    budget: float,
+    header: str,
+    guard_version: int | None,
+    record_dir: Path | None,
+    ledger: CallLedger,
+    secrets: Sequence[str],
+    flow: bool,
+) -> None:
+    """Amaç koşusunun raporu, çağrı kaydı, ölçümleri ve geçiş kararı."""
+    purpose = str(data["purpose"])
+    run.model = gw.models.purpose(purpose).model
+    total = len(data["cases"]) * runs_of(data)
+    if flow or data.get("esikler"):
+        run.olcum = asistan_olcumleri(data, run.results, purpose)
+    if run.results:
+        day = today or dt.date.today()
+        run.report = write_report(
+            rules_dir,
+            data,
+            run.results,
+            model=run.model,
+            provider=gw.provider_name,
+            mode=mode,
+            today=today,
+            tag=run.tag,
+            extra={
+                "tamamlandi": run.complete,
+                "set_vaka_sayisi": len(data["cases"]),
+                "kosu_sayisi": total,
+                "maliyet_usd": round(run.cost_usd, 6),
+                "butce_usd": budget,
+                "calisma_alani_basligi": header == "gönderildi",
+                "guardrails_version": guard_version,
+                "kayit_adaylari": str(record_dir) if record_dir is not None else None,
+                "cagri_kaydi": f"{report_stem(data, day, run.tag)}.calls.jsonl",
+                "cagri_sayisi": len(run.rows),
+                "cagri_defteri": str(ledger.path),
+                "amac": purpose,
+                "via_flow": flow,
+                "icerik_hash": icerik_hash(rules_dir, str(data["bundle"])),
+                "olcumler": run.olcum,
+                # Vaka başına dağılım (§13: medyan/p90 maliyet ve uçtan uca süre).
+                "dagilim": {
+                    "maliyet_usd": {
+                        "medyan": _percentile([r.cost_usd for r in run.results], 0.5),
+                        "p90": _percentile([r.cost_usd for r in run.results], 0.9),
+                    },
+                    "sure_ms": {
+                        "medyan": _percentile([r.sure_ms for r in run.results], 0.5),
+                        "p90": _percentile([r.sure_ms for r in run.results], 0.9),
+                    },
+                },
+            },
+        )
+        calls = write_calls_file(run.report.with_suffix(".calls.jsonl"), run.rows, secrets)
+        run.calls_rel = str(calls.relative_to(rules_dir))
+    run.passed = set_passed(data, run.results, purpose)
+
+
+def _percentile(values: Sequence[int | float | None], q: float) -> float | None:
+    vals = sorted(v for v in values if v is not None)
+    if not vals:
+        return None
+    return vals[max(0, math.ceil(q * len(vals)) - 1)]
 
 
 # ------------------------------------------------------------------ CLI
@@ -792,6 +1057,17 @@ def main(
     parser.add_argument(
         "--ledger", type=Path, default=None, help="çağrı defteri (vars. exports/eval-live/)"
     )
+    parser.add_argument(
+        "--purpose",
+        action="append",
+        default=[],
+        help="yalnızca bu amaç(lar) (ör. assistant_deep); vars. setin tüm amaçları",
+    )
+    parser.add_argument(
+        "--via-flow",
+        action="store_true",
+        help="asistan setini işleyici (flow.cevapla) üzerinden koştur (tohumlu yığın gerekir)",
+    )
     args = parser.parse_args(argv)
     try:
         settings = GatewaySettings()
@@ -802,7 +1078,7 @@ def main(
                 settings, load_model_table(rules_dir), provider_factory, out=out, ledger=ledger
             )
         budget = _budget(args.budget_usd)
-        plans = plan_bundles(rules_dir, args.bundle)
+        plans = plan_bundles(rules_dir, args.bundle, args.purpose)
         if args.dry_run:
             return dry_run(rules_dir, plans, budget, out)
         record_dir = args.record_dir or (default_record_dir(rules_dir) if args.record else None)
@@ -816,6 +1092,7 @@ def main(
             provider_factory=provider_factory,
             out=out,
             ledger=ledger,
+            via_flow=args.via_flow,
         )
     except GatewayConfigError as exc:
         out(f"HATA: {redact(exc, secret_values(GatewaySettings()))}")
