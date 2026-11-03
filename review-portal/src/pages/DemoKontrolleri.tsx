@@ -382,13 +382,13 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
     const basladi = Date.now();
     try {
       const y = await api.demoKir();
-      ekle(y.mesaj ?? "Kırılma isteği alındı.");
+      ekle(y.mesaj ?? "Buton kimliği değiştirme isteği alındı.");
       // core işi ≤20 sn bekler: bittiyse sonuç CI koşusunun kimliğini taşıyabilir.
       const sonuc = (y as IsYaniti & { sonuc?: Record<string, unknown> }).sonuc;
       const runId = sonuc && (typeof sonuc.ci_run_id === "string" ? sonuc.ci_run_id : typeof sonuc.run_id === "string" ? sonuc.run_id : null);
       if (runId) runIdRef.current = runId;
       setD({ basladi, yanit: y, kosu: null, hatalar: null, bitti: false });
-      bildir(y.mesaj ?? "Locator kırılması başladı.");
+      bildir(y.mesaj ?? "Buton kimliği değiştiriliyor…");
       setOnay(false);
     } catch (e) {
       setHata(hataMesaji(e));
@@ -435,7 +435,7 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
             disabled={(!!d && !d.bitti) || engelli}
             title={
               desteksiz
-                ? (durum?.locator_demo?.neden ?? "Locator demosu bu kipte desteklenmiyor.")
+                ? (durum?.locator_demo?.neden ?? "Test bakımı demosu bu kipte desteklenmiyor.")
                 : onKosulYok
                   ? (onKosul?.yonerge ?? "Önce main için yeşil bir temel koşu gerekir.")
                   : ld.hal === "kirik"
@@ -453,7 +453,7 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
               : onKosulYok
                 ? "Önce yeşil temel koşu"
                 : ld.hal === "kirik"
-                  ? "Locator zaten kırık"
+                  ? "Buton kimliği zaten değişti"
                   : ld.hal === "onarildi"
                     ? "Önce demoyu sıfırlayın"
                     : ld.hal === "dogrulaniyor"
@@ -486,14 +486,15 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
           <p className="kucuk">Bu düğme o geliştiriciyi taklit eder: kimliği değiştiren commit'i ana dala alır, uygulamayı yeniden kurar, CI'ı başlatır.</p>
         </div>
       </Uyari>
-      <p className="soluk kucuk">
+      <details className="soluk kucuk">
+        <summary>Teknik ayrıntı</summary>
         <span className="mono">demo/break-locator</span> dalı (Sepete ekle butonunun <span className="mono">data-testid</span>'i{" "}
         <span className="mono">add-to-cart</span> → <span className="mono">cart-add</span>) demo-admin yetkisiyle korumalı ana dala
         merge edilir; işlem denetime "demo kırılması" olarak yazılır. Çalışan demo uygulaması main'den yeniden kurulur, CI kırmızıya
         döner, triage "test bakımı / locator" der ve onarım önerir. Onarım PR'ını mühendis açar ve onaylar.
-      </p>
+      </details>
       {desteksiz && (
-        <Uyari ton="hata" baslik="Locator demosu bu kipte yok">
+        <Uyari ton="hata" baslik="Test bakımı demosu bu kipte yok">
           <span data-testid="locator-desteksiz">{durum?.locator_demo?.neden ?? "Yalnızca yerel forge'da (TP_FORGE=local) desteklenir."}</span>
         </Uyari>
       )}
@@ -520,7 +521,7 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
         </p>
       )}
       {onay && (
-        <div className="onay-kutusu" role="group" aria-label="Locator kırma onayı">
+        <div className="onay-kutusu" role="group" aria-label="Buton kimliği değiştirme onayı">
           <p>
             <strong>Emin misiniz?</strong> Korumalı ana dala demo kırılması merge edilecek ve demo uygulaması yeniden kurulacak. Onarım
             merge edilene kadar katalog testleri kırmızı kalır.
@@ -536,7 +537,7 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
         </div>
       )}
       {hata && (
-        <Uyari ton="hata" baslik="Kırılma başlatılamadı">
+        <Uyari ton="hata" baslik="Değişiklik başlatılamadı">
           {hata}
         </Uyari>
       )}

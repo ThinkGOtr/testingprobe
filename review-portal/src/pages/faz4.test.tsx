@@ -178,8 +178,12 @@ describe("demo kontrolleri (sunucu)", () => {
     const u = userEvent.setup();
     uygulama("/demo");
     expect(await screen.findByRole("heading", { name: "Demo kontrolleri", level: 1 })).toBeInTheDocument();
+    // Teknik paragraf açıklamanın altında katlanmış durur.
+    const teknik = screen.getByText("Teknik ayrıntı").closest("details");
+    expect(teknik).not.toHaveAttribute("open");
+    expect(teknik).toHaveTextContent("demo/break-locator");
     await u.click(screen.getByRole("button", { name: "Buton kimliğini değiştir" }));
-    const onay = screen.getByRole("group", { name: "Locator kırma onayı" });
+    const onay = screen.getByRole("group", { name: "Buton kimliği değiştirme onayı" });
     expect(onay).toHaveTextContent("Emin misiniz?");
     await u.click(within(onay).getByRole("button", { name: "Evet, buton kimliğini değiştir" }));
     const ilerleme = await screen.findByRole("list", { name: "Locator kırılması ilerlemesi" });

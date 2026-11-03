@@ -126,7 +126,7 @@ describe("/demo sayfası onarım sonrası", () => {
 
     const dugme = await screen.findByRole("button", { name: "Önce demoyu sıfırlayın" });
     expect(dugme).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "Locator zaten kırık" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Buton kimliği zaten değişti" })).toBeNull();
     expect(screen.queryByTestId("zaten-kirik")).toBeNull();
     expect(screen.getByTestId("onarildi")).toHaveTextContent(/Onarım PR #5 merge edildi, CI yeşil \(33\/33\)/);
 
@@ -136,12 +136,12 @@ describe("/demo sayfası onarım sonrası", () => {
     expect(adimlar).toHaveTextContent("33/33 geçti");
   });
 
-  it("onarım öncesi (kırılma commit'i kırmızı) hâlâ 'Locator zaten kırık' der", async () => {
+  it("onarım öncesi (kırılma commit'i kırmızı) hâlâ 'Buton kimliği zaten değişti' der", async () => {
     await oturumAc("sunucu");
     vi.spyOn(api, "demoDurumu").mockResolvedValue(KIRIK);
     vi.spyOn(api, "kosular").mockResolvedValue([KIRMIZI]);
     uygulama("/demo");
-    expect(await screen.findByRole("button", { name: "Locator zaten kırık" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Buton kimliği zaten değişti" })).toBeDisabled();
     expect(screen.getByTestId("zaten-kirik")).toHaveTextContent("cart-add");
     expect(screen.queryByTestId("onarildi")).toBeNull();
   });

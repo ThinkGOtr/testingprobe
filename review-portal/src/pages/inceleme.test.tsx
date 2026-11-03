@@ -1,4 +1,4 @@
-// İnceleme bulgularının düzeltmeleri: REPLAY/REPLAY-MISS tutarlılık kartı, son haldeki bulgularda
+// İnceleme bulgularının düzeltmeleri: REPLAY/REPLAY-MISS tutarlılık kartı, son hâldeki bulgularda
 // karar formu, serbest metin etiketleri, PO cevapları, case ölçümleri (REPLAY, baz değer), yayın
 // rolü, örnek gereksinim ve dar ekran tabloları.
 import { readFileSync } from "node:fs";
@@ -92,7 +92,7 @@ describe("tutarlılık kartı: REPLAY / REPLAY-MISS ve dürüst boş durum", () 
   });
 });
 
-describe("tutarlılık kartı: doküman son hale geçtikten sonra", () => {
+describe("tutarlılık kartı: doküman son hâle geçtikten sonra", () => {
   it("işlevsiz düzeltme düğmesi yerine güncel durum ve 'karar gerekmez' notu gösterilir", async () => {
     await oturumAc("analist");
     const g = gereksinim("req-tpd-3");
@@ -100,18 +100,20 @@ describe("tutarlılık kartı: doküman son hale geçtikten sonra", () => {
     g.kontrol_turu = 2;
     uygulama("/gereksinimler/req-tpd-3");
     const kart = await screen.findByRole("region", { name: /Tutarlılık bulguları/ });
-    expect(await within(kart).findByTestId("son-hal-durumu")).toHaveTextContent("✓ Doküman son hal · PO teyidi bekliyor");
+    expect(await within(kart).findByTestId("son-hal-durumu")).toHaveTextContent("✓ Doküman son hâl · PO teyidi bekliyor");
     expect(within(kart).getByTestId("son-hal-notu")).toHaveTextContent("karar gerekmez");
-    expect(within(kart).queryByRole("button", { name: /Düzeltmeleri Jira'ya yaz|Son hal olarak onayla/ })).toBeNull();
+    // PO teyidi beklemek uyarı değil sıradaki adım: çip uyarı tonunda değil.
+    expect(within(kart).getByTestId("son-hal-durumu").querySelector(".cip-uyari")).toBeNull();
+    expect(within(kart).queryByRole("button", { name: /Düzeltmeleri Jira'ya yaz|Son hâl olarak onayla/ })).toBeNull();
   });
 
-  it("findings_open iken düğme yerinde, son hal durumu yok", async () => {
+  it("findings_open iken düğme yerinde, son hâl durumu yok", async () => {
     await oturumAc("analist");
     const g = gereksinim("req-tpd-3");
     g.durum = "findings_open";
     uygulama("/gereksinimler/req-tpd-3");
     const kart = await screen.findByRole("region", { name: /Tutarlılık bulguları/ });
-    expect(await within(kart).findByRole("button", { name: /Düzeltmeleri Jira'ya yaz|Son hal olarak onayla/ })).toBeInTheDocument();
+    expect(await within(kart).findByRole("button", { name: /Düzeltmeleri Jira'ya yaz|Son hâl olarak onayla/ })).toBeInTheDocument();
     expect(within(kart).queryByTestId("son-hal-durumu")).toBeNull();
   });
 });
@@ -138,10 +140,10 @@ describe("PO kartı: insan kapısı metni", () => {
 describe("bulgu kararı yalnızca findings_open iken", () => {
   const uyari = (): Bulgu => ({ ...mockVerisi().bulgular.find((b) => b.id === "fnd-8")! });
 
-  it("son haldeki gereksinimde açık uyarı salt okunur; form ve 'Kararı kaydet' yok", async () => {
+  it("son hâldeki gereksinimde açık uyarı salt okunur; form ve 'Kararı kaydet' yok", async () => {
     await oturumAc("analist");
     sar(<BulguKarti bulgu={uyari()} gereksinimDurumu="done" guncellendi={() => undefined} />);
-    expect(await screen.findByTestId("bulgu-salt-okunur")).toHaveTextContent("Uyarı — karar gerekmiyor; doküman son hal");
+    expect(await screen.findByTestId("bulgu-salt-okunur")).toHaveTextContent("Uyarı — karar gerekmiyor; doküman son hâl");
     expect(screen.queryByRole("radio")).toBeNull();
     expect(screen.queryByRole("button", { name: "Kararı kaydet" })).toBeNull();
   });

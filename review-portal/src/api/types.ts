@@ -130,8 +130,8 @@ export interface GereksinimDetay extends Gereksinim {
   /** PO'nun Jira'daki cevap yorumları (`requirement.po_cevaplari`); soru bazında eşlenmez. */
   po_cevaplari?: PoCevabi[];
   /**
-   * Son denetim güvenilmez (REPLAY-MISS ya da tüm bulgular elendi): belge otomatik son hal olmaz;
-   * analist açıkça "son hal" der (fail-closed). null: güvenilir.
+   * Son denetim güvenilmez (REPLAY-MISS ya da tüm bulgular elendi): belge otomatik son hâl olmaz;
+   * analist açıkça "son hâl" der (fail-closed). null: güvenilir.
    */
   denetim_guvenilmez?: string | null;
   /** Gereksinim insan kararı bekliyor (tur sınırı ya da güvenilmez denetim). */
@@ -1263,7 +1263,7 @@ export interface IsYaniti {
   job_id: string | null;
   durum: string;
   mesaj?: string;
-  /** apply-doc-fixes "son hal onayı": kararsız uyarıların accept_difference olarak kaydı (ör. "F2 (tur 1)"). */
+  /** apply-doc-fixes "son hâl onayı": kararsız uyarıların accept_difference olarak kaydı (ör. "F2 (tur 1)"). */
   kabul_edilen_uyarilar?: string[];
 }
 

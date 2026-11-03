@@ -258,6 +258,62 @@ describe("koşu detayı (canlı core şekli)", () => {
     expect(screen.getByText("Süzgece uyan test yok.")).toBeInTheDocument();
   });
 
+  it("GitHub iş sonuçları Türkçe; Sauce durumu koşu başlığında; satır kapalıyken aria-controls yok", async () => {
+    yapilandir({ mockZorunlu: false, mockOtomatik: false, yetenekKesfi: true });
+    vi.stubGlobal("fetch", sahteCore({ [`/runs/${RID}`]: { ...KOSU, sauce_durum: "error", sauce_neden: "oturum sınırı dolu" } }));
+    const u = userEvent.setup();
+    uygulama(`/kosular/${RID}`);
+    const ci = await screen.findByRole("region", { name: "CI adımları" });
+    expect(within(ci).getByText("geçti")).toBeInTheDocument();
+    expect(within(ci).getByText("kaldı")).toBeInTheDocument();
+    expect(within(ci).queryByText("success")).not.toBeInTheDocument();
+    expect(screen.getByText("Sauce koşmadı: oturum sınırı dolu")).toBeInTheDocument();
+    const dugme = screen.getByRole("button", { name: /Sepet › sepete ekler/ });
+    expect(dugme).not.toHaveAttribute("aria-controls");
+    await u.click(dugme);
+    expect(dugme).toHaveAttribute("aria-controls", "test-ayrinti-r1");
+  });
+
+  it("Sauce çipi: sonuçlar Türkçe; sıradaki GitHub koşusunda sırada; Sauce'suz yerel koşuda yok", async () => {
+    const { SauceCipi } = await import("./Kosular");
+    const temel = { kaynak: "github" as const, durum: "passed" as const, sauce_neden: "SAUCE_TETIKLER" };
+    const metin = (k: Parameters<typeof SauceCipi>[0]["k"]) => render(<>{SauceCipi({ k })}</>).container.textContent;
+    expect(metin({ ...temel, sauce_durum: "passed" })).toBe("Sauce: geçti");
+    expect(metin({ ...temel, sauce_durum: "failed" })).toBe("Sauce: kırmızı");
+    expect(metin({ ...temel, sauce_durum: "atlandi" })).toBe("Sauce atlandı: SAUCE_TETIKLER");
+    expect(metin({ ...temel, durum: "queued", sauce_durum: null })).toBe("Sauce: sırada/sürüyor");
+    expect(metin({ ...temel, sauce_durum: null })).toBe("");
+    expect(metin({ ...temel, kaynak: "local", durum: "running", sauce_durum: null })).toBe("");
+  });
+
+  it("Koşular: iki tetik düğmesinin açıklaması görünür ve düğmeye aria-describedby ile bağlı", async () => {
+    yapilandir({ mockZorunlu: false, mockOtomatik: false, yetenekKesfi: true });
+    vi.stubGlobal("fetch", sahteCore({ "/runs": [] }));
+    uygulama("/kosular");
+    const gece = await screen.findByRole("button", { name: "Gece koşusunu şimdi başlat" });
+    expect(gece).toHaveAccessibleDescription(/zamanlanmış koşuyu şimdi başlatır: aynı onaylı test paketi/);
+    expect(screen.getByRole("button", { name: "Deploy sonrası testleri koş" })).toHaveAccessibleDescription(/uygulamayı hiçbir yere yüklemez/);
+    expect(screen.queryByText(/tam regresyon/)).not.toBeInTheDocument();
+  });
+
+  it("GitHub yedeğinde Allure GitHub artefaktı diye etiketlenir; eksik dosyalar CI koşusuna bağlanır", async () => {
+    yapilandir({ mockZorunlu: false, mockOtomatik: false, yetenekKesfi: true });
+    const kosu = {
+      ...KOSU,
+      allure_url: "https://github.com/acme/demo-app/actions/runs/700#artifacts",
+      allure_sonuclari_url: null,
+      junit_url: null,
+      log_url: null,
+      github_artefakt: { durum: "budandi", hata: null },
+    };
+    vi.stubGlobal("fetch", sahteCore({ [`/runs/${RID}`]: kosu }));
+    uygulama(`/kosular/${RID}`);
+    const kart = await screen.findByRole("region", { name: "Raporlar ve bağlantılar" });
+    expect(within(kart).getByRole("link", { name: /Allure raporu \(GitHub artefaktı\)/ })).toHaveAttribute("href", kosu.allure_url);
+    expect(within(kart).getByRole("link", { name: /JUnit XML \(GitHub artefaktında\)/ })).toHaveAttribute("href", KOSU.ci_url);
+    expect(within(kart).getByRole("link", { name: /Koşu günlüğü \(GitHub artefaktında\)/ })).toHaveAttribute("href", KOSU.ci_url);
+  });
+
   it("ayrıntı: denemesi olmayan (JUnit) test hata mesajını gösterir", () => {
     const s = kosuDetayUyarla({ ...KOSU, sonuclar: [{ id: "x", test_adi: "a", durum: "failed", hata_mesaji: "junit hatası" }] }).sonuclar[0];
     render(<TestAyrintisi s={s} />);

@@ -375,7 +375,7 @@ export function TestSonuclari({ k }: { k: KosuDetay }) {
                   <Fragment key={s.id}>
                     <tr>
                       <td>
-                        <button type="button" className="dugme-metin" aria-expanded={ac} aria-controls={panel} onClick={() => degistir(s.id)}>
+                        <button type="button" className="dugme-metin" aria-expanded={ac} aria-controls={ac ? panel : undefined} onClick={() => degistir(s.id)}>
                           <span aria-hidden="true">{ac ? "▾" : "▸"} </span>
                           {s.test_adi}
                         </button>
@@ -445,6 +445,16 @@ const GH_SONUC_TONU: Record<string, "basari" | "hata" | "uyari" | "notr"> = {
   neutral: "notr",
 };
 
+/** GitHub job sonucu (`conclusion`) için Türkçe etiket; bilinmeyen değer olduğu gibi gösterilir. */
+const GH_SONUC_ETIKETI: Record<string, string> = {
+  success: "geçti",
+  failure: "kaldı",
+  skipped: "atlandı",
+  cancelled: "iptal",
+  timed_out: "zaman aşımı",
+  neutral: "nötr",
+};
+
 const META_ETIKETI: Record<string, string> = {
   durum: "Koşu durumu",
   exit_code: "Çıkış kodu",
@@ -480,7 +490,7 @@ export function CiAdimlari({ k }: { k: KosuDetay }) {
         <ul className="duz-liste" aria-label="GitHub işleri">
           {gh.isler.map((j, i) => (
             <li key={`${j.ad}-${i}`} className="satir-ogeler">
-              <Cip ton={GH_SONUC_TONU[j.sonuc ?? ""] ?? "notr"}>{j.sonuc ?? "—"}</Cip>
+              <Cip ton={GH_SONUC_TONU[j.sonuc ?? ""] ?? "notr"}>{j.sonuc ? (GH_SONUC_ETIKETI[j.sonuc] ?? j.sonuc) : "—"}</Cip>
               {j.url ? <DisBaglanti href={j.url}>{j.ad}</DisBaglanti> : <span>{j.ad}</span>}
             </li>
           ))}

@@ -43,7 +43,7 @@ function KanitGorunumu({ k }: { k: Kanit }) {
   );
 }
 
-/** Doküman "son hal"e ulaştıktan sonraki gereksinim durumları (uyarılar artık karar beklemez). */
+/** Doküman "son hâl"e ulaştıktan sonraki gereksinim durumları (uyarılar artık karar beklemez). */
 export const SON_HAL_SONRASI = new Set<GereksinimDurumu>(["doc_final", "pending_po", "po_approved", "generating", "cases_ready", "done"]);
 
 export function BulguKarti({
@@ -56,7 +56,7 @@ export function BulguKarti({
   bulgu: Bulgu;
   /**
    * Gereksinimin durumu: core bulgu kararını yalnızca `findings_open` iken kabul eder. Başka
-   * durumda (ör. son hal, PO teyidi, yayınlandı) karar formu gösterilmez. Verilmezse kısıtlanmaz.
+   * durumda (ör. son hâl, PO teyidi, yayınlandı) karar formu gösterilmez. Verilmezse kısıtlanmaz.
    */
   gereksinimDurumu?: GereksinimDurumu;
   /** Düzeltmenin nereye yazıldığı: Jira story'si ya da serbest metin doküman. */
@@ -180,7 +180,7 @@ export function BulguKarti({
       ) : bulguKarariAcik && gereksinimDurumu && !gereksinimKararBekliyor ? (
         <p className="soluk" role="status" data-testid="bulgu-salt-okunur">
           {bulgu.severity === "warning" && SON_HAL_SONRASI.has(gereksinimDurumu)
-            ? `Uyarı — karar gerekmiyor; doküman son hal (${durumEtiketi(gereksinimDurumu).etiket}).`
+            ? `Uyarı — karar gerekmiyor; doküman son hâl (${durumEtiketi(gereksinimDurumu).etiket}).`
             : `Gereksinim şu an bulgu kararı beklemiyor (${durumEtiketi(gereksinimDurumu).etiket}).`}
         </p>
       ) : !kararVerilebilir ? (

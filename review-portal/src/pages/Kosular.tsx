@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
@@ -89,6 +89,30 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
   );
 }
 
+const GECE_ACIKLAMASI =
+  "Her gece 02:00'de (UTC) zamanlanmış koşuyu şimdi başlatır: aynı onaylı test paketi; kod değişmese de veri/ortam kaymasını ve kararsız (flaky) testleri yakalar.";
+const DEPLOY_ACIKLAMASI =
+  "Müşterinin deploy hattının yükleme bitince göndereceği sinyali taklit eder ve testleri koşturur; uygulamayı hiçbir yere yüklemez.";
+
+/**
+ * Koşunun Sauce Labs durumu (GitHub kipinde Sauce, koşunun içindeki bir job'dur: `sauce_durum`).
+ * Sauce bilgisi olmayan yerel koşuda hiçbir şey gösterilmez.
+ */
+export function SauceCipi({ k }: { k: Pick<Kosu, "kaynak" | "durum" | "sauce_durum" | "sauce_neden"> }): ReactNode {
+  switch (k.sauce_durum) {
+    case "passed":
+      return <Cip ton="basari">Sauce: geçti</Cip>;
+    case "failed":
+      return <Cip ton="hata">Sauce: kırmızı</Cip>;
+    case "error":
+      return <Cip ton="uyari">Sauce koşmadı: {k.sauce_neden ?? "altyapı hatası"}</Cip>;
+    case "atlandi":
+      return <Cip ton="notr">Sauce atlandı: {k.sauce_neden ?? "neden bildirilmedi"}</Cip>;
+  }
+  if (k.kaynak === "github" && (k.durum === "queued" || k.durum === "running")) return <Cip ton="bilgi">Sauce: sırada/sürüyor</Cip>;
+  return null;
+}
+
 type Filtre = { tetik: Tetik | ""; kaynak: KosuKaynagi | ""; durum: Kosu["durum"] | ""; kirma: boolean };
 
 /** Koşu listesinin süzgeci (adres çubuğunda: ?tetik=&kaynak=&durum=&kirma=1). */
@@ -104,7 +128,9 @@ export function kosulariSuz(kosular: Kosu[], f: Filtre): Kosu[] {
 
 export function Kosular() {
   const v = useVeri(() => api.kosular(), []);
-  const islem = useIslem();
+  // Her düğmenin kendi meşgul durumu: biri koşarken diğeri "dönüyor" görünmez.
+  const geceIslem = useIslem();
+  const deployIslem = useIslem();
   const bildir = useBildirim();
   const sessiz = useGeciktirilmis(() => void v.yenile(true));
   useOlay(sessiz, ["ci.status", "failure.classified"]);
@@ -131,6 +157,8 @@ export function Kosular() {
   const kaynaklar = [...new Set(tum.map((k) => k.kaynak))];
 
   const tetikle = async (tetik: "deploy" | "nightly") => {
+    const islem = tetik === "deploy" ? deployIslem : geceIslem;
+    (tetik === "deploy" ? geceIslem : deployIslem).temizle();
     const s = await islem.calistir(() => api.ciTetikle(tetik));
     if (s) {
       bildir(s.mesaj ?? "Koşu tetiklendi.");
@@ -149,16 +177,18 @@ export function Kosular() {
             <IslemDugmesi
               roller={["presenter"]}
               tur="ikincil"
-              calisiyor={islem.calisiyor}
-              title="Her gece 02:00'de (UTC) otomatik koşan tam regresyonu şimdi başlatır: kod değişmese de veri, ortam ve kararsız (flaky) test sorunlarını yakalar."
+              calisiyor={geceIslem.calisiyor}
+              title={GECE_ACIKLAMASI}
+              aria-describedby="kosular-gece-aciklama"
               onClick={() => tetikle("nightly")}
             >
               Gece koşusunu şimdi başlat
             </IslemDugmesi>
             <IslemDugmesi
               roller={["presenter"]}
-              calisiyor={islem.calisiyor}
-              title="Müşterinin deploy hattının yükleme bitince göndereceği sinyali taklit eder ve testleri koşturur; uygulamayı hiçbir yere yüklemez."
+              calisiyor={deployIslem.calisiyor}
+              title={DEPLOY_ACIKLAMASI}
+              aria-describedby="kosular-deploy-aciklama"
               onClick={() => tetikle("deploy")}
             >
               Deploy sonrası testleri koş
@@ -166,8 +196,17 @@ export function Kosular() {
           </>
         }
       />
-      {islem.hata && <HataKutusu hata={islem.hata} />}
-      {sonTetik && !islem.hata && <Uyari ton="bilgi">{sonTetik}</Uyari>}
+      <ul className="tetik-aciklamalari kucuk soluk" aria-label="Tetik düğmeleri">
+        <li id="kosular-gece-aciklama">
+          <strong>Gece koşusunu şimdi başlat:</strong> {GECE_ACIKLAMASI}
+        </li>
+        <li id="kosular-deploy-aciklama">
+          <strong>Deploy sonrası testleri koş:</strong> {DEPLOY_ACIKLAMASI}
+        </li>
+      </ul>
+      {geceIslem.hata && <HataKutusu hata={geceIslem.hata} />}
+      {deployIslem.hata && <HataKutusu hata={deployIslem.hata} />}
+      {sonTetik && !geceIslem.hata && !deployIslem.hata && <Uyari ton="bilgi">{sonTetik}</Uyari>}
       <Kart>
         {v.yukleniyor && !v.veri ? (
           <Yukleniyor />
@@ -278,6 +317,37 @@ function HataListesi({ k }: { k: KosuDetayTuru }) {
 
 const githubaGider = (u: string | null | undefined) => Boolean(u && /^https:\/\/github\.com\//.test(u));
 
+/**
+ * Rapor bağlantısı. Yerel kopya yoksa (GitHub yedeği) ve dosya bağlantısı da yoksa, "GitHub
+ * artefaktında" nedeni GitHub'daki koşuya (ci_url) bağlanır: artefakt oradan indirilir.
+ */
+function ArtefaktBaglantisi({
+  href,
+  ghYedek,
+  ciUrl,
+  yokNedeni,
+  children,
+}: {
+  href: string | null | undefined;
+  ghYedek: string | null;
+  ciUrl: string | null;
+  yokNedeni: string;
+  children: ReactNode;
+}) {
+  if (!href && ghYedek && githubaGider(ciUrl)) {
+    return (
+      <Baglanti href={ciUrl}>
+        {children} (GitHub artefaktında)
+      </Baglanti>
+    );
+  }
+  return (
+    <Baglanti href={href} yokNedeni={ghYedek && !href ? "GitHub artefaktında" : yokNedeni}>
+      {children}
+    </Baglanti>
+  );
+}
+
 export function KosuDetay() {
   const { id = "" } = useParams();
   const v = useVeri(() => api.kosu(id), [id]);
@@ -307,6 +377,7 @@ export function KosuDetay() {
               {k.pr_no !== null && ` #${k.pr_no}`}
             </Cip>
             <Cip ton={k.kaynak === "sauce" ? "vurgu" : k.kaynak === "github" ? "bilgi" : "notr"}>{KAYNAK[k.kaynak] ?? k.kaynak}</Cip>
+            <SauceCipi k={k} />
             <span className="mono">{k.commit}</span>
             <span className="soluk">{tarih(k.baslangic)}</span>
           </span>
@@ -323,12 +394,14 @@ export function KosuDetay() {
           <Baglanti href={k.rapor_url} yokNedeni="koşu bu raporu üretmedi ya da core sunmuyor">
             Playwright HTML raporu{githubaGider(k.rapor_url) ? " (GitHub)" : ""}
           </Baglanti>
-          <Baglanti href={k.junit_url ?? null} yokNedeni={ghYedek ? "GitHub artefaktında" : "koşu JUnit XML üretmedi"}>
+          <ArtefaktBaglantisi href={k.junit_url ?? null} ghYedek={ghYedek} ciUrl={k.ci_url} yokNedeni="koşu JUnit XML üretmedi">
             JUnit XML
-          </Baglanti>
-          <Baglanti href={k.allure_url} yokNedeni="yok">
-            {k.allure_url && /allure-results\/?$/.test(k.allure_url) ? "Allure ham sonuçları (JSON listesi)" : "Allure raporu"}
-          </Baglanti>
+          </ArtefaktBaglantisi>
+          <ArtefaktBaglantisi href={k.allure_url} ghYedek={ghYedek} ciUrl={k.ci_url} yokNedeni="bu koşuda üretilmedi">
+            {k.allure_url && /allure-results\/?$/.test(k.allure_url)
+              ? "Allure ham sonuçları (JSON listesi)"
+              : `Allure raporu${githubaGider(k.allure_url) ? " (GitHub artefaktı)" : ""}`}
+          </ArtefaktBaglantisi>
           {k.allure_sonuclari_url && k.allure_sonuclari_url !== k.allure_url && (
             <Baglanti href={k.allure_sonuclari_url} yokNedeni="yok">
               Allure ham sonuçları (JSON listesi)
@@ -344,9 +417,9 @@ export function KosuDetay() {
               CI işi
             </Baglanti>
           )}
-          <Baglanti href={k.log_url} yokNedeni={ghYedek ? "GitHub artefaktında" : "yok"}>
+          <ArtefaktBaglantisi href={k.log_url} ghYedek={ghYedek} ciUrl={k.ci_url} yokNedeni="yok">
             Koşu günlüğü
-          </Baglanti>
+          </ArtefaktBaglantisi>
           {k.script_id && <Link to={`/kod/${encodeURIComponent(k.script_id)}`}>Üretilen test</Link>}
         </div>
         {ghYedek && <p className="kucuk soluk">{ghYedek}</p>}

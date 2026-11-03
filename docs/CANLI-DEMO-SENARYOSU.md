@@ -17,7 +17,7 @@ ekran, neye tıklanır, ne yazılır, ekranda ne görülür, ne söylenir.
 | Jira | **Gerçek Jira Cloud**, proje `TPD` | https://iyzitrace.atlassian.net/browse/TPD-1 |
 | Test yönetimi | **Xray Cloud** (adımlı Manual Test) | Jira içinde, TPD projesi |
 | Git + PR + CI | **GitHub** + **GitHub Actions** | https://github.com/ThinkGOtr/testingprobe-demo-app |
-| Cihaz bulutu | **Sauce Labs** job'u (Actions içinde) | koşu detayındaki Sauce bağlantısı |
+| Cihaz bulutu | **Sauce Labs** job'u (Actions içinde) | koşu detayında **"Sauce Labs videosu"** bağlantısı ve Sauce çipi |
 | Model | **REPLAY** (küratörlü golden kayıtlar) | portalda her AI çıktısında REPLAY rozeti |
 
 ### Jira'da demonun ihtiyaç duyduğu kayıtlar (TPD projesi)
@@ -57,7 +57,7 @@ türleri `Test` ve `Relates`, ürünün yazma hesabı ve **ayrı** PO hesabı.
 | 1 | VM açık mı | Mac: `gcloud compute instances list --project testingprobe` | `tp-demo RUNNING` (kapalıysa `gcloud compute instances start tp-demo --zone europe-west3-a --project testingprobe`) |
 | 2 | **Tek hesap test kipini kapat** | VM `.env`: `TP_TEST_TEK_HESAP=0`; `JIRA_PO_ACCOUNT_IDS`'te **yalnızca PO'nun** (ör. Cengizhan) accountId'si → `make up` | `make status`'ta "UYARI: TP_TEST_TEK_HESAP" satırı **yok**. Bugün değer `1` — kapatılmazsa PO onayını ürün hesabı da verebilir, bu sunumda söylediğimiz kuralı çiğner |
 | 3 | PO hesabı hazır | PO kendi Atlassian hesabıyla iyzitrace.atlassian.net'e girebiliyor, TPD'de etiket ekleyebiliyor | PO ürünün okuma/yazma hesabından **farklı** bir hesap olmalı |
-| 4 | Sauce tetikleri | Değişiklik yok: Sauce push, deploy ve gece koşularının hepsinde koşar (`SAUCE_TETIKLER` tanımsız). Mac: `gh variable list --repo ThinkGOtr/testingprobe-demo-app` → `SAUCE_TETIKLER` satırı **olmamalı** | Hesap tek eşzamanlı oturum: Sauce job'ları sıraya girer (her biri ~1–11 dk). Merge'lerin push Sauce'u bitmeden tetiklenen deploy'un Sauce'u **bekler** (düşmez) |
+| 4 | Sauce tetikleri | Değişiklik yok: Sauce push, deploy ve gece koşularının hepsinde koşar (`SAUCE_TETIKLER` tanımsız). Mac: `gh variable list --repo ThinkGOtr/testingprobe-demo-app` → `SAUCE_TETIKLER` satırı **olmamalı** | Hesap tek eşzamanlı oturum: Sauce adımları sıraya girer (her biri ~1–11 dk). Merge'lerin push Sauce'u bitmeden tetiklenen deploy'un Sauce adımı 60 sn arayla (en çok 20 kez) yeniden dener — **bekler, düşmez** |
 | 5 | Tam prova | Bu belgenin §3–§8'i baştan sona, kronometreyle | Her adımın gerçek süresini not al |
 | 6 | Yedek video | `make demo-prova UI=1` (VM ya da yerel) | Aksaklıkta açılacak kayıt sunum makinesinde |
 | 7 | **Manuel baz değer ölçümü** (bir kez; Kontrol Kulesi'ndeki "Hazırlık kazancı" için) | **Kim:** bu işi normalde elle yapan bir analist / test mühendisi (ideali müşteri ekibinden). TPD-1'i okuyup test case'lerini **AI'sız** yazar, kronometreyle süreyi tutar — tahmin/uydurma değer yazılmaz. **Nereye:** `rules/baz-degerler.yaml` (`story: TPD-1`, `deger_s`: saniye, `giren`: ad soyad, `not`: "F0 ölçümü, tarih, kronometre") → commit → sunucuya yükle. `make reset` silmez; Jira'dan çekmede otomatik uygulanır. Hızlı ama reset'te silinen yol: portal TPD-1 → **Manuel baz değer** → "Ölçüm gir" (analist/PO) | Kontrol Kulesi → Hazırlık süresi (story bazında): TPD-1 Manuel baz **ölçüm** (giren + not), kazanç sütunu dolu. Ölçüm yoksa "ölçülmedi" doğrudur |
@@ -101,11 +101,12 @@ make reset          # Jira temizlik planını gösterir, "[e/H]" sorusuna → e
 make demo-reset
 make status                                  # hepsi healthy, son satır "Model kipi: REPLAY"
 make security-check                          # Özet: 10/10
-systemctl is-active tp-demo-web-sync         # active (locator demosu için şart)
+systemctl is-active tp-demo-web-sync         # active (test bakımı demosu için şart)
 ```
 
 Sonra portalda **sunucu** ile **Koşular** ekranını aç: `make demo-reset`'in tetiklediği GitHub
-koşusu **yeşil** bitmiş olmalı. Yeşil temel koşu yoksa "Buton kimliğini değiştir" çalışmaz.
+koşusu **yeşil** bitmiş olmalı. Bu, bakım yolunun **L1 · Yeşil temel koşu** adımıdır (Demo yol
+haritası → "Test bakımı yolu"); yeşil temel koşu yoksa "Buton kimliğini değiştir" çalışmaz.
 
 ### 1.3 Tarayıcı profilleri
 
@@ -132,8 +133,9 @@ Portalın sağ üstündeki **Canlı olaylar** göstergesi yeşil olmalı.
 | F3 | Minimum tutar (veride 750,00) | **Dokümanı düzelt** |
 | F4 | Kredi limiti uyarısı kodda yok | **Kod/veri hatalı** |
 
-Bug taslaklarında: **C3 → TPD-5'e bağla**, **F2 → TPD-5'e bağla**, **F4 → Onayla ve Jira'da aç**,
-**C2 kırma koşusu taslağı → dokunma**.
+Bug taslaklarında: **C3 → "TPD-5 kaydına bağla"**, **F2 → "TPD-5 kaydına bağla"**, **F4 → "Onayla ve
+Jira'da aç"**, **C2 kırma koşusu taslağı → dokunma** (ekranda "önerilen karar Reddet" yazar; sahnede
+basma).
 
 ---
 
@@ -144,7 +146,8 @@ Açılış       Demo yol haritası (0/14)
 Bölüm A      1 Jira'dan çek → 2 Ön inceleme (kod+veri) → 3 PO onayı (Jira) → 4 Case üret/onayla/Xray'e yayınla
 Bölüm B      5 Kod üret (ajan + şablon) → 6 Kırarak doğrula → 7 GitHub PR + merge
              → 8 GitHub Actions (push/deploy/gece) → 9 Sauce → 10 Raporlar → 11 Kontrol Kulesi
-Bakım        L1 Buton kimliğini değiştir → L2 kırmızı koşu → L3 tek satırlık onarım PR'ı → L4 yeşil
+Bakım        L1 Yeşil temel koşu (§1.2) → L2 Buton kimliğini değiştir → L3 kırmızı koşu + triage
+             → L4 tek satırlık onarım PR'ı → L5 merge → yeşil
 Bölüm C      12 Triage → 13 Testçi kararı → 14 Jira'da Bug / mevcut kayda bağlama
 Kapanış      Yol haritası 14/14 · Denetim zinciri
 ```
@@ -215,8 +218,8 @@ doğrulaması canlı."
    2. kontrol turu + PO sorusu).
 
 - Görülen: önerilen metin farkı (AC3 → "Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL…");
-  "Belge son hal yapıldı; PO teyidi bekleniyor." Tutarlılık kartının sağ üstünde düğmenin yerine
-  **"✓ Doküman son hal · PO teyidi bekliyor"** çıkar; altındaki kartlar 2. turun kaydıdır
+  "Belge son hâl yapıldı; PO teyidi bekleniyor." Tutarlılık kartının sağ üstünde düğmenin yerine
+  **"✓ Doküman son hâl · PO teyidi bekliyor"** çıkar; altındaki kartlar 2. turun kaydıdır
   ("Güncelliğini yitirdi" etiketi normaldir), karar gerekmez.
 6. **Jira sekmesine geç** (TPD-1'i yenile): açıklama güncellenmiş, `🤖 AI Testing Probe:` ile
    başlayan PO soru yorumu, `tp-po-pending` etiketi.
@@ -245,21 +248,22 @@ koyduğu etiket onay sayılmaz, hatta geri kaldırılır. Onaydan sonra içerik 
 | Alt adım | Kim yapar | Nerede |
 |---|---|---|
 | Case üret | **AI** (REPLAY) | TPD-1 sayfası, sağ üst **"Case üret"** |
-| Onayla / düzelt | **İnsan** | Sol menü **Case review** |
-| Yayınla | **Ürünün Xray bağlantısı** (AI yok) — yalnızca onaylı case'ler | Sol menü **Yayın** |
+| Onayla / düzelt | **İnsan** | TPD-1 sayfası, sağ üst **"Case review"** düğmesi |
+| Yayınla | **Ürünün Xray bağlantısı** (AI yok) — yalnızca onaylı case'ler | Case review sayfası → **"Yayın önizleme"** → "Hedef" kartı → **"Seçilenleri yayınla (n)"** |
 
 Akış göstergesinde 4. adımın kesikli halkası "AI adımı" demektir; AI sen **"Case üret"**e basınca
 çalışır. PO kartında "✓ İnsan kapısı geçildi" yazmalı.
 
 1. TPD-1 → **"Case üret"** → 10 case kartı (pozitif/negatif/sınır), her biri bir AC'ye bağlı.
    **C3** = "6 adet kampanyalı üründe bedava ürün verilmez" — bunu göster, sonra lazım olacak.
-2. Sol menü **Case review** → birkaç case'i **"Onayla"**; **yalnızca C8**'de ("Onaylanan siparişin
+2. TPD-1 sayfasının sağ üstündeki **"Case review"** düğmesi → birkaç case'i **"Onayla"**; **yalnızca C8**'de ("Onaylanan siparişin
    numarası gösterilir…") **"Düzelt"** → küçük bir metin değişikliği → onay; kalanları onayla.
    > ⚠️ **C1, C2, C3, C5'i düzeltme.** Bunlar Bölüm B'de koda dönüşür; REPLAY kaydı case metnine
    > bağlıdır, değişen case kod üretiminde REPLAY-MISS verir. C3 değişirse "defect adayı" anı
    > (5b) ve Bölüm C'deki TPD-5 bağlantısı kaybolur.
    - Görülen: sayaç, **kabul oranı**, düzeltmede alan bazlı fark.
-3. Sol menü **Yayın** → **"Yayın önizleme"** (hedef: `xray`) → **"Seçilenleri yayınla (n)"**
+3. Case review sayfasında **"Yayın önizleme"** → Yayın önizleme sayfasındaki **"Hedef"** kartında
+   (hedef: `xray`) **"Seçilenleri yayınla (n)"**
 4. **Jira sekmesi** → TPD-1'e `Test` bağlantısıyla bağlı yeni Test issue'ları; birini aç → Xray'de
    **adımlı Manual Test**.
 
@@ -300,7 +304,7 @@ gerçekten koşuyor; modelin kararı REPLAY."
 
 1. Aynı ekranın altındaki **Üretilen testler** tablosunda C3 satırına ("6 adet kampanyalı üründe
    bedava ürün verilmez") tıkla — testin detay sayfası açılır.
-- Görülen: tabloda Durum **"Defect adayı"**; detayda `beklenen "0", gerçekleşen "1" (3/3 tekrar)`
+- Görülen: tabloda Durum **"Defect adayı"**; detayda **beklenen 0, gerçekleşen 1 (3/3 tekrar)**
   (test 6 adette bedava beklemiyor, uygulama 1 bedava veriyor); PR **açılmadı**.
 
 **Söyle:** "İşte değer burada. Test, dokümandaki doğru davranışı bekliyor; bugünkü kod onu
@@ -320,7 +324,9 @@ test kırmızıya dönmeli.
    - Görülen zaman çizelgesi: Bayraksız **yeşil** → `BREAK_CAMPAIGN=1` **kırmızı** → Bayrak
      kaldırıldı **yeşil** = **"Test hata yakalıyor ✓"**.
 3. Geri dön; **C1** ("Sepete ekle…") ve **C5** ("Kampanyasız siparişte minimum tutar…") için aynısı.
-   - Görülen: üç adım da yeşil, sarı kutu **"Zayıf test: kırılmış uygulamada da yeşil kaldı"**.
+   - Görülen: Bayraksız **yeşil** → kırık adımda (`BREAK_CAMPAIGN=1`) **⚠ "Yeşil · beklenmeyen
+     sonuç"** → Bayrak kaldırıldı **yeşil**; sarı kutu **"Zayıf test: kırılmış uygulamada da yeşil
+     kaldı"**.
      Beklenen budur: kampanya bozulması bu testleri etkilemez (sepet sayacı / minimum tutar
      kontrolü). Merge engellenmez, açık kabul ister (Adım 7).
 
@@ -335,7 +341,7 @@ Portal senin adına GitHub onayı göndermez — onay insanın kendi GitHub hesa
 her PR için aynıdır: **önce GitHub'da Approve, sonra portalda "Merge et"**. Approve etmeden
 "Merge et"e basarsan "Merge reddedildi: … onaylı insan review'u yok" çıkar; bu doğru davranıştır.
 
-**C2 (#11) için:**
+**C2 için** (PR numarasını ezberleme; test detayındaki **"PR'ı aç ↗"** doğru PR'ı açar):
 
 1. **Profil: Mühendis** → C2 test detayı → **Pull request** kartında **"PR'ı aç ↗"** → GitHub'da
    PR açılır.
@@ -345,7 +351,7 @@ her PR için aynıdır: **önce GitHub'da Approve, sonra portalda "Merge et"**. 
 4. Portala dön (sayfayı yenile) → **Pull request** kartında **Merge kapısı açık ✓** → **"Merge et"**.
    - Görülen: PR **Birleşti**; main'e push koşusu otomatik başlar.
 
-**C1 (#10) ve C5 (#12) için (vakit varsa):** aynı 1–4; 4. adımda merge kapısının altındaki sarı
+**C1 ve C5 için (vakit varsa):** aynı 1–4 (her birinin PR'ını kendi test detayındaki **"PR'ı aç ↗"** ile aç); 4. adımda merge kapısının altındaki sarı
 kutuda **"Uyarıyı gördüm; zayıf test olarak merge et (not denetime yazılır)"** kutusunu işaretle,
 sonra **"Merge et"**. Bu kabul, kim/ne zaman bilgisiyle ürünün **Denetim** kaydına (hash zincirli)
 ve Kontrol Kulesi'ne yazılır.
@@ -367,43 +373,51 @@ yalnızca onaylı, deterministik test kodu koşuyor."
 
 **Profil: Sunucu** → sol menü **Koşular**
 
-Dört tetik, aynı deterministik test paketi (GitHub Actions; CI'da AI yok):
+Dört tetik, aynı onaylı, deterministik test paketi (GitHub Actions; CI'da AI yok). Sağ üstteki iki
+düğmenin ne yaptığı başlığın hemen altında yazar.
 
 | Tetik | Ne zaman | Neden |
 |---|---|---|
 | PR | Bot PR açınca / günceller | Merge kapısı: test ana dala girmeden yeşil olmalı |
 | push | Main'e merge olunca (otomatik) | Ana dalın yeni hâli bütün paketle doğrulanır |
 | deploy | Müşterinin deploy hattı yükleme bitince sinyal gönderir | Yeni ortamda (QA) testler koşar |
-| gece | Her gece 02:00 UTC (zamanlanmış) | Kod değişmese de veri/ortam bozulmaları ve kararsız (flaky) testler yakalanır; pahalı geniş regresyon gündüzü yormaz |
+| gece | Her gece 02:00 UTC (zamanlanmış) | Aynı paket; kod değişmese de veri/ortam kayması ve kararsız (flaky) testler yakalanır. (Gerçek projelerde gece koşusu çoğu zaman daha geniş bir pakettir; demoda aynı paket.) |
 
 1. Az önceki merge'lerin başlattığı **push** koşularını göster.
 2. **"Deploy sonrası testleri koş"** → listeye **deploy** koşusu düşer. Bu düğme uygulamayı
    **yüklemez**; müşterinin deploy hattının göndereceği sinyali taklit eder (demoda deploy hattı yok).
-3. Vakit varsa **"Gece koşusunu şimdi başlat"** (zamanlanmış gece koşusunun elle başlatılması).
+3. Vakit varsa **"Gece koşusunu şimdi başlat"** (zamanlanmış gece koşusunun elle başlatılması; aynı
+   paket). Zaman darsa atla (§9): bakım demosundan önce bu koşunun da bitmesi gerekir.
 4. İstersen GitHub → **Actions** sekmesinde aynı koşuları göster.
 
 **Söyle:** "Aynı onaylı paket dört tetikte koşar: PR'da kapı, merge'de ana dal, deploy'da yeni
 ortam, gece de kod değişmese bile ortam ve veri kayması için. Gerçek kurulumda deploy sinyalini
 sizin deploy hattınız gönderir; burada düğmeyle taklit ediyoruz."
 
-**Sauce sonucu (deploy/gece):** Sauce'ta testler kırmızıysa koşu kırmızı olur. Sauce'a
-ulaşılamadıysa (ör. oturum sınırı) koşu yeşil kalır, özette **"⚠️ Sauce koşmadı"** uyarısı
-görünür — test koşmadığı için uygulama hatası sayılmaz.
+**Sauce sonucu (push/deploy/gece):** koşu detayının başlığında Sauce çipi görünür: **"Sauce: geçti"**,
+**"Sauce: kırmızı"**, **"Sauce koşmadı: …"**, **"Sauce atlandı: …"** ya da koşu sürerken **"Sauce:
+sırada/sürüyor"**. Sauce'ta testler kırmızıysa koşu kırmızı olur. Sauce koşamadıysa (ör. altyapı
+adımı başarısız) koşu yeşil kalır, GitHub özetinde **"Sauce koşmadı: saucectl çalışmadı (başarısız
+altyapı adımı: …)"** yazar — test koşmadığı için uygulama hatası sayılmaz. PR koşularında Sauce
+atlanır; özette uyarı değil **"Sauce atlandı"** notu görünür.
 
 ### Adım 9 · Sauce Labs (0,5 dk)
 
-Sauce her koşuda (push, deploy, gece) çalışır. Merge'lerin push koşusundaki **Sauce** job'unu
-göster (Koşular → push koşusu → Sauce satırı / GitHub Actions → `sauce` job'u → Sauce sonuç
-bağlantısı). Deploy'un Sauce job'u, öndeki Sauce bitene kadar GitHub'da **"Waiting"** görünür —
-hata değil, sıradır.
+Sauce her koşuda (push, deploy, gece) çalışır. Merge'lerin push koşusundaki Sauce sonucunu göster:
+Koşular → push koşusu → başlıktaki **Sauce çipi** ve "Raporlar ve bağlantılar"daki **"Sauce Labs
+videosu"** (ya da GitHub Actions → `sauce` job'u). Hesap tek oturumlu: öndeki Sauce sürerken
+deploy'un **"Sauce'ta Playwright (Chromium)"** adımı GitHub günlüğünde **"Sauce oturum sınırı dolu
+(başka koşu sürüyor); 60 sn sonra yeniden (n/20)"** notlarıyla bekler — hata değil, sıradır;
+"concurrent session limit" hatasıyla düşmez.
 
 **Söyle:** "Aynı testler Sauce Labs'in bulut tarayıcılarında da koşuyor; sonuç bağlantısı koşuya
-yazılıyor. Hesap tek eşzamanlı oturumlu, koşular sıraya giriyor." (Sauce job'u tamamlanmadıysa:
+yazılıyor. Hesap tek eşzamanlı oturumlu, koşular sıraya giriyor." (Sauce adımı tamamlanmadıysa:
 "Sauce sonucu kapanışta göstereceğim.")
 
 ### Adım 10 · Raporlar (0,5 dk, isteğe bağlı)
 
-Koşu detayı → **Allure raporu** / Playwright HTML / JUnit XML.
+Koşu detayı → **Allure raporu** / Playwright HTML raporu / JUnit XML. (Yerel kopya alınamadıysa
+etiketler "(GitHub)", "(GitHub artefaktı)", "(GitHub artefaktında)" der ve GitHub'a gider.)
 **Söyle:** "Standart çıktılar; mevcut raporlama araçlarınıza olduğu gibi girer."
 
 ### Adım 11 · Kontrol Kulesi (1 dk)
@@ -428,7 +442,7 @@ süresi."
 
 ---
 
-## 6. Bakım — locator kırılması ve tek satırlık onarım (4 dk)
+## 6. Bakım — buton kimliği değişir, tek satırlık onarım (4 dk)
 
 **Ne anlatılıyor:** test otomasyonunun en pahalı kısmı yazmak değil **bakımı**. Geliştirici
 "Sepete ekle" butonunun teknik kimliğini değiştirir (`data-testid` `add-to-cart` → `cart-add`);
@@ -440,11 +454,18 @@ gizlenemez); (3) insan bir satırı görüp merge eder, hepsi yeşile döner. **
 düğmesi o geliştiriciyi taklit eder: kimliği değiştiren commit'i main'e alır, uygulamayı yeniden
 derler, CI'ı başlatır.
 
-> **Zamanlama:** Adım 7–8'in koşuları **bittikten sonra** L1'i başlat, sonra hemen Bölüm C'ye geç;
-> kırmızı koşu Bölüm C sırasında oluşur (GitHub Actions birkaç dakika sürer). Push koşusu bitmeden
-> kırma: koşu ortasında uygulama değişirse sonuçlar `environment` sınıflanır, onarım önerilmez.
+Adımlar portaldaki **Demo yol haritası → "Test bakımı yolu"** ile aynı numaralıdır: **L1 · Yeşil
+temel koşu** hazırlıkta (§1.2) tamamlandı; sahnede L2'den başlarsın.
 
-### L1 · Buton kimliğini değiştir — locator kırılması (0,5 dk)
+> **Zamanlama:** Adım 7–8'in koşuları **bittikten sonra** L2'yi başlat, sonra hemen Bölüm C'ye geç;
+> kırmızı koşu Bölüm C sırasında oluşur (GitHub Actions birkaç dakika sürer). Push koşusu bitmeden
+> kimliği değiştirme: koşu ortasında uygulama değişirse sonuçlar `environment` sınıflanır, onarım
+> önerilmez.
+
+### L2 · Buton kimliğini değiştir (0,5 dk)
+
+**Önce:** **Koşular**'da **Sırada** ya da **Koşuyor** durumunda koşu kalmamalı. Zaman darsa Adım 8'de
+"Gece koşusunu şimdi başlat"ı atla (§9, 3. madde) — bu koşu da bitmeden L2 başlatılmamalı.
 
 **Profil: Sunucu** → sol menü **Demo kontrolleri** → **"Buton kimliğini değiştir"** → **"Evet, buton kimliğini değiştir"**
 
@@ -455,25 +476,25 @@ derler, CI'ı başlatır.
 **Söyle:** "Bir geliştirici butonun test kimliğini değiştirdi — işlev aynı. Klasik otomasyonda bu,
 sabah onlarca kırmızı test demek."
 
-→ **Şimdi Bölüm C'ye geç (§7)**, sonra L2'ye dön.
+→ **Şimdi Bölüm C'ye geç (§7)**, sonra L3'e dön.
 
-### L2 · Kırmızı koşu (0,5 dk)
+### L3 · Kırmızı koşu ve triage (0,5 dk)
 
 **Profil: Sunucu** → sol menü **Koşular**:
 
 1. Üstteki **"Kasıtlı kırma koşuları"** kutusunun işaretini kaldır (kırarak doğrulama koşuları gizlenir).
-2. En üstteki **Push (main) · Başarısız** koşusuna tıkla (ör. `7acd95ba` · 14/36).
+2. En üstteki **Push (main) · Başarısız** koşusuna tıkla (ör. `7acd95ba` · 14/36 geçen, 22 kırmızı).
 3. **"Başarısızlıklar ve triage"** kartını göster.
 
-- Görülen: çok sayıda kırmızı; hepsi **test_maintenance / locator** (`catalog.addToCart`).
-  Ekrandaki sayıyı oku (merge ettiğin case sayısına göre değişir; ör. 22/36 kırmızı).
+- Görülen: çok sayıda kırmızı; hepsinin çipi **"Test bakımı · locator"** (`catalog.addToCart`).
+  Ekrandaki sayıyı oku (merge ettiğin case sayısına göre değişir; ör. 14/36 geçen, 22 kırmızı).
 
 **Söyle:** "Ürün kırmızıları tek tek bug açmıyor. Kural, elemanın niyetinin — rol + ad — sayfada
 durduğunu ve tek bir farklı testId'ye çözüldüğünü kanıtlıyor: bu ürün hatası değil, test bakımı."
 
-### L3 · Onarım PR'ı (1,5 dk)
+### L4 · Onarım PR'ı (1,5 dk)
 
-1. Aynı kartta kırmızılardan birinin **"Triage sonucu"** bağlantısına tıkla → hata detayı açılır.
+1. Aynı kartta kırmızılardan birinin **"Triage sonucunu aç"** bağlantısına tıkla → hata detayı açılır.
 2. **Profili Mühendis'e geçir** (onarımı mühendis açar) → **"Onarım PR'ı aç"**.
 
 - Görülen: yalnızca `e2e/pages/catalog/locators.ts` içinde **1 satır** testId; AST koruması (onarım
@@ -484,7 +505,7 @@ durduğunu ve tek bir farklı testId'ye çözüldüğünü kanıtlıyor: bu ür�
 assertion asla otomatik değişmez — AST koruması bunu hem burada hem CI'da zorunlu kılıyor. Beklenen
 sonuçtaki her sapma defect adayıdır, onarılmaz."
 
-### L4 · Merge → yeşil (1,5 dk)
+### L5 · Merge → yeşil (1,5 dk)
 
 1. Hata detayındaki onarım PR'ı bağlantısı → GitHub'da **Files changed** (tek satır) → **Review
    changes** → **Approve** → **Submit review**.
@@ -507,10 +528,10 @@ test bakımı mı, ortam mı, flaky mi) ve hazır bug taslağını nasıl çıka
 ürün verilmez") → detay açılır. (C3 kodu üretilmediyse — ör. C3 düzeltildiyse — bu satır yoktur;
 adımı atla, 13'e geç.)
 
-- Görülen: sınıf **product_defect**, "Karar kaynağı: deterministik kural"; eşleşen sinyaller
+- Görülen: sınıf **"Ürün hatası"**, "Karar kaynağı: deterministik kural"; eşleşen sinyaller
   (assertion farkı, eleman bulundu, sayfa yapısı beklenen, tutarlı tekrar); hazır bug taslağı;
   Jira'da benzer açık bug araması → **TPD-5** "Kampanya indirimi sepette yanlış hesaplanıyor",
-  benzerlik **high**, öneri **bağla**.
+  **yüksek olasılık**, AI önerisi **"mevcut kayda bağla (TPD-5)"**.
 
 **Söyle:** "Önce deterministik kurallar: kuralın verebildiği kararı modele bırakmıyoruz. Model
 yalnızca taslağı yazıyor ve mükerrer adayları sıralıyor — o da REPLAY. Uydurma aday ya da gerçek
@@ -526,7 +547,7 @@ ve **Kaynak** sütunuyla tanı. Her satırı aç (özete tıkla) ve kararı ver:
 | "Sepet: **6 adet** … bedava adet 0 beklenirken 1 **görünüyor**" | **Triage** | C3 testi (kod üretiminde yakalanan) | **"TPD-5 kaydına bağla"** |
 | "Sepet: **6 adet** … bedava adet 0 beklenirken 1 **veriliyor**" | **Tutarlılık denetimi** | F2 — Bölüm A'da analistin "kod hatalı" dediği kampanya bulgusu | **"TPD-5 kaydına bağla"** |
 | "Sepet: **Kredi limiti** aşıldığında … uyarısı gösterilmiyor" | **Tutarlılık denetimi** | F4 — kredi limiti bulgusu; mükerrer adayı yok | **"Onayla ve Jira'da aç"** |
-| "Sepet: **7 adet** … bedava adet 1 beklenirken 0 görünüyor" + **"Kasıtlı kırma koşusu"** etiketi | Triage | Adım 6'da bilerek bozduğumuz koşu | **Dokunma** |
+| "Sepet: **7 adet** … bedava adet 1 beklenirken 0 görünüyor" + **"Kasıtlı kırma koşusu (BREAK_CAMPAIGN)"** etiketi | Triage | Adım 6'da bilerek bozduğumuz koşu | **Dokunma** (ekranda "önerilen karar Reddet" yazar; sahnede basma, yol haritasını etkilemez) |
 
 (C3 kodu üretilmediyse ilk satır yoktur; diğer üçüyle devam et.)
 
@@ -545,7 +566,7 @@ Analistin dokümandan bulduğu hata ile testin yakaladığı hata **aynı Jira k
 **Söyle:** "Kayıt story'ye ve teste bağlı, kanıt bağlantılı. Kim onayladı, hangi içerik hash'i,
 hangi zincir başı — hepsi kayıtta."
 
-→ **L2'ye dön (§6).**
+→ **L3'e dön (§6).**
 
 ---
 
@@ -559,7 +580,8 @@ hangi zincir başı — hepsi kayıtta."
    > "Her AI çağrısı, araç çağrısı, onay ve ret kayıtta. Kayıtlar append-only ve hash zinciriyle
    > korunuyor; zincirin başı Jira yorumlarına ve PR açıklamalarına sabitleniyor. **AI üretti, her
    > adımda insan onayladı.**"
-3. (Sauce job'u o ana kadar bittiyse) deploy koşusundaki Sauce sonucunu göster.
+3. (Sauce o ana kadar bittiyse) deploy koşusunun başlığındaki Sauce çipini ve **"Sauce Labs
+   videosu"** bağlantısını göster.
 
 Sunum sonrası (VM): `make export-audit`.
 
@@ -573,9 +595,9 @@ Sunum sonrası (VM): `make export-audit`.
 4. Adım 7'de C1/C5 merge'ü — yalnız C2
 5. Adım 4'te "Düzelt" gösterimi
 6. Adım 11 tek cümleye
-7. L3'te PR gövdesi gezintisi — yalnız 1 satırlık diff
+7. L4'te PR gövdesi gezintisi — yalnız 1 satırlık diff
 
-**Atlanmayacaklar:** REPLAY cümlesi, insan kapıları (2, 3, 4, 7, 13, L4), **5b defect adayı anı**,
+**Atlanmayacaklar:** REPLAY cümlesi, insan kapıları (2, 3, 4, 7, 13, L5), **5b defect adayı anı**,
 **F2 + C3 → TPD-5** buluşması.
 
 ---
@@ -592,7 +614,7 @@ Sunum sonrası (VM): `make export-audit`.
 | 5b'de defect adayı yok | Adım 2'de F2 yanlışlıkla "Dokümanı düzelt" seçilmiş; söyle, yedek videoya geç |
 | GitHub merge kapısı kırmızı | Kalan PR'lar main ilerleyince yeniden CI koşar ve onay düşer: CI bitsin, GitHub'da yeniden Approve |
 | GitHub Actions uzun sürüyor | Kontrol Kulesi'ni ya da Denetim'i anlat; koşu bitince devam |
-| Locator kırıldı ama bayi uygulaması değişmedi | VM: `systemctl status tp-demo-web-sync`, `journalctl -u tp-demo-web-sync -n 50` |
+| Buton kimliği değişti ama bayi uygulaması değişmedi | VM: `systemctl status tp-demo-web-sync`, `journalctl -u tp-demo-web-sync -n 50` |
 | "Önce yeşil temel koşu" uyarısı | Yeşil push koşusu yok; Koşular'dan bitmesini bekle |
 | Tam çöküş | Yedek video; sunum sonrası `make reset` |
 

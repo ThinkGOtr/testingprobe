@@ -325,7 +325,7 @@ describe("demo kontrolleri", () => {
     await oturumAc("sunucu");
     vi.spyOn(api, "demoDurumu").mockResolvedValue(KIRIK);
     uygulama("/demo");
-    const d = await screen.findByRole("button", { name: "Locator zaten kırık" });
+    const d = await screen.findByRole("button", { name: "Buton kimliği zaten değişti" });
     expect(d).toBeDisabled();
     expect(screen.getByTestId("zaten-kirik")).toHaveTextContent("cart-add");
     await waitFor(() => expect(screen.getByRole("list", { name: "Locator kırılması ilerlemesi" })).toHaveTextContent("Kırılma istendi"));

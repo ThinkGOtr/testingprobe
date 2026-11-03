@@ -522,6 +522,15 @@ code,
   margin-top: 6px;
   max-width: 80ch;
 }
+.tetik-aciklamalari {
+  list-style: none;
+  padding: 0;
+  margin: -10px 0 14px;
+  max-width: 100ch;
+}
+.tetik-aciklamalari li {
+  padding: 1px 0;
+}
 .ust-baglanti {
   font-size: 0.875rem;
   margin-bottom: 6px;
@@ -1378,6 +1387,7 @@ fieldset:disabled select {
 }
 .hata-mesaji {
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   color: var(--err);
 }
 .sonuc {
@@ -2452,6 +2462,8 @@ mark.kaynak-deger {
 .test-ayrinti .kod-blok {
   max-height: 24em;
   overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .test-deneme,
 .test-blok {

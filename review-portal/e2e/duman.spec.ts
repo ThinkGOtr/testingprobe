@@ -348,7 +348,7 @@ for (const tema of ["light", "dark"] as const) {
       ["/claude-code", "Token oluştur"],
       ["/hatalar/fail-2", "Locator yoklaması (locator-probe)"],
       ["/bug-taslaklari/bug-4", "Olası mükerrerler"],
-      ["/yol-haritasi", "Locator kırılma yolu"],
+      ["/yol-haritasi", "Test bakımı yolu"],
     ];
     const ihlaller: string[] = [];
     for (const genislik of [1440, 390]) {
@@ -411,7 +411,7 @@ test("Faz 4 locator yolu: sunucu kırar → CI kırmızı → triage → mühend
   await page.getByRole("link", { name: "Demo kontrolleri" }).click();
   await expect(page.getByRole("heading", { name: "Demo kontrolleri", level: 1 })).toBeVisible();
   await page.getByRole("button", { name: "Buton kimliğini değiştir" }).click();
-  await expect(page.getByRole("group", { name: "Locator kırma onayı" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Buton kimliği değiştirme onayı" })).toBeVisible();
   await page.screenshot({ path: `${EKRAN_DIZINI}/45-demo-kir-onay.png`, fullPage: true });
   await page.getByRole("button", { name: "Evet, buton kimliğini değiştir" }).click();
   const ilerleme = page.getByRole("list", { name: "Locator kırılması ilerlemesi" });

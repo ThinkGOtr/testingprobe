@@ -1287,7 +1287,7 @@ let demoKirik = false;
 
 function demoKir(): IsYaniti {
   rolGerekli("presenter");
-  if (demoKirik) throw new ApiError(409, "Locator zaten kırık (main'de cart-add); önce demoyu sıfırlayın.");
+  if (demoKirik) throw new ApiError(409, "Buton kimliği zaten değişti (main'de cart-add); önce demoyu sıfırlayın.");
   demoKirik = true;
   denetimEkle("demo.break_locator", "demo-app-web", "demo kırılması: demo/break-locator merge (demo-admin bypass) · add-to-cart → cart-add");
   const k = kosuOlustur("push", "local", false, null);
@@ -1313,7 +1313,7 @@ function demoKir(): IsYaniti {
       ilerleme("triage", "Triage: test bakımı / locator; onarım önerisi hazır.");
     },
   ]);
-  return is("started", `Locator kırılması başladı: merge → yeniden kurulum → CI (${k.id}).`);
+  return is("started", `Buton kimliği değiştiriliyor: merge → yeniden kurulum → CI (${k.id}).`);
 }
 
 function onarimPr(id: string): IsYaniti {

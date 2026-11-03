@@ -253,7 +253,7 @@ export function YolHaritasi() {
       </Kart>
 
       <Kart
-        baslik="Locator kırılma yolu"
+        baslik="Test bakımı yolu"
         eylemler={
           <span className="kucuk" data-testid="yh-locator-ilerleme">
             <strong>
@@ -267,7 +267,7 @@ export function YolHaritasi() {
           “Sepete ekle” <span className="mono">data-testid</span> <span className="mono">add-to-cart → cart-add</span>: triage “test bakımı /
           locator” der, onarım PR'ı yalnızca testId değerini değiştirir, mühendis onaylar, CI yeşile döner.
         </p>
-        <ol className="yh-adimlar" aria-label="Locator kırılma yolu">
+        <ol className="yh-adimlar" aria-label="Test bakımı yolu">
           {loc.map((a) => (
             <AdimSatiri key={a.no} a={a} />
           ))}

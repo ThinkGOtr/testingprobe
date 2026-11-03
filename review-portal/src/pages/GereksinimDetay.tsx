@@ -70,10 +70,10 @@ export function GereksinimDetay() {
   const dogrulaniyor = liste.filter((b) => b.durum === "unverified").length;
   const elenen = Math.max(g.elenen_bulgu ?? 0, liste.filter((b) => b.durum === "discarded").length);
   const turSiniri = g.kontrol_turu >= g.kontrol_turu_ust_sinir;
-  // Yazılacak düzeltme ve açık engelleyici yokken analist belgeyi açıkça son hal yapar (ör.
-  // güvenilmez denetim sonrası otomatik son hal olmaz; core apply-doc-fixes'i düzeltmesiz kabul eder).
+  // Yazılacak düzeltme ve açık engelleyici yokken analist belgeyi açıkça son hâl yapar (ör.
+  // güvenilmez denetim sonrası otomatik son hâl olmaz; core apply-doc-fixes'i düzeltmesiz kabul eder).
   const sonHalAcik = g.durum === "findings_open" && yazilacak === 0 && acikEngelleyici === 0;
-  // Belge son hale geçtiyse düzeltme düğmesi artık işlevsiz: soluk düğme "takıldı" sanılmasın,
+  // Belge son hâle geçtiyse düzeltme düğmesi artık işlevsiz: soluk düğme "takıldı" sanılmasın,
   // yerine gereksinimin güncel durumu yazılır.
   const sonHalSonrasi = SON_HAL_SONRASI.has(g.durum);
   const bosBulgu = bosBulguMetni(g, elenen, dogrulaniyor);
@@ -295,7 +295,9 @@ export function GereksinimDetay() {
           {g.son_kontrol && <ReplayRozeti mode={g.son_kontrol.mode} />}
           {sonHalSonrasi ? (
             <span data-testid="son-hal-durumu">
-              <Cip ton={d.ton}>✓ Doküman son hal · {d.etiket}</Cip>
+              {/* Bu çip dokümanın durumunu söyler: son hâl tamam (✓). PO teyidi beklemesi bir uyarı
+                  değil, sıradaki adımdır; bu yüzden uyarı tonu yerine bilgi tonu. */}
+              <Cip ton={g.durum === "pending_po" ? "bilgi" : d.ton}>{g.durum === "doc_final" ? "✓ Doküman son hâl" : `✓ Doküman son hâl · ${d.etiket}`}</Cip>
             </span>
           ) : (
           <IslemDugmesi
@@ -305,8 +307,8 @@ export function GereksinimDetay() {
             title={
               sonHalAcik
                 ? g.denetim_guvenilmez
-                  ? `Denetim güvenilmez (${g.denetim_guvenilmez}); belge yalnızca açık kararınızla son hal olur ve PO'ya gider`
-                  : "Yazılacak düzeltme yok; belge son hal olur ve PO'ya gider"
+                  ? `Denetim güvenilmez (${g.denetim_guvenilmez}); belge yalnızca açık kararınızla son hâl olur ve PO'ya gider`
+                  : "Yazılacak düzeltme yok; belge son hâl olur ve PO'ya gider"
                 : turSiniri
                 ? `Kontrol turu sınırına ulaşıldı (${g.kontrol_turu_ust_sinir}); insan kararı gerekiyor`
                 : yazilacak === 0
@@ -319,15 +321,15 @@ export function GereksinimDetay() {
                 sonHalAcik
                   ? (r) =>
                       r?.kabul_edilen_uyarilar && r.kabul_edilen_uyarilar.length > 0
-                        ? `Belge son hal yapıldı; kararsız uyarılar bilinçli fark olarak kaydedildi (${r.kabul_edilen_uyarilar.join(", ")}). PO teyidi bekleniyor.`
-                        : "Belge son hal yapıldı; PO teyidi bekleniyor."
+                        ? `Belge son hâl yapıldı; kararsız uyarılar bilinçli fark olarak kaydedildi (${r.kabul_edilen_uyarilar.join(", ")}). PO teyidi bekleniyor.`
+                        : "Belge son hâl yapıldı; PO teyidi bekleniyor."
                   : g.kaynak === "jira"
                     ? "Düzeltmeler Jira'ya yazılıyor; ardından yeniden kontrol."
                     : "Düzeltmeler uygulanıyor; ardından yeniden kontrol.",
               )
             }
           >
-            {sonHalAcik ? "Son hal olarak onayla" : g.kaynak === "jira" ? "Düzeltmeleri Jira'ya yaz" : "Düzeltmeleri uygula"}
+            {sonHalAcik ? "Son hâl olarak onayla" : g.kaynak === "jira" ? "Düzeltmeleri Jira'ya yaz" : "Düzeltmeleri uygula"}
             {yazilacak > 0 && ` (${yazilacak})`}
             {g.kontrol_turu > 0 && " · "}
             {g.kontrol_turu > 0 && (
@@ -378,7 +380,7 @@ export function GereksinimDetay() {
         )}
         {acikEngelleyici > 0 && (
           <Uyari>
-            {acikEngelleyici} engelleyici bulgu karar bekliyor. Engelleyici bulgu kalmadan doküman "son hal" olmaz ve PO teyidine geçilmez.
+            {acikEngelleyici} engelleyici bulgu karar bekliyor. Engelleyici bulgu kalmadan doküman "son hâl" olmaz ve PO teyidine geçilmez.
           </Uyari>
         )}
         {bulgular.yukleniyor && !bulgular.veri ? (
@@ -544,7 +546,7 @@ function PoKarti({ g, yenile }: { g: Detay; yenile: () => void }) {
           PO teyidi verilmişti; case üretimi hata ile bitti. Yeniden denemede onayın güncelliği sunucuda yeniden doğrulanır.
         </p>
       ) : (
-        <p className="soluk">Henüz istenmedi. Doküman "son hal" olunca PO teyidi istenir.</p>
+        <p className="soluk">Henüz istenmedi. Doküman "son hâl" olunca PO teyidi istenir.</p>
       )}
       {kapiGecildi ? (
         <p className="kucuk" data-testid="po-kapisi">

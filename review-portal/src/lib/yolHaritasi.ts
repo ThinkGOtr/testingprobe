@@ -153,7 +153,7 @@ export function demoAdimlari(x: YolGirdisi): YolAdimi[] {
   const a2 = !g
     ? adim(2, { hal: "bekliyor", kanit: "Story yok." })
     : denetimSonrasi.includes(g.durum) || (g.durum === "failed" && g.son_hata?.job_tur === "cases.generate")
-      ? adim(2, { hal: "tamam", kanit: `Doküman son hal · ${tur}`, baglanti: { yol: gYolu, etiket: "Bulgular" }, mode: mode2 })
+      ? adim(2, { hal: "tamam", kanit: `Doküman son hâl · ${tur}`, baglanti: { yol: gYolu, etiket: "Bulgular" }, mode: mode2 })
       : g.durum === "in_review" || g.durum === "findings_open"
         ? adim(2, {
             hal: "suruyor",
@@ -179,7 +179,7 @@ export function demoAdimlari(x: YolGirdisi): YolAdimi[] {
             ipucu: g.kaynak === "jira" ? "PO Jira'da (po@sim.local) cevaplar ve tp-po-approved etiketini koyar; 15 sn'de bir okunur." : "PO portalda onaylar.",
             baglanti: { yol: gYolu, etiket: "PO teyidi" },
           })
-        : adim(3, { hal: "bekliyor", kanit: "Doküman son hal olunca PO teyidi istenir." });
+        : adim(3, { hal: "bekliyor", kanit: "Doküman son hâl olunca PO teyidi istenir." });
 
   // 4 — Test case (QA onayı + yayın)
   const onayli = cs.filter((c) => c.durum === "approved" || c.durum === "published").length;
@@ -311,10 +311,16 @@ export function sonrakiAdimlar(x: SonrakiGirdi): YolAdimi[] {
 
   // 9 — Sauce + QA. GitHub kipinde Sauce, GitHub koşusunun içinde bir job'dur (sauce_durum,
   // sauce.json); yerel kipte ayrı "sauce" kaynaklı koşu. Kimlik yoksa yerel Chromium job'u yedektir.
+  // GitHub kipinde (herhangi bir CI koşusu GitHub'dan) "kimlik yok" denmez: Sauce job'u ya sırada,
+  // ya atlandı (SAUCE_TETIKLER) ya da sonucu koşuya yazıldı.
   const sauce = ci.filter((k) => k.kaynak === "sauce" || k.sauce_durum === "passed" || k.sauce_durum === "failed");
   const sauceKirmizi = ci.filter((k) => k.sauce_durum === "failed").length;
   const sauceUlasilamadi = ci.filter((k) => k.sauce_durum === "error");
   const bitenYerel = ci.filter((k) => k.kaynak !== "sauce" && ["passed", "failed"].includes(k.durum));
+  const githubKipi = tumCi.some((k) => k.kaynak === "github");
+  const ghCi = ci.filter((k) => k.kaynak === "github");
+  const sauceSirada = ghCi.filter((k) => !k.sauce_durum && (k.durum === "queued" || k.durum === "running"));
+  const sauceAtlandi = ghCi.length > 0 && ghCi.every((k) => k.sauce_durum === "atlandi");
   const a9 =
     sauce.length > 0
       ? adim(9, {
@@ -329,6 +335,29 @@ export function sonrakiAdimlar(x: SonrakiGirdi): YolAdimi[] {
             ipucu: "Sahnede açıkça söyleyin: Sauce bu koşularda çalışmadı; bir sonraki koşuda (deploy/gece) yeniden denenir.",
             baglanti: { yol: "/kosular", etiket: "Koşular" },
           })
+      : githubKipi
+        ? sauceSirada.length > 0
+          ? adim(9, {
+              hal: "suruyor",
+              kanit: `Sauce job'u sırada/sürüyor (${sauceSirada.length} GitHub koşusu).`,
+              ipucu: "Hesap tek eşzamanlı oturumlu: Sauce job'ları sıraya girer; koşu bitince sonuç buraya yazılır.",
+              baglanti: { yol: "/kosular", etiket: "Koşular" },
+            })
+          : sauceAtlandi
+            ? adim(9, {
+                hal: "yedek",
+                kanit: `Sauce bu tetiklerde atlandı (${ghCi.find((k) => k.sauce_neden)?.sauce_neden ?? "neden bildirilmedi"}) — testler yerel Chromium job'unda koştu.`,
+                ipucu: "Sahnede açıkça söyleyin: Sauce bu koşularda bilerek atlandı (SAUCE_TETIKLER).",
+                baglanti: { yol: "/kosular", etiket: "Koşular" },
+              })
+            : bitenYerel.length > 0
+              ? adim(9, {
+                  hal: "yedek",
+                  kanit: `Sauce sonucu koşulara yazılmadı — testler GitHub Actions'ta koştu (${bitenYerel.length} koşu).`,
+                  ipucu: "GitHub Actions'ta koşunun sauce job'una bakın.",
+                  baglanti: { yol: "/kosular", etiket: "Koşular" },
+                })
+              : adim(9, { hal: "bekliyor", kanit: "Story için biten CI koşusu yok." })
       : bitenYerel.length > 0
         ? adim(9, {
             hal: "yedek",

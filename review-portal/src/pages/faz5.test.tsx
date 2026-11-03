@@ -322,6 +322,16 @@ describe("demo yol haritası: türetme", () => {
     const ulasilamadi = demoAdimlari({ ...yerelGirdi, kosular: ghKosu("error") })[8];
     expect(ulasilamadi).toMatchObject({ hal: "yedek", kanit: expect.stringMatching(/ulaşılamadı \(oturum sınırı dolu\)/) });
     expect(ulasilamadi.kanit).not.toMatch(/kimliği yok/);
+    // GitHub kipinde Sauce sonucu henüz yoksa ve koşu sıradaysa "sürüyor"; hepsi atlandıysa nedeniyle yedek.
+    const ghSirada = yerelGirdi.kosular.map((k, i) => (i === 0 ? { ...k, kaynak: "github" as const, durum: "running" as const, sauce_durum: null } : k));
+    const sirada = demoAdimlari({ ...yerelGirdi, kosular: ghSirada })[8];
+    expect(sirada).toMatchObject({ hal: "suruyor", kanit: expect.stringMatching(/Sauce job'u sırada\/sürüyor/) });
+    const ghAtlandi = yerelGirdi.kosular.map((k) => ({ ...k, kaynak: "github" as const, sauce_durum: "atlandi" as const, sauce_neden: "SAUCE_TETIKLER: push yok" }));
+    const atlandi = demoAdimlari({ ...yerelGirdi, kosular: ghAtlandi })[8];
+    expect(atlandi).toMatchObject({ hal: "yedek", kanit: expect.stringMatching(/Sauce bu tetiklerde atlandı \(SAUCE_TETIKLER: push yok\)/) });
+    // GitHub koşusu bitti ama Sauce sonucu yazılmadı: yine "kimlik yok" denmez.
+    const ghBos = yerelGirdi.kosular.map((k) => ({ ...k, kaynak: "github" as const, durum: "passed" as const, sauce_durum: null }));
+    for (const x of [sirada, atlandi, demoAdimlari({ ...yerelGirdi, kosular: ghBos })[8]]) expect(x.kanit).not.toMatch(/kimliği yok/);
     // Her bağlantı portal içi bir ekrana çıkar.
     for (const x of a) if (x.baglanti) expect(x.baglanti.yol.startsWith("/")).toBe(true);
     expect(v.gereksinimler.length).toBeGreaterThan(0);
@@ -374,7 +384,7 @@ describe("demo yol haritası: ekran", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Demo yol haritası" })).toBeInTheDocument();
     const liste = screen.getByRole("list", { name: "14 adımlı demo akışı" });
     expect(within(liste).getAllByRole("listitem")).toHaveLength(14);
-    expect(screen.getByRole("list", { name: "Locator kırılma yolu" })).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Test bakımı yolu" })).toBeInTheDocument();
     expect(screen.getByTestId("yh-mod")).toHaveTextContent("REPLAY");
     expect(screen.getByTestId("yh-strict")).toHaveTextContent("kapalı");
     expect(screen.getByTestId("yh-degerlendirme")).toHaveTextContent("canlı değerlendirme bekliyor");

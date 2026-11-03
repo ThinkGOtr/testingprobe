@@ -637,7 +637,7 @@ canliTesti("canlı: 14 adım + locator kırma/onarım arayüzden", async ({ page
     await page.goto("/demo");
     await expect(page.getByRole("heading", { name: "Demo kontrolleri", level: 1 })).toBeVisible();
     await page.getByRole("button", { name: "Buton kimliğini değiştir", exact: true }).click();
-    await expect(page.getByRole("group", { name: "Locator kırma onayı" })).toBeVisible();
+    await expect(page.getByRole("group", { name: "Buton kimliği değiştirme onayı" })).toBeVisible();
     await page.getByRole("button", { name: "Evet, buton kimliğini değiştir" }).click();
     const istek: J = await bekle(
       "kırma için yenileme isteği yazıldı",
