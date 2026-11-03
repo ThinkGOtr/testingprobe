@@ -42,6 +42,7 @@ ekran, neye tıklanır, ne yazılır, ekranda ne görülür, ne söylenir.
 | 4 | Sauce tetikleri | Değişiklik yok: Sauce push, deploy ve gece koşularının hepsinde koşar (`SAUCE_TETIKLER` tanımsız). Mac: `gh variable list --repo ThinkGOtr/testingprobe-demo-app` → `SAUCE_TETIKLER` satırı **olmamalı** | Hesap tek eşzamanlı oturum: Sauce job'ları sıraya girer (her biri ~1–11 dk). Merge'lerin push Sauce'u bitmeden tetiklenen deploy'un Sauce'u **bekler** (düşmez) |
 | 5 | Tam prova | Bu belgenin §3–§8'i baştan sona, kronometreyle | Her adımın gerçek süresini not al |
 | 6 | Yedek video | `make demo-prova UI=1` (VM ya da yerel) | Aksaklıkta açılacak kayıt sunum makinesinde |
+| 7 | **Manuel baz değer ölçümü** (bir kez; Kontrol Kulesi'ndeki "Hazırlık kazancı" için) | **Kim:** bu işi normalde elle yapan bir analist / test mühendisi (ideali müşteri ekibinden). TPD-1'i okuyup test case'lerini **AI'sız** yazar, kronometreyle süreyi tutar — tahmin/uydurma değer yazılmaz. **Nereye:** `rules/baz-degerler.yaml` (`story: TPD-1`, `deger_s`: saniye, `giren`: ad soyad, `not`: "F0 ölçümü, tarih, kronometre") → commit → sunucuya yükle. `make reset` silmez; Jira'dan çekmede otomatik uygulanır. Hızlı ama reset'te silinen yol: portal TPD-1 → **Manuel baz değer** → "Ölçüm gir" (analist/PO) | Kontrol Kulesi → Hazırlık süresi (story bazında): TPD-1 Manuel baz **ölçüm** (giren + not), kazanç sütunu dolu. Ölçüm yoksa "ölçülmedi" doğrudur |
 
 ### 1.2 Toplantıdan 30 dk önce (VM'de)
 
@@ -373,6 +374,14 @@ Koşu detayı → **Allure raporu** / Playwright HTML / JUnit XML.
 
 Sol menü **Kontrol Kulesi** → gez: son koşular, geçme oranı, flaky testler, alan karnesi, açık defect
 adayı, AI katkısı (kabul oranı, review süresi).
+
+Beklenen boşluklar (hata değil):
+- **Case başına AI + review "ölçülmedi"** ve **Maliyet $0,00**: REPLAY'de model çağrısı yok, süre ve
+  ücret ölçülmez. Canlı modelde otomatik dolar; elle girilecek bir şey yok.
+- **Hazırlık kazancı "ölçülmüş baz yok"**: §1.1 #7'deki manuel ölçüm girilmediyse. Girildiyse bile
+  kazanç **"(REPLAY: yalnız review)"** etiketlidir — verimlilik iddiası olarak söylenmez.
+- **Flaky testler "yok"**: demo uygulaması deterministik; gerçek uygulamada aralıklı kırılan
+  testler (yeniden denemede geçen / aynı commit'te farklı sonuç) burada listelenir.
 
 **Söyle:** "Tek ekranda kalite. Her KPI'nın hangi veriden ve hangi pencereden hesaplandığı yazıyor.
 Kazanç oranını yalnızca manuel baz süresi **ölçülmüş** story'lerde gösteriyoruz; ölçüm yoksa ekran
