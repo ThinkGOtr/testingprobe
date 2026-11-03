@@ -1,182 +1,303 @@
 /* AI Testing Probe — Kontrol Kulesi tasarım belirteçleri ve bileşen stilleri.
-   Sakin, kurumsal: nötr yüzeyler, tek vurgu rengi (lacivert), durum renkleri yalnızca durum için. */
+   "Agent Probe çizgisi" (docs/TASARIM-YENILEME-PLANI.md §2–§3): koyu lacivert zemin, indigo = marka ve
+   etkileşim, mor (--vurgu) = yalnız AI, yeşil = insan kapısı ve başarı, amber = uyarı, kırmızı = hata,
+   nötr = kategorik bilgi. Temaya bağlı her değer token'dır; bileşen kurallarında sabit renk ve
+   [data-theme] seçicisi kullanılmaz.
+
+   Tema stratejisi (§3.1):
+   - :root (niteliksiz) ve [data-theme="dark"]  → koyu (varsayılan)
+   - [data-theme="light"]                         → açık
+   - nitelik yok + işletim sistemi açık           → açık ("sistem" kipi)
+   Kontrast değerleri §3.3'te (WCAG 2.x, iki bağımsız hesap); yeni renk çifti aynı hesapla eklenir. */
 
 :root {
-  --bg: #f4f5f7;
+  /* ---- yüzeyler ve kenarlar */
+  --bg: #06060f;
+  --surface: #0e0e1c;
+  --surface-2: #15152a;
+  --surface-3: #1c1c33;
+  --border: #2e2e58; /* kart kenarı: bg'ye 1,58, surface'e 1,50 */
+  --border-soft: #25254a; /* kart içi ayraç, tablo satırı */
+  --border-strong: #3a3a66; /* ikincil düğme kenarı */
+  --border-input: #6b6e94; /* form kenarı: tüm yüzeylerde ≥3:1 (3,39–4,12) */
+
+  /* ---- metin */
+  --text: #f0f0ff; /* 14,7–17,9 */
+  --text-2: #94a3b8; /* 6,5–7,9 */
+  --muted: #8590a6; /* 5,2–6,3 — tonlu (*-bg) zeminde kullanılmaz, orada --text-2 */
+
+  /* ---- marka / etkileşim (indigo) */
+  --accent: #818cf8; /* yalnız metin ve kenar (5,6–6,8); dolu zemin olarak kullanılmaz */
+  --accent-hover: #a5b4fc;
+  --accent-soft: rgb(99 102 241 / 0.12);
+  --accent-solid: #4f46e5; /* dolu zeminler; beyazla 6,29 */
+  --accent-solid-hover: #5b54e8; /* beyazla 5,41 */
+  --accent-text: #ffffff; /* yalnız --accent-solid üstünde */
+  --on-ton: #06060f; /* tür/durum renginde dolu zemin üstündeki metin ve ✓ (≥7,6) */
+  --focus: #a5b4fc; /* 8,6–10,1 */
+
+  /* ---- durum */
+  --ok: #34d399;
+  --ok-bg: rgb(52 211 153 / 0.12);
+  --warn: #fbbf24;
+  --warn-bg: rgb(251 191 36 / 0.12);
+  --err: #fb7185;
+  --err-bg: rgb(251 113 133 / 0.12);
+  --err-solid: #be123c; /* "tehlike" düğme zemini; beyazla 6,29 */
+  --info: #38bdf8; /* yalnız bilgi kutusu ikonu/şeridi; çiplerde değil */
+  --info-bg: rgb(56 189 248 / 0.12);
+  --vurgu: #c084fc; /* yalnız AI */
+  --vurgu-bg: rgb(192 132 252 / 0.12);
+  --notr: #cbd5e1; /* kategorik */
+  --notr-bg: rgb(203 213 225 / 0.1);
+
+  --replay: var(--vurgu); /* REPLAY biçimle ayrılır (§4.6) */
+  --replay-bg: var(--vurgu-bg);
+  --replay-miss: var(--warn); /* ayrı ikon */
+  --replay-miss-bg: var(--warn-bg);
+
+  /* ---- fark ve kod */
+  --ins: #6ee7b7;
+  --ins-bg: #0f2f26;
+  --del: #fda4af;
+  --del-bg: #3a1220;
+
+  --code-bg: #08080f;
+  --code-text: #e2e6ee;
+  --tk-anahtar: #ff7ab2;
+  --tk-metin: #7ee2a8;
+  --tk-yorum: #a3acb7; /* --kod-vurgu satırında da ≥5,7 */
+  --tk-sayi: #79c0ff;
+  --tk-tip: #d2a8ff;
+  --tk-fonksiyon: #ffc680;
+  --kod-vurgu: rgb(251 191 36 / 0.1);
+
+  /* ---- grafik */
+  --chart-bar: #818cf8;
+  --chart-bar-active: #c7d2fe;
+  --chart-grid: #1e1e35;
+  --chart-target: #7c8596;
+
+  /* ---- derinlik, etkileşim katmanları, imzalar */
+  --shadow: 0 4px 24px rgb(0 0 0 / 0.4);
+  --glow: 0 0 0 1px rgb(99 102 241 / 0.35), 0 8px 32px rgb(99 102 241 / 0.18);
+  --hover: rgb(255 255 255 / 0.04);
+  --hover-accent: rgb(99 102 241 / 0.06); /* tıklanabilir satır */
+  --halka: 0 0 0 3px rgb(99 102 241 / 0.25); /* odakta ek halka */
+  --ust-cubuk-bg: rgb(6 6 15 / 0.92); /* .92 altı → altından kayan metinde AA kaybı */
+  --ust-cubuk-opak: #06060f; /* saydamlık azaltıldığında / backdrop-filter yokken */
+  --marka-cizgi: linear-gradient(90deg, transparent, #6366f1, #a855f7, #6366f1, transparent);
+  --ortam: radial-gradient(900px 600px at 0 0, rgb(99 102 241 / 0.07), transparent),
+    radial-gradient(700px 500px at 100% 100%, rgb(139 92 246 / 0.05), transparent);
+  --giris-izgara: rgb(99 102 241 / 0.04);
+  --secim: rgb(99 102 241 / 0.35); /* ::selection zemini; metin --text kalır */
+  --kaydirma: #3a3a66; /* kaydırma çubuğu tutamağı */
+  --kaydirma-hover: #4d4d80;
+  /* data: SVG içinde currentColor/var() çalışmaz; renk --text-2 değeri */
+  --select-ok: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+
+  /* ---- tema bağımsız: tipografi, boşluk, şekil (§3.4) */
+  --font: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius: 12px;
+  --radius-lg: 20px;
+  --radius-sm: 8px;
+  --radius-kontrol: 10px; /* düğme ve giriş */
+  --radius-hap: 999px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+
+  color-scheme: dark;
+  font-family: var(--font);
+  font-size: 90.625%; /* ≈14,5 px; kullanıcının tarayıcı yazı boyutuna saygılı */
+  line-height: 1.55;
+}
+
+/* Açık tema değerleri iki yerde aynıdır: seçilmiş açık tema ve "sistem" kipinde açık işletim sistemi.
+   Birini değiştiren ötekini de değiştirir. */
+:root[data-theme="light"] {
+  --bg: #f6f7fb;
   --surface: #ffffff;
-  --surface-2: #f8f9fb;
-  --surface-3: #eef0f4;
-  --text: #1b2130;
-  --text-2: #4a5365;
-  --muted: #5f6878;
-  --border: #dde1e8;
-  --border-strong: #c3c9d4;
-  --accent: #1f4fbf;
-  --accent-hover: #183f9a;
-  --accent-soft: #e6edfb;
+  --surface-2: #f2f4f8;
+  --surface-3: #e9ecf3;
+  --border: #e4e7ed;
+  --border-soft: #eceef3;
+  --border-strong: #d1d5de;
+  --border-input: #7a8093; /* 3,33–3,94 */
+  --text: #0f1117;
+  --text-2: #4b5263;
+  --muted: #5f6678;
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-soft: #eef2ff;
+  --accent-solid: #4f46e5;
+  --accent-solid-hover: #4338ca; /* beyazla 7,9 */
   --accent-text: #ffffff;
-  --focus: #1f6feb;
-
-  --ok: #17663a;
-  --ok-bg: #e3f4ea;
-  --warn: #7a4d00;
-  --warn-bg: #fff1d1;
-  --err: #a0181c;
-  --err-bg: #fde6e6;
-  --info: #0d5c7a;
-  --info-bg: #e1f1f7;
-  --vurgu: #5b3cc4;
-  --vurgu-bg: #eee9fb;
-  --notr: #4a5365;
-  --notr-bg: #eceff4;
-
-  --replay: #6b3fb0;
-  --replay-bg: #f0e9fb;
-  --replay-miss: #8a4b00;
-  --replay-miss-bg: #ffe7c2;
-
-  --ins-bg: #d8f3e1;
+  --on-ton: #ffffff;
+  --focus: #4f46e5; /* 5,3–6,3 */
+  --ok: #065f46;
+  --ok-bg: #e6f2ee;
+  --warn: #92400e;
+  --warn-bg: #fdf3e7;
+  --err: #9f1239;
+  --err-bg: #f8e7ec;
+  --err-solid: #be123c;
+  --info: #075985;
+  --info-bg: #e6f0f6;
+  --vurgu: #7e22ce;
+  --vurgu-bg: #f5edfc;
+  --notr: #4b5263;
+  --notr-bg: #eef0f4;
   --ins: #0f5a2f;
-  --del-bg: #fbdcdc;
+  --ins-bg: #d8f3e1;
   --del: #8e1a1a;
-
+  --del-bg: #fbdcdc;
   --code-bg: #f6f8fa;
   --code-text: #1f2328;
   --tk-anahtar: #b0185a;
   --tk-metin: #0a6640;
-  --tk-yorum: #57606a; /* #fff4c2 vurgu satırında 5.8:1 (WCAG AA) */
+  --tk-yorum: #57606a; /* #fff4c2 vurgu satırında 5,8 */
   --tk-sayi: #0550ae;
   --tk-tip: #6f42c1;
   --tk-fonksiyon: #7a4500;
   --kod-vurgu: #fff4c2;
-
-  --chart-bar: #3a63d1;
-  --chart-bar-active: #1f4fbf;
-  --chart-grid: #e3e6ec;
+  --chart-bar: #4f46e5;
+  --chart-bar-active: #3730a3;
+  --chart-grid: #e4e7ed;
   --chart-target: #8a93a3;
-
-  --shadow: 0 1px 2px rgb(16 24 40 / 0.06), 0 1px 3px rgb(16 24 40 / 0.06);
-  --radius: 10px;
-  --radius-sm: 6px;
-  --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-
+  --shadow: 0 1px 3px rgb(0 0 0 / 0.06), 0 1px 2px rgb(0 0 0 / 0.04);
+  --glow: 0 0 #0000; /* none değil: virgüllü gölge listesinde geçersiz olur */
+  --hover: rgb(15 17 23 / 0.04);
+  --hover-accent: rgb(79 70 229 / 0.05);
+  --halka: 0 0 0 3px rgb(79 70 229 / 0.18);
+  --ust-cubuk-bg: rgb(255 255 255 / 0.92);
+  --ust-cubuk-opak: #ffffff;
+  --marka-cizgi: linear-gradient(
+    90deg,
+    transparent,
+    rgb(99 102 241 / 0.5),
+    rgb(168 85 247 / 0.5),
+    rgb(99 102 241 / 0.5),
+    transparent
+  );
+  --ortam: none;
+  --giris-izgara: rgb(79 70 229 / 0.03);
+  --secim: rgb(79 70 229 / 0.18);
+  --kaydirma: #c3c8d3;
+  --kaydirma-hover: #a3a9b7;
+  --select-ok: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%234b5263' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   color-scheme: light;
-  font-family: var(--font);
-  line-height: 1.5;
-  font-size: 15px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #0f1218;
-    --surface: #171b23;
-    --surface-2: #1c212b;
-    --surface-3: #232a36;
-    --text: #e7eaf0;
-    --text-2: #c2c8d3;
-    --muted: #9aa3b2;
-    --border: #2a313d;
-    --border-strong: #3a4352;
-    --accent: #7da2ff;
-    --accent-hover: #9db8ff;
-    --accent-soft: #1d2a48;
-    --accent-text: #0d1424;
-    --focus: #8fb2ff;
-    --ok: #7fdca4;
-    --ok-bg: #12301f;
-    --warn: #f2c46b;
-    --warn-bg: #352a0f;
-    --err: #ff9d9d;
-    --err-bg: #3b1616;
-    --info: #7fd0ec;
-    --info-bg: #0f2c38;
-    --vurgu: #b9a6ff;
-    --vurgu-bg: #29214a;
-    --notr: #c2c8d3;
-    --notr-bg: #262d39;
-    --replay: #cbb0ff;
-    --replay-bg: #2d2148;
-    --replay-miss: #ffc56b;
-    --replay-miss-bg: #3d2a08;
-    --ins-bg: #143823;
-    --ins: #9be8b8;
-    --del-bg: #431a1a;
-    --del: #ffb3b3;
-    --code-bg: #12161d;
-    --code-text: #e2e6ee;
-    --tk-anahtar: #ff7ab2;
-    --tk-metin: #7ee2a8;
-    --tk-yorum: #a3acb7; /* #3a3214 vurgu satırında 5.5:1 (WCAG AA) */
-    --tk-sayi: #79c0ff;
-    --tk-tip: #d2a8ff;
-    --tk-fonksiyon: #ffc680;
-    --kod-vurgu: #3a3214;
-    --chart-bar: #7da2ff;
-    --chart-bar-active: #b0c6ff;
-    --chart-grid: #2a313d;
-    --chart-target: #7c8596;
-    --shadow: none;
-    color-scheme: dark;
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --bg: #f6f7fb;
+    --surface: #ffffff;
+    --surface-2: #f2f4f8;
+    --surface-3: #e9ecf3;
+    --border: #e4e7ed;
+    --border-soft: #eceef3;
+    --border-strong: #d1d5de;
+    --border-input: #7a8093;
+    --text: #0f1117;
+    --text-2: #4b5263;
+    --muted: #5f6678;
+    --accent: #4f46e5;
+    --accent-hover: #4338ca;
+    --accent-soft: #eef2ff;
+    --accent-solid: #4f46e5;
+    --accent-solid-hover: #4338ca;
+    --accent-text: #ffffff;
+    --on-ton: #ffffff;
+    --focus: #4f46e5;
+    --ok: #065f46;
+    --ok-bg: #e6f2ee;
+    --warn: #92400e;
+    --warn-bg: #fdf3e7;
+    --err: #9f1239;
+    --err-bg: #f8e7ec;
+    --err-solid: #be123c;
+    --info: #075985;
+    --info-bg: #e6f0f6;
+    --vurgu: #7e22ce;
+    --vurgu-bg: #f5edfc;
+    --notr: #4b5263;
+    --notr-bg: #eef0f4;
+    --ins: #0f5a2f;
+    --ins-bg: #d8f3e1;
+    --del: #8e1a1a;
+    --del-bg: #fbdcdc;
+    --code-bg: #f6f8fa;
+    --code-text: #1f2328;
+    --tk-anahtar: #b0185a;
+    --tk-metin: #0a6640;
+    --tk-yorum: #57606a;
+    --tk-sayi: #0550ae;
+    --tk-tip: #6f42c1;
+    --tk-fonksiyon: #7a4500;
+    --kod-vurgu: #fff4c2;
+    --chart-bar: #4f46e5;
+    --chart-bar-active: #3730a3;
+    --chart-grid: #e4e7ed;
+    --chart-target: #8a93a3;
+    --shadow: 0 1px 3px rgb(0 0 0 / 0.06), 0 1px 2px rgb(0 0 0 / 0.04);
+    --glow: 0 0 #0000;
+    --hover: rgb(15 17 23 / 0.04);
+    --hover-accent: rgb(79 70 229 / 0.05);
+    --halka: 0 0 0 3px rgb(79 70 229 / 0.18);
+    --ust-cubuk-bg: rgb(255 255 255 / 0.92);
+    --ust-cubuk-opak: #ffffff;
+    --marka-cizgi: linear-gradient(
+      90deg,
+      transparent,
+      rgb(99 102 241 / 0.5),
+      rgb(168 85 247 / 0.5),
+      rgb(99 102 241 / 0.5),
+      transparent
+    );
+    --ortam: none;
+    --giris-izgara: rgb(79 70 229 / 0.03);
+    --secim: rgb(79 70 229 / 0.18);
+    --kaydirma: #c3c8d3;
+    --kaydirma-hover: #a3a9b7;
+    --select-ok: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%234b5263' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    color-scheme: light;
   }
 }
 
-:root[data-theme="dark"] {
-  --bg: #0f1218;
-  --surface: #171b23;
-  --surface-2: #1c212b;
-  --surface-3: #232a36;
-  --text: #e7eaf0;
-  --text-2: #c2c8d3;
-  --muted: #9aa3b2;
-  --border: #2a313d;
-  --border-strong: #3a4352;
-  --accent: #7da2ff;
-  --accent-hover: #9db8ff;
-  --accent-soft: #1d2a48;
-  --accent-text: #0d1424;
-  --focus: #8fb2ff;
-  --ok: #7fdca4;
-  --ok-bg: #12301f;
-  --warn: #f2c46b;
-  --warn-bg: #352a0f;
-  --err: #ff9d9d;
-  --err-bg: #3b1616;
-  --info: #7fd0ec;
-  --info-bg: #0f2c38;
-  --vurgu: #b9a6ff;
-  --vurgu-bg: #29214a;
-  --notr: #c2c8d3;
-  --notr-bg: #262d39;
-  --replay: #cbb0ff;
-  --replay-bg: #2d2148;
-  --replay-miss: #ffc56b;
-  --replay-miss-bg: #3d2a08;
-  --ins-bg: #143823;
-  --ins: #9be8b8;
-  --del-bg: #431a1a;
-  --del: #ffb3b3;
-  --code-bg: #12161d;
-  --code-text: #e2e6ee;
-  --tk-anahtar: #ff7ab2;
-  --tk-metin: #7ee2a8;
-  --tk-yorum: #a3acb7; /* #3a3214 vurgu satırında 5.5:1 (WCAG AA) */
-  --tk-sayi: #79c0ff;
-  --tk-tip: #d2a8ff;
-  --tk-fonksiyon: #ffc680;
-  --kod-vurgu: #3a3214;
-  --chart-bar: #7da2ff;
-  --chart-bar-active: #b0c6ff;
-  --chart-grid: #2a313d;
-  --chart-target: #7c8596;
-  --shadow: none;
-  color-scheme: dark;
+/* Yarı saydam üst çubuk: saydamlık azaltıldığında veya bulanıklık desteklenmiyorsa opak zemin (§7).
+   Seçici tüm tema bloklarıyla aynı özgüllükte ve sonra geldiği için kazanır. */
+@media (prefers-reduced-transparency: reduce) {
+  :root:not([data-theme]),
+  :root[data-theme] {
+    --ust-cubuk-bg: var(--ust-cubuk-opak);
+  }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root:not([data-theme]),
+  :root[data-theme] {
+    --ust-cubuk-bg: var(--ust-cubuk-opak);
+  }
 }
 
 *,
 *::before,
 *::after {
   box-sizing: border-box;
+}
+
+html {
+  accent-color: var(--accent-solid);
+  scrollbar-color: var(--kaydirma) transparent;
+  scrollbar-width: thin;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 html,
@@ -188,20 +309,49 @@ body {
 
 body {
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-optical-sizing: auto;
+  text-rendering: optimizeLegibility;
 }
 
+/* Gövde metnindeki bağlantı altı çizili kalır (accent/text oranı koyuda 2,64 — renk tek başına yetmez).
+   Tablo/eylem, menü, düğme ve hap biçimli bağlantılar kendi bileşen kurallarında çizgisizdir. */
 a {
   color: var(--accent);
+  text-decoration-thickness: from-font;
   text-underline-offset: 2px;
 }
 a:hover {
   color: var(--accent-hover);
 }
 
+/* Odak: tek tip 2 px halka. Köşe yuvarlatma bileşenin kendi border-radius'undan gelir. */
 :focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
-  border-radius: 3px;
+}
+
+::selection {
+  background: var(--secim);
+  color: var(--text);
+}
+
+/* İnce kaydırma çubuğu: Chromium/Firefox scrollbar-color'ı kullanır; aşağıdakiler eski WebKit için */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--kaydirma);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--kaydirma-hover);
 }
 
 h1,
@@ -211,14 +361,27 @@ h3 {
   margin: 0;
 }
 
-p {
-  margin: 0.4rem 0;
+h1 {
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 
+h2,
+h3 {
+  font-weight: 700;
+}
+
+p {
+  margin: 0.4rem 0;
+  max-width: 72ch;
+}
+
+/* Mono kimlikler (TPD-1, run-107, sha, yol). Bilgi taşıyan metin 0.75rem'in altına inmez. */
 code,
 .mono {
   font-family: var(--mono);
-  font-size: 0.92em;
+  font-size: max(0.85em, 0.75rem);
 }
 
 .gorunmez {
@@ -244,6 +407,21 @@ code,
 }
 .hata-metin {
   color: var(--err);
+}
+
+/* Zorunlu renk kipi (Windows yüksek karşıtlık): arka plan renkleri silinir; anlam taşıyan dolgular ve
+   noktalar sistem rengiyle görünür kalır (§7). */
+@media (forced-colors: active) {
+  .ilerleme-dolgu,
+  .baglanti .nokta,
+  .odak-isaret {
+    forced-color-adjust: none;
+    background: CanvasText;
+    outline: 1px solid CanvasText;
+  }
+  .akis-no {
+    outline: 1px solid CanvasText;
+  }
 }
 
 /* ---------------------------------------------------------------- kabuk */
@@ -448,8 +626,16 @@ code,
   flex: 1;
   min-width: 0;
   padding: 24px 28px 64px;
-  max-width: 1280px;
+  max-width: 1320px;
 }
+/* Geniş ekranda (≥1680 px) içerik ortalanır; sağda ölü alan kalmaz (G12). */
+@media (min-width: 1680px) {
+  .icerik {
+    margin-inline: auto;
+  }
+}
+/* "İçeriğe atla" hedefi (tabindex=-1): programatik odakta halka gösterilmez, klavye odağı içindeki
+   öğelere geçer. */
 .icerik:focus {
   outline: none;
 }
@@ -498,9 +684,24 @@ code,
 }
 
 @media (prefers-reduced-motion: reduce) {
-  * {
+  html {
+    scroll-behavior: auto !important;
+  }
+  *,
+  *::before,
+  *::after {
     transition: none !important;
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  /* Birincil düğmenin kalkışı: kalkış kuralıyla aynı seçici (.dugme:hover özgüllüğü yetmez). */
+  .dugme-birincil:hover:not(:disabled) {
+    transform: none !important;
+  }
+  /* Döner simge statik kalır (meşguliyet aria-busy ile bildirilir); nabız noktası da statik. */
+  .donen,
+  .baglanti .nokta {
+    animation: none !important;
   }
 }
 
