@@ -31,6 +31,7 @@ from tp_core.features.codegen.browser import AracSonucu
 from tp_core.features.codegen.classify import classify
 from tp_core.features.codegen.classify import test_error_kind as hata_turu
 from tp_core.features.codegen.normalize import find_exact_source
+from tp_core.integrations.forge import ForgeError
 from tp_core.models import PullRequest, Review, Script, session_scope
 from tp_core.models.codegen_feature import ScriptAdim
 from tp_core.workflow.jobs import process_one
@@ -100,6 +101,52 @@ def _bekleyen_isler(engine: Engine, tur: str) -> list[Any]:
                 {"t": tur},
             )
         )
+
+
+# --------------------------------------------- açık kabul PR'a da yazılır
+
+
+def test_acik_kabulle_merge_pr_ye_yorum_yazar(
+    api: TestClient, engine: Engine, codegen: Any, hazir: dict[str, Any], muhendis: Any
+) -> None:
+    """Kırma kanıtı olmadan (açık kabulle) merge: kabul ve not GitHub PR'ında da görünür."""
+    a = _pr_ac(api, engine, hazir["cases"][2])
+    durum, hata = _isi_isle(
+        engine, _merge_kuyruga(a.id, muhendis, "Sepet sayacı testi, kampanya değil.")
+    )
+    assert durum == "done", hata
+    yorumlar = [c["body"] for c in codegen.forge.get_pr_record(a.pr_no).get("comments", [])]
+    (kabul,) = [y for y in yorumlar if "açık kabulle merge" in y]
+    assert "⚠️ Kırarak doğrulama yapılmadı" in kabul
+    assert "Kabul notu: Sepet sayacı testi, kampanya değil." in kabul
+    assert f"Kabul eden: `{muhendis.kullanici_adi}`" in kabul
+    assert "codegen.merge_acknowledged" in kabul
+
+
+def test_kabul_yorumu_yazilamazsa_merge_yine_yapilir(
+    api: TestClient, engine: Engine, codegen: Any, hazir: dict[str, Any], muhendis: Any
+) -> None:
+    a = _pr_ac(api, engine, hazir["cases"][2])
+    gercek = codegen.forge.comment_pr
+
+    def bozuk(number: int, body: str, **kw: Any) -> None:
+        if "açık kabulle merge" in body:
+            raise ForgeError("yorum yazılamadı")
+        gercek(number, body, **kw)
+
+    codegen.forge.comment_pr = bozuk
+    try:
+        assert _isi_isle(engine, _merge_kuyruga(a.id, muhendis))[0] == "done"
+    finally:
+        codegen.forge.comment_pr = gercek
+    assert script_of(a.id)[0].durum == "merged"
+    with engine.begin() as c:
+        n = c.execute(
+            text(
+                "SELECT count(*) FROM audit_event WHERE eylem = 'codegen.merge_ack_comment_failed'"
+            )
+        ).scalar()
+    assert n == 1
 
 
 # --------------------------------------------- main ilerledi: diğer PR'ın dalı güncellenir

@@ -2538,6 +2538,62 @@ def _merged_isaretle(
     return {"durum": "merged", "pr": number, "merge_sha": merge_sha, "ci": ci}
 
 
+def _review_gerekcesi(s: Session, review_id: object) -> str | None:
+    from tp_core.models import Review
+
+    if not review_id:
+        return None
+    try:
+        r = s.get(Review, uuid.UUID(str(review_id)))
+    except ValueError:
+        return None
+    return r.gerekce if r is not None else None
+
+
+def _kabul_yorumu(
+    forge: ForgePort,
+    engine: Engine,
+    sid: uuid.UUID,
+    number: int,
+    actor: str,
+    head: str,
+    kabul: Sequence[str],
+    notu: str | None,
+    break_durum: str | None,
+) -> None:
+    """Zayıf test / kanıtsız merge kabulünü PR'a yorum olarak yazar (merge'den önce).
+
+    Kabul çekirdekte `codegen.merge_acknowledged` denetim kaydındadır; review GitHub'da yapıldığı
+    için PR'a bakan da testin hata yakaladığının kanıtlanmadığını ve bunu kimin kabul ettiğini
+    görsün. Yorum yazılamazsa merge yine yapılır (kabul denetimde), başarısızlık denetime yazılır.
+    """
+    govde = "\n".join(
+        [
+            "### Testing Probe — açık kabulle merge",
+            "",
+            *[f"⚠️ {k}" for k in kabul],
+            "",
+            f"- Kabul eden: `{actor}` (Testing Probe portalı)",
+            f"- Kabul notu: {notu or '—'}",
+            f"- Kırarak doğrulama: `{break_durum or '—'}` · head `{head[:12]}`",
+            "",
+            "_Kabul Testing Probe denetim kaydında da var (`codegen.merge_acknowledged`)._",
+        ]
+    )
+    try:
+        forge.comment_pr(number, govde)
+    except ForgeError as exc:
+        log.warning("PR #%s kabul yorumu yazılamadı: %s", number, exc)
+        with engine.begin() as conn:
+            append_audit(
+                conn,
+                actor,
+                "codegen.merge_ack_comment_failed",
+                f"script:{sid}",
+                {"pr": number, "head_sha": head, "neden": str(exc)[:500]},
+            )
+
+
 def run_merge(ctx: JobContext, engine: Engine) -> dict[str, Any]:
     from tp_core.integrations.forge import (
         ForgeConflictError,
@@ -2561,6 +2617,9 @@ def run_merge(ctx: JobContext, engine: Engine) -> dict[str, Any]:
         if not approved_hash_matches(s, sc, frozenset({"merge"})):
             raise PermanentJobError("güncel içerikle eşleşen insan merge onayı yok")
         engel = kaynak_engeli(s, cg)
+        kabul = merge_kabul_gerekceleri(sc, cg)
+        kabul_notu = _review_gerekcesi(s, yuk.get("review_id")) if kabul else None
+        break_durum = cg.break_durum
     if engel is not None:
         with engine.begin() as conn:
             append_audit(
@@ -2572,6 +2631,8 @@ def run_merge(ctx: JobContext, engine: Engine) -> dict[str, Any]:
             )
         raise PermanentJobError(f"Merge reddedildi: {engel}")
     forge = _forge()
+    if kabul:
+        _kabul_yorumu(forge, engine, sid, number, actor, head, kabul, kabul_notu, break_durum)
     try:
         merge_sha: str | None = forge.merge_pr(number, actor, expected_head_sha=head)
     except (ForgeProtectionError, ForgeConflictError, ForgeStateError, ForgeError) as exc:
