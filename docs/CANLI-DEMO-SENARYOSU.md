@@ -44,6 +44,24 @@ ekran, neye tıklanır, ne yazılır, ekranda ne görülür, ne söylenir.
 | 6 | Yedek video | `make demo-prova UI=1` (VM ya da yerel) | Aksaklıkta açılacak kayıt sunum makinesinde |
 | 7 | **Manuel baz değer ölçümü** (bir kez; Kontrol Kulesi'ndeki "Hazırlık kazancı" için) | **Kim:** bu işi normalde elle yapan bir analist / test mühendisi (ideali müşteri ekibinden). TPD-1'i okuyup test case'lerini **AI'sız** yazar, kronometreyle süreyi tutar — tahmin/uydurma değer yazılmaz. **Nereye:** `rules/baz-degerler.yaml` (`story: TPD-1`, `deger_s`: saniye, `giren`: ad soyad, `not`: "F0 ölçümü, tarih, kronometre") → commit → sunucuya yükle. `make reset` silmez; Jira'dan çekmede otomatik uygulanır. Hızlı ama reset'te silinen yol: portal TPD-1 → **Manuel baz değer** → "Ölçüm gir" (analist/PO) | Kontrol Kulesi → Hazırlık süresi (story bazında): TPD-1 Manuel baz **ölçüm** (giren + not), kazanç sütunu dolu. Ölçüm yoksa "ölçülmedi" doğrudur |
 
+#### Manuel baz değer: ölçüm yöntemi (§1.1 #7)
+
+Elle, **tek seferlik** hazırlık adımıdır; demo akışının parçası değildir. Değer **ölçülür**, tahmin
+edilmez ve kimse (Claude dahil) uydurmaz: Kontrol Kulesi bu sayıyı "ölçüm · giren: …" diye gösterir
+ve kazancı ondan hesaplar.
+
+| | |
+|---|---|
+| **Kim** | Bu işi bugün elle yapan bir analist / test mühendisi. İdeali müşteri ekibinden biri (sunumda en inandırıcısı); TPD-1'i daha önce görmemiş olmalı. |
+| **Ne ölçülür** | TPD-1 için **test case hazırlama süresi**, AI'sız: story'yi ve 6 kabul kriterini okumak, belirsizlikleri not etmek, pozitif / negatif / sınır case'leri adımları ve beklenen sonuçlarıyla yazmak (portaldaki 10 case'in kapsamına denk). |
+| **Dahil değil** | Otomasyon kodu yazmak, case'leri Jira/Xray'e girmek, PO ile toplantı beklemek. |
+| **Kronometre** | Story ekranda açılınca başlar; kişi "case'ler hazır" deyince durur. Mola varsa düşülür. |
+| **Kayıt** | `rules/baz-degerler.yaml` → `story: TPD-1`, `deger_s` (saniye), `giren: "Ad Soyad"`, `not: "F0 ölçümü, <tarih>, kronometre, <kişi rolü>"` → commit → sunucuya yükle. |
+| **Ölçüm yoksa** | Kart "ölçülmedi" kalır — doğrudur. **Söyle:** "Kazancı yalnızca sizin ekibinizin ölçtüğü manuel süreyle hesaplıyoruz; pilotta ilk iş bu ölçümü birlikte almak." |
+
+REPLAY'de ölçüm girilse bile AI süresi ölçülmez; kazanç "(REPLAY: yalnız review)" etiketlidir ve
+verimlilik iddiası olarak söylenmez.
+
 ### 1.2 Toplantıdan 30 dk önce (VM'de)
 
 Önce Mac'te bağlan ve sunucunun komut satırını (`…@tp-demo:~$`) bekle. Bağlantı komutunu
