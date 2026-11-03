@@ -272,26 +272,50 @@ getiriyor. Adım 2'de analistin 'kod hatalı' dediği F2 bulgusu buydu."
 
 ### Adım 6 · Kırarak doğrula (2 dk)
 
-1. **C2** script'i → **"Kırarak doğrula"**
-- Görülen zaman çizelgesi: bayraksız **yeşil** → `BREAK_CAMPAIGN=1` **kırmızı** → bayrak kaldırıldı
-  **yeşil** = **"Test hata yakalıyor ✓"**
-2. **C1** ve **C5** için aynısı → "Kırma etkilemedi · kabul gerekli".
+Merge'den **önce** yapılır: testin hata yakaladığı kanıtlanmadan test kalıcı pakete alınmaz.
+Uygulama bilerek bozulur (`BREAK_CAMPAIGN=1`, yalnızca koşunun bayisi için kampanya kuralı),
+test kırmızıya dönmeli.
+
+**Profil: Mühendis** → **Kod üretimi** → altta **Üretilen testler** tablosu:
+
+1. **"7 adet kampanyalı üründe 1 adet bedava verilir"** (C2) satırına tıkla → test detayı açılır.
+2. Sağdaki **Kırarak doğrula** kartında **"Kırarak doğrula"** düğmesine bas (~1,5 dk).
+   - Görülen zaman çizelgesi: Bayraksız **yeşil** → `BREAK_CAMPAIGN=1` **kırmızı** → Bayrak
+     kaldırıldı **yeşil** = **"Test hata yakalıyor ✓"**.
+3. Geri dön; **C1** ("Sepete ekle…") ve **C5** ("Kampanyasız siparişte minimum tutar…") için aynısı.
+   - Görülen: üç adım da yeşil, sarı kutu **"Zayıf test: kırılmış uygulamada da yeşil kaldı"**.
+     Beklenen budur: kampanya bozulması bu testleri etkilemez (sepet sayacı / minimum tutar
+     kontrolü). Merge engellenmez, açık kabul ister (Adım 7).
 
 **Söyle (C2 koşarken, ~1,5 dk):** "Yeşil test yetmez; testin hatayı yakaladığını kanıtlıyoruz.
 Uygulamada kampanyayı bilerek bozuyoruz, test kırmızıya dönmeli. Kampanya dışı testlerde kırılma
 etki etmez — ürün bunu gizlemiyor, merge için açık insan kabulü istiyor."
 
-### Adım 7 · GitHub PR ve korumalı main'e merge (2,5 dk)
+### Adım 7 · GitHub'da onay → portalda merge (2,5 dk)
 
-1. **GitHub sekmesi** → demo reposu → **Pull requests**: botun (`antreklabs-testing-probe[bot]`)
-   açtığı PR'ları göster; C2 PR'ında diff ve PR gövdesi (case bağlantısı, eşleme tablosu, CI sonucu
-   yorumu).
-2. GitHub'da C2 PR'ına **Approve**.
-3. Portal → C2 PR'ı → merge kapısını göster (zorunlu check yeşil + insan onayı) → **"Merge et"**.
+Ana dal korumalı (GitHub ruleset): PR, GitHub'da bir insan **Approve** etmeden merge edilemez.
+Portal senin adına GitHub onayı göndermez — onay insanın kendi GitHub hesabından gelir. Sıra
+her PR için aynıdır: **önce GitHub'da Approve, sonra portalda "Merge et"**. Approve etmeden
+"Merge et"e basarsan "Merge reddedildi: … onaylı insan review'u yok" çıkar; bu doğru davranıştır.
+
+**C2 (#11) için:**
+
+1. **Profil: Mühendis** → C2 test detayı → **Pull request** kartında **"PR'ı aç ↗"** → GitHub'da
+   PR açılır.
+2. GitHub'da göster: yazar `antreklabs-testing-probe[bot]`, **Files changed** sekmesinde üretilen
+   test dosyası, PR açıklamasında case bağlantısı ve eşleme tablosu, CI yorumu.
+3. GitHub'da sağ üst **Review changes** → **Approve** → **Submit review**.
+4. Portala dön (sayfayı yenile) → **Pull request** kartında **Merge kapısı açık ✓** → **"Merge et"**.
    - Görülen: PR **Birleşti**; main'e push koşusu otomatik başlar.
-4. Zaman varsa C1/C5'i de kabul notu yazarak merge et. **Dikkat:** her merge main'i ilerletir;
-   kalan PR'ların CI'ı yeniden koşar (~1,5 dk) ve GitHub onayları düşer → yeniden **Approve** gerekir.
-   Vakit yoksa yalnız C2 yeter.
+
+**C1 (#10) ve C5 (#12) için (vakit varsa):** aynı 1–4; 4. adımda merge kapısının altındaki sarı
+kutuda **"Uyarıyı gördüm; zayıf test olarak merge et (not denetime yazılır)"** kutusunu işaretle,
+sonra **"Merge et"**. Bu kabul, kim/ne zaman bilgisiyle ürünün **Denetim** kaydına (hash zincirli)
+ve Kontrol Kulesi'ne yazılır.
+
+> **Dikkat:** her merge main'i ilerletir; kalan PR'ların CI'ı yeniden koşar (~1,5 dk) ve GitHub
+> önceki onayları düşürür → kalan PR'ı GitHub'da **yeniden Approve** et, CI yeşil olunca merge et.
+> Vakit yoksa yalnız C2 yeter.
 
 **Söyle:** "Ana dal korumalı: doğrudan push yok, bot merge edemez; CI yeşil ve insan onayı olmadan
 merge yok — bu GitHub ruleset'i. Ve önemli: **CI'da AI yok.** Model anahtarı, MCP, ajan yok;
