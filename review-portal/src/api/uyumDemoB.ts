@@ -17,6 +17,7 @@ import type {
   KontrolKulesi,
   KpiAnahtari,
   Kosu,
+  KosuAdimi,
   KosuDetay,
   KosuKaynagi,
   PrCheck,
@@ -25,6 +26,8 @@ import type {
   ScriptDetay,
   ScriptDurumu,
   Tetik,
+  PwAdimi,
+  TestDenemesi,
   TestSonucu,
   YerelKontrol,
   YerelKontrolHatasi,
@@ -422,14 +425,46 @@ function triageOzeti(t: Ham): Pick<TestSonucu, "triage_sinifi" | "triage_alt_tur
   };
 }
 
+function adimUyarla(a: Ham, derinlik = 0): PwAdimi {
+  const alt = derinlik < 6 ? dizi(a.adimlar).map((x) => adimUyarla(x, derinlik + 1)) : [];
+  return {
+    baslik: metin(ilk(a, "baslik", "title")),
+    sure_ms: sayi(ilk(a, "sure_ms", "duration")),
+    hata: metinYaDaNull(a.hata),
+    ...(alt.length ? { adimlar: alt } : {}),
+  };
+}
+
+function denemeUyarla(d: Ham): TestDenemesi {
+  const h = nesneMi(d.hata) ? (d.hata as Ham) : null;
+  const adimlar = dizi(d.adimlar).map((a) => adimUyarla(a));
+  return {
+    deneme: sayi(d.deneme),
+    sonuc: metin(d.sonuc),
+    sure_ms: sayi(d.sure_ms),
+    hata: h
+      ? { mesaj: metinYaDaNull(h.mesaj), stack: metinYaDaNull(h.stack), snippet: metinYaDaNull(h.snippet), konum: metinYaDaNull(h.konum) }
+      : typeof d.hata === "string" && d.hata
+        ? { mesaj: d.hata }
+        : null,
+    ...(adimlar.length ? { adimlar } : {}),
+    stdout: metinYaDaNull(d.stdout),
+    stderr: metinYaDaNull(d.stderr),
+  };
+}
+
 export function testSonucuUyarla(t: Ham): TestSonucu {
   const ekler = dizi(t.ekler).map((e) => ({
     ad: metin(ilk(e, "ad", "name"), "ek"),
     tur: metinYaDaNull(ilk(e, "tur", "contentType", "content_type")),
     url: adresUyarla(e.url),
+    deneme: sayiYaDaNull(e.deneme),
   }));
+  const denemeler = dizi(t.denemeler).map(denemeUyarla);
   return {
     ...(ekler.length ? { ekler } : {}),
+    ...(denemeler.length ? { denemeler } : {}),
+    dosya: metinYaDaNull(ilk(t, "dosya", "file")),
     id: kimlik(t.id),
     test_adi: metin(t.test_adi),
     durum: testSonucDurumu(ilk(t, "durum", "sonuc", "status")),
@@ -491,6 +526,44 @@ export function kosuUyarla(k: Ham): Kosu {
     script_id: metinYaDaNull(kimlik(k.script_id)),
     saglik_hatasi:
       metinYaDaNull(k.saglik_hatasi) ?? (saglik.ok === false ? metin(saglik.hata, "Koşu öncesi sağlık yoklaması başarısız.") : null),
+    ...githubArtefakti(k.github_artefakt),
+  };
+}
+
+function githubArtefakti(x: unknown): Pick<Kosu, "github_artefakt"> {
+  if (!nesneMi(x)) return {};
+  const g = x as Ham;
+  const durum = metin(g.durum);
+  return durum ? { github_artefakt: { durum, hata: metinYaDaNull(g.hata) } } : {};
+}
+
+function kosuAdimlari(x: unknown): KosuDetay["adimlar"] {
+  if (!nesneMi(x)) return null;
+  const out: Record<string, KosuAdimi> = {};
+  for (const [ad, ham] of Object.entries(x as Ham)) {
+    if (!nesneMi(ham)) continue;
+    const a = ham as Ham;
+    out[ad] = {
+      ok: a.ok === true,
+      atlandi: a.atlandi === true,
+      reason: metinYaDaNull(a.reason),
+      error: metinYaDaNull(a.error),
+      mode: metinYaDaNull(a.mode),
+      status: metinYaDaNull(a.status),
+    };
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+function githubBilgisi(x: unknown): KosuDetay["github"] {
+  if (!nesneMi(x)) return null;
+  const g = x as Ham;
+  const meta: Record<string, string> = {};
+  if (nesneMi(g.meta)) for (const [k, v] of Object.entries(g.meta as Ham)) if (v !== null && v !== undefined && v !== "") meta[k] = String(v);
+  return {
+    isler: dizi(g.isler).map((j) => ({ ad: metin(j.ad), sonuc: metinYaDaNull(j.sonuc), url: adresUyarla(j.url) })),
+    meta,
+    conclusion: metinYaDaNull(g.conclusion),
   };
 }
 
@@ -520,6 +593,8 @@ export function kosuDetayUyarla(k: Ham): KosuDetay {
     log_url: adresUyarla(k.log_url),
     hata: metinYaDaNull(k.hata),
     uyarilar: dizgeler(k.uyarilar),
+    adimlar: kosuAdimlari(k.adimlar),
+    github: githubBilgisi(k.github),
   };
 }
 

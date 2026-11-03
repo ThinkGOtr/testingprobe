@@ -317,3 +317,36 @@ def test_boyut_siniri_st_size_yerine_okunan_bayta_bakar(
     with pytest.raises(RaporHatasi, match="çok büyük"):
         p._oku(sonuc / "results.json", yerel)
     assert p._oku(sonuc / "yok.json", yerel) is None
+
+
+def test_deneme_ayrintisi_adimlar_stack_cikti_sinirli() -> None:
+    """Portal ayrıntı paneli: hata + stack + konum, adım ağacı (sınırlı), stdout/stderr (base64)."""
+    import base64
+
+    from tp_core.features.ci import parse
+
+    derin = {"title": "d0", "duration": 1}
+    for i in range(1, 8):
+        derin = {"title": f"d{i}", "duration": 1, "steps": [derin]}
+    sonuc = {
+        "retry": 1,
+        "status": "failed",
+        "duration": 50,
+        "errors": [{"message": "\x1b[31mboom\x1b[0m", "stack": "S" * 20_000}],
+        "steps": [{"title": f"a{i}", "duration": i} for i in range(400)] + [derin],
+        "stdout": [{"text": "x" * 10_000}],
+        "stderr": [{"buffer": base64.b64encode("uyarı\n".encode()).decode()}],
+    }
+    d = parse._deneme_ozeti(sonuc)
+    assert d["hata"]["mesaj"] == "boom"  # ANSI temizlenir
+    assert len(d["hata"]["stack"]) <= parse.MAX_STACK + 1
+    assert len(d["adimlar"]) == parse.MAX_ADIM  # toplam adım sınırı
+    assert len(d["stdout"]) <= parse.MAX_CIKTI + 1
+    assert d["stderr"] == "uyarı\n"
+    # Derinlik sınırı: ağaç MAX_ADIM_DERINLIK'te kesilir.
+    d2 = parse._deneme_ozeti({"status": "passed", "steps": [derin]})
+    n, a = 0, d2["adimlar"][0]
+    while "adimlar" in a:
+        n, a = n + 1, a["adimlar"][0]
+    assert n == parse.MAX_ADIM_DERINLIK - 1
+    assert "hata" not in d2  # geçen denemede hata alanı yok

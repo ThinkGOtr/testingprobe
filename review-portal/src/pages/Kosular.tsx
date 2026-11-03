@@ -8,6 +8,7 @@ import { BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, Metrik, SayfaB
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { HATA_SINIFI, KAYNAK, KOSU_DURUMU, TETIK } from "../lib/etiketler";
 import { sure, tarih } from "../lib/format";
+import { CiAdimlari, githubYedekNotu, TestSonuclari } from "./KosuSonuclari";
 
 const TETIK_TONU: Partial<Record<Tetik, "notr" | "bilgi" | "vurgu" | "uyari">> = {
   nightly: "bilgi",
@@ -275,6 +276,8 @@ function HataListesi({ k }: { k: KosuDetayTuru }) {
   );
 }
 
+const githubaGider = (u: string | null | undefined) => Boolean(u && /^https:\/\/github\.com\//.test(u));
+
 export function KosuDetay() {
   const { id = "" } = useParams();
   const v = useVeri(() => api.kosu(id), [id]);
@@ -285,6 +288,7 @@ export function KosuDetay() {
   if (v.hata && !v.veri) return <HataKutusu hata={v.hata} yenile={() => void v.yenile()} />;
   const k = v.veri;
   if (!k) return null;
+  const ghYedek = githubYedekNotu(k);
 
   return (
     <>
@@ -317,9 +321,9 @@ export function KosuDetay() {
       <Kart baslik="Raporlar ve bağlantılar">
         <div className="artefakt-baglantilari">
           <Baglanti href={k.rapor_url} yokNedeni="koşu bu raporu üretmedi ya da core sunmuyor">
-            Playwright HTML raporu
+            Playwright HTML raporu{githubaGider(k.rapor_url) ? " (GitHub)" : ""}
           </Baglanti>
-          <Baglanti href={k.junit_url ?? null} yokNedeni="koşu JUnit XML üretmedi">
+          <Baglanti href={k.junit_url ?? null} yokNedeni={ghYedek ? "GitHub artefaktında" : "koşu JUnit XML üretmedi"}>
             JUnit XML
           </Baglanti>
           <Baglanti href={k.allure_url} yokNedeni="yok">
@@ -340,11 +344,12 @@ export function KosuDetay() {
               CI işi
             </Baglanti>
           )}
-          <Baglanti href={k.log_url} yokNedeni="yok">
+          <Baglanti href={k.log_url} yokNedeni={ghYedek ? "GitHub artefaktında" : "yok"}>
             Koşu günlüğü
           </Baglanti>
           {k.script_id && <Link to={`/kod/${encodeURIComponent(k.script_id)}`}>Üretilen test</Link>}
         </div>
+        {ghYedek && <p className="kucuk soluk">{ghYedek}</p>}
         {k.hata && <p className="kucuk hata-metin">{k.hata}</p>}
         {k.uyarilar.length > 0 && (
           <ul className="kucuk duz-liste">
@@ -364,63 +369,8 @@ export function KosuDetay() {
         </div>
       </Kart>
       <HataListesi k={k} />
-      <Kart baslik="Test sonuçları">
-        {k.sonuclar.length === 0 ? (
-          <BosDurum baslik={k.durum === "queued" || k.durum === "running" ? "Koşu sürüyor…" : "Sonuç yok."} />
-        ) : (
-          <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Test sonuçları tablosu">
-            <table className="tablo">
-              <thead>
-                <tr>
-                  <th scope="col">Test</th>
-                  <th scope="col">Durum</th>
-                  <th scope="col" className="sayi">
-                    Retry
-                  </th>
-                  <th scope="col">Süre</th>
-                  <th scope="col">Triage</th>
-                </tr>
-              </thead>
-              <tbody>
-                {k.sonuclar.map((s) => (
-                  <tr key={s.id}>
-                    <td>
-                      {s.test_adi}
-                      {s.hata_mesaji && <pre className="hata-mesaji">{s.hata_mesaji}</pre>}
-                      {s.ekler && s.ekler.length > 0 && (
-                        <div className="satir-ogeler kucuk">
-                          {s.ekler.map((e, i) => (
-                            <Baglanti key={`${e.ad}-${i}`} href={e.url}>
-                              {e.ad}
-                            </Baglanti>
-                          ))}
-                        </div>
-                      )}
-                    </td>
-                    <td>
-                      <DurumCipi d={s.durum} />
-                    </td>
-                    <td className="sayi">{s.retry}</td>
-                    <td>{sure(s.sure_ms)}</td>
-                    <td>
-                      {s.failure_id ? (
-                        <span className="satir-ogeler">
-                          {s.triage_sinifi && <SinifCipi sinif={s.triage_sinifi} alt={s.triage_alt_tur ?? null} />}
-                          <Link to={`/hatalar/${encodeURIComponent(s.failure_id)}`}>Triage sonucu</Link>
-                        </span>
-                      ) : s.durum === "failed" ? (
-                        <span className="soluk kucuk">sınıflandırılıyor</span>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Kart>
+      <CiAdimlari k={k} />
+      <TestSonuclari k={k} />
     </>
   );
 }

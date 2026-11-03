@@ -2418,3 +2418,91 @@ mark.kaynak-deger {
   gap: 4px 10px;
   align-items: baseline;
 }
+
+/* Koşu detayı: test sonucu ayrıntısı (KosuSonuclari.tsx) */
+.dugme-metin {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.dugme-metin:hover {
+  text-decoration: underline;
+}
+.dugme-metin:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.hata-mesaji-kisa {
+  max-height: 6.5em;
+  overflow: hidden;
+}
+.test-ayrinti-satiri > td {
+  background: var(--surface-2);
+}
+.test-ayrinti {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.test-ayrinti .kod-blok {
+  max-height: 24em;
+  overflow: auto;
+}
+.test-deneme,
+.test-blok {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+}
+.test-deneme > summary,
+.test-blok > summary {
+  cursor: pointer;
+}
+.pw-adimlar {
+  margin: 4px 0;
+  padding-left: 1.25rem;
+}
+.pw-adim {
+  margin: 2px 0;
+}
+.pw-adim-hata > .satir-ogeler {
+  color: var(--err);
+  font-weight: 600;
+}
+.test-ekleri {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+}
+.test-ek-resim,
+.test-ek-video {
+  margin: 0;
+}
+.test-ek-resim img,
+.test-ek-video video {
+  display: block;
+  max-width: min(480px, 100%);
+  max-height: 320px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.ci-meta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 12px;
+  margin: 8px 0;
+}
+.ci-meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.kod-blok.gunluk {
+  max-height: 28em;
+  overflow: auto;
+}

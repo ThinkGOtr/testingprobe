@@ -155,6 +155,15 @@ Artefakt kökleri düzdür (tek dizin yüklenir); adlar yerel koşuyla (test-run
 | `break-verify-results` | break-verify | `break-verify.json`, `break-verify.log`, `results.json` (son adım) |
 | `ast-guard-report` · `semgrep-report` | ast-guard · semgrep | `ast-guard-report.json` · `semgrep.json` |
 
+**Portalda yerel kopya:** çekirdek alımda `test-local-results`'ı (raporu taşımıyorsa ayrıca
+`playwright-report`'u) aynen `TP_GITHUB_ARTIFACTS_PATH/gh/<run_id>-<deneme>/src/e2e/results/` altına
+açar (`tp_gh_artifacts` volume'ü: core-worker yazar, core-api salt okur; `safe_extract_zip`). Portal
+Playwright HTML / JUnit / allure-results / `run-checks.log` bağlantılarını GitHub'a gitmeden oturumlu
+artefakt ucundan açar; kopya alınamazsa GitHub bağlantısına düşer. En yeni `TP_GITHUB_ARTIFACTS_KEEP`
+(varsayılan 30) kopya saklanır. Özellikten önce alınmış koşular için (core-worker içinde):
+`python -m tp_core.features.ci artefakt-indir <run_id>` (idempotent). Allure HTML raporu CI'da
+üretilmez; portal ham `allure-results` listesini gösterir.
+
 **`ci-meta.json`** (`schema_version: 1`, `scripts/github-ci-results.sh`): `kaynak: "github"`, `job`,
 `tetik` (`pr|push|nightly|deploy|manual`), `istek_id`, `sha` (test edilen commit), `github_sha`, `ref`,
 `event`, `repo`, `run_id`, `run_attempt`, `run_url`, `playwright`, `toolchain_image`, `exit_code`,

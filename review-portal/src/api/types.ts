@@ -703,6 +703,47 @@ export interface Kosu {
   script_id: string | null;
   /** Koşu öncesi sağlık yoklaması başarısız (test-runner `saglik.ok=false`): Playwright başlamadı. */
   saglik_hatasi: string | null;
+  /**
+   * GitHub koşusunun raporlarının core'daki yerel kopyası (core `github_artefakt`). `indirildi` /
+   * `mevcut`: bağlantılar core'dan; `hata` / `yok` / `budandi`: bağlantılar GitHub'a düşer.
+   */
+  github_artefakt?: { durum: string; hata: string | null } | null;
+}
+
+/** Playwright `test.step` ağacı (core results.json'dan; sınırlı). */
+export interface PwAdimi {
+  baslik: string;
+  sure_ms: number;
+  hata?: string | null;
+  adimlar?: PwAdimi[];
+}
+
+/** Bir testin tek denemesi (core `denemeler[]`): hata + stack, adımlar, stdout/stderr. */
+export interface TestDenemesi {
+  deneme: number;
+  sonuc: string;
+  sure_ms: number;
+  hata?: { mesaj?: string | null; stack?: string | null; snippet?: string | null; konum?: string | null } | null;
+  adimlar?: PwAdimi[];
+  stdout?: string | null;
+  stderr?: string | null;
+}
+
+/** Yerel CI adımı (toolchain `/check`: deps, tsc, eslint, ast_guard, run). */
+export interface KosuAdimi {
+  ok: boolean;
+  atlandi: boolean;
+  reason?: string | null;
+  error?: string | null;
+  mode?: string | null;
+  status?: string | null;
+}
+
+/** GitHub koşusu özeti (core `github`): işler ve ci-meta.json alanları. */
+export interface GithubKosuBilgisi {
+  isler: { ad: string; sonuc: string | null; url: string | null }[];
+  meta: Record<string, string>;
+  conclusion: string | null;
 }
 
 export interface TestSonucu {
@@ -718,7 +759,11 @@ export interface TestSonucu {
   triage_alt_tur?: string | null;
   case_id: string | null;
   /** Playwright ekleri (trace, ekran görüntüsü, video); url core'un artefakt ucundan. */
-  ekler?: { ad: string; tur: string | null; url: string | null }[];
+  ekler?: { ad: string; tur: string | null; url: string | null; deneme?: number | null }[];
+  /** Spec dosyası (core `dosya`). */
+  dosya?: string | null;
+  /** Denemeler (core results.json'dan): hata/stack, adımlar, çıktı. */
+  denemeler?: TestDenemesi[];
 }
 
 /** Koşunun triage kayıtları (core `failure`; test sonucuna bağlı olmayan ortam hatası dahil). */
@@ -739,6 +784,10 @@ export interface KosuDetay extends Kosu {
   log_url: string | null;
   hata: string | null;
   uyarilar: string[];
+  /** Yerel CI adımları (toolchain `/check`); GitHub koşusunda yok. */
+  adimlar?: Record<string, KosuAdimi> | null;
+  /** GitHub koşusu: işler + ci-meta.json özeti. */
+  github?: GithubKosuBilgisi | null;
 }
 
 // ---------------------------------------------------------------- Triage
