@@ -276,7 +276,7 @@ test("Demo-B: kod üretimi → yerel kontrol → PR → kırarak doğrula → me
   const satirlar = page.getByRole("region", { name: "Koşular tablosu" }).getByRole("row");
   await expect(sayac).toBeVisible();
   const once = await satirlar.count();
-  await page.getByRole("button", { name: "Deploy tetikle" }).click();
+  await page.getByRole("button", { name: "Deploy sonrası testleri koş" }).click();
   // Önceki deploy koşusu hâlâ kuyruktaysa core yeni koşu açmaz ("zaten kuyrukta"): satır eklenmez.
   const zatenKuyrukta = page.getByText(/zaten kuyrukta/).first();
   await expect(page.getByText(/kuyruğa alındı|zaten kuyrukta/).first()).toBeVisible();

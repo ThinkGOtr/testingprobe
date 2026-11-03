@@ -145,11 +145,22 @@ export function Kosular() {
         aciklama="CI yalnızca onaylı, deterministik test kodunu koşturur; CI'da AI yoktur. Yerel test-runner her zaman koşar; GitHub Actions ve Sauce Labs kimlik bilgileri varsa aynı testleri koşturur."
         eylemler={
           <>
-            <IslemDugmesi roller={["presenter"]} tur="ikincil" calisiyor={islem.calisiyor} onClick={() => tetikle("nightly")}>
-              Gece koşusu
+            <IslemDugmesi
+              roller={["presenter"]}
+              tur="ikincil"
+              calisiyor={islem.calisiyor}
+              title="Her gece 02:00'de (UTC) otomatik koşan tam regresyonu şimdi başlatır: kod değişmese de veri, ortam ve kararsız (flaky) test sorunlarını yakalar."
+              onClick={() => tetikle("nightly")}
+            >
+              Gece koşusunu şimdi başlat
             </IslemDugmesi>
-            <IslemDugmesi roller={["presenter"]} calisiyor={islem.calisiyor} onClick={() => tetikle("deploy")}>
-              Deploy tetikle
+            <IslemDugmesi
+              roller={["presenter"]}
+              calisiyor={islem.calisiyor}
+              title="Müşterinin deploy hattının yükleme bitince göndereceği sinyali taklit eder ve testleri koşturur; uygulamayı hiçbir yere yüklemez."
+              onClick={() => tetikle("deploy")}
+            >
+              Deploy sonrası testleri koş
             </IslemDugmesi>
           </>
         }

@@ -600,7 +600,12 @@ jobs:
         run: uv run --no-project --with-requirements requirements.txt pytest -q
 
   sauce:
-    # Zorunlu DEĞİL (continue-on-error): Sauce veya tünel hatası PR'ı kilitlemez (§8.5).
+    # Zorunlu DEĞİL: Sauce hiçbir zaman PR'ı/merge'ü kilitlemez (§8.5). Sonuç son adımda
+    # sauce.json'a göre verilir:
+    #   testler kırmızı (durum=failed) → deploy/gece koşusunda koşu KIRMIZI; PR/push'ta job
+    #     kırmızı ama koşu yeşil (continue-on-error);
+    #   Sauce'a ulaşılamadı (durum=error: oturum sınırı, tünel, kimlik) / atlandı → job yeşil,
+    #     "Sauce koşmadı" uyarısı (test hiç koşmadı; uygulama hatası sayılmaz).
     # Her durumda (kimlik yoksa da) `sauce-results` artefaktına sauce.json yazılır: çekirdek
     # "atlandı" / "kırmızı" / "hata"yı ayırır ve Sauce job linkini (job_url) buradan okur.
     name: sauce
@@ -608,7 +613,7 @@ jobs:
     if: needs.changes.outputs.run_tests == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    continue-on-error: true
+    continue-on-error: ${{ needs.changes.outputs.trigger != 'deploy' && needs.changes.outputs.trigger != 'nightly' }}
     # Sauce hesabı tek eşzamanlı oturum: iki koşunun Sauce job'u aynı anda başlarsa ikincisi
     # "concurrent session limit" ile düşer. Repo genelinde sıraya girer; süren job iptal edilmez.
     # (GitHub bekleyen tek job tutar: üçüncü gelirse bekleyen eski job iptal olur.)
@@ -750,8 +755,8 @@ jobs:
             -e "TP_SAUCE=1" \
             -e "TP_TRIGGER=$TP_TRIGGER" \
             2>&1 | tee ../results/sauce/saucectl.log || rc=${PIPESTATUS[0]}
+          # Karar burada değil, son adımda (sauce.json): altyapı hatası testi kırmızıya boyamasın.
           echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
-          exit "$rc"
 
       # Sauce job linki adım özetine VE sauce.json'a (artefakt) yazılır. Kimlik yoksa "atlandi".
       - name: Sauce özeti ve sauce.json
@@ -784,3 +789,19 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
           path: tp-sauce/
+
+      - name: Sauce sonucu
+        if: always()
+        run: |
+          set -euo pipefail
+          durum="$(jq -r '.durum // "error"' tp-sauce/sauce.json 2>/dev/null || echo error)"
+          neden="$(jq -r '.neden // ""' tp-sauce/sauce.json 2>/dev/null || true)"
+          case "$durum" in
+            passed) echo "Sauce: testler geçti" ;;
+            failed)
+              echo "::error title=Sauce: testler kırmızı::Aynı testler Sauce tarayıcısında kırmızı ($TP_TRIGGER). $neden"
+              exit 1 ;;
+            *)
+              echo "::warning title=Sauce koşmadı::${neden:-Sauce sonucu okunamadı} — test koşmadı; uygulama hatası sayılmaz."
+              { echo; echo "> ⚠️ **Sauce koşmadı:** ${neden:-sonuç okunamadı}. Testler Sauce'ta çalışmadı; bu uygulama ya da test hatası değildir."; } >> "$GITHUB_STEP_SUMMARY" ;;
+          esac

@@ -330,12 +330,28 @@ yalnızca onaylı, deterministik test kodu koşuyor."
 
 **Profil: Sunucu** → sol menü **Koşular**
 
-1. Push koşusunu göster (GitHub Actions'tan canlı akıyor).
-2. **"Deploy tetikle"** (vakit varsa **"Gece koşusu"**).
-3. İstersen GitHub → **Actions** sekmesinde aynı koşuyu göster.
+Dört tetik, aynı deterministik test paketi (GitHub Actions; CI'da AI yok):
 
-**Söyle:** "Tetikler: PR, main'e push, gece ve deploy olayı — hepsi aynı deterministik paket,
-GitHub Actions'ta."
+| Tetik | Ne zaman | Neden |
+|---|---|---|
+| PR | Bot PR açınca / günceller | Merge kapısı: test ana dala girmeden yeşil olmalı |
+| push | Main'e merge olunca (otomatik) | Ana dalın yeni hâli bütün paketle doğrulanır |
+| deploy | Müşterinin deploy hattı yükleme bitince sinyal gönderir | Yeni ortamda (QA) testler koşar |
+| gece | Her gece 02:00 UTC (zamanlanmış) | Kod değişmese de veri/ortam bozulmaları ve kararsız (flaky) testler yakalanır; pahalı geniş regresyon gündüzü yormaz |
+
+1. Az önceki merge'lerin başlattığı **push** koşularını göster.
+2. **"Deploy sonrası testleri koş"** → listeye **deploy** koşusu düşer. Bu düğme uygulamayı
+   **yüklemez**; müşterinin deploy hattının göndereceği sinyali taklit eder (demoda deploy hattı yok).
+3. Vakit varsa **"Gece koşusunu şimdi başlat"** (zamanlanmış gece koşusunun elle başlatılması).
+4. İstersen GitHub → **Actions** sekmesinde aynı koşuları göster.
+
+**Söyle:** "Aynı onaylı paket dört tetikte koşar: PR'da kapı, merge'de ana dal, deploy'da yeni
+ortam, gece de kod değişmese bile ortam ve veri kayması için. Gerçek kurulumda deploy sinyalini
+sizin deploy hattınız gönderir; burada düğmeyle taklit ediyoruz."
+
+**Sauce sonucu (deploy/gece):** Sauce'ta testler kırmızıysa koşu kırmızı olur. Sauce'a
+ulaşılamadıysa (ör. oturum sınırı) koşu yeşil kalır, özette **"⚠️ Sauce koşmadı"** uyarısı
+görünür — test koşmadığı için uygulama hatası sayılmaz.
 
 ### Adım 9 · Sauce Labs (0,5 dk)
 
@@ -478,7 +494,7 @@ Sunum sonrası (VM): `make export-audit`.
 
 1. Claude Code kanalı dakikası
 2. Adım 10 (raporlar) — yalnız soru gelirse
-3. Adım 8'de "Gece koşusu"
+3. Adım 8'de "Gece koşusunu şimdi başlat"
 4. Adım 7'de C1/C5 merge'ü — yalnız C2
 5. Adım 4'te "Düzelt" gösterimi
 6. Adım 11 tek cümleye

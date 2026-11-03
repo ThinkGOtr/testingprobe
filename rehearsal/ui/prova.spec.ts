@@ -554,9 +554,9 @@ canliTesti("canlı: 14 adım + locator kırma/onarım arayüzden", async ({ page
   await adim(page, "Sunucu: deploy + gece koşusu", async () => {
     await giris(page, "sunucu");
     await page.goto("/kosular");
-    await page.getByRole("button", { name: "Deploy tetikle" }).click();
+    await page.getByRole("button", { name: "Deploy sonrası testleri koş" }).click();
     await expect(page.getByText(/kuyruğa alındı|zaten kuyrukta/).first()).toBeVisible();
-    await page.getByRole("button", { name: "Gece koşusu" }).click();
+    await page.getByRole("button", { name: "Gece koşusunu şimdi başlat" }).click();
     await bekle(
       "deploy + nightly bitti",
       async () => {

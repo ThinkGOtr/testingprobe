@@ -234,7 +234,7 @@ test("sunucu: açılış Demo yol haritası; Kontrol Kulesi (KPI kaynağı), ko�
   await page.goto("/kosular");
   await page.getByRole("combobox", { name: "Tetik" }).selectOption("break_verify");
   await expect(page).toHaveURL(/tetik=break_verify/);
-  await page.getByRole("button", { name: "Deploy tetikle" }).click();
+  await page.getByRole("button", { name: "Deploy sonrası testleri koş" }).click();
   await expect(page.getByText(/Deploy koşusu sıraya alındı/).first()).toBeVisible();
   await page.screenshot({ path: `${EKRAN_DIZINI}/27-kosular-suzgec.png`, fullPage: true });
   await page.goto("/kosular/run-108");

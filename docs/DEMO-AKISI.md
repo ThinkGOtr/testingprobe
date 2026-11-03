@@ -97,7 +97,7 @@ make security-check # Özet: 10/10
 - **Sauce süresi:** Sauce hesabı tek eşzamanlı oturum; push koşusundaki Sauce adımı ~11 dk sürer ve
   ürün push koşusunun bitmesini bekler. Sunum için demo reposunda
   `gh variable set SAUCE_TETIKLER --repo ThinkGOtr/testingprobe-demo-app --body deploy,nightly`
-  (Sauce'u "Deploy tetikle" ve gece koşusunda gösterin); sunumdan sonra değişkeni silin.
+  (Sauce'u "Deploy sonrası testleri koş" ve gece koşusunda gösterin); sunumdan sonra değişkeni silin.
 
 ### 1.3 Tarayıcı ve oturumlar
 
@@ -181,7 +181,7 @@ Sırayla uygulanır; her biri yaklaşık kazancıyla:
 
 1. İsteğe bağlı Claude Code dakikası (zaten toplamda yok).
 2. Adım 10 (Allure/JUnit) — toplamda yok; yalnızca soru gelirse.
-3. Adım 8'de "Gece koşusu" — yalnız "Deploy tetikle" (≈ 0,5 dk).
+3. Adım 8'de "Gece koşusunu şimdi başlat" — yalnız "Deploy sonrası testleri koş" (≈ 0,5 dk).
 4. Adım 4b'de "Düzelt" gösterimi — hepsini doğrudan onaylayın (≈ 0,5 dk).
 5. Adım 11 tek cümleye — yalnız AI katkısı ve "ölçülmedi" kutusu (≈ 0,5 dk).
 6. L3'te PR gövdesinin gezilmesi — yalnız 1 satırlık diff (≈ 0,5 dk).
@@ -227,7 +227,7 @@ insanda." Ayrıntı: [CLAUDE-CODE-KANALI.md](CLAUDE-CODE-KANALI.md).
 | 5b | Mühendis · C3 script | C3'ü açın | **Defect adayı**: "beklenen "0", gerçekleşen "1" (3/3 tekrar)" — PR açılmadı | "İşte değer: test, dokümandaki doğru davranışı bekliyor ve bugünkü kod onu karşılamıyor. Ürün testi 'düzeltmeye' çalışmıyor; bunu bir ürün hatası adayı olarak insana getiriyor. Bunu Faz 4'te göreceğiz." | 0,5 dk | — / 1,5 sn | — | `make demo-check` provada 0 döndüyse bu an gelir; gelmezse F2 kararı yanlıştır (yedek video V2) |
 | 6 | Mühendis · C2 script (sonra C1, C5) | "Kırarak doğrula" | Zaman çizelgesi: bayraksız **yeşil** → `BREAK_CAMPAIGN=1` **kırmızı** (assertion) → bayrak kaldırıldı **yeşil** = "Test hata yakalıyor ✓". C1/C5'te aynı işlem "Kırma etkilemedi · kabul gerekli" (zayıf test işareti) | "Yeşil test yetmez; testin hatayı yakaladığını kanıtlıyoruz: uygulamada kampanyayı bilerek bozuyoruz, test kırmızıya dönmeli. Kampanya dışı testlerde kırılma etki etmez — ürün bunu gizlemiyor, merge için açık insan kabulü istiyor." C2'nin ~1,5 dk'lık koşusu sırasında bu cümleyi söyleyin | 2 dk | 1 dk 45 sn / 120 sn (C2 86,9 + C1 16,7 + C5 16,6) | — | Kırma koşusu "tamamlanamadı" biterse tekrar "Kırarak doğrula"; ikinci kez olursa söyleyip merge'e geçin (merge kabul notu ister) |
 | 7 | Mühendis · C2, C1, C5 PR'ları | Merge kapısını gösterin → "Merge et" (C1/C5'te kabul notu yazarak) | Merge kapısı: zorunlu `local-ci` yeşil + insan onayı; PR **Birleşti**; main'e push CI otomatik kuyruğa girer | "Ana dal korumalı: doğrudan push yok, bot merge edemez; CI yeşil ve insan onayı olmadan merge yok. GitHub'da bu bir ruleset; burada aynı kural yerel forge'da." **Merge beklemesinde (C1, C5) şunları söyleyin:** "CI'da AI yok: model anahtarı, MCP, ajan yok — yalnızca onaylı, deterministik test kodu" ve 9. adımın Sauce notu (aşağıda) | 2 dk | 2 dk 02 sn / 126,6 sn (C2 2,1 + C1 50,3 + C5 74,2) | — | CI sürüyorsa "CI sürüyor; yeşil olunca merge edilebilir" — bekleyin ve bekleme cümlelerini söyleyin. 2 dk'yı aşarsa yedek video V2 (§1.5: hazır PR yedeği yok) |
-| 8 | Sunucu · **Koşular** | Push koşusunu gösterin → "Deploy tetikle" (zaman varsa "Gece koşusu") | Tetik türleri: `push`, `deploy`, `nightly`; koşu durumu canlı akar | "Tetikler: PR, main'e push, gece ve deploy olayı — hepsi aynı deterministik paket." | 1 dk | 1 dk 15 sn / 77,1 sn (push + deploy + gece) | — | Koşu 2 dk'yı aşarsa adım 11'e geçin, koşuyu sonra gösterin; tamamen takılırsa yedek video V3 |
+| 8 | Sunucu · **Koşular** | Push koşusunu gösterin → "Deploy sonrası testleri koş" (zaman varsa "Gece koşusunu şimdi başlat") | Tetik türleri: `push`, `deploy`, `nightly`; koşu durumu canlı akar | "Tetikler: PR, main'e push, gece ve deploy olayı — hepsi aynı deterministik paket." | 1 dk | 1 dk 15 sn / 77,1 sn (push + deploy + gece) | — | Koşu 2 dk'yı aşarsa adım 11'e geçin, koşuyu sonra gösterin; tamamen takılırsa yedek video V3 |
 | 9 | (adım 7'de anlatıldı) | — | Koşunun yerel Chromium job'u; QA ortamı = compose'daki uygulama; yol haritasında "yerel yedek" | **Dürüst not:** "Sauce Labs job'u CI'da hazır ama hesabın kimliği henüz tanımlı değil; bugün aynı testler yerel Chromium job'unda koşuyor. Kimlik geldiğinde GitHub secret olarak eklenir, ek kod gerekmez." | 0 dk (7'nin içinde) | — | — | — |
 | 10 | (isteğe bağlı) Sunucu · koşu detayı | "Allure raporu", JUnit bağlantısı | Allure raporu, Playwright HTML raporu, JUnit XML | "Standart çıktılar: JUnit XML ve Allure. Mevcut raporlama araçlarınıza olduğu gibi girer." | 0 dk (yalnız soru gelirse) | — | — | Rapor açılmazsa JUnit bağlantısını gösterin |
 | 11 | Sunucu · **Kontrol Kulesi** | Ekranı gezin | Son koşular, koşu bazlı geçme oranı, flaky testler, uygulama/alan karnesi, açık defect adayı, AI katkısı (kabul oranı, süre) | "Tek ekranda kalite: hangi alan kırılgan, hangi test flaky, AI'ın katkısı ne. Her KPI'nın hangi tablodan ve hangi pencereden hesaplandığı yazıyor. Kazanç yalnızca story'ye özel ölçülmüş manuel bazı olan story'lerden hesaplanır; 'varsayılan' baz kazanca girmez, ölçüm yoksa 'ölçülmedi' görünür. REPLAY'de hazırlık süresi yalnız review süresidir." | 1 dk | 0,1 sn / 1,5 sn | — | — |

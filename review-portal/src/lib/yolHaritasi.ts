@@ -304,7 +304,7 @@ export function sonrakiAdimlar(x: SonrakiGirdi): YolAdimi[] {
       : adim(8, {
           hal: anaTetik ? "tamam" : "suruyor",
           kanit: `Tetikler: ${tetikler.map((t) => TETIK_ADI[t] ?? t).join(", ")} · ${ci.length} koşu`,
-          ipucu: anaTetik ? null : "Sunucu: Koşular → \"Deploy tetikle\" ya da \"Gece koşusu\" (merge sonrası push CI otomatik).",
+          ipucu: anaTetik ? null : "Sunucu: Koşular → \"Deploy sonrası testleri koş\" ya da \"Gece koşusunu şimdi başlat\" (merge sonrası push CI otomatik).",
           baglanti: { yol: "/kosular", etiket: "Koşular" },
           simulator: ciSim,
         });

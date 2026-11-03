@@ -493,8 +493,8 @@ TP_REQUIRED_CHECKS=                     # boş = test-local,ast-guard,semgrep
 | Portal | GitHub |
 |---|---|
 | PR açılması / main'e merge | `pull_request` / `push` |
-| Sunucu · Koşular → "Deploy tetikle" | `repository_dispatch` `deploy` (koşu adı `ci deploy [<kimlik>]`) |
-| Sunucu · Koşular → "Gece koşusu" | `workflow_dispatch` `ci.yml` `tetik=nightly`; ayrıca zamanlanmış `0 2 * * *` (UTC) |
+| Sunucu · Koşular → "Deploy sonrası testleri koş" | `repository_dispatch` `deploy` (koşu adı `ci deploy [<kimlik>]`) |
+| Sunucu · Koşular → "Gece koşusunu şimdi başlat" | `workflow_dispatch` `ci.yml` `tetik=nightly`; ayrıca zamanlanmış `0 2 * * *` (UTC) |
 
 Core koşuyu adındaki `[<kimlik>]` ile bulur, artefaktları (`test-local-results`, `sauce-results`)
 indirir; PR CI sonucu PR'a tek yorum olarak yazılır.
@@ -551,7 +551,7 @@ scripts/demo-web-sync.sh --main     # demo-app-web = GitHub main (toolchain ayna
 Uçtan uca: (1) mühendis bir onaylı case için kod üretir → `tp/case-*` dalında bot PR'ı →
 `test-local`, `ast-guard`, `semgrep` → portalda merge kapısı → insan merge → `push` koşusu.
 (2) Locator yolu 5.7 adımlarıyla: yeşil temel `push` koşusu → kır → kırmızı → onarım PR'ı (bot)
-→ insan merge → yeşil → sıfırla. Sunucu "Deploy tetikle" →
+→ insan merge → yeşil → sıfırla. Sunucu "Deploy sonrası testleri koş" →
 `gh run list --repo ThinkGOtr/testingprobe-demo-app --workflow ci.yml --limit 3` listesinde
 `ci deploy [...]`. Prova listesindeki "bot main'e push dener → reddedilir" maddesi ruleset
 uygulandıktan sonra bot kimliğiyle denenir.

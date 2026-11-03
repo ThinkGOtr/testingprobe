@@ -292,11 +292,11 @@ describe("Koşular", () => {
     expect(kirmasiz.length).toBeLessThan(hepsi.length);
   });
 
-  it("sunucu 'Deploy tetikle' ile koşu kuyruğa alınır; mühendis tetikleyemez", async () => {
+  it("sunucu 'Deploy sonrası testleri koş' ile koşu kuyruğa alınır; mühendis tetikleyemez", async () => {
     await oturumAc("sunucu");
     const u = userEvent.setup();
     uygulama("/kosular");
-    await u.click(await screen.findByRole("button", { name: "Deploy tetikle" }));
+    await u.click(await screen.findByRole("button", { name: "Deploy sonrası testleri koş" }));
     expect(await screen.findAllByText(/Deploy koşusu sıraya alındı/)).not.toHaveLength(0);
   });
 
