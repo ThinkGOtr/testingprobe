@@ -138,29 +138,55 @@ interface IslemDugmesiOzellikleri extends ButtonHTMLAttributes<HTMLButtonElement
   calisiyor?: boolean;
   tur?: DugmeTuru;
   kucuk?: boolean;
+  /**
+   * Pasiflik nedenini düğmenin altına görünür yazmaz (yalnız `title` kalır). Neden zaten ekranda
+   * görünür biçimde yazılıysa (ör. Koşular tetik açıklamaları) ya da testler o metni ekranda
+   * tekil arıyorsa kullanılır.
+   */
+  nedenGizli?: boolean;
 }
 
 /**
  * Rol farkındalıklı eylem düğmesi: yetkisiz rolde pasif ve nedenini söyler
  * (sunucu yine de her uçta rolü kontrol eder).
+ *
+ * Pasifken (`disabled` ya da yetkisiz rol) bir neden varsa, native `disabled` düğme odak almadığı ve
+ * `title` klavyede okunmadığı için neden düğmenin dışında görünür yazılır (`.dugme-neden`) ve
+ * `aria-describedby` ile düğmeye bağlanır. Çalışırken (`calisiyor`) yazılmaz.
  */
-export function IslemDugmesi({ roller, calisiyor, tur = "birincil", kucuk, disabled, children, title, className, ...geri }: IslemDugmesiOzellikleri) {
+export function IslemDugmesi({ roller, calisiyor, tur = "birincil", kucuk, disabled, children, title, className, nedenGizli, ...geri }: IslemDugmesiOzellikleri) {
   const { kullanici } = useOturum();
+  const nedenId = useId();
   const yetkili = !roller || roller.length === 0 || (!!kullanici && roller.includes(kullanici.rol));
   const neden = !yetkili ? `Bu işlem için gereken rol: ${roller?.map((r) => ROL[r]).join(" / ")}` : title;
-  return (
+  const nedenGorunur = !nedenGizli && !calisiyor && (!!disabled || !yetkili) && !!neden?.trim();
+  const tanim = [geri["aria-describedby"], nedenGorunur ? nedenId : undefined].filter(Boolean).join(" ") || undefined;
+  const dugme = (
     <button
       type="button"
       {...geri}
       className={`dugme dugme-${tur}${kucuk ? " dugme-kucuk" : ""} ${className ?? ""}`}
       disabled={disabled || !yetkili || calisiyor}
       title={neden}
+      aria-describedby={tanim}
       aria-busy={calisiyor || undefined}
       data-yetkisiz={!yetkili || undefined}
     >
       {calisiyor && <span className="donen donen-kucuk" aria-hidden="true" />}
       {children}
     </button>
+  );
+  // Sarıcı her zaman çizilir (neden yokken `display: contents`): neden belirip kaybolurken düğme
+  // yeniden bağlanmaz (odak ve öğe kimliği korunur).
+  return (
+    <span className={`dugme-neden-sarici${nedenGorunur ? " neden-var" : ""}`}>
+      {dugme}
+      {nedenGorunur && (
+        <span id={nedenId} className="dugme-neden">
+          {neden}
+        </span>
+      )}
+    </span>
   );
 }
 

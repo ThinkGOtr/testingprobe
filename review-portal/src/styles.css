@@ -3497,6 +3497,44 @@ details.soluk > summary {
    (paralel şerit birleştirmesi için çapa — silinmez)
    ================================================================== */
 
+/* Görünür pasiflik nedeni (§4.5): native disabled düğme odak almaz, title klavyede okunmaz. Neden
+   düğmenin DIŞINDA, altında yazılır ve aria-describedby ile bağlıdır. Sarıcı her IslemDugmesi'nde
+   vardır; neden yokken düzene katılmaz (display: contents → mevcut flex/grid düzeni aynen). */
+.dugme-neden-sarici {
+  display: contents;
+}
+.dugme-neden-sarici.neden-var {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  max-width: 100%;
+  vertical-align: top;
+}
+/* --muted yalnız nötr yüzeyde (kart/sayfa); tonlu zemine konmaz (§3.2 kural 3). */
+.dugme-neden {
+  display: block;
+  max-width: 34ch;
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--muted);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+/* Nedenli düğme satırı uzar: satırdaki diğer düğmeler ortalanmasın, üstten hizalansın. */
+.eylemler:has(> .neden-var),
+.satir-ogeler:has(> .neden-var) {
+  align-items: flex-start;
+}
+/* Tam genişlik (blok) düğme kalıplarında neden de düğmeyle aynı genişlikte kalır. */
+@media (max-width: 640px) {
+  .dugme-neden {
+    max-width: 100%;
+  }
+}
+
 
 
 

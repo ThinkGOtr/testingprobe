@@ -180,6 +180,7 @@ export function Kosular() {
               calisiyor={geceIslem.calisiyor}
               title={GECE_ACIKLAMASI}
               aria-describedby="kosular-gece-aciklama"
+              nedenGizli
               onClick={() => tetikle("nightly")}
             >
               Gece koşusunu şimdi başlat
@@ -189,6 +190,7 @@ export function Kosular() {
               calisiyor={deployIslem.calisiyor}
               title={DEPLOY_ACIKLAMASI}
               aria-describedby="kosular-deploy-aciklama"
+              nedenGizli
               onClick={() => tetikle("deploy")}
             >
               Deploy sonrası testleri koş
