@@ -87,7 +87,7 @@ systemctl is-active tp-demo-web-sync         # active (locator demosu için şar
 ```
 
 Sonra portalda **sunucu** ile **Koşular** ekranını aç: `make demo-reset`'in tetiklediği GitHub
-koşusu **yeşil** bitmiş olmalı. Yeşil temel koşu yoksa "Locator'ı kır" çalışmaz.
+koşusu **yeşil** bitmiş olmalı. Yeşil temel koşu yoksa "Buton kimliğini değiştir" çalışmaz.
 
 ### 1.3 Tarayıcı profilleri
 
@@ -126,7 +126,7 @@ Açılış       Demo yol haritası (0/14)
 Bölüm A      1 Jira'dan çek → 2 Ön inceleme (kod+veri) → 3 PO onayı (Jira) → 4 Case üret/onayla/Xray'e yayınla
 Bölüm B      5 Kod üret (ajan + şablon) → 6 Kırarak doğrula → 7 GitHub PR + merge
              → 8 GitHub Actions (push/deploy/gece) → 9 Sauce → 10 Raporlar → 11 Kontrol Kulesi
-Bakım        L1 Locator'ı kır → L2 kırmızı koşu → L3 tek satırlık onarım PR'ı → L4 yeşil
+Bakım        L1 Buton kimliğini değiştir → L2 kırmızı koşu → L3 tek satırlık onarım PR'ı → L4 yeşil
 Bölüm C      12 Triage → 13 Testçi kararı → 14 Jira'da Bug / mevcut kayda bağlama
 Kapanış      Yol haritası 14/14 · Denetim zinciri
 ```
@@ -418,7 +418,7 @@ işlev aynı, uygulama sağlam — ama o butona tıklayan bütün testler kırm�
 tabanlı, AI'sız ayırt eder — butonun rolü + adı sayfada duruyor, yalnız kimlik değişmiş → **ürün
 hatası değil, test bakımı** (22 kırmızı için 22 bug açmaz); (2) **tek satırlık onarım PR'ı** açar,
 AST koruması assertion'lara dokunulamayacağını garanti eder (gerçek hata testi değiştirerek
-gizlenemez); (3) insan bir satırı görüp merge eder, hepsi yeşile döner. **"Locator'ı kır"**
+gizlenemez); (3) insan bir satırı görüp merge eder, hepsi yeşile döner. **"Buton kimliğini değiştir"**
 düğmesi o geliştiriciyi taklit eder: kimliği değiştiren commit'i main'e alır, uygulamayı yeniden
 derler, CI'ı başlatır.
 
@@ -426,9 +426,9 @@ derler, CI'ı başlatır.
 > kırmızı koşu Bölüm C sırasında oluşur (GitHub Actions birkaç dakika sürer). Push koşusu bitmeden
 > kırma: koşu ortasında uygulama değişirse sonuçlar `environment` sınıflanır, onarım önerilmez.
 
-### L1 · Locator'ı kır (0,5 dk)
+### L1 · Buton kimliğini değiştir — locator kırılması (0,5 dk)
 
-**Profil: Sunucu** → sol menü **Demo kontrolleri** → **"Locator'ı kır"** → **"Evet, locator'ı kır"**
+**Profil: Sunucu** → sol menü **Demo kontrolleri** → **"Buton kimliğini değiştir"** → **"Evet, buton kimliğini değiştir"**
 
 - Görülen: Demo olay günlüğü — GitHub'da `demo/break-locator-…` PR'ı açıldı ve insan kimliğiyle
   merge edildi (`add-to-cart` → `cart-add`, rol ve ad aynı), bayi uygulaması yeniden derleniyor,

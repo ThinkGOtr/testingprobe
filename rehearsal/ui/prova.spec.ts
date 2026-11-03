@@ -630,15 +630,15 @@ canliTesti("canlı: 14 adım + locator kırma/onarım arayüzden", async ({ page
   }
 
   // ---------------- Faz 4: locator
-  await adim(page, "Sunucu: Demo kontrolleri → Locator'ı kır (izleyici uygulamayı yeniden kurar)", async () => {
+  await adim(page, "Sunucu: Demo kontrolleri → Buton kimliğini değiştir (izleyici uygulamayı yeniden kurar)", async () => {
     await giris(page, "sunucu");
     await bekle("CI boşta", async () => !(await api(page, "/runs?limit=30")).some((k: J) => ["queued", "running"].includes(k.durum)), 8 * 60_000, 5000);
     const eskiIstek = (await api(page, "/demo/status")).web_yenileme_istegi?.istek_id ?? null;
     await page.goto("/demo");
     await expect(page.getByRole("heading", { name: "Demo kontrolleri", level: 1 })).toBeVisible();
-    await page.getByRole("button", { name: "Locator'ı kır", exact: true }).click();
+    await page.getByRole("button", { name: "Buton kimliğini değiştir", exact: true }).click();
     await expect(page.getByRole("group", { name: "Locator kırma onayı" })).toBeVisible();
-    await page.getByRole("button", { name: "Evet, locator'ı kır" }).click();
+    await page.getByRole("button", { name: "Evet, buton kimliğini değiştir" }).click();
     const istek: J = await bekle(
       "kırma için yenileme isteği yazıldı",
       async () => {

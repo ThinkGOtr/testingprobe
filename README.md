@@ -160,7 +160,7 @@ Tüm hedefler repo kökünden çalışır; çıkış kodu `0` = başarı. `make 
 | `make demo-reset` | Sunucu sıfırlaması (`POST /demo/reset`): main → demo-baseline, açık bot PR'ları kapanır, demo-app-web yeniden derlenir, baseline CI kuyruğa girer, yalnızca sistemin açtığı AI Bug'ları jira-sim'den silinir. Veritabanı korunur (tam sıfırlama: `make reset`) |
 | `make demo-check` | Demo-B ön kontrolü: onaylı case'lerde "defect adayı" anı REPLAY'de hazır mı (`STORY=TPD-1`) + REPLAY tarayıcı adımları canlı MCP'de tekrarlanıyor mu (`RUNS=5`) |
 | `make demo-prova` | Sunum öncesi otomatik prova: her koşudan önce `make reset`, strict REPLAY, 14 adım + locator kırma/onarım. `RUNS=n` (varsayılan 1; TEKNIK-TASARIM §13 için `RUNS=3`, koşu başına ~10,5 dk), host'ta `uv` gerekir, `UI=1` arayüzden (video), `UITUR=1` salt okuma tur. Ayrıntı: [rehearsal/README.md](rehearsal/README.md); arayüz kipleri için bir kez `cd rehearsal/ui && npm ci && npx playwright install chromium` |
-| `make demo-break` | Portaldaki "Locator'ı kır" düğmesinin terminal eşi (`POST /demo/break-locator`) + demo-app-web eşitleme |
+| `make demo-break` | Portaldaki "Buton kimliğini değiştir" düğmesinin terminal eşi (`POST /demo/break-locator`) + demo-app-web eşitleme |
 | `make break` | Host yolu: yeşil temel koşu ön denetimi + `demo/break-locator` demo-admin bypass merge + demo-app-web derleme (`Z=1` denetimi atlar — önerilmez) |
 | `make demo-web-sync [A=--watch]` | core'un istediği forge commit'inden demo-app-web'i derler; portal düğmesi kullanılacaksa sunum boyunca `A=--watch` ile açık kalır |
 | `make demo-baseline` | Forge main → demo-baseline + demo-app-web yeniden derleme (PR kaydı korunur) |

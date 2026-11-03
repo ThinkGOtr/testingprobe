@@ -425,7 +425,7 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
 
   return (
     <Kart
-      baslik="Locator'ı kır"
+      baslik="Test bakımı demosu"
       eylemler={
         !onay && (
           <IslemDugmesi
@@ -458,11 +458,34 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
                     ? "Önce demoyu sıfırlayın"
                     : ld.hal === "dogrulaniyor"
                       ? "CI sürüyor"
-                      : "Locator'ı kır"}
+                      : "Buton kimliğini değiştir"}
           </IslemDugmesi>
         )
       }
     >
+      <Uyari ton="bilgi" baslik="Bu demo ne gösteriyor? Test bakımı">
+        <div data-testid="locator-aciklama">
+          <p>
+            Otomasyonun asıl maliyeti yazmak değil <strong>bakımı</strong>. Bir geliştirici "Sepete ekle" butonunun teknik kimliğini
+            değiştirir; işlev aynı, uygulama sağlam — ama o butona tıklayan bütün testler kırmızı olur. Klasik otomasyonda bu, sabah
+            onlarca kırmızı test ve tek tek "uygulama mı bozuk, test mi?" incelemesi demektir.
+          </p>
+          <ol>
+            <li>
+              <strong>Ayırt eder</strong> (kural, AI yok): butonun rolü ve adı sayfada duruyor, yalnız kimliği değişmiş → ürün hatası
+              değil, <em>test bakımı</em>. Kırmızılar için tek tek bug açılmaz.
+            </li>
+            <li>
+              <strong>Tek satırlık onarım önerir</strong>: yalnız kimlik değeri değişir; AST koruması testin neyi kontrol ettiğine
+              (assertion) dokunulamayacağını garanti eder — gerçek bir hata testi değiştirerek gizlenemez.
+            </li>
+            <li>
+              <strong>İnsan onaylar</strong>: mühendis bir satırlık farkı görüp merge eder; testler yeşile döner.
+            </li>
+          </ol>
+          <p className="kucuk">Bu düğme o geliştiriciyi taklit eder: kimliği değiştiren commit'i ana dala alır, uygulamayı yeniden kurar, CI'ı başlatır.</p>
+        </div>
+      </Uyari>
       <p className="soluk kucuk">
         <span className="mono">demo/break-locator</span> dalı (Sepete ekle butonunun <span className="mono">data-testid</span>'i{" "}
         <span className="mono">add-to-cart</span> → <span className="mono">cart-add</span>) demo-admin yetkisiyle korumalı ana dala
@@ -504,7 +527,7 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
           </p>
           <div className="satir-ogeler">
             <IslemDugmesi roller={["presenter"]} tur="tehlike" calisiyor={calisiyor} onClick={() => void kir()}>
-              Evet, locator'ı kır
+              Evet, buton kimliğini değiştir
             </IslemDugmesi>
             <button type="button" className="dugme dugme-ikincil" onClick={() => setOnay(false)} disabled={calisiyor}>
               Vazgeç

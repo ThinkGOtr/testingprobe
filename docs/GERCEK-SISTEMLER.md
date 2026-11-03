@@ -504,7 +504,7 @@ indirir; PR CI sonucu PR'a tek yorum olarak yazılır.
 Kırılma ve sıfırlama **bot ile değil, insan kimliğiyle** (`GITHUB_MERGE_TOKEN`) yapılır;
 onarımı bot önerir, insan merge eder:
 
-1. **Kır** (Sunucu · "Locator'ı kır" ya da `make break`): core-worker, main'in o anki head'inden
+1. **Kır** (Sunucu · "Buton kimliğini değiştir" ya da `make break`): core-worker, main'in o anki head'inden
    `demo/break-locator-<main12>` dalına tek commit yazar (yalnızca `demo-app/web/src` altındaki
    tırnaklı `add-to-cart` → `cart-add`), PR'ı açar, farkı yerel kipteki aynı kuralla doğrular
    (yalnızca `web/src`, satır sayısı aynı, yalnızca testid) ve PR head'ine bağlı olarak

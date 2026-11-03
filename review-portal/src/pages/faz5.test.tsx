@@ -486,7 +486,7 @@ describe("Demo kontrolleri: durum ipuçları", () => {
     await oturumAc("sunucu");
     uygulama("/demo");
     expect(await screen.findByTestId("on-kosul-hazir")).toHaveTextContent("ön koşul ✓");
-    expect(screen.getByRole("button", { name: "Locator'ı kır" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Buton kimliğini değiştir" })).toBeEnabled();
   });
 });
 

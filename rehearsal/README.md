@@ -54,7 +54,7 @@ B4 ayrıca deploy koşusunun Playwright HTML / JUnit / Allure bağlantılarını
 Sauce kimliği yokken sahte Sauce bağlantısı olmadığını doğrular (§2 adım 9–10).
 
 Arayüz provası (`--ui`, `UI_KIP=canli`) sahnedeki yolları kullanır: locator kırılması **Demo
-kontrolleri → "Locator'ı kır" → "Evet, locator'ı kır"** düğmesiyle yapılır ve prova, sunucunun
+kontrolleri → "Buton kimliğini değiştir" → "Evet, buton kimliğini değiştir"** düğmesiyle yapılır ve prova, sunucunun
 host'ta açık tuttuğu `scripts/demo-web-sync.sh --watch` izleyicisini arka planda başlatır (host'ta
 zaten çalışıyorsa ikincisini açmaz); izleyicinin isteği uyguladığı `/forge/demo-web-refresh.done`
 ile doğrulanır. `make demo-break` terminal yedeği API provasının D1 adımında ayrıca prova edilir.

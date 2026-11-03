@@ -410,10 +410,10 @@ test("Faz 4 locator yolu: sunucu kırar → CI kırmızı → triage → mühend
   await girisYap(page, "sunucu");
   await page.getByRole("link", { name: "Demo kontrolleri" }).click();
   await expect(page.getByRole("heading", { name: "Demo kontrolleri", level: 1 })).toBeVisible();
-  await page.getByRole("button", { name: "Locator'ı kır" }).click();
+  await page.getByRole("button", { name: "Buton kimliğini değiştir" }).click();
   await expect(page.getByRole("group", { name: "Locator kırma onayı" })).toBeVisible();
   await page.screenshot({ path: `${EKRAN_DIZINI}/45-demo-kir-onay.png`, fullPage: true });
-  await page.getByRole("button", { name: "Evet, locator'ı kır" }).click();
+  await page.getByRole("button", { name: "Evet, buton kimliğini değiştir" }).click();
   const ilerleme = page.getByRole("list", { name: "Locator kırılması ilerlemesi" });
   await expect(ilerleme.getByRole("link", { name: "onarım önerisini aç" })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("list", { name: "Demo olay günlüğü" })).toContainText("demo-admin bypass");

@@ -115,5 +115,5 @@ React 18 + Vite 8 + TypeScript (strict), react-router. Arayüz metinleri Türkç
   "çekirdek bildirmiyor" denir ("canlı" uydurulmaz). Okunamayan uçlar listelenir, adımları "tamam" sayılmaz.
 - **Triage kanıt bağlantıları:** aynı türün deneme kopyaları (Playwright `-retryN` dizinleri) tek
   satırda "1. deneme · 2. deneme" olarak gösterilir.
-- **Demo kontrolleri:** `onarim_on_kosulu` (yeşil temel koşu yoksa "Locator'ı kır" pasif + yönerge)
+- **Demo kontrolleri:** `onarim_on_kosulu` (yeşil temel koşu yoksa "Buton kimliğini değiştir" pasif + yönerge)
   ve `locator_demo.destekleniyor` (GitHub kipinde neden) ipuçları.

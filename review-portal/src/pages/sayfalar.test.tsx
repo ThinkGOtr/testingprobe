@@ -253,7 +253,7 @@ describe("ekranlar", () => {
     expect(screen.getByRole("heading", { name: "Erişilebilirlik" })).toBeInTheDocument();
     // POST /demo/break-locator ve /demo/reset core'da yok (Faz 4/5): sahnede 404 vermesin diye çizilmez.
     expect(screen.queryByRole("button", { name: "Demoyu sıfırla" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Locator'ı kır" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Buton kimliğini değiştir" })).toBeNull();
   });
 
   it("denetim: zincir doğrulama sonucu", async () => {

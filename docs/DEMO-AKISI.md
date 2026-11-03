@@ -67,7 +67,7 @@ make security-check # Özet: 10/10
 - Portalda **sunucu** olarak **Koşular** ekranını açın; `make demo-reset`'in kuyruğa aldığı main
   koşusunun **yeşil** bittiğini görün. Locator kırılması yeşil bir temel koşu ister; yoksa
   `POST /demo/break-locator` 409 ve Türkçe yönerge döner.
-- Ayrı bir terminalde **sunum boyunca açık** bırakın (portaldaki "Locator'ı kır" düğmesi uygulamayı
+- Ayrı bir terminalde **sunum boyunca açık** bırakın (portaldaki "Buton kimliğini değiştir" düğmesi uygulamayı
   derleyemez, bunu host yapar):
 
   ```bash
@@ -254,7 +254,7 @@ yapılmadıysa (yalnız yedek yol) **19 kırmızı, 18 kardeş hata, tam paket 3
 
 | # | Rol / ekran | Ne tıklanır | İzleyici ne görür | Söylenecek | Süre | Makine (API / UI) | Ölçülen | Yedek |
 |---|---|---|---|---|---|---|---|---|
-| L1 | Sunucu · **Demo kontrolleri** (adım 11'den sonra, Faz 4'ten önce) | "Locator'ı kır" → "Evet, locator'ı kır" | Demo olay günlüğü: kırılma merge'ü (`add-to-cart` → `cart-add`, rol ve ad aynı), demo uygulaması yeniden derleniyor, ardından push CI | "Geliştirici bir butonun test kimliğini değiştirdi — işlev aynı. Klasik otomasyonda bu, sabah onlarca kırmızı test demek." | 0,5 dk | 8,3 sn / 9,9 sn | — | "Demo uygulaması hâlâ yeniden kurulmadı": host'ta `make demo-web-sync A=--watch` açık mı? Kapalıysa açın. Düğme 409 dönerse yeşil temel koşu yoktur (yönergeyi okuyun). Son çare terminal: `make break` |
+| L1 | Sunucu · **Demo kontrolleri** (adım 11'den sonra, Faz 4'ten önce) | "Buton kimliğini değiştir" → "Evet, buton kimliğini değiştir" | Demo olay günlüğü: kırılma merge'ü (`add-to-cart` → `cart-add`, rol ve ad aynı), demo uygulaması yeniden derleniyor, ardından push CI | "Geliştirici bir butonun test kimliğini değiştirdi — işlev aynı. Klasik otomasyonda bu, sabah onlarca kırmızı test demek." | 0,5 dk | 8,3 sn / 9,9 sn | — | "Demo uygulaması hâlâ yeniden kurulmadı": host'ta `make demo-web-sync A=--watch` açık mı? Kapalıysa açın. Düğme 409 dönerse yeşil temel koşu yoktur (yönergeyi okuyun). Son çare terminal: `make break` |
 | L2 | Sunucu · Koşular → kırmızı koşu | Koşuyu açın | **22 kırmızı / 36**; hepsi **test_maintenance / locator** (`catalog.addToCart`, kapsam `product-card-P-00x`, sha eşleşiyor) | "Ürün kırmızıları tek tek bug açmıyor: kural, elemanın niyetinin (rol + ad) sayfada durduğunu ve tek bir farklı testId'ye çözüldüğünü kanıtlıyor. Bu bir ürün hatası değil, test bakımı." | 0,5 dk | 2 dk 35 sn / 157,1 sn (Faz 4 sırasında) | — | Hepsi `environment` sınıflandıysa uygulama koşu ortasında derlenmiştir: söyleyin, `make demo-reset` sonra tekrar — sahnede değil; yedek video V5 |
 | L3 | Mühendis · hata detayı | "Onarım PR'ı aç" | Onarım: yalnızca `e2e/pages/catalog/locators.ts` içinde **1 satır** testId; AST koruması (onarım modu: yalnızca testId değeri) ✓; tam paket yerel kontrol **36/36** ✓; PR gövdesinde sinyaller, diff, yoklama, aria doğrulaması, "AI üretimi: hayır"; **21 kardeş hata** aynı PR'ı paylaşır (22 hatanın tümü tek onarımda) | "Onarım deterministik, modelsiz. Yalnızca locator değeri değişebilir: test dosyası ve assertion asla otomatik değişmez — bunu AST koruması hem burada hem CI'da zorunlu kılıyor. Beklenen sonuçtaki her sapma defect adayıdır, onarılmaz." | 1 dk | 27,2 sn / 28,9 sn | — | Onarım "engellendi" derse nedeni okuyun (ör. sha farklı); bu, ürünün doğru reddidir |
 | L4 | Mühendis · onarım PR'ı | "Merge et" | Merge → push CI → **36/36 yeşil**; kırmızı hataların durumu `merged` | "Tek insan onayıyla 22 kırmızı yeşile döndü; ve bunu yapan kod değişikliği tek satır, gözden geçirilmesi saniyeler." | 1 dk | 25,7 sn / 31,3 sn | — | CI uzun sürerse bu arada **Denetim** ekranını gösterin (aşağıda) |
@@ -263,7 +263,7 @@ yapılmadıysa (yalnız yedek yol) **19 kırmızı, 18 kardeş hata, tam paket 3
 
 Ekranlar ve sözler aynıdır; arkadaki mekanizma farklıdır (ayrıntı: `docs/GERCEK-SISTEMLER.md` §5.7):
 
-- **L1 "Locator'ı kır"**: bot DEĞİL, insan kimliği (`GITHUB_MERGE_TOKEN`, `demo-admin`) GitHub'da
+- **L1 "Buton kimliğini değiştir"**: bot DEĞİL, insan kimliği (`GITHUB_MERGE_TOKEN`, `demo-admin`) GitHub'da
   `demo/break-locator-<main12>` dalını, PR'ı açar ve bypass ile merge eder. GitHub'da PR'ı gösterin:
   yazar ve merge eden Gokhan, fark tek satır `data-testid`. Sunum boyunca ayrı terminalde
   `make demo-web-sync A=--watch` açık olmalı (demo-app-web GitHub main'inden, toolchain aynası

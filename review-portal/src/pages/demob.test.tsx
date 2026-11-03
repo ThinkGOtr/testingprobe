@@ -337,7 +337,7 @@ describe("Kontrol Kulesi", () => {
     const diger = within(tablo).getByText("TPD-4").closest("tr")!;
     expect(within(diger).queryByText(/defect adayı/)).toBeNull();
     // Sunucu düğmeleri core'da olmayan uçlara gitmez (404 yok).
-    expect(screen.queryByRole("button", { name: "Locator'ı kır" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Buton kimliğini değiştir" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Demoyu sıfırla" })).toBeNull();
   });
 });

@@ -178,10 +178,10 @@ describe("demo kontrolleri (sunucu)", () => {
     const u = userEvent.setup();
     uygulama("/demo");
     expect(await screen.findByRole("heading", { name: "Demo kontrolleri", level: 1 })).toBeInTheDocument();
-    await u.click(screen.getByRole("button", { name: "Locator'ı kır" }));
+    await u.click(screen.getByRole("button", { name: "Buton kimliğini değiştir" }));
     const onay = screen.getByRole("group", { name: "Locator kırma onayı" });
     expect(onay).toHaveTextContent("Emin misiniz?");
-    await u.click(within(onay).getByRole("button", { name: "Evet, locator'ı kır" }));
+    await u.click(within(onay).getByRole("button", { name: "Evet, buton kimliğini değiştir" }));
     const ilerleme = await screen.findByRole("list", { name: "Locator kırılması ilerlemesi" });
     await waitFor(() => expect(within(ilerleme).getByRole("link", { name: "onarım önerisini aç" })).toHaveAttribute("href", "/hatalar/fail-2"), {
       timeout: 8000,

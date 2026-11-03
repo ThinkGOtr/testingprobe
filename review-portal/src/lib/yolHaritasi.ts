@@ -449,10 +449,10 @@ export function locatorAdimlari(x: Pick<YolGirdisi, "demo" | "hatalar" | "kosula
       ipucu: on?.hazir === false ? (on.yonerge ?? "make demo-reset, yeşil koşudan sonra kırın.") : null,
       baglanti: on?.son_yesil_kosu?.run_id ? { yol: `/kosular/${kodla(on.son_yesil_kosu.run_id)}`, etiket: "Koşu" } : { yol: "/kosular", etiket: "Koşular" },
     }),
-    yap("L2", "Locator'ı kır (add-to-cart → cart-add)", "insan", {
+    yap("L2", "Buton kimliğini değiştir (add-to-cart → cart-add)", "insan", {
       hal: kirildi ? "tamam" : "bekliyor",
       kanit: kirildi ? `Uygulama testId: ${typeof d?.forge?.testid === "string" ? d.forge.testid : "cart-add"}` : "Main baseline'da.",
-      ipucu: kirildi ? null : "Sunucu: Demo kontrolleri → \"Locator'ı kır\" (host'ta make demo-web-sync A=--watch açık) ya da make break.",
+      ipucu: kirildi ? null : "Sunucu: Demo kontrolleri → \"Buton kimliğini değiştir\" (host'ta make demo-web-sync A=--watch açık) ya da make break.",
       baglanti: { yol: "/demo", etiket: "Demo kontrolleri" },
     }),
     yap("L3", "Push CI kırmızı → triage: test bakımı / locator", "ai", {

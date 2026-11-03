@@ -147,7 +147,7 @@ Tam sunucu senaryosu, rol başına tarayıcı oturumları ve aksaklık rehberi:
 ```bash
 make reset               # temiz başlangıç
 make demo-reset          # main → demo-baseline, demo-app-web derlenir, baseline CI kuyruğa girer
-make demo-web-sync A=--watch   # ayrı terminalde, portaldaki "Locator'ı kır" için açık kalır
+make demo-web-sync A=--watch   # ayrı terminalde, portaldaki "Buton kimliğini değiştir" için açık kalır
 ```
 
 1. **Demo-A** (analist): Gereksinimler → "Jira'dan çek" → TPD-1 → "Ön incelemeyi başlat" →
@@ -155,7 +155,7 @@ make demo-web-sync A=--watch   # ayrı terminalde, portaldaki "Locator'ı kır" 
    jira-sim'de onaylar → "Case üret" → onay → yayın.
 2. `make demo-check` → çıkış `0` ve `C3 DEFECT ADAYI` (değilse F2 yanlış karar almıştır).
 3. **Demo-B** (muhendis): Kod üretimi → C1, C2, C3, C5 → kırarak doğrula → merge → push CI.
-4. **Faz 4**: C3 defect adayı → triage → testçi "TPD-5 kaydına bağla"; sunucu "Locator'ı kır" →
+4. **Faz 4**: C3 defect adayı → triage → testçi "TPD-5 kaydına bağla"; sunucu "Buton kimliğini değiştir" →
    muhendis "Onarım PR'ı aç" → merge → yeşil.
 
 Bütün AI çıktıları **REPLAY** rozetlidir; bu, dış hesap bağlanana kadar beklenen durumdur.
@@ -223,7 +223,7 @@ Konteyner dışında test (paket başına kalite kapısı, MIMARI-SOZLESME §7):
 | Portal "Canlı olaylar" kırmızı / giriş ekranına atıyor | Oturum kapanmış ya da parola değişmiş; yeniden giriş yapın |
 | AI çıktısında **REPLAY-MISS** rozeti | Girdi golden beyanıyla eşleşmedi (ör. Jira içeriği elle değişti). Dürüst etikettir; `make reset` ile başa dönün |
 | `make demo-check` başarısız ("defect adayı yok") | Demo-A'da F2 "Dokümanı düzelt" seçilmiş; `make reset`, Demo-A'yı F2 ve F4 **Kod/veri hatalı** ile tekrarlayın |
-| "Locator'ı kır" / `make break` 409, "yeşil temel koşu yok" | `make reset` sonrası veritabanında koşu yoktur: `make demo-reset`, baseline koşu yeşil bitince kırın |
+| "Buton kimliğini değiştir" / `make break` 409, "yeşil temel koşu yok" | `make reset` sonrası veritabanında koşu yoktur: `make demo-reset`, baseline koşu yeşil bitince kırın |
 | "Demo uygulaması hâlâ yeniden kurulmadı" | core-worker imaj derleyemez: host'ta `make demo-web-sync A=--watch` açık olmalı |
 | Kırık locator koşusunda hatalar `environment`/`unknown` | Uygulama koşu ortasında yeniden derlendi; önceki CI koşusu bitmeden kırmayın. `make demo-reset`, sonra tekrar |
 | Locator demosundan sonra kod üretimi reddediliyor | REPLAY kod üretimi başlangıç testId'sini (`add-to-cart`) ister: `make demo-baseline` ya da `make demo-reset` |

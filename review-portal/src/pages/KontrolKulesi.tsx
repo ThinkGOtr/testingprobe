@@ -56,7 +56,7 @@ export function KontrolKulesi() {
         aciklama="Kalite, flaky testler, karne ve AI katkısı tek ekranda. Her ölçünün kaynağı yanındaki (i) ipucunda; ölçülmemiş değer “ölçülmedi” yazılır."
       />
       {/*
-        "Locator'ı kır" / "Demoyu sıfırla" (POST /demo/break-locator, /demo/reset) core'da henüz yok
+        "Buton kimliğini değiştir" / "Demoyu sıfırla" (POST /demo/break-locator, /demo/reset) core'da henüz yok
         (Faz 4/5). Sahnede 404 göstermemek için düğmeler bu sayfada çizilmez; sıfırlama `make reset`.
       */}
       {k.uyarilar.length > 0 && (

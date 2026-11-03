@@ -284,7 +284,7 @@ make demo-reset         # GitHub main → demo-baseline, demo-app-web GitHub'dan
 
 ### 8.3 Locator demosu izleyicisi (sürekli açık servis)
 
-"Locator'ı kır" ve "Demo sıfırla" sonrasında bayi uygulamasını yeniden derleyen izleyici; VM
+"Buton kimliğini değiştir" ve "Demo sıfırla" sonrasında bayi uygulamasını yeniden derleyen izleyici; VM
 yeniden başlasa da kendiliğinden açılır:
 
 ```bash
