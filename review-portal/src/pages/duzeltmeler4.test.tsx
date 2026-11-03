@@ -211,6 +211,25 @@ describe("kırarak doğrulama ve koşu bağlantıları", () => {
     expect(screen.getByText("cg-8908c645-local-check-515752")).toHaveAttribute("title", expect.stringMatching(/Toolchain koşu etiketi/));
   });
 
+  it("zayıf test: kırık uygulamada yeşil — 'beklenmeyen sonuç' yeşil tik değil uyarı simgesiyle", async () => {
+    yapilandir({ mockZorunlu: false, mockOtomatik: false, yetenekKesfi: true });
+    const s = coreScript({
+      zayif_test: true,
+      break_verify: {
+        durum: "weak",
+        asamalar: [ASAMA("baseline", "passed", "cg-1-local"), ASAMA("broken", "passed", "cg-1-red"), ASAMA("restored", "passed", "cg-1-green")],
+      },
+    });
+    vi.stubGlobal("fetch", sahteCore("engineer", { [`/scripts/${SID}`]: s, "/scripts": [], "/cases": [] }));
+    uygulama(`/kod/${SID}`);
+    const zaman = await screen.findByRole("list", { name: "Kırarak doğrulama zaman çizelgesi" });
+    const [ilk, kirik] = within(zaman).getAllByRole("listitem");
+    expect(kirik).toHaveTextContent("beklenmeyen sonuç");
+    expect(kirik).toHaveClass("kirma-sonucsuz");
+    expect(within(kirik).getByText("⚠")).toBeInTheDocument();
+    expect(ilk).not.toHaveClass("kirma-sonucsuz");
+  });
+
   it("assertion ile kırmızı: 'beklendiği gibi'; UUID koşu bağlantı olur", async () => {
     yapilandir({ mockZorunlu: false, mockOtomatik: false, yetenekKesfi: true });
     const uuid = "9106b437-0770-4afb-9f58-c9d437cf659d";

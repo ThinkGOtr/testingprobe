@@ -74,10 +74,13 @@ export function KirmaZaman({ bv, uygulanmaz = false }: { bv: BreakVerify; uygula
         const sinif = a.ad === "broken" && a.sonuc === "failed" ? kirikSinifi(a, bv) : null;
         // Kırık koşu kırmızı ama assertion dışı (locator/ortam…): hata yakalama kanıtı değildir.
         const sonucsuz = sinif !== null && sinif !== "defect_adayi";
+        // Beklenenin tersi (ör. kırık uygulamada yeşil): yeşil tik "sorun yok" diye okunmasın.
+        const beklenmedik = (a.sonuc === "passed" || a.sonuc === "failed") && !uyumlu;
+        const uyari = sonucsuz || beklenmedik;
         return (
-          <li key={a.ad} className={`kirma-asama kirma-${a.sonuc}${sonucsuz ? " kirma-sonucsuz" : ""}`}>
+          <li key={a.ad} className={`kirma-asama kirma-${a.sonuc}${uyari ? " kirma-sonucsuz" : ""}`} data-beklenmedik={beklenmedik || undefined}>
             <span className="kirma-ikon" aria-hidden="true">
-              {sonucsuz ? "⚠" : SONUC[a.sonuc].ikon}
+              {uyari ? "⚠" : SONUC[a.sonuc].ikon}
             </span>
             <div>
               <div className="kirma-ad">{ASAMA_ADI[a.ad]}</div>
