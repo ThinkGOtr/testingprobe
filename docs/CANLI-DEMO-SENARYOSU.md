@@ -124,6 +124,9 @@ boyut/konumda; geçiş Cmd + \` ile. Zoom %125.
 Portal parolaları: VM `.env` → `SEED_USER_PASSWORD` (parola yöneticisinden yapıştır).
 Portalın sağ üstündeki **Canlı olaylar** göstergesi yeşil olmalı.
 
+**Tema:** portal varsayılan olarak koyu açılır. Her profilde sağ üstteki tema düğmesiyle temayı **elle** seç
+(tarayıcı bir kez seçimi hatırlar). Projektörde koyu tema soluk görünürse hepsini **açık** temaya al.
+
 ### 1.4 Kritik kararlar (ezberle — yanlış tık sonraki "vay" anlarını siler)
 
 | Bulgu | Konu | Karar |
@@ -201,7 +204,7 @@ hesapla ve yalnızca insan onaylı içerikle yapılır."
    - **F3** minimum tutar — kanıt SQL: `ayar.min_siparis_tutari = 750.00`
    - **F4** kredi limiti uyarısı kodda yok
 3. Kanıtı göster — tıklama gerekmez, kartın başlığının altında açık durur:
-   - **F2** kartı: gri **"Kod"** kutusu, `campaign.py:23`, vurgulu satır `return adet // 6`.
+   - **F2** kartı: **"Kod"** etiketli kod kutusu, `campaign.py:23`, vurgulu satır `return adet // 6`.
    - **F3** kartı: **"Veri"** kutusu, SQL sorgusu ve altında sonucu (`750.00`).
    - **F1**'de kanıt kutusu yoktur ("Kanıt dokümanın kendisi"): çelişki dokümanın içinde.
    - Her kartın sağ üstündeki yeşil **"✓ kanıt doğrulandı"** rozetini işaret et.
@@ -251,7 +254,7 @@ koyduğu etiket onay sayılmaz, hatta geri kaldırılır. Onaydan sonra içerik 
 | Onayla / düzelt | **İnsan** | TPD-1 sayfası, sağ üst **"Case review"** düğmesi |
 | Yayınla | **Ürünün Xray bağlantısı** (AI yok) — yalnızca onaylı case'ler | Case review sayfası → **"Yayın önizleme"** → "Hedef" kartı → **"Seçilenleri yayınla (n)"** |
 
-Akış göstergesinde 4. adımın kesikli halkası "AI adımı" demektir; AI sen **"Case üret"**e basınca
+Akış göstergesinde **kesik kenarlı** adım AI içerir, **kare** adım insan kapısıdır (4. adım ikisi birden: kesik kenarlı kare); AI sen **"Case üret"**e basınca
 çalışır. PO kartında "✓ İnsan kapısı geçildi" yazmalı.
 
 1. TPD-1 → **"Case üret"** → 10 case kartı (pozitif/negatif/sınır), her biri bir AC'ye bağlı.
@@ -426,7 +429,7 @@ Sol menü **Kontrol Kulesi** → gez: son koşular, geçme oranı, flaky testler
 adayı, AI katkısı (kabul oranı, review süresi).
 
 Beklenen boşluklar (hata değil):
-- **Case başına AI + review "ölçülmedi"** ve **Maliyet $0,00**: REPLAY'de model çağrısı yok, süre ve
+- **Case başına AI + review "ölçülmedi"** ve **Maliyet "REPLAY — ölçülmedi"**: REPLAY'de model çağrısı yok, süre ve
   ücret ölçülmez. Canlı modelde otomatik dolar; elle girilecek bir şey yok.
 - **Hazırlık kazancı "ölçülmüş baz yok"**: §1.1 #7'deki manuel ölçüm girilmediyse. Girildiyse bile
   kazanç **"(REPLAY: yalnız review)"** etiketlidir — verimlilik iddiası olarak söylenmez.
