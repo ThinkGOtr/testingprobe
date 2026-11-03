@@ -484,6 +484,10 @@ function PoKarti({ g, yenile }: { g: Detay; yenile: () => void }) {
   const islem = useIslem();
   const bildir = useBildirim();
   const po = g.po;
+  // Onay var ve içerik onaydan sonra değişmediyse kapı geçilmiştir; sabit kural metni "henüz
+  // geçilmedi" gibi okunmasın.
+  const kapiGecildi =
+    po.durum === "approved" && !(po.onaylanan_hash && g.icerik_hash && po.onaylanan_hash !== g.icerik_hash);
   return (
     <Kart baslik="PO teyidi">
       {po.durum === "approved" ? (
@@ -542,7 +546,15 @@ function PoKarti({ g, yenile }: { g: Detay; yenile: () => void }) {
       ) : (
         <p className="soluk">Henüz istenmedi. Doküman "son hal" olunca PO teyidi istenir.</p>
       )}
-      <p className="soluk kucuk">İnsan kapısı: PO teyidi olmadan case üretimine geçilmez.</p>
+      {kapiGecildi ? (
+        <p className="kucuk" data-testid="po-kapisi">
+          ✓ İnsan kapısı geçildi: PO onayı alındı, case üretimine geçilebilir.
+        </p>
+      ) : (
+        <p className="soluk kucuk" data-testid="po-kapisi">
+          İnsan kapısı: PO teyidi olmadan case üretimine geçilmez.
+        </p>
+      )}
     </Kart>
   );
 }

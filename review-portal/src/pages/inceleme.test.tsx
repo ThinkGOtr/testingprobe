@@ -116,6 +116,25 @@ describe("tutarlılık kartı: doküman son hale geçtikten sonra", () => {
   });
 });
 
+describe("PO kartı: insan kapısı metni", () => {
+  it("onay varsa ve içerik değişmediyse kapı geçildi yazar", async () => {
+    await oturumAc("analist");
+    const g = gereksinim("req-tpd-3");
+    g.durum = "po_approved";
+    g.po = { ...g.po, durum: "approved", onaylayan: "po@sim.local", kanal: "jira", onaylanan_hash: g.icerik_hash };
+    uygulama("/gereksinimler/req-tpd-3");
+    expect(await screen.findByTestId("po-kapisi")).toHaveTextContent("✓ İnsan kapısı geçildi");
+  });
+
+  it("onay yokken kural metni kalır", async () => {
+    await oturumAc("analist");
+    const g = gereksinim("req-tpd-3");
+    g.po = { ...g.po, durum: "pending", kanal: "jira" };
+    uygulama("/gereksinimler/req-tpd-3");
+    expect(await screen.findByTestId("po-kapisi")).toHaveTextContent("PO teyidi olmadan case üretimine geçilmez");
+  });
+});
+
 describe("bulgu kararı yalnızca findings_open iken", () => {
   const uyari = (): Bulgu => ({ ...mockVerisi().bulgular.find((b) => b.id === "fnd-8")! });
 

@@ -205,6 +205,15 @@ koyduğu etiket onay sayılmaz, hatta geri kaldırılır. Onaydan sonra içerik 
 
 **Profil: Analist**
 
+| Alt adım | Kim yapar | Nerede |
+|---|---|---|
+| Case üret | **AI** (REPLAY) | TPD-1 sayfası, sağ üst **"Case üret"** |
+| Onayla / düzelt | **İnsan** | Sol menü **Case review** |
+| Yayınla | **Ürünün Xray bağlantısı** (AI yok) — yalnızca onaylı case'ler | Sol menü **Yayın** |
+
+Akış göstergesinde 4. adımın kesikli halkası "AI adımı" demektir; AI sen **"Case üret"**e basınca
+çalışır. PO kartında "✓ İnsan kapısı geçildi" yazmalı.
+
 1. TPD-1 → **"Case üret"** → 10 case kartı (pozitif/negatif/sınır), her biri bir AC'ye bağlı.
    **C3** = "6 adet kampanyalı üründe bedava ürün verilmez" — bunu göster, sonra lazım olacak.
 2. Sol menü **Case review** → birkaç case'i **"Onayla"**; birinde **"Düzelt"** → küçük bir metin
