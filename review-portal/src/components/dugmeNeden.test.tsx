@@ -154,6 +154,17 @@ describe("ekranlarda görünür neden", () => {
     expect(container.querySelector(".dugme-neden")).toBeNull();
   });
 
+  it("Script detay (defect adayı): kutu nedeni zaten yazdığı için 'Kırarak doğrula' yanında tekrar yok", async () => {
+    await oturumAc("muhendis");
+    uygulama("/kod/scr-3");
+    const d = await screen.findByRole("button", { name: "Kırarak doğrula" });
+    expect(d).toBeDisabled();
+    expect(d).toHaveAttribute("title", expect.stringMatching(/^Defect adayı/));
+    expect(d).not.toHaveAttribute("aria-describedby");
+    expect(screen.getByText("Kırarak doğrulama kapalı")).toBeInTheDocument();
+    expect(d.parentElement).not.toHaveClass("neden-var");
+  });
+
   it("Case review: yayın yetkisi olmayan rolde 'Yayın önizleme' nedeni görünür ve bağlı", async () => {
     await oturumAc("po");
     uygulama("/gereksinimler/req-tpd-1/caseler");

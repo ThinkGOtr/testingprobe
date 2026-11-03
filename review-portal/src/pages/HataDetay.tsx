@@ -300,6 +300,8 @@ function OnarimKarti({ o, hataId, yenile }: { o: LocatorOnarimi; hataId: string;
             roller={["engineer"]}
             disabled={mergeEngeli !== null}
             title={mergeEngeli ?? undefined}
+            // Engel düğmenin altında zaten görünür yazılı (aşağıdaki p).
+            nedenGizli={mergeEngeli !== null}
             calisiyor={islem.calisiyor}
             onClick={async () => {
               const s = await islem.calistir(() => api.prBirlestir(pr), { cakismada: yenile });
