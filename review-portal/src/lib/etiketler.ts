@@ -34,7 +34,7 @@ export const GEREKSINIM_DURUMU: Record<GereksinimDurumu, { etiket: string; ton: 
   pending_po: { etiket: "PO teyidi bekliyor", ton: "uyari" },
   po_approved: { etiket: "PO onaylı", ton: "basari" },
   generating: { etiket: "Case üretiliyor", ton: "bilgi" },
-  cases_ready: { etiket: "Case review", ton: "vurgu" },
+  cases_ready: { etiket: "Case review", ton: "bilgi" },
   done: { etiket: "Case'ler yayınlandı", ton: "basari" },
   failed: { etiket: "Hata", ton: "hata" },
 };
@@ -127,7 +127,7 @@ export const SCRIPT_DURUMU: Record<ScriptDurumu, { etiket: string; ton: Ton }> =
   verifying: { etiket: "Ajan doğruluyor", ton: "bilgi" },
   checking: { etiket: "Yerel kontrol", ton: "bilgi" },
   blocked: { etiket: "İnsana düştü", ton: "uyari" },
-  pr_open: { etiket: "PR açık", ton: "vurgu" },
+  pr_open: { etiket: "PR açık", ton: "bilgi" },
   merged: { etiket: "Birleştirildi", ton: "basari" },
   closed: { etiket: "Kapatıldı", ton: "notr" },
   failed: { etiket: "Başarısız", ton: "hata" },

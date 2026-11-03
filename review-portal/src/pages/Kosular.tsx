@@ -11,8 +11,8 @@ import { sure, tarih } from "../lib/format";
 import { CiAdimlari, githubYedekNotu, TestSonuclari } from "./KosuSonuclari";
 
 const TETIK_TONU: Partial<Record<Tetik, "notr" | "bilgi" | "vurgu" | "uyari">> = {
-  nightly: "bilgi",
-  deploy: "vurgu",
+  nightly: "notr",
+  deploy: "notr",
   break_verify: "uyari",
   local_check: "notr",
 };
@@ -64,7 +64,7 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
               </td>
               {!kompakt && (
                 <td>
-                  <Cip ton={k.kaynak === "sauce" ? "vurgu" : k.kaynak === "github" ? "bilgi" : "notr"}>{KAYNAK[k.kaynak] ?? k.kaynak}</Cip>
+                  <Cip ton="notr">{KAYNAK[k.kaynak] ?? k.kaynak}</Cip>
                 </td>
               )}
               <td>
@@ -376,7 +376,7 @@ export function KosuDetay() {
               {TETIK[k.tetik] ?? k.tetik}
               {k.pr_no !== null && ` #${k.pr_no}`}
             </Cip>
-            <Cip ton={k.kaynak === "sauce" ? "vurgu" : k.kaynak === "github" ? "bilgi" : "notr"}>{KAYNAK[k.kaynak] ?? k.kaynak}</Cip>
+            <Cip ton="notr">{KAYNAK[k.kaynak] ?? k.kaynak}</Cip>
             <SauceCipi k={k} />
             <span className="mono">{k.commit}</span>
             <span className="soluk">{tarih(k.baslangic)}</span>

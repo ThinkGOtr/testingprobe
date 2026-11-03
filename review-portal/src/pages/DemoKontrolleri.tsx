@@ -814,7 +814,7 @@ function DurumKarti({ d }: { d: DemoDurumu | null }) {
           <>
             <dt>Locator durumu</dt>
             <dd>
-              <Cip ton={d.locator_durumu === "baseline" ? "basari" : d.locator_durumu === "kirik" ? "hata" : "vurgu"}>
+              <Cip ton={d.locator_durumu === "baseline" ? "basari" : d.locator_durumu === "kirik" ? "hata" : "notr"}>
                 {d.locator_durumu === "baseline" ? "başlangıç" : d.locator_durumu === "kirik" ? "kırık" : "onarıldı"}
               </Cip>
             </dd>

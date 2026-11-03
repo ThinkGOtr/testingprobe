@@ -111,7 +111,7 @@ export function BulguKarti({
               {bulgu.bulgu_etiketi}
             </span>
           )}
-          <Cip ton="vurgu">{BULGU_TURU[bulgu.type] ?? bulgu.type}</Cip>
+          <Cip ton="notr">{BULGU_TURU[bulgu.type] ?? bulgu.type}</Cip>
           <span className="mono">{bulgu.doc_ref}</span>
           <ReplayRozeti mode={bulgu.mode} />
           {bulgu.durum !== "open" && <Cip ton={dd.ton}>{dd.etiket}</Cip>}

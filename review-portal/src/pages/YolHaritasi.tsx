@@ -27,7 +27,7 @@ import {
 const YENILEME_MS = 20_000;
 
 const HAL: Record<AdimHali, { etiket: string; ton: Ton; isaret: string }> = {
-  tamam: { etiket: "tamam", ton: "basari", isaret: "✓" },
+  tamam: { etiket: "tamam", ton: "notr", isaret: "✓" },
   suruyor: { etiket: "sürüyor", ton: "bilgi", isaret: "…" },
   bekliyor: { etiket: "bekliyor", ton: "notr", isaret: "○" },
   engel: { etiket: "engel", ton: "hata", isaret: "!" },

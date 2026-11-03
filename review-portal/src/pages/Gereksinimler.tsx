@@ -122,7 +122,7 @@ function GereksinimSatiri({ g, kanit }: { g: Gereksinim; kanit: Omit<SonrakiGird
     <tr>
       <td className="mono" data-etiket="Anahtar">
         {g.jira_key ?? (
-          <Cip ton="vurgu" title="Serbest metin gereksinim">
+          <Cip ton="notr" title="Serbest metin gereksinim">
             Serbest metin
           </Cip>
         )}

@@ -110,7 +110,7 @@ export function CaseKarti({
               {a}
             </span>
           ))}
-          {tc.kanal === "ide" && <Cip ton="vurgu" title="Claude Code (MCP submit_draft_cases) kanalından geldi">Claude Code</Cip>}
+          {tc.kanal === "ide" && <Cip ton="notr" title="Claude Code (MCP submit_draft_cases) kanalından geldi">Claude Code</Cip>}
           <ReplayRozeti mode={tc.mode} />
         </div>
         {tc.jira_test_key && <span className="mono">{tc.jira_test_key}</span>}

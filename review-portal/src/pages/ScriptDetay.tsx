@@ -235,7 +235,7 @@ function EslemeTablosu({ eslemeler }: { eslemeler: AdimEslemesi[] }) {
               <td className="mono" data-etiket="Metot">
                 {e.po}.{e.method}({e.args.map(DEGER).join(", ")})
               </td>
-              <td data-etiket="Tür">{e.beklenen ? <Cip ton="vurgu">Doğrulama</Cip> : <Cip>Eylem</Cip>}</td>
+              <td data-etiket="Tür">{e.beklenen ? <Cip ton="notr">Doğrulama</Cip> : <Cip>Eylem</Cip>}</td>
               <td data-etiket="Uygulamada">
                 {e.beklenen ? (
                   // Doğrulamanın `verified`'ı değerin onaylı case metninde bulunmasıdır (kaynak
@@ -685,7 +685,7 @@ export function ScriptDetay() {
                 <span className="mono">#{s.pr.number}</span> {s.pr.baslik}
               </p>
               <p className="satir-ogeler">
-                <Cip ton={s.pr.durum === "merged" ? "basari" : s.pr.durum === "open" ? "vurgu" : "notr"}>
+                <Cip ton={s.pr.durum === "merged" ? "basari" : s.pr.durum === "open" ? "bilgi" : "notr"}>
                   {s.pr.durum === "merged" ? "Birleşti" : s.pr.durum === "open" ? "Açık" : "Kapalı"}
                 </Cip>
                 {prBirlesti ? (

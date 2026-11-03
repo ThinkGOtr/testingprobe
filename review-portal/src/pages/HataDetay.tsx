@@ -13,7 +13,7 @@ import { kisaKosuAdi } from "./Kosular";
 const ONARIM_DURUMU: Record<LocatorOnarimi["durum"], { etiket: string; ton: Ton }> = {
   proposed: { etiket: "Önerildi", ton: "notr" },
   checking: { etiket: "Kontrol ediliyor", ton: "bilgi" },
-  pr_open: { etiket: "PR açık", ton: "vurgu" },
+  pr_open: { etiket: "PR açık", ton: "bilgi" },
   merged: { etiket: "Birleşti", ton: "basari" },
   rejected: { etiket: "Reddedildi", ton: "notr" },
   failed: { etiket: "Başarısız", ton: "hata" },
