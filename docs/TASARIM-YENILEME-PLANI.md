@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Sürüm | **v4 (uygulamaya hazır)** — 3 inceleme turu (Ek A); 2. ve 3. turda engelleyici yok |
+| Sürüm | **v5 (uygulamaya hazır)** — 3 inceleme turu + plan sonrası kod değişikliği taraması (Ek A, Ek B); 2. ve 3. turda engelleyici yok |
 | Tarih | 2026-11-03 |
 | Kapsam | `review-portal/` (React + Vite, nginx). **Görsel dil ve ekran düzeni.** |
 | Kapsam dışı | `demo-app/` (test edilen uygulama; Script detayındaki önizlemesi dahil kendi görünümünde kalır), `sims/jira-sim/` (Jira'yı taklit eder), core/API, iş kuralları, arayüz metinleri |
@@ -40,14 +40,14 @@ serbesttir ama §9'daki test-etki taramasından geçer.
 
 | Konu | Durum (kanıt) | Yenilemeye etkisi |
 |---|---|---|
-| Stil mimarisi | Tek dosya `src/styles.css` (2420 satır, ~244 kök sınıf). Bileşenler ekran bölümlerinde bağlamlı olarak yeniden tanımlanıyor (`.kart` 551 / `.kule-izgara > .kart` 2019; `.cip` 696 / `.karar-ozet .cip` 1391 / `.hazirlik-tablo td .cip` 2305; `.uyari-kutusu` 743 / `.yerel-kontrol .uyari-kutusu` 2164; `.dugme-ek` 2146; `.rozet-degerlendirme` 1885) | Her bileşen değişikliğinde **sonraki tekrar tanımlar da** güncellenir (§6.3) |
-| Stil dosyasını okuyan test | `inceleme.test.tsx:461-465` `styles.css`'i metin olarak okuyup `.tablo-yigin` 640 px kuralını arıyor | Dosya bölünmez (§6.3, karar K1) |
+| Stil mimarisi | Tek dosya `src/styles.css` (2420 satır; HEAD `5a791de`'de **2520** — Ek B; aşağıdaki satır numaraları 2420'lik tabana göredir, ~244 kök sınıf). Bileşenler ekran bölümlerinde bağlamlı olarak yeniden tanımlanıyor (`.kart` 551 / `.kule-izgara > .kart` 2019; `.cip` 696 / `.karar-ozet .cip` 1391 / `.hazirlik-tablo td .cip` 2305; `.uyari-kutusu` 743 / `.yerel-kontrol .uyari-kutusu` 2164; `.dugme-ek` 2146; `.rozet-degerlendirme` 1885) | Her bileşen değişikliğinde **sonraki tekrar tanımlar da** güncellenir (§6.3) |
+| Stil dosyasını okuyan test | `inceleme.test.tsx:463-467` `styles.css`'i metin olarak okuyup `.tablo-yigin` 640 px kuralını arıyor | Dosya bölünmez (§6.3, karar K1) |
 | TSX'te sabit renk | Yok. Satır içi stil 6 yerde (konum/genişlik) | Görünüm CSS'ten yönetilir |
 | Tema | `tp-tema`: `temaOku()` (`Kabuk.tsx:52-60`) yalnız `acik`/`koyu` tanır, aksi `sistem`; `useTema` (62-76) **her açılışta** değeri yazar (`setItem` 68-72) → daha önce açılmış her tarayıcıda `tp-tema=sistem` kayıtlı | Göç gerekir (§3.1) |
 | Font | `--font: "Inter", …` ama Inter **yüklenmiyor** | Self-host |
 | CSP (`nginx.conf:38,148`) | `default-src 'self'` (font-src yok) · `img-src 'self' data:` · satır içi betik yasak | Google Fonts yok; **`data:` font da yok** (Vite 4 KB altı dosyayı gömer — §6.2) |
 | Docker | Yalnız `index.html`, `src/` vb. kopyalanır; `public/` yok | Statik varlık `src/`'den import edilir veya `data:` URI |
-| Birim test | 2026-11-03 ölçümleri 496 → 497 → 498 (paralel geliştirme sürüyor); `tsc` temiz | Kapı: **F0'da ölçülen taban sayısından az değil** |
+| Birim test | 2026-11-03 ölçümleri 496 → 497 → 498 → **512** (HEAD `5a791de`, 34 dosya; `kosuSonuclari.test.tsx` eklendi; paralel geliştirme sürüyor); `tsc` temiz | Kapı: **F0'da ölçülen taban sayısından az değil** |
 | E2E duman | Örnek veri, `vite preview` (nginx/CSP yok). axe döngüsü `["light","dark"]` için `emulateMedia` (`duman.spec.ts:334-361`), 1440 + 390 px, serious/critical = 0 | Statik koyu varsayılan bu döngüyü **sessizce tek temaya düşürür** → yeniden yazılır (§8) |
 | Ölçüm testleri | Yatay taşma (`:252-258, 296-302, 313-320`), "Adım" hücresi >250 px (`:326-329`), akış adı çakışması 375 px (`:382-394`) | Font/boşluk değişimine duyarlı; `document.fonts.ready` beklenir |
 | Prova | `rehearsal/ui`: `npm run birim` yalnız yardımcı fonksiyon; arayüz provası `npm run tur` / `npm run canli` | Kapı: `tur` (§8) |
@@ -81,16 +81,22 @@ serbesttir ama §9'daki test-etki taramasından geçer.
 
 **Satır numaraları kayar** (senaryo sürekli güncelleniyor; 2026-11-03 12:53'te 313. satırdan sonra 5 satır
 eklendi). Uygulamada her atıf alıntı metniyle `grep -n` ile yeniden bulunur; aşağıdaki numaralar
-2026-11-03 13:00 itibarıyladır.
+2026-11-03 15:10 itibarıyladır (HEAD `5a791de`, 639 satır; 13:00'teki numaralar 35–75 satır kaydı — senaryo
+gün içinde sürekli düzenleniyor, bu numaralara değil alıntıya güvenin).
 
-`CANLI-DEMO-SENARYOSU.md` satırları: sol menü (119, 146, 242, 331, 354, 372); sağ üst **Canlı olaylar**
-göstergesi yeşil (87), kırmızı = sorun (493); "mor adımlar AI, yeşil adımlar insan kapısı" (128);
-4\. adımın **kesikli halkası = AI adımı** (214); kartın sağ üstünde yeşil **"✓ kanıt doğrulandı"** (167);
-"✓ Doküman son hal · PO teyidi bekliyor" kartın sağ üstünde (181-183); **PO onaylı** rozeti (198); sağ üst
-**Case üret** (210); "✓ İnsan kapısı geçildi" (215); **Defect adayı** durumu (266); sağdaki **Kırarak doğrula**
-kartı, yeşil → kırmızı → yeşil (282-283); **sarı kutu** "Zayıf test"/kabul onayı (286, 311); "Merge kapısı
-açık ✓" (308); REPLAY rozeti her AI çıktısında (130); REPLAY-MISS amber (495); Denetim verify yeşil (463);
-sunum makinesi **%125 zoom** (76).
+`CANLI-DEMO-SENARYOSU.md` satırları: sağ üst **Canlı olaylar** göstergesi yeşil (125), kırmızı = sorun (610);
+"Mor adımlar AI taslağı, yeşil adımlar insan kapısı" (168); REPLAY rozeti her AI çıktısında (170); gri
+**"Kod"** kutusu (204); kartın sağ üstünde yeşil **"✓ kanıt doğrulandı"** (207); **"✓ Doküman son hâl · PO
+teyidi bekliyor"** kartın sağ üstünde (222 — çip artık `bilgi`/indigo, §5); **PO onaylı** rozeti (238); sağ üst
+**Case üret** ve **Case review** düğmeleri, Case review → **Yayın önizleme** (250-265); 4\. adımın **kesikli
+halkası = AI adımı** (254); "✓ İnsan kapısı geçildi" (255); **Defect adayı** durumu (307); sağdaki **Kırarak
+doğrula** kartı, yeşil → kırmızı → yeşil (323-325) ve zayıf testte **⚠ "Yeşil · beklenmeyen sonuç"** + **sarı
+kutu** "Zayıf test" (327-329); merge kapısı altındaki sarı kabul kutusu (354-355); "Merge kapısı açık ✓" (351);
+**"⚠️ Sauce koşmadı"** uyarısı (398-400, §4.6 `SauceCipi`); Koşu detayı raporları (Adım 10, 419); Kule
+"Beklenen boşluklar" (428-432); Koşular'da **"Kasıtlı kırma koşuları"** kutusu ve **"Başarısızlıklar ve triage"**
+kartı (L2, 485-487); "tamamı yeşil 36/36" (L4, 513); mükerrer **"yüksek olasılık"** (534); REPLAY-MISS amber
+(612); Denetim verify yeşil (579); sunum makinesi **%125 zoom** (114).
+Bulma: `grep -n "<alıntı>" docs/CANLI-DEMO-SENARYOSU.md`.
 
 ---
 
@@ -322,7 +328,7 @@ sağda, birincil en sağda ("Case üret" sağ üstte kalır).
   | Bulgu (açık, uyarı) | `article.bulgu:not(.bulgu-blocking):is([data-durum="open"], [data-durum="unverified"])` | `--warn` |
   | Bulgu (kapanmış) | `article.bulgu:is([data-durum="decided"], [data-durum="resolved"], [data-durum="stale"], [data-durum="discarded"])` | `--border-strong` |
   | Case | mevcut `.case-${durum}` (`CaseKarti.tsx:101`) | `draft` → `--vurgu` (AI taslağı, karar bekliyor); `approved`/`published` → `--ok`; `rejected`/`superseded` → `--border-strong` |
-  | PO kapısı | bekliyor: `.kart:has([data-testid="po-kapisi"].soluk)` (`GereksinimDetay.tsx:554`); geçildi: `.kart:has([data-testid="po-kapisi"]:not(.soluk))` (`:550`) | `--warn` / `--ok` |
+  | PO kapısı | bekliyor: `.kart:has([data-testid="po-kapisi"].soluk)` (`GereksinimDetay.tsx:556`); geçildi: `.kart:has([data-testid="po-kapisi"]:not(.soluk))` (`:552`) | `--warn` / `--ok` |
   | Merge kapısı | geçildi: `.merge-kapisi:has(> .ok-metin)` (yalnız birleştirilmiş dalda doğrudan çocuk, `ScriptDetay.tsx:747-748`); bekliyor: `.merge-kapisi:not(:has(> .ok-metin))` ("açık ✓" iç içe olduğu için `>` iki hali ayırır, `:761-763`) | `--ok` / `--warn` |
   | Bug karar paneli | `.karar-paneli` (yalnız `draft` iken çizilir, `BugTaslaklari.tsx:402, 649`) | `--warn` |
 
@@ -342,6 +348,8 @@ sağda, birincil en sağda ("Case üret" sağ üstte kalır).
 | `tehlike` | `--err-solid`, beyaz (6,29) |
 | **pasif** | `opacity` **yok** — mevcut `.dugme:disabled { opacity: .5 }` (609) ve `.dugme-ek { opacity: .85 }` (2146) silinir. Zemin `--surface-3`, metin `--muted` (5,17 / 4,85), kesik kenar `--border-strong`, `cursor: not-allowed`. Rol yüzünden pasifse (`[data-yetkisiz]`) maske ile kilit ikonu (`content: ""`) |
 | çalışıyor | döner simge; genişlik sabit |
+| **metin düğmesi** `.dugme-metin` *(plan sonrası, Ek B; 2432+ bloğu)* | Tablo hücresinde açılır-kapanır test adı (`aria-expanded`). Kenarsız/zeminsiz kalır; metin `--text` 500, hover `--accent` + alt çizgi; odak global halka. Önündeki ▸/▾ glifi `aria-hidden` metin kalır (SVG listesine girmez, §4.16) ve `--muted` |
+| **seçim (segment) düğmeleri** | Test sonucu süzgecindeki "Tümü (n) / Başarısız (n) …" (`aria-pressed`): seçili = `birincil` (`--accent-solid`), diğerleri `ikincil`, küçük (30 px). Sayısı 0 olan pasif görünümü yukarıdaki pasif kuralıyla (opacity yok). Sınıf değişmez |
 
 Pasif öğeler axe'ten zaten muaf (native `disabled` / `aria-disabled`), ama renkler yine AA'yı sağlar.
 
@@ -349,7 +357,7 @@ Pasif öğeler axe'ten zaten muaf (native `disabled` / `aria-disabled`), ama ren
 `title` klavyede okunmaz. Neden metni düğmenin **dışında**, `aria-describedby` ile bağlı, `--muted`, tonlu
 zemine konmaz. Ön koşul: o `title` metni (ve "Bu işlem için gereken rol:" öneki) aynı ekranda
 `getByText`/`findByText`/`page.getByText` ile aranıyorsa o düğmede çizilmez (çift eşleşme → strict mode).
-Bilinen adaylar: `inceleme.test.tsx:394,402`, `bilesenler.test.tsx:144`, `demob.test.tsx:97,127,208`,
+Bilinen adaylar: `inceleme.test.tsx:396,404`, `bilesenler.test.tsx:144`, `demob.test.tsx:97,127,208`,
 `duzeltmeler.test.tsx:109,125`, `duzeltmeler3.test.tsx:68,70`.
 
 ### 4.6 Rozet ve çip — `.rozet .rozet-* .cip .cip-*` — MVT (C) + ton (M)
@@ -364,9 +372,10 @@ Bilinen adaylar: `inceleme.test.tsx:394,402`, `bilesenler.test.tsx:144`, `demob.
 - **Ton değişikliği (M, MVT) — tam liste:**
   - AI olmayan kategorik çipler → `notr`: bulgu türü (`BulguKarti.tsx:114`), "Serbest metin"
     (`Gereksinimler.tsx:125`), "Claude Code" (`CaseKarti.tsx:113`), "Doğrulama/Eylem" (`ScriptDetay.tsx:238`),
-    koşu tetiği `TETIK_TONU`'nda **yalnız** `nightly` ve `deploy` (`Kosular.tsx:12-16`; `break_verify: "uyari"`
-    kalır), koşu kaynağı üçlüsü (`Kosular.tsx:66, 294`) sabit `notr` (Kule aynı `KosuTablosu`'nu kullanır,
-    `KontrolKulesi.tsx:301`), Demo kontrolleri "onarıldı" (`DemoKontrolleri.tsx:793`).
+    koşu tetiği `TETIK_TONU`'nda **yalnız** `nightly` ve `deploy` (`Kosular.tsx:13-17`; `break_verify: "uyari"`
+    kalır), koşu kaynağı üçlüsü (`Kosular.tsx:67, 379`) sabit `notr` (Kule aynı `KosuTablosu`'nu kullanır,
+    `KontrolKulesi.tsx:301`), Demo kontrolleri "onarıldı" (`DemoKontrolleri.tsx:817`). *(Satırlar 15:00
+    çalışma ağacına göre; Ek B.)*
   - AI olmayan `vurgu` durumları → `bilgi` (indigo, "insan incelemesi bekliyor"): "Case review"
     (`etiketler.ts:37`), `SCRIPT_DURUMU` içinde **yalnız** `pr_open` "PR açık" (`etiketler.ts:130`), Triage
     onarım "PR açık" (`HataDetay.tsx:16`), PR "Açık" çipi (`ScriptDetay.tsx:688`).
@@ -374,13 +383,18 @@ Bilinen adaylar: `inceleme.test.tsx:394,402`, `bilesenler.test.tsx:144`, `demob.
     (`YolHaritasi.tsx:108`).
   - Yol haritası `HAL.tamam.ton` `basari` → `notr` (`YolHaritasi.tsx:30`; ✓ zaten `.yh-no`'da, hap metnine
     eklenmez). `HAL.suruyor` `bilgi` kalır (artık indigo).
-  - **Değişmez:** "Kırarak doğrula"/kırma çipi `uyari` (`Kosular.tsx:55`); "1 defect adayı" `cip-uyari`
+  - **Değişmez (plan sonrası eklenen çipler, Ek B):** `SauceCipi` (`Kosular.tsx:101-113`: geçti `basari`,
+    kırmızı `hata`, "Sauce koşmadı: …" `uyari` — senaryo 389-391 "⚠️" ile uyumlu —, atlandı `notr`,
+    sırada/sürüyor `bilgi`); `CiAdimlari` "geçti/kaldı/atlandı" ve GitHub işi sonuç hapları
+    (`KosuSonuclari.tsx` `GH_SONUC_TONU`). Bunlar test/iş sonucu haplarıdır: §3.2 kural 6 gereği yeşil
+    **hapta** kalır, şerit/dolgu almaz.
+  - **Değişmez:** "Kırarak doğrula"/kırma çipi `uyari` (`Kosular.tsx:56`); "1 defect adayı" `cip-uyari`
     (testte kilitli); `SCRIPT_DURUMU`'nun `pr_open` dışındaki tonları ve `YEREL_SINIF` ("Defect adayı" `hata`,
     "Kararsız (flaky)" ve kabul gerektiren işaretler amber).
   - **CSS'te `--info` kullanan diğer yerler:** `.kirma-running .kirma-ikon` (1778-1781) →
     `--accent`/`--accent-soft`; `.bildirim-bilgi` (2112) şeridi `--info` kalır.
   - Test etkisi: tek ton sınıfı doğrulaması `cip-uyari`; yol haritası testleri yalnız `data-hal`'e bakıyor
-    (`duzeltmeler6.test.tsx:139`, `faz5.test.tsx:400`, `canli.spec.ts:381`, `duman.spec.ts:508`) — tarama
+    (`duzeltmeler6.test.tsx:139`, `faz5.test.tsx:418`, `canli.spec.ts:381`, `duman.spec.ts:508`) — tarama
     2026-11-03.
 - **Mükerrer benzerliği** kategorik hap kalır ("yüksek olasılık" vb.) + REPLAY; çubuk/yüzde gösterilmez.
 
@@ -391,6 +405,13 @@ Başlık hücresi `--surface-2`, `0.75rem`/700/büyük harf/`.05em`/`--muted` (5
 `--border`, 12 px, `overflow-x: auto`, odaklanabilir bölge aynı; mobilde kaydırılabilirken sağ kenarda 24 px
 solma gölgesi (CSS scroll-shadow, G18). İlk sütun kimlikleri `--mono`; sayılar `tabular-nums` sağa yaslı.
 `.tablo-yigin` 640 px kuralı (test bunu metin olarak arıyor) **aynı yerde ve aynı biçimde** kalır.
+**Açılır ayrıntı satırı** (`tr.test-ayrinti-satiri`, Koşu detayı, Ek B): `td` zemini `--surface-2` (bugün de
+öyle) + üst ayraç `--border-soft`; satır hover'ı **almaz** (`.tablo tbody tr:not(.test-ayrinti-satiri):hover`).
+Açık satırın üstündeki test satırına sol 3 px `--accent` şerit (`tr:has(+ .test-ayrinti-satiri) > td:first-child
+{ box-shadow: inset 3px 0 0 var(--accent) }`) — hangi testin açıldığı görünür. İçteki `.test-deneme`/`.test-blok`
+(`<details>`) 1 px `--border-soft`, 8 px; `summary` 600; `.pw-adim-hata` `--err` (değişmez), başarılı adım ✓
+`--muted`. `.hata-mesaji-kisa` (6,5em kesik) altına 1,5em `--surface` → saydam solma (yalnız görsel).
+Ek görselleri (`.test-ek-resim img`, `.test-ek-video video`) 1 px `--border`, `--radius-sm` (bugün de öyle).
 
 ### 4.8 Form — MVT (C)
 
@@ -405,9 +426,23 @@ Ton **zemini korunur** (`--*-bg`; demo'daki "sarı kutu" tarifleri) + sol 3 px t
 metin `--text`, ikincil metin `--text-2` (tonlu zeminde `--muted` yasak). `.kapi-uyarilari` ve "Zayıf test"
 kutusu amber kalır. `.uyari-kutusu` 2164 tekrar tanımı da güncellenir.
 
+**Mevcut hata (plan sonrası ortaya çıktı, MVT'de düzeltilir — yalnız CSS):** `.uyari-kutusu strong { display:
+block }` (bugün 763) **gövdedeki satır içi `<strong>`'ları da** blok yapıyor. Demo kontrollerine eklenen
+"Bu demo ne gösteriyor? Test bakımı" kutusunda (`data-testid="locator-aciklama"`) "**bakımı**", "**Ayırt
+eder**", "**Tek satırlık onarım önerir**", "**İnsan onaylar**" kendi satırlarına düşüyor. Seçici
+`.uyari-kutusu > strong` olur (`Uyari` başlığı doğrudan çocuk `<strong>`, `ui.tsx:90`). Ayrıca başlık +
+uzun gövde yan yana iki sütuna bölünmesin diye `.uyari-kutusu > strong { flex-basis: 100% }`; gövdedeki
+`ol/ul` `padding-left: 1.25rem`, `margin: 6px 0`; `p + p` `margin-top: 6px`. 1440 ve 390 px ekran görüntüsüyle
+onaylanır. Kapsam: `<Uyari baslik>` kullanan **36 yer** (BugTaslaklari 8, DemoKontrolleri 7, HataDetay 5,
+Yayin 4, ScriptDetay 3, …; `grep -rn "<Uyari[^>]*baslik=" src`). Bugün geniş ekranda başlık gövdenin **solunda**
+duruyor (flex satırı); `flex-basis: 100%` ile her yerde **üstüne** geçer — bilinçli, site uyarı dilidir.
+Senaryo tarifleri ("sarı kutu", "✓ Zincir doğrulandı") metin/renk düzeyinde olduğundan etkilenmez; F2-C'de
+Denetim, Script detay (merge kapısı, "Dal main'in gerisinde"), Bug taslakları ve `/demo` ekranları önce/sonra
+karşılaştırılır.
+
 ### 4.10 Akış göstergesi (14 adım) — `AkisAdimlari.tsx`, `.akis*` — MVT (C)
 
-**Tür = biçim + renk** (bugünkü biçim dili korunur; demo satır 214 "kesikli halka = AI"):
+**Tür = biçim + renk** (bugünkü biçim dili korunur; demo satır 251 (v4'te 214) "kesikli halka = AI"):
 
 | Tür | Biçim | Renk |
 |---|---|---|
@@ -435,7 +470,7 @@ kalır; "AI + insan" öğesi eklenmez (yeni görünür metin). Kenar en az 2 px;
 
 `--code-bg`, 1 px `--border`, 12 px; `.kod-dosya` şerit (`--surface-2`, mono `--muted`). Pencere noktası yok.
 Satır no `--muted`; vurgu satırı `--kod-vurgu`. `ins`/`del` hap zeminli. `.kod-*` 2141 tekrar tanımı da
-güncellenir. ("Kod" etiketli kutu koyu temada siyahımsı olur → senaryo satır 164 F5'te netleşir.)
+güncellenir. ("Kod" etiketli kutu koyu temada siyahımsı olur → senaryo satır 201 (v4'te 164) MVT senaryo düzeltmesinde netleşir.)
 
 ### 4.12 Metrik / KPI — `Metrik`, `.metrik*`, `.olculmedi`, `Ilerleme` — MVT (C)
 
@@ -449,9 +484,9 @@ güncellenir. ("Kod" etiketli kutu koyu temada siyahımsı olur → senaryo sat�
   değil), hap değil. Hap yalnız `.olculmedi`.
 - **Kule maliyeti REPLAY'de (MVT, M):** `KontrolKulesi.tsx:146-153` — koşul
   `ai.cagri_sayisi !== null && ai.cagri_sayisi > 0 && ai.replay_cagri === ai.cagri_sayisi` (null koruması;
-  `yolHaritasi.ts:522-523` `modOzeti` ile aynı mantık; `demob.test.tsx:386-396` null senaryosu "ölçülmedi"
+  `yolHaritasi.ts:567-568` `modOzeti` ile aynı mantık; `demob.test.tsx:386-396` null senaryosu "ölçülmedi"
   demez) ise "Maliyet (toplam)" ve "Bugün" değeri `<Olculmedi metin="REPLAY — ölçülmedi" />`
-  olur (Case review'daki mevcut metinle aynı; `inceleme.test.tsx:274-281` emsali). Alt satır ("n model
+  olur (Case review'daki mevcut metinle aynı; `inceleme.test.tsx:276-283` emsali). Alt satır ("n model
   çağrısı", "Günlük tavan …") aynen. Önkoşul §9: bu metnin Kule sayfasında kapsamsız `getByText` ile
   aranmadığı doğrulanır.
 - **`.olculmedi`** (2235): değer yuvasında, etiketle aynı ya da büyük boyda, `--text-2`, 600, kesik kenarlı
@@ -499,19 +534,19 @@ MVT (§6.1) bittiğinde tüm ekranlar yeni dile geçer. Bu tablo, **ek** düzen 
 | Ekran | Rota | Rol | Öncelik | MVT'de (C) | Demo sonrası (F4, M) | Kilitler |
 |---|---|---|---|---|---|---|
 | Yol haritası | `/yol-haritasi` | Sunucu | **P1** | **MVT DOM:** `<li class="yh-adim">`'e `data-tur={a.tur}` (`YolHaritasi.tsx:71`; bugün tür DOM'da yok). Daire **= tür** (§4.10 biçim+renk, `[data-tur]` seçicisiyle). Durum yalnız `.yh-no`'daki ✓ + durum hapı; **"tamam" hapı `notr`** (§4.6; yeşil insan onayına ait). `yh-tur` metni `[data-tur]`'a göre tür renginde hap. Mevcut dört durum kuralı `.yh-adim.yh-{tamam,suruyor,engel,yedek} .yh-no` (2350-2369) **silinir**; `.yh-no` §4.10 gibi çizilir: `[data-tur]` kenarı; `tamam` → tür dolgusu + ✓ `--on-ton`; diğer haller boş iç. `yh-tur` hap rengi: sistem `--notr`, insan `--ok`, ai ve ai_insan `--vurgu`. "Sıradaki" = `[data-testid="yh-sonraki"]` paragrafı (`YolHaritasi.tsx:243`): sol 3 px `--accent-solid` + `--accent-soft` bant. "Sürüyor" yalnız hapta (`bilgi` → indigo). Adımlar arası ayraç mevcut `border-top` (2326-2336) `--border-soft` — **yeşil bağlantı çizgisi yok**. Bağlantılar çizgisiz `--accent`, hover'da çizili | — | `yh-adim-*`, `yh-ilerleme`, `yh-mod`, liste "14 adımlı demo akışı" (14 öğe), "Locator kırılması ilerlemesi" |
-| Gereksinim detayı | `/gereksinimler/:id` | Analist | **P1** | Bulgu şerit önceliği (§4.4); "✓ Doküman son hal" ve "✓ kanıt doğrulandı" sağ üst, yeşil; PO kartı insan kapısı şeridi | ≥1280 px sağda yapışkan **bölüm gezgini**: `<nav aria-label="Sayfa bölümleri">` + düz `<a href="#…">` (list/article değil); `scroll-padding-top` yapışkanlar toplamına | `article.bulgu` (sayı 3), `.rozet-dogrulandi`, `bulgu-sayaclari`, `.baslik-anahtar`, `aria-current="step"`, "Case üret" sağ üst, navigation "14 adımlı akıştaki ilerleme" |
+| Gereksinim detayı | `/gereksinimler/:id` | Analist | **P1** | Bulgu şerit önceliği (§4.4); "✓ kanıt doğrulandı" sağ üst, yeşil; "✓ Doküman son hâl" çipi sağ üst — **ton kodda belirlenir (Ek B, `GereksinimDetay.tsx:300`): `pending_po` → `bilgi` (indigo, "sıradaki adım"), `doc_final`/`po_approved` → `basari`**; tasarım bu tonları değiştirmez; PO kartı insan kapısı şeridi | ≥1280 px sağda yapışkan **bölüm gezgini**: `<nav aria-label="Sayfa bölümleri">` + düz `<a href="#…">` (list/article değil); `scroll-padding-top` yapışkanlar toplamına | `article.bulgu` (sayı 3), `.rozet-dogrulandi`, `bulgu-sayaclari`, `.baslik-anahtar`, `aria-current="step"`, "Case üret" sağ üst, navigation "14 adımlı akıştaki ilerleme" |
 | Kod üretimi | `/kod` | Mühendis | **P1** | Ton değişikliği yalnız "PR açık" (indigo, §4.6). "Defect adayı" mevcut `hata` tonuyla kalır; öne çıkması yalnız CSS: `tr:has(.cip-hata) > td:first-child { box-shadow: inset 3px 0 0 var(--err) }` (tablo `border-collapse: collapse`, 832; "Başarısız" satırları da `hata` olduğundan aynı şeridi alır — kabul) ve hap 700. Uyarı/kabul gerektiren işaretler amber | — | bölge "Üretilen testler tablosu" |
-| Script detay | `/kod/:id` | Mühendis | **P1** | PR + Kırarak doğrula kartları üst hizalı; merge kapısı insan kapısı şeridi; zayıf test kutusu amber; zaman çizelgesi yeşil→kırmızı→yeşil | — | `merge-kapisi`, `merge-uyarilari`, `yerel-sinif`, `kirma-*`, `.ok-metin`, `.ajan-ekran img`, liste "Kırarak doğrulama zaman çizelgesi", "PR check'leri", bölge "Eşlenen adımlar tablosu", demo-app önizlemesi kendi görünümünde |
+| Script detay | `/kod/:id` | Mühendis | **P1** | PR + Kırarak doğrula kartları üst hizalı; merge kapısı insan kapısı şeridi; zayıf test kutusu amber; zaman çizelgesi yeşil→kırmızı→yeşil. **Plan sonrası (Ek B):** beklenenin tersi sonuç (`data-beklenmedik`) de `kirma-sonucsuz` sınıfı + ⚠ alır → `.kirma-sonucsuz .kirma-ikon` amber kuralı (bugün 1796) **iki durumu da** kapsar, yeşil/kırmızı aşama kuralları onu ezmemeli (seçici özgüllüğü F2-D'de kontrol). Kod üretimi tablosundaki "Kırma etkilemedi · kabulle birleşti / kabul gerekli" düz metindir (hap değil, `Kod.tsx:169-171`) — MVT'de renk verilmez | — | `merge-kapisi`, `merge-uyarilari`, `yerel-sinif`, `kirma-*`, `.ok-metin`, `.ajan-ekran img`, liste "Kırarak doğrulama zaman çizelgesi", "PR check'leri", bölge "Eşlenen adımlar tablosu", demo-app önizlemesi kendi görünümünde |
 | Bug taslakları / detay | `/bug-taslaklari(/:id)` | Testçi | **P1** | Karar düğmeleri insan kapısı kartında; mükerrer kategorik hap + REPLAY; kasıtlı kırma taslağı uyarısı amber | — | `mukerrer-onerisi`, liste "Mükerrer adayları", "Olası mükerrerler" |
 | Case review | `/gereksinimler/:id/caseler` | Analist | **P1** | Mevcut `.case-${durum}` sınıflarıyla (G13): şerit §4.4 tablosu; `approved/published/rejected/superseded` kartlar `--surface-2` zemin ve adım tablosu hücre dolgusu `6px 10px`; `draft` kartlar `--surface` (öne çıkar). Rozet yığını (G14): `.case-baslik .satir-ogeler > .cip ~ .cip-notr { background: none; border: 0; padding: 0 0 0 8px; border-left: 1px solid var(--border-soft); color: var(--text-2) }` (ilk `.cip` = durum çipi hap kalır; "Yerini yenisi aldı"/"Düşük risk" gibi nötr durum/risk çipleri ilk sırada değilse düzleşir — F2-D'de 1440 px ekran görüntüsüyle onaylanır) — ayraç `content` ile **değil** kenarla (pseudo metin erişilebilir ada girer). Özet `.metrik-izgara` şerit görünümü (§4.12) | Sekmeler yapışkan. `<details>` ile katlama **yapılmaz** (bölge sorguları). (v2'deki `data-durum` maddesi gereksiz — sınıf zaten var) | `Adımlar:` bölgeleri, `tablo-yigin`, `case-karar-kilit`, `case-baz*`, `.metrik`/`.metrik-deger` `/^—$/`, meter "Case kabul oranı", "Onayla/Düzelt/Reddet/Yeniden aç" |
-| Koşular | `/kosular` | Sunucu | **P1** | Tetik/kaynak nötr (§4.6); durum renkli; kimlik mono; satır hover | — | süzgeç etiketleri, bölge "Koşular tablosu" |
+| Koşular | `/kosular` | Sunucu | **P1** (Adım 8, L2, L4) | Tetik/kaynak nötr (§4.6); durum renkli; kimlik mono; satır hover. **Tetik açıklamaları** (`ul.tetik-aciklamalari`, Ek B): `margin: -10px 0 14px` `.sayfa-basligi`'nın alt boşluğuna (bugün 18 px) yaslanıyor — §4.3 başlık boşluğu değişirse negatif marj aynı oranda yeniden ayarlanır; metin `--text-2` (`.soluk` → `--muted` değil, 2 satırlık okunur açıklama), ≤100ch. Açıklama zaten görünür ve `aria-describedby` bağlı → bu iki düğmeye F3'te `.dugme-neden` **eklenmez** | — | süzgeç etiketleri, checkbox "Kasıtlı kırma koşuları", bölge "Koşular tablosu", düğmeler "Deploy sonrası testleri koş" / "Gece koşusunu şimdi başlat", liste "Tetik düğmeleri", `#kosular-gece-aciklama` / `#kosular-deploy-aciklama` |
 | Kontrol Kulesi | `/kontrol-kulesi` | Sunucu | **P1** | Kart şerit başlıkları (tablolar); `.metrik-izgara` stat şeridi görünümü; grafik ≤180 px; boş durumlar tek stil; `align-items:start`; **REPLAY'de maliyet "REPLAY — ölçülmedi"** (§4.12, MVT DOM) | **KPI şeridi**: Geçme oranı · Açık defect adayı · Case kabul · Script ilk review · Hazırlık kazancı. **Maliyet şeride girmez.** REPLAY'de mevcut `Olculmedi` metinleri ("REPLAY: hesaplanmaz", "ölçülmüş baz yok") **aynen** kullanılır — yeni metin yok (`duman.spec.ts:499`, `faz5.test.tsx:259` kilitli). Öğeler kartlardan **taşınır, kopyalanmaz**; testid ve (i) ipucu birlikte taşınır; "Geçme oranı" h2 olarak tek kalır | `gecme-orani`, `hazirlik-kazanci`, `hazirlik-TPD-1`, `kazanc-kapsam`, başlık "Geçme oranı", bölge "AI katkısı", "Karne tablosu", "Karne (story ve uygulama alanı)", kapsamsız `getByText("ölçülmüş baz yok")` (tekil kalmalı) |
 | Triage | `/hatalar/:id` | Mühendis/Testçi | **P1** (demo Adım 12 ve L3) | Kartlar üst hizalı; onarım aşamaları dikey zaman çizelgesi; "Onarım PR'ı aç" pasif görünüm (§4.5). Görsel kapı: 1152 px'te sınıf + sinyaller + onarım kartı ilk ekranda | — | `triage-sinif`, bölge "Locator yoklaması (locator-probe)", liste "Onarım hattı", "Karar kaynağı: deterministik kural" |
 | Denetim | `/denetim` | Sunucu | P2 | Hash mono; "✓ Zincir doğrulandı" yeşil, belirgin | — | "✓ Zincir doğrulandı" / "✗ Zincir kırık" |
-| Demo kontrolleri | `/demo` | Sunucu | P2 | "Locator'ı kır" `tehlike`; onay grubu kartı | — | grup "Locator kırma onayı", liste "Demo olay günlüğü", exact "Locator'ı kır" |
+| Demo kontrolleri | `/demo` | Sunucu | **P1** (L1) | Kart başlığı artık **"Test bakımı demosu"**; düğme **"Buton kimliğini değiştir"** `tehlike` (onaydaki "Evet, buton kimliğini değiştir" de `tehlike`); onay grubu kartı. Kartın başındaki "Bu demo ne gösteriyor? Test bakımı" bilgi kutusu (`locator-aciklama`, numaralı 3 madde) §4.9 düzeltmesiyle: satır içi vurgular satırda kalır, başlık üstte, liste girintili; kutu `--info-bg` (K10: gökmavisi yalnız bilgi kutusunda). Kart altındaki **"Teknik ayrıntı"** `<details className="soluk kucuk">` (plan sonrası) kart katlama değildir (K8 kartın kendisi için), içerik ayrıntısıdır: `summary` `--text-2` 500, varsayılan işaretçi, odak global halka | — | grup **"Buton kimliği değiştirme onayı"** (`5a791de` ile "Locator kırma onayı" adından değişti), liste "Locator kırılması ilerlemesi", liste "Demo olay günlüğü", exact "Buton kimliğini değiştir", "Evet, buton kimliğini değiştir", testid `locator-aciklama`, `on-kosul-hazir` |
 | Giriş | `/giris` | — | P2 | §4.14 (demoda seyirci görmez) | `<strong>Probe</strong>` | "Oturum aç", etiketler, "Giriş yap" |
 | Gereksinimler | `/gereksinimler` | Analist | P2 | Tablo; "Serbest metin" nötr | — | "Gereksinimler tablosu", `tablo-yigin` |
-| Koşu detayı | `/kosular/:id` | — | P2 | — | — | "Raporlar ve bağlantılar", liste "Kanıt bağlantıları" |
+| Koşu detayı | `/kosular/:id` | Sunucu/Mühendis | **P1** (Adım 9 Sauce, Adım 10 raporlar, L2 "Başarısızlıklar ve triage", L4 "36/36") — plan sonrası büyüdü (`KosuSonuclari.tsx`, Ek B) | Kart sırası değişmez (Raporlar ve bağlantılar → metrik kartı (`.metrik-izgara`, §4.12 stat şeridi; L4 "36/36" burada okunur) → Başarısızlıklar ve triage → CI adımları → Test sonuçları). "Test sonuçları" ve "CI adımları" kartlarında şerit başlık (§4.4; Test sonuçları kartında başlıkla tablo arasında süzgeç çubuğu durur — şerit yine başlığa uygulanır, süzgeç çubuğu şeridin altında 12 px). Süzgeç: segment düğmeleri (§4.5), `Ara`/`Dosya`/`Sırala` §4.8 formu, sayaç `role="status"` `--muted` tabular-nums, 390 px'te alt alta sarar. Açılır ayrıntı satırı §4.7. `.ci-meta` `dl` iki sütun `dt --muted`; 390 px'te tek sütun. Günlük (`.kod-blok.gunluk`) §4.11 kod kutusu. `SauceCipi` başlık çipleri arasında (§4.6). "(GitHub artefaktında)" bağlantıları normal bağlantı stili | — | "Raporlar ve bağlantılar", liste "Kanıt bağlantıları", kart "Başarısızlıklar ve triage", bölgeler "Test sonuçları tablosu", "CI adımları", `Test ayrıntısı: …`, `Adımlar (deneme N)`; gruplar "Test sonucu süzgeci", "Duruma göre"; düğmeler "Tümü (n)", "Başarısız (n)" … (`aria-pressed`); searchbox "Ara"; listeler "Yerel CI adımları", "GitHub işleri"; `dl` "ci-meta.json özeti"; img `Ekran görüntüsü: …`, video `Video: …`; bağlantılar `/… \(GitHub artefaktında\)/`, `/Playwright HTML raporu( \(GitHub\))?/`, "Playwright trace'i indir"; metinler "Sauce koşmadı: …", "geçti"/"kaldı", "Süzgece uyan test yok."; `[data-hatali='1']`, `.dugme-metin` |
 | Yayın | `/gereksinimler/:id/yayin` | Analist | P2 | Tablo | — | `yayin-*` |
 | Claude Code | `/claude-code` | Analist | P3 | Kurulum adımları zaman çizelgesi | — | "Token oluştur", bölge "Token listesi" |
 | 404 / yetki yok | — | — | P3 | Boş durum stili | — | "Sayfa bulunamadı", "Bu ekran için yetkiniz yok." |
@@ -539,18 +574,21 @@ düzeni (G13/G14, CSS), Kule stat şeridi görünümü dahil.
 | 4 | `YolHaritasi.tsx:71` | `data-tur={a.tur}` |
 | 5 | `BulguKarti.tsx:105` | `data-durum={bulgu.durum}` |
 | 6 | `KontrolKulesi.tsx:146-153` | REPLAY'de maliyet `Olculmedi` (§4.12) |
-| 7 | `e2e/duman.spec.ts`, yeni birim testler | §8 test değişiklikleri |
+| 7 | `e2e/duman.spec.ts`, yeni birim testler, `src/api/mock/fixtures.ts` (yalnız örnek veri, Ek B2) | §8 test değişiklikleri |
 
 **Demo senaryosu düzeltmeleri (MVT'de, demo öncesi)** — `CANLI-DEMO-SENARYOSU.md`; satırlar alıntıyla
 `grep -n` ile bulunur (§1.3):
-- "Sol menü **Case review**" / "Sol menü **Yayın**" (≈211, 212, 219, 225) → "TPD-1 başlığındaki **Case
-  review** / **Yayın önizleme** düğmesi".
-- "benzerlik **high**" (≈423) → "yüksek olasılık".
-- "gri Kod kutusu" (≈164) → "'Kod' etiketli kod kutusu".
-- "4. adımın kesikli halkası" (≈214) → "kesik **kenar** = AI içerir; kare = insan kapısı".
-- "mor adımlar AI, yeşil adımlar insan kapısı" (≈128) — çizimle uyumlu, değişmez.
-- Adım 11 (Kontrol Kulesi) "Söyle" paragrafına **ekleme** (≈356-358): "Maliyet REPLAY'de 'ölçülmedi' —
-  model çağrısı yapılmadı, sıfır bir ölçüm değildir."
+- ~~"Sol menü **Case review**" / "Sol menü **Yayın**" → TPD-1 başlığındaki düğmeler~~ — **yapıldı** (`5a791de`).
+- ~~"benzerlik **high**" → "yüksek olasılık"~~ — **yapıldı** (`5a791de`, ≈534).
+- "gri **"Kod"** kutusu" (≈204) → "'Kod' etiketli kod kutusu".
+- "4. adımın kesikli halkası" (≈254) → "kesik **kenar** = AI içerir; kare = insan kapısı".
+- "Mor adımlar AI taslağı, yeşil adımlar insan kapısı" (≈168) — çizimle uyumlu, değişmez.
+- Adım 11 (Kontrol Kulesi) **"Beklenen boşluklar"** maddesi (≈429-430, plan sonrası eklendi): "**Maliyet
+  $0,00**" → "**Maliyet 'REPLAY — ölçülmedi'**" (MVT DOM #6 ile ekranda artık $0,00 görünmez; madde değişmezse
+  sunucu ekranda olmayan bir sayıyı arar). Aynı maddedeki "REPLAY'de model çağrısı yok, süre ve ücret ölçülmez"
+  cümlesi kalır — v4'teki "Söyle paragrafına ekleme" bununla karşılandı, ayrıca eklenmez.
+- L1 / Bölüm 6 / sorun giderme metinleri "Buton kimliğini değiştir" adını zaten kullanıyor — tasarım
+  değişikliği gerektirmez; §9 kilidine alındı.
 - §1.3 hazırlık: tema her profilde elle seçilir; projektör soluksa → açık.
 
 Demo sonrası: F3 (ikon seti, `<strong>Probe</strong>`, avatar, `ornek-veri-tam`, `.dugme-neden`) ve F4
@@ -578,15 +616,19 @@ Demo sonrası: F3 (ikon seti, `<strong>Probe</strong>`, avatar, `ornek-veri-tam`
 
 **F2 — Tasarım sistemi (CSS; tek PR olarak birleşir, kısmi F2 yayına çıkmaz)**
 
-Satır numaraları 2026-11-03 tabanına göredir; F2 başında taban commit kimliği PR'a yazılır ve satırlar o
-commit'te yeniden doğrulanır.
+Satır numaraları 2026-11-03 tabanına (2420 satır) göredir; F2 başında taban commit kimliği PR'a yazılır ve
+satırlar o commit'te yeniden doğrulanır. **`5a791de`'deki kayma (2520 satır):** 525–533 `.tetik-aciklamalari`
+eklendi (B/C sınırı: C'ye girer) → ≥525 satırlar **+9**; 1390'da `.hata-mesaji`'ya bir satır → ≥1391 satırlar
+**+10**; 2431–2520 yeni **"Koşu detayı: test sonucu ayrıntısı"** bloğu → **D şeridi** (§4.5 `.dugme-metin`
+ve §4.7 ayrıntı satırı kuralları burada yazılır). Örnek: `.dugme:disabled` 609 → 618, `.yh-adim … .yh-no`
+2350-2369 → 2360-2379, `.kirma-sonucsuz .kirma-ikon` 1786 → 1796.
 
 | Şerit | `styles.css` bölümleri (mevcut satırlar) | İçerik |
 |---|---|---|
 | A (önce, ~½ gün) | 1–248 (token + temel) + **447–456 (`.icerik`) ve 500–505 (hareket azaltma)** | §3 token'ları, tema blokları, tipografi, odak, bağlantı, `.icerik`, hareket azaltma, forced-colors, `::selection`, kaydırma çubuğu |
 | B | 249–506 (kabuk), 1104–1143 (giriş), 2084–2150 (bildirim) — **447–456, 500–505, 2141 ve 2146 hariç** | §4.1, §4.2, §4.14, §4.15 |
 | C | 507–1103 (yapı, düğme, rozet, durum, tablo, form) + D aralığındaki bileşen tanımları: 1391 (`.karar-ozet .cip`), 1578–1622 (metrik/ilerleme), 1885 (`.rozet-degerlendirme`), 2019 (`.kule-izgara > .kart`), 2027 (`.buyuk-sayi`), 2034–2070 (`.grafik*`), 2146 (`.dugme-ek`), 2164 (`.yerel-kontrol .uyari-kutusu`), 2195–2211 (`.filtre-cubugu*`), 2235 (`.olculmedi`), 2275 (`.buyuk-sayi-kucuk`), 2305 (`.hazirlik-tablo td .cip`) | §4.3–§4.9, §4.12, §4.13 |
-| D | 1144–1267 (akış), 1268–1496 (gereksinim, kod — `.kod-blok` 1367 dahil), 1497–2083 (case, kod üretimi, triage, kule), 2141 (`.adim-liste .kod-blok`), 2151–2420 (Demo-B, Faz 5, yol haritası) — C'nin listelediği satırlar hariç; TSX DOM değişiklikleri (§6.1 #3–#6) | §4.10, §4.11, §5 MVT sütunu, §4.6 |
+| D | 1144–1267 (akış), 1268–1496 (gereksinim, kod — `.kod-blok` 1367 dahil), 1497–2083 (case, kod üretimi, triage, kule), 2141 (`.adim-liste .kod-blok`), 2151–2420 (Demo-B, Faz 5, yol haritası), **+ yeni blok 2431–2520 (Koşu detayı, `5a791de` numarası)** — C'nin listelediği satırlar hariç; TSX DOM değişiklikleri (§6.1 #3–#6) | §4.10, §4.11, §5 MVT sütunu, §4.6 |
 
 Şeritler aynı dosyada **ayrık satır aralıklarında** çalışır; Git ayrık parçaları birleştirir. Şerit sınır
 satırlarına ve başka şeridin aralığının ±3 satırına yalnız o aralığın sahibi dokunur; yeni kural gerekiyorsa
@@ -604,7 +646,7 @@ konum ifadeleri doğrulanır. `README.md`'ye kısa "Görsel dil" bölümü. Ekra
 
 ### 6.3 Neden stil dosyası bölünmüyor (karar K1)
 
-Bölme (a) `inceleme.test.tsx:461-465`'i kırar, (b) anlamsal dosyalara taşıma tekrar tanımlar yüzünden
+Bölme (a) `inceleme.test.tsx:463-467`'i kırar, (b) anlamsal dosyalara taşıma tekrar tanımlar yüzünden
 kaskadı değiştirir, (c) bitişik satır aralıklarıyla bölmek ise sahiplik sorununu çözmez. Paralellik ayrık
 satır aralıklarıyla sağlanır; F2 sonunda dosya yine tek parçadır. Bölme gerekirse ayrı, sıfır-fark bir PR
 olarak demodan sonra değerlendirilir (kapı: `cat` birleşimi orijinalle `diff` boş + derlenmiş CSS aynı +
@@ -649,8 +691,9 @@ test güncellemesi).
 | Tip | `npm run typecheck` | 0 hata |
 | Derleme | `npm run build`, `npm run build:mock` | 0 hata; `dist/assets/*.woff2` var; `grep -c 'data:font' dist/assets/*.css` = 0 |
 | Duman e2e | `npm run e2e` | Tümü geçer (axe, konsol hatası 0, taşma 0) |
-| **axe döngüsü yeniden yazılır** | `duman.spec.ts:334-361` | Tema `emulateMedia` ile değil: ilk `page.goto`'dan önce `page.addInitScript(t => { localStorage.setItem("tp-tema-v","2"); localStorage.setItem("tp-tema", t) }, "acik"\|"koyu")`. Her sayfada axe'tan önce `expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).colorScheme))` beklenen `light`/`dark`; `acik`/`koyu` turunda `html` `data-theme` = `light`/`dark`. Üçüncü tur: `sistem` + `emulateMedia({colorScheme:"light"})`, yalnız 1440 px, `html` `not.toHaveAttribute("data-theme")`. `analyze()` öncesi `page.addStyleTag({ content: ".kabuk::before,.giris-sayfa::before,.giris-sayfa::after{display:none}" })` (büyük dekoratif pseudo zeminler axe kontrastını `incomplete`'e düşürmesin). Eklenen sayfalar ve bekleme işaretleri: `/giris` (**oturum açmadan önce**, her turda) → button "Giriş yap"; `/gereksinimler` → region "Gereksinimler tablosu"; `/kod` → region "Üretilen testler tablosu"; `/kosular` → region "Koşular tablosu"; `/kosular/run-107` → region "Raporlar ve bağlantılar"; `/bug-taslaklari` → heading "Bug taslakları"; `/demo` → **aynı turda `girisYap(page, "sunucu")` sonrası** (rol `presenter` ister, `App.tsx:113-119`), group "Locator kırma onayı". `color-contrast` **incomplete** düğüm sayısı sayfa başına raporlanır ve F0 tabanını aşamaz (sayısal kapı). Etiketler, F0 denemesindeki ihlaller düzeltildikten sonra `wcag21aa`, `wcag22aa` eklenir |
+| **axe döngüsü yeniden yazılır** | `duman.spec.ts:334-361` | Tema `emulateMedia` ile değil: ilk `page.goto`'dan önce `page.addInitScript(t => { localStorage.setItem("tp-tema-v","2"); localStorage.setItem("tp-tema", t) }, "acik"\|"koyu")`. Her sayfada axe'tan önce `expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).colorScheme))` beklenen `light`/`dark`; `acik`/`koyu` turunda `html` `data-theme` = `light`/`dark`. Üçüncü tur: `sistem` + `emulateMedia({colorScheme:"light"})`, yalnız 1440 px, `html` `not.toHaveAttribute("data-theme")`. `analyze()` öncesi `page.addStyleTag({ content: ".kabuk::before,.giris-sayfa::before,.giris-sayfa::after{display:none}" })` (büyük dekoratif pseudo zeminler axe kontrastını `incomplete`'e düşürmesin). Eklenen sayfalar ve bekleme işaretleri: `/giris` (**oturum açmadan önce**, her turda) → button "Giriş yap"; `/gereksinimler` → region "Gereksinimler tablosu"; `/kod` → region "Üretilen testler tablosu"; `/kosular` → region "Koşular tablosu"; `/kosular/run-107` → region "Raporlar ve bağlantılar"; `/bug-taslaklari` → heading "Bug taslakları"; `/demo` → **aynı turda `girisYap(page, "sunucu")` sonrası** (rol `presenter` ister, `App.tsx:113-119`), group "Buton kimliği değiştirme onayı". `color-contrast` **incomplete** düğüm sayısı sayfa başına raporlanır ve F0 tabanını aşamaz (sayısal kapı). Etiketler, F0 denemesindeki ihlaller düzeltildikten sonra `wcag21aa`, `wcag22aa` eklenir |
 | Açık tema görüntüleri | aynı döngü | 1440 px'te `e2e/ekranlar/acik/<ad>.png` |
+| **Koşu detayı kapsamı** (Ek B) | F0'da `src/api/mock/fixtures.ts` `run-107` | Örnek veride `denemeler`/`adimlar`/`ekler`/`github`/`sauce_durum` **yok** (`run-107` 2026-11-01'den beri değişmedi) → yeni Test sonuçları ayrıntısı, CI adımları ve Sauce çipi ne ekran görüntüsüne ne axe'a giriyor. F0'da `run-107`'ye bir başarısız sonucun deneme+adım+ek (resim) verisi, `adimlar` ve `sauce_durum: "error"` eklenir — önce `grep -rn "run-107" src e2e` ile sayım/metin testleri kontrol edilir (`lib.test.ts`, `sayfalar.test.tsx`); kırılırsa ayrı `run-108` fikstürü. duman axe turunda `/kosular/run-1xx` sayfasında ilk test adı düğmesine tıklanıp `region "Test ayrıntısı: …"` beklenir, sonra axe. Ek resmi `img-src 'self'` altında aynı kökenden gelir (CSP değişmez) |
 | "Mobil görünüm ve koyu tema" testi | `duman.spec.ts:246-263` | `emulateMedia({colorScheme:"light"})` + `html[data-theme=dark]` doğrulaması (OS açıkken de varsayılan koyu) |
 | Font zamanlaması | `girisYap` ve ölçüm öncesi | `await page.evaluate(() => document.fonts.ready)` |
 | %125 zoom eşdeğeri | yeni kısa e2e | 1152×720 viewport'ta Script detayında `getByRole("region", { name: "Kırarak doğrula" })` PR kartının **sağında** (aynı adlı düğme var — rol ile seç) |
@@ -687,11 +730,23 @@ akıştaki ilerleme"; button "Menü", "Çıkış"; listeler "14 adımlı demo ak
 günlüğü", "Onarım hattı", "Kanıt bağlantıları" (`:scope > li`); bölgeler "Gereksinimler tablosu",
 `Adımlar: …`, "Raporlar ve bağlantılar", "Önerilen değişiklik farkı", "Eşlenen adımlar tablosu", "Üretilen
 testler tablosu", "Koşular tablosu", "Karne tablosu", "Token listesi", "Manuel baz değer", "Locator
-yoklaması (locator-probe)", "AI katkısı"; grup "Locator kırma onayı"; meter "Case kabul oranı"; heading
+yoklaması (locator-probe)", "AI katkısı"; grup "Buton kimliği değiştirme onayı" (eski adı "Locator kırma onayı"; §8 axe bekleme işareti de bu adla); bölge/liste "Test bakımı yolu" (yol haritası, eski adı "Locator kırılma yolu"); meter "Case kabul oranı"; heading
 "Geçme oranı"; img `/^Kaynak: …/`; link "Story'yi aç →", "Kod üretiminde incele"; `getByRole("article")`
 = 3 (`/gereksinimler/req-ft-1`); `.baglanti` `role="status"`; `ROTALAR` başlıkları; `Olculmedi` metinleri
 "REPLAY: hesaplanmaz" (`duman.spec.ts:499` tam eşleşme), "ölçülmüş baz yok" (kapsamsız, tekil),
 "REPLAY — ölçülmedi"; yol haritası `data-hal`. Prova dürüstlük kilidi: DOM'a "CANLI"/"live" yazılmaz (`prova.spec.ts:227-230`).
+
+**Plan sonrası eklenen kilitler (Ek B, `5a791de`):** sınıflar `dugme-metin`, `test-ayrinti-satiri`,
+`pw-adim-hata` (+ `[data-hatali='1']`), `kirma-sonucsuz` (+ `data-beklenmedik`), `tetik-aciklamalari`;
+düğmeler "Buton kimliğini değiştir", "Evet, buton kimliğini değiştir", "Deploy sonrası testleri koş", "Gece
+koşusunu şimdi başlat", "Tümü (n)"/"Başarısız (n)" … (`aria-pressed`); kart başlıkları "Test bakımı demosu",
+"Başarısızlıklar ve triage", "CI adımları", "Test sonuçları"; bölgeler "Test sonuçları tablosu", `Test
+ayrıntısı: …`, `Adımlar (deneme N)`; gruplar "Test sonucu süzgeci", "Duruma göre"; listeler "Tetik
+düğmeleri", "Yerel CI adımları", "GitHub işleri"; `dl` "ci-meta.json özeti"; searchbox "Ara"; checkbox
+"Kasıtlı kırma koşuları"; img `Ekran görüntüsü: …`, video `Video: …`; metinler "Sauce koşmadı: …", "Sauce:
+geçti", "(GitHub artefaktında)", "Süzgece uyan test yok.", "✓ Doküman son hâl" (şapkalı â), yol haritası L2
+"Buton kimliğini değiştir (add-to-cart → cart-add)"; id `kosular-gece-aciklama`, `kosular-deploy-aciklama`
+(`aria-describedby` hedefi — kaldırılmaz/yeniden adlandırılmaz).
 
 **Yeni markup kuralları:** `article`, `list`/`listitem`, `region`, `status` rolü eklenmez (eklenirse
 benzersiz ad + sayım testleri tek tek kontrol); `aria-current="step"` yalnız akışta; yeni görünür metin
@@ -715,6 +770,8 @@ eklenmez; CSS ikon `content: ""`.
 | Yarım F2 karışık görünüm | Düşük | F2 tek birleştirme |
 | Demo anlatısı bozulur | Düşük | §1.3 korunur; F4 demodan sonra; F5 senaryo düzeltmesi |
 | `backdrop-filter` yavaş/eksik | Düşük | Yalnız üst çubuk ve giriş kartı; `-webkit-` + yedek |
+| Portal ve senaryo yenileme sırasında da değişiyor (13:09–14:54 arası 7 portal commit'i; ad/metin değişiklikleri) | **Yüksek** | Ek B taraması F0'da tekrarlanır: `git log <plan-tabanı>..HEAD -- review-portal docs/CANLI-DEMO-SENARYOSU.md`; yeni ekran/sınıf/ad → §5 + §9'a eklenir; satırlar alıntıyla bulunur |
+| Yeni ekranlar örnek veride boş kalır, görsel kapıdan kaçar | Orta | §8 "Koşu detayı kapsamı" satırı |
 
 ---
 
@@ -742,7 +799,7 @@ eklenmez; CSS ikon `content: ""`.
 | K4 | Mor yalnız AI; AI olmayan çipler nötr; REPLAY biçimle ayrılır | Tasarımcı + ürün |
 | K5 | KPI şeridinde Maliyet yok; REPLAY'de para/süre sayısı yok | Anayasa (ölçülmemiş sayı söylenmez) |
 | K6 | MVT demodan önce; F3/F4 demodan sonra; 3 iş günü donma | Ürün |
-| K7 | Akış ve yol haritasında tür = biçim + renk; durum ✓ + hap | Erişilebilirlik + demo satır 214 |
+| K7 | Akış ve yol haritasında tür = biçim + renk; durum ✓ + hap | Erişilebilirlik + demo satır 251 (v4'te 214) |
 | K8 | Kart katlama (`<details>`) yok | Bölge sorguları ve prova |
 | K9 | Yeşil = insan onayı verildi; çözülmüş/kapanmış kayıt nötr şerit | Tasarımcı + ürün (tur 2) |
 | K10 | `cip-bilgi` indigo; gökmavisi yalnız bilgi kutusunda | Renk sayısını azaltma (tasarımcı) |
@@ -767,3 +824,28 @@ eklenmez; CSS ikon `content: ""`.
 | 2 | QA / test otomasyonu | 0 | 5 | MVT DOM listesi (§6.1); axe pseudo zemin gizleme + incomplete kapısı; KPI'da mevcut `Olculmedi` metinleri; `colorScheme` doğrulaması; prova yığını hazırlığı |
 | 2 | Frontend mühendisi | 0 | 4 | Göç eski değeri siler + mount yazmaz; `.kabuk { isolation: isolate }`; şerit tablosu sınırları ve eksik tekrar tanımlar; `.kart:has(> .kod)` + taşan şerit |
 | 3 | Uygulayıcı mühendis (bağımsız son kapı; 498/498 test, ~60 atıf doğrulandı) | 0 | 8 | "PR açık" tonu çelişkisi ve eksik `vurgu` kullanımları; akış `tamam` kuralı (1203/1205); yol haritası yeşil çizgi kaldırıldı + eski durum kuralları silinir; insan kapısı bekliyor/geçildi seçicileri kesinleşti; bulgu 6 durum eşlemesi; Kule null koruması; axe `/demo` rolü + bekleme işaretleri; senaryo satır kaymaları (alıntıyla bulma kuralı). Küçükler: Case başlık seçicisi, kart dolgusu, şerit A/B sınırı, `--info` kalan kullanımlar, KPI rengi, atıf düzeltmeleri |
+
+---
+
+## Ek B — Plan sonrası kod değişikliği taraması (2026-11-03, v4 → v5)
+
+v4 13:09'da kapandı. 13:09 – 14:54 arasında `review-portal/` ve demo senaryosuna 7 commit girdi
+(`b210841`, `94aa954`, `c378925`, `9c71526`, `102597e`, `5a791de` ve senaryo commit'leri). Tarama:
+`git log 022921e..HEAD -- review-portal docs/CANLI-DEMO-SENARYOSU.md`, plandaki 56 dosya:satır atıfının
+`022921e` ile HEAD arasında satır metniyle karşılaştırılması, birim testler (512/512, `tsc` temiz).
+
+| # | Değişiklik (commit) | Plana etkisi | İşlendiği yer |
+|---|---|---|---|
+| B1 | **Okunur test sonuçları ekranı** — `KosuSonuclari.tsx` (549 satır): süzgeç, açılır deneme/adım/ek ayrıntısı, CI adımları, günlük; `styles.css` sonuna 90 satır (`94aa954`, `5a791de`) | Koşu detayı P2 → **P1** (senaryo Adım 9, 10, L2, L4); yeni bileşen kalıpları (metin düğmesi, segment düğme, açılır satır, `<details>` blokları, ek görselleri) | §4.5, §4.7, §5 Koşu detayı, §6.2 D şeridi, §8 kapsam satırı, §9 |
+| B2 | Örnek veride (`fixtures.ts` `run-107`) bu ekranın verisi yok | Duman ekran görüntüsü ve axe yeni ekranı **görmüyor** | §8 "Koşu detayı kapsamı" (F0) |
+| B3 | "Locator'ı kır" → kart **"Test bakımı demosu"**, düğme **"Buton kimliğini değiştir"**, onay grubu **"Buton kimliği değiştirme onayı"**; yol haritası bölümü **"Test bakımı yolu"**; açıklama kutusu + "Teknik ayrıntı" `<details>` (`c378925`, `5a791de`) | v4'teki kilitler (exact "Locator'ı kır", grup "Locator kırma onayı") ve axe bekleme işareti **eskidi** | §5 Demo kontrolleri, §8 axe, §9 |
+| B4 | **Mevcut CSS hatası:** `.uyari-kutusu strong { display: block }` yeni açıklama kutusundaki satır içi `<strong>`'ları satır başına atıyor | MVT'de düzeltilir (yalnız CSS); 36 `<Uyari baslik>` yerinde başlık üste geçer | §4.9 |
+| B5 | `SauceCipi` (geçti/kırmızı/koşmadı/atlandı/sürüyor), CI adımı ve GitHub işi sonuç hapları, Türkçe iş sonuçları (`9c71526`, `5a791de`) | Ton listesine "değişmez" olarak eklendi (test sonucu hapı; §3.2 kural 6) | §4.6 |
+| B6 | Koşular: tetik düğmelerine görünür açıklama listesi (`aria-describedby`), negatif üst marj; düğme başına ayrı meşgul durumu | Başlık boşluğu değişiminde marj yeniden ayarı; bu düğmelere F3 `.dugme-neden` eklenmez | §5 Koşular |
+| B7 | "✓ Doküman son hâl" çipi: `pending_po` → `bilgi`, metin şapkalı "hâl" (`5a791de`) | v4 "yeşil" diyordu → kodun kararı esas alındı (K9 ile uyumlu: PO onayı henüz verilmedi) | §1.3, §5 Gereksinim detayı |
+| B8 | Kırarak doğrulamada beklenmeyen sonuç ⚠ + `kirma-sonucsuz` (`c0eb3f9`); senaryoda "⚠ Yeşil · beklenmeyen sonuç" | Amber kuralı iki durumu da kapsamalı | §1.3, §5 Script detay |
+| B9 | Senaryo: "Sol menü Case review/Yayın" ve "benzerlik high" düzeltmeleri **kullanıcı tarafından yapıldı**; Kule "Beklenen boşluklar"da yeni "**Maliyet $0,00**" maddesi | İki MVT senaryo maddesi kapandı; Maliyet maddesi MVT DOM #6 ile çelişir → güncellenir | §6.1 senaryo düzeltmeleri |
+| B10 | Satır kaymaları: `Kosular.tsx` (+1, +85), `DemoKontrolleri.tsx` (+24), `GereksinimDetay.tsx` (+2), `inceleme.test.tsx` (+2), `faz5.test.tsx` (+18), `yolHaritasi.ts` (+45), `styles.css` (+9/+10, sonda +90); senaryo 35–75 satır | Atıflar güncellendi; değişmeyen atıflar (Kabuk, YolHaritasi.tsx:71, BulguKarti.tsx:105, KontrolKulesi.tsx:146-153, duman.spec.ts:334-361/499/508 …) doğrulandı | §1.3, §4.6, §5, §6.2, §9 |
+
+Sonuç: engelleyici yok. MVT kapsamına eklenen tek iş B4 (CSS) ve B2 (F0 fikstürü); geri kalanı
+spesifikasyon ve kilit güncellemesi. F0'da bu tarama `5a791de..HEAD` için tekrarlanır.
