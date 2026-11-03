@@ -1388,9 +1388,13 @@ fieldset:disabled select {
 .akis-simdi::before {
   background: var(--accent);
 }
+/* Tür = biçim + renk (§4.10, K7): AI kesik daire (mor), insan kapısı köşeli kare (yeşil), AI + insan kesik
+   mor kenarlı kare + içte yeşil halka, sistem küçük daire (nötr). Durum biçimden ve renkten bağımsızdır:
+   tamam = içte tür renginde dolgu (content-box) + ✓, şimdiki = dışta indigo halka, bekliyor = boş iç. */
 .akis-no {
   position: relative;
   z-index: 1;
+  box-sizing: border-box;
   width: 28px;
   height: 28px;
   border-radius: 50%;
@@ -1398,31 +1402,53 @@ fieldset:disabled select {
   place-items: center;
   font-weight: 700;
   font-size: 0.78rem;
-  background: var(--surface);
-  border: 2px solid var(--border-strong);
-  color: var(--muted);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  /* Dolgu içeride kalır: kenarla dolgu arasındaki 3 px'lik yüzey halkası içten gölgeyle çizilir (gradyan/
+     background-clip yerine — axe arka plan rengini ölçebilsin; akış çizgisi dairenin içinden görünmez). */
+  background: var(--akis-dolgu);
+  box-shadow: inset 0 0 0 3px var(--surface);
+  border: 2px solid var(--notr);
+  color: var(--text-2);
+  --akis-tur: var(--notr);
+  --akis-dolgu: var(--surface);
+}
+/* Sistem: küçük daire. Kutu 28 px kalır (akış çizgisi ve axe arka plan ölçümü için); görünen çember 22 px,
+   yüzey renginde kenarın içinde içten gölgeyle çizilir. */
+.akis-tur-sistem .akis-no {
+  border: 3px solid var(--surface);
+  box-shadow: inset 0 0 0 2px var(--notr), inset 0 0 0 4px var(--surface);
+  font-size: 0.75rem;
+}
+.akis-tur-ai .akis-no {
+  border: 2px dashed var(--vurgu);
+  --akis-tur: var(--vurgu);
 }
 .akis-tur-insan .akis-no {
   border-radius: 6px;
+  border: 2px solid var(--ok);
+  --akis-tur: var(--ok);
 }
-.akis-tur-ai .akis-no,
 .akis-tur-ai_insan .akis-no {
-  border-style: dashed;
+  border-radius: 6px;
+  border: 2px dashed var(--vurgu);
+  box-shadow: inset 0 0 0 2px var(--ok), inset 0 0 0 3px var(--surface);
+  --akis-tur: var(--vurgu);
 }
 .akis-tamam .akis-no {
-  background: var(--accent);
-  border-color: var(--accent);
-  border-style: solid;
-  color: var(--accent-text);
+  --akis-dolgu: var(--akis-tur);
+  color: var(--on-ton);
 }
 .akis-simdi .akis-no {
-  border-color: var(--accent);
-  color: var(--accent);
-  box-shadow: 0 0 0 4px var(--accent-soft);
+  color: var(--text);
+  box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--accent), var(--glow);
+}
+.akis-tur-ai_insan.akis-simdi .akis-no {
+  box-shadow: inset 0 0 0 2px var(--ok), inset 0 0 0 3px var(--surface), 0 0 0 3px var(--bg), 0 0 0 5px var(--accent), var(--glow);
 }
 .akis-simdi .akis-ad {
   color: var(--text);
-  font-weight: 650;
+  font-weight: 700;
 }
 .akis-lejant {
   margin: 12px 0 0;
@@ -1434,16 +1460,18 @@ fieldset:disabled select {
 }
 .lejant {
   display: inline-block;
+  box-sizing: border-box;
   width: 12px;
   height: 12px;
-  border: 2px solid var(--border-strong);
+  border: 2px solid var(--notr);
   margin-left: 8px;
 }
 .lejant-ai {
-  border-style: dashed;
+  border: 2px dashed var(--vurgu);
   border-radius: 50%;
 }
 .lejant-insan {
+  border-color: var(--ok);
   border-radius: 3px;
 }
 .lejant-sistem {
@@ -1507,7 +1535,7 @@ fieldset:disabled select {
 }
 .ac-liste li {
   padding: 6px 0;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-soft);
 }
 .soru-liste {
   padding-left: 18px;
@@ -1526,15 +1554,21 @@ fieldset:disabled select {
   gap: 14px;
   margin-top: 12px;
 }
+/* Durum şeridi (§4.4, K9): açık bulgu önemine göre kırmızı/amber; karara bağlanmış, çözülmüş, eskimiş veya
+   elenmiş bulgu nötr şerit alır — önem yalnız hapta kalır (G15). Şerit tek başına anlam taşımaz: durum hapı
+   ve metni kartta her zaman var. */
 .bulgu {
   border: 1px solid var(--border);
-  border-left: 4px solid var(--warn);
-  border-radius: var(--radius-sm);
-  padding: 14px 16px;
+  border-left: 3px solid var(--warn);
+  border-radius: var(--radius);
+  padding: 16px 18px;
   background: var(--surface);
 }
 .bulgu-blocking {
   border-left-color: var(--err);
+}
+article.bulgu:is([data-durum="decided"], [data-durum="resolved"], [data-durum="stale"], [data-durum="discarded"]) {
+  border-left-color: var(--border-strong);
 }
 .bulgu-baslik {
   display: flex;
@@ -1577,11 +1611,12 @@ fieldset:disabled select {
 .kod-blok {
   font-family: var(--mono);
   font-size: 0.82rem;
+  line-height: 1.55;
   background: var(--code-bg);
   color: var(--code-text);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
+  border-radius: var(--radius);
+  padding: 12px 14px;
   margin: 4px 0;
   overflow-x: auto;
   white-space: pre;
@@ -1606,7 +1641,7 @@ fieldset:disabled select {
 .fark {
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   padding: 10px 12px;
   margin: 6px 0;
   line-height: 1.7;
@@ -1615,14 +1650,14 @@ fieldset:disabled select {
   background: var(--ins-bg);
   color: var(--ins);
   text-decoration: none;
-  border-radius: 3px;
-  padding: 1px 2px;
+  border-radius: 4px;
+  padding: 1px 4px;
 }
 .fark del {
   background: var(--del-bg);
   color: var(--del);
-  border-radius: 3px;
-  padding: 1px 2px;
+  border-radius: 4px;
+  padding: 1px 4px;
 }
 /* Büyük ölçüde yeniden yazılmış metin: iki satır (Önce / Sonra). */
 .fark-once-sonra {
@@ -1646,24 +1681,26 @@ fieldset:disabled select {
 
 /* ---------------------------------------------------------------- kod */
 
+/* Kod kutusu (§4.11): --code-bg, 1 px kenar, 12 px; dosya adı şeridi --surface-2 + mono --muted.
+   Pencere noktası yok. */
 .kod {
   margin: 0;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   overflow: hidden;
   background: var(--code-bg);
 }
 .kod-dosya {
   font-family: var(--mono);
   font-size: 0.78rem;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--border);
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-soft);
   color: var(--muted);
   background: var(--surface-2);
 }
 .kod pre {
   margin: 0;
-  padding: 10px 0;
+  padding: 12px 0;
   overflow-x: auto;
   font-family: var(--mono);
   font-size: 0.82rem;
@@ -1712,18 +1749,40 @@ fieldset:disabled select {
   flex-direction: column;
   gap: 14px;
 }
+/* Durum şeridi (§4.4, K9) ve karar ağırlığı (G13): karar bekleyen AI taslağı (draft) mor şerit ve --surface ile
+   öne çıkar; onaylı/yayınlanmış yeşil, reddedilmiş/yerini yenisi almış nötr şerit — bu kartlar --surface-2
+   zeminde ve sık adım tablosuyla geri çekilir. */
 .case {
   background: var(--surface);
   border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
   border-radius: var(--radius);
   padding: 16px 18px;
   box-shadow: var(--shadow);
+}
+.case-draft {
+  border-left-color: var(--vurgu);
+}
+.case-approved,
+.case-published {
+  border-left-color: var(--ok);
+}
+.case-approved,
+.case-published,
+.case-rejected,
+.case-superseded {
+  background: var(--surface-2);
+  box-shadow: none;
+}
+.case:is(.case-approved, .case-published, .case-rejected, .case-superseded) .tablo td {
+  padding: 6px 10px;
 }
 /* Reddedilen case soluk gösterilir ama opaklıkla değil: opaklık metin kontrastını AA altına
    düşürüyordu (axe color-contrast). Kesik kenar + ikincil yüzey yeterli ayrım sağlar. */
 .case-rejected {
   background: var(--surface-2);
   border-style: dashed;
+  border-left-style: solid;
   box-shadow: none;
 }
 .case-baslik {
@@ -1732,9 +1791,19 @@ fieldset:disabled select {
   gap: 10px;
   flex-wrap: wrap;
 }
+/* Rozet yığını (G14): ilk çip (durum) hap kalır; sonraki nötr çipler (tür, nötr risk) düz metne iner, aralarında
+   ince kenar ayraç. Ayraç content ile değil kenarla (pseudo metin erişilebilir ada girer). */
+.case-baslik .satir-ogeler > .cip ~ .cip-notr {
+  background: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0 0 0 8px;
+  border-left: 1px solid var(--border-soft);
+  color: var(--text-2);
+}
 .case-ad {
-  font-size: 1rem;
-  font-weight: 650;
+  font-size: 1.05rem;
+  font-weight: 700;
   margin: 10px 0 8px;
 }
 .case-alt {
@@ -1743,7 +1812,7 @@ fieldset:disabled select {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-soft);
   padding-top: 10px;
   margin-top: 10px;
 }
@@ -1866,7 +1935,7 @@ fieldset:disabled select {
 }
 .secim-liste li {
   padding: 8px 0;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-soft);
 }
 .secim-liste label {
   display: flex;
@@ -1907,6 +1976,9 @@ fieldset:disabled select {
   background: var(--surface);
   color: var(--text);
   cursor: pointer;
+}
+.ajan-adim:hover {
+  background: var(--hover-accent);
 }
 .ajan-adim.aktif {
   border-color: var(--accent);
@@ -1987,13 +2059,15 @@ fieldset:disabled select {
   color: var(--err);
 }
 .kirma-running .kirma-ikon {
-  background: var(--info-bg);
-  color: var(--info);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 .kirma-ad {
   font-weight: 600;
 }
-/* Kırmızı ama assertion dışı (locator/ortam): kanıt sayılmaz → amber. */
+/* Kırmızı ama assertion dışı (locator/ortam) ya da beklenenin tersi sonuç (data-beklenmedik): kanıt sayılmaz
+   → amber + ⚠. Özgüllük yeşil/kırmızı aşama kurallarından yüksek; sıralamaya bağlı kalmaz. */
+.kirma-asama.kirma-sonucsuz .kirma-ikon,
 .kirma-sonucsuz .kirma-ikon {
   background: var(--warn-bg);
   color: var(--warn);
@@ -2023,7 +2097,7 @@ mark.kaynak-deger {
   display: flex;
   gap: 10px;
   padding: 8px 0;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-soft);
 }
 .sinyal-liste li > span {
   color: var(--ok);
@@ -2036,7 +2110,7 @@ mark.kaynak-deger {
 }
 .duz-liste li {
   padding: 6px 0;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-soft);
 }
 .duz-liste li:first-child,
 .sinyal-liste li:first-child {
@@ -2047,40 +2121,43 @@ mark.kaynak-deger {
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
-  background: var(--surface-2);
+  background: var(--code-bg);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   padding: 10px 12px;
   margin: 8px 0;
 }
 .locator-fark del {
   background: var(--del-bg);
   color: var(--del);
-  padding: 1px 4px;
-  border-radius: 3px;
+  padding: 1px 6px;
+  border-radius: 4px;
 }
 .locator-fark ins {
   background: var(--ins-bg);
   color: var(--ins);
   text-decoration: none;
-  padding: 1px 4px;
-  border-radius: 3px;
+  padding: 1px 6px;
+  border-radius: 4px;
 }
 
 .mukerrer-liste li {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 10px 12px;
+  background: var(--surface);
 }
 .mukerrer-liste li + li {
   margin-top: 8px;
 }
+/* Bug karar paneli = insan kapısı, yalnız taslak (draft) iken çizilir → bekleyen kapı amber şeridi (§4.4). */
 .karar-paneli {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
   border-top: 1px dashed var(--border);
-  padding-top: 14px;
+  padding: 14px 0 0 14px;
+  box-shadow: inset 3px 0 0 var(--warn);
 }
 .karar-paneli h3 {
   font-size: 0.95rem;
@@ -2141,22 +2218,27 @@ mark.kaynak-deger {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* Onarım hattı: dikey zaman çizelgesi — işaretler arasında ince bağlantı çizgisi (kırarak doğrulama ile aynı dil). */
 .onarim-asamalari {
   list-style: none;
   padding: 0;
   margin: 12px 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
 }
 .onarim-asamalari li {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   align-items: flex-start;
-  padding: 8px 12px;
-  border-top: 1px solid var(--border);
+  padding: 6px 0;
+  position: relative;
 }
-.onarim-asamalari li:first-child {
-  border-top: none;
+.onarim-asamalari li:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 30px;
+  bottom: -4px;
+  width: 2px;
+  background: var(--border-strong);
 }
 .asama-isaret {
   display: inline-grid;
@@ -2197,7 +2279,7 @@ mark.kaynak-deger {
   gap: 10px;
   align-items: flex-start;
   padding: 6px 0;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-soft);
 }
 .demo-adimlari li:first-child {
   border-top: none;
@@ -2212,6 +2294,7 @@ mark.kaynak-deger {
 }
 .onay-kutusu {
   border: 1px solid var(--warn);
+  border-left-width: 3px;
   background: var(--warn-bg);
   color: var(--text);
   border-radius: var(--radius-sm);
@@ -2539,44 +2622,51 @@ mark.kaynak-deger {
   grid-template-columns: 2.2rem minmax(0, 1fr) auto;
   gap: 4px 12px;
   align-items: start;
-  padding: 10px 0;
-  border-top: 1px solid var(--border);
+  padding: 12px 0;
+  border-top: 1px solid var(--border-soft);
 }
 .yh-adim:first-child {
   border-top: none;
 }
+/* Daire = tür (§4.10, §5, K7): [data-tur] kenarı ve biçimi akış göstergesiyle aynı. Durum yalnız ✓ (tamam →
+   içte tür renginde dolgu + --on-ton) ve durum hapıyla; diğer haller boş iç. */
 .yh-no {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
   width: 2rem;
   height: 2rem;
   border-radius: 999px;
   font-weight: 700;
+  font-size: 0.85rem;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
-  border: 2px solid var(--border-strong);
+  border: 2px solid var(--notr);
   color: var(--text-2);
-  background: var(--surface);
+  background: var(--yh-dolgu);
+  box-shadow: inset 0 0 0 3px var(--surface);
+  --yh-tur: var(--notr);
+  --yh-dolgu: var(--surface);
+}
+.yh-adim[data-tur="ai"] .yh-no {
+  border: 2px dashed var(--vurgu);
+  --yh-tur: var(--vurgu);
+}
+.yh-adim[data-tur="insan"] .yh-no {
+  border: 2px solid var(--ok);
+  border-radius: 8px;
+  --yh-tur: var(--ok);
+}
+.yh-adim[data-tur="ai_insan"] .yh-no {
+  border: 2px dashed var(--vurgu);
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 2px var(--ok), inset 0 0 0 3px var(--surface);
+  --yh-tur: var(--vurgu);
 }
 .yh-adim.yh-tamam .yh-no {
-  border-color: var(--ok);
-  background: var(--ok-bg);
-  color: var(--ok);
-}
-.yh-adim.yh-suruyor .yh-no {
-  border-color: var(--info);
-  background: var(--info-bg);
-  color: var(--info);
-}
-.yh-adim.yh-engel .yh-no {
-  border-color: var(--err);
-  background: var(--err-bg);
-  color: var(--err);
-}
-.yh-adim.yh-yedek .yh-no {
-  border-color: var(--warn);
-  background: var(--warn-bg);
-  color: var(--warn);
+  --yh-dolgu: var(--yh-tur);
+  color: var(--on-ton);
 }
 .yh-baslik {
   display: flex;
@@ -2585,10 +2675,28 @@ mark.kaynak-deger {
   align-items: center;
   font-weight: 600;
 }
+/* Tür metni tür renginde hap (sistem nötr, insan yeşil, AI ve AI + insan mor). */
 .yh-tur {
-  font-weight: 500;
-  font-size: 0.78rem;
-  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  font-weight: 600;
+  font-size: 0.75rem;
+  padding: 1px 8px;
+  border-radius: var(--radius-hap);
+  border: 1px solid color-mix(in srgb, var(--notr) 30%, transparent);
+  background: var(--notr-bg);
+  color: var(--notr);
+  white-space: nowrap;
+}
+.yh-adim[data-tur="insan"] .yh-tur {
+  border-color: color-mix(in srgb, var(--ok) 30%, transparent);
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.yh-adim:is([data-tur="ai"], [data-tur="ai_insan"]) .yh-tur {
+  border-color: color-mix(in srgb, var(--vurgu) 30%, transparent);
+  background: var(--vurgu-bg);
+  color: var(--vurgu);
 }
 .yh-kanit {
   margin: 2px 0 0;
@@ -2603,6 +2711,22 @@ mark.kaynak-deger {
 .yh-baglanti {
   white-space: nowrap;
   font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--accent);
+  text-decoration: none;
+}
+.yh-baglanti:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+/* "Sıradaki" bandı: indigo şerit + yumuşak zemin; zemin + metin de değiştiği için şerit tek gösterge değil. */
+[data-testid="yh-sonraki"] {
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--accent-solid);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--accent-soft);
+  color: var(--text);
 }
 @media (max-width: 640px) {
   .yh-adim {
@@ -2631,16 +2755,23 @@ mark.kaynak-deger {
 }
 
 /* Koşu detayı: test sonucu ayrıntısı (KosuSonuclari.tsx) */
+/* Metin düğmesi (§4.5): tablo hücresinde açılır-kapanır test adı; kenarsız/zeminsiz, hover indigo + alt çizgi.
+   Önündeki ▸/▾ glifi aria-hidden metin olarak kalır, --muted. */
 .dugme-metin {
   background: none;
   border: 0;
   padding: 0;
   font: inherit;
-  color: inherit;
+  font-weight: 500;
+  color: var(--text);
   text-align: left;
   cursor: pointer;
 }
+.dugme-metin > [aria-hidden="true"] {
+  color: var(--muted);
+}
 .dugme-metin:hover {
+  color: var(--accent);
   text-decoration: underline;
 }
 .dugme-metin:focus-visible {
@@ -2651,8 +2782,17 @@ mark.kaynak-deger {
   max-height: 6.5em;
   overflow: hidden;
 }
+/* Açılır ayrıntı satırı (§4.7): ikincil yüzey + üst ayraç; satır hover almaz. Açık satırın üstündeki test
+   satırı solda indigo şerit alır (hangi testin açıldığı görünür). */
 .test-ayrinti-satiri > td {
   background: var(--surface-2);
+  border-top: 1px solid var(--border-soft);
+}
+.tablo tbody tr.test-ayrinti-satiri:hover {
+  background: transparent;
+}
+.tablo tbody tr:has(+ .test-ayrinti-satiri) > td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 .test-ayrinti {
   display: flex;
@@ -2668,13 +2808,14 @@ mark.kaynak-deger {
 }
 .test-deneme,
 .test-blok {
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
   padding: 6px 10px;
 }
 .test-deneme > summary,
 .test-blok > summary {
   cursor: pointer;
+  font-weight: 600;
 }
 .pw-adimlar {
   margin: 4px 0;
@@ -2682,6 +2823,9 @@ mark.kaynak-deger {
 }
 .pw-adim {
   margin: 2px 0;
+}
+.pw-adim:not(.pw-adim-hata) > .satir-ogeler > [aria-hidden="true"] {
+  color: var(--muted);
 }
 .pw-adim-hata > .satir-ogeler {
   color: var(--err);
@@ -2707,15 +2851,91 @@ mark.kaynak-deger {
 }
 .ci-meta {
   display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 2px 12px;
-  margin: 8px 0;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 16px;
+  margin: 12px 0 8px;
+}
+.ci-meta dt {
+  color: var(--muted);
 }
 .ci-meta dd {
   margin: 0;
   overflow-wrap: anywhere;
 }
+@media (max-width: 520px) {
+  .ci-meta {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  .ci-meta dd + dt {
+    margin-top: 8px;
+  }
+}
 .kod-blok.gunluk {
   max-height: 28em;
   overflow: auto;
+}
+
+/* CI adımları ve benzeri satır listeleri: her öğe kendi satırında (li.satir-ogeler inline-flex olduğu için
+   öğeler yan yana akıyordu); öğe içi çip + metin yine satır içinde sarar. */
+.duz-liste > li.satir-ogeler {
+  display: flex;
+}
+
+/* ---------------------------------------------------------------- Şerit D ekleri (§4.4, §5 MVT) */
+
+/* Kartlar üst hizalı (G6): Script detayında PR ve Kırarak doğrula, Triage'da sınıf ve sinyaller, Kule. */
+.iki-sutun,
+.kule-izgara {
+  align-items: start;
+}
+
+/* Kod üretimi: defect adayı / başarısız satırı solda kırmızı şerit, hata hapı kalın (renk tek gösterge değil). */
+.tablo-sarici[aria-label="Üretilen testler tablosu"] tbody tr:has(.cip-hata) > td:first-child {
+  box-shadow: inset 3px 0 0 var(--err);
+}
+.tablo-sarici[aria-label="Üretilen testler tablosu"] .cip-hata {
+  font-weight: 700;
+}
+
+/* İnsan kapısı şeridi (§4.4, K9): bekliyor amber, geçildi yeşil. Şerit tek başına anlam taşımaz; kapı metni
+   ("İnsan kapısı: …", "✓ Birleştirildi", "Merge kapısı açık ✓") her durumda yanında. */
+.kart:has([data-testid="po-kapisi"].soluk) {
+  border-left: 3px solid var(--warn);
+}
+.kart:has([data-testid="po-kapisi"]:not(.soluk)) {
+  border-left: 3px solid var(--ok);
+}
+.merge-kapisi:not(:has(> .ok-metin)) {
+  padding-left: 12px;
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+.merge-kapisi:has(> .ok-metin) {
+  padding-left: 12px;
+  box-shadow: inset 3px 0 0 var(--ok);
+}
+/* İnsan kapısı "kişi" ikonu: CSS maskesi, content "" (erişilebilir ada metin girmez). */
+.kart:has([data-testid="po-kapisi"]) > .kart-baslik h2::before,
+.merge-kapisi > div:first-child::before {
+  content: "";
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-right: 6px;
+  vertical-align: -0.125em;
+  background: currentColor;
+  -webkit-mask: var(--ikon-kisi) center / contain no-repeat;
+  mask: var(--ikon-kisi) center / contain no-repeat;
+}
+.kart:has([data-testid="po-kapisi"]),
+.merge-kapisi {
+  --ikon-kisi: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8'/%3E%3C/svg%3E");
+}
+
+/* Demo kontrolleri "Teknik ayrıntı" (içerik ayrıntısı, kart katlama değil — K8): özet okunur ikincil metin,
+   varsayılan işaretçi, odak global halka. */
+details.soluk > summary {
+  color: var(--text-2);
+  font-weight: 500;
+  cursor: pointer;
 }
