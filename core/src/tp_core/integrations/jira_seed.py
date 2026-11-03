@@ -7,15 +7,17 @@ TPD-1 golden'ının ``input_match``'ine uymaz ve REPLAY-MISS döner. Bu komut, �
 kullanıcısıyla (``JIRA_WRITE_EMAIL``/``JIRA_WRITE_TOKEN``) ve aynı ``RestJira`` kod yoluyla:
 
 1. TPD-1..TPD-4'ün özetini, açıklamasını ve kabul kriterlerini ``docs/DEMO-VERISI.md``'deki
-   içeriğe döndürür (jira-sim tohumuyla birebir aynı ADF);
+   içeriğe döndürür (jira-sim tohumuyla birebir aynı ADF); tohum Bug'larının (TPD-5..TPD-7)
+   özetini ve açıklamasını da (görev şablonu) döndürür, durumlarına (TPD-7 "Done") dokunmaz;
 2. bu story'lerden ``tp-po-*``, ``AI-generated`` ve ``tp-<uuid>`` etiketlerini kaldırır,
    ``tp-demo`` etiketini garanti eder (kaldırma bayat PO onayını da geçersiz kılar: onay ancak son
    kaldırmadan sonra eklenirse sayılır);
 3. ``tp-<uuid>`` etiketli, story olmayan (Test/Task/Bug) açık kayıtları "Done" kategorisindeki bir
-   duruma geçirerek kapatır (``--sil`` ile siler) ve ``tp-<uuid>`` etiketini kaldırır; önceden
-   kapatılmış ama etiketini taşıyan kayıtlardan da kaldırır. Case kimliği içerikten türediği
-   için aynı demo case'i her provada aynı etiketi alır; etiket kalırsa yayın eski kaydı bulur.
-   Tohum kayıtlarını (TPD-1..TPD-7) kapatmaz;
+   duruma geçirerek kapatır ve ``tp-<uuid>`` etiketini kaldırır; önceden kapatılmış ama etiketini
+   taşıyan kayıtlardan da kaldırır. ``--sil`` (``make reset``) ile açık ya da kapalı, etiketli tüm
+   koşu kayıtlarını siler (etiketi daha önce kaldırılmış kapalı kayıt tanınamaz, kalır). Case
+   kimliği içerikten türediği için aynı demo case'i her provada aynı etiketi alır; etiket kalırsa
+   yayın eski kaydı bulur. Tohum kayıtlarını (TPD-1..TPD-7) kapatmaz ve silmez;
 4. tohum kayıtlarındaki (TPD-1..TPD-7) **tüm yorumları** siler. Tohumda yorum yoktur; ürünün
    yorumları (PO sorusu, yayın özeti, kanıt yorumları) ve PO cevapları koşunun izidir. Akış için
    şart değildir (PO cevapları inceleme yorumundan *sonraki* yorumlardan okunur), ama sunumda eski
@@ -94,6 +96,9 @@ class DemoStory:
     bölümü "Not applicable" yazar; ``parse_description`` onu AC saymaz.
     QA Checklist maddeleri ``ACn:`` ile başlamaz (AC'ye sonda ``(AC1)`` diye atıf yapar); aksi
     hâlde girdi eşlemesi onları kabul kriteri sayardı.
+
+    Tohum Bug'ları (``SEED_BUGS``) da bu sınıfla yazılır: ``paragraph`` eski açıklamanın ilk
+    paragrafı, kabul kriterleri beklenen davranıştır (``ACn:`` öneksiz).
     """
 
     number: int
@@ -205,6 +210,55 @@ DEMO_STORIES: tuple[DemoStory, ...] = (
 )
 
 
+# Tohum Bug'ları (mükerrer araması adayları): eski serbest metnin her cümlesi şablon bölümlerinde
+# birebir durur (Objective ilk paragraf, User Flow adımlar, Other Beklenen/Gerçekleşen), böylece
+# ``bugs/jql.py`` terimleri aynı kayıtlara çarpar. Özetler dup_rank golden'larıyla birebir.
+SEED_BUGS: tuple[DemoStory, ...] = (
+    DemoStory(
+        5,
+        "Kampanya indirimi sepette yanlış hesaplanıyor",
+        '"6 al 1 bedava" kampanyası bir adet erken başlıyor: 6 adet alımda bedava ürün '
+        "veriliyor. Kampanya 7. adette başlamalı (6 öde + 1 bedava).",
+        (
+            "6 adet alımda bedava ürün verilmez: bedava 0 adet, indirim 0,00 TL, toplam 150,00 TL.",
+            "Bedava ürün 7. adette verilir (6 öde + 1 bedava).",
+        ),
+        scope='- Sepetteki "6 al 1 bedava" kampanya hesabı (bedava adet, indirim, toplam)',
+        user_flow="1. bayi1 ile giriş yap\n"
+        "2. Portakal Gazozu 1L ürününden 6 adet sepete ekle\n"
+        "3. Sepetteki bedava adet ve indirim satırını kontrol et",
+        dependencies="- Story: TPD-1",
+        other="Beklenen: bedava 0 adet, indirim 0,00 TL, toplam 150,00 TL.\n"
+        "Gerçekleşen: bedava 1 adet, indirim 25,00 TL, toplam 125,00 TL.",
+        qa_checklist="- 6 adet: bedava 0 adet, indirim 0,00 TL, toplam 150,00 TL\n"
+        "- 7 adet: 1 bedava (regresyon)",
+    ),
+    DemoStory(
+        6,
+        "Sipariş geçmişinde tarih sıralaması ters görünüyor",
+        "Sipariş geçmişi tablosunda en eski sipariş en üstte listeleniyor; en yeni sipariş "
+        "en üstte olmalı.",
+        ("Sipariş geçmişi tablosunda en yeni sipariş en üstte listelenir.",),
+        scope="- Sipariş geçmişi tablosunun tarih sıralaması",
+        user_flow="1. Sipariş geçmişi tablosunu aç\n2. En üstteki siparişin tarihine bak",
+        other="Beklenen: en yeni sipariş en üstte.\nGerçekleşen: en eski sipariş en üstte.",
+        qa_checklist="- En yeni sipariş en üstte, en eski sipariş en altta listelenir",
+    ),
+    DemoStory(
+        7,
+        "Giriş sayfasında hata mesajı İngilizce görünüyor",
+        "Hatalı parolada mesaj Türkçe yerine İngilizce gösteriliyordu. Düzeltildi.",
+        ('Hatalı parolada "Kullanıcı adı veya parola hatalı" mesajı Türkçe gösterilir.',),
+        scope="- Giriş sayfasındaki hata mesajının dili",
+        user_flow="1. Giriş sayfasını aç\n"
+        "2. Hatalı parolayla giriş yap\n"
+        "3. Hata mesajının dilini kontrol et",
+        dependencies="- Story: TPD-4",
+        qa_checklist="- Hatalı parolada mesaj Türkçe görünür (regresyon)",
+    ),
+)
+
+
 def is_run_label(label: str) -> bool:
     """Ürünün koşu başına koyduğu etiketler: ``tp-po-*``, ``AI-generated``, ``tp-<uuid>``."""
     return label.startswith("tp-po-") or label == AI_LABEL or bool(TP_UUID_LABEL.match(label))
@@ -233,6 +287,7 @@ class StoryPlan:
 class SeedPlan:
     project: str
     stories: list[StoryPlan] = field(default_factory=list)
+    bugs: list[str] = field(default_factory=list)  # içeriği tohuma döndürülecek tohum Bug'ları
     missing: list[str] = field(default_factory=list)
     run_issues: list[str] = field(default_factory=list)  # kapatılacak/silinecek
     # koşu kaydı → kaldırılacak tp-<uuid> etiketleri (açık olanlar kapatılırken de kaldırılır)
@@ -243,10 +298,19 @@ class SeedPlan:
     def empty(self) -> bool:
         return (
             not self.run_issues
+            and not self.bugs
             and not self.run_labels
             and not self.comments
             and not any(s.needed for s in self.stories)
         )
+
+    @property
+    def delete_targets(self) -> list[str]:
+        """``--sil``: açık ya da kapalı, ``tp-<uuid>`` etiketli tüm koşu kayıtları (tohum hariç).
+
+        ``run_labels`` her koşu kaydını içerir (açıklar ``run_issues``'ta da durur). Etiketi önceki
+        bir kapatma modu reset'inde kaldırılmış kapalı kayıt güvenle tanınamaz; dokunulmaz."""
+        return list(self.run_labels)
 
     def lines(self, delete: bool = False) -> list[str]:
         out = []
@@ -262,11 +326,25 @@ class SeedPlan:
             if s.add_demo_label:
                 parts.append(f"'{DEMO_LABEL}' etiketi eklenecek")
             out.append(f"  {s.key}: " + "; ".join(parts))
+        if self.bugs:
+            out.append(
+                "  Tohum Bug'ları (özet/açıklama tohum içeriğine döndürülecek): "
+                + ", ".join(self.bugs)
+            )
+        else:
+            out.append("  Tohum Bug'ları tohum içeriğinde, değişiklik yok")
         for key in self.missing:
             out.append(f"  {key}: Jira'da bulunamadı (elle oluşturulmalı)")
-        verb = "silinecek" if delete else "kapatılacak"
-        if self.run_issues:
-            out.append(f"  Koşu kayıtları ({verb}): " + ", ".join(self.run_issues))
+        if delete:
+            if self.delete_targets:
+                out.append(
+                    "  Koşu kayıtları (silinecek, açık ve kapalı): "
+                    + ", ".join(self.delete_targets)
+                )
+            else:
+                out.append("  Koşu kaydı (tp-<uuid> etiketli Test/Bug) yok")
+        elif self.run_issues:
+            out.append("  Koşu kayıtları (kapatılacak): " + ", ".join(self.run_issues))
         else:
             out.append("  Açık koşu kaydı (tp-<uuid> etiketli Test/Bug) yok")
         kapali = [k for k in self.run_labels if k not in self.run_issues]
@@ -287,11 +365,19 @@ class SeedPlan:
 @dataclass
 class SeedResult:
     restored: list[str] = field(default_factory=list)
+    bugs_restored: list[str] = field(default_factory=list)
     closed: list[str] = field(default_factory=list)
     deleted: list[str] = field(default_factory=list)
     unlabeled: list[str] = field(default_factory=list)
     comments_deleted: int = 0
     failed: list[str] = field(default_factory=list)  # "KEY: neden"
+
+
+def _same_content(f: dict[str, Any], seed: DemoStory) -> bool:
+    # Gerçek Jira ADF'ye ``localId`` gibi öznitelikler ekler; karşılaştırma metin üzerinden.
+    return str(f.get("summary") or "") == seed.summary and adf_to_text(
+        f.get("description")
+    ) == adf_to_text(seed.adf())
 
 
 def plan(jira: RestJira, project: str = "TPD") -> SeedPlan:
@@ -305,10 +391,7 @@ def plan(jira: RestJira, project: str = "TPD") -> SeedPlan:
             result.missing.append(key)
             continue
         labels = [str(lb) for lb in f.get("labels") or []]
-        # Gerçek Jira ADF'ye ``localId`` gibi öznitelikler ekler; karşılaştırma metin üzerinden.
-        same = str(f.get("summary") or "") == story.summary and adf_to_text(
-            f.get("description")
-        ) == adf_to_text(story.adf())
+        same = _same_content(f, story)
         result.stories.append(
             StoryPlan(
                 key=key,
@@ -317,6 +400,15 @@ def plan(jira: RestJira, project: str = "TPD") -> SeedPlan:
                 add_demo_label=DEMO_LABEL not in labels,
             )
         )
+    for bug in SEED_BUGS:
+        key = f"{project}-{bug.number}"
+        try:
+            f = jira.raw_fields(key, ("summary", "description"))
+        except JiraNotFound:
+            result.missing.append(key)
+            continue
+        if not _same_content(f, bug):
+            result.bugs.append(key)
     acik = {
         i.key
         for i in jira.search(
@@ -376,12 +468,23 @@ def apply(jira: RestJira, seed_plan: SeedPlan, *, delete: bool = False) -> SeedR
             result.restored.append(s.key)
         except JiraError as exc:
             result.failed.append(f"{s.key}: {exc}")
-    for key in seed_plan.run_issues:
+    for key in seed_plan.bugs:
+        bug = next(b for b in SEED_BUGS if key.endswith(f"-{b.number}"))
         try:
-            if delete:
+            # Yalnızca içerik: durum (TPD-7 "Done") ve etiketler değişmez.
+            jira.edit_issue(key, fields={"summary": bug.summary, "description": bug.adf()})
+            result.bugs_restored.append(key)
+        except JiraError as exc:
+            result.failed.append(f"{key}: {exc}")
+    if delete:
+        for key in seed_plan.delete_targets:
+            try:
                 jira.delete_issue(key)
                 result.deleted.append(key)
-                continue
+            except JiraError as exc:
+                result.failed.append(f"{key}: {exc}")
+    for key in [] if delete else seed_plan.run_issues:
+        try:
             tid = _done_transition(jira, key)
             if tid is None:
                 result.failed.append(f"{key}: 'Done' kategorisinde bir geçiş yok")
@@ -410,8 +513,8 @@ def apply(jira: RestJira, seed_plan: SeedPlan, *, delete: bool = False) -> SeedR
 def main(argv: Sequence[str] | None = None, *, jira: RestJira | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="jira-seed",
-        description="Jira projesini demo başlangıcına döndürür (TPD-1..TPD-4, koşu kayıtları, "
-        "tohum kayıtlarındaki yorumlar).",
+        description="Jira projesini demo başlangıcına döndürür (TPD-1..TPD-4, tohum Bug'ları "
+        "TPD-5..TPD-7, koşu kayıtları, tohum kayıtlarındaki yorumlar).",
     )
     parser.add_argument("--onay", action="store_true", help="planı uygula (yoksa kuru çalışma)")
     parser.add_argument(
@@ -439,6 +542,8 @@ def main(argv: Sequence[str] | None = None, *, jira: RestJira | None = None) -> 
     r = apply(client, p, delete=args.sil)
     if r.restored:
         print("Döndürülen story'ler: " + ", ".join(r.restored))
+    if r.bugs_restored:
+        print("Döndürülen tohum Bug'ları: " + ", ".join(r.bugs_restored))
     if r.closed:
         print("Kapatılan koşu kayıtları: " + ", ".join(r.closed))
     if r.deleted:

@@ -65,7 +65,8 @@ NOT_APPLICABLE = "Not applicable"
 
 
 def _desc(paragraph: str, acs: list[str] | None, **sections: str) -> dict[str, Any]:
-    """Story açıklaması görev şablonunda: ``paragraph`` Objective, ``acs`` Acceptance Criteria.
+    """Açıklama görev şablonunda: ``paragraph`` Objective, ``acs`` Acceptance Criteria (story ve
+    tohum Bug'ları).
 
     Verilmeyen bölüm "Not applicable" olur (TPD-2'nin AC bölümü dahil: kabul kriteri yok; çekirdek
     bu işareti AC saymaz). Portal örnek verisi (review-portal/scripts/golden_esitle.py)
@@ -107,6 +108,18 @@ TPD4_ACS = [
     'AC2: Hatalı parola girildiğinde "Kullanıcı adı veya parola hatalı" mesajı gösterilir '
     "ve giriş yapılmaz.",
 ]
+
+# Tohum Bug'ları (TPD-5..TPD-7) da görev şablonunda: Objective eski açıklamanın ilk paragrafı,
+# User Flow adımlar, Other "Beklenen/Gerçekleşen" satırları (cümleler birebir: mükerrer araması
+# terimleri aynı kayda çarpsın). Acceptance Criteria beklenen davranıştır ("ACn:" öneki yok).
+TPD5_ACS = [
+    "6 adet alımda bedava ürün verilmez: bedava 0 adet, indirim 0,00 TL, toplam 150,00 TL.",
+    "Bedava ürün 7. adette verilir (6 öde + 1 bedava).",
+]
+
+TPD6_ACS = ["Sipariş geçmişi tablosunda en yeni sipariş en üstte listelenir."]
+
+TPD7_ACS = ['Hatalı parolada "Kullanıcı adı veya parola hatalı" mesajı Türkçe gösterilir.']
 
 _ISSUES: list[dict[str, Any]] = [
     {
@@ -215,15 +228,19 @@ _ISSUES: list[dict[str, Any]] = [
         "key": "TPD-5",
         "type": "Bug",
         "summary": "Kampanya indirimi sepette yanlış hesaplanıyor",
-        "description": text_to_adf(
+        "description": _desc(
             '"6 al 1 bedava" kampanyası bir adet erken başlıyor: 6 adet alımda bedava ürün '
-            "veriliyor. Kampanya 7. adette başlamalı (6 öde + 1 bedava).\n\n"
-            "Adımlar:\n"
-            "1. bayi1 ile giriş yap\n"
+            "veriliyor. Kampanya 7. adette başlamalı (6 öde + 1 bedava).",
+            TPD5_ACS,
+            scope='- Sepetteki "6 al 1 bedava" kampanya hesabı (bedava adet, indirim, toplam)',
+            user_flow="1. bayi1 ile giriş yap\n"
             "2. Portakal Gazozu 1L ürününden 6 adet sepete ekle\n"
-            "3. Sepetteki bedava adet ve indirim satırını kontrol et\n\n"
-            "Beklenen: bedava 0 adet, indirim 0,00 TL, toplam 150,00 TL.\n"
-            "Gerçekleşen: bedava 1 adet, indirim 25,00 TL, toplam 125,00 TL."
+            "3. Sepetteki bedava adet ve indirim satırını kontrol et",
+            dependencies="- Story: TPD-1",
+            other="Beklenen: bedava 0 adet, indirim 0,00 TL, toplam 150,00 TL.\n"
+            "Gerçekleşen: bedava 1 adet, indirim 25,00 TL, toplam 125,00 TL.",
+            qa_checklist="- 6 adet: bedava 0 adet, indirim 0,00 TL, toplam 150,00 TL\n"
+            "- 7 adet: 1 bedava (regresyon)",
         ),
         "labels": [],
         "status": "To Do",
@@ -234,9 +251,14 @@ _ISSUES: list[dict[str, Any]] = [
         "key": "TPD-6",
         "type": "Bug",
         "summary": "Sipariş geçmişinde tarih sıralaması ters görünüyor",
-        "description": text_to_adf(
+        "description": _desc(
             "Sipariş geçmişi tablosunda en eski sipariş en üstte listeleniyor; en yeni sipariş "
-            "en üstte olmalı."
+            "en üstte olmalı.",
+            TPD6_ACS,
+            scope="- Sipariş geçmişi tablosunun tarih sıralaması",
+            user_flow="1. Sipariş geçmişi tablosunu aç\n2. En üstteki siparişin tarihine bak",
+            other="Beklenen: en yeni sipariş en üstte.\nGerçekleşen: en eski sipariş en üstte.",
+            qa_checklist="- En yeni sipariş en üstte, en eski sipariş en altta listelenir",
         ),
         "labels": [],
         "status": "In Progress",
@@ -247,8 +269,15 @@ _ISSUES: list[dict[str, Any]] = [
         "key": "TPD-7",
         "type": "Bug",
         "summary": "Giriş sayfasında hata mesajı İngilizce görünüyor",
-        "description": text_to_adf(
-            "Hatalı parolada mesaj Türkçe yerine İngilizce gösteriliyordu. Düzeltildi."
+        "description": _desc(
+            "Hatalı parolada mesaj Türkçe yerine İngilizce gösteriliyordu. Düzeltildi.",
+            TPD7_ACS,
+            scope="- Giriş sayfasındaki hata mesajının dili",
+            user_flow="1. Giriş sayfasını aç\n"
+            "2. Hatalı parolayla giriş yap\n"
+            "3. Hata mesajının dilini kontrol et",
+            dependencies="- Story: TPD-4",
+            qa_checklist="- Hatalı parolada mesaj Türkçe görünür (regresyon)",
         ),
         "labels": [],
         "status": "Done",

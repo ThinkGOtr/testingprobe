@@ -192,11 +192,12 @@ curl -fsS -G -u "$(envv JIRA_READ_EMAIL):$(envv JIRA_READ_TOKEN)" \
    | TPD-6 | Bug | Sipariş geçmişinde tarih sıralaması ters görünüyor | In Progress |
    | TPD-7 | Bug | Giriş sayfasında hata mesajı İngilizce görünüyor | Done |
 
-   Bug açıklamalarını simülatörün tohumundan kopyalayın: `sims/jira-sim/src/jira_sim/seed.py`
-   (TPD-5'in beklenen/gerçekleşen değerleri mükerrer araması için önemlidir).
-2. Story içeriklerini `make jira-seed` ile yükleyin — açıklama ve kabul kriterleri
-   `docs/DEMO-VERISI.md`'deki içerikle birebir yazılır, koşu etiketleri temizlenir, `tp-demo`
-   eklenir:
+   Açıklamaları boş bırakabilirsiniz: içerik bir sonraki adımda yazılır. Durumları (TPD-6
+   In Progress, TPD-7 Done) elle verin; `jira-seed` durumlara dokunmaz.
+2. İçerikleri `make jira-seed` ile yükleyin — TPD-1..4'ün açıklama ve kabul kriterleri ile
+   TPD-5..7'nin özet ve açıklaması `docs/DEMO-VERISI.md`'deki görev şablonu içeriğiyle birebir
+   yazılır (Bug'larda TPD-5'in beklenen/gerçekleşen değerleri mükerrer araması için önemlidir);
+   story'lerin koşu etiketleri temizlenir, `tp-demo` eklenir:
 
    ```bash
    make up
@@ -206,16 +207,19 @@ curl -fsS -G -u "$(envv JIRA_READ_EMAIL):$(envv JIRA_READ_TOKEN)" \
 
 3. Provalar arasında: `make reset` gerçek Jira'da önce planı yazdırır ve onay (`e`) ister; ya da
    doğrudan `make jira-seed ONAY=1` (tp-<uuid> etiketli Test/Bug kayıtları "Done"a geçirilerek
-   kapatılır; silmek için `--sil`; TPD-1..7'deki **tüm yorumlar** silinir — tohumda yorum yoktur,
-   hepsi koşuların izidir, elle yazılmış PO cevapları dahil). Kayıtlar arası bağlantılar
-   (`Test`, `Relates`) kalır. `make demo-reset` **gerçek Jira'ya dokunmaz**.
+   kapatılır; `--sil` ile açık ya da kapalı tüm etiketli koşu kayıtları silinir — `make reset`
+   bunu kullanır; TPD-1..7 asla kapatılmaz/silinmez; TPD-1..7'deki **tüm yorumlar** silinir —
+   tohumda yorum yoktur, hepsi koşuların izidir, elle yazılmış PO cevapları dahil). Etiketi önceki
+   bir kapatma modu reset'inde kaldırılmış kapalı kayıt güvenle tanınamaz, kalır. Kayıtlar arası
+   bağlantılar (`Test`, `Relates`) kalır. `make demo-reset` **gerçek Jira'ya dokunmaz**.
 
 ### 2.5 Doğrulama
 
 ```bash
 make jira-seed
 # Beklenen: "Jira demo başlangıcı (https://<site>.atlassian.net, proje TPD):" ve TPD-1..4 için
-# "demo içeriğinde, değişiklik yok"; "Jira'da bulunamadı" satırı olmamalı.
+# "demo içeriğinde, değişiklik yok", "Tohum Bug'ları tohum içeriğinde, değişiklik yok";
+# "Jira'da bulunamadı" satırı olmamalı.
 make security-check     # 10/10; JIRA_WRITE_* yalnızca core-worker'da
 ```
 

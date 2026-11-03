@@ -139,6 +139,7 @@ Mevcut Bug kayıtları (story değil; mükerrer arama havuzu):
   taslağının mükerrer adayı.
 - **TPD-6** "Sipariş geçmişinde tarih sıralaması ters görünüyor" (In Progress) ve **TPD-7** "Giriş
   sayfasında hata mesajı İngilizce görünüyor" (Done) — dup_rank gürültüsü.
+- Açıklamaları da story'ler gibi görev şablonundadır (metinler aşağıda, TPD-4'ten sonra).
 
 Sunum notu: TPD-2 ve TPD-3 denetimi bir doğrulanmış **uyarı** bulgusuyla `findings_open`'da durur
 (her doğrulanmış bulgu analist kararı ister). Analist uyarıya karar verir ya da "Son hal olarak
@@ -309,6 +310,97 @@ Not applicable
 - Hata/ret: hatalı parolada "Kullanıcı adı veya parola hatalı" mesajı, giriş yok (AC2)
 - Uç durum: boş parola ve bilinmeyen kullanıcı adı (AC2)
 - Sınır değer: parolada yalnızca büyük/küçük harf farkı (AC2)
+```
+
+**Tohum Bug'ları (TPD-5..TPD-7) da görev şablonundadır.** Eski serbest metnin her cümlesi bir
+bölümde birebir durur (Objective ilk paragraf, User Flow adımlar, Other "Beklenen/Gerçekleşen"
+satırları), böylece mükerrer araması terimleri (`bugs/jql.py`) aynı kayda çarpar; özetler dup_rank
+golden'larıyla birebir aynıdır. Acceptance Criteria beklenen davranıştır (`ACn:` öneksiz). Gerçek
+Jira'da `jira-seed` bunların özetini ve açıklamasını da bu içeriğe döndürür; durumlarına (TPD-7
+"Done") dokunmaz.
+
+**TPD-5 açıklaması (görev şablonu, Bug):**
+
+```text
+### 🎯 Objective (Amaç)
+"6 al 1 bedava" kampanyası bir adet erken başlıyor: 6 adet alımda bedava ürün veriliyor. Kampanya 7. adette başlamalı (6 öde + 1 bedava).
+
+### 🚀 Scope (Kapsam)
+- Sepetteki "6 al 1 bedava" kampanya hesabı (bedava adet, indirim, toplam)
+
+### 🔄 User Flow (Kullanıcı Akışı)
+1. bayi1 ile giriş yap
+2. Portakal Gazozu 1L ürününden 6 adet sepete ekle
+3. Sepetteki bedava adet ve indirim satırını kontrol et
+
+### 🔗 Dependencies & Integration (Bağımlılıklar ve Entegrasyon)
+- Story: TPD-1
+
+### ℹ️ Other Information & Assets (Diğer Bilgiler & Kaynaklar)
+Beklenen: bedava 0 adet, indirim 0,00 TL, toplam 150,00 TL.
+Gerçekleşen: bedava 1 adet, indirim 25,00 TL, toplam 125,00 TL.
+
+### 🔑 Acceptance Criteria (Kabul Kriterleri)
+- 6 adet alımda bedava ürün verilmez: bedava 0 adet, indirim 0,00 TL, toplam 150,00 TL.
+- Bedava ürün 7. adette verilir (6 öde + 1 bedava).
+
+### 🧪 QA Checklist
+- 6 adet: bedava 0 adet, indirim 0,00 TL, toplam 150,00 TL
+- 7 adet: 1 bedava (regresyon)
+```
+
+**TPD-6 açıklaması (görev şablonu, Bug):**
+
+```text
+### 🎯 Objective (Amaç)
+Sipariş geçmişi tablosunda en eski sipariş en üstte listeleniyor; en yeni sipariş en üstte olmalı.
+
+### 🚀 Scope (Kapsam)
+- Sipariş geçmişi tablosunun tarih sıralaması
+
+### 🔄 User Flow (Kullanıcı Akışı)
+1. Sipariş geçmişi tablosunu aç
+2. En üstteki siparişin tarihine bak
+
+### 🔗 Dependencies & Integration (Bağımlılıklar ve Entegrasyon)
+Not applicable
+
+### ℹ️ Other Information & Assets (Diğer Bilgiler & Kaynaklar)
+Beklenen: en yeni sipariş en üstte.
+Gerçekleşen: en eski sipariş en üstte.
+
+### 🔑 Acceptance Criteria (Kabul Kriterleri)
+- Sipariş geçmişi tablosunda en yeni sipariş en üstte listelenir.
+
+### 🧪 QA Checklist
+- En yeni sipariş en üstte, en eski sipariş en altta listelenir
+```
+
+**TPD-7 açıklaması (görev şablonu, Bug):**
+
+```text
+### 🎯 Objective (Amaç)
+Hatalı parolada mesaj Türkçe yerine İngilizce gösteriliyordu. Düzeltildi.
+
+### 🚀 Scope (Kapsam)
+- Giriş sayfasındaki hata mesajının dili
+
+### 🔄 User Flow (Kullanıcı Akışı)
+1. Giriş sayfasını aç
+2. Hatalı parolayla giriş yap
+3. Hata mesajının dilini kontrol et
+
+### 🔗 Dependencies & Integration (Bağımlılıklar ve Entegrasyon)
+- Story: TPD-4
+
+### ℹ️ Other Information & Assets (Diğer Bilgiler & Kaynaklar)
+Not applicable
+
+### 🔑 Acceptance Criteria (Kabul Kriterleri)
+- Hatalı parolada "Kullanıcı adı veya parola hatalı" mesajı Türkçe gösterilir.
+
+### 🧪 QA Checklist
+- Hatalı parolada mesaj Türkçe görünür (regresyon)
 ```
 
 **Jira kullanıcıları (simülatör):** `reader@sim.local` (yalnızca okuma), `writer@sim.local` (ürünün yazma

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import re
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
@@ -298,12 +298,8 @@ def _production_search(client: TestClient, texts: list[str]) -> list:
     return [i for i in issues if i.issue_type == "Bug" and i.status != "Done"]
 
 
-def test_f4_and_break_published_as_new_keep_tpd5_ranked_first_for_c3_and_f2(
-    rules_dir: Path,
-) -> None:
-    """Sahne sırası serbest: F4 "Yeni kayıt" (canlıda TPD-8) ve kırma "Yeni kayıt" önce
-    yayımlansa da C3 ve F2 sıralaması REPLAY'dir; TPD-5 AI gerekçesiyle ilk, öneri bağla. Kırma
-    koşusunun tekrarında önceki kırma Bug'ı aynı belirti olarak önerilir."""
+def _replay_ranker(rules_dir: Path) -> Callable[[list[str], list], dict]:
+    """REPLAY (strict) dup_rank çağrısı: (hata imzası blokları, adaylar) → doğrulanmış çıktı."""
     from tp_core.gateway import (
         Gateway,
         ReplayStore,
@@ -338,11 +334,57 @@ def test_f4_and_break_published_as_new_keep_tpd5_ranked_first_for_c3_and_f2(
         assert dup_rank_problems(out, cands) == []
         return out
 
+    return rank
+
+
+def _c3_f2_texts() -> tuple[list[str], list[str]]:
+    """C3 ve F2'nin mükerrer araması metinleri (bugs şeridinin hata imzası kaynakları)."""
     c3 = _c3_case()
     ac2 = di.story_ac("AC2")
-    c3_texts = [ac2, C3_TITLE, c3["steps"][-1]["expected"], C3_TITLE]
     f2 = di.finding_kwargs("TPD-1", "F2")
-    f2_texts = [ac2, f2["claim"], f2["doc_text"], f2["observed"]]
+    return (
+        [ac2, C3_TITLE, c3["steps"][-1]["expected"], C3_TITLE],
+        [ac2, f2["claim"], f2["doc_text"], f2["observed"]],
+    )
+
+
+def test_templated_seed_bugs_keep_tpd5_first_and_high_for_c3_and_f2(
+    sim: TestClient, rules_dir: Path
+) -> None:
+    """Görev şablonundaki tohum Bug'ları: C3/F2 üretim araması TPD-5'i bulur (küme golden aday
+    beyanına uyar, kapalı TPD-7 yok); TPD-5 terim örtüşmesinde de ilk, REPLAY sıralamasında high
+    ve bağla."""
+    from tp_core.features.bugs import jql
+
+    rank = _replay_ranker(rules_dir)
+    c3_texts, f2_texts = _c3_f2_texts()
+    spec = load_golden("dup_rank", "HATA")["input_match"]["candidates"]
+    declared = {*spec["required"], *spec["optional"]}
+    for sources, texts in (
+        (di.c3_sources(), c3_texts),
+        (di.finding_sources("TPD-1", "F2"), f2_texts),
+    ):
+        cands = _production_search(sim, texts)
+        keys = {c.key for c in cands}
+        assert "TPD-5" in keys and keys <= declared, keys
+        terms = jql.key_terms(texts)
+        scores = {c.key: jql.overlap_score(terms, f"{c.summary}\n{c.description}") for c in cands}
+        assert max(scores, key=lambda k: (scores[k], k == "TPD-5")) == "TPD-5", scores
+        out = rank(sources, cands)
+        assert out["candidates"][0]["key"] == "TPD-5"
+        assert out["candidates"][0]["likelihood"] == "high"
+        assert (out["recommendation"], out["link_key"]) == ("link", "TPD-5")
+
+
+def test_f4_and_break_published_as_new_keep_tpd5_ranked_first_for_c3_and_f2(
+    rules_dir: Path,
+) -> None:
+    """Sahne sırası serbest: F4 "Yeni kayıt" (canlıda TPD-8) ve kırma "Yeni kayıt" önce
+    yayımlansa da C3 ve F2 sıralaması REPLAY'dir; TPD-5 AI gerekçesiyle ilk, öneri bağla. Kırma
+    koşusunun tekrarında önceki kırma Bug'ı aynı belirti olarak önerilir."""
+    rank = _replay_ranker(rules_dir)
+    c3_texts, f2_texts = _c3_f2_texts()
+    ac2 = di.story_ac("AC2")
     with TestClient(create_app(data_path="", base_url=BASE), base_url=BASE) as fresh:
         f4_key = _create_bug(fresh, "f4-kredi-limiti/HATA")
         for sources, texts in (

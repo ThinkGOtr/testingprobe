@@ -38,7 +38,14 @@ from tp_core.integrations.jira_adf import (
     template_doc,
     text_to_adf,
 )
-from tp_core.integrations.jira_seed import DEMO_STORIES, apply, is_run_label, main, plan
+from tp_core.integrations.jira_seed import (
+    DEMO_STORIES,
+    SEED_BUGS,
+    apply,
+    is_run_label,
+    main,
+    plan,
+)
 
 REPO = Path(__file__).resolve().parents[4]
 SIM_SRC = REPO / "sims" / "jira-sim" / "src"
@@ -273,6 +280,46 @@ def test_delete_mode_removes_run_issues(sim: TestClient, jira: RestJira) -> None
     assert sim.get(f"/rest/api/3/issue/{keys['foreign']}", auth=WRITER).status_code == 200
 
 
+def test_delete_mode_removes_open_and_closed_run_issues_and_is_idempotent(
+    sim: TestClient, jira: RestJira, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``make reset`` (``--onay --sil``): açık ve kapalı tüm koşu kayıtları silinir; tohum kayıtları
+    (TPD-5 koşu etiketi taşısa da) ve ürünün olmayan kayıtlar kalır; ikinci plan boştur."""
+    keys = _rehearse(sim)
+    done = next(
+        t for t in jira.transitions(keys["test"]) if t["to"]["statusCategory"]["key"] == "done"
+    )
+    jira.transition(keys["test"], done["id"])  # önceki provadan kapalı kalan koşu kaydı
+    # Etiketsiz/AI-generated'sız kayıt: ürünün değil, kapalı olsa da dokunulmaz.
+    foreign_closed = sim.post(
+        "/rest/api/3/issue",
+        json={"fields": {"project": {"key": "TPD"}, "issuetype": {"name": "Bug"}, "summary": "x"}},
+        auth=WRITER,
+    ).json()["key"]
+    jira.transition(foreign_closed, done["id"])
+    run_keys = sorted([keys["test"], keys["task_case"], keys["bug"]])
+
+    p = plan(jira, "TPD")
+    assert keys["test"] not in p.run_issues
+    assert sorted(p.delete_targets) == run_keys
+    assert main(["--sil"], jira=jira) == 0
+    out = capsys.readouterr().out
+    assert "Koşu kayıtları (silinecek, açık ve kapalı): " + ", ".join(p.delete_targets) in out
+    assert "tp-<uuid> etiketi kaldırılacak" not in out
+
+    assert main(["--onay", "--sil"], jira=jira) == 0
+    capsys.readouterr()
+    for k in run_keys:
+        assert sim.get(f"/rest/api/3/issue/{k}", auth=WRITER).status_code == 404
+    for k in (keys["foreign"], foreign_closed, *(f"TPD-{n}" for n in range(1, 8))):
+        assert sim.get(f"/rest/api/3/issue/{k}", auth=WRITER).status_code == 200, k
+
+    p = plan(jira, "TPD")
+    assert p.empty and p.delete_targets == []
+    assert main(["--onay", "--sil"], jira=jira) == 0
+    assert "zaten demo başlangıcında" in capsys.readouterr().out
+
+
 def test_missing_story_and_failed_transition_are_reported(
     sim: TestClient, jira: RestJira, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -480,3 +527,111 @@ def test_run_labels_are_stripped_from_closed_and_newly_closed_issues(
         assert not any(jira_seed.TP_UUID_LABEL.match(lb) for lb in labels)
     assert "musteri-isi" in _fields(sim, keys["foreign"])["labels"]  # ürünün olmayan kayıt
     assert plan(jira, "TPD").empty
+
+
+# ------------------------------------------------------- tohum Bug'ları (TPD-5..TPD-7, şablon)
+
+# Şablon öncesi serbest metin (eski tohum; gerçek Jira'da ilk ``make reset``'e kadar bu durur).
+# Mükerrer araması terimleri bu cümlelere çarptığı için her cümle şablonda birebir korunur.
+OLD_SEED_BUGS = {
+    5: '"6 al 1 bedava" kampanyası bir adet erken başlıyor: 6 adet alımda bedava ürün '
+    "veriliyor. Kampanya 7. adette başlamalı (6 öde + 1 bedava).\n\n"
+    "Adımlar:\n"
+    "1. bayi1 ile giriş yap\n"
+    "2. Portakal Gazozu 1L ürününden 6 adet sepete ekle\n"
+    "3. Sepetteki bedava adet ve indirim satırını kontrol et\n\n"
+    "Beklenen: bedava 0 adet, indirim 0,00 TL, toplam 150,00 TL.\n"
+    "Gerçekleşen: bedava 1 adet, indirim 25,00 TL, toplam 125,00 TL.",
+    6: "Sipariş geçmişi tablosunda en eski sipariş en üstte listeleniyor; en yeni sipariş "
+    "en üstte olmalı.",
+    7: "Hatalı parolada mesaj Türkçe yerine İngilizce gösteriliyordu. Düzeltildi.",
+}
+
+
+def test_seed_bugs_match_simulator_seed() -> None:
+    """jira_seed'in yazdığı tohum Bug'ları jira-sim tohumuyla birebir aynı ADF ve özet."""
+    issues = initial_state()["issues"]
+    assert [b.number for b in SEED_BUGS] == [5, 6, 7]
+    for bug in SEED_BUGS:
+        seeded = issues[f"TPD-{bug.number}"]
+        assert seeded["issuetype"] == "Bug"
+        assert bug.summary == seeded["summary"]
+        assert bug.adf() == seeded["description"]
+    assert issues["TPD-7"]["status"] == "Done"
+
+
+def test_seed_bugs_follow_the_template_and_keep_old_sentences() -> None:
+    """7 bölüm sırasıyla; eski açıklamanın her satırı (başlık "Adımlar:" hariç) şablonda birebir."""
+    titles = [title for _, title, _ in TEMPLATE_SECTIONS]
+    for bug in SEED_BUGS:
+        adf = bug.adf()
+        headings = [adf_to_text({"content": [n]}) for n in adf["content"] if n["type"] == "heading"]
+        assert headings == titles, bug.number
+        text = bug.text()
+        for line in OLD_SEED_BUGS[bug.number].splitlines():
+            if line and line != "Adımlar:":
+                assert line in text, (bug.number, line)
+    assert "- Story: TPD-1" in SEED_BUGS[0].text()
+
+
+def test_demo_verisi_lists_every_seed_bug_template_verbatim() -> None:
+    doc = (REPO / "docs" / "DEMO-VERISI.md").read_text(encoding="utf-8")
+    for bug in SEED_BUGS:
+        block = doc.split(f"**TPD-{bug.number} açıklaması (görev şablonu, Bug):**", 1)[1]
+        body = block.split("```text\n", 1)[1].split("\n```", 1)[0]
+        assert body == bug.text(), bug.number
+
+
+def test_old_format_seed_bugs_are_restored_and_idempotent(
+    sim: TestClient, jira: RestJira, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Gerçek Jira'da TPD-5..7 eski serbest metinde: ``jira-seed`` planlar, yalnızca içeriği
+    yazar (durum ve etiketler yerinde, TPD-7 "Done" kalır); ikinci plan boştur."""
+    for n, text in OLD_SEED_BUGS.items():
+        r = sim.put(
+            f"/rest/api/3/issue/TPD-{n}",
+            json={"fields": {"description": text_to_adf(text)}},
+            auth=WRITER,
+        )
+        assert r.status_code == 204, r.text
+    r = sim.put(
+        "/rest/api/3/issue/TPD-6",
+        json={
+            "fields": {"summary": "Sipariş geçmişi sıralaması"},
+            "update": {"labels": [{"add": "x"}]},
+        },
+        auth=WRITER,
+    )
+    assert r.status_code == 204, r.text
+
+    p = plan(jira, "TPD")
+    assert p.bugs == ["TPD-5", "TPD-6", "TPD-7"]
+    assert not any(s.needed for s in p.stories) and not p.empty
+    assert main([], jira=jira) == 0
+    out = capsys.readouterr().out
+    assert "Tohum Bug'ları (özet/açıklama tohum içeriğine döndürülecek): TPD-5, TPD-6, TPD-7" in out
+
+    assert main(["--onay"], jira=jira) == 0
+    assert "Döndürülen tohum Bug'ları: TPD-5, TPD-6, TPD-7" in capsys.readouterr().out
+    seed = initial_state()["issues"]
+    for n in (5, 6, 7):
+        f = _fields(sim, f"TPD-{n}")
+        assert f["summary"] == seed[f"TPD-{n}"]["summary"]
+        assert f["description"] == seed[f"TPD-{n}"]["description"]
+        assert f["status"]["name"] == seed[f"TPD-{n}"]["status"]
+    assert _fields(sim, "TPD-6")["labels"] == ["x"]  # etiketlere dokunulmaz
+
+    # İkinci çalıştırma: değişecek bir şey kalmadı.
+    p = plan(jira, "TPD")
+    assert p.empty and p.bugs == []
+    assert "  Tohum Bug'ları tohum içeriğinde, değişiklik yok" in p.lines()
+    assert main(["--onay"], jira=jira) == 0
+    assert "zaten demo başlangıcında" in capsys.readouterr().out
+
+
+def test_missing_seed_bug_is_reported(sim: TestClient, jira: RestJira) -> None:
+    r = sim.delete("/rest/api/3/issue/TPD-6", auth=WRITER)
+    assert r.status_code == 204, r.text
+    p = plan(jira, "TPD")
+    assert "TPD-6" in p.missing and p.bugs == []
+    assert main(["--onay"], jira=jira) == 1
