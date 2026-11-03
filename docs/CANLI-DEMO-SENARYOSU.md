@@ -261,8 +261,10 @@ gerçekten koşuyor; modelin kararı REPLAY."
 
 ### Adım 5b · Defect adayı anı (0,5 dk) — **sunumun en önemli anı**
 
-1. **C3** script'ini aç.
-- Görülen: **Defect adayı** — `beklenen "0", gerçekleşen "1" (3/3 tekrar)`; PR **açılmadı**.
+1. Aynı ekranın altındaki **Üretilen testler** tablosunda C3 satırına ("6 adet kampanyalı üründe
+   bedava ürün verilmez") tıkla — testin detay sayfası açılır.
+- Görülen: tabloda Durum **"Defect adayı"**; detayda `beklenen "0", gerçekleşen "1" (3/3 tekrar)`
+  (test 6 adette bedava beklemiyor, uygulama 1 bedava veriyor); PR **açılmadı**.
 
 **Söyle:** "İşte değer burada. Test, dokümandaki doğru davranışı bekliyor; bugünkü kod onu
 karşılamıyor. Ürün testi 'yeşile boyamaya' çalışmıyor — bunu ürün hatası adayı olarak insana
