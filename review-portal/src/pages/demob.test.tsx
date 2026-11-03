@@ -224,6 +224,15 @@ describe("Kod üretimi: ekranlar (örnek veri)", () => {
     await waitFor(() => expect(mockVerisi().scriptler.find((s) => s.case_ids.includes("case-1-4"))?.durum).toBe("pr_open"), { timeout: 4000 });
     ayar.isAdimiMs = 0;
   });
+
+  it("PR'ı kapatılmış (değişiklik istendi) case yeniden üretim listesine döner", async () => {
+    await oturumAc("muhendis");
+    const s = mockVerisi().scriptler.find((x) => x.id === "scr-2")!;
+    expect(s.case_ids).toEqual(["case-1-2"]); // C2: "7 adet kampanyalı üründe 1 adet bedava verilir"
+    s.durum = "closed";
+    uygulama("/kod");
+    expect(await screen.findByRole("checkbox", { name: /7 adet kampanyalı üründe 1 adet bedava/ })).toBeInTheDocument();
+  });
 });
 
 describe("merge kapısı gerekçeleri (core göndermezse türetilir)", () => {

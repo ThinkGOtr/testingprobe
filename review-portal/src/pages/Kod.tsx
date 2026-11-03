@@ -21,7 +21,9 @@ export function Kod() {
   });
   useOlay(sessiz, ["agent.step", "pr.opened", "ci.status", "script.updated", "case.updated"]);
 
-  const scriptliCaseler = new Set((scriptler.veri ?? []).flatMap((s) => s.case_ids));
+  // Kapatılmış (değişiklik istendi / reddedildi / yerine geçildi) test case'i yeniden üretime açar:
+  // çekirdek kapalı script'ten sonra yeni üretimi kabul eder.
+  const scriptliCaseler = new Set((scriptler.veri ?? []).filter((s) => s.durum !== "closed").flatMap((s) => s.case_ids));
   const adaylar = (caseler.veri ?? []).filter((c) => (c.durum === "approved" || c.durum === "published") && !scriptliCaseler.has(c.id));
   const tumScriptler = scriptler.veri ?? [];
   const kapaliSayisi = tumScriptler.filter((s) => s.durum === "closed").length;
