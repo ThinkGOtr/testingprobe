@@ -5,6 +5,7 @@ import type { CiktiModu, Degerlendirme, Rol } from "../api/types";
 import { useOturum } from "../auth";
 import { ROL, type Ton } from "../lib/etiketler";
 import { baglantiTuru } from "../lib/rotalar";
+import { Ikon } from "./Ikon";
 
 /** Kayıtlı (replay) çıktı rozeti. live için hiçbir şey göstermez (Constitution VIII). */
 export function ReplayRozeti({ mode, degerlendirme }: { mode: CiktiModu | null | undefined; degerlendirme?: Degerlendirme | null }) {
@@ -189,7 +190,7 @@ export function DisBaglanti({ href, children }: { href: string; children: ReactN
     <a href={href} target="_blank" rel="noreferrer noopener" className="dis-baglanti">
       {children}
       <span className="gorunmez"> (yeni sekmede açılır)</span>
-      <span aria-hidden="true"> ↗</span>
+      <Ikon ad="dis" className="ikon-dis" />
     </a>
   );
 }

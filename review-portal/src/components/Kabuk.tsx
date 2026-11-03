@@ -6,10 +6,13 @@ import type { Rol } from "../api/types";
 import { useOturum } from "../auth";
 import { ROL } from "../lib/etiketler";
 import { TEMA_ETIKETI, useTema } from "../lib/tema";
+import { Ikon, type IkonAdi } from "./Ikon";
 
 interface NavOgesi {
   yol: string;
   ad: string;
+  /** Menü öğesinin dekoratif ikonu (aria-hidden; erişilebilir ad `ad`dır). */
+  ikon: IkonAdi;
   /** Yalnızca bu rollere görünür (boşsa herkese). */
   gorunur?: Rol[];
   /** Bu rollerin asıl çalışma alanı (vurgulanır). */
@@ -22,20 +25,20 @@ const NAV: { grup: string; ogeler: NavOgesi[] }[] = [
   {
     grup: "İş akışı",
     ogeler: [
-      { yol: "/gereksinimler", ad: "Gereksinimler", odak: ["analyst", "po"], uc: ["GET", "/requirements"] },
-      { yol: "/kod", ad: "Kod üretimi", odak: ["engineer"], uc: ["GET", "/scripts"] },
-      { yol: "/kosular", ad: "Koşular", odak: ["presenter", "engineer"], uc: ["GET", "/runs"] },
-      { yol: "/bug-taslaklari", ad: "Bug taslakları", odak: ["tester"], uc: ["GET", "/bug-drafts"] },
+      { yol: "/gereksinimler", ad: "Gereksinimler", ikon: "gereksinim", odak: ["analyst", "po"], uc: ["GET", "/requirements"] },
+      { yol: "/kod", ad: "Kod üretimi", ikon: "kod", odak: ["engineer"], uc: ["GET", "/scripts"] },
+      { yol: "/kosular", ad: "Koşular", ikon: "kosu", odak: ["presenter", "engineer"], uc: ["GET", "/runs"] },
+      { yol: "/bug-taslaklari", ad: "Bug taslakları", ikon: "bug", odak: ["tester"], uc: ["GET", "/bug-drafts"] },
     ],
   },
   {
     grup: "İzleme",
     ogeler: [
-      { yol: "/yol-haritasi", ad: "Demo yol haritası", odak: ["presenter"], uc: ["GET", "/requirements"] },
-      { yol: "/kontrol-kulesi", ad: "Kontrol Kulesi", odak: ["presenter"], uc: ["GET", "/control-tower"] },
-      { yol: "/demo", ad: "Demo kontrolleri", gorunur: ["presenter"], odak: ["presenter"], uc: ["POST", "/demo/break-locator"] },
-      { yol: "/denetim", ad: "Denetim", uc: ["GET", "/audit"] },
-      { yol: "/claude-code", ad: "Claude Code kanalı", gorunur: ["analyst"], uc: ["GET", "/tokens"] },
+      { yol: "/yol-haritasi", ad: "Demo yol haritası", ikon: "harita", odak: ["presenter"], uc: ["GET", "/requirements"] },
+      { yol: "/kontrol-kulesi", ad: "Kontrol Kulesi", ikon: "kule", odak: ["presenter"], uc: ["GET", "/control-tower"] },
+      { yol: "/demo", ad: "Demo kontrolleri", ikon: "demo", gorunur: ["presenter"], odak: ["presenter"], uc: ["POST", "/demo/break-locator"] },
+      { yol: "/denetim", ad: "Denetim", ikon: "denetim", uc: ["GET", "/audit"] },
+      { yol: "/claude-code", ad: "Claude Code kanalı", ikon: "terminal", gorunur: ["analyst"], uc: ["GET", "/tokens"] },
     ],
   },
 ];
@@ -72,6 +75,15 @@ export function useCanliYetenekler(): Yetenekler | null {
   return y;
 }
 
+/** Avatar için baş harfler (en çok iki): "Cengizhan Gunaydin" → "CG", "sunucu" → "S". */
+export function basHarfler(ad: string): string {
+  const parcalar = ad.trim().split(/[\s._-]+/).filter(Boolean);
+  return parcalar
+    .slice(0, 2)
+    .map((p) => p[0]!.toLocaleUpperCase("tr-TR"))
+    .join("");
+}
+
 export function Kabuk() {
   const { kullanici, cikisYap } = useOturum();
   const baglanti = useBaglantiDurumu();
@@ -100,13 +112,13 @@ export function Kabuk() {
           aria-controls="yan-menu"
           onClick={() => setMenuAcik((m) => !m)}
         >
-          <span aria-hidden="true">☰</span>
+          <Ikon ad="menu" />
           <span className="gorunmez">Menü</span>
         </button>
         <NavLink to="/" className="marka">
           <span className="marka-isaret" aria-hidden="true" />
           <span>
-            AI Testing Probe <span className="marka-alt">İnceleme portalı</span>
+            AI Testing <strong>Probe</strong> <span className="marka-alt">İnceleme portalı</span>
           </span>
         </NavLink>
         <div className="ust-sag">
@@ -127,10 +139,13 @@ export function Kabuk() {
             <span className="baglanti-metin">{b.etiket}</span>
           </span>
           <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={temaDegistir} aria-label={`${TEMA_ETIKETI[tema]} (değiştir)`}>
-            {tema === "koyu" ? "☾" : tema === "acik" ? "☀" : "◐"}
+            <Ikon ad={tema === "koyu" ? "ay" : tema === "acik" ? "gunes" : "sistem"} />
           </button>
           {kullanici && (
             <div className="kullanici">
+              <span className="kullanici-avatar" aria-hidden="true">
+                {basHarfler(kullanici.ad_soyad || kullanici.kullanici_adi)}
+              </span>
               <span className="kullanici-ad" title={`${kullanici.gorunen_ad ?? ROL[kullanici.rol]} (${kullanici.kullanici_adi})`}>
                 {kullanici.ad_soyad || kullanici.kullanici_adi}
               </span>
@@ -166,11 +181,13 @@ export function Kabuk() {
                           aria-disabled="true"
                           title="Bu fazda yok: çekirdek bu ekranın verisini henüz sunmuyor (örnek veri gösterilmez)."
                         >
+                          <Ikon ad={o.ikon} />
                           <span>{o.ad}</span>
                           <span className="menu-oge-not">bu fazda yok</span>
                         </span>
                       ) : (
                       <NavLink to={o.yol} className={({ isActive }) => `menu-oge${isActive ? " aktif" : ""}`}>
+                        <Ikon ad={o.ikon} />
                         <span>{o.ad}</span>
                         {kullanici && o.odak?.includes(kullanici.rol) && (
                           <span className="odak-isaret" title="Rolünüzün çalışma alanı">
@@ -188,7 +205,7 @@ export function Kabuk() {
         </nav>
         <main id="ana-icerik" className="icerik" tabIndex={-1}>
           {mockAktif && (
-            <div className="uyari-kutusu uyari-uyari ornek-veri-bandi" role="note" data-testid="ornek-veri-bandi">
+            <div className={`uyari-kutusu uyari-uyari ornek-veri-bandi${mockZorunlu() ? " ornek-veri-tam" : ""}`} role="note" data-testid="ornek-veri-bandi">
               <strong>ÖRNEK VERİ — gerçek değil.</strong>{" "}
               {mockZorunlu()
                 ? "Bu portal örnek veriyle derlendi; sayılar ve oranlar ölçüm değildir."
