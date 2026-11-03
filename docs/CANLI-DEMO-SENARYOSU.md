@@ -241,7 +241,14 @@ besleyebilirsiniz; Claude Code taslak gönderir, onay yine burada insanda."
 
 **Profil: Mühendis** → sol menü **Kod üretimi**
 
-1. **C1** (sepet sayacı), **C2** (7 adet), **C3** (6 adet), **C5** (750,00 TL) seçili olsun.
+1. Listede C-numarası yok; satırlar Jira anahtarıyla, case sırasıyla gelir (1. satır C1, 2. satır
+   C2 …). Şu dört başlığı işaretle:
+   | Case | Başlık |
+   |---|---|
+   | **C1** | Sepete ekle ile ürün sepete eklenir ve sepet sayacı artar |
+   | **C2** | 7 adet kampanyalı üründe 1 adet bedava verilir |
+   | **C3** | 6 adet kampanyalı üründe bedava ürün verilmez |
+   | **C5** | Kampanyasız siparişte minimum tutarın altında uyarı gösterilir ve onay pasif olur |
 2. **"Seçilenler için kod üret (4)"**
 3. Ajan adımları canlı akar: navigate → snapshot → click → generate_locator, her adımın ekran
    görüntüsüyle; sonra adım → page object eşleme tablosu, şablondan üretilen TypeScript ve yerel
