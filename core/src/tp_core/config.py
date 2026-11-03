@@ -97,6 +97,9 @@ class Settings(BaseSettings):
     # core-worker paylaşılan `tp_artifacts`'a (checks/<sha>.json merge kapısı) yazamaz. Boşsa
     # TP_ARTIFACTS_PATH kullanılır (testler/yerel geliştirme).
     codegen_artifacts_path: str = Field(default="", validation_alias="TP_CODEGEN_ARTIFACTS_PATH")
+    # GitHub koşu artefaktlarının yerel kopyası (core-worker rw, core-api ro; ayrı volume
+    # `tp_gh_artifacts`): core-worker paylaşılan `tp_artifacts`'a yazamaz. Boşsa TP_ARTIFACTS_PATH.
+    github_artifacts_path: str = Field(default="", validation_alias="TP_GITHUB_ARTIFACTS_PATH")
 
     # Merge kapısı dosyaları `checks/<sha>.json` (tek yazar toolchain-worker `/check`; ayrı volume
     # `tp_checks`, core-api/core-worker salt okur, test-runner hiç görmez). Boşsa

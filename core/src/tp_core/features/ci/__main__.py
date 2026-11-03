@@ -1,12 +1,18 @@
 """CI operatör komutları (core-worker içinde çalışır; GitHub kimlik bilgisi yalnızca orada).
 
     python -m tp_core.features.ci aria-doldur <run_id> [<run_id> ...] [--isteyen AD]
+    python -m tp_core.features.ci artefakt-indir <run_id> [<run_id> ...] [--isteyen AD]
 
 `aria-doldur`: GitHub kaynaklı koşunun `test-local-results` artefaktındaki `<sayfa>.aria.yml`
 dosyalarını `run_aria`'ya (0016) geri doldurur — 0016 öncesi içe aktarılan yeşil koşuların locator
 onarımına son yeşil aria kanıtı olabilmesi için. İdempotent (var olan yollar yeniden yazılmaz);
 denetim kaydı `ci.aria_snapshots_backfilled`. `run_id` tam UUID ya da en az 8 karakterlik tekil
 önek olabilir. Çıktı koşu başına tek satır JSON'dur.
+
+`artefakt-indir`: GitHub kaynaklı koşunun raporlarını (Playwright HTML, JUnit, allure-results,
+run-checks.log) core'un yerel kopyasına alır (`github_artifacts`) — özellikten önce içe aktarılan
+koşular portalda GitHub'a gitmeden açılabilsin. İdempotent (kopya varsa indirme yok); denetim
+kaydı `ci.github_artifacts_mirrored`.
 Çıkış: 0 tamam · 3 en az bir koşu reddedildi · 2 kullanım hatası.
 """
 
@@ -54,12 +60,29 @@ def aria_doldur(kimlik: str, isteyen: str) -> dict[str, Any]:
         return service.github_aria_doldur(s, run, isteyen)
 
 
+def artefakt_indir(kimlik: str, isteyen: str) -> dict[str, Any]:
+    from tp_core.features.ci import service
+    from tp_core.models import session_scope
+
+    with session_scope() as s:
+        run = _run_bul(s, kimlik)
+        if run is None:
+            raise service.CiError(f"koşu yok: {kimlik}")
+        return service.github_artefakt_indir(s, run, isteyen)
+
+
+KOMUTLAR = {"aria-doldur": aria_doldur, "artefakt-indir": artefakt_indir}
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="python -m tp_core.features.ci")
     alt = p.add_subparsers(dest="komut", required=True)
     a = alt.add_parser("aria-doldur", help="GitHub koşusunun aria snapshot'larını geri doldurur")
     a.add_argument("run_id", nargs="+")
     a.add_argument("--isteyen", default="operator")
+    b = alt.add_parser("artefakt-indir", help="GitHub koşusunun raporlarını yerel kopyaya alır")
+    b.add_argument("run_id", nargs="+")
+    b.add_argument("--isteyen", default="operator")
     args = p.parse_args(argv)
     from tp_core.features.ci.clients import GitHubCiError
     from tp_core.features.ci.service import CiError
@@ -67,7 +90,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     kod = 0
     for kimlik in args.run_id:
         try:
-            out = aria_doldur(kimlik, args.isteyen)
+            out = KOMUTLAR[args.komut](kimlik, args.isteyen)
         except (CiError, GitHubCiError) as exc:
             hata = {"tamam": False, "run": kimlik, "neden": str(exc)}
             print(json.dumps(hata, ensure_ascii=False))

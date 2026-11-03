@@ -494,6 +494,98 @@ def _json_testleri(
             _json_testleri(alt, burada, dosya, out, kosu_dizini, ekler)
 
 
+MAX_STACK = 8000
+MAX_CIKTI = 4000
+MAX_ADIM = 150
+MAX_ADIM_DERINLIK = 4
+
+
+def _hata_ozeti(err: Any) -> dict[str, Any] | None:
+    if not isinstance(err, Mapping):
+        return {"mesaj": temiz(err)} if isinstance(err, str) and err else None
+    out: dict[str, Any] = {}
+    if err.get("message"):
+        out["mesaj"] = temiz(err.get("message"))
+    if err.get("stack"):
+        out["stack"] = temiz(err.get("stack"), MAX_STACK)
+    if err.get("snippet"):
+        out["snippet"] = temiz(err.get("snippet"), MAX_CIKTI)
+    konum = err.get("location")
+    if isinstance(konum, Mapping) and konum.get("file"):
+        out["konum"] = temiz(f"{konum.get('file')}:{_int(konum.get('line'))}", 500)
+    return out or None
+
+
+def _cikti(parcalar: Any) -> str | None:
+    """Playwright `stdout`/`stderr`: [{text} | {buffer(base64)}] → sınırlı düz metin."""
+    if not isinstance(parcalar, list):
+        return None
+    metin: list[str] = []
+    toplam = 0
+    for p in parcalar[:200]:
+        if isinstance(p, Mapping) and isinstance(p.get("text"), str):
+            parca = p["text"]
+        elif isinstance(p, Mapping) and isinstance(p.get("buffer"), str):
+            try:
+                parca = base64.b64decode(p["buffer"][: MAX_CIKTI * 2]).decode("utf-8", "replace")
+            except (binascii.Error, ValueError):
+                continue
+        elif isinstance(p, str):
+            parca = p
+        else:
+            continue
+        metin.append(parca)
+        toplam += len(parca)
+        if toplam > MAX_CIKTI:
+            break
+    birlesik = "".join(metin)
+    return temiz(birlesik, MAX_CIKTI) if birlesik.strip() else None
+
+
+def _adimlar(steps: Any, sayac: list[int], derinlik: int = 0) -> list[dict[str, Any]]:
+    """Playwright `results[].steps` (test.step ağacı) → sınırlı, düz alanlı ağaç."""
+    if not isinstance(steps, list) or derinlik >= MAX_ADIM_DERINLIK:
+        return []
+    out: list[dict[str, Any]] = []
+    for st in steps:
+        if not isinstance(st, Mapping) or sayac[0] >= MAX_ADIM:
+            break
+        sayac[0] += 1
+        adim: dict[str, Any] = {
+            "baslik": temiz(st.get("title"), 300),
+            "sure_ms": _int(st.get("duration")),
+        }
+        hata = _hata_ozeti(st.get("error"))
+        if hata:
+            adim["hata"] = temiz(hata.get("mesaj") or "hata", 500)
+        alt = _adimlar(st.get("steps"), sayac, derinlik + 1)
+        if alt:
+            adim["adimlar"] = alt
+        out.append(adim)
+    return out
+
+
+def _deneme_ozeti(r: Mapping[str, Any]) -> dict[str, Any]:
+    """Tek deneme: sonuç, süre, hata (mesaj + stack + konum), adımlar, stdout/stderr (sınırlı)."""
+    out: dict[str, Any] = {
+        "deneme": _int(r.get("retry")),
+        "sonuc": temiz(r.get("status"), 20),
+        "sure_ms": _int(r.get("duration")),
+    }
+    hatalar = [h for h in (r.get("errors") or []) if h] if isinstance(r.get("errors"), list) else []
+    hata = _hata_ozeti(r.get("error") or (hatalar[0] if hatalar else None))
+    if hata and r.get("status") not in ("passed", "skipped"):
+        out["hata"] = hata
+    adimlar = _adimlar(r.get("steps"), [0])
+    if adimlar:
+        out["adimlar"] = adimlar
+    for k, ad in (("stdout", "stdout"), ("stderr", "stderr")):
+        c = _cikti(r.get(k))
+        if c:
+            out[ad] = c
+    return out
+
+
 def _json_test(
     ad: str,
     dosya: str | None,
@@ -526,14 +618,7 @@ def _json_test(
         mesaj = err.get("message") if isinstance(err, Mapping) else err
         hata = temiz(mesaj) if mesaj else f"Test durumu: {basarisiz.get('status')}"
     retry = max((_int(r.get("retry")) for r in sonuclar), default=0)
-    denemeler = [
-        {
-            "deneme": _int(r.get("retry")),
-            "sonuc": temiz(r.get("status"), 20),
-            "sure_ms": _int(r.get("duration")),
-        }
-        for r in sonuclar[:10]
-    ]
+    denemeler = [_deneme_ozeti(r) for r in sonuclar[:10]]
     a11y: list[dict[str, Any]] = []
     ekler: list[dict[str, Any]] = []
     for r in sonuclar:

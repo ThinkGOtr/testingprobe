@@ -56,6 +56,16 @@ def artifacts_root() -> Path:
     return Path(get_settings().artifacts_path)
 
 
+def github_artifacts_root() -> Path:
+    """GitHub koşu artefaktlarının yerel kopyası (`TP_GITHUB_ARTIFACTS_PATH`; yoksa artefakt
+    kökü)."""
+    f = _overrides.get("github_artifacts_root")
+    if f is not None:
+        return Path(f())
+    yol = get_settings().github_artifacts_path
+    return Path(yol) if yol else artifacts_root()
+
+
 def checks_root() -> Path:
     """Merge kapısı dosyalarının dizini (`TP_CHECKS_PATH`; yoksa `<artifacts>/checks`)."""
     f = _overrides.get("checks_root")

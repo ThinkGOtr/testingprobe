@@ -78,6 +78,10 @@ x-core-env: &core-env
   TP_MANUAL_BASELINE_S: ${TP_MANUAL_BASELINE_S:-}
   # Kod üretimi ekran görüntüleri (`tp_codegen`: core-worker rw, core-api ro).
   TP_CODEGEN_ARTIFACTS_PATH: /codegen-artifacts
+  # GitHub koşu artefaktlarının yerel kopyası (`tp_gh_artifacts`: core-worker rw, core-api ro):
+  # portal Playwright/JUnit/Allure/günlük bağlantılarını GitHub'a gitmeden core'dan sunar.
+  TP_GITHUB_ARTIFACTS_PATH: /github-artifacts
+  TP_GITHUB_ARTIFACTS_KEEP: ${TP_GITHUB_ARTIFACTS_KEEP:-30}
   # Kontrol Kulesi pencereleri: son N koşu, flaky ve trend gün sayısı.
   TP_CT_SON_KOSU: ${TP_CT_SON_KOSU:-20}
   TP_CT_FLAKY_GUN: ${TP_CT_FLAKY_GUN:-30}
@@ -150,6 +154,7 @@ services:
       - tp_artifacts:/artifacts:ro
       - tp_checks:/checks:ro
       - tp_codegen:/codegen-artifacts:ro
+      - tp_gh_artifacts:/github-artifacts:ro
       - ./rules:/rules:ro
     ports:
       - "127.0.0.1:${TP_API_PORT:-8000}:8000"
@@ -221,6 +226,7 @@ services:
       - tp_artifacts:/artifacts:ro
       - tp_checks:/checks:ro
       - tp_codegen:/codegen-artifacts
+      - tp_gh_artifacts:/github-artifacts
       # TP_MODEL_MODE=record konteyner içinde kullanılacaksa :ro kaldırılır.
       - ./rules:/rules:ro
     networks: [core-net, mcp-net]
@@ -448,6 +454,7 @@ volumes:
   tp_forge: {}
   tp_artifacts: {}
   tp_codegen: {}
+  tp_gh_artifacts: {}
   tp_checks: {}
   tp_forge_mirror: {}
   tp_jira: {}

@@ -2,7 +2,9 @@
 
 Artefaktlar test kodunun çıktısıdır (güvenilmeyen). Kurallar:
 
-- Yalnızca koşunun kendi dizini (`TP_ARTIFACTS_PATH/runs/<dizin>`) altındaki izinli alt ağaçlar:
+- Yalnızca koşunun kendi dizini (`TP_ARTIFACTS_PATH/runs/<dizin>`; GitHub koşusunda core'un yerel
+  kopyası `TP_GITHUB_ARTIFACTS_PATH/gh/<id>-<deneme>`, bkz. `github_artifacts`) altındaki izinli
+  alt ağaçlar:
   `src/**/results/**` (JUnit, JSON, HTML raporu, allure-results, trace/ekran görüntüsü),
   `run.json`, `runner.log`. Kaynak kod ve diğer dosyalar sunulmaz.
 - Yol öğeleri: boş, `.`/`..`, NUL, ters bölü, gizli dosya (`.` ile başlayan) reddedilir; gerçek yol
@@ -75,11 +77,12 @@ DEPO_SIMI = (
 
 def depo_simi_gerekir_mi(yol: Path) -> bool:
     """Statik Allure raporu (`allure-report/index.html`) ve Playwright HTML raporu
-    (`results/html/index.html`) bellek içi depo şimi ister. Şim yalnızca depo erişilemiyorsa
+    (`results/html/index.html`; GitHub koşusunun yerel kopyasında `playwright-report/index.html`)
+    bellek içi depo şimi ister. Şim yalnızca depo erişilemiyorsa
     devreye girer; nginx de aynısını eklerse ikinci kopya etkisizdir."""
     if yol.name != "index.html":
         return False
-    return yol.parent.name == "allure-report" or (
+    return yol.parent.name in ("allure-report", "playwright-report") or (
         yol.parent.name == "html" and yol.parent.parent.name == "results"
     )
 

@@ -15,7 +15,7 @@ import fnmatch
 import io
 import os
 import zipfile
-from collections.abc import Mapping
+from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime
 from typing import Any
 from urllib.parse import quote
@@ -119,46 +119,59 @@ class GitHubCiError(RuntimeError):
     pass
 
 
-def _zip_dosyalari(
-    veri: bytes, adlar: tuple[str, ...], ekler: tuple[str, ...] = ()
+def dosya_sec(
+    girdiler: Iterable[tuple[str, int, Callable[[], bytes]]],
+    adlar: tuple[str, ...],
+    ekler: tuple[str, ...] = (),
 ) -> dict[str, bytes]:
-    """Zip içinden adı (yolun son öğesi) `adlar`'da olan dosyaları okur (sınırlı boyut).
+    """(göreli yol, boyut, okuyucu) girdilerinden adı (yolun son öğesi) `adlar`'da olanları okur.
 
     `ekler`: test başına çok sayıda olabilen küçük ek dosyalarının ad kalıpları (`fnmatch`;
     `error-context.md`, `*aria*.yml`); her biri
     `MAX_ERROR_CONTEXT`, toplamı `MAX_EK_TOPLAM_BAYT`, sayısı `MAX_EK_DOSYA` ile sınırlıdır.
-    Aynı ada sahip her kopya (farklı test dizinleri) ayrı anahtar olarak döner.
+    Aynı ada sahip her kopya (farklı test dizinleri) ayrı anahtar olarak döner. Zip ve yerel kopya
+    (diskteki açılmış artefakt) aynı seçimi kullanır: anahtarlar iki kaynakta da aynıdır.
     """
     out: dict[str, bytes] = {}
     ek_toplam = 0
     ek_sayi = 0
+    for yol, boyut, oku in girdiler:
+        ad = yol.rsplit("/", 1)[-1]
+        if ad not in adlar and any(fnmatch.fnmatchcase(ad, k) for k in ekler):
+            if (
+                boyut > MAX_ERROR_CONTEXT
+                or ek_sayi >= MAX_EK_DOSYA
+                or ek_toplam + boyut > MAX_EK_TOPLAM_BAYT
+                or yol in out
+            ):
+                continue
+            icerik = oku()
+            ek_toplam += len(icerik)
+            ek_sayi += 1
+            out[yol] = icerik
+            continue
+        if ad not in adlar or boyut > MAX_RAPOR_BAYT or yol in out:
+            continue
+        # Aynı ad birden çok yerde olabilir (results/ ve demo-app/e2e/results/): ilk bulunan.
+        out[yol] = oku()
+    return out
+
+
+def _zip_dosyalari(
+    veri: bytes, adlar: tuple[str, ...], ekler: tuple[str, ...] = ()
+) -> dict[str, bytes]:
+    """Zip içinden `dosya_sec` kurallarıyla dosya okur (sınırlı boyut)."""
     try:
         zf = zipfile.ZipFile(io.BytesIO(veri))
     except zipfile.BadZipFile as exc:
         raise GitHubCiError(f"artefakt zip'i bozuk: {exc}") from exc
     with zf:
-        for info in zf.infolist():
-            if info.is_dir():
-                continue
-            ad = info.filename.rsplit("/", 1)[-1]
-            if ad not in adlar and any(fnmatch.fnmatchcase(ad, k) for k in ekler):
-                if (
-                    info.file_size > MAX_ERROR_CONTEXT
-                    or ek_sayi >= MAX_EK_DOSYA
-                    or ek_toplam + info.file_size > MAX_EK_TOPLAM_BAYT
-                    or info.filename in out
-                ):
-                    continue
-                icerik = zf.read(info)
-                ek_toplam += len(icerik)
-                ek_sayi += 1
-                out[info.filename] = icerik
-                continue
-            if ad not in adlar or info.file_size > MAX_RAPOR_BAYT:
-                continue
-            # Aynı ad birden çok yerde olabilir (results/ ve demo-app/e2e/results/): ilk bulunan.
-            out.setdefault(info.filename, zf.read(info))
-    return out
+        girdiler = (
+            (info.filename, info.file_size, lambda info=info: zf.read(info))
+            for info in zf.infolist()
+            if not info.is_dir()
+        )
+        return dosya_sec(girdiler, adlar, ekler)
 
 
 class GitHubCi:
@@ -216,9 +229,8 @@ class GitHubCi:
         ).json()
         return [a for a in (data.get("artifacts") or []) if isinstance(a, dict)]
 
-    def artifact_files(
-        self, artifact: Mapping[str, Any], adlar: tuple[str, ...], ekler: tuple[str, ...] = ()
-    ) -> dict[str, bytes]:
+    def artifact_zip(self, artifact: Mapping[str, Any]) -> bytes:
+        """Artefakt zip'inin baytları (`MAX_ZIP_BAYT` sınırlı; süresi dolmuşsa hata)."""
         if artifact.get("expired"):
             raise GitHubCiError(f"artefakt süresi dolmuş: {artifact.get('name')}")
         boyut = int(artifact.get("size_in_bytes") or 0)
@@ -230,7 +242,14 @@ class GitHubCi:
             "artefakt indirme",
             follow_redirects=True,
         )
-        return _zip_dosyalari(resp.content, adlar, ekler)
+        if len(resp.content) > MAX_ZIP_BAYT:
+            raise GitHubCiError(f"artefakt çok büyük: {artifact.get('name')} (> {MAX_ZIP_BAYT})")
+        return resp.content
+
+    def artifact_files(
+        self, artifact: Mapping[str, Any], adlar: tuple[str, ...], ekler: tuple[str, ...] = ()
+    ) -> dict[str, bytes]:
+        return _zip_dosyalari(self.artifact_zip(artifact), adlar, ekler)
 
     def repository_dispatch(self, event_type: str, payload: Mapping[str, Any]) -> None:
         self._istek(

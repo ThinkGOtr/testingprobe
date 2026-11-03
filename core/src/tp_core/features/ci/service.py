@@ -42,12 +42,13 @@ from sqlalchemy.orm import Session
 
 from tp_core.audit import audit_on_commit
 from tp_core.events import publish_tx
-from tp_core.features.ci import services
+from tp_core.features.ci import github_artifacts, services
 from tp_core.features.ci.clients import (
     RESULTS_ARTIFACT,
     SAUCE_ARTIFACT,
     GitHubCiError,
     ToolchainError,
+    _zip_dosyalari,
     parse_gh_time,
 )
 from tp_core.features.ci.parse import (
@@ -1125,6 +1126,106 @@ def github_hata_baglami_doldur(session: Session, run: Run) -> dict[str, Any]:
     return {"run_id": str(run.id), "bulunan": bulunan, "guncellenen": n}
 
 
+# ci-meta.json'dan koşu kaydına alınan alanlar (portal özeti; `.github/CI.md` "ci-meta.json").
+CI_META_ALANLARI = (
+    "tetik",
+    "sha",
+    "event",
+    "run_id",
+    "job",
+    "ref",
+    "durum",
+    "hata",
+    "exit_code",
+    "playwright",
+)
+
+
+def _ci_meta(ham: bytes | None, uyarilar: list[str]) -> dict[str, Any]:
+    if not ham:
+        return {}
+    import json
+
+    try:
+        m = json.loads(ham.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        uyarilar.append("ci-meta.json okunamadı.")
+        return {}
+    return m if isinstance(m, dict) else {}
+
+
+def _gh_kosu_dizini(yerel: Mapping[str, Any], results_kok: Any) -> tuple[KosuDizini | None, str]:
+    """Yerel kopya varsa: (results.json'daki runner yollarını kopyaya eşleyen dizin, ek öneki).
+
+    `results_kok` (ci-meta.json) ek yollarının runner'daki köküdür; artefakt kökü (results.json'ın
+    dizini) ona karşılık gelir. Ek yolları önce o köke, sonra öneke göre koşu dizinine göreli olur.
+    """
+    if yerel.get("durum") not in ("indirildi", "mevcut") or not isinstance(results_kok, str):
+        return None, ""
+    p = github_artifacts.yol(yerel.get("dizin"))
+    json_rel = (yerel.get("yollar") or {}).get("json")
+    if p is None or not isinstance(json_rel, str) or not results_kok.startswith("/"):
+        return None, ""
+    onek = PurePosixPath(json_rel).parent.as_posix()
+    return KosuDizini(results_kok.rstrip("/") or "/", p / onek), onek
+
+
+def _github_yerel(
+    session: Session,
+    gh: Any,
+    artefaktlar: Sequence[Mapping[str, Any]],
+    gh_dizin: str | None,
+    sonuc_zip: bytes | None = None,
+) -> dict[str, Any]:
+    """GitHub artefaktlarının yerel kopyasını hazırlar (bkz. `github_artifacts`); saklama dışına
+    düşen eski kopyaların koşu kayıtlarını `budandi` yapar. Hata alımı düşürmez."""
+    if gh_dizin is None:
+        return {"dizin": None, "durum": "hata", "hata": "GitHub koşu kimliği yok", "yollar": {}}
+    sonuc = github_artifacts.hazirla(gh, artefaktlar, gh_dizin, sonuc_zip=sonuc_zip)
+    if sonuc["durum"] == "indirildi":
+        try:
+            silinen = github_artifacts.budama(koru=(gh_dizin,))
+        except Exception:  # saklama hatası alımı düşürmez
+            log.exception("GitHub artefakt kopyaları budanamadı")
+            silinen = []
+        if silinen:
+            session.execute(
+                text(
+                    "UPDATE run SET artefaktlar = jsonb_set(artefaktlar, '{github_yerel,durum}', "
+                    "'\"budandi\"') WHERE artefaktlar->'github_yerel'->>'dizin' = ANY(:d)"
+                ),
+                {"d": silinen},
+            )
+    return {k: v for k, v in sonuc.items() if k != "indirilen"}
+
+
+def github_artefakt_indir(session: Session, run: Run, isteyen: str = "system") -> dict[str, Any]:
+    """Önceden içe aktarılmış GitHub koşusunun artefaktlarını yerel kopyaya alır (geri doldurma).
+
+    Yerel kopya özelliğinden önce alınan koşular için (artefakt GitHub'da saklama süresi
+    içindeyken). Yalnızca core-worker'da çalışır (GitHub kimlik bilgisi + yazılabilir volume).
+    İdempotent: kopya varsa indirme yapılmaz. Test satırları yeniden yazılmaz. Denetim kaydı
+    `ci.github_artifacts_mirrored`.
+    """
+    if run.kaynak != "github" or not run.github_run_id:
+        raise CiError("koşu GitHub kaynaklı değil ya da GitHub koşu kimliği yok")
+    a = run.artefaktlar or {}
+    gh_bilgi = a.get("github") if isinstance(a.get("github"), dict) else {}
+    gh_dizin = github_artifacts.dizin_adi(run.github_run_id, gh_bilgi.get("deneme"))
+    gh = services.github()
+    artefaktlar = [] if github_artifacts.mevcut(gh_dizin) else gh.artifacts(run.github_run_id)
+    yerel = _github_yerel(session, gh, artefaktlar, gh_dizin)
+    run.artefaktlar = {**a, "github_yerel": yerel}
+    audit_on_commit(
+        session,
+        isteyen,
+        "ci.github_artifacts_mirrored",
+        f"run:{run.id}",
+        {"github_run_id": run.github_run_id, "durum": yerel["durum"], "dizin": yerel["dizin"]},
+    )
+    return {"run_id": str(run.id), "github_run_id": run.github_run_id, **yerel}
+
+
 def github_ingest(session: Session, run: Run, wr: Mapping[str, Any]) -> str:
     """Tamamlanmış GitHub workflow koşusunu koşu kaydına işler."""
     gh = services.github()
@@ -1135,35 +1236,45 @@ def github_ingest(session: Session, run: Run, wr: Mapping[str, Any]) -> str:
     meta: dict[str, Any] = {}
     dosyalar: Mapping[str, bytes] = {}
     sonuc_art = next((a for a in artefaktlar if a.get("name") == RESULTS_ARTIFACT), None)
+    gh_dizin = github_artifacts.dizin_adi(wr.get("id"), wr.get("run_attempt"))
+    yerel_kopya = github_artifacts.mevcut(gh_dizin)
+    sonuc_zip: bytes | None = None
+    okundu = False
     if sonuc_art is None:
         uyarilar.append(f"'{RESULTS_ARTIFACT}' artefaktı yok (testler no-op olabilir).")
     else:
         try:
-            dosyalar = gh.artifact_files(
-                sonuc_art, ("junit.xml", "results.json", "ci-meta.json"), EK_KALIPLARI
-            )
-            ayr = parse_reports(
-                _sec_dosya(dosyalar, "junit.xml"),
-                _sec_dosya(dosyalar, "results.json"),
-                ekler=_artefakt_ekleri(dosyalar),
-            )
-            uyarilar.extend(ayr.uyarilar)
-            ham_meta = _sec_dosya(dosyalar, "ci-meta.json")
-            if ham_meta:
-                import json
-
-                try:
-                    m = json.loads(ham_meta.decode("utf-8"))
-                    if isinstance(m, dict):
-                        meta = {
-                            k: temiz(m.get(k), 200)
-                            for k in ("tetik", "sha", "event", "run_id")
-                            if m.get(k)
-                        }
-                except (UnicodeDecodeError, ValueError):
-                    uyarilar.append("ci-meta.json okunamadı.")
+            adlar = ("junit.xml", "results.json", "ci-meta.json")
+            if yerel_kopya is not None:
+                # Yeniden alım (iş yeniden denemesi): yerel kopya varsa yeniden indirilmez.
+                dosyalar = github_artifacts.disk_dosyalari(yerel_kopya, adlar, EK_KALIPLARI)
+            else:
+                sonuc_zip = gh.artifact_zip(sonuc_art)
+                dosyalar = _zip_dosyalari(sonuc_zip, adlar, EK_KALIPLARI)
+            okundu = True
         except GitHubCiError as exc:
             uyarilar.append(str(exc))
+    # Raporların yerel kopyası (portal GitHub'a gitmeden açar); ayrıştırma için indirilen zip
+    # yeniden kullanılır. Hata alımı düşürmez.
+    yerel = _github_yerel(session, gh, artefaktlar, gh_dizin, sonuc_zip)
+    sonuc_zip = None  # büyük zip bellekte tutulmaz
+    if okundu:
+        ham_meta = _sec_dosya(dosyalar, "ci-meta.json")
+        m = _ci_meta(ham_meta, uyarilar)
+        meta = {k: temiz(m.get(k), 200) for k in CI_META_ALANLARI if m.get(k) not in (None, "")}
+        kosu_dizini, ek_onek = _gh_kosu_dizini(yerel, m.get("results_kok"))
+        ayr = parse_reports(
+            _sec_dosya(dosyalar, "junit.xml"),
+            _sec_dosya(dosyalar, "results.json"),
+            kosu_dizini=kosu_dizini,
+            ekler=_artefakt_ekleri(dosyalar),
+        )
+        if ek_onek:
+            # Ek yolları sonuç köküne göreli → koşu (yerel kopya) dizinine göreli.
+            for t in ayr.testler:
+                for e in t.ekler:
+                    e["yol"] = f"{ek_onek}/{e['yol']}"
+        uyarilar.extend(ayr.uyarilar)
     if wr.get("head_sha") and SHA_RE.match(str(wr["head_sha"])):
         run.commit = str(wr["head_sha"])
     sayac = record_results(session, run, ayr) if ayr is not None else sayilar([])
@@ -1202,6 +1313,7 @@ def github_ingest(session: Session, run: Run, wr: Mapping[str, Any]) -> str:
             "aria_dosya": aria_kayit["bulunan"],
         },
         "sauce": sauce,
+        "github_yerel": yerel,
         "raporlar": ayr.raporlar if ayr else {"junit": False, "json": False},
         "istatistik": ayr.istatistik if ayr else {},
         "uyarilar": uyarilar[:20],
@@ -1491,6 +1603,12 @@ def serialize_runs(session: Session, runs: Sequence[Run]) -> list[dict[str, Any]
             # (toolchain yolları yine bildirir; kırık bağlantı gösterilmez).
             a = {k: v for k, v in a.items() if k not in ("html", "allure", "allure_html", "junit")}
         sauce = a.get("sauce") if isinstance(a.get("sauce"), dict) else {}
+        gy = _github_yerel_ozeti(a)
+        if gy["kullanilir"]:
+            # GitHub koşusu: core'un yerel kopyası yerel koşu düzeninde sunulur (önce yerel
+            # bağlantı; GitHub bağlantıları `ci_url` ve yerel kopya yoksa yedek olarak kalır).
+            dizin = gy["dizin"]
+            a = {**a, **gy["yollar"]}
         out.append(
             {
                 "id": str(r.id),
@@ -1533,9 +1651,35 @@ def serialize_runs(session: Session, runs: Sequence[Run]) -> list[dict[str, Any]
                 "isteyen": o.get("isteyen"),
                 # Koşu dizini saklama nedeniyle silindi (test-runner `prune_runs`): bağlantı yok.
                 "artefakt_budandi": a.get("artefakt_budandi"),
+                # GitHub koşusunun yerel kopyası: {durum: indirildi|mevcut|yok|hata|budandi, hata}.
+                "github_artefakt": {"durum": gy["durum"], "hata": gy["hata"]}
+                if r.kaynak == "github" and gy["durum"]
+                else None,
             }
         )
     return out
+
+
+def _github_yerel_ozeti(a: Mapping[str, Any]) -> dict[str, Any]:
+    gy = a.get("github_yerel") if isinstance(a.get("github_yerel"), Mapping) else {}
+    durum = gy.get("durum") if isinstance(gy.get("durum"), str) else None
+    dizin = gy.get("dizin") if github_artifacts.yol(gy.get("dizin")) is not None else None
+    yollar = gy.get("yollar") if isinstance(gy.get("yollar"), Mapping) else {}
+    temiz_yollar = {
+        k: v
+        for k, v in yollar.items()
+        if k in ("junit", "json", "html", "allure", "allure_html", "log")
+        and isinstance(v, str)
+        and not v.startswith("/")
+        and ".." not in PurePosixPath(v).parts
+    }
+    return {
+        "kullanilir": bool(dizin and durum in ("indirildi", "mevcut")),
+        "dizin": dizin,
+        "durum": durum,
+        "hata": temiz(gy.get("hata"), 300) if gy.get("hata") else None,
+        "yollar": temiz_yollar,
+    }
 
 
 def list_runs(
@@ -1622,6 +1766,9 @@ def run_detail(session: Session, run_id: uuid.UUID) -> dict[str, Any] | None:
     triage = {r.test_result_id: r for r in f_rows if r.test_result_id is not None}
     a = run.artefaktlar or {}
     dizin = a.get("dizin")
+    gy = _github_yerel_ozeti(a)
+    if not dizin and gy["kullanilir"]:
+        dizin = gy["dizin"]
     sonuclar = []
     for tr, ek in rows:
         ekler = []
@@ -1681,10 +1828,14 @@ def artifact_dir(session: Session, run_id: uuid.UUID) -> Path | None:
     run = session.get(Run, run_id)
     if run is None:
         return None
-    dizin = (run.artefaktlar or {}).get("dizin")
-    if not isinstance(dizin, str) or not RUN_DIR_RE.match(dizin):
-        return None
-    return services.artifacts_root() / dizin
+    a = run.artefaktlar or {}
+    dizin = a.get("dizin")
+    if isinstance(dizin, str) and RUN_DIR_RE.match(dizin):
+        return services.artifacts_root() / dizin
+    gy = _github_yerel_ozeti(a)
+    if run.kaynak == "github" and gy["kullanilir"]:
+        return github_artifacts.yol(gy["dizin"])
+    return None
 
 
 # ------------------------------------------------------------------- artefakt saklama

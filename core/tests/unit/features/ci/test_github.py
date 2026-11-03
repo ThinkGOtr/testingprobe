@@ -234,8 +234,12 @@ def test_pr_kosusu_github_dan_alinir(engine: Engine, gh: FakeGitHub) -> None:
         assert len(rows) == 9 and {r.kaynak for r in rows} == {"github"}
         detay = service.run_detail(s, rid)
     assert detay["sauce_url"].startswith("https://app.eu-central-1.saucelabs.com/")
+    # Artefakt Playwright HTML raporu taşımıyor: rapor bağlantısı GitHub'a düşer; JUnit ve kök
+    # core'un yerel kopyasından (bkz. test_github_artifacts.py).
     assert detay["rapor_url"] == f"https://github.com/{REPO}/actions/runs/101#artifacts"
-    assert detay["artefakt_kok"] is None  # GitHub koşusunun yerel artefaktı yok
+    assert detay["artefakt_kok"] == f"/api/artifacts/runs/{rid}/"
+    assert detay["junit_url"] == f"/api/artifacts/runs/{rid}/src/e2e/results/results/junit.xml"
+    assert detay["github_artefakt"] == {"durum": "indirildi", "hata": None}
     # §8.5: sonuç + Sauce video/log bağlantısı PR yorumuna bir kez yazılır.
     assert len(gh.yorumlar) == 1
     pr, govde = gh.yorumlar[0]

@@ -382,6 +382,8 @@ Beklenen boşluklar (hata değil):
   kazanç **"(REPLAY: yalnız review)"** etiketlidir — verimlilik iddiası olarak söylenmez.
 - **Flaky testler "yok"**: demo uygulaması deterministik; gerçek uygulamada aralıklı kırılan
   testler (yeniden denemede geçen / aynı commit'te farklı sonuç) burada listelenir.
+  **Söyle:** "Gerçek uygulamalarda burada aralıklı kırılan testler listelenir; demo uygulaması
+  deterministik olduğu için boş — ürün olmayan bir flaky'yi uydurmuyor."
 
 **Söyle:** "Tek ekranda kalite. Her KPI'nın hangi veriden ve hangi pencereden hesaplandığı yazıyor.
 Kazanç oranını yalnızca manuel baz süresi **ölçülmüş** story'lerde gösteriyoruz; ölçüm yoksa ekran
