@@ -481,7 +481,7 @@ export function CiAdimlari({ k }: { k: KosuDetay }) {
               <Cip ton={a.atlandi ? "notr" : a.ok ? "basari" : "hata"}>{a.atlandi ? "atlandı" : a.ok ? "geçti" : "kaldı"}</Cip>
               <span>{ADIM_ADI[ad] ?? ad}</span>
               {a.mode && <span className="soluk kucuk">mod: {a.mode}</span>}
-              {(a.error || a.reason) && <span className="kucuk hata-metin">{a.error ?? a.reason}</span>}
+              {(a.error || a.reason) && <span className={a.atlandi ? "kucuk soluk" : "kucuk hata-metin"}>{a.error ?? a.reason}</span>}
             </li>
           ))}
         </ul>

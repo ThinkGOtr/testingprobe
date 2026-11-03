@@ -3533,5 +3533,25 @@ details.soluk > summary {
    (paralel şerit birleştirmesi için çapa — silinmez)
    ================================================================== */
 
+/* Kaydırma kapları opak zemin alır (görünüm aynı: üstündeki kartın zemin rengi). axe color-contrast,
+   metnin altındaki ilk zeminli ata metni tümüyle kapsamıyorsa "elmPartiallyObscured" ile incomplete
+   verir; yatay kayan tabloda (390 px) kısmen görünen hücreler ve kaydırılmış listede kalan öğeler kartın
+   sınırını aşar. overflow:auto kabının kapsama alanı axe'ta scrollWidth/scrollHeight ile hesaplanır →
+   kap opaksa zemin kapta biter, hücre ve hap (%12 zemin, §3.2 k.2) kontrastı ölçülür. Sağ kenar solma
+   gölgesi (G18) iç gölge olduğundan zeminin üstünde çizilmeye devam eder. */
+.tablo-sarici,
+.ajan-adimlar {
+  background-color: var(--surface);
+}
+.case:is(.case-approved, .case-published, .case-rejected, .case-superseded) .tablo-sarici {
+  background-color: var(--surface-2);
+}
+
+/* Koşular tetik açıklamaları: başlık alt boşluğu 18 → 24 px oldu (Şerit B); aynı görsel aralık için
+   negatif üst marj -10 → -16 px (§5 Koşular). */
+.tetik-aciklamalari {
+  margin-top: -16px;
+}
+
 
 

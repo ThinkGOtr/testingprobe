@@ -10,7 +10,7 @@ import type { TestSonucu } from "../api/types";
 import { kosuDetayUyarla } from "../api/uyumDemoB";
 import { OturumProvider } from "../auth";
 import { BildirimProvider } from "../components/Bildirim";
-import { adimHatali, ekTuru, githubYedekNotu, sonucFiltresiOku, sonuclariSuz, sonucSayaclari, TestAyrintisi } from "./KosuSonuclari";
+import { adimHatali, CiAdimlari, ekTuru, githubYedekNotu, sonucFiltresiOku, sonuclariSuz, sonucSayaclari, TestAyrintisi } from "./KosuSonuclari";
 
 const RID = "9106b437-0770-4afb-9f58-c9d437cf659d";
 const OPENAPI = {
@@ -312,6 +312,23 @@ describe("koşu detayı (canlı core şekli)", () => {
     expect(within(kart).getByRole("link", { name: /Allure raporu \(GitHub artefaktı\)/ })).toHaveAttribute("href", kosu.allure_url);
     expect(within(kart).getByRole("link", { name: /JUnit XML \(GitHub artefaktında\)/ })).toHaveAttribute("href", KOSU.ci_url);
     expect(within(kart).getByRole("link", { name: /Koşu günlüğü \(GitHub artefaktında\)/ })).toHaveAttribute("href", KOSU.ci_url);
+  });
+
+  it("CI adımları: atlanan adımın gerekçesi soluk, kalan adımın hatası kırmızı", () => {
+    const k = kosuDetayUyarla({
+      ...KOSU,
+      github: null,
+      adimlar: {
+        tsc: { ok: false, atlandi: false, error: "2 tip hatası" },
+        eslint: { ok: false, atlandi: true, reason: "deps kurulamadı" },
+      },
+    });
+    render(<CiAdimlari k={k} />);
+    const liste = screen.getByRole("list", { name: "Yerel CI adımları" });
+    expect(within(liste).getByText("2 tip hatası")).toHaveClass("hata-metin");
+    const gerekce = within(liste).getByText("deps kurulamadı");
+    expect(gerekce).toHaveClass("soluk");
+    expect(gerekce).not.toHaveClass("hata-metin");
   });
 
   it("ayrıntı: denemesi olmayan (JUnit) test hata mesajını gösterir", () => {
