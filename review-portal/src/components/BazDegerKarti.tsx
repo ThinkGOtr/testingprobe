@@ -68,7 +68,7 @@ function BazDegeri({ b }: { b: ManuelBaz }) {
   );
 }
 
-export function BazDegerKarti({ g, guncellendi }: { g: Pick<GereksinimDetay, "id" | "manuel_baz">; guncellendi: (b: ManuelBaz | undefined) => void }) {
+export function BazDegerKarti({ g, guncellendi, id }: { g: Pick<GereksinimDetay, "id" | "manuel_baz">; guncellendi: (b: ManuelBaz | undefined) => void; id?: string }) {
   const yetkili = useRol("analyst", "po");
   const islem = useIslem();
   const bildir = useBildirim();
@@ -130,6 +130,7 @@ export function BazDegerKarti({ g, guncellendi }: { g: Pick<GereksinimDetay, "id
 
   return (
     <Kart
+      id={id}
       baslik="Manuel baz değer"
       eylemler={
         b !== undefined &&
