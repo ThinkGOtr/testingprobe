@@ -313,6 +313,11 @@ kutuda **"Uyarıyı gördüm; zayıf test olarak merge et (not denetime yazılı
 sonra **"Merge et"**. Bu kabul, kim/ne zaman bilgisiyle ürünün **Denetim** kaydına (hash zincirli)
 ve Kontrol Kulesi'ne yazılır.
 
+> **Dikkat — "Değişiklik iste" / "Reddet":** merge kartının altındaki bu düğmeler "kod yanlış,
+> PR'ı kapat" demektir; merge reddedildiğinde (Approve eksik) **basma**. Yanlışlıkla basıldıysa:
+> Kod üretimi → üst listede o case'i işaretle → "Seçilenler için kod üret (1)" → yeni PR, kırarak
+> doğrula, GitHub'da Approve, Merge et.
+>
 > **Dikkat:** her merge main'i ilerletir; kalan PR'ların CI'ı yeniden koşar (~1,5 dk) ve GitHub
 > önceki onayları düşürür → kalan PR'ı GitHub'da **yeniden Approve** et, CI yeşil olunca merge et.
 > Vakit yoksa yalnız C2 yeter.
