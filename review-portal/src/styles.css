@@ -3771,6 +3771,56 @@ details.soluk > summary {
    (paralel şerit birleştirmesi için çapa — silinmez)
    ================================================================== */
 
+/* Case filtresi sekmeleri yapışkan (§5, F4): üst çubuğun (56 px, z-index 20) hemen altında, onun altında
+   kalan z-index; zemin opak --bg, kartlar altından kayarken görünmez. Şerit .icerik iç boşluğu kadar iki
+   yana uzar (kart kenarları/gölgeleri yanlardan sızmasın); dikey boşluk negatif marjla korunur, akıştaki
+   yerleşim değişmez. <details> ile katlama yok (K8). */
+.sekmeler {
+  position: sticky;
+  top: 56px;
+  z-index: 10;
+  background: var(--bg);
+  margin: -8px -28px 4px;
+  padding: 8px 28px;
+}
+@media (max-width: 860px) {
+  .sekmeler {
+    margin-inline: -16px;
+    padding-inline: 16px;
+  }
+}
+/* Odak/çapa kaydırması yapışkan sekmelerin altında kalmasın (WCAG 2.4.11): üst çubuk + sekme şeridi. */
+html:has(.sekmeler) {
+  scroll-padding-top: 128px;
+}
+@media (max-width: 640px) {
+  html:has(.sekmeler) {
+    scroll-padding-top: 168px;
+  }
+}
+
+/* Dar ekran yığın tablo (≤640 px): etiket sütunu için 36 % sol boşluk. Sonradan gelen
+   "@media (max-width: 640px) .tablo td { padding: 10px }" (aynı özgüllük, sonra) ve karara bağlanmış
+   case'lerin sık tablo kuralı (.case:is(...) .tablo td, daha özgül) bu boşluğu eziyordu → mutlak konumlu
+   etiket (ADIM/VERİ/BEKLENEN) hücre metninin üstüne biniyordu (son satır hariç). Özgüllük 0,3,1 + sonra. */
+@media (max-width: 640px) {
+  .tablo.tablo-yigin td:not(.adim-no) {
+    padding: 4px 0 4px 36%;
+  }
+  .tablo.tablo-yigin td.adim-no {
+    padding: 4px 0;
+  }
+}
+
+/* Yayın önizleme: işlem sütununda dış bağlantı (TPD-9 ↗) tablo/eylem bağlantısı gibi çizgisiz, hover'da
+   çizili (§7) ve bölünmez (↗ tek başına alt satıra düşmesin). */
+.tablo td > .cip + .dis-baglanti {
+  white-space: nowrap;
+  text-decoration: none;
+}
+.tablo td > .cip + .dis-baglanti:hover {
+  text-decoration: underline;
+}
 
 
 
