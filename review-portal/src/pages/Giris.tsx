@@ -40,7 +40,7 @@ export function Giris() {
         <div className="marka marka-buyuk">
           <span className="marka-isaret" aria-hidden="true" />
           <span>
-            AI Testing Probe <span className="marka-alt">İnceleme portalı</span>
+            AI Testing <strong>Probe</strong> <span className="marka-alt">İnceleme portalı</span>
           </span>
         </div>
         <h1>Oturum aç</h1>

@@ -3488,6 +3488,100 @@ details.soluk > summary {
    (paralel şerit birleştirmesi için çapa — silinmez)
    ================================================================== */
 
+/* İkon seti (§4.16, Ikon.tsx): satır içi SVG, currentColor, dekoratif. Boy yazı boyunu izler. */
+.ikon {
+  flex-shrink: 0;
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.125em;
+}
+/* Kabuk düğmeleri (☰ ve tema ☾ ☀ ◐ → SVG): 32×32 kutu korunur, ikon 18 px. */
+.menu-dugmesi .ikon,
+.ust-sag > .dugme-hayalet .ikon {
+  width: 18px;
+  height: 18px;
+}
+/* Dış bağlantı (↗ → SVG): metinden ince bir boşlukla ayrılır, bağlantı rengini alır. */
+.dis-baglanti .ikon-dis {
+  width: 0.85em;
+  height: 0.85em;
+  margin-left: 0.25em;
+  vertical-align: -0.05em;
+}
+
+/* Menü öğesi ikonları: ikon + ad solda; odak noktası ve "bu fazda yok" notu sağa yaslanır. */
+.menu-oge {
+  justify-content: flex-start;
+  gap: 10px;
+}
+.menu-oge > .ikon {
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+}
+.menu-oge:hover > .ikon,
+.menu-oge.aktif > .ikon {
+  color: inherit;
+}
+.menu-oge-pasif > .ikon,
+.menu-oge-pasif:hover > .ikon {
+  color: var(--muted);
+}
+.menu-oge > .odak-isaret,
+.menu-oge > .menu-oge-not {
+  margin-left: auto;
+}
+
+/* Marka: "Probe" vurgusu (§4.1, §4.14). Gradyan metin değil düz --accent: background-clip:text axe
+   color-contrast'ı "incomplete"e düşürüyordu; --accent zeminde ölçülebilir ve AA (koyu ≥5,6; açık 6,3). */
+.marka strong {
+  font-weight: 800;
+  color: var(--accent);
+}
+
+/* Avatar (§6.2 F3): .kullanici-ad'ın kardeşi, aria-hidden, baş harfler. Ad/rol sütununun sağında.
+   Izgara yalnız geniş ekranda: ≤860 px'te .kullanici (avatar dahil) gizli kalır (kabuk kuralı). */
+@media (min-width: 861px) {
+  .kullanici {
+    display: grid;
+    grid-template-columns: auto auto;
+    column-gap: 10px;
+    align-items: center;
+  }
+}
+.kullanici > .kullanici-ad,
+.kullanici > .kullanici-rol {
+  grid-column: 1;
+}
+.kullanici-avatar {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent-solid) 40%, transparent);
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+/* Tam örnek veri derlemesi (§4.2): bant amber zeminini korur, yazı daha ince. Kısmi örnek veri (canlı
+   derleme) bandı bugünkü belirginlikte kalır. */
+.uyari-kutusu.ornek-veri-bandi.ornek-veri-tam {
+  min-height: 32px;
+  padding: 6px 12px;
+  font-size: 0.8125rem;
+  color: var(--text-2);
+}
+.uyari-kutusu.ornek-veri-bandi.ornek-veri-tam > strong {
+  font-weight: 600;
+}
+
 
 
 
