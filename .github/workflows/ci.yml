@@ -609,6 +609,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     continue-on-error: true
+    # Sauce hesabı tek eşzamanlı oturum: iki koşunun Sauce job'u aynı anda başlarsa ikincisi
+    # "concurrent session limit" ile düşer. Repo genelinde sıraya girer; süren job iptal edilmez.
+    # (GitHub bekleyen tek job tutar: üçüncü gelirse bekleyen eski job iptal olur.)
+    concurrency:
+      group: sauce-${{ github.repository }}
+      cancel-in-progress: false
     env:
       SAUCE_USERNAME: ${{ secrets.SAUCE_USERNAME }}
       SAUCE_ACCESS_KEY: ${{ secrets.SAUCE_ACCESS_KEY }}
