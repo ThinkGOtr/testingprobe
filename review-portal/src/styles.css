@@ -3638,6 +3638,70 @@ details.soluk > summary {
    (paralel şerit birleştirmesi için çapa — silinmez)
    ================================================================== */
 
+/* Kule KPI şeridi (§5 F4, §4.12): .metrik-izgara stat şeridi; beş öğe (Geçme oranı · açık defect adayı ·
+   Case kabul · Script ilk review · Hazırlık kazancı). Sarmalı flex: dar ekranda satır sonundaki öğe
+   genişler, boş hücre kalmaz. Ayraçlar .metrik-izgara > .metrik ile aynı (sol/üst gölge, kenarda kırpılır). */
+.metrik-izgara.kule-kpi {
+  display: flex;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.kule-kpi > .metrik,
+.kule-kpi > .olcer {
+  flex: 1 1 170px;
+  min-width: 0;
+  margin: 0;
+  padding: 14px 16px;
+  box-shadow:
+    -1px 0 0 var(--border-soft),
+    0 -1px 0 var(--border-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.kule-kpi .metrik-alt {
+  margin-top: 2px;
+}
+/* Açık defect adayı: DOM'da değer önce ("⚠ 1 açık defect adayı" okunur), görselde etiket üstte. */
+.kule-kpi-defect > .metrik-etiket {
+  order: -1;
+}
+.kule-kpi .kule-kpi-uyari {
+  color: var(--warn);
+}
+/* HedefOlcer öğeleri şeritte metrik biçiminde: etiket eyebrow, değer şerit değeri, çubuk ve hedef altta. */
+.kule-kpi .olcer-ust {
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 2px;
+  margin-bottom: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.kule-kpi .olcer-ust .kaynak-ipucu {
+  text-transform: none; /* "i" glifi büyük harfe (tr: İ) dönmesin */
+  letter-spacing: 0;
+}
+.kule-kpi .olcer-ust > strong {
+  font-size: 1.6rem;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: 0;
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+.kule-kpi .ilerleme {
+  flex: none;
+}
+.kule-kpi .olcer-alt {
+  font-size: 0.75rem;
+  color: var(--text-2);
+}
+
 
 
 
