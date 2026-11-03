@@ -39,7 +39,7 @@ ekran, neye tıklanır, ne yazılır, ekranda ne görülür, ne söylenir.
 | 1 | VM açık mı | Mac: `gcloud compute instances list --project testingprobe` | `tp-demo RUNNING` (kapalıysa `gcloud compute instances start tp-demo --zone europe-west3-a --project testingprobe`) |
 | 2 | **Tek hesap test kipini kapat** | VM `.env`: `TP_TEST_TEK_HESAP=0`; `JIRA_PO_ACCOUNT_IDS`'te **yalnızca PO'nun** (ör. Cengizhan) accountId'si → `make up` | `make status`'ta "UYARI: TP_TEST_TEK_HESAP" satırı **yok**. Bugün değer `1` — kapatılmazsa PO onayını ürün hesabı da verebilir, bu sunumda söylediğimiz kuralı çiğner |
 | 3 | PO hesabı hazır | PO kendi Atlassian hesabıyla iyzitrace.atlassian.net'e girebiliyor, TPD'de etiket ekleyebiliyor | PO ürünün okuma/yazma hesabından **farklı** bir hesap olmalı |
-| 4 | Sauce'u push'tan çıkar | Mac: `gh variable set SAUCE_TETIKLER --repo ThinkGOtr/testingprobe-demo-app --body deploy,nightly` | Push koşuları ~11 dk Sauce beklemez; Sauce "Deploy tetikle"de görünür. Sunumdan sonra `gh variable delete SAUCE_TETIKLER --repo ThinkGOtr/testingprobe-demo-app` |
+| 4 | Sauce tetikleri | Değişiklik yok: Sauce push, deploy ve gece koşularının hepsinde koşar (`SAUCE_TETIKLER` tanımsız). Mac: `gh variable list --repo ThinkGOtr/testingprobe-demo-app` → `SAUCE_TETIKLER` satırı **olmamalı** | Hesap tek eşzamanlı oturum: Sauce job'ları sıraya girer (her biri ~1–11 dk). Merge'lerin push Sauce'u bitmeden tetiklenen deploy'un Sauce'u **bekler** (düşmez) |
 | 5 | Tam prova | Bu belgenin §3–§8'i baştan sona, kronometreyle | Her adımın gerçek süresini not al |
 | 6 | Yedek video | `make demo-prova UI=1` (VM ya da yerel) | Aksaklıkta açılacak kayıt sunum makinesinde |
 
@@ -339,10 +339,14 @@ GitHub Actions'ta."
 
 ### Adım 9 · Sauce Labs (0,5 dk)
 
-Deploy koşusunun detayında **Sauce** job'u ve sonuç bağlantısı.
+Sauce her koşuda (push, deploy, gece) çalışır. Merge'lerin push koşusundaki **Sauce** job'unu
+göster (Koşular → push koşusu → Sauce satırı / GitHub Actions → `sauce` job'u → Sauce sonuç
+bağlantısı). Deploy'un Sauce job'u, öndeki Sauce bitene kadar GitHub'da **"Waiting"** görünür —
+hata değil, sıradır.
+
 **Söyle:** "Aynı testler Sauce Labs'in bulut tarayıcılarında da koşuyor; sonuç bağlantısı koşuya
-yazılıyor." (Sauce job'u tamamlanmadıysa: "Sauce tek eşzamanlı oturumla ~10 dk sürüyor, sonucu
-kapanışta göstereceğim.")
+yazılıyor. Hesap tek eşzamanlı oturumlu, koşular sıraya giriyor." (Sauce job'u tamamlanmadıysa:
+"Sauce sonucu kapanışta göstereceğim.")
 
 ### Adım 10 · Raporlar (0,5 dk, isteğe bağlı)
 
@@ -466,7 +470,7 @@ hangi zincir başı — hepsi kayıtta."
    > adımda insan onayladı.**"
 3. (Sauce job'u o ana kadar bittiyse) deploy koşusundaki Sauce sonucunu göster.
 
-Sunum sonrası (VM): `make export-audit`; Sauce değişkenini geri al (§1.1 #4).
+Sunum sonrası (VM): `make export-audit`.
 
 ---
 
