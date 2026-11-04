@@ -689,6 +689,70 @@ test("%125 zoom eşdeğeri (1152×720): TPD-1 'Case üret' görünür pasiflik n
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1152);
 });
 
+test("pasiflik nedeni yerleşimi (review 3): neden kendi düğmesinin altında, grup kenarından taşmaz; kart başlıkları hizalı; sarmış başlıkta grup sağda", async ({ page }) => {
+  const kutu = async (l: import("@playwright/test").Locator) => (await l.boundingBox())!;
+  /** Nedenin metin satırlarının en sol / en sağ kenarı (kutunun değil, metnin). */
+  const metinKenari = (l: import("@playwright/test").Locator) =>
+    l.evaluate((e) => {
+      const r = document.createRange();
+      r.selectNodeContents(e);
+      const s = [...r.getClientRects()];
+      return { sol: Math.min(...s.map((x) => x.left)), sag: Math.max(...s.map((x) => x.right)), satir: new Set(s.map((x) => Math.round(x.top))).size };
+    });
+
+  // Case review, testci, 1440: karar verilmiş case satırında neden paragrafın değil 'Yeniden aç' düğmesinin altında.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await girisYap(page, "testci");
+  await page.goto("/gereksinimler/req-tpd-1/caseler");
+  const satir = page.locator(".satir-ogeler:has(> .neden-var)").first();
+  await expect(satir).toBeVisible();
+  await fontlariBekle(page);
+  const yenidenAc = await kutu(satir.getByRole("button", { name: "Yeniden aç" }));
+  const nedenK = await kutu(satir.locator(".dugme-neden"));
+  expect(nedenK.x).toBeGreaterThanOrEqual(yenidenAc.x - 1);
+  expect(nedenK.y).toBeGreaterThanOrEqual(yenidenAc.y + yenidenAc.height - 1);
+  // Tek düğmeli sayfa başlığında kısa neden tek satır, sağ kenarı düğmeyle aynı.
+  const yayin = page.locator(".sayfa-basligi .eylemler");
+  const yayinNeden = await metinKenari(yayin.locator(".dugme-neden"));
+  expect(yayinNeden.satir).toBe(1);
+  const yayinD = await kutu(yayin.getByRole("button", { name: "Yayın önizleme" }));
+  expect(Math.abs(yayinNeden.sag - (yayinD.x + yayinD.width))).toBeLessThanOrEqual(1);
+
+  // Script detay, testci: sola yaslı merge grubunda neden metni düğmenin sol kenarından başlar; komşu kart başlıkları aynı hizada.
+  for (const g of [1440, 1152]) {
+    await page.setViewportSize({ width: g, height: 900 });
+    await page.goto("/kod/scr-2");
+    const pr = page.getByRole("region", { name: "Pull request" });
+    await expect(pr).toBeVisible();
+    await fontlariBekle(page);
+    const merge = pr.locator(".eylemler:has(> .neden-var)").first();
+    const ilkDugme = await kutu(merge.locator("button").first());
+    expect((await metinKenari(merge.locator(".dugme-neden"))).sol).toBeGreaterThanOrEqual(ilkDugme.x - 1);
+    const h2a = await kutu(pr.getByRole("heading", { name: "Pull request" }));
+    const h2b = await kutu(page.getByRole("region", { name: "Kırarak doğrula" }).getByRole("heading", { name: "Kırarak doğrula" }));
+    expect(Math.abs(h2a.y + h2a.height / 2 - (h2b.y + h2b.height / 2))).toBeLessThanOrEqual(1);
+  }
+
+  // TPD-1, analist: başlık sarınca (1024 / 390) eylem grubu sağa yaslı, neden metni son düğmenin sağ kenarında biter.
+  await page.context().clearCookies();
+  await girisYap(page, "analist");
+  for (const g of [1024, 390]) {
+    await page.setViewportSize({ width: g, height: 900 });
+    await page.goto("/gereksinimler/req-tpd-1");
+    const baslik = page.locator(".sayfa-basligi");
+    await expect(baslik.locator(".dugme-neden").first()).toBeVisible();
+    await fontlariBekle(page);
+    const kap = await kutu(baslik);
+    const son = await kutu(baslik.locator(".eylemler .dugme").last());
+    expect(Math.abs(son.x + son.width - (kap.x + kap.width))).toBeLessThanOrEqual(1);
+    for (const n of await baslik.locator(".dugme-neden").all()) {
+      const k = await metinKenari(n);
+      expect(Math.abs(k.sag - (kap.x + kap.width))).toBeLessThanOrEqual(1);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(g);
+  }
+});
+
 test("mobil (375 px) yayın önizleme ve akış göstergesi: sayfa yatay kaymaz, adım adları çakışmaz", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await girisYap(page, "analist");

@@ -3,6 +3,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { MemoryRouter } from "react-router-dom";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Rotalar } from "../App";
 import { OturumProvider } from "../auth";
@@ -283,5 +285,41 @@ describe("ekranlarda görünür neden", () => {
     expect(d).toBeDisabled();
     expect(d).toHaveAttribute("title", "Yayın analist rolü gerektirir");
     expect(d).toHaveAccessibleDescription("Yayın analist rolü gerektirir");
+  });
+
+  it("Case review (karar verilmiş case): 'Yeniden aç' satırı metin + düğme karışık grup; neden düğmenin sarıcısında", async () => {
+    await oturumAc("testci");
+    const { container } = uygulama("/gereksinimler/req-tpd-1/caseler");
+    await screen.findAllByRole("button", { name: "Yeniden aç" });
+    const satirlar = [...container.querySelectorAll(".satir-ogeler")].filter((g) => g.querySelector(":scope > .dugme-neden-sarici.neden-var"));
+    expect(satirlar.length).toBeGreaterThan(0);
+    for (const g of satirlar) {
+      // Karışık satır: düğme dışı doğrudan çocuk (paragraf) var → CSS sarıcıyı sütun bırakır (grup nedeni değil).
+      expect(g.querySelector(":scope > p")).not.toBeNull();
+      const sarici = g.querySelector(":scope > .dugme-neden-sarici.neden-var")!;
+      expect(sarici.querySelector(":scope > button")).toHaveTextContent("Yeniden aç");
+      expect(sarici.querySelector(":scope > .dugme-neden")).toHaveTextContent("Bu işlem için gereken rol: Analist");
+    }
+  });
+});
+
+describe("Pasiflik nedeni yerleşim kuralları (review 3)", () => {
+  const css = readFileSync(resolve(__dirname, "../styles.css"), "utf8");
+  const blok = css.slice(css.indexOf("R3-NEDEN"));
+
+  it("grup nedeni yalnız düğme gruplarında: tek düğmeli ve karışık gruplarda sarıcı sütun kalır", () => {
+    expect(blok).toContain(".eylemler > .dugme-neden-sarici.neden-var:only-child");
+    expect(blok).toContain(".satir-ogeler:has(> :not(.dugme-neden-sarici, .dugme)) > .dugme-neden-sarici.neden-var");
+  });
+
+  it("-8 px gap telafisi yalnız sağa yaslı sayfa başlığında; sola yaslı grupta neden düğme kenarından başlar", () => {
+    expect(blok).toMatch(/\.eylemler > \.neden-var > \.dugme-neden,\s*\.satir-ogeler > \.neden-var > \.dugme-neden \{\s*margin-left: 0;/);
+    expect(blok).toMatch(/\.sayfa-basligi > \.eylemler[^{]*> \.neden-var:not\(:only-child\) > \.dugme-neden \{\s*margin-left: -8px;/);
+    expect(blok).not.toMatch(/^\.eylemler > \.neden-var > \.dugme-neden[^{]*\{[^}]*margin-left: -8px/m);
+  });
+
+  it("sayfa başlığı eylemleri sarınca da sağda; kart başlığı h2 her durumda 36 px satırın ortasında", () => {
+    expect(blok).toMatch(/\.sayfa-basligi > \.eylemler \{\s*margin-left: auto;\s*justify-content: flex-end;/);
+    expect(blok).toMatch(/\.kart-baslik > h2,[^{]*\{\s*padding-block: max\(0px, calc\(\(36px - 1lh\) \/ 2\)\);/);
   });
 });
