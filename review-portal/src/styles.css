@@ -4190,6 +4190,84 @@ td > .satir-baglanti + .cip,
    Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
    ================================================================== */
 
+/* Kart başlığı satırı (§4.4, review 3): h2 her zaman düğme yüksekliğinde (36 px) bir satırın ortasında —
+   düğmeli, düğmesiz, nedenli ya da sarmış (düğme alta inmiş) başlıkta aynı konum; yan yana kartların
+   başlıkları aynı hizada. Küçük (30 px) düğme de nedenli (üstten hizalı) başlıkta bu satırın ortasına iner.
+   Şerit başlık (iç boşluk 14 px) bundan muaf: şerit yüksekliği değişmez. */
+.kart-baslik > h2,
+.kart-baslik:has(> .eylemler > .neden-var) > h2,
+.kart-baslik:has(> .eylemler > .neden-var > .dugme-kucuk) > h2 {
+  padding-block: max(0px, calc((36px - 1lh) / 2));
+}
+.kart:has(> .tablo-sarici, > .kod-blok, > .kod) > .kart-baslik:first-child > h2 {
+  padding-block: 0;
+}
+.kart-baslik:has(> .eylemler > .neden-var > .dugme-kucuk) > .eylemler {
+  margin-top: 3px;
+}
+
+/* Grup nedeni yalnız düğme grubunda (review 3): grupta tek düğme varsa ya da grupta düğme dışı öğe (metin,
+   çip, bağlantı) varsa neden kendi düğmesinin altında kalır (sarıcı sütun; .dugme-neden-sarici.neden-var
+   temel kuralı). Böylece Case review'daki "Karar verildi… / Yeniden aç" satırında neden paragrafın altına
+   değil düğmenin altına iner; tek düğmeli sayfa başlığında kısa neden tek satırda kalır (34ch). */
+.eylemler > .dugme-neden-sarici.neden-var:only-child,
+.satir-ogeler > .dugme-neden-sarici.neden-var:only-child,
+.eylemler:has(> :not(.dugme-neden-sarici, .dugme)) > .dugme-neden-sarici.neden-var,
+.satir-ogeler:has(> :not(.dugme-neden-sarici, .dugme)) > .dugme-neden-sarici.neden-var {
+  display: inline-flex;
+}
+.eylemler > .neden-var:only-child > .dugme-neden,
+.satir-ogeler > .neden-var:only-child > .dugme-neden,
+.eylemler:has(> :not(.dugme-neden-sarici, .dugme)) > .neden-var > .dugme-neden,
+.satir-ogeler:has(> :not(.dugme-neden-sarici, .dugme)) > .neden-var > .dugme-neden {
+  order: 0;
+  flex: none;
+  max-width: 34ch;
+  margin: 0;
+  contain: none;
+}
+/* Sağa yaslı başlıklarda sarıcı sütunun nedeni düğmenin sağ kenarına hizalı. */
+.sayfa-basligi > .eylemler > .neden-var,
+.kart-baslik > .eylemler > .neden-var {
+  align-items: flex-end;
+}
+/* Düğme dışı öğeli nedenli grupta (paragraf/rozet + düğme) öğeler taban çizgisinde: metin düğme yazısıyla
+   aynı satırda okunur (üstten hizada rozet/paragraf düğmeden yukarıda kalıyordu). */
+.eylemler:has(> :not(.dugme-neden-sarici, .dugme)):has(> .neden-var),
+.satir-ogeler:has(> :not(.dugme-neden-sarici, .dugme)):has(> .neden-var) {
+  align-items: baseline;
+}
+
+/* Sola yaslı gruplarda grup nedeni ilk düğmenin sol kenarından başlar (kart iç çizgisinin dışına taşmaz).
+   -8 px (içsel genişlikteki gap telafisi) yalnız sağa yaslı sayfa başlığında gerekir. */
+.eylemler > .neden-var > .dugme-neden,
+.satir-ogeler > .neden-var > .dugme-neden {
+  margin-left: 0;
+}
+.sayfa-basligi > .eylemler:not(:has(> :not(.dugme-neden-sarici, .dugme))) > .neden-var:not(:only-child) > .dugme-neden {
+  margin-left: -8px;
+}
+/* Kart başlığında grup nedeni 34ch ile sınırlı olduğundan düğmelerin yanına sığabilir: boş, tam genişlik
+   bir flex öğesi düğme satırını kırar, neden her zaman düğmelerin altında ve sağa yaslı (yalnız düğme
+   grubunda; karışık grupta neden sarıcı sütunda kalır). */
+.kart-baslik > .eylemler:has(> .neden-var:not(:only-child)):not(:has(> :not(.dugme-neden-sarici, .dugme)))::after {
+  content: "";
+  order: 1;
+  flex-basis: 100%;
+  margin-left: -8px;
+}
+.kart-baslik > .eylemler:not(:has(> :not(.dugme-neden-sarici, .dugme))) > .neden-var:not(:only-child) > .dugme-neden {
+  order: 2;
+  margin-top: -12px; /* kırıcı satırın iki 8 px aralığı − 4 px: neden düğmeden yine 4 px aşağıda */
+}
+
+/* Sayfa başlığı eylemleri her genişlikte sağda (§4.3 "Eylemler sağda, birincil en sağda"): başlık sarınca da
+   grup sağa yaslı kalır, neden satırı (sağa hizalı) düğmelerin altında durur. */
+.sayfa-basligi > .eylemler {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
 
 
 
