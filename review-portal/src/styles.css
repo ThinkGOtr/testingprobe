@@ -3999,6 +3999,55 @@ td > .satir-baglanti + .cip,
    Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
    ================================================================== */
 
+/* Grup nedeni (§4.5, review 2): düğme grubunda (.eylemler / .satir-ogeler) neden, ilk düğmenin sarıcısını
+   genişletmez. Sarıcı düzene katılmaz (display: contents); neden grubun kendi flex öğesi olur ve düğme
+   satırının ALTINA, grubun tam genişliğinde ayrı satıra iner (order + flex-basis 100%). Düğme aralıkları
+   8 px kalır. contain: inline-size → nedenin metni grubun içsel genişliğine katılmaz: sayfa başlığında
+   eylem grubu yalnız düğmeler kadar yer ister, 'Case üret' 1152 px'te de h1'in sağında kalır (§5).
+   Satırlar arası 8 px gap'e -4 px: neden düğmeye eskisi gibi 4 px uzaklıkta. */
+.eylemler > .dugme-neden-sarici.neden-var,
+.satir-ogeler > .dugme-neden-sarici.neden-var {
+  display: contents;
+}
+.eylemler > .neden-var > .dugme-neden,
+.satir-ogeler > .neden-var > .dugme-neden {
+  order: 1;
+  flex: 1 0 100%;
+  max-width: none;
+  margin-top: -4px;
+  /* İçsel genişlikte nedenden önceki 8 px gap'i de geri al (grup tam düğmeler kadar; sağa yaslıda
+     soldan 8 px boşluk kalmasın). Neden zaten kendi satırında; soldaki 8 px taşma boş alandır. */
+  margin-left: -8px;
+  contain: inline-size;
+}
+/* Sağa yaslı gruplarda (sayfa başlığı, kart başlığı) düğmeler ve neden sağ kenarda biter. */
+.sayfa-basligi > .eylemler:has(> .neden-var),
+.kart-baslik > .eylemler:has(> .neden-var) {
+  justify-content: flex-end;
+}
+.sayfa-basligi > .eylemler > .neden-var > .dugme-neden,
+.kart-baslik > .eylemler > .neden-var > .dugme-neden {
+  text-align: right;
+}
+/* Kart başlığında grup sağa yaslı ve h2'den ayrı: neden düğme genişliğine sıkışmaz, eski 34ch ölçüsünde
+   (grup gerekirse genişler; düğmeler yine sağ kenarda, aralar 8 px). */
+.kart-baslik > .eylemler > .neden-var > .dugme-neden {
+  contain: none;
+  max-width: 34ch;
+  margin-left: auto;
+}
+/* Kart başlığında neden başlığı aşağı itmez: üstten hizalı, h2 düğme satırının (36 px) ortasında —
+   nedensiz hâldeki (align-items: center) konumla aynı, komşu kartın başlığıyla aynı hizada. */
+.kart-baslik:has(> .eylemler > .neden-var) {
+  align-items: flex-start;
+}
+.kart-baslik:has(> .eylemler > .neden-var) > h2 {
+  padding-top: max(0px, calc((36px - 1lh) / 2));
+}
+.kart-baslik:has(> .eylemler > .neden-var > .dugme-kucuk) > h2 {
+  padding-top: max(0px, calc((30px - 1lh) / 2));
+}
+
 
 
 

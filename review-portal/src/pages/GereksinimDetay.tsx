@@ -310,8 +310,10 @@ export function GereksinimDetay() {
                     roller={["analyst"]}
                     disabled={sonHalAcik ? false : yazilacak === 0 || turSiniri}
                     calisiyor={islem.calisiyor && g.durum === "in_review"}
-                    // Tur sınırı nedeni aşağıdaki uyarı kutusunda zaten görünür yazılı.
-                    nedenGizli={turSiniri}
+                    // Tur sınırı nedeni aşağıdaki uyarı kutusunda (yalnız yazılacak düzeltme varken) görünür
+                    // yazılı; düğmeye bağlanır. Kutu yoksa neden düğmenin altında yazılır.
+                    nedenGizli={turSiniri && yazilacak > 0}
+                    aria-describedby={turSiniri && yazilacak > 0 ? "tur-siniri-neden" : undefined}
                     title={
                       sonHalAcik
                         ? g.denetim_guvenilmez
@@ -382,7 +384,7 @@ export function GereksinimDetay() {
               </p>
             )}
             {turSiniri && yazilacak > 0 && (
-              <Uyari>
+              <Uyari id="tur-siniri-neden">
                 Kontrol turu sınırına ulaşıldı ({g.kontrol_turu_ust_sinir}). Kalan düzeltmeler otomatik yazılmaz; insan kararı gerekiyor.
               </Uyari>
             )}
