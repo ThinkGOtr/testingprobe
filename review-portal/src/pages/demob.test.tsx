@@ -72,6 +72,9 @@ describe("Kod üretimi: ekranlar (örnek veri)", () => {
       expect.stringContaining("Yeşil"),
     ]);
     expect(screen.getByTestId("merge-kapisi")).toHaveTextContent("açık ✓");
+    // İnsan kapısı henüz geçilmedi (merge insan kararı): amber "bekliyor" şeridi, yeşil değil.
+    expect(screen.getByTestId("merge-kapisi")).toHaveClass("kapi-bekliyor");
+    expect(screen.getByTestId("merge-kapisi")).not.toHaveClass("kapi-gecti");
     expect(screen.getByRole("button", { name: "Merge et" })).toBeEnabled();
   });
 
@@ -146,6 +149,8 @@ describe("Kod üretimi: ekranlar (örnek veri)", () => {
     const kapi = await screen.findByTestId("merge-kapisi");
     expect(kapi).toHaveTextContent("✓ Birleştirildi — muhendis");
     expect(kapi).toHaveTextContent("merge commit 5b06333");
+    expect(kapi).toHaveClass("kapi-gecti");
+    expect(kapi).not.toHaveClass("kapi-bekliyor");
     expect(kapi).not.toHaveTextContent("durum: merged");
     expect(screen.queryByRole("button", { name: "Merge et" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Yeniden doğrula" })).not.toBeInTheDocument();
@@ -339,6 +344,23 @@ describe("Kontrol Kulesi", () => {
     // Sunucu düğmeleri core'da olmayan uçlara gitmez (404 yok).
     expect(screen.queryByRole("button", { name: "Buton kimliğini değiştir" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Demoyu sıfırla" })).toBeNull();
+  });
+});
+
+describe("Kontrol Kulesi: günlük geçme oranı grafiği", () => {
+  it("grafik kabı adlı group; her odak durağı (sütun) role=img ve 'gün: oran' adı taşır", async () => {
+    await oturumAc("sunucu");
+    uygulama("/kontrol-kulesi");
+    const grafik = await screen.findByRole("group", { name: /Ayrıntılar aşağıdaki tabloda\./ });
+    // Kap img olsaydı alt öğeler sunumsal olur, odak durakları adsız kalırdı (4.1.2).
+    expect(grafik).not.toHaveAttribute("role", "img");
+    const duraklar = [...grafik.querySelectorAll<SVGElement>('[tabindex="0"]')];
+    expect(duraklar.length).toBeGreaterThan(0);
+    for (const d of duraklar) {
+      expect(d).toHaveAttribute("role", "img");
+      expect(d).toHaveAccessibleName(/^\S.*: %?\d/);
+    }
+    expect(within(grafik).getAllByRole("img")).toHaveLength(duraklar.length);
   });
 });
 

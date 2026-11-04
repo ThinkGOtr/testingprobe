@@ -196,6 +196,24 @@ test("case kararları durum makinesine uyar: reddedilen onaylanamaz, onaylı red
   await page.screenshot({ path: `${EKRAN_DIZINI}/24-case-karar-kilidi.png`, fullPage: true });
 });
 
+test("Case review: Case filtresi sekmeleri ≥641 px'te üst çubuğun altında yapışık, ≤640 px'te akışta", async ({ page }) => {
+  await girisYap(page, "analist");
+  await page.goto("/gereksinimler/req-tpd-1/caseler");
+  const sekmeler = page.getByRole("group", { name: "Case filtresi" });
+  await expect(sekmeler).toHaveCSS("position", "sticky");
+  await expect(sekmeler).toHaveCSS("top", "56px");
+  // Aşağı kaydırınca şerit üst çubuğun (56 px) hemen altında kalır.
+  await expect(page.getByRole("article").first()).toBeVisible();
+  await expect
+    .poll(async () => {
+      await page.evaluate(() => window.scrollTo(0, 1500));
+      return Math.round((await sekmeler.boundingBox())!.y);
+    })
+    .toBe(56);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(sekmeler).toHaveCSS("position", "static");
+});
+
 test("TPD-3: seed metni, golden soruları ve golden uyarı bulgusu görünür ('Bulgu yok' değil)", async ({ page }) => {
   await girisYap(page, "analist");
   await page.goto("/gereksinimler/req-tpd-3");

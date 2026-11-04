@@ -75,6 +75,32 @@ describe("gereksinim detayı", () => {
   });
 });
 
+describe("PO teyidi insan kapısı şeridi", () => {
+  it("onaylı ve içerik değişmemişse kapi-gecti; içerik onaydan sonra değiştiyse ya da onay yoksa kapi-bekliyor", async () => {
+    await oturumAc("analist");
+    const g = mockVerisi().gereksinimler.find((x) => x.id === "req-tpd-1")!;
+    g.po = { ...g.po, durum: "approved" };
+    g.po.onaylanan_hash = g.icerik_hash ?? null;
+    const { unmount } = uygulama("/gereksinimler/req-tpd-1");
+    const kart = await screen.findByRole("region", { name: "PO teyidi" });
+    expect(kart).toHaveClass("insan-kapisi", "kapi-gecti");
+    expect(kart).not.toHaveClass("kapi-bekliyor");
+    unmount();
+
+    g.po.onaylanan_hash = "sha256:0123456789abcdef0123";
+    const ikinci = uygulama("/gereksinimler/req-tpd-1");
+    await screen.findByText(/yeniden PO teyidi gerekir/);
+    expect(screen.getByRole("region", { name: "PO teyidi" })).toHaveClass("kapi-bekliyor");
+    ikinci.unmount();
+
+    const bekleyen = mockVerisi().gereksinimler.find((x) => x.po.durum !== "approved")!;
+    uygulama(`/gereksinimler/${bekleyen.id}`);
+    const k3 = await screen.findByRole("region", { name: "PO teyidi" });
+    expect(k3).toHaveClass("kapi-bekliyor");
+    expect(k3).not.toHaveClass("kapi-gecti");
+  });
+});
+
 describe("case review", () => {
   it("karar bekleyen case'ler görüntülendi olarak bir kez bildirilir; review süresi bundan ölçülür", async () => {
     await oturumAc("analist");

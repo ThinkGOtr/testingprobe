@@ -1049,7 +1049,7 @@ function kodUret(govde: unknown): IsYaniti {
             aciklama:
               "Assertion hatası: uygulama onaylı case'in beklenen değerini vermiyor (3/3 tekrarda aynı). Otomatik düzeltme yapılmaz; insan incelemesine gider.",
             basarisiz: [
-              { test_adi: c.icerik.title, hata_mesaji: "toHaveText(\"0\") · bedava adet", beklenen: "bedava adet 0 · indirim 0,00 TL", gerceklesen: "bedava adet 1 · indirim 25,00 TL", adim: "S4" },
+              { test_adi: c.icerik.title, hata_mesaji: "toHaveText(\"0\") · bedava adet", beklenen: "bedava adet 0 · indirim 0,00 TL", gerceklesen: "bedava adet 1 · indirim 25,00 TL", adim: "S4", tekrar: 3 },
             ],
           };
           s.engel = { tur: "defect_candidate", neden: "Yerel kontrolde assertion kırmızı: defect adayı (onarım yok)." };

@@ -91,10 +91,10 @@ export function Gereksinimler() {
                   <th scope="col">Durum</th>
                   <th scope="col">Adım</th>
                   <th scope="col">PO</th>
-                  <th scope="col" className="sayi">
+                  <th scope="col" className="sayi baslik-sarar">
                     Açık bulgu
                   </th>
-                  <th scope="col" className="sayi">
+                  <th scope="col" className="sayi baslik-sarar">
                     Case (onaylı/toplam)
                   </th>
                   <th scope="col">Çekim</th>
@@ -157,7 +157,7 @@ function GereksinimSatiri({ g, kanit }: { g: Gereksinim; kanit: Omit<SonrakiGird
       <td className="sayi" data-etiket="Case (onaylı)">
         {g.sayaclar.case_toplam ? `${g.sayaclar.case_onayli}/${g.sayaclar.case_toplam}` : "—"}
       </td>
-      <td data-etiket="Çekim">{tarih(g.cekim_zamani)}</td>
+      <td className="tek-satir" data-etiket="Çekim">{tarih(g.cekim_zamani)}</td>
     </tr>
   );
 }

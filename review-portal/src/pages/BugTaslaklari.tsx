@@ -135,7 +135,12 @@ export function BugTaslaklari() {
                           {b.icerik.summary}
                         </Link>{" "}
                         <ReplayRozeti mode={b.mode} degerlendirme={b.degerlendirme} />
-                        {b.icerik.uretim === "sablon" && <Cip ton="notr">Şablon</Cip>}
+                        {b.icerik.uretim === "sablon" && (
+                          <>
+                            {" "}
+                            <Cip ton="notr">Şablon</Cip>
+                          </>
+                        )}
                         {kirmaIds.has(b.id) && (
                           <span data-testid="kirma-cipi">
                             {" "}
@@ -150,7 +155,7 @@ export function BugTaslaklari() {
                       <td>
                         <Cip ton={d.ton}>{d.etiket}</Cip>
                       </td>
-                      <td>{tarih(b.olusturma)}</td>
+                      <td className="tek-satir">{tarih(b.olusturma)}</td>
                     </tr>
                   );
                 })}
