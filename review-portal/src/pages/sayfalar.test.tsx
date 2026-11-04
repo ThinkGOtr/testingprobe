@@ -85,6 +85,28 @@ describe("oturum ve yönlendirme", () => {
     expect(screen.getByRole("button", { name: "Çıkış" })).toHaveFocus();
   });
 
+  it("açık mobil menü kipseldir: odak ilk bağlantıda, içerik inert, Tab menü ile düğme arasında döner", async () => {
+    await oturumAc("analist");
+    const u = userEvent.setup();
+    uygulama("/denetim");
+    await screen.findByRole("heading", { name: "Denetim", level: 1 });
+    const dugme = screen.getByRole("button", { name: "Menü" });
+    const menu = screen.getByRole("navigation", { name: "Ana menü" });
+    const ana = document.getElementById("ana-icerik")!;
+    await u.click(dugme);
+    const baglantilar = within(menu).getAllByRole("link");
+    expect(baglantilar[0]).toHaveFocus();
+    expect(ana.inert).toBe(true);
+    baglantilar[baglantilar.length - 1]!.focus();
+    await u.tab();
+    expect(dugme).toHaveFocus();
+    await u.tab({ shift: true });
+    expect(baglantilar[baglantilar.length - 1]).toHaveFocus();
+    await u.keyboard("{Escape}");
+    expect(dugme).toHaveFocus();
+    expect(ana.inert).toBe(false);
+  });
+
   it("açık mobil menüden gezinince menü kapanır, odak yeni sayfanın içeriğine geçer (body'ye düşmez)", async () => {
     await oturumAc("analist");
     const u = userEvent.setup();

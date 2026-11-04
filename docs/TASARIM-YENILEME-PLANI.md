@@ -534,7 +534,7 @@ MVT (§6.1) bittiğinde tüm ekranlar yeni dile geçer. Bu tablo, **ek** düzen 
 | Ekran | Rota | Rol | Öncelik | MVT'de (C) | Demo sonrası (F4, M) | Kilitler |
 |---|---|---|---|---|---|---|
 | Yol haritası | `/yol-haritasi` | Sunucu | **P1** | **MVT DOM:** `<li class="yh-adim">`'e `data-tur={a.tur}` (`YolHaritasi.tsx:71`; bugün tür DOM'da yok). Daire **= tür** (§4.10 biçim+renk, `[data-tur]` seçicisiyle). Durum yalnız `.yh-no`'daki ✓ + durum hapı; **"tamam" hapı `notr`** (§4.6; yeşil insan onayına ait). `yh-tur` metni `[data-tur]`'a göre tür renginde hap. Mevcut dört durum kuralı `.yh-adim.yh-{tamam,suruyor,engel,yedek} .yh-no` (2350-2369) **silinir**; `.yh-no` §4.10 gibi çizilir: `[data-tur]` kenarı; `tamam` → tür dolgusu + ✓ `--on-ton`; diğer haller boş iç. `yh-tur` hap rengi: sistem `--notr`, insan `--ok`, ai ve ai_insan `--vurgu`. "Sıradaki" = `[data-testid="yh-sonraki"]` paragrafı (`YolHaritasi.tsx:243`): sol 3 px `--accent-solid` + `--accent-soft` bant. "Sürüyor" yalnız hapta (`bilgi` → indigo). Adımlar arası ayraç mevcut `border-top` (2326-2336) `--border-soft` — **yeşil bağlantı çizgisi yok**. Bağlantılar çizgisiz `--accent`, hover'da çizili | — | `yh-adim-*`, `yh-ilerleme`, `yh-mod`, liste "14 adımlı demo akışı" (14 öğe), "Locator kırılması ilerlemesi" |
-| Gereksinim detayı | `/gereksinimler/:id` | Analist | **P1** | Bulgu şerit önceliği (§4.4); "✓ kanıt doğrulandı" sağ üst, yeşil; "✓ Doküman son hâl" çipi sağ üst — **ton kodda belirlenir (Ek B, `GereksinimDetay.tsx:300`): `pending_po` → `bilgi` (indigo, "sıradaki adım"), `doc_final`/`po_approved` → `basari`**; tasarım bu tonları değiştirmez; PO kartı insan kapısı şeridi | ≥1280 px sağda yapışkan **bölüm gezgini**: `<nav aria-label="Sayfa bölümleri">` + düz `<a href="#…">` (list/article değil); `scroll-padding-top` yapışkanlar toplamına | `article.bulgu` (sayı 3), `.rozet-dogrulandi`, `bulgu-sayaclari`, `.baslik-anahtar`, `aria-current="step"`, "Case üret" sağ üst, navigation "14 adımlı akıştaki ilerleme" |
+| Gereksinim detayı | `/gereksinimler/:id` | Analist | **P1** | Bulgu şerit önceliği (§4.4); "✓ kanıt doğrulandı" sağ üst, yeşil; "✓ Doküman son hâl" çipi sağ üst — **ton kodda belirlenir (Ek B, `GereksinimDetay.tsx:300`): `pending_po` → `bilgi` (indigo, "sıradaki adım"), `doc_final`/`po_approved` → `basari`**; tasarım bu tonları değiştirmez; PO kartı insan kapısı şeridi | **Bölüm gezgini** üç aralıkta: ≤860 px gizli (`display: none`), 861–1279 px üst çubuğun altında yapışkan tek satır yatay şerit, ≥1280 px sağda yapışkan sütun; `<nav aria-label="Sayfa bölümleri">` + düz `<a href="#…">` (list/article değil); `scroll-padding-top` yapışkanlar toplamına (şerit aralığında 120 px = 56 + 45 + 16; şerit sarmaz) | `article.bulgu` (sayı 3), `.rozet-dogrulandi`, `bulgu-sayaclari`, `.baslik-anahtar`, `aria-current="step"`, "Case üret" sağ üst, navigation "14 adımlı akıştaki ilerleme" |
 | Kod üretimi | `/kod` | Mühendis | **P1** | Ton değişikliği yalnız "PR açık" (indigo, §4.6). "Defect adayı" mevcut `hata` tonuyla kalır; öne çıkması yalnız CSS: `tr:has(.cip-hata) > td:first-child { box-shadow: inset 3px 0 0 var(--err) }` (tablo `border-collapse: collapse`, 832; "Başarısız" satırları da `hata` olduğundan aynı şeridi alır — kabul) ve hap 700. Uyarı/kabul gerektiren işaretler amber | — | bölge "Üretilen testler tablosu" |
 | Script detay | `/kod/:id` | Mühendis | **P1** | PR + Kırarak doğrula kartları üst hizalı; merge kapısı insan kapısı şeridi; zayıf test kutusu amber; zaman çizelgesi yeşil→kırmızı→yeşil. **Plan sonrası (Ek B):** beklenenin tersi sonuç (`data-beklenmedik`) de `kirma-sonucsuz` sınıfı + ⚠ alır → `.kirma-sonucsuz .kirma-ikon` amber kuralı (bugün 1796) **iki durumu da** kapsar, yeşil/kırmızı aşama kuralları onu ezmemeli (seçici özgüllüğü F2-D'de kontrol). Kod üretimi tablosundaki "Kırma etkilemedi · kabulle birleşti / kabul gerekli" düz metindir (hap değil, `Kod.tsx:169-171`) — MVT'de renk verilmez | — | `merge-kapisi`, `merge-uyarilari`, `yerel-sinif`, `kirma-*`, `.ok-metin`, `.ajan-ekran img`, liste "Kırarak doğrulama zaman çizelgesi", "PR check'leri", bölge "Eşlenen adımlar tablosu", demo-app önizlemesi kendi görünümünde |
 | Bug taslakları / detay | `/bug-taslaklari(/:id)` | Testçi | **P1** | Karar düğmeleri insan kapısı kartında; mükerrer kategorik hap + REPLAY; kasıtlı kırma taslağı uyarısı amber | — | `mukerrer-onerisi`, liste "Mükerrer adayları", "Olası mükerrerler" |
@@ -748,11 +748,26 @@ geçti", "(GitHub artefaktında)", "Süzgece uyan test yok.", "✓ Doküman son 
 "Buton kimliğini değiştir (add-to-cart → cart-add)"; id `kosular-gece-aciklama`, `kosular-deploy-aciklama`
 (`aria-describedby` hedefi — kaldırılmaz/yeniden adlandırılmaz).
 
-**Review turu 1 kilitleri:** navigation "Sayfa bölümleri" (gereksinim detayı, ≥1280 px görünür) bağlantı
-metinleri "Doküman", "PO teyidi", "Manuel baz değer", "Ön inceleme soruları", "Tutarlılık bulguları" kart
-başlıklarıyla aynıdır → kart başlıkları yalnız `getByRole("region", { name })` ile aranır, `getByText` ile
-aranmaz (`duman.spec.ts` "bölüm gezgini" testi). `.dugme-neden` grup başına tekildir: aynı `.eylemler` /
+**Review turu 1 kilitleri:** navigation "Sayfa bölümleri" (gereksinim detayı; ≤860 px gizli, 861–1279 px
+yapışkan yatay şerit, ≥1280 px yapışkan sütun — yani ≥861 px'te görünür) bağlantı metinleri "Doküman", "PO
+teyidi", "Manuel baz değer", "Ön inceleme soruları", "Tutarlılık bulguları" kart başlıklarıyla aynıdır ve DOM'da
+içerikten önce gelir → kart başlıkları yalnız `getByRole("region", { name })` ile aranır, `getByText` ile
+aranmaz: ≥861 px'te `getByText(…).first()` gezgin bağlantısını bulur ve kart kaybını yakalamaz, ≤860 px'te
+gizli bağlantıyı bulur (`duman.spec.ts` "bölüm gezgini" testi). `.dugme-neden` grup başına tekildir: aynı `.eylemler` /
 `.satir-ogeler` içinde eş metinli neden bir kez çizilir, her düğmenin `aria-describedby`'si ona bağlıdır.
+
+**Review turu 2–3 kilitleri:** id `kirma-kapali-neden` (`ScriptDetay.tsx` `aria-describedby` hedefi;
+`dugmeNeden.test.tsx` birebir arar — kaldırılmaz/yeniden adlandırılmaz). `main#ana-icerik` `tabIndex=-1`:
+"İçeriğe atla" hedefi ve açık mobil menüden gezinince odak buraya taşınır (`duman.spec.ts` mobil menü testi,
+`sayfalar.test.tsx`). Açık mobil menü (≤860 px) kipseldir: menü düğmesi ile `nav#yan-menu` dışı (`.atla`,
+`.marka`, `.ust-sag`, `#ana-icerik`) `inert`, açılışta odak ilk menü bağlantısında, Tab/Shift+Tab menü ile
+menü düğmesi arasında döner, Escape kapatır ve odağı düğmeye verir (aynı testler). `src/tema-on.js`: ilk boyama
+betiği, `src/lib/tema.ts` ile aynı kurallar (`tema.test.tsx` "tema-on.js" testleri kaynağı `?raw` okur);
+`vite.config.ts` `tp-tema-on` eklentisi derlemede küçültüp `<head>` sonuna klasik `<script src>` ekler (satır
+içi değil, CSP). Stil kancası sınıfları (test kimliği değil, styles.css bağlı; yeniden adlandırılırsa CSS
+birlikte): `insan-kapisi` + `kapi-gecti`/`kapi-bekliyor` (PO teyidi kartı, `merge-kapisi`), `test-sonuclari`
+(koşu sonuç tablosu), `yh-sonraki` (testid ile aynı ad). Giriş markası `<strong data-metin="Probe">`: gradyan
+bindirme kelimeyi bu nitelikten okur (`content: attr(data-metin) / ""`).
 
 **Yeni markup kuralları:** `article`, `list`/`listitem`, `region`, `status` rolü eklenmez (eklenirse
 benzersiz ad + sayım testleri tek tek kontrol); `aria-current="step"` yalnız akışta; yeni görünür metin

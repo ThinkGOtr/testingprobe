@@ -1745,28 +1745,20 @@ fieldset:disabled select {
    axe color-contrast'ı "incomplete"e düşürüyor (/giris 0 → 1, ölçüldü). Bunun yerine: metin düz başlangıç
    renginde (axe ölçer, AA), üstüne aynı kelime bitiş renginde bindirilir ve soldan sağa maskeyle açılır.
    Bindirme yalnız görsel: `content: "…" / ""` alternatif metni boş → erişilebilir ad değişmez; sözdizimini
-   tanımayan tarayıcı bildirimi yok sayar, düz renk kalır. Uçlar AA: koyu --accent #818cf8 → #c084fc, açık
-   --accent #4f46e5 → #7e22ce. Kelime Giris.tsx'teki <strong>Probe</strong> ile aynı olmalı. */
+   tanımayan tarayıcı bildirimi yok sayar, düz renk kalır. Uçlar token, AA: --accent → --vurgu (koyu #818cf8 →
+   #c084fc, açık #4f46e5 → #7e22ce). Bindirme kelimesi Giris.tsx'teki <strong data-metin> niteliğinden okunur. */
 .giris-kart .marka strong {
   position: relative; /* metin rengi: .marka strong → --accent (koyu #818cf8, açık #4f46e5) */
   display: inline-block; /* kutu = satır yüksekliği: bindirme aynı taban çizgisine oturur */
 }
 .giris-kart .marka strong::after {
-  content: "Probe" / "";
+  content: attr(data-metin) / "";
   position: absolute;
   inset: 0;
-  color: #c084fc;
+  color: var(--vurgu);
   -webkit-mask-image: linear-gradient(90deg, transparent, #000);
   mask-image: linear-gradient(90deg, transparent, #000);
   pointer-events: none;
-}
-:root[data-theme="light"] .giris-kart .marka strong::after {
-  color: #7e22ce;
-}
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme]) .giris-kart .marka strong::after {
-    color: #7e22ce;
-  }
 }
 @media (forced-colors: active) {
   .giris-kart .marka strong::after {
@@ -4213,6 +4205,58 @@ td > .satir-baglanti + .cip,
    R3-KABUK (review turu 3 çapası — sonra kaldırılır)
    Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
    ================================================================== */
+
+/* Bölüm gezgini şeridi (861–1279 px) tek satır: 861–890 px'te beş bağlantı iki satıra sarıyor, şerit 80 px'e
+   çıkıyor ve sabit çapa payı (scroll-padding-top: 120 px = üst çubuk 56 + şerit 45 + 16) kartın üstünü şeridin
+   altında bırakıyordu. Satır sarmaz; 900 px altında bağlantılar sıkılaşır (tümü sığar), yine sığmazsa (metin
+   yakınlaştırma) şerit kendi içinde yatay kayar — yükseklik sabit kalır, pay yeter. */
+@media (min-width: 861px) and (max-width: 1279px) {
+  .bolum-gezgini {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+  }
+  .bolum-gezgini a {
+    flex: none;
+    white-space: nowrap;
+  }
+}
+@media (min-width: 861px) and (max-width: 899px) {
+  .bolum-gezgini {
+    gap: 4px;
+  }
+  .bolum-gezgini a {
+    padding-inline: 9px;
+  }
+}
+
+/* Kontrol Kulesi grafiği zorunlu renk kipinde: SVG dolgu/kontur sistem rengine çevrilmez; token renkleri
+   (koyu temada açık lavanta) beyaz Canvas'ta kayboluyordu (odak halkası ~1,9:1, etkin sütun ~1,4:1). Sütunlar
+   CanvasText, etkin sütun ve odak halkası Highlight, hedef çizgisi CanvasText, ızgara GrayText. */
+@media (forced-colors: active) {
+  .grafik-sutun {
+    fill: CanvasText;
+  }
+  .grafik-sutun.aktif {
+    fill: Highlight;
+  }
+  .grafik-hedef {
+    stroke: CanvasText;
+  }
+  .grafik-izgara {
+    stroke: GrayText;
+  }
+  .grafik-eksen {
+    fill: CanvasText;
+  }
+  .grafik-hedef-alan:focus-visible .grafik-odak {
+    stroke: Highlight;
+  }
+  .grafik-hedef-alan:focus-visible .grafik-sutun {
+    stroke: CanvasText;
+  }
+}
 
 
 

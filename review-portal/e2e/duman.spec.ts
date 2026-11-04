@@ -313,6 +313,29 @@ test("mobil menü kapalıyken Tab sırasına girmez (dikey ve yatay telefon); me
     await page.keyboard.press("Escape");
     await expect(menuDugmesi).toBeFocused();
     await expect(menu.getByRole("link", { name: "Denetim" })).toBeHidden();
+    // Açık menü kipsel (WCAG 2.4.11): açılışta odak ilk bağlantıda; Tab / Shift+Tab yalnız menü ile menü
+    // düğmesi arasında dolaşır, menünün altında kalan içeriğe geçmez.
+    await page.keyboard.press("Enter");
+    await expect(menuDugmesi).toHaveAttribute("aria-expanded", "true");
+    await expect(menu.getByRole("link").first()).toBeFocused();
+    const odakYeri = () =>
+      page.evaluate(() => {
+        const e = document.activeElement;
+        return e?.closest("#yan-menu") ? "menu" : e?.classList.contains("menu-dugmesi") ? "dugme" : `${e?.tagName}.${e?.className}`;
+      });
+    for (const tus of ["Tab", "Shift+Tab"]) {
+      const yerler = new Set<string>();
+      for (let i = 0; i < 14; i++) {
+        await page.keyboard.press(tus);
+        const yer = await odakYeri();
+        expect(["menu", "dugme"], `${genislik}×${yukseklik} açık menü ${tus} ${i + 1}: ${yer}`).toContain(yer);
+        yerler.add(yer);
+      }
+      expect([...yerler].sort(), `${genislik}×${yukseklik} ${tus} döngüsü`).toEqual(["dugme", "menu"]);
+    }
+    await expect(menuDugmesi).toHaveAttribute("aria-expanded", "true");
+    await page.keyboard.press("Escape");
+    await expect(menuDugmesi).toBeFocused();
     await menuDugmesi.click();
     await menu.getByRole("link", { name: "Denetim" }).click();
     await expect(page.getByRole("heading", { name: "Denetim", level: 1 })).toBeVisible();
@@ -741,9 +764,10 @@ test("bilinmeyen sayfa: h1 başlığı var (axe page-has-heading-one)", async ({
 
 // Bölüm gezgini (`nav "Sayfa bölümleri"`) bağlantıları kart başlıklarıyla aynı metni taşır ve DOM'da
 // içerikten önce gelir: kart başlığı `getByText(...).first()` ile değil, `getByRole("region", { name })`
-// ile aranır (860 px ve altında gezgin gizlidir; `.first()` gizli bağlantıyı bulur).
-// 861–1279 px'te gezgin başlığın altında akışta yatay bağlantı şerididir (yapışkan değil).
-test("bölüm gezgini: ≥1280 px yapışkan sütun, 1152 px yapışkan yatay şerit, 860 px'te gizli; bağlantı bölümü üst çubuğun altına getirir", async ({ page }) => {
+// ile aranır (860 px ve altında gezgin gizlidir, `.first()` gizli bağlantıyı bulur; ≥861 px'te görünür
+// bağlantıyı bulur ve kart kaybını yakalamaz). 861–1279 px'te gezgin üst çubuğun altında yapışkan tek satır
+// yatay şerittir, ≥1280 px'te sağda yapışkan sütun.
+test("bölüm gezgini: ≥1280 px yapışkan sütun, 1152 ve 861 px yapışkan tek satır şerit, 860 px'te gizli; bağlantı bölümü üst çubuğun altına getirir", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await girisYap(page, "analist");
   await page.goto("/gereksinimler/req-tpd-1");
@@ -772,6 +796,17 @@ test("bölüm gezgini: ≥1280 px yapışkan sütun, 1152 px yapışkan yatay ş
       const serit = await gezgin.boundingBox();
       const kutu = await bolum.boundingBox();
       return !!serit && !!kutu && kutu.y >= serit.y + serit.height;
+    })
+    .toBe(true);
+  // Şeridin en dar ucu (861 px): bağlantılar sarmaz, şerit tek satır kalır → sabit çapa payı yeter.
+  await page.setViewportSize({ width: 861, height: 720 });
+  await gezgin.getByRole("link", { name: "Doküman" }).click();
+  await gezgin.getByRole("link", { name: "Tutarlılık bulguları" }).click();
+  await expect
+    .poll(async () => {
+      const serit = await gezgin.boundingBox();
+      const kutu = await bolum.boundingBox();
+      return !!serit && !!kutu && serit.height < 60 && kutu.y >= serit.y + serit.height;
     })
     .toBe(true);
   await page.setViewportSize({ width: 860, height: 800 });

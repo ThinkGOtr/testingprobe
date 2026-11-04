@@ -95,6 +95,8 @@ export function Kabuk() {
   const git = useNavigate();
 
   const menuDugmesi = useRef<HTMLButtonElement>(null);
+  const kabukRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLElement>(null);
 
   // Rota değişince menü kapanır. Açık mobil menüden gezinildiyse odak yeni sayfanın içeriğine (#ana-icerik,
   // "İçeriğe atla" hedefi, tabIndex=-1) taşınır: kapanan menüdeki bağlantı gizlenir, odak body'ye düşmez
@@ -104,7 +106,12 @@ export function Kabuk() {
   useEffect(() => {
     if (!menuAcikRef.current) return;
     setMenuAcik(false);
-    document.getElementById("ana-icerik")?.focus({ preventScroll: true });
+    // İçerik açık menüde inert; inert kaldırma efekti yeniden çizimde çalışır, odak ondan önce taşınır.
+    const ana = document.getElementById("ana-icerik");
+    if (ana) {
+      ana.inert = false;
+      ana.focus({ preventScroll: true });
+    }
   }, [konum.pathname]);
 
   // Açık mobil menü geniş ekrana geçişte kapanır (geri daraltınca perdeyle yeniden açılmaz).
@@ -131,11 +138,42 @@ export function Kabuk() {
     return () => document.removeEventListener("keydown", kapat);
   }, [menuAcik]);
 
+  // Açık mobil menü kipsel davranır (WCAG 2.4.11 / 2.4.3): menü düğmesi ve menü dışındaki her şey (İçeriğe atla,
+  // marka, üst çubuğun sağı, içerik) inert olur; Tab yalnız menü düğmesi ile menü bağlantıları arasında döngüyle dolaşır,
+  // odak menünün altında kalan içeriğe geçemez. Açılışta odak ilk menü bağlantısına taşınır. Kapanış: Escape,
+  // menü düğmesi ya da bir bağlantıyla gezinme (yukarıdaki efektler).
+  useEffect(() => {
+    if (!menuAcik) return;
+    const kok = kabukRef.current;
+    if (!kok) return;
+    const arka = [...kok.querySelectorAll<HTMLElement>(":scope > .atla, .ust-cubuk > .marka, .ust-cubuk > .ust-sag, #ana-icerik")];
+    for (const e of arka) e.inert = true;
+    menuRef.current?.querySelector<HTMLElement>("a[href]")?.focus();
+    // Döngü: son bağlantıdan Tab menü düğmesine, menü düğmesinden Shift+Tab son bağlantıya (sayfa dışına çıkmaz).
+    const dongu = (e: KeyboardEvent) => {
+      if (e.key !== "Tab" || e.altKey || e.ctrlKey || e.metaKey) return;
+      const dugme = menuDugmesi.current;
+      const baglantilar = [...(menuRef.current?.querySelectorAll<HTMLElement>("a[href]") ?? [])];
+      if (!dugme || baglantilar.length === 0) return;
+      const sira = [dugme, ...baglantilar];
+      const i = sira.indexOf(document.activeElement as HTMLElement);
+      const hedef = e.shiftKey ? (i <= 0 ? sira[sira.length - 1] : null) : i === -1 || i === sira.length - 1 ? sira[0] : null;
+      if (!hedef) return;
+      e.preventDefault();
+      hedef.focus();
+    };
+    document.addEventListener("keydown", dongu);
+    return () => {
+      document.removeEventListener("keydown", dongu);
+      for (const e of arka) e.inert = false;
+    };
+  }, [menuAcik]);
+
   const mockAktif = mockZorunlu() || mockUclar.length > 0;
   const b = BAGLANTI[baglanti];
 
   return (
-    <div className="kabuk">
+    <div className="kabuk" ref={kabukRef}>
       <a className="atla" href="#ana-icerik">
         İçeriğe atla
       </a>
@@ -201,7 +239,7 @@ export function Kabuk() {
         </div>
       </header>
       <div className="govde">
-        <nav id="yan-menu" className={`yan-menu${menuAcik ? " acik" : ""}`} aria-label="Ana menü">
+        <nav ref={menuRef} id="yan-menu" className={`yan-menu${menuAcik ? " acik" : ""}`} aria-label="Ana menü">
           {NAV.map((g) => {
             const ogeler = g.ogeler.filter((o) => !o.gorunur || (kullanici && o.gorunur.includes(kullanici.rol)));
             if (ogeler.length === 0) return null;

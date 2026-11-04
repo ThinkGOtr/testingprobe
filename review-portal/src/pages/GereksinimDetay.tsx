@@ -440,9 +440,11 @@ const BOLUMLER: { id: string; ad: string }[] = [
 ];
 
 /**
- * Uzun sayfada yön bulma (G8): ≥1280 px'te sağda yapışkan; daha dar ekranda CSS ile gizlenir
- * (display: none → erişilebilirlik ağacında da yok). Liste rolü bilinçli olarak kullanılmaz (§9 rol
- * sayımları); düz bağlantılar. DOM'da içerikten önce: klavyede bölümlere atlama yolu.
+ * Uzun sayfada yön bulma (G8), üç aralık (CSS): ≤860 px gizli (display: none → erişilebilirlik ağacında da
+ * yok); 861–1279 px üst çubuğun altında yapışkan tek satır yatay şerit; ≥1280 px sağda yapışkan sütun. Liste
+ * rolü bilinçli olarak kullanılmaz (§9 rol sayımları); düz bağlantılar. DOM'da içerikten önce: klavyede
+ * bölümlere atlama yolu. Bağlantı metinleri kart başlıklarıyla aynı: ≥861 px'te testte
+ * getByText(kart başlığı).first() bu bağlantıyı bulur → kartlar getByRole("region", { name }) ile aranır (§9).
  */
 function BolumGezgini() {
   return (

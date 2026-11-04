@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, minifySync, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 
 const TEMA_ON = fileURLToPath(new URL("./src/tema-on.js", import.meta.url));
@@ -11,7 +11,8 @@ const NGINX_CONF = fileURLToPath(new URL("./nginx.conf", import.meta.url));
  * sönmez. Derlemede dosya `assets/tema-on-[hash].js` olarak çıkar ve `<head>`in sonuna (stil bağlantısından
  * sonra, gövdeden önce) klasik senkron `<script src>` ile eklenir. Satır içi betik değil (nginx CSP'si:
  * `default-src 'self'`, script-src yok → inline yasak); aynı kökenli dosya izinli. public/ kullanılmaz:
- * Dockerfile yalnız src/ ve index.html'i kopyalar. Geliştirme sunucusunda kaynak dosya doğrudan sunulur.
+ * Dockerfile yalnız src/ ve index.html'i kopyalar. Derlemede küçültülür (minifySync); geliştirme sunucusunda
+ * kaynak dosya doğrudan sunulur.
  */
 function temaOnBetigi(): Plugin {
   let base = "/";
@@ -23,7 +24,11 @@ function temaOnBetigi(): Plugin {
       derleme = c.command === "build";
     },
     buildStart() {
-      if (derleme) this.emitFile({ type: "asset", name: "tema-on.js", source: readFileSync(TEMA_ON, "utf8") });
+      if (!derleme) return;
+      // Kaynak açıklamalı; pakete küçültülmüş hâli çıkar (~1500 B → ~300 B, yorum bloğu üretime gitmez).
+      const k = minifySync("tema-on.js", readFileSync(TEMA_ON, "utf8"), { compress: true, mangle: true });
+      if (k.errors.length) throw new Error(`tema-on.js küçültülemedi: ${k.errors.map((h) => h.message).join("; ")}`);
+      this.emitFile({ type: "asset", name: "tema-on.js", source: k.code });
     },
     transformIndexHtml: {
       order: "post",
