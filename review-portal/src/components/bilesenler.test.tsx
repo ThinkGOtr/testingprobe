@@ -137,6 +137,15 @@ describe("BulguKarti", () => {
     expect(screen.queryByRole("button", { name: "Kararı değiştir" })).toBeNull();
   });
 
+  it("veri kanıtının sorgu sonucu (dar ekranda yatay kayar) klavyeyle odaklanır: adlı bölge, tabindex 0", async () => {
+    await oturumAc("analist");
+    sar(<BulguKarti bulgu={mockVerisi().bulgular.find((b) => b.id === "fnd-2")!} guncellendi={() => {}} />);
+    const sonuc = screen.getByRole("region", { name: "Sorgu sonucu" });
+    expect(sonuc.tagName).toBe("PRE");
+    expect(sonuc).toHaveAttribute("tabindex", "0");
+    expect(screen.getAllByRole("region", { name: "Sorgu sonucu" })).toHaveLength(1);
+  });
+
   it("analist olmayan rolde karar düğmesi pasif ve nedenini söyler", async () => {
     await oturumAc("testci");
     sar(<BulguKarti bulgu={mockVerisi().bulgular.find((b) => b.id === "fnd-5")!} guncellendi={() => {}} />);

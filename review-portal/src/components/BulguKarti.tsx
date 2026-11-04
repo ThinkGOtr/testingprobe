@@ -35,7 +35,9 @@ function KanitGorunumu({ k }: { k: Kanit }) {
         <code>{k.query}</code>
       </pre>
       {k.result_preview && (
-        <pre className="sonuc" aria-label="Sorgu sonucu">
+        // Dar ekranda (320 px) yatay kayar: klavyeyle odaklanıp kaydırılabilir (WCAG 2.1.1); odaklanabilir öğenin
+        // adı rol ister (pre üstünde aria-label yasak) → adlı bölge. Sayfada tek (mock: req-ft-1 kanıtı).
+        <pre className="sonuc" tabIndex={0} role="region" aria-label="Sorgu sonucu">
           {k.result_preview}
         </pre>
       )}
