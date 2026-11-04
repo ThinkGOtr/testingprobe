@@ -70,7 +70,7 @@
   --tk-sayi: #79c0ff;
   --tk-tip: #d2a8ff;
   --tk-fonksiyon: #ffc680;
-  --kod-vurgu: rgb(251 191 36 / 0.1);
+  --kod-vurgu: rgb(251 191 36 / 0.18); /* koda 1,40; --tk-* ≥5,89 (en düşük --tk-anahtar) */
 
   /* ---- grafik */
   --chart-bar: #818cf8;
@@ -1801,8 +1801,9 @@ fieldset:disabled select {
   font-size: 0.78rem;
   line-height: 1;
   font-variant-numeric: tabular-nums;
-  /* Dolgu içeride kalır: kenarla dolgu arasındaki 3 px'lik yüzey halkası içten gölgeyle çizilir (gradyan/
-     background-clip yerine — axe arka plan rengini ölçebilsin; akış çizgisi dairenin içinden görünmez). */
+  /* Dolgu padding kutusunda kalır (background-clip: padding-box; kesik kenarın boşluklarından yüzey görünür).
+     Kenarla dolgu arasındaki 3 px'lik yüzey halkası içten gölgedir — gradyan kullanılmaz, axe arka plan
+     rengini ölçebilsin; akış çizgisi dairenin içinden görünmez. */
   background: var(--akis-dolgu);
   background-clip: padding-box;
   --akis-ic: inset 0 0 0 3px var(--surface);
@@ -1883,31 +1884,7 @@ fieldset:disabled select {
   border-radius: 3px;
   box-shadow: inset 0 0 0 2px var(--ok);
 }
-@media (max-width: 860px) {
-  .akis ol {
-    grid-template-columns: repeat(7, minmax(0, 1fr));
-    row-gap: 14px;
-  }
-  .akis-adim:nth-child(8)::before {
-    display: none;
-  }
-}
-/* Telefon genişliği: 4 sütun; adım adları birbirine girmez, uzun sözcük satır içinde bölünür. */
-@media (max-width: 520px) {
-  .akis ol {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-  .akis-adim {
-    overflow-wrap: anywhere;
-    hyphens: auto;
-  }
-  .akis-adim:nth-child(8)::before {
-    display: block;
-  }
-  .akis-adim:nth-child(4n + 1)::before {
-    display: none;
-  }
-}
+/* 7x2 ve 4 sütun düzenleri içerik genişliğine göre: R2-AKIS çapası altındaki @container kuralları. */
 
 /* ---------------------------------------------------------------- gereksinim detayı */
 
@@ -3990,6 +3967,63 @@ td > .satir-baglanti + .cip,
    R2-AKIS (review turu 2 çapası — temizlikte kaldırılır)
    Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
    ================================================================== */
+
+/* Akış göstergesi düzeni içerik genişliğine göre (görünüm genişliği değil: yan menü ve bölüm gezgini
+   akışın alanını daraltır). 14 sütun yalnız kap ≥ 57.5rem (kök 14,5 px → ≈ 834 px) iken: sütun ≈ (834 −
+   13 × 4) / 14 ≈ 55,8 px; bölünemeyen en uzun sözcük "gece/deploy" (≈ 64 px) taşsa da komşu adla arasında
+   boşluk kalır. Eşik rem: kök/metin boyutu büyüyünce etiketle birlikte büyür. 862–1150 px görünümde 14
+   sütunda adlar üst üste biniyordu. 4 sütun eşiği 31rem (≈ 450 px) eski 520 px görünüm kırılmasıyla aynı. */
+.akis {
+  container: akis / inline-size;
+}
+@container akis (width < 57.5rem) {
+  .akis ol {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    row-gap: 14px;
+  }
+  .akis-adim:nth-child(8)::before {
+    display: none;
+  }
+}
+/* Dar kap (telefon): 4 sütun; adım adları birbirine girmez, uzun sözcük satır içinde bölünür. */
+@container akis (width <= 31rem) {
+  .akis ol {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .akis-adim {
+    overflow-wrap: anywhere;
+    hyphens: auto;
+  }
+  .akis-adim:nth-child(8)::before {
+    display: block;
+  }
+  .akis-adim:nth-child(4n + 1)::before {
+    display: none;
+  }
+}
+
+/* Yol haritası "n/14 tamam" sayacı (sunucu açılış/kapanışta okur): KPI dili (§3.4, §4.12) — 1.9rem / 800 /
+   tabular-nums, renk --text (stat şeridi dışında indigo yok). Metin ve testid aynı; yalnız sayı büyür. */
+[data-testid="yh-ilerleme"] {
+  align-items: baseline;
+  column-gap: 8px;
+}
+[data-testid="yh-ilerleme"] > strong {
+  font-size: 1.9rem;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* Kod vurgu satırı projektörde seçilsin: --kod-vurgu dolgusuna ek 3 px amber sol çubuk (koda karşı ≥10:1).
+   Satır no o satırda --text-2 (koyu vurgu zemininde --muted 4,5'in altına iner). */
+.kod-vurgu {
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+.kod-vurgu .kod-no {
+  color: var(--text-2);
+}
 
 
 

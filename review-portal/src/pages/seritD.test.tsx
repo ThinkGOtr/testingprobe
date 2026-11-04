@@ -69,6 +69,11 @@ describe("Akış göstergesi: tür = biçim + renk (§4.10)", () => {
     expect(s).toMatch(/\.akis-tur-ai_insan \.akis-no \{[^}]*dashed var\(--vurgu\)[^}]*inset 0 0 0 2px var\(--ok\)/);
     expect(s).toMatch(/\.akis-simdi \.akis-no \{[^}]*0 0 0 5px var\(--accent\)/);
   });
+  it("stil: tamam dolgusu kesik kenarın altına boyanmaz (background-clip: padding-box; akış ve yol haritası)", () => {
+    const s = css();
+    expect(s).toMatch(/(^|\n)\.akis-no \{[^}]*background-clip: padding-box/);
+    expect(s).toMatch(/(^|\n)\.yh-no \{[^}]*background-clip: padding-box/);
+  });
 });
 
 describe("Bulgu kartı: durum DOM'da (data-durum)", () => {

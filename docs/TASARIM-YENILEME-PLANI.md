@@ -192,7 +192,7 @@ token'dır — bileşen CSS'inde sabit `rgb()`/hex ve `[data-theme]` seçicisi k
 | `--replay-miss` / `-bg` | = `--warn` | = `--warn` | ayrı ikon |
 | `--ins`/`--ins-bg`, `--del`/`--del-bg` | `#6ee7b7`/`#0f2f26`, `#fda4af`/`#3a1220` | mevcut açık değerler | 7,1–9,5 |
 | `--code-bg` | `#08080f` | `#f6f8fa` | |
-| `--kod-vurgu` | `rgb(251 191 36 / .10)` | `#fff4c2` | `--tk-*` bu satırda ≥5,7 |
+| `--kod-vurgu` | `rgb(251 191 36 / .18)` (+ 3 px `--warn` sol çubuk, review 2) | `#fff4c2` | `--tk-*` bu satırda ≥5,7 |
 | `--chart-bar` / `-active` | `#818cf8` / `#c7d2fe` | `#4f46e5` / `#3730a3` | |
 | `--chart-grid` | `#1e1e35` | `#e4e7ed` | |
 | `--glow` *(yeni)* | `0 0 0 1px rgb(99 102 241 / .35), 0 8px 32px rgb(99 102 241 / .18)` | `0 0 #0000` | `none` değil (virgüllü gölgede geçersiz olur) |

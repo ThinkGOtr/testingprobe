@@ -23,6 +23,21 @@ async function girisYap(page: Page, kullanici: string) {
   await fontlariBekle(page);
 }
 
+/** Akış göstergesinde kutuları üst üste binen adım adı çiftleri (1 px tolerans). */
+async function akisAdCakismalari(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const kutular = [...document.querySelectorAll(".akis-ad")].map((e) => ({ m: e.textContent, r: e.getBoundingClientRect() }));
+    const sonuc: string[] = [];
+    for (let i = 0; i < kutular.length; i++)
+      for (let j = i + 1; j < kutular.length; j++) {
+        const a = kutular[i].r;
+        const b = kutular[j].r;
+        if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) sonuc.push(`${kutular[i].m} ↔ ${kutular[j].m}`);
+      }
+    return sonuc;
+  });
+}
+
 function konsolHatalariniTopla(page: Page): string[] {
   const hatalar: string[] = [];
   page.on("console", (m) => {
@@ -564,19 +579,32 @@ test("mobil (375 px) yayın önizleme ve akış göstergesi: sayfa yatay kaymaz,
   await page.goto("/gereksinimler/req-tpd-1");
   await expect(page.locator(".akis-ad").first()).toBeVisible();
   await fontlariBekle(page);
-  const cakisanlar = await page.evaluate(() => {
-    const kutular = [...document.querySelectorAll(".akis-ad")].map((e) => ({ m: e.textContent, r: e.getBoundingClientRect() }));
-    const sonuc: string[] = [];
-    for (let i = 0; i < kutular.length; i++)
-      for (let j = i + 1; j < kutular.length; j++) {
-        const a = kutular[i].r;
-        const b = kutular[j].r;
-        if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) sonuc.push(`${kutular[i].m} ↔ ${kutular[j].m}`);
-      }
-    return sonuc;
-  });
-  expect(cakisanlar).toEqual([]);
+  expect(await akisAdCakismalari(page)).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+});
+
+test("akış göstergesi 1024 px (1280 ekran %125): adım adları çakışmaz, düzen içerik genişliğine göre 7x2; tamamlanmış AI adımı kesik kalır", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await girisYap(page, "analist");
+  await page.goto("/gereksinimler/req-tpd-1");
+  await expect(page.locator(".akis-ad").first()).toBeVisible();
+  await fontlariBekle(page);
+  expect(await akisAdCakismalari(page)).toEqual([]);
+  expect(await page.locator(".akis ol").evaluate((e) => getComputedStyle(e).gridTemplateColumns.split(" ").length)).toBe(7);
+  // Kesik kenar regresyonu: tür dolgusu kenarın altına boyanmaz (background-clip: padding-box), kenar kesik kalır.
+  const aiNo = page.locator(".akis-tamam.akis-tur-ai .akis-no").first();
+  await expect(aiNo).toBeAttached();
+  expect(await aiNo.evaluate((e) => [getComputedStyle(e).backgroundClip, getComputedStyle(e).borderTopStyle])).toEqual(["padding-box", "dashed"]);
+  await page.screenshot({ path: `${EKRAN_DIZINI}/59-akis-1024.png` });
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect.poll(() => page.locator(".akis ol").evaluate((e) => getComputedStyle(e).gridTemplateColumns.split(" ").length)).toBe(14);
+  expect(await akisAdCakismalari(page)).toEqual([]);
+
+  await page.goto("/yol-haritasi");
+  const yhAi = page.locator('.yh-adim.yh-tamam[data-tur="ai"] .yh-no').first();
+  await expect(yhAi).toBeVisible();
+  expect(await yhAi.evaluate((e) => [getComputedStyle(e).backgroundClip, getComputedStyle(e).borderTopStyle])).toEqual(["padding-box", "dashed"]);
 });
 
 test("bilinmeyen sayfa: h1 başlığı var (axe page-has-heading-one)", async ({ page }) => {
