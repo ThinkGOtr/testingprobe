@@ -15,6 +15,9 @@
 #       --update-status     set tamamen geçerse rules/evaluations.yaml → evaluated (guardrails:
 #                           diğer 7 paket aynı guardrails sürümüyle geçince geçişli olarak)
 #       --ledger DOSYA      çağrı defteri (vars. exports/eval-live/ai_call.jsonl; hash zincirli)
+#       --via-flow          asistan setini gerçek akıştan (flow.cevapla) koşar; bayraksız atlanır
+#                           (tohumlu yığın ister: make up + seed; worker durdurulmalı)
+#       --purpose AMAÇ      yalnız bu amacı koşar (tekrarlanabilir; ör. assistant, assistant_deep)
 #
 # Ajan setleri (consistency-check, verify-and-map) yığını ister (make up): forge, demo-app salt
 # okuma veritabanı (DEMOAPP_RO_DATABASE_URL), Playwright MCP (PLAYWRIGHT_MCP_URL). Erişilemezse
@@ -28,7 +31,7 @@ set -euo pipefail
 
 case "${1:-}" in
   -h|--help)
-    sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'
     exit 0
     ;;
 esac

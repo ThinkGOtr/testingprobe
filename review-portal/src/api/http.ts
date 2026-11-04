@@ -16,16 +16,44 @@
 // Mock'tan gelen her veri arayüzde "ÖRNEK VERİ" olarak etiketlenir (sahte canlı gösterim yok).
 
 import type { Kullanici } from "./types";
+import { gorunenMetinEkle, hataAdayi, hataKaydet } from "../lib/sonHata";
+
+/** `ApiError`'ın isteğe bağlı ek alanları (AI-ASISTAN-PLANI §5.5). */
+export interface ApiHataEki {
+  /** Sunucunun makine okunur hata kodu (`{"detail", "kod"}` yanıtı; ör. `bekleyen_var`). */
+  kod?: string;
+  method?: string;
+  /** `ucuNormallestir` ile kimlikleri `:id` yapılmış yol (ör. `/cases/:id/review`). */
+  yol?: string;
+  /** Başka bir hatadan dönüştürülen hata, son hata kaydının kimliğini taşır. */
+  kayitId?: string;
+}
+
+let kayitSayaci = 0;
+
+function yeniKayitId(): string {
+  kayitSayaci += 1;
+  return `h-${kayitSayaci}-${Date.now().toString(36)}`;
+}
 
 export class ApiError extends Error {
   readonly status: number;
   readonly detail: string;
+  kod?: string;
+  method?: string;
+  yol?: string;
+  /** Son hata deposundaki kaydın kimliği ("Asistana sor" bu kaydın bağlamıyla açar). */
+  readonly kayitId: string;
 
-  constructor(status: number, detail: string) {
+  constructor(status: number, detail: string, ek: ApiHataEki = {}) {
     super(detail);
     this.name = "ApiError";
     this.status = status;
     this.detail = detail;
+    this.kod = ek.kod;
+    this.method = ek.method;
+    this.yol = ek.yol;
+    this.kayitId = ek.kayitId ?? yeniKayitId();
   }
 }
 
@@ -191,21 +219,26 @@ function sorguMetni(sorgu?: Sorgu): URLSearchParams {
   return p;
 }
 
-async function detayOku(res: Response): Promise<{ detail: string | null; json: boolean }> {
+export async function detayOku(res: Response): Promise<{ detail: string | null; json: boolean; kod?: string }> {
   const metin = await res.text().catch(() => "");
   if (!metin) return { detail: null, json: false };
   try {
     const govde = JSON.parse(metin) as unknown;
-    if (govde && typeof govde === "object" && "detail" in govde) {
-      const d = (govde as { detail: unknown }).detail;
-      if (typeof d === "string") return { detail: d, json: true };
-      // FastAPI doğrulama hataları: [{loc, msg, type}]
-      if (Array.isArray(d)) {
-        const mesajlar = d
-          .map((x) => (x && typeof x === "object" && "msg" in x ? String((x as { msg: unknown }).msg) : ""))
-          .filter(Boolean);
-        return { detail: mesajlar.join("; ") || "Geçersiz istek", json: true };
+    if (govde && typeof govde === "object") {
+      const hamKod = (govde as { kod?: unknown }).kod;
+      const kod = typeof hamKod === "string" && hamKod ? hamKod : undefined;
+      if ("detail" in govde) {
+        const d = (govde as { detail: unknown }).detail;
+        if (typeof d === "string") return { detail: d, json: true, kod };
+        // FastAPI doğrulama hataları: [{loc, msg, type}]
+        if (Array.isArray(d)) {
+          const mesajlar = d
+            .map((x) => (x && typeof x === "object" && "msg" in x ? String((x as { msg: unknown }).msg) : ""))
+            .filter(Boolean);
+          return { detail: mesajlar.join("; ") || "Geçersiz istek", json: true, kod };
+        }
       }
+      return { detail: null, json: true, kod };
     }
     return { detail: null, json: true };
   } catch {
@@ -256,10 +289,33 @@ export interface IstekSecenegi {
   kaynak?: readonly [string, string];
 }
 
+/**
+ * Uç çağrısı. Hata `ApiError` ise uç bilgisi (method, normalleştirilmiş yol) eklenir ve son hata
+ * deposuna yazılır: GET dışı hatalar hemen, GET hataları yalnızca ekranda gösterilince
+ * (`HataKutusu`); `/assistant/*`, `/auth/*` ve 501 hiç yazılmaz (lib/sonHata.ts).
+ */
 export async function istek<T>(
   method: "GET" | "POST" | "PUT" | "DELETE",
   path: string,
   secenek: IstekSecenegi = {},
+): Promise<T> {
+  try {
+    return await istekGonder<T>(method, path, secenek);
+  } catch (e) {
+    if (e instanceof ApiError) {
+      e.method ??= method;
+      e.yol ??= ucuNormallestir(method, path.split("?")[0]).slice(method.length + 1);
+      if (method === "GET") hataAdayi(e);
+      else hataKaydet(e);
+    }
+    throw e;
+  }
+}
+
+async function istekGonder<T>(
+  method: "GET" | "POST" | "PUT" | "DELETE",
+  path: string,
+  secenek: IstekSecenegi,
 ): Promise<T> {
   const q = sorguMetni(secenek.sorgu);
   if (ayarlar.mockZorunlu) {
@@ -308,7 +364,7 @@ export async function istek<T>(
     }
   }
 
-  const { detail, json } = await detayOku(res);
+  const { detail, json, kod } = await detayOku(res);
   if (res.status === 404 && ayarlar.mockOtomatik && (detail === "Not Found" || !json)) {
     // Kaynağı çekirdekten gelen bir işlem örnek veriye düşmez (bkz. IstekSecenegi.kaynak).
     if (secenek.kaynak && !mockUclar.has(ucuNormallestir(...secenek.kaynak))) throw new ApiError(501, UC_YOK);
@@ -317,7 +373,7 @@ export async function istek<T>(
   // Canlı derlemede genel 404 (FastAPI'de rota yok) "bu fazda yok" demektir; ham "Not Found" gösterilmez.
   if (res.status === 404 && !ayarlar.mockOtomatik && (detail === "Not Found" || !json)) throw new ApiError(501, BU_FAZDA_YOK);
   if (res.status === 401 && !path.startsWith("/auth/")) yetkisizDinleyici?.();
-  throw new ApiError(res.status, detail ?? VARSAYILAN_HATA[res.status] ?? `Beklenmeyen hata (HTTP ${res.status}).`);
+  throw new ApiError(res.status, detail ?? VARSAYILAN_HATA[res.status] ?? `Beklenmeyen hata (HTTP ${res.status}).`, { kod });
 }
 
 /** Karar uçlarında 409'un kullanıcıya gösterilen hâli (içerik görüntülendikten sonra değişti). */
@@ -334,8 +390,10 @@ export function kararCakismasi(e: unknown): e is ApiError {
  * yalnızca sunucunun gerekçesi — içerik değişmediği için "İçerik değişti" denmez.
  */
 export function cakismaMesaji(e: ApiError): string {
-  if (/[iİ]çerik[^.]*değiş|head sha|hash/.test(e.detail)) return ICERIK_DEGISTI;
-  return e.detail;
+  const metin = /[iİ]çerik[^.]*değiş|head sha|hash/.test(e.detail) ? ICERIK_DEGISTI : e.detail;
+  // Kullanıcının gördüğü metin son hata kaydına eklenir (asistan bağlamı, §5.5).
+  gorunenMetinEkle(e.kayitId, metin);
+  return metin;
 }
 
 export function hataMesaji(e: unknown): string {

@@ -1,0 +1,215 @@
+# Portal asistanı hata sözlüğü (AI-ASISTAN-PLANI §10.2 adım 2; constitution XI — modelsiz).
+#
+# Kullanıcı "Bu hata ne demek?" diye sorduğunda ve bağlamda `son_hata` varsa worker önce bu
+# sözlüğe bakar; eşleşme varsa cevap modelsiz verilir (`kaynak=sozluk`).
+#
+# Eşleşme sırası:
+#   1. `metinler`: son hatanın `detail` veya `gorunen_metin`'i normalize edilir (Türkçe küçük harf:
+#      I→ı, İ→i; boşluklar teke indirilir) ve kaydın metin parçalarından biri içinde geçiyorsa o kayıt
+#      seçilir (özgül kayıtlar önce: aynı koda bağlı genel kayıttan daha isabetlidir).
+#   2. `kodlar`: `son_hata.kod` (MIMARI-SOZLESME §5; `api/errors.py`, `WorkflowError.kod`,
+#      `api/csrf.py`) kaydın kod listesindeyse; birden fazla kayıt eşleşirse dosyadaki ilk kayıt.
+#
+# Alanlar: `id` (tekil, kebab-case), `kodlar` (liste; boş olabilir), `metinler` (normalize küçük
+# harf parçalar; boş olabilir, ama ikisi birden boş olamaz), `baslik`, `anlam` (hata ne demek),
+# `neden` (genellikle neden olur), `cozum` (ne yapmalı), `rota` (ilgili ekran; `rotalar.json`
+# kalıbı veya null — `:id` bağlamdaki varlıkla doldurulur, varlık yoksa bağlantı verilmez).
+# Metinler düz metindir; URL, HTML, Markdown içermez (kural testi). Kodlar `kod` sözleşmesindeki
+# sabit değerlerdir; sözleşmede olmayan kod kural testinde düşer.
+version: 1
+kayitlar:
+  # --- Özgül metinler (önce bakılır) ----------------------------------------------------------
+  - id: ac-eksik-uretim-engeli
+    kodlar: []
+    metinler: ["kabul kriteri eksik"]
+    baslik: Kabul kriteri eksik
+    anlam: Gereksinimin kabul kriteri yok ya da eksik; bu durumdaki gereksinim case üretimine gönderilmez.
+    neden: Case'ler kabul kriterlerinden üretilir. Kriter olmadan üretilen case uydurma olur; sistem bunu engeller.
+    cozum: Story'nin kabul kriterleri kaynağında (Jira) tamamlanmalı, sonra gereksinim yeniden senkronize edilip incelemeye alınmalı.
+    rota: /gereksinimler/:id
+  - id: po-onayi-sonrasi-degisti
+    kodlar: []
+    metinler: ["po onayından sonra değişmiş", "po'nun onayladığı içerik güncel içerikle aynı değil"]
+    baslik: İçerik PO onayından sonra değişti
+    anlam: PO'nun onayladığı gereksinim içeriği ile şimdiki içerik aynı değil; eski onay artık geçerli sayılmaz.
+    neden: Onay belirli bir içeriğe (içerik hash'i) bağlıdır. Story onaydan sonra güncellenince onay yenilenmeden case üretilmez.
+    cozum: PO'dan güncel içeriği yeniden onaylamasını isteyin; onay gelince case üretimini başlatın.
+    rota: /gereksinimler/:id
+  - id: po-onay-etiketi-yok
+    kodlar: []
+    metinler: ["tp-po-approved"]
+    baslik: Jira'daki PO onay etiketi kaldırılmış
+    anlam: PO onayı Jira'daki onay etiketiyle verilmişti; etiket artık kayıtta yok.
+    neden: Jira kanalında onay, etiketin varlığıyla izlenir. Etiket kaldırılınca onay geri alınmış sayılır.
+    cozum: PO'dan onayı yenilemesini isteyin (Jira'da etiketi yeniden koyması ya da portaldan onaylaması).
+    rota: /gereksinimler/:id
+  - id: gorunduktan-sonra-degisti
+    kodlar: []
+    metinler: ["görüntüledikten sonra değişmiş", "onaydan sonra içerik değişmiş", "onaydan sonra değişmiş"]
+    baslik: İçerik siz görüntüledikten sonra değişti
+    anlam: Karar verdiğiniz içerik, ekranda gördüğünüz içerikten farklı; karar kaydedilmedi.
+    neden: Her karar görüntülenen içeriğin hash'iyle doğrulanır. Siz bakarken başka biri ya da sistem içeriği güncellediyse karar reddedilir.
+    cozum: Sayfayı yenileyin, güncel içeriği inceleyin ve kararınızı yeniden verin.
+    rota: null
+  - id: jira-kanali-onay
+    kodlar: []
+    metinler: ["jira kanalı yalnızca po teyidi", "po onaylayıcıları listesinde", "ürünün kendi hesabından"]
+    baslik: Jira'dan gelen onay kabul edilmedi
+    anlam: Jira üzerinden gelen onay, tanımlı PO hesabından ya da geçerli bir PO teyidinden gelmediği için insan onayı sayılmadı.
+    neden: Onay yalnızca yetkili PO hesabının verdiği teyitle geçerlidir; ürünün kendi bot hesabının işlemi onay değildir.
+    cozum: Onayı PO'nun kendi hesabıyla vermesini isteyin ya da PO portaldan onaylasın.
+    rota: /gereksinimler/:id
+  - id: ret-gerekce-zorunlu
+    kodlar: []
+    metinler: ["gerekçe zorunludur", "kararı gerekçe ister"]
+    baslik: Gerekçe gerekli
+    anlam: Seçtiğiniz karar bir gerekçe olmadan kaydedilmez.
+    neden: Ret ve "farkı kabul et" gibi kararlar denetim kaydında gerekçesiyle tutulur.
+    cozum: Karar formundaki gerekçe alanını doldurup yeniden gönderin.
+    rota: null
+  - id: oturum-gecersiz
+    kodlar: []
+    metinler: ["oturumunuz geçersiz", "oturum açmanız gerekiyor"]
+    baslik: Oturum sona erdi
+    anlam: Oturumunuz yok ya da süresi dolmuş; istek kimliksiz sayıldı.
+    neden: Oturum çerezi belirli bir süre sonra geçersiz olur ya da çıkış yapılmıştır.
+    cozum: Yeniden giriş yapın; yarım kalan işlemi tekrar deneyin.
+    rota: /giris
+  - id: yerel-artefakt-yok
+    kodlar: []
+    metinler: ["bu koşunun yerel artefaktı yok"]
+    baslik: Koşunun yerel artefaktı yok
+    anlam: Bu koşunun log, rapor ya da ekran görüntüsü gibi dosyaları bu sunucuda bulunmuyor.
+    neden: Koşu başka bir ortamda (ör. GitHub Actions) yapılmış ve dosyaları buraya kopyalanmamış olabilir ya da koşu dosya üretmeden bitmiştir.
+    cozum: Koşu detayındaki adım özetlerine bakın; koşu GitHub'da yapıldıysa sonuçlar orada durur.
+    rota: /kosular/:id
+  # --- İş akışı kodları (WorkflowError ailesi) ------------------------------------------------
+  - id: onay-hash-uyusmuyor
+    kodlar: [onay_hash_uyusmuyor]
+    metinler: []
+    baslik: İçerik değişti, yeniden inceleyin
+    anlam: Karar verdiğiniz içerik, gördüğünüz içerikle aynı değil; karar kaydedilmedi.
+    neden: Siz ekrandayken içerik güncellendi (yeni üretim, düzenleme ya da senkronizasyon).
+    cozum: Sayfayı yenileyin, güncel içeriği inceleyin ve kararı yeniden verin.
+    rota: null
+  - id: kapi-kapali
+    kodlar: [kapi_kapali]
+    metinler: []
+    baslik: Onay kapısı kapalı
+    anlam: Bu adım, önceki bir insan onayı olmadan ya da onay geçersizleştiği için yapılamıyor.
+    neden: İş akışındaki her geçiş, bir önceki adımın geçerli insan onayına bağlıdır (ör. case üretimi için PO onayı).
+    cozum: Bekleyen onayı ilgili rolden isteyin; ekrandaki durum ve "bekleyen kapı" bilgisine bakın.
+    rota: null
+  - id: gecersiz-gecis
+    kodlar: [gecersiz_gecis]
+    metinler: []
+    baslik: Bu durumda bu işlem yapılamaz
+    anlam: Kaydın şimdiki durumu bu işleme izin vermiyor.
+    neden: Kayıtlar belirli bir sırayla ilerler; örneğin onaylanmamış bir case yayımlanamaz.
+    cozum: Kaydın durumunu kontrol edin; önce gereken adımı tamamlayın ya da sayfayı yenileyip güncel durumu görün.
+    rota: null
+  - id: eszamanli-gecis
+    kodlar: [eszamanli_gecis]
+    metinler: []
+    baslik: Kayıt aynı anda değişti
+    anlam: İşleminiz sırasında kaydın durumu başka bir işlemle değişti.
+    neden: Aynı kayıt üzerinde başka bir kullanıcı ya da arka plan işi aynı anda çalıştı.
+    cozum: Sayfayı yenileyin ve güncel durumda işlemi yeniden değerlendirin.
+    rota: null
+  - id: kosul-saglanmadi
+    kodlar: [kosul_saglanmadi]
+    metinler: []
+    baslik: Ön koşul sağlanmadı
+    anlam: İşlem için gereken bir koşul eksik (ör. kabul kriteri, doğrulanmış kanıt ya da gerekçe).
+    neden: Bazı geçişler içerik koşullarıyla korunur; koşul sağlanmadan sistem ilerlemez.
+    cozum: Hata metnindeki koşulu tamamlayın ve yeniden deneyin.
+    rota: null
+  - id: onay-yetkisi-yok
+    kodlar: [onay_yetkisi_yok]
+    metinler: []
+    baslik: Bu kararı sizin rolünüz veremez
+    anlam: Bu kayıt türünde onayı yalnızca belirli bir rol verebilir.
+    neden: Onay yetkisi rol bazlıdır (case kararı Analist, PO onayı Ürün sahibi, PR merge Mühendis, bug taslağı Testçi).
+    cozum: Kararı ilgili role bırakın; isterseniz kayda yorum ya da not ekleyerek iletin.
+    rota: null
+  - id: gecersiz-karar
+    kodlar: [gecersiz_karar]
+    metinler: []
+    baslik: Karar eksik ya da geçersiz
+    anlam: Gönderilen karar ya da kararla birlikte gelmesi gereken bilgi geçersiz.
+    neden: Bazı kararlar ek bilgi ister (gerekçe, düzenlenmiş içerik, Jira anahtarı, seçili case).
+    cozum: Hata metninde istenen bilgiyi ekleyip kararı yeniden verin.
+    rota: null
+  # --- Genel kodlar (durum kodundan) ----------------------------------------------------------
+  - id: kaynak-reddi
+    kodlar: [kaynak_reddi]
+    metinler: []
+    baslik: İstek güvenlik nedeniyle reddedildi
+    anlam: İstek, portalın kendi adresinden gelmediği için reddedildi.
+    neden: Siteler arası istek sahteciliğine karşı koruma; portal farklı bir adresten ya da eklentiyle açılmış olabilir.
+    cozum: Portalı kendi adresinden yeniden açın ve işlemi tekrar deneyin.
+    rota: null
+  - id: yetkisiz
+    kodlar: [yetkisiz]
+    metinler: []
+    baslik: Oturum gerekli
+    anlam: İstek oturum olmadan yapıldı ya da oturum geçersiz.
+    neden: Oturumun süresi dolmuş ya da çıkış yapılmış olabilir.
+    cozum: Yeniden giriş yapın.
+    rota: /giris
+  - id: yasak
+    kodlar: [yasak]
+    metinler: []
+    baslik: Bu işlem için yetkiniz yok
+    anlam: Rolünüz bu işlemi yapamaz.
+    neden: Portal işlemleri rol bazlıdır; düğme gri ise üzerine gelince hangi rolün yapabileceği yazar.
+    cozum: İşlemi ilgili role bırakın.
+    rota: null
+  - id: bulunamadi
+    kodlar: [bulunamadi]
+    metinler: []
+    baslik: Kayıt bulunamadı
+    anlam: İstenen kayıt yok, silinmiş ya da sizin rolünüze kapalı.
+    neden: Bağlantı eski olabilir ya da kayıt yeniden üretilmiş (yeni kimlikle) olabilir.
+    cozum: Listeden kaydı yeniden açın.
+    rota: null
+  - id: cakisma
+    kodlar: [cakisma]
+    metinler: []
+    baslik: Çakışma
+    anlam: İşlem, kaydın şimdiki durumuyla çakışıyor.
+    neden: Aynı işlem zaten yapılmış ya da sürüyor olabilir.
+    cozum: Sayfayı yenileyip güncel durumu kontrol edin.
+    rota: null
+  - id: gecersiz-istek
+    kodlar: [gecersiz_istek, istek_hatasi, govde_cok_buyuk, yontem_desteklenmiyor]
+    metinler: []
+    baslik: Geçersiz istek
+    anlam: Gönderilen bilgi eksik, hatalı biçimde ya da çok büyük.
+    neden: Form alanlarından biri beklenen biçimde değil.
+    cozum: Hata metnindeki alanı düzeltip yeniden gönderin.
+    rota: null
+  - id: hiz-siniri
+    kodlar: [hiz_siniri]
+    metinler: []
+    baslik: Çok sık istek
+    anlam: Kısa sürede çok fazla istek gönderildi.
+    neden: Sistemi korumak için kullanıcı başına istek sınırı vardır.
+    cozum: Biraz bekleyip yeniden deneyin.
+    rota: null
+  - id: butce-asildi
+    kodlar: [butce_asildi]
+    metinler: []
+    baslik: Model bütçesi doldu
+    anlam: Günlük ya da iş akışı başına model harcama tavanına ulaşıldı; AI adımı çalıştırılmadı.
+    neden: Model çağrıları maliyet tavanıyla sınırlıdır.
+    cozum: Harcamayı Kontrol Kulesi'nde görün; tavan ertesi gün (UTC) yenilenir ya da yönetici tavanı değiştirir.
+    rota: /kontrol-kulesi
+  - id: ic-hata
+    kodlar: [ic_hata]
+    metinler: []
+    baslik: Sunucu hatası
+    anlam: Sunucuda beklenmeyen bir hata oluştu; ayrıntı güvenlik nedeniyle gösterilmez.
+    neden: Geçici bir altyapı sorunu ya da hata olabilir.
+    cozum: Bir süre sonra yeniden deneyin; sürerse Denetim ekranındaki kayıtlarla birlikte yöneticiye iletin.
+    rota: /denetim

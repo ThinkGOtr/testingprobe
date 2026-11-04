@@ -1,0 +1,72 @@
+# "Ürüne özgü soru" sınıflandırması (AI-ASISTAN-PLANI §5.4; deterministik, modelsiz).
+#
+# Bir soru ürüne özgüdür, eğer: bağlamda ana sayfa dışı bir varlık/rota varsa, VEYA soruda
+# `[A-Z]+-\d+` biçimli bir anahtar geçiyorsa, VEYA soru bu listedeki bir terimi içeriyorsa, VEYA
+# model bir ürün/probe/uygulama aracı çağırdıysa. Ürüne özgü soruda yalnız `genel_bilgi` kaynaklı
+# cevap en fazla "Kısmen" gösterilir.
+#
+# Eşleşme: soru ve terim Türkçe küçük harfe çevrilir (I→ı, İ→i), boşluklar teke indirilir; terim
+# bir kelime başında başlamalıdır (önek eşleşmesi: "gereksinim" → "gereksinimi", "gereksinimler").
+# Kural: yalnız Testing Probe'a (ya da demo uygulamasına) özgü adlar girer. "test", "flaky", "bug",
+# "ci", "jira", "locator" gibi genel QA terimleri GİRMEZ — "Flaky test nasıl ayıklanır?" genel
+# bilgi sorusudur (kural testi bunu denetler).
+version: 1
+terimler:
+  # Ürün ve bileşenler
+  - probe
+  - portal
+  - asistan
+  - kontrol kulesi
+  - yol haritası
+  - denetim kaydı
+  - denetim ekranı
+  - demo kontrolleri
+  - claude code kanalı
+  - mcp kanalı
+  # Gereksinim akışı
+  - gereksinim
+  - tutarlılık denetimi
+  - bulgu
+  - kabul kriteri
+  - po onay
+  - po cevab
+  - po teyidi
+  - doküman finalize
+  - son hal
+  - case üret
+  - case inceleme
+  - case onay
+  - case yayın
+  - yayın ekranı
+  - serbest metin
+  # Kod ve koşu
+  - kırarak doğrula
+  - yerel kontrol
+  - pr merge
+  - merge kapısı
+  - koşu
+  - hata detay
+  - triage
+  - otomatik onarım
+  - onarımı başlat
+  - bug taslağı
+  - bug taslak
+  - mükerrer aday
+  # AI ve kipler
+  - replay
+  - golden
+  - canlı değerlendirme
+  - model bütçesi
+  - öneri düğmesi
+  - daha ayrıntılı incele
+  # Roller (portal etiketleri)
+  - analist
+  - mühendis
+  - testçi
+  - ürün sahibi
+  # Demo uygulaması
+  - demo uygulaması
+  - demo-app
+  - kampanya indirimi
+  - minimum sipariş
+  - bayi

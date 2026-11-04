@@ -210,7 +210,7 @@ export function BazDegerKarti({ g, guncellendi, id }: { g: Pick<GereksinimDetay,
           )}
         </div>
       )}
-      {islem.hata && <HataKutusu hata={islem.hata} />}
+      {islem.hata && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
     </Kart>
   );
 }

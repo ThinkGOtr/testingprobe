@@ -186,7 +186,7 @@ export function YolHaritasi() {
   }, [yenile]);
 
   if (v.yukleniyor && !v.veri) return <Yukleniyor metin="Demo durumu okunuyor…" />;
-  if (v.hata && !v.veri) return <HataKutusu hata={v.hata} yenile={() => void v.yenile()} />;
+  if (v.hata && !v.veri) return <HataKutusu hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />;
   const y = v.veri;
   if (!y) return null;
   const adimlar = demoAdimlari(y);

@@ -20,6 +20,7 @@ versiyonlanır. Model geçidi (`core/src/tp_core/gateway`) bu dizini çalışma 
 rules/
 ├── models.yaml              # amaç → model, max_tokens, params (effort, thinking); fiyat tablosu
 ├── pii-allowlist.yaml       # maskelenmeyecek sentetik değerler (simülatör kullanıcıları)
+├── assistant/               # portal asistanı ve Öneri düğmesi kuralları (modelsiz; aşağıda)
 ├── prompts/
 │   ├── _guardrails.md       # her prompt'a eklenen ortak güvenlik kuralları (<untrusted> blokları)
 │   └── <bundle>.md          # YAML ön bilgisi (id, version, purpose) + sistem prompt'u
@@ -39,6 +40,30 @@ rules/
 | `triage` | `triage` | Haiku 5.5 | çağrı | §8.6 `class`, `signals[]`, `rationale` |
 | `bug_draft` | `bug-draft` | Haiku 5.5 | çağrı | §8.12 bug taslağı |
 | `dup_rank` | `dup-rank` | Haiku 5.5 | çağrı | §8.12 mükerrer aday sıralaması |
+| `assistant` | `assistant` | Haiku 5.5 | ajan | Asistan cevabı (AI-ASISTAN-PLANI §7.2): `cevap_bloklari[]`, `kaynaklar[]`, `oneriler[]` |
+| `assistant_deep` | `assistant` | Sonnet 5.5 | ajan | `assistant` ile aynı şema ("Daha ayrıntılı incele", otomatik yükseltme) |
+
+## Portal asistanı kuralları (`assistant/`)
+
+Portal asistanı (AI-ASISTAN-PLANI) modelden önce bu dosyalardaki deterministik kuralları uygular
+(constitution XI); hepsi modelsizdir, model kapalıyken de çalışır.
+
+| Dosya | İçerik |
+|---|---|
+| `assistant/hata-sozlugu.yaml` | Hata `kod`'u (MIMARI-SOZLESME §5) veya `detail`/görünen metin parçası → anlam, neden, çözüm, ekran |
+| `assistant/urun-terimleri.yaml` | "Ürüne özgü soru" sınıflandırması için ürün terimleri (genel QA terimleri girmez) |
+| `assistant/rotalar.json` | Portalın iç rotaları (`App.tsx` ile birebir); bağlam rotası bunlara indirgenir, cevaptaki iç rota yalnız bunlara uyarsa bağlantı olur |
+| `assistant/oneriler.yaml` | Öneri düğmesi kuralları (§17.3, 26 kural; tek kural tek eylem), olgu sözleşmesi, bilinçli boş ekranlar |
+| `assistant/jira-taslaklari.yaml` | Önerilerin Jira kayıt/yorum taslakları (olgu yer tutuculu düz metin; URL yok) |
+
+- `dev` birleştirmesi bayrak arkasıdır (`TP_ASISTAN_MODEL_MODE=off`, `TP_ASISTAN_ONERI`); constitution
+  X'teki birleştirme `main`'dir: `assistant` paketi `main`'e canlı değerlendirmeyle (`evaluated`) geçer.
+- Öneri kuralları ve taslak şablonları deterministik kural testine
+  (`core/tests/unit/gateway/test_rules_asistan.py`: bilinmeyen olgu/operatör/yer tutucu, serbest metin
+  olgusu yer tutucu olamaz, taslakta URL yok, sistem hattı olan ekranda Jira eylemi yok, rol hizalama,
+  kapsam matrisi) **ve** öneri modu eval vakalarına (`evaluation/assistant.json`) tabidir.
+- Asistan golden'ları (`replay/assistant{,_deep}/golden/ornek.json`) yalnız kural testleri içindir;
+  asistan çalışma zamanında golden/replay kullanmaz.
 
 ## Model geçidi kullanımı (özet)
 
@@ -139,7 +164,10 @@ doğrulanır. Birebir kayıtlar iki yolla üretilir:
 **Ajan araç izin listesi (geçitte, `ALLOWED_AGENT_TOOLS`):** `verify_and_map` yalnızca §8.4
 listesi (`browser_navigate`, `browser_snapshot`, `browser_click`, `browser_type`,
 `browser_select_option`, `browser_wait_for`, `browser_generate_locator`); `consistency_check`
-yalnızca `search_code`, `get_file_contents`, `db_schema`, `db_query`. Listesi olmayan amaç ajan
+yalnızca `search_code`, `get_file_contents`, `db_schema`, `db_query`. `assistant` ve `assistant_deep`
+yalnızca 13 salt okuma aracı (`product_search`, `product_read`, `probe_get`, `probe_list`, `probe_jobs`,
+`probe_audit`, `probe_my_queue`, `jira_issue`, `ci_log`, `search_code`, `get_file_contents`,
+`db_schema`, `db_query`). Listesi olmayan amaç ajan
 olarak koşamaz; listede olmayan her araç (MCP'nin yeni eklediği araçlar dahil) reddedilir.
 `FORBIDDEN_TOOLS` (kod çalıştırma, dosya: `browser_file_upload`, `browser_drop`; ağ, ekran
 görüntüsü) ikinci kontroldür. Kayıtlı Playwright MCP `tools/list` fikstürü
@@ -193,6 +221,7 @@ varsa çıkış 1. Bu tablo kayıtla aynı olmalıdır (`test_evaluation_status.
 | `triage` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `bug-draft` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `dup-rank` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
+| `assistant` (portal asistanı; `assistant` + `assistant_deep` amaçları, `assistant/*` kuralları) | v1 | **canlı değerlendirme bekliyor** |
 
 2026-11-01'de `requirement-review` v3, `triage`, `bug-draft` ve `dup-rank` v2 canlı modelle
 (`make eval-live A='--bundle … --update-status'`, sert bütçe tavanı 1,50 USD, gerçek harcama

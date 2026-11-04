@@ -248,3 +248,11 @@ def sunucu(db: Db) -> Iterator[str]:
     finally:
         server.should_exit = True
         t.join(timeout=10)
+
+
+@pytest.fixture(autouse=True)
+def _canli_model_anahtari_yok(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Geliştiricinin kabuğundaki `ANTHROPIC_API_KEY` hiçbir birim testinde görünmez (plan §13):
+    hiçbir test yanlışlıkla canlı model yoluna giremez. Anahtar isteyen test kendi sahte değerini
+    `monkeypatch.setenv` ile verir (bu fikstür ondan önce çalışır)."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)

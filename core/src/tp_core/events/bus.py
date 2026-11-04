@@ -23,7 +23,20 @@ from tp_core.audit.canonical import canonical_json, normalize
 CHANNEL = "tp_events"
 MAX_PAYLOAD = 7900  # Postgres sınırı 8000 bayt
 EVENT_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$")
-KIMLIK_ALANLARI = ("id", "requirement_id", "case_id", "script_id", "run_id", "job_id", "durum")
+# Kırpılmış yükte korunan alanlar. `mesaj_id` ve `kullanici_id` asistan olayları içindir: SSE akışı
+# `assistant.*` olayını yalnız `kullanici_id`'si oturum kullanıcısı olana teslim eder (fail-closed),
+# kırpmada düşerse olay kimseye gitmez.
+KIMLIK_ALANLARI = (
+    "id",
+    "requirement_id",
+    "case_id",
+    "script_id",
+    "run_id",
+    "job_id",
+    "durum",
+    "mesaj_id",
+    "kullanici_id",
+)
 
 
 def build_payload(event: str, data: Mapping[str, Any]) -> str:

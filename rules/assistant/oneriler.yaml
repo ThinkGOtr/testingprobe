@@ -1,0 +1,598 @@
+# Öneri düğmesi kuralları (AI-ASISTAN-PLANI §17.2–17.3; constitution IX, XI — modelsiz).
+#
+# Kullanıcı bir ekranda "Öneri"ye basınca `features/assistant/oneri.py` bu kuralları o ekran, o rol ve
+# ekrandaki varlığın olgularıyla (`olgular(varlik)`) değerlendirir. İfade değerlendirme YOKTUR:
+# koşullar aşağıdaki kapalı operatör kümesiyle yazılır ve hepsi VE ile bağlanır. Öneri hiçbir zaman
+# kendiliğinden uygulanmaz (constitution I); asistan Jira'ya yazmaz, taslağı kullanıcı açar.
+#
+# Kural alanları
+#   id           tekil, kebab-case; kartta, geri bildirimde ve "Neden? Sor" bağlamında kullanılır
+#   ekran        `rotalar.json` kalıbı (ör. /gereksinimler/:id)
+#   varlik       ekranın varlık türü (rotalar.json'daki `varlik` ile aynı) veya null (ekran düzeyi)
+#   roller       analyst | po | engineer | tester | presenter (en az bir)
+#   kosul        { <operatör anahtarı>: değer } — operatörler:
+#                  durum_in: [..]            varlığın durumu listede (workflow/states.MACHINES)
+#                  <olgu>_in: [..]           enum olgusu listede
+#                  <olgu>_esit: değer        eşit (bool/enum/sayı)
+#                  <olgu>_gte / <olgu>_lte   sayı ≥ / ≤
+#                  <olgu>_var / <olgu>_yok   değer var / yok (yalnız `true` yazılır)
+#   oncelik      0–100; panelde azalan sıra
+#   baslik       kısa başlık (yer tutuculu)
+#   neden        iş akışındaki etkisi: hangi kapıyı tıkıyor, kimi bekletiyor, hangi riski taşıyor
+#   eylem        TEK eylem:
+#                  {tur: rota, rota: <rotalar.json kalıbı>, capa?: <bölüm>, id_olgusu?: <kimlik olgusu>,
+#                   yetki: {uc: "<YÖNTEM> <FastAPI yolu>", onay_varligi?: <APPROVER_ROLES anahtarı>}}
+#                  {tur: jira_taslak, sablon: <jira-taslaklari.yaml id; tur Task|Bug|Story>}
+#                  {tur: jira_yorum,  sablon: <jira-taslaklari.yaml id; tur yorum>}  (jira_key_var ister)
+#                  {tur: jira_kaydi}                                                  (jira_key_var ister)
+#                  {tur: bilgi}
+#                `rota` eyleminde `:id` ekrandaki varlığın kimliğiyle, `id_olgusu` verilirse o olgunun
+#                değeriyle doldurulur. `yetki.uc` rol hizalama testinin bağlandığı uçtur: kuralın
+#                `roller`'i ucun `require_role` kümesinin (ve `onay_varligi` verilmişse
+#                `APPROVER_ROLES[onay_varligi]`'nın) alt kümesidir; diğer roller yalnız `bilgi` görür.
+#   aciklama     "Neden? Sor" model kapalıyken gösterilen uzun açıklama (`neden`'den uzun)
+#   tekrar_saat  (isteğe bağlı) "Yaptım" sonrası aynı varlık+durumda yeniden gösterme aralığı (saat)
+#
+# Metin yer tutucuları (`{ad}`): yalnız `olgular` bölümünde `yer_tutucu: true` olan olgular ve
+# onların `turevler`'i. Serbest metin taşıyan alanlar (başlık, Jira özeti, adım adı, test adı) yer
+# tutucu OLAMAZ. Yerleştirme tek geçişli güvenli değiştirmeyle yapılır (`str.format` değil; değerdeki
+# `{…}` yeniden açılmaz); çıktı düz metindir (HTML/Markdown yok).
+#
+# Sistem hattı olan işte Jira eylemi yasaktır: bug taslağı (`/bug-taslaklari*`, varlık `bug_draft`),
+# case yayını (`/gereksinimler/:id/yayin`) ve tutarlılık bulgusu kararı (`consistency_finding`)
+# ekran/varlıklarında `jira_taslak`/`jira_yorum` eylemli kural olamaz (yalnız `rota`/`bilgi`).
+# Hata detayı listede değildir (flaky ve test verisi için sistem hattı yok).
+#
+# Kapsam matrisi: her (rota × rol) için en az bir kural VEYA `bos_ekranlar`'da bilinçli boş kayıt
+# vardır (`/giris` hariç; `rotalar.json`'da rolü kısıtlı ekranda yalnız o roller). Kuralsız
+# (rota × rol) için Öneri düğmesi gizlenir.
+#
+# Kural testi: core/tests/unit/gateway/test_rules_asistan.py. Kural içeriği değişirse ürün sahibi
+# onayı (K10) yenilenir; olgu sözleşmesi değişirse `features/assistant/oneri.py` ile birlikte.
+version: 1
+
+# Olgu sözleşmesi (`olgular(varlik)`; kapalı liste). `varliklar`: olgunun hesaplandığı varlık
+# türleri; `genel` = varlıksız (ekran düzeyi) kural. `tur`: durum | enum | sayi | oran | bool |
+# anahtar | kimlik | metin_listesi. `degerler`: enum değerleri (koddaki sabitle aynı; test denetler).
+olgular:
+  durum:
+    tur: durum
+    varliklar: [requirement, consistency_finding, test_case, script, bug_draft]
+    kaynak: varlığın `durum` alanı (workflow/states.MACHINES); run ve failure'da yok (koşu için ci_sonuc)
+    yer_tutucu: false
+  po_bekleme_saat:
+    tur: sayi
+    varliklar: [requirement]
+    kaynak: >-
+      pending_po iken son pending_po geçişinden geçen saat: audit_event (eylem
+      requirement.transition, nesne requirement:<id>, ozet.to = pending_po) zamanı; iz yoksa son
+      RequirementReview.olusturma
+    yer_tutucu: true
+    turevler: {po_bekleme_gun: "po_bekleme_saat / 24, aşağı yuvarlanır, en az 1"}
+  po_kanal:
+    tur: enum
+    varliklar: [requirement]
+    kaynak: gereksinim serileştirmesindeki po.kanal
+    degerler: [portal, jira]
+    yer_tutucu: false
+  ac_eksik:
+    tur: bool
+    varliklar: [requirement]
+    kaynak: Requirement.ac_missing
+    yer_tutucu: false
+  acik_bulgu_sayisi:
+    tur: sayi
+    varliklar: [requirement]
+    kaynak: >-
+      gereksinimin `open` durumdaki ve kanıtı doğrulanmış (kanit_dogrulandi) consistency_finding
+      sayısı; kararlaşmış önceki tur bulguları `open` olmadığından sayılmaz
+    yer_tutucu: true
+  inceleme_bekleyen_case:
+    tur: sayi
+    varliklar: [requirement]
+    kaynak: gereksinimin `draft` test_case sayısı (superseded hariç)
+    yer_tutucu: true
+  onayli_case:
+    tur: sayi
+    varliklar: [requirement]
+    kaynak: gereksinimin `approved` test_case sayısı (superseded hariç)
+    yer_tutucu: true
+  kirarak_dogrulama:
+    tur: enum
+    varliklar: [script]
+    kaynak: script kırarak doğrulama durumu (models/codegen_feature.BREAK_DURUM; lib/kapi.ts ile aynı alan)
+    degerler: [not_started, running, passed, weak, failed]
+    yer_tutucu: false
+  defect_adayi:
+    tur: bool
+    varliklar: [script]
+    kaynak: >-
+      script_codegen.engel_turu = defect_candidate ya da yerel kontrol sınıfı defect_adayi (codegen
+      views.serialize `engel.tur`/`yerel_sinif`; Kod.tsx "Yeniden üret" koşuluyla aynı). Üretim kaydı
+      olmayan (onarım) script'te olgu yok
+    yer_tutucu: false
+  ci_sonuc:
+    tur: enum
+    varliklar: [run]
+    kaynak: Run.sonuc (models/enums.RUN_SONUC)
+    degerler: [queued, running, passed, failed, error]
+    yer_tutucu: false
+  basarisiz_adimlar:
+    tur: metin_listesi
+    varliklar: [run]
+    kaynak: Run.artefaktlar başarısız adım adları (serbest metin; yer tutucu olamaz)
+    yer_tutucu: false
+  hata_sinifi:
+    tur: enum
+    varliklar: [failure]
+    kaynak: Failure sınıfı (models/enums.FAILURE_SINIF)
+    degerler: [environment, flaky, test_maintenance, product_defect, test_data, unknown]
+    yer_tutucu: false
+  onarim_durumu:
+    tur: enum
+    varliklar: [failure]
+    kaynak: Failure onarım önerisi durumu (models/enums.ONERI_DURUMU)
+    degerler: [none, proposed, pr_open, merged, rejected]
+    yer_tutucu: false
+  flaky_tekrar:
+    tur: sayi
+    varliklar: [failure]
+    kaynak: aynı testin son 10 koşusunda flaky sonuç sayısı
+    yer_tutucu: true
+  bug_taslagi_var:
+    tur: bool
+    varliklar: [failure]
+    kaynak: failure ile ilişkili BugDraft var mı
+    yer_tutucu: false
+  bug_taslagi_id:
+    tur: kimlik
+    varliklar: [failure]
+    kaynak: failure ile ilişkili en güncel BugDraft.id (yalnız `id_olgusu` olarak; yer tutucu olamaz)
+    yer_tutucu: false
+  bulgu_kaynakli:
+    tur: bool
+    varliklar: [bug_draft]
+    kaynak: BugDraft.finding_id dolu (taslak tutarlılık bulgusundan)
+    yer_tutucu: false
+  jira_key:
+    tur: anahtar
+    varliklar: [requirement, bug_draft]
+    kaynak: varlığın Jira anahtarı (^[A-Z][A-Z0-9]+-[0-9]+$)
+    yer_tutucu: true
+  butce_orani:
+    tur: oran
+    varliklar: [genel]
+    kaynak: genel günlük model bütçesi kullanımı (0–1)
+    yer_tutucu: true
+    turevler: {butce_yuzde: "butce_orani × 100, tam sayıya yuvarlanır"}
+  son_kosu_saat:
+    tur: sayi
+    varliklar: [genel]
+    kaynak: son Run bitişinden geçen saat (koşu yoksa olgu yok)
+    yer_tutucu: true
+    turevler: {son_kosu_gun: "son_kosu_saat / 24, aşağı yuvarlanır"}
+
+kurallar:
+  # ------------------------------------------------------------------ Gereksinim detay
+  - id: gereksinim-bulgu-karari                                     # §17.3 #1
+    ekran: /gereksinimler/:id
+    varlik: requirement
+    roller: [analyst]
+    kosul: {durum_in: [findings_open], acik_bulgu_sayisi_gte: 1}
+    oncelik: 90
+    baslik: "{acik_bulgu_sayisi} tutarlılık bulgusu kararınızı bekliyor"
+    neden: Doküman bulgular kararlaştırılmadan finalize edilemez; PO onayı ve case üretimi bu adımı bekler.
+    eylem:
+      tur: rota
+      rota: /gereksinimler/:id
+      capa: bulgular
+      yetki: {uc: "POST /findings/{finding_id}/decision", onay_varligi: consistency_finding}
+    aciklama: >-
+      Tutarlılık denetimi dokümanı kodla ve veriyle karşılaştırdı ve kanıtı doğrulanmış bulgular
+      buldu. Her bulgu için karar verin: dokümanı düzeltin, kod hatası olarak işaretleyin ya da farkı
+      gerekçesiyle kabul edin. Bütün bulgular kararlaşmadan doküman "son hal" olmaz; PO onayı ve case
+      üretimi bu yüzden bekler.
+
+  - id: gereksinim-ac-eksik-jira                                    # §17.3 #2
+    ekran: /gereksinimler/:id
+    varlik: requirement
+    roller: [analyst]
+    kosul: {ac_eksik_esit: true, jira_key_var: true}
+    oncelik: 85
+    baslik: Kabul kriteri eksik; story kaynağında güncellenmeli
+    neden: Kabul kriteri olmayan gereksinimden case üretilmez; story Jira'da tamamlanmadıkça akış ilerlemez.
+    eylem: {tur: jira_yorum, sablon: ac-eksik}
+    aciklama: >-
+      Case'ler kabul kriterlerinden üretilir ve kriterleri eksik gereksinim case üretimine gönderilmez.
+      Kriterlerin sahibi story'yi yazan taraftır; Jira kaydına kriterlerin tamamlanmasını isteyen bir
+      yorum yazın. Story güncellenince gereksinim yeniden senkronize edilip incelemeye alınır.
+
+  - id: gereksinim-ac-eksik                                         # §17.3 #3
+    ekran: /gereksinimler/:id
+    varlik: requirement
+    roller: [analyst]
+    kosul: {ac_eksik_esit: true, jira_key_yok: true}
+    oncelik: 85
+    baslik: Kabul kriteri eksik; story kaynağında güncellenmeli
+    neden: Kabul kriteri olmayan gereksinimden case üretilmez; metin kaynağında tamamlanmadıkça akış ilerlemez.
+    eylem: {tur: bilgi}
+    aciklama: >-
+      Bu gereksinimin Jira kaydı yok (serbest metinle girilmiş). Kabul kriterleri metnin kaynağında
+      tamamlanmalı ve gereksinim güncel metinle yeniden girilmelidir; kriterler olmadan case üretimi
+      başlatılamaz.
+
+  - id: gereksinim-po-hatirlatma-jira                               # §17.3 #4
+    ekran: /gereksinimler/:id
+    varlik: requirement
+    roller: [analyst]
+    kosul: {durum_in: [pending_po], po_bekleme_saat_gte: 24, po_kanal_esit: jira, jira_key_var: true}
+    oncelik: 80
+    baslik: "PO onayı {po_bekleme_gun} gündür bekliyor; hatırlatın"
+    neden: Case üretimi PO onayı olmadan başlamaz. Bekleme demo takvimini kaydırır; PO'ya Jira'da hatırlatın.
+    eylem: {tur: jira_yorum, sablon: po-hatirlatma}
+    aciklama: >-
+      Gereksinim PO onayında ve PO onayı Jira kanalından bekleniyor. Onay gelmeden case üretimi
+      başlatılamaz (insan onay kapısı). Jira kaydına kısa bir hatırlatma yorumu yazın; PO onayı
+      verince durum kendiliğinden güncellenir.
+    tekrar_saat: 24
+
+  - id: gereksinim-po-bekliyor-portal                               # §17.3 #5
+    ekran: /gereksinimler/:id
+    varlik: requirement
+    roller: [analyst]
+    kosul: {durum_in: [pending_po], po_bekleme_saat_gte: 24, po_kanal_esit: portal}
+    oncelik: 80
+    baslik: "PO onayı {po_bekleme_gun} gündür bekliyor; onay portalda"
+    neden: Case üretimi PO onayı olmadan başlamaz. Onay portalda verilir; PO'ya ekrana bakmasını hatırlatın.
+    eylem: {tur: bilgi}
+    aciklama: >-
+      Gereksinim PO onayında ve onay portaldan bekleniyor. Onay gelmeden case üretimi başlatılamaz.
+      PO bu gereksinimin detay ekranında onay bölümünü görür; kendisine ekranın yolunu iletin.
+    tekrar_saat: 24
+
+  - id: gereksinim-po-onayi-portal                                  # §17.3 #6
+    ekran: /gereksinimler/:id
+    varlik: requirement
+    roller: [po]
+    kosul: {durum_in: [pending_po], po_kanal_esit: portal}
+    oncelik: 95
+    baslik: Onayınız bekleniyor; case üretimi buna bağlı
+    neden: Analist case üretimini ancak sizin onayınızdan sonra başlatabilir; onay içeriğin bu hâline bağlanır.
+    eylem:
+      tur: rota
+      rota: /gereksinimler/:id
+      capa: po-onay
+      yetki: {uc: "POST /requirements/{req_id}/po-approve", onay_varligi: requirement}
+    aciklama: >-
+      Gereksinim dokümanı son hâline geldi ve onayınızı bekliyor. Onay, gördüğünüz içeriğe bağlanır;
+      içerik sonradan değişirse onay yenilenmelidir. Onayınızdan sonra analist case üretimini başlatır.
+
+  - id: gereksinim-po-onayi-jira                                    # §17.3 #7
+    ekran: /gereksinimler/:id
+    varlik: requirement
+    roller: [po]
+    kosul: {durum_in: [pending_po], po_kanal_esit: jira, jira_key_var: true}
+    oncelik: 95
+    baslik: Onayınız bekleniyor; case üretimi buna bağlı
+    neden: Analist case üretimini ancak sizin onayınızdan sonra başlatabilir; bu gereksinimde onay Jira'dan verilir.
+    eylem: {tur: jira_kaydi}
+    aciklama: >-
+      Bu gereksinimde PO onayı Jira kanalından alınır. Jira kaydını açıp onayınızı orada verin;
+      Testing Probe onayı kendi hesabınızdan gelen teyitle tanır ve durumu günceller.
+
+  - id: gereksinim-case-uret                                        # §17.3 #8
+    ekran: /gereksinimler/:id
+    varlik: requirement
+    roller: [analyst]
+    kosul: {durum_in: [po_approved], ac_eksik_esit: false}
+    oncelik: 90
+    baslik: PO onayladı; case üretimini başlatın
+    neden: Onaylı içerikten case üretilmeden inceleme, yayın ve otomasyon adımları başlayamaz.
+    eylem:
+      tur: rota
+      rota: /gereksinimler/:id
+      capa: case-uret
+      yetki: {uc: "POST /requirements/{requirement_id}/generate-cases"}
+    aciklama: >-
+      PO gereksinimin bu hâlini onayladı. Case üretimi yalnızca onaylı içerikten yapılır; üretim
+      bitince case'ler inceleme ekranına düşer ve kararınızı bekler.
+
+  - id: gereksinim-basarisiz                                        # §17.3 #9
+    ekran: /gereksinimler/:id
+    varlik: requirement
+    roller: [analyst]
+    kosul: {durum_in: [failed]}
+    oncelik: 70
+    baslik: Son işlem başarısız; nedenini sorun
+    neden: Gereksinim hata durumunda kaldıkça inceleme ve case üretimi ilerlemez.
+    eylem: {tur: bilgi}
+    aciklama: >-
+      Bu gereksinimde son çalışan iş (inceleme ya da case üretimi) hatayla bitti. Ekrandaki hata
+      mesajına ve iş geçmişine bakın; "Neden? Sor" ile asistana nedenini sorabilirsiniz. Sorun
+      giderilince işlem yeniden başlatılabilir.
+
+  # ------------------------------------------------------------------ Case inceleme
+  - id: case-inceleme-bekliyor                                      # §17.3 #10
+    ekran: /gereksinimler/:id/caseler
+    varlik: requirement
+    roller: [analyst]
+    kosul: {inceleme_bekleyen_case_gte: 1}
+    oncelik: 90
+    baslik: "{inceleme_bekleyen_case} case kararınızı bekliyor"
+    neden: Onaylanmayan case yayımlanamaz ve otomasyona geçemez.
+    eylem:
+      tur: rota
+      rota: /gereksinimler/:id/caseler
+      yetki: {uc: "POST /cases/{case_id}/decision", onay_varligi: test_case}
+    aciklama: >-
+      Üretilen case'ler taslak durumunda. Her case'i onaylayın, düzenleyerek onaylayın ya da
+      gerekçesiyle reddedin. Yayın ve otomasyon yalnızca onaylı case'lerle yapılır.
+
+  - id: case-yayina-hazir                                           # §17.3 #11
+    ekran: /gereksinimler/:id/caseler
+    varlik: requirement
+    roller: [analyst]
+    kosul: {durum_in: [cases_ready], inceleme_bekleyen_case_esit: 0, onayli_case_gte: 1}
+    oncelik: 85
+    baslik: İnceleme tamam; yayına hazır
+    neden: Onaylı case'ler yayımlanınca test yönetimine geçer ve otomasyon üretimi başlayabilir.
+    eylem:
+      tur: rota
+      rota: /gereksinimler/:id/yayin
+      yetki: {uc: "POST /publish", onay_varligi: test_case}
+    aciklama: >-
+      Bu gereksinimin bütün case'leri kararlaştırıldı. Yayın ekranında onaylı case'leri seçip
+      yayımlayın; yayın Testing Probe'un kendi onaylı hattıyla yapılır.
+
+  - id: case-inceleme-analistte                                     # §17.3 #12
+    ekran: /gereksinimler/:id/caseler
+    varlik: requirement
+    roller: [tester]
+    kosul: {inceleme_bekleyen_case_gte: 1}
+    oncelik: 40
+    baslik: Case'ler analist incelemesinde
+    neden: Case kararını Analist verir; onaylanan case'ler yayımlanınca test planına girer.
+    eylem: {tur: bilgi}
+    aciklama: >-
+      Bu gereksinimin case'leri henüz analist incelemesinde. Case kararı Analist rolündedir;
+      onaylanıp yayımlanınca test çalışmasına alınabilir.
+
+  # ------------------------------------------------------------------ Script detay
+  - id: script-kirarak-dogrula                                      # §17.3 #13
+    ekran: /kod/:id
+    varlik: script
+    roller: [engineer]
+    kosul: {durum_in: [pr_open], kirarak_dogrulama_in: [not_started, weak, failed]}
+    oncelik: 90
+    baslik: Merge öncesi kırarak doğrulayın (yeşil→kırmızı→yeşil)
+    neden: Kırarak doğrulanmamış test, hatayı yakalayıp yakalamadığı bilinmeden ana dala girer.
+    eylem:
+      tur: rota
+      rota: /kod/:id
+      capa: kirarak-dogrula
+      yetki: {uc: "POST /scripts/{script_id}/break-verify"}
+    aciklama: >-
+      Kırarak doğrulama, testi önce yeşilde, sonra uygulama bilinçli olarak bozulmuşken kırmızıda,
+      sonra yeniden yeşilde koşturur. Böylece testin gerçekten hatayı yakaladığı kanıtlanır. Zayıf ya
+      da başarısız sonuçta merge açık insan kabulü ister.
+
+  - id: script-merge-karari                                         # §17.3 #14
+    ekran: /kod/:id
+    varlik: script
+    roller: [engineer]
+    kosul: {durum_in: [pr_open], kirarak_dogrulama_esit: passed}
+    oncelik: 85
+    baslik: PR merge kararınızı bekliyor
+    neden: Doğrulanmış test merge edilmeden gece koşularına ve regresyon setine girmez.
+    eylem:
+      tur: rota
+      rota: /kod/:id
+      capa: pr
+      yetki: {uc: "POST /prs/{number}/merge", onay_varligi: script}
+    aciklama: >-
+      Script'in PR'ı açık ve kırarak doğrulama geçti. Değişikliği inceleyip merge kararını verin;
+      merge yalnızca Mühendis onayıyla yapılır.
+
+  - id: script-insana-dustu                                         # §17.3 #15
+    ekran: /kod/:id
+    varlik: script
+    roller: [engineer]
+    # Defect adayında test doğrudur (uygulama farklı davranıyor): yeniden üretim önerilmez, karar
+    # triage'dadır (Kod.tsx ile aynı ayrım). Üretim kaydı olmayan script'te olgu yok → kural düşmez.
+    kosul: {durum_in: [blocked], defect_adayi_esit: false}
+    oncelik: 80
+    baslik: Üretim insana düştü; nedenini sorun
+    neden: Script üretimi otomatik olarak ilerleyemedi; insan incelemesi olmadan PR açılmaz.
+    eylem:
+      tur: rota
+      # blocked script'te kırarak doğrulama çalışmaz (yalnız pr_open; codegen/service.py
+      # start_break_verify); anlamlı eylem yeniden üretimdir (research R3). "Yeniden üret" düğmesi
+      # yalnız Kod listesinde (Kod.tsx), script detayında yok → hedef /kod.
+      rota: /kod
+      yetki: {uc: "POST /code/generate"}
+    aciklama: >-
+      Script üretimi doğrulama ya da yerel kontrol adımında takıldı ve insana bırakıldı. Ekrandaki
+      sınıfa (locator, derleme, ortam) bakın; nedeni giderdiyseniz Kod listesinde bu kaydın satırındaki
+      "Yeniden üret" ile aynı onaylı case için kodu yeniden üretin. "Neden? Sor" ile asistandan ayrıntı
+      isteyebilirsiniz.
+
+  # ------------------------------------------------------------------ Koşu detay
+  - id: kosu-ortam-hatasi-task                                      # §17.3 #16
+    ekran: /kosular/:id
+    varlik: run
+    roller: [engineer]
+    kosul: {ci_sonuc_esit: error}
+    oncelik: 85
+    baslik: "Testler koşmadı: CI ortam hatası"
+    neden: Ortam hatasında test sonucu yoktur; düzeltilmezse sonraki koşular da aynı yerde durur.
+    eylem: {tur: jira_taslak, sablon: ortam-hatasi-task}
+    aciklama: >-
+      Koşu, testler çalışmadan altyapı hatasıyla bitti (ör. lint, kurulum ya da sağlık yoklaması).
+      Koşu detayındaki başarısız adıma bakın; kalıcı bir sorunsa takip için bir görev kaydı açın.
+
+  - id: kosu-ortam-hatasi-bilgi                                     # §17.3 #17
+    ekran: /kosular/:id
+    varlik: run
+    roller: [presenter]
+    kosul: {ci_sonuc_esit: error}
+    oncelik: 60
+    baslik: Koşu ortam hatasıyla bitti; mühendis inceliyor
+    neden: Bu koşunun test sonucu yok; demo öncesi güncel ve başarılı bir koşu gerekir.
+    eylem: {tur: bilgi}
+    aciklama: >-
+      Koşu testler çalışmadan bitti. İnceleme Mühendis rolündedir; düzeltildikten sonra yeni bir koşu
+      tetiklenebilir.
+
+  # ------------------------------------------------------------------ Hata detay
+  - id: hata-bakim-onarim                                           # §17.3 #18
+    ekran: /hatalar/:id
+    varlik: failure
+    roller: [engineer]
+    kosul: {hata_sinifi_esit: test_maintenance, onarim_durumu_esit: none}
+    oncelik: 85
+    baslik: Bakım hatası; otomatik onarımı başlatın
+    neden: Test, değişmeyen bir niyet için güncelliğini yitirdi; onarılmazsa her koşuda kırmızı kalır.
+    eylem:
+      tur: rota
+      rota: /hatalar/:id
+      capa: onarim
+      yetki: {uc: "POST /failures/{failure_id}/fix"}
+    aciklama: >-
+      Triage bu hatayı test bakımı (ör. locator) olarak sınıfladı. Otomatik onarım bir öneri PR'ı
+      hazırlar; PR'ı siz inceler ve merge edersiniz, beklenen değerlere dokunulmaz.
+
+  - id: hata-bug-taslagi-karari                                     # §17.3 #19
+    ekran: /hatalar/:id
+    varlik: failure
+    roller: [tester]
+    kosul: {hata_sinifi_esit: product_defect, bug_taslagi_var_esit: true}
+    oncelik: 90
+    baslik: Bug taslağı kararınızı bekliyor
+    neden: Ürün hatası kayda geçmeden geliştiriciye ulaşmaz; mükerrer kontrolü ve yayın taslak kararına bağlı.
+    eylem:
+      tur: rota
+      rota: /bug-taslaklari/:id
+      id_olgusu: bug_taslagi_id
+      yetki: {uc: "POST /bug-drafts/{draft_id}/decision", onay_varligi: bug_draft}
+    aciklama: >-
+      Bu hata ürün hatası olarak sınıflandı ve bir bug taslağı hazırlandı. Taslağı inceleyip yeni
+      kayıt açın, mevcut bir kayda bağlayın ya da kapatın; yayın Testing Probe'un kendi hattıyla yapılır.
+
+  - id: hata-flaky-task                                             # §17.3 #20
+    ekran: /hatalar/:id
+    varlik: failure
+    roller: [engineer]
+    kosul: {hata_sinifi_esit: flaky, flaky_tekrar_gte: 3}
+    oncelik: 75
+    baslik: "Bu test son 10 koşuda {flaky_tekrar} kez kararsız çıktı; takip kaydı açın"
+    neden: Kararsız test gerçek hataları gölgeler ve koşu sonuçlarına güveni azaltır.
+    eylem: {tur: jira_taslak, sablon: flaky-task}
+    aciklama: >-
+      Aynı test yakın koşularda tekrar tekrar kararsız sonuç verdi. Kararsızlık zamanlama, veri ya da
+      ortam kaynaklı olabilir; kalıcı çözüm için bir görev kaydı açıp nedeni araştırın.
+
+  - id: hata-test-verisi-task                                       # §17.3 #21
+    ekran: /hatalar/:id
+    varlik: failure
+    roller: [tester]
+    kosul: {hata_sinifi_esit: test_data}
+    oncelik: 80
+    baslik: Test verisi sorunu; veri sahibine iletin
+    neden: Ön koşul verisi sağlanmadıkça test anlamlı sonuç vermez ve her koşuda aynı yerde düşer.
+    eylem: {tur: jira_taslak, sablon: test-verisi-task}
+    aciklama: >-
+      Triage bu hatayı test verisi sorunu olarak sınıfladı: testin ön koşulu olan veri ortamda yok ya
+      da beklenenden farklı. Verinin sahibine iletmek için bir görev kaydı açın.
+
+  - id: hata-test-verisi-bilgi                                      # §17.3 #22
+    ekran: /hatalar/:id
+    varlik: failure
+    roller: [engineer]
+    kosul: {hata_sinifi_esit: test_data}
+    oncelik: 50
+    baslik: Test verisi sorunu; Testçi takip ediyor
+    neden: Hata kodda değil verideyse kod değişikliği sorunu çözmez.
+    eylem: {tur: bilgi}
+    aciklama: >-
+      Bu hata test verisi sorunu olarak sınıflandı. Takibi Testçi rolündedir; veri düzeltilince test
+      yeniden koşturulabilir.
+
+  # ------------------------------------------------------------------ Bug taslağı
+  - id: bug-taslagi-karari                                          # §17.3 #23
+    ekran: /bug-taslaklari/:id
+    varlik: bug_draft
+    roller: [tester]
+    kosul: {durum_in: [draft]}
+    oncelik: 90
+    baslik: Taslak kararınızı bekliyor (yeni/bağla/kapat)
+    neden: Karar verilmeyen taslak Jira'ya geçmez; ürün hatası geliştiriciye ulaşmaz.
+    eylem:
+      tur: rota
+      rota: /bug-taslaklari/:id
+      yetki: {uc: "POST /bug-drafts/{draft_id}/decision", onay_varligi: bug_draft}
+    aciklama: >-
+      Taslağı ve mükerrer adaylarını inceleyin; yeni kayıt açın, mevcut bir kayda bağlayın ya da
+      gerekçesiyle kapatın. Yayın Testing Probe'un kendi onaylı hattıyla yapılır.
+
+  - id: bug-taslagi-bulgudan                                        # §17.3 #24
+    ekran: /bug-taslaklari/:id
+    varlik: bug_draft
+    roller: [analyst]
+    kosul: {durum_in: [draft], bulgu_kaynakli_esit: true}
+    oncelik: 40
+    baslik: Bulgudan bug taslağı hazır; karar Testçide
+    neden: Tutarlılık bulgusunda verdiğiniz "kod hatası" kararı bu taslağı üretti; yayın kararı Testçinin.
+    eylem: {tur: bilgi}
+    aciklama: >-
+      Bu taslak, tutarlılık bulgusunu kod hatası olarak işaretlemenizden üretildi. Taslağı Jira'ya
+      açma, bağlama ya da kapatma kararı Testçi rolündedir.
+
+  # ------------------------------------------------------------------ Kontrol Kulesi ve Koşular
+  - id: butce-uyarisi                                               # §17.3 #25
+    ekran: /kontrol-kulesi
+    varlik: null
+    roller: [presenter]
+    kosul: {butce_orani_gte: 0.8}
+    oncelik: 70
+    baslik: "Model bütçesinin %{butce_yuzde} kadarı kullanıldı"
+    neden: Günlük tavan dolunca AI adımları duraklar; demo sırasında bütçe bitmemeli.
+    eylem: {tur: bilgi}
+    aciklama: >-
+      Genel günlük model bütçesinin büyük kısmı kullanıldı. Tavan dolarsa AI adımları ertesi güne
+      (UTC) kadar çalışmaz. Harcama dağılımı bu ekranda; gerekirse tavanı yöneticiyle değerlendirin.
+
+  - id: guncel-kosu-yok                                             # §17.3 #26
+    ekran: /kosular
+    varlik: null
+    roller: [presenter]
+    kosul: {son_kosu_saat_gte: 24}
+    oncelik: 60
+    baslik: Güncel koşu yok; demo öncesi koşu tetikleyin
+    neden: "Son koşu {son_kosu_gun} gün önce; demoda gösterilecek sonuçlar güncel olmayabilir."
+    eylem:
+      tur: rota
+      rota: /kosular
+      yetki: {uc: "POST /ci/trigger"}
+    aciklama: >-
+      Son 24 saatte koşu yapılmadı. Demo öncesi bir koşu tetikleyerek sonuçların güncel olduğundan
+      emin olun; koşu birkaç dakika sürebilir.
+
+# Bilinçli boş ekranlar: bu (ekran × rol) için kural yoktur, Öneri düğmesi gizlenir.
+bos_ekranlar:
+  - {ekran: /, roller: [analyst, po, engineer, tester, presenter]}
+  - {ekran: /gereksinimler, roller: [analyst, po, engineer, tester, presenter]}
+  - {ekran: /gereksinimler/:id, roller: [engineer, tester, presenter]}
+  - {ekran: /gereksinimler/:id/caseler, roller: [po, engineer, presenter]}
+  - {ekran: /gereksinimler/:id/yayin, roller: [analyst, po, engineer, tester, presenter]}
+  - {ekran: /kod, roller: [analyst, po, engineer, tester, presenter]}
+  - {ekran: /kod/:id, roller: [analyst, po, tester, presenter]}
+  - {ekran: /kosular, roller: [analyst, po, engineer, tester]}
+  - {ekran: /kosular/:id, roller: [analyst, po, tester]}
+  - {ekran: /hatalar/:id, roller: [analyst, po, presenter]}
+  - {ekran: /bug-taslaklari, roller: [analyst, po, engineer, tester, presenter]}
+  - {ekran: /bug-taslaklari/:id, roller: [po, engineer, presenter]}
+  - {ekran: /kontrol-kulesi, roller: [analyst, po, engineer, tester]}
+  - {ekran: /yol-haritasi, roller: [analyst, po, engineer, tester, presenter]}
+  - {ekran: /denetim, roller: [analyst, po, engineer, tester, presenter]}
+  - {ekran: /claude-code, roller: [analyst]}
+  - {ekran: /demo, roller: [presenter]}

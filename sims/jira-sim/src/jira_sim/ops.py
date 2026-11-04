@@ -122,7 +122,9 @@ def comment_json(c: dict[str, Any], key: str, issue_id: str, base: str) -> dict[
         "updateAuthor": author,
         "created": c["created"],
         "updated": c["created"],
-        "jsdPublic": True,
+        # Kısıtlı yorum provası (asistanın kısıtlı yorum filtresi): saklanmışsa aynen döner.
+        "jsdPublic": c.get("jsdPublic", True) is not False,
+        **({"visibility": c["visibility"]} if c.get("visibility") else {}),
     }
 
 
@@ -467,7 +469,25 @@ def delete_issue(store: Store, key: str) -> None:
         ]
 
 
-def add_comment(store: Store, key: str, body: Any, author: str) -> dict[str, Any]:
+def add_comment(
+    store: Store,
+    key: str,
+    body: Any,
+    author: str,
+    *,
+    visibility: Any = None,
+    jsd_public: Any = None,
+) -> dict[str, Any]:
+    """Yorum ekler. ``visibility`` (``{"type": "role"|"group", "value": ...}``) ve
+    ``jsdPublic=false`` (iç not) gerçek Jira'daki kısıtlı yorumları taklit eder."""
+    if visibility is not None and (
+        not isinstance(visibility, dict)
+        or visibility.get("type") not in ("role", "group")
+        or not isinstance(visibility.get("value"), str)
+    ):
+        raise SimError(400, errors={"visibility": "Invalid visibility."})
+    if jsd_public is not None and not isinstance(jsd_public, bool):
+        raise SimError(400, errors={"jsdPublic": "jsdPublic must be a boolean."})
     if not is_adf_doc(body):
         raise SimError(400, errors={"comment": "Comment body must be an Atlassian Document"})
     if not adf_to_text(body).strip():
@@ -476,6 +496,10 @@ def add_comment(store: Store, key: str, body: Any, author: str) -> dict[str, Any
         it = require_issue(store, key)
         body = resolve_mentions(body, mention_names())
         c = {"id": store.next_id(), "author": author, "body": body, "created": now_jira()}
+        if visibility is not None:
+            c["visibility"] = {"type": visibility["type"], "value": visibility["value"]}
+        if jsd_public is False:
+            c["jsdPublic"] = False
         it["comments"].append(c)
         it["updated"] = c["created"]
     return c

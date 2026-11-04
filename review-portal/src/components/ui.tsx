@@ -1,10 +1,12 @@
-import { useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode, type RefObject } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode, type RefObject } from "react";
 import { Link } from "react-router-dom";
 import { buFazdaYok } from "../api/http";
 import type { CiktiModu, Degerlendirme, Rol } from "../api/types";
 import { useOturum } from "../auth";
 import { ROL, type Ton } from "../lib/etiketler";
 import { baglantiTuru } from "../lib/rotalar";
+import { hataGosterildi, hataTazele } from "../lib/sonHata";
+import { asistanaSor, useAsistanHazir } from "./asistan/kontrol";
 import { Ikon } from "./Ikon";
 
 /** Kayıtlı (replay) çıktı rozeti. live için hiçbir şey göstermez (Constitution VIII). */
@@ -65,9 +67,83 @@ export function Yukleniyor({ metin = "Yükleniyor…" }: { metin?: string }) {
   );
 }
 
-export function HataKutusu({ hata, yenile }: { hata: string; yenile?: () => void }) {
+/**
+ * Gösterilen hatanın "son hata" kaydı (AI-ASISTAN-PLANI §5.5): `kaynak` (useVeri/useIslem
+ * `hataNesnesi`) verilirse o kayıt, verilmezse metinle eşleşen ya da yeni açılan kayıt.
+ * Kayıt dışı hatada (asistan/giriş uçları, 501) null.
+ */
+function useHataKaydi(kaynak: unknown, hata: string | null, kapali = false): string | null {
+  const [kayitId, setKayitId] = useState<string | null>(null);
+  useEffect(() => {
+    setKayitId(kapali || !hata ? null : hataGosterildi(kaynak, hata));
+  }, [kaynak, hata, kapali]);
+  return kayitId;
+}
+
+/**
+ * Gösterilen bir hatanın yanındaki "Asistana sor" (§11): paneli o kaydın bağlamıyla açar.
+ * Yalnız asistan kullanılabilirken görünür. Karar ekranlarının satır içi hata/409 uyarıları
+ * (`alan-hata`) bunu doğrudan kullanır; HataKutusu `kaynak` verildiğinde kullanır.
+ */
+export function AsistanaSorDugmesi({ hata, kaynak }: { hata: string | null; kaynak: unknown }) {
+  const asistanHazir = useAsistanHazir();
+  const kayitId = useHataKaydi(kaynak, hata);
+  if (!asistanHazir || !kayitId) return null;
+  return (
+    <button
+      type="button"
+      className="dugme dugme-hayalet dugme-kucuk"
+      onClick={() => {
+        // Düğme 5 dk'dan uzun ekranda kalmış olabilir: kayıt yeniden yazılır (düştüyse yeniden açılır)
+        // ve süresi tıklama anından başlar. Aksi halde panel başka bir hatanın bağlamına düşerdi.
+        const id = hataGosterildi(kaynak, hata) ?? kayitId;
+        hataTazele(id);
+        asistanaSor(id);
+      }}
+    >
+      Asistana sor
+    </button>
+  );
+}
+
+/**
+ * Karar ekranlarının satır içi hata/409 uyarısı (`alan-hata`). "Asistana sor" canlı bölgenin
+ * (`role="alert"`) dışında, kardeş öğedir: ekran okuyucu duyuruya düğme metnini eklemez; düğme
+ * kayıt yazıldıktan sonra belirdiğinde canlı bölgede ikinci bir değişiklik olmaz.
+ */
+export function AlanHatasi({ children, asistan }: { children: ReactNode; asistan?: { hata: string | null; kaynak: unknown } | null }) {
+  return (
+    <div className="alan-hata-satir">
+      <p className="alan-hata" role="alert">
+        {children}
+      </p>
+      {asistan && <AsistanaSorDugmesi hata={asistan.hata} kaynak={asistan.kaynak} />}
+    </div>
+  );
+}
+
+/**
+ * Hata kutusu. Gösterilen hata "son hata" deposuna yazılır (asistan bağlamı, AI-ASISTAN-PLANI §5.5).
+ * `kaynak` (useVeri/useIslem `hataNesnesi`) verildiğinde ve asistan kullanılabilirken
+ * "Asistana sor" görünür. `kayitDisi`: gösterilen metin kullanıcının karşılaştığı bir API hatası
+ * değil (ör. script kaydının saklı `hata` alanı); son hata deposuna yazılmaz.
+ */
+export function HataKutusu({
+  hata,
+  yenile,
+  kaynak,
+  kayitDisi = false,
+}: {
+  hata: string;
+  yenile?: () => void;
+  kaynak?: unknown;
+  kayitDisi?: boolean;
+}) {
+  const planli = buFazdaYok(hata) || buFazdaYok(kaynak);
+  // Kaynaksız kutu da kayda yazılır (metinle); düğme yalnız kaynakla çizilir.
+  useHataKaydi(kaynak, hata, planli || kayitDisi || kaynak !== undefined);
   // Canlı derlemede core'un henüz sunmadığı ekran: hata değil, planlı "bu fazda yok" boş durumu.
-  if (buFazdaYok(hata)) {
+  if (planli) {
     return (
       <div className="bos-durum" role="status" data-testid="bu-fazda-yok">
         <p className="bos-baslik">Bu ekran bu fazda yok.</p>
@@ -75,14 +151,17 @@ export function HataKutusu({ hata, yenile }: { hata: string; yenile?: () => void
       </div>
     );
   }
+  // Yalnız metin canlı bölgededir (AlanHatasi ile aynı desen): düğmeler kardeş öğedir; kayıt
+  // yazıldıktan sonra beliren "Asistana sor" duyuruya eklenmez, ikinci değişiklik yaratmaz.
   return (
-    <div className="uyari-kutusu uyari-hata" role="alert">
-      <span>{hata}</span>
+    <div className="uyari-kutusu uyari-hata">
+      <span role="alert">{hata}</span>
       {yenile && (
         <button type="button" className="dugme dugme-ikincil dugme-kucuk" onClick={yenile}>
           Tekrar dene
         </button>
       )}
+      {kaynak !== undefined && <AsistanaSorDugmesi hata={hata} kaynak={kaynak} />}
     </div>
   );
 }
@@ -262,6 +341,11 @@ export function Ilerleme({ oran, etiket, hedef }: { oran: number; etiket: string
       {hedef !== undefined && <div className="ilerleme-hedef" style={{ left: `${hedef * 100}%` }} title={`Hedef: %${Math.round(hedef * 100)}`} />}
     </div>
   );
+}
+
+/** Ölçülmemiş değer: sayı uydurulmaz, açıkça "ölçülmedi" yazılır. */
+export function Olculmedi({ metin = "ölçülmedi" }: { metin?: string }) {
+  return <span className="olculmedi">{metin}</span>;
 }
 
 /** `ton`: değerin durum anlamı (§3.4 KPI: başarısız → --err, tamamı geçti → --ok, flaky → --warn); etiket anlamı taşır, renk ek işarettir. */

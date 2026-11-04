@@ -10,6 +10,14 @@ canlı değerlendirme ölçmesi gereken şeyi ölçmezdi):
   doğrulanamayan kanıt vakayı düşürür (§8.2b adım 4).
 - `browser`: kod üretiminin Playwright MCP oturumu (`AgentBrowser` + `McpBrowserSession`,
   doğrulama bayisi bayi3; `replay_check` ile aynı kurulum, ajan bayisi kilidi alınır).
+- `assistant:<rol>` (AI-ASISTAN-PLANI §13): portal asistanı. Vaka geçide doğrudan değil, worker'ın
+  işleyicisi `flow.cevapla` üzerinden koşar (`AsistanAkisi`, `eval_live --via-flow`): sözlük/şablon/
+  kapalı dalları, üretim araçları (`tools.arac_seti`, rol kısıtı oturumdaki kullanıcıyla) ve §7.3
+  son işlem dahil. Ortam tohumlanmış Testing Probe veritabanında (`DATABASE_URL`) o roldeki ilk
+  kullanıcıyı seçer; her vaka için bir sohbet + bekleyen asistan mesajı yazar, cevabı okur ve
+  sohbeti yumuşak siler. Vaka süresince `asistan_durum` canlı işaretlenir (vaka bitince önceki
+  satır geri yazılır) — koşu sırasında worker'ı durdurun ya da `TP_ASISTAN_MODEL_MODE=live` ile
+  çalıştırın, aksi hâlde kalp atışı satırı vaka ortasında geri çevirebilir.
 
 Ortam kurulamazsa (`ToolEnvUnavailable`: forge/veritabanı/MCP erişilemiyor) vaka ÇAĞRILMAZ ve
 koşu eksik sayılır; durum "canlı değerlendirme bekliyor" kalır. Bu ortamlar compose yığınını ister
@@ -19,9 +27,16 @@ koşu eksik sayılır; durum "canlı değerlendirme bekliyor" kalır. Bu ortamla
 
 from __future__ import annotations
 
+import json
+import os
+import re
+import time
+import uuid
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
+from functools import partial
+from pathlib import Path
 from typing import Any
 
 from tp_core.ports import ToolExecutor, ToolSpec
@@ -39,6 +54,8 @@ class ToolEnv:
     close: Callable[[], None] = lambda: None
     # Çıktıya ortama özgü ek denetim (ör. kanıtın yeniden doğrulanması); boş liste = geçti.
     check: Callable[[Any, Mapping[str, Any]], list[str]] = field(default=lambda output, expect: [])
+    # Asistan ortamı: vakayı işleyici (`flow.cevapla`) üzerinden koşturan sürücü (`--via-flow`).
+    akis: AsistanAkisi | None = None
 
 
 EnvFactory = Callable[[], ToolEnv]
@@ -119,9 +136,297 @@ def _browser_env() -> ToolEnv:  # pragma: no cover - canlı yığın (Playwright
     return ToolEnv("browser", session.tools, session.execute, close=close)
 
 
+# ------------------------------------------------------------------ asistan (AI-ASISTAN-PLANI §13)
+
+ASISTAN_ROLLERI: tuple[str, ...] = ("analyst", "po", "engineer", "tester", "presenter")
+ASISTAN_ORTAM_ONEKI = "assistant:"
+ASISTAN_AMACLARI: tuple[str, ...] = ("assistant", "assistant_deep")
+TOHUM = "<tohum>"
+# Vakanın `tohum_secim` süzgecinde izinli sütunlar (sabit; SQL'e yalnız bunlar girer).
+_TOHUM_TABLOLARI: dict[str, tuple[str, frozenset[str], str]] = {
+    "requirement": ("requirement", frozenset({"durum", "jira_key", "kaynak"}), "olusturma DESC"),
+    "script": ("script", frozenset({"durum", "tur"}), "olusturma DESC"),
+    "run": ("run", frozenset({"sonuc", "kaynak", "tetik"}), "baslama DESC NULLS LAST"),
+    "failure": (
+        "failure",
+        frozenset({"sinif", "alt_tur", "oneri_turu"}),
+        "(SELECT r.baslama FROM run r WHERE r.id = failure.run_id) DESC NULLS LAST",
+    ),
+}
+
+
+@dataclass
+class AkisSonucu:
+    """İşleyiciden okunan sonuç: `output` saklanan cevap + `cevap_kaynagi`, `otomatik_derin`."""
+
+    output: dict[str, Any] | None
+    durum: str | None
+    maliyet_usd: float | None = None
+    sure_ms: int | None = None
+    hata: str | None = None
+
+
+def tohum_coz(conn: Any, baglam: Any, secim: Mapping[str, Any] | None = None) -> Any:
+    """Bağlamdaki `varlik.id = "<tohum>"`'u tohumlanmış veritabanındaki kimlikle değiştirir.
+
+    `requirement` `anahtar` (Jira anahtarı) ile, diğerleri vakanın `tohum_secim` süzgeciyle (izinli
+    sütunlar) en yeni kayıttan seçilir. Çözülemezse `TohumYok` (vaka "tohum yok" diye düşer)."""
+    from sqlalchemy import text
+
+    if not isinstance(baglam, Mapping):
+        return baglam
+    varlik = baglam.get("varlik")
+    if not isinstance(varlik, Mapping) or varlik.get("id") != TOHUM:
+        return dict(baglam)
+    tur = str(varlik.get("tur") or "")
+    if tur not in _TOHUM_TABLOLARI:
+        raise TohumYok(f"tohum çözülemedi: bilinmeyen varlık türü {tur!r}")
+    tablo, izinli, sira = _TOHUM_TABLOLARI[tur]
+    kosul = dict(secim or {})
+    if tur == "requirement" and varlik.get("anahtar"):
+        kosul.setdefault("jira_key", varlik["anahtar"])
+    bilinmeyen = sorted(set(kosul) - izinli)
+    if bilinmeyen:
+        raise TohumYok(f"tohum_secim izinli olmayan sütun: {bilinmeyen}")
+    where = " AND ".join(f"{k} = :{k}" for k in sorted(kosul)) or "TRUE"
+    kimlik = conn.execute(
+        text(f"SELECT id FROM {tablo} WHERE {where} ORDER BY {sira} LIMIT 1"),
+        kosul,
+    ).scalar()
+    if kimlik is None:
+        raise TohumYok(f"tohum çözülemedi: {tur} {kosul}")
+    return {**baglam, "varlik": {**varlik, "id": str(kimlik)}}
+
+
+class TohumYok(RuntimeError):
+    """Vakanın gerektirdiği tohum verisi veritabanında yok."""
+
+
+_DURUM_SUTUNLARI = ("mod", "model_hazir", "maskeleme", "musteri_verisi", "kalp_atisi")
+
+
+@dataclass
+class AsistanAkisi:
+    """Bir role ait asistan vakalarını `flow.cevapla` üzerinden koşturan sürücü.
+
+    `arac_seti_fabrikasi`, `dogrulayici`, `masker`: `flow.cevapla`'ya aynen geçer (None → üretim).
+    Testler sahte araç seti/doğrulayıcı verir; canlı değerlendirme üretimdekileri kullanır."""
+
+    session_factory: Callable[[], Any]
+    kullanici_id: uuid.UUID
+    rol: str
+    arac_seti_fabrikasi: Callable[[Any], Any] | None = None
+    dogrulayici: Any = None
+    masker: Any = None
+    rules_dir: Path | None = None
+    saat: Callable[[], float] = time.monotonic
+
+    # -------------------------------------------------------------- asistan_durum
+
+    @staticmethod
+    def _canli_isaretle(conn: Any) -> dict[str, Any] | None:
+        """`asistan_durum`'u canlı işaretler; önceki satırı (yoksa None) döndürür."""
+        from sqlalchemy import text
+
+        satir = (
+            conn.execute(
+                text(f"SELECT {', '.join(_DURUM_SUTUNLARI)} FROM asistan_durum WHERE id = 1")
+            )
+            .mappings()
+            .first()
+        )
+        conn.execute(
+            text(
+                "INSERT INTO asistan_durum (id, mod, model_hazir, kalp_atisi) "
+                "VALUES (1, 'live', true, now()) ON CONFLICT (id) DO UPDATE SET mod = 'live', "
+                "model_hazir = true, kalp_atisi = now()"
+            )
+        )
+        return dict(satir) if satir else None
+
+    @staticmethod
+    def _durumu_geri_yaz(conn: Any, onceki: dict[str, Any] | None) -> None:
+        """`asistan_durum`'u vaka öncesine döndürür (satır yoktuysa siler)."""
+        from sqlalchemy import text
+
+        if onceki is None:
+            conn.execute(text("DELETE FROM asistan_durum WHERE id = 1"))
+            return
+        atama = ", ".join(f"{k} = :{k}" for k in _DURUM_SUTUNLARI)
+        conn.execute(text(f"UPDATE asistan_durum SET {atama} WHERE id = 1"), onceki)
+
+    # -------------------------------------------------------------- vaka
+
+    def _mesaj_yaz(
+        self, case: Mapping[str, Any], amac: str
+    ) -> tuple[uuid.UUID, uuid.UUID, dict[str, Any] | None]:
+        from sqlalchemy import text
+
+        sohbet, mesaj = uuid.uuid4(), uuid.uuid4()
+        kip = str(case.get("kip") or "soru")
+        with self.session_factory() as s:
+            conn = s.connection()
+            baglam = tohum_coz(conn, case.get("baglam"), case.get("tohum_secim"))
+            conn.execute(
+                text("INSERT INTO asistan_sohbet (id, kullanici_id, baslik) VALUES (:s, :k, :b)"),
+                {"s": sohbet, "k": self.kullanici_id, "b": f"eval: {case['id']}"[:120]},
+            )
+            ortak = {"s": sohbet, "k": self.kullanici_id, "icerik": case.get("soru"), "kip": kip}
+            conn.execute(
+                text(
+                    "INSERT INTO asistan_mesaj (sohbet_id, kullanici_id, sira, rol, icerik, kip, "
+                    "durum) VALUES (:s, :k, 1, 'user', :icerik, :kip, 'done')"
+                ),
+                ortak,
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO asistan_mesaj (id, sohbet_id, kullanici_id, sira, rol, icerik, "
+                    "baglam, kip, durum, amac) VALUES (:m, :s, :k, 2, 'assistant', :icerik, "
+                    "CAST(:baglam AS jsonb), :kip, 'pending', :amac)"
+                ),
+                {
+                    **ortak,
+                    "m": mesaj,
+                    "baglam": json.dumps(baglam, ensure_ascii=False) if baglam else None,
+                    # `assistant` için NULL (API gibi; işleyici `hedef_amac`'ı yazar).
+                    "amac": amac if amac != "assistant" else None,
+                },
+            )
+            onceki = self._canli_isaretle(conn)
+            s.commit()
+        return sohbet, mesaj, onceki
+
+    def _temizle(self, sohbet: uuid.UUID, mesaj: uuid.UUID, onceki: dict[str, Any] | None) -> None:
+        from sqlalchemy import text
+
+        with self.session_factory() as s:
+            conn = s.connection()
+            # İşleyici bir nedenle bitiremediyse "kullanıcı başına tek bekleyen" kilidi kalmasın.
+            conn.execute(
+                text(
+                    "UPDATE asistan_mesaj SET durum = 'iptal', tamamlanma = now() "
+                    "WHERE id = :m AND durum IN ('pending', 'running')"
+                ),
+                {"m": mesaj},
+            )
+            conn.execute(
+                text("UPDATE asistan_sohbet SET silindi = true, silinme = now() WHERE id = :s"),
+                {"s": sohbet},
+            )
+            self._durumu_geri_yaz(conn, onceki)
+            s.commit()
+
+    def sor(
+        self, case: Mapping[str, Any], amac: str, gateway_factory: Callable[..., Any]
+    ) -> AkisSonucu:
+        """Vakayı bir asistan mesajı olarak yazar, `flow.cevapla` ile cevaplatır, sonucu okur.
+
+        Otomatik yükseltme (§6.2) değerlendirmede çocuk mesaj/iş yaratmaz (worker onu canlı
+        cevaplamasın): cevaplama süresince `TP_ASISTAN_OTOMATIK_DERIN=0`, sonra tetik aynı
+        deterministik fonksiyonla (`flow.otomatik_tetik`, ortamın gerçek ayarıyla) hesaplanır."""
+        from sqlalchemy import text
+
+        from tp_core.features.assistant import flow
+
+        sohbet, mesaj, onceki_durum = self._mesaj_yaz(case, amac)
+        try:
+            onceki = os.environ.get(flow.ORTAM_OTOMATIK_DERIN)
+            os.environ[flow.ORTAM_OTOMATIK_DERIN] = "0"
+            try:
+                durum = flow.cevapla(
+                    self.session_factory,
+                    mesaj,
+                    gateway_factory=gateway_factory,
+                    arac_seti_fabrikasi=self.arac_seti_fabrikasi,
+                    dogrulayici=self.dogrulayici,
+                    masker=self.masker,
+                    rules_dir=self.rules_dir,
+                    saat=self.saat,
+                )
+            finally:
+                if onceki is None:
+                    os.environ.pop(flow.ORTAM_OTOMATIK_DERIN, None)
+                else:
+                    os.environ[flow.ORTAM_OTOMATIK_DERIN] = onceki
+            with self.session_factory() as s:
+                conn = s.connection()
+                r = (
+                    conn.execute(
+                        text(
+                            "SELECT cevap, kaynak, durum, hata_kodu, maliyet_usd, sure_ms "
+                            "FROM asistan_mesaj WHERE id = :m"
+                        ),
+                        {"m": mesaj},
+                    )
+                    .mappings()
+                    .one()
+                )
+                m = flow._mesaj_oku(conn, mesaj)
+                s.rollback()
+        finally:
+            self._temizle(sohbet, mesaj, onceki_durum)
+        maliyet = float(r["maliyet_usd"]) if r["maliyet_usd"] is not None else None
+        if r["durum"] != "done" or not isinstance(r["cevap"], Mapping):
+            return AkisSonucu(
+                None,
+                r["durum"] or durum,
+                maliyet,
+                r["sure_ms"],
+                f"mesaj {r['durum'] or durum}: {r['hata_kodu'] or '-'}",
+            )
+        cevap = dict(r["cevap"])
+        output = {
+            **cevap,
+            "cevap_kaynagi": r["kaynak"],
+            "otomatik_derin": r["kaynak"] == "model" and flow.otomatik_tetik(m, cevap),
+        }
+        return AkisSonucu(output, r["durum"], maliyet, r["sure_ms"])
+
+
+def _asistan_env(rol: str) -> ToolEnv:  # pragma: no cover - canlı yığın (tohumlu Testing Probe DB)
+    from sqlalchemy import text
+    from sqlalchemy.orm import sessionmaker
+
+    from tp_core.db import get_engine
+
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            kullanici = conn.execute(
+                text("SELECT id FROM app_user WHERE rol = :r ORDER BY kullanici_adi LIMIT 1"),
+                {"r": rol},
+            ).scalar()
+    except Exception as exc:
+        raise ToolEnvUnavailable(
+            f"Testing Probe veritabanına bağlanılamadı ({type(exc).__name__}); DATABASE_URL ve "
+            "tohumlu yığın gerekli (make up, make seed)"
+        ) from exc
+    if kullanici is None:
+        raise ToolEnvUnavailable(f"'{rol}' rolünde kullanıcı yok (make seed)")
+    akis = AsistanAkisi(sessionmaker(engine, expire_on_commit=False), kullanici, rol)
+    return asistan_ortami(akis)
+
+
+def asistan_ortami(akis: AsistanAkisi, *, close: Callable[[], None] | None = None) -> ToolEnv:
+    """`AsistanAkisi`'nı ortam olarak sarar (araçları işleyici kurar; doğrudan araç yürütme yok)."""
+
+    def execute(name: str, args: dict[str, Any]) -> str:
+        raise PermissionError("asistan ortamı yalnız işleyici üzerinden koşar (--via-flow)")
+
+    return ToolEnv(
+        f"{ASISTAN_ORTAM_ONEKI}{akis.rol}",
+        [],
+        execute,
+        close=close or (lambda: None),
+        akis=akis,
+    )
+
+
 ENVS: dict[str, EnvFactory] = {
     "consistency": _consistency_env,
     "browser": _browser_env,
+    **{f"{ASISTAN_ORTAM_ONEKI}{rol}": partial(_asistan_env, rol) for rol in ASISTAN_ROLLERI},
 }
 
 
@@ -254,3 +559,151 @@ def _blob(items: Sequence[Any]) -> str:
     import json
 
     return json.dumps(list(items), ensure_ascii=False)
+
+
+# ------------------------------------------------------------------ asistan beklentileri
+
+ASISTAN_BEKLENTILERI = frozenset(
+    {
+        "contains",
+        "not_contains",
+        "kaynak_tur_include",
+        "kaynak_ref_include",
+        "rota_in",
+        "eylem_reddi",
+        "guven_gosterimi",
+        "otomatik_derin",
+        "oneri_eylem_tur",
+        "oneri_max",
+        "jira_anahtarlari_include",
+        "cevap_kaynagi_in",
+    }
+)
+
+
+def _kucuk(metin: str) -> str:
+    """Türkçe duyarlı küçük harf (I → ı, İ → i) — `contains` büyük/küçük harfe bakmaz."""
+    return metin.replace("I", "ı").replace("İ", "i").lower()
+
+
+def asistan_metni(out: Mapping[str, Any]) -> str:
+    """Kullanıcının gördüğü metin: bloklar, maddeler, notlar, yönlendirme etiketleri, öneri
+    başlık/neden/taslak. Kaynak alıntıları (doğrulanan ham metin) ve sunucunun kurduğu Jira
+    bağlantıları (`jira_baglantilari`) dahil değildir."""
+    parcalar: list[str] = []
+    for b in out.get("cevap_bloklari") or []:
+        if isinstance(b, Mapping):
+            parcalar.append(str(b.get("metin") or ""))
+            parcalar += [str(x) for x in b.get("maddeler") or []]
+    parcalar += [str(n) for n in out.get("notlar") or []]
+    for y in out.get("yonlendirmeler") or []:
+        if isinstance(y, Mapping):
+            parcalar.append(str(y.get("etiket") or ""))
+    for o in out.get("oneriler") or []:
+        if not isinstance(o, Mapping):
+            continue
+        parcalar += [str(o.get("baslik") or ""), str(o.get("neden") or "")]
+        taslak = (
+            (o.get("eylem") or {}).get("taslak") if isinstance(o.get("eylem"), Mapping) else None
+        )
+        if isinstance(taslak, Mapping):
+            parcalar += [str(taslak.get("ozet") or ""), str(taslak.get("aciklama") or "")]
+    return "\n".join(p for p in parcalar if p)
+
+
+def rota_eslesir(rota: str, kalip: str) -> bool:
+    """`/kosular/3f2a` ~ `/kosular/:id` (segment sayısı eşit; `:x` boş olmayan tek segment)."""
+    yol = re.split(r"[?#]", str(rota), maxsplit=1)[0].rstrip("/") or "/"
+    k = str(kalip).rstrip("/") or "/"
+    a, b = yol.split("/"), k.split("/")
+    if len(a) != len(b):
+        return False
+    return all((kb.startswith(":") and ka) or ka == kb for ka, kb in zip(a, b, strict=True))
+
+
+def asistan_problems(
+    output: Any, expect: Mapping[str, Any], *, purpose: str = "assistant"
+) -> list[str]:
+    """Asistan beklentisi (deterministik; LLM hakemi yok — AI-ASISTAN-PLANI §13).
+
+    `output`: işleyicinin sakladığı cevap (§7.3 sonrası) + `cevap_kaynagi`, `otomatik_derin`."""
+    bilinmeyen = sorted(set(expect) - ASISTAN_BEKLENTILERI)
+    if bilinmeyen:
+        from tp_core.gateway.errors import GatewayConfigError
+
+        raise GatewayConfigError(f"bilinmeyen asistan beklentisi: {bilinmeyen}")
+    out = output if isinstance(output, Mapping) else {}
+    failures: list[str] = []
+    metin = _kucuk(asistan_metni(out))
+    failures += [
+        f"cevap '{n}' içermiyor" for n in expect.get("contains") or [] if _kucuk(n) not in metin
+    ]
+    failures += [
+        f"cevap '{n}' içermemeli" for n in expect.get("not_contains") or [] if _kucuk(n) in metin
+    ]
+    kaynaklar = [k for k in out.get("kaynaklar") or [] if isinstance(k, Mapping)]
+    turler = {k.get("tur") for k in kaynaklar}
+    failures += [
+        f"'{t}' türünde kaynak yok"
+        for t in expect.get("kaynak_tur_include") or []
+        if t not in turler
+    ]
+    refs = [str(k.get("ref") or "") for k in kaynaklar]
+    failures += [
+        f"'{r}' içeren kaynak yok"
+        for r in expect.get("kaynak_ref_include") or []
+        if not any(r in ref for ref in refs)
+    ]
+    kaliplar = list(expect.get("rota_in") or [])
+    if kaliplar:
+        rotalar = [
+            str(y.get("rota") or "")
+            for y in out.get("yonlendirmeler") or []
+            if isinstance(y, Mapping)
+        ]
+        if not any(rota_eslesir(r, k) for r in rotalar for k in kaliplar):
+            failures.append(f"yönlendirme {rotalar} şu kalıplara uymuyor: {kaliplar}")
+    if "eylem_reddi" in expect and bool(out.get("eylem_reddi")) is not bool(expect["eylem_reddi"]):
+        failures.append(
+            f"eylem_reddi {out.get('eylem_reddi')!r}, beklenen {expect['eylem_reddi']!r}"
+        )
+    if "guven_gosterimi" in expect and out.get("guven_gosterimi") not in expect["guven_gosterimi"]:
+        failures.append(
+            f"güven gösterimi {out.get('guven_gosterimi')!r}, beklenen {expect['guven_gosterimi']}"
+        )
+    # `otomatik_derin` yalnız varsayılan amaçta anlamlı (`assistant_deep` asla yükseltilmez, §6.2).
+    derin = bool(out.get("otomatik_derin"))
+    if (
+        "otomatik_derin" in expect
+        and purpose == "assistant"
+        and derin is not bool(expect["otomatik_derin"])
+    ):
+        failures.append(f"otomatik yükseltme {derin}, beklenen {bool(expect['otomatik_derin'])}")
+    oneriler = [o for o in out.get("oneriler") or [] if isinstance(o, Mapping)]
+    izinli = expect.get("oneri_eylem_tur")
+    if izinli is not None:
+        for o in oneriler:
+            tur = (o.get("eylem") or {}).get("tur") if isinstance(o.get("eylem"), Mapping) else None
+            if tur not in izinli:
+                failures.append(f"öneri eylemi {tur!r} izinli değil: {list(izinli)}")
+    if "oneri_max" in expect and len(oneriler) > int(expect["oneri_max"]):
+        failures.append(f"{len(oneriler)} öneri, en çok {expect['oneri_max']}")
+    anahtarlar = set(out.get("jira_anahtarlari") or [])
+    failures += [
+        f"Jira anahtarı {a} yok"
+        for a in expect.get("jira_anahtarlari_include") or []
+        if a not in anahtarlar
+    ]
+    if "cevap_kaynagi_in" in expect and out.get("cevap_kaynagi") not in expect["cevap_kaynagi_in"]:
+        failures.append(
+            f"cevap kaynağı {out.get('cevap_kaynagi')!r}, beklenen {expect['cevap_kaynagi_in']}"
+        )
+    return failures
+
+
+def dogrulanmis_kaynak_var(out: Mapping[str, Any]) -> bool:
+    """§13 eşiği "ürüne özgü sorularda doğrulanmış kaynak": genel bilgi dışı, `dogrulandi=true`."""
+    return any(
+        isinstance(k, Mapping) and k.get("dogrulandi") is True and k.get("tur") != "genel_bilgi"
+        for k in out.get("kaynaklar") or []
+    )

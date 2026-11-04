@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "not": "Portalın iç rotaları (review-portal/src/App.tsx ve lib/rotalar.ts ile birebir; portal ve core testleri eşitliği denetler). Asistan bağlamındaki rota bu kalıplardan birine indirgenir; cevaptaki ve öneri eylemlerindeki iç rota yalnızca bu kalıplara uyuyorsa bağlantı olur (AI-ASISTAN-PLANI §5.5, §7.3). `roller` null ise tüm roller, değilse yalnız listelenen roller ekranı açabilir (RolGerekli). `varlik` ekrandaki :id'nin türüdür.",
+  "rotalar": [
+    {"kalip": "/", "ekran": "Ana sayfa", "varlik": null, "roller": null},
+    {"kalip": "/giris", "ekran": "Giriş", "varlik": null, "roller": null},
+    {"kalip": "/gereksinimler", "ekran": "Gereksinimler", "varlik": null, "roller": null},
+    {"kalip": "/gereksinimler/:id", "ekran": "Gereksinim detay", "varlik": "requirement", "roller": null},
+    {"kalip": "/gereksinimler/:id/caseler", "ekran": "Case inceleme", "varlik": "requirement", "roller": null},
+    {"kalip": "/gereksinimler/:id/yayin", "ekran": "Yayın", "varlik": "requirement", "roller": null},
+    {"kalip": "/kod", "ekran": "Kod (scriptler)", "varlik": null, "roller": null},
+    {"kalip": "/kod/:id", "ekran": "Script detay", "varlik": "script", "roller": null},
+    {"kalip": "/kosular", "ekran": "Koşular", "varlik": null, "roller": null},
+    {"kalip": "/kosular/:id", "ekran": "Koşu detay", "varlik": "run", "roller": null},
+    {"kalip": "/hatalar/:id", "ekran": "Hata detay", "varlik": "failure", "roller": null},
+    {"kalip": "/bug-taslaklari", "ekran": "Bug taslakları", "varlik": null, "roller": null},
+    {"kalip": "/bug-taslaklari/:id", "ekran": "Bug taslağı", "varlik": "bug_draft", "roller": null},
+    {"kalip": "/kontrol-kulesi", "ekran": "Kontrol Kulesi", "varlik": null, "roller": null},
+    {"kalip": "/yol-haritasi", "ekran": "Yol haritası", "varlik": null, "roller": null},
+    {"kalip": "/denetim", "ekran": "Denetim", "varlik": null, "roller": null},
+    {"kalip": "/claude-code", "ekran": "Claude Code kanalı", "varlik": null, "roller": ["analyst"]},
+    {"kalip": "/demo", "ekran": "Demo kontrolleri", "varlik": null, "roller": ["presenter"]}
+  ]
+}

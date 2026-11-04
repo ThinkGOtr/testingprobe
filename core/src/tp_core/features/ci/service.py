@@ -1917,3 +1917,28 @@ def mark_pruned_runs(session: Session, *, en_cok: int = 500) -> int:
             or 0
         )
     return n
+
+
+# ------------------------------------------------------------------- asistan: koşu logu
+
+
+def log_yolu(run: Run) -> tuple[Path, str] | None:
+    """Koşunun runner logu: `(koşu kökü, köke göre yol)`; yoksa None (AI-ASISTAN-PLANI §5.7).
+
+    Yerel koşu: `artifact_dir` kökü + `artefaktlar["log"]`. GitHub koşusu: core'un yerel kopyası
+    (`_github_yerel_ozeti`; durum `indirildi|mevcut`) + `github_yerel.yollar.log`. Yol burada
+    doğrulanmaz: okuyan taraf `artifacts.coz(kok, yol)` ve güvenli açma ile okur (artefaktı
+    test-runner yazar, güvenilmez).
+    """
+    a = run.artefaktlar or {}
+    dizin = a.get("dizin")
+    log = a.get("log")
+    if isinstance(dizin, str) and RUN_DIR_RE.match(dizin) and isinstance(log, str) and log:
+        return services.artifacts_root() / dizin, log
+    gy = _github_yerel_ozeti(a)
+    gy_log = gy["yollar"].get("log")
+    if run.kaynak == "github" and gy["kullanilir"] and gy_log:
+        kok = github_artifacts.yol(gy["dizin"])
+        if kok is not None:
+            return kok, gy_log
+    return None

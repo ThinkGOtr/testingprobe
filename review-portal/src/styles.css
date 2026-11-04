@@ -430,6 +430,15 @@ code,
 
 /* ---------------------------------------------------------------- kabuk */
 
+/* Katmanlar (AI-ASISTAN-PLANI §11 + tasarım yenileme), tek sıra. Yeni sabit öğe bu sıraya oturtulur.
+   .kabuk kendi yığın bağlamıdır (isolation: isolate, ortam ışıması için); içindeki sıra:
+     yapışkan şeritler 10, üst çubuk 20, mobil menü perdesi 29, yan menü 30, KPI kaynak ipucu 60, .atla 100.
+   .kabuk'un kardeşleri (kök bağlam; tamamı Kabuk'un üstünde çizilir):
+     "Bu ne?" bindirmesi 39, asistan başlatıcı ve paneli 40, panel içi modal 45, bildirimler 50.
+   Mobil menü açıkken (≤860 px, kipsel) yüzen asistan başlatıcı perdenin üstünde kalmasın diye gizlenir
+   (aşağıda; Kabuk.tsx ayrıca inert yapar). */
+
+/* "İçeriğe atla" ve "Asistanı aç": odak alana kadar görünmez; ikisi aynı yerde, sırayla odak alır. */
 .atla {
   position: absolute;
   left: 8px;
@@ -442,6 +451,11 @@ code,
 }
 .atla:focus {
   top: 8px;
+}
+button.atla {
+  border: 0;
+  font: inherit;
+  cursor: pointer;
 }
 
 /* Statik ortam ışıması (§4.1): isolation olmadan body'nin opak zemini z-index:-1 katmanı örter.
@@ -651,6 +665,7 @@ code,
 }
 
 .yan-menu {
+  z-index: 30;
   width: 240px;
   flex-shrink: 0;
   padding: 20px 12px;
@@ -766,6 +781,10 @@ code,
   }
   .yan-menu.acik {
     transform: none;
+  }
+  /* Açık kipsel menüde yüzen asistan başlatıcı (Kabuk'un kardeşi, z 40) perdenin üstünde parlak kalmaz. */
+  body:has(.yan-menu.acik) .asistan-baslatici {
+    visibility: hidden;
   }
   /* Açık menünün perdesi: üst çubuğun altındaki içeriği karartır; dokununca menü kapanır (Kabuk.tsx). */
   .menu-perde {
@@ -1634,6 +1653,12 @@ fieldset:disabled select {
   font-weight: 600;
   font-size: 0.875rem;
   margin: 4px 0;
+}
+.alan-hata-satir {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
 }
 .ac-satir {
   display: flex;
@@ -2954,6 +2979,17 @@ mark.kaynak-deger {
   gap: 8px;
   max-width: min(420px, calc(100vw - 32px));
 }
+/* Sağ alttaki "Asistan" düğmesi görünürken bildirimler onun üstünde durur (düğmeyi örtmez). */
+body:has(.asistan-baslatici) .bildirimler {
+  bottom: 72px;
+}
+/* Asistan paneli (masaüstü, modal değil) açıkken başlatıcı yok: bildirimler panelin solunda durur,
+   paneldeki "Asistana sor" ve sayaç satırını örtmez (panel 16 + 420 + 16 px). Dar ekranda panel tam
+   ekran modaldır; bildirim üstte kalır (katman sırası). */
+body:has(.asistan-panel:not(.asistan-panel-modal)) .bildirimler {
+  right: 452px;
+  max-width: min(420px, calc(100vw - 468px));
+}
 .bildirim {
   display: flex;
   gap: 10px;
@@ -4036,13 +4072,13 @@ html:has(.sekmeler-yapiskan) {
 /* Triage ızgarası (§5 görsel kapı: 1152 px'te sınıf + sinyaller + onarım kartı ilk ekranda). Sol sütunda
    Sınıf ve altında öneri (onarım / bug taslağı / "Öneri üretilmedi"); sağda Eşleşen sinyaller tüm satırlara
    yayılır. Öneri satırı 1fr: uzun sinyal kartının fazlası Sınıf satırını şişirmez (G6 boşluğu kalmaz).
-   Öneri yoksa (ortam sorunu) düz iki sütun kalır. DOM sırası değişmez; tek sütunda (≤960 px)
+   Öneri tek kapta (.triage-oneri, #onarim çapası); kap boşsa (ortam sorunu) düz iki sütun kalır. DOM sırası değişmez; tek sütunda (≤960 px)
    Sınıf → Sinyaller → Öneri. */
 @media (min-width: 961px) {
-  .iki-sutun.triage-izgara:has(> :nth-child(3)) {
+  .iki-sutun.triage-izgara:has(> .triage-oneri:not(:empty)) {
     grid-template-rows: auto 1fr;
   }
-  .triage-izgara:has(> :nth-child(3)) > :nth-child(2) {
+  .triage-izgara:has(> .triage-oneri:not(:empty)) > :nth-child(2) {
     grid-column: 2;
     grid-row: 1 / -1;
   }
@@ -4050,9 +4086,14 @@ html:has(.sekmeler-yapiskan) {
     grid-column: 1;
   }
 }
-.triage-izgara > * {
+.triage-izgara > *,
+.triage-oneri > * {
   margin-top: 0;
   margin-bottom: 0;
+}
+/* Öneri kabı (#onarim, asistan çapası) her zaman çizilir; öneri yokken ızgarada boş satır açmaz. */
+.triage-oneri:empty {
+  display: none;
 }
 
 /* Merge kapısı satırı ile "Merge et" düğmesi arasında nefes payı (kapı şeridine yapışmasın). */
@@ -4083,7 +4124,8 @@ html:has(.sekmeler-yapiskan) {
 
 /* Dar üst çubukta marka: "AI Testing" görsel olarak gizlenir (erişilebilir ad tam kalır), "Probe" vurgusu
    kesilmeden görünür; ellipsis'e bırakılmaz. 360 px altında üst çubuk aralıkları ve ÖRNEK VERİ rozeti
-   sıkılaşır. */
+   sıkılaşır. (Dev'deki "≤479 px'te rozet varken adın tamamını gizle" kuralının yerini alır: ad kısaldığı
+   için ÖRNEK VERİ rozeti ve öneri düğmesiyle de sığar; 320 px duman testi bunu ölçer.) */
 @media (max-width: 440px) {
   .marka-on {
     position: absolute;

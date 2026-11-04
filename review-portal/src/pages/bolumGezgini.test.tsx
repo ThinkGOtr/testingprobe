@@ -41,6 +41,9 @@ describe("gereksinim detayı: bölüm gezgini", () => {
       expect(within(hedef as HTMLElement).getByRole("heading", { level: 2 }).textContent).toContain(a.textContent!);
     }
     expect(Object.values(BOLUM_ID).map((id) => `#${id}`)).toEqual(baglantilar.map((a) => a.getAttribute("href")));
+    // Gezgin ile asistan öneri çapaları (rules/assistant/oneriler.yaml) aynı kimlikleri kullanır.
+    expect(BOLUM_ID.bulgular).toBe("bulgular");
+    expect(BOLUM_ID.po).toBe("po-onay");
   });
 
   it("liste/makale rolü eklemez; kilitli sayımlar ve akış gezgini korunur", async () => {

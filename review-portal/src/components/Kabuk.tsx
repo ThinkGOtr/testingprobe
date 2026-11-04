@@ -4,9 +4,13 @@ import { canliDerleme, cekirdekYetenekleri, mockDegisikligineAbone, mockUclari, 
 import { useBaglantiDurumu, type BaglantiDurumu } from "../api/events";
 import type { Rol } from "../api/types";
 import { useOturum } from "../auth";
+import { useCapayaKaydir } from "../lib/capa";
 import { ROL } from "../lib/etiketler";
 import { TEMA_ETIKETI, useTema } from "../lib/tema";
+import { OneriDugmesi } from "./asistan/OneriDugmesi";
+import { paneliAc, sekmeSec, useAsistanHazir } from "./asistan/kontrol";
 import { Ikon, type IkonAdi } from "./Ikon";
+import { KabukDurumuSaglayici, useKabukDurumu } from "./KabukDurumu";
 
 interface NavOgesi {
   yol: string;
@@ -84,13 +88,62 @@ export function basHarfler(ad: string): string {
     .join("");
 }
 
+/**
+ * Panel çizilince soru alanına (yoksa panel başlığına, o da yoksa panele) odak verir; birkaç kare
+ * bekler. İlk düğme başlıktaki "Asistanı kapat" olduğu için belge sırasıyla ilk öğe seçilmez.
+ */
+function paneleOdaklan(kalan = 10): void {
+  const panel = document.querySelector<HTMLElement>('[data-testid="asistan-paneli"]');
+  if (!panel) {
+    if (kalan > 0) setTimeout(() => paneleOdaklan(kalan - 1), 16);
+    return;
+  }
+  const hedef = panel.querySelector<HTMLElement>("#asistan-soru:not([disabled])") ?? panel.querySelector<HTMLElement>("h2[tabindex]");
+  if (hedef) hedef.focus();
+  else {
+    panel.tabIndex = -1;
+    panel.focus();
+  }
+}
+
+/** `.atla` yanında "Asistanı aç" atlama düğmesi: yalnız asistan kullanılabilirken. */
+function AsistanaAtla() {
+  const hazir = useAsistanHazir();
+  if (!hazir) return null;
+  return (
+    <button
+      type="button"
+      className="atla atla-asistan"
+      aria-label="Asistanı aç (panele atla)"
+      onClick={() => {
+        sekmeSec("sohbet");
+        paneliAc();
+        paneleOdaklan();
+      }}
+    >
+      Asistanı aç
+    </button>
+  );
+}
+
+/** Kabuk; App düzeyinde `KabukDurumuSaglayici` yoksa kendi sağlayıcısını kurar. */
 export function Kabuk() {
+  const durum = useKabukDurumu();
+  if (durum) return <KabukIcerik />;
+  return (
+    <KabukDurumuSaglayici>
+      <KabukIcerik />
+    </KabukDurumuSaglayici>
+  );
+}
+
+function KabukIcerik() {
   const { kullanici, cikisYap } = useOturum();
   const baglanti = useBaglantiDurumu();
   const mockUclar = useMockUclari();
   const yetenekler = useCanliYetenekler();
   const [tema, temaDegistir] = useTema();
-  const [menuAcik, setMenuAcik] = useState(false);
+  const { menuAcik, menuAyarla: setMenuAcik } = useKabukDurumu()!;
   const konum = useLocation();
   const git = useNavigate();
 
@@ -138,15 +191,20 @@ export function Kabuk() {
     return () => document.removeEventListener("keydown", kapat);
   }, [menuAcik]);
 
-  // Açık mobil menü kipsel davranır (WCAG 2.4.11 / 2.4.3): menü düğmesi ve menü dışındaki her şey (İçeriğe atla,
-  // marka, üst çubuğun sağı, içerik) inert olur; Tab yalnız menü düğmesi ile menü bağlantıları arasında döngüyle dolaşır,
+  // Açık mobil menü kipsel davranır (WCAG 2.4.11 / 2.4.3): menü düğmesi ve menü dışındaki her şey (İçeriğe atla ve
+  // "Asistanı aç" atlamaları, marka, üst çubuğun sağı — öneri düğmesi dahil —, içerik ve Kabuk'un kardeşi olan yüzen
+  // asistan başlatıcısı) inert olur; başlatıcı perdenin altına iner (styles.css), menüyle yarışan ikinci bir giriş kalmaz.
+  // Asistana ulaşmak için menü kapatılır; panel açılırsa KabukDurumu çekmeceyi zaten kapatır. Tab yalnız menü düğmesi ile menü bağlantıları arasında döngüyle dolaşır,
   // odak menünün altında kalan içeriğe geçemez. Açılışta odak ilk menü bağlantısına taşınır. Kapanış: Escape,
   // menü düğmesi, perdeye dokunma ya da bir bağlantıyla gezinme (yukarıdaki efektler).
   useEffect(() => {
     if (!menuAcik) return;
     const kok = kabukRef.current;
     if (!kok) return;
-    const arka = [...kok.querySelectorAll<HTMLElement>(":scope > .atla, .ust-cubuk > .marka, .ust-cubuk > .ust-sag, #ana-icerik")];
+    const arka = [
+      ...kok.querySelectorAll<HTMLElement>(":scope > .atla, .ust-cubuk > .marka, .ust-cubuk > .ust-sag, #ana-icerik"),
+      ...document.querySelectorAll<HTMLElement>(".asistan-baslatici"),
+    ];
     for (const e of arka) e.inert = true;
     menuRef.current?.querySelector<HTMLElement>("a[href]")?.focus();
     // Döngü: son bağlantıdan Tab menü düğmesine, menü düğmesinden Shift+Tab son bağlantıya (sayfa dışına çıkmaz).
@@ -169,6 +227,9 @@ export function Kabuk() {
     };
   }, [menuAcik]);
 
+  // Öneri kartındaki "Git" çapası (`#bulgular` vb.): hedef bölüme kaydırır.
+  useCapayaKaydir();
+
   const mockAktif = mockZorunlu() || mockUclar.length > 0;
   const b = BAGLANTI[baglanti];
 
@@ -177,6 +238,7 @@ export function Kabuk() {
       <a className="atla" href="#ana-icerik">
         İçeriğe atla
       </a>
+      <AsistanaAtla />
       <header className="ust-cubuk">
         <button
           ref={menuDugmesi}
@@ -208,6 +270,7 @@ export function Kabuk() {
               ÖRNEK VERİ
             </span>
           )}
+          <OneriDugmesi />
           <span className={`baglanti baglanti-${b.sinif}`} role="status">
             <span className="nokta" aria-hidden="true" />
             <span className="baglanti-metin">{b.etiket}</span>

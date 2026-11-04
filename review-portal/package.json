@@ -11,7 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p e2e/tsconfig.json",
     "sozlesme:durumlar": "uv run --quiet --project ../core python scripts/durum_makineleri.py > src/api/sozlesme/durum-makineleri.json",
     "sozlesme:golden": "python3 -I scripts/golden_esitle.py > src/api/mock/golden/kaynaklar.json"
   },

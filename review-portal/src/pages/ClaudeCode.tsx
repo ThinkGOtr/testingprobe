@@ -100,7 +100,7 @@ export function ClaudeCode() {
             kimlik bilgisi ve <span className="mono">.mcp.json</span> verilmez.
           </Uyari>
         )}
-        {islem.hata && <HataKutusu hata={islem.hata} />}
+        {islem.hata && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
       </Kart>
 
       {token && (
@@ -164,7 +164,7 @@ export function ClaudeCode() {
         {tokenlar.yukleniyor && !tokenlar.veri ? (
           <Yukleniyor />
         ) : tokenlar.hata && !tokenlar.veri ? (
-          <HataKutusu hata={tokenlar.hata} yenile={() => void tokenlar.yenile()} />
+          <HataKutusu hata={tokenlar.hata} kaynak={tokenlar.hataNesnesi} yenile={() => void tokenlar.yenile()} />
         ) : !tokenlar.veri?.length ? (
           <BosDurum baslik="Henüz token yok." />
         ) : (
@@ -221,7 +221,7 @@ export function ClaudeCode() {
             </table>
           </div>
         )}
-        {iptal.hata && <HataKutusu hata={iptal.hata} />}
+        {iptal.hata && <HataKutusu hata={iptal.hata} kaynak={iptal.hataNesnesi} />}
       </Kart>
     </>
   );

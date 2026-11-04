@@ -189,7 +189,10 @@ export const api = {
       ham = nesne(await istek<unknown>("GET", `/failures/${yol(id)}`));
     } catch (e) {
       // Geçersiz kimlik (core 422: pydantic UUID metni) ya da yok (404): "bulunamadı" (ham doğrulama metni gösterilmez).
-      if (e instanceof ApiError && (e.status === 422 || e.status === 404)) throw new ApiError(404, HATA_BULUNAMADI);
+      // Dönüşen hata son hata kaydının kimliğini taşır (asistan bağlamı aynı kayda bağlanır).
+      if (e instanceof ApiError && (e.status === 422 || e.status === 404)) {
+        throw new ApiError(404, HATA_BULUNAMADI, { kod: e.kod, method: e.method, yol: e.yol, kayitId: e.kayitId });
+      }
       throw e;
     }
     const oneri = nesne(ham.oneri);

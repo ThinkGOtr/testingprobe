@@ -163,7 +163,10 @@ def test_yabanci_origin_govdesiz_post_reddedilir(db: Db, make_user: MakeUser) ->
         _giris(c, u.kullanici_adi)
         r = c.post("/auth/logout", headers={"Origin": "http://127.0.0.1:8081"})
         assert r.status_code == 403
-        assert r.json() == {"detail": "İstek başka bir kaynaktan geldi; işlem reddedildi"}
+        assert r.json() == {
+            "detail": "İstek başka bir kaynaktan geldi; işlem reddedildi",
+            "kod": "kaynak_reddi",
+        }
         r = c.post(
             "/auth/logout",
             headers={"Sec-Fetch-Site": "same-site", "Origin": "http://127.0.0.1:8081"},

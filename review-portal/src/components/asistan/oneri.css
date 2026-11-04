@@ -1,0 +1,224 @@
+/* Öneri düğmesi ve Öneriler sekmesi (AI-ASISTAN-PLANI §17.6). Renkler styles.css belirteçleri. */
+
+.oneri-dugmesi {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.oneri-dugmesi:hover {
+  background: var(--surface-2);
+}
+.oneri-dugmesi:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.oneri-dugmesi-var {
+  border-color: var(--accent);
+}
+.oneri-rozet {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent-solid);
+  color: var(--accent-text);
+  font-size: 0.75rem;
+  line-height: 20px;
+  text-align: center;
+}
+
+.oneri-liste,
+.oneri-bastirilanlar,
+.oneri-cipler {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.oneri-liste {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.oneri-karti {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.oneri-karti-vurgulu {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.oneri-karti-ai {
+  border-style: dashed;
+}
+.oneri-ai-etiket {
+  display: inline-block;
+  margin-bottom: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--warn-bg);
+  color: var(--warn);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.oneri-baslik {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  line-height: 1.3;
+}
+.oneri-neden,
+.oneri-aciklama {
+  margin: 0 0 8px;
+  color: var(--text-2);
+  font-size: 0.875rem;
+}
+.oneri-aciklama {
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.oneri-eylemler {
+  margin-bottom: 6px;
+}
+.oneri-eylem-satiri,
+.oneri-alt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.oneri-alt {
+  margin-top: 6px;
+}
+.oneri-not {
+  margin: 6px 0 0;
+}
+
+.oneri-taslak {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.oneri-taslak-alanlar {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 10px;
+  margin: 0 0 6px;
+  font-size: 0.8125rem;
+}
+.oneri-taslak-alanlar dt {
+  color: var(--muted);
+}
+.oneri-taslak-alanlar dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.oneri-taslak-metin {
+  margin-bottom: 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.8125rem;
+}
+.oneri-ai-uyari {
+  margin: 0 0 6px;
+  color: var(--warn);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.oneri-kopya-yedek {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+}
+
+.oneri-cipler {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.oneri-cipi {
+  border: 0;
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.oneri-yaptim {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.oneri-ust {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+.oneri-hata {
+  margin: 6px 0 0;
+  color: var(--err);
+  font-size: 0.8125rem;
+}
+
+.oneri-bastirilanlar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+.oneri-bastirilan {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+}
+.oneri-bastirilan-baslik {
+  color: var(--muted);
+  text-decoration: line-through;
+  font-size: 0.875rem;
+}
+
+.oneri-diger {
+  margin: 12px 0 0;
+  font-size: 0.875rem;
+}
+.oneri-ek {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 759px) {
+  .oneri-dugmesi {
+    padding: 4px 8px;
+  }
+}
+/* Dar telefonda üst çubuk sığmıyor (marka adı tek harfe kırpılıyordu): sayı varken yalnız rozet
+   çizilir; ad `aria-label` ("Öneriler (n)") ve `title` ile korunur. */
+@media (max-width: 479px) {
+  .oneri-dugmesi-var {
+    padding: 4px;
+  }
+  .oneri-dugmesi-var .oneri-etiket {
+    display: none;
+  }
+}

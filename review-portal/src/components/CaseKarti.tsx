@@ -7,7 +7,7 @@ import { useIslem } from "../hooks";
 import { CASE_DURUMU, CASE_TURU, RET_NEDENI, RISK } from "../lib/etiketler";
 import { sure, tarih } from "../lib/format";
 import { FarkGorunumu } from "./FarkGorunumu";
-import { Cip, IslemDugmesi, ReplayRozeti } from "./ui";
+import { AlanHatasi, Cip, IslemDugmesi, ReplayRozeti } from "./ui";
 
 type Mod = "goster" | "duzenle" | "reddet";
 
@@ -121,6 +121,7 @@ export function CaseKarti({
           ilk={tc.icerik}
           calisiyor={islem.calisiyor}
           hata={islem.hata}
+          hataKaynagi={islem.hataNesnesi}
           vazgec={() => setMod("goster")}
           kaydet={(icerik, beklenenAnlamDegisti) =>
             karar(() =>
@@ -180,6 +181,7 @@ export function CaseKarti({
         <RetFormu
           calisiyor={islem.calisiyor}
           hata={islem.hata}
+          hataKaynagi={islem.hataNesnesi}
           vazgec={() => setMod("goster")}
           reddet={(neden) => karar(() => api.caseKarari(tc.id, { ...bag, karar: "reject", ret_nedeni: neden }))}
         />
@@ -270,9 +272,7 @@ export function CaseKarti({
         </ul>
       )}
       {mod === "goster" && islem.hata && (
-        <p className="alan-hata" role="alert">
-          {islem.hata}
-        </p>
+        <AlanHatasi asistan={{ hata: islem.hata, kaynak: islem.hataNesnesi }}>{islem.hata}</AlanHatasi>
       )}
     </article>
   );
@@ -310,7 +310,20 @@ function KucukDuzeltme({ tc }: { tc: TestCase }) {
   );
 }
 
-function RetFormu({ reddet, vazgec, calisiyor, hata }: { reddet: (n: RetNedeni) => void; vazgec: () => void; calisiyor: boolean; hata: string | null }) {
+function RetFormu({
+  reddet,
+  vazgec,
+  calisiyor,
+  hata,
+  hataKaynagi,
+}: {
+  reddet: (n: RetNedeni) => void;
+  vazgec: () => void;
+  calisiyor: boolean;
+  hata: string | null;
+  /** useIslem `hataNesnesi`: 409 / karar hatasının yanında "Asistana sor". */
+  hataKaynagi?: unknown;
+}) {
   const [neden, setNeden] = useState<RetNedeni | "">("");
   const [uyari, setUyari] = useState<string | null>(null);
   const id = useId();
@@ -336,9 +349,7 @@ function RetFormu({ reddet, vazgec, calisiyor, hata }: { reddet: (n: RetNedeni) 
         </select>
       </div>
       {(uyari || hata) && (
-        <p className="alan-hata" role="alert">
-          {uyari ?? hata}
-        </p>
+        <AlanHatasi asistan={uyari ? null : { hata, kaynak: hataKaynagi }}>{uyari ?? hata}</AlanHatasi>
       )}
       <div className="eylemler">
         <IslemDugmesi roller={["analyst"]} type="submit" tur="tehlike" kucuk calisiyor={calisiyor}>
@@ -358,12 +369,14 @@ function CaseDuzenleyici({
   vazgec,
   calisiyor,
   hata,
+  hataKaynagi,
 }: {
   ilk: TestCaseIcerik;
   kaydet: (i: TestCaseIcerik, beklenenAnlamDegisti?: boolean) => void;
   vazgec: () => void;
   calisiyor: boolean;
   hata: string | null;
+  hataKaynagi?: unknown;
 }) {
   const [icerik, setIcerik] = useState<TestCaseIcerik>(() => JSON.parse(JSON.stringify(ilk)) as TestCaseIcerik);
   const [uyari, setUyari] = useState<string | null>(null);
@@ -539,9 +552,7 @@ function CaseDuzenleyici({
         </fieldset>
       )}
       {(uyari || hata) && (
-        <p className="alan-hata" role="alert">
-          {uyari ?? hata}
-        </p>
+        <AlanHatasi asistan={uyari ? null : { hata, kaynak: hataKaynagi }}>{uyari ?? hata}</AlanHatasi>
       )}
       <div className="eylemler">
         <IslemDugmesi roller={["analyst"]} type="submit" kucuk calisiyor={calisiyor}>

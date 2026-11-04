@@ -865,7 +865,7 @@ test("bölüm gezgini: ≥1280 px yapışkan sütun, 1152 ve 861 px yapışkan t
   await expect(gezgin).toBeVisible();
   const bolum = page.getByRole("region", { name: "Tutarlılık bulguları" });
   await gezgin.getByRole("link", { name: "Tutarlılık bulguları" }).click();
-  await expect(page).toHaveURL(/#bolum-bulgular$/);
+  await expect(page).toHaveURL(/#bulgular$/);
   await expect(bolum).toBeInViewport();
   await expect
     .poll(async () => {

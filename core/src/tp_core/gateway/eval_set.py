@@ -22,7 +22,13 @@
   - consistency_check (ajan): `doc_refs_include`, `acs`, `min_blocking`/`max_blocking`; kanıt
     araç ortamında üretimin `EvidenceVerifier`'ıyla yeniden doğrulanır (`eval_agents`);
   - verify_and_map (ajan): `steps`, `methods` (sembol tablosu), `expects_include`,
-    `no_missing_methods`, `all_verified`.
+    `no_missing_methods`, `all_verified`;
+  - assistant / assistant_deep (AI-ASISTAN-PLANI §13; işleyici üzerinden, `run_flow_case`):
+    `contains`/`not_contains` (görünür cevap metni), `kaynak_tur_include`, `kaynak_ref_include`,
+    `rota_in`, `eylem_reddi`, `guven_gosterimi`, `otomatik_derin`, `oneri_eylem_tur`,
+    `oneri_max`, `jira_anahtarlari_include`, `cevap_kaynagi_in`
+    (`eval_agents.asistan_problems`). Set `esikler` taşıyorsa geçiş vaka vaka değil eşiklerle
+    ölçülür (`asistan_olcumleri`).
 - Vaka düzeyi `replay_key` setinkini geçersiz kılar (story başına golden kökü).
 - Koşturucu: geçit **canlı** (`live`/`record`) olmalıdır; REPLAY'de koşu yalnızca duman testi
   sayılır (`--allow-replay`) ve durum kaydını asla `evaluated` yapmaz. Sonuç raporu
@@ -51,8 +57,12 @@ from tp_core.gateway.bundle import load_schema
 from tp_core.gateway.defects import dup_rank_problems
 from tp_core.gateway.errors import GatewayConfigError, GatewayError
 from tp_core.gateway.eval_agents import (
+    ASISTAN_AMACLARI,
+    TohumYok,
     ToolEnv,
+    asistan_problems,
     coverage_problems,
+    dogrulanmis_kaynak_var,
     findings_problems,
     mapping_problems,
     review_problems,
@@ -73,6 +83,9 @@ class CaseResult:
     output: Any = None
     mode: str | None = None
     error: str | None = None
+    # Vaka başına harcama ve uçtan uca süre (rapordaki medyan/p90; işleyici koşularında dolu).
+    cost_usd: float | None = None
+    sure_ms: int | None = None
 
 
 def set_path(rules_dir: Path, bundle: str) -> Path:
@@ -142,6 +155,8 @@ def check_output(purpose: str, expect: Mapping[str, Any], output: Any) -> list[s
         failures += findings_problems(out, expect)
     elif purpose == "verify_and_map":
         failures += mapping_problems(out, expect)
+    elif purpose in ASISTAN_AMACLARI:
+        failures += asistan_problems(output, expect, purpose=purpose)
     else:
         raise GatewayConfigError(f"değerlendirme beklentisi tanımlı değil: {purpose}")
     return failures
@@ -215,6 +230,178 @@ def run_case(
     return CaseResult(cid, not failures, failures, res.output, res.mode)
 
 
+def is_flow_set(data: Mapping[str, Any]) -> bool:
+    """Set işleyici üzerinden mi koşar (asistan: `agent.tool_env == "assistant"`)?"""
+    agent = data.get("agent") or {}
+    return isinstance(agent, Mapping) and agent.get("tool_env") == "assistant"
+
+
+def set_purposes(data: Mapping[str, Any]) -> list[str]:
+    """Setin koşturulabileceği amaçlar (`purposes`; yoksa yalnız `purpose`)."""
+    return [str(p) for p in data.get("purposes") or [data["purpose"]]]
+
+
+def flow_env_name(case: Mapping[str, Any]) -> str:
+    """Asistan vakasının araç ortamı: `assistant:<rol>` (`eval_agents.ENVS`)."""
+    return f"assistant:{case.get('rol')}"
+
+
+def run_flow_case(
+    env: ToolEnv | None,
+    case: Mapping[str, Any],
+    purpose: str,
+    gateway_factory: Any,
+    *,
+    case_id: str | None = None,
+    clock: Any = None,
+) -> CaseResult:
+    """Asistan vakasını işleyici (`flow.cevapla`) üzerinden koşturur ve beklentiyle karşılaştırır.
+
+    Ortam yoksa (rol ortamı kurulamadı) vaka çağrılmaz. Tohum çözülemezse vaka düşer. Süre
+    uçtan uçtur (mesaj yazımından cevap okunana kadar, `clock`); maliyet mesaja yazılan harcama."""
+    import time
+
+    cid = case_id or str(case["id"])
+    if env is None or env.akis is None:
+        return CaseResult(cid, False, ["araç ortamı yok"], error="asistan rol ortamı yok")
+    saat = clock or time.monotonic
+    basla = saat()
+    try:
+        sonuc = env.akis.sor(case, purpose, gateway_factory)
+    except TohumYok as exc:
+        return CaseResult(cid, False, ["tohum yok"], error=str(exc)[:500])
+    sure_ms = int((saat() - basla) * 1000)
+    if sonuc.output is None:
+        return CaseResult(
+            cid,
+            False,
+            [sonuc.hata or "cevap yok"],
+            error=sonuc.hata,
+            mode="flow",
+            cost_usd=sonuc.maliyet_usd,
+            sure_ms=sure_ms,
+        )
+    failures = check_output(purpose, case.get("expect") or {}, sonuc.output)
+    return CaseResult(
+        cid,
+        not failures,
+        failures,
+        sonuc.output,
+        "flow",
+        cost_usd=sonuc.maliyet_usd,
+        sure_ms=sure_ms,
+    )
+
+
+def _yuzdelik(degerler: Sequence[float], oran: float) -> float | None:
+    """En yakın sıra yöntemi (p50 = medyan alt değer, p90)."""
+    import math
+
+    sirali = sorted(degerler)
+    if not sirali:
+        return None
+    return sirali[max(0, math.ceil(oran * len(sirali)) - 1)]
+
+
+def asistan_olcumleri(
+    data: Mapping[str, Any], results: Sequence[CaseResult], purpose: str
+) -> dict[str, Any]:
+    """§13 ölçümleri ve eşik kararı (asistan seti).
+
+    - beklenti geçişi: geçen vaka / tüm vaka;
+    - doğrulanmış kaynak: `urune_ozgu` etiketli vakalarda genel bilgi dışı doğrulanmış kaynak oranı;
+    - eylem reddi + injection direnci: `eylem_istegi`/`injection` etiketli vakaların geçiş oranı;
+    - otomatik yükseltme oranı (yalnız `assistant`, `kip=soru` model cevapları);
+    - medyan/p90 maliyet (USD) ve uçtan uca süre (sn)."""
+    by_id = {str(c["id"]): c for c in data["cases"]}
+
+    def vaka(r: CaseResult) -> Mapping[str, Any]:
+        return by_id.get(r.id.split("#", 1)[0], {})
+
+    def etiketli(*etiketler: str) -> list[CaseResult]:
+        return [r for r in results if set(vaka(r).get("etiketler") or []) & set(etiketler)]
+
+    def oran(pay: int, payda: int) -> float | None:
+        return round(pay / payda, 4) if payda else None
+
+    urune = etiketli("urune_ozgu")
+    guvenlik = etiketli("eylem_istegi", "injection")
+    model_sorulari = [
+        r
+        for r in results
+        if vaka(r).get("kip", "soru") == "soru"
+        and isinstance(r.output, Mapping)
+        and r.output.get("cevap_kaynagi") == "model"
+    ]
+    maliyetler = [r.cost_usd for r in results if r.cost_usd is not None]
+    sureler = [r.sure_ms / 1000 for r in results if r.sure_ms is not None]
+    olcum: dict[str, Any] = {
+        "amac": purpose,
+        "beklenti_gecis_orani": oran(sum(r.ok for r in results), len(results)),
+        "dogrulanmis_kaynak_orani": oran(
+            sum(isinstance(r.output, Mapping) and dogrulanmis_kaynak_var(r.output) for r in urune),
+            len(urune),
+        ),
+        "eylem_ve_injection_orani": oran(sum(r.ok for r in guvenlik), len(guvenlik)),
+        "otomatik_derin_orani": (
+            oran(
+                sum(bool(r.output.get("otomatik_derin")) for r in model_sorulari),
+                len(model_sorulari),
+            )
+            if purpose == "assistant"
+            else None
+        ),
+        "maliyet_usd": {
+            "medyan": _yuzdelik(maliyetler, 0.5),
+            "p90": _yuzdelik(maliyetler, 0.9),
+            "toplam": round(sum(maliyetler), 6),
+        },
+        "sure_s": {"medyan": _yuzdelik(sureler, 0.5), "p90": _yuzdelik(sureler, 0.9)},
+    }
+    olcum["esikler"] = esik_karari(data.get("esikler") or {}, olcum, purpose)
+    return olcum
+
+
+def _amac_degeri(deger: Any, purpose: str) -> Any:
+    return deger.get(purpose) if isinstance(deger, Mapping) else deger
+
+
+def esik_karari(
+    esikler: Mapping[str, Any], olcum: Mapping[str, Any], purpose: str
+) -> list[dict[str, Any]]:
+    """`esikler` → [{ad, deger, esik, gecti}]. Ölçülemeyen değer (None) eşiği geçmez; amaca
+    özgü eşik (`{assistant: …, assistant_deep: …}`) o amaç için tanımlı değilse atlanır."""
+    tablo = (
+        ("beklenti_gecis_min", olcum.get("beklenti_gecis_orani"), "min"),
+        ("dogrulanmis_kaynak_min", olcum.get("dogrulanmis_kaynak_orani"), "min"),
+        ("eylem_ve_injection_min", olcum.get("eylem_ve_injection_orani"), "min"),
+        ("otomatik_derin_max", olcum.get("otomatik_derin_orani"), "max"),
+        ("medyan_maliyet_usd_max", (olcum.get("maliyet_usd") or {}).get("medyan"), "max"),
+        ("p90_sure_s_max", (olcum.get("sure_s") or {}).get("p90"), "max"),
+    )
+    out = []
+    for ad, deger, yon in tablo:
+        if ad not in esikler:
+            continue
+        esik = _amac_degeri(esikler[ad], purpose)
+        if esik is None:
+            continue
+        if ad == "otomatik_derin_max" and purpose != "assistant":
+            continue
+        gecti = deger is not None and (deger >= esik if yon == "min" else deger <= esik)
+        out.append({"ad": ad, "deger": deger, "esik": esik, "gecti": bool(gecti)})
+    return out
+
+
+def set_passed(data: Mapping[str, Any], results: Sequence[CaseResult], purpose: str) -> bool:
+    """Set geçti mi: `esikler` varsa tüm eşikler (§13), yoksa her vaka."""
+    if not results:
+        return False
+    if data.get("esikler"):
+        return all(e["gecti"] for e in asistan_olcumleri(data, results, purpose)["esikler"])
+    return all(r.ok for r in results)
+
+
 def run_set(
     gw: Any, rules_dir: Path, data: Mapping[str, Any], *, env: ToolEnv | None = None
 ) -> list[CaseResult]:
@@ -238,13 +425,15 @@ def write_report(
     mode: str,
     today: dt.date | None = None,
     extra: Mapping[str, Any] | None = None,
+    tag: str | None = None,
 ) -> Path:
-    """`extra`: rapora eklenen ek alanlar (ör. `eval_live`: maliyet, bütçe, tamamlanma)."""
+    """`extra`: rapora eklenen ek alanlar (ör. `eval_live`: maliyet, bütçe, tamamlanma).
+    `tag`: çok amaçlı setlerde amaç adı (`assistant-v1-assistant_deep-<tarih>.json`)."""
     today = today or dt.date.today()
     folder = rules_dir / EVAL_DIR / RESULTS_DIR
     folder.mkdir(parents=True, exist_ok=True)
     suffix = "" if mode in LIVE_MODES else "-replay-duman"
-    path = folder / f"{data['bundle']}-v{data['version']}-{today.isoformat()}{suffix}.json"
+    path = folder / f"{report_stem(data, today, tag)}{suffix}.json"
     report = {
         "bundle": data["bundle"],
         "version": data["version"],
@@ -262,6 +451,11 @@ def write_report(
     return path
 
 
+def report_stem(data: Mapping[str, Any], today: dt.date, tag: str | None = None) -> str:
+    middle = f"-{tag}" if tag else ""
+    return f"{data['bundle']}-v{data['version']}{middle}-{today.isoformat()}"
+
+
 def mark_evaluated(
     rules_dir: Path,
     bundle: str,
@@ -275,12 +469,16 @@ def mark_evaluated(
     total: int | None = None,
     guardrails_version: int | None = None,
     calls: str | None = None,
+    icerik_hash: str | None = None,
+    amaclar: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> None:
     """`rules/evaluations.yaml` kaydını `evaluated` yapar (baştaki açıklama yorumu korunur).
 
     Eski `note` ("canlı değerlendirme yapılmadı" gibi) bayatlar: yerine üretilmiş bir satır yazılır
     ki kayıt kendisiyle çelişmesin. `guardrails_version`: koşu sırasında ortak `_guardrails`
-    paketinin sürümü (`guardrails` geçişli kapsamı bunu okur). `calls`: çağrı kaydı (JSONL) yolu."""
+    paketinin sürümü (`guardrails` geçişli kapsamı bunu okur). `calls`: çağrı kaydı (JSONL) yolu.
+    `icerik_hash`: koşu anındaki içerik hash'i (`evaluation.icerik_hash`; §4.2 X). `amaclar`:
+    çok amaçlı paketlerde amaç başına model/rapor/ölçüm (`evaluation.amaclar`)."""
     when = (today or dt.date.today()).isoformat()
     evaluation: dict[str, Any] = {
         "date": when,
@@ -292,6 +490,10 @@ def mark_evaluated(
         evaluation["guardrails_version"] = guardrails_version
     if calls:
         evaluation["calls"] = calls
+    if icerik_hash:
+        evaluation["icerik_hash"] = icerik_hash
+    if amaclar:
+        evaluation["amaclar"] = {k: dict(v) for k, v in amaclar.items()}
     score = f", {passed}/{total} vaka geçti" if passed is not None and total is not None else ""
     note = f"Canlı değerlendirme {when}, {model} ({provider}){score}: {results}"
     _write_entry(rules_dir, bundle, version, evaluation, note)

@@ -59,3 +59,29 @@ export function kisaHash(h: string | null | undefined, n = 10): string {
   const temiz = h.replace(/^sha256:/, "");
   return temiz.length > n ? `${temiz.slice(0, n)}…` : temiz;
 }
+
+/**
+ * "2 gün önce" biçiminde göreli zaman (asistan cevap kartı, öneri kartı "yaptım dedi").
+ * Tarih yoksa ya da geçersizse null; gelecekteki tarih "az önce" sayılır.
+ */
+export function goreliZaman(iso: string | null | undefined, simdi = Date.now()): string | null {
+  const d = gecerliTarih(iso);
+  if (!d) return null;
+  const sn = Math.max(0, Math.floor((simdi - d.getTime()) / 1000));
+  if (sn < 60) return "az önce";
+  const dk = Math.floor(sn / 60);
+  if (dk < 60) return `${dk} dk önce`;
+  const sa = Math.floor(dk / 60);
+  if (sa < 24) return `${sa} sa önce`;
+  return `${Math.floor(sa / 24)} gün önce`;
+}
+
+/**
+ * Yeni sekmede açılacak dış adres yalnız http(s) ise döner; `javascript:`, `data:` vb. null.
+ * Sunucu adresleri zaten sınırlar; bu istemci tarafındaki derinlemesine savunmadır.
+ */
+export function guvenliDisAdres(adres: string | null | undefined): string | null {
+  if (!adres) return null;
+  const a = adres.trim();
+  return /^https?:\/\//i.test(a) ? a : null;
+}

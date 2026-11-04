@@ -6,6 +6,7 @@ import type { Rol } from "./api/types";
 import { OturumProvider, useOturum, varsayilanSayfa } from "./auth";
 import { BildirimProvider } from "./components/Bildirim";
 import { Kabuk } from "./components/Kabuk";
+import { AsistanPaneli } from "./components/asistan/AsistanPaneli";
 import { BosDurum, Kart, SayfaBasligi, Yukleniyor } from "./components/ui";
 import { BugTaslakDetay, BugTaslaklari } from "./pages/BugTaslaklari";
 import { CaseReview } from "./pages/CaseReview";
@@ -84,6 +85,8 @@ export function Rotalar() {
         element={
           <OturumGerekli>
             <Kabuk />
+            {/* Portal asistanı (AI-ASISTAN-PLANI §11): Kabuk'un kardeşi, olay akışı içinde; /giris'te yok. */}
+            <AsistanPaneli />
           </OturumGerekli>
         }
       >

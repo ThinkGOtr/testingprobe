@@ -110,3 +110,14 @@ class ReplayNoOutput(ReplayNotFound):
 
 class AgentTurnLimit(GatewayError):
     """Ajan `max_turns` içinde son çıktı aracını çağırmadı."""
+
+
+class AgentDeadlineExceeded(GatewayError):
+    """Ajanın mutlak süre sınırı (`run_agent(..., bitis=)`) doldu; tur başında ya da sağlayıcı
+    zaman aşımı/yeniden deneme beklemesi kalan süreye sığmadığında. Asistan: `zaman_asimi`."""
+
+
+class AgentStopped(GatewayError):
+    """Çağıran ajanın durmasını istedi (`run_agent(..., should_stop=)` tur başında doğru
+    döndü; ör. asistan mesajı iptal edildi). Hata değil, istenmiş çıkıştır; yazılan turlar
+    kayıtta kalır."""

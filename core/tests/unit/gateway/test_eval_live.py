@@ -217,6 +217,19 @@ def test_unknown_bundle_and_bad_budget_are_config_errors(capsys) -> None:
     assert "pozitif" in capsys.readouterr().out
 
 
+def test_asistan_seti_dusuk_butcede_uyarir(capsys: pytest.CaptureFixture[str]) -> None:
+    # Plan §13: asistan seti + model/effort matrisi için tavan ≥ 10; daha azı engellenmez, uyarılır.
+    assert main(["--dry-run", "--bundle", "assistant", "--budget-usd", "5"]) == 0
+    out = capsys.readouterr().out
+    assert "UYARI: asistan seti için TP_EVAL_BUDGET_USD ≥ 10" in out
+    assert "--budget-usd 10" in out and "--rules-dir" in out
+    assert main(["--dry-run", "--bundle", "assistant", "--budget-usd", "10"]) == 0
+    assert "UYARI: asistan seti" not in capsys.readouterr().out
+    # Asistan seti seçilmediyse uyarı yok.
+    assert main(["--dry-run", "--bundle", "triage", "--budget-usd", "5"]) == 0
+    assert "UYARI: asistan seti" not in capsys.readouterr().out
+
+
 # ------------------------------------------------------------------ canlı koşu (sahte sağlayıcı)
 
 

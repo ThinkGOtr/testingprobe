@@ -4,17 +4,16 @@ import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import type { KontrolKulesi as Kule, KpiAnahtari } from "../api/types";
 import { HedefOlcer, OranSutunlari } from "../components/Grafikler";
-import { BosDurum, Cip, HataKutusu, Ilerleme, Kart, Metrik, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { BosDurum, Cip, HataKutusu, Ilerleme, Kart, Metrik, Olculmedi, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useVeri } from "../hooks";
 import { kazancOzeti, type KazancOzeti } from "../api/uyumFaz5";
 import { BAZ_KAYNAGI } from "../components/BazDegerKarti";
 import { dolar, sure, tarih, yuzde } from "../lib/format";
 import { KosuTablosu } from "./Kosular";
+import { OnerilerOlcumKarti } from "../components/asistan/OnerilerOlcumKarti";
 
-/** Ölçülmemiş değer: sayı uydurulmaz, açıkça "ölçülmedi" yazılır. */
-export function Olculmedi({ metin = "ölçülmedi" }: { metin?: string }) {
-  return <span className="olculmedi">{metin}</span>;
-}
+// `Olculmedi` ortak bileşenlere (components/ui) taşındı; eski içe aktarmalar için yeniden dışa aktarılır.
+export { Olculmedi };
 
 /**
  * KPI'nın kaynağı (core `kaynaklar`): ekran okuyucuda etiket (role=img + aria-label); görenler için fareyle,
@@ -90,7 +89,7 @@ export function KontrolKulesi() {
   useOlay(sessiz, ["ci.status", "failure.classified", "case.generated", "bug.published", "script.updated"]);
 
   if (v.yukleniyor && !v.veri) return <Yukleniyor />;
-  if (v.hata && !v.veri) return <HataKutusu hata={v.hata} yenile={() => void v.yenile()} />;
+  if (v.hata && !v.veri) return <HataKutusu hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />;
   const k = v.veri;
   if (!k) return null;
   const ai = k.ai_katkisi;
@@ -367,6 +366,8 @@ export function KontrolKulesi() {
           </div>
         )}
       </Kart>
+
+      <OnerilerOlcumKarti kule={k} />
 
       <Kart baslik="Son koşular" eylemler={<KaynakIpucu kaynak={k.kaynaklar.son_kosular} />}>
         {k.son_kosular.length === 0 ? <BosDurum baslik="Henüz koşu yok." /> : <KosuTablosu kosular={k.son_kosular} kompakt />}

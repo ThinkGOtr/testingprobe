@@ -102,6 +102,14 @@ class PurposeConfig:
     max_input_tokens: int | None = None  # ajan: önbelleksiz+yazma girdi toplamı tavanı
     # İstemci zaman aşımı (sn). Taşıma ayarıdır, çıktıyı etkilemez: bundle hash'ine girmez.
     timeout_s: float | None = None
+    # Yeniden deneme politikası (taşıma ayarı; bundle hash'ine girmez). None: geçidin
+    # `RetryPolicy` değeri (429/5xx için 3, zaman aşımı için 1). Asistan gibi süre bütçeli amaçlar
+    # daha az dener (§10.1 "Süre").
+    max_retries: int | None = None
+    max_timeout_retries: int | None = None
+    # Sağlayıcı tarafı ret yedeği: None = adaptör varsayılanı (destekleyen modelde "default");
+    # "none" = gönderilmez (ör. `assistant_deep` Opus'a yönlendirilmesin).
+    fallbacks: str | None = None
 
 
 @dataclass(frozen=True)
@@ -163,6 +171,11 @@ def load_model_table(rules_dir: Path) -> ModelTable:
             params=merged_params,
             max_input_tokens=spec.get("max_input_tokens"),
             timeout_s=_timeout(name, spec.get("timeout_s", defaults.get("timeout_s"))),
+            max_retries=_retries(name, "max_retries", spec.get("max_retries")),
+            max_timeout_retries=_retries(
+                name, "max_timeout_retries", spec.get("max_timeout_retries")
+            ),
+            fallbacks=_fallbacks(name, spec.get("fallbacks")),
         )
         if cfg.model not in prices:
             raise GatewayConfigError(f"'{name}' amacının modeli '{cfg.model}' için fiyat yok")
@@ -180,3 +193,26 @@ def _timeout(purpose: str, value: Any) -> float | None:
     if seconds <= 0:
         raise GatewayConfigError(f"'{purpose}' timeout_s pozitif olmalı: {value!r}")
     return seconds
+
+
+FALLBACK_CHOICES = ("default", "none")
+
+
+def _retries(purpose: str, key: str, value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise GatewayConfigError(
+            f"'{purpose}' {key} sıfır ya da pozitif tam sayı olmalı: {value!r}"
+        )
+    return value
+
+
+def _fallbacks(purpose: str, value: Any) -> str | None:
+    if value is None:
+        return None
+    if value not in FALLBACK_CHOICES:
+        raise GatewayConfigError(
+            f"'{purpose}' fallbacks {'/'.join(FALLBACK_CHOICES)} olmalı: {value!r}"
+        )
+    return str(value)

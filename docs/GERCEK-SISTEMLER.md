@@ -148,6 +148,14 @@ cd core && uv run python -m tp_core.gateway.evaluation --check   # birleştirme 
 
 API token'ları: id.atlassian.com → Security → API tokens (her kullanıcı kendi token'ını üretir).
 
+Okuma kullanıcısı yalnız bu ürüne ayrılmış olmalı ve **hiçbir projede** *Add comments*, *Create
+issues*, *Edit issues* izni taşımamalıdır: AI asistanın `jira_issue` aracı bu kimlikle okur (kodda
+yazma yöntemi olmayan dar okuyucu + yalnız-GET transport; üçüncü katman bu izin ayarıdır).
+`make security-check` 8, gerçek Jira kipinde core-worker içinden okuma kimliğiyle
+`GET /rest/api/3/mypermissions?permissions=ADD_COMMENTS,CREATE_ISSUES,EDIT_ISSUES` sorar (proje
+bağlamı vermeden, yani herhangi bir projede); izinlerden biri varsa ya da yanıt doğrulanamazsa
+(401/403, ağ hatası) FAIL verir. Kimlik ve adres yazdırılmaz; simülatörde adım atlanır.
+
 ### 2.3 `.env`
 
 ```dotenv
@@ -220,7 +228,7 @@ make jira-seed
 # Beklenen: "Jira demo başlangıcı (https://<site>.atlassian.net, proje TPD):" ve TPD-1..4 için
 # "demo içeriğinde, değişiklik yok", "Tohum Bug'ları tohum içeriğinde, değişiklik yok";
 # "Jira'da bulunamadı" satırı olmamalı.
-make security-check     # 10/10; JIRA_WRITE_* yalnızca core-worker'da
+make security-check     # 10/10; JIRA_WRITE_* yalnızca core-worker'da; okuma hesabında yazma izni yok
 ```
 
 Portalda: analist **Gereksinimler → "Jira'dan çek"** → TPD-1..TPD-4 listelenir; story bağlantıları

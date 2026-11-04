@@ -12,14 +12,24 @@ Kayıt sürümü prompt ön bilgisindeki `version`'dan farklıysa kayıt bayatt�
 yükseltilip durum yazılmadan birleştirilemez. `--check` birleştirme kapısıdır: bekleyen veya bayat
 kayıt varsa çıkış kodu 1. Bu modül istisna üretmez; istisna yalnızca sahip onayıyla elle yazılır.
 
+**İçerik hash'i** (AI-ASISTAN-PLANI §4.2 X): bazı paketlerin davranışı prompt sürümünden fazlasına
+bağlıdır (şema, `models.yaml` amaç ayarları, kural dosyaları). Bu paketler için `ICERIK_KAYNAKLARI`
+sabit dosya listesinden bir hash hesaplanır (`icerik_hash`); `make eval-live A=--update-status` onu
+`evaluation.icerik_hash`'e yazar. `evaluated` kayıtta hash yoksa ya da güncel içerikle uyuşmuyorsa
+durum `icerik_degisti` olur ve kapı kapanır (prompt sürümü yükseltilmeden yapılan şema/ayar/kural
+değişikliği de değerlendirilmemiş içerik sayılır). `waived` kayıtta hash denetlenmez.
+
     cd core && uv run python -m tp_core.gateway.evaluation            # durum tablosu
     cd core && uv run python -m tp_core.gateway.evaluation --check    # birleştirme kapısı
+    cd core && uv run python -m tp_core.gateway.evaluation --hash     # güncel içerik hash'leri
 """
 
 from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
+import json
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -39,10 +49,84 @@ _LABELS = {
     "evaluated": "canlı değerlendirildi",
     "waived": "onaylı istisna (canlı değerlendirme yok)",
     "stale": "değerlendirme kaydı bayat (prompt sürümü değişti)",
+    "icerik_degisti": "değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)",
     "missing": "değerlendirme kaydı yok",
 }
 _EVALUATION_FIELDS = ("date", "model", "provider", "results")
 _WAIVER_FIELDS = ("approved_by", "approved_at", "reason", "until")
+
+
+ICERIK_HASH_ALANI = "icerik_hash"
+_YOK = b"<yok>"
+
+
+@dataclass(frozen=True)
+class IcerikKaynagi:
+    """Bir paketin değerlendirilen içeriği (yollar `rules/`'a göre, sabit liste).
+
+    `dosyalar`: tek tek dosyalar; `globlar`: sabit dizin içindeki desenler (ör. `assistant/*.yaml`);
+    `model_amaclari`: `models.yaml` `purposes` altındaki amaç blokları (yalnız bu bloklar; fiyat
+    tablosu ve diğer amaçlar hash'e girmez)."""
+
+    dosyalar: tuple[str, ...]
+    globlar: tuple[str, ...] = ()
+    model_amaclari: tuple[str, ...] = ()
+
+
+# AI-ASISTAN-PLANI §4.2 X: prompt, iki şema, `models.yaml` asistan amaçları,
+# `rules/assistant/*.yaml` ve `rules/assistant/rotalar.json` (model çıktısındaki rotanın bağlantıya
+# dönüşmesini ve öneri kurallarının ekran/eylem doğrulamasını belirler; plandaki listeye eklendi).
+# Değerlendirme seti (`evaluation/assistant.json`) ölçüttür, içerik değil; hash'e girmez.
+ICERIK_KAYNAKLARI: Mapping[str, IcerikKaynagi] = {
+    "assistant": IcerikKaynagi(
+        dosyalar=(
+            "prompts/assistant.md",
+            "schemas/assistant.schema.json",
+            "schemas/assistant_deep.schema.json",
+        ),
+        globlar=("assistant/*.yaml", "assistant/*.json"),
+        model_amaclari=("assistant", "assistant_deep"),
+    ),
+}
+
+
+def icerik_dosyalari(rules_dir: Path, bundle_id: str) -> list[str]:
+    """Paketin hash'e giren dosyaları (`rules/`'a göre, sıralı); kaydı yoksa boş liste."""
+    kaynak = ICERIK_KAYNAKLARI.get(bundle_id)
+    if kaynak is None:
+        return []
+    yollar = set(kaynak.dosyalar)
+    for desen in kaynak.globlar:
+        yollar |= {str(p.relative_to(rules_dir)) for p in rules_dir.glob(desen) if p.is_file()}
+    return sorted(yollar)
+
+
+def icerik_hash(rules_dir: Path, bundle_id: str) -> str | None:
+    """Paketin içerik hash'i (`sha256:<hex>`); `ICERIK_KAYNAKLARI`'nda olmayan paket → None.
+
+    Satır sonları normalize edilir (CRLF ↔ LF farkı içerik değişikliği sayılmaz). Eksik dosya
+    `<yok>` olarak hash'e girer (silinen dosya da değişikliktir). `models.yaml` amaç blokları
+    ayrıştırılıp kanonik JSON olarak girer (yorum/biçim değişikliği hash'i değiştirmez)."""
+    kaynak = ICERIK_KAYNAKLARI.get(bundle_id)
+    if kaynak is None:
+        return None
+    h = hashlib.sha256()
+    for rel in icerik_dosyalari(rules_dir, bundle_id):
+        path = rules_dir / rel
+        veri = path.read_bytes().replace(b"\r\n", b"\n") if path.is_file() else _YOK
+        h.update(rel.encode() + b"\0" + hashlib.sha256(veri).hexdigest().encode() + b"\n")
+    if kaynak.model_amaclari:
+        models_path = rules_dir / "models.yaml"
+        try:
+            purposes = (yaml.safe_load(models_path.read_text(encoding="utf-8")) or {}).get(
+                "purposes"
+            ) or {}
+        except FileNotFoundError:
+            purposes = {}
+        for amac in kaynak.model_amaclari:
+            blok = json.dumps(purposes.get(amac), ensure_ascii=False, sort_keys=True, default=str)
+            h.update(f"models.yaml#purposes.{amac}\0".encode() + blok.encode() + b"\n")
+    return "sha256:" + h.hexdigest()
 
 
 @dataclass(frozen=True)
@@ -50,7 +134,7 @@ class EvaluationStatus:
     bundle_id: str
     prompt_version: int
     recorded_version: int | None
-    status: str  # pending | evaluated | waived | stale | missing
+    status: str  # pending | evaluated | waived | stale | icerik_degisti | missing
     detail: Mapping[str, Any] | None = None
 
     @property
@@ -142,6 +226,10 @@ def evaluation_statuses(rules_dir: Path) -> dict[str, EvaluationStatus]:
             continue
         status = rec["status"] if rec["version"] == version else "stale"
         detail = rec.get("evaluation") or rec.get("waiver")
+        if status == "evaluated" and bundle_id in ICERIK_KAYNAKLARI:
+            kayitli = (rec.get("evaluation") or {}).get(ICERIK_HASH_ALANI)
+            if kayitli != icerik_hash(rules_dir, bundle_id):
+                status = "icerik_degisti"
         out[bundle_id] = EvaluationStatus(bundle_id, version, rec["version"], status, detail)
     unknown = sorted(set(records) - set(out))
     if unknown:
@@ -204,8 +292,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--check", action="store_true", help="birleştirme kapısı: bekleyen kayıt varsa çıkış 1"
     )
+    parser.add_argument(
+        "--hash", action="store_true", help="içerik hash'i tutulan paketlerin güncel hash'i"
+    )
     args = parser.parse_args(argv)
     rules_dir = args.rules_dir or find_rules_dir()
+    if args.hash:
+        for bundle_id in ICERIK_KAYNAKLARI:
+            print(f"{bundle_id}\t{icerik_hash(rules_dir, bundle_id)}")
+            for rel in icerik_dosyalari(rules_dir, bundle_id):
+                print(f"  {rel}")
+        return 0
     try:
         statuses = evaluation_statuses(rules_dir)
     except GatewayConfigError as exc:
@@ -213,6 +310,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     for s in statuses.values():
         print(f"{s.bundle_id}@v{s.prompt_version}\t{s.status}\t{s.label}")
+        if s.status == "icerik_degisti":
+            kayitli = (s.detail or {}).get(ICERIK_HASH_ALANI) or "(kayıtta yok)"
+            guncel = icerik_hash(rules_dir, s.bundle_id)
+            print(f"  içerik hash'i: kayıtlı {kayitli}, güncel {guncel}")
     if args.check:
         blocked = [s for s in statuses.values() if not s.mergeable]
         if blocked:

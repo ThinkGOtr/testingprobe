@@ -1,6 +1,19 @@
 <!--
 Sync Impact Report
-- Version change: 1.1.0 → 1.2.0 (MINOR: İlke VII on-prem kurulum ve modelin müşteri ortamında
+- Version change: 1.2.0 → 1.3.0 (MINOR: İlke II, portal içi salt okuma bilgi ve yönlendirme
+  asistanını AI'ın çalışabileceği dördüncü alan olarak ekledi — eylem yok, çıktısı karar dayanağı
+  değildir, model yalnızca core-worker'da; ürün sahibi kararı K7, 2026-11-03)
+- Modified principles: II. CI'da AI Yok (genişletildi; mevcut kural değişmedi)
+- Added sections: yok · Removed sections: yok
+- Templates requiring updates: yok (şablonlar kuralı çalışma anında okur); bağlı belgeler
+  docs/TEKNIK-TASARIM.md §8.13 ve docs/MIMARI-SOZLESME.md §5–§6 aynı PR'da güncellendi ✅
+- Onay durumu: ürün sahibi ✅ 2026-11-03 (K7); teknik lider ⏳ açık (tasks T007; onay tarihi buraya
+  işlenir). Governance iki onayı da istediğinden v1.3.0 onaya dek yalnız `dev`'de, asistan bayrak
+  arkasında (`TP_ASISTAN_MODEL_MODE=off`) geçerlidir; teknik lider onayı `main` birleştirme koşuludur
+  ve PR açıklamasında öyle yazılır (docs/AI-ASISTAN-PLANI.md §14 kontrol listesi)
+- Follow-up TODOs: teknik lider onayı (değişiklik dosyası aynı PR'da; Governance)
+- Kaynak: docs/AI-ASISTAN-PLANI.md v6 §1 K7, §4; specs/008-ai-asistan/
+- Önceki: 1.1.0 → 1.2.0 (MINOR: İlke VII on-prem kurulum ve modelin müşteri ortamında
   çalışması ile genişletildi; maskeleme müşteri verisi işlenen ortamlarda zorunlu)
 - Önceki: 1.0.1 → 1.1.0 (MINOR: test edilen uygulamaya salt okuma erişim kısıtları ve kanıt
   doğrulama kuralı eklendi)
@@ -29,8 +42,12 @@ onaylanan hash ile karşılaştırır; onaydan sonra değişen içerik reddedili
 
 ### II. CI'da AI Yok (NON-NEGOTIABLE)
 CI yalnızca onaylanmış, deterministik test kodunu koşturur. CI ortamında model anahtarı, MCP sunucusu
-ve ajan bağımlılığı bulunamaz. AI yalnızca tasarım, kod üretimi ve bakım aşamalarında, yalnızca
-core-worker içinde çalışır.
+ve ajan bağımlılığı bulunamaz. AI yalnızca tasarım, kod üretimi ve bakım aşamalarında ve portal
+içi asistanda, yalnızca core-worker içinde çalışır. Portal asistanı **salt okuma bilgi ve
+yönlendirme asistanıdır**: eylem yapmaz (yazma aracı, onay, yayın, Jira kaydı/yorumu yoktur; eylem
+isteğine yalnızca ilgili ekrana bağlantı ve kullanıcının kendisinin uygulayacağı taslakla cevap
+verir), çıktısı **karar dayanağı değildir** ve hiçbir karar alanına, onay kaydına veya başka bir AI
+adımına girdi olmaz. core-api model anahtarını ve model kipini bilmez.
 
 ### III. Yapılandırılmış Çıktı
 Her model çağrısı şemaya uyan yapılandırılmış çıktı üretir ve Pydantic/JSON Schema ile doğrulanır.
@@ -133,4 +150,4 @@ ve etkisi yazılır ve teknik lider ile ürün sahibi tarafından onaylanır. S�
 kaldırma veya yeniden tanımlama MAJOR, yeni ilke veya bölüm MINOR, açıklama ve ifade düzeltmeleri
 PATCH. Çalışma zamanı rehberi için `docs/TEKNIK-TASARIM.md` ve `CLAUDE.md` kullanılır.
 
-**Version**: 1.2.0 | **Ratified**: 2026-10-30 | **Last Amended**: 2026-10-30
+**Version**: 1.3.0 | **Ratified**: 2026-10-30 | **Last Amended**: 2026-11-03
