@@ -328,7 +328,7 @@ test kırmızıya dönmeli.
      kaldırıldı **yeşil** = **"Test hata yakalıyor ✓"**.
 3. Geri dön; **C1** ("Sepete ekle…") ve **C5** ("Kampanyasız siparişte minimum tutar…") için aynısı.
    - Görülen: Bayraksız **yeşil** → kırık adımda (`BREAK_CAMPAIGN=1`) **⚠ "Yeşil · beklenmeyen
-     sonuç"** → Bayrak kaldırıldı **yeşil**; sarı kutu **"Zayıf test: kırılmış uygulamada da yeşil
+     sonuç"** → Bayrak kaldırıldı **yeşil**; altında ⚠ uyarı kutusu **"Zayıf test: kırılmış uygulamada da yeşil
      kaldı"**.
      Beklenen budur: kampanya bozulması bu testleri etkilemez (sepet sayacı / minimum tutar
      kontrolü). Merge engellenmez, açık kabul ister (Adım 7).
@@ -354,8 +354,8 @@ her PR için aynıdır: **önce GitHub'da Approve, sonra portalda "Merge et"**. 
 4. Portala dön (sayfayı yenile) → **Pull request** kartında **Merge kapısı açık ✓** → **"Merge et"**.
    - Görülen: PR **Birleşti**; main'e push koşusu otomatik başlar.
 
-**C1 ve C5 için (vakit varsa):** aynı 1–4 (her birinin PR'ını kendi test detayındaki **"PR'ı aç ↗"** ile aç); 4. adımda merge kapısının altındaki sarı
-kutuda **"Uyarıyı gördüm; zayıf test olarak merge et (not denetime yazılır)"** kutusunu işaretle,
+**C1 ve C5 için (vakit varsa):** aynı 1–4 (her birinin PR'ını kendi test detayındaki **"PR'ı aç ↗"** ile aç); 4. adımda merge kapısının altındaki
+uyarı kutusunda (amber kenarlı, "Zayıf test: …") **"Uyarıyı gördüm; zayıf test olarak merge et (not denetime yazılır)"** kutusunu işaretle,
 sonra **"Merge et"**. Bu kabul, kim/ne zaman bilgisiyle ürünün **Denetim** kaydına (hash zincirli)
 ve Kontrol Kulesi'ne yazılır.
 
@@ -425,8 +425,10 @@ etiketler "(GitHub)", "(GitHub artefaktı)", "(GitHub artefaktında)" der ve Git
 
 ### Adım 11 · Kontrol Kulesi (1 dk)
 
-Sol menü **Kontrol Kulesi** → gez: son koşular, geçme oranı, flaky testler, alan karnesi, açık defect
-adayı, AI katkısı (kabul oranı, review süresi).
+Sol menü **Kontrol Kulesi** → gez. Üstteki KPI şeridi soldan sağa: geçme oranı, açık defect adayı,
+**case kabul oranı**, **script ilk review başarısı**, hazırlık kazancı. Altında: geçme oranı grafiği,
+**AI katkısı** kartı (case başına AI + review süresi, maliyet, bugün), erişilebilirlik, flaky
+testler, karne (story ve uygulama alanı), son koşular.
 
 Beklenen boşluklar (hata değil):
 - **Case başına AI + review "ölçülmedi"** ve **Maliyet "REPLAY — ölçülmedi"**: REPLAY'de model çağrısı yok, süre ve
@@ -531,7 +533,8 @@ test bakımı mı, ortam mı, flaky mi) ve hazır bug taslağını nasıl çıka
 ürün verilmez") → detay açılır. (C3 kodu üretilmediyse — ör. C3 düzeltildiyse — bu satır yoktur;
 adımı atla, 13'e geç.)
 
-- Görülen: sınıf **"Ürün hatası"**, "Karar kaynağı: deterministik kural"; eşleşen sinyaller
+- Görülen: sınıf **"Ürün hatası"**, "Karar kaynağı: kural · product_defect" (deterministik kural);
+  eşleşen sinyaller
   (assertion farkı, eleman bulundu, sayfa yapısı beklenen, tutarlı tekrar); hazır bug taslağı;
   Jira'da benzer açık bug araması → **TPD-5** "Kampanya indirimi sepette yanlış hesaplanıyor",
   **yüksek olasılık**, AI önerisi **"mevcut kayda bağla (TPD-5)"**.

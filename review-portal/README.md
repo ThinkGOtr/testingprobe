@@ -20,6 +20,30 @@ aynı metinli bağlantılar taşır, DOM'da içerikten önce gelir ve 1280 px al
 pasiflik nedeni (`.dugme-neden`) bir kez yazılır; diğer düğmeler `aria-describedby` ile ona bağlanır,
 neden metnini düğmenin erişilebilir açıklamasıyla (`toHaveAccessibleDescription`) doğrulayın.
 
+## Görsel dil
+
+"Agent Probe çizgisi"; ayrıntı ve gerekçeler [`docs/TASARIM-YENILEME-PLANI.md`](../docs/TASARIM-YENILEME-PLANI.md) (§2–§4).
+
+- **Token kuralı:** temaya bağlı her değer `src/styles.css` başındaki `:root` token'ıdır. Bileşen
+  kurallarında sabit renk ve `[data-theme]` seçicisi yazılmaz. `--accent` yalnız metin ve kenar içindir.
+  Dolu zeminde `--accent-solid` + `--accent-text` kullanılır (`--err-solid` de aynı mantıkla).
+- **Renk disiplini:** indigo = marka ve etkileşim (bağlantı, birincil düğme, aktif menü, şimdiki adım);
+  mor (`--vurgu`) = **yalnız AI** (AI adımı/çıktısı, REPLAY); yeşil = insan kapısı ve başarı; amber =
+  uyarı ve örnek veri; kırmızı = hata ya da engel; nötr = kategorik bilgi (tetik, kaynak, tür, kanal).
+- **Kontrast:** yeni renk çifti WCAG 2.x hesabıyla eklenir (metin ≥ 4,5, kenar ve ikon ≥ 3) ve değer
+  token yorumuna yazılır. `npm run e2e` axe denetimi iki temada geçmelidir.
+- **Tema:** varsayılan koyu. Döngü koyu → açık → sistem şeklindedir; `src/lib/tema.ts` yönetir.
+  `localStorage` anahtarları `tp-tema` (`koyu`/`acik`/`sistem`) ve göç işareti `tp-tema-v=2` (işaret
+  yoksa eski `tp-tema` silinir). `index.html` ilk boyamayı `data-theme="dark"` ile yapar.
+- **Font:** Inter ve JetBrains Mono (değişken, OFL) `@fontsource-variable` ile self-host edilir ve
+  `main.tsx`'te `styles.css`'ten önce yüklenir. Inter latin ve latin-ext dosyaları derlemede
+  `<link rel="preload">` ile önyüklenir (`vite.config.ts`).
+- **İkon:** `src/components/Ikon.tsx` içinde bağımlılıksız satır içi SVG'ler var (`aria-hidden`,
+  `<title>` yok). ✓ ✗ ⚠ gibi glifler metin olarak kalır, çünkü testler bunları arar.
+- **CSP:** nginx `default-src 'self'` kullanır; `font-src` yoktur ve satır içi betik yasaktır. Bu
+  yüzden Google Fonts ya da CDN kullanılmaz. `data:` font da kullanılmaz: `vite.config.ts` woff2
+  dosyalarını gömmez. Kapı: `grep -c 'data:font' dist/assets/*.css` = 0.
+
 ## API sözleşmesi
 
 - `src/api/client.ts`: MIMARI-SOZLESME §5'teki her uç için türlü istemci.
