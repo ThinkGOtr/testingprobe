@@ -1108,7 +1108,9 @@ export type KpiAnahtari =
   | "kazanc_orani"
   | "maliyet"
   | "a11y"
-  | "son_kosular";
+  | "son_kosular"
+  /** Asistan ölçümü (Kule "Öneriler ve asistan" kartı; core `asistan.KAYNAK`). */
+  | "asistan";
 
 /**
  * Ölçülmemiş değerler `null`'dır: portal "ölçülmedi" / "veri yok" yazar, sayı uydurmaz

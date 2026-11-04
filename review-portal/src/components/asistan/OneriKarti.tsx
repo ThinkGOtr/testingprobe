@@ -10,6 +10,7 @@ import { JIRA_ANAHTARI, oneriApi, oneriHataMetni, type AsistanOnerisi, type Kura
 import { goreliZaman, guvenliDisAdres } from "../../lib/format";
 import { uygulamaRotasiMi } from "../../lib/rotalar";
 import { useBildirim } from "../Bildirim";
+import { Ikon } from "../Ikon";
 import { acSekme, oneriSohbeti, paneliKapat } from "./kontrol";
 
 export const NEDEN_SORUSU = "Bu öneriyi neden yapmalıyım, yapmazsam ne olur?";
@@ -106,7 +107,7 @@ export function OneriEylemAlani({ eylem, ai, onGit }: { eylem: OneriEylemi; ai?:
   const jiraAc = jiraAdresi ? (
     <a className="dugme dugme-ikincil dugme-kucuk" href={jiraAdresi} target="_blank" rel="noopener noreferrer">
       Jira'yı aç<span className="gorunmez"> (yeni sekmede açılır)</span>
-      <span aria-hidden="true"> ↗</span>
+      <Ikon ad="dis" className="ikon-dis" />
     </a>
   ) : null;
 
@@ -191,6 +192,7 @@ export function OneriEylemAlani({ eylem, ai, onGit }: { eylem: OneriEylemi; ai?:
           <div className="oneri-taslak-metin">{eylem.taslak.aciklama}</div>
           {eylem.adim_notu && <p className="soluk kucuk">{eylem.adim_notu}</p>}
           <button type="button" className="dugme dugme-ikincil dugme-kucuk" onClick={() => void kopyala()}>
+            <Ikon ad="kopyala" />
             Kopyala
           </button>
           {yedek !== null && (
@@ -281,7 +283,8 @@ export function OneriKarti({ oneri, modelAcik, varlikId, vurgulu, onGit, onGeriB
 
       <div className="oneri-alt">
         {modelAcik ? (
-          <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => sor(NEDEN_SORUSU)}>
+          <button type="button" className="dugme dugme-ikincil dugme-kucuk" onClick={() => sor(NEDEN_SORUSU)}>
+            <Ikon ad="aiSor" className="ikon-ai" />
             Neden? Sor
           </button>
         ) : (
@@ -289,22 +292,28 @@ export function OneriKarti({ oneri, modelAcik, varlikId, vurgulu, onGit, onGeriB
             {aciklamaAcik ? "Açıklamayı gizle" : "Açıklamayı göster"}
           </button>
         )}
-        <button
-          type="button"
-          className="dugme dugme-hayalet dugme-kucuk"
-          aria-pressed={faydali}
-          onClick={() => void geriBildir(1)}
-          disabled={gonderiyor || faydali}
-          title="Bu öneri işe yaradı (kart kalır; Kontrol Kulesi ölçümüne girer)"
-        >
-          Faydalı
-        </button>
-        <button type="button" className="dugme dugme-hayalet dugme-kucuk" aria-expanded={yaptimAcik} onClick={() => setYaptimAcik((a) => !a)} disabled={gonderiyor}>
-          Yaptım
-        </button>
-        <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => void geriBildir(-1)} disabled={gonderiyor} title="Bu öneriyi yalnız sizin için gizler (faydasız)">
-          Gizle
-        </button>
+        {/* Geri bildirim üçlüsü tek grup: dar panelde birlikte alt satıra iner (düzen; rol yok). */}
+        <div className="oneri-geri-bildirim">
+          <button
+            type="button"
+            className="dugme dugme-hayalet dugme-kucuk"
+            aria-pressed={faydali}
+            onClick={() => void geriBildir(1)}
+            disabled={gonderiyor || faydali}
+            title="Bu öneri işe yaradı (kart kalır; Kontrol Kulesi ölçümüne girer)"
+          >
+            <Ikon ad="faydali" />
+            Faydalı
+          </button>
+          <button type="button" className="dugme dugme-hayalet dugme-kucuk" aria-expanded={yaptimAcik} onClick={() => setYaptimAcik((a) => !a)} disabled={gonderiyor}>
+            <Ikon ad="yaptim" />
+            Yaptım
+          </button>
+          <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => void geriBildir(-1)} disabled={gonderiyor} title="Bu öneriyi yalnız sizin için gizler (faydasız)">
+            <Ikon ad="gizle" />
+            Gizle
+          </button>
+        </div>
       </div>
 
       {modelAcik && (
@@ -379,14 +388,18 @@ export function AiOneriKarti({ oneri, onGit, sohbetId }: { oneri: AsistanOnerisi
   const sor = (soru: string) => acSekme("sohbet", { soru, ...(sohbetId ? { sohbetId } : {}) });
   return (
     <article className="oneri-karti oneri-karti-ai" aria-labelledby={baslikId}>
-      <span className="oneri-ai-etiket">AI önerisi · doğrulanmadı</span>
+      <span className="oneri-ai-etiket">
+        <Ikon ad="aiSor" />
+        AI önerisi · doğrulanmadı
+      </span>
       <h3 id={baslikId} className="oneri-baslik">
         {k.baslik}
       </h3>
       <p className="oneri-neden">{k.neden}</p>
       <OneriEylemAlani eylem={k.eylem} ai onGit={onGit} />
       <div className="oneri-alt">
-        <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => sor(aiOneriSorusu(k.baslik, k.neden))}>
+        <button type="button" className="dugme dugme-ikincil dugme-kucuk" onClick={() => sor(aiOneriSorusu(k.baslik, k.neden))}>
+          <Ikon ad="aiSor" className="ikon-ai" />
           Bunu sor
         </button>
       </div>

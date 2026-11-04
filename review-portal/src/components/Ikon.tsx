@@ -6,6 +6,25 @@
  */
 
 const CIZIM = {
+  // Öneriler ve asistana soran eylemler (öneri kartı, "Asistana sor", ek öneriler). `aiSor` AI kimliğidir
+  // (dört köşeli parıltı): yalnız AI'a soran/AI üreten öğelerde, `--vurgu` renginde kullanılır.
+  aiSor: <path d="M12 3.5c.6 4.4 2.6 6.4 7 7-4.4.6-6.4 2.6-7 7-.6-4.4-2.6-6.4-7-7 4.4-.6 6.4-2.6 7-7ZM18.5 15.5c.2 1.4.8 2 2.2 2.2-1.4.2-2 .8-2.2 2.2-.2-1.4-.8-2-2.2-2.2 1.4-.2 2-.8 2.2-2.2Z" />,
+  faydali: <path d="M7.5 10.5v9h-3v-9h3ZM7.5 10.5 11 4a2 2 0 0 1 2.9 2.2L13 10h5.3a2 2 0 0 1 2 2.4l-1.3 5.6a2 2 0 0 1-2 1.5H7.5" />,
+  yaptim: <path d="m5 12.5 4.5 4.5L19 7.5" />,
+  gizle: (
+    <>
+      <path d="M10.6 5.6A9.8 9.8 0 0 1 12 5.5c5 0 8.5 4.5 9.5 6.5a14 14 0 0 1-2.6 3.4M6.6 6.6C4.4 8 3 10.2 2.5 12c1 2 4.5 6.5 9.5 6.5 1.8 0 3.4-.6 4.8-1.4" />
+      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M3.5 3.5l17 17" />
+    </>
+  ),
+  yenile: <path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4" />,
+  kopyala: (
+    <>
+      <rect x="8.5" y="8.5" width="11" height="11" rx="2" />
+      <path d="M15.5 8.5V6a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5" />
+    </>
+  ),
+
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   ay: <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" />,
   gunes: (

@@ -8,6 +8,7 @@ import { useBaglantiDurumu, useOlay } from "../../api/events";
 import { ApiError } from "../../api/http";
 import type { EkranBaglami } from "../../lib/ekranBaglami";
 import { oturumDegisinceTemizle } from "../../lib/oturumTemizligi";
+import { Ikon } from "../Ikon";
 import { AiOneriKarti } from "./OneriKarti";
 import { oneriAyar } from "./OneriVerisi";
 
@@ -329,10 +330,11 @@ export function OneriEkOneriler({ ekran, onGit }: { ekran: EkranBaglami; onGit?:
         disabled={gonderiliyor || !!sohbetteBekleyen}
         aria-describedby={sohbetteBekleyen ? "oneri-ek-kilit" : undefined}
       >
+        <Ikon ad="aiSor" className="ikon-ai" />
         Başka ne yapabilirim?
       </button>
       {sohbetteBekleyen && (
-        <p className="soluk kucuk" id="oneri-ek-kilit" role="status">
+        <p className="dugme-neden" id="oneri-ek-kilit" role="status">
           Sohbet'teki soru yanıt bekliyor; cevap gelince kullanılabilir.
         </p>
       )}
@@ -394,7 +396,8 @@ export function OneriEkOneriler({ ekran, onGit }: { ekran: EkranBaglami; onGit?:
   }
   if (durum.tur === "bekliyor") {
     return (
-      <div className="oneri-ek" role="status">
+      <div className="oneri-ek oneri-ek-bekliyor" role="status">
+        <span className="donen donen-kucuk" aria-hidden="true" />
         <span className="soluk kucuk">Ek öneriler hazırlanıyor…</span>{" "}
         <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => void durdur(durum.mesajId)}>
           Durdur

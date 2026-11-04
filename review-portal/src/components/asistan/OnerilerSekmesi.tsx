@@ -9,6 +9,7 @@ import { Link } from "react-router-dom";
 import type { AsistanDurumu } from "../../api/asistan";
 import { useOturum } from "../../auth";
 import type { EkranBaglami } from "../../lib/ekranBaglami";
+import { Ikon } from "../Ikon";
 import { BosDurum, Uyari, Yukleniyor } from "../ui";
 import { OneriEkOneriler } from "./OneriEkOneriler";
 import { goreliZaman, OneriKarti } from "./OneriKarti";
@@ -106,6 +107,7 @@ export function OnerilerSekmesi({ ekran, asistan, oneriKuralId, onGit }: Onerile
       <div className="oneri-ust">
         {/* Erişilebilir ad görünen metindir (WCAG 2.5.3); yükleme aria-busy ile verilir. */}
         <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={yenile} disabled={durum.yukleniyor} aria-busy={durum.yukleniyor || undefined}>
+          <Ikon ad="yenile" className="oneri-yenile-ikon" />
           Önerileri yenile
         </button>
       </div>

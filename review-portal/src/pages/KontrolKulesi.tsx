@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
@@ -11,69 +11,12 @@ import { BAZ_KAYNAGI } from "../components/BazDegerKarti";
 import { dolar, sure, tarih, yuzde } from "../lib/format";
 import { KosuTablosu } from "./Kosular";
 import { OnerilerOlcumKarti } from "../components/asistan/OnerilerOlcumKarti";
+import { KaynakIpucu } from "../components/KaynakIpucu";
 
 // `Olculmedi` ortak bileşenlere (components/ui) taşındı; eski içe aktarmalar için yeniden dışa aktarılır.
 export { Olculmedi };
-
-/**
- * KPI'nın kaynağı (core `kaynaklar`): ekran okuyucuda etiket (role=img + aria-label); görenler için fareyle,
- * klavye odağıyla ya da dokunarak açılan ipucu (WCAG 1.4.13: üstüne gelinebilir, Escape ile kapanır).
- * İpucu metni CSS `attr(aria-label)` ile çizilir (DOM'a yeni metin girmez); `position: fixed` olduğu için
- * şeridin `overflow: hidden` kırpmasına takılmaz, ekran kenarına sıkıştırılır.
- */
-export function KaynakIpucu({ kaynak }: { kaynak: string | undefined }) {
-  const metin = kaynak ? `Kaynak: ${kaynak}` : "Kaynak: core bu ölçünün kaynağını bildirmedi";
-  const ref = useRef<HTMLSpanElement>(null);
-  const [acik, setAcik] = useState(false);
-  const [konum, setKonum] = useState<{ x: number; y: number } | null>(null);
-  const yerlestir = useCallback(() => {
-    const el = ref.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    const kenar = 16;
-    const en = Math.min(280, window.innerWidth - 2 * kenar);
-    const x = Math.max(kenar, Math.min(r.left + r.width / 2 - en / 2, window.innerWidth - kenar - en));
-    // Boşluksuz (24 px hedefin alt kenarı): imleç ipucuna geçerken ipucu kapanmaz (1.4.13 üstüne gelinebilir).
-    setKonum({ x: Math.round(x), y: Math.round(r.bottom - 1) });
-  }, []);
-  const ac = () => {
-    yerlestir();
-    setAcik(true);
-  };
-  useEffect(() => {
-    if (!acik) return;
-    window.addEventListener("scroll", yerlestir, true);
-    window.addEventListener("resize", yerlestir);
-    return () => {
-      window.removeEventListener("scroll", yerlestir, true);
-      window.removeEventListener("resize", yerlestir);
-    };
-  }, [acik, yerlestir]);
-  return (
-    <span
-      ref={ref}
-      className="kaynak-ipucu"
-      tabIndex={0}
-      role="img"
-      aria-label={metin}
-      data-testid="kaynak-ipucu"
-      data-acik={acik ? "" : undefined}
-      style={acik && konum ? ({ "--ipucu-x": `${konum.x}px`, "--ipucu-y": `${konum.y}px` } as CSSProperties) : undefined}
-      onMouseEnter={ac}
-      onMouseLeave={() => setAcik(false)}
-      onFocus={ac}
-      onBlur={() => setAcik(false)}
-      onKeyDown={(e) => {
-        if (e.key === "Escape" && acik) {
-          e.stopPropagation();
-          setAcik(false);
-        }
-      }}
-    >
-      i
-    </span>
-  );
-}
+// `KaynakIpucu` Kule kartlarıyla asistan ölçüm kartı arasında ortak (components/KaynakIpucu); eski içe aktarmalar için.
+export { KaynakIpucu };
 
 function KpiBaslik({ ad, k, anahtar }: { ad: string; k: Kule; anahtar: KpiAnahtari }): ReactNode {
   return (
