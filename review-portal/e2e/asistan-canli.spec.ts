@@ -208,7 +208,7 @@ test("analist (model kapalı): S2 sözlük, S3 şablon, kapalı kip mesajı, S12
   await page.goto(`/gereksinimler/${hedef!.id}`);
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   const dugme = page.getByTestId("oneri-dugmesi");
-  await expect(dugme).toHaveAttribute("aria-label", /^Öneriler \([1-9]\d*\)$/);
+  await expect(dugme).toHaveAttribute("aria-label", /^Öneriler: [1-9]\d*$/);
   await dugme.click();
   await expect(panel(page).getByRole("tab", { name: "Öneriler" })).toHaveAttribute("aria-selected", "true");
   const sekme = page.getByTestId("oneriler-sekmesi");
@@ -277,7 +277,7 @@ test("testçi (model kapalı): S6 bugün ne yapmalıyım, S3 şablon, kapalı ki
     await page.goto(`/bug-taslaklari/${taslak.id}`);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     const dugme = page.getByTestId("oneri-dugmesi");
-    await expect(dugme).toHaveAttribute("aria-label", /^Öneriler \([1-9]\d*\)$/);
+    await expect(dugme).toHaveAttribute("aria-label", /^Öneriler: [1-9]\d*$/);
     await dugme.click();
     const oneri = page.getByTestId("oneriler-sekmesi").getByRole("article").filter({ hasText: /Taslak kararınızı bekliyor/ });
     await expect(oneri).toHaveCount(1);

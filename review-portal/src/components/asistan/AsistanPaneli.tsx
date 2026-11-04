@@ -340,7 +340,7 @@ export function AsistanPaneli() {
         // Kap yalnız konum içindir (sağ alt). Pasifken neden portalın pasiflik dilinde düğmenin DIŞINDA,
         // solunda görünür yazılır (.dugme-neden; dokunmatikte ve klavyede title okunmaz) ve
         // aria-describedby ile bağlıdır; düğme yine tıklanır, panel nedeni uyarıda da gösterir.
-        <div className={`asistan-baslatici-kap${pasifNeden ? " neden-var" : ""}`} data-asistan-gizli>
+        <div className="asistan-baslatici-kap" data-asistan-gizli>
           {pasifNeden && (
             <p id={nedenId} className="dugme-neden asistan-baslatici-neden">
               {pasifNeden}
@@ -360,7 +360,9 @@ export function AsistanPaneli() {
               paneliAc();
             }}
           >
-            <Ikon ad="asistan" /> Asistan
+            {/* Görünür ad erişilebilir adın içinde (WCAG 2.5.3); dar/kısa ekranda gizlenir (yalnız ikon, asistan.css). */}
+            <Ikon ad="asistan" />
+            <span className="asistan-baslatici-metin">{pasifNeden ? "Asistan" : "Asistanı aç"}</span>
           </button>
         </div>
       )}

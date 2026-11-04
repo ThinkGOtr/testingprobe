@@ -193,10 +193,11 @@ function KabukIcerik() {
 
   // Açık mobil menü kipsel davranır (WCAG 2.4.11 / 2.4.3): menü düğmesi ve menü dışındaki her şey (İçeriğe atla ve
   // "Asistanı aç" atlamaları, marka, üst çubuğun sağı — öneri düğmesi dahil —, içerik ve Kabuk'un kardeşi olan yüzen
-  // asistan başlatıcısı) inert olur; başlatıcı perdenin altına iner (styles.css), menüyle yarışan ikinci bir giriş kalmaz.
-  // Asistana ulaşmak için menü kapatılır; panel açılırsa KabukDurumu çekmeceyi zaten kapatır. Tab yalnız menü düğmesi ile menü bağlantıları arasında döngüyle dolaşır,
-  // odak menünün altında kalan içeriğe geçemez. Açılışta odak ilk menü bağlantısına taşınır. Kapanış: Escape,
-  // menü düğmesi, perdeye dokunma ya da bir bağlantıyla gezinme (yukarıdaki efektler).
+  // asistan başlatıcısı) inert olur; başlatıcının kabı perdenin altında gizlenir (asistan.css), menüyle yarışan ikinci
+  // bir giriş kalmaz. Asistan paneli ile çekmece birbirini dışlar (KabukDurumu): menü açılınca açık panel kapanır,
+  // panel açılınca menü kapanır. Tab yalnız menü düğmesi ile menü bağlantıları arasında döngüyle dolaşır, odak
+  // menünün altında kalan içeriğe geçemez. Açılışta odak ilk menü bağlantısına taşınır. Kapanış: Escape, menü
+  // düğmesi, perdeye dokunma ya da bir bağlantıyla gezinme (yukarıdaki efektler).
   useEffect(() => {
     if (!menuAcik) return;
     const kok = kabukRef.current;
@@ -258,6 +259,9 @@ function KabukIcerik() {
           </span>
         </NavLink>
         <div className="ust-sag">
+          {/* Öneri düğmesi grubun en solunda: yalnız kuralı olan ekranlarda çizildiği için sağa yaslı grupta
+              görünüp kaybolması diğer öğeleri (ÖRNEK VERİ, bağlantı göstergesi) kaydırmaz. */}
+          <OneriDugmesi />
           {mockAktif && (
             <span
               className="rozet rozet-mock"
@@ -267,10 +271,14 @@ function KabukIcerik() {
                   : `Şu uçlar henüz core-api'de yok; örnek veriyle cevaplandı:\n${mockUclar.join("\n")}`
               }
             >
-              ÖRNEK VERİ
+              {/* Dar üst çubukta (≤360 px) görsel olarak "ÖRNEK"e kısalır: tam metin görsel gizlenir ama okunur,
+                  kısa kopya yalnız görseldir (styles.css). */}
+              <span className="rozet-mock-tam">ÖRNEK VERİ</span>
+              <span className="rozet-mock-kisa" aria-hidden="true">
+                ÖRNEK
+              </span>
             </span>
           )}
-          <OneriDugmesi />
           <span className={`baglanti baglanti-${b.sinif}`} role="status">
             <span className="nokta" aria-hidden="true" />
             <span className="baglanti-metin">{b.etiket}</span>

@@ -326,11 +326,18 @@ test("mobil menü kapalıyken Tab sırasına girmez (dikey ve yatay telefon); me
       await page.keyboard.press("Tab");
       expect(await menudeOdak(), `${genislik}×${yukseklik} Tab ${i + 1}`).toBe(false);
     }
+    // Kipsel menüde yüzen asistan başlatıcısı perdenin üstünde görünmez ve inert'tir; menü kapanınca geri gelir.
+    // (Başlatıcı asistan durumu okununca çizilir: menü ondan önce açılırsa inert listesine giremez.)
+    const baslatici = page.getByRole("button", { name: "Asistanı aç", exact: true });
+    await expect(baslatici).toBeVisible();
     await menuDugmesi.click();
     await expect(menu.getByRole("link", { name: "Denetim" })).toBeVisible();
+    await expect(baslatici).toBeHidden();
+    expect(await page.locator(".asistan-baslatici").evaluate((e) => (e as HTMLElement).inert)).toBe(true);
     await page.keyboard.press("Escape");
     await expect(menuDugmesi).toBeFocused();
     await expect(menu.getByRole("link", { name: "Denetim" })).toBeHidden();
+    await expect(baslatici).toBeVisible();
     // Açık menü kipsel (WCAG 2.4.11): açılışta odak ilk bağlantıda; Tab / Shift+Tab yalnız menü ile menü
     // düğmesi arasında dolaşır, menünün altında kalan içeriğe geçmez.
     await page.keyboard.press("Enter");
@@ -370,24 +377,38 @@ test("mobil menü kapalıyken Tab sırasına girmez (dikey ve yatay telefon); me
   }
 });
 
-test("320 px üst çubuk: \"Probe\" markası kesilmez", async ({ page }) => {
+test("320–480 px üst çubuk: \"Probe\" markası rozet sayılı Öneri düğmesi ve ÖRNEK VERİ ile de kesilmez", async ({ page }) => {
+  // En dolu üst çubuk: Öneri düğmesi rozetli (bekleyen iş 1) + ÖRNEK VERİ + bağlantı + tema + Çıkış.
   await page.setViewportSize({ width: 320, height: 640 });
-  await girisYap(page, "sunucu");
-  await page.goto("/gereksinimler");
-  await expect(page.getByRole("heading", { name: "Gereksinimler", level: 1 })).toBeVisible();
+  await girisYap(page, "analist");
+  await page.goto("/gereksinimler/req-ft-1");
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await expect(page.getByTestId("oneri-dugmesi").locator(".oneri-rozet")).toHaveText("1");
+  await expect(page.locator(".ust-sag > .rozet-mock")).toBeVisible();
   await fontlariBekle(page);
-  const olcu = await page.evaluate(() => {
-    const kap = document.querySelector(".ust-cubuk .marka > span:last-child")!;
-    return {
-      tasma: kap.scrollWidth - kap.clientWidth,
-      sag: document.querySelector(".ust-cubuk .marka strong")!.getBoundingClientRect().right,
-      kapSag: kap.getBoundingClientRect().right,
-      sayfa: document.documentElement.scrollWidth,
-    };
-  });
-  expect(olcu.tasma).toBeLessThanOrEqual(0);
-  expect(olcu.sag).toBeLessThanOrEqual(olcu.kapSag + 0.5);
-  expect(olcu.sayfa).toBeLessThanOrEqual(320);
+  for (const genislik of [320, 340, 360, 390, 440, 480]) {
+    await page.setViewportSize({ width: genislik, height: 640 });
+    const olcu = await page.evaluate(() => {
+      const kap = document.querySelector(".ust-cubuk .marka > span:last-child")!;
+      return {
+        tasma: kap.scrollWidth - kap.clientWidth,
+        sag: document.querySelector(".ust-cubuk .marka strong")!.getBoundingClientRect().right,
+        kapSag: kap.getBoundingClientRect().right,
+        sayfa: document.documentElement.scrollWidth,
+      };
+    });
+    expect(olcu.tasma, `${genislik}px marka taşması`).toBeLessThanOrEqual(0);
+    expect(olcu.sag, `${genislik}px "Probe"`).toBeLessThanOrEqual(olcu.kapSag + 0.5);
+    expect(olcu.sayfa, `${genislik}px yatay kaydırma`).toBeLessThanOrEqual(genislik);
+  }
+  // Öneri düğmesinin görünüp kaybolması sağ grubu kaydırmaz: düğme grubun en solunda.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const solKenar = () => page.locator(".ust-sag > .rozet-mock").evaluate((e) => e.getBoundingClientRect().left);
+  const oneriliSol = await solKenar();
+  await page.goto("/kod/scr-2");
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await expect(page.getByTestId("oneri-dugmesi")).toHaveCount(0);
+  expect(await solKenar()).toBe(oneriliSol);
 });
 
 test("ilk boyama kayıtlı temada: açık/sistem seçen kullanıcı paket gelmeden koyu görmez", async ({ page }) => {
