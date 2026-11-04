@@ -1129,6 +1129,7 @@ def test_otomatik_yukseltme_cocuk_ve_is_ayni_transactionda(
         "derin_cocuk",
         "elle_derin",
         "model_hatasi",
+        "genel_bilgi",
     ],
 )
 def test_otomatik_yukseltme_tetiklenmez(
@@ -1166,8 +1167,17 @@ def test_otomatik_yukseltme_tetiklenmez(
     elif neden == "model_hatasi":
         _, mid = soru_gonder(client, engine, KIRARAK, baglam=GRI_BAGLAM)
         assert cevapla(engine, mid, Gecit(engine, script)) == "error"
+    elif neden == "genel_bilgi":  # S9: ürüne özgü olmayan soru, araçsız genel bilgi cevabı
+        _, mid = soru_gonder(client, engine, "Flaky test nasıl ayıklanır?")
+        genel = [bitir(guven="orta", kaynaklar=[{"tur": "genel_bilgi", "ref": "", "alinti": ""}])]
+        assert cevapla(engine, mid, Gecit(engine, genel)) == "done"
+        cevap = mesaj(engine, mid)["cevap"]
+        assert (cevap["urune_ozgu"], cevap["guven_gosterimi"]) == (False, sonislem.GENEL_BILGI)
     else:
         mid = _yukseltilen(client, engine, script)
+    if neden == "eylem_reddi":  # S7: model bağlantı vermese de ret ekran bağlantısı taşır
+        cevap = mesaj(engine, mid)["cevap"]
+        assert [y["rota"] for y in cevap["yonlendirmeler"]] == ["/kod"]
     assert cocuklar(engine, mid) == []
     assert "derin_onerilir" not in (mesaj(engine, mid)["cevap"] or {})
 

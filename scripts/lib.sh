@@ -6,8 +6,18 @@
 TP_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$TP_REPO_ROOT" || exit 1
 
-# Compose proje adı ve Postgres volume'ü (docker-compose.yml: name: testingprobe)
-TP_PROJECT="testingprobe"
+# Compose proje adı ve Postgres volume'ü (docker-compose.yml: name: ${COMPOSE_PROJECT_NAME:-testingprobe}).
+# Yalıtılmış ikinci yığın için (ör. ayrı worktree): COMPOSE_PROJECT_NAME ve TP_IMAGE_PREFIX kabukta
+# ya da .env'de verilir; boşsa varsayılan testingprobe (bkz. .env.example).
+_tp_env_ilk() {
+  [ -f .env ] || return 0
+  sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" .env | tail -n 1 | tr -d "\"'[:space:]" || true
+}
+COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-$(_tp_env_ilk COMPOSE_PROJECT_NAME)}"
+TP_IMAGE_PREFIX="${TP_IMAGE_PREFIX:-$(_tp_env_ilk TP_IMAGE_PREFIX)}"
+TP_PROJECT="${COMPOSE_PROJECT_NAME:-testingprobe}"
+TP_IMAGE_PREFIX="${TP_IMAGE_PREFIX:-testingprobe}"
+export COMPOSE_PROJECT_NAME="$TP_PROJECT" TP_IMAGE_PREFIX
 TP_PG_VOLUME="${TP_PROJECT}_tp_pgdata"
 TP_ARTIFACTS_VOLUME="${TP_PROJECT}_tp_artifacts"
 TP_CODEGEN_VOLUME="${TP_PROJECT}_tp_codegen"

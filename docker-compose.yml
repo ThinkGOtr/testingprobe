@@ -14,13 +14,14 @@
 # kapatılamayan araçları) yalnızca demo-app-web'e ulaşır (nginx /api/test/*'i kapatır); core-api,
 # jira-sim, postgres, demo-app-api, test-runner ve internete erişemez; host'a port açmaz.
 
-name: testingprobe
+# Proje adı ve imaj öneki ortamdan değiştirilebilir (yalıtılmış ikinci yığın; bkz. .env.example).
+name: ${COMPOSE_PROJECT_NAME:-testingprobe}
 
 # İmajı yalnızca `migrate` derler; core-api/core-worker aynı yerel imajı kullanır (build yok,
 # pull_policy: never). Aynı imajı üç servisin ayrı ayrı derlemesi `make up`'ı idempotent olmaktan
 # çıkarıyordu (her çalıştırmada yeniden derleme → gereksiz yeniden oluşturma).
 x-core-image: &core-image
-  image: testingprobe-core:local
+  image: ${TP_IMAGE_PREFIX:-testingprobe}-core:local
   pull_policy: never
 
 # Ortak çekirdek ortamı (core-api + core-worker). Yazma yetkili kimlikler burada DEĞİL:
@@ -100,7 +101,7 @@ x-core-env: &core-env
 # İmajı yalnızca toolchain-worker derler (`ci` hedefi, MCP yok); test-runner aynı yerel imajı
 # kullanır. playwright-mcp ayrı `mcp` hedefini derler (Constitution II: CI imajında ajan yok).
 x-toolchain-image: &toolchain-image
-  image: testingprobe-toolchain:local
+  image: ${TP_IMAGE_PREFIX:-testingprobe}-toolchain:local
   pull_policy: never
 
 x-toolchain-build: &toolchain-build
@@ -349,7 +350,7 @@ services:
         limits: { memory: 3g }
 
   playwright-mcp:
-    image: testingprobe-toolchain-mcp:local
+    image: ${TP_IMAGE_PREFIX:-testingprobe}-toolchain-mcp:local
     build:
       context: ./toolchain
       target: mcp
@@ -376,7 +377,7 @@ services:
         limits: { memory: 2g }
 
   jira-sim:
-    image: testingprobe-jira-sim:local
+    image: ${TP_IMAGE_PREFIX:-testingprobe}-jira-sim:local
     build:
       context: ./sims/jira-sim
     pull_policy: build
@@ -402,7 +403,7 @@ services:
         limits: { memory: 256m }
 
   review-portal:
-    image: testingprobe-review-portal:local
+    image: ${TP_IMAGE_PREFIX:-testingprobe}-review-portal:local
     build:
       context: ./review-portal
     pull_policy: build
@@ -422,7 +423,7 @@ services:
         limits: { memory: 128m }
 
   demo-app-api:
-    image: testingprobe-demo-app-api:local
+    image: ${TP_IMAGE_PREFIX:-testingprobe}-demo-app-api:local
     build:
       context: ./demo-app/api
     pull_policy: build
@@ -448,7 +449,7 @@ services:
         limits: { memory: 256m }
 
   demo-app-web:
-    image: testingprobe-demo-app-web:local
+    image: ${TP_IMAGE_PREFIX:-testingprobe}-demo-app-web:local
     build:
       context: ./demo-app/web
     pull_policy: build

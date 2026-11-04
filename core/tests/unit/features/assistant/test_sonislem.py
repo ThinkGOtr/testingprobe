@@ -940,3 +940,182 @@ def test_varsayilan_arac_seti_ve_dogrulayici_ayni_sha_ve_tek_kurulum(
     araclar.execute("search_code", {"query": "indirim"})
     assert dogrulayici.uygulama_satirlari("src/k.py") == ["src/k.py@abc123", "return indirim"]
     assert kurulum == ["kod"]
+
+
+# ------------------------------------------------------------------ eylem reddi → ekran bağlantısı
+
+
+def _probe_havuzu(arac: str, metin: str) -> KanitHavuzu:
+    havuz = KanitHavuzu()
+    havuz.ekle(arac, "probe_verisi", lambda k: f"[kanit:{k}]\n{metin}")
+    return havuz
+
+
+@pytest.mark.parametrize(
+    ("soru", "baglam", "rol", "beklenen"),
+    [
+        # Bağlamsız eylem: kural dosyasındaki ifade → ekran (eval eylem-kosu-tetikle).
+        ("Yeni bir gece koşusu başlat.", None, "presenter", ["/kosular"]),
+        # Bulunulan ekran ve ifade aynı (eval eylem-demo-sifirla).
+        ("Demo verisini sıfırla.", {"rota_kalibi": "/demo"}, "presenter", ["/demo"]),
+        # Rolün açamadığı ekran bağlantı olmaz (`/demo` yalnız Sunucu).
+        ("Demo verisini sıfırla.", {"rota_kalibi": "/demo"}, "tester", []),
+        # `:id` bağlamdaki varlıktan; ifade eşleşmezse bulunulan ekran.
+        (
+            "Bu case'i onayla",
+            {
+                "rota_kalibi": "/gereksinimler/:id/caseler",
+                "varlik": {"tur": "requirement", "id": REQ},
+            },
+            "analyst",
+            [UUID_RE_ROTA],
+        ),
+        (
+            "Bu hata için Jira'da bir task aç.",
+            {"rota_kalibi": "/hatalar/:id", "varlik": {"tur": "failure", "id": REQ}},
+            "tester",
+            [f"/hatalar/{REQ}"],
+        ),
+        # Varlık türü ekranınkine uymuyorsa `:id` doldurulmaz → liste ekranı.
+        (
+            "TPD-3'ü PO adına onayla.",
+            {"rota_kalibi": "/kod/:id", "varlik": {"tur": "script", "id": REQ}},
+            "analyst",
+            ["/gereksinimler"],
+        ),
+        # Eşleşme ve bağlam yok: bağlantı uydurulmaz.
+        ("Demo veritabanında indirim oranını %20 yap.", None, "tester", []),
+    ],
+)
+def test_eylem_reddinde_ekran_baglantisi_kural_dosyasindan(
+    soru: str, baglam: dict[str, Any] | None, rol: str, beklenen: list[str]
+) -> None:
+    cevap = isle(
+        _cikti(eylem_reddi=True, guven="dusuk"),
+        SonIslemBaglami(soru=soru, baglam=baglam, rol=rol, urune_ozgu=True),
+    )
+    assert [y["rota"] for y in cevap["yonlendirmeler"]] == beklenen
+    assert all(y["etiket"] for y in cevap["yonlendirmeler"])
+    assert sonislem.NOT_EMIN_DEGILIM not in cevap["notlar"]  # ret metni yeterli
+
+
+def test_eylem_reddinde_id_arac_sonucundaki_kayittan_anahtarla_secilir() -> None:
+    diger = "0f3c8a1e-2b4d-4c6e-8f00-998877665544"
+    tek = _probe_havuzu("probe_get", f"anahtar: TPD-3\nekran_rotasi: /gereksinimler/{REQ}")
+    cevap = isle(
+        _cikti(eylem_reddi=True),
+        SonIslemBaglami(soru="TPD-3'ü PO adına onayla", havuz=tek, rol="analyst"),
+    )
+    assert [y["rota"] for y in cevap["yonlendirmeler"]] == [f"/gereksinimler/{REQ}"]
+    liste = _probe_havuzu(
+        "probe_list",
+        f"- {REQ} | pending_po | TPD-3 · Kampanya | /gereksinimler/{REQ}\n"
+        f"- {diger} | pending_po | TPD-4 · Bayi | /gereksinimler/{diger}",
+    )
+    cevap = isle(
+        _cikti(eylem_reddi=True),
+        SonIslemBaglami(soru="TPD-4 için case üret", havuz=liste, rol="analyst"),
+    )
+    assert [y["rota"] for y in cevap["yonlendirmeler"]] == [f"/gereksinimler/{diger}"]
+    # Anahtarsız soruda liste satırlarından tahmin yok (belirsiz) → liste ekranı.
+    cevap = isle(
+        _cikti(eylem_reddi=True),
+        SonIslemBaglami(soru="Bekleyen gereksinimi onayla", havuz=liste, rol="analyst"),
+    )
+    assert [y["rota"] for y in cevap["yonlendirmeler"]] == ["/gereksinimler"]
+
+
+def test_modelin_gecerli_yonlendirmesi_varsa_eylem_kurali_eklenmez() -> None:
+    cevap = isle(
+        _cikti(eylem_reddi=True, yonlendirmeler=[{"etiket": "Koşu", "rota": f"/kosular/{REQ}"}]),
+        SonIslemBaglami(soru="Yeni bir gece koşusu başlat.", rol="presenter"),
+    )
+    assert [y["rota"] for y in cevap["yonlendirmeler"]] == [f"/kosular/{REQ}"]
+    # Rota dışı model rotası düşer, kural bağlantısı gelir (eval s8 `/kuyruk` deseni).
+    cevap = isle(
+        _cikti(eylem_reddi=True, yonlendirmeler=[{"etiket": "Kuyruk", "rota": "/kuyruk"}]),
+        SonIslemBaglami(soru="Yeni bir gece koşusu başlat.", rol="presenter"),
+    )
+    assert [y["rota"] for y in cevap["yonlendirmeler"]] == ["/kosular"]
+    # Eylem reddi olmayan cevaba bağlantı eklenmez.
+    cevap = isle(_cikti(), SonIslemBaglami(soru="Yeni bir gece koşusu başlat.", rol="presenter"))
+    assert cevap["yonlendirmeler"] == []
+
+
+def test_eylem_reddinde_soru_anahtari_gereksinim_ekranina_cozulur() -> None:
+    """Araç çağrılmadan reddedilen "TPD-3'ü PO adına onayla" (eval eylem-po-adina-onay): soruda tek
+    anahtar → gereksinimin kaydı; modelin yalnız liste ekranı verdiği bağlantının yerine geçer."""
+    kimlikler = {"TPD-3": REQ}
+    b = {"soru": "TPD-3'ü PO adına onayla", "rol": "analyst", "gereksinim_kimligi": kimlikler.get}
+    cevap = isle(_cikti(eylem_reddi=True), SonIslemBaglami(**b))
+    assert [y["rota"] for y in cevap["yonlendirmeler"]] == [f"/gereksinimler/{REQ}"]
+    liste = [{"etiket": "Gereksinimler", "rota": "/gereksinimler"}]
+    cevap = isle(_cikti(eylem_reddi=True, yonlendirmeler=liste), SonIslemBaglami(**b))
+    assert [y["rota"] for y in cevap["yonlendirmeler"]] == [f"/gereksinimler/{REQ}"]
+    # Kayıtsız anahtar: tahmin yok, modelin liste bağlantısı kalır.
+    b["gereksinim_kimligi"] = {}.get
+    cevap = isle(_cikti(eylem_reddi=True, yonlendirmeler=liste), SonIslemBaglami(**b))
+    assert [y["rota"] for y in cevap["yonlendirmeler"]] == ["/gereksinimler"]
+    # Modelin kayıt ekranı (liste değil) aynen kalır.
+    kayit = [{"etiket": "Koşu", "rota": f"/kosular/{REQ}"}]
+    b["gereksinim_kimligi"] = kimlikler.get
+    cevap = isle(_cikti(eylem_reddi=True, yonlendirmeler=kayit), SonIslemBaglami(**b))
+    assert [y["rota"] for y in cevap["yonlendirmeler"]] == [f"/kosular/{REQ}"]
+
+
+# ------------------------------------------------------------------ "emin değilim" (§7.1)
+
+
+@pytest.mark.parametrize(
+    ("cikti", "baglam", "not_beklenir"),
+    [
+        # Kaynaksız ürün sorusu → "Emin değil"; metinde ifade yok (eval bilmiyorum-uretim-ip).
+        (
+            {
+                "guven": "dusuk",
+                "cevap_bloklari": [{"tur": "paragraf", "metin": "Doğrulayamadım.", "maddeler": []}],
+            },
+            {"urune_ozgu": True},
+            True,
+        ),
+        # Model `dusuk` işaretledi, metin ifadeyi taşımıyor (eval bilmiyorum-sonraki-sprint).
+        ({"guven": "dusuk"}, {"urune_ozgu": True}, True),
+        # Model ifadeyi zaten yazdı (büyük harf/İ dahil): tekrar yok.
+        (
+            {
+                "guven": "dusuk",
+                "cevap_bloklari": [{"tur": "paragraf", "metin": "EMİN DEĞİLİM.", "maddeler": []}],
+            },
+            {"urune_ozgu": True},
+            False,
+        ),
+        ({"guven": "yuksek"}, {"urune_ozgu": False}, False),
+        (
+            {"guven": "orta", "kaynaklar": [_kaynak("genel_bilgi", "", "")]},
+            {"urune_ozgu": False},
+            False,
+        ),
+        # Toparlama "Emin değil" gösterir → ifade de eklenir.
+        ({"guven": "yuksek"}, {"toparlama": True}, True),
+    ],
+)
+def test_dogrulanamayan_cevapta_emin_degilim_notu(
+    cikti: dict[str, Any], baglam: dict[str, Any], not_beklenir: bool
+) -> None:
+    cevap = isle(_cikti(**cikti), SonIslemBaglami(**baglam))
+    assert (sonislem.NOT_EMIN_DEGILIM in cevap["notlar"]) is not_beklenir
+    if not_beklenir:
+        assert cevap["guven_gosterimi"] in (sonislem.EMIN_DEGIL, sonislem.KISMEN)
+
+
+def test_cevap_metninde_mention_yankisi_anmaz_kod_blogu_korunur() -> None:
+    bloklar = sonislem._bloklar(
+        [
+            {"tur": "paragraf", "metin": "@ali eklenmez; reader@sim.local kalır."},
+            {"tur": "liste", "maddeler": ["@ayse.k yorum yazdı"]},
+            {"tur": "kod", "metin": "@job_handler('x')"},
+        ]
+    )
+    assert bloklar[0]["metin"] == "ali eklenmez; reader@sim.local kalır."
+    assert bloklar[1]["maddeler"] == ["ayse.k yorum yazdı"]
+    assert bloklar[2]["metin"] == "@job_handler('x')"
