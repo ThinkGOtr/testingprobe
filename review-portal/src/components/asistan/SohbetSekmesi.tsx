@@ -30,13 +30,13 @@ import { CevapKarti } from "./CevapKarti";
 import { ekranAnahtariUret, ilkGorulmeler, istekGecerli, oneriSohbetiUnut, oneriSohbetiYaz, sohbetTaslagi, type AcmaIstegi, type SohbetTaslagi } from "./kontrol";
 import { ekOneriDurdur, ekOneriKontrol, sohbetBekleyeniYaz, useBekleyenEkOneri } from "./OneriEkOneriler";
 import { oneriAnahtari, oneriGetir, oneriSorgusu } from "./OneriVerisi";
+import { SOHBET_ANAHTARI } from "./oturumAnahtarlari";
 import { soruOnerileri } from "./sorular";
 
 /** Zamanlamalar (testler kısaltabilir). `duyuruAraMs`: aynı duyuru metni yeniden yazılmadan önce
  * canlı bölgenin boş kaldığı süre. */
 export const sohbetAyar = { yoklamaMs: 3000, uzunSurerMs: 25_000, saatMs: 1000, duyuruAraMs: 100 };
 
-const SOHBET_ANAHTARI = "tp-asistan-sohbet";
 
 function kayitliSohbet(): string | null {
   try {

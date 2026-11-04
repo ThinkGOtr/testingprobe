@@ -1,8 +1,14 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
-import { afterEach, beforeEach } from "vitest";
+import { afterEach, beforeAll, beforeEach } from "vitest";
 import { mockKayitlariniSifirla, yapilandir } from "../api/http";
 import { mockSifirla } from "../api/mock/handlers";
+import { asistanIceriginiYukle } from "../components/asistan/AsistanPaneli";
+
+// Asistan paneli içeriği tarayıcıda ayrı parçadır (ilk açılışta yüklenir, Suspense). Testlerde önceden
+// yüklenir: panel açılınca içerik eş zamanlı çizilir, test sırası/tek test koşusu sonucu değiştirmez.
+// Yükleme anı (Suspense yer tutucusu) asistan/tembelYukleme.test.tsx'te ayrıca sınanır.
+beforeAll(() => asistanIceriginiYukle());
 
 beforeEach(() => {
   mockSifirla();

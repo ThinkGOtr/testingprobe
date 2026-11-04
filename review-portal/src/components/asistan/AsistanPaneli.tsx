@@ -4,19 +4,78 @@
 // App.tsx'te `OturumGerekli` içinde Kabuk'un kardeşi olarak çizilir (OlayProvider içinde, /giris'te yok);
 // rota parametrelerini `useEkranBaglami` (useLocation + matchPath) ile okur.
 import "./asistan.css";
-import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
+// Oturum temizliği ana pakette: içerik modülleri hiç yüklenmeden çıkış yapılsa da kayıtlı anahtarlar silinir.
+import "./oturumAnahtarlari";
+import { Component, lazy, Suspense, useCallback, useEffect, useId, useRef, useState, type ComponentType, type ReactNode, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { api } from "../../api/client";
 import { mockZorunlu } from "../../api/http";
 import { useEkranBaglami, type EkranBaglami } from "../../lib/ekranBaglami";
 import { Ikon } from "../Ikon";
-import { DegerlendirmeNotu, Uyari } from "../ui";
+import { DegerlendirmeNotu, Uyari, Yukleniyor } from "../ui";
 import { elemanTanimi, noktadakiOge, yakalanabilirMi, type SeciliEleman } from "./buNe";
 import { ekranAnahtariUret, ekranDegisti, istegiTuket, paneliAc, paneliKapat, panelHazirAyarla, sekmeSec, useAsistanKontrol, type AsistanSekmesi } from "./kontrol";
-import { OnerilerSekmesi } from "./OnerilerSekmesi";
-import { SohbetSekmesi } from "./SohbetSekmesi";
+import type { OnerilerSekmesiOzellikleri } from "./OnerilerSekmesi";
+import type { SohbetSekmesiOzellikleri } from "./SohbetSekmesi";
 import { useAsistanKapisi } from "./yetenek";
 
 export const DAR_EKRAN_PX = 760;
+
+// Panel içeriği (Sohbet / Öneriler sekmeleri, cevap ve öneri kartları) ayrı parçadadır: panel kapalıyken
+// ana pakete girmez; ilk açılışta (ya da başlatıcının üzerine gelinince / odaklanınca) yüklenir. Stiller
+// (asistan.css, oneri.css) başlatıcı ve Öneri düğmesiyle ana pakette kalır: yükleme sırası değişmez.
+// Yüklendikten sonra `lazy` eş zamanlı bir thenable alır ve askıya almadan çizer (testler önceden yükler).
+type Icerik = { Sohbet: ComponentType<SohbetSekmesiOzellikleri>; Oneriler: ComponentType<OnerilerSekmesiOzellikleri> };
+let icerik: Icerik | null = null;
+let icerikYukleniyor: Promise<void> | null = null;
+
+/** Panel içerik parçasını yükler (bir kez); yükleme hatasında sonraki çağrı yeniden ister. */
+export function asistanIceriginiYukle(): Promise<void> {
+  icerikYukleniyor ??= Promise.all([import("./SohbetSekmesi"), import("./OnerilerSekmesi")]).then(
+    ([s, o]) => {
+      icerik = { Sohbet: s.SohbetSekmesi, Oneriler: o.OnerilerSekmesi };
+    },
+    (e: unknown) => {
+      icerikYukleniyor = null;
+      throw e;
+    },
+  );
+  return icerikYukleniyor;
+}
+
+function tembel<P>(sec: (i: Icerik) => ComponentType<P>) {
+  return lazy<ComponentType<P>>(() => {
+    if (icerik) {
+      const c = sec(icerik);
+      return { then: (coz: (m: { default: ComponentType<P> }) => void) => coz({ default: c }) } as Promise<{ default: ComponentType<P> }>;
+    }
+    return asistanIceriginiYukle().then(() => ({ default: sec(icerik!) }));
+  });
+}
+
+// `lazy` reddi önbelleğe alır: yükleme hatasından sonra "Yeniden dene" yeni bileşenlerle ister.
+const tembelSekmeler = () => ({ Sohbet: tembel((i) => i.Sohbet), Oneriler: tembel((i) => i.Oneriler) });
+let sekmeler = tembelSekmeler();
+
+/** İçerik parçası yüklenemezse (ağ kopukluğu, yeni sürümden sonra kalkmış eski parça) uygulama düşmez:
+ * panel içinde hata ve yeniden deneme. */
+class IcerikSiniri extends Component<{ children: ReactNode; yenidenDene: () => void }, { hata: boolean }> {
+  state = { hata: false };
+  static getDerivedStateFromError() {
+    return { hata: true };
+  }
+  render() {
+    if (!this.state.hata) return this.props.children;
+    return (
+      <Uyari ton="hata" baslik="Asistan yüklenemedi">
+        Bağlantıyı denetleyip yeniden deneyin.{" "}
+        <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={this.props.yenidenDene}>
+          Yeniden dene
+        </button>
+      </Uyari>
+    );
+  }
+}
+const onYukle = () => void asistanIceriginiYukle().catch(() => undefined);
 
 /** Pasif asistan (ör. `worker_yok`) panel açıkken bu aralıkla yeniden okunur (testler kısaltabilir). */
 export const panelAyar = { pasifYoklamaMs: 30_000 };
@@ -88,6 +147,13 @@ export function AsistanPaneli() {
   const oncekiBuNe = useRef(false);
   const baslikId = useId();
   const nedenId = useId();
+  /** İçerik yükleme denemesi: artınca hata sınırı sıfırlanır, sekmeler yeniden istenir. */
+  const [icerikDenemesi, setIcerikDenemesi] = useState(0);
+  const icerikYenidenDene = useCallback(() => {
+    sekmeler = tembelSekmeler();
+    setIcerikDenemesi((d) => d + 1);
+  }, []);
+  const { Sohbet: SohbetSekmesi, Oneriler: OnerilerSekmesi } = sekmeler;
 
   // "Bu ne?" seçimi o ekrana aittir: rota/varlık değişince önceki ekranın öğesi yeni bağlamla gitmesin.
   useEffect(() => setSecili(null), [ekranHam.rota_kalibi, ekranHam.varlik?.id]);
@@ -354,6 +420,8 @@ export function AsistanPaneli() {
             title={pasifNeden ?? "Asistanı aç"}
             aria-label={pasifNeden ? "Asistan (kapalı)" : "Asistanı aç"}
             aria-describedby={pasifNeden ? nedenId : undefined}
+            onPointerEnter={onYukle}
+            onFocus={onYukle}
             onClick={() => {
               // Pasifken de açılır: neden Sohbet sekmesindeki uyarıda da görünür.
               sekmeSec("sohbet");
@@ -440,37 +508,41 @@ export function AsistanPaneli() {
             aria-labelledby={yalnizOneri ? undefined : `asistan-sekme-${sekme}`}
             aria-label={yalnizOneri ? "Öneriler" : undefined}
           >
-            {sekme === "oneriler" ? (
-              <OnerilerSekmesi
-                ekran={ekran}
-                asistan={asistan}
-                oneriKuralId={kontrol.istek?.sekme === "oneriler" ? (kontrol.istek.oneriKuralId ?? null) : null}
-                onGit={onGit}
-              />
-            ) : pasifNeden || !asistan ? (
-              <Uyari ton="uyari" baslik="Asistan kullanılamıyor">
-                {pasifNeden ?? "Asistan kapalı."}{" "}
-                <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => void yenile()}>
-                  Yeniden dene
-                </button>
-              </Uyari>
-            ) : (
-              <SohbetSekmesi
-                ekran={ekran}
-                asistan={asistan}
-                durumYenile={() => void yenile()}
-                buNeBaslat={() => {
-                  setBuNeMesaji(null);
-                  setBuNe((b) => !b);
-                }}
-                buNeAcik={buNe}
-                secili={secili}
-                seciliTemizle={() => setSecili(null)}
-                istek={kontrol.istek}
-                istegiTuket={istegiTuket}
-                onGit={onGit}
-              />
-            )}
+            <IcerikSiniri key={icerikDenemesi} yenidenDene={icerikYenidenDene}>
+              <Suspense fallback={<Yukleniyor metin="Asistan yükleniyor…" />}>
+                {sekme === "oneriler" ? (
+                  <OnerilerSekmesi
+                    ekran={ekran}
+                    asistan={asistan}
+                    oneriKuralId={kontrol.istek?.sekme === "oneriler" ? (kontrol.istek.oneriKuralId ?? null) : null}
+                    onGit={onGit}
+                  />
+                ) : pasifNeden || !asistan ? (
+                  <Uyari ton="uyari" baslik="Asistan kullanılamıyor">
+                    {pasifNeden ?? "Asistan kapalı."}{" "}
+                    <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => void yenile()}>
+                      Yeniden dene
+                    </button>
+                  </Uyari>
+                ) : (
+                  <SohbetSekmesi
+                    ekran={ekran}
+                    asistan={asistan}
+                    durumYenile={() => void yenile()}
+                    buNeBaslat={() => {
+                      setBuNeMesaji(null);
+                      setBuNe((b) => !b);
+                    }}
+                    buNeAcik={buNe}
+                    secili={secili}
+                    seciliTemizle={() => setSecili(null)}
+                    istek={kontrol.istek}
+                    istegiTuket={istegiTuket}
+                    onGit={onGit}
+                  />
+                )}
+              </Suspense>
+            </IcerikSiniri>
           </div>
         </div>
       )}

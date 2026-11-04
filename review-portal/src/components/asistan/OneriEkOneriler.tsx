@@ -11,6 +11,7 @@ import { oturumDegisinceTemizle } from "../../lib/oturumTemizligi";
 import { Ikon } from "../Ikon";
 import { AiOneriKarti } from "./OneriKarti";
 import { oneriAyar } from "./OneriVerisi";
+import { EK_BEKLEYEN_ANAHTARI } from "./oturumAnahtarlari";
 
 /**
  * "Ek öneri" sohbeti ekran/varlık başına bir kez açılır ve oturum boyunca yeniden kullanılır
@@ -42,7 +43,6 @@ let ekSurum = 0;
  * sayar (Sohbet'te 409 bekleyen_var); bellekte kalsaydı kullanıcı bekleyeni göremez, durduramazdı.
  * Yalnız `bekliyor` kayıtları (anahtar → mesaj kimliği) oturum deposuna yazılır.
  */
-const EK_BEKLEYEN_ANAHTARI = "tp-asistan-ek-bekleyen";
 /** Depodan geri yüklenen, bu sayfa ömründe henüz durumu okunmamış bekleyenler. */
 const geriYuklenenler = new Set<string>();
 
