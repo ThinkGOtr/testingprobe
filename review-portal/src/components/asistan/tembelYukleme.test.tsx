@@ -2,7 +2,7 @@
 // kapalıyken ana pakete girmez, ilk açılışta yüklenir. Diğer testler içeriği önceden yükler
 // (test/setup.ts); burada taze modül kaydıyla yükleme anı sınanır: erişilebilir yer tutucu, sonra içerik.
 // Oturum temizliği (AI-ASISTAN-PLANI §16 madde 1) içerik hiç yüklenmeden de kayıtlı anahtarları siler.
-import { act, fireEvent, screen, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import kaynak from "./AsistanPaneli.tsx?raw";
 
@@ -33,17 +33,22 @@ describe("asistan paneli içeriği ayrı parçada (kod bölme)", () => {
     expect(within(screen.getByTestId("asistan-paneli")).getByLabelText("Sorunuz")).toBeInTheDocument();
   });
 
-  it("parça yüklenemezse uygulama düşmez: panelde hata ve 'Yeniden dene' içeriği yeniden ister", async () => {
+  it("parça yüklenemezse uygulama düşmez: panelde hata ve 'Yeniden dene' içeriği yeniden ister; odak panel başlığına", async () => {
     vi.resetModules();
-    vi.doMock("./SohbetSekmesi", () => {
-      throw new Error("parça yok");
-    });
+    const http = await import("../../api/http");
+    http.yapilandir({ mockZorunlu: true, mockOtomatik: true, yetenekKesfi: false });
+    const { oturumAc, sar } = await import("../../test/yardimci");
+    const { AsistanPaneli, icerikYukleyici } = await import("./AsistanPaneli");
+    // Parça yükleme hatası: dinamik içe aktarım reddedilir (vi.doMock fabrikasından fırlatmak vitest'in
+    // "error when mocking a module" yığınını basıyordu — tam koşuda gürültü).
+    const asil = icerikYukleyici.yukle;
+    icerikYukleyici.yukle = () => Promise.reject(new Error("parça yok"));
     const konsol = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    // React sınırın yakaladığı hatayı geliştirme kipinde window "error" olayıyla da bildirir; jsdom işlenmemiş
+    // olayı yığınıyla stderr'e basar (konsol casusunu atlar). Beklenen hata: olay işlendi sayılır.
+    const yut = (e: ErrorEvent) => e.preventDefault();
+    window.addEventListener("error", yut);
     try {
-      const http = await import("../../api/http");
-      http.yapilandir({ mockZorunlu: true, mockOtomatik: true, yetenekKesfi: false });
-      const { oturumAc, sar } = await import("../../test/yardimci");
-      const { AsistanPaneli } = await import("./AsistanPaneli");
       await oturumAc("analist");
       sar(<AsistanPaneli />, { yol: "/kosular" });
       fireEvent.click(await screen.findByRole("button", { name: "Asistanı aç" }));
@@ -52,24 +57,44 @@ describe("asistan paneli içeriği ayrı parçada (kod bölme)", () => {
       // Başlık ve kapatma düğmesi yerinde: panel (ve uygulama) çizili kalır.
       expect(screen.getByRole("button", { name: "Asistanı kapat" })).toBeInTheDocument();
 
-      vi.doUnmock("./SohbetSekmesi");
-      fireEvent.click(within(uyari).getByRole("button", { name: "Yeniden dene" }));
+      icerikYukleyici.yukle = asil;
+      const dugme = within(uyari).getByRole("button", { name: "Yeniden dene" });
+      dugme.focus();
+      fireEvent.click(dugme);
+      // Düğme DOM'dan kalkar: odak body'ye düşmez, panel başlığına gelir (WCAG 2.4.3).
+      await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Asistan", level: 2 })));
       expect(await within(screen.getByTestId("asistan-paneli")).findByLabelText("Sorunuz")).toBeInTheDocument();
       expect(screen.queryByText("Asistan yüklenemedi")).toBeNull();
     } finally {
-      vi.doUnmock("./SohbetSekmesi");
+      icerikYukleyici.yukle = asil;
+      window.removeEventListener("error", yut);
       konsol.mockRestore();
     }
   });
 
-  it("içerik hiç yüklenmeden oturum değişse de kayıtlı sohbet ve bekleyen ek öneri silinir", async () => {
+  it("içerik hiç yüklenmeden oturum değişse de kayıtlı sohbet ve bekleyen ek öneri silinir (kayıt ana paketteki AsistanPaneli'nden)", async () => {
     vi.resetModules();
-    const { oturumVerileriniTemizle } = await import("../../lib/oturumTemizligi");
-    const { SOHBET_ANAHTARI, EK_BEKLEYEN_ANAHTARI } = await import("./oturumAnahtarlari");
-    sessionStorage.setItem(SOHBET_ANAHTARI, "sohbet-A");
-    sessionStorage.setItem(EK_BEKLEYEN_ANAHTARI, JSON.stringify({ "a|": "m-A" }));
-    oturumVerileriniTemizle();
-    expect(sessionStorage.getItem(SOHBET_ANAHTARI)).toBeNull();
-    expect(sessionStorage.getItem(EK_BEKLEYEN_ANAHTARI)).toBeNull();
+    // İçerik modülleri yüklenirse bu test anlamını yitirir (kendi temizleyicilerini kaydederler): yüklenmediği kanıtlanır.
+    const yuklenen: string[] = [];
+    for (const m of ["./SohbetSekmesi", "./OnerilerSekmesi", "./OneriEkOneriler", "./oturumAnahtarlari"] as const) {
+      vi.doMock(m, async (asil) => {
+        yuklenen.push(m);
+        return asil();
+      });
+    }
+    try {
+      const { oturumVerileriniTemizle } = await import("../../lib/oturumTemizligi");
+      await import("./AsistanPaneli");
+      // Anahtarlar düz metin (anahtar modülü testte içe aktarılmaz): kayıt yalnız AsistanPaneli'nin yan etkili
+      // içe aktarımından gelebilir; o satır silinirse test kırılır.
+      sessionStorage.setItem("tp-asistan-sohbet", "sohbet-A");
+      sessionStorage.setItem("tp-asistan-ek-bekleyen", JSON.stringify({ "a|": "m-A" }));
+      oturumVerileriniTemizle();
+      expect(sessionStorage.getItem("tp-asistan-sohbet")).toBeNull();
+      expect(sessionStorage.getItem("tp-asistan-ek-bekleyen")).toBeNull();
+      expect(yuklenen).toEqual(["./oturumAnahtarlari"]);
+    } finally {
+      for (const m of ["./SohbetSekmesi", "./OnerilerSekmesi", "./OneriEkOneriler", "./oturumAnahtarlari"]) vi.doUnmock(m);
+    }
   });
 });

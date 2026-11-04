@@ -28,9 +28,14 @@ type Icerik = { Sohbet: ComponentType<SohbetSekmesiOzellikleri>; Oneriler: Compo
 let icerik: Icerik | null = null;
 let icerikYukleniyor: Promise<void> | null = null;
 
+/** Parçaların dinamik içe aktarımı; testler yükleme hatasını taklit etmek için değiştirebilir. */
+export const icerikYukleyici = {
+  yukle: () => Promise.all([import("./SohbetSekmesi"), import("./OnerilerSekmesi")]),
+};
+
 /** Panel içerik parçasını yükler (bir kez); yükleme hatasında sonraki çağrı yeniden ister. */
 export function asistanIceriginiYukle(): Promise<void> {
-  icerikYukleniyor ??= Promise.all([import("./SohbetSekmesi"), import("./OnerilerSekmesi")]).then(
+  icerikYukleniyor ??= icerikYukleyici.yukle().then(
     ([s, o]) => {
       icerik = { Sohbet: s.SohbetSekmesi, Oneriler: o.OnerilerSekmesi };
     },
@@ -149,10 +154,19 @@ export function AsistanPaneli() {
   const nedenId = useId();
   /** İçerik yükleme denemesi: artınca hata sınırı sıfırlanır, sekmeler yeniden istenir. */
   const [icerikDenemesi, setIcerikDenemesi] = useState(0);
+  /** "Yeniden dene" sınırla birlikte DOM'dan kalkar: odak body'ye düşmesin, panel başlığına verilir. */
+  const odagiBasligaVer = useRef(false);
   const icerikYenidenDene = useCallback(() => {
     sekmeler = tembelSekmeler();
+    odagiBasligaVer.current = true;
     setIcerikDenemesi((d) => d + 1);
   }, []);
+  useEffect(() => {
+    if (!odagiBasligaVer.current) return;
+    odagiBasligaVer.current = false;
+    const aktif = document.activeElement;
+    if (!aktif || aktif === document.body || !aktif.isConnected) baslikRef.current?.focus();
+  }, [icerikDenemesi]);
   const { Sohbet: SohbetSekmesi, Oneriler: OnerilerSekmesi } = sekmeler;
 
   // "Bu ne?" seçimi o ekrana aittir: rota/varlık değişince önceki ekranın öğesi yeni bağlamla gitmesin.
