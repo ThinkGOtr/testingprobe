@@ -1527,7 +1527,12 @@ function kontrolKulesi(): KontrolKulesi & AsistanliKule {
       script_hedefi: 0.6,
       pass_at_1: scriptler.length ? scriptler.filter((s) => s.pass_at_1).length / scriptler.length : null,
       duzeltme_sonrasi: null,
-      ort_ai_sure_ms: caseler.length ? caseler.reduce((a, c) => a + c.ai_sure_ms, 0) / caseler.length : null,
+      // core eşi: REPLAY'de model süresi ölçülmez (0/kayıt süresi ölçüm değil) — yalnız canlı case'lerden; hazirlik
+      // satırları (ai_olculmedi) ile aynı kural. Hepsi REPLAY ise null → Kule "Case başına AI + review" ölçülmedi.
+      ort_ai_sure_ms: (() => {
+        const canli = caseler.filter((c) => c.mode === "live");
+        return canli.length ? canli.reduce((a, c) => a + c.ai_sure_ms, 0) / canli.length : null;
+      })(),
       ort_review_sure_ms: reviewlar.length ? reviewlar.reduce((a, c) => a + (c.review_sure_ms ?? 0), 0) / reviewlar.length : null,
       // Baz değer F0'da ölçülür; ölçülmemiş baz değer ve ondan türeyen "kazanç" uydurulmaz.
       manuel_baz_ms: null,

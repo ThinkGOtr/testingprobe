@@ -195,6 +195,15 @@ describe("canlı derleme (VITE_MOCK=0): uydurma KPI yok", () => {
     expect(screen.getByRole("region", { name: "AI katkısı" })).not.toHaveTextContent(/Kazanç/);
   });
 
+  it("örnek veri (tümü REPLAY): 'Case başına AI + review' ölçülmedi; AI süresi sayı olarak yazılmaz (core eşi)", async () => {
+    await oturumAc("sunucu");
+    sar(<KontrolKulesi />);
+    const ai = await screen.findByRole("region", { name: "AI katkısı" });
+    const metrik = within(ai).getByText("Case başına AI + review").closest(".metrik") as HTMLElement;
+    expect(within(metrik).getByText(/ölçülmedi/)).toBeInTheDocument();
+    expect(metrik).not.toHaveTextContent(/AI \d/);
+  });
+
   it("örnek veri modunda her ekranın üstünde 'ÖRNEK VERİ — gerçek değil' bandı", async () => {
     await oturumAc("sunucu");
     uygulama("/kontrol-kulesi");
