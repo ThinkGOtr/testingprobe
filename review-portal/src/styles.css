@@ -3850,5 +3850,56 @@ html:has(.sekmeler) {
   margin-top: -16px;
 }
 
+/* ==================================================================
+   R1-AKIS (akış/yol haritası düzeltmeleri)
+   Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
+   (paralel şerit birleştirmesi için çapa — silinmez)
+   ================================================================== */
+
+
+
+
+/* ==================================================================
+   R1-TRIAGE (triage/script detay düzeni)
+   Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
+   (paralel şerit birleştirmesi için çapa — silinmez)
+   ================================================================== */
+
+
+
+
+/* ==================================================================
+   R1-KABUK (kabuk/giriş/erişilebilirlik)
+   Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
+   (paralel şerit birleştirmesi için çapa — silinmez)
+   ================================================================== */
+
+
+
+
+/* ==================================================================
+   R1-BILESEN (metrik/çip/tablo cilası)
+   Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
+   (paralel şerit birleştirmesi için çapa — silinmez)
+   ================================================================== */
+
+
+
+
+/* ==================================================================
+   R1-RESPONSIVE (dar ekran ve tablo düzeltmeleri)
+   Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
+   (paralel şerit birleştirmesi için çapa — silinmez)
+   ================================================================== */
+
+
+
+
+/* ==================================================================
+   R1-NEDEN (dugme-neden tekrar)
+   Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
+   (paralel şerit birleştirmesi için çapa — silinmez)
+   ================================================================== */
+
 
 
