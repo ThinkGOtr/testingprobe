@@ -23,7 +23,7 @@ from sqlalchemy import Engine, text
 from tests.unit.conftest import PAROLA, Db
 from tp_core.api.main import create_app
 from tp_core.features.assistant import api as asistan_api
-from tp_core.features.assistant import budget
+from tp_core.features.assistant import budget, hiz
 from tp_core.workflow.service import Principal
 
 ROLLER = ("analyst", "po", "engineer", "tester", "presenter")
@@ -548,6 +548,29 @@ def test_iptal_edilip_suren_is_sayimda_kalir(client: TestClient, make_user, engi
     assert sor(client, s).status_code == 202
 
 
+@pytest.mark.parametrize("son_durum", ["done", "error"])
+def test_cevabi_yazilmis_ama_isi_kapanmamis_soru_sayilmaz(
+    client: TestClient, make_user, engine, canli, son_durum: str
+) -> None:
+    """Cevap yazıldı (mesaj son durumda), iş ayrı transaction'da henüz `complete` olmadı: yeni
+    soru 409 `bekleyen_var` almaz."""
+    giris(client, make_user("tester"))
+    s = sohbet_ac(client)
+    mid = sor(client, s).json()["mesaj_id"]
+    with engine.begin() as c:
+        c.execute(
+            text("UPDATE asistan_mesaj SET durum = :d WHERE id = :m"), {"d": son_durum, "m": mid}
+        )
+        c.execute(
+            text(
+                "UPDATE job SET durum = 'running' WHERE id = "
+                "(SELECT job_id FROM asistan_mesaj WHERE id = :m)"
+            ),
+            {"m": mid},
+        )
+    assert sor(client, s).status_code == 202
+
+
 def test_pending_iptal_isi_kuyruktan_dusurur(client: TestClient, make_user, engine, canli) -> None:
     giris(client, make_user("po"))
     s = sohbet_ac(client)
@@ -696,6 +719,34 @@ def test_oneri_kural_id_gecersiz_409_gecerli_sohbete_yazilir(
     assert baglam["oneri"] == {"kural_id": "gereksinim-po-bekliyor"}
     assert cagrilar[-1][1]["rota_kalibi"] == "/gereksinimler/:id"
     assert sor(client, s, oneri_kural_id="Gecersiz Biçim").status_code == 422
+
+
+def test_oneri_kural_id_reddedilse_de_kovadan_duser(
+    client: TestClient, make_user, engine, canli, monkeypatch
+) -> None:
+    """Reddedilen (409) kural istekleri de öneri kovasına girer; sınırdan sonra öneri motoru
+    hiç çalışmaz (429)."""
+    cagri = 0
+
+    def sahte(*_a: Any) -> bool:
+        nonlocal cagri
+        cagri += 1
+        return False
+
+    monkeypatch.setattr(asistan_api, "oneri_gecerli_mi", sahte)
+    # Uzun pencere: pencere sınırı testin ortasına düşmesin.
+    monkeypatch.setitem(hiz.VARSAYILAN_SINIRLAR, hiz.KOVA_ONERI_LISTE, (2, 86400))
+    giris(client, make_user("analyst"))
+    s = sohbet_ac(client)
+    for _ in range(2):
+        r = sor(client, s, oneri_kural_id="eski-kural")
+        assert r.status_code == 409 and r.json()["kod"] == "oneri_gecersiz"
+    r = sor(client, s, oneri_kural_id="eski-kural")
+    assert r.status_code == 429 and r.json()["kod"] == "hiz_siniri"
+    assert cagri == 2
+    assert tek(engine, "SELECT count(*) FROM asistan_mesaj WHERE sohbet_id = :s", s=s) == 0
+    # Kural kimliksiz düz soru bu kovaya bağlı değildir.
+    assert sor(client, s).status_code == 202
 
 
 def test_oneri_kapaliysa_kural_id_gecersiz(client, make_user, canli, monkeypatch) -> None:

@@ -997,6 +997,7 @@ def control_tower(session: Session) -> dict[str, Any]:
             ),
             "maliyet": (
                 "ai_call.maliyet toplamı (tüm amaçlar); bugün: Europe/Istanbul gün başından; "
+                "gunluk_butce_usd ve asistan tavanları UTC gününe göre (03:00 TR) sıfırlanır; "
                 "amac_gruplari: 'assistant*' amaçları (asistan) ve diğerleri ayrı"
             ),
             "asistan": asistan.KAYNAK,

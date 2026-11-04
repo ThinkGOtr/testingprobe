@@ -9,7 +9,7 @@ import { api } from "../../api/client";
 import { mockZorunlu } from "../../api/http";
 import { useEkranBaglami, type EkranBaglami } from "../../lib/ekranBaglami";
 import { DegerlendirmeNotu, Uyari } from "../ui";
-import { elemanTanimi, noktadakiOge, type SeciliEleman } from "./buNe";
+import { elemanTanimi, noktadakiOge, yakalanabilirMi, type SeciliEleman } from "./buNe";
 import { istegiTuket, paneliAc, paneliKapat, panelHazirAyarla, sekmeSec, useAsistanKontrol, type AsistanSekmesi } from "./kontrol";
 import { OnerilerSekmesi } from "./OnerilerSekmesi";
 import { SohbetSekmesi } from "./SohbetSekmesi";
@@ -82,6 +82,9 @@ export function AsistanPaneli() {
   /** Panel dışında en son odaklanan öğe: kapanınca odak oraya (yoksa başlatıcıya) döner. */
   const disOdakRef = useRef<HTMLElement | null>(null);
   const oncekiAcik = useRef(kontrol.acik);
+  /** "Bu ne?" bir seçimle bitti: panel geri gelince odak soru alanına verilir. */
+  const secimYapildi = useRef(false);
+  const oncekiBuNe = useRef(false);
   const baslikId = useId();
 
   // "Bu ne?" seçimi o ekrana aittir: rota/varlık değişince önceki ekranın öğesi yeni bağlamla gitmesin.
@@ -108,18 +111,49 @@ export function AsistanPaneli() {
     setBuNeMesaji(null);
   }, []);
 
-  // Esc: önce "Bu ne?"den çıkar (belge düzeyinde; bindirme odak almaz).
+  /** "Bu ne?" kipinde bir öğe seçildi (fare ya da klavye): tanım bağlama girer, Sohbet açılır. */
+  const ogeSec = useCallback(
+    (sonuc: Element | "gizli" | null) => {
+      if (sonuc === "gizli") {
+        setBuNeMesaji("Bu öğe asistana gönderilmez (giriş alanı, kod ya da gizli içerik). Başka bir öğe seçin.");
+        return;
+      }
+      const tanim = sonuc ? elemanTanimi(sonuc) : null;
+      if (!tanim) {
+        setBuNeMesaji("Burada tanımlanabilir bir öğe yok. Bir düğmeye, başlığa ya da etikete tıklayın.");
+        return;
+      }
+      setSecili(tanim);
+      secimYapildi.current = true;
+      buNeBitir();
+      sekmeSec("sohbet");
+      paneliAc();
+    },
+    [buNeBitir],
+  );
+
+  // Esc: önce "Bu ne?"den çıkar (belge düzeyinde; bindirme odak almaz). Klavye yolu: kip açıkken
+  // Tab ile sayfadaki öğeye gidilip Enter'a basılınca odaktaki öğe seçilir (panel içi hariç).
   useEffect(() => {
     if (!buNe) return;
     const fn = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
         buNeBitir();
+        return;
       }
+      if (e.key !== "Enter" || e.defaultPrevented) return;
+      const aktif = document.activeElement;
+      if (!aktif || aktif === document.body || aktif === document.documentElement) return;
+      if (panelRef.current?.contains(aktif) || bindirmeRef.current?.contains(aktif)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      ogeSec(yakalanabilirMi(aktif) ? aktif : "gizli");
     };
-    document.addEventListener("keydown", fn);
-    return () => document.removeEventListener("keydown", fn);
-  }, [buNe, buNeBitir]);
+    // Yakalama evresinde: odaktaki düğmenin kendi Enter davranışı (tıklama) tetiklenmesin.
+    document.addEventListener("keydown", fn, true);
+    return () => document.removeEventListener("keydown", fn, true);
+  }, [buNe, buNeBitir, ogeSec]);
 
   // Panel dışındaki son odak (başlatıcı, Öneri düğmesi, "Asistana sor"): kapanınca geri verilir.
   useEffect(() => {
@@ -184,25 +218,50 @@ export function AsistanPaneli() {
     return () => document.removeEventListener("keydown", fn);
   }, [modalAktif]);
 
+  // Dar ekran modalı: arka plan (panelin atalarının kardeşleri) `inert` ve sayfa kaydırması kilitli;
+  // ekran okuyucunun sanal imleci arka plana kaçmasın, mobilde arka plan kaymasın. Kapanınca geri alınır.
+  useEffect(() => {
+    if (!modalAktif) return;
+    const p = panelRef.current;
+    if (!p) return;
+    const degisenler: Element[] = [];
+    for (let el: Element | null = p; el && el !== document.body; el = el.parentElement) {
+      const ust: HTMLElement | null = el.parentElement;
+      if (!ust) break;
+      for (const kardes of Array.from<Element>(ust.children)) {
+        if (kardes === el || kardes.hasAttribute("inert") || kardes.tagName === "SCRIPT") continue;
+        kardes.setAttribute("inert", "");
+        degisenler.push(kardes);
+      }
+    }
+    const oncekiTasma = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      degisenler.forEach((el) => el.removeAttribute("inert"));
+      document.body.style.overflow = oncekiTasma;
+    };
+  }, [modalAktif]);
+
+  // "Bu ne?" bitince odak panele döner: dar ekranda kip açılınca panel (ve odaktaki "? Bu ne?")
+  // DOM'dan kalkar, geri gelince odak body'de kalırdı. Seçim yapıldıysa soru alanına, yoksa düğmeye.
+  useEffect(() => {
+    const once = oncekiBuNe.current;
+    oncekiBuNe.current = buNe;
+    if (!once || buNe) return;
+    const secildi = secimYapildi.current;
+    secimYapildi.current = false;
+    const p = panelRef.current;
+    if (!p || !kontrol.acik) return;
+    const hedef = p.querySelector<HTMLElement>(secildi ? "#asistan-soru" : ".asistan-bune-dugmesi");
+    hedef?.focus();
+  }, [buNe, kontrol.acik]);
+
   const atla = useCallback((el: Element) => el === bindirmeRef.current || !!bindirmeRef.current?.contains(el), []);
 
   const bindirmeTikla = (e: ReactMouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const sonuc = noktadakiOge(e.clientX, e.clientY, atla);
-    if (sonuc === "gizli") {
-      setBuNeMesaji("Bu öğe asistana gönderilmez (giriş alanı, kod ya da gizli içerik). Başka bir öğe seçin.");
-      return;
-    }
-    const tanim = sonuc ? elemanTanimi(sonuc) : null;
-    if (!tanim) {
-      setBuNeMesaji("Burada tanımlanabilir bir öğe yok. Bir düğmeye, başlığa ya da etikete tıklayın.");
-      return;
-    }
-    setSecili(tanim);
-    buNeBitir();
-    sekmeSec("sohbet");
-    paneliAc();
+    ogeSec(noktadakiOge(e.clientX, e.clientY, atla));
   };
 
   const bindirmeHareket = (e: ReactMouseEvent) => {
@@ -288,7 +347,8 @@ export function AsistanPaneli() {
         >
           {vurgu && <div className="asistan-bune-vurgu" style={{ left: vurgu.x, top: vurgu.y, width: vurgu.w, height: vurgu.h }} />}
           <div className="asistan-bune-ipucu" role="status" onClick={(e) => e.stopPropagation()}>
-            {buNeMesaji ?? "Sormak istediğiniz öğeye tıklayın."} <span className="soluk">Esc ile çıkın.</span>
+            {buNeMesaji ?? "Sormak istediğiniz öğeye tıklayın."}{" "}
+            <span className="soluk">Klavyeyle: Tab ile öğeye gidip Enter'a basın (pasif düğmeler odak almaz; kartın başlığını seçin). Esc ile çıkın.</span>
             <button type="button" className="dugme dugme-ikincil dugme-kucuk" onClick={buNeBitir}>
               Vazgeç
             </button>

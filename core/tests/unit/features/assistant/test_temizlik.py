@@ -1,5 +1,6 @@
 """Asistan saklama temizliği (`temizlik.py`; AI-ASISTAN-PLANI §8): 90 gün, yumuşak silinenler
-dahil; bekleyen mesaja ve `ai_call`/`tool_call`'a dokunmaz; hız sayacı 1 gün. Gerçek Postgres."""
+dahil; etkin sohbetin eski mesajları ve bitmiş cevap işleri de; bekleyen mesaja ve
+`ai_call`/`tool_call`'a dokunmaz; hız sayacı 1 gün. Gerçek Postgres."""
 
 from __future__ import annotations
 
@@ -118,12 +119,29 @@ def test_saklama_suresi_ve_kapsam(engine: Engine, make_user) -> None:
     silinmis_eski = _sohbet(engine, u.id, gun_once=100, silindi=True, silinme_gun_once=95)
     # Yumuşak silinmiş ama yakın zamanda silinmiş: süre dolmadı, kalır.
     silinmis_yeni = _sohbet(engine, u.id, gun_once=100, silindi=True, silinme_gun_once=10)
-    # Etkin sohbet: saklama sohbet düzeyinde; süreden eski mesajı ve onun derin çocuğu da kalır
-    # (kullanılan sohbet yarım kalmaz).
+    # Etkin sohbet: süreden eski bitmiş mesaj tek tek gider (panel "90 gün saklanır"); süresi
+    # dolmamış derin çocuğu olan eski mesaj çiftiyle kalır (yarım kalmaz), sonraki koşuda gider.
     etkin = _sohbet(engine, u.id, gun_once=1)
     etkin_eski = _mesaj(engine, etkin, u.id, 1, gun_once=95, rol="assistant")
     etkin_cocuk = _mesaj(engine, etkin, u.id, 2, gun_once=89, rol="assistant", ust=etkin_eski)
     etkin_yeni = _mesaj(engine, etkin, u.id, 3, gun_once=1)
+    etkin_cok_eski = _mesaj(engine, etkin, u.id, 4, gun_once=120)
+    cift_ust = _mesaj(engine, etkin, u.id, 5, gun_once=100, rol="assistant")
+    cift_cocuk = _mesaj(engine, etkin, u.id, 6, gun_once=99, rol="assistant", ust=cift_ust)
+    # Bitmemiş çocuğu olan eski mesaj (kullanıcı başı tek bekleyen: ayrı kullanıcı ve sohbet).
+    v = make_user("tester")
+    v_sohbet = _sohbet(engine, v.id, gun_once=1)
+    acik_cocuk_ustu = _mesaj(engine, v_sohbet, v.id, 1, gun_once=100, rol="assistant")
+    acik_cocuk = _mesaj(
+        engine,
+        v_sohbet,
+        v.id,
+        2,
+        gun_once=100,
+        rol="assistant",
+        ust=acik_cocuk_ustu,
+        durum="running",
+    )
     # Eski ama bekleyen mesajı olan sohbet: dokunulmaz (worker koşuyor olabilir).
     bekleyen = _sohbet(engine, u.id, gun_once=200)
     bekleyen_m = _mesaj(engine, bekleyen, u.id, 1, gun_once=200, durum="running", rol="assistant")
@@ -148,6 +166,24 @@ def test_saklama_suresi_ve_kapsam(engine: Engine, make_user) -> None:
                 ),
                 {"i": uuid.uuid4(), "k": u.id, "s": saat},
             )
+        # Cevap işleri: bitmiş eski satır gider; yeni bitmiş ve eski ama bitmemiş satır kalır.
+        isler = {}
+        for ad, durum, gun in (
+            ("eski_bitmis", "done", 100),
+            ("eski_dusmus", "failed", 95),
+            ("yeni_bitmis", "done", 10),
+            ("eski_bekleyen", "running", 100),
+        ):
+            isler[ad] = c.execute(
+                text(
+                    "INSERT INTO job (tur, yuk, durum, bitis, guncelleme) VALUES "
+                    "('assistant.answer', CAST(:y AS jsonb), :d, "
+                    "CASE WHEN :d = 'running' THEN NULL "
+                    "ELSE now() - make_interval(days => :g) END, "
+                    "now() - make_interval(days => :g)) RETURNING id"
+                ),
+                {"y": f'{{"kullanici_id": "{u.id}", "tetik": "kullanici"}}', "d": durum, "g": gun},
+            ).scalar_one()
         # Denetim kayıtları: 200 gün önceki ai_call ve tool_call kalır.
         cid = uuid.uuid4()
         c.execute(
@@ -167,6 +203,8 @@ def test_saklama_suresi_ve_kapsam(engine: Engine, make_user) -> None:
     assert sonuc == {
         "saklama_gun": 90,
         "sohbet": 2,
+        "mesaj": 3,  # etkin_cok_eski, cift_ust, cift_cocuk
+        "cevap_isi": 2,
         "oneri_geri_bildirim": 1,
         "hiz": 1,
     }
@@ -176,6 +214,15 @@ def test_saklama_suresi_ve_kapsam(engine: Engine, make_user) -> None:
     assert _var(engine, "asistan_sohbet", etkin) and _var(engine, "asistan_mesaj", etkin_yeni)
     assert _var(engine, "asistan_mesaj", etkin_eski)
     assert _var(engine, "asistan_mesaj", etkin_cocuk)
+    assert not _var(engine, "asistan_mesaj", etkin_cok_eski)
+    assert not _var(engine, "asistan_mesaj", cift_ust)
+    assert not _var(engine, "asistan_mesaj", cift_cocuk)
+    assert _var(engine, "asistan_mesaj", acik_cocuk_ustu)
+    assert _var(engine, "asistan_mesaj", acik_cocuk)
+    assert {ad for ad, j in isler.items() if _var(engine, "job", j)} == {
+        "yeni_bitmis",
+        "eski_bekleyen",
+    }
     assert _var(engine, "asistan_sohbet", bekleyen) and _var(engine, "asistan_mesaj", bekleyen_m)
     assert _var(engine, "asistan_sohbet", mesaji_yeni)
     assert _say(engine, "SELECT count(*) FROM asistan_oneri_geri_bildirim") == 1

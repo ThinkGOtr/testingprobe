@@ -2,6 +2,7 @@
 // "Neden? Sor" paneli belirli sekme ve bağlamla açar. Panel tek örnektir (App.tsx); durum
 // modül düzeyinde tutulur, bileşenler `useSyncExternalStore` ile okur.
 import { useSyncExternalStore } from "react";
+import { oturumDegisinceTemizle } from "../../lib/oturumTemizligi";
 
 export type AsistanSekmesi = "sohbet" | "oneriler";
 
@@ -120,3 +121,11 @@ export function asistanKontrolSifirla(): void {
   durum = { acik: false, sekme: "sohbet", istek: null, hazir: false };
   dinleyiciler.forEach((fn) => fn());
 }
+
+// Çıkışta / kullanıcı değişince: panel kapanır, bekleyen dış istek düşer. `hazir` panelin
+// çizimine bağlıdır (panel kendisi yazar); burada korunur.
+oturumDegisinceTemizle(() => {
+  const hazir = durum.hazir;
+  asistanKontrolSifirla();
+  if (hazir) panelHazirAyarla(true);
+});

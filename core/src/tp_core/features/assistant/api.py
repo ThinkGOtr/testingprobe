@@ -453,6 +453,13 @@ def soru_gonder(
     if (oneri_kipi or kural_id is not None) and not _oneri_acik():
         raise _oneri_gecersiz()
     if kural_id is not None:
+        # Kural hesabı (öneri motoru) GET /assistant/suggestions ile aynı kovadan düşer; sayaç
+        # ayrı, hemen commit edilen bağlantıda: 409 `oneri_gecersiz` ile reddedilen istek de
+        # sayılır (saatlik soru hakkı yalnız eklenen mesajları sayar).
+        with session.get_bind().begin() as conn:
+            izinli = hiz.kova_kontrol(conn, hiz.KOVA_ONERI_LISTE, kullanici_id=user.id)
+        if not izinli:
+            raise KodluHata(429, "hiz_siniri", "Çok sık istek; biraz sonra yeniden deneyin.")
         if not oneri_gecerli_mi(session, user, kural_id, baglam):
             raise _oneri_gecersiz()
         baglam = {**(baglam or {}), "oneri": {"kural_id": kural_id}}

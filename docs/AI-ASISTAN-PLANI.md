@@ -545,7 +545,7 @@ asistan_hiz (kullanici_id uuid null, kova text, pencere_baslangic timestamptz, s
 | `POST /assistant/conversations` | Yeni sohbet |
 | `DELETE /assistant/conversations/{id}` | Yumuşak silme |
 | `GET /assistant/conversations/{id}/messages` | Mesajlar (sayfa yenilenince bekleyen mesaj buradan) |
-| `GET /assistant/suggestions?rota=&varlik_tur=&varlik_id=` | Kural tabanlı öneriler (§17; modelsiz, worker gerekmez, model kapalıyken de çalışır): `{oneriler: [{kural_id, baslik, neden, oncelik, eylem}], hesaplandi}`; `eylem` içinde sunucu kurgulu `baglanti` (yalnız §17.4); `ekranda_kural_var`; `bastirilan` ("Yaptım" bilgisi). Rol oturumdan; rota `rotalar.json` kalıbına indirgenir; varlık yoksa/rolüne kapalıysa 404; kullanıcı başı dakikada 60 (429 `hiz_siniri`); 10 sn sunucu önbelleği |
+| `GET /assistant/suggestions?rota=&varlik_tur=&varlik_id=` | Kural tabanlı öneriler (§17; modelsiz, worker gerekmez, model kapalıyken de çalışır): `{oneriler: [{kural_id, baslik, neden, oncelik, eylem}], hesaplandi}`; `eylem` içinde sunucu kurgulu `baglanti` (yalnız §17.4); `ekranda_kural_var`; `bastirilan` ("Yaptım" bilgisi). Rol oturumdan; rota `rotalar.json` kalıbına indirgenir; varlık yoksa/rolüne kapalıysa 404; kullanıcı başı dakikada 60 (429 `hiz_siniri`); 4 sn sunucu önbelleği (portalın 5 sn SSE debounce'undan kısa olmalı; bkz. §17.6) |
 | `POST /assistant/suggestions/{kural_id}/feedback` | `{deger: -1\|1\|2, varlik_id?, jira_anahtari?}` (gizle/faydalı/yaptım). `kural_id` yüklü kurallarda yoksa 422; `varlik_id` rol/erişim kontrolünden geçer (404); `varlik_durum` **sunucuda** hesaplanır; `jira_anahtari` regex; kullanıcı başı dakikada 30 |
 | `POST /assistant/conversations/{id}/messages` | `{soru ≤ 2000, baglam ≤ 2KB, kip?: soru\|oneri, oneri_kural_id?}` veya `{ust_mesaj_id}` → 202 `{mesaj_id}`. `kip=oneri`'de `soru` boş olabilir (sunucu sabit "Bu ekranda başka ne yapabilirim?" metnini yazar); `oneri_kural_id` verilirse sunucu öneriyi yeniden hesaplar, artık geçerli değilse 409 `oneri_gecersiz`. 422 (boyut, `sir_icerik`, geçersiz `ust_mesaj_id`), 404 (silinmiş/başkasının sohbeti veya `ust_mesaj_id`'si), 409 `bekleyen_var` (kısmi tekil indeks ihlali — atomik), 409 `zaten_derin` (`ust_mesaj_id` tekilliği), 429 `hiz_siniri` / `mesgul`, 402 `butce_asildi`, 503 `asistan_kapali` (`neden`: `worker_yok` — kalp atışı yok; `maskeleme_kapali` — müşteri verisi kurulumunda maskeleme kapalı). Model gerekip gerekmediğine (sözlük/şablon) worker karar verir. Eşzamanlı POST'ta hangi tekil kısıt patlarsa patlasın (`sira` veya bekleyen indeksi) `IntegrityError` kısıt adına göre 409 `bekleyen_var`'a eşlenir |
 | `GET /assistant/messages/{id}` | Tek mesaj (SSE yokken yoklama) |
@@ -937,6 +937,22 @@ R ve G'nin ön koşulu olan kural matrisi onayı (K10) 2026-11-03'te verildi.
 tam paket yeşil; bilgi paketi üretimi Linux'ta (host uid ≠ 10001) doğrulandı; çok rollü incelemede
 KRİTİK/ÖNEMLİ bulgu yok.
 
+**`main` öncesi açık kapılar (durum 2026-11-04; `dev`'e yalnız `TP_ASISTAN_MODEL_MODE=off` bayrağı
+arkasında girilir):**
+
+1. **K10 yeniden onayı** (tasks.md T136): kural 1, 8, 11 daraltmaları ve kural 15 (defect adayı hariç,
+   eylem rotası `/kod`) ürün sahibince tarihle onaylanır; §1 K10 satırı ve §17.3 tablosundaki
+   "uygulanan" notları buna göre güncellenir. Onay çıkmazsa `rules/assistant/oneriler.yaml` §17.3'teki
+   hâline döner (fark listesi `specs/008-ai-asistan/contracts/oneri-kurallari.md`).
+2. **Canlı değerlendirme** (T131): `make eval-live A="--bundle assistant --via-flow --update-status"` →
+   `rules/evaluations.yaml` `assistant.status: evaluated` ve `icerik_hash` dolu; rapor §16 madde 5 ve 9
+   için medyan maliyet, otomatik yükseltme oranı (≤ %35) ve p90 uçtan uca süreyi yazar; K2 kararı
+   buradan çıkar. `pending` kayıtta `--check` 1 döner, yani `main` PR'ının CI'ı mekanik olarak düşer
+   (§16 madde 2, 5, 9, 14 bu adımla doğrulanır).
+3. **E2E** (T132), **Jira Cloud yeni kayıt yolu** (T133, §17.4, research R7), **çok rollü inceleme**
+   (T134) ve **anayasa 1.3.0 teknik lider onayı** (T007) kapanır.
+4. Ancak bundan sonra tam paket yeşil → `main` → sunucuda `live` (T135).
+
 **Süre (kaba, 3–4 paralel geliştirici/ajan):** S 1–2 gün (kural matrisi onayı dahil); paralel şeritler 6–8 gün (en uzun yol
 C1 → C2 → R(motor) → E → D1 → D2); H 2–3 gün → **10–13 iş günü**.
 
@@ -1057,17 +1073,17 @@ rol hizalama testinin bağlandığı uçtur.
 
 | # | Ekran | Rol | Koşul (özet) | Öneri (özet) | Eylem | `yetki` |
 |---|---|---|---|---|---|---|
-| 1 | Gereksinim detay | Analist | `findings_open` | "N tutarlılık bulgusu kararınızı bekliyor" — doküman finalize edilemez | rota: bulgular (çapa) | `POST /findings/{id}/decision` |
+| 1 | Gereksinim detay | Analist | `findings_open` (uygulanan: `acik_bulgu_sayisi ≥ 1`; K10 yeniden onayı açık) | "N tutarlılık bulgusu kararınızı bekliyor" — doküman finalize edilemez | rota: bulgular (çapa) | `POST /findings/{id}/decision` |
 | 2 | Gereksinim detay | Analist | `ac_eksik`, `jira_key_var` | "Kabul kriteri eksik; story kaynağında güncellenmeli" | jira_yorum: `ac-eksik` | — |
 | 3 | Gereksinim detay | Analist | `ac_eksik`, `jira_key_yok` | aynı | bilgi | — |
 | 4 | Gereksinim detay | Analist | `pending_po`, `po_bekleme_saat ≥ 24`, `po_kanal=jira` | "PO onayı N gündür bekliyor; hatırlatın" | jira_yorum: `po-hatirlatma` | — |
 | 5 | Gereksinim detay | Analist | `pending_po`, `po_bekleme_saat ≥ 24`, `po_kanal=portal` | "PO onayı N gündür bekliyor; onay portalda" | bilgi | — |
 | 6 | Gereksinim detay | PO | `pending_po`, `po_kanal=portal` | "Onayınız bekleniyor; case üretimi buna bağlı" | rota: onay bölümü (çapa) | `POST /requirements/{id}/po-approve` |
 | 7 | Gereksinim detay | PO | `pending_po`, `po_kanal=jira` | aynı | jira_kaydi | — |
-| 8 | Gereksinim detay | Analist | `po_approved` | "PO onayladı; case üretimini başlatın" | rota: gereksinim (case üret) | `POST /requirements/{id}/generate-cases` |
+| 8 | Gereksinim detay | Analist | `po_approved` (uygulanan: `ac_eksik=false`; K10 yeniden onayı açık) | "PO onayladı; case üretimini başlatın" | rota: gereksinim (case üret) | `POST /requirements/{id}/generate-cases` |
 | 9 | Gereksinim detay | Analist | `failed` | "Son işlem başarısız; nedenini sorun" | bilgi ("Neden? Sor" kartta her zaman var) | — |
 | 10 | Case inceleme | Analist | `inceleme_bekleyen_case ≥ 1` | "N case kararınızı bekliyor" | rota: caseler | `POST /cases/{id}/decision` |
-| 11 | Case inceleme | Analist | `cases_ready`, `inceleme_bekleyen_case = 0` | "İnceleme tamam; yayına hazır" | rota: `/gereksinimler/:id/yayin` | `POST /publish` |
+| 11 | Case inceleme | Analist | `cases_ready`, `inceleme_bekleyen_case = 0` (uygulanan: `onayli_case ≥ 1`; K10 yeniden onayı açık) | "İnceleme tamam; yayına hazır" | rota: `/gereksinimler/:id/yayin` | `POST /publish` |
 | 12 | Case inceleme | Testçi | `inceleme_bekleyen_case ≥ 1` | "Case'ler analist incelemesinde" | bilgi | — |
 | 13 | Script detay | Mühendis | `pr_open`, `kirarak_dogrulama ∈ {not_started, weak, failed}` | "Merge öncesi kırarak doğrulayın (yeşil→kırmızı→yeşil)" | rota: script | `POST /scripts/{id}/break-verify` |
 | 14 | Script detay | Mühendis | `pr_open`, `kirarak_dogrulama=passed` | "PR merge kararınızı bekliyor" | rota: script (PR bölümü) | `POST /prs/{n}/merge` |
@@ -1141,7 +1157,10 @@ tek satır (`probe_my_queue`).
   (`undefined`) gizli; `null` (canlı olmayan derleme) görünür; uç yok → gizli.
 - **Rozet yenileme:** rota/varlık değişince bir istek; SSE'de yalnız **açık varlığın** olayları
   (`olayEslesir` id ile; liste ekranında yalnız ilgili konu listesi) 5 sn debounce ile tek yenileme; 429
-  gelirse son değer sessizce korunur. Sunucuda `(kullanici, rota, varlik)` için 10 sn önbellek.
+  gelirse son değer sessizce korunur. Sunucuda `(kullanici, rota, varlik)` için 4 sn önbellek
+  (`oneri.ONBELLEK_SURE_S`). Süre 5 sn SSE debounce'undan kısa olmalıdır: olaydan önce hesaplanan
+  sonuç, olaydan 5 sn sonraki yenilemede önbellekte kalmamalı; ilk taslaktaki 10 sn bu yenilemeyi eski
+  rozetle bırakıyordu (2026-11-04).
 - **Panel:** asistan paneliyle aynı kap, iki sekme: "Sohbet" | "Öneriler". Düğme paneli "Öneriler"
   sekmesinde açar. Kart: başlık, neden, eylem düğmesi ("Git" / "Taslağı göster" / "Jira'yı aç"
   — `target=_blank rel="noopener noreferrer"`), "Neden? Sor", "Yaptım", "Gizle". Altta "Diğer ekranlarda

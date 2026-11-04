@@ -37,7 +37,7 @@ Başkasının kaynağına her uç (cancel/feedback/`ust_mesaj_id` dahil) → 404
 - **İş yükü**: daima `{mesaj_id, kullanici_id, tetik}`; idempotency anahtarı
   `assistant.answer:<mesaj_id>`.
 - **Öneri (10)**: modelsiz, worker gerekmez, model kapalıyken çalışır, `ai_call` yazmaz; rol oturumdan;
-  rota `rotalar.json` kalıbına indirgenir; `(kullanici, rota, varlik)` için 10 sn sunucu önbelleği;
+  rota `rotalar.json` kalıbına indirgenir; `(kullanici, rota, varlik)` için 4 sn sunucu önbelleği (5 sn SSE debounce'undan kısa);
   `eylem.baglanti` yalnız sunucu kurar (contracts/oneri-kurallari.md §Bağlantı). `TP_ASISTAN_ONERI=0` →
   uç kapalı (404 `bulunamadi`; portal yetenek kapısı gizler).
 - **Geri bildirim (11)**: `varlik_durum` sunucuda hesaplanır; istemcinin gönderdiği yok sayılır.

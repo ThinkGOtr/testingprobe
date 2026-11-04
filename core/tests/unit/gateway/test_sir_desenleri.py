@@ -27,6 +27,8 @@ VAKALAR: list[tuple[str, str]] = [
     ("github_token", "gh" + "r_" + GOVDE),
     ("gitlab_pat", "gl" + "pat-" + GOVDE),
     ("anthropic_key", "sk-" + "ant-" + "api03-" + GOVDE),
+    ("openai_key", "sk-" + "proj-" + GOVDE + "_" + GOVDE),
+    ("openai_key", "sk-" + GOVDE + GOVDE),
     ("atlassian_token", "ATA" + "TT" + GOVDE + "=" + GOVDE),
     ("google_api_key", "AI" + "za" + "Sy" + GOVDE + "xyz12345"),
     ("aws_access_key", "AK" + "IA" + "ABCDEFGHIJ234567"),
@@ -46,6 +48,9 @@ def test_her_desenin_vakasi_var() -> None:
         "env_assignment",
         "generic_assignment",
         "url_credentials",
+        "header_token",
+        "bare_auth_scheme",
+        "cli_user_password",
     }
     assert adlar == {p.name for p in SECRET_PATTERNS}
 
@@ -116,6 +121,23 @@ def test_ortam_atamasi(ad: str) -> None:
     assert scrub_secret_patterns(f"{ad}=s3cr3tDeger x") == f"{ad}=*** x"
 
 
+@pytest.mark.parametrize(
+    "ad",
+    [
+        "PGPASSWORD",  # alt çizgisiz sonek
+        "DB_PASS",
+        "MYSQL_ROOT_PASSWD",
+        "export AWS_SECRET_ACCESS_KEY",
+        "DJANGO_SECRET_KEY",
+        "MY_APIKEY",
+        "OPENAI_APIKEY",
+    ],
+)
+def test_ortam_atamasi_genis_sonekler(ad: str) -> None:
+    assert scrub_secret_patterns(f"{ad}=Abcdef123456ghij x") == f"{ad}=*** x"
+    assert "env_assignment" in {f.name for f in find_secret_patterns(f"{ad}=Abcdef123456ghij")}
+
+
 def test_ortam_atamasi_yer_tutucuya_dokunmaz() -> None:
     metin = "JIRA_READ_TOKEN=<okuma token'ı> TP_APP_PASSWORD=${TP_APP_PASSWORD}"
     assert scrub_secret_patterns(metin) == metin
@@ -136,6 +158,8 @@ SIR = "Xy7" + "pQ9wLm2"  # ≥ 8, harf + rakam
         (f"cli --api-key={SIR}", "cli --api-key=***"),
         (f"client_secret: {SIR}", "client_secret: ***"),
         (f"secret={SIR}", "secret=***"),
+        (f"SECRET_KEY={SIR}", "SECRET_KEY=***"),
+        (f"secret-key: {SIR}", "secret-key: ***"),
     ],
 )
 def test_oneksiz_atama(metin: str, beklenen: str) -> None:
@@ -160,6 +184,65 @@ def test_oneksiz_atama(metin: str, beklenen: str) -> None:
     ],
 )
 def test_oneksiz_atama_kaynak_kodu_ve_yer_tutucuya_dokunmaz(metin: str) -> None:
+    assert scrub_secret_patterns(metin) == metin
+
+
+HEX = "a1b2c3d4" + "e5f60718" * 3
+
+
+@pytest.mark.parametrize(
+    ("metin", "beklenen"),
+    [
+        # DEMOAPP_TEST_TOKEN core-worker'da yok (security-check 8): yalnız biçimden yakalanır.
+        (f"> X-Demoapp-Test-Token: {HEX}", "> X-Demoapp-Test-Token: ***"),
+        (f"x-api-key: {SIR} devam", "x-api-key: *** devam"),
+        ('{"Private-Token": "' + SIR + '"}', '{"Private-Token": "***"}'),
+        (f"X-Auth: {SIR}", "X-Auth: ***"),
+        (f"X-Request-Id: {SIR}", f"X-Request-Id: {SIR}"),  # sır adı taşımayan başlık
+    ],
+)
+def test_tireli_baslik(metin: str, beklenen: str) -> None:
+    assert scrub_secret_patterns(metin) == beklenen
+
+
+@pytest.mark.parametrize(
+    "metin",
+    [
+        '{"X-Demoapp-Test-Token": token}',
+        "headers = {'X-Api-Key': settings.api_key}",
+        "X-Demoapp-Test-Token: <token>",
+        "X-Demoapp-Test-Token: ${DEMOAPP_TEST_TOKEN}",
+    ],
+)
+def test_tireli_baslik_kaynak_kodu_ve_yer_tutucuya_dokunmaz(metin: str) -> None:
+    assert scrub_secret_patterns(metin) == metin
+
+
+@pytest.mark.parametrize(
+    ("metin", "beklenen"),
+    [
+        ("istek Basic " + "dXNlcjpwYXNzd29yZDEyMw==" + " gönderildi", "istek Basic *** gönderildi"),
+        ("-H 'Bearer " + GOVDE + "'", "-H 'Bearer ***'"),
+        ("curl -u admin:" + "S3cretPassw0rd" + " https://x", "curl -u admin:*** https://x"),
+        ("wget --user=ci:" + "S3cretPassw0rd", "wget --user=ci:***"),
+    ],
+)
+def test_oneksiz_sema_ve_cli_kimligi(metin: str, beklenen: str) -> None:
+    assert scrub_secret_patterns(metin) == beklenen
+
+
+@pytest.mark.parametrize(
+    "metin",
+    [
+        "Basic authentication kullanılır",
+        "Bearer token ile çağrılır",
+        'curl -u "$KULLANICI:$PAROLA" https://x',
+        "curl -u kullanici:<parola>",
+        "ls -u",
+        "scikit-learn ve risk-free",
+    ],
+)
+def test_oneksiz_sema_ve_cli_dogal_metne_dokunmaz(metin: str) -> None:
     assert scrub_secret_patterns(metin) == metin
 
 

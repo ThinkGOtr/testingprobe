@@ -21,8 +21,12 @@ commit="$(git rev-parse HEAD 2>/dev/null)" || die "git commit'i okunamadı (repo
 mkdir -p var/tp-bilgi
 
 echo "Asistan bilgi paketi üretiliyor (commit ${commit:0:12})..."
-# --build: `git pull && make up` akışında üretici (paket.py) de güncel kaynaktan gelsin.
-compose run --rm --no-deps --build --user "$(id -u):$(id -g)" \
+# Önce core imajı derlenir: imajı yalnız `migrate` servisi derler (core-worker'da build bölümü yok,
+# pull_policy: never — docker-compose.yml x-core-image). `run --build core-worker` bu yüzden hiçbir
+# şey derlemezdi: temiz kurulumda imaj yok, `git pull && make up` akışında eski imajda paket.py yok.
+# İdempotent: kaynak değişmediyse önbellekten döner; up.sh'teki `up --build` aynı imajı yeniden kullanır.
+compose build migrate
+compose run --rm --no-deps --user "$(id -u):$(id -g)" \
   -v "$PWD":/repo:ro \
   -v "$PWD/var/tp-bilgi":/out \
   core-worker python -m tp_core.features.assistant.paket \

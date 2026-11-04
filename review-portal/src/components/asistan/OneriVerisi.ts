@@ -10,6 +10,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { oneriApi, type OneriListesi, type OneriSorgusu } from "../../api/asistan";
 import { ApiError, buFazdaYok, cekirdekYetenekleri, hataMesaji, ucVar } from "../../api/http";
 import type { EkranBaglami } from "../../lib/ekranBaglami";
+import { oturumDegisinceTemizle } from "../../lib/oturumTemizligi";
 
 /** Zamanlamalar (testler kısaltabilir). */
 export const oneriAyar = { olayGecikmeMs: 5000, yoklamaMs: 3000 };
@@ -87,12 +88,14 @@ export function useOneriDurumu(anahtar: string | null): OneriDurumu {
   return useSyncExternalStore(abone, () => (anahtar ? (kayitlar.get(anahtar) ?? BOS) : BOS));
 }
 
-/** Testler için. */
+/** Çıkışta / kullanıcı değişince ve testlerde (anahtar kullanıcıyı içerir; bellek de boşalsın). */
 export function oneriDeposunuSifirla(): void {
   kayitlar.clear();
   ucuslar.clear();
   dinleyiciler.forEach((fn) => fn());
 }
+
+oturumDegisinceTemizle(oneriDeposunuSifirla);
 
 /**
  * Öneri ucunun yetenek kapısı: `undefined` uç listesi okunuyor (gizli), `true` görünür

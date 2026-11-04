@@ -401,6 +401,51 @@ def test_sure_dolunca_akis_kesilir() -> None:
     assert kuyruk.kesildi == "sure"
 
 
+class _KurulumAuth:
+    """App kipini taklit eder: token, verilen istemciyle `access_tokens` POST'u ile alınır."""
+
+    def __init__(self) -> None:
+        self.cagri = 0
+
+    def token(self, client: httpx.Client) -> str:
+        self.cagri += 1
+        client.post("/app/installations/1/access_tokens")
+        return FORGE_TOKEN
+
+    def invalidate(self) -> None:
+        pass
+
+
+def _zaman_asimi(req: httpx.Request) -> float:
+    return float(req.extensions["timeout"]["read"])
+
+
+def test_kurulum_token_alimi_kalan_sureyle_sinirli() -> None:
+    """§5.7: kurulum token'ı alımı da `ci_log` süresine dahil (istemcinin 30 sn'si değil)."""
+    sahte = SahteGitHub(b"log\n")
+    auth = _KurulumAuth()
+    forge = GitHubForge(
+        "ornek/uygulama",
+        auth,
+        api_url="https://api.github.com",
+        transport=httpx.MockTransport(sahte),
+    )
+    ok = GitHubCiOkuyucu(forge)
+    assert ok.job_logs(7, sure_s=2).veri == b"log\n"
+    token_istegi, api = sahte.istekler[0], sahte.istekler[1]
+    assert token_istegi.url.path.endswith("/access_tokens")
+    assert _zaman_asimi(token_istegi) == pytest.approx(2.0)
+    assert _zaman_asimi(api) <= 2.0
+    sahte.istekler.clear()
+    ok.jobs(555, timeout=3)
+    assert sahte.istekler[0].url.path.endswith("/access_tokens")
+    assert _zaman_asimi(sahte.istekler[0]) == pytest.approx(3.0)
+    # Zaman aşımı verilmeyen olağan forge çağrısı istemcinin varsayılanıyla kalır.
+    sahte.istekler.clear()
+    forge.request("GET", "/repos/ornek/uygulama/actions/runs/555/jobs", "x")
+    assert _zaman_asimi(sahte.istekler[0]) == pytest.approx(30.0)
+
+
 def test_actions_read_token_varsa_o_kullanilir() -> None:
     sahte = SahteGitHub()
     tok = "gh" + "p_" + "ActionsReadOnlyToken0123456789abcd"

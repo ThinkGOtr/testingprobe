@@ -127,6 +127,8 @@ def test_maliyet_assistant_amaclari_ayri_grup(engine: Engine, olcum_verisi) -> N
     assert ai["amaclar"]["assistant_deep"] == {"cagri": 2, "maliyet_usd": 0.19}
     assert k["asistan"]["maliyet"] == g
     assert "assistant*" in k["kaynaklar"]["maliyet"] and "asistan" in k["kaynaklar"]
+    # "bugün" dilimi TR gün başından; bütçe tavanları UTC gününde sıfırlanır — fark yazılı olmalı.
+    assert "UTC" in k["kaynaklar"]["maliyet"] and "UTC" in k["kaynaklar"]["asistan"]
 
 
 def test_oneriler_kural_basina_sayilar(engine: Engine, olcum_verisi, kurallar) -> None:

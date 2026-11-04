@@ -28,6 +28,9 @@ setin amaçlarından yalnız bunlar (asistan seti `assistant` ve `assistant_deep
 yalnız tüm amaçlar `esikler`'i geçince kaydı `evaluated` yapar (`evaluation.amaclar`,
 `evaluation.icerik_hash`).
 Her rapor vaka başına maliyet ve uçtan uca sürenin medyan/p90'ını (`dagilim`) taşır.
+Asistan seti seçilip tavan `ASISTAN_ASGARI_BUTCE_USD`'nin (10, plan §13) altındaysa uyarı basılır
+(koşu engellenmez). Model/effort matrisi (Haiku/Sonnet × low/medium, K2) için ayrı bayrak yok:
+`rules/` kopyasında `models.yaml` amaç kaydı değiştirilip `--rules-dir <kopya>` ile koşulur.
 
 `--record`: aynı koşu `record` kipinde, birebir kayıtları AYRI bir dizine yazar (varsayılan
 `exports/eval-live/<zaman>/replay-adaylari/`, git'e girmez). Commit'li golden'lar
@@ -116,6 +119,8 @@ from tp_core.gateway.testing import InMemoryCallRecorder
 
 BUDGET_ENV = "TP_EVAL_BUDGET_USD"
 DEFAULT_BUDGET_USD = 5.0
+ASISTAN_PAKETI = "assistant"
+ASISTAN_ASGARI_BUTCE_USD = 10.0  # AI-ASISTAN-PLANI §13: asistan seti + matris için önerilen tavan
 PING_PURPOSE = "triage"  # en ucuz amaç (Haiku sınıfı)
 PING_MAX_TOKENS = 16
 CHARS_PER_TOKEN = 3  # temkinli (Türkçe metin token başına ~3-4 karakter)
@@ -1039,6 +1044,22 @@ def _budget(value: str | None) -> float:
     return budget
 
 
+def _asistan_butce_uyarisi(
+    plans: Sequence[BundlePlan], budget: float, out: Callable[[str], None]
+) -> None:
+    """Asistan seti koşacaksa ve tavan §13'ün önerdiği 10 USD'nin altındaysa uyarır."""
+    if budget >= ASISTAN_ASGARI_BUTCE_USD:
+        return
+    if not any(p.bundle == ASISTAN_PAKETI and p.skip_reason is None for p in plans):
+        return
+    out(
+        f"UYARI: asistan seti için {BUDGET_ENV} ≥ {ASISTAN_ASGARI_BUTCE_USD:g} önerilir "
+        f"(AI-ASISTAN-PLANI §13); tavan {budget:g} USD — koşu tavanda yarıda kalabilir "
+        f"(--budget-usd {ASISTAN_ASGARI_BUTCE_USD:g}). Model/effort matrisi: models.yaml'ı "
+        "değiştirilmiş rules/ kopyasıyla --rules-dir."
+    )
+
+
 def main(
     argv: list[str] | None = None,
     *,
@@ -1053,7 +1074,12 @@ def main(
     parser.add_argument("--record", action="store_true", help="kayıt adaylarını ayrı dizine yaz")
     parser.add_argument("--record-dir", type=Path, default=None)
     parser.add_argument("--update-status", action="store_true")
-    parser.add_argument("--rules-dir", type=Path, default=None)
+    parser.add_argument(
+        "--rules-dir",
+        type=Path,
+        default=None,
+        help="kural dizini (model/effort matrisi: models.yaml'ı değiştirilmiş kopya)",
+    )
     parser.add_argument(
         "--ledger", type=Path, default=None, help="çağrı defteri (vars. exports/eval-live/)"
     )
@@ -1079,6 +1105,7 @@ def main(
             )
         budget = _budget(args.budget_usd)
         plans = plan_bundles(rules_dir, args.bundle, args.purpose)
+        _asistan_butce_uyarisi(plans, budget, out)
         if args.dry_run:
             return dry_run(rules_dir, plans, budget, out)
         record_dir = args.record_dir or (default_record_dir(rules_dir) if args.record else None)

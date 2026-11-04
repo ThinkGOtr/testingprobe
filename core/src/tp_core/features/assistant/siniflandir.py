@@ -65,6 +65,15 @@ _NE_DEMEK: Final = (
     "bu hata",
     "bu ne",
     "neyi ifade",
+    # Ekrandaki hata çoğu zaman "mesaj/uyarı/bildirim" diye anılır ("Bu mesaj ne?").
+    "bu mesaj",
+    "mesaj ne",
+    "bu uyarı",
+    "bu uyari",
+    "uyarı ne",
+    "uyari ne",
+    "bu bildirim",
+    "bildirim ne",
 )
 # Şablon dalı (anahtarla birlikte): "TPD-3 neden bekliyor?", "TPD-3'ün durumu ne?", "nerede?" …
 _DURUM: Final = (

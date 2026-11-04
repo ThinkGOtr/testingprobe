@@ -8,6 +8,8 @@
 //   hiç yazılmaz. Kayıt 5 dk geçerlidir.
 //
 // Bu modül `api/http`'yi içe aktarmaz (döngü olmasın): hata nesnesini alan adlarıyla okur.
+// Kayıtlar kullanıcıya aittir: çıkışta / kullanıcı değişince silinir (`oturumTemizligi`).
+import { oturumDegisinceTemizle } from "./oturumTemizligi";
 
 /** Asistan bağlamına giden kayıt (§5.5 `son_hata`; `yas_s` gönderirken hesaplanır). */
 export interface SonHataKaydi {
@@ -143,6 +145,19 @@ export function gorunenMetinEkle(kayitId: string, metin: string): void {
   bildir();
 }
 
+/**
+ * "Asistana sor" tıklandı: hata hâlâ ekranda, kaydın 5 dk'lık süresi tıklama anından yeniden
+ * başlar ve en son kayıt olur. Kayıt yoksa (20 kayıt sınırıyla düştüyse) false.
+ */
+export function hataTazele(kayitId: string, simdi = Date.now()): boolean {
+  const k = kayitlar.find((x) => x.kayitId === kayitId);
+  if (!k) return false;
+  kayitlar = ekle(kayitlar, { ...k, zaman: simdi });
+  sonYazilan = kayitId;
+  bildir();
+  return true;
+}
+
 function gecerli(k: SonHataKaydi, simdi: number): boolean {
   return simdi - k.zaman <= SON_HATA_GECERLILIK_MS;
 }
@@ -183,10 +198,12 @@ export function sonHataSurumu(): number {
   return surum;
 }
 
-/** Testler için. */
+/** Çıkışta / kullanıcı değişince (önceki kullanıcının hatası sonrakinin bağlamına gitmesin) ve testlerde. */
 export function sonHatayiSifirla(): void {
   kayitlar = [];
   adaylar = [];
   sonYazilan = null;
   bildir();
 }
+
+oturumDegisinceTemizle(sonHatayiSifirla);

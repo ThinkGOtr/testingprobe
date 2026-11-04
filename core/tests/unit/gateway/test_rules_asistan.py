@@ -25,6 +25,7 @@ import pytest
 import yaml
 
 from tests.unit.gateway.demo_sources import REPO, RULES
+from tp_core.features.assistant import sonislem
 from tp_core.gateway import ALLOWED_AGENT_TOOLS, FORBIDDEN_TOOLS, load_schema
 from tp_core.gateway.bundle import parse_prompt_file
 
@@ -98,10 +99,10 @@ EYLEM_ALANLARI: dict[str, tuple[set[str], set[str]]] = {  # tur → (zorunlu, is
     "bilgi": ({"tur"}, set()),
 }
 # Testing Probe'un kendi onaylı hattı olan iş: bu ekran/varlıklarda Jira taslağı/yorumu yasak
-# (§17.2; mükerrer Jira kaydı ve constitution I'i aşan paralel hat olmasın). Bilerek burada
-# sabittir: kural dosyası kendi korumasını gevşetemez.
-SISTEM_HATTI_EKRANLARI = ("/bug-taslaklari", "/gereksinimler/:id/yayin")
-SISTEM_HATTI_VARLIKLARI = ("bug_draft", "consistency_finding")
+# (§17.2; mükerrer Jira kaydı ve constitution I'i aşan paralel hat olmasın). Liste kodda sabittir
+# (kural dosyası kendi korumasını gevşetemez) ve model önerilerinin son işlemiyle ortaktır.
+SISTEM_HATTI_EKRANLARI = sonislem.SISTEM_HATTI_EKRANLARI
+SISTEM_HATTI_VARLIKLARI = sonislem.SISTEM_HATTI_VARLIKLARI
 KEBAB = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 YER_TUTUCU = re.compile(r"\{([a-z_]+)\}")
 JIRA_ANAHTARI = re.compile(r"^[A-Z][A-Z0-9]+-[0-9]+$")

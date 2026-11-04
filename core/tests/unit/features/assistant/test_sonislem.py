@@ -117,6 +117,13 @@ def _kaynak(tur: str, ref: str, alinti: str) -> dict[str, str]:
         ("data:text/html;base64,PHNjcmlwdD4= aç", "[bağlantı kaldırıldı] aç", "base64"),
         ("www.evil.example adresine git", "[bağlantı kaldırıldı] adresine git", "evil"),
         ("ftp://kullanici:parola@host/dosya", "[bağlantı kaldırıldı]", "parola"),
+        # Şemasız alan adı + yol (enjeksiyonla "şu adrese gidip giriş yapın" metni).
+        (
+            "Önce evil.example.com/login adresinde oturum açın.",
+            "Önce [bağlantı kaldırıldı] adresinde oturum açın.",
+            "evil",
+        ),
+        ("Bkz. destek.ornek.com.tr:8443/giris", "Bkz. [bağlantı kaldırıldı]", "destek"),
     ],
 )
 def test_metin_url_ve_markdown_duzlesir(girdi: str, beklenen: str, olmayan: str) -> None:
@@ -127,6 +134,21 @@ def test_metin_url_ve_markdown_duzlesir(girdi: str, beklenen: str, olmayan: str)
     blok = cevap["cevap_bloklari"][0]
     assert blok["metin"] == beklenen and blok["maddeler"] == [beklenen]
     assert olmayan not in str(cevap)
+
+
+@pytest.mark.parametrize(
+    "metin",
+    [
+        "review-portal/src/pages/Script.tsx:12",
+        "next.config.app.ts ve README.md, app.py",
+        "tp_core.features.assistant.flow modülü",
+        "kampanya.py:3 satırı, sürüm v1.2.3",
+        "po.kisi@ornek.com adresine yazın",
+        "src/app.io dosyası",
+    ],
+)
+def test_semasiz_alan_deseni_dosya_ve_kod_adlarina_dokunmaz(metin: str) -> None:
+    assert sonislem.duz_metin(metin) == metin
 
 
 def test_metin_toplam_6000_karakterde_kirpilir_ve_blok_turu_korunur() -> None:
@@ -515,6 +537,64 @@ def test_oneri_eylemi_bilinen_anahtar_ve_tur_kurallari(
         assert out["taslak"]["tur"] == "yorum" and out["taslak"]["proje"] == "TPD"
 
 
+_BUG_TASLAGI = {
+    "tur": "jira_taslak",
+    "taslak": {"tur": "Bug", "ozet": "Giriş hatası", "aciklama": "Adımlar"},
+}
+_YORUM = {
+    "tur": "jira_yorum",
+    "anahtar": "TPD-3",
+    "taslak": {"tur": "yorum", "ozet": "a", "aciklama": "b"},
+}
+
+
+@pytest.mark.parametrize(
+    ("rota_kalibi", "varlik_turu", "sistem_hatti"),
+    [
+        ("/bug-taslaklari/:id", "bug_draft", True),
+        ("/bug-taslaklari", None, True),
+        ("/gereksinimler/:id/yayin", "requirement", True),
+        ("/gereksinimler/:id", "consistency_finding", True),
+        ("/gereksinimler/:id", "requirement", False),
+        ("/kosular/:id", "run", False),
+        ("/bug-taslaklari-eski", None, False),  # önek değil, tam bölüt
+        (None, None, False),
+    ],
+)
+def test_sistem_hattinda_jira_onerisi_bilgiye_duser(
+    rota_kalibi: str | None, varlik_turu: str | None, sistem_hatti: bool
+) -> None:
+    """§17.2: sistem hattındaki işte modelin Jira taslağı/yorumu önerisi deterministik düşer."""
+    b = _oneri_baglami(rota_kalibi=rota_kalibi, varlik_turu=varlik_turu)
+    assert sonislem.sistem_hatti_mi(rota_kalibi, varlik_turu) is sistem_hatti
+    for eylem, tur in ((_BUG_TASLAGI, "jira_taslak"), (_YORUM, "jira_yorum")):
+        out = sonislem.oneri_eylemi(eylem, b)
+        assert out["tur"] == ("bilgi" if sistem_hatti else tur)
+        assert ("baglanti" in out) is not sistem_hatti
+    # Kaydı açmak (yeni kayıt değil) ve rota sistem hattında da serbesttir.
+    assert sonislem.oneri_eylemi({"tur": "jira_kaydi", "anahtar": "TPD-3"}, b)["tur"] == (
+        "jira_kaydi"
+    )
+    assert sonislem.oneri_eylemi({"tur": "rota", "rota": "/kosular"}, b)["tur"] == "rota"
+
+
+@pytest.mark.parametrize(
+    ("rol", "rota", "beklenen"),
+    [
+        ("tester", "/demo", "bilgi"),  # yalnız presenter
+        ("presenter", "/demo", "rota"),
+        ("tester", "/claude-code", "bilgi"),  # yalnız analyst
+        ("analyst", "/claude-code", "rota"),
+        ("tester", "/kod/0f3c-1", "rota"),  # roller null → herkes
+        (None, "/demo", "rota"),  # rol bilinmiyor → süzgeç yok
+    ],
+)
+def test_rota_eylemi_rolle_hizalanir(rol: str | None, rota: str, beklenen: str) -> None:
+    out = sonislem.oneri_eylemi({"tur": "rota", "rota": rota}, _oneri_baglami(rol=rol))
+    assert out["tur"] == beklenen
+    assert out["rota"] == (rota if beklenen == "rota" else None)
+
+
 def test_oneri_metinleri_kirpilir() -> None:
     cevap = isle(
         _cikti(oneriler=[_oneri("B" * 200, {"tur": "bilgi"}, neden="N" * 900)]),
@@ -600,6 +680,10 @@ def test_urun_terimleri_dosyadan_okunur() -> None:
         ("Bugün ne yapmalıyım?", None, True, False),
         ("BUGÜN NE YAPMALIYIM", None, True, False),
         ("Bu hata ne demek?", None, False, True),
+        ("Bu mesaj ne?", None, False, True),
+        ("BU UYARI NE", None, False, True),
+        ("Bu bildirim ne anlatıyor", None, False, True),
+        ("Mesajı tekrar gönder", None, False, False),
         ("Bu case'i onayla", None, False, False),
     ],
 )

@@ -592,8 +592,8 @@ def test_db_kesintisinde_kisa_uyari_ve_ustel_bekleme(
 
     from sqlalchemy.exc import OperationalError
 
-    # asistan işleri başka testlerce kaydedilmiş olabilir; kalp atışı beklemeleri karışmasın
-    monkeypatch.setenv("TP_WORKER_ASISTAN_SERIT", "0")
+    # Asistan şeridi platform conftest'inde kapalı (`_asistan_seridi_kapali`): kalp atışı
+    # beklemeleri karışmaz.
     dur = _KayitliBekleme(0)
     turlar = iter(["db", "db", "db", "db", "ok", "db", "son"])
 
@@ -621,7 +621,6 @@ def test_db_kesintisinde_kisa_uyari_ve_ustel_bekleme(
 def test_db_bekleme_ust_siniri(monkeypatch: pytest.MonkeyPatch) -> None:
     from sqlalchemy.exc import OperationalError
 
-    monkeypatch.setenv("TP_WORKER_ASISTAN_SERIT", "0")
     dur = _KayitliBekleme(0)
     sayac = {"n": 0}
 
@@ -764,3 +763,11 @@ def test_is_akisi_butce_istisnasi_gecidinkinin_alt_sinifi() -> None:
     assert isinstance(exc, GecitButceAsimi)
     assert (exc.scope, exc.spent_usd, exc.cap_usd) == ("workflow", 2.5, 2.0)
     assert str(exc) == "iş akışı aşıldı"
+
+
+def test_platform_testlerinde_asistan_seridi_kapali() -> None:
+    """Asistan modülü içe aktarılmış olsa da (REGISTRY'de `assistant.answer`) platform worker
+    testleri asistan iş parçacığı açmaz: sıralamadan bağımsız (`_asistan_seridi_kapali`)."""
+    import tp_core.features.assistant  # noqa: F401 — handler kaydı
+
+    assert worker.asistan_serit_turleri() == frozenset()

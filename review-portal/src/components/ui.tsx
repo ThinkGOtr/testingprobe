@@ -5,7 +5,7 @@ import type { CiktiModu, Degerlendirme, Rol } from "../api/types";
 import { useOturum } from "../auth";
 import { ROL, type Ton } from "../lib/etiketler";
 import { baglantiTuru } from "../lib/rotalar";
-import { hataGosterildi } from "../lib/sonHata";
+import { hataGosterildi, hataTazele } from "../lib/sonHata";
 import { asistanaSor, useAsistanHazir } from "./asistan/kontrol";
 
 /** Kayıtlı (replay) çıktı rozeti. live için hiçbir şey göstermez (Constitution VIII). */
@@ -87,7 +87,17 @@ export function AsistanaSorDugmesi({ hata, kaynak }: { hata: string | null; kayn
   const kayitId = useHataKaydi(kaynak, hata);
   if (!asistanHazir || !kayitId) return null;
   return (
-    <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => asistanaSor(kayitId)}>
+    <button
+      type="button"
+      className="dugme dugme-hayalet dugme-kucuk"
+      onClick={() => {
+        // Düğme 5 dk'dan uzun ekranda kalmış olabilir: kayıt yeniden yazılır (düştüyse yeniden açılır)
+        // ve süresi tıklama anından başlar. Aksi halde panel başka bir hatanın bağlamına düşerdi.
+        const id = hataGosterildi(kaynak, hata) ?? kayitId;
+        hataTazele(id);
+        asistanaSor(id);
+      }}
+    >
       Asistana sor
     </button>
   );

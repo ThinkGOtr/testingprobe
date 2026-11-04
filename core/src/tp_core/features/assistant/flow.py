@@ -274,6 +274,11 @@ def _otomatik_derin_acik() -> bool:
     return os.environ.get(ORTAM_OTOMATIK_DERIN, "1").strip().lower() not in ("0", "false", "off")
 
 
+def _baglam_metni(baglam: Any, alan: str) -> str | None:
+    deger = baglam.get(alan) if isinstance(baglam, Mapping) else None
+    return deger if isinstance(deger, str) and deger else None
+
+
 def _principal(m: Mesaj) -> Any:
     from tp_core.workflow.service import Principal
 
@@ -820,6 +825,9 @@ def cevapla(
                 saat=saat,
                 musteri_verisi=musteri_verisi,
                 sir_degerleri=ab.sir_degerleri,
+                rota_kalibi=_baglam_metni(m.baglam, "rota_kalibi"),
+                varlik_turu=_baglam_metni((m.baglam or {}).get("varlik"), "tur"),
+                rol=m.rol,
             )
             cevap = sonislem.isle(sonuc.output, sb)
         finally:

@@ -7,6 +7,7 @@ import { asistanApi, baglamiSigdir, bekliyor, gonderimHataMetni, mesajHataMetni,
 import { useBaglantiDurumu, useOlay } from "../../api/events";
 import { ApiError } from "../../api/http";
 import type { EkranBaglami } from "../../lib/ekranBaglami";
+import { oturumDegisinceTemizle } from "../../lib/oturumTemizligi";
 import { AiOneriKarti } from "./OneriKarti";
 import { oneriAyar } from "./OneriVerisi";
 
@@ -98,22 +99,42 @@ function ekBitti(mesaj: AsistanMesaji): void {
   }
 }
 
+/** Mesaj artık okunamıyor (404: silinmiş ya da bu kullanıcının değil): bekleme kaydı düşer. */
+function ekBeklemeyiDusur(mesajId: string): void {
+  let degisti = false;
+  for (const [k, d] of ekDurumlar) {
+    if (d.tur === "bekliyor" && d.mesajId === mesajId) {
+      ekDurumlar.delete(k);
+      degisti = true;
+    }
+  }
+  if (degisti) ekBildir();
+}
+
 /** Bileşen yokken (Sohbet sekmesi açık) bekleyen ek önerinin bitip bitmediğini okur. */
 export async function ekOneriKontrol(mesajId: string): Promise<void> {
   try {
     const m = await asistanApi.mesaj(mesajId);
     if (!bekliyor(m)) ekBitti(m);
-  } catch {
-    /* bir sonraki olayda/turda yeniden denenir */
+  } catch (e) {
+    // 404 kalıcıdır: kayıt kalırsa Sohbet "Ek öneriler hazırlanıyor" diye kilitli kalır.
+    if (e instanceof ApiError && e.status === 404) ekBeklemeyiDusur(mesajId);
+    /* diğerleri: bir sonraki olayda/turda yeniden denenir */
   }
 }
 
-/** Testler için. */
+/**
+ * Çıkışta / kullanıcı değişince ve testlerde. Ek öneri sohbetleri ve sonuçları kullanıcıya
+ * aittir (anahtar yalnız ekran/varlık): önceki kullanıcının bekleyen ek önerisi sonrakinin
+ * Sohbet'ini kilitlemesin, sonuçları ona gösterilmesin (§16 madde 1).
+ */
 export function ekOneriSohbetleriniSifirla(): void {
   ekSohbetler.clear();
   ekDurumlar.clear();
   ekBildir();
 }
+
+oturumDegisinceTemizle(ekOneriSohbetleriniSifirla);
 
 export function OneriEkOneriler({ ekran, onGit }: { ekran: EkranBaglami; onGit?: () => void }) {
   const anahtar = `${ekran.rota_kalibi}|${ekran.varlik?.id ?? ""}`;
@@ -154,8 +175,13 @@ export function OneriEkOneriler({ ekran, onGit }: { ekran: EkranBaglami; onGit?:
       if (m.durum === "done") setDurum((d) => (d.tur === "bekliyor" && d.mesajId === id ? { tur: "hazir", mesaj: m } : d));
       else if (m.durum === "iptal") setDurum((d) => (d.tur === "bekliyor" && d.mesajId === id ? { tur: "bos" } : d));
       else setDurum((d) => (d.tur === "bekliyor" && d.mesajId === id ? { tur: "hata", metin: mesajHataMetni(m.hata_kodu) } : d));
-    } catch {
-      /* bir sonraki olayda/turda yeniden denenir */
+    } catch (e) {
+      // 404 kalıcıdır (mesaj silinmiş / bu kullanıcının değil): bekleme bırakılır.
+      if (e instanceof ApiError && e.status === 404) {
+        ekBeklemeyiDusur(id);
+        if (bagli.current) setDurum((d) => (d.tur === "bekliyor" && d.mesajId === id ? { tur: "bos" } : d));
+      }
+      /* diğerleri: bir sonraki olayda/turda yeniden denenir */
     }
   }, []);
 

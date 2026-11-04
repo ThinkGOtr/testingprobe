@@ -78,7 +78,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from urllib.parse import quote, urlsplit
 
 import httpx
@@ -232,6 +232,32 @@ class AppAuth:
     def invalidate(self) -> None:
         with self._lock:
             self._cached = None
+
+
+class _SureliIstemci:
+    """`auth.token` için aynı istemci; her isteğe verilen zaman aşımı uygulanır.
+
+    Kurulum token'ı alımı (App kipinde GET kurulum + POST access_tokens) çağıranın kalan süresine
+    dahil olsun (asistan `ci_log`, AI-ASISTAN-PLANI §5.7); istemcinin 30 sn varsayılanı değil."""
+
+    def __init__(self, client: httpx.Client, timeout: float) -> None:
+        self._client = client
+        self._timeout = timeout
+
+    def get(self, *a: Any, **kw: Any) -> httpx.Response:
+        kw.setdefault("timeout", self._timeout)
+        return self._client.get(*a, **kw)
+
+    def post(self, *a: Any, **kw: Any) -> httpx.Response:
+        kw.setdefault("timeout", self._timeout)
+        return self._client.post(*a, **kw)
+
+    def request(self, *a: Any, **kw: Any) -> httpx.Response:
+        kw.setdefault("timeout", self._timeout)
+        return self._client.request(*a, **kw)
+
+    def __getattr__(self, ad: str) -> Any:
+        return getattr(self._client, ad)
 
 
 def _raise_for(resp: httpx.Response, what: str) -> None:
@@ -648,8 +674,12 @@ class GitHubForge:
     ) -> httpx.Response:
         auth = auth or self._auth
         extra = kw.pop("headers", {})
+        # Çağıran zaman aşımı verdiyse kurulum token'ı alımı da onunla sınırlı.
+        istemci = self._client
+        if isinstance(kw.get("timeout"), int | float):
+            istemci = cast(httpx.Client, _SureliIstemci(self._client, float(kw["timeout"])))
         for attempt in range(2):
-            headers = {**extra, "Authorization": f"Bearer {auth.token(self._client)}"}
+            headers = {**extra, "Authorization": f"Bearer {auth.token(istemci)}"}
             resp = self._client.request(method, path, headers=headers, **kw)
             if resp.status_code == 401 and attempt == 0:
                 auth.invalidate()  # süresi dolmuş kurulum token'ı → bir kez yenile
@@ -1507,10 +1537,16 @@ class GitHubForge:
         düşürür (token blob deposuna gitmez). 401'de kurulum token'ı bir kez yenilenir. Başarısız
         yanıtın gövdesinden en çok 64 KB okunur (hata iletisi için).
         """
+        basla = time.monotonic()
+        sureli = cast(httpx.Client, _SureliIstemci(self._client, timeout))
         for attempt in range(2):
-            headers = {"Authorization": f"Bearer {self._auth.token(self._client)}"}
+            # Kurulum token'ı alımı da `timeout` içinde; akış kalan süreyle açılır.
+            headers = {"Authorization": f"Bearer {self._auth.token(sureli)}"}
+            kalan = timeout - (time.monotonic() - basla)
+            if kalan <= 0:
+                raise httpx.TimeoutException(f"GitHub {what}: süre doldu")
             with self._client.stream(
-                "GET", path, headers=headers, follow_redirects=True, timeout=timeout, **kw
+                "GET", path, headers=headers, follow_redirects=True, timeout=kalan, **kw
             ) as resp:
                 if resp.status_code == 401 and attempt == 0:
                     self._auth.invalidate()  # süresi dolmuş kurulum token'ı → bir kez yenile

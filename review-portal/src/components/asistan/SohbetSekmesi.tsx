@@ -21,6 +21,7 @@ import { ApiError, hataMesaji } from "../../api/http";
 import { useOturum } from "../../auth";
 import type { EkranBaglami } from "../../lib/ekranBaglami";
 import { tarih } from "../../lib/format";
+import { oturumDegisinceTemizle } from "../../lib/oturumTemizligi";
 import { hataKaydi, SON_HATA_GECERLILIK_MS, sonHata, sonHataAbone, sonHataBaglami, sonHataSurumu, type SonHataKaydi } from "../../lib/sonHata";
 import { BosDurum, Yukleniyor } from "../ui";
 import type { SeciliEleman } from "./buNe";
@@ -51,13 +52,37 @@ function sohbetiHatirla(id: string | null): void {
   }
 }
 
-function gecenSure(iso: string, simdi: number): string {
-  const sn = Math.max(0, Math.floor((simdi - new Date(iso).getTime()) / 1000));
+// Kayıtlı sohbet kullanıcıya aittir: çıkışta / kullanıcı değişince unutulur.
+oturumDegisinceTemizle(() => sohbetiHatirla(null));
+
+// Bekleme süresi istemci saatiyle ölçülür: başlangıç mesajın bu sekmede ilk görüldüğü an.
+// Sunucunun `olusturma` zamanı istemci saatine karşı kullanılmaz (saat kayması sayacı 0'da
+// tutar ya da "Uzun sürüyor"u hemen gösterirdi). Sayfa yenilenince sayaç yeniden başlar.
+function gecenSure(baslangic: number, simdi: number): string {
+  const sn = Math.max(0, Math.floor((simdi - baslangic) / 1000));
   return sn < 60 ? `${sn} sn` : `${Math.floor(sn / 60)} dk ${String(sn % 60).padStart(2, "0")} sn`;
 }
 
-function uzunSurdu(iso: string, simdi: number): boolean {
-  return simdi - new Date(iso).getTime() >= sohbetAyar.uzunSurerMs;
+function uzunSurdu(baslangic: number, simdi: number): boolean {
+  return Math.max(0, simdi - baslangic) >= sohbetAyar.uzunSurerMs;
+}
+
+/** Gönderilecek sorunun seçenekleri (öneri kuralı, yeni sohbet, hedef sohbet). */
+interface GonderSecenegi {
+  yeniSohbet?: boolean;
+  oneriKuralId?: string | null;
+  sohbetId?: string | null;
+}
+
+/** Bekleyen soru varken dışarıdan gelen ("Neden? Sor", "Bunu sor") ve girdiye bırakılan soru. */
+interface BekletilenSoru {
+  metin: string;
+  secenek: GonderSecenegi;
+}
+
+/** Gönderim, asistanın kapandığını söyledi (ör. 503 `worker_yok`): durum yeniden okunmalı. */
+function asistanKapandi(e: unknown): boolean {
+  return e instanceof ApiError && (e.kod === "asistan_kapali" || e.status === 503);
 }
 
 export interface SohbetSekmesiOzellikleri {
@@ -108,6 +133,13 @@ export function SohbetSekmesi({
   const [ekranDahil, setEkranDahil] = useState(true);
   const [hataDahil, setHataDahil] = useState(true);
   const [secilenHataId, setSecilenHataId] = useState<string | null>(null);
+  /** "Asistana sor" ile seçilen kaydın süresi dolmuşsa gösterilen not. */
+  const [hataNotu, setHataNotu] = useState<string | null>(null);
+  /** Bekleme sürerken girdiye bırakılan dış soru: girdiden gönderilince seçenekleriyle gider. */
+  const [bekletilen, setBekletilen] = useState<BekletilenSoru | null>(null);
+  /** Ekran okuyucuya yalnız sonuç duyurulur (liste kabı canlı bölge değildir). */
+  const [duyuru, setDuyuru] = useState("");
+  const ilkGorulme = useRef(new Map<string, number>());
   const girdiRef = useRef<HTMLTextAreaElement>(null);
   const sohbetRef = useRef(sohbetId);
   sohbetRef.current = sohbetId;
@@ -117,10 +149,11 @@ export function SohbetSekmesi({
   // Rota değişince ekran çipi yeniden eklenir (kaldırma yalnız o ekran için).
   useEffect(() => setEkranDahil(true), [ekran.rota_kalibi, ekran.varlik?.id]);
 
-  // Son hata: "Asistana sor" ile seçilen kayıt, yoksa 5 dk içindeki son kayıt.
+  // Son hata: "Asistana sor" ile seçilen kayıt, yoksa 5 dk içindeki son kayıt. Seçilen kaydın
+  // süresi dolduysa başka (ilgisiz) bir hataya düşülmez: o hata sorusu bağlamsız kalır, not gösterilir.
   useSyncExternalStore(sonHataAbone, sonHataSurumu);
   const gecerliHata = useCallback(
-    (): SonHataKaydi | null => (secilenHataId ? hataKaydi(secilenHataId) : null) ?? sonHata(),
+    (): SonHataKaydi | null => (secilenHataId ? hataKaydi(secilenHataId) : sonHata()),
     [secilenHataId],
   );
   const hata = gecerliHata();
@@ -220,6 +253,27 @@ export function SohbetSekmesi({
     return () => clearInterval(z);
   }, [ekBekleyen, sseVar]);
 
+  // Bekleyen mesaj bitince yalnız sonuç duyurulur (geçmişten açılan sohbetin tamamı okunmaz).
+  const oncekiBekleyenler = useRef<string[]>([]);
+  useEffect(() => {
+    const onceki = oncekiBekleyenler.current;
+    oncekiBekleyenler.current = bekleyenAnahtar ? bekleyenAnahtar.split("|") : [];
+    const biten = mesajlar.filter((m) => onceki.includes(m.id) && !bekliyor(m));
+    if (biten.length === 0) return;
+    const son = biten[biten.length - 1];
+    setDuyuru(son.durum === "done" ? "Asistanın cevabı geldi." : son.durum === "iptal" ? "Soru iptal edildi." : "Soru tamamlanamadı.");
+  }, [bekleyenAnahtar, mesajlar]);
+
+  /** Bekleme başlangıcı: mesajın bu sekmede ilk görüldüğü an (istemci saati). */
+  const baslangic = (m: AsistanMesaji): number => {
+    let t = ilkGorulme.current.get(m.id);
+    if (t === undefined) {
+      t = Date.now();
+      ilkGorulme.current.set(m.id, t);
+    }
+    return t;
+  };
+
   // Geçen süre sayacı.
   useEffect(() => {
     if (!bekleyenAnahtar) return;
@@ -244,16 +298,22 @@ export function SohbetSekmesi({
   }, [ekranDahil, ekran, gecerliHata, hataDahil, secili]);
 
   const gonder = useCallback(
-    async (soru: string, secenek: { yeniSohbet?: boolean; oneriKuralId?: string | null; sohbetId?: string | null } = {}) => {
+    async (soru: string, secenek: GonderSecenegi = {}) => {
       const metin = soru.trim();
-      if (!metin || gonderiyor) return;
-      // Yanıt bekleyen soru varken (bu sekmede) yeni soru gönderilmez: sunucu 409 bekleyen_var
-      // döndürür. Yeni sohbete de geçilmez; soru girdide kalır, cevap gelince gönderilir.
-      if (kullaniciBekliyor) {
+      if (!metin) return;
+      // Yanıt bekleyen soru varken (bu sekmede) ya da önceki gönderim sürerken yeni soru
+      // gönderilmez: sunucu 409 bekleyen_var döndürür. Yeni sohbete de geçilmez; soru girdide
+      // kalır, cevap gelince gönderilir. Öneri kuralı / hedef sohbet de saklanır (§17.6): girdiden
+      // gönderilen aynı soru onlarla gider, girdi değişirse düşer.
+      if (kullaniciBekliyor || gonderiyor) {
         setGirdi(metin);
-        setGonderimHatasi(BEKLEYEN_VAR_METNI);
+        setBekletilen(secenek.oneriKuralId || secenek.yeniSohbet || secenek.sohbetId ? { metin, secenek } : null);
+        setGonderimHatasi(
+          kullaniciBekliyor ? BEKLEYEN_VAR_METNI : "Önceki soru gönderiliyor; bu soru girdide bekliyor, sonra yeniden gönderin.",
+        );
         return;
       }
+      setBekletilen(null);
       setGonderiyor(true);
       setGonderimHatasi(null);
       let yeniId: string | null = null;
@@ -288,6 +348,9 @@ export function SohbetSekmesi({
         }
         setGirdi("");
         seciliTemizle();
+        // Seçilen hata kaydı bu soruyla gitti; sonraki sorular güncel son hatayı kullanır.
+        setSecilenHataId(null);
+        setHataNotu(null);
         await yukle(id, true);
         durumYenile();
       } catch (e) {
@@ -297,6 +360,8 @@ export function SohbetSekmesi({
           setGirdi((g) => g || metin);
         }
         setGonderimHatasi(gonderimHataMetni(e));
+        // Asistan bu arada kapandıysa (worker gitti) panel nedenini gösteren pasif uyarıya geçsin.
+        if (asistanKapandi(e)) durumYenile();
       } finally {
         setGonderiyor(false);
       }
@@ -314,7 +379,13 @@ export function SohbetSekmesi({
     if (istek.kayitId) {
       setSecilenHataId(istek.kayitId);
       setHataDahil(true);
-      if (!istek.soru) setGirdi((g) => g || "Bu hata ne demek, ne yapmalıyım?");
+      if (hataKaydi(istek.kayitId)) {
+        setHataNotu(null);
+        if (!istek.soru) setGirdi((g) => g || "Bu hata ne demek, ne yapmalıyım?");
+      } else {
+        // Kayıt süresi doldu / silindi: başka bir hatanın bağlamı yerine gitmesin, girdi doldurulmaz.
+        setHataNotu("Bu hatanın kaydı artık yok (5 dk geçti). Hata yeniden görünürse oradan tekrar sorun.");
+      }
     }
     if (istek.soru) {
       void gonder(istek.soru, { yeniSohbet: !!istek.oneriKuralId, oneriKuralId: istek.oneriKuralId ?? null, sohbetId: istek.sohbetId ?? null });
@@ -330,6 +401,8 @@ export function SohbetSekmesi({
     sohbetiHatirla(null);
     setMesajlar([]);
     setGonderimHatasi(null);
+    setSecilenHataId(null);
+    setHataNotu(null);
   };
 
   const yeniSohbet = () => {
@@ -423,9 +496,9 @@ export function SohbetSekmesi({
       <span>
         {etiket ?? adimMetni(adimlar[m.id] ?? m.adim_kodu)}
         {/* Sayaç her saniye değişir: canlı bölgede duyurulmaz (yalnız adım ve "Uzun sürüyor"). */}
-        <span aria-hidden="true"> · {gecenSure(m.olusturma, simdi)}</span>
+        <span aria-hidden="true"> · {gecenSure(baslangic(m), simdi)}</span>
       </span>
-      {uzunSurdu(m.olusturma, simdi) && <span className="asistan-uzun">Uzun sürüyor</span>}
+      {uzunSurdu(baslangic(m), simdi) && <span className="asistan-uzun">Uzun sürüyor</span>}
       <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => void iptalEt(m)}>
         {m.tetik === "otomatik" ? "Durdur" : "Beklemeyi bırak"}
       </button>
@@ -557,6 +630,8 @@ export function SohbetSekmesi({
     );
   }
 
+  /** Girdideki soru bekletilen dış soruysa onun seçenekleri (öneri kuralı, sohbet); elle değiştiyse yok. */
+  const bekletilenSecenek = (): GonderSecenegi => (bekletilen && bekletilen.metin === girdi.trim() ? bekletilen.secenek : {});
   const sayac = girdi.length;
   const gonderilemez = !girdi.trim() || sayac > SORU_AZAMI || gonderiyor || kullaniciBekliyor;
   const kokler = mesajlar.filter((m) => !m.ust_mesaj_id);
@@ -571,7 +646,12 @@ export function SohbetSekmesi({
           Geçmiş
         </button>
       </div>
-      <div className="asistan-mesajlar" aria-live="polite">
+      {/* Liste kabı canlı bölge değildir: geçmişten açılan sohbet baştan okunmaz. Bekleme adımları
+          kendi role="status" bölgelerinde, sonuç bu küçük bölgede duyurulur. */}
+      <p className="gorunmez" role="status" data-testid="asistan-duyuru">
+        {duyuru}
+      </p>
+      <div className="asistan-mesajlar">
         {yukleniyor && <Yukleniyor metin="Sohbet yükleniyor…" />}
         {yuklemeHatasi && (
           <div className="uyari-kutusu uyari-hata" role="alert">
@@ -612,7 +692,7 @@ export function SohbetSekmesi({
         className="asistan-girdi"
         onSubmit={(e) => {
           e.preventDefault();
-          if (!gonderilemez) void gonder(girdi);
+          if (!gonderilemez) void gonder(girdi, bekletilenSecenek());
         }}
       >
         <div className="asistan-cipler" aria-label="Soruya eklenecek bağlam">
@@ -641,9 +721,12 @@ export function SohbetSekmesi({
               </button>
             </span>
           )}
-          <button type="button" className="cip cip-notr asistan-bune-dugmesi" aria-pressed={buNeAcik} onClick={buNeBaslat}>
-            ? Bu ne?
-          </button>
+          {/* Model kapalıyken seçili öğe sorusu cevaplanamaz (yalnız "kapalı" metni döner): düğme gizli. */}
+          {modelAcik && (
+            <button type="button" className="cip cip-notr asistan-bune-dugmesi" aria-pressed={buNeAcik} onClick={buNeBaslat}>
+              ? Bu ne?
+            </button>
+          )}
         </div>
         <label className="gorunmez" htmlFor="asistan-soru">
           Sorunuz
@@ -654,11 +737,15 @@ export function SohbetSekmesi({
           value={girdi}
           rows={3}
           placeholder="Sorunuzu yazın…"
-          onChange={(e) => setGirdi(e.target.value)}
+          onChange={(e) => {
+            setGirdi(e.target.value);
+            // Bekletilen dış soru elle değiştirildiyse kuralı/sohbeti artık onun değildir.
+            if (bekletilen && e.target.value.trim() !== bekletilen.metin) setBekletilen(null);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
-              if (!gonderilemez) void gonder(girdi);
+              if (!gonderilemez) void gonder(girdi, bekletilenSecenek());
             }
           }}
           aria-describedby="asistan-sayac"
@@ -680,6 +767,11 @@ export function SohbetSekmesi({
           </p>
         ) : (
           kullaniciBekliyor && <p className="soluk kucuk">Cevap gelince yeni soru sorabilirsiniz.</p>
+        )}
+        {hataNotu && (
+          <p className="soluk kucuk" role="status">
+            {hataNotu}
+          </p>
         )}
         {gonderimHatasi && (
           <div className="uyari-kutusu uyari-hata" role="alert">

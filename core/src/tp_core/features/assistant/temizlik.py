@@ -11,14 +11,19 @@ Saklama süresi `TP_ASISTAN_SAKLAMA_GUN` (varsayılan 90; geçersiz değer varsa
 - **Sohbet:** son etkinliği (`guncelleme`, `silinme`, en yeni mesajın `olusturma`'sı) süreden eski
   sohbet fiziksel olarak silinir; **yumuşak silinenler dahil** (`silindi` fark etmez). Bekleyen
   (`pending`/`running`) mesajı olan sohbete dokunulmaz. Mesajlar `ON DELETE CASCADE` ile gider.
-- **Mesaj:** tek tek silinmez. Saklama sohbet düzeyindedir (K4, panel: "sohbet 90 gün saklanır"):
-  kullanılan bir sohbetin eski soruları ve onlara bağlı "Daha ayrıntılı" cevapları (`ust_mesaj_id`
-  CASCADE) yarım kalmaz; sohbet son etkinliğinden süre kadar sonra bütünüyle gider.
+- **Mesaj:** etkin (silinmeyen) sohbette de süreden eski, bitmiş (`done`/`error`/`iptal`) mesaj
+  tek tek silinir: panel "sohbet 90 gün saklanır" der; kullanılan sohbet eski mesajları süresiz
+  taşımaz. "Daha ayrıntılı" çifti yarım kalmaz: süresi dolmamış ya da bitmemiş çocuğu
+  (`ust_mesaj_id`) olan mesaj çocukla birlikte sonraki koşuda gider (CASCADE).
 - **Öneri geri bildirimi** (`asistan_oneri_geri_bildirim`): süreden eski satırlar silinir; "Gizle"
   bastırması da bu süre sonunda kalkar.
 - **Hız sayacı** (`asistan_hiz`): 1 günden eski pencereler (`hiz.hiz_temizle`).
 - `ai_call` ve `tool_call` append-only denetim kayıtlarıdır, **dokunulmaz** (kişi bağı
   `ai_call.ek` ile kalır; Kontrol Kulesi maliyeti bu yüzden saklama süresinden etkilenmez).
+
+- **Cevap işleri** (`job`, `tur='assistant.answer'`): bitmiş ve süreden eski satırlar silinir
+  (yük kullanıcı ve mesaj kimliği taşır; sayaç sorguları büyüyen tabloyu taramasın).
+  `asistan_mesaj.job_id` yabancı anahtar değildir.
 
 Silinen satır sayıları iş sonucuna yazılır; içerik (soru/cevap metni) hiçbir yere yazılmaz.
 Temizlik işinin kendi bitmiş kayıtları 1 günden sonra `job` tablosundan silinir.
@@ -38,6 +43,7 @@ from sqlalchemy.orm import Session
 
 from tp_core.db import get_engine
 from tp_core.features.assistant import hiz
+from tp_core.features.assistant.budget import ASISTAN_IS_TURU
 from tp_core.workflow import jobs as jobq
 from tp_core.workflow.jobs import JobContext, job_handler
 
@@ -88,6 +94,25 @@ _SOHBET_SIL = text(
     """
 )
 
+_MESAJ_SIL = text(
+    """
+    DELETE FROM asistan_mesaj m
+    WHERE m.olusturma < now() - make_interval(days => :g)
+      AND m.durum IN ('done', 'error', 'iptal')
+      AND NOT EXISTS (
+            SELECT 1 FROM asistan_mesaj c
+            WHERE c.ust_mesaj_id = m.id
+              AND (c.olusturma >= now() - make_interval(days => :g)
+                   OR c.durum NOT IN ('done', 'error', 'iptal'))
+          )
+    """
+)
+
+_CEVAP_ISI_SIL = text(
+    "DELETE FROM job WHERE tur = :t AND durum IN ('done', 'failed', 'cancelled') "
+    "AND COALESCE(bitis, guncelleme) < now() - make_interval(days => :g)"
+)
+
 _GERI_BILDIRIM_SIL = text(
     "DELETE FROM asistan_oneri_geri_bildirim WHERE olusturma < now() - make_interval(days => :g)"
 )
@@ -96,15 +121,20 @@ _GERI_BILDIRIM_SIL = text(
 def temizle(session: Session, *, gun: int | None = None) -> dict[str, int]:
     """Saklama süresini aşan asistan verisini çağıranın işleminde siler; tablo başına sayılar.
 
-    Mesajlar yalnız sohbetleriyle (CASCADE) gider; sayıları `sohbet`'in içindedir.
+    Silinen sohbetlerin mesajları (CASCADE) `sohbet`'in içindedir; `mesaj` kalan sohbetlerden
+    tek tek silinenlerdir.
     """
     g = saklama_gun() if gun is None else max(int(gun), 1)
     sohbet = session.execute(_SOHBET_SIL, {"g": g}).rowcount or 0
+    mesaj = session.execute(_MESAJ_SIL, {"g": g}).rowcount or 0
+    cevap_isi = session.execute(_CEVAP_ISI_SIL, {"t": ASISTAN_IS_TURU, "g": g}).rowcount or 0
     geri_bildirim = session.execute(_GERI_BILDIRIM_SIL, {"g": g}).rowcount or 0
     hiz_sayisi = hiz.hiz_temizle(session)
     return {
         "saklama_gun": g,
         "sohbet": int(sohbet),
+        "mesaj": int(mesaj),
+        "cevap_isi": int(cevap_isi),
         "oneri_geri_bildirim": int(geri_bildirim),
         "hiz": int(hiz_sayisi),
     }
@@ -147,11 +177,14 @@ def temizlik(_ctx: JobContext) -> dict[str, Any]:
         with Session(engine) as session, session.begin():
             sonuc = temizle(session)
         sonuc["is_kaydi"] = is_kayitlarini_sil(engine)
-        if any(sonuc[k] for k in ("sohbet", "oneri_geri_bildirim")):
+        if any(sonuc[k] for k in ("sohbet", "mesaj", "cevap_isi", "oneri_geri_bildirim")):
             log.info(
-                "asistan saklama temizliği (%d gün): %d sohbet, %d öneri geri bildirimi",
+                "asistan saklama temizliği (%d gün): %d sohbet, %d mesaj, %d cevap işi, "
+                "%d öneri geri bildirimi",
                 sonuc["saklama_gun"],
                 sonuc["sohbet"],
+                sonuc["mesaj"],
+                sonuc["cevap_isi"],
                 sonuc["oneri_geri_bildirim"],
             )
         return sonuc

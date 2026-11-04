@@ -114,6 +114,28 @@ def rota_indirge(rota: str | None) -> tuple[str, str | None] | None:
     return None
 
 
+@lru_cache(maxsize=4)
+def _roller(yol: str) -> dict[str, frozenset[str] | None]:
+    try:
+        veri = json.loads(Path(yol).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    out: dict[str, frozenset[str] | None] = {}
+    for r in veri.get("rotalar", []):
+        kalip, roller = r.get("kalip"), r.get("roller")
+        if isinstance(kalip, str):
+            out[kalip] = frozenset(map(str, roller)) if isinstance(roller, list) else None
+    return out
+
+
+def rota_rolleri(rota: str | None) -> frozenset[str] | None:
+    """Rotanın ekranını açabilen roller (`rotalar.json` `roller`); None → tüm roller/kalıp yok."""
+    eslesme = rota_indirge(rota)
+    if eslesme is None:
+        return None
+    return _roller(str(_rotalar_dosyasi())).get(eslesme[0])
+
+
 def baglam_dogrula(ham: Any) -> dict[str, Any] | None:
     """İstemci bağlamını doğrular ve normalize eder (sunucuda saklanan biçim).
 

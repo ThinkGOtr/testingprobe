@@ -264,10 +264,16 @@ def _onekli(onek: str, govde: str, en_az: int) -> str:
 
 # `generic_assignment` anahtar adları (büyük/küçük harf duyarsız) ve değer karakterleri.
 _SIR_ANAHTARI = (
-    r"(?:password|passwd|secret|client[_-]?secret|token|access[_-]?token|auth[_-]?token"
-    r"|refresh[_-]?token|api[_-]?key|access[_-]?key|private[_-]?key)"
+    r"(?:password|passwd|secret[_-]?key|secret|client[_-]?secret|token|access[_-]?token"
+    r"|auth[_-]?token|refresh[_-]?token|api[_-]?key|access[_-]?key|private[_-]?key)"
 )
 _SIR_KARAKTERI = r"A-Za-z0-9_\-+/=.~@#%^&!"
+# Rastgele görünümlü değer: ≥ 8 karakter, harf VE rakam (kaynak koddaki `token`, `None`, `str`
+# gibi adlar ve düz kelimeler eşleşmez).
+_RASTGELE_DEGER = (
+    rf"(?=[{_SIR_KARAKTERI}]*\d)(?=[{_SIR_KARAKTERI}]*[A-Za-z])"
+    rf"[{_SIR_KARAKTERI}]{{{SECRET_VALUE_MIN_LEN},}}"
+)
 
 
 @dataclass(frozen=True)
@@ -303,7 +309,8 @@ SECRET_PATTERNS: tuple[SecretPattern, ...] = (
         "env_assignment",
         re.compile(
             r"(?P<keep>\b(?:SEED_USER_PASSWORD|TP_SESSION_SECRET|JIRA_[A-Z_]*TOKEN"
-            r"|[A-Z][A-Z0-9_]*(?:_PASSWORD|_SECRET|_API_KEY|_PRIVATE_KEY|_TOKEN))\s*=\s*)"
+            r"|[A-Z][A-Z0-9_]*(?:PASSWORD|PASSWD|_PASS|_SECRET|_TOKEN|_API_?KEY|APIKEY"
+            r"|_ACCESS_KEY|_PRIVATE_KEY|_SECRET_KEY))\s*=\s*)"
             r"(?![<${'\"`*])[^\s'\"`]+"
         ),
         keep_group="keep",
@@ -318,9 +325,41 @@ SECRET_PATTERNS: tuple[SecretPattern, ...] = (
         re.compile(
             rf"(?P<keep>(?:--{_SIR_ANAHTARI}\b(?:\s*=\s*|\s+)"
             rf"|(?<![\w-]){_SIR_ANAHTARI}\b[\"']?\s*[:=]\s*)[\"']?)"
-            rf"(?=[{_SIR_KARAKTERI}]*\d)(?=[{_SIR_KARAKTERI}]*[A-Za-z])"
-            rf"[{_SIR_KARAKTERI}]{{{SECRET_VALUE_MIN_LEN},}}(?=[\s'\"`,;)}}\]]|\Z)",
+            rf"{_RASTGELE_DEGER}(?=[\s'\"`,;)}}\]]|\Z)",
             re.IGNORECASE,
+        ),
+        keep_group="keep",
+    ),
+    # Tireli özel başlık: `X-Demoapp-Test-Token: …`, `X-Api-Key: …`, `"Private-Token": "…"`.
+    # Değeri core-worker'da bilinmeyen sırlar (ör. DEMOAPP_TEST_TOKEN yalnız test-runner'da) için;
+    # değer `_RASTGELE_DEGER` kuralına uyar (kaynak koddaki `{"X-…-Token": token}` eşleşmez); URL
+    # içi `https://x-access-token:…@` `url_credentials`'a kalır.
+    SecretPattern(
+        "header_token",
+        re.compile(
+            r"(?P<keep>(?<![/\w.-])[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*-"
+            r"(?:Token|Api-?Key|Secret|Auth|Password)[\"']?\s*:\s*[\"']?)"
+            rf"{_RASTGELE_DEGER}(?=[\s'\"`,;)}}\]]|\Z)",
+            re.IGNORECASE,
+        ),
+        keep_group="keep",
+    ),
+    # Başlık adı olmadan şema + kimlik (log/komut çıktısı): `Basic dXNl…`, `Bearer eyJ…`.
+    SecretPattern(
+        "bare_auth_scheme",
+        re.compile(
+            r"(?P<keep>\b(?:Bearer|Basic)\s+)"
+            r"(?=[A-Za-z0-9._~+/=-]*\d)(?=[A-Za-z0-9._~+/=-]*[A-Za-z])[A-Za-z0-9._~+/-]{12,}=*"
+            r"(?=[\s'\"`,;)}\]]|\Z)"
+        ),
+        keep_group="keep",
+    ),
+    # curl/wget kullanıcı:parola bayrağı: `curl -u kullanici:<parola>`, `--user=kullanici:<parola>`.
+    SecretPattern(
+        "cli_user_password",
+        re.compile(
+            r"(?P<keep>(?<!\S)(?:-u|--user)(?:\s+|=)[\"']?[^\s:'\"$<]+:)"
+            r"(?![<${*])[^\s'\"`]+"
         ),
         keep_group="keep",
     ),
@@ -333,6 +372,8 @@ SECRET_PATTERNS: tuple[SecretPattern, ...] = (
     SecretPattern("github_token", re.compile(_onekli(r"\bgh[pousr]_", r"[A-Za-z0-9]", 20))),
     SecretPattern("gitlab_pat", re.compile(_onekli(r"\bglpat-", r"[A-Za-z0-9_-]", 20))),
     SecretPattern("anthropic_key", re.compile(_onekli(r"\bsk-ant-", r"[A-Za-z0-9_-]", 8))),
+    # OpenAI biçimli anahtarlar (`sk-proj-…`, `sk-svcacct-…`, eski `sk-…`); Anthropic yukarıda.
+    SecretPattern("openai_key", re.compile(_onekli(r"\bsk-(?!ant-)", r"[A-Za-z0-9_-]", 20))),
     SecretPattern("atlassian_token", re.compile(_onekli(r"\bATATT", r"[A-Za-z0-9_=+/-]", 16))),
     SecretPattern("google_api_key", re.compile(_onekli(r"\bAIza", r"[0-9A-Za-z_-]", 20))),
     SecretPattern("aws_access_key", re.compile(r"\bAKIA(?:[0-9A-Z]{16}|[0-9A-Z]+\Z)")),

@@ -225,12 +225,19 @@ def global_bekleyen(conn: Connection, *, haric_is: uuid.UUID | None = None) -> i
 
 
 def kullanici_bekleyen(conn: Connection, kullanici_id: uuid.UUID) -> int:
-    """Kullanıcının bitmemiş, kendi tetiklediği (`tetik='kullanici'`) asistan işleri."""
+    """Kullanıcının bitmemiş, kendi tetiklediği (`tetik='kullanici'`) asistan işleri.
+
+    Mesajı zaten son durumda (`done`/`error`) olan iş sayılmaz: cevap kendi transaction'ında
+    yazılır, iş ise ayrı transaction'da `complete` olur; arada gelen yeni soru yanlışlıkla
+    `bekleyen_var` almasın. `iptal` sayılır (iş tur başında durana dek kapanıyor; §9)."""
     return int(
         conn.execute(
             text(
-                "SELECT count(*) FROM job WHERE tur = :t AND durum IN ('queued','running','retry') "
-                "AND yuk->>'kullanici_id' = :k AND yuk->>'tetik' = 'kullanici'"
+                "SELECT count(*) FROM job j WHERE j.tur = :t "
+                "AND j.durum IN ('queued','running','retry') "
+                "AND j.yuk->>'kullanici_id' = :k AND j.yuk->>'tetik' = 'kullanici' "
+                "AND NOT EXISTS (SELECT 1 FROM asistan_mesaj m "
+                "WHERE m.id::text = j.yuk->>'mesaj_id' AND m.durum IN ('done','error'))"
             ),
             {"t": ASISTAN_IS_TURU, "k": str(kullanici_id)},
         ).scalar_one()

@@ -5,7 +5,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { kaynakDogrulandi, type AsistanMesaji, type CevapBlogu, type CevapKaynagiOgesi, type GuvenGosterimi } from "../../api/asistan";
 import { mockZorunlu } from "../../api/http";
-import { dolar } from "../../lib/format";
+import { dolar, goreliZaman, guvenliDisAdres } from "../../lib/format";
 import type { Ton } from "../../lib/etiketler";
 import { uygulamaRotasiMi } from "../../lib/rotalar";
 import { Cip, DisBaglanti } from "../ui";
@@ -31,19 +31,8 @@ const KAYNAK_NOTU: Record<string, string> = {
   kapali: "Hazır cevap",
 };
 
-/** "2 gün önce" biçiminde göreli zaman. */
-export function goreliZaman(iso: string | null | undefined, simdi = Date.now()): string | null {
-  if (!iso) return null;
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return null;
-  const sn = Math.max(0, Math.round((simdi - t) / 1000));
-  if (sn < 60) return "az önce";
-  const dk = Math.floor(sn / 60);
-  if (dk < 60) return `${dk} dk önce`;
-  const sa = Math.floor(dk / 60);
-  if (sa < 24) return `${sa} sa önce`;
-  return `${Math.floor(sa / 24)} gün önce`;
-}
+/** Göreli zaman tek yerde (lib/format); eski içe aktarımlar için yeniden dışa aktarılır. */
+export { goreliZaman };
 
 /** Kaynak listesindeki görünen etiket. */
 export function kaynakEtiketi(k: CevapKaynagiOgesi): string {
@@ -183,7 +172,7 @@ function AlintiModali({ kaynak, kapat }: { kaynak: CevapKaynagiOgesi; kapat: () 
         <pre className="kod-blok">
           <code>{kaynak.alinti || "(alıntı yok)"}</code>
         </pre>
-        {kaynak.jira?.url && <DisBaglanti href={kaynak.jira.url}>Jira'da aç</DisBaglanti>}
+        {guvenliDisAdres(kaynak.jira?.url) && <DisBaglanti href={guvenliDisAdres(kaynak.jira?.url)!}>Jira'da aç</DisBaglanti>}
       </div>
     </div>
   );
@@ -212,7 +201,7 @@ function Kaynaklar({ kaynaklar }: { kaynaklar: CevapKaynagiOgesi[] }) {
                   {k.tur === "urun_kodu" || k.tur === "uygulama_kodu" || k.tur === "dokuman" ? "Satırları göster" : "Alıntıyı göster"}
                 </button>
               )}
-              {k.tur === "jira" && k.jira?.url && <DisBaglanti href={k.jira.url}>Jira'da aç</DisBaglanti>}
+              {k.tur === "jira" && guvenliDisAdres(k.jira?.url) && <DisBaglanti href={guvenliDisAdres(k.jira?.url)!}>Jira'da aç</DisBaglanti>}
             </li>
           );
         })}
@@ -243,8 +232,16 @@ export function CevapKarti({ mesaj, baslik, derinIncelenebilir, derinIncele, der
   const guven = c.guven_gosterimi ?? null;
   const ornek = c.ornek_veri === true || mockZorunlu();
   const yonlendirmeler = (c.yonlendirmeler ?? []).filter((y) => uygulamaRotasiMi(y.rota));
-  const kaynakJiraAnahtarlari = new Set((c.kaynaklar ?? []).filter((k) => k.tur === "jira" && k.jira?.url).map((k) => k.jira!.anahtar));
-  const jiraBaglantilari = (c.jira_baglantilari ?? []).filter((j) => !kaynakJiraAnahtarlari.has(j.anahtar));
+  // Jira adresleri yalnız http(s) ise bağlantı olur (javascript:/data: vb. düşer; OneriKarti ile aynı süzgeç).
+  const kaynakJiraAnahtarlari = new Set(
+    (c.kaynaklar ?? []).filter((k) => k.tur === "jira" && guvenliDisAdres(k.jira?.url)).map((k) => k.jira!.anahtar),
+  );
+  const jiraBaglantilari = (c.jira_baglantilari ?? [])
+    .flatMap((j) => {
+      const url = guvenliDisAdres(j.url);
+      return url ? [{ ...j, url }] : [];
+    })
+    .filter((j) => !kaynakJiraAnahtarlari.has(j.anahtar));
   const maliyet = mesaj.maliyet_usd != null ? Number(mesaj.maliyet_usd) : null;
   const olculmedi = mesaj.kaynak !== "model" || maliyet === null || !Number.isFinite(maliyet);
   return (

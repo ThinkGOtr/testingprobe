@@ -136,7 +136,9 @@ def asistan_olcumu(session: Session, maliyet: dict[str, Any]) -> dict[str, Any]:
 KAYNAK: Final = (
     "maliyet: ai_call.maliyet, amac 'assistant*' (assistant, assistant_deep) = asistan grubu, "
     "geri kalanı diğer; tüm zamanlar (ai_call saklama temizliğine girmez), bugün: Europe/Istanbul "
-    "gün başından · öneriler: kural başına 'Neden? Sor' = öneri bağlamlı kullanıcı sorusu "
+    "gün başından (asistan bütçe tavanları — günlük ve kullanıcı başı — UTC gününe göre, "
+    "03:00 TR'de sıfırlanır; bu dilimle birebir örtüşmez) · öneriler: kural başına 'Neden? Sor' "
+    "= öneri bağlamlı kullanıcı sorusu "
     "(asistan_mesaj.baglam.oneri.kural_id), Faydalı/Gizle/Yaptım = asistan_oneri_geri_bildirim."
     "deger 1/-1/2; son TP_ASISTAN_SAKLAMA_GUN gün (saklama temizliği); gösterim sayısı tutulmaz, "
     "kişi bazlı rapor yok"

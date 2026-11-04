@@ -16,7 +16,8 @@ adım modele sorulmaz:
 - **Öneri eylemleri** (yalnız öneri kipi; soru kipinde `oneriler` boşaltılır): rota dışı → `bilgi`;
   taslak metninde URL "[bağlantı kaldırıldı]", Jira wiki bağlantısı ve mention temizlenir; proje
   daima sunucudaki `JIRA_PROJECT`; bilinmeyen anahtar → null (`jira_yorum`/`jira_kaydi` → `bilgi`);
-  en çok 3; kural önerisiyle aynı başlık (normalize) atılır.
+  en çok 3; kural önerisiyle aynı başlık (normalize) atılır. Sistem hattı ekranında/varlığında
+  (`SISTEM_HATTI_*`) Jira taslağı/yorumu ve soranın rolünün açamadığı rota → `bilgi` (§17.2).
 - **Güven gösterimi**: §7.3 tablosu (`guven_gosterimi`).
 - Müşteri verisi kurulumunda cevap aynı oturumla yeniden maskelenir; her kaynağın sha256'sı
   `dogrulama`'ya yazılır.
@@ -85,14 +86,29 @@ HAVUZ_TURLERI: Final = frozenset({"probe_verisi", "jira", "ci_log"})
 BLOK_TURLERI: Final = frozenset({"baslik", "paragraf", "liste", "kod"})
 EYLEM_TURLERI: Final = frozenset({"rota", "jira_taslak", "jira_yorum", "jira_kaydi", "bilgi"})
 YENI_KAYIT_TURLERI: Final = frozenset({"Task", "Bug", "Story"})
+# Testing Probe'un kendi onaylı hattı olan iş (bug taslağı, case yayını, tutarlılık bulgusu): bu
+# ekran/varlıklarda Jira taslağı/yorumu önerilmez, `bilgi`ye düşer (§17.2; mükerrer Jira kaydı ve
+# constitution I'i aşan paralel hat olmasın). Kural dosyası testi de bu sabitleri okur.
+SISTEM_HATTI_EKRANLARI: Final = ("/bug-taslaklari", "/gereksinimler/:id/yayin")
+SISTEM_HATTI_VARLIKLARI: Final = frozenset({"bug_draft", "consistency_finding"})
+SISTEM_HATTI_EYLEMLERI: Final = frozenset({"jira_taslak", "jira_yorum"})
 
 # ASCII rakam (`\d` Unicode rakamı da kabul ederdi).
 JIRA_ANAHTARI: Final = re.compile(r"[A-Z][A-Z0-9]+-[0-9]+")
 _GORSEL: Final = re.compile(r"!\[([^\]\n]*)\]\([^)\n]*\)")
 _MD_BAGLANTI: Final = re.compile(r"\[([^\]\n]*)\]\([^)\n]*\)")
+# Şemasız alan adı ("evil.example.com/login"): oltalama metni olmasın. Kod/dosya adlarıyla
+# karışmasın diye yalnız yaygın üst düzey alanlar ve son etiket olarak ("config.app.ts" değil,
+# "README.md" değil); öncesinde kelime, nokta, "@" ya da "/" yoksa (e-posta, yol içi değil).
+_TLD: Final = (
+    "com|net|org|io|dev|app|co|info|biz|xyz|me|ru|cn|tk|top|online|site|live|ly|gg|link|click"
+    "|shop|store|tr|uk|de|ai|cc|su"
+)
 _URL: Final = re.compile(
     r"(?i)(?:\b[a-z][a-z0-9+.\-]*://|\bwww\.)[^\s<>\"'`]*"
     r"|\b(?:javascript|data|vbscript|file)\s*:[^\s<>\"'`]*"
+    r"|(?<![\w.@/\-])(?:[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?\.)+(?:" + _TLD + r")"
+    r"(?![\w\-])(?!\.[a-z0-9])(?::[0-9]+)?(?:/[^\s<>\"'`]*)?"
 )
 _WIKI_BAGLANTI: Final = re.compile(r"\[([^\[\]|\n]*)\|[^\[\]\n]*\]")
 _MENTION_ID: Final = re.compile(r"\[~[^\]\n]*\]")
@@ -179,6 +195,21 @@ def _bloklar(ham: Any) -> list[dict[str, Any]]:
 
 
 # ------------------------------------------------------------------ rota
+
+
+def sistem_hatti_mi(rota_kalibi: Any, varlik_turu: Any) -> bool:
+    """Ekran (rota kalıbı veya altı) ya da varlık Testing Probe'un kendi hattında mı (§17.2)."""
+    if isinstance(varlik_turu, str) and varlik_turu in SISTEM_HATTI_VARLIKLARI:
+        return True
+    if not isinstance(rota_kalibi, str):
+        return False
+    return any(rota_kalibi == e or rota_kalibi.startswith(e + "/") for e in SISTEM_HATTI_EKRANLARI)
+
+
+def _rota_rolleri(rota: Any) -> frozenset[str] | None:
+    from tp_core.features.assistant.schemas import rota_rolleri
+
+    return rota_rolleri(rota) if isinstance(rota, str) else None
 
 
 def rota_gecerli(rota: Any) -> bool:
@@ -282,6 +313,10 @@ class SonIslemBaglami:
     - `kayit_adresi` / `yeni_kayit_adresi` / `proje`: "Jira'yı aç" bağlantıları (yalnız sunucu).
     - `kural_basliklari`: öneri kipinde gösterilen kural önerilerinin başlıkları (mükerrer atma).
     - `bitis`, `saat`: veri sorgusu yeniden çalıştırmanın süre sınırı (`time.monotonic` ekseni).
+    - `rota_kalibi`, `varlik_turu`: sorunun sorulduğu ekran; sistem hattı ekranında/varlığında
+      `jira_taslak`/`jira_yorum` önerisi `bilgi`ye düşer (§17.2).
+    - `rol`: soranın rolü; `rotalar.json`'da bu rolün açamadığı ekrana `rota` eylemi `bilgi`ye
+      düşer (None → rol süzgeci yok).
     """
 
     havuz: KanitHavuzu | None = None
@@ -300,6 +335,10 @@ class SonIslemBaglami:
     musteri_verisi: bool = False
     sir_degerleri: tuple[str, ...] = ()
     rota_gecerli: Callable[[Any], bool] = rota_gecerli
+    rota_kalibi: str | None = None
+    varlik_turu: str | None = None
+    rol: str | None = None
+    rota_rolleri: Callable[[Any], frozenset[str] | None] = _rota_rolleri
     _anahtar_onbellek: dict[str, bool] = field(default_factory=dict, repr=False)
 
     def anahtar_bilinir(self, anahtar: Any) -> bool:
@@ -559,7 +598,12 @@ def oneri_eylemi(ham: Any, b: SonIslemBaglami) -> dict[str, Any]:
         rota = ham.get("rota")
         if not b.rota_gecerli(rota):
             return _bilgi()
+        roller = b.rota_rolleri(rota) if b.rol else None
+        if roller and b.rol not in roller:
+            return _bilgi()  # rol ekranı açamaz: yanıltıcı yönlendirme olmasın (§17.2)
         return {"tur": "rota", "rota": rota, "anahtar": None, "taslak": None}
+    if tur in SISTEM_HATTI_EYLEMLERI and sistem_hatti_mi(b.rota_kalibi, b.varlik_turu):
+        return _bilgi()
     anahtar = ham.get("anahtar") if b.anahtar_bilinir(ham.get("anahtar")) else None
     taslak_ham = ham.get("taslak") if isinstance(ham.get("taslak"), Mapping) else None
     if tur == "jira_taslak":

@@ -7,6 +7,7 @@
 import { useId, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { JIRA_ANAHTARI, oneriApi, oneriHataMetni, type AsistanOnerisi, type KuralOnerisi, type OneriEylemi, type OneriGeriBildirimDegeri } from "../../api/asistan";
+import { goreliZaman, guvenliDisAdres } from "../../lib/format";
 import { uygulamaRotasiMi } from "../../lib/rotalar";
 import { useBildirim } from "../Bildirim";
 import { acSekme } from "./kontrol";
@@ -22,15 +23,8 @@ export const HAZIR_SORULAR: { metin: string; yalnizJira?: boolean }[] = [
 
 const JIRA_EYLEMLERI = new Set(["jira_taslak", "jira_yorum", "jira_kaydi"]);
 
-/** "2 sa önce" biçimi ("Yaptım" satırı). */
-export function goreliZaman(iso: string, simdi = Date.now()): string {
-  const dk = Math.max(0, Math.floor((simdi - new Date(iso).getTime()) / 60_000));
-  if (dk < 1) return "az önce";
-  if (dk < 60) return `${dk} dk önce`;
-  const sa = Math.floor(dk / 60);
-  if (sa < 24) return `${sa} sa önce`;
-  return `${Math.floor(sa / 24)} gün önce`;
-}
+/** Göreli zaman tek yerde (lib/format, NaN korumalı); eski içe aktarımlar için yeniden dışa aktarılır. */
+export { goreliZaman };
 
 /** Panoya giden düz metin: proje, tür, etiketler, özet ve açıklama (yalnız `text/plain`). */
 export function taslakMetni(e: Pick<OneriEylemi, "taslak" | "anahtar">): string {
@@ -65,7 +59,7 @@ export function aiMetniTemizle(metin: string): string {
 export function aiOnerisiKarta(o: AsistanOnerisi): { baslik: string; neden: string; eylem: OneriEylemi } {
   const e = o.eylem;
   const rota = e.rota && e.rota.startsWith("/") && !e.rota.startsWith("//") && uygulamaRotasiMi(e.rota) ? e.rota : null;
-  const baglanti = e.baglanti && /^https?:\/\//i.test(e.baglanti) ? e.baglanti : null;
+  const baglanti = guvenliDisAdres(e.baglanti);
   const eylem: OneriEylemi =
     e.tur === "rota"
       ? rota
@@ -107,8 +101,10 @@ export function OneriEylemAlani({ eylem, ai, onGit }: { eylem: OneriEylemi; ai?:
     }
   };
 
-  const jiraAc = eylem.baglanti ? (
-    <a className="dugme dugme-ikincil dugme-kucuk" href={eylem.baglanti} target="_blank" rel="noopener noreferrer">
+  // Kural önerisinin adresi de yalnız http(s) ise bağlantı olur (AI önerisi `aiOnerisiKarta`da süzülür).
+  const jiraAdresi = guvenliDisAdres(eylem.baglanti);
+  const jiraAc = jiraAdresi ? (
+    <a className="dugme dugme-ikincil dugme-kucuk" href={jiraAdresi} target="_blank" rel="noopener noreferrer">
       Jira'yı aç<span className="gorunmez"> (yeni sekmede açılır)</span>
       <span aria-hidden="true"> ↗</span>
     </a>

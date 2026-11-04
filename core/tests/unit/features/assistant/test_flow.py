@@ -839,22 +839,84 @@ def test_otomatik_yukseltme_cocuk_ve_is_ayni_transactionda(
 
 @pytest.mark.parametrize(
     "neden",
-    ["dogrulandi", "eylem_reddi", "bayrak_kapali"],
+    [
+        "dogrulandi",
+        "eylem_reddi",
+        "bayrak_kapali",
+        "oneri_kipi",
+        "derin_cocuk",
+        "elle_derin",
+        "model_hatasi",
+    ],
 )
 def test_otomatik_yukseltme_tetiklenmez(
     client: TestClient, make_user, engine: Engine, monkeypatch: pytest.MonkeyPatch, neden: str
 ) -> None:
+    """§13: dışlamaların her biri ayrı; "Emin değil" cevabı bile çocuk üretmez."""
     giris(client, make_user("engineer"))
-    script = [bitir(guven="dusuk")]
+    script: list[Any] = [bitir(guven="dusuk")]
     if neden == "dogrulandi":
         script = dogrulanmis_kaynak()
     elif neden == "eylem_reddi":
         script = [bitir(guven="dusuk", eylem_reddi=True)]
-    else:
+    elif neden == "bayrak_kapali":
         monkeypatch.setenv("TP_ASISTAN_OTOMATIK_DERIN", "0")
-    mid = _yukseltilen(client, engine, script)
+    elif neden == "model_hatasi":
+        script = [RuntimeError("sağlayıcı düştü")]
+    if neden == "oneri_kipi":  # öneri kipi asla yükseltilmez
+        _, mid = soru_gonder(client, engine, "", baglam={"rota": "/gereksinimler"}, kip="oneri")
+        assert cevapla(engine, mid, Gecit(engine, script)) == "done"
+        assert mesaj(engine, mid)["cevap"]["guven_gosterimi"] == sonislem.EMIN_DEGIL
+    elif neden in ("derin_cocuk", "elle_derin"):  # assistant_deep asla yükseltilmez
+        if neden == "derin_cocuk":  # otomatik çocuk "Emin değil" biter → torun yok
+            ust = _yukseltilen(client, engine, [bitir(guven="dusuk")])
+            mid = str(cocuklar(engine, ust)[0]["id"])
+        else:  # elle "Daha ayrıntılı" (doğrulanmış model cevabının altı)
+            sohbet, ust = soru_gonder(client, engine, KIRARAK, baglam=GRI_BAGLAM)
+            assert cevapla(engine, ust, Gecit(engine, dogrulanmis_kaynak())) == "done"
+            r = sor(client, sohbet, ust_mesaj_id=ust)
+            assert r.status_code == 202, r.text
+            mid = r.json()["mesaj_id"]
+        is_bitir(engine, ust)
+        assert mesaj(engine, mid)["amac"] == "assistant_deep"
+        assert cevapla(engine, mid, Gecit(engine, script)) == "done"
+        assert mesaj(engine, mid)["cevap"]["guven_gosterimi"] == sonislem.EMIN_DEGIL
+    elif neden == "model_hatasi":
+        _, mid = soru_gonder(client, engine, KIRARAK, baglam=GRI_BAGLAM)
+        assert cevapla(engine, mid, Gecit(engine, script)) == "error"
+    else:
+        mid = _yukseltilen(client, engine, script)
     assert cocuklar(engine, mid) == []
-    assert "derin_onerilir" not in mesaj(engine, mid)["cevap"]
+    assert "derin_onerilir" not in (mesaj(engine, mid)["cevap"] or {})
+
+
+@pytest.mark.parametrize("dal", ["sozluk", "sablon", "kapali"])
+def test_modelsiz_dallar_otomatik_tetige_ulasmaz(
+    client: TestClient,
+    make_user,
+    engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    veri: dict[str, Any],
+    dal: str,
+) -> None:
+    """Sözlük/şablon/kapalı cevaplar otomatik yükseltme kararına hiç girmez (§13)."""
+
+    def cagrilmamali(*_: Any) -> bool:
+        pytest.fail("modelsiz dalda otomatik tetik değerlendirilmemeli")
+
+    monkeypatch.setattr(flow, "otomatik_tetik", cagrilmamali)
+    giris(client, make_user("analyst"))
+    if dal == "sozluk":
+        _, mid = soru_gonder(
+            client, engine, "Bu mesaj ne?", baglam={"son_hata": {"kod": "kapi_kapali"}}
+        )
+    elif dal == "sablon":
+        _, mid = soru_gonder(client, engine, "TPD-3 neden bekliyor?")
+    else:
+        _, mid = soru_gonder(client, engine, KIRARAK, baglam=GRI_BAGLAM, model_hazir=False)
+    assert cevapla(engine, mid) == "done"
+    assert mesaj(engine, mid)["kaynak"] == dal
+    assert cocuklar(engine, mid) == []
 
 
 def _kosan(client: TestClient, engine: Engine) -> flow.Mesaj:
@@ -1154,11 +1216,16 @@ def test_yan_etkisizlik_soru_oneri_ve_otomatik_yukseltme(
         mid = r.json()["mesaj_id"]
         assert cevapla(engine, mid, Gecit(engine, script) if script else yasak_gecit) == "done"
         is_bitir(engine, mid)
-        with engine.begin() as c:  # otomatik çocuğu kapat ki sıradaki soru sorulabilsin
-            c.execute(
-                text("UPDATE asistan_mesaj SET durum = 'iptal' WHERE ust_mesaj_id = :u"),
-                {"u": mid},
-            )
+        # Otomatik yükseltme çocuğu gerçekten koşar (assistant_deep: araç çağrıları, son işlem);
+        # yan etkileri de aşağıdaki anlık görüntüye girer.
+        for cocuk in cocuklar(engine, mid):
+            assert cocuk["amac"] == "assistant_deep"
+            assert cevapla(engine, str(cocuk["id"]), Gecit(engine, dogrulanmis_kaynak())) == "done"
+            is_bitir(engine, cocuk["id"])
+    assert any(
+        c["tetik"] == "otomatik" and c["durum"] == "done"
+        for c in cocuklar(engine, mid)  # son akış otomatik yükseltmeydi
+    )
     r = sor(
         client,
         sohbet,
@@ -1184,6 +1251,12 @@ def test_yan_etkisizlik_soru_oneri_ve_otomatik_yukseltme(
     assert r.status_code == 200, r.text
     with engine.connect() as c:
         assert verify_chain(c).ok
+    # Aynı doğrulama uç üzerinden (yetki, serileştirme, çapalar dahil).
+    r = client.get("/audit", params={"verify": "true"})
+    assert r.status_code == 200, r.text
+    dogrulama = r.json()["verify"]
+    assert dogrulama["ok"] is True and dogrulama["broken_at"] is None
+    assert dogrulama["anchors"] is None or dogrulama["anchors"]["broken"] == []
 
 
 def test_hata_kodu_eslemesi() -> None:
