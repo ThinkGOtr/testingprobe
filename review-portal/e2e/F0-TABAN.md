@@ -58,3 +58,54 @@ Notlar:
   390 px'te yatay kayan tablolardaki hücreler (`/denetim`, `/kosular`: tablo sarıcı dışına taşan satırlar).
 - Bu sayılar `duman.spec.ts` içinde `F0_INCOMPLETE` sabitidir; F2 sonrası azalırsa taban düşürülür,
   artış PR'ı durdurur (elle inceleme §3.3).
+
+## Yenileme sonrası taban (2026-11-04, `50ad4e2`)
+
+Ölçüm: dal `ui-temiz`, commit `50ad4e2` (görsel yenileme + `styles.css` temizliği; temizlik görseli
+değiştirmez: 128 ekran görüntüsünde piksel farkı 0). Kurulum F0 ile aynı (`vite build --mode mock` +
+`vite preview`, Playwright 1.64.1 Chromium, `@axe-core/playwright` 4.14.0, aynı etiketler, aynı pseudo
+gizleme, aynı bekleme ve etkileşimler). İki bağımsız koşu aynı sayıları verdi. `duman.spec.ts`
+`F0_INCOMPLETE` bu sayılara indirildi; hiçbir hücre yükselmedi. Ciddi/kritik ihlal: 0.
+
+Toplam (19 sayfa × 5 sütun): **1008 → 283**.
+
+| Sayfa | koyu 1440 | koyu 390 | açık 1440 | açık 390 | sistem 1440 |
+|---|---|---|---|---|---|
+| `/giris` | 0 | 0 | 0 | 0 | 0 |
+| `/gereksinimler/req-tpd-1` | 13 → **6** | 11 → **9** | 12 → **6** | 10 → **9** | 13 → **6** |
+| `/gereksinimler/req-tpd-1/caseler` | 4 → **0** | 2 → **0** | 3 → **0** | 1 → **0** | 4 → **0** |
+| `/kod/scr-2` | 13 → **8** | 31 → **8** | 12 → **8** | 30 → **8** | 13 → **8** |
+| `/denetim` | 3 → **0** | 73 → **0** | 2 → **0** | 72 → **0** | 3 → **0** |
+| `/kontrol-kulesi` | 5 → **2** | 22 → **2** | 4 → **2** | 21 → **2** | 5 → **2** |
+| `/gereksinimler/req-ft-1` | 7 → **2** | 5 → **3** | 6 → **2** | 4 → **3** | 7 → **2** |
+| `/gereksinimler/req-tpd-1/yayin` | 4 → **0** | 24 → **0** | 3 → **0** | 23 → **0** | 4 → **0** |
+| `/claude-code` | 3 → **0** | 2 → **0** | 2 → **0** | 1 → **0** | 3 → **0** |
+| `/hatalar/fail-2` | 15 → **11** | 13 → **11** | 14 → **11** | 12 → **11** | 15 → **11** |
+| `/bug-taslaklari/bug-4` | 5 → **0** | 2 → **0** | 4 → **0** | 1 → **0** | 5 → **0** |
+| `/yol-haritasi` | 12 → **8** | 10 → **8** | 11 → **8** | 9 → **8** | 12 → **8** |
+| `/gereksinimler` | 3 → **0** | 2 → **0** | 2 → **0** | 1 → **0** | 3 → **0** |
+| `/kod` | 3 → **0** | 17 → **0** | 2 → **0** | 16 → **0** | 3 → **0** |
+| `/kosular` | 7 → **0** | 63 → **0** | 6 → **0** | 62 → **0** | 7 → **0** |
+| `/kosular/run-107` | 23 → **17** | 20 → **17** | 22 → **17** | 19 → **17** | 23 → **17** |
+| `/kosular/run-108` | 7 → **1** | 5 → **1** | 6 → **1** | 4 → **1** | 7 → **1** |
+| `/bug-taslaklari` | 3 → **0** | 17 → **0** | 2 → **0** | 16 → **0** | 3 → **0** |
+| `/demo` | 4 → **0** | 2 → **0** | 3 → **0** | 1 → **0** | 4 → **0** |
+
+Düşüşün nedenleri:
+- **390 px'te taşan tablo hücreleri** (`/denetim` 73, `/kosular` 63, `/yayin` 24, `/kod/scr-2` 31,
+  `/kontrol-kulesi` 22, `/kod` ve `/bug-taslaklari` 17): kaydırma kapları (`.tablo-sarici`, `.ajan-adimlar`)
+  opak zemin aldı. axe artık zemini kapta buluyor; "elmPartiallyObscured" kalmadı.
+- **Her Kabuk sayfasında h1 ve ilk paragraf** (ÖRNEK VERİ bandı ve yapışkan üst çubukla örtüşme). Üst
+  çubuğun alt çizgisi pseudo öğe yerine `border-image` oldu. Gövdenin gradyan kenar çubuğu zemini iç
+  gölgeye çevrildi. Bunlar artık zemin hesabını bozmuyor.
+- **Tema düğmesi ve menü düğmesi** (koyu/sistem +1): ☾/◐/☰ glifleri SVG ikon oldu (F3).
+- **Koşular tetik açıklamaları** (`#kosular-gece-aciklama`, `#kosular-deploy-aciklama`): negatif üst
+  marj sayfa başlığının yeni alt boşluğuna göre ayarlandı. Açıklama artık başlıkla örtüşmüyor.
+- **İkincil düğme ve haplar**: düğme zemini opak `--surface`; ton zeminleri tema bloklarında token.
+- **Kalan incomplete düğümlerin tümü** `aria-hidden` dekoratif öğeler ve SVG eksen metni:
+  - akış dairesi ve yol haritası dairesi (`.akis-no`, `.yh-no`)
+  - ✓/✗ işaretleri (`.kirma-ikon`, `.sinyal-liste` ve `.pw-adim` içi `span[aria-hidden]`)
+  - Kule geçme oranı grafiğinin `text` öğeleri
+  - `/req-ft-1` 390 px'teki tek kod belirteci (`.tk-anahtar`)
+
+  Bunların metin kontrastı anlam taşımaz; ayrıca elle incelendi (§3.3).

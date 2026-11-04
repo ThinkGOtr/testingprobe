@@ -406,30 +406,30 @@ const AXE_SAYFALARI: { yol: string; ad: string; hazir: (p: Page) => Promise<void
 ];
 
 /**
- * F0 tabanı (e2e/F0-TABAN.md, Ek B2 fikstürü dahil): sayfa başına axe `color-contrast` **incomplete** düğüm
- * sayısı. Sıra: koyu 1440, koyu 390, açık 1440, açık 390, sistem 1440. Tasarım değişikliği bu sayıları
- * aşamaz (§8 sayısal kapı); azalırsa taban düşürülür.
+ * F0 tabanı (e2e/F0-TABAN.md "Yenileme sonrası taban", Ek B2 fikstürü dahil): sayfa başına axe
+ * `color-contrast` **incomplete** düğüm sayısı. Sıra: koyu 1440, koyu 390, açık 1440, açık 390, sistem 1440.
+ * Tasarım değişikliği bu sayıları aşamaz (§8 sayısal kapı); azalırsa taban düşürülür.
  */
 const F0_INCOMPLETE: Record<string, [number, number, number, number, number]> = {
   "/giris": [0, 0, 0, 0, 0],
-  "/gereksinimler/req-tpd-1": [13, 11, 12, 10, 13],
-  "/gereksinimler/req-tpd-1/caseler": [4, 2, 3, 1, 4],
-  "/kod/scr-2": [13, 31, 12, 30, 13],
-  "/denetim": [3, 73, 2, 72, 3],
-  "/kontrol-kulesi": [5, 22, 4, 21, 5],
-  "/gereksinimler/req-ft-1": [7, 5, 6, 4, 7],
-  "/gereksinimler/req-tpd-1/yayin": [4, 24, 3, 23, 4],
-  "/claude-code": [3, 2, 2, 1, 3],
-  "/hatalar/fail-2": [15, 13, 14, 12, 15],
-  "/bug-taslaklari/bug-4": [5, 2, 4, 1, 5],
-  "/yol-haritasi": [12, 10, 11, 9, 12],
-  "/gereksinimler": [3, 2, 2, 1, 3],
-  "/kod": [3, 17, 2, 16, 3],
-  "/kosular": [7, 63, 6, 62, 7],
-  "/kosular/run-107": [23, 20, 22, 19, 23],
-  "/kosular/run-108": [7, 5, 6, 4, 7],
-  "/bug-taslaklari": [3, 17, 2, 16, 3],
-  "/demo": [4, 2, 3, 1, 4],
+  "/gereksinimler/req-tpd-1": [6, 9, 6, 9, 6],
+  "/gereksinimler/req-tpd-1/caseler": [0, 0, 0, 0, 0],
+  "/kod/scr-2": [8, 8, 8, 8, 8],
+  "/denetim": [0, 0, 0, 0, 0],
+  "/kontrol-kulesi": [2, 2, 2, 2, 2],
+  "/gereksinimler/req-ft-1": [2, 3, 2, 3, 2],
+  "/gereksinimler/req-tpd-1/yayin": [0, 0, 0, 0, 0],
+  "/claude-code": [0, 0, 0, 0, 0],
+  "/hatalar/fail-2": [11, 11, 11, 11, 11],
+  "/bug-taslaklari/bug-4": [0, 0, 0, 0, 0],
+  "/yol-haritasi": [8, 8, 8, 8, 8],
+  "/gereksinimler": [0, 0, 0, 0, 0],
+  "/kod": [0, 0, 0, 0, 0],
+  "/kosular": [0, 0, 0, 0, 0],
+  "/kosular/run-107": [17, 17, 17, 17, 17],
+  "/kosular/run-108": [1, 1, 1, 1, 1],
+  "/bug-taslaklari": [0, 0, 0, 0, 0],
+  "/demo": [0, 0, 0, 0, 0],
 };
 
 function f0Taban(yol: string, tema: TemaTuru["tema"], genislik: number): number {
