@@ -826,11 +826,6 @@ code,
   flex-wrap: wrap;
   margin-bottom: 24px;
 }
-.sayfa-basligi h1 {
-  font-size: 1.6rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-}
 .sayfa-basligi p {
   margin-top: 6px;
   color: var(--text-2);
@@ -848,7 +843,7 @@ code,
 .tetik-aciklamalari li {
   padding: 1px 0;
 }
-/* Geri bağlantısı: section-badge hapı. Büyük harfe çevrilmez (aşağıdaki "büyük harf ve Türkçe" notu). */
+/* Geri bağlantısı: section-badge hapı. Büyük harfe çevrilmez (metrik bölümündeki "büyük harf ve Türkçe" notu). */
 .ust-baglanti {
   margin-bottom: 10px;
   font-size: 0.75rem;
@@ -858,6 +853,7 @@ code,
   display: inline-block;
   padding: 3px 12px;
   font-weight: 600;
+  letter-spacing: 0.01em;
   color: var(--accent);
   background: var(--accent-soft);
   border: 1px solid color-mix(in srgb, var(--accent-solid) 30%, transparent);
@@ -1385,6 +1381,7 @@ td .cip + .cip {
   font-size: 0.75rem;
   color: var(--muted);
   font-weight: 700;
+  letter-spacing: 0.01em;
   padding: 10px 14px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--border-soft);
@@ -1418,7 +1415,12 @@ td .cip + .cip {
 /*
  * Dar ekranda (≤ 640 px) satırlar "etiket: değer" kartlarına dönüşür: sütun kırpılmaz, tablo yatay
  * kaydırma gerektirmez. Başlık satırı ekran okuyucu için DOM'da kalır (görsel olarak gizli); her
- * hücrenin etiketi `data-etiket`'ten gelir.
+ * hücrenin etiketi `data-etiket`'ten gelir. Etiket sola yüzen öğedir: negatif sol marjla hücrenin %36'lık
+ * sol iç boşluğuna oturur (marj kutusu içerik alanına girmez, değer metni sarılmaz); hücre flow-root olduğu
+ * için iki satıra saran etiket hücreyi büyütür, alttaki satırın etiketine binmez. Yüzdeler içerik
+ * genişliğine (hücrenin %64'ü) göre: %36 / %64 = %56,25. Hücre iç boşluğu `.tablo.tablo-yigin tbody td:not(.adim-no)`
+ * (0,3,2) ile: aşağıdaki dar ekran `.tablo td` ve karara bağlanmış case'in `.case:is(…) .tablo td` (0,3,1)
+ * kurallarından özgül. Sarıcının ikinci çerçevesi kalkar (satırlar kendi kenarlı kartlarıdır).
  */
 @media (max-width: 640px) {
   .tablo-yigin thead {
@@ -1436,6 +1438,10 @@ td .cip + .cip {
     display: block;
     width: 100%;
   }
+  .tablo-sarici:has(> .tablo-yigin) {
+    border: 0;
+    border-radius: 0;
+  }
   .tablo-yigin tr {
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -1445,26 +1451,26 @@ td .cip + .cip {
   .tablo-yigin tbody tr:hover {
     background: transparent;
   }
-  /* Etiket solda sabit sütunda (mutlak konum), içerik akışı bozulmadan sağda satır içi akar. */
-  .tablo-yigin td,
-  .tablo-yigin tbody tr:last-child td {
+  .tablo-yigin td {
     position: relative;
     min-height: 1.6em;
-    padding: 4px 0 4px 36%;
     border-bottom: none;
     text-align: left;
   }
   .tablo-yigin td.sayi {
     text-align: left;
   }
+  .tablo.tablo-yigin tbody td:not(.adim-no) {
+    padding: 4px 0 4px 36%;
+  }
   .tablo-yigin td.mono,
   .tablo-yigin td .mono {
     white-space: normal;
     overflow-wrap: anywhere;
   }
-  /* Adım kartı: adım no başlık gibi; boş "Veri" satırı yer kaplamaz. */
-  .tablo-yigin td.adim-no {
-    padding-left: 0;
+  /* Adım kartı: adım no başlık gibi. */
+  .tablo.tablo-yigin tbody td.adim-no {
+    padding: 4px 0;
     font-weight: 650;
   }
   .tablo-yigin td.adim-no::before {
@@ -1473,13 +1479,16 @@ td .cip + .cip {
   .tablo-yigin td.bos-hucre {
     display: none;
   }
+  .tablo-yigin td[data-etiket] {
+    display: flow-root;
+  }
   .tablo-yigin td[data-etiket]::before {
     content: attr(data-etiket);
-    position: absolute;
-    left: 0;
-    top: 6px;
-    width: calc(36% - 10px);
+    float: left;
+    margin: 2px 0 0 -56.25%;
+    width: calc(56.25% - 10px);
     font-size: 0.75rem;
+    line-height: 1.35;
     letter-spacing: 0;
     color: var(--muted);
     font-weight: 650;
@@ -1500,18 +1509,13 @@ td .cip + .cip {
 .bos-hucre {
   color: var(--muted);
 }
-/* Yığın görünümde satırlar kendi kenarlı kartlarıdır; sarıcının ikinci çerçevesi kalkar.
-   Dar ekranda yatay kayan tablolarda hücre iç boşluğu daralır. */
+/* Dar ekranda yatay kayan tablolarda hücre iç boşluğu daralır. */
 @media (max-width: 640px) {
   .tablo th {
     padding: 8px 10px;
   }
   .tablo td {
     padding: 10px;
-  }
-  .tablo-sarici:has(> .tablo-yigin) {
-    border: 0;
-    border-radius: 0;
   }
 }
 
@@ -1720,8 +1724,6 @@ fieldset:disabled select {
   padding: 32px;
   box-shadow: var(--shadow);
 }
-/* "AI Testing Probe" gradyan metni MVT'de yok: background-clip:text axe color-contrast'ı "incomplete"e
-   düşürüyor (/giris F0 tabanı 0 → 2). F3'te <strong>Probe</strong> ile yeniden değerlendirilir. */
 .giris-kart h1 {
   font-size: 1.5rem;
   font-weight: 800;
@@ -1729,6 +1731,46 @@ fieldset:disabled select {
 }
 .giris-kart form {
   margin-top: 18px;
+}
+/* Giriş kartı: "İnceleme portalı" kendi satırında (tek satırda kartın iç dolgusuna ~7 px taşıyordu). */
+.giris-kart .marka-alt {
+  display: block;
+  margin-left: 0;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+/* Giriş kartı markası: "Probe" gradyan metin (§4.14, dashboard login "Agent Probe" gibi). background-clip:text
+   axe color-contrast'ı "incomplete"e düşürüyor (/giris 0 → 1, ölçüldü). Bunun yerine: metin düz başlangıç
+   renginde (axe ölçer, AA), üstüne aynı kelime bitiş renginde bindirilir ve soldan sağa maskeyle açılır.
+   Bindirme yalnız görsel: `content: "…" / ""` alternatif metni boş → erişilebilir ad değişmez; sözdizimini
+   tanımayan tarayıcı bildirimi yok sayar, düz renk kalır. Uçlar AA: koyu --accent #818cf8 → #c084fc, açık
+   --accent #4f46e5 → #7e22ce. Kelime Giris.tsx'teki <strong>Probe</strong> ile aynı olmalı. */
+.giris-kart .marka strong {
+  position: relative; /* metin rengi: .marka strong → --accent (koyu #818cf8, açık #4f46e5) */
+  display: inline-block; /* kutu = satır yüksekliği: bindirme aynı taban çizgisine oturur */
+}
+.giris-kart .marka strong::after {
+  content: "Probe" / "";
+  position: absolute;
+  inset: 0;
+  color: #c084fc;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000);
+  mask-image: linear-gradient(90deg, transparent, #000);
+  pointer-events: none;
+}
+:root[data-theme="light"] .giris-kart .marka strong::after {
+  color: #7e22ce;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .giris-kart .marka strong::after {
+    color: #7e22ce;
+  }
+}
+@media (forced-colors: active) {
+  .giris-kart .marka strong::after {
+    content: none;
+  }
 }
 .giris-ipucu {
   margin-top: 18px;
@@ -1884,7 +1926,39 @@ fieldset:disabled select {
   border-radius: 3px;
   box-shadow: inset 0 0 0 2px var(--ok);
 }
-/* 7x2 ve 4 sütun düzenleri içerik genişliğine göre: R2-AKIS çapası altındaki @container kuralları. */
+/* Akış göstergesi düzeni içerik genişliğine göre (görünüm genişliği değil: yan menü ve bölüm gezgini
+   akışın alanını daraltır). 14 sütun yalnız kap ≥ 57.5rem (kök 14,5 px → ≈ 834 px) iken: sütun ≈ (834 −
+   13 × 4) / 14 ≈ 55,8 px; bölünemeyen en uzun sözcük "gece/deploy" (≈ 64 px) taşsa da komşu adla arasında
+   boşluk kalır. Eşik rem: kök/metin boyutu büyüyünce etiketle birlikte büyür. 862–1150 px görünümde 14
+   sütunda adlar üst üste biniyordu. 4 sütun eşiği 31rem (≈ 450 px) eski 520 px görünüm kırılmasıyla aynı. */
+.akis {
+  container: akis / inline-size;
+}
+@container akis (width < 57.5rem) {
+  .akis ol {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    row-gap: 14px;
+  }
+  .akis-adim:nth-child(8)::before {
+    display: none;
+  }
+}
+/* Dar kap (telefon): 4 sütun; adım adları birbirine girmez, uzun sözcük satır içinde bölünür. */
+@container akis (width <= 31rem) {
+  .akis ol {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .akis-adim {
+    overflow-wrap: anywhere;
+    hyphens: auto;
+  }
+  .akis-adim:nth-child(8)::before {
+    display: block;
+  }
+  .akis-adim:nth-child(4n + 1)::before {
+    display: none;
+  }
+}
 
 /* ---------------------------------------------------------------- gereksinim detayı */
 
@@ -2053,6 +2127,7 @@ article.bulgu:is([data-durum="decided"], [data-durum="resolved"], [data-durum="s
 .fark-once-sonra dt {
   font-size: 0.75rem;
   font-weight: 650;
+  letter-spacing: 0.01em;
   color: var(--muted);
   padding-top: 2px;
 }
@@ -2093,8 +2168,11 @@ article.bulgu:is([data-durum="decided"], [data-durum="resolved"], [data-durum="s
   display: block;
   padding-right: 12px;
 }
+/* Kod vurgu satırı projektörde seçilsin: --kod-vurgu dolgusuna ek 3 px amber sol çubuk (koda karşı ≥10:1).
+   Satır no o satırda --text-2 (koyu vurgu zemininde --muted 4,5'in altına iner). */
 .kod-vurgu {
   background: var(--kod-vurgu);
+  box-shadow: inset 3px 0 0 var(--warn);
 }
 .kod-no {
   display: inline-block;
@@ -2103,6 +2181,9 @@ article.bulgu:is([data-durum="decided"], [data-durum="resolved"], [data-durum="s
   text-align: right;
   color: var(--muted);
   user-select: none;
+}
+.kod-vurgu .kod-no {
+  color: var(--text-2);
 }
 .tk-anahtar {
   color: var(--tk-anahtar);
@@ -2241,8 +2322,8 @@ article.bulgu:is([data-durum="decided"], [data-durum="resolved"], [data-durum="s
 /* Stat şeridi (§4.12, site .hero-stats): tek --surface-2 zemin, 1 px --border, 12 px; içteki kutular
    kenarsız, aralarında 1 px --border-soft ayraç (sol/üst dış gölge; şerit kenarındakiler overflow ile
    kırpılır). Değer şerit içinde 1.6rem/800 --accent; şerit dışında indigo yalnız etkileşimdir.
-   Sarmalı flex (Kule KPI şeridiyle aynı): boş ızgara izi kalmaz, satır sonundaki öğeler genişleyip satırı
-   doldurur. */
+   Sarmalı flex: boş ızgara izi kalmaz, satır sonundaki öğeler genişleyip satırı doldurur. Beş ve altı
+   öğeli şeritler eşit sütunlu ızgaradır (aşağıda). */
 .metrik-izgara {
   display: flex;
   flex-wrap: wrap;
@@ -2262,10 +2343,28 @@ article.bulgu:is([data-durum="decided"], [data-durum="resolved"], [data-durum="s
     -1px 0 0 var(--border-soft),
     0 -1px 0 var(--border-soft);
 }
+/* Stat şeridi öğe genişliği (Kule KPI şeridi kendi genişliğini kullanır). */
+.metrik-izgara:not(.kule-kpi) > .metrik {
+  flex: 1 1 150px;
+}
+/* Büyük harf dönüşümü ve Türkçe (lang="tr"): text-transform yerel kurala göre çevirir (i → İ), bu yüzden
+   karışık dilli serbest etiketlerde İngilizce sözcükler "SCRİPT/REVİEW" olur; lang="en" ile çevirmek bu kez
+   Türkçe sözcükleri bozar ("KRITIK", "SÜRESI"). font-variant-caps: all-small-caps de çözüm değil: Inter'de
+   gerçek küçük büyük harf (smcp) yok, tarayıcının sentezi aynı yerel kuralla büyütür (Chromium'da denendi).
+   CSS sözcük başına dil seçemediği için serbest/karışık içerikli etiketler (metrik/KPI etiketi, tablo
+   başlığı, yığın tablo etiketi, fark dt, geri bağlantısı) yazıldığı gibi (cümle düzeni) gösterilir: iki
+   dilde de doğru, DOM ve metin aynı. Kapalı ve yalnız Türkçe/kod sözcüklü kümeler (menü grup başlığı,
+   .rozet: REPLAY, REPLAY-MISS, ÖRNEK VERİ) büyük harf kalır. Eyebrow hiyerarşisi boyut, 700 ağırlık ve
+   --muted ile korunur; küçük harfte geniş aralık okunurluğu düşürdüğü için bu etiketlerde aralık 0.01em. */
 .metrik-etiket {
   font-size: 0.75rem;
   font-weight: 700;
+  letter-spacing: 0.01em;
   color: var(--muted);
+}
+/* "açık defect adayı" gibi küçük harfle başlayan etiketin ilk harfi büyük (a/ç → A/Ç; tr kuralı doğru). */
+.metrik-etiket::first-letter {
+  text-transform: uppercase;
 }
 .metrik-deger {
   font-size: 1.9rem;
@@ -2278,13 +2377,65 @@ article.bulgu:is([data-durum="decided"], [data-durum="resolved"], [data-durum="s
   font-size: 1.6rem;
   color: var(--accent);
 }
+/* Stat şeridinde durum anlamı olan sayı (§3.4 KPI): başarısız → --err, tamamı geçti → --ok, flaky → --warn.
+   Etiket anlamı taşır; renk ek işarettir. */
+.metrik-izgara .metrik-hata .metrik-deger {
+  color: var(--err);
+}
+.metrik-izgara .metrik-basari .metrik-deger {
+  color: var(--ok);
+}
+.metrik-izgara .metrik-uyari .metrik-deger {
+  color: var(--warn);
+}
 .metrik-etiket .kaynak-ipucu {
-  text-transform: none; /* "i" ipucu glifi büyük harfe (tr: İ) dönmesin */
   letter-spacing: 0;
 }
 .metrik-alt {
   font-size: 0.75rem;
   color: var(--text-2);
+}
+/* Stat şeridi eşit sütun ritmi (.hero-stats): beş ve altı öğeli şeritler (Koşu detayı, Kule KPI, Case review
+   Kararlar / Süre-maliyet) flex yerine ızgara. Flex'te 684–734 px içerikte beş öğe 4+1 sarıyor, son öğe tüm
+   satırı kaplıyordu; ayraçlar satırlar arasında hizasızdı. Sütun sayısı öğe sayısının böleni (5 → 5;
+   6 → 3, ≥1280 px'te 6); ≤640 px'te iki sütun, tek kalan son öğe tüm satır. Öğeler subgrid: etiket, değer
+   ve alt satır şerit boyunca aynı çizgide (uzun etiket iki satıra sarınca değer aşağı kaymaz). Öğe sayısı
+   başka olan şeritler (Kule AI katkısı 3, Erişilebilirlik 2) flex kalır. */
+.metrik-izgara:has(> :nth-child(5):last-child),
+.metrik-izgara:has(> :nth-child(6):last-child) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.metrik-izgara:has(> :nth-child(5):last-child) > *,
+.metrik-izgara:has(> :nth-child(6):last-child) > * {
+  display: grid;
+  grid-row: span 3;
+  grid-template-rows: subgrid;
+  row-gap: 0;
+  align-content: start;
+}
+.metrik-izgara:has(> :nth-child(5):last-child) > :last-child {
+  grid-column: 1 / -1;
+}
+@media (min-width: 641px) {
+  .metrik-izgara:has(> :nth-child(5):last-child) {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .metrik-izgara:has(> :nth-child(5):last-child) > :last-child {
+    grid-column: auto;
+  }
+  .metrik-izgara:has(> :nth-child(6):last-child) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1280px) {
+  .metrik-izgara:has(> :nth-child(6):last-child) {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+/* Kartın tek içeriği stat şeridiyse alt marj kalkar (Koşu detayı: şerit üstünde 21, altında 33 px boşluk). */
+.kart > .metrik-izgara:last-child {
+  margin-bottom: 0;
 }
 
 .ilerleme {
@@ -2756,6 +2907,11 @@ mark.kaynak-deger {
   stroke: var(--focus);
   stroke-width: 2;
 }
+/* Kule grafiği sütun odağı: halka tüm hedef alanda (%0 sütun 2 px; yalnız sütun konturu görünmüyordu). */
+.grafik-hedef-alan:focus-visible .grafik-odak {
+  stroke: var(--focus);
+  stroke-width: 2;
+}
 .grafik-ipucu {
   position: absolute;
   top: -6px;
@@ -2946,6 +3102,12 @@ mark.kaynak-deger {
 }
 .filtre-cubugu select {
   min-width: 140px;
+}
+/* Arama kutuları yer tutucuyu kesmesin. */
+#denetim-ara,
+.filtre-cubugu input[type="search"] {
+  width: 18rem;
+  max-width: 100%;
 }
 .filtre-cubugu [role="status"] {
   color: var(--muted);
@@ -3214,11 +3376,20 @@ td .olculmedi {
     white-space: normal;
   }
 }
+/* Yol haritası "n/14 tamam" sayacı (sunucu açılış/kapanışta okur): KPI dili (§3.4, §4.12) — 1.9rem / 800 /
+   tabular-nums, renk --text (stat şeridi dışında indigo yok). Metin ve testid aynı; yalnız sayı büyür. */
 .yh-ozet {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 16px;
-  align-items: center;
+  gap: 8px;
+  align-items: baseline;
+}
+.yh-ozet > strong {
+  font-size: 1.9rem;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
 }
 .kanit-gruplari {
   display: grid;
@@ -3348,6 +3519,13 @@ td .olculmedi {
     margin-top: 8px;
   }
 }
+/* Koşu detayı Test sonuçları ≤640 px: tablo yatay kayar (sağ solma işareti), Test sütunu 71 px'e sıkışıp
+   ad sözcük sözcük, hata kutusu harf harf kırılmasın. */
+@media (max-width: 640px) {
+  [aria-label="Test sonuçları tablosu"] > .tablo > tbody > tr > td:first-child {
+    min-width: 14rem;
+  }
+}
 .kod-blok.gunluk {
   max-height: 28em;
   overflow: auto;
@@ -3419,8 +3597,9 @@ details.soluk > summary {
   margin-left: auto;
 }
 
-/* Marka: "Probe" vurgusu (§4.1, §4.14). Gradyan metin değil düz --accent: background-clip:text axe
-   color-contrast'ı "incomplete"e düşürüyordu; --accent zeminde ölçülebilir ve AA (koyu ≥5,6; açık 6,3). */
+/* Marka: "Probe" vurgusu (§4.1, §4.14). background-clip:text gradyanı değil düz --accent: gradyan axe
+   color-contrast'ı "incomplete"e düşürüyordu; --accent zeminde ölçülebilir ve AA (koyu ≥5,6; açık 6,3).
+   Giriş kartında üstüne bitiş rengi bindirilir (giriş bölümü). */
 .marka strong {
   font-weight: 800;
   color: var(--accent);
@@ -3502,6 +3681,54 @@ details.soluk > summary {
 .satir-ogeler:has(> .neden-var) {
   align-items: flex-start;
 }
+/* Grup nedeni (§4.5, review 2): düğme grubunda (.eylemler / .satir-ogeler) neden, ilk düğmenin sarıcısını
+   genişletmez. Sarıcı düzene katılmaz (display: contents); neden grubun kendi flex öğesi olur ve düğme
+   satırının ALTINA, grubun tam genişliğinde ayrı satıra iner (order + flex-basis 100%). Düğme aralıkları
+   8 px kalır. contain: inline-size → nedenin metni grubun içsel genişliğine katılmaz: sayfa başlığında
+   eylem grubu yalnız düğmeler kadar yer ister, 'Case üret' 1152 px'te de h1'in sağında kalır (§5).
+   Satırlar arası 8 px gap'e -4 px: neden düğmeye eskisi gibi 4 px uzaklıkta. */
+.eylemler > .dugme-neden-sarici.neden-var,
+.satir-ogeler > .dugme-neden-sarici.neden-var {
+  display: contents;
+}
+.eylemler > .neden-var > .dugme-neden,
+.satir-ogeler > .neden-var > .dugme-neden {
+  order: 1;
+  flex: 1 0 100%;
+  max-width: none;
+  margin-top: -4px;
+  /* İçsel genişlikte nedenden önceki 8 px gap'i de geri al (grup tam düğmeler kadar; sağa yaslıda
+     soldan 8 px boşluk kalmasın). Neden zaten kendi satırında; soldaki 8 px taşma boş alandır. */
+  margin-left: -8px;
+  contain: inline-size;
+}
+/* Sağa yaslı gruplarda (sayfa başlığı, kart başlığı) düğmeler ve neden sağ kenarda biter. */
+.sayfa-basligi > .eylemler:has(> .neden-var),
+.kart-baslik > .eylemler:has(> .neden-var) {
+  justify-content: flex-end;
+}
+.sayfa-basligi > .eylemler > .neden-var > .dugme-neden {
+  text-align: right;
+}
+/* Kart başlığında grup sağa yaslı ve h2'den ayrı: neden düğme genişliğine sıkışmaz, eski 34ch ölçüsünde
+   (grup gerekirse genişler; düğmeler yine sağ kenarda, aralar 8 px). */
+.kart-baslik > .eylemler > .neden-var > .dugme-neden {
+  text-align: right;
+  contain: none;
+  max-width: 34ch;
+  margin-left: auto;
+}
+/* Kart başlığında neden başlığı aşağı itmez: üstten hizalı, h2 düğme satırının (36 px) ortasında —
+   nedensiz hâldeki (align-items: center) konumla aynı, komşu kartın başlığıyla aynı hizada. */
+.kart-baslik:has(> .eylemler > .neden-var) {
+  align-items: flex-start;
+}
+.kart-baslik:has(> .eylemler > .neden-var) > h2 {
+  padding-top: max(0px, calc((36px - 1lh) / 2));
+}
+.kart-baslik:has(> .eylemler > .neden-var > .dugme-kucuk) > h2 {
+  padding-top: max(0px, calc((30px - 1lh) / 2));
+}
 /* Tam genişlik (blok) düğme kalıplarında neden de düğmeyle aynı genişlikte kalır. */
 @media (max-width: 640px) {
   .dugme-neden {
@@ -3512,8 +3739,8 @@ details.soluk > summary {
 /* ---------------------------------------------------------------- kontrol kulesi KPI şeridi */
 
 /* Kule KPI şeridi (§5 F4, §4.12): .metrik-izgara stat şeridi; beş öğe (Geçme oranı · açık defect adayı ·
-   Case kabul · Script ilk review · Hazırlık kazancı). Sarmalı flex: dar ekranda satır sonundaki öğe
-   genişler, boş hücre kalmaz. Ayraçlar .metrik-izgara > .metrik ile aynı (sol/üst gölge, kenarda kırpılır). */
+   Case kabul · Script ilk review · Hazırlık kazancı): beş öğeli eşit sütun ızgarası (metrik bölümü).
+   Ayraçlar .metrik-izgara > .metrik ile aynı (sol/üst gölge, kenarda kırpılır). */
 .metrik-izgara.kule-kpi {
   margin-bottom: 16px;
 }
@@ -3540,18 +3767,21 @@ details.soluk > summary {
 .kule-kpi .kule-kpi-uyari {
   color: var(--warn);
 }
-/* HedefOlcer öğeleri şeritte metrik biçiminde: etiket eyebrow, değer şerit değeri, çubuk ve hedef altta. */
+/* HedefOlcer öğeleri şeritte metrik biçiminde: etiket eyebrow, değer şerit değeri, çubuk ve hedef altta.
+   .olcer-ust kabı kaldırılır (display: contents; DOM ve okuma sırası aynı), etiket ve değer şeridin
+   satırlarına oturur. */
 .kule-kpi .olcer-ust {
+  display: contents;
   flex-direction: column;
   justify-content: flex-start;
   gap: 2px;
   margin-bottom: 8px;
   font-size: 0.75rem;
   font-weight: 700;
+  letter-spacing: 0.01em;
   color: var(--muted);
 }
 .kule-kpi .olcer-ust .kaynak-ipucu {
-  text-transform: none; /* "i" glifi büyük harfe (tr: İ) dönmesin */
   letter-spacing: 0;
 }
 .kule-kpi .olcer-ust > strong {
@@ -3559,9 +3789,9 @@ details.soluk > summary {
   font-weight: 800;
   line-height: 1.15;
   letter-spacing: 0;
-  text-transform: none;
   font-variant-numeric: tabular-nums;
   color: var(--accent);
+  margin-bottom: 6px;
 }
 .kule-kpi .ilerleme {
   flex: none;
@@ -3570,11 +3800,24 @@ details.soluk > summary {
   font-size: 0.75rem;
   color: var(--text-2);
 }
+/* Kule KPI: dört satır (etiket · değer · çubuk/alt · hedef). */
+.metrik-izgara.kule-kpi > * {
+  grid-row: span 4;
+  row-gap: 2px;
+}
+/* (i) ipucu etiketin son sözcüğüyle aynı satırda (KpiBaslik'taki .kpi-baslik ile aynı): metin kendi içinde
+   sarar, ipucu yanında kalır; "Script ilk review başarısı" 1152 px'te (i)'yi tek başına alt satıra atmaz. */
+.kule-kpi .olcer-ust > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 
 /* ---------------------------------------------------------------- gereksinim detayı: bölüm gezgini */
 
-/* Gereksinim detayı bölüm gezgini (§5, F4): ≥1280 px'te içeriğin sağında yapışkan sütun; daha dar
-   ekranda display: none (akışta yer kaplamaz, erişilebilirlik ağacında yok). Yapışma payı:
+/* Gereksinim detayı bölüm gezgini (§5, F4) üç aralıkta: ≤860 px gizli (display: none; akışta yer kaplamaz,
+   erişilebilirlik ağacında yok), 861–1279 px yatay şerit (aşağıda), ≥1280 px içeriğin sağında yapışkan
+   sütun. Sütunun yapışma payı:
    üst çubuk 56 px + 16 px = 72 px; html scroll-padding-top (72 px) ile aynı — ÖRNEK VERİ bandı
    yapışkan değil, toplama girmez. Kart başlıkları gezginin bağlantı hedefidir. */
 .bolum-gezgini {
@@ -3624,19 +3867,109 @@ details.soluk > summary {
   }
 }
 
-/* ---------------------------------------------------------------- case review sekmeleri, yığın tablo, yayın bağlantısı */
+/* 861–1279 px (kenar çubuklu düzen, ör. 1152 px sunum makinesi): sağ sütun içeriği ~650 px'e daraltıp
+   tabloları keseceği için yapışkan sütun yerine başlığın altında yatay bağlantı şeridi. Şerit yapışkan
+   (üst çubuğun altında; uzun sayfada kaydırınca kaybolmaz), zemini yapışkan case sekmeleriyle aynı kalıpta
+   (yalnız yapışınca). Case review'un yapışkan sekmeleri bu sayfada yok, çakışmaz. Şerit .icerik iç
+   boşluğu kadar iki yana uzar; çapa kaydırma payı üst çubuk + şerit + 16 px. */
+@media (min-width: 861px) and (max-width: 1279px) {
+  .bolum-gezgini {
+    position: sticky;
+    top: 56px;
+    z-index: 10;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: -8px -28px 8px;
+    padding: 8px 28px;
+    font-size: 0.85rem;
+    background: var(--ust-cubuk-bg);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+  }
+  .bolum-gezgini a {
+    padding: 4px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-hap);
+    background: var(--surface);
+    color: var(--text-2);
+    font-weight: 500;
+    text-decoration: none;
+  }
+  .bolum-gezgini a:hover {
+    color: var(--text);
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  @supports (container-type: scroll-state) {
+    .bolum-gezgini {
+      container-type: scroll-state;
+      background: none;
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+    .bolum-gezgini::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+    }
+    @container scroll-state(stuck: top) {
+      .bolum-gezgini::before {
+        background: var(--ust-cubuk-bg);
+        -webkit-backdrop-filter: blur(16px);
+        backdrop-filter: blur(16px);
+        box-shadow: 0 1px 0 var(--border-soft);
+      }
+    }
+  }
+  html:has(.bolum-gezgini) {
+    scroll-padding-top: 120px;
+  }
+}
+
+/* ---------------------------------------------------------------- case review sekmeleri, yayın bağlantısı */
 
 /* Case filtresi sekmeleri yapışkan (§5, F4): üst çubuğun (56 px, z-index 20) hemen altında, onun altında
-   kalan z-index; zemin opak --bg, kartlar altından kayarken görünmez. Şerit .icerik iç boşluğu kadar iki
-   yana uzar (kart kenarları/gölgeleri yanlardan sızmasın); dikey boşluk negatif marjla korunur, akıştaki
-   yerleşim değişmez. <details> ile katlama yok (K8). */
+   kalan z-index. Şerit .icerik iç boşluğu kadar iki yana uzar (kart kenarları/gölgeleri yanlardan
+   sızmasın); dikey boşluk negatif marjla korunur, akıştaki yerleşim değişmez. <details> ile katlama yok
+   (K8). Zemin yalnız yapışınca: akışta saydam (opak --bg şerit ortam ışımasını yatay bantla kesiyordu),
+   yapışınca üst çubuğun yarı saydam + bulanık zemini. Zemin ::before'da (scroll-state sorgusu kabın
+   kendisini değil alt öğelerini biçimler). Desteği olmayan tarayıcıda her zaman üst çubuk zemini.
+   Sekmelerin kendi opak zemini var (kontrast). Aynı kalıp 861–1279 px bölüm gezgini şeridinde. */
 .sekmeler-yapiskan {
   position: sticky;
   top: 56px;
   z-index: 10;
-  background: var(--bg);
   margin: -8px -28px 4px;
   padding: 8px 28px;
+  background: var(--ust-cubuk-bg);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+@supports (container-type: scroll-state) {
+  .sekmeler-yapiskan {
+    container-type: scroll-state;
+    background: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .sekmeler-yapiskan::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+  }
+  @container scroll-state(stuck: top) {
+    .sekmeler-yapiskan::before {
+      background: var(--ust-cubuk-bg);
+      -webkit-backdrop-filter: blur(16px);
+      backdrop-filter: blur(16px);
+      box-shadow: 0 1px 0 var(--border-soft);
+    }
+  }
 }
 @media (max-width: 860px) {
   .sekmeler-yapiskan {
@@ -3656,19 +3989,6 @@ html:has(.sekmeler-yapiskan) {
   }
   html:has(.sekmeler-yapiskan) {
     scroll-padding-top: 72px;
-  }
-}
-
-/* Dar ekran yığın tablo (≤640 px): etiket sütunu için 36 % sol boşluk. Sonradan gelen
-   "@media (max-width: 640px) .tablo td { padding: 10px }" (aynı özgüllük, sonra) ve karara bağlanmış
-   case'lerin sık tablo kuralı (.case:is(...) .tablo td, daha özgül) bu boşluğu eziyordu → mutlak konumlu
-   etiket (ADIM/VERİ/BEKLENEN) hücre metninin üstüne biniyordu (son satır hariç). Özgüllük 0,3,1 + sonra. */
-@media (max-width: 640px) {
-  .tablo.tablo-yigin td:not(.adim-no) {
-    padding: 4px 0 4px 36%;
-  }
-  .tablo.tablo-yigin td.adim-no {
-    padding: 4px 0;
   }
 }
 
@@ -3717,9 +4037,13 @@ html:has(.sekmeler-yapiskan) {
    visibility:hidden — ekran dışındaki bağlantılar Tab sırasından ve erişilebilirlik ağacından çıkar
    (WCAG 2.4.7). Gizleme kapanış kayması (.18 s) bitince uygulanır; açılışta anında görünür. Hareket
    azaltmada genel "transition: none" gecikmeyi de kaldırır. Gizleme nav'ın çocuklarında: "Ana menü"
-   işareti (landmark) yerinde kalır. */
+   işareti (landmark) yerinde kalır. Kısa ekranda (yatay telefon, %200 yakınlaştırma) gizli çocuklar yer
+   kapladığı için nav kaydırılabilir kalıyor, Chromium da kaydırılabilir kabı Tab durağı yapıyordu (ekran
+   dışında, odak görünmez): kapalıyken kaydırma da kapalı → nav odaklanamaz. Açık menü kendi kaydırmasını
+   korur (.yan-menu overflow-y: auto). */
 @media (max-width: 860px) {
   .yan-menu:not(.acik) {
+    overflow: hidden;
     box-shadow: none;
   }
   .yan-menu:not(.acik) > * {
@@ -3754,14 +4078,10 @@ html:has(.sekmeler-yapiskan) {
     padding: 3px 6px;
     letter-spacing: 0.04em;
   }
-}
-
-/* Giriş kartı: "İnceleme portalı" kendi satırında (tek satırda kartın iç dolgusuna ~7 px taşıyordu). */
-.giris-kart .marka-alt {
-  display: block;
-  margin-left: 0;
-  font-size: 0.875rem;
-  line-height: 1.4;
+  /* 320 px'te "Probe" 2 px eksikle "Pro…" kesiliyordu: sağ grup aralıkları 6 → 4 px. */
+  .ust-sag {
+    gap: 4px;
+  }
 }
 
 /* Zorunlu renk kipi: seçili segment/sekme (aria-pressed, .aktif) ve aktif menü öğesi yalnız zemin ve
@@ -3783,45 +4103,7 @@ html:has(.sekmeler-yapiskan) {
   }
 }
 
-/* ---------------------------------------------------------------- bileşen cilası: stat şeridi, büyük harf, ipucu, tablo bağlantıları */
-
-/* Stat şeridi öğe genişliği (Kule KPI şeridi kendi genişliğini kullanır). */
-.metrik-izgara:not(.kule-kpi) > .metrik {
-  flex: 1 1 150px;
-}
-/* Stat şeridinde durum anlamı olan sayı (§3.4 KPI): başarısız → --err, tamamı geçti → --ok, flaky → --warn.
-   Etiket anlamı taşır; renk ek işarettir. */
-.metrik-izgara .metrik-hata .metrik-deger {
-  color: var(--err);
-}
-.metrik-izgara .metrik-basari .metrik-deger {
-  color: var(--ok);
-}
-.metrik-izgara .metrik-uyari .metrik-deger {
-  color: var(--warn);
-}
-
-/* Büyük harf dönüşümü ve Türkçe (lang="tr"): text-transform yerel kurala göre çevirir (i → İ), bu yüzden
-   karışık dilli serbest etiketlerde İngilizce sözcükler "SCRİPT/REVİEW" olur; lang="en" ile çevirmek bu kez
-   Türkçe sözcükleri bozar ("KRITIK", "SÜRESI"). font-variant-caps: all-small-caps de çözüm değil: Inter'de
-   gerçek küçük büyük harf (smcp) yok, tarayıcının sentezi aynı yerel kuralla büyütür (Chromium'da denendi).
-   CSS sözcük başına dil seçemediği için serbest/karışık içerikli etiketler (metrik/KPI etiketi, tablo
-   başlığı, yığın tablo etiketi, fark dt, geri bağlantısı) yazıldığı gibi (cümle düzeni) gösterilir: iki
-   dilde de doğru, DOM ve metin aynı. Kapalı ve yalnız Türkçe/kod sözcüklü kümeler (menü grup başlığı,
-   .rozet: REPLAY, REPLAY-MISS, ÖRNEK VERİ) büyük harf kalır. Eyebrow hiyerarşisi boyut, 700 ağırlık ve
-   --muted ile korunur; küçük harfte geniş aralık okunurluğu düşürdüğü için aralık daraltılır. */
-.metrik-etiket,
-.kule-kpi .olcer-ust,
-.fark-once-sonra dt,
-.ust-baglanti a,
-.tablo th {
-  text-transform: none;
-  letter-spacing: 0.01em;
-}
-/* "açık defect adayı" gibi küçük harfle başlayan etiketin ilk harfi büyük (a/ç → A/Ç; tr kuralı doğru). */
-.metrik-etiket::first-letter {
-  text-transform: uppercase;
-}
+/* ---------------------------------------------------------------- bileşen cilası: boş durum, ipucu, tablo bağlantıları */
 
 /* Boş durum: paragraf 72ch sınırlı; ortalı metin kartın ortasında dursun. */
 .bos-durum > p,
@@ -3860,7 +4142,6 @@ td > .satir-baglanti + .cip,
   font-weight: 500;
   line-height: 1.45;
   letter-spacing: 0;
-  text-transform: none;
   text-align: left;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -3896,25 +4177,7 @@ td > .satir-baglanti + .cip,
   }
 }
 
-/* ---------------------------------------------------------------- dar ekran ve tablo düzeltmeleri */
-
-/* Yığın tablo etiketi akışta (≤640 px): mutlak konumlu etiket hücre yüksekliğine katılmıyordu; 320/360 px'te
-   iki satıra saran etiket ("AÇIK BULGU", "CASE (ONAYLI)") alttaki satırın etiketine biniyordu. Etiket artık
-   sola yüzen öğe: negatif sol marjla hücrenin %36'lık sol boşluğuna oturur (marj kutusu içerik alanına
-   girmez, değer metni sarılmaz), hücre flow-root olduğu için yüksekliği etikete göre büyür. Yüzdeler
-   içerik genişliğine (hücrenin %64'ü) göre: %36 / %64 = %56,25. 640 px kuralının metni değişmez. */
-@media (max-width: 640px) {
-  .tablo.tablo-yigin td[data-etiket] {
-    display: flow-root;
-  }
-  .tablo.tablo-yigin td[data-etiket]::before {
-    position: static;
-    float: left;
-    margin: 2px 0 0 -56.25%;
-    width: calc(56.25% - 10px);
-    line-height: 1.35;
-  }
-}
+/* ---------------------------------------------------------------- geniş tablolar (≤1279 px), tek satır hücreler */
 
 /* Geniş tablolar (Kod üretimi, Bug taslakları, Script eşleme) 1152 px'te (sunum makinesi, %125) son sütunu
    kesiyordu. Kenar çubuklu düzende ≤1279 px hücre yatay iç boşluğu 14 → 10 px; Kod üretiminde test adının
@@ -3934,379 +4197,4 @@ td > .satir-baglanti + .cip,
 .tablo td.tek-satir {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-}
-
-/* Bölüm gezgini 861–1279 px'te (kenar çubuklu düzen, ör. 1152 px sunum makinesi): sağ sütun içeriği
-   ~650 px'e daraltıp tabloları keseceği için yapışkan sütun yerine başlığın altında, akışta yatay bağlantı
-   şeridi (yapışkan değil, dikeyde tek satır). ≥1280 px kuralı aynen. */
-@media (min-width: 861px) and (max-width: 1279px) {
-  .bolum-gezgini {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin: 0 0 16px;
-    font-size: 0.85rem;
-  }
-  .bolum-gezgini a {
-    padding: 4px 12px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-hap);
-    background: var(--surface);
-    color: var(--text-2);
-    font-weight: 500;
-    text-decoration: none;
-  }
-  .bolum-gezgini a:hover {
-    color: var(--text);
-    border-color: var(--accent);
-    background: var(--accent-soft);
-  }
-}
-
-/* ==================================================================
-   R2-AKIS (review turu 2 çapası — temizlikte kaldırılır)
-   Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
-   ================================================================== */
-
-/* Akış göstergesi düzeni içerik genişliğine göre (görünüm genişliği değil: yan menü ve bölüm gezgini
-   akışın alanını daraltır). 14 sütun yalnız kap ≥ 57.5rem (kök 14,5 px → ≈ 834 px) iken: sütun ≈ (834 −
-   13 × 4) / 14 ≈ 55,8 px; bölünemeyen en uzun sözcük "gece/deploy" (≈ 64 px) taşsa da komşu adla arasında
-   boşluk kalır. Eşik rem: kök/metin boyutu büyüyünce etiketle birlikte büyür. 862–1150 px görünümde 14
-   sütunda adlar üst üste biniyordu. 4 sütun eşiği 31rem (≈ 450 px) eski 520 px görünüm kırılmasıyla aynı. */
-.akis {
-  container: akis / inline-size;
-}
-@container akis (width < 57.5rem) {
-  .akis ol {
-    grid-template-columns: repeat(7, minmax(0, 1fr));
-    row-gap: 14px;
-  }
-  .akis-adim:nth-child(8)::before {
-    display: none;
-  }
-}
-/* Dar kap (telefon): 4 sütun; adım adları birbirine girmez, uzun sözcük satır içinde bölünür. */
-@container akis (width <= 31rem) {
-  .akis ol {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-  .akis-adim {
-    overflow-wrap: anywhere;
-    hyphens: auto;
-  }
-  .akis-adim:nth-child(8)::before {
-    display: block;
-  }
-  .akis-adim:nth-child(4n + 1)::before {
-    display: none;
-  }
-}
-
-/* Yol haritası "n/14 tamam" sayacı (sunucu açılış/kapanışta okur): KPI dili (§3.4, §4.12) — 1.9rem / 800 /
-   tabular-nums, renk --text (stat şeridi dışında indigo yok). Metin ve testid aynı; yalnız sayı büyür. */
-[data-testid="yh-ilerleme"] {
-  align-items: baseline;
-  column-gap: 8px;
-}
-[data-testid="yh-ilerleme"] > strong {
-  font-size: 1.9rem;
-  font-weight: 800;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
-}
-
-/* Kod vurgu satırı projektörde seçilsin: --kod-vurgu dolgusuna ek 3 px amber sol çubuk (koda karşı ≥10:1).
-   Satır no o satırda --text-2 (koyu vurgu zemininde --muted 4,5'in altına iner). */
-.kod-vurgu {
-  box-shadow: inset 3px 0 0 var(--warn);
-}
-.kod-vurgu .kod-no {
-  color: var(--text-2);
-}
-
-
-
-
-/* ==================================================================
-   R2-DUGME (review turu 2 çapası — temizlikte kaldırılır)
-   Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
-   ================================================================== */
-
-/* Grup nedeni (§4.5, review 2): düğme grubunda (.eylemler / .satir-ogeler) neden, ilk düğmenin sarıcısını
-   genişletmez. Sarıcı düzene katılmaz (display: contents); neden grubun kendi flex öğesi olur ve düğme
-   satırının ALTINA, grubun tam genişliğinde ayrı satıra iner (order + flex-basis 100%). Düğme aralıkları
-   8 px kalır. contain: inline-size → nedenin metni grubun içsel genişliğine katılmaz: sayfa başlığında
-   eylem grubu yalnız düğmeler kadar yer ister, 'Case üret' 1152 px'te de h1'in sağında kalır (§5).
-   Satırlar arası 8 px gap'e -4 px: neden düğmeye eskisi gibi 4 px uzaklıkta. */
-.eylemler > .dugme-neden-sarici.neden-var,
-.satir-ogeler > .dugme-neden-sarici.neden-var {
-  display: contents;
-}
-.eylemler > .neden-var > .dugme-neden,
-.satir-ogeler > .neden-var > .dugme-neden {
-  order: 1;
-  flex: 1 0 100%;
-  max-width: none;
-  margin-top: -4px;
-  /* İçsel genişlikte nedenden önceki 8 px gap'i de geri al (grup tam düğmeler kadar; sağa yaslıda
-     soldan 8 px boşluk kalmasın). Neden zaten kendi satırında; soldaki 8 px taşma boş alandır. */
-  margin-left: -8px;
-  contain: inline-size;
-}
-/* Sağa yaslı gruplarda (sayfa başlığı, kart başlığı) düğmeler ve neden sağ kenarda biter. */
-.sayfa-basligi > .eylemler:has(> .neden-var),
-.kart-baslik > .eylemler:has(> .neden-var) {
-  justify-content: flex-end;
-}
-.sayfa-basligi > .eylemler > .neden-var > .dugme-neden,
-.kart-baslik > .eylemler > .neden-var > .dugme-neden {
-  text-align: right;
-}
-/* Kart başlığında grup sağa yaslı ve h2'den ayrı: neden düğme genişliğine sıkışmaz, eski 34ch ölçüsünde
-   (grup gerekirse genişler; düğmeler yine sağ kenarda, aralar 8 px). */
-.kart-baslik > .eylemler > .neden-var > .dugme-neden {
-  contain: none;
-  max-width: 34ch;
-  margin-left: auto;
-}
-/* Kart başlığında neden başlığı aşağı itmez: üstten hizalı, h2 düğme satırının (36 px) ortasında —
-   nedensiz hâldeki (align-items: center) konumla aynı, komşu kartın başlığıyla aynı hizada. */
-.kart-baslik:has(> .eylemler > .neden-var) {
-  align-items: flex-start;
-}
-.kart-baslik:has(> .eylemler > .neden-var) > h2 {
-  padding-top: max(0px, calc((36px - 1lh) / 2));
-}
-.kart-baslik:has(> .eylemler > .neden-var > .dugme-kucuk) > h2 {
-  padding-top: max(0px, calc((30px - 1lh) / 2));
-}
-
-
-
-
-/* ==================================================================
-   R2-KABUK (review turu 2 çapası — temizlikte kaldırılır)
-   Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
-   ================================================================== */
-
-/* Kapalı mobil menü kısa ekranda (yatay telefon, %200 yakınlaştırma): gizli çocuklar yer kapladığı için nav
-   kaydırılabilir kalıyor, Chromium da kaydırılabilir kabı Tab durağı yapıyordu (ekran dışında, odak görünmez —
-   WCAG 2.4.7). Kapalıyken kaydırma kapalı → nav odaklanamaz. "Ana menü" işareti yerinde kalır (nav'ın kendisi
-   gizlenmez). Açık menü kendi kaydırmasını korur (.yan-menu overflow-y: auto). */
-@media (max-width: 860px) {
-  .yan-menu:not(.acik) {
-    overflow: hidden;
-  }
-}
-
-/* 320 px'te "Probe" 2 px eksikle "Pro…" kesiliyordu: sağ grup aralıkları 6 → 4 px (3 aralık, 6 px kazanç). */
-@media (max-width: 360px) {
-  .ust-sag {
-    gap: 4px;
-  }
-}
-
-/* Giriş kartı markası: "Probe" gradyan metin (§4.14, dashboard login "Agent Probe" gibi). background-clip:text
-   axe color-contrast'ı "incomplete"e düşürüyor (/giris 0 → 1, ölçüldü). Bunun yerine: metin düz başlangıç
-   renginde (axe ölçer, AA), üstüne aynı kelime bitiş renginde bindirilir ve soldan sağa maskeyle açılır.
-   Bindirme yalnız görsel: `content: "…" / ""` alternatif metni boş → erişilebilir ad değişmez; sözdizimini
-   tanımayan tarayıcı bildirimi yok sayar, düz renk kalır. Uçlar AA: koyu --accent #818cf8 → #c084fc, açık
-   --accent #4f46e5 → #7e22ce. Kelime Giris.tsx'teki <strong>Probe</strong> ile aynı olmalı. */
-.giris-kart .marka strong {
-  position: relative; /* metin rengi: .marka strong → --accent (koyu #818cf8, açık #4f46e5) */
-  display: inline-block; /* kutu = satır yüksekliği: bindirme aynı taban çizgisine oturur */
-}
-.giris-kart .marka strong::after {
-  content: "Probe" / "";
-  position: absolute;
-  inset: 0;
-  color: #c084fc;
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000);
-  mask-image: linear-gradient(90deg, transparent, #000);
-  pointer-events: none;
-}
-:root[data-theme="light"] .giris-kart .marka strong::after {
-  color: #7e22ce;
-}
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme]) .giris-kart .marka strong::after {
-    color: #7e22ce;
-  }
-}
-@media (forced-colors: active) {
-  .giris-kart .marka strong::after {
-    content: none;
-  }
-}
-
-
-
-
-/* ==================================================================
-   R2-METRIK (review turu 2 çapası — temizlikte kaldırılır)
-   Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
-   ================================================================== */
-
-
-
-
-/* Stat şeridi eşit sütun ritmi (.hero-stats): beş ve altı öğeli şeritler (Koşu detayı, Kule KPI, Case review
-   Kararlar / Süre-maliyet) flex yerine ızgara. Flex'te 684–734 px içerikte beş öğe 4+1 sarıyor, son öğe tüm
-   satırı kaplıyordu; ayraçlar satırlar arasında hizasızdı. Sütun sayısı öğe sayısının böleni (5 → 5;
-   6 → 3, ≥1280 px'te 6); ≤640 px'te iki sütun, tek kalan son öğe tüm satır. Öğeler subgrid: etiket, değer
-   ve alt satır şerit boyunca aynı çizgide (uzun etiket iki satıra sarınca değer aşağı kaymaz). Öğe sayısı
-   başka olan şeritler (Kule AI katkısı 3, Erişilebilirlik 2) flex kalır. */
-.metrik-izgara:has(> :nth-child(5):last-child),
-.metrik-izgara:has(> :nth-child(6):last-child) {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-.metrik-izgara:has(> :nth-child(5):last-child) > *,
-.metrik-izgara:has(> :nth-child(6):last-child) > * {
-  display: grid;
-  grid-row: span 3;
-  grid-template-rows: subgrid;
-  row-gap: 0;
-  align-content: start;
-}
-.metrik-izgara:has(> :nth-child(5):last-child) > :last-child {
-  grid-column: 1 / -1;
-}
-@media (min-width: 641px) {
-  .metrik-izgara:has(> :nth-child(5):last-child) {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-  }
-  .metrik-izgara:has(> :nth-child(5):last-child) > :last-child {
-    grid-column: auto;
-  }
-  .metrik-izgara:has(> :nth-child(6):last-child) {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-@media (min-width: 1280px) {
-  .metrik-izgara:has(> :nth-child(6):last-child) {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-  }
-}
-/* Kule KPI: dört satır (etiket · değer · çubuk/alt · hedef). HedefOlcer'in .olcer-ust kabı kaldırılır
-   (display: contents; DOM ve okuma sırası aynı), etiket ve değer şeridin satırlarına oturur. */
-.metrik-izgara.kule-kpi > * {
-  grid-row: span 4;
-  row-gap: 2px;
-}
-.kule-kpi .olcer-ust {
-  display: contents;
-}
-.kule-kpi .olcer-ust > strong {
-  margin-bottom: 6px;
-}
-/* (i) ipucu etiketin son sözcüğüyle aynı satırda (KpiBaslik'taki .kpi-baslik ile aynı): metin kendi içinde
-   sarar, ipucu yanında kalır; "Script ilk review başarısı" 1152 px'te (i)'yi tek başına alt satıra atmaz. */
-.kule-kpi .olcer-ust > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-/* Kartın tek içeriği stat şeridiyse alt marj kalkar (Koşu detayı: şerit üstünde 21, altında 33 px boşluk). */
-.kart > .metrik-izgara:last-child {
-  margin-bottom: 0;
-}
-
-/* Tarih/aktör/süre hücreleri tek satır (.tek-satir: Denetim Zaman/Aktör, Kod üretimi Oluşturma, Koşu detayı
-   Süre). Arama kutuları yer tutucuyu kesmesin. */
-#denetim-ara,
-.filtre-cubugu input[type="search"] {
-  width: 18rem;
-  max-width: 100%;
-}
-
-/* Koşu detayı Test sonuçları ≤640 px: tablo yatay kayar (sağ solma işareti), Test sütunu 71 px'e sıkışıp
-   ad sözcük sözcük, hata kutusu harf harf kırılmasın. */
-@media (max-width: 640px) {
-  [aria-label="Test sonuçları tablosu"] > .tablo > tbody > tr > td:first-child {
-    min-width: 14rem;
-  }
-}
-
-/* Yapışkan şeritler (case filtresi sekmeleri, bölüm gezgini) yalnız yapışınca zemin alır: akışta saydam
-   (opak --bg şerit ortam ışımasını yatay bantla kesiyordu), yapışınca üst çubuğun yarı saydam + bulanık
-   zemini. Zemin ::before'da (scroll-state sorgusu kabın kendisini değil alt öğelerini biçimler). Desteği
-   olmayan tarayıcıda her zaman üst çubuk zemini. Sekme/bağlantıların kendi opak zemini var (kontrast). */
-.sekmeler-yapiskan {
-  background: var(--ust-cubuk-bg);
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
-}
-@supports (container-type: scroll-state) {
-  .sekmeler-yapiskan {
-    container-type: scroll-state;
-    background: none;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-  .sekmeler-yapiskan::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-  }
-  @container scroll-state(stuck: top) {
-    .sekmeler-yapiskan::before {
-      background: var(--ust-cubuk-bg);
-      -webkit-backdrop-filter: blur(16px);
-      backdrop-filter: blur(16px);
-      box-shadow: 0 1px 0 var(--border-soft);
-    }
-  }
-}
-
-/* Bölüm gezgini 861–1279 px (1152 px sunum makinesi): yatay şerit artık yapışkan (üst çubuğun altında),
-   uzun sayfada kaydırınca kaybolmaz. Case review'un yapışkan sekmeleri bu sayfada yok, çakışmaz. Şerit
-   .icerik iç boşluğu kadar iki yana uzar; çapa kaydırma payı üst çubuk + şerit + 16 px. */
-@media (min-width: 861px) and (max-width: 1279px) {
-  .bolum-gezgini {
-    position: sticky;
-    top: 56px;
-    z-index: 10;
-    margin: -8px -28px 8px;
-    padding: 8px 28px;
-    background: var(--ust-cubuk-bg);
-    -webkit-backdrop-filter: blur(16px);
-    backdrop-filter: blur(16px);
-  }
-  @supports (container-type: scroll-state) {
-    .bolum-gezgini {
-      container-type: scroll-state;
-      background: none;
-      -webkit-backdrop-filter: none;
-      backdrop-filter: none;
-    }
-    .bolum-gezgini::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      z-index: -1;
-      pointer-events: none;
-    }
-    @container scroll-state(stuck: top) {
-      .bolum-gezgini::before {
-        background: var(--ust-cubuk-bg);
-        -webkit-backdrop-filter: blur(16px);
-        backdrop-filter: blur(16px);
-        box-shadow: 0 1px 0 var(--border-soft);
-      }
-    }
-  }
-  html:has(.bolum-gezgini) {
-    scroll-padding-top: 120px;
-  }
-}
-
-/* Kule grafiği sütun odağı: halka tüm hedef alanda (%0 sütun 2 px; yalnız sütun konturu görünmüyordu). */
-.grafik-hedef-alan:focus-visible .grafik-odak {
-  stroke: var(--focus);
-  stroke-width: 2;
 }
