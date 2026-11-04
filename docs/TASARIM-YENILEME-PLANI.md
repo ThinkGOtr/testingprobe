@@ -452,7 +452,7 @@ karşılaştırılır.
 | Sistem | küçük daire, `2px solid var(--notr)` | `--notr` |
 
 **Durum renkten ve kesiklikten bağımsız:**
-- **tamam:** tür renginde dolgu, `background-clip: content-box` + 3 px `padding` → dolgu içeride kalır, tür
+- **tamam:** tür renginde dolgu, `background-clip: padding-box` + 3 px iç gölge halkası → dolgu içeride kalır, tür
   kenarı (kesik/düz) dışarıda görünür; ✓ `--on-ton` (AI + insan dolgusu `--vurgu`). Mevcut
   `.akis-tamam .akis-no` kuralındaki `border-style: solid` (1205), `border-color: var(--accent)` ve
   `background: var(--accent)` silinir (aksi halde AI'nin kesik kenarını ezer).
@@ -461,8 +461,8 @@ karşılaştırılır.
   değildir; halka klavye odağıyla karışmaz.
 - **bekliyor:** boş iç + tür renginde kenar, `opacity` yok (kenar ≥5,5:1).
 
-Lejant (`AkisAdimlari.tsx:27-30`) **mevcut üç öğeyle** (AI adımı, İnsan kapısı, Sistem) ve aynı çizimlerle
-kalır; "AI + insan" öğesi eklenmez (yeni görünür metin). Kenar en az 2 px; `.akis-no` zaten 28 px
+Lejant (`AkisAdimlari.tsx:27-31`) dört öğe: AI adımı, İnsan kapısı, **AI + insan kapısı** (review turu 1:
+dördüncü biçimin görsel karşılığı yoktu; lejant `aria-hidden`, testlere etkisi yok), Sistem. Kenar en az 2 px; `.akis-no` zaten 28 px
 (1189-1190). Mobil 4 sütun ve "adım adları çakışmaz" kuralı korunur; daire 28 px'ye büyürken `.akis-ad` ölçümü
 (`duman.spec.ts:381-394`) kapıdır.
 

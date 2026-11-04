@@ -3822,6 +3822,48 @@ html:has(.sekmeler) {
    (paralel şerit birleştirmesi için çapa — silinmez)
    ================================================================== */
 
+/* §4.10/K7: tamam adımında tür dolgusu kenarın altına boyanmaz (padding-box). Böylece kesik kenarın
+   boşluklarından yüzey görünür ve tamamlanmış AI / AI + insan adımı kesik kalır. İç yüzey halkası
+   içten gölgeyle aynen çizilir. Daireler aria-hidden olduğu için axe kontrast ölçümünü etkilemez. */
+.akis-no,
+.yh-no {
+  background-clip: padding-box;
+}
+/* Türün iç çizimi (--akis-ic) tek değişkende: şimdiki adımın dış indigo halkası onu ezmez, ekler.
+   Böylece sistem adımı şimdiki adım olduğunda da nötr çemberi görünür kalır. */
+.akis-no {
+  --akis-ic: inset 0 0 0 3px var(--surface);
+  box-shadow: var(--akis-ic);
+}
+.akis-tur-sistem .akis-no {
+  --akis-ic: inset 0 0 0 2px var(--notr), inset 0 0 0 4px var(--surface);
+  box-shadow: var(--akis-ic);
+}
+.akis-tur-ai_insan .akis-no {
+  --akis-ic: inset 0 0 0 2px var(--ok), inset 0 0 0 3px var(--surface);
+  box-shadow: var(--akis-ic);
+}
+.akis-simdi .akis-no,
+.akis-tur-ai_insan.akis-simdi .akis-no {
+  box-shadow: var(--akis-ic), 0 0 0 3px var(--bg), 0 0 0 5px var(--accent), var(--glow);
+}
+/* §3.4 alt sınır: bilgi taşıyan metin ≥ 0.75rem (adım adları, üst çubuk ÖRNEK VERİ rozeti). */
+.akis-adim {
+  font-size: 0.75rem;
+}
+.ust-sag > .rozet-mock {
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+}
+/* Lejantta dördüncü biçim: AI + insan = kesik mor kenarlı kare + içte yeşil halka. */
+.lejant-ai-insan {
+  width: 14px;
+  height: 14px;
+  border: 2px dashed var(--vurgu);
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 2px var(--ok);
+}
+
 
 
 
