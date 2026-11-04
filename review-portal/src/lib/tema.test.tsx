@@ -1,4 +1,4 @@
-import { act, render, renderHook, screen } from "@testing-library/react";
+import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -162,7 +162,10 @@ describe("Kabuk tema düğmesi", () => {
       </MemoryRouter>,
     );
     await screen.findByRole("heading", { name: "Denetim", level: 1 });
-    expect(kok()).toHaveAttribute("data-theme", "dark");
+    // Tema, Kabuk'un useEffect'inde uygulanır. Kabuk oturum çözülünce act dışı bir güncellemeyle bağlanır;
+    // findByRole başlığı DOM'a yazıldığı anda bulur, pasif efekt henüz çalışmamış olabilir (yük altında
+    // ~30 koşuda 1 kez data-theme null görülüyordu). Efekti bekle.
+    await waitFor(() => expect(kok()).toHaveAttribute("data-theme", "dark"));
     expect(temaYazmalari(yaz)).toEqual([]);
     await u.click(screen.getByRole("button", { name: "Tema: koyu (değiştir)" }));
     expect(kok()).toHaveAttribute("data-theme", "light");
