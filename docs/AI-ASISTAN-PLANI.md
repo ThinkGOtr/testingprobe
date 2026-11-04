@@ -1192,7 +1192,8 @@ tek satır (`probe_my_queue`).
   "Kim onaylıyor?", "Jira'da nasıl açarım?". Bu akışta **otomatik yükseltme olağan kurallarla
   uygulanır** (`kip='soru'`). Model kapalıyken düğmenin adı "Açıklamayı göster" olur ve kuralın
   genişletilmiş `aciklama` metnini (kural dosyasında, `neden`'den uzun) gösterir; model çağrısı yok.
-- **Erişilebilirlik:** düğme `aria-label="Öneriler (N)"`; sekmeler `role="tablist"`; rozet değişimi
+- **Erişilebilirlik:** düğme `aria-label="Öneriler: N"` (görünür "Öneriler N" adın içinde kalır, WCAG 2.5.3;
+  "Öneriler (N)" olmaz: axe parantez içini addan düşürür); sekmeler `role="tablist"`; rozet değişimi
   `aria-live` ile duyurulmaz (gürültü).
 - **Mock:** `api/mock/handlers.ts`'e öneri uçları (11 uca dahil) ve kural fixture'ları; 5 rol
   parametreli vitest (`pages/*.test.tsx` kalıbı).

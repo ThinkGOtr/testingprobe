@@ -293,16 +293,32 @@ Yeni renk çifti eklenirse aynı hesap yapılır; e2e axe iki temada geçmeden f
 - **AI asistan kancaları (korunur; `docs/AI-ASISTAN-PLANI.md` §11 Kabuk adımı, R7):** reskin bunları
   taşımaz ve silmez, yalnız görünüm belirteçlerini alır.
   - `Kabuk.tsx`: `.atla` yanında `<AsistanaAtla />` (`button.atla.atla-asistan`, "Asistanı aç"; yalnız
-    asistan hazırken görünür); `.ust-sag`'da ÖRNEK VERİ rozetinden sonra, bağlantı göstergesinden önce
-    `<OneriDugmesi />`; `Kabuk` → `KabukIcerik` bölünmesi ve `KabukDurumuSaglayici`/`useKabukDurumu`
+    asistan hazırken görünür); `.ust-sag`'ın **en solunda** `<OneriDugmesi />` (yalnız kuralı olan ekranlarda
+    çizilir; sağa yaslı grupta solda durduğu için görünüp kaybolması ÖRNEK VERİ ve bağlantı göstergesini
+    kaydırmaz); `Kabuk` → `KabukIcerik` bölünmesi ve `KabukDurumuSaglayici`/`useKabukDurumu`
     (menü durumu `menuAcik` buradan gelir; `useState`'e geri çevrilmez).
-  - Katman sırası (`styles.css:252` ve `components/asistan/asistan.css:2` yorumları ile aynı): menü
-    perdesi/üst çubuk 20–30 · "Bu ne?" bindirmesi 39 · asistan başlatıcı ve panel 40 · panel içi modal 45 ·
+  - Katman sırası (`styles.css` "kabuk" bölümü ve `asistan.css` baş yorumu ile aynı; `kabuk.test.tsx` kilitler): üst
+    çubuk 20 · menü perdesi 29 · yan menü 30 · "Bu ne?" bindirmesi 39 · asistan başlatıcı ve panel 40 · panel içi modal 45 ·
     `.bildirimler` 50 · `.atla` 100. Yeni sabit öğe (perde, ortam ışıması dahil) bu sıraya oturtulur.
   - `body:has(.asistan-baslatici) .bildirimler { bottom: 72px }`: sağ alttaki "Asistan" düğmesi
     görünürken bildirimler onun üstünde durur; §4.15 bildirim konumu değişirse bu kural birlikte taşınır.
-  - Asistan paneli `top: 64px` ile üst çubuğun (56 px + 2 px çizgi) altından başlar; üst çubuk yüksekliği
-    değişirse panel ofseti birlikte güncellenir.
+  - Asistan paneli `top: 56px` ile üst çubuğun altından başlar (üst çubuk border-box 56 px, 2 px marka
+    çizgisi dahil); üst çubuk yüksekliği değişirse panel ofseti birlikte güncellenir.
+  - 760–860 px'de panel ile mobil menü çekmecesi birbirini dışlar (`KabukDurumu`): panel açılınca menü,
+    menü açılınca panel kapanır; kipsel menünün yanında karartılmamış, tıklanabilir ikinci bölge kalmaz.
+- **AI asistan arayüzü (görsel dil):** asistan bileşenleri portalın token'larını kullanır; sabit renk yok.
+  - Renk: mor (`--vurgu`) yalnız AI kimliği ve AI içeriği (panel başlık ikonu, AI cevabı/AI önerisi sol
+    3 px şeridi, AI hapı); etkileşim (başlatıcı, Öneri düğmesi rozeti ve kenarı, seçili sekme, "Bu ne?"
+    hedef çerçevesi) indigo; insan kararı yeşil; ÖRNEK VERİ amber; pasiflik nötr kesik kenar.
+  - Başlatıcı (sağ alt, z 40): sakin yüzey (`--surface-2`, 1 px `--accent` kenar, indigo ikon), indigo dolgu
+    yalnız hover/odakta; 1280 px altında ya da ≤760 px yüksekliğinde 44 px yuvarlak, yalnız ikon. Pasifken
+    kesik kenar + düğmenin solunda görünür neden (`aria-describedby`). Görünür ad erişilebilir adın içinde.
+  - Üst çubuk Öneri düğmesi: ikincil küçük düğme, görünür "Öneriler" + sayı rozeti, ad `Öneriler: N`
+    (WCAG 2.5.3); ≤520 px'te 32 px kare, rozet köşede. Dar üst çubukta "Probe" 320 px'te de tam görünür
+    (≤360 px'te ÖRNEK VERİ görsel olarak "ÖRNEK"); duman testi rozetli ekranda ölçer.
+  - Panel: masaüstünde sağa yaslı 420 px çekmece (kart yüzeyi, sol ayraç), < 760 px tam ekran modal.
+    "Bu ne?" ipucu bandı içeriğin üstünde (üst çubuğun 8 px altında), içerik alanına ortalı; tıklamayı yutmaz
+    (yalnız "Vazgeç" tıklanır), altındaki öğe de seçilebilir.
 
 ### 4.2 ÖRNEK VERİ bandı — `.ornek-veri-bandi` (testid korunur)
 
