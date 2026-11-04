@@ -4381,6 +4381,73 @@ td > .satir-baglanti + .cip,
     white-space: nowrap;
   }
 }
+/* Asistan paneli açıkken (≥1440 px, asistan.css içeriği 420 px sağdan boşaltır) içerik sütunu 1440 px'te
+   724, 1680 px'te 964 px'e iner — panelsiz 861–1279 px görünümdeki içerik genişliği. Gezgin görünüm
+   genişliğine bağlı olduğundan sağ sütunda kalıyor, kartlar ~250 px'e sıkışıyordu. 1440–1699 px'te panel
+   açıkken gezgin aynı yapışkan tek satır şerittir (içerik ≥ 984 px'te, yani ≥1700 px'te sütun yeniden sığar;
+   panelsiz 1280 px'teki içerik genişliği). Modal panel (< 760 px) bu aralıkta yok. */
+@media (min-width: 1440px) and (max-width: 1699px) {
+  body:has(.asistan-panel:not(.asistan-panel-modal)) .bolum-duzen {
+    display: block;
+  }
+  body:has(.asistan-panel:not(.asistan-panel-modal)) .bolum-gezgini {
+    position: sticky;
+    top: 56px;
+    z-index: 10;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 6px;
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    margin: -8px -28px 8px;
+    padding: 8px 28px;
+    border-left: 0;
+    background: var(--ust-cubuk-bg);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+  }
+  body:has(.asistan-panel:not(.asistan-panel-modal)) .bolum-gezgini a {
+    flex: none;
+    margin-left: 0;
+    padding: 4px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-hap);
+    background: var(--surface);
+    line-height: inherit;
+    white-space: nowrap;
+  }
+  body:has(.asistan-panel:not(.asistan-panel-modal)) .bolum-gezgini a:hover {
+    border-color: var(--accent);
+  }
+  @supports (container-type: scroll-state) {
+    body:has(.asistan-panel:not(.asistan-panel-modal)) .bolum-gezgini {
+      container-type: scroll-state;
+      background: none;
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+    body:has(.asistan-panel:not(.asistan-panel-modal)) .bolum-gezgini::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+    }
+    @container scroll-state(stuck: top) {
+      body:has(.asistan-panel:not(.asistan-panel-modal)) .bolum-gezgini::before {
+        background: var(--ust-cubuk-bg);
+        -webkit-backdrop-filter: blur(16px);
+        backdrop-filter: blur(16px);
+        box-shadow: 0 1px 0 var(--border-soft);
+      }
+    }
+  }
+  html:has(.bolum-gezgini):has(.asistan-panel:not(.asistan-panel-modal)) {
+    scroll-padding-top: 120px;
+  }
+}
 @media (min-width: 861px) and (max-width: 899px) {
   .bolum-gezgini {
     gap: 4px;

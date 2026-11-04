@@ -242,6 +242,43 @@ test("masaüstü panel odağı örtmez (WCAG 2.4.11): ≥1440 px içerik boşalt
   await expect(panel(page)).toBeVisible();
 });
 
+// Panel açıkken (1440–1699 px) içerik 861–1279 px genişliğine iner: bölüm gezgini sağ sütunda kalmaz,
+// yapışkan tek satır şerit olur; gövde içerik genişliğini alır. ≥1700 px'te sütun geri gelir.
+test("panel açıkken (1440–1699 px) bölüm gezgini yatay şerit, gövde daralmaz; ≥1700 px sütun", async ({ page }) => {
+  await girisYap(page, "analist");
+  await page.goto("/gereksinimler/req-tpd-1");
+  const gezgin = page.getByRole("navigation", { name: "Sayfa bölümleri" });
+  const govde = page.locator(".bolum-govde");
+  await expect(gezgin).toHaveCSS("flex-direction", "column");
+  await paneliAc(page);
+  for (const w of [1440, 1680]) {
+    await page.setViewportSize({ width: w, height: 900 });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect(gezgin).toHaveCSS("flex-direction", "row");
+    await expect(gezgin).toHaveCSS("position", "sticky");
+    const g = (await gezgin.boundingBox())!;
+    const b = (await govde.boundingBox())!;
+    expect(g.y + g.height, `${w}: şerit gövdenin üstünde`).toBeLessThanOrEqual(b.y);
+    expect(g.height, `${w}: tek satır`).toBeLessThan(60);
+    expect(b.width, `${w}: gövde içerik genişliğinde`).toBeGreaterThanOrEqual(700);
+    expect(g.x + g.width, `${w}: şerit panelin altına girmez`).toBeLessThanOrEqual((await panel(page).boundingBox())!.x + 1);
+    await gezgin.getByRole("link", { name: "Doküman" }).click();
+    await gezgin.getByRole("link", { name: "Tutarlılık bulguları" }).click();
+    await expect
+      .poll(async () => {
+        const serit = await gezgin.boundingBox();
+        const kutu = await page.getByRole("region", { name: "Tutarlılık bulguları" }).boundingBox();
+        return !!serit && !!kutu && kutu.y >= serit.y + serit.height;
+      })
+      .toBe(true);
+  }
+  await page.setViewportSize({ width: 1700, height: 900 });
+  await expect(gezgin).toHaveCSS("flex-direction", "column");
+  await page.getByRole("button", { name: "Asistanı kapat" }).click();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(gezgin).toHaveCSS("flex-direction", "column");
+});
+
 test("son hata çipi ve sözlük cevabı (S2, mock örneği)", async ({ page }) => {
   const hatalar = konsolHatalariniTopla(page);
   await girisYap(page, "analist");
