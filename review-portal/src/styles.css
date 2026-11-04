@@ -76,7 +76,6 @@
   --chart-bar: #818cf8;
   --chart-bar-active: #c7d2fe;
   --chart-grid: #1e1e35;
-  --chart-target: #7c8596;
 
   /* ---- derinlik, etkileşim katmanları, imzalar */
   --shadow: 0 4px 24px rgb(0 0 0 / 0.4);
@@ -87,14 +86,16 @@
   --ust-cubuk-bg: rgb(6 6 15 / 0.92); /* .92 altı → altından kayan metinde AA kaybı */
   --ust-cubuk-opak: #06060f; /* saydamlık azaltıldığında / backdrop-filter yokken */
   --marka-cizgi: linear-gradient(90deg, transparent, #6366f1, #a855f7, #6366f1, transparent);
-  --ortam: radial-gradient(900px 600px at 0 0, rgb(99 102 241 / 0.07), transparent),
-    radial-gradient(700px 500px at 100% 100%, rgb(139 92 246 / 0.05), transparent);
+  /* Ortam ışıması (§4.1): indigo merkezi içerik alanının sol üstünde (yan menü 240 px, üst çubuk 56 px),
+     yoğunluk dashboard login.html düzeyinde (indigo .14, mor .10). En kötü üst üste binmede bile --muted
+     5,05, --text-2 6,32, --accent 5,43, --err 5,8. Açık temada none. */
+  --ortam: radial-gradient(1400px 1000px at 240px 56px, rgb(99 102 241 / 0.14), transparent 80%),
+    radial-gradient(1100px 800px at 100% 100%, rgb(168 85 247 / 0.1), transparent 80%);
   --giris-izgara: rgb(99 102 241 / 0.04);
   --secim: rgb(99 102 241 / 0.35); /* ::selection zemini; metin --text kalır */
   --kaydirma: #3a3a66; /* kaydırma çubuğu tutamağı */
   --kaydirma-hover: #4d4d80;
-  /* data: SVG içinde currentColor/var() çalışmaz; renk --text-2 değeri */
-  --select-ok: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --kart-golge: 0 1px 3px #0000, 0 1px 2px #0000; /* koyuda görünmez; liste biçimi açık temayla aynı */
 
   /* ---- tema bağımsız: tipografi, boşluk, şekil (§3.4) */
   --font: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -104,14 +105,17 @@
   --radius-sm: 8px;
   --radius-kontrol: 10px; /* düğme ve giriş */
   --radius-hap: 999px;
-  --space-1: 4px;
   --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-7: 32px;
-  --space-8: 48px;
+
+  /* ---- ikonlar: yalnız maske olarak kullanılır (content: "" + mask-image; renk currentColor).
+     data: SVG'de renk siyah = maske. */
+  --ikon-kisi: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7'/%3E%3C/svg%3E");
+  --ikon-kilit: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='5' y='11' width='14' height='10' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E");
+  --ikon-kayit: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Ccircle cx='12' cy='12' r='4' fill='black' stroke='none'/%3E%3C/svg%3E");
+  --ikon-uyari: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z'/%3E%3Cpath d='M12 9v4M12 17h.01'/%3E%3C/svg%3E");
+  --ikon-hata: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='m15 9-6 6M9 9l6 6'/%3E%3C/svg%3E");
+  --ikon-bilgi: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 16v-4M12 8h.01'/%3E%3C/svg%3E");
+  --ikon-basari: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='m8 12 3 3 5-6'/%3E%3C/svg%3E");
 
   color-scheme: dark;
   font-family: var(--font);
@@ -170,7 +174,6 @@
   --chart-bar: #4f46e5;
   --chart-bar-active: #3730a3;
   --chart-grid: #e4e7ed;
-  --chart-target: #8a93a3;
   --shadow: 0 1px 3px rgb(0 0 0 / 0.06), 0 1px 2px rgb(0 0 0 / 0.04);
   --glow: 0 0 #0000; /* none değil: virgüllü gölge listesinde geçersiz olur */
   --hover: rgb(15 17 23 / 0.04);
@@ -191,7 +194,7 @@
   --secim: rgb(79 70 229 / 0.18);
   --kaydirma: #c3c8d3;
   --kaydirma-hover: #a3a9b7;
-  --select-ok: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%234b5263' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --kart-golge: var(--shadow);
   color-scheme: light;
 }
 
@@ -245,7 +248,6 @@
     --chart-bar: #4f46e5;
     --chart-bar-active: #3730a3;
     --chart-grid: #e4e7ed;
-    --chart-target: #8a93a3;
     --shadow: 0 1px 3px rgb(0 0 0 / 0.06), 0 1px 2px rgb(0 0 0 / 0.04);
     --glow: 0 0 #0000;
     --hover: rgb(15 17 23 / 0.04);
@@ -266,7 +268,7 @@
     --secim: rgb(79 70 229 / 0.18);
     --kaydirma: #c3c8d3;
     --kaydirma-hover: #a3a9b7;
-    --select-ok: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%234b5263' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    --kart-golge: var(--shadow);
     color-scheme: light;
   }
 }
@@ -292,12 +294,14 @@
   box-sizing: border-box;
 }
 
+/* scroll-padding-top: yapışkan üst çubuğun altında kalmasın diye çapa/odak kaydırması (WCAG 2.4.11). */
 html {
   accent-color: var(--accent-solid);
   scrollbar-color: var(--kaydirma) transparent;
   scrollbar-width: thin;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  scroll-padding-top: 72px;
 }
 
 html,
@@ -438,11 +442,6 @@ code,
 }
 .atla:focus {
   top: 8px;
-}
-
-/* Yapışkan üst çubuğun altında kalmasın diye çapa/odak kaydırması (WCAG 2.4.11) */
-html {
-  scroll-padding-top: 72px;
 }
 
 /* Statik ortam ışıması (§4.1): isolation olmadan body'nin opak zemini z-index:-1 katmanı örter.
@@ -601,16 +600,17 @@ html {
   }
 }
 
-/* Üst çubuktaki ÖRNEK VERİ rozeti: amber section-badge kalıbı (renkler .rozet-mock'tan) */
+/* Üst çubuktaki ÖRNEK VERİ rozeti: amber section-badge kalıbı (renkler .rozet-mock'tan). Yazı 0.75rem:
+   §3.4 alt sınırı (bilgi taşıyan metin ≥ 0.75rem). */
 .ust-sag > .rozet-mock {
   padding: 3px 10px;
   border-radius: var(--radius-hap);
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.06em;
 }
 
-/* Kabuk glifleri (☰ ◐ ☾ ☀): SVG'ye geçişe (F3) kadar tek tip kutu ve yazı tipi */
+/* Kabuk düğmeleri (menü, tema): 32×32 tek tip kutu; ikon SVG (Ikon.tsx), boyu "ikonlar" bölümünde. */
 .menu-dugmesi,
 .ust-sag > .dugme-hayalet {
   width: 32px;
@@ -619,9 +619,6 @@ html {
   padding: 0;
   align-items: center;
   justify-content: center;
-  font-family: var(--mono);
-  font-size: 1rem;
-  line-height: 1;
   color: var(--text-2);
 }
 .menu-dugmesi {
@@ -683,11 +680,12 @@ html {
   display: grid;
   gap: 2px;
 }
+/* İkon + ad solda; odak noktası ve "bu fazda yok" notu sağa yaslanır (margin-left: auto, ikonlar bölümü). */
 .menu-oge {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  justify-content: flex-start;
+  gap: 10px;
   min-height: 36px;
   padding: 6px 12px;
   border-radius: var(--radius-kontrol);
@@ -819,37 +817,56 @@ html {
 
 /* ---------------------------------------------------------------- sayfa yapısı */
 
+/* Sayfa başlığı (§4.3) */
 .sayfa-basligi {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
-  margin-bottom: 18px;
+  margin-bottom: 24px;
 }
 .sayfa-basligi h1 {
-  font-size: 1.5rem;
-  font-weight: 650;
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 .sayfa-basligi p {
   margin-top: 6px;
-  max-width: 80ch;
+  color: var(--text-2);
+  max-width: 72ch;
 }
+/* Koşular tetik açıklamaları (§5): başlığın hemen altında (negatif üst marj başlık alt boşluğu 24 px'e
+   göre), iki satırlık okunur açıklama → --text-2 (.soluk'un --muted'ını ezer). */
 .tetik-aciklamalari {
   list-style: none;
   padding: 0;
-  margin: -10px 0 14px;
+  margin: -16px 0 14px;
   max-width: 100ch;
+  color: var(--text-2);
 }
 .tetik-aciklamalari li {
   padding: 1px 0;
 }
+/* Geri bağlantısı: section-badge hapı. Büyük harfe çevrilmez (aşağıdaki "büyük harf ve Türkçe" notu). */
 .ust-baglanti {
-  font-size: 0.875rem;
-  margin-bottom: 6px;
+  margin-bottom: 10px;
+  font-size: 0.75rem;
+  line-height: 1.4;
 }
 .ust-baglanti a {
+  display: inline-block;
+  padding: 3px 12px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent-solid) 30%, transparent);
+  border-radius: var(--radius-hap);
   text-decoration: none;
+}
+.ust-baglanti a:hover {
+  color: var(--accent-hover);
+  border-color: var(--accent);
 }
 .baslik-anahtar {
   color: var(--muted);
@@ -870,7 +887,7 @@ html {
   align-items: center;
 }
 
-/* Kart (§4.4): koyuda gölgesiz ince kenarlı yüzey, açıkta hafif gölge (--kart-golge). Hover yok.
+/* Kart (§4.4): koyuda gölgesiz ince kenarlı yüzey, açıkta hafif gölge (--kart-golge = --shadow). Hover yok.
    overflow: hidden konmaz — içerideki odak halkası kesilir. */
 .kart {
   background: var(--surface);
@@ -908,32 +925,15 @@ html {
 
 /* Durum şeridi (site .test-result, §4.4 / §3.2 kural 6): sol 3 px. Şerit tek başına anlam taşımaz;
    kartta durum metni/hapı her zaman var. Yeşil yalnız geçilmiş insan kapısı ve insanın onayladığı
-   varlık; kapanmış kayıt nötr (--border-strong). */
-article.bulgu.bulgu-blocking:is([data-durum="open"], [data-durum="unverified"]) {
-  border-left: 3px solid var(--err);
-}
-article.bulgu:not(.bulgu-blocking):is([data-durum="open"], [data-durum="unverified"]) {
-  border-left: 3px solid var(--warn);
-}
-article.bulgu:is([data-durum="decided"], [data-durum="resolved"], [data-durum="stale"], [data-durum="discarded"]) {
-  border-left: 3px solid var(--border-strong);
-}
-article.case.case-draft {
-  border-left: 3px solid var(--vurgu);
-}
-article.case:is(.case-approved, .case-published) {
-  border-left: 3px solid var(--ok);
-}
-article.case:is(.case-rejected, .case-superseded) {
-  border-left: 3px solid var(--border-strong);
-}
+   varlık; kapanmış kayıt nötr (--border-strong). Bulgu ve case şeritleri kendi bölümlerinde. */
 .kart:has([data-testid="po-kapisi"].soluk) {
   border-left: 3px solid var(--warn);
 }
 .kart:has([data-testid="po-kapisi"]:not(.soluk)) {
   border-left: 3px solid var(--ok);
 }
-/* Merge kapısı ve bug karar paneli kartın içinde bir bölümdür: şerit içe çizilir (inset gölge). */
+/* Merge kapısı ve bug karar paneli (triage bölümü) kartın içinde bir bölümdür: şerit içe çizilir
+   (inset gölge). */
 .merge-kapisi:has(> .ok-metin) {
   box-shadow: inset 3px 0 0 var(--ok);
   padding-left: 12px;
@@ -941,10 +941,6 @@ article.case:is(.case-rejected, .case-superseded) {
 .merge-kapisi:not(:has(> .ok-metin)) {
   box-shadow: inset 3px 0 0 var(--warn);
   padding-left: 12px;
-}
-.karar-paneli {
-  box-shadow: inset 3px 0 0 var(--warn);
-  padding-left: 14px;
 }
 /* İnsan kapısı ikonu ("kişi"): yalnız maske, metin yok (content: "" erişilebilir ada girmez). */
 .kart:has([data-testid="po-kapisi"]) > .kart-baslik h2::before,
@@ -962,6 +958,7 @@ article.case:is(.case-rejected, .case-superseded) {
   forced-color-adjust: none;
 }
 
+/* Kartlar üst hizalı (G6): Script detayında PR ve Kırarak doğrula, Triage'da sınıf ve sinyaller. */
 .iki-sutun {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -978,25 +975,6 @@ article.case:is(.case-rejected, .case-superseded) {
   .iki-sutun {
     grid-template-columns: minmax(0, 1fr);
   }
-}
-
-/* Koşular tetik açıklamaları (§5): iki satırlık okunur açıklama → --text-2 (.soluk'un --muted'ını ezer). */
-.tetik-aciklamalari {
-  color: var(--text-2);
-}
-
-/* Bileşen belirteçleri (tema bağımsız; Şerit C). İkonlar yalnız maske olarak kullanılır
-   (content: "" + mask-image; renk currentColor). data: SVG'de renk siyah = maske. */
-:root {
-  /* Kart gölgesi: koyuda yok, açıkta --shadow değeri. light-dark() kullanılan color-scheme'e bakar. */
-  --kart-golge: 0 1px 3px light-dark(rgb(0 0 0 / 0.06), #0000), 0 1px 2px light-dark(rgb(0 0 0 / 0.04), #0000);
-  --ikon-kisi: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7'/%3E%3C/svg%3E");
-  --ikon-kilit: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='5' y='11' width='14' height='10' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E");
-  --ikon-kayit: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Ccircle cx='12' cy='12' r='4' fill='black' stroke='none'/%3E%3C/svg%3E");
-  --ikon-uyari: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z'/%3E%3Cpath d='M12 9v4M12 17h.01'/%3E%3C/svg%3E");
-  --ikon-hata: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='m15 9-6 6M9 9l6 6'/%3E%3C/svg%3E");
-  --ikon-bilgi: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 16v-4M12 8h.01'/%3E%3C/svg%3E");
-  --ikon-basari: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='m8 12 3 3 5-6'/%3E%3C/svg%3E");
 }
 
 /* ---------------------------------------------------------------- düğmeler */
@@ -1116,11 +1094,14 @@ article.case:is(.case-rejected, .case-superseded) {
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
-/* REPLAY: mor + büyük harf + 1,5 px tam opak kenar + "kayıt" ikonu → diğer mor haplardan biçimle ayrılır. */
+/* REPLAY: mor + büyük harf + 1,5 px tam opak kenar + "kayıt" ikonu → diğer mor haplardan biçimle ayrılır.
+   Chromium kenar kalınlığını cihaz pikseline yuvarlar (DPR 1'de 1,5 → 1 px): 1 px kenar + 0,5 px dış halka
+   her DPR'de 1,5 px görünür; hap boyu diğer haplarla aynı kalır. */
 .rozet-replay {
   background: var(--replay-bg);
   color: var(--replay);
-  border: 1.5px solid var(--replay);
+  border: 1px solid var(--replay);
+  box-shadow: 0 0 0 0.5px var(--replay);
 }
 .rozet-replay-miss {
   background: var(--replay-miss-bg);
@@ -1146,11 +1127,7 @@ article.case:is(.case-rejected, .case-superseded) {
   background: var(--warn-bg);
   color: var(--warn);
   border-color: color-mix(in srgb, var(--warn) 30%, transparent);
-  cursor: help;
-  /* Üst çubukta dar ekranda marka metnine yer bırakır (Şerit B bu rozeti section-badge yapacak). */
-  font-size: 0.7rem;
-  letter-spacing: 0.05em;
-  padding: 2px 7px;
+  cursor: help; /* boyut ve biçim: üst çubuk kuralı (.ust-sag > .rozet-mock) */
 }
 /* Cümle biçimli rozetler: metin aynen (✓ dahil), büyük harfe çevrilmez. */
 .rozet-dogrulandi,
@@ -1347,10 +1324,12 @@ td .cip + .cip {
 
 /* ---------------------------------------------------------------- tablo */
 
-/* Tablo (§4.7): başlık şeridi --surface-2 + büyük harf --muted (5,6); satır ayracı --border-soft;
-   sarıcı 1 px --border, 12 px köşe. Kaydırılabilirken sağ kenarda solma gölgesi (G18): kaydırma
-   zaman çizelgesine bağlı animasyon — kaydırılamıyorsa zaman çizelgesi etkin değildir, gölge çizilmez;
-   sona gelindiğinde söner. Gölge içeriğin altında boyanır, metin kontrastını değiştirmez. */
+/* Tablo (§4.7): başlık şeridi --surface-2 + --muted (5,6); satır ayracı --border-soft; sarıcı 1 px
+   --border, 12 px köşe.
+   Sarıcı opak zemin alır (görünüm aynı: üstündeki kartın zemini). axe color-contrast, metnin altındaki ilk
+   zeminli ata metni tümüyle kapsamıyorsa "elmPartiallyObscured" ile incomplete verir; yatay kayan tabloda
+   (390 px) kısmen görünen hücreler kartın sınırını aşar. Kap opaksa zemin kapta biter, hücre ve hap
+   kontrastı ölçülür. */
 .tablo-sarici {
   /* position: relative — içerideki görsel gizli (position: absolute) metinler kaydırma kabının
    * dışına taşıp sayfayı yatay kaydırmasın (ör. dar ekranda yayın tablosu). */
@@ -1359,19 +1338,36 @@ td .cip + .cip {
   overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  background-color: var(--surface);
+}
+/* Kaydırılabilirken sağ kenarda solma (G18) içeriğin ÜSTÜNDE: kaydırma kabına maske (zeminli başlık/ayrıntı
+   hücreleri ve kod blokları solmayı örtmesin). Kaydırma zaman çizelgesine bağlı animasyon: kaydırma yoksa
+   zaman çizelgesi etkin değildir → --tablo-solma 0, maske düz; sona gelindiğinde söner. Kenar ve odak
+   halkası maskelenmez (no-clip − padding-box halkası). Ek pseudo/katman yok (axe incomplete artmaz). */
+@property --tablo-solma {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
 }
 @supports (animation-timeline: scroll()) {
   .tablo-sarici {
-    animation: tablo-sag-solma linear both;
+    animation: tablo-sag-maske linear both;
     animation-timeline: scroll(self inline);
+    -webkit-mask-image: linear-gradient(to left, transparent, #000 var(--tablo-solma)), linear-gradient(#000 0 0), linear-gradient(#000 0 0);
+    mask-image: linear-gradient(to left, transparent, #000 var(--tablo-solma)), linear-gradient(#000 0 0), linear-gradient(#000 0 0);
+    -webkit-mask-clip: padding-box, padding-box, no-clip;
+    mask-clip: padding-box, padding-box, no-clip;
+    -webkit-mask-composite: source-over, xor;
+    mask-composite: add, exclude, add;
   }
 }
-@keyframes tablo-sag-solma {
-  from {
-    box-shadow: inset -24px 0 16px -16px var(--border-strong);
+@keyframes tablo-sag-maske {
+  0%,
+  92% {
+    --tablo-solma: 32px;
   }
-  to {
-    box-shadow: inset 0 0 0 0 transparent;
+  100% {
+    --tablo-solma: 0px;
   }
 }
 /* Klavyeyle kaydırılabilsin diye odaklanabilir (tabIndex=0, role=region). */
@@ -1387,8 +1383,6 @@ td .cip + .cip {
 .tablo th {
   text-align: left;
   font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   color: var(--muted);
   font-weight: 700;
   padding: 10px 14px;
@@ -1486,8 +1480,7 @@ td .cip + .cip {
     top: 6px;
     width: calc(36% - 10px);
     font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0;
     color: var(--muted);
     font-weight: 650;
     font-family: var(--font, inherit);
@@ -1579,9 +1572,8 @@ textarea::placeholder {
   color: var(--muted);
   opacity: 1;
 }
-/* Açılır liste: yerel ok (appearance korunur). --select-ok (data: SVG zemin resmi) bilinçli olarak
-   kullanılmadı: zemin resmi axe'ta select metnini color-contrast "bgImage" incomplete'e düşürür
-   (sayısal kapı). */
+/* Açılır liste yerel oku kullanır (appearance korunur): özel ok için data: SVG zemin resmi axe'ta select
+   metnini color-contrast "bgImage" incomplete'e düşürür (sayısal kapı). */
 textarea {
   resize: vertical;
   line-height: 1.45;
@@ -1768,7 +1760,7 @@ fieldset:disabled select {
   align-items: center;
   text-align: center;
   gap: 6px;
-  font-size: 0.72rem;
+  font-size: 0.75rem; /* §3.4 alt sınır: bilgi taşıyan metin ≥ 0.75rem */
   color: var(--muted);
   position: relative;
 }
@@ -1791,7 +1783,11 @@ fieldset:disabled select {
 }
 /* Tür = biçim + renk (§4.10, K7): AI kesik daire (mor), insan kapısı köşeli kare (yeşil), AI + insan kesik
    mor kenarlı kare + içte yeşil halka, sistem küçük daire (nötr). Durum biçimden ve renkten bağımsızdır:
-   tamam = içte tür renginde dolgu (content-box) + ✓, şimdiki = dışta indigo halka, bekliyor = boş iç. */
+   tamam = içte tür renginde dolgu + ✓, şimdiki = dışta indigo halka, bekliyor = boş iç.
+   Tamam adımında tür dolgusu kenarın altına boyanmaz (background-clip: padding-box): kesik kenarın
+   boşluklarından yüzey görünür, tamamlanmış AI / AI + insan adımı kesik kalır. Türün iç çizimi (--akis-ic)
+   tek değişkende: şimdiki adımın dış indigo halkası onu ezmez, ekler (sistem adımı şimdiki adım olduğunda
+   da nötr çemberi görünür kalır). Daireler aria-hidden: axe kontrast ölçümünü etkilemez. */
 .akis-no {
   position: relative;
   z-index: 1;
@@ -1808,7 +1804,9 @@ fieldset:disabled select {
   /* Dolgu içeride kalır: kenarla dolgu arasındaki 3 px'lik yüzey halkası içten gölgeyle çizilir (gradyan/
      background-clip yerine — axe arka plan rengini ölçebilsin; akış çizgisi dairenin içinden görünmez). */
   background: var(--akis-dolgu);
-  box-shadow: inset 0 0 0 3px var(--surface);
+  background-clip: padding-box;
+  --akis-ic: inset 0 0 0 3px var(--surface);
+  box-shadow: var(--akis-ic);
   border: 2px solid var(--notr);
   color: var(--text-2);
   --akis-tur: var(--notr);
@@ -1818,7 +1816,8 @@ fieldset:disabled select {
    yüzey renginde kenarın içinde içten gölgeyle çizilir. */
 .akis-tur-sistem .akis-no {
   border: 3px solid var(--surface);
-  box-shadow: inset 0 0 0 2px var(--notr), inset 0 0 0 4px var(--surface);
+  --akis-ic: inset 0 0 0 2px var(--notr), inset 0 0 0 4px var(--surface);
+  box-shadow: var(--akis-ic);
   font-size: 0.75rem;
 }
 .akis-tur-ai .akis-no {
@@ -1833,7 +1832,8 @@ fieldset:disabled select {
 .akis-tur-ai_insan .akis-no {
   border-radius: 6px;
   border: 2px dashed var(--vurgu);
-  box-shadow: inset 0 0 0 2px var(--ok), inset 0 0 0 3px var(--surface);
+  --akis-ic: inset 0 0 0 2px var(--ok), inset 0 0 0 3px var(--surface);
+  box-shadow: var(--akis-ic);
   --akis-tur: var(--vurgu);
 }
 .akis-tamam .akis-no {
@@ -1842,10 +1842,7 @@ fieldset:disabled select {
 }
 .akis-simdi .akis-no {
   color: var(--text);
-  box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--accent), var(--glow);
-}
-.akis-tur-ai_insan.akis-simdi .akis-no {
-  box-shadow: inset 0 0 0 2px var(--ok), inset 0 0 0 3px var(--surface), 0 0 0 3px var(--bg), 0 0 0 5px var(--accent), var(--glow);
+  box-shadow: var(--akis-ic), 0 0 0 3px var(--bg), 0 0 0 5px var(--accent), var(--glow);
 }
 .akis-simdi .akis-ad {
   color: var(--text);
@@ -1877,6 +1874,14 @@ fieldset:disabled select {
 }
 .lejant-sistem {
   border-radius: 50%;
+}
+/* Lejantta dördüncü biçim: AI + insan = kesik mor kenarlı kare + içte yeşil halka. */
+.lejant-ai-insan {
+  width: 14px;
+  height: 14px;
+  border: 2px dashed var(--vurgu);
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 2px var(--ok);
 }
 @media (max-width: 860px) {
   .akis ol {
@@ -1955,7 +1960,7 @@ fieldset:disabled select {
   gap: 14px;
   margin-top: 12px;
 }
-/* Durum şeridi (§4.4, K9): açık bulgu önemine göre kırmızı/amber; karara bağlanmış, çözülmüş, eskimiş veya
+/* Durum şeridi (§4.4, K9): açık bulgu önemine göre kırmızı (blocking)/amber; karara bağlanmış, çözülmüş, eskimiş veya
    elenmiş bulgu nötr şerit alır — önem yalnız hapta kalır (G15). Şerit tek başına anlam taşımaz: durum hapı
    ve metni kartta her zaman var. */
 .bulgu {
@@ -1998,7 +2003,8 @@ article.bulgu:is([data-durum="decided"], [data-durum="resolved"], [data-durum="s
   align-items: center;
   flex-wrap: wrap;
   min-width: 0;
-  margin-bottom: 6px;
+  margin: 0 0 6px;
+  font-size: 0.9rem;
 }
 /* Uzun dosya yolu ve sha256 özeti dar ekranda sayfayı yatay kaydırmasın. */
 .kanit-baslik > .mono,
@@ -2071,8 +2077,6 @@ article.bulgu:is([data-durum="decided"], [data-durum="resolved"], [data-durum="s
   font-size: 0.75rem;
   font-weight: 650;
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   padding-top: 2px;
 }
 .fark-once-sonra dd {
@@ -2178,13 +2182,14 @@ article.bulgu:is([data-durum="decided"], [data-durum="resolved"], [data-durum="s
 .case:is(.case-approved, .case-published, .case-rejected, .case-superseded) .tablo td {
   padding: 6px 10px;
 }
+.case:is(.case-approved, .case-published, .case-rejected, .case-superseded) .tablo-sarici {
+  background-color: var(--surface-2);
+}
 /* Reddedilen case soluk gösterilir ama opaklıkla değil: opaklık metin kontrastını AA altına
    düşürüyordu (axe color-contrast). Kesik kenar + ikincil yüzey yeterli ayrım sağlar. */
 .case-rejected {
-  background: var(--surface-2);
   border-style: dashed;
   border-left-style: solid;
-  box-shadow: none;
 }
 .case-baslik {
   display: flex;
@@ -2258,10 +2263,12 @@ article.bulgu:is([data-durum="decided"], [data-durum="resolved"], [data-durum="s
 
 /* Stat şeridi (§4.12, site .hero-stats): tek --surface-2 zemin, 1 px --border, 12 px; içteki kutular
    kenarsız, aralarında 1 px --border-soft ayraç (sol/üst dış gölge; şerit kenarındakiler overflow ile
-   kırpılır). Değer şerit içinde 1.6rem/800 --accent; şerit dışında indigo yalnız etkileşimdir. */
+   kırpılır). Değer şerit içinde 1.6rem/800 --accent; şerit dışında indigo yalnız etkileşimdir.
+   Sarmalı flex (Kule KPI şeridiyle aynı): boş ızgara izi kalmaz, satır sonundaki öğeler genişleyip satırı
+   doldurur. */
 .metrik-izgara {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 0;
   margin-bottom: 12px;
   background: var(--surface-2);
@@ -2281,8 +2288,6 @@ article.bulgu:is([data-durum="decided"], [data-durum="resolved"], [data-durum="s
 .metrik-etiket {
   font-size: 0.75rem;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
   color: var(--muted);
 }
 .metrik-deger {
@@ -2377,6 +2382,7 @@ article.bulgu:is([data-durum="decided"], [data-durum="resolved"], [data-durum="s
     grid-template-columns: minmax(0, 1fr);
   }
 }
+/* Kaydırılan liste opak zemin alır: kaydırılmış öğeler kartın sınırını aşar (tablo sarıcıdaki axe notu). */
 .ajan-adimlar {
   list-style: none;
   padding: 0;
@@ -2386,6 +2392,7 @@ article.bulgu:is([data-durum="decided"], [data-durum="resolved"], [data-durum="s
   gap: 6px;
   max-height: 440px;
   overflow-y: auto;
+  background-color: var(--surface);
 }
 .ajan-adim {
   width: 100%;
@@ -2615,14 +2622,6 @@ mark.kaynak-deger {
     grid-template-columns: minmax(0, 1fr);
   }
 }
-.kanit-baslik {
-  font-size: 0.9rem;
-  margin: 0 0 6px;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-}
 .tanim-izgara {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
@@ -2683,9 +2682,6 @@ mark.kaynak-deger {
   cursor: pointer;
   font-size: 0.875rem;
 }
-.aday-olasilik {
-  font-size: 0.75rem;
-}
 .mukerrer-liste li.aday-oneri {
   border-color: var(--accent);
   box-shadow: inset 3px 0 0 var(--accent);
@@ -2732,6 +2728,7 @@ mark.kaynak-deger {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+  align-items: start;
   margin-bottom: 16px;
 }
 .kule-izgara > .kart {
@@ -2743,24 +2740,16 @@ mark.kaynak-deger {
     grid-template-columns: minmax(0, 1fr);
   }
 }
-.buyuk-sayi {
-  font-size: 1.9rem;
-  font-weight: 800;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
-}
 
-/* Grafik (§4.13): yükseklik ≤180 px. viewBox 320×120 → genişlik 480 px'te sınırlanır (oran korunur,
-   ipucunun yüzde konumu sütunlarla hizalı kalır). */
+/* Grafik (§4.13): viewBox çizilen genişliğe eşit (Grafikler.tsx), ölçek 1:1 — eksen 12 px (≥11, gövdeden
+   küçük), sütun en çok 28 px; grafik kart genişliğini doldurur. */
 .grafik {
   margin: 12px 0 0;
   position: relative;
-  max-width: 480px;
 }
 .grafik-svg {
   width: 100%;
   height: auto;
-  max-height: 180px;
   display: block;
 }
 .grafik-izgara {
@@ -2780,7 +2769,7 @@ mark.kaynak-deger {
 }
 .grafik-eksen {
   fill: var(--muted);
-  font-size: 11.5px; /* viewBox birimi; 390 px'te ≈11 px */
+  font-size: 12px;
   font-family: var(--font);
 }
 .grafik-hedef-alan:focus {
@@ -2894,44 +2883,6 @@ mark.kaynak-deger {
   letter-spacing: 0.02em;
 }
 
-/* Sayfa başlığı (§4.3) — Şerit B. Temel .sayfa-basligi kuralları "sayfa yapısı" bölümünde; bu blok
-   onlardan sonra geldiği için aynı özgüllükle kazanır. Alt boşluk 18 → 24 px: Koşular'daki
-   .tetik-aciklamalari negatif üst marjı (-10px) buna yaslıdır → aynı görsel aralık için -16px olmalı. */
-.sayfa-basligi {
-  margin-bottom: 24px;
-}
-.sayfa-basligi h1 {
-  font-size: 1.6rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-}
-.sayfa-basligi p {
-  color: var(--text-2);
-  max-width: 72ch;
-}
-/* Geri bağlantısı: section-badge hapı */
-.ust-baglanti {
-  margin-bottom: 10px;
-  font-size: 0.75rem;
-  line-height: 1.4;
-}
-.ust-baglanti a {
-  display: inline-block;
-  padding: 3px 12px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--accent);
-  background: var(--accent-soft);
-  border: 1px solid color-mix(in srgb, var(--accent-solid) 30%, transparent);
-  border-radius: var(--radius-hap);
-  text-decoration: none;
-}
-.ust-baglanti a:hover {
-  color: var(--accent-hover);
-  border-color: var(--accent);
-}
-
 .dis-baglanti {
   font-weight: 550;
 }
@@ -2963,8 +2914,6 @@ mark.kaynak-deger {
   margin: 2px 0 0 28px;
 }
 .kontrol-liste {
-  list-style: none;
-  padding: 0;
   margin: 0 0 10px;
   display: flex;
   flex-direction: column;
@@ -3030,23 +2979,31 @@ mark.kaynak-deger {
   align-items: center;
   gap: 6px;
 }
+/* KPI kaynak ipucu (KontrolKulesi.tsx KaynakIpucu): hedef 24×24 = görünen 18 px daire + 3 px saydam
+   kenar (zemin padding-box'a kırpılır, halka iç gölgeyle). Düz renk zemin kalır: gradyan zemin axe
+   kontrastını "incomplete"e düşürür. İpucu metni aria-label'dan, açıkken sabit konumda (şerit
+   overflow'u kırpmaz; kural "bileşen cilası" bölümünde). */
 .kaynak-ipucu {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  margin: -3px;
   border-radius: 50%;
-  border: 1px solid var(--border-strong);
+  border: 3px solid transparent;
   color: var(--muted);
   font-size: 0.7rem;
   font-weight: 600;
   cursor: help;
   background: var(--surface-2);
+  background-clip: padding-box;
+  box-shadow: inset 0 0 0 1px var(--border-strong);
 }
 .kaynak-ipucu:focus-visible {
   outline: 2px solid var(--focus);
-  outline-offset: 2px;
+  outline-offset: 0;
 }
 /* "Ölçülmedi" (§4.12): değer yuvasında kesik kenarlı hap, --text-2, 600, italik değil; metin aynen.
    Tablo içinde (ör. "case yok") boş değer tek stili: --muted düz yazı, hap değil (G16). */
@@ -3187,6 +3144,7 @@ td .olculmedi {
   border: 2px solid var(--notr);
   color: var(--text-2);
   background: var(--yh-dolgu);
+  background-clip: padding-box; /* kesik kenar tamam adımında da kesik kalır (akış göstergesi notu) */
   box-shadow: inset 0 0 0 3px var(--surface);
   --yh-tur: var(--notr);
   --yh-dolgu: var(--surface);
@@ -3424,13 +3382,7 @@ td .olculmedi {
   display: flex;
 }
 
-/* ---------------------------------------------------------------- Şerit D ekleri (§4.4, §5 MVT) */
-
-/* Kartlar üst hizalı (G6): Script detayında PR ve Kırarak doğrula, Triage'da sınıf ve sinyaller, Kule. */
-.iki-sutun,
-.kule-izgara {
-  align-items: start;
-}
+/* ---------------------------------------------------------------- kod üretimi ve demo ekleri (§4.4, §5) */
 
 /* Kod üretimi: defect adayı / başarısız satırı solda kırmızı şerit, hata hapı kalın (renk tek gösterge değil). */
 .kod-tablosu tbody tr:has(.cip-hata) > td:first-child {
@@ -3448,11 +3400,7 @@ details.soluk > summary {
   cursor: pointer;
 }
 
-/* ==================================================================
-   F3-IKON (ikon seti, marka, avatar, ornek-veri-tam)
-   Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
-   (paralel şerit birleştirmesi için çapa — silinmez)
-   ================================================================== */
+/* ---------------------------------------------------------------- ikonlar, marka vurgusu, avatar, örnek veri bandı */
 
 /* İkon seti (§4.16, Ikon.tsx): satır içi SVG, currentColor, dekoratif. Boy yazı boyunu izler. */
 .ikon {
@@ -3475,11 +3423,7 @@ details.soluk > summary {
   vertical-align: -0.05em;
 }
 
-/* Menü öğesi ikonları: ikon + ad solda; odak noktası ve "bu fazda yok" notu sağa yaslanır. */
-.menu-oge {
-  justify-content: flex-start;
-  gap: 10px;
-}
+/* Menü öğesi ikonları: pasif renkte; hover ve aktif öğede metin rengini alır. */
 .menu-oge > .ikon {
   width: 16px;
   height: 16px;
@@ -3548,14 +3492,7 @@ details.soluk > summary {
   font-weight: 600;
 }
 
-
-
-
-/* ==================================================================
-   F3-NEDEN (.dugme-neden)
-   Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
-   (paralel şerit birleştirmesi için çapa — silinmez)
-   ================================================================== */
+/* ---------------------------------------------------------------- pasiflik nedeni (.dugme-neden) */
 
 /* Görünür pasiflik nedeni (§4.5): native disabled düğme odak almaz, title klavyede okunmaz. Neden
    düğmenin DIŞINDA, altında yazılır ve aria-describedby ile bağlıdır. Sarıcı her IslemDugmesi'nde
@@ -3595,21 +3532,12 @@ details.soluk > summary {
   }
 }
 
-
-
-
-/* ==================================================================
-   F4-KULE (Kontrol Kulesi KPI şeridi)
-   Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
-   (paralel şerit birleştirmesi için çapa — silinmez)
-   ================================================================== */
+/* ---------------------------------------------------------------- kontrol kulesi KPI şeridi */
 
 /* Kule KPI şeridi (§5 F4, §4.12): .metrik-izgara stat şeridi; beş öğe (Geçme oranı · açık defect adayı ·
    Case kabul · Script ilk review · Hazırlık kazancı). Sarmalı flex: dar ekranda satır sonundaki öğe
    genişler, boş hücre kalmaz. Ayraçlar .metrik-izgara > .metrik ile aynı (sol/üst gölge, kenarda kırpılır). */
 .metrik-izgara.kule-kpi {
-  display: flex;
-  flex-wrap: wrap;
   margin-bottom: 16px;
 }
 .kule-kpi > .metrik,
@@ -3643,8 +3571,6 @@ details.soluk > summary {
   margin-bottom: 8px;
   font-size: 0.75rem;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
   color: var(--muted);
 }
 .kule-kpi .olcer-ust .kaynak-ipucu {
@@ -3668,14 +3594,7 @@ details.soluk > summary {
   color: var(--text-2);
 }
 
-
-
-
-/* ==================================================================
-   F4-GEREKSINIM (bölüm gezgini)
-   Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
-   (paralel şerit birleştirmesi için çapa — silinmez)
-   ================================================================== */
+/* ---------------------------------------------------------------- gereksinim detayı: bölüm gezgini */
 
 /* Gereksinim detayı bölüm gezgini (§5, F4): ≥1280 px'te içeriğin sağında yapışkan sütun; daha dar
    ekranda display: none (akışta yer kaplamaz, erişilebilirlik ağacında yok). Yapışma payı:
@@ -3728,14 +3647,7 @@ details.soluk > summary {
   }
 }
 
-
-
-
-/* ==================================================================
-   F4-CASE (Case review yapışkan sekmeler)
-   Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
-   (paralel şerit birleştirmesi için çapa — silinmez)
-   ================================================================== */
+/* ---------------------------------------------------------------- case review sekmeleri, yığın tablo, yayın bağlantısı */
 
 /* Case filtresi sekmeleri yapışkan (§5, F4): üst çubuğun (56 px, z-index 20) hemen altında, onun altında
    kalan z-index; zemin opak --bg, kartlar altından kayarken görünmez. Şerit .icerik iç boşluğu kadar iki
@@ -3759,9 +3671,14 @@ details.soluk > summary {
 html:has(.sekmeler-yapiskan) {
   scroll-padding-top: 128px;
 }
+/* ≤640 px'te yapışkan değil: iki satıra sarınca üst çubukla birlikte 143 px ekranın üstüne sabitleniyordu
+   (844 px ekranın ~%17'si). Akışta kalır; kaydırma payı genel 72 px'e döner. */
 @media (max-width: 640px) {
+  .sekmeler-yapiskan {
+    position: static;
+  }
   html:has(.sekmeler-yapiskan) {
-    scroll-padding-top: 168px;
+    scroll-padding-top: 72px;
   }
 }
 
@@ -3788,90 +3705,7 @@ html:has(.sekmeler-yapiskan) {
   text-decoration: underline;
 }
 
-
-
-/* ==================================================================
-   DUZELT-AXE (koyu tema incomplete düzeltmeleri)
-   Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
-   (paralel şerit birleştirmesi için çapa — silinmez)
-   ================================================================== */
-
-/* Kaydırma kapları opak zemin alır (görünüm aynı: üstündeki kartın zemin rengi). axe color-contrast,
-   metnin altındaki ilk zeminli ata metni tümüyle kapsamıyorsa "elmPartiallyObscured" ile incomplete
-   verir; yatay kayan tabloda (390 px) kısmen görünen hücreler ve kaydırılmış listede kalan öğeler kartın
-   sınırını aşar. overflow:auto kabının kapsama alanı axe'ta scrollWidth/scrollHeight ile hesaplanır →
-   kap opaksa zemin kapta biter, hücre ve hap (%12 zemin, §3.2 k.2) kontrastı ölçülür. Sağ kenar solma
-   gölgesi (G18) iç gölge olduğundan zeminin üstünde çizilmeye devam eder. */
-.tablo-sarici,
-.ajan-adimlar {
-  background-color: var(--surface);
-}
-.case:is(.case-approved, .case-published, .case-rejected, .case-superseded) .tablo-sarici {
-  background-color: var(--surface-2);
-}
-
-/* Koşular tetik açıklamaları: başlık alt boşluğu 18 → 24 px oldu (Şerit B); aynı görsel aralık için
-   negatif üst marj -10 → -16 px (§5 Koşular). */
-.tetik-aciklamalari {
-  margin-top: -16px;
-}
-
-/* ==================================================================
-   R1-AKIS (akış/yol haritası düzeltmeleri)
-   Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
-   (paralel şerit birleştirmesi için çapa — silinmez)
-   ================================================================== */
-
-/* §4.10/K7: tamam adımında tür dolgusu kenarın altına boyanmaz (padding-box). Böylece kesik kenarın
-   boşluklarından yüzey görünür ve tamamlanmış AI / AI + insan adımı kesik kalır. İç yüzey halkası
-   içten gölgeyle aynen çizilir. Daireler aria-hidden olduğu için axe kontrast ölçümünü etkilemez. */
-.akis-no,
-.yh-no {
-  background-clip: padding-box;
-}
-/* Türün iç çizimi (--akis-ic) tek değişkende: şimdiki adımın dış indigo halkası onu ezmez, ekler.
-   Böylece sistem adımı şimdiki adım olduğunda da nötr çemberi görünür kalır. */
-.akis-no {
-  --akis-ic: inset 0 0 0 3px var(--surface);
-  box-shadow: var(--akis-ic);
-}
-.akis-tur-sistem .akis-no {
-  --akis-ic: inset 0 0 0 2px var(--notr), inset 0 0 0 4px var(--surface);
-  box-shadow: var(--akis-ic);
-}
-.akis-tur-ai_insan .akis-no {
-  --akis-ic: inset 0 0 0 2px var(--ok), inset 0 0 0 3px var(--surface);
-  box-shadow: var(--akis-ic);
-}
-.akis-simdi .akis-no,
-.akis-tur-ai_insan.akis-simdi .akis-no {
-  box-shadow: var(--akis-ic), 0 0 0 3px var(--bg), 0 0 0 5px var(--accent), var(--glow);
-}
-/* §3.4 alt sınır: bilgi taşıyan metin ≥ 0.75rem (adım adları, üst çubuk ÖRNEK VERİ rozeti). */
-.akis-adim {
-  font-size: 0.75rem;
-}
-.ust-sag > .rozet-mock {
-  font-size: 0.75rem;
-  letter-spacing: 0.06em;
-}
-/* Lejantta dördüncü biçim: AI + insan = kesik mor kenarlı kare + içte yeşil halka. */
-.lejant-ai-insan {
-  width: 14px;
-  height: 14px;
-  border: 2px dashed var(--vurgu);
-  border-radius: 3px;
-  box-shadow: inset 0 0 0 2px var(--ok);
-}
-
-
-
-
-/* ==================================================================
-   R1-TRIAGE (triage/script detay düzeni)
-   Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
-   (paralel şerit birleştirmesi için çapa — silinmez)
-   ================================================================== */
+/* ---------------------------------------------------------------- triage ızgarası */
 
 /* Triage ızgarası (§5 görsel kapı: 1152 px'te sınıf + sinyaller + onarım kartı ilk ekranda). Sol sütunda
    Sınıf ve altında öneri (onarım / bug taslağı / "Öneri üretilmedi"); sağda Eşleşen sinyaller tüm satırlara
@@ -3900,24 +3734,7 @@ html:has(.sekmeler-yapiskan) {
   margin-top: 12px;
 }
 
-
-
-
-/* ==================================================================
-   R1-KABUK (kabuk/giriş/erişilebilirlik)
-   Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
-   (paralel şerit birleştirmesi için çapa — silinmez)
-   ================================================================== */
-
-/* Ortam ışıması içerik alanında görünür (§4.1): indigo merkezi içerik alanının sol üstünde (yan menü
-   240 px, üst çubuk 56 px; eski "0 0" merkezi opak menünün altında kalıyordu), yoğunluk dashboard
-   login.html düzeyinde (indigo .14, mor .10). En kötü üst üste binmede bile --muted 5,05, --text-2 6,32,
-   --accent 5,43, --err 5,8. Açık tema --ortam:none kalır: açık tema blokları (:root[data-theme], :root:not(...))
-   bu :root tanımından özgüldür. */
-:root {
-  --ortam: radial-gradient(1400px 1000px at 240px 56px, rgb(99 102 241 / 0.14), transparent 80%),
-    radial-gradient(1100px 800px at 100% 100%, rgb(168 85 247 / 0.1), transparent 80%);
-}
+/* ---------------------------------------------------------------- kabuk: mobil menü, dar üst çubuk, zorunlu renk */
 
 /* Mobil yan menü (≤860 px) kapalıyken: gölge yok (sol kenarda gri şerit bırakıyordu) ve içerik
    visibility:hidden — ekran dışındaki bağlantılar Tab sırasından ve erişilebilirlik ağacından çıkar
@@ -3989,21 +3806,9 @@ html:has(.sekmeler-yapiskan) {
   }
 }
 
+/* ---------------------------------------------------------------- bileşen cilası: stat şeridi, büyük harf, ipucu, tablo bağlantıları */
 
-
-
-/* ==================================================================
-   R1-BILESEN (metrik/çip/tablo cilası)
-   Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
-   (paralel şerit birleştirmesi için çapa — silinmez)
-   ================================================================== */
-
-/* Stat şeridi: Kule KPI şeridiyle aynı sarmalı flex (boş ızgara izi kalmaz; satır sonundaki öğeler
-   genişleyip satırı doldurur). Ayraçlar .metrik-izgara > .metrik gölgeleriyle aynı. */
-.metrik-izgara {
-  display: flex;
-  flex-wrap: wrap;
-}
+/* Stat şeridi öğe genişliği (Kule KPI şeridi kendi genişliğini kullanır). */
 .metrik-izgara:not(.kule-kpi) > .metrik {
   flex: 1 1 150px;
 }
@@ -4031,10 +3836,7 @@ html:has(.sekmeler-yapiskan) {
 .metrik-etiket,
 .kule-kpi .olcer-ust,
 .fark-once-sonra dt,
-.ust-baglanti a {
-  text-transform: none;
-  letter-spacing: 0.01em;
-}
+.ust-baglanti a,
 .tablo th {
   text-transform: none;
   letter-spacing: 0.01em;
@@ -4042,12 +3844,6 @@ html:has(.sekmeler-yapiskan) {
 /* "açık defect adayı" gibi küçük harfle başlayan etiketin ilk harfi büyük (a/ç → A/Ç; tr kuralı doğru). */
 .metrik-etiket::first-letter {
   text-transform: uppercase;
-}
-@media (max-width: 640px) {
-  .tablo-yigin td[data-etiket]::before {
-    text-transform: none;
-    letter-spacing: 0;
-  }
 }
 
 /* Boş durum: paragraf 72ch sınırlı; ortalı metin kartın ortasında dursun. */
@@ -4062,46 +3858,12 @@ td > .satir-baglanti + .cip,
   margin-left: 6px;
 }
 
-/* Geçme oranı grafiği: viewBox çizilen genişliğe eşit (Grafikler.tsx), ölçek 1:1 — eksen 12 px (≥11,
-   gövdeden küçük), sütun en çok 28 px; grafik kart genişliğini doldurur. */
-.grafik {
-  max-width: none;
-}
-.grafik-svg {
-  max-height: none;
-}
-.grafik-eksen {
-  font-size: 12px;
-}
-
 /* Başlığı kendi işaretiyle başlayan uyarı ("✓ Zincir doğrulandı"): maske ikonu çizilmez (çift ✓ olmaz). */
 .uyari-isaretli > strong::before {
   content: none;
 }
 
-/* REPLAY 1,5 px tam opak kenar (§4.6): Chromium kenar kalınlığını cihaz pikseline yuvarlar (DPR 1'de 1,5 →
-   1 px). 1 px kenar + 0,5 px dış halka her DPR'de 1,5 px görünür; hap boyu diğer haplarla aynı kalır. */
-.rozet-replay {
-  border-width: 1px;
-  box-shadow: 0 0 0 0.5px var(--replay);
-}
-
-/* KPI kaynak ipucu (KontrolKulesi.tsx KaynakIpucu): hedef 24×24 = görünen 18 px daire + 3 px saydam
-   kenar (zemin padding-box'a kırpılır, halka iç gölgeyle). Düz renk zemin kalır: gradyan zemin axe
-   kontrastını "incomplete"e düşürür. İpucu metni aria-label'dan, açıkken sabit konumda (şerit
-   overflow'u kırpmaz). */
-.kaynak-ipucu {
-  box-sizing: border-box;
-  width: 24px;
-  height: 24px;
-  margin: -3px;
-  border: 3px solid transparent;
-  background-clip: padding-box;
-  box-shadow: inset 0 0 0 1px var(--border-strong);
-}
-.kaynak-ipucu:focus-visible {
-  outline-offset: 0;
-}
+/* KPI kaynak ipucu açık: metin aria-label'dan, sabit konumda (--ipucu-x/y KaynakIpucu'dan). */
 .kaynak-ipucu[data-acik]::after {
   content: attr(aria-label);
   position: fixed;
@@ -4135,36 +3897,6 @@ td > .satir-baglanti + .cip,
   text-decoration: underline;
 }
 
-/* G18 sağ kenar solması içeriğin ÜSTÜNDE: kaydırma kabına maske (zeminli başlık/ayrıntı hücreleri ve kod
-   blokları gölgeyi örtmesin). Kenar ve odak halkası maskelenmez (no-clip − padding-box halkası). Kaydırma
-   yoksa zaman çizelgesi etkin değildir → --tablo-solma 0, maske düz. Ek pseudo/katman yok (axe incomplete
-   artmaz). */
-@property --tablo-solma {
-  syntax: "<length>";
-  inherits: false;
-  initial-value: 0px;
-}
-@supports (animation-timeline: scroll()) {
-  .tablo-sarici {
-    animation-name: tablo-sag-maske;
-    -webkit-mask-image: linear-gradient(to left, transparent, #000 var(--tablo-solma)), linear-gradient(#000 0 0), linear-gradient(#000 0 0);
-    mask-image: linear-gradient(to left, transparent, #000 var(--tablo-solma)), linear-gradient(#000 0 0), linear-gradient(#000 0 0);
-    -webkit-mask-clip: padding-box, padding-box, no-clip;
-    mask-clip: padding-box, padding-box, no-clip;
-    -webkit-mask-composite: source-over, xor;
-    mask-composite: add, exclude, add;
-  }
-}
-@keyframes tablo-sag-maske {
-  0%,
-  92% {
-    --tablo-solma: 32px;
-  }
-  100% {
-    --tablo-solma: 0px;
-  }
-}
-
 /* Kısaltılmış hata mesajı (§4.7): altta 1,5em solma (maske; zemin --code-bg olduğu için renk karışmaz).
    Yalnız gerçekten taşıyorsa: taşma yoksa kaydırma zaman çizelgesi etkin değildir → maske düz. */
 @property --hata-solma {
@@ -4187,14 +3919,7 @@ td > .satir-baglanti + .cip,
   }
 }
 
-
-
-
-/* ==================================================================
-   R1-RESPONSIVE (dar ekran ve tablo düzeltmeleri)
-   Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
-   (paralel şerit birleştirmesi için çapa — silinmez)
-   ================================================================== */
+/* ---------------------------------------------------------------- dar ekran ve tablo düzeltmeleri */
 
 /* Yığın tablo etiketi akışta (≤640 px): mutlak konumlu etiket hücre yüksekliğine katılmıyordu; 320/360 px'te
    iki satıra saran etiket ("AÇIK BULGU", "CASE (ONAYLI)") alttaki satırın etiketine biniyordu. Etiket artık
@@ -4234,17 +3959,6 @@ td > .satir-baglanti + .cip,
   font-variant-numeric: tabular-nums;
 }
 
-/* Case filtresi sekmeleri ≤640 px'te yapışkan değil: iki satıra sarınca üst çubukla birlikte 143 px ekranın
-   üstüne sabitleniyordu (844 px ekranın ~%17'si). Akışta kalır; kaydırma payı genel 72 px'e döner. */
-@media (max-width: 640px) {
-  .sekmeler-yapiskan {
-    position: static;
-  }
-  html:has(.sekmeler-yapiskan) {
-    scroll-padding-top: 72px;
-  }
-}
-
 /* Bölüm gezgini 861–1279 px'te (kenar çubuklu düzen, ör. 1152 px sunum makinesi): sağ sütun içeriği
    ~650 px'e daraltıp tabloları keseceği için yapışkan sütun yerine başlığın altında, akışta yatay bağlantı
    şeridi (yapışkan değil, dikeyde tek satır). ≥1280 px kuralı aynen. */
@@ -4271,15 +3985,3 @@ td > .satir-baglanti + .cip,
     background: var(--accent-soft);
   }
 }
-
-
-
-
-/* ==================================================================
-   R1-NEDEN (dugme-neden tekrar)
-   Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
-   (paralel şerit birleştirmesi için çapa — silinmez)
-   ================================================================== */
-
-
-

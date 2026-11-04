@@ -195,226 +195,226 @@ export function GereksinimDetay() {
       ))}
 
       <div className="bolum-duzen">
-      <BolumGezgini />
-      <div className="bolum-govde">
-      <div className="iki-sutun">
-        <Kart baslik="Doküman" id={BOLUM_ID.dokuman}>
-          <Dokuman g={g} />
-        </Kart>
+        <BolumGezgini />
+        <div className="bolum-govde">
+          <div className="iki-sutun">
+            <Kart baslik="Doküman" id={BOLUM_ID.dokuman}>
+              <Dokuman g={g} />
+            </Kart>
 
-        <PoKarti g={g} yenile={tumunuYenile} />
-      </div>
+            <PoKarti g={g} yenile={tumunuYenile} />
+          </div>
 
-      <BazDegerKarti
-        id={BOLUM_ID.baz}
-        g={g}
-        guncellendi={(b) => {
-          if (b !== undefined) detay.setVeri({ ...g, manuel_baz: b });
-          void detay.yenile(true);
-        }}
-      />
+          <BazDegerKarti
+            id={BOLUM_ID.baz}
+            g={g}
+            guncellendi={(b) => {
+              if (b !== undefined) detay.setVeri({ ...g, manuel_baz: b });
+              void detay.yenile(true);
+            }}
+          />
 
-      <Kart
-        id={BOLUM_ID.sorular}
-        baslik="Ön inceleme soruları"
-        eylemler={g.on_inceleme && <ReplayRozeti mode={g.on_inceleme.mode} />}
-      >
-        {!g.on_inceleme ? (
-          <BosDurum baslik="Ön inceleme henüz yapılmadı." />
-        ) : (
-          <>
-            <p className="soluk">
-              Karar: {g.on_inceleme.verdict === "ready" ? "Hazır (yine de PO teyidi istenir)" : "PO'ya sorular var"} ·{" "}
-              {tarih(g.on_inceleme.zaman)}
-              {g.on_inceleme.jira_comment_id && ` · Jira yorumu #${g.on_inceleme.jira_comment_id}`}
-            </p>
-            {g.on_inceleme.ozet && (
-              <p className="kucuk" data-testid="on-inceleme-ozet">
-                {/* Model çıktısı (güvenilmeyen içerikten türedi): düz metin, karar dayanağı değil. */}
-                <strong>AI özeti</strong> <span className="soluk">(model çıktısı, karar dayanağı değildir)</span>: {g.on_inceleme.ozet}
-              </p>
+          <Kart
+            id={BOLUM_ID.sorular}
+            baslik="Ön inceleme soruları"
+            eylemler={g.on_inceleme && <ReplayRozeti mode={g.on_inceleme.mode} />}
+          >
+            {!g.on_inceleme ? (
+              <BosDurum baslik="Ön inceleme henüz yapılmadı." />
+            ) : (
+              <>
+                <p className="soluk">
+                  Karar: {g.on_inceleme.verdict === "ready" ? "Hazır (yine de PO teyidi istenir)" : "PO'ya sorular var"} ·{" "}
+                  {tarih(g.on_inceleme.zaman)}
+                  {g.on_inceleme.jira_comment_id && ` · Jira yorumu #${g.on_inceleme.jira_comment_id}`}
+                </p>
+                {g.on_inceleme.ozet && (
+                  <p className="kucuk" data-testid="on-inceleme-ozet">
+                    {/* Model çıktısı (güvenilmeyen içerikten türedi): düz metin, karar dayanağı değil. */}
+                    <strong>AI özeti</strong> <span className="soluk">(model çıktısı, karar dayanağı değildir)</span>: {g.on_inceleme.ozet}
+                  </p>
+                )}
+                <ol className="soru-liste">
+                  {g.on_inceleme.questions.map((s) => (
+                    <li key={s.id}>
+                      <div className="satir-ogeler">
+                        <strong className="mono" title="PO cevabında kullanılan kimlik (ör. 'Q3: …')">{s.id}</strong>
+                        <Cip ton="bilgi">{SORU_TURU[s.type] ?? s.type}</Cip>
+                        {s.ac_ref && <span className="mono">{s.ac_ref}</span>}
+                        {s.duzeltmeyle_degisti && (
+                          <Cip ton="uyari" title="Sorunun ilgilendiği madde doküman düzeltmesiyle değişti; PO güncel metne göre cevaplar.">
+                            Düzeltmeyle metni değişti
+                          </Cip>
+                        )}
+                      </div>
+                      <p>{s.text}</p>
+                      {s.kararla_cozuldu && !s.cevap ? (
+                        <p className="kucuk" data-testid={`soru-cozuldu-${s.id}`}>
+                          <Cip ton="basari" title="Bu soru analistin bulgu kararıyla kapandı; PO'ya sorulmaz (bilgi için).">
+                            Çözüldü
+                          </Cip>{" "}
+                          {s.kararla_cozuldu}
+                        </p>
+                      ) : s.cevap ? (
+                        <p className="cevap">↳ {s.cevap}</p>
+                      ) : (
+                        <p className="soluk kucuk">
+                          {g.po.durum !== "approved"
+                            ? "Cevap bekleniyor"
+                            : poCevaplari.length > 0
+                              ? "PO Jira'da yanıtladı (aşağıda)"
+                              : "Ayrı cevap yazılmadı; PO içeriği onayladı."}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              </>
             )}
-            <ol className="soru-liste">
-              {g.on_inceleme.questions.map((s) => (
-                <li key={s.id}>
-                  <div className="satir-ogeler">
-                    <strong className="mono" title="PO cevabında kullanılan kimlik (ör. 'Q3: …')">{s.id}</strong>
-                    <Cip ton="bilgi">{SORU_TURU[s.type] ?? s.type}</Cip>
-                    {s.ac_ref && <span className="mono">{s.ac_ref}</span>}
-                    {s.duzeltmeyle_degisti && (
-                      <Cip ton="uyari" title="Sorunun ilgilendiği madde doküman düzeltmesiyle değişti; PO güncel metne göre cevaplar.">
-                        Düzeltmeyle metni değişti
-                      </Cip>
-                    )}
-                  </div>
-                  <p>{s.text}</p>
-                  {s.kararla_cozuldu && !s.cevap ? (
-                    <p className="kucuk" data-testid={`soru-cozuldu-${s.id}`}>
-                      <Cip ton="basari" title="Bu soru analistin bulgu kararıyla kapandı; PO'ya sorulmaz (bilgi için).">
-                        Çözüldü
-                      </Cip>{" "}
-                      {s.kararla_cozuldu}
-                    </p>
-                  ) : s.cevap ? (
-                    <p className="cevap">↳ {s.cevap}</p>
-                  ) : (
-                    <p className="soluk kucuk">
-                      {g.po.durum !== "approved"
-                        ? "Cevap bekleniyor"
-                        : poCevaplari.length > 0
-                          ? "PO Jira'da yanıtladı (aşağıda)"
-                          : "Ayrı cevap yazılmadı; PO içeriği onayladı."}
-                    </p>
-                  )}
-                </li>
-              ))}
-            </ol>
-          </>
-        )}
-        {poCevaplari.length > 0 && (
-          <section className="po-cevaplari" aria-labelledby="po-cevaplari-baslik" data-testid="po-cevaplari">
-            <h3 id="po-cevaplari-baslik" className="alt-baslik">
-              PO cevapları {g.kaynak === "jira" && "(Jira yorumu)"}
-            </h3>
-            <ul className="po-cevap-liste">
-              {poCevaplari.map((c, i) => (
-                <li key={c.id || i} className="po-cevap">
-                  <div className="satir-ogeler soluk kucuk">
-                    <strong>{c.yazar ?? "PO"}</strong>
-                    {c.zaman && <span>{tarih(c.zaman)}</span>}
-                    {c.url && <DisBaglanti href={c.url}>{c.id ? `Jira yorumu #${c.id}` : "Jira'da aç"}</DisBaglanti>}
-                  </div>
-                  {/* Güvenilmeyen içerik (§5): düz metin olarak gösterilir. */}
-                  <p className="po-cevap-metin">{c.metin}</p>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-      </Kart>
+            {poCevaplari.length > 0 && (
+              <section className="po-cevaplari" aria-labelledby="po-cevaplari-baslik" data-testid="po-cevaplari">
+                <h3 id="po-cevaplari-baslik" className="alt-baslik">
+                  PO cevapları {g.kaynak === "jira" && "(Jira yorumu)"}
+                </h3>
+                <ul className="po-cevap-liste">
+                  {poCevaplari.map((c, i) => (
+                    <li key={c.id || i} className="po-cevap">
+                      <div className="satir-ogeler soluk kucuk">
+                        <strong>{c.yazar ?? "PO"}</strong>
+                        {c.zaman && <span>{tarih(c.zaman)}</span>}
+                        {c.url && <DisBaglanti href={c.url}>{c.id ? `Jira yorumu #${c.id}` : "Jira'da aç"}</DisBaglanti>}
+                      </div>
+                      {/* Güvenilmeyen içerik (§5): düz metin olarak gösterilir. */}
+                      <p className="po-cevap-metin">{c.metin}</p>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </Kart>
 
-      <Kart
-        id={BOLUM_ID.bulgular}
-        baslik={`Tutarlılık bulguları${g.kontrol_turu ? ` · kontrol turu ${g.kontrol_turu}/${g.kontrol_turu_ust_sinir}` : ""}`}
-        eylemler={
-          <>
-          {g.son_kontrol && <ReplayRozeti mode={g.son_kontrol.mode} />}
-          {sonHalSonrasi ? (
-            <span data-testid="son-hal-durumu">
-              {/* Bu çip dokümanın durumunu söyler: son hâl tamam (✓). PO teyidi beklemesi bir uyarı
-                  değil, sıradaki adımdır; bu yüzden uyarı tonu yerine bilgi tonu. */}
-              <Cip ton={g.durum === "pending_po" ? "bilgi" : d.ton}>{g.durum === "doc_final" ? "✓ Doküman son hâl" : `✓ Doküman son hâl · ${d.etiket}`}</Cip>
-            </span>
-          ) : (
-          <IslemDugmesi
-            roller={["analyst"]}
-            disabled={sonHalAcik ? false : yazilacak === 0 || turSiniri}
-            calisiyor={islem.calisiyor && g.durum === "in_review"}
-            // Tur sınırı nedeni aşağıdaki uyarı kutusunda zaten görünür yazılı.
-            nedenGizli={turSiniri}
-            title={
-              sonHalAcik
-                ? g.denetim_guvenilmez
-                  ? `Denetim güvenilmez (${g.denetim_guvenilmez}); belge yalnızca açık kararınızla son hâl olur ve PO'ya gider`
-                  : "Yazılacak düzeltme yok; belge son hâl olur ve PO'ya gider"
-                : turSiniri
-                ? `Kontrol turu sınırına ulaşıldı (${g.kontrol_turu_ust_sinir}); insan kararı gerekiyor`
-                : yazilacak === 0
-                  ? "Yazılmayı bekleyen 'dokümanı düzelt' kararı yok"
-                  : `Yazılır ve yeniden kontrol turu ${g.kontrol_turu + 1}/${g.kontrol_turu_ust_sinir} başlar`
-            }
-            onClick={() =>
-              eylem(
-                () => duzeltmeleriUygula(g.id),
-                sonHalAcik
-                  ? (r) =>
-                      r?.kabul_edilen_uyarilar && r.kabul_edilen_uyarilar.length > 0
-                        ? `Belge son hâl yapıldı; kararsız uyarılar bilinçli fark olarak kaydedildi (${r.kabul_edilen_uyarilar.join(", ")}). PO teyidi bekleniyor.`
-                        : "Belge son hâl yapıldı; PO teyidi bekleniyor."
-                  : g.kaynak === "jira"
-                    ? "Düzeltmeler Jira'ya yazılıyor; ardından yeniden kontrol."
-                    : "Düzeltmeler uygulanıyor; ardından yeniden kontrol.",
-              )
+          <Kart
+            id={BOLUM_ID.bulgular}
+            baslik={`Tutarlılık bulguları${g.kontrol_turu ? ` · kontrol turu ${g.kontrol_turu}/${g.kontrol_turu_ust_sinir}` : ""}`}
+            eylemler={
+              <>
+                {g.son_kontrol && <ReplayRozeti mode={g.son_kontrol.mode} />}
+                {sonHalSonrasi ? (
+                  <span data-testid="son-hal-durumu">
+                    {/* Bu çip dokümanın durumunu söyler: son hâl tamam (✓). PO teyidi beklemesi bir uyarı
+                        değil, sıradaki adımdır; bu yüzden uyarı tonu yerine bilgi tonu. */}
+                    <Cip ton={g.durum === "pending_po" ? "bilgi" : d.ton}>{g.durum === "doc_final" ? "✓ Doküman son hâl" : `✓ Doküman son hâl · ${d.etiket}`}</Cip>
+                  </span>
+                ) : (
+                  <IslemDugmesi
+                    roller={["analyst"]}
+                    disabled={sonHalAcik ? false : yazilacak === 0 || turSiniri}
+                    calisiyor={islem.calisiyor && g.durum === "in_review"}
+                    // Tur sınırı nedeni aşağıdaki uyarı kutusunda zaten görünür yazılı.
+                    nedenGizli={turSiniri}
+                    title={
+                      sonHalAcik
+                        ? g.denetim_guvenilmez
+                          ? `Denetim güvenilmez (${g.denetim_guvenilmez}); belge yalnızca açık kararınızla son hâl olur ve PO'ya gider`
+                          : "Yazılacak düzeltme yok; belge son hâl olur ve PO'ya gider"
+                        : turSiniri
+                        ? `Kontrol turu sınırına ulaşıldı (${g.kontrol_turu_ust_sinir}); insan kararı gerekiyor`
+                        : yazilacak === 0
+                          ? "Yazılmayı bekleyen 'dokümanı düzelt' kararı yok"
+                          : `Yazılır ve yeniden kontrol turu ${g.kontrol_turu + 1}/${g.kontrol_turu_ust_sinir} başlar`
+                    }
+                    onClick={() =>
+                      eylem(
+                        () => duzeltmeleriUygula(g.id),
+                        sonHalAcik
+                          ? (r) =>
+                              r?.kabul_edilen_uyarilar && r.kabul_edilen_uyarilar.length > 0
+                                ? `Belge son hâl yapıldı; kararsız uyarılar bilinçli fark olarak kaydedildi (${r.kabul_edilen_uyarilar.join(", ")}). PO teyidi bekleniyor.`
+                                : "Belge son hâl yapıldı; PO teyidi bekleniyor."
+                          : g.kaynak === "jira"
+                            ? "Düzeltmeler Jira'ya yazılıyor; ardından yeniden kontrol."
+                            : "Düzeltmeler uygulanıyor; ardından yeniden kontrol.",
+                      )
+                    }
+                  >
+                    {sonHalAcik ? "Son hâl olarak onayla" : g.kaynak === "jira" ? "Düzeltmeleri Jira'ya yaz" : "Düzeltmeleri uygula"}
+                    {yazilacak > 0 && ` (${yazilacak})`}
+                    {g.kontrol_turu > 0 && " · "}
+                    {g.kontrol_turu > 0 && (
+                      <span className="dugme-ek">
+                        tur {g.kontrol_turu}/{g.kontrol_turu_ust_sinir}
+                      </span>
+                    )}
+                  </IslemDugmesi>
+                )}
+              </>
             }
           >
-            {sonHalAcik ? "Son hâl olarak onayla" : g.kaynak === "jira" ? "Düzeltmeleri Jira'ya yaz" : "Düzeltmeleri uygula"}
-            {yazilacak > 0 && ` (${yazilacak})`}
-            {g.kontrol_turu > 0 && " · "}
+            <p className="soluk">
+              Doküman kodla (salt okuma repo) ve veriyle (salt okuma sorgu) karşılaştırılır. Yalnızca kanıtı deterministik olarak yeniden
+              doğrulanan bulgular gösterilir.
+            </p>
+            {sonHalSonrasi && (
+              <p className="kucuk" data-testid="son-hal-notu">
+                Düzeltmeler Jira'ya yazıldı ve son kontrol turunda engelleyici bulgu kalmadı. Aşağıdaki kartlar bu turun kaydıdır;
+                karar gerekmez.
+              </p>
+            )}
             {g.kontrol_turu > 0 && (
-              <span className="dugme-ek">
-                tur {g.kontrol_turu}/{g.kontrol_turu_ust_sinir}
-              </span>
+              <p className="satir-ogeler kucuk" data-testid="bulgu-sayaclari">
+                <span>
+                  Kontrol turu{" "}
+                  <strong className="mono">
+                    {g.kontrol_turu}/{g.kontrol_turu_ust_sinir}
+                  </strong>
+                </span>
+                <span>
+                  Gösterilen <strong>{turdakiBulgular.length}</strong>
+                </span>
+                {dogrulaniyor > 0 && (
+                  <span>
+                    Kanıt doğrulanıyor <strong>{dogrulaniyor}</strong>
+                  </span>
+                )}
+                <span title="Kanıtı (kod satırı veya sorgu sonucu) yeniden çekilip eşleşmediği için gösterilmeyen bulgular">
+                  Kanıtı doğrulanamadığı için elenen <strong>{elenen}</strong>
+                </span>
+              </p>
             )}
-          </IslemDugmesi>
-          )}
-          </>
-        }
-      >
-        <p className="soluk">
-          Doküman kodla (salt okuma repo) ve veriyle (salt okuma sorgu) karşılaştırılır. Yalnızca kanıtı deterministik olarak yeniden
-          doğrulanan bulgular gösterilir.
-        </p>
-        {sonHalSonrasi && (
-          <p className="kucuk" data-testid="son-hal-notu">
-            Düzeltmeler Jira'ya yazıldı ve son kontrol turunda engelleyici bulgu kalmadı. Aşağıdaki kartlar bu turun kaydıdır;
-            karar gerekmez.
-          </p>
-        )}
-        {g.kontrol_turu > 0 && (
-          <p className="satir-ogeler kucuk" data-testid="bulgu-sayaclari">
-            <span>
-              Kontrol turu{" "}
-              <strong className="mono">
-                {g.kontrol_turu}/{g.kontrol_turu_ust_sinir}
-              </strong>
-            </span>
-            <span>
-              Gösterilen <strong>{turdakiBulgular.length}</strong>
-            </span>
-            {dogrulaniyor > 0 && (
-              <span>
-                Kanıt doğrulanıyor <strong>{dogrulaniyor}</strong>
-              </span>
+            {turSiniri && yazilacak > 0 && (
+              <Uyari>
+                Kontrol turu sınırına ulaşıldı ({g.kontrol_turu_ust_sinir}). Kalan düzeltmeler otomatik yazılmaz; insan kararı gerekiyor.
+              </Uyari>
             )}
-            <span title="Kanıtı (kod satırı veya sorgu sonucu) yeniden çekilip eşleşmediği için gösterilmeyen bulgular">
-              Kanıtı doğrulanamadığı için elenen <strong>{elenen}</strong>
-            </span>
-          </p>
-        )}
-        {turSiniri && yazilacak > 0 && (
-          <Uyari>
-            Kontrol turu sınırına ulaşıldı ({g.kontrol_turu_ust_sinir}). Kalan düzeltmeler otomatik yazılmaz; insan kararı gerekiyor.
-          </Uyari>
-        )}
-        {acikEngelleyici > 0 && (
-          <Uyari>
-            {acikEngelleyici} engelleyici bulgu karar bekliyor. Engelleyici bulgu kalmadan doküman "son hâl" olmaz ve PO teyidine geçilmez.
-          </Uyari>
-        )}
-        {bulgular.yukleniyor && !bulgular.veri ? (
-          <Yukleniyor />
-        ) : bulgular.hata && !bulgular.veri ? (
-          <HataKutusu hata={bulgular.hata} yenile={() => void bulgular.yenile()} />
-        ) : turdakiBulgular.length === 0 ? (
-          <div data-testid="bulgu-bos">
-            {g.durum === "in_review" ? <Yukleniyor metin={bosBulgu} /> : <BosDurum baslik={bosBulgu} />}
-          </div>
-        ) : (
-          <div className="bulgu-liste">
-            {turdakiBulgular.map((b) => (
-              <BulguKarti
-                key={`${b.id}-${b.durum}`}
-                bulgu={b}
-                gereksinimDurumu={g.durum}
-                kaynak={g.kaynak}
-                guncellendi={bulguGuncelle}
-                yenile={tumunuYenile}
-              />
-            ))}
-          </div>
-        )}
-      </Kart>
-      </div>
+            {acikEngelleyici > 0 && (
+              <Uyari>
+                {acikEngelleyici} engelleyici bulgu karar bekliyor. Engelleyici bulgu kalmadan doküman "son hâl" olmaz ve PO teyidine geçilmez.
+              </Uyari>
+            )}
+            {bulgular.yukleniyor && !bulgular.veri ? (
+              <Yukleniyor />
+            ) : bulgular.hata && !bulgular.veri ? (
+              <HataKutusu hata={bulgular.hata} yenile={() => void bulgular.yenile()} />
+            ) : turdakiBulgular.length === 0 ? (
+              <div data-testid="bulgu-bos">
+                {g.durum === "in_review" ? <Yukleniyor metin={bosBulgu} /> : <BosDurum baslik={bosBulgu} />}
+              </div>
+            ) : (
+              <div className="bulgu-liste">
+                {turdakiBulgular.map((b) => (
+                  <BulguKarti
+                    key={`${b.id}-${b.durum}`}
+                    bulgu={b}
+                    gereksinimDurumu={g.durum}
+                    kaynak={g.kaynak}
+                    guncellendi={bulguGuncelle}
+                    yenile={tumunuYenile}
+                  />
+                ))}
+              </div>
+            )}
+          </Kart>
+        </div>
       </div>
     </>
   );
