@@ -3909,6 +3909,86 @@ html:has(.sekmeler) {
    (paralel şerit birleştirmesi için çapa — silinmez)
    ================================================================== */
 
+/* Ortam ışıması içerik alanında görünür (§4.1): indigo merkezi içerik alanının sol üstünde (yan menü
+   240 px, üst çubuk 56 px; eski "0 0" merkezi opak menünün altında kalıyordu), yoğunluk dashboard
+   login.html düzeyinde (indigo .14, mor .10). En kötü üst üste binmede bile --muted 5,05, --text-2 6,32,
+   --accent 5,43, --err 5,8. Açık tema --ortam:none kalır: açık tema blokları (:root[data-theme], :root:not(...))
+   bu :root tanımından özgüldür. */
+:root {
+  --ortam: radial-gradient(1400px 1000px at 240px 56px, rgb(99 102 241 / 0.14), transparent 80%),
+    radial-gradient(1100px 800px at 100% 100%, rgb(168 85 247 / 0.1), transparent 80%);
+}
+
+/* Mobil yan menü (≤860 px) kapalıyken: gölge yok (sol kenarda gri şerit bırakıyordu) ve içerik
+   visibility:hidden — ekran dışındaki bağlantılar Tab sırasından ve erişilebilirlik ağacından çıkar
+   (WCAG 2.4.7). Gizleme kapanış kayması (.18 s) bitince uygulanır; açılışta anında görünür. Hareket
+   azaltmada genel "transition: none" gecikmeyi de kaldırır. Gizleme nav'ın çocuklarında: "Ana menü"
+   işareti (landmark) yerinde kalır. */
+@media (max-width: 860px) {
+  .yan-menu:not(.acik) {
+    box-shadow: none;
+  }
+  .yan-menu:not(.acik) > * {
+    visibility: hidden;
+    transition: visibility 0s linear 0.18s;
+  }
+}
+
+/* Dar üst çubukta marka: "AI Testing" görsel olarak gizlenir (erişilebilir ad tam kalır), "Probe" vurgusu
+   kesilmeden görünür; ellipsis'e bırakılmaz. 360 px altında üst çubuk aralıkları ve ÖRNEK VERİ rozeti
+   sıkılaşır. */
+@media (max-width: 440px) {
+  .marka-on {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
+@media (max-width: 360px) {
+  .ust-cubuk {
+    gap: 6px;
+    padding: 0 8px;
+  }
+  .ust-cubuk .marka {
+    gap: 6px;
+  }
+  .ust-sag > .rozet-mock {
+    padding: 3px 6px;
+    letter-spacing: 0.04em;
+  }
+}
+
+/* Giriş kartı: "İnceleme portalı" kendi satırında (tek satırda kartın iç dolgusuna ~7 px taşıyordu). */
+.giris-kart .marka-alt {
+  display: block;
+  margin-left: 0;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+/* Zorunlu renk kipi: seçili segment/sekme (aria-pressed, .aktif) ve aktif menü öğesi yalnız zemin ve
+   gölgeyle ayrışıyordu; ikisi de silinir. Seçili olan Highlight zemine, aktif menü öğesi Highlight
+   çerçeveye geçer. */
+@media (forced-colors: active) {
+  .sekme.aktif,
+  .sekme[aria-pressed="true"],
+  .dugme[aria-pressed="true"],
+  .ajan-adim[aria-pressed="true"] {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+    border-color: Highlight;
+  }
+  .menu-oge.aktif {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}
+
 
 
 
