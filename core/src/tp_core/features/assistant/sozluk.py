@@ -84,6 +84,11 @@ def _asistan_dizini(rules_dir: Path | None) -> Path:
     return find_rules_dir(rules_dir) / "assistant"
 
 
+def rota_varliklari(rules_dir: Path | None = None) -> dict[str, str | None]:
+    """`rotalar.json` kalıbı → ekrandaki `:id`'nin varlık türü (None: varlıksız ekran)."""
+    return _rota_varliklari(str(_asistan_dizini(rules_dir) / ROTA_DOSYASI))
+
+
 def kayitlar(rules_dir: Path | None = None) -> tuple[SozlukKaydi, ...]:
     return _yukle(str(_asistan_dizini(rules_dir) / SOZLUK_DOSYASI))
 

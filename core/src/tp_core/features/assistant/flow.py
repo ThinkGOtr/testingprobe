@@ -855,6 +855,7 @@ def cevapla(
                 or varsayilan_dogrulayici
                 or sonislem.VarsayilanDogrulayici(),
                 bilinen_anahtar=_bilinen_anahtar(ab),
+                gereksinim_kimligi=_gereksinim_kimligi(ab),
                 kayit_adresi=jira.kayit,
                 yeni_kayit_adresi=jira.yeni_kayit,
                 proje=jira.proje,
@@ -866,6 +867,8 @@ def cevapla(
                 rota_kalibi=_baglam_metni(m.baglam, "rota_kalibi"),
                 varlik_turu=_baglam_metni((m.baglam or {}).get("varlik"), "tur"),
                 rol=m.rol,
+                soru=m.icerik,
+                baglam=m.baglam if isinstance(m.baglam, Mapping) else None,
             )
             cevap = sonislem.isle(sonuc.output, sb)
         finally:
@@ -915,6 +918,15 @@ def varsayilan_araclar(ab: Any) -> tuple[Any, sonislem.VarsayilanDogrulayici]:
     urun = UrunBilgisi()
     kod = _tek_sefer(kod_araclari)
     return arac_seti(ab, urun=urun, kod=kod), sonislem.VarsayilanDogrulayici(urun=urun, kod=kod)
+
+
+def _gereksinim_kimligi(ab: Any) -> Callable[[str], str | None]:
+    def kimlik(anahtar: str) -> str | None:
+        from tp_core.features.assistant.tools.jira import gereksinim_kimligi
+
+        return gereksinim_kimligi(ab, anahtar)
+
+    return kimlik
 
 
 def _bilinen_anahtar(ab: Any) -> Callable[[str], bool]:

@@ -4,10 +4,15 @@ Model çıktısı (`assistant.schema.json`) saklanmadan ve gösterilmeden önce 
 adım modele sorulmaz:
 
 - **Metin**: bloklardaki Markdown görsel/bağlantı kalıpları (`![..](..)`, `[..](..)`) metnine,
-  çıplak URL'ler ve `javascript:`/`data:` kalıpları "[bağlantı kaldırıldı]"na çevrilir; toplam 6000
+  çıplak URL'ler ve `javascript:`/`data:` kalıpları "[bağlantı kaldırıldı]"na çevrilir, kod bloğu
+  dışındaki `@ad` bahisleri `ad` olur; toplam 6000
   karakterde kırpılır. Portal blokları düz metin çizer (HTML yok).
 - **Linkler**: yalnız `rotalar.json` kalıbına uyan iç rota (`yonlendirmeler`) ve Testing Probe'da
   kaydı olan Jira anahtarı (`jira_anahtarlari`; bağlantıyı sunucu kurar). Başka dış link yok.
+  Eylem reddinde model geçerli yönlendirme vermediyse ekran bağlantısı
+  `rules/assistant/eylem-rotalari.yaml`'dan seçilir (`eylem_rotasi`; aynı doğrulama ve rol süzgeci).
+- **"Emin değilim"** (§7.1): rozet "Emin değil" ya da model `dusuk` iken görünen metinde ifade
+  yoksa not olarak eklenir (eylem reddi hariç).
 - **Kaynak doğrulama**: `urun_kodu`/`dokuman` (MANIFEST'te dosya, satır aralıkta, alıntı satırda),
   `uygulama_kodu` (aynı sha'da forge), `uygulama_verisi` (havuzdaki SQL yeniden çalıştırılır, en
   çok 5, `bitis` içinde; özet `digest_matches_any`), `probe_verisi`/`jira`/`ci_log` (`kN` türü
@@ -74,6 +79,12 @@ ALINTI_EN_AZ: Final = 8  # requirements/verifier.MIN_SNIPPET ile aynı
 BAGLANTI_KALDIRILDI: Final = "[bağlantı kaldırıldı]"
 NOT_URUN_KAYNAGI_YOK: Final = "Ürün kaynağıyla doğrulanmadı; genel bilgiye dayanıyor."
 NOT_TOPARLAMA: Final = "Cevap süre/bağlam sınırında eldeki bilgiyle toparlandı."
+# §7.1 "bilmiyorsan 'emin değilim' + nereye bakılacağı": model düşük güvenle ya da kaynaksız cevap
+# verip ifadeyi yazmadıysa son işlem ekler (görünen metin, rozetle tutarlı).
+NOT_EMIN_DEGILIM: Final = (
+    "Emin değilim: bu cevap kaynakla doğrulanamadı; bağlantı verilen ekrandan ya da ilgili rolden "
+    "teyit edin."
+)
 
 KAYNAK_TURLERI: Final = frozenset(
     {
@@ -192,6 +203,11 @@ def taslak_metni(metin: Any) -> str:
     return re.sub(r"[ \t]{2,}", " ", metin).strip()
 
 
+def _bahissiz(metin: str, tur: str) -> str:
+    """Cevapta `@ad` bahsi `ad` olur (yankılanan mention kimseyi anmaz); kod bloğu hariç."""
+    return metin if tur == "kod" else _MENTION.sub(lambda m: m.group(0)[1:], metin)
+
+
 def kirp(metin: str, ust: int) -> str:
     metin = metin.strip()
     return metin if len(metin) <= ust else metin[: ust - 1].rstrip() + "…"
@@ -208,7 +224,7 @@ def _bloklar(ham: Any) -> list[dict[str, Any]]:
         if kalan <= 0 or not isinstance(b, Mapping):
             break
         tur = b.get("tur") if b.get("tur") in BLOK_TURLERI else "paragraf"
-        metin = duz_metin(b.get("metin"))
+        metin = _bahissiz(duz_metin(b.get("metin")), tur)
         if len(metin) > kalan:
             metin = metin[: max(kalan - 1, 0)] + "…"
         kalan -= len(metin)
@@ -217,7 +233,7 @@ def _bloklar(ham: Any) -> list[dict[str, Any]]:
             for m in b.get("maddeler") or []:
                 if kalan <= 0:
                     break
-                madde = duz_metin(m)
+                madde = _bahissiz(duz_metin(m), tur)
                 if len(madde) > kalan:
                     madde = madde[: max(kalan - 1, 0)] + "…"
                 kalan -= len(madde)
@@ -342,6 +358,7 @@ class SonIslemBaglami:
     - `urune_ozgu`: §5.4 kararı (model araç çağrıları dahil, işleyici hesaplar).
     - `toparlama`: ajan toparlama nudge'ından sonra bitti.
     - `bilinen_anahtar`: Jira anahtarı Testing Probe'da kayıtlı mı.
+    - `gereksinim_kimligi`: Jira anahtarındaki gereksinimin kimliği (eylem reddi ekranı için).
     - `kayit_adresi` / `yeni_kayit_adresi` / `proje`: "Jira'yı aç" bağlantıları (yalnız sunucu).
     - `kural_basliklari`: öneri kipinde gösterilen kural önerilerinin başlıkları (mükerrer atma).
     - `bitis`, `saat`: veri sorgusu yeniden çalıştırmanın süre sınırı (`time.monotonic` ekseni).
@@ -349,6 +366,8 @@ class SonIslemBaglami:
       `jira_taslak`/`jira_yorum` önerisi `bilgi`ye düşer (§17.2).
     - `rol`: soranın rolü; `rotalar.json`'da bu rolün açamadığı ekrana `rota` eylemi `bilgi`ye
       düşer (None → rol süzgeci yok).
+    - `soru`, `baglam`: soru metni ve doğrulanmış ekran bağlamı; eylem reddinde model geçerli
+      yönlendirme vermediyse ekran bağlantısı bunlardan seçilir (`eylem_rotasi`).
     """
 
     havuz: KanitHavuzu | None = None
@@ -358,6 +377,7 @@ class SonIslemBaglami:
     kip: str = "soru"
     dogrulayici: Dogrulayici | None = None
     bilinen_anahtar: Callable[[str], bool] = _bilinmiyor
+    gereksinim_kimligi: Callable[[str], str | None] | None = None
     kayit_adresi: Callable[[str], str | None] | None = None
     yeni_kayit_adresi: str | None = None
     proje: str | None = None
@@ -371,6 +391,8 @@ class SonIslemBaglami:
     varlik_turu: str | None = None
     rol: str | None = None
     rota_rolleri: Callable[[Any], frozenset[str] | None] = _rota_rolleri
+    soru: str | None = None
+    baglam: Mapping[str, Any] | None = None
     _anahtar_onbellek: dict[str, bool] = field(default_factory=dict, repr=False)
 
     def anahtar_bilinir(self, anahtar: Any) -> bool:
@@ -685,6 +707,44 @@ def _yonlendirmeler(ham: Any, b: SonIslemBaglami) -> list[dict[str, str]]:
     return out
 
 
+def _eylem_yonlendirmesi(b: SonIslemBaglami) -> list[dict[str, str]]:
+    """Eylem reddinde ekran bağlantısı (S7: "ret + onay ekranı linki"): model geçerli yönlendirme
+    vermediyse `rules/assistant/eylem-rotalari.yaml` kuralıyla; aynı doğrulama ve rol süzgeci."""
+    from tp_core.features.assistant import eylem_rotasi
+    from tp_core.features.assistant.schemas import rota_indirge
+
+    try:
+        rota = eylem_rotasi.ekran_rotasi(
+            b.soru, b.baglam, b.havuz or (), gereksinim_kimligi=b.gereksinim_kimligi
+        )
+    except Exception as exc:  # kural dosyası okunamazsa cevap düşmez, bağlantı eklenmez
+        log.warning("eylem ekranı seçilemedi (%s)", type(exc).__name__)
+        return []
+    if not rota:
+        return []
+    eslesme = rota_indirge(rota)
+    etiket = (eslesme[1] if eslesme else None) or "Ekrana git"
+    return _yonlendirmeler([{"etiket": etiket, "rota": rota}], b)
+
+
+def _eylem_ekrani(model: list[dict[str, str]], b: SonIslemBaglami) -> list[dict[str, str]]:
+    """Eylem reddinin ekranı: model yönlendirme vermediyse kuralın ekranı; modelinki kuralın kayıt
+    ekranının yalnız listesiyse (ör. `/gereksinimler` ↔ `/gereksinimler/<id>`) kayıt ekranı onun
+    yerine geçer. Diğer durumlarda modelin geçerli yönlendirmeleri aynen kalır."""
+    if model and not any("/" not in y["rota"].strip("/") for y in model):
+        return model
+    kural = _eylem_yonlendirmesi(b)
+    if not model:
+        return kural
+    if not kural:
+        return model
+    hedef = kural[0]["rota"]
+    if not any(hedef.startswith(y["rota"].rstrip("/") + "/") for y in model):
+        return model
+    kalan = [y for y in model if not hedef.startswith(y["rota"].rstrip("/") + "/")]
+    return (kural + kalan)[:YONLENDIRME_AZAMI]
+
+
 def _jira(ham: Any, b: SonIslemBaglami) -> tuple[list[str], list[dict[str, str]]]:
     anahtarlar: list[str] = []
     for a in ham if isinstance(ham, list) else []:
@@ -828,6 +888,23 @@ def guven_gosterimi(
 # ------------------------------------------------------------------ giriş noktası
 
 
+def emin_degilim_gerekir(cevap: Mapping[str, Any]) -> bool:
+    """§7.1: doğrulanamayan cevapta "emin değilim" ifadesi görünmeli.
+
+    Rozet "Emin değil" ya da model `guven=dusuk` iken görünen metinde ifade yoksa True. Eylem
+    reddinde eklenmez (ret ve ekran bağlantısı yeterli; belirsizlik eylemle ilgili değil)."""
+    if cevap.get("eylem_reddi"):
+        return False
+    if cevap.get("guven_gosterimi") != EMIN_DEGIL and cevap.get("guven") != "dusuk":
+        return False
+    parcalar: list[str] = []
+    for blok in cevap.get("cevap_bloklari") or []:
+        parcalar.append(str(blok.get("metin") or ""))
+        parcalar += [str(m) for m in blok.get("maddeler") or []]
+    parcalar += [str(n) for n in cevap.get("notlar") or []]
+    return "emin değil" not in normalize(" ".join(parcalar))
+
+
 def _sir_temizle_tum(deger: Any, sirlar: tuple[str, ...]) -> Any:
     if isinstance(deger, str):
         return sir_temizle(deger, sirlar)
@@ -849,6 +926,8 @@ def isle(cikti: Any, b: SonIslemBaglami) -> dict[str, Any]:
     out["yonlendirmeler"] = _yonlendirmeler(cikti.get("yonlendirmeler"), b)
     out["jira_anahtarlari"], out["jira_baglantilari"] = _jira(cikti.get("jira_anahtarlari"), b)
     out["eylem_reddi"] = cikti.get("eylem_reddi") is True
+    if out["eylem_reddi"] and b.kip == "soru":
+        out["yonlendirmeler"] = _eylem_ekrani(out["yonlendirmeler"], b)
     out["oneriler"] = _oneriler(cikti.get("oneriler"), b)
     out["urune_ozgu"] = bool(b.urune_ozgu)
     out["toparlama"] = bool(b.toparlama)
@@ -863,6 +942,8 @@ def isle(cikti: Any, b: SonIslemBaglami) -> dict[str, Any]:
         out["notlar"].append(NOT_URUN_KAYNAGI_YOK)
     if b.toparlama:
         out["notlar"].append(NOT_TOPARLAMA)
+    if emin_degilim_gerekir(out):
+        out["notlar"].append(NOT_EMIN_DEGILIM)
     out = _sir_temizle_tum(out, b.sir_degerleri)
     if b.musteri_verisi and b.oturum is not None:
         out, _ = b.oturum.mask(out)

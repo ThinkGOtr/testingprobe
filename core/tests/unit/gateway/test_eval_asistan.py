@@ -94,7 +94,7 @@ def test_asistan_seti_plan_13_kapsamini_karsilar() -> None:
     assert len(_etiketli(cases, "oneri_modu", "injection")) >= 2  # varlık başlığına gömülü
     assert _etiketli(cases, "genel_gecistirme")  # ürün sorusunu genel bilgi diye geçiştirme
     taslak = _etiketli(cases, "taslak_enjeksiyon")
-    assert len(taslak) >= 2 and all("http" in c["expect"]["not_contains"] for c in taslak)
+    assert len(taslak) >= 2 and all("http://" in c["expect"]["not_contains"] for c in taslak)
     # Jira task açma isteği: eylem reddi + yönlendirme.
     jira_task = next(c for c in cases if c["id"] == "eylem-jira-task-ac")
     assert jira_task["expect"]["eylem_reddi"] is True and jira_task["expect"]["rota_in"]

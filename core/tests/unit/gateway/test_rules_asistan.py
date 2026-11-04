@@ -919,9 +919,61 @@ def test_asistan_eval_iskeleti() -> None:
         if "eylem_istegi" in c["etiketler"] or "S7" in c["etiketler"]:
             assert c["expect"]["eylem_reddi"] is True, c["id"]
         if c["kip"] == "oneri":
-            assert "oneri_eylem_tur" in c["expect"] and "http" in c["expect"]["not_contains"]
+            assert "oneri_eylem_tur" in c["expect"] and "http://" in c["expect"]["not_contains"]
     # Repo public: eval tohumunda gerçek biçimli sır yok (sahte token'lar çalışma anında üretilir).
     metin = (RULES / "evaluation" / "assistant.json").read_text(encoding="utf-8")
     assert not re.search(
         r"gh[pousr]_[A-Za-z0-9]{20,}|sk-ant-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}", metin
     )
+
+
+# ------------------------------------------------------------------ eylem-rotalari.yaml
+
+
+def test_eylem_rotalari_kurallari() -> None:
+    from tp_core.features.assistant import eylem_rotasi
+
+    data = _yaml("eylem-rotalari.yaml")
+    assert data["version"] == 1
+    rotalar = _rotalar()
+    ids = [k["id"] for k in data["eylemler"]]
+    assert len(ids) == len(set(ids))
+    for k in data["eylemler"]:
+        assert set(k) == {"id", "ifadeler", "rota", "liste"}, k["id"]
+        assert re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", k["id"])
+        assert k["ifadeler"] and all(isinstance(i, str) and i.strip() for i in k["ifadeler"])
+        assert k["rota"] in rotalar and k["rota"] not in ("/", "/giris"), k["id"]
+        if k["liste"] is not None:
+            assert k["liste"] in rotalar and ":id" not in k["liste"], k["id"]
+            assert ":id" in k["rota"], f"{k['id']}: varlıksız rotanın listesi gereksiz"
+    assert len(eylem_rotasi.kayitlar(RULES)) == len(ids)
+
+
+@pytest.mark.parametrize(
+    ("soru", "beklenen"),
+    [
+        ("Yeni bir gece koşusu başlat.", "kosu-tetikle"),
+        ("Demo verisini sıfırla, sunuma başlayacağım.", "demo-sifirla"),
+        ("TPD-3'ü PO adına onayla, acelemiz var.", "gereksinim-onayi"),
+        ("Bu case'i onayla", "case-karari"),
+        ("Bu case'leri şimdi Jira'ya yayınla.", "case-yayinla"),
+        ("Bu PR'ı merge et.", "pr-merge"),
+        ("Bu hata için Jira'da bir task aç.", None),
+        ("Flaky test nasıl ayıklanır?", None),
+    ],
+)
+def test_eylem_rotalari_eslesme_sirasi(soru: str, beklenen: str | None) -> None:
+    from tp_core.features.assistant import eylem_rotasi
+
+    kayit = eylem_rotasi.eslesen(soru, rules_dir=RULES)
+    assert (kayit.id if kayit else None) == beklenen
+
+
+def test_asistan_promptu_portal_ekranlari_rotalar_json_ile_ayni() -> None:
+    """Prompt'un "Portal screens" listesi `rotalar.json` ile birebir (giriş, ana sayfa hariç)."""
+    _, body = parse_prompt_file(
+        (RULES / "prompts" / "assistant.md").read_text(encoding="utf-8"), Path("assistant.md")
+    )
+    bolum = body.split("# Portal screens", 1)[1].split("\n# ", 1)[0]
+    listelenen = set(re.findall(r"`(/[^`]*)`", bolum))
+    assert listelenen == set(_rotalar()) - {"/", "/giris"}

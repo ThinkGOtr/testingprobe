@@ -1,0 +1,71 @@
+# Eylem reddinde ekran bağlantısı (AI-ASISTAN-PLANI §2 S7, §7.1, §7.3; constitution XI — modelsiz).
+#
+# Asistan eylem yapmaz: kullanıcı bir eylem istediğinde (`eylem_reddi=true`) cevap, eylemin
+# yapıldığı ekrana bir bağlantı taşır. Model geçerli bir `yonlendirmeler` vermediyse (ör. ürün
+# bilgi paketi yokken rota uydurmaktan kaçındıysa ya da `rotalar.json` dışı bir rota yazdıysa) son
+# işlem bu dosyadan deterministik bir ekran bağlantısı ekler; model geçerli bir yönlendirme verdiyse
+# bu dosyaya bakılmaz.
+#
+# Seçim sırası:
+#   1. `eylemler`: dosyadaki ilk eşleşen kayıt (özgül kayıtlar önce). Bir kaydın `ifadeler`'inden
+#      biri eşleşirse kayıt seçilir; ifade boşlukla ayrılmış kök listesidir ve köklerin hepsi soruda
+#      bir kelime başında geçmelidir (sıra serbest; "koşu başlat" → "Yeni bir gece koşusu başlat").
+#      Soru ve kökler Türkçe küçük harfe çevrilir (I→ı, İ→i), boşluklar teke indirilir.
+#      `rota`'daki `:id` şu sırayla doldurulur: (a) ekran bağlamındaki varlık (ekranın türündeyse),
+#      (b) bu mesajın araç sonuçlarındaki tek kayıt rotası (`probe_get` `ekran_rotasi`; soruda Jira
+#      anahtarı varsa o anahtarın satırı), (c) olmazsa `liste` (ekranın liste rotası; null → bağlantı
+#      yok).
+#   2. Eşleşme yoksa: kullanıcının bulunduğu ekran (bağlamdaki `rota_kalibi`; `:id` bağlamdaki
+#      varlıkla).
+# Rolün açamadığı ekran (`rotalar.json` `roller`) bağlantı olmaz; `rota`/`liste` `rotalar.json`
+# kalıbı olmalıdır (kural testi).
+version: 1
+eylemler:
+  - id: case-yayinla
+    ifadeler: ["yayınla", "yayımla", "yayına al"]
+    rota: /gereksinimler/:id/yayin
+    liste: /gereksinimler
+  - id: case-karari
+    ifadeler: ["case onay", "case redd", "case karar"]
+    rota: /gereksinimler/:id/caseler
+    liste: /gereksinimler
+  - id: case-uret
+    ifadeler: ["case üret", "case oluştur"]
+    rota: /gereksinimler/:id
+    liste: /gereksinimler
+  - id: bulgu-karari
+    ifadeler: ["bulgu kapat", "bulgu karar", "bulgu kabul", "bulgu redd"]
+    rota: /gereksinimler/:id
+    liste: /gereksinimler
+  - id: gereksinim-onayi
+    ifadeler: ["onayla", "onay ver", "onaylat"]
+    rota: /gereksinimler/:id
+    liste: /gereksinimler
+  - id: pr-merge
+    ifadeler: ["merge", "birleştir"]
+    rota: /kod/:id
+    liste: /kod
+  - id: kirarak-dogrula
+    ifadeler: ["kırarak doğrula"]
+    rota: /kod/:id
+    liste: /kod
+  - id: kod-uret
+    ifadeler: ["script üret", "kod üret", "yeniden üret"]
+    rota: /kod
+    liste: null
+  - id: onarim
+    ifadeler: ["onarım başlat", "onarımı başlat", "onar"]
+    rota: /hatalar/:id
+    liste: null
+  - id: bug-taslagi-karari
+    ifadeler: ["bug taslağı", "bug taslak"]
+    rota: /bug-taslaklari/:id
+    liste: /bug-taslaklari
+  - id: kosu-tetikle
+    ifadeler: ["koşu başlat", "koşu tetikle", "koşu çalıştır", "koşuyu başlat", "testleri çalıştır"]
+    rota: /kosular
+    liste: null
+  - id: demo-sifirla
+    ifadeler: ["demo sıfırla", "demo hazırla"]
+    rota: /demo
+    liste: null

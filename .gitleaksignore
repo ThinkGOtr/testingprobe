@@ -1,3 +1,31 @@
 # gitleaks yanlış alarmları (parmak izi: commit:dosya:kural:satır). Gerçek sır buraya eklenmez.
 # jira_seed.py: Jira JQL sorgu metni generic-api-key sanıldı (sır değil).
 8a53787099461605735e70f84cb1020be02478b0:core/src/tp_core/integrations/jira_seed.py:generic-api-key:323
+# eval çağrı defteri (assistant-v1 2026-11-04): id_or_key alanı kayıt UUID'si / Jira anahtarı, sır değil.
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:1
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:14
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:25
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:32
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:46
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:48
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:57
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:59
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:61
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:7
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:72
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:81
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:85
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:88
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:91
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:93
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:1
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:21
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:47
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:50
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:53
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:6
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:62
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:72
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:77
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:81
+209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:84

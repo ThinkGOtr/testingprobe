@@ -150,6 +150,13 @@ def bilinen_anahtar_mi(baglam: AracBaglami, anahtar: str) -> bool:
         return bool(s.execute(sorgu).scalar())
 
 
+def gereksinim_kimligi(baglam: AracBaglami, anahtar: str) -> str | None:
+    """Jira anahtarındaki gereksinimin kimliği (Testing Probe'da yoksa None)."""
+    with baglam.db() as s:
+        kimlik = s.execute(select(Requirement.id).where(Requirement.jira_key == anahtar)).scalar()
+    return str(kimlik) if kimlik is not None else None
+
+
 def _jira_kovasi(baglam: AracBaglami) -> bool:
     sinir, pencere_s = VARSAYILAN_SINIRLAR[KOVA_JIRA_GLOBAL]
     with baglam.db() as s:
