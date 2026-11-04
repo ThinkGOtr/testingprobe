@@ -30,6 +30,9 @@ class ProviderRequest(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)  # models.yaml'daki amaç parametreleri
     # İstek başına istemci zaman aşımı (sn; models.yaml `timeout_s`). None: adaptör varsayılanı.
     timeout_s: float | None = None
+    # Sağlayıcı tarafı ret yedeği (models.yaml `fallbacks`). None: adaptör varsayılanı;
+    # "none": yedek istenmez (adaptör parametreyi göndermez).
+    fallbacks: str | None = None
 
 
 class Usage(BaseModel):

@@ -83,13 +83,18 @@ def login(body: LoginIn, request: Request, session: DbSession, codec: Codec) -> 
     # pencerede en çok MAX_DENEME kez doğrulanır.
     if not THROTTLE.try_acquire(anahtar):
         return JSONResponse(
-            {"detail": "Çok fazla hatalı deneme. Birkaç dakika sonra tekrar deneyin."},
+            {
+                "detail": "Çok fazla hatalı deneme. Birkaç dakika sonra tekrar deneyin.",
+                "kod": "hiz_siniri",
+            },
             status_code=429,
         )
     user = authenticate(session, body.kullanici_adi, body.parola, client_address(request))
     if user is None:
         # İstisna değil yanıt: başarısız deneme denetim kaydıyla birlikte commit edilir.
-        return JSONResponse({"detail": "Kullanıcı adı veya parola hatalı"}, status_code=401)
+        return JSONResponse(
+            {"detail": "Kullanıcı adı veya parola hatalı", "kod": "yetkisiz"}, status_code=401
+        )
     THROTTLE.success(anahtar)
     sid = open_session(session, user.id, codec.max_age_s)
     yanit = JSONResponse(

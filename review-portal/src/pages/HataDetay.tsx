@@ -315,7 +315,7 @@ function OnarimKarti({ o, hataId, yenile }: { o: LocatorOnarimi; hataId: string;
         </div>
       )}
       {o.durum === "merged" && <Uyari ton="basari">Onarım birleşti; main üzerindeki CI koşusu testin yeniden yeşile döndüğünü gösterir.</Uyari>}
-      {islem.hata && <HataKutusu hata={islem.hata} />}
+      {islem.hata && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
     </Kart>
   );
 }
@@ -585,7 +585,7 @@ export function HataDetay() {
   useOlay(sessiz, ["failure.classified", "failure.updated", "ci.status", "pr.opened", "pr.merged"], id);
 
   if (v.yukleniyor && !v.veri) return <Yukleniyor />;
-  if (v.hata && !v.veri) return <HataKutusu hata={v.hata} yenile={() => void v.yenile()} />;
+  if (v.hata && !v.veri) return <HataKutusu hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />;
   const h = v.veri;
   if (!h) return null;
   const s = HATA_SINIFI[h.sinif] ?? { etiket: h.sinif, ton: "notr" as const };
@@ -661,23 +661,26 @@ export function HataDetay() {
         </Kart>
       </div>
 
-      {!ortam && h.oneri?.tur === "locator_fix" && <OnarimKarti o={h.oneri} hataId={h.id} yenile={() => void v.yenile(true)} />}
-      {!ortam && h.oneri?.tur === "bug_draft" && (
-        <Kart baslik="Öneri">
-          <p>
-            Ürün hatası adayı: bug taslağı hazırlandı ve Jira'da mükerrer araması yapıldı. Kayıt yalnızca testçi onayıyla açılır.{" "}
-            <Link className="dugme dugme-birincil dugme-kucuk" to={`/bug-taslaklari/${encodeURIComponent(h.oneri.bug_draft_id)}`}>
-              Bug taslağına git
-            </Link>
-          </p>
-          <MukerrerSatiri id={h.oneri.bug_draft_id} />
-        </Kart>
-      )}
-      {!h.oneri && h.oneri_yok_nedeni && (
-        <Uyari ton="uyari" baslik="Öneri üretilmedi">
-          {h.oneri_yok_nedeni}
-        </Uyari>
-      )}
+      {/* Öneri kartındaki "Git" çapası (#onarim): onarım/öneri bölümü her durumda bu kapta. */}
+      <div id="onarim">
+        {!ortam && h.oneri?.tur === "locator_fix" && <OnarimKarti o={h.oneri} hataId={h.id} yenile={() => void v.yenile(true)} />}
+        {!ortam && h.oneri?.tur === "bug_draft" && (
+          <Kart baslik="Öneri">
+            <p>
+              Ürün hatası adayı: bug taslağı hazırlandı ve Jira'da mükerrer araması yapıldı. Kayıt yalnızca testçi onayıyla açılır.{" "}
+              <Link className="dugme dugme-birincil dugme-kucuk" to={`/bug-taslaklari/${encodeURIComponent(h.oneri.bug_draft_id)}`}>
+                Bug taslağına git
+              </Link>
+            </p>
+            <MukerrerSatiri id={h.oneri.bug_draft_id} />
+          </Kart>
+        )}
+        {!h.oneri && h.oneri_yok_nedeni && (
+          <Uyari ton="uyari" baslik="Öneri üretilmedi">
+            {h.oneri_yok_nedeni}
+          </Uyari>
+        )}
+      </div>
 
       <KanitKarti k={h.kanit} linkler={h.kanit_linkleri} />
     </>

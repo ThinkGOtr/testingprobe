@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "./client";
-import { ApiError, BU_FAZDA_YOK, buFazdaYok, canliDerleme, UC_YOK, cakismaMesaji, ICERIK_DEGISTI, kararCakismasi, istek, mockOturumuAyarla, mockUclari, ucuNormallestir, ucVar, yapilandir, yetenekleriAyristir, yetkisizOlunca } from "./http";
+import { ApiError, BU_FAZDA_YOK, buFazdaYok, canliDerleme, detayOku, UC_YOK, cakismaMesaji, ICERIK_DEGISTI, kararCakismasi, istek, mockOturumuAyarla, mockUclari, ucuNormallestir, ucVar, yapilandir, yetenekleriAyristir, yetkisizOlunca } from "./http";
 
 function yanit(status: number, govde: unknown, json = true): Response {
   return new Response(json ? JSON.stringify(govde) : String(govde), {
@@ -321,5 +321,24 @@ describe("core uç keşfi (openapi.json) — örnek veri uçlarına ağ isteği 
     expect(ucVar(y, "get", "/events")).toBe(true);
     expect(y.uclar.some((u) => u.method === "PARAMETERS")).toBe(false);
     expect(yetenekleriAyristir({ detail: "x" })).toBeNull();
+  });
+});
+
+// AI-ASISTAN-PLANI §13: asistanın "son hata" bağlamı için ApiError ek alanları ve yanıttaki kod.
+describe("ApiError ek alanları", () => {
+  it("eski iki argümanlı çağrı derlenir; kayitId her hatada üretilir ve tekildir", () => {
+    const a = new ApiError(409, "x");
+    const b = new ApiError(409, "x");
+    expect(a.kayitId).toMatch(/^h-/);
+    expect(a.kayitId).not.toBe(b.kayitId);
+    expect(a.kod).toBeUndefined();
+    const c = new ApiError(409, "y", { kod: "bekleyen_var", method: "POST", yol: "/x/:id", kayitId: "sabit" });
+    expect(c).toMatchObject({ kod: "bekleyen_var", method: "POST", yol: "/x/:id", kayitId: "sabit" });
+  });
+
+  it("detayOku yanıttaki kod'u okur (detail dizisi ve kodsuz gövde dahil)", async () => {
+    expect(await detayOku(yanit(409, { detail: "Bekleyen var", kod: "bekleyen_var" }))).toEqual({ detail: "Bekleyen var", json: true, kod: "bekleyen_var" });
+    expect(await detayOku(yanit(422, { detail: [{ msg: "çok uzun" }], kod: "gecersiz_istek" }))).toMatchObject({ detail: "çok uzun", kod: "gecersiz_istek" });
+    expect((await detayOku(yanit(400, { detail: "x" }))).kod).toBeUndefined();
   });
 });

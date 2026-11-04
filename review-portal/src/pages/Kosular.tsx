@@ -204,14 +204,14 @@ export function Kosular() {
           <strong>Deploy sonrası testleri koş:</strong> {DEPLOY_ACIKLAMASI}
         </li>
       </ul>
-      {geceIslem.hata && <HataKutusu hata={geceIslem.hata} />}
-      {deployIslem.hata && <HataKutusu hata={deployIslem.hata} />}
+      {geceIslem.hata && <HataKutusu hata={geceIslem.hata} kaynak={geceIslem.hataNesnesi} />}
+      {deployIslem.hata && <HataKutusu hata={deployIslem.hata} kaynak={deployIslem.hataNesnesi} />}
       {sonTetik && !geceIslem.hata && !deployIslem.hata && <Uyari ton="bilgi">{sonTetik}</Uyari>}
       <Kart>
         {v.yukleniyor && !v.veri ? (
           <Yukleniyor />
         ) : v.hata && !v.veri ? (
-          <HataKutusu hata={v.hata} yenile={() => void v.yenile()} />
+          <HataKutusu hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />
         ) : tum.length === 0 ? (
           <BosDurum baslik="Henüz koşu yok." />
         ) : (
@@ -355,7 +355,7 @@ export function KosuDetay() {
   useOlay(sessiz, ["ci.status", "failure.classified"], id);
 
   if (v.yukleniyor && !v.veri) return <Yukleniyor />;
-  if (v.hata && !v.veri) return <HataKutusu hata={v.hata} yenile={() => void v.yenile()} />;
+  if (v.hata && !v.veri) return <HataKutusu hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />;
   const k = v.veri;
   if (!k) return null;
   const ghYedek = githubYedekNotu(k);

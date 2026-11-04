@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { CORE_OLAYLARI, DINLENEN_OLAYLAR, olayEslesir, olayiAyristir, olayKonulari, OlayYolu, type OlayKaynagi } from "./events";
+import { BILINEN_OLAYLAR, CORE_OLAYLARI, DINLENEN_OLAYLAR, olayEslesir, olayiAyristir, olayKonulari, OlayYolu, type OlayKaynagi } from "./events";
 import { mockOlayYayinla } from "./mock/olaylar";
 import type { PortalOlayi } from "./types";
 
@@ -296,5 +296,22 @@ describe("Demo-B core olay adları (codegen + ci şeritleri)", () => {
     const ci = olayiAyristir("ci.status", JSON.stringify({ data: { id: "r-1", run_id: "r-1", script_id: "s-1", durum: "running" }, ts: "t" }));
     expect(olayEslesir(ci, new Set(["ci.status"]), "s-1")).toBe(true);
     expect(olayEslesir(ci, new Set(["ci.status"]), "r-1")).toBe(true);
+  });
+});
+
+describe("asistan olayları (AI-ASISTAN-PLANI §9)", () => {
+  it("assistant.step ve assistant.answered BILINEN_OLAYLAR'da; CORE_OLAYLARI değişmez", () => {
+    expect(BILINEN_OLAYLAR).toContain("assistant.step");
+    expect(BILINEN_OLAYLAR).toContain("assistant.answered");
+    expect(DINLENEN_OLAYLAR).toContain("assistant.answered");
+    expect(CORE_OLAYLARI as readonly string[]).not.toContain("assistant.step");
+  });
+
+  it("olayEslesir data.mesaj_id ile eşleşir (core zarfı, kimliksiz olay)", () => {
+    const o = olayiAyristir("assistant.answered", JSON.stringify({ data: { mesaj_id: "m-1", kullanici_id: "u-1", durum: "done" }, ts: "t" }));
+    expect(o.id).toBeUndefined();
+    expect(olayEslesir(o, new Set(["assistant.answered"]), "m-1")).toBe(true);
+    expect(olayEslesir(o, new Set(["assistant.answered"]), "m-2")).toBe(false);
+    expect(olayEslesir(o, new Set(["assistant.step"]), "m-1")).toBe(false);
   });
 });

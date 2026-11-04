@@ -32,7 +32,7 @@ export function Denetim() {
       {v.yukleniyor && !v.veri ? (
         <Yukleniyor />
       ) : v.hata && !v.veri ? (
-        <HataKutusu hata={v.hata} yenile={() => void v.yenile()} />
+        <HataKutusu hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />
       ) : (
         <>
           {dg ? (

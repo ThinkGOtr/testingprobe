@@ -1,7 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "./api/client";
 import { ApiError, mockOturumuAyarla, yetkisizOlunca } from "./api/http";
 import type { Kullanici, Rol } from "./api/types";
+import { oturumVerileriniTemizle } from "./lib/oturumTemizligi";
 
 interface OturumBaglami {
   kullanici: Kullanici | null;
@@ -15,8 +16,15 @@ const Baglam = createContext<OturumBaglami | null>(null);
 export function OturumProvider({ children }: { children: ReactNode }) {
   const [kullanici, setKullanici] = useState<Kullanici | null>(null);
   const [yukleniyor, setYukleniyor] = useState(true);
+  /** Son bilinen kullanıcı: çıkışta ya da başka kullanıcıya geçişte istemci depoları temizlenir. */
+  const oncekiId = useRef<string | null>(null);
 
   const ayarla = useCallback((k: Kullanici | null) => {
+    // Sayfa açılışındaki `me()` (null → kullanıcı) temizlemez: yenilemeden sonra bekleyen
+    // asistan mesajına yeniden bağlanılabilsin. Bilinen kullanıcı gidince ya da değişince temizler.
+    const yeniId = k?.id ?? null;
+    if (oncekiId.current !== null && oncekiId.current !== yeniId) oturumVerileriniTemizle();
+    oncekiId.current = yeniId;
     mockOturumuAyarla(k);
     setKullanici(k);
   }, []);
@@ -38,6 +46,9 @@ export function OturumProvider({ children }: { children: ReactNode }) {
   const girisYap = useCallback(
     async (kullaniciAdi: string, parola: string) => {
       const k = await api.login(kullaniciAdi, parola);
+      // Açık giriş yeni oturumdur: önceki kullanıcıdan (ör. süresi dolup yeniden yüklenen sekme)
+      // kalan sohbet/hata kayıtları taşınmaz.
+      oturumVerileriniTemizle();
       ayarla(k);
       return k;
     },

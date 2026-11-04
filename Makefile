@@ -10,7 +10,7 @@ export PLAYWRIGHT_VERSION := $(strip $(shell cat .playwright-version 2>/dev/null
 
 S ?=
 
-.PHONY: help env up status seed reset jira-seed forge-init break demo-break demo-reset demo-web-sync locator-break-verify demo-baseline export-audit security-check e2e-smoke demo-check demo-prova prova-temizle eval-live prune logs down
+.PHONY: help env up asistan-paket status seed reset jira-seed forge-init break demo-break demo-reset demo-web-sync locator-break-verify demo-baseline export-audit security-check e2e-smoke demo-check demo-prova prova-temizle eval-live asistan-perf prune logs down
 
 help: ## Hedefleri listeler
 	@echo "Kullanım: make <hedef>"
@@ -20,8 +20,13 @@ help: ## Hedefleri listeler
 env: ## .env'i üretir, boş F0 parolalarını rastgele doldurur (var olanlara dokunmaz)
 	@scripts/env.sh
 
-up: ## Önkoşul kontrolü + tüm servisleri sağlıklı başlatır (idempotent)
+up: ## Asistan bilgi paketi + önkoşul kontrolü + tüm servisleri sağlıklı başlatır (idempotent; paketi atla: TP_SKIP_ASISTAN_PAKET=1)
+	@mkdir -p var/tp-bilgi  # bağlama noktası yoksa docker root sahipli oluşturmasın
+	@if [ "$${TP_SKIP_ASISTAN_PAKET:-0}" != "1" ]; then scripts/asistan-bilgi-paketi.sh; fi
 	@scripts/up.sh
+
+asistan-paket: ## Asistanın ürün bilgi paketini üretir: var/tp-bilgi/ (core imajında; sır taraması bulgusunda ≠0)
+	@scripts/asistan-bilgi-paketi.sh
 
 status: ## Servis / durum / sağlık / yerel adres tablosu
 	@scripts/status.sh
@@ -75,8 +80,11 @@ demo-prova: ## Tam demo provası: make reset → 14 adım + locator kırma/onar�
 prova-temizle: ## Eski prova raporlarını temizle (N=10: son N koşu klasörü kalır)
 	@scripts/demo-prova.sh --temizle $(or $(N),10)
 
-eval-live: ## Prompt değerlendirme setini CANLI modelle koşturur, sert bütçe TP_EVAL_BUDGET_USD (5) (A='--ping' | '--dry-run' | '--bundle triage --update-status' | '--record')
+eval-live: ## Prompt değerlendirme setini CANLI modelle koşturur, sert bütçe TP_EVAL_BUDGET_USD (5; asistan seti ≥10) (A='--ping' | '--dry-run' | '--bundle triage --update-status' | '--record' | '--bundle assistant --via-flow')
 	@scripts/eval-live.sh $(A)
+
+asistan-perf: ## Asistan süre testleri (§16.12 öneri ucu p95 < 300 ms; T132): TP_TEST_PERF=1 pytest -m perf (geçici test postgres'i; toplu gönderim öncesi)
+	@cd core && TP_TEST_PERF=1 TP_TEST_REQUIRE_DB=1 uv run pytest tests/unit/features/assistant -m perf -q
 
 prune: ## Kullanılmayan (dangling) imajları ve build önbelleğini temizler; volume'lere dokunmaz
 	@echo "İmajlar:";        docker image prune -f | tail -n 1

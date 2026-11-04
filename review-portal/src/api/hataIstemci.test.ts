@@ -2,7 +2,7 @@
 // kaydını zaten katıyorsa (`oneri_durumu`) ayrı `GET /failures/{id}/fix` çağrılmaz (404 konsol hatası yok).
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, HATA_BULUNAMADI } from "./client";
-import { yapilandir } from "./http";
+import { ApiError, yapilandir } from "./http";
 
 function yanit(status: number, govde: unknown): Response {
   return new Response(JSON.stringify(govde), { status, headers: { "Content-Type": "application/json" } });
@@ -39,5 +39,29 @@ describe("api.hata", () => {
     await expect(api.hata("abc")).rejects.toMatchObject({ status: 404, detail: HATA_BULUNAMADI });
     vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(yanit(404, { detail: "Başarısızlık bulunamadı" }))));
     await expect(api.hata(TRIAGE.id)).rejects.toMatchObject({ status: 404, detail: HATA_BULUNAMADI });
+  });
+
+  it("dönüşen ve dönüşmeyen hata ApiError kod/method/yol/kayitId'yi korur (asistan son hata bağlamı)", async () => {
+    yapilandir({ mockZorunlu: false, mockOtomatik: false });
+    // 422 → 404 "bulunamadı": kod, uç ve son hata kaydı kimliği aynı kalır.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(() => Promise.resolve(yanit(422, { detail: [{ loc: ["path", "failure_id"], msg: "Input should be a valid UUID" }], kod: "gecersiz_istek" }))),
+    );
+    const e1 = await api.hata("abc").catch((e: unknown) => e);
+    expect(e1).toBeInstanceOf(ApiError);
+    const a1 = e1 as ApiError;
+    expect(a1).toMatchObject({ status: 404, detail: HATA_BULUNAMADI, kod: "gecersiz_istek", method: "GET" });
+    expect(a1.yol).toMatch(/^\/failures\//);
+    expect(a1.kayitId).toMatch(/\S/);
+    // Dönüşmeyen hata (409, kodlu gövde) olduğu gibi gelir.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(() => Promise.resolve(yanit(409, { detail: "Kayıt başka biri tarafından değişti", kod: "durum_cakismasi" }))),
+    );
+    const e2 = await api.hata(TRIAGE.id).catch((e: unknown) => e);
+    expect(e2).toBeInstanceOf(ApiError);
+    expect(e2).toMatchObject({ status: 409, kod: "durum_cakismasi", method: "GET", yol: "/failures/:id" });
+    expect((e2 as ApiError).kayitId).not.toBe(a1.kayitId);
   });
 });

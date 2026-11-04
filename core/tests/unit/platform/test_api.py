@@ -99,7 +99,7 @@ def test_hatali_giris_401_ve_denetlenir(
     ad = "olmayan_kullanici" if ad_degistir else u.kullanici_adi
     r = client.post("/auth/login", json={"kullanici_adi": ad, "parola": "yanlis"})
     assert r.status_code == 401
-    assert r.json() == {"detail": "Kullanıcı adı veya parola hatalı"}
+    assert r.json() == {"detail": "Kullanıcı adı veya parola hatalı", "kod": "yetkisiz"}
     assert "set-cookie" not in r.headers
     assert _eylemler(engine) == ["auth.login_failed"]  # yanıt 401 olsa da commit edildi
 
@@ -303,7 +303,10 @@ def test_basarisiz_giris_aktoru_cagirandan_gelmez(
 
 def test_oturumsuz_ve_bozuk_cerez(client: TestClient, make_user: MakeUser) -> None:
     assert client.get("/auth/me").status_code == 401
-    assert client.get("/auth/me").json() == {"detail": "Oturum açmanız gerekiyor"}
+    assert client.get("/auth/me").json() == {
+        "detail": "Oturum açmanız gerekiyor",
+        "kod": "yetkisiz",
+    }
     _giris(client, make_user("po"))
     gecerli = client.cookies[COOKIE_NAME]
     assert client.get("/auth/me").status_code == 200
@@ -495,7 +498,10 @@ def test_suresi_dolan_token_gecersiz(
 def test_token_yalnizca_analist(client: TestClient, make_user: MakeUser, rol: str) -> None:
     _giris(client, make_user(rol))
     r = client.post("/tokens", json={"kapsam": "submit"})
-    assert r.status_code == 403 and r.json() == {"detail": "Bu işlem için yetkiniz yok"}
+    assert r.status_code == 403 and r.json() == {
+        "detail": "Bu işlem için yetkiniz yok",
+        "kod": "yasak",
+    }
 
 
 def test_gecersiz_kapsam(client: TestClient, make_user: MakeUser) -> None:
@@ -600,7 +606,7 @@ def test_is_akisi_hatasi_409_detail(db: Db) -> None:
     app.include_router(r)
     with TestClient(app) as c:
         resp = c.get("/patlat")
-    assert resp.status_code == 409 and resp.json() == {"detail": "onay yok"}
+    assert resp.status_code == 409 and resp.json() == {"detail": "onay yok", "kod": "kapi_kapali"}
 
 
 def test_ozellik_router_kesfi_ve_cakisma(tmp_path: Path, db: Db) -> None:

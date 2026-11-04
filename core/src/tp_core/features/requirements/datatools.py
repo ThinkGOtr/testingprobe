@@ -26,6 +26,7 @@ import psycopg
 from tp_core.features.requirements.sqlguard import ALLOWED_COLUMNS, validate_select
 from tp_core.gateway import PiiMasker, digest_matches, result_digest, wrap_tool_result
 from tp_core.gateway.evidence import canonical_cell
+from tp_core.gateway.masking import MaskingSession
 
 MAX_ROWS = 100
 STATEMENT_TIMEOUT_MS = 5000
@@ -137,12 +138,24 @@ def _ilk_satir(exc: BaseException) -> str:
 class DataTools:
     """Ajana verilen `db_schema` / `db_query` uygulaması (maskeli, güvenilmeyen blokta)."""
 
-    def __init__(self, db: DemoDb, masker: PiiMasker | None = None) -> None:
+    def __init__(
+        self,
+        db: DemoDb,
+        masker: PiiMasker | None = None,
+        *,
+        session: MaskingSession | None = None,
+    ) -> None:
+        """`session` verilirse (asistan: mesaj başına tek oturum, geçitle paylaşılır) sorgu
+        başına yeni oturum açılmaz; yer tutucular soru, araç sonuçları ve cevap boyunca tekildir.
+        Maskelemenin açık olup olmadığı da o oturumdan okunur."""
         self.db = db
         self.masker = masker or PiiMasker(enabled=False)
+        self.session = session
 
     @property
     def masking(self) -> bool:
+        if self.session is not None:
+            return bool(self.session.enabled)
         return bool(getattr(self.masker, "enabled", False))
 
     def db_schema(self, _args: dict[str, Any]) -> str:
@@ -165,7 +178,8 @@ class DataTools:
         )
         metin = "\n".join(govde)
         if self.masking:
-            maskeli, _ = self.masker.new_session().mask(metin)
+            oturum = self.session if self.session is not None else self.masker.new_session()
+            maskeli, _ = oturum.mask(metin)
             metin = str(maskeli)
         # Sorgu ve özet veri bloğunun dışında: model kanıta bunları birebir kopyalar.
         return f"query: {res.sql}\nresult_digest: {ozet}\n" + wrap_tool_result("db_query", metin)

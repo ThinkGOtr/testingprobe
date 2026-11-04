@@ -580,7 +580,7 @@ export function ScriptDetay() {
   );
 
   if (v.yukleniyor && !v.veri) return <Yukleniyor />;
-  if (v.hata && !v.veri) return <HataKutusu hata={v.hata} yenile={() => void v.yenile()} />;
+  if (v.hata && !v.veri) return <HataKutusu hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />;
   const s: Detay | undefined = v.veri;
   if (!s) return null;
   const d = SCRIPT_DURUMU[s.durum] ?? { etiket: s.durum, ton: "notr" as const };
@@ -639,7 +639,8 @@ export function ScriptDetay() {
           )}
         </Uyari>
       ) : (
-        s.hata && <HataKutusu hata={s.hata} />
+        // Script kaydının saklı hatası API hatası değildir: asistanın "son hata" bağlamına gitmez (§5.5).
+        s.hata && <HataKutusu hata={s.hata} kayitDisi />
       )}
       {s.uyarilar.length > 0 && (
         <Uyari ton="bilgi">
@@ -650,7 +651,7 @@ export function ScriptDetay() {
           </ul>
         </Uyari>
       )}
-      {islem.hata && hataYeri === "genel" && <HataKutusu hata={islem.hata} />}
+      {islem.hata && hataYeri === "genel" && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
 
       <Kart baslik="Ajan adımları (Playwright MCP)" eylemler={uretiliyor && <Cip ton="bilgi">Adımlar geliyor</Cip>}>
         {s.mode === "replay" && (
@@ -678,7 +679,7 @@ export function ScriptDetay() {
       </Kart>
 
       <div className="iki-sutun">
-        <Kart baslik="Pull request">
+        <Kart baslik="Pull request" id="pr">
           {s.pr ? (
             <>
               <p>
@@ -810,7 +811,7 @@ export function ScriptDetay() {
               </IslemDugmesi>
             </div>
           )}
-          {islem.hata && hataYeri === "pr" && <HataKutusu hata={islem.hata} />}
+          {islem.hata && hataYeri === "pr" && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
           {s.pr && prAcik && (
             <details className="pr-ret" data-testid="pr-ret">
               <summary>Değişiklik iste / reddet</summary>
@@ -867,6 +868,7 @@ export function ScriptDetay() {
         </Kart>
 
         <Kart
+          id="kirarak-dogrula"
           baslik="Kırarak doğrula"
           eylemler={
             !prBirlesti && (

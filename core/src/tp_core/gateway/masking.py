@@ -240,3 +240,352 @@ def scrub_secrets_in(value: Any, secrets: Iterable[str]) -> Any:
     if isinstance(value, list):
         return [scrub_secrets_in(v, known) for v in value]
     return value
+
+
+# ------------------------------------------------------------------ biçimden sır temizliği
+#
+# Asistan araç çıktıları (ürün bilgisi, CI logu, Jira, probe verisi) ve bilgi paketi üretim
+# taraması için (AI-ASISTAN-PLANI §5.1, §10.3 Şerit C1). PII maskelemesinden AYRI ve her zaman
+# açık; geri açılmaz. Değeri bilinmeyen ama biçimi tanınan sırlar (token önekleri, JWT, özel
+# anahtar, URL içi kimlik, Authorization başlığı, `AD=değer` ataması) ile çalışma anı sır
+# değerleri (`gateway.factory.known_secret_values`) temizlenir.
+#
+# Kesme sınırı: araç çıktıları kırpılır (ör. log kuyruğu, 400 satır), bu yüzden metnin SONUNDA
+# kalan yarım token (öneki tanınan, gövdesi kısa) ve bilinen sır değerinin metnin başında/sonunda
+# kalan ≥ 8 karakterlik parçası da temizlenir.
+
+SECRET_VALUE_MIN_LEN = 8  # çalışma anı sır değerleri: daha kısası rastgele eşleşir
+
+
+def _onekli(onek: str, govde: str, en_az: int) -> str:
+    """Önekli token: tam gövde ya da metin sonunda (kesme) kısa gövde."""
+    return rf"{onek}(?:{govde}{{{en_az},}}|{govde}+\Z)"
+
+
+# `generic_assignment` anahtar adları (büyük/küçük harf duyarsız) ve değer karakterleri.
+_SIR_ANAHTARI = (
+    r"(?:password|passwd|secret[_-]?key|secret|client[_-]?secret|token|access[_-]?token"
+    r"|auth[_-]?token|refresh[_-]?token|api[_-]?key|access[_-]?key|private[_-]?key)"
+)
+_SIR_KARAKTERI = r"A-Za-z0-9_\-+/=.~@#%^&!"
+# Rastgele görünümlü değer: ≥ 8 karakter, harf VE rakam (kaynak koddaki `token`, `None`, `str`
+# gibi adlar ve düz kelimeler eşleşmez).
+_RASTGELE_DEGER = (
+    rf"(?=[{_SIR_KARAKTERI}]*\d)(?=[{_SIR_KARAKTERI}]*[A-Za-z])"
+    rf"[{_SIR_KARAKTERI}]{{{SECRET_VALUE_MIN_LEN},}}"
+)
+# URL sorgu / çerez değeri: `_RASTGELE_DEGER` kuralı, ama `&`, `#`, `;` ayıraç sayılır (yüzde
+# kodlu `%3D` dahil).
+_URL_KARAKTERI = r"A-Za-z0-9_\-+/=.~%"
+_URL_DEGERI = (
+    rf"(?=[{_URL_KARAKTERI}]*\d)(?=[{_URL_KARAKTERI}]*[A-Za-z])"
+    rf"[{_URL_KARAKTERI}]{{{SECRET_VALUE_MIN_LEN},}}"
+)
+
+
+@dataclass(frozen=True)
+class SecretPattern:
+    name: str
+    pattern: re.Pattern[str]
+    # Eşleşmenin korunan kısmı (ör. başlık adı); geri kalanı `***` olur.
+    keep_group: str | None = None
+
+
+SECRET_PATTERNS: tuple[SecretPattern, ...] = (
+    # Özel anahtar bloğu (kesikse metin sonuna kadar); BEGIN'i kesilmiş blok aşağıda ayrıca.
+    SecretPattern(
+        "private_key",
+        re.compile(
+            r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?"
+            r"(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|\Z)"
+        ),
+    ),
+    SecretPattern(
+        "private_key_tail",
+        re.compile(r"\A[A-Za-z0-9+/=\s]*-----END [A-Z0-9 ]*PRIVATE KEY-----"),
+    ),
+    SecretPattern(
+        "authorization",
+        re.compile(
+            r"(?P<keep>\bAuthorization\s*:\s*(?:Bearer|Basic|token)\s+)[^\s'\"`,;]+",
+            re.IGNORECASE,
+        ),
+        keep_group="keep",
+    ),
+    SecretPattern(
+        "env_assignment",
+        re.compile(
+            r"(?P<keep>\b(?:SEED_USER_PASSWORD|TP_SESSION_SECRET|JIRA_[A-Z_]*TOKEN"
+            r"|[A-Z][A-Z0-9_]*(?:PASSWORD|PASSWD|_PASS|_SECRET|_TOKEN|_API_?KEY|APIKEY"
+            r"|_ACCESS_KEY|_PRIVATE_KEY|_SECRET_KEY))"
+            r"(?:\s*=\s*(?![<${'\"`*])|\s*(?P<iki_nokta>:)\s*[\"']?))"
+            # `=` biçimi her değeri alır; YAML/compose `:` biçiminde (`DB_PASSWORD: …`) kaynak
+            # koddaki tip açıklamaları (`DB_PASSWORD: str`) eşleşmesin diye değer rastgele
+            # görünümlü olmalı.
+            rf"(?(iki_nokta){_RASTGELE_DEGER}(?=[\s'\"`,;)}}\]]|\Z)|[^\s'\"`]+)"
+        ),
+        keep_group="keep",
+    ),
+    # Öneksiz/küçük harfli atama (CI logu, YAML/JSON, CLI bayrağı): `PASSWORD=…`, `password: …`,
+    # `"password": "…"`, `export TOKEN=…`, `--password …`; alt çizgili önekli küçük harfli adlar
+    # (`db_password: …`, `github_token: …`, `aws_secret_access_key=…`) dahil. Kaynak koddaki
+    # adlarla karışmasın diye değer ≥ 8 karakter, harf VE rakam içerir ve ifade sınırında biter
+    # (`password: str`, `token = get_token()`, `tokens[0]`, URL içi `x-access-token:…@`
+    # eşleşmez); yer tutucular (`${…}`, `<…>`, `***`) dışarıda.
+    SecretPattern(
+        "generic_assignment",
+        re.compile(
+            rf"(?P<keep>(?:--{_SIR_ANAHTARI}\b(?:\s*=\s*|\s+)"
+            rf"|(?<![\w-])(?:[A-Za-z0-9]+_)*{_SIR_ANAHTARI}\b[\"']?\s*[:=]\s*)[\"']?)"
+            rf"{_RASTGELE_DEGER}(?=[\s'\"`,;)}}\]]|\Z)",
+            re.IGNORECASE,
+        ),
+        keep_group="keep",
+    ),
+    # Tireli özel başlık: `X-Demoapp-Test-Token: …`, `X-Api-Key: …`, `"Private-Token": "…"`.
+    # Değeri core-worker'da bilinmeyen sırlar (ör. DEMOAPP_TEST_TOKEN yalnız test-runner'da) için;
+    # değer `_RASTGELE_DEGER` kuralına uyar (kaynak koddaki `{"X-…-Token": token}` eşleşmez); URL
+    # içi `https://x-access-token:…@` `url_credentials`'a kalır.
+    SecretPattern(
+        "header_token",
+        re.compile(
+            r"(?P<keep>(?<![/\w.-])[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*-"
+            r"(?:Token|Api-?Key|Secret|Auth|Password)[\"']?\s*:\s*[\"']?)"
+            rf"{_RASTGELE_DEGER}(?=[\s'\"`,;)}}\]]|\Z)",
+            re.IGNORECASE,
+        ),
+        keep_group="keep",
+    ),
+    # Başlık adı olmadan şema + kimlik (log/komut çıktısı): `Basic dXNl…`, `Bearer eyJ…`.
+    SecretPattern(
+        "bare_auth_scheme",
+        re.compile(
+            r"(?P<keep>\b(?:Bearer|Basic)\s+)"
+            r"(?=[A-Za-z0-9._~+/=-]*\d)(?=[A-Za-z0-9._~+/=-]*[A-Za-z])[A-Za-z0-9._~+/-]{12,}=*"
+            r"(?=[\s'\"`,;)}\]]|\Z)"
+        ),
+        keep_group="keep",
+    ),
+    # curl/wget kullanıcı:parola bayrağı: `curl -u kullanici:<parola>`, `--user=kullanici:<parola>`.
+    SecretPattern(
+        "cli_user_password",
+        re.compile(
+            r"(?P<keep>(?<!\S)(?:-u|--user)(?:\s+|=)[\"']?[^\s:'\"$<]+:)"
+            r"(?![<${*])[^\s'\"`]+"
+        ),
+        keep_group="keep",
+    ),
+    # Komut satırı parola bayrağı: `docker login -u ci -p <parola>` (ya da bitişik `-p<parola>`),
+    # `helm registry login --password=<parola>`, `mysql -u root -p<parola>`. `-p` port/üst dizin
+    # bayrağı da olduğundan yalnız `… login` alt komutunda ve mysql/mariadb araçlarında tanınır;
+    # mysql'de `-p <ad>` (boşluklu) veritabanı adıdır, yalnız bitişik `-p<parola>` sırdır.
+    # `--password-stdin` ve yer tutucular (`$…`, `<…>`, `***`) dışarıda.
+    SecretPattern(
+        "cli_password_flag",
+        re.compile(
+            r"(?P<keep>(?:\b(?:docker|podman|nerdctl|buildah|skopeo|oras|helm(?:\s+registry)?)"
+            r"\s+login\b[^\n|;&]*?(?<!\S)(?:-p(?:\s+|=)?|--password(?:\s+|=))"
+            r"|\b(?:mysql|mysqldump|mysqladmin|mysqlimport|mysqlcheck|mysqlshow|mariadb"
+            r"|mariadb-dump)\b[^\n|;&]*?(?<!\S)(?:-p|--password=))[\"']?)"
+            r"(?![<${*\"'-])[^\s'\"`]+"
+        ),
+        keep_group="keep",
+    ),
+    # Azure bağlantı dizgisi: `…;AccountKey=<base64>;…`, `SharedAccessKey=…`,
+    # `SharedAccessSignature=sv=…&sig=…` (değer `;`'e kadar).
+    SecretPattern(
+        "azure_connection_key",
+        re.compile(
+            r"(?P<keep>\b(?:AccountKey|SharedAccessKey|SharedAccessSignature)\s*=\s*)"
+            r"(?![<${*])[^;\s'\"`]+",
+            re.IGNORECASE,
+        ),
+        keep_group="keep",
+    ),
+    # Oturum çerezi (Playwright/HTTP izleri): `Cookie: a=1; session=<v>`,
+    # `Set-Cookie: tp_session=<v>; Path=/`. Yalnız adı session/token/auth içeren çerezler; ad
+    # `Cookie:` başlığından ya da aynı başlıktaki önceki çerezin `;` ayıracından sonra gelir
+    # (`Path=/` gibi öznitelikler adı taşımadığından dokunulmaz).
+    SecretPattern(
+        "session_cookie",
+        re.compile(
+            r"(?P<keep>(?:\b(?:Set-)?Cookie\s*:\s*|;\s*)"
+            r"[A-Za-z0-9_.-]*(?:session|token|auth)[A-Za-z0-9_.-]*=)"
+            rf"{_URL_DEGERI}(?=[\s;,'\"`)}}\]]|\Z)",
+            re.IGNORECASE,
+        ),
+        keep_group="keep",
+    ),
+    # İmzalı URL / sorgu dizgisindeki kimlik: `?sv=…&sig=<v>`, `X-Amz-Signature=<v>`,
+    # `X-Goog-Signature=<v>`, `X-Amz-Security-Token=<v>`, `&token=<v>` (değer `&`/`#`'e kadar;
+    # `generic_assignment` `&` ile biten değeri almaz); log satırındaki çıplak `X-Amz-Signature=<v>`
+    # dahil.
+    SecretPattern(
+        "url_signature",
+        re.compile(
+            r"(?P<keep>(?:[?&;]|(?<![\w-]))(?:sig|signature|X-Amz-Signature|X-Goog-Signature"
+            r"|X-Amz-Security-Token|token|access_token|id_token|refresh_token|api_?key)=)"
+            rf"{_URL_DEGERI}(?=[&#\s'\"`,;)}}\]]|\Z)",
+            re.IGNORECASE,
+        ),
+        keep_group="keep",
+    ),
+    # GitHub Actions maske komutu: `::add-mask::<v>` satırının değeri tanımı gereği sırdır, bu
+    # yüzden rastgelelik koşulu aranmaz; yalnız yer tutucular (`$…`, `${…}`, `<…>`, `***`) dışarıda.
+    SecretPattern(
+        "github_add_mask",
+        re.compile(r"(?P<keep>::add-mask::)(?![<${*])[^\s'\"`]+"),
+        keep_group="keep",
+    ),
+    SecretPattern(
+        "url_credentials",
+        re.compile(r"(?P<keep>\b[a-z][a-z0-9+.-]*://)[^/\s:@]+:[^@\s]+(?=@)", re.IGNORECASE),
+        keep_group="keep",
+    ),
+    # Parolasız ama kimliği kullanıcı adında taşıyan URL (Sentry DSN `https://<anahtar>@o1…`,
+    # `https://<token>@host/r.git`). `https://git@host` gibi gerçek kullanıcı adları eşleşmesin
+    # diye kullanıcı kısmı ≥ 24 karakter, harf VE rakam içerir.
+    SecretPattern(
+        "url_userinfo_token",
+        re.compile(
+            r"(?P<keep>\b[a-z][a-z0-9+.-]*://)"
+            r"(?=[A-Za-z0-9_-]*\d)(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]{24,}(?=@)",
+            re.IGNORECASE,
+        ),
+        keep_group="keep",
+    ),
+    # Yolunda gizli anahtar taşıyan gelen webhook adresleri: Slack
+    # (`hooks.slack.com/services/T…/B…/<anahtar>`, workflows/triggers), Discord
+    # (`discord.com/api/webhooks/<id>/<anahtar>`) ve Teams/Office 365 (`…/webhook(b2)/…`;
+    # kimlik birden çok yol bileşenine dağıldığından önekten sonrası tümüyle).
+    SecretPattern(
+        "webhook_url",
+        re.compile(
+            r"(?P<keep>\bhooks\.slack\.com/(?:services|workflows|triggers)/(?:[A-Za-z0-9]+/)+)"
+            r"[A-Za-z0-9]{8,}",
+            re.IGNORECASE,
+        ),
+        keep_group="keep",
+    ),
+    SecretPattern(
+        "webhook_url",
+        re.compile(
+            r"(?P<keep>\b(?:(?:canary|ptb)\.)?discord(?:app)?\.com/api/webhooks/\d+/)"
+            r"[A-Za-z0-9_-]{8,}",
+            re.IGNORECASE,
+        ),
+        keep_group="keep",
+    ),
+    SecretPattern(
+        "webhook_url",
+        re.compile(
+            r"(?P<keep>\b(?:[a-z0-9-]+\.)*(?:outlook\.office(?:365)?\.com|webhook\.office\.com)"
+            r"/webhook(?:b2)?/)[^\s'\"`<>)\]]+",
+            re.IGNORECASE,
+        ),
+        keep_group="keep",
+    ),
+    SecretPattern("github_pat", re.compile(_onekli(r"\bgithub_pat_", r"[A-Za-z0-9_]", 20))),
+    SecretPattern("github_token", re.compile(_onekli(r"\bgh[pousr]_", r"[A-Za-z0-9]", 20))),
+    SecretPattern("gitlab_pat", re.compile(_onekli(r"\bglpat-", r"[A-Za-z0-9_-]", 20))),
+    SecretPattern("anthropic_key", re.compile(_onekli(r"\bsk-ant-", r"[A-Za-z0-9_-]", 8))),
+    # OpenAI biçimli anahtarlar (`sk-proj-…`, `sk-svcacct-…`, eski `sk-…`); Anthropic yukarıda.
+    SecretPattern("openai_key", re.compile(_onekli(r"\bsk-(?!ant-)", r"[A-Za-z0-9_-]", 20))),
+    SecretPattern("atlassian_token", re.compile(_onekli(r"\bATATT", r"[A-Za-z0-9_=+/-]", 16))),
+    SecretPattern("google_api_key", re.compile(_onekli(r"\bAIza", r"[0-9A-Za-z_-]", 20))),
+    SecretPattern("aws_access_key", re.compile(r"\bAKIA(?:[0-9A-Z]{16}|[0-9A-Z]+\Z)")),
+    SecretPattern("slack_token", re.compile(_onekli(r"\bxox[abposr]-", r"[A-Za-z0-9-]", 8))),
+    SecretPattern("npm_token", re.compile(_onekli(r"\bnpm_", r"[A-Za-z0-9]", 20))),
+    # Stripe gizli/kısıtlı anahtarı (`sk_live_…`, `rk_test_…`; yayımlanabilir `pk_` sır değil).
+    SecretPattern(
+        "stripe_key", re.compile(_onekli(r"\b(?:sk|rk)_(?:live|test)_", r"[A-Za-z0-9]", 16))
+    ),
+    # Grafana hizmet hesabı / Grafana Cloud token'ı (`glsa_…`, `glc_…`).
+    SecretPattern("grafana_token", re.compile(_onekli(r"\bgl(?:sa|c)_", r"[A-Za-z0-9_+/=-]", 20))),
+    SecretPattern("huggingface_token", re.compile(_onekli(r"\bhf_", r"[A-Za-z0-9]", 20))),
+    # SendGrid: `SG.<22>.<43>` (kesikse ilk iki parça yeter).
+    SecretPattern(
+        "sendgrid_key",
+        re.compile(r"\bSG\.[\w-]{16,}\.[\w-]{16,}|\bSG\.[\w-]{16,}(?:\.[\w-]*)?\Z"),
+    ),
+    SecretPattern(
+        "jwt",
+        re.compile(r"\beyJ[\w-]+\.[\w-]+\.[\w-]+|\beyJ[\w-]{8,}(?:\.[\w-]*){0,2}\Z"),
+    ),
+    SecretPattern("tp_token", re.compile(_onekli(r"\btpt_", r"[A-Za-z0-9]", 8))),
+    SecretPattern("tp_mcp_token", re.compile(_onekli(r"\btpk_", r"[A-Za-z0-9_]", 8))),
+)
+
+
+@dataclass(frozen=True)
+class SecretFinding:
+    """Bulunan sır: tür ve konum (değer TAŞINMAZ; rapora/kayda yalnız bunlar yazılır)."""
+
+    name: str
+    start: int
+    end: int
+
+
+def _sir_degerleri(values: Iterable[str]) -> list[str]:
+    return sorted(
+        {v for v in values if isinstance(v, str) and len(v) >= SECRET_VALUE_MIN_LEN},
+        key=len,
+        reverse=True,
+    )
+
+
+def find_secret_patterns(text: str, values: Iterable[str] = ()) -> list[SecretFinding]:
+    """Metindeki biçimden tanınan sırlar ve bilinen sır değerleri (≥ 8 karakter), konumlarıyla."""
+    if not text:
+        return []
+    found: list[SecretFinding] = []
+    for sp in SECRET_PATTERNS:
+        for m in sp.pattern.finditer(text):
+            start = m.end(sp.keep_group) if sp.keep_group else m.start()
+            if m.end() > start:
+                found.append(SecretFinding(sp.name, start, m.end()))
+    for value in _sir_degerleri(values):
+        i = text.find(value)
+        while i != -1:
+            found.append(SecretFinding("known_value", i, i + len(value)))
+            i = text.find(value, i + len(value))
+        # Kesme sınırı: metnin sonunda değerin başı, başında değerin sonu kalmış olabilir.
+        for n in range(len(value) - 1, SECRET_VALUE_MIN_LEN - 1, -1):
+            if text.endswith(value[:n]):
+                found.append(SecretFinding("known_value_partial", len(text) - n, len(text)))
+                break
+        for n in range(len(value) - 1, SECRET_VALUE_MIN_LEN - 1, -1):
+            if text.startswith(value[-n:]):
+                found.append(SecretFinding("known_value_partial", 0, n))
+                break
+    return sorted(found, key=lambda f: (f.start, -f.end))
+
+
+def scrub_secret_patterns(text: str, values: Iterable[str] = ()) -> str:
+    """Biçimden tanınan sırları ve bilinen sır değerlerini (≥ 8 karakter) `***` ile değiştirir.
+
+    >>> scrub_secret_patterns("Authorization: Bearer ornek.token-123")
+    'Authorization: Bearer ***'
+    >>> scrub_secret_patterns("klon: https://ornek:parola@forge.local/x.git")
+    'klon: https://***@forge.local/x.git'
+    """
+    if not text:
+        return text
+    findings = find_secret_patterns(text, values)
+    if not findings:
+        return text
+    # Çakışan aralıkları birleştir, sonra tek geçişte değiştir (konumlar kaymaz).
+    araliklar: list[list[int]] = []
+    for f in findings:
+        if araliklar and f.start <= araliklar[-1][1]:
+            araliklar[-1][1] = max(araliklar[-1][1], f.end)
+        else:
+            araliklar.append([f.start, f.end])
+    parcalar: list[str] = []
+    konum = 0
+    for bas, son in araliklar:
+        parcalar.append(text[konum:bas])
+        parcalar.append(SECRET_MASK)
+        konum = son
+    parcalar.append(text[konum:])
+    return "".join(parcalar)

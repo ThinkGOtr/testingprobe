@@ -42,6 +42,7 @@ from tp_core.gateway.evaluation import (
     EVALUATIONS_FILE,
     evaluation_status,
     evaluation_statuses,
+    icerik_hash,
     prompt_versions,
 )
 from tp_core.gateway.testing import (
@@ -401,6 +402,7 @@ def _mark_all(rules_dir: Path, guard: int) -> None:
             results=f"evaluation/results/{bundle}.json",
             today=TODAY,
             guardrails_version=guard,
+            icerik_hash=icerik_hash(rules_dir, bundle),
         )
 
 
@@ -408,7 +410,8 @@ def test_guardrails_is_evaluated_transitively_only_when_every_bundle_passed(
     rules_dir: Path,
 ) -> None:
     covered, missing = guardrails_coverage(rules_dir)
-    assert not covered and len(missing) == 7
+    # guardrails dışındaki her paket (asistan dahil) canlı değerlendirilmeden kapsam yok.
+    assert not covered and len(missing) == len(prompt_versions(rules_dir)) - 1
     assert not mark_guardrails_if_covered(rules_dir, model="m", provider="anthropic")
     _mark_all(rules_dir, guard=99)  # başka guardrails sürümüyle: sayılmaz
     covered, missing = guardrails_coverage(rules_dir)

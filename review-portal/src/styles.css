@@ -248,6 +248,10 @@ code,
 
 /* ---------------------------------------------------------------- kabuk */
 
+/* Katmanlar (AI-ASISTAN-PLANI §11): üst çubuk 20, yan menü 30, asistan paneli 40 ("Bu ne?" bindirmesi 39,
+   panel içi modal 45), bildirimler 50, atlama bağlantıları (.atla) 100. Yeni sabit öğe bu sıraya oturtulur. */
+
+/* "İçeriğe atla" ve "Asistanı aç": odak alana kadar görünmez; ikisi aynı yerde, sırayla odak alır. */
 .atla {
   position: absolute;
   left: 8px;
@@ -260,6 +264,11 @@ code,
 }
 .atla:focus {
   top: 8px;
+}
+button.atla {
+  border: 0;
+  font: inherit;
+  cursor: pointer;
 }
 
 .kabuk {
@@ -381,6 +390,7 @@ code,
 }
 
 .yan-menu {
+  z-index: 30;
   width: 232px;
   flex-shrink: 0;
   padding: 16px 12px;
@@ -494,6 +504,21 @@ code,
   .ust-sag {
     gap: 6px;
     flex-shrink: 0;
+  }
+}
+
+/* Dar telefonda ÖRNEK VERİ rozeti de varken marka adı sığmıyor ("AI T…" diye kırpılıyordu): ad
+   görsel olarak gizlenir, yalnız işaret kalır; bağlantının erişilebilir adı korunur. Canlı
+   derlemede (rozet yok) ad sığar, dokunulmaz. */
+@media (max-width: 479px) {
+  .ust-cubuk:has(.rozet-mock) .marka > span:last-child {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
 }
 
@@ -1044,6 +1069,12 @@ fieldset:disabled select {
   font-weight: 600;
   font-size: 0.875rem;
   margin: 4px 0;
+}
+.alan-hata-satir {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
 }
 .ac-satir {
   display: flex;
@@ -2102,6 +2133,17 @@ mark.kaynak-deger {
   flex-direction: column;
   gap: 8px;
   max-width: min(420px, calc(100vw - 32px));
+}
+/* Sağ alttaki "Asistan" düğmesi görünürken bildirimler onun üstünde durur (düğmeyi örtmez). */
+body:has(.asistan-baslatici) .bildirimler {
+  bottom: 72px;
+}
+/* Asistan paneli (masaüstü, modal değil) açıkken başlatıcı yok: bildirimler panelin solunda durur,
+   paneldeki "Asistana sor" ve sayaç satırını örtmez (panel 16 + 420 + 16 px). Dar ekranda panel tam
+   ekran modaldır; bildirim üstte kalır (katman sırası). */
+body:has(.asistan-panel:not(.asistan-panel-modal)) .bildirimler {
+  right: 452px;
+  max-width: min(420px, calc(100vw - 468px));
 }
 .bildirim {
   display: flex;

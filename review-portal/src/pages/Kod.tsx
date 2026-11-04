@@ -66,11 +66,11 @@ export function Kod() {
           </IslemDugmesi>
         }
       >
-        {islem.hata && <HataKutusu hata={islem.hata} />}
+        {islem.hata && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
         {caseler.yukleniyor && !caseler.veri ? (
           <Yukleniyor />
         ) : caseler.hata && !caseler.veri ? (
-          <HataKutusu hata={caseler.hata} yenile={() => void caseler.yenile()} />
+          <HataKutusu hata={caseler.hata} kaynak={caseler.hataNesnesi} yenile={() => void caseler.yenile()} />
         ) : adaylar.length === 0 ? (
           <BosDurum baslik="Kodu üretilmemiş onaylı case yok." />
         ) : (
@@ -112,7 +112,7 @@ export function Kod() {
         {scriptler.yukleniyor && !scriptler.veri ? (
           <Yukleniyor />
         ) : scriptler.hata && !scriptler.veri ? (
-          <HataKutusu hata={scriptler.hata} yenile={() => void scriptler.yenile()} />
+          <HataKutusu hata={scriptler.hata} kaynak={scriptler.hataNesnesi} yenile={() => void scriptler.yenile()} />
         ) : tumScriptler.length === 0 ? (
           <BosDurum baslik="Henüz üretilen test yok." />
         ) : gorunen.length === 0 ? (

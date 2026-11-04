@@ -70,3 +70,25 @@ purposes:
     model: claude-haiku-5-5
     max_tokens: 2048
     params: { effort: low }
+  # Portal asistanı (AI-ASISTAN-PLANI §6.1). Prompt paketi ikisinde de `assistant`; şema amaç adıyla
+  # aranır (iki şema dosyası birebir aynı). Kipi pipeline'dan bağımsızdır (TP_ASISTAN_MODEL_MODE).
+  # Adaptif düşünme açık (thinking alanı yok); düşünme token'ı çıktı olarak hesaba girer.
+  # max_retries / max_timeout_retries / fallbacks: geçidin `_complete` yeniden deneme ayarları ve
+  # sunucu tarafı ret yedeği (PurposeConfig, §10.3); taşıma ayarıdır, bundle hash'ine girmez.
+  assistant:                  # varsayılan (Haiku sınıfı)
+    model: claude-haiku-5-5
+    max_tokens: 4096
+    max_input_tokens: 40000   # önbellekten okunan önek sayılmaz
+    timeout_s: 30
+    max_retries: 1
+    max_timeout_retries: 0
+    params: { effort: medium }  # Haiku'da medium: araç seçiminde daha isabetli; ucuz model
+  assistant_deep:             # "Daha ayrıntılı incele" ve otomatik yükseltme (Sonnet sınıfı)
+    model: claude-sonnet-5-5
+    max_tokens: 3000
+    max_input_tokens: 60000
+    timeout_s: 45
+    max_retries: 1
+    max_timeout_retries: 0
+    fallbacks: none           # sunucu tarafı ret yedeği (Opus'a yönlendirme) kapalı
+    params: { effort: low }   # Sonnet low: yeterli kalite, düşük düşünme maliyeti

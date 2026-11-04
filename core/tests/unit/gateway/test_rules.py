@@ -18,6 +18,9 @@ PURPOSES = {
     "triage": "triage",
     "bug_draft": "bug-draft",
     "dup_rank": "dup-rank",
+    # Portal asistanı: iki amaç tek prompt paketini paylaşır (AI-ASISTAN-PLANI §6.1).
+    "assistant": "assistant",
+    "assistant_deep": "assistant",
 }
 
 
@@ -37,8 +40,9 @@ def test_model_classes_per_task() -> None:
     table = load_model_table(REAL_RULES)
     for p in ("requirement_review", "case_generation", "consistency_check", "verify_and_map"):
         assert table.purpose(p).model == "claude-sonnet-5-5"
-    for p in ("triage", "bug_draft", "dup_rank"):
+    for p in ("triage", "bug_draft", "dup_rank", "assistant"):
         assert table.purpose(p).model == "claude-haiku-5-5"
+    assert table.purpose("assistant_deep").model == "claude-sonnet-5-5"
     for cfg in table.purposes.values():
         assert 0 <= cfg.params["temperature"] <= 0.2
 

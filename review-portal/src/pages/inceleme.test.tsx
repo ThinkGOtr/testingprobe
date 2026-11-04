@@ -347,7 +347,8 @@ describe("case ölçümleri", () => {
     uygulama("/gereksinimler/req-tpd-1/caseler");
     const ozet = await screen.findByRole("region", { name: "Özet" });
     expect(await within(ozet).findByTestId("case-kazanc")).toHaveTextContent("—");
-    expect(within(ozet).getByText(/5 sn altı \(betik\/API onayı\) — kazanç hesaplanmaz/)).toBeInTheDocument();
+    // "—" yükleme sırasında da görünür; metrik gelene kadar bekle (yük altında yarış).
+    expect(await within(ozet).findByText(/5 sn altı \(betik\/API onayı\) — kazanç hesaplanmaz/)).toBeInTheDocument();
     expect(within(ozet).getByText(/betik\/API onayı, insan review'u sayılmaz/)).toBeInTheDocument();
   });
 

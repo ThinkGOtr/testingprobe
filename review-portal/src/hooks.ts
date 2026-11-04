@@ -6,6 +6,8 @@ export interface VeriDurumu<T> {
   hata: string | null;
   /** Son hatanın HTTP durum kodu (ApiError değilse null); ör. 403'te "Tekrar dene" anlamsızdır. */
   hataKodu: number | null;
+  /** Son hatanın kendisi (ApiError ise `kayitId` taşır); `HataKutusu kaynak` prop'una verilir. */
+  hataNesnesi: unknown;
   yukleniyor: boolean;
   /** sessiz=true: mevcut veriyi koruyarak arka planda yenile (SSE olaylarında). */
   yenile: (sessiz?: boolean) => Promise<void>;
@@ -17,6 +19,7 @@ export function useVeri<T>(yukle: () => Promise<T>, bagimliliklar: readonly unkn
   const [veri, setVeri] = useState<T | undefined>(undefined);
   const [hata, setHata] = useState<string | null>(null);
   const [hataKodu, setHataKodu] = useState<number | null>(null);
+  const [hataNesnesi, setHataNesnesi] = useState<unknown>(null);
   const [yukleniyor, setYukleniyor] = useState(true);
   const sayac = useRef(0);
   const yukleRef = useRef(yukle);
@@ -31,11 +34,13 @@ export function useVeri<T>(yukle: () => Promise<T>, bagimliliklar: readonly unkn
         setVeri(v);
         setHata(null);
         setHataKodu(null);
+        setHataNesnesi(null);
       }
     } catch (e) {
       if (benim === sayac.current) {
         setHata(hataMesaji(e));
         setHataKodu(e instanceof ApiError ? e.status : null);
+        setHataNesnesi(e);
       }
     } finally {
       if (benim === sayac.current) setYukleniyor(false);
@@ -50,7 +55,7 @@ export function useVeri<T>(yukle: () => Promise<T>, bagimliliklar: readonly unkn
     };
   }, bagimliliklar);
 
-  return { veri, hata, hataKodu, yukleniyor, yenile, setVeri };
+  return { veri, hata, hataKodu, hataNesnesi, yukleniyor, yenile, setVeri };
 }
 
 export interface IslemSecenegi {
@@ -64,6 +69,8 @@ export interface IslemSecenegi {
 export interface IslemDurumu {
   calisiyor: boolean;
   hata: string | null;
+  /** Son hatanın kendisi (`HataKutusu kaynak`). */
+  hataNesnesi: unknown;
   calistir: <T>(fn: () => Promise<T>, secenek?: IslemSecenegi) => Promise<T | undefined>;
   temizle: () => void;
 }
@@ -72,6 +79,7 @@ export interface IslemDurumu {
 export function useIslem(): IslemDurumu {
   const [calisiyor, setCalisiyor] = useState(false);
   const [hata, setHata] = useState<string | null>(null);
+  const [hataNesnesi, setHataNesnesi] = useState<unknown>(null);
   const bagli = useRef(true);
   useEffect(() => {
     bagli.current = true;
@@ -82,22 +90,30 @@ export function useIslem(): IslemDurumu {
   const calistir = useCallback(async <T,>(fn: () => Promise<T>, secenek?: IslemSecenegi) => {
     setCalisiyor(true);
     setHata(null);
+    setHataNesnesi(null);
     try {
       return await fn();
     } catch (e) {
       if (secenek?.cakismada && kararCakismasi(e)) {
-        if (bagli.current) setHata(cakismaMesaji(e));
+        if (bagli.current) {
+          setHata(cakismaMesaji(e));
+          setHataNesnesi(e);
+        }
         secenek.cakismada();
       } else if (bagli.current) {
         setHata(hataMesaji(e));
+        setHataNesnesi(e);
       }
       return undefined;
     } finally {
       if (bagli.current) setCalisiyor(false);
     }
   }, []);
-  const temizle = useCallback(() => setHata(null), []);
-  return { calisiyor, hata, calistir, temizle };
+  const temizle = useCallback(() => {
+    setHata(null);
+    setHataNesnesi(null);
+  }, []);
+  return { calisiyor, hata, hataNesnesi, calistir, temizle };
 }
 
 /** Değer değişmeden belirli süre geçince çağrılan zamanlayıcı (SSE patlamalarını birleştirir). */

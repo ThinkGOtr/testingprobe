@@ -1,0 +1,10 @@
+{
+  // Playwright senaryoları (e2e/*.spec.ts) için tip denetimi: uygulama ayarları + Node tipleri.
+  // Kök tsconfig yalnız src'yi kapsar; bu dosya olmadan spec tür hataları ancak Playwright koşusunda çıkardı.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["./**/*.ts", "../playwright.config.ts"],
+  "exclude": ["sonuclar"]
+}

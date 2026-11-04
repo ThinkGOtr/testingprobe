@@ -10,6 +10,7 @@ from contextlib import contextmanager
 
 from sqlalchemy.orm import Session
 
+from tp_core.models import asistan as asistan
 from tp_core.models import baseline_feature as baseline_feature
 from tp_core.models import bugs_feature as bugs_feature
 from tp_core.models import ci_feature as ci_feature

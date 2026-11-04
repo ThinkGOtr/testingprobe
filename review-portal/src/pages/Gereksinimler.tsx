@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import type { Gereksinim } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
-import { BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Yukleniyor } from "../components/ui";
+import { AlanHatasi, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { adimAdi, akisAdimi } from "../lib/akis";
 import { akisKanitlari, guncelAdim, type SonrakiGirdi } from "../lib/yolHaritasi";
@@ -15,7 +15,7 @@ import { ORNEK_SERBEST_GEREKSINIM } from "../lib/ornekGereksinim";
 const PO_ETIKET = { not_requested: "—", pending: "Bekliyor", approved: "Onaylı" } as const;
 
 export function Gereksinimler() {
-  const { veri, hata, yukleniyor, yenile } = useVeri(() => api.gereksinimler(), []);
+  const { veri, hata, hataNesnesi, yukleniyor, yenile } = useVeri(() => api.gereksinimler(), []);
   // `done` story'lerin kod → bug adımları (5–14) yol haritasıyla aynı kanıtlardan okunur.
   const tamamVar = (veri ?? []).some((g) => g.durum === "done");
   const kanit = useVeri(() => (tamamVar ? akisKanitlari() : Promise.resolve(null)), [tamamVar]);
@@ -59,7 +59,7 @@ export function Gereksinimler() {
           </>
         }
       />
-      {cek.hata && <HataKutusu hata={cek.hata} />}
+      {cek.hata && <HataKutusu hata={cek.hata} kaynak={cek.hataNesnesi} />}
       {formAcik && <SerbestMetinFormu kapat={() => setFormAcik(false)} />}
 
       <Kart
@@ -76,7 +76,7 @@ export function Gereksinimler() {
         {yukleniyor && !veri ? (
           <Yukleniyor />
         ) : hata && !veri ? (
-          <HataKutusu hata={hata} yenile={() => void yenile()} />
+          <HataKutusu hata={hata} kaynak={hataNesnesi} yenile={() => void yenile()} />
         ) : liste.length === 0 ? (
           <BosDurum baslik={filtre ? "Aramaya uyan gereksinim yok." : "Henüz gereksinim yok."}>
             {!filtre && "Jira'dan çekin veya serbest metin gereksinim ekleyin."}
@@ -247,9 +247,7 @@ function SerbestMetinFormu({ kapat }: { kapat: () => void }) {
           <p className="soluk kucuk">Kabul kriteri girilmezse gereksinim "AC eksik" olarak işaretlenir ve case üretimine gönderilmez.</p>
         </fieldset>
         {(dogrulama || islem.hata) && (
-          <p className="alan-hata" role="alert">
-            {dogrulama ?? islem.hata}
-          </p>
+          <AlanHatasi asistan={dogrulama ? null : { hata: islem.hata, kaynak: islem.hataNesnesi }}>{dogrulama ?? islem.hata}</AlanHatasi>
         )}
         <div className="eylemler">
           <IslemDugmesi roller={["analyst"]} type="submit" calisiyor={islem.calisiyor}>

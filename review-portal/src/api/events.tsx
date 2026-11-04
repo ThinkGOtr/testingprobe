@@ -66,6 +66,10 @@ export const BILINEN_OLAYLAR = [
   "demo.ci_skipped",
   "demo.reset",
   "demo.progress",
+  // Portal asistanı (AI-ASISTAN-PLANI §9): core yalnız oturum kullanıcısının olaylarını teslim eder;
+  // veri `{mesaj_id, kullanici_id, adim_kodu}` / `{mesaj_id, kullanici_id, durum}`.
+  "assistant.step",
+  "assistant.answered",
 ] as const;
 
 /** Ayrıntılı olayın ek konuları (sayfalar konuya abone olur, olay adına değil). */
@@ -151,7 +155,7 @@ export function olayKonulari(o: PortalOlayi): string[] {
 export function olayEslesir(o: PortalOlayi, konular: ReadonlySet<string> | null, id?: string): boolean {
   if (konular && !olayKonulari(o).some((k) => konular.has(k))) return false;
   // Demo-B olayları nesnesini `script_id` / `run_id` alanında taşır (ajan adımı, koşu, kırma aşaması).
-  // Faz 4: triage/onarım olayları `failure_id`, bug olayları `bug_draft_id` taşır.
+  // Faz 4: triage/onarım olayları `failure_id`, bug olayları `bug_draft_id`, asistan olayları `mesaj_id` taşır.
   return (
     !id ||
     o.id === id ||
@@ -159,7 +163,9 @@ export function olayEslesir(o: PortalOlayi, konular: ReadonlySet<string> | null,
     o.data.script_id === id ||
     o.data.run_id === id ||
     o.data.failure_id === id ||
-    o.data.bug_draft_id === id
+    o.data.bug_draft_id === id ||
+    // Asistan olayları mesajını `mesaj_id` alanında taşır.
+    o.data.mesaj_id === id
   );
 }
 

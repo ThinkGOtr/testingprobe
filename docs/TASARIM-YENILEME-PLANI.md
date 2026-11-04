@@ -290,6 +290,19 @@ Yeni renk çifti eklenirse aynı hesap yapılır; e2e axe iki temada geçmeden f
   `.yan-menu.acik { box-shadow: <.yan-menu'deki mevcut gölge, styles.css:471>, 0 0 0 100vmax rgb(0 0 0 / .5) }`
   (tıklamayı yakalamaz, taşma üretmez). Menü z-index 30 > üst çubuk 20 olduğundan perde üst çubuğu da
   karartır; hamburger tıklanabilir kalır — kabul edildi.
+- **AI asistan kancaları (korunur; `docs/AI-ASISTAN-PLANI.md` §11 Kabuk adımı, R7):** reskin bunları
+  taşımaz ve silmez, yalnız görünüm belirteçlerini alır.
+  - `Kabuk.tsx`: `.atla` yanında `<AsistanaAtla />` (`button.atla.atla-asistan`, "Asistanı aç"; yalnız
+    asistan hazırken görünür); `.ust-sag`'da ÖRNEK VERİ rozetinden sonra, bağlantı göstergesinden önce
+    `<OneriDugmesi />`; `Kabuk` → `KabukIcerik` bölünmesi ve `KabukDurumuSaglayici`/`useKabukDurumu`
+    (menü durumu `menuAcik` buradan gelir; `useState`'e geri çevrilmez).
+  - Katman sırası (`styles.css:252` ve `components/asistan/asistan.css:2` yorumları ile aynı): menü
+    perdesi/üst çubuk 20–30 · "Bu ne?" bindirmesi 39 · asistan başlatıcı ve panel 40 · panel içi modal 45 ·
+    `.bildirimler` 50 · `.atla` 100. Yeni sabit öğe (perde, ortam ışıması dahil) bu sıraya oturtulur.
+  - `body:has(.asistan-baslatici) .bildirimler { bottom: 72px }`: sağ alttaki "Asistan" düğmesi
+    görünürken bildirimler onun üstünde durur; §4.15 bildirim konumu değişirse bu kural birlikte taşınır.
+  - Asistan paneli `top: 64px` ile üst çubuğun (56 px + 2 px çizgi) altından başlar; üst çubuk yüksekliği
+    değişirse panel ofseti birlikte güncellenir.
 
 ### 4.2 ÖRNEK VERİ bandı — `.ornek-veri-bandi` (testid korunur)
 

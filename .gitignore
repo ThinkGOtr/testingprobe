@@ -14,6 +14,8 @@ docs/sunumlar/
 docs/RFI-Ozeti.md
 
 # Araç çıktıları
+# Asistan ürün bilgi paketi (make asistan-paket → var/tp-bilgi/; core-worker'a salt okunur)
+var/
 node_modules/
 .venv/
 __pycache__/

@@ -1,0 +1,42 @@
+{
+  "kind": "agent",
+  "purpose": "assistant",
+  "golden": "ornek",
+  "note": "Örnek golden kayıt; elle hazırlandı, model çıktısı değildir. Yalnız kural/şema testleri içindir (AI-ASISTAN-PLANI §10.4): asistan çalışma zamanında golden ve replay kullanmaz. Araç adımı yok; genel bilgi sorusuna kaynaklı cevap biçimini gösterir.",
+  "steps": [],
+  "output": {
+    "cevap_bloklari": [
+      {
+        "tur": "paragraf",
+        "metin": "Kararsız (flaky) test, aynı kodla bazen geçip bazen kırmızı olan testtir. Ayıklamak için önce tekrar ederek kararsızlığı kanıtlayın, sonra nedeni daraltın.",
+        "maddeler": []
+      },
+      {
+        "tur": "liste",
+        "metin": "Önerilen adımlar:",
+        "maddeler": [
+          "Testi aynı ortamda birkaç kez tekrar koşun ve sonuçları karşılaştırın.",
+          "Sabit beklemeler yerine koşula bağlı beklemeler kullanın.",
+          "Testler arası paylaşılan veriyi ve çalışma sırasına bağımlılığı kaldırın."
+        ]
+      }
+    ],
+    "guven": "orta",
+    "kaynaklar": [
+      {
+        "tur": "genel_bilgi",
+        "ref": "",
+        "alinti": ""
+      }
+    ],
+    "yonlendirmeler": [
+      {
+        "etiket": "Koşular",
+        "rota": "/kosular"
+      }
+    ],
+    "jira_anahtarlari": [],
+    "eylem_reddi": false,
+    "oneriler": []
+  }
+}

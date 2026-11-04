@@ -94,6 +94,14 @@ Yazma uçları köken denetimli; `JIRA_SIM_ADMIN_TOKEN` tanımlıysa `X-Sim-Admi
   site provası (adaptör `Task` + `test-case` etiketine, `Relates` bağlantısına düşer).
 - `POST /sim/faults` — `{"path_prefix", "status", "count", "retry_after"?, "method"?}`; 429/5xx
   yeniden deneme provası. Boş liste (`[]`) temizler.
+- `GET /sim/istekler` — `/rest/*` ve `/xray/*` isteklerinin sayacı: `{toplam, yontemler: {GET: n,
+  …}, son: [{yontem, yol}]}` (sorgu dizgisi/gövde tutulmaz; son 1000 istek). Asistanın yan
+  etkisizlik provası: akış boyunca yalnız `GET` görülmelidir. `POST /sim/istekler/sifirla` ve
+  `/sim/reset` sayacı sıfırlar.
+
+Yorum ekleme (`POST /rest/api/3/issue/{key}/comment`) gerçek Jira gibi isteğe bağlı
+`visibility` (`{"type": "role"|"group", "value": …}`) ve `jsdPublic: false` (iç not) alır; okumada
+aynen döner. Asistanın kısıtlı yorum filtresinin provası içindir.
 
 ## Gerçek Jira'da demo başlangıcı (`jira-seed`)
 

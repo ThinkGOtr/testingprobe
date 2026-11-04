@@ -33,7 +33,8 @@ Sağlayıcıya özgü kararlar yalnızca burada:
   sunucu tarafı yedek yoktur). Ret kategorisine göre Anthropic'in önerdiği modele yönlendirir;
   `between_tools` isteği yedek modelde düşünmesiz koşar. Yanıtı üreten model `response.model`'dir
   ve `ai_call.model`'e yazılır (`ProviderResponse.fallback_from` asıl model). Zincirin tamamı
-  reddederse `stop_reason == "refusal"` → `ProviderRefusal` (insana düşer).
+  reddederse `stop_reason == "refusal"` → `ProviderRefusal` (insana düşer). Amaç models.yaml'da
+  `fallbacks: none` derse (`ProviderRequest.fallbacks`) yedek istenmez.
 """
 
 from __future__ import annotations
@@ -246,6 +247,9 @@ class AnthropicProvider:
         return kwargs
 
     def uses_server_fallback(self, request: ProviderRequest) -> bool:
+        # Amaç `fallbacks: none` ise (ör. `assistant_deep`) beta başlığı ve parametre gönderilmez.
+        if request.fallbacks == "none":
+            return False
         return self.server_fallback and request.model in SERVER_FALLBACK_MODELS
 
     @staticmethod
