@@ -747,6 +747,10 @@ body:has(.asistan-panel:not(.asistan-panel-modal)) .asistan-bune-ipucu {
   .asistan-cevap {
     border-left-color: CanvasText;
   }
+  /* Metin eylemleri zorunlu renkte ButtonBorder kenarı alır: sıfır yatay iç boşlukta metin kenara değiyordu. */
+  .asistan-kaynak > .dugme-hayalet {
+    padding-inline: 6px;
+  }
   .asistan-bune-vurgu {
     outline-color: Highlight;
   }
@@ -812,19 +816,45 @@ body:has(.asistan-panel:not(.asistan-panel-modal)) .asistan-bune-ipucu {
   pointer-events: none;
 }
 .asistan-bune-ipucu .dugme {
+  margin-left: auto;
   pointer-events: auto;
 }
-/* Kenar çubuğu görünürken (≥861 px) bant içerik alanının ortasında; panel açıksa kenar çubuğu ile panel
-   arasındaki alanın. 861–1099 px'te bu alan dar kalır: panelin solundaki alan (yukarıdaki kural) kullanılır. */
+/* Kenar çubuğu görünürken (≥861 px) bant içerik sütununun iç kenarlarına hizalı: altındaki ÖRNEK VERİ
+   şeridiyle (.icerik iç boşluğu 28 px, tavan 1320 px, ≥1680 px ortalı) aynı genişlikte, şeridi tam örter;
+   ortalanıp şeritten dar kalınca şeridin iki ucu bandın yanlarından taşıyordu. Panel açıkken: ≥1440 px'te
+   içerik panel kadar boşaltılmıştır (sağ 28 + 420 px); 1100–1439 px'te sağ kenar panelin solu (şerit orada
+   panelin altına girer); 861–1099 px'te içerik alanı dar kalır, bant panelin solundaki alanın tamamını alır. */
 @media (min-width: 861px) {
   .asistan-bune-ipucu {
-    left: calc(240px + (100vw - 240px) / 2);
-    max-width: min(760px, calc(100vw - 240px - 32px));
+    left: 268px;
+    right: max(28px, 100vw - 1532px);
+    width: auto;
+    max-width: none;
+    transform: none;
+  }
+  body:has(.asistan-panel:not(.asistan-panel-modal)) .asistan-bune-ipucu {
+    left: 16px;
+    right: 436px;
+    width: auto;
+    max-width: none;
+    transform: none;
   }
 }
 @media (min-width: 1100px) {
   body:has(.asistan-panel:not(.asistan-panel-modal)) .asistan-bune-ipucu {
-    left: calc(240px + (100vw - 240px - 420px) / 2);
-    max-width: min(760px, calc(100vw - 240px - 452px));
+    left: 268px;
+    right: 420px;
+  }
+}
+@media (min-width: 1440px) {
+  body:has(.asistan-panel:not(.asistan-panel-modal)) .asistan-bune-ipucu {
+    left: calc(100vw - min(100vw - 240px, 1740px) + 28px);
+    right: 448px;
+  }
+}
+@media (min-width: 1680px) {
+  .asistan-bune-ipucu {
+    left: calc((100vw - 1560px) / 2 + 268px);
+    right: calc((100vw - 1560px) / 2 + 28px);
   }
 }

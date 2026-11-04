@@ -369,6 +369,12 @@
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+/* Zorunlu renkte düğme ButtonBorder kenarı alır: metin kenara değmesin (kaynak satırı eylemleriyle aynı). */
+@media (forced-colors: active) {
+  .oneri-ek > .dugme-hayalet {
+    padding-inline: 6px;
+  }
+}
 .oneri-ek-bekliyor {
   display: flex;
   flex-wrap: wrap;
