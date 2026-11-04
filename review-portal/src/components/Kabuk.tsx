@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { canliDerleme, cekirdekYetenekleri, mockDegisikligineAbone, mockUclari, mockZorunlu, ucVar, type Yetenekler } from "../api/http";
 import { useBaglantiDurumu, type BaglantiDurumu } from "../api/events";
@@ -94,7 +94,21 @@ export function Kabuk() {
   const konum = useLocation();
   const git = useNavigate();
 
+  const menuDugmesi = useRef<HTMLButtonElement>(null);
+
   useEffect(() => setMenuAcik(false), [konum.pathname]);
+
+  // Açık mobil menü Escape ile kapanır; odak menü düğmesine döner (kapanan menüde kalmaz).
+  useEffect(() => {
+    if (!menuAcik) return;
+    const kapat = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      setMenuAcik(false);
+      menuDugmesi.current?.focus();
+    };
+    document.addEventListener("keydown", kapat);
+    return () => document.removeEventListener("keydown", kapat);
+  }, [menuAcik]);
 
   const mockAktif = mockZorunlu() || mockUclar.length > 0;
   const b = BAGLANTI[baglanti];
@@ -106,6 +120,7 @@ export function Kabuk() {
       </a>
       <header className="ust-cubuk">
         <button
+          ref={menuDugmesi}
           type="button"
           className="menu-dugmesi"
           aria-expanded={menuAcik}
@@ -118,7 +133,7 @@ export function Kabuk() {
         <NavLink to="/" className="marka">
           <span className="marka-isaret" aria-hidden="true" />
           <span>
-            AI Testing <strong>Probe</strong> <span className="marka-alt">İnceleme portalı</span>
+            <span className="marka-on">AI Testing</span> <strong>Probe</strong> <span className="marka-alt">İnceleme portalı</span>
           </span>
         </NavLink>
         <div className="ust-sag">

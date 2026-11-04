@@ -63,6 +63,27 @@ describe("oturum ve yönlendirme", () => {
     await u.click(screen.getByRole("button", { name: "Çıkış" }));
     expect(await screen.findByRole("heading", { name: "Oturum aç" })).toBeInTheDocument();
   });
+
+  it("mobil menü Escape ile kapanır ve odak menü düğmesine döner", async () => {
+    await oturumAc("analist");
+    const u = userEvent.setup();
+    uygulama("/denetim");
+    await screen.findByRole("heading", { name: "Denetim", level: 1 });
+    const dugme = screen.getByRole("button", { name: "Menü" });
+    const menu = screen.getByRole("navigation", { name: "Ana menü" });
+    await u.click(dugme);
+    expect(dugme).toHaveAttribute("aria-expanded", "true");
+    expect(menu).toHaveClass("acik");
+    within(menu).getByRole("link", { name: "Koşular" }).focus();
+    await u.keyboard("{Escape}");
+    expect(dugme).toHaveAttribute("aria-expanded", "false");
+    expect(menu).not.toHaveClass("acik");
+    expect(dugme).toHaveFocus();
+    // Kapalıyken Escape bir şey yapmaz (odak çalınmaz).
+    screen.getByRole("button", { name: "Çıkış" }).focus();
+    await u.keyboard("{Escape}");
+    expect(screen.getByRole("button", { name: "Çıkış" })).toHaveFocus();
+  });
 });
 
 describe("ekranlar", () => {
