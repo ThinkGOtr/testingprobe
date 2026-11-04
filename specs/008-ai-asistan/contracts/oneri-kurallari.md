@@ -56,10 +56,10 @@ def oneriler(
 | Olgu | Varlık | Tür | Kaynak (koda karşı doğrulandı) |
 |---|---|---|---|
 | `durum` | requirement, consistency_finding, test_case, script, bug_draft | str | varlığın `durum` alanı (`workflow/states.MACHINES`); `run` ve `failure`'da `durum` yoktur (koşu için `ci_sonuc`) |
-| `po_bekleme_saat` | requirement | int (saat) | `durum='pending_po'` iken son `audit_event` (`eylem='requirement.transition'`, `nesne='requirement:<id>'`, `ozet->>'to'='pending_po'`) `zaman`'ından beri |
+| `po_bekleme_saat` | requirement | int (saat) | `durum='pending_po'` iken son `audit_event` (`eylem='requirement.transition'`, `nesne='requirement:<id>'`, `ozet->>'to'='pending_po'`) `zaman`'ından beri; iz yoksa son `RequirementReview.olusturma` |
 | `po_kanal` | requirement | `portal`\|`jira` | `serialize.po_status` (`"jira" if kaynak=="jira" else "portal"`) |
 | `ac_eksik` | requirement | bool | `Requirement.ac_missing` |
-| `acik_bulgu_sayisi` | requirement | int | güncel `kontrol_turu`'nda `consistency_finding.durum='open'` |
+| `acik_bulgu_sayisi` | requirement | int | `consistency_finding.durum='open'` ve `kanit_dogrulandi=true` (tur filtresi yok: önceki turların bulguları kararlaşmış olduğundan `open` değildir) |
 | `inceleme_bekleyen_case` | requirement | int | `test_case.durum='draft'` (superseded hariç) |
 | `onayli_case` | requirement | int | `test_case.durum='approved'` |
 | `kirarak_dogrulama` | script | `not_started`\|`running`\|`passed`\|`weak`\|`failed` | `ScriptCodegen.break_durum` (`BREAK_DURUM`) |

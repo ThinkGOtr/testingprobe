@@ -289,7 +289,9 @@ def test_havuz_kaynagi_turu_uyusmali_ve_500_karakter_sonrasi_alinti_dogrulanir()
     assert cevap["dogrulama"]["k1"]["sha256"] == havuz.al("k1").sha256
 
 
-def test_pii_iceren_probe_alintisi_maskeleme_acikken_dogrulanir() -> None:
+def test_son_islem_pii_iceren_probe_alintisini_maskeleme_acikken_dogrular() -> None:
+    """Son işlem katmanı: maskeli havuzdaki kanıta ham değerli alıntı `isle` ile doğrulanır
+    (sarmalayıcı katmanı `test_arac_sarmalayici`'da)."""
     oturum = _oturum(maske=True)
     havuz, giden = _havuz_ile(
         oturum,
@@ -304,7 +306,9 @@ def test_pii_iceren_probe_alintisi_maskeleme_acikken_dogrulanir() -> None:
     assert cevap["kaynaklar"][0]["dogrulandi"] is True
 
 
-def test_tek_oturum_farkli_epostalar_farkli_yer_tutucu_ve_cevapta_dogru_acilir() -> None:
+def test_son_islem_havuzu_tek_oturumda_yer_tutuculari_tutarli_acar() -> None:
+    """Son işlem havuz yardımcısı (`_havuz_ile`) üzerinden: soru ve araç çıktıları tek oturumda
+    tutarlı yer tutucu alır (sarmalayıcının kendisi `test_arac_sarmalayici`'da)."""
     oturum = _oturum(maske=True)
     soru, _ = oturum.mask_text("Soru: ali@ornek.com nerede?")
     _, giden = _havuz_ile(
@@ -578,6 +582,20 @@ def test_sistem_hattinda_jira_onerisi_bilgiye_duser(
     assert sonislem.oneri_eylemi({"tur": "rota", "rota": "/kosular"}, b)["tur"] == "rota"
 
 
+def test_hata_detayinda_bug_taslagi_bilgiye_duser_task_serbest() -> None:
+    """Hata detayı sistem hattı değildir (§17.3) ama ürün hatasının Bug'ı bug taslağı hattındadır:
+    modelin Bug taslağı `bilgi`ye düşer; Task taslağı ve yorum serbest kalır."""
+    b = _oneri_baglami(rota_kalibi="/hatalar/:id", varlik_turu="failure")
+    assert sonislem.sistem_hatti_mi("/hatalar/:id", "failure") is False
+    assert sonislem.oneri_eylemi(_BUG_TASLAGI, b)["tur"] == "bilgi"
+    task = {**_BUG_TASLAGI, "taslak": {**_BUG_TASLAGI["taslak"], "tur": "Task"}}
+    assert sonislem.oneri_eylemi(task, b)["tur"] == "jira_taslak"
+    assert sonislem.oneri_eylemi(_YORUM, b)["tur"] == "jira_yorum"
+    # Başka ekranda Bug taslağı değişmez.
+    diger = _oneri_baglami(rota_kalibi="/kosular/:id", varlik_turu="run")
+    assert sonislem.oneri_eylemi(_BUG_TASLAGI, diger)["tur"] == "jira_taslak"
+
+
 @pytest.mark.parametrize(
     ("rol", "rota", "beklenen"),
     [
@@ -742,14 +760,26 @@ def test_veri_dogrulamasi_is_parcacigi_birakmaz_ve_es_zamanli_calisir() -> None:
         havuz=havuz,
     )
     sar("db_query", {})
-    once = threading.active_count()
+
+    def dogrulama_isleri() -> set[threading.Thread]:
+        # Yalnız doğrulayıcının iş parçacıkları (`thread_name_prefix="asistan-dogrula"`); başka
+        # fikstürlerin/arka plan iş parçacıkları sayıyı oynatmaz.
+        return {
+            t
+            for t in threading.enumerate()
+            if t.name.startswith("asistan-dogrula") and t.is_alive()
+        }
+
+    once = dogrulama_isleri()
     for _ in range(3):
         isle(
             _cikti(kaynaklar=[_kaynak("uygulama_verisi", "k1", "")]),
             SonIslemBaglami(havuz=havuz, dogrulayici=SahteDogrulayici(satirlar=satirlar)),
         )
-    time.sleep(0.05)
-    assert threading.active_count() <= once + 1
+    son = time.monotonic() + 5.0
+    while dogrulama_isleri() - once and time.monotonic() < son:
+        time.sleep(0.02)
+    assert dogrulama_isleri() - once == set()
 
 
 def test_varsayilan_arac_seti_ve_dogrulayici_ayni_sha_ve_tek_kurulum(

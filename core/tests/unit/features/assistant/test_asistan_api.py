@@ -313,7 +313,9 @@ def _outbox_var(engine: Engine) -> bool:
     return bool(tek(engine, "SELECT to_regclass('public.outbox') IS NOT NULL"))
 
 
-def test_sohbet_olusturma_hiz_siniri(client: TestClient, make_user) -> None:
+def test_sohbet_olusturma_hiz_siniri(
+    client: TestClient, make_user, sabit_hiz_penceresi: int
+) -> None:
     giris(client, make_user("analyst"))
     for i in range(30):
         assert client.post("/assistant/conversations", json={}).status_code == 201, i
@@ -373,6 +375,25 @@ def test_calisma_ani_sir_degeri_de_yakalanir(
     monkeypatch.setenv("JIRA_READ_TOKEN", deger)
     giris(client, make_user("analyst"))
     r = sor(client, sohbet_ac(client), soru=f"şu değer ne: {deger}")
+    assert r.status_code == 422 and r.json()["kod"] == "sir_icerik" and deger not in r.text
+
+
+def test_sir_degerinin_oneki_422_vermez_tami_verir(
+    client: TestClient, make_user, canli, monkeypatch
+) -> None:
+    """Kullanıcı girdisinde kısmi eşleşme (`known_value_partial`) aranmaz: 422 karakter karakter
+    tahminle sır çıkaran bir doğrulama aracı olmasın. Tam değer yine reddedilir."""
+    deger = "dusuk-entropi-" + uuid.uuid4().hex[:6]
+    monkeypatch.setenv("JIRA_READ_TOKEN", deger)
+    giris(client, make_user("analyst"))
+    s = sohbet_ac(client)
+    r = sor(client, s, soru="bu bir soru " + deger[:9])  # sonda sırrın 9 karakterlik öneki
+    assert r.status_code == 202, r.text
+    mesaj_bitir(engine_of(client), r.json()["mesaj_id"], amac="assistant")
+    r = sor(client, s, soru=deger[-9:] + " ile başlayan soru")  # başta sırrın soneki
+    assert r.status_code == 202, r.text
+    mesaj_bitir(engine_of(client), r.json()["mesaj_id"], amac="assistant")
+    r = sor(client, s, soru=f"tam değer {deger} burada")
     assert r.status_code == 422 and r.json()["kod"] == "sir_icerik" and deger not in r.text
 
 
@@ -479,6 +500,71 @@ def test_amac_null_ust_kabul_ve_assistant_amaci(
     r = sor(client, s, ust_mesaj_id=ust)
     assert r.status_code == 202, r.text
     assert client.get(f"/assistant/messages/{r.json()['mesaj_id']}").json()["amac"] == "assistant"
+
+
+def test_zincirli_derin_kok_soruda_kalir(client: TestClient, make_user, engine, canli) -> None:
+    """Q1→A1 (amac NULL), Q2→A2, A1'in derini C1, C1'in derini C2: çocuklar sohbetin sonuna
+    eklendiğinden "önceki son kullanıcı mesajı" Q2 olurdu; soru ve bağlam üstten devralınır."""
+    giris(client, make_user("analyst"))
+    s = sohbet_ac(client)
+    b1 = {"rota": "/gereksinimler"}
+    r = sor(client, s, soru="Birinci soru: TPD-1 neden bekliyor?", baglam=b1)
+    a1 = r.json()["mesaj_id"]
+    mesaj_bitir(engine, a1, amac=None)  # sözlük/şablon cevabı
+    r = sor(client, s, soru="İkinci soru: bambaşka bir konu", baglam={"rota": "/kosular"})
+    mesaj_bitir(engine, r.json()["mesaj_id"], amac="assistant")
+    r = sor(client, s, ust_mesaj_id=a1)
+    assert r.status_code == 202, r.text
+    c1 = r.json()["mesaj_id"]
+    mesaj_bitir(engine, c1, amac="assistant")
+    r = sor(client, s, ust_mesaj_id=c1)
+    assert r.status_code == 202, r.text
+    c2 = r.json()["mesaj_id"]
+    for mid, amac in ((c1, "assistant"), (c2, "assistant_deep")):
+        satir = tek(
+            engine,
+            "SELECT json_build_object('i', icerik, 'b', baglam, 'a', amac) "
+            "FROM asistan_mesaj WHERE id = :m",
+            m=mid,
+        )
+        assert satir["i"] == "Birinci soru: TPD-1 neden bekliyor?", mid
+        assert satir["b"]["rota_kalibi"] == "/gereksinimler" and satir["a"] == amac
+
+
+def test_bilinmeyen_kisit_ihlali_sabit_500_ve_parametre_sizmaz(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Bilinen kısıtlar dışındaki IntegrityError yeniden fırlatılmaz: SQL parametreleri (soru,
+    bağlam) Starlette'in hata günlüğüne düşmesin; kayda yalnız sınıf ve kısıt adı."""
+    from contextlib import contextmanager
+
+    from sqlalchemy.exc import IntegrityError
+
+    from tp_core.api.errors import IC_HATA, KodluHata
+
+    class _Diag:
+        constraint_name = "baska_kisit"
+
+    class _Orig(Exception):
+        diag = _Diag()
+
+    class SahteOturum:
+        @contextmanager
+        def begin_nested(self) -> Iterator[None]:
+            yield
+
+        def add_all(self, _m: Any) -> None:
+            return None
+
+        def flush(self) -> None:
+            raise IntegrityError("INSERT …", {"icerik": "gizli-soru-metni"}, _Orig())
+
+    with caplog.at_level("DEBUG"), pytest.raises(KodluHata) as hata:
+        asistan_api._ekle(SahteOturum(), object())  # type: ignore[arg-type]
+    assert hata.value.status_code == 500 and hata.value.kod == IC_HATA
+    assert hata.value.__cause__ is None and hata.value.__suppress_context__
+    assert "gizli-soru-metni" not in caplog.text and "gizli-soru-metni" not in str(hata.value)
+    assert "IntegrityError" in caplog.text and "baska_kisit" in caplog.text
 
 
 def test_zaten_derin_tekil_kisittan_eslenir(

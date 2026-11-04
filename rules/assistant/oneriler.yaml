@@ -57,13 +57,16 @@ version: 1
 olgular:
   durum:
     tur: durum
-    varliklar: [requirement, script, bug_draft]
-    kaynak: varlığın `durum` alanı (workflow/states.MACHINES)
+    varliklar: [requirement, consistency_finding, test_case, script, bug_draft]
+    kaynak: varlığın `durum` alanı (workflow/states.MACHINES); run ve failure'da yok (koşu için ci_sonuc)
     yer_tutucu: false
   po_bekleme_saat:
     tur: sayi
     varliklar: [requirement]
-    kaynak: pending_po için son RequirementReview.olusturma'dan geçen saat
+    kaynak: >-
+      pending_po iken son pending_po geçişinden geçen saat: audit_event (eylem
+      requirement.transition, nesne requirement:<id>, ozet.to = pending_po) zamanı; iz yoksa son
+      RequirementReview.olusturma
     yer_tutucu: true
     turevler: {po_bekleme_gun: "po_bekleme_saat / 24, aşağı yuvarlanır, en az 1"}
   po_kanal:
@@ -80,7 +83,9 @@ olgular:
   acik_bulgu_sayisi:
     tur: sayi
     varliklar: [requirement]
-    kaynak: gereksinimin `open` durumdaki consistency_finding sayısı
+    kaynak: >-
+      gereksinimin `open` durumdaki ve kanıtı doğrulanmış (kanit_dogrulandi) consistency_finding
+      sayısı; kararlaşmış önceki tur bulguları `open` olmadığından sayılmaz
     yer_tutucu: true
   inceleme_bekleyen_case:
     tur: sayi

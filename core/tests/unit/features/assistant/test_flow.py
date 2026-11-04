@@ -358,6 +358,75 @@ def test_bilinmeyen_anahtar_sablona_girmez_kapali_kipe_duser(
     assert m["cevap"]["cevap_bloklari"][0]["metin"] == flow.KAPALI_METNI
 
 
+SON_HATA = {"uc": "POST /cases/:id/review", "status": 409, "kod": "onay_hash_uyusmuyor"}
+
+
+def test_son_hata_varken_anahtarli_durum_sorusu_sozluge_gitmez(
+    client: TestClient, make_user, engine: Engine, veri
+) -> None:
+    """S3: ekranda son hata varken "TPD-3 neden …?" gereksinim durumunu alır, hatanın sözlük
+    açıklamasını değil ("neden" sözlük sınıfında da geçer)."""
+    giris(client, make_user("analyst"))
+    _, mid = soru_gonder(
+        client,
+        engine,
+        "TPD-3 neden case üretimine geçmiyor?",
+        baglam={"son_hata": SON_HATA},
+        model_hazir=False,
+    )
+    assert cevapla(engine, mid) == "done"
+    m = mesaj(engine, mid)
+    assert m["kaynak"] == "sablon"
+    assert "PO onayı bekleniyor" in json.dumps(m["cevap"], ensure_ascii=False)
+
+
+@pytest.mark.parametrize(
+    ("soru", "kaynak"),
+    [
+        ("Bu düğme neden gri?", "kapali"),  # "? Bu ne?" akışı: öğe hakkında
+        ("Bu ne?", "kapali"),
+        ("Bu hata ne demek?", "sozluk"),  # hatayı açıkça anar
+    ],
+)
+def test_secili_oge_varken_sozluk_yalniz_hatayi_anan_soruda(
+    client: TestClient, make_user, engine: Engine, soru: str, kaynak: str
+) -> None:
+    giris(client, make_user("tester"))
+    baglam = {
+        "rota": "/kod",
+        "son_hata": {"kod": "kapi_kapali"},
+        "secili_eleman": {"ad": "Kırarak doğrula", "rol": "button", "devre_disi": True},
+    }
+    _, mid = soru_gonder(client, engine, soru, baglam=baglam, model_hazir=False)
+    assert cevapla(engine, mid) == "done"
+    assert mesaj(engine, mid)["kaynak"] == kaynak
+
+
+def test_sozluk_sorusu_siniflandirmasi() -> None:
+    from tp_core.features.assistant import siniflandir
+
+    secili = {"secili_eleman": {"ad": "Kaydet"}}
+    assert siniflandir.sozluk_sorusu("Az önceki hata ne demek?")
+    assert siniflandir.sozluk_sorusu("Neden oldu?", {"son_hata": {"kod": "x"}})
+    assert not siniflandir.sozluk_sorusu("TPD-3 neden case üretimine geçmiyor?")
+    assert not siniflandir.sozluk_sorusu("Bu Kırarak doğrula neden gri?", secili)
+    assert siniflandir.sozluk_sorusu("Bu mesaj ne?", secili)
+    assert not siniflandir.sozluk_sorusu("Merhaba", None)
+
+
+def test_kapali_cipleri_ekrandaki_anahtari_kullanir() -> None:
+    def cipler(baglam: Any) -> list[str]:
+        return flow.kapali_cevabi("soru", baglam)["cevap_bloklari"][1]["maddeler"]
+
+    assert cipler({"varlik": {"tur": "requirement", "anahtar": "ABC-12"}})[-1] == (
+        "ABC-12 neden bekliyor?"
+    )
+    for baglam in (None, {}, {"varlik": {"tur": "run", "id": "x"}}, {"varlik": {"anahtar": "x"}}):
+        son = cipler(baglam)[-1]
+        assert son == flow.KAPALI_DURUM_GENEL and "TPD-3" not in son
+    assert cipler(None)[:2] == list(flow.KAPALI_CIPLERI)
+
+
 @pytest.mark.parametrize("musteri", [False, True])
 def test_kapali_kip_gecit_kurulmaz(
     client: TestClient, make_user, engine: Engine, musteri: bool
@@ -583,6 +652,62 @@ def test_eski_cevabin_derini_gecmisi_kok_sorudan_oncesiyle_sinirli(
         "Asistan: cevap-1",
     ]
     assert son.splitlines()[-1] == "Asistan: cevap-1" and "soru-2" not in son
+
+
+def test_zincirli_derinin_gecmisi_zincir_kokunun_sorusuyla_sinirli(
+    make_user, engine: Engine
+) -> None:
+    """Q0, A0, Q1, A1, Q2, A2; A1'in derini C1 (sıra 7), C1'in derini C2 (sıra 8). C2'nin kök
+    sorusu Q1'dir (C1'in sırasından önceki son soru Q2 değil): geçmiş Q0/A0 + üst cevap C1."""
+    u = make_user("tester")
+    ids: dict[str, uuid.UUID] = {}
+    with engine.begin() as c:
+        sohbet = c.execute(
+            text("INSERT INTO asistan_sohbet (kullanici_id) VALUES (:k) RETURNING id"),
+            {"k": u.id},
+        ).scalar_one()
+
+        def ekle(ad: str, sira: int, rol: str, icerik: str, **ek: Any) -> None:
+            ids[ad] = c.execute(
+                text(
+                    "INSERT INTO asistan_mesaj (sohbet_id, kullanici_id, sira, rol, icerik, "
+                    "cevap, durum, ust_mesaj_id, amac) VALUES (:s, :k, :n, :r, :q, "
+                    "CAST(:c AS jsonb), :d, :u, :a) RETURNING id"
+                ),
+                {
+                    "s": sohbet,
+                    "k": u.id,
+                    "n": sira,
+                    "r": rol,
+                    "q": icerik,
+                    "c": json.dumps({"cevap_bloklari": [{"tur": "paragraf", "metin": ek["metin"]}]})
+                    if "metin" in ek
+                    else None,
+                    "d": ek.get("durum", "done"),
+                    "u": ek.get("ust"),
+                    "a": ek.get("amac"),
+                },
+            ).scalar_one()
+
+        for i in range(3):
+            ekle(f"Q{i}", 2 * i + 1, "user", f"soru-{i}")
+            ekle(f"A{i}", 2 * i + 2, "assistant", f"soru-{i}", metin=f"cevap-{i}")
+        ekle("C1", 7, "assistant", "soru-1", metin="derin-1", ust=ids["A1"], amac="assistant")
+        ekle(
+            "C2",
+            8,
+            "assistant",
+            "soru-1",
+            durum="pending",
+            ust=ids["C1"],
+            amac="assistant_deep",
+        )
+        gecmis = flow.sohbet_gecmisi(c, flow._mesaj_oku(c, ids["C2"])) or ""
+    assert gecmis.splitlines() == [
+        "Kullanıcı: soru-0",
+        "Asistan: cevap-0",
+        "Asistan: derin-1",
+    ]
 
 
 def test_oneri_bayragi_kapaliyken_worker_kural_onerisi_hesaplamaz(

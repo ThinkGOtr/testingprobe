@@ -167,6 +167,11 @@
   margin-top: 8px;
 }
 
+.oneri-ust {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
 .oneri-hata {
   margin: 6px 0 0;
   color: var(--err);

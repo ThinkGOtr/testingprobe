@@ -35,7 +35,12 @@ from typing import Any
 from sqlalchemy import Text, cast, func, or_, select
 from sqlalchemy.orm import Session
 
-from tp_core.features.assistant.tools.base import AracBaglami, AracHatasi, AracSonucu
+from tp_core.features.assistant.tools.base import (
+    AracBaglami,
+    AracHatasi,
+    AracSonucu,
+    kesik_temizle,
+)
 from tp_core.models import (
     AiCall,
     AuditEvent,
@@ -446,7 +451,7 @@ def _varlik_turu(session: Session, varlik_id: uuid.UUID) -> str | None:
 
 def _kirp(deger: str, ust: int = METIN_UST) -> str:
     deger = " ".join(deger.split())
-    return deger if len(deger) <= ust else deger[: ust - 1] + "…"
+    return deger if len(deger) <= ust else kesik_temizle(deger[: ust - 1]) + "…"
 
 
 def _deger_metni(deger: Any) -> str:

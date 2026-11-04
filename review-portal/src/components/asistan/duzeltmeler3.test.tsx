@@ -21,7 +21,7 @@ import { AsistanaSorDugmesi } from "../ui";
 import { AsistanPaneli } from "./AsistanPaneli";
 import { CevapKarti } from "./CevapKarti";
 import { acSekme, asistanKontrolSifirla, useAsistanKontrol } from "./kontrol";
-import { ekOneriKontrol, ekOneriSohbetleriniSifirla, OneriEkOneriler, useBekleyenEkOneri } from "./OneriEkOneriler";
+import { ekBekleyenleriGeriYukle, ekOneriKontrol, ekOneriSohbetleriniSifirla, OneriEkOneriler, useBekleyenEkOneri } from "./OneriEkOneriler";
 import { NEDEN_SORUSU, aiOnerisiKarta } from "./OneriKarti";
 import { oneriAyar, oneriDeposunuSifirla } from "./OneriVerisi";
 import { sohbetAyar } from "./SohbetSekmesi";
@@ -422,6 +422,10 @@ describe("erişilebilirlik ve sayaç", () => {
     const arka = screen.getByTestId("arka-plan");
     expect(arka).toHaveAttribute("inert");
     expect(document.body.style.overflow).toBe("hidden");
+    // Bildirim canlı bölgesi panelin kardeşi ama inert olmaz (Kopyala/Gizle durumları duyurulur).
+    const bildirimler = document.querySelector(".bildirimler")!;
+    expect(bildirimler.parentElement).toBe(panel().parentElement);
+    expect(bildirimler).not.toHaveAttribute("inert");
 
     await u.click(within(panel()).getByRole("button", { name: "? Bu ne?" }));
     // Kip açıkken panel kalkar (modal değil): arka plan seçilebilir olmalı.
@@ -434,5 +438,31 @@ describe("erişilebilirlik ve sayaç", () => {
     await u.click(within(panel()).getByRole("button", { name: "Asistanı kapat" }));
     expect(arka).not.toHaveAttribute("inert");
     expect(document.body.style.overflow).toBe("");
+  });
+});
+
+describe("bekleyen ek öneri sayfa yenilemesinden sağ çıkar (tur 4)", () => {
+  it("oturum deposundan geri yüklenen bekleyen Sohbet'te görünür ve durdurulabilir", async () => {
+    await oturumAc("analist");
+    const s = await asistanApi.sohbetOlustur(null);
+    const { mesaj_id } = await asistanApi.soruGonder(s.id, { soru: "", kip: "oneri" });
+    // Önceki sayfa ömrü: bekleyen kayıt depoya yazılmıştı; bellek sıfır (yenileme).
+    sessionStorage.setItem("tp-asistan-ek-bekleyen", JSON.stringify({ "/gereksinimler/:id|req-ft-1": mesaj_id }));
+    ekBekleyenleriGeriYukle();
+    const u = userEvent.setup();
+    sarmala("/kosular", <AsistanPaneli />);
+    await u.click(await screen.findByRole("button", { name: "Asistanı aç" }));
+    const not = await within(panel()).findByTestId("ek-oneri-bekliyor");
+    await u.click(within(not).getByRole("button", { name: "Durdur" }));
+    await waitFor(() => expect(within(panel()).queryByTestId("ek-oneri-bekliyor")).toBeNull());
+    expect((await asistanApi.mesaj(mesaj_id)).durum).toBe("iptal");
+    expect(sessionStorage.getItem("tp-asistan-ek-bekleyen")).toBeNull();
+  });
+
+  it("çıkışta / kullanıcı değişince depo kaydı da silinir", async () => {
+    sessionStorage.setItem("tp-asistan-ek-bekleyen", JSON.stringify({ "a|": "m-x" }));
+    ekBekleyenleriGeriYukle();
+    ekOneriSohbetleriniSifirla();
+    expect(sessionStorage.getItem("tp-asistan-ek-bekleyen")).toBeNull();
   });
 });

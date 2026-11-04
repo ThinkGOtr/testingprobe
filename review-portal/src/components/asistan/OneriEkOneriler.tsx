@@ -36,8 +36,48 @@ const ekDurumlar = new Map<string, KaliciDurum>();
 const ekDinleyiciler = new Set<() => void>();
 let ekSurum = 0;
 
+/**
+ * Bekleyen ek öneri sayfa yenilemesinden sağ çıksın: sunucu onu kullanıcının bekleyen sorusu
+ * sayar (Sohbet'te 409 bekleyen_var); bellekte kalsaydı kullanıcı bekleyeni göremez, durduramazdı.
+ * Yalnız `bekliyor` kayıtları (anahtar → mesaj kimliği) oturum deposuna yazılır.
+ */
+const EK_BEKLEYEN_ANAHTARI = "tp-asistan-ek-bekleyen";
+/** Depodan geri yüklenen, bu sayfa ömründe henüz durumu okunmamış bekleyenler. */
+const geriYuklenenler = new Set<string>();
+
+function ekKaydet(): void {
+  try {
+    const kayit: Record<string, string> = {};
+    for (const [k, d] of ekDurumlar) if (d.tur === "bekliyor") kayit[k] = d.mesajId;
+    if (Object.keys(kayit).length) sessionStorage.setItem(EK_BEKLEYEN_ANAHTARI, JSON.stringify(kayit));
+    else sessionStorage.removeItem(EK_BEKLEYEN_ANAHTARI);
+  } catch {
+    /* depo kapalı: yalnız bellek */
+  }
+}
+
+/** Sayfa açılışında (ve testlerde) oturum deposundaki bekleyen ek önerileri belleğe alır. */
+export function ekBekleyenleriGeriYukle(): void {
+  try {
+    const ham = sessionStorage.getItem(EK_BEKLEYEN_ANAHTARI);
+    if (!ham) return;
+    const kayit = JSON.parse(ham) as unknown;
+    if (!kayit || typeof kayit !== "object") return;
+    for (const [k, id] of Object.entries(kayit as Record<string, unknown>)) {
+      if (typeof id !== "string" || ekDurumlar.has(k)) continue;
+      ekDurumlar.set(k, { tur: "bekliyor", mesajId: id });
+      geriYuklenenler.add(id);
+    }
+  } catch {
+    /* bozuk kayıt / depo kapalı */
+  }
+}
+
+ekBekleyenleriGeriYukle();
+
 function ekBildir(): void {
   ekSurum += 1;
+  ekKaydet();
   ekDinleyiciler.forEach((fn) => fn());
 }
 
@@ -68,7 +108,14 @@ function bekleyenEkOneri(): string | null {
 /** Yanıt bekleyen ek öneri mesajının kimliği (yoksa null). */
 export function useBekleyenEkOneri(): string | null {
   useSyncExternalStore(ekAbone, () => ekSurum);
-  return bekleyenEkOneri();
+  const id = bekleyenEkOneri();
+  // Yenilemeden geri yüklenen bekleyen, bu arada bitmiş olabilir (olayı kaçırıldı): bir kez okunur.
+  useEffect(() => {
+    if (!id || !geriYuklenenler.has(id)) return;
+    geriYuklenenler.delete(id);
+    void ekOneriKontrol(id);
+  }, [id]);
+  return id;
 }
 
 /** Bekleyen ek öneriyi durdurur (Sohbet sekmesinden de). */
@@ -131,6 +178,7 @@ export async function ekOneriKontrol(mesajId: string): Promise<void> {
 export function ekOneriSohbetleriniSifirla(): void {
   ekSohbetler.clear();
   ekDurumlar.clear();
+  geriYuklenenler.clear();
   ekBildir();
 }
 

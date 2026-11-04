@@ -262,3 +262,12 @@ def test_uc_rolleri_routerla_ayni(db: Any) -> None:
     for uc, roller in probe.UC_ROLLERI.items():
         assert uc in rotalar, uc
         assert rotalar[uc] == roller, uc
+
+
+def test_kirpma_sinirindaki_yarim_token_maskelenir() -> None:
+    """Kırpma işaretinden önce temizlik: sınırda yarım kalan token düz geçmez."""
+    token = "gh" + "p_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"
+    metin = "runner hata " + "z" * (probe.METIN_UST - 25) + " " + token
+    cikti = probe._kirp(metin)
+    assert cikti.endswith("…") and "***" in cikti and token[:6] not in cikti
+    assert probe._kirp("kısa " + token) == "kısa " + token  # kırpılmayan metin aynen (sarmalayıcı)

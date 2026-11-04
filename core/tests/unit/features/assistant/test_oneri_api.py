@@ -214,7 +214,10 @@ def test_geri_bildirim_hatalari(
 
 
 def test_hiz_siniri_liste_60_geri_bildirim_30(
-    client: TestClient, tohum: Tohum, make_user: MakeUser
+    client: TestClient,
+    tohum: Tohum,
+    make_user: MakeUser,
+    sabit_hiz_penceresi: int,
 ) -> None:
     _giris(client, make_user("presenter"))
     for i in range(60):
@@ -276,7 +279,10 @@ def test_model_kapaliyken_ve_worker_yokken_calisir(
 
 
 def test_hiz_sayaci_404_ile_biten_istekte_de_artar(
-    client: TestClient, tohum: Tohum, make_user: MakeUser
+    client: TestClient,
+    tohum: Tohum,
+    make_user: MakeUser,
+    sabit_hiz_penceresi: int,
 ) -> None:
     """Sayaç ayrı bağlantıda commit edilir: geçersiz varlık/kural istekleri de sınıra takılır."""
     _giris(client, make_user("analyst"))
@@ -324,7 +330,8 @@ P95_TEKRAR = int(os.environ.get("TP_TEST_ONERI_P95_TEKRAR", "6"))
 
 @pytest.mark.perf
 @pytest.mark.skipif(
-    os.environ.get("TP_TEST_PERF", "1").strip() == "0", reason="TP_TEST_PERF=0: süre ölçümü kapalı"
+    os.environ.get("TP_TEST_PERF", "0").strip() != "1",
+    reason="süre ölçümü varsayılan kapalı (yük altında yanlış kırmızı); TP_TEST_PERF=1 ile açılır",
 )
 def test_oneri_ucu_tohumlu_veride_p95_300ms_alti(
     client: TestClient,

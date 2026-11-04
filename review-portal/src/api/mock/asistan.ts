@@ -64,6 +64,9 @@ interface MockSohbet extends Sohbet {
 }
 
 interface MockMesaj extends AsistanMesaji {
+  /** İç durum: core bunları mesaj yanıtında döndürmez (`mesaj_ozeti`); `disaVer` atar. */
+  adim_kodu: string | null;
+  basladi: boolean;
   kullanici_id: string;
   baglam: Record<string, unknown> | null;
   oneri_kural_id: string | null;
@@ -91,11 +94,13 @@ function kimlik(onek: string): string {
 const simdi = () => new Date().toISOString();
 
 function disaVer(m: MockMesaj): AsistanMesaji {
-  // Sunucu `kullanici_id`/`baglam`'ı mesaj yanıtında döndürmez.
-  const { kullanici_id: _k, baglam: _b, oneri_kural_id: _o, ...geri } = m;
+  // Sunucu `kullanici_id`/`baglam`/adım kodu/"başladı"yı mesaj yanıtında döndürmez (core `mesaj_ozeti`).
+  const { kullanici_id: _k, baglam: _b, oneri_kural_id: _o, adim_kodu: _a, basladi: _ba, ...geri } = m;
   void _k;
   void _b;
   void _o;
+  void _a;
+  void _ba;
   return geri;
 }
 

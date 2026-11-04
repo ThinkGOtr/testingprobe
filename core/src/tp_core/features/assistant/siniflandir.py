@@ -9,6 +9,7 @@ Modelsiz kararlar burada; hepsi saf fonksiyondur (DB yok):
   **veya** model bir ürün/probe/uygulama aracı çağırdı. Ürüne özgü soruda yalnız `genel_bilgi`
   kaynaklı cevap en fazla "Kısmen" gösterilir (§7.3).
 - `ne_demek_sorusu`: sözlük dalının soru sınıfı ("ne demek / neden"; §10.2 adım 2).
+- `sozluk_sorusu`: sözlük dalına gidilir mi — `ne_demek_sorusu` + bağlam/anahtar dışlamaları.
 - `durum_sorusu`, `kuyruk_sorusu`: şablon dalının soru sınıfları (§10.2 adım 3).
 """
 
@@ -75,6 +76,9 @@ _NE_DEMEK: Final = (
     "bu bildirim",
     "bildirim ne",
 )
+# Soruyu açıkça ekrandaki hataya bağlayan sözcükler. Seçili öğe varken "neden/bu ne" öğe hakkındadır
+# ("? Bu ne?" akışı); sözlüğe yalnız bu sözcüklerden biri geçerse gidilir.
+_HATA_SOZCUKLERI: Final = ("hata", "mesaj", "uyarı", "uyari", "bildirim")
 # Şablon dalı (anahtarla birlikte): "TPD-3 neden bekliyor?", "TPD-3'ün durumu ne?", "nerede?" …
 _DURUM: Final = (
     "neden",
@@ -176,6 +180,18 @@ def urune_ozgu(
 
 def ne_demek_sorusu(soru: str | None) -> bool:
     return _icerir(normalize(soru), _NE_DEMEK)
+
+
+def sozluk_sorusu(soru: str | None, baglam: Mapping[str, Any] | None = None) -> bool:
+    """Sözlük dalı (§10.2 adım 2): bağlamda son hata olsa da şu sorular sözlüğe gitmez —
+    soruda Jira anahtarı geçen (gereksinim/iş sorusu, şablon ya da modele kalır) ve seçili öğe
+    varken hatayı açıkça anmayan ("Bu düğme neden gri?" öğe hakkındadır)."""
+    if not ne_demek_sorusu(soru) or jira_anahtarlari(soru):
+        return False
+    secili = baglam.get("secili_eleman") if isinstance(baglam, Mapping) else None
+    if secili:
+        return _icerir(normalize(soru), _HATA_SOZCUKLERI)
+    return True
 
 
 def jira_anahtarlari(soru: str | None) -> list[str]:

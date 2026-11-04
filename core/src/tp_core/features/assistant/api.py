@@ -27,6 +27,7 @@ dahil edilir.
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -37,7 +38,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from tp_core.api.errors import KodluHata
+from tp_core.api.errors import IC_HATA, SUNUCU_HATASI_METNI, KodluHata
 from tp_core.auth.deps import CurrentUser, DbSession
 from tp_core.events import publish_tx
 from tp_core.features.assistant import budget, hiz
@@ -59,6 +60,7 @@ from tp_core.models.asistan import (
 from tp_core.workflow import jobs
 from tp_core.workflow.service import Principal
 
+log = logging.getLogger(__name__)
 router = APIRouter(tags=["assistant"])
 
 SOHBET_LISTE_AZAMI = 50
@@ -278,14 +280,21 @@ def mesajlar(sohbet_id: uuid.UUID, session: DbSession, user: CurrentUser) -> lis
 # ------------------------------------------------------------------ soru gönderme
 
 
+KISMI_SIR = "known_value_partial"  # `gateway.masking.find_secret_patterns` bulgu adı
+
+
 def _sir_kontrol(*metinler: str) -> None:
-    """Soru/bağlamda sır deseni ya da çalışma anı sır değeri → 422 `sir_icerik` (değer yazılmaz)."""
+    """Soru/bağlamda sır deseni ya da çalışma anı sır değeri → 422 `sir_icerik` (değer yazılmaz).
+
+    Kullanıcı girdisinde yalnız biçim desenleri ve TAM değer aranır: kesme sınırı koruması
+    (`known_value_partial`, öneki ≥ 8 karakter) kırpılmış araç çıktısı içindir; burada 422'yi
+    karakter karakter tahminle sır çıkaran bir doğrulama aracına (oracle) çevirirdi."""
     from tp_core.gateway.factory import known_secret_values
     from tp_core.gateway.masking import find_secret_patterns
 
     degerler = known_secret_values()
     for metin in metinler:
-        if metin and find_secret_patterns(metin, degerler):
+        if metin and any(f.name != KISMI_SIR for f in find_secret_patterns(metin, degerler)):
             raise KodluHata(
                 422,
                 "sir_icerik",
@@ -374,7 +383,10 @@ def _ekle(session: Session, *mesajlar: AsistanMesaj) -> None:
             raise KodluHata(409, "zaten_derin", "Bu cevap zaten ayrıntılı inceleniyor.") from None
         if kisit in (MESAJ_SIRA_UQ, MESAJ_BEKLEYEN_UQ):
             raise _bekleyen_var() from None
-        raise
+        # Bilinmeyen kısıt: istisna yeniden fırlatılmaz — SQL parametreleri (soru metni, ekran
+        # bağlamı) Starlette'in hata günlüğüne düşerdi. Kayda yalnız sınıf ve kısıt adı (§9).
+        log.warning("asistan: mesaj eklenemedi (%s, kısıt=%s)", type(exc).__name__, kisit)
+        raise KodluHata(500, IC_HATA, SUNUCU_HATASI_METNI) from None
 
 
 def _kuyruga_al(session: Session, m: AsistanMesaj, user: Principal) -> None:
@@ -403,20 +415,6 @@ def _derin_ust(
     if var is not None:
         raise KodluHata(409, "zaten_derin", "Bu cevap zaten ayrıntılı inceleniyor.")
     return ust
-
-
-def _kok_soru(session: Session, ust: AsistanMesaj) -> AsistanMesaj | None:
-    """Üst asistan cevabının sorusu: aynı sohbette ondan önceki son kullanıcı mesajı."""
-    return (
-        session.query(AsistanMesaj)
-        .filter(
-            AsistanMesaj.sohbet_id == ust.sohbet_id,
-            AsistanMesaj.rol == "user",
-            AsistanMesaj.sira < ust.sira,
-        )
-        .order_by(AsistanMesaj.sira.desc())
-        .first()
-    )
 
 
 def _hizmet_kontrol(session: Session) -> None:
@@ -472,8 +470,10 @@ def soru_gonder(
 
     sira = _sonraki_sira(session, s.id)
     if ust is not None:
-        kok = _kok_soru(session, ust)
-        # Soru, amaç ve kip sunucuda üst mesajdan türetilir; istemcinin `soru`'su yok sayılır.
+        # Soru, bağlam, amaç ve kip sunucuda üst mesajdan türetilir; istemcinin `soru`'su yok
+        # sayılır. Her asistan mesajı sorusunu `icerik`/`baglam`'da taşır (derin çocuk da
+        # üstünden alır); böylece zincirli "Daha ayrıntılı" kök soruda kalır — çocuk sohbetin
+        # sonuna eklendiğinden "önceki son kullanıcı mesajı" araya giren başka soru olabilirdi.
         cevap = AsistanMesaj(
             id=uuid.uuid4(),
             sohbet_id=s.id,
@@ -481,8 +481,8 @@ def soru_gonder(
             sira=sira,
             rol="assistant",
             ust_mesaj_id=ust.id,
-            icerik=kok.icerik if kok is not None else ust.icerik,
-            baglam=kok.baglam if kok is not None else ust.baglam,
+            icerik=ust.icerik,
+            baglam=ust.baglam,
             durum="pending",
             amac="assistant_deep" if derin_amac else "assistant",
             # Kip üstten devralınır: öneri kipindeki cevabın derini de kural önerilerini

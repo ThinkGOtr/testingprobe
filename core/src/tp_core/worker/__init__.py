@@ -35,6 +35,8 @@ Bir iş `zaman_asimi_s` içinde bitmezse iş `retry`/`failed` yazılır ve süre
 Asistan şeridinde zaman aşımı süreci kapatmaz: iş `failed`, mesaj uzlaştırmayla
 `error/zaman_asimi` olur; asılı iş parçacığı en geç bir sonraki geçit turunda `should_stop`
 (mesaj artık `running` değil) ile durur ve geç gelen sonucu yazamaz (`durum='running'` koşulu).
+Asılı iş parçacığı durana dek şeritte bir yuva sayılır: koşan + asılı iş parçacığı sayısı
+`asistan_paralel()`'e ulaştıysa şerit yeni iş almaz (gerçek eşzamanlı model çağrısı ≤ PARALEL).
 
 Canlılık: ana döngü (ve iş beklerken yürütücü) `TP_WORKER_LIVENESS_FILE` dosyasının zamanını
 tazeler; `tp_core.worker.healthcheck` dosya `CANLILIK_ESIGI_S`'den eskiyse sağlıksız der.
@@ -185,6 +187,12 @@ _kanca_sonraki = 0.0
 _genel_haric: list[str] | None = None
 _son_uzlastirma = 0.0
 _uzlastirma_kilidi = threading.Lock()
+# Asistan şeridinin gerçek eşzamanlılığı: işleyicisi koşan (`_asistan_aktif`) + zaman aşımından
+# sonra asılı kalan (`_asistan_asili`) iş parçacıkları toplamı `asistan_paralel()`'i geçmez.
+# Asılı olan iş `failed` yazıldığı için `budget.global_bekleyen`'de sayılmaz; burada sayılır.
+_asistan_kilidi = threading.Lock()
+_asistan_aktif = 0
+_asistan_asili: list[threading.Thread] = []
 
 
 def uzun_serit_turleri() -> frozenset[str]:
@@ -275,10 +283,25 @@ def asistan_tur(turler: Collection[str]) -> bool:
     """Asistan şeridinden bir iş işler (yalnızca `turler`); iş yoksa False.
 
     Zaman aşımı süreci kapatmaz: iş `failed` yazılmıştır; mesaj hemen uzlaştırılır
-    (`error/zaman_asimi`) ve asılı iş parçacığı `should_stop` ile kendiliğinden durur.
+    (`error/zaman_asimi`) ve asılı iş parçacığı `should_stop` ile kendiliğinden durur. Asılı
+    iş parçacığı durana dek bir yuva tutar: koşan + asılı `asistan_paralel()`'e ulaştıysa yeni
+    iş alınmaz (False; döngü `aralik` bekler).
     """
+    global _asistan_aktif
     uzlastir_gerekirse()
-    sonuc = process_one(get_engine(), canli=canli, turler=sorted(turler))
+    with _asistan_kilidi:
+        _asistan_asili[:] = [t for t in _asistan_asili if t.is_alive()]
+        if _asistan_aktif + len(_asistan_asili) >= asistan_paralel():
+            return False
+        _asistan_aktif += 1
+    sonuc = None
+    try:
+        sonuc = process_one(get_engine(), canli=canli, turler=sorted(turler))
+    finally:
+        with _asistan_kilidi:
+            _asistan_aktif -= 1
+            if sonuc is not None and sonuc.asili is not None:
+                _asistan_asili.append(sonuc.asili)
     if sonuc is not None and sonuc.zaman_asimi:
         log.error("asistan işi zaman aşımına uğradı; süreç sürüyor: %s", sonuc.hata)
         uzlastir_gerekirse(zorla=True)

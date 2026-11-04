@@ -182,6 +182,8 @@ class AsistanOneriGeriBildirim(Base):
     __table_args__ = (
         _sayi_check("deger", enums.ASISTAN_ONERI_DEGER, "asistan_oneri_geri_bildirim_deger_ck"),
         Index("asistan_oneri_geri_bildirim_ix", "kullanici_id", "kural_id", "varlik_id"),
+        # Kullanıcılar arası "Gizle/Yaptım" bastırma sorgusu (kullanici_id süzmez).
+        Index("asistan_oneri_geri_bildirim_varlik_ix", "kural_id", "varlik_id", "varlik_durum"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()

@@ -95,8 +95,11 @@ KAPALI_METNI: Final = (
 KAPALI_CIPLERI: Final = (
     "Bu hata ne demek?",
     "Bugün ne yapmalıyım?",
-    "TPD-3 neden bekliyor?",
 )
+# Üçüncü çip ekrandaki varlığın gerçek Jira anahtarıyla üretilir (portal `sorular.ts` gibi);
+# anahtar yoksa genel biçim verilir (müşteri kurulumunda sabit bir örnek anahtar yanıltır).
+KAPALI_DURUM_CIPI: Final = "{anahtar} neden bekliyor?"
+KAPALI_DURUM_GENEL: Final = "<Jira anahtarı> neden bekliyor?"
 ONERI_KAPALI_METNI: Final = "Ek öneri için canlı model gerekir; kural önerileri yukarıda."
 
 ROL_ETIKETI: Final = {
@@ -306,21 +309,30 @@ def _derin_siniri(conn: Connection, m: Mesaj) -> tuple[int, uuid.UUID | None]:
 
     "Daha ayrıntılı" eski bir cevaba da basılabilir ve çocuk sohbetin sonuna eklenir; geçmiş kök
     sorudan öncesiyle sınırlanır (kök soru `Soru:` satırında gider, sonraki sorular ilgisizdir).
+    Kök soru `ust_mesaj_id` zincirinin başındaki cevabın sorusudur (zincirli derinde üst mesaj
+    da sohbetin sonundadır; onun sırasından önceki son soru araya giren başka bir soru olabilir).
     Üst (kısa) cevap geçmişin son satırı olarak ayrıca eklenir."""
-    ust = conn.execute(
-        text("SELECT sira FROM asistan_mesaj WHERE id = :u AND sohbet_id = :s"),
-        {"u": m.ust_mesaj_id, "s": m.sohbet_id},
-    ).scalar_one_or_none()
-    if ust is None:
+    if m.ust_mesaj_id is None:
         return m.sira, None
-    kok = conn.execute(
+    kok_id = asistan_budget.kok_mesaj_id(conn, m.ust_mesaj_id)
+    kok_sira = (
+        conn.execute(
+            text("SELECT sira FROM asistan_mesaj WHERE id = :k AND sohbet_id = :s"),
+            {"k": kok_id, "s": m.sohbet_id},
+        ).scalar_one_or_none()
+        if kok_id is not None
+        else None
+    )
+    if kok_sira is None:
+        return m.sira, None
+    soru = conn.execute(
         text(
             "SELECT MAX(sira) FROM asistan_mesaj WHERE sohbet_id = :s AND rol = 'user' "
-            "AND sira < :u"
+            "AND sira < :k"
         ),
-        {"s": m.sohbet_id, "u": ust},
+        {"s": m.sohbet_id, "k": kok_sira},
     ).scalar_one_or_none()
-    return (kok if kok is not None else ust), m.ust_mesaj_id
+    return (soru if soru is not None else kok_sira), m.ust_mesaj_id
 
 
 def sohbet_gecmisi(conn: Connection, m: Mesaj) -> str | None:
@@ -454,14 +466,26 @@ def _oneri_baglami(session_factory: SessionFactory, m: Mesaj) -> dict[str, Any] 
 # ------------------------------------------------------------------ sabit cevaplar
 
 
-def kapali_cevabi(kip: str) -> dict[str, Any]:
+def kapali_cipleri(baglam: Mapping[str, Any] | None = None) -> list[str]:
+    varlik = baglam.get("varlik") if isinstance(baglam, Mapping) else None
+    anahtar = varlik.get("anahtar") if isinstance(varlik, Mapping) else None
+    anahtarlar = siniflandir.jira_anahtarlari(anahtar if isinstance(anahtar, str) else None)
+    durum = (
+        KAPALI_DURUM_CIPI.format(anahtar=anahtarlar[0])
+        if len(anahtarlar) == 1 and anahtarlar[0] == anahtar
+        else KAPALI_DURUM_GENEL
+    )
+    return [*KAPALI_CIPLERI, durum]
+
+
+def kapali_cevabi(kip: str, baglam: Mapping[str, Any] | None = None) -> dict[str, Any]:
     out = sonislem.bos_cevap()
     if kip == "oneri":
         out["cevap_bloklari"] = [{"tur": "paragraf", "metin": ONERI_KAPALI_METNI, "maddeler": []}]
         return out
     out["cevap_bloklari"] = [
         {"tur": "paragraf", "metin": KAPALI_METNI, "maddeler": []},
-        {"tur": "liste", "metin": "Şunları sorabilirsiniz:", "maddeler": list(KAPALI_CIPLERI)},
+        {"tur": "liste", "metin": "Şunları sorabilirsiniz:", "maddeler": kapali_cipleri(baglam)},
     ]
     return out
 
@@ -566,6 +590,15 @@ def model_cevabini_yaz(
 ) -> str:
     """Canlı cevabın tek transaction'ı (§6.2 sırası). Dönüş: mesajın son durumu."""
     tetik = otomatik_tetik(m, cevap)
+    kok: uuid.UUID | None = None
+    kalan: asistan_budget.Kalanlar | None = None
+    if tetik:
+        # Bütçe kalanları (`ai_call` toplamları) global kilitten ÖNCE, ayrı okumada: kilit
+        # altında yalnız sayaçlar kalır (API POST de bütçeyi kilitten önce okur; §6.2).
+        with session_factory() as s:
+            kok = asistan_budget.kok_mesaj_id(s.connection(), m.id) or m.id
+            kalan = asistan_budget.kalanlar(s.connection(), m.kullanici_id, kok_id=kok)
+            s.rollback()
     with session_factory() as s:
         conn = s.connection()
         if tetik:
@@ -586,10 +619,9 @@ def model_cevabini_yaz(
             s.commit()
             return son
         derin_bekliyor = False
-        if tetik:
-            kok = asistan_budget.kok_mesaj_id(conn, m.id) or m.id
+        if tetik and kok is not None:
             karar = asistan_budget.otomatik_on_kosul(  # (3)
-                conn, m.kullanici_id, kok, mevcut_is=m.job_id
+                conn, m.kullanici_id, kok, mevcut_is=m.job_id, kalan=kalan
             )
             if karar.yukselt:
                 derin_bekliyor = _cocuk_ekle(conn, m) is not None  # (4) + (5)
@@ -727,7 +759,7 @@ def cevapla(
 
         # (2) Sözlük
         son_hata = (m.baglam or {}).get("son_hata")
-        if dogrudan and son_hata and siniflandir.ne_demek_sorusu(m.icerik):
+        if dogrudan and son_hata and siniflandir.sozluk_sorusu(m.icerik, m.baglam):
             kayit = sozluk.bul(son_hata, rules_dir=rules_dir)
             if kayit is not None:
                 cevap = sozluk.cevap(kayit, m.baglam, rules_dir=rules_dir)
@@ -745,7 +777,7 @@ def cevapla(
 
         # (4) Kapalı kip: geçit kurulmaz.
         if not model_hazir:
-            return _modelsiz_yaz(session_factory, m, kapali_cevabi(m.kip), "kapali")
+            return _modelsiz_yaz(session_factory, m, kapali_cevabi(m.kip, m.baglam), "kapali")
 
         # (5) Canlı
         canli = True

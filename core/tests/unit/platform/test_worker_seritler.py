@@ -205,3 +205,39 @@ def test_asistan_serit_kapaliyken_asistan_isi_genel_seritte_kosmaz(
         jobs.REGISTRY.pop(genel_tur, None)
     assert sonuc == [0]
     assert worker._genel_haric is None
+
+
+def test_asili_asistan_is_parcacigi_yuva_tutar(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Zaman aşımına uğrayan asistan işi `failed` yazılır (global bekleyende sayılmaz) ama asılı
+    iş parçacığı durana dek yuva tutar: koşan + asılı ≤ `TP_WORKER_ASISTAN_PARALEL`."""
+    monkeypatch.setenv("TP_WORKER_ASISTAN_PARALEL", "1")
+    monkeypatch.setattr(worker, "_asistan_aktif", 0)
+    monkeypatch.setattr(worker, "_asistan_asili", [])
+    ek = uuid.uuid4().hex[:6]
+    tur = f"t.asili.{ek}"
+    serbest = threading.Event()
+    job_handler(tur, max_deneme=1, zaman_asimi_s=1, serit=ASISTAN_SERIT)(
+        lambda _c: serbest.wait(10)
+    )
+    try:
+        with engine.begin() as c:
+            ilk = enqueue(c, tur)
+        assert worker.asistan_tur({tur}) is True
+        assert _durum(engine, ilk) == "failed"
+        assert len(worker._asistan_asili) == 1 and worker._asistan_asili[0].is_alive()
+        with engine.begin() as c:
+            ikinci = enqueue(c, tur)
+        # asılı iş parçacığı yuvayı tutuyor: yeni iş alınmaz
+        assert worker.asistan_tur({tur}) is False
+        assert _durum(engine, ikinci) == "queued"
+        assert worker._asistan_aktif == 0
+        serbest.set()
+        assert _bekle(lambda: not worker._asistan_asili[0].is_alive())
+        assert worker.asistan_tur({tur}) is True
+        assert _durum(engine, ikinci) == "done"
+        assert worker._asistan_asili == []
+    finally:
+        serbest.set()
+        jobs.REGISTRY.pop(tur, None)

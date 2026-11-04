@@ -298,12 +298,15 @@ def otomatik_on_kosul(
     kok_id: uuid.UUID,
     *,
     mevcut_is: uuid.UUID | None = None,
+    kalan: Kalanlar | None = None,
 ) -> OtomatikKarar:
     """§6.2 ön koşulları (hepsi). `global_kilit` alınmış transaction'da çağrılmalıdır.
 
     `mevcut_is`: üst mesajın hâlâ `running` görünen kendi işi global sayımdan düşülür.
+    `kalan`: kilitten ÖNCE okunmuş bütçe kalanları (`kalanlar`; `ai_call` toplamları kilit
+    altında koşmasın — global kilit her API POST'u bekletir). Verilmezse burada okunur.
     """
-    k = kalanlar(conn, kullanici_id, kok_id=kok_id)
+    k = kalan if kalan is not None else kalanlar(conn, kullanici_id, kok_id=kok_id)
     asgari = OTOMATIK_ASGARI_KALAN_USD
     if k.kullanici < asgari:
         return OtomatikKarar(False, "kullanici_kalani")

@@ -21,6 +21,15 @@ export interface AcmaIstegi extends AcmaSecenegi {
   sekme: AsistanSekmesi;
   /** Aynı isteğin iki kez işlenmemesi için artan sıra. */
   sira: number;
+  /** İsteğin yazıldığı an (ms); bayat istek gönderilmez (`istekGecerli`). */
+  zaman: number;
+}
+
+/** Dış isteğin geçerlilik süresi: Sohbet bu süre içinde çizilmezse istek gönderilmeden düşer. */
+export const ISTEK_GECERLILIK_MS = 30_000;
+
+export function istekGecerli(istek: Pick<AcmaIstegi, "zaman">, simdi = Date.now()): boolean {
+  return simdi - istek.zaman <= ISTEK_GECERLILIK_MS;
 }
 
 interface Durum {
@@ -73,7 +82,7 @@ function abone(fn: () => void): () => void {
 /** Paneli belirtilen sekmede açar (Öneri düğmesi: `acSekme("oneriler")`). */
 export function acSekme(sekme: AsistanSekmesi, secenek: AcmaSecenegi = {}): void {
   sira += 1;
-  degistir({ acik: true, sekme, istek: { sekme, sira, ...secenek } });
+  degistir({ acik: true, sekme, istek: { sekme, sira, zaman: Date.now(), ...secenek } });
 }
 
 /** "Asistana sor": paneli sohbet sekmesinde o hata kaydının bağlamıyla açar. */
@@ -111,8 +120,30 @@ export function useAsistanHazir(): boolean {
   return useSyncExternalStore(abone, () => durum.hazir);
 }
 
+/**
+ * "Neden? Sor" ile açılan öneri sohbetleri: (kural, varlık) → sohbet. Kartın hazır soru çipleri
+ * aynı kural için ikinci kez yeni sohbet açmaz, takip sorusu olarak o sohbete gider (§17.6:
+ * öneri bağlamı sohbetin takip sorularında sunucuda taşınır).
+ */
+const oneriSohbetleri = new Map<string, string>();
+const oneriSohbetAnahtari = (kuralId: string, varlikId: string | null | undefined) => `${kuralId}|${varlikId ?? ""}`;
+
+export function oneriSohbetiYaz(kuralId: string, varlikId: string | null | undefined, sohbetId: string): void {
+  oneriSohbetleri.set(oneriSohbetAnahtari(kuralId, varlikId), sohbetId);
+}
+
+export function oneriSohbeti(kuralId: string, varlikId: string | null | undefined): string | null {
+  return oneriSohbetleri.get(oneriSohbetAnahtari(kuralId, varlikId)) ?? null;
+}
+
+/** Sohbet silinince (ya da sunucuda bulunamayınca) eşleme düşer. */
+export function oneriSohbetiUnut(sohbetId: string): void {
+  for (const [k, v] of oneriSohbetleri) if (v === sohbetId) oneriSohbetleri.delete(k);
+}
+
 /** Testler için. */
 export function asistanKontrolSifirla(): void {
+  oneriSohbetleri.clear();
   try {
     sessionStorage.removeItem(OTURUM_ANAHTARI);
   } catch {

@@ -57,7 +57,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -630,6 +630,9 @@ class Sonuc:
     butce_asildi: bool = False  # model geçidi tavanı: yeniden denenmez, iş akışı duraklar
     # İşleyici `zaman_asimi_s` içinde bitmedi; iş parçacığı hâlâ asılı olabilir → süreç çıkmalı.
     zaman_asimi: bool = False
+    # Zaman aşımında asılı kalan işleyici iş parçacığı (süreci kapatmayan asistan şeridi, gerçek
+    # eşzamanlı çağrı sayısını sınırlamak için izler).
+    asili: threading.Thread | None = field(default=None, compare=False, repr=False)
 
 
 def execute(job: ClaimedJob, registry: Mapping[str, HandlerSpec] | None = None) -> Sonuc:
@@ -730,8 +733,8 @@ def execute_with_timeout(
     md = job.max_deneme or (spec.max_deneme if spec else DEFAULT_MAX_DENEME)
     hata = f"zaman aşımı: iş {sure:g} sn içinde bitmedi"
     if job.deneme < md and spec is not None:
-        return Sonuc("retry", 1, hata, spec.backoff(job.deneme), zaman_asimi=True)
-    return Sonuc("failed", 1, hata, zaman_asimi=True)
+        return Sonuc("retry", 1, hata, spec.backoff(job.deneme), zaman_asimi=True, asili=t)
+    return Sonuc("failed", 1, hata, zaman_asimi=True, asili=t)
 
 
 def process_one(

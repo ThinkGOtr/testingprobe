@@ -65,7 +65,7 @@ class SahteDemoDb:
 # ------------------------------------------------------------------ tek maskeleme oturumu
 
 
-def test_tek_oturum_farkli_epostalar_farkli_yer_tutucu_ve_cevapta_dogru_acilir() -> None:
+def test_sarmalayici_tek_oturumda_farkli_epostalara_farkli_yer_tutucu_verir() -> None:
     baglam = _baglam()
     oturum = baglam.oturum
     soru, _ = oturum.mask_text("ayse@ornek.com neden bekliyor?")
@@ -89,7 +89,7 @@ def test_tek_oturum_farkli_epostalar_farkli_yer_tutucu_ve_cevapta_dogru_acilir()
     )
 
 
-def test_pii_iceren_probe_verisi_alintisi_maskeleme_acikken_dogrulanir() -> None:
+def test_sarmalayici_pii_iceren_probe_verisini_maskeli_havuza_yazar() -> None:
     baglam = _baglam()
     sar = AracSarmalayici(baglam, yeni={"probe_get": _sabit("PO cevabı: ali@ornek.com onayladı")})
     cikti = sar("probe_get", {})

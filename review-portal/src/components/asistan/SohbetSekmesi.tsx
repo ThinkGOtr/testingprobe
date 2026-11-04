@@ -26,8 +26,9 @@ import { hataKaydi, SON_HATA_GECERLILIK_MS, sonHata, sonHataAbone, sonHataBaglam
 import { BosDurum, Yukleniyor } from "../ui";
 import type { SeciliEleman } from "./buNe";
 import { CevapKarti } from "./CevapKarti";
-import type { AcmaIstegi } from "./kontrol";
+import { istekGecerli, oneriSohbetiUnut, oneriSohbetiYaz, type AcmaIstegi } from "./kontrol";
 import { ekOneriDurdur, ekOneriKontrol, useBekleyenEkOneri } from "./OneriEkOneriler";
+import { oneriAnahtari, oneriGetir, oneriSorgusu } from "./OneriVerisi";
 import { soruOnerileri } from "./sorular";
 
 /** Zamanlamalar (testler kısaltabilir). */
@@ -232,7 +233,9 @@ export function SohbetSekmesi({
           try {
             const m = await asistanApi.mesaj(id);
             if (!bekliyor(m)) bitti = true;
-            else if (m.adim_kodu) setAdimlar((a) => ({ ...a, [id]: m.adim_kodu! }));
+            // Core mesaj yanıtı adım kodu taşımaz; `running` görüldüyse listeye yazılır
+            // (iptal notu "işlenen kısım ücretlendi" buna dayanır).
+            else if (m.durum === "running") setMesajlar((l) => l.map((x) => (x.id === id && x.durum !== "running" ? { ...x, durum: "running" } : x)));
           } catch {
             /* bir sonraki turda yeniden denenir */
           }
@@ -333,6 +336,8 @@ export function SohbetSekmesi({
           kip: "soru",
           ...(kural ? { oneri_kural_id: kural } : {}),
         });
+        // Öneri sohbeti hatırlanır: kartın sonraki hazır soruları bu sohbete gider.
+        if (kural) oneriSohbetiYaz(kural, ekran.varlik?.id, id);
         // Yeni sohbete ancak soru kabul edildikten sonra geçilir (409'da mevcut sohbet kalır).
         if (yeniId) {
           sohbetRef.current = yeniId;
@@ -359,14 +364,21 @@ export function SohbetSekmesi({
           void asistanApi.sohbetSil(yeniId).catch(() => undefined);
           setGirdi((g) => g || metin);
         }
+        // Hedef öneri sohbeti silinmiş: eşleme düşer, sonraki çip yeni sohbet açar.
+        if (secenek.sohbetId && e instanceof ApiError && e.status === 404) oneriSohbetiUnut(secenek.sohbetId);
         setGonderimHatasi(gonderimHataMetni(e));
+        // Öneri geçersizleşti: Öneriler sekmesi/rozet eski kartı göstermesin, bu ekranın önerileri yenilenir.
+        if (e instanceof ApiError && e.kod === "oneri_gecersiz") {
+          const sorgu = oneriSorgusu(ekran);
+          if (kullanici && sorgu) void oneriGetir(oneriAnahtari(kullanici.id, sorgu), sorgu, { zorla: true });
+        }
         // Asistan bu arada kapandıysa (worker gitti) panel nedenini gösteren pasif uyarıya geçsin.
         if (asistanKapandi(e)) durumYenile();
       } finally {
         setGonderiyor(false);
       }
     },
-    [gonderiyor, kullaniciBekliyor, baglamUret, seciliTemizle, yukle, durumYenile],
+    [gonderiyor, kullaniciBekliyor, baglamUret, seciliTemizle, yukle, durumYenile, ekran, kullanici],
   );
 
   // Dış istek: "Asistana sor" (hata kaydı) ya da "Neden? Sor" (öneri kuralı + soru).
@@ -376,6 +388,8 @@ export function SohbetSekmesi({
     if (islenenSira.current === istek.sira) return;
     islenenSira.current = istek.sira;
     istegiTuket(istek.sira);
+    // Bayat istek (Sohbet o sırada çizilemedi): kullanıcı bir şey yapmadan eski soru gönderilmez.
+    if (!istekGecerli(istek)) return;
     if (istek.kayitId) {
       setSecilenHataId(istek.kayitId);
       setHataDahil(true);
@@ -428,6 +442,7 @@ export function SohbetSekmesi({
     try {
       await asistanApi.sohbetSil(s.id);
       setSohbetler((l) => (l ?? []).filter((x) => x.id !== s.id));
+      oneriSohbetiUnut(s.id);
       if (s.id === sohbetId) sohbetiBirak();
     } catch (e) {
       setGecmisHatasi(`Sohbet silinemedi: ${hataMesaji(e)}`);
@@ -438,14 +453,16 @@ export function SohbetSekmesi({
 
   const iptalEt = async (m: AsistanMesaji) => {
     try {
-      // Ücret notu sunucunun gördüğü duruma göre: iptal yanıtı (yoksa mesajın kendisi) başladı mı?
+      // Ücret notu sunucunun gördüğü duruma göre: core mesaj yanıtı "başladı" bilgisi taşımaz,
+      // iptal yanıtında durum artık `iptal`dir. Bu yüzden iptalden hemen önce güncel durum okunur
+      // (SSE kopukken listedeki `m.durum` eski `pending` olabilir).
+      const once = await asistanApi.mesaj(m.id).catch(() => null);
       const yanit = await asistanApi.iptal(m.id);
-      const son = yanit && typeof yanit === "object" && "durum" in yanit ? yanit : await asistanApi.mesaj(m.id).catch(() => null);
+      const son = yanit && typeof yanit === "object" && "durum" in yanit ? yanit : null;
       const basladi =
         m.durum === "running" ||
-        m.basladi === true ||
+        once?.durum === "running" ||
         (!!adimlar[m.id] && adimlar[m.id] !== "sirada") ||
-        son?.basladi === true ||
         Number(son?.maliyet_usd ?? 0) > 0;
       setNotlar((n) => ({
         ...n,
@@ -494,7 +511,7 @@ export function SohbetSekmesi({
     <div className="asistan-bekleme" role="status" data-testid="asistan-bekleme">
       <span className="donen donen-kucuk" aria-hidden="true" />
       <span>
-        {etiket ?? adimMetni(adimlar[m.id] ?? m.adim_kodu)}
+        {etiket ?? adimMetni(adimlar[m.id] ?? (m.durum === "pending" ? "sirada" : null))}
         {/* Sayaç her saniye değişir: canlı bölgede duyurulmaz (yalnız adım ve "Uzun sürüyor"). */}
         <span aria-hidden="true"> · {gecenSure(baslangic(m), simdi)}</span>
       </span>

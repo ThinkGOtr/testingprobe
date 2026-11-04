@@ -32,7 +32,12 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any, Final
 
-from tp_core.features.assistant.tools.base import AracBaglami, AracHatasi, AracSonucu
+from tp_core.features.assistant.tools.base import (
+    AracBaglami,
+    AracHatasi,
+    AracSonucu,
+    kesik_temizle,
+)
 from tp_core.features.ci import artifacts
 from tp_core.features.ci.clients import (
     LOG_EN_COK_BAYT,
@@ -191,7 +196,7 @@ def log_isle(
 
 def _metin(deger: Any, sinir: int = MAX_ADIM_METNI) -> str:
     s = " ".join(str(deger).split())
-    return s if len(s) <= sinir else s[:sinir] + "…"
+    return s if len(s) <= sinir else kesik_temizle(s[:sinir]) + "…"
 
 
 def db_ozeti(sonuc: str, artefaktlar: Mapping[str, Any]) -> list[str]:

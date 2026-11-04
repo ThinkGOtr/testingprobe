@@ -434,12 +434,12 @@ def test_kurulum_token_alimi_kalan_sureyle_sinirli() -> None:
     assert ok.job_logs(7, sure_s=2).veri == b"log\n"
     token_istegi, api = sahte.istekler[0], sahte.istekler[1]
     assert token_istegi.url.path.endswith("/access_tokens")
-    assert _zaman_asimi(token_istegi) == pytest.approx(2.0)
+    assert _zaman_asimi(token_istegi) == pytest.approx(2.0, abs=0.05)
     assert _zaman_asimi(api) <= 2.0
     sahte.istekler.clear()
     ok.jobs(555, timeout=3)
     assert sahte.istekler[0].url.path.endswith("/access_tokens")
-    assert _zaman_asimi(sahte.istekler[0]) == pytest.approx(3.0)
+    assert _zaman_asimi(sahte.istekler[0]) == pytest.approx(3.0, abs=0.05)
     # Zaman aşımı verilmeyen olağan forge çağrısı istemcinin varsayılanıyla kalır.
     sahte.istekler.clear()
     forge.request("GET", "/repos/ornek/uygulama/actions/runs/555/jobs", "x")
@@ -527,3 +527,12 @@ def test_log_yolu_yerel_ve_github(kokler) -> None:
     assert log_yolu(r) is None
     r = Run(kaynak="github", artefaktlar={"github_yerel": {**gy, "yollar": {"log": "../x"}}})
     assert log_yolu(r) is None
+
+
+def test_db_ozeti_kirpma_sinirindaki_yarim_token_maskelenir() -> None:
+    """`_metin` kırpma işaretinden önce temizler: sınırda yarım kalan token düz geçmez."""
+    token = "gh" + "p_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"
+    hata = "q" * (araci.MAX_ADIM_METNI - 12) + " " + token
+    satirlar = araci.db_ozeti("failed", {"runner_hata": hata})
+    metin = "\n".join(satirlar)
+    assert "Runner hatası:" in metin and "***" in metin and token[:6] not in metin

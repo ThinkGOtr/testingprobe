@@ -220,7 +220,7 @@ export interface CevapKartiOzellikleri {
   derinIncele?: () => void;
   derinCalisiyor?: boolean;
   geriBildir?: (deger: -1 | 1) => void;
-  /** "Bugün kalan soru hakkı ≈ N" (son kartta). */
+  /** "Bu saat kalan soru hakkı ≈ N" (son kartta; core saatlik sınırdan türetir, günlük bütçe ayrı 402 ile keser). */
   kalanSoru?: number | null;
   /** Git bağlantısına basılınca (mobilde panel kapanır). */
   onGit?: () => void;
@@ -325,7 +325,7 @@ export function CevapKarti({ mesaj, baslik, derinIncelenebilir, derinIncele, der
           </span>
         )}
         <span className="soluk kucuk">Maliyet: {olculmedi ? "ölçülmedi" : `≈ ${dolar(maliyet!)}`}</span>
-        {kalanSoru != null && <span className="soluk kucuk">Bugün kalan soru hakkı ≈ {kalanSoru}</span>}
+        {kalanSoru != null && <span className="soluk kucuk">Bu saat kalan soru hakkı ≈ {kalanSoru}</span>}
       </div>
     </article>
   );

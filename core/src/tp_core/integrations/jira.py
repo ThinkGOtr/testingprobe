@@ -112,11 +112,25 @@ class JiraSettings(BaseSettings):
     jira_hesap_po: str = Field(default="", validation_alias="JIRA_HESAP_PO")
     jira_hesap_muhendis: str = Field(default="", validation_alias="JIRA_HESAP_MUHENDIS")
     jira_hesap_testci: str = Field(default="", validation_alias="JIRA_HESAP_TESTCI")
+    # Ürünün bot accountId'leri (virgülle). Gerçek Jira yorum yazarının e-postasını çoğunlukla
+    # gizler; asistan okuyucusu bot yorumunu bu kimliklerle tanır.
+    jira_bot_account_ids: str = Field(default="", validation_alias="TP_JIRA_BOT_ACCOUNT_IDS")
 
     def role_account(self, rol: str) -> str:
         """``analist`` | ``po`` | ``muhendis`` | ``testci`` → accountId (geçersiz/boş → "")."""
         deger = str(getattr(self, f"jira_hesap_{rol}", "") or "").strip()
         return deger if valid_account_id(deger) else ""
+
+    @property
+    def bot_kimlikleri(self) -> frozenset[str]:
+        """Yorum yazan bot hesabının kimlikleri (küçük harf): ``JIRA_WRITE_EMAIL``,
+        ``TP_JIRA_BOT_ACCOUNT_IDS``; simülatörde sim yazma kullanıcısı da."""
+        ids = {a.strip().lower() for a in self.jira_bot_account_ids.split(",") if a.strip()}
+        if self.jira_write_email and self.jira_write_email.strip():
+            ids.add(self.jira_write_email.strip().lower())
+        if self.is_simulator:
+            ids.add(SIM_WRITE[0])
+        return frozenset(ids)
 
     @property
     def po_accounts(self) -> frozenset[str]:
@@ -857,7 +871,8 @@ def get_jira(settings: JiraSettings | None = None, *, http: httpx.Client | None 
 # (`security-check` gerçek Jira'da bu hesabın yorum/issue yazma izni taşımadığını denetler).
 #
 # Kişi verisi modele gitmez: yorumlar ham ADF üzerinde tek geçişte işlenir — kısıtlı yorumlar
-# (`visibility` dolu ya da `jsdPublic=false`) elenir, bot yorumu `has_bot_header` ile tanınır,
+# (`visibility` dolu ya da `jsdPublic=false`) elenir, bot yorumu `has_bot_header` VE yazarın bot
+# hesabı olmasıyla (`JiraSettings.bot_kimlikleri`) tanınır (imi taklit eden kişi bot sayılmaz),
 # yazar ve ADF mention'ları rol etiketine ("PO", "analyst" …) ya da mesaj içi takma ada
 # ("Kişi-1") çevrilir; ad/e-posta/accountId metne hiç girmez.
 
@@ -1018,6 +1033,7 @@ class JiraOkuyucu:
         transport: httpx.BaseTransport | None = None,
         browse_url: str | None = None,
         etiketleyici: KisiEtiketleyici | None = None,
+        bot_kimlikleri: Iterable[str] = (),
         max_retries: int = OKUMA_MAX_YENIDEN_DENEME,
         backoff_s: float = 0.5,
         sleep: Sleep = time.sleep,
@@ -1032,6 +1048,7 @@ class JiraOkuyucu:
         self._max_retries = max(0, int(max_retries))
         self._backoff_s = backoff_s
         self._etiketleyici = etiketleyici or KisiEtiketleyici()
+        self._bot = {b.strip().lower() for b in bot_kimlikleri if b and b.strip()}
         self._http = httpx.Client(
             transport=YalnizGetTransport(transport or httpx.HTTPTransport()),
             auth=httpx.BasicAuth(*read_auth),
@@ -1097,10 +1114,13 @@ class JiraOkuyucu:
 
     def _yorum(self, c: Mapping[str, Any]) -> OkunanYorum:
         govde = c.get("body")
-        if has_bot_header(govde):
+        kimlikler = person_ids(c.get("author"))
+        # Bot etiketi yalnız bot hesabının imli yorumuna: imi taklit eden kişi kendi etiketini
+        # alır ve im metinde kalır (güven yükseltmesi yok).
+        if has_bot_header(govde) and any(i.strip().lower() in self._bot for i in kimlikler):
             yazar = BOT_ETIKETI
         else:
-            yazar = self._etiketleyici.etiket(person_ids(c.get("author")))
+            yazar = self._etiketleyici.etiket(kimlikler)
         metin = adf_to_text(self._etiketleyici.mentionlari_degistir(govde))
         if yazar == BOT_ETIKETI:
             metin = strip_bot_header(metin)
@@ -1166,6 +1186,7 @@ def get_jira_okuma(
         transport=transport,
         browse_url=s.jira_browse_url,
         etiketleyici=KisiEtiketleyici.ayarlardan(s, takma_adlar),
+        bot_kimlikleri=s.bot_kimlikleri,
         sleep=sleep,
         saat=saat,
     )

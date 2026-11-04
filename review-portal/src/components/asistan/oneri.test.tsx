@@ -219,6 +219,58 @@ describe("Öneri düğmesi", () => {
     }
   });
 
+  it("core biçimli olaylar (gereksinim kimliği taşımayan bulgu/case olayları) rozeti yeniler", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await oturumAc("analist");
+      const pencere = oneriAyar.olayGecikmeMs;
+      const ilerlet = (ms: number) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
+      const spy = vi.spyOn(oneriApi, "liste");
+      uygulama("/gereksinimler/req-ft-1");
+      await dugme();
+      await waitFor(() => expect(spy).toHaveBeenCalled());
+      await ilerlet(10);
+      const once = spy.mock.calls.length;
+      // Başka gereksinimin kendi core olayı yok sayılır.
+      act(() => mockOlayYayinla({ type: "requirement.state", id: "req-tpd-3", data: { id: "req-tpd-3", durum: "approved" } }));
+      await ilerlet(pencere + 100);
+      expect(spy.mock.calls.length).toBe(once);
+      // core: consistency_finding.state {id, from, durum, aktor} — requirement_id yok.
+      act(() => mockOlayYayinla({ type: "consistency_finding.state", id: "fnd-9", data: { id: "fnd-9", from: "open", durum: "resolved", aktor: "u1" } }));
+      await ilerlet(pencere + 100);
+      await waitFor(() => expect(spy.mock.calls.length).toBe(once + 1));
+      // core: review.recorded {id, nesne_turu, nesne_id} ve test_case.state.
+      act(() => mockOlayYayinla({ type: "review.recorded", id: "tc-9", data: { id: "rv-1", nesne_turu: "test_case", nesne_id: "tc-9" } }));
+      await ilerlet(pencere + 100);
+      await waitFor(() => expect(spy.mock.calls.length).toBe(once + 2));
+      act(() => mockOlayYayinla({ type: "test_case.state", id: "tc-9", data: { id: "tc-9", from: "draft", durum: "approved" } }));
+      await ilerlet(pencere + 100);
+      await waitFor(() => expect(spy.mock.calls.length).toBe(once + 3));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("sonuç varken Öneriler sekmesinde 'Yenile' zorla yeniden okur", async () => {
+    await oturumAc("analist");
+    const spy = vi.spyOn(oneriApi, "liste");
+    render(
+      <MemoryRouter>
+        <OturumProvider>
+          <BildirimProvider>
+            <OnerilerSekmesi ekran={{ rota_kalibi: "/gereksinimler/:id", ekran: "Gereksinim detayı", varlik: { tur: "requirement", id: "req-ft-1" } }} asistan={null} />
+          </BildirimProvider>
+        </OturumProvider>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText(/tutarlılık bulgusu kararınızı bekliyor/)).toBeInTheDocument();
+    expect(spy).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Önerileri yenile" }));
+    });
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
+  });
+
   it("429: önceki değer yokken sekmede kısa not, değer varken sessiz", async () => {
     await oturumAc("analist");
     const spy = vi.spyOn(oneriApi, "liste").mockRejectedValueOnce(new ApiError(429, "Çok sık", { kod: "hiz_siniri" }));
@@ -338,6 +390,26 @@ describe("Öneriler sekmesi", () => {
     expect(govde.soru).toBe("Bu öneriyi neden yapmalıyım, yapmazsam ne olur?");
     expect(govde.kip).toBe("soru");
     expect(screen.getByRole("tab", { name: "Sohbet" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it('"Neden? Sor" sonrası aynı kartın hazır soru çipi yeni sohbet açmaz, o sohbete takip sorusu olur', async () => {
+    await oturumAc("analist");
+    const olustur = vi.spyOn(asistanApi, "sohbetOlustur");
+    const gonder = vi.spyOn(asistanApi, "soruGonder");
+    const u = userEvent.setup();
+    uygulama("/gereksinimler/req-ft-1");
+    const s = await oneriPaneliniAc(u);
+    await u.click(s.getByRole("button", { name: "Neden? Sor" }));
+    await waitFor(() => expect(gonder).toHaveBeenCalledTimes(1));
+    act(() => asistanMockIsle(asistanMockBekleyenler().at(-1)!));
+    await waitFor(() => expect(asistanMockBekleyenler()).toHaveLength(0));
+    await u.click(screen.getByRole("tab", { name: "Öneriler" }));
+    await u.click(within(await screen.findByTestId("oneriler-sekmesi")).getByRole("button", { name: "Kim onaylıyor?" }));
+    await waitFor(() => expect(gonder).toHaveBeenCalledTimes(2));
+    expect(olustur).toHaveBeenCalledTimes(1);
+    expect(gonder.mock.calls[1][0]).toBe(gonder.mock.calls[0][0]);
+    expect(gonder.mock.calls[1][1].oneri_kural_id).toBeUndefined();
+    expect(gonder.mock.calls[1][1].soru).toBe("Kim onaylıyor?");
   });
 
   it('model kapalıyken "Açıklamayı göster" kural açıklamasını gösterir (model çağrısı yok); "Başka ne yapabilirim?" gizli', async () => {

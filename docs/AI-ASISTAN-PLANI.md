@@ -1033,10 +1033,10 @@ kapalıyken de çalışır).
 | Olgu | Kaynak | Değerler |
 |---|---|---|
 | `durum` | varlığın `durum` alanı (`workflow/states.MACHINES`) | makinedeki durumlar (ör. requirement `findings_open`, `pending_po`, `po_approved`, `cases_ready`, `failed`; bug_draft `draft`; script `pr_open`, `blocked`) |
-| `po_bekleme_saat` | `pending_po` için son `RequirementReview.olusturma` (`models/requirements.py`) | saat |
+| `po_bekleme_saat` | `pending_po`'ya son geçişin `audit_event` (`requirement.transition`, `to=pending_po`) zamanı; iz yoksa son `RequirementReview.olusturma` | saat |
 | `po_kanal` | gereksinim serileştirmesindeki `po.kanal` | `portal` \| `jira` |
 | `ac_eksik` | `Requirement.ac_missing` (`models/requirements.py`) | bool |
-| `acik_bulgu_sayisi` | `consistency_finding` `open` sayısı | sayı |
+| `acik_bulgu_sayisi` | `consistency_finding` `open` ve kanıtı doğrulanmış sayısı | sayı |
 | `inceleme_bekleyen_case`, `onayli_case` | `test_case` `draft` / `approved` sayıları (`superseded` hariç) | sayı |
 | `kirarak_dogrulama` | script kırarak doğrulama durumu (`models/codegen_feature.BREAK_DURUM`; `lib/kapi.ts` ile aynı alan) | `not_started`, `running`, `passed`, `weak`, `failed` |
 | `ci_sonuc`, `basarisiz_adimlar` | `Run.sonuc`, `Run.artefaktlar` | `RUN_SONUC`, adım adları |

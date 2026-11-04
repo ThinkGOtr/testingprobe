@@ -1,6 +1,6 @@
 // Mock arka uç: asistan uçları, assistant.* olayları ve kodlu hatalar (AI-ASISTAN-PLANI §9, §13).
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { asistanApi } from "../asistan";
+import { asistanApi, gonderimHataMetni } from "../asistan";
 import { ApiError, mockUclari } from "../http";
 import type { PortalOlayi } from "../types";
 import { oturumAc } from "../../test/yardimci";
@@ -92,17 +92,36 @@ describe("asistan mock uçları", () => {
     expect(await asistanApi.durum()).toMatchObject({ etkin: false, neden: "worker_yok" });
   });
 
+  it("429 hiz_siniri: kovayı sunucu metni söyler (öneri sorusu dakikalık kova 'saatlik' denmez)", async () => {
+    expect(gonderimHataMetni(new ApiError(429, "Çok sık istek; biraz sonra yeniden deneyin.", { kod: "hiz_siniri" }))).toBe(
+      "Çok sık istek; biraz sonra yeniden deneyin.",
+    );
+    expect(gonderimHataMetni(new ApiError(429, "", { kod: "hiz_siniri" }))).toMatch(/Çok sık soru/);
+    expect(gonderimHataMetni(new ApiError(429, "", { kod: "hiz_siniri" }))).not.toMatch(/Saatlik/);
+  });
+
+  it("mesaj yanıtı core `mesaj_ozeti` anahtarlarıyla aynı (mock fazladan alan üretmez)", async () => {
+    // core/src/tp_core/features/assistant/api.py mesaj_ozeti
+    const CORE = ["id", "sohbet_id", "sira", "rol", "ust_mesaj_id", "icerik", "cevap", "durum", "hata_kodu", "kaynak", "amac", "kip", "tetik", "maliyet_usd", "sure_ms", "geri_bildirim", "olusturma", "tamamlanma"];
+    const s = await asistanApi.sohbetOlustur(null);
+    const a = await asistanApi.soruGonder(s.id, { soru: "bir" });
+    const { asistanMockBaslat } = await import("./asistan");
+    asistanMockBaslat(a.mesaj_id);
+    expect(Object.keys(await asistanApi.mesaj(a.mesaj_id)).sort()).toEqual([...CORE].sort());
+    for (const m of await asistanApi.mesajlar(s.id)) expect(Object.keys(m).sort()).toEqual([...CORE].sort());
+  });
+
   it("iptal: pending → iptal (ücret yok); running → iptal (harcanan yazılır)", async () => {
     const s = await asistanApi.sohbetOlustur(null);
     const a = await asistanApi.soruGonder(s.id, { soru: "bir" });
     await asistanApi.iptal(a.mesaj_id);
-    expect(await asistanApi.mesaj(a.mesaj_id)).toMatchObject({ durum: "iptal", maliyet_usd: null, basladi: false });
+    expect(await asistanApi.mesaj(a.mesaj_id)).toMatchObject({ durum: "iptal", maliyet_usd: null });
     const b = await asistanApi.soruGonder(s.id, { soru: "iki" });
     const { asistanMockBaslat } = await import("./asistan");
     asistanMockBaslat(b.mesaj_id);
     await asistanApi.iptal(b.mesaj_id);
     const m = await asistanApi.mesaj(b.mesaj_id);
-    expect(m).toMatchObject({ durum: "iptal", basladi: true });
+    expect(m).toMatchObject({ durum: "iptal" });
     expect(Number(m.maliyet_usd)).toBeGreaterThan(0);
     // İptal edilen mesaj sonradan işlenmez.
     asistanMockIsle(b.mesaj_id);

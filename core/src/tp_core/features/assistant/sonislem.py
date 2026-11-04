@@ -92,6 +92,10 @@ YENI_KAYIT_TURLERI: Final = frozenset({"Task", "Bug", "Story"})
 SISTEM_HATTI_EKRANLARI: Final = ("/bug-taslaklari", "/gereksinimler/:id/yayin")
 SISTEM_HATTI_VARLIKLARI: Final = frozenset({"bug_draft", "consistency_finding"})
 SISTEM_HATTI_EYLEMLERI: Final = frozenset({"jira_taslak", "jira_yorum"})
+# Hata detayı (`failure`) sistem hattı değildir (flaky/test verisi için Task/yorum serbest; §17.3),
+# ama ürün hatasının Bug kaydı Probe'un bug taslağı hattındadır: orada yeni Bug taslağı `bilgi`ye
+# düşer (prompt'a bırakılmaz).
+BUG_HATTI_VARLIKLARI: Final = frozenset({"failure"})
 
 # ASCII rakam (`\d` Unicode rakamı da kabul ederdi).
 JIRA_ANAHTARI: Final = re.compile(r"[A-Z][A-Z0-9]+-[0-9]+")
@@ -609,6 +613,8 @@ def oneri_eylemi(ham: Any, b: SonIslemBaglami) -> dict[str, Any]:
     if tur == "jira_taslak":
         taslak_turu = taslak_ham.get("tur") if taslak_ham else None
         if taslak_turu not in YENI_KAYIT_TURLERI:
+            return _bilgi()
+        if taslak_turu == "Bug" and b.varlik_turu in BUG_HATTI_VARLIKLARI:
             return _bilgi()
         out = {
             "tur": tur,

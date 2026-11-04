@@ -110,15 +110,13 @@ export interface AsistanMesaji {
   amac: AsistanAmaci | null;
   kip: "soru" | "oneri";
   tetik: "kullanici" | "otomatik";
-  /** Son `assistant.step` adımı (sayfa yenilenince bekleyen mesajın adımı). */
-  adim_kodu?: string | null;
   maliyet_usd: number | string | null;
   sure_ms: number | null;
   geri_bildirim: -1 | 1 | null;
   olusturma: string;
   tamamlanma: string | null;
-  /** Mesaj işlenmeye başladı mı (`running` görülmüşse); iptal notu için. */
-  basladi?: boolean;
+  // Core `mesaj_ozeti` adım kodu ve "başladı" bilgisi yazmaz: adım yalnız `assistant.step`
+  // olayıyla gelir, başlama `durum === "running"` ile anlaşılır.
 }
 
 /** Soru gövdesi (§9). `baglam` ≤ 2 KB (istemci kırpar, sunucu doğrular). */
@@ -210,7 +208,8 @@ export function gonderimHataMetni(e: unknown): string {
     case "zaten_derin":
       return "Bu cevap zaten ayrıntılı incelendi.";
     case "hiz_siniri":
-      return "Saatlik soru sınırına ulaştınız. Biraz sonra yeniden deneyin.";
+      // Sunucu kovayı (saatlik soru, sık sohbet açma, öneri sorusu dakikalık) kendi metniyle söyler.
+      return e.detail?.trim() || "Çok sık soru gönderildi. Biraz sonra yeniden deneyin.";
     case "mesgul":
       return "Asistan şu an meşgul. Birkaç saniye sonra yeniden deneyin.";
     case "butce_asildi":
@@ -220,7 +219,7 @@ export function gonderimHataMetni(e: unknown): string {
     case "asistan_kapali":
       return "Asistan şu an kapalı.";
     case "oneri_gecersiz":
-      return "Bu öneri artık geçerli değil (ekrandaki durum değişti). Öneriler sekmesini yenileyin.";
+      return "Bu öneri artık geçerli değil (ekrandaki durum değişti); öneriler yenilendi.";
     default:
       return e.detail;
   }

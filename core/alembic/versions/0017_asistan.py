@@ -141,6 +141,9 @@ CREATE TABLE asistan_oneri_geri_bildirim (
 """,
     "CREATE INDEX asistan_oneri_geri_bildirim_ix "
     "ON asistan_oneri_geri_bildirim (kullanici_id, kural_id, varlik_id)",
+    # Öneri ucunun kullanıcılar arası "Gizle/Yaptım" bastırma sorgusu `kullanici_id` süzmez.
+    "CREATE INDEX asistan_oneri_geri_bildirim_varlik_ix "
+    "ON asistan_oneri_geri_bildirim (kural_id, varlik_id, varlik_durum)",
     """
 CREATE TABLE asistan_hiz (
     id UUID DEFAULT gen_random_uuid() NOT NULL,

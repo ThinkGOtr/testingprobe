@@ -174,6 +174,15 @@ def sir_temizle(metin: str, sir_degerleri: Iterable[str] = ()) -> str:
     return scrub_secrets(metin, degerler)
 
 
+def kesik_temizle(parca: str) -> str:
+    """Kırpılan parçayı kırpma işareti eklenmeden ÖNCE temizler: parça `\\Z` ile bitiyorken
+    `scrub_secret_patterns`'ın kesme sınırı koruması (yarım token, bilinen değerin öneki) devreye
+    girer; işaret eklendikten sonra yapılan temizlik yarım token'ı düz bırakırdı."""
+    from tp_core.gateway.factory import known_secret_values
+
+    return scrub_secret_patterns(parca, known_secret_values())
+
+
 def _db_query_ozeti(metin: str) -> tuple[str | None, str | None]:
     """`DataTools.db_query` çıktısının başındaki `query:` ve `result_digest:` satırları."""
     if not metin.startswith("query: "):

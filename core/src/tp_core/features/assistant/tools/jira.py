@@ -34,7 +34,12 @@ import httpx
 from sqlalchemy import exists, or_, select
 
 from tp_core.features.assistant.hiz import KOVA_JIRA_GLOBAL, VARSAYILAN_SINIRLAR, hiz_kontrol
-from tp_core.features.assistant.tools.base import AracBaglami, AracHatasi, AracSonucu
+from tp_core.features.assistant.tools.base import (
+    AracBaglami,
+    AracHatasi,
+    AracSonucu,
+    kesik_temizle,
+)
 from tp_core.integrations import jira as jira_mod
 from tp_core.models.delivery import BugDraft, ExternalRef
 from tp_core.models.requirements import Requirement
@@ -161,7 +166,7 @@ def _kova_kancasi(baglam: AracBaglami) -> Callable[[], None]:
 
 def _kirp(metin: str, sinir: int) -> str:
     metin = metin.strip()
-    return metin if len(metin) <= sinir else metin[:sinir].rstrip() + " …[kırpıldı]"
+    return metin if len(metin) <= sinir else kesik_temizle(metin[:sinir]).rstrip() + " …[kırpıldı]"
 
 
 def _bicimle(issue: jira_mod.OkunanIssue, sayfa: jira_mod.YorumSayfasi, limit: int) -> str:
@@ -219,7 +224,10 @@ def jira_issue(baglam: AracBaglami, **arg: Any) -> AracSonucu:
                 min(ISTEK_SURE_S, kalan), min(TOPLAM_SURE_S, kalan), takma_adlar, transport
             ) as okuyucu:
                 issue = okuyucu.get_issue(anahtar)
-                sayfa = okuyucu.son_yorumlar(anahtar, limit)
+                # Önbellek anahtar başına tek okumadır: yorumlar sözleşmenin üst sınırıyla
+                # (10) okunur, `limit` biçimlemede uygulanır — sonraki çağrı daha büyük
+                # `yorum_limit` isterse de karşılanır (istek sayısı n'den bağımsız, en çok 2).
+                sayfa = okuyucu.son_yorumlar(anahtar, YORUM_LIMIT_EN_COK)
         except JiraKovasiDoldu as exc:
             raise AracHatasi(MESAJ_MESGUL) from exc
         except jira_mod.JiraNotFound as exc:
@@ -233,7 +241,8 @@ def jira_issue(baglam: AracBaglami, **arg: Any) -> AracSonucu:
                 raise AracHatasi(MESAJ_YANIT_YOK) from exc
             raise AracHatasi(MESAJ_ERISIM) from exc
         onbellek[anahtar] = (issue, sayfa)
-    # Aynı anahtar mesajda bir kez okunur; sonraki çağrı (başka limitle de) önbellekten döner.
+    # Aynı anahtar mesajda bir kez okunur; sonraki çağrı (başka limitle de) önbellekten, kendi
+    # limitiyle döner.
     issue, sayfa = onbellek[anahtar]
     return AracSonucu(
         metin=_bicimle(issue, sayfa, limit),

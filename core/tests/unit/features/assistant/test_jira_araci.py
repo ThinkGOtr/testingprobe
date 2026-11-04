@@ -14,6 +14,7 @@ import pytest
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
+from tp_core.features.assistant.hiz import KOVA_JIRA_GLOBAL, VARSAYILAN_SINIRLAR
 from tp_core.features.assistant.tools import jira as araci
 from tp_core.features.assistant.tools.base import AracBaglami, AracHatasi, AracSarmalayici
 from tp_core.gateway.masking import PiiMasker
@@ -211,6 +212,31 @@ def test_ayni_anahtar_mesajda_tek_istek(engine: Engine, sahte: SahteJira, biline
     assert "Kampanya indirimi" in ikinci and ilk
 
 
+def test_onbellek_sonraki_cagrinin_yorum_limitini_karsilar(
+    engine: Engine, sahte: SahteJira, bilinen
+) -> None:
+    """Önbellek anahtar başınadır ama limit çağrı başına: ilk çağrı 2 yorum isterken ikinci
+    çağrının 10'u ilk okumanın 2 yorumuyla sınırlı kalmaz (yine tek okuma)."""
+    sahte.yorumlar = [
+        {
+            "id": str(i),
+            "author": {"accountId": f"acc-{i}", "displayName": f"Kişi {i}"},
+            "body": text_to_adf(f"yorum-{i:02d}"),
+            "created": "2026-11-01T10:00:00.000+0000",
+        }
+        for i in range(12)
+    ]
+    b = _baglam(engine)
+    ilk = araci.jira_issue(b, anahtar="TPD-3", yorum_limit=2).metin
+    istek = len(sahte.istekler)
+    ikinci = araci.jira_issue(b, anahtar="TPD-3", yorum_limit=10).metin
+    assert len(sahte.istekler) == istek  # ikinci çağrı ağa çıkmaz
+    assert "son 2 gösteriliyor" in ilk and "yorum-11" in ilk and "yorum-09" not in ilk
+    assert "son 10 gösteriliyor" in ikinci
+    assert all(f"yorum-{i:02d}" in ikinci for i in range(2, 12))
+    assert "yorum-01" not in ikinci
+
+
 def test_yazar_e_postasi_ve_adi_modele_gitmez(engine: Engine, sahte: SahteJira, bilinen) -> None:
     b = _baglam(engine)
     sar = AracSarmalayici(b, yeni=araci.ARACLAR)
@@ -271,6 +297,10 @@ def test_sure_bittiyse_istek_yok(engine: Engine, sahte: SahteJira, bilinen) -> N
     assert sahte.istekler == []
 
 
+def _jira_penceresi() -> int:
+    return VARSAYILAN_SINIRLAR[KOVA_JIRA_GLOBAL][1]
+
+
 def _jira_kova_sayisi(engine: Engine) -> int:
     with engine.connect() as c:
         return int(
@@ -278,8 +308,9 @@ def _jira_kova_sayisi(engine: Engine) -> int:
                 text(
                     "SELECT COALESCE(SUM(sayi), 0) FROM asistan_hiz WHERE kova = 'jira_global' "
                     "AND pencere_baslangic = "
-                    "to_timestamp(floor(extract(epoch FROM now()) / 60) * 60)"
-                )
+                    "to_timestamp(floor(extract(epoch FROM now()) / :p) * :p)"
+                ),
+                {"p": _jira_penceresi()},
             ).scalar_one()
         )
 
@@ -291,13 +322,15 @@ def _jira_kova_ayarla(engine: Engine, sayi: int) -> None:
             text(
                 "INSERT INTO asistan_hiz (id, kullanici_id, kova, pencere_baslangic, sayi) "
                 "VALUES (:id, NULL, 'jira_global', "
-                "to_timestamp(floor(extract(epoch FROM now()) / 60) * 60), :n)"
+                "to_timestamp(floor(extract(epoch FROM now()) / :p) * :p), :n)"
             ),
-            {"id": uuid.uuid4(), "n": sayi},
+            {"id": uuid.uuid4(), "n": sayi, "p": _jira_penceresi()},
         )
 
 
-def test_jira_kovasi_her_http_istegini_sayar(engine: Engine, sahte: SahteJira, bilinen) -> None:
+def test_jira_kovasi_her_http_istegini_sayar(
+    engine: Engine, sahte: SahteJira, bilinen, sabit_hiz_penceresi: int
+) -> None:
     """Sınır dakikada 30 HTTP isteğidir: bir okuma (konu + yorum sayfaları) kaç istek yaptıysa
     kovadan o kadar düşer; kova dolunca istek ağa çıkmaz ("Jira meşgul")."""
     _jira_kova_ayarla(engine, 0)
@@ -328,3 +361,20 @@ def test_arac_semasi_anahtar_kalibi() -> None:
     assert spec.name == "jira_issue"
     assert spec.input_schema["required"] == ["anahtar"]
     assert spec.input_schema["additionalProperties"] is False
+
+
+def test_kirpma_sinirindaki_yarim_token_maskelenir(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Kırpma işaretinden ÖNCE temizlik: sınırda yarım kalan token (biçim deseni) ve bilinen sır
+    değerinin öneki düz geçmez (işaret eklendikten sonra `\\Z` koruması çalışmazdı)."""
+    from tp_core.features.assistant.tools.base import sir_temizle
+
+    token = "gh" + "p_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"
+    metin = "x" * (araci.MAX_YORUM - 14) + " " + token
+    cikti = sir_temizle(araci._kirp(metin, araci.MAX_YORUM))
+    assert cikti.endswith("…[kırpıldı]") and "***" in cikti
+    assert token[:6] not in cikti
+    deger = "bilinen-" + uuid.uuid4().hex
+    monkeypatch.setenv("JIRA_READ_TOKEN", deger)
+    metin = "y" * (araci.MAX_YORUM - 12) + " " + deger
+    cikti = sir_temizle(araci._kirp(metin, araci.MAX_YORUM), [deger])
+    assert deger[:11] not in cikti and "***" in cikti

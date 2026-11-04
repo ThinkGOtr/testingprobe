@@ -8,6 +8,8 @@
 //   listede `GET /assistant/suggestions` yoksa gizli (istek hiç atılmaz).
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { oneriApi, type OneriListesi, type OneriSorgusu } from "../../api/asistan";
+import { olayEslesir } from "../../api/events";
+import type { PortalOlayi } from "../../api/types";
 import { ApiError, buFazdaYok, cekirdekYetenekleri, hataMesaji, ucVar } from "../../api/http";
 import type { EkranBaglami } from "../../lib/ekranBaglami";
 import { oturumDegisinceTemizle } from "../../lib/oturumTemizligi";
@@ -136,4 +138,22 @@ export function oneriOlayKonulari(ekran: EkranBaglami): string[] {
   }
   if (ekran.rota_kalibi === "/kosular" || ekran.rota_kalibi === "/kontrol-kulesi") return ["ci.status"];
   return [];
+}
+
+/** Olayın üst varlığını taşıyan alanlar: biri doluysa olay o varlığa aittir. */
+const UST_ALANLAR = ["requirement_id", "script_id", "run_id", "failure_id", "bug_draft_id"] as const;
+
+/**
+ * Rozet yenilemesinde olay bu varlığa ait sayılır mı? Kimlik eşleşirse evet. Eşleşmezse: olay başka
+ * bir üst varlık kimliği taşıyorsa ya da aynı türden başka bir varlığın kendi olayıysa hayır. Core'un
+ * `<tür>.state` / `review.recorded` olayları alt nesneler (bulgu, case) için üst kimlik taşımaz
+ * (`{id, from, durum, aktor}`); bunlar kabul edilir — 5 sn'lik pencere yükü sınırlar.
+ */
+export function oneriOlayiIlgili(o: PortalOlayi, varlik: { tur: string; id: string } | null | undefined): boolean {
+  if (!varlik) return true;
+  if (olayEslesir(o, null, varlik.id)) return true;
+  if (UST_ALANLAR.some((a) => typeof o.data[a] === "string")) return false;
+  const durum = /^([a-z_]+)\.state$/.exec(o.type);
+  const kendiTuru = durum ? durum[1] : o.type === "review.recorded" ? o.data.nesne_turu : o.type.split(".")[0];
+  return kendiTuru !== varlik.tur;
 }

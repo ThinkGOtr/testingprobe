@@ -9,7 +9,7 @@ import { useOlay } from "../../api/events";
 import { useOturum } from "../../auth";
 import { useEkranBaglami } from "../../lib/ekranBaglami";
 import { acSekme } from "./kontrol";
-import { oneriAnahtari, oneriAyar, oneriGetir, oneriOlayKonulari, oneriSorgusu, useOneriDurumu, useOneriYetenegi } from "./OneriVerisi";
+import { oneriAnahtari, oneriAyar, oneriGetir, oneriOlayiIlgili, oneriOlayKonulari, oneriSorgusu, useOneriDurumu, useOneriYetenegi } from "./OneriVerisi";
 
 export function OneriDugmesi() {
   const { kullanici } = useOturum();
@@ -37,9 +37,13 @@ export function OneriDugmesi() {
   );
 
   const konular = oneriOlayKonulari(ekran);
+  const varlikRef = useRef(ekran.varlik);
+  varlikRef.current = ekran.varlik;
   useOlay(
-    () => {
+    (o) => {
       if (!anahtar || konular.length === 0 || zamanlayici.current) return;
+      // Kimlik süzgeci burada: core'un bulgu/case olayları gereksinim kimliği taşımaz (bkz. oneriOlayiIlgili).
+      if (!oneriOlayiIlgili(o, varlikRef.current)) return;
       // İlk olay 5 sn'lik pencereyi açar; penceredeki diğer olaylar aynı yenilemeye katılır.
       zamanlayici.current = setTimeout(() => {
         zamanlayici.current = null;
@@ -47,7 +51,6 @@ export function OneriDugmesi() {
       }, oneriAyar.olayGecikmeMs);
     },
     konular.length > 0 ? konular : ["oneri.olay-yok"],
-    ekran.varlik?.id,
   );
 
   const sonuc = durum.sonuc;

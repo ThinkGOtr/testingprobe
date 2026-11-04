@@ -99,6 +99,17 @@ def test_ai_call_parent_call_id_indeksli(db: Db) -> None:
     assert tanim is not None and "(parent_call_id)" in tanim[0]
 
 
+def test_oneri_bastirma_sorgusu_indeksli(db: Db) -> None:
+    """Öneri ucunun kullanıcılar arası bastırma sorgusu `kullanici_id` süzmez; baştaki sütunu
+    `kural_id` olan indeksle aranır (`asistan_oneri_geri_bildirim_ix` kullanılamaz)."""
+    with psycopg.connect(db.owner_url.replace("+psycopg", ""), autocommit=True) as o:
+        tanim = o.execute(
+            "SELECT indexdef FROM pg_indexes WHERE tablename = 'asistan_oneri_geri_bildirim' "
+            "AND indexname = 'asistan_oneri_geri_bildirim_varlik_ix'"
+        ).fetchone()
+    assert tanim is not None and "(kural_id, varlik_id, varlik_durum)" in tanim[0]
+
+
 def test_kisit_adlari_sozlesmeyle_ayni(db: Db) -> None:
     """API IntegrityError'ı kısıt adına göre 409'a eşler; adlar migrasyonla birebir olmalı."""
     with psycopg.connect(db.owner_url.replace("+psycopg", ""), autocommit=True) as o:

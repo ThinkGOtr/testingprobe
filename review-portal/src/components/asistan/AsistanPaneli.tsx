@@ -220,6 +220,7 @@ export function AsistanPaneli() {
 
   // Dar ekran modalı: arka plan (panelin atalarının kardeşleri) `inert` ve sayfa kaydırması kilitli;
   // ekran okuyucunun sanal imleci arka plana kaçmasın, mobilde arka plan kaymasın. Kapanınca geri alınır.
+  // Bildirim canlı bölgesi (`.bildirimler`) hariç: panelin "Kopyalandı/Gizlendi" durumları duyurulmalı.
   useEffect(() => {
     if (!modalAktif) return;
     const p = panelRef.current;
@@ -229,7 +230,7 @@ export function AsistanPaneli() {
       const ust: HTMLElement | null = el.parentElement;
       if (!ust) break;
       for (const kardes of Array.from<Element>(ust.children)) {
-        if (kardes === el || kardes.hasAttribute("inert") || kardes.tagName === "SCRIPT") continue;
+        if (kardes === el || kardes.hasAttribute("inert") || kardes.tagName === "SCRIPT" || kardes.classList.contains("bildirimler")) continue;
         kardes.setAttribute("inert", "");
         degisenler.push(kardes);
       }
@@ -273,6 +274,13 @@ export function AsistanPaneli() {
     const r = sonuc.getBoundingClientRect();
     setVurgu({ x: r.left, y: r.top, w: r.width, h: r.height });
   };
+
+  // Sohbet çizilemiyorsa (asistan pasif ya da ucu yok) Sohbet'e yönelik dış istek tüketilir:
+  // depoda kalıp asistan hazıra dönünce kullanıcı bir şey yapmadan eski soru gönderilmesin.
+  const istekSirasi = kontrol.istek?.sekme === "sohbet" ? kontrol.istek.sira : null;
+  useEffect(() => {
+    if (istekSirasi !== null && (kapi.tur === "pasif" || kapi.tur === "gizli")) istegiTuket(istekSirasi);
+  }, [istekSirasi, kapi.tur]);
 
   if (kapi.tur === "yukleniyor") return null;
   // Asistan ucu yok: düğme gizli; Öneri düğmesi paneli Öneriler sekmesinde yine açabilir.

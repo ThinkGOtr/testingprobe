@@ -103,6 +103,11 @@ export function OnerilerSekmesi({ ekran, asistan, oneriKuralId, onGit }: Onerile
 
   return (
     <div className="asistan-oneriler-sekmesi" data-testid="oneriler-sekmesi">
+      <div className="oneri-ust">
+        <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={yenile} disabled={durum.yukleniyor} aria-label="Önerileri yenile">
+          {durum.yukleniyor ? "Yenileniyor…" : "Yenile"}
+        </button>
+      </div>
       {durum.hata && <p className="oneri-hata kucuk">{durum.hata}</p>}
       {oneriler.length === 0 ? (
         <BosDurum baslik="Bu ekranda sizin için bekleyen bir iş yok.">

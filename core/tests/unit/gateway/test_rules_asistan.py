@@ -553,6 +553,11 @@ def test_olgu_sozlesmesi_kodla_ayni() -> None:
     for ad, degerler in beklenen.items():
         assert set(olgular[ad]["degerler"]) == set(degerler), ad
     assert set(olgular["durum"]["varliklar"]) <= set(MACHINES)
+    # Dışa aktarılan kural dosyası (İlke IX) hesaplanan varlıkları eksiksiz anlatır: kodla birebir.
+    from tp_core.features.assistant.oneri import OLGU_HESAPLAYICILARI
+
+    for ad, o in olgular.items():
+        assert set(o["varliklar"]) == set(OLGU_HESAPLAYICILARI[ad]), ad
     for ad, o in olgular.items():
         assert o["kaynak"], ad
 

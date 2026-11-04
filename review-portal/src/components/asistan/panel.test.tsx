@@ -1,13 +1,13 @@
 // Portal asistan paneli (AI-ASISTAN-PLANI §11, §13 "Portal (vitest)"): yetenek kapısı, yerleşim,
 // başlık rozet kuralı, soru/cevap akışı, bekleme/iptal/yoklama/yeniden bağlanma, otomatik
 // yükseltme, Jira/CI kaynakları, "Asistana sor", "? Bu ne?" ve data-asistan-gizli kuralı.
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Rotalar } from "../../App";
-import { asistanApi } from "../../api/asistan";
+import { asistanApi, oneriApi } from "../../api/asistan";
 import { api } from "../../api/client";
 import { ApiError, yapilandir } from "../../api/http";
 import { asistanMockAyarla, asistanMockBaslat, asistanMockBekleyenler, asistanMockIsle } from "../../api/mock/asistan";
@@ -19,7 +19,7 @@ import { BildirimProvider } from "../Bildirim";
 import { AsistanaSorDugmesi, HataKutusu } from "../ui";
 import { AsistanPaneli } from "./AsistanPaneli";
 import { elemanTanimi } from "./buNe";
-import { acSekme, asistanKontrolSifirla } from "./kontrol";
+import { acSekme, asistanKontrolSifirla, useAsistanKontrol } from "./kontrol";
 import { sohbetAyar } from "./SohbetSekmesi";
 
 function uygulama(yol: string) {
@@ -269,7 +269,7 @@ describe("soru ve cevap", () => {
     expect(dogrulanmamis).toHaveClass("soluk-kaynak");
     expect(within(dogrulanmamis).getByText("doğrulanmadı")).toBeInTheDocument();
     expect(within(kart).getByRole("link", { name: "Git: Kod üretimi" })).toHaveAttribute("href", "/kod");
-    expect(within(kart).getByText(/Bugün kalan soru hakkı ≈ 29/)).toBeInTheDocument();
+    expect(within(kart).getByText(/Bu saat kalan soru hakkı ≈ 29/)).toBeInTheDocument();
     expect(within(kart).getByText(/Maliyet: ≈/)).toBeInTheDocument();
     await u.click(within(kart).getByRole("button", { name: "Faydalı" }));
     await waitFor(() => expect(within(kart).getByRole("button", { name: "Faydalı" })).toHaveAttribute("aria-pressed", "true"));
@@ -388,6 +388,60 @@ describe("bekleme, iptal, yoklama, yeniden bağlanma", () => {
     act(() => asistanMockBaslat(id));
     await u.click(within(p).getByRole("button", { name: "Beklemeyi bırak" }));
     expect(await within(p).findByText(/İşlenen kısım ücretlendi/)).toBeInTheDocument();
+  });
+
+  it("SSE kopukken ve yoklama henüz gelmeden 'running' mesaj durdurulursa not 'ücretlendi' der (core mesajı basladi taşımaz)", async () => {
+    sohbetAyar.yoklamaMs = 60_000;
+    await oturumAc("analist");
+    const u = userEvent.setup();
+    yalnizPanel();
+    const p = await paneliAc(u);
+    const id = await sor(u, "uzun soru");
+    // Worker işi aldı; portal bunu ne olayla ne yoklamayla gördü (listede hâlâ `pending`).
+    act(() => void asistanMockBaslat(id));
+    const m = await asistanApi.mesaj(id);
+    expect(m.durum).toBe("running");
+    expect(m).not.toHaveProperty("basladi");
+    expect(m).not.toHaveProperty("adim_kodu");
+    await u.click(within(p).getByRole("button", { name: "Beklemeyi bırak" }));
+    expect(await within(p).findByText(/İşlenen kısım ücretlendi/)).toBeInTheDocument();
+  });
+
+  it("bayat dış istek (Sohbet o sırada çizilemedi) sonradan gönderilmez", async () => {
+    await oturumAc("analist");
+    const gonder = vi.spyOn(asistanApi, "soruGonder");
+    const simdi = Date.now();
+    const saat = vi.spyOn(Date, "now").mockReturnValue(simdi - 60_000);
+    act(() => acSekme("sohbet", { soru: "eski soru" }));
+    saat.mockRestore();
+    yalnizPanel();
+    expect(await screen.findByTestId("asistan-paneli")).toBeInTheDocument();
+    await act(async () => undefined);
+    expect(gonder).not.toHaveBeenCalled();
+    expect(renderHook(() => useAsistanKontrol()).result.current.istek).toBeNull();
+  });
+
+  it("asistan pasifken Sohbet'e yönelik dış istek tüketilir (hazıra dönünce gönderilmez)", async () => {
+    await oturumAc("analist");
+    asistanMockAyarla({ etkin: false, neden: "worker_yok" });
+    const gonder = vi.spyOn(asistanApi, "soruGonder");
+    yalnizPanel();
+    act(() => acSekme("sohbet", { soru: "pasifken soru" }));
+    expect(within(await screen.findByTestId("asistan-paneli")).getByText(/Asistan kullanılamıyor/)).toBeInTheDocument();
+    await waitFor(() => expect(renderHook(() => useAsistanKontrol()).result.current.istek).toBeNull());
+    expect(gonder).not.toHaveBeenCalled();
+  });
+
+  it("öneri sorusu 409 oneri_gecersiz alınca bu ekranın önerileri zorla yenilenir", async () => {
+    await oturumAc("analist");
+    const u = userEvent.setup();
+    yalnizPanel("/gereksinimler/req-ft-1");
+    const p = await paneliAc(u);
+    const liste = vi.spyOn(oneriApi, "liste");
+    vi.spyOn(asistanApi, "soruGonder").mockRejectedValueOnce(new ApiError(409, "geçersiz", { kod: "oneri_gecersiz" }));
+    act(() => acSekme("sohbet", { oneriKuralId: "r01", soru: "Bu öneri neden çıktı?" }));
+    expect(await within(p).findByText(/öneriler yenilendi/)).toBeInTheDocument();
+    await waitFor(() => expect(liste).toHaveBeenCalledWith(expect.objectContaining({ varlik_id: "req-ft-1" })));
   });
 
   it("geçen süre sayacı canlı bölgede duyurulmaz (aria-hidden); adım metni duyurulur", async () => {

@@ -10,7 +10,7 @@ import { JIRA_ANAHTARI, oneriApi, oneriHataMetni, type AsistanOnerisi, type Kura
 import { goreliZaman, guvenliDisAdres } from "../../lib/format";
 import { uygulamaRotasiMi } from "../../lib/rotalar";
 import { useBildirim } from "../Bildirim";
-import { acSekme } from "./kontrol";
+import { acSekme, oneriSohbeti } from "./kontrol";
 
 export const NEDEN_SORUSU = "Bu öneriyi neden yapmalıyım, yapmazsam ne olur?";
 
@@ -231,7 +231,11 @@ export function OneriKarti({ oneri, modelAcik, varlikId, vurgulu, onGit, onGeriB
   const alanId = useId();
   const jiraEylemi = JIRA_EYLEMLERI.has(oneri.eylem.tur);
 
-  const sor = (soru: string) => acSekme("sohbet", { oneriKuralId: oneri.kural_id, soru });
+  // Aynı kural için "Neden? Sor" sohbeti açıldıysa çip sorusu oraya (takip) gider; yoksa yeni sohbet.
+  const sor = (soru: string) => {
+    const sohbetId = oneriSohbeti(oneri.kural_id, varlikId);
+    acSekme("sohbet", sohbetId ? { soru, sohbetId } : { oneriKuralId: oneri.kural_id, soru });
+  };
 
   const geriBildir = async (deger: OneriGeriBildirimDegeri) => {
     const jira = anahtar.trim().toUpperCase();
