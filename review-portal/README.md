@@ -15,7 +15,7 @@ React 18 + Vite 8 + TypeScript (strict), react-router. Arayüz metinleri Türkç
 | `npm run e2e` | Playwright duman testi: mock derlemeyi `vite preview` ile açar, tüm rotaları gezer, ekran görüntülerini `e2e/ekranlar/` altına yazar; her rolde ölü iç bağlantı, 390 px taşma ve axe (WCAG 2 AA, açık/koyu tema) denetimi yapar (ilk seferde `npx playwright install chromium`) |
 
 **Test yazarken:** gereksinim detayındaki bölüm gezgini (`nav "Sayfa bölümleri"`) kart başlıklarıyla
-aynı metinli bağlantılar taşır, DOM'da içerikten önce gelir ve 1280 px altında gizlidir. Kart başlıkları
+aynı metinli bağlantılar taşır, DOM'da içerikten önce gelir ve 860 px ve altında gizlidir (861–1279 px yatay şerit). Kart başlıkları
 `getByText(...).first()` ile değil `getByRole("region", { name })` ile aranır. Aynı düğme grubundaki eş
 pasiflik nedeni (`.dugme-neden`) bir kez yazılır; diğer düğmeler `aria-describedby` ile ona bağlanır,
 neden metnini düğmenin erişilebilir açıklamasıyla (`toHaveAccessibleDescription`) doğrulayın.
