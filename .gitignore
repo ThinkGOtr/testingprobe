@@ -29,3 +29,6 @@ playwright-report/
 demo-app/results/
 demo-app/e2e/results/
 review-portal/e2e/ekranlar/
+
+# Canlı demo senaryosu: giriş parolaları içerir, yalnız yerelde tutulur
+docs/CANLI-DEMO-SENARYOSU.md
