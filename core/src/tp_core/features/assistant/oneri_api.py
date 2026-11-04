@@ -105,6 +105,12 @@ def suggestion_feedback(
     except oneri.GecersizGeriBildirim as exc:
         # Metin `oneri`'deki sabit Türkçe iletidir (istisna adı ya da ham girdi değil).
         raise HTTPException(422, str(exc)) from None
-    # "Yaptım" tüm rollerde bastırır: eski sonuçlar önbellek süresini beklemesin.
-    oneri.ONBELLEK.temizle()
+    # Bastırma kapsamı kadar temizlik (eski sonuçlar önbellek süresini beklemesin): "Yaptım" tüm
+    # rollerde bastırır → tüm önbellek; "Gizle" yalnız bu kullanıcıda → yalnız onun kayıtları;
+    # "Faydalı" listeyi değiştirmez → dokunulmaz. Önbellek süreç içidir: çok süreçli koşuda diğer
+    # süreçler bastırılmış kartı en çok `ONBELLEK_SURE_S` (4 sn) daha gösterebilir (kabul edildi).
+    if body.deger == oneri.YAPTIM:
+        oneri.ONBELLEK.temizle()
+    elif body.deger == oneri.GIZLE:
+        oneri.ONBELLEK.temizle(user.id)
     return sonuc

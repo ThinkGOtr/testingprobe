@@ -506,6 +506,17 @@ def test_onbellek_sure_dolunca_dusurur() -> None:
     assert ob.al(("b",)) is None
 
 
+def test_onbellek_kullaniciya_ozel_temizlik() -> None:
+    """`temizle(kullanici_id)` yalnız o kullanıcının kayıtlarını siler ("Gizle" kapsamı)."""
+    ob = oneri.Onbellek(sure_s=10)
+    ob.koy(("u1", "tester", "/a"), {"x": 1})
+    ob.koy(("u1", "tester", "/b"), {"x": 2})
+    ob.koy(("u2", "tester", "/a"), {"x": 3})
+    ob.temizle("u1")
+    assert ob.al(("u1", "tester", "/a")) is None and ob.al(("u1", "tester", "/b")) is None
+    assert ob.al(("u2", "tester", "/a")) == {"x": 3}
+
+
 def test_onbellek_portal_olay_yenilemesinden_kisa() -> None:
     """SSE olayından `olayGecikmeMs` sonra yapılan tek `zorla` yenilemesi önbellekten eski rozet
     almamalı: önbellek ömrü portal gecikmesinden kısa."""

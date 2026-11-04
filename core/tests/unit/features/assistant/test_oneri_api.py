@@ -138,6 +138,28 @@ def test_jira_taslak_karti_ve_ai_call_yazilmaz(
     assert (_sayi(engine, "ai_call"), _sayi(engine, "tool_call"), _sayi(engine, "job")) == once
 
 
+def test_geri_bildirim_onbellek_kapsami(
+    client: TestClient, tohum: Tohum, make_user: MakeUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Önbellek temizliği bastırma kapsamı kadardır: "Faydalı" kimsenin önbelleğine dokunmaz,
+    "Gizle" yalnız gönderenin kayıtlarını siler, "Yaptım" (tüm rollerde bastırır) tümünü siler."""
+    temizlenen: list[Any] = []
+    gercek = oneri.ONBELLEK.temizle
+    monkeypatch.setattr(
+        oneri.ONBELLEK, "temizle", lambda k=None: (temizlenen.append(k), gercek(k))[1]
+    )
+    kisi = make_user("tester")
+    bid = tohum.bug_taslagi("draft")
+    _giris(client, kisi)
+    url = f"{UC}/bug-taslagi-karari/feedback"
+    assert client.post(url, json={"deger": 1, "varlik_id": str(bid)}).status_code == 200
+    assert temizlenen == []
+    assert client.post(url, json={"deger": -1, "varlik_id": str(bid)}).status_code == 200
+    assert temizlenen == [kisi.id]
+    assert client.post(url, json={"deger": 2, "varlik_id": str(bid)}).status_code == 200
+    assert temizlenen == [kisi.id, None]
+
+
 def test_geri_bildirim_gizle_ve_yaptim(
     client: TestClient, engine: Engine, tohum: Tohum, make_user: MakeUser
 ) -> None:

@@ -212,3 +212,13 @@
     padding: 4px 8px;
   }
 }
+/* Dar telefonda üst çubuk sığmıyor (marka adı tek harfe kırpılıyordu): sayı varken yalnız rozet
+   çizilir; ad `aria-label` ("Öneriler (n)") ve `title` ile korunur. */
+@media (max-width: 479px) {
+  .oneri-dugmesi-var {
+    padding: 4px;
+  }
+  .oneri-dugmesi-var .oneri-etiket {
+    display: none;
+  }
+}

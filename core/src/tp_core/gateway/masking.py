@@ -310,21 +310,26 @@ SECRET_PATTERNS: tuple[SecretPattern, ...] = (
         re.compile(
             r"(?P<keep>\b(?:SEED_USER_PASSWORD|TP_SESSION_SECRET|JIRA_[A-Z_]*TOKEN"
             r"|[A-Z][A-Z0-9_]*(?:PASSWORD|PASSWD|_PASS|_SECRET|_TOKEN|_API_?KEY|APIKEY"
-            r"|_ACCESS_KEY|_PRIVATE_KEY|_SECRET_KEY))\s*=\s*)"
-            r"(?![<${'\"`*])[^\s'\"`]+"
+            r"|_ACCESS_KEY|_PRIVATE_KEY|_SECRET_KEY))"
+            r"(?:\s*=\s*(?![<${'\"`*])|\s*(?P<iki_nokta>:)\s*[\"']?))"
+            # `=` biçimi her değeri alır; YAML/compose `:` biçiminde (`DB_PASSWORD: …`) kaynak
+            # koddaki tip açıklamaları (`DB_PASSWORD: str`) eşleşmesin diye değer rastgele
+            # görünümlü olmalı.
+            rf"(?(iki_nokta){_RASTGELE_DEGER}(?=[\s'\"`,;)}}\]]|\Z)|[^\s'\"`]+)"
         ),
         keep_group="keep",
     ),
     # Öneksiz/küçük harfli atama (CI logu, YAML/JSON, CLI bayrağı): `PASSWORD=…`, `password: …`,
-    # `"password": "…"`, `export TOKEN=…`, `--password …`. Kaynak koddaki adlarla karışmasın diye
-    # değer ≥ 8 karakter, harf VE rakam içerir ve ifade sınırında biter (`password: str`,
-    # `token = get_token()`, `tokens[0]`, URL içi `x-access-token:…@` eşleşmez); yer tutucular
-    # (`${…}`, `<…>`, `***`) dışarıda.
+    # `"password": "…"`, `export TOKEN=…`, `--password …`; alt çizgili önekli küçük harfli adlar
+    # (`db_password: …`, `github_token: …`, `aws_secret_access_key=…`) dahil. Kaynak koddaki
+    # adlarla karışmasın diye değer ≥ 8 karakter, harf VE rakam içerir ve ifade sınırında biter
+    # (`password: str`, `token = get_token()`, `tokens[0]`, URL içi `x-access-token:…@`
+    # eşleşmez); yer tutucular (`${…}`, `<…>`, `***`) dışarıda.
     SecretPattern(
         "generic_assignment",
         re.compile(
             rf"(?P<keep>(?:--{_SIR_ANAHTARI}\b(?:\s*=\s*|\s+)"
-            rf"|(?<![\w-]){_SIR_ANAHTARI}\b[\"']?\s*[:=]\s*)[\"']?)"
+            rf"|(?<![\w-])(?:[A-Za-z0-9]+_)*{_SIR_ANAHTARI}\b[\"']?\s*[:=]\s*)[\"']?)"
             rf"{_RASTGELE_DEGER}(?=[\s'\"`,;)}}\]]|\Z)",
             re.IGNORECASE,
         ),
@@ -363,7 +368,7 @@ SECRET_PATTERNS: tuple[SecretPattern, ...] = (
         ),
         keep_group="keep",
     ),
-    # Komut satırı parola bayrağı (değer ayrı token): `docker login -u ci -p <parola>`,
+    # Komut satırı parola bayrağı: `docker login -u ci -p <parola>` (ya da bitişik `-p<parola>`),
     # `helm registry login --password=<parola>`, `mysql -u root -p<parola>`. `-p` port/üst dizin
     # bayrağı da olduğundan yalnız `… login` alt komutunda ve mysql/mariadb araçlarında tanınır;
     # mysql'de `-p <ad>` (boşluklu) veritabanı adıdır, yalnız bitişik `-p<parola>` sırdır.
@@ -372,7 +377,7 @@ SECRET_PATTERNS: tuple[SecretPattern, ...] = (
         "cli_password_flag",
         re.compile(
             r"(?P<keep>(?:\b(?:docker|podman|nerdctl|buildah|skopeo|oras|helm(?:\s+registry)?)"
-            r"\s+login\b[^\n|;&]*?(?<!\S)(?:-p|--password)(?:\s+|=)"
+            r"\s+login\b[^\n|;&]*?(?<!\S)(?:-p(?:\s+|=)?|--password(?:\s+|=))"
             r"|\b(?:mysql|mysqldump|mysqladmin|mysqlimport|mysqlcheck|mysqlshow|mariadb"
             r"|mariadb-dump)\b[^\n|;&]*?(?<!\S)(?:-p|--password=))[\"']?)"
             r"(?![<${*\"'-])[^\s'\"`]+"

@@ -145,6 +145,31 @@ def test_ortam_atamasi_genis_sonekler(ad: str) -> None:
     assert "env_assignment" in {f.name for f in find_secret_patterns(f"{ad}=Abcdef123456ghij")}
 
 
+@pytest.mark.parametrize(
+    "ad", ["DB_PASSWORD", "GITHUB_TOKEN", "SMTP_PASS", "AWS_SECRET_ACCESS_KEY"]
+)
+def test_ortam_atamasi_yaml_iki_nokta(ad: str) -> None:
+    deger = "Sup3r" + "S3cret9"
+    assert scrub_secret_patterns(f"{ad}: {deger}") == f"{ad}: ***"
+    assert scrub_secret_patterns(f"  {ad}: '{deger}'\n") == f"  {ad}: '***'\n"
+    assert "env_assignment" in {f.name for f in find_secret_patterns(f"{ad}: {deger}")}
+
+
+@pytest.mark.parametrize(
+    "metin",
+    [
+        "DB_PASSWORD: str",
+        "DB_PASSWORD: str = Field(default='')",
+        "SMTP_PASS: Optional[str] = None",
+        "GITHUB_TOKEN: ${GITHUB_TOKEN}",
+        "DB_PASSWORD: <parola>",
+        "DB_PASSWORD: ***",
+    ],
+)
+def test_ortam_atamasi_iki_nokta_kaynak_kodu_ve_yer_tutucuya_dokunmaz(metin: str) -> None:
+    assert scrub_secret_patterns(metin) == metin
+
+
 def test_ortam_atamasi_yer_tutucuya_dokunmaz() -> None:
     metin = "JIRA_READ_TOKEN=<okuma token'ı> TP_APP_PASSWORD=${TP_APP_PASSWORD}"
     assert scrub_secret_patterns(metin) == metin
@@ -167,6 +192,12 @@ SIR = "Xy7" + "pQ9wLm2"  # ≥ 8, harf + rakam
         (f"secret={SIR}", "secret=***"),
         (f"SECRET_KEY={SIR}", "SECRET_KEY=***"),
         (f"secret-key: {SIR}", "secret-key: ***"),
+        # Alt çizgili önekli küçük harfli adlar (YAML/compose, araç çıktısı).
+        (f"db_password: {SIR}", "db_password: ***"),
+        (f"github_token: {SIR}", "github_token: ***"),
+        (f"jira_token: {SIR}", "jira_token: ***"),
+        (f"aws_secret_access_key={SIR}", "aws_secret_access_key=***"),
+        (f'  "smtp_auth_token": "{SIR}",', '  "smtp_auth_token": "***",'),
     ],
 )
 def test_oneksiz_atama(metin: str, beklenen: str) -> None:
@@ -188,6 +219,10 @@ def test_oneksiz_atama(metin: str, beklenen: str) -> None:
         "secret: yalnizharf",  # rakamsız düz kelime
         "password_hash: " + SIR,  # farklı alan adı
         "pwd: /home/user1/build",
+        "def baglan(db_password: str, github_token: str | None = None) -> None:",
+        "jira_token = ayarlar.jira_token",
+        "db_password: ${DB_PASSWORD}",
+        "github_token_url: " + SIR,  # farklı alan adı
     ],
 )
 def test_oneksiz_atama_kaynak_kodu_ve_yer_tutucuya_dokunmaz(metin: str) -> None:
@@ -280,6 +315,14 @@ def test_url_ici_kimlik(metin: str, beklenen: str) -> None:
             "helm registry login r.local -p '" + "S3cretPassw0rd" + "'",
             "helm registry login r.local -p '***'",
         ),
+        (
+            "docker login -u ci -p" + "S3cretPassw0rd" + " reg.local",
+            "docker login -u ci -p*** reg.local",
+        ),
+        (
+            "helm registry login r.local -p=" + "S3cretPassw0rd",
+            "helm registry login r.local -p=***",
+        ),
         ("mysql -u root -p" + "S3cretPassw0rd" + " tp", "mysql -u root -p*** tp"),
         ("mysqldump --password=" + "parola" + " tp", "mysqldump --password=*** tp"),
     ],
@@ -296,6 +339,8 @@ def test_cli_parola_bayragi(metin: str, beklenen: str) -> None:
         "docker login -u ci -p $REGISTRY_PAROLA reg.local",
         'docker login -u ci -p "$PAROLA" reg.local',
         "docker login -u ci --password-stdin reg.local",
+        "docker login -u ci -p${REGISTRY_PAROLA} reg.local",
+        "docker login --platform linux/amd64 reg.local",
         "mysql -u root -p tpdb",
         "mysql -u root -p",
         "ssh -p 2222 kullanici@host",

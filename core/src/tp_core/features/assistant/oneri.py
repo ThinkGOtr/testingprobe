@@ -1371,9 +1371,13 @@ class Onbellek:
                 self._kayit = {a: k for a, k in self._kayit.items() if simdi - k[0] < self.sure_s}
             self._kayit[anahtar] = (self._saat(), deger)
 
-    def temizle(self) -> None:
+    def temizle(self, kullanici_id: Any = None) -> None:
+        """Tümünü ya da yalnız `kullanici_id`'nin kayıtlarını (anahtarın ilk öğesi) siler."""
         with self._kilit:
-            self._kayit.clear()
+            if kullanici_id is None:
+                self._kayit.clear()
+            else:
+                self._kayit = {a: k for a, k in self._kayit.items() if a[0] != kullanici_id}
 
 
 ONBELLEK: Final = Onbellek()

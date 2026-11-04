@@ -120,8 +120,13 @@ def mesaj_ozeti(m: AsistanMesaj) -> dict[str, Any]:
     }
 
 
-def _sohbet(session: Session, sohbet_id: uuid.UUID, user: Principal) -> AsistanSohbet:
-    s = session.get(AsistanSohbet, sohbet_id)
+def _sohbet(
+    session: Session, sohbet_id: uuid.UUID, user: Principal, *, kilitle: bool = False
+) -> AsistanSohbet:
+    # `kilitle`: sil ile gönder sohbet satırında sıralanır (FOR UPDATE, READ COMMITTED'da en son
+    # sürümü okur): silme commit edildikten sonra gelen gönderim 404 alır, silmeden önce kilidi
+    # alan gönderimin cevabı silmenin açık mesaj taramasında görülüp iptal edilir.
+    s = session.get(AsistanSohbet, sohbet_id, with_for_update=kilitle or None)
     if s is None or s.kullanici_id != user.id or s.silindi:
         raise _bulunamadi()
     return s
@@ -247,7 +252,7 @@ def sohbet_sil(sohbet_id: uuid.UUID, session: DbSession, user: CurrentUser) -> R
     """Yumuşak silme. Sohbetin açık (`pending`/`running`) cevapları aynı transaction'da
     iptal edilir: silinen sohbetin mesajına iptal ucu 404 döndüğünden kullanıcı onları başka
     yoldan durduramaz (koşan iş geçitte `should_stop` ile sonraki turda durur)."""
-    s = _sohbet(session, sohbet_id, user)
+    s = _sohbet(session, sohbet_id, user, kilitle=True)
     acik = (
         session.query(AsistanMesaj)
         .filter(
@@ -439,7 +444,7 @@ def soru_gonder(
             json.dumps(govde.baglam, ensure_ascii=False) if govde.baglam else "",
         )
 
-    s = _sohbet(session, sohbet_id, user)
+    s = _sohbet(session, sohbet_id, user, kilitle=True)
     ust = _derin_ust(session, s, user, govde.ust_mesaj_id) if govde.ust_mesaj_id else None
     _hizmet_kontrol(session)
 

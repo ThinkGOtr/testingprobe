@@ -106,12 +106,23 @@ export function AsistanaSorDugmesi({ hata, kaynak }: { hata: string | null; kayn
 /**
  * Hata kutusu. Gösterilen hata "son hata" deposuna yazılır (asistan bağlamı, AI-ASISTAN-PLANI §5.5).
  * `kaynak` (useVeri/useIslem `hataNesnesi`) verildiğinde ve asistan kullanılabilirken
- * "Asistana sor" görünür.
+ * "Asistana sor" görünür. `kayitDisi`: gösterilen metin kullanıcının karşılaştığı bir API hatası
+ * değil (ör. script kaydının saklı `hata` alanı); son hata deposuna yazılmaz.
  */
-export function HataKutusu({ hata, yenile, kaynak }: { hata: string; yenile?: () => void; kaynak?: unknown }) {
+export function HataKutusu({
+  hata,
+  yenile,
+  kaynak,
+  kayitDisi = false,
+}: {
+  hata: string;
+  yenile?: () => void;
+  kaynak?: unknown;
+  kayitDisi?: boolean;
+}) {
   const planli = buFazdaYok(hata) || buFazdaYok(kaynak);
   // Kaynaksız kutu da kayda yazılır (metinle); düğme yalnız kaynakla çizilir.
-  useHataKaydi(kaynak, hata, planli || kaynak !== undefined);
+  useHataKaydi(kaynak, hata, planli || kayitDisi || kaynak !== undefined);
   // Canlı derlemede core'un henüz sunmadığı ekran: hata değil, planlı "bu fazda yok" boş durumu.
   if (planli) {
     return (

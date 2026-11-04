@@ -408,10 +408,49 @@ function bos(alan: Partial<AsistanCevabi>): AsistanCevabi {
   };
 }
 
+/**
+ * Örnek sözlük maddeleri hata durumuna göre ayrılır: 404 için "içerik değişti" demek yanlış açıklamaya
+ * yeşil güven çipi düşürürdü. Tanınmayan durumda kaynak gösterilmez, güven "Kısmen" olur.
+ */
+function sozlukMaddesi(status: number | null): {
+  anlam: string;
+  yapilacaklar: string[];
+  kaynak: CevapKaynagiOgesi | null;
+} {
+  switch (status) {
+    case 409:
+      return {
+        anlam: "işlem sırasında ekrandaki içeriğin ya da durumun değiştiğini gösterir.",
+        yapilacaklar: ["Ekranı yenileyin.", "İçeriği yeniden inceleyip kararınızı yeniden verin."],
+        kaynak: { tur: "dokuman", ref: "docs/MIMARI-SOZLESME.md:120", alinti: "409: içerik görüntülendikten sonra değişti", dogrulandi: true },
+      };
+    case 404:
+      return {
+        anlam: "istenen kaydın bulunamadığını gösterir: kimlik yanlış olabilir ya da kayıt silinmiş olabilir.",
+        yapilacaklar: ["Adresteki kimliği kontrol edin.", "Kaydı listeden yeniden açın."],
+        kaynak: { tur: "dokuman", ref: "docs/MIMARI-SOZLESME.md:340", alinti: "bulunamadi | 404, 410 | genel", dogrulandi: true },
+      };
+    case 403:
+      return {
+        anlam: "rolünüzün bu işlem için yetkisi olmadığını gösterir.",
+        yapilacaklar: ["İşlemi yetkili rolden birine yönlendirin.", "Rolünüzün doğru olduğunu yöneticinize sorun."],
+        kaynak: { tur: "dokuman", ref: "docs/MIMARI-SOZLESME.md:339", alinti: "yasak | 403 | genel (`require_role` reddi)", dogrulandi: true },
+      };
+    default:
+      return {
+        anlam: "işlemin tamamlanamadığını gösterir; kesin neden bu örnek sözlükte yok.",
+        yapilacaklar: ["İşlemi yeniden deneyin.", "Sürerse hatanın ayrıntısıyla asistana yeniden sorun."],
+        kaynak: null,
+      };
+  }
+}
+
 function cevapUret(m: MockMesaj): { cevap: AsistanCevabi; kaynak: AsistanMesaji["kaynak"]; amac: AsistanMesaji["amac"] } {
   const soru = m.icerik ?? "";
   const baglam = m.baglam ?? {};
-  const sonHata = baglam.son_hata as { gorunen_metin?: string | null; detail?: string; uc?: string | null } | undefined;
+  const sonHata = baglam.son_hata as
+    | { gorunen_metin?: string | null; detail?: string; uc?: string | null; status?: number | null; kod?: string | null }
+    | undefined;
   const anahtar = /([A-Z][A-Z0-9]+-\d+)/.exec(soru)?.[1];
   const derin = m.amac === "assistant_deep";
 
@@ -445,18 +484,19 @@ function cevapUret(m: MockMesaj): { cevap: AsistanCevabi; kaynak: AsistanMesaji[
   // Sözlük: son hata bağlamı + "ne demek/neden" sınıfı (modelsiz, ücretsiz).
   if (!derin && sonHata && /ne demek|neden|hata/i.test(soru)) {
     const metin = sonHata.gorunen_metin || sonHata.detail || "bu hata";
+    const madde = sozlukMaddesi(sonHata.status ?? null);
     return {
       kaynak: "sozluk",
       amac: null,
       cevap: bos({
         cevap_bloklari: [
           { tur: "baslik", metin: "Hata açıklaması" },
-          { tur: "paragraf", metin: `${ORNEK} "${metin}" mesajı, işlem sırasında ekrandaki içeriğin ya da durumun değiştiğini gösterir.` },
-          { tur: "liste", metin: "Ne yapmalı:", maddeler: ["Ekranı yenileyin.", "İçeriği yeniden inceleyip kararınızı yeniden verin."] },
+          { tur: "paragraf", metin: `${ORNEK} "${metin}" mesajı, ${madde.anlam}` },
+          { tur: "liste", metin: "Ne yapmalı:", maddeler: madde.yapilacaklar },
         ],
-        guven: "yuksek",
-        guven_gosterimi: "Kaynakla doğrulandı",
-        kaynaklar: [{ tur: "dokuman", ref: "docs/MIMARI-SOZLESME.md:120", alinti: "409: içerik görüntülendikten sonra değişti", dogrulandi: true }],
+        ...(madde.kaynak
+          ? { guven: "yuksek" as const, guven_gosterimi: "Kaynakla doğrulandı" as const, kaynaklar: [madde.kaynak] }
+          : { guven: "orta" as const, guven_gosterimi: "Kısmen" as const }),
       }),
     };
   }

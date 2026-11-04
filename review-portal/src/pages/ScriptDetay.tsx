@@ -639,7 +639,8 @@ export function ScriptDetay() {
           )}
         </Uyari>
       ) : (
-        s.hata && <HataKutusu hata={s.hata} />
+        // Script kaydının saklı hatası API hatası değildir: asistanın "son hata" bağlamına gitmez (§5.5).
+        s.hata && <HataKutusu hata={s.hata} kayitDisi />
       )}
       {s.uyarilar.length > 0 && (
         <Uyari ton="bilgi">

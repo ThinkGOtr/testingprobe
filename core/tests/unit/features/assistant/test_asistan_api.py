@@ -310,6 +310,44 @@ def test_sohbet_silinince_acik_cevaplar_iptal(client: TestClient, make_user, eng
     assert tek(engine, "SELECT durum FROM asistan_mesaj WHERE id = :m", m=mid2) == "iptal"
 
 
+def test_silme_suren_sohbete_gonderim_beklenir_ve_404(
+    client: TestClient, make_user, engine, canli
+) -> None:
+    """Gönderim sohbet satırını kilitleyerek okur: eşzamanlı silme commit edilene dek bekler,
+    ardından silinmiş sohbeti görüp 404 döner (silinmiş sohbete iptal edilemez cevap eklenmez)."""
+    import time
+
+    giris(client, make_user("tester"))
+    s = sohbet_ac(client)
+    sonuc: list[httpx.Response] = []
+    with engine.connect() as silen:
+        tx = silen.begin()
+        silen.execute(text("SELECT 1 FROM asistan_sohbet WHERE id = :s FOR UPDATE"), {"s": s})
+        silen.execute(text("UPDATE asistan_sohbet SET silindi = true WHERE id = :s"), {"s": s})
+        t = threading.Thread(target=lambda: sonuc.append(sor(client, s)))
+        t.start()
+        bekliyor = False
+        for _ in range(200):  # gönderim satır kilidinde beklemeye geçene dek
+            with engine.connect() as c:
+                bekliyor = bool(
+                    c.execute(
+                        text(
+                            "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' "
+                            "AND query ILIKE '%asistan_sohbet%FOR UPDATE%'"
+                        )
+                    ).scalar_one()
+                )
+            if bekliyor or not t.is_alive():
+                break
+            time.sleep(0.02)
+        assert bekliyor and t.is_alive(), sonuc and sonuc[0].text
+        tx.commit()
+        t.join(20)
+    assert sonuc and sonuc[0].status_code == 404, sonuc and sonuc[0].text
+    assert tek(engine, "SELECT count(*) FROM asistan_mesaj WHERE sohbet_id = :s", s=s) == 0
+    assert tek(engine, "SELECT count(*) FROM job WHERE tur = 'assistant.answer'") == 0
+
+
 def _outbox_var(engine: Engine) -> bool:
     return bool(tek(engine, "SELECT to_regclass('public.outbox') IS NOT NULL"))
 

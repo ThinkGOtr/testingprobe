@@ -109,9 +109,15 @@ function bekleyenEkOneri(): string | null {
 export function useBekleyenEkOneri(): string | null {
   useSyncExternalStore(ekAbone, () => ekSurum);
   const id = bekleyenEkOneri();
-  // Yenilemeden geri yüklenen bekleyen, bu arada bitmiş olabilir (olayı kaçırıldı): bir kez okunur.
+  // Bekleyen, dinleyen bileşen yokken bitmiş olabilir (olay kaçırıldı, tekrar oynatılmaz): sayfa
+  // yenilemesinden geri yüklenen ya da bu bileşen çizilirken (ör. panel kapalıyken cevap geldi,
+  // panel Sohbet'te yeniden açıldı) zaten bekleyen kayıt bir kez okunur; yoksa kilit takılı kalır.
+  const ilkGorulen = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    if (!id || !geriYuklenenler.has(id)) return;
+    const ilk = ilkGorulen.current === undefined;
+    if (ilk) ilkGorulen.current = id;
+    if (!id) return;
+    if (!ilk && !geriYuklenenler.has(id)) return;
     geriYuklenenler.delete(id);
     void ekOneriKontrol(id);
   }, [id]);

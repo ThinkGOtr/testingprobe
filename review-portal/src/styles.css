@@ -507,6 +507,21 @@ button.atla {
   }
 }
 
+/* Dar telefonda ÖRNEK VERİ rozeti de varken marka adı sığmıyor ("AI T…" diye kırpılıyordu): ad
+   görsel olarak gizlenir, yalnız işaret kalır; bağlantının erişilebilir adı korunur. Canlı
+   derlemede (rozet yok) ad sığar, dokunulmaz. */
+@media (max-width: 479px) {
+  .ust-cubuk:has(.rozet-mock) .marka > span:last-child {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     transition: none !important;

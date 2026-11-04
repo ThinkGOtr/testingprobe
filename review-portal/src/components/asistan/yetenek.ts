@@ -8,13 +8,17 @@
 // yükleme durumunu ayıran ayrı bir kanca kullanılır.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { asistanApi, kapaliNedeni, type AsistanDurumu } from "../../api/asistan";
-import { buFazdaYok, cekirdekYetenekleri, hataMesaji, ucVar } from "../../api/http";
+import { ApiError, buFazdaYok, cekirdekYetenekleri, hataMesaji, ucVar } from "../../api/http";
 
 export type AsistanKapisi =
   | { tur: "yukleniyor" }
   | { tur: "gizli" }
   | { tur: "pasif"; neden: string; asistan: AsistanDurumu | null }
   | { tur: "hazir"; asistan: AsistanDurumu };
+
+function asistanKapaliHatasi(e: unknown): boolean {
+  return e instanceof ApiError && (e.kod === "asistan_kapali" || e.status === 503);
+}
 
 export function useAsistanKapisi(): { kapi: AsistanKapisi; yenile: () => Promise<void> } {
   const [kapi, setKapi] = useState<AsistanKapisi>({ tur: "yukleniyor" });
@@ -28,8 +32,15 @@ export function useAsistanKapisi(): { kapi: AsistanKapisi; yenile: () => Promise
       setKapi(d.etkin ? { tur: "hazir", asistan: d } : { tur: "pasif", neden: kapaliNedeni(d.neden), asistan: d });
     } catch (e) {
       if (!bagli.current) return;
-      if (buFazdaYok(e)) setKapi({ tur: "gizli" });
-      else setKapi({ tur: "pasif", neden: `Asistan durumu okunamadı: ${hataMesaji(e)}`, asistan: null });
+      if (buFazdaYok(e)) {
+        setKapi({ tur: "gizli" });
+        return;
+      }
+      const pasif: AsistanKapisi = { tur: "pasif", neden: `Asistan durumu okunamadı: ${hataMesaji(e)}`, asistan: null };
+      // Hazırken (her cevaptan sonraki kalan_soru yenilemesi) geçici hata (ağ, 5xx, 429) kapıyı
+      // pasife düşürmez: panel Sohbet yerine uyarı çizer, girdideki yarım soru kaybolurdu. Yalnız
+      // asistanın kapandığını söyleyen 503 / `asistan_kapali` pasife geçirir (`etkin=false` yukarıda).
+      setKapi((onceki) => (onceki.tur === "hazir" && !asistanKapaliHatasi(e) ? onceki : pasif));
     }
   }, []);
 

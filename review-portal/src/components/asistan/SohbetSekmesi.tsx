@@ -31,8 +31,9 @@ import { ekOneriDurdur, ekOneriKontrol, sohbetBekleyeniYaz, useBekleyenEkOneri }
 import { oneriAnahtari, oneriGetir, oneriSorgusu } from "./OneriVerisi";
 import { soruOnerileri } from "./sorular";
 
-/** Zamanlamalar (testler kısaltabilir). */
-export const sohbetAyar = { yoklamaMs: 3000, uzunSurerMs: 25_000, saatMs: 1000 };
+/** Zamanlamalar (testler kısaltabilir). `duyuruAraMs`: aynı duyuru metni yeniden yazılmadan önce
+ * canlı bölgenin boş kaldığı süre. */
+export const sohbetAyar = { yoklamaMs: 3000, uzunSurerMs: 25_000, saatMs: 1000, duyuruAraMs: 100 };
 
 const SOHBET_ANAHTARI = "tp-asistan-sohbet";
 
@@ -140,6 +141,23 @@ export function SohbetSekmesi({
   const [bekletilen, setBekletilen] = useState<BekletilenSoru | null>(null);
   /** Ekran okuyucuya yalnız sonuç duyurulur (liste kabı canlı bölge değildir). */
   const [duyuru, setDuyuru] = useState("");
+  const duyuruZamanlayici = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (duyuruZamanlayici.current) clearTimeout(duyuruZamanlayici.current);
+    },
+    [],
+  );
+  /** Aynı metin ardışık duyurulsa da canlı bölgede DOM değişsin: önce boşaltılır, metin kısa bir
+   * aradan sonra yazılır (aynı değerle `setDuyuru` yeniden çizmez, ikinci cevap duyurulmazdı). */
+  const duyur = useCallback((metin: string) => {
+    if (duyuruZamanlayici.current) clearTimeout(duyuruZamanlayici.current);
+    setDuyuru("");
+    duyuruZamanlayici.current = setTimeout(() => {
+      duyuruZamanlayici.current = null;
+      setDuyuru(metin);
+    }, sohbetAyar.duyuruAraMs);
+  }, []);
   const ilkGorulme = useRef(new Map<string, number>());
   const girdiRef = useRef<HTMLTextAreaElement>(null);
   const sohbetRef = useRef(sohbetId);
@@ -297,8 +315,8 @@ export function SohbetSekmesi({
     const biten = mesajlar.filter((m) => onceki.includes(m.id) && !bekliyor(m));
     if (biten.length === 0) return;
     const son = biten[biten.length - 1];
-    setDuyuru(son.durum === "done" ? "Asistanın cevabı geldi." : son.durum === "iptal" ? "Soru iptal edildi." : "Soru tamamlanamadı.");
-  }, [bekleyenAnahtar, mesajlar]);
+    duyur(son.durum === "done" ? "Asistanın cevabı geldi." : son.durum === "iptal" ? "Soru iptal edildi." : "Soru tamamlanamadı.");
+  }, [bekleyenAnahtar, mesajlar, duyur]);
 
   /** Bekleme başlangıcı: mesajın bu sekmede ilk görüldüğü an (istemci saati). */
   const baslangic = (m: AsistanMesaji): number => {

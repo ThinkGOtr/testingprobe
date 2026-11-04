@@ -186,9 +186,16 @@ export function adimMetni(kod: string | null | undefined): string {
   return ADIM_METINLERI[kod] ?? "Soru inceleniyor…";
 }
 
-/** Mesaj hata kodu (`hata_kodu`) → kullanıcı metni (§11 Durumlar). */
+/**
+ * Mesaj hata kodu (`hata_kodu`) → kullanıcı metni (§11 Durumlar). `butce_asildi` dört kapsamdan
+ * (soru başı, kullanıcı, asistan, genel) hangisinin dolduğunu taşımaz: metin ikisini de söyler,
+ * "yarın" diye kesinlemez (soru başı bütçe dolduysa hemen yeni soru sorulabilir). Core soru başı
+ * kapsamına ayrı kod yazarsa (`soru_butcesi`) o ayrıca karşılanır.
+ */
 export const MESAJ_HATALARI: Record<string, string> = {
-  butce_asildi: "Bugünkü asistan bütçesi doldu; yarın yeniden deneyin.",
+  butce_asildi:
+    "Asistan bütçesi doldu. Bu soru için ayrılan bütçe dolduysa soruyu daraltıp yeni soru sorabilirsiniz; günlük bütçe dolduysa yarın yeniden deneyin.",
+  soru_butcesi: "Bu soru için ayrılan bütçe doldu; soruyu daraltıp yeni soru sorabilirsiniz.",
   girdi_tavani: "Soru çok geniş. Tek bir ekran, kayıt ya da hata üzerine daraltarak sorun.",
   zaman_asimi: "Cevap zamanında hazırlanamadı (zaman aşımı). Soruyu daraltıp yeniden deneyin.",
   model_hatasi: "Model şu an cevap veremedi. Biraz sonra yeniden deneyin.",
@@ -218,7 +225,8 @@ export function gonderimHataMetni(e: unknown): string {
     case "mesgul":
       return "Asistan şu an meşgul. Birkaç saniye sonra yeniden deneyin.";
     case "butce_asildi":
-      return MESAJ_HATALARI.butce_asildi;
+      // Core hangi kapsamın (soru başı / kullanıcı / asistan / genel) dolduğunu kendi metniyle söyler.
+      return e.detail?.trim() || MESAJ_HATALARI.butce_asildi;
     case "sir_icerik":
       return "Soru veya bağlam parola/token benzeri bir değer içeriyor. O kısmı çıkarıp yeniden sorun.";
     case "asistan_kapali":

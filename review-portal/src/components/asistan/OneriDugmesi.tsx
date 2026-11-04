@@ -65,7 +65,9 @@ export function OneriDugmesi() {
       title={n > 0 ? `Bu ekranda sizi bekleyen ${n} iş` : "Bu ekranda sizi bekleyen iş yok"}
       onClick={() => acSekme("oneriler")}
     >
-      <span aria-hidden="true">Öneri</span>
+      <span className="oneri-etiket" aria-hidden="true">
+        Öneri
+      </span>
       {n > 0 && (
         <span className="oneri-rozet" aria-hidden="true">
           {n}
