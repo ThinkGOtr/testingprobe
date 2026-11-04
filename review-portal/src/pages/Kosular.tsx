@@ -79,8 +79,8 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
                 {k.gecen}/{k.toplam}
               </td>
               {!kompakt && <td className="mono">{k.commit}</td>}
-              <td>{tarih(k.baslangic)}</td>
-              {!kompakt && <td>{sure(k.sure_ms)}</td>}
+              <td className="tek-satir">{tarih(k.baslangic)}</td>
+              {!kompakt && <td className="tek-satir">{sure(k.sure_ms)}</td>}
             </tr>
           ))}
         </tbody>
