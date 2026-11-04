@@ -589,8 +589,9 @@ test("bilinmeyen sayfa: h1 başlığı var (axe page-has-heading-one)", async ({
 
 // Bölüm gezgini (`nav "Sayfa bölümleri"`) bağlantıları kart başlıklarıyla aynı metni taşır ve DOM'da
 // içerikten önce gelir: kart başlığı `getByText(...).first()` ile değil, `getByRole("region", { name })`
-// ile aranır (1279 px ve altında gezgin gizlidir; `.first()` gizli bağlantıyı bulur).
-test("bölüm gezgini: ≥1280 px görünür ve bağlantı bölümü üst çubuğun altına getirir; 1279 px'te gizli", async ({ page }) => {
+// ile aranır (860 px ve altında gezgin gizlidir; `.first()` gizli bağlantıyı bulur).
+// 861–1279 px'te gezgin başlığın altında akışta yatay bağlantı şerididir (yapışkan değil).
+test("bölüm gezgini: ≥1280 px yapışkan sütun, 1152 px yatay şerit, 860 px'te gizli; bağlantı bölümü üst çubuğun altına getirir", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await girisYap(page, "analist");
   await page.goto("/gereksinimler/req-tpd-1");
@@ -607,7 +608,10 @@ test("bölüm gezgini: ≥1280 px görünür ve bağlantı bölümü üst çubu�
       return !!ust && !!kutu && kutu.y >= ust.y + ust.height;
     })
     .toBe(true);
-  await page.setViewportSize({ width: 1279, height: 800 });
+  await page.setViewportSize({ width: 1152, height: 720 });
+  await expect(gezgin).toBeVisible();
+  await expect(gezgin).toHaveCSS("position", "static");
+  await page.setViewportSize({ width: 860, height: 800 });
   await expect(gezgin).toBeHidden();
   await expect(page.getByRole("region", { name: "Tutarlılık bulguları" })).toBeVisible();
 });
