@@ -3740,23 +3740,19 @@ details.soluk > summary {
 /* ---------------------------------------------------------------- kontrol kulesi KPI şeridi */
 
 /* Kule KPI şeridi (§5 F4, §4.12): .metrik-izgara stat şeridi; beş öğe (Geçme oranı · açık defect adayı ·
-   Case kabul · Script ilk review · Hazırlık kazancı): beş öğeli eşit sütun ızgarası (metrik bölümü).
-   Ayraçlar .metrik-izgara > .metrik ile aynı (sol/üst gölge, kenarda kırpılır). */
+   Case kabul · Script ilk review · Hazırlık kazancı): beş öğeli eşit sütun ızgarası (metrik bölümü;
+   öğeler subgrid, flex özellikleri burada etkisizdir). Şerit her zaman beş öğelidir. Ayraçlar .metrik-izgara > .metrik ile aynı (sol/üst gölge, kenarda kırpılır). */
 .metrik-izgara.kule-kpi {
   margin-bottom: 16px;
 }
 .kule-kpi > .metrik,
 .kule-kpi > .olcer {
-  flex: 1 1 170px;
   min-width: 0;
   margin: 0;
   padding: 14px 16px;
   box-shadow:
     -1px 0 0 var(--border-soft),
     0 -1px 0 var(--border-soft);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
 }
 .kule-kpi .metrik-alt {
   margin-top: 2px;
@@ -3773,10 +3769,6 @@ details.soluk > summary {
    satırlarına oturur. */
 .kule-kpi .olcer-ust {
   display: contents;
-  flex-direction: column;
-  justify-content: flex-start;
-  gap: 2px;
-  margin-bottom: 8px;
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.01em;
@@ -4221,6 +4213,58 @@ td > .satir-baglanti + .cip,
    R3-TABLO (review turu 3 çapası — sonra kaldırılır)
    Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
    ================================================================== */
+
+/* Tablo hücreleri ilk satırın taban çizgisinde hizalanır (review 3): top hizada hap (.cip/.rozet, 12 px
+   yazı + 2 px dolgu) içeren satırda mono/sayı hücreleri (Geçen/toplam, Commit) haplardan 2-4 px yukarıda
+   duruyordu. Çok satırlı hücrelerde ilk satırlar yine aynı çizgide; yığın düzeninde (≤640 px) hücre blok
+   olduğu için etkisizdir. */
+.tablo td {
+  vertical-align: baseline;
+}
+
+/* Gereksinimler (review 3): "Çekim" tek satır (.tek-satir) olunca genişliği Başlık sütunundan gitmesin diye
+   sayı başlıkları ("Açık bulgu", "Case (onaylı/toplam)") iki satıra sarabilir; boşalan genişlik Başlık'a
+   kalır (1152 px'te tablo kaydırma kabına sığar). */
+.tablo th.baslik-sarar {
+  white-space: normal;
+}
+/* Gereksinim arama: ipucu ("Anahtar veya başlık ara") kesilmeden okunur. */
+#gereksinim-ara {
+  width: 15rem;
+  max-width: 100%;
+}
+
+/* Kart içi üç öğeli stat şeridi (Kule AI katkısı): 2+1 sarıp tek kalan öğe tüm satırı kaplamasın; şerit
+   ≥ 450 px ise üç eşit sütun, daha darsa tek sütun. Sütun alt sınırı şerit genişliğine göre seçilir:
+   (450px - 100%) pozitifken çok büyük → min(100%, …) tek sütuna iner. Öğeler subgrid (etiket/değer/alt aynı
+   çizgide; beş/altı öğeli şeritlerle aynı ritim). */
+.metrik-izgara:not(.kule-kpi):has(> :nth-child(3):last-child) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, max(100% / 3, (450px - 100%) * 999)), 1fr));
+}
+.metrik-izgara:not(.kule-kpi):has(> :nth-child(3):last-child) > * {
+  display: grid;
+  grid-row: span 3;
+  grid-template-rows: subgrid;
+  row-gap: 0;
+  align-content: start;
+}
+
+/* Koşu detayı açık test ayrıntısı ≤640 px (review 3): Test sütunu alt genişliği tabloyu kaydırma kabından
+   geniş yapıyor, colSpan ayrıntı paneli de tablo genişliğini alıp sağdan kesiliyordu. Kaydırma kabı
+   container olur; panel kabın görünür genişliğine sabitlenir ve yatay kaydırmada solda yapışık kalır
+   (hücre iç boşluğu 10 px). */
+@media (max-width: 640px) {
+  .tablo-sarici:has(> .tablo.test-sonuclari) {
+    container-type: inline-size;
+  }
+  .tablo.test-sonuclari .test-ayrinti-satiri .test-ayrinti {
+    position: sticky;
+    left: 10px;
+    width: calc(100cqi - 20px);
+    max-width: none;
+  }
+}
 
 
 

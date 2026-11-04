@@ -26,6 +26,8 @@ export function ReplayRozeti({ mode, degerlendirme }: { mode: CiktiModu | null |
   return (
     <>
       {rozet}
+      {/* Rozetler satır içinde de ayrık dursun (flex/gap kabında boşluk düğümü yok sayılır). */}
+      {degerlendirme && degerlendirme.durum !== "evaluated" && " "}
       <DegerlendirmeNotu d={degerlendirme} />
     </>
   );
