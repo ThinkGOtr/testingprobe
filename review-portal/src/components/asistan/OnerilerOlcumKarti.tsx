@@ -3,14 +3,21 @@
 // sayısı tutulmaz (istemci izleme yok). Veri `GET /control-tower` yanıtının `asistan` bölümünden gelir;
 // eski core bu bölümü vermezse kart çizilmez (uydurulmaz). Sayılar asistan saklama süresiyle
 // (`saklama_gun`) sınırlıdır; maliyet `ai_call`'dan tüm zamanlardır (saklama temizliğine girmez).
+// Maliyet K5'e uyar (ölçülmemiş sayı söylenmez): diğer AI işleri AI katkısı kartıyla aynı kuralla
+// REPLAY'de "REPLAY — ölçülmedi"; asistanın hiç model çağrısı yoksa "$0,00" yerine "çağrı yok";
+// maliyet verilmediyse (null) "ölçülmedi".
 import { KaynakIpucu } from "../KaynakIpucu";
-import { BosDurum, Cip, Kart, Metrik } from "../ui";
+import type { ReactNode } from "react";
+import type { KontrolKulesi } from "../../api/types";
+import { BosDurum, Cip, Kart, Metrik, Olculmedi } from "../ui";
 import { dolar } from "../../lib/format";
+import { tumuReplayMi } from "../../lib/aiMaliyet";
 
 export interface MaliyetGrubu {
   cagri: number;
-  maliyet_usd: number;
-  maliyet_usd_bugun: number;
+  /** null: core maliyeti bildirmedi (ölçülmedi; 0 uydurulmaz). */
+  maliyet_usd: number | null;
+  maliyet_usd_bugun: number | null;
   amaclar: string[];
 }
 
@@ -36,6 +43,8 @@ export interface AsistanKuleOlcumu {
 /** Kontrol Kulesi yanıtının bu kartın okuduğu parçası (tip `api/types`'a dokunmadan). */
 export interface AsistanliKule {
   asistan?: AsistanKuleOlcumu | null;
+  /** Diğer AI işlerinin REPLAY durumu AI katkısı kartıyla aynı kaynaktan okunur (K5). */
+  ai_katkisi?: Pick<KontrolKulesi["ai_katkisi"], "cagri_sayisi" | "replay_cagri"> | null;
   kaynaklar?: Partial<Record<string, string>>;
 }
 
@@ -50,12 +59,25 @@ function etkilesim(s: OneriOlcumSatiri): number {
   return s.neden_sor + s.faydali + s.gizle + s.yaptim;
 }
 
+/** Asistan maliyeti: çağrı yoksa sıfır "ölçüm" gibi okunmasın; null → ölçülmedi. */
+function asistanMaliyeti(g: MaliyetGrubu, deger: number | null): ReactNode {
+  if (g.cagri === 0) return <Olculmedi metin="çağrı yok" />;
+  return deger === null ? <Olculmedi /> : dolar(deger);
+}
+
 export function OnerilerOlcumKarti({ kule }: { kule: AsistanliKule }) {
   const o = kule.asistan;
   if (!o) return null;
   const etkilesimli = o.oneriler.filter((s) => etkilesim(s) > 0);
   const sessiz = o.oneriler.length - etkilesimli.length;
   const as = o.maliyet.asistan;
+  const digerBugun = tumuReplayMi(kule.ai_katkisi) ? (
+    <Olculmedi metin="REPLAY — ölçülmedi" />
+  ) : o.maliyet.diger.maliyet_usd_bugun === null ? (
+    <Olculmedi />
+  ) : (
+    dolar(o.maliyet.diger.maliyet_usd_bugun)
+  );
 
   return (
     <Kart
@@ -66,10 +88,14 @@ export function OnerilerOlcumKarti({ kule }: { kule: AsistanliKule }) {
       <div className="metrik-izgara">
         <Metrik
           etiket="Asistan maliyeti (toplam)"
-          deger={<span data-testid="asistan-maliyet">{dolar(as.maliyet_usd)}</span>}
+          deger={<span data-testid="asistan-maliyet">{asistanMaliyeti(as, as.maliyet_usd)}</span>}
           alt={`${as.cagri} model çağrısı${as.amaclar.length ? ` · ${as.amaclar.join(", ")}` : ""}`}
         />
-        <Metrik etiket="Asistan bugün" deger={dolar(as.maliyet_usd_bugun)} alt={`Diğer AI işleri bugün ${dolar(o.maliyet.diger.maliyet_usd_bugun)}`} />
+        <Metrik
+          etiket="Asistan bugün"
+          deger={<span data-testid="asistan-maliyet-bugun">{asistanMaliyeti(as, as.maliyet_usd_bugun)}</span>}
+          alt={<span data-testid="diger-ai-bugun">Diğer AI işleri bugün {digerBugun}</span>}
+        />
         <Metrik etiket="Neden? Sor" deger={<span data-testid="oneri-toplam-neden">{o.oneri_toplam.neden_sor}</span>} />
         <Metrik
           etiket="Faydalı / Gizle / Yaptım"

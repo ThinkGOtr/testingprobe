@@ -11,6 +11,7 @@ import { BAZ_KAYNAGI } from "../components/BazDegerKarti";
 import { dolar, sure, tarih, yuzde } from "../lib/format";
 import { KosuTablosu } from "./Kosular";
 import { OnerilerOlcumKarti } from "../components/asistan/OnerilerOlcumKarti";
+import { tumuReplayMi } from "../lib/aiMaliyet";
 import { KaynakIpucu } from "../components/KaynakIpucu";
 
 // `Olculmedi` ortak bileşenlere (components/ui) taşındı; eski içe aktarmalar için yeniden dışa aktarılır.
@@ -36,9 +37,8 @@ export function KontrolKulesi() {
   const k = v.veri;
   if (!k) return null;
   const ai = k.ai_katkisi;
-  // Tüm AI çağrıları REPLAY'den karşılandıysa ücret ölçülmez: "$0,00" ölçüm gibi okunmasın (§4.12, K5).
-  // null koruması: çağrı sayısı bilinmiyorsa REPLAY sayılmaz (yolHaritasi.ts modOzeti ile aynı mantık).
-  const tumuReplay = ai.cagri_sayisi != null && ai.cagri_sayisi > 0 && ai.replay_cagri === ai.cagri_sayisi;
+  // Tüm AI çağrıları REPLAY'den karşılandıysa ücret ölçülmez (§4.12, K5); "Öneriler ve asistan" kartı da aynı kuralı kullanır.
+  const tumuReplay = tumuReplayMi(ai);
   const toplamSure = ai.ort_ai_sure_ms !== null && ai.ort_review_sure_ms !== null ? ai.ort_ai_sure_ms + ai.ort_review_sure_ms : null;
   // Kazanç yalnızca baz değeri story için ölçülmüş satırlardan (varsayılan baz değer kazanca girmez).
   const kazanc = kazancOzeti(k.hazirlik);

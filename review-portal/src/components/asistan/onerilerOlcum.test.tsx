@@ -100,4 +100,50 @@ describe("OnerilerOlcumKarti", () => {
     // Eski core (bölüm yok): kart çizilmez.
     expect(kontrolKulesiUyarla({}).asistan).toBeNull();
   });
+  describe("maliyet K5: ölçülmemiş sayı söylenmez", () => {
+    function maliyetli(asistan: Partial<AsistanKuleOlcumu["maliyet"]["asistan"]>, diger: Partial<AsistanKuleOlcumu["maliyet"]["diger"]> = {}): AsistanKuleOlcumu {
+      const v = olcum([]);
+      v.maliyet.asistan = { ...v.maliyet.asistan, ...asistan };
+      v.maliyet.diger = { ...v.maliyet.diger, ...diger };
+      return v;
+    }
+
+    it("REPLAY örnek verisi: hiç '$' sayısı yok; diğer AI işleri AI katkısıyla aynı 'REPLAY — ölçülmedi', asistan 'çağrı yok'", () => {
+      const veri = maliyetli({ cagri: 0, maliyet_usd: 0, maliyet_usd_bugun: 0, amaclar: [] }, { cagri: 20, maliyet_usd: 0, maliyet_usd_bugun: 0 });
+      const { container } = render(<OnerilerOlcumKarti kule={{ asistan: veri, ai_katkisi: { cagri_sayisi: 20, replay_cagri: 20 } }} />);
+      expect(container.textContent).not.toMatch(/\$/);
+      expect(screen.getByTestId("asistan-maliyet")).toHaveTextContent("çağrı yok");
+      expect(screen.getByTestId("asistan-maliyet-bugun")).toHaveTextContent("çağrı yok");
+      expect(screen.getByTestId("diger-ai-bugun")).toHaveTextContent("Diğer AI işleri bugün REPLAY — ölçülmedi");
+      expect(screen.getByText(/^0 model çağrısı$/)).toBeInTheDocument();
+    });
+
+    it("canlı asistan + REPLAY pipeline: asistan ölçülü dolar, diğer AI işleri ölçülmedi", () => {
+      render(<OnerilerOlcumKarti kule={{ asistan: maliyetli({}), ai_katkisi: { cagri_sayisi: 5, replay_cagri: 5 } }} />);
+      expect(screen.getByTestId("asistan-maliyet").textContent).toMatch(/\$0[.,]20/);
+      expect(screen.getByTestId("asistan-maliyet-bugun").textContent).toMatch(/\$0[.,]10/);
+      expect(screen.getByTestId("diger-ai-bugun")).toHaveTextContent("REPLAY — ölçülmedi");
+    });
+
+    it("canlı pipeline (karışık mod) diğer AI işlerini dolar yazar; çağrı sayısı bilinmiyorsa REPLAY sayılmaz", () => {
+      const { unmount } = render(<OnerilerOlcumKarti kule={{ asistan: maliyetli({}), ai_katkisi: { cagri_sayisi: 5, replay_cagri: 2 } }} />);
+      expect(screen.getByTestId("diger-ai-bugun").textContent).toMatch(/\$0[.,]50/);
+      unmount();
+      render(<OnerilerOlcumKarti kule={{ asistan: maliyetli({}), ai_katkisi: { cagri_sayisi: null, replay_cagri: null } }} />);
+      expect(screen.getByTestId("diger-ai-bugun").textContent).toMatch(/\$0[.,]50/);
+    });
+
+    it("null koruması: maliyet bildirilmediyse 'ölçülmedi' (0 uydurulmaz); uyarlayıcı null'u korur", () => {
+      const k = kontrolKulesiUyarla({
+        asistan: { maliyet: { asistan: { cagri: 2, amaclar: ["assistant"] }, diger: { cagri: 1 } }, oneriler: [], oneri_toplam: {}, saklama_gun: 90 },
+      });
+      expect(k.asistan?.maliyet.asistan.maliyet_usd).toBeNull();
+      expect(k.asistan?.maliyet.diger.maliyet_usd_bugun).toBeNull();
+      const { container } = render(<OnerilerOlcumKarti kule={k} />);
+      expect(container.textContent).not.toMatch(/\$/);
+      expect(screen.getByTestId("asistan-maliyet")).toHaveTextContent("ölçülmedi");
+      expect(screen.getByTestId("asistan-maliyet-bugun")).toHaveTextContent("ölçülmedi");
+      expect(screen.getByTestId("diger-ai-bugun")).toHaveTextContent("Diğer AI işleri bugün ölçülmedi");
+    });
+  });
 });

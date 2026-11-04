@@ -632,7 +632,8 @@ function kaynaklarUyarla(x: unknown): KontrolKulesi["kaynaklar"] {
 
 function maliyetGrubuUyarla(x: unknown): MaliyetGrubu {
   const m = nesne(x);
-  return { cagri: sayi(m.cagri), maliyet_usd: sayi(m.maliyet_usd), maliyet_usd_bugun: sayi(m.maliyet_usd_bugun), amaclar: dizgeler(m.amaclar) };
+  // Maliyet verilmediyse null kalır (kart "ölçülmedi" yazar; 0 uydurulmaz).
+  return { cagri: sayi(m.cagri), maliyet_usd: sayiYaDaNull(m.maliyet_usd), maliyet_usd_bugun: sayiYaDaNull(m.maliyet_usd_bugun), amaclar: dizgeler(m.amaclar) };
 }
 
 /**
