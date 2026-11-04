@@ -518,7 +518,7 @@ function cevapUret(m: MockMesaj): { cevap: AsistanCevabi; kaynak: AsistanMesaji[
       ref: "k3",
       alinti: "src/e2e/kampanya.spec.ts:14 'page' is declared but never used",
       dogrulandi: true,
-      ci: { run_id: "run-0007", kosu_no: 7, satir_bas: 412, satir_bit: 418 },
+      ci: { run_id: "run-0007", kosu_no: "7", satir_bas: 412, satir_bit: 418 },
     });
     if (/jira/i.test(soru)) notlar.push("Jira şu an yanıt vermiyor; cevap Jira kaydı olmadan hazırlandı.");
   }
@@ -547,8 +547,11 @@ function cevapUret(m: MockMesaj): { cevap: AsistanCevabi; kaynak: AsistanMesaji[
   };
 }
 
+// Core ile aynı (api.py `iptal`): kullanıcı mesajı 422; `iptal` idempotent; bitmiş cevap 409 (kodsuz).
 function iptal(id: string, k: Kullanici): AsistanMesaji {
   const m = mesajBul(id, k);
+  if (m.rol !== "assistant") throw new ApiError(422, "Yalnız asistan cevabı iptal edilebilir.", { kod: "gecersiz_istek" });
+  if (m.durum === "done" || m.durum === "error") throw new ApiError(409, "Cevap zaten tamamlandı; iptal edilemez.");
   if (m.durum === "pending" || m.durum === "running") {
     const z = zamanlayicilar.get(id);
     if (z) clearTimeout(z);
@@ -565,7 +568,8 @@ function geriBildirim(id: string, govde: unknown, k: Kullanici): void {
   const m = mesajBul(id, k);
   const d = (govde as { deger?: unknown } | null)?.deger;
   if (d !== 1 && d !== -1) throw new ApiError(422, "Geri bildirim -1 ya da 1 olmalı.", { kod: "gecersiz_istek" });
-  if (m.rol !== "assistant" || m.durum !== "done") throw new ApiError(409, "Yalnız tamamlanmış cevaba geri bildirim verilir.", { kod: "cakisma" });
+  // Core (api.py `geri_bildirim`) yalnız rolü denetler; durum şartı yoktur.
+  if (m.rol !== "assistant") throw new ApiError(422, "Yalnız asistan cevabına geri bildirim verilir.", { kod: "gecersiz_istek" });
   m.geri_bildirim = d;
 }
 

@@ -23,7 +23,12 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from tp_core.gateway.masking import MaskingSession, scrub_secret_patterns, scrub_secrets
+from tp_core.gateway.masking import (
+    PLACEHOLDER_RE,
+    MaskingSession,
+    scrub_secret_patterns,
+    scrub_secrets,
+)
 from tp_core.gateway.untrusted import UntrustedKind, wrap_untrusted
 
 # §7.2 `kaynaklar[].tur` değerlerinden kanıt havuzuna giren türler.
@@ -197,6 +202,14 @@ def _db_query_ozeti(metin: str) -> tuple[str | None, str | None]:
     return sql, digest or None
 
 
+def _yer_tutucu_notr(metin: str) -> str:
+    """Maskelenmemiş kod çıktısındaki hazır `<<PII_…>>` dizgisini etkisizleştirir (`mask_text`'in
+    yaptığı gibi `<<` → `< <`); geçit son çıktıyı açarken oturumdaki gerçek değeri koymasın.
+    İkinci maskeleme değildir: veri araçlarının (`DataTools`) oturumla maskeli yer tutucusuna
+    dokunulmaz (§12)."""
+    return PLACEHOLDER_RE.sub(lambda m: m.group(0).replace("<<", "< <", 1), metin)
+
+
 class AracSarmalayici:
     """Geçide verilen `ToolExecutor` (`execute(name, args) -> str`).
 
@@ -277,6 +290,8 @@ class AracSarmalayici:
         temiz = self._temiz(str(ham))
         sql, digest = _db_query_ozeti(temiz) if name == "db_query" else (None, None)
         tur = self.mevcut_turleri.get(name, "uygulama_kodu")
+        if tur == "uygulama_kodu":
+            temiz = _yer_tutucu_notr(temiz)
         return self.havuz.ekle(
             name,
             tur,

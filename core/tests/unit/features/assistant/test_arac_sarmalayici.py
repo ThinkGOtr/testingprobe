@@ -133,6 +133,26 @@ def test_mevcut_arac_cift_sarilmaz_ve_ikinci_kez_maskelenmez() -> None:
     assert sema.count("<untrusted") == 1 and sema.startswith("[kanit:k2]\n")
 
 
+def test_kod_aracindaki_hazir_yer_tutucu_etkisizlesir_veri_aracinda_kalir() -> None:
+    """Test edilen uygulamanın kodunda düz `<<PII_EMAIL_1>>` geçerse geçit onu oturumdaki gerçek
+    değere açmasın; veri aracının maskeli yer tutucusu ise açılabilir kalır."""
+    baglam = _baglam()
+    veri = DataTools(SahteDemoDb([("Bayi 1", "bayi1@ornek.com")]), session=baglam.oturum)
+    sar = AracSarmalayici(
+        baglam,
+        mevcut={
+            "db_query": veri.db_query,
+            "get_file_contents": lambda _a: "a.ts:1: const x = '<<PII_EMAIL_1>>'",
+        },
+        mevcut_turleri={"db_query": "uygulama_verisi", "get_file_contents": "uygulama_kodu"},
+    )
+    veri_cikti = sar("db_query", {"sql": "SELECT ad, eposta FROM bayi"})
+    kod_cikti = sar("get_file_contents", {"path": "a.ts"})
+    assert "<<PII_EMAIL_1>>" in veri_cikti
+    assert "<<PII_EMAIL_1>>" not in kod_cikti and "< <PII_EMAIL_1>>" in kod_cikti
+    assert "bayi1@ornek.com" not in str(baglam.oturum.unmask(kod_cikti))
+
+
 def test_yeni_arac_tek_kez_sarilir_ve_kimlikler_sirali() -> None:
     sar = AracSarmalayici(
         _baglam(),

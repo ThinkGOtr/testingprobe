@@ -11,6 +11,8 @@
 # şablonu kullanan her kuralın varlığında hesaplanabilmelidir. Eksik olgu boş metinle doldurulur.
 # Metinlerde URL, wiki bağlantısı (`[..|..]`), mention (`[~..]`, `@..`), HTML ve Markdown yoktur
 # (kural testi). Kişi adı ya da e-posta yazılmaz.
+# İzlenebilirlik: kimlik ve serbest metin (test adı, koşu/hata kimliği) yer tutucu olamaz; bu yüzden
+# Task taslakları kullanıcının dolduracağı bir `Kaynak: (… buraya ekleyin)` satırı taşır (kural testi).
 version: 1
 taslaklar:
   - id: po-hatirlatma
@@ -38,7 +40,7 @@ taslaklar:
       Bir otomasyon testi son 10 koşuda {flaky_tekrar} kez kararsız sonuç verdi (aynı kodla bazen geçti, bazen kırmızı oldu).
       İstenen: kararsızlığın nedenini (zamanlama, test verisi, ortam ya da sıralama bağımlılığı) bulmak ve kalıcı olarak gidermek.
       Kabul: test aynı ortamda art arda tekrarlarda tutarlı sonuç verir.
-      Ayrıntı: Testing Probe hata detay ekranındaki kanıtlar ve koşu geçmişi.
+      Kaynak: (test adını ve Testing Probe hata kimliğini buraya ekleyin); kanıtlar ve koşu geçmişi hata detay ekranındadır.
     etiketler: [flaky, otomasyon]
 
   - id: ortam-hatasi-task
@@ -48,7 +50,7 @@ taslaklar:
       Son CI koşusu testler çalışmadan ortam hatasıyla bitti; bu koşunun test sonucu yok.
       İstenen: başarısız adımın (ör. kurulum, lint ya da sağlık yoklaması) nedenini bulmak ve düzeltmek.
       Kabul: yeni bir koşuda testler çalışır ve sonuç üretir.
-      Ayrıntı: Testing Probe koşu detay ekranındaki adım özetleri ve log.
+      Kaynak: (Testing Probe koşu numarasını buraya ekleyin); adım özetleri ve log koşu detay ekranındadır.
     etiketler: [ci, ortam]
 
   - id: test-verisi-task
@@ -58,5 +60,5 @@ taslaklar:
       Bir otomasyon testi, ön koşul verisi ortamda olmadığı ya da beklenenden farklı olduğu için başarısız oldu (triage sınıfı: test verisi).
       İstenen: testin ihtiyaç duyduğu veriyi test ortamında hazırlamak ya da veri kurulumunu düzeltmek.
       Kabul: test aynı ortamda veri hatası olmadan koşar.
-      Ayrıntı: Testing Probe hata detay ekranındaki kanıtlar.
+      Kaynak: (test adını ve Testing Probe hata kimliğini buraya ekleyin); kanıtlar hata detay ekranındadır.
     etiketler: [test-verisi]

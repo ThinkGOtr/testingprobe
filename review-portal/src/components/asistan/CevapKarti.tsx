@@ -227,6 +227,7 @@ export interface CevapKartiOzellikleri {
 }
 
 export function CevapKarti({ mesaj, baslik, derinIncelenebilir, derinIncele, derinCalisiyor, geriBildir, kalanSoru, onGit }: CevapKartiOzellikleri) {
+  const derinNotId = useId();
   const c = mesaj.cevap;
   if (!c) return null;
   const guven = c.guven_gosterimi ?? null;
@@ -295,10 +296,23 @@ export function CevapKarti({ mesaj, baslik, derinIncelenebilir, derinIncele, der
           ))}
         </div>
       )}
+      {derinIncelenebilir && derinIncele && c.derin_onerilir && (
+        <p id={derinNotId} className="asistan-not" data-testid="derin-onerilir">
+          Bu cevap kaynakla doğrulanamadı; ayrıntılı inceleme önerilir.
+        </p>
+      )}
       <p className="asistan-bilgi-amacli soluk kucuk">Bilgi amaçlıdır; kararı ilgili ekranda verin.</p>
       <div className="asistan-cevap-alt">
         {derinIncelenebilir && derinIncele && (
-          <button type="button" className="dugme dugme-ikincil dugme-kucuk" onClick={derinIncele} disabled={derinCalisiyor}>
+          // `derin_onerilir`: cevap doğrulanamadı ama otomatik yükseltme ön koşulu tutmadı (bütçe %20
+          // altı vb., §6.2); otomatik inceleme yerine düğme birincil tonda ve notla önerilir.
+          <button
+            type="button"
+            className={c.derin_onerilir ? "dugme dugme-birincil dugme-kucuk" : "dugme dugme-ikincil dugme-kucuk"}
+            onClick={derinIncele}
+            disabled={derinCalisiyor}
+            aria-describedby={c.derin_onerilir ? derinNotId : undefined}
+          >
             Daha ayrıntılı incele
           </button>
         )}

@@ -281,6 +281,31 @@ def test_sayaclar_job_tablosundan(engine: Engine, make_user, monkeypatch) -> Non
     assert budget.global_sinir() == 6
 
 
+def test_sayaclar_mesaj_eslemesi_uuid_ve_bozuk_kimlik(engine: Engine, make_user) -> None:
+    """Yükteki `mesaj_id` uuid'e çevrilip PK ile eşlenir; boş/bozuk kimlik hata vermez."""
+    u = make_user("po")
+    sohbet = _sohbet(engine, u.id)
+    bitmis = _mesaj(engine, sohbet, u.id, 1, durum="done")
+    iptal = _mesaj(engine, sohbet, u.id, 2, durum="iptal")
+    with engine.begin() as c:
+        for mid in (str(bitmis), str(iptal).upper(), "", "bozuk"):
+            c.execute(
+                text(
+                    "INSERT INTO job (tur, yuk, durum) VALUES ('assistant.answer', "
+                    "CAST(:y AS jsonb), 'running')"
+                ),
+                {
+                    "y": json.dumps(
+                        {"mesaj_id": mid, "kullanici_id": str(u.id), "tetik": "kullanici"}
+                    )
+                },
+            )
+    with engine.connect() as c:
+        # done mesajlı iş sayılmaz; iptal + iki kimliksiz iş sayılır.
+        assert budget.kullanici_bekleyen(c, u.id) == 3
+        assert budget.kullanici_kapanan(c, u.id) == 1
+
+
 def test_global_kilit_ikinci_transactioni_bekletir(engine: Engine) -> None:
     sira: list[str] = []
     birinci_aldi = threading.Event()

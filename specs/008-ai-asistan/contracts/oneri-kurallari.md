@@ -175,6 +175,11 @@ Plan v6 §17.3 tablosundan farklar ve nedenleri:
   Eylem rotası `/kod/:id` yerine **`/kod`** (2026-11-04): "Yeniden üret" düğmesi yalnız Kod listesinde
   var, script detayında yok; `/kod/:id` hedefi mühendisi bulunduğu ekranda bırakıyordu. Bu bir eylem
   hedefi değişikliğidir, aşağıdaki K10 yeniden onay listesine girer.
+- **Jira Task taslak metinleri (2026-11-04, davranış değişmedi):** `flaky-task`, `ortam-hatasi-task` ve
+  `test-verisi-task` açıklamalarındaki "Ayrıntı:" satırı, kullanıcının dolduracağı "Kaynak: (… buraya
+  ekleyin)" satırıyla değişti. Kimlik ve serbest metin yer tutucu olamadığından (olgu sözleşmesi)
+  kopyalanan kaydın Probe'daki hata/koşuyla izlenebilirliği bu satırla sağlanır; kural testi denetler.
+  K10 onayında bilgi olarak sunulur.
 - **K10 yeniden onay (açık, 2026-11-04):** kural 1, 8, 11 ve 15'teki daraltmalar ile kural 15'in eylem
   rotası ürün sahibinin onayını bekler (plan §2 K10: "kural içeriği değişirse yeniden onay"). Onay
   verildiğinde plan K10 satırı tarihle güncellenir; verilene dek bu sözleşme ve `oneriler.yaml` geçerli

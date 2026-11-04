@@ -1,6 +1,6 @@
 // Mock arka uç: asistan uçları, assistant.* olayları ve kodlu hatalar (AI-ASISTAN-PLANI §9, §13).
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { asistanApi, gonderimHataMetni } from "../asistan";
+import { asistanApi, BEKLEYEN_VAR_METNI, gonderimHataMetni } from "../asistan";
 import { ApiError, mockUclari } from "../http";
 import type { PortalOlayi } from "../types";
 import { oturumAc } from "../../test/yardimci";
@@ -100,6 +100,13 @@ describe("asistan mock uçları", () => {
     expect(gonderimHataMetni(new ApiError(429, "", { kod: "hiz_siniri" }))).not.toMatch(/Saatlik/);
   });
 
+  it("409 bekleyen_var: durdurulan cevap kapanıyorsa sunucu metni, aksi halde sabit metin", async () => {
+    const kapaniyor = "Durdurulan cevap kapanıyor; birkaç saniye sonra yeniden deneyin.";
+    expect(gonderimHataMetni(new ApiError(409, kapaniyor, { kod: "bekleyen_var" }))).toBe(kapaniyor);
+    expect(gonderimHataMetni(new ApiError(409, "Yanıt bekleyen bir sorunuz var; bitmesini bekleyin.", { kod: "bekleyen_var" }))).toBe(BEKLEYEN_VAR_METNI);
+    expect(gonderimHataMetni(new ApiError(409, "", { kod: "bekleyen_var" }))).toBe(BEKLEYEN_VAR_METNI);
+  });
+
   it("mesaj yanıtı core `mesaj_ozeti` anahtarlarıyla aynı (mock fazladan alan üretmez)", async () => {
     // core/src/tp_core/features/assistant/api.py mesaj_ozeti
     const CORE = ["id", "sohbet_id", "sira", "rol", "ust_mesaj_id", "icerik", "cevap", "durum", "hata_kodu", "kaynak", "amac", "kip", "tetik", "maliyet_usd", "sure_ms", "geri_bildirim", "olusturma", "tamamlanma"];
@@ -126,6 +133,11 @@ describe("asistan mock uçları", () => {
     // İptal edilen mesaj sonradan işlenmez.
     asistanMockIsle(b.mesaj_id);
     expect((await asistanApi.mesaj(b.mesaj_id)).durum).toBe("iptal");
+    // İptal idempotent; tamamlanmış cevap core gibi 409 (kodsuz).
+    expect((await asistanApi.iptal(b.mesaj_id)) as { durum?: string }).toMatchObject({ durum: "iptal" });
+    const c = await asistanApi.soruGonder(s.id, { soru: "üç" });
+    asistanMockIsle(c.mesaj_id);
+    expect(await kodu(asistanApi.iptal(c.mesaj_id))).toEqual({ status: 409, kod: undefined });
   });
 
   it("Daha ayrıntılı incele: ust_mesaj_id → assistant_deep çocuk; ikinci kez 409 zaten_derin; derin cevap yeniden incelenemez", async () => {
@@ -175,5 +187,11 @@ describe("asistan mock uçları", () => {
     await asistanApi.geriBildirim(a.mesaj_id, -1);
     expect((await asistanApi.mesaj(a.mesaj_id)).geri_bildirim).toBe(-1);
     expect(await kodu(asistanApi.geriBildirim(a.mesaj_id, 0 as unknown as 1))).toEqual({ status: 422, kod: "gecersiz_istek" });
+    // Core gibi durum şartı yok: bekleyen cevaba da geri bildirim yazılır; kullanıcı mesajı 422.
+    const b = await asistanApi.soruGonder(s.id, { soru: "iki" });
+    await asistanApi.geriBildirim(b.mesaj_id, 1);
+    expect((await asistanApi.mesaj(b.mesaj_id)).geri_bildirim).toBe(1);
+    const soruMesaji = (await asistanApi.mesajlar(s.id)).find((m) => m.rol === "user")!;
+    expect(await kodu(asistanApi.geriBildirim(soruMesaji.id, 1))).toEqual({ status: 422, kod: "gecersiz_istek" });
   });
 });

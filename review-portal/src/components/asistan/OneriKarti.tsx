@@ -10,7 +10,7 @@ import { JIRA_ANAHTARI, oneriApi, oneriHataMetni, type AsistanOnerisi, type Kura
 import { goreliZaman, guvenliDisAdres } from "../../lib/format";
 import { uygulamaRotasiMi } from "../../lib/rotalar";
 import { useBildirim } from "../Bildirim";
-import { acSekme, oneriSohbeti } from "./kontrol";
+import { acSekme, oneriSohbeti, paneliKapat } from "./kontrol";
 
 export const NEDEN_SORUSU = "Bu öneriyi neden yapmalıyım, yapmazsam ne olur?";
 
@@ -121,6 +121,9 @@ export function OneriEylemAlani({ eylem, ai, onGit }: { eylem: OneriEylemi; ai?:
           onClick={() => {
             git(hedef);
             onGit?.();
+            // Çapalı hedef (ör. #kirarak-dogrula) sayfa içinde kaydırılır; masaüstünde de sağdaki
+            // bindirme panel bölümün üstünde kalmasın diye panel kapanır (dar ekranda onGit zaten kapatır).
+            if (eylem.capa) paneliKapat();
           }}
         >
           Git

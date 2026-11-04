@@ -124,6 +124,14 @@ def _kaynak(tur: str, ref: str, alinti: str) -> dict[str, str]:
             "evil",
         ),
         ("Bkz. destek.ornek.com.tr:8443/giris", "Bkz. [bağlantı kaldırıldı]", "destek"),
+        # IDN/homograf (Kiril "е"), listede olmayan TLD + yol, çıplak IPv4 + port/yol.
+        ("Bkz. \u0435vil.com/login", "Bkz. [bağlantı kaldırıldı]", "vil"),
+        ("Bkz. göz.com/x", "Bkz. [bağlantı kaldırıldı]", "göz"),
+        ("Bkz. evil.zip/login", "Bkz. [bağlantı kaldırıldı]", "evil"),
+        ("Bkz. evil.example.page/reset", "Bkz. [bağlantı kaldırıldı]", "evil"),
+        ("Bkz. 10.1.2.3:8080/login giriş", "Bkz. [bağlantı kaldırıldı] giriş", "10.1"),
+        ("Bkz. 10.1.2.3/panel", "Bkz. [bağlantı kaldırıldı]", "10.1"),
+        ("Bkz. paypal.com.evil.io/a", "Bkz. [bağlantı kaldırıldı]", "evil"),
     ],
 )
 def test_metin_url_ve_markdown_duzlesir(girdi: str, beklenen: str, olmayan: str) -> None:
@@ -145,6 +153,9 @@ def test_metin_url_ve_markdown_duzlesir(girdi: str, beklenen: str, olmayan: str)
         "kampanya.py:3 satırı, sürüm v1.2.3",
         "po.kisi@ornek.com adresine yazın",
         "src/app.io dosyası",
+        "flow.cevapla ve self.b.rol çağrısı",
+        "sürüm 1.2.3.4 ve docs/AI-PLAN.md",
+        "Node.js/React ve config.yaml/anahtar",
     ],
 )
 def test_semasiz_alan_deseni_dosya_ve_kod_adlarina_dokunmaz(metin: str) -> None:
@@ -188,6 +199,30 @@ def test_yalniz_rota_kalibina_uyan_ic_rota_baglanti_olur() -> None:
         {"etiket": "Caseler", "rota": UUID_RE_ROTA},
         {"etiket": "Denetim", "rota": "/denetim"},
     ]
+
+
+@pytest.mark.parametrize(
+    ("rol", "beklenen"),
+    [
+        ("tester", ["/kosular"]),  # /demo yalnız presenter, /claude-code yalnız analyst
+        ("presenter", ["/demo", "/kosular"]),
+        ("analyst", ["/claude-code", "/kosular"]),
+        (None, ["/demo", "/claude-code", "/kosular"]),  # rol bilinmiyor → süzgeç yok
+    ],
+)
+def test_yonlendirme_rolun_acamadigi_ekrana_dusmez(rol: str | None, beklenen: list[str]) -> None:
+    """`oneri_eylemi` rota süzgeciyle aynı: rolün açamadığı ekrana "Git:" düğmesi çıkmaz."""
+    cevap = isle(
+        _cikti(
+            yonlendirmeler=[
+                {"etiket": "Demo", "rota": "/demo"},
+                {"etiket": "Claude Code", "rota": "/claude-code"},
+                {"etiket": "Koşular", "rota": "/kosular"},
+            ]
+        ),
+        SonIslemBaglami(rol=rol),
+    )
+    assert [y["rota"] for y in cevap["yonlendirmeler"]] == beklenen
 
 
 def test_bilinmeyen_jira_anahtari_baglanti_almaz() -> None:
@@ -247,6 +282,54 @@ def test_urun_kodu_ve_dokuman_ref_bicimleri() -> None:
     assert len(cevap["kaynaklar"]) == 7
     assert cevap["dogrulama"]["review-portal/src/x.tsx:2"]["dogrulandi"] is True
     assert len(cevap["dogrulama"]["docs/ONBOARDING.md:1-2"]["sha256"]) == 64
+
+
+def test_kod_okumasi_kalan_sureyle_sinirli() -> None:
+    """§7.3 ürün/uygulama kodu doğrulaması `bitis`e bağlıdır: süre bittiyse forge hiç okunmaz,
+    yavaş forge kalan süreyi aşarsa "zaman aşımı" (cevap 120 sn emniyetine takılıp kaybolmaz)."""
+
+    class Yavas(SahteDogrulayici):
+        def __init__(self, bekle_s: float, **kw: Any) -> None:
+            super().__init__(**kw)
+            self.okunan: list[str] = []
+            self.bekle = bekle_s
+
+        def uygulama_satirlari(self, yol: str) -> list[str] | None:
+            self.okunan.append(yol)
+            time.sleep(self.bekle)
+            return super().uygulama_satirlari(yol)
+
+        def urun_satirlari(self, yol: str, bas: int, son: int) -> list[str] | None:
+            self.okunan.append(yol)
+            time.sleep(self.bekle)
+            return super().urun_satirlari(yol, bas, son)
+
+    kaynaklar = [
+        _kaynak("uygulama_kodu", "src/k.py:1", "x = 1"),
+        _kaynak("urun_kodu", "docs/a.md:1", "x = 1"),
+    ]
+    dosya = {"src/k.py": ["x = 1"]}
+    bitmis = Yavas(0.0, uygulama=dosya, urun={"docs/a.md": ["x = 1"]})
+    cevap = isle(
+        _cikti(kaynaklar=kaynaklar),
+        SonIslemBaglami(dogrulayici=bitmis, bitis=time.monotonic() - 1),
+    )
+    assert [k["neden"] for k in cevap["kaynaklar"]] == ["zaman aşımı"] * 2
+    assert bitmis.okunan == []
+    yavas = Yavas(2.0, uygulama=dosya)
+    t0 = time.monotonic()
+    cevap = isle(
+        _cikti(kaynaklar=kaynaklar[:1]), SonIslemBaglami(dogrulayici=yavas, bitis=t0 + 0.8)
+    )
+    assert cevap["kaynaklar"][0]["neden"] == "zaman aşımı"
+    assert time.monotonic() - t0 < 1.8
+    # Süre yeterliyse doğrulama aynen çalışır.
+    hizli = Yavas(0.0, uygulama=dosya)
+    cevap = isle(
+        _cikti(kaynaklar=kaynaklar[:1]),
+        SonIslemBaglami(dogrulayici=hizli, bitis=time.monotonic() + 30),
+    )
+    assert cevap["kaynaklar"][0]["dogrulandi"] is True
 
 
 def test_kisa_alinti_yalniz_tam_satirsa_gecer() -> None:
@@ -545,6 +628,10 @@ _BUG_TASLAGI = {
     "tur": "jira_taslak",
     "taslak": {"tur": "Bug", "ozet": "Giriş hatası", "aciklama": "Adımlar"},
 }
+_TASK_TASLAGI = {
+    "tur": "jira_taslak",
+    "taslak": {"tur": "Task", "ozet": "Test verisini yenile", "aciklama": "Adımlar"},
+}
 _YORUM = {
     "tur": "jira_yorum",
     "anahtar": "TPD-3",
@@ -571,7 +658,7 @@ def test_sistem_hattinda_jira_onerisi_bilgiye_duser(
     """§17.2: sistem hattındaki işte modelin Jira taslağı/yorumu önerisi deterministik düşer."""
     b = _oneri_baglami(rota_kalibi=rota_kalibi, varlik_turu=varlik_turu)
     assert sonislem.sistem_hatti_mi(rota_kalibi, varlik_turu) is sistem_hatti
-    for eylem, tur in ((_BUG_TASLAGI, "jira_taslak"), (_YORUM, "jira_yorum")):
+    for eylem, tur in ((_TASK_TASLAGI, "jira_taslak"), (_YORUM, "jira_yorum")):
         out = sonislem.oneri_eylemi(eylem, b)
         assert out["tur"] == ("bilgi" if sistem_hatti else tur)
         assert ("baglanti" in out) is not sistem_hatti
@@ -591,9 +678,27 @@ def test_hata_detayinda_bug_taslagi_bilgiye_duser_task_serbest() -> None:
     task = {**_BUG_TASLAGI, "taslak": {**_BUG_TASLAGI["taslak"], "tur": "Task"}}
     assert sonislem.oneri_eylemi(task, b)["tur"] == "jira_taslak"
     assert sonislem.oneri_eylemi(_YORUM, b)["tur"] == "jira_yorum"
-    # Başka ekranda Bug taslağı değişmez.
-    diger = _oneri_baglami(rota_kalibi="/kosular/:id", varlik_turu="run")
-    assert sonislem.oneri_eylemi(_BUG_TASLAGI, diger)["tur"] == "jira_taslak"
+
+
+@pytest.mark.parametrize(
+    ("rota_kalibi", "varlik_turu"),
+    [
+        ("/kosular/:id", "run"),
+        ("/gereksinimler/:id", "requirement"),
+        ("/scriptler/:id", "script"),
+        ("/", None),
+        (None, None),
+    ],
+)
+def test_modelin_bug_taslagi_her_ekranda_bilgiye_duser(
+    rota_kalibi: str | None, varlik_turu: str | None
+) -> None:
+    """Ürün hatasının Bug'ı her ekranda Probe'un bug taslağı hattındadır (koşudaki ürün hataları,
+    gereksinimdeki code_defect bulguları; §17.2): ikinci bir Bug açma yolu olmaz; Task serbest."""
+    b = _oneri_baglami(rota_kalibi=rota_kalibi, varlik_turu=varlik_turu)
+    assert sonislem.oneri_eylemi(_BUG_TASLAGI, b)["tur"] == "bilgi"
+    task = {**_BUG_TASLAGI, "taslak": {**_BUG_TASLAGI["taslak"], "tur": "Task"}}
+    assert sonislem.oneri_eylemi(task, b)["tur"] == "jira_taslak"
 
 
 @pytest.mark.parametrize(
@@ -695,6 +800,10 @@ def test_urun_terimleri_dosyadan_okunur() -> None:
         ("TPD-3'ün durumu ne?", "TPD-3", False, False),
         ("TPD-3 ile TPD-4 farkı neden?", None, False, True),
         ("TPD-３ neden bekliyor?", None, False, True),
+        # Jira yorumu/içeriği sorusu şablona gitmez (canlı `jira_issue` için modele kalır).
+        ("TPD-3'te PO yorumunda neden itiraz etmiş?", None, False, True),
+        ("TPD-3 Jira'da neden bekliyor?", None, False, True),
+        ("TPD-3'te PO ne istemiş, durum ne?", None, False, False),
         ("Bugün ne yapmalıyım?", None, True, False),
         ("BUGÜN NE YAPMALIYIM", None, True, False),
         ("Bu hata ne demek?", None, False, True),

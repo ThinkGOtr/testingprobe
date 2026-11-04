@@ -241,13 +241,15 @@ export function OneriEkOneriler({ ekran, onGit }: { ekran: EkranBaglami; onGit?:
     ["assistant.answered"],
   );
 
-  // Yeniden bağlanınca (sekmeye dönüş) bekleyen mesaj bir kez okunur: arada gelen cevap kaçmasın.
+  // Sekmeye dönüşte ve SSE yeniden bağlanınca (kopuk → bağlı) bekleyen mesaj bir kez okunur:
+  // kopukluk yoklama aralığından kısa sürdüyse arada gelen cevap olayı kaçmış olabilir (tekrar
+  // oynatma yok). Bağlantı koptuğunda da bir okuma olur; zararsızdır.
+  const sseVar = baglanti === "bagli" || baglanti === "mock";
   useEffect(() => {
     if (bekleyenId) void oku(bekleyenId);
-  }, [bekleyenId, oku]);
+  }, [bekleyenId, sseVar, oku]);
 
   // SSE kopukken yoklama.
-  const sseVar = baglanti === "bagli" || baglanti === "mock";
   useEffect(() => {
     if (!bekleyenId || sseVar) return;
     const z = setInterval(() => void oku(bekleyenId), oneriAyar.yoklamaMs);

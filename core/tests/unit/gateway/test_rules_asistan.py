@@ -587,6 +587,10 @@ def test_jira_taslaklari_bicimi() -> None:
         if t["ozet"]:
             assert _metin_hatalari(t["id"], t["ozet"], tum_yer_tutucular) == []
         assert all(isinstance(e, str) and re.fullmatch(r"[a-z0-9-]+", e) for e in t["etiketler"])
+        if t["tur"] != "yorum" and "{jira_key}" not in t["aciklama"]:
+            # Kimlik yer tutucu olamaz: kopyalanan kayıt Probe'daki kayda kullanıcının
+            # dolduracağı kaynak satırıyla bağlanır.
+            assert re.search(r"^Kaynak: \(.+buraya ekleyin\)", t["aciklama"], re.M), t["id"]
 
 
 def _bozuk(degistir: Any) -> list[str]:

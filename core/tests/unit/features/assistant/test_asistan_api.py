@@ -263,8 +263,9 @@ def test_sahiplik_her_uc_404(rol: str, client: TestClient, make_user, engine, ca
     assert all(x["id"] != s for x in client.get("/assistant/conversations").json())
 
 
-def test_silinmis_sohbet_404(client: TestClient, make_user, engine, canli) -> None:
-    giris(client, make_user("analyst"))
+@pytest.mark.parametrize("rol", ROLLER)
+def test_silinmis_sohbet_404(rol: str, client: TestClient, make_user, engine, canli) -> None:
+    giris(client, make_user(rol))
     s = sohbet_ac(client)
     mid = soru_sor_ve_bitir(client, engine, s)
     assert client.delete(f"/assistant/conversations/{s}").status_code == 204
@@ -334,8 +335,9 @@ def test_ortak_conftest_canli_anahtari_siler() -> None:
 # ------------------------------------------------------------------ doğrulama
 
 
-def test_boyut_ve_bos_soru_422(client: TestClient, make_user, canli) -> None:
-    giris(client, make_user("tester"))
+@pytest.mark.parametrize("rol", ROLLER)
+def test_boyut_ve_bos_soru_422(rol: str, client: TestClient, make_user, canli) -> None:
+    giris(client, make_user(rol))
     s = sohbet_ac(client)
     assert sor(client, s, soru="a" * 2001).status_code == 422
     assert sor(client, s, soru="a" * 2000).status_code == 202
@@ -349,8 +351,11 @@ def test_boyut_ve_bos_soru_422(client: TestClient, make_user, canli) -> None:
     assert sor(client, s2, baglam={"bilinmeyen": 1}).status_code == 422
 
 
-def test_sirli_soru_ve_baglam_422_deger_yanitta_yok(client: TestClient, make_user, canli) -> None:
-    giris(client, make_user("engineer"))
+@pytest.mark.parametrize("rol", ROLLER)
+def test_sirli_soru_ve_baglam_422_deger_yanitta_yok(
+    rol: str, client: TestClient, make_user, canli
+) -> None:
+    giris(client, make_user(rol))
     s = sohbet_ac(client)
     sahte = "gh" + "p_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4"
     r = sor(client, s, soru=f"token bu mu {sahte}?")

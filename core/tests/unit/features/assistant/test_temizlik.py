@@ -232,6 +232,27 @@ def test_saklama_suresi_ve_kapsam(engine: Engine, make_user) -> None:
     assert _say(engine, "SELECT count(*) FROM tool_call") == tool_once
 
 
+def test_iki_kademeli_zincirde_taze_torun_korunur(engine: Engine, make_user) -> None:
+    """Kök → "Daha ayrıntılı" → yeniden "Daha ayrıntılı": kök ve çocuk eski olsa da 5 günlük
+    torun varken kök silinmez (FK CASCADE torunu süresinden önce götürürdü)."""
+    u = make_user("analyst")
+    sohbet = _sohbet(engine, u.id, gun_once=1)
+    kok = _mesaj(engine, sohbet, u.id, 1, gun_once=100, rol="assistant")
+    cocuk = _mesaj(engine, sohbet, u.id, 2, gun_once=95, rol="assistant", ust=kok)
+    torun = _mesaj(engine, sohbet, u.id, 3, gun_once=5, rol="assistant", ust=cocuk)
+    # Tümü eski üç kademeli zincir ise bütünüyle gider.
+    e_kok = _mesaj(engine, sohbet, u.id, 4, gun_once=130, rol="assistant")
+    e_cocuk = _mesaj(engine, sohbet, u.id, 5, gun_once=120, rol="assistant", ust=e_kok)
+    e_torun = _mesaj(engine, sohbet, u.id, 6, gun_once=110, rol="assistant", ust=e_cocuk)
+
+    with Session(engine) as s, s.begin():
+        sonuc = temizlik.temizle(s)
+
+    assert all(_var(engine, "asistan_mesaj", m) for m in (kok, cocuk, torun))
+    assert not any(_var(engine, "asistan_mesaj", m) for m in (e_kok, e_cocuk, e_torun))
+    assert sonuc["mesaj"] >= 1
+
+
 def test_saklama_gunu_ortamdan_okunur(
     engine: Engine, make_user, monkeypatch: pytest.MonkeyPatch
 ) -> None:

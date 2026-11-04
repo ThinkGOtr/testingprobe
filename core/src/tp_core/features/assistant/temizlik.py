@@ -94,17 +94,25 @@ _SOHBET_SIL = text(
     """
 )
 
+# `ust_mesaj_id` FK'sı ON DELETE CASCADE: eski kök silinirse tüm alt ağacı gider. Bu yüzden taze
+# ya da bitmemiş bir mesajın bütün ataları (zincir ≤ 10 kademe; "Daha ayrıntılı" → yeniden
+# "Daha ayrıntılı") korunur; yalnız doğrudan çocuğa bakmak torunu süresinden önce silerdi.
 _MESAJ_SIL = text(
     """
+    WITH RECURSIVE korunan (id, derinlik) AS (
+        SELECT c.ust_mesaj_id, 1 FROM asistan_mesaj c
+        WHERE c.ust_mesaj_id IS NOT NULL
+          AND (c.olusturma >= now() - make_interval(days => :g)
+               OR c.durum NOT IN ('done', 'error', 'iptal'))
+        UNION
+        SELECT a.ust_mesaj_id, k.derinlik + 1 FROM asistan_mesaj a
+        JOIN korunan k ON a.id = k.id
+        WHERE a.ust_mesaj_id IS NOT NULL AND k.derinlik < 10
+    )
     DELETE FROM asistan_mesaj m
     WHERE m.olusturma < now() - make_interval(days => :g)
       AND m.durum IN ('done', 'error', 'iptal')
-      AND NOT EXISTS (
-            SELECT 1 FROM asistan_mesaj c
-            WHERE c.ust_mesaj_id = m.id
-              AND (c.olusturma >= now() - make_interval(days => :g)
-                   OR c.durum NOT IN ('done', 'error', 'iptal'))
-          )
+      AND NOT EXISTS (SELECT 1 FROM korunan k WHERE k.id = m.id)
     """
 )
 

@@ -517,6 +517,94 @@ def test_canli_tam_dongu_assistant(client: TestClient, make_user, engine: Engine
     assert cocuklar(engine, mid) == []
 
 
+def test_jira_ve_ci_kaynagi_tarih_kosu_ve_satir_tasir(
+    client: TestClient, make_user, engine: Engine, veri
+) -> None:
+    """§11 kaynak etiketi: gerçek araç biçimiyle (`jira._bicimle`, `ci.log_isle`) sunucu, alıntının
+    eşleştiği satırdan Jira'da yorum mu/tarih, CI'da koşu numarası ve log satır aralığı üretir
+    (portal mock'u ile gerçek API aynı alanları taşır)."""
+    from datetime import UTC, datetime
+
+    from tp_core.features.assistant.tools import ci as ci_araci
+    from tp_core.features.assistant.tools import jira as jira_araci
+    from tp_core.integrations import jira as jira_mod
+
+    tarih = datetime(2026, 11, 2, 9, 30, tzinfo=UTC)
+    issue = jira_mod.OkunanIssue(
+        key="TPD-3",
+        issue_type="Story",
+        summary="Kampanya indirimi",
+        description="Kampanya kodu bayi başına bir kez uygulanır.",
+        acceptance_criteria=[],
+        labels=[],
+        status="In Progress",
+        updated=None,
+    )
+    sayfa = jira_mod.YorumSayfasi(
+        toplam=1,
+        yorumlar=[jira_mod.OkunanYorum("1", "PO", tarih, "Kabul kriterini netleştirin lütfen.")],
+        kisitli=0,
+    )
+    log = "\n".join(f"adım {i}" for i in range(1, 30)) + "\nE501 satır çok uzun\nbitti\n"
+
+    def jira_issue(_b: Any, **arg: Any) -> AracSonucu:
+        metin, yorumlar = jira_araci._bicimle(issue, sayfa, 3)
+        return AracSonucu(
+            metin,
+            kanit_turu="jira",
+            tur="jira",
+            meta={"anahtar": "TPD-3", "yorum_satirlari": yorumlar},
+        )
+
+    def ci_log(_b: Any, **arg: Any) -> AracSonucu:
+        metin = ci_araci.log_isle(log.encode(), kirpildi=False, ara="E501", satir=120)
+        return AracSonucu(
+            metin,
+            kanit_turu="ci_log",
+            tur="ci_log",
+            meta={"run_id": arg["run_id"], "kosu_no": "123456"},
+        )
+
+    def fabrika_(ab: Any) -> Any:
+        return arac_seti(
+            ab,
+            urun=SahteUrun(),
+            kod=SahteKod(),
+            veri=SahteVeri(),
+            yeni_araclar={"jira_issue": jira_issue, "ci_log": ci_log},
+        )
+
+    giris(client, make_user("tester"))
+    _, mid = soru_gonder(client, engine, "TPD-3 koşusu neden kırmızı, PO ne yazmış?")
+    run_id = str(uuid.uuid4())
+    gecit = Gecit(
+        engine,
+        [
+            tool_response(("jira_issue", {"anahtar": "TPD-3"})),
+            tool_response(("ci_log", {"run_id": run_id, "ara": "E501"})),
+            bitir(
+                kaynaklar=[
+                    {"tur": "jira", "ref": "k1", "alinti": "Kabul kriterini netleştirin"},
+                    {"tur": "jira", "ref": "k1", "alinti": "bayi başına bir kez uygulanır"},
+                    {"tur": "ci_log", "ref": "k2", "alinti": "E501 satır çok uzun"},
+                ]
+            ),
+        ],
+    )
+    assert cevapla(engine, mid, gecit, arac_seti_fabrikasi=fabrika_) == "done"
+    yorum, aciklama, ci_kaynagi = mesaj(engine, mid)["cevap"]["kaynaklar"]
+    assert yorum["dogrulandi"] and aciklama["dogrulandi"] and ci_kaynagi["dogrulandi"]
+    assert yorum["jira"]["anahtar"] == "TPD-3"
+    assert yorum["jira"]["yorum"] is True and yorum["jira"]["tarih"] == tarih.isoformat()
+    assert aciklama["jira"]["yorum"] is False and aciklama["jira"]["tarih"] is None
+    assert ci_kaynagi["ci"] == {
+        "run_id": run_id,
+        "kosu_no": "123456",
+        "satir_bas": 30,
+        "satir_bit": 30,
+    }
+
+
 def test_yalniz_workerin_bildigi_sir_modele_gitmez(
     client: TestClient, make_user, engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:

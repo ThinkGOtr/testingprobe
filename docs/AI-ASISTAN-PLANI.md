@@ -246,7 +246,8 @@ Sunucuda şemayla doğrulanır (≤ 2 KB), modele **ilk kullanıcı mesajında**
   `JiraUnavailable` fırlatan uyku enjekte edilir (`send_with_retry`'ın `MAX_RETRY_DELAY_S=30` sınırı
   yerine); aşarsa "Jira şu an yanıt vermiyor",
   iş düşmez. 401/403/5xx'te modele ve kayda yalnız sınıf ("Jira erişim hatası").
-- **Global Jira kovası:** asistanın Jira çağrıları dakikada 30 (§9 hız sınırı mekanizması, `asistan_hiz`
+- **Global Jira kovası:** asistanın Jira HTTP istekleri dakikada 30 (pratikte ~10–15 `jira_issue`
+  çağrısı; anahtar başına ≤ 3 istek) (§9 hız sınırı mekanizması, `asistan_hiz`
   kovası `jira_global`); aşılınca "Jira meşgul" — pipeline'ın Jira kotası korunur.
 - **Kısıtlı yorumlar:** `visibility` dolu (rol/grup kısıtlı) veya `jsdPublic=false` (iç not) yorumlar
   elenir; "N kısıtlı yorum gösterilmedi" yazılır.
@@ -441,7 +442,8 @@ alıntılanırken yalnız ilgili satır; log/yorumdaki talimatlar uygulanmaz. **
 **Tek eylem sözleşmesi** (kural kartı ve model kartı aynı bileşenle çizilir): `rota` → iç rota;
 `jira_taslak` → yeni kayıt taslağı (`taslak.tur` Task|Bug|Story); `jira_yorum` → bilinen `anahtar`'a
 yorum taslağı (`taslak.tur=yorum`); `jira_kaydi` → bilinen `anahtar`'ın kaydını aç (taslak yok);
-`bilgi` → yalnız metin. Kural dosyası (§17.2) aynı alanları kullanır (`sablon` → `taslak`'ı üretir).
+`bilgi` → yalnız metin. Modelin önerdiği `taslak.tur=Bug` her ekranda `bilgi`'ye düşer (Bug açmanın
+tek yolu Bug taslağı hattıdır; Task, Story, yorum ve kayıt açma serbest). Kural dosyası (§17.2) aynı alanları kullanır (`sablon` → `taslak`'ı üretir).
 
 `test_schema_compat` kuralı gereği her nesne kapalı (`additionalProperties: false`) ve **tüm alanlar
 `required`**; "yok" değeri **yalnız** `anyOf [{type: string}, {type: null}]` / `anyOf [{obje}, {type: null}]`
@@ -718,7 +720,7 @@ golden kullanmaz.
   mesaja yeniden bağlanma; 401 → giriş; 409 `bekleyen_var` → "Başka bir sekmede yanıt bekleyen sorunuz var".
 - **Cevap kartı:** bloklar; Kaynaklar (dosya:satır; ürün kodu satırları modalda; doğrulanmamış soluk +
   uyarı); güven etiketi (§7.3); "Bilgi amaçlıdır"; **Git** (mobilde panel kapanır, sohbet korunur);
-  "Daha ayrıntılı incele" (`assistant_deep` cevabında yok); 👍/👎; "Bugün kalan soru hakkı ≈ N";
+  "Daha ayrıntılı incele" (`assistant_deep` cevabında yok); 👍/👎; "Bu saat kalan soru hakkı ≈ N" (saatlik sınır, §9);
   sözlük/şablon/kapalı cevaplarda maliyet "ölçülmedi".
 - **Soru önerileri (boş sohbet):** rol + rota birlikte; kapalı kipte yalnız sözlük/şablonla cevaplanabilenler.
 - **Otomatik yükseltme (§6.2):** "Ön cevap (kaynakla doğrulanamadı)" etiketi + "Ayrıntılı inceleme
@@ -947,11 +949,27 @@ arkasında girilir):**
 2. **Canlı değerlendirme** (T131): `make eval-live A="--bundle assistant --via-flow --update-status"` →
    `rules/evaluations.yaml` `assistant.status: evaluated` ve `icerik_hash` dolu; rapor §16 madde 5 ve 9
    için medyan maliyet, otomatik yükseltme oranı (≤ %35) ve p90 uçtan uca süreyi yazar; K2 kararı
-   buradan çıkar. `pending` kayıtta `--check` 1 döner, yani `main` PR'ının CI'ı mekanik olarak düşer
-   (§16 madde 2, 5, 9, 14 bu adımla doğrulanır).
+   buradan çıkar (§16 madde 2, 5, 9, 14 bu adımla doğrulanır). `evaluation --check` `pending` kayıtta 1
+   döner, ancak CI bu komutu **koşmaz** (başka paketler de `pending`; durum 2026-11-04). Kapı bu yüzden
+   prosedüreldir: `main` PR'ı aşağıdaki kontrol listesiyle birleştirilir; ileride `main` hedefli CI'a
+   paket bazlı bir kontrol eklenebilir (core/platform şeridi).
 3. **E2E** (T132), **Jira Cloud yeni kayıt yolu** (T133, §17.4, research R7), **çok rollü inceleme**
    (T134) ve **anayasa 1.3.0 teknik lider onayı** (T007) kapanır.
 4. Ancak bundan sonra tam paket yeşil → `main` → sunucuda `live` (T135).
+
+**`main` PR'ı birleştirme kontrol listesi** (PR açıklamasına aynen kopyalanır; biri işaretsizse
+birleştirilmez):
+
+- [ ] `cd core && uv run python -m tp_core.gateway.evaluation` çıktısında `assistant@v1 evaluated`
+  (`pending` ya da `icerik_degisti` değil); kayıtta `evaluation.icerik_hash` ve `evaluation.amaclar` dolu (T131)
+- [ ] Canlı rapor: S1–S9 anahtar gerçekler, otomatik yükseltme oranı ≤ %35, medyan maliyet, p90 süre ve
+  K2 kararı PR açıklamasında (T131)
+- [ ] E2E: `asistan-duman.spec.ts`, `PORTAL_LIVE=1 asistan-canli.spec.ts`, `rehearsal/ui/prova.spec.ts`
+  yeşil; `TP_TEST_PERF=1` ile öneri ucu p95 < 300 ms (T132, §16.12)
+- [ ] Gerçek Jira Cloud'da "Jira'yı aç" yeni kayıt yolu denendi (T133)
+- [ ] Çok rollü incelemede KRİTİK/ÖNEMLİ bulgu yok (T134)
+- [ ] K10 yeniden onayı tarihlendi (§1 K10 satırı; T136)
+- [ ] Anayasa v1.3.0 teknik lider onayı alındı ve Sync Impact Report'ta tarihlendi (T007)
 
 **Süre (kaba, 3–4 paralel geliştirici/ajan):** S 1–2 gün (kural matrisi onayı dahil); paralel şeritler 6–8 gün (en uzun yol
 C1 → C2 → R(motor) → E → D1 → D2); H 2–3 gün → **10–13 iş günü**.

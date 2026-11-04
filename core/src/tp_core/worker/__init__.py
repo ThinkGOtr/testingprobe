@@ -29,6 +29,10 @@ edebildiği için şerit döngüsünden bağımsız). Asistan şeridi her turda 
 `UZLASTIRMA_ARALIGI_S`'de bir) işi bitmiş ya da olmayan açık mesajları `error/zaman_asimi` yapar.
 `TP_WORKER_ASISTAN_SERIT=0` iken şerit ve kalp atışı yoktur → asistan `worker_yok` görünür;
 asistan türleri yine genel şeridin `haric`'indedir (genel şeritte zaman aşımı süreci kapatırdı).
+Kapanmadan hemen önce (kalp atışı henüz tazeyken) kabul edilmiş sorular süresiz `pending`
+kalmasın diye genel şerit `KAPALI_SERIT_TEMIZLIK_S`'de bir, kalp atışı `KALP_ATISI_AZAMI_S`'den
+eskiyse (asistan şeridi açık başka bir worker yoksa) bekleyen (`queued`/`retry`) asistan işlerini
+`cancelled` yapar ve uzlaştırma mesajları `error/zaman_asimi` kapatır.
 
 Bir iş `zaman_asimi_s` içinde bitmezse iş `retry`/`failed` yazılır ve süreç
 `ZAMAN_ASIMI_CIKIS_KODU` ile çıkar (asılı iş parçacığı öldürülemez; compose yeniden başlatır).
@@ -99,6 +103,8 @@ KALP_ATISI_ARALIGI_S = 30.0
 # Asistan şeridi uzlaştırması en sık bu aralıkta bir (paralel iş parçacıkları aynı sorguyu
 # saniyede birkaç kez koşmasın); zaman aşımından hemen sonra beklemeden koşar.
 UZLASTIRMA_ARALIGI_S = 5.0
+# Asistan şeridi kapalıyken genel şeritteki bekleyen-asistan-işi temizliği bu aralıkta bir.
+KAPALI_SERIT_TEMIZLIK_S = 30.0
 
 
 def canlilik_dosyasi() -> Path:
@@ -186,6 +192,7 @@ _kanca_sonraki = 0.0
 # Ana (genel) döngünün almayacağı türler: uzun/asistan şeridi açıkken `run()` doldurur.
 _genel_haric: list[str] | None = None
 _son_uzlastirma = 0.0
+_son_kapali_temizlik = 0.0
 _uzlastirma_kilidi = threading.Lock()
 # Asistan şeridinin gerçek eşzamanlılığı: işleyicisi koşan (`_asistan_aktif`) + zaman aşımından
 # sonra asılı kalan (`_asistan_asili`) iş parçacıkları toplamı `asistan_paralel()`'i geçmez.
@@ -279,6 +286,54 @@ def uzlastir_gerekirse(*, zorla: bool = False) -> int:
         return len(uzlastir(conn))
 
 
+def kapali_serit_temizle(turler: Collection[str]) -> int:
+    """Asistan şeridi kapalıyken bekleyen asistan işlerini kapatır; kapanan mesaj sayısı.
+
+    Yalnız `asistan_durum` kalp atışı API eşiğinden (`KALP_ATISI_AZAMI_S`) eskiyse ya da hiç
+    yoksa koşar: o andan sonra API yeni soru kabul etmez ve şeridi açık başka bir worker yoktur
+    (varsa kalp atışı tazedir; işlerine dokunulmaz). Koşan işlere dokunulmaz (sahipsizse
+    `release_orphans`/`reap_stale` onları `retry`'a çeker, sonraki turda kapanır).
+    """
+    from sqlalchemy import text
+
+    from tp_core.features.assistant.api import KALP_ATISI_AZAMI_S
+    from tp_core.features.assistant.durum import uzlastir
+
+    if not turler:
+        return 0
+    with get_engine().begin() as conn:
+        taze = conn.execute(
+            text(
+                "SELECT 1 FROM asistan_durum WHERE id = 1 AND kalp_atisi IS NOT NULL "
+                "AND kalp_atisi >= now() - make_interval(secs => :esik)"
+            ),
+            {"esik": KALP_ATISI_AZAMI_S},
+        ).first()
+        if taze is not None:
+            return 0
+        iptal = conn.execute(
+            text(
+                "UPDATE job SET durum = 'cancelled', guncelleme = now(), bitis = now() "
+                "WHERE tur = ANY(:turler) AND durum IN ('queued', 'retry')"
+            ),
+            {"turler": sorted(turler)},
+        ).rowcount
+        if iptal:
+            log.warning(
+                "asistan şeridi kapalı (TP_WORKER_ASISTAN_SERIT=0): bekleyen %d asistan işi iptal",
+                iptal,
+            )
+        return len(uzlastir(conn))
+
+
+def _kapali_serit_temizle_gerekirse(turler: Collection[str]) -> None:
+    global _son_kapali_temizlik
+    if time.monotonic() - _son_kapali_temizlik < KAPALI_SERIT_TEMIZLIK_S:
+        return
+    _son_kapali_temizlik = time.monotonic()
+    kapali_serit_temizle(turler)
+
+
 def asistan_tur(turler: Collection[str]) -> bool:
     """Asistan şeridinden bir iş işler (yalnızca `turler`); iş yoksa False.
 
@@ -340,12 +395,18 @@ def run(dur: threading.Event, aralik: float = 1.0, *, uzun: Collection[str] | No
     tum_asistan = serit_turleri(ASISTAN_SERIT)
     kapali_asistan = tum_asistan - asistan
     uzun_k = frozenset(uzun or ()) - tum_asistan
+
+    def genel() -> bool:
+        if kapali_asistan:
+            _kapali_serit_temizle_gerekirse(kapali_asistan)
+        return tek_tur()
+
     if not uzun_k and not asistan:
         if not kapali_asistan:
-            return _dongu(dur, aralik, lambda: tek_tur(), "genel")
+            return _dongu(dur, aralik, genel, "genel")
         _genel_haric = sorted(kapali_asistan)
         try:
-            return _dongu(dur, aralik, lambda: tek_tur(), "genel")
+            return _dongu(dur, aralik, genel, "genel")
         finally:
             _genel_haric = None
     _genel_haric = sorted(uzun_k | tum_asistan)
@@ -384,7 +445,7 @@ def run(dur: threading.Event, aralik: float = 1.0, *, uzun: Collection[str] | No
     for t in iplikler:
         t.start()
     try:
-        kod = _dongu(dur, aralik, lambda: tek_tur(), "genel")
+        kod = _dongu(dur, aralik, genel, "genel")
     finally:
         dur.set()
         _genel_haric = None

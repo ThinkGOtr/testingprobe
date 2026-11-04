@@ -95,6 +95,19 @@ _DURUM: Final = (
     "geçmiyor",
     "ilerlemiyor",
 )
+# Jira kaydının içeriği (yorum/açıklama) sorulursa şablon kapı durumunu anlatamaz: soru modele
+# kalır, canlı `jira_issue` okunur ("TPD-3'te PO yorumunda neden itiraz etmiş?").
+_JIRA_ICERIGI: Final = (
+    "yorum",
+    "jira",
+    "ne demiş",
+    "ne demis",
+    "ne istemiş",
+    "ne istemis",
+    "ne yazmış",
+    "ne yazmis",
+    "itiraz",
+)
 # "Bugün ne yapmalıyım?" sınıfı → `probe_my_queue`.
 _KUYRUK: Final = (
     "bugün ne yap",
@@ -206,12 +219,16 @@ def jira_anahtarlari(soru: str | None) -> list[str]:
 def durum_sorusu(soru: str | None) -> str | None:
     """Şablon: sorudaki tek Jira anahtarı + "neden/durum/nerede" sınıfı → anahtar; değilse None.
 
-    Birden çok anahtar varsa şablon kullanılmaz (karşılaştırma sorusu modele kalır).
+    Birden çok anahtar varsa şablon kullanılmaz (karşılaştırma sorusu modele kalır); Jira
+    yorumu/içeriği sorusu da (`_JIRA_ICERIGI`) modele kalır.
     """
     anahtarlar = jira_anahtarlari(soru)
     if len(anahtarlar) != 1:
         return None
-    return anahtarlar[0] if _icerir(normalize(soru), _DURUM) else None
+    metin = normalize(soru)
+    if _icerir(metin, _JIRA_ICERIGI):
+        return None
+    return anahtarlar[0] if _icerir(metin, _DURUM) else None
 
 
 def kuyruk_sorusu(soru: str | None) -> bool:

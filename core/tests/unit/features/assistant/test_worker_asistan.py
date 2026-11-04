@@ -597,6 +597,7 @@ def test_asistan_seridi_kapaliyken_kalp_atisi_ve_serit_yok(
 ) -> None:
     monkeypatch.setenv("TP_WORKER_ASISTAN_SERIT", "0")
     monkeypatch.setattr(worker, "KALP_ATISI_ARALIGI_S", 0.05)
+    monkeypatch.setattr(worker, "_son_kapali_temizlik", 0.0)
     ek = uuid.uuid4().hex[:6]
     a_tur = f"t.askap.{ek}"
     _kaydet(a_tur, lambda _c: None, zaman_asimi_s=30)
@@ -614,10 +615,10 @@ def test_asistan_seridi_kapaliyken_kalp_atisi_ve_serit_yok(
             a_id = enqueue(c, a_tur)
         t, sonuc = _calistir(dur)
         # Şerit kapalı: tür genel döngüde de koşmaz (haric'te; orada zaman aşımı süreci
-        # kapatırdı), kuyrukta kalır; kalp atışı yazılmaz.
+        # kapatırdı); kalp atışı yazılmaz. Kalp atışı olmadığından genel şerit bekleyen işi
+        # süresiz `queued` bırakmaz, `cancelled` yapar (kapali_serit_temizle).
         assert _bekle(lambda: len(haricler) >= 3)
-        time.sleep(0.2)
-        assert _is_durumu(engine, a_id) == "queued"
+        assert _bekle(lambda: _is_durumu(engine, a_id) == "cancelled")
         assert _durum_satiri(engine) is None
         assert all(h is not None and a_tur in h for h in haricler)
     finally:

@@ -224,6 +224,16 @@ def global_bekleyen(conn: Connection, *, haric_is: uuid.UUID | None = None) -> i
     )
 
 
+# Yükteki `mesaj_id` → uuid; kolon tarafı dönüştürülmez ki `asistan_mesaj` PK indeksi kullanılsın.
+# CASE, geçersiz/boş kimlikte (`""`) dönüştürme hatası yerine NULL verir (değerlendirme sırası
+# WHERE'de garanti değil; başka tetikli işler de aynı satırlarda taranır).
+_YUK_MESAJ = (
+    "(CASE WHEN j.yuk->>'mesaj_id' ~* "
+    "'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' "
+    "THEN (j.yuk->>'mesaj_id')::uuid END)"
+)
+
+
 def kullanici_bekleyen(conn: Connection, kullanici_id: uuid.UUID) -> int:
     """Kullanıcının bitmemiş, kendi tetiklediği (`tetik='kullanici'`) asistan işleri.
 
@@ -237,7 +247,7 @@ def kullanici_bekleyen(conn: Connection, kullanici_id: uuid.UUID) -> int:
                 "AND j.durum IN ('queued','running','retry') "
                 "AND j.yuk->>'kullanici_id' = :k AND j.yuk->>'tetik' = 'kullanici' "
                 "AND NOT EXISTS (SELECT 1 FROM asistan_mesaj m "
-                "WHERE m.id::text = j.yuk->>'mesaj_id' AND m.durum IN ('done','error'))"
+                "WHERE m.id = " + _YUK_MESAJ + " AND m.durum IN ('done','error'))"
             ),
             {"t": ASISTAN_IS_TURU, "k": str(kullanici_id)},
         ).scalar_one()
@@ -253,7 +263,7 @@ def kullanici_kapanan(conn: Connection, kullanici_id: uuid.UUID) -> int:
         conn.execute(
             text(
                 "SELECT count(*) FROM job j JOIN asistan_mesaj m "
-                "ON m.id::text = j.yuk->>'mesaj_id' "
+                "ON m.id = " + _YUK_MESAJ + " "
                 "WHERE j.tur = :t AND j.durum IN ('queued','running','retry') "
                 "AND j.yuk->>'kullanici_id' = :k AND j.yuk->>'tetik' = 'kullanici' "
                 "AND m.durum = 'iptal'"

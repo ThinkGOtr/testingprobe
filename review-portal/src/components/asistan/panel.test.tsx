@@ -488,6 +488,8 @@ describe("bekleme, iptal, yoklama, yeniden bağlanma", () => {
     yalnizPanel();
     const p = await paneliAc(u);
     isle(await sor(u, "Bugün ne yapmalıyım?"));
+    // Bekleyen soru varken Geçmiş pasiftir: cevap gelince açılır.
+    await waitFor(() => expect(within(p).getByRole("button", { name: "Geçmiş" })).toBeEnabled());
     await u.click(within(p).getByRole("button", { name: "Geçmiş" }));
     const sil = await within(p).findByRole("button", { name: /sohbetini sil/ });
     await u.click(sil);

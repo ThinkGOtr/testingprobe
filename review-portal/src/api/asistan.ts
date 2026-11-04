@@ -13,7 +13,7 @@ export interface AsistanDurumu {
   varsayilan_model?: string | null;
   degerlendirme?: Degerlendirme | null;
   paket_commit?: string | null;
-  /** Kullanıcının bugün kalan yaklaşık soru hakkı. */
+  /** Kullanıcının bu saat kalan yaklaşık soru hakkı (core `SAATLIK_SORU - saatlik_soru`; günlük sayaç yok). */
   kalan_soru?: number | null;
   /** Model hazır mı (öneri "Başka ne yapabilirim?" ve "Daha ayrıntılı incele" için); yoksa `mod==="live"`. */
   model_hazir?: boolean | null;
@@ -92,6 +92,8 @@ export interface AsistanCevabi {
   /** §7.3 doğrulama sonucu, `ref` başına (contracts/assistant-schema.md "Saklanan cevap biçimi"). */
   dogrulama?: Record<string, { dogrulandi: boolean; sha256?: string | null }> | null;
   urune_ozgu?: boolean;
+  /** Otomatik yükseltme ön koşulu tutmadı (flow.py): kart "Daha ayrıntılı incele"yi önerir (§6.2). */
+  derin_onerilir?: boolean;
   /** Mock arka uç cevabı: arayüz "ÖRNEK VERİ" gösterir. */
   ornek_veri?: boolean;
 }
@@ -204,7 +206,10 @@ export function gonderimHataMetni(e: unknown): string {
   if (!(e instanceof ApiError)) return e instanceof Error ? e.message : "Soru gönderilemedi.";
   switch (e.kod) {
     case "bekleyen_var":
-      return BEKLEYEN_VAR_METNI;
+      // Core iki gerekçe yazar (api.py `_bekleyen_var`): bekleyen soru (genel metin) ya da az önce
+      // durdurulan cevabın işi hâlâ kapanıyor. İkincisinde sunucu metni gösterilir: kullanıcının
+      // ekranında bekleyen soru yoktur, "başka sekmede" demek yanıltır.
+      return e.detail && /kapan/i.test(e.detail) ? e.detail : BEKLEYEN_VAR_METNI;
     case "zaten_derin":
       return "Bu cevap zaten ayrıntılı incelendi.";
     case "hiz_siniri":

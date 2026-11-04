@@ -146,6 +146,9 @@ export function SohbetSekmesi({
   sohbetRef.current = sohbetId;
   /** İşlenen son dış istek: StrictMode'da effect iki kez koşsa da soru bir kez gönderilir. */
   const islenenSira = useRef<number | null>(null);
+  /** Gönderimden sonra yeni sohbete geçerken etki yüklemeyi atlar: `gonder` zaten sessiz yükler
+   * (aynı liste iki kez çekilmez, "Sohbet yükleniyor…" yanıp sönmez). */
+  const yuklemeyiAtla = useRef<string | null>(null);
 
   // Rota değişince ekran çipi yeniden eklenir (kaldırma yalnız o ekran için).
   useEffect(() => setEkranDahil(true), [ekran.rota_kalibi, ekran.varlik?.id]);
@@ -192,6 +195,11 @@ export function SohbetSekmesi({
 
   // Panel açılınca kayıtlı sohbet yüklenir; bekleyen mesaj varsa bekleme yeniden kurulur.
   useEffect(() => {
+    if (sohbetId && yuklemeyiAtla.current === sohbetId) {
+      yuklemeyiAtla.current = null;
+      return;
+    }
+    yuklemeyiAtla.current = null;
     if (sohbetId) void yukle(sohbetId);
     else setMesajlar([]);
   }, [sohbetId, yukle]);
@@ -199,7 +207,11 @@ export function SohbetSekmesi({
   const bekleyenler = useMemo(() => mesajlar.filter((m) => m.rol === "assistant" && bekliyor(m)), [mesajlar]);
   // Öneriler sekmesindeki "Başka ne yapabilirim?" de kullanıcının bekleyen sorusudur (sunucu 409 bekleyen_var).
   const ekBekleyen = useBekleyenEkOneri();
-  const kullaniciBekliyor = bekleyenler.some((m) => m.tetik === "kullanici") || !!ekBekleyen;
+  /** Bu sohbette yanıt bekleyen kullanıcı sorusu: sohbetten çıkılırsa bekleme ve "Beklemeyi bırak"
+   * görünmez olur, sunucu ise cevap gelene dek her yeni soruya 409 verir. Bu yüzden o sürede
+   * "Yeni sohbet" ve "Geçmiş" pasiftir (ek öneri bekleyeni kendi deposunda tutulur, sayılmaz). */
+  const sohbetteBekleyen = bekleyenler.some((m) => m.tetik === "kullanici");
+  const kullaniciBekliyor = sohbetteBekleyen || !!ekBekleyen;
   const bekleyenAnahtar = bekleyenler.map((m) => m.id).join("|");
 
   // Olaylar: core yalnız bu kullanıcının asistan olaylarını teslim eder.
@@ -221,33 +233,50 @@ export function SohbetSekmesi({
     ["assistant.step", "assistant.answered"],
   );
 
+  /** Bekleyen mesajları tek tek okur; biten varsa sohbet ve durum yenilenir. */
+  const bekleyenleriOku = useCallback(
+    async (ids: string[]) => {
+      let bitti = false;
+      for (const id of ids) {
+        try {
+          const m = await asistanApi.mesaj(id);
+          if (!bekliyor(m)) bitti = true;
+          // Core mesaj yanıtı adım kodu taşımaz; `running` görüldüyse listeye yazılır
+          // (iptal notu "işlenen kısım ücretlendi" buna dayanır).
+          else if (m.durum === "running") setMesajlar((l) => l.map((x) => (x.id === id && x.durum !== "running" ? { ...x, durum: "running" } : x)));
+        } catch {
+          /* bir sonraki turda / olayda yeniden denenir */
+        }
+      }
+      if (bitti && sohbetRef.current) {
+        await yukle(sohbetRef.current, true);
+        durumYenile();
+      }
+    },
+    [yukle, durumYenile],
+  );
+
   // SSE kopukken (yeniden bağlanıyor / kapalı) 3 sn'de bir yoklama.
   const sseVar = baglanti === "bagli" || baglanti === "mock";
   useEffect(() => {
     if (!bekleyenAnahtar || sseVar) return;
     const ids = bekleyenAnahtar.split("|");
-    const z = setInterval(() => {
-      void (async () => {
-        let bitti = false;
-        for (const id of ids) {
-          try {
-            const m = await asistanApi.mesaj(id);
-            if (!bekliyor(m)) bitti = true;
-            // Core mesaj yanıtı adım kodu taşımaz; `running` görüldüyse listeye yazılır
-            // (iptal notu "işlenen kısım ücretlendi" buna dayanır).
-            else if (m.durum === "running") setMesajlar((l) => l.map((x) => (x.id === id && x.durum !== "running" ? { ...x, durum: "running" } : x)));
-          } catch {
-            /* bir sonraki turda yeniden denenir */
-          }
-        }
-        if (bitti && sohbetRef.current) {
-          await yukle(sohbetRef.current, true);
-          durumYenile();
-        }
-      })();
-    }, sohbetAyar.yoklamaMs);
+    const z = setInterval(() => void bekleyenleriOku(ids), sohbetAyar.yoklamaMs);
     return () => clearInterval(z);
-  }, [bekleyenAnahtar, sseVar, yukle, durumYenile]);
+  }, [bekleyenAnahtar, sseVar, bekleyenleriOku]);
+
+  // SSE yeniden bağlanınca (kopuk → bağlı) bekleyenler bir kez okunur: kopukluk yoklama aralığından
+  // kısa sürdüyse arada yayınlanan `assistant.answered` kaçmış olabilir (Last-Event-ID ile tekrar
+  // oynatma yok); okunmazsa bekleme takılı kalır ve yeni soru engellenirdi.
+  const oncekiSse = useRef(sseVar);
+  useEffect(() => {
+    const onceki = oncekiSse.current;
+    oncekiSse.current = sseVar;
+    if (onceki || !sseVar) return;
+    if (bekleyenAnahtar) void bekleyenleriOku(bekleyenAnahtar.split("|"));
+    if (ekBekleyen) void ekOneriKontrol(ekBekleyen);
+    // Yalnız bağlantı geçişinde: bekleyen listesi değişince yeniden okunmaz.
+  }, [sseVar]);
 
   // Ek öneri beklerken SSE kopuksa onu da yokla (Öneriler sekmesi kapalıyken bekleme takılı kalmasın).
   useEffect(() => {
@@ -342,12 +371,14 @@ export function SohbetSekmesi({
         if (yeniId) {
           sohbetRef.current = yeniId;
           sohbetiHatirla(yeniId);
+          yuklemeyiAtla.current = yeniId;
           setSohbetId(yeniId);
           setMesajlar([]);
         } else if (id !== sohbetRef.current) {
           // Başka sohbette soruldu ("Bunu sor": ek öneri sohbeti): o sohbete geçilir.
           sohbetRef.current = id;
           sohbetiHatirla(id);
+          yuklemeyiAtla.current = id;
           setSohbetId(id);
           setMesajlar([]);
         }
@@ -656,10 +687,22 @@ export function SohbetSekmesi({
   return (
     <div className="asistan-sohbet">
       <div className="asistan-sohbet-eylem">
-        <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={yeniSohbet}>
+        <button
+          type="button"
+          className="dugme dugme-hayalet dugme-kucuk"
+          onClick={yeniSohbet}
+          disabled={sohbetteBekleyen}
+          aria-describedby={sohbetteBekleyen ? "asistan-sohbet-kilit" : undefined}
+        >
           Yeni sohbet
         </button>
-        <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => void gecmisiAc()}>
+        <button
+          type="button"
+          className="dugme dugme-hayalet dugme-kucuk"
+          onClick={() => void gecmisiAc()}
+          disabled={sohbetteBekleyen}
+          aria-describedby={sohbetteBekleyen ? "asistan-sohbet-kilit" : undefined}
+        >
           Geçmiş
         </button>
       </div>
@@ -783,7 +826,11 @@ export function SohbetSekmesi({
             </button>
           </p>
         ) : (
-          kullaniciBekliyor && <p className="soluk kucuk">Cevap gelince yeni soru sorabilirsiniz.</p>
+          kullaniciBekliyor && (
+            <p className="soluk kucuk" id="asistan-sohbet-kilit">
+              Cevap gelince yeni soru sorabilir, yeni sohbet açabilirsiniz.
+            </p>
+          )
         )}
         {hataNotu && (
           <p className="soluk kucuk" role="status">

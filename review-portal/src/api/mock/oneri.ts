@@ -66,21 +66,21 @@ const TASLAKLAR: Record<string, Taslak> = {
     tur: "Task",
     ozet: "Kararsız (flaky) test incelenmeli",
     aciklama:
-      "Bir otomasyon testi son 10 koşuda {flaky_tekrar} kez kararsız sonuç verdi (aynı kodla bazen geçti, bazen kırmızı oldu).\nİstenen: kararsızlığın nedenini (zamanlama, test verisi, ortam ya da sıralama bağımlılığı) bulmak ve kalıcı olarak gidermek.\nKabul: test aynı ortamda art arda tekrarlarda tutarlı sonuç verir.\nAyrıntı: Testing Probe hata detay ekranındaki kanıtlar ve koşu geçmişi.",
+      "Bir otomasyon testi son 10 koşuda {flaky_tekrar} kez kararsız sonuç verdi (aynı kodla bazen geçti, bazen kırmızı oldu).\nİstenen: kararsızlığın nedenini (zamanlama, test verisi, ortam ya da sıralama bağımlılığı) bulmak ve kalıcı olarak gidermek.\nKabul: test aynı ortamda art arda tekrarlarda tutarlı sonuç verir.\nKaynak: (test adını ve Testing Probe hata kimliğini buraya ekleyin); kanıtlar ve koşu geçmişi hata detay ekranındadır.",
     etiketler: ["flaky", "otomasyon"],
   },
   "ortam-hatasi-task": {
     tur: "Task",
     ozet: "CI ortam hatası testlerin koşmasını engelliyor",
     aciklama:
-      "Son CI koşusu testler çalışmadan ortam hatasıyla bitti; bu koşunun test sonucu yok.\nİstenen: başarısız adımın (ör. kurulum, lint ya da sağlık yoklaması) nedenini bulmak ve düzeltmek.\nKabul: yeni bir koşuda testler çalışır ve sonuç üretir.\nAyrıntı: Testing Probe koşu detay ekranındaki adım özetleri ve log.",
+      "Son CI koşusu testler çalışmadan ortam hatasıyla bitti; bu koşunun test sonucu yok.\nİstenen: başarısız adımın (ör. kurulum, lint ya da sağlık yoklaması) nedenini bulmak ve düzeltmek.\nKabul: yeni bir koşuda testler çalışır ve sonuç üretir.\nKaynak: (Testing Probe koşu numarasını buraya ekleyin); adım özetleri ve log koşu detay ekranındadır.",
     etiketler: ["ci", "ortam"],
   },
   "test-verisi-task": {
     tur: "Task",
     ozet: "Test verisi ön koşulu sağlanmalı",
     aciklama:
-      "Bir otomasyon testi, ön koşul verisi ortamda olmadığı ya da beklenenden farklı olduğu için başarısız oldu (triage sınıfı: test verisi).\nİstenen: testin ihtiyaç duyduğu veriyi test ortamında hazırlamak ya da veri kurulumunu düzeltmek.\nKabul: test aynı ortamda veri hatası olmadan koşar.\nAyrıntı: Testing Probe hata detay ekranındaki kanıtlar.",
+      "Bir otomasyon testi, ön koşul verisi ortamda olmadığı ya da beklenenden farklı olduğu için başarısız oldu (triage sınıfı: test verisi).\nİstenen: testin ihtiyaç duyduğu veriyi test ortamında hazırlamak ya da veri kurulumunu düzeltmek.\nKabul: test aynı ortamda veri hatası olmadan koşar.\nKaynak: (test adını ve Testing Probe hata kimliğini buraya ekleyin); kanıtlar hata detay ekranındadır.",
     etiketler: ["test-verisi"],
   },
 };

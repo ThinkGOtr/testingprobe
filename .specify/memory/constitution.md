@@ -7,6 +7,10 @@ Sync Impact Report
 - Added sections: yok · Removed sections: yok
 - Templates requiring updates: yok (şablonlar kuralı çalışma anında okur); bağlı belgeler
   docs/TEKNIK-TASARIM.md §8.13 ve docs/MIMARI-SOZLESME.md §5–§6 aynı PR'da güncellendi ✅
+- Onay durumu: ürün sahibi ✅ 2026-11-03 (K7); teknik lider ⏳ açık (tasks T007; onay tarihi buraya
+  işlenir). Governance iki onayı da istediğinden v1.3.0 onaya dek yalnız `dev`'de, asistan bayrak
+  arkasında (`TP_ASISTAN_MODEL_MODE=off`) geçerlidir; teknik lider onayı `main` birleştirme koşuludur
+  ve PR açıklamasında öyle yazılır (docs/AI-ASISTAN-PLANI.md §14 kontrol listesi)
 - Follow-up TODOs: teknik lider onayı (değişiklik dosyası aynı PR'da; Governance)
 - Kaynak: docs/AI-ASISTAN-PLANI.md v6 §1 K7, §4; specs/008-ai-asistan/
 - Önceki: 1.1.0 → 1.2.0 (MINOR: İlke VII on-prem kurulum ve modelin müşteri ortamında

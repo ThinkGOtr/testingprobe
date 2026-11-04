@@ -51,7 +51,7 @@ Hiçbir araç `issue_url`, ham ad/e-posta/accountId, token, parola veya oturum a
   &maxResults=n` (en çok 2 istek).
 - Süre: istek başı `min(8, kalan)` sn, araç toplamı `min(12, kalan)`, `max_retries=1`; kalan süreyi
   aşan bekleme → `JiraUnavailable`. 401/403/5xx → yalnız sınıf ("Jira erişim hatası").
-- Global kova `jira_global` 30/dk → "Jira meşgul".
+- Global kova `jira_global` 30 HTTP isteği/dk (pratikte ~10–15 `jira_issue` çağrısı) → "Jira meşgul".
 - Kısıtlı yorum (`visibility` dolu veya `jsdPublic=false`) elenir. Yazar etiketi: bot (`has_bot_header`)
   → "Testing Probe botu"; `JiraSettings.po_accounts` → "PO"; `JIRA_HESAP_*` → portal rol etiketi;
   diğerleri → "Kişi-1" …; ADF mention'ları aynı kuralla.
@@ -68,6 +68,9 @@ Hiçbir araç `issue_url`, ham ad/e-posta/accountId, token, parola veya oturum a
   `Authorization` düşer.
 - İşleme: kuyruk → ilk yarım satır atılır → UTF-8 `replace` → ANSI + GitHub zaman damgası temizliği →
   sır temizliği → maskeleme → `ara` (±3 bağlam, ≤ 50 eşleşme) veya son `satir` satır → ≤ 16 KB.
+- Kaynak eki (sunucu, `sonislem`): `ci.kosu_no` (GitHub run kimliği ya da yerel koşu kimliğinin 8
+  karakterlik öneki, string), `satir_bas`/`satir_bit` (alınan log kuyruğuna göre; kırpılmışsa logun
+  başı sayılmaz). Jira için `jira.yorum` (bool) ve `jira.tarih` (ISO; yorum değilse null).
 
 ## `scrub_secret_patterns` (Şerit C1, `gateway/masking.py`)
 

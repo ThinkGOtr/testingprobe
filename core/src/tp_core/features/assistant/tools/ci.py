@@ -375,7 +375,14 @@ def ci_log(baglam: AracBaglami, **arg: Any) -> AracSonucu:
         kanit_turu="ci_log",
         tur="ci_log",
         kaynak=f"run:{run_id}",
-        meta={"run_id": str(run_id), "log_kaynagi": log_kaynagi},
+        meta={
+            "run_id": str(run_id),
+            "log_kaynagi": log_kaynagi,
+            # Kaynak etiketindeki görünen koşu numarası ("CI logu (koşu #…, satır …)"): GitHub
+            # koşusunda GitHub run kimliği, yerel koşuda kimliğin kısa öneki.
+            "kosu_no": github_run_id if github_run_id.isdigit() else str(run_id)[:8],
+            # Satır numaraları alınan kuyruğa göredir; kuyruk kırpıldıysa logun başı sayılmaz.
+        },
     )
 
 

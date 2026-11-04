@@ -403,11 +403,14 @@ export function AsistanPaneli() {
               {sekmeDugmesi("oneriler", "Öneriler")}
             </div>
           )}
+          {/* Asistan ucu yokken (yalnız Öneriler) sekme listesi çizilmez: içerik adsız bir sekme
+              paneli değil, adlı bir bölgedir. */}
           <div
             className="asistan-sekme-icerik"
-            role="tabpanel"
+            role={yalnizOneri ? "region" : "tabpanel"}
             id={`asistan-sekme-icerik-${sekme}`}
             aria-labelledby={yalnizOneri ? undefined : `asistan-sekme-${sekme}`}
+            aria-label={yalnizOneri ? "Öneriler" : undefined}
           >
             {sekme === "oneriler" ? (
               <OnerilerSekmesi

@@ -239,6 +239,8 @@ describe("Geçmiş hataları", () => {
     await waitFor(() => expect(asistanMockBekleyenler().length).toBeGreaterThan(0));
     act(() => asistanMockIsle(asistanMockBekleyenler().at(-1)!));
     vi.spyOn(asistanApi, "sohbetSil").mockRejectedValueOnce(new ApiError(503, "Geçici hata"));
+    // Bekleyen soru varken Geçmiş pasiftir: cevap gelince açılır.
+    await waitFor(() => expect(within(p).getByRole("button", { name: "Geçmiş" })).toBeEnabled());
     await u.click(within(p).getByRole("button", { name: "Geçmiş" }));
     await u.click(await within(p).findByRole("button", { name: /sohbetini sil/ }));
     await u.click(within(within(p).getByRole("group", { name: "Silme onayı" })).getByRole("button", { name: "Sil" }));

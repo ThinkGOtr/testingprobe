@@ -17,7 +17,8 @@ adım modele sorulmaz:
   taslak metninde URL "[bağlantı kaldırıldı]", Jira wiki bağlantısı ve mention temizlenir; proje
   daima sunucudaki `JIRA_PROJECT`; bilinmeyen anahtar → null (`jira_yorum`/`jira_kaydi` → `bilgi`);
   en çok 3; kural önerisiyle aynı başlık (normalize) atılır. Sistem hattı ekranında/varlığında
-  (`SISTEM_HATTI_*`) Jira taslağı/yorumu ve soranın rolünün açamadığı rota → `bilgi` (§17.2).
+  (`SISTEM_HATTI_*`) Jira taslağı/yorumu, her ekranda modelin Bug taslağı ve soranın rolünün
+  açamadığı rota → `bilgi` (§17.2); rolün açamadığı rotaya yönlendirme düğmesi de düşer.
 - **Güven gösterimi**: §7.3 tablosu (`guven_gosterimi`).
 - Müşteri verisi kurulumunda cevap aynı oturumla yeniden maskelenir; her kaynağın sha256'sı
   `dogrulama`'ya yazılır.
@@ -63,6 +64,10 @@ TASLAK_ACIKLAMA_AZAMI: Final = 3000
 VERI_DOGRULAMA_AZAMI: Final = 5
 VERI_SORGU_UST_S: Final = 10.0
 VERI_EN_AZ_KALAN_S: Final = 0.5
+# Ürün paketi / uygulama kodu (forge) okumasının tek seferlik üst sınırı; `bitis` kalanıyla
+# kısılır. Forge yavaşsa doğrulama "zaman aşımı" olur, ücreti ödenmiş cevap 120 sn emniyet
+# sınırına takılıp kaybolmaz.
+KOD_OKUMA_UST_S: Final = 10.0
 URUN_SATIR_AZAMI: Final = 400
 ALINTI_EN_AZ: Final = 8  # requirements/verifier.MIN_SNIPPET ile aynı
 
@@ -92,10 +97,6 @@ YENI_KAYIT_TURLERI: Final = frozenset({"Task", "Bug", "Story"})
 SISTEM_HATTI_EKRANLARI: Final = ("/bug-taslaklari", "/gereksinimler/:id/yayin")
 SISTEM_HATTI_VARLIKLARI: Final = frozenset({"bug_draft", "consistency_finding"})
 SISTEM_HATTI_EYLEMLERI: Final = frozenset({"jira_taslak", "jira_yorum"})
-# Hata detayı (`failure`) sistem hattı değildir (flaky/test verisi için Task/yorum serbest; §17.3),
-# ama ürün hatasının Bug kaydı Probe'un bug taslağı hattındadır: orada yeni Bug taslağı `bilgi`ye
-# düşer (prompt'a bırakılmaz).
-BUG_HATTI_VARLIKLARI: Final = frozenset({"failure"})
 
 # ASCII rakam (`\d` Unicode rakamı da kabul ederdi).
 JIRA_ANAHTARI: Final = re.compile(r"[A-Z][A-Z0-9]+-[0-9]+")
@@ -104,15 +105,34 @@ _MD_BAGLANTI: Final = re.compile(r"\[([^\]\n]*)\]\([^)\n]*\)")
 # Şemasız alan adı ("evil.example.com/login"): oltalama metni olmasın. Kod/dosya adlarıyla
 # karışmasın diye yalnız yaygın üst düzey alanlar ve son etiket olarak ("config.app.ts" değil,
 # "README.md" değil); öncesinde kelime, nokta, "@" ya da "/" yoksa (e-posta, yol içi değil).
+# Etiketler Unicode harf kabul eder (IDN/homograf: Kiril "е"li "еvil.com", "göz.com").
 _TLD: Final = (
     "com|net|org|io|dev|app|co|info|biz|xyz|me|ru|cn|tk|top|online|site|live|ly|gg|link|click"
     "|shop|store|tr|uk|de|ai|cc|su"
 )
+# Listede olmayan üst düzey alan ("evil.zip/login", "x.page/reset") yalnız ardında yol varsa
+# (yol yoksa "flow.cevapla" gibi kod adları da eşleşirdi); dosya uzantısı son etiket sayılmaz.
+_UZANTI: Final = (
+    "ts|tsx|js|jsx|mjs|cjs|py|pyi|md|mdx|json|jsonl|ya?ml|toml|txt|html?|css|scss|sh|sql|go|rs"
+    "|java|kt|rb|php|lock|cfg|ini|log|csv|xml|vue|env|conf"
+)
+_ETIKET: Final = r"[^\W_](?:[\w\-]*[^\W_])?"
+_YOL: Final = r"/[^\s<>\"'`]*"
+_ALAN_BASI: Final = r"(?<![\w.@/\-])"
 _URL: Final = re.compile(
-    r"(?i)(?:\b[a-z][a-z0-9+.\-]*://|\bwww\.)[^\s<>\"'`]*"
-    r"|\b(?:javascript|data|vbscript|file)\s*:[^\s<>\"'`]*"
-    r"|(?<![\w.@/\-])(?:[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?\.)+(?:" + _TLD + r")"
-    r"(?![\w\-])(?!\.[a-z0-9])(?::[0-9]+)?(?:/[^\s<>\"'`]*)?"
+    "(?i)"
+    + "|".join(
+        (
+            r"(?:\b[a-z][a-z0-9+.\-]*://|\bwww\.)[^\s<>\"'`]*",
+            r"\b(?:javascript|data|vbscript|file)\s*:[^\s<>\"'`]*",
+            # Bilinen üst düzey alan: yol isteğe bağlı.
+            rf"{_ALAN_BASI}(?:{_ETIKET}\.)+(?:{_TLD})(?![\w\-])(?!\.\w)(?::[0-9]+)?(?:{_YOL})?",
+            # Listede olmayan üst düzey alan: yol zorunlu, dosya uzantısı değil.
+            rf"{_ALAN_BASI}(?:{_ETIKET}\.)+(?!(?:{_UZANTI})[:/])[^\W\d_]{{2,24}}(?::[0-9]+)?{_YOL}",
+            # Çıplak IPv4: sürüm numarasıyla ("1.2.3.4") karışmasın diye port ya da yol gerekir.
+            rf"{_ALAN_BASI}(?:[0-9]{{1,3}}\.){{3}}[0-9]{{1,3}}(?::[0-9]+(?:{_YOL})?|{_YOL})",
+        )
+    )
 )
 _WIKI_BAGLANTI: Final = re.compile(r"\[([^\[\]|\n]*)\|[^\[\]\n]*\]")
 _MENTION_ID: Final = re.compile(r"\[~[^\]\n]*\]")
@@ -404,10 +424,33 @@ class _Sonuc:
     neden: str | None = None
 
 
+class _ZamanAsimi(Exception):
+    pass
+
+
 class _KaynakDogrulayici:
     def __init__(self, b: SonIslemBaglami) -> None:
         self.b = b
         self.veri_sayisi = 0
+
+    def _kalan(self, ust: float) -> float:
+        kalan = ust
+        if self.b.bitis is not None:
+            kalan = min(kalan, self.b.bitis - self.b.saat())
+        return kalan
+
+    def _sureli(self, ust: float, fn: Callable[..., Any], *args: Any) -> Any:
+        """`fn`'i kalan süreyle sınırlı çalıştırır; süre yoksa ya da aşılırsa `_ZamanAsimi`."""
+        kalan = self._kalan(ust)
+        if kalan < VERI_EN_AZ_KALAN_S:
+            raise _ZamanAsimi
+        havuz = ThreadPoolExecutor(max_workers=1, thread_name_prefix="asistan-dogrula")
+        try:
+            return havuz.submit(fn, *args).result(timeout=kalan)
+        except FutureTimeout:
+            raise _ZamanAsimi from None
+        finally:
+            havuz.shutdown(wait=False, cancel_futures=True)
 
     def __call__(self, tur: str, ref: str, alinti: Any) -> _Sonuc:
         try:
@@ -430,7 +473,12 @@ class _KaynakDogrulayici:
         if parca is None or self.b.dogrulayici is None:
             return _Sonuc(False, neden="ref biçimi geçersiz" if parca is None else "doğrulanamadı")
         yol, bas, son = parca
-        satirlar = self.b.dogrulayici.urun_satirlari(yol, bas, son)
+        try:
+            satirlar = self._sureli(
+                KOD_OKUMA_UST_S, self.b.dogrulayici.urun_satirlari, yol, bas, son
+            )
+        except _ZamanAsimi:
+            return _Sonuc(False, neden="zaman aşımı")
         if not satirlar or len(satirlar) < son - bas + 1:
             return _Sonuc(False, neden="dosya ya da satır pakette yok")
         if not alinti_gecer(alinti, satirlar):
@@ -442,7 +490,10 @@ class _KaynakDogrulayici:
         if parca is None or self.b.dogrulayici is None:
             return _Sonuc(False, neden="ref biçimi geçersiz" if parca is None else "doğrulanamadı")
         yol, bas, son = parca
-        dosya = self.b.dogrulayici.uygulama_satirlari(yol)
+        try:
+            dosya = self._sureli(KOD_OKUMA_UST_S, self.b.dogrulayici.uygulama_satirlari, yol)
+        except _ZamanAsimi:
+            return _Sonuc(False, neden="zaman aşımı")
         if dosya is None or son > len(dosya):
             return _Sonuc(False, neden="dosya ya da satır yok")
         satirlar = dosya[bas - 1 : son]
@@ -458,22 +509,15 @@ class _KaynakDogrulayici:
             return _Sonuc(False, kanit.sha256, "doğrulanamadı")
         if self.veri_sayisi >= VERI_DOGRULAMA_AZAMI:
             return _Sonuc(False, kanit.sha256, "doğrulama sınırı (5 sorgu)")
-        kalan = VERI_SORGU_UST_S
-        if self.b.bitis is not None:
-            kalan = min(kalan, self.b.bitis - self.b.saat())
-        if kalan < VERI_EN_AZ_KALAN_S:
+        if self._kalan(VERI_SORGU_UST_S) < VERI_EN_AZ_KALAN_S:
             return _Sonuc(False, kanit.sha256, "zaman aşımı")
         self.veri_sayisi += 1
         from tp_core.features.requirements.datatools import digest_matches_any
 
-        havuz = ThreadPoolExecutor(max_workers=1, thread_name_prefix="asistan-dogrula")
         try:
-            gelecek = havuz.submit(self.b.dogrulayici.veri_sorgula, kanit.sql)
-            satirlar = gelecek.result(timeout=kalan)
-        except FutureTimeout:
+            satirlar = self._sureli(VERI_SORGU_UST_S, self.b.dogrulayici.veri_sorgula, kanit.sql)
+        except _ZamanAsimi:
             return _Sonuc(False, kanit.sha256, "zaman aşımı")
-        finally:
-            havuz.shutdown(wait=False, cancel_futures=True)
         if not digest_matches_any(kanit.result_digest, satirlar):
             return _Sonuc(False, kanit.sha256, "sonuç özeti eşleşmiyor")
         return _Sonuc(True, kanit.sha256)
@@ -518,27 +562,96 @@ def _kaynaklar(
             onceki = dogrulama.get(ref)
             if onceki is None or (sonuc.dogrulandi and not onceki["dogrulandi"]):
                 dogrulama[ref] = {"dogrulandi": sonuc.dogrulandi, "sha256": sonuc.sha256}
-            ek = _kaynak_eki(tur, ref, b)
+            ek = _kaynak_eki(tur, ref, alinti, b)
             if ek:
                 kayit.update(ek)
         out.append(kayit)
     return out, dogrulama
 
 
-def _kaynak_eki(tur: str, ref: str, b: SonIslemBaglami) -> dict[str, Any]:
-    """Jira/CI kaynağının sunucu tarafı ayrıntısı (havuz meta'sından; modelden değil)."""
+def alinti_araligi(alinti: Any, satirlar: Sequence[str]) -> tuple[int, int] | None:
+    """Alıntının geçtiği en kısa satır aralığı (0 tabanlı, iki uç dahil); `alinti_gecer` ile aynı
+    normalizasyon. Bulunamazsa None."""
+    if not isinstance(alinti, str):
+        return None
+    a = norm_ws(_SATIR_ONEKI.sub("", alinti))
+    if not a:
+        return None
+    norm = [norm_ws(s) for s in satirlar]
+    for i, s in enumerate(norm):
+        if (a == s) if len(a) < ALINTI_EN_AZ else (a in s):
+            return i, i
+    if len(a) < ALINTI_EN_AZ:
+        return None
+    for i in range(len(norm)):
+        birlesik = norm[i]
+        for j in range(i + 1, len(norm)):
+            birlesik = f"{birlesik} {norm[j]}" if birlesik else norm[j]
+            if a in birlesik:
+                return i, j
+            if len(birlesik) > len(a) + len(norm[i]) + 1:
+                break
+    return None
+
+
+def _govde_satirlari(kanit_metni: str) -> tuple[list[str], int]:
+    """Kanıt metninin satırları ve araç çıktısının başladığı satır (`[kanit:kN]` ve
+    `<untrusted …>` açılış satırlarından sonra)."""
+    satirlar = kanit_metni.splitlines()
+    for i, s in enumerate(satirlar[:3]):
+        if s.startswith("<untrusted "):
+            return satirlar, i + 1
+    return satirlar, 1 if satirlar and satirlar[0].startswith("[kanit:") else 0
+
+
+_CI_SATIR_NO: Final = re.compile(r"^([0-9]+)\| ")
+
+
+def _kaynak_eki(tur: str, ref: str, alinti: Any, b: SonIslemBaglami) -> dict[str, Any]:
+    """Jira/CI kaynağının sunucu tarafı ayrıntısı (havuz meta'sından ve alıntının eşleştiği
+    satırdan; modelden değil): Jira'da yorum mu açıklama mı ve yorum tarihi, CI'da koşu numarası
+    ve log satır aralığı (§11 "Jira yorumu (TPD-3, 2 gün önce)", "CI logu (koşu #…, satır …)")."""
     if b.havuz is None or tur not in ("jira", "ci_log"):
         return {}
     kanit = b.havuz.al(ref, tur)
     if kanit is None:
         return {}
+    acik = kanit.metin
+    if b.oturum is not None:
+        acik = str(b.oturum.unmask(kanit.metin))
+    satirlar, govde_basi = _govde_satirlari(acik)
+    aralik = alinti_araligi(alinti, satirlar)
     if tur == "jira":
         anahtar = kanit.meta.get("anahtar")
         if not b.anahtar_bilinir(anahtar):
             return {}
-        return {"jira": {"anahtar": anahtar, "url": b.adres(anahtar)}}
+        jira: dict[str, Any] = {"anahtar": anahtar, "url": b.adres(anahtar)}
+        if aralik is not None:
+            ilk, son = aralik[0] - govde_basi, aralik[1] - govde_basi
+            yorum = next(
+                (
+                    y
+                    for y in kanit.meta.get("yorum_satirlari") or ()
+                    if isinstance(y, list | tuple) and len(y) == 3 and y[0] <= ilk and son <= y[1]
+                ),
+                None,
+            )
+            jira["yorum"] = yorum is not None
+            jira["tarih"] = yorum[2] if yorum is not None else None
+        return {"jira": jira}
     run_id = kanit.meta.get("run_id")
-    return {"ci": {"run_id": str(run_id)}} if run_id else {}
+    if not run_id:
+        return {}
+    ci: dict[str, Any] = {"run_id": str(run_id), "kosu_no": kanit.meta.get("kosu_no")}
+    if aralik is not None:
+        nolar = [
+            int(m.group(1))
+            for s in satirlar[aralik[0] : aralik[1] + 1]
+            if (m := _CI_SATIR_NO.match(s)) is not None
+        ]
+        if nolar:
+            ci["satir_bas"], ci["satir_bit"] = min(nolar), max(nolar)
+    return {"ci": ci}
 
 
 # ------------------------------------------------------------------ bağlantılar
@@ -555,6 +668,9 @@ def _yonlendirmeler(ham: Any, b: SonIslemBaglami) -> list[dict[str, str]]:
         rota = y.get("rota")
         if not isinstance(rota, str) or rota in gorulen or not b.rota_gecerli(rota):
             continue
+        roller = b.rota_rolleri(rota) if b.rol else None
+        if roller and b.rol not in roller:
+            continue  # rol ekranı açamaz: yanıltıcı "Git:" düğmesi olmasın (`oneri_eylemi` gibi)
         gorulen.add(rota)
         etiket = kirp(duz_metin(y.get("etiket")), ETIKET_AZAMI) or "Ekrana git"
         out.append({"etiket": etiket, "rota": rota})
@@ -614,7 +730,11 @@ def oneri_eylemi(ham: Any, b: SonIslemBaglami) -> dict[str, Any]:
         taslak_turu = taslak_ham.get("tur") if taslak_ham else None
         if taslak_turu not in YENI_KAYIT_TURLERI:
             return _bilgi()
-        if taslak_turu == "Bug" and b.varlik_turu in BUG_HATTI_VARLIKLARI:
+        # Hata/koşu/gereksinim detayı sistem hattı değildir (Task/yorum serbest; §17.3), ama ürün
+        # hatasının Bug kaydı her ekranda Probe'un bug taslağı hattındadır (koşudaki ürün hataları,
+        # gereksinimdeki code_defect bulguları): modelin yeni Bug taslağı her ekranda `bilgi`ye
+        # düşer (prompt'a bırakılmaz; mükerrer kayıt ve İlke I'i aşan paralel hat olmasın).
+        if taslak_turu == "Bug":
             return _bilgi()
         out = {
             "tur": tur,

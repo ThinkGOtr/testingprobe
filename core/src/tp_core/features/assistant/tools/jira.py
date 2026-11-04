@@ -14,7 +14,9 @@ Kurallar (sırasıyla; ilki tutmazsa Jira'ya istek gitmez):
    Serbest JQL/arama yok.
 4. Global Jira kovası (`asistan_hiz` `jira_global`, dakikada 30 **HTTP isteği**): her Jira isteği
    (konu, yorum sayfaları ve yeniden denemeler dahil) ağa çıkmadan önce kovadan bir birim düşer
-   (`KovaTransport`); aşılınca "Jira meşgul" — pipeline'ın Jira kotası korunur.
+   (`KovaTransport`); aşılınca "Jira meşgul" — pipeline'ın Jira kotası korunur. Önbelleksiz bir
+   `jira_issue` en az 2 istek (konu + yorum sayfası; gerekirse ikinci sayfa) harcar: pratikte
+   dakikada ~10–15 araç çağrısı. Bilinçli olarak sıkı (plan §5.6/§13 "30 çağrı" = 30 istek).
 5. Okuyucu (`integrations.jira.JiraOkuyucu`) araç çağrısı başına kalan süreyle kurulur: istek başı
    `min(8, kalan)`, toplam `min(12, kalan)`; yalnız GET, yazma yöntemi yok.
 
@@ -169,7 +171,12 @@ def _kirp(metin: str, sinir: int) -> str:
     return metin if len(metin) <= sinir else kesik_temizle(metin[:sinir]).rstrip() + " …[kırpıldı]"
 
 
-def _bicimle(issue: jira_mod.OkunanIssue, sayfa: jira_mod.YorumSayfasi, limit: int) -> str:
+def _bicimle(
+    issue: jira_mod.OkunanIssue, sayfa: jira_mod.YorumSayfasi, limit: int
+) -> tuple[str, list[list[Any]]]:
+    """Model metni ve yorumların satır aralıkları (`[ilk, son, tarih ISO | None]`, 0 tabanlı,
+    metnin kendi satırları; son işlem alıntının yorumdan mı açıklamadan mı geldiğini ve yorum
+    tarihini buradan çıkarır — yorum gövdesindeki sahte başlık satırı tarih uyduramaz)."""
     satirlar = [
         f"Jira {issue.key} · tür: {issue.issue_type or '-'} · durum: {issue.status or '-'}",
         f"Özet: {issue.summary}",
@@ -190,11 +197,15 @@ def _bicimle(issue: jira_mod.OkunanIssue, sayfa: jira_mod.YorumSayfasi, limit: i
     satirlar.append(ust)
     if sayfa.kisitli:
         satirlar.append(f"({sayfa.kisitli} kısıtlı yorum gösterilmedi)")
+    aralik: list[list[Any]] = []
     for y in yorumlar:
-        tarih = y.tarih.isoformat() if y.tarih else "-"
-        satirlar.append(f"--- [{tarih}] {y.yazar}:")
-        satirlar.append(_kirp(y.metin, MAX_YORUM) or "(boş)")
-    return "\n".join(satirlar)
+        tarih = y.tarih.isoformat() if y.tarih else None
+        ilk = sum(s.count("\n") + 1 for s in satirlar)
+        satirlar.append(f"--- [{tarih or '-'}] {y.yazar}:")
+        govde = _kirp(y.metin, MAX_YORUM) or "(boş)"
+        satirlar.append(govde)
+        aralik.append([ilk, ilk + 1 + govde.count("\n"), tarih])
+    return "\n".join(satirlar), aralik
 
 
 def jira_issue(baglam: AracBaglami, **arg: Any) -> AracSonucu:
@@ -244,12 +255,13 @@ def jira_issue(baglam: AracBaglami, **arg: Any) -> AracSonucu:
     # Aynı anahtar mesajda bir kez okunur; sonraki çağrı (başka limitle de) önbellekten, kendi
     # limitiyle döner.
     issue, sayfa = onbellek[anahtar]
+    metin, yorum_satirlari = _bicimle(issue, sayfa, limit)
     return AracSonucu(
-        metin=_bicimle(issue, sayfa, limit),
+        metin=metin,
         kanit_turu="jira",
         tur="jira",
         kaynak=f"jira:{anahtar}",
-        meta={"anahtar": anahtar},
+        meta={"anahtar": anahtar, "yorum_satirlari": yorum_satirlari},
     )
 
 

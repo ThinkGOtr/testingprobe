@@ -94,7 +94,8 @@ T131 `evaluated` olmadan yapılmaz (İlke X).
 **Birleştirme kapısı:** dal `dev`'e yalnız bayrak arkasında (`TP_ASISTAN_MODEL_MODE=off`) girer. `main`'e
 birleştirme ve sunucuda `live` için T007 (teknik lider onayı, anayasa v1.3.0), T131 (`assistant` paketi
 `evaluated` + içerik hash'i + K2 kararı; medyan maliyet, yükseltme oranı ≤ %35, p90 süre raporu), T132,
-T133 ve T136 kapanmış olmalı (plan §16 madde 2, 5, 9, 14).
+T133 ve T136 kapanmış olmalı (plan §16 madde 2, 5, 9, 14). `evaluation --check` CI'da koşmadığından kapı
+prosedüreldir: `main` PR'ı plan §14'teki birleştirme kontrol listesiyle açılır.
 
 - [x] T130 Eval düzeneği (`check_output` `assistant` dalı, `--via-flow`, `ENVS["assistant:<rol>"]`, içerik hash'i)
 - [ ] T131 Canlı set ≥ 30 soru + matris (Haiku low/medium, Sonnet low/medium) → K2 kararı → `evaluated`
