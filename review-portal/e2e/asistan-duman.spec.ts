@@ -438,3 +438,66 @@ test("Öneri paneli: Jira taslağı kartı (mühendis, CI ortam hatası) — tas
   expect(pano).toContain("CI ortam hatası testlerin koşmasını engelliyor");
   await page.screenshot({ path: `${EKRAN_DIZINI}/06-oneri-jira-taslak.png` });
 });
+
+// Asistan düzeltmelerinin regresyon kilitleri (zorunlu renk, kısa yükseklik, "Bu ne?" bandı).
+test("zorunlu renk kipi: seçili sekme ve basılı 'Faydalı' ayırt edilir; metin eylemleri kenara yapışmaz", async ({ page }) => {
+  await page.emulateMedia({ forcedColors: "active" });
+  await girisYap(page, "analist");
+  await page.goto("/kod/scr-2");
+  const p = await paneliAc(page);
+  const stil = (l: Locator) =>
+    l.evaluate((e) => {
+      const c = getComputedStyle(e);
+      return `${c.backgroundColor}|${c.color}|${c.borderTopColor}`;
+    });
+  expect(await stil(p.getByRole("tab", { name: "Sohbet" }))).not.toBe(await stil(p.getByRole("tab", { name: "Öneriler" })));
+
+  await p.getByLabel("Sorunuz").fill("Bu düğme neden gri?");
+  await p.getByRole("button", { name: "Asistana sor" }).click();
+  const kart = await sonCevap(p);
+  const eylem = kart.getByRole("button", { name: /^(Satırları|Alıntıyı) göster$/ }).first();
+  await expect(eylem).toBeVisible();
+  expect(parseFloat(await eylem.evaluate((e) => getComputedStyle(e).paddingLeft))).toBeGreaterThanOrEqual(6);
+
+  await page.goto("/gereksinimler/req-ft-1");
+  await page.getByRole("button", { name: "Öneriler: 1" }).click();
+  const sekme = page.getByTestId("oneriler-sekmesi");
+  const faydali = sekme.getByRole("button", { name: "Faydalı" });
+  const gizle = sekme.getByRole("button", { name: "Gizle" }).first();
+  await faydali.click();
+  await expect(faydali).toHaveAttribute("aria-pressed", "true");
+  expect(await stil(faydali)).not.toBe(await stil(gizle));
+});
+
+test("kısa görünüm (1280×500): panel bütün olarak kayar, soru alanı odakla görünür alana gelir", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 500 });
+  await girisYap(page, "analist");
+  await page.goto("/kosular");
+  const p = await paneliAc(page);
+  await expect(p).toHaveCSS("overflow-y", "auto");
+  expect(await p.evaluate((e) => e.scrollHeight > e.clientHeight)).toBe(true);
+  const soru = p.getByLabel("Sorunuz");
+  await soru.focus();
+  await expect.poll(async () => (await soru.boundingBox())!.y + (await soru.boundingBox())!.height).toBeLessThanOrEqual(500);
+});
+
+test('"Bu ne?" bandı: üst çubuğun altında, kenar çubuğunu örtmez, ÖRNEK VERİ şeridiyle aynı kenarlar; kipte kaydırma payı bandın altına', async ({ page }) => {
+  await girisYap(page, "analist");
+  await page.goto("/kod/scr-2");
+  const p = await paneliAc(page);
+  await p.getByRole("button", { name: "? Bu ne?" }).click();
+  const bant = page.locator(".asistan-bune-ipucu");
+  await expect(bant).toBeVisible();
+  const b = (await bant.boundingBox())!;
+  const s = (await page.getByTestId("ornek-veri-bandi").boundingBox())!;
+  expect(b.y).toBeLessThanOrEqual(120);
+  expect(b.x).toBeGreaterThanOrEqual(240);
+  expect(Math.abs(b.x - s.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(b.x + b.width - (s.x + s.width))).toBeLessThanOrEqual(1);
+  expect(b.y + b.height).toBeGreaterThanOrEqual(s.y + s.height);
+  const pay = () => page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop));
+  expect(await pay()).toBeGreaterThanOrEqual(b.y + b.height);
+  await page.keyboard.press("Escape");
+  await expect(bant).toHaveCount(0);
+  expect(await pay()).toBe(72);
+});
