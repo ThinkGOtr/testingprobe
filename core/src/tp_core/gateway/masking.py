@@ -274,6 +274,13 @@ _RASTGELE_DEGER = (
     rf"(?=[{_SIR_KARAKTERI}]*\d)(?=[{_SIR_KARAKTERI}]*[A-Za-z])"
     rf"[{_SIR_KARAKTERI}]{{{SECRET_VALUE_MIN_LEN},}}"
 )
+# URL sorgu / çerez değeri: `_RASTGELE_DEGER` kuralı, ama `&`, `#`, `;` ayıraç sayılır (yüzde
+# kodlu `%3D` dahil).
+_URL_KARAKTERI = r"A-Za-z0-9_\-+/=.~%"
+_URL_DEGERI = (
+    rf"(?=[{_URL_KARAKTERI}]*\d)(?=[{_URL_KARAKTERI}]*[A-Za-z])"
+    rf"[{_URL_KARAKTERI}]{{{SECRET_VALUE_MIN_LEN},}}"
+)
 
 
 @dataclass(frozen=True)
@@ -393,6 +400,41 @@ SECRET_PATTERNS: tuple[SecretPattern, ...] = (
             r"(?![<${*])[^;\s'\"`]+",
             re.IGNORECASE,
         ),
+        keep_group="keep",
+    ),
+    # Oturum çerezi (Playwright/HTTP izleri): `Cookie: a=1; session=<v>`,
+    # `Set-Cookie: tp_session=<v>; Path=/`. Yalnız adı session/token/auth içeren çerezler; ad
+    # `Cookie:` başlığından ya da aynı başlıktaki önceki çerezin `;` ayıracından sonra gelir
+    # (`Path=/` gibi öznitelikler adı taşımadığından dokunulmaz).
+    SecretPattern(
+        "session_cookie",
+        re.compile(
+            r"(?P<keep>(?:\b(?:Set-)?Cookie\s*:\s*|;\s*)"
+            r"[A-Za-z0-9_.-]*(?:session|token|auth)[A-Za-z0-9_.-]*=)"
+            rf"{_URL_DEGERI}(?=[\s;,'\"`)}}\]]|\Z)",
+            re.IGNORECASE,
+        ),
+        keep_group="keep",
+    ),
+    # İmzalı URL / sorgu dizgisindeki kimlik: `?sv=…&sig=<v>`, `X-Amz-Signature=<v>`,
+    # `X-Goog-Signature=<v>`, `X-Amz-Security-Token=<v>`, `&token=<v>` (değer `&`/`#`'e kadar;
+    # `generic_assignment` `&` ile biten değeri almaz); log satırındaki çıplak `X-Amz-Signature=<v>`
+    # dahil.
+    SecretPattern(
+        "url_signature",
+        re.compile(
+            r"(?P<keep>(?:[?&;]|(?<![\w-]))(?:sig|signature|X-Amz-Signature|X-Goog-Signature"
+            r"|X-Amz-Security-Token|token|access_token|id_token|refresh_token|api_?key)=)"
+            rf"{_URL_DEGERI}(?=[&#\s'\"`,;)}}\]]|\Z)",
+            re.IGNORECASE,
+        ),
+        keep_group="keep",
+    ),
+    # GitHub Actions maske komutu: `::add-mask::<v>` satırının değeri tanımı gereği sırdır, bu
+    # yüzden rastgelelik koşulu aranmaz; yalnız yer tutucular (`$…`, `${…}`, `<…>`, `***`) dışarıda.
+    SecretPattern(
+        "github_add_mask",
+        re.compile(r"(?P<keep>::add-mask::)(?![<${*])[^\s'\"`]+"),
         keep_group="keep",
     ),
     SecretPattern(

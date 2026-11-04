@@ -1070,6 +1070,12 @@ fieldset:disabled select {
   font-size: 0.875rem;
   margin: 4px 0;
 }
+.alan-hata-satir {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
 .ac-satir {
   display: flex;
   gap: 8px;

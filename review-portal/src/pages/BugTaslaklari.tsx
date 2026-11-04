@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import type { BugTaslagi, BugTaslakIcerik, MukerrerAday, MukerrerArama } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
-import { AsistanaSorDugmesi, BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { AlanHatasi, BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { KisiAdi } from "../components/KisiAdi";
 import { BUG_DURUMU, SEVERITY, type Ton } from "../lib/etiketler";
@@ -716,10 +716,9 @@ export function BugTaslakDetay() {
             </div>
           )}
           {(uyari || islem.hata) && (
-            <p className="alan-hata" role="alert">
-              {uyari ?? (islem.hata ? semaHatasiTurkce(islem.hata) : null)}{" "}
-              {!uyari && islem.hata && <AsistanaSorDugmesi hata={semaHatasiTurkce(islem.hata)} kaynak={islem.hataNesnesi} />}
-            </p>
+            <AlanHatasi asistan={!uyari && islem.hata ? { hata: semaHatasiTurkce(islem.hata), kaynak: islem.hataNesnesi } : null}>
+              {uyari ?? (islem.hata ? semaHatasiTurkce(islem.hata) : null)}
+            </AlanHatasi>
           )}
           {!taslak && <p className="kucuk soluk">Bu taslak için karar verildi; içerik artık değiştirilemez.</p>}
         </form>

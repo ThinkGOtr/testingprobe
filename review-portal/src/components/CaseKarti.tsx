@@ -7,7 +7,7 @@ import { useIslem } from "../hooks";
 import { CASE_DURUMU, CASE_TURU, RET_NEDENI, RISK } from "../lib/etiketler";
 import { sure, tarih } from "../lib/format";
 import { FarkGorunumu } from "./FarkGorunumu";
-import { AsistanaSorDugmesi, Cip, IslemDugmesi, ReplayRozeti } from "./ui";
+import { AlanHatasi, Cip, IslemDugmesi, ReplayRozeti } from "./ui";
 
 type Mod = "goster" | "duzenle" | "reddet";
 
@@ -272,9 +272,7 @@ export function CaseKarti({
         </ul>
       )}
       {mod === "goster" && islem.hata && (
-        <p className="alan-hata" role="alert">
-          {islem.hata} <AsistanaSorDugmesi hata={islem.hata} kaynak={islem.hataNesnesi} />
-        </p>
+        <AlanHatasi asistan={{ hata: islem.hata, kaynak: islem.hataNesnesi }}>{islem.hata}</AlanHatasi>
       )}
     </article>
   );
@@ -351,9 +349,7 @@ function RetFormu({
         </select>
       </div>
       {(uyari || hata) && (
-        <p className="alan-hata" role="alert">
-          {uyari ?? hata} {!uyari && <AsistanaSorDugmesi hata={hata} kaynak={hataKaynagi} />}
-        </p>
+        <AlanHatasi asistan={uyari ? null : { hata, kaynak: hataKaynagi }}>{uyari ?? hata}</AlanHatasi>
       )}
       <div className="eylemler">
         <IslemDugmesi roller={["analyst"]} type="submit" tur="tehlike" kucuk calisiyor={calisiyor}>
@@ -556,9 +552,7 @@ function CaseDuzenleyici({
         </fieldset>
       )}
       {(uyari || hata) && (
-        <p className="alan-hata" role="alert">
-          {uyari ?? hata} {!uyari && <AsistanaSorDugmesi hata={hata} kaynak={hataKaynagi} />}
-        </p>
+        <AlanHatasi asistan={uyari ? null : { hata, kaynak: hataKaynagi }}>{uyari ?? hata}</AlanHatasi>
       )}
       <div className="eylemler">
         <IslemDugmesi roller={["analyst"]} type="submit" kucuk calisiyor={calisiyor}>

@@ -333,7 +333,7 @@ def test_silme_suren_sohbete_gonderim_beklenir_ve_404(
                     c.execute(
                         text(
                             "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' "
-                            "AND query ILIKE '%asistan_sohbet%FOR UPDATE%'"
+                            "AND query ILIKE '%asistan_sohbet%FOR NO KEY UPDATE%'"
                         )
                     ).scalar_one()
                 )
@@ -346,6 +346,37 @@ def test_silme_suren_sohbete_gonderim_beklenir_ve_404(
     assert sonuc and sonuc[0].status_code == 404, sonuc and sonuc[0].text
     assert tek(engine, "SELECT count(*) FROM asistan_mesaj WHERE sohbet_id = :s", s=s) == 0
     assert tek(engine, "SELECT count(*) FROM job WHERE tur = 'assistant.answer'") == 0
+
+
+def test_sohbet_kilidi_fk_key_share_ile_cakismaz(
+    client: TestClient, make_user, engine, canli
+) -> None:
+    """Gönder/sil'in sohbet kilidi (FOR NO KEY UPDATE) worker'ın otomatik çocuk INSERT'ini
+    (`asistan_mesaj.sohbet_id` FK → sohbet satırında KEY SHARE) bekletmez. FOR UPDATE olsaydı
+    worker global kilit/mesaj kilidini tutarken sohbette bekler, API ters sırada global kilidi
+    veya mesajı isterdi: deadlock (gönderim 500 ya da ücreti ödenmiş cevap `error`)."""
+    from sqlalchemy.orm import Session
+
+    u = make_user("tester")
+    giris(client, u)
+    s = sohbet_ac(client)
+    mid = sor(client, s).json()["mesaj_id"]
+    with Session(engine) as api_oturumu:
+        asistan_api._sohbet(api_oturumu, uuid.UUID(s), u, kilitle=True)
+        with engine.connect() as worker:  # API sohbet kilidini tutarken
+            tx = worker.begin()
+            worker.execute(text("SET LOCAL lock_timeout = '2s'"))
+            worker.execute(
+                text(
+                    "INSERT INTO asistan_mesaj (id, sohbet_id, kullanici_id, sira, rol, "
+                    "ust_mesaj_id, icerik, durum, amac, kip, tetik) "
+                    "SELECT :id, :s, kullanici_id, 99, 'assistant', :u, 'x', 'pending', "
+                    "'assistant_deep', 'soru', 'otomatik' FROM asistan_mesaj WHERE id = :u"
+                ),
+                {"id": uuid.uuid4(), "s": s, "u": mid},
+            )  # lock_timeout aşılsaydı LockNotAvailable
+            tx.rollback()
+        api_oturumu.rollback()
 
 
 def _outbox_var(engine: Engine) -> bool:

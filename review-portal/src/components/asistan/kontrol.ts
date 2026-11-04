@@ -141,9 +141,46 @@ export function oneriSohbetiUnut(sohbetId: string): void {
   for (const [k, v] of oneriSohbetleri) if (v === sohbetId) oneriSohbetleri.delete(k);
 }
 
+/**
+ * Sohbet sekmesinin taslağı: girdi, bağlam çipi tercihleri, bekletilen soru, iptal notları ve
+ * bekleme başlangıçları. Yalnız seçili sekme çizilir ve dar ekranda "Bu ne?" kipi paneli DOM'dan
+ * kaldırır; bu değerler bileşen state'inde tutulsaydı sekme geçişinde / öğe seçiminde sıfırlanır,
+ * kaldırılan çipler geri gelir ve yazılan soru silinirdi. Oturum değişince temizlenir.
+ */
+export interface SohbetTaslagi {
+  girdi: string;
+  /** Ekran çipinin kaldırıldığı ekranın anahtarı (rota kalıbı + varlık); başka ekranda çip yine eklenir. */
+  ekranKaldirilan: string | null;
+  /** Hata çipinin kaldırıldığı kaydın kimliği; yeni hata kaydında çip yine eklenir. */
+  hataKaldirilan: string | null;
+  secilenHataId: string | null;
+  hataNotu: string | null;
+  bekletilen: { metin: string; secenek: { yeniSohbet?: boolean; oneriKuralId?: string | null; sohbetId?: string | null } } | null;
+  /** Mesaj kimliği → "Beklemeyi bırak" sonrası ücret notu. */
+  notlar: Record<string, string>;
+  /** Mesaj kimliği → son adım kodu (SSE `assistant.step`). */
+  adimlar: Record<string, string>;
+}
+
+function bosTaslak(): SohbetTaslagi {
+  return { girdi: "", ekranKaldirilan: null, hataKaldirilan: null, secilenHataId: null, hataNotu: null, bekletilen: null, notlar: {}, adimlar: {} };
+}
+
+/** Tek panel örneği okur/yazar (SohbetSekmesi); değişiklik bileşenin kendi state'iyle de çizilir. */
+export const sohbetTaslagi: SohbetTaslagi = bosTaslak();
+
+/** Bekleme başlangıcı: mesajın bu sekmede ilk görüldüğü an (istemci saati); sekme geçişinde korunur. */
+export const ilkGorulmeler = new Map<string, number>();
+
+function taslagiSifirla(): void {
+  Object.assign(sohbetTaslagi, bosTaslak());
+  ilkGorulmeler.clear();
+}
+
 /** Testler için. */
 export function asistanKontrolSifirla(): void {
   oneriSohbetleri.clear();
+  taslagiSifirla();
   try {
     sessionStorage.removeItem(OTURUM_ANAHTARI);
   } catch {

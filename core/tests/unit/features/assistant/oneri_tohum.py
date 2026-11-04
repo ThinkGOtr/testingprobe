@@ -218,10 +218,16 @@ class Tohum:
             )
         return b.id
 
-    def harcama(self, usd: str) -> None:
+    def harcama(self, usd: str, an: datetime | None = None) -> None:
+        # `an`: değerlendirme anıyla aynı UTC günü (gece yarısı sınırında DB `now()` kayabilir).
         self._ekle(
             AiCall(
-                amac="triage", saglayici="anthropic", model="m", mod="live", maliyet=Decimal(usd)
+                amac="triage",
+                saglayici="anthropic",
+                model="m",
+                mod="live",
+                maliyet=Decimal(usd),
+                **({"olusturma": an} if an is not None else {}),
             )
         )
 
@@ -342,7 +348,7 @@ def _bug(durum: str, *, bulgu: bool = False) -> Kurulum:
 
 def _butce(usd: str, *, gun_sonra: int = 0) -> Kurulum:
     def _k(t: Tohum, n: datetime) -> Ekran:
-        t.harcama(usd)  # TP_DAILY_BUDGET_USD=10 (test fikstürü)
+        t.harcama(usd, n)  # TP_DAILY_BUDGET_USD=10 (test fikstürü)
         # Harcama gün başına sayılır (UTC): olumsuz vaka sonraki günü ölçer.
         return Ekran("/kontrol-kulesi", None, None, n + timedelta(days=gun_sonra))
 

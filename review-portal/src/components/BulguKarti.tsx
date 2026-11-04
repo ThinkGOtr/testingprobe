@@ -8,7 +8,7 @@ import { tarih } from "../lib/format";
 import { FarkGorunumu } from "./FarkGorunumu";
 import { KisiAdi } from "./KisiAdi";
 import { KodGorunumu } from "./KodGorunumu";
-import { AsistanaSorDugmesi, Cip, IslemDugmesi, ReplayRozeti } from "./ui";
+import { AlanHatasi, Cip, IslemDugmesi, ReplayRozeti } from "./ui";
 
 function KanitGorunumu({ k }: { k: Kanit }) {
   if (k.kind === "code") {
@@ -247,9 +247,7 @@ export function BulguKarti({
             </div>
           )}
           {(dogrulama || islem.hata) && (
-            <p className="alan-hata" role="alert">
-              {dogrulama ?? islem.hata} {!dogrulama && <AsistanaSorDugmesi hata={islem.hata} kaynak={islem.hataNesnesi} />}
-            </p>
+            <AlanHatasi asistan={dogrulama ? null : { hata: islem.hata, kaynak: islem.hataNesnesi }}>{dogrulama ?? islem.hata}</AlanHatasi>
           )}
           <div className="eylemler">
             <IslemDugmesi roller={["analyst"]} type="submit" calisiyor={islem.calisiyor}>

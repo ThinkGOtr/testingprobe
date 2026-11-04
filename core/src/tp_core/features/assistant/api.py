@@ -123,10 +123,15 @@ def mesaj_ozeti(m: AsistanMesaj) -> dict[str, Any]:
 def _sohbet(
     session: Session, sohbet_id: uuid.UUID, user: Principal, *, kilitle: bool = False
 ) -> AsistanSohbet:
-    # `kilitle`: sil ile gönder sohbet satırında sıralanır (FOR UPDATE, READ COMMITTED'da en son
-    # sürümü okur): silme commit edildikten sonra gelen gönderim 404 alır, silmeden önce kilidi
-    # alan gönderimin cevabı silmenin açık mesaj taramasında görülüp iptal edilir.
-    s = session.get(AsistanSohbet, sohbet_id, with_for_update=kilitle or None)
+    # `kilitle`: sil ile gönder sohbet satırında sıralanır (READ COMMITTED'da en son sürümü
+    # okur): silme commit edildikten sonra gelen gönderim 404 alır, silmeden önce kilidi alan
+    # gönderimin cevabı silmenin açık mesaj taramasında görülüp iptal edilir. Kip FOR NO KEY
+    # UPDATE: `asistan_mesaj.sohbet_id` FK'sinin INSERT'te aldığı KEY SHARE ile çakışmaz. FOR
+    # UPDATE, worker'ın otomatik çocuk INSERT'iyle (global kilit → mesaj → sohbet KEY SHARE)
+    # ters sırada bekleyip kilitlenmeye (deadlock) yol açardı.
+    s = session.get(
+        AsistanSohbet, sohbet_id, with_for_update={"key_share": True} if kilitle else None
+    )
     if s is None or s.kullanici_id != user.id or s.silindi:
         raise _bulunamadi()
     return s

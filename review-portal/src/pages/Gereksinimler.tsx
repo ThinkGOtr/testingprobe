@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import type { Gereksinim } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
-import { AsistanaSorDugmesi, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Yukleniyor } from "../components/ui";
+import { AlanHatasi, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { adimAdi, akisAdimi } from "../lib/akis";
 import { akisKanitlari, guncelAdim, type SonrakiGirdi } from "../lib/yolHaritasi";
@@ -247,9 +247,7 @@ function SerbestMetinFormu({ kapat }: { kapat: () => void }) {
           <p className="soluk kucuk">Kabul kriteri girilmezse gereksinim "AC eksik" olarak işaretlenir ve case üretimine gönderilmez.</p>
         </fieldset>
         {(dogrulama || islem.hata) && (
-          <p className="alan-hata" role="alert">
-            {dogrulama ?? islem.hata} {!dogrulama && <AsistanaSorDugmesi hata={islem.hata} kaynak={islem.hataNesnesi} />}
-          </p>
+          <AlanHatasi asistan={dogrulama ? null : { hata: islem.hata, kaynak: islem.hataNesnesi }}>{dogrulama ?? islem.hata}</AlanHatasi>
         )}
         <div className="eylemler">
           <IslemDugmesi roller={["analyst"]} type="submit" calisiyor={islem.calisiyor}>

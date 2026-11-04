@@ -58,6 +58,9 @@ def test_her_desenin_vakasi_var() -> None:
         "cli_user_password",
         "cli_password_flag",
         "azure_connection_key",
+        "session_cookie",
+        "url_signature",
+        "github_add_mask",
     }
     assert adlar == {p.name for p in SECRET_PATTERNS}
 
@@ -376,6 +379,101 @@ def test_cli_parola_bayragi_dogal_komuta_dokunmaz(metin: str) -> None:
 )
 def test_azure_baglanti_dizgisi(metin: str, beklenen: str) -> None:
     assert scrub_secret_patterns(metin) == beklenen
+
+
+@pytest.mark.parametrize(
+    ("metin", "beklenen"),
+    [
+        (f"Cookie: session={GOVDE}", "Cookie: session=***"),
+        (
+            f"cookie: theme=dark; sessionid={GOVDE}; lang=tr",
+            "cookie: theme=dark; sessionid=***; lang=tr",
+        ),
+        (
+            f"Set-Cookie: tp_session={GOVDE}; Path=/; HttpOnly",
+            "Set-Cookie: tp_session=***; Path=/; HttpOnly",
+        ),
+        (f"Set-Cookie: auth_token={GOVDE}%3D%3D", "Set-Cookie: auth_token=***"),
+        (f"Cookie: theme={GOVDE}", f"Cookie: theme={GOVDE}"),  # sır adı taşımayan çerez
+    ],
+)
+def test_oturum_cerezi(metin: str, beklenen: str) -> None:
+    assert scrub_secret_patterns(metin) == beklenen
+    if metin != beklenen:
+        assert "session_cookie" in {f.name for f in find_secret_patterns(metin)}
+
+
+@pytest.mark.parametrize(
+    "metin",
+    [
+        "Cookie: session=${OTURUM}",
+        "Cookie: session=<oturum>",
+        "Set-Cookie: tp_session=deleted; Path=/",
+        "cookies = {'session': session_id}",
+    ],
+)
+def test_oturum_cerezi_yer_tutucuya_dokunmaz(metin: str) -> None:
+    assert scrub_secret_patterns(metin) == metin
+
+
+@pytest.mark.parametrize(
+    ("metin", "beklenen"),
+    [
+        (
+            f"GET https://a.blob.core.windows.net/c?sv=2021&sig={GOVDE}%3D&se=2026",
+            "GET https://a.blob.core.windows.net/c?sv=2021&sig=***&se=2026",
+        ),
+        (
+            f"https://s3.local/b?X-Amz-Date=20260101T000000Z&X-Amz-Signature={HEX}",
+            "https://s3.local/b?X-Amz-Date=20260101T000000Z&X-Amz-Signature=***",
+        ),
+        (
+            f"https://storage.local/o?X-Goog-Signature={HEX}#bolum",
+            "https://storage.local/o?X-Goog-Signature=***#bolum",
+        ),
+        (
+            f"https://s3.local/b?X-Amz-Security-Token={GOVDE}&sayfa=2",
+            "https://s3.local/b?X-Amz-Security-Token=***&sayfa=2",
+        ),
+        (f"imzalı istek X-Amz-Signature={HEX} 403", "imzalı istek X-Amz-Signature=*** 403"),
+    ],
+)
+def test_imzali_url(metin: str, beklenen: str) -> None:
+    assert scrub_secret_patterns(metin) == beklenen
+    assert "url_signature" in {f.name for f in find_secret_patterns(metin)}
+
+
+@pytest.mark.parametrize(
+    "metin",
+    [
+        "https://x.local/a?sig=${IMZA}&sayfa=2",
+        "https://x.local/ara?q=signature&sayfa=2",
+        "https://x.local/a?sig=abc&sayfa=2",  # rastgele görünmeyen değer
+    ],
+)
+def test_imzali_url_dogal_metne_dokunmaz(metin: str) -> None:
+    assert scrub_secret_patterns(metin) == metin
+
+
+@pytest.mark.parametrize(
+    ("metin", "beklenen"),
+    [
+        (f"::add-mask::{GOVDE}", "::add-mask::***"),
+        ("::add-mask::" + "duzparola", "::add-mask::***"),  # değer tanımı gereği sır
+        (f'echo "::add-mask::{GOVDE}"', 'echo "::add-mask::***"'),
+    ],
+)
+def test_github_add_mask(metin: str, beklenen: str) -> None:
+    assert scrub_secret_patterns(metin) == beklenen
+    assert "github_add_mask" in {f.name for f in find_secret_patterns(metin)}
+
+
+@pytest.mark.parametrize(
+    "metin",
+    ['echo "::add-mask::$TOKEN"', "::add-mask::${{ steps.x.outputs.t }}", "::add-mask::***"],
+)
+def test_github_add_mask_yer_tutucuya_dokunmaz(metin: str) -> None:
+    assert scrub_secret_patterns(metin) == metin
 
 
 def test_azure_yer_tutucuya_dokunmaz() -> None:

@@ -227,8 +227,10 @@ Sunucuda şemayla doğrulanır (≤ 2 KB), modele **ilk kullanıcı mesajında**
 - `jira_issue {anahtar, yorum_limit?: 1–10 (vars. 5)}` → özet, tür, durum, etiketler, açıklama (≤ 3000
   karakter), **son N yorum** (yazar etiketi, tarih, metin ≤ 1500 karakter), toplam yorum sayısı. `issue_url`
   modele **gitmez**; bağlantıyı yalnız sunucu kurar (§7.3).
-- **En çok 2 istek:** yeni `son_yorumlar(key, n)`: önce `GET /issue/{k}/comment?maxResults=1` ile
-  `total`, sonra `startAt=max(0, total-n)&maxResults=n` (jira-sim `orderBy`'ı yok sayar, `startAt`'ı
+- **Anahtar başına en çok 3 istek** (yeniden denemeler hariç; kayıt + toplam + yorum sayfası, R11 ile
+  aynı): `get_issue` 1 istek; yeni `son_yorumlar(key, n)` en çok 2 istek: önce
+  `GET /issue/{k}/comment?maxResults=1` ile `total` (toplam 0 veya 1 ise ikinci istek yok), sonra
+  `startAt=max(0, total-n)&maxResults=n` (jira-sim `orderBy`'ı yok sayar, `startAt`'ı
   destekler; gerçek Jira'da da aynı sonuç). Mevcut `get_comments` tüm sayfaları gezdiği için kullanılmaz.
 - **Yalnız bilinen anahtarlar:** anahtar `^[A-Z][A-Z0-9]+-[0-9]+$` (ASCII; `re.ASCII`, `fullmatch`)
   **ve** Testing Probe'da kaydı olan (`Requirement.jira_key`, `BugDraft.jira_key` veya `ExternalRef`
