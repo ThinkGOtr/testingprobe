@@ -3,6 +3,7 @@
 // sayısı tutulmaz (istemci izleme yok). Veri `GET /control-tower` yanıtının `asistan` bölümünden gelir;
 // eski core bu bölümü vermezse kart çizilmez (uydurulmaz). Sayılar asistan saklama süresiyle
 // (`saklama_gun`) sınırlıdır; maliyet `ai_call`'dan tüm zamanlardır (saklama temizliğine girmez).
+import { KaynakIpucu } from "../KaynakIpucu";
 import { BosDurum, Cip, Kart, Metrik } from "../ui";
 import { dolar } from "../../lib/format";
 
@@ -52,8 +53,6 @@ function etkilesim(s: OneriOlcumSatiri): number {
 export function OnerilerOlcumKarti({ kule }: { kule: AsistanliKule }) {
   const o = kule.asistan;
   if (!o) return null;
-  const kaynak = kule.kaynaklar?.asistan;
-  const ipucu = kaynak ? `Kaynak: ${kaynak}` : "Kaynak: core bu ölçünün kaynağını bildirmedi";
   const etkilesimli = o.oneriler.filter((s) => etkilesim(s) > 0);
   const sessiz = o.oneriler.length - etkilesimli.length;
   const as = o.maliyet.asistan;
@@ -62,11 +61,7 @@ export function OnerilerOlcumKarti({ kule }: { kule: AsistanliKule }) {
     <Kart
       baslik="Öneriler ve asistan"
       className="kule-oneriler"
-      eylemler={
-        <span className="kaynak-ipucu" tabIndex={0} role="img" aria-label={ipucu} title={ipucu} data-testid="oneri-olcum-kaynak">
-          i
-        </span>
-      }
+      eylemler={<KaynakIpucu kaynak={kule.kaynaklar?.asistan} testId="oneri-olcum-kaynak" />}
     >
       <div className="metrik-izgara">
         <Metrik

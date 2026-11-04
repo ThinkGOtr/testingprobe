@@ -3,6 +3,7 @@
 // kişi bazlı alan çizilmez.
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { kontrolKulesiUyarla } from "../../api/uyumDemoB";
 import { OnerilerOlcumKarti, type AsistanKuleOlcumu, type OneriOlcumSatiri } from "./OnerilerOlcumKarti";
 
 function satir(kural_id: string, ek: Partial<OneriOlcumSatiri> = {}): OneriOlcumSatiri {
@@ -80,5 +81,23 @@ describe("OnerilerOlcumKarti", () => {
     (veri.oneriler[0] as unknown as Record<string, unknown>).kullanici_adi = "ayse";
     render(<OnerilerOlcumKarti kule={{ asistan: veri }} />);
     expect(screen.queryByText(/ayse/)).toBeNull();
+  });
+
+  it("canlı core yanıtı: Kule uyarlayıcısı asistan bölümünü ve kaynağını korur (kart çizilir)", () => {
+    const k = kontrolKulesiUyarla({
+      kaynaklar: { asistan: "asistan_mesaj + asistan_oneri_geri_bildirim" },
+      asistan: {
+        maliyet: { asistan: { cagri: 2, maliyet_usd: 0.3, maliyet_usd_bugun: 0.1, amaclar: ["assistant"] }, diger: { cagri: 1, maliyet_usd: 1, maliyet_usd_bugun: 0.5, amaclar: [] } },
+        oneriler: [{ kural_id: "r1", baslik: "Kural 1", ekran: "/runs/:id", kural_setinde: true, neden_sor: 1, faydali: 2, gizle: 0, yaptim: 0 }],
+        oneri_toplam: { neden_sor: 1, faydali: 2, gizle: 0, yaptim: 0 },
+        saklama_gun: 90,
+      },
+    });
+    render(<OnerilerOlcumKarti kule={k} />);
+    expect(screen.getByRole("heading", { name: "Öneriler ve asistan" })).toBeInTheDocument();
+    expect(screen.getByTestId("oneri-toplam-geri-bildirim")).toHaveTextContent("2 / 0 / 0");
+    expect(screen.getByTestId("oneri-olcum-kaynak")).toHaveAttribute("aria-label", "Kaynak: asistan_mesaj + asistan_oneri_geri_bildirim");
+    // Eski core (bölüm yok): kart çizilmez.
+    expect(kontrolKulesiUyarla({}).asistan).toBeNull();
   });
 });

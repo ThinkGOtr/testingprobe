@@ -3,6 +3,7 @@
 // verisinin olgularıyla değerlendirilir. "Yaptım" (2) o kuralı o varlık aynı durumdayken tüm rollerde,
 // "Gizle" (-1) yalnız o kullanıcı için bastırır. `baglanti`'yı yalnız bu "sunucu" kurar (§17.4):
 // jira-sim gezinme adresi bilinen anahtar için; kayıt oluşturma sayfası simülatörde yok.
+import type { AsistanKuleOlcumu, MaliyetGrubu } from "../../components/asistan/OnerilerOlcumKarti";
 import { ApiError, BU_FAZDA_YOK } from "../http";
 import { JIRA_ANAHTARI, type BastirilanOneri, type KuralOnerisi, type OneriEylemi, type OneriListesi } from "../asistan";
 import type { Kullanici, Rol } from "../types";
@@ -456,6 +457,37 @@ export function oneriMockSifirla(): void {
 /** Testler için: "Yaptım"/"Gizle" kayıtları. */
 export function oneriMockGeriBildirimleri(): readonly GeriBildirimKaydi[] {
   return geriBildirimler;
+}
+
+/**
+ * Kontrol Kulesi "Öneriler ve asistan" bölümü (core `control_tower/asistan.py` biçimi): kural başına bu
+ * oturumdaki Faydalı / Gizle / Yaptım kayıtları. Örnek veride asistan model çağırmaz: asistan maliyeti ve
+ * "Neden? Sor" sayısı 0 (uydurulmaz); `diger` çağıranın AI katkısı toplamıdır. Başlıktaki yer tutucular
+ * core gibi "…" olur.
+ */
+export function oneriKuleOlcumu(diger: MaliyetGrubu): AsistanKuleOlcumu {
+  const satirlar = MOCK_KURALLAR.map((k) => {
+    const kayitlar = geriBildirimler.filter((g) => g.kural_id === k.id);
+    const say = (d: -1 | 1 | 2) => kayitlar.filter((g) => g.deger === d).length;
+    return {
+      kural_id: k.id,
+      baslik: k.baslik.replace(/\{[^}]*\}/g, "…"),
+      ekran: k.ekran,
+      kural_setinde: true,
+      neden_sor: 0,
+      faydali: say(1),
+      gizle: say(-1),
+      yaptim: say(2),
+    };
+  });
+  const top = (a: "faydali" | "gizle" | "yaptim") => satirlar.reduce((t, s) => t + s[a], 0);
+  const bos = { cagri: 0, maliyet_usd: 0, maliyet_usd_bugun: 0, amaclar: [] };
+  return {
+    maliyet: { asistan: bos, diger },
+    oneriler: satirlar.sort((a, b) => b.faydali + b.gizle + b.yaptim - (a.faydali + a.gizle + a.yaptim)),
+    oneri_toplam: { neden_sor: 0, faydali: top("faydali"), gizle: top("gizle"), yaptim: top("yaptim") },
+    saklama_gun: 90,
+  };
 }
 
 const saatFarki = (iso: string | null | undefined, simdi: number): number | null =>

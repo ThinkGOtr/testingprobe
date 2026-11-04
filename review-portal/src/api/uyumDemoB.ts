@@ -36,6 +36,7 @@ import type {
 import { SCRIPT_DURUMLARI } from "./types";
 import { dizgeler, ilk, kimlik, metin, metinYaDaNull, modUyarla, nesneMi, sayi, sayiYaDaNull, type Ham } from "./uyum";
 import { hazirlikUyarla } from "./uyumFaz5";
+import type { AsistanKuleOlcumu, AsistanliKule, MaliyetGrubu } from "../components/asistan/OnerilerOlcumKarti";
 
 const nesne = (x: unknown): Ham => (nesneMi(x) ? x : {});
 const dizi = (x: unknown): Ham[] => (Array.isArray(x) ? x.filter(nesneMi) : []);
@@ -615,6 +616,7 @@ const KPI_ANAHTARLARI: KpiAnahtari[] = [
   "maliyet",
   "a11y",
   "son_kosular",
+  "asistan",
 ];
 
 function kaynaklarUyarla(x: unknown): KontrolKulesi["kaynaklar"] {
@@ -628,7 +630,38 @@ function kaynaklarUyarla(x: unknown): KontrolKulesi["kaynaklar"] {
   return sonuc;
 }
 
-export function kontrolKulesiUyarla(govde: unknown): KontrolKulesi {
+function maliyetGrubuUyarla(x: unknown): MaliyetGrubu {
+  const m = nesne(x);
+  return { cagri: sayi(m.cagri), maliyet_usd: sayi(m.maliyet_usd), maliyet_usd_bugun: sayi(m.maliyet_usd_bugun), amaclar: dizgeler(m.amaclar) };
+}
+
+/**
+ * Asistan ölçümü (core `asistan`, AI-ASISTAN-PLANI §17.7 / §6.4): Kule "Öneriler ve asistan" kartının
+ * verisi. Core vermezse (eski sürüm) null → kart çizilmez; sayı uydurulmaz.
+ */
+function asistanOlcumuUyarla(x: unknown): AsistanKuleOlcumu | null {
+  if (!nesneMi(x)) return null;
+  const m = nesne(x.maliyet);
+  const t = nesne(x.oneri_toplam);
+  return {
+    maliyet: { asistan: maliyetGrubuUyarla(m.asistan), diger: maliyetGrubuUyarla(m.diger) },
+    oneriler: dizi(x.oneriler).map((s) => ({
+      kural_id: metin(s.kural_id),
+      baslik: metinYaDaNull(s.baslik),
+      ekran: metinYaDaNull(s.ekran),
+      kural_setinde: s.kural_setinde !== false,
+      neden_sor: sayi(s.neden_sor),
+      faydali: sayi(s.faydali),
+      gizle: sayi(s.gizle),
+      yaptim: sayi(s.yaptim),
+    })),
+    oneri_toplam: { neden_sor: sayi(t.neden_sor), faydali: sayi(t.faydali), gizle: sayi(t.gizle), yaptim: sayi(t.yaptim) },
+    saklama_gun: sayi(x.saklama_gun),
+  };
+}
+
+/** Kule yanıtı; `asistan` bölümü kart bileşeninin tipiyle (api/types'a dokunmadan) taşınır. */
+export function kontrolKulesiUyarla(govde: unknown): KontrolKulesi & AsistanliKule {
   const g = nesne(govde);
   const go = g.gecme_orani;
   const goN = nesne(go);
@@ -699,5 +732,6 @@ export function kontrolKulesiUyarla(govde: unknown): KontrolKulesi {
         : null,
     kaynaklar: kaynaklarUyarla(g.kaynaklar),
     uyarilar: dizgeler(g.uyarilar),
+    asistan: asistanOlcumuUyarla(g.asistan),
   };
 }

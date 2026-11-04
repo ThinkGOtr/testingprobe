@@ -63,7 +63,8 @@ import {
 } from "./fixtures";
 import { mockOlayYayinla } from "./olaylar";
 import { asistanMockSifirla, asistanRotalari } from "./asistan";
-import { oneriMockSifirla, oneriRotalari } from "./oneri";
+import { oneriKuleOlcumu, oneriMockSifirla, oneriRotalari } from "./oneri";
+import type { AsistanliKule } from "../../components/asistan/OnerilerOlcumKarti";
 import { kirmaTaslagiMi } from "../../lib/yolHaritasi";
 import { BAZ_NOT_EN_AZ, BAZ_NOT_EN_COK, BAZ_UST_SINIR_S, kazancOzeti } from "../uyumFaz5";
 
@@ -1445,10 +1446,11 @@ const KULE_KAYNAKLARI: KontrolKulesi["kaynaklar"] = {
   kazanc_orani: "1 − Σ(AI + review süresi) / Σ(manuel baz), yalnızca story'ye özel ölçülmüş baz değerli (kaynak 'olcum'; varsayılan kazanca girmez) story'ler",
   maliyet: "ai_call.maliyet_usd (REPLAY çağrıları 0)",
   a11y: "@axe-core/playwright · WCAG 2.2 AA · demo story sayfaları",
+  asistan: "asistan_mesaj (Neden? Sor) + asistan_oneri_geri_bildirim (Faydalı/Gizle/Yaptım) · ai_call assistant* amaçları",
   son_kosular: "run tablosu (yerel test-runner, GitHub Actions, Sauce Labs)",
 };
 
-function kontrolKulesi(): KontrolKulesi {
+function kontrolKulesi(): KontrolKulesi & AsistanliKule {
   girisGerekli();
   // core gibi: Kontrol Kulesi yalnızca CI koşularını sayar (yerel kontrol ve kırarak doğrula hariç).
   const ciKosulari = veri.kosular.filter((k) => ["pr", "push", "nightly", "deploy", "manual"].includes(k.tetik));
@@ -1547,6 +1549,8 @@ function kontrolKulesi(): KontrolKulesi {
       ],
     },
     kaynaklar: KULE_KAYNAKLARI,
+    // Asistan dışı AI işleri: AI katkısı kartındaki toplamlarla aynı (core `amac_gruplari.diger`).
+    asistan: oneriKuleOlcumu({ cagri: 14 + caseler.length, maliyet_usd: caseler.reduce((a, c) => a + c.maliyet_usd, 0), maliyet_usd_bugun: 0, amaclar: [] }),
     uyarilar: [
       kazancOzeti(hazirlikSatirlari()).hesaplanan
         ? "Kazanç yalnızca story için ölçülmüş baz değerden hesaplanır."
