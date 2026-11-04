@@ -92,7 +92,7 @@ export function AsistanaSorDugmesi({ hata, kaynak }: { hata: string | null; kayn
   return (
     <button
       type="button"
-      className="dugme dugme-hayalet dugme-kucuk"
+      className="dugme dugme-hayalet dugme-kucuk asistana-sor"
       onClick={() => {
         // Düğme 5 dk'dan uzun ekranda kalmış olabilir: kayıt yeniden yazılır (düştüyse yeniden açılır)
         // ve süresi tıklama anından başlar. Aksi halde panel başka bir hatanın bağlamına düşerdi.
@@ -101,6 +101,7 @@ export function AsistanaSorDugmesi({ hata, kaynak }: { hata: string | null; kayn
         asistanaSor(id);
       }}
     >
+      <Ikon ad="aiSor" className="ikon-ai" />
       Asistana sor
     </button>
   );

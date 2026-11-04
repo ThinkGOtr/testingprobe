@@ -243,6 +243,9 @@ test("Öneri paneli: rozet, kart, Neden? Sor sohbete geçer, Git çapaya gider; 
   await expect(sekme.getByRole("button", { name: "Başka ne yapabilirim?" })).toBeVisible();
   await expect(page.getByText(SAHTE_CANLI)).toHaveCount(0);
   await page.screenshot({ path: `${EKRAN_DIZINI}/05-oneri-paneli.png` });
+  // Erişilebilirlik: Öneriler sekmesi (kart, ikonlu araç çubuğu, tıklanabilir çipler; WCAG 2.2 hedef boyutu dahil) ihlalsiz.
+  const axeOneri = await new AxeBuilder({ page }).include('[data-testid="asistan-paneli"]').withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze();
+  expect(axeOneri.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
 
   // "Neden? Sor": Sohbet sekmesine geçer ve öneri bağlamıyla soruyu gönderir.
   await kart.getByRole("button", { name: "Neden? Sor" }).click();
@@ -256,6 +259,25 @@ test("Öneri paneli: rozet, kart, Neden? Sor sohbete geçer, Git çapaya gider; 
   await sekme.getByRole("article").filter({ hasText: /tutarlılık bulgusu/ }).getByRole("button", { name: "Git" }).click();
   await expect(page).toHaveURL(/\/gereksinimler\/req-ft-1#bulgular$/);
   expect(hatalar).toEqual([]);
+});
+
+test("Kontrol Kulesi öneri ölçümü: Faydalı sayısı karta yansır (uygulama içi gezinme), kart ihlalsiz", async ({ page }) => {
+  await girisYap(page, "analist");
+  await page.goto("/gereksinimler/req-ft-1");
+  await page.getByRole("button", { name: "Öneriler (1)" }).click();
+  const sekme = page.getByTestId("oneriler-sekmesi");
+  await sekme.getByRole("button", { name: "Faydalı" }).click();
+  await expect(sekme.getByRole("button", { name: "Faydalı" })).toHaveAttribute("aria-pressed", "true");
+  // Mock durumu sayfa belleğinde: Kule'ye menüden (tam yükleme olmadan) gidilir.
+  await page.getByRole("button", { name: "Asistanı kapat" }).click();
+  await page.getByRole("navigation", { name: "Ana menü" }).getByRole("link", { name: /Kontrol Kulesi/ }).click();
+  const kart = page.getByRole("region", { name: "Öneriler ve asistan" });
+  await expect(kart).toBeVisible();
+  await expect(kart.getByTestId("oneri-toplam-geri-bildirim")).toHaveText("1 / 0 / 0");
+  await expect(kart.getByTestId("oneri-olcum-tablosu")).toBeVisible();
+  const axe = await new AxeBuilder({ page }).include(".kule-oneriler").withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze();
+  expect(axe.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
+  await kart.screenshot({ path: `${EKRAN_DIZINI}/07-kule-oneri-olcumu.png` });
 });
 
 test("Öneri paneli: Jira taslağı kartı (mühendis, CI ortam hatası) — taslak gösterilir, simülatörde Jira bağlantısı yok", async ({ page, context }) => {

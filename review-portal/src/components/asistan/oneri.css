@@ -36,6 +36,12 @@
   text-align: center;
 }
 
+/* ---------------------------------------------------------------- Öneriler sekmesi ve öneri kartı
+   Görsel dil (TASARIM-YENILEME §2–§4): kart yüzeyi portal kartıyla aynı (--surface, 1 px --border, 12 px,
+   açıkta --kart-golge); kural önerisi nötr, model önerisi AI'dır (sol 3 px --vurgu şeridi + mor hap, §4.4 case
+   taslağı kalıbı). Etkileşim indigo (birincil "Git", vurgulu kart kenarı, odak); mor yalnız AI kimliği
+   (parıltı ikonu, AI hapı). Sabit renk ve [data-theme] seçicisi yok: iki tema ve sistem kipi token'larla. */
+
 .oneri-liste,
 .oneri-bastirilanlar,
 .oneri-cipler {
@@ -46,138 +52,257 @@
 .oneri-liste {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .oneri-karti {
-  padding: 12px;
+  padding: 14px 16px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   background: var(--surface);
+  box-shadow: var(--kart-golge);
+  min-width: 0;
 }
+/* Öneri düğmesi/bağlantısıyla açılan kart: indigo kenar + ek halka (renk tek gösterge değil: kart görünür
+   alana kaydırılır). */
 .oneri-karti-vurgulu {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-soft);
+  box-shadow: var(--halka), var(--kart-golge);
 }
+/* Model önerisi (doğrulanmadı): AI üretimi → mor sol şerit; etiketi hapta yazılı (şerit tek başına anlam taşımaz). */
 .oneri-karti-ai {
-  border-style: dashed;
+  border-left: 3px solid var(--vurgu);
+  padding-left: 14px;
 }
 .oneri-ai-etiket {
-  display: inline-block;
-  margin-bottom: 4px;
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: var(--warn-bg);
-  color: var(--warn);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--vurgu) 30%, transparent);
+  border-radius: var(--radius-hap);
+  background: var(--vurgu-bg);
+  color: var(--vurgu);
   font-size: 0.75rem;
   font-weight: 600;
+  line-height: 1.4;
 }
 .oneri-baslik {
   margin: 0 0 4px;
   font-size: 0.95rem;
-  line-height: 1.3;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 .oneri-neden,
 .oneri-aciklama {
-  margin: 0 0 8px;
+  margin: 0 0 10px;
   color: var(--text-2);
   font-size: 0.875rem;
+  line-height: 1.5;
 }
 .oneri-aciklama {
-  padding: 8px;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
+  color: var(--text);
 }
 
 .oneri-eylemler {
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 .oneri-eylem-satiri,
 .oneri-alt {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 6px 8px;
 }
+/* Geri bildirim araç çubuğu: içerikten ince ayraçla ayrılır; düğmeler ikonlu (dugme-ikincil "Neden? Sor",
+   dugme-hayalet Faydalı / Yaptım / Gizle). */
 .oneri-alt {
-  margin-top: 6px;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+}
+/* Faydalı / Yaptım / Gizle tek grup: sığmazsa "Neden? Sor"un altına birlikte iner. */
+.oneri-geri-bildirim {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+}
+.oneri-alt .dugme-hayalet.dugme-kucuk {
+  padding-inline: 8px;
+}
+.oneri-alt .dugme .ikon,
+.oneri-taslak .dugme .ikon,
+.oneri-ust .dugme .ikon,
+.oneri-ek .dugme .ikon,
+.asistana-sor .ikon {
+  width: 14px;
+  height: 14px;
+}
+/* "Faydalı" işaretlendi (aria-pressed, tekrar gönderilmez): pasif kesik görünüm değil, seçili durum —
+   indigo yumuşak zemin + indigo metin (koyu 5,6+, açık 6,3+). İmleç bilgi verir. */
+.oneri-alt .dugme[aria-pressed="true"],
+.oneri-alt .dugme[aria-pressed="true"]:disabled {
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  cursor: default;
+}
+/* Açılır-kapanır "Yaptım" açıkken düğme basılı görünür. */
+.oneri-alt .dugme-hayalet[aria-expanded="true"] {
+  background: var(--hover);
+  color: var(--text);
 }
 .oneri-not {
   margin: 6px 0 0;
 }
 
+/* AI'a soran eylemlerin (Neden? Sor, Bunu sor, Başka ne yapabilirim?, Asistana sor) parıltı ikonu: AI kimliği
+   mor (§3.2 K4); düğmenin kendisi portal düğmesidir. Pasifken ikon da pasif rengi alır. */
+.ikon-ai {
+  color: var(--vurgu);
+}
+.dugme:disabled .ikon-ai,
+.dugme[aria-disabled="true"] .ikon-ai {
+  color: inherit;
+}
+.oneri-ai-etiket .ikon {
+  width: 13px;
+  height: 13px;
+}
+
 .oneri-taslak {
-  margin-top: 8px;
-  padding: 8px;
-  border: 1px solid var(--border);
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
 }
 .oneri-taslak-alanlar {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: 2px 10px;
-  margin: 0 0 6px;
+  gap: 2px 12px;
+  margin: 0 0 8px;
   font-size: 0.8125rem;
 }
 .oneri-taslak-alanlar dt {
   color: var(--muted);
+  font-weight: 600;
 }
 .oneri-taslak-alanlar dd {
   margin: 0;
   overflow-wrap: anywhere;
 }
 .oneri-taslak-metin {
-  margin-bottom: 6px;
+  margin-bottom: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-size: 0.8125rem;
+  line-height: 1.5;
 }
+/* AI taslağı uyarısı: amber metin + uyarı ikonu (maske, metin eklenmez); nötr --surface-2 üstünde. */
 .oneri-ai-uyari {
-  margin: 0 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
   color: var(--warn);
   font-size: 0.8125rem;
   font-weight: 600;
 }
+.oneri-ai-uyari::before {
+  content: "";
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+  background: currentColor;
+  -webkit-mask: var(--ikon-uyari) center / contain no-repeat;
+  mask: var(--ikon-uyari) center / contain no-repeat;
+  forced-color-adjust: none;
+}
 .oneri-kopya-yedek {
   display: block;
   width: 100%;
-  margin-top: 6px;
+  margin-top: 8px;
   font-family: var(--mono);
   font-size: 0.75rem;
 }
 
+/* Hazır soru çipleri: tıklanabilir hap (portal .cip .cip-notr) — hover'da indigo kenar (etkileşim), hedef
+   ≥ 24 px (WCAG 2.5.8). */
 .oneri-cipler {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 6px;
+  gap: 6px;
+  margin-top: 10px;
 }
 .oneri-cipi {
-  border: 0;
+  min-height: 24px;
   font: inherit;
   font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.4;
   cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+.oneri-cipi:hover {
+  border-color: var(--accent);
+  color: var(--text);
 }
 
+/* "Yaptım" formu: kart içinde ikincil yüzey. */
 .oneri-yaptim {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-top: 8px;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.oneri-yaptim label {
+  font-weight: 600;
+}
+.oneri-yaptim .oneri-eylem-satiri {
+  margin-top: 2px;
 }
 
 .oneri-ust {
   display: flex;
   justify-content: flex-end;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
+}
+/* Yenileme sürerken (aria-busy) ikon döner; hareket azaltmada statik (styles.css genel kuralı süreyi kısar). */
+.oneri-ust .dugme[aria-busy="true"] .oneri-yenile-ikon {
+  animation: don 0.8s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .oneri-ust .dugme[aria-busy="true"] .oneri-yenile-ikon {
+    animation: none;
+  }
 }
 .oneri-hata {
-  margin: 6px 0 0;
+  margin: 8px 0 0;
   color: var(--err);
   font-size: 0.8125rem;
+  font-weight: 600;
 }
 
+/* "Yaptım" ile kapanan öneriler: kapanmış kayıt nötr (§3.2 kural 6 — yeşil değil): --surface-2 zemin,
+   --border-strong sol şerit, üstü çizili başlık --text-2. */
 .oneri-bastirilanlar {
   display: flex;
   flex-direction: column;
@@ -187,24 +312,56 @@
 .oneri-bastirilan {
   display: flex;
   flex-direction: column;
-  padding: 8px 10px;
-  border: 1px dashed var(--border);
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-soft);
+  border-left: 3px solid var(--border-strong);
   border-radius: var(--radius-sm);
+  background: var(--surface-2);
 }
 .oneri-bastirilan-baslik {
-  color: var(--muted);
+  color: var(--text-2);
   text-decoration: line-through;
   font-size: 0.875rem;
 }
 
 .oneri-diger {
-  margin: 12px 0 0;
+  margin: 14px 0 0;
+  color: var(--text-2);
   font-size: 0.875rem;
 }
 .oneri-ek {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+}
+.oneri-ek > .rozet-mock {
+  margin-bottom: 10px;
+}
+.oneri-ek > .oneri-liste + .dugme {
   margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
+}
+.oneri-ek-bekliyor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+/* Pasiflik nedeni (§4.5 .dugme-neden; styles.css) düğmenin altında. */
+.oneri-ek > .dugme-neden {
+  margin: 6px 0 0;
+}
+
+/* Asistan eklentileri (sayfalarda): "Asistana sor" hata kutusunun ve satır içi hatanın yanında hayalet düğme,
+   AI parıltısıyla. Tonlu hata zemininde metin --text-2 (hayalet varsayılanı; --muted tonlu zeminde yok). */
+.uyari-kutusu > .asistana-sor,
+.alan-hata-satir > .asistana-sor {
+  flex-shrink: 0;
+}
+/* Hata kutusu (HataKutusu): metin dar ekranda tek sözcük sütununa sıkışmasın — en az ~15rem ister, sığmazsa
+   "Tekrar dene" / "Asistana sor" alt satıra iner (geniş ekranda düzen aynı: düğmeler sağda). */
+.uyari-kutusu > span[role="alert"]:has(~ .dugme) {
+  flex: 1 1 15rem;
 }
 
 @media (max-width: 759px) {
