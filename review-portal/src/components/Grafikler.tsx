@@ -39,7 +39,9 @@ export function OranSutunlari({ noktalar, baslik, hedef }: { noktalar: Nokta[]; 
 
   return (
     <figure className="grafik" ref={kap}>
-      <svg viewBox={`0 0 ${G} ${Y}`} width={G} height={Y} role="img" aria-label={`${baslik}. Ayrıntılar aşağıdaki tabloda.`} className="grafik-svg">
+      {/* Sütunlar klavyeyle odaklanır (ipucu): svg role="img" olsaydı alt öğeleri sunumsal olur, odak durağının
+          adı/rolü kalmazdı (4.1.2). Kap "group", her sütun kendi adıyla "img". */}
+      <svg viewBox={`0 0 ${G} ${Y}`} width={G} height={Y} role="group" aria-label={`${baslik}. Ayrıntılar aşağıdaki tabloda.`} className="grafik-svg">
         {[0, 0.5, 1].map((o) => (
           <g key={o}>
             <line x1={0} x2={G} y1={y(o)} y2={y(o)} className="grafik-izgara" />
@@ -57,13 +59,16 @@ export function OranSutunlari({ noktalar, baslik, hedef }: { noktalar: Nokta[]; 
             <g
               key={n.etiket}
               tabIndex={0}
+              role="img"
+              aria-label={`${n.etiket}: ${yuzde(n.oran)}${n.ek ? ` · ${n.ek}` : ""}`}
               onMouseEnter={() => setAktif(i)}
               onMouseLeave={() => setAktif(null)}
               onFocus={() => setAktif(i)}
               onBlur={() => setAktif(null)}
               className="grafik-hedef-alan"
             >
-              <rect x={i * adim} y={0} width={adim} height={Y} fill="transparent" />
+              {/* Hedef alan = odak halkası: 1 px içeride (svg kenarında kırpılmasın). */}
+              <rect x={i * adim + 1} y={1} width={Math.max(0, adim - 2)} height={Y - 2} rx={6} fill="transparent" className="grafik-odak" />
               <path d={yol} className={`grafik-sutun${aktif === i ? " aktif" : ""}`} />
               <text x={x + genislik / 2} y={Y - 6} textAnchor="middle" className="grafik-eksen">
                 {n.etiket}

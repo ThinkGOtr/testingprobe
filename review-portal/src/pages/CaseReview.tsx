@@ -204,6 +204,9 @@ export function CaseReview() {
           <Metrik etiket="Düzeltilerek onaylı" deger={ozet.duzeltilmis} />
           <Metrik etiket="Reddedilen" deger={ozet.ret} />
           <Metrik etiket="Karar bekleyen" deger={ozet.bekleyen} />
+        </div>
+        {/* İkinci şerit: süre ve maliyet (kararlar şeridiyle eşit sütun ritmi; 11 öğe tek şeritte 7+4 sarıyordu). */}
+        <div className="metrik-izgara">
           <Metrik
             etiket="AI süresi"
             deger={aiOlculmedi ? "—" : sure(ozet.aiSure)}
@@ -235,7 +238,8 @@ export function CaseReview() {
             etiket="Manuel baz (story başına)"
             deger={
               <span data-testid="case-baz">
-                {baz.ms === null ? "—" : sure(baz.ms)}{" "}
+                {/* Ölçülmemiş baz: yalnız "Ölçülmedi" çipi (tire + çip + açıklamada üçüncü kez "ölçülmedi" yazılmaz). */}
+                {baz.ms !== null ? `${sure(baz.ms)} ` : baz.kaynak === "olculmedi" ? null : "— "}
                 <Cip ton={bazEtiket.ton} title={bazEtiket.aciklama}>
                   {bazEtiket.etiket}
                 </Cip>
@@ -247,7 +251,7 @@ export function CaseReview() {
                   ? `ölçüm${baz.giren ? ` · ${kisiAdi(baz.giren)}` : ""}${baz.not ? ` · ${baz.not}` : ""}`
                   : baz.kaynak === "varsayilan"
                     ? "varsayılan (TP_MANUAL_BASELINE_S) — bu story için ölçülmedi, kazanca girmez"
-                    : "ölçülmedi — bu story için baz değer girilmedi"}
+                    : "bu story için baz değer girilmedi"}
               </span>
             }
           />

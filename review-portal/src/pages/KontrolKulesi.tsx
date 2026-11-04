@@ -414,7 +414,8 @@ function HazirlikKarti({ k, kazanc }: { k: Kule; kazanc: KazancOzeti }) {
                     )}
                   </td>
                   <td>
-                    {h.manuel_baz_ms === null ? <Olculmedi /> : sure(h.manuel_baz_ms)}
+                    {/* Ölçülmemiş baz yalnız "Ölçülmedi" çipiyle (aynı hücrede iki kez "ölçülmedi" yazılmaz). */}
+                    {h.manuel_baz_ms !== null ? sure(h.manuel_baz_ms) : h.baz_kaynagi === "olculmedi" ? null : <Olculmedi />}
                     <Cip ton={bk.ton} title={bk.aciklama}>
                       {bk.etiket}
                     </Cip>
