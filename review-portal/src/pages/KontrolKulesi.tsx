@@ -14,11 +14,6 @@ import { OnerilerOlcumKarti } from "../components/asistan/OnerilerOlcumKarti";
 import { tumuReplayMi } from "../lib/aiMaliyet";
 import { KaynakIpucu } from "../components/KaynakIpucu";
 
-// `Olculmedi` ortak bileşenlere (components/ui) taşındı; eski içe aktarmalar için yeniden dışa aktarılır.
-export { Olculmedi };
-// `KaynakIpucu` Kule kartlarıyla asistan ölçüm kartı arasında ortak (components/KaynakIpucu); eski içe aktarmalar için.
-export { KaynakIpucu };
-
 function KpiBaslik({ ad, k, anahtar }: { ad: string; k: Kule; anahtar: KpiAnahtari }): ReactNode {
   return (
     <span className="kpi-baslik">

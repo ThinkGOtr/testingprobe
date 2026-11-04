@@ -137,8 +137,16 @@ describe("yerleşim ve yetenek kapısı", () => {
     const u = userEvent.setup();
     yalnizPanel();
     const d = await screen.findByRole("button", { name: /Asistan \(kapalı/ });
+    expect(d).toHaveAccessibleName("Asistan (kapalı)");
     expect(d).toHaveClass("pasif");
     expect(d.getAttribute("title")).toMatch(/maskeleme/);
+    // Neden düğmenin dışında görünür yazılır (dokunmatik/klavye title okumaz) ve açıklama olarak bağlıdır.
+    expect(d).toHaveAccessibleDescription(/maskeleme/);
+    const neden = document.getElementById(d.getAttribute("aria-describedby") ?? "");
+    expect(neden).toHaveClass("dugme-neden", "asistan-baslatici-neden");
+    expect(neden).toBeVisible();
+    expect(neden).toHaveTextContent(/maskeleme/);
+    expect(d.contains(neden)).toBe(false);
     await u.click(d);
     // Dokunmatikte title görünmez: neden panelde, Sohbet sekmesinde okunur; soru alanı yok.
     const p = panel();

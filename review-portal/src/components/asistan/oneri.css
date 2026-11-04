@@ -2,7 +2,8 @@
 
 /* Üst çubuk "Öneri" düğmesi: görünüm .dugme .dugme-ikincil .dugme-kucuk'tan (üst çubuktaki "Çıkış" ile
    aynı yükseklik, yarıçap, kenar, odak). Burada yalnız sayı rozeti ve bekleyen iş varken indigo kenar
-   (indigo = etkileşim; mor yalnız AI). Dar üst çubukta (≤520 px) yalnız ikon + rozet: ad aria-label'da. */
+   (indigo = etkileşim; mor yalnız AI). Dar üst çubukta (≤520 px) yalnız ikon; rozet köşeye biner, düğme
+   32 px kare kalır ("Probe" markası 320 px'te de kesilmez; ad aria-label'da). */
 .oneri-dugmesi .ikon {
   width: 16px;
   height: 16px;
@@ -28,10 +29,17 @@
 }
 @media (max-width: 520px) {
   .dugme.oneri-dugmesi {
+    position: relative;
     padding-inline: 7px;
   }
   .oneri-dugmesi .oneri-etiket {
     display: none;
+  }
+  .oneri-dugmesi .oneri-rozet {
+    position: absolute;
+    top: -6px;
+    right: -5px;
+    box-shadow: 0 0 0 2px var(--ust-cubuk-opak);
   }
 }
 

@@ -435,8 +435,9 @@ code,
      yapışkan şeritler 10, üst çubuk 20, mobil menü perdesi 29, yan menü 30, KPI kaynak ipucu 60, .atla 100.
    .kabuk'un kardeşleri (kök bağlam; tamamı Kabuk'un üstünde çizilir):
      "Bu ne?" bindirmesi 39, asistan başlatıcı ve paneli 40, panel içi modal 45, bildirimler 50.
-   Mobil menü açıkken (≤860 px, kipsel) yüzen asistan başlatıcı perdenin üstünde kalmasın diye gizlenir
-   (aşağıda; Kabuk.tsx ayrıca inert yapar). */
+   Mobil menü açıkken (≤860 px, kipsel) yüzen asistan başlatıcısının kabı perdenin üstünde kalmasın diye
+   gizlenir (asistan.css; Kabuk.tsx ayrıca inert yapar); açık panel ise kapanır (KabukDurumu). Sıra
+   kabuk.test.tsx'te kilitli. */
 
 /* "İçeriğe atla" ve "Asistanı aç": odak alana kadar görünmez; ikisi aynı yerde, sırayla odak alır. */
 .atla {
@@ -773,7 +774,6 @@ button.atla {
     position: fixed;
     top: 56px;
     left: 0;
-    z-index: 30;
     height: calc(100vh - 56px);
     transform: translateX(-100%);
     transition: transform 0.18s ease;
@@ -781,10 +781,6 @@ button.atla {
   }
   .yan-menu.acik {
     transform: none;
-  }
-  /* Açık kipsel menüde yüzen asistan başlatıcı (Kabuk'un kardeşi, z 40) perdenin üstünde parlak kalmaz. */
-  body:has(.yan-menu.acik) .asistan-baslatici {
-    visibility: hidden;
   }
   /* Açık menünün perdesi: üst çubuğun altındaki içeriği karartır; dokununca menü kapanır (Kabuk.tsx). */
   .menu-perde {
@@ -2984,8 +2980,8 @@ body:has(.asistan-baslatici) .bildirimler {
   bottom: 72px;
 }
 /* Asistan paneli (masaüstü, modal değil) açıkken başlatıcı yok: bildirimler panelin solunda durur,
-   paneldeki "Asistana sor" ve sayaç satırını örtmez (panel 16 + 420 + 16 px). Dar ekranda panel tam
-   ekran modaldır; bildirim üstte kalır (katman sırası). */
+   paneldeki "Asistana sor" ve sayaç satırını örtmez (panel sağ kenara yaslı 420 px + 32 px ara = 452 px).
+   Dar ekranda panel tam ekran modaldır; bildirim üstte kalır (katman sırası). */
 body:has(.asistan-panel:not(.asistan-panel-modal)) .bildirimler {
   right: 452px;
   max-width: min(420px, calc(100vw - 468px));
@@ -4123,9 +4119,13 @@ html:has(.sekmeler-yapiskan) {
 }
 
 /* Dar üst çubukta marka: "AI Testing" görsel olarak gizlenir (erişilebilir ad tam kalır), "Probe" vurgusu
-   kesilmeden görünür; ellipsis'e bırakılmaz. 360 px altında üst çubuk aralıkları ve ÖRNEK VERİ rozeti
-   sıkılaşır. (Dev'deki "≤479 px'te rozet varken adın tamamını gizle" kuralının yerini alır: ad kısaldığı
-   için ÖRNEK VERİ rozeti ve öneri düğmesiyle de sığar; 320 px duman testi bunu ölçer.) */
+   kesilmeden görünür; ellipsis'e bırakılmaz. 360 px altında üst çubuk aralıkları sıkılaşır ve ÖRNEK VERİ
+   rozeti görsel olarak "ÖRNEK"e kısalır (metin ve title tam). Öneri düğmesi ≤520 px'te 32 px kare (rozet
+   köşede, oneri.css). Böylece ad, rozet sayılı Öneri düğmesi ve ÖRNEK VERİ ile birlikte 320–480 px'te
+   sığar; 320 ve 390 px duman testi bunu Öneri düğmesi görünen ekranda ölçer. */
+.rozet-mock-kisa {
+  display: none;
+}
 @media (max-width: 440px) {
   .marka-on {
     position: absolute;
@@ -4139,7 +4139,7 @@ html:has(.sekmeler-yapiskan) {
 }
 @media (max-width: 360px) {
   .ust-cubuk {
-    gap: 6px;
+    gap: 4px;
     padding: 0 8px;
   }
   .ust-cubuk .marka {
@@ -4149,9 +4149,22 @@ html:has(.sekmeler-yapiskan) {
     padding: 3px 6px;
     letter-spacing: 0.04em;
   }
-  /* 320 px'te "Probe" 2 px eksikle "Pro…" kesiliyordu: sağ grup aralıkları 6 → 4 px. */
+  .rozet-mock-tam {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .rozet-mock-kisa {
+    display: inline;
+  }
+  /* 320 px'te rozetli Öneri düğmesi ve ÖRNEK rozetiyle "Probe" payı sıfıra iniyordu (alt piksel yuvarlamada
+     "Pro…"): sağ grup aralıkları 6 → 2 px (32 px'lik düğmeler arası; tema düğmesi kenarsız). */
   .ust-sag {
-    gap: 4px;
+    gap: 2px;
   }
 }
 

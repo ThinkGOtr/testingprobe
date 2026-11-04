@@ -283,6 +283,22 @@ test("dar ekran: panel modal dialog; şablon cevabındaki Git paneli kapatır, s
   expect(hatalar).toEqual([]);
 });
 
+test("760–860 px: panel ile mobil menü birbirini dışlar (menü açılınca panel kapanır, panel açılınca menü)", async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 800 });
+  await girisYap(page, "analist");
+  await page.goto("/gereksinimler/req-ft-1");
+  await paneliAc(page);
+  const menuDugmesi = page.getByRole("button", { name: "Menü" });
+  await menuDugmesi.click();
+  await expect(menuDugmesi).toHaveAttribute("aria-expanded", "true");
+  await expect(panel(page)).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Ana menü" }).getByRole("link").first()).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(menuDugmesi).toHaveAttribute("aria-expanded", "false");
+  await paneliAc(page);
+  await expect(menuDugmesi).toHaveAttribute("aria-expanded", "false");
+});
+
 test("Öneri paneli: rozet, kart, Neden? Sor sohbete geçer, Git çapaya gider; boş ve kuralsız ekran", async ({ page }) => {
   const hatalar = konsolHatalariniTopla(page);
   await girisYap(page, "analist");
@@ -295,7 +311,7 @@ test("Öneri paneli: rozet, kart, Neden? Sor sohbete geçer, Git çapaya gider; 
 
   // Kural var, iş yok: rozetsiz düğme ve boş durum.
   await page.goto("/gereksinimler/req-tpd-1");
-  const bos = page.getByRole("button", { name: "Öneriler (0)" });
+  const bos = page.getByRole("button", { name: "Öneriler: 0" });
   await expect(bos).toBeVisible();
   await bos.click();
   await expect(panel(page).getByRole("tab", { name: "Öneriler" })).toHaveAttribute("aria-selected", "true");
@@ -303,9 +319,17 @@ test("Öneri paneli: rozet, kart, Neden? Sor sohbete geçer, Git çapaya gider; 
 
   // Bekleyen iş: rozet 1; düğme paneli Öneriler sekmesinde açar.
   await page.goto("/gereksinimler/req-ft-1");
-  const dugme = page.getByRole("button", { name: "Öneriler (1)" });
+  const dugme = page.getByRole("button", { name: "Öneriler: 1" });
   await expect(dugme).toBeVisible();
   await expect(dugme.locator(".oneri-rozet")).toHaveText("1");
+  // WCAG 2.5.3: görünür etiket erişilebilir adın içinde ("Öneriler 1" ⊂ "Öneriler: 1"; başlatıcıda "Asistanı aç");
+  // dar üst çubukta (yalnız ikon + köşe rozeti) da. axe parantez içini addan düşürdüğü için ad "Öneriler (1)" değil.
+  for (const genislik of [1440, 390]) {
+    await page.setViewportSize({ width: genislik, height: 900 });
+    const ad = await new AxeBuilder({ page }).include(".ust-cubuk").include(".asistan-baslatici-kap").withRules(["label-content-name-mismatch"]).analyze();
+    expect(ad.violations.map((v) => `${genislik}px ${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
   await dugme.click();
   const p = panel(page);
   await expect(p.getByRole("tab", { name: "Öneriler" })).toHaveAttribute("aria-selected", "true");
@@ -340,7 +364,7 @@ test("Öneri paneli: rozet, kart, Neden? Sor sohbete geçer, Git çapaya gider; 
 test("Kontrol Kulesi öneri ölçümü: Faydalı sayısı karta yansır (uygulama içi gezinme), kart ihlalsiz", async ({ page }) => {
   await girisYap(page, "analist");
   await page.goto("/gereksinimler/req-ft-1");
-  await page.getByRole("button", { name: "Öneriler (1)" }).click();
+  await page.getByRole("button", { name: "Öneriler: 1" }).click();
   const sekme = page.getByTestId("oneriler-sekmesi");
   await sekme.getByRole("button", { name: "Faydalı" }).click();
   await expect(sekme.getByRole("button", { name: "Faydalı" })).toHaveAttribute("aria-pressed", "true");
@@ -361,7 +385,7 @@ test("Öneri paneli: Jira taslağı kartı (mühendis, CI ortam hatası) — tas
   await girisYap(page, "muhendis");
   await page.goto("/kosular/run-109");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(/run-109/);
-  await page.getByRole("button", { name: /^Öneriler \(\d+\)$/ }).click();
+  await page.getByRole("button", { name: /^Öneriler: \d+$/ }).click();
   const sekme = page.getByTestId("oneriler-sekmesi");
   const kart = sekme.getByRole("article").filter({ has: page.getByRole("heading", { name: "Testler koşmadı: CI ortam hatası" }) });
   await expect(kart).toHaveCount(1);

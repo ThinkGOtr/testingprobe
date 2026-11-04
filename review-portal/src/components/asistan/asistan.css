@@ -79,7 +79,7 @@
   box-shadow: var(--shadow);
   text-align: right;
 }
-/* Açık kipsel mobil menüde kap (neden dahil) perdenin üstünde kalmaz; düğme styles.css'te zaten gizli. */
+/* Açık kipsel mobil menüde kap (düğme ve neden) perdenin (z 29) üstünde kalmaz; Kabuk onu inert de yapar. */
 @media (max-width: 860px) {
   body:has(.yan-menu.acik) .asistan-baslatici-kap {
     visibility: hidden;
@@ -107,20 +107,13 @@
   box-shadow: var(--shadow);
   overflow: hidden;
 }
-/* Dar ekran (< 760 px): tam ekran modal dialog; kenar ve gölge yok. */
+/* Dar ekran (< 760 px, AsistanPaneli `useDarEkran` sınıfı ekler): tam ekran modal dialog; kenar ve gölge yok. */
 .asistan-panel-modal {
   inset: 0;
   width: 100vw;
   max-width: 100vw;
   border: 0;
   box-shadow: none;
-}
-@media (max-width: 759px) {
-  .asistan-panel {
-    inset: 0;
-    width: 100vw;
-    border: 0;
-  }
 }
 /* Panel açıkken odak örtülmesi (WCAG 2.4.11): ≥1440 px'te içerik sütunu panel genişliği kadar sağdan
    boşaltılır, sayfanın sağındaki odaklanabilir öğeler (başlık eylemleri, bölüm gezgini) panelin altında
@@ -743,7 +736,6 @@ body:has(.asistan-panel:not(.asistan-panel-modal)) .asistan-bune-ipucu {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .asistan-panel,
   .asistan-baslatici {
     transition: none;
   }
@@ -768,5 +760,71 @@ body:has(.asistan-panel:not(.asistan-panel-modal)) .asistan-bune-ipucu {
     background: Highlight;
     color: HighlightText;
     border-color: Highlight;
+  }
+}
+
+/* ---------------------------------------------------------------- kabuk şeridi: başlatıcı ve "Bu ne?" bandı yerleşimi
+   (Yukarıdaki kuralların üstüne yazar; panel içeriği kurallarına dokunmaz.) */
+
+/* Başlatıcı içerik üstünde yüzer: sahnede her ekranın en baskın rengi olmasın diye sakin yüzey (--surface-2,
+   1 px indigo kenar, indigo ikon); indigo dolgu yalnız hover/odakta (indigo = etkileşim). Pasif kip kendi
+   kesik kenarlı dilini korur. */
+.asistan-baslatici:not(.pasif) {
+  background: var(--surface-2);
+  border-color: var(--accent);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+.asistan-baslatici:not(.pasif) .ikon {
+  color: var(--accent);
+}
+.asistan-baslatici:not(.pasif):hover,
+.asistan-baslatici:not(.pasif):focus-visible {
+  background: var(--accent-solid);
+  border-color: var(--accent-solid);
+  color: var(--accent-text);
+}
+.asistan-baslatici:not(.pasif):hover .ikon,
+.asistan-baslatici:not(.pasif):focus-visible .ikon {
+  color: var(--accent-text);
+}
+/* 1280 px altında ya da kısa ekranda (≤760 px; demo 1152×720) yalnız ikon: 44 px yuvarlak düğme sağ kolondaki
+   içeriği (tarih/süre hücreleri, uyarı satırı sonu) daha az örter. Ad aria-label'da ("Asistanı aç"). */
+@media (max-width: 1279px), (max-height: 760px) {
+  .asistan-baslatici {
+    justify-content: center;
+    width: 44px;
+    min-height: 44px;
+    padding: 0;
+    border-radius: 50%;
+  }
+  .asistan-baslatici-metin {
+    display: none;
+  }
+}
+
+/* "Bu ne?" ipucu bandı içeriğin üstünde (üst çubuğun 8 px altında) durur ve tıklamayı yutmaz: bandın
+   altındaki öğe de seçilebilir (isabet testi bindirmeyi ve bandı zaten atlar); yalnız "Vazgeç" tıklanır.
+   Altta duran bant ekranın alt kenarındaki eylemleri (Merge et, Değişiklik iste) örtüyordu. */
+.asistan-bune-ipucu {
+  top: 64px;
+  bottom: auto;
+  pointer-events: none;
+}
+.asistan-bune-ipucu .dugme {
+  pointer-events: auto;
+}
+/* Kenar çubuğu görünürken (≥861 px) bant içerik alanının ortasında; panel açıksa kenar çubuğu ile panel
+   arasındaki alanın. 861–1099 px'te bu alan dar kalır: panelin solundaki alan (yukarıdaki kural) kullanılır. */
+@media (min-width: 861px) {
+  .asistan-bune-ipucu {
+    left: calc(240px + (100vw - 240px) / 2);
+    max-width: min(760px, calc(100vw - 240px - 32px));
+  }
+}
+@media (min-width: 1100px) {
+  body:has(.asistan-panel:not(.asistan-panel-modal)) .asistan-bune-ipucu {
+    left: calc(240px + (100vw - 240px - 420px) / 2);
+    max-width: min(760px, calc(100vw - 240px - 452px));
   }
 }

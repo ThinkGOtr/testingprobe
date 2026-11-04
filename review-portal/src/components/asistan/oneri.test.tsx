@@ -94,7 +94,7 @@ describe("Öneri düğmesi", () => {
     await oturumAc("analist");
     uygulama("/gereksinimler/req-ft-1");
     const d = await dugme();
-    expect(d).toHaveAccessibleName("Öneriler (1)");
+    expect(d).toHaveAccessibleName("Öneriler: 1");
     expect(within(d).getByText("1")).toBeInTheDocument();
     expect(screen.getAllByTestId("oneri-dugmesi")).toHaveLength(1);
     expect(d.closest(".ust-sag")).not.toBeNull();
@@ -106,7 +106,7 @@ describe("Öneri düğmesi", () => {
     await oturumAc("analist");
     const { unmount } = yalnizDugme("/gereksinimler/req-tpd-1");
     const d = await dugme();
-    expect(d).toHaveAccessibleName("Öneriler (0)");
+    expect(d).toHaveAccessibleName("Öneriler: 0");
     expect(d.querySelector(".oneri-rozet")).toBeNull();
     unmount();
     const spy = vi.spyOn(oneriApi, "liste");
@@ -158,7 +158,7 @@ describe("Öneri düğmesi", () => {
     const spy = vi.spyOn(oneriApi, "liste");
     const u = userEvent.setup();
     uygulama("/gereksinimler/req-ft-1");
-    expect(await dugme()).toHaveAccessibleName("Öneriler (1)");
+    expect(await dugme()).toHaveAccessibleName("Öneriler: 1");
     const s = await oneriPaneliniAc(u);
     const rotalar = () => spy.mock.calls.map((c) => c[0].rota);
     expect(rotalar().filter((r) => r === "/gereksinimler/req-ft-1")).toHaveLength(1);
@@ -309,7 +309,7 @@ describe("Öneriler sekmesi", () => {
     const s = await oneriPaneliniAc(u);
     const basliklar = s.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
     expect(basliklar).toEqual(["Yüksek öncelik", "Orta öncelik", "Düşük öncelik"]);
-    expect(await dugme()).toHaveAccessibleName("Öneriler (3)");
+    expect(await dugme()).toHaveAccessibleName("Öneriler: 3");
   });
 
   it('"Git" iç rotaya (çapa ile) gider', async () => {
@@ -487,7 +487,7 @@ describe("Öneriler sekmesi", () => {
     await u.click(s.getByRole("button", { name: "Gizle" }));
     await waitFor(() => expect(gb).toHaveBeenCalledWith("gereksinim-bulgu-karari", { deger: -1, varlik_id: "req-ft-1" }));
     expect(await s.findByText("Bu ekranda sizin için bekleyen bir iş yok.")).toBeInTheDocument();
-    await waitFor(async () => expect(await dugme()).toHaveAccessibleName("Öneriler (0)"));
+    await waitFor(async () => expect(await dugme()).toHaveAccessibleName("Öneriler: 0"));
   });
 
   it('"Yaptım" isteğe bağlı Jira anahtarıyla: geçersiz anahtar reddedilir; kartın yerinde "yaptım dedi"', async () => {
@@ -513,7 +513,7 @@ describe("Öneriler sekmesi", () => {
     const u = userEvent.setup();
     uygulama("/kod/scr-1");
     const s = await oneriPaneliniAc(u);
-    expect(await dugme()).toHaveAccessibleName("Öneriler (1)");
+    expect(await dugme()).toHaveAccessibleName("Öneriler: 1");
     const diger = s.getByText(/Diğer ekranlarda sizi bekleyen \d+ iş/);
     expect(within(diger).getByRole("link", { name: "Git" })).toBeInTheDocument();
   });
@@ -596,7 +596,7 @@ describe.each([
     const u = userEvent.setup();
     uygulama(yol);
     const d = await dugme();
-    await waitFor(() => expect(d.getAttribute("aria-label")).toMatch(/^Öneriler \([1-9]\d*\)$/));
+    await waitFor(() => expect(d.getAttribute("aria-label")).toMatch(/^Öneriler: [1-9]\d*$/));
     const s = await oneriPaneliniAc(u);
     expect(s.getByRole("heading", { name: baslik })).toBeInTheDocument();
     const eylemOgesi = eylem === "Git" ? s.getAllByRole("button", { name: "Git" })[0] : s.getByRole("link", { name: /Jira'yı aç/ });
