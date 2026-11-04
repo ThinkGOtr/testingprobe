@@ -814,7 +814,7 @@ export function SohbetSekmesi({
           if (!gonderilemez) void gonder(girdi, bekletilenSecenek());
         }}
       >
-        <div className="asistan-cipler" aria-label="Soruya eklenecek bağlam">
+        <div className="asistan-cipler" role="group" aria-label="Soruya eklenecek bağlam">
           {ekranDahil && ekran.rota_kalibi && (
             <span className="cip cip-bilgi asistan-baglam-cipi">
               Bu ekran: {ekran.ekran}

@@ -292,6 +292,28 @@ export function AsistanPaneli() {
     return () => document.removeEventListener("keydown", fn);
   }, [modalAktif]);
 
+  // Masaüstü (modal değil): panel sayfanın üstünde durur. ≥1440 px'te içerik panel kadar sağdan boşaltılır
+  // (asistan.css); daha dar ekranda odaktaki sayfa öğesi panelin altında kalabilir (WCAG 2.4.11). Esc,
+  // odak paneldeyken panelTus'la kapatır; odak panelin ALTINDAKİ bir sayfa öğesindeyse de kapatır —
+  // kullanıcı odağı taşımadan öğeyi açığa çıkarır. Başka Esc dinleyicisi işlediyse dokunulmaz.
+  const ortmeEscAktif = !dar && kontrol.acik && !buNe;
+  useEffect(() => {
+    if (!ortmeEscAktif) return;
+    const fn = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      const p = panelRef.current;
+      const aktif = document.activeElement;
+      if (!p || !(aktif instanceof HTMLElement) || p.contains(aktif)) return;
+      const pr = p.getBoundingClientRect();
+      const r = aktif.getBoundingClientRect();
+      if (pr.width === 0 || r.width === 0 || r.right <= pr.left || r.bottom <= pr.top) return;
+      e.preventDefault();
+      paneliKapat();
+    };
+    document.addEventListener("keydown", fn);
+    return () => document.removeEventListener("keydown", fn);
+  }, [ortmeEscAktif]);
+
   // Dar ekran modalı: arka plan (panelin atalarının kardeşleri) `inert` ve sayfa kaydırması kilitli;
   // ekran okuyucunun sanal imleci arka plana kaçmasın, mobilde arka plan kaymasın. Kapanınca geri alınır.
   // Bildirim canlı bölgesi (`.bildirimler`) hariç: panelin "Kopyalandı/Gizlendi" durumları duyurulmalı.

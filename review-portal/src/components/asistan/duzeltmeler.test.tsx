@@ -354,8 +354,8 @@ describe("cevap kartı", () => {
   const TABLO: [GuvenGosterimi, string, RegExp][] = [
     ["Kaynakla doğrulandı", "basari", /deterministik olarak doğrulandı/],
     ["Kısmen", "uyari", /model emin değil/],
-    ["Emin değil", "hata", /doğrulanmış kaynak yok/],
-    ["Genel bilgi", "bilgi", /genel QA bilgisi/],
+    ["Emin değil", "uyari", /doğrulanmış kaynak yok/],
+    ["Genel bilgi", "notr", /genel QA bilgisi/],
   ];
 
   it.each(TABLO)("güven tablosu: %s → %s tonu ve açıklama", (guven, ton, aciklama) => {

@@ -122,6 +122,46 @@
     border: 0;
   }
 }
+/* Panel açıkken odak örtülmesi (WCAG 2.4.11): ≥1440 px'te içerik sütunu panel genişliği kadar sağdan
+   boşaltılır, sayfanın sağındaki odaklanabilir öğeler (başlık eylemleri, bölüm gezgini) panelin altında
+   kalmaz. Ölçüm: 1440 px'te içerik sütunu 1144 → 724 px (geniş tablolar kendi .tablo-sarici kaydırıcısında,
+   sayfada yatay kaydırma yok); 1280 px'te 564, 1024 px'te 308 px kalırdı — düzen dağılırdı, eşik 1440. Daha dar masaüstünde panel bindirme olarak kalır;
+   odaktaki öğe panelin altındaysa Esc paneli kapatır (AsistanPaneli). Geniş ekranda (≥1680 px) içerik
+   ortalanıyordu: panel açıkken sağa yaslanır ve tavan panel kadar büyür, metin sütunu daralmaz. */
+@media (min-width: 1440px) {
+  body:has(.asistan-panel:not(.asistan-panel-modal)) .icerik {
+    padding-right: calc(28px + 420px);
+    max-width: calc(1320px + 420px);
+    margin-right: 0;
+  }
+}
+/* Kısa görünüm (≈ %200 yakınlaştırma, 1280×800 → 640×400): başlık + sekmeler + girdi sabit kalınca mesaj
+   alanı ~65 px'e iniyordu. Burada panel bütün olarak kayar: başlık, denetim notu ve sekmeler yukarı kayıp
+   gider, sekme içeriği (mesajlar + girdi) panelin tam yüksekliğini alır; girdi şeridi de sıkışır. */
+@media (max-height: 520px) {
+  .asistan-panel {
+    overflow-y: auto;
+  }
+  .asistan-panel > .asistan-sekme-icerik {
+    flex: 0 0 100%;
+  }
+  .asistan-panel-ust {
+    padding-top: 8px;
+  }
+  .asistan-denetim-notu,
+  .asistan-sekmeler {
+    padding-bottom: 8px;
+  }
+  .asistan-girdi {
+    padding: 8px 16px 10px;
+    gap: 6px;
+  }
+  /* rows=3 yerine iki satır; kullanıcı yine büyütebilir. */
+  .asistan-girdi textarea {
+    height: 52px;
+    min-height: 40px;
+  }
+}
 
 /* Başlık şeridi: AI kimliği (mor ikon karosu) + "Asistan" + dürüstlük rozetleri + kapat. */
 .asistan-panel-ust {
@@ -378,13 +418,37 @@
 .asistan-kaynak-ref {
   font-size: 0.8rem;
 }
-.soluk-kaynak {
-  opacity: 0.65;
+/* Doğrulanmamış kaynak: satır soldurulmaz (opacity tür hapını, uyarıyı ve düğmeyi AA altına çekiyordu);
+   durum biçimle söylenir — kesik kenarlı amber "doğrulanmadı" rozeti (portalın kesik = "teyitsiz" dili) —
+   ve yalnız yol metni geri çekilir (--muted; cevap kartının nötr --surface-2 zemininde ≥5:1). */
+.soluk-kaynak .asistan-kaynak-ref {
+  color: var(--muted);
 }
 .asistan-dogrulanmadi {
+  padding: 1px 8px;
+  border: 1px dashed var(--warn);
+  border-radius: var(--radius-hap);
+  background: var(--warn-bg);
   color: var(--warn);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   font-weight: 600;
+}
+/* Satır içi metin eylemleri ("Satırları göster", "Alıntıyı göster"): alt satıra sarınca metin, üstteki tür
+   hapıyla aynı sol kenardan başlar — yatay iç boşluk yok, hover zemin yerine alt çizgi. Hedef yüksekliği
+   (.dugme-kucuk 30 px) korunur. "Jira'da aç" bağlantısı da en az 24 px hedef (WCAG 2.5.8). */
+.asistan-kaynak > .dugme-hayalet {
+  padding-inline: 0;
+}
+.asistan-kaynak > .dugme-hayalet:hover:not(:disabled) {
+  background: transparent;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.asistan-kaynak > .dis-baglanti {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
 }
 .asistan-yonlendirmeler {
   display: flex;
@@ -693,5 +757,16 @@ body:has(.asistan-panel:not(.asistan-panel-modal)) .asistan-bune-ipucu {
   }
   .asistan-bune-vurgu {
     outline-color: Highlight;
+  }
+  /* Seçili sekme ve basılı "Bu ne?" yalnız zemin/kenar rengiyle ayrışıyordu (zorunlu renkte silinir):
+     portalın .sekme.aktif kuralıyla aynı — Highlight zemin + HighlightText. */
+  .asistan-sekme.aktif,
+  .asistan-sekme[aria-selected="true"],
+  .asistan-bune-dugmesi[aria-pressed="true"],
+  .asistan-bune-dugmesi[aria-pressed="true"]:hover:not(:disabled) {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+    border-color: Highlight;
   }
 }

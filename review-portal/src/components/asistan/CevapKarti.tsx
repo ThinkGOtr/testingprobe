@@ -1,6 +1,7 @@
 // Asistan cevap kartı (AI-ASISTAN-PLANI §11 "Cevap kartı", §7.3 güven tablosu). Bloklar düz
 // metin olarak çizilir (HTML yok); kaynaklar dosya:satır / Jira / CI biçiminde, doğrulanmamış
-// kaynak soluk ve uyarılı; bağlantılar yalnız iç rota (Git) ve sunucunun kurduğu Jira adresidir.
+// kaynak biçimle işaretli (kesik kenarlı amber "doğrulanmadı" rozeti, --muted yol metni; satır
+// soldurulmaz); bağlantılar yalnız iç rota (Git) ve sunucunun kurduğu Jira adresidir.
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { kaynakDogrulandi, type AsistanMesaji, type CevapBlogu, type CevapKaynagiOgesi, type GuvenGosterimi } from "../../api/asistan";
@@ -12,11 +13,13 @@ import { Ikon } from "../Ikon";
 import { Cip, DisBaglanti } from "../ui";
 import { AiOneriKarti } from "./OneriKarti";
 
+// Renk disiplini (TASARIM-YENILEME-PLANI §3.2, §4.6): kırmızı yalnız hata/engel, indigo yalnız etkileşim/süren.
+// "Emin değil" bir hata değil, dikkat çağrısıdır (doğrulayın) → amber; "Genel bilgi" kategoriktir → nötr.
 export const GUVEN_TONU: Record<GuvenGosterimi, Ton> = {
   "Kaynakla doğrulandı": "basari",
   Kısmen: "uyari",
-  "Emin değil": "hata",
-  "Genel bilgi": "bilgi",
+  "Emin değil": "uyari",
+  "Genel bilgi": "notr",
 };
 
 const GUVEN_ACIKLAMASI: Record<GuvenGosterimi, string> = {

@@ -155,6 +155,17 @@
   color: var(--accent);
   cursor: default;
 }
+/* Zorunlu renk kipi: global .dugme[aria-pressed] kuralı forced-color-adjust: none verir, yukarıdaki özgül kural
+   tema renklerini sızdırıyordu (koyu temada açık indigo metin Canvas üstünde). Seçili durum Highlight ile. */
+@media (forced-colors: active) {
+  .oneri-alt .dugme[aria-pressed="true"],
+  .oneri-alt .dugme[aria-pressed="true"]:disabled {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+    border: 1px solid Highlight;
+  }
+}
 /* Açılır-kapanır "Yaptım" açıkken düğme basılı görünür. */
 .oneri-alt .dugme-hayalet[aria-expanded="true"] {
   background: var(--hover);
@@ -339,6 +350,16 @@
 }
 .oneri-ek > .oneri-liste + .dugme {
   margin-top: 12px;
+}
+/* Ek öneriler geldikten sonraki hayalet "Başka ne yapabilirim?": kartların sol kenarıyla hizalı başlar —
+   yatay iç boşluk yok, hover zemin yerine alt çizgi (kaynak satırındaki metin eylemleriyle aynı). */
+.oneri-ek > .dugme-hayalet {
+  padding-inline: 0;
+}
+.oneri-ek > .dugme-hayalet:hover:not(:disabled) {
+  background: transparent;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .oneri-ek-bekliyor {
   display: flex;
