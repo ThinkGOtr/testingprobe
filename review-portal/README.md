@@ -14,6 +14,12 @@ React 18 + Vite 8 + TypeScript (strict), react-router. Arayüz metinleri Türkç
 | `PORTAL_LIVE=1 npx playwright test` | Canlı yığın testi (`e2e/canli.spec.ts`): çalışan portala (`PORTAL_URL`, varsayılan `http://127.0.0.1:8080`) analist olarak girer (`SEED_USER_PASSWORD`; `set -a; . ../.env; set +a`), gerekirse Jira'dan çeker, TPD-1'i açar; çekirdek `/requirements` sunmuyorsa açıkça başarısız olur (örnek veriye düşen sahte geçiş yok) |
 | `npm run e2e` | Playwright duman testi: mock derlemeyi `vite preview` ile açar, tüm rotaları gezer, ekran görüntülerini `e2e/ekranlar/` altına yazar; her rolde ölü iç bağlantı, 390 px taşma ve axe (WCAG 2 AA, açık/koyu tema) denetimi yapar (ilk seferde `npx playwright install chromium`) |
 
+**Test yazarken:** gereksinim detayındaki bölüm gezgini (`nav "Sayfa bölümleri"`) kart başlıklarıyla
+aynı metinli bağlantılar taşır, DOM'da içerikten önce gelir ve 1280 px altında gizlidir. Kart başlıkları
+`getByText(...).first()` ile değil `getByRole("region", { name })` ile aranır. Aynı düğme grubundaki eş
+pasiflik nedeni (`.dugme-neden`) bir kez yazılır; diğer düğmeler `aria-describedby` ile ona bağlanır,
+neden metnini düğmenin erişilebilir açıklamasıyla (`toHaveAccessibleDescription`) doğrulayın.
+
 ## API sözleşmesi
 
 - `src/api/client.ts`: MIMARI-SOZLESME §5'teki her uç için türlü istemci.

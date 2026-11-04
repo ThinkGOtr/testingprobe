@@ -1,4 +1,4 @@
-import { useId, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode, type RefObject } from "react";
 import { Link } from "react-router-dom";
 import { buFazdaYok } from "../api/http";
 import type { CiktiModu, Degerlendirme, Rol } from "../api/types";
@@ -148,12 +148,55 @@ interface IslemDugmesiOzellikleri extends ButtonHTMLAttributes<HTMLButtonElement
 }
 
 /**
+ * Ortak neden: aynı düğme grubunda (en yakın `.eylemler` / `.satir-ogeler`, yoksa ebeveyn) aynı metinli
+ * görünür nedenler bir kez yazılır. DOM sırasındaki ilk düğme nedeni çizer, diğerleri `aria-describedby`
+ * ile onun kimliğine bağlanır (aynı rol nedeni grupta tekrar etmez; kapsamsız `getByText` tekil kalır).
+ * Sahip kaybolur ya da nedeni değişirse sıradaki düğme nedeni kendisi çizer.
+ */
+interface NedenKaydi {
+  sarici: HTMLElement;
+  neden: string;
+  id: string;
+  ata: (sahipId: string) => void;
+}
+const nedenGruplari = new WeakMap<Element, Set<NedenKaydi>>();
+
+function nedenGrubunuYenile(kume: Set<NedenKaydi>) {
+  const sirali = [...kume].sort((a, b) => (a.sarici.compareDocumentPosition(b.sarici) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+  for (const k of sirali) k.ata(sirali.find((x) => x.neden === k.neden)!.id);
+}
+
+/** Bu düğmenin görünür nedeninin çizildiği öğenin kimliği (kendisi ya da gruptaki ilk eş neden). */
+function useOrtakNeden(sarici: RefObject<HTMLElement>, neden: string | undefined, id: string): string {
+  const [sahip, setSahip] = useState(id);
+  useLayoutEffect(() => {
+    const el = sarici.current;
+    const grup = el?.parentElement?.closest(".eylemler, .satir-ogeler") ?? el?.parentElement;
+    if (!el || !grup || !neden) {
+      setSahip(id);
+      return;
+    }
+    let kume = nedenGruplari.get(grup);
+    if (!kume) nedenGruplari.set(grup, (kume = new Set()));
+    const kayit: NedenKaydi = { sarici: el, neden, id, ata: setSahip };
+    kume.add(kayit);
+    nedenGrubunuYenile(kume);
+    return () => {
+      kume.delete(kayit);
+      nedenGrubunuYenile(kume);
+    };
+  }, [sarici, neden, id]);
+  return sahip;
+}
+
+/**
  * Rol farkındalıklı eylem düğmesi: yetkisiz rolde pasif ve nedenini söyler
  * (sunucu yine de her uçta rolü kontrol eder).
  *
  * Pasifken (`disabled` ya da yetkisiz rol) bir neden varsa, native `disabled` düğme odak almadığı ve
  * `title` klavyede okunmadığı için neden düğmenin dışında görünür yazılır (`.dugme-neden`) ve
- * `aria-describedby` ile düğmeye bağlanır. Çalışırken (`calisiyor`) yazılmaz.
+ * `aria-describedby` ile düğmeye bağlanır. Çalışırken (`calisiyor`) yazılmaz. Aynı gruptaki eş metinli
+ * nedenler bir kez yazılır (`useOrtakNeden`).
  */
 export function IslemDugmesi({ roller, calisiyor, tur = "birincil", kucuk, disabled, children, title, className, nedenGizli, ...geri }: IslemDugmesiOzellikleri) {
   const { kullanici } = useOturum();
@@ -161,7 +204,10 @@ export function IslemDugmesi({ roller, calisiyor, tur = "birincil", kucuk, disab
   const yetkili = !roller || roller.length === 0 || (!!kullanici && roller.includes(kullanici.rol));
   const neden = !yetkili ? `Bu işlem için gereken rol: ${roller?.map((r) => ROL[r]).join(" / ")}` : title;
   const nedenGorunur = !nedenGizli && !calisiyor && (!!disabled || !yetkili) && !!neden?.trim();
-  const tanim = [geri["aria-describedby"], nedenGorunur ? nedenId : undefined].filter(Boolean).join(" ") || undefined;
+  const sariciRef = useRef<HTMLSpanElement>(null);
+  const nedenSahibi = useOrtakNeden(sariciRef, nedenGorunur ? neden : undefined, nedenId);
+  const nedenCiz = nedenGorunur && nedenSahibi === nedenId;
+  const tanim = [geri["aria-describedby"], nedenGorunur ? nedenSahibi : undefined].filter(Boolean).join(" ") || undefined;
   const dugme = (
     <button
       type="button"
@@ -180,9 +226,9 @@ export function IslemDugmesi({ roller, calisiyor, tur = "birincil", kucuk, disab
   // Sarıcı her zaman çizilir (neden yokken `display: contents`): neden belirip kaybolurken düğme
   // yeniden bağlanmaz (odak ve öğe kimliği korunur).
   return (
-    <span className={`dugme-neden-sarici${nedenGorunur ? " neden-var" : ""}`}>
+    <span ref={sariciRef} className={`dugme-neden-sarici${nedenCiz ? " neden-var" : ""}`}>
       {dugme}
-      {nedenGorunur && (
+      {nedenCiz && (
         <span id={nedenId} className="dugme-neden">
           {neden}
         </span>

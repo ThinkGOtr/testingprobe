@@ -748,6 +748,12 @@ geçti", "(GitHub artefaktında)", "Süzgece uyan test yok.", "✓ Doküman son 
 "Buton kimliğini değiştir (add-to-cart → cart-add)"; id `kosular-gece-aciklama`, `kosular-deploy-aciklama`
 (`aria-describedby` hedefi — kaldırılmaz/yeniden adlandırılmaz).
 
+**Review turu 1 kilitleri:** navigation "Sayfa bölümleri" (gereksinim detayı, ≥1280 px görünür) bağlantı
+metinleri "Doküman", "PO teyidi", "Manuel baz değer", "Ön inceleme soruları", "Tutarlılık bulguları" kart
+başlıklarıyla aynıdır → kart başlıkları yalnız `getByRole("region", { name })` ile aranır, `getByText` ile
+aranmaz (`duman.spec.ts` "bölüm gezgini" testi). `.dugme-neden` grup başına tekildir: aynı `.eylemler` /
+`.satir-ogeler` içinde eş metinli neden bir kez çizilir, her düğmenin `aria-describedby`'si ona bağlıdır.
+
 **Yeni markup kuralları:** `article`, `list`/`listitem`, `region`, `status` rolü eklenmez (eklenirse
 benzersiz ad + sayım testleri tek tek kontrol); `aria-current="step"` yalnız akışta; yeni görünür metin
 eklenmez; CSS ikon `content: ""`.

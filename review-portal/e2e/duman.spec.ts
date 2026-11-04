@@ -570,6 +570,31 @@ test("bilinmeyen sayfa: h1 başlığı var (axe page-has-heading-one)", async ({
   expect(sonuc.violations.map((v) => v.id)).toEqual([]);
 });
 
+// Bölüm gezgini (`nav "Sayfa bölümleri"`) bağlantıları kart başlıklarıyla aynı metni taşır ve DOM'da
+// içerikten önce gelir: kart başlığı `getByText(...).first()` ile değil, `getByRole("region", { name })`
+// ile aranır (1279 px ve altında gezgin gizlidir; `.first()` gizli bağlantıyı bulur).
+test("bölüm gezgini: ≥1280 px görünür ve bağlantı bölümü üst çubuğun altına getirir; 1279 px'te gizli", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await girisYap(page, "analist");
+  await page.goto("/gereksinimler/req-tpd-1");
+  const gezgin = page.getByRole("navigation", { name: "Sayfa bölümleri" });
+  await expect(gezgin).toBeVisible();
+  const bolum = page.getByRole("region", { name: "Tutarlılık bulguları" });
+  await gezgin.getByRole("link", { name: "Tutarlılık bulguları" }).click();
+  await expect(page).toHaveURL(/#bolum-bulgular$/);
+  await expect(bolum).toBeInViewport();
+  await expect
+    .poll(async () => {
+      const ust = await page.locator(".ust-cubuk").boundingBox();
+      const kutu = await bolum.boundingBox();
+      return !!ust && !!kutu && kutu.y >= ust.y + ust.height;
+    })
+    .toBe(true);
+  await page.setViewportSize({ width: 1279, height: 800 });
+  await expect(gezgin).toBeHidden();
+  await expect(page.getByRole("region", { name: "Tutarlılık bulguları" })).toBeVisible();
+});
+
 // ---------------------------------------------------------------- Faz 4
 
 test("Faz 4 locator yolu: sunucu kırar → CI kırmızı → triage → mühendis onarım PR'ı → merge", async ({ page }) => {
