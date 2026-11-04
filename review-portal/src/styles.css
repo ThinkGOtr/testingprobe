@@ -4444,7 +4444,7 @@ td > .satir-baglanti + .cip,
       }
     }
   }
-  html:has(.bolum-gezgini):has(.asistan-panel:not(.asistan-panel-modal)) {
+  html:has(.bolum-gezgini):has(:where(.asistan-panel:not(.asistan-panel-modal))) {
     scroll-padding-top: 120px;
   }
 }

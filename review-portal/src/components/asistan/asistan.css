@@ -858,3 +858,16 @@ body:has(.asistan-panel:not(.asistan-panel-modal)) .asistan-bune-ipucu {
     right: calc((100vw - 1560px) / 2 + 28px);
   }
 }
+/* "Bu ne?" kipinde odak/çapa kaydırması bandın altında kalmasın: klavyeyle (Shift+Tab, sayfa içi bağlantı)
+   gidilen öğe bandın örttüğü şeride (üst 64 px'ten bant altına) kayıyor, Enter'la seçilecek öğe görünmüyordu.
+   Pay = bant altı + 8 px: ≥1280 px tek/iki satır (126 px), 861–1279 px iki satır (≈147 px), ≤860 px üç satır
+   (≈167 px). Yapışkan şeritler (bölüm gezgini, case sekmeleri) bandın üstünde biter, pay onları da kapsar.
+   Seçici özgüllüğü sayfa paylarından (html:has(...), 0-1-1) yüksek: kip açıkken her zaman bu geçerli. */
+html:has(.asistan-bune-bindirme):has(.asistan-bune-ipucu) {
+  scroll-padding-top: 176px;
+}
+@media (min-width: 1280px) {
+  html:has(.asistan-bune-bindirme):has(.asistan-bune-ipucu) {
+    scroll-padding-top: 136px;
+  }
+}
