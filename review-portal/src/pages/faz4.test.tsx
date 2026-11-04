@@ -71,6 +71,11 @@ describe("triage ekranı", () => {
     expect(screen.getByRole("region", { name: /Sağlık yoklaması/ })).toHaveTextContent("bağlantı reddedildi");
     expect(screen.queryByRole("button", { name: "Onarım PR'ı aç" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Bug taslağına git" })).toBeNull();
+    // #onarim çapası (asistan "Git") her durumda var; öneri yokken hiç düğüm taşımaz ki CSS
+    // `.triage-oneri:empty` tutsun ve ızgarada boş satır açılmasın (boşluk/yorum düğümü :empty'yi bozar).
+    const kap = document.getElementById("onarim");
+    expect(kap).not.toBeNull();
+    expect(kap!.childNodes.length).toBe(0);
   });
 
   it("ürün hatası (C3 defect adayı): bug taslağına bağlantı, kural kararı model rozeti taşımaz", async () => {

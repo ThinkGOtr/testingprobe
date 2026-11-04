@@ -710,6 +710,26 @@ test("%125 zoom eşdeğeri (1152×720): Script detayında Kırarak doğrula kart
   expect(dugme!.y + dugme!.height).toBeLessThanOrEqual(720);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1152);
   await page.screenshot({ path: `${EKRAN_DIZINI}/58-triage-1152.png` });
+
+  // Öneri yok (ortam sorunu, fail-3): #onarim çapası DOM'da ama boş ve gizli (:empty); ızgara tek satır,
+  // Sınıf ve Eşleşen sinyaller aynı satırda (boş ikinci satır açılmaz).
+  await page.goto("/hatalar/fail-3");
+  const sinif = page.getByRole("region", { name: "Sınıf", exact: true });
+  const sinyaller = page.getByRole("region", { name: "Eşleşen sinyaller", exact: true });
+  await expect(sinif).toBeVisible();
+  await expect(page.getByText("Ortam sorunu", { exact: true })).toBeVisible();
+  await fontlariBekle(page);
+  const kap = page.locator("#onarim");
+  await expect(kap).toHaveCount(1);
+  await expect(kap).toBeHidden();
+  expect(await kap.evaluate((e) => e.childNodes.length)).toBe(0);
+  const satirlar = await page.locator(".triage-izgara").evaluate((e) => getComputedStyle(e).gridTemplateRows.trim().split(/\s+/).length);
+  expect(satirlar).toBe(1);
+  const s1 = await sinif.boundingBox();
+  const s2 = await sinyaller.boundingBox();
+  expect(Math.abs(s1!.y - s2!.y)).toBeLessThanOrEqual(1);
+  expect(s2!.x).toBeGreaterThanOrEqual(s1!.x + s1!.width - 1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1152);
 });
 
 test("%125 zoom eşdeğeri (1152×720): TPD-1 'Case üret' görünür pasiflik nedenleriyle de sağ üstte; düğme aralıkları 8 px", async ({ page }) => {
