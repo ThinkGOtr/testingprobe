@@ -26,6 +26,7 @@ export function AkisAdimlari({ adim, kaynak = "jira" }: { adim: number; kaynak?:
       </ol>
       <p className="akis-lejant soluk" aria-hidden="true">
         <span className="lejant lejant-ai" /> AI adımı <span className="lejant lejant-insan" /> İnsan kapısı{" "}
+        <span className="lejant lejant-ai-insan" /> AI + insan kapısı{" "}
         <span className="lejant lejant-sistem" /> Sistem
       </p>
     </nav>
