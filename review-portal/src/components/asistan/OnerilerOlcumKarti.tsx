@@ -71,13 +71,12 @@ export function OnerilerOlcumKarti({ kule }: { kule: AsistanliKule }) {
   const etkilesimli = o.oneriler.filter((s) => etkilesim(s) > 0);
   const sessiz = o.oneriler.length - etkilesimli.length;
   const as = o.maliyet.asistan;
-  const digerBugun = tumuReplayMi(kule.ai_katkisi) ? (
-    <Olculmedi metin="REPLAY — ölçülmedi" />
-  ) : o.maliyet.diger.maliyet_usd_bugun === null ? (
-    <Olculmedi />
-  ) : (
-    dolar(o.maliyet.diger.maliyet_usd_bugun)
-  );
+  // Alt satır cümle içidir: ölçülmedi hap değil düz metin (değer yuvalarındaki hap AI katkısı kartıyla aynı).
+  const digerBugun = tumuReplayMi(kule.ai_katkisi)
+    ? "REPLAY — ölçülmedi"
+    : o.maliyet.diger.maliyet_usd_bugun === null
+      ? "ölçülmedi"
+      : dolar(o.maliyet.diger.maliyet_usd_bugun);
 
   return (
     <Kart
@@ -94,7 +93,7 @@ export function OnerilerOlcumKarti({ kule }: { kule: AsistanliKule }) {
         <Metrik
           etiket="Asistan bugün"
           deger={<span data-testid="asistan-maliyet-bugun">{asistanMaliyeti(as, as.maliyet_usd_bugun)}</span>}
-          alt={<span data-testid="diger-ai-bugun">Diğer AI işleri bugün {digerBugun}</span>}
+          alt={<span data-testid="diger-ai-bugun">Diğer AI işleri bugün: {digerBugun}</span>}
         />
         <Metrik etiket="Neden? Sor" deger={<span data-testid="oneri-toplam-neden">{o.oneri_toplam.neden_sor}</span>} />
         <Metrik

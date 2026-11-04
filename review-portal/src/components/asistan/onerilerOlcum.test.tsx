@@ -114,7 +114,7 @@ describe("OnerilerOlcumKarti", () => {
       expect(container.textContent).not.toMatch(/\$/);
       expect(screen.getByTestId("asistan-maliyet")).toHaveTextContent("çağrı yok");
       expect(screen.getByTestId("asistan-maliyet-bugun")).toHaveTextContent("çağrı yok");
-      expect(screen.getByTestId("diger-ai-bugun")).toHaveTextContent("Diğer AI işleri bugün REPLAY — ölçülmedi");
+      expect(screen.getByTestId("diger-ai-bugun")).toHaveTextContent("Diğer AI işleri bugün: REPLAY — ölçülmedi");
       expect(screen.getByText(/^0 model çağrısı$/)).toBeInTheDocument();
     });
 
@@ -143,7 +143,7 @@ describe("OnerilerOlcumKarti", () => {
       expect(container.textContent).not.toMatch(/\$/);
       expect(screen.getByTestId("asistan-maliyet")).toHaveTextContent("ölçülmedi");
       expect(screen.getByTestId("asistan-maliyet-bugun")).toHaveTextContent("ölçülmedi");
-      expect(screen.getByTestId("diger-ai-bugun")).toHaveTextContent("Diğer AI işleri bugün ölçülmedi");
+      expect(screen.getByTestId("diger-ai-bugun")).toHaveTextContent("Diğer AI işleri bugün: ölçülmedi");
     });
   });
 });
