@@ -610,6 +610,35 @@ export function ScriptDetay() {
     }
   }
 
+  const uretimKartlari = (
+    <>
+      <Kart baslik="Ajan adımları (Playwright MCP)" eylemler={uretiliyor && <Cip ton="bilgi">Adımlar geliyor</Cip>}>
+        {s.mode === "replay" && (
+          <p className="kucuk soluk" data-testid="replay-bandi">
+            <span className="rozet rozet-replay">REPLAY</span> Model kararları kayıtlı golden çıktıdan; tarayıcı adımları çalışan uygulamada yeniden
+            {uretiliyor ? " koşturuluyor (canlı model değil)." : " koşturuldu."}
+          </p>
+        )}
+        <AjanAdimlari adimlar={s.adimlar} canli={uretiliyor} />
+      </Kart>
+
+      <Kart baslik="Eşlenen adımlar (adım → page object)">
+        <p className="soluk kucuk">
+          Her adım sembol tablosundaki bir metoda eşlendi; doğrulama değerleri onaylı case metninde geçmek zorundadır. Kod bu tablodan şablonla üretilir.
+        </p>
+        {s.eslemeler.length ? (
+          <EslemeTablosu eslemeler={s.eslemeler} />
+        ) : (
+          <BosDurum baslik={uretiliyor ? "Eşleme ajan bitince yazılır." : "Eşleme kaydı yok."} />
+        )}
+      </Kart>
+
+      <Kart baslik="Yerel kontrol">
+        <YerelKontrolKarti yk={s.yerel_kontrol} uretiliyor={uretiliyor} />
+      </Kart>
+    </>
+  );
+
   return (
     <>
       <SayfaBasligi
@@ -652,30 +681,9 @@ export function ScriptDetay() {
       )}
       {islem.hata && hataYeri === "genel" && <HataKutusu hata={islem.hata} />}
 
-      <Kart baslik="Ajan adımları (Playwright MCP)" eylemler={uretiliyor && <Cip ton="bilgi">Adımlar geliyor</Cip>}>
-        {s.mode === "replay" && (
-          <p className="kucuk soluk" data-testid="replay-bandi">
-            <span className="rozet rozet-replay">REPLAY</span> Model kararları kayıtlı golden çıktıdan; tarayıcı adımları çalışan uygulamada yeniden
-            {uretiliyor ? " koşturuluyor (canlı model değil)." : " koşturuldu."}
-          </p>
-        )}
-        <AjanAdimlari adimlar={s.adimlar} canli={uretiliyor} />
-      </Kart>
-
-      <Kart baslik="Eşlenen adımlar (adım → page object)">
-        <p className="soluk kucuk">
-          Her adım sembol tablosundaki bir metoda eşlendi; doğrulama değerleri onaylı case metninde geçmek zorundadır. Kod bu tablodan şablonla üretilir.
-        </p>
-        {s.eslemeler.length ? (
-          <EslemeTablosu eslemeler={s.eslemeler} />
-        ) : (
-          <BosDurum baslik={uretiliyor ? "Eşleme ajan bitince yazılır." : "Eşleme kaydı yok."} />
-        )}
-      </Kart>
-
-      <Kart baslik="Yerel kontrol">
-        <YerelKontrolKarti yk={s.yerel_kontrol} uretiliyor={uretiliyor} />
-      </Kart>
+      {/* PR açıldıktan sonra karar kartları (PR + Kırarak doğrula) üste gelir: demo Adım 6–7 kaydırmasız
+          (1152×720). Üretim sürerken ajan adımları üstte kalır. Okuma ve sekme sırası görsel sırayla aynı. */}
+      {!s.pr && uretimKartlari}
 
       <div className="iki-sutun">
         <Kart baslik="Pull request">
@@ -918,6 +926,8 @@ export function ScriptDetay() {
           )}
         </Kart>
       </div>
+
+      {s.pr && uretimKartlari}
 
       <Kart baslik="Üretilen test dosyası">
         {s.kod ? <KodGorunumu kod={s.kod} dosya={s.dosya_yolu} /> : <BosDurum baslik="Kod henüz üretilmedi." />}

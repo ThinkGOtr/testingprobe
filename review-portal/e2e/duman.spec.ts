@@ -512,7 +512,7 @@ for (const tur of TEMA_TURLARI) {
   });
 }
 
-test("%125 zoom eşdeğeri (1152×720): Script detayında Kırarak doğrula kartı PR kartının sağında", async ({ page }) => {
+test("%125 zoom eşdeğeri (1152×720): Script detayında Kırarak doğrula kartı PR kartının sağında; Triage'da onarım kartı ilk ekranda", async ({ page }) => {
   await page.setViewportSize({ width: 1152, height: 720 });
   await girisYap(page, "muhendis");
   await page.goto("/kod/scr-2");
@@ -530,7 +530,24 @@ test("%125 zoom eşdeğeri (1152×720): Script detayında Kırarak doğrula kart
   expect(b!.y).toBeLessThan(a!.y + a!.height);
   expect(a!.y).toBeLessThan(b!.y + b!.height);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1152);
+  // PR açıkken karar kartları ilk ekranda (demo Adım 6–7 kaydırmasız).
+  expect(a!.y).toBeLessThan(720);
+  expect(b!.y).toBeLessThan(720);
   await page.screenshot({ path: `${EKRAN_DIZINI}/57-script-detay-1152.png`, fullPage: true });
+
+  // Triage (§5 görsel kapı): sınıf + sinyaller + onarım kartı ve "Onarım PR'ı aç" düğmesi ilk ekranda.
+  await page.goto("/hatalar/fail-2");
+  const onarim = page.getByRole("region", { name: "Locator onarım önerisi" });
+  await expect(onarim).toBeVisible();
+  await fontlariBekle(page);
+  for (const bolge of [page.getByRole("region", { name: "Sınıf", exact: true }), page.getByRole("region", { name: "Eşleşen sinyaller", exact: true }), onarim]) {
+    const k = await bolge.boundingBox();
+    expect(k!.y).toBeLessThan(720);
+  }
+  const dugme = await onarim.getByRole("button", { name: "Onarım PR'ı aç" }).boundingBox();
+  expect(dugme!.y + dugme!.height).toBeLessThanOrEqual(720);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1152);
+  await page.screenshot({ path: `${EKRAN_DIZINI}/58-triage-1152.png` });
 });
 
 test("mobil (375 px) yayın önizleme ve akış göstergesi: sayfa yatay kaymaz, adım adları çakışmaz", async ({ page }) => {

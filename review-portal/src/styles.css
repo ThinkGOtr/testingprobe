@@ -3440,40 +3440,6 @@ td .olculmedi {
   font-weight: 700;
 }
 
-/* İnsan kapısı şeridi (§4.4, K9): bekliyor amber, geçildi yeşil. Şerit tek başına anlam taşımaz; kapı metni
-   ("İnsan kapısı: …", "✓ Birleştirildi", "Merge kapısı açık ✓") her durumda yanında. */
-.kart:has([data-testid="po-kapisi"].soluk) {
-  border-left: 3px solid var(--warn);
-}
-.kart:has([data-testid="po-kapisi"]:not(.soluk)) {
-  border-left: 3px solid var(--ok);
-}
-.merge-kapisi:not(:has(> .ok-metin)) {
-  padding-left: 12px;
-  box-shadow: inset 3px 0 0 var(--warn);
-}
-.merge-kapisi:has(> .ok-metin) {
-  padding-left: 12px;
-  box-shadow: inset 3px 0 0 var(--ok);
-}
-/* İnsan kapısı "kişi" ikonu: CSS maskesi, content "" (erişilebilir ada metin girmez). */
-.kart:has([data-testid="po-kapisi"]) > .kart-baslik h2::before,
-.merge-kapisi > div:first-child::before {
-  content: "";
-  display: inline-block;
-  width: 1em;
-  height: 1em;
-  margin-right: 6px;
-  vertical-align: -0.125em;
-  background: currentColor;
-  -webkit-mask: var(--ikon-kisi) center / contain no-repeat;
-  mask: var(--ikon-kisi) center / contain no-repeat;
-}
-.kart:has([data-testid="po-kapisi"]),
-.merge-kapisi {
-  --ikon-kisi: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8'/%3E%3C/svg%3E");
-}
-
 /* Demo kontrolleri "Teknik ayrıntı" (içerik ayrıntısı, kart katlama değil — K8): özet okunur ikincil metin,
    varsayılan işaretçi, odak global halka. */
 details.soluk > summary {
@@ -3864,6 +3830,33 @@ html:has(.sekmeler) {
    Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
    (paralel şerit birleştirmesi için çapa — silinmez)
    ================================================================== */
+
+/* Triage ızgarası (§5 görsel kapı: 1152 px'te sınıf + sinyaller + onarım kartı ilk ekranda). Sol sütunda
+   Sınıf ve altında öneri (onarım / bug taslağı / "Öneri üretilmedi"); sağda Eşleşen sinyaller tüm satırlara
+   yayılır. Öneri satırı 1fr: uzun sinyal kartının fazlası Sınıf satırını şişirmez (G6 boşluğu kalmaz).
+   Öneri yoksa (ortam sorunu) düz iki sütun kalır. DOM sırası değişmez; tek sütunda (≤960 px)
+   Sınıf → Sinyaller → Öneri. */
+@media (min-width: 961px) {
+  .iki-sutun.triage-izgara:has(> :nth-child(3)) {
+    grid-template-rows: auto 1fr;
+  }
+  .triage-izgara:has(> :nth-child(3)) > :nth-child(2) {
+    grid-column: 2;
+    grid-row: 1 / -1;
+  }
+  .triage-izgara > :not(:nth-child(2)) {
+    grid-column: 1;
+  }
+}
+.triage-izgara > * {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+/* Merge kapısı satırı ile "Merge et" düğmesi arasında nefes payı (kapı şeridine yapışmasın). */
+.merge-kapisi + .eylemler {
+  margin-top: 12px;
+}
 
 
 

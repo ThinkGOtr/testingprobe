@@ -600,7 +600,9 @@ export function HataDetay() {
         baslik="Triage sonucu"
         aciklama={h.test_adi}
       />
-      <div className="iki-sutun">
+      {/* Triage ızgarası (§5 görsel kapı, 1152 px): solda Sınıf + öneri, sağda iki satıra yayılan sinyaller.
+          DOM sırası Sınıf → Sinyaller → Öneri olarak kalır; yerleşim yalnız CSS ızgarasıyla. */}
+      <div className="iki-sutun triage-izgara">
         <Kart baslik="Sınıf">
           <p className="satir-ogeler" data-testid="triage-sinif">
             <Cip ton={s.ton}>{s.etiket}</Cip>
@@ -661,25 +663,25 @@ export function HataDetay() {
             </Uyari>
           )}
         </Kart>
-      </div>
 
-      {!ortam && h.oneri?.tur === "locator_fix" && <OnarimKarti o={h.oneri} hataId={h.id} yenile={() => void v.yenile(true)} />}
-      {!ortam && h.oneri?.tur === "bug_draft" && (
-        <Kart baslik="Öneri">
-          <p>
-            Ürün hatası adayı: bug taslağı hazırlandı ve Jira'da mükerrer araması yapıldı. Kayıt yalnızca testçi onayıyla açılır.{" "}
-            <Link className="dugme dugme-birincil dugme-kucuk" to={`/bug-taslaklari/${encodeURIComponent(h.oneri.bug_draft_id)}`}>
-              Bug taslağına git
-            </Link>
-          </p>
-          <MukerrerSatiri id={h.oneri.bug_draft_id} />
-        </Kart>
-      )}
-      {!h.oneri && h.oneri_yok_nedeni && (
-        <Uyari ton="uyari" baslik="Öneri üretilmedi">
-          {h.oneri_yok_nedeni}
-        </Uyari>
-      )}
+        {!ortam && h.oneri?.tur === "locator_fix" && <OnarimKarti o={h.oneri} hataId={h.id} yenile={() => void v.yenile(true)} />}
+        {!ortam && h.oneri?.tur === "bug_draft" && (
+          <Kart baslik="Öneri">
+            <p>
+              Ürün hatası adayı: bug taslağı hazırlandı ve Jira'da mükerrer araması yapıldı. Kayıt yalnızca testçi onayıyla açılır.{" "}
+              <Link className="dugme dugme-birincil dugme-kucuk" to={`/bug-taslaklari/${encodeURIComponent(h.oneri.bug_draft_id)}`}>
+                Bug taslağına git
+              </Link>
+            </p>
+            <MukerrerSatiri id={h.oneri.bug_draft_id} />
+          </Kart>
+        )}
+        {!h.oneri && h.oneri_yok_nedeni && (
+          <Uyari ton="uyari" baslik="Öneri üretilmedi">
+            {h.oneri_yok_nedeni}
+          </Uyari>
+        )}
+      </div>
 
       <KanitKarti k={h.kanit} linkler={h.kanit_linkleri} />
     </>
