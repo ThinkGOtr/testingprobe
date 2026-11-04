@@ -84,6 +84,26 @@ describe("oturum ve yönlendirme", () => {
     await u.keyboard("{Escape}");
     expect(screen.getByRole("button", { name: "Çıkış" })).toHaveFocus();
   });
+
+  it("açık mobil menüden gezinince menü kapanır, odak yeni sayfanın içeriğine geçer (body'ye düşmez)", async () => {
+    await oturumAc("analist");
+    const u = userEvent.setup();
+    uygulama("/denetim");
+    await screen.findByRole("heading", { name: "Denetim", level: 1 });
+    const dugme = screen.getByRole("button", { name: "Menü" });
+    const menu = screen.getByRole("navigation", { name: "Ana menü" });
+    await u.click(dugme);
+    await u.click(within(menu).getByRole("link", { name: "Koşular" }));
+    await screen.findByRole("heading", { name: "Koşular", level: 1 });
+    expect(dugme).toHaveAttribute("aria-expanded", "false");
+    expect(menu).not.toHaveClass("acik");
+    expect(screen.getByRole("main")).toHaveFocus();
+    // Menü kapalıyken (geniş ekran) bağlantıyla gezinmek odağı taşımaz.
+    const kontrolKulesi = within(menu).getByRole("link", { name: "Kontrol Kulesi" });
+    await u.click(kontrolKulesi);
+    await screen.findByRole("heading", { name: "Kontrol Kulesi", level: 1 });
+    expect(kontrolKulesi).toHaveFocus();
+  });
 });
 
 describe("ekranlar", () => {

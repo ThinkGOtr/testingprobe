@@ -3,9 +3,10 @@ import { useCallback, useEffect, useState } from "react";
 /**
  * Tema tercihi (tasarım planı §3.1).
  *
- * - Varsayılan **koyu** (marka yüzü). `index.html` ilk boyamayı `data-theme="dark"` ile yapar;
- *   `main.tsx` render'dan önce `temaUygula(temaOku())` çağırır, böylece Kabuk dışındaki `/giris` de
- *   doğru temada açılır.
+ * - Varsayılan **koyu** (marka yüzü). `index.html` `data-theme="dark"` ile gelir; `src/tema-on.js`
+ *   (klasik betik, paketten önce) kayıtlı tercihi ilk boyamadan önce uygular (açık/sistem kullanıcıda koyu
+ *   yanıp sönmez; kurallar burayla aynı, depolamaya yazmaz). `main.tsx` render'dan önce yine
+ *   `temaUygula(temaOku())` çağırır (göç + yedek), böylece Kabuk dışındaki `/giris` de doğru temada açılır.
  * - `html` özniteliği sözleşmesi: koyu → `data-theme="dark"`, açık → `data-theme="light"`,
  *   sistem → öznitelik yok (stil dosyası `prefers-color-scheme` ile karar verir).
  * - Tercih yalnız kullanıcı temayı değiştirdiğinde yazılır; açılışta (mount) `tp-tema` yazılmaz.

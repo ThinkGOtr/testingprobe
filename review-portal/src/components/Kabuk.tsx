@@ -96,7 +96,28 @@ export function Kabuk() {
 
   const menuDugmesi = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => setMenuAcik(false), [konum.pathname]);
+  // Rota değişince menü kapanır. Açık mobil menüden gezinildiyse odak yeni sayfanın içeriğine (#ana-icerik,
+  // "İçeriğe atla" hedefi, tabIndex=-1) taşınır: kapanan menüdeki bağlantı gizlenir, odak body'ye düşmez
+  // (WCAG 2.4.3). Geniş ekranda (menü hep görünür) odak tıklanan bağlantıda kalır.
+  const menuAcikRef = useRef(menuAcik);
+  menuAcikRef.current = menuAcik;
+  useEffect(() => {
+    if (!menuAcikRef.current) return;
+    setMenuAcik(false);
+    document.getElementById("ana-icerik")?.focus({ preventScroll: true });
+  }, [konum.pathname]);
+
+  // Açık mobil menü geniş ekrana geçişte kapanır (geri daraltınca perdeyle yeniden açılmaz).
+  useEffect(() => {
+    if (!menuAcik || typeof window.matchMedia !== "function") return;
+    const genis = window.matchMedia("(min-width: 861px)");
+    const kapat = () => {
+      if (genis.matches) setMenuAcik(false);
+    };
+    kapat();
+    genis.addEventListener("change", kapat);
+    return () => genis.removeEventListener("change", kapat);
+  }, [menuAcik]);
 
   // Açık mobil menü Escape ile kapanır; odak menü düğmesine döner (kapanan menüde kalmaz).
   useEffect(() => {

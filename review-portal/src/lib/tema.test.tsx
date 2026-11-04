@@ -6,6 +6,7 @@ import { Rotalar } from "../App";
 import { OturumProvider } from "../auth";
 import { BildirimProvider } from "../components/Bildirim";
 import { oturumAc } from "../test/yardimci";
+import temaOnKaynagi from "../tema-on.js?raw";
 import { sonrakiTema, temaKaydet, temaOku, temaUygula, useTema } from "./tema";
 
 const kok = () => document.documentElement;
@@ -169,5 +170,44 @@ describe("Kabuk tema düğmesi", () => {
     await u.click(screen.getByRole("button", { name: "Tema: açık (değiştir)" }));
     expect(kok()).not.toHaveAttribute("data-theme");
     expect(screen.getByRole("button", { name: "Tema: sistem (değiştir)" })).toBeInTheDocument();
+  });
+});
+
+describe("tema-on.js (ilk boyama betiği) temaOku + temaUygula ile aynı sonucu verir", () => {
+  const calistir = () => new Function(temaOnKaynagi)();
+  const durumlar: [string, Record<string, string>][] = [
+    ["depolama boş", {}],
+    ["işaretli açık", { "tp-tema-v": "2", "tp-tema": "acik" }],
+    ["işaretli sistem", { "tp-tema-v": "2", "tp-tema": "sistem" }],
+    ["işaretli koyu", { "tp-tema-v": "2", "tp-tema": "koyu" }],
+    ["işaretli tanınmayan", { "tp-tema-v": "2", "tp-tema": "mor" }],
+    ["işaretsiz eski açık (göç: koyu)", { "tp-tema": "acik" }],
+    ["işaretsiz eski sistem (göç: koyu)", { "tp-tema": "sistem" }],
+  ];
+  it.each(durumlar)("%s", (_ad, kayit) => {
+    const yukle = () => {
+      localStorage.clear();
+      for (const [k, v] of Object.entries(kayit)) localStorage.setItem(k, v);
+      kok().setAttribute("data-theme", "dark"); // index.html varsayılanı
+    };
+    yukle();
+    const yaz = vi.spyOn(Storage.prototype, "setItem");
+    calistir();
+    const betik = kok().getAttribute("data-theme");
+    expect(temaYazmalari(yaz)).toEqual([]); // betik depolamaya yazmaz
+    yaz.mockRestore();
+    yukle();
+    temaUygula(temaOku());
+    expect(betik).toBe(kok().getAttribute("data-theme"));
+  });
+
+  it("depolama erişimi hata verirse koyu kalır", () => {
+    kok().setAttribute("data-theme", "dark");
+    const oku = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("engelli");
+    });
+    calistir();
+    oku.mockRestore();
+    expect(kok()).toHaveAttribute("data-theme", "dark");
   });
 });

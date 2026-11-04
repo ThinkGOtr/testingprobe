@@ -1,6 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 
 const EKRAN_DIZINI = "e2e/ekranlar";
 const ACIK_EKRAN_DIZINI = `${EKRAN_DIZINI}/acik`;
@@ -288,6 +288,104 @@ test("mobil görünüm ve koyu tema", async ({ page }) => {
   await page.getByRole("button", { name: "Menü" }).click();
   await expect(page.getByRole("link", { name: "Koşular" })).toBeVisible();
   await page.screenshot({ path: `${EKRAN_DIZINI}/31-mobil-menu.png` });
+});
+
+test("mobil menü kapalıyken Tab sırasına girmez (dikey ve yatay telefon); menüden gezinince odak içeriğe geçer", async ({ page }) => {
+  // jsdom CSS görmediği için kapalı menünün Tab dışlaması (visibility + overflow) yalnız burada sınanır.
+  await girisYap(page, "sunucu");
+  for (const [genislik, yukseklik] of [
+    [390, 844],
+    [844, 390],
+  ] as const) {
+    await page.setViewportSize({ width: genislik, height: yukseklik });
+    await page.goto("/kosular");
+    await expect(page.getByRole("heading", { name: "Koşular", level: 1 })).toBeVisible();
+    const menu = page.locator("#yan-menu");
+    const menuDugmesi = page.getByRole("button", { name: "Menü" });
+    await expect(menu.getByRole("link", { name: "Denetim" })).toBeHidden();
+    const menudeOdak = () => page.evaluate(() => !!document.activeElement?.closest("#yan-menu"));
+    for (let i = 0; i < 12; i++) {
+      await page.keyboard.press("Tab");
+      expect(await menudeOdak(), `${genislik}×${yukseklik} Tab ${i + 1}`).toBe(false);
+    }
+    await menuDugmesi.click();
+    await expect(menu.getByRole("link", { name: "Denetim" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(menuDugmesi).toBeFocused();
+    await expect(menu.getByRole("link", { name: "Denetim" })).toBeHidden();
+    await menuDugmesi.click();
+    await menu.getByRole("link", { name: "Denetim" }).click();
+    await expect(page.getByRole("heading", { name: "Denetim", level: 1 })).toBeVisible();
+    await expect(menuDugmesi).toHaveAttribute("aria-expanded", "false");
+    await expect(page.locator("#ana-icerik")).toBeFocused();
+  }
+});
+
+test("320 px üst çubuk: \"Probe\" markası kesilmez", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 640 });
+  await girisYap(page, "sunucu");
+  await page.goto("/gereksinimler");
+  await expect(page.getByRole("heading", { name: "Gereksinimler", level: 1 })).toBeVisible();
+  await fontlariBekle(page);
+  const olcu = await page.evaluate(() => {
+    const kap = document.querySelector(".ust-cubuk .marka > span:last-child")!;
+    return {
+      tasma: kap.scrollWidth - kap.clientWidth,
+      sag: document.querySelector(".ust-cubuk .marka strong")!.getBoundingClientRect().right,
+      kapSag: kap.getBoundingClientRect().right,
+      sayfa: document.documentElement.scrollWidth,
+    };
+  });
+  expect(olcu.tasma).toBeLessThanOrEqual(0);
+  expect(olcu.sag).toBeLessThanOrEqual(olcu.kapSag + 0.5);
+  expect(olcu.sayfa).toBeLessThanOrEqual(320);
+});
+
+test("ilk boyama kayıtlı temada: açık/sistem seçen kullanıcı paket gelmeden koyu görmez", async ({ page }) => {
+  // Uygulama paketi geciktirilir: tema yalnız tema-on.js'ten (head'deki klasik betik) gelebilir.
+  await page.route(/\/assets\/index-[\w-]+\.js$/, async (r) => {
+    await new Promise((z) => setTimeout(z, 1500));
+    await r.continue();
+  });
+  await page.emulateMedia({ colorScheme: "light" });
+  for (const [tema, beklenen] of [
+    ["acik", "light"],
+    ["sistem", null],
+    ["koyu", "dark"],
+  ] as const) {
+    await page.addInitScript((t) => {
+      localStorage.setItem("tp-tema-v", "2");
+      localStorage.setItem("tp-tema", t);
+    }, tema);
+    await page.goto("/giris", { waitUntil: "commit" });
+    await expect.poll(() => page.evaluate(() => document.body !== null)).toBe(true);
+    // Paket henüz çalışmadı (kök boş) ama tema uygulanmış.
+    expect(await page.evaluate(() => document.getElementById("root")?.childElementCount ?? -1)).toBe(0);
+    expect(await page.evaluate(() => document.documentElement.getAttribute("data-theme"))).toBe(beklenen);
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).toBe(tema === "koyu" ? "dark" : "light");
+  }
+});
+
+test("CSP: önizleme nginx.conf başlığını gönderir; ekranlarda CSP ihlali yok", async ({ page }) => {
+  const nginxCsp = /add_header\s+Content-Security-Policy\s+"([^"]+)"/.exec(readFileSync("nginx.conf", "utf8"))?.[1];
+  expect(nginxCsp).toBeTruthy();
+  const ihlaller: string[] = [];
+  page.on("console", (m) => {
+    if (m.type() === "error" && /Content Security Policy/i.test(m.text())) ihlaller.push(m.text());
+  });
+  await page.addInitScript(() => {
+    document.addEventListener("securitypolicyviolation", (e) => console.error(`Content Security Policy ihlali: ${e.violatedDirective} ${e.blockedURI}`));
+  });
+  const yanit = await page.goto("/giris");
+  expect(yanit?.headers()["content-security-policy"]).toBe(nginxCsp);
+  await expect(page.getByRole("button", { name: "Giriş yap" })).toBeVisible();
+  await girisYap(page, "analist");
+  for (const yol of ["/gereksinimler/req-tpd-1", "/kod/scr-2", "/kosular/run-107", "/kontrol-kulesi", "/yol-haritasi", "/denetim"]) {
+    await page.goto(yol);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await fontlariBekle(page);
+  }
+  expect(ihlaller).toEqual([]);
 });
 
 test("hiçbir rolde ölü iç bağlantı yok (her href bir ekrana çıkar)", async ({ page }) => {
