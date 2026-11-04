@@ -900,6 +900,8 @@ function scriptler(): ScriptDetay[] {
             beklenen: "bedava adet 0 · indirim 0,00 TL",
             gerceklesen: "bedava adet 1 · indirim 25,00 TL",
             adim: "S4: Üst menüden sepete git",
+            // Core repeat-each tekrarlarını tek satıra toplar: 3 tekrarın 3'ünde aynı fark (triage sinyaliyle aynı).
+            tekrar: 3,
           },
         ],
         gecen: 0,
