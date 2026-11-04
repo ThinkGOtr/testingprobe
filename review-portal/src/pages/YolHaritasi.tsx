@@ -86,7 +86,7 @@ function AdimSatiri({ a }: { a: YolAdimi }) {
         <p className="yh-kanit">{a.kanit}</p>
         {a.simulator && (
           <p className="yh-simulator kucuk" data-testid={`yh-simulator-${a.no}`}>
-            <Cip ton="bilgi">Simülatör</Cip> {a.simulator.replace(/^simülatör: /, "")}
+            <Cip ton="notr">Simülatör</Cip> {a.simulator.replace(/^simülatör: /, "")}
           </p>
         )}
         {a.ipucu && <p className="yh-ipucu">↳ {a.ipucu}</p>}

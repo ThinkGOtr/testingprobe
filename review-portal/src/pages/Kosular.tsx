@@ -437,9 +437,9 @@ export function KosuDetay() {
       <Kart>
         <div className="metrik-izgara">
           <Metrik etiket="Toplam" deger={k.toplam} />
-          <Metrik etiket="Geçen" deger={k.gecen} />
-          <Metrik etiket="Başarısız" deger={k.basarisiz} />
-          <Metrik etiket="Flaky" deger={k.flaky} />
+          <Metrik etiket="Geçen" deger={k.gecen} ton={k.toplam > 0 && k.gecen === k.toplam ? "basari" : undefined} />
+          <Metrik etiket="Başarısız" deger={k.basarisiz} ton={k.basarisiz > 0 ? "hata" : undefined} />
+          <Metrik etiket="Flaky" deger={k.flaky} ton={k.flaky > 0 ? "uyari" : undefined} />
           <Metrik etiket="Süre" deger={sure(k.sure_ms)} />
         </div>
       </Kart>

@@ -37,11 +37,11 @@ export function Denetim() {
         <>
           {dg ? (
             dg.gecerli ? (
-              <Uyari ton="basari" baslik="✓ Zincir doğrulandı">
+              <Uyari ton="basari" baslik="✓ Zincir doğrulandı" isaretli>
                 {dg.kontrol_edilen} olay kontrol edildi · son hash <span className="mono">{kisaHash(dg.son_hash, 16)}</span> · {tarih(dg.zaman)}
               </Uyari>
             ) : (
-              <Uyari ton="hata" baslik="✗ Zincir kırık">
+              <Uyari ton="hata" baslik="✗ Zincir kırık" isaretli>
                 {dg.kontrol_edilen} olay kontrol edildi · ilk kırık kayıt <span className="mono">{dg.ilk_kirik_id}</span>. Denetim kaydı değiştirilmiş olabilir.
               </Uyari>
             )

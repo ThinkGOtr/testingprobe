@@ -3998,6 +3998,195 @@ html:has(.sekmeler) {
    (paralel şerit birleştirmesi için çapa — silinmez)
    ================================================================== */
 
+/* Stat şeridi: Kule KPI şeridiyle aynı sarmalı flex (boş ızgara izi kalmaz; satır sonundaki öğeler
+   genişleyip satırı doldurur). Ayraçlar .metrik-izgara > .metrik gölgeleriyle aynı. */
+.metrik-izgara {
+  display: flex;
+  flex-wrap: wrap;
+}
+.metrik-izgara:not(.kule-kpi) > .metrik {
+  flex: 1 1 150px;
+}
+/* Stat şeridinde durum anlamı olan sayı (§3.4 KPI): başarısız → --err, tamamı geçti → --ok, flaky → --warn.
+   Etiket anlamı taşır; renk ek işarettir. */
+.metrik-izgara .metrik-hata .metrik-deger {
+  color: var(--err);
+}
+.metrik-izgara .metrik-basari .metrik-deger {
+  color: var(--ok);
+}
+.metrik-izgara .metrik-uyari .metrik-deger {
+  color: var(--warn);
+}
+
+/* Büyük harf dönüşümü ve Türkçe (lang="tr"): text-transform yerel kurala göre çevirir (i → İ), bu yüzden
+   karışık dilli serbest etiketlerde İngilizce sözcükler "SCRİPT/REVİEW" olur; lang="en" ile çevirmek bu kez
+   Türkçe sözcükleri bozar ("KRITIK", "SÜRESI"). font-variant-caps: all-small-caps de çözüm değil: Inter'de
+   gerçek küçük büyük harf (smcp) yok, tarayıcının sentezi aynı yerel kuralla büyütür (Chromium'da denendi).
+   CSS sözcük başına dil seçemediği için serbest/karışık içerikli etiketler (metrik/KPI etiketi, tablo
+   başlığı, yığın tablo etiketi, fark dt, geri bağlantısı) yazıldığı gibi (cümle düzeni) gösterilir: iki
+   dilde de doğru, DOM ve metin aynı. Kapalı ve yalnız Türkçe/kod sözcüklü kümeler (menü grup başlığı,
+   .rozet: REPLAY, REPLAY-MISS, ÖRNEK VERİ) büyük harf kalır. Eyebrow hiyerarşisi boyut, 700 ağırlık ve
+   --muted ile korunur; küçük harfte geniş aralık okunurluğu düşürdüğü için aralık daraltılır. */
+.metrik-etiket,
+.kule-kpi .olcer-ust,
+.fark-once-sonra dt,
+.ust-baglanti a {
+  text-transform: none;
+  letter-spacing: 0.01em;
+}
+.tablo th {
+  text-transform: none;
+  letter-spacing: 0.01em;
+}
+/* "açık defect adayı" gibi küçük harfle başlayan etiketin ilk harfi büyük (a/ç → A/Ç; tr kuralı doğru). */
+.metrik-etiket::first-letter {
+  text-transform: uppercase;
+}
+@media (max-width: 640px) {
+  .tablo-yigin td[data-etiket]::before {
+    text-transform: none;
+    letter-spacing: 0;
+  }
+}
+
+/* Boş durum: paragraf 72ch sınırlı; ortalı metin kartın ortasında dursun. */
+.bos-durum > p,
+.bos-durum > div {
+  margin-inline: auto;
+}
+
+/* Kimlik + çip (ör. "run-107 kırma", sha + "baseline"): araya boşluk. */
+td > .satir-baglanti + .cip,
+.tanim-izgara dd.mono > .cip {
+  margin-left: 6px;
+}
+
+/* Geçme oranı grafiği: viewBox çizilen genişliğe eşit (Grafikler.tsx), ölçek 1:1 — eksen 12 px (≥11,
+   gövdeden küçük), sütun en çok 28 px; grafik kart genişliğini doldurur. */
+.grafik {
+  max-width: none;
+}
+.grafik-svg {
+  max-height: none;
+}
+.grafik-eksen {
+  font-size: 12px;
+}
+
+/* Başlığı kendi işaretiyle başlayan uyarı ("✓ Zincir doğrulandı"): maske ikonu çizilmez (çift ✓ olmaz). */
+.uyari-isaretli > strong::before {
+  content: none;
+}
+
+/* REPLAY 1,5 px tam opak kenar (§4.6): Chromium kenar kalınlığını cihaz pikseline yuvarlar (DPR 1'de 1,5 →
+   1 px). 1 px kenar + 0,5 px dış halka her DPR'de 1,5 px görünür; hap boyu diğer haplarla aynı kalır. */
+.rozet-replay {
+  border-width: 1px;
+  box-shadow: 0 0 0 0.5px var(--replay);
+}
+
+/* KPI kaynak ipucu (KontrolKulesi.tsx KaynakIpucu): hedef 24×24 = görünen 18 px daire + 3 px saydam
+   kenar (zemin padding-box'a kırpılır, halka iç gölgeyle). Düz renk zemin kalır: gradyan zemin axe
+   kontrastını "incomplete"e düşürür. İpucu metni aria-label'dan, açıkken sabit konumda (şerit
+   overflow'u kırpmaz). */
+.kaynak-ipucu {
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  margin: -3px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.kaynak-ipucu:focus-visible {
+  outline-offset: 0;
+}
+.kaynak-ipucu[data-acik]::after {
+  content: attr(aria-label);
+  position: fixed;
+  z-index: 60;
+  left: var(--ipucu-x, 16px);
+  top: var(--ipucu-y, 16px);
+  width: max-content;
+  max-width: min(280px, calc(100vw - 32px));
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: 0;
+  text-transform: none;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Tablo eylem/kimlik bağlantıları (§7): çizgisiz, hover'da çizili. Paragraf içi bağlantılar çizili kalır. */
+.tablo td a:not(.dugme) {
+  text-decoration: none;
+}
+.tablo td a:not(.dugme):hover {
+  text-decoration: underline;
+}
+
+/* G18 sağ kenar solması içeriğin ÜSTÜNDE: kaydırma kabına maske (zeminli başlık/ayrıntı hücreleri ve kod
+   blokları gölgeyi örtmesin). Kenar ve odak halkası maskelenmez (no-clip − padding-box halkası). Kaydırma
+   yoksa zaman çizelgesi etkin değildir → --tablo-solma 0, maske düz. Ek pseudo/katman yok (axe incomplete
+   artmaz). */
+@property --tablo-solma {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@supports (animation-timeline: scroll()) {
+  .tablo-sarici {
+    animation-name: tablo-sag-maske;
+    -webkit-mask-image: linear-gradient(to left, transparent, #000 var(--tablo-solma)), linear-gradient(#000 0 0), linear-gradient(#000 0 0);
+    mask-image: linear-gradient(to left, transparent, #000 var(--tablo-solma)), linear-gradient(#000 0 0), linear-gradient(#000 0 0);
+    -webkit-mask-clip: padding-box, padding-box, no-clip;
+    mask-clip: padding-box, padding-box, no-clip;
+    -webkit-mask-composite: source-over, xor;
+    mask-composite: add, exclude, add;
+  }
+}
+@keyframes tablo-sag-maske {
+  0%,
+  92% {
+    --tablo-solma: 32px;
+  }
+  100% {
+    --tablo-solma: 0px;
+  }
+}
+
+/* Kısaltılmış hata mesajı (§4.7): altta 1,5em solma (maske; zemin --code-bg olduğu için renk karışmaz).
+   Yalnız gerçekten taşıyorsa: taşma yoksa kaydırma zaman çizelgesi etkin değildir → maske düz. */
+@property --hata-solma {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@supports (animation-timeline: scroll()) {
+  .hata-mesaji-kisa {
+    animation: hata-alt-solma linear both;
+    animation-timeline: scroll(self block);
+    -webkit-mask-image: linear-gradient(to top, transparent, #000 var(--hata-solma));
+    mask-image: linear-gradient(to top, transparent, #000 var(--hata-solma));
+  }
+}
+@keyframes hata-alt-solma {
+  from,
+  to {
+    --hata-solma: 1.5em;
+  }
+}
+
 
 
 

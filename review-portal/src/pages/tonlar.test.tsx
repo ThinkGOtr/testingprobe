@@ -4,7 +4,7 @@ import { render, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import type { Kosu, Tetik } from "../api/types";
-import { GEREKSINIM_DURUMU, SCRIPT_DURUMU } from "../lib/etiketler";
+import { CASE_DURUMU, GEREKSINIM_DURUMU, HATA_SINIFI, SCRIPT_DURUMU } from "../lib/etiketler";
 import { KosuTablosu } from "./Kosular";
 
 function kosu(id: string, tetik: Tetik, kaynak: Kosu["kaynak"], ek: Partial<Kosu> = {}): Kosu {
@@ -38,6 +38,13 @@ describe("ton disiplini (§4.6)", () => {
     expect(SCRIPT_DURUMU.pr_open.ton).toBe("bilgi");
     expect(SCRIPT_DURUMU.blocked.ton).toBe("uyari");
     expect(SCRIPT_DURUMU.merged.ton).toBe("basari");
+  });
+
+  it("yayınlanmış case yeşil (insan onayı, §3.2 kural 6); triage 'Test bakımı' sınıfı kategorik nötr", () => {
+    expect(CASE_DURUMU.published.ton).toBe("basari");
+    expect(CASE_DURUMU.approved.ton).toBe("basari");
+    expect(HATA_SINIFI.test_maintenance.ton).toBe("notr");
+    expect(HATA_SINIFI.product_defect.ton).toBe("hata");
   });
 
   it("koşu tetiği (gece/deploy) ve kaynak çipleri nötr; kırarak doğrula ve kırma çipi amber kalır", () => {

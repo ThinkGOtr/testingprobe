@@ -364,6 +364,26 @@ describe("Kontrol Kulesi: KPI şeridi (F4)", () => {
     expect(within(screen.getByRole("region", { name: "Geçme oranı" })).queryByTestId("gecme-orani")).toBeNull();
     expect(screen.getAllByText("ölçülmüş baz yok")).toHaveLength(1);
   });
+
+  it("(i) kaynak ipucu klavye odağıyla açılır, Escape ile kapanır; ad ve rol aynı (1.4.13)", async () => {
+    await oturumAc("sunucu");
+    uygulama("/kontrol-kulesi");
+    const serit = await screen.findByTestId("kule-kpi");
+    const ipucu = within(serit).getAllByRole("img", { name: /^Kaynak: test_result/ })[0];
+    expect(ipucu).toHaveAttribute("tabindex", "0");
+    expect(ipucu).not.toHaveAttribute("data-acik");
+    const u = userEvent.setup();
+    await u.click(document.body);
+    ipucu.focus();
+    await waitFor(() => expect(ipucu).toHaveAttribute("data-acik"));
+    await u.keyboard("{Escape}");
+    expect(ipucu).not.toHaveAttribute("data-acik");
+    expect(ipucu).toHaveFocus();
+    await u.hover(ipucu);
+    expect(ipucu).toHaveAttribute("data-acik");
+    await u.unhover(ipucu);
+    expect(ipucu).not.toHaveAttribute("data-acik");
+  });
 });
 
 describe("rol bazlı açılış", () => {
@@ -461,6 +481,39 @@ describe("canlı derleme: core şekilli Demo-B yanıtları", () => {
     expect(screen.getByTestId("defect-adayi-ozet")).toHaveTextContent("1 açık defect adayı");
     // core karnesi: acik_bug = yayınlanmış farklı Jira anahtarı; bug_taslagi = yayınlanmamış (kırma hariç) taslak.
     expect(screen.getByTestId("karne-bug-TPD-1")).toHaveTextContent("2 · taslak 1");
+  });
+
+  it.each([
+    ["karne boş", [], "—"],
+    [
+      "karnede açık defect adayı yok",
+      [{ story_key: "TPD-1", baslik: "Sepet", case_sayisi: 4, otomasyon_kapsami: 1, son_sonuc: "passed", acik_bug: 0, bug_taslagi: 0, acik_defect_adayi: 0 }],
+      "0",
+    ],
+  ])("Kontrol Kulesi KPI şeridi: %s → defect adayı '%s', amber yok, 'Kod üretiminde incele' yok", async (_ad, karne, beklenen) => {
+    yapilandir({ mockZorunlu: false, mockOtomatik: false, yetenekKesfi: true });
+    vi.stubGlobal(
+      "fetch",
+      sahteCore("presenter", {
+        "/control-tower": {
+          son_kosular: [],
+          gecme_orani: { oran: 1, toplam: 3, gecen: 3, son_n: 20, birim: "kosu" },
+          flaky: [],
+          karne,
+          ai_katkisi: {},
+          a11y: null,
+          kaynaklar: {},
+          uyarilar: [],
+        },
+      }),
+    );
+    uygulama("/kontrol-kulesi");
+    const ozet = await screen.findByTestId("defect-adayi-ozet");
+    expect(ozet.querySelector(".metrik-deger")).toHaveTextContent(new RegExp(`^${beklenen}$`));
+    expect(ozet).toHaveTextContent(`${beklenen} açık defect adayı`);
+    expect(ozet).not.toHaveTextContent("⚠");
+    expect(ozet.querySelector(".kule-kpi-uyari")).toBeNull();
+    expect(within(ozet).queryByRole("link", { name: "Kod üretiminde incele" })).toBeNull();
   });
 
   it("script detayı DB kolon adlarıyla (kirma_dogrulama, uretim_modu, step_mapping, pull_request.checks) çizilir", async () => {

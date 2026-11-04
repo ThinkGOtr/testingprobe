@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { yuzde } from "../lib/format";
 
 interface Nokta {
@@ -13,8 +13,23 @@ interface Nokta {
  */
 export function OranSutunlari({ noktalar, baslik, hedef }: { noktalar: Nokta[]; baslik: string; hedef?: number }) {
   const [aktif, setAktif] = useState<number | null>(null);
-  const G = 320;
-  const Y = 120;
+  // viewBox genişliği çizilen genişliğe eşitlenir (1:1): eksen yazısı ve sütun genişliği (en çok 28 px)
+  // ekranda da CSS piksel olarak kalır, grafik kartı doldurur (§4.13). Ölçülemezse (jsdom) 320.
+  const kap = useRef<HTMLElement>(null);
+  const [G, setG] = useState(320);
+  useEffect(() => {
+    const el = kap.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const olc = () => {
+      const w = Math.round(el.clientWidth);
+      if (w > 0) setG(w);
+    };
+    olc();
+    const ro = new ResizeObserver(olc);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const Y = 160;
   const ust = 8;
   const alt = 22;
   const yukseklik = Y - ust - alt;
@@ -23,8 +38,8 @@ export function OranSutunlari({ noktalar, baslik, hedef }: { noktalar: Nokta[]; 
   const y = (o: number) => ust + yukseklik * (1 - Math.max(0, Math.min(1, o)));
 
   return (
-    <figure className="grafik">
-      <svg viewBox={`0 0 ${G} ${Y}`} role="img" aria-label={`${baslik}. Ayrıntılar aşağıdaki tabloda.`} className="grafik-svg">
+    <figure className="grafik" ref={kap}>
+      <svg viewBox={`0 0 ${G} ${Y}`} width={G} height={Y} role="img" aria-label={`${baslik}. Ayrıntılar aşağıdaki tabloda.`} className="grafik-svg">
         {[0, 0.5, 1].map((o) => (
           <g key={o}>
             <line x1={0} x2={G} y1={y(o)} y2={y(o)} className="grafik-izgara" />
