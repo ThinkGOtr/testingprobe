@@ -308,6 +308,8 @@ export function AsistanPaneli() {
       const r = aktif.getBoundingClientRect();
       if (pr.width === 0 || r.width === 0 || r.right <= pr.left || r.bottom <= pr.top) return;
       e.preventDefault();
+      // Kapanışta odak geri dönüşü bu öğeyi hedefler: odak yerinde kalır (başlatıcıya taşınmaz).
+      disOdakRef.current = aktif;
       paneliKapat();
     };
     document.addEventListener("keydown", fn);

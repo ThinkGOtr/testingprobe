@@ -229,6 +229,29 @@ describe("dar ekran", () => {
   });
 });
 
+describe("masaüstü odak", () => {
+  it("masaüstü (< 1440 px): odak panelin altındaki sayfa öğesindeyken Esc paneli kapatır, odak o öğede kalır", async () => {
+    await oturumAc("analist");
+    const u = userEvent.setup();
+    yalnizPanel(
+      "/gereksinimler",
+      <button type="button" data-testid="alttaki">
+        Alttaki
+      </button>,
+    );
+    await u.click(await screen.findByRole("button", { name: "Asistanı aç" }));
+    const kutu = (left: number, right: number) => () => ({ left, right, top: 100, bottom: 140, width: right - left, height: 40, x: left, y: 100, toJSON: () => ({}) }) as DOMRect;
+    const alttaki = screen.getByTestId("alttaki");
+    vi.spyOn(panel(), "getBoundingClientRect").mockImplementation(kutu(860, 1280));
+    vi.spyOn(alttaki, "getBoundingClientRect").mockImplementation(kutu(913, 966));
+    act(() => alttaki.focus());
+    expect(document.activeElement).toBe(alttaki);
+    await u.keyboard("{Escape}");
+    expect(screen.queryByTestId("asistan-paneli")).toBeNull();
+    expect(document.activeElement).toBe(alttaki);
+  });
+});
+
 describe("başlık", () => {
   it("canlı kipte rozet yok ve CANLI/live metni görünmez; denetim notu ve ÖRNEK VERİ var", async () => {
     await oturumAc("muhendis");
