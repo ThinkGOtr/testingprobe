@@ -240,7 +240,7 @@ export function YolHaritasi() {
         }
       >
         {il.sonraki && (
-          <p className="kucuk" data-testid="yh-sonraki">
+          <p className="kucuk yh-sonraki" data-testid="yh-sonraki">
             <strong>Sıradaki:</strong> {il.sonraki.no}. {il.sonraki.ad}
             {il.sonraki.ipucu ? ` — ${il.sonraki.ipucu}` : ""}
           </p>

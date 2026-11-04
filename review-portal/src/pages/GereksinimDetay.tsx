@@ -537,7 +537,7 @@ function PoKarti({ g, yenile }: { g: Detay; yenile: () => void }) {
   const kapiGecildi =
     po.durum === "approved" && !(po.onaylanan_hash && g.icerik_hash && po.onaylanan_hash !== g.icerik_hash);
   return (
-    <Kart baslik="PO teyidi" id={BOLUM_ID.po}>
+    <Kart baslik="PO teyidi" id={BOLUM_ID.po} className={`insan-kapisi ${kapiGecildi ? "kapi-gecti" : "kapi-bekliyor"}`}>
       {po.durum === "approved" ? (
         <>
           <p>

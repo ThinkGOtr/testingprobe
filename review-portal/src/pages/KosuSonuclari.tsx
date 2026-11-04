@@ -355,7 +355,7 @@ export function TestSonuclari({ k }: { k: KosuDetay }) {
         <BosDurum baslik="Süzgece uyan test yok." />
       ) : (
         <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Test sonuçları tablosu">
-          <table className="tablo">
+          <table className="tablo test-sonuclari">
             <thead>
               <tr>
                 <th scope="col">Test</th>

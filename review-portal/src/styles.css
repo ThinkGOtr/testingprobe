@@ -922,24 +922,24 @@ code,
 /* Durum şeridi (site .test-result, §4.4 / §3.2 kural 6): sol 3 px. Şerit tek başına anlam taşımaz;
    kartta durum metni/hapı her zaman var. Yeşil yalnız geçilmiş insan kapısı ve insanın onayladığı
    varlık; kapanmış kayıt nötr (--border-strong). Bulgu ve case şeritleri kendi bölümlerinde. */
-.kart:has([data-testid="po-kapisi"].soluk) {
+.kart.insan-kapisi.kapi-bekliyor {
   border-left: 3px solid var(--warn);
 }
-.kart:has([data-testid="po-kapisi"]:not(.soluk)) {
+.kart.insan-kapisi.kapi-gecti {
   border-left: 3px solid var(--ok);
 }
 /* Merge kapısı ve bug karar paneli (triage bölümü) kartın içinde bir bölümdür: şerit içe çizilir
    (inset gölge). */
-.merge-kapisi:has(> .ok-metin) {
+.merge-kapisi.kapi-gecti {
   box-shadow: inset 3px 0 0 var(--ok);
   padding-left: 12px;
 }
-.merge-kapisi:not(:has(> .ok-metin)) {
+.merge-kapisi.kapi-bekliyor {
   box-shadow: inset 3px 0 0 var(--warn);
   padding-left: 12px;
 }
 /* İnsan kapısı ikonu ("kişi"): yalnız maske, metin yok (content: "" erişilebilir ada girmez). */
-.kart:has([data-testid="po-kapisi"]) > .kart-baslik h2::before,
+.kart.insan-kapisi > .kart-baslik h2::before,
 .merge-kapisi > .kucuk:first-child > strong:first-child::before,
 .karar-paneli > :first-child > h3:first-child::before {
   content: "";
@@ -3359,7 +3359,7 @@ td .olculmedi {
   text-decoration: underline;
 }
 /* "Sıradaki" bandı: indigo şerit + yumuşak zemin; zemin + metin de değiştiği için şerit tek gösterge değil. */
-[data-testid="yh-sonraki"] {
+.yh-sonraki {
   margin: 0 0 8px;
   padding: 8px 12px;
   border-left: 3px solid var(--accent-solid);
@@ -3522,7 +3522,7 @@ td .olculmedi {
 /* Koşu detayı Test sonuçları ≤640 px: tablo yatay kayar (sağ solma işareti), Test sütunu 71 px'e sıkışıp
    ad sözcük sözcük, hata kutusu harf harf kırılmasın. */
 @media (max-width: 640px) {
-  [aria-label="Test sonuçları tablosu"] > .tablo > tbody > tr > td:first-child {
+  .tablo.test-sonuclari > tbody > tr > td:first-child {
     min-width: 14rem;
   }
 }

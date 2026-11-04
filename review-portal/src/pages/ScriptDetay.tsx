@@ -709,7 +709,7 @@ export function ScriptDetay() {
           </BosDurum>
         )}
         {prBirlesti && s.pr ? (
-          <div className="merge-kapisi" data-testid="merge-kapisi">
+          <div className="merge-kapisi kapi-gecti" data-testid="merge-kapisi">
             <div className="kucuk ok-metin">
               <strong>✓ Birleştirildi</strong>
               {s.pr.merge_eden && ` — ${s.pr.merge_eden}`}
@@ -723,7 +723,7 @@ export function ScriptDetay() {
             </div>
           </div>
         ) : prAcik && (
-          <div className="merge-kapisi" data-testid="merge-kapisi">
+          <div className="merge-kapisi kapi-bekliyor" data-testid="merge-kapisi">
             <div className="kucuk">
               <strong>Merge kapısı</strong> {kapiAcik ? <span className="ok-metin">açık ✓</span> : <span className="soluk">kapalı</span>}
             </div>
