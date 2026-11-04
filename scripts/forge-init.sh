@@ -24,7 +24,7 @@
 #   push CI'ı öldürülmez. Yeniden oluşturma gerekiyorsa ve ci.run/repair.fix işi koşuyorsa
 #   betik durur (--force ya da TP_DEMO_WEB_FORCE=1 zorlar; bitince `sync-web`).
 #   Ortam: TP_FORGE_EXEC (varsayılan "docker compose exec -T core-worker"),
-#          TP_DEMO_WEB_IMAGE (varsayılan testingprobe-demo-app-web:local),
+#          TP_DEMO_WEB_IMAGE (varsayılan ${TP_IMAGE_PREFIX:-testingprobe}-demo-app-web:local),
 #          TP_DEMO_WEB_DEPLOY=0 → yalnızca imajı derler, servisi yeniden oluşturmaz,
 #          TP_DEMO_WEB_FORCE=1 (ya da --force) → güncel olsa / iş koşsa da derler + oluşturur.
 #
@@ -43,8 +43,8 @@
 # (LocalForge bunu yapar).
 #
 # Çalıştırma: tek kullanımlık konteyner (core imajı; git içerir), ağ kapalı, demo-app salt okunur.
-# Ortam: TP_FORGE_VOLUME (varsayılan testingprobe_tp_forge), TP_FORGE_SRC (varsayılan demo-app),
-#        TP_FORGE_IMAGE (varsayılan testingprobe-core:local; yoksa core/ dizininden build edilir).
+# Ortam: TP_FORGE_VOLUME (varsayılan ${COMPOSE_PROJECT_NAME:-testingprobe}_tp_forge), TP_FORGE_SRC (varsayılan demo-app),
+#        TP_FORGE_IMAGE (varsayılan ${TP_IMAGE_PREFIX:-testingprobe}-core:local; yoksa core/ dizininden build edilir).
 set -euo pipefail
 # shellcheck source=scripts/lib.sh
 . "$(dirname "$0")/lib.sh"
@@ -65,7 +65,7 @@ if [ "$MODE" != init ]; then
   command -v docker >/dev/null 2>&1 || die "docker bulunamadı"
   # shellcheck disable=SC2206  # komut öneki bilerek kelimelere bölünür
   EXEC=(${TP_FORGE_EXEC:-docker compose exec -T core-worker})
-  WEB_IMAGE="${TP_DEMO_WEB_IMAGE:-testingprobe-demo-app-web:local}"
+  WEB_IMAGE="${TP_DEMO_WEB_IMAGE:-${TP_IMAGE_PREFIX}-demo-app-web:local}"
   "${EXEC[@]}" python -c 'import tp_core.integrations.forge_demo' >/dev/null 2>&1 \
     || die "core-worker'a erişilemiyor veya forge_demo modülü yok (make up ile core imajını yeniden derleyin)"
   if [ "$MODE" = status ]; then
@@ -225,7 +225,7 @@ fi
 
 VOLUME="${TP_FORGE_VOLUME:-${TP_PROJECT}_tp_forge}"
 SRC="${TP_FORGE_SRC:-demo-app}"
-IMAGE="${TP_FORGE_IMAGE:-testingprobe-core:local}"
+IMAGE="${TP_FORGE_IMAGE:-${TP_IMAGE_PREFIX}-core:local}"
 
 command -v docker >/dev/null 2>&1 || die "docker bulunamadı"
 [ -d "$SRC" ] || die "kaynak dizin yok: $SRC"

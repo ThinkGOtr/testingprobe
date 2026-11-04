@@ -31,7 +31,7 @@
 #
 # Ortam: TP_FORGE_EXEC (varsayılan "docker compose exec -T core-worker"),
 #        TP_TOOLCHAIN_EXEC (GitHub kipi; varsayılan "docker compose exec -T toolchain-worker"),
-#        TP_DEMO_WEB_IMAGE (varsayılan testingprobe-demo-app-web:local),
+#        TP_DEMO_WEB_IMAGE (varsayılan ${TP_IMAGE_PREFIX:-testingprobe}-demo-app-web:local),
 #        TP_DEMO_SYNC_WAIT_S (--wait / tek sefer kilit beklemesi, varsayılan 120),
 #        TP_DEMO_SYNC_POLL_S (3), TP_DEMO_SYNC_LOCK_STALE_S (600).
 set -euo pipefail
@@ -60,7 +60,7 @@ command -v docker >/dev/null 2>&1 || die "docker bulunamadı"
 demo_exec_init
 # shellcheck disable=SC2206  # komut öneki bilerek kelimelere bölünür
 TOOLCHAIN_EXEC=(${TP_TOOLCHAIN_EXEC:-docker compose exec -T toolchain-worker})
-WEB_IMAGE="${TP_DEMO_WEB_IMAGE:-testingprobe-demo-app-web:local}"
+WEB_IMAGE="${TP_DEMO_WEB_IMAGE:-${TP_IMAGE_PREFIX}-demo-app-web:local}"
 POLL="${TP_DEMO_SYNC_POLL_S:-3}"
 WAIT_LIMIT="${TP_DEMO_SYNC_WAIT_S:-120}"
 KILIT_STALE="${TP_DEMO_SYNC_LOCK_STALE_S:-600}"
