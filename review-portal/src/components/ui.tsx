@@ -91,14 +91,17 @@ export function Uyari({
   children,
   baslik,
   isaretli,
+  id,
 }: {
   ton?: "uyari" | "bilgi" | "hata" | "basari";
   children: ReactNode;
   baslik?: string;
   isaretli?: boolean;
+  /** Kutu bir düğmenin görünür pasiflik nedeniyse (`aria-describedby` hedefi). */
+  id?: string;
 }) {
   return (
-    <div className={`uyari-kutusu uyari-${ton}${isaretli ? " uyari-isaretli" : ""}`} role={ton === "hata" ? "alert" : "note"}>
+    <div id={id} className={`uyari-kutusu uyari-${ton}${isaretli ? " uyari-isaretli" : ""}`} role={ton === "hata" ? "alert" : "note"}>
       {baslik && <strong>{baslik}</strong>}
       <div>{children}</div>
     </div>
@@ -151,9 +154,10 @@ interface IslemDugmesiOzellikleri extends ButtonHTMLAttributes<HTMLButtonElement
   tur?: DugmeTuru;
   kucuk?: boolean;
   /**
-   * Pasiflik nedenini düğmenin altına görünür yazmaz (yalnız `title` kalır). Neden zaten ekranda
-   * görünür biçimde yazılıysa (ör. Koşular tetik açıklamaları) ya da testler o metni ekranda
-   * tekil arıyorsa kullanılır.
+   * Durum nedenini düğmenin altına görünür yazmaz (`title` kalır). Neden zaten ekranda görünür
+   * biçimde yazılıysa (ör. Koşular tetik açıklamaları, merge kapı nedenleri) kullanılır; çağıran o
+   * görünür metnin kimliğini `aria-describedby` ile geçirir (korunur). Rol nedeni ("gereken rol")
+   * başka yerde yazılmadığı için bastırılmaz: yetkisiz rolde neden yine görünür yazılır.
    */
   nedenGizli?: boolean;
 }
@@ -214,7 +218,7 @@ export function IslemDugmesi({ roller, calisiyor, tur = "birincil", kucuk, disab
   const nedenId = useId();
   const yetkili = !roller || roller.length === 0 || (!!kullanici && roller.includes(kullanici.rol));
   const neden = !yetkili ? `Bu işlem için gereken rol: ${roller?.map((r) => ROL[r]).join(" / ")}` : title;
-  const nedenGorunur = !nedenGizli && !calisiyor && (!!disabled || !yetkili) && !!neden?.trim();
+  const nedenGorunur = (!nedenGizli || !yetkili) && !calisiyor && (!!disabled || !yetkili) && !!neden?.trim();
   const sariciRef = useRef<HTMLSpanElement>(null);
   const nedenSahibi = useOrtakNeden(sariciRef, nedenGorunur ? neden : undefined, nedenId);
   const nedenCiz = nedenGorunur && nedenSahibi === nedenId;

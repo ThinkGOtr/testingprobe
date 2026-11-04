@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
@@ -639,6 +639,253 @@ export function ScriptDetay() {
     </>
   );
 
+  // Karar kartları (PR + Kırarak doğrula). Sıra değişiminde iki bölüm anahtarlı kardeş olarak yer değiştirir:
+  // React taşır, yeniden mount etmez (AjanAdimlari seçimi ve kart durumları korunur).
+  const kararKartlari = (
+    <div key="karar" className="iki-sutun">
+      <Kart baslik="Pull request">
+        {s.pr ? (
+          <>
+            <p>
+              <span className="mono">#{s.pr.number}</span> {s.pr.baslik}
+            </p>
+            <p className="satir-ogeler">
+              <Cip ton={s.pr.durum === "merged" ? "basari" : s.pr.durum === "open" ? "bilgi" : "notr"}>
+                {s.pr.durum === "merged" ? "Birleşti" : s.pr.durum === "open" ? "Açık" : "Kapalı"}
+              </Cip>
+              {prBirlesti ? (
+                <Cip ton="basari" title="Forge, zorunlu check'ler yeşil değilken merge etmez; PR'ın CI sonucu merge anında dondurulur.">
+                  PR CI: merge öncesi yeşil
+                </Cip>
+              ) : (
+                <Cip ton={s.pr.ci === "passed" ? "basari" : s.pr.ci === "failed" ? "hata" : "bilgi"}>
+                  CI: {s.pr.ci === "passed" ? "yeşil" : s.pr.ci === "failed" ? "kırmızı" : s.pr.ci === "pending" ? "bekliyor" : "—"}
+                </Cip>
+              )}
+              <span className="mono kucuk">{s.pr.branch}</span>
+              {s.pr.forge && <span className="kucuk soluk">{s.pr.forge === "local" ? "LocalForge" : "GitHub"}</span>}
+            </p>
+            {prBirlesti ? (
+              <BirlesmisPrCi pr={s.pr} />
+            ) : (
+              s.pr.checks && s.pr.checks.length > 0 && <CheckListesi checks={s.pr.checks} />
+            )}
+            {s.pr.url && (
+              <p>
+                <Baglanti href={s.pr.url}>PR'ı aç</Baglanti>
+              </p>
+            )}
+            {s.pr.govde && (
+              <details className="pr-aciklamasi" data-testid="pr-aciklamasi">
+                <summary>PR açıklaması</summary>
+                <PrAciklamasi govde={s.pr.govde} />
+              </details>
+            )}
+            {prAcik && s.pr.dal?.geride && (
+              <Uyari ton="uyari" baslik="Dal main'in gerisinde">
+                {s.pr.dal.guncelleme
+                  ? `Dal güncelleniyor (${s.pr.dal.guncelleme}).`
+                  : (s.pr.dal.neden ?? "Başka bir PR merge edildi; önce dalı güncelleyin. Güncelleme yeni head ve yeni CI üretir, yeniden incelemeniz gerekir.")}
+                <div className="eylemler">
+                  <IslemDugmesi
+                    roller={["engineer"]}
+                    tur="ikincil"
+                    calisiyor={islem.calisiyor}
+                    disabled={!!s.pr.dal.guncelleme}
+                    onClick={() => s.pr && eylem(() => api.prDaliGuncelle(s.pr!.number), "Dal güncellemesi kuyruğa alındı.", "pr")}
+                  >
+                    Dalı güncelle
+                  </IslemDugmesi>
+                </div>
+              </Uyari>
+            )}
+            {s.pass_at_1 !== null && <p className="kucuk">pass@1 (düzeltme turu öncesi): {s.pass_at_1 ? "✓" : "✗"}</p>}
+          </>
+        ) : (
+          <BosDurum baslik={s.yerel_sinif === "defect_adayi" ? "PR açılmadı: defect adayı insana düştü." : "PR henüz açılmadı."}>
+            {s.yerel_sinif === "defect_adayi" && s.failure_id && (
+              <Link to={`/hatalar/${encodeURIComponent(s.failure_id)}`}>Triage sonucu ve bug taslağı</Link>
+            )}
+          </BosDurum>
+        )}
+        {prBirlesti && s.pr ? (
+          <div className="merge-kapisi" data-testid="merge-kapisi">
+            <div className="kucuk ok-metin">
+              <strong>✓ Birleştirildi</strong>
+              {s.pr.merge_eden && ` — ${s.pr.merge_eden}`}
+              {s.pr.merge_zamani && `, ${tarih(s.pr.merge_zamani)}`}
+              {s.pr.merge_sha && (
+                <>
+                  {" · merge commit "}
+                  <span className="mono">{s.pr.merge_sha.slice(0, 7)}</span>
+                </>
+              )}
+            </div>
+          </div>
+        ) : prAcik && (
+          <div className="merge-kapisi" data-testid="merge-kapisi">
+            <div className="kucuk">
+              <strong>Merge kapısı</strong> {kapiAcik ? <span className="ok-metin">açık ✓</span> : <span className="soluk">kapalı</span>}
+            </div>
+            {engeller.length > 0 && (
+              <ul className="kucuk kapi-nedenleri" id="merge-kapi-nedenleri">
+                {engeller.map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
+            )}
+            {kapiAcik && uyarilar.length > 0 && (
+              <div className="kucuk kapi-uyarilari" data-testid="merge-uyarilari">
+                <ul>
+                  {uyarilar.map((n) => (
+                    <li key={n}>{n}</li>
+                  ))}
+                </ul>
+                <label className="kapi-kabul">
+                  <input type="checkbox" checked={kabul} onChange={(e) => setKabulHead(e.target.checked && s.pr ? s.pr.head_sha : null)} />
+                  <span>Uyarıyı gördüm; {onayNotu?.startsWith("Zayıf") ? "zayıf test olarak" : "kırarak doğrulama kanıtı olmadan"} merge et (not denetime yazılır).</span>
+                </label>
+              </div>
+            )}
+          </div>
+        )}
+        {s.pr && prAcik && (
+          <div className="eylemler">
+            <IslemDugmesi
+              roller={["engineer"]}
+              disabled={!mergeHazir}
+              calisiyor={islem.calisiyor}
+              // Merge engelleri hemen üstte (kapi-nedenleri) görünür yazılı; tekrarlanmaz, düğmeye bağlanır.
+              nedenGizli={!mergeHazir && engeller.length > 0}
+              aria-describedby={!mergeHazir && engeller.length > 0 ? "merge-kapi-nedenleri" : undefined}
+              title={
+                mergeHazir
+                  ? "İnsan onaylı merge: incelediğiniz içerik ve head commit'e bağlanır"
+                  : engeller.length
+                    ? engeller.join(" ")
+                    : "Önce uyarıyı kabul edin"
+              }
+              onClick={() =>
+                s.pr &&
+                eylem(
+                  () => api.prBirlestir({ ...s.pr!, onay_notu: kabul ? onayNotu : null }),
+                  (r) => (r as { mesaj: string }).mesaj,
+                  "pr",
+                )
+              }
+            >
+              Merge et
+            </IslemDugmesi>
+          </div>
+        )}
+        {islem.hata && hataYeri === "pr" && <HataKutusu hata={islem.hata} />}
+        {s.pr && prAcik && (
+          <details className="pr-ret" data-testid="pr-ret">
+            <summary>Değişiklik iste / reddet</summary>
+            <div className="form-alan kucuk">
+              <label>
+                Ret nedeni{" "}
+                <select value={retNedeni} onChange={(e) => setRetNedeni(e.target.value as RetNedeni | "")} aria-label="Ret nedeni">
+                  <option value="">Seçin…</option>
+                  {RET_SECENEKLERI.map(([k, etiket]) => (
+                    <option key={k} value={k}>
+                      {etiket}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Not (isteğe bağlı)
+                <textarea value={retNotu} maxLength={500} rows={2} onChange={(e) => setRetNotu(e.target.value)} aria-label="Ret notu" />
+              </label>
+              <p className="soluk">PR kapatılır, case yeniden üretilebilir; karar ve neden denetime ve Kontrol Kulesi'ne yazılır.</p>
+            </div>
+            <div className="eylemler">
+              {(["degisiklik_iste", "reddet"] as const).map((karar) => (
+                <IslemDugmesi
+                  key={karar}
+                  roller={["engineer"]}
+                  tur="ikincil"
+                  disabled={!retNedeni}
+                  calisiyor={islem.calisiyor}
+                  title={retNedeni ? undefined : "Önce ret nedeni seçin"}
+                  onClick={() =>
+                    s.pr &&
+                    retNedeni &&
+                    eylem(
+                      () =>
+                        api.prReview(s.pr!.number, {
+                          karar,
+                          ret_nedeni: retNedeni,
+                          icerik_hash: s.pr!.icerik_hash,
+                          head_sha: s.pr!.head_sha,
+                          not: retNotu.trim() || null,
+                        }),
+                      karar === "reddet" ? "PR reddedildi." : "Değişiklik istendi.",
+                      "pr",
+                    )
+                  }
+                >
+                  {karar === "reddet" ? "Reddet" : "Değişiklik iste"}
+                </IslemDugmesi>
+              ))}
+            </div>
+          </details>
+        )}
+      </Kart>
+
+      <Kart
+        baslik="Kırarak doğrula"
+        eylemler={
+          !prBirlesti && (
+          <IslemDugmesi
+            roller={["engineer"]}
+            tur="ikincil"
+            disabled={!prAcik || defectAdayi || s.break_verify.durum === "running"}
+            calisiyor={s.break_verify.durum === "running"}
+            // Defect adayında "Kırarak doğrulama kapalı" kutusu nedeni zaten görünür yazar; düğmeye bağlanır.
+            nedenGizli={defectAdayi}
+            aria-describedby={defectAdayi ? "kirma-kapali-neden" : undefined}
+            title={
+              defectAdayi
+                ? "Defect adayı: test zaten kırmızı (ürün hatası şüphesi). Kırarak doğrulama anlamsız; karar triage/bug taslağında."
+                : prAcik
+                  ? undefined
+                  : "Kırarak doğrulama için açık PR gerekir"
+            }
+            onClick={() => eylem(() => api.kirarakDogrula(s.id), (r) => (r as { mesaj?: string }).mesaj ?? "Kırarak doğrulama başladı.")}
+          >
+            {s.break_verify.durum === "not_started" ? "Kırarak doğrula" : "Yeniden doğrula"}
+          </IslemDugmesi>
+          )
+        }
+      >
+        <p className="soluk kucuk">
+          Koşunun bayisi için kampanya kuralı BREAK_CAMPAIGN ile bozulur (diğer bayiler ve ajan etkilenmez); test kırmızıya dönmezse "zayıf test" sayılır.
+        </p>
+        {defectAdayi && (
+          <Uyari ton="bilgi" baslik="Kırarak doğrulama kapalı" id="kirma-kapali-neden">
+            Yerel kontrol bu testi assertion farkıyla kırmızı buldu (defect adayı). Uygulama zaten beklenenden farklı davranıyor; kırma
+            kanıt üretmez. Hata triage'a gitti; bug taslağı ve testçi kararı triage sayfasında.
+          </Uyari>
+        )}
+        <KirmaZaman bv={s.break_verify} uygulanmaz={defectAdayi} />
+        {s.break_verify.durum === "passed" && <Uyari ton="basari">Test hata yakalıyor ✓</Uyari>}
+        {(s.zayif_test || s.break_verify.durum === "weak") && (
+          <Uyari ton="uyari">
+            Zayıf test: kırılmış uygulamada da yeşil kaldı. BREAK_CAMPAIGN yalnızca kampanya kuralını bozar; kampanya dışı davranışı doğrulayan testte
+            bu beklenir. Merge engellenmez, kabul notu denetime yazılır.
+          </Uyari>
+        )}
+        {s.break_verify.durum === "failed" && (
+          <Uyari ton="uyari">
+            {kirmaNedeni(s.break_verify.neden)}. Koşu etiketleriyle
+            inceleyip yeniden deneyin.
+          </Uyari>
+        )}
+      </Kart>
+    </div>
+  );
   return (
     <>
       <SayfaBasligi
@@ -683,251 +930,9 @@ export function ScriptDetay() {
 
       {/* PR açıldıktan sonra karar kartları (PR + Kırarak doğrula) üste gelir: demo Adım 6–7 kaydırmasız
           (1152×720). Üretim sürerken ajan adımları üstte kalır. Okuma ve sekme sırası görsel sırayla aynı. */}
-      {!s.pr && uretimKartlari}
-
-      <div className="iki-sutun">
-        <Kart baslik="Pull request">
-          {s.pr ? (
-            <>
-              <p>
-                <span className="mono">#{s.pr.number}</span> {s.pr.baslik}
-              </p>
-              <p className="satir-ogeler">
-                <Cip ton={s.pr.durum === "merged" ? "basari" : s.pr.durum === "open" ? "bilgi" : "notr"}>
-                  {s.pr.durum === "merged" ? "Birleşti" : s.pr.durum === "open" ? "Açık" : "Kapalı"}
-                </Cip>
-                {prBirlesti ? (
-                  <Cip ton="basari" title="Forge, zorunlu check'ler yeşil değilken merge etmez; PR'ın CI sonucu merge anında dondurulur.">
-                    PR CI: merge öncesi yeşil
-                  </Cip>
-                ) : (
-                  <Cip ton={s.pr.ci === "passed" ? "basari" : s.pr.ci === "failed" ? "hata" : "bilgi"}>
-                    CI: {s.pr.ci === "passed" ? "yeşil" : s.pr.ci === "failed" ? "kırmızı" : s.pr.ci === "pending" ? "bekliyor" : "—"}
-                  </Cip>
-                )}
-                <span className="mono kucuk">{s.pr.branch}</span>
-                {s.pr.forge && <span className="kucuk soluk">{s.pr.forge === "local" ? "LocalForge" : "GitHub"}</span>}
-              </p>
-              {prBirlesti ? (
-                <BirlesmisPrCi pr={s.pr} />
-              ) : (
-                s.pr.checks && s.pr.checks.length > 0 && <CheckListesi checks={s.pr.checks} />
-              )}
-              {s.pr.url && (
-                <p>
-                  <Baglanti href={s.pr.url}>PR'ı aç</Baglanti>
-                </p>
-              )}
-              {s.pr.govde && (
-                <details className="pr-aciklamasi" data-testid="pr-aciklamasi">
-                  <summary>PR açıklaması</summary>
-                  <PrAciklamasi govde={s.pr.govde} />
-                </details>
-              )}
-              {prAcik && s.pr.dal?.geride && (
-                <Uyari ton="uyari" baslik="Dal main'in gerisinde">
-                  {s.pr.dal.guncelleme
-                    ? `Dal güncelleniyor (${s.pr.dal.guncelleme}).`
-                    : (s.pr.dal.neden ?? "Başka bir PR merge edildi; önce dalı güncelleyin. Güncelleme yeni head ve yeni CI üretir, yeniden incelemeniz gerekir.")}
-                  <div className="eylemler">
-                    <IslemDugmesi
-                      roller={["engineer"]}
-                      tur="ikincil"
-                      calisiyor={islem.calisiyor}
-                      disabled={!!s.pr.dal.guncelleme}
-                      onClick={() => s.pr && eylem(() => api.prDaliGuncelle(s.pr!.number), "Dal güncellemesi kuyruğa alındı.", "pr")}
-                    >
-                      Dalı güncelle
-                    </IslemDugmesi>
-                  </div>
-                </Uyari>
-              )}
-              {s.pass_at_1 !== null && <p className="kucuk">pass@1 (düzeltme turu öncesi): {s.pass_at_1 ? "✓" : "✗"}</p>}
-            </>
-          ) : (
-            <BosDurum baslik={s.yerel_sinif === "defect_adayi" ? "PR açılmadı: defect adayı insana düştü." : "PR henüz açılmadı."}>
-              {s.yerel_sinif === "defect_adayi" && s.failure_id && (
-                <Link to={`/hatalar/${encodeURIComponent(s.failure_id)}`}>Triage sonucu ve bug taslağı</Link>
-              )}
-            </BosDurum>
-          )}
-          {prBirlesti && s.pr ? (
-            <div className="merge-kapisi" data-testid="merge-kapisi">
-              <div className="kucuk ok-metin">
-                <strong>✓ Birleştirildi</strong>
-                {s.pr.merge_eden && ` — ${s.pr.merge_eden}`}
-                {s.pr.merge_zamani && `, ${tarih(s.pr.merge_zamani)}`}
-                {s.pr.merge_sha && (
-                  <>
-                    {" · merge commit "}
-                    <span className="mono">{s.pr.merge_sha.slice(0, 7)}</span>
-                  </>
-                )}
-              </div>
-            </div>
-          ) : prAcik && (
-            <div className="merge-kapisi" data-testid="merge-kapisi">
-              <div className="kucuk">
-                <strong>Merge kapısı</strong> {kapiAcik ? <span className="ok-metin">açık ✓</span> : <span className="soluk">kapalı</span>}
-              </div>
-              {engeller.length > 0 && (
-                <ul className="kucuk kapi-nedenleri">
-                  {engeller.map((n) => (
-                    <li key={n}>{n}</li>
-                  ))}
-                </ul>
-              )}
-              {kapiAcik && uyarilar.length > 0 && (
-                <div className="kucuk kapi-uyarilari" data-testid="merge-uyarilari">
-                  <ul>
-                    {uyarilar.map((n) => (
-                      <li key={n}>{n}</li>
-                    ))}
-                  </ul>
-                  <label className="kapi-kabul">
-                    <input type="checkbox" checked={kabul} onChange={(e) => setKabulHead(e.target.checked && s.pr ? s.pr.head_sha : null)} />
-                    <span>Uyarıyı gördüm; {onayNotu?.startsWith("Zayıf") ? "zayıf test olarak" : "kırarak doğrulama kanıtı olmadan"} merge et (not denetime yazılır).</span>
-                  </label>
-                </div>
-              )}
-            </div>
-          )}
-          {s.pr && prAcik && (
-            <div className="eylemler">
-              <IslemDugmesi
-                roller={["engineer"]}
-                disabled={!mergeHazir}
-                calisiyor={islem.calisiyor}
-                // Merge engelleri hemen üstte (kapi-nedenleri) görünür yazılı; tekrarlanmaz.
-                nedenGizli={!mergeHazir && engeller.length > 0}
-                title={
-                  mergeHazir
-                    ? "İnsan onaylı merge: incelediğiniz içerik ve head commit'e bağlanır"
-                    : engeller.length
-                      ? engeller.join(" ")
-                      : "Önce uyarıyı kabul edin"
-                }
-                onClick={() =>
-                  s.pr &&
-                  eylem(
-                    () => api.prBirlestir({ ...s.pr!, onay_notu: kabul ? onayNotu : null }),
-                    (r) => (r as { mesaj: string }).mesaj,
-                    "pr",
-                  )
-                }
-              >
-                Merge et
-              </IslemDugmesi>
-            </div>
-          )}
-          {islem.hata && hataYeri === "pr" && <HataKutusu hata={islem.hata} />}
-          {s.pr && prAcik && (
-            <details className="pr-ret" data-testid="pr-ret">
-              <summary>Değişiklik iste / reddet</summary>
-              <div className="form-alan kucuk">
-                <label>
-                  Ret nedeni{" "}
-                  <select value={retNedeni} onChange={(e) => setRetNedeni(e.target.value as RetNedeni | "")} aria-label="Ret nedeni">
-                    <option value="">Seçin…</option>
-                    {RET_SECENEKLERI.map(([k, etiket]) => (
-                      <option key={k} value={k}>
-                        {etiket}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Not (isteğe bağlı)
-                  <textarea value={retNotu} maxLength={500} rows={2} onChange={(e) => setRetNotu(e.target.value)} aria-label="Ret notu" />
-                </label>
-                <p className="soluk">PR kapatılır, case yeniden üretilebilir; karar ve neden denetime ve Kontrol Kulesi'ne yazılır.</p>
-              </div>
-              <div className="eylemler">
-                {(["degisiklik_iste", "reddet"] as const).map((karar) => (
-                  <IslemDugmesi
-                    key={karar}
-                    roller={["engineer"]}
-                    tur="ikincil"
-                    disabled={!retNedeni}
-                    calisiyor={islem.calisiyor}
-                    title={retNedeni ? undefined : "Önce ret nedeni seçin"}
-                    onClick={() =>
-                      s.pr &&
-                      retNedeni &&
-                      eylem(
-                        () =>
-                          api.prReview(s.pr!.number, {
-                            karar,
-                            ret_nedeni: retNedeni,
-                            icerik_hash: s.pr!.icerik_hash,
-                            head_sha: s.pr!.head_sha,
-                            not: retNotu.trim() || null,
-                          }),
-                        karar === "reddet" ? "PR reddedildi." : "Değişiklik istendi.",
-                        "pr",
-                      )
-                    }
-                  >
-                    {karar === "reddet" ? "Reddet" : "Değişiklik iste"}
-                  </IslemDugmesi>
-                ))}
-              </div>
-            </details>
-          )}
-        </Kart>
-
-        <Kart
-          baslik="Kırarak doğrula"
-          eylemler={
-            !prBirlesti && (
-            <IslemDugmesi
-              roller={["engineer"]}
-              tur="ikincil"
-              disabled={!prAcik || defectAdayi || s.break_verify.durum === "running"}
-              calisiyor={s.break_verify.durum === "running"}
-              // Defect adayında "Kırarak doğrulama kapalı" kutusu nedeni zaten görünür yazar.
-              nedenGizli={defectAdayi}
-              title={
-                defectAdayi
-                  ? "Defect adayı: test zaten kırmızı (ürün hatası şüphesi). Kırarak doğrulama anlamsız; karar triage/bug taslağında."
-                  : prAcik
-                    ? undefined
-                    : "Kırarak doğrulama için açık PR gerekir"
-              }
-              onClick={() => eylem(() => api.kirarakDogrula(s.id), (r) => (r as { mesaj?: string }).mesaj ?? "Kırarak doğrulama başladı.")}
-            >
-              {s.break_verify.durum === "not_started" ? "Kırarak doğrula" : "Yeniden doğrula"}
-            </IslemDugmesi>
-            )
-          }
-        >
-          <p className="soluk kucuk">
-            Koşunun bayisi için kampanya kuralı BREAK_CAMPAIGN ile bozulur (diğer bayiler ve ajan etkilenmez); test kırmızıya dönmezse "zayıf test" sayılır.
-          </p>
-          {defectAdayi && (
-            <Uyari ton="bilgi" baslik="Kırarak doğrulama kapalı">
-              Yerel kontrol bu testi assertion farkıyla kırmızı buldu (defect adayı). Uygulama zaten beklenenden farklı davranıyor; kırma
-              kanıt üretmez. Hata triage'a gitti; bug taslağı ve testçi kararı triage sayfasında.
-            </Uyari>
-          )}
-          <KirmaZaman bv={s.break_verify} uygulanmaz={defectAdayi} />
-          {s.break_verify.durum === "passed" && <Uyari ton="basari">Test hata yakalıyor ✓</Uyari>}
-          {(s.zayif_test || s.break_verify.durum === "weak") && (
-            <Uyari ton="uyari">
-              Zayıf test: kırılmış uygulamada da yeşil kaldı. BREAK_CAMPAIGN yalnızca kampanya kuralını bozar; kampanya dışı davranışı doğrulayan testte
-              bu beklenir. Merge engellenmez, kabul notu denetime yazılır.
-            </Uyari>
-          )}
-          {s.break_verify.durum === "failed" && (
-            <Uyari ton="uyari">
-              {kirmaNedeni(s.break_verify.neden)}. Koşu etiketleriyle
-              inceleyip yeniden deneyin.
-            </Uyari>
-          )}
-        </Kart>
-      </div>
-
-      {s.pr && uretimKartlari}
+      {s.pr
+        ? [kararKartlari, <Fragment key="uretim">{uretimKartlari}</Fragment>]
+        : [<Fragment key="uretim">{uretimKartlari}</Fragment>, kararKartlari]}
 
       <Kart baslik="Üretilen test dosyası">
         {s.kod ? <KodGorunumu kod={s.kod} dosya={s.dosya_yolu} /> : <BosDurum baslik="Kod henüz üretilmedi." />}

@@ -300,8 +300,9 @@ function OnarimKarti({ o, hataId, yenile }: { o: LocatorOnarimi; hataId: string;
             roller={["engineer"]}
             disabled={mergeEngeli !== null}
             title={mergeEngeli ?? undefined}
-            // Engel düğmenin altında zaten görünür yazılı (aşağıdaki p).
+            // Engel düğmenin altında zaten görünür yazılı (aşağıdaki p); düğmeye bağlanır.
             nedenGizli={mergeEngeli !== null}
+            aria-describedby={mergeEngeli !== null ? "onarim-merge-engeli" : undefined}
             calisiyor={islem.calisiyor}
             onClick={async () => {
               const s = await islem.calistir(() => api.prBirlestir(pr), { cakismada: yenile });
@@ -313,7 +314,11 @@ function OnarimKarti({ o, hataId, yenile }: { o: LocatorOnarimi; hataId: string;
           >
             Onarımı onayla ve merge et
           </IslemDugmesi>
-          {mergeEngeli && <p className="kucuk soluk">{mergeEngeli}.</p>}
+          {mergeEngeli && (
+            <p className="kucuk soluk" id="onarim-merge-engeli">
+              {mergeEngeli}.
+            </p>
+          )}
         </div>
       )}
       {o.durum === "merged" && <Uyari ton="basari">Onarım birleşti; main üzerindeki CI koşusu testin yeniden yeşile döndüğünü gösterir.</Uyari>}

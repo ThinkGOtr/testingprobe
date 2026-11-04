@@ -565,6 +565,32 @@ test("%125 zoom eşdeğeri (1152×720): Script detayında Kırarak doğrula kart
   await page.screenshot({ path: `${EKRAN_DIZINI}/58-triage-1152.png` });
 });
 
+test("%125 zoom eşdeğeri (1152×720): TPD-1 'Case üret' görünür pasiflik nedenleriyle de sağ üstte; düğme aralıkları 8 px", async ({ page }) => {
+  await page.setViewportSize({ width: 1152, height: 720 });
+  // Analistte iki başlık düğmesi pasif ve nedenleri görünür (.dugme-neden): nedenler grubu genişletmemeli.
+  await girisYap(page, "analist");
+  await page.goto("/gereksinimler/req-tpd-1");
+  const baslik = page.locator(".sayfa-basligi");
+  const caseUret = baslik.getByRole("button", { name: "Case üret" });
+  await expect(caseUret).toBeVisible();
+  await expect(baslik.locator(".dugme-neden").first()).toBeVisible();
+  await fontlariBekle(page);
+  const h1 = (await baslik.locator("h1").boundingBox())!;
+  const d = (await caseUret.boundingBox())!;
+  const kap = (await baslik.boundingBox())!;
+  // Sağ üst: içerik ortasının sağında ve h1 ile aynı bantta (başlığın altına inmemiş).
+  expect(d.x).toBeGreaterThan(kap.x + kap.width / 2);
+  expect(d.y).toBeLessThan(h1.y + h1.height);
+  const kutular = await baslik.locator(".eylemler > button, .eylemler > .dugme-neden-sarici > button, .eylemler > a").evaluateAll((es) =>
+    es.map((e) => e.getBoundingClientRect()).map((r) => ({ x: r.left, r: r.right, y: r.top })),
+  );
+  kutular.sort((a, b) => a.x - b.x);
+  for (let i = 1; i < kutular.length; i++) {
+    if (Math.abs(kutular[i].y - kutular[i - 1].y) < 2) expect(Math.round(kutular[i].x - kutular[i - 1].r)).toBe(8);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1152);
+});
+
 test("mobil (375 px) yayın önizleme ve akış göstergesi: sayfa yatay kaymaz, adım adları çakışmaz", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await girisYap(page, "analist");

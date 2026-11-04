@@ -215,15 +215,27 @@ describe("grupta ortak neden (tekrar yok)", () => {
 });
 
 describe("ekranlarda görünür neden", () => {
-  it("Koşular: iki tetik düğmesine eklenmez (açıklamaları zaten görünür ve bağlı)", async () => {
+  it("Koşular: iki tetik düğmesine açıklama eklenmez (açıklamaları zaten görünür ve bağlı)", async () => {
+    await oturumAc("sunucu");
+    const { container } = uygulama("/kosular");
+    const gece = await screen.findByRole("button", { name: "Gece koşusunu şimdi başlat" });
+    const deploy = screen.getByRole("button", { name: "Deploy sonrası testleri koş" });
+    expect(gece).toHaveAttribute("aria-describedby", "kosular-gece-aciklama");
+    expect(deploy).toHaveAttribute("aria-describedby", "kosular-deploy-aciklama");
+    expect(container.querySelector(".dugme-neden")).toBeNull();
+  });
+
+  it("Koşular (yetkisiz rol): nedenGizli rol nedenini bastırmaz; grupta bir kez yazılır, açıklamayla birlikte bağlı", async () => {
     await oturumAc("analist");
     const { container } = uygulama("/kosular");
     const gece = await screen.findByRole("button", { name: "Gece koşusunu şimdi başlat" });
     const deploy = screen.getByRole("button", { name: "Deploy sonrası testleri koş" });
     expect(gece).toBeDisabled();
-    expect(gece).toHaveAttribute("aria-describedby", "kosular-gece-aciklama");
-    expect(deploy).toHaveAttribute("aria-describedby", "kosular-deploy-aciklama");
-    expect(container.querySelector(".dugme-neden")).toBeNull();
+    await waitFor(() => expect(container.querySelectorAll(".dugme-neden")).toHaveLength(1));
+    const neden = container.querySelector(".dugme-neden")!;
+    expect(neden).toHaveTextContent(/^Bu işlem için gereken rol: /);
+    expect(gece.getAttribute("aria-describedby")).toBe(`kosular-gece-aciklama ${neden.id}`);
+    expect(deploy.getAttribute("aria-describedby")).toBe(`kosular-deploy-aciklama ${neden.id}`);
   });
 
   it("Script detay (defect adayı): kutu nedeni zaten yazdığı için 'Kırarak doğrula' yanında tekrar yok", async () => {
@@ -232,9 +244,20 @@ describe("ekranlarda görünür neden", () => {
     const d = await screen.findByRole("button", { name: "Kırarak doğrula" });
     expect(d).toBeDisabled();
     expect(d).toHaveAttribute("title", expect.stringMatching(/^Defect adayı/));
-    expect(d).not.toHaveAttribute("aria-describedby");
-    expect(screen.getByText("Kırarak doğrulama kapalı")).toBeInTheDocument();
+    // Görünür "Kırarak doğrulama kapalı" kutusu düğmeye bağlı.
+    expect(d).toHaveAttribute("aria-describedby", "kirma-kapali-neden");
+    expect(d).toHaveAccessibleDescription(/^Kırarak doğrulama kapalı/);
     expect(d.parentElement).not.toHaveClass("neden-var");
+  });
+
+  it("Script detay (defect adayı, analist): kutu bağlı kalır, rol nedeni de görünür yazılır", async () => {
+    await oturumAc("analist");
+    uygulama("/kod/scr-3");
+    const d = await screen.findByRole("button", { name: "Kırarak doğrula" });
+    expect(d).toBeDisabled();
+    const neden = await screen.findByText("Bu işlem için gereken rol: Mühendis");
+    expect(d.getAttribute("aria-describedby")).toBe(`kirma-kapali-neden ${neden.id}`);
+    expect(d).toHaveAccessibleDescription(/^Kırarak doğrulama kapalı.*Bu işlem için gereken rol: Mühendis$/);
   });
 
   it("Script detay (analist): PR ret grubundaki iki düğmede rol nedeni bir kez yazılır", async () => {

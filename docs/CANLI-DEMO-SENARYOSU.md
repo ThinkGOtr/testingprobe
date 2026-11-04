@@ -531,12 +531,14 @@ test bakımı mı, ortam mı, flaky mi) ve hazır bug taslağını nasıl çıka
 
 **Profil: Testçi** → sol menü **Bug taslakları** → **C3** satırı ("6 adet kampanyalı üründe bedava
 ürün verilmez") → detay açılır. (C3 kodu üretilmediyse — ör. C3 düzeltildiyse — bu satır yoktur;
-adımı atla, 13'e geç.)
+adımı atla, 13'e geç.) Bug taslağı detayında sınıf yazmaz: başlıktaki **Triage sonucu**
+bağlantısıyla triage sayfasına geç, sonra tarayıcıda geri dön.
 
-- Görülen: sınıf **"Ürün hatası"**, "Karar kaynağı: kural · product_defect" (deterministik kural);
-  eşleşen sinyaller
-  (assertion farkı, eleman bulundu, sayfa yapısı beklenen, tutarlı tekrar); hazır bug taslağı;
-  Jira'da benzer açık bug araması → **TPD-5** "Kampanya indirimi sepette yanlış hesaplanıyor",
+- Triage sayfasında görülen: sınıf **"Ürün hatası"**, "Karar kaynağı: kural · product_defect"
+  (deterministik kural); eşleşen sinyaller (assertion farkı, eleman bulundu, sayfa yapısı beklenen,
+  tutarlı tekrar).
+- Bug taslağı detayında (geri dönünce) görülen: hazır bug taslağı; **Olası mükerrerler** (Jira'da
+  benzer açık bug araması) → **TPD-5** "Kampanya indirimi sepette yanlış hesaplanıyor",
   **yüksek olasılık**, AI önerisi **"mevcut kayda bağla (TPD-5)"**.
 
 **Söyle:** "Önce deterministik kurallar: kuralın verebildiği kararı modele bırakmıyoruz. Model
