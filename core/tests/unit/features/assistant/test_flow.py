@@ -900,6 +900,75 @@ def test_neden_sor_oneri_baglami_sunucuda_yeniden_uretilir(
     assert "PO 3 gündür bekliyor" in ilk and "istemci metni" not in ilk
 
 
+@pytest.mark.parametrize("bayrak", ["0", "1"])
+def test_oneri_sohbeti_baglam_kurulamazsa_sozluk_dali_calisir(
+    bayrak: str,
+    client: TestClient,
+    make_user,
+    engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Öneriden açılan sohbette bayrak sonradan kapanırsa (`0`) ya da öneri artık geçerli
+    değilse (`1`, motor None döner) öneri bağlamı yoktur: hata sözlüğüyle cevaplanabilen soru
+    sözlükten cevaplanır (model kapalıyken "kapalı" sabit cevabına düşmez)."""
+    from tp_core.features.assistant import api as asistan_api
+    from tp_core.features.assistant import oneri
+
+    monkeypatch.setattr(asistan_api, "oneri_gecerli_mi", lambda *a, **k: True)
+    giris(client, make_user("analyst"))
+    baglam = {
+        "rota": "/gereksinimler",
+        "son_hata": {
+            "uc": "POST /cases/:id/review",
+            "status": 409,
+            "kod": "onay_hash_uyusmuyor",
+            "detail": "İçerik değişti, yeniden inceleyin.",
+        },
+    }
+    _, mid = soru_gonder(
+        client,
+        engine,
+        "Az önceki hata ne demek?",
+        baglam=baglam,
+        model_hazir=False,
+        oneri_kural_id="gereksinim-po-bekliyor",
+    )
+    monkeypatch.setenv("TP_ASISTAN_ONERI", bayrak)
+    if bayrak == "1":
+        monkeypatch.setattr(oneri, "oneri_baglami", lambda *a, **k: None)
+    assert cevapla(engine, mid) == "done"
+    assert mesaj(engine, mid)["kaynak"] == "sozluk"
+
+
+def test_oneri_sohbeti_baglam_varsa_sozluk_atlanir(
+    client: TestClient, make_user, engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tp_core.features.assistant import api as asistan_api
+    from tp_core.features.assistant import oneri
+
+    monkeypatch.setattr(asistan_api, "oneri_gecerli_mi", lambda *a, **k: True)
+    monkeypatch.setattr(
+        oneri,
+        "oneri_baglami",
+        lambda *a, **k: {"kural_id": "gereksinim-po-bekliyor", "baslik": "b", "neden": "n"},
+    )
+    giris(client, make_user("analyst"))
+    baglam = {
+        "rota": "/gereksinimler",
+        "son_hata": {"uc": "POST /cases/:id/review", "status": 409, "kod": "onay_hash_uyusmuyor"},
+    }
+    _, mid = soru_gonder(
+        client,
+        engine,
+        "Az önceki hata ne demek?",
+        baglam=baglam,
+        model_hazir=False,
+        oneri_kural_id="gereksinim-po-bekliyor",
+    )
+    assert cevapla(engine, mid) == "done"
+    assert mesaj(engine, mid)["kaynak"] == "kapali"
+
+
 # ------------------------------------------------------------------ iptal, hata, yarış
 
 

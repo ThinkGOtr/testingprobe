@@ -117,20 +117,31 @@ def _is(engine: Engine, kullanici_id: uuid.UUID, *, tetik: str, durum: str = "qu
 # ------------------------------------------------------------------ hız sayacı
 
 
-def test_hiz_sabit_pencere_sinir_dahil(session: Session, make_user) -> None:
+# Sayaç testleri geniş pencerede (`sabit_hiz_penceresi`): saate hizalı 60 sn'lik pencerede
+# çağrılar dakika sınırını aşarsa sayaç sıfırlanır. Bugün `session` tek transaction ve `now()`
+# sabit olduğundan bu olmaz; ama fikstür ara commit yaparsa yanlış kırmızı çıkardı (API testleri
+# de aynı nedenle geniş pencere kullanır). Pencere hizası ayrıca aşağıda sınanır.
+
+
+def test_hiz_sabit_pencere_sinir_dahil(
+    session: Session, make_user, sabit_hiz_penceresi: int
+) -> None:
     u = make_user("analyst")
+    p = sabit_hiz_penceresi
     sonuc = [
-        hiz.hiz_kontrol(session, "oneri_liste", kullanici_id=u.id, sinir=60, pencere_s=60)
+        hiz.hiz_kontrol(session, "oneri_liste", kullanici_id=u.id, sinir=60, pencere_s=p)
         for _ in range(61)
     ]
     assert sonuc[:60] == [True] * 60 and sonuc[60] is False
     # başka kullanıcı ve başka kova ayrı sayılır
     v = make_user("po")
-    assert hiz.hiz_kontrol(session, "oneri_liste", kullanici_id=v.id, sinir=60, pencere_s=60)
+    assert hiz.hiz_kontrol(session, "oneri_liste", kullanici_id=v.id, sinir=60, pencere_s=p)
     assert hiz.kova_kontrol(session, hiz.KOVA_ONERI_GERI_BILDIRIM, kullanici_id=u.id)
 
 
-def test_hiz_global_kova_null_kullanici_tek_satir(session: Session) -> None:
+def test_hiz_global_kova_null_kullanici_tek_satir(
+    session: Session, sabit_hiz_penceresi: int
+) -> None:
     for _ in range(30):
         assert hiz.kova_kontrol(session, hiz.KOVA_JIRA_GLOBAL, kullanici_id=None)
     assert hiz.kova_kontrol(session, hiz.KOVA_JIRA_GLOBAL, kullanici_id=None) is False

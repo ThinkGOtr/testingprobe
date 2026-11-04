@@ -258,18 +258,29 @@ def sohbet_sil(sohbet_id: uuid.UUID, session: DbSession, user: CurrentUser) -> R
     iptal edilir: silinen sohbetin mesajına iptal ucu 404 döndüğünden kullanıcı onları başka
     yoldan durduramaz (koşan iş geçitte `should_stop` ile sonraki turda durur)."""
     s = _sohbet(session, sohbet_id, user, kilitle=True)
-    acik = (
-        session.query(AsistanMesaj)
-        .filter(
-            AsistanMesaj.sohbet_id == s.id,
-            AsistanMesaj.rol == "assistant",
-            AsistanMesaj.durum.in_(("pending", "running")),
+    # Tarama boşalana dek tekrarlanır: sohbet kilidi (FOR NO KEY UPDATE) worker'ın otomatik
+    # çocuk INSERT'ini (FK KEY SHARE) engellemez. Worker üst mesajı kilitliyken tarama o satırda
+    # bekler; worker çocuğu ekleyip commit edince READ COMMITTED yalnız üst satırı yeniden
+    # değerlendirir (artık `done`, atlanır) ve yeni çocuğu görmez. Sonraki ifade yeni anlık
+    # görüntüyle çocuğu bulur ve iptal eder (yoksa ücretli `assistant_deep` koşardı). İlk
+    # tarama bu yüzden boş dönse de en az bir kez yeniden taranır.
+    ilk = True
+    while True:
+        acik = (
+            session.query(AsistanMesaj)
+            .filter(
+                AsistanMesaj.sohbet_id == s.id,
+                AsistanMesaj.rol == "assistant",
+                AsistanMesaj.durum.in_(("pending", "running")),
+            )
+            .with_for_update()
+            .all()
         )
-        .with_for_update()
-        .all()
-    )
-    for m in acik:
-        _iptal_et(session, m, user)
+        for m in acik:
+            _iptal_et(session, m, user)
+        if not acik and not ilk:
+            break
+        ilk = False
     s.silindi = True
     s.silinme = datetime.now(UTC)
     return Response(status_code=204)

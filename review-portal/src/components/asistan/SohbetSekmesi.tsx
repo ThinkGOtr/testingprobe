@@ -26,7 +26,7 @@ import { hataKaydi, SON_HATA_GECERLILIK_MS, sonHata, sonHataAbone, sonHataBaglam
 import { BosDurum, Yukleniyor } from "../ui";
 import type { SeciliEleman } from "./buNe";
 import { CevapKarti } from "./CevapKarti";
-import { ilkGorulmeler, istekGecerli, oneriSohbetiUnut, oneriSohbetiYaz, sohbetTaslagi, type AcmaIstegi, type SohbetTaslagi } from "./kontrol";
+import { ekranAnahtariUret, ilkGorulmeler, istekGecerli, oneriSohbetiUnut, oneriSohbetiYaz, sohbetTaslagi, type AcmaIstegi, type SohbetTaslagi } from "./kontrol";
 import { ekOneriDurdur, ekOneriKontrol, sohbetBekleyeniYaz, useBekleyenEkOneri } from "./OneriEkOneriler";
 import { oneriAnahtari, oneriGetir, oneriSorgusu } from "./OneriVerisi";
 import { soruOnerileri } from "./sorular";
@@ -182,8 +182,9 @@ export function SohbetSekmesi({
    * (aynı liste iki kez çekilmez, "Sohbet yükleniyor…" yanıp sönmez). */
   const yuklemeyiAtla = useRef<string | null>(null);
 
-  // Rota değişince ekran çipi yeniden eklenir (kaldırma yalnız o ekran için).
-  const ekranAnahtari = `${ekran.rota_kalibi ?? ""}|${ekran.varlik?.id ?? ""}`;
+  // Rota değişince ekran çipi yeniden eklenir (kaldırma yalnız o ekran için). Sekme çizili değilken
+  // gezinmeyi `AsistanPaneli` (ekranDegisti) yakalar; bu effect sekme açıkken bileşen state'ini düşürür.
+  const ekranAnahtari = ekranAnahtariUret(ekran);
   const ekranDahil = ekranKaldirilan !== ekranAnahtari;
   useEffect(() => {
     if (ekranKaldirilan !== null && ekranKaldirilan !== ekranAnahtari) setEkranKaldirilan(null);
@@ -382,7 +383,7 @@ export function SohbetSekmesi({
       // gönderilen aynı soru onlarla gider, girdi değişirse düşer.
       if (kullaniciBekliyor || gonderiyor) {
         setGirdi(metin);
-        setBekletilen(secenek.oneriKuralId || secenek.yeniSohbet || secenek.sohbetId ? { metin, secenek } : null);
+        setBekletilen(secenek.oneriKuralId || secenek.yeniSohbet || secenek.sohbetId ? { metin, ekran: ekranAnahtari, secenek } : null);
         setGonderimHatasi(
           kullaniciBekliyor ? BEKLEYEN_VAR_METNI : "Önceki soru gönderiliyor; bu soru girdide bekliyor, sonra yeniden gönderin.",
         );
@@ -452,7 +453,7 @@ export function SohbetSekmesi({
         setGonderiyor(false);
       }
     },
-    [gonderiyor, kullaniciBekliyor, baglamUret, seciliTemizle, yukle, durumYenile, ekran, kullanici],
+    [gonderiyor, kullaniciBekliyor, baglamUret, seciliTemizle, yukle, durumYenile, ekran, ekranAnahtari, kullanici],
   );
 
   // Dış istek: "Asistana sor" (hata kaydı) ya da "Neden? Sor" (öneri kuralı + soru).
@@ -729,8 +730,14 @@ export function SohbetSekmesi({
     );
   }
 
-  /** Girdideki soru bekletilen dış soruysa onun seçenekleri (öneri kuralı, sohbet); elle değiştiyse yok. */
-  const bekletilenSecenek = (): GonderSecenegi => (bekletilen && bekletilen.metin === girdi.trim() ? bekletilen.secenek : {});
+  /** Girdideki soru bekletilen dış soruysa onun seçenekleri (öneri kuralı, sohbet); elle değiştiyse yok.
+   * Öneri kuralı bırakıldığı ekrana bağlıdır: başka ekranda gönderilirse kural düşer (sunucu 409
+   * `oneri_gecersiz` verirdi); soru yine yeni sohbette, o anki ekran bağlamıyla gider. */
+  const bekletilenSecenek = (): GonderSecenegi => {
+    if (!bekletilen || bekletilen.metin !== girdi.trim()) return {};
+    if (bekletilen.ekran === ekranAnahtari) return bekletilen.secenek;
+    return { ...bekletilen.secenek, oneriKuralId: null };
+  };
   const sayac = girdi.length;
   const gonderilemez = !girdi.trim() || sayac > SORU_AZAMI || gonderiyor || kullaniciBekliyor;
   const kokler = mesajlar.filter((m) => !m.ust_mesaj_id);

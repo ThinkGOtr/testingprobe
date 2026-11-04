@@ -41,11 +41,11 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Final
 
-from sqlalchemy import Connection, Engine, and_, func, or_, text, update
+from sqlalchemy import Connection, Engine, and_, case, func, literal, or_, select, text, update
 
 from tp_core.events import publish_tx
 from tp_core.models import enums
-from tp_core.models.asistan import AsistanMesaj
+from tp_core.models.asistan import AsistanMesaj, AsistanSohbet
 
 log = logging.getLogger("tp_core.worker")
 
@@ -193,6 +193,7 @@ def model_hazir_oku(conn: Connection) -> bool:
 # ------------------------------------------------------------------ mesaj durumu
 
 _MESAJ = AsistanMesaj.__table__
+_SOHBET = AsistanSohbet.__table__
 # `sonuc_yaz`'ın yazabileceği alanlar (harcama alanları ayrı: `harcama_yaz`).
 SONUC_ALANLARI: Final = frozenset(
     {"durum", "cevap", "kaynak", "amac", "hata_kodu", "ai_call_id", "tamamlanma"}
@@ -210,13 +211,33 @@ def _olay(conn: Connection, mesaj_id: uuid.UUID, kullanici_id: uuid.UUID, durum:
 
 
 def baslat(conn: Connection, mesaj_id: uuid.UUID) -> bool:
-    """`pending → running`; mesaj iptal edildiyse/uzlaştırıldıysa False (iş hiçbir şey yapmaz)."""
+    """`pending → running`; mesaj iptal edildiyse/uzlaştırıldıysa False (iş hiçbir şey yapmaz).
+
+    Sohbeti silinmiş mesaj başlatılmaz, `iptal`e çekilir (model çağrısı yok, ücret yok): silme
+    ile worker'ın otomatik çocuk eklemesi yarışırsa çocuk silinen sohbette `pending` kalabilir
+    (silme ucu ikinci taramayla kapatır; bu son savunma hattıdır).
+    """
+    silindi = (
+        select(literal(1))
+        .select_from(_SOHBET)
+        .where(_SOHBET.c.id == _MESAJ.c.sohbet_id, _SOHBET.c.silindi.is_(True))
+        .exists()
+    )
     sonuc = conn.execute(
         update(_MESAJ)
         .where(_MESAJ.c.id == mesaj_id, _MESAJ.c.durum == "pending")
-        .values(durum="running")
-    )
-    return sonuc.rowcount == 1
+        .values(
+            durum=case((silindi, "iptal"), else_="running"),
+            tamamlanma=case((silindi, func.now()), else_=_MESAJ.c.tamamlanma),
+        )
+        .returning(_MESAJ.c.durum, _MESAJ.c.kullanici_id)
+    ).first()
+    if sonuc is None:
+        return False
+    if sonuc.durum == "iptal":
+        _olay(conn, mesaj_id, sonuc.kullanici_id, "iptal")
+        return False
+    return True
 
 
 def sonuc_yaz(conn: Connection, mesaj_id: uuid.UUID, **alanlar: Any) -> bool:

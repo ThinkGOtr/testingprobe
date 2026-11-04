@@ -10,7 +10,7 @@ import { mockZorunlu } from "../../api/http";
 import { useEkranBaglami, type EkranBaglami } from "../../lib/ekranBaglami";
 import { DegerlendirmeNotu, Uyari } from "../ui";
 import { elemanTanimi, noktadakiOge, yakalanabilirMi, type SeciliEleman } from "./buNe";
-import { istegiTuket, paneliAc, paneliKapat, panelHazirAyarla, sekmeSec, useAsistanKontrol, type AsistanSekmesi } from "./kontrol";
+import { ekranAnahtariUret, ekranDegisti, istegiTuket, paneliAc, paneliKapat, panelHazirAyarla, sekmeSec, useAsistanKontrol, type AsistanSekmesi } from "./kontrol";
 import { OnerilerSekmesi } from "./OnerilerSekmesi";
 import { SohbetSekmesi } from "./SohbetSekmesi";
 import { useAsistanKapisi } from "./yetenek";
@@ -89,6 +89,9 @@ export function AsistanPaneli() {
 
   // "Bu ne?" seçimi o ekrana aittir: rota/varlık değişince önceki ekranın öğesi yeni bağlamla gitmesin.
   useEffect(() => setSecili(null), [ekranHam.rota_kalibi, ekranHam.varlik?.id]);
+  // Ekran çipi tercihi o ekrana aittir; Sohbet sekmesi çizili olmasa da rota değişince düşer.
+  const ekranAnahtari = ekranAnahtariUret(ekranHam);
+  useEffect(() => ekranDegisti(ekranAnahtari), [ekranAnahtari]);
 
   const hazir = kapi.tur === "hazir";
   // Pasifken durum yalnız ilk yüklemede okunsaydı worker sonradan gelse de panel sayfa yenilenene

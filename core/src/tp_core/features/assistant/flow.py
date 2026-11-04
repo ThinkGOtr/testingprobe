@@ -552,6 +552,9 @@ def _cocuk_ekle(conn: Connection, m: Mesaj) -> uuid.UUID | None:
             "SELECT :id, :s, :k, COALESCE(MAX(sira), 0) + 1, 'assistant', :u, :icerik, "
             "CAST(:baglam AS jsonb), 'pending', :amac, 'soru', 'otomatik' "
             "FROM asistan_mesaj WHERE sohbet_id = :s "
+            # Silinmiş sohbete çocuk eklenmez (silme commit'lendikten sonra gelen ekleme).
+            # HAVING: toplamlı SELECT boş kümede de bir satır döndürür, WHERE yetmez.
+            "HAVING EXISTS (SELECT 1 FROM asistan_sohbet WHERE id = :s AND NOT silindi) "
             "ON CONFLICT (ust_mesaj_id) WHERE ust_mesaj_id IS NOT NULL DO NOTHING RETURNING id"
         ),
         {
@@ -754,7 +757,11 @@ def cevapla(
         oturum = mesaj_oturumu(masker)
         ab = arac_baglami(m.kullanici_id, m.rol, oturum, db=session_factory, bitis=bitis)
         jira = _jira_adresleri()
-        oneri_var = m.oneri_kural() is not None
+        # Öneri sohbetinde sözlük/şablon yalnız öneri bağlamı gerçekten kurulabiliyorsa atlanır:
+        # bayrak (`TP_ASISTAN_ONERI`) kapandıysa ya da kural artık geçersizse bağlam None olur
+        # ve takip sorusu normal kanallardan (sözlük → şablon → kapalı/canlı) cevaplanır.
+        oneri_baglami = _oneri_baglami(session_factory, m) if m.oneri_kural() else None
+        oneri_var = oneri_baglami is not None
         dogrudan = m.kip == "soru" and not m.derin and not oneri_var
 
         # (2) Sözlük
@@ -787,7 +794,6 @@ def cevapla(
             gecmis = sohbet_gecmisi(s.connection(), m)
             s.rollback()
         kural_onerileri = _kural_onerileri(session_factory, m) if m.kip == "oneri" else None
-        oneri_baglami = _oneri_baglami(session_factory, m) if oneri_var else None
         butce = asistan_budget.AsistanBudget(engine, kullanici_id=m.kullanici_id, kok_id=kok)
         gw = (gateway_factory or varsayilan_gecit_fabrikasi(engine))(budget=butce)
         if arac_seti_fabrikasi is None:

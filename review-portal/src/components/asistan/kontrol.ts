@@ -155,7 +155,12 @@ export interface SohbetTaslagi {
   hataKaldirilan: string | null;
   secilenHataId: string | null;
   hataNotu: string | null;
-  bekletilen: { metin: string; secenek: { yeniSohbet?: boolean; oneriKuralId?: string | null; sohbetId?: string | null } } | null;
+  /** Bekletilen dış soru; `ekran`: bırakıldığı ekranın anahtarı (öneri kuralı yalnız o ekranda geçerli). */
+  bekletilen: {
+    metin: string;
+    ekran: string;
+    secenek: { yeniSohbet?: boolean; oneriKuralId?: string | null; sohbetId?: string | null };
+  } | null;
   /** Mesaj kimliği → "Beklemeyi bırak" sonrası ücret notu. */
   notlar: Record<string, string>;
   /** Mesaj kimliği → son adım kodu (SSE `assistant.step`). */
@@ -166,8 +171,26 @@ function bosTaslak(): SohbetTaslagi {
   return { girdi: "", ekranKaldirilan: null, hataKaldirilan: null, secilenHataId: null, hataNotu: null, bekletilen: null, notlar: {}, adimlar: {} };
 }
 
-/** Tek panel örneği okur/yazar (SohbetSekmesi); değişiklik bileşenin kendi state'iyle de çizilir. */
+/**
+ * Tek panel örneği okur/yazar (SohbetSekmesi); değişiklik bileşenin kendi state'iyle de çizilir.
+ * Taslak kullanıcıya özeldir (oturum değişince temizlenir) ve uygulamada tek `AsistanPaneli` vardır;
+ * ikinci bir SohbetSekmesi örneği eklenirse taslak örnek başına anahtarlanmalıdır.
+ */
 export const sohbetTaslagi: SohbetTaslagi = bosTaslak();
+
+/** Ekran anahtarı: rota kalıbı + varlık. Ekran çipi tercihi ve bekletilen öneri sorusu buna bağlıdır. */
+export function ekranAnahtariUret(ekran: { rota_kalibi?: string | null; varlik?: { id?: string | null } | null }): string {
+  return `${ekran.rota_kalibi ?? ""}|${ekran.varlik?.id ?? ""}`;
+}
+
+/**
+ * Rota değişimi (her zaman bağlı `AsistanPaneli` çağırır): başka ekrana geçilince ekran çipi
+ * tercihi düşer. SohbetSekmesi panel kapalıyken / Öneriler sekmesindeyken çizilmez; temizlik
+ * yalnız onun effect'inde olsaydı A → B → A dönüşünde kaldırılan çip geri gelmezdi.
+ */
+export function ekranDegisti(anahtar: string): void {
+  if (sohbetTaslagi.ekranKaldirilan !== null && sohbetTaslagi.ekranKaldirilan !== anahtar) sohbetTaslagi.ekranKaldirilan = null;
+}
 
 /** Bekleme başlangıcı: mesajın bu sekmede ilk görüldüğü an (istemci saati); sekme geçişinde korunur. */
 export const ilkGorulmeler = new Map<string, number>();

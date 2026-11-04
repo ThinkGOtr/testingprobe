@@ -7,7 +7,7 @@ kendi sahte değerini `monkeypatch.setenv` ile verir; bu fikstür onlardan önce
 `perf` işareti duvar saatiyle ölçen testleri ayırır (işaret aşağıda `pytest_configure`'da kayıtlı;
 `-m 'not perf'` geçerlidir).
 Bu testler varsayılan olarak ATLANIR (yük altında yanlış kırmızı verir); toplu gönderim öncesi
-ya da ayrı CI adımında `TP_TEST_PERF=1` ile açılır.
+ya da ayrı CI adımında `TP_TEST_PERF=1` ile açılır: `make asistan-perf` (repo kökü).
 """
 
 from __future__ import annotations

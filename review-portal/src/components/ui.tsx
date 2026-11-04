@@ -148,9 +148,11 @@ export function HataKutusu({
       </div>
     );
   }
+  // Yalnız metin canlı bölgededir (AlanHatasi ile aynı desen): düğmeler kardeş öğedir; kayıt
+  // yazıldıktan sonra beliren "Asistana sor" duyuruya eklenmez, ikinci değişiklik yaratmaz.
   return (
-    <div className="uyari-kutusu uyari-hata" role="alert">
-      <span>{hata}</span>
+    <div className="uyari-kutusu uyari-hata">
+      <span role="alert">{hata}</span>
       {yenile && (
         <button type="button" className="dugme dugme-ikincil dugme-kucuk" onClick={yenile}>
           Tekrar dene

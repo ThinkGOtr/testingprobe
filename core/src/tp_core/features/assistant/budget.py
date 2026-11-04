@@ -42,6 +42,9 @@ SORU_BASI_USD: Final = Decimal("0.50")
 # Otomatik yükseltme ön koşulu: her kalan en az bu kadar (soğuk önekli Sonnet + yeniden isteme).
 OTOMATIK_ASGARI_KALAN_USD: Final = Decimal("0.20")
 # Kullanıcının günlük kalanı tavanın bu oranının altındaysa otomatik yerine düğme önerilir.
+# Bugünkü değerlerle ($1 × %20 = $0.20 = asgari kalan) bu koşul asgari kalanla örtüşür ve
+# `kullanici_orani` nedeni hiç görülmez; plan §6.2 ikisini ayrı yazar, tavan büyütülünce ayrışır
+# (test_hiz_ve_butce.test_otomatik_kullanici_orani_esigi tavanı $2 yaparak sınar).
 OTOMATIK_KULLANICI_ORAN: Final = Decimal("0.20")
 
 SAATLIK_SORU: Final = 30

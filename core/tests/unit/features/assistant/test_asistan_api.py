@@ -379,6 +379,116 @@ def test_sohbet_kilidi_fk_key_share_ile_cakismaz(
         api_oturumu.rollback()
 
 
+def _kilit_bekleyen_var(engine: Engine) -> bool:
+    return bool(
+        tek(
+            engine,
+            "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' "
+            "AND datname = current_database()",
+        )
+    )
+
+
+def test_sohbet_sil_worker_otomatik_cocuk_yarisi_iptal_eder(
+    client: TestClient, make_user, engine, canli
+) -> None:
+    """Silme ↔ otomatik yükseltme yarışı (tur 9): worker üst mesajı `running → done` yapıp
+    transaction'ı açık tutarken silme mesaj taramasında bekler; worker çocuğu ekleyip commit
+    edince silmenin ilk taraması çocuğu görmez. İkinci tarama onu `iptal` eder ve işi kuyruktan
+    düşürür; aksi hâlde silinen sohbette ücretli `assistant_deep` koşardı."""
+    import time
+
+    from sqlalchemy.orm import Session
+
+    from tp_core.features.assistant import flow
+
+    u = make_user("tester")
+    giris(client, u)
+    s = sohbet_ac(client)
+    mid = sor(client, s).json()["mesaj_id"]
+    with engine.begin() as c:
+        c.execute(text("UPDATE asistan_mesaj SET durum = 'running' WHERE id = :m"), {"m": mid})
+    sonuc: list[httpx.Response] = []
+    with Session(engine) as worker:
+        conn = worker.connection()
+        m = flow._mesaj_oku(conn, uuid.UUID(mid))
+        conn.execute(
+            text("UPDATE asistan_mesaj SET durum = 'done' WHERE id = :m AND durum = 'running'"),
+            {"m": mid},
+        )  # model_cevabini_yaz (2): üst mesaj kilitli, transaction açık
+        t = threading.Thread(
+            target=lambda: sonuc.append(client.delete(f"/assistant/conversations/{s}"))
+        )
+        t.start()
+        son = time.monotonic() + 10
+        while not _kilit_bekleyen_var(engine):
+            assert time.monotonic() < son, "silme mesaj kilidinde beklemedi"
+            time.sleep(0.05)
+        cocuk = flow._cocuk_ekle(conn, m)  # (4)+(5): silme henüz commit'lenmedi
+        assert cocuk is not None
+        worker.commit()
+    t.join(10)
+    assert sonuc and sonuc[0].status_code == 204, sonuc and sonuc[0].text
+    with engine.connect() as c:
+        durum, tamam, is_durumu = c.execute(
+            text(
+                "SELECT m.durum, m.tamamlanma IS NOT NULL, j.durum FROM asistan_mesaj m "
+                "JOIN job j ON j.id = m.job_id WHERE m.id = :c"
+            ),
+            {"c": cocuk},
+        ).one()
+    assert (durum, tamam) == ("iptal", True)
+    assert is_durumu == "cancelled"
+
+
+def test_silinen_sohbete_otomatik_cocuk_eklenmez(
+    client: TestClient, make_user, engine, canli
+) -> None:
+    """Silme commit'lendikten sonra gelen otomatik yükseltme çocuk eklemez, iş kuyruğa girmez."""
+    from sqlalchemy.orm import Session
+
+    from tp_core.features.assistant import flow
+
+    u = make_user("tester")
+    giris(client, u)
+    s = sohbet_ac(client)
+    mid = sor(client, s).json()["mesaj_id"]
+    mesaj_bitir(engine, mid, amac="assistant")
+    assert client.delete(f"/assistant/conversations/{s}").status_code == 204
+    with Session(engine) as worker:
+        conn = worker.connection()
+        assert flow._cocuk_ekle(conn, flow._mesaj_oku(conn, uuid.UUID(mid))) is None
+        worker.commit()
+    assert tek(engine, "SELECT count(*) FROM asistan_mesaj WHERE ust_mesaj_id = :m", m=mid) == 0
+
+
+def test_baslat_silinen_sohbetin_mesajini_iptal_eder(
+    client: TestClient, make_user, engine, canli
+) -> None:
+    """Son savunma: silinen sohbette `pending` kalmış mesaj başlatılmaz, `iptal`e çekilir."""
+    from tp_core.features.assistant import durum
+
+    u = make_user("tester")
+    giris(client, u)
+    s = sohbet_ac(client)
+    mid = sor(client, s).json()["mesaj_id"]
+    with engine.begin() as c:  # silme ucunu atlayarak: yarışta kaçmış mesajın durumu
+        c.execute(text("UPDATE asistan_sohbet SET silindi = true WHERE id = :s"), {"s": s})
+        assert durum.baslat(c, uuid.UUID(mid)) is False
+    with engine.connect() as c:
+        d, tamam = c.execute(
+            text("SELECT durum, tamamlanma IS NOT NULL FROM asistan_mesaj WHERE id = :m"),
+            {"m": mid},
+        ).one()
+    assert (d, tamam) == ("iptal", True)
+    giris(client, make_user("tester"))  # silinmemiş sohbette davranış aynı (ayrı kullanıcı:
+    s2 = sohbet_ac(client)  # ilk kullanıcının açık cevap sınırına takılmasın)
+    mid2 = sor(client, s2).json()["mesaj_id"]
+    with engine.begin() as c:
+        assert durum.baslat(c, uuid.UUID(mid2)) is True
+        assert durum.baslat(c, uuid.UUID(mid2)) is False  # ikinci kez başlatılmaz
+
+
 def _outbox_var(engine: Engine) -> bool:
     return bool(tek(engine, "SELECT to_regclass('public.outbox') IS NOT NULL"))
 
@@ -485,14 +595,25 @@ def test_feedback_dogrulama(client: TestClient, make_user, engine, canli) -> Non
     )
 
 
-def test_origin_evil_403_ve_bearer_401(client: TestClient, make_user, canli) -> None:
+def test_origin_evil_403_ve_bearer_401(client: TestClient, make_user, engine, canli) -> None:
+    from sqlalchemy.orm import Session
+
+    from tp_core.auth.tokens import verify_bearer
+
     u = make_user("analyst")
     giris(client, u)
     s = sohbet_ac(client)
     r = client.post("/assistant/conversations", headers={"Origin": "http://evil"})
     assert r.status_code == 403 and r.json()["kod"] == "kaynak_reddi"
 
-    ham = "tp" + "t_" + uuid.uuid4().hex  # yalnız çerez kabul edilir; bearer biçimi önemsiz
+    # Gerçek, geçerli submit kapsamlı MCP token'ı: asistan uçları yalnız çerez kabul eder;
+    # ileride bir uca `require_token`/çift kimlik eklenirse bu test kırmızıya döner.
+    r = client.post("/tokens", json={"kapsam": "submit"})
+    assert r.status_code in (200, 201), r.status_code
+    ham = r.json()["token"]
+    with Session(engine) as oturum:
+        assert verify_bearer(oturum, ham, "submit") is not None
+        oturum.rollback()
     m = str(uuid.uuid4())
     uclar = [
         ("GET", "/assistant/status"),

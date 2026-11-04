@@ -10,7 +10,7 @@ export PLAYWRIGHT_VERSION := $(strip $(shell cat .playwright-version 2>/dev/null
 
 S ?=
 
-.PHONY: help env up asistan-paket status seed reset jira-seed forge-init break demo-break demo-reset demo-web-sync locator-break-verify demo-baseline export-audit security-check e2e-smoke demo-check demo-prova prova-temizle eval-live prune logs down
+.PHONY: help env up asistan-paket status seed reset jira-seed forge-init break demo-break demo-reset demo-web-sync locator-break-verify demo-baseline export-audit security-check e2e-smoke demo-check demo-prova prova-temizle eval-live asistan-perf prune logs down
 
 help: ## Hedefleri listeler
 	@echo "Kullanım: make <hedef>"
@@ -82,6 +82,9 @@ prova-temizle: ## Eski prova raporlarını temizle (N=10: son N koşu klasörü 
 
 eval-live: ## Prompt değerlendirme setini CANLI modelle koşturur, sert bütçe TP_EVAL_BUDGET_USD (5; asistan seti ≥10) (A='--ping' | '--dry-run' | '--bundle triage --update-status' | '--record' | '--bundle assistant --via-flow')
 	@scripts/eval-live.sh $(A)
+
+asistan-perf: ## Asistan süre testleri (§16.12 öneri ucu p95 < 300 ms; T132): TP_TEST_PERF=1 pytest -m perf (geçici test postgres'i; toplu gönderim öncesi)
+	@cd core && TP_TEST_PERF=1 TP_TEST_REQUIRE_DB=1 uv run pytest tests/unit/features/assistant -m perf -q
 
 prune: ## Kullanılmayan (dangling) imajları ve build önbelleğini temizler; volume'lere dokunmaz
 	@echo "İmajlar:";        docker image prune -f | tail -n 1

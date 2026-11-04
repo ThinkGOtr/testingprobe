@@ -442,6 +442,49 @@ SECRET_PATTERNS: tuple[SecretPattern, ...] = (
         re.compile(r"(?P<keep>\b[a-z][a-z0-9+.-]*://)[^/\s:@]+:[^@\s]+(?=@)", re.IGNORECASE),
         keep_group="keep",
     ),
+    # Parolasız ama kimliği kullanıcı adında taşıyan URL (Sentry DSN `https://<anahtar>@o1…`,
+    # `https://<token>@host/r.git`). `https://git@host` gibi gerçek kullanıcı adları eşleşmesin
+    # diye kullanıcı kısmı ≥ 24 karakter, harf VE rakam içerir.
+    SecretPattern(
+        "url_userinfo_token",
+        re.compile(
+            r"(?P<keep>\b[a-z][a-z0-9+.-]*://)"
+            r"(?=[A-Za-z0-9_-]*\d)(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]{24,}(?=@)",
+            re.IGNORECASE,
+        ),
+        keep_group="keep",
+    ),
+    # Yolunda gizli anahtar taşıyan gelen webhook adresleri: Slack
+    # (`hooks.slack.com/services/T…/B…/<anahtar>`, workflows/triggers), Discord
+    # (`discord.com/api/webhooks/<id>/<anahtar>`) ve Teams/Office 365 (`…/webhook(b2)/…`;
+    # kimlik birden çok yol bileşenine dağıldığından önekten sonrası tümüyle).
+    SecretPattern(
+        "webhook_url",
+        re.compile(
+            r"(?P<keep>\bhooks\.slack\.com/(?:services|workflows|triggers)/(?:[A-Za-z0-9]+/)+)"
+            r"[A-Za-z0-9]{8,}",
+            re.IGNORECASE,
+        ),
+        keep_group="keep",
+    ),
+    SecretPattern(
+        "webhook_url",
+        re.compile(
+            r"(?P<keep>\b(?:(?:canary|ptb)\.)?discord(?:app)?\.com/api/webhooks/\d+/)"
+            r"[A-Za-z0-9_-]{8,}",
+            re.IGNORECASE,
+        ),
+        keep_group="keep",
+    ),
+    SecretPattern(
+        "webhook_url",
+        re.compile(
+            r"(?P<keep>\b(?:[a-z0-9-]+\.)*(?:outlook\.office(?:365)?\.com|webhook\.office\.com)"
+            r"/webhook(?:b2)?/)[^\s'\"`<>)\]]+",
+            re.IGNORECASE,
+        ),
+        keep_group="keep",
+    ),
     SecretPattern("github_pat", re.compile(_onekli(r"\bgithub_pat_", r"[A-Za-z0-9_]", 20))),
     SecretPattern("github_token", re.compile(_onekli(r"\bgh[pousr]_", r"[A-Za-z0-9]", 20))),
     SecretPattern("gitlab_pat", re.compile(_onekli(r"\bglpat-", r"[A-Za-z0-9_-]", 20))),

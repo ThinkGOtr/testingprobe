@@ -61,6 +61,8 @@ def test_her_desenin_vakasi_var() -> None:
         "session_cookie",
         "url_signature",
         "github_add_mask",
+        "url_userinfo_token",
+        "webhook_url",
     }
     assert adlar == {p.name for p in SECRET_PATTERNS}
 
@@ -473,6 +475,93 @@ def test_github_add_mask(metin: str, beklenen: str) -> None:
     ['echo "::add-mask::$TOKEN"', "::add-mask::${{ steps.x.outputs.t }}", "::add-mask::***"],
 )
 def test_github_add_mask_yer_tutucuya_dokunmaz(metin: str) -> None:
+    assert scrub_secret_patterns(metin) == metin
+
+
+HEX32 = "0a1b2c3d4e5f" + "6a7b8c9d0e1f" + "2a3b4c5d"  # 32 karakter, Sentry DSN anahtarı biçimi
+
+
+@pytest.mark.parametrize(
+    ("metin", "beklenen"),
+    [
+        (
+            "dsn=https://" + HEX32 + "@o1.ingest.sentry.io/1",
+            "dsn=https://***@o1.ingest.sentry.io/1",
+        ),
+        (
+            "git clone https://" + GOVDE + "x9Y8@forge.local/o/r.git",
+            "git clone https://***@forge.local/o/r.git",
+        ),
+    ],
+)
+def test_parolasiz_url_kimligi(metin: str, beklenen: str) -> None:
+    assert "url_userinfo_token" in {f.name for f in find_secret_patterns(metin)}
+    assert scrub_secret_patterns(metin) == beklenen
+
+
+@pytest.mark.parametrize(
+    "metin",
+    [
+        "ssh://git@github.com/o/r.git",
+        "https://deploy-bot@forge.local/o/r.git",
+        "https://ornekkullaniciadiuzunolanbiri@forge.local/x",  # rakamsız: gerçek kullanıcı adı
+    ],
+)
+def test_parolasiz_url_kullanici_adina_dokunmaz(metin: str) -> None:
+    assert scrub_secret_patterns(metin) == metin
+
+
+@pytest.mark.parametrize(
+    ("metin", "beklenen"),
+    [
+        (
+            "bildirim https://hooks.slack.com/services/T0"
+            + "00/B0"
+            + "00/"
+            + GOVDE
+            + " gönderildi",
+            "bildirim https://hooks.slack.com/services/T000/B000/*** gönderildi",
+        ),
+        (
+            "https://hooks.slack.com/workflows/T01/A02/123/" + GOVDE,
+            "https://hooks.slack.com/workflows/T01/A02/123/***",
+        ),
+        (
+            "https://discord.com/api/webhooks/123456789/" + GOVDE + "-_x",
+            "https://discord.com/api/webhooks/123456789/***",
+        ),
+        (
+            "https://discordapp.com/api/webhooks/42/" + GOVDE,
+            "https://discordapp.com/api/webhooks/42/***",
+        ),
+        (
+            '"url": "https://ornek.webhook.office.com/webhookb2/'
+            + GOVDE
+            + "@"
+            + GOVDE
+            + '/IncomingWebhook/abc/def"',
+            '"url": "https://ornek.webhook.office.com/webhookb2/***"',
+        ),
+        (
+            "https://outlook.office.com/webhook/" + GOVDE + "/IncomingWebhook/x/y",
+            "https://outlook.office.com/webhook/***",
+        ),
+    ],
+)
+def test_webhook_adresi(metin: str, beklenen: str) -> None:
+    assert "webhook_url" in {f.name for f in find_secret_patterns(metin)}
+    assert scrub_secret_patterns(metin) == beklenen
+
+
+@pytest.mark.parametrize(
+    "metin",
+    [
+        "Slack entegrasyonu: https://hooks.slack.com/services/ adresine bakın",
+        "https://discord.com/api/webhooks/ belgesi",
+        "https://api.slack.com/messaging/webhooks",
+    ],
+)
+def test_webhook_adresi_dogal_metne_dokunmaz(metin: str) -> None:
     assert scrub_secret_patterns(metin) == metin
 
 
