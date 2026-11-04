@@ -3433,10 +3433,10 @@ td .olculmedi {
 }
 
 /* Kod üretimi: defect adayı / başarısız satırı solda kırmızı şerit, hata hapı kalın (renk tek gösterge değil). */
-.tablo-sarici[aria-label="Üretilen testler tablosu"] tbody tr:has(.cip-hata) > td:first-child {
+.kod-tablosu tbody tr:has(.cip-hata) > td:first-child {
   box-shadow: inset 3px 0 0 var(--err);
 }
-.tablo-sarici[aria-label="Üretilen testler tablosu"] .cip-hata {
+.kod-tablosu .cip-hata {
   font-weight: 700;
 }
 
@@ -3741,7 +3741,7 @@ details.soluk > summary {
    kalan z-index; zemin opak --bg, kartlar altından kayarken görünmez. Şerit .icerik iç boşluğu kadar iki
    yana uzar (kart kenarları/gölgeleri yanlardan sızmasın); dikey boşluk negatif marjla korunur, akıştaki
    yerleşim değişmez. <details> ile katlama yok (K8). */
-.sekmeler {
+.sekmeler-yapiskan {
   position: sticky;
   top: 56px;
   z-index: 10;
@@ -3750,17 +3750,17 @@ details.soluk > summary {
   padding: 8px 28px;
 }
 @media (max-width: 860px) {
-  .sekmeler {
+  .sekmeler-yapiskan {
     margin-inline: -16px;
     padding-inline: 16px;
   }
 }
 /* Odak/çapa kaydırması yapışkan sekmelerin altında kalmasın (WCAG 2.4.11): üst çubuk + sekme şeridi. */
-html:has(.sekmeler) {
+html:has(.sekmeler-yapiskan) {
   scroll-padding-top: 128px;
 }
 @media (max-width: 640px) {
-  html:has(.sekmeler) {
+  html:has(.sekmeler-yapiskan) {
     scroll-padding-top: 168px;
   }
 }
@@ -4195,6 +4195,82 @@ td > .satir-baglanti + .cip,
    Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
    (paralel şerit birleştirmesi için çapa — silinmez)
    ================================================================== */
+
+/* Yığın tablo etiketi akışta (≤640 px): mutlak konumlu etiket hücre yüksekliğine katılmıyordu; 320/360 px'te
+   iki satıra saran etiket ("AÇIK BULGU", "CASE (ONAYLI)") alttaki satırın etiketine biniyordu. Etiket artık
+   sola yüzen öğe: negatif sol marjla hücrenin %36'lık sol boşluğuna oturur (marj kutusu içerik alanına
+   girmez, değer metni sarılmaz), hücre flow-root olduğu için yüksekliği etikete göre büyür. Yüzdeler
+   içerik genişliğine (hücrenin %64'ü) göre: %36 / %64 = %56,25. 640 px kuralının metni değişmez. */
+@media (max-width: 640px) {
+  .tablo.tablo-yigin td[data-etiket] {
+    display: flow-root;
+  }
+  .tablo.tablo-yigin td[data-etiket]::before {
+    position: static;
+    float: left;
+    margin: 2px 0 0 -56.25%;
+    width: calc(56.25% - 10px);
+    line-height: 1.35;
+  }
+}
+
+/* Geniş tablolar (Kod üretimi, Bug taslakları, Script eşleme) 1152 px'te (sunum makinesi, %125) son sütunu
+   kesiyordu. Kenar çubuklu düzende ≤1279 px hücre yatay iç boşluğu 14 → 10 px; Kod üretiminde test adının
+   altındaki dosya yolu sarılabilir (yol uzunluğu Test sütununu genişletip "Kırarak doğrula"yı dışarı itiyordu). */
+@media (max-width: 1279px) {
+  .tablo th,
+  .tablo td {
+    padding-inline: 10px;
+  }
+}
+.kod-tablosu td > .mono.kucuk {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Koşular: başlangıç ve süre tek satır (satır yüksekliği yarıya iner, ilk ekrana daha çok koşu sığar). */
+.tablo td.tek-satir {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Case filtresi sekmeleri ≤640 px'te yapışkan değil: iki satıra sarınca üst çubukla birlikte 143 px ekranın
+   üstüne sabitleniyordu (844 px ekranın ~%17'si). Akışta kalır; kaydırma payı genel 72 px'e döner. */
+@media (max-width: 640px) {
+  .sekmeler-yapiskan {
+    position: static;
+  }
+  html:has(.sekmeler-yapiskan) {
+    scroll-padding-top: 72px;
+  }
+}
+
+/* Bölüm gezgini 861–1279 px'te (kenar çubuklu düzen, ör. 1152 px sunum makinesi): sağ sütun içeriği
+   ~650 px'e daraltıp tabloları keseceği için yapışkan sütun yerine başlığın altında, akışta yatay bağlantı
+   şeridi (yapışkan değil, dikeyde tek satır). ≥1280 px kuralı aynen. */
+@media (min-width: 861px) and (max-width: 1279px) {
+  .bolum-gezgini {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0 0 16px;
+    font-size: 0.85rem;
+  }
+  .bolum-gezgini a {
+    padding: 4px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-hap);
+    background: var(--surface);
+    color: var(--text-2);
+    font-weight: 500;
+    text-decoration: none;
+  }
+  .bolum-gezgini a:hover {
+    color: var(--text);
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+}
 
 
 

@@ -291,7 +291,7 @@ export function CaseReview() {
         </p>
       </Kart>
 
-      <div className="sekmeler" role="group" aria-label="Case filtresi">
+      <div className="sekmeler sekmeler-yapiskan" role="group" aria-label="Case filtresi">
         {(
           [
             ["hepsi", `Hepsi (${liste.length})`],

@@ -118,7 +118,7 @@ export function Kod() {
         ) : gorunen.length === 0 ? (
           <BosDurum baslik="Açık üretilen test yok; kapatılanlar gizli." />
         ) : (
-          <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Üretilen testler tablosu">
+          <div className="tablo-sarici kod-tablosu" tabIndex={0} role="region" aria-label="Üretilen testler tablosu">
             <table className="tablo">
               <thead>
                 <tr>
