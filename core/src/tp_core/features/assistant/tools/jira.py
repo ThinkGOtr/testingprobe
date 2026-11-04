@@ -12,8 +12,9 @@ Kurallar (sırasıyla; ilki tutmazsa Jira'ya istek gitmez):
 3. Yalnız bilinen anahtar: Testing Probe'da kaydı olan (`Requirement.jira_key`,
    `BugDraft.jira_key`, ya da `ExternalRef` `sistem IN ('jira','xray') AND durum='created'`).
    Serbest JQL/arama yok.
-4. Global Jira kovası (`asistan_hiz` `jira_global`, dakikada 30): aşılınca "Jira meşgul" —
-   pipeline'ın Jira kotası korunur.
+4. Global Jira kovası (`asistan_hiz` `jira_global`, dakikada 30 **HTTP isteği**): her Jira isteği
+   (konu, yorum sayfaları ve yeniden denemeler dahil) ağa çıkmadan önce kovadan bir birim düşer
+   (`KovaTransport`); aşılınca "Jira meşgul" — pipeline'ın Jira kotası korunur.
 5. Okuyucu (`integrations.jira.JiraOkuyucu`) araç çağrısı başına kalan süreyle kurulur: istek başı
    `min(8, kalan)`, toplam `min(12, kalan)`; yalnız GET, yazma yöntemi yok.
 
@@ -26,8 +27,10 @@ maskelemeden geçer, `<untrusted kind=jira>` ile sarılır (`tools.base`).
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from typing import Any, Final
 
+import httpx
 from sqlalchemy import exists, or_, select
 
 from tp_core.features.assistant.hiz import KOVA_JIRA_GLOBAL, VARSAYILAN_SINIRLAR, hiz_kontrol
@@ -65,11 +68,41 @@ MESAJ_ERISIM: Final = "Jira erişim hatası."
 MESAJ_YOK: Final = "Kayıt Jira'da bulunamadı."
 
 
+class JiraKovasiDoldu(Exception):
+    """`jira_global` kovası doldu; istek ağa çıkmadı (httpx hatası değildir, yeniden denenmez)."""
+
+
+class KovaTransport(httpx.BaseTransport):
+    """Her HTTP isteğinden (yeniden denemeler dahil) önce `kanca`'yı çağırır; kanca
+    `JiraKovasiDoldu` fırlatırsa istek iç transport'a hiç gitmez."""
+
+    def __init__(self, ic: httpx.BaseTransport, kanca: Callable[[], None]) -> None:
+        self._ic = ic
+        self._kanca = kanca
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        self._kanca()
+        return self._ic.handle_request(request)
+
+    def close(self) -> None:
+        self._ic.close()
+
+
+def ag_transportu() -> httpx.BaseTransport:
+    """Asıl ağ transport'u (testler sahte transport'la değiştirir)."""
+    return httpx.HTTPTransport()
+
+
 def okuyucu_kur(
-    timeout_s: float, toplam_sure_s: float, takma_adlar: dict[str, str]
+    timeout_s: float,
+    toplam_sure_s: float,
+    takma_adlar: dict[str, str],
+    transport: httpx.BaseTransport,
 ) -> jira_mod.JiraOkuyucu:
-    """Okuyucu fabrikası (testler sahte transport'lu okuyucuyla değiştirir)."""
-    return jira_mod.get_jira_okuma(timeout_s, toplam_sure_s, takma_adlar=takma_adlar)
+    """Okuyucu fabrikası; `transport` kova sayacıyla sarılıdır (testler ayarı değiştirir)."""
+    return jira_mod.get_jira_okuma(
+        timeout_s, toplam_sure_s, takma_adlar=takma_adlar, transport=transport
+    )
 
 
 def anahtar_dogrula(deger: Any) -> str:
@@ -116,6 +149,14 @@ def _jira_kovasi(baglam: AracBaglami) -> bool:
         izin = hiz_kontrol(s, KOVA_JIRA_GLOBAL, kullanici_id=None, sinir=sinir, pencere_s=pencere_s)
         s.commit()
     return izin
+
+
+def _kova_kancasi(baglam: AracBaglami) -> Callable[[], None]:
+    def kanca() -> None:
+        if not _jira_kovasi(baglam):
+            raise JiraKovasiDoldu()
+
+    return kanca
 
 
 def _kirp(metin: str, sinir: int) -> str:
@@ -171,15 +212,16 @@ def jira_issue(baglam: AracBaglami, **arg: Any) -> AracSonucu:
         kalan = baglam.kalan_s()
         if kalan < EN_AZ_KALAN_S:
             raise AracHatasi(MESAJ_YANIT_YOK)
-        if not _jira_kovasi(baglam):
-            raise AracHatasi(MESAJ_MESGUL)
         takma_adlar: dict[str, str] = baglam.durum.setdefault(DURUM_TAKMA_ADLAR, {})
+        transport = KovaTransport(ag_transportu(), _kova_kancasi(baglam))
         try:
             with okuyucu_kur(
-                min(ISTEK_SURE_S, kalan), min(TOPLAM_SURE_S, kalan), takma_adlar
+                min(ISTEK_SURE_S, kalan), min(TOPLAM_SURE_S, kalan), takma_adlar, transport
             ) as okuyucu:
                 issue = okuyucu.get_issue(anahtar)
                 sayfa = okuyucu.son_yorumlar(anahtar, limit)
+        except JiraKovasiDoldu as exc:
+            raise AracHatasi(MESAJ_MESGUL) from exc
         except jira_mod.JiraNotFound as exc:
             raise AracHatasi(MESAJ_YOK) from exc
         except (jira_mod.JiraAuthError, jira_mod.JiraPermissionError) as exc:

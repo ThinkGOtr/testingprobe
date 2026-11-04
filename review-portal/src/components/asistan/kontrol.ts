@@ -12,6 +12,8 @@ export interface AcmaSecenegi {
   kayitId?: string;
   /** Sohbet sekmesinde yeni sohbette hemen gönderilecek soru (ör. "Neden? Sor"). */
   soru?: string;
+  /** Soru bu sohbette sorulur (AI öneri kartının "Bunu sor"u: ek öneri sohbeti). */
+  sohbetId?: string;
 }
 
 export interface AcmaIstegi extends AcmaSecenegi {

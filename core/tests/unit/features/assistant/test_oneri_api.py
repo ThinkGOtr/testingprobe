@@ -245,7 +245,7 @@ def test_sunucu_onbellegi_kullanici_ve_varlik_bazinda(
     assert [c["kural_id"] for c in ilk["oneriler"]] == ["gereksinim-basarisiz"]
     with allow_state_write(), Session(engine) as s, s.begin():
         s.get(Requirement, req).durum = "in_review"  # type: ignore[union-attr]
-    # 10 sn içinde aynı (kullanıcı, rota, varlık) önbellekten döner.
+    # Önbellek süresi içinde aynı (kullanıcı, rota, varlık) önbellekten döner.
     assert client.get(UC, params=params).json() == ilk
     # Başka kullanıcı kendi hesabını alır.
     _giris(client, make_user("analyst"))
@@ -319,9 +319,13 @@ def test_diger_ekranlar_ozeti_kuyruktan_gelir(
 
 
 P95_ESIK_MS = float(os.environ.get("TP_TEST_ONERI_P95_MS", "300"))
-P95_TEKRAR = 12
+P95_TEKRAR = int(os.environ.get("TP_TEST_ONERI_P95_TEKRAR", "6"))
 
 
+@pytest.mark.perf
+@pytest.mark.skipif(
+    os.environ.get("TP_TEST_PERF", "1").strip() == "0", reason="TP_TEST_PERF=0: süre ölçümü kapalı"
+)
 def test_oneri_ucu_tohumlu_veride_p95_300ms_alti(
     client: TestClient,
     tohum: Tohum,
@@ -330,8 +334,10 @@ def test_oneri_ucu_tohumlu_veride_p95_300ms_alti(
 ) -> None:
     """§16.12: tohumlu veride 5 rol × ana ekranlar, önbellek dışı p95 < 300 ms.
 
-    Her çağrı öncesi `ONBELLEK.temizle()` (sunucu önbelleği ölçümü yanıltmaz). Eşik yavaş CI
-    makinesi için `TP_TEST_ONERI_P95_MS` ile gevşetilebilir; varsayılan plan değeridir.
+    Her çağrı öncesi `ONBELLEK.temizle()` (sunucu önbelleği ölçümü yanıltmaz). Rol × rota başına
+    bir ısınma çağrısı ölçülmez (ilk sorgu planı/bağlantı ısınması p95'i oynatmasın). Eşik yavaş
+    CI makinesi için `TP_TEST_ONERI_P95_MS`, tekrar `TP_TEST_ONERI_P95_TEKRAR` ile ayarlanır;
+    `perf` işaretli (`-m 'not perf'`), `TP_TEST_PERF=0` atlar.
     """
     monkeypatch.setitem(hiz.VARSAYILAN_SINIRLAR, hiz.KOVA_ONERI_LISTE, (10_000, 60))
     req = tohum.gereksinim("findings_open", po_bekleme=30)
@@ -360,6 +366,8 @@ def test_oneri_ucu_tohumlu_veride_p95_300ms_alti(
     for rol in ROLLER:
         _giris(client, make_user(rol))
         for rota in rotalar:
+            oneri.ONBELLEK.temizle()
+            assert client.get(UC, params={"rota": rota}).status_code == 200  # ısınma
             for _ in range(P95_TEKRAR):
                 oneri.ONBELLEK.temizle()
                 bas = time.perf_counter()

@@ -2117,6 +2117,13 @@ mark.kaynak-deger {
 body:has(.asistan-baslatici) .bildirimler {
   bottom: 72px;
 }
+/* Asistan paneli (masaüstü, modal değil) açıkken başlatıcı yok: bildirimler panelin solunda durur,
+   paneldeki "Asistana sor" ve sayaç satırını örtmez (panel 16 + 420 + 16 px). Dar ekranda panel tam
+   ekran modaldır; bildirim üstte kalır (katman sırası). */
+body:has(.asistan-panel:not(.asistan-panel-modal)) .bildirimler {
+  right: 452px;
+  max-width: min(420px, calc(100vw - 468px));
+}
 .bildirim {
   display: flex;
   gap: 10px;

@@ -81,15 +81,18 @@ def sahte(monkeypatch: pytest.MonkeyPatch) -> SahteJira:
     s = SahteJira()
     ayar = J.JiraSettings(JIRA_BASE_URL="http://jira-sim:8090")
 
-    def kur(timeout_s: float, toplam_sure_s: float, takma_adlar: dict[str, str]) -> Any:
+    def kur(
+        timeout_s: float, toplam_sure_s: float, takma_adlar: dict[str, str], transport: Any
+    ) -> Any:
         return J.get_jira_okuma(
             timeout_s,
             toplam_sure_s,
             settings=ayar,
-            transport=httpx.MockTransport(s),
+            transport=transport,  # kova sayaçlı sarmalayıcı (içinde sahte transport)
             takma_adlar=takma_adlar,
         )
 
+    monkeypatch.setattr(araci, "ag_transportu", lambda: httpx.MockTransport(s))
     monkeypatch.setattr(araci, "okuyucu_kur", kur)
     return s
 
@@ -243,16 +246,19 @@ def test_retry_after_kalan_sureyi_asinca_yanit_vermiyor(
 
     uykular: list[float] = []
 
-    def kur(timeout_s: float, toplam_sure_s: float, takma_adlar: dict[str, str]) -> Any:
+    def kur(
+        timeout_s: float, toplam_sure_s: float, takma_adlar: dict[str, str], transport: Any
+    ) -> Any:
         assert timeout_s <= 8 and toplam_sure_s <= 12
         return J.get_jira_okuma(
             timeout_s,
             toplam_sure_s,
             settings=J.JiraSettings(JIRA_BASE_URL="http://jira-sim:8090"),
-            transport=httpx.MockTransport(isleyici),
+            transport=transport,
             sleep=uykular.append,
         )
 
+    monkeypatch.setattr(araci, "ag_transportu", lambda: httpx.MockTransport(isleyici))
     monkeypatch.setattr(araci, "okuyucu_kur", kur)
     with pytest.raises(AracHatasi, match="yanıt vermiyor"):
         araci.jira_issue(_baglam(engine, bitis=time.monotonic() + 30), anahtar="TPD-3")
@@ -265,21 +271,50 @@ def test_sure_bittiyse_istek_yok(engine: Engine, sahte: SahteJira, bilinen) -> N
     assert sahte.istekler == []
 
 
-def test_jira_kovasi_31_cagrida_mesgul(engine: Engine, sahte: SahteJira, bilinen) -> None:
+def _jira_kova_sayisi(engine: Engine) -> int:
+    with engine.connect() as c:
+        return int(
+            c.execute(
+                text(
+                    "SELECT COALESCE(SUM(sayi), 0) FROM asistan_hiz WHERE kova = 'jira_global' "
+                    "AND pencere_baslangic = "
+                    "to_timestamp(floor(extract(epoch FROM now()) / 60) * 60)"
+                )
+            ).scalar_one()
+        )
+
+
+def _jira_kova_ayarla(engine: Engine, sayi: int) -> None:
     with engine.begin() as c:
+        c.execute(text("DELETE FROM asistan_hiz WHERE kova = 'jira_global'"))
         c.execute(
             text(
                 "INSERT INTO asistan_hiz (id, kullanici_id, kova, pencere_baslangic, sayi) "
                 "VALUES (:id, NULL, 'jira_global', "
-                "to_timestamp(floor(extract(epoch FROM now()) / 60) * 60), 29)"
+                "to_timestamp(floor(extract(epoch FROM now()) / 60) * 60), :n)"
             ),
-            {"id": uuid.uuid4()},
+            {"id": uuid.uuid4(), "n": sayi},
         )
-    araci.jira_issue(_baglam(engine), anahtar="TPD-3")  # 30. çağrı: kabul
-    onceki = len(sahte.istekler)
+
+
+def test_jira_kovasi_her_http_istegini_sayar(engine: Engine, sahte: SahteJira, bilinen) -> None:
+    """Sınır dakikada 30 HTTP isteğidir: bir okuma (konu + yorum sayfaları) kaç istek yaptıysa
+    kovadan o kadar düşer; kova dolunca istek ağa çıkmaz ("Jira meşgul")."""
+    _jira_kova_ayarla(engine, 0)
+    araci.jira_issue(_baglam(engine), anahtar="TPD-3")
+    istek = len(sahte.istekler)
+    assert istek >= 2 and _jira_kova_sayisi(engine) == istek
+
+    _jira_kova_ayarla(engine, 30)
     with pytest.raises(AracHatasi, match="Jira meşgul"):
-        araci.jira_issue(_baglam(engine), anahtar="TPD-9")  # 31.
-    assert len(sahte.istekler) == onceki
+        araci.jira_issue(_baglam(engine), anahtar="TPD-9")  # 31. istek
+    assert len(sahte.istekler) == istek
+
+    # Okumanın ortasında dolan kova: ilk istek (30.) gider, ikincisi (31.) ağa çıkmaz.
+    _jira_kova_ayarla(engine, 29)
+    with pytest.raises(AracHatasi, match="Jira meşgul"):
+        araci.jira_issue(_baglam(engine), anahtar="TPD-21")
+    assert len(sahte.istekler) == istek + 1
 
 
 def test_bilinmeyen_arguman_reddedilir(engine: Engine, sahte: SahteJira, bilinen) -> None:

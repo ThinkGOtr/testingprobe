@@ -11,9 +11,9 @@ Saklama süresi `TP_ASISTAN_SAKLAMA_GUN` (varsayılan 90; geçersiz değer varsa
 - **Sohbet:** son etkinliği (`guncelleme`, `silinme`, en yeni mesajın `olusturma`'sı) süreden eski
   sohbet fiziksel olarak silinir; **yumuşak silinenler dahil** (`silindi` fark etmez). Bekleyen
   (`pending`/`running`) mesajı olan sohbete dokunulmaz. Mesajlar `ON DELETE CASCADE` ile gider.
-- **Mesaj:** süren sohbetlerde süreden eski, bitmiş mesajlar silinir. Bir mesaj silinince
-  `ust_mesaj_id` CASCADE'i "Daha ayrıntılı incele" çocuğunu da siler (çocuk üstten saniyeler sonra
-  doğar; sınırda bir gün gecikmeyle gider, sızıntı değildir).
+- **Mesaj:** tek tek silinmez. Saklama sohbet düzeyindedir (K4, panel: "sohbet 90 gün saklanır"):
+  kullanılan bir sohbetin eski soruları ve onlara bağlı "Daha ayrıntılı" cevapları (`ust_mesaj_id`
+  CASCADE) yarım kalmaz; sohbet son etkinliğinden süre kadar sonra bütünüyle gider.
 - **Öneri geri bildirimi** (`asistan_oneri_geri_bildirim`): süreden eski satırlar silinir; "Gizle"
   bastırması da bu süre sonunda kalkar.
 - **Hız sayacı** (`asistan_hiz`): 1 günden eski pencereler (`hiz.hiz_temizle`).
@@ -88,14 +88,6 @@ _SOHBET_SIL = text(
     """
 )
 
-_MESAJ_SIL = text(
-    """
-    DELETE FROM asistan_mesaj
-    WHERE olusturma < now() - make_interval(days => :g)
-      AND durum NOT IN ('pending', 'running')
-    """
-)
-
 _GERI_BILDIRIM_SIL = text(
     "DELETE FROM asistan_oneri_geri_bildirim WHERE olusturma < now() - make_interval(days => :g)"
 )
@@ -104,17 +96,15 @@ _GERI_BILDIRIM_SIL = text(
 def temizle(session: Session, *, gun: int | None = None) -> dict[str, int]:
     """Saklama süresini aşan asistan verisini çağıranın işleminde siler; tablo başına sayılar.
 
-    Mesaj sayısı yalnız doğrudan silinenlerdir (sohbetle CASCADE gidenler `sohbet`'tedir).
+    Mesajlar yalnız sohbetleriyle (CASCADE) gider; sayıları `sohbet`'in içindedir.
     """
     g = saklama_gun() if gun is None else max(int(gun), 1)
     sohbet = session.execute(_SOHBET_SIL, {"g": g}).rowcount or 0
-    mesaj = session.execute(_MESAJ_SIL, {"g": g}).rowcount or 0
     geri_bildirim = session.execute(_GERI_BILDIRIM_SIL, {"g": g}).rowcount or 0
     hiz_sayisi = hiz.hiz_temizle(session)
     return {
         "saklama_gun": g,
         "sohbet": int(sohbet),
-        "mesaj": int(mesaj),
         "oneri_geri_bildirim": int(geri_bildirim),
         "hiz": int(hiz_sayisi),
     }
@@ -157,12 +147,11 @@ def temizlik(_ctx: JobContext) -> dict[str, Any]:
         with Session(engine) as session, session.begin():
             sonuc = temizle(session)
         sonuc["is_kaydi"] = is_kayitlarini_sil(engine)
-        if any(sonuc[k] for k in ("sohbet", "mesaj", "oneri_geri_bildirim")):
+        if any(sonuc[k] for k in ("sohbet", "oneri_geri_bildirim")):
             log.info(
-                "asistan saklama temizliği (%d gün): %d sohbet, %d mesaj, %d öneri geri bildirimi",
+                "asistan saklama temizliği (%d gün): %d sohbet, %d öneri geri bildirimi",
                 sonuc["saklama_gun"],
                 sonuc["sohbet"],
-                sonuc["mesaj"],
                 sonuc["oneri_geri_bildirim"],
             )
         return sonuc

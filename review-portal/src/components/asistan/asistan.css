@@ -457,6 +457,12 @@
   cursor: default;
   font-size: 0.9rem;
 }
+/* Bindirme (z 39) panelin (z 40) altındadır ve bant bindirmenin çocuğudur: panel açıkken bant
+   panelin solundaki alanın ortasına alınır, "Vazgeç" panelin altında kalmaz. */
+body:has(.asistan-panel:not(.asistan-panel-modal)) .asistan-bune-ipucu {
+  left: calc((100vw - 452px) / 2);
+  max-width: calc(100vw - 484px);
+}
 
 @media (prefers-reduced-motion: reduce) {
   .asistan-panel,

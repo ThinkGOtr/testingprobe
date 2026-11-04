@@ -20,21 +20,18 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any, Final
+from typing import Any
 
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session, sessionmaker
 
 from tp_core.db import get_engine
 from tp_core.features.assistant import durum, flow, temizlik
-from tp_core.features.assistant.budget import ASISTAN_IS_TURU
+from tp_core.features.assistant.budget import ASISTAN_IS_TURU, IS_ZAMAN_ASIMI_S
 from tp_core.gateway.errors import BudgetExceeded
 from tp_core.workflow.jobs import ASISTAN_SERIT, JobContext, PermanentJobError, job_handler
 
 log = logging.getLogger("tp_core.worker")
-
-# API'nin satıra yazdığı politika ile aynı (`api.IS_ZAMAN_ASIMI_S`); süre sınırı geçitte (75 sn).
-IS_ZAMAN_ASIMI_S: Final = 120
 
 
 def _mesaj_id(yuk: Any) -> uuid.UUID:

@@ -661,23 +661,26 @@ export function HataDetay() {
         </Kart>
       </div>
 
-      {!ortam && h.oneri?.tur === "locator_fix" && <OnarimKarti o={h.oneri} hataId={h.id} yenile={() => void v.yenile(true)} />}
-      {!ortam && h.oneri?.tur === "bug_draft" && (
-        <Kart baslik="Öneri">
-          <p>
-            Ürün hatası adayı: bug taslağı hazırlandı ve Jira'da mükerrer araması yapıldı. Kayıt yalnızca testçi onayıyla açılır.{" "}
-            <Link className="dugme dugme-birincil dugme-kucuk" to={`/bug-taslaklari/${encodeURIComponent(h.oneri.bug_draft_id)}`}>
-              Bug taslağına git
-            </Link>
-          </p>
-          <MukerrerSatiri id={h.oneri.bug_draft_id} />
-        </Kart>
-      )}
-      {!h.oneri && h.oneri_yok_nedeni && (
-        <Uyari ton="uyari" baslik="Öneri üretilmedi">
-          {h.oneri_yok_nedeni}
-        </Uyari>
-      )}
+      {/* Öneri kartındaki "Git" çapası (#onarim): onarım/öneri bölümü her durumda bu kapta. */}
+      <div id="onarim">
+        {!ortam && h.oneri?.tur === "locator_fix" && <OnarimKarti o={h.oneri} hataId={h.id} yenile={() => void v.yenile(true)} />}
+        {!ortam && h.oneri?.tur === "bug_draft" && (
+          <Kart baslik="Öneri">
+            <p>
+              Ürün hatası adayı: bug taslağı hazırlandı ve Jira'da mükerrer araması yapıldı. Kayıt yalnızca testçi onayıyla açılır.{" "}
+              <Link className="dugme dugme-birincil dugme-kucuk" to={`/bug-taslaklari/${encodeURIComponent(h.oneri.bug_draft_id)}`}>
+                Bug taslağına git
+              </Link>
+            </p>
+            <MukerrerSatiri id={h.oneri.bug_draft_id} />
+          </Kart>
+        )}
+        {!h.oneri && h.oneri_yok_nedeni && (
+          <Uyari ton="uyari" baslik="Öneri üretilmedi">
+            {h.oneri_yok_nedeni}
+          </Uyari>
+        )}
+      </div>
 
       <KanitKarti k={h.kanit} linkler={h.kanit_linkleri} />
     </>

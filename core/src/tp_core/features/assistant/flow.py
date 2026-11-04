@@ -81,7 +81,7 @@ BUNDLE: Final = "assistant"
 VARSAYILAN_AMAC: Final = "assistant"
 DERIN_AMAC: Final = "assistant_deep"
 ORTAM_OTOMATIK_DERIN: Final = "TP_ASISTAN_OTOMATIK_DERIN"
-IS_ZAMAN_ASIMI_S: Final = 120  # api.IS_ZAMAN_ASIMI_S ile aynı (yalnız emniyet; süre geçitte)
+IS_ZAMAN_ASIMI_S: Final = asistan_budget.IS_ZAMAN_ASIMI_S  # tek kaynak budget.py
 
 HATA_BUTCE: Final = mesaj_durumu.HATA_BUTCE
 HATA_GIRDI: Final = "girdi_tavani"
@@ -296,22 +296,51 @@ def _cevap_metni(cevap: Any) -> str:
     return " ".join(" ".join(parcalar).split())
 
 
+def _derin_siniri(conn: Connection, m: Mesaj) -> tuple[int, uuid.UUID | None]:
+    """Derin mesajın geçmiş sınırı: kök sorunun sırası ve üst (kısa) cevabın kimliği.
+
+    "Daha ayrıntılı" eski bir cevaba da basılabilir ve çocuk sohbetin sonuna eklenir; geçmiş kök
+    sorudan öncesiyle sınırlanır (kök soru `Soru:` satırında gider, sonraki sorular ilgisizdir).
+    Üst (kısa) cevap geçmişin son satırı olarak ayrıca eklenir."""
+    ust = conn.execute(
+        text("SELECT sira FROM asistan_mesaj WHERE id = :u AND sohbet_id = :s"),
+        {"u": m.ust_mesaj_id, "s": m.sohbet_id},
+    ).scalar_one_or_none()
+    if ust is None:
+        return m.sira, None
+    kok = conn.execute(
+        text(
+            "SELECT MAX(sira) FROM asistan_mesaj WHERE sohbet_id = :s AND rol = 'user' "
+            "AND sira < :u"
+        ),
+        {"s": m.sohbet_id, "u": ust},
+    ).scalar_one_or_none()
+    return (kok if kok is not None else ust), m.ust_mesaj_id
+
+
 def sohbet_gecmisi(conn: Connection, m: Mesaj) -> str | None:
-    """§6.5: son 6 mesajın metni, cevaplar 600 karaktere kırpılı (bu sorunun kendisi hariç)."""
+    """§6.5: son 6 mesajın metni, cevaplar 600 karaktere kırpılı (bu sorunun kendisi hariç).
+    Derin mesajda kök sorudan öncesi + üst kısa cevap (`_derin_siniri`)."""
+    sinir, ust_id = _derin_siniri(conn, m) if m.derin else (m.sira, None)
     satirlar = (
         conn.execute(
             text(
                 "SELECT rol, icerik, cevap, sira FROM asistan_mesaj WHERE sohbet_id = :s "
-                "AND sira < :n AND durum = 'done' ORDER BY sira DESC LIMIT :k"
+                "AND (sira < :n OR id = :u) AND durum = 'done' ORDER BY sira DESC LIMIT :k"
             ),
-            {"s": m.sohbet_id, "n": m.sira, "k": GECMIS_MESAJ + 1},
+            {"s": m.sohbet_id, "n": sinir, "u": ust_id, "k": GECMIS_MESAJ + 1},
         )
         .mappings()
         .all()
     )
     secilen = []
     for r in satirlar:
-        if r["rol"] == "user" and r["sira"] == m.sira - 1 and r["icerik"] == m.icerik:
+        if (
+            not m.derin
+            and r["rol"] == "user"
+            and r["sira"] == m.sira - 1
+            and r["icerik"] == m.icerik
+        ):
             continue  # cevaplanan sorunun kendisi geçmiş değildir
         secilen.append(r)
     secilen = list(reversed(secilen[:GECMIS_MESAJ]))
@@ -374,9 +403,12 @@ def ilk_mesaj(
 
 
 def _kural_onerileri(session_factory: SessionFactory, m: Mesaj) -> list[dict[str, Any]]:
-    """Öneri kipinde ekrandaki kural önerileri (aynı motor; modelsiz)."""
+    """Öneri kipinde ekrandaki kural önerileri (aynı motor; modelsiz). `TP_ASISTAN_ONERI=0`
+    (geri alma) iken boş: kuyrukta kalmış öneri kipi işi de kural önerisi taşımaz."""
     from tp_core.features.assistant import oneri
 
+    if not oneri.oneri_etkin():
+        return []
     baglam = m.baglam or {}
     varlik = baglam.get("varlik") if isinstance(baglam.get("varlik"), Mapping) else {}
     rota = baglam.get("rota_kalibi") or ""

@@ -6,6 +6,7 @@ Sahte token'lar çalışma anında birleştirilir (repo public; push koruması).
 from __future__ import annotations
 
 import json
+import logging
 import os
 import uuid
 from collections.abc import Iterator
@@ -416,6 +417,26 @@ def test_actions_read_token_varsa_o_kullanilir() -> None:
     )
     ok.jobs(555)
     assert sahte.istekler[-1].headers["Authorization"] == f"Bearer {okuma}"
+
+
+def test_okuma_tokeni_yoksa_forge_kimligi_uyariyla(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """İki okuma token'ı da boşsa forge kimliğine düşülür ve en az yetki sapması loglanır."""
+    sahte = SahteGitHub()
+    forge = _okuyucu(sahte)._forge
+    monkeypatch.setattr(services, "forge", lambda: forge)
+    with caplog.at_level(logging.WARNING, logger="tp_core.ci"):
+        ok = GitHubCiOkuyucu.kur({"GITHUB_TOKEN": FORGE_TOKEN, "GITHUB_REPO": "ornek/uygulama"})
+    assert ok._forge is forge
+    uyari = [r.getMessage() for r in caplog.records if r.name == "tp_core.ci"]
+    assert uyari and "forge kimliği" in uyari[0] and FORGE_TOKEN not in uyari[0]
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="tp_core.ci"):
+        GitHubCiOkuyucu.kur(
+            {"GITHUB_READ_TOKEN": "gh" + "p_" + "x" * 36, "GITHUB_REPO": "ornek/uygulama"}
+        )
+    assert not [r for r in caplog.records if r.name == "tp_core.ci"]
 
 
 def test_ci_log_github_yedegi_basarisiz_job_once(

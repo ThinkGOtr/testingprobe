@@ -176,6 +176,7 @@ def test_olgular_script_kosu_hata_bug_genel(
         assert oneri.olgular(s, kisi, "script", sid) == {
             "durum": "pr_open",
             "kirarak_dogrulama": "weak",
+            "defect_adayi": False,
         }
         assert oneri.olgular(s, kisi, "script", onarim) == {"durum": "pr_open"}
         assert oneri.olgular(s, kisi, "run", rid) == {"ci_sonuc": "error"}
@@ -195,6 +196,29 @@ def test_olgular_script_kosu_hata_bug_genel(
         }
         g = oneri.olgular(s, kisi, None, None)
     assert g == {"butce_orani": 0.0}  # bitmiş koşu yok → son_kosu_saat olgusu yok
+
+
+def test_script_insana_dustu_defect_adayi_ve_rota(
+    engine: Engine, tohum: Tohum, make_user: MakeUser
+) -> None:
+    """Kural 15: "Yeniden üret" Kod listesinde (rota /kod); defect adayı (engel ya da yerel sınıf)
+    ve üretim kaydı olmayan script'te önerilmez (Kod.tsx düğme koşuluyla aynı)."""
+    kisi = make_user("engineer")
+    locator = tohum.script("blocked", "not_started", engel_turu="locator")
+    sonuc = _hesapla(engine, kisi, Ekran(f"/kod/{locator}", "script", locator, _simdi()))
+    kart = next(c for c in sonuc["oneriler"] if c["kural_id"] == "script-insana-dustu")
+    assert kart["eylem"]["rota"] == "/kod"
+    yerel = tohum.script("blocked", "not_started", yerel_kontrol={"sinif": "defect_adayi"})
+    atlandi = tohum.script(
+        "blocked", "not_started", yerel_kontrol={"sinif": "defect_adayi", "atlandi": True}
+    )
+    onarim = tohum.script("blocked", None)
+    with Session(engine) as s:
+        assert oneri.olgular(s, kisi, "script", yerel)["defect_adayi"] is True
+        assert oneri.olgular(s, kisi, "script", atlandi)["defect_adayi"] is False
+    for sid in (yerel, onarim):
+        e = Ekran(f"/kod/{sid}", "script", sid, _simdi())
+        assert "script-insana-dustu" not in _idler(_hesapla(engine, kisi, e)), sid
 
 
 def test_son_kosu_ic_tetikleri_saymaz(engine: Engine, tohum: Tohum, make_user: MakeUser) -> None:

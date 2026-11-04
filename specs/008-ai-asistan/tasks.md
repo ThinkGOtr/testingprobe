@@ -57,8 +57,8 @@ T131 `evaluated` olmadan yapılmaz (İlke X).
 ### Şerit R — öneri motoru (US2) — C2 + A'dan sonra; uç E'den sonra
 - [x] T060 `features/assistant/oneri.py`: `olgular()`, `oneriler()` (contracts/oneri-kurallari.md), güvenli yer tutucu
 - [x] T061 `GET /assistant/suggestions`, `POST /assistant/suggestions/{kural_id}/feedback`, bağlantı kurgusu (`JIRA_CREATE_URL` doğrulaması)
-- [ ] T062 Kural testleri: her kural olumlu/olumsuz, 5 rol, rol hizalama, kapsam matrisi, sistem hattı yasağı, p95 < 300 ms
-  — *açık kalan:* olumlu/olumsuz, rol, hizalama ve kapsam testleri var; p95 < 300 ms ölçümü yok
+- [x] T062 Kural testleri: her kural olumlu/olumsuz, 5 rol, rol hizalama, kapsam matrisi, sistem hattı yasağı, p95 < 300 ms
+  (`test_oneri_motoru.py`, `test_rules_asistan.py`, `test_oneri_api.py::test_oneri_ucu_tohumlu_veride_p95_300ms_alti`)
 
 ### Şerit E — API (US1, US4) — B + C1 + R(motor)'dan sonra
 - [x] T070 Mesaj uçları (atomik bekleme, `ust_mesaj_id`, `kip`/`oneri_kural_id`, sayaçlar, advisory lock)
@@ -91,9 +91,15 @@ T131 `evaluated` olmadan yapılmaz (İlke X).
 
 ## Faz 3: Değerlendirme ve kapanış (Şerit H, seri)
 
+**Birleştirme kapısı:** dal `dev`'e yalnız bayrak arkasında (`TP_ASISTAN_MODEL_MODE=off`) girer. `main`'e
+birleştirme ve sunucuda `live` için T007 (teknik lider onayı, anayasa v1.3.0), T131 (`assistant` paketi
+`evaluated` + içerik hash'i + K2 kararı; medyan maliyet, yükseltme oranı ≤ %35, p90 süre raporu), T132,
+T133 ve T136 kapanmış olmalı (plan §16 madde 2, 5, 9, 14).
+
 - [x] T130 Eval düzeneği (`check_output` `assistant` dalı, `--via-flow`, `ENVS["assistant:<rol>"]`, içerik hash'i)
 - [ ] T131 Canlı set ≥ 30 soru + matris (Haiku low/medium, Sonnet low/medium) → K2 kararı → `evaluated`
 - [ ] T132 E2E: mock duman + `canli.spec.ts` (`TP_ASISTAN_MODEL_MODE=off`); prova dürüstlük kilidi yeşil
 - [ ] T133 Gerçek Jira Cloud'da "Jira'yı aç" yeni kayıt yolu kontrolü (research R7)
 - [ ] T134 Çok rollü inceleme döngüsü; KRİTİK/ÖNEMLİ bulgu yok
+- [ ] T136 K10 yeniden onayı: kural 1, 8, 11 daraltmaları ve kural 15 (defect adayı hariç, eylem `/kod`); onayla plan K10 satırı tarihlenir (contracts/oneri-kurallari.md fark listesi)
 - [ ] T135 Tam paket yeşil → `main` → sunucu `.env`'de `TP_ASISTAN_MODEL_MODE=live`

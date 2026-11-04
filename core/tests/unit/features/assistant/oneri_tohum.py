@@ -128,7 +128,14 @@ class Tohum:
 
     # -------------------------------------------------------------- script / koşu / hata
 
-    def script(self, durum: str = "pr_open", break_durum: str | None = "not_started") -> uuid.UUID:
+    def script(
+        self,
+        durum: str = "pr_open",
+        break_durum: str | None = "not_started",
+        *,
+        engel_turu: str | None = None,
+        yerel_kontrol: dict[str, Any] | None = None,
+    ) -> uuid.UUID:
         sc = Script(dosya_yolu=f"e2e/t{uuid.uuid4().hex[:6]}.spec.ts", durum=durum)
         self._ekle(sc)
         if break_durum is not None:
@@ -142,6 +149,8 @@ class Tohum:
                     case_hash="h",
                     sira_no=1,
                     break_durum=break_durum,
+                    engel_turu=engel_turu,
+                    yerel_kontrol=yerel_kontrol,
                 )
             )
         return sc.id
@@ -270,9 +279,9 @@ def _case_bitti(t: Tohum, n: datetime) -> Ekran:
     return _ci(req, n)
 
 
-def _script(durum: str, brk: str | None) -> Kurulum:
+def _script(durum: str, brk: str | None, **kw: Any) -> Kurulum:
     def _k(t: Tohum, n: datetime) -> Ekran:
-        sid = t.script(durum, brk)
+        sid = t.script(durum, brk, **kw)
         return Ekran(f"/kod/{sid}", "script", sid, n)
 
     return _k
@@ -409,7 +418,12 @@ VAKALAR: dict[str, tuple[str, Kurulum, Kurulum]] = {
         _script("pr_open", "passed"),
         _script("merged", "passed"),
     ),
-    "script-insana-dustu": ("engineer", _script("blocked", None), _script("closed", None)),
+    "script-insana-dustu": (
+        "engineer",
+        _script("blocked", "not_started", engel_turu="locator"),
+        # Defect adayında yeniden üretim önerilmez (karar triage'da; Kod.tsx ile aynı).
+        _script("blocked", "not_started", engel_turu="defect_candidate"),
+    ),
     "kosu-ortam-hatasi-task": ("engineer", _kosu("error"), _kosu("failed")),
     "kosu-ortam-hatasi-bilgi": ("presenter", _kosu("error"), _kosu("passed")),
     "hata-bakim-onarim": (

@@ -101,7 +101,7 @@ bundles:
       çalışma zamanında golden kullanmaz. Değerlendirme seti: rules/evaluation/assistant.json (40 vaka,
       iki amaç, §13 eşikleri); işleyici üzerinden koşar: `make eval-live A="--bundle assistant --via-flow
       --budget-usd 15 --update-status"` (tohumlu yığın). Kayıt `evaluation.icerik_hash` (prompt, iki şema,
-      models.yaml asistan amaçları, rules/assistant/*.yaml) ve `evaluation.amaclar` taşır; içerik sonradan
+      models.yaml asistan amaçları, rules/assistant/*.yaml ve rotalar.json) ve `evaluation.amaclar` taşır; içerik sonradan
       değişirse `--check` düşer. Canlı değerlendirme yapılmadı; onaylı istisna yok. `dev`''de bayrak
       arkasında (`TP_ASISTAN_MODEL_MODE=off`) kabul edilir; `main`''e birleştirme ve sunucuda `live`
       açılması bu kayıt `evaluated` olmadan yapılmaz (İlke X; tasks.md T131, T135).'

@@ -191,7 +191,7 @@ başlığıyla mükerrer atma, proje sunucudan) birim testleriyle; model kapalı
   (`TP_ASISTAN_SAKLAMA_GUN`); `ai_call`/`tool_call` etkilenmemelidir (K4).
 - **FR-019**: Asistan ve öneri uçları bayraklarla bağımsız kapatılabilmeli (`TP_ASISTAN_MODEL_MODE`,
   `TP_ASISTAN_ONERI`, `TP_ASISTAN_OTOMATIK_DERIN`); geri alma = bayrak `off`.
-- **FR-020**: Prompt, iki şema, `models.yaml` asistan amaçları ve `rules/assistant/*.yaml` canlı
+- **FR-020**: Prompt, iki şema, `models.yaml` asistan amaçları, `rules/assistant/*.yaml` ve `rules/assistant/rotalar.json` canlı
   değerlendirmeden geçmeden `main`'e birleşmemeli; `evaluations.yaml` kaydı içerik hash'i taşımalıdır
   (İlke X).
 

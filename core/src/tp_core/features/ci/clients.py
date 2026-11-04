@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import fnmatch
 import io
+import logging
 import os
 import time
 import zipfile
@@ -25,6 +26,8 @@ from urllib.parse import quote
 import httpx
 
 from tp_core.features.ci.parse import MAX_ERROR_CONTEXT, MAX_RAPOR_BAYT
+
+log = logging.getLogger("tp_core.ci")
 
 # toolchain /check en kötü zinciri (MIMARI-SOZLESME §2): /check kilidi bekleme + git + statik
 # adımlar (tsc, eslint, AST koruması) + test-runner kilidi bekleme + koşu. Varsayılanlar
@@ -337,6 +340,13 @@ class GitHubCiOkuyucu:
             return cls(forge)
         from tp_core.features.ci import services
 
+        # Okuma token'ı yok: forge kimliği (GitHub App ya da GITHUB_TOKEN; yazma yetkili olabilir).
+        # Okuyucu yalnız GET gönderir, yine de en az yetki sapması görünür olsun (değer yazılmaz).
+        log.warning(
+            "ci_log: %s/GITHUB_READ_TOKEN boş; GitHub iş logu forge kimliğiyle okunuyor "
+            "(yalnız actions:read token'ı önerilir)",
+            ACTIONS_READ_TOKEN_ENV,
+        )
         return cls(services.forge())
 
     @property

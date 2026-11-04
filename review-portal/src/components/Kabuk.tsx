@@ -4,6 +4,7 @@ import { canliDerleme, cekirdekYetenekleri, mockDegisikligineAbone, mockUclari, 
 import { useBaglantiDurumu, type BaglantiDurumu } from "../api/events";
 import type { Rol } from "../api/types";
 import { useOturum } from "../auth";
+import { useCapayaKaydir } from "../lib/capa";
 import { ROL } from "../lib/etiketler";
 import { OneriDugmesi } from "./asistan/OneriDugmesi";
 import { paneliAc, sekmeSec, useAsistanHazir } from "./asistan/kontrol";
@@ -104,14 +105,17 @@ export function useCanliYetenekler(): Yetenekler | null {
   return y;
 }
 
-/** Panel çizilince içindeki ilk odaklanabilir öğeye (yoksa panele) odak verir; birkaç kare bekler. */
+/**
+ * Panel çizilince soru alanına (yoksa panel başlığına, o da yoksa panele) odak verir; birkaç kare
+ * bekler. İlk düğme başlıktaki "Asistanı kapat" olduğu için belge sırasıyla ilk öğe seçilmez.
+ */
 function paneleOdaklan(kalan = 10): void {
   const panel = document.querySelector<HTMLElement>('[data-testid="asistan-paneli"]');
   if (!panel) {
     if (kalan > 0) setTimeout(() => paneleOdaklan(kalan - 1), 16);
     return;
   }
-  const hedef = panel.querySelector<HTMLElement>("textarea:not([disabled]), input:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex='-1'])");
+  const hedef = panel.querySelector<HTMLElement>("#asistan-soru:not([disabled])") ?? panel.querySelector<HTMLElement>("h2[tabindex]");
   if (hedef) hedef.focus();
   else {
     panel.tabIndex = -1;
@@ -161,6 +165,8 @@ function KabukIcerik() {
   const git = useNavigate();
 
   useEffect(() => setMenuAcik(false), [konum.pathname, setMenuAcik]);
+  // Öneri kartındaki "Git" çapası (`#bulgular` vb.): hedef bölüme kaydırır.
+  useCapayaKaydir();
 
   const mockAktif = mockZorunlu() || mockUclar.length > 0;
   const b = BAGLANTI[baglanti];

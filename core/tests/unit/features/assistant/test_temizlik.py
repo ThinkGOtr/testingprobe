@@ -118,7 +118,8 @@ def test_saklama_suresi_ve_kapsam(engine: Engine, make_user) -> None:
     silinmis_eski = _sohbet(engine, u.id, gun_once=100, silindi=True, silinme_gun_once=95)
     # Yumuşak silinmiş ama yakın zamanda silinmiş: süre dolmadı, kalır.
     silinmis_yeni = _sohbet(engine, u.id, gun_once=100, silindi=True, silinme_gun_once=10)
-    # Etkin sohbet: eski mesajı gider (süresi dolmamış derin çocuğu CASCADE ile), yenisi kalır.
+    # Etkin sohbet: saklama sohbet düzeyinde; süreden eski mesajı ve onun derin çocuğu da kalır
+    # (kullanılan sohbet yarım kalmaz).
     etkin = _sohbet(engine, u.id, gun_once=1)
     etkin_eski = _mesaj(engine, etkin, u.id, 1, gun_once=95, rol="assistant")
     etkin_cocuk = _mesaj(engine, etkin, u.id, 2, gun_once=89, rol="assistant", ust=etkin_eski)
@@ -166,7 +167,6 @@ def test_saklama_suresi_ve_kapsam(engine: Engine, make_user) -> None:
     assert sonuc == {
         "saklama_gun": 90,
         "sohbet": 2,
-        "mesaj": 1,  # etkin_eski; çocuğu CASCADE ile gider
         "oneri_geri_bildirim": 1,
         "hiz": 1,
     }
@@ -174,8 +174,8 @@ def test_saklama_suresi_ve_kapsam(engine: Engine, make_user) -> None:
     assert not _var(engine, "asistan_sohbet", silinmis_eski)
     assert _var(engine, "asistan_sohbet", silinmis_yeni)
     assert _var(engine, "asistan_sohbet", etkin) and _var(engine, "asistan_mesaj", etkin_yeni)
-    assert not _var(engine, "asistan_mesaj", etkin_eski)
-    assert not _var(engine, "asistan_mesaj", etkin_cocuk)
+    assert _var(engine, "asistan_mesaj", etkin_eski)
+    assert _var(engine, "asistan_mesaj", etkin_cocuk)
     assert _var(engine, "asistan_sohbet", bekleyen) and _var(engine, "asistan_mesaj", bekleyen_m)
     assert _var(engine, "asistan_sohbet", mesaji_yeni)
     assert _say(engine, "SELECT count(*) FROM asistan_oneri_geri_bildirim") == 1

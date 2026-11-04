@@ -50,6 +50,9 @@ KULLANICI_BEKLEYEN: Final = 1
 VARSAYILAN_PARALEL: Final = 3
 
 ASISTAN_IS_TURU: Final = "assistant.answer"
+# `assistant.answer` işinin kuyruk zaman aşımı (yalnız emniyet; süre sınırı geçitte, 75 sn). Tek
+# kaynak: API POST'u, otomatik yükseltme ve `@job_handler` kaydı buradan okur.
+IS_ZAMAN_ASIMI_S: Final = 120
 ASISTAN_AMACLARI: Final = ("assistant", "assistant_deep")
 BITMEMIS_IS: Final = ("queued", "running", "retry")
 
@@ -228,6 +231,25 @@ def kullanici_bekleyen(conn: Connection, kullanici_id: uuid.UUID) -> int:
             text(
                 "SELECT count(*) FROM job WHERE tur = :t AND durum IN ('queued','running','retry') "
                 "AND yuk->>'kullanici_id' = :k AND yuk->>'tetik' = 'kullanici'"
+            ),
+            {"t": ASISTAN_IS_TURU, "k": str(kullanici_id)},
+        ).scalar_one()
+    )
+
+
+def kullanici_kapanan(conn: Connection, kullanici_id: uuid.UUID) -> int:
+    """`kullanici_bekleyen` içinde mesajı zaten `iptal` olan (durdurulmuş ama hâlâ kapanan) işler.
+
+    Koşan cevap iptal edilince iş geçitte tur başında durur; o ana dek kullanıcı sayacında kalır
+    (§9). API bu durumda 409 `bekleyen_var` metnini "kapanıyor" olarak açıklar."""
+    return int(
+        conn.execute(
+            text(
+                "SELECT count(*) FROM job j JOIN asistan_mesaj m "
+                "ON m.id::text = j.yuk->>'mesaj_id' "
+                "WHERE j.tur = :t AND j.durum IN ('queued','running','retry') "
+                "AND j.yuk->>'kullanici_id' = :k AND j.yuk->>'tetik' = 'kullanici' "
+                "AND m.durum = 'iptal'"
             ),
             {"t": ASISTAN_IS_TURU, "k": str(kullanici_id)},
         ).scalar_one()

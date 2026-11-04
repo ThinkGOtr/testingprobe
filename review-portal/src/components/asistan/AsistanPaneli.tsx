@@ -17,6 +17,9 @@ import { useAsistanKapisi } from "./yetenek";
 
 export const DAR_EKRAN_PX = 760;
 
+/** Pasif asistan (ör. `worker_yok`) panel açıkken bu aralıkla yeniden okunur (testler kısaltabilir). */
+export const panelAyar = { pasifYoklamaMs: 30_000 };
+
 const ODAKLANABILIR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
 
@@ -81,7 +84,19 @@ export function AsistanPaneli() {
   const oncekiAcik = useRef(kontrol.acik);
   const baslikId = useId();
 
+  // "Bu ne?" seçimi o ekrana aittir: rota/varlık değişince önceki ekranın öğesi yeni bağlamla gitmesin.
+  useEffect(() => setSecili(null), [ekranHam.rota_kalibi, ekranHam.varlik?.id]);
+
   const hazir = kapi.tur === "hazir";
+  // Pasifken durum yalnız ilk yüklemede okunsaydı worker sonradan gelse de panel sayfa yenilenene
+  // kadar "kullanılamıyor" kalırdı: panel açılınca ve açık kaldıkça periyodik olarak yeniden okunur.
+  const pasifAcik = kapi.tur === "pasif" && kontrol.acik;
+  useEffect(() => {
+    if (!pasifAcik) return;
+    void yenile();
+    const z = setInterval(() => void yenile(), panelAyar.pasifYoklamaMs);
+    return () => clearInterval(z);
+  }, [pasifAcik, yenile]);
   useEffect(() => {
     panelHazirAyarla(hazir);
     return () => panelHazirAyarla(false);
@@ -137,7 +152,8 @@ export function AsistanPaneli() {
     if (!modalAktif) return;
     const fn = (e: KeyboardEvent) => {
       const p = panelRef.current;
-      if (!p) return;
+      // İç modal (alıntı) tuşu kendisi işlediyse dokunulmaz.
+      if (!p || e.defaultPrevented) return;
       if (e.key === "Escape") {
         e.preventDefault();
         paneliKapat();
@@ -334,7 +350,10 @@ export function AsistanPaneli() {
               />
             ) : pasifNeden || !asistan ? (
               <Uyari ton="uyari" baslik="Asistan kullanılamıyor">
-                {pasifNeden ?? "Asistan kapalı."}
+                {pasifNeden ?? "Asistan kapalı."}{" "}
+                <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => void yenile()}>
+                  Yeniden dene
+                </button>
               </Uyari>
             ) : (
               <SohbetSekmesi

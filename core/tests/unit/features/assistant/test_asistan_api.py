@@ -409,14 +409,10 @@ def test_origin_evil_403_ve_bearer_401(client: TestClient, make_user, canli) -> 
         ("GET", f"/assistant/messages/{m}"),
         ("POST", f"/assistant/messages/{m}/cancel"),
         ("POST", f"/assistant/messages/{m}/feedback"),
+        ("GET", "/assistant/suggestions"),
+        ("POST", "/assistant/suggestions/gereksinim-po-bekliyor/feedback"),
     ]
-    from tp_core.api.registry import _rotalar
-
-    if ("GET", "/assistant/suggestions") in {(y, p) for y, p, _ in _rotalar(client.app.routes)}:
-        uclar += [  # Şerit R uçları bu router'a dahil edilir (11 uç)
-            ("GET", "/assistant/suggestions"),
-            ("POST", "/assistant/suggestions/gereksinim-po-bekliyor/feedback"),
-        ]
+    assert len(uclar) == 11
     client.cookies.clear()
     for yontem, yol in uclar:
         r = client.request(yontem, yol, headers={"Authorization": f"Bearer {ham}"}, json={})
@@ -523,6 +519,7 @@ def test_kullanici_basi_tek_bekleyen(client: TestClient, make_user, engine, canl
     assert sor(client, s).status_code == 202
     r = sor(client, s)
     assert r.status_code == 409 and r.json()["kod"] == "bekleyen_var"
+    assert "kapanıyor" not in r.json()["detail"]
     # başka sohbetten de aynı
     assert sor(client, sohbet_ac(client)).json()["kod"] == "bekleyen_var"
 
@@ -542,9 +539,10 @@ def test_iptal_edilip_suren_is_sayimda_kalir(client: TestClient, make_user, engi
         )
     r = client.post(f"/assistant/messages/{mid}/cancel")
     assert r.status_code == 200 and r.json()["durum"] == "iptal"
-    # kısmi tekil indeks boşaldı ama iş sürüyor → yine 409
+    # kısmi tekil indeks boşaldı ama iş sürüyor → yine 409; metin "kapanıyor" der
     r = sor(client, s)
     assert r.status_code == 409 and r.json()["kod"] == "bekleyen_var"
+    assert "kapanıyor" in r.json()["detail"]
     with engine.begin() as c:
         c.execute(text("UPDATE job SET durum = 'done' WHERE durum = 'running'"))
     assert sor(client, s).status_code == 202
@@ -705,6 +703,35 @@ def test_oneri_kapaliysa_kural_id_gecersiz(client, make_user, canli, monkeypatch
     monkeypatch.setenv("TP_ASISTAN_ONERI", "0")
     giris(client, make_user("po"))
     r = sor(client, sohbet_ac(client), oneri_kural_id="gereksinim-po-bekliyor")
+    assert r.status_code == 409 and r.json()["kod"] == "oneri_gecersiz"
+
+
+@pytest.mark.parametrize("deger", ["0", "false", "off"])
+def test_oneri_kapaliysa_oneri_kipi_reddedilir(
+    client, make_user, engine, canli, monkeypatch, deger
+) -> None:
+    """Geri alma bayrağı "Başka ne yapabilirim?" kipini de kapatır (§9); düz soru etkilenmez.
+    Bayrak okumaları tek kaynaktan (`oneri.oneri_etkin`): "0" dışındaki kapalı değerler de."""
+    giris(client, make_user("tester"))
+    s = sohbet_ac(client)
+    monkeypatch.setenv("TP_ASISTAN_ONERI", deger)
+    r = client.post(f"/assistant/conversations/{s}/messages", json={"kip": "oneri"})
+    assert r.status_code == 409 and r.json()["kod"] == "oneri_gecersiz"
+    assert tek(engine, "SELECT count(*) FROM asistan_mesaj WHERE sohbet_id = :s", s=s) == 0
+    assert sor(client, s).status_code == 202
+
+
+def test_oneri_kapaliysa_oneri_kipi_cevabinin_derini_reddedilir(
+    client, make_user, engine, canli, monkeypatch
+) -> None:
+    giris(client, make_user("tester"))
+    s = sohbet_ac(client)
+    mid = client.post(f"/assistant/conversations/{s}/messages", json={"kip": "oneri"}).json()[
+        "mesaj_id"
+    ]
+    mesaj_bitir(engine, mid, amac="assistant")
+    monkeypatch.setenv("TP_ASISTAN_ONERI", "0")
+    r = sor(client, s, ust_mesaj_id=mid)
     assert r.status_code == 409 and r.json()["kod"] == "oneri_gecersiz"
 
 

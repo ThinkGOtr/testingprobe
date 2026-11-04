@@ -293,6 +293,12 @@ def test_jira_baglantisi_ayarlardan(monkeypatch: pytest.MonkeyPatch) -> None:
         assert b.yeni_kayit_adresi() == (
             "https://ornek.atlassian.net/secure/CreateIssue!default.jspa"
         )
+        # Gezinme kökü de şema/kullanıcı bilgisiyle doğrulanır: http(s) dışı ya da kimlikli
+        # adres bağlantı üretmez (portala `javascript:` href'i gitmez).
+        for kotu_kok in ("javascript:alert(1)//x", "data:text/html,x", "https://u:p@ornek.net"):
+            k = kur(JIRA_BROWSE_URL=kotu_kok, JIRA_BASE_URL="https://ornek.atlassian.net")
+            assert k.kayit_adresi("ABC-1") is None and k.yeni_kayit_adresi() is None, kotu_kok
+        b = kur(JIRA_BASE_URL="https://ornek.atlassian.net", JIRA_PROJECT="ABC")
         # Bilinmeyen/biçimsiz anahtar → bağlantı yok (Jira anahtar atlatma).
         for kotu in ("tpd-3", "TPD-3/../x", "TPD-3?expand=x", "TPD-٣", "", None):
             assert b.kayit_adresi(kotu) is None, kotu
@@ -498,6 +504,22 @@ def test_onbellek_sure_dolunca_dusurur() -> None:
     ob.koy(("b",), {})
     ob.temizle()
     assert ob.al(("b",)) is None
+
+
+def test_onbellek_portal_olay_yenilemesinden_kisa() -> None:
+    """SSE olayından `olayGecikmeMs` sonra yapılan tek `zorla` yenilemesi önbellekten eski rozet
+    almamalı: önbellek ömrü portal gecikmesinden kısa."""
+    import re
+
+    assert oneri.ONBELLEK.sure_s == oneri.ONBELLEK_SURE_S
+    kaynak = (
+        Path(__file__).resolve().parents[5] / "review-portal/src/components/asistan/OneriVerisi.ts"
+    )
+    if not kaynak.exists():
+        pytest.skip("review-portal kaynağı yok")
+    m = re.search(r"olayGecikmeMs:\s*(\d+)", kaynak.read_text(encoding="utf-8"))
+    assert m is not None
+    assert int(m.group(1)) > oneri.ONBELLEK_SURE_S * 1000
 
 
 @pytest.mark.parametrize(("deger", "beklenen"), [("1", True), ("0", False), ("false", False)])

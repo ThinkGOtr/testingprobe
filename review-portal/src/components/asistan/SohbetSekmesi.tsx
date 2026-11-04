@@ -21,11 +21,12 @@ import { ApiError, hataMesaji } from "../../api/http";
 import { useOturum } from "../../auth";
 import type { EkranBaglami } from "../../lib/ekranBaglami";
 import { tarih } from "../../lib/format";
-import { hataKaydi, sonHata, sonHataAbone, sonHataBaglami, sonHataSurumu, type SonHataKaydi } from "../../lib/sonHata";
+import { hataKaydi, SON_HATA_GECERLILIK_MS, sonHata, sonHataAbone, sonHataBaglami, sonHataSurumu, type SonHataKaydi } from "../../lib/sonHata";
 import { BosDurum, Yukleniyor } from "../ui";
 import type { SeciliEleman } from "./buNe";
 import { CevapKarti } from "./CevapKarti";
 import type { AcmaIstegi } from "./kontrol";
+import { ekOneriDurdur, ekOneriKontrol, useBekleyenEkOneri } from "./OneriEkOneriler";
 import { soruOnerileri } from "./sorular";
 
 /** Zamanlamalar (testler kısaltabilir). */
@@ -102,22 +103,36 @@ export function SohbetSekmesi({
   const [simdi, setSimdi] = useState(() => Date.now());
   const [gecmisAcik, setGecmisAcik] = useState(false);
   const [sohbetler, setSohbetler] = useState<Sohbet[] | null>(null);
+  const [gecmisHatasi, setGecmisHatasi] = useState<string | null>(null);
   const [silinecek, setSilinecek] = useState<Sohbet | null>(null);
   const [ekranDahil, setEkranDahil] = useState(true);
   const [hataDahil, setHataDahil] = useState(true);
   const [secilenHataId, setSecilenHataId] = useState<string | null>(null);
-  const [oneriKuralId, setOneriKuralId] = useState<string | null>(null);
   const girdiRef = useRef<HTMLTextAreaElement>(null);
   const sohbetRef = useRef(sohbetId);
   sohbetRef.current = sohbetId;
+  /** İşlenen son dış istek: StrictMode'da effect iki kez koşsa da soru bir kez gönderilir. */
+  const islenenSira = useRef<number | null>(null);
 
   // Rota değişince ekran çipi yeniden eklenir (kaldırma yalnız o ekran için).
   useEffect(() => setEkranDahil(true), [ekran.rota_kalibi, ekran.varlik?.id]);
 
   // Son hata: "Asistana sor" ile seçilen kayıt, yoksa 5 dk içindeki son kayıt.
   useSyncExternalStore(sonHataAbone, sonHataSurumu);
-  const hata: SonHataKaydi | null = (secilenHataId ? hataKaydi(secilenHataId) : null) ?? sonHata();
+  const gecerliHata = useCallback(
+    (): SonHataKaydi | null => (secilenHataId ? hataKaydi(secilenHataId) : null) ?? sonHata(),
+    [secilenHataId],
+  );
+  const hata = gecerliHata();
   useEffect(() => setHataDahil(true), [hata?.kayitId]);
+  // 5 dk dolunca çip kendiliğinden kalksın (panel açık beklerken de): kalan süre kadar sonra yeniden çiz.
+  const [, setHataSaati] = useState(0);
+  useEffect(() => {
+    if (!hata) return;
+    const kalan = hata.zaman + SON_HATA_GECERLILIK_MS - Date.now() + 50;
+    const z = setTimeout(() => setHataSaati((n) => n + 1), Math.max(0, kalan));
+    return () => clearTimeout(z);
+  }, [hata?.kayitId, hata?.zaman]);
 
   const yukle = useCallback(async (id: string, sessiz = false) => {
     if (!sessiz) setYukleniyor(true);
@@ -148,7 +163,9 @@ export function SohbetSekmesi({
   }, [sohbetId, yukle]);
 
   const bekleyenler = useMemo(() => mesajlar.filter((m) => m.rol === "assistant" && bekliyor(m)), [mesajlar]);
-  const kullaniciBekliyor = bekleyenler.some((m) => m.tetik === "kullanici");
+  // Öneriler sekmesindeki "Başka ne yapabilirim?" de kullanıcının bekleyen sorusudur (sunucu 409 bekleyen_var).
+  const ekBekleyen = useBekleyenEkOneri();
+  const kullaniciBekliyor = bekleyenler.some((m) => m.tetik === "kullanici") || !!ekBekleyen;
   const bekleyenAnahtar = bekleyenler.map((m) => m.id).join("|");
 
   // Olaylar: core yalnız bu kullanıcının asistan olaylarını teslim eder.
@@ -156,6 +173,10 @@ export function SohbetSekmesi({
     (o) => {
       const id = typeof o.data.mesaj_id === "string" ? o.data.mesaj_id : o.id;
       if (!id) return;
+      if (o.type === "assistant.answered" && ekBekleyen && id === ekBekleyen) {
+        void ekOneriKontrol(ekBekleyen);
+        return;
+      }
       if (o.type === "assistant.step" && typeof o.data.adim_kodu === "string") {
         setAdimlar((a) => ({ ...a, [id]: o.data.adim_kodu as string }));
       } else if (o.type === "assistant.answered" && sohbetRef.current) {
@@ -192,6 +213,13 @@ export function SohbetSekmesi({
     return () => clearInterval(z);
   }, [bekleyenAnahtar, sseVar, yukle, durumYenile]);
 
+  // Ek öneri beklerken SSE kopuksa onu da yokla (Öneriler sekmesi kapalıyken bekleme takılı kalmasın).
+  useEffect(() => {
+    if (!ekBekleyen || sseVar) return;
+    const z = setInterval(() => void ekOneriKontrol(ekBekleyen), sohbetAyar.yoklamaMs);
+    return () => clearInterval(z);
+  }, [ekBekleyen, sseVar]);
+
   // Geçen süre sayacı.
   useEffect(() => {
     if (!bekleyenAnahtar) return;
@@ -200,20 +228,23 @@ export function SohbetSekmesi({
     return () => clearInterval(z);
   }, [bekleyenAnahtar]);
 
-  const baglamUret = useCallback((): Record<string, unknown> => {
+  /** `ekranZorunlu`: öneri sorusu ("Neden? Sor") kuralın ekranına bağlıdır; çip kaldırılmış olsa da ekran gider. */
+  const baglamUret = useCallback((ekranZorunlu = false): Record<string, unknown> => {
     const b: Record<string, unknown> = {};
-    if (ekranDahil) {
+    if (ekranDahil || ekranZorunlu) {
       b.rota_kalibi = ekran.rota_kalibi;
       b.ekran = ekran.ekran;
       if (ekran.varlik) b.varlik = { tur: ekran.varlik.tur, id: ekran.varlik.id, anahtar: ekran.varlik.anahtar ?? null };
     }
-    if (hata && hataDahil) b.son_hata = sonHataBaglami(hata);
+    // Gönderim anında yeniden doğrulanır: süresi dolmuş kayıt (yas_s > 300) bağlama girmez.
+    const guncelHata = gecerliHata();
+    if (guncelHata && hataDahil) b.son_hata = sonHataBaglami(guncelHata);
     if (secili) b.secili_eleman = secili;
     return baglamiSigdir(b);
-  }, [ekranDahil, ekran, hata, hataDahil, secili]);
+  }, [ekranDahil, ekran, gecerliHata, hataDahil, secili]);
 
   const gonder = useCallback(
-    async (soru: string, secenek: { yeniSohbet?: boolean; oneriKuralId?: string | null } = {}) => {
+    async (soru: string, secenek: { yeniSohbet?: boolean; oneriKuralId?: string | null; sohbetId?: string | null } = {}) => {
       const metin = soru.trim();
       if (!metin || gonderiyor) return;
       // Yanıt bekleyen soru varken (bu sekmede) yeni soru gönderilmez: sunucu 409 bekleyen_var
@@ -227,15 +258,18 @@ export function SohbetSekmesi({
       setGonderimHatasi(null);
       let yeniId: string | null = null;
       try {
-        let id = secenek.yeniSohbet ? null : sohbetRef.current;
-        const kural = secenek.oneriKuralId ?? (secenek.yeniSohbet ? null : oneriKuralId);
+        let id = secenek.sohbetId ?? (secenek.yeniSohbet ? null : sohbetRef.current);
+        // Öneri kuralı yalnız sohbeti açan ilk soruda gider; sunucu sohbete yazar
+        // (`asistan_sohbet.oneri_kural_id`) ve takip sorularında bağlamı oradan taşır (§17.6).
+        // Takipte yeniden göndermek, ekran değişince ya da Geçmiş'ten açılınca 409 `oneri_gecersiz` verirdi.
+        const kural = id ? null : (secenek.oneriKuralId ?? null);
         if (!id) {
           yeniId = (await asistanApi.sohbetOlustur(null)).id;
           id = yeniId;
         }
         await asistanApi.soruGonder(id, {
           soru: metin,
-          baglam: baglamUret(),
+          baglam: baglamUret(!!kural),
           kip: "soru",
           ...(kural ? { oneri_kural_id: kural } : {}),
         });
@@ -245,7 +279,12 @@ export function SohbetSekmesi({
           sohbetiHatirla(yeniId);
           setSohbetId(yeniId);
           setMesajlar([]);
-          setOneriKuralId(kural ?? null);
+        } else if (id !== sohbetRef.current) {
+          // Başka sohbette soruldu ("Bunu sor": ek öneri sohbeti): o sohbete geçilir.
+          sohbetRef.current = id;
+          sohbetiHatirla(id);
+          setSohbetId(id);
+          setMesajlar([]);
         }
         setGirdi("");
         seciliTemizle();
@@ -262,12 +301,15 @@ export function SohbetSekmesi({
         setGonderiyor(false);
       }
     },
-    [gonderiyor, kullaniciBekliyor, oneriKuralId, baglamUret, seciliTemizle, yukle, durumYenile],
+    [gonderiyor, kullaniciBekliyor, baglamUret, seciliTemizle, yukle, durumYenile],
   );
 
   // Dış istek: "Asistana sor" (hata kaydı) ya da "Neden? Sor" (öneri kuralı + soru).
   useEffect(() => {
     if (!istek || istek.sekme !== "sohbet") return;
+    // StrictMode effect'i iki kez çalıştırır ve ikinci çağrı aynı `istek` prop'unu görür.
+    if (islenenSira.current === istek.sira) return;
+    islenenSira.current = istek.sira;
     istegiTuket(istek.sira);
     if (istek.kayitId) {
       setSecilenHataId(istek.kayitId);
@@ -275,7 +317,7 @@ export function SohbetSekmesi({
       if (!istek.soru) setGirdi((g) => g || "Bu hata ne demek, ne yapmalıyım?");
     }
     if (istek.soru) {
-      void gonder(istek.soru, { yeniSohbet: !!istek.oneriKuralId, oneriKuralId: istek.oneriKuralId ?? null });
+      void gonder(istek.soru, { yeniSohbet: !!istek.oneriKuralId, oneriKuralId: istek.oneriKuralId ?? null, sohbetId: istek.sohbetId ?? null });
     } else {
       girdiRef.current?.focus();
     }
@@ -287,7 +329,6 @@ export function SohbetSekmesi({
     setSohbetId(null);
     sohbetiHatirla(null);
     setMesajlar([]);
-    setOneriKuralId(null);
     setGonderimHatasi(null);
   };
 
@@ -300,21 +341,23 @@ export function SohbetSekmesi({
   const gecmisiAc = async () => {
     setGecmisAcik(true);
     setSohbetler(null);
+    setGecmisHatasi(null);
     try {
       setSohbetler(await asistanApi.sohbetler());
     } catch (e) {
-      setSohbetler([]);
-      setYuklemeHatasi(hataMesaji(e));
+      // Liste okunamadı: "Henüz sohbet yok" denmez; hata ve "Yeniden dene" gösterilir.
+      setGecmisHatasi(hataMesaji(e));
     }
   };
 
   const sil = async (s: Sohbet) => {
+    setGecmisHatasi(null);
     try {
       await asistanApi.sohbetSil(s.id);
       setSohbetler((l) => (l ?? []).filter((x) => x.id !== s.id));
       if (s.id === sohbetId) sohbetiBirak();
     } catch (e) {
-      setYuklemeHatasi(hataMesaji(e));
+      setGecmisHatasi(`Sohbet silinemedi: ${hataMesaji(e)}`);
     } finally {
       setSilinecek(null);
     }
@@ -454,8 +497,16 @@ export function SohbetSekmesi({
             Geri
           </button>
         </div>
+        {gecmisHatasi && (
+          <div className="uyari-kutusu uyari-hata" role="alert">
+            {gecmisHatasi}{" "}
+            <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => void gecmisiAc()}>
+              Yeniden dene
+            </button>
+          </div>
+        )}
         {sohbetler === null ? (
-          <Yukleniyor />
+          !gecmisHatasi && <Yukleniyor />
         ) : sohbetler.length === 0 ? (
           <BosDurum baslik="Henüz sohbet yok." />
         ) : (
@@ -469,7 +520,6 @@ export function SohbetSekmesi({
                     sohbetRef.current = s.id;
                     sohbetiHatirla(s.id);
                     setSohbetId(s.id);
-                    setOneriKuralId(s.oneri_kural_id ?? null);
                     setGecmisAcik(false);
                   }}
                 >
@@ -621,7 +671,16 @@ export function SohbetSekmesi({
             Asistana sor
           </button>
         </div>
-        {kullaniciBekliyor && <p className="soluk kucuk">Cevap gelince yeni soru sorabilirsiniz.</p>}
+        {ekBekleyen ? (
+          <p className="soluk kucuk" role="status" data-testid="ek-oneri-bekliyor">
+            Ek öneriler hazırlanıyor (Öneriler sekmesi); bitince yeni soru sorabilirsiniz.{" "}
+            <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => void ekOneriDurdur(ekBekleyen)}>
+              Durdur
+            </button>
+          </p>
+        ) : (
+          kullaniciBekliyor && <p className="soluk kucuk">Cevap gelince yeni soru sorabilirsiniz.</p>
+        )}
         {gonderimHatasi && (
           <div className="uyari-kutusu uyari-hata" role="alert">
             {gonderimHatasi}

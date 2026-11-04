@@ -98,6 +98,14 @@ olgular:
     kaynak: script kırarak doğrulama durumu (models/codegen_feature.BREAK_DURUM; lib/kapi.ts ile aynı alan)
     degerler: [not_started, running, passed, weak, failed]
     yer_tutucu: false
+  defect_adayi:
+    tur: bool
+    varliklar: [script]
+    kaynak: >-
+      script_codegen.engel_turu = defect_candidate ya da yerel kontrol sınıfı defect_adayi (codegen
+      views.serialize `engel.tur`/`yerel_sinif`; Kod.tsx "Yeniden üret" koşuluyla aynı). Üretim kaydı
+      olmayan (onarım) script'te olgu yok
+    yer_tutucu: false
   ci_sonuc:
     tur: enum
     varliklar: [run]
@@ -384,19 +392,23 @@ kurallar:
     ekran: /kod/:id
     varlik: script
     roller: [engineer]
-    kosul: {durum_in: [blocked]}
+    # Defect adayında test doğrudur (uygulama farklı davranıyor): yeniden üretim önerilmez, karar
+    # triage'dadır (Kod.tsx ile aynı ayrım). Üretim kaydı olmayan script'te olgu yok → kural düşmez.
+    kosul: {durum_in: [blocked], defect_adayi_esit: false}
     oncelik: 80
     baslik: Üretim insana düştü; nedenini sorun
     neden: Script üretimi otomatik olarak ilerleyemedi; insan incelemesi olmadan PR açılmaz.
     eylem:
       tur: rota
-      rota: /kod/:id
       # blocked script'te kırarak doğrulama çalışmaz (yalnız pr_open; codegen/service.py
-      # start_break_verify); anlamlı eylem yeniden üretimdir (research R3).
+      # start_break_verify); anlamlı eylem yeniden üretimdir (research R3). "Yeniden üret" düğmesi
+      # yalnız Kod listesinde (Kod.tsx), script detayında yok → hedef /kod.
+      rota: /kod
       yetki: {uc: "POST /code/generate"}
     aciklama: >-
       Script üretimi doğrulama ya da yerel kontrol adımında takıldı ve insana bırakıldı. Ekrandaki
-      sınıfa (locator, derleme, ortam, defect adayı) bakın; "Neden? Sor" ile asistandan ayrıntı
+      sınıfa (locator, derleme, ortam) bakın; nedeni giderdiyseniz Kod listesinde bu kaydın satırındaki
+      "Yeniden üret" ile aynı onaylı case için kodu yeniden üretin. "Neden? Sor" ile asistandan ayrıntı
       isteyebilirsiniz.
 
   # ------------------------------------------------------------------ Koşu detay

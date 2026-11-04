@@ -63,6 +63,7 @@ def oneriler(
 | `inceleme_bekleyen_case` | requirement | int | `test_case.durum='draft'` (superseded hariç) |
 | `onayli_case` | requirement | int | `test_case.durum='approved'` |
 | `kirarak_dogrulama` | script | `not_started`\|`running`\|`passed`\|`weak`\|`failed` | `ScriptCodegen.break_durum` (`BREAK_DURUM`) |
+| `defect_adayi` | script | bool | `ScriptCodegen.engel_turu='defect_candidate'` ya da `yerel_kontrol.sinif='defect_adayi'` (atlanmamış); üretim kaydı yoksa olgu yok (Kod.tsx "Yeniden üret" koşuluyla aynı) |
 | `ci_sonuc` | run | `RUN_SONUC` | `Run.sonuc` |
 | `basarisiz_adimlar` | run | list[str] | `Run.artefaktlar["basarisiz_adimlar"]` (yalnız `_var`/`_yok`) |
 | `hata_sinifi` | failure | `FAILURE_SINIF` | `Failure.sinif` |
@@ -134,7 +135,7 @@ HD `/hatalar/:id`, BT `/bug-taslaklari/:id`, KK `/kontrol-kulesi`, K `/kosular`.
 | 12 | `case-inceleme-analistte` | CI | tester | `inceleme_bekleyen_case_gte:1` | bilgi | — |
 | 13 | `script-kirarak-dogrula` | SD | engineer | `durum_in:[pr_open]`, `kirarak_dogrulama_in:[not_started, weak, failed]` (bkz. not) | rota SD | `POST /scripts/{script_id}/break-verify` |
 | 14 | `script-merge-karari` | SD | engineer | `durum_in:[pr_open]`, `kirarak_dogrulama_esit:passed` | rota SD | `POST /prs/{number}/merge` |
-| 15 | `script-insana-dustu` | SD | engineer | `durum_in:[blocked]` | rota SD | **`POST /code/generate`** (research R3) |
+| 15 | `script-insana-dustu` | SD | engineer | `durum_in:[blocked]`, `defect_adayi_esit:false` | rota `/kod` | **`POST /code/generate`** (research R3) |
 | 16 | `kosu-ortam-hatasi-task` | KD | engineer | `ci_sonuc_esit:error` | jira_taslak `ortam-hatasi-task` | — |
 | 17 | `kosu-ortam-hatasi-bilgi` | KD | presenter | `ci_sonuc_esit:error` | bilgi | — |
 | 18 | `hata-bakim-onarim` | HD | engineer | `hata_sinifi_esit:test_maintenance`, `onarim_durumu_esit:none` | rota HD | `POST /failures/{failure_id}/fix` |
@@ -155,14 +156,29 @@ Plan v6 §17.3 tablosundan farklar ve nedenleri:
 - **Operatör biçimi (davranış aynı):** bool olgular `_var` yerine `_esit:true` ile yazılır (2, 3, 19,
   24) — `_var` "değer tanımlı" demektir, `false` da tanımlı sayılır; `inceleme_bekleyen_case_lte:0`
   yerine `_esit:0` (11); 4 ve 7'deki `jira_key_var` eylemin (jira_yorum/jira_kaydi) zaten istediği
-  ön koşulun açık yazımıdır. plandaki `#bulgular`/`#po-onay`/`#pr` çapaları dosyada yok
-  (eylem `rota`'sı yalnız rota kalıbıdır; `lib/rotalar.ts` ile eşleşir).
+  ön koşulun açık yazımıdır. Çapalar eylemde ayrı `capa` alanıdır (`rota` yalnız rota kalıbıdır,
+  `lib/rotalar.ts` ile eşleşir): 1 `bulgular`, 6 `po-onay`, 8 `case-uret`, 13 `kirarak-dogrula`,
+  14 `pr`, 18 `onarim`. Portal hedef öğeleri bu id'lerle taşır ve hash'e kaydırır
+  (`review-portal/src/lib/capa.ts`; `capa.test.tsx` her çapanın sayfada bulunduğunu sınar).
 - **Davranış daraltmaları (K10 ürün sahibi onayı gerekir, açık):**
   - Kural 8 `ac_eksik_esit:false`: AC eksik bir `po_approved` gereksinimde analist "case üret"
     önerisini **görmez**; yerine kural 2/3 (AC eksik) görünür. Gerekçe: eksik AC ile üretilen case'ler
     incelemede geri döner.
   - Kural 11 `onayli_case_gte:1`: hiç onaylı case yokken (hepsi reddedilmiş) "yayına hazır" denmez.
-- **Kural 15 `yetki.uc`:** `POST /code/generate` (research R3); rol (engineer) değişmedi.
+  - Kural 1 `acik_bulgu_sayisi_gte:1`: `findings_open` durumunda kanıtı doğrulanmış açık bulgu yoksa
+    (hepsi kararlaşmış ya da kanıtsız) "N bulgu kararınızı bekliyor" denmez; başlıktaki `{acik_bulgu_sayisi}`
+    yer tutucusu 0 olamaz. (2026-11-04, inceleme tur 2'de fark listesine eklendi.)
+  - Kural 15 `defect_adayi_esit:false` (2026-11-04): defect adayında test doğrudur (uygulama farklı
+    davranıyor); yeniden üretim önerilmez, karar triage'dadır (Kod.tsx "Yeniden üret" düğmesiyle aynı
+    ayrım). Üretim kaydı olmayan (onarım) script'te olgu yoktur ve kural düşmez.
+- **Kural 15 eylemi:** `yetki.uc` `POST /code/generate` (research R3); rol (engineer) değişmedi.
+  Eylem rotası `/kod/:id` yerine **`/kod`** (2026-11-04): "Yeniden üret" düğmesi yalnız Kod listesinde
+  var, script detayında yok; `/kod/:id` hedefi mühendisi bulunduğu ekranda bırakıyordu. Bu bir eylem
+  hedefi değişikliğidir, aşağıdaki K10 yeniden onay listesine girer.
+- **K10 yeniden onay (açık, 2026-11-04):** kural 1, 8, 11 ve 15'teki daraltmalar ile kural 15'in eylem
+  rotası ürün sahibinin onayını bekler (plan §2 K10: "kural içeriği değişirse yeniden onay"). Onay
+  verildiğinde plan K10 satırı tarihle güncellenir; verilene dek bu sözleşme ve `oneriler.yaml` geçerli
+  kabul edilir, yalnız `dev`'de bayrak arkasındadır.
 
 **Not (kural 13):** "`kirarak_dogrulama ∈ {not_started, weak, failed}`" kapalı operatör kümesinde
 `_in` yalnız `durum` içindir; kural 13 üç ayrı kuralla değil, `kirarak_dogrulama_in: [not_started,

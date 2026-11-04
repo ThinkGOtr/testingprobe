@@ -529,6 +529,90 @@ def test_gecmis_kirpilir_ve_untrusted(client: TestClient, make_user, engine: Eng
     assert ilk.count("Peki şimdi ne olacak?") == 1
 
 
+def test_eski_cevabin_derini_gecmisi_kok_sorudan_oncesiyle_sinirli(
+    make_user, engine: Engine
+) -> None:
+    """Q0, A0, Q1, A1, Q2, A2; A1'in "Daha ayrıntılı"sı sohbetin sonuna eklenir (sıra 7). Geçmiş
+    Q0/A0 + üst kısa cevap A1'dir; kök soru Q1 yalnız `Soru:` satırında, Q2/A2 hiç gitmez."""
+    u = make_user("tester")
+    ids: dict[str, uuid.UUID] = {}
+    with engine.begin() as c:
+        sohbet = c.execute(
+            text("INSERT INTO asistan_sohbet (kullanici_id) VALUES (:k) RETURNING id"),
+            {"k": u.id},
+        ).scalar_one()
+        for i in range(3):
+            ids[f"Q{i}"] = c.execute(
+                text(
+                    "INSERT INTO asistan_mesaj (sohbet_id, kullanici_id, sira, rol, icerik, "
+                    "durum) VALUES (:s, :k, :n, 'user', :q, 'done') RETURNING id"
+                ),
+                {"s": sohbet, "k": u.id, "n": 2 * i + 1, "q": f"soru-{i}"},
+            ).scalar_one()
+            ids[f"A{i}"] = c.execute(
+                text(
+                    "INSERT INTO asistan_mesaj (sohbet_id, kullanici_id, sira, rol, icerik, "
+                    "cevap, durum, kaynak) VALUES (:s, :k, :n, 'assistant', :q, "
+                    "CAST(:c AS jsonb), 'done', 'model') RETURNING id"
+                ),
+                {
+                    "s": sohbet,
+                    "k": u.id,
+                    "n": 2 * i + 2,
+                    "q": f"soru-{i}",
+                    "c": json.dumps(
+                        {"cevap_bloklari": [{"tur": "paragraf", "metin": f"cevap-{i}"}]}
+                    ),
+                },
+            ).scalar_one()
+        derin = c.execute(
+            text(
+                "INSERT INTO asistan_mesaj (sohbet_id, kullanici_id, sira, rol, ust_mesaj_id, "
+                "icerik, durum, amac) VALUES (:s, :k, 7, 'assistant', :u, 'soru-1', 'pending', "
+                "'assistant_deep') RETURNING id"
+            ),
+            {"s": sohbet, "k": u.id, "u": ids["A1"]},
+        ).scalar_one()
+        m = flow._mesaj_oku(c, derin)
+        gecmis = flow.sohbet_gecmisi(c, m) or ""
+        # Derin olmayan son soru davranışı değişmez: kendi sorusu hariç önceki her şey.
+        son = flow.sohbet_gecmisi(c, flow._mesaj_oku(c, ids["A2"])) or ""
+    assert gecmis.splitlines() == [
+        "Kullanıcı: soru-0",
+        "Asistan: cevap-0",
+        "Asistan: cevap-1",
+    ]
+    assert son.splitlines()[-1] == "Asistan: cevap-1" and "soru-2" not in son
+
+
+def test_oneri_bayragi_kapaliyken_worker_kural_onerisi_hesaplamaz(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bayrak kuyrukta bekleyen öneri kipi işinden sonra kapanırsa model kural önerisi görmez."""
+    monkeypatch.setenv("TP_ASISTAN_ONERI", "off")
+
+    def oturum_yok() -> Any:
+        pytest.fail("bayrak kapalıyken öneri motoru çağrılmamalı")
+
+    m = flow.Mesaj(
+        id=uuid.uuid4(),
+        sohbet_id=uuid.uuid4(),
+        kullanici_id=uuid.uuid4(),
+        kullanici_adi="t",
+        rol="tester",
+        sira=2,
+        icerik="?",
+        baglam={"rota_kalibi": "/gereksinimler/:id"},
+        kip="oneri",
+        tetik="kullanici",
+        amac=None,
+        ust_mesaj_id=None,
+        job_id=None,
+        oneri_kural_id=None,
+    )
+    assert flow._kural_onerileri(oturum_yok, m) == []
+
+
 def test_oneri_kipi_kural_onerileri_untrusted_ve_son_islem(
     client: TestClient, make_user, engine: Engine, veri
 ) -> None:

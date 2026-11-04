@@ -16,6 +16,7 @@ import type {
 } from "../asistan";
 import type { Kullanici } from "../types";
 import { mockOlayYayinla } from "./olaylar";
+import { MOCK_KURALLAR } from "./oneri";
 
 const testModu = import.meta.env.MODE === "test";
 
@@ -213,6 +214,13 @@ function soruGonder(sohbetId: string, govde: unknown, k: Kullanici): { mesaj_id:
   const oneriKuralId = typeof g.oneri_kural_id === "string" ? g.oneri_kural_id : null;
   if (oneriKuralId && asistanMockAyar.gecersizOneriler.includes(oneriKuralId)) {
     throw new ApiError(409, "Öneri artık geçerli değil.", { kod: "oneri_gecersiz" });
+  }
+  // Sunucu (`oneri_gecerli_mi`) kuralı bağlamdaki ekranla yeniden değerlendirir: rota yoksa ya da
+  // kuralın ekranı değilse 409. (Bilinmeyen test kuralları yalnız `gecersizOneriler` ile sınanır.)
+  if (oneriKuralId) {
+    const kural = MOCK_KURALLAR.find((x) => x.id === oneriKuralId);
+    const rota = typeof baglam?.rota_kalibi === "string" ? baglam.rota_kalibi : null;
+    if (kural && rota !== kural.ekran) throw new ApiError(409, "Öneri artık geçerli değil.", { kod: "oneri_gecersiz" });
   }
   if (bekleyenKullaniciMesaji(k)) throw new ApiError(409, "Yanıt bekleyen sorunuz var.", { kod: "bekleyen_var" });
   hizKontrol(1);

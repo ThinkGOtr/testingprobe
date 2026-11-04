@@ -15,8 +15,8 @@ ile artar: çok süreçte (birden çok uvicorn/worker) atomiktir, okuma-yazma ya
 - 1 günden eski satırlar `hiz_temizle` ile silinir (saklama işi çağırır).
 
 Kovalar (sabitler aşağıda): `oneri_liste` 60/dk ve `oneri_geri_bildirim` 30/dk (kullanıcı başı,
-Şerit R), `jira_global` 30/dk (global, Şerit J), `sohbet_olustur` 30/dk (kullanıcı başı; yalnız
-satır büyümesine karşı, model maliyeti yok).
+Şerit R), `jira_global` 30 HTTP isteği/dk (global, Şerit J; yeniden denemeler dahil her istek),
+`sohbet_olustur` 30/dk (kullanıcı başı; yalnız satır büyümesine karşı, model maliyeti yok).
 """
 
 from __future__ import annotations

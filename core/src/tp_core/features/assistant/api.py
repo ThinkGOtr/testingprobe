@@ -26,9 +26,7 @@ dahil edilir.
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import os
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -43,6 +41,7 @@ from tp_core.api.errors import KodluHata
 from tp_core.auth.deps import CurrentUser, DbSession
 from tp_core.events import publish_tx
 from tp_core.features.assistant import budget, hiz
+from tp_core.features.assistant import oneri_api as _oneri_api
 from tp_core.features.assistant.schemas import (
     ONERI_SORUSU,
     MesajGeriBildirim,
@@ -64,14 +63,10 @@ router = APIRouter(tags=["assistant"])
 
 SOHBET_LISTE_AZAMI = 50
 KALP_ATISI_AZAMI_S = 120
-IS_ZAMAN_ASIMI_S = 120
+IS_ZAMAN_ASIMI_S = budget.IS_ZAMAN_ASIMI_S  # tek kaynak budget.py
 EV_ANSWERED = "assistant.answered"
 
-_ONERI_API = "tp_core.features.assistant.oneri_api"
-if importlib.util.find_spec(_ONERI_API) is not None:  # Şerit R uçları (aynı dalda gelir)
-    from tp_core.features.assistant import oneri_api as _oneri_api
-
-    router.include_router(_oneri_api.router)
+router.include_router(_oneri_api.router)  # öneri uçları (`/assistant/suggestions…`)
 
 
 # ------------------------------------------------------------------ yardımcılar
@@ -309,7 +304,14 @@ def oneri_gecerli_mi(
 
 
 def _oneri_acik() -> bool:
-    return os.environ.get("TP_ASISTAN_ONERI", "1").strip() != "0"
+    """`TP_ASISTAN_ONERI` geri alma bayrağı; tek kaynak `oneri.oneri_etkin` (§9)."""
+    from tp_core.features.assistant.oneri import oneri_etkin
+
+    return oneri_etkin()
+
+
+def _oneri_gecersiz() -> KodluHata:
+    return KodluHata(409, "oneri_gecersiz", "Bu öneri artık geçerli değil.")
 
 
 def _sonraki_sira(session: Session, sohbet_id: uuid.UUID) -> int:
@@ -337,15 +339,21 @@ def _hiz_kontrol(session: Session, user: Principal, agirlik: int) -> None:
         )
 
 
-def _bekleyen_var() -> KodluHata:
+def _bekleyen_var(*, kapaniyor: bool = False) -> KodluHata:
+    if kapaniyor:
+        # Durdurulan (`iptal`) ama işi hâlâ kapanan cevap: iş tur başında durana dek sayılır (§9).
+        return KodluHata(
+            409, "bekleyen_var", "Durdurulan cevap kapanıyor; birkaç saniye sonra yeniden deneyin."
+        )
     return KodluHata(409, "bekleyen_var", "Yanıt bekleyen bir sorunuz var; bitmesini bekleyin.")
 
 
 def _sayac_kontrol(session: Session, user: Principal) -> None:
     conn = session.connection()
     budget.global_kilit(conn)
-    if budget.kullanici_bekleyen(conn, user.id) >= budget.KULLANICI_BEKLEYEN:
-        raise _bekleyen_var()
+    bekleyen = budget.kullanici_bekleyen(conn, user.id)
+    if bekleyen >= budget.KULLANICI_BEKLEYEN:
+        raise _bekleyen_var(kapaniyor=budget.kullanici_kapanan(conn, user.id) >= bekleyen)
     if budget.global_bekleyen(conn) >= budget.global_sinir():
         raise KodluHata(429, "mesgul", "Asistan şu an meşgul; biraz sonra yeniden deneyin.")
 
@@ -439,9 +447,14 @@ def soru_gonder(
 
     baglam = govde.baglam
     kural_id = None if derin else govde.oneri_kural_id
+    # Geri alma bayrağı (`TP_ASISTAN_ONERI=0`) "Başka ne yapabilirim?" kipini de kapatır: öneri
+    # kipindeki yeni soru ve onun "Daha ayrıntılı"sı kural önerilerini modele taşırdı.
+    oneri_kipi = (ust.kip if ust is not None else govde.kip) == "oneri"
+    if (oneri_kipi or kural_id is not None) and not _oneri_acik():
+        raise _oneri_gecersiz()
     if kural_id is not None:
-        if not _oneri_acik() or not oneri_gecerli_mi(session, user, kural_id, baglam):
-            raise KodluHata(409, "oneri_gecersiz", "Bu öneri artık geçerli değil.")
+        if not oneri_gecerli_mi(session, user, kural_id, baglam):
+            raise _oneri_gecersiz()
         baglam = {**(baglam or {}), "oneri": {"kural_id": kural_id}}
 
     derin_amac = ust is not None and ust.amac == "assistant"

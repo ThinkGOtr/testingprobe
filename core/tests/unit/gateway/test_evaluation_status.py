@@ -204,7 +204,13 @@ def test_asistan_icerik_hash_sabit_dosya_listesi() -> None:
         "schemas/assistant_deep.schema.json",
     } <= set(dosyalar)
     kural = {p for p in dosyalar if p.startswith("assistant/")}
-    assert kural == {f"assistant/{p.name}" for p in (RULES / "assistant").glob("*.yaml")}
+    assert kural == {
+        f"assistant/{p.name}"
+        for desen in ("*.yaml", "*.json")
+        for p in (RULES / "assistant").glob(desen)
+    }
+    assert "assistant/rotalar.json" in kural  # rota → bağlantı eşlemesi de değerlendirilen içerik
+    assert "evaluation/assistant.json" not in dosyalar
     assert all((RULES / p).is_file() for p in dosyalar)
     h = icerik_hash(RULES, "assistant")
     assert h and h.startswith("sha256:") and h == icerik_hash(RULES, "assistant")
@@ -227,6 +233,10 @@ def test_icerik_hash_degisiklikleri_yakalar(rules_dir: Path) -> None:
     (rules_dir / "assistant" / "yeni.yaml").write_text("version: 1\n", encoding="utf-8")
     h2 = icerik_hash(rules_dir, "assistant")
     assert h2 != h1
+    # Rota eşlemesi (rotalar.json) model çıktısının bağlantısını belirler → içerik.
+    h2b = _hash_ile(rules_dir, "assistant/rotalar.json", "\n")
+    assert h2b != h2
+    h2 = h2b
     # CRLF ↔ LF farkı içerik değişikliği değildir.
     prompt = rules_dir / "prompts" / "assistant.md"
     prompt.write_bytes(prompt.read_bytes().replace(b"\n", b"\r\n"))

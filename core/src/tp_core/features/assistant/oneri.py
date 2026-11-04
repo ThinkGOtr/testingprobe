@@ -617,11 +617,19 @@ def _script_olgulari(session: Session, sc: Any) -> dict[str, Any]:
     from tp_core.models.codegen_feature import ScriptCodegen
 
     o: dict[str, Any] = {"durum": sc.durum}
-    break_durum = session.scalar(
-        select(ScriptCodegen.break_durum).where(ScriptCodegen.script_id == sc.id)
-    )
-    if break_durum is not None:  # onarım script'inde üretim kaydı yok → olgu yok
+    kayit = session.execute(
+        select(
+            ScriptCodegen.break_durum, ScriptCodegen.engel_turu, ScriptCodegen.yerel_kontrol
+        ).where(ScriptCodegen.script_id == sc.id)
+    ).first()
+    if kayit is not None:  # onarım script'inde üretim kaydı yok → olgu yok
+        break_durum, engel_turu, yerel = kayit
         o["kirarak_dogrulama"] = break_durum
+        # Kod.tsx "Yeniden üret" ayrımıyla aynı (codegen/views.serialize `engel`/`yerel_sinif`).
+        yk = yerel or {}
+        o["defect_adayi"] = engel_turu == "defect_candidate" or (
+            not yk.get("atlandi") and yk.get("sinif") == "defect_adayi"
+        )
     return o
 
 
@@ -726,6 +734,7 @@ OLGU_HESAPLAYICILARI: Final[Mapping[str, frozenset[str]]] = {
     "inceleme_bekleyen_case": frozenset({"requirement"}),
     "onayli_case": frozenset({"requirement"}),
     "kirarak_dogrulama": frozenset({"script"}),
+    "defect_adayi": frozenset({"script"}),
     "ci_sonuc": frozenset({"run"}),
     "basarisiz_adimlar": frozenset({"run"}),
     "hata_sinifi": frozenset({"failure"}),
@@ -1328,10 +1337,18 @@ def geri_bildirim_yaz(
 # ------------------------------------------------------------------ sunucu önbelleği
 
 
+# Önbellek ömrü portalın SSE sonrası tek yenilemesinden (`oneriAyar.olayGecikmeMs` = 5 sn) kısa
+# olmalı: olaydan önce hesaplanmış sonuç, olaydan 5 sn sonraki `zorla` yenilemesinde artık
+# önbellekte değildir (plan §17.6'daki 10 sn bu yenilemeyi eski rozetle bırakıyordu).
+ONBELLEK_SURE_S: Final = 4.0
+
+
 class Onbellek:
     """`(kullanici, rota, varlik)` için kısa ömürlü sonuç önbelleği (süreç içi, thread-safe)."""
 
-    def __init__(self, sure_s: float = 10.0, saat: Callable[[], float] = time.monotonic) -> None:
+    def __init__(
+        self, sure_s: float = ONBELLEK_SURE_S, saat: Callable[[], float] = time.monotonic
+    ) -> None:
         self.sure_s = sure_s
         self._saat = saat
         self._kayit: dict[tuple[Any, ...], tuple[float, dict[str, Any]]] = {}

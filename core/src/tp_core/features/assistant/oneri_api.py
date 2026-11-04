@@ -105,6 +105,6 @@ def suggestion_feedback(
     except oneri.GecersizGeriBildirim as exc:
         # Metin `oneri`'deki sabit Türkçe iletidir (istisna adı ya da ham girdi değil).
         raise HTTPException(422, str(exc)) from None
-    # "Yaptım" tüm rollerde bastırır: eski sonuçlar 10 sn beklemesin.
+    # "Yaptım" tüm rollerde bastırır: eski sonuçlar önbellek süresini beklemesin.
     oneri.ONBELLEK.temizle()
     return sonuc

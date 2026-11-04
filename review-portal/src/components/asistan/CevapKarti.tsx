@@ -1,7 +1,7 @@
 // Asistan cevap kartı (AI-ASISTAN-PLANI §11 "Cevap kartı", §7.3 güven tablosu). Bloklar düz
 // metin olarak çizilir (HTML yok); kaynaklar dosya:satır / Jira / CI biçiminde, doğrulanmamış
 // kaynak soluk ve uyarılı; bağlantılar yalnız iç rota (Git) ve sunucunun kurduğu Jira adresidir.
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { kaynakDogrulandi, type AsistanMesaji, type CevapBlogu, type CevapKaynagiOgesi, type GuvenGosterimi } from "../../api/asistan";
 import { mockZorunlu } from "../../api/http";
@@ -121,11 +121,27 @@ export function Bloklar({ bloklar }: { bloklar: CevapBlogu[] }) {
   );
 }
 
+const MODAL_ODAKLANABILIR = 'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Alıntı modalı (`aria-modal`): açılınca "Kapat"a odak, Tab/Shift+Tab modal içinde döner (panelin
+ * kendi tuzağına geçmez), kapanınca odak açan düğmeye ("Alıntıyı göster") geri verilir.
+ */
 function AlintiModali({ kaynak, kapat }: { kaynak: CevapKaynagiOgesi; kapat: () => void }) {
   const baslikId = useId();
+  const modalRef = useRef<HTMLDivElement>(null);
+  const kapatRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const acan = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    kapatRef.current?.focus();
+    return () => {
+      if (acan?.isConnected) acan.focus();
+    };
+  }, []);
   return (
     <div className="asistan-modal-arka" onClick={kapat}>
       <div
+        ref={modalRef}
         className="asistan-modal"
         role="dialog"
         aria-modal="true"
@@ -135,12 +151,31 @@ function AlintiModali({ kaynak, kapat }: { kaynak: CevapKaynagiOgesi; kapat: () 
           if (e.key === "Escape") {
             e.stopPropagation();
             kapat();
+            return;
+          }
+          if (e.key !== "Tab") return;
+          // Panelin (dar ekran) belge düzeyindeki Tab tuzağına ulaşmasın: odak modalda kalır.
+          e.stopPropagation();
+          const ogeler = Array.from(modalRef.current?.querySelectorAll<HTMLElement>(MODAL_ODAKLANABILIR) ?? []);
+          if (ogeler.length === 0) {
+            e.preventDefault();
+            return;
+          }
+          const ilk = ogeler[0];
+          const son = ogeler[ogeler.length - 1];
+          const aktif = document.activeElement;
+          if (e.shiftKey && (aktif === ilk || !modalRef.current?.contains(aktif))) {
+            e.preventDefault();
+            son.focus();
+          } else if (!e.shiftKey && (aktif === son || !modalRef.current?.contains(aktif))) {
+            e.preventDefault();
+            ilk.focus();
           }
         }}
       >
         <div className="asistan-modal-baslik">
           <h3 id={baslikId}>{kaynakEtiketi(kaynak)}</h3>
-          <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={kapat} autoFocus>
+          <button ref={kapatRef} type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={kapat}>
             Kapat
           </button>
         </div>
@@ -242,7 +277,7 @@ export function CevapKarti({ mesaj, baslik, derinIncelenebilir, derinIncele, der
           <ul className="oneri-liste">
             {c.oneriler!.map((o, i) => (
               <li key={i}>
-                <AiOneriKarti oneri={o} onGit={onGit} />
+                <AiOneriKarti oneri={o} onGit={onGit} sohbetId={mesaj.sohbet_id} />
               </li>
             ))}
           </ul>

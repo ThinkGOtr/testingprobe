@@ -70,6 +70,7 @@ OLGU_ADLARI = frozenset(
         "inceleme_bekleyen_case",
         "onayli_case",
         "kirarak_dogrulama",
+        "defect_adayi",
         "ci_sonuc",
         "basarisiz_adimlar",
         "hata_sinifi",
@@ -832,10 +833,6 @@ def test_asistan_promptu_oneri_kipini_ve_araclari_anlatir() -> None:
 
 
 def test_asistan_arac_izin_listesi() -> None:
-    if "assistant" not in ALLOWED_AGENT_TOOLS:
-        pytest.skip(
-            "ALLOWED_AGENT_TOOLS['assistant'] gateway/core.py'ye henüz eklenmedi (Şerit D2g)"
-        )
     for amac in ("assistant", "assistant_deep"):
         assert ALLOWED_AGENT_TOOLS[amac] == ASISTAN_ARACLARI, amac
         assert not ALLOWED_AGENT_TOOLS[amac] & FORBIDDEN_TOOLS

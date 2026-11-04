@@ -48,7 +48,7 @@ soruda ≈ $4.7 (günlük tavan $10). Varsayılan model, teslim içindeki canlı
 | K7 | Anayasa v1.3.0 | **Kabul.** İlke II'ye: "salt okuma bilgi ve yönlendirme asistanı; eylem yok; çıktısı karar dayanağı değildir" |
 | K8 | Öneri düğmesi | **Yeni (§17).** Kural tabanlı öneri + gerekçe + yönlendirme (portal ekranı / Jira taslağı); model destekli ek öneri isteğe bağlı. Jira'ya yazma yok |
 | K9 | Teslim biçimi | **Tek teslim** (§14): tüm kapsam tek dal/PR dizisinde, faz kapısı yok; anayasa X gereği canlı değerlendirme merge öncesi teslimin içinde |
-| K10 | Öneri kural matrisi (§17.3, 26 kural) | **Kabul (2026-11-03).** Şerit R ve G'nin başlama koşulu sağlandı; Şerit S'de yalnız uç yolları/olgu kaynakları koda karşı doğrulanır, kural içeriği değişirse yeniden onay |
+| K10 | Öneri kural matrisi (§17.3, 26 kural) | **Kabul (2026-11-03).** Şerit R ve G'nin başlama koşulu sağlandı; Şerit S'de yalnız uç yolları/olgu kaynakları koda karşı doğrulanır, kural içeriği değişirse yeniden onay. **Yeniden onay açık (2026-11-04):** kural 1, 8, 11 daraltmaları ve kural 15 (defect adayında önerilmez, eylem rotası `/kod`) — fark listesi `specs/008-ai-asistan/contracts/oneri-kurallari.md` |
 
 ## 2. Örnek sorular (kabul testlerinin tohumu)
 
@@ -100,7 +100,7 @@ diğer şeritler başlamadan yazılır.
 | VII | Mesaj başına **tek maskeleme oturumu** (soru, geçmiş, bağlam, tüm araç sonuçları aynı oturumda; §5.0); müşteri verisi kurulumunda (`TP_ASISTAN_MUSTERI_VERISI=1`) `TP_PII_MASKING` kapalıysa asistan `etkin=false`; cevap saklanmadan önce aynı oturumla yeniden maskelenir |
 | VIII | `ai_call.ek` = `{kanal:"asistan", kullanici_id, mesaj_id}` (kök ve turlar; şema değişmez) — sohbet silinse de kişi izi `ai_call`'da kalır; `tool_call` `kanal='asistan'` + `cagiran_user_id` |
 | IX | `rules/prompts/assistant.md`, iki şema dosyası, `models.yaml` |
-| X | Paket `pending` girer (mevcut paketler gibi; `pending` CI'ı düşürmez); tam canlı set teslimin merge öncesi adımıdır (§14 Şerit H) → `evaluated`. `evaluations.yaml` kaydına eval anındaki **içerik hash'i** yazılır (prompt, iki şema, `models.yaml` asistan amaçları, `rules/assistant/*.yaml`); mekanizma (Şerit H): `gateway/evaluation.py` hash'i sabit dosya listesinden hesaplar; `make eval-live
+| X | Paket `pending` girer (mevcut paketler gibi; `pending` CI'ı düşürmez); tam canlı set teslimin merge öncesi adımıdır (§14 Şerit H) → `evaluated`. `evaluations.yaml` kaydına eval anındaki **içerik hash'i** yazılır (prompt, iki şema, `models.yaml` asistan amaçları, `rules/assistant/*.yaml`, `rules/assistant/rotalar.json`; eval seti ölçüttür, hash'e girmez); mekanizma (Şerit H): `gateway/evaluation.py` hash'i sabit dosya listesinden hesaplar; `make eval-live
 A=--update-status` `evaluation.icerik_hash` alanına yazar; mevcut durum kontrolü (`--check`,
 `test_evaluation_status.py`) `evaluated` kayıtta hash'i güncel içerikle karşılaştırır, uyuşmazlıkta düşer —
 böylece `main`'e giden PR'ın CI'ı değerlendirilmemiş içeriği reddeder. `rules/README.md`'ye: "`dev` birleştirmesi bayrak arkasıdır; X'teki birleştirme `main`'dir; öneri kuralları ve taslak şablonları deterministik tohum testine **ve** öneri modu eval vakalarına tabidir" |
@@ -1071,7 +1071,7 @@ rol hizalama testinin bağlandığı uçtur.
 | 12 | Case inceleme | Testçi | `inceleme_bekleyen_case ≥ 1` | "Case'ler analist incelemesinde" | bilgi | — |
 | 13 | Script detay | Mühendis | `pr_open`, `kirarak_dogrulama ∈ {not_started, weak, failed}` | "Merge öncesi kırarak doğrulayın (yeşil→kırmızı→yeşil)" | rota: script | `POST /scripts/{id}/break-verify` |
 | 14 | Script detay | Mühendis | `pr_open`, `kirarak_dogrulama=passed` | "PR merge kararınızı bekliyor" | rota: script (PR bölümü) | `POST /prs/{n}/merge` |
-| 15 | Script detay | Mühendis | `blocked` | "Üretim insana düştü; nedenini sorun" | rota: script | `POST /scripts/{id}/break-verify` |
+| 15 | Script detay | Mühendis | `blocked` (uygulanan: defect adayı hariç; K10 yeniden onayı açık) | "Üretim insana düştü; nedenini sorun" | rota: script (uygulanan: `/kod`, "Yeniden üret" listede) | `POST /scripts/{id}/break-verify` (uygulanan: `POST /code/generate`, research R3) |
 | 16 | Koşu detay | Mühendis | `ci_sonuc=error` | "Testler koşmadı: CI ortam hatası" | jira_taslak: `ortam-hatasi-task` | — |
 | 17 | Koşu detay | Sunucu | `ci_sonuc=error` | "Koşu ortam hatasıyla bitti; mühendis inceliyor" | bilgi | — |
 | 18 | Hata detay | Mühendis | `hata_sinifi=test_maintenance`, `onarim_durumu=none` | "Bakım hatası; otomatik onarımı başlatın" | rota: hata (Onarımı başlat) | `POST /failures/{id}/fix` |

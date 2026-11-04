@@ -85,6 +85,7 @@ class AiCall(Base):
         in_check("mod", enums.AI_MOD, "ai_call_mod_ck"),
         Index("ai_call_workflow_ix", "workflow_id"),
         Index("ai_call_olusturma_ix", "olusturma"),
+        Index("ai_call_parent_ix", "parent_call_id"),  # 0017: asistan soru başı harcama
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()

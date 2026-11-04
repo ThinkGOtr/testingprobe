@@ -281,13 +281,13 @@ export const MOCK_KURALLAR: MockKural[] = [
     id: "script-insana-dustu",
     ekran: "/kod/:id",
     roller: ["engineer"],
-    kosul: (o) => o.durum === "blocked",
+    kosul: (o) => o.durum === "blocked" && o.defect_adayi === false,
     oncelik: 80,
     baslik: "Üretim insana düştü; nedenini sorun",
     neden: "Script üretimi otomatik olarak ilerleyemedi; insan incelemesi olmadan PR açılmaz.",
-    eylem: { tur: "rota", rota: "/kod/:id" },
+    eylem: { tur: "rota", rota: "/kod" },
     aciklama:
-      'Script üretimi doğrulama ya da yerel kontrol adımında takıldı ve insana bırakıldı. Ekrandaki sınıfa (locator, derleme, ortam, defect adayı) bakın; "Neden? Sor" ile asistandan ayrıntı isteyebilirsiniz.',
+      'Script üretimi doğrulama ya da yerel kontrol adımında takıldı ve insana bırakıldı. Ekrandaki sınıfa (locator, derleme, ortam) bakın; nedeni giderdiyseniz Kod listesinde bu kaydın satırındaki "Yeniden üret" ile aynı onaylı case için kodu yeniden üretin. "Neden? Sor" ile asistandan ayrıntı isteyebilirsiniz.',
   },
   {
     id: "kosu-ortam-hatasi-task",
@@ -489,7 +489,13 @@ function olgular(veri: MockVeri, tur: string | null, id: string | null, simdi: n
   }
   if (tur === "script") {
     const s = veri.scriptler.find((x) => x.id === id);
-    return s ? { durum: s.durum, kirarak_dogrulama: s.break_verify?.durum ?? "not_started" } : null;
+    return s
+      ? {
+          durum: s.durum,
+          kirarak_dogrulama: s.break_verify?.durum ?? "not_started",
+          defect_adayi: s.yerel_sinif === "defect_adayi" || s.engel?.tur === "defect_candidate",
+        }
+      : null;
   }
   if (tur === "run") {
     const k = veri.kosular.find((x) => x.id === id);

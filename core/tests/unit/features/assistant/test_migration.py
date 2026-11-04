@@ -27,7 +27,7 @@ TABLOLAR = {
 
 def _ilgili(fark: object) -> bool:
     metin = repr(fark)
-    return any(t in metin for t in (*TABLOLAR, "tool_call"))
+    return any(t in metin for t in (*TABLOLAR, "tool_call", "ai_call_parent_ix"))
 
 
 _HIZ_EKLE = (
@@ -87,6 +87,16 @@ def test_asistan_modelleri_ve_migrasyon_ayni(db: Db) -> None:
         farklar = [f for f in compare_metadata(ctx, Base.metadata) if _ilgili(f)]
     eng.dispose()
     assert farklar == []
+
+
+def test_ai_call_parent_call_id_indeksli(db: Db) -> None:
+    """Soru başı bütçe sorgusu her ajan turunda `parent_call_id` ile arar (tam tarama yok)."""
+    with psycopg.connect(db.owner_url.replace("+psycopg", ""), autocommit=True) as o:
+        tanim = o.execute(
+            "SELECT indexdef FROM pg_indexes WHERE tablename = 'ai_call' "
+            "AND indexname = 'ai_call_parent_ix'"
+        ).fetchone()
+    assert tanim is not None and "(parent_call_id)" in tanim[0]
 
 
 def test_kisit_adlari_sozlesmeyle_ayni(db: Db) -> None:

@@ -13,6 +13,9 @@
 - `tool_call_kanal_ck` → `kanal IN ('agent', 'asistan', 'ide')`; append-only tetikleyicisi ve
   yetkiler değişmez. Downgrade, `kanal='asistan'` satırı varken bilerek başarısız olur
   (tool_call append-only'dir, satır silinmez).
+- `ai_call_parent_ix` (`ai_call.parent_call_id`): asistanın soru başı bütçe/harcama sorguları her
+  ajan turunda kök çağrının turlarını bu kolonla arar. Yalnız indeks; kolon ve append-only
+  tetikleyicisi değişmez.
 
 Model ↔ şema eşitliği tests/unit/features/assistant/test_migration.py'de doğrulanır.
 
@@ -151,6 +154,7 @@ CREATE TABLE asistan_hiz (
 )
 """,
     "CREATE INDEX asistan_hiz_pencere_ix ON asistan_hiz (pencere_baslangic)",
+    "CREATE INDEX ai_call_parent_ix ON ai_call (parent_call_id)",
 )
 
 
@@ -169,5 +173,6 @@ def downgrade() -> None:
     # ve geri alma bilerek başarısız olur (satırlar silinmez, NOT VALID ile gizlenmez).
     op.drop_constraint("tool_call_kanal_ck", "tool_call", type_="check")
     op.create_check_constraint("tool_call_kanal_ck", "tool_call", "kanal IN ('agent', 'ide')")
+    op.execute("DROP INDEX IF EXISTS ai_call_parent_ix")
     for tablo in reversed(TABLES):
         op.execute(f"DROP TABLE IF EXISTS {tablo}")

@@ -1,7 +1,8 @@
 // Öneri kartı (AI-ASISTAN-PLANI §17.4–17.6): başlık, neden, eylem ("Git" / "Taslağı göster" /
 // "Jira'yı aç"), "Neden? Sor" (model kapalıyken "Açıklamayı göster"), hazır soru çipleri, "Yaptım"
 // (isteğe bağlı Jira anahtarı) ve "Gizle". Model destekli ek öneri kartı aynı görünür, "AI önerisi ·
-// doğrulanmadı" etiketi taşır; onda Yaptım/Gizle yoktur (kural kimliği yok). İlke I: hiçbir eylem
+// doğrulanmadı" etiketi taşır; onda Yaptım/Gizle yoktur (kural kimliği yok), "Neden? Sor" yerine
+// "Bunu sor" öneriyi üreten sohbette sorar. İlke I: hiçbir eylem
 // kendiliğinden uygulanmaz; Jira'ya yazılmaz, taslağı kullanıcı kopyalar ve kaydı kendisi açar.
 import { useId, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -356,10 +357,23 @@ export function OneriKarti({ oneri, modelAcik, varlikId, vurgulu, onGit, onGeriB
   );
 }
 
-/** Model destekli ek öneri kartı ("AI önerisi · doğrulanmadı"). */
-export function AiOneriKarti({ oneri, onGit }: { oneri: AsistanOnerisi; onGit?: () => void }) {
+/** AI öneri kartının "Bunu sor" sorusu: başlık ve gerekçe soruya taşınır (soru sınırı içinde). */
+export function aiOneriSorusu(baslik: string, neden: string): string {
+  const b = baslik.slice(0, 200);
+  const n = neden.slice(0, 600);
+  return `"${b}" önerisini neden yapmalıyım, yapmazsam ne olur?${n ? ` Önerinin gerekçesi: ${n}` : ""}`;
+}
+
+/**
+ * Model destekli ek öneri kartı ("AI önerisi · doğrulanmadı"). Kural kimliği olmadığından
+ * "Neden? Sor" yerine "Bunu sor": başlık ve gerekçe, öneriyi üreten sohbette (verildiyse) soru
+ * olarak sorulur; hazır soru çipleri aynı sohbete gider.
+ */
+export function AiOneriKarti({ oneri, onGit, sohbetId }: { oneri: AsistanOnerisi; onGit?: () => void; sohbetId?: string }) {
   const k = aiOnerisiKarta(oneri);
   const baslikId = useId();
+  const jiraEylemi = JIRA_EYLEMLERI.has(k.eylem.tur);
+  const sor = (soru: string) => acSekme("sohbet", { soru, ...(sohbetId ? { sohbetId } : {}) });
   return (
     <article className="oneri-karti oneri-karti-ai" aria-labelledby={baslikId}>
       <span className="oneri-ai-etiket">AI önerisi · doğrulanmadı</span>
@@ -368,6 +382,20 @@ export function AiOneriKarti({ oneri, onGit }: { oneri: AsistanOnerisi; onGit?: 
       </h3>
       <p className="oneri-neden">{k.neden}</p>
       <OneriEylemAlani eylem={k.eylem} ai onGit={onGit} />
+      <div className="oneri-alt">
+        <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => sor(aiOneriSorusu(k.baslik, k.neden))}>
+          Bunu sor
+        </button>
+      </div>
+      <ul className="oneri-cipler" aria-label="Hazır sorular">
+        {HAZIR_SORULAR.filter((s) => !s.yalnizJira || jiraEylemi).map((s) => (
+          <li key={s.metin}>
+            <button type="button" className="cip cip-notr oneri-cipi" onClick={() => sor(`${s.metin} (Öneri: ${k.baslik.slice(0, 200)})`)}>
+              {s.metin}
+            </button>
+          </li>
+        ))}
+      </ul>
     </article>
   );
 }

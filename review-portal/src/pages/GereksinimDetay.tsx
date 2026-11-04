@@ -152,6 +152,7 @@ export function GereksinimDetay() {
               {g.kontrol_turu > 0 ? "Yeniden denetle" : "Ön incelemeyi başlat"}
             </IslemDugmesi>
             <IslemDugmesi
+              id="case-uret"
               roller={["analyst"]}
               tur={uretimHatasi && caseUretilebilir ? "birincil" : undefined}
               disabled={!caseUretilebilir}
@@ -289,6 +290,7 @@ export function GereksinimDetay() {
       </Kart>
 
       <Kart
+        id="bulgular"
         baslik={`Tutarlılık bulguları${g.kontrol_turu ? ` · kontrol turu ${g.kontrol_turu}/${g.kontrol_turu_ust_sinir}` : ""}`}
         eylemler={
           <>
@@ -491,7 +493,7 @@ function PoKarti({ g, yenile }: { g: Detay; yenile: () => void }) {
   const kapiGecildi =
     po.durum === "approved" && !(po.onaylanan_hash && g.icerik_hash && po.onaylanan_hash !== g.icerik_hash);
   return (
-    <Kart baslik="PO teyidi">
+    <Kart baslik="PO teyidi" id="po-onay">
       {po.durum === "approved" ? (
         <>
           <p>

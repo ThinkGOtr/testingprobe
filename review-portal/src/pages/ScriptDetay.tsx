@@ -678,7 +678,7 @@ export function ScriptDetay() {
       </Kart>
 
       <div className="iki-sutun">
-        <Kart baslik="Pull request">
+        <Kart baslik="Pull request" id="pr">
           {s.pr ? (
             <>
               <p>
@@ -867,6 +867,7 @@ export function ScriptDetay() {
         </Kart>
 
         <Kart
+          id="kirarak-dogrula"
           baslik="Kırarak doğrula"
           eylemler={
             !prBirlesti && (
