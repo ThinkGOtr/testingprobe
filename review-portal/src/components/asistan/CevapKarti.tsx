@@ -8,6 +8,7 @@ import { mockZorunlu } from "../../api/http";
 import { dolar, goreliZaman, guvenliDisAdres } from "../../lib/format";
 import type { Ton } from "../../lib/etiketler";
 import { uygulamaRotasiMi } from "../../lib/rotalar";
+import { Ikon } from "../Ikon";
 import { Cip, DisBaglanti } from "../ui";
 import { AiOneriKarti } from "./OneriKarti";
 
@@ -325,7 +326,7 @@ export function CevapKarti({ mesaj, baslik, derinIncelenebilir, derinIncele, der
               aria-pressed={mesaj.geri_bildirim === 1}
               onClick={() => geriBildir(1)}
             >
-              👍
+              <Ikon ad="begen" />
             </button>
             <button
               type="button"
@@ -334,7 +335,7 @@ export function CevapKarti({ mesaj, baslik, derinIncelenebilir, derinIncele, der
               aria-pressed={mesaj.geri_bildirim === -1}
               onClick={() => geriBildir(-1)}
             >
-              👎
+              <Ikon ad="begenme" />
             </button>
           </span>
         )}

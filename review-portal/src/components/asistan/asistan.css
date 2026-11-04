@@ -1,120 +1,209 @@
-/* Portal asistan paneli (AI-ASISTAN-PLANI §11). Katman sırasının tamamı styles.css "kabuk" bölümünün
-   başında (panel Kabuk'un kardeşi: "Bu ne?" bindirmesi 39, başlatıcı/panel 40, panel içi modal 45,
-   bildirimler 50). Renkler styles.css belirteçleri. */
+/* Portal asistan paneli (AI-ASISTAN-PLANI §11) — "Agent Probe çizgisi" (TASARIM-YENILEME-PLANI §2–§4).
+   Katman sırasının tamamı styles.css "kabuk" bölümünün başında (panel Kabuk'un kardeşi: "Bu ne?"
+   bindirmesi 39, başlatıcı/panel 40, panel içi modal 45, bildirimler 50).
+   Renk disiplini (§3.2): yalnız token; sabit renk ve [data-theme] seçicisi yok. Mor (--vurgu) yalnız AI
+   kimliği ve AI cevabı işaretidir (başlık ikonu, cevap kartının sol şeridi); etkileşim (başlatıcı,
+   birincil düğme, seçili sekme, odak, "Bu ne?" hedefi) indigo --accent / --accent-solid. Dolu zeminde
+   --accent-solid + --accent-text; tonlu zeminde --muted yok (--text-2). */
 
-.asistan-baslatici {
+/* ---------------------------------------------------------------- başlatıcı (sağ alt) */
+
+/* Kap yalnız konumdur; pasifken neden düğmenin solunda (.dugme-neden). Kap tıklamayı yutmaz. */
+.asistan-baslatici-kap {
   position: fixed;
   right: 16px;
   bottom: 16px;
   z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+  pointer-events: none;
+}
+.asistan-baslatici-kap > * {
+  pointer-events: auto;
+}
+/* Birincil düğme dili (§4.5): --accent-solid dolgu + beyaz, 600; yüzen öğe olduğu için gölge + ışıma. */
+.asistan-baslatici {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 10px 16px;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 16px 8px 14px;
   border: 1px solid var(--accent-solid);
-  border-radius: 999px;
-  /* Dolu zemin --accent-solid (README Görsel dil: --accent yalnız metin/kenar; koyu temada beyazla 2,9). */
+  border-radius: var(--radius);
   background: var(--accent-solid);
   color: var(--accent-text);
   font: inherit;
   font-weight: 600;
-  box-shadow: var(--shadow);
+  white-space: nowrap;
+  box-shadow: var(--shadow), var(--glow);
   cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+.asistan-baslatici .ikon {
+  width: 18px;
+  height: 18px;
 }
 .asistan-baslatici:hover {
   background: var(--accent-solid-hover);
+  border-color: var(--accent-solid-hover);
+  transform: translateY(-1px);
 }
-.asistan-baslatici:focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
-}
+/* Pasif (asistan kapalı): portalın pasiflik dili — --surface-3 zemin, --muted metin, kesik kenar, ışıma
+   yok. Düğme yine tıklanır (panel nedeni gösterir), bu yüzden not-allowed değil. */
 .asistan-baslatici.pasif {
   background: var(--surface-3);
-  border-color: var(--border-strong);
+  border: 1px dashed var(--border-strong);
   color: var(--muted);
+  box-shadow: var(--shadow);
+}
+.asistan-baslatici.pasif:hover {
+  background: var(--surface-3);
+  border-color: var(--border-input);
+  color: var(--text-2);
+  transform: none;
+}
+/* Görünür neden: nötr yüzeyde (--surface; --muted yalnız nötr yüzeyde) küçük kutu, en çok iki-üç satır. */
+.dugme-neden.asistan-baslatici-neden {
+  margin: 0;
+  max-width: 30ch;
+  padding: 6px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  text-align: right;
+}
+/* Açık kipsel mobil menüde kap (neden dahil) perdenin üstünde kalmaz; düğme styles.css'te zaten gizli. */
+@media (max-width: 860px) {
+  body:has(.yan-menu.acik) .asistan-baslatici-kap {
+    visibility: hidden;
+  }
 }
 
+/* ---------------------------------------------------------------- panel yüzeyi */
+
+/* Masaüstü (≥760 px, modal değil): üst çubuğun altından sayfanın sağ kenarına yaslı çekmece. Yüzey kart
+   dilinde (--surface, 1 px --border); içerikten sol kenardaki ayraçla ayrılır (yan menünün sağ kenarının
+   aynası) ve gölgeyle içeriğin üstünde durur. Üst çubuk 56 px (border-box; 2 px marka çizgisi dahil). */
 .asistan-panel {
   position: fixed;
-  top: 64px;
-  right: 16px;
-  bottom: 16px;
+  top: 56px;
+  right: 0;
+  bottom: 0;
   z-index: 40;
   width: 420px;
-  max-width: calc(100vw - 32px);
+  max-width: 100vw;
   display: flex;
   flex-direction: column;
   background: var(--surface);
   color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: 0 8px 28px rgb(16 24 40 / 0.18);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow);
   overflow: hidden;
 }
+/* Dar ekran (< 760 px): tam ekran modal dialog; kenar ve gölge yok. */
 .asistan-panel-modal {
   inset: 0;
-  top: 0;
-  right: 0;
-  bottom: 0;
   width: 100vw;
   max-width: 100vw;
-  border-radius: 0;
   border: 0;
+  box-shadow: none;
 }
 @media (max-width: 759px) {
   .asistan-panel {
     inset: 0;
     width: 100vw;
-    max-width: 100vw;
-    border-radius: 0;
+    border: 0;
   }
 }
 
+/* Başlık şeridi: AI kimliği (mor ikon karosu) + "Asistan" + dürüstlük rozetleri + kapat. */
 .asistan-panel-ust {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
-  padding: 12px 14px 4px;
+  padding: 14px 12px 4px 16px;
 }
 .asistan-panel-baslik {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 6px 8px;
+  min-height: 32px;
+}
+.asistan-kimlik {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: var(--vurgu-bg);
+  color: var(--vurgu);
+  border: 1px solid color-mix(in srgb, var(--vurgu) 30%, transparent);
+}
+.asistan-kimlik .ikon {
+  width: 16px;
+  height: 16px;
 }
 .asistan-panel-baslik h2 {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+/* Kapat: üst çubuktaki ikon düğmeleriyle aynı 32×32 kutu, ikon 18 px. */
+.dugme.asistan-kapat {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  flex-shrink: 0;
+}
+.asistan-kapat .ikon {
+  width: 18px;
+  height: 18px;
 }
 .asistan-denetim-notu {
   margin: 0;
-  padding: 0 14px 8px;
+  padding: 0 16px 12px;
 }
 
+/* Sekme şeridi: portalın sekme kalıbı (.sekme — hap, seçili = --accent-solid dolgu + beyaz). Şeridin
+   altındaki ayraç içerikten ayırır. */
 .asistan-sekmeler {
   display: flex;
   gap: 4px;
-  padding: 0 14px;
-  border-bottom: 1px solid var(--border);
+  padding: 0 16px 12px;
+  border-bottom: 1px solid var(--border-soft);
 }
 .asistan-sekme {
-  padding: 8px 12px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: none;
-  color: var(--text-2);
   font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 5px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-hap);
+  background: var(--surface);
+  color: var(--text-2);
   cursor: pointer;
 }
-.asistan-sekme.aktif {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-  font-weight: 600;
+.asistan-sekme:hover:not(.aktif) {
+  background: var(--surface-2);
+  color: var(--text);
 }
-.asistan-sekme:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: -2px;
+.asistan-sekme.aktif {
+  background: var(--accent-solid);
+  border-color: var(--accent-solid);
+  color: var(--accent-text);
 }
 
 .asistan-sekme-icerik {
@@ -126,8 +215,10 @@
 }
 .asistan-sekme-icerik > .uyari-kutusu,
 .asistan-oneriler-sekmesi {
-  margin: 12px 14px;
+  margin: 12px 16px;
 }
+
+/* ---------------------------------------------------------------- sohbet */
 
 .asistan-sohbet {
   flex: 1;
@@ -135,34 +226,46 @@
   display: flex;
   flex-direction: column;
 }
+/* "Yeni sohbet" / "Geçmiş": hayalet küçük düğmeler (ikon + metin), şeridin sağında. */
 .asistan-sohbet-eylem {
   display: flex;
   justify-content: flex-end;
   gap: 4px;
-  padding: 6px 10px 0;
+  padding: 8px 12px 0;
 }
 .asistan-mesajlar {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 8px 14px;
+  padding: 8px 16px 16px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
+/* Kullanıcının sorusu: indigo yumuşak balon (etkileşim tonu; AI değil). */
 .asistan-soru {
   align-self: flex-end;
   max-width: 85%;
   padding: 8px 12px;
-  border-radius: var(--radius) var(--radius) 2px var(--radius);
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-radius: var(--radius) var(--radius) 4px var(--radius);
   background: var(--accent-soft);
+  color: var(--text);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .asistan-grup {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+}
+.asistan-bos {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.asistan-bos > p {
+  margin: 4px 0 0;
 }
 .asistan-bos ul,
 .asistan-soru-onerileri {
@@ -173,17 +276,38 @@
   flex-wrap: wrap;
   gap: 6px;
 }
+/* Hazır soru çipleri: portal Cip'i (.cip .cip-notr; boy, hap, %30 kenar aynı) + düğme durumları.
+   Uzun soru dar panelde sarar. Hover/basılı = indigo (etkileşim). */
 .asistan-oneri-cipi {
-  border: 1px solid var(--border);
-  cursor: pointer;
   font: inherit;
-  font-size: 0.85rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: normal;
+  text-align: left;
+  cursor: pointer;
+}
+.asistan-oneri-cipi:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.asistan-oneri-cipi:disabled,
+.asistan-bune-dugmesi:disabled {
+  background: var(--surface-3);
+  color: var(--muted);
+  border: 1px dashed var(--border-strong);
+  cursor: not-allowed;
 }
 
+/* ---------------------------------------------------------------- cevap kartı (AI çıktısı) */
+
+/* Kart dili (--surface-2 iç yüzey, 1 px --border, 12 px) + sol 3 px --vurgu şeridi: AI çıktısı (§4.4
+   AI taslağı şeridiyle aynı anlam). Şerit tek başına anlam taşımaz; kartın adı "Asistan cevabı". */
 .asistan-cevap {
-  padding: 10px 12px;
+  padding: 12px 14px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--vurgu);
+  border-radius: var(--radius);
   background: var(--surface-2);
   overflow-wrap: anywhere;
 }
@@ -192,7 +316,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 .asistan-cevap-etiket {
   font-size: 0.85rem;
@@ -216,16 +340,19 @@
   font-size: 0.85rem;
   color: var(--text-2);
 }
+/* Eyebrow (§3.4): 0.75rem / 700 / büyük harf; nötr yüzeyde --muted. */
 .asistan-alt-baslik {
-  margin-top: 6px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--text-2);
+  margin-top: 10px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 .asistan-kaynaklar ul,
 .asistan-oneriler ul {
   list-style: none;
-  margin: 4px 0;
+  margin: 6px 0;
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -238,12 +365,18 @@
   gap: 6px;
   font-size: 0.85rem;
 }
+/* Kaynak türü: kategorik → nötr hap (Cip notr ile aynı). */
 .asistan-kaynak-tur {
-  padding: 1px 6px;
-  border-radius: 4px;
+  padding: 1px 8px;
+  border: 1px solid color-mix(in srgb, var(--notr) 30%, transparent);
+  border-radius: var(--radius-hap);
   background: var(--notr-bg);
   color: var(--notr);
   font-size: 0.75rem;
+  font-weight: 600;
+}
+.asistan-kaynak-ref {
+  font-size: 0.8rem;
 }
 .soluk-kaynak {
   opacity: 0.65;
@@ -257,24 +390,36 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 6px;
+  margin-top: 8px;
 }
 .asistan-bilgi-amacli {
-  margin: 6px 0 0;
+  margin: 8px 0 0;
 }
 .asistan-cevap-alt {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-top: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
 }
 .asistan-geri-bildirim {
   display: inline-flex;
   gap: 2px;
 }
+/* 👍/👎 yerine ikon: 30×30 kare hayalet düğme; basılı = indigo yumuşak zemin. */
+.asistan-geri-bildirim .dugme {
+  width: 30px;
+  padding: 0;
+}
+.asistan-geri-bildirim .ikon {
+  width: 16px;
+  height: 16px;
+}
 .asistan-geri-bildirim [aria-pressed="true"] {
   background: var(--accent-soft);
+  color: var(--accent);
 }
 .asistan-on-cevap > summary {
   cursor: pointer;
@@ -288,7 +433,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 8px 12px;
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius-sm);
   font-size: 0.9rem;
@@ -298,28 +443,28 @@
   font-weight: 600;
 }
 
+/* ---------------------------------------------------------------- girdi */
+
+/* Girdi şeridi: üstte ayraç; textarea portal formu (global kural: --surface-2, --border-input, 10 px,
+   odakta 2 px halka + --halka). */
 .asistan-girdi {
-  border-top: 1px solid var(--border);
-  padding: 8px 14px 12px;
+  border-top: 1px solid var(--border-soft);
+  padding: 10px 16px 14px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 .asistan-girdi textarea {
-  width: 100%;
-  resize: vertical;
-  min-height: 60px;
-  padding: 8px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
+  min-height: 64px;
 }
 .asistan-girdi-alt {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
+}
+.asistan-sayac {
+  font-variant-numeric: tabular-nums;
 }
 .asistan-sayac-asim {
   color: var(--err);
@@ -334,29 +479,55 @@
 .asistan-baglam-cipi {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   max-width: 100%;
+  padding-right: 2px;
+  white-space: normal;
 }
+/* Çipten kaldır: 20×20 ikon düğmesi (komşu hedeflerle ≥24 px aralık, WCAG 2.5.8 aralık istisnası). */
 .asistan-cip-kaldir {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  padding: 0;
   border: 0;
+  border-radius: var(--radius-hap);
   background: none;
   color: inherit;
   cursor: pointer;
   font: inherit;
-  padding: 0 2px;
 }
+.asistan-cip-kaldir .ikon {
+  width: 12px;
+  height: 12px;
+}
+.asistan-cip-kaldir:hover {
+  background: color-mix(in srgb, currentColor 15%, transparent);
+}
+/* "Bu ne?": Cip boyunda düğme; basılıyken (kip açık) indigo — seçim bir etkileşimdir. */
 .asistan-bune-dugmesi {
-  border: 1px solid var(--border);
-  cursor: pointer;
   font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.asistan-bune-dugmesi:hover:not(:disabled),
+.asistan-bune-dugmesi[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
 }
 .asistan-bune-dugmesi[aria-pressed="true"] {
-  background: var(--vurgu-bg);
-  color: var(--vurgu);
+  border-color: var(--accent);
 }
 
+/* ---------------------------------------------------------------- geçmiş */
+
 .asistan-gecmis {
-  padding: 10px 14px;
+  padding: 10px 16px;
   overflow-y: auto;
 }
 .asistan-gecmis-ust {
@@ -374,20 +545,32 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 0;
-  border-bottom: 1px solid var(--border);
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border-soft);
 }
+.asistan-sohbet-listesi li:last-child {
+  border-bottom: 0;
+}
+/* Sohbet satırı: tıklanabilir satır dili (hover --hover-accent). */
 .asistan-sohbet-sec {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  gap: 2px;
+  padding: 6px 8px;
   border: 0;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--text);
   font: inherit;
+  font-weight: 500;
   text-align: left;
   cursor: pointer;
+}
+.asistan-sohbet-sec:hover {
+  background: var(--hover-accent);
 }
 .asistan-sil-onay {
   display: inline-flex;
@@ -395,6 +578,9 @@
   gap: 4px;
 }
 
+/* ---------------------------------------------------------------- alıntı modalı (panel içi, z 45) */
+
+/* Perde: sayfa zemininin %80'i (koyuda karartır, açıkta soldurur) + hafif bulanıklık; sabit renk yok. */
 .asistan-modal-arka {
   position: fixed;
   inset: 0;
@@ -402,16 +588,19 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgb(16 24 40 / 0.4);
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
   padding: 16px;
 }
 .asistan-modal {
   width: min(640px, 100%);
   max-height: 80vh;
   overflow: auto;
-  padding: 14px;
+  padding: 16px 20px 20px;
   background: var(--surface);
   color: var(--text);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
 }
@@ -420,11 +609,21 @@
   justify-content: space-between;
   align-items: center;
   gap: 8px;
+  margin-bottom: 8px;
 }
 .asistan-modal-baslik h3 {
   margin: 0;
   font-size: 0.95rem;
 }
+@media (prefers-reduced-transparency: reduce) {
+  .asistan-modal-arka {
+    background: var(--bg);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* ---------------------------------------------------------------- "Bu ne?" bindirmesi */
 
 .asistan-bune-bindirme {
   position: fixed;
@@ -433,14 +632,17 @@
   cursor: crosshair;
   background: transparent;
 }
+/* Hedef çerçevesi: indigo (etkileşim) — kullanıcı soracağı öğeyi seçiyor. */
 .asistan-bune-vurgu {
   position: fixed;
   pointer-events: none;
-  outline: 2px solid var(--vurgu);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 4px;
-  background: rgb(91 60 196 / 0.08);
+  border-radius: var(--radius-sm);
+  background: var(--hover-accent);
+  box-shadow: var(--halka);
 }
+/* İpucu bandı: nötr yüzey + sol 3 px indigo şerit (uyarı kutusu kalıbı); --muted burada nötr yüzeyde. */
 .asistan-bune-ipucu {
   position: fixed;
   left: 50%;
@@ -448,27 +650,48 @@
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 8px;
-  max-width: calc(100vw - 32px);
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
+  gap: 8px 12px;
+  width: max-content;
+  max-width: min(760px, calc(100vw - 32px));
+  padding: 10px 12px 10px 14px;
+  border-radius: var(--radius);
   background: var(--surface);
   color: var(--text);
-  border: 1px solid var(--vurgu);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-solid);
   box-shadow: var(--shadow);
   cursor: default;
   font-size: 0.9rem;
 }
-/* Bindirme (z 39) panelin (z 40) altındadır ve bant bindirmenin çocuğudur: panel açıkken bant
-   panelin solundaki alanın ortasına alınır, "Vazgeç" panelin altında kalmaz. */
+.asistan-bune-metin {
+  flex: 1;
+  min-width: 0;
+  max-width: 72ch;
+}
+.asistan-bune-ipucu .dugme {
+  flex-shrink: 0;
+}
+/* Bindirme (z 39) panelin (z 40) altındadır ve bant bindirmenin çocuğudur: panel açıkken bant panelin
+   solundaki alanın ortasına alınır, "Vazgeç" panelin altında kalmaz (panel 420 px, sağa yaslı). */
 body:has(.asistan-panel:not(.asistan-panel-modal)) .asistan-bune-ipucu {
-  left: calc((100vw - 452px) / 2);
-  max-width: calc(100vw - 484px);
+  left: calc((100vw - 420px) / 2);
+  max-width: calc(100vw - 452px);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .asistan-panel,
   .asistan-baslatici {
     transition: none;
+  }
+  .asistan-baslatici:hover {
+    transform: none;
+  }
+}
+@media (forced-colors: active) {
+  .asistan-cevap {
+    border-left-color: CanvasText;
+  }
+  .asistan-bune-vurgu {
+    outline-color: Highlight;
   }
 }

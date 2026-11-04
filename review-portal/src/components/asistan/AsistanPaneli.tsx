@@ -8,6 +8,7 @@ import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent as 
 import { api } from "../../api/client";
 import { mockZorunlu } from "../../api/http";
 import { useEkranBaglami, type EkranBaglami } from "../../lib/ekranBaglami";
+import { Ikon } from "../Ikon";
 import { DegerlendirmeNotu, Uyari } from "../ui";
 import { elemanTanimi, noktadakiOge, yakalanabilirMi, type SeciliEleman } from "./buNe";
 import { ekranAnahtariUret, ekranDegisti, istegiTuket, paneliAc, paneliKapat, panelHazirAyarla, sekmeSec, useAsistanKontrol, type AsistanSekmesi } from "./kontrol";
@@ -76,7 +77,7 @@ export function AsistanPaneli() {
   const [vurgu, setVurgu] = useState<Vurgu | null>(null);
   const [secili, setSecili] = useState<SeciliEleman | null>(null);
   const bindirmeRef = useRef<HTMLDivElement>(null);
-  const panelRef = useRef<HTMLElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const baslikRef = useRef<HTMLHeadingElement>(null);
   const baslaticiRef = useRef<HTMLButtonElement>(null);
   /** Panel dışında en son odaklanan öğe: kapanınca odak oraya (yoksa başlatıcıya) döner. */
@@ -86,6 +87,7 @@ export function AsistanPaneli() {
   const secimYapildi = useRef(false);
   const oncekiBuNe = useRef(false);
   const baslikId = useId();
+  const nedenId = useId();
 
   // "Bu ne?" seçimi o ekrana aittir: rota/varlık değişince önceki ekranın öğesi yeni bağlamla gitmesin.
   useEffect(() => setSecili(null), [ekranHam.rota_kalibi, ekranHam.varlik?.id]);
@@ -335,21 +337,32 @@ export function AsistanPaneli() {
   return (
     <>
       {!yalnizOneri && !kontrol.acik && (
-        <button
-          ref={baslaticiRef}
-          type="button"
-          className={`asistan-baslatici${pasifNeden ? " pasif" : ""}`}
-          data-asistan-gizli
-          title={pasifNeden ?? "Asistanı aç"}
-          aria-label={pasifNeden ? `Asistan (kapalı: ${pasifNeden})` : "Asistanı aç"}
-          onClick={() => {
-            // Pasifken de açılır: neden Sohbet sekmesindeki uyarıda görünür (dokunmatikte title yok).
-            sekmeSec("sohbet");
-            paneliAc();
-          }}
-        >
-          <span aria-hidden="true">✦</span> Asistan
-        </button>
+        // Kap yalnız konum içindir (sağ alt). Pasifken neden portalın pasiflik dilinde düğmenin DIŞINDA,
+        // solunda görünür yazılır (.dugme-neden; dokunmatikte ve klavyede title okunmaz) ve
+        // aria-describedby ile bağlıdır; düğme yine tıklanır, panel nedeni uyarıda da gösterir.
+        <div className={`asistan-baslatici-kap${pasifNeden ? " neden-var" : ""}`} data-asistan-gizli>
+          {pasifNeden && (
+            <p id={nedenId} className="dugme-neden asistan-baslatici-neden">
+              {pasifNeden}
+            </p>
+          )}
+          <button
+            ref={baslaticiRef}
+            type="button"
+            className={`asistan-baslatici${pasifNeden ? " pasif" : ""}`}
+            data-asistan-gizli
+            title={pasifNeden ?? "Asistanı aç"}
+            aria-label={pasifNeden ? "Asistan (kapalı)" : "Asistanı aç"}
+            aria-describedby={pasifNeden ? nedenId : undefined}
+            onClick={() => {
+              // Pasifken de açılır: neden Sohbet sekmesindeki uyarıda da görünür.
+              sekmeSec("sohbet");
+              paneliAc();
+            }}
+          >
+            <Ikon ad="asistan" /> Asistan
+          </button>
+        </div>
       )}
 
       {buNe && (
@@ -362,8 +375,11 @@ export function AsistanPaneli() {
         >
           {vurgu && <div className="asistan-bune-vurgu" style={{ left: vurgu.x, top: vurgu.y, width: vurgu.w, height: vurgu.h }} />}
           <div className="asistan-bune-ipucu" role="status" onClick={(e) => e.stopPropagation()}>
-            {buNeMesaji ?? "Sormak istediğiniz öğeye tıklayın."}{" "}
-            <span className="soluk">Klavyeyle: Tab ile öğeye gidip Enter'a basın (pasif düğmeler odak almaz; kartın başlığını seçin). Esc ile çıkın.</span>
+            {/* Metin tek akışta (flex öğesi tek): mesaj ve klavye ipucu satır içinde sarar, "Vazgeç" sağda. */}
+            <span className="asistan-bune-metin">
+              {buNeMesaji ?? "Sormak istediğiniz öğeye tıklayın."}{" "}
+              <span className="soluk">Klavyeyle: Tab ile öğeye gidip Enter'a basın (pasif düğmeler odak almaz; kartın başlığını seçin). Esc ile çıkın.</span>
+            </span>
             <button type="button" className="dugme dugme-ikincil dugme-kucuk" onClick={buNeBitir}>
               Vazgeç
             </button>
@@ -372,7 +388,8 @@ export function AsistanPaneli() {
       )}
 
       {panelGorunur && (
-        <aside
+        // div + açık rol: <aside> üstünde role="dialog" ARIA-in-HTML'de izinli değil (axe aria-allowed-role).
+        <div
           ref={panelRef}
           className={`asistan-panel${dar ? " asistan-panel-modal" : ""}`}
           data-asistan-gizli
@@ -384,6 +401,10 @@ export function AsistanPaneli() {
         >
           <header className="asistan-panel-ust">
             <div className="asistan-panel-baslik">
+              {/* AI kimliği (mor yalnız AI): dekoratif; başlığın adı "Asistan" kalır. */}
+              <span className="asistan-kimlik" aria-hidden="true">
+                <Ikon ad="asistan" />
+              </span>
               <h2 id={baslikId} ref={baslikRef} tabIndex={-1}>
                 Asistan
               </h2>
@@ -399,8 +420,8 @@ export function AsistanPaneli() {
               )}
               <DegerlendirmeNotu d={asistan?.degerlendirme} />
             </div>
-            <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={paneliKapat} aria-label="Asistanı kapat">
-              ✕
+            <button type="button" className="dugme dugme-hayalet dugme-kucuk asistan-kapat" onClick={paneliKapat} aria-label="Asistanı kapat">
+              <Ikon ad="kapat" />
             </button>
           </header>
           <p className="asistan-denetim-notu soluk kucuk">Sorular denetim kaydına girer; sohbet 90 gün saklanır.</p>
@@ -451,7 +472,7 @@ export function AsistanPaneli() {
               />
             )}
           </div>
-        </aside>
+        </div>
       )}
     </>
   );

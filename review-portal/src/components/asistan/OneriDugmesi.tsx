@@ -8,6 +8,7 @@ import { useEffect, useRef } from "react";
 import { useOlay } from "../../api/events";
 import { useOturum } from "../../auth";
 import { useEkranBaglami } from "../../lib/ekranBaglami";
+import { Ikon } from "../Ikon";
 import { acSekme } from "./kontrol";
 import { oneriAnahtari, oneriAyar, oneriGetir, oneriOlayiIlgili, oneriOlayKonulari, oneriSorgusu, useOneriDurumu, useOneriYetenegi } from "./OneriVerisi";
 
@@ -59,12 +60,14 @@ export function OneriDugmesi() {
   return (
     <button
       type="button"
-      className={`oneri-dugmesi${n > 0 ? " oneri-dugmesi-var" : ""}`}
+      // Üst çubuktaki "Çıkış" ile aynı dil: ikincil küçük düğme (oneri.css yalnız rozet ve vurgu ekler).
+      className={`dugme dugme-ikincil dugme-kucuk oneri-dugmesi${n > 0 ? " oneri-dugmesi-var" : ""}`}
       data-testid="oneri-dugmesi"
       aria-label={`Öneriler (${n})`}
       title={n > 0 ? `Bu ekranda sizi bekleyen ${n} iş` : "Bu ekranda sizi bekleyen iş yok"}
       onClick={() => acSekme("oneriler")}
     >
+      <Ikon ad="oneri" />
       <span className="oneri-etiket" aria-hidden="true">
         Öneri
       </span>

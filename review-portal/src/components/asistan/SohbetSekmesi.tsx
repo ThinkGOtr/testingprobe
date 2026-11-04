@@ -23,6 +23,7 @@ import type { EkranBaglami } from "../../lib/ekranBaglami";
 import { tarih } from "../../lib/format";
 import { oturumDegisinceTemizle } from "../../lib/oturumTemizligi";
 import { hataKaydi, SON_HATA_GECERLILIK_MS, sonHata, sonHataAbone, sonHataBaglami, sonHataSurumu, type SonHataKaydi } from "../../lib/sonHata";
+import { Ikon } from "../Ikon";
 import { BosDurum, Yukleniyor } from "../ui";
 import type { SeciliEleman } from "./buNe";
 import { CevapKarti } from "./CevapKarti";
@@ -667,7 +668,7 @@ export function SohbetSekmesi({
         <div className="asistan-gecmis-ust">
           <strong>Sohbet geçmişi</strong>
           <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => setGecmisAcik(false)}>
-            Geri
+            <Ikon ad="geri" /> Geri
           </button>
         </div>
         {gecmisHatasi && (
@@ -752,7 +753,7 @@ export function SohbetSekmesi({
           disabled={sohbetteBekleyen}
           aria-describedby={sohbetteBekleyen ? "asistan-sohbet-kilit" : undefined}
         >
-          Yeni sohbet
+          <Ikon ad="arti" /> Yeni sohbet
         </button>
         <button
           type="button"
@@ -761,7 +762,7 @@ export function SohbetSekmesi({
           disabled={sohbetteBekleyen}
           aria-describedby={sohbetteBekleyen ? "asistan-sohbet-kilit" : undefined}
         >
-          Geçmiş
+          <Ikon ad="gecmis" /> Geçmiş
         </button>
       </div>
       {/* Liste kabı canlı bölge değildir: geçmişten açılan sohbet baştan okunmaz. Bekleme adımları
@@ -819,7 +820,7 @@ export function SohbetSekmesi({
               Bu ekran: {ekran.ekran}
               {ekran.varlik?.anahtar ? ` · ${ekran.varlik.anahtar}` : ""}
               <button type="button" className="asistan-cip-kaldir" aria-label="Ekran bağlamını kaldır" onClick={() => setEkranKaldirilan(ekranAnahtari)}>
-                ×
+                <Ikon ad="kapat" />
               </button>
             </span>
           )}
@@ -827,22 +828,23 @@ export function SohbetSekmesi({
             <span className="cip cip-uyari asistan-baglam-cipi" title={hata.detail}>
               Son hata: {(hata.gorunen_metin ?? hata.detail).slice(0, 60)}
               <button type="button" className="asistan-cip-kaldir" aria-label="Son hata bağlamını kaldır" onClick={() => setHataKaldirilan(hata.kayitId)}>
-                ×
+                <Ikon ad="kapat" />
               </button>
             </span>
           )}
           {secili && (
-            <span className="cip cip-vurgu asistan-baglam-cipi">
+            <span className="cip cip-bilgi asistan-baglam-cipi">
               Seçili: {secili.ad || secili.ipucu || secili.test_id}
               <button type="button" className="asistan-cip-kaldir" aria-label="Seçili öğeyi kaldır" onClick={seciliTemizle}>
-                ×
+                <Ikon ad="kapat" />
               </button>
             </span>
           )}
           {/* Model kapalıyken seçili öğe sorusu cevaplanamaz (yalnız "kapalı" metni döner): düğme gizli. */}
           {modelAcik && (
-            <button type="button" className="cip cip-notr asistan-bune-dugmesi" aria-pressed={buNeAcik} onClick={buNeBaslat}>
-              ? Bu ne?
+            // Erişilebilir ad "? Bu ne?" korunur (testler ve plan bu adla arar); "?" glifi yerine SVG ikon.
+            <button type="button" className="cip cip-notr asistan-bune-dugmesi" aria-label="? Bu ne?" aria-pressed={buNeAcik} onClick={buNeBaslat}>
+              <Ikon ad="soru" /> Bu ne?
             </button>
           )}
         </div>
@@ -872,8 +874,14 @@ export function SohbetSekmesi({
           <span id="asistan-sayac" className={sayac > SORU_AZAMI ? "asistan-sayac asistan-sayac-asim" : "asistan-sayac soluk kucuk"}>
             {sayac} / {SORU_AZAMI}
           </span>
-          <button type="submit" className="dugme dugme-birincil dugme-kucuk" disabled={gonderilemez} aria-busy={gonderiyor || undefined}>
-            Asistana sor
+          <button
+            type="submit"
+            className="dugme dugme-birincil dugme-kucuk"
+            disabled={gonderilemez}
+            aria-busy={gonderiyor || undefined}
+            aria-describedby={sohbetteBekleyen ? "asistan-sohbet-kilit" : undefined}
+          >
+            Asistana sor <Ikon ad="gonder" />
           </button>
         </div>
         {ekBekleyen ? (

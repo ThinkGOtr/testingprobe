@@ -1,39 +1,38 @@
 /* Öneri düğmesi ve Öneriler sekmesi (AI-ASISTAN-PLANI §17.6). Renkler styles.css belirteçleri. */
 
-.oneri-dugmesi {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
-  font-size: 0.875rem;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
+/* Üst çubuk "Öneri" düğmesi: görünüm .dugme .dugme-ikincil .dugme-kucuk'tan (üst çubuktaki "Çıkış" ile
+   aynı yükseklik, yarıçap, kenar, odak). Burada yalnız sayı rozeti ve bekleyen iş varken indigo kenar
+   (indigo = etkileşim; mor yalnız AI). Dar üst çubukta (≤520 px) yalnız ikon + rozet: ad aria-label'da. */
+.oneri-dugmesi .ikon {
+  width: 16px;
+  height: 16px;
+  color: var(--text-2);
 }
-.oneri-dugmesi:hover {
-  background: var(--surface-2);
-}
-.oneri-dugmesi:focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
-}
-.oneri-dugmesi-var {
+.oneri-dugmesi.oneri-dugmesi-var {
   border-color: var(--accent);
 }
+.oneri-dugmesi.oneri-dugmesi-var .ikon {
+  color: var(--accent);
+}
 .oneri-rozet {
-  min-width: 20px;
-  padding: 0 6px;
-  border-radius: 999px;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-hap);
   background: var(--accent-solid);
   color: var(--accent-text);
   font-size: 0.75rem;
-  line-height: 20px;
+  font-weight: 700;
+  line-height: 18px;
   text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 520px) {
+  .dugme.oneri-dugmesi {
+    padding-inline: 7px;
+  }
+  .oneri-dugmesi .oneri-etiket {
+    display: none;
+  }
 }
 
 .oneri-liste,
@@ -205,20 +204,4 @@
   margin-top: 12px;
   padding-top: 10px;
   border-top: 1px solid var(--border);
-}
-
-@media (max-width: 759px) {
-  .oneri-dugmesi {
-    padding: 4px 8px;
-  }
-}
-/* Dar telefonda üst çubuk sığmıyor (marka adı tek harfe kırpılıyordu): sayı varken yalnız rozet
-   çizilir; ad `aria-label` ("Öneriler (n)") ve `title` ile korunur. */
-@media (max-width: 479px) {
-  .oneri-dugmesi-var {
-    padding: 4px;
-  }
-  .oneri-dugmesi-var .oneri-etiket {
-    display: none;
-  }
 }
