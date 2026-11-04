@@ -1476,7 +1476,8 @@ td .cip + .cip {
   .tablo-yigin td.adim-no::before {
     display: none;
   }
-  .tablo-yigin td.bos-hucre {
+  /* [data-etiket] ile özgüllük aşağıdaki display: flow-root kuralını geçer: boş "Veri" hücresi yer kaplamaz. */
+  .tablo-yigin td.bos-hucre[data-etiket] {
     display: none;
   }
   .tablo-yigin td[data-etiket] {
@@ -3801,7 +3802,8 @@ details.soluk > summary {
   color: var(--text-2);
 }
 /* Kule KPI: dört satır (etiket · değer · çubuk/alt · hedef). */
-.metrik-izgara.kule-kpi > * {
+/* :has() özgüllüğü genel beş öğeli şerit kuralını (span 3) geçer. */
+.metrik-izgara.kule-kpi:has(> :nth-child(5):last-child) > * {
   grid-row: span 4;
   row-gap: 2px;
 }
