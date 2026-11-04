@@ -190,6 +190,9 @@ describe("canlı derleme (VITE_MOCK=0): uydurma KPI yok", () => {
     const serit = screen.getByTestId("kule-kpi");
     expect(within(serit).getByText("ölçülmüş baz yok")).toBeInTheDocument();
     expect(serit).not.toHaveTextContent(/Kazanç %/);
+    // Uydurma kazanç yüzdesi hiçbir kartta yok (şerit, AI katkısı, hazırlık tablosu dahil tüm sayfa).
+    expect(document.body).not.toHaveTextContent(/Kazanç %/);
+    expect(screen.getByRole("region", { name: "AI katkısı" })).not.toHaveTextContent(/Kazanç/);
   });
 
   it("örnek veri modunda her ekranın üstünde 'ÖRNEK VERİ — gerçek değil' bandı", async () => {

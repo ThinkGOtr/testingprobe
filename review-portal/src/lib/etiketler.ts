@@ -100,7 +100,7 @@ export const CASE_DURUMU: Record<CaseDurumu, { etiket: string; ton: Ton }> = {
   draft: { etiket: "Karar bekliyor", ton: "uyari" },
   approved: { etiket: "Onaylı", ton: "basari" },
   rejected: { etiket: "Reddedildi", ton: "hata" },
-  published: { etiket: "Yayınlandı", ton: "bilgi" },
+  published: { etiket: "Yayınlandı", ton: "basari" },
   superseded: { etiket: "Yerini yenisi aldı", ton: "notr" },
 };
 
@@ -184,7 +184,7 @@ export const KAYNAK: Record<KosuKaynagi, string> = { local: "Yerel Chromium", gi
 export const HATA_SINIFI: Record<HataSinifi, { etiket: string; ton: Ton }> = {
   environment: { etiket: "Ortam", ton: "notr" },
   flaky: { etiket: "Flaky", ton: "uyari" },
-  test_maintenance: { etiket: "Test bakımı", ton: "bilgi" },
+  test_maintenance: { etiket: "Test bakımı", ton: "notr" },
   product_defect: { etiket: "Ürün hatası", ton: "hata" },
   test_data: { etiket: "Test verisi", ton: "uyari" },
   unknown: { etiket: "Belirsiz", ton: "notr" },

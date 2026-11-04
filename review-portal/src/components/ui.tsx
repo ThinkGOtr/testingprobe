@@ -85,9 +85,20 @@ export function HataKutusu({ hata, yenile }: { hata: string; yenile?: () => void
   );
 }
 
-export function Uyari({ ton = "uyari", children, baslik }: { ton?: "uyari" | "bilgi" | "hata" | "basari"; children: ReactNode; baslik?: string }) {
+/** `isaretli`: başlık kendi işaretiyle başlıyor (ör. "✓ Zincir doğrulandı"); maske ikonu çizilmez, işaret iki kez görünmez. */
+export function Uyari({
+  ton = "uyari",
+  children,
+  baslik,
+  isaretli,
+}: {
+  ton?: "uyari" | "bilgi" | "hata" | "basari";
+  children: ReactNode;
+  baslik?: string;
+  isaretli?: boolean;
+}) {
   return (
-    <div className={`uyari-kutusu uyari-${ton}`} role={ton === "hata" ? "alert" : "note"}>
+    <div className={`uyari-kutusu uyari-${ton}${isaretli ? " uyari-isaretli" : ""}`} role={ton === "hata" ? "alert" : "note"}>
       {baslik && <strong>{baslik}</strong>}
       <div>{children}</div>
     </div>
@@ -201,9 +212,10 @@ export function Ilerleme({ oran, etiket, hedef }: { oran: number; etiket: string
   );
 }
 
-export function Metrik({ etiket, deger, alt }: { etiket: ReactNode; deger: ReactNode; alt?: ReactNode }) {
+/** `ton`: değerin durum anlamı (§3.4 KPI: başarısız → --err, tamamı geçti → --ok, flaky → --warn); etiket anlamı taşır, renk ek işarettir. */
+export function Metrik({ etiket, deger, alt, ton }: { etiket: ReactNode; deger: ReactNode; alt?: ReactNode; ton?: "basari" | "uyari" | "hata" }) {
   return (
-    <div className="metrik">
+    <div className={ton ? `metrik metrik-${ton}` : "metrik"}>
       <div className="metrik-etiket">{etiket}</div>
       <div className="metrik-deger">{deger}</div>
       {alt && <div className="metrik-alt">{alt}</div>}
