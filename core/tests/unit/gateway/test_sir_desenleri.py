@@ -34,6 +34,11 @@ VAKALAR: list[tuple[str, str]] = [
     ("aws_access_key", "AK" + "IA" + "ABCDEFGHIJ234567"),
     ("slack_token", "xo" + "xb-" + "1234567890-" + GOVDE),
     ("npm_token", "np" + "m_" + GOVDE),
+    ("stripe_key", "sk" + "_live_" + GOVDE),
+    ("stripe_key", "rk" + "_test_" + GOVDE),
+    ("grafana_token", "gl" + "sa_" + GOVDE + "_" + "0a1b2c3d"),
+    ("huggingface_token", "h" + "f_" + GOVDE + "XyZ"),
+    ("sendgrid_key", "S" + "G." + GOVDE + "." + GOVDE + "-" + GOVDE),
     ("jwt", "ey" + "JhbGciOiJIUzI1NiJ9" + "." + "ey" + "JzdWIiOiIxIn0" + "." + "c2lnbmF0dXJl"),
     ("tp_token", "tp" + "t_" + GOVDE),
     ("tp_mcp_token", "tp" + "k_" + "mock_" + GOVDE),
@@ -51,6 +56,8 @@ def test_her_desenin_vakasi_var() -> None:
         "header_token",
         "bare_auth_scheme",
         "cli_user_password",
+        "cli_password_flag",
+        "azure_connection_key",
     }
     assert adlar == {p.name for p in SECRET_PATTERNS}
 
@@ -259,6 +266,76 @@ def test_oneksiz_sema_ve_cli_dogal_metne_dokunmaz(metin: str) -> None:
 )
 def test_url_ici_kimlik(metin: str, beklenen: str) -> None:
     assert scrub_secret_patterns(metin) == beklenen
+
+
+@pytest.mark.parametrize(
+    ("metin", "beklenen"),
+    [
+        (
+            "docker login -u ci -p " + "S3cretPassw0rd" + " reg.local",
+            "docker login -u ci -p *** reg.local",
+        ),
+        ("podman login --password=" + "S3cretPassw0rd", "podman login --password=***"),
+        (
+            "helm registry login r.local -p '" + "S3cretPassw0rd" + "'",
+            "helm registry login r.local -p '***'",
+        ),
+        ("mysql -u root -p" + "S3cretPassw0rd" + " tp", "mysql -u root -p*** tp"),
+        ("mysqldump --password=" + "parola" + " tp", "mysqldump --password=*** tp"),
+    ],
+)
+def test_cli_parola_bayragi(metin: str, beklenen: str) -> None:
+    assert scrub_secret_patterns(metin) == beklenen
+
+
+@pytest.mark.parametrize(
+    "metin",
+    [
+        "docker run -p 8080:80 nginx",
+        "mkdir -p build2/out1",
+        "docker login -u ci -p $REGISTRY_PAROLA reg.local",
+        'docker login -u ci -p "$PAROLA" reg.local',
+        "docker login -u ci --password-stdin reg.local",
+        "mysql -u root -p tpdb",
+        "mysql -u root -p",
+        "ssh -p 2222 kullanici@host",
+    ],
+)
+def test_cli_parola_bayragi_dogal_komuta_dokunmaz(metin: str) -> None:
+    assert scrub_secret_patterns(metin) == metin
+
+
+@pytest.mark.parametrize(
+    ("metin", "beklenen"),
+    [
+        (
+            "DefaultEndpointsProtocol=https;AccountName=tp;AccountKey="
+            + "QmFzZTY0"
+            + GOVDE
+            + "=="
+            + ";EndpointSuffix=core.windows.net",
+            "DefaultEndpointsProtocol=https;AccountName=tp;AccountKey=***"
+            ";EndpointSuffix=core.windows.net",
+        ),
+        (
+            "Endpoint=sb://ns.servicebus.windows.net/;SharedAccessKeyName=root;"
+            "SharedAccessKey=" + GOVDE + "+/x=",
+            "Endpoint=sb://ns.servicebus.windows.net/;SharedAccessKeyName=root;SharedAccessKey=***",
+        ),
+        (
+            "BlobEndpoint=https://a.blob.core.windows.net;SharedAccessSignature=sv=2022&sig="
+            + GOVDE,
+            "BlobEndpoint=https://a.blob.core.windows.net;SharedAccessSignature=***",
+        ),
+    ],
+)
+def test_azure_baglanti_dizgisi(metin: str, beklenen: str) -> None:
+    assert scrub_secret_patterns(metin) == beklenen
+
+
+def test_azure_yer_tutucuya_dokunmaz() -> None:
+    metin = "AccountKey=<anahtar>;SharedAccessKey=${SAS}"
+    assert scrub_secret_patterns(metin) == metin
 
 
 def test_sir_olmayan_metin_degismez() -> None:

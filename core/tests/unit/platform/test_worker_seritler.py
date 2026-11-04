@@ -278,6 +278,14 @@ def _soru(engine: Engine, kullanici_id: uuid.UUID, tur: str) -> tuple[uuid.UUID,
     return jid, mesaj_id
 
 
+def _yaslandir(engine: Engine, jid: uuid.UUID) -> None:
+    with engine.begin() as c:
+        c.execute(
+            text("UPDATE job SET olusturma = now() - interval '1 hour' WHERE id = :i"),
+            {"i": jid},
+        )
+
+
 def _mesaj_durumu(engine: Engine, mesaj_id: uuid.UUID) -> tuple[str, str | None]:
     with engine.connect() as c:
         r = c.execute(
@@ -291,7 +299,8 @@ def test_asistan_serit_kapaliyken_bekleyen_soru_kalp_atisi_bayatlayinca_kapanir(
 ) -> None:
     """`TP_WORKER_ASISTAN_SERIT=0`: kapanmadan hemen önce kabul edilen soru süresiz `pending`
     kalmaz. Kalp atışı tazeyken (şeridi açık başka worker olabilir) dokunulmaz; API eşiğinden
-    eskiyse iş `cancelled`, mesaj `error/zaman_asimi` olur. Diğer türlerin işine dokunulmaz."""
+    eskiyse ve iş de eşikten eskiyse iş `cancelled`, mesaj `error/zaman_asimi` olur (yeni iş,
+    şeridi açık worker'ın yeniden başlama penceresi için korunur). Diğer türlere dokunulmaz."""
     ek = uuid.uuid4().hex[:6]
     a_tur, genel_tur = f"t.askapali2.{ek}", f"t.genel2.{ek}"
     job_handler(a_tur, max_deneme=1, zaman_asimi_s=30, serit=ASISTAN_SERIT)(lambda _c: None)
@@ -307,6 +316,12 @@ def test_asistan_serit_kapaliyken_bekleyen_soru_kalp_atisi_bayatlayinca_kapanir(
         assert _mesaj_durumu(engine, mid) == ("pending", None)
 
         _kalp_atisi(engine, 10_000)  # bayat: API artık soru kabul etmiyor
+        # ...ama iş yeni: şeridi açık worker yeniden başlıyor olabilir; dokunulmaz.
+        assert worker.kapali_serit_temizle({a_tur}) == 0
+        assert _durum(engine, jid) == "queued"
+        assert _mesaj_durumu(engine, mid) == ("pending", None)
+
+        _yaslandir(engine, jid)  # iş de eşikten eski: şerit gerçekten kapalı
         assert worker.kapali_serit_temizle({a_tur}) == 1
         assert _durum(engine, jid) == "cancelled"
         assert _mesaj_durumu(engine, mid) == ("error", "zaman_asimi")
@@ -315,6 +330,8 @@ def test_asistan_serit_kapaliyken_bekleyen_soru_kalp_atisi_bayatlayinca_kapanir(
 
         _kalp_atisi(engine, None)  # hiç kalp atışı yok
         jid2, mid2 = _soru(engine, kullanici.id, a_tur)
+        assert worker.kapali_serit_temizle({a_tur}) == 0  # yeni iş korunur
+        _yaslandir(engine, jid2)
         assert worker.kapali_serit_temizle({a_tur}) == 1
         assert _durum(engine, jid2) == "cancelled"
         assert _mesaj_durumu(engine, mid2)[0] == "error"

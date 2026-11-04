@@ -132,6 +132,21 @@ def _kaynak(tur: str, ref: str, alinti: str) -> dict[str, str]:
         ("Bkz. 10.1.2.3:8080/login giriş", "Bkz. [bağlantı kaldırıldı] giriş", "10.1"),
         ("Bkz. 10.1.2.3/panel", "Bkz. [bağlantı kaldırıldı]", "10.1"),
         ("Bkz. paypal.com.evil.io/a", "Bkz. [bağlantı kaldırıldı]", "evil"),
+        # Gizlenmiş nokta (ideografik/tam genişlik, parantezli) ve protokolsüz "//" adres.
+        (
+            "Şifrenizi yenileyin: evil\u3002com/reset",
+            "Şifrenizi yenileyin: [bağlantı kaldırıldı]",
+            "evil",
+        ),
+        (
+            "Bkz. evil\uff0ecom ve evil\uff61net",
+            "Bkz. [bağlantı kaldırıldı] ve [bağlantı kaldırıldı]",
+            "evil",
+        ),
+        ("giriş: evil[.]com/login", "giriş: [bağlantı kaldırıldı]", "evil"),
+        ("Bkz. evil(.)example{.}page/x", "Bkz. [bağlantı kaldırıldı]", "evil"),
+        ("Bkz. //evil.com/x hemen", "Bkz. [bağlantı kaldırıldı] hemen", "evil"),
+        ("Bkz. //evil.zip", "Bkz. [bağlantı kaldırıldı]", "evil"),
     ],
 )
 def test_metin_url_ve_markdown_duzlesir(girdi: str, beklenen: str, olmayan: str) -> None:
@@ -156,6 +171,8 @@ def test_metin_url_ve_markdown_duzlesir(girdi: str, beklenen: str, olmayan: str)
         "flow.cevapla ve self.b.rol çağrısı",
         "sürüm 1.2.3.4 ve docs/AI-PLAN.md",
         "Node.js/React ve config.yaml/anahtar",
+        "// yorum: config.ts ve //app.ts satırı",
+        "dizi[.] ve f(.) gösterimi, src//app.io",
     ],
 )
 def test_semasiz_alan_deseni_dosya_ve_kod_adlarina_dokunmaz(metin: str) -> None:

@@ -117,6 +117,9 @@ _UZANTI: Final = (
     "|java|kt|rb|php|lock|cfg|ini|log|csv|xml|vue|env|conf"
 )
 _ETIKET: Final = r"[^\W_](?:[\w\-]*[^\W_])?"
+# Gizlenmiş nokta da ayraç sayılır: ideografik/tam genişlik nokta ("evil。com") ve köşeli/yuvarlak/
+# süslü parantezli nokta ("evil[.]com"); kullanıcı adresi elle yazıp gitmesin.
+_NOKTA: Final = r"(?:[.\u3002\uff0e\uff61]|\[\.\]|\(\.\)|\{\.\})"
 _YOL: Final = r"/[^\s<>\"'`]*"
 _ALAN_BASI: Final = r"(?<![\w.@/\-])"
 _URL: Final = re.compile(
@@ -126,9 +129,14 @@ _URL: Final = re.compile(
             r"(?:\b[a-z][a-z0-9+.\-]*://|\bwww\.)[^\s<>\"'`]*",
             r"\b(?:javascript|data|vbscript|file)\s*:[^\s<>\"'`]*",
             # Bilinen üst düzey alan: yol isteğe bağlı.
-            rf"{_ALAN_BASI}(?:{_ETIKET}\.)+(?:{_TLD})(?![\w\-])(?!\.\w)(?::[0-9]+)?(?:{_YOL})?",
+            rf"{_ALAN_BASI}(?:{_ETIKET}{_NOKTA})+(?:{_TLD})(?![\w\-])(?!\.\w)(?::[0-9]+)?"
+            rf"(?:{_YOL})?",
             # Listede olmayan üst düzey alan: yol zorunlu, dosya uzantısı değil.
-            rf"{_ALAN_BASI}(?:{_ETIKET}\.)+(?!(?:{_UZANTI})[:/])[^\W\d_]{{2,24}}(?::[0-9]+)?{_YOL}",
+            rf"{_ALAN_BASI}(?:{_ETIKET}{_NOKTA})+(?!(?:{_UZANTI})[:/])[^\W\d_]{{2,24}}(?::[0-9]+)?"
+            rf"{_YOL}",
+            # Protokolsüz "//evil.com/x": her üst düzey alan, dosya uzantısı değil.
+            rf"(?<![\w:/])//(?:{_ETIKET}{_NOKTA})+(?!(?:{_UZANTI})(?![\w\-]))[^\W\d_]{{2,24}}"
+            rf"(?![\w\-])(?::[0-9]+)?(?:{_YOL})?",
             # Çıplak IPv4: sürüm numarasıyla ("1.2.3.4") karışmasın diye port ya da yol gerekir.
             rf"{_ALAN_BASI}(?:[0-9]{{1,3}}\.){{3}}[0-9]{{1,3}}(?::[0-9]+(?:{_YOL})?|{_YOL})",
         )

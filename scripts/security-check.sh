@@ -262,6 +262,11 @@ check_model_key() {
   else
     ok=0; info "core-worker: ANTHROPIC_API_KEY tanımlı değil (beklenen: tanımlı)"
   fi
+  # Bilgi (başarısızlık değil): gerçek GitHub kipinde ayrı okuma token'ı yoksa ci_log forge
+  # kimliğiyle okur (yalnız GET; en az yetki sapması). Değer yazdırılmaz, yalnız boşluğa bakılır.
+  if compose exec -T core-worker sh -c '[ "$(printf %s "${TP_FORGE:-local}" | tr A-Z a-z)" = github ] && [ -z "${GITHUB_ACTIONS_READ_TOKEN}${GITHUB_READ_TOKEN}" ]' 2>/dev/null; then
+    info "core-worker: ci_log forge kimliğiyle okuyor (actions:read token önerilir: GITHUB_ACTIONS_READ_TOKEN)"
+  fi
   # Çalışma alanı kimliği ve asistanın CI log okuma token'ı da anahtarla aynı sınıftadır
   # (sır; yalnızca core-worker). Token core-worker'da boş olabilir (mevcut okuma kimliği kullanılır).
   for svc in core-api review-portal jira-sim toolchain-worker test-runner playwright-mcp demo-app-api demo-app-web; do

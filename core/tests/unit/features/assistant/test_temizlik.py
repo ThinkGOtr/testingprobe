@@ -120,7 +120,7 @@ def test_saklama_suresi_ve_kapsam(engine: Engine, make_user) -> None:
     # Yumuşak silinmiş ama yakın zamanda silinmiş: süre dolmadı, kalır.
     silinmis_yeni = _sohbet(engine, u.id, gun_once=100, silindi=True, silinme_gun_once=10)
     # Etkin sohbet: süreden eski bitmiş mesaj tek tek gider (panel "90 gün saklanır"); süresi
-    # dolmamış derin çocuğu olan eski mesaj çiftiyle kalır (yarım kalmaz), sonraki koşuda gider.
+    # dolmamış derin çocuğu olan eski cevap çocuğuyla kalır (yarım kalmaz), sonraki koşuda gider.
     etkin = _sohbet(engine, u.id, gun_once=1)
     etkin_eski = _mesaj(engine, etkin, u.id, 1, gun_once=95, rol="assistant")
     etkin_cocuk = _mesaj(engine, etkin, u.id, 2, gun_once=89, rol="assistant", ust=etkin_eski)
@@ -251,6 +251,32 @@ def test_iki_kademeli_zincirde_taze_torun_korunur(engine: Engine, make_user) -> 
     assert all(_var(engine, "asistan_mesaj", m) for m in (kok, cocuk, torun))
     assert not any(_var(engine, "asistan_mesaj", m) for m in (e_kok, e_cocuk, e_torun))
     assert sonuc["mesaj"] >= 1
+
+
+def test_korunan_kok_cevabin_sorusu_da_korunur(engine: Engine, make_user) -> None:
+    """Soru (sira n) ile kök cevap (sira n+1) arasında FK yok: taze derin çocuk kök cevabı
+    korurken önceki `user` sorusu da kalır; geçmişte cevap sorusuz görünmez. Tümü eski çiftte
+    soru da gider."""
+    u = make_user("analyst")
+    sohbet = _sohbet(engine, u.id, gun_once=1)
+    eski_soru = _mesaj(engine, sohbet, u.id, 1, gun_once=120)
+    eski_cevap = _mesaj(engine, sohbet, u.id, 2, gun_once=120, rol="assistant")
+    soru = _mesaj(engine, sohbet, u.id, 3, gun_once=95)
+    kok = _mesaj(engine, sohbet, u.id, 4, gun_once=95, rol="assistant")
+    cocuk = _mesaj(engine, sohbet, u.id, 5, gun_once=92, rol="assistant", ust=kok)
+    torun = _mesaj(engine, sohbet, u.id, 6, gun_once=5, rol="assistant", ust=cocuk)
+    # Torundan sonraki eski çift: korunan bir cevaba bağlı değil, ikisi de gider.
+    yalniz_soru = _mesaj(engine, sohbet, u.id, 7, gun_once=100)
+    yalniz_cevap = _mesaj(engine, sohbet, u.id, 8, gun_once=100, rol="assistant")
+
+    with Session(engine) as s, s.begin():
+        sonuc = temizlik.temizle(s)
+
+    assert all(_var(engine, "asistan_mesaj", m) for m in (soru, kok, cocuk, torun))
+    assert not any(
+        _var(engine, "asistan_mesaj", m) for m in (eski_soru, eski_cevap, yalniz_soru, yalniz_cevap)
+    )
+    assert sonuc["mesaj"] == 4
 
 
 def test_saklama_gunu_ortamdan_okunur(

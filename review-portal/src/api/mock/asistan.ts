@@ -35,6 +35,16 @@ export interface AsistanMockAyar {
   gecersizOneriler: string[];
   /** status ucu yokmuş gibi 501 (canlı derlemede "bu fazda yok"). */
   statusYok: boolean;
+  /**
+   * Bütçe %20 altı vb. (§6.2): otomatik yükseltme ön koşulu tutmaz; "Emin değil" cevap çocuk
+   * açmaz, `derin_onerilir: true` taşır (core flow). Soruda "bütçe düşük" geçince de (demo).
+   */
+  butceDusuk: boolean;
+  /**
+   * Çalışırken (`running`) durdurulan cevabın işi tur başında durana dek sayılma süresi (ms):
+   * bu pencerede yeni soru 409 "Durdurulan cevap kapanıyor" alır (core `_bekleyen_var`). 0: yok.
+   */
+  kapanmaMs: number;
 }
 
 function ilkAyar(): AsistanMockAyar {
@@ -49,6 +59,8 @@ function ilkAyar(): AsistanMockAyar {
     butceDoldu: false,
     gecersizOneriler: [],
     statusYok: false,
+    butceDusuk: false,
+    kapanmaMs: testModu ? 0 : 3000,
   };
 }
 
@@ -80,6 +92,7 @@ let sayac = 0;
 export function asistanMockSifirla(): void {
   zamanlayicilar.forEach((z) => clearTimeout(z));
   zamanlayicilar.clear();
+  kapananlar.clear();
   sohbetler = [];
   mesajlar = [];
   sayac = 0;
@@ -139,10 +152,29 @@ function durum(k: Kullanici): AsistanDurumu {
   };
 }
 
+/** Çalışırken durdurulan cevaplar → işin kapanacağı an (ms). Core bunları da bekleyen sayar. */
+const kapananlar = new Map<string, number>();
+
 function bekleyenKullaniciMesaji(k: Kullanici): MockMesaj | undefined {
   return mesajlar.find(
     (m) => m.kullanici_id === k.id && m.rol === "assistant" && m.tetik === "kullanici" && (m.durum === "pending" || m.durum === "running"),
   );
+}
+
+/** Core `_sayac_kontrol` ile aynı: bekleyen yoksa ama durdurulan iş hâlâ kapanıyorsa "kapanıyor" metni. */
+function bekleyenVarKontrol(k: Kullanici): void {
+  if (bekleyenKullaniciMesaji(k)) throw new ApiError(409, "Yanıt bekleyen bir sorunuz var; bitmesini bekleyin.", { kod: "bekleyen_var" });
+  const simdiMs = Date.now();
+  for (const [id, son] of kapananlar) {
+    if (son <= simdiMs) {
+      kapananlar.delete(id);
+      continue;
+    }
+    const m = mesajlar.find((x) => x.id === id);
+    if (m && m.kullanici_id === k.id && m.tetik === "kullanici") {
+      throw new ApiError(409, "Durdurulan cevap kapanıyor; birkaç saniye sonra yeniden deneyin.", { kod: "bekleyen_var" });
+    }
+  }
 }
 
 function yeniMesaj(s: MockSohbet, k: Kullanici, alan: Partial<MockMesaj>): MockMesaj {
@@ -191,7 +223,7 @@ function soruGonder(sohbetId: string, govde: unknown, k: Kullanici): { mesaj_id:
       throw new ApiError(422, "Bu cevap ayrıntılı incelenemez.", { kod: "gecersiz_istek" });
     }
     if (mesajlar.some((m) => m.ust_mesaj_id === ust.id)) throw new ApiError(409, "Bu cevap zaten ayrıntılı incelendi.", { kod: "zaten_derin" });
-    if (bekleyenKullaniciMesaji(k)) throw new ApiError(409, "Yanıt bekleyen sorunuz var.", { kod: "bekleyen_var" });
+    bekleyenVarKontrol(k);
     hizKontrol(2);
     const kok = kokSoru(ust);
     const cocuk = yeniMesaj(s, k, {
@@ -227,7 +259,7 @@ function soruGonder(sohbetId: string, govde: unknown, k: Kullanici): { mesaj_id:
     const rota = typeof baglam?.rota_kalibi === "string" ? baglam.rota_kalibi : null;
     if (kural && rota !== kural.ekran) throw new ApiError(409, "Öneri artık geçerli değil.", { kod: "oneri_gecersiz" });
   }
-  if (bekleyenKullaniciMesaji(k)) throw new ApiError(409, "Yanıt bekleyen sorunuz var.", { kod: "bekleyen_var" });
+  bekleyenVarKontrol(k);
   hizKontrol(1);
 
   if (oneriKuralId) s.oneri_kural_id = oneriKuralId;
@@ -335,13 +367,17 @@ function adimBitir(id: string): boolean {
   m.maliyet_usd = kaynak === "model" ? (amac === "assistant_deep" ? 0.089 : 0.0045) : null;
   // Otomatik yükseltme (§6.2): Haiku "Emin değil" → ayrı çocuk mesaj, tetik=otomatik.
   const s = sohbetler.find((x) => x.id === m.sohbet_id)!;
-  const derin =
+  const yukseltilebilir =
     kaynak === "model" &&
     amac === "assistant" &&
     m.kip === "soru" &&
     !cevap.eylem_reddi &&
     cevap.guven_gosterimi === "Emin değil" &&
     !mesajlar.some((x) => x.ust_mesaj_id === m.id);
+  // Ön koşul tutmadı (bütçe düşük): çocuk açılmaz, kart "Daha ayrıntılı incele"yi önerir (core flow).
+  const onKosulYok = asistanMockAyar.butceDusuk || /bütçe düşük/i.test(m.icerik ?? "");
+  const derin = yukseltilebilir && !onKosulYok;
+  if (yukseltilebilir && onKosulYok) m.cevap = { ...cevap, derin_onerilir: true };
   mockOlayYayinla({
     type: "assistant.answered",
     id: m.id,
@@ -559,6 +595,8 @@ function iptal(id: string, k: Kullanici): AsistanMesaji {
     m.durum = "iptal";
     m.tamamlanma = simdi();
     if (m.basladi) m.maliyet_usd = 0.001;
+    // Çalışan iş tur başında durana dek sayılır (core `kullanici_kapanan`); sıradaki iş hemen düşer.
+    if (m.basladi && asistanMockAyar.kapanmaMs > 0) kapananlar.set(m.id, Date.now() + asistanMockAyar.kapanmaMs);
     mockOlayYayinla({ type: "assistant.answered", id: m.id, data: { mesaj_id: m.id, kullanici_id: m.kullanici_id, durum: "iptal" } });
   }
   return disaVer(m);

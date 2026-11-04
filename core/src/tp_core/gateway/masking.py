@@ -363,6 +363,33 @@ SECRET_PATTERNS: tuple[SecretPattern, ...] = (
         ),
         keep_group="keep",
     ),
+    # Komut satırı parola bayrağı (değer ayrı token): `docker login -u ci -p <parola>`,
+    # `helm registry login --password=<parola>`, `mysql -u root -p<parola>`. `-p` port/üst dizin
+    # bayrağı da olduğundan yalnız `… login` alt komutunda ve mysql/mariadb araçlarında tanınır;
+    # mysql'de `-p <ad>` (boşluklu) veritabanı adıdır, yalnız bitişik `-p<parola>` sırdır.
+    # `--password-stdin` ve yer tutucular (`$…`, `<…>`, `***`) dışarıda.
+    SecretPattern(
+        "cli_password_flag",
+        re.compile(
+            r"(?P<keep>(?:\b(?:docker|podman|nerdctl|buildah|skopeo|oras|helm(?:\s+registry)?)"
+            r"\s+login\b[^\n|;&]*?(?<!\S)(?:-p|--password)(?:\s+|=)"
+            r"|\b(?:mysql|mysqldump|mysqladmin|mysqlimport|mysqlcheck|mysqlshow|mariadb"
+            r"|mariadb-dump)\b[^\n|;&]*?(?<!\S)(?:-p|--password=))[\"']?)"
+            r"(?![<${*\"'-])[^\s'\"`]+"
+        ),
+        keep_group="keep",
+    ),
+    # Azure bağlantı dizgisi: `…;AccountKey=<base64>;…`, `SharedAccessKey=…`,
+    # `SharedAccessSignature=sv=…&sig=…` (değer `;`'e kadar).
+    SecretPattern(
+        "azure_connection_key",
+        re.compile(
+            r"(?P<keep>\b(?:AccountKey|SharedAccessKey|SharedAccessSignature)\s*=\s*)"
+            r"(?![<${*])[^;\s'\"`]+",
+            re.IGNORECASE,
+        ),
+        keep_group="keep",
+    ),
     SecretPattern(
         "url_credentials",
         re.compile(r"(?P<keep>\b[a-z][a-z0-9+.-]*://)[^/\s:@]+:[^@\s]+(?=@)", re.IGNORECASE),
@@ -379,6 +406,18 @@ SECRET_PATTERNS: tuple[SecretPattern, ...] = (
     SecretPattern("aws_access_key", re.compile(r"\bAKIA(?:[0-9A-Z]{16}|[0-9A-Z]+\Z)")),
     SecretPattern("slack_token", re.compile(_onekli(r"\bxox[abposr]-", r"[A-Za-z0-9-]", 8))),
     SecretPattern("npm_token", re.compile(_onekli(r"\bnpm_", r"[A-Za-z0-9]", 20))),
+    # Stripe gizli/kısıtlı anahtarı (`sk_live_…`, `rk_test_…`; yayımlanabilir `pk_` sır değil).
+    SecretPattern(
+        "stripe_key", re.compile(_onekli(r"\b(?:sk|rk)_(?:live|test)_", r"[A-Za-z0-9]", 16))
+    ),
+    # Grafana hizmet hesabı / Grafana Cloud token'ı (`glsa_…`, `glc_…`).
+    SecretPattern("grafana_token", re.compile(_onekli(r"\bgl(?:sa|c)_", r"[A-Za-z0-9_+/=-]", 20))),
+    SecretPattern("huggingface_token", re.compile(_onekli(r"\bhf_", r"[A-Za-z0-9]", 20))),
+    # SendGrid: `SG.<22>.<43>` (kesikse ilk iki parça yeter).
+    SecretPattern(
+        "sendgrid_key",
+        re.compile(r"\bSG\.[\w-]{16,}\.[\w-]{16,}|\bSG\.[\w-]{16,}(?:\.[\w-]*)?\Z"),
+    ),
     SecretPattern(
         "jwt",
         re.compile(r"\beyJ[\w-]+\.[\w-]+\.[\w-]+|\beyJ[\w-]{8,}(?:\.[\w-]*){0,2}\Z"),

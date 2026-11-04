@@ -368,10 +368,16 @@ def test_varliksiz_kuralda_yaptim_ertesi_gun_duser(
 ) -> None:
     sunucu = make_user("presenter")
     tohum.harcama("9")
-    bugun = _simdi()
+    # "Bugün" harcama satırının DB saatinden alınır: Python saati UTC gece yarısını geçmiş olsa
+    # da gün anahtarı ve günlük harcama aynı güne düşer (sınırda kırılmasın).
+    with engine.connect() as c:
+        bugun = c.execute(text("SELECT max(olusturma) FROM ai_call")).scalar_one()
     with Session(engine) as s, s.begin():
         k = oneri.geri_bildirim_yaz(s, sunucu, "butce-uyarisi", 2, simdi=bugun)
-    assert k["varlik_durum"] == f"gun:{bugun.date().isoformat()}" and k["varlik_id"] is None
+    assert (
+        k["varlik_durum"] == f"gun:{bugun.astimezone(UTC).date().isoformat()}"
+        and k["varlik_id"] is None
+    )
     e = Ekran("/kontrol-kulesi", None, None, bugun)
     sonuc = _hesapla(engine, make_user("presenter"), e)
     assert _idler(sonuc) == [] and sonuc["bastirilan"][0]["kural_id"] == "butce-uyarisi"

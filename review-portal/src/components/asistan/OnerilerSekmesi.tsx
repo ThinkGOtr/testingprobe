@@ -104,11 +104,17 @@ export function OnerilerSekmesi({ ekran, asistan, oneriKuralId, onGit }: Onerile
   return (
     <div className="asistan-oneriler-sekmesi" data-testid="oneriler-sekmesi">
       <div className="oneri-ust">
-        <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={yenile} disabled={durum.yukleniyor} aria-label="Önerileri yenile">
-          {durum.yukleniyor ? "Yenileniyor…" : "Yenile"}
+        {/* Erişilebilir ad görünen metindir (WCAG 2.5.3); yükleme aria-busy ile verilir. */}
+        <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={yenile} disabled={durum.yukleniyor} aria-busy={durum.yukleniyor || undefined}>
+          Önerileri yenile
         </button>
       </div>
-      {durum.hata && <p className="oneri-hata kucuk">{durum.hata}</p>}
+      {/* Sonuç varken yenileme 429 / ağ hatası alırsa da duyurulsun. */}
+      {durum.hata && (
+        <p className="oneri-hata kucuk" role="status">
+          {durum.hata}
+        </p>
+      )}
       {oneriler.length === 0 ? (
         <BosDurum baslik="Bu ekranda sizin için bekleyen bir iş yok.">
           {!diger && (

@@ -138,7 +138,10 @@ export function AsistanPaneli() {
     if (!buNe) return;
     const fn = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        // Yayılım durdurulur: gerçek tarayıcıda dinleyiciler arasında mikro görev çalışır, React
+        // buNe=false ile yeniden çizer ve panelin onKeyDown'u aynı Esc ile paneli de kapatırdı.
         e.preventDefault();
+        e.stopPropagation();
         buNeBitir();
         return;
       }
@@ -295,7 +298,8 @@ export function AsistanPaneli() {
 
   const panelTus = (e: ReactKeyboardEvent) => {
     // Dar ekranda Esc belge düzeyinde dinlenir (modalAktif).
-    if (e.key === "Escape" && !buNe && !dar) {
+    // Esc'i başka bir dinleyici (ör. "Bu ne?" kipinden çıkış) işlediyse panel kapanmaz.
+    if (e.key === "Escape" && !buNe && !dar && !e.nativeEvent.defaultPrevented) {
       e.preventDefault();
       paneliKapat();
     }

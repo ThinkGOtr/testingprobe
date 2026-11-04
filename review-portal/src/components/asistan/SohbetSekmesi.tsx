@@ -27,7 +27,7 @@ import { BosDurum, Yukleniyor } from "../ui";
 import type { SeciliEleman } from "./buNe";
 import { CevapKarti } from "./CevapKarti";
 import { istekGecerli, oneriSohbetiUnut, oneriSohbetiYaz, type AcmaIstegi } from "./kontrol";
-import { ekOneriDurdur, ekOneriKontrol, useBekleyenEkOneri } from "./OneriEkOneriler";
+import { ekOneriDurdur, ekOneriKontrol, sohbetBekleyeniYaz, useBekleyenEkOneri } from "./OneriEkOneriler";
 import { oneriAnahtari, oneriGetir, oneriSorgusu } from "./OneriVerisi";
 import { soruOnerileri } from "./sorular";
 
@@ -210,7 +210,11 @@ export function SohbetSekmesi({
   /** Bu sohbette yanıt bekleyen kullanıcı sorusu: sohbetten çıkılırsa bekleme ve "Beklemeyi bırak"
    * görünmez olur, sunucu ise cevap gelene dek her yeni soruya 409 verir. Bu yüzden o sürede
    * "Yeni sohbet" ve "Geçmiş" pasiftir (ek öneri bekleyeni kendi deposunda tutulur, sayılmaz). */
-  const sohbetteBekleyen = bekleyenler.some((m) => m.tetik === "kullanici");
+  const sohbetteBekleyenId = bekleyenler.find((m) => m.tetik === "kullanici")?.id ?? null;
+  const sohbetteBekleyen = !!sohbetteBekleyenId;
+  // Öneriler sekmesindeki "Başka ne yapabilirim?" de bu süre pasif olsun (ters yön kilidi). Sekme
+  // kalkınca kayıt silinmez: Öneriler açıkken cevap gelince orada düşer.
+  useEffect(() => sohbetBekleyeniYaz(sohbetteBekleyenId), [sohbetteBekleyenId]);
   const kullaniciBekliyor = sohbetteBekleyen || !!ekBekleyen;
   const bekleyenAnahtar = bekleyenler.map((m) => m.id).join("|");
 
@@ -825,12 +829,13 @@ export function SohbetSekmesi({
               Durdur
             </button>
           </p>
-        ) : (
-          kullaniciBekliyor && (
-            <p className="soluk kucuk" id="asistan-sohbet-kilit">
-              Cevap gelince yeni soru sorabilir, yeni sohbet açabilirsiniz.
-            </p>
-          )
+        ) : null}
+        {/* "Yeni sohbet" / "Geçmiş" aria-describedby buna işaret eder: ek öneri de beklerken çizilir;
+            pasifleşme ekran okuyucuya duyurulsun diye canlı bölgedir. */}
+        {sohbetteBekleyen && (
+          <p className="soluk kucuk" id="asistan-sohbet-kilit" role="status">
+            Cevap gelince yeni soru sorabilir, yeni sohbet açabilirsiniz.
+          </p>
         )}
         {hataNotu && (
           <p className="soluk kucuk" role="status">

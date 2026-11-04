@@ -658,6 +658,19 @@ describe('"? Bu ne?"', () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByTestId("asistan-bune-bindirme")).toBeNull();
     expect(panel()).toBeInTheDocument();
+    // Odak paneldeyken kipte Esc: olay panelin onKeyDown'una ulaşmamalı (gerçek tarayıcıda
+    // dinleyiciler arasında mikro görev çalışır, panelTus güncel buNe=false ile paneli kapatırdı).
+    await u.click(within(p).getByRole("button", { name: "? Bu ne?" }));
+    const disari = vi.fn();
+    window.addEventListener("keydown", disari);
+    fireEvent.keyDown(within(p).getByLabelText("Sorunuz"), { key: "Escape" });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    window.removeEventListener("keydown", disari);
+    expect(disari).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("asistan-bune-bindirme")).toBeNull();
+    expect(panel()).toBeInTheDocument();
     fireEvent.keyDown(within(p).getByLabelText("Sorunuz"), { key: "Escape" });
     expect(screen.queryByTestId("asistan-paneli")).toBeNull();
     delete (document as { elementsFromPoint?: unknown }).elementsFromPoint;

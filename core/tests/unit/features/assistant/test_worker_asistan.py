@@ -613,6 +613,11 @@ def test_asistan_seridi_kapaliyken_kalp_atisi_ve_serit_yok(
     try:
         with engine.begin() as c:
             a_id = enqueue(c, a_tur)
+            # Temizlik yalnız eşikten eski işi kapatır (yeni kabul edilen iş korunur).
+            c.execute(
+                text("UPDATE job SET olusturma = now() - interval '1 hour' WHERE id = :i"),
+                {"i": a_id},
+            )
         t, sonuc = _calistir(dur)
         # Şerit kapalı: tür genel döngüde de koşmaz (haric'te; orada zaman aşımı süreci
         # kapatırdı); kalp atışı yazılmaz. Kalp atışı olmadığından genel şerit bekleyen işi

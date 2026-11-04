@@ -118,12 +118,26 @@ export function useBekleyenEkOneri(): string | null {
   return id;
 }
 
-/** Bekleyen ek öneriyi durdurur (Sohbet sekmesinden de). */
+/**
+ * Bekleyen ek öneriyi durdurur (Sohbet sekmesinden de). Cevap sunucuda bu arada bittiyse
+ * (iptal 409 "zaten tamamlandı") mesaj okunur ve sonuç kaydedilir: gelen öneriler kaybolmasın.
+ */
 export async function ekOneriDurdur(mesajId: string): Promise<void> {
   try {
     await asistanApi.iptal(mesajId);
-  } catch {
-    /* zaten bitti */
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 409) {
+      try {
+        const m = await asistanApi.mesaj(mesajId);
+        if (!bekliyor(m)) {
+          ekBitti(m);
+          return;
+        }
+      } catch {
+        /* okunamadı: bekleme aşağıda düşer */
+      }
+    }
+    /* diğerleri: zaten bitti / iptal edildi */
   }
   let degisti = false;
   for (const [k, d] of ekDurumlar) {
@@ -171,6 +185,36 @@ export async function ekOneriKontrol(mesajId: string): Promise<void> {
 }
 
 /**
+ * Ters yön kilidi: Sohbet sekmesinde yanıt bekleyen kullanıcı sorusu (sunucu ek öneriye de 409
+ * bekleyen_var verir). Sohbet sekmesi kimliği yazar; sekmeler arasında yalnız seçili olan çizildiği
+ * için Öneriler açıkken kaydı bu bileşen cevap olayı / okuma ile kendisi düşürür.
+ */
+let sohbetBekleyen: string | null = null;
+
+/** Sohbet sekmesi: bu sohbette yanıt bekleyen kullanıcı sorusunun kimliği (yoksa null). */
+export function sohbetBekleyeniYaz(id: string | null): void {
+  if (sohbetBekleyen === id) return;
+  sohbetBekleyen = id;
+  ekBildir();
+}
+
+function useSohbetBekleyen(): string | null {
+  useSyncExternalStore(ekAbone, () => ekSurum);
+  return sohbetBekleyen;
+}
+
+/** Sohbet'teki bekleyen soru bitti mi: bittiyse (ya da artık okunamıyorsa) kilit kalkar. */
+async function sohbetBekleyeniKontrol(id: string): Promise<void> {
+  try {
+    const m = await asistanApi.mesaj(id);
+    if (bekliyor(m)) return;
+  } catch (e) {
+    if (!(e instanceof ApiError && e.status === 404)) return;
+  }
+  if (sohbetBekleyen === id) sohbetBekleyeniYaz(null);
+}
+
+/**
  * Çıkışta / kullanıcı değişince ve testlerde. Ek öneri sohbetleri ve sonuçları kullanıcıya
  * aittir (anahtar yalnız ekran/varlık): önceki kullanıcının bekleyen ek önerisi sonrakinin
  * Sohbet'ini kilitlemesin, sonuçları ona gösterilmesin (§16 madde 1).
@@ -179,6 +223,7 @@ export function ekOneriSohbetleriniSifirla(): void {
   ekSohbetler.clear();
   ekDurumlar.clear();
   geriYuklenenler.clear();
+  sohbetBekleyen = null;
   ekBildir();
 }
 
@@ -233,10 +278,13 @@ export function OneriEkOneriler({ ekran, onGit }: { ekran: EkranBaglami; onGit?:
     }
   }, []);
 
+  const sohbetteBekleyen = useSohbetBekleyen();
+
   useOlay(
     (o) => {
       const id = typeof o.data.mesaj_id === "string" ? o.data.mesaj_id : o.id;
       if (bekleyenId && id === bekleyenId) void oku(bekleyenId);
+      if (sohbetteBekleyen && id === sohbetteBekleyen) void sohbetBekleyeniKontrol(sohbetteBekleyen);
     },
     ["assistant.answered"],
   );
@@ -255,6 +303,35 @@ export function OneriEkOneriler({ ekran, onGit }: { ekran: EkranBaglami; onGit?:
     const z = setInterval(() => void oku(bekleyenId), oneriAyar.yoklamaMs);
     return () => clearInterval(z);
   }, [bekleyenId, sseVar, oku]);
+
+  // Sohbet'teki bekleyen soru: sekme değişirken olay kaçmış olabilir; bir kez ve kopukken yoklamayla okunur.
+  useEffect(() => {
+    if (!sohbetteBekleyen) return;
+    void sohbetBekleyeniKontrol(sohbetteBekleyen);
+    if (sseVar) return;
+    const z = setInterval(() => void sohbetBekleyeniKontrol(sohbetteBekleyen), oneriAyar.yoklamaMs);
+    return () => clearInterval(z);
+  }, [sohbetteBekleyen, sseVar]);
+
+  /** Sohbet'te soru beklerken yeni ek öneri sunucuda 409 alır: düğme pasif, neden yanında yazılı. */
+  const baslatDugmesi = (gonderiliyor: boolean, sinif = "dugme-ikincil") => (
+    <>
+      <button
+        type="button"
+        className={`dugme ${sinif} dugme-kucuk`}
+        onClick={() => void baslat()}
+        disabled={gonderiliyor || !!sohbetteBekleyen}
+        aria-describedby={sohbetteBekleyen ? "oneri-ek-kilit" : undefined}
+      >
+        Başka ne yapabilirim?
+      </button>
+      {sohbetteBekleyen && (
+        <p className="soluk kucuk" id="oneri-ek-kilit" role="status">
+          Sohbet'teki soru yanıt bekliyor; cevap gelince kullanılabilir.
+        </p>
+      )}
+    </>
+  );
 
   const baslat = async () => {
     setDurum({ tur: "gonderiliyor" });
@@ -298,16 +375,15 @@ export function OneriEkOneriler({ ekran, onGit }: { ekran: EkranBaglami; onGit?:
 
   const durdur = async (id: string) => {
     await ekOneriDurdur(id);
-    setDurum({ tur: "bos" });
+    // İptal yetişmediyse (cevap bitmişti) kayıt "hazir"a çevrilmiştir: sonuç gösterilir.
+    if (!bagli.current) return;
+    const k = ekDurumlar.get(anahtarRef.current);
+    setDurum((d) => (d.tur === "bekliyor" && d.mesajId === id ? (k?.tur === "hazir" && k.mesaj.id === id ? k : { tur: "bos" }) : d));
   };
 
   if (durum.tur === "bos" || durum.tur === "gonderiliyor") {
     return (
-      <div className="oneri-ek">
-        <button type="button" className="dugme dugme-ikincil dugme-kucuk" onClick={() => void baslat()} disabled={durum.tur === "gonderiliyor"}>
-          Başka ne yapabilirim?
-        </button>
-      </div>
+      <div className="oneri-ek">{baslatDugmesi(durum.tur === "gonderiliyor")}</div>
     );
   }
   if (durum.tur === "bekliyor") {
@@ -350,9 +426,7 @@ export function OneriEkOneriler({ ekran, onGit }: { ekran: EkranBaglami; onGit?:
         </ul>
       )}
       {/* Sonuç ekran başına saklanır (sekme değişse de kalır); yenisi yalnız istenince. */}
-      <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => void baslat()}>
-        Başka ne yapabilirim?
-      </button>
+      {baslatDugmesi(false, "dugme-hayalet")}
     </section>
   );
 }

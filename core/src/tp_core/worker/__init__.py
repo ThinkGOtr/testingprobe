@@ -293,6 +293,11 @@ def kapali_serit_temizle(turler: Collection[str]) -> int:
     yoksa koşar: o andan sonra API yeni soru kabul etmez ve şeridi açık başka bir worker yoktur
     (varsa kalp atışı tazedir; işlerine dokunulmaz). Koşan işlere dokunulmaz (sahipsizse
     `release_orphans`/`reap_stale` onları `retry`'a çeker, sonraki turda kapanır).
+
+    Karma dağıtımda şeridi açık worker yeniden başlarken kalp atışı geçici olarak eskiyebilir;
+    o pencerede yeni kabul edilmiş işler iptal edilmesin diye yalnız kendisi de eşikten eski
+    (`olusturma < now() - KALP_ATISI_AZAMI_S`) işler kapatılır. Daha genç iş bir sonraki turda
+    yeniden değerlendirilir; şerit gerçekten kapalıysa en geç iki eşik içinde kapanır.
     """
     from sqlalchemy import text
 
@@ -314,9 +319,10 @@ def kapali_serit_temizle(turler: Collection[str]) -> int:
         iptal = conn.execute(
             text(
                 "UPDATE job SET durum = 'cancelled', guncelleme = now(), bitis = now() "
-                "WHERE tur = ANY(:turler) AND durum IN ('queued', 'retry')"
+                "WHERE tur = ANY(:turler) AND durum IN ('queued', 'retry') "
+                "AND olusturma < now() - make_interval(secs => :esik)"
             ),
-            {"turler": sorted(turler)},
+            {"turler": sorted(turler), "esik": KALP_ATISI_AZAMI_S},
         ).rowcount
         if iptal:
             log.warning(
