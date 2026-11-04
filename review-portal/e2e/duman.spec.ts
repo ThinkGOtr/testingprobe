@@ -354,6 +354,14 @@ test("mobil menü kapalıyken Tab sırasına girmez (dikey ve yatay telefon); me
     await expect(menuDugmesi).toHaveAttribute("aria-expanded", "true");
     await page.keyboard.press("Escape");
     await expect(menuDugmesi).toBeFocused();
+    // Perdeye (menünün sağındaki karartılmış içerik) dokunmak menüyü kapatır; odak menü düğmesine döner.
+    await menuDugmesi.click();
+    await expect(menu.getByRole("link", { name: "Denetim" })).toBeVisible();
+    await page.mouse.click(genislik - 10, yukseklik - 20);
+    await expect(menuDugmesi).toHaveAttribute("aria-expanded", "false");
+    await expect(menuDugmesi).toBeFocused();
+    await expect(menu.getByRole("link", { name: "Denetim" })).toBeHidden();
+    await expect(page.locator("#ana-icerik")).not.toHaveAttribute("inert", "");
     await menuDugmesi.click();
     await menu.getByRole("link", { name: "Denetim" }).click();
     await expect(page.getByRole("heading", { name: "Denetim", level: 1 })).toBeVisible();

@@ -141,7 +141,7 @@ export function Kabuk() {
   // Açık mobil menü kipsel davranır (WCAG 2.4.11 / 2.4.3): menü düğmesi ve menü dışındaki her şey (İçeriğe atla,
   // marka, üst çubuğun sağı, içerik) inert olur; Tab yalnız menü düğmesi ile menü bağlantıları arasında döngüyle dolaşır,
   // odak menünün altında kalan içeriğe geçemez. Açılışta odak ilk menü bağlantısına taşınır. Kapanış: Escape,
-  // menü düğmesi ya da bir bağlantıyla gezinme (yukarıdaki efektler).
+  // menü düğmesi, perdeye dokunma ya da bir bağlantıyla gezinme (yukarıdaki efektler).
   useEffect(() => {
     if (!menuAcik) return;
     const kok = kabukRef.current;
@@ -277,6 +277,18 @@ export function Kabuk() {
             );
           })}
         </nav>
+        {/* Açık mobil menünün perdesi (yalnız ≤860 px görünür): dokununca/tıklayınca menü kapanır, odak menü
+            düğmesine döner. Yalnız işaretçi kolaylığı; klavyede Escape ve menü düğmesi zaten kapatır. */}
+        {menuAcik && (
+          <div
+            className="menu-perde"
+            aria-hidden="true"
+            onClick={() => {
+              setMenuAcik(false);
+              menuDugmesi.current?.focus();
+            }}
+          />
+        )}
         <main id="ana-icerik" className="icerik" tabIndex={-1}>
           {mockAktif && (
             <div className={`uyari-kutusu uyari-uyari ornek-veri-bandi${mockZorunlu() ? " ornek-veri-tam" : ""}`} role="note" data-testid="ornek-veri-bandi">

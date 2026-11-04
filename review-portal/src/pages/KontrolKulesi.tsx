@@ -214,12 +214,19 @@ export function KontrolKulesi() {
             <Metrik
               etiket="Bugün"
               deger={tumuReplay ? <Olculmedi metin="REPLAY — ölçülmedi" /> : ai.maliyet_usd_bugun === null ? <Olculmedi /> : dolar(ai.maliyet_usd_bugun)}
-              alt={ai.gunluk_butce_usd === null ? undefined : `Günlük tavan ${dolar(ai.gunluk_butce_usd)}`}
+              alt={
+                ai.gunluk_butce_usd === null ? undefined : (
+                  <>
+                    Günlük tavan {dolar(ai.gunluk_butce_usd)}
+                    {/* Bütçe çubuğu tavanın altında; maliyet ölçülmediyse (REPLAY) boş ray çizilmez. */}
+                    {!tumuReplay && ai.maliyet_usd_bugun !== null && ai.gunluk_butce_usd ? (
+                      <Ilerleme oran={ai.maliyet_usd_bugun / ai.gunluk_butce_usd} etiket="Günlük bütçe kullanımı" />
+                    ) : null}
+                  </>
+                )
+              }
             />
           </div>
-          {ai.maliyet_usd_bugun !== null && ai.gunluk_butce_usd ? (
-            <Ilerleme oran={ai.maliyet_usd_bugun / ai.gunluk_butce_usd} etiket="Günlük bütçe kullanımı" />
-          ) : null}
           {ai.replay_cagri !== null && ai.replay_cagri > 0 && (
             <p className="kucuk">
               <span className="rozet rozet-replay">REPLAY</span> {ai.replay_cagri} çağrı girdisi doğrulanmış hazır (golden) çıktıdan karşılandı (süre ve maliyet ölçülmez).

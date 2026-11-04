@@ -745,6 +745,10 @@ code,
 .icerik:focus {
   outline: none;
 }
+/* Mobil menü perdesi yalnız ≤860 px'te çizilir (aşağıda). */
+.menu-perde {
+  display: none;
+}
 
 @media (max-width: 860px) {
   .menu-dugmesi {
@@ -760,12 +764,16 @@ code,
     transition: transform 0.18s ease;
     box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
   }
-  /* Açık menüde perde: yalnız görsel (tıklamayı yakalamaz, taşma üretmez), mevcut gölgeyle birleşik */
   .yan-menu.acik {
     transform: none;
-    box-shadow:
-      0 8px 24px rgb(0 0 0 / 0.18),
-      0 0 0 100vmax rgb(0 0 0 / 0.5);
+  }
+  /* Açık menünün perdesi: üst çubuğun altındaki içeriği karartır; dokununca menü kapanır (Kabuk.tsx). */
+  .menu-perde {
+    display: block;
+    position: fixed;
+    inset: 56px 0 0 0;
+    z-index: 29;
+    background: rgb(0 0 0 / 0.5);
   }
   .icerik {
     padding: 16px 16px 48px;
@@ -842,6 +850,15 @@ code,
 }
 .tetik-aciklamalari li {
   padding: 1px 0;
+}
+/* Koşular başlığı 1152–1439 px'te: açıklama kalan genişliğe sarar (3 satır), iki tetik düğmesi başlığın
+   sağında kalır (açıklamanın altına inmez; review 4). Daha dar ekranda açıklama çok daralacağı için eski
+   düzen (düğmeler altta, sağda). */
+@media (min-width: 1152px) {
+  .sayfa-basligi:has(+ .tetik-aciklamalari) > :first-child {
+    flex: 1 1 0;
+    min-width: 0;
+  }
 }
 /* Geri bağlantısı: section-badge hapı. Büyük harfe çevrilmez (metrik bölümündeki "büyük harf ve Türkçe" notu). */
 .ust-baglanti {
@@ -1173,8 +1190,10 @@ code,
   color: var(--vurgu);
   border-color: color-mix(in srgb, var(--vurgu) 30%, transparent);
 }
-td .cip + .cip {
-  margin-left: 6px;
+/* Yan yana çiplerin arası: boşluk soldaki çipin sağında. Hücrede çipler sarınca alt satırdaki çip üsttekiyle
+   aynı sol kenardan başlar (sol marj sarılan satırın başında 6 px girinti bırakıyordu; review 4). */
+td .cip:has(+ .cip) {
+  margin-right: 6px;
 }
 
 .ac-ref {
@@ -2448,6 +2467,10 @@ article.bulgu:is([data-durum="decided"], [data-durum="resolved"], [data-durum="s
 .ilerleme-dusuk {
   background: var(--warn);
 }
+/* Metrik altındaki çubuk (Kule "Bugün" → günlük bütçe): alt satırın altında, hücre genişliğinde. */
+.metrik-alt > .ilerleme {
+  margin-top: 6px;
+}
 .ilerleme-hedef {
   position: absolute;
   top: -4px;
@@ -3203,6 +3226,16 @@ td .olculmedi {
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
+/* Değer yokken "ölçülmedi" düz soluk metin (Kule tablosundaki gibi): yanındaki durum çipiyle (Ölçülmedi)
+   iki benzer hap yan yana durmaz (review 4). */
+.buyuk-sayi-kucuk > .olculmedi {
+  display: inline;
+  padding: 0;
+  border: 0;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--muted);
+}
 .baz-form {
   margin-top: 12px;
   padding-top: 12px;
@@ -3398,7 +3431,13 @@ td .olculmedi {
 /* Koşu detayı: test sonucu ayrıntısı (KosuSonuclari.tsx) */
 /* Metin düğmesi (§4.5): tablo hücresinde açılır-kapanır test adı; kenarsız/zeminsiz, hover indigo + alt çizgi.
    Önündeki ▸/▾ glifi aria-hidden metin olarak kalır, --muted. */
+/* inline-flex: düğmenin taban çizgisi ilk satırdan gelir (inline-block'ta son satırdan). Tablo hücreleri
+   taban çizgisinde hizalı (.tablo td); iki satıra saran test adının satırındaki Durum/Süre hücreleri adın
+   ilk satırıyla aynı çizgide kalır. Ok (▸/▾) ayrı öğe: sarınca ad okun sağında hizalı devam eder. */
 .dugme-metin {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25em;
   background: none;
   border: 0;
   padding: 0;
@@ -3699,6 +3738,10 @@ details.soluk > summary {
 .sayfa-basligi > .eylemler:has(> .neden-var),
 .kart-baslik > .eylemler:has(> .neden-var) {
   justify-content: flex-end;
+}
+/* Kart başlığı sarınca (dar ekran) nedenli grup h2'nin altında da sağ kenarda kalır (review 4). */
+.kart-baslik > .eylemler:has(> .neden-var) {
+  margin-left: auto;
 }
 .sayfa-basligi > .eylemler > .neden-var > .dugme-neden {
   text-align: right;
@@ -4238,6 +4281,14 @@ td > .satir-baglanti + .cip,
 .sayfa-basligi > .eylemler:not(:has(> :not(.dugme-neden-sarici, .dugme))) > .neden-var:not(:only-child) > .dugme-neden {
   margin-left: -8px;
 }
+/* Dar ekranda (≤640 px) grup iki satıra sarar: etkin düğme/bağlantı nedenin altına dizilir, neden pasif
+   düğmelerin satırının hemen altında kalır (son satırdaki etkin düğmeye aitmiş gibi okunmaz; review 4). */
+@media (max-width: 640px) {
+  .sayfa-basligi > .eylemler:not(:has(> :not(.dugme-neden-sarici, .dugme))):has(> .neden-var:not(:only-child)) > .dugme,
+  .sayfa-basligi > .eylemler:not(:has(> :not(.dugme-neden-sarici, .dugme))):has(> .neden-var:not(:only-child)) > .dugme-neden-sarici > .dugme:enabled {
+    order: 2;
+  }
+}
 /* Kart başlığında grup nedeni 34ch ile sınırlı olduğundan düğmelerin yanına sığabilir: boş, tam genişlik
    bir flex öğesi düğme satırını kırar, neden her zaman düğmelerin altında ve sağa yaslı (yalnız düğme
    grubunda; karışık grupta neden sarıcı sütunda kalır). */
@@ -4323,6 +4374,12 @@ td > .satir-baglanti + .cip,
    sayı başlıkları ("Açık bulgu", "Case (onaylı/toplam)") iki satıra sarabilir; boşalan genişlik Başlık'a
    kalır (1152 px'te tablo kaydırma kabına sığar). */
 .tablo th.baslik-sarar {
+  white-space: normal;
+}
+/* "Case (onaylı/toplam)" eğik çizgiden (<wbr>) sarar; "Serbest metin" çipi Anahtar sütununda iki satıra
+   inebilir (review 4). İkisinin de bıraktığı genişlik Başlık'a kalır: 1152 px'te başlıklar 2 satır, ilk
+   ekranda 4 gereksinim; 1024 px'te tablo kaydırmasız sığar. */
+.tablo td[data-etiket="Anahtar"] > .cip {
   white-space: normal;
 }
 /* Gereksinim arama: ipucu ("Anahtar veya başlık ara") kesilmeden okunur. */

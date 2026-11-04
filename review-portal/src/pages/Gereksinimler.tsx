@@ -95,7 +95,9 @@ export function Gereksinimler() {
                     Açık bulgu
                   </th>
                   <th scope="col" className="sayi baslik-sarar">
-                    Case (onaylı/toplam)
+                    Case (onaylı/
+                    <wbr />
+                    toplam)
                   </th>
                   <th scope="col">Çekim</th>
                 </tr>
