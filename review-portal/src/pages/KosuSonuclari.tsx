@@ -394,7 +394,7 @@ export function TestSonuclari({ k }: { k: KosuDetay }) {
                         <DurumCipi d={s.durum} />
                       </td>
                       <td className="sayi">{s.retry}</td>
-                      <td>{sure(s.sure_ms)}</td>
+                      <td className="tek-satir">{sure(s.sure_ms)}</td>
                       <td>
                         {s.failure_id ? (
                           <span className="satir-ogeler">

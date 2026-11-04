@@ -4150,3 +4150,163 @@ td > .satir-baglanti + .cip,
 
 
 
+
+/* Stat şeridi eşit sütun ritmi (.hero-stats): beş ve altı öğeli şeritler (Koşu detayı, Kule KPI, Case review
+   Kararlar / Süre-maliyet) flex yerine ızgara. Flex'te 684–734 px içerikte beş öğe 4+1 sarıyor, son öğe tüm
+   satırı kaplıyordu; ayraçlar satırlar arasında hizasızdı. Sütun sayısı öğe sayısının böleni (5 → 5;
+   6 → 3, ≥1280 px'te 6); ≤640 px'te iki sütun, tek kalan son öğe tüm satır. Öğeler subgrid: etiket, değer
+   ve alt satır şerit boyunca aynı çizgide (uzun etiket iki satıra sarınca değer aşağı kaymaz). Öğe sayısı
+   başka olan şeritler (Kule AI katkısı 3, Erişilebilirlik 2) flex kalır. */
+.metrik-izgara:has(> :nth-child(5):last-child),
+.metrik-izgara:has(> :nth-child(6):last-child) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.metrik-izgara:has(> :nth-child(5):last-child) > *,
+.metrik-izgara:has(> :nth-child(6):last-child) > * {
+  display: grid;
+  grid-row: span 3;
+  grid-template-rows: subgrid;
+  row-gap: 0;
+  align-content: start;
+}
+.metrik-izgara:has(> :nth-child(5):last-child) > :last-child {
+  grid-column: 1 / -1;
+}
+@media (min-width: 641px) {
+  .metrik-izgara:has(> :nth-child(5):last-child) {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .metrik-izgara:has(> :nth-child(5):last-child) > :last-child {
+    grid-column: auto;
+  }
+  .metrik-izgara:has(> :nth-child(6):last-child) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1280px) {
+  .metrik-izgara:has(> :nth-child(6):last-child) {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+/* Kule KPI: dört satır (etiket · değer · çubuk/alt · hedef). HedefOlcer'in .olcer-ust kabı kaldırılır
+   (display: contents; DOM ve okuma sırası aynı), etiket ve değer şeridin satırlarına oturur. */
+.metrik-izgara.kule-kpi > * {
+  grid-row: span 4;
+  row-gap: 2px;
+}
+.kule-kpi .olcer-ust {
+  display: contents;
+}
+.kule-kpi .olcer-ust > strong {
+  margin-bottom: 6px;
+}
+/* (i) ipucu etiketin son sözcüğüyle aynı satırda (KpiBaslik'taki .kpi-baslik ile aynı): metin kendi içinde
+   sarar, ipucu yanında kalır; "Script ilk review başarısı" 1152 px'te (i)'yi tek başına alt satıra atmaz. */
+.kule-kpi .olcer-ust > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Kartın tek içeriği stat şeridiyse alt marj kalkar (Koşu detayı: şerit üstünde 21, altında 33 px boşluk). */
+.kart > .metrik-izgara:last-child {
+  margin-bottom: 0;
+}
+
+/* Tarih/aktör/süre hücreleri tek satır (.tek-satir: Denetim Zaman/Aktör, Kod üretimi Oluşturma, Koşu detayı
+   Süre). Arama kutuları yer tutucuyu kesmesin. */
+#denetim-ara,
+.filtre-cubugu input[type="search"] {
+  width: 18rem;
+  max-width: 100%;
+}
+
+/* Koşu detayı Test sonuçları ≤640 px: tablo yatay kayar (sağ solma işareti), Test sütunu 71 px'e sıkışıp
+   ad sözcük sözcük, hata kutusu harf harf kırılmasın. */
+@media (max-width: 640px) {
+  [aria-label="Test sonuçları tablosu"] > .tablo > tbody > tr > td:first-child {
+    min-width: 14rem;
+  }
+}
+
+/* Yapışkan şeritler (case filtresi sekmeleri, bölüm gezgini) yalnız yapışınca zemin alır: akışta saydam
+   (opak --bg şerit ortam ışımasını yatay bantla kesiyordu), yapışınca üst çubuğun yarı saydam + bulanık
+   zemini. Zemin ::before'da (scroll-state sorgusu kabın kendisini değil alt öğelerini biçimler). Desteği
+   olmayan tarayıcıda her zaman üst çubuk zemini. Sekme/bağlantıların kendi opak zemini var (kontrast). */
+.sekmeler-yapiskan {
+  background: var(--ust-cubuk-bg);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+@supports (container-type: scroll-state) {
+  .sekmeler-yapiskan {
+    container-type: scroll-state;
+    background: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .sekmeler-yapiskan::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+  }
+  @container scroll-state(stuck: top) {
+    .sekmeler-yapiskan::before {
+      background: var(--ust-cubuk-bg);
+      -webkit-backdrop-filter: blur(16px);
+      backdrop-filter: blur(16px);
+      box-shadow: 0 1px 0 var(--border-soft);
+    }
+  }
+}
+
+/* Bölüm gezgini 861–1279 px (1152 px sunum makinesi): yatay şerit artık yapışkan (üst çubuğun altında),
+   uzun sayfada kaydırınca kaybolmaz. Case review'un yapışkan sekmeleri bu sayfada yok, çakışmaz. Şerit
+   .icerik iç boşluğu kadar iki yana uzar; çapa kaydırma payı üst çubuk + şerit + 16 px. */
+@media (min-width: 861px) and (max-width: 1279px) {
+  .bolum-gezgini {
+    position: sticky;
+    top: 56px;
+    z-index: 10;
+    margin: -8px -28px 8px;
+    padding: 8px 28px;
+    background: var(--ust-cubuk-bg);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+  }
+  @supports (container-type: scroll-state) {
+    .bolum-gezgini {
+      container-type: scroll-state;
+      background: none;
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+    .bolum-gezgini::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+    }
+    @container scroll-state(stuck: top) {
+      .bolum-gezgini::before {
+        background: var(--ust-cubuk-bg);
+        -webkit-backdrop-filter: blur(16px);
+        backdrop-filter: blur(16px);
+        box-shadow: 0 1px 0 var(--border-soft);
+      }
+    }
+  }
+  html:has(.bolum-gezgini) {
+    scroll-padding-top: 120px;
+  }
+}
+
+/* Kule grafiği sütun odağı: halka tüm hedef alanda (%0 sütun 2 px; yalnız sütun konturu görünmüyordu). */
+.grafik-hedef-alan:focus-visible .grafik-odak {
+  stroke: var(--focus);
+  stroke-width: 2;
+}

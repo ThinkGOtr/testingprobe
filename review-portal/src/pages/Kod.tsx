@@ -175,7 +175,7 @@ export function Kod() {
                                 ? "Tamamlanamadı"
                                 : "—"}
                       </td>
-                      <td>{tarih(s.olusturma)}</td>
+                      <td className="tek-satir">{tarih(s.olusturma)}</td>
                       <td>
                         {/* Defect adayının testi doğru (uygulama farklı davranıyor): yeniden üretim önerilmez, karar triage'da. */}
                         {(s.durum === "blocked" || s.durum === "failed") &&

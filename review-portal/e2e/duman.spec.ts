@@ -743,7 +743,7 @@ test("bilinmeyen sayfa: h1 başlığı var (axe page-has-heading-one)", async ({
 // içerikten önce gelir: kart başlığı `getByText(...).first()` ile değil, `getByRole("region", { name })`
 // ile aranır (860 px ve altında gezgin gizlidir; `.first()` gizli bağlantıyı bulur).
 // 861–1279 px'te gezgin başlığın altında akışta yatay bağlantı şerididir (yapışkan değil).
-test("bölüm gezgini: ≥1280 px yapışkan sütun, 1152 px yatay şerit, 860 px'te gizli; bağlantı bölümü üst çubuğun altına getirir", async ({ page }) => {
+test("bölüm gezgini: ≥1280 px yapışkan sütun, 1152 px yapışkan yatay şerit, 860 px'te gizli; bağlantı bölümü üst çubuğun altına getirir", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await girisYap(page, "analist");
   await page.goto("/gereksinimler/req-tpd-1");
@@ -762,7 +762,18 @@ test("bölüm gezgini: ≥1280 px yapışkan sütun, 1152 px yatay şerit, 860 p
     .toBe(true);
   await page.setViewportSize({ width: 1152, height: 720 });
   await expect(gezgin).toBeVisible();
-  await expect(gezgin).toHaveCSS("position", "static");
+  await expect(gezgin).toHaveCSS("position", "sticky");
+  // Kaydırınca şerit üst çubuğun altında kalır; bağlantı bölümü şeridin altına getirir (WCAG 2.4.11).
+  await gezgin.getByRole("link", { name: "Doküman" }).click();
+  await gezgin.getByRole("link", { name: "Tutarlılık bulguları" }).click();
+  await expect(gezgin).toBeInViewport();
+  await expect
+    .poll(async () => {
+      const serit = await gezgin.boundingBox();
+      const kutu = await bolum.boundingBox();
+      return !!serit && !!kutu && kutu.y >= serit.y + serit.height;
+    })
+    .toBe(true);
   await page.setViewportSize({ width: 860, height: 800 });
   await expect(gezgin).toBeHidden();
   await expect(page.getByRole("region", { name: "Tutarlılık bulguları" })).toBeVisible();

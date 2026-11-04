@@ -81,8 +81,8 @@ export function Denetim() {
                     {olaylar.map((o) => (
                       <tr key={o.id} className={dg && !dg.gecerli && dg.ilk_kirik_id === o.id ? "satir-hata" : undefined}>
                         <td className="sayi mono">{o.sira}</td>
-                        <td>{tarih(o.zaman)}</td>
-                        <td title={kisiAdi(o.aktor) !== o.aktor ? o.aktor : undefined}>{kisiAdi(o.aktor)}</td>
+                        <td className="tek-satir">{tarih(o.zaman)}</td>
+                        <td className="tek-satir" title={kisiAdi(o.aktor) !== o.aktor ? o.aktor : undefined}>{kisiAdi(o.aktor)}</td>
                         <td className="mono">{o.eylem}</td>
                         <td className="mono">{o.nesne}</td>
                         <td>{o.ozet}</td>
