@@ -4007,6 +4007,56 @@ td > .satir-baglanti + .cip,
    Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
    ================================================================== */
 
+/* Kapalı mobil menü kısa ekranda (yatay telefon, %200 yakınlaştırma): gizli çocuklar yer kapladığı için nav
+   kaydırılabilir kalıyor, Chromium da kaydırılabilir kabı Tab durağı yapıyordu (ekran dışında, odak görünmez —
+   WCAG 2.4.7). Kapalıyken kaydırma kapalı → nav odaklanamaz. "Ana menü" işareti yerinde kalır (nav'ın kendisi
+   gizlenmez). Açık menü kendi kaydırmasını korur (.yan-menu overflow-y: auto). */
+@media (max-width: 860px) {
+  .yan-menu:not(.acik) {
+    overflow: hidden;
+  }
+}
+
+/* 320 px'te "Probe" 2 px eksikle "Pro…" kesiliyordu: sağ grup aralıkları 6 → 4 px (3 aralık, 6 px kazanç). */
+@media (max-width: 360px) {
+  .ust-sag {
+    gap: 4px;
+  }
+}
+
+/* Giriş kartı markası: "Probe" gradyan metin (§4.14, dashboard login "Agent Probe" gibi). background-clip:text
+   axe color-contrast'ı "incomplete"e düşürüyor (/giris 0 → 1, ölçüldü). Bunun yerine: metin düz başlangıç
+   renginde (axe ölçer, AA), üstüne aynı kelime bitiş renginde bindirilir ve soldan sağa maskeyle açılır.
+   Bindirme yalnız görsel: `content: "…" / ""` alternatif metni boş → erişilebilir ad değişmez; sözdizimini
+   tanımayan tarayıcı bildirimi yok sayar, düz renk kalır. Uçlar AA: koyu --accent #818cf8 → #c084fc, açık
+   --accent #4f46e5 → #7e22ce. Kelime Giris.tsx'teki <strong>Probe</strong> ile aynı olmalı. */
+.giris-kart .marka strong {
+  position: relative; /* metin rengi: .marka strong → --accent (koyu #818cf8, açık #4f46e5) */
+  display: inline-block; /* kutu = satır yüksekliği: bindirme aynı taban çizgisine oturur */
+}
+.giris-kart .marka strong::after {
+  content: "Probe" / "";
+  position: absolute;
+  inset: 0;
+  color: #c084fc;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000);
+  mask-image: linear-gradient(90deg, transparent, #000);
+  pointer-events: none;
+}
+:root[data-theme="light"] .giris-kart .marka strong::after {
+  color: #7e22ce;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .giris-kart .marka strong::after {
+    color: #7e22ce;
+  }
+}
+@media (forced-colors: active) {
+  .giris-kart .marka strong::after {
+    content: none;
+  }
+}
+
 
 
 
