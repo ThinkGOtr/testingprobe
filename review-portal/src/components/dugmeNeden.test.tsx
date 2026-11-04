@@ -305,7 +305,7 @@ describe("ekranlarda görünür neden", () => {
 
 describe("Pasiflik nedeni yerleşim kuralları (review 3)", () => {
   const css = readFileSync(resolve(__dirname, "../styles.css"), "utf8");
-  const blok = css.slice(css.indexOf("R3-NEDEN"));
+  const blok = css;
 
   it("grup nedeni yalnız düğme gruplarında: tek düğmeli ve karışık gruplarda sarıcı sütun kalır", () => {
     expect(blok).toContain(".eylemler > .dugme-neden-sarici.neden-var:only-child");
@@ -313,7 +313,7 @@ describe("Pasiflik nedeni yerleşim kuralları (review 3)", () => {
   });
 
   it("-8 px gap telafisi yalnız sağa yaslı sayfa başlığında; sola yaslı grupta neden düğme kenarından başlar", () => {
-    expect(blok).toMatch(/\.eylemler > \.neden-var > \.dugme-neden,\s*\.satir-ogeler > \.neden-var > \.dugme-neden \{\s*margin-left: 0;/);
+    expect(blok).toMatch(/\.eylemler > \.neden-var > \.dugme-neden,\s*\.satir-ogeler > \.neden-var > \.dugme-neden \{[^}]*margin-left: 0;/);
     expect(blok).toMatch(/\.sayfa-basligi > \.eylemler[^{]*> \.neden-var:not\(:only-child\) > \.dugme-neden \{\s*margin-left: -8px;/);
     expect(blok).not.toMatch(/^\.eylemler > \.neden-var > \.dugme-neden[^{]*\{[^}]*margin-left: -8px/m);
   });

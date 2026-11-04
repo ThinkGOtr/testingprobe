@@ -3690,9 +3690,9 @@ details.soluk > summary {
   flex: 1 0 100%;
   max-width: none;
   margin-top: -4px;
-  /* İçsel genişlikte nedenden önceki 8 px gap'i de geri al (grup tam düğmeler kadar; sağa yaslıda
-     soldan 8 px boşluk kalmasın). Neden zaten kendi satırında; soldaki 8 px taşma boş alandır. */
-  margin-left: -8px;
+  /* Sola yaslı gruplarda neden ilk düğmenin sol kenarından başlar; -8 px gap telafisi yalnız sağa yaslı
+     sayfa başlığında (aşağıda). */
+  margin-left: 0;
   contain: inline-size;
 }
 /* Sağa yaslı gruplarda (sayfa başlığı, kart başlığı) düğmeler ve neden sağ kenarda biter. */
@@ -4185,10 +4185,6 @@ td > .satir-baglanti + .cip,
   font-variant-numeric: tabular-nums;
 }
 
-/* ==================================================================
-   R3-NEDEN (review turu 3 çapası — sonra kaldırılır)
-   Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
-   ================================================================== */
 
 /* Kart başlığı satırı (§4.4, review 3): h2 her zaman düğme yüksekliğinde (36 px) bir satırın ortasında —
    düğmeli, düğmesiz, nedenli ya da sarmış (düğme alta inmiş) başlıkta aynı konum; yan yana kartların
@@ -4238,12 +4234,7 @@ td > .satir-baglanti + .cip,
   align-items: baseline;
 }
 
-/* Sola yaslı gruplarda grup nedeni ilk düğmenin sol kenarından başlar (kart iç çizgisinin dışına taşmaz).
-   -8 px (içsel genişlikteki gap telafisi) yalnız sağa yaslı sayfa başlığında gerekir. */
-.eylemler > .neden-var > .dugme-neden,
-.satir-ogeler > .neden-var > .dugme-neden {
-  margin-left: 0;
-}
+/* -8 px (içsel genişlikteki gap telafisi) yalnız sağa yaslı sayfa başlığında gerekir. */
 .sayfa-basligi > .eylemler:not(:has(> :not(.dugme-neden-sarici, .dugme))) > .neden-var:not(:only-child) > .dugme-neden {
   margin-left: -8px;
 }
@@ -4267,14 +4258,6 @@ td > .satir-baglanti + .cip,
   margin-left: auto;
   justify-content: flex-end;
 }
-
-
-
-
-/* ==================================================================
-   R3-KABUK (review turu 3 çapası — sonra kaldırılır)
-   Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
-   ================================================================== */
 
 /* Bölüm gezgini şeridi (861–1279 px) tek satır: 861–890 px'te beş bağlantı iki satıra sarıyor, şerit 80 px'e
    çıkıyor ve sabit çapa payı (scroll-padding-top: 120 px = üst çubuk 56 + şerit 45 + 16) kartın üstünü şeridin
@@ -4328,14 +4311,6 @@ td > .satir-baglanti + .cip,
   }
 }
 
-
-
-
-/* ==================================================================
-   R3-TABLO (review turu 3 çapası — sonra kaldırılır)
-   Bu şeridin kuralları yalnız bu başlığın altına, bir sonraki başlıktan önce eklenir.
-   ================================================================== */
-
 /* Tablo hücreleri ilk satırın taban çizgisinde hizalanır (review 3): top hizada hap (.cip/.rozet, 12 px
    yazı + 2 px dolgu) içeren satırda mono/sayı hücreleri (Geçen/toplam, Commit) haplardan 2-4 px yukarıda
    duruyordu. Çok satırlı hücrelerde ilk satırlar yine aynı çizgide; yığın düzeninde (≤640 px) hücre blok
@@ -4387,6 +4362,4 @@ td > .satir-baglanti + .cip,
     max-width: none;
   }
 }
-
-
 
