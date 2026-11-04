@@ -54,6 +54,12 @@ async function sonCevap(p: Locator): Promise<Locator> {
   return kart;
 }
 
+/** Panelin WCAG 2.2 AA denetimi (renk karşıtlığı, hedef boyutu dahil): ihlal 0. */
+async function panelAxe(page: Page, bolge = '[data-testid="asistan-paneli"]') {
+  const axe = await new AxeBuilder({ page }).include(bolge).withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze();
+  expect(axe.violations.map((v) => `${v.id}: ${v.help} — ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
+}
+
 test("asistan paneli: açılır, sekmeler, dürüst rozetler, bağlam çipi rotayla güncellenir, Esc kapatır", async ({ page }) => {
   const hatalar = konsolHatalariniTopla(page);
   await girisYap(page, "analist");
@@ -155,6 +161,11 @@ test('"? Bu ne?": pasif (disabled) düğme seçilir, nedeni sorulur; Esc önce k
   await expect(kart.getByText("Bilgi amaçlıdır; kararı ilgili ekranda verin.")).toBeVisible();
   await expect(p.getByText("Seçili: Merge et")).toHaveCount(0);
   await expect(page.getByText(SAHTE_CANLI)).toHaveCount(0);
+  // Doğrulanmamış kaynak satırı (docs/DEMO-AKISI.md) biçimle işaretli; satır soldurulmaz → kart AA'da ihlalsiz.
+  const dogrulanmamis = kart.locator(".soluk-kaynak");
+  await expect(dogrulanmamis.getByText("doğrulanmadı", { exact: true })).toBeVisible();
+  await dogrulanmamis.scrollIntoViewIfNeeded();
+  await panelAxe(page);
   await page.screenshot({ path: `${EKRAN_DIZINI}/03-bu-ne-cevap.png` });
 
   // "Git": iç rotaya gider; masaüstünde panel açık kalır, sohbet korunur.
@@ -164,6 +175,71 @@ test('"? Bu ne?": pasif (disabled) düğme seçilir, nedeni sorulur; Esc önce k
   await expect(panel(page)).toBeVisible();
   await expect(p.getByText("Bu düğme neden gri?")).toBeVisible();
   expect(hatalar).toEqual([]);
+});
+
+// İki temada (koyu varsayılan, açık) panelin üç durumu: boş sohbet, cevap kartı (doğrulanmamış kaynak satırı
+// dahil), Öneriler sekmesi; dar ekranda (390 px) modal dialog. Token'a çevrilen renklerin kontrast kilidi.
+for (const tema of ["koyu", "acik"] as const) {
+  test(`asistan paneli axe (${tema} tema): boş sohbet, cevap kartı, Öneriler, 390 px modal`, async ({ page }) => {
+    await page.addInitScript((t) => {
+      try {
+        localStorage.setItem("tp-tema-v", "2");
+        localStorage.setItem("tp-tema", t);
+      } catch {
+        /* depolama kapalıysa varsayılan tema */
+      }
+    }, tema);
+    await girisYap(page, "analist");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", tema === "koyu" ? "dark" : "light");
+    await page.goto("/gereksinimler/req-ft-1");
+    const p = await paneliAc(page);
+    await panelAxe(page);
+
+    await p.getByLabel("Sorunuz").fill("Bu düğme neden gri?");
+    await p.getByRole("button", { name: "Asistana sor" }).click();
+    const kart = await sonCevap(p);
+    const dogrulanmamis = kart.locator(".soluk-kaynak");
+    await expect(dogrulanmamis.getByText("doğrulanmadı", { exact: true })).toBeVisible();
+    await dogrulanmamis.scrollIntoViewIfNeeded();
+    await panelAxe(page);
+    await page.screenshot({ path: `${EKRAN_DIZINI}/08-axe-${tema}-cevap.png` });
+
+    await p.getByRole("tab", { name: "Öneriler" }).click();
+    await expect(page.getByTestId("oneriler-sekmesi").getByRole("article").first()).toBeVisible();
+    await panelAxe(page);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const d = page.getByRole("dialog", { name: "Asistan" });
+    await expect(d).toBeVisible();
+    await d.getByRole("tab", { name: "Sohbet" }).click();
+    await expect(d.getByRole("article").last()).toBeVisible();
+    await panelAxe(page);
+    await page.screenshot({ path: `${EKRAN_DIZINI}/08-axe-${tema}-390.png` });
+  });
+}
+
+test("masaüstü panel odağı örtmez (WCAG 2.4.11): ≥1440 px içerik boşaltılır; daha dar ekranda Esc örtülen öğeden paneli kapatır", async ({ page }) => {
+  await girisYap(page, "analist");
+  await page.goto("/gereksinimler/req-ft-1");
+  const p = await paneliAc(page);
+  // 1440 px: içerik sütunu panelin solunda biter.
+  const panelSol = (await p.boundingBox())!.x;
+  const icerik = await page.locator(".icerik").evaluate((el) => el.getBoundingClientRect().right - parseFloat(getComputedStyle(el).paddingRight));
+  expect(icerik).toBeLessThanOrEqual(panelSol);
+
+  // 1280 px: panel bindirme; panelin altındaki odaklı öğede Esc paneli kapatır, odak yerinde kalır.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const ortulen = page.getByRole("link", { name: "PO teyidi" }).first();
+  await ortulen.focus();
+  expect((await ortulen.boundingBox())!.x).toBeGreaterThan((await p.boundingBox())!.x);
+  await page.keyboard.press("Escape");
+  await expect(panel(page)).toHaveCount(0);
+  await expect(ortulen).toBeFocused();
+  // Panelin altında olmayan öğede Esc paneli kapatmaz.
+  await paneliAc(page);
+  await page.getByRole("navigation", { name: "Ana menü" }).getByRole("link").first().focus();
+  await page.keyboard.press("Escape");
+  await expect(panel(page)).toBeVisible();
 });
 
 test("son hata çipi ve sözlük cevabı (S2, mock örneği)", async ({ page }) => {
