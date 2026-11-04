@@ -822,6 +822,19 @@ def bekleyen_isler(
     return toplam, isler
 
 
+def kuyrukta_mi(session: Session, rol: str, tur: str, kimlik: uuid.UUID) -> bool:
+    """Varlık rolün bekleyen işlerinden biri mi (`bekleyen_isler` ile aynı kaynaklar)."""
+    model = MODELLER.get(tur)
+    if model is None:
+        return False
+    for kaynak_tur, sorgu, _neden in _kuyruk_kaynaklari(rol):
+        if kaynak_tur == tur and session.scalar(
+            select(func.count()).select_from(sorgu.where(model.id == kimlik).subquery())
+        ):
+            return True
+    return False
+
+
 # ----------------------------------------------------------------- araçlar
 
 

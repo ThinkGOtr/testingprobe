@@ -276,6 +276,59 @@ def test_silinmis_sohbet_404(client: TestClient, make_user, engine, canli) -> No
     assert tek(engine, "SELECT silindi FROM asistan_sohbet WHERE id = :s", s=s) is True
 
 
+def test_sohbet_silinince_acik_cevaplar_iptal(client: TestClient, make_user, engine, canli) -> None:
+    """Silinen sohbetin bekleyen cevabı iptal edilir, işi kuyruktan düşer: kullanıcı başka
+    sohbette hemen soru sorabilir. Koşan cevap da iptal olur (geçit sonraki turda durur)."""
+    giris(client, make_user("tester"))
+    s = sohbet_ac(client)
+    mid = sor(client, s).json()["mesaj_id"]
+    assert client.delete(f"/assistant/conversations/{s}").status_code == 204
+    assert tek(engine, "SELECT durum FROM asistan_mesaj WHERE id = :m", m=mid) == "iptal"
+    durum = tek(
+        engine,
+        "SELECT j.durum FROM job j JOIN asistan_mesaj m ON m.job_id = j.id WHERE m.id = :m",
+        m=mid,
+    )
+    assert durum == "cancelled"
+    olay = (
+        tek(
+            engine,
+            "SELECT count(*) FROM outbox WHERE tur = 'assistant.answered' "
+            "AND veri->>'mesaj_id' = :m AND veri->>'durum' = 'iptal'",
+            m=mid,
+        )
+        if _outbox_var(engine)
+        else 1
+    )
+    assert olay == 1
+    s2 = sohbet_ac(client)
+    mid2 = sor(client, s2).json()["mesaj_id"]  # 409 bekleyen_var değil
+    with engine.begin() as c:  # worker işi aldı
+        c.execute(text("UPDATE asistan_mesaj SET durum = 'running' WHERE id = :m"), {"m": mid2})
+    assert client.delete(f"/assistant/conversations/{s2}").status_code == 204
+    assert tek(engine, "SELECT durum FROM asistan_mesaj WHERE id = :m", m=mid2) == "iptal"
+
+
+def _outbox_var(engine: Engine) -> bool:
+    return bool(tek(engine, "SELECT to_regclass('public.outbox') IS NOT NULL"))
+
+
+def test_sohbet_olusturma_hiz_siniri(client: TestClient, make_user) -> None:
+    giris(client, make_user("analyst"))
+    for i in range(30):
+        assert client.post("/assistant/conversations", json={}).status_code == 201, i
+    r = client.post("/assistant/conversations", json={})
+    assert r.status_code == 429 and r.json()["kod"] == "hiz_siniri"
+    giris(client, make_user("analyst"))  # kullanıcı başı kova
+    assert client.post("/assistant/conversations", json={}).status_code == 201
+
+
+def test_ortak_conftest_canli_anahtari_siler() -> None:
+    import os
+
+    assert "ANTHROPIC_API_KEY" not in os.environ
+
+
 # ------------------------------------------------------------------ doğrulama
 
 
@@ -405,6 +458,20 @@ def test_ust_mesaj_kurallari(rol: str, client: TestClient, make_user, engine, ca
     # ikinci kez → 409 zaten_derin
     r = sor(client, s, ust_mesaj_id=ust)
     assert r.status_code == 409 and r.json()["kod"] == "zaten_derin"
+
+
+def test_oneri_kipindeki_cevabin_derini_kipi_devralir(
+    client: TestClient, make_user, engine, canli
+) -> None:
+    giris(client, make_user("tester"))
+    s = sohbet_ac(client)
+    r = client.post(f"/assistant/conversations/{s}/messages", json={"kip": "oneri"})
+    ust = r.json()["mesaj_id"]
+    mesaj_bitir(engine, ust, amac="assistant")
+    r = sor(client, s, ust_mesaj_id=ust)
+    assert r.status_code == 202, r.text
+    cocuk = client.get(f"/assistant/messages/{r.json()['mesaj_id']}").json()
+    assert cocuk["kip"] == "oneri" and cocuk["icerik"] == "Bu ekranda başka ne yapabilirim?"
 
 
 def test_amac_null_ust_kabul_ve_assistant_amaci(

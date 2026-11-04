@@ -9,6 +9,7 @@ import { dolar } from "../../lib/format";
 import type { Ton } from "../../lib/etiketler";
 import { uygulamaRotasiMi } from "../../lib/rotalar";
 import { Cip, DisBaglanti } from "../ui";
+import { AiOneriKarti } from "./OneriKarti";
 
 export const GUVEN_TONU: Record<GuvenGosterimi, Ton> = {
   "Kaynakla doğrulandı": "basari",
@@ -237,16 +238,11 @@ export function CevapKarti({ mesaj, baslik, derinIncelenebilir, derinIncele, der
       {(c.oneriler ?? []).length > 0 && (
         <div className="asistan-oneriler">
           <div className="asistan-alt-baslik">Ek öneriler</div>
-          <ul>
+          {/* Öneriler sekmesindeki kartın aynısı: taslak/Jira eylemleri (Taslağı göster/Kopyala) geçmişte de çizilir. */}
+          <ul className="oneri-liste">
             {c.oneriler!.map((o, i) => (
               <li key={i}>
-                <strong>{o.baslik}</strong> <span className="soluk kucuk">AI önerisi · doğrulanmadı</span>
-                <div className="kucuk">{o.neden}</div>
-                {o.eylem.tur === "rota" && o.eylem.rota && uygulamaRotasiMi(o.eylem.rota) && (
-                  <Link to={o.eylem.rota} onClick={onGit}>
-                    Git
-                  </Link>
-                )}
+                <AiOneriKarti oneri={o} onGit={onGit} />
               </li>
             ))}
           </ul>

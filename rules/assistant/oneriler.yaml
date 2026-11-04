@@ -391,7 +391,9 @@ kurallar:
     eylem:
       tur: rota
       rota: /kod/:id
-      yetki: {uc: "POST /scripts/{script_id}/break-verify"}
+      # blocked script'te kırarak doğrulama çalışmaz (yalnız pr_open; codegen/service.py
+      # start_break_verify); anlamlı eylem yeniden üretimdir (research R3).
+      yetki: {uc: "POST /code/generate"}
     aciklama: >-
       Script üretimi doğrulama ya da yerel kontrol adımında takıldı ve insana bırakıldı. Ekrandaki
       sınıfa (locator, derleme, ortam, defect adayı) bakın; "Neden? Sor" ile asistandan ayrıntı

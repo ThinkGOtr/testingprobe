@@ -354,7 +354,9 @@ def test_dogrulama_hatasi_cevabi_dusurmez() -> None:
         SonIslemBaglami(dogrulayici=Patlayan()),
     )
     assert cevap["kaynaklar"][0]["dogrulandi"] is False
+    assert cevap["kaynaklar"][0].get("neden") in (None, "doğrulanamadı")
     assert "gizli" not in str(cevap)
+    assert "RuntimeError" not in str(cevap)  # istisna adı yalnız kayda
 
 
 # ------------------------------------------------------------------ güven tablosu

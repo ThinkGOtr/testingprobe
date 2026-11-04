@@ -120,32 +120,49 @@ HD `/hatalar/:id`, BT `/bug-taslaklari/:id`, KK `/kontrol-kulesi`, K `/kosular`.
 
 | # | `id` | Ekran | Rol | Koşul | Eylem | `yetki.uc` |
 |---|---|---|---|---|---|---|
-| 1 | `gereksinim-bulgu-karari` | GD | analyst | `durum_in:[findings_open]`, `acik_bulgu_sayisi_gte:1` | rota GD `#bulgular` | `POST /findings/{id}/decision` |
-| 2 | `gereksinim-ac-eksik-jira` | GD | analyst | `ac_eksik_var`, `jira_key_var` | jira_yorum `ac-eksik` | — |
-| 3 | `gereksinim-ac-eksik` | GD | analyst | `ac_eksik_var`, `jira_key_yok` | bilgi | — |
-| 4 | `gereksinim-po-bekliyor-jira` | GD | analyst | `durum_in:[pending_po]`, `po_bekleme_saat_gte:24`, `po_kanal_esit:jira` | jira_yorum `po-hatirlatma` | — |
+| 1 | `gereksinim-bulgu-karari` | GD | analyst | `durum_in:[findings_open]`, `acik_bulgu_sayisi_gte:1` | rota GD | `POST /findings/{finding_id}/decision` |
+| 2 | `gereksinim-ac-eksik-jira` | GD | analyst | `ac_eksik_esit:true`, `jira_key_var` | jira_yorum `ac-eksik` | — |
+| 3 | `gereksinim-ac-eksik` | GD | analyst | `ac_eksik_esit:true`, `jira_key_yok` | bilgi | — |
+| 4 | `gereksinim-po-hatirlatma-jira` | GD | analyst | `durum_in:[pending_po]`, `po_bekleme_saat_gte:24`, `po_kanal_esit:jira`, `jira_key_var` | jira_yorum `po-hatirlatma` | — |
 | 5 | `gereksinim-po-bekliyor-portal` | GD | analyst | `durum_in:[pending_po]`, `po_bekleme_saat_gte:24`, `po_kanal_esit:portal` | bilgi | — |
-| 6 | `po-onay-portal` | GD | po | `durum_in:[pending_po]`, `po_kanal_esit:portal` | rota GD `#po-onay` | `POST /requirements/{id}/po-approve` |
-| 7 | `po-onay-jira` | GD | po | `durum_in:[pending_po]`, `po_kanal_esit:jira` | jira_kaydi | — |
-| 8 | `gereksinim-case-uret` | GD | analyst | `durum_in:[po_approved]` | rota GD | `POST /requirements/{id}/generate-cases` |
+| 6 | `gereksinim-po-onayi-portal` | GD | po | `durum_in:[pending_po]`, `po_kanal_esit:portal` | rota GD | `POST /requirements/{req_id}/po-approve` |
+| 7 | `gereksinim-po-onayi-jira` | GD | po | `durum_in:[pending_po]`, `po_kanal_esit:jira`, `jira_key_var` | jira_kaydi | — |
+| 8 | `gereksinim-case-uret` | GD | analyst | `durum_in:[po_approved]`, `ac_eksik_esit:false` (bkz. not) | rota GD | `POST /requirements/{requirement_id}/generate-cases` |
 | 9 | `gereksinim-basarisiz` | GD | analyst | `durum_in:[failed]` | bilgi | — |
-| 10 | `case-inceleme-bekliyor` | CI | analyst | `inceleme_bekleyen_case_gte:1` | rota CI | `POST /cases/{id}/decision` |
-| 11 | `case-yayina-hazir` | CI | analyst | `durum_in:[cases_ready]`, `inceleme_bekleyen_case_lte:0` | rota `/gereksinimler/:id/yayin` | `POST /publish` |
-| 12 | `case-analistte` | CI | tester | `inceleme_bekleyen_case_gte:1` | bilgi | — |
-| 13 | `script-kirarak-dogrula` | SD | engineer | `durum_in:[pr_open]`, `kirarak_dogrulama_in:[not_started, weak, failed]` (bkz. not) | rota SD | `POST /scripts/{id}/break-verify` |
-| 14 | `script-merge-bekliyor` | SD | engineer | `durum_in:[pr_open]`, `kirarak_dogrulama_esit:passed` | rota SD `#pr` | `POST /prs/{number}/merge` |
+| 10 | `case-inceleme-bekliyor` | CI | analyst | `inceleme_bekleyen_case_gte:1` | rota CI | `POST /cases/{case_id}/decision` |
+| 11 | `case-yayina-hazir` | CI | analyst | `durum_in:[cases_ready]`, `inceleme_bekleyen_case_esit:0`, `onayli_case_gte:1` | rota `/gereksinimler/:id/yayin` | `POST /publish` |
+| 12 | `case-inceleme-analistte` | CI | tester | `inceleme_bekleyen_case_gte:1` | bilgi | — |
+| 13 | `script-kirarak-dogrula` | SD | engineer | `durum_in:[pr_open]`, `kirarak_dogrulama_in:[not_started, weak, failed]` (bkz. not) | rota SD | `POST /scripts/{script_id}/break-verify` |
+| 14 | `script-merge-karari` | SD | engineer | `durum_in:[pr_open]`, `kirarak_dogrulama_esit:passed` | rota SD | `POST /prs/{number}/merge` |
 | 15 | `script-insana-dustu` | SD | engineer | `durum_in:[blocked]` | rota SD | **`POST /code/generate`** (research R3) |
-| 16 | `kosu-ortam-hatasi` | KD | engineer | `ci_sonuc_esit:error` | jira_taslak `ortam-hatasi-task` | — |
+| 16 | `kosu-ortam-hatasi-task` | KD | engineer | `ci_sonuc_esit:error` | jira_taslak `ortam-hatasi-task` | — |
 | 17 | `kosu-ortam-hatasi-bilgi` | KD | presenter | `ci_sonuc_esit:error` | bilgi | — |
-| 18 | `hata-onarim-baslat` | HD | engineer | `hata_sinifi_esit:test_maintenance`, `onarim_durumu_esit:none` | rota HD | `POST /failures/{id}/fix` |
-| 19 | `hata-bug-taslagi` | HD | tester | `hata_sinifi_esit:product_defect`, `bug_taslagi_var` | rota `/bug-taslaklari/:id` | `POST /bug-drafts/{id}/decision` |
-| 20 | `hata-flaky-takip` | HD | engineer | `hata_sinifi_esit:flaky`, `flaky_tekrar_gte:3` | jira_taslak `flaky-task` | — |
-| 21 | `hata-test-verisi` | HD | tester | `hata_sinifi_esit:test_data` | jira_taslak `test-verisi-task` | — |
+| 18 | `hata-bakim-onarim` | HD | engineer | `hata_sinifi_esit:test_maintenance`, `onarim_durumu_esit:none` | rota HD | `POST /failures/{failure_id}/fix` |
+| 19 | `hata-bug-taslagi-karari` | HD | tester | `hata_sinifi_esit:product_defect`, `bug_taslagi_var_esit:true` | rota `/bug-taslaklari/:id` | `POST /bug-drafts/{draft_id}/decision` |
+| 20 | `hata-flaky-task` | HD | engineer | `hata_sinifi_esit:flaky`, `flaky_tekrar_gte:3` | jira_taslak `flaky-task` | — |
+| 21 | `hata-test-verisi-task` | HD | tester | `hata_sinifi_esit:test_data` | jira_taslak `test-verisi-task` | — |
 | 22 | `hata-test-verisi-bilgi` | HD | engineer | `hata_sinifi_esit:test_data` | bilgi | — |
-| 23 | `bug-taslak-karari` | BT | tester | `durum_in:[draft]` | rota BT | `POST /bug-drafts/{id}/decision` |
-| 24 | `bug-taslak-bulgudan` | BT | analyst | `durum_in:[draft]`, `bulgu_kaynakli_var` | bilgi | — |
+| 23 | `bug-taslagi-karari` | BT | tester | `durum_in:[draft]` | rota BT | `POST /bug-drafts/{draft_id}/decision` |
+| 24 | `bug-taslagi-bulgudan` | BT | analyst | `durum_in:[draft]`, `bulgu_kaynakli_esit:true` | bilgi | — |
 | 25 | `butce-uyarisi` | KK | presenter | `butce_orani_gte:0.8` | bilgi | — |
 | 26 | `guncel-kosu-yok` | K | presenter | `son_kosu_saat_gte:24` | rota K | `POST /ci/trigger` |
+
+Tablo `rules/assistant/oneriler.yaml` ile birebirdir (kaynak dosyadır; çelişkide dosya geçerlidir).
+Plan v6 §17.3 tablosundan farklar ve nedenleri:
+
+- **Kimlikler** (2026-11-03 Şerit S): 4, 6, 7, 12, 14, 16, 18–21, 23, 24 `id`'leri dosyadaki adlarla
+  yeniden adlandırıldı; rol, ekran ve eylem türü aynı.
+- **Operatör biçimi (davranış aynı):** bool olgular `_var` yerine `_esit:true` ile yazılır (2, 3, 19,
+  24) — `_var` "değer tanımlı" demektir, `false` da tanımlı sayılır; `inceleme_bekleyen_case_lte:0`
+  yerine `_esit:0` (11); 4 ve 7'deki `jira_key_var` eylemin (jira_yorum/jira_kaydi) zaten istediği
+  ön koşulun açık yazımıdır. plandaki `#bulgular`/`#po-onay`/`#pr` çapaları dosyada yok
+  (eylem `rota`'sı yalnız rota kalıbıdır; `lib/rotalar.ts` ile eşleşir).
+- **Davranış daraltmaları (K10 ürün sahibi onayı gerekir, açık):**
+  - Kural 8 `ac_eksik_esit:false`: AC eksik bir `po_approved` gereksinimde analist "case üret"
+    önerisini **görmez**; yerine kural 2/3 (AC eksik) görünür. Gerekçe: eksik AC ile üretilen case'ler
+    incelemede geri döner.
+  - Kural 11 `onayli_case_gte:1`: hiç onaylı case yokken (hepsi reddedilmiş) "yayına hazır" denmez.
+- **Kural 15 `yetki.uc`:** `POST /code/generate` (research R3); rol (engineer) değişmedi.
 
 **Not (kural 13):** "`kirarak_dogrulama ∈ {not_started, weak, failed}`" kapalı operatör kümesinde
 `_in` yalnız `durum` içindir; kural 13 üç ayrı kuralla değil, `kirarak_dogrulama_in: [not_started,

@@ -39,7 +39,7 @@ export function KontrolKulesi() {
   useOlay(sessiz, ["ci.status", "failure.classified", "case.generated", "bug.published", "script.updated"]);
 
   if (v.yukleniyor && !v.veri) return <Yukleniyor />;
-  if (v.hata && !v.veri) return <HataKutusu hata={v.hata} yenile={() => void v.yenile()} />;
+  if (v.hata && !v.veri) return <HataKutusu hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />;
   const k = v.veri;
   if (!k) return null;
   const ai = k.ai_katkisi;

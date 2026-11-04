@@ -7,12 +7,15 @@
 #   3. tp_app audit_event'i UPDATE/DELETE/TRUNCATE edemez
 #   4. Depoda sır yok (gitleaks; git geçmişi + commit edilmemiş izlenen/izlenmeyen dosyalar)
 #   5. demoapp_ro yalnızca izinli tablo/kolonları okur; yazamaz, parola özeti ve sipariş verisi kapalı
-#   6. Model anahtarı değişkeni yalnızca core-worker'da (anayasa); core-api'de tanımlı değil
+#   6. Model anahtarı değişkeni yalnızca core-worker'da (anayasa); core-api'de tanımlı değil.
+#      Asistanın `ci_log` okuma token'ı (GITHUB_ACTIONS_READ_TOKEN, contracts/env.md) da aynı sınıfta
 #   7. playwright-mcp (ajan tarayıcısı) core-api, jira-sim, postgres, demo-app-api (/test/*),
 #      test-runner ve internete erişemez; demo-app-web'e erişir; core-worker MCP'ye mcp-net
 #      üzerinden erişir
 #   8. Yazma yetkili dış sistem kimlikleri (Jira/Xray/GitHub) yalnızca core-worker'da;
-#      DEMOAPP_TEST_TOKEN yalnızca demo-app-api ve test-runner'da
+#      DEMOAPP_TEST_TOKEN yalnızca demo-app-api ve test-runner'da; gerçek Jira kipinde okuma hesabı
+#      (JIRA_READ_*) ADD_COMMENTS/CREATE_ISSUES/EDIT_ISSUES iznini taşımaz (mypermissions;
+#      AI-ASISTAN-PLANI §5.6, R14 — scripts/jira-okuma-izni.py; simülatörde atlanır)
 #   9. Merge kapısı (checks/<sha>.json) ayrı tp_checks volume'ünde: yalnızca toolchain-worker yazar,
 #      test-runner bağlamaz ve yazdığı kanarya kapıda görünmez; toolchain-worker belirteç ister,
 #      test-runner'da belirteç yok (toolchain/security/checks-isolation.sh)
@@ -259,19 +262,20 @@ check_model_key() {
   else
     ok=0; info "core-worker: ANTHROPIC_API_KEY tanımlı değil (beklenen: tanımlı)"
   fi
-  # Çalışma alanı kimliği de anahtarla aynı sınıftadır (sır; yalnızca core-worker).
+  # Çalışma alanı kimliği ve asistanın CI log okuma token'ı da anahtarla aynı sınıftadır
+  # (sır; yalnızca core-worker). Token core-worker'da boş olabilir (mevcut okuma kimliği kullanılır).
   for svc in core-api review-portal jira-sim toolchain-worker test-runner playwright-mcp demo-app-api demo-app-web; do
     svc_running "$svc" || continue
-    for var in ANTHROPIC_API_KEY ANTHROPIC_WORKSPACE_ID; do
+    for var in ANTHROPIC_API_KEY ANTHROPIC_WORKSPACE_ID GITHUB_ACTIONS_READ_TOKEN; do
       if compose exec -T "$svc" sh -c "env | grep -q '^${var}='" 2>/dev/null; then
         ok=0; info "$svc: $var tanımlı — olmamalı"
       fi
     done
   done
   if [ "$ok" -eq 1 ]; then
-    pass "6/anahtar: model anahtarı değişkeni yalnızca core-worker'da"
+    pass "6/anahtar: model anahtarı ve asistan CI okuma token'ı değişkeni yalnızca core-worker'da"
   else
-    fail "6/anahtar: model anahtarı core-worker dışında tanımlı"
+    fail "6/anahtar: model anahtarı ya da GITHUB_ACTIONS_READ_TOKEN core-worker dışında tanımlı"
   fi
 }
 
@@ -355,8 +359,19 @@ check_write_creds() {
       ok=0; info "${svc}: DEMOAPP_TEST_TOKEN tanımlı — olmamalı"
     fi
   done
+  # Jira okuma hesabı Jira'da yazma izni taşımaz (asistanın jira_issue aracı bu kimliği kullanır).
+  # Betik yalnız durum + izin adı/hata sınıfı yazar; kimlik ve adres yazdırılmaz.
+  local izin
+  izin="$(compose exec -T core-worker python - < "$TP_REPO_ROOT/scripts/jira-okuma-izni.py" 2>/dev/null | tail -n 1 || true)"
+  case "$izin" in
+    "ATLA simulator") info "Jira okuma hesabı izni: simülatör, atlandı" ;;
+    TAMAM) info "Jira okuma hesabı: ADD_COMMENTS/CREATE_ISSUES/EDIT_ISSUES yok (beklenen)" ;;
+    "YAZMA "*) ok=0; info "Jira okuma hesabı yazma izni taşıyor: ${izin#YAZMA } — olmamalı" ;;
+    "HATA "*) ok=0; info "Jira okuma hesabı izni doğrulanamadı: ${izin#HATA }" ;;
+    *) ok=0; info "Jira okuma hesabı izni doğrulanamadı: betik sonuç vermedi" ;;
+  esac
   if [ "$ok" -eq 1 ]; then
-    pass "8/yazma: Jira/Xray/GitHub yazma kimlikleri yalnızca core-worker'da; demo test belirteci yalnızca demo-app-api + test-runner'da"
+    pass "8/yazma: Jira/Xray/GitHub yazma kimlikleri yalnızca core-worker'da; Jira okuma hesabında yazma izni yok; demo test belirteci yalnızca demo-app-api + test-runner'da"
   else
     fail "8/yazma: yazma kimlikleri core-worker dışında tanımlı"
   fi

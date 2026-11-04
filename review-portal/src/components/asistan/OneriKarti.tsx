@@ -5,7 +5,7 @@
 // kendiliğinden uygulanmaz; Jira'ya yazılmaz, taslağı kullanıcı kopyalar ve kaydı kendisi açar.
 import { useId, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { JIRA_ANAHTARI, oneriApi, oneriHataMetni, type AsistanOnerisi, type KuralOnerisi, type OneriEylemi } from "../../api/asistan";
+import { JIRA_ANAHTARI, oneriApi, oneriHataMetni, type AsistanOnerisi, type KuralOnerisi, type OneriEylemi, type OneriGeriBildirimDegeri } from "../../api/asistan";
 import { uygulamaRotasiMi } from "../../lib/rotalar";
 import { useBildirim } from "../Bildirim";
 import { acSekme } from "./kontrol";
@@ -219,7 +219,7 @@ export interface OneriKartiOzellikleri {
   vurgulu?: boolean;
   onGit?: () => void;
   /** Geri bildirim kaydedilince (liste yeniden okunur; "Gizle" kartı hemen kaldırır). */
-  onGeriBildirim: (kuralId: string, deger: -1 | 2) => void;
+  onGeriBildirim: (kuralId: string, deger: OneriGeriBildirimDegeri) => void;
 }
 
 export function OneriKarti({ oneri, modelAcik, varlikId, vurgulu, onGit, onGeriBildirim }: OneriKartiOzellikleri) {
@@ -229,13 +229,14 @@ export function OneriKarti({ oneri, modelAcik, varlikId, vurgulu, onGit, onGeriB
   const [anahtar, setAnahtar] = useState("");
   const [hata, setHata] = useState<string | null>(null);
   const [gonderiyor, setGonderiyor] = useState(false);
+  const [faydali, setFaydali] = useState(false);
   const baslikId = useId();
   const alanId = useId();
   const jiraEylemi = JIRA_EYLEMLERI.has(oneri.eylem.tur);
 
   const sor = (soru: string) => acSekme("sohbet", { oneriKuralId: oneri.kural_id, soru });
 
-  const geriBildir = async (deger: -1 | 2) => {
+  const geriBildir = async (deger: OneriGeriBildirimDegeri) => {
     const jira = anahtar.trim().toUpperCase();
     if (deger === 2 && jira && !JIRA_ANAHTARI.test(jira)) {
       setHata("Jira anahtarı biçimi geçersiz (ör. TPD-12).");
@@ -249,7 +250,10 @@ export function OneriKarti({ oneri, modelAcik, varlikId, vurgulu, onGit, onGeriB
         ...(varlikId ? { varlik_id: varlikId } : {}),
         ...(deger === 2 && jira ? { jira_anahtari: jira } : {}),
       });
-      bildir(deger === 2 ? "Kaydedildi: bu öneri bu durumda herkes için kapandı." : "Öneri sizin için gizlendi.");
+      bildir(
+        deger === 2 ? "Kaydedildi: bu öneri bu durumda herkes için kapandı." : deger === 1 ? "Teşekkürler: faydalı olarak işaretlendi." : "Öneri sizin için gizlendi.",
+      );
+      if (deger === 1) setFaydali(true);
       setYaptimAcik(false);
       onGeriBildirim(oneri.kural_id, deger);
     } catch (e) {
@@ -281,6 +285,16 @@ export function OneriKarti({ oneri, modelAcik, varlikId, vurgulu, onGit, onGeriB
             {aciklamaAcik ? "Açıklamayı gizle" : "Açıklamayı göster"}
           </button>
         )}
+        <button
+          type="button"
+          className="dugme dugme-hayalet dugme-kucuk"
+          aria-pressed={faydali}
+          onClick={() => void geriBildir(1)}
+          disabled={gonderiyor || faydali}
+          title="Bu öneri işe yaradı (kart kalır; Kontrol Kulesi ölçümüne girer)"
+        >
+          Faydalı
+        </button>
         <button type="button" className="dugme dugme-hayalet dugme-kucuk" aria-expanded={yaptimAcik} onClick={() => setYaptimAcik((a) => !a)} disabled={gonderiyor}>
           Yaptım
         </button>

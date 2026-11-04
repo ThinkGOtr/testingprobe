@@ -30,7 +30,6 @@
   background: var(--surface-3);
   border-color: var(--border-strong);
   color: var(--muted);
-  cursor: not-allowed;
 }
 
 .asistan-panel {

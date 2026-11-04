@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import type { BugTaslagi, BugTaslakIcerik, MukerrerAday, MukerrerArama } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
-import { BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { AsistanaSorDugmesi, BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { KisiAdi } from "../components/KisiAdi";
 import { BUG_DURUMU, SEVERITY, type Ton } from "../lib/etiketler";
@@ -107,7 +107,7 @@ export function BugTaslaklari() {
         {v.yukleniyor && !v.veri ? (
           <Yukleniyor />
         ) : v.hata && !v.veri ? (
-          <HataKutusu hata={v.hata} yenile={() => void v.yenile()} />
+          <HataKutusu hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />
         ) : (v.veri ?? []).length === 0 ? (
           <BosDurum baslik="Bug taslağı yok." />
         ) : (
@@ -396,7 +396,7 @@ export function BugTaslakDetay() {
   }, [v.veri]);
 
   if (v.yukleniyor && !v.veri) return <Yukleniyor />;
-  if (v.hata && !v.veri) return <HataKutusu hata={v.hata} yenile={() => void v.yenile()} />;
+  if (v.hata && !v.veri) return <HataKutusu hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />;
   const b = v.veri;
   if (!b || !icerik) return null;
   const taslak = b.durum === "draft";
@@ -717,7 +717,8 @@ export function BugTaslakDetay() {
           )}
           {(uyari || islem.hata) && (
             <p className="alan-hata" role="alert">
-              {uyari ?? (islem.hata ? semaHatasiTurkce(islem.hata) : null)}
+              {uyari ?? (islem.hata ? semaHatasiTurkce(islem.hata) : null)}{" "}
+              {!uyari && islem.hata && <AsistanaSorDugmesi hata={semaHatasiTurkce(islem.hata)} kaynak={islem.hataNesnesi} />}
             </p>
           )}
           {!taslak && <p className="kucuk soluk">Bu taslak için karar verildi; içerik artık değiştirilemez.</p>}

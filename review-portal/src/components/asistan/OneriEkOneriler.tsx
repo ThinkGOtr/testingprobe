@@ -5,9 +5,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { asistanApi, baglamiSigdir, bekliyor, gonderimHataMetni, mesajHataMetni, type AsistanMesaji } from "../../api/asistan";
 import { useBaglantiDurumu, useOlay } from "../../api/events";
+import { ApiError } from "../../api/http";
 import type { EkranBaglami } from "../../lib/ekranBaglami";
 import { AiOneriKarti } from "./OneriKarti";
 import { oneriAyar } from "./OneriVerisi";
+
+/**
+ * "Ek öneri" sohbeti ekran/varlık başına bir kez açılır ve oturum boyunca yeniden kullanılır
+ * (her tıklamada yeni sohbet geçmiş listesini doldurmasın).
+ */
+const ekSohbetler = new Map<string, string>();
+
+/** Testler için. */
+export function ekOneriSohbetleriniSifirla(): void {
+  ekSohbetler.clear();
+}
 
 type Durum =
   | { tur: "bos" }
@@ -62,11 +74,33 @@ export function OneriEkOneriler({ ekran, onGit }: { ekran: EkranBaglami; onGit?:
 
   const baslat = async () => {
     setDurum({ tur: "gonderiliyor" });
+    const anahtar = `${ekran.rota_kalibi}|${ekran.varlik?.id ?? ""}`;
+    const baglam: Record<string, unknown> = { rota_kalibi: ekran.rota_kalibi, ekran: ekran.ekran };
+    if (ekran.varlik) baglam.varlik = { tur: ekran.varlik.tur, id: ekran.varlik.id, anahtar: ekran.varlik.anahtar ?? null };
+    const gonder = (sohbetId: string) => asistanApi.soruGonder(sohbetId, { soru: "", kip: "oneri", baglam: baglamiSigdir(baglam) });
     try {
-      const s = await asistanApi.sohbetOlustur("Ek öneri");
-      const baglam: Record<string, unknown> = { rota_kalibi: ekran.rota_kalibi, ekran: ekran.ekran };
-      if (ekran.varlik) baglam.varlik = { tur: ekran.varlik.tur, id: ekran.varlik.id, anahtar: ekran.varlik.anahtar ?? null };
-      const { mesaj_id } = await asistanApi.soruGonder(s.id, { soru: "", kip: "oneri", baglam: baglamiSigdir(baglam) });
+      let mesaj_id: string | null = null;
+      const mevcut = ekSohbetler.get(anahtar);
+      if (mevcut) {
+        try {
+          mesaj_id = (await gonder(mevcut)).mesaj_id;
+        } catch (e) {
+          // Sohbet silinmiş (geçmişten): yenisi açılır; başka hata olduğu gibi gösterilir.
+          if (!(e instanceof ApiError && e.status === 404)) throw e;
+          ekSohbetler.delete(anahtar);
+        }
+      }
+      if (!mesaj_id) {
+        const s = await asistanApi.sohbetOlustur("Ek öneri");
+        try {
+          mesaj_id = (await gonder(s.id)).mesaj_id;
+        } catch (e) {
+          // Soru kabul edilmedi (ör. 409 bekleyen_var): boş sohbet sahipsiz kalmasın.
+          void asistanApi.sohbetSil(s.id).catch(() => undefined);
+          throw e;
+        }
+        ekSohbetler.set(anahtar, s.id);
+      }
       if (!bagli.current) return;
       setDurum({ tur: "bekliyor", mesajId: mesaj_id });
       // Olay gönderimden önce geldiyse kaçmasın.

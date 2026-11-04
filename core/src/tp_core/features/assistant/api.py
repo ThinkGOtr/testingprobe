@@ -42,7 +42,7 @@ from sqlalchemy.orm import Session
 from tp_core.api.errors import KodluHata
 from tp_core.auth.deps import CurrentUser, DbSession
 from tp_core.events import publish_tx
-from tp_core.features.assistant import budget
+from tp_core.features.assistant import budget, hiz
 from tp_core.features.assistant.schemas import (
     ONERI_SORUSU,
     MesajGeriBildirim,
@@ -233,6 +233,11 @@ def sohbet_olustur(
     baslik = (govde.baslik if govde else None) or None
     if baslik:
         _sir_kontrol(baslik)
+    # Sayaç ayrı, hemen commit edilen bağlantıda (öneri uçlarındaki gibi).
+    with session.get_bind().begin() as conn:
+        izinli = hiz.kova_kontrol(conn, hiz.KOVA_SOHBET_OLUSTUR, kullanici_id=user.id)
+    if not izinli:
+        raise KodluHata(429, "hiz_siniri", "Çok sık sohbet açıldı; biraz sonra yeniden deneyin.")
     s = AsistanSohbet(kullanici_id=user.id, baslik=baslik)
     session.add(s)
     session.flush()
@@ -242,7 +247,22 @@ def sohbet_olustur(
 
 @router.delete("/assistant/conversations/{sohbet_id}", status_code=204)
 def sohbet_sil(sohbet_id: uuid.UUID, session: DbSession, user: CurrentUser) -> Response:
+    """Yumuşak silme. Sohbetin açık (`pending`/`running`) cevapları aynı transaction'da
+    iptal edilir: silinen sohbetin mesajına iptal ucu 404 döndüğünden kullanıcı onları başka
+    yoldan durduramaz (koşan iş geçitte `should_stop` ile sonraki turda durur)."""
     s = _sohbet(session, sohbet_id, user)
+    acik = (
+        session.query(AsistanMesaj)
+        .filter(
+            AsistanMesaj.sohbet_id == s.id,
+            AsistanMesaj.rol == "assistant",
+            AsistanMesaj.durum.in_(("pending", "running")),
+        )
+        .with_for_update()
+        .all()
+    )
+    for m in acik:
+        _iptal_et(session, m, user)
     s.silindi = True
     s.silinme = datetime.now(UTC)
     return Response(status_code=204)
@@ -433,7 +453,7 @@ def soru_gonder(
     sira = _sonraki_sira(session, s.id)
     if ust is not None:
         kok = _kok_soru(session, ust)
-        # Soru ve amaç sunucuda üst mesajdan türetilir; istemcinin `soru`'su yok sayılır.
+        # Soru, amaç ve kip sunucuda üst mesajdan türetilir; istemcinin `soru`'su yok sayılır.
         cevap = AsistanMesaj(
             id=uuid.uuid4(),
             sohbet_id=s.id,
@@ -445,7 +465,9 @@ def soru_gonder(
             baglam=kok.baglam if kok is not None else ust.baglam,
             durum="pending",
             amac="assistant_deep" if derin_amac else "assistant",
-            kip="soru",
+            # Kip üstten devralınır: öneri kipindeki cevabın derini de kural önerilerini
+            # modele verir ve `oneriler` sözleşmesini korur.
+            kip=ust.kip,
             tetik="kullanici",
         )
         _ekle(session, cevap)
@@ -494,17 +516,8 @@ def mesaj(mesaj_id: uuid.UUID, session: DbSession, user: CurrentUser) -> dict[st
     return mesaj_ozeti(_mesaj(session, mesaj_id, user))
 
 
-@router.post("/assistant/messages/{mesaj_id}/cancel")
-def iptal(mesaj_id: uuid.UUID, session: DbSession, user: CurrentUser) -> dict[str, Any]:
-    """`pending` → `iptal` (iş kuyruktan düşer, ücret yok); `running` → `iptal` (worker tur
-    başında durur, harcanan yazılır; süren iş bitene kadar sayaçlarda kalır). İdempotent."""
-    m = _mesaj(session, mesaj_id, user, kilitle=True)
-    if m.rol != "assistant":
-        raise KodluHata(422, "gecersiz_istek", "Yalnız asistan cevabı iptal edilebilir.")
-    if m.durum == "iptal":
-        return mesaj_ozeti(m)
-    if m.durum not in ("pending", "running"):
-        raise HTTPException(409, "Cevap zaten tamamlandı; iptal edilemez.")
+def _iptal_et(session: Session, m: AsistanMesaj, user: Principal) -> None:
+    """Kilitli `pending`/`running` cevabı `iptal` yapar; `pending` işi kuyruktan düşer."""
     onceki = m.durum
     m.durum = "iptal"
     m.tamamlanma = datetime.now(UTC)
@@ -516,6 +529,20 @@ def iptal(mesaj_id: uuid.UUID, session: DbSession, user: CurrentUser) -> dict[st
         EV_ANSWERED,
         {"mesaj_id": str(m.id), "kullanici_id": str(user.id), "durum": "iptal"},
     )
+
+
+@router.post("/assistant/messages/{mesaj_id}/cancel")
+def iptal(mesaj_id: uuid.UUID, session: DbSession, user: CurrentUser) -> dict[str, Any]:
+    """`pending` → `iptal` (iş kuyruktan düşer, ücret yok); `running` → `iptal` (worker tur
+    başında durur, harcanan yazılır; süren iş bitene kadar sayaçlarda kalır). İdempotent."""
+    m = _mesaj(session, mesaj_id, user, kilitle=True)
+    if m.rol != "assistant":
+        raise KodluHata(422, "gecersiz_istek", "Yalnız asistan cevabı iptal edilebilir.")
+    if m.durum == "iptal":
+        return mesaj_ozeti(m)
+    if m.durum not in ("pending", "running"):
+        raise HTTPException(409, "Cevap zaten tamamlandı; iptal edilemez.")
+    _iptal_et(session, m, user)
     return mesaj_ozeti(m)
 
 

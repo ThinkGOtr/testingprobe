@@ -20,6 +20,7 @@ import { acSekme, asistanKontrolSifirla } from "./kontrol";
 import { aiMetniTemizle, aiOnerisiKarta, goreliZaman, taslakMetni } from "./OneriKarti";
 import { OneriDugmesi } from "./OneriDugmesi";
 import { OnerilerSekmesi } from "./OnerilerSekmesi";
+import { ekOneriSohbetleriniSifirla } from "./OneriEkOneriler";
 import { oneriAyar, oneriDeposunuSifirla } from "./OneriVerisi";
 import { sohbetAyar } from "./SohbetSekmesi";
 
@@ -73,6 +74,7 @@ function liste(d: Partial<OneriListesi>): OneriListesi {
 beforeEach(() => {
   asistanKontrolSifirla();
   oneriDeposunuSifirla();
+  ekOneriSohbetleriniSifirla();
   asistanMockAyarla({ otomatikIsle: false });
   Object.assign(oneriAyar, { olayGecikmeMs: 5000, yoklamaMs: 30 });
   Object.assign(sohbetAyar, { yoklamaMs: 30 });
@@ -183,27 +185,38 @@ describe("Öneri düğmesi", () => {
   });
 
   it("açık varlığın olayları 5 sn penceresinde tek yenileme; başka varlığın olayı yok sayılır", async () => {
-    await oturumAc("analist");
-    Object.assign(oneriAyar, { olayGecikmeMs: 60 });
-    const spy = vi.spyOn(oneriApi, "liste");
-    uygulama("/gereksinimler/req-ft-1");
-    await dugme();
-    await waitFor(() => expect(spy).toHaveBeenCalled());
-    const once = spy.mock.calls.length;
-    act(() => {
-      mockOlayYayinla({ type: "requirement.updated", id: "req-tpd-3", data: { requirement_id: "req-tpd-3" } });
-      mockOlayYayinla({ type: "assistant.answered", id: "m-1", data: { mesaj_id: "m-1" } });
-    });
-    await new Promise((r) => setTimeout(r, 120));
-    expect(spy.mock.calls.length).toBe(once);
-    act(() => {
-      mockOlayYayinla({ type: "requirement.updated", id: "req-ft-1", data: { requirement_id: "req-ft-1" } });
-      mockOlayYayinla({ type: "finding.updated", id: "fnd-1", data: { requirement_id: "req-ft-1" } });
-      mockOlayYayinla({ type: "requirement.updated", id: "req-ft-1", data: { requirement_id: "req-ft-1" } });
-    });
-    await waitFor(() => expect(spy.mock.calls.length).toBe(once + 1));
-    await new Promise((r) => setTimeout(r, 120));
-    expect(spy.mock.calls.length).toBe(once + 1);
+    // Sahte saat: pencere kesin ilerletilir, negatif doğrulama gerçek beklemeye dayanmaz.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await oturumAc("analist");
+      const pencere = oneriAyar.olayGecikmeMs;
+      const ilerlet = (ms: number) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
+      const spy = vi.spyOn(oneriApi, "liste");
+      uygulama("/gereksinimler/req-ft-1");
+      await dugme();
+      await waitFor(() => expect(spy).toHaveBeenCalled());
+      await ilerlet(10);
+      const once = spy.mock.calls.length;
+      act(() => {
+        mockOlayYayinla({ type: "requirement.updated", id: "req-tpd-3", data: { requirement_id: "req-tpd-3" } });
+        mockOlayYayinla({ type: "assistant.answered", id: "m-1", data: { mesaj_id: "m-1" } });
+      });
+      await ilerlet(pencere + 100);
+      expect(spy.mock.calls.length).toBe(once);
+      act(() => {
+        mockOlayYayinla({ type: "requirement.updated", id: "req-ft-1", data: { requirement_id: "req-ft-1" } });
+        mockOlayYayinla({ type: "finding.updated", id: "fnd-1", data: { requirement_id: "req-ft-1" } });
+        mockOlayYayinla({ type: "requirement.updated", id: "req-ft-1", data: { requirement_id: "req-ft-1" } });
+      });
+      await ilerlet(pencere - 100);
+      expect(spy.mock.calls.length).toBe(once);
+      await ilerlet(200);
+      await waitFor(() => expect(spy.mock.calls.length).toBe(once + 1));
+      await ilerlet(pencere * 2);
+      expect(spy.mock.calls.length).toBe(once + 1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("429: önceki değer yokken sekmede kısa not, değer varken sessiz", async () => {
@@ -357,6 +370,40 @@ describe("Öneriler sekmesi", () => {
     act(() => asistanMockIsle(id));
     expect(await s.findByText("AI önerisi · doğrulanmadı")).toBeInTheDocument();
     expect(s.getByRole("heading", { name: "Kapsam bulgularını gözden geçirin" })).toBeInTheDocument();
+  });
+
+  it('"Başka ne yapabilirim?" ekran/varlık başına tek "Ek öneri" sohbeti açar (tekrar tıklamada yeniden kullanır)', async () => {
+    await oturumAc("analist");
+    const olustur = vi.spyOn(asistanApi, "sohbetOlustur");
+    const gonder = vi.spyOn(asistanApi, "soruGonder");
+    const u = userEvent.setup();
+    for (let tur = 0; tur < 2; tur++) {
+      // Her turda bileşen yeniden bağlanır (panel kapatılıp açılmış gibi); sohbet eşlemi modülde kalır.
+      const r = uygulama("/gereksinimler/req-ft-1");
+      const s = await oneriPaneliniAc(u);
+      await u.click(s.getByRole("button", { name: "Başka ne yapabilirim?" }));
+      await waitFor(() => expect(gonder).toHaveBeenCalledTimes(tur + 1));
+      act(() => asistanMockIsle(asistanMockBekleyenler().at(-1)!));
+      await s.findByText("AI önerisi · doğrulanmadı");
+      r.unmount();
+      asistanKontrolSifirla();
+    }
+    expect(olustur).toHaveBeenCalledTimes(1);
+    expect(olustur).toHaveBeenCalledWith("Ek öneri");
+    expect(gonder.mock.calls[1][0]).toBe(gonder.mock.calls[0][0]);
+  });
+
+  it('"Faydalı" 1 geri bildirimi yazar; kart kalır ve düğme basılı olur', async () => {
+    await oturumAc("analist");
+    const gb = vi.spyOn(oneriApi, "geriBildirim");
+    const u = userEvent.setup();
+    uygulama("/gereksinimler/req-ft-1");
+    const s = await oneriPaneliniAc(u);
+    await u.click(s.getByRole("button", { name: "Faydalı" }));
+    await waitFor(() => expect(gb).toHaveBeenCalledWith("gereksinim-bulgu-karari", { deger: 1, varlik_id: "req-ft-1" }));
+    expect(oneriMockGeriBildirimleri()[0]).toMatchObject({ deger: 1, varlik_id: "req-ft-1" });
+    expect(await s.findByRole("button", { name: "Faydalı" })).toHaveAttribute("aria-pressed", "true");
+    expect(s.getByRole("heading", { name: /bulgu/i })).toBeInTheDocument();
   });
 
   it('"Gizle" -1 geri bildirimi yazar ve kartı kaldırır (yalnız o kullanıcı)', async () => {

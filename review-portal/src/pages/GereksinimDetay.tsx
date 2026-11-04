@@ -57,7 +57,7 @@ export function GereksinimDetay() {
   useOlay(sessiz, ["requirement.updated", "finding.updated", "case.generated"], id);
 
   if (detay.yukleniyor && !detay.veri) return <Yukleniyor />;
-  if (detay.hata && !detay.veri) return <HataKutusu hata={detay.hata} yenile={() => void detay.yenile()} />;
+  if (detay.hata && !detay.veri) return <HataKutusu hata={detay.hata} kaynak={detay.hataNesnesi} yenile={() => void detay.yenile()} />;
   const g = detay.veri;
   if (!g) return null;
   const d = g.ac_missing && g.durum === "new" ? AC_EKSIK : gereksinimDurumu(g.durum);
@@ -168,7 +168,7 @@ export function GereksinimDetay() {
           </>
         }
       />
-      {islem.hata && <HataKutusu hata={islem.hata} />}
+      {islem.hata && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
 
       <Kart>
         <AkisAdimlari adim={guncelAdim(g, kanit.veri ?? null, akisAdimi(g.durum, g.adim ?? hataAdimi(g.son_hata?.job_tur)))} kaynak={g.kaynak} />
@@ -386,7 +386,7 @@ export function GereksinimDetay() {
         {bulgular.yukleniyor && !bulgular.veri ? (
           <Yukleniyor />
         ) : bulgular.hata && !bulgular.veri ? (
-          <HataKutusu hata={bulgular.hata} yenile={() => void bulgular.yenile()} />
+          <HataKutusu hata={bulgular.hata} kaynak={bulgular.hataNesnesi} yenile={() => void bulgular.yenile()} />
         ) : turdakiBulgular.length === 0 ? (
           <div data-testid="bulgu-bos">
             {g.durum === "in_review" ? <Yukleniyor metin={bosBulgu} /> : <BosDurum baslik={bosBulgu} />}
@@ -539,7 +539,7 @@ function PoKarti({ g, yenile }: { g: Detay; yenile: () => void }) {
               PO olarak onayla
             </IslemDugmesi>
           )}
-          {islem.hata && <HataKutusu hata={islem.hata} />}
+          {islem.hata && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
         </>
       ) : uretimHatasiMi(g) ? (
         <p className="soluk" data-testid="po-uretim-hatasi">

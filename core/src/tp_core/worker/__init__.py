@@ -27,7 +27,8 @@ ek şerit yoksa `_genel_haric` None kalır (eski davranış). Ayrı bir zamanlay
 `KALP_ATISI_ARALIGI_S` (30 sn) `asistan_durum`'u yazar (asistan işi şeridi 120 sn'ye kadar bloke
 edebildiği için şerit döngüsünden bağımsız). Asistan şeridi her turda (en sık
 `UZLASTIRMA_ARALIGI_S`'de bir) işi bitmiş ya da olmayan açık mesajları `error/zaman_asimi` yapar.
-`TP_WORKER_ASISTAN_SERIT=0` iken şerit ve kalp atışı yoktur → asistan `worker_yok` görünür.
+`TP_WORKER_ASISTAN_SERIT=0` iken şerit ve kalp atışı yoktur → asistan `worker_yok` görünür;
+asistan türleri yine genel şeridin `haric`'indedir (genel şeritte zaman aşımı süreci kapatırdı).
 
 Bir iş `zaman_asimi_s` içinde bitmezse iş `retry`/`failed` yazılır ve süreç
 `ZAMAN_ASIMI_CIKIS_KODU` ile çıkar (asılı iş parçacığı öldürülemez; compose yeniden başlatır).
@@ -311,10 +312,20 @@ def run(dur: threading.Event, aralik: float = 1.0, *, uzun: Collection[str] | No
     global _genel_haric
     log.info("worker başladı; işleyiciler: %s", ", ".join(sorted(REGISTRY)))
     asistan = asistan_serit_turleri()
-    uzun_k = frozenset(uzun or ()) - asistan
+    # Şerit kapalıyken de asistan türleri genel şeritte koşmaz: orada zaman aşımı tüm süreci
+    # kapatırdı. Bekleyen asistan işleri kuyrukta kalır (asistan `worker_yok` görünür).
+    tum_asistan = serit_turleri(ASISTAN_SERIT)
+    kapali_asistan = tum_asistan - asistan
+    uzun_k = frozenset(uzun or ()) - tum_asistan
     if not uzun_k and not asistan:
-        return _dongu(dur, aralik, lambda: tek_tur(), "genel")
-    _genel_haric = sorted(uzun_k | asistan)
+        if not kapali_asistan:
+            return _dongu(dur, aralik, lambda: tek_tur(), "genel")
+        _genel_haric = sorted(kapali_asistan)
+        try:
+            return _dongu(dur, aralik, lambda: tek_tur(), "genel")
+        finally:
+            _genel_haric = None
+    _genel_haric = sorted(uzun_k | tum_asistan)
     kodlar: list[int] = []
     iplikler: list[threading.Thread] = []
 

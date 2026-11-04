@@ -1112,6 +1112,35 @@ def _bastirmalar(
 # ------------------------------------------------------------------ öneriler
 
 
+# Öneri varlık türü → `probe_my_queue` kuyruk türü (yalnız adı farklı olan).
+_KUYRUK_TURU: Final = {"test_case": "case"}
+
+
+def diger_ekranlar(session: Session, kullanici: Principal, ekran: Ekran) -> dict[str, Any]:
+    """§17.3 `*` özet: "Diğer ekranlarda sizi bekleyen N iş → Git" (`probe_my_queue` sayımı).
+
+    Açık ekrandaki varlık kuyruktaysa sayıdan düşer; `rota` ilk başka işin ekranıdır. Rozete
+    sayılmaz (portal). Yalnız SELECT; rolün kapısındaki varlıklar (`bekleyen_isler`).
+    """
+    from tp_core.features.assistant.tools.probe import bekleyen_isler, kuyrukta_mi
+
+    toplam, isler = bekleyen_isler(session, kullanici.rol)
+    kendi_tur = _KUYRUK_TURU.get(ekran.varlik_tur or "", ekran.varlik_tur)
+
+    def buradaki(tur: str, kimlik: uuid.UUID) -> bool:
+        return ekran.varlik_id is not None and tur == kendi_tur and kimlik == ekran.varlik_id
+
+    if (
+        ekran.varlik_id is not None
+        and kendi_tur is not None
+        and kuyrukta_mi(session, kullanici.rol, kendi_tur, ekran.varlik_id)
+    ):
+        toplam -= 1
+    sayi = max(toplam, 0)
+    rota = next((i.rota for i in isler if not buradaki(i.tur, i.id)), None)
+    return {"sayi": sayi, "rota": rota if sayi else None}
+
+
 def oneriler_ekran(
     session: Session,
     kullanici: Principal,
@@ -1131,8 +1160,7 @@ def oneriler_ekran(
         "ekranda_kural_var": bool(adaylar),
         "oneriler": [],
         "bastirilan": [],
-        # "Diğer ekranlarda sizi bekleyen N iş" (`probe_my_queue` sayımı) — bağlanınca dolar.
-        "diger_ekranlar": None,
+        "diger_ekranlar": diger_ekranlar(session, kullanici, ekran),
         "hesaplandi": simdi.isoformat(),
     }
     eslesen = [k for k in adaylar if kosul_saglanir(k.kosullar, olgu)]

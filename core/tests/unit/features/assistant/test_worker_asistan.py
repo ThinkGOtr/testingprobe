@@ -333,6 +333,28 @@ def test_uzlastirma(engine: Engine, make_user) -> None:
         jobs.REGISTRY.pop(reg_tur, None)
 
 
+def test_zaman_asimi_uzlastirilan_mesaja_harcama_yazilir(engine: Engine, make_user) -> None:
+    """Asılı iş uzlaştırmadan sonra bittiğinde harcaması `asistan_mesaj`'a da yazılır; başka
+    hata koduyla kapanmış mesaja yazılmaz."""
+    u = make_user("engineer")
+    asili = _mesaj_ekle(engine, u.id, durum_="running", job_id=uuid.uuid4())  # iş yok → uzlaşır
+    with engine.begin() as c:
+        assert durum.uzlastir(c) == [asili]
+        assert durum.sonuc_yaz(c, asili, durum="done", cevap={"metin": "geç"}) is False
+        assert durum.harcama_yaz(
+            c, asili, maliyet_usd=Decimal("0.02"), token_girdi=50, token_cikti=7, sure_ms=130000
+        )
+    m = _mesaj(engine, asili)
+    assert (m["durum"], m["hata_kodu"], m["cevap"]) == ("error", "zaman_asimi", None)
+    assert (m["maliyet_usd"], m["token_girdi"], m["token_cikti"], m["sure_ms"]) == (
+        Decimal("0.02"), 50, 7, 130000,
+    )  # fmt: skip
+    diger = _mesaj_ekle(engine, u.id, durum_="running")
+    with engine.begin() as c:
+        assert durum.hata_yaz(c, diger, durum.HATA_MODEL)
+        assert durum.harcama_yaz(c, diger, sure_ms=5) is False
+
+
 # ------------------------------------------------------------------ işleyici
 
 
@@ -591,11 +613,13 @@ def test_asistan_seridi_kapaliyken_kalp_atisi_ve_serit_yok(
         with engine.begin() as c:
             a_id = enqueue(c, a_tur)
         t, sonuc = _calistir(dur)
-        # Şerit kapalı: tür genel döngüde (haric yok) koşar; kalp atışı yazılmaz.
-        assert _bekle(lambda: _is_durumu(engine, a_id) == "done")
+        # Şerit kapalı: tür genel döngüde de koşmaz (haric'te; orada zaman aşımı süreci
+        # kapatırdı), kuyrukta kalır; kalp atışı yazılmaz.
+        assert _bekle(lambda: len(haricler) >= 3)
         time.sleep(0.2)
+        assert _is_durumu(engine, a_id) == "queued"
         assert _durum_satiri(engine) is None
-        assert haricler and all(h is None for h in haricler)
+        assert all(h is not None and a_tur in h for h in haricler)
     finally:
         dur.set()
         jobs.REGISTRY.pop(a_tur, None)

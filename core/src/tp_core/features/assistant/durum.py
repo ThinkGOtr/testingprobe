@@ -41,7 +41,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Final
 
-from sqlalchemy import Connection, Engine, func, text, update
+from sqlalchemy import Connection, Engine, and_, func, or_, text, update
 
 from tp_core.events import publish_tx
 from tp_core.models import enums
@@ -249,7 +249,9 @@ def harcama_yaz(
     token_cikti: int | None = None,
     sure_ms: int | None = None,
 ) -> bool:
-    """Maliyet/token/süre: mesaj `running` ya da `iptal` iken (iptal sonrası harcama kaybolmaz)."""
+    """Maliyet/token/süre: mesaj `running` ya da `iptal` iken (iptal sonrası harcama kaybolmaz);
+    ayrıca `uzlastir`'ın `error/zaman_asimi` yaptığı mesajda (asılı iş sonradan bittiğinde
+    harcaması mesaj düzeyinde de görünsün)."""
     degerler = {
         k: v
         for k, v in {
@@ -264,7 +266,13 @@ def harcama_yaz(
         return False
     sonuc = conn.execute(
         update(_MESAJ)
-        .where(_MESAJ.c.id == mesaj_id, _MESAJ.c.durum.in_(("running", "iptal")))
+        .where(
+            _MESAJ.c.id == mesaj_id,
+            or_(
+                _MESAJ.c.durum.in_(("running", "iptal")),
+                and_(_MESAJ.c.durum == "error", _MESAJ.c.hata_kodu == HATA_ZAMAN_ASIMI),
+            ),
+        )
         .values(**degerler)
     )
     return sonuc.rowcount == 1

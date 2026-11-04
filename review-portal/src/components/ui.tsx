@@ -65,17 +65,43 @@ export function Yukleniyor({ metin = "Yükleniyor…" }: { metin?: string }) {
 }
 
 /**
- * Hata kutusu. Gösterilen hata "son hata" deposuna yazılır (asistan bağlamı, AI-ASISTAN-PLANI §5.5):
- * `kaynak` (useVeri/useIslem `hataNesnesi`) verilirse o kayıt, verilmezse metinle eşleşen ya da
- * yeni açılan kayıt. `kaynak` verildiğinde ve asistan kullanılabilirken "Asistana sor" görünür.
+ * Gösterilen hatanın "son hata" kaydı (AI-ASISTAN-PLANI §5.5): `kaynak` (useVeri/useIslem
+ * `hataNesnesi`) verilirse o kayıt, verilmezse metinle eşleşen ya da yeni açılan kayıt.
+ * Kayıt dışı hatada (asistan/giriş uçları, 501) null.
+ */
+function useHataKaydi(kaynak: unknown, hata: string | null, kapali = false): string | null {
+  const [kayitId, setKayitId] = useState<string | null>(null);
+  useEffect(() => {
+    setKayitId(kapali || !hata ? null : hataGosterildi(kaynak, hata));
+  }, [kaynak, hata, kapali]);
+  return kayitId;
+}
+
+/**
+ * Gösterilen bir hatanın yanındaki "Asistana sor" (§11): paneli o kaydın bağlamıyla açar.
+ * Yalnız asistan kullanılabilirken görünür. Karar ekranlarının satır içi hata/409 uyarıları
+ * (`alan-hata`) bunu doğrudan kullanır; HataKutusu `kaynak` verildiğinde kullanır.
+ */
+export function AsistanaSorDugmesi({ hata, kaynak }: { hata: string | null; kaynak: unknown }) {
+  const asistanHazir = useAsistanHazir();
+  const kayitId = useHataKaydi(kaynak, hata);
+  if (!asistanHazir || !kayitId) return null;
+  return (
+    <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => asistanaSor(kayitId)}>
+      Asistana sor
+    </button>
+  );
+}
+
+/**
+ * Hata kutusu. Gösterilen hata "son hata" deposuna yazılır (asistan bağlamı, AI-ASISTAN-PLANI §5.5).
+ * `kaynak` (useVeri/useIslem `hataNesnesi`) verildiğinde ve asistan kullanılabilirken
+ * "Asistana sor" görünür.
  */
 export function HataKutusu({ hata, yenile, kaynak }: { hata: string; yenile?: () => void; kaynak?: unknown }) {
   const planli = buFazdaYok(hata) || buFazdaYok(kaynak);
-  const [kayitId, setKayitId] = useState<string | null>(null);
-  const asistanHazir = useAsistanHazir();
-  useEffect(() => {
-    setKayitId(planli ? null : hataGosterildi(kaynak, hata));
-  }, [kaynak, hata, planli]);
+  // Kaynaksız kutu da kayda yazılır (metinle); düğme yalnız kaynakla çizilir.
+  useHataKaydi(kaynak, hata, planli || kaynak !== undefined);
   // Canlı derlemede core'un henüz sunmadığı ekran: hata değil, planlı "bu fazda yok" boş durumu.
   if (planli) {
     return (
@@ -93,11 +119,7 @@ export function HataKutusu({ hata, yenile, kaynak }: { hata: string; yenile?: ()
           Tekrar dene
         </button>
       )}
-      {kaynak !== undefined && asistanHazir && kayitId && (
-        <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => asistanaSor(kayitId)}>
-          Asistana sor
-        </button>
-      )}
+      {kaynak !== undefined && <AsistanaSorDugmesi hata={hata} kaynak={kaynak} />}
     </div>
   );
 }

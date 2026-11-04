@@ -2,7 +2,8 @@
 `POST /assistant/suggestions/{kural_id}/feedback`.
 
 Modelsizdir: worker gerekmez, model kapalıyken de çalışır, `ai_call` yazmaz. Rol oturumdan gelir
-(`CurrentUser`: yalnız çerez; `tpt_` bearer 401). Liste ucu yalnız okur (tek yazım hız sayacıdır);
+(`CurrentUser`: yalnız çerez; `tpt_` bearer 401). Liste ucu yalnız okur (tek yazım, ayrı bağlantıda
+hemen commit edilen hız sayacıdır);
 geri bildirim ucu yalnız `asistan_oneri_geri_bildirim`'e satır ekler.
 
 `router` asistan uçlarıyla birlikte `features/assistant/api.py`'de bağlanır
@@ -17,6 +18,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, HTTPException, Path, Query
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.orm import Session
 
 from tp_core.api.deps import CurrentUser, DbSession
 from tp_core.api.errors import KodluHata
@@ -38,8 +40,12 @@ def _etkin() -> None:
         raise KodluHata(404, "bulunamadi", KAPALI_MESAJI)
 
 
-def _hiz(session: Any, kova: str, user: CurrentUser) -> None:
-    if not kova_kontrol(session, kova, kullanici_id=user.id):
+def _hiz(session: Session, kova: str, user: CurrentUser) -> None:
+    """Sayaç ayrı, hemen commit edilen kısa bir bağlantıda artar: isteğin kendi işlemi 404/422
+    ile geri alınsa da istek sayılmış olur (geçersiz rota/varlık istekleri de sınıra takılır)."""
+    with session.get_bind().begin() as conn:
+        izinli = kova_kontrol(conn, kova, kullanici_id=user.id)
+    if not izinli:
         raise KodluHata(429, "hiz_siniri", HIZ_MESAJI)
 
 

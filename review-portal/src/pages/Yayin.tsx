@@ -132,7 +132,7 @@ function YayinEkrani() {
           {onizleme.hata}
         </Uyari>
       ) : onizleme.hata && !o ? (
-        <HataKutusu hata={onizleme.hata} yenile={() => void onizleme.yenile()} />
+        <HataKutusu hata={onizleme.hata} kaynak={onizleme.hataNesnesi} yenile={() => void onizleme.yenile()} />
       ) : o ? (
         <>
           <Kart
@@ -175,7 +175,7 @@ function YayinEkrani() {
                 Yayın işi sürüyor (<span className="mono">{bekleyenIs}</span>)…
               </p>
             )}
-            {islem.hata && <HataKutusu hata={islem.hata} />}
+            {islem.hata && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
           </Kart>
 
           {sonuc && <YayinSonucKarti sonuc={sonuc} adres={adres} />}

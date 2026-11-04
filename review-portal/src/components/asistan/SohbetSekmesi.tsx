@@ -7,6 +7,7 @@ import {
   adimMetni,
   asistanApi,
   baglamiSigdir,
+  BEKLEYEN_VAR_METNI,
   bekliyor,
   gonderimHataMetni,
   mesajHataMetni,
@@ -215,19 +216,22 @@ export function SohbetSekmesi({
     async (soru: string, secenek: { yeniSohbet?: boolean; oneriKuralId?: string | null } = {}) => {
       const metin = soru.trim();
       if (!metin || gonderiyor) return;
+      // Yanıt bekleyen soru varken (bu sekmede) yeni soru gönderilmez: sunucu 409 bekleyen_var
+      // döndürür. Yeni sohbete de geçilmez; soru girdide kalır, cevap gelince gönderilir.
+      if (kullaniciBekliyor) {
+        setGirdi(metin);
+        setGonderimHatasi(BEKLEYEN_VAR_METNI);
+        return;
+      }
       setGonderiyor(true);
       setGonderimHatasi(null);
+      let yeniId: string | null = null;
       try {
         let id = secenek.yeniSohbet ? null : sohbetRef.current;
         const kural = secenek.oneriKuralId ?? (secenek.yeniSohbet ? null : oneriKuralId);
         if (!id) {
-          const s = await asistanApi.sohbetOlustur(null);
-          id = s.id;
-          sohbetRef.current = id;
-          sohbetiHatirla(id);
-          setSohbetId(id);
-          setMesajlar([]);
-          setOneriKuralId(kural ?? null);
+          yeniId = (await asistanApi.sohbetOlustur(null)).id;
+          id = yeniId;
         }
         await asistanApi.soruGonder(id, {
           soru: metin,
@@ -235,17 +239,30 @@ export function SohbetSekmesi({
           kip: "soru",
           ...(kural ? { oneri_kural_id: kural } : {}),
         });
+        // Yeni sohbete ancak soru kabul edildikten sonra geçilir (409'da mevcut sohbet kalır).
+        if (yeniId) {
+          sohbetRef.current = yeniId;
+          sohbetiHatirla(yeniId);
+          setSohbetId(yeniId);
+          setMesajlar([]);
+          setOneriKuralId(kural ?? null);
+        }
         setGirdi("");
         seciliTemizle();
         await yukle(id, true);
         durumYenile();
       } catch (e) {
+        if (yeniId && sohbetRef.current !== yeniId) {
+          // Soru kabul edilmedi: az önce açılan boş sohbet sahipsiz kalmasın.
+          void asistanApi.sohbetSil(yeniId).catch(() => undefined);
+          setGirdi((g) => g || metin);
+        }
         setGonderimHatasi(gonderimHataMetni(e));
       } finally {
         setGonderiyor(false);
       }
     },
-    [gonderiyor, oneriKuralId, baglamUret, seciliTemizle, yukle, durumYenile],
+    [gonderiyor, kullaniciBekliyor, oneriKuralId, baglamUret, seciliTemizle, yukle, durumYenile],
   );
 
   // Dış istek: "Asistana sor" (hata kaydı) ya da "Neden? Sor" (öneri kuralı + soru).
@@ -361,7 +378,9 @@ export function SohbetSekmesi({
     <div className="asistan-bekleme" role="status" data-testid="asistan-bekleme">
       <span className="donen donen-kucuk" aria-hidden="true" />
       <span>
-        {etiket ?? adimMetni(adimlar[m.id] ?? m.adim_kodu)} · {gecenSure(m.olusturma, simdi)}
+        {etiket ?? adimMetni(adimlar[m.id] ?? m.adim_kodu)}
+        {/* Sayaç her saniye değişir: canlı bölgede duyurulmaz (yalnız adım ve "Uzun sürüyor"). */}
+        <span aria-hidden="true"> · {gecenSure(m.olusturma, simdi)}</span>
       </span>
       {uzunSurdu(m.olusturma, simdi) && <span className="asistan-uzun">Uzun sürüyor</span>}
       <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => void iptalEt(m)}>

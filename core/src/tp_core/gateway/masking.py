@@ -262,6 +262,14 @@ def _onekli(onek: str, govde: str, en_az: int) -> str:
     return rf"{onek}(?:{govde}{{{en_az},}}|{govde}+\Z)"
 
 
+# `generic_assignment` anahtar adları (büyük/küçük harf duyarsız) ve değer karakterleri.
+_SIR_ANAHTARI = (
+    r"(?:password|passwd|secret|client[_-]?secret|token|access[_-]?token|auth[_-]?token"
+    r"|refresh[_-]?token|api[_-]?key|access[_-]?key|private[_-]?key)"
+)
+_SIR_KARAKTERI = r"A-Za-z0-9_\-+/=.~@#%^&!"
+
+
 @dataclass(frozen=True)
 class SecretPattern:
     name: str
@@ -300,6 +308,22 @@ SECRET_PATTERNS: tuple[SecretPattern, ...] = (
         ),
         keep_group="keep",
     ),
+    # Öneksiz/küçük harfli atama (CI logu, YAML/JSON, CLI bayrağı): `PASSWORD=…`, `password: …`,
+    # `"password": "…"`, `export TOKEN=…`, `--password …`. Kaynak koddaki adlarla karışmasın diye
+    # değer ≥ 8 karakter, harf VE rakam içerir ve ifade sınırında biter (`password: str`,
+    # `token = get_token()`, `tokens[0]`, URL içi `x-access-token:…@` eşleşmez); yer tutucular
+    # (`${…}`, `<…>`, `***`) dışarıda.
+    SecretPattern(
+        "generic_assignment",
+        re.compile(
+            rf"(?P<keep>(?:--{_SIR_ANAHTARI}\b(?:\s*=\s*|\s+)"
+            rf"|(?<![\w-]){_SIR_ANAHTARI}\b[\"']?\s*[:=]\s*)[\"']?)"
+            rf"(?=[{_SIR_KARAKTERI}]*\d)(?=[{_SIR_KARAKTERI}]*[A-Za-z])"
+            rf"[{_SIR_KARAKTERI}]{{{SECRET_VALUE_MIN_LEN},}}(?=[\s'\"`,;)}}\]]|\Z)",
+            re.IGNORECASE,
+        ),
+        keep_group="keep",
+    ),
     SecretPattern(
         "url_credentials",
         re.compile(r"(?P<keep>\b[a-z][a-z0-9+.-]*://)[^/\s:@]+:[^@\s]+(?=@)", re.IGNORECASE),
@@ -307,6 +331,7 @@ SECRET_PATTERNS: tuple[SecretPattern, ...] = (
     ),
     SecretPattern("github_pat", re.compile(_onekli(r"\bgithub_pat_", r"[A-Za-z0-9_]", 20))),
     SecretPattern("github_token", re.compile(_onekli(r"\bgh[pousr]_", r"[A-Za-z0-9]", 20))),
+    SecretPattern("gitlab_pat", re.compile(_onekli(r"\bglpat-", r"[A-Za-z0-9_-]", 20))),
     SecretPattern("anthropic_key", re.compile(_onekli(r"\bsk-ant-", r"[A-Za-z0-9_-]", 8))),
     SecretPattern("atlassian_token", re.compile(_onekli(r"\bATATT", r"[A-Za-z0-9_=+/-]", 16))),
     SecretPattern("google_api_key", re.compile(_onekli(r"\bAIza", r"[0-9A-Za-z_-]", 20))),

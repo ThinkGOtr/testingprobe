@@ -45,7 +45,7 @@ import os
 import threading
 import time
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
@@ -59,6 +59,7 @@ from tp_core.features.assistant import budget as asistan_budget
 from tp_core.features.assistant import durum as mesaj_durumu
 from tp_core.features.assistant import siniflandir, sonislem, sozluk
 from tp_core.features.assistant.sablon import sablon_cevabi
+from tp_core.features.assistant.tools.base import sir_temizle
 from tp_core.gateway.errors import AgentDeadlineExceeded, AgentStopped, BudgetExceeded
 from tp_core.gateway.untrusted import UntrustedKind, wrap_untrusted
 from tp_core.ports import ModelMessage
@@ -345,8 +346,13 @@ def ilk_mesaj(
     ekran: Mapping[str, Any] | None,
     kural_onerileri: list[Mapping[str, Any]] | None,
     gecmis: str | None,
+    sir_degerleri: Iterable[str] = (),
 ) -> list[ModelMessage]:
-    """Rol ve bağlam sabit önekte değil ilk kullanıcı mesajında (§6.5 önbellek)."""
+    """Rol ve bağlam sabit önekte değil ilk kullanıcı mesajında (§6.5 önbellek).
+
+    Bütün metin worker'ın sır değerleriyle (`sir_temizle`) bir kez daha süzülür: core-api'nin
+    422 `sir_icerik` taraması yalnız kendi ortamındaki değerleri bilir (Jira/GitHub okuma
+    token'ları yalnız worker'dadır); soru, bağlam ve geçmiş modele sırsız gider."""
     parcalar = [
         f"Kullanıcının rolü: {ROL_ETIKETI.get(m.rol, m.rol)}",
         f"kip={m.kip}",
@@ -363,7 +369,8 @@ def ilk_mesaj(
     if gecmis:
         parcalar.append(_blok(gecmis, kaynak="sohbet_gecmisi", tur="text"))
     parcalar.append(f"Soru: {m.icerik or ''}")
-    return [ModelMessage(role="user", content="\n\n".join(parcalar))]
+    icerik = sir_temizle("\n\n".join(parcalar), sir_degerleri)
+    return [ModelMessage(role="user", content=icerik)]
 
 
 def _kural_onerileri(session_factory: SessionFactory, m: Mesaj) -> list[dict[str, Any]]:
@@ -740,6 +747,7 @@ def cevapla(
                     ekran=_ekran_baglami(m, oneri_baglami),
                     kural_onerileri=kural_onerileri,
                     gecmis=gecmis,
+                    sir_degerleri=ab.sir_degerleri,
                 ),
                 araclar.specs,
                 araclar.execute,

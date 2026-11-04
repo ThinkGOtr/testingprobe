@@ -3,8 +3,11 @@
 **Tarih**: 2026-11-03 · **Dal**: `feat/ai-asistan` (taban `dev`, 443a668)
 
 Plan v6 §17.2–17.3 olgu kaynaklarının ve uç yollarının "Şerit S'de koda karşı kesinleşir" maddesi
-bu belgede kapatılır. Kural **içeriği** (koşul, rol, öneri metni, eylem türü) değişmedi; yalnız
-olgu kaynağı ve bir kuralın `yetki` ucu düzeltildi → K10 yeniden onayı gerekmez.
+bu belgede kapatılır. Rol ve eylem türü değişmedi; olgu kaynakları ve kural 15'in `yetki` ucu
+düzeltildi. **Düzeltme (inceleme turu 1):** uygulamada iki kural koşulu daraltıldı (kural 8
+`ac_eksik_esit:false`, kural 11 `onayli_case_gte:1`) ve kimlikler/operatör biçimi değişti; ayrıntı
+`contracts/oneri-kurallari.md` "İlk kural seti" altındaki fark listesinde. İki daraltma için K10
+kapsamında ürün sahibinin tek satırlık onayı **gerekir** (açık).
 
 ## R1. Spec numarası
 

@@ -5,6 +5,8 @@ yan etkisizlik.
 
 from __future__ import annotations
 
+import os
+import time
 import uuid
 from collections.abc import Callable, Iterator
 from typing import Any
@@ -17,7 +19,7 @@ from tests.unit.conftest import PAROLA, Db
 from tp_core.api import main
 from tp_core.auth.login import THROTTLE
 from tp_core.config import get_settings
-from tp_core.features.assistant import oneri, oneri_api
+from tp_core.features.assistant import hiz, oneri, oneri_api
 from tp_core.workflow.service import Principal
 
 from .oneri_tohum import Tohum
@@ -271,3 +273,99 @@ def test_model_kapaliyken_ve_worker_yokken_calisir(
     r = client.get(UC, params={"rota": f"/hatalar/{fid}"})
     assert r.status_code == 200
     assert [c["kural_id"] for c in r.json()["oneriler"]] == ["hata-bakim-onarim"]
+
+
+def test_hiz_sayaci_404_ile_biten_istekte_de_artar(
+    client: TestClient, tohum: Tohum, make_user: MakeUser
+) -> None:
+    """Sayaç ayrı bağlantıda commit edilir: geçersiz varlık/kural istekleri de sınıra takılır."""
+    _giris(client, make_user("analyst"))
+    for i in range(60):
+        r = client.get(UC, params={"rota": f"/gereksinimler/{uuid.uuid4()}"})
+        assert r.status_code == 404, (i, r.text)
+    r = client.get(UC, params={"rota": f"/gereksinimler/{uuid.uuid4()}"})
+    assert r.status_code == 429 and r.json()["kod"] == "hiz_siniri"
+    for i in range(30):
+        r = client.post(f"{UC}/olmayan-kural/feedback", json={"deger": 1})
+        assert r.status_code == 422, (i, r.text)
+    r = client.post(f"{UC}/olmayan-kural/feedback", json={"deger": 1})
+    assert r.status_code == 429 and r.json()["kod"] == "hiz_siniri"
+
+
+def test_diger_ekranlar_ozeti_kuyruktan_gelir(
+    client: TestClient, tohum: Tohum, make_user: MakeUser
+) -> None:
+    """§17.3 `*` özet: rolün bekleyen işleri (`probe_my_queue` sayımı) `{sayi, rota}` döner;
+    açık ekrandaki varlık sayıdan düşer, kuyruk boşsa sayı 0 ve rota yok."""
+    _giris(client, make_user("engineer"))
+    bos = client.get(UC, params={"rota": "/kosular"}).json()["diger_ekranlar"]
+    assert bos == {"sayi": 0, "rota": None}
+
+    rid = tohum.kosu("error")
+    oneri.ONBELLEK.temizle()
+    ozet = client.get(UC, params={"rota": "/kosular"}).json()["diger_ekranlar"]
+    assert ozet == {"sayi": 1, "rota": f"/kosular/{rid}"}
+    # Tek iş açık ekrandaysa "diğer ekranlarda" iş kalmaz.
+    burada = client.get(UC, params={"rota": f"/kosular/{rid}"}).json()["diger_ekranlar"]
+    assert burada == {"sayi": 0, "rota": None}
+
+    rid2 = tohum.kosu("error")
+    oneri.ONBELLEK.temizle()
+    ozet = client.get(UC, params={"rota": f"/kosular/{rid}"}).json()["diger_ekranlar"]
+    assert ozet == {"sayi": 1, "rota": f"/kosular/{rid2}"}
+
+    _giris(client, make_user("analyst"))  # rol kapısı: koşu hatası mühendisin işidir
+    assert client.get(UC, params={"rota": "/kosular"}).json()["diger_ekranlar"]["sayi"] == 0
+
+
+P95_ESIK_MS = float(os.environ.get("TP_TEST_ONERI_P95_MS", "300"))
+P95_TEKRAR = 12
+
+
+def test_oneri_ucu_tohumlu_veride_p95_300ms_alti(
+    client: TestClient,
+    tohum: Tohum,
+    make_user: MakeUser,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """§16.12: tohumlu veride 5 rol × ana ekranlar, önbellek dışı p95 < 300 ms.
+
+    Her çağrı öncesi `ONBELLEK.temizle()` (sunucu önbelleği ölçümü yanıltmaz). Eşik yavaş CI
+    makinesi için `TP_TEST_ONERI_P95_MS` ile gevşetilebilir; varsayılan plan değeridir.
+    """
+    monkeypatch.setitem(hiz.VARSAYILAN_SINIRLAR, hiz.KOVA_ONERI_LISTE, (10_000, 60))
+    req = tohum.gereksinim("findings_open", po_bekleme=30)
+    tohum.bulgu(req)
+    tohum.case(req)
+    rid = tohum.kosu("error")
+    fid = tohum.hata("test_maintenance", run_id=rid)
+    sid = tohum.script("failed")
+    bid = tohum.bug_taslagi("draft", failure_id=fid)
+    tohum.harcama("7")
+    rotalar = [
+        "/",
+        "/gereksinimler",
+        f"/gereksinimler/{req}",
+        f"/gereksinimler/{req}/caseler",
+        "/kod",
+        f"/kod/{sid}",
+        "/kosular",
+        f"/kosular/{rid}",
+        f"/hatalar/{fid}",
+        "/bug-taslaklari",
+        f"/bug-taslaklari/{bid}",
+        "/kontrol-kulesi",
+    ]
+    sureler: list[float] = []
+    for rol in ROLLER:
+        _giris(client, make_user(rol))
+        for rota in rotalar:
+            for _ in range(P95_TEKRAR):
+                oneri.ONBELLEK.temizle()
+                bas = time.perf_counter()
+                r = client.get(UC, params={"rota": rota})
+                sureler.append((time.perf_counter() - bas) * 1000)
+                assert r.status_code == 200, (rol, rota, r.text)
+    sureler.sort()
+    p95 = sureler[int(len(sureler) * 0.95) - 1]
+    assert p95 < P95_ESIK_MS, f"p95={p95:.1f} ms (n={len(sureler)}, eşik {P95_ESIK_MS} ms)"

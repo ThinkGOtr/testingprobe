@@ -27,7 +27,7 @@ from tests.unit.conftest import Db
 from tests.unit.features.assistant import test_asistan_api as _api
 from tests.unit.features.assistant import test_probe_tools as _probe
 from tests.unit.features.assistant.test_sonislem import SahteDogrulayici
-from tp_core.audit import PgCallRecorder
+from tp_core.audit import PgCallRecorder, verify_chain
 from tp_core.features.assistant import budget, flow, sonislem
 from tp_core.features.assistant.tools import AracSonucu, arac_seti
 from tp_core.gateway import FINAL_TOOL, build_gateway
@@ -53,8 +53,8 @@ GRI_BAGLAM = {"rota": "/kod"}
 
 
 @pytest.fixture(autouse=True)
-def _anahtarsiz(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+def _otomatik_derin_varsayilan(monkeypatch: pytest.MonkeyPatch) -> None:
+    # ANTHROPIC_API_KEY ortak conftest'te silinir.
     monkeypatch.delenv("TP_ASISTAN_OTOMATIK_DERIN", raising=False)
 
 
@@ -446,6 +446,24 @@ def test_canli_tam_dongu_assistant(client: TestClient, make_user, engine: Engine
     assert "po.kisi@ornek.com" not in sonraki and "<<PII_EMAIL_" in sonraki
     # Doğrulanmış cevapta otomatik yükseltme yok.
     assert cocuklar(engine, mid) == []
+
+
+def test_yalniz_workerin_bildigi_sir_modele_gitmez(
+    client: TestClient, make_user, engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """core-api'nin bilmediği (yalnız worker ortamındaki) biçimsiz sır değeri soruya
+    yapıştırılırsa 422'ye takılmaz; worker ilk mesajı kendi sır değerleriyle süzer."""
+    deger = "jira" + "dc" + "Pat" + "Q7w8E9r0T1y2U3i4"  # biçimi tanınmayan Jira DC PAT
+    monkeypatch.delenv("JIRA_READ_TOKEN", raising=False)
+    giris(client, make_user("tester"))
+    _, mid = soru_gonder(
+        client, engine, f"Jira token'ım {deger} neden çalışmıyor?", baglam={"rota": "/kod"}
+    )
+    monkeypatch.setenv("JIRA_READ_TOKEN", deger)  # yalnız worker'da
+    gecit = Gecit(engine, [bitir()])
+    assert cevapla(engine, mid, gecit) == "done"
+    assert deger not in gecit.ilk_istek()
+    assert "neden çalışmıyor" in gecit.ilk_istek()
 
 
 def test_assistant_deep_ayri_mesaj_ve_zincir_yok(
@@ -887,8 +905,33 @@ def test_tetik_kontrol_kisiti_ust_mesajsiz_otomatigi_reddeder(
         )
 
 
+def kilitte_bekler(db: Db, adet: int, *, sure: float = 15.0) -> bool:
+    """En az `adet` oturum kilitte (`wait_event_type = 'Lock'`) bekleyene dek yoklar.
+
+    Sabit `sleep` yerine olumlu kanıt: yavaş makinede kilide henüz ulaşmamış iş parçacığı da
+    `is_alive()` döner, yarış sınanmadan test yeşil geçerdi. Başka rollerin bekleme olayını
+    yalnız süper kullanıcı görür (sahip/uygulama rolü için `wait_event` NULL döner)."""
+    sahip = create_engine(db.srv.url("postgres", db.name))
+    try:
+        son = time.monotonic() + sure
+        while time.monotonic() < son:
+            with sahip.connect() as c:
+                n = c.execute(
+                    text(
+                        "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() "
+                        "AND wait_event_type = 'Lock'"
+                    )
+                ).scalar_one()
+            if n >= adet:
+                return True
+            time.sleep(0.02)
+        return False
+    finally:
+        sahip.dispose()
+
+
 def test_ust_iptali_yukseltmeyle_eszamanli_cocuk_yok_harcama_yazilir(
-    client: TestClient, make_user, engine: Engine
+    client: TestClient, make_user, engine: Engine, db: Db
 ) -> None:
     giris(client, make_user("analyst"))
     m = _kosan(client, engine)
@@ -904,7 +947,7 @@ def test_ust_iptali_yukseltmeyle_eszamanli_cocuk_yok_harcama_yazilir(
 
     t = threading.Thread(target=yaz)
     t.start()
-    time.sleep(0.5)  # yükseltme transaction'ı satır kilidinde bekliyor
+    assert kilitte_bekler(db, 1)  # yükseltme transaction'ı satır kilidinde bekliyor
     assert t.is_alive()
     kilitli.execute(text("UPDATE asistan_mesaj SET durum = 'iptal' WHERE id = :i"), {"i": m.id})
     tx.commit()
@@ -953,8 +996,8 @@ def test_api_post_ile_yukseltme_eszamanli_deadlock_yok(
         isler = [threading.Thread(target=yukselt), threading.Thread(target=post)]
         for t in isler:
             t.start()
-        time.sleep(0.5)
-        assert all(t.is_alive() for t in isler)  # ikisi de kilitte
+        assert kilitte_bekler(db, 2)  # ikisi de kilitte
+        assert all(t.is_alive() for t in isler)
         tx.commit()
         kilit.close()
         for t in isler:
@@ -1043,8 +1086,20 @@ def test_yan_etkisizlik_soru_oneri_ve_otomatik_yukseltme(
         },
     )
     assert r.status_code == 202, r.text
-    assert cevapla(engine, r.json()["mesaj_id"], Gecit(engine, [bitir()])) == "done"
+    oneri_mid = r.json()["mesaj_id"]
+    assert cevapla(engine, oneri_mid, Gecit(engine, [bitir()])) == "done"
     assert _anlik(db) == once
+    # §13 "Migrasyon/denetim": soru, öneri, otomatik yükseltme ve geri bildirimlerden sonra
+    # denetim zinciri bütün kalır.
+    r = client.post(f"/assistant/messages/{oneri_mid}/feedback", json={"deger": 1})
+    assert r.status_code == 200, r.text
+    r = client.post(
+        "/assistant/suggestions/gereksinim-bulgu-karari/feedback",
+        json={"deger": 1, "varlik_id": str(veri["req"])},
+    )
+    assert r.status_code == 200, r.text
+    with engine.connect() as c:
+        assert verify_chain(c).ok
 
 
 def test_hata_kodu_eslemesi() -> None:

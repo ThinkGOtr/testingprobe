@@ -25,6 +25,7 @@ VAKALAR: list[tuple[str, str]] = [
     ("github_token", "gh" + "o_" + GOVDE),
     ("github_token", "gh" + "u_" + GOVDE),
     ("github_token", "gh" + "r_" + GOVDE),
+    ("gitlab_pat", "gl" + "pat-" + GOVDE),
     ("anthropic_key", "sk-" + "ant-" + "api03-" + GOVDE),
     ("atlassian_token", "ATA" + "TT" + GOVDE + "=" + GOVDE),
     ("google_api_key", "AI" + "za" + "Sy" + GOVDE + "xyz12345"),
@@ -43,6 +44,7 @@ def test_her_desenin_vakasi_var() -> None:
         "private_key_tail",
         "authorization",
         "env_assignment",
+        "generic_assignment",
         "url_credentials",
     }
     assert adlar == {p.name for p in SECRET_PATTERNS}
@@ -116,6 +118,48 @@ def test_ortam_atamasi(ad: str) -> None:
 
 def test_ortam_atamasi_yer_tutucuya_dokunmaz() -> None:
     metin = "JIRA_READ_TOKEN=<okuma token'ı> TP_APP_PASSWORD=${TP_APP_PASSWORD}"
+    assert scrub_secret_patterns(metin) == metin
+
+
+SIR = "Xy7" + "pQ9wLm2"  # ≥ 8, harf + rakam
+
+
+@pytest.mark.parametrize(
+    ("metin", "beklenen"),
+    [
+        (f"PASSWORD={SIR} x", "PASSWORD=*** x"),
+        (f"password: {SIR}", "password: ***"),
+        (f"Password = '{SIR}';", "Password = '***';"),
+        ('{"password": "' + SIR + '", "u": 1}', '{"password": "***", "u": 1}'),
+        (f"export TOKEN={SIR}", "export TOKEN=***"),
+        (f"curl --password {SIR} -X", "curl --password *** -X"),
+        (f"cli --api-key={SIR}", "cli --api-key=***"),
+        (f"client_secret: {SIR}", "client_secret: ***"),
+        (f"secret={SIR}", "secret=***"),
+    ],
+)
+def test_oneksiz_atama(metin: str, beklenen: str) -> None:
+    assert scrub_secret_patterns(metin) == beklenen
+    assert "generic_assignment" in {f.name for f in find_secret_patterns(metin)}
+
+
+@pytest.mark.parametrize(
+    "metin",
+    [
+        "def giris(password: str, token: str | None = None) -> None:",
+        "token = get_token()",
+        "token = tokens[0]",
+        "api_key = settings.anthropic_api_key",
+        "password: ${DB_PASSWORD}",
+        "password: <parola>",
+        "password: ***",
+        "secret: kisa1",
+        "secret: yalnizharf",  # rakamsız düz kelime
+        "password_hash: " + SIR,  # farklı alan adı
+        "pwd: /home/user1/build",
+    ],
+)
+def test_oneksiz_atama_kaynak_kodu_ve_yer_tutucuya_dokunmaz(metin: str) -> None:
     assert scrub_secret_patterns(metin) == metin
 
 

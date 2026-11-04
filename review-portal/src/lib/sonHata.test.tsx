@@ -1,11 +1,12 @@
 // Son hata deposu (AI-ASISTAN-PLANI §5.5): GET dışı hatalar hemen, GET hataları yalnız
 // HataKutusu gösterince yazılır; /assistant/*, /auth/* ve 501 hiç yazılmaz; mock-zorunlu dalda da
-// çalışır; 5 dk geçerli; gösterilen metin eklenir; ApiError kod/method/yol/kayitId taşır.
+// çalışır; 5 dk geçerli; gösterilen metin eklenir; istek() hatası kod/method/yol taşır
+// (ApiError alanları ve detayOku kod: api/http.test.ts).
 import { render } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api/client";
-import { ApiError, BU_FAZDA_YOK, cakismaMesaji, detayOku, ICERIK_DEGISTI, istek, yapilandir } from "../api/http";
+import { ApiError, BU_FAZDA_YOK, cakismaMesaji, ICERIK_DEGISTI, istek, yapilandir } from "../api/http";
 import { HataKutusu } from "../components/ui";
 import { oturumAc } from "../test/yardimci";
 import { OturumProvider } from "../auth";
@@ -28,22 +29,6 @@ beforeEach(() => sonHatayiSifirla());
 afterEach(() => vi.unstubAllGlobals());
 
 describe("ApiError ek alanları", () => {
-  it("eski iki argümanlı çağrı derlenir; kayitId her hatada üretilir ve tekildir", () => {
-    const a = new ApiError(409, "x");
-    const b = new ApiError(409, "x");
-    expect(a.kayitId).toMatch(/^h-/);
-    expect(a.kayitId).not.toBe(b.kayitId);
-    expect(a.kod).toBeUndefined();
-    const c = new ApiError(409, "y", { kod: "bekleyen_var", method: "POST", yol: "/x/:id", kayitId: "sabit" });
-    expect(c).toMatchObject({ kod: "bekleyen_var", method: "POST", yol: "/x/:id", kayitId: "sabit" });
-  });
-
-  it("detayOku yanıttaki kod'u okur (detail dizisi ve kodsuz gövde dahil)", async () => {
-    expect(await detayOku(yanit(409, { detail: "Bekleyen var", kod: "bekleyen_var" }))).toEqual({ detail: "Bekleyen var", json: true, kod: "bekleyen_var" });
-    expect(await detayOku(yanit(422, { detail: [{ msg: "çok uzun" }], kod: "gecersiz_istek" }))).toMatchObject({ detail: "çok uzun", kod: "gecersiz_istek" });
-    expect((await detayOku(yanit(400, { detail: "x" }))).kod).toBeUndefined();
-  });
-
   it("gerçek modda hata kod, method ve normalleştirilmiş yolu taşır", async () => {
     yapilandir({ mockZorunlu: false, mockOtomatik: false });
     vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(yanit(409, { detail: "Onay hash'i uyuşmuyor", kod: "onay_hash_uyusmuyor" }))));

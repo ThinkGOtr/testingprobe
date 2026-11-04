@@ -309,7 +309,7 @@ export function CaseReview() {
       {caseler.yukleniyor && !caseler.veri ? (
         <Yukleniyor />
       ) : caseler.hata && !caseler.veri ? (
-        <HataKutusu hata={caseler.hata} yenile={() => void caseler.yenile()} />
+        <HataKutusu hata={caseler.hata} kaynak={caseler.hataNesnesi} yenile={() => void caseler.yenile()} />
       ) : gorunen.length === 0 ? (
         <Kart>
           <BosDurum baslik={liste.length ? "Bu filtrede case yok." : "Henüz case üretilmedi."}>

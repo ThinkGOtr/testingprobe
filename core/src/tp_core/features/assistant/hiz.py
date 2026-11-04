@@ -8,13 +8,15 @@ ile artar: çok süreçte (birden çok uvicorn/worker) atomiktir, okuma-yazma ya
   pencereyi bölmez.
 - `kullanici_id=None` global kovadır (ör. `jira_global`); tekillik NULLS NOT DISTINCT olduğundan
   global kova da tek satırda sayılır.
-- Sayaç çağıranın işleminde artar. Reddedilen istek (429) işlemi geri alırsa artış da geri alınır;
-  sınır yine korunur çünkü kabul edilen her istek sayılmıştır.
+- Sayaç çağıranın işleminde (oturum ya da bağlantı) artar. Reddedilen istek (429) işlemi geri
+  alırsa artış da geri alınır; sınır yine korunur çünkü kabul edilen her istek sayılmıştır. Öneri
+  uçları sayacı ayrı, hemen commit edilen bağlantıda artırır (404/422 ile biten istek de sayılır).
 - Saatlik soru sınırı bu tabloda değil, mesaj tablosundan sayılır (iptal/hata dahil; §9).
 - 1 günden eski satırlar `hiz_temizle` ile silinir (saklama işi çağırır).
 
 Kovalar (sabitler aşağıda): `oneri_liste` 60/dk ve `oneri_geri_bildirim` 30/dk (kullanıcı başı,
-Şerit R), `jira_global` 30/dk (global, Şerit J).
+Şerit R), `jira_global` 30/dk (global, Şerit J), `sohbet_olustur` 30/dk (kullanıcı başı; yalnız
+satır büyümesine karşı, model maliyeti yok).
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ from __future__ import annotations
 import uuid
 from typing import Final
 
-from sqlalchemy import text
+from sqlalchemy import Connection, text
 from sqlalchemy.orm import Session
 
 from tp_core.models.asistan import HIZ_UQ
@@ -30,12 +32,14 @@ from tp_core.models.asistan import HIZ_UQ
 KOVA_ONERI_LISTE: Final = "oneri_liste"
 KOVA_ONERI_GERI_BILDIRIM: Final = "oneri_geri_bildirim"
 KOVA_JIRA_GLOBAL: Final = "jira_global"
+KOVA_SOHBET_OLUSTUR: Final = "sohbet_olustur"
 
 # Kova → (sınır, pencere saniyesi). Çağıran isterse doğrudan `hiz_kontrol`'e kendi değerini verir.
 VARSAYILAN_SINIRLAR: Final[dict[str, tuple[int, int]]] = {
     KOVA_ONERI_LISTE: (60, 60),
     KOVA_ONERI_GERI_BILDIRIM: (30, 60),
     KOVA_JIRA_GLOBAL: (30, 60),
+    KOVA_SOHBET_OLUSTUR: (30, 60),
 }
 
 SAKLAMA_SAAT: Final = 24
@@ -55,7 +59,7 @@ _ARTIR = text(
 
 
 def hiz_kontrol(
-    session: Session,
+    session: Session | Connection,
     kova: str,
     *,
     kullanici_id: uuid.UUID | None,
@@ -82,7 +86,9 @@ def hiz_kontrol(
     return int(sayi) <= sinir
 
 
-def kova_kontrol(session: Session, kova: str, *, kullanici_id: uuid.UUID | None) -> bool:
+def kova_kontrol(
+    session: Session | Connection, kova: str, *, kullanici_id: uuid.UUID | None
+) -> bool:
     """`VARSAYILAN_SINIRLAR`'daki kova için `hiz_kontrol`."""
     sinir, pencere_s = VARSAYILAN_SINIRLAR[kova]
     return hiz_kontrol(session, kova, kullanici_id=kullanici_id, sinir=sinir, pencere_s=pencere_s)

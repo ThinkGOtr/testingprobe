@@ -17,6 +17,9 @@ import { useAsistanKapisi } from "./yetenek";
 
 export const DAR_EKRAN_PX = 760;
 
+const ODAKLANABILIR =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
+
 function darEkranMi(): boolean {
   return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(`(max-width: ${DAR_EKRAN_PX - 1}px)`).matches;
 }
@@ -71,6 +74,11 @@ export function AsistanPaneli() {
   const [secili, setSecili] = useState<SeciliEleman | null>(null);
   const bindirmeRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
+  const baslikRef = useRef<HTMLHeadingElement>(null);
+  const baslaticiRef = useRef<HTMLButtonElement>(null);
+  /** Panel dışında en son odaklanan öğe: kapanınca odak oraya (yoksa başlatıcıya) döner. */
+  const disOdakRef = useRef<HTMLElement | null>(null);
+  const oncekiAcik = useRef(kontrol.acik);
   const baslikId = useId();
 
   const hazir = kapi.tur === "hazir";
@@ -97,6 +105,68 @@ export function AsistanPaneli() {
     document.addEventListener("keydown", fn);
     return () => document.removeEventListener("keydown", fn);
   }, [buNe, buNeBitir]);
+
+  // Panel dışındaki son odak (başlatıcı, Öneri düğmesi, "Asistana sor"): kapanınca geri verilir.
+  useEffect(() => {
+    const fn = (e: FocusEvent) => {
+      const t = e.target;
+      if (t instanceof HTMLElement && !panelRef.current?.contains(t)) disOdakRef.current = t;
+    };
+    document.addEventListener("focusin", fn);
+    return () => document.removeEventListener("focusin", fn);
+  }, []);
+
+  // Açılınca odak panele (içeride zaten odak yoksa başlığa; "Asistana sor" girdiyi odaklar),
+  // kapanınca açan öğeye döner. Yalnız geçişlerde: sayfa yenilenip panel açık gelirse odak çalınmaz.
+  useEffect(() => {
+    const once = oncekiAcik.current;
+    oncekiAcik.current = kontrol.acik;
+    if (kontrol.acik && !once) {
+      const p = panelRef.current;
+      if (p && !p.contains(document.activeElement)) baslikRef.current?.focus();
+    } else if (!kontrol.acik && once) {
+      const hedef = disOdakRef.current;
+      if (hedef && hedef.isConnected && hedef !== document.body) hedef.focus();
+      else baslaticiRef.current?.focus();
+    }
+  }, [kontrol.acik]);
+
+  // Dar ekran (modal dialog): Esc belge düzeyinde kapatır, Tab odağı panel içinde tutar.
+  const modalAktif = dar && kontrol.acik && !buNe;
+  useEffect(() => {
+    if (!modalAktif) return;
+    const fn = (e: KeyboardEvent) => {
+      const p = panelRef.current;
+      if (!p) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        paneliKapat();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const ogeler = Array.from(p.querySelectorAll<HTMLElement>(ODAKLANABILIR)).filter((el) => el.tabIndex >= 0 && !el.hasAttribute("hidden"));
+      if (ogeler.length === 0) {
+        e.preventDefault();
+        baslikRef.current?.focus();
+        return;
+      }
+      const ilk = ogeler[0];
+      const son = ogeler[ogeler.length - 1];
+      const aktif = document.activeElement;
+      if (!p.contains(aktif)) {
+        e.preventDefault();
+        (e.shiftKey ? son : ilk).focus();
+      } else if (e.shiftKey && (aktif === ilk || aktif === baslikRef.current)) {
+        e.preventDefault();
+        son.focus();
+      } else if (!e.shiftKey && aktif === son) {
+        e.preventDefault();
+        ilk.focus();
+      }
+    };
+    document.addEventListener("keydown", fn);
+    return () => document.removeEventListener("keydown", fn);
+  }, [modalAktif]);
 
   const atla = useCallback((el: Element) => el === bindirmeRef.current || !!bindirmeRef.current?.contains(el), []);
 
@@ -141,7 +211,8 @@ export function AsistanPaneli() {
   const onGit = dar ? paneliKapat : undefined;
 
   const panelTus = (e: ReactKeyboardEvent) => {
-    if (e.key === "Escape" && !buNe) {
+    // Dar ekranda Esc belge düzeyinde dinlenir (modalAktif).
+    if (e.key === "Escape" && !buNe && !dar) {
       e.preventDefault();
       paneliKapat();
     }
@@ -153,7 +224,8 @@ export function AsistanPaneli() {
       role="tab"
       id={`asistan-sekme-${s}`}
       aria-selected={sekme === s}
-      aria-controls={`asistan-sekme-icerik-${s}`}
+      // Yalnız seçili sekmenin paneli DOM'da: aria-controls var olmayan id'ye işaret etmesin.
+      aria-controls={sekme === s ? `asistan-sekme-icerik-${s}` : undefined}
       tabIndex={sekme === s ? 0 : -1}
       className={`asistan-sekme${sekme === s ? " aktif" : ""}`}
       onClick={() => sekmeSec(s)}
@@ -174,14 +246,14 @@ export function AsistanPaneli() {
     <>
       {!yalnizOneri && !kontrol.acik && (
         <button
+          ref={baslaticiRef}
           type="button"
           className={`asistan-baslatici${pasifNeden ? " pasif" : ""}`}
           data-asistan-gizli
-          aria-disabled={pasifNeden ? true : undefined}
           title={pasifNeden ?? "Asistanı aç"}
           aria-label={pasifNeden ? `Asistan (kapalı: ${pasifNeden})` : "Asistanı aç"}
           onClick={() => {
-            if (pasifNeden) return;
+            // Pasifken de açılır: neden Sohbet sekmesindeki uyarıda görünür (dokunmatikte title yok).
             sekmeSec("sohbet");
             paneliAc();
           }}
@@ -221,7 +293,9 @@ export function AsistanPaneli() {
         >
           <header className="asistan-panel-ust">
             <div className="asistan-panel-baslik">
-              <h2 id={baslikId}>Asistan</h2>
+              <h2 id={baslikId} ref={baslikRef} tabIndex={-1}>
+                Asistan
+              </h2>
               {asistan?.mod === "off" && (
                 <span className="rozet rozet-replay" title="Canlı model kapalı: yalnız hata sözlüğü, kayıt şablonları ve kural önerileri.">
                   HAZIR CEVAPLAR

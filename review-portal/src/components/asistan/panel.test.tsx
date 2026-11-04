@@ -16,7 +16,7 @@ import { hataKaydet, sonHatayiSifirla } from "../../lib/sonHata";
 import { ClaudeCode } from "../../pages/ClaudeCode";
 import { oturumAc } from "../../test/yardimci";
 import { BildirimProvider } from "../Bildirim";
-import { HataKutusu } from "../ui";
+import { AsistanaSorDugmesi, HataKutusu } from "../ui";
 import { AsistanPaneli } from "./AsistanPaneli";
 import { elemanTanimi } from "./buNe";
 import { acSekme, asistanKontrolSifirla } from "./kontrol";
@@ -131,16 +131,19 @@ describe("yerleşim ve yetenek kapısı", () => {
     expect(screen.queryByRole("button", { name: /Asistan/ })).toBeNull();
   });
 
-  it("etkin=false → düğme pasif ve nedeni söyler; tıklamak paneli açmaz", async () => {
+  it("etkin=false → düğme pasif görünür ve nedeni söyler; tıklamak paneli nedeni gösteren uyarıyla açar", async () => {
     asistanMockAyarla({ etkin: false, neden: "maskeleme_kapali" });
     await oturumAc("analist");
     const u = userEvent.setup();
     yalnizPanel();
     const d = await screen.findByRole("button", { name: /Asistan \(kapalı/ });
-    expect(d).toHaveAttribute("aria-disabled", "true");
+    expect(d).toHaveClass("pasif");
     expect(d.getAttribute("title")).toMatch(/maskeleme/);
     await u.click(d);
-    expect(screen.queryByTestId("asistan-paneli")).toBeNull();
+    // Dokunmatikte title görünmez: neden panelde, Sohbet sekmesinde okunur; soru alanı yok.
+    const p = panel();
+    expect(within(p).getByText("Asistan kullanılamıyor")).toBeInTheDocument();
+    expect(within(p).queryByLabelText("Sorunuz")).toBeNull();
   });
 
   it("Öneri düğmesi paneli Öneriler sekmesinde açar (acSekme); sekmeler tablist", async () => {
@@ -151,6 +154,10 @@ describe("yerleşim ve yetenek kapısı", () => {
     expect(screen.getByRole("tablist", { name: "Asistan sekmeleri" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Öneriler" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByTestId("oneriler-sekmesi")).toBeInTheDocument();
+    // Yalnız seçili sekmenin paneli DOM'da: aria-controls var olan id'ye işaret eder.
+    const secili = screen.getByRole("tab", { name: "Öneriler" });
+    expect(document.getElementById(secili.getAttribute("aria-controls")!)).toHaveAttribute("role", "tabpanel");
+    expect(screen.getByRole("tab", { name: "Sohbet" })).not.toHaveAttribute("aria-controls");
   });
 });
 
@@ -169,6 +176,48 @@ describe("dar ekran", () => {
     isle(await sor(u, "Kırarak doğrula neden gri?"));
     await u.click(await within(d).findByRole("link", { name: "Git: Kod üretimi" }, { timeout: 3000 }));
     expect(screen.queryByTestId("asistan-paneli")).toBeNull();
+  });
+
+  it("dialog açılınca odak içeride, Tab panelde döner, odak dışarıdayken Esc kapatır, odak başlatıcıya döner", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((q: string) => ({ matches: q.includes("max-width"), media: q, addEventListener: () => undefined, removeEventListener: () => undefined })),
+    );
+    await oturumAc("muhendis");
+    const u = userEvent.setup();
+    yalnizPanel();
+    await u.click(await screen.findByRole("button", { name: "Asistanı aç" }));
+    const d = screen.getByRole("dialog", { name: "Asistan" });
+    expect(d).toContainElement(document.activeElement as HTMLElement);
+    // Tab ve Shift+Tab odağı dışarı kaçırmaz.
+    for (let i = 0; i < 25; i++) {
+      await u.tab();
+      expect(d).toContainElement(document.activeElement as HTMLElement);
+    }
+    await u.tab({ shift: true });
+    expect(d).toContainElement(document.activeElement as HTMLElement);
+    // Odak body'deyken de Esc kapatır (belge düzeyinde dinlenir).
+    (document.activeElement as HTMLElement).blur();
+    expect(document.activeElement).toBe(document.body);
+    await u.keyboard("{Escape}");
+    expect(screen.queryByTestId("asistan-paneli")).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Asistanı aç" }));
+  });
+
+  it("dışarıdan (Öneri düğmesi gibi) açılan panel kapanınca odak açan öğeye döner", async () => {
+    await oturumAc("analist");
+    const u = userEvent.setup();
+    yalnizPanel(
+      "/gereksinimler",
+      <button type="button" onClick={() => acSekme("sohbet")}>
+        Dış açıcı
+      </button>,
+    );
+    await screen.findByRole("button", { name: "Asistanı aç" });
+    await u.click(screen.getByRole("button", { name: "Dış açıcı" }));
+    expect(panel()).toContainElement(document.activeElement as HTMLElement);
+    await u.click(within(panel()).getByRole("button", { name: "Asistanı kapat" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Dış açıcı" }));
   });
 });
 
@@ -282,7 +331,36 @@ describe("soru ve cevap", () => {
     const p = await paneliAc(u);
     await u.type(within(p).getByLabelText("Sorunuz"), "yeni soru");
     await u.click(within(p).getByRole("button", { name: "Asistana sor" }));
-    expect(await within(p).findByText(/Başka bir sekmede yanıt bekleyen sorunuz var/)).toBeInTheDocument();
+    expect(await within(p).findByText(/Yanıt bekleyen bir sorunuz var \(bu ya da başka bir sekmede\)/)).toBeInTheDocument();
+  });
+
+  it("yanıt bekleyen soru varken 'Neden? Sor' sohbetten ayrılmaz, boş sohbet açmaz; soru girdide kalır", async () => {
+    await oturumAc("analist");
+    const u = userEvent.setup();
+    yalnizPanel("/gereksinimler");
+    const p = await paneliAc(u);
+    await sor(u, "ilk soru");
+    const olustur = vi.spyOn(asistanApi, "sohbetOlustur");
+    act(() => acSekme("sohbet", { oneriKuralId: "r01", soru: "Bu öneri neden çıktı?" }));
+    expect(await within(p).findByText(/Yanıt bekleyen bir sorunuz var \(bu ya da başka bir sekmede\)/)).toBeInTheDocument();
+    expect(olustur).not.toHaveBeenCalled();
+    expect(within(p).getByTestId("asistan-bekleme")).toBeInTheDocument();
+    expect(within(p).getByText("ilk soru")).toBeInTheDocument();
+    expect(within(p).getByLabelText("Sorunuz")).toHaveValue("Bu öneri neden çıktı?");
+  });
+
+  it("yeni sohbette soru reddedilirse (409) önceki sohbet kalır ve açılan boş sohbet silinir", async () => {
+    await oturumAc("analist");
+    const s0 = await asistanApi.sohbetOlustur(null);
+    await asistanApi.soruGonder(s0.id, { soru: "diğer sekme" });
+    const u = userEvent.setup();
+    yalnizPanel("/gereksinimler");
+    const p = await paneliAc(u);
+    const sil = vi.spyOn(asistanApi, "sohbetSil");
+    act(() => acSekme("sohbet", { oneriKuralId: "r01", soru: "Bu öneri neden çıktı?" }));
+    expect(await within(p).findByText(/Yanıt bekleyen bir sorunuz var/)).toBeInTheDocument();
+    await waitFor(() => expect(sil).toHaveBeenCalledTimes(1));
+    expect(within(p).getByLabelText("Sorunuz")).toHaveValue("Bu öneri neden çıktı?");
   });
 
   it("mesaj hatası: girdi_tavani → 'Soru çok geniş' daraltma önerisi", async () => {
@@ -310,6 +388,18 @@ describe("bekleme, iptal, yoklama, yeniden bağlanma", () => {
     act(() => asistanMockBaslat(id));
     await u.click(within(p).getByRole("button", { name: "Beklemeyi bırak" }));
     expect(await within(p).findByText(/İşlenen kısım ücretlendi/)).toBeInTheDocument();
+  });
+
+  it("geçen süre sayacı canlı bölgede duyurulmaz (aria-hidden); adım metni duyurulur", async () => {
+    await oturumAc("analist");
+    const u = userEvent.setup();
+    yalnizPanel();
+    const p = await paneliAc(u);
+    await sor(u, "bir");
+    const b = within(p).getByTestId("asistan-bekleme");
+    const sayac = within(b).getByText(/· \d+ sn/);
+    expect(sayac).toHaveAttribute("aria-hidden", "true");
+    expect(sayac.closest('[role="status"]')).toBe(b);
   });
 
   it("SSE yokken yoklama; 25 sn sonra 'Uzun sürüyor'", async () => {
@@ -414,6 +504,31 @@ describe("Asistana sor ve son hata", () => {
     expect(casus.mock.calls[0][1].baglam).toMatchObject({
       son_hata: { uc: "POST /cases/:id/review", status: 409, kod: "onay_hash_uyusmuyor", gorunen_metin: "İçerik değişti, yeniden inceleyin." },
     });
+  });
+
+  it("gerçek sayfa: yükleme hatasında HataKutusu 'Asistana sor' gösterir (kaynak=hataNesnesi)", async () => {
+    await oturumAc("analist");
+    const u = userEvent.setup();
+    uygulama("/gereksinimler/boyle-bir-gereksinim-yok");
+    const kutu = await screen.findByRole("alert", {}, { timeout: 5000 });
+    await u.click(within(kutu).getByRole("button", { name: "Asistana sor" }));
+    expect(within(panel()).getByLabelText("Sorunuz")).toHaveValue("Bu hata ne demek, ne yapmalıyım?");
+    expect(within(panel()).getByText(/Son hata:/)).toBeInTheDocument();
+  });
+
+  it("karar ekranlarının satır içi 409 uyarısında 'Asistana sor' (AsistanaSorDugmesi)", async () => {
+    await oturumAc("analist");
+    const u = userEvent.setup();
+    const hata = new ApiError(409, "Durum değişti", { kod: "durum_degisti", method: "POST", yol: "/findings/:id/decision" });
+    hataKaydet(hata);
+    yalnizPanel(
+      "/gereksinimler",
+      <p className="alan-hata" role="alert">
+        İçerik değişti. <AsistanaSorDugmesi hata="İçerik değişti." kaynak={hata} />
+      </p>,
+    );
+    await u.click(await screen.findByRole("button", { name: "Asistana sor" }));
+    expect(within(panel()).getByText(/Son hata: İçerik değişti\./)).toBeInTheDocument();
   });
 
   it("kaynaksız HataKutusu'nda 'Asistana sor' yok", async () => {

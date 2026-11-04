@@ -19,6 +19,7 @@ from tp_core import worker
 from tp_core.config import get_settings
 from tp_core.workflow import jobs
 from tp_core.workflow.jobs import (
+    ASISTAN_SERIT,
     UZUN_SERIT,
     HandlerSpec,
     claim,
@@ -164,3 +165,43 @@ def test_uzun_seritte_zaman_asimi_sureci_durdurur(engine: Engine) -> None:
     finally:
         serbest.set()
         jobs.REGISTRY.pop(tur, None)
+
+
+def test_asistan_serit_kapaliyken_asistan_isi_genel_seritte_kosmaz(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`TP_WORKER_ASISTAN_SERIT=0`: asistan işi genel şeritte alınmaz (orada zaman aşımı tüm
+    süreci kapatırdı); kuyrukta kalır, genel işler işlenir, süreç çıkış kodu 0."""
+    monkeypatch.setenv("TP_WORKER_ASISTAN_SERIT", "0")
+    ek = uuid.uuid4().hex[:6]
+    a_tur, genel_tur = f"t.askapali.{ek}", f"t.genel.{ek}"
+    calisti = threading.Event()
+
+    def asistan_isi(_c) -> None:
+        calisti.set()
+        time.sleep(5)
+
+    job_handler(a_tur, max_deneme=1, zaman_asimi_s=1, serit=ASISTAN_SERIT)(asistan_isi)
+    job_handler(genel_tur, max_deneme=1, zaman_asimi_s=30)(lambda _c: None)
+    dur = threading.Event()
+    sonuc: list[int] = []
+    t = threading.Thread(target=lambda: sonuc.append(worker.run(dur, aralik=0.02)), daemon=True)
+    try:
+        assert worker.asistan_serit_turleri() == frozenset()
+        with engine.begin() as c:
+            a_id = enqueue(c, a_tur)  # önce eklenen (en eski)
+            g_id = enqueue(c, genel_tur)
+        t.start()
+        assert _bekle(lambda: _durum(engine, g_id) == "done")
+        assert a_tur in (worker._genel_haric or [])
+        time.sleep(0.2)
+        assert not calisti.is_set()
+        assert _durum(engine, a_id) == "queued"
+        assert t.is_alive()
+    finally:
+        dur.set()
+        t.join(timeout=10)
+        jobs.REGISTRY.pop(a_tur, None)
+        jobs.REGISTRY.pop(genel_tur, None)
+    assert sonuc == [0]
+    assert worker._genel_haric is None

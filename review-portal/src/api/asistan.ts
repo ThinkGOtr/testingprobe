@@ -198,12 +198,15 @@ export function mesajHataMetni(kod: string | null | undefined): string {
   return (kod && MESAJ_HATALARI[kod]) || "Cevap hazırlanamadı.";
 }
 
+/** Yanıt bekleyen soru varken yeni soru (409 bekleyen_var ya da istemcide önceden engellenen). */
+export const BEKLEYEN_VAR_METNI = "Yanıt bekleyen bir sorunuz var (bu ya da başka bir sekmede). O cevap gelince yeniden sorun.";
+
 /** Gönderim hatası (`ApiError.kod`) → kullanıcı metni. */
 export function gonderimHataMetni(e: unknown): string {
   if (!(e instanceof ApiError)) return e instanceof Error ? e.message : "Soru gönderilemedi.";
   switch (e.kod) {
     case "bekleyen_var":
-      return "Başka bir sekmede yanıt bekleyen sorunuz var. O cevap gelince yeniden sorun.";
+      return BEKLEYEN_VAR_METNI;
     case "zaten_derin":
       return "Bu cevap zaten ayrıntılı incelendi.";
     case "hiz_siniri":

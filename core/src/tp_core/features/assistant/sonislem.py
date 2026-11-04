@@ -28,6 +28,7 @@ Saklanan biçim (portal `AsistanCevabi`): şema alanları + `guven_gosterimi`, `
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -39,6 +40,8 @@ from typing import Any, Final, Protocol
 from tp_core.features.assistant.siniflandir import normalize
 from tp_core.features.assistant.tools.base import KanitHavuzu, sir_temizle
 from tp_core.gateway.masking import MaskingSession
+
+log = logging.getLogger(__name__)
 
 DOGRULANDI: Final = "Kaynakla doğrulandı"
 KISMEN: Final = "Kısmen"
@@ -374,7 +377,9 @@ class _KaynakDogrulayici:
             if tur in HAVUZ_TURLERI:
                 return self._havuz(tur, ref, alinti)
         except Exception as exc:  # doğrulama hatası cevabı düşürmez
-            return _Sonuc(False, neden=f"doğrulanamadı ({type(exc).__name__})")
+            # Kullanıcıya sabit metin; istisna adı yalnız kayda (§9, §10.2).
+            log.debug("asistan kaynak doğrulanamadı: %s (%s)", tur, type(exc).__name__)
+            return _Sonuc(False, neden="doğrulanamadı")
         return _Sonuc(False, neden="doğrulanmaz")
 
     def _urun(self, ref: str, alinti: Any) -> _Sonuc:
