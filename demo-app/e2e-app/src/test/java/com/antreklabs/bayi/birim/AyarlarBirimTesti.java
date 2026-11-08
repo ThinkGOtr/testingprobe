@@ -66,12 +66,16 @@ public class AyarlarBirimTesti {
     assertEquals(yetenek(o, "app"), "/x/bayi.apk");
     assertEquals(yetenek(o, "deviceName"), "emulator-5554");
     assertEquals(yetenek(o, "noReset"), Boolean.FALSE);
+    // RN testID öneksiz resource-id'dir; sürücü paket öneki eklememeli. Verilen APK her oturumda kurulur.
+    assertEquals(yetenek(o, "disableIdLocatorAutocompletion"), Boolean.TRUE);
+    assertEquals(yetenek(o, "enforceAppInstall"), Boolean.TRUE);
 
     BaseOptions<?> kurulu =
         SurucuFabrikasi.secenekler(
-            Platform.ANDROID, Ayarlar.haritadan(Map.of("app.id", "com.antreklabs.bayi", "app.activity", ".MainActivity"), Map.of()));
-    assertEquals(yetenek(kurulu, "appPackage"), "com.antreklabs.bayi");
+            Platform.ANDROID, Ayarlar.haritadan(Map.of("app.id", "com.antreklabs.bayisiparis", "app.activity", ".MainActivity"), Map.of()));
+    assertEquals(yetenek(kurulu, "appPackage"), "com.antreklabs.bayisiparis");
     assertEquals(yetenek(kurulu, "appActivity"), ".MainActivity");
+    assertEquals(yetenek(kurulu, "disableIdLocatorAutocompletion"), Boolean.TRUE);
     assertThrows(
         IllegalArgumentException.class, () -> SurucuFabrikasi.secenekler(Platform.ANDROID, Ayarlar.haritadan(Map.of(), Map.of())));
   }
@@ -85,8 +89,8 @@ public class AyarlarBirimTesti {
     assertEquals(String.valueOf(yetenek(o, "automationName")).toLowerCase(), "xcuitest");
     assertEquals(yetenek(o, "app"), "/x/Bayi.app");
     assertEquals(yetenek(o, "platformVersion"), "18.0");
-    BaseOptions<?> kurulu = SurucuFabrikasi.secenekler(Platform.IOS, Ayarlar.haritadan(Map.of("app.id", "com.antreklabs.bayi"), Map.of()));
-    assertEquals(yetenek(kurulu, "bundleId"), "com.antreklabs.bayi");
+    BaseOptions<?> kurulu = SurucuFabrikasi.secenekler(Platform.IOS, Ayarlar.haritadan(Map.of("app.id", "com.antreklabs.bayisiparis"), Map.of()));
+    assertEquals(yetenek(kurulu, "bundleId"), "com.antreklabs.bayisiparis");
   }
 
   @Test(groups = "birim")

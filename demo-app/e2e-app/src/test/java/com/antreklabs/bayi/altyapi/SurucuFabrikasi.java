@@ -53,11 +53,16 @@ public final class SurucuFabrikasi {
     o.setNewCommandTimeout(KOMUT_ZAMAN_ASIMI);
     // Animasyonlar kapalı: bekleme yardımcıları geçiş animasyonuna takılmaz.
     o.setDisableWindowAnimation(true);
+    // RN testID, resource-id'ye paket öneki OLMADAN yazılır ("login-username"). UiAutomator2 `id`
+    // stratejisinde varsayılan olarak "<paket>:id/" önekini ekler ve öğeyi bulamaz; kapatılır.
+    o.setCapability("appium:disableIdLocatorAutocompletion", true);
     a.deviceName().ifPresent(o::setDeviceName);
     a.udid().ifPresent(o::setUdid);
     a.platformVersion().ifPresent(o::setPlatformVersion);
     if (a.appPath().isPresent()) {
       o.setApp(a.appPath().get());
+      // Cihazdaki eski (aynı sürüm kodlu) APK'yı korumak yerine verilen derlemeyi her oturumda kurar.
+      o.setEnforceAppInstall(true);
     } else {
       String paket = a.appId().orElseThrow(() -> eksik("android", "app.path ya da app.id (paket adı)"));
       o.setAppPackage(paket);

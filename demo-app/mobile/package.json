@@ -1,0 +1,30 @@
+{
+  "name": "bayi-siparis-mobil",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Bayi Sipariş Portalı örnek uygulaması — mobil (Expo / React Native; iOS + Android)",
+  "main": "index.ts",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "expo start",
+    "tip-kontrol": "tsc --noEmit",
+    "kimlik-kontrol": "node scripts/kimlik-kontrol.mjs",
+    "kimlik-uret": "node scripts/kimlik-kontrol.mjs --uret",
+    "kontrol": "npm run tip-kontrol && npm run kimlik-kontrol",
+    "derle:android": "scripts/derle-android.sh",
+    "derle:ios": "scripts/derle-ios.sh"
+  },
+  "dependencies": {
+    "expo": "58.0.23",
+    "expo-status-bar": "58.0.4",
+    "react": "19.3.0",
+    "react-native": "0.88.1",
+    "react-native-safe-area-context": "5.11.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "typescript": "6.0.3"
+  }
+}

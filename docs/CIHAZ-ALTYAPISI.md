@@ -48,8 +48,10 @@ Durum dosyaları ve günlükler `var/cihaz/` altındadır (git dışı): `appium
 Betikler yalnızca bu iki cihaza dokunur. Başka şeritlerin cihazları (ör. `tp-mobil-gelistirme`) ve
 kullanıcının diğer AVD/simülatörleri seri numarası / UDID adıyla ayrılarak atlanır.
 
-Uygulama kimliği varsayılanı `com.antreklabs.bayi` (Ş1 farklı seçerse `TP_APP_PAKETI`, app-mcp'de
-`APP_ANDROID_PACKAGE` / `APP_IOS_BUNDLE_ID`).
+Uygulama kimliği `com.antreklabs.bayisiparis` (Android paketi, etkinlik `.MainActivity`; iOS bundle id
+aynı). Betiklerde `TP_APP_PAKETI`, app-mcp'de `APP_ANDROID_PACKAGE` / `APP_ANDROID_ACTIVITY` /
+`APP_IOS_BUNDLE_ID` ile değiştirilir (compose varsayılanları bunlardır). Derlemeler
+`demo-app/mobile/build/bayi-siparis.apk` ve `BayiSiparis.app`; `cihaz-baslat` en yenisini kurar.
 
 ## 4. Appium (proje içi) ve WebDriverAgent
 
@@ -134,7 +136,7 @@ Sonuç metni Playwright MCP'ye benzer bölümlerdir; snapshot satır içi ```` `
 Tıklandı: Giriş yap [ref=e7]
 ### Uygulama
 - Platform: android
-- Uygulama: com.antreklabs.bayi
+- Uygulama: com.antreklabs.bayisiparis
 ### Snapshot
 ```yaml
 - <rol> "<ad>" [id=<kimlik>] [password] [disabled] [checked] [selected] [ref=eN]: <değer>
@@ -237,7 +239,7 @@ eklendi (çalışıyorsa denetlenir).
 
 ### 6.6 Testler ve duman
 
-- Birim: `cd toolchain/app-mcp && npm test` (node:test; sahte Appium katmanı; 70 test). Fikstürler
+- Birim: `cd toolchain/app-mcp && npm test` (node:test; sahte Appium katmanı; 71 test). Fikstürler
   `test/fixtures/`: **gerçek** `android-ayarlar.xml`, `android-ayarlar-arama.xml`, `ios-ayarlar.xml`
   (`scripts/kaynak-yakala.mjs` ile canlı cihazdan yakalandı) ve **elle yazılmış** RN/WPF Bayi
   giriş ekranları (`*-bayi-giris.xml`). Her fikstürün altın snapshot'ı `*.snapshot.txt`
@@ -247,6 +249,11 @@ eklendi (çalışıyorsa denetlenir).
   locator üretir, ekran görüntüsü alır, geçersiz ref hata yolunu dener. Kanıt
   `var/cihaz/kanit/duman-<platform>[-konteyner]-<zaman>.txt|.png`. Konteynerdeki app-mcp'ye karşı:
   `DUMAN_MCP_URL=http://127.0.0.1:<port>/mcp`.
+- Demo uygulama dumanı: `node toolchain/app-mcp/scripts/duman-demo.mjs android|ios` — Bayi Sipariş
+  Portalı'nı `reset` ile başlatır, snapshot'ta giriş kimliklerini bulur, kullanıcı adı + parola yazar
+  (parola çıktıda `***`), giriş yapar, kataloğu bekler ve "Sepete ekle" için
+  `{"platform":"android","strategy":"id","id":"add-to-cart"}` (iOS: `accessibilityId`) bekler. Kanıt
+  `var/cihaz/kanit/duman-demo-<platform>-<zaman>.txt`.
 
 ## 7. Bilinen sorunlar / açık işler
 

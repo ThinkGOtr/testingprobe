@@ -406,9 +406,9 @@ services:
       APPIUM_URL_IOS: ${APPIUM_URL_IOS:-http://host.docker.internal:4723}
       APPIUM_URL_WINDOWS: ${APPIUM_URL_WINDOWS:-}
       # Ajan yalnızca bu uygulamayı başlatabilir (app_launch platform dışında argüman almaz).
-      APP_ANDROID_PACKAGE: ${APP_ANDROID_PACKAGE:-com.antreklabs.bayi}
-      APP_ANDROID_ACTIVITY: ${APP_ANDROID_ACTIVITY:-}
-      APP_IOS_BUNDLE_ID: ${APP_IOS_BUNDLE_ID:-com.antreklabs.bayi}
+      APP_ANDROID_PACKAGE: ${APP_ANDROID_PACKAGE:-com.antreklabs.bayisiparis}
+      APP_ANDROID_ACTIVITY: ${APP_ANDROID_ACTIVITY:-.MainActivity}
+      APP_IOS_BUNDLE_ID: ${APP_IOS_BUNDLE_ID:-com.antreklabs.bayisiparis}
       APP_IOS_UDID: ${APP_IOS_UDID:-}
       APP_WINDOWS_APP: ${APP_WINDOWS_APP:-}
     extra_hosts:
