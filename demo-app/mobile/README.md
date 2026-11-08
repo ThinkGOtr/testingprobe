@@ -133,10 +133,10 @@ npm run tip-kontrol      # tsc --noEmit
 
 Derleme betikleri ikisini de önce çalıştırır; sözleşme bozuksa derleme yapılmaz.
 
-## Doğrulama (elle, Appium'suz)
+## Doğrulama
 
 ```bash
-# Android: resource-id'ler
+# Android (Appium'suz): resource-id'ler
 adb shell uiautomator dump /sdcard/pencere.xml && adb pull /sdcard/pencere.xml
 grep -o 'resource-id="[^"]*"' pencere.xml | sort -u
 
@@ -145,6 +145,18 @@ adb exec-out screencap -p > ekran.png
 xcrun simctl io booted screenshot ekran.png
 ```
 
-iOS'ta `accessibilityIdentifier` doğrulaması Appium/XCUITest (ya da Xcode Accessibility Inspector)
-ister; kimlik değerleri `testID` ile birebir aynı olduğundan Ş3 referans testleri (`AppiumBy.accessibilityId`)
-bunu kilitler.
+iOS'ta `accessibilityIdentifier` yalnızca XCUITest üzerinden görülür (Appium XCUITest sürücüsü ya da
+doğrudan WebDriverAgent). Sayfa kaynağında `name="<kimlik>"`, `label` ise Türkçe erişilebilirlik
+adıdır (ör. `name="add-to-cart" label="Sepete ekle"`).
+
+İlk doğrulama (2026-11-08, Android 16 emülatörü + iOS 18.5 simülatörü, bayi1): giriş hatası, giriş,
+7 adet kampanyalı ürün (1 bedava, 25,00 TL indirim), sepet tutarları, sipariş onayı, siparişlerim,
+boş sepet, minimum tutar uyarısı (onay düğmesi pasif), satır kaldırma ve çıkış her iki platformda
+kimliklerle bulunarak yürütüldü; 39 kimliğin 37'si ağaçta görüldü (`checkout-error` ve `orders-empty`
+yalnızca hata / hiç siparişi olmayan bayi durumunda çıkar).
+
+**Bilinen davranışlar**
+
+- iOS sayı klavyesinde "Bitti" tuşu yoktur; açık klavye alt sekmeleri ve alttaki kartların
+  düğmelerini örter. Uygulama "Sepete ekle"de klavyeyi kapatır ve kaydırınca kapanır; testte adet
+  yazıldıktan sonra aynı kartın düğmesine basılır (başka karta geçmeden).

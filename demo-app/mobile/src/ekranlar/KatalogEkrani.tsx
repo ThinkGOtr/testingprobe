@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Keyboard, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { api, ApiError, type Cart, type Product } from "../api";
 import { formatTL } from "../bicim";
 import { Dugme } from "../bilesenler/Dugme";
@@ -29,6 +29,8 @@ export function KatalogEkrani({ onCartChange }: Props) {
   }, []);
 
   async function add(p: Product) {
+    // iOS sayı klavyesinde "bitti" tuşu yok; açık kalırsa alt sekmeleri (Sepet) örter.
+    Keyboard.dismiss();
     const raw = (qty[p.kod] ?? "1").trim();
     const n = raw === "" ? Number.NaN : Number(raw);
     if (!Number.isInteger(n) || n < 1 || n > MAX_QTY) {
@@ -49,7 +51,11 @@ export function KatalogEkrani({ onCartChange }: Props) {
   }
 
   return (
-    <ScrollView contentContainerStyle={stiller.kaydirma} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      contentContainerStyle={stiller.kaydirma}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+    >
       <View style={ortak.sayfaBasi}>
         <Text style={ortak.h1} accessibilityRole="header">
           Ürün kataloğu
