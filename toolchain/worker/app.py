@@ -26,6 +26,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    ValidationInfo,
     field_validator,
     model_validator,
 )
@@ -60,6 +61,7 @@ from toolchain_common.validation import (
 )
 from worker import affected
 from worker import check as checks
+from worker import java as javayol
 from worker.astguard import AstGuardError, run_ast_guard
 
 app = create_app(
@@ -77,6 +79,24 @@ install_error_handlers(app)
 Ref = Annotated[str, AfterValidator(validate_ref)]
 # `/health` dışındaki her uç (toolchain_common/auth.py).
 AUTH = [Depends(require_token)]
+# Dil boyutu (009 §2.1): `lang` (ts | java) ya da `platform` (web | android | ios | windows).
+# İkisi de verilmezse `ts` — mevcut Playwright/TypeScript yolu, davranışı değişmez.
+Lang = Literal["ts", "java"]
+Platform = Literal["web", "android", "ios", "windows"]
+
+
+class LangMixin(BaseModel):
+    lang: Lang | None = None
+    platform: Platform | None = None
+
+    @model_validator(mode="after")
+    def _lang_uyumu(self) -> LangMixin:
+        javayol.resolve_lang(self.lang, self.platform)
+        return self
+
+    @property
+    def dil(self) -> str:
+        return javayol.resolve_lang(self.lang, self.platform)
 
 
 def _resolve(cfg: Settings, ref: str, prefer: Path | None = None) -> repos.Located:
@@ -91,30 +111,40 @@ def _resolve(cfg: Settings, ref: str, prefer: Path | None = None) -> repos.Locat
 
 # ------------------------------------------------------------------------------- /symbols
 
-_SYMBOL_CACHE: OrderedDict[tuple[str, str], dict[str, Any]] = OrderedDict()
+_SYMBOL_CACHE: OrderedDict[tuple[str, str, str], dict[str, Any]] = OrderedDict()
 _SYMBOL_CACHE_LOCK = threading.Lock()
 _SYMBOL_CACHE_MAX = 32
 
 
-class SymbolsBody(BaseModel):
+class SymbolsBody(LangMixin):
     model_config = ConfigDict(extra="forbid")
     sha: Ref
 
 
-def extract_symbols(cfg: Settings, full_sha: str, repo: Path | None = None) -> dict[str, Any]:
-    """Commit'in e2e/pages ağacından sembol tablosu (commit değişmez → önbellekli)."""
+def extract_symbols(
+    cfg: Settings, full_sha: str, repo: Path | None = None, lang: str = "ts"
+) -> dict[str, Any]:
+    """Commit'in e2e/pages (ts) ya da e2e-app (java) ağacından sembol tablosu.
+
+    Commit değişmez → (depo, sha, dil) anahtarıyla önbellekli. Java tablosu `java-araclar
+    symbols` ile TS `tp-symbols` şemasındadır (009 §2.5).
+    """
     repo = repo or cfg.forge_path
-    key = (str(repo), full_sha)
+    key = (str(repo), full_sha, lang)
     with _SYMBOL_CACHE_LOCK:
         if key in _SYMBOL_CACHE:
             _SYMBOL_CACHE.move_to_end(key)
             return _SYMBOL_CACHE[key]
-    with gitforge.checkout(repo, full_sha, cfg.e2e_root, cfg.git_timeout_s) as e2e:
-        res = proc.run(
-            [cfg.node, str(cfg.symbols_cli), "--root", str(e2e)],
-            timeout_s=cfg.symbols_timeout_s,
-            keep_full_stdout=True,
-        )
+    if lang == "java":
+        with gitforge.checkout(repo, full_sha, cfg.e2e_app_root, cfg.git_timeout_s) as root:
+            res = javayol.run_symbols(cfg, root)
+    else:
+        with gitforge.checkout(repo, full_sha, cfg.e2e_root, cfg.git_timeout_s) as e2e:
+            res = proc.run(
+                [cfg.node, str(cfg.symbols_cli), "--root", str(e2e)],
+                timeout_s=cfg.symbols_timeout_s,
+                keep_full_stdout=True,
+            )
     if res.timed_out:
         raise HTTPException(504, "Sembol çıkarımı süre sınırını aştı.")
     try:
@@ -126,6 +156,8 @@ def extract_symbols(cfg: Settings, full_sha: str, repo: Path | None = None) -> d
             422, f"Sembol tablosu çıkarılamadı: {table.get('error', res.stderr[:300])}"
         )
     table = {"sha": full_sha, **table}
+    if lang != "ts":
+        table["lang"] = lang
     with _SYMBOL_CACHE_LOCK:
         _SYMBOL_CACHE[key] = table
         while len(_SYMBOL_CACHE) > _SYMBOL_CACHE_MAX:
@@ -138,7 +170,7 @@ def symbols(body: SymbolsBody) -> dict[str, Any]:
     cfg = settings()
     loc = _resolve(cfg, body.sha)
     try:
-        return {**extract_symbols(cfg, loc.sha, loc.repo), "kaynak": loc.kaynak}
+        return {**extract_symbols(cfg, loc.sha, loc.repo, body.dil), "kaynak": loc.kaynak}
     except gitforge.ForgeError as exc:
         raise HTTPException(503, f"Forge okunamadı: {exc}") from exc
 
@@ -146,7 +178,7 @@ def symbols(body: SymbolsBody) -> dict[str, Any]:
 # ----------------------------------------------------------------------------- /ast-guard
 
 
-class AstGuardBody(BaseModel):
+class AstGuardBody(LangMixin):
     model_config = ConfigDict(extra="forbid")
     base_sha: Ref
     head_sha: Ref
@@ -165,9 +197,17 @@ def ast_guard(body: AstGuardBody) -> dict[str, Any]:
             422, "base ve head aynı depoda değil (yerel forge / GitHub aynası); karşılaştırılamaz."
         )
     try:
-        report = run_ast_guard(cfg, base, head, body.mode, head_loc.repo)
-    except AstGuardError as exc:
+        if body.dil == "java":
+            with gitforge.checkout(
+                head_loc.repo, head, cfg.e2e_app_root, cfg.git_timeout_s
+            ) as root:
+                report = javayol.guard_report(cfg, head_loc.repo, base, head, body.mode, root)
+        else:
+            report = run_ast_guard(cfg, base, head, body.mode, head_loc.repo)
+    except (AstGuardError, javayol.JavaAracError) as exc:
         raise HTTPException(422, str(exc)) from exc
+    except gitforge.ForgeError as exc:
+        raise HTTPException(503, f"Forge okunamadı: {exc}") from exc
     return {
         "ok": bool(report.get("ok")),
         "violations": report.get("violations", []),
@@ -181,13 +221,13 @@ def ast_guard(body: AstGuardBody) -> dict[str, Any]:
 # --------------------------------------------------------------------------------- /check
 
 
-class CheckBody(BaseModel):
+class CheckBody(LangMixin):
     model_config = ConfigDict(extra="forbid")
 
     sha: Ref
-    test_files: Annotated[list[str], AfterValidator(validate_test_files)] = Field(
-        default_factory=list
-    )
+    # `lang`/`platform` (LangMixin) alanları test_files'tan önce doğrulanır: Java'da test dosyası
+    # e2e-app köküne göre `src/test/java/**/<Ad>Test.java`, TS'de `tests/**.spec.ts`.
+    test_files: list[str] = Field(default_factory=list)
     repeat_each: int = Field(3, ge=1, le=10)
     retries: int = Field(0, ge=0, le=3)
     env: dict[str, str] = Field(default_factory=dict)
@@ -205,6 +245,19 @@ class CheckBody(BaseModel):
     # ya da "@diff" (base_sha..sha). Kapsamlıdır: asla local-ci kaydı olmaz.
     affected_by: Annotated[list[str], Field(max_length=50)] = Field(default_factory=list)
 
+    @field_validator("test_files")
+    @classmethod
+    def _test_files(cls, v: list[str], info: ValidationInfo) -> list[str]:
+        try:
+            lang = javayol.resolve_lang(info.data.get("lang"), info.data.get("platform"))
+        except ValueError:
+            lang = "ts"  # uyumsuzluk model doğrulamasında ayrıca bildirilir
+        if lang != "java":
+            return validate_test_files(v)
+        if len(v) > 200:
+            raise ValueError("en fazla 200 test dosyası verilebilir")
+        return list(dict.fromkeys(javayol.validate_java_test_file(x) for x in v))
+
     @field_validator("affected_by")
     @classmethod
     def _affected(cls, v: list[str]) -> list[str]:
@@ -216,6 +269,10 @@ class CheckBody(BaseModel):
 
     @model_validator(mode="after")
     def _record(self) -> CheckBody:
+        if self.dil == "java" and (self.grep or self.affected_by):
+            raise ValueError(
+                "Java yolunda grep ve affected_by henüz desteklenmiyor (test_files kullanın)"
+            )
         if self.affected_by and (self.test_files or self.grep):
             raise ValueError("affected_by, test_files ve grep ile birlikte verilemez")
         if self.record_check and self.affected_by:
@@ -261,6 +318,8 @@ def check(body: CheckBody) -> dict[str, Any]:
         record_check=body.record_check,
         keep=body.keep,
         affected_by=body.affected_by,
+        lang=body.dil,
+        platform=body.platform,
     )
     try:
         return checks.execute(cfg, req)

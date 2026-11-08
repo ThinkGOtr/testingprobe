@@ -69,6 +69,26 @@ class Settings:
     allure_cli: Path
     allure_config: Path
     allure_timeout_s: float
+    # Java (009 §2.3–2.5): e2e-app kökü (forge'da; local-forge `e2e-app`, GitHub monorepo
+    # `demo-app/e2e-app`), güvenilir pom + önceden ısıtılmış Maven deposu, java ve mvn ikilileri.
+    e2e_app_root: str = "e2e-app"
+    e2e_app_deps: Path = Path("/opt/e2e-app")
+    java: str = "java"
+    mvn: str = "/opt/maven/bin/mvn"
+    mvn_timeout_s: float = 300
+    # Boş = imajdaki `TOOLCHAIN_HOME/java-araclar/java-araclar.jar` (geliştirmede target/ yolu).
+    java_araclar_jar_path: Path | None = None
+
+    @property
+    def java_araclar_jar(self) -> Path:
+        return self.java_araclar_jar_path or (
+            self.toolchain_home / "java-araclar" / "java-araclar.jar"
+        )
+
+    @property
+    def e2e_app_m2(self) -> Path:
+        """Çevrimdışı Maven deposu (salt okunur; `maven.repo.local.tail`)."""
+        return self.e2e_app_deps / "m2"
 
     @property
     def ast_guard_cli(self) -> Path:
@@ -159,4 +179,12 @@ def settings() -> Settings:
         allure_cli=Path(env("TP_ALLURE_CLI", "/opt/allure/node_modules/allure/cli.js")),
         allure_config=Path(env("TP_ALLURE_CONFIG", "/opt/allure/allurerc.mjs")),
         allure_timeout_s=_float("TP_ALLURE_TIMEOUT_S", 120),
+        e2e_app_root=env("TP_E2E_APP_ROOT", "e2e-app"),
+        e2e_app_deps=Path(env("TP_E2E_APP_DEPS", "/opt/e2e-app")),
+        java=env("TP_JAVA", "java"),
+        mvn=env("TP_MVN", "/opt/maven/bin/mvn"),
+        mvn_timeout_s=_float("TP_MVN_TIMEOUT_S", 300),
+        java_araclar_jar_path=(
+            Path(env("TP_JAVA_ARACLAR_JAR")) if env("TP_JAVA_ARACLAR_JAR", "").strip() else None
+        ),
     )

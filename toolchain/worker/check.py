@@ -51,6 +51,7 @@ from toolchain_common import appsha, gitforge, repos
 from toolchain_common.artifacts import atomic_write_json, checks_file
 from toolchain_common.settings import Settings
 from worker import affected, static
+from worker import java as javayol
 from worker.astguard import AstGuardError, run_ast_guard
 
 CHECK_NAME = "local-ci"
@@ -82,6 +83,14 @@ class CheckRequest:
     # Etkilenen testler (Faz 4 onarım): e2e köküne göre değişen kaynaklar ya da ["@diff"]
     # (base_sha..sha farkı). İçe aktarma grafiğiyle spec dosyalarına çevrilir (worker/affected.py).
     affected_by: list[str] = field(default_factory=list)
+    # Dil (009 §2.1): "ts" = Playwright/TypeScript (varsayılan, mevcut yol), "java" = Appium/TestNG
+    # (`e2e-app`, worker/java.py). `platform` Java koşusunda test-runner'a iletilir.
+    lang: str = "ts"
+    platform: str | None = None
+
+    @property
+    def step_names(self) -> tuple[str, ...]:
+        return javayol.STEPS if self.lang == "java" else STEPS
 
     @property
     def full_scope(self) -> bool:
@@ -117,18 +126,25 @@ def skipped(reason: str) -> dict[str, Any]:
     return {"ok": False, "skipped": True, "reason": reason}
 
 
-def aggregate(sha: str, steps: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def aggregate(
+    sha: str, steps: dict[str, dict[str, Any]], names: tuple[str, ...] = STEPS
+) -> dict[str, Any]:
     """Adım sonuçlarından tek rapor: hepsi tamam ve koşu `passed` ise `success`."""
     failed = [
         name
-        for name in STEPS
+        for name in names
         if name in steps and not steps[name].get("skipped") and not steps[name].get("ok")
     ]
     run = steps.get("run") or {}
     run_tests = run.get("tests") if isinstance(run.get("tests"), list) else []
-    complete = all(name in steps and not steps[name].get("skipped") for name in STEPS)
+    complete = all(name in steps and not steps[name].get("skipped") for name in names)
     success = complete and not failed and run.get("status") == "passed"
-    if success:
+    if success and names == javayol.STEPS:
+        summary = (
+            "Yerel CI (Java) geçti: uygulama eşleşmesi, bağımlılıklar, AST koruması, derleme ve "
+            "testler yeşil."
+        )
+    elif success:
         summary = (
             "Yerel CI geçti: uygulama eşleşmesi, bağımlılıklar, tsc, eslint, AST koruması ve "
             "testler yeşil."
@@ -150,7 +166,7 @@ def aggregate(sha: str, steps: dict[str, dict[str, Any]]) -> dict[str, Any]:
             run.get("failure_groups") if isinstance(run.get("failure_groups"), list) else []
         ),
         "test_counts": _counts(run_tests),
-        **{name: steps.get(name, skipped("önceki adım başarısız")) for name in STEPS},
+        **{name: steps.get(name, skipped("önceki adım başarısız")) for name in names},
     }
 
 
@@ -252,10 +268,13 @@ def _execute_locked(
     steps: dict[str, dict[str, Any]] = {}
     report: dict[str, Any] | None = None
     try:
-        steps = _run_steps(cfg, req, head, base, runner_client, steps)
-        report = aggregate(full, steps)
+        if req.lang == "java":
+            steps = _run_java_steps(cfg, req, head, base, runner_client, steps)
+        else:
+            steps = _run_steps(cfg, req, head, base, runner_client, steps)
+        report = aggregate(full, steps, req.step_names)
     except Exception as exc:  # dosya her durumda failure ile kapanır
-        report = aggregate(full, steps)
+        report = aggregate(full, steps, req.step_names)
         report.update(
             conclusion="failure",
             ok=False,
@@ -270,6 +289,9 @@ def _execute_locked(
             report["kapsam"] = {**req.scope(), "etkilenen": steps.get("affected")}
             report["check_recorded"] = path is not None
             report["kaynak"] = head.kaynak
+            if req.lang != "ts":
+                report["lang"] = req.lang
+                report["platform"] = req.platform
             if path is not None:
                 atomic_write_json(path, checks_document(full, "completed", report))
     return report
@@ -384,5 +406,68 @@ def _run_steps(
     }
     if req.grep:
         body["grep"] = req.grep
+    steps["run"] = _call_runner(cfg, body, runner_client)
+    return steps
+
+
+def _run_java_steps(
+    cfg: Settings,
+    req: CheckRequest,
+    head: repos.Located,
+    base: str | None,
+    runner_client: httpx.Client | None,
+    steps: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Java yolu (009 §2.3–2.5): app → deps (pom kilidi) → guard → compile → run.
+
+    Koruma derlemeden ÖNCE koşar: yalnızca ayrıştırır; Maven ise (güvenilir pom'la da olsa)
+    derleyici eklentilerini çalıştırır. Kapsam (`test_files`) e2e-app köküne göredir.
+    """
+    full = head.sha
+    steps["app"] = app_step(cfg, head)
+    if not steps["app"]["ok"]:
+        return steps
+    base_sha = base or gitforge.merge_base(head.repo, full, "main", cfg.git_timeout_s) or full
+    with gitforge.checkout(head.repo, full, cfg.e2e_app_root, cfg.git_timeout_s) as root:
+        missing = [f for f in req.test_files if not (root / f).is_file()]
+        if missing:
+            steps["deps"] = {
+                "ok": False,
+                "error": "Test dosyası commit'te yok: " + ", ".join(missing),
+                "missing_test_files": missing,
+            }
+            return steps
+        steps["deps"] = javayol.check_deps(cfg, root)
+        if not steps["deps"]["ok"]:
+            return steps
+        try:
+            guard = javayol.guard_report(cfg, head.repo, base_sha, full, req.ast_guard_mode, root)
+            steps["guard"] = {
+                "ok": bool(guard.get("ok")),
+                "mode": req.ast_guard_mode,
+                "base_sha": base_sha,
+                "report": guard,
+            }
+        except javayol.JavaAracError as exc:
+            steps["guard"] = {"ok": False, "mode": req.ast_guard_mode, "error": str(exc)}
+        if not steps["guard"]["ok"]:
+            return steps
+        steps["compile"] = javayol.run_test_compile(cfg, root)
+        if not steps["compile"]["ok"]:
+            return steps
+
+    body: dict[str, Any] = {
+        "sha": full,
+        "run_id": req.run_id or default_run_id(full),
+        "repeat_each": req.repeat_each,
+        "retries": req.retries,
+        "test_files": list(req.test_files),
+        "env": {"BREAK_CAMPAIGN": "1"} if req.break_campaign else {},
+        "keep": req.keep,
+        # test-runner'ın Java yolu (Ş8): dil + platform (Appium sürücüsü seçimi).
+        "lang": "java",
+    }
+    if req.platform:
+        body["platform"] = req.platform
     steps["run"] = _call_runner(cfg, body, runner_client)
     return steps
