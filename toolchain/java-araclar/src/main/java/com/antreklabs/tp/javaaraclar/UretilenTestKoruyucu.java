@@ -95,6 +95,7 @@ public final class UretilenTestKoruyucu {
   public static final Set<String> ZORUNLU_IMPORTLAR = Set.of(
       TEMEL_PAKET + ".altyapi.TestTabani", "org.testng.annotations.Test");
   public static final String BASLIK = "// AI-generated";
+  public static final String PAKET_BILGISI = "package-info.java";
   public static final String URETILEN_GRUBU = "uretilen";
   static final Pattern DOSYA_ADI = Pattern.compile("^[A-Za-z][A-Za-z0-9]*C[0-9]+_[0-9a-f]{8}Test\\.java$");
   static final Pattern BAYI = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$");
@@ -213,6 +214,10 @@ public final class UretilenTestKoruyucu {
 
     void calis(String metin) {
       String ad = dosya.substring(dosya.lastIndexOf('/') + 1);
+      if (ad.equals(PAKET_BILGISI) && dosya.equals(DIZIN + PAKET_BILGISI)) {
+        paketBilgisi(metin);
+        return;
+      }
       if (!dosya.startsWith(DIZIN) || dosya.substring(DIZIN.length()).contains("/") || !DOSYA_ADI.matcher(ad).matches()) {
         ekle("file_location", 0, "üretilen test " + DIZIN + "<Story>C<sıra>_<uuid8>Test.java olmalı");
       }
@@ -229,6 +234,31 @@ public final class UretilenTestKoruyucu {
         return;
       }
       birim(a.birim(), ad.endsWith(".java") ? ad.substring(0, ad.length() - 5) : ad);
+    }
+
+    /**
+     * {@code uretilen/package-info.java}: yalnızca belge yorumu + {@code package} bildirimi (sınıf,
+     * import, paket notasyonu yok). Kod taşıyamaz; yine de karakter denetimi uygulanır.
+     */
+    void paketBilgisi(String metin) {
+      for (KarakterDenetimi.Bulgu b : KarakterDenetimi.denetle(metin)) ekle(b.kod(), b.satir(), b.mesaj());
+      Kaynaklar.Ayristirma a = Kaynaklar.ayristir(metin, dosya);
+      if (!a.temiz()) {
+        for (Map<String, Object> h : a.hatalar()) {
+          Object s = h.get("line");
+          ekle("parse_error", s instanceof Integer i ? i : 0, (String) h.get("message"));
+        }
+        return;
+      }
+      CompilationUnit cu = a.birim();
+      cu.getModule().ifPresent(m -> ekle("forbidden_statement", m, "modül bildirimi yasak"));
+      if (cu.getPackageDeclaration().isEmpty()
+          || !cu.getPackageDeclaration().get().getNameAsString().equals(PAKET)
+          || !cu.getPackageDeclaration().get().getAnnotations().isEmpty()) {
+        ekle("wrong_package", 1, PAKET_BILGISI + " yalnızca 'package " + PAKET + ";' taşır (notasyonsuz)");
+      }
+      cu.getImports().forEach(i -> ekle("forbidden_import", i, PAKET_BILGISI + " içinde import yasak"));
+      cu.getTypes().forEach(t -> ekle("top_level_type", t, PAKET_BILGISI + " içinde tür bildirimi yasak"));
     }
 
     void birim(CompilationUnit cu, String beklenenSinif) {

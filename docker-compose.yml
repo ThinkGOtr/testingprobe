@@ -297,6 +297,9 @@ services:
       # Forge deposunda e2e kökü: LocalForge 'e2e'; TP_FORGE=github iken 'demo-app/e2e'
       # (core TP_FORGE_APP_ROOT varsayılanı 'demo-app' ile eşleşmeli).
       TP_E2E_ROOT: ${TP_E2E_ROOT:-e2e}
+      # Java e2e kökü (009 §2.3; /symbols, /check, /ast-guard `lang=java`): LocalForge 'e2e-app';
+      # TP_FORGE=github iken 'demo-app/e2e-app'.
+      TP_E2E_APP_ROOT: ${TP_E2E_APP_ROOT:-e2e-app}
       # Çalışan uygulamanın commit eşleşmesinde karşılaştırılan uygulama yolları (/check `app`,
       # /locator-probe): LocalForge 'web,api'; TP_FORGE=github iken 'demo-app/web,demo-app/api'.
       TP_APP_PATHS: ${TP_APP_PATHS:-web,api}

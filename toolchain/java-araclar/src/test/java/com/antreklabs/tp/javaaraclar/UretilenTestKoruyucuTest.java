@@ -260,6 +260,45 @@ class UretilenTestKoruyucuTest {
   }
 
   @Test
+  void paketBilgisi() {
+    String yol = UretilenTestKoruyucu.DIZIN + "package-info.java";
+    String temiz = "/**\n * Üretilen testler.\n */\npackage com.antreklabs.bayi.uretilen;\n";
+    assertEquals(List.of(), UretilenTestKoruyucu.dosyaDenetle(yol, temiz, tablo));
+    for (String[] c : new String[][] {
+        {temiz + "class X { static { System.exit(1); } }\n", "top_level_type"},
+        {temiz.replace("package", "import java.io.File;\npackage"), "parse_error"},
+        {temiz.replace("package com", "@Deprecated\npackage com"), "wrong_package"},
+        {temiz.replace("uretilen;", "testler;"), "wrong_package"},
+        {temiz.replace("Üretilen", "\\u002a/ x /*"), "unicode_escape"},
+    }) {
+      List<UretilenTestKoruyucu.Ihlal> v = UretilenTestKoruyucu.dosyaDenetle(yol, c[0], tablo);
+      assertTrue(v.stream().anyMatch(i -> i.kod().equals(c[1])), c[1] + " beklenirken: " + v);
+    }
+    // Başka dizindeki package-info sıradan dosya gibi reddedilir.
+    assertTrue(UretilenTestKoruyucu.dosyaDenetle("src/test/java/x/package-info.java", temiz, tablo).stream()
+        .anyMatch(i -> i.kod().equals("file_location")));
+  }
+
+  /** Ş3'ün gerçek projesi (demo-app/e2e-app) varsa: tablo hatasız, altın üretilen test geçer. */
+  @Test
+  void gercekE2eApp() throws IOException {
+    Path gercek = Path.of("../../demo-app/e2e-app");
+    org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.isDirectory(gercek.resolve("src/test/java")));
+    SembolCikarici.Tablo t = SembolCikarici.cikar(gercek, Kaynaklar.TEST_KAYNAK);
+    assertEquals(List.of(), t.json().get("errors"));
+    assertEquals(List.of("girisEkrani", "katalogEkrani", "onayEkrani", "sepetEkrani", "siparisEkrani"),
+        t.json().get("fixtures"));
+    List<String> uretilen = new java.util.ArrayList<>();
+    try (Stream<Path> s = java.nio.file.Files.list(gercek.resolve(UretilenTestKoruyucu.DIZIN))) {
+      s.filter(p -> p.toString().endsWith(".java")).sorted()
+          .forEach(p -> uretilen.add(UretilenTestKoruyucu.DIZIN + p.getFileName()));
+    }
+    assertTrue(uretilen.contains(UretilenTestKoruyucu.DIZIN + "TPD1C3_0a1b2c3dTest.java"), uretilen.toString());
+    Map<String, Object> r = UretilenTestKoruyucu.denetle(gercek, uretilen, true);
+    assertEquals(true, r.get("ok"), r.toString());
+  }
+
+  @Test
   void dosyasizCagriNoop() throws IOException {
     Map<String, Object> r = UretilenTestKoruyucu.denetle(KOK, List.of(), false);
     assertEquals(true, r.get("ok"));

@@ -376,3 +376,10 @@ def test_real_offline_test_compile(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     res = javayol.run_test_compile(cfg, root)
     assert not res["ok"]
     assert res["diagnostics"] and res["diagnostics"][0]["file"] == GEN
+    if (DEMO_E2E_APP / "pom.xml").is_file():
+        # Ş3'ün gerçek projesi aynı ısıtılmış depoyla çevrimdışı derlenir.
+        real = tmp_path / "gercek"
+        shutil.copytree(DEMO_E2E_APP, real, ignore=shutil.ignore_patterns("target"))
+        assert javayol.check_deps(cfg, real)["ok"]
+        res = javayol.run_test_compile(cfg, real)
+        assert res["ok"], res
