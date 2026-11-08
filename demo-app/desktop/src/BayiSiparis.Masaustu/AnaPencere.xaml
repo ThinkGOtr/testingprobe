@@ -1,0 +1,88 @@
+<!-- Ana pencere (web: Layout.tsx). Kimlikler web'deki data-testid değerleriyle aynıdır;
+     yalnız masaüstüne özgü olanlar (app-window, busy-indicator, page-*) scripts/kimlik-kontrol.py'de listelidir. -->
+<Window x:Class="BayiSiparis.Masaustu.AnaPencere"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:o="clr-namespace:BayiSiparis.Masaustu.Otomasyon"
+        AutomationProperties.AutomationId="app-window"
+        Title="{Binding PencereBasligi}"
+        Width="1200" Height="860" MinWidth="960" MinHeight="640"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource Zemin}" Foreground="{StaticResource Metin}"
+        FontFamily="Segoe UI" FontSize="14">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <!-- Üst menü: yalnız oturum açıkken -->
+    <o:Kosullu Grid.Row="0" Goster="{Binding OturumAcik}">
+      <Border Background="{StaticResource Yuzey}" BorderBrush="{StaticResource Cizgi}" BorderThickness="0,0,0,1" Padding="24,10">
+        <DockPanel LastChildFill="False">
+          <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+            <Border Width="32" Height="32" CornerRadius="8" Background="{StaticResource Birincil}" Margin="0,0,10,0" />
+            <TextBlock Text="Bayi Sipariş Portalı" FontWeight="SemiBold" FontSize="16" VerticalAlignment="Center" Margin="0,0,28,0" />
+          </StackPanel>
+          <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center"
+                      AutomationProperties.Name="Ana menü">
+            <Button Style="{StaticResource MenuDugmesi}" Content="Katalog"
+                    AutomationProperties.AutomationId="nav-catalog"
+                    AutomationProperties.ItemStatus="{Binding AktifMenu, Converter={StaticResource EtkinMenu}, ConverterParameter=catalog}"
+                    Command="{Binding KatalogaGitKomutu}" />
+            <Button Style="{StaticResource MenuDugmesi}"
+                    AutomationProperties.AutomationId="nav-cart"
+                    AutomationProperties.Name="Sepet"
+                    AutomationProperties.ItemStatus="{Binding AktifMenu, Converter={StaticResource EtkinMenu}, ConverterParameter=cart}"
+                    Command="{Binding SepeteGitKomutu}">
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Sepet" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" VerticalAlignment="Center" />
+                <Border Background="{StaticResource Vurgu}" CornerRadius="9" MinWidth="20" Padding="6,0" Margin="6,0,0,0">
+                  <o:OtomasyonMetni AutomationProperties.AutomationId="cart-count" Text="{Binding SepetAdedi}"
+                                    Foreground="White" FontWeight="SemiBold" FontSize="12" HorizontalAlignment="Center" />
+                </Border>
+              </StackPanel>
+            </Button>
+            <Button Style="{StaticResource MenuDugmesi}" Content="Siparişlerim"
+                    AutomationProperties.AutomationId="nav-orders"
+                    AutomationProperties.ItemStatus="{Binding AktifMenu, Converter={StaticResource EtkinMenu}, ConverterParameter=orders}"
+                    Command="{Binding SiparislereGitKomutu}" />
+          </StackPanel>
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+            <o:OtomasyonMetni AutomationProperties.AutomationId="current-dealer" Text="{Binding BayiAdi}"
+                              VerticalAlignment="Center" Margin="0,0,12,0" FontWeight="SemiBold" />
+            <Button Style="{StaticResource HayaletDugme}" Content="Çıkış yap"
+                    AutomationProperties.AutomationId="nav-logout" Command="{Binding CikisKomutu}" />
+          </StackPanel>
+        </DockPanel>
+      </Border>
+    </o:Kosullu>
+
+    <!-- İçerik: etkin ekran (App.xaml'deki DataTemplate eşlemesi) -->
+    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+      <Grid Margin="24,20">
+        <o:Kosullu Goster="{Binding OturumKontrolEdiliyor}">
+          <TextBlock Text="Yükleniyor…" Style="{StaticResource SolukMetin}" />
+        </o:Kosullu>
+        <ContentControl Content="{Binding Sayfa}" Focusable="False" IsTabStop="False" />
+      </Grid>
+    </ScrollViewer>
+
+    <!-- Meşgul göstergesi: bir API çağrısı sürerken ağaçta vardır, bitince tamamen çıkar.
+         Testler "busy-indicator" kaybolana kadar bekleyebilir. Tıklamaları engellemez. -->
+    <o:Kosullu Grid.Row="1" Goster="{Binding Mesgul.Mesgul}" HorizontalAlignment="Right" VerticalAlignment="Top"
+               Margin="0,8,16,0" IsHitTestVisible="False">
+      <Border Background="{StaticResource BirincilYumusak}" CornerRadius="6" Padding="10,4">
+        <o:OtomasyonMetni AutomationProperties.AutomationId="busy-indicator" Text="İşlem sürüyor…"
+                          Foreground="{StaticResource Birincil}" FontSize="12" />
+      </Border>
+    </o:Kosullu>
+
+    <!-- Alt bilgi: web'de Layout içinde, yalnız oturum açıkken -->
+    <o:Kosullu Grid.Row="2" Goster="{Binding OturumAcik}" HorizontalAlignment="Center">
+      <TextBlock Text="Bayi Sipariş Portalı · Örnek uygulama · Tüm veriler sentetiktir"
+                 Style="{StaticResource SolukMetin}" FontSize="12" Margin="0,8,0,10" />
+    </o:Kosullu>
+  </Grid>
+</Window>
