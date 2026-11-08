@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
+<!--
+  Cihaz süiti: elle yazılmış referans testler (testler/) + şablondan üretilen testler (uretilen/).
+  Gruplar: duman (temel akışlar), kampanya (kırarak doğrula), uretilen (Testing Probe üretimi).
+  Birim testleri (birim/, grup "birim") cihaz istemez ve bu süite girmez: ./mvnw -q test -Dgroups=birim
+  Tek cihaz = tek iş parçacığı: paralel koşum yok (bayi bayi1; @Bayi ile sabitlenen test o bayiyi kullanır).
+  Platform: -Dplatform=android|ios|windows (ya da aşağıdaki parametre; sistem özelliği önceliklidir).
+-->
+<suite name="Bayi Sipariş Portalı — uygulama" parallel="none" verbose="1">
+  <test name="uygulama-e2e" preserve-order="true">
+    <groups>
+      <run>
+        <exclude name="birim"/>
+      </run>
+    </groups>
+    <packages>
+      <package name="com.antreklabs.bayi.testler"/>
+      <package name="com.antreklabs.bayi.uretilen"/>
+    </packages>
+  </test>
+</suite>
