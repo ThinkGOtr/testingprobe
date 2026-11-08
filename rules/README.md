@@ -37,6 +37,7 @@ rules/
 | `consistency_check` | `consistency-check` | Sonnet 5.5 | ajan | §8.2b `findings[]` (kanıtlı) |
 | `case_generation` | `case-generation` | Sonnet 5.5 | çağrı | §7 test case şeması `cases[]` |
 | `verify_and_map` | `verify-and-map` | Sonnet 5.5 | ajan | §8.4 `step_mapping[]`, `expects[]`, `missing_methods[]` |
+| `verify_and_map_app` | `verify-and-map-app` | Sonnet 5.5 | ajan | 009 §2.6 (app-mcp/Appium): `platform`, `step_mapping[]`, `expects[]`, `missing_methods[]` |
 | `triage` | `triage` | Haiku 5.5 | çağrı | §8.6 `class`, `signals[]`, `rationale` |
 | `bug_draft` | `bug-draft` | Haiku 5.5 | çağrı | §8.12 bug taslağı |
 | `dup_rank` | `dup-rank` | Haiku 5.5 | çağrı | §8.12 mükerrer aday sıralaması |
@@ -218,6 +219,7 @@ varsa çıkış 1. Bu tablo kayıtla aynı olmalıdır (`test_evaluation_status.
 | `consistency-check` | v4 | **canlı değerlendirme bekliyor** |
 | `case-generation` | v2 | **canlı değerlendirme bekliyor** |
 | `verify-and-map` (+ `verify_and_map` golden'ları) | v3 | **canlı değerlendirme bekliyor** |
+| `verify-and-map-app` (+ `verify_and_map_app` golden'ları; 009 mobil/masaüstü) | v1 | **canlı değerlendirme bekliyor** |
 | `triage` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `bug-draft` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `dup-rank` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |

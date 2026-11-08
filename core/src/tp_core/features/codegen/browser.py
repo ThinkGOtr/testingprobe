@@ -28,6 +28,12 @@
   ajanın sayfasını görmenin tek yolu aynı oturumdur. Bu yüzden görüntü oturumu varsayılan olarak
   ajanın oturumudur (çağrı ve sonucu modele hiç girmez); ayrı bir oturum verilirse (paylaşılan
   bağlam, `--shared-browser-context`) o kullanılır.
+- **Uygulama (009 §2.6):** `AgentApp` aynı vekilin app-mcp (Appium; Android/iOS/Windows) eşidir:
+  izin listesi `ALLOWED_AGENT_TOOLS['verify_and_map_app']`, ilk çağrı `app_launch` ve yalnızca
+  istenen platform; canlı görünüm `app_screenshot` ile yine model döngüsünün DIŞINDA alınır
+  (`FORBIDDEN_TOOLS`'ta: ajan hiçbir zaman çağıramaz). Parola alanı son snapshot'taki `[password]`
+  işaretinden de tanınır. Bayi değişimi ve gizli değer kuralları webdekinin aynısıdır.
+  MCP istemcisi aynıdır (`McpBrowserSession`; `APP_MCP_URL`).
 """
 
 from __future__ import annotations
@@ -303,8 +309,8 @@ def reset_agent_cart(cfg: AgentConfig, *, client: Any = None) -> bool:
 ScreenshotSink = Callable[[int, bytes], str | None]
 
 
-def allowed_tools() -> frozenset[str]:
-    return frozenset(ALLOWED_AGENT_TOOLS[PURPOSE]) - FORBIDDEN_TOOLS
+def allowed_tools(purpose: str = PURPOSE) -> frozenset[str]:
+    return frozenset(ALLOWED_AGENT_TOOLS[purpose]) - FORBIDDEN_TOOLS
 
 
 def parola_alani(args: Mapping[str, Any]) -> bool:
@@ -316,6 +322,16 @@ def mask_args(args: Mapping[str, Any]) -> dict[str, Any]:
     """Kayıt için araç argümanları: parola alanına yazılan metin gizlenir."""
     out = dict(args)
     if "text" in out and parola_alani(out):
+        out["text"] = "***"
+    return out
+
+
+def mask_args_with(args: Mapping[str, Any], gizliler: Sequence[str] | set[str]) -> dict[str, Any]:
+    """`mask_args` + bilinen gizli değerler (`AgentBrowser.gizliler`): ref'le hedeflenen parola
+    alanına (app-mcp `[password]`) yazılan metin element açıklaması olmasa da gizlenir."""
+    out = mask_args(args)
+    metin = out.get("text")
+    if isinstance(metin, str) and metin in {g for g in gizliler if isinstance(g, str) and g}:
         out["text"] = "***"
     return out
 
@@ -332,6 +348,7 @@ _SNAP_SATIR = re.compile(
     r'^(?P<indent>\s*)- (?P<rol>[a-z][a-z0-9-]*)(?: "(?P<ad>(?:[^"\\]|\\.)*)")?'
 )
 _URUN_KODU = re.compile(r"\b([A-Z]{1,4}-\d{2,})\b")
+_KIMLIK_ATTR = re.compile(r"\[id=([^\]\s]{1,200})\]")
 
 
 @dataclass(frozen=True)
@@ -344,6 +361,9 @@ class LocatorHedefi:
     rol: str | None = None
     ad: str | None = None
     kod: str | None = None  # elemanın kartındaki ürün kodu (`P-001`)
+    # app-mcp snapshot satırındaki erişilebilirlik kimliği (`[id=login-submit]`; web'de yok).
+    kimlik: str | None = None
+    parola: bool = False  # satır `[password]` işaretli (app-mcp)
 
 
 def _indent(satir: str) -> int:
@@ -381,11 +401,24 @@ def locator_hedefi(satirlar: Sequence[str] | None, target: Any) -> LocatorHedefi
             # Kart: üst elemanın bloğunda tek ürün kodu. Birden çoksa (sayfa gövdesi) kapsam yok.
             if len(kodlar) == 1:
                 kod = kodlar.pop()
-    return LocatorHedefi(ref, True, rol, ad, kod)
+    kimlik_m = _KIMLIK_ATTR.search(satir)
+    return LocatorHedefi(
+        ref, True, rol, ad, kod, kimlik_m.group(1) if kimlik_m else None, "[password]" in satir
+    )
 
 
 class AgentBrowser:
-    """Model geçidinin `ToolExecutor`'ı: izin listesi, güvenilmeyen sarma, ajan bayisi, görüntü."""
+    """Model geçidinin `ToolExecutor`'ı: izin listesi, güvenilmeyen sarma, ajan bayisi, görüntü.
+
+    Sınıf öznitelikleri araç adlarıdır; `AgentApp` (app-mcp) bunları değiştirir, kurallar aynıdır.
+    """
+
+    PURPOSE = PURPOSE
+    SCREENSHOT_TOOL = SCREENSHOT_TOOL
+    SCREENSHOT_ARGS: Mapping[str, Any] = {"type": "png"}
+    TYPE_TOOL = "browser_type"
+    GENERATE_LOCATOR = "browser_generate_locator"
+    REF_KEY = "target"  # ref alan argüman (Playwright MCP 1.64)
 
     def __init__(
         self,
@@ -429,7 +462,7 @@ class AgentBrowser:
     def tool_specs(self) -> list[ToolSpec]:
         """MCP `tools/list` ∩ izin listesi (ajana verilen araçlar)."""
         if self._specs is None:
-            izinli = allowed_tools()
+            izinli = allowed_tools(self.PURPOSE)
             self._specs = [
                 ToolSpec(
                     name=t["name"],
@@ -441,8 +474,11 @@ class AgentBrowser:
             ]
         return self._specs
 
+    def _parola_mi(self, args: Mapping[str, Any]) -> bool:
+        return parola_alani(args)
+
     def _hazirla(self, name: str, args: Mapping[str, Any]) -> dict[str, Any]:
-        if name not in allowed_tools():
+        if name not in allowed_tools(self.PURPOSE):
             raise BrowserError(f"araç izinli değil: {name}")
         out = dict(args)
         if name == "browser_navigate":
@@ -451,8 +487,8 @@ class AgentBrowser:
             if not (url == kok or url.startswith(kok + "/")):
                 raise BrowserError(f"yalnızca demo uygulamasına gidilebilir ({kok})")
         metin = out.get("text")
-        if name == "browser_type" and isinstance(metin, str):
-            if parola_alani(out):
+        if name == self.TYPE_TOOL and isinstance(metin, str):
+            if self._parola_mi(out):
                 self.gizliler.add(metin)
                 if self._ajan_girisi and metin in self.gercek_parolalar:
                     # Ajan bayisiyle giriş: case bayisinin gerçek parolası → ajan bayisininki.
@@ -477,8 +513,10 @@ class AgentBrowser:
                     f"araç çağrısı bütçesi ({self.config.max_tool_calls}) doldu; sonucu şimdi ver"
                 )
             gercek = self._hazirla(name, args)
-            if name == GENERATE_LOCATOR:
-                self._son_locator_hedefi = locator_hedefi(self._son_snapshot, gercek.get("target"))
+            if name == self.GENERATE_LOCATOR:
+                self._son_locator_hedefi = locator_hedefi(
+                    self._son_snapshot, gercek.get(self.REF_KEY)
+                )
             self.calls += 1
             self.last_screenshot = None
             out = self.session.call(name, gercek)
@@ -516,7 +554,7 @@ class AgentBrowser:
         if self.screenshot_sink is None:
             return
         try:
-            out = self.screenshot_session.call(SCREENSHOT_TOOL, {"type": "png"})
+            out = self.screenshot_session.call(self.SCREENSHOT_TOOL, dict(self.SCREENSHOT_ARGS))
         except Exception as exc:  # görüntü alınamaması doğrulamayı durdurmaz
             log.warning("ekran görüntüsü alınamadı: %s", exc)
             return
@@ -533,6 +571,58 @@ class AgentBrowser:
     def pop_screenshot(self) -> str | None:
         ref, self.last_screenshot = self.last_screenshot, None
         return ref
+
+
+APP_PURPOSE = "verify_and_map_app"
+APP_LAUNCH = "app_launch"
+APP_SCREENSHOT_TOOL = "app_screenshot"
+APP_PLATFORMLARI = ("android", "ios", "windows")
+
+
+class AgentApp(AgentBrowser):
+    """app-mcp (Appium) vekili: `verify_and_map_app` izin listesi, tek platform, model dışı görüntü.
+
+    - İlk araç çağrısı `app_launch` olmalıdır (uygulama sıfırdan başlar; uygulama kimliği app-mcp
+      yapılandırmasındandır, ajan seçemez) ve yalnızca bu koşunun platformu verilebilir.
+    - `app_screenshot` ajana hiçbir zaman verilmez (`FORBIDDEN_TOOLS`); çekirdek her eylemden
+      sonra canlı görünüm için kendisi çağırır, görüntü modele gitmez (Constitution V).
+    - Parola alanı: `element` açıklaması (web kuralı) ya da hedef ref'in son snapshot satırındaki
+      `[password]` işareti. Yazılan metin gizli değerlere eklenir ve her çıktıda `***` olur.
+    """
+
+    PURPOSE = APP_PURPOSE
+    SCREENSHOT_TOOL = APP_SCREENSHOT_TOOL
+    SCREENSHOT_ARGS: Mapping[str, Any] = {}
+    TYPE_TOOL = "app_type"
+    GENERATE_LOCATOR = "app_generate_locator"
+    REF_KEY = "ref"
+
+    def __init__(self, session: BrowserSession, *, platform: str, **kwargs: Any) -> None:
+        if platform not in APP_PLATFORMLARI:
+            raise BrowserError(f"geçersiz uygulama platformu: {platform!r}")
+        super().__init__(session, **kwargs)
+        self.platform = platform
+        self._baslatildi = False
+
+    def _parola_mi(self, args: Mapping[str, Any]) -> bool:
+        if parola_alani(args):
+            return True
+        return locator_hedefi(self._son_snapshot, args.get(self.REF_KEY)).parola
+
+    def _hazirla(self, name: str, args: Mapping[str, Any]) -> dict[str, Any]:
+        out = super()._hazirla(name, args)
+        if name == APP_LAUNCH:
+            istenen = out.get("platform", self.platform)
+            if istenen != self.platform:
+                raise BrowserError(
+                    f"yalnızca bu doğrulamanın platformu başlatılabilir ({self.platform})"
+                )
+            out["platform"] = self.platform
+            self._baslatildi = True
+            self._son_snapshot = None  # app_launch ref'leri sıfırlar
+        elif not self._baslatildi:
+            raise BrowserError("Uygulama başlatılmadı: ilk araç çağrısı app_launch olmalı")
+        return out
 
 
 def screenshot_writer(artifacts_root: Path, script_id: Any) -> ScreenshotSink:

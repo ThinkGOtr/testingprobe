@@ -218,6 +218,8 @@ def serialize(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any]
         "test_key": cg.test_key,
         "baslik": cg.baslik,
         "dosya_yolu": sc.dosya_yolu,
+        # 009 §2.1: web | android | ios | windows (portal rozeti / Kontrol Kulesi süzgeci).
+        "platform": sc.platform,
         "branch": sc.branch or "",
         "durum": sc.durum,
         # Faz 4: defect adayı script'in triage sonucu (portal "Triage sonucuna git").

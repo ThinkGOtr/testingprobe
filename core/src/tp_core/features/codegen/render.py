@@ -169,12 +169,16 @@ def mapping_hash(mapping: Mapping[str, Any]) -> str:
     )
 
 
-def _pinned_dealer(mapping: Mapping[str, Any], dealers: Mapping[str, Any]) -> str | None:
+def _pinned_dealer(
+    mapping: Mapping[str, Any],
+    dealers: Mapping[str, Any],
+    login_metotlari: frozenset[str] = frozenset({"login"}),
+) -> str | None:
     """Case'in giriş yaptığı e2e bayisi (tek ve bilinen ise)."""
     bulunan = {
         m["args"][0]
         for m in mapping.get("step_mapping") or []
-        if m.get("method") == "login"
+        if m.get("method") in login_metotlari
         and m.get("args")
         and isinstance(m["args"][0], str)
         and m["args"][0] in dealers
@@ -237,6 +241,211 @@ def render_test(inp: RenderInput, rules_dir: Path) -> Rendered:
     return Rendered(
         content=content,
         repo_path=f"{inp.e2e_root.strip('/') or E2E_ROOT}/{test_file}",
+        test_file=test_file,
+        template_hash=template_hash,
+        mapping_hash=ctx["mapping_hash"],
+        dealer=ctx["dealer"],
+    )
+
+
+# ============================================================ Java / Appium / TestNG (009 §2.8)
+#
+# Platform `android` | `ios` | `windows` için aynı eşleme `rules/templates/appium_testng.java.j2`
+# ile Java'ya render edilir. Dosya: `<e2e-app kökü>/src/test/java/com/antreklabs/bayi/uretilen/
+# <Story><Platform>C<sıra>_<uuid8>Test.java` (ör. `TPD1AndroidC3_0a1b2c3dTest.java`): bir case'in
+# her platformdaki script'i ayrı dosyadır, dallar/PR'lar merge'de çakışmaz. Ad `java-araclar guard`
+# dosya adı kuralına (`^[A-Za-z][A-Za-z0-9]*C[0-9]+_[0-9a-f]{8}Test\.java$`) uyar. Test TestNG
+# gruplarında platformunu taşır (`uretilen`, `<platform>`, `tp-case-<uuid>`, story): CI platform
+# koşusu yalnız kendi platformunun üretilen testlerini seçebilir.
+
+JAVA_TEMPLATE_NAME = "appium_testng.java.j2"
+JAVA_GENERATED_DIR = "src/test/java/com/antreklabs/bayi/uretilen"  # e2e-app köküne göre
+E2E_APP_ROOT = "e2e-app"  # forge deposunda (LocalForge düzeni; GitHub'da `<uygulama kökü>/e2e-app`)
+JAVA_URETILEN_GRUBU = "uretilen"
+# Java giriş metodu (bayi sabitleme): web `LoginPage.login` ↔ `GirisEkrani.girisYap`.
+LOGIN_METOTLARI = frozenset({"login", "girisYap"})
+_JAVA_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_JAVA_SINIF_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*C[0-9]+_[0-9a-f]{8}Test$")
+_JAVA_GRUP_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$")
+_JAVA_BAYI_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+_JAVA_DOUBLE_RE = re.compile(r"-?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?")
+# Java string literalinde kaçışlı basılanlar; diğer kontrol/biçim karakterleri reddedilir.
+_JAVA_KACIS = {"\\": "\\\\", '"': '\\"', "\n": "\\n", "\r": "\\r", "\t": "\\t"}
+# java-araclar KarakterDenetimi: CONTROL, FORMAT, LINE/PARAGRAPH_SEPARATOR, PRIVATE_USE, SURROGATE,
+# UNASSIGNED yasak (insan incelemesinde görülen metin derlenen metinle aynı olmalı).
+_JAVA_YASAK_KATEGORI = frozenset({"Cc", "Cf", "Zl", "Zp", "Co", "Cs", "Cn"})
+_JAVA_INT = (-(2**31), 2**31 - 1)
+_JAVA_LONG = (-(2**63), 2**63 - 1)
+_BAYILER_RE = re.compile(
+    r"new\s+BayiBilgisi\(\s*\"(?P<u>[A-Za-z0-9_.-]+)\"\s*,\s*\"(?P<p>[^\"\\]*)\"\s*,"
+    r"\s*\"(?P<n>[^\"\\]*)\"\s*\)"
+)
+
+
+def _java_metin(value: str) -> str:
+    out = []
+    for ch in value:
+        if ch in _JAVA_KACIS:
+            out.append(_JAVA_KACIS[ch])
+        elif unicodedata.category(ch) in _JAVA_YASAK_KATEGORI:
+            raise RenderError(
+                f"Java literaline basılamayan karakter (U+{ord(ch):04X}); değer reddedildi"
+            )
+        else:
+            out.append(ch)  # ASCII dışı karakter ham UTF-8 (\uXXXX kaçışı guard'da yasak)
+    return '"' + "".join(out) + '"'
+
+
+def java_literal(value: Any) -> str:
+    """Java literali: String / int / long (`L`) / double / boolean. Başka tür → RenderError.
+
+    `java-araclar guard`'ın kabul ettiği literal biçimleri üretilir (negatif sayı tekli eksiyle);
+    sonlu olmayan sayı, 64 biti aşan tamsayı ve kontrol/görünmez karakterli metin reddedilir.
+    """
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        if _JAVA_INT[0] <= value <= _JAVA_INT[1]:
+            return str(value)
+        if _JAVA_LONG[0] <= value <= _JAVA_LONG[1]:
+            return f"{value}L"
+        raise RenderError(f"Java long aralığı dışında tamsayı: {value}")
+    if isinstance(value, float):
+        if value != value or value in (float("inf"), float("-inf")):
+            raise RenderError("sonlu olmayan sayı şablona basılamaz")
+        metin = repr(value)
+        if not _JAVA_DOUBLE_RE.fullmatch(metin):
+            raise RenderError(f"Java double literaline çevrilemeyen sayı: {metin}")
+        return metin
+    if isinstance(value, str):
+        return _java_metin(value)
+    raise RenderError(f"şablona basılamayan değer türü: {type(value).__name__}")
+
+
+def java_args(args: Sequence[Any]) -> str:
+    return ", ".join(java_literal(a) for a in args)
+
+
+def java_ident(value: Any) -> str:
+    if not isinstance(value, str) or not _JAVA_IDENT_RE.match(value):
+        raise RenderError(f"geçersiz Java tanımlayıcısı: {value!r}")
+    return value
+
+
+def java_class_name(story_key: str | None, platform: str, sira_no: int, case_id: uuid.UUID) -> str:
+    """`<Story><Platform>C<sıra>_<uuid8>Test` (Java tanımlayıcısı; guard dosya adı kuralı)."""
+    kok = story_key if story_key and _STORY_RE.match(story_key) else "Serbest"
+    kok = re.sub(r"[^A-Za-z0-9]", "", kok)
+    ad = f"{kok}{platform[:1].upper()}{platform[1:]}C{int(sira_no)}_{case_id.hex[:8]}Test"
+    if not _JAVA_SINIF_RE.match(ad):
+        raise RenderError(f"üretilen Java sınıf adı geçersiz: {ad}")
+    return ad
+
+
+def java_repo_path(
+    e2e_app_root: str, story_key: str | None, platform: str, sira_no: int, case_id: uuid.UUID
+) -> str:
+    kok = e2e_app_root.strip("/") or E2E_APP_ROOT
+    ad = java_class_name(story_key, platform, sira_no, case_id)
+    return f"{kok}/{JAVA_GENERATED_DIR}/{ad}.java"
+
+
+def parse_java_dealers(bayiler_source: str) -> dict[str, dict[str, str]]:
+    """`altyapi/Bayiler.java` `E2E = List.of(new BayiBilgisi(…), …)` bayileri (sözdizimsel)."""
+    m = re.search(r"\bE2E\s*=\s*List\.of\((?P<govde>.*?)\)\s*;", bayiler_source, re.S)
+    if m is None:
+        return {}
+    return {
+        d.group("u"): {"password": d.group("p"), "name": d.group("n")}
+        for d in _BAYILER_RE.finditer(m.group("govde"))
+    }
+
+
+def _java_env(templates_dir: Path) -> jinja2.Environment:
+    env = jinja2.Environment(
+        loader=jinja2.FileSystemLoader(str(templates_dir)),
+        autoescape=False,  # Java üretilir; kaçış `java` süzgecindedir
+        undefined=jinja2.StrictUndefined,
+        trim_blocks=True,
+        lstrip_blocks=True,
+        keep_trailing_newline=True,
+    )
+    env.filters["java"] = java_literal
+    env.filters["ident"] = java_ident
+    env.filters["comment"] = comment
+    env.filters["jargs"] = java_args
+    return env
+
+
+@lru_cache(maxsize=8)
+def _java_template(templates_dir: str) -> tuple[jinja2.Template, str]:
+    path = Path(templates_dir) / JAVA_TEMPLATE_NAME
+    kaynak = path.read_text(encoding="utf-8")
+    return _java_env(Path(templates_dir)).get_template(JAVA_TEMPLATE_NAME), sha256_hex(kaynak)
+
+
+def build_java_context(inp: RenderInput, platform: str, template_hash: str) -> dict[str, Any]:
+    case = inp.case
+    adimlar = {str(s.get("id")): s for s in case.get("steps") or [] if isinstance(s, Mapping)}
+
+    def cagri(item: Mapping[str, Any]) -> dict[str, Any]:
+        return {
+            "fixture": java_ident(fixture_name(java_ident(str(item.get("po"))))),
+            "method": java_ident(str(item.get("method"))),
+            "args": list(item["args"]),
+        }
+
+    steps: list[dict[str, Any]] = []
+    for m in inp.mapping.get("step_mapping") or []:
+        sid = str(m.get("step_id"))
+        if steps and steps[-1]["sid"] == sid:
+            steps[-1]["calls"].append(cagri(m))
+            continue
+        eylem = (adimlar.get(sid) or {}).get("action") or ""
+        steps.append({"sid": sid, "label": f"{sid} — {eylem}", "calls": [cagri(m)]})
+    expects = [cagri(e) for e in inp.mapping.get("expects") or []]
+    story = inp.story_key if inp.story_key and _STORY_RE.match(inp.story_key) else None
+    gruplar = [JAVA_URETILEN_GRUBU, platform, f"tp-case-{inp.case_id}"] + ([story] if story else [])
+    for g in gruplar:
+        if not _JAVA_GRUP_RE.match(g):
+            raise RenderError(f"geçersiz TestNG grubu: {g!r}")
+    dealer = _pinned_dealer(inp.mapping, inp.dealers, LOGIN_METOTLARI)
+    if dealer is not None and not _JAVA_BAYI_RE.match(dealer):
+        raise RenderError(f"geçersiz bayi adı: {dealer!r}")
+    ref = f"{story or 'SERBEST'} C{int(inp.sira_no)}"
+    return {
+        "case_ref": ref,
+        "case_id": str(inp.case_id),
+        "story_key": story or "-",
+        "test_key": inp.test_key or "-",
+        "case_hash": inp.case_hash,
+        "platform": platform,
+        "mode": inp.mode or "-",
+        "bundle_hash": inp.bundle_hash or "-",
+        "mapping_hash": mapping_hash(inp.mapping),
+        "template_hash": template_hash,
+        "dealer": dealer,
+        "class_name": java_class_name(inp.story_key, platform, inp.sira_no, inp.case_id),
+        "groups": gruplar,
+        "description": str(case.get("title") or "").strip() or ref,
+        "steps": steps,
+        "expects": expects,
+    }
+
+
+def render_java_test(inp: RenderInput, platform: str, rules_dir: Path) -> Rendered:
+    """Appium/TestNG testi (009 §2.8). `inp.e2e_root` burada forge'daki e2e-app köküdür;
+    `test_file` e2e-app köküne göredir (toolchain `/check` Java `test_files`)."""
+    template, template_hash = _java_template(str(templates_dir(rules_dir)))
+    ctx = build_java_context(inp, platform, template_hash)
+    try:
+        content = template.render(**ctx)
+    except jinja2.TemplateError as exc:  # pragma: no cover - şablon hatası (geliştirici)
+        raise RenderError(f"şablon render edilemedi: {exc}") from exc
+    test_file = f"{JAVA_GENERATED_DIR}/{ctx['class_name']}.java"
+    return Rendered(
+        content=content,
+        repo_path=f"{inp.e2e_root.strip('/') or E2E_APP_ROOT}/{test_file}",
         test_file=test_file,
         template_hash=template_hash,
         mapping_hash=ctx["mapping_hash"],

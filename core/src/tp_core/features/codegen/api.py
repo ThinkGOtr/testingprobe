@@ -2,7 +2,7 @@
 
 | Yöntem | Yol | Rol |
 |---|---|---|
-| POST | `/code/generate` `{case_ids[]}` | engineer — onaylı case'lerden CasesToCode (202) |
+| POST | `/code/generate` `{case_ids[], platform?}` | engineer — CasesToCode (202) |
 | GET  | `/scripts` · `/scripts/{id}` | herkes — üretilen test, PR, adımlar, yerel kontrol |
 | GET  | `/scripts/{id}/screenshots/{n}` | herkes — ajan adımının ekran görüntüsü (PNG) |
 | POST | `/scripts/{id}/break-verify` | engineer — kırarak doğrula (202) |
@@ -24,7 +24,7 @@ Review (`karar` ∈ {degisiklik_iste, reddet}, `ret_nedeni` sabit taksonomiden) 
 from __future__ import annotations
 
 import uuid
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.concurrency import run_in_threadpool
@@ -45,6 +45,8 @@ MERGE_BEKLEME_S = 20.0  # portal nginx /api/ zaman aşımı 30 sn
 
 class KodUretGirdisi(BaseModel):
     case_ids: list[uuid.UUID] = Field(min_length=1, max_length=service.MAX_CASE)
+    # 009 §2.1: üretilecek testin platformu; yoksa web (geriye uyum). Bilinmeyen değer 422.
+    platform: Literal["web", "android", "ios", "windows"] = "web"
 
 
 class MergeGirdisi(BaseModel):
@@ -64,7 +66,7 @@ class ReviewGirdisi(BaseModel):
 
 @router.post("/code/generate", status_code=202)
 def generate(body: KodUretGirdisi, session: DbSession, user: Engineer) -> dict[str, Any]:
-    return service.start_generation(session, body.case_ids, user)
+    return service.start_generation(session, body.case_ids, user, body.platform)
 
 
 @router.get("/scripts")

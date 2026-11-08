@@ -299,6 +299,7 @@ FREE_TEXT = {
     ],
 }
 SYMBOLS_FIXTURE = Path(__file__).resolve().parents[1] / "features" / "codegen" / "symbols.json"
+SYMBOLS_JAVA_FIXTURE = SYMBOLS_FIXTURE.with_name("symbols-java.json")
 
 
 def _stories() -> dict[str, dict[str, Any]]:
@@ -528,6 +529,51 @@ def verify_and_map_cases() -> list[dict[str, Any]]:
     return out
 
 
+def verify_and_map_app_cases() -> list[dict[str, Any]]:
+    """Mobil/masaüstü doğrulama ajanı (app-mcp; 009 §2.6): üretimin `app_mapping_messages`
+    kurucusu, gerçek Java ekran nesnesi tablosu (`java-araclar symbols`, codegen fikstürü)."""
+    from tp_core.features.codegen.checks import SymbolTable
+    from tp_core.features.codegen.service import app_mapping_messages, case_ref
+    from tp_core.gateway.inputs import VERIFY_AGENT_DEALER
+
+    symbols = json.loads(SYMBOLS_JAVA_FIXTURE.read_text(encoding="utf-8"))
+    table = SymbolTable(symbols)
+    methods = sorted(
+        f"{po['class']}.{m['name']}" for po in symbols["page_objects"] for m in po["methods"]
+    )
+    out = []
+    for key, n, platform, title in (
+        ("TPD-1", 2, "android", "7 adette 1 bedava (Android)"),
+    ):
+        case = load_golden("case_generation", key)["output"]["cases"][n - 1]
+        ad = f"{golden_name(key, case_no=n)}-{platform}"
+        golden = load_golden("verify_and_map_app", ad)["output"]
+        out.append(
+            {
+                "id": f"{key.lower()}-c{n}-{platform}",
+                "description": f"{key}-C{n} ({platform}): {title}",
+                "replay_key": {"name": ad, "jira_key": key},
+                "messages": _msgs(
+                    app_mapping_messages(
+                        case,
+                        case_ref(key, n),
+                        table,
+                        platform=platform,
+                        agent_dealer=VERIFY_AGENT_DEALER,
+                    )
+                ),
+                "expect": {
+                    "steps": [s["id"] for s in case["steps"]],
+                    "methods": methods,
+                    "expects_include": [f"{e['po']}.{e['method']}" for e in golden["expects"]],
+                    "no_missing_methods": True,
+                    "all_verified": True,
+                },
+            }
+        )
+    return out
+
+
 SETS: dict[str, tuple[str, Callable[[], list[dict[str, Any]]]]] = {
     "triage": ("triage", triage_cases),
     "bug-draft": ("bug_draft", bug_draft_cases),
@@ -536,12 +582,14 @@ SETS: dict[str, tuple[str, Callable[[], list[dict[str, Any]]]]] = {
     "case-generation": ("case_generation", case_generation_cases),
     "consistency-check": ("consistency_check", consistency_check_cases),
     "verify-and-map": ("verify_and_map", verify_and_map_cases),
+    "verify-and-map-app": ("verify_and_map_app", verify_and_map_app_cases),
 }
 # Set düzeyi ek alanlar: §12 koşu sayısı, ajan araç ortamı (`tp_core.gateway.eval_agents`).
 EXTRA: dict[str, dict[str, Any]] = {
     "case-generation": {"runs": 3},
     "consistency-check": {"agent": {"tool_env": "consistency", "max_turns": 15}},
     "verify-and-map": {"agent": {"tool_env": "browser", "max_turns": 20}},
+    "verify-and-map-app": {"agent": {"tool_env": "app:android", "max_turns": 20}},
 }
 DEFECT_SETS = ("triage", "bug-draft", "dup-rank")
 

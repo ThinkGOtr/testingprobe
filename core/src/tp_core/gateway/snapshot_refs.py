@@ -22,12 +22,16 @@ Golden adımının yapılandırılmış hedefi (`steps[i].hedef`, yalnızca ref 
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 SNAPSHOT_TOOL = "browser_snapshot"
+# app-mcp (009 §2.6) eşleri: snapshot biçimi aynıdır (`### Snapshot` + ```yaml```, `[ref=eN]`).
+APP_SNAPSHOT_TOOL = "app_snapshot"
+APP_GENERATE_LOCATOR = "app_generate_locator"
 SNAPSHOT_REF = re.compile(r"^e\d+$")
 # Ref alan argümanlar (Playwright MCP 1.64: `target`; eski sürümler: `ref`).
 REF_ARGS = ("target", "ref")
@@ -170,3 +174,28 @@ def strip_mcp_file_links(text: str) -> str:
                 continue
         out.append(line)
     return "\n".join(out)
+
+
+_APP_LOCATOR = re.compile(r"^###\s*Locator\s*\n(\{[^\n]*\})", re.MULTILINE)
+_APP_LOCATOR_MAX = 2000
+
+
+def app_locator(text: str | None) -> tuple[str, str | None] | None:
+    """`app_generate_locator` sonucundaki `(strategy, id)` (yoksa None).
+
+    app-mcp biçimi: `### Locator` + tek satır JSON `{"platform", "strategy", "id"}`; kimliksiz
+    elemanda `id: null` (çekirdek bunu eksik locator sayar). Ayrıştırılamayan çıktı None döner.
+    """
+    m = _APP_LOCATOR.search(text or "")
+    if m is None or len(m.group(1)) > _APP_LOCATOR_MAX:
+        return None
+    try:
+        veri = json.loads(m.group(1))
+    except ValueError:
+        return None
+    if not isinstance(veri, Mapping):
+        return None
+    strateji, kimlik = veri.get("strategy"), veri.get("id")
+    if not isinstance(strateji, str) or not (kimlik is None or isinstance(kimlik, str)):
+        return None
+    return strateji, kimlik

@@ -18,3 +18,18 @@ kontrollerden geçmiş** adım → page object eşlemesiyle render eder; model T
   bilinçli değiştirdiğinizde `TP_UPDATE_GOLDEN=1 uv run pytest
   tests/unit/features/codegen/test_render.py` ile yenileyin ve farkı inceleyin; şablon hash'i
   her üretilen dosyanın başlığına yazıldığı için değişiklik PR'larda görünür.
+
+`appium_testng.java.j2` (009 mobil-masaüstü §2.4, §2.8): aynı eşlemenin Android / iOS / Windows
+için Java 17 + Appium + TestNG karşılığı (`render.render_java_test`; model Java yazmaz).
+
+- Değerler `java` süzgecinden geçer: String / int / long (`L`) / double / boolean literali.
+  Unicode kaçışı üretilmez (`java-araclar guard` her yerde reddeder; javac onu yorum ve literal
+  içinde bile işler): ASCII dışı karakter ham UTF-8 basılır; ters bölü, tırnak, satır sonu ve
+  sekme kaçışlanır; diğer kontrol/biçim/görünmez karakterler (Cc, Cf, Zl, Zp, Co, Cs, Cn)
+  şablonu reddettirir.
+- Sınıf `<Story><Platform>C<sıra>_<uuid8>Test` (ör. `TPD1AndroidC3_0a1b2c3dTest`): bir case'in
+  her platformu ayrı dosya/dal/PR; ad guard'ın dosya adı kuralına uyar. Dosya
+  `<e2e-app kökü>/src/test/java/com/antreklabs/bayi/uretilen/`. TestNG grupları: `uretilen`,
+  `<platform>`, `tp-case-<uuid>`, story. `@Bayi("bayiN")` web `test.use` karşılığıdır.
+- Golden: `core/tests/unit/features/codegen/golden/*.java` (`test_platform.py`); aynı test
+  üretilen dosyayı gerçek `java-araclar.jar guard` ile denetler (jar yoksa atlanır).
