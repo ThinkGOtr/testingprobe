@@ -48,8 +48,10 @@ Durum dosyaları ve günlükler `var/cihaz/` altındadır (git dışı): `appium
 Betikler yalnızca bu iki cihaza dokunur. Başka şeritlerin cihazları (ör. `tp-mobil-gelistirme`) ve
 kullanıcının diğer AVD/simülatörleri seri numarası / UDID adıyla ayrılarak atlanır.
 
-Uygulama kimliği varsayılanı `com.antreklabs.bayi` (Ş1 farklı seçerse `TP_APP_PAKETI`, app-mcp'de
-`APP_ANDROID_PACKAGE` / `APP_IOS_BUNDLE_ID`).
+Uygulama kimliği `com.antreklabs.bayisiparis` (Android paketi, etkinlik `.MainActivity`; iOS bundle id
+aynı). Betiklerde `TP_APP_PAKETI`, app-mcp'de `APP_ANDROID_PACKAGE` / `APP_ANDROID_ACTIVITY` /
+`APP_IOS_BUNDLE_ID` ile değiştirilir (compose varsayılanları bunlardır). Derlemeler
+`demo-app/mobile/build/bayi-siparis.apk` ve `BayiSiparis.app`; `cihaz-baslat` en yenisini kurar.
 
 ## 4. Appium (proje içi) ve WebDriverAgent
 
@@ -134,7 +136,7 @@ Sonuç metni Playwright MCP'ye benzer bölümlerdir; snapshot satır içi ```` `
 Tıklandı: Giriş yap [ref=e7]
 ### Uygulama
 - Platform: android
-- Uygulama: com.antreklabs.bayi
+- Uygulama: com.antreklabs.bayisiparis
 ### Snapshot
 ```yaml
 - <rol> "<ad>" [id=<kimlik>] [password] [disabled] [checked] [selected] [ref=eN]: <değer>

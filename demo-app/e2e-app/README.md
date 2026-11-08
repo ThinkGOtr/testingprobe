@@ -77,7 +77,11 @@ testin kanıtı `target/kanit/<Sınıf>.<metot>/{ekran.png,sayfa-kaynagi.xml}` (
 - **Bayi**: varsayılan `bayi1`; `@Bayi("bayi2")` sınıfı sabitler (web `test.use({ dealerUsername })`).
   `bayi3` doğrulama ajanınındır, e2e'ye kapalıdır. Aynı demo API'ye karşı koşan Java süreçleri (ör.
   Android + iOS aynı anda) bayiyi işletim sistemi dosya kilidiyle sırayla alır
-  (`$TMPDIR/demoapp-e2e-app-kilit-<api özeti>/`). Web e2e ile aynı anda aynı bayiyi kullanmayın.
+  (`$TMPDIR/demoapp-e2e-app-kilit-<api özeti>/`). **Web e2e ile kilit ortak değildir:** web
+  (`demo-app/e2e/tests/fixtures.ts`) kendi dizininde (`$TMPDIR/demoapp-e2e-kilit-<özet>/`, O_EXCL
+  dosyası) kilitler; ikisi birbirini görmez. Aynı demo API'ye karşı web e2e ile uygulama e2e'sini
+  (ya da break-verify'larını) aynı anda koşturmayın — `/test/reset` ve `/test/break` bayi verisini
+  diğerinin altından değiştirir. Sıra: önce biri, sonra diğeri (CI'da ayrı demo ortamları).
 - **Gruplar**: `duman` (temel akışlar), `kampanya` (kırarak doğrula kümesi), `uretilen`,
   `sifir-veri` (sıfırlanmış veri ister; `TP_E2E_NO_RESET=1`'de atlanır), `birim` (cihazsız).
 

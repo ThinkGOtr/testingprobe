@@ -86,10 +86,15 @@ export function ayarlariOku(ortam: Ortam = process.env): Ayarlar {
       'appium:disableWindowAnimation': true,
       'appium:forceAppLaunch': true,
       'appium:shouldTerminateApp': true,
+      // RN testID resource-id'ye paket öneki olmadan yazılır; sürücü `id` aramasına
+      // "<paket>:id/" eklemesin (Java testleri AppiumBy.id ile aynı kimliği arar).
+      'appium:disableIdLocatorAutocompletion': true,
       ...ortak,
     };
     ekle(y, 'appium:appActivity', ortam.APP_ANDROID_ACTIVITY);
     ekle(y, 'appium:app', ortam.APP_ANDROID_APK);
+    // APK verildiyse cihazdaki eski derleme (aynı sürüm kodu) yerine her oturumda bu kurulur.
+    if (y['appium:app']) y['appium:enforceAppInstall'] = true;
     ekle(y, 'appium:udid', ortam.APP_ANDROID_UDID);
     platformlar.android = { platform: 'android', appiumUrl: a, uygulamaKimligi: paket, yetenekler: y };
   }

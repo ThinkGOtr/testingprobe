@@ -39,7 +39,7 @@ EMULATOR_LOG="$VAR/emulator.log"
 
 # Uygulama derlemeleri (Ş1 üretir; yoksa kurulum atlanır).
 MOBIL_BUILD="$KOK/demo-app/mobile/build"
-TP_APP_PAKETI="${TP_APP_PAKETI:-com.antreklabs.bayi}"
+TP_APP_PAKETI="${TP_APP_PAKETI:-com.antreklabs.bayisiparis}"
 
 bilgi() { printf '\033[36m•\033[0m %s\n' "$*"; }
 uyari() { printf '\033[33m!\033[0m %s\n' "$*" >&2; }
