@@ -30,6 +30,10 @@ cd demo-app/e2e-app
 # Cihaz koşusu (Appium 3 sunucusu + emülatör/simülatör/Windows VM hazır; demo API çalışıyor):
 export DEMOAPP_TEST_TOKEN=…                 # ORTAMDAN; depoya ve komut satırına yazmayın
 export DEMO_API_URL=http://127.0.0.1:18000  # /test/* uçlarına doğrudan erişilen API kökü
+# Compose demo-app-api'yi hosta açmaz ve demo-net internal'dır (port yayımlanamaz). Yerelde geçici vekil:
+#   docker run -d --rm --name tp-demo-api-vekil -p 127.0.0.1:18000:8000 alpine/socat \
+#     tcp-listen:8000,fork,reuseaddr tcp:demo-app-api:8000
+#   docker network connect testingprobe_demo-net tp-demo-api-vekil
 ../ci/run-app-checks.sh android -Dapp.path=../mobile/build/bayi-siparis.apk
 ../ci/run-app-checks.sh ios -Dapp.path=../mobile/build/BayiSiparis.app -Ddevice.name="iPhone 16"
 ../ci/run-app-checks.sh android -Dgroups=duman          # yalnız bir grup (testng.xml devre dışı kalır)
