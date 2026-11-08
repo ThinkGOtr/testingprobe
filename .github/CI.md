@@ -13,6 +13,9 @@ ajan bağımlılığı **yoktur**; yalnızca onaylanmış, deterministik test ko
 | `workflows/ci.yml` | `pull_request`, `push` (main), gece `0 2 * * *` (02:00 UTC = 05:00 TR), `repository_dispatch` `deploy`, `workflow_dispatch` (`tetik`, `istek_id`) | `contents: read`, `packages: read` (`changes` job'una ek olarak `pull-requests: read`) |
 | `workflows/break-verify.yml` | yalnızca elle `workflow_dispatch` (`grep`, `istek_id`) — "kırarak doğrula" kanıtını GitHub Actions'ta üretir; çekirdek tetiklemez (aşağıda "Kırarak doğrula ve GitHub modu") | `contents: read` |
 | `workflows/build-toolchain.yml` | `toolchain/**`, `.playwright-version` değişikliği (main'e push → çok mimarili derleyip gönderir; PR → yalnızca amd64 derler), `workflow_dispatch` | `packages: write` **yalnızca burada** |
+| `workflows/mobil-android.yml` | `pull_request`, `push` (main), gece `30 2 * * *`, `workflow_dispatch` (`tetik`, `istek_id`) — aşağıda "Uygulama iş akışları" | `contents: read` (`changes`: + `pull-requests: read`) |
+| `workflows/mobil-ios.yml` | yalnız ilgili yollar değişen `pull_request` (workflow düzeyinde `paths`), gece `0 3 * * *`, `workflow_dispatch` | `contents: read` |
+| `workflows/masaustu-windows.yml` | `pull_request`, `push` (main), gece `30 3 * * *`, `workflow_dispatch` (`tetik`, `istek_id`) | `contents: read` (`changes`: + `pull-requests: read`) |
 
 Her üçüncü taraf Action tam 40 karakterlik commit SHA'sıyla, sürüm yorumuyla sabitlenmiştir;
 Semgrep imajı sürüm + digest ile sabitlenmiştir. `dependabot.yml` bunları aylık günceller.
@@ -196,6 +199,49 @@ kırarak doğrulama "tamamlanamadı" (`failed`) biter ve merge açık kabul notu
 (`merge_kabul_gerekceleri`). `break-verify.yml` bir mühendisin aynı kanıtı GitHub üzerinde elle
 üretmesi içindir (Actions → break-verify → Run workflow, ref = `tp/case-*` dalı); sonucu
 `break-verify.json`'dadır ve portala yansımaz.
+
+## Uygulama iş akışları (mobil / masaüstü, 009)
+
+`specs/009-mobil-masaustu/plan.md` §2.7. Üçü de AI'sızdır (Constitution II): app-mcp, model anahtarı
+ve ajan yoktur; yalnızca `demo-app/e2e-app` (Java + Appium + TestNG) `demo-app/ci/run-app-checks.sh
+<platform>` ile koşar. Appium ve sürücüler `tools/appium` kilit dosyasından kurulur (`npm ci`,
+`APPIUM_HOME`), `--relaxed-security` olmadan, `127.0.0.1:4723`'te. Test uçlarının (`/test/*`) sırrı
+koşu başına rastgele üretilir, maskelenir ve yalnızca ortamla geçer.
+
+| Job (= check adı) | Runner | Uygulama | Demo API'ye erişim |
+|---|---|---|---|
+| `mobil-android` | `ubuntu-24.04` + KVM, `reactivecircus/android-emulator-runner` (API 34, `google_apis`, x86_64, animasyonlar kapalı) | `derle-android.sh` (`ANDROID_ABI=x86_64`) → `build/bayi-siparis.apk` | `scripts/github-demo-serve.sh` (API + vite preview `/api` vekili, `127.0.0.1:8081`); emülatör hostun loopback'ine `10.0.2.2` ile ulaşır → APK'nın varsayılan adresi `http://10.0.2.2:8081/api` değişmez |
+| `mobil-ios` | `macos-15` (arm64), en yeni kararlı Xcode, simülatör `TP iPhone` (en yeni iOS çalışma zamanı) | `derle-ios.sh` → `build/BayiSiparis.app` (yalnız `demo-app/mobile/**` değişince yeniden derlenir; `actions/cache`) | aynı `github-demo-serve.sh`; simülatör hostun ağını paylaşır → `http://127.0.0.1:8081/api`. WebDriverAgent testlerden önce `appium driver run xcuitest build-wda` ile derlenir |
+| `masaustu-windows` | `windows-latest` (x64) | `yayinla.ps1 -Rid win-x64` (self-contained) → `build/win-x64/BayiSiparis.exe`; NovaWindows sürücüsü sabit sürümle geçici `APPIUM_HOME`'a | Windows runner'ında Linux konteyneri yok: API doğrudan `uv run uvicorn` (SQLite, test modu, `127.0.0.1:18000`). Uygulama API'yi yalnızca verilen kökten çağırdığı ve API uçları kökte olduğu için vekil gerekmez: `APP_ARGS=--api-url http://127.0.0.1:18000` |
+
+Java testleri `/test/*` uçlarına her platformda doğrudan API kökünden (`DEMO_API_URL=http://127.0.0.1:18000`)
+gider. Artefakt (`<job>-results`): `ci-meta.json` (`job`, `platform`, `sha`, `tetik`, `istek_id`,
+`durum` = passed|failed|error), `surefire-reports/TEST-*.xml` (cihaz koşusu JUnit XML),
+`birim-raporlari/`, `allure-results/`, `kanit/<Sınıf>.<metot>/` (ekran görüntüsü + sayfa kaynağı;
+triage), `logs/` (`serve.log`/`api.log`, `appium.log`, `run-app-checks.log`, iOS'ta `wda-derleme.log`).
+
+**Zorunlu check'ler (platform başına).** Varsayılan ruleset ve `TP_REQUIRED_CHECKS` değişmez
+(`test-local,ast-guard,semgrep`). Bir platform etkinleştirildiğinde onun job adı iki yere birlikte
+eklenir — ikisi aynı tutulmalıdır:
+
+```bash
+# ör. Android + Windows etkin:
+TP_REQUIRED_CHECKS=test-local,ast-guard,semgrep,mobil-android,masaustu-windows   # core-worker (.env)
+scripts/github-ruleset.sh --checks test-local,ast-guard,semgrep,mobil-android,masaustu-windows --apply
+```
+
+`mobil-android` ve `masaustu-windows` bu yüzden ci.yml gibi `changes` job'u + "no-op, başarılı"
+desenini kullanır (workflow düzeyinde `paths` yok; ilgisiz PR beklemez). `mobil-ios` macOS dakikaları
+pahalı olduğundan (plan §5) workflow düzeyinde `paths` filtresiyle yalnız ilgili PR'da, gece ve elle
+koşar; **varsayılan olarak zorunlu check değildir** (atlanan zorunlu check PR'ı süresiz bekletirdi).
+Zorunlu yapılacaksa önce aynı `changes` + no-op desenine çevrilmelidir.
+
+Demo deposuna (`scripts/github-demo-repo-init.sh`) üç iş akışı ve `tools/appium/package{,-lock}.json`
+da kopyalanır.
+
+Doğrulanmamış (GitHub'da koşturulmadı; yalnız `actionlint` + YAML ayrıştırma): emülatör/simülatör
+açılış süreleri, runner imajındaki Xcode'un Expo SDK 58 / RN 0.88 için yeterliliği, NovaWindows'un
+`windows-latest` etkileşimli masaüstü oturumunda çalışması ve Git Bash altında `mvnw`.
 
 ## Ruleset
 

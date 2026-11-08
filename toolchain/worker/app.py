@@ -269,6 +269,10 @@ class CheckBody(LangMixin):
 
     @model_validator(mode="after")
     def _record(self) -> CheckBody:
+        if self.dil == "java" and self.platform not in checks.JAVA_PLATFORMS:
+            # Koşu bir Appium sürücüsüne gider ve kapı kaydı platform başınadır
+            # (`local-ci-<platform>`): platformsuz Java kontrolü anlamsızdır.
+            raise ValueError(f"Java kontrolü platform ister: {checks.JAVA_PLATFORMS}")
         if self.dil == "java" and (self.grep or self.affected_by):
             raise ValueError(
                 "Java yolunda grep ve affected_by henüz desteklenmiyor (test_files kullanın)"

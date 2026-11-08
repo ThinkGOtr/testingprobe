@@ -103,7 +103,10 @@ written. Empty token → endpoints open and `/health` `auth: ok (uyarı: …)`; 
     round; assertion → "defect adayı", no repair) and Phase 4 triage (§8.6). See "Failure inputs".
   - **Single writer of `TP_ARTIFACTS_PATH/checks/<full sha>.json`** (core only reads it via
     `LocalForge.checks()`): `{"schema_version":1, "sha", "guncelleme", "checks":[{"name":"local-ci",
-    "status":"in_progress"|"completed","conclusion":…,"url":null}], "report":{…}}` — `in_progress`
+    "status":"in_progress"|"completed","conclusion":…,"url":null}], "report":{…}, "reports":{name:…}}`.
+    Check names are **per platform** (spec 009 §2.7): web/TS `local-ci` (unchanged), Java
+    `local-ci-android|ios|windows` (`/check` with `lang:"java"` requires `platform`). A write only
+    replaces its own entry; other platforms' entries are kept (`report` = last written). `in_progress`
     first, `completed` at the end, `failure` on any unexpected exception. Which checks are recorded
     (`record_check`): `null` (default) → only a **full-scope** check (no `test_files`, no `grep`) —
     the local equivalent of the PR CI that runs every test; `true` → same, and **422 with
@@ -221,6 +224,50 @@ written. Empty token → endpoints open and `/health` `auth: ok (uyarı: …)`; 
   `/test/break {kampanya:false}` for each of `TP_RUN_DEALERS` (bayi1,bayi2); if that fails the run is `error`.
 - Status: `failed` = some test unexpected; `error` = health check failed, timeout, no/corrupt report, report-level errors,
   no test ran, non-zero exit without failures, or break not restored; else `passed` (flaky counts as passed, see `stats.flaky`).
+
+#### Java / Appium runs (spec 009 §2.7, `runner/java_run.py`)
+
+- `POST /run {…, lang:"java", platform:"android"|"ios"|"windows"}` — `platform` is required with
+  `lang:"java"` and rejected with `lang:"ts"` (default; the old body is unchanged). `test_files`
+  are e2e-app relative `src/test/java/**/<Name>Test.java`; `grep` and `workers` are 422 for Java.
+- Same lock, run directory contract, break restore (`/test/break {kampanya:false}` for every
+  `TP_RUN_DEALERS`), cleanup and Allure report as Playwright runs. The commit's
+  `TP_E2E_APP_ROOT` tree (`e2e-app`, GitHub mode `demo-app/e2e-app`) is copied to
+  `runs/<id>/src/e2e-app/`.
+- Hardening = toolchain-worker's Java compile path: the commit's `mvnw`/`ci/run-app-checks.sh` are
+  **not** executed; the image's pinned Maven (`TP_MVN`) runs offline (`-o`), the warmed repo is a
+  read-only `maven.repo.local.tail`, the writable head repo is a per-run temp dir, `pom.xml` and
+  `.mvn/` must match the trusted copy (`worker.java.check_deps`, else `error` without running
+  Maven), `-Dmaven.compiler.proc=none`, environment is an allow-list (no `MAVEN_*`,
+  `JAVA_TOOL_OPTIONS`, …; `MAVEN_SKIP_RC=1`).
+- Per repeat (`repeat_each`, sequential): `mvn … [test-compile] surefire:test -Dplatform=<p>` with
+  `-Draporlar.dizini`, `-Dkanit.dizini`, `-Dallure.results.directory` per repeat; `test_files` →
+  `-Dtest=<path>` (testng.xml ignored), otherwise `testng.xml` (testler + uretilen). Device-free
+  unit tests (`birim`) are not run here (GitHub workflows run them via `run-app-checks.sh`).
+  `retries` has no Java equivalent: ignored, reported as `retries_yok_sayildi:true`.
+- Health (`saglik`): `{ok, zaman, web:null, api, appium, hata}` — `GET DEMO_API_URL/health` and
+  Appium `GET APPIUM_URL_<PLATFORM>/status`; failure → `error`, Maven never starts.
+- Maven env: `PLATFORM`, `APPIUM_URL`, `DEMO_API_URL`, `DEMOAPP_TEST_TOKEN`, `BREAK_CAMPAIGN`,
+  `TP_RUN_ID`, `CI=1` and the app/device settings from `TP_APP_ID_<P>` (default
+  `com.antreklabs.bayisiparis` for android/ios), `TP_APP_PATH_<P>` (path on the **Appium host**),
+  `TP_APP_ACTIVITY_<P>` (android default `.MainActivity` when no path), `TP_APP_ARGS_<P>`,
+  `TP_DEVICE_NAME_<P>`, `TP_DEVICE_UDID_<P>`, `TP_PLATFORM_VERSION_<P>` → e2e-app `APP_ID`, ….
+- Result: Surefire `TEST-*.xml` (untrusted: DTD/entities rejected, size-bounded) → the same
+  `{stats, tests, failures, failure_groups}` shape as Playwright (`runner/surefire.py`), plus one
+  clean `runs/<id>/results/junit.xml` (`junit`; core's JUnit input; `json` is `null`). Extra keys:
+  `surefire_dir`, `kanit_dir`, `appium_url`, `compile_diagnostics` (javac errors when Maven failed
+  without a report), `kirmizi_denetimi` (break runs: `{ok, kirmizi, kotu}` — the
+  `araclar/KirmiziDenetimi.java` rule: every red test is an assertion, at least one red; setup,
+  locator, other errors and skipped tests are not "red"). `reports:{junit,surefire,allure,allure_html,kanit}`.
+- `failure.type` (same set as Playwright): `assertion` (`<failure type=java.lang.AssertionError>`,
+  `Bekle.dogrula`; `expected`/`received`/`timeout_ms` parsed), `locator_not_found` (Timeout "öğe
+  görünmedi: kimlik …" / NoSuchElement), `locator_timeout` (other TimeoutException), `test_data`
+  (`/test/`, login, token, cart-reset setup messages), `other`. `locator_test_id` /
+  `locator_scope_test_id` come from the `kimlik '…'` text; `page_location` is the first
+  `ekranlar/` stack frame; `evidence.screenshot` / `evidence.page_source` (+ `page_source_rel`) are
+  `target/kanit/<Class>.<method>/{ekran.png,sayfa-kaynagi.xml}`.
+- Network: Appium runs on the host; test-runner reaches it **only** through `appium-gw`
+  (compose profile `mobil`, see `docs/CIHAZ-ALTYAPISI.md` §5.1).
 
 - Allure report: after every run, `allure-results/` is turned into a static single-file Allure
   report `results/allure-report/index.html` (`reports.allure_html`; the portal's "Allure raporu"

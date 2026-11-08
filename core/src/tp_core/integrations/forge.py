@@ -242,6 +242,44 @@ def evaluate_required_checks(
     return RequiredChecksVerdict(passed=passed, required=list(required), states=states)
 
 
+# Uygulama (Java + Appium) kontrolleri platform başınadır (009 §2.7): toolchain-worker /check
+# `lang=java` kaydı `local-ci-<platform>`; web kaydı `local-ci` olarak kalır.
+APP_PLATFORMS: tuple[str, ...] = ("android", "ios", "windows")
+APP_PLATFORM_CHECKS: tuple[str, ...] = tuple(f"{REQUIRED_CHECK}-{p}" for p in APP_PLATFORMS)
+# LocalForge düzeninde Java e2e kökü (toolchain TP_E2E_APP_ROOT varsayılanı).
+LOCAL_APP_E2E_ROOT = "e2e-app/"
+
+
+def local_required_checks(
+    configured: Sequence[str], checks: Sequence[CheckRun], changed_paths: Sequence[str]
+) -> tuple[tuple[str, ...], str | None]:
+    """LocalForge merge kapısı: platform başına zorunlu kontroller + ek ihlal nedeni.
+
+    - Yapılandırılmış liste (varsayılan `local-ci`) aynen zorunludur; web PR'ı için davranış
+      değişmez.
+    - Bu head için KAYDEDİLMİŞ her `local-ci-<platform>` de zorunludur: kırmızı bir uygulama
+      kontrolü merge'i durdurur (yalnızca web yeşili yetmez).
+    - PR yalnızca `e2e-app/` altını değiştiriyorsa (uygulama testi / Kimlikler onarımı) web
+      `local-ci` gerekmez; bunun yerine en az bir platform kontrolü olmalı.
+    - `e2e-app/` değişip hiç platform kontrolü yoksa ikinci değer ihlal nedenidir.
+    """
+    platform_names = set(APP_PLATFORM_CHECKS)
+    recorded = [c.name for c in checks if c.name in platform_names]
+    touches_app = any(p.startswith(LOCAL_APP_E2E_ROOT) for p in changed_paths)
+    app_only = touches_app and all(p.startswith(LOCAL_APP_E2E_ROOT) for p in changed_paths)
+    required = [n for n in configured if not (app_only and recorded and n == REQUIRED_CHECK)]
+    for name in recorded:
+        if name not in required:
+            required.append(name)
+    reason = None
+    if touches_app and not any(n in platform_names for n in required):
+        reason = (
+            f"{LOCAL_APP_E2E_ROOT} değişikliği için en az bir uygulama kontrolü gerekli "
+            f"({' | '.join(APP_PLATFORM_CHECKS)})"
+        )
+    return validate_required_checks(required or list(configured)), reason
+
+
 def get_forge(env: Mapping[str, str] | None = None) -> ForgePort:
     """`TP_FORGE`'a göre adaptör kurar (varsayılan: local)."""
     env = os.environ if env is None else env

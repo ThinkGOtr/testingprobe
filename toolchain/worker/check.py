@@ -16,6 +16,13 @@ Başta `checks/<sha>.json`'a `in_progress`, sonda `completed` + `success|failure
 da dosya `failure` ile kapatılır: yarım kalmış kontrol asla başarı sayılmaz.
 
 **Tek yazar:** `checks/<sha>.json`'ı yalnızca bu modül yazar (core salt okur; LocalForge.checks()).
+
+**Kontrol adı platform başınadır** (009 §2.7): web (TS/Playwright) `local-ci` (değişmedi), Java
+(Appium) `local-ci-<platform>` (`local-ci-android`, `local-ci-ios`, `local-ci-windows`). Dosya bir
+kontrol listesidir; her yazım YALNIZCA kendi adındaki girdiyi değiştirir, diğer platformların
+girdileri korunur (eskiden tek girdiydi: son yazan kazanırdı). `report` son yazılan kontrolün
+raporudur; `reports` ad → rapor eşlemesidir.
+
 Hangi kontrol `local-ci` kaydı olur (`record_check`):
 
 - varsayılan (`None`): yalnızca **tam kapsamlı** kontrol — `test_files` ve `grep` yok, kırılma
@@ -38,11 +45,13 @@ kontrolünü (`saglik`) üst düzeyde taşır: kod üretiminin "locator/eşleme 
 
 from __future__ import annotations
 
+import json
 import os
 import threading
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -55,6 +64,8 @@ from worker import java as javayol
 from worker.astguard import AstGuardError, run_ast_guard
 
 CHECK_NAME = "local-ci"
+# Java (Appium) kontrolleri platform başına ayrı kayıttır: `local-ci-<platform>`.
+JAVA_PLATFORMS = ("android", "ios", "windows")
 CHECK_LOCK = threading.Lock()
 STEPS = ("app", "deps", "tsc", "eslint", "ast_guard", "run")
 
@@ -93,12 +104,21 @@ class CheckRequest:
         return javayol.STEPS if self.lang == "java" else STEPS
 
     @property
+    def check_name(self) -> str | None:
+        """Merge kapısındaki kayıt adı: web `local-ci`, Java `local-ci-<platform>`; Java'da
+        platform yoksa None (kayıt yazılmaz; API platformu zaten zorunlu tutar)."""
+        try:
+            return check_name(self.lang, self.platform)
+        except ValueError:
+            return None
+
+    @property
     def full_scope(self) -> bool:
         return not self.test_files and not self.grep and not self.affected_by
 
     def records_check(self) -> bool:
         # Merge kapısına yalnızca tam kapsamlı, kırılmasız kontrol yazılır (record_check ne olursa).
-        if self.break_campaign or not self.full_scope:
+        if self.break_campaign or not self.full_scope or self.check_name is None:
             return False
         return self.record_check is not False
 
@@ -179,25 +199,66 @@ def _counts(tests: list[dict[str, Any]]) -> dict[str, int]:
     return out
 
 
-def checks_document(sha: str, status: str, report: dict[str, Any] | None) -> dict[str, Any]:
-    """LocalForge.checks() biçimi: {"checks": [CheckRun…]} (+ rapor, ek alanlar yok sayılır)."""
+def check_name(lang: str, platform: str | None) -> str:
+    """`local-ci` (TS/web) ya da `local-ci-<platform>` (Java). Java'da platform zorunludur."""
+    if lang != "java":
+        return CHECK_NAME
+    if platform not in JAVA_PLATFORMS:
+        raise ValueError(f"Java kontrolü platform ister: {JAVA_PLATFORMS}")
+    return f"{CHECK_NAME}-{platform}"
+
+
+def _existing_checks(path: Path | None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Dosyadaki kontrol girdileri ve raporları (okunamazsa boş: yalnızca bu kontrol yazılır).
+
+    Dosyayı yalnızca bu modül yazar; yine de beklenmeyen biçimdeki girdiler atılır.
+    """
+    if path is None:
+        return [], {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return [], {}
+    if not isinstance(data, dict):
+        return [], {}
+    entries = [
+        c
+        for c in data.get("checks") or []
+        if isinstance(c, dict) and isinstance(c.get("name"), str)
+    ]
+    reports = data.get("reports") if isinstance(data.get("reports"), dict) else {}
+    return entries, reports
+
+
+def checks_document(
+    sha: str,
+    status: str,
+    report: dict[str, Any] | None,
+    name: str = CHECK_NAME,
+    existing: Path | None = None,
+) -> dict[str, Any]:
+    """LocalForge.checks() biçimi: {"checks": [CheckRun…]} (+ rapor, ek alanlar yok sayılır).
+
+    `existing` (aynı sha'nın kapı dosyası) verilirse diğer adlardaki girdiler korunur; bu adın
+    girdisi değişir. Sıra kararlıdır: web `local-ci` başta, platformlar ad sırasıyla.
+    """
     conclusion = None if report is None else report["conclusion"]
+    # `tam`: yalnızca tam kapsamlı kontrol yazılır (CheckRequest.records_check); ek alan,
+    # CheckRun onu yok sayar ama core kapıda doğrulayabilir.
+    entry = {"name": name, "status": status, "conclusion": conclusion, "url": None, "tam": True}
+    others, old_reports = _existing_checks(existing)
+    entries = [c for c in others if c["name"] != name] + [entry]
+    entries.sort(key=lambda c: (c["name"] != CHECK_NAME, c["name"]))
+    names = {c["name"] for c in entries}
+    reports = {k: v for k, v in old_reports.items() if k != name and k in names}
+    reports[name] = report
     return {
         "schema_version": 1,
         "sha": sha,
         "guncelleme": now_iso(),
-        # `tam`: yalnızca tam kapsamlı kontrol yazılır (CheckRequest.records_check); ek alan,
-        # CheckRun onu yok sayar ama core kapıda doğrulayabilir.
-        "checks": [
-            {
-                "name": CHECK_NAME,
-                "status": status,
-                "conclusion": conclusion,
-                "url": None,
-                "tam": True,
-            }
-        ],
+        "checks": entries,
         "report": report,
+        "reports": reports,
     }
 
 
@@ -263,7 +324,10 @@ def _execute_locked(
     full = head.sha
     path = checks_file(cfg.artifacts_path, full, cfg.checks_dir) if req.records_check() else None
     if path is not None:
-        atomic_write_json(path, checks_document(full, "in_progress", None))
+        atomic_write_json(
+            path,
+            checks_document(full, "in_progress", None, req.check_name or CHECK_NAME, existing=path),
+        )
     started = time.monotonic()
     steps: dict[str, dict[str, Any]] = {}
     report: dict[str, Any] | None = None
@@ -289,11 +353,17 @@ def _execute_locked(
             report["kapsam"] = {**req.scope(), "etkilenen": steps.get("affected")}
             report["check_recorded"] = path is not None
             report["kaynak"] = head.kaynak
+            report["check_name"] = req.check_name
             if req.lang != "ts":
                 report["lang"] = req.lang
                 report["platform"] = req.platform
             if path is not None:
-                atomic_write_json(path, checks_document(full, "completed", report))
+                atomic_write_json(
+                    path,
+                    checks_document(
+                        full, "completed", report, req.check_name or CHECK_NAME, existing=path
+                    ),
+                )
     return report
 
 
