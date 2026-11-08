@@ -10,7 +10,7 @@ export PLAYWRIGHT_VERSION := $(strip $(shell cat .playwright-version 2>/dev/null
 
 S ?=
 
-.PHONY: help env up asistan-paket status seed reset jira-seed forge-init break demo-break demo-reset demo-web-sync locator-break-verify demo-baseline export-audit security-check e2e-smoke demo-check demo-prova prova-temizle eval-live asistan-perf prune logs down
+.PHONY: help env up asistan-paket status seed reset jira-seed forge-init break demo-break demo-reset demo-web-sync locator-break-verify demo-baseline export-audit security-check e2e-smoke demo-check demo-prova prova-temizle eval-live asistan-perf prune logs down cihaz-kur cihaz-baslat cihaz-durdur cihaz-durum cihaz-wda cihaz-ag
 
 help: ## Hedefleri listeler
 	@echo "Kullanım: make <hedef>"
@@ -85,6 +85,27 @@ eval-live: ## Prompt değerlendirme setini CANLI modelle koşturur, sert bütçe
 
 asistan-perf: ## Asistan süre testleri (§16.12 öneri ucu p95 < 300 ms; T132): TP_TEST_PERF=1 pytest -m perf (geçici test postgres'i; toplu gönderim öncesi)
 	@cd core && TP_TEST_PERF=1 TP_TEST_REQUIRE_DB=1 uv run pytest tests/unit/features/assistant -m perf -q
+
+# --- Cihaz altyapısı (009 mobil; docs/CIHAZ-ALTYAPISI.md) ---------------------------------------
+PLATFORM ?=
+
+cihaz-kur: ## Appium 3 + sürücüler (tools/appium) + AVD tp-android + simülatör "TP iPhone" + app-mcp (idempotent)
+	@scripts/cihaz/kur.sh
+
+cihaz-baslat: ## Cihazı açar, derleme varsa uygulamayı kurar, Appium 127.0.0.1:4723 (PLATFORM=android|ios; GORUNMEZ=1: penceresiz)
+	@scripts/cihaz/baslat.sh $(PLATFORM)
+
+cihaz-durdur: ## Appium + kanonik cihazları durdurur (PLATFORM=android|ios: yalnız o cihaz)
+	@scripts/cihaz/durdur.sh $(PLATFORM)
+
+cihaz-durum: ## Appium, cihaz ve uygulama derlemesi durumu
+	@scripts/cihaz/durum.sh
+
+cihaz-wda: ## iOS WebDriverAgent ön derlemesi (ilk xcuitest oturumu hızlanır; Xcode değişince yeniden)
+	@scripts/cihaz/wda.sh
+
+cihaz-ag: ## Konteyner → host.docker.internal:4723 erişimi + LAN'dan erişilemezlik doğrulaması
+	@scripts/cihaz/ag-dogrula.sh
 
 prune: ## Kullanılmayan (dangling) imajları ve build önbelleğini temizler; volume'lere dokunmaz
 	@echo "İmajlar:";        docker image prune -f | tail -n 1

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Elle yazılmış, XCUITest biçiminde: React Native (Expo) Bayi Sipariş Portalı giriş ekranı.
+     RN testID → accessibilityIdentifier (`name`); öznitelikler gerçek kaynaktan (ios-ayarlar.xml) örneklenmiştir. -->
+<AppiumAUT>
+  <XCUIElementTypeApplication type="XCUIElementTypeApplication" name="Bayi" label="Bayi" enabled="true" visible="true" accessible="false" x="0" y="0" width="393" height="852" index="0" traits="">
+    <XCUIElementTypeWindow type="XCUIElementTypeWindow" enabled="true" visible="true" accessible="false" x="0" y="0" width="393" height="852" index="0" traits="">
+      <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="0" width="393" height="852" index="0" traits="">
+        <XCUIElementTypeImage type="XCUIElementTypeImage" enabled="true" visible="true" accessible="false" x="156" y="80" width="80" height="80" index="0" traits="Image"/>
+        <XCUIElementTypeStaticText type="XCUIElementTypeStaticText" value="Bayi Sipariş Portalı" name="Bayi Sipariş Portalı" label="Bayi Sipariş Portalı" enabled="true" visible="true" accessible="true" x="40" y="180" width="313" height="34" index="1" traits="Header"/>
+        <XCUIElementTypeTextField type="XCUIElementTypeTextField" value="bayi3" name="login-username" label="" enabled="true" visible="true" accessible="true" x="40" y="240" width="313" height="44" index="2" placeholderValue="Kullanıcı adı" traits=""/>
+        <XCUIElementTypeSecureTextField type="XCUIElementTypeSecureTextField" value="••••••••" name="login-password" label="" enabled="true" visible="true" accessible="true" x="40" y="300" width="313" height="44" index="3" placeholderValue="Parola" traits=""/>
+        <XCUIElementTypeSwitch type="XCUIElementTypeSwitch" value="1" name="login-remember" label="Beni hatırla" enabled="true" visible="true" accessible="true" x="40" y="360" width="51" height="31" index="4" traits="Button, ToggleButton"/>
+        <XCUIElementTypeOther type="XCUIElementTypeOther" name="login-submit" label="Giriş yap" enabled="true" visible="true" accessible="true" x="40" y="410" width="313" height="48" index="5" traits="">
+          <XCUIElementTypeStaticText type="XCUIElementTypeStaticText" value="Giriş yap" name="Giriş yap" label="Giriş yap" enabled="true" visible="true" accessible="false" x="160" y="422" width="73" height="22" index="0" traits="StaticText"/>
+        </XCUIElementTypeOther>
+        <XCUIElementTypeStaticText type="XCUIElementTypeStaticText" value="Kullanıcı adı veya parola hatalı" name="login-error" label="Kullanıcı adı veya parola hatalı" enabled="true" visible="true" accessible="true" x="40" y="470" width="313" height="20" index="6" traits="StaticText"/>
+        <XCUIElementTypeButton type="XCUIElementTypeButton" name="Kayıt ol" label="Kayıt ol" enabled="false" visible="true" accessible="true" x="40" y="500" width="313" height="44" index="7" traits="Button, NotEnabled"/>
+        <XCUIElementTypeOther type="XCUIElementTypeOther" name="login-language" enabled="true" visible="true" accessible="false" x="40" y="560" width="313" height="160" index="8" traits="">
+          <XCUIElementTypePicker type="XCUIElementTypePicker" enabled="true" visible="true" accessible="false" x="40" y="560" width="313" height="160" index="0" traits="">
+            <XCUIElementTypePickerWheel type="XCUIElementTypePickerWheel" value="Türkçe" enabled="true" visible="true" accessible="true" x="40" y="560" width="313" height="160" index="0" traits="Adjustable"/>
+          </XCUIElementTypePicker>
+        </XCUIElementTypeOther>
+        <XCUIElementTypeStaticText type="XCUIElementTypeStaticText" value="Görünmez" name="Görünmez" label="Görünmez" enabled="true" visible="false" accessible="true" x="40" y="740" width="313" height="20" index="9" traits="StaticText"/>
+        <XCUIElementTypeStaticText type="XCUIElementTypeStaticText" value="Sıfır" name="zero-size" label="Sıfır" enabled="true" visible="true" accessible="true" x="40" y="760" width="0" height="0" index="10" traits="StaticText"/>
+        <XCUIElementTypeScrollView type="XCUIElementTypeScrollView" name="product-list" enabled="true" visible="true" accessible="false" x="0" y="600" width="393" height="252" index="11" traits="">
+          <XCUIElementTypeOther type="XCUIElementTypeOther" name="product-card-P-001" enabled="true" visible="true" accessible="false" x="0" y="600" width="393" height="120" index="0" traits="">
+            <XCUIElementTypeStaticText type="XCUIElementTypeStaticText" value="P-001" name="P-001" label="P-001" enabled="true" visible="true" accessible="true" x="16" y="610" width="80" height="20" index="0" traits="StaticText"/>
+            <XCUIElementTypeButton type="XCUIElementTypeButton" name="add-to-cart" label="Sepete ekle" enabled="true" visible="true" accessible="true" x="250" y="680" width="127" height="32" index="1" traits="Button"/>
+          </XCUIElementTypeOther>
+          <XCUIElementTypeOther type="XCUIElementTypeOther" name="product-card-P-002" enabled="true" visible="true" accessible="false" x="0" y="720" width="393" height="120" index="1" traits="">
+            <XCUIElementTypeStaticText type="XCUIElementTypeStaticText" value="P-002" name="P-002" label="P-002" enabled="true" visible="true" accessible="true" x="16" y="730" width="80" height="20" index="0" traits="StaticText"/>
+            <XCUIElementTypeButton type="XCUIElementTypeButton" name="add-to-cart" label="Sepete ekle" enabled="true" visible="true" accessible="true" x="250" y="800" width="127" height="32" index="1" traits="Button"/>
+          </XCUIElementTypeOther>
+        </XCUIElementTypeScrollView>
+      </XCUIElementTypeOther>
+    </XCUIElementTypeWindow>
+    <XCUIElementTypeWindow type="XCUIElementTypeWindow" enabled="true" visible="true" accessible="false" x="0" y="0" width="393" height="852" index="1" traits="">
+      <XCUIElementTypeKeyboard type="XCUIElementTypeKeyboard" enabled="true" visible="true" accessible="false" x="0" y="560" width="393" height="292" index="0" traits="">
+        <XCUIElementTypeKey type="XCUIElementTypeKey" name="q" label="q" enabled="true" visible="true" accessible="true" x="3" y="570" width="36" height="42" index="0" traits="Button, KeyboardKey"/>
+      </XCUIElementTypeKeyboard>
+    </XCUIElementTypeWindow>
+  </XCUIElementTypeApplication>
+</AppiumAUT>

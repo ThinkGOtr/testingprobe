@@ -269,7 +269,7 @@ check_model_key() {
   fi
   # Çalışma alanı kimliği ve asistanın CI log okuma token'ı da anahtarla aynı sınıftadır
   # (sır; yalnızca core-worker). Token core-worker'da boş olabilir (mevcut okuma kimliği kullanılır).
-  for svc in core-api review-portal jira-sim toolchain-worker test-runner playwright-mcp demo-app-api demo-app-web; do
+  for svc in core-api review-portal jira-sim toolchain-worker test-runner playwright-mcp app-mcp demo-app-api demo-app-web; do
     svc_running "$svc" || continue
     for var in ANTHROPIC_API_KEY ANTHROPIC_WORKSPACE_ID GITHUB_ACTIONS_READ_TOKEN; do
       if compose exec -T "$svc" sh -c "env | grep -q '^${var}='" 2>/dev/null; then
@@ -344,7 +344,7 @@ check_write_creds() {
   else
     ok=0; info "core-worker: JIRA_WRITE_TOKEN tanımlı değil (pozitif kontrol)"
   fi
-  for svc in core-api review-portal jira-sim toolchain-worker test-runner playwright-mcp demo-app-api demo-app-web; do
+  for svc in core-api review-portal jira-sim toolchain-worker test-runner playwright-mcp app-mcp demo-app-api demo-app-web; do
     svc_running "$svc" || continue
     found="$(compose exec -T "$svc" sh -c 'env' 2>/dev/null | grep -E "$pattern" | cut -d= -f1 | tr '\n' ' ' || true)"
     if [ -n "$found" ]; then
@@ -358,7 +358,7 @@ check_write_creds() {
       ok=0; info "${svc}: DEMOAPP_TEST_TOKEN tanımlı değil (pozitif kontrol)"
     fi
   done
-  for svc in core-api core-worker review-portal jira-sim toolchain-worker playwright-mcp demo-app-web; do
+  for svc in core-api core-worker review-portal jira-sim toolchain-worker playwright-mcp app-mcp demo-app-web; do
     svc_running "$svc" || continue
     if compose exec -T "$svc" sh -c 'env | grep -q "^DEMOAPP_TEST_TOKEN="' 2>/dev/null; then
       ok=0; info "${svc}: DEMOAPP_TEST_TOKEN tanımlı — olmamalı"
