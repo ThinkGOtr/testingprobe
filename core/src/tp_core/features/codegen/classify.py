@@ -5,7 +5,7 @@ toolchain-worker `/check` raporu (`deps → tsc → eslint → ast_guard → run
 | Sınıf | Koşul | Sonraki adım |
 |---|---|---|
 | `gecti` | `conclusion = success` | PR |
-| `derleme` | deps/tsc/eslint/AST koruması başarısız | insana |
+| `derleme` | deps/tsc/eslint/AST koruması (Java: deps/guard/compile) başarısız | insana |
 | `ortam` | sağlık, runner yok, rapor yok, uygulama≠commit (`app`) | insana (yeniden denenebilir) |
 | `locator` | locator bulunamadı / bulma zaman aşımı / strict mode | 1 yeniden eşleme turu |
 | `defect_adayi` | **tüm** tekrarlar aynı `expect(...)`'te farklı değer | onarım yok, insana |
@@ -15,6 +15,13 @@ toolchain-worker `/check` raporu (`deps → tsc → eslint → ast_guard → run
 `--repeat-each=3` kararlı kırmızıyı kararsızdan ayırmak içindir: 3 tekrardan biri bile geçtiyse
 sonuç "uygulama onaylı case'in beklenen sonucunu vermedi" diye okunamaz (yarış, zamanlama ya da
 test kararsızlığı olabilir); `kararsiz` sınıfı ayrı tutulur ve pass@1'de geçmedi sayılır.
+
+Java/Appium raporu (009 §2.3; toolchain `/check` `lang=java`: `app → deps → guard → compile → run`)
+aynı sınıflara ayrılır: `NoSuchElementException` / `TimeoutException` (eylem ön koşulu,
+`Bekle.kosul`) / `StaleElementReferenceException` → locator; `java.lang.AssertionError`
+(`Bekle.dogrula`: "<açıklama>: beklenen <X>, görülen <Y> (N ms)") → assertion; Appium oturumu
+açılamadı / bağlantı reddedildi → ortam. Kurulum kaynaklı assertion (`/test/*` çağrısı, giriş,
+`DEMOAPP_TEST_TOKEN`; `araclar/KirmiziDenetimi.java` süzgeci) defect adayı sayılmaz → ortam.
 
 Hata metinleri test kodunun çıktısıdır (güvenilmez): yalnızca kalıp eşlenir, kırpılarak saklanır.
 """
@@ -42,8 +49,57 @@ _RECEIVED = re.compile(r"^\s*Received(?: string| value)?:\s*(?P<v>.+)$", re.I | 
 _EXPECTED = re.compile(r"^\s*Expected(?: string| value| pattern)?:\s*(?P<v>.+)$", re.I | re.M)
 _ORTAM = re.compile(r"net::ERR_|ECONNREFUSED|ENOTFOUND|page\.goto: Timeout", re.I)
 
+# Java / Appium (009 §2.3). Sınıf adları paketli ya da paketsiz gelebilir (Surefire `type` ya da
+# mesajın ilk satırı); yalnızca kalıp eşlenir.
+JAVA_ORTAM = re.compile(
+    r"SessionNotCreatedException|Could not start a new session|UnreachableBrowserException"
+    r"|java\.net\.(?:Connect|NoRouteToHost|UnknownHost)Exception|ConnectException"
+    r"|Connection refused",
+    re.I,
+)
+JAVA_ASSERTION = re.compile(r"(?:java\.lang\.)?AssertionError\b")
+JAVA_LOCATOR = re.compile(
+    r"(?:org\.openqa\.selenium\.)?(?:NoSuchElementException|TimeoutException"
+    r"|StaleElementReferenceException)\b"
+)
+# Assertion türünde olsa da kurulum kaynaklı (demo-app/e2e-app/araclar/KirmiziDenetimi.java).
+JAVA_KURULUM = re.compile(r"/test/|giriş başarısız|DEMOAPP_TEST_TOKEN", re.I)
+# `Bekle.dogrula`: "<açıklama>: beklenen <X>, görülen <Y> (N ms)"; TestNG Assert:
+# "expected [X] but found [Y]".
+_JAVA_BEKLENEN = re.compile(r"beklenen <(?P<exp>.*?)>, görülen <(?P<rec>.*)> \(\d+ ms\)", re.S)
+_TESTNG_BEKLENEN = re.compile(r"expected \[(?P<exp>.*?)\] but found \[(?P<rec>.*?)\]", re.S)
+
+
+def java_beklenen_gorulen(mesaj: str | None) -> tuple[str | None, str | None]:
+    """Java assertion mesajındaki (beklenen, görülen); yoksa (None, None)."""
+    m = _JAVA_BEKLENEN.search(mesaj or "") or _TESTNG_BEKLENEN.search(mesaj or "")
+    if m is None:
+        return None, None
+    return m.group("exp"), m.group("rec")
+
+
+def java_hata_turu(message: str | None) -> str | None:
+    """Java/Appium hata metninin türü (`ortam` | `assertion` | `locator`); Java değilse None.
+
+    Sıra: ortam (oturum/bağlantı) → kurulum assertion'ı (ortam) → assertion → locator. Assertion
+    mesajı bir `TimeoutException`'ı anabilir (`Bekle.dogrula` zaman aşımını AssertionError'a
+    çevirir); bu yüzden assertion locator'dan önce gelir.
+    """
+    m = message or ""
+    if JAVA_ORTAM.search(m):
+        return "ortam"
+    ilk = m.lstrip().splitlines()[0] if m.strip() else ""
+    if JAVA_ASSERTION.search(ilk) or _JAVA_BEKLENEN.search(m):
+        return "ortam" if JAVA_KURULUM.search(m) else "assertion"
+    if JAVA_LOCATOR.search(ilk) or JAVA_LOCATOR.search(m):
+        return "locator"
+    return None
+
+
 ACIKLAMA = {
     "gecti": "Yerel kontrol geçti (tsc, eslint, AST koruması, Playwright tekrarları yeşil).",
+    "gecti_java": "Yerel kontrol geçti (pom kilidi, Java AST koruması, test-compile, Appium "
+    "tekrarları yeşil).",
     "derleme": "Derleme/lint/AST koruması başarısız: üretilen kod ya da kütüphane insan "
     "incelemesi ister.",
     "ortam": "Ortam hatası (uygulama/test-runner erişilemedi); test sonucu güvenilir değil, "
@@ -116,6 +172,9 @@ def test_error_kind(message: str | None, runner_type: str | None = None) -> str:
     m = message or ""
     if _ORTAM.search(m):
         return "ortam"
+    java = java_hata_turu(m)
+    if java is not None:
+        return java
     # Assertion önce: Playwright'ın `expect(locator).toHaveText` zaman aşımı mesajı "Call log"
     # bölümünde `- waiting for getByTestId(...)` satırı taşır; bu bir locator hatası değildir.
     # Locator kalıpları "Call log" satırları dışında aranır.
@@ -139,6 +198,8 @@ def _hata_satiri(test: Mapping[str, Any]) -> dict[str, Any]:
     m_exp, m_rec = _EXPECTED.search(err), _RECEIVED.search(err)
     exp = failure.get("expected") or (m_exp.group("v").strip() if m_exp else None)
     rec = failure.get("received") or (m_rec.group("v").strip() if m_rec else None)
+    if exp is None and rec is None:
+        exp, rec = java_beklenen_gorulen(err or failure.get("message"))
     adim = failure.get("step") if isinstance(failure.get("step"), Mapping) else None
     konum = failure.get("test_location") or failure.get("location")
     satir = konum.get("line") if isinstance(konum, Mapping) else None
@@ -174,8 +235,23 @@ def _adim_ok(report: Mapping[str, Any], ad: str) -> bool | None:
     return bool(adim.get("ok"))
 
 
+# Statik adımlar: TS (`deps → tsc → eslint → ast_guard`) ve Java (`deps → guard → compile`).
+TS_ADIMLARI = ("deps", "tsc", "eslint", "ast_guard")
+JAVA_ADIMLARI = ("deps", "guard", "compile")
+
+
+def java_raporu_mu(report: Mapping[str, Any]) -> bool:
+    """toolchain `/check` Java yolu raporu mu? (`lang=java` ya da Java adımları)."""
+    if report.get("lang") == "java":
+        return True
+    return any(isinstance(report.get(a), Mapping) for a in ("guard", "compile")) and not any(
+        isinstance(report.get(a), Mapping) for a in ("tsc", "eslint", "ast_guard")
+    )
+
+
 def classify(report: Mapping[str, Any]) -> Siniflama:
-    adimlar = {ad: _adim_ok(report, ad) for ad in ("deps", "tsc", "eslint", "ast_guard")}
+    statik = JAVA_ADIMLARI if java_raporu_mu(report) else TS_ADIMLARI
+    adimlar = {ad: _adim_ok(report, ad) for ad in statik}
     run = report.get("run") if isinstance(report.get("run"), Mapping) else {}
     run = run or {}
     tests = [t for t in run.get("tests") or [] if isinstance(t, Mapping)]
@@ -188,7 +264,8 @@ def classify(report: Mapping[str, Any]) -> Siniflama:
         "toplam": len(tests),
     }
     if report.get("conclusion") == "success":
-        return Siniflama("gecti", "success", ACIKLAMA["gecti"], **ortak)
+        aciklama = ACIKLAMA["gecti_java"] if statik == JAVA_ADIMLARI else ACIKLAMA["gecti"]
+        return Siniflama("gecti", "success", aciklama, **ortak)
     app = report.get("app")
     if isinstance(app, Mapping) and not app.get("skipped") and app.get("ok") is False:
         # Çalışan uygulama commit'le eşleşmiyor (`sha_eslesmesi='farkli'`) ya da doğrulanamadı:

@@ -43,12 +43,22 @@ def pr_govdesi(k: Mapping[str, Any]) -> str:
     aria = k.get("aria") or {}
     ast = k.get("ast_guard") or {}
     yk = k.get("yerel_kontrol") or {}
+    platform = str(k.get("platform") or "web")
+    java = platform != "web"
+    giris = (
+        f"Uygulama ({platform}): yalnızca `ekranlar/Kimlikler.java` içindeki ilgili sabitin "
+        "kimlik değeri değişir; sabit adları, niyet ve ekran nesneleri değişmez (009 §2.2). "
+        "Test dosyaları ve assertion'lara dokunulmadı (Constitution VI). Merge yalnızca insan "
+        "onayıyla yapılır."
+        if java
+        else "Yalnızca `pages/**/locators.ts` içindeki ilgili `testId` değeri değişir; anahtar "
+        "kümesi, rol, ad, niyet ve `within` değişmez. Test dosyaları ve assertion'lara "
+        "dokunulmadı (Constitution VI). Merge yalnızca insan onayıyla yapılır."
+    )
     satirlar = [
         "## Locator onarımı (bakım yolu, TEKNIK-TASARIM §8.7)",
         "",
-        "Yalnızca `pages/**/locators.ts` içindeki ilgili `testId` değeri değişir; anahtar kümesi, "
-        "rol, ad, niyet ve `within` değişmez. Test dosyaları ve assertion'lara dokunulmadı "
-        "(Constitution VI). Merge yalnızca insan onayıyla yapılır.",
+        giris,
         "",
         "### Hata",
         f"- Hata analizi: {_kod(k.get('failure_id'))} · koşu {_kod(k.get('run_id'))}",
@@ -70,7 +80,7 @@ def pr_govdesi(k: Mapping[str, Any]) -> str:
         str(k.get("fark") or "").replace("```", "'''")[:4000].rstrip(),
         "```",
         "",
-        "### Aday (çalışan uygulamada yoklama)",
+        "### Aday (hata anı sayfa kaynağı)" if java else "### Aday (çalışan uygulamada yoklama)",
         f"- Sayfa: {_kod(probe.get('url_path'))} · kapsayıcı {_kod(k.get('scope_test_id'))}",
         f"- Eşleşme: {_kod(probe.get('matches'))} · okunan testId {_kod(probe.get('test_id'))}",
         f"- Ölçülen: {_kod(probe.get('olculen'))} · uygulama sha {_kod(probe.get('uygulama_sha'))}"
@@ -80,7 +90,7 @@ def pr_govdesi(k: Mapping[str, Any]) -> str:
         satirlar.append(f"- Uyarı: {_kod(probe.get('uyari'), 300)}")
     satirlar += [
         "",
-        "### Son yeşil doğrulaması (aria)",
+        "### Kanıt doğrulaması (sayfa kaynağı)" if java else "### Son yeşil doğrulaması (aria)",
         f"- Kaynak: {_kod(aria.get('kaynak'))}"
         + (f" · koşu {_kod(aria.get('run_id'))}" if aria.get("run_id") else "")
         + (f" · {_kod(aria.get('ref'))}" if aria.get("ref") else ""),
