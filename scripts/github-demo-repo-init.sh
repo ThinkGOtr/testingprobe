@@ -18,6 +18,9 @@
 #                              ubuntu-24.04 runner'ları); ürün deposundaki ci.yml'den, golden-drift
 #                              job'u çıkarılarak (golden kayıtlar ürün deposunda kalır: rules/, docs/)
 #   .github/workflows/break-verify.yml  elle "kırarak doğrula" kanıtı (zorunlu değil)
+#   .github/workflows/{mobil-android,mobil-ios,masaustu-windows}.yml  uygulama e2e (009; Java +
+#                              Appium; platform etkinse mobil-android / masaustu-windows zorunlu check)
+#   tools/appium/package{,-lock}.json   Appium 3 + sürücüler (uygulama iş akışları npm ci ile kurar)
 #   .github/CODEOWNERS         /demo-app/e2e/pages/, tests/generated/, kalite kapısı yapılandırması,
 #                              /.github/, /toolchain/ast-guard/, /scripts/github-*.sh → @<codeowner>
 #   .github/dependabot.yml     Action SHA'ları + ast-guard bağımlılıkları (PR açar, merge etmez)
@@ -103,6 +106,8 @@ copy_tracked() {
 
 copy_tracked demo-app toolchain/ast-guard toolchain/security/no-mcp-in-image.sh \
   .playwright-version .github/workflows/break-verify.yml .github/dependabot.yml \
+  .github/workflows/mobil-android.yml .github/workflows/mobil-ios.yml \
+  .github/workflows/masaustu-windows.yml tools/appium/package.json tools/appium/package-lock.json \
   scripts/github-ast-guard-mode.sh scripts/github-ci-results.sh scripts/github-demo-serve.sh \
   scripts/github-sauce-summary.sh scripts/github-break-verify-result.sh
 [ -f "$DEST/demo-app/web/Dockerfile" ] || die "demo-app/web/Dockerfile kopyalanmadı"

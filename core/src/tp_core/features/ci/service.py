@@ -564,11 +564,19 @@ def _checks_dosyasi(sha: str | None) -> dict[str, Any] | None:
     local = next(
         (c for c in checks or [] if isinstance(c, dict) and c.get("name") == "local-ci"), None
     )
+    # Uygulama kontrolleri platform başına ayrı kayıttır (`local-ci-<platform>`, 009 §2.7).
+    platformlar = {
+        str(c["name"]): {"durum": c.get("status"), "conclusion": c.get("conclusion")}
+        for c in checks or []
+        if isinstance(c, dict) and isinstance(c.get("name"), str)
+        and c["name"].startswith("local-ci-")
+    }  # fmt: skip
     return {
         "yol": f"checks/{sha}.json",
         "var": True,
         "durum": (local or {}).get("status"),
         "conclusion": (local or {}).get("conclusion"),
+        **({"platformlar": platformlar} if platformlar else {}),
     }
 
 

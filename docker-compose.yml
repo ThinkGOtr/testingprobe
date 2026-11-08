@@ -9,10 +9,12 @@
 #   runner-net : internal; toolchain-worker <-> test-runner
 #   mcp-net    : internal; yalnızca core-worker <-> playwright-mcp
 #   app-mcp-net: internal; yalnızca core-worker <-> app-mcp (mobil/masaüstü ajan aracı, 009)
-#   cihaz-net  : yalnızca app-mcp; hosttaki Appium'a (host.docker.internal:4723) çıkış için
-#                internal DEĞİL (internal ağdan host'a ulaşılamaz). docs/CIHAZ-ALTYAPISI.md §Ağ
-# test-runner yalnızca demo-net + runner-net'te: postgres, core-api, playwright-mcp ve internete
-# erişemez; demo-app-web'e (UI) ve demo-app-api'ye (/test/* sıfırlama + kırılma, belirteçli) erişir.
+#   cihaz-net  : yalnızca app-mcp + appium-gw; hosttaki Appium'a (host.docker.internal:4723) çıkış
+#                için internal DEĞİL (internal ağdan host'a ulaşılamaz). docs/CIHAZ-ALTYAPISI.md §5
+#   appium-net : internal; yalnızca test-runner <-> appium-gw (LocalForge Java koşusu, 009 §2.7)
+# test-runner yalnızca demo-net + runner-net + appium-net'te: postgres, core-api, playwright-mcp ve
+# internete erişemez; demo-app-web'e (UI) ve demo-app-api'ye (/test/* sıfırlama + kırılma, belirteçli)
+# erişir. Tek ağ istisnası: appium-gw üzerinden YALNIZCA host.docker.internal:4723 (Appium).
 # playwright-mcp yalnızca agent-net + mcp-net'te: tarayıcısı (ve browser_run_code_unsafe gibi
 # kapatılamayan araçları) yalnızca demo-app-web'e ulaşır (nginx /api/test/*'i kapatır); core-api,
 # jira-sim, postgres, demo-app-api, test-runner ve internete erişemez; host'a port açmaz.
@@ -340,12 +342,26 @@ services:
       DEMOAPP_TEST_TOKEN: ${DEMOAPP_TEST_TOKEN:?make env çalıştırın}
       TP_FORGE_MIRROR_PATH: /forge-mirror/demo-app.git
       TP_E2E_ROOT: ${TP_E2E_ROOT:-e2e}
+      # Java (Appium) koşusu (009 §2.7, runner/java_run.py): e2e-app kökü ve platform başına Appium.
+      # Appium hostta; test-runner ona yalnızca appium-gw (TCP yönlendirici, `mobil` profili)
+      # üzerinden ulaşır. Boş = o platformun Java koşusu sağlık kontrolünde `error`.
+      TP_E2E_APP_ROOT: ${TP_E2E_APP_ROOT:-e2e-app}
+      APPIUM_URL_ANDROID: ${TP_RUNNER_APPIUM_URL_ANDROID:-http://appium-gw:4723}
+      APPIUM_URL_IOS: ${TP_RUNNER_APPIUM_URL_IOS:-http://appium-gw:4723}
+      APPIUM_URL_WINDOWS: ${TP_RUNNER_APPIUM_URL_WINDOWS:-}
+      # Appium hostundaki kurulu uygulama (make cihaz-baslat kurar) ve cihaz seçimi.
+      TP_APP_ID_ANDROID: ${TP_APP_ID_ANDROID:-com.antreklabs.bayisiparis}
+      TP_APP_ID_IOS: ${TP_APP_ID_IOS:-com.antreklabs.bayisiparis}
+      TP_APP_ID_WINDOWS: ${TP_APP_ID_WINDOWS:-}
+      TP_APP_PATH_WINDOWS: ${TP_APP_PATH_WINDOWS:-}
+      TP_DEVICE_UDID_ANDROID: ${APP_ANDROID_UDID:-}
+      TP_DEVICE_UDID_IOS: ${APP_IOS_UDID:-}
     volumes:
       - tp_forge:/forge:ro
       - tp_artifacts:/artifacts
       # tp_checks BAĞLANMAZ: üretilen kod merge kapısı dosyasını göremez/yazamaz.
       - tp_forge_mirror:/forge-mirror:ro
-    networks: [demo-net, runner-net]
+    networks: [demo-net, runner-net, appium-net]
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:8200/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
@@ -418,6 +434,32 @@ services:
     deploy:
       resources:
         limits: { memory: 512m }
+
+  # test-runner'ın hosttaki Appium'a TEK çıkışı (009 §2.7; docs/CIHAZ-ALTYAPISI.md §5.1).
+  # Internal ağdan host'a ulaşılamadığı için test-runner internal ağlarda kalır; bu yönlendirici
+  # appium-net (internal) üzerinden gelen bağlantıyı yalnızca host.docker.internal:4723'e iletir
+  # (hedef sabit; komut satırı dışında yapılandırma yok). Böylece koşan test kodu internete ya da
+  # hosttaki başka bir porta DOĞRUDAN çıkamaz. Kalan risk: Appium API'sinin kendisi (ör. `app`
+  # yeteneğine URL → hosttan indirme, emülatörün kendi ağı); bkz. docs/CIHAZ-ALTYAPISI.md §5.1. Tek amaçlı socat (alpine tabanlı, özetle sabit); root değil,
+  # salt okunur, yetkisiz; dışarıdan girdi almaz (ajan/test kodu yalnızca TCP akışı gönderir).
+  # Varsayılan yığına girmez: `docker compose --profile mobil up -d appium-gw`.
+  appium-gw:
+    image: alpine/socat:1.8.0.3@sha256:beb4a68d9e4fe6b0f21ea774a0fde6c31f580dde6368939ed70100c5385b015e
+    profiles: [mobil]
+    command:
+      - "TCP-LISTEN:4723,fork,reuseaddr,max-children=16"
+      - "TCP:host.docker.internal:4723,connect-timeout=10"
+    user: "65534:65534"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [appium-net, cihaz-net]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { memory: 64m }
 
   jira-sim:
     image: ${TP_IMAGE_PREFIX:-testingprobe}-jira-sim:local
@@ -519,6 +561,7 @@ networks:
   runner-net: { internal: true }
   mcp-net: { internal: true }
   app-mcp-net: { internal: true }
+  appium-net: { internal: true }
   cihaz-net: {}
 
 volumes:

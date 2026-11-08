@@ -7,11 +7,19 @@ ya da süreç grubu öldürülür; aynı anda tek koşu yürür, sıradaki istek
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import uvicorn
 from fastapi import HTTPException
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from runner import run as runner
 from toolchain_common import (
@@ -29,6 +37,7 @@ from toolchain_common.validation import (
     validate_run_id,
     validate_test_files,
 )
+from worker.java import validate_java_test_file
 
 ALLOWED_ENV = {"BREAK_CAMPAIGN"}
 
@@ -46,6 +55,11 @@ install_error_handlers(app)
 class RunBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    # Dil (009 §2.1): verilmezse "ts" (Playwright; eski gövde aynen geçer). "java" = e2e-app
+    # (Appium + TestNG) ve `platform` zorunlu; test_files e2e-app köküne göre
+    # `src/test/java/**/<Ad>Test.java`. Alanlar test_files'tan ÖNCE tanımlıdır (doğrulama sırası).
+    lang: Literal["ts", "java"] = "ts"
+    platform: Literal["android", "ios", "windows"] | None = None
     sha: Annotated[str, AfterValidator(validate_ref)]
     run_id: Annotated[str, AfterValidator(validate_run_id)]
     grep: Annotated[str | None, AfterValidator(validate_grep)] = None
@@ -54,12 +68,32 @@ class RunBody(BaseModel):
     # Sözleşme: env.BREAK_CAMPAIGN="1"; `break_campaign: true` eş anlamlıdır.
     env: dict[str, str] = Field(default_factory=dict)
     break_campaign: bool = False
-    test_files: Annotated[list[str], AfterValidator(validate_test_files)] = Field(
-        default_factory=list
-    )
+    test_files: list[str] = Field(default_factory=list)
     workers: int | None = Field(None, ge=1, le=2)
     # Kanıt olarak saklanacak koşu (kırarak doğrulama, triage): temizlikte silinmez (`.keep`).
     keep: bool = False
+
+    @field_validator("test_files")
+    @classmethod
+    def _test_files(cls, v: list[str], info: ValidationInfo) -> list[str]:
+        if info.data.get("lang") != "java":
+            return validate_test_files(v)
+        if len(v) > 200:
+            raise ValueError("en fazla 200 test dosyası verilebilir")
+        return list(dict.fromkeys(validate_java_test_file(x) for x in v))
+
+    @model_validator(mode="after")
+    def _lang(self) -> RunBody:
+        if self.lang == "java":
+            if self.platform is None:
+                raise ValueError("lang=java platform ister (android | ios | windows)")
+            if self.grep:
+                raise ValueError("Java koşusunda grep desteklenmiyor (test_files kullanın)")
+            if self.workers is not None:
+                raise ValueError("Java koşusu tek cihazda tek iş parçacığıdır (workers verilemez)")
+        elif self.platform is not None:
+            raise ValueError("platform yalnızca lang=java ile verilir (web: lang=ts)")
+        return self
 
     @field_validator("env")
     @classmethod
@@ -84,6 +118,8 @@ class RunBody(BaseModel):
             test_files=self.test_files,
             workers=self.workers,
             keep=self.keep,
+            lang=self.lang,
+            platform=self.platform,
         )
 
 

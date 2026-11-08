@@ -1,0 +1,283 @@
+# iOS uygulama e2e CI'ı — AI'sız (Constitution II, specs/009-mobil-masaustu §2.7).
+#
+# Bu workflow'da model anahtarı, MCP sunucusu (app-mcp dahil) veya ajan bağımlılığı YOKTUR; yalnızca
+# onaylanmış, deterministik Java + Appium + TestNG test kodu (demo-app/e2e-app) koşar.
+#
+# Akış (macOS arm64 runner, iOS simülatörü):
+#   .app derle (demo-app/mobile/scripts/derle-ios.sh; Release, iphonesimulator, imzasız)
+#   → demo uygulaması (scripts/github-demo-serve.sh: API + vite preview /api vekili, 127.0.0.1:8081;
+#     simülatör hostun ağını paylaşır → uygulamanın varsayılan adresi http://127.0.0.1:8081/api)
+#   → simülatör "TP iPhone" (en yeni kurulu iOS çalışma zamanı) → WebDriverAgent ön derlemesi
+#   → Appium 3 + xcuitest (tools/appium kilit dosyası, 127.0.0.1:4723)
+#   → demo-app/ci/run-app-checks.sh ios
+#
+# MALİYET: macOS dakikaları Linux'un ~10 katıdır (plan §5). Bu yüzden yalnızca ilgili yollar değişen
+# PR'da, gece ve elle çalışır — workflow düzeyinde `paths` filtresi VARDIR. Sonuç: `mobil-ios`
+# varsayılan olarak ZORUNLU CHECK DEĞİLDİR (atlanan zorunlu check PR'ı süresiz bekletirdi). Zorunlu
+# yapılacaksa önce bu filtre ci.yml'deki `changes` job'u + no-op desenine çevrilmelidir
+# (.github/CI.md "Uygulama iş akışları").
+name: mobil-ios
+run-name: >-
+  ${{ github.event_name == 'workflow_dispatch'
+      && format('mobil-ios {0} [{1}]', inputs.tetik, inputs.istek_id || 'elle')
+    || github.event.pull_request.title || 'mobil-ios' }}
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'demo-app/mobile/**'
+      - 'demo-app/e2e-app/**'
+      - 'demo-app/api/**'
+      - 'demo-app/web/**'
+      - 'scripts/github-demo-serve.sh'
+      - 'demo-app/kimlikler.json'
+      - 'demo-app/ci/run-app-checks.sh'
+      - 'demo-app/ci/break-verify-app.sh'
+      - 'tools/appium/**'
+      - '.github/workflows/mobil-ios.yml'
+  schedule:
+    # Gece koşusu: 03:00 UTC = 06:00 TR
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      tetik:
+        description: "Tetik türü (sonuç kaydında görünür)"
+        type: choice
+        options: [manual, nightly, deploy]
+        default: manual
+      istek_id:
+        description: "Çekirdeğin istek kimliği (koşu adında görünür; [A-Za-z0-9._-], ≤64)"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobil-ios-${{ github.event_name }}-${{ github.event.pull_request.number || inputs.istek_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  APP_ROOT: demo-app
+  NODE_VERSION: "22"
+  JAVA_VERSION: "17"
+  UV_VERSION: "0.8.24"
+  APP_BUNDLE: demo-app/mobile/build/BayiSiparis.app
+  SIM_NAME: TP iPhone
+  # Tercih edilen cihaz tipi; çalışma zamanı desteklemiyorsa ilk desteklenen iPhone seçilir.
+  SIM_DEVICE_TYPE: iPhone 16
+  # Boş = runner'daki en yeni kararlı Xcode (Expo SDK 58 / RN 0.88 yeni Xcode ister).
+  XCODE_APP: ""
+  TP_ISTEK_ID: ${{ inputs.istek_id || '' }}
+
+jobs:
+  mobil-ios:
+    name: mobil-ios
+    runs-on: macos-15
+    timeout-minutes: 120
+    env:
+      CI: "true"
+      EVENT: ${{ github.event_name }}
+      DISPATCH_TETIK: ${{ inputs.tetik }}
+    steps:
+      - name: Tetik
+        run: |
+          set -euo pipefail
+          if [ -n "$TP_ISTEK_ID" ] && ! [[ "$TP_ISTEK_ID" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
+            echo "::error::istek_id biçimi geçersiz ([A-Za-z0-9._-], en çok 64 karakter)"
+            exit 1
+          fi
+          case "$EVENT" in
+            pull_request)      trigger="pr" ;;
+            schedule)          trigger="nightly" ;;
+            workflow_dispatch) trigger="${DISPATCH_TETIK:-manual}" ;;
+            *)                 trigger="$EVENT" ;;
+          esac
+          echo "TP_TRIGGER=$trigger" >> "$GITHUB_ENV"
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Xcode seçimi
+        run: |
+          set -euo pipefail
+          xcode="${XCODE_APP:-}"
+          if [ -z "$xcode" ]; then
+            # Beta/RC olmayan en yeni Xcode_<sürüm>.app
+            xcode="$(find /Applications -maxdepth 1 -name 'Xcode_*.app' -type d \
+              | grep -viE 'beta|release_candidate|_rc' | sort -V | tail -n 1)"
+          fi
+          [ -d "$xcode" ] || { echo "::error::Xcode bulunamadı: ${xcode:-yok}"; exit 1; }
+          sudo xcode-select -s "$xcode/Contents/Developer"
+          xcodebuild -version
+
+      - name: Java kurulumu
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+          cache-dependency-path: demo-app/e2e-app/pom.xml
+
+      - name: Node kurulumu
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            demo-app/mobile/package-lock.json
+            demo-app/web/package-lock.json
+            tools/appium/package-lock.json
+
+      - name: uv kurulumu
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: demo-app/api/uv.lock
+
+      # Plan §5: derlenmiş .app önbelleği — yalnız uygulama kaynağı değişince yeniden derlenir.
+      - name: .app önbelleği
+        id: app-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: demo-app/mobile/build/BayiSiparis.app
+          key: ios-app-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('demo-app/mobile/**', '!demo-app/mobile/build/**') }}
+
+      - name: .app derle (simülatör)
+        if: steps.app-cache.outputs.cache-hit != 'true'
+        env:
+          IOS_ARCHS: arm64
+          TEMIZ: "1"
+        run: |
+          set -euo pipefail
+          bash demo-app/mobile/scripts/derle-ios.sh
+          test -d "$APP_BUNDLE"
+
+      - name: Simülatör oluştur ve aç
+        run: |
+          set -euo pipefail
+          read -r rt_id rt_ver < <(xcrun simctl list runtimes -j | jq -r '
+            [.runtimes[] | select(.platform == "iOS" and .isAvailable)]
+            | sort_by(.version | split(".") | map(tonumber)) | last
+            | "\(.identifier) \(.version)"')
+          [ -n "${rt_id:-}" ] || { echo "::error::Kurulu iOS simülatör çalışma zamanı yok"; exit 1; }
+          dt="$(xcrun simctl list runtimes -j | jq -r --arg id "$rt_id" --arg ad "$SIM_DEVICE_TYPE" '
+            [.runtimes[] | select(.identifier == $id) | .supportedDeviceTypes[]
+             | select(.productFamily == "iPhone")] as $t
+            | (($t | map(select(.name == $ad)) | first) // ($t | first)) | .identifier')"
+          udid="$(xcrun simctl create "$SIM_NAME" "$dt" "$rt_id")"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          echo "SIM_UDID=$udid" >> "$GITHUB_ENV"
+          echo "SIM_IOS=$rt_ver" >> "$GITHUB_ENV"
+          echo "Simülatör: $SIM_NAME ($udid) · $dt · iOS $rt_ver"
+
+      - name: Demo uygulamasını başlat
+        run: |
+          set -euo pipefail
+          token="$(openssl rand -hex 24)"
+          echo "::add-mask::$token"
+          echo "DEMOAPP_TEST_TOKEN=$token" >> "$GITHUB_ENV"
+          echo "DEMO_API_URL=http://127.0.0.1:18000" >> "$GITHUB_ENV"
+          mkdir -p tp-logs
+          PORT=8081 DEMO_API_PORT=18000 DEMOAPP_TEST_TOKEN="$token" \
+            nohup bash scripts/github-demo-serve.sh > tp-logs/serve.log 2>&1 &
+          for _ in $(seq 1 90); do
+            if curl -fsS "http://127.0.0.1:8081/api/health" >/dev/null 2>&1; then
+              echo "Uygulama hazır: http://127.0.0.1:8081"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Demo uygulaması 180 sn içinde hazır olmadı"
+          tail -n 100 tp-logs/serve.log
+          exit 1
+
+      # xcuitest ilk oturumda WDA'yı derler (dakikalar); oturum açılışı zaman aşımına düşmesin diye
+      # önceden derlenir (scripts/cihaz/wda.sh ile aynı komut). xcuitest 12.x build-wda betiği
+      # başarıda da ≠0 çıkabilir: başarı xcodebuild'in satırından ölçülür.
+      - name: Appium kur ve WebDriverAgent derle
+        timeout-minutes: 30
+        run: |
+          set -euo pipefail
+          (cd tools/appium && npm ci --no-audit --no-fund --loglevel=error)
+          export APPIUM_HOME="$GITHUB_WORKSPACE/tools/appium"
+          mkdir -p tp-logs
+          sdk="$(sed -E 's/^([0-9]+\.[0-9]+).*/\1/' <<<"$SIM_IOS")"
+          tools/appium/node_modules/.bin/appium driver run xcuitest build-wda \
+            --name "$SIM_NAME" --sdk "$sdk" > tp-logs/wda-derleme.log 2>&1 || true
+          grep -q '\*\* TEST BUILD SUCCEEDED \*\*' tp-logs/wda-derleme.log || {
+            echo "::error::WebDriverAgent derlenemedi"; tail -n 80 tp-logs/wda-derleme.log; exit 1; }
+
+      - name: Appium başlat
+        run: |
+          set -euo pipefail
+          export APPIUM_HOME="$GITHUB_WORKSPACE/tools/appium"
+          nohup tools/appium/node_modules/.bin/appium --address 127.0.0.1 --port 4723 \
+            --log-no-colors --log-timestamp > tp-logs/appium.log 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -fsS -m 2 http://127.0.0.1:4723/status >/dev/null 2>&1 && { echo "Appium hazır"; exit 0; }
+            sleep 1
+          done
+          echo "::error::Appium 30 sn içinde hazır olmadı"
+          tail -n 100 tp-logs/appium.log
+          exit 1
+
+      - name: Testler (simülatörde)
+        id: tests
+        timeout-minutes: 60
+        run: |
+          set -euo pipefail
+          bash demo-app/ci/run-app-checks.sh ios "-Dapp.path=$GITHUB_WORKSPACE/$APP_BUNDLE" \
+            "-Ddevice.udid=$SIM_UDID" "-Ddevice.name=$SIM_NAME" "-Dplatform.version=$SIM_IOS" \
+            2>&1 | tee tp-logs/run-app-checks.log
+
+      # --- Sonuçlar (mobil-android ile aynı düzen) ----------------------------------------------
+      - name: Sonuçları topla
+        if: always()
+        env:
+          OUTCOME: ${{ steps.tests.outcome }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          out=tp-results
+          mkdir -p "$out"
+          target="$APP_ROOT/e2e-app/target"
+          for d in surefire-reports birim-raporlari allure-results kanit; do
+            if [ -d "$target/$d" ]; then cp -R "$target/$d" "$out/$d"; fi
+          done
+          if [ -d tp-logs ]; then cp -R tp-logs "$out/logs"; fi
+          # Test kodunun bıraktığı bağlar (symlink) maskeyi atlatıp yüklenmesin.
+          find "$out" -type l -delete
+          if [ -n "${DEMOAPP_TEST_TOKEN:-}" ]; then
+            { grep -rl -- "$DEMOAPP_TEST_TOKEN" "$out" || true; } | while read -r f; do
+              sed -i '' "s/$DEMOAPP_TEST_TOKEN/***/g" "$f"
+            done
+          fi
+          case "$OUTCOME" in success) durum=passed ;; failure) durum=failed ;; *) durum=error ;; esac
+          jq -n --arg platform ios --arg sha "$SHA" --arg tetik "${TP_TRIGGER:-}" \
+            --arg istek "$TP_ISTEK_ID" --arg durum "$durum" --arg sonuc "$OUTCOME" \
+            --arg job mobil-ios \
+            '{schema_version: 1, job: $job, platform: $platform, sha: $sha, tetik: $tetik,
+              istek_id: (if $istek == "" then null else $istek end), durum: $durum,
+              adim_sonucu: $sonuc}' > "$out/ci-meta.json"
+          n="$(find "$out/surefire-reports" -name 'TEST-*.xml' 2>/dev/null | wc -l | tr -d ' ')"
+          {
+            echo "### mobil-ios (tetik: \`${TP_TRIGGER:-?}\`)"
+            echo "Durum: **$durum** · JUnit XML: $n dosya · commit \`${SHA:0:12}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Artefaktlar
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mobil-ios-results
+          retention-days: 14
+          if-no-files-found: warn
+          include-hidden-files: false
+          path: tp-results/

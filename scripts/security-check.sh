@@ -2,8 +2,8 @@
 # make security-check — research R10'daki 4 güvenlik kontrolü (FR-015, SC-004) + Faz 1'in 4 kontrolü + Faz 3 kapı yalıtımı ve CI imajında ajan yok.
 # Her kontrol PASS/FAIL yazar; özet "N/10"; herhangi bir FAIL → ≠0.
 #   1. Host'a açılan tüm portlar yalnızca 127.0.0.1'e bağlı (istisna: GCP katmanında edge 80/443)
-#   2. test-runner'dan postgres, core-api, playwright-mcp ve internete erişim yok
-#      (demo-app-web ve demo-app-api'ye var)
+#   2. test-runner'dan postgres, core-api, playwright-mcp, host (host.docker.internal) ve internete
+#      erişim yok (demo-app-web ve demo-app-api'ye var; `mobil` profilinde appium-gw:4723'e var)
 #   3. tp_app audit_event'i UPDATE/DELETE/TRUNCATE edemez
 #   4. Depoda sır yok (gitleaks; git geçmişi + commit edilmemiş izlenen/izlenmeyen dosyalar)
 #   5. demoapp_ro yalnızca izinli tablo/kolonları okur; yazamaz, parola özeti ve sipariş verisi kapalı
@@ -123,7 +123,11 @@ check_isolation() {
   if ! svc_running test-runner; then
     fail "2/izolasyon: test-runner çalışmıyor — kontrol yapılamadı"; return
   fi
-  local targets="postgres:5432 core-api:8000 playwright-mcp:8931 example.com:443 demo-app-web:8080 demo-app-api:8000"
+  # host.docker.internal: test-runner hosta (Appium dahil) DOĞRUDAN çıkamaz; tek yol appium-gw
+  # (`mobil` profili, yalnızca host:4723'e yönlendirir; 009 §2.7, docs/CIHAZ-ALTYAPISI.md §5.1).
+  local targets="postgres:5432 core-api:8000 playwright-mcp:8931 example.com:443 host.docker.internal:4723 host.docker.internal:8081 demo-app-web:8080 demo-app-api:8000"
+  local gw=0
+  if svc_running appium-gw; then gw=1; targets="$targets appium-gw:4723"; fi
   # shellcheck disable=SC2086  # hedefler bilinçli olarak sözcüklere bölünür
   if ! out="$(compose exec -T test-runner node -e "$NET_JS" $targets 2>&1)"; then
     fail "2/izolasyon: test-runner içinde node çalıştırılamadı"; info "$out"; return
@@ -131,7 +135,7 @@ check_isolation() {
   for target in $targets; do
     res="$(printf '%s\n' "$out" | awk -v t="$target" '$1 == t { print $2 }' | head -n 1)"
     [ -n "$res" ] || res="SONUÇ_YOK"
-    if [ "$target" = "demo-app-web:8080" ] || [ "$target" = "demo-app-api:8000" ]; then
+    if [ "$target" = "demo-app-web:8080" ] || [ "$target" = "demo-app-api:8000" ] || [ "$target" = "appium-gw:4723" ]; then
       # pozitif kontrol: erişilmesi gereken hedef; erişilemiyorsa test anlamsız
       if [ "$res" = "OPEN" ]; then info "$target erişilebilir (beklenen)"; else ok=0; info "$target $res — erişilebilir olmalıydı (pozitif kontrol)"; fi
     else
@@ -139,7 +143,8 @@ check_isolation() {
     fi
   done
   if [ "$ok" -eq 1 ]; then
-    pass "2/izolasyon: test-runner postgres, core-api, playwright-mcp ve internete erişemiyor"
+    [ "$gw" -eq 1 ] || info "appium-gw çalışmıyor (mobil profili kapalı): Appium yolu denetlenmedi"
+    pass "2/izolasyon: test-runner postgres, core-api, playwright-mcp, host ve internete erişemiyor"
   else
     fail "2/izolasyon: test-runner ağ kısıtı beklendiği gibi değil"
   fi
