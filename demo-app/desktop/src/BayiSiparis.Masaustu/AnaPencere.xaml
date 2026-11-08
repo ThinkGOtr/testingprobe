@@ -79,7 +79,10 @@
       </Border>
     </o:Kosullu>
 
-    <TextBlock Grid.Row="2" Text="Bayi Sipariş Portalı · Örnek uygulama · Tüm veriler sentetiktir"
-               Style="{StaticResource SolukMetin}" FontSize="12" HorizontalAlignment="Center" Margin="0,8,0,10" />
+    <!-- Alt bilgi: web'de Layout içinde, yalnız oturum açıkken -->
+    <o:Kosullu Grid.Row="2" Goster="{Binding OturumAcik}" HorizontalAlignment="Center">
+      <TextBlock Text="Bayi Sipariş Portalı · Örnek uygulama · Tüm veriler sentetiktir"
+                 Style="{StaticResource SolukMetin}" FontSize="12" Margin="0,8,0,10" />
+    </o:Kosullu>
   </Grid>
 </Window>

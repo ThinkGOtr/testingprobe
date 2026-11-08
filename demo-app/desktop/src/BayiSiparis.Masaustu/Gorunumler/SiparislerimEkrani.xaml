@@ -72,8 +72,8 @@
                       <!-- Web'de sipariş numarası onay sayfasına bağlantıdır (kimliksiz). -->
                       <Button Grid.Column="0" Style="{StaticResource BaglantiDugmesi}" HorizontalAlignment="Left" Padding="0,2"
                               Content="{Binding Numara}"
-                              Command="{Binding DataContext.Kabuk.SiparisAcKomutu, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                              CommandParameter="{Binding Numara}" />
+                              CommandParameter="{Binding Numara}"
+                              Command="{Binding DataContext.Kabuk.SiparisAcKomutu, RelativeSource={RelativeSource AncestorType=UserControl}}" />
                       <o:OtomasyonMetni Grid.Column="1" Text="{Binding TarihMetni}" VerticalAlignment="Center" />
                       <o:OtomasyonMetni Grid.Column="2" Text="{Binding AdetMetni}" TextAlignment="Right" VerticalAlignment="Center" />
                       <o:OtomasyonMetni Grid.Column="3" Text="{Binding IndirimMetni}" TextAlignment="Right" VerticalAlignment="Center" />

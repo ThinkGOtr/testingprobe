@@ -11,6 +11,7 @@
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Automation.Peers;
+using System.Windows.Automation.Provider;
 using System.Windows.Controls;
 using System.Windows.Markup;
 
@@ -56,9 +57,18 @@ public class OtomasyonListesi : ItemsControl
         new GrupEsi(this, () => AutomationControlType.List, nameof(OtomasyonListesi));
 }
 
+/// <summary>
+/// Kapsayıcı eşi. ScrollItem desenini destekler: kaydırma alanının dışında kalan kart/satır, sürücü
+/// (ScrollIntoView) tarafından görünür alana getirilebilir (web'de Playwright'ın otomatik kaydırması karşılığı).
+/// </summary>
 internal sealed class GrupEsi(FrameworkElement sahip, Func<AutomationControlType> tur, string sinif)
-    : FrameworkElementAutomationPeer(sahip)
+    : FrameworkElementAutomationPeer(sahip), IScrollItemProvider
 {
+    public override object? GetPattern(PatternInterface desen) =>
+        desen == PatternInterface.ScrollItem ? this : base.GetPattern(desen);
+
+    public void ScrollIntoView() => ((FrameworkElement)Owner).BringIntoView();
+
     protected override AutomationControlType GetAutomationControlTypeCore() => tur();
 
     protected override string GetClassNameCore() => sinif;

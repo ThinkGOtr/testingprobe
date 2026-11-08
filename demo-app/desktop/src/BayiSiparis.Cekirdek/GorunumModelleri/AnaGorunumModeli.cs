@@ -25,7 +25,8 @@ public sealed class AnaGorunumModeli : GozlemlenebilirNesne
         KatalogaGitKomutu = new Komut(_ => KatalogaGit(), _ => OturumAcik);
         SepeteGitKomutu = new Komut(_ => SepeteGit(), _ => OturumAcik);
         SiparislereGitKomutu = new Komut(_ => SiparislereGit(), _ => OturumAcik);
-        SiparisAcKomutu = new Komut(p => SiparisOnayinaGit((string)p!), p => OturumAcik && p is string);
+        // CanExecute parametreye bakmaz: WPF, CommandParameter bağlanmadan önce null ile sorar ve sonra yeniden sormaz.
+        SiparisAcKomutu = new Komut(p => { if (p is string n) { SiparisOnayinaGit(n); } }, _ => OturumAcik);
         CikisKomutu = new AsenkronKomut(_ => CikisAsync(), _ => OturumAcik);
     }
 

@@ -113,7 +113,8 @@ masaüstünde de kimlik verilmedi; bunlar UIA'da `Name` ile bulunur.
 - **Listeler sanallaştırılmaz:** `product-list`, `cart-table`, `orders-table` düz `StackPanel`/`WrapPanel`
   kullanan `OtomasyonListesi`'dir; tüm satırlar her zaman ağaçtadır. Varsayılan pencere 1200×860'tır;
   demo verisi (4 ürün) kaydırmasız sığar. Daha küçük ekranda kaydırma dışında kalan eleman `IsOffscreen`
-  olabilir ve fare tabanlı tıklama başarısız olabilir — VM çözünürlüğünü ≥ 1280×900 tutun.
+  olur; kart/satır kapsayıcıları UIA `ScrollItem` desenini destekler (`ScrollIntoView`), yine de VM
+  çözünürlüğünü ≥ 1280×900 tutmak fare tabanlı tıklamayı güvenli kılar.
 - **Parola alanı:** `login-password` bir `PasswordBox`'tır; değer okunamaz (UIA `IsPassword`),
   `sendKeys` ile yazılır.
 
