@@ -118,6 +118,71 @@ Bağlantı: streamable HTTP, `APP_MCP_URL` (yalnızca core-worker). Platform ba�
 - **CI (LocalForge kipi):** test-runner Java testlerini hosttaki Appium'a karşı koşturur; test-runner
   için tek ağ istisnası `host.docker.internal:4723`.
 
+### 2.8 Java biçim sözleşmesi (Ş3 yazar, Ş5 ayrıştırır, Ş6 render eder)
+
+**Kimlikler (saf veri)** — `ekranlar/Kimlikler.java`; yalnızca iç içe `public static final class` ve
+`public static final String` sabitleri; başka kod yok. Javadoc ilk cümlesi = `intent`. `_ONEK` ile biten
+sabit önektir (`prefix: true`, ör. `URUN_KARTI_ONEK = "product-card-"`).
+
+```java
+public final class Kimlikler {
+  private Kimlikler() {}
+  /** Giriş ekranı. */
+  public static final class Giris {
+    /** Kullanıcı adı alanı. */
+    public static final String KULLANICI_ADI = "login-username";
+  }
+}
+```
+
+Sembol tablosunda locator anahtarı `Giris.KULLANICI_ADI` → `{testId, role:"", name:"", intent, prefix, file}`.
+
+**Ekran nesnesi** — `ekranlar/<Ad>Ekrani.java`, `Ekran` taban sınıfından türer. Sembol tablosuna yalnız
+`public`, statik olmayan, kurucu olmayan metotlar girer. `dogrula` ile başlayan metot `kind: "expect"`,
+diğerleri `"action"`; `async: false`; dönüş `void`. Parametre türleri yalnız `String`, `int`, `long`,
+`double`, `boolean`.
+
+```java
+public class GirisEkrani extends Ekran {
+  /** Bayi kullanıcı adı ve parolasıyla giriş yapar. */
+  public void girisYap(String kullaniciAdi, String parola) { ... }
+  /** Hata mesajının göründüğünü ve metnini doğrular. */
+  public void dogrulaHataMesaji(String beklenen) { ... }
+}
+```
+
+**Fikstür erişimi** — `TestTabani` her ekran için `lowerCamel(SınıfAdı)()` erişimcisi sağlar
+(`girisEkrani()`, `katalogEkrani()` …). Fikstür adı = bu erişimcinin adı.
+
+**Üretilen test** — tam biçim (başka hiçbir şey yok):
+
+```java
+// AI-generated — AI Testing Probe (CasesToCode). Elle düzenlemeyin; …
+// Case: … · Story: … · Jira Test: …  (web şablonundaki başlık satırlarının aynısı)
+package com.antreklabs.bayi.uretilen;
+
+import com.antreklabs.bayi.altyapi.Bayi;
+import com.antreklabs.bayi.altyapi.TestTabani;
+import org.testng.annotations.Test;
+
+@Bayi("bayi2")
+public class DEMO12C1_ab12cd34Test extends TestTabani {
+  @Test(groups = {"uretilen", "kampanya"}, description = "…")
+  public void senaryo() {
+    // <adım etiketi>
+    girisEkrani().girisYap("bayi2", "…");
+    // Beklenen sonuç (değerler onaylı case metninden)
+    sepetEkrani().dogrulaToplam("1.250,00 TL");
+  }
+}
+```
+
+`guard` kuralları: tek üst düzey sınıf; izinli import'lar yalnız yukarıdaki üçü; `@Bayi` en çok bir kez,
+tek string literal; tek `@Test` metot, parametresiz, `void`; gövdede yalnız ifade deyimleri, her biri
+`<erişimci>().<metot>(<literal>, …)` ve erişimci + metot sembol tablosunda var; argümanlar yalnız
+string/int/long/double/boolean literal (negatif sayı için tekli eksi); dal, döngü, lambda, `new`, alan,
+statik çağrı, `this`, `super`, dizi, metin bloğu yasak.
+
 ## 3. Şeritler
 
 İlk dalga (bağımsız, paralel):
