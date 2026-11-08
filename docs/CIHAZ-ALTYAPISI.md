@@ -237,7 +237,7 @@ eklendi (çalışıyorsa denetlenir).
 
 ### 6.6 Testler ve duman
 
-- Birim: `cd toolchain/app-mcp && npm test` (node:test; sahte Appium katmanı; 69 test). Fikstürler
+- Birim: `cd toolchain/app-mcp && npm test` (node:test; sahte Appium katmanı; 70 test). Fikstürler
   `test/fixtures/`: **gerçek** `android-ayarlar.xml`, `android-ayarlar-arama.xml`, `ios-ayarlar.xml`
   (`scripts/kaynak-yakala.mjs` ile canlı cihazdan yakalandı) ve **elle yazılmış** RN/WPF Bayi
   giriş ekranları (`*-bayi-giris.xml`). Her fikstürün altın snapshot'ı `*.snapshot.txt`

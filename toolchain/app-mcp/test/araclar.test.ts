@@ -102,6 +102,18 @@ describe('app_launch', () => {
     assert.equal(f.acilanlar[0]!.surucu.kapali, true);
   });
 
+  it('düşmüş Appium oturumunda yeniden başlatma yeni oturum açar', async () => {
+    const f = sahteFabrika({ android: androidGiris });
+    const { cagir } = await baglan(f);
+    await cagir('app_launch', { platform: 'android' });
+    f.acilanlar[0]!.surucu.hataVer.uygulamayiSonlandir = new Error('invalid session id');
+    const r = await cagir('app_launch', { platform: 'android' });
+    assert.equal(r.isError, undefined, r.metin);
+    assert.match(r.metin, /Uygulama başlatıldı/);
+    assert.equal(f.acilanlar.length, 2);
+    assert.equal(f.acilanlar[0]!.surucu.kapali, true);
+  });
+
   it('yapılandırılmamış platform: isError', async () => {
     const ayar = testAyarlari({ APPIUM_URL_WINDOWS: '' });
     const { cagir } = await baglan(sahteFabrika({ android: androidGiris }), new CihazKilidi(), 'x', ayar);

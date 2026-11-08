@@ -113,15 +113,17 @@ export class AppOturumu {
       const acik = Object.keys(this.ayar.platformlar).join(', ') || 'yok';
       throw new AracHatasi(`${platform} platformu yapılandırılmamış (açık platformlar: ${acik})`);
     }
-    const yeniden = this.surucu !== undefined && this.platform === platform && !sifirla && platform !== 'windows';
+    let yeniden = this.surucu !== undefined && this.platform === platform && !sifirla && platform !== 'windows';
     if (yeniden) {
       try {
         await this.surucu!.uygulamayiSonlandir(pa.uygulamaKimligi);
         await this.surucu!.uygulamayiEtkinlestir(pa.uygulamaKimligi);
-      } catch (e) {
-        throw new AracHatasi(`uygulama yeniden başlatılamadı: ${hataMetni(e)}`);
+      } catch {
+        // Appium oturumu düşmüş olabilir (newCommandTimeout, sürücü çökmesi): yeni oturum açılır.
+        yeniden = false;
       }
-    } else {
+    }
+    if (!yeniden) {
       await this.kapat();
       this.kilit.al(platform, this.kimlik);
       try {
