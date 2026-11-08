@@ -8,6 +8,9 @@
 #   agent-net  : internal; yalnızca playwright-mcp <-> demo-app-web (ajan tarayıcısı)
 #   runner-net : internal; toolchain-worker <-> test-runner
 #   mcp-net    : internal; yalnızca core-worker <-> playwright-mcp
+#   app-mcp-net: internal; yalnızca core-worker <-> app-mcp (mobil/masaüstü ajan aracı, 009)
+#   cihaz-net  : yalnızca app-mcp; hosttaki Appium'a (host.docker.internal:4723) çıkış için
+#                internal DEĞİL (internal ağdan host'a ulaşılamaz). docs/CIHAZ-ALTYAPISI.md §Ağ
 # test-runner yalnızca demo-net + runner-net'te: postgres, core-api, playwright-mcp ve internete
 # erişemez; demo-app-web'e (UI) ve demo-app-api'ye (/test/* sıfırlama + kırılma, belirteçli) erişir.
 # playwright-mcp yalnızca agent-net + mcp-net'te: tarayıcısı (ve browser_run_code_unsafe gibi
@@ -197,6 +200,8 @@ services:
       TP_PII_MASKING: ${TP_PII_MASKING:-0}
       TP_REPLAY_STRICT: ${TP_REPLAY_STRICT:-0}
       PLAYWRIGHT_MCP_URL: http://playwright-mcp:8931/mcp
+      # Mobil/masaüstü doğrulama ajanının aracı (009; app-mcp `mobil` profiliyle başlar).
+      APP_MCP_URL: http://app-mcp:8932/mcp
       # Yazma yetkili dış sistem kimlikleri — yalnızca core-worker.
       JIRA_WRITE_EMAIL: ${JIRA_WRITE_EMAIL:-writer@sim.local}
       JIRA_WRITE_TOKEN: ${JIRA_WRITE_TOKEN:-sim}
@@ -256,7 +261,7 @@ services:
       - ./rules:/rules:ro
       # Asistanın ürün bilgi paketi (make asistan-paket; yalnızca core-worker, salt okunur).
       - ./var/tp-bilgi:/opt/tp-bilgi:ro
-    networks: [core-net, mcp-net]
+    networks: [core-net, mcp-net, app-mcp-net]
     restart: unless-stopped
     # Worker SIGTERM'de elindeki işi bitirir; yeniden başlayınca kalan işleri bırakır (release_orphans).
     stop_grace_period: 30s
@@ -376,6 +381,41 @@ services:
       resources:
         limits: { memory: 2g }
 
+  # Mobil/masaüstü doğrulama ajanının aracı (specs/009-mobil-masaustu §2.6). Appium hostta koşar
+  # (make cihaz-baslat); app-mcp ona host.docker.internal üzerinden bağlanır. Varsayılan yığına
+  # girmez: `docker compose --profile mobil up -d app-mcp` (cihaz altyapısı olmadan anlamsız).
+  # Host'a port açılmaz; yalnızca core-worker app-mcp-net üzerinden ulaşır.
+  app-mcp:
+    image: ${TP_IMAGE_PREFIX:-testingprobe}-app-mcp:local
+    build:
+      context: ./toolchain/app-mcp
+    pull_policy: build
+    profiles: [mobil]
+    init: true
+    environment:
+      APP_MCP_HOST: 0.0.0.0
+      APP_MCP_PORT: "8932"
+      # Host başlığı denetimi (DNS rebinding): yalnızca core-worker'ın kullandığı ad.
+      APP_MCP_ALLOWED_HOSTS: app-mcp:8932,app-mcp
+      APP_MCP_IDLE_S: ${APP_MCP_IDLE_S:-300}
+      # Platform başına Appium adresi; boş = platform kapalı. Windows: UTM VM adresi.
+      APPIUM_URL_ANDROID: ${APPIUM_URL_ANDROID:-http://host.docker.internal:4723}
+      APPIUM_URL_IOS: ${APPIUM_URL_IOS:-http://host.docker.internal:4723}
+      APPIUM_URL_WINDOWS: ${APPIUM_URL_WINDOWS:-}
+      # Ajan yalnızca bu uygulamayı başlatabilir (app_launch platform dışında argüman almaz).
+      APP_ANDROID_PACKAGE: ${APP_ANDROID_PACKAGE:-com.antreklabs.bayi}
+      APP_ANDROID_ACTIVITY: ${APP_ANDROID_ACTIVITY:-}
+      APP_IOS_BUNDLE_ID: ${APP_IOS_BUNDLE_ID:-com.antreklabs.bayi}
+      APP_IOS_UDID: ${APP_IOS_UDID:-}
+      APP_WINDOWS_APP: ${APP_WINDOWS_APP:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [app-mcp-net, cihaz-net]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { memory: 512m }
+
   jira-sim:
     image: ${TP_IMAGE_PREFIX:-testingprobe}-jira-sim:local
     build:
@@ -475,6 +515,8 @@ networks:
   agent-net: { internal: true }
   runner-net: { internal: true }
   mcp-net: { internal: true }
+  app-mcp-net: { internal: true }
+  cihaz-net: {}
 
 volumes:
   tp_pgdata: {}

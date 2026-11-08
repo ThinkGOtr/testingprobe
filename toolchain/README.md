@@ -353,3 +353,10 @@ The pytest suite builds a temporary bare forge from `demo-app/e2e`. With `node`,
 mounted at build time. No model SDKs (constitution II). `/health` per
 `specs/001-dev-foundation/contracts/health.md`: `playwright` compares the installed
 `playwright-core` with env `PLAYWRIGHT_VERSION` (503 on mismatch or if unset).
+
+## app-mcp (mobile / desktop agent tool, spec 009)
+
+`app-mcp/` is a separate Node + TypeScript MCP server (own `Dockerfile`, image
+`testingprobe-app-mcp:local`, compose service `app-mcp` under profile `mobil`). It is not part of the
+`ci`/`mcp` targets above and never enters the CI or test-runner image. Tools, snapshot format,
+networking and the local device scripts: `docs/CIHAZ-ALTYAPISI.md`.

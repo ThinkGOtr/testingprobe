@@ -1,0 +1,29 @@
+- navigation [id=Settings] [ref=e1]:
+  - heading "Settings" [ref=e2]
+  - textbox "Search" [ref=e3]:
+    - button "Dictate" [ref=e4]
+    - button "Dictate" [ref=e5]
+- list [ref=e6]:
+  - listitem [ref=e7]:
+    - button "Apple Account, Sign in to access your iCloud data, the App Store, Apple services, and more." [id=com.apple.settings.primaryAppleAccount] [ref=e8]:
+      - image "apple.id" [ref=e9]
+  - listitem [ref=e10]:
+    - button "General" [id=com.apple.settings.general] [ref=e11]
+  - listitem [ref=e12]:
+    - button "Accessibility" [id=com.apple.settings.accessibility] [ref=e13]
+  - listitem [ref=e14]:
+    - button "Action Button" [id=com.apple.settings.actionButton] [ref=e15]
+  - listitem [ref=e16]:
+    - button "Apple Intelligence & Siri" [id=com.apple.settings.siri] [ref=e17]
+  - listitem [ref=e18]:
+    - button "Camera" [id=com.apple.settings.camera] [ref=e19]
+  - listitem [ref=e20]:
+    - button "Home Screen & App Library" [id=com.apple.settings.homeScreen] [ref=e21]
+  - listitem [ref=e22]:
+    - button "Search" [id=com.apple.settings.search] [ref=e23]
+  - listitem [ref=e24]:
+    - button "StandBy" [id=com.apple.settings.standBy] [ref=e25]
+  - listitem [ref=e26]:
+    - button "Screen Time" [id=com.apple.settings.screenTime] [ref=e27]
+  - listitem [ref=e28]:
+    - button "Privacy & Security" [id=com.apple.settings.privacyAndSecurity] [ref=e29]

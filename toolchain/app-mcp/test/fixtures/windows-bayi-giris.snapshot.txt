@@ -1,0 +1,15 @@
+- window "Bayi Sipariş Portalı" [id=AnaPencere] [ref=e1]:
+  - text "Bayi Sipariş Portalı" [ref=e2]
+  - text "Kullanıcı adı" [ref=e3]
+  - textbox "Kullanıcı adı" [id=login-username] [ref=e4]: bayi3
+  - textbox "Parola" [id=login-password] [password] [ref=e5]: ***
+  - checkbox "Beni hatırla" [id=login-remember] [checked] [ref=e6]
+  - button "Giriş yap" [id=login-submit] [ref=e7]
+  - text "Kullanıcı adı veya parola hatalı" [id=login-error] [ref=e8]
+  - combobox "Dil" [id=login-language] [ref=e9]: Türkçe
+  - button "Kayıt ol" [id=login-register] [disabled] [ref=e10]
+  - list [id=product-list] [ref=e11]:
+    - listitem "P-001" [id=product-card-P-001] [selected] [ref=e12]:
+      - button "Sepete ekle" [id=add-to-cart] [ref=e13]
+    - listitem "P-002" [id=product-card-P-002] [ref=e14]:
+      - button "Sepete ekle" [id=add-to-cart] [ref=e15]
