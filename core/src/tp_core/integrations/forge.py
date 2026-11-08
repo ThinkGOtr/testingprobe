@@ -260,14 +260,22 @@ def local_required_checks(
     - Bu head için KAYDEDİLMİŞ her `local-ci-<platform>` de zorunludur: kırmızı bir uygulama
       kontrolü merge'i durdurur (yalnızca web yeşili yetmez).
     - PR yalnızca `e2e-app/` altını değiştiriyorsa (uygulama testi / Kimlikler onarımı) web
-      `local-ci` gerekmez; bunun yerine en az bir platform kontrolü olmalı.
+      `local-ci` gerekmez (kaydedilmişse yine yeşil olmalı); en az bir platform kontrolü olmalı.
+    - Yarıda kalmış (`in_progress`) bir kayıt merge'i durdurur; kontrol yeniden koşturulur
+      (aynı adın girdisi üzerine yazılır) ya da demo-admin bypass'ı kullanılır.
     - `e2e-app/` değişip hiç platform kontrolü yoksa ikinci değer ihlal nedenidir.
     """
     platform_names = set(APP_PLATFORM_CHECKS)
     recorded = [c.name for c in checks if c.name in platform_names]
     touches_app = any(p.startswith(LOCAL_APP_E2E_ROOT) for p in changed_paths)
     app_only = touches_app and all(p.startswith(LOCAL_APP_E2E_ROOT) for p in changed_paths)
-    required = [n for n in configured if not (app_only and recorded and n == REQUIRED_CHECK)]
+    # Kayıtlı her kontrol yeşil olmalı (simetri): web local-ci yalnızca KAYDEDİLMEMİŞSE düşer.
+    web_recorded = any(c.name == REQUIRED_CHECK for c in checks)
+    required = [
+        n
+        for n in configured
+        if not (app_only and recorded and n == REQUIRED_CHECK and not web_recorded)
+    ]
     for name in recorded:
         if name not in required:
             required.append(name)

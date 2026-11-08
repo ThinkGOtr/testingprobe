@@ -29,6 +29,8 @@ on:
       - 'demo-app/mobile/**'
       - 'demo-app/e2e-app/**'
       - 'demo-app/api/**'
+      - 'demo-app/web/**'
+      - 'scripts/github-demo-serve.sh'
       - 'demo-app/kimlikler.json'
       - 'demo-app/ci/run-app-checks.sh'
       - 'demo-app/ci/break-verify-app.sh'
@@ -250,6 +252,8 @@ jobs:
             if [ -d "$target/$d" ]; then cp -R "$target/$d" "$out/$d"; fi
           done
           if [ -d tp-logs ]; then cp -R tp-logs "$out/logs"; fi
+          # Test kodunun bıraktığı bağlar (symlink) maskeyi atlatıp yüklenmesin.
+          find "$out" -type l -delete
           if [ -n "${DEMOAPP_TEST_TOKEN:-}" ]; then
             { grep -rl -- "$DEMOAPP_TEST_TOKEN" "$out" || true; } | while read -r f; do
               sed -i '' "s/$DEMOAPP_TEST_TOKEN/***/g" "$f"

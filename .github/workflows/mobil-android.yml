@@ -281,6 +281,8 @@ jobs:
           if [ -d tp-logs ]; then cp -R tp-logs "$out/logs"; fi
           # Sır günlüklere yazılmaz; yine de koşu belirteci geçen dosyalarda maskelenir
           # (GitHub maskesi yalnız iş günlüğüne uygulanır, artefakta değil). Belirteç onaltılıktır.
+          # Test kodunun bıraktığı bağlar (symlink) maskeyi atlatıp yüklenmesin.
+          find "$out" -type l -delete
           if [ -n "${DEMOAPP_TEST_TOKEN:-}" ]; then
             { grep -rl -- "$DEMOAPP_TEST_TOKEN" "$out" || true; } | while read -r f; do
               sed -i "s/$DEMOAPP_TEST_TOKEN/***/g" "$f"

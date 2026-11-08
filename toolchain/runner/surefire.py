@@ -41,10 +41,11 @@ MAX_XML = 32 * 1024 * 1024  # tek TEST-*.xml üst sınırı (bayt)
 MAX_XML_FILES = 200
 JAVA_SRC = "src/test/java"
 ASSERTION = "java.lang.AssertionError"
-# KirmiziDenetimi.KURULUM + TestVerisi'nin diğer hazırlık mesajları.
-_KURULUM_RE = re.compile(
-    r"/test/|giriş başarısız|DEMOAPP_TEST_TOKEN|sepet boşaltılamadı|demo API'ye ulaşılamadı"
-)
+# KirmiziDenetimi.KURULUM birebir: AssertionError bu kalıba uyarsa kurulumdur (kırmızı sayılmaz).
+_KURULUM_RE = re.compile(r"/test/|giriş başarısız|DEMOAPP_TEST_TOKEN")
+# Assertion dışı istisnalarda ek hazırlık mesajları (TestVerisi): yalnızca tür ayrımı içindir;
+# kırmızı denetimi zaten yalnız assertion'ı kırmızı sayar, bu yüzden referansla çelişmez.
+_KURULUM_EK_RE = re.compile(r"sepet boşaltılamadı|demo API'ye ulaşılamadı")
 # Bekle.dogrula: "<açıklama>: beklenen <x>, görülen <y> (N ms)"
 _DOGRULA_RE = re.compile(r"beklenen <(.*?)>, görülen <(.*?)> \((\d+) ms\)", re.S)
 # Ekran.ad(): "'kimlik'" ya da "'kapsayıcı' içinde 'kimlik'"
@@ -145,10 +146,11 @@ def classify(tag: str, exc_type: str, message: str, body: str) -> dict[str, Any]
         timeout_ms = int(s.group(1)) * 1000
 
     simple = exc_type.rsplit(".", 1)[-1]
-    if _KURULUM_RE.search(message):
+    is_assertion = tag == "failure" and exc_type == ASSERTION
+    if _KURULUM_RE.search(message) or (not is_assertion and _KURULUM_EK_RE.search(message)):
         kind = "test_data"
         signals.append("veri hazırlığı (/test/*, giriş) başarısız")
-    elif tag == "failure" and exc_type == ASSERTION:
+    elif is_assertion:
         kind = "assertion"
         signals.append("beklenen ≠ gerçekleşen")
         if received == "(öğe yok)":
@@ -194,7 +196,13 @@ def _evidence(kanit_dir: Path, simple_class: str, method: str, rel_root: Path | 
         p = base / name
         ok = False
         try:
-            ok = p.is_file() and not p.is_symlink() and kanit_dir.resolve() in p.resolve().parents
+            # Test kodu kanıt dizinini (ya da alt dizinini) bağla dışarı yöneltebilir: kanıt
+            # yolunda bağ olmamalı; ayrıca artefakt kökü içinde kalmalı (aşağıda rel_root).
+            ok = (
+                p.is_file()
+                and not any(x.is_symlink() for x in (kanit_dir, base, p))
+                and kanit_dir.resolve() in p.resolve().parents
+            )
         except OSError:
             ok = False
         rel = None
@@ -202,7 +210,7 @@ def _evidence(kanit_dir: Path, simple_class: str, method: str, rel_root: Path | 
             try:
                 rel = str(p.resolve().relative_to(rel_root.resolve()))
             except ValueError:
-                rel = None
+                ok = False  # artefakt kökü dışında: kanıt sayılmaz
         out[key] = {"path": str(p), "rel": rel, "exists": True} if ok else None
     return out
 
@@ -242,6 +250,7 @@ def summarize(
     for rep in repeats:
         cases, errs = _testcases(rep.reports_dir)
         errors += [f"tekrar {rep.index + 1}: {e}" if len(repeats) > 1 else e for e in errs]
+        seen_ids: dict[str, int] = {}  # aynı metodun birden çok çağrısı (data provider)
         for tc in cases:
             if len(tests) >= MAX_TESTS:
                 break
@@ -292,9 +301,12 @@ def summarize(
             stats["duration_ms"] += duration
             file = _src_file(classname)
             title = f"{simple} › {method}"
+            base_id = f"{classname}.{method}#{rep.index}"
+            n = seen_ids.get(base_id, 0)
+            seen_ids[base_id] = n + 1
             tests.append(
                 {
-                    "id": _clip(f"{classname}.{method}#{rep.index}", 200),
+                    "id": _clip(base_id + (f".{n}" if n else ""), 200),
                     "title": title,
                     "file": file,
                     "line": 0,

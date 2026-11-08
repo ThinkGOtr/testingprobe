@@ -724,6 +724,14 @@ def test_platform_kapisi_yalniz_e2e_app_degisikligi(forge: LocalForge, artifacts
     ci_green(artifacts, head)  # yalnızca web yeşili yetmez
     with pytest.raises(ForgeProtectionError, match="en az bir uygulama kontrolü"):
         forge.merge_pr(pr.number, "ali")
+    # Kaydedilmiş kırmızı web kontrolü yine durdurur (simetri).
+    write_checks(
+        artifacts,
+        head,
+        {"checks": [_check("local-ci", "failure"), _check("local-ci-ios", "success")]},
+    )
+    with pytest.raises(ForgeProtectionError, match="'local-ci' durumu: failure"):
+        forge.merge_pr(pr.number, "ali")
     write_checks(artifacts, head, {"checks": [_check("local-ci-ios", "success")]})
     result = forge.merge_pr_detailed(pr.number, "ali", expected_head_sha=head)
     assert result.bypass is False and result.sha == head

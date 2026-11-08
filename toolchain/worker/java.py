@@ -40,9 +40,10 @@ PLATFORM_LANG = {"web": "ts", "android": "java", "ios": "java", "windows": "java
 STEPS = ("app", "deps", "guard", "compile", "run")
 GENERATED_DIR = "src/test/java/com/antreklabs/bayi/uretilen"
 KIMLIK_RE = re.compile(r"\A(?:[^/]+/)*ekranlar/Kimlikler\.java\Z")
-# Java test dosyası (e2e-app köküne göre): src/test/java/**/<Ad>Test.java
+# Java test dosyası (e2e-app köküne göre): src/test/java/**/<Ad>Test.java (üretilen) ya da
+# <Ad>Testi.java (elle yazılmış referans testler, testler/)
 JAVA_TEST_FILE_RE = re.compile(
-    r"\Asrc/test/java/(?:[A-Za-z_][A-Za-z0-9_]*/)+[A-Za-z_][A-Za-z0-9_]*Test\.java\Z"
+    r"\Asrc/test/java/(?:[A-Za-z_][A-Za-z0-9_]*/)+[A-Za-z_][A-Za-z0-9_]*Testi?\.java\Z"
 )
 # Maven başlatıcısının proje kökünden okuduğu yapılandırma; sarmalayıcı dosyaları zararsızdır
 # (mvnw hiç çalıştırılmaz).
@@ -75,7 +76,7 @@ def resolve_lang(lang: str | None, platform: str | None) -> str:
 def validate_java_test_file(value: str) -> str:
     if not isinstance(value, str) or not JAVA_TEST_FILE_RE.match(value) or ".." in value:
         raise ValueError(
-            f"geçersiz Java test dosyası: {value!r} (beklenen: src/test/java/**/<Ad>Test.java)"
+            f"geçersiz Java test dosyası: {value!r} (beklenen: src/test/java/**/<Ad>Test[i].java)"
         )
     return value
 

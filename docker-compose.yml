@@ -439,7 +439,8 @@ services:
   # Internal ağdan host'a ulaşılamadığı için test-runner internal ağlarda kalır; bu yönlendirici
   # appium-net (internal) üzerinden gelen bağlantıyı yalnızca host.docker.internal:4723'e iletir
   # (hedef sabit; komut satırı dışında yapılandırma yok). Böylece koşan test kodu internete ya da
-  # hosttaki başka bir porta çıkamaz. Tek amaçlı socat (alpine tabanlı, özetle sabit); root değil,
+  # hosttaki başka bir porta DOĞRUDAN çıkamaz. Kalan risk: Appium API'sinin kendisi (ör. `app`
+  # yeteneğine URL → hosttan indirme, emülatörün kendi ağı); bkz. docs/CIHAZ-ALTYAPISI.md §5.1. Tek amaçlı socat (alpine tabanlı, özetle sabit); root değil,
   # salt okunur, yetkisiz; dışarıdan girdi almaz (ajan/test kodu yalnızca TCP akışı gönderir).
   # Varsayılan yığına girmez: `docker compose --profile mobil up -d appium-gw`.
   appium-gw:

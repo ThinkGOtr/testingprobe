@@ -95,6 +95,49 @@ Doğrulama (`make cihaz-ag`, 2026-11-08):
   güvenlik duvarıyla sınırlandırılmalıdır (bu Mac'te gerekmedi).
 - Konteyner yolunun uçtan uca kanıtı: `var/cihaz/kanit/duman-android-konteyner-*.txt`.
 
+### 5.1 test-runner → Appium: `appium-gw` (LocalForge Java koşusu, 009 §2.7)
+
+test-runner koşan test kodunu (üretilmiş + elle yazılmış Java) çalıştırır; bu yüzden internete ve
+hosta çıkışı yoktur (yalnız internal ağlar: `demo-net`, `runner-net`). Java koşusu ise hosttaki
+Appium'a ulaşmalıdır ve internal ağdan host'a ulaşılamaz. En az yetkili çözüm:
+
+```
+test-runner ──appium-net (internal)──▶ appium-gw ──cihaz-net──▶ host.docker.internal:4723 (Appium)
+```
+
+- `appium-gw` (`mobil` profili) tek amaçlı bir TCP yönlendiricidir (`alpine/socat`, özetle sabit):
+  `TCP-LISTEN:4723` → `TCP:host.docker.internal:4723`. Hedef komut satırında sabittir; gelen akış
+  hedefi değiştiremez. Root değil (`65534`), salt okunur kök, tüm yetenekler düşürülmüş,
+  `no-new-privileges`, 64 MB.
+- test-runner `cihaz-net`'e **konmaz** (konsaydı internete çıkardı); yalnız `appium-net` eklenir.
+  `APPIUM_URL_ANDROID|IOS=http://appium-gw:4723` (`TP_RUNNER_APPIUM_URL_*` ile değişir). Windows
+  (UTM VM) için yönlendirici tanımlı değildir: `TP_RUNNER_APPIUM_URL_WINDOWS` boşken Windows Java
+  koşusu sağlık kontrolünde `error` döner (VM için ikinci bir sabit hedefli yönlendirici gerekir).
+- Uygulama demo API'ye emülatörden `10.0.2.2:8081` (host → compose `demo-app-web`) ile gider;
+  testlerin `/test/*` çağrıları test-runner'dan doğrudan `demo-app-api:8000`'e (demo-net) gider.
+  İkisi aynı API'dir; hosttaki geçici vekile (`127.0.0.1:18000`) bağımlılık yoktur.
+- `make security-check` 2. madde: test-runner'dan `host.docker.internal:4723/8081`, internet,
+  postgres, core-api, playwright-mcp kapalı; `appium-gw` çalışıyorsa `appium-gw:4723` açık olmalı.
+
+Doğrulama (2026-11-08, yalıtılmış `tp-s8` yığını, test-runner içinden TCP denemesi):
+
+```
+1.1.1.1:443 ERR_ENETUNREACH          example.com:443 ERR_EAI_AGAIN
+host.docker.internal:4723 ERR_EAI_AGAIN   host.docker.internal:8081 ERR_EAI_AGAIN
+testingprobe-postgres-1:5432 ERR_EAI_AGAIN
+appium-gw:4723 OPEN   →  GET http://appium-gw:4723/status: ready=true (Appium 3.9.0)
+demo-app-api:8000 OPEN
+```
+
+**Kalan risk (bilinçli):** appium-gw TCP hedefini sabitler ama Appium API'sini sınırlamaz. Appium
+oturumu açabilen test kodu cihazı sürebilir; `appium:app` yeteneğine URL verilirse Appium hostu
+dosyayı indirir (hostun ağına SSRF / sızdırma yolu) ve emülatörün kendi internet çıkışı vardır.
+Koşan kod `/check` yolunda bağımlılık kilidi + Java AST koruması (üretilen testler) ve insan onaylı
+PR'dan gelir; ancak test-runner `/run` bu korumayı kendisi yinelemez (yalnızca pom/.mvn kilidi) ve
+runner-net'ten (toolchain-worker) çağrılır. Appium `--relaxed-security` olmadan koşar (`mobile:
+shell` vb. kapalı). Sertleştirme seçenekleri (yapılmadı): Appium önünde `app` yeteneğini süzen
+vekil; emülatörü ağsız açmak (uygulama API'ye `10.0.2.2` IP'siyle gider).
+
 ## 6. app-mcp (`toolchain/app-mcp/`)
 
 Kendi MCP sunucumuz (Node 22 + TypeScript, `@modelcontextprotocol/sdk` 1.32, streamable HTTP
