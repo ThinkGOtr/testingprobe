@@ -1,0 +1,58 @@
+<!-- Sipariş onayı (web: OrderConfirmationPage.tsx). -->
+<UserControl x:Class="BayiSiparis.Masaustu.Gorunumler.SiparisOnayEkrani"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:o="clr-namespace:BayiSiparis.Masaustu.Otomasyon"
+             AutomationProperties.AutomationId="page-order-confirmation"
+             AutomationProperties.Name="Sipariş onayı">
+  <StackPanel>
+    <o:Kosullu Goster="{Binding Hata, Converter={StaticResource DoluMu}}">
+      <Border Style="{StaticResource HataKutusu}">
+        <TextBlock Text="{Binding Hata}" Foreground="{StaticResource Tehlike}" TextWrapping="Wrap" />
+      </Border>
+    </o:Kosullu>
+    <o:Kosullu Goster="{Binding Yukleniyor}">
+      <TextBlock Text="Sipariş yükleniyor…" Style="{StaticResource SolukMetin}" />
+    </o:Kosullu>
+
+    <o:Kosullu Goster="{Binding Yuklendi}">
+      <o:OtomasyonGrubu AutomationProperties.AutomationId="order-confirmation" AutomationProperties.Name="Siparişiniz alındı"
+                        Width="520" HorizontalAlignment="Center" Margin="0,24,0,0">
+        <Border Style="{StaticResource Panel}" Padding="32">
+          <StackPanel>
+            <Border Width="56" Height="56" CornerRadius="28" Background="{StaticResource Basari}" HorizontalAlignment="Center" Margin="0,0,0,12">
+              <TextBlock Text="✓" Foreground="White" FontSize="28" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <TextBlock Text="Siparişiniz alındı" Style="{StaticResource Baslik1}" HorizontalAlignment="Center" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,4,0,16">
+              <TextBlock Text="Sipariş numaranız: " />
+              <o:OtomasyonMetni AutomationProperties.AutomationId="order-number" Text="{Binding SiparisNumarasi}" FontWeight="Bold" />
+            </StackPanel>
+            <Border BorderBrush="{StaticResource Cizgi}" BorderThickness="0,1" Padding="0,10">
+              <StackPanel>
+                <DockPanel Margin="0,0,0,6">
+                  <o:OtomasyonMetni DockPanel.Dock="Right" Text="{Binding AdetToplamMetni}" />
+                  <TextBlock Text="Ürün adedi" Style="{StaticResource SolukMetin}" />
+                </DockPanel>
+                <DockPanel Margin="0,0,0,6">
+                  <o:OtomasyonMetni DockPanel.Dock="Right" AutomationProperties.AutomationId="order-discount" Text="{Binding IndirimMetni}" />
+                  <TextBlock Text="Kampanya indirimi" Style="{StaticResource SolukMetin}" />
+                </DockPanel>
+                <DockPanel>
+                  <o:OtomasyonMetni DockPanel.Dock="Right" AutomationProperties.AutomationId="order-total" Text="{Binding ToplamMetni}" FontWeight="Bold" />
+                  <TextBlock Text="Genel toplam" FontWeight="SemiBold" />
+                </DockPanel>
+              </StackPanel>
+            </Border>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,16,0,0">
+              <Button Style="{StaticResource BirincilDugme}" Content="Siparişlerime git" Margin="0,0,10,0"
+                      AutomationProperties.AutomationId="go-orders" Command="{Binding Kabuk.SiparislereGitKomutu}" />
+              <Button Style="{StaticResource HayaletDugme}" Content="Alışverişe devam et"
+                      AutomationProperties.AutomationId="go-catalog" Command="{Binding Kabuk.KatalogaGitKomutu}" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+      </o:OtomasyonGrubu>
+    </o:Kosullu>
+  </StackPanel>
+</UserControl>

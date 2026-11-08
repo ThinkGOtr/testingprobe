@@ -1,0 +1,170 @@
+<!-- Sepet (web: CartPage.tsx). Satır kimlikleri ürün koduyla kurulur: cart-line-P-001, cart-line-qty-P-001 … -->
+<UserControl x:Class="BayiSiparis.Masaustu.Gorunumler.SepetEkrani"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:o="clr-namespace:BayiSiparis.Masaustu.Otomasyon"
+             AutomationProperties.AutomationId="page-cart"
+             AutomationProperties.Name="Sepetim">
+  <UserControl.Resources>
+    <Style x:Key="SutunBasligi" TargetType="TextBlock" BasedOn="{StaticResource SolukMetin}">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+  </UserControl.Resources>
+  <StackPanel>
+    <TextBlock Text="Sepetim" Style="{StaticResource Baslik1}" />
+
+    <!-- Sepet henüz yok: yükleniyor ya da yüklenemedi -->
+    <o:Kosullu Goster="{Binding Yukleniyor}">
+      <TextBlock Text="Sepet yükleniyor…" Style="{StaticResource SolukMetin}" />
+    </o:Kosullu>
+    <o:Kosullu Goster="{Binding YuklemeHatasiVar}">
+      <Border Style="{StaticResource HataKutusu}">
+        <TextBlock Text="{Binding Hata}" Foreground="{StaticResource Tehlike}" TextWrapping="Wrap" />
+      </Border>
+    </o:Kosullu>
+
+    <o:Kosullu Goster="{Binding Sepet, Converter={StaticResource DoluMu}}">
+      <TextBlock Text="Kampanya indirimleri sepet toplamına otomatik uygulanır." Style="{StaticResource SolukMetin}" Margin="0,0,0,16" />
+    </o:Kosullu>
+
+    <!-- Boş sepet -->
+    <o:Kosullu Goster="{Binding Bos}">
+      <StackPanel>
+        <o:OtomasyonGrubu AutomationProperties.AutomationId="cart-empty" AutomationProperties.Name="Sepetiniz boş.">
+          <Border Style="{StaticResource Panel}" Padding="32">
+            <StackPanel HorizontalAlignment="Center">
+              <o:OtomasyonMetni Text="Sepetiniz boş." HorizontalAlignment="Center" Margin="0,0,0,12" />
+              <Button Style="{StaticResource BirincilDugme}" Content="Kataloğa dön"
+                      Command="{Binding Kabuk.KatalogaGitKomutu}" HorizontalAlignment="Center" />
+            </StackPanel>
+          </Border>
+        </o:OtomasyonGrubu>
+        <o:Kosullu Goster="{Binding BosSepetHatasi, Converter={StaticResource DoluMu}}">
+          <Border Style="{StaticResource HataKutusu}">
+            <TextBlock Text="{Binding BosSepetHatasi}" Foreground="{StaticResource Tehlike}" TextWrapping="Wrap" />
+          </Border>
+        </o:Kosullu>
+      </StackPanel>
+    </o:Kosullu>
+
+    <!-- Dolu sepet: tablo + özet -->
+    <o:Kosullu Goster="{Binding Dolu}">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="20" />
+          <ColumnDefinition Width="320" />
+        </Grid.ColumnDefinitions>
+
+        <Border Grid.Column="0" Style="{StaticResource Panel}" VerticalAlignment="Top">
+          <StackPanel>
+            <Grid Margin="0,0,0,8">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="100" />
+                <ColumnDefinition Width="60" />
+                <ColumnDefinition Width="60" />
+                <ColumnDefinition Width="100" />
+                <ColumnDefinition Width="80" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Grid.Column="0" Text="Ürün" Style="{StaticResource SutunBasligi}" />
+              <TextBlock Grid.Column="1" Text="Birim fiyat" Style="{StaticResource SutunBasligi}" TextAlignment="Right" />
+              <TextBlock Grid.Column="2" Text="Adet" Style="{StaticResource SutunBasligi}" TextAlignment="Right" />
+              <TextBlock Grid.Column="3" Text="Bedava" Style="{StaticResource SutunBasligi}" TextAlignment="Right" />
+              <TextBlock Grid.Column="4" Text="Tutar" Style="{StaticResource SutunBasligi}" TextAlignment="Right" />
+            </Grid>
+            <o:OtomasyonListesi AutomationProperties.AutomationId="cart-table" AutomationProperties.Name="Sepetteki ürünler"
+                                ItemsSource="{Binding Satirlar}" Focusable="False">
+              <o:OtomasyonListesi.ItemTemplate>
+                <DataTemplate>
+                  <o:OtomasyonGrubu Tur="DataItem"
+                                    AutomationProperties.AutomationId="{Binding UrunKod, StringFormat=cart-line-{0}}"
+                                    AutomationProperties.Name="{Binding UrunAd}">
+                    <Border BorderBrush="{StaticResource Cizgi}" BorderThickness="0,1,0,0" Padding="0,10">
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="100" />
+                          <ColumnDefinition Width="60" />
+                          <ColumnDefinition Width="60" />
+                          <ColumnDefinition Width="100" />
+                          <ColumnDefinition Width="80" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                          <o:OtomasyonMetni Text="{Binding UrunAd}" FontWeight="SemiBold" />
+                          <StackPanel Orientation="Horizontal">
+                            <o:OtomasyonMetni Text="{Binding UrunKod}" Style="{StaticResource SolukMetin}" FontSize="12" />
+                            <o:Kosullu Goster="{Binding KampanyaVar}">
+                              <Border Background="{StaticResource VurguYumusak}" CornerRadius="6" Padding="6,1" Margin="8,0,0,0">
+                                <o:OtomasyonMetni Text="{Binding Kampanya}" Foreground="{StaticResource VurguMetin}" FontSize="11" />
+                              </Border>
+                            </o:Kosullu>
+                          </StackPanel>
+                        </StackPanel>
+                        <o:OtomasyonMetni Grid.Column="1" Text="{Binding BirimFiyatMetni}" TextAlignment="Right" VerticalAlignment="Center" />
+                        <o:OtomasyonMetni Grid.Column="2" AutomationProperties.AutomationId="{Binding UrunKod, StringFormat=cart-line-qty-{0}}"
+                                          Text="{Binding AdetMetni}" TextAlignment="Right" VerticalAlignment="Center" />
+                        <o:OtomasyonMetni Grid.Column="3" AutomationProperties.AutomationId="{Binding UrunKod, StringFormat=cart-line-free-{0}}"
+                                          Text="{Binding BedavaAdetMetni}" TextAlignment="Right" VerticalAlignment="Center" />
+                        <o:OtomasyonMetni Grid.Column="4" AutomationProperties.AutomationId="{Binding UrunKod, StringFormat=cart-line-total-{0}}"
+                                          Text="{Binding SatirTutariMetni}" TextAlignment="Right" VerticalAlignment="Center" FontWeight="SemiBold" />
+                        <Button Grid.Column="5" Style="{StaticResource BaglantiDugmesi}" HorizontalAlignment="Right"
+                                AutomationProperties.AutomationId="{Binding UrunKod, StringFormat=cart-line-remove-{0}}"
+                                AutomationProperties.Name="{Binding KaldirEtiketi}"
+                                Content="Kaldır" Command="{Binding KaldirKomutu}" />
+                      </Grid>
+                    </Border>
+                  </o:OtomasyonGrubu>
+                </DataTemplate>
+              </o:OtomasyonListesi.ItemTemplate>
+            </o:OtomasyonListesi>
+          </StackPanel>
+        </Border>
+
+        <Border Grid.Column="2" Style="{StaticResource Panel}" VerticalAlignment="Top">
+          <StackPanel>
+            <TextBlock Text="Sipariş özeti" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,12" />
+            <DockPanel Margin="0,0,0,6">
+              <o:OtomasyonMetni DockPanel.Dock="Right" AutomationProperties.AutomationId="cart-subtotal" Text="{Binding AraToplamMetni}" />
+              <TextBlock Text="Ara toplam" Style="{StaticResource SolukMetin}" />
+            </DockPanel>
+            <DockPanel Margin="0,0,0,6">
+              <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <o:Kosullu Goster="{Binding IndirimVar}">
+                  <TextBlock Text="−" Foreground="{StaticResource Basari}" />
+                </o:Kosullu>
+                <o:OtomasyonMetni AutomationProperties.AutomationId="cart-discount" Text="{Binding IndirimMetni}" />
+              </StackPanel>
+              <TextBlock Text="Kampanya indirimi" Style="{StaticResource SolukMetin}" />
+            </DockPanel>
+            <Border BorderBrush="{StaticResource Cizgi}" BorderThickness="0,1,0,0" Padding="0,8,0,0" Margin="0,4,0,0">
+              <DockPanel>
+                <o:OtomasyonMetni DockPanel.Dock="Right" AutomationProperties.AutomationId="cart-total" Text="{Binding ToplamMetni}"
+                                  FontWeight="Bold" FontSize="16" />
+                <TextBlock Text="Genel toplam" FontWeight="SemiBold" />
+              </DockPanel>
+            </Border>
+
+            <o:Kosullu Goster="{Binding MinSiparisUyarisi, Converter={StaticResource DoluMu}}">
+              <Border Style="{StaticResource UyariKutusu}">
+                <o:OtomasyonMetni AutomationProperties.AutomationId="min-order-warning" Text="{Binding MinSiparisUyarisi}"
+                                  Foreground="{StaticResource UyariMetin}" TextWrapping="Wrap" />
+              </Border>
+            </o:Kosullu>
+            <o:Kosullu Goster="{Binding OnayHatasi, Converter={StaticResource DoluMu}}">
+              <Border Style="{StaticResource HataKutusu}">
+                <o:OtomasyonMetni AutomationProperties.AutomationId="checkout-error" Text="{Binding OnayHatasi}"
+                                  Foreground="{StaticResource Tehlike}" TextWrapping="Wrap" />
+              </Border>
+            </o:Kosullu>
+
+            <Button Style="{StaticResource BirincilDugme}" Margin="0,12,0,0"
+                    AutomationProperties.AutomationId="checkout-submit"
+                    Content="{Binding OnayDugmesiMetni}" Command="{Binding OnaylaKomutu}" />
+          </StackPanel>
+        </Border>
+      </Grid>
+    </o:Kosullu>
+  </StackPanel>
+</UserControl>
