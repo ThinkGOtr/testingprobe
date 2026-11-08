@@ -30,6 +30,10 @@ cd demo-app/e2e-app
 # Cihaz koşusu (Appium 3 sunucusu + emülatör/simülatör/Windows VM hazır; demo API çalışıyor):
 export DEMOAPP_TEST_TOKEN=…                 # ORTAMDAN; depoya ve komut satırına yazmayın
 export DEMO_API_URL=http://127.0.0.1:18000  # /test/* uçlarına doğrudan erişilen API kökü
+# Compose demo-app-api'yi hosta açmaz ve demo-net internal'dır (port yayımlanamaz). Yerelde geçici vekil:
+#   docker run -d --rm --name tp-demo-api-vekil -p 127.0.0.1:18000:8000 alpine/socat \
+#     tcp-listen:8000,fork,reuseaddr tcp:demo-app-api:8000
+#   docker network connect testingprobe_demo-net tp-demo-api-vekil
 ../ci/run-app-checks.sh android -Dapp.path=../mobile/build/bayi-siparis.apk
 ../ci/run-app-checks.sh ios -Dapp.path=../mobile/build/BayiSiparis.app -Ddevice.name="iPhone 16"
 ../ci/run-app-checks.sh android -Dgroups=duman          # yalnız bir grup (testng.xml devre dışı kalır)
@@ -77,7 +81,11 @@ testin kanıtı `target/kanit/<Sınıf>.<metot>/{ekran.png,sayfa-kaynagi.xml}` (
 - **Bayi**: varsayılan `bayi1`; `@Bayi("bayi2")` sınıfı sabitler (web `test.use({ dealerUsername })`).
   `bayi3` doğrulama ajanınındır, e2e'ye kapalıdır. Aynı demo API'ye karşı koşan Java süreçleri (ör.
   Android + iOS aynı anda) bayiyi işletim sistemi dosya kilidiyle sırayla alır
-  (`$TMPDIR/demoapp-e2e-app-kilit-<api özeti>/`). Web e2e ile aynı anda aynı bayiyi kullanmayın.
+  (`$TMPDIR/demoapp-e2e-app-kilit-<api özeti>/`). **Web e2e ile kilit ortak değildir:** web
+  (`demo-app/e2e/tests/fixtures.ts`) kendi dizininde (`$TMPDIR/demoapp-e2e-kilit-<özet>/`, O_EXCL
+  dosyası) kilitler; ikisi birbirini görmez. Aynı demo API'ye karşı web e2e ile uygulama e2e'sini
+  (ya da break-verify'larını) aynı anda koşturmayın — `/test/reset` ve `/test/break` bayi verisini
+  diğerinin altından değiştirir. Sıra: önce biri, sonra diğeri (CI'da ayrı demo ortamları).
 - **Gruplar**: `duman` (temel akışlar), `kampanya` (kırarak doğrula kümesi), `uretilen`,
   `sifir-veri` (sıfırlanmış veri ister; `TP_E2E_NO_RESET=1`'de atlanır), `birim` (cihazsız).
 

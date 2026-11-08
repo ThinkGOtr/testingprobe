@@ -84,7 +84,31 @@ public final class Kimlik {
       return "new UiSelector().description(\"" + javaDizesi(id) + "\")";
     }
     // Paket önekli (com.x:id/kimlik) ya da öneksiz (RN testID) resource-id.
-    return "new UiSelector().resourceIdMatches(\"" + javaDizesi("(.+:id/)?" + Pattern.quote(id)) + "\")";
+    return "new UiSelector().resourceIdMatches(\"" + javaDizesi("(.+:id/)?" + duzIfade(id)) + "\")";
+  }
+
+  private static final String REGEX_OZEL = ".$*+?(){}|";
+
+  /**
+   * Kimliği düzenli ifadede birebir eşleşecek biçime getirir. {@code Pattern.quote}'un
+   * {@code \Q…\E}'si Appium'un UiSelector ayrıştırıcısından sağlam geçmez (emülatörde
+   * {@code scrollIntoView} hiç eşleşmeyip listenin sonuna kadar kaydı — 2026-11-08). Bu yüzden ters
+   * bölü kullanılmaz: özel karakter {@code [c]} sınıfına alınır. Sınıfa sığmayan karakterler
+   * ({@code [ ] \ ^}) kimliklerde yoktur; olursa yine {@code Pattern.quote}'a düşülür.
+   */
+  static String duzIfade(String id) {
+    StringBuilder b = new StringBuilder();
+    for (char c : id.toCharArray()) {
+      if (c == '[' || c == ']' || c == '\\' || c == '^') {
+        return Pattern.quote(id);
+      }
+      if (REGEX_OZEL.indexOf(c) >= 0) {
+        b.append('[').append(c).append(']');
+      } else {
+        b.append(c);
+      }
+    }
+    return b.toString();
   }
 
   private static String javaDizesi(String s) {

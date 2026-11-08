@@ -68,6 +68,19 @@ describe('Android (UiAutomator2)', () => {
     assert.match(metin, /- heading "Bayi Sipariş Portalı"/);
     assert.doesNotMatch(metin, /- image/);
   });
+  it('RN başlığı düz android.view.View olarak gelir (gerçek katalog kaynağı): heading olur', () => {
+    // demo-app/mobile katalog ekranı, emülatörde gözlendi (2026-11-08): ürün adı.
+    const xml =
+      '<hierarchy><android.view.ViewGroup class="android.view.ViewGroup" resource-id="product-card-P-001" ' +
+      'bounds="[42,600][1038,1200]" displayed="true">' +
+      '<android.widget.TextView class="android.widget.TextView" text="P-001" bounds="[264,663][996,706]" displayed="true" heading="false" />' +
+      '<android.view.View class="android.view.View" text="Portakal Gazozu 1L" bounds="[264,711][996,768]" displayed="true" heading="true" clickable="false" />' +
+      '<android.view.View class="android.view.View" text="" bounds="[264,770][996,780]" displayed="true" heading="false" clickable="false" />' +
+      '</android.view.ViewGroup></hierarchy>';
+    const s = snapshot(xml, 'android').metin;
+    assert.match(s, /- heading "Portakal Gazozu 1L" \[ref=e\d+\]/);
+    assert.doesNotMatch(s, /- heading ""/);
+  });
   it('ipucu gösteren boş alan değer taşımaz; ad ipucudur', () => {
     assert.match(metin, /- textbox "Kullanıcı adı" \[id=login-username\] \[ref=e\d+\]$/m);
   });

@@ -106,6 +106,15 @@ describe('yapılandırma', () => {
     assert.equal(y['appium:appActivity'], '.MainActivity');
     assert.equal(y['appium:newCommandTimeout'], 180);
     assert.equal(y['appium:automationName'], 'UiAutomator2');
+    // RN testID öneksiz resource-id: sürücü paket öneki eklememeli.
+    assert.equal(y['appium:disableIdLocatorAutocompletion'], true);
+    assert.equal(y['appium:enforceAppInstall'], undefined, 'APK yokken kurulum zorlanmaz');
+    const apk = ayarlariOku({
+      APPIUM_URL_ANDROID: 'http://h:4723',
+      APP_ANDROID_PACKAGE: 'com.antreklabs.bayisiparis',
+      APP_ANDROID_APK: '/x/bayi-siparis.apk',
+    });
+    assert.equal(apk.platformlar.android!.yetenekler['appium:enforceAppInstall'], true);
     assert.equal(a.bostaSn, 120);
     assert.deepEqual(a.izinliHostlar, ['127.0.0.1:8932', 'localhost:8932']);
   });

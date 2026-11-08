@@ -205,7 +205,11 @@ const android: Uyarlayici = {
       return r === 'text' && d.oz.heading === 'true' ? 'heading' : r;
     }
     if (r) return r;
-    return tiklanir ? 'button' : null;
+    if (tiklanir) return 'button';
+    // RN (Fabric) accessibilityRole="header" olan Text'i TextView değil düz `android.view.View`
+    // olarak yayımlar (ör. katalogda ürün adı); metni ve heading işareti vardır.
+    if (d.oz.heading === 'true' && (sade(d.oz.text) || sade(d.oz['content-desc']))) return 'heading';
+    return null;
   },
   ad(d, rol) {
     const metin = sade(d.oz.text);

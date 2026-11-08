@@ -1,6 +1,7 @@
 package com.antreklabs.bayi.birim;
 
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertThrows;
 import static org.testng.Assert.assertTrue;
 
@@ -42,7 +43,7 @@ public class KimlikBirimTesti {
     Kimlik.kur(Platform.ANDROID, ayar(Map.of("kimlik.android", "uiautomator")));
     assertEquals(
         Kimlik.bul("cart-total"),
-        AppiumBy.androidUIAutomator("new UiSelector().resourceIdMatches(\"(.+:id/)?\\\\Qcart-total\\\\E\")"));
+        AppiumBy.androidUIAutomator("new UiSelector().resourceIdMatches(\"(.+:id/)?cart-total\")"));
     assertThrows(IllegalArgumentException.class, () -> Kimlik.strateji(Platform.IOS, ayar(Map.of("kimlik.ios", "uiautomator"))));
     assertThrows(IllegalArgumentException.class, () -> Kimlik.strateji(Platform.ANDROID, ayar(Map.of("kimlik.android", "xpath"))));
     Kimlik.kur(Platform.ANDROID, ayar(Map.of()));
@@ -60,7 +61,12 @@ public class KimlikBirimTesti {
   public void androidKaydirmaIfadesi() {
     String ifade = Kaydirma.androidKaydirmaIfadesi(Kimlik.Strateji.ID, "product-card-P-004", "add-to-cart");
     assertTrue(ifade.startsWith("new UiScrollable(new UiSelector().scrollable(true)).scrollIntoView("), ifade);
-    assertTrue(ifade.contains("\\\\Qproduct-card-P-004\\\\E\").childSelector("), ifade);
+    assertTrue(ifade.contains("(.+:id/)?product-card-P-004\").childSelector("), ifade);
+    // Ters bölü yok: \Q…\E Appium'un UiSelector ayrıştırıcısında eşleşmez (cihazda gözlendi).
+    assertFalse(ifade.contains("\\"), ifade);
+    // Düzenli ifade özel karakterleri sınıfa alınır; ifade yine birebir eşleşir.
+    assertEquals(Kimlik.uiSelector(Kimlik.Strateji.ID, "a.b(c)"), "new UiSelector().resourceIdMatches(\"(.+:id/)?a[.]b[(]c[)]\")");
+    assertTrue(java.util.regex.Pattern.matches("(.+:id/)?a[.]b[(]c[)]", "com.x:id/a.b(c)"));
     String erisim = Kaydirma.androidKaydirmaIfadesi(Kimlik.Strateji.ERISILEBILIRLIK, null, "cart-total");
     assertTrue(erisim.endsWith("scrollIntoView(new UiSelector().description(\"cart-total\"))"), erisim);
   }
