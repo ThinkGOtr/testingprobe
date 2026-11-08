@@ -49,14 +49,17 @@ def kt(status: str, error: str | None = None) -> dict[str, Any]:
 
 
 def test_java_hata_turleri() -> None:
-    assert hata_turu(ASSERT_JAVA) == "assertion"
-    assert hata_turu(TIMEOUT_JAVA) == "locator"
-    assert hata_turu("org.openqa.selenium.NoSuchElementException: no such element") == "locator"
-    assert hata_turu("StaleElementReferenceException: stale") == "locator"
-    assert hata_turu(ORTAM_JAVA) == "ortam"
-    assert hata_turu("java.net.ConnectException: Connection refused") == "ortam"
+    assert hata_turu(ASSERT_JAVA, java=True) == "assertion"
+    assert hata_turu(TIMEOUT_JAVA, java=True) == "locator"
+    assert (
+        hata_turu("org.openqa.selenium.NoSuchElementException: no such element", java=True)
+        == "locator"
+    )
+    assert hata_turu("StaleElementReferenceException: stale", java=True) == "locator"
+    assert hata_turu(ORTAM_JAVA, java=True) == "ortam"
+    assert hata_turu("java.net.ConnectException: Connection refused", java=True) == "ortam"
     # Kurulum kaynaklı assertion defect adayı değildir.
-    assert hata_turu(KURULUM_JAVA) == "ortam"
+    assert hata_turu(KURULUM_JAVA, java=True) == "ortam"
     # Runner'ın biçimsel türü önce gelir.
     assert hata_turu(TIMEOUT_JAVA, "assertion") == "assertion"
 

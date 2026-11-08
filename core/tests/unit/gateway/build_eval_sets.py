@@ -542,9 +542,7 @@ def verify_and_map_app_cases() -> list[dict[str, Any]]:
         f"{po['class']}.{m['name']}" for po in symbols["page_objects"] for m in po["methods"]
     )
     out = []
-    for key, n, platform, title in (
-        ("TPD-1", 2, "android", "7 adette 1 bedava (Android)"),
-    ):
+    for key, n, platform, title in (("TPD-1", 2, "android", "7 adette 1 bedava (Android)"),):
         case = load_golden("case_generation", key)["output"]["cases"][n - 1]
         ad = f"{golden_name(key, case_no=n)}-{platform}"
         golden = load_golden("verify_and_map_app", ad)["output"]

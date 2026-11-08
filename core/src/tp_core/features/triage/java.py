@@ -58,6 +58,8 @@ def java_mi(platform: str | None, dosya: str | None, mesaj: str | None = None) -
     d = (dosya or "").strip()
     if d.endswith(".java") or _FQCN_RE.match(d):
         return True
+    if d.endswith(".ts"):  # Playwright testi: Java istisna metni geçse de web
+        return False
     return bool(_JAVA_ISTISNA_RE.search(mesaj or ""))
 
 

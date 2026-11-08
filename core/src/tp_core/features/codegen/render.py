@@ -33,6 +33,7 @@ import jinja2
 
 from tp_core.audit import content_hash
 from tp_core.audit.canonical import sha256_hex
+from tp_core.features.codegen import platform as platformlar
 from tp_core.features.codegen.checks import IDENT_RE, fixture_name
 
 TEMPLATE_NAME = "playwright_test.ts.j2"
@@ -259,8 +260,8 @@ def render_test(inp: RenderInput, rules_dir: Path) -> Rendered:
 # koşusu yalnız kendi platformunun üretilen testlerini seçebilir.
 
 JAVA_TEMPLATE_NAME = "appium_testng.java.j2"
-JAVA_GENERATED_DIR = "src/test/java/com/antreklabs/bayi/uretilen"  # e2e-app köküne göre
-E2E_APP_ROOT = "e2e-app"  # forge deposunda (LocalForge düzeni; GitHub'da `<uygulama kökü>/e2e-app`)
+JAVA_GENERATED_DIR = platformlar.JAVA_URETILEN_DIZIN  # e2e-app köküne göre (tek kaynak)
+E2E_APP_ROOT = platformlar.E2E_APP_DIZINI  # LocalForge düzeni; GitHub: `<uygulama kökü>/e2e-app`
 JAVA_URETILEN_GRUBU = "uretilen"
 # Java giriş metodu (bayi sabitleme): web `LoginPage.login` ↔ `GirisEkrani.girisYap`.
 LOGIN_METOTLARI = frozenset({"login", "girisYap"})
@@ -322,6 +323,15 @@ def java_literal(value: Any) -> str:
     raise RenderError(f"şablona basılamayan değer türü: {type(value).__name__}")
 
 
+def java_comment(value: Any) -> str:
+    """Java `//` yorumu: `comment` + javac'ın yorumda bile işlediği Unicode kaçışı (ters bölü + u)
+    etkisizleştirilir (ters bölü `/` olur) ve görünmez/biçim karakterleri boşluk olur (guard
+    `KarakterDenetimi` ile aynı kategoriler)."""
+    metin = comment(value).replace("\\", "/")
+    temiz = "".join(" " if unicodedata.category(ch) in _JAVA_YASAK_KATEGORI else ch for ch in metin)
+    return re.sub(r"\s+", " ", temiz).strip() or "-"
+
+
 def java_args(args: Sequence[Any]) -> str:
     return ", ".join(java_literal(a) for a in args)
 
@@ -372,7 +382,7 @@ def _java_env(templates_dir: Path) -> jinja2.Environment:
     )
     env.filters["java"] = java_literal
     env.filters["ident"] = java_ident
-    env.filters["comment"] = comment
+    env.filters["comment"] = java_comment
     env.filters["jargs"] = java_args
     return env
 

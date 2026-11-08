@@ -251,6 +251,16 @@ DEFAULT_TOOL_CHANNEL = "agent"
 _CALL_ID_NAMESPACE = uuid5(NAMESPACE_URL, "tp:ai_call")
 
 
+def executor_secrets(execute: Any) -> frozenset[str]:
+    """Araç yürütücüsünün bildirdiği sır değerleri (`gateway_gizliler`; ör. `AgentApp`'in
+    snapshot'taki `[password]` işaretinden tanıdığı parola alanına yazılan metin). Bunlar
+    `tool_call` argüman/sonuç kaydından silinir; bildirmeyen yürütücüde boş küme (web değişmez)."""
+    degerler = getattr(execute, "gateway_gizliler", None)
+    if not degerler:
+        return frozenset()
+    return frozenset(v for v in degerler if isinstance(v, str) and v)
+
+
 def deterministic_call_id(job_id: UUID | str, step: str) -> UUID:
     """İş yeniden denemesinde aynı kalan çağrı kimliği (iş kimliği + adım adı)."""
     return uuid5(_CALL_ID_NAMESPACE, f"{job_id}:{step}")
@@ -1278,6 +1288,7 @@ class Gateway:
                     result = strip_mcp_file_links(result)
                     result, _ = session.mask(result) if self._mask_tool_results else (result, [])
                     secrets.update(secret_tool_values(tc.args))
+                    secrets.update(executor_secrets(execute))
                     step = AgentStep(
                         tool=tc.name,
                         args=tc.args,
@@ -1576,6 +1587,7 @@ class Gateway:
                     if banned and recorded.tool in allowed
                     else f"Araç izinli değil: {recorded.tool}"
                 )
+            secrets.update(executor_secrets(execute))
             step = AgentStep(
                 tool=recorded.tool,
                 args=args,

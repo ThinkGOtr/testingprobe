@@ -75,7 +75,9 @@ demo-app/e2e-app/
 ### 2.4 Üretilen test sözleşmesi
 
 Şablon `rules/templates/appium_testng.java.j2`. Dosya:
-`src/test/java/com/antreklabs/bayi/uretilen/<Story>C<sira>_<uuid8>Test.java`. İçerik yalnızca:
+`src/test/java/com/antreklabs/bayi/uretilen/<Story><Platform>C<sira>_<uuid8>Test.java` (ör.
+`TPD1AndroidC3_0a1b2c3dTest.java`; platform adı, aynı case'in platform script'leri ayrı dosya/dal/PR
+olsun diye — guard'ın dosya adı kuralına uyar). İçerik yalnızca:
 `package`, izinli `import`'lar, `@Bayi` (opsiyonel), `TestTabani`'ndan türeyen tek sınıf, tek `@Test`
 metot (`groups = {"uretilen", <etiketler>}`), gövdede yalnızca `<ekranAlanı>.<metot>(<literal>…);`
 satırları. Dal, döngü, lambda, ham `driver`, `Thread.sleep`, yansıma, dosya/ağ erişimi yasak; bunu
@@ -182,6 +184,33 @@ tek string literal; tek `@Test` metot, parametresiz, `void`; gövdede yalnız if
 `<erişimci>().<metot>(<literal>, …)` ve erişimci + metot sembol tablosunda var; argümanlar yalnız
 string/int/long/double/boolean literal (negatif sayı için tekli eksi); dal, döngü, lambda, `new`, alan,
 statik çağrı, `this`, `super`, dizi, metin bloğu yasak.
+
+Ş6 çıktısının ek kuralları: TestNG grupları `{"uretilen", "<platform>", "tp-case-<case uuid>",
+"<story>"}` (CI platform koşusu yalnız kendi platformunun üretilen testlerini `-Dgroups` ile
+seçebilir); adım yorumu `// S<n> — <eylem>`; yorum ve literallerde Unicode kaçışı yoktur.
+
+### 2.9 Çekirdek arayüzleri (Ş6 → Ş7, Ş8)
+
+- **API:** `POST /code/generate {case_ids[], platform?: "web"|"android"|"ios"|"windows"}` (yoksa
+  `web`; başka değer 422). Yanıt ve `sonuclar[]` öğeleri `platform` taşır. `GET /scripts`,
+  `GET /scripts/{id}` → `platform`. Aynı case için platform başına ayrı script; "PR zaten var"
+  ve yeniden üretimde eski PR'ı kapatma yalnız aynı platformda.
+- **SSE / denetim:** `agent.step`, `pr.opened`, `codegen.check` yükleri ve `codegen.requested`,
+  `codegen.committed`, `codegen.pr_opened` denetim kayıtları `platform` taşır. Uygulama
+  adımlarında `tool` = `app_*`; ekran görüntüsü aynı `screenshot_url` (app-mcp `app_screenshot`).
+- **Dal / dosya / PR:** dal `tp/case-<platform>-<uuid>[-n]`, dosya `<app root>/e2e-app/src/test/
+  java/com/antreklabs/bayi/uretilen/<Story><Platform>C<n>_<uuid8>Test.java`, PR etiketi
+  `platform:<platform>`, başlık `[<STORY>-C<n> · <platform>] …`.
+- **toolchain (Ş5 uyumlu):** `/symbols {sha, platform}`; `/check {…, platform, test_files:
+  ["src/test/java/…Test.java"]}` (e2e-app köküne göre; kırarak doğrulama aynı gövde +
+  `env.BREAK_CAMPAIGN=1`, `repeat_each=1`). Web istek gövdeleri değişmez.
+- **Ş8 (test-runner / CI) beklentisi:** `/run` gövdesinde `lang:"java"`, `platform`; rapor
+  `run.tests[]` başına `title` (tekrarlarda aynı), `status` (`expected|unexpected|flaky|skipped`),
+  `error` (tam istisna metni; ilk satır istisna sınıfı), isteğe bağlı `failure.type`
+  (`locator_not_found|locator_timeout|assertion|navigation|test_data`), kanıt
+  `target/kanit/<Sınıf>.<metot>/{ekran.png,sayfa-kaynagi.xml}`; CI koşularında
+  `run.ortam.platform`. `enqueue_ci(script_id=…)` platformu `script.platform`'dan almalı; Java
+  PR'ları için platform başına zorunlu check.
 
 ## 3. Şeritler
 

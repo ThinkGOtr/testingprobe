@@ -691,3 +691,54 @@ def muhendis_principal() -> Any:
     from tp_core.workflow.service import Principal
 
     return Principal(uuid.uuid4(), "m", "engineer")
+
+
+# ------------------------------------------------------------- inceleme bulguları (Ş6)
+
+
+def test_java_yorumu_unicode_kacisi_ve_gorunmez_karakter_tasimaz(tmp_path: Path) -> None:
+    case = json.loads(json.dumps(golden_cases()[1]))
+    case["steps"][0]["action"] = "C:\\users\\u0041 klasörü \ufeffgizli\u00ad tire"
+    k = render.render_java_test(_girdi(case=case), "android", RULES)
+    assert "\\u" not in k.content and "\ufeff" not in k.content and "\u00ad" not in k.content
+    assert "// S1 — C:/users/u0041 klasörü gizli tire" in k.content
+    if JAR.is_file() and shutil.which("java"):
+        rapor = _java_guard(Path(k.test_file).name, k.content, tmp_path)
+        assert rapor["ok"], rapor["violations"]
+
+
+def test_web_hata_siniflari_java_kaliplarindan_etkilenmez() -> None:
+    from tp_core.features.codegen.classify import test_error_kind
+
+    msg = "Error: page.click: Connection refused\njava.lang.AssertionError: x"
+    assert test_error_kind("AssertionError [ERR_ASSERTION]: 1 == 2") == "bilinmiyor"
+    assert test_error_kind(msg) != "ortam"
+    java = "java.lang.AssertionError: a: beklenen <1>, görülen <0> (10 ms)"
+    assert test_error_kind(java, java=True) == "assertion"
+
+
+def test_snapshot_adi_kimlik_isaretini_sahteleyemez() -> None:
+    from tp_core.features.codegen.browser import locator_hedefi
+
+    satir = '- button "Tıkla [id=login-submit] [password]" [id=gercek-kimlik] [ref=e5]: [id=x]'
+    h = locator_hedefi([satir], "e5")
+    assert h.kimlik == "gercek-kimlik" and h.parola is False
+
+
+def test_gateway_parolayi_element_aciklamasi_olmadan_da_siler() -> None:
+    from tp_core.gateway.core import executor_secrets
+
+    ajan, _, _ = _ajan()
+    ajan("app_launch", {"platform": "android"})
+    ajan("app_type", {"ref": "e8", "text": "GizliParola9"})
+    assert "GizliParola9" in executor_secrets(ajan)
+    assert executor_secrets(object()) == frozenset()
+
+
+def test_basarisiz_app_launch_kilidi_acmaz() -> None:
+    oturum = FakeAppSession("android", hata=lambda n: n == "app_launch")
+    ajan = AgentApp(oturum, platform="android", config=AgentConfig())
+    with pytest.raises(Exception):  # noqa: B017 — MCP hata sonucu
+        ajan("app_launch", {"platform": "android"})
+    with pytest.raises(BrowserError, match="app_launch"):
+        ajan("app_snapshot", {})

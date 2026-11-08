@@ -401,10 +401,15 @@ def locator_hedefi(satirlar: Sequence[str] | None, target: Any) -> LocatorHedefi
             # Kart: üst elemanın bloğunda tek ürün kodu. Birden çoksa (sayfa gövdesi) kapsam yok.
             if len(kodlar) == 1:
                 kod = kodlar.pop()
-    kimlik_m = _KIMLIK_ATTR.search(satir)
+    # Öznitelikler yalnızca erişilebilir addan SONRA aranır: görünen ad `[id=…]` taşısa da
+    # kimlik/parola işareti sahtelenemez.
+    oznitelik = satir[m.end() :] if m else satir
+    oznitelik = oznitelik.split("]:", 1)[0]  # değer kısmı (`: …`) dışarıda
+    kimlik_m = _KIMLIK_ATTR.search(oznitelik)
     return LocatorHedefi(
-        ref, True, rol, ad, kod, kimlik_m.group(1) if kimlik_m else None, "[password]" in satir
-    )
+        ref, True, rol, ad, kod, kimlik_m.group(1) if kimlik_m else None,
+        "[password]" in oznitelik,
+    )  # fmt: skip
 
 
 class AgentBrowser:
@@ -604,10 +609,23 @@ class AgentApp(AgentBrowser):
         self.platform = platform
         self._baslatildi = False
 
+    @property
+    def gateway_gizliler(self) -> frozenset[str]:
+        """Geçidin `tool_call` kaydından sileceği değerler (`gateway.core.executor_secrets`):
+        parola alanına yazılan her metin ve ajan parolası — `element` açıklaması parolayı
+        söylemese bile (snapshot `[password]`)."""
+        return frozenset(self.gizliler)
+
     def _parola_mi(self, args: Mapping[str, Any]) -> bool:
         if parola_alani(args):
             return True
         return locator_hedefi(self._son_snapshot, args.get(self.REF_KEY)).parola
+
+    def __call__(self, name: str, args: dict[str, Any]) -> str:
+        sonuc = super().__call__(name, args)  # hata → istisna; kilit açılmaz
+        if name == APP_LAUNCH:
+            self._baslatildi = True
+        return sonuc
 
     def _hazirla(self, name: str, args: Mapping[str, Any]) -> dict[str, Any]:
         out = super()._hazirla(name, args)
@@ -618,7 +636,6 @@ class AgentApp(AgentBrowser):
                     f"yalnızca bu doğrulamanın platformu başlatılabilir ({self.platform})"
                 )
             out["platform"] = self.platform
-            self._baslatildi = True
             self._son_snapshot = None  # app_launch ref'leri sıfırlar
         elif not self._baslatildi:
             raise BrowserError("Uygulama başlatılmadı: ilk araç çağrısı app_launch olmalı")

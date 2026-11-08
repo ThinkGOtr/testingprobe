@@ -162,19 +162,24 @@ RUNNER_TURU = {
 }
 
 
-def test_error_kind(message: str | None, runner_type: str | None = None) -> str:
-    """Tek bir Playwright hatası: `locator` | `assertion` | `ortam` | `bilinmiyor`.
+def test_error_kind(
+    message: str | None, runner_type: str | None = None, *, java: bool = False
+) -> str:
+    """Tek bir test hatası: `locator` | `assertion` | `ortam` | `bilinmiyor`.
 
     Önce test-runner'ın biçimsel türü (`failure.type`), yoksa/`other` ise mesaj kalıpları.
+    Java/Appium kalıpları yalnızca Java raporunda (`java=True`) uygulanır: web Playwright
+    hatalarının sınıfı değişmez.
     """
     if runner_type in RUNNER_TURU:
         return RUNNER_TURU[runner_type]
     m = message or ""
     if _ORTAM.search(m):
         return "ortam"
-    java = java_hata_turu(m)
-    if java is not None:
-        return java
+    if java:
+        jtur = java_hata_turu(m)
+        if jtur is not None:
+            return jtur
     # Assertion önce: Playwright'ın `expect(locator).toHaveText` zaman aşımı mesajı "Call log"
     # bölümünde `- waiting for getByTestId(...)` satırı taşır; bu bir locator hatası değildir.
     # Locator kalıpları "Call log" satırları dışında aranır.
@@ -191,14 +196,14 @@ def _cagri_kaydi_disi(m: str) -> str:
     return ana
 
 
-def _hata_satiri(test: Mapping[str, Any]) -> dict[str, Any]:
+def _hata_satiri(test: Mapping[str, Any], java: bool = False) -> dict[str, Any]:
     err = str(test.get("error") or "")
     failure = test.get("failure") if isinstance(test.get("failure"), Mapping) else {}
     failure = failure or {}
     m_exp, m_rec = _EXPECTED.search(err), _RECEIVED.search(err)
     exp = failure.get("expected") or (m_exp.group("v").strip() if m_exp else None)
     rec = failure.get("received") or (m_rec.group("v").strip() if m_rec else None)
-    if exp is None and rec is None:
+    if java and exp is None and rec is None:
         exp, rec = java_beklenen_gorulen(err or failure.get("message"))
     adim = failure.get("step") if isinstance(failure.get("step"), Mapping) else None
     konum = failure.get("test_location") or failure.get("location")
@@ -210,7 +215,7 @@ def _hata_satiri(test: Mapping[str, Any]) -> dict[str, Any]:
         "gerceklesen": _kirp(rec),
         "adim": _kirp(adim.get("title")) if adim else None,
         "locator": _kirp(failure.get("locator")),
-        "tur": test_error_kind(err, failure.get("type")),
+        "tur": test_error_kind(err, failure.get("type"), java=java),
         "satir": satir if isinstance(satir, int) and not isinstance(satir, bool) else None,
     }
 
@@ -300,7 +305,8 @@ def classify(report: Mapping[str, Any]) -> Siniflama:
             **ortak,
         )
     kirmizi = [t for t in tests if t.get("status") not in (*GECEN, "skipped")]
-    satirlar = [_hata_satiri(t) for t in kirmizi]
+    java_rapor = java_raporu_mu(report)
+    satirlar = [_hata_satiri(t, java_rapor) for t in kirmizi]
     turler = {s["tur"] for s in satirlar}
     if "ortam" in turler:
         sinif = "ortam"

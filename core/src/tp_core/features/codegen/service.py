@@ -196,11 +196,6 @@ def bayiler_path() -> str:
     return f"{e2e_app_root()}/src/test/java/com/antreklabs/bayi/altyapi/Bayiler.java"
 
 
-def test_kok(platform: str | None) -> str:
-    """Platformun forge'daki test kökü: web `e2e`, uygulama `e2e-app`."""
-    return e2e_app_root() if platformlar.uygulama_mi(platform) else e2e_root()
-
-
 def e2e_goreli(dosya_yolu: str | None, platform: str | None = None) -> str:
     """Forge yolu → toolchain `/check` `test_files` yolu (e2e / e2e-app köküne göre)."""
     yol = dosya_yolu or ""
