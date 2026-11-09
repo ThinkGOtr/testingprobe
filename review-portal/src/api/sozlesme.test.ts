@@ -101,7 +101,8 @@ describe("örnek veri yalnızca core durumlarını üretir", () => {
     };
     await oturumAc("muhendis");
     await api.kodUret(["case-1-2", "case-1-3", "case-1-1"]);
-    const yeni = () => mockVerisi().scriptler.filter((s) => !["scr-1", "scr-2", "scr-3"].includes(s.id));
+    // 009: örnek veride ayrıca uygulama platformlarının script'leri var (scr-and, scr-ios, scr-win).
+    const yeni = () => mockVerisi().scriptler.filter((s) => !["scr-1", "scr-2", "scr-3", "scr-and", "scr-ios", "scr-win"].includes(s.id));
     await izle(() => yeni().length === 3 && yeni().every((s) => ["pr_open", "failed", "blocked"].includes(s.durum)));
     await api.kirarakDogrula("scr-2");
     await izle(() => mockVerisi().scriptler.find((s) => s.id === "scr-2")!.break_verify.durum === "passed");

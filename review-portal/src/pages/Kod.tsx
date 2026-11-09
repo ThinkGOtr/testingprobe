@@ -8,12 +8,16 @@ import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { SCRIPT_DURUMU, scriptIsareti } from "../lib/etiketler";
 import { YEREL_SINIF } from "../lib/kapi";
 import { tarih } from "../lib/format";
+import { PlatformRozeti, PlatformSecici } from "../components/Platform";
+import { PLATFORM_ETIKETI, type Platform } from "../lib/platform";
 
 export function Kod() {
   const scriptler = useVeri(() => api.scriptler(), []);
   const caseler = useVeri(() => api.caseler(), []);
   const [secili, setSecili] = useState<Set<string>>(new Set());
   const [kapatilanlar, setKapatilanlar] = useState(false);
+  // 009: üretimin hedef platformu (varsayılan Web). Aynı case her platformda ayrı script/PR alır.
+  const [platform, setPlatform] = useState<Platform>("web");
   const islem = useIslem();
   const bildir = useBildirim();
   const sessiz = useGeciktirilmis(() => {
@@ -23,15 +27,20 @@ export function Kod() {
 
   // Kapatılmış (değişiklik istendi / reddedildi / yerine geçildi) test case'i yeniden üretime açar:
   // çekirdek kapalı script'ten sonra yeni üretimi kabul eder.
-  const scriptliCaseler = new Set((scriptler.veri ?? []).filter((s) => s.durum !== "closed").flatMap((s) => s.case_ids));
+  // Aday: seçili platformda açık script'i olmayan onaylı case (başka platformdaki script'i engel değil).
+  const scriptliCaseler = new Set(
+    (scriptler.veri ?? []).filter((s) => s.durum !== "closed" && (s.platform ?? "web") === platform).flatMap((s) => s.case_ids),
+  );
   const adaylar = (caseler.veri ?? []).filter((c) => (c.durum === "approved" || c.durum === "published") && !scriptliCaseler.has(c.id));
+  // Platform değişince başka platformda artık aday olmayan seçimler sayılmaz/gönderilmez.
+  const seciliAdaylar = adaylar.filter((c) => secili.has(c.id)).map((c) => c.id);
   const tumScriptler = scriptler.veri ?? [];
   const kapaliSayisi = tumScriptler.filter((s) => s.durum === "closed").length;
   // Yeniden üretimle kapatılan eski kayıtlar varsayılan olarak gizlenir (aynı test iki kez görünmesin).
   const gorunen = kapatilanlar ? tumScriptler : tumScriptler.filter((s) => s.durum !== "closed");
 
-  const yenidenUret = async (caseIds: string[]) => {
-    const s = await islem.calistir(() => api.kodUret(caseIds));
+  const yenidenUret = async (caseIds: string[], p: Platform) => {
+    const s = await islem.calistir(() => api.kodUret(caseIds, p));
     if (s) {
       bildir(s.mesaj ?? "Yeniden üretim başladı; eski kayıt kapatılır.");
       void scriptler.yenile(true);
@@ -42,7 +51,7 @@ export function Kod() {
     <>
       <SayfaBasligi
         baslik="Kod üretimi"
-        aciklama="Onaylı case'ler uygulamada adım adım doğrulanır (Playwright MCP), page object'lere eşlenir ve şablondan TypeScript teste dönüşür. Model kod yazmaz; yerel kontrol yeşilse bot ayrı dalda PR açar."
+        aciklama="Onaylı case'ler seçilen platformda adım adım doğrulanır (Web: Playwright MCP; Android, iOS, Windows: Appium), page object'lere eşlenir ve şablondan teste dönüşür (Web: TypeScript, uygulamalar: Java). Model kod yazmaz; yerel kontrol yeşilse bot ayrı dalda PR açar."
       />
 
       <Kart
@@ -50,10 +59,10 @@ export function Kod() {
         eylemler={
           <IslemDugmesi
             roller={["engineer"]}
-            disabled={secili.size === 0}
+            disabled={seciliAdaylar.length === 0}
             calisiyor={islem.calisiyor}
             onClick={async () => {
-              const s = await islem.calistir(() => api.kodUret([...secili]));
+              const s = await islem.calistir(() => api.kodUret(seciliAdaylar, platform));
               if (s) {
                 bildir(s.mesaj ?? "Kod üretimi başladı.");
                 setSecili(new Set());
@@ -62,17 +71,24 @@ export function Kod() {
               }
             }}
           >
-            Seçilenler için kod üret ({secili.size})
+            Seçilenler için kod üret ({seciliAdaylar.length}){platform !== "web" && ` · ${PLATFORM_ETIKETI[platform]}`}
           </IslemDugmesi>
         }
       >
+        <PlatformSecici
+          etiket="Hedef platform"
+          deger={platform}
+          degistir={setPlatform}
+          aciklamali
+          ipucu="Aynı onaylı case her platform için ayrı test ve ayrı PR olur; listede yalnızca bu platformda kodu üretilmemiş case'ler görünür."
+        />
         {islem.hata && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
         {caseler.yukleniyor && !caseler.veri ? (
           <Yukleniyor />
         ) : caseler.hata && !caseler.veri ? (
           <HataKutusu hata={caseler.hata} kaynak={caseler.hataNesnesi} yenile={() => void caseler.yenile()} />
         ) : adaylar.length === 0 ? (
-          <BosDurum baslik="Kodu üretilmemiş onaylı case yok." />
+          <BosDurum baslik={platform === "web" ? "Kodu üretilmemiş onaylı case yok." : `${PLATFORM_ETIKETI[platform]} için kodu üretilmemiş onaylı case yok.`} />
         ) : (
           <ul className="secim-liste">
             {adaylar.map((c) => (
@@ -143,7 +159,10 @@ export function Kod() {
                         <Link to={`/kod/${encodeURIComponent(s.id)}`} className="satir-baglanti">
                           {s.baslik}
                         </Link>
-                        <div className="mono kucuk soluk">{s.dosya_yolu}</div>
+                        <div className="satir-ogeler kucuk">
+                          <PlatformRozeti platform={s.platform} />
+                          <span className="mono soluk">{s.dosya_yolu}</span>
+                        </div>
                       </td>
                       <td>
                         <span className="satir-ogeler">
@@ -186,7 +205,7 @@ export function Kod() {
                             tur="ikincil"
                             calisiyor={islem.calisiyor}
                             title="Aynı onaylı case için kodu yeniden üretir; bu kayıt kapatılır."
-                            onClick={() => yenidenUret(s.case_ids)}
+                            onClick={() => yenidenUret(s.case_ids, s.platform ?? "web")}
                           >
                             Yeniden üret
                           </IslemDugmesi>
