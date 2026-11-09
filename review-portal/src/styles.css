@@ -4577,12 +4577,15 @@ td > .satir-baglanti + .cip,
 }
 .platform-secenek input {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  margin: 0;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
   opacity: 0;
-  cursor: pointer;
 }
 .platform-secenek:has(input:focus-visible) {
   outline: 2px solid var(--focus);
