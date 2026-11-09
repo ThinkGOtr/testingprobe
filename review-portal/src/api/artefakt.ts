@@ -20,7 +20,8 @@ const ARTEFAKT_YOLU = /^\/api\/artifacts\/[^?#]*$/;
 /** Okunabilir kanıt adresi mi: core artefakt ucu ya da `data:` (örnek veri). */
 export function okunabilirArtefakt(url: string | null | undefined): boolean {
   if (!url) return false;
-  return url.startsWith("data:") || (ARTEFAKT_YOLU.test(url) && !url.includes(".."));
+  // `..` ve kodlanmış hâli (%2e): tarayıcı normalleştirince artefakt ucunun dışına çıkılmasın.
+  return url.startsWith("data:") || (ARTEFAKT_YOLU.test(url) && !url.includes("..") && !/%2e/i.test(url) && !url.includes("\\"));
 }
 
 function kes(baytlar: Uint8Array, sinir: number): ArtefaktMetni {
@@ -41,7 +42,13 @@ function dataCoz(url: string, sinir: number): ArtefaktMetni {
     for (let i = 0; i < ikili.length; i++) b[i] = ikili.charCodeAt(i);
     return kes(b, sinir);
   }
-  return kes(new TextEncoder().encode(decodeURIComponent(govde)), sinir);
+  let metin: string;
+  try {
+    metin = decodeURIComponent(govde);
+  } catch {
+    throw new Error("Kanıt adresi çözülemedi.");
+  }
+  return kes(new TextEncoder().encode(metin), sinir);
 }
 
 export async function artefaktMetniOku(

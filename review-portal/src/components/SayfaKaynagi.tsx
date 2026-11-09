@@ -41,7 +41,7 @@ export function SayfaKaynagiGoruntuleyici({ url, etiket = "Hata anı sayfa kayna
         bulur.{" "}
         {url && !url.startsWith("data:") && (
           <Baglanti href={url} yokNedeni="dosya sunucusu yok">
-            Ham dosyayı aç
+            Ham dosyayı indir
           </Baglanti>
         )}
       </p>

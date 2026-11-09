@@ -67,7 +67,7 @@ export function onarimAsamalari(o: LocatorOnarimi): Asama[] {
   // 009: uygulama testinde aria snapshot yok; onarım işi hata anı sayfa kaynağını yeniden okur.
   const app = sayfaKaynagiOnerisiMi(o);
   const ariaDurumu: Asama["durum"] =
-    o.aria_dogrulama?.eslesti === true ? "tamam" : o.aria_dogrulama?.eslesti === false ? "hata" : app && ileri ? "tamam" : "bekliyor";
+    o.aria_dogrulama?.eslesti === true ? "tamam" : o.aria_dogrulama?.eslesti === false ? "hata" : "bekliyor";
   return [
     {
       ad: app ? "Öneri (LLM'siz: hata anı sayfa kaynağından okunan kimlik)" : "Öneri (LLM'siz: DOM'dan okunan testId)",
@@ -179,7 +179,7 @@ function OnarimKarti({ o, hataId, yenile }: { o: LocatorOnarimi; hataId: string;
       {app ? (
         <p className="soluk kucuk" data-testid="onarim-sayfa-kaynagi">
           Uygulama testi: yeni kimlik hata anındaki sayfa kaynağından (Appium XML) bulundu. Onarım yalnızca{" "}
-          <span className="mono">{o.dosya || "Kimlikler.java"}</span> içindeki ilgili kimlik değerini değiştirir; ekran nesnesi metotları ve test
+          <span className="mono">{o.dosya || "(dosya bilinmiyor)"}</span> içindeki ilgili kimlik değerini değiştirir; ekran nesnesi metotları ve test
           adımları değişmez (AST koruması). Merge insan onayı ister.
         </p>
       ) : (
@@ -579,6 +579,8 @@ function KanitKarti({
 }) {
   if (!k && linkler.length === 0) return null;
   const app = uygulamaKanitlari(linkler, platform);
+  // Sayfa kaynağı görüntüleyicide (kendi bağlantısıyla) gösterilir; listede tekrarlanmaz.
+  const listedeki = app.sayfaKaynagi ? linkler.filter((l) => kanitTuru(l) !== "page_source") : linkler;
   return (
     <Kart baslik="Kanıt">
       <div className="kanit-izgara">
@@ -615,7 +617,7 @@ function KanitKarti({
       {(app.sayfaKaynagi || app.ekran) && (
         <div className="uygulama-kanit">
           {app.ekran && <EkranGoruntusuKaniti url={app.ekran.url} etiket={`Hata anı ekran görüntüsü${platform ? ` (${PLATFORM_ETIKETI[platform]})` : ""}`} />}
-          {app.sayfaKaynagi && <SayfaKaynagiGoruntuleyici url={app.sayfaKaynagi.url} />}
+          {app.sayfaKaynagi && <SayfaKaynagiGoruntuleyici key={app.sayfaKaynagi.url ?? "yok"} url={app.sayfaKaynagi.url} />}
         </div>
       )}
       {k?.uyarilar && k.uyarilar.length > 0 && (
@@ -625,9 +627,9 @@ function KanitKarti({
           ))}
         </ul>
       )}
-      {linkler.length > 0 && (
+      {listedeki.length > 0 && (
         <ul className="duz-liste kanit-gruplari" aria-label="Kanıt bağlantıları">
-          {kanitGruplari(linkler).map((g) => (
+          {kanitGruplari(listedeki).map((g) => (
             <li key={g.etiket} className="kanit-grubu">
               {g.linkler.length === 1 ? (
                 <Baglanti href={g.linkler[0].url} yokNedeni="dosya sunucusu yok">

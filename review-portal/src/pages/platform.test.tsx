@@ -81,7 +81,8 @@ describe("uyarlayıcılar (core şekli)", () => {
       checks: { yol: "checks/x.json", var: true, durum: "completed", conclusion: "success", platformlar: { "local-ci-android": { durum: "completed", conclusion: "failure" } } },
     });
     expect(d.platform_kontrolleri).toEqual([{ ad: "local-ci-android", platform: "android", durum: "failed" }]);
-    expect(d.platform).toBe("android");
+    // Check'ler commit'indir: web koşusunun commit'inde de local-ci-android olabilir → platform türetilmez.
+    expect(d.platform).toBeNull();
   });
 
   it("triage: öneri kaynağı/platformu okunur; failure platformu öneriden düşer", () => {
@@ -123,6 +124,17 @@ describe("Kod üretimi: platform seçimi", () => {
     expect(s.branch).toMatch(/^tp\/case-android-/);
     expect(s.dosya_yolu).toMatch(/e2e-app\/.*\.java$/);
     casus.mockRestore();
+  });
+
+  it("platform değişince seçim temizlenir (Web'de seçilen case Android'e taşınmaz)", async () => {
+    await oturumAc("muhendis");
+    const u = userEvent.setup();
+    uygulama("/kod");
+    await u.click(await screen.findByRole("checkbox", { name: /minimum tutarın altında uyarı/ }));
+    expect(screen.getByRole("button", { name: "Seçilenler için kod üret (1)" })).toBeEnabled();
+    await u.click(screen.getByRole("radio", { name: /^Android/ }));
+    expect(screen.getByRole("checkbox", { name: /minimum tutarın altında uyarı/ })).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "Seçilenler için kod üret (0) · Android" })).toBeDisabled();
   });
 
   it("liste satırında platform rozeti (web + uygulamalar)", async () => {

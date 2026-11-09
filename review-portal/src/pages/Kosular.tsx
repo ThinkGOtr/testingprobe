@@ -364,7 +364,7 @@ function PlatformKontrolleri({ k }: { k: KosuDetayTuru }) {
   if (pk.length === 0) return null;
   return (
     <Kart baslik="Platform kontrolleri">
-      <p className="kucuk soluk">Aynı commit için her platformun yerel CI kontrolü ayrı kayıttır; Java PR'larında her biri zorunlu check'tir.</p>
+      <p className="kucuk soluk">Bu koşunun commit'i için uygulama platformlarının yerel CI kontrolleri (her biri ayrı kayıt; Java PR'larında zorunlu check). Web kontrolü (local-ci) PR check'lerinde görünür.</p>
       <ul className="duz-liste" aria-label="Platform kontrolleri">
         {pk.map((c) => {
           const d = PK_DURUMU[c.durum] ?? { etiket: c.durum, ton: "notr" as const };

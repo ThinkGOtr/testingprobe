@@ -23,6 +23,7 @@ describe("artefaktMetniOku", () => {
     expect(okunabilirArtefakt("data:application/xml;base64,PGEvPg==")).toBe(true);
     expect(okunabilirArtefakt("https://ornek.test/x.xml")).toBe(false);
     expect(okunabilirArtefakt("/api/artifacts/runs/../../etc")).toBe(false);
+    expect(okunabilirArtefakt("/api/artifacts/%2E%2e/requirements")).toBe(false);
     expect(okunabilirArtefakt("/api/requirements")).toBe(false);
     expect(okunabilirArtefakt(null)).toBe(false);
     const f = vi.fn();
@@ -35,6 +36,7 @@ describe("artefaktMetniOku", () => {
     const b64 = btoa(String.fromCharCode(...new TextEncoder().encode("<a>Giriş</a>")));
     expect((await artefaktMetniOku(`data:application/xml;base64,${b64}`)).metin).toBe("<a>Giriş</a>");
     expect((await artefaktMetniOku(`data:text/plain,${encodeURIComponent("<b>ş</b>")}`)).metin).toBe("<b>ş</b>");
+    await expect(artefaktMetniOku("data:text/plain,%E0%A4%A")).rejects.toThrow("Kanıt adresi çözülemedi.");
   });
 
   it("boyut sınırında kesilir ve işaretlenir", async () => {

@@ -29,7 +29,7 @@ export function Kod() {
   // çekirdek kapalı script'ten sonra yeni üretimi kabul eder.
   // Aday: seçili platformda açık script'i olmayan onaylı case (başka platformdaki script'i engel değil).
   const scriptliCaseler = new Set(
-    (scriptler.veri ?? []).filter((s) => s.durum !== "closed" && (s.platform ?? "web") === platform).flatMap((s) => s.case_ids),
+    (scriptler.veri ?? []).filter((s) => s.durum !== "closed" && (s.platform === undefined ? "web" : s.platform) === platform).flatMap((s) => s.case_ids),
   );
   const adaylar = (caseler.veri ?? []).filter((c) => (c.durum === "approved" || c.durum === "published") && !scriptliCaseler.has(c.id));
   // Platform değişince başka platformda artık aday olmayan seçimler sayılmaz/gönderilmez.
@@ -78,7 +78,12 @@ export function Kod() {
         <PlatformSecici
           etiket="Hedef platform"
           deger={platform}
-          degistir={setPlatform}
+          degistir={(p) => {
+            // Bir platform için seçilen case başka platforma taşınmaz: seçim temizlenir.
+            setPlatform(p);
+            setSecili(new Set());
+          }}
+          disabled={islem.calisiyor}
           aciklamali
           ipucu="Aynı onaylı case her platform için ayrı test ve ayrı PR olur; listede yalnızca bu platformda kodu üretilmemiş case'ler görünür."
         />
@@ -199,13 +204,14 @@ export function Kod() {
                         {/* Defect adayının testi doğru (uygulama farklı davranıyor): yeniden üretim önerilmez, karar triage'da. */}
                         {(s.durum === "blocked" || s.durum === "failed") &&
                           s.case_ids.length > 0 &&
+                          s.platform !== null &&
                           !(s.yerel_sinif === "defect_adayi" || s.engel?.tur === "defect_candidate") && (
                           <IslemDugmesi
                             roller={["engineer"]}
                             tur="ikincil"
                             calisiyor={islem.calisiyor}
                             title="Aynı onaylı case için kodu yeniden üretir; bu kayıt kapatılır."
-                            onClick={() => yenidenUret(s.case_ids, s.platform ?? "web")}
+                            onClick={() => yenidenUret(s.case_ids, s.platform === undefined ? "web" : (s.platform as Platform))}
                           >
                             Yeniden üret
                           </IslemDugmesi>

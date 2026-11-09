@@ -541,16 +541,11 @@ export function kosuUyarla(k: Ham): Kosu {
 }
 
 /**
- * Koşunun platformu: core `platform` → `ortam.platform` (test-runner/CI) → commit'in tek bir
- * `local-ci-<platform>` kontrolü varsa o. Hiçbiri yoksa null (web varsayılmaz: liste ucu 009'da
- * platformu henüz taşımıyor olabilir; uydurulmaz).
+ * Koşunun platformu: core `platform` → `ortam.platform` (test-runner/CI). Yoksa null (web varsayılmaz;
+ * commit'in check'leri koşunun değil commit'indir, platform onlardan türetilmez — uydurulmaz).
  */
 function kosuPlatformu(k: Ham, ortam: Ham): Platform | null {
-  const dogrudan = platformUyarla(k.platform) ?? platformUyarla(ortam.platform);
-  if (dogrudan) return dogrudan;
-  const pk = platformKontrolleri(k);
-  const kumesi = new Set((pk ?? []).map((c) => c.platform).filter(Boolean));
-  return kumesi.size === 1 ? ([...kumesi][0] as Platform) : null;
+  return platformUyarla(k.platform) ?? platformUyarla(ortam.platform);
 }
 
 /**

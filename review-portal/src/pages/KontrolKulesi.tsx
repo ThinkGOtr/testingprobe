@@ -20,7 +20,7 @@ import { PLATFORMLAR, PLATFORM_ETIKETI, platformaGoreSuz, platformSecimiOku, typ
 /** Platform başına üretilen test sayıları (Kule "Platform dağılımı"; kapatılan kayıtlar sayılmaz). */
 export function platformDagilimi(scriptler: Script[]): { platform: Platform; toplam: number; pr_acik: number; birlesti: number; defect: number }[] {
   return PLATFORMLAR.map((platform) => {
-    const ps = scriptler.filter((s) => (s.platform ?? "web") === platform && s.durum !== "closed");
+    const ps = scriptler.filter((s) => (s.platform === undefined ? "web" : s.platform) === platform && s.durum !== "closed");
     return {
       platform,
       toplam: ps.length,
