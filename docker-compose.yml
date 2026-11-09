@@ -9,12 +9,15 @@
 #   runner-net : internal; toolchain-worker <-> test-runner
 #   mcp-net    : internal; yalnızca core-worker <-> playwright-mcp
 #   app-mcp-net: internal; yalnızca core-worker <-> app-mcp (mobil/masaüstü ajan aracı, 009)
-#   cihaz-net  : yalnızca app-mcp + appium-gw; hosttaki Appium'a (host.docker.internal:4723) çıkış
-#                için internal DEĞİL (internal ağdan host'a ulaşılamaz). docs/CIHAZ-ALTYAPISI.md §5
-#   appium-net : internal; yalnızca test-runner <-> appium-gw (LocalForge Java koşusu, 009 §2.7)
+#   cihaz-net  : yalnızca app-mcp + appium-gw(-windows); hosttaki Appium'a (host.docker.internal:4723)
+#                ve Windows VM Appium'una çıkış için internal DEĞİL (internal ağdan host'a
+#                ulaşılamaz). docs/CIHAZ-ALTYAPISI.md §5
+#   appium-net : internal; yalnızca test-runner <-> appium-gw / appium-gw-windows (LocalForge Java
+#                koşusu, 009 §2.7)
 # test-runner yalnızca demo-net + runner-net + appium-net'te: postgres, core-api, playwright-mcp ve
 # internete erişemez; demo-app-web'e (UI) ve demo-app-api'ye (/test/* sıfırlama + kırılma, belirteçli)
-# erişir. Tek ağ istisnası: appium-gw üzerinden YALNIZCA host.docker.internal:4723 (Appium).
+# erişir. Tek ağ istisnası: appium-gw üzerinden YALNIZCA host.docker.internal:4723 (Appium) ve
+# `mobil-windows` profilinde appium-gw-windows üzerinden YALNIZCA TP_WINDOWS_VM_APPIUM (VM Appium).
 # playwright-mcp yalnızca agent-net + mcp-net'te: tarayıcısı (ve browser_run_code_unsafe gibi
 # kapatılamayan araçları) yalnızca demo-app-web'e ulaşır (nginx /api/test/*'i kapatır); core-api,
 # jira-sim, postgres, demo-app-api, test-runner ve internete erişemez; host'a port açmaz.
@@ -203,7 +206,9 @@ services:
       TP_REPLAY_STRICT: ${TP_REPLAY_STRICT:-0}
       PLAYWRIGHT_MCP_URL: http://playwright-mcp:8931/mcp
       # Mobil/masaüstü doğrulama ajanının aracı (009; app-mcp `mobil` profiliyle başlar).
-      APP_MCP_URL: http://app-mcp:8932/mcp
+      # Yedek yol (konteyner UTM ağına ulaşamazsa): app-mcp hostta süreç olarak koşar ve
+      # APP_MCP_URL=http://host.docker.internal:<port>/mcp verilir (docs/WINDOWS-VM.md §5.1).
+      APP_MCP_URL: ${APP_MCP_URL:-http://app-mcp:8932/mcp}
       # Yazma yetkili dış sistem kimlikleri — yalnızca core-worker.
       JIRA_WRITE_EMAIL: ${JIRA_WRITE_EMAIL:-writer@sim.local}
       JIRA_WRITE_TOKEN: ${JIRA_WRITE_TOKEN:-sim}
@@ -344,7 +349,9 @@ services:
       TP_E2E_ROOT: ${TP_E2E_ROOT:-e2e}
       # Java (Appium) koşusu (009 §2.7, runner/java_run.py): e2e-app kökü ve platform başına Appium.
       # Appium hostta; test-runner ona yalnızca appium-gw (TCP yönlendirici, `mobil` profili)
-      # üzerinden ulaşır. Boş = o platformun Java koşusu sağlık kontrolünde `error`.
+      # üzerinden ulaşır. Boş = o platformun Java koşusu sağlık kontrolünde `error`. Windows (UTM
+      # VM): `mobil-windows` profilindeki appium-gw-windows; açıkça verilir
+      # (TP_RUNNER_APPIUM_URL_WINDOWS=http://appium-gw-windows:4723), varsayılan boş = kapalı.
       TP_E2E_APP_ROOT: ${TP_E2E_APP_ROOT:-e2e-app}
       APPIUM_URL_ANDROID: ${TP_RUNNER_APPIUM_URL_ANDROID:-http://appium-gw:4723}
       APPIUM_URL_IOS: ${TP_RUNNER_APPIUM_URL_IOS:-http://appium-gw:4723}
@@ -354,6 +361,9 @@ services:
       TP_APP_ID_IOS: ${TP_APP_ID_IOS:-com.antreklabs.bayisiparis}
       TP_APP_ID_WINDOWS: ${TP_APP_ID_WINDOWS:-}
       TP_APP_PATH_WINDOWS: ${TP_APP_PATH_WINDOWS:-}
+      # Windows: NovaWindows appArguments / appWorkingDir (ör. --api-url http://192.168.64.1:18081/api).
+      TP_APP_ARGS_WINDOWS: ${TP_APP_ARGS_WINDOWS:-}
+      TP_APP_WORKDIR_WINDOWS: ${TP_APP_WORKDIR_WINDOWS:-}
       TP_DEVICE_UDID_ANDROID: ${APP_ANDROID_UDID:-}
       TP_DEVICE_UDID_IOS: ${APP_IOS_UDID:-}
     volumes:
@@ -424,9 +434,12 @@ services:
       # Ajan yalnızca bu uygulamayı başlatabilir (app_launch platform dışında argüman almaz).
       APP_ANDROID_PACKAGE: ${APP_ANDROID_PACKAGE:-com.antreklabs.bayisiparis}
       APP_ANDROID_ACTIVITY: ${APP_ANDROID_ACTIVITY:-.MainActivity}
+      APP_ANDROID_UDID: ${APP_ANDROID_UDID:-}
       APP_IOS_BUNDLE_ID: ${APP_IOS_BUNDLE_ID:-com.antreklabs.bayisiparis}
       APP_IOS_UDID: ${APP_IOS_UDID:-}
       APP_WINDOWS_APP: ${APP_WINDOWS_APP:-}
+      APP_WINDOWS_ARGS: ${APP_WINDOWS_ARGS:-}
+      APP_WINDOWS_WORKDIR: ${APP_WINDOWS_WORKDIR:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks: [app-mcp-net, cihaz-net]
@@ -455,6 +468,40 @@ services:
     security_opt: ["no-new-privileges:true"]
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks: [appium-net, cihaz-net]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { memory: 64m }
+
+  # test-runner'ın Windows sanal makinesindeki (UTM) Appium'a çıkışı (009 §2.7; docs/WINDOWS-VM.md
+  # §5.3). appium-gw ile aynı sertleştirme; hedef yalnızca TP_WINDOWS_VM_APPIUM (host:port, varsayılan
+  # 192.168.64.2:4723) ve konteyner açılışında biçimi doğrulanır (socat adres seçeneği enjekte
+  # edilemez: virgül, boşluk vb. reddedilir). Ayrı profil: VM yokken `mobil` profili bozulmaz.
+  #   docker compose --profile mobil-windows up -d appium-gw-windows
+  #   .env: TP_RUNNER_APPIUM_URL_WINDOWS=http://appium-gw-windows:4723
+  # Docker Desktop'ın konteynerden UTM ağına (192.168.64.0/24) yönlendirmesi bu Mac'te VM ile
+  # denenmedi (docs/WINDOWS-VM.md §5.3).
+  appium-gw-windows:
+    image: alpine/socat:1.8.0.3@sha256:beb4a68d9e4fe6b0f21ea774a0fde6c31f580dde6368939ed70100c5385b015e
+    profiles: [mobil-windows]
+    environment:
+      HEDEF: ${TP_WINDOWS_VM_APPIUM:-192.168.64.2:4723}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        h="$$HEDEF"
+        port="$${h##*:}"
+        if ! printf '%s\n' "$$h" | grep -Eqx '[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?:[0-9]{1,5}' \
+          || [ "$$port" -lt 1 ] || [ "$$port" -gt 65535 ]; then
+          echo "TP_WINDOWS_VM_APPIUM host:port biçiminde olmalı (ör. 192.168.64.2:4723): '$$h'" >&2
+          exit 64
+        fi
+        exec socat TCP-LISTEN:4723,fork,reuseaddr,max-children=16 "TCP:$$h,connect-timeout=10"
+    user: "65534:65534"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     networks: [appium-net, cihaz-net]
     restart: unless-stopped
     deploy:

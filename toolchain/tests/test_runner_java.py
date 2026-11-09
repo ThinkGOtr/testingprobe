@@ -346,3 +346,24 @@ def test_check_names() -> None:
     req = checks.CheckRequest(sha="x", lang="java", platform=None)
     assert req.check_name is None and req.records_check() is False
     assert checks.CheckRequest(sha="x", lang="java", platform="windows").records_check() is True
+
+
+def test_app_settings_windows_args_and_workdir(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Windows: TP_APP_*_WINDOWS → e2e-app APP_PATH / APP_ARGS / APP_WORKDIR (NovaWindows
+    appArguments / appWorkingDir); varsayılan uygulama kimliği yok, Android ayarı sızmaz."""
+    import os
+
+    from runner import java_run
+
+    for k in list(os.environ):
+        if k.startswith(("TP_APP_", "TP_DEVICE_", "TP_PLATFORM_VERSION_")):
+            monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("TP_APP_PATH_WINDOWS", r"C:\tp\bayi\win-arm64\BayiSiparis.exe")
+    monkeypatch.setenv("TP_APP_ARGS_WINDOWS", " --api-url http://192.168.64.1:18081/api ")
+    monkeypatch.setenv("TP_APP_WORKDIR_WINDOWS", r"C:\tp\bayi\win-arm64")
+    monkeypatch.setenv("TP_APP_ARGS_ANDROID", "--yanlis")
+    assert java_run.app_settings("windows") == {
+        "APP_PATH": r"C:\tp\bayi\win-arm64\BayiSiparis.exe",
+        "APP_ARGS": "--api-url http://192.168.64.1:18081/api",
+        "APP_WORKDIR": r"C:\tp\bayi\win-arm64",
+    }

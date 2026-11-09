@@ -91,9 +91,25 @@ public final class SurucuFabrikasi {
     WindowsOptions o = new WindowsOptions();
     o.setAutomationName(NOVA_WINDOWS);
     o.setNewCommandTimeout(KOMUT_ZAMAN_ASIMI);
-    o.setApp(a.appPath().or(a::appId).orElseThrow(() -> eksik("windows", "app.path (exe) ya da app.id (AUMID)")));
-    a.appArgs().ifPresent(o::setAppArguments);
+    String uygulama = a.appPath().or(a::appId).orElseThrow(() -> eksik("windows", "app.path (exe) ya da app.id (AUMID)"));
+    o.setApp(powershellGuvenli("app.path/app.id", uygulama));
+    a.appArgs().map(v -> powershellGuvenli("app.args", v)).ifPresent(o::setAppArguments);
+    a.appWorkdir().map(v -> powershellGuvenli("app.workdir", v)).ifPresent(o::setAppWorkingDir);
     return o;
+  }
+
+  /**
+   * NovaWindows 1.5.0 {@code app} ve {@code appArguments} değerlerini PowerShell'de tek tırnak içine
+   * kaçışsız gömer ({@code Start-Process '<app>' -ArgumentList '<args>'}); tek tırnak (PowerShell'in
+   * akıllı tırnakları dahil) ya da denetim karakteri VM'de keyfi komuta dönüşür, reddedilir.
+   * app-mcp {@code yapilandirma.ts} aynı kuralı uygular.
+   */
+  static String powershellGuvenli(String ad, String deger) {
+    if (deger.matches("(?s).*['‘’‚‛\\p{Cntrl}].*")) {
+      throw new IllegalArgumentException(
+          ad + " tek tırnak ya da denetim karakteri içeremez (NovaWindows PowerShell'e kaçışsız geçirir)");
+    }
+    return deger;
   }
 
   private static IllegalArgumentException eksik(String platform, String ne) {

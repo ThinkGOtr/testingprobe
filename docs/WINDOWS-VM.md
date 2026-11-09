@@ -177,9 +177,9 @@ sürüm: `masaustu-windows.yml` `NODE_VERSION: "22"`). Yeni bir PowerShell'de: `
 ### 4.3 API adresi **[denenmedi]**
 
 Uygulama API kökünü şu sırayla okur: `--api-url` argümanı > `BAYI_API_URL` ortamı > exe yanındaki
-`appsettings.json` > `http://127.0.0.1:8081/api`. **app-mcp Windows'ta uygulamaya argüman geçirmez**
-(`toolchain/app-mcp/src/yapilandirma.ts`: yalnız `appium:app`), bu yüzden ajan yolu için adres
-`appsettings.json`'a yazılmalıdır (Yol A):
+`appsettings.json` > `http://127.0.0.1:8081/api`. Yol A'da en kolayı adresi Appium yeteneğiyle
+vermektir: app-mcp `APP_WINDOWS_ARGS` (→ `appium:appArguments`), Java/test-runner `APP_ARGS` /
+`TP_APP_ARGS_WINDOWS` (§5). Kalıcı istenirse `appsettings.json`'a yazılır:
 
 ```powershell
 @'
@@ -238,7 +238,9 @@ node C:\tp\appium\node_modules\appium\index.js --address <VM-IP> --port 4723 --l
 
 ```bash
 APPIUM_URL_WINDOWS=http://<VM-IP>:4723
-APP_WINDOWS_APP='C:\tp\bayi\win-arm64\BayiSiparis.exe'
+APP_WINDOWS_APP=C:\tp\bayi\win-arm64\BayiSiparis.exe
+APP_WINDOWS_ARGS=--api-url http://192.168.64.1:18081/api       # Yol B'de / appsettings.json'da gerekmez
+# APP_WINDOWS_WORKDIR=C:\tp\bayi\win-arm64                       # isteğe bağlı (appium:appWorkingDir)
 ```
 
 ```bash
@@ -246,11 +248,31 @@ docker compose --profile mobil up -d app-mcp
 ```
 
 Boş `APPIUM_URL_WINDOWS` = Windows platformu kapalı (varsayılan). `APP_WINDOWS_APP` zorunludur
-(.exe yolu VM'deki yoldur, ya da AUMID); ajan başka uygulama seçemez. **Açık nokta:** app-mcp
-konteyneri `cihaz-net` üzerinden çıkar; Docker Desktop konteynerinden UTM ağına (`192.168.64.0/24`)
-erişim bu Mac'te denenmedi. Erişilemezse app-mcp'yi hostta süreç olarak koşturup doğrulayın
-(`cd toolchain/app-mcp && npm run build`, `APPIUM_URL_WINDOWS=… APP_WINDOWS_APP=… node dist/src/index.js`;
-varsayılan `127.0.0.1:8932`).
+(.exe yolu VM'deki yoldur, ya da AUMID); ajan başka uygulama seçemez. `APP_WINDOWS_ARGS` ve
+`APP_WINDOWS_WORKDIR` NovaWindows 1.5.0'ın `appArguments` / `appWorkingDir` yetenekleridir (sürücü
+paketinin README'si ve `lib/constraints.ts`'iyle doğrulandı). Sürücü uygulama yolunu ve argümanları
+PowerShell'de tek tırnak içine kaçışsız gömdüğünden üç değerde de tek tırnak ve denetim karakteri
+reddedilir (app-mcp açılmaz, hata mesajı değişkeni adlandırır).
+
+**Açık nokta:** app-mcp konteyneri `cihaz-net` üzerinden çıkar; Docker Desktop konteynerinden UTM
+ağına (`192.168.64.0/24`) erişim bu Mac'te VM ile denenmedi. Denemek için:
+`docker compose exec app-mcp node -e "fetch('http://<VM-IP>:4723/status').then(r=>r.text()).then(console.log)"`.
+Erişilemezse **yedek yol**: app-mcp hostta süreç olarak koşar, core-worker ona
+`host.docker.internal` ile bağlanır ([CIHAZ-ALTYAPISI.md §6.5](CIHAZ-ALTYAPISI.md)):
+
+```bash
+docker compose --profile mobil stop app-mcp
+cd toolchain/app-mcp && npm ci && npm run build
+APPIUM_URL_WINDOWS=http://<VM-IP>:4723 APP_WINDOWS_APP='C:\tp\bayi\win-arm64\BayiSiparis.exe' \
+  APP_WINDOWS_ARGS='--api-url http://192.168.64.1:18081/api' \
+  APP_MCP_HOST=127.0.0.1 APP_MCP_PORT=8932 APP_MCP_ALLOWED_HOSTS=host.docker.internal:8932 \
+  node dist/src/index.js
+# Başka bir kabukta: .env'e APP_MCP_URL=http://host.docker.internal:8932/mcp → docker compose up -d core-worker
+```
+
+Bu yol (konteyner → `host.docker.internal` → hostta `127.0.0.1`'e bağlı app-mcp) 2026-11-09'da
+Android emülatörüyle uçtan uca doğrulandı (`duman.mjs android` + `DUMAN_MCP_URL`, BAŞARILI); Windows
+VM ile denenmedi. İş bitince `.env`'deki `APP_MCP_URL` satırını silin.
 
 ### 5.2 Java testleri (hosttan elle) **[denenmedi]**
 
@@ -263,17 +285,37 @@ export DEMO_API_URL=http://127.0.0.1:18000
 export APPIUM_URL=http://<VM-IP>:4723
 export APP_PATH='C:\tp\bayi\win-arm64\BayiSiparis.exe'
 export APP_ARGS='--api-url http://192.168.64.1:18081/api'     # Yol B'de gerekmez
+# export APP_WORKDIR='C:\tp\bayi\win-arm64'                   # isteğe bağlı (appium:appWorkingDir)
 demo-app/ci/run-app-checks.sh windows -Dgroups=duman
 ```
 
-### 5.3 Yerel kontrol (test-runner) — desteklenmiyor
+### 5.3 Yerel kontrol (test-runner): `appium-gw-windows` **[denenmedi]**
 
-test-runner yalnız internal ağlardadır; hosta tek çıkışı `appium-gw`'dir ve o yalnız
-`host.docker.internal:4723`'e gider. `TP_RUNNER_APPIUM_URL_WINDOWS` (compose → test-runner
-`APPIUM_URL_WINDOWS`) bu yüzden boştur ve VM adresi verilse de internal ağdan ulaşılamaz: Windows için
-`local-ci-windows` yerelde üretilemez, Windows Java koşusu sağlık adımında `error` döner
-([CIHAZ-ALTYAPISI.md §5.1](CIHAZ-ALTYAPISI.md)). Windows PR kanıtı GitHub'daki `masaustu-windows`
-iş akışıdır.
+test-runner yalnız internal ağlardadır; VM'deki Appium'a tek yolu `mobil-windows` profilindeki
+`appium-gw-windows` yönlendiricisidir (`appium-gw` ile aynı sertleştirme; tek hedef
+`TP_WINDOWS_VM_APPIUM`, açılışta `host:port` biçimi doğrulanır —
+[CIHAZ-ALTYAPISI.md §5.1](CIHAZ-ALTYAPISI.md)). `.env`:
+
+```bash
+TP_WINDOWS_VM_APPIUM=<VM-IP>:4723
+TP_RUNNER_APPIUM_URL_WINDOWS=http://appium-gw-windows:4723
+TP_APP_PATH_WINDOWS=C:\tp\bayi\win-arm64\BayiSiparis.exe
+TP_APP_ARGS_WINDOWS=--api-url http://192.168.64.1:18081/api
+```
+
+```bash
+docker compose --profile mobil-windows up -d appium-gw-windows
+docker compose up -d test-runner          # yeni APPIUM_URL_WINDOWS ile yeniden oluşturulur
+docker compose logs appium-gw-windows     # hatalı TP_WINDOWS_VM_APPIUM → açıklayıcı hata, çıkış 64
+```
+
+`TP_RUNNER_APPIUM_URL_WINDOWS` verilmezse (varsayılan) Windows Java koşusu sağlık adımında `error`
+döner. Yönlendiricinin kendisi (biçim doğrulama, sertleştirme, `appium-net`'ten iletim) VM yerine
+hosttaki Appium'a karşı doğrulandı; **Docker Desktop'ın konteynerden UTM ağına (`192.168.64.0/24`)
+yönlendirmesi VM ile denenmedi** — `docker compose exec test-runner node -e
+"fetch('http://appium-gw-windows:4723/status').then(r=>r.text()).then(console.log)"` ile sınayın.
+Ulaşılamazsa yerel `local-ci-windows` üretilemez; Windows PR kanıtı GitHub'daki `masaustu-windows`
+iş akışıdır (birincil yol zaten odur).
 
 ## 6. Doğrulama listesi **[denenmedi]**
 
@@ -284,7 +326,8 @@ iş akışıdır.
 | 3 | Mac | `curl -s http://<VM-IP>:4723/status` | `"ready":true` |
 | 4 | LAN'daki başka makine | `nc -z -w 2 <Mac-LAN-IP> 18081` | bağlantı kurulamaz |
 | 5 | Mac | `demo-app/ci/run-app-checks.sh windows -Dgroups=duman` (§5.2) | `BUILD SUCCESS`; rapor `demo-app/e2e-app/target/surefire-reports/` |
-| 6 | Mac | app-mcp Windows dumanı | **Henüz yok:** `toolchain/app-mcp/scripts/duman.mjs` ve `duman-demo.mjs` yalnız `android\|ios` kabul eder. Windows için bir duman eklenene dek 5. adım ve kod üretiminde ajanın ilk `app_launch` + `app_snapshot` adımları kanıttır |
+| 6 | Mac | `cd toolchain/app-mcp && npm run build && TP_WINDOWS_VM_APPIUM=<VM-IP>:4723 APP_WINDOWS_ARGS='--api-url http://192.168.64.1:18081/api' node scripts/duman-demo.mjs windows` (genel duman: `APP_WINDOWS_APP=… node scripts/duman.mjs windows`, tıklamaz) | `SONUÇ: BAŞARILI`; `add-to-cart` locator'ı `{"platform":"windows","strategy":"accessibilityId","id":"add-to-cart"}`; kanıt `var/cihaz/kanit/duman-demo-windows-*.txt` |
+| 6b | Mac | `TP_WINDOWS_VM_APPIUM=<VM-IP>:4723 docker compose --profile mobil-windows up -d appium-gw-windows` + §5.3'teki `fetch` | `"ready":true` |
 | 7 | Mac | app-mcp `app_snapshot` çıktısı | `[id=login-username]` vb. kimlikler görünmeli; NovaWindows öznitelik adları (`Value.Value`, `Toggle.ToggleState`, `SelectionItem.IsSelected`) elle yazılmış fikstürle (`toolchain/app-mcp/test/fixtures/*-bayi-giris.xml`) karşılaştırılmalı, fark varsa fikstür ve ağaç dönüştürücüsü düzeltilmeli ([CIHAZ-ALTYAPISI.md §7](CIHAZ-ALTYAPISI.md) madde 3) |
 
 ## 7. Kapatma
@@ -292,4 +335,5 @@ iş akışıdır.
 Mac'te socat / SSH tüneli / `http.server` süreçlerini durdurun (Ctrl+C); VM'de Appium'u kapatın. Güvenlik
 duvarı kuralını kaldırmak için: `Remove-NetFirewallRule -DisplayName 'TP Appium 4723 (yalniz UTM agi)'`.
 `.env`'deki `APPIUM_URL_WINDOWS`'u boşaltıp `docker compose --profile mobil up -d app-mcp` ile Windows
-platformunu kapatın.
+platformunu kapatın; yönlendirici açıldıysa `docker compose --profile mobil-windows stop
+appium-gw-windows` ve `TP_RUNNER_APPIUM_URL_WINDOWS` / `APP_MCP_URL` satırlarını silin.

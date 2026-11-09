@@ -1,24 +1,29 @@
 #!/usr/bin/env node
 // app-mcp entegrasyon dumanı: çalışan cihaz + Appium'a karşı, MCP istemcisiyle stok bir uygulamayı
 // (Android Ayarlar / iOS Ayarlar) başlatır, snapshot alır, bir öğeye tıklar, sonuçları yazar.
+// Windows'ta stok uygulama yoktur: yapılandırılmış uygulama (APP_WINDOWS_APP, zorunlu) başlatılır,
+// snapshot + locator + ekran görüntüsü alınır; bilinmeyen uygulamada hiçbir şeye TIKLANMAZ.
 //
 //   make cihaz-baslat PLATFORM=android && npm run build && node scripts/duman.mjs android
 //   node scripts/duman.mjs ios
+//   APP_WINDOWS_APP='C:\tp\bayi\win-arm64\BayiSiparis.exe' node scripts/duman.mjs windows
 //
-// Ortam: APPIUM_URL (varsayılan http://127.0.0.1:4723), DUMAN_KANIT (varsayılan
-// <repo>/var/cihaz/kanit). app-mcp ayrı süreç olarak başlatılır (gerçek HTTP yolu).
+// Ortam: APPIUM_URL (varsayılan http://127.0.0.1:4723; windows: http://$TP_WINDOWS_VM_APPIUM,
+// varsayılan 192.168.64.2:4723), APP_WINDOWS_ARGS / APP_WINDOWS_WORKDIR (isteğe bağlı),
+// DUMAN_KANIT (varsayılan <repo>/var/cihaz/kanit). app-mcp ayrı süreç olarak başlatılır (gerçek
+// HTTP yolu); DUMAN_MCP_URL verilirse çalışan bir app-mcp'ye bağlanılır.
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { stokOrtami } from './duman-ortami.mjs';
 
 const burasi = dirname(fileURLToPath(import.meta.url));
 const paket = resolve(burasi, '..');
 const kok = resolve(paket, '../..');
 const platform = process.argv[2] ?? 'android';
-const appium = process.env.APPIUM_URL ?? 'http://127.0.0.1:4723';
 const port = Number(process.env.DUMAN_PORT ?? 18932);
 const kanitDizini = process.env.DUMAN_KANIT ?? join(kok, 'var/cihaz/kanit');
 
@@ -27,20 +32,16 @@ const kanitDizini = process.env.DUMAN_KANIT ?? join(kok, 'var/cihaz/kanit');
 const udidDosyasi = join(kok, 'var/cihaz/ios.udid');
 const iosUdid = process.env.TP_IOS_UDID ?? (existsSync(udidDosyasi) ? readFileSync(udidDosyasi, 'utf8').trim() : '');
 
-const STOK = {
-  android: {
-    env: { APPIUM_URL_ANDROID: appium, APP_ANDROID_PACKAGE: 'com.android.settings', APP_ANDROID_ACTIVITY: '.Settings' },
-    // Tıklanacak öğe: adı bu desene uyan ilk düğme.
-    hedef: /^- button "(Network|Ağ|Connected|Bağlı|Display|Ekran)/,
-  },
-  ios: {
-    env: { APPIUM_URL_IOS: appium, APP_IOS_BUNDLE_ID: 'com.apple.Preferences', APP_IOS_UDID: iosUdid },
-    hedef: /^- (button|listitem) "(General|Genel)/,
-  },
-};
-const stok = STOK[platform];
+// Tıklanacak öğe (hedef): adı desene uyan ilk düğme; Windows'ta null (tıklama yok).
+let stok;
+try {
+  stok = stokOrtami(platform, process.env, iosUdid, Boolean(process.env.DUMAN_MCP_URL));
+} catch (e) {
+  console.error(e.message);
+  process.exit(2);
+}
 if (!stok) {
-  console.error('kullanım: duman.mjs android|ios');
+  console.error('kullanım: duman.mjs android|ios|windows');
   process.exit(2);
 }
 
@@ -101,12 +102,16 @@ try {
   await cagir('app_wait_for', { time: 2 });
   const snap = await cagir('app_snapshot', {});
   const satirlar = snap.metin.split('\n');
-  const satir = satirlar.find((s) => stok.hedef.test(s.trimStart())) ?? satirlar.find((s) => /^\s*- button ".+" .*\[ref=e\d+\]/.test(s));
-  if (!satir) throw new Error('tıklanacak düğme bulunamadı');
+  const satir = stok.hedef
+    ? (satirlar.find((s) => stok.hedef.test(s.trimStart())) ?? satirlar.find((s) => /^\s*- button ".+" .*\[ref=e\d+\]/.test(s)))
+    : // Windows: kimlikli (AutomationId) ilk öğe, yoksa ilk düğme — yalnızca locator üretilir.
+      (satirlar.find((s) => /\[id=[^\]]+\] .*\[ref=e\d+\]/.test(s) && !/^\s*- window /.test(s)) ??
+      satirlar.find((s) => /^\s*- button .*\[ref=e\d+\]/.test(s)));
+  if (!satir) throw new Error(stok.hedef ? 'tıklanacak düğme bulunamadı' : "snapshot'ta kimlikli öğe ya da düğme yok");
   const ref = /\[ref=(e\d+)\]/.exec(satir)[1];
   const tarif = /"([^"]*)"/.exec(satir)?.[1] ?? ref;
   await cagir('app_generate_locator', { ref, element: tarif });
-  await cagir('app_click', { ref, element: tarif });
+  if (stok.hedef) await cagir('app_click', { ref, element: tarif });
   const ekran = await cagir('app_screenshot', {});
   if (ekran.resim) writeFileSync(kanitDosyasi.replace(/\.txt$/, '.png'), Buffer.from(ekran.resim.data, 'base64'));
   // Hata yolu: var olmayan ref → isError beklenir.

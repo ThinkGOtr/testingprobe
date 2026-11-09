@@ -1,56 +1,53 @@
 #!/usr/bin/env node
 // app-mcp DEMO UYGULAMA dumanı: çalışan cihaz + Appium'a karşı, MCP istemcisiyle Bayi Sipariş
-// Portalı'nı (demo-app/mobile) başlatır ve doğrulama ajanının yolunu yürür:
+// Portalı'nı (demo-app/mobile; Windows'ta demo-app/desktop WPF, aynı kimlikler) başlatır ve
+// doğrulama ajanının yolunu yürür:
 //   app_launch (reset) → snapshot'ta giriş kimlikleri → kullanıcı adı + parola (maskeli) → giriş →
 //   katalog metnini bekle → ürün kartındaki "Sepete ekle" için app_generate_locator
 //   → {platform, strategy:"id"|"accessibilityId", id:"add-to-cart"} beklenir.
 //
 //   make cihaz-baslat PLATFORM=android && npm run build && node scripts/duman-demo.mjs android
 //   node scripts/duman-demo.mjs ios
+//   node scripts/duman-demo.mjs windows   # UTM VM'de Appium + NovaWindows (docs/WINDOWS-VM.md)
 //
-// Ortam: APPIUM_URL (varsayılan http://127.0.0.1:4723), DUMAN_KANIT (varsayılan
-// <repo>/var/cihaz/kanit — gitignore'lu), DUMAN_BAYI / DUMAN_PAROLA (varsayılan demo bayi1),
-// APP_ANDROID_APK / APP_IOS_APP (verilirse oturumda kurulur). Parola hiçbir çıktıya yazılmaz.
+// Ortam: APPIUM_URL (varsayılan http://127.0.0.1:4723; windows: http://$TP_WINDOWS_VM_APPIUM,
+// varsayılan 192.168.64.2:4723), DUMAN_KANIT (varsayılan <repo>/var/cihaz/kanit — gitignore'lu),
+// DUMAN_BAYI / DUMAN_PAROLA (varsayılan demo bayi1), APP_ANDROID_APK / APP_IOS_APP (verilirse
+// oturumda kurulur). Windows: APP_WINDOWS_APP (varsayılan C:\tp\bayi\win-arm64\BayiSiparis.exe),
+// APP_WINDOWS_ARGS (ör. `--api-url http://192.168.64.1:18081/api`; appsettings.json ya da SSH
+// tüneli yolunda gerekmez), APP_WINDOWS_WORKDIR. Parola hiçbir çıktıya yazılmaz.
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { BEKLENEN_STRATEJI, demoOrtami, uygulamaKimligi } from './duman-ortami.mjs';
 
 const burasi = dirname(fileURLToPath(import.meta.url));
 const paket = resolve(burasi, '..');
 const kok = resolve(paket, '../..');
 const platform = process.argv[2] ?? 'android';
-const appium = process.env.APPIUM_URL ?? 'http://127.0.0.1:4723';
 const port = Number(process.env.DUMAN_PORT ?? 18933);
 const kanitDizini = process.env.DUMAN_KANIT ?? join(kok, 'var/cihaz/kanit');
 const bayi = process.env.DUMAN_BAYI ?? 'bayi1';
 const parola = process.env.DUMAN_PAROLA ?? 'Demo123!'; // demo-app/README.md "Demo bayileri"
-const UYGULAMA = 'com.antreklabs.bayisiparis';
 
 const udidDosyasi = join(kok, 'var/cihaz/ios.udid');
 const iosUdid = process.env.TP_IOS_UDID ?? (existsSync(udidDosyasi) ? readFileSync(udidDosyasi, 'utf8').trim() : '');
 
-const ORTAM = {
-  android: {
-    APPIUM_URL_ANDROID: appium,
-    APP_ANDROID_PACKAGE: UYGULAMA,
-    APP_ANDROID_ACTIVITY: '.MainActivity',
-    ...(process.env.APP_ANDROID_APK ? { APP_ANDROID_APK: process.env.APP_ANDROID_APK } : {}),
-  },
-  ios: {
-    APPIUM_URL_IOS: appium,
-    APP_IOS_BUNDLE_ID: UYGULAMA,
-    APP_IOS_UDID: iosUdid,
-    ...(process.env.APP_IOS_APP ? { APP_IOS_APP: process.env.APP_IOS_APP } : {}),
-  },
-};
-const BEKLENEN_STRATEJI = { android: 'id', ios: 'accessibilityId' };
-if (!ORTAM[platform]) {
-  console.error('kullanım: duman-demo.mjs android|ios');
+let ORTAM;
+try {
+  ORTAM = demoOrtami(platform, process.env, iosUdid);
+} catch (e) {
+  console.error(e.message);
   process.exit(2);
 }
+if (!ORTAM) {
+  console.error('kullanım: duman-demo.mjs android|ios|windows');
+  process.exit(2);
+}
+const UYGULAMA = uygulamaKimligi(platform, ORTAM);
 
 mkdirSync(kanitDizini, { recursive: true });
 const zaman = new Date().toISOString().replace(/[:.]/g, '-');
@@ -66,7 +63,7 @@ const yaz = (s) => {
 let sunucu;
 let sunucuLog = '';
 sunucu = spawn(process.execPath, [join(paket, 'dist/src/index.js')], {
-  env: { ...process.env, ...ORTAM[platform], APP_MCP_PORT: String(port), APP_MCP_HOST: '127.0.0.1' },
+  env: { ...process.env, ...ORTAM, APP_MCP_PORT: String(port), APP_MCP_HOST: '127.0.0.1' },
   stdio: ['ignore', 'inherit', 'pipe'],
 });
 sunucu.stderr.on('data', (d) => {

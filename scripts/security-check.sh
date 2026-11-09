@@ -3,7 +3,8 @@
 # Her kontrol PASS/FAIL yazar; özet "N/10"; herhangi bir FAIL → ≠0.
 #   1. Host'a açılan tüm portlar yalnızca 127.0.0.1'e bağlı (istisna: GCP katmanında edge 80/443)
 #   2. test-runner'dan postgres, core-api, playwright-mcp, host (host.docker.internal) ve internete
-#      erişim yok (demo-app-web ve demo-app-api'ye var; `mobil` profilinde appium-gw:4723'e var)
+#      erişim yok (demo-app-web ve demo-app-api'ye var; `mobil` profilinde appium-gw:4723'e,
+#      `mobil-windows` profilinde appium-gw-windows:4723'e var)
 #   3. tp_app audit_event'i UPDATE/DELETE/TRUNCATE edemez
 #   4. Depoda sır yok (gitleaks; git geçmişi + commit edilmemiş izlenen/izlenmeyen dosyalar)
 #   5. demoapp_ro yalnızca izinli tablo/kolonları okur; yazamaz, parola özeti ve sipariş verisi kapalı
@@ -128,6 +129,8 @@ check_isolation() {
   local targets="postgres:5432 core-api:8000 playwright-mcp:8931 example.com:443 host.docker.internal:4723 host.docker.internal:8081 demo-app-web:8080 demo-app-api:8000"
   local gw=0
   if svc_running appium-gw; then gw=1; targets="$targets appium-gw:4723"; fi
+  # Windows VM yönlendiricisi (`mobil-windows` profili; hedef yalnızca TP_WINDOWS_VM_APPIUM).
+  if svc_running appium-gw-windows; then targets="$targets appium-gw-windows:4723"; fi
   # shellcheck disable=SC2086  # hedefler bilinçli olarak sözcüklere bölünür
   if ! out="$(compose exec -T test-runner node -e "$NET_JS" $targets 2>&1)"; then
     fail "2/izolasyon: test-runner içinde node çalıştırılamadı"; info "$out"; return
@@ -135,7 +138,7 @@ check_isolation() {
   for target in $targets; do
     res="$(printf '%s\n' "$out" | awk -v t="$target" '$1 == t { print $2 }' | head -n 1)"
     [ -n "$res" ] || res="SONUÇ_YOK"
-    if [ "$target" = "demo-app-web:8080" ] || [ "$target" = "demo-app-api:8000" ] || [ "$target" = "appium-gw:4723" ]; then
+    if [ "$target" = "demo-app-web:8080" ] || [ "$target" = "demo-app-api:8000" ] || [ "$target" = "appium-gw:4723" ] || [ "$target" = "appium-gw-windows:4723" ]; then
       # pozitif kontrol: erişilmesi gereken hedef; erişilemiyorsa test anlamsız
       if [ "$res" = "OPEN" ]; then info "$target erişilebilir (beklenen)"; else ok=0; info "$target $res — erişilebilir olmalıydı (pozitif kontrol)"; fi
     else

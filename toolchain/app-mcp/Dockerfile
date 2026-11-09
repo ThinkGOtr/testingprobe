@@ -11,6 +11,8 @@ COPY package.json package-lock.json tsconfig.json ./
 RUN npm ci --ignore-scripts --no-audit --no-fund
 COPY src ./src
 COPY test ./test
+# test/duman.test.ts betiklerin ortam modülünü (scripts/duman-ortami.mjs) sınar; son imaja girmez.
+COPY scripts ./scripts
 # Birim testleri imaj derlemesinde de koşar (sahte Appium; ağ yok).
 RUN npm test && npm prune --omit=dev --no-audit --no-fund
 

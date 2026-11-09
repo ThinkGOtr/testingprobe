@@ -103,8 +103,33 @@ public class AyarlarBirimTesti {
     assertEquals(yetenek(o, "automationName"), SurucuFabrikasi.NOVA_WINDOWS);
     assertEquals(yetenek(o, "app"), "C:\\bayi\\Bayi.exe");
     assertEquals(yetenek(o, "appArguments"), "--api http://10.0.0.2:8081/api");
+    assertEquals(yetenek(o, "appWorkingDir"), null);
     assertThrows(
         IllegalArgumentException.class, () -> SurucuFabrikasi.secenekler(Platform.WINDOWS, Ayarlar.haritadan(Map.of(), Map.of())));
+  }
+
+  @Test(groups = "birim")
+  public void windowsCalismaDiziniOrtamdan() {
+    BaseOptions<?> o =
+        SurucuFabrikasi.secenekler(
+            Platform.WINDOWS,
+            Ayarlar.haritadan(Map.of(), Map.of("APP_PATH", "C:\\tp\\bayi\\BayiSiparis.exe", "APP_WORKDIR", "C:\\tp\\bayi")));
+    assertEquals(yetenek(o, "appWorkingDir"), "C:\\tp\\bayi");
+  }
+
+  @Test(groups = "birim")
+  public void windowsPowershellTirnagiReddedilir() {
+    for (Map<String, String> kotu :
+        java.util.List.of(
+            Map.of("app.path", "C:\\a.exe", "app.args", "--x '; Remove-Item C:\\ -Recurse; '"),
+            Map.of("app.path", "C:\\a.exe", "app.args", "--x\n--y"),
+            Map.of("app.path", "C:\\a.exe", "app.args", "--x \u2019y"),
+            Map.of("app.path", "C:\\a.exe", "app.workdir", "C:\\O'Brien"),
+            Map.of("app.path", "C:\\a'b.exe"))) {
+      assertThrows(
+          IllegalArgumentException.class,
+          () -> SurucuFabrikasi.secenekler(Platform.WINDOWS, Ayarlar.haritadan(kotu, Map.of())));
+    }
   }
 
   @Test(groups = "birim")

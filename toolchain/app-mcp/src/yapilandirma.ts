@@ -7,7 +7,8 @@
  *   APP_ANDROID_PACKAGE (zorunlu), APP_ANDROID_ACTIVITY, APP_ANDROID_APK, APP_ANDROID_UDID
  *   APP_IOS_BUNDLE_ID (zorunlu), APP_IOS_APP, APP_IOS_UDID, APP_IOS_DEVICE_NAME,
  *   APP_IOS_PLATFORM_VERSION
- *   APP_WINDOWS_APP (zorunlu: .exe yolu ya da AUMID)
+ *   APP_WINDOWS_APP (zorunlu: .exe yolu ya da AUMID), APP_WINDOWS_ARGS (→ appium:appArguments,
+ *   ör. `--api-url http://192.168.64.1:18081/api`), APP_WINDOWS_WORKDIR (→ appium:appWorkingDir)
  *   APP_MCP_HOST (127.0.0.1), APP_MCP_PORT (8932), APP_MCP_ALLOWED_HOSTS (virgüllü Host listesi)
  *   APP_MCP_IDLE_S (300), APP_MCP_WAIT_MAX_S (10), APP_MCP_SNAPSHOT_MAX_SATIR (400),
  *   APP_MCP_SNAPSHOT_MAX_KARAKTER (40000), APP_MCP_OTURUM_ACMA_S (300)
@@ -66,6 +67,21 @@ function zorunlu(ortam: Ortam, ad: string, platform: string): string {
   return v;
 }
 
+/**
+ * NovaWindows 1.5.0 `app` ve `appArguments` değerlerini PowerShell'de tek tırnak içine KAÇIŞSIZ
+ * gömer (`Start-Process '<app>' -ArgumentList '<appArguments>'`, lib/commands/app.ts). Tek tırnak
+ * ya da satır sonu, VM'de keyfi PowerShell çalıştırmaya dönüşür; bu yüzden reddedilir.
+ * `appWorkingDir` sürücüde kaçışlanır ama `%DEGISKEN%` genişletilir; aynı kural ona da uygulanır.
+ */
+function powershellGuvenli(ad: string, deger: string | undefined): string | undefined {
+  const v = deger?.trim();
+  if (!v) return undefined;
+  if (/['\u2018\u2019\u201a\u201b\x00-\x1f\x7f]/.test(v)) {
+    throw new Error(`${ad} tek tırnak ya da denetim karakteri içeremez (NovaWindows PowerShell'e kaçışsız geçirir)`);
+  }
+  return v;
+}
+
 function ekle(hedef: Record<string, unknown>, anahtar: string, deger: string | undefined): void {
   if (deger?.trim()) hedef[anahtar] = deger.trim();
 }
@@ -120,13 +136,17 @@ export function ayarlariOku(ortam: Ortam = process.env): Ayarlar {
 
   const w = adres(ortam, 'APPIUM_URL_WINDOWS');
   if (w) {
-    const uygulama = zorunlu(ortam, 'APP_WINDOWS_APP', 'windows');
+    const uygulama = powershellGuvenli('APP_WINDOWS_APP', zorunlu(ortam, 'APP_WINDOWS_APP', 'windows'))!;
     const y: Record<string, unknown> = {
       platformName: 'Windows',
       'appium:automationName': 'NovaWindows',
       'appium:app': uygulama,
       ...ortak,
     };
+    // Yetenek adları sabit sürücü sürümünün (appium-novawindows-driver 1.5.0) README'si ve
+    // lib/constraints.ts'iyle doğrulandı: appArguments (dize), appWorkingDir (dize).
+    ekle(y, 'appium:appArguments', powershellGuvenli('APP_WINDOWS_ARGS', ortam.APP_WINDOWS_ARGS));
+    ekle(y, 'appium:appWorkingDir', powershellGuvenli('APP_WINDOWS_WORKDIR', ortam.APP_WINDOWS_WORKDIR));
     platformlar.windows = { platform: 'windows', appiumUrl: w, uygulamaKimligi: uygulama, yetenekler: y };
   }
 

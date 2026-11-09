@@ -41,7 +41,7 @@ export DEMO_API_URL=http://127.0.0.1:18000  # /test/* uçlarına doğrudan eriş
 ```
 
 `run-app-checks.sh`: `test-compile` → birim (`target/birim-raporlari/`) → cihaz koşusu. Sonuçlar
-`target/surefire-reports/TEST-*.xml` (JUnit XML; `ci/parse.py`), `target/allure-results/`, başarısız
+`target/surefire-reports/TEST-*.xml` (JUnit XML; `core/src/tp_core/features/ci/parse.py`), `target/allure-results/`, başarısız
 testin kanıtı `target/kanit/<Sınıf>.<metot>/{ekran.png,sayfa-kaynagi.xml}` (triage okur).
 
 ## Ayarlar
@@ -54,7 +54,8 @@ testin kanıtı `target/kanit/<Sınıf>.<metot>/{ekran.png,sayfa-kaynagi.xml}` (
 | `appium.url` | `APPIUM_URL` | `http://127.0.0.1:4723` | Appium 3 (temel yol `/`) |
 | `app.path` | `APP_PATH` | — | `.apk` / `.app` / `.exe`; yoksa `app.id` kurulu uygulamayı açar |
 | `app.id`, `app.activity` | `APP_ID`, `APP_ACTIVITY` | — | Android paket / iOS bundle id (`com.antreklabs.bayisiparis`) / Windows AUMID |
-| `app.args` | `APP_ARGS` | — | Windows: uygulama argümanları |
+| `app.args` | `APP_ARGS` | — | Windows: uygulama argümanları (NovaWindows `appArguments`) |
+| `app.workdir` | `APP_WORKDIR` | — | Windows: uygulamanın çalışma dizini (NovaWindows `appWorkingDir`). Windows uygulama yolu/argüman/dizininde tek tırnak ve denetim karakteri reddedilir (sürücü PowerShell'e kaçışsız geçirir) |
 | `device.name`, `device.udid`, `platform.version` | `DEVICE_NAME`, `DEVICE_UDID`, `PLATFORM_VERSION` | — | |
 | `demo.api.url` | `DEMO_API_URL` | `http://127.0.0.1:8081/api` | `/test/*` kökü. Compose'daki nginx `/api/test/`'i açmaz: orada doğrudan API adresi verin |
 | `demoapp.test.token` | `DEMOAPP_TEST_TOKEN` | — | **Sır.** Yalnızca ortamdan; başlıkta taşınır, rapora/kanıta yazılmaz |
@@ -104,11 +105,16 @@ okunan numara oturumda saklanır (`dogrulaOnaylananSiparisToplami`).
 
 ## Üretilen testler
 
-`uretilen/<Story>C<sira>_<uuid8>Test.java`, şablon `rules/templates/appium_testng.java.j2`. İçerik
+`uretilen/<Story><Platform>C<sira>_<uuid8>Test.java` (ör. `TPD1AndroidC3_0a1b2c3dTest.java`; plan
+§2.4), şablon `rules/templates/appium_testng.java.j2`. İçerik
 yalnızca başlık yorumları, `package`, üç izinli import, en çok bir `@Bayi("…")`, `TestTabani`'ndan
 türeyen tek sınıf, tek `@Test(groups = {"uretilen", …})` `senaryo()` metodu ve gövdede
 `<erişimci>().<metot>(<literal>, …);` satırları (plan §2.4, §2.8). Elle düzenlenmez;
-`toolchain/java-araclar guard` denetler. `TPD1C3_0a1b2c3dTest` biçim için altın örnektir.
+`toolchain/java-araclar guard` denetler. Elle yazılmış `TPD1C3_0a1b2c3dTest` biçim (gövde ve
+yapı) için altın örnektir ve bilerek platformdan bağımsızdır (adında platform yoktur; guard'ın
+dosya adı kuralı `[A-Za-z][A-Za-z0-9]*C<n>_<uuid8>Test.java` iki biçimi de kabul eder). Testing Probe'un ürettiği
+dosyalar adında her zaman platformu taşır (`…AndroidC3…`, `…IosC3…`, `…WindowsC3…`): aynı case'in
+platform script'leri ayrı dosya/dal/PR olur.
 
 ## Onarım (locator)
 

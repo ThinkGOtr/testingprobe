@@ -250,7 +250,7 @@ written. Empty token → endpoints open and `/health` `auth: ok (uyarı: …)`; 
 - Maven env: `PLATFORM`, `APPIUM_URL`, `DEMO_API_URL`, `DEMOAPP_TEST_TOKEN`, `BREAK_CAMPAIGN`,
   `TP_RUN_ID`, `CI=1` and the app/device settings from `TP_APP_ID_<P>` (default
   `com.antreklabs.bayisiparis` for android/ios), `TP_APP_PATH_<P>` (path on the **Appium host**),
-  `TP_APP_ACTIVITY_<P>` (android default `.MainActivity` when no path), `TP_APP_ARGS_<P>`,
+  `TP_APP_ACTIVITY_<P>` (android default `.MainActivity` when no path), `TP_APP_ARGS_<P>`, `TP_APP_WORKDIR_<P>` (Windows: NovaWindows `appArguments` / `appWorkingDir`),
   `TP_DEVICE_NAME_<P>`, `TP_DEVICE_UDID_<P>`, `TP_PLATFORM_VERSION_<P>` → e2e-app `APP_ID`, ….
 - Result: Surefire `TEST-*.xml` (untrusted: DTD/entities rejected, size-bounded) → the same
   `{stats, tests, failures, failure_groups}` shape as Playwright (`runner/surefire.py`), plus one

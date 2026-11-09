@@ -23,6 +23,7 @@ public final class Ayarlar {
           Map.entry("app.id", "APP_ID"),
           Map.entry("app.activity", "APP_ACTIVITY"),
           Map.entry("app.args", "APP_ARGS"),
+          Map.entry("app.workdir", "APP_WORKDIR"),
           Map.entry("device.name", "DEVICE_NAME"),
           Map.entry("device.udid", "DEVICE_UDID"),
           Map.entry("platform.version", "PLATFORM_VERSION"),
@@ -115,6 +116,11 @@ public final class Ayarlar {
   /** Windows: uygulamaya geçirilecek komut satırı argümanları (ör. demo API adresi). */
   public Optional<String> appArgs() {
     return deger("app.args");
+  }
+
+  /** Windows: uygulamanın çalışma dizini (NovaWindows {@code appWorkingDir}). */
+  public Optional<String> appWorkdir() {
+    return deger("app.workdir");
   }
 
   /** Emülatör / simülatör / cihaz adı. */

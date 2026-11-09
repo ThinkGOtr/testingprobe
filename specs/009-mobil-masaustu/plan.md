@@ -68,7 +68,7 @@ demo-app/e2e-app/
 - Bayi sabitleme: `@Bayi("bayi2")` sınıf notasyonu (web'deki `test.use({ dealerUsername })` karşılığı).
 - Ekran nesnesi metotları: eylem (`void`, ad fiil) ve beklenti (`dogrula…` ön eki, `kind=expect`);
   Javadoc ilk cümlesi = `doc`.
-- Raporlar: Surefire JUnit XML (`target/surefire-reports/`) + Allure sonuçları — mevcut `ci/parse.py`
+- Raporlar: Surefire JUnit XML (`target/surefire-reports/`) + Allure sonuçları — mevcut `core/src/tp_core/features/ci/parse.py`
   JUnit yolu kullanılır.
 - Kırarak doğrula: web ile aynı `POST /test/break` (bayi kapsamlı); grup `kampanya`.
 

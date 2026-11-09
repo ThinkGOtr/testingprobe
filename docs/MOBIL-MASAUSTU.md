@@ -167,12 +167,14 @@ flowchart LR
     CW["core-worker"] -->|"app-mcp-net (internal)"| AM["app-mcp"]
     TW["toolchain-worker"] -->|"runner-net (internal)"| TR["test-runner"]
     TR -->|"appium-net (internal)"| GW["appium-gw (socat, sabit hedef)"]
+    TR -.->|"appium-net (internal)"| GWW["appium-gw-windows (mobil-windows profili)"]
   end
   AM -->|"cihaz-net → host.docker.internal:4723"| AP["Appium 3 — host, 127.0.0.1:4723"]
   GW -->|"cihaz-net → host.docker.internal:4723"| AP
   AP -->|uiautomator2| EMU["Android emülatörü tp-android"]
   AP -->|xcuitest| SIM["iOS simülatörü TP iPhone"]
   AM -.->|"APPIUM_URL_WINDOWS (denenmedi)"| WAP["Appium + NovaWindows — UTM Windows 11 ARM"]
+  GWW -.->|"cihaz-net → TP_WINDOWS_VM_APPIUM (denenmedi)"| WAP
   WAP --> EXE["BayiSiparis.exe"]
 ```
 
@@ -185,9 +187,11 @@ flowchart LR
 - Uygulama demo API'ye Android'de `10.0.2.2:8081`, iOS'ta `127.0.0.1:8081` (compose `demo-app-web`
   nginx'i, `/api/*`) üzerinden gider. Testlerin `/test/*` çağrıları test-runner'dan doğrudan
   `demo-app-api:8000`'e gider.
-- Windows için test-runner yönlendiricisi yoktur (`TP_RUNNER_APPIUM_URL_WINDOWS` boş): Windows Java
-  koşusu yerel kontrolde sağlık adımında `error` döner. Windows yerelde yalnız app-mcp (ajan) ve
-  hosttan elle Java koşusu için düşünülmüştür.
+- Windows için test-runner yönlendiricisi `appium-gw-windows`'tur (`mobil-windows` profili, tek hedef
+  `TP_WINDOWS_VM_APPIUM`); açıkça `TP_RUNNER_APPIUM_URL_WINDOWS=http://appium-gw-windows:4723`
+  verilmezse Windows Java koşusu yerel kontrolde sağlık adımında `error` döner. Docker Desktop'tan
+  UTM ağına yönlendirme VM ile denenmedi; app-mcp için yedek yol hostta süreçtir
+  ([WINDOWS-VM.md §5](WINDOWS-VM.md)).
 
 Cihaz hazırlığı: `make cihaz-kur` (bir kez), `make cihaz-baslat PLATFORM=android|ios`, `make cihaz-durum`,
 `make cihaz-durdur`, `make cihaz-wda` (iOS), `make cihaz-ag`.
@@ -200,7 +204,7 @@ Cihaz hazırlığı: `make cihaz-kur` (bir kez), `make cihaz-baslat PLATFORM=and
 | Cihaz | bu Mac'teki emülatör/simülatör (appium-gw üzerinden) | runner'ın emülatörü / simülatörü / Windows masaüstü |
 | Kontrol adı | `local-ci-android`, `local-ci-ios`, `local-ci-windows` | `mobil-android`, `mobil-ios`, `masaustu-windows` |
 | Zorunluluk | head için kaydedilmiş her `local-ci-<platform>` zorunlu; yalnız `e2e-app/` değiştiren PR en az bir platform kontrolü ister | platform etkinleştirilince job adı hem `TP_REQUIRED_CHECKS`'e hem ruleset'e (`scripts/github-ruleset.sh --checks …`) eklenir; `mobil-ios` varsayılan olarak zorunlu değil (yol süzgeçli, pahalı macOS dakikası) |
-| Windows | desteklenmez (yönlendirici yok) | `masaustu-windows`, `windows-latest` x64 |
+| Windows | isteğe bağlı: `appium-gw-windows` + UTM VM (denenmedi; [WINDOWS-VM.md §5.3](WINDOWS-VM.md)) | `masaustu-windows`, `windows-latest` x64 |
 | Artefakt | `runs/<id>/` (Surefire özeti, `junit.xml`, Allure, kanıt) | `<job>-results`: `ci-meta.json`, `surefire-reports/`, `allure-results/`, `kanit/`, `logs/` |
 
 Her iki kipte de CI'da AI yoktur: app-mcp, model anahtarı ve ajan yalnız kod üretiminde (core-worker)
@@ -223,6 +227,10 @@ Bu bölüm 2026-11-09 itibarıyla `feat/mobil-masaustu` dalının durumudur.
 | Windows uygulaması | **Yalnız derlendi** | macOS'ta `EnableWindowsTargeting` ile derleniyor, çekirdek testleri geçiyor; hiç Windows'ta çalıştırılmadı |
 | Windows CI (`masaustu-windows.yml`) | **Yazıldı, koşturulmadı** | yalnız `actionlint` + YAML ayrıştırma |
 | Windows VM (UTM) | **Kurulmadı** | rehber: [WINDOWS-VM.md](WINDOWS-VM.md); app-mcp Windows snapshot fikstürü elle yazıldı, NovaWindows öznitelik adları gerçek kaynakla doğrulanmalı |
+| app-mcp Windows dumanı (`duman.mjs windows`, `duman-demo.mjs windows`) | **Yazıldı, VM'de koşturulmadı** | platform ortamı (`scripts/duman-ortami.mjs`) ve Windows demo akışı (giriş → `add-to-cart` = `accessibilityId`) elle yazılmış UIA fikstürü + sahte NovaWindows ile birim testli (`test/duman.test.ts`) |
+| Windows uygulama argümanı / çalışma dizini | **Birim testli** | app-mcp `APP_WINDOWS_ARGS` / `APP_WINDOWS_WORKDIR`, e2e-app `APP_ARGS` / `APP_WORKDIR`, test-runner `TP_APP_ARGS_WINDOWS` / `TP_APP_WORKDIR_WINDOWS` → NovaWindows 1.5.0 `appArguments` / `appWorkingDir` (adlar sürücü paketinden doğrulandı); tek tırnak ve denetim karakteri reddedilir (sürücü PowerShell'e kaçışsız geçirir) |
+| test-runner → appium-gw-windows → VM Appium | **Kanıtlandı (yönlendirici), VM ile denenmedi** | `mobil-windows` profili; hedef `TP_WINDOWS_VM_APPIUM`, açılışta biçim doğrulaması; VM yerine hosttaki Appium'a karşı `/status` iletildi. Docker Desktop → UTM ağı (`192.168.64.0/24`) yönlendirmesi doğrulanmadı ([CIHAZ-ALTYAPISI.md §5.1](CIHAZ-ALTYAPISI.md)) |
+| app-mcp hostta süreç (yedek yol, `APP_MCP_URL=http://host.docker.internal:…`) | **Kanıtlandı (Android)** | konteynerden hosttaki app-mcp'ye `duman.mjs android` BAŞARILI ([CIHAZ-ALTYAPISI.md §6.5](CIHAZ-ALTYAPISI.md)); Windows VM ile denenmedi |
 | GitHub mobil iş akışları (`mobil-android`, `mobil-ios`) | **Yazıldı, koşturulmadı** | emülatör/simülatör açılış süreleri, runner Xcode'unun Expo SDK 58 / RN 0.88 yeterliliği doğrulanmadı |
 | Kod üretimi Android uçtan uca (case → ajan → PR → kırarak doğrula → merge) | **Koşturulmadı** | çekirdek yolu birim/sözleşme testli (`core/tests/unit/features/codegen/test_platform.py`, altın Java çıktısı); canlı yığında prova yapılmadı ([MOBIL-DEMO-EKI.md](MOBIL-DEMO-EKI.md) "Hazır mı") |
 | PR CI'ında `local-ci-<platform>` kaydı | **Bağlantı eksik** | toolchain-worker `/check` (`lang:"java"`) kaydı yazabiliyor ve LocalForge kapısı onu istiyor, ama çekirdeğin PR CI tetiği (`core/src/tp_core/features/ci/service.py` `enqueue_ci`) henüz platformu iletmiyor (plan §2.9 beklentisi): Android PR'ında web paketi koşar, `local-ci-android` oluşmaz |
@@ -234,5 +242,5 @@ Bilinen sınırlar:
 - Platform başına tek cihaz: app-mcp aynı anda bir MCP oturumunun bir platformu sürmesine izin verir.
 - Aynı demo API'ye karşı web e2e ile uygulama e2e'si aynı anda koşturulmaz (bayi kilitleri ortak değil).
 - Gerçek cihaz (fiziksel telefon) ve bulut cihaz çiftliği kapsam dışıdır; CI emülatör/simülatör kullanır.
-- `.env.example` henüz mobil değişkenlerini (`APPIUM_URL_*`, `APP_WINDOWS_APP`, `TP_RUNNER_APPIUM_URL_*`)
-  listelemiyor; varsayılanlar `docker-compose.yml`'dadır.
+- Mobil/masaüstü değişkenleri `.env.example`'da "Mobil / masaüstü (009)" bölümünde yorum satırı
+  olarak listelenir; açılmazlarsa `docker-compose.yml` varsayılanları geçerlidir.

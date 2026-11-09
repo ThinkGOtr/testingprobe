@@ -110,14 +110,27 @@ test-runner ──appium-net (internal)──▶ appium-gw ──cihaz-net──
   hedefi değiştiremez. Root değil (`65534`), salt okunur kök, tüm yetenekler düşürülmüş,
   `no-new-privileges`, 64 MB.
 - test-runner `cihaz-net`'e **konmaz** (konsaydı internete çıkardı); yalnız `appium-net` eklenir.
-  `APPIUM_URL_ANDROID|IOS=http://appium-gw:4723` (`TP_RUNNER_APPIUM_URL_*` ile değişir). Windows
-  (UTM VM) için yönlendirici tanımlı değildir: `TP_RUNNER_APPIUM_URL_WINDOWS` boşken Windows Java
-  koşusu sağlık kontrolünde `error` döner (VM için ikinci bir sabit hedefli yönlendirici gerekir).
+  `APPIUM_URL_ANDROID|IOS=http://appium-gw:4723` (`TP_RUNNER_APPIUM_URL_*` ile değişir).
+- **Windows (UTM VM): `appium-gw-windows`** (`mobil-windows` profili; VM yokken `mobil` profili
+  etkilenmez). `appium-gw` ile aynı imaj ve sertleştirme; tek hedefi `TP_WINDOWS_VM_APPIUM`
+  (varsayılan `192.168.64.2:4723`). Konteyner açılışında değer `host:port` biçiminde doğrulanır
+  (`[A-Za-z0-9.-]+:<1–65535>`; virgül/boşluk vb. reddedilir → socat adres seçeneği enjekte
+  edilemez; hatalı değerde çıkış kodu 64). test-runner'da `TP_RUNNER_APPIUM_URL_WINDOWS` varsayılan
+  boştur (Windows Java koşusu sağlık kontrolünde `error`); açmak için
+  `TP_RUNNER_APPIUM_URL_WINDOWS=http://appium-gw-windows:4723`. Uygulama yolu/argümanları:
+  `TP_APP_PATH_WINDOWS`, `TP_APP_ARGS_WINDOWS`, `TP_APP_WORKDIR_WINDOWS` (→ e2e-app `APP_PATH`,
+  `APP_ARGS`, `APP_WORKDIR`). Doğrulama (2026-11-09, yalıtılmış `tp-s10-gwtest` projesi): altı
+  hatalı hedef (`x:1,exec:sh`, portsuz, `:99999`, boşluklu, boş host, `-x:1`) 64 ile reddedildi;
+  geçerli hedefle (`host.docker.internal:4723`, VM yerine) `appium-net`'ten
+  `GET http://appium-gw-windows:4723/status` → `ready=true`; konteyner `65534`, salt okunur,
+  `CapDrop=[ALL]`, `no-new-privileges`, 64 MB. **VM ile denenmedi:** Docker Desktop'ın konteynerden
+  UTM ağına (`192.168.64.0/24`) yönlendirmesi doğrulanmadı ([WINDOWS-VM.md §5.3](WINDOWS-VM.md)).
 - Uygulama demo API'ye emülatörden `10.0.2.2:8081` (host → compose `demo-app-web`) ile gider;
   testlerin `/test/*` çağrıları test-runner'dan doğrudan `demo-app-api:8000`'e (demo-net) gider.
   İkisi aynı API'dir; hosttaki geçici vekile (`127.0.0.1:18000`) bağımlılık yoktur.
 - `make security-check` 2. madde: test-runner'dan `host.docker.internal:4723/8081`, internet,
-  postgres, core-api, playwright-mcp kapalı; `appium-gw` çalışıyorsa `appium-gw:4723` açık olmalı.
+  postgres, core-api, playwright-mcp kapalı; `appium-gw` çalışıyorsa `appium-gw:4723`,
+  `appium-gw-windows` çalışıyorsa `appium-gw-windows:4723` açık olmalı.
 
 Doğrulama (2026-11-08, yalıtılmış `tp-s8` yığını, test-runner içinden TCP denemesi):
 
@@ -255,7 +268,7 @@ Tıklandı: Giriş yap [ref=e7]
 | `APPIUM_URL_ANDROID` / `_IOS` / `_WINDOWS` | — | Boş = platform kapalı. Compose: `http://host.docker.internal:4723` (Windows: VM adresi) |
 | `APP_ANDROID_PACKAGE` (zorunlu), `APP_ANDROID_ACTIVITY`, `APP_ANDROID_APK`, `APP_ANDROID_UDID` | | Ajan uygulama seçemez |
 | `APP_IOS_BUNDLE_ID` (zorunlu), `APP_IOS_UDID` (önerilir), `APP_IOS_APP`, `APP_IOS_DEVICE_NAME`, `APP_IOS_PLATFORM_VERSION` | | |
-| `APP_WINDOWS_APP` (zorunlu: .exe yolu ya da AUMID) | | NovaWindows |
+| `APP_WINDOWS_APP` (zorunlu: .exe yolu ya da AUMID), `APP_WINDOWS_ARGS` (→ `appium:appArguments`), `APP_WINDOWS_WORKDIR` (→ `appium:appWorkingDir`) | | NovaWindows. Yetenek adları sabit sürücü sürümünün (`appium-novawindows-driver@1.5.0`) README'si ve `lib/constraints.ts`'iyle doğrulandı. Sürücü `app` ve `appArguments`'ı PowerShell'de tek tırnak içine **kaçışsız** gömdüğü için (`Start-Process '<app>' -ArgumentList '<args>'`) üç değerde de tek tırnak (akıllı tırnaklar dahil) ve denetim karakteri reddedilir (e2e-app `SurucuFabrikasi` aynı kural) |
 | `APP_MCP_HOST` / `APP_MCP_PORT` | `127.0.0.1` / `8932` | İmajda `0.0.0.0` |
 | `APP_MCP_ALLOWED_HOSTS` | `127.0.0.1:<port>,localhost:<port>` | Host başlığı denetimi (DNS rebinding); compose: `app-mcp:8932,app-mcp` |
 | `APP_MCP_IDLE_S` | 300 | Boşta kalan MCP oturumu + Appium oturumu kapanır; `newCommandTimeout = idle + 60` |
@@ -275,14 +288,33 @@ Tıklandı: Giriş yap [ref=e7]
 
 Servis `app-mcp` (`profiles: [mobil]`; varsayılan `make up` yığınına girmez, mevcut servisler
 etkilenmez): `docker compose --profile mobil up -d app-mcp`. core-worker'a `APP_MCP_URL=
-http://app-mcp:8932/mcp` ve `app-mcp-net` eklendi. Host'a port açılmaz. İmaj
+http://app-mcp:8932/mcp` (`.env`'den değişir) ve `app-mcp-net` eklendi. Host'a port açılmaz.
+
+**Yedek yol — app-mcp hostta süreç:** konteyner bir Appium adresine ulaşamazsa (ör. Windows VM,
+WINDOWS-VM.md §5.1) app-mcp hostta koşar, core-worker ona `host.docker.internal` ile bağlanır:
+
+```bash
+cd toolchain/app-mcp && npm ci && npm run build
+APPIUM_URL_WINDOWS=http://<VM-IP>:4723 APP_WINDOWS_APP='C:\tp\bayi\win-arm64\BayiSiparis.exe' \
+  APP_MCP_HOST=127.0.0.1 APP_MCP_PORT=8932 APP_MCP_ALLOWED_HOSTS=host.docker.internal:8932 \
+  node dist/src/index.js
+# .env: APP_MCP_URL=http://host.docker.internal:8932/mcp → docker compose up -d core-worker
+```
+
+Docker Desktop `host.docker.internal` bağlantısını hostun loopback'ine vekillediği için süreç
+`127.0.0.1`'de kalır (LAN'a açılmaz); `APP_MCP_ALLOWED_HOSTS` konteynerin gönderdiği Host başlığını
+kabul eder. Doğrulama (2026-11-09, Android emülatörü ile): hostta `127.0.0.1:18934`'teki app-mcp'ye
+bir konteynerden (`node:22` imajı, varsayılan köprü ağı) `DUMAN_MCP_URL=http://host.docker.internal:18934/mcp
+node scripts/duman.mjs android` → `SONUÇ: BAŞARILI` (launch, snapshot, locator, tıklama, ekran
+görüntüsü, geçersiz ref hata yolu). Linux'ta (Docker Engine) core-worker'a
+`extra_hosts: host.docker.internal:host-gateway` ve hostta uygun bağlama adresi gerekir. İmaj
 `toolchain/app-mcp/Dockerfile` (node:22 slim, sabit özet; derleme aşamasında birim testleri koşar;
 `USER node`, salt okunur uygulama dizini). `make security-check` 6 ve 8'deki sır döngülerine app-mcp
 eklendi (çalışıyorsa denetlenir).
 
 ### 6.6 Testler ve duman
 
-- Birim: `cd toolchain/app-mcp && npm test` (node:test; sahte Appium katmanı; 71 test). Fikstürler
+- Birim: `cd toolchain/app-mcp && npm test` (node:test; sahte Appium katmanı; 78 test). Fikstürler
   `test/fixtures/`: **gerçek** `android-ayarlar.xml`, `android-ayarlar-arama.xml`, `ios-ayarlar.xml`
   (`scripts/kaynak-yakala.mjs` ile canlı cihazdan yakalandı) ve **elle yazılmış** RN/WPF Bayi
   giriş ekranları (`*-bayi-giris.xml`). Her fikstürün altın snapshot'ı `*.snapshot.txt`
@@ -292,11 +324,20 @@ eklendi (çalışıyorsa denetlenir).
   locator üretir, ekran görüntüsü alır, geçersiz ref hata yolunu dener. Kanıt
   `var/cihaz/kanit/duman-<platform>[-konteyner]-<zaman>.txt|.png`. Konteynerdeki app-mcp'ye karşı:
   `DUMAN_MCP_URL=http://127.0.0.1:<port>/mcp`.
-- Demo uygulama dumanı: `node toolchain/app-mcp/scripts/duman-demo.mjs android|ios` — Bayi Sipariş
+- Windows dumanı: `APP_WINDOWS_APP=… node toolchain/app-mcp/scripts/duman.mjs windows` — stok
+  uygulama olmadığı için yapılandırılmış uygulamayı başlatır, snapshot + locator + ekran görüntüsü
+  alır, **tıklamaz**. Appium adresi `APPIUM_URL` ya da `http://$TP_WINDOWS_VM_APPIUM` (varsayılan
+  `192.168.64.2:4723`); `APP_WINDOWS_ARGS` / `APP_WINDOWS_WORKDIR` geçer. Platform ortamı
+  `scripts/duman-ortami.mjs`'tedir ve `test/duman.test.ts` cihazsız sınar (Windows demo akışı
+  dahil: elle yazılmış UIA fikstürü üzerinde sahte NovaWindows ile).
+- Demo uygulama dumanı: `node toolchain/app-mcp/scripts/duman-demo.mjs android|ios|windows` — Bayi Sipariş
   Portalı'nı `reset` ile başlatır, snapshot'ta giriş kimliklerini bulur, kullanıcı adı + parola yazar
   (parola çıktıda `***`), giriş yapar, kataloğu bekler ve "Sepete ekle" için
-  `{"platform":"android","strategy":"id","id":"add-to-cart"}` (iOS: `accessibilityId`) bekler. Kanıt
-  `var/cihaz/kanit/duman-demo-<platform>-<zaman>.txt`.
+  `{"platform":"android","strategy":"id","id":"add-to-cart"}` (iOS ve Windows: `accessibilityId`)
+  bekler. Windows'ta WPF uygulaması (`demo-app/desktop`, aynı kimlikler) varsayılan
+  `C:\tp\bayi\win-arm64\BayiSiparis.exe` yolundan açılır; `APP_WINDOWS_ARGS='--api-url …'` ile API
+  adresi verilebilir. Kanıt `var/cihaz/kanit/duman-demo-<platform>-<zaman>.txt`. **Windows dumanları
+  gerçek VM'de henüz koşturulmadı.**
 
 ## 7. Bilinen sorunlar / açık işler
 

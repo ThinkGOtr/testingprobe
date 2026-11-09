@@ -126,4 +126,32 @@ describe('yapılandırma', () => {
     assert.equal(a.platformlar.windows!.yetenekler['appium:automationName'], 'NovaWindows');
     assert.equal(a.platformlar.windows!.uygulamaKimligi, 'C:\\Bayi\\Bayi.exe');
   });
+
+  it('Windows: uygulama argümanı ve çalışma dizini (NovaWindows 1.5.0 yetenekleri)', () => {
+    const yok = testAyarlari().platformlar.windows!.yetenekler;
+    assert.equal(yok['appium:appArguments'], undefined);
+    assert.equal(yok['appium:appWorkingDir'], undefined);
+    const y = testAyarlari({
+      APP_WINDOWS_ARGS: ' --api-url http://192.168.64.1:18081/api ',
+      APP_WINDOWS_WORKDIR: 'C:\\tp\\bayi\\win-arm64',
+    }).platformlar.windows!.yetenekler;
+    assert.equal(y['appium:appArguments'], '--api-url http://192.168.64.1:18081/api');
+    assert.equal(y['appium:appWorkingDir'], 'C:\\tp\\bayi\\win-arm64');
+    assert.equal(y['appium:app'], 'C:\\Bayi\\Bayi.exe');
+  });
+
+  it('Windows: PowerShell tırnağını kıran değerler reddedilir', () => {
+    const kotu: Array<[string, string]> = [
+      ['APP_WINDOWS_ARGS', "--api-url x'; Remove-Item C:\\ -Recurse; '"],
+      ['APP_WINDOWS_ARGS', '--a\n--b'],
+      ['APP_WINDOWS_ARGS', '--a \u2019x'],
+      ['APP_WINDOWS_WORKDIR', "C:\\O'Brien"],
+      ['APP_WINDOWS_APP', "C:\\a'b.exe"],
+    ];
+    for (const [ad, deger] of kotu) {
+      assert.throws(() => testAyarlari({ [ad]: deger }), new RegExp(`${ad} tek tırnak`), `${ad}=${JSON.stringify(deger)}`);
+    }
+    // Windows kapalıyken (adres yok) bu değişkenler okunmaz.
+    assert.doesNotThrow(() => testAyarlari({ APPIUM_URL_WINDOWS: '', APP_WINDOWS_ARGS: "'" }));
+  });
 });
