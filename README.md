@@ -31,6 +31,7 @@ Temel kural: hiçbir AI çıktısı insan onayı olmadan test varlığına dön�
 | Faz 3 · Demo-B | Kod üretimi (Playwright MCP ajanı + şablon) → yerel kontrol → PR → kırarak doğrula → merge → yerel CI (PR/push/gece/deploy) → Kontrol Kulesi | Tamam |
 | Faz 4 | Triage (önce kural) → locator onarım PR'ı / mükerrer aramalı bug taslağı → testçi kararı → Jira; demo kontrolleri | Tamam |
 | Faz 5 | Prova, gerçek sistemlere geçiş hazırlığı, ölçülmüş baz değer | Sürüyor |
+| 009 · Mobil/masaüstü | Aynı hat Android, iOS ve Windows uygulamalarına: app-mcp ajanı (Appium), Java + Appium + TestNG şablonu, platform başına PR ve kontrol | Sürüyor (`feat/mobil-masaustu`): Android'de uygulama, Java referans testleri ve app-mcp emülatörde yeşil, kod üretimi → PR → merge zinciri henüz uçtan uca koşturulmadı; iOS bu Mac'te macOS gizlilik izni nedeniyle Appium'da bekliyor; Windows yalnız derlendi, CI iş akışları yazıldı ama koşturulmadı. Ayrıntı: [docs/MOBIL-MASAUSTU.md](docs/MOBIL-MASAUSTU.md) §8 |
 
 **Bugün dış hesap yoktur ve bu açıkça etiketlenir:**
 
@@ -64,6 +65,8 @@ Tüm servisler [`docker-compose.yml`](docker-compose.yml) içindedir. Host'a aç
 | `demo-app-api` | Örnek uygulama API'si: Bayi Sipariş Portalı (FastAPI) | — (iç ağ) |
 | `demo-app-web` | Örnek uygulama arayüzü (React + nginx) | http://127.0.0.1:8081 |
 | `jira-sim` | Jira Cloud REST v3 + Xray alt kümesi simülatörü; gerçek Jira ile aynı istemci kodu | http://127.0.0.1:8090 |
+| `app-mcp` | `mobil` profili. Mobil/masaüstü doğrulama ajanının aracı (kendi MCP sunucumuz, Appium istemcisi); kapalı araç listesi, kod çalıştırma yok | — (host'a açılmaz) |
+| `appium-gw` | `mobil` profili. test-runner'ın hosttaki Appium'a tek çıkışı: yalnız `host.docker.internal:4723`'e sabit TCP yönlendirici | — (iç ağ) |
 
 Dış sistemler port + adaptör + yerel simülatör düzenindedir
 ([MIMARI-SOZLESME §1](docs/MIMARI-SOZLESME.md#1-dış-sistemler-port--adaptör--yerel-simülatör)):
@@ -75,6 +78,7 @@ Dış sistemler port + adaptör + yerel simülatör düzenindedir
 | Test yönetimi | Jira Test issue | Jira Test issue · Xray Cloud | `TP_TEST_MGMT` |
 | Git forge + CI | LocalForge (yerel bare git + PR kaydı) + test-runner | GitHub (App, ruleset, Actions) | `TP_FORGE` |
 | Bulut tarayıcı | yerel Chromium | Sauce Labs (GitHub Actions job'u) | GitHub secret'ları |
+| Mobil/masaüstü cihaz | Bu Mac'te Appium 3 (`127.0.0.1:4723`) + Android emülatörü / iOS simülatörü; Windows için isteğe bağlı UTM VM | GitHub Actions emülatör / simülatör / `windows-latest` (`mobil-android`, `mobil-ios`, `masaustu-windows`) | `APPIUM_URL_*`, `make cihaz-*` |
 
 ### Ağlar ve izolasyon
 
@@ -86,8 +90,11 @@ Dış sistemler port + adaptör + yerel simülatör düzenindedir
 | `agent-net` | `internal` | demo-app-web, playwright-mcp |
 | `runner-net` | `internal` | toolchain-worker, test-runner |
 | `mcp-net` | `internal` | core-worker, playwright-mcp |
+| `app-mcp-net` | `internal` | core-worker, app-mcp |
+| `appium-net` | `internal` | test-runner, appium-gw |
+| `cihaz-net` | normal (host'a çıkış için) | app-mcp, appium-gw |
 
-`test-runner` yalnızca `demo-net` ve `runner-net`'tedir: Postgres'e, core-api'ye, playwright-mcp'ye,
+`test-runner` yalnızca `demo-net`, `runner-net` ve `appium-net`'tedir (sonuncusu yalnız appium-gw'ye): Postgres'e, core-api'ye, playwright-mcp'ye,
 merge kapısına, sırlara ve internete erişemez. `playwright-mcp` yalnızca demo-app-web'e ulaşır (nginx
 `/api/test/*`'i kapatır). Bu sınırlar `make security-check` ile otomatik doğrulanır.
 
@@ -185,9 +192,10 @@ testingprobe/
 ├── scripts/               # up, status, seed, reset, security-check, demo-*, forge-init, github-*, eval-live
 ├── infra/postgres/        # veritabanı ve rol başlatma
 ├── core/                  # çekirdek (Python 3.12, uv): API, worker, model geçidi, entegrasyonlar, özellikler
-├── toolchain/             # toolchain imajı: toolchain-worker, test-runner, playwright-mcp, AST koruması
+├── toolchain/             # toolchain imajı: toolchain-worker, test-runner, playwright-mcp, AST koruması; app-mcp, java-araclar
+├── tools/appium/          # Appium 3 + sürücü sürümleri (kilit dosyası; make cihaz-kur)
 ├── review-portal/         # inceleme portalı (React + Vite, nginx)
-├── demo-app/              # örnek uygulama: api/, web/, e2e/ (page object'ler + testler), ci/
+├── demo-app/              # örnek uygulama: api/, web/, mobile/, desktop/, e2e/ (Playwright), e2e-app/ (Java + Appium), ci/
 ├── sims/jira-sim/         # Jira Cloud REST v3 + Xray alt kümesi simülatörü
 ├── rules/                 # prompt, şema, replay kayıtları, değerlendirme setleri — bkz. rules/README.md
 ├── .github/               # CI workflow'ları (AI'sız), CODEOWNERS, ruleset betiği — bkz. .github/CI.md
@@ -209,6 +217,10 @@ testingprobe/
 | [docs/CLAUDE-CODE-KANALI.md](docs/CLAUDE-CODE-KANALI.md) | IDE (MCP) kanalı |
 | [docs/ONBOARDING.md](docs/ONBOARDING.md) | Yeni ekip üyesi rehberi ve sorun giderme |
 | [.github/CI.md](.github/CI.md) | CI job'ları, Sauce, ruleset, artefakt sözleşmesi |
+| [docs/MOBIL-MASAUSTU.md](docs/MOBIL-MASAUSTU.md) | Mobil (Android, iOS) ve Windows masaüstü: hat, kimlik sözleşmesi, Java çıktısı, app-mcp, kanıt durumu |
+| [docs/CIHAZ-ALTYAPISI.md](docs/CIHAZ-ALTYAPISI.md) | Yerel cihazlar, Appium, `make cihaz-*`, app-mcp ayrıntısı |
+| [docs/WINDOWS-VM.md](docs/WINDOWS-VM.md) | UTM içinde Windows 11 ARM kurulumu (henüz koşturulmadı) |
+| [docs/MOBIL-DEMO-EKI.md](docs/MOBIL-DEMO-EKI.md) | Canlı demoya Android eki: aynı case → Java testi → PR (provası yapılmadı) |
 | [rules/README.md](rules/README.md) | Model geçidi, REPLAY, canlı değerlendirme |
 
 ## Çalışma şekli (Spec Kit)

@@ -204,6 +204,28 @@ Konteyner dışında test (paket başına kalite kapısı, MIMARI-SOZLESME §7):
 (cd review-portal && npm ci --ignore-scripts && npm run build && npm test)
 ```
 
+### 4.1 Mobil / masaüstü ile çalışmak
+
+Android, iOS ve Windows hattı ([MOBIL-MASAUSTU.md](MOBIL-MASAUSTU.md)) varsayılan yığına girmez; cihazlar
+hostta, `app-mcp` ve `appium-gw` compose `mobil` profilindedir. Ek önkoşullar: JDK 17, Android SDK,
+Xcode (iOS), Node 22 ([CIHAZ-ALTYAPISI.md §1](CIHAZ-ALTYAPISI.md)).
+
+| Ne zaman | Komut |
+|---|---|
+| Bir kez | `make cihaz-kur` (Appium 3 + sürücüler `tools/appium/`, AVD `tp-android`, simülatör `TP iPhone`, app-mcp derlemesi) |
+| Uygulamayı derlemek | `cd demo-app/mobile && npm ci && scripts/derle-android.sh` (iOS: `scripts/derle-ios.sh`) |
+| Cihazı açmak | `make cihaz-baslat PLATFORM=android` (ya da `ios`; `GORUNMEZ=1` penceresiz) — uygulamayı kurar, Appium `127.0.0.1:4723` |
+| Ajan aracı + test-runner yönlendiricisi | `docker compose --profile mobil up -d app-mcp appium-gw` |
+| Durum / ağ denetimi | `make cihaz-durum` · `make cihaz-ag` |
+| Duman | `cd toolchain/app-mcp && npm run build && node scripts/duman-demo.mjs android` (Bayi uygulamasında giriş + locator) |
+| Java testleri (host) | `demo-app/e2e-app/README.md` → "Koşum" (`demo-app/ci/run-app-checks.sh android …`) |
+| Kapatmak | `make cihaz-durdur` |
+| Windows | isteğe bağlı UTM VM: [WINDOWS-VM.md](WINDOWS-VM.md) (henüz koşturulmadı) |
+
+iOS'ta Appium oturumu asılı kalırsa: Appium'u başlatan uygulamaya (Terminal / IDE) macOS gizlilik
+izni verin, sonra `make cihaz-durdur && make cihaz-baslat PLATFORM=ios`
+([CIHAZ-ALTYAPISI.md §7](CIHAZ-ALTYAPISI.md)).
+
 ## 5. Sırlar ve gerçek sistemler
 
 - `.env` **asla commit edilmez** (`.gitignore`'da). Depoda yalnızca açıklamalı `.env.example` bulunur.
