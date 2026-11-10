@@ -69,9 +69,6 @@ function SegmentGrubu<T extends string>({
                 aria-describedby={alt ? altId : undefined}
               />
               <span className="platform-secenek-ad" id={adId}>
-                <span className="platform-secenek-isaret" aria-hidden="true">
-                  ✓
-                </span>
                 {s.ad}
               </span>
               {alt && (

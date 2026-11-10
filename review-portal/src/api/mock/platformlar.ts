@@ -187,7 +187,7 @@ export function uygulamaKosulari(): KosuDetay[] {
       "run-110",
       "nightly",
       "local",
-      t(30, "04:00"),
+      t(28, "18:00"),
       [
         sonuc("r110-1", testAndC2(), "passed", 41000, { case_id: "case-1-2" }),
         sonuc("r110-2", TEST_AND_GIRIS, "failed", 38000, {
@@ -267,7 +267,7 @@ export function uygulamaHatalari(): HataAnalizi[] {
         { etiket: "Hata anı sayfa kaynağı (Appium)", url: dataAdresi("application/xml", ANDROID_SAYFA_KAYNAGI), tur: "page_source" },
       ],
       mode: null,
-      zaman: t(30, "04:04"),
+      zaman: t(28, "18:04"),
     },
   ];
 }

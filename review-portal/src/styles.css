@@ -4602,11 +4602,12 @@ td > .satir-baglanti + .cip,
   align-items: center;
   gap: 4px;
 }
-.platform-secenek-isaret {
-  display: none;
+/* Seçili işareti CSS içeriği: ada girmez (alternatif metin boş), renk dışında ikinci gösterge. */
+.platform-secenek:has(input:checked) .platform-secenek-ad::before {
+  content: "✓" / "";
 }
-.platform-secenek:has(input:checked) .platform-secenek-isaret {
-  display: inline;
+.yol-kirilir {
+  overflow-wrap: anywhere;
 }
 .platform-secenek-alt {
   font-weight: 400;

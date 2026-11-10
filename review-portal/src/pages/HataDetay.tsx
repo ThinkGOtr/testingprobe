@@ -179,7 +179,7 @@ function OnarimKarti({ o, hataId, yenile }: { o: LocatorOnarimi; hataId: string;
       {app ? (
         <p className="soluk kucuk" data-testid="onarim-sayfa-kaynagi">
           Uygulama testi: yeni kimlik hata anındaki sayfa kaynağından (Appium XML) bulundu. Onarım yalnızca{" "}
-          <span className="mono">{o.dosya || "(dosya bilinmiyor)"}</span> içindeki ilgili kimlik değerini değiştirir; ekran nesnesi metotları ve test
+          <span className="mono yol-kirilir">{o.dosya || "(dosya bilinmiyor)"}</span> içindeki ilgili kimlik değerini değiştirir; ekran nesnesi metotları ve test
           adımları değişmez (AST koruması). Merge insan onayı ister.
         </p>
       ) : (

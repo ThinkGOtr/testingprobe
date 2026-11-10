@@ -73,7 +73,7 @@ test("009: Kontrol Kulesi platform süzgeci adres çubuğunda; son koşular ve p
   const grup = page.getByRole("group", { name: "Platform" });
   await expect(grup.getByRole("radio", { name: "Tümü" })).toBeChecked();
   await expect(page.getByRole("region", { name: "Platform dağılımı tablosu" }).getByRole("row")).toHaveCount(5);
-  await grup.getByRole("radio", { name: "Android" }).check();
+  await grup.getByText("Android", { exact: true }).click();
   await expect(page).toHaveURL(/platform=android/);
   await expect(page.getByRole("region", { name: "Platform dağılımı tablosu" }).getByRole("row")).toHaveCount(2);
   const kosular = page.getByRole("region", { name: "Koşular tablosu" });
