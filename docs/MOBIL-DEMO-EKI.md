@@ -52,8 +52,8 @@ Ana demoda C2'nin web PR'ı merge edilmiş olabilir; Android script'i ayrı scri
 
 İsteğe bağlı kapanış (yalnız soru gelirse): `demo-app/e2e-app/target/kanit/` düzeni (hata anında ekran
 görüntüsü + sayfa kaynağı XML'i) — triage'ın uygulama kanıtı. iOS ve Windows sorulursa
-[MOBIL-MASAUSTU.md §8](MOBIL-MASAUSTU.md)'deki durumu olduğu gibi söyleyin: iOS bu Mac'te macOS
-gizlilik izni yüzünden Appium oturumunda bekliyor; Windows uygulaması derleniyor, CI iş akışı yazıldı
+[MOBIL-MASAUSTU.md §8](MOBIL-MASAUSTU.md)'deki durumu olduğu gibi söyleyin: iOS'ta Java referans testleri
+(kırarak doğrula dahil) ve app-mcp simülatörde yeşil, kod üretimi zinciri iOS'ta koşturulmadı; Windows uygulaması derleniyor, CI iş akışı yazıldı
 ama henüz koşturulmadı.
 
 ## 3. Cihaz aksarsa — yedek cümleler

@@ -362,20 +362,33 @@ eklendi (çalışıyorsa denetlenir).
 
 ## 7. Bilinen sorunlar / açık işler
 
-1. **iOS + Xcode 26+ (DeviceHub) — macOS gizlilik izni.** xcuitest her oturumda simülatör
-   tercihlerini `~/Library/Containers/com.apple.dt.Devices/…` altına yazar. Appium'u başlatan
-   uygulamanın (Terminal / IDE) "diğer uygulamaların verilerine erişim" izni yoksa macOS bir izin
-   penceresi açar ve dosya erişimi **yanıt verilene dek asılı kalır**; oturum açılışı zaman aşımına
-   düşer (günlükte son satır `Updated … com.apple.iphonesimulator.plist`). Çözüm: açılan izin
-   penceresini onaylayın ya da Sistem Ayarları → Gizlilik ve Güvenlik → **Uygulama Yönetimi** /
-   **Tam Disk Erişimi** altında Appium'u başlatan uygulamaya izin verin, sonra
-   `make cihaz-durdur && make cihaz-baslat PLATFORM=ios`.
-2. **Port 4723 paylaşımı:** başka şeritler (Ş1/Ş3) de `127.0.0.1:4723` kullanır. `cihaz-baslat`
+1. **iOS + Xcode 26+ (DeviceHub) — macOS gizlilik izni. (Bu Mac'te çözüldü, 2026-11-10.)**
+   xcuitest her oturumda simülatör tercihlerini `~/Library/Containers/com.apple.dt.Devices/…`
+   altına yazar. Appium'u başlatan uygulamanın (Terminal / IDE) "diğer uygulamaların verilerine
+   erişim" izni yoksa macOS bir izin penceresi açar ve dosya erişimi **yanıt verilene dek asılı
+   kalır**; oturum açılışı zaman aşımına düşer (günlükte son satır `Updated … com.apple.iphonesimulator.plist`).
+   Çözüm: Sistem Ayarları → Gizlilik ve Güvenlik → **Tam Disk Erişimi** (ya da **Uygulama
+   Yönetimi**) altında Appium'u başlatan uygulamaya (burada VS Code) izin verin, **izinden önce
+   başlamış Appium'u durdurup yeniden başlatın** (izin yeni süreçlere geçer). Çalışan bir Appium
+   başka bir worktree'den başlatılmışsa `make cihaz-durdur` onu tanımaz (pid dosyası o
+   worktree'dedir); süreci elle sonlandırın, sonra `make cihaz-baslat PLATFORM=ios`.
+   Doğrulama (Xcode 27.2, iOS 18.5 simülatörü `TP iPhone`, xcuitest 12.22.8): izin sonrası
+   `Updated DeviceHub preferences …` satırı anında geçti; WDA ilk oturumda derlenip **28 sn**'de
+   hazır oldu, sonraki oturumlar birkaç saniyede açılıyor. `duman.mjs ios` (stok Ayarlar) 53 sn,
+   `duman-demo.mjs ios` 11 sn BAŞARILI; Java referans paketi iOS'ta 17/17 yeşil (iki koşu).
+2. **iOS'ta WDA'nın kaydırma ve klavye komutları RN ekranlarında işe yaramaz** (e2e-app'te aşıldı):
+   `mobile: scroll toVisible` RN `ScrollView`'da "max scroll count reached" ile düşer (yalnız tablo
+   hücrelerini tanır), `direction` kaydırması hiç kaydırmaz; `hideKeyboard` yalnızca klavyedeki
+   "done" benzeri tuşa basarak kapatır — sayı klavyesinde (adet alanı) böyle tuş yoktur, giriş
+   ekranının "next"/"go" tuşları ise eylem tetikler. e2e-app (`altyapi/Kaydirma`, `altyapi/Klavye`)
+   iOS'ta kaydırma kabının kenar boşluğundan `mobile: dragFromToForDuration` sürüklemesi kullanır;
+   katalog ekranı `keyboardDismissMode="on-drag"` olduğundan aynı sürükleme klavyeyi de kapatır.
+3. **Port 4723 paylaşımı:** başka şeritler (Ş1/Ş3) de `127.0.0.1:4723` kullanır. `cihaz-baslat`
    çalışan bir Appium görürse yenisini başlatmaz (sahibi `make cihaz-durum`'da "harici süreç").
-3. **Windows fikstürü elle yazıldı** (NovaWindows öznitelik adları — `Value.Value`,
+4. **Windows fikstürü elle yazıldı** (NovaWindows öznitelik adları — `Value.Value`,
    `Toggle.ToggleState`, `SelectionItem.IsSelected` — VM'de gerçek kaynakla doğrulanmalı;
    `docs/WINDOWS-VM.md`, Ş9).
-4. **Çekirdek entegrasyonu (Ş6):** `ALLOWED_AGENT_TOOLS['verify_and_map_app']` = `app_screenshot`
+5. **Çekirdek entegrasyonu (Ş6):** `ALLOWED_AGENT_TOOLS['verify_and_map_app']` = `app_screenshot`
    hariç yedi araç; `FORBIDDEN_TOOLS`'a `app_screenshot`; ref argümanı `ref` (Playwright 1.64
    `target` kullanır; `snapshot_refs.REF_ARGS` ikisini de tanır); locator çapraz kontrolü
    `app_generate_locator` JSON'undan.

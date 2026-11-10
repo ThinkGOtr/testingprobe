@@ -31,7 +31,7 @@ Temel kural: hiçbir AI çıktısı insan onayı olmadan test varlığına dön�
 | Faz 3 · Demo-B | Kod üretimi (Playwright MCP ajanı + şablon) → yerel kontrol → PR → kırarak doğrula → merge → yerel CI (PR/push/gece/deploy) → Kontrol Kulesi | Tamam |
 | Faz 4 | Triage (önce kural) → locator onarım PR'ı / mükerrer aramalı bug taslağı → testçi kararı → Jira; demo kontrolleri | Tamam |
 | Faz 5 | Prova, gerçek sistemlere geçiş hazırlığı, ölçülmüş baz değer | Sürüyor |
-| 009 · Mobil/masaüstü | Aynı hat Android, iOS ve Windows uygulamalarına: app-mcp ajanı (Appium), Java + Appium + TestNG şablonu, platform başına PR ve kontrol | Sürüyor (`feat/mobil-masaustu`): Android'de uygulama, Java referans testleri ve app-mcp emülatörde yeşil, kod üretimi → PR → merge zinciri henüz uçtan uca koşturulmadı; iOS bu Mac'te macOS gizlilik izni nedeniyle Appium'da bekliyor; Windows yalnız derlendi, CI iş akışları yazıldı ama koşturulmadı. Ayrıntı: [docs/MOBIL-MASAUSTU.md](docs/MOBIL-MASAUSTU.md) §8 |
+| 009 · Mobil/masaüstü | Aynı hat Android, iOS ve Windows uygulamalarına: app-mcp ajanı (Appium), Java + Appium + TestNG şablonu, platform başına PR ve kontrol | Sürüyor (`feat/mobil-masaustu`): Android'de uygulama, Java referans testleri ve app-mcp emülatörde yeşil, kod üretimi → PR → merge zinciri henüz uçtan uca koşturulmadı; iOS'ta da uygulama, Java referans testleri (kırarak doğrula dahil) ve app-mcp simülatörde yeşil; Windows yalnız derlendi, CI iş akışları yazıldı ama koşturulmadı. Ayrıntı: [docs/MOBIL-MASAUSTU.md](docs/MOBIL-MASAUSTU.md) §8 |
 
 **Bugün dış hesap yoktur ve bu açıkça etiketlenir:**
 

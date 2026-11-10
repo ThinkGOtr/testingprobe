@@ -222,8 +222,9 @@ Xcode (iOS), Node 22 ([CIHAZ-ALTYAPISI.md §1](CIHAZ-ALTYAPISI.md)).
 | Kapatmak | `make cihaz-durdur` |
 | Windows | isteğe bağlı UTM VM: [WINDOWS-VM.md](WINDOWS-VM.md) (henüz koşturulmadı) |
 
-iOS'ta Appium oturumu asılı kalırsa: Appium'u başlatan uygulamaya (Terminal / IDE) macOS gizlilik
-izni verin, sonra `make cihaz-durdur && make cihaz-baslat PLATFORM=ios`
+iOS'ta Appium oturumu asılı kalırsa: Appium'u başlatan uygulamaya (Terminal / IDE) macOS Tam Disk
+Erişimi verin; izinden önce başlamış Appium izni görmez, yeniden başlatın:
+`make cihaz-durdur && make cihaz-baslat PLATFORM=ios`
 ([CIHAZ-ALTYAPISI.md §7](CIHAZ-ALTYAPISI.md)).
 
 ## 5. Sırlar ve gerçek sistemler

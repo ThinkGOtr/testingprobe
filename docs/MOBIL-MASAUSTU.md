@@ -212,7 +212,7 @@ kullanılır.
 
 ## 8. Sınırlar ve kanıt durumu
 
-Bu bölüm 2026-11-09 itibarıyla `feat/mobil-masaustu` dalının durumudur.
+Bu bölüm 2026-11-09 itibarıyla `feat/mobil-masaustu` dalının durumudur; iOS satırları 2026-11-10'da cihazda doğrulanarak güncellendi.
 
 | Konu | Durum | Kanıt / not |
 |---|---|---|
@@ -222,8 +222,10 @@ Bu bölüm 2026-11-09 itibarıyla `feat/mobil-masaustu` dalının durumudur.
 | test-runner → appium-gw → Appium | **Kanıtlandı (ağ)** | yalıtılmış yığında `appium-gw:4723` açık, internet/host diğer portlar kapalı ([CIHAZ-ALTYAPISI.md §5.1](CIHAZ-ALTYAPISI.md)) |
 | Android REPLAY golden'ı (`verify_and_map_app/golden/TPD-1-C2-android`) | **Sözleşmeden yazıldı** | araç adımları app-mcp sözleşmesine göre elle hazırlandı, canlı cihazda kaydedilmedi (`rules/evaluations.yaml`) |
 | `verify_and_map_app` canlı model değerlendirmesi | **Bekliyor** | `rules/evaluations.yaml` → `verify-and-map-app: status: pending` |
-| iOS uygulaması | Elle yürütüldü | iOS 18.5 simülatöründe aynı akış elle doğrulandı |
-| iOS Appium (xcuitest) oturumu | **Bu Mac'te engelli** | Xcode 26+ ile xcuitest, Appium'u başlatan uygulamanın macOS gizlilik iznini (Uygulama Yönetimi / Tam Disk Erişimi) bekleyip asılı kalıyor; izin verilene dek iOS Java koşusu ve app-mcp iOS dumanı yapılamıyor ([CIHAZ-ALTYAPISI.md §7](CIHAZ-ALTYAPISI.md)) |
+| iOS uygulaması | **Kanıtlandı** | `derle-ios.sh` Release simülatör derlemesi (API `127.0.0.1:8081/api`); iOS 18.5 simülatöründe (`TP iPhone`) Appium ile uçtan uca sürüldü |
+| iOS Appium (xcuitest) oturumu | **Kanıtlandı** (2026-11-10) | engel macOS gizlilik iznidir: Appium'u başlatan uygulamaya (VS Code) Tam Disk Erişimi verilip Appium yeniden başlatılınca DeviceHub adımı geçti; Xcode 27.2, xcuitest 12.22.8, WDA ilk derleme+açılış 28 sn ([CIHAZ-ALTYAPISI.md §7](CIHAZ-ALTYAPISI.md) madde 1) |
+| app-mcp iOS | **Kanıtlandı** | `duman.mjs ios` (stok Ayarlar: başlat, snapshot, tıkla, ekran görüntüsü) 53 sn BAŞARILI; `duman-demo.mjs ios` 11 sn BAŞARILI — giriş → katalog, `add-to-cart` locator'ı `{"platform":"ios","strategy":"accessibilityId","id":"add-to-cart"}` (kanıt `var/cihaz/kanit/`, depoda yok) |
+| iOS Java referans testleri | **Kanıtlandı** | `run-app-checks.sh ios` 17/17 yeşil, iki ardışık koşu (her biri ~288 sn); `break-verify-app.sh ios` yeşil (5/5) → kırmızı (2 assertion: `TPD1C3_0a1b2c3dTest.senaryo`, `SepetTesti.kampanyaYediAdet`; kampanyasız 3 test yeşil) → yeşil (5/5), 317 sn. iOS'a özgü düzeltmeler yalnız altyapıda (`Kaydirma`, `Klavye`: WDA `scroll toVisible` ve `hideKeyboard` RN ekranlarında çalışmadığından sürükleme; [CIHAZ-ALTYAPISI.md §7](CIHAZ-ALTYAPISI.md) madde 2); ekran nesneleri ve kimlikler değişmedi; ortak altyapı değiştiği için Android aynı gün yeniden koşuldu: 17/17 yeşil (187 sn) |
 | Windows uygulaması | **Yalnız derlendi** | macOS'ta `EnableWindowsTargeting` ile derleniyor, çekirdek testleri geçiyor; hiç Windows'ta çalıştırılmadı |
 | Windows CI (`masaustu-windows.yml`) | **Yazıldı, koşturulmadı** | yalnız `actionlint` + YAML ayrıştırma |
 | Windows VM (UTM) | **Kurulmadı** | rehber: [WINDOWS-VM.md](WINDOWS-VM.md); app-mcp Windows snapshot fikstürü elle yazıldı, NovaWindows öznitelik adları gerçek kaynakla doğrulanmalı |
