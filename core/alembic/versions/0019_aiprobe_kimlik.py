@@ -10,8 +10,9 @@
 
 Tüm NOT NULL kolonlar `server_default`'lu: mevcut satırlar ve `local` kip etkilenmez.
 
-Not: `feat/mobil-masaustu` birleştirildi; bu göç `0018_script_platform`'un ardından gelir (tasks.md
-T051). Tek baş kalmazsa `tests/unit/platform/test_aiprobe_sso.py::test_alembic_tek_bas` başarısız olur.
+Not: `feat/mobil-masaustu` birleştirildi; bu göç `0018_script_platform`'un ardından gelir
+(tasks.md T051). Tek baş kalmazsa `tests/unit/platform/test_aiprobe_sso.py::test_alembic_tek_bas`
+başarısız olur.
 
 Revision ID: 0019
 Revises: 0018
