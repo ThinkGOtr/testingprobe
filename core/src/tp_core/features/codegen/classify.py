@@ -135,6 +135,9 @@ class Siniflama:
     gecen: int = 0
     toplam: int = 0
     hata: str | None = None
+    # test-runner Java yolunun kırarak doğrulama denetimi (`run.kirmizi_denetimi.ok`): BREAK
+    # koşusunda ≥1 kırmızı ve her kırmızı `failure.type == "assertion"`. Web/kırılmasız: None.
+    kirmizi_ok: bool | None = None
 
     def ozet(self) -> dict[str, Any]:
         return {
@@ -261,12 +264,14 @@ def classify(report: Mapping[str, Any]) -> Siniflama:
     run = run or {}
     tests = [t for t in run.get("tests") or [] if isinstance(t, Mapping)]
     gecen = sum(1 for t in tests if t.get("status") in GECEN)
+    kd = run.get("kirmizi_denetimi")
     ortak = {
         "run_status": run.get("status"),
         "run_id": run.get("run_id"),
         "adimlar": adimlar,
         "gecen": gecen,
         "toplam": len(tests),
+        "kirmizi_ok": (kd.get("ok") is True) if isinstance(kd, Mapping) else None,
     }
     if report.get("conclusion") == "success":
         aciklama = ACIKLAMA["gecti_java"] if statik == JAVA_ADIMLARI else ACIKLAMA["gecti"]

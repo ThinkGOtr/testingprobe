@@ -144,5 +144,7 @@ class ToolchainClient:
         if run_id:
             body["run_id"] = run_id
         if platform and platform != "web":
+            # Ş8 sözleşmesi: Java yolu açıkça (`lang`) + Appium sürücüsü (`platform`).
+            body["lang"] = "java"
             body["platform"] = platform
         return self._post("/check", body, self.check_timeout_s)

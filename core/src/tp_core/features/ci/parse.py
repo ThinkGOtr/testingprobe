@@ -816,3 +816,96 @@ def sayilar(testler: Iterable[TestSatiri | Mapping[str, Any]]) -> dict[str, int]
         else:
             s["basarisiz"] += 1
     return s
+
+
+# --------------------------------------------------------------------------- Java (009)
+
+JAVA_SRC = "src/test/java"
+# Surefire `testcase@classname`: Java sınıf adı (paketli ya da varsayılan paket; iç sınıf `$`).
+_JAVA_SINIF = re.compile(r"\A(?:[A-Za-z_]\w*\.)*[A-Za-z_][\w$]*\Z")
+_JSON_YOK_UYARISI = "JSON rapor (results.json) bulunamadı"
+
+
+def java_test_kimligi(classname: str | None, metot: str) -> tuple[str | None, str]:
+    """Surefire (`classname`, `name`) → test-runner Java özetiyle (`runner/surefire.py`
+    `_src_file` + `simple`) aynı kimlik: dosya `src/test/java/<paket yolu>/<Dış sınıf>.java`,
+    ad `<Sınıf> › <metot>` (sınıf = `classname`'in son öğesi, iç sınıfta `Dis$Ic`).
+
+    Böylece `test_result` satırı koşu raporundaki (`run.json` `tests[]`) girdiyle, üretilen
+    script'in forge yoluyla (`…/e2e-app/src/test/java/…`) ve triage kanıtıyla eşleşir. Yalnızca
+    Java koşusunda çağrılır; Java sınıf adı değilse değer değişmez.
+    """
+    if not classname or not _JAVA_SINIF.match(classname):
+        return classname, metot
+    dis = classname.split("$", 1)[0]
+    basit = classname.rsplit(".", 1)[-1]
+    ad = metot if metot.startswith(f"{basit} › ") else f"{basit} › {metot}"
+    return f"{JAVA_SRC}/{dis.replace('.', '/')}.java", ad
+
+
+SUREFIRE_KALIBI = "TEST-*.xml"
+SUREFIRE_DIZINI = "surefire-reports"  # cihaz koşusu; `birim-raporlari/` (cihazsız birim) değil
+MAX_SUREFIRE_DOSYA = 200
+
+
+def surefire_yolu_mu(yol: str) -> bool:
+    """Artefakt içi yol cihaz koşusunun Surefire raporu mu (`…/surefire-reports/TEST-*.xml`)?"""
+    parcalar = yol.split("/")
+    return (
+        len(parcalar) >= 2
+        and parcalar[-2] == SUREFIRE_DIZINI
+        and fnmatch.fnmatchcase(parcalar[-1], SUREFIRE_KALIBI)
+    )
+
+
+def java_satirlari(satirlar: Iterable[TestSatiri]) -> list[TestSatiri]:
+    """Ham JUnit satırlarının kimliğini `java_test_kimligi` biçimine çevirir."""
+    out = []
+    for t in satirlar:
+        dosya, ad = java_test_kimligi(t.dosya, t.test_adi)
+        out.append(TestSatiri(**{**t.__dict__, "dosya": dosya, "test_adi": ad}))
+    return out
+
+
+def surefire_ayristir(dosyalar: Mapping[str, bytes], uyarilar: Iterable[str] = ()) -> Ayristirma:
+    """GitHub uygulama iş akışı artefaktındaki `surefire-reports/TEST-*.xml` dosyaları (cihaz
+    koşusu) → tek ayrıştırma. Okunamayan dosya uyarı olur; diğerleri işlenir. Toplam test sayısı
+    `MAX_TEST` ile sınırlıdır. `uyarilar`: okuma aşamasının uyarıları (atlanan dosyalar)."""
+    notlar: list[str] = list(uyarilar)
+    junit: list[TestSatiri] = []
+    adlar = sorted(y for y in dosyalar if surefire_yolu_mu(y))
+    if len(adlar) > MAX_SUREFIRE_DOSYA:
+        notlar.append(f"{len(adlar)} Surefire raporundan yalnızca {MAX_SUREFIRE_DOSYA} okundu.")
+    for yol in adlar[:MAX_SUREFIRE_DOSYA]:
+        ad = temiz(yol.rsplit("/", 1)[-1], 120)
+        try:
+            junit.extend(parse_junit(dosyalar[yol]))
+        except RaporHatasi as exc:
+            notlar.append(f"{ad}: {temiz(exc, 200)}")
+        except Exception as exc:  # güvenilmeyen girdi: okunamayan rapor yalnızca uyarı
+            notlar.append(f"{ad}: ayrıştırılamadı ({temiz(exc, 200)})")
+        if len(junit) >= MAX_TEST:
+            notlar.append(f"Test sayısı üst sınırı ({MAX_TEST}) aşıldı; kalan raporlar okunmadı.")
+            break
+    if not adlar:
+        notlar.append("Surefire JUnit XML'i (surefire-reports/TEST-*.xml) artefaktta yok.")
+    return Ayristirma(
+        testler=merge(java_satirlari(junit[:MAX_TEST]), None),
+        uyarilar=notlar,
+        istatistik={},
+        raporlar={"junit": bool(adlar), "json": False},
+    )
+
+
+def java_ayristirmasi(ayr: Ayristirma) -> Ayristirma:
+    """Java (Appium/TestNG) koşusunun JUnit ayrıştırması: test kimlikleri `java_test_kimligi`
+    biçimine çevrilir; Java yolunda JSON rapor olmadığından "JSON yok" uyarısı düşer.
+
+    Tekrarlar (`repeat_each`) `parse_reports` içinde (sınıf, metot) anahtarıyla zaten
+    birleştirilmiştir; kimlik dönüşümü birebirdir, yeniden birleştirme gerekmez."""
+    return Ayristirma(
+        testler=java_satirlari(ayr.testler),
+        uyarilar=[u for u in ayr.uyarilar if not u.startswith(_JSON_YOK_UYARISI)],
+        istatistik=ayr.istatistik,
+        raporlar=ayr.raporlar,
+    )

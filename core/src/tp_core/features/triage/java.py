@@ -75,9 +75,12 @@ def sinif_adi(dosya: str | None) -> str | None:
 
 
 def kanit_dizini_adi(dosya: str | None, test_adi: str) -> str | None:
-    """`Kanit.dizin` ile aynı: `Sınıf.metot`, `[^A-Za-z0-9._-]` → `_`."""
+    """`Kanit.dizin` ile aynı: `Sınıf.metot`, `[^A-Za-z0-9._-]` → `_`.
+
+    `test_adi` Surefire metot adı (`senaryo`), paketli ad (`…Test.senaryo`) ya da test-runner /
+    çekirdek JUnit kimliği (`<Sınıf> › <metot>`, `ci.parse.java_test_kimligi`) olabilir."""
     sinif = sinif_adi(dosya)
-    metot = (test_adi or "").strip().rsplit(".", 1)[-1]
+    metot = (test_adi or "").strip().rsplit(" › ", 1)[-1].rsplit(".", 1)[-1]
     if not sinif or not metot:
         return None
     ad = _GUVENSIZ_RE.sub("_", f"{sinif}.{metot}")

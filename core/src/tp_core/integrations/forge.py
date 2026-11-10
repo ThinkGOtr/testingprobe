@@ -288,6 +288,54 @@ def local_required_checks(
     return validate_required_checks(required or list(configured)), reason
 
 
+# GitHub forge kipi (009 §2.7, .github/CI.md "Uygulama iş akışları"): platform → iş akışı dosyası
+# ve check (= job) adı. Platform `TP_PLATFORMS` ile etkinleştirilince job adı zorunlu kontrol
+# listesine eklenir (GitHub ruleset'ine de `scripts/github-ruleset.sh --checks` ile eklenmelidir).
+PLATFORMS_ENV = "TP_PLATFORMS"
+GITHUB_PLATFORM_CHECKS: dict[str, str] = {
+    "android": "mobil-android",
+    "ios": "mobil-ios",
+    "windows": "masaustu-windows",
+}
+GITHUB_PLATFORM_WORKFLOWS: dict[str, str] = {
+    p: f"{ad}.yml" for p, ad in GITHUB_PLATFORM_CHECKS.items()
+}
+
+
+# Zorunlu check yapılabilen platform iş akışları (`changes` + no-op deseni; .github/CI.md).
+ZORUNLU_YAPILABILIR_PLATFORMLAR: tuple[str, ...] = ("android", "windows")
+
+
+def etkin_platformlar(env: Mapping[str, str] | None = None) -> tuple[str, ...]:
+    """`TP_PLATFORMS="android,windows"` → ("android", "windows"); boş → (). `web` yok sayılır
+    (her zaman etkin); bilinmeyen ad yanlış yapılandırmadır (`ForgeValidationError`)."""
+    env = os.environ if env is None else env
+    out: list[str] = []
+    for parca in (env.get(PLATFORMS_ENV) or "").split(","):
+        ad = parca.strip().lower()
+        if not ad or ad == "web":
+            continue
+        if ad not in APP_PLATFORMS:
+            raise ForgeValidationError(
+                f"{PLATFORMS_ENV} yalnızca {', '.join(APP_PLATFORMS)} içerebilir: {parca!r}"
+            )
+        if ad not in ZORUNLU_YAPILABILIR_PLATFORMLAR:
+            # mobil-ios.yml workflow düzeyinde `paths` süzgeçlidir ve push tetiği yoktur: ilgisiz
+            # PR'da check hiç oluşmaz → zorunlu yapılırsa her PR süresiz bekler (.github/CI.md).
+            raise ForgeValidationError(
+                f"{PLATFORMS_ENV}={ad}: bu platformun iş akışı zorunlu check olamaz (no-op deseni "
+                "yok); önce iş akışını `changes` + no-op desenine çevirin"
+            )
+        if ad not in out:
+            out.append(ad)
+    return tuple(out)
+
+
+def github_required_checks(configured: Sequence[str], platforms: Sequence[str]) -> tuple[str, ...]:
+    """GitHub zorunlu kontrolleri: yapılandırılmış liste + etkin platformların job adları."""
+    return validate_required_checks([*configured, *(GITHUB_PLATFORM_CHECKS[p] for p in platforms)])
+
+
 def get_forge(env: Mapping[str, str] | None = None) -> ForgePort:
     """`TP_FORGE`'a göre adaptör kurar (varsayılan: local)."""
     env = os.environ if env is None else env

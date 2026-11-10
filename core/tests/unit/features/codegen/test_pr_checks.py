@@ -218,6 +218,101 @@ def test_merge_kapisi_github_kipinde_db_kopyasini_kullanir(engine: Engine, kip: 
         ]
 
 
+# ------------------------------------------------- platform başına kapı (009, Ş6b)
+
+APP_DOSYA = "e2e-app/src/test/java/com/antreklabs/bayi/uretilen/TPD1AndroidC2_0a1b2c3dTest.java"
+
+
+def _checks_yaz(tmp_path: Path, head: str, checks: list[dict[str, Any]]) -> None:
+    (tmp_path / "checks").mkdir(exist_ok=True)
+    (tmp_path / "checks" / f"{head}.json").write_text(json.dumps({"checks": checks}))
+
+
+def test_local_uygulama_pr_platform_kontrolu_ister_merge_pr_ile_ayni(
+    engine: Engine, kip: Any, tmp_path: Path
+) -> None:
+    """Portal `forge.local_required_checks`'i kullanır: yalnız e2e-app/ değiştiren Android PR'ı
+    web `local-ci` yerine `local-ci-android` ister; kayıt yokken de bekler ("yok")."""
+    from tp_core.integrations.forge import local_required_checks
+
+    kip("local")
+    head = _sha()
+    yollar = [APP_DOSYA]
+    # Henüz hiç kontrol yok: platform kontrolü zorunlu ve 'yok'.
+    _, ci, engeller = views.pr_checks(head, None, degisen=yollar, platform="android")
+    assert "Zorunlu kontrol 'local-ci-android': yok" in engeller
+    # Koşuyor (toolchain başta in_progress yazar).
+    koşan = [{"name": "local-ci-android", "status": "in_progress", "conclusion": None}]
+    _checks_yaz(tmp_path, head, koşan)
+    _, ci, engeller = views.pr_checks(head, None, degisen=yollar, platform="android")
+    assert ci == "pending" and engeller == ["Zorunlu kontrol 'local-ci-android': pending"]
+    # Yeşil: web local-ci kaydı olmadan merge edilebilir (LocalForge kapısıyla aynı).
+    yesil = [{"name": "local-ci-android", "status": "completed", "conclusion": "success"}]
+    _checks_yaz(tmp_path, head, yesil)
+    liste, ci, engeller = views.pr_checks(head, None, degisen=yollar, platform="android")
+    assert ci == "passed" and engeller == []
+    assert [(c["ad"], c["zorunlu"]) for c in liste] == [("local-ci-android", True)]
+    zorunlu, neden = local_required_checks(
+        ("local-ci",), [CheckRun(name="local-ci-android", status="completed",
+                                 conclusion="success")], yollar
+    )  # fmt: skip
+    assert zorunlu == ("local-ci-android",) and neden is None
+    # Kayıtlı kırmızı web local-ci de durdurur (simetri).
+    _checks_yaz(tmp_path, head, [*yesil, {"name": "local-ci", "status": "completed",
+                                          "conclusion": "failure"}])  # fmt: skip
+    _, ci, engeller = views.pr_checks(head, None, degisen=yollar, platform="android")
+    assert ci == "failed" and engeller == ["Zorunlu kontrol 'local-ci': failed"]
+
+
+def test_local_web_pr_davranisi_degismez(engine: Engine, kip: Any, tmp_path: Path) -> None:
+    kip("local")
+    head = _sha()
+    _checks_yaz(tmp_path, head, [{"name": "local-ci", "status": "completed",
+                                  "conclusion": "success"}])  # fmt: skip
+    yollar = ["e2e/tests/generated/TPD1C2_0a1b2c3d.spec.ts"]
+    _, ci, engeller = views.pr_checks(head, None, degisen=yollar, platform="web")
+    assert ci == "passed" and engeller == []
+
+
+def test_merge_engelleri_uygulama_scripti(engine: Engine, kip: Any, tmp_path: Path) -> None:
+    kip("local")
+    head = _sha()
+    with session_scope() as s:
+        sc = Script(tur="test", dosya_yolu=APP_DOSYA, branch="tp/case-android-x",
+                    platform="android")  # fmt: skip
+        s.add(sc)
+        s.flush()
+        s.execute(
+            text("UPDATE script SET durum = 'pr_open', pr_no = 611, head_sha = :h WHERE id = :i"),
+            {"h": head, "i": sc.id},
+        )
+        s.refresh(sc)
+        cg = SimpleNamespace(break_durum="passed", dal={})
+        assert views.merge_engelleri(sc, cg) == ["Zorunlu kontrol 'local-ci-android': yok"]
+        _checks_yaz(tmp_path, head, [{"name": "local-ci-android", "status": "completed",
+                                      "conclusion": "success"}])  # fmt: skip
+        assert views.merge_engelleri(sc, cg) == []
+
+
+def test_github_platform_checkleri_tp_platforms(
+    engine: Engine, kip: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    kip("github")
+    assert views.required_checks() == ("test-local", "ast-guard", "semgrep")
+    monkeypatch.setenv("TP_PLATFORMS", "android, windows,web")
+    assert views.required_checks() == (
+        "test-local", "ast-guard", "semgrep", "mobil-android", "masaustu-windows",
+    )  # fmt: skip
+    monkeypatch.setenv("TP_PLATFORMS", "symbian")
+    assert views.required_checks() == ("test-local", "ast-guard", "semgrep")
+    # Geçersiz yapılandırma portalda engel olarak görünür (GitHubForge de kurulamaz).
+    _, _, engeller = views.pr_checks(_sha(), None)
+    assert any(e.startswith("Yapılandırma hatası") for e in engeller)
+    kip("local")
+    monkeypatch.setenv("TP_PLATFORMS", "android")
+    assert views.required_checks() == ("local-ci",)
+
+
 # ---------------------------------------------------------------- migrasyon
 
 KOLONLAR = ("checks", "checks_sha", "checks_zaman")

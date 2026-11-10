@@ -31,14 +31,19 @@ from tp_core.features.codegen.service import (
     screenshot_url,
 )
 from tp_core.integrations.forge import (
+    APP_PLATFORMS,
     GITHUB_REQUIRED_CHECKS,
     LOCAL_REQUIRED_CHECKS,
     REQUIRED_CHECKS_ENV,
     ForgeValidationError,
+    etkin_platformlar,
+    github_required_checks,
+    local_required_checks,
     parse_required_checks,
 )
 from tp_core.models import PullRequest, Script, ScriptTestCase, StepMapping
 from tp_core.models.codegen_feature import ScriptAdim, ScriptCodegen, ScriptKontrol
+from tp_core.ports import CheckRun
 from tp_core.workflow.service import content_hash_of
 
 _SHA_RE = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?$")
@@ -49,9 +54,17 @@ def required_checks() -> tuple[str, ...]:
     forge = get_settings().forge
     varsayilan = LOCAL_REQUIRED_CHECKS if forge == "local" else GITHUB_REQUIRED_CHECKS
     try:
-        return parse_required_checks(os.environ.get(REQUIRED_CHECKS_ENV), varsayilan)
+        liste = parse_required_checks(os.environ.get(REQUIRED_CHECKS_ENV), varsayilan)
     except ForgeValidationError:
-        return tuple(varsayilan)
+        liste = tuple(varsayilan)
+    if forge != "github":
+        # LocalForge: platform kontrolleri PR'a göre eklenir (`yerel_zorunlu_checkler`).
+        return liste
+    try:
+        # GitHub: etkin platformların iş akışı check'leri (`TP_PLATFORMS`; GitHubForge ile aynı).
+        return github_required_checks(liste, etkin_platformlar(os.environ))
+    except ForgeValidationError:
+        return liste
 
 
 def read_checks(sha: str | None) -> list[dict[str, Any]]:
@@ -94,19 +107,76 @@ def _check_durumu(c: dict[str, Any]) -> str:
     return {"success": "passed", "skipped": "skipped"}.get(str(c.get("conclusion")), "failed")
 
 
+def pr_degisen_yollari(sc: Script | None) -> list[str]:
+    """Script PR'ının değiştirdiği forge yolları. Üretilen test PR'ı tek dosyalık commit'tir
+    (`commit_files({dosya_yolu: …})`); dal güncellemesi main'i birleştirir, merge tabanına göre
+    fark yine bu dosyadır. Bilinmiyorsa boş liste (kapı yapılandırılmış listeye düşer)."""
+    return [sc.dosya_yolu] if sc is not None and sc.dosya_yolu else []
+
+
+def _check_run(c: dict[str, Any]) -> CheckRun | None:
+    try:
+        return CheckRun(
+            name=c["name"],
+            status=c.get("status") if c.get("status") in ("queued", "in_progress") else "completed",
+            conclusion=c.get("conclusion")
+            if c.get("conclusion") in ("success", "failure", "cancelled", "skipped")
+            else None,
+        )
+    except (KeyError, ValueError):
+        return None
+
+
+def yerel_zorunlu_checkler(
+    ham: Sequence[dict[str, Any]], degisen: Sequence[str], platform: str | None = None
+) -> tuple[tuple[str, ...], str | None]:
+    """LocalForge merge kapısıyla AYNI kural (`forge.local_required_checks`): portal ve
+    `merge_pr` aynı zorunlu listeyi görür. Uygulama script'inin kendi platform kontrolü
+    (`local-ci-<platform>`) henüz kaydedilmemişse de zorunlu listeye girer ("yok"): yalnız
+    e2e-app/ değiştiren PR'da web `local-ci` yerine onu bekleriz (kapı da aynısını ister)."""
+    kosular = [k for k in (_check_run(c) for c in ham) if k is not None]
+    beklenen = f"{LOCAL_REQUIRED_CHECKS[0]}-{platform}" if platform in APP_PLATFORMS else None
+    if beklenen and beklenen not in {k.name for k in kosular}:
+        kosular.append(CheckRun(name=beklenen, status="queued"))
+    try:
+        return local_required_checks(required_checks(), kosular, list(degisen))
+    except ForgeValidationError:
+        return required_checks(), None
+
+
 def pr_checks(
-    sha: str | None, kayit: PullRequest | None = None
+    sha: str | None,
+    kayit: PullRequest | None = None,
+    *,
+    degisen: Sequence[str] = (),
+    platform: str | None = None,
 ) -> tuple[list[dict[str, Any]], str | None, list[str]]:
     """(portal check listesi, ci özeti, zorunlu check engelleri).
 
-    LocalForge: `checks/<sha>.json`. GitHub: `kayit` (PR kaydı) üzerindeki worker kopyası; kopya
-    yok/bayatsa zorunlu check'ler `pending` (asla `passed` değil)."""
+    LocalForge: `checks/<sha>.json`; zorunlu liste merge kapısının kuralıdır
+    (`yerel_zorunlu_checkler`; `degisen` = PR'ın değiştirdiği yollar, `platform` = script'in
+    platformu). GitHub: `kayit` (PR kaydı) üzerindeki worker kopyası; kopya yok/bayatsa zorunlu
+    check'ler `pending` (asla `passed` değil); platform iş akışları `TP_PLATFORMS` ile zorunlu."""
     zorunlu = required_checks()
+    ek_engel: str | None = None
     if get_settings().forge == "github":
+        try:
+            etkin_platformlar(os.environ)
+        except ForgeValidationError as exc:
+            # GitHubForge.from_env aynı hatayla kurulamaz (merge kapalı): portal "merge
+            # edilebilir" göstermesin.
+            ek_engel = f"Yapılandırma hatası: {exc}"
         ham = github_checks(sha, kayit)
         if ham is None:
             if not sha:
-                return [], None, [f"Zorunlu kontrol '{ad}': yok" for ad in zorunlu]
+                return (
+                    [],
+                    None,
+                    [
+                        *(f"Zorunlu kontrol '{ad}': yok" for ad in zorunlu),
+                        *([ek_engel] if ek_engel else []),
+                    ],
+                )
             bekleyen = [
                 {
                     "ad": ad,
@@ -117,9 +187,17 @@ def pr_checks(
                 }
                 for ad in zorunlu
             ]
-            return bekleyen, "pending", [f"Zorunlu kontrol '{ad}': pending" for ad in zorunlu]
+            return (
+                bekleyen,
+                "pending",
+                [
+                    *(f"Zorunlu kontrol '{ad}': pending" for ad in zorunlu),
+                    *([ek_engel] if ek_engel else []),
+                ],
+            )
     else:
         ham = read_checks(sha)
+        zorunlu, ek_engel = yerel_zorunlu_checkler(ham, degisen, platform)
     son: dict[str, dict[str, Any]] = {}
     for c in ham:
         son[c["name"]] = c
@@ -141,6 +219,8 @@ def pr_checks(
         durumlar.append(d)
         if d != "passed":
             engeller.append(f"Zorunlu kontrol '{ad}': {d}")
+    if ek_engel:
+        engeller.append(ek_engel)
     if not son:
         ci = None
     elif all(d == "passed" for d in durumlar):
@@ -156,7 +236,9 @@ def _pr(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any] | Non
     if sc.pr_no is None:
         return None
     kayit = session.get(PullRequest, sc.pr_no)
-    checks, ci, _ = pr_checks(sc.head_sha, kayit)
+    checks, ci, _ = pr_checks(
+        sc.head_sha, kayit, degisen=pr_degisen_yollari(sc), platform=sc.platform
+    )
     return {
         "number": sc.pr_no,
         "url": cg.pr_url,
@@ -294,7 +376,9 @@ def merge_engelleri(sc: Script, cg: ScriptCodegen) -> list[str]:
     dal = dal_engeli(cg)
     if dal:
         engeller.append(dal)
-    _, _, check_engelleri = pr_checks(sc.head_sha, script_pr_kaydi(sc))
+    _, _, check_engelleri = pr_checks(
+        sc.head_sha, script_pr_kaydi(sc), degisen=pr_degisen_yollari(sc), platform=sc.platform
+    )
     engeller += check_engelleri
     return engeller
 

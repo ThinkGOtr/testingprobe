@@ -339,6 +339,27 @@ eklendi (çalışıyorsa denetlenir).
   adresi verilebilir. Kanıt `var/cihaz/kanit/duman-demo-<platform>-<zaman>.txt`. **Windows dumanları
   gerçek VM'de henüz koşturulmadı.**
 
+### 6.7 Çekirdek → yerel CI bağlantısı (Ş6b)
+
+- `enqueue_ci(script_id)` platformu `script.platform`'dan alır (`run.ortam.platform`); uygulama
+  platformunda `ci.run` toolchain `/check`'e `lang: "java"` + `platform` gönderir. Tam kapsamlı
+  Java koşusu merge kapısının `local-ci-<platform>` kaydını yazar. Aynı commit'te web ve uygulama
+  koşuları ayrı etkin koşudur (biri ötekini yutmaz).
+- Kod üretimi yerel kontrolü ve kırarak doğrulama cihazda `repeat_each=1` koşar. Kırarak
+  doğrulama kararı çekirdeğin sınıfı (her kırmızı assertion) + test-runner'ın
+  `kirmizi_denetimi.ok`'udur.
+- Java raporunda JSON yoktur: sonuçlar `run.junit`'ten okunur, test kimliği test-runner özetiyle
+  aynı biçime çevrilir (`<Sınıf> › <metot>`, `src/test/java/…/<Sınıf>.java`). Böylece triage
+  `run.json` `failure` girdisini (tür, kimlik, `evidence.page_source|screenshot`, `page_location`)
+  bulur. Sözleşme testi: `core/tests/unit/features/triage/test_surefire_sozlesmesi.py`.
+- Portal `pr_checks` LocalForge kapısıyla aynı kuralı (`forge.local_required_checks`) uygular.
+- GitHub kipi: `TP_PLATFORMS=android,windows` → `mobil-android`, `masaustu-windows` zorunlu
+  check (ruleset'e de eklenmeli). `ios` kabul edilmez (iş akışı `paths` süzgeçli, no-op deseni
+  yok). Koşu platformun iş akışından (`mobil-android.yml` …) ve `<job>-results` artefaktındaki
+  `surefire-reports/TEST-*.xml`'den alınır (`birim-raporlari/` sayılmaz).
+- Yalıtılmış yığında uygulama demo API'ye hostun `DEMO_WEB_PORT`'u üzerinden gider: ana yığından
+  farklı portta APK `EXPO_PUBLIC_API_URL_ANDROID=http://10.0.2.2:<port>/api` ile derlenmelidir.
+
 ## 7. Bilinen sorunlar / açık işler
 
 1. **iOS + Xcode 26+ (DeviceHub) — macOS gizlilik izni.** xcuitest her oturumda simülatör

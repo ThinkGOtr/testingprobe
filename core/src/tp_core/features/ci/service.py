@@ -50,6 +50,7 @@ from tp_core.features.ci.clients import (
     ToolchainError,
     _zip_dosyalari,
     parse_gh_time,
+    surefire_dosyalari,
 )
 from tp_core.features.ci.parse import (
     ARIA_DOSYA_KALIPLARI,
@@ -60,9 +61,11 @@ from tp_core.features.ci.parse import (
     RaporHatasi,
     TestSatiri,
     aria_dosyalari,
+    java_ayristirmasi,
     parse_files,
     parse_reports,
     sayilar,
+    surefire_ayristir,
     temiz,
 )
 from tp_core.models import (
@@ -89,6 +92,11 @@ CI_REPEAT_EACH = 1
 AKTIF = ("queued", "running")
 BITMIS = ("passed", "failed", "error")
 TOOLCHAIN_ADIMLAR = ("deps", "tsc", "eslint", "ast_guard", "run")
+# Java (Appium + TestNG, 009 §2.3) yolunun adımları: toolchain `worker/java.py` `STEPS` ile aynı.
+TOOLCHAIN_ADIMLAR_JAVA = ("app", "deps", "guard", "compile", "run")
+# Uygulama platformları (009 §2.1); `web` mevcut Playwright/TypeScript yoludur.
+UYGULAMA_PLATFORMLARI = ("android", "ios", "windows")
+WEB = "web"
 ISTANBUL_SABIT = timezone(timedelta(hours=3), "+03")
 RUN_DIR_RE = re.compile(r"^runs/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$")
 SHA_RE = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?$")
@@ -182,6 +190,12 @@ def enqueue_ci(
     `trigger`: `pr` | `push` | `nightly` | `deploy`. `sha` None ise iş `ref`'in (main) o anki
     head'ini çözer. Codegen şeridi PR açılınca/güncellenince `('pr', pr_number)`, merge sonrası
     `('push')` ile çağırır.
+
+    **Platform (009 §2.9):** koşunun platformu `script_id`'nin `script.platform`'udur (script yoksa
+    `web`) ve `run.ortam.platform`'a yazılır. Uygulama platformunda (`android|ios|windows`) yerel
+    iş toolchain `/check`'e `lang=java` + `platform` gönderir: tam kapsamlı Java koşusu merge
+    kapısının okuduğu `local-ci-<platform>` kaydını yazar; GitHub kipinde platformun iş akışı
+    (`mobil-android.yml` …) izlenir.
     """
     return _enqueue(
         session,
@@ -221,13 +235,17 @@ def _enqueue(
         mevcut = session.scalar(select(CiTetik).where(CiTetik.anahtar == anahtar))
         if mevcut is not None:
             return {"run_id": mevcut.run_id, "job_id": None, "yeni": False}
-    # Aynı commit/tetik/PR için etkin koşu varsa ikinci koşu açılmaz.
-    jobq.idempotency_lock(conn, f"ci_aktif:{trigger}:{kaynak}:{sha or ref}:{pr_number}")
+    platform = script_platformu(session, script_id)
+    # Aynı commit/tetik/PR/platform için etkin koşu varsa ikinci koşu açılmaz (merge sonrası main'de
+    # web ve android koşuları ayrı kontrollerdir: biri ötekinin yerine geçmez).
+    kilit = f"ci_aktif:{trigger}:{kaynak}:{sha or ref}:{pr_number}"
+    jobq.idempotency_lock(conn, kilit if platform == WEB else f"{kilit}:{platform}")
     q = select(Run).where(
         Run.tetik == trigger,
         Run.kaynak == kaynak,
         Run.sonuc.in_(AKTIF),
         Run.pr_no.is_(None) if pr_number is None else Run.pr_no == pr_number,
+        func.coalesce(Run.ortam["platform"].astext, WEB) == platform,
     )
     q = q.where(Run.commit == sha) if sha else q.where(Run.ortam["ref"].astext == ref)
     aktif = session.scalars(q.order_by(Run.olusturma.desc()).limit(1)).first()
@@ -279,6 +297,8 @@ def _enqueue(
             "ref": None if sha else ref,
             "break_campaign": False,
             "dispatch": trigger if (dispatch and kaynak == "github") else None,
+            # 009 §2.9: `script.platform` (web | android | ios | windows).
+            "platform": platform,
         },
         artefaktlar={},
     )
@@ -314,9 +334,55 @@ def _enqueue(
             "pr_no": pr_number,
             "anahtar": anahtar,
             "job_id": str(job_id),
+            "platform": platform,
         },
     )
     return {"run_id": run.id, "job_id": job_id, "yeni": True}
+
+
+def script_platformu(session: Session, script_id: uuid.UUID | None) -> str:
+    """Koşunun platformu: script'in `platform`'u; script yoksa ya da bilinmeyen değerse `web`."""
+    if script_id is None:
+        return WEB
+    sc = session.get(Script, script_id)
+    deger = getattr(sc, "platform", None) if sc is not None else None
+    return deger if deger in UYGULAMA_PLATFORMLARI else WEB
+
+
+def kosu_platformu(run: Run) -> str:
+    """`run.ortam.platform` (eski kayıtlarda yok → `web`)."""
+    deger = (run.ortam or {}).get("platform")
+    return deger if deger in UYGULAMA_PLATFORMLARI else WEB
+
+
+def gh_is_akisi(run: Run) -> dict[str, str]:
+    """GitHub kipinde koşunun iş akışı: web `ci.yml` (varsayılan, argüman verilmez → mevcut
+    istemci çağrısı değişmez), uygulama `mobil-android.yml` | `mobil-ios.yml` |
+    `masaustu-windows.yml` (PR'da `pull_request` ile kendiliğinden koşar; elle gece/deploy
+    `workflow_dispatch` ile aynı dosyaya gider)."""
+    from tp_core.integrations.forge import GITHUB_PLATFORM_WORKFLOWS
+
+    p = kosu_platformu(run)
+    return {"workflow": GITHUB_PLATFORM_WORKFLOWS[p]} if p in UYGULAMA_PLATFORMLARI else {}
+
+
+def gh_sonuc_artefakti(run: Run) -> str:
+    """Sonuç artefaktının adı: web `test-local-results`, uygulama `<job>-results`
+    (.github/CI.md "Uygulama iş akışları")."""
+    from tp_core.integrations.forge import GITHUB_PLATFORM_CHECKS
+
+    p = kosu_platformu(run)
+    if p in UYGULAMA_PLATFORMLARI:
+        return f"{GITHUB_PLATFORM_CHECKS[p]}-results"
+    return RESULTS_ARTIFACT
+
+
+def check_body_platformu(platform: str) -> dict[str, Any]:
+    """toolchain `/check` gövdesinin dil alanları: web için boş (istek baytları değişmez), uygulama
+    için `lang=java` + `platform` (toolchain `/check` Java yolu, `local-ci-<platform>` kaydı)."""
+    if platform in UYGULAMA_PLATFORMLARI:
+        return {"lang": "java", "platform": platform}
+    return {}
 
 
 def trigger_manual(session: Session, tetik: str, isteyen: str) -> dict[str, Any]:
@@ -547,8 +613,9 @@ def _adim_ozeti(adim: Any) -> dict[str, Any]:
     return out
 
 
-def _checks_dosyasi(sha: str | None) -> dict[str, Any] | None:
-    """toolchain'in yazdığı `checks/<sha>.json`'u okur (çekirdek bu dosyayı YAZMAZ)."""
+def _checks_dosyasi(sha: str | None, ad: str = "local-ci") -> dict[str, Any] | None:
+    """toolchain'in yazdığı `checks/<sha>.json`'u okur (çekirdek bu dosyayı YAZMAZ). `durum` /
+    `conclusion` koşunun kendi kontrolüdür: web `local-ci`, uygulama `local-ci-<platform>`."""
     if not sha or not SHA_RE.match(sha):
         return None
     yol = services.checks_root() / f"{sha}.json"
@@ -561,15 +628,18 @@ def _checks_dosyasi(sha: str | None) -> dict[str, Any] | None:
     except (OSError, ValueError) as exc:
         return {"yol": f"checks/{sha}.json", "var": True, "hata": temiz(exc, 200)}
     checks = veri.get("checks") if isinstance(veri, dict) else None
-    local = next(
-        (c for c in checks or [] if isinstance(c, dict) and c.get("name") == "local-ci"), None
-    )
-    # Uygulama kontrolleri platform başına ayrı kayıttır (`local-ci-<platform>`, 009 §2.7).
+    local = next((c for c in checks or [] if isinstance(c, dict) and c.get("name") == ad), None)
+    # Kontroller platform başına ayrı kayıttır (web `local-ci`, uygulama `local-ci-<platform>`,
+    # 009 §2.7); portal her birini ayrıntı bağlantısıyla gösterir.
     platformlar = {
-        str(c["name"]): {"durum": c.get("status"), "conclusion": c.get("conclusion")}
+        str(c["name"]): {
+            "durum": c.get("status"),
+            "conclusion": c.get("conclusion"),
+            "details_url": c.get("url") if isinstance(c.get("url"), str) else None,
+        }
         for c in checks or []
         if isinstance(c, dict) and isinstance(c.get("name"), str)
-        and c["name"].startswith("local-ci-")
+        and (c["name"] == "local-ci" or c["name"].startswith("local-ci-"))
     }  # fmt: skip
     return {
         "yol": f"checks/{sha}.json",
@@ -594,10 +664,45 @@ def _ast_guard_mode(run: Run) -> str:
     return "pr"
 
 
-def ingest_check_report(session: Session, run: Run, report: Mapping[str, Any]) -> str:
-    """toolchain `/check` yanıtını koşuya işler; koşunun sonucunu döndürür (testten bağımsız)."""
+def kirmizi_denetimi_ozeti(kd: Mapping[str, Any]) -> dict[str, Any]:
+    """test-runner `kirmizi_denetimi` (`ok`, `kirmizi[]`, `kotu[]`; test başlıkları güvenilmeyen
+    test çıktısıdır) → kırpılmış, sınırlı kopya."""
+
+    def liste(x: Any) -> list[str]:
+        return [temiz(v, 200) for v in (x if isinstance(x, list) else [])[:20]]
+
+    return {
+        "ok": kd.get("ok") is True,
+        "kirmizi": liste(kd.get("kirmizi")),
+        "kotu": liste(kd.get("kotu")),
+    }
+
+
+def rapor_platformu(report: Mapping[str, Any]) -> str | None:
+    """`/check` raporunun platformu: üst düzey `platform` (toolchain) ya da `run.platform`
+    (test-runner Java yolu); `lang=java` ise ve platform yoksa None (bilinmiyor)."""
     rr = report.get("run") if isinstance(report.get("run"), Mapping) else {}
-    adimlar = {k: _adim_ozeti(report.get(k)) for k in TOOLCHAIN_ADIMLAR}
+    for aday in (report.get("platform"), (rr or {}).get("platform")):
+        if aday in UYGULAMA_PLATFORMLARI:
+            return str(aday)
+    if report.get("lang") == "java" or (rr or {}).get("lang") == "java":
+        return None
+    return WEB
+
+
+def ingest_check_report(session: Session, run: Run, report: Mapping[str, Any]) -> str:
+    """toolchain `/check` yanıtını koşuya işler; koşunun sonucunu döndürür (testten bağımsız).
+
+    Java (Appium) raporu (009): adımlar `app → deps → guard → compile → run`; test-runner JSON
+    rapor yazmaz (`run.json` null), sonuçlar Surefire'dan birleştirilmiş `run.junit`'ten okunur ve
+    test kimliği test-runner/triage ile aynı biçime çevrilir (`parse.java_junit_satirlari`).
+    `run.ortam.platform` rapordan (yoksa koşunun kendi platformu) yazılır.
+    """
+    rr = report.get("run") if isinstance(report.get("run"), Mapping) else {}
+    platform = rapor_platformu(report) or kosu_platformu(run)
+    java = platform in UYGULAMA_PLATFORMLARI or report.get("lang") == "java"
+    adim_adlari = TOOLCHAIN_ADIMLAR_JAVA if java else TOOLCHAIN_ADIMLAR
+    adimlar = {k: _adim_ozeti(report.get(k)) for k in adim_adlari}
     uzak = rr.get("artifacts_dir") if isinstance(rr.get("artifacts_dir"), str) else None
     dizin_rel = rr.get("artifacts_rel") if isinstance(rr.get("artifacts_rel"), str) else None
     if dizin_rel is not None and not RUN_DIR_RE.match(dizin_rel):
@@ -621,6 +726,8 @@ def ingest_check_report(session: Session, run: Run, report: Mapping[str, Any]) -
                 yerel / yollar["json"] if yollar["json"] else None,
                 KosuDizini(uzak, yerel),
             )
+            if java:
+                ayr = java_ayristirmasi(ayr)
             uyarilar.extend(ayr.uyarilar)
         except RaporHatasi as exc:
             uyarilar.append(str(exc))
@@ -638,10 +745,13 @@ def ingest_check_report(session: Session, run: Run, report: Mapping[str, Any]) -
         sonuc = "error"
     else:
         sonuc = "failed"
+    koruma = adimlar.get("guard" if java else "ast_guard") or {}
     run.ortam = {
         **(run.ortam or {}),
         "saglik": dict(saglik) if saglik else None,
-        "ast_guard_mode": adimlar["ast_guard"].get("mode"),
+        "ast_guard_mode": koruma.get("mode"),
+        "platform": platform,
+        **({"lang": "java"} if java else {}),
     }
     run.artefaktlar = {
         **(run.artefaktlar or {}),
@@ -654,7 +764,15 @@ def ingest_check_report(session: Session, run: Run, report: Mapping[str, Any]) -
         "raporlar": ayr.raporlar if ayr else {"junit": False, "json": False},
         "istatistik": ayr.istatistik if ayr else {},
         "uyarilar": uyarilar[:20],
-        "checks": _checks_dosyasi(run.commit),
+        "checks": _checks_dosyasi(
+            run.commit, f"local-ci-{platform}" if platform in UYGULAMA_PLATFORMLARI else "local-ci"
+        ),
+        # Kırarak doğrulamanın kırmızı denetimi (test-runner Java yolu; KirmiziDenetimi kuralı).
+        **(
+            {"kirmizi_denetimi": kirmizi_denetimi_ozeti(rr["kirmizi_denetimi"])}
+            if isinstance(rr.get("kirmizi_denetimi"), Mapping)
+            else {}
+        ),
         "runner_hata": temiz(rr.get("error"), 1000) if rr.get("error") else None,
         "sayilar": sayac,
     }
@@ -717,6 +835,7 @@ def _run_job(engine: Engine, run_id: uuid.UUID, *, deneme: int, son_deneme: bool
             )
         sha = run.commit
         mode = _ast_guard_mode(run)
+        platform = kosu_platformu(run)
 
     body = {
         "sha": sha,
@@ -725,6 +844,8 @@ def _run_job(engine: Engine, run_id: uuid.UUID, *, deneme: int, son_deneme: bool
         "retries": CI_RETRIES,
         "ast_guard_mode": mode,
         "run_id": f"ci-{run_id}-{deneme}",
+        # Uygulama koşusu: tam kapsamlı Java koşusu → `local-ci-<platform>` (009 §2.7).
+        **check_body_platformu(platform),
     }
     try:
         report = services.toolchain().check(body)
@@ -847,7 +968,7 @@ def _dispatch(engine: Engine, run_id: uuid.UUID) -> None:
             gh = services.github()
             adaylar: list[dict[str, Any]] = []
             for olay in _olaylar(run):
-                adaylar += gh.workflow_runs(head_sha=None, event=olay)
+                adaylar += gh.workflow_runs(head_sha=None, event=olay, **gh_is_akisi(run))
             if _aday_sec(session, run, adaylar) is not None:
                 ref.durum = "created"
                 ref.external_key = ref.external_key or _dispatch_olayi(tetik)
@@ -881,13 +1002,14 @@ def _dispatch(engine: Engine, run_id: uuid.UUID) -> None:
         }
         hedef_ref = (run.ortam or {}).get("ref") or "main"
         isteyen = str((run.ortam or {}).get("isteyen") or "system")
+        is_akisi = gh_is_akisi(run)
     # (2) API çağrısı: işlem dışında; `intent` kalıcı.
     gh = services.github()
     try:
         if tetik == "deploy":
             gh.repository_dispatch("deploy", {"tetik": "deploy", "tp_run_id": str(run_id)})
         else:
-            gh.workflow_dispatch(hedef_ref, {"tetik": "nightly"})
+            gh.workflow_dispatch(hedef_ref, {"tetik": "nightly"}, **is_akisi)
     except Exception as exc:
         # Yanıt okunamadıysa (zaman aşımı/bağlantı koptu) istek GitHub'a ulaşmış olabilir: `hata`
         # yazılmaz → sonraki deneme önce koşuyu arar (kör tekrar yok).
@@ -1257,13 +1379,18 @@ def github_ingest(session: Session, run: Run, wr: Mapping[str, Any]) -> str:
     ayr: Ayristirma | None = None
     meta: dict[str, Any] = {}
     dosyalar: Mapping[str, bytes] = {}
-    sonuc_art = next((a for a in artefaktlar if a.get("name") == RESULTS_ARTIFACT), None)
+    # 009: uygulama iş akışının artefaktı `<job>-results` (Surefire TEST-*.xml + ci-meta.json).
+    java = kosu_platformu(run) in UYGULAMA_PLATFORMLARI
+    art_adi = gh_sonuc_artefakti(run)
+    surefire: dict[str, bytes] = {}
+    surefire_uyari: list[str] = []
+    sonuc_art = next((a for a in artefaktlar if a.get("name") == art_adi), None)
     gh_dizin = github_artifacts.dizin_adi(wr.get("id"), wr.get("run_attempt"))
-    yerel_kopya = github_artifacts.mevcut(gh_dizin)
+    yerel_kopya = None if java else github_artifacts.mevcut(gh_dizin)
     sonuc_zip: bytes | None = None
     okundu = False
     if sonuc_art is None:
-        uyarilar.append(f"'{RESULTS_ARTIFACT}' artefaktı yok (testler no-op olabilir).")
+        uyarilar.append(f"'{art_adi}' artefaktı yok (testler no-op olabilir).")
     else:
         try:
             adlar = ("junit.xml", "results.json", "ci-meta.json")
@@ -1289,24 +1416,31 @@ def github_ingest(session: Session, run: Run, wr: Mapping[str, Any]) -> str:
             if dosyalar is None:
                 sonuc_zip = gh.artifact_zip(sonuc_art)
                 dosyalar = _zip_dosyalari(sonuc_zip, adlar, EK_KALIPLARI)
+                if java:
+                    # Surefire raporları ek değil rapordur: kendi boyut/sayı sınırı + uyarı.
+                    surefire, surefire_uyari = surefire_dosyalari(sonuc_zip)
             okundu = True
         except GitHubCiError as exc:
             uyarilar.append(str(exc))
     # Raporların yerel kopyası (portal GitHub'a gitmeden açar); ayrıştırma için indirilen zip
     # yeniden kullanılır. Hata alımı düşürmez.
-    yerel = _github_yerel(session, gh, artefaktlar, gh_dizin, sonuc_zip)
+    # Uygulama artefaktı yerel kopya düzeninde (`test-local-results`) değildir: zip verilmez.
+    yerel = _github_yerel(session, gh, artefaktlar, gh_dizin, None if java else sonuc_zip)
     sonuc_zip = None  # büyük zip bellekte tutulmaz
     if okundu:
         ham_meta = _sec_dosya(dosyalar, "ci-meta.json")
         m = _ci_meta(ham_meta, uyarilar)
         meta = {k: temiz(m.get(k), 200) for k in CI_META_ALANLARI if m.get(k) not in (None, "")}
         kosu_dizini, ek_onek = _gh_kosu_dizini(yerel, m.get("results_kok"))
-        ayr = parse_reports(
-            _sec_dosya(dosyalar, "junit.xml"),
-            _sec_dosya(dosyalar, "results.json"),
-            kosu_dizini=kosu_dizini,
-            ekler=_artefakt_ekleri(dosyalar),
-        )
+        if java:
+            ayr = surefire_ayristir(surefire, surefire_uyari)
+        else:
+            ayr = parse_reports(
+                _sec_dosya(dosyalar, "junit.xml"),
+                _sec_dosya(dosyalar, "results.json"),
+                kosu_dizini=kosu_dizini,
+                ekler=_artefakt_ekleri(dosyalar),
+            )
         if ek_onek:
             # Ek yolları sonuç köküne göreli → koşu (yerel kopya) dizinine göreli.
             for t in ayr.testler:
@@ -1390,7 +1524,9 @@ def github_poll(engine: Engine, run_id: uuid.UUID, tur: int) -> dict[str, Any]:
                 adaylar: list[dict[str, Any]] = []
                 for olay in _olaylar(run):
                     adaylar += gh.workflow_runs(
-                        head_sha=run.commit if run.tetik in ("pr", "push") else None, event=olay
+                        head_sha=run.commit if run.tetik in ("pr", "push") else None,
+                        event=olay,
+                        **gh_is_akisi(run),
                     )
                 wr = _aday_sec(session, run, adaylar)
                 if wr is not None:
@@ -1629,6 +1765,13 @@ def serialize_runs(session: Session, runs: Sequence[Run]) -> list[dict[str, Any]
             .group_by(TestResult.run_id, TestResult.sonuc)
         ):
             sayac[run_id][sonuc] += int(n)
+    # 009: koşunun platformu `ortam.platform`; eski kayıtlarda script'in platformu.
+    sids = {r.script_id for r in runs if r.script_id and not (r.ortam or {}).get("platform")}
+    script_platform = (
+        dict(session.execute(select(Script.id, Script.platform).where(Script.id.in_(sids))).all())
+        if sids
+        else {}
+    )
     out = []
     for r in runs:
         s = sayac.get(r.id, {})
@@ -1682,6 +1825,7 @@ def serialize_runs(session: Session, runs: Sequence[Run]) -> list[dict[str, Any]
                 "log_url": _url(r.id, a.get("log"), dizin),
                 "break_campaign": bool(o.get("break_campaign")),
                 "script_id": str(r.script_id) if r.script_id else None,
+                "platform": o.get("platform") or script_platform.get(r.script_id) or WEB,
                 "saglik_hatasi": (saglik or {}).get("hata")
                 if saglik and not saglik.get("ok")
                 else None,

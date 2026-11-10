@@ -219,7 +219,10 @@ public final class UretilenTestKoruyucu {
         return;
       }
       if (!dosya.startsWith(DIZIN) || dosya.substring(DIZIN.length()).contains("/") || !DOSYA_ADI.matcher(ad).matches()) {
-        ekle("file_location", 0, "üretilen test " + DIZIN + "<Story>C<sıra>_<uuid8>Test.java olmalı");
+        // 009 §2.4: dosya adı platform adını da taşır (`TPD1AndroidC3_0a1b2c3dTest.java`);
+        // DOSYA_ADI kalıbı ikisini de kabul eder, mesaj üretilen biçimi gösterir.
+        ekle("file_location", 0, "üretilen test " + DIZIN
+            + "<Story><Platform>C<sıra>_<uuid8>Test.java olmalı (ör. TPD1AndroidC3_0a1b2c3dTest.java)");
       }
       for (KarakterDenetimi.Bulgu b : KarakterDenetimi.denetle(metin)) ekle(b.kod(), b.satir(), b.mesaj());
       if (!metin.startsWith(BASLIK)) {

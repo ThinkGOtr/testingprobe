@@ -147,6 +147,17 @@ def max_turns(max_tool_calls: int = MAX_TOOL_CALLS) -> int:
 
 MAX_TURNS = max_turns()
 REPEAT_EACH = 3
+# Uygulama (cihaz) kontrolü tek tekrardır (009 §2.9): her tekrar uygulamayı sıfırdan başlatır
+# (emülatör/simülatörde dakikalar); tek cihaz paralel koşamaz. Kararlı kırmızı / kararsız ayrımı
+# bu yüzden yerel kontrolde yapılamaz: tek kırmızı assertion defect adayı olarak insana gider.
+REPEAT_EACH_UYGULAMA = 1
+
+
+def tekrar_sayisi(platform: str | None) -> int:
+    """Yerel kontrolün `repeat_each`'i: web 3, uygulama (cihaz) 1."""
+    return REPEAT_EACH_UYGULAMA if platformlar.uygulama_mi(platform) else REPEAT_EACH
+
+
 CASE_KULLANILIR = frozenset({"approved", "published"})
 GEREKSINIM_KULLANILIR = frozenset({"cases_ready", "done"})
 AKTIF = frozenset({"pending", "verifying", "checking"})
@@ -1424,6 +1435,7 @@ def _kosu_kaydet(
     report: Mapping[str, Any] | None,
     baslama: datetime,
     hata: str | None = None,
+    platform: str = platformlar.WEB,
 ) -> str | None:
     """Kontrol koşusunu `run` satırı olarak kaydeder (tetik `local_check` | `break_verify`) ve
     JUnit/JSON raporunu CI yoluyla aynı ayrıştırıcıdan `test_result`'a işler. `run.id` döner.
@@ -1450,6 +1462,7 @@ def _kosu_kaydet(
                     "isteyen": "system",
                     "ref": None,
                     "codegen_tur": tur,
+                    "platform": platform,
                 },
                 artefaktlar={},
             )
@@ -1553,7 +1566,7 @@ def _kontrol(
     run_uuid = None
     if not atlandi:
         run_uuid = _kosu_kaydet(
-            sid, sha, tur, kirma, repeat_each, pr_no, report, baslama, sinif.hata
+            sid, sha, tur, kirma, repeat_each, pr_no, report, baslama, sinif.hata, platform
         )
     kayit_sinifi = kirma_sinifi(sinif) if kirma else sinif
     with session_scope() as s:
@@ -1824,7 +1837,7 @@ def run_generation(ctx: JobContext, engine: Engine) -> dict[str, Any]:
         return commit
     sinif, atlandi = _kontrol(
         engine, sid, commit, rendered.test_file, "local_check", yerel_forge=yerel_forge,
-        platform=platform,
+        platform=platform, repeat_each=tekrar_sayisi(platform),
     )  # fmt: skip
     # Ortam hatası modelin başarısı/başarısızlığı değildir: pass@1 ölçülmedi sayılır. Kararsız
     # (flaky) ve defect adayı "geçmedi"dir (control_tower defect adayını paydadan ayrıca ayırır).
@@ -1879,7 +1892,7 @@ def run_generation(ctx: JobContext, engine: Engine) -> dict[str, Any]:
             return commit
         sinif, atlandi = _kontrol(
             engine, sid, commit, rendered.test_file, "remap_check", yerel_forge=yerel_forge,
-            platform=platform,
+            platform=platform, repeat_each=tekrar_sayisi(platform),
         )  # fmt: skip
         with session_scope() as s:
             sc, _ = _yukle(s, sid, lock=True)
@@ -1905,7 +1918,7 @@ def run_generation(ctx: JobContext, engine: Engine) -> dict[str, Any]:
             if ilk.get("beklenen") or ilk.get("gerceklesen"):
                 neden += f" (beklenen {ilk.get('beklenen')}, gerçekleşen {ilk.get('gerceklesen')})"
             if (ilk.get("tekrar") or 1) > 1:
-                neden += f" ({ilk['tekrar']}/{REPEAT_EACH} tekrar)"
+                neden += f" ({ilk['tekrar']}/{tekrar_sayisi(platform)} tekrar)"
         return _insana(
             engine,
             sid,
@@ -2499,6 +2512,13 @@ def _kirma_karari(kirik: Siniflama, yesil: Siniflama, atlandi: bool) -> tuple[st
         return "failed", f"Kırarak doğrulama tamamlanamadı: {kotu.aciklama}"
     if kirik.sinif == "gecti":
         return "weak", "Uygulama kırıldığında test yeşil kaldı: zayıf test."
+    if kirik.sinif == "defect_adayi" and kirik.kirmizi_ok is False:
+        # Uygulama (Java) koşusu: test-runner'ın kırmızı denetimi (≥1 kırmızı, her kırmızı
+        # assertion; KirmiziDenetimi) çekirdeğin sınıfıyla çelişiyorsa kanıt sayılmaz.
+        return "failed", (
+            "Kırık koşunun kırmızı denetimi geçmedi (kırmızıların hepsi assertion değil ya da "
+            "kırmızı yok); hata yakalama kanıtı sayılmaz."
+        )
     if kirik.sinif == "defect_adayi":
         return "passed", "Test hata yakalıyor ✓ (yeşil → kırmızı → yeşil)."
     return "failed", (

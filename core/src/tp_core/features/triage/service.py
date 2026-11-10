@@ -75,7 +75,9 @@ KIRMA_TASLAK_YOK = (
     "yakaladı. Bug taslağı açılmaz, Jira'ya yazılmaz."
 )
 KIRMIZI_TEST = ("failed", "timedout", "flaky")
-STATIK_ADIMLAR = ("deps", "tsc", "eslint", "ast_guard")
+# TS (`deps → tsc → eslint → ast_guard`) + Java (009: `deps → guard → compile`). Adım bir
+# koşuda yoksa `atlandi` olur ve sayılmaz. `app` (uygulama ≠ commit) statik değil, ortamdır.
+STATIK_ADIMLAR = ("deps", "tsc", "eslint", "ast_guard", "guard", "compile")
 MAX_TEST = 50
 SUPURME_PENCERESI = timedelta(days=2)
 
@@ -495,7 +497,8 @@ def _story_ve_case(
     session: Session, run: Run, test_case_id: uuid.UUID | None, dosya: str | None
 ) -> tuple[str | None, str | None]:
     """Hatanın story'si ve (üretilen testse) case referansı (`TPD-1-C3`)."""
-    uretilen = "tests/generated/" in (dosya or "")
+    # Üretilen test: web `tests/generated/`, Java (009) `…/bayi/uretilen/`.
+    uretilen = any(k in (dosya or "") for k in ("tests/generated/", "/uretilen/"))
     if run.script_id is not None:
         cg = session.get(ScriptCodegen, run.script_id)
         if cg is not None and cg.story_key:
@@ -1736,6 +1739,11 @@ def serialize(session: Session, f: Failure, ek: FailureEk | None, run: Run | Non
             "sha": o.get("sha"),
             "son_yesil_run_id": o.get("son_yesil_run_id"),
             "probe": o.get("probe"),
+            # 009: uygulama önerisinin kaynağı (`sayfa_kaynagi`), platformu ve hata anı sayfa
+            # kaynağı özeti (portal Ş7 gösterir).
+            "kaynak": o.get("kaynak"),
+            "platform": o.get("platform"),
+            "sayfa_kaynagi": o.get("sayfa_kaynagi"),
         }
         ek_gorunum = _onarim_gorunumu(session, f)
         if ek_gorunum:
@@ -1821,6 +1829,8 @@ def serialize(session: Session, f: Failure, ek: FailureEk | None, run: Run | Non
         "commit": run.commit if run else None,
         "tetik": run.tetik if run else None,
         "pr_no": run.pr_no if run else None,
+        # 009: hatanın platformu (run.ortam.platform → run.json → script.platform; web/None).
+        "platform": kosu_platformu(session, run) if run is not None else None,
     }
 
 
