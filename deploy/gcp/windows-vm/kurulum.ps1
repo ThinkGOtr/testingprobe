@@ -95,6 +95,18 @@ function Write-Seri([string] $Satir) {
     Write-TpLog $Satir
 }
 
+# Tani: bir log dosyasinin son satirlarini seri porta yazar (Get-TemizMesaj ile maskeli, ASCII).
+# VM'e uzaktan giris yok; hata aninda tek gorunur kanal seri porttur.
+function Write-LogKuyrugu([string] $Yol, [int] $Satir = 30) {
+    $ad = Split-Path -Leaf $Yol
+    if (-not (Test-Path $Yol)) { Write-Seri "TP-WINDOWS-LOG $ad (yok)"; return }
+    try {
+        foreach ($s in (Get-Content -Path $Yol -Tail $Satir -ErrorAction Stop)) {
+            if ($s.Trim()) { Write-Seri ("TP-WINDOWS-LOG {0} {1}" -f $ad, (Get-TemizMesaj $s)) }
+        }
+    } catch { Write-Seri "TP-WINDOWS-LOG $ad (okunamadi)" }
+}
+
 function Get-TemizMesaj([string] $Mesaj) {
     foreach ($g in $script:GizliDegerler) {
         if ($g) { $Mesaj = $Mesaj.Replace($g, '***') }
@@ -749,7 +761,19 @@ Invoke-Adim 'baslat-bayragi' {
 # --- Appium'un oturumda ayaga kalkmasini bekle ---
 Invoke-Adim 'appium-bekle' {
     $bitis = (Get-Date).AddSeconds($AppiumBeklemeSaniye)
+    $oturumLog = Join-Path $LogDizini 'oturum.log'
+    $appiumLog = Join-Path $LogDizini 'appium.log'
+    $bayrakZamani = (Get-Item $BaslatBayragi).LastWriteTime
     while (-not (Test-AppiumHazir)) {
+        # Appium bu acilista cikmissa (oturum betigi "appium cikti" yazar) 10 dk beklemeden bildir.
+        $cikti = (Test-Path $oturumLog) -and ((Get-Item $oturumLog).LastWriteTime -gt $bayrakZamani) -and
+            (Select-String -Path $oturumLog -Pattern 'appium cikti' -SimpleMatch -Quiet) -and
+            ((Get-Content $oturumLog -Tail 1) -match 'appium cikti')
+        if ($cikti -or ((Get-Date) -gt $bitis)) {
+            Write-LogKuyrugu $oturumLog 15
+            Write-LogKuyrugu $appiumLog 40
+        }
+        if ($cikti) { throw "Appium oturumda cikti (bkz. TP-WINDOWS-LOG satirlari)" }
         if ((Get-Date) -gt $bitis) {
             $oturum = Get-Process -Name explorer -IncludeUserName -ErrorAction SilentlyContinue |
                 Where-Object { $_.UserName -like "*\$Kullanici" }
