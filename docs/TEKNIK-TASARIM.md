@@ -1,8 +1,10 @@
 # AI Automation Testing (Test Engineering Suite) — Demo Teknik Tasarımı
 
-> **Sürüm:** v1.6 · 2026-11-03 · **Hazırlayan:** Gökhan Sipahi · **Gözden geçirecek:** Cengizhan Bey, Hakan, İsmail
+> **Sürüm:** v1.7 · 2026-11-10 · **Hazırlayan:** Gökhan Sipahi · **Gözden geçirecek:** Cengizhan Bey, Hakan, İsmail
 > **Bağlayıcı kaynak:** "AI Automation Testing — Geliştirme Ekibi için Ürün Brief'i" (Cengizhan Bey, 30.10.2026). Bu doküman o brief'in **demo dilimini** tarif eder. Brief'ten sapmalar §19'dadır.
 > **Spec Kit nedir:** GitHub'ın açık kaynak "spesifikasyon güdümlü geliştirme" aracı. Bu doküman önce projenin değişmez kurallarına (constitution, §3), sonra her kilometre taşı için ayrı spec → plan → görev → uygulama döngüsüne (§21) girdi olur.
+>
+> **v1.6 → v1.7 (2026-11-10, ADR-0001 onaylandı):** **AI Probe ortak kimliği** (§8.14; §3 satır 12, §8.10, §9, §14 güncellendi). Constitution v2.0.0 (MAJOR): İlke XII — AP ile kod/ekran/DB paylaşımı yok, ortak kimliğe yalnızca belgelenmiş HTTP kimlik API'si (devir + oturum kontrolü) ile bağlanılır, Firebase SDK'sı TP'ye girmez; İlke VII — on-prem `TP_AUTH_MODE=local` varsayılan. Spec `specs/010-aiprobe-sso/`.
 >
 > **v1.5 → v1.6 (2026-11-03, ürün sahibi kararları K1–K10):** portal içi **salt okuma asistan** ve kural tabanlı **Öneri** düğmesi eklendi (§8.13; §4, §7, §8.8, §9 güncellendi). Constitution v1.3.0: İlke II'ye "salt okuma bilgi ve yönlendirme asistanı; eylem yok; çıktısı karar dayanağı değildir". Ayrıntılı plan `docs/AI-ASISTAN-PLANI.md` v6, spec `specs/008-ai-asistan/`.
 >
@@ -128,6 +130,7 @@ Demo story'si mutlaka `add-to-cart` ve kampanya hesabı adımlarını içerir.
 | 8 | Her şey kayıt altında | `ai_call`, `tool_call`, `audit_event` append-only ve `prev_hash` zinciriyle; zincirin son hash'i her yayında Jira yorumuna ve her PR açıklamasına yazılarak dışarıya sabitlenir; her AI çağrısı onaylayan kişiye iş akışı üzerinden bağlı |
 | 9 | Ürün opsiyonel kalabilmeli | `rules/` altındaki prompt, kural ve şemalardan `CLAUDE.md` ve `.github/copilot-instructions.md` üretilir; `publish_test_cases` MCP aracı ürünsüz kanaldan da kullanılabilir |
 | 10 | Her çıktı ölçülür | §12 ölçüm tanımları; her karar ve düzeltme kaydedilir |
+| 12 | Bağımsız ürün, sözleşmeli kimlik (ADR-0001) | AP ile ortak kod/ekran/DB yok. `TP_AUTH_MODE=local` (varsayılan, on-prem): argon2 + `tp_session`, dış çağrı yok. `aiprobe`/`both`: yalnızca iki sunucu çağrısı (`/v1/handoff/redeem`, `/v1/session/check`), TP'nin servis hesabının Google ID token'ıyla; Firebase SDK'sı yok; dış kimlik `kimlik_bagi` ile TP rol hesaplarına bağlanır, yetki `app_user.rol` ile (§8.14) |
 
 ---
 
@@ -378,7 +381,7 @@ FailureToFix(run_id)
 
 ### 8.10 Review Portal
 - **Ekranlar:** Story listesi · Case review (onay/düzelt/reddet, ret nedeni, fark, AI süresi, kabul oranı) · Yayın önizlemesi · Kod üretimi (adım ekran görüntüleri canlı, PR linki) · Koşu ve triage (sinyaller, öneri, PR linki, **denetim paneli** ve zincir doğrulaması).
-- **Kimlik (demo):** seed kullanıcılar (`analist`, `muhendis`), oturum çerezi; her karar kullanıcı adına imzalı.
+- **Kimlik (demo):** seed kullanıcılar (`analist`, `muhendis`), oturum çerezi; her karar kullanıcı adına imzalı. `aiprobe`/`both` kipinde giriş AI Probe hesabıyla (§8.14): çok rol hesabına bağlı kişiye rol seçici, üst çubukta "Rol değiştir".
 - **REPLAY rozeti** kayıtlı çıktı kullanıldığında görünür.
 
 ---
@@ -451,11 +454,28 @@ FailureToFix(run_id)
 
 **Portal:** sağ altta panel (bindirme, mobilde modal; `role="complementary"`), bağlam çipleri (ekran, son hata, "? Bu ne?"), `HataKutusu`'nda "Asistana sor", üst çubukta tek Öneri düğmesi (sayı rozeti), kapalı kipte "HAZIR CEVAPLAR" rozeti (canlı kipte "CANLI" yazılmaz).
 
+### 8.14 AI Probe ortak kimliği (ADR-0001, `specs/010-aiprobe-sso/`)
+
+**Kip:** `TP_AUTH_MODE=local|aiprobe|both`. `local` (varsayılan; on-prem, İlke VII) bugünkü davranıştır: argon2 giriş, `tp_session` çerezi, dış çağrı yok. `aiprobe`: yalnız ortak kimlik (`POST /auth/login` 404). `both`: ikisi birden (geçiş ve acil erişim). `aiprobe`/`both`'ta oturum çerezi `__Host-tp_session` (Secure, HttpOnly, SameSite=Lax, Path=/), durum çerezi `__Host-aiprobe_state`.
+
+**Giriş devri (PLAN §2.3, CONTRACT "Ürün tarafı"):** `GET /auth/aiprobe/login?continue=` → 32 baytlık `state` + çerez (10 dk) → `{AIPROBE_ID_ORIGIN}/login?product=testing-probe&state=&continue=`. Dönüş `GET /auth/aiprobe/callback?code=&state=` → çerezle sabit zamanlı karşılaştırma → `POST {AIPROBE_HOME_RUN_URL}/v1/handoff/redeem` (TP servis hesabının Google ID token'ı; sağlayıcı enjekte edilebilir, varsayılan GCE metadata sunucusu) → yanıtın `state`'i de eşleşmeli, `org` ∈ `AIPROBE_ALLOWED_ORGS` (boşsa red, fail-closed) → TP rolleri = `roles` ∩ TP rolleri. `continue` yalnız `/` ile başlayan göreli yol (`//`, `\`, kontrol karakteri reddedilir → `/`).
+
+**Kişi ↔ rol hesabı:** `kimlik_bagi(external_uid, app_user_id UNIQUE)`. Aday hesaplar = kişiye bağlı ve rolü `roles` içinde olan `app_user`'lar. **JIT:** `roles`'taki bir rol için bağlı hesap yoksa o rol adına yeni `app_user` (`ad_soyad` = devirdeki `name`; kullanılamaz parola özeti → yerel girişle açılamaz) + bağ (`auth.jit_user` denetimi). Tek aday → oturum; birden çok → imzalı 10 dk'lık seçim çerezi + portal `/rol-sec` → `POST /auth/aiprobe/rol-sec`. **Rol değiştir:** `POST /auth/aiprobe/rol-degistir` — parola yok; sunucu bağı ve rolü taze oturum kontrolüyle yeniden doğrular, eski oturumu iptal eder, **yeni oturum kimliği** verir.
+
+**Oturum ve iptal:** `oturum.external_uid`, `auth_time`, `son_kontrol`. Boşta 30 dk kayan (yalnız kullanıcı istekleri uzatır; SSE denetimi uzatmaz), mutlak 8 sa. `session_valid` ve `verify_bearer`, son kontrolden ≥ 60 sn geçtiyse `POST /v1/session/check {uid, auth_time}` çağırır (süreç içi 60 sn önbellek; SSE'nin 15 sn döngüsü aynı yolu kullanır). `valid=false` ya da oturumun rolü artık `roles`'ta değilse: kişinin bağlı hesaplarının `app_user.auth_epoch`'u artar, `external_uid` oturumları iptal edilir → çerez (`ae` alanı) ve `tpt_` token'ları (`api_token.auth_epoch`) reddedilir (≤ 60 sn, yolculuk 13). `aiprobe-home` erişilemezse oturum korunur, yanıtta `X-Aiprobe-Degraded: 1`; yeni giriş 503.
+
+**Çıkış:** `POST /auth/logout` yerel oturumu iptal eder; AI Probe oturumunda yanıt `redirect: {AIPROBE_ID_ORIGIN}/logout?product=testing-probe` taşır (tüm ürünlerden çıkış; "yalnız bu üründen" yok).
+
+**Yönetim:** `GET|PUT|DELETE /admin/kimlik-bagi` yalnızca `aiprobe-home` servis kimliğiyle: Google ID token (`aud` = `AIPROBE_TP_AUDIENCE`, `iss` Google, `email_verified`, `email` = `AIPROBE_HOME_SA`); doğrulayıcı enjekte edilebilir. Bağ kaldırma o hesabın epoch'unu artırır ve oturumlarını kapatır. Ekran `home/admin` "TP rol hesabı bağla"dadır (TP'de yönetim ekranı yok).
+
 ## 9. API sözleşmesi (özet)
 
 | Yöntem | Yol | Amaç |
 |---|---|---|
-| POST | `/api/auth/login` | Oturum |
+| POST | `/api/auth/login` | Oturum (`local`/`both`) |
+| GET | `/api/auth/aiprobe/login` · `/api/auth/aiprobe/callback` | AI Probe giriş devri (`aiprobe`/`both`, §8.14) |
+| GET · POST | `/api/auth/aiprobe/hesaplar` · `/rol-sec` · `/rol-degistir` | Rol seçici ve rol değiştir |
+| GET · PUT · DELETE | `/api/admin/kimlik-bagi` | Kişi ↔ rol hesabı bağı; yalnız `aiprobe-home` servis kimliği |
 | GET | `/api/requirements?project=` | Story listesi (Rovo) |
 | POST | `/api/requirements/{key}/generate` | `RequirementToCases` başlat |
 | GET | `/api/cases?requirement=` | Case listesi |
@@ -568,6 +588,7 @@ Tek doğruluk kaynağı repo kökündeki `docker-compose.yml`'dir; ayrıntılar 
 | Anthropic | Ayrı proje anahtarı, harcama limiti; API verisi model eğitiminde kullanılmaz; saklama süresi ve sıfır saklama (ZDR) seçeneği sözleşmeyle teyit edilir |
 | Ağ | Tüm portlar `127.0.0.1`; MCP ve toolchain-worker yalnızca iç ağ ve demo uygulamasına erişir |
 | Denetim | Zincirli hash, append-only, imzalı dışa aktarım |
+| Ortak kimlik (§8.14) | Yalnız `aiprobe`/`both`: sunucudan sunucuya Google ID token'lı iki çağrı; tarayıcıdan gelen kimlik iddiasına güvenilmez; devir kodu tek kullanımlık ve `state`'e bağlı; `__Host-` çerezler; on-prem `local` |
 | Üretim notu | Ürün ortamında: Azure Key Vault, Entra kimliği, OAuth 2.1 (Rovo), Azure OpenAI veya AB bölgeli model; KVKK m.9 aktarım mekanizması |
 
 ---

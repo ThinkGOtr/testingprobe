@@ -1,6 +1,23 @@
 <!--
 Sync Impact Report
-- Version change: 1.2.0 → 1.3.0 (MINOR: İlke II, portal içi salt okuma bilgi ve yönlendirme
+- Version change: 1.3.0 → 2.0.0 (MAJOR: İlke XII yeniden tanımlandı — TP, Agent Probe ile kod,
+  ekran ve veritabanı paylaşmamaya devam eder; ortak AI Probe kimliğine YALNIZCA belgelenmiş HTTP
+  kimlik API'si (giriş devri + oturum kontrolü) üzerinden bağlanabilir; Firebase SDK'sı TP'ye
+  girmez. İlke VII'ye on-prem kimlik kuralı eklendi: `TP_AUTH_MODE=local` varsayılan, dış kimlik
+  servisine çağrı yok)
+- Modified principles: VII. Veri Müşteride Kalır (genişletildi), XII. Bağımsız Ürün ve Model
+  Bağımsızlığı → "XII. Bağımsız Ürün, Sözleşmeli Kimlik ve Model Bağımsızlığı" (yeniden tanım)
+- Added sections: yok · Removed sections: yok
+- Güvenlik ve Mimari Kısıtlar: "Kimlik" maddesi eklendi
+- Templates requiring updates: yok (şablonlar kuralı çalışma anında okur) ✅; bağlı belgeler
+  docs/TEKNIK-TASARIM.md v1.7 (§3 tablo satırı 12, §8.10, §9, §14) ve docs/MIMARI-SOZLESME.md
+  (§5 uçlar, §6 ortam değişkenleri) aynı dalda güncellendi ✅
+- Onay durumu: teknik lider ✅ + ürün sahibi ✅ + KVKK sorumlusu ✅ — onaylandı (2026-11-10),
+  onaycı isimleri F0 notuna işlenecek (Governance)
+- Follow-up TODOs: onaycı isimlerinin F0 notuna işlenmesi
+- Kaynak: docs/adr/0001-aiprobe-ortak-kimligi.md; aiprobe-platform-plan/PLAN.md §2.3, §4.2;
+  specs/010-aiprobe-sso/
+- Önceki: 1.2.0 → 1.3.0 (MINOR: İlke II, portal içi salt okuma bilgi ve yönlendirme
   asistanını AI'ın çalışabileceği dördüncü alan olarak ekledi — eylem yok, çıktısı karar dayanağı
   değildir, model yalnızca core-worker'da; ürün sahibi kararı K7, 2026-11-03)
 - Modified principles: II. CI'da AI Yok (genişletildi; mevcut kural değişmedi)
@@ -76,6 +93,9 @@ her sapma defect adayıdır.
 de müşteri ortamında (müşterinin bulut hesabı/tenant'ı veya on-prem) çalışır. Müşteri verisi işlenen
 her ortamda model geçidinde PII maskeleme zorunludur; yalnızca sentetik veriyle çalışan geliştirme ve
 demo ortamında maskeleme kapalı olabilir. Müşteri verisi model eğitimi veya ince ayar için kullanılmaz.
+On-prem kurulum kendi kimliğiyle çalışır: `TP_AUTH_MODE=local` varsayılandır ve bu kipte hiçbir dış
+kimlik servisine çağrı yapılmaz. Ortak kimlik (`aiprobe`/`both`) yalnızca Antrek'in barındırdığı
+ortamda açılır; kimlik servisine yalnızca kişi kimliği (`uid`, `auth_time`) gider, alan verisi gitmez.
 
 ### VIII. Her Şey Kayıt Altında
 Her AI çağrısı, araç çağrısı, onay ve ret kaydedilir: model, sürüm, bundle hash'i, maskeli girdi,
@@ -99,10 +119,14 @@ Deterministik bir kuralın verebildiği karar LLM'e bırakılmaz. Triage önce k
 LLM yalnızca kural eşleşmediğinde devreye girer ve deterministik bir `environment` kararını ezemez.
 Kimlikler (`uuid5`) ve replay anahtarları deterministiktir.
 
-### XII. Bağımsız Ürün ve Model Bağımsızlığı
-Testing Probe, Agent Probe'dan bağımsız ayrı bir üründür; ortak kod, ekran, veritabanı veya kimlik
-paylaşmaz (ortak çekirdek kararı ürün sahibinin ADR'sine bırakılmıştır). Model geçidi sağlayıcıdan
-bağımsız bir sözleşme sunar; sağlayıcıya özgü özellikler yalnızca adaptörlerde bulunur.
+### XII. Bağımsız Ürün, Sözleşmeli Kimlik ve Model Bağımsızlığı
+Testing Probe, Agent Probe'dan bağımsız ayrı bir üründür; Agent Probe ile ortak kod, ekran veya
+veritabanı paylaşmaz. Ortak AI Probe kimliğine **yalnızca belgelenmiş HTTP kimlik API'si** (giriş
+devri kodunun takası ve oturum kontrolü; ADR-0001) üzerinden bağlanabilir: çağrılar TP kodunda, TP
+sahipliğinde yazılır; Firebase SDK'sı (istemci veya Admin) ve platformun ya da Agent Probe'un kodu
+TP'ye girmez. TP'nin yetki modeli değişmez: dış kimlik yalnızca TP rol hesaplarına (`kimlik_bagi`)
+bağlanır, yetki kararları `app_user.rol` ile verilir. Model geçidi sağlayıcıdan bağımsız bir
+sözleşme sunar; sağlayıcıya özgü özellikler yalnızca adaptörlerde bulunur.
 
 ## Güvenlik ve Mimari Kısıtlar
 
@@ -121,6 +145,11 @@ bağımsız bir sözleşme sunar; sağlayıcıya özgü özellikler yalnızca ad
 - **Tedarik zinciri:** İmajlar digest, Action'lar SHA ile sabitlenir; lockfile zorunludur;
   `npm ci --ignore-scripts`; Semgrep her PR'da koşar.
 - **Ağ:** Host'a açılan tüm portlar yalnızca `127.0.0.1`; Mac'e dışarıdan gelen bağlantı yoktur.
+- **Kimlik:** Yerel kipte argon2 + sunucu tarafı oturum. Ortak kimlik kipinde dış kimlik yalnızca
+  sunucudan sunucuya, imzalı servis kimliğiyle doğrulanan çağrılarla gelir; tarayıcıdan gelen
+  hiçbir kimlik iddiasına (token, e-posta, rol) güvenilmez. Oturum ve `tpt_` token'ları dış iptali
+  en geç 60 sn içinde izler; kimlik servisi erişilemezse açık oturum süre sınırları içinde korunur,
+  yeni giriş açılmaz.
 - **Sırlar:** Sırlar git'e girmez (`.env`, Docker secrets; imza anahtarı Keychain'de).
 - **Test edilen uygulamaya erişim:** Kod ve veritabanına yalnızca salt okuma; kod için read-only GitHub
   MCP ve yalnızca ilgili repoda `contents:read`; veri için izin listeli tablolar, tek `SELECT`, zaman
@@ -150,4 +179,4 @@ ve etkisi yazılır ve teknik lider ile ürün sahibi tarafından onaylanır. S�
 kaldırma veya yeniden tanımlama MAJOR, yeni ilke veya bölüm MINOR, açıklama ve ifade düzeltmeleri
 PATCH. Çalışma zamanı rehberi için `docs/TEKNIK-TASARIM.md` ve `CLAUDE.md` kullanılır.
 
-**Version**: 1.3.0 | **Ratified**: 2026-10-30 | **Last Amended**: 2026-11-03
+**Version**: 2.0.0 | **Ratified**: 2026-10-30 | **Last Amended**: 2026-11-10

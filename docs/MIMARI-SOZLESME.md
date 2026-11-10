@@ -255,7 +255,13 @@ gönderilir ve akış kapanır. Portal bunu alınca yeniden bağlanmaz, giriş e
 | Yöntem | Yol | Rol | Amaç |
 |---|---|---|---|
 | POST | `/auth/login` `{kullanici_adi, parola}` | — | Oturum |
-| POST | `/auth/logout` | herkes | |
+| POST | `/auth/logout` | herkes | AI Probe oturumunda yanıt `{ok, redirect}` (`{AIPROBE_ID_ORIGIN}/logout?product=testing-probe`) |
+| GET | `/auth/aiprobe/login?continue=` | — | `aiprobe`/`both`: `state` çerezi + 302 `id.` giriş sayfası (TEKNIK-TASARIM §8.14) |
+| GET | `/auth/aiprobe/callback?code=&state=` | — | Devir kodu takası → oturum (302 `continue`) ya da rol seçici (302 `/rol-sec?continue=`); hata `durum_uyusmuyor` 400, `giris_kodu_gecersiz` 400, `kimlik_servisi_yok` 503, `org_reddi`/`rol_yok` 403 |
+| GET | `/auth/aiprobe/hesaplar` | — | Seçim çerezi ya da AI Probe oturumu: `{hesaplar: [{id, kullanici_adi, rol, gorunen_ad}], aktif_id, continue}` |
+| POST | `/auth/aiprobe/rol-sec` `{app_user_id}` | — | Rol seçici: seçim çereziyle oturum açar |
+| POST | `/auth/aiprobe/rol-degistir` `{app_user_id}` | AI Probe oturumu | Bağı ve rolü yeniden doğrular, yeni oturum kimliği |
+| GET · PUT · DELETE | `/admin/kimlik-bagi` (`?external_uid=`) · `/admin/kimlik-bagi/{app_user_id}` · `/admin/kimlik-bagi/hesaplar` | `aiprobe-home` servis kimliği | Kişi ↔ rol hesabı bağları (`PUT {external_uid, app_user_id \| kullanici_adi}`) |
 | GET | `/auth/me` | herkes | `{id, kullanici_adi, rol, gorunen_ad, ad_soyad, kisiler}` — `gorunen_ad` ("Cengizhan Gunaydin · Analist"), `kisiler` (`{kullanici_adi: gorunen_ad}`) yalnızca gösterim; yetki `rol` ile (`TP_GORUNEN_ADLAR`) |
 | GET | `/requirements` | herkes | Story listesi (Jira'dan çekilmiş + durum) |
 | POST | `/requirements/sync` | analyst | Jira'dan çek |
@@ -679,6 +685,13 @@ Faz 1 entegrasyonunda eklenenler (boş = yerel simülatör / güvenli varsayıla
   `GH_APP_ID`, `GH_APP_PRIVATE_KEY` / `GH_APP_PRIVATE_KEY_PATH`, `GH_APP_INSTALLATION_ID`, `TP_FORGE_PRS_PATH`.
 - Platform: `TP_MCP_PUBLIC_URL` (IDE'ye gösterilen MCP adresi), `TP_SESSION_MAX_AGE_S`,
   `TP_SESSION_COOKIE_SECURE`, `TP_API_TOKEN_TTL_S`, `TP_WORKER_POLL_S`.
+- Ortak kimlik (ADR-0001, TEKNIK-TASARIM §8.14; yalnız core-api): `TP_AUTH_MODE` (`local` | `aiprobe` |
+  `both`, varsayılan `local` — on-prem hep `local`), `AIPROBE_HOME_RUN_URL` (sunucudan sunucuya
+  `aiprobe-home` adresi; TP'nin ID token audience'ı), `AIPROBE_ID_ORIGIN` (giriş/çıkış sayfası),
+  `AIPROBE_PRODUCT_ID` (`testing-probe`), `AIPROBE_ALLOWED_ORGS` (virgülle; boş = herkes reddedilir),
+  `AIPROBE_HOME_SA` (admin ucunu çağırabilecek tek servis hesabı e-postası), `AIPROBE_TP_AUDIENCE`
+  (admin ucunda beklenen ID token `aud`'u), `AIPROBE_SESSION_CHECK_S` (60), `AIPROBE_IDLE_S` (1800),
+  `AIPROBE_ABSOLUTE_S` (28800), `AIPROBE_HTTP_TIMEOUT_S` (5).
 - Demo uygulaması: `DEMOAPP_TEST_MODE=1` (compose), `DEMOAPP_TEST_TOKEN` (`/test/reset` ve
   `/test/break` için; `make env` üretir, yalnızca demo-app-api ve test-runner'a verilir; uçlar yalnızca
   demo-net'ten erişilir, demo-app-web nginx'i `/api/test/*`'i 404'le kapatır; e2e webServer modu her
