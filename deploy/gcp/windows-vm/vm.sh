@@ -42,7 +42,8 @@ TP_DEMO_VM="tp-demo"
 TP_DEMO_BOLGE="europe-west3-a"
 TP_DEMO_IP_YEDEK="10.156.0.2"
 
-DURUM_DESENI='TP-WINDOWS-(HAZIR|HATA)'
+# BASLADI her açılışın başında yazılır; son satır BASLADI ise önceki açılışın HAZIR/HATA'sı bayattır.
+DURUM_DESENI='TP-WINDOWS-(BASLADI|HAZIR|HATA)'
 
 bilgi() { printf '\033[36m•\033[0m %s\n' "$*" >&2; }
 uyari() { printf '\033[33m!\033[0m %s\n' "$*" >&2; }
