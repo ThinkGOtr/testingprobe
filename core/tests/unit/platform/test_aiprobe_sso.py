@@ -1435,3 +1435,14 @@ def test_jit_adi_aiprobe_kaynakli(client: TestClient, home: SahteHome, engine: E
     assert me["ad_soyad"] == "Ayşe Yılmaz" and me["ad_kaynak"] == "aiprobe"
     assert me["kisiler"][me["kullanici_adi"]] == "Ayşe Yılmaz (AI Probe) · Testçi"
 
+
+def test_me_products_bos_liste_erisim_olarak_korunur(
+    client: TestClient, home: SahteHome, engine: Engine
+) -> None:
+    """Sözleşme v1.6 / değiştirici 1.0.2: diğer erişilebilir ürünler `[]` ile gelir (erişim =
+    anahtarın varlığı); TP haritayı süzmeden saklar ve `/auth/me`'de aynen döner."""
+    _giris(client, home, ["tester"], products={"tp": ["tester"], "ap": []})
+    assert client.get("/auth/me").json()["products"] == {"tp": ["tester"], "ap": []}
+    home.kisiler[UID] = {"roles": ["tester"], "diger": {"ap": [], "xp": []}}
+    _kontrol_zamanini_eskit(engine)
+    assert client.get("/auth/me").json()["products"] == {"tp": ["tester"], "ap": [], "xp": []}

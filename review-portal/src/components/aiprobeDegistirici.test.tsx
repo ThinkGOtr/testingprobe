@@ -9,12 +9,14 @@ import { OturumProvider } from "../auth";
 import { gezinti } from "../lib/kimlikKipi";
 import { AIPROBE_KIPI, sahteSunucu } from "../test/sahteSunucu";
 import { BildirimProvider } from "./Bildirim";
+import type { Kullanici } from "../api/types";
+import { degistiriciMe } from "./AiprobeDegistirici";
 import { Kabuk } from "./Kabuk";
 
 const baglanirkenMe: unknown[] = [];
 
 vi.mock("../lib/degistirici", () => ({
-  DEGISTIRICI_SURUMU: "1.0.1",
+  DEGISTIRICI_SURUMU: "1.0.2",
   degistiriciyiYukle: async () => {
     if (customElements.get("aiprobe-switcher")) return;
     customElements.define(
@@ -78,6 +80,11 @@ describe("AiprobeDegistirici", () => {
     expect(sw.getAttribute("lang")).toBe("tr");
     expect(sw.getAttribute("logout-method")).toBe("get");
     expect(baglanirkenMe[0]).toMatchObject({ product: "testing-probe", roles: ["analyst", "po"], products: { ap: ["user"] } });
+  });
+
+  it("v1.6: diğer ürünlerin boş rol listesi ([]) korunur (erişim = anahtar var; değiştirici 1.0.2)", () => {
+    const me = degistiriciMe({ ...ME, products: { tp: ["analyst"], ap: [] } } as Kullanici);
+    expect(me?.products).toEqual({ tp: ["analyst"], ap: [] });
   });
 
   it("çok rollü oturumda 'Rol değiştir' product-menu yuvasında; tıklayınca /rol-sec?continue=", async () => {

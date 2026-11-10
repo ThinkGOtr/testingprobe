@@ -55,8 +55,10 @@ description: "AI Probe ortak girişi (SSO) görev listesi"
   yanıt başlığından (`local`'de başlık yok → arayüz değişmez). `both`: `/giris` yerel form + AI Probe
 - [x] T041 Portal `/rol-sec` sayfası (`GET /api/auth/aiprobe/hesaplar` + `rol-sec`; açık oturumda
   `rol-degistir`). Asistan bağlamı dışında (`rotalar.json`'a girmez; core `ASISTAN_DISI`)
-- [x] T042 `<aiprobe-switcher>` 1.0.1 vendor (`review-portal/src/vendor/aiprobe-switcher/`, platform
-  `dist/switcher-1.0.1.js` = `web/home/sdk/switcher-1.0.1.js` ile bayt bayt aynı, sha384 testte), yalnız aiprobe/both'ta dinamik
+- [x] T042 `<aiprobe-switcher>` 1.0.2 vendor (`review-portal/src/vendor/aiprobe-switcher/`, platform
+  `dist/switcher-1.0.2.js` = `web/home/sdk/switcher-1.0.2.js` ile bayt bayt aynı, sha384 testte;
+  1.0.2 = sözleşme v1.6: erişim = `products`'ta anahtarın varlığı, diğer erişilebilir ürünler `[]`
+  ile gelir — core `/auth/me` ve portal `[]`'yi olduğu gibi aktarır), yalnız aiprobe/both'ta dinamik
   yüklenir; `product-menu` yuvasında "Rol değiştir"; `X-Aiprobe-Degraded` bandı. CSP kipe göre
   (`docker/40-tp-kimlik-csp.sh`: aiprobe/both → `connect-src`/`img-src` + home kökeni; local aynen)
 - [x] T043 Çıkışta `redirect`'e gitme (yalnız home/aynı köken); `GET /auth/me` → `product`, `roles`,
@@ -77,6 +79,12 @@ description: "AI Probe ortak girişi (SSO) görev listesi"
   iki baş kalırsa başarısız olur
 - [ ] T052 CI'da emülatörlü `aiprobe-home` ile `both` e2e (yolculuk 6, 11, 13, 14)
 - [ ] T053 Taşımada `home` taslak bağ listesi → `PUT /admin/kimlik-bagi` (bulunamayan ad = no-go)
+- [ ] T054 Konteyner imajları Artifact Registry'de:
+  `europe-west1-docker.pkg.dev/aiprobe-platform/testing-probe/<imaj>` (ör. `core`, `review-portal`,
+  `toolchain`). Bu dalda kayıt defteri referansı yok: `docker-compose.yml` imajları yerelde
+  `${TP_IMAGE_PREFIX:-testingprobe}-<imaj>:local` olarak kurar, `deploy/gcp/docker-compose.gcp.yml`
+  imaj geçersiz kılmaz. Tek GCP projesine geçişte `TP_IMAGE_PREFIX` / GCP katmanı bu depoya
+  yönlendirilir ve deploy belgesi (docs/GCP-KURULUM.md) güncellenir
 
 ## Dependencies & Execution Order
 

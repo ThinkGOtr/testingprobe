@@ -29,7 +29,8 @@ export function useCikis(): () => Promise<void> {
 /**
  * Değiştiricinin `.me`'si (CONTRACT `/auth/me` alt kümesi: `product`, `roles`, `products`, `name`).
  * `products` (ürün kodu → roller) varsa değiştirici erişimi her ürün için kesin bilir ("Ürünleriniz"
- * / "Keşfet"); yoksa yalnız bu ürünü bilir.
+ * / "Keşfet"); yoksa yalnız bu ürünü bilir. Sözleşme v1.6 (değiştirici 1.0.2): erişim = anahtarın
+ * varlığı; diğer erişilebilir ürünler boş liste `[]` ile gelir ve olduğu gibi aktarılır.
  */
 export function degistiriciMe(k: Kullanici | null): Record<string, unknown> | null {
   if (!k) return null;
@@ -73,7 +74,7 @@ export function AiprobeDegistirici() {
         sw.setAttribute("lang", "tr");
         sw.setAttribute("me-url", "/api/auth/me");
         sw.setAttribute("logout-url", "/giris");
-        // 1.0.1 varsayılanı `post` + `me.csrf_token` formu; TP CSRF'i Origin denetimidir (token
+        // 1.0.x varsayılanı `post` + `me.csrf_token` formu; TP CSRF'i Origin denetimidir (token
         // yok): çıkış bağlantısı `aiprobe:navigate` ile yakalanıp TP çıkışına yönlendirilir.
         sw.setAttribute("logout-method", "get");
         sw.me = degistiriciMe(kullaniciRef.current);

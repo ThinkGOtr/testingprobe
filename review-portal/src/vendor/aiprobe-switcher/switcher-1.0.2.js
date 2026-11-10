@@ -1,7 +1,7 @@
 /*! @aiprobe/switcher — <aiprobe-switcher> ürün değiştirici. Bağımlılık yok, derleme gerekmez.
  *
  * Kullanım:
- *   <script type="module" src="/vendor/switcher-1.0.1.js" integrity="sha384-…"></script>
+ *   <script type="module" src="/vendor/switcher-1.0.2.js" integrity="sha384-…"></script>
  *   <aiprobe-switcher product="testing-probe" home-origin="https://home.aiprobe.antreklabs.com" lang="tr">
  *     <div slot="product-menu"><button>Rol değiştir</button></div>
  *   </aiprobe-switcher>
@@ -12,6 +12,8 @@
  *               admin-url (verilirse "Yönetim" bağlantısı gösterilir)
  * Gizli (status=hidden) ürünler yalnız kullanıcının o üründe rolü varsa listelenir.
  *
+ * 1.0.2: erişim = me.products'ta kodun VARLIĞI (sözleşme v1.6: ürün oturumlarında yalnız çağıran ürünün
+ *        rolleri gelir, diğer erişilebilir ürünler boş liste `[]`). Eski home yanıtlarıyla da aynı sonuç.
  * 1.0.1: çıkış POST (CSRF) formu; gizli ürünler rol varsa görünür; "Keşfet" satırları soluk değil
  *        (AA kontrast, yalnız logo gri); admin-url; logo adresi home-origin'e göre çözülür.
  * Özellikler:   .me (nesne verilirse me-url çağrılmaz), .refresh()
@@ -23,7 +25,7 @@
  * home sayfası (kullanıcı onayıyla) yapar.
  */
 
-export const VERSION = '1.0.1';
+export const VERSION = '1.0.2';
 const DEFAULT_HOME = 'https://home.aiprobe.antreklabs.com';
 const STATUS_TTL_MS = 30_000;
 
@@ -255,11 +257,14 @@ export class AiprobeSwitcher extends HTMLElement {
     if (restoreFocus) this._btn.focus();
   }
 
-  /** Erişim: 'yes' | 'no' | 'unknown'. me.products (kod→roller) varsa kesin; yoksa yalnız bu ürün bilinir. */
+  /** Erişim: 'yes' | 'no' | 'unknown'. me.products (kod→roller; v1.6: diğer ürünler []) varsa kesin; yoksa yalnız bu ürün bilinir. */
   _access(p) {
     const me = this._me;
     if (!me) return 'unknown';
-    if (me.products && typeof me.products === 'object') return (me.products[p.code] || []).length ? 'yes' : 'no';
+    // v1.6: anahtar var = erişim var (diğer ürünlerin rol listesi boş gelir; rolsüz ürünler hiç yazılmaz).
+    if (me.products && typeof me.products === 'object') {
+      return Object.prototype.hasOwnProperty.call(me.products, p.code) && Array.isArray(me.products[p.code]) ? 'yes' : 'no';
+    }
     if (me.product === p.id) return (me.roles || []).length ? 'yes' : 'no';
     return 'unknown';
   }
