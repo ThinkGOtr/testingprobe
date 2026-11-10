@@ -35,7 +35,8 @@ export DEMO_API_URL=http://127.0.0.1:18000  # /test/* uçlarına doğrudan eriş
 #     tcp-listen:8000,fork,reuseaddr tcp:demo-app-api:8000
 #   docker network connect testingprobe_demo-net tp-demo-api-vekil
 ../ci/run-app-checks.sh android -Dapp.path=../mobile/build/bayi-siparis.apk
-../ci/run-app-checks.sh ios -Dapp.path=../mobile/build/BayiSiparis.app -Ddevice.name="iPhone 16"
+DEVICE_UDID="$(cat ../../var/cihaz/ios.udid)" \
+  ../ci/run-app-checks.sh ios -Dapp.path=../mobile/build/BayiSiparis.app   # iOS: simülatör UDID ile (make cihaz-baslat PLATFORM=ios yazar)
 ../ci/run-app-checks.sh android -Dgroups=duman          # yalnız bir grup (testng.xml devre dışı kalır)
 ../ci/break-verify-app.sh android -Dapp.path=…          # yeşil → kırmızı (yalnız assertion) → yeşil
 ```
@@ -74,7 +75,13 @@ testin kanıtı `target/kanit/<Sınıf>.<metot>/{ekran.png,sayfa-kaynagi.xml}` (
 - **Bekleme**: yalnızca açık bekleme (`Bekle`), örtük bekleme 0, `Thread.sleep` yasak (birim testi
   denetler). Eylem ön koşulu sağlanmazsa `TimeoutException` (locator/kurulum), beklenti sağlanmazsa
   `AssertionError` (`dogrula…`). Kırarak doğrula ve triage bu ayrıma dayanır.
-- **Ekran dışı öğe**: `Kaydirma` — Android `UiScrollable.scrollIntoView`, iOS `mobile: scroll toVisible`.
+- **Ekran dışı öğe**: `Kaydirma` — Android `UiScrollable.scrollIntoView`; iOS'ta kaydırma kabının
+  kenar boşluğundan öğeye doğru `mobile: dragFromToForDuration` sürüklemesi (WDA'nın
+  `mobile: scroll toVisible`'ı RN `ScrollView`'da çalışmaz). Klavye altında kalan öğe de aynı
+  sürüklemeyle açılır (katalog `keyboardDismissMode="on-drag"`).
+- **Klavye**: `Klavye.kapat` — Android `hideKeyboard`; iOS'ta `hideKeyboard` yalnız "done" tuşuyla
+  kapatabildiğinden (sayı klavyesinde yok; giriş ekranındaki "next"/"go" eylem tetikler) klavyenin
+  üstünde kısa bir sürükleme.
 - **Uygulama sıfırlama**: her test yeni Appium oturumu (`noReset=false`); oturum taşınmaz.
 - **Hazırlık testin içinde** (`TestTabani` TestNG `IHookable`): bayi kilidi → `/test/reset` (ya da
   sepet boşaltma) → `BREAK_CAMPAIGN` ise `/test/break` → oturum → `@OturumAcik` ise arayüzden giriş →
