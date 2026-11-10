@@ -111,7 +111,7 @@ test-runner ──appium-net (internal)──▶ appium-gw ──cihaz-net──
   `no-new-privileges`, 64 MB.
 - test-runner `cihaz-net`'e **konmaz** (konsaydı internete çıkardı); yalnız `appium-net` eklenir.
   `APPIUM_URL_ANDROID|IOS=http://appium-gw:4723` (`TP_RUNNER_APPIUM_URL_*` ile değişir).
-- **Windows (UTM VM): `appium-gw-windows`** (`mobil-windows` profili; VM yokken `mobil` profili
+- **Windows (GCP `tp-windows` — [WINDOWS-GCP.md](WINDOWS-GCP.md) — ya da UTM VM): `appium-gw-windows`** (`mobil-windows` profili; VM yokken `mobil` profili
   etkilenmez). `appium-gw` ile aynı imaj ve sertleştirme; tek hedefi `TP_WINDOWS_VM_APPIUM`
   (varsayılan `192.168.64.2:4723`). Konteyner açılışında değer `host:port` biçiminde doğrulanır
   (`[A-Za-z0-9.-]+:<1–65535>`; virgül/boşluk vb. reddedilir → socat adres seçeneği enjekte
@@ -286,7 +286,7 @@ Tıklandı: Giriş yap [ref=e7]
 
 ### 6.5 Compose
 
-Servis `app-mcp` (`profiles: [mobil]`; varsayılan `make up` yığınına girmez, mevcut servisler
+Servis `app-mcp` (`profiles: [mobil, mobil-windows]`; varsayılan `make up` yığınına girmez, mevcut servisler
 etkilenmez): `docker compose --profile mobil up -d app-mcp`. core-worker'a `APP_MCP_URL=
 http://app-mcp:8932/mcp` (`.env`'den değişir) ve `app-mcp-net` eklendi. Host'a port açılmaz.
 

@@ -1,9 +1,15 @@
-# Windows 11 ARM sanal makinesi (UTM) — yerel Windows masaüstü testi
+# Windows 11 ARM sanal makinesi (UTM) — yerel Windows masaüstü testi (isteğe bağlı)
+
+> **Birincil canlı yol artık GCP'dir:** Windows masaüstü testi tp-demo yığınından GCP'deki
+> `tp-windows` VM'iyle koşar — [WINDOWS-GCP.md](WINDOWS-GCP.md). Bu UTM rehberi yalnızca çevrimdışı /
+> yerel geliştirme için isteğe bağlıdır; Mac'ten GCP VM'ini sürmek için UTM yerine
+> `scripts/cihaz/windows-gcp-tunel.sh` (WINDOWS-GCP.md §7) kullanılabilir.
 
 Windows masaüstü uygulamasını (`demo-app/desktop`, WPF) bu Mac'te doğrulama ajanıyla (app-mcp) ve
 Java testleriyle sürmek için UTM içinde Windows 11 ARM kurulumu. Plan: `specs/009-mobil-masaustu/plan.md`
 §2.7 (K2: Docker'da Windows Apple Silicon'da KVM olmadığı için olmaz). Birincil Windows koşusu
-GitHub'daki `masaustu-windows` iş akışıdır (`windows-latest`, x64); VM isteğe bağlıdır.
+GitHub'daki `masaustu-windows` iş akışıdır (`windows-latest`, x64); canlı/yerel kontrol için GCP VM
+([WINDOWS-GCP.md](WINDOWS-GCP.md)), bu UTM VM isteğe bağlıdır.
 
 > **Durum (2026-11-09): bu rehberin hiçbir adımı henüz uçtan uca koşturulmadı.** Komutlar ve ortam
 > adları depodaki koda göre doğrulandı (betik, compose, app-mcp yapılandırması, iş akışı); VM'in

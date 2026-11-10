@@ -4,7 +4,8 @@
 #   1. Host'a açılan tüm portlar yalnızca 127.0.0.1'e bağlı (istisna: GCP katmanında edge 80/443)
 #   2. test-runner'dan postgres, core-api, playwright-mcp, host (host.docker.internal) ve internete
 #      erişim yok (demo-app-web ve demo-app-api'ye var; `mobil` profilinde appium-gw:4723'e,
-#      `mobil-windows` profilinde appium-gw-windows:4723'e var)
+#      `mobil-windows` profilinde appium-gw-windows:4723'e var; VM Appium'una (TP_WINDOWS_VM_APPIUM)
+#      doğrudan yok)
 #   3. tp_app audit_event'i UPDATE/DELETE/TRUNCATE edemez
 #   4. Depoda sır yok (gitleaks; git geçmişi + commit edilmemiş izlenen/izlenmeyen dosyalar)
 #   5. demoapp_ro yalnızca izinli tablo/kolonları okur; yazamaz, parola özeti ve sipariş verisi kapalı
@@ -130,7 +131,18 @@ check_isolation() {
   local gw=0
   if svc_running appium-gw; then gw=1; targets="$targets appium-gw:4723"; fi
   # Windows VM yönlendiricisi (`mobil-windows` profili; hedef yalnızca TP_WINDOWS_VM_APPIUM).
-  if svc_running appium-gw-windows; then targets="$targets appium-gw-windows:4723"; fi
+  # Pozitif: yönlendirici açık. Negatif: VM'in Appium'u (GCP'de tp-windows iç IP'si) test-runner'dan
+  # DOĞRUDAN erişilemez — tek yol yönlendiricidir (docs/WINDOWS-GCP.md).
+  local vm_hedef=""
+  if svc_running appium-gw-windows; then
+    targets="$targets appium-gw-windows:4723"
+    vm_hedef="$(compose config --format json 2>/dev/null | python3 -c '
+import json, re, sys
+h = str(((json.load(sys.stdin).get("services") or {}).get("appium-gw-windows") or {}).get("environment", {}).get("HEDEF") or "")
+print(h if re.fullmatch(r"[A-Za-z0-9.-]+:[0-9]{1,5}", h) else "")
+' || true)"
+    [ -z "$vm_hedef" ] || targets="$targets $vm_hedef"
+  fi
   # shellcheck disable=SC2086  # hedefler bilinçli olarak sözcüklere bölünür
   if ! out="$(compose exec -T test-runner node -e "$NET_JS" $targets 2>&1)"; then
     fail "2/izolasyon: test-runner içinde node çalıştırılamadı"; info "$out"; return

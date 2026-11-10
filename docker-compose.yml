@@ -10,8 +10,10 @@
 #   mcp-net    : internal; yalnızca core-worker <-> playwright-mcp
 #   app-mcp-net: internal; yalnızca core-worker <-> app-mcp (mobil/masaüstü ajan aracı, 009)
 #   cihaz-net  : yalnızca app-mcp + appium-gw(-windows); hosttaki Appium'a (host.docker.internal:4723)
-#                ve Windows VM Appium'una çıkış için internal DEĞİL (internal ağdan host'a
-#                ulaşılamaz). docs/CIHAZ-ALTYAPISI.md §5
+#                ve Windows VM Appium'una çıkış için internal DEĞİL (internal ağdan host'a ve VPC'ye
+#                ulaşılamaz). GCP'de (Linux Docker Engine) bu ağdan çıkış host IP'sine NAT'lanır
+#                (tp-demo 10.156.0.2 → tp-windows:4723; Windows güvenlik duvarı yalnızca bu kaynağa
+#                izin verir). docs/CIHAZ-ALTYAPISI.md §5, docs/WINDOWS-GCP.md
 #   appium-net : internal; yalnızca test-runner <-> appium-gw / appium-gw-windows (LocalForge Java
 #                koşusu, 009 §2.7)
 # test-runner yalnızca demo-net + runner-net + appium-net'te: postgres, core-api, playwright-mcp ve
@@ -349,9 +351,11 @@ services:
       TP_E2E_ROOT: ${TP_E2E_ROOT:-e2e}
       # Java (Appium) koşusu (009 §2.7, runner/java_run.py): e2e-app kökü ve platform başına Appium.
       # Appium hostta; test-runner ona yalnızca appium-gw (TCP yönlendirici, `mobil` profili)
-      # üzerinden ulaşır. Boş = o platformun Java koşusu sağlık kontrolünde `error`. Windows (UTM
-      # VM): `mobil-windows` profilindeki appium-gw-windows; açıkça verilir
+      # üzerinden ulaşır. Boş = o platformun Java koşusu sağlık kontrolünde `error`. Windows (GCP
+      # tp-windows ya da UTM VM): `mobil-windows` profilindeki appium-gw-windows; açıkça verilir
       # (TP_RUNNER_APPIUM_URL_WINDOWS=http://appium-gw-windows:4723), varsayılan boş = kapalı.
+      # /test/* sıfırlaması (DEMO_API_URL) her zaman bu yığının demo-app-api'sidir; Windows
+      # uygulaması aynı API'ye dış kapıdan (TP_APP_ARGS_WINDOWS=--api-url https://<bayi>/api) gider.
       TP_E2E_APP_ROOT: ${TP_E2E_APP_ROOT:-e2e-app}
       APPIUM_URL_ANDROID: ${TP_RUNNER_APPIUM_URL_ANDROID:-http://appium-gw:4723}
       APPIUM_URL_IOS: ${TP_RUNNER_APPIUM_URL_IOS:-http://appium-gw:4723}
@@ -413,13 +417,15 @@ services:
   # Mobil/masaüstü doğrulama ajanının aracı (specs/009-mobil-masaustu §2.6). Appium hostta koşar
   # (make cihaz-baslat); app-mcp ona host.docker.internal üzerinden bağlanır. Varsayılan yığına
   # girmez: `docker compose --profile mobil up -d app-mcp` (cihaz altyapısı olmadan anlamsız).
+  # `mobil-windows` profilinde de başlar: GCP'de (tp-demo) hostta Appium yoktur, yalnız Windows VM
+  # vardır (APPIUM_URL_WINDOWS=http://appium-gw-windows:4723; docs/WINDOWS-GCP.md).
   # Host'a port açılmaz; yalnızca core-worker app-mcp-net üzerinden ulaşır.
   app-mcp:
     image: ${TP_IMAGE_PREFIX:-testingprobe}-app-mcp:local
     build:
       context: ./toolchain/app-mcp
     pull_policy: build
-    profiles: [mobil]
+    profiles: [mobil, mobil-windows]
     init: true
     environment:
       APP_MCP_HOST: 0.0.0.0
@@ -427,7 +433,8 @@ services:
       # Host başlığı denetimi (DNS rebinding): yalnızca core-worker'ın kullandığı ad.
       APP_MCP_ALLOWED_HOSTS: app-mcp:8932,app-mcp
       APP_MCP_IDLE_S: ${APP_MCP_IDLE_S:-300}
-      # Platform başına Appium adresi; boş = platform kapalı. Windows: UTM VM adresi.
+      # Platform başına Appium adresi; boş = platform kapalı. Windows: GCP'de
+      # http://appium-gw-windows:4723 (cihaz-net), UTM'de VM adresi.
       APPIUM_URL_ANDROID: ${APPIUM_URL_ANDROID:-http://host.docker.internal:4723}
       APPIUM_URL_IOS: ${APPIUM_URL_IOS:-http://host.docker.internal:4723}
       APPIUM_URL_WINDOWS: ${APPIUM_URL_WINDOWS:-}
@@ -474,10 +481,12 @@ services:
       resources:
         limits: { memory: 64m }
 
-  # test-runner'ın Windows sanal makinesindeki (UTM) Appium'a çıkışı (009 §2.7; docs/WINDOWS-VM.md
-  # §5.3). appium-gw ile aynı sertleştirme; hedef yalnızca TP_WINDOWS_VM_APPIUM (host:port, varsayılan
-  # 192.168.64.2:4723) ve konteyner açılışında biçimi doğrulanır (socat adres seçeneği enjekte
-  # edilemez: virgül, boşluk vb. reddedilir). Ayrı profil: VM yokken `mobil` profili bozulmaz.
+  # test-runner'ın (ve GCP'de app-mcp'nin) Windows sanal makinesindeki Appium'a çıkışı (009 §2.7).
+  # Birincil yol GCP: tp-demo → tp-windows iç IP'si (docs/WINDOWS-GCP.md); isteğe bağlı UTM
+  # (docs/WINDOWS-VM.md §5.3). appium-gw ile aynı sertleştirme; hedef yalnızca TP_WINDOWS_VM_APPIUM
+  # (host:port, varsayılan 192.168.64.2:4723) ve konteyner açılışında biçimi doğrulanır (socat adres
+  # seçeneği enjekte edilemez: virgül, boşluk vb. reddedilir). Ayrı profil: VM yokken `mobil`
+  # profili bozulmaz. Port açmaz; test-runner yalnızca appium-net'ten (internal) ulaşır.
   #   docker compose --profile mobil-windows up -d appium-gw-windows
   #   .env: TP_RUNNER_APPIUM_URL_WINDOWS=http://appium-gw-windows:4723
   # Docker Desktop'ın konteynerden UTM ağına (192.168.64.0/24) yönlendirmesi bu Mac'te VM ile

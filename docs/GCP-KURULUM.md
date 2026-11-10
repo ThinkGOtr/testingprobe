@@ -324,6 +324,21 @@ Kısa uçtan uca prova (isteğe bağlı, uv gerekir): `make demo-prova`.
 accountId'sini çıkar, `make up`. `make status`'ta "UYARI: TP_TEST_TEK_HESAP" görünmemeli. Ayrıntı:
 `docs/DEMO-AKISI.md` → "Gerçek sistemlerle sunuluyorsa".
 
+### 10.1 Windows masaüstü testi (isteğe bağlı: `tp-windows` VM)
+
+Windows uygulaması (WPF) için aynı `default` VPC'de ayrı, yalnız demo sırasında açılan bir Windows
+Server 2022 VM'i (`tp-windows`, europe-west1-b) kullanılır; tp-demo ona iç IP ile ulaşır, internete
+port açılmaz. Özet (ayrıntı ve sorun giderme: [WINDOWS-GCP.md](WINDOWS-GCP.md)):
+
+1. Mac: `make windows-vm-olustur` (ilk kez) ya da `make windows-vm-ac`, ardından `make windows-vm-bekle`;
+   iç IP: `deploy/gcp/windows-vm/vm.sh ip`.
+2. VM (tp-demo) `.env`: `COMPOSE_PROFILES=mobil-windows`, `TP_WINDOWS_VM_APPIUM=<iç-IP>:4723`,
+   `TP_RUNNER_APPIUM_URL_WINDOWS` / `APPIUM_URL_WINDOWS=http://appium-gw-windows:4723`,
+   `APP_WINDOWS_APP` / `TP_APP_PATH_WINDOWS=C:\tp\uygulama\BayiSiparis.exe`,
+   `APP_WINDOWS_ARGS` / `TP_APP_ARGS_WINDOWS=--api-url https://bayi.testing-probe.antreklabs.com/api`
+   (tam blok: WINDOWS-GCP.md §4) → `make up`.
+3. Demo bitince Mac: `make windows-vm-kapat` (açıkken ~0,08–0,13 $/sa; kapalıyken yalnız disk).
+
 ---
 
 ## 11. Maliyet (yaklaşık)
