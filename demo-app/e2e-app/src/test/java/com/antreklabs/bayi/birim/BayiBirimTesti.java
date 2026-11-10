@@ -107,7 +107,8 @@ public class BayiBirimTesti {
     }
   }
 
-  @Test(groups = "birim")
+  // timeOut: çocuk süreç beklenmedik biçimde susarsa (ör. Windows CI) koşu asılı kalmasın, düşsün.
+  @Test(groups = "birim", timeOut = 30_000)
   public void kilitSureclerArasidir() throws IOException, InterruptedException {
     // Ayrı bir JVM kilidi tutarken bu süreç alamaz; süreç bitince kilit kendiliğinden düşer.
     Path dizin = Files.createTempDirectory("demoapp-kilit-surec-");
