@@ -112,6 +112,10 @@ def verify_bearer(session: Session, raw: str | None, kapsam: str) -> Principal |
             kimlik = aiprobe.OturumKimligi(int(tok.olusturma.timestamp()))
         if not aiprobe.token_kontrol(session, user, kimlik, tok):
             return None
+    elif tok.auth_time is not None:
+        # Yerel kipe dönülmüşse AI Probe oturumundan üretilmiş token kabul edilmez (oturumlarla
+        # simetrik, fail-closed).
+        return None
     session.execute(
         update(ApiToken).where(ApiToken.id == tok.id).values(son_kullanim=datetime.now(UTC))
     )

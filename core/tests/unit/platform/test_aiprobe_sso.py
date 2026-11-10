@@ -17,7 +17,7 @@ from urllib.parse import parse_qs, urlsplit
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, text
+from sqlalchemy import Engine, select, text
 from sqlalchemy.orm import Session
 
 from tp_core.api import main
@@ -1446,3 +1446,123 @@ def test_me_products_bos_liste_erisim_olarak_korunur(
     home.kisiler[UID] = {"roles": ["tester"], "diger": {"ap": [], "xp": []}}
     _kontrol_zamanini_eskit(engine)
     assert client.get("/auth/me").json()["products"] == {"tp": ["tester"], "ap": [], "xp": []}
+
+
+# ------------------------------------------------------------------ güvenlik turu 5 (2026-11-10)
+
+
+def _home_admin_suzmez(home: SahteHome) -> None:
+    """Hatalı home: `/v1/session/check` `acr="1"`de de `po`'yu döner (süzgeç yok)."""
+    import json
+
+    asil = home.handler
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/v1/session/check":
+            govde = json.loads(req.content) | {"acr": "2"}
+            req = httpx.Request("POST", req.url, headers=req.headers, json=govde)
+        return asil(req)
+
+    aiprobe.configure(transport=httpx.MockTransport(handler))
+
+
+def _acr_1_yap(engine: Engine) -> None:
+    with engine.begin() as c:
+        c.execute(text("UPDATE oturum SET acr = '1'"))
+
+
+def test_yerel_kipe_donulunce_aiprobe_tokeni_reddedilir(
+    client: TestClient, home: SahteHome, session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _giris(client, home, ["analyst"])
+    _uid, raw = _api_token(client, session)
+    assert verify_bearer(session, raw, "publish") is not None
+    session.commit()
+    monkeypatch.setenv("TP_AUTH_MODE", "local")
+    get_settings.cache_clear()
+    assert verify_bearer(session, raw, "publish") is None
+    n = home.sayi("/v1/session/check")
+    assert verify_bearer(session, raw, "publish") is None
+    assert home.sayi("/v1/session/check") == n  # yerel kipte home'a sorulmaz
+
+
+def test_acr1_oturumunda_home_po_donse_de_oturum_duser(
+    client: TestClient, home: SahteHome, engine: Engine
+) -> None:
+    _giris(client, home, ["po"])
+    assert client.get("/auth/me").json()["rol"] == "po"
+    _acr_1_yap(engine)
+    _home_admin_suzmez(home)
+    _kontrol_zamanini_eskit(engine)
+    assert client.get("/auth/me").status_code == 401
+    with engine.connect() as c:
+        assert c.execute(text("SELECT auth_epoch FROM app_user")).scalar_one() == 1
+
+
+def test_acr1_tokeninda_home_po_donse_de_token_reddedilir(
+    client: TestClient, home: SahteHome, engine: Engine, session: Session
+) -> None:
+    _giris(client, home, ["po"])
+    me = client.get("/auth/me").json()
+    p = Principal(uuid.UUID(me["id"]), me["kullanici_adi"], "po")
+    _tok, raw = issue_token(session, p, "publish", 3600, auth_time=1_762_780_000, acr="1",
+                            session_epoch_ms=EPOCH_MS)  # fmt: skip
+    session.commit()
+    _home_admin_suzmez(home)
+    aiprobe.ONBELLEK.temizle()
+    assert verify_bearer(session, raw, "publish") is None
+    session.commit()
+    assert _epoch(engine, me["id"]) == 1
+
+
+def test_acr1_oturumunda_po_ya_rol_degistirilemez(
+    client: TestClient, home: SahteHome, make_user: MakeUser, engine: Engine
+) -> None:
+    analist, po = make_user("analyst"), make_user("po")
+    _bagla(engine, analist)
+    _bagla(engine, po)
+    _giris(client, home, ["analyst", "po"])
+    assert client.post("/auth/aiprobe/rol-sec", json={"app_user_id": str(analist.id)}).is_success
+    _acr_1_yap(engine)
+    _home_admin_suzmez(home)
+    r = client.post("/auth/aiprobe/rol-degistir", json={"app_user_id": str(po.id)})
+    assert r.status_code == 403
+    assert client.get("/auth/me").json()["rol"] == "analyst"
+
+
+def test_degraded_baslangici_istek_geri_alinsa_da_kalici(
+    client: TestClient, home: SahteHome, engine: Engine, session: Session
+) -> None:
+    from tp_core.models import AppUser, Oturum
+
+    _giris(client, home, ["analyst"])
+    _uid, raw = _api_token(client, session)
+    home.kapali = True
+    aiprobe.ONBELLEK.temizle()
+    _kontrol_zamanini_eskit(engine)
+    # Token: kabul edilir, ardından isteğin işlemi hata ile geri alınır.
+    assert verify_bearer(session, raw, "publish") is not None
+    session.rollback()
+    # Oturum: aynı şekilde.
+    o = session.scalar(select(Oturum))
+    user = session.get(AppUser, o.user_id)
+    assert aiprobe.oturum_kontrol(session, o, user) is aiprobe.Kontrol.ULASILAMADI
+    session.rollback()
+    with engine.connect() as c:
+        assert c.execute(text("SELECT degraded_baslangic FROM api_token")).scalar_one()
+        assert c.execute(text("SELECT degraded_baslangic FROM oturum")).scalar_one()
+
+
+def test_check_401_invalid_caller_ayri_olay(
+    client: TestClient, home: SahteHome, engine: Engine, caplog: pytest.LogCaptureFixture
+) -> None:
+    _giris(client, home, ["tester"])
+    _check_yaniti(home, 401)
+    with caplog.at_level("ERROR", logger="tp_core.auth.aiprobe"):
+        for _ in range(3):
+            aiprobe.ONBELLEK.temizle()
+            sonuc = aiprobe.kontrol_et(UID, aiprobe.OturumKimligi(1_762_780_000, "2", EPOCH_MS))
+            assert not sonuc.valid and sonuc.reason == "check_rejected_401"
+    olaylar = [r for r in caplog.records if "aiprobe_check_invalid_caller" in r.getMessage()]
+    assert len(olaylar) == 1 and olaylar[0].levelname == "ERROR"  # dakikada bir
+    assert aiprobe.INVALID_CALLER.toplam == 3

@@ -437,7 +437,7 @@ def rol_sec(body: HesapSec, request: Request, session: DbSession, codec: Codec) 
     if not sonuc.valid:
         aiprobe.iptal_et(secim["x"], None, sonuc.reason or "gecersiz")
         return _hata(401, "yetkisiz", "Oturumunuz sonlandırıldı; yeniden giriş yapın", SECIM_COOKIE)
-    if hedef.rol not in sonuc.roles:
+    if hedef.rol not in aiprobe.tp_rolleri(sonuc.roles, kimlik.acr):
         raise KodluHata(403, "yasak", "Bu rol AI Probe hesabınızda tanımlı değil")
     _onceki_oturumu_kapat(request, session, codec)
     yanit = JSONResponse(
@@ -481,7 +481,7 @@ def rol_degistir(
         yanit = _hata(401, "yetkisiz", "Oturumunuz sonlandırıldı; yeniden giriş yapın")
         yanit.delete_cookie(cookie_name(), path="/", httponly=True, samesite="lax", secure=True)
         return yanit
-    if hedef.rol not in sonuc.roles:
+    if hedef.rol not in aiprobe.tp_rolleri(sonuc.roles, kimlik.acr):
         raise KodluHata(403, "yasak", "Bu rol AI Probe hesabınızda tanımlı değil")
     veri = codec.loads(request.cookies.get(cookie_name(), ""))
     if veri is not None:

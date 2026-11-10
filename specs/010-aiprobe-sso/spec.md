@@ -77,8 +77,9 @@ dolduğunda) 401, aynı kullanıcının `tpt_` token'ı 401.
 1. **Given** son kontrolden ≥60 sn geçmiş oturum, **When** home `valid=false`, **Then** 401,
    `app_user.auth_epoch` artmış, `external_uid` oturumları iptal.
 2. **Given** aynı kişinin `tpt_` token'ı, **When** MCP çağrısı, **Then** 401.
-3. **Given** home erişilemez (ağ/5xx), **When** istek gelir, **Then** oturum korunur, yanıt
-   `X-Aiprobe-Degraded: 1` taşır.
+3. **Given** home erişilemez (ağ/5xx/408/429), **When** istek gelir, **Then** oturum en çok
+   10 dk korunur, yanıt `X-Aiprobe-Degraded: 1` taşır; 10 dk aşılınca 401. Diğer 4xx (400, 401
+   `invalid_caller`, 403, 404) fail-closed: 401 ve iptal.
 
 ---
 
@@ -159,7 +160,11 @@ kabul edilmez.
   yeniler.
 - **FR-007**: `session_valid` ve `verify_bearer` ≥60 sn'de bir (önbellekli) oturum kontrolü yapar;
   geçersizde `auth_epoch` artar, oturumlar iptal, `tpt_` token'ları reddedilir.
-- **FR-008**: Home erişilemezse oturum korunur ve `X-Aiprobe-Degraded: 1`; yeni giriş 503.
+- **FR-008**: Oturum kontrolü `POST /v1/session/check {uid, auth_time, acr, session_epoch_ms}`
+  gönderir. Home erişilemezse (ağ, 5xx, 408, 429) oturum ve `tpt_` token'ı ilk erişilemeyen
+  kontrolden itibaren en çok 10 dk korunur (`degraded_baslangic` kalıcı) ve `X-Aiprobe-Degraded: 1`;
+  sonra oturum kapatılır / token reddedilir. Diğer 4xx yanıtları fail-closed (geçersiz → iptal);
+  401 `invalid_caller` ayrı ERROR olayı `aiprobe_check_invalid_caller`. Yeni giriş 503.
 - **FR-009**: AI Probe oturumunda boşta 30 dk kayan / mutlak 8 sa.
 - **FR-010**: Çerez adı `aiprobe`/`both`'ta `__Host-tp_session` (Secure), `local`'de `tp_session`.
 - **FR-011**: `/admin/kimlik-bagi` yalnızca `AIPROBE_HOME_SA` servis kimliğini kabul eder.

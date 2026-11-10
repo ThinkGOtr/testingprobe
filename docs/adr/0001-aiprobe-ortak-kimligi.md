@@ -58,9 +58,12 @@ müşteri ortamında (on-prem, İlke VII) dış bir kimlik servisine bağımlıl
 
 - (+) Tek giriş, merkezi çıkış ve iptal; demo hesapları `home/admin`'den yönetilir.
 - (+) On-prem dağıtım ve mevcut yerel giriş testleri değişmez.
-- (−) `aiprobe` modunda `aiprobe-home` kesintisinde yeni giriş yapılamaz; açık oturumlar boşta
-  (30 dk) / mutlak (8 sa) sınırlar içinde korunur ve `X-Aiprobe-Degraded: 1` döner (kabul edilen
-  sınır; PLAN §2.3).
+- (−) `aiprobe` modunda `aiprobe-home` kesintisinde (ağ hatası, 5xx, 408, 429) yeni giriş
+  yapılamaz; açık oturumlar ve `tpt_` token'ları ilk erişilemeyen kontrolden itibaren **en çok
+  10 dk** (`degraded_baslangic`, ayrı işlemde kalıcı yazılır) korunur ve `X-Aiprobe-Degraded: 1`
+  döner; sınır aşılınca oturum kapatılır / token home yeniden doğrulayana dek reddedilir. Diğer
+  4xx yanıtları (400, 401 `invalid_caller`, 403, 404 …) fail-closed'dur: oturum geçersiz sayılır
+  ve kişinin hesapları iptal edilir (kabul edilen sınır; PLAN §2.3).
 - (−) İptal etkisi en çok 60 sn gecikir (önbellek); kabul edildi.
 - KVKK: kişisel veri olarak yalnızca e-posta, ad ve platform `uid`'si işlenir; `app_user.ad_soyad`
   ve `kimlik_bagi.external_uid` TP veritabanında tutulur. Aktarım SaaS ortamı içindir; on-prem'de

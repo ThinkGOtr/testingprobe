@@ -33,7 +33,9 @@ from typing import Any, Protocol
 
 import httpx
 from sqlalchemy import select, text, update
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import set_committed_value
 
 from tp_core.audit import audit_on_commit
 from tp_core.config import get_settings
@@ -292,6 +294,7 @@ def reset() -> None:
     _YAPI = _Yapi()
     ONBELLEK.temizle()
     DEGRADED_KABUL.temizle()
+    INVALID_CALLER.temizle()
 
 
 def simdi() -> datetime:
@@ -382,6 +385,10 @@ class HomeIstemcisi:
         if kimlik.session_epoch_ms:
             govde["session_epoch_ms"] = kimlik.session_epoch_ms
         r = self._post("/v1/session/check", govde)
+        if r.status_code == 401:
+            # invalid_caller: TP'nin servis kimliği/audience'ı yanlış (yapılandırma hatası); ayrı
+            # olay olarak görünür kılınır, karar yine fail-closed.
+            INVALID_CALLER.kaydet()
         if r.status_code != 200:
             # 5xx/408/429 `_post`'ta degraded'e çevrildi; kalan 4xx (400 bad_request, 401
             # invalid_caller, 403, 404 …) fail-closed: home oturumu onaylamıyor → geçersiz.
@@ -481,6 +488,65 @@ class _Sayac:
 DEGRADED_KABUL = _Sayac()
 
 
+class _InvalidCaller:
+    """Home `/v1/session/check` 401 (`invalid_caller`) sayacı: her yanıt sayılır, ERROR
+    `aiprobe_check_invalid_caller` dakikada en çok bir kez loglanır (log tabanlı metrik)."""
+
+    ARALIK_S = 60.0
+
+    def __init__(self) -> None:
+        self.toplam = 0
+        self._son_log: float | None = None
+        self._kilit = threading.Lock()
+
+    def kaydet(self) -> bool:
+        with self._kilit:
+            self.toplam += 1
+            an = time.monotonic()
+            if self._son_log is not None and an - self._son_log < self.ARALIK_S:
+                return False
+            self._son_log, n = an, self.toplam
+        log.error(
+            "aiprobe_check_invalid_caller toplam=%d: aiprobe-home TP'nin servis kimliğini "
+            "reddetti (AIPROBE_HOME_RUN_URL audience / servis hesabı yapılandırmasını denetleyin)",
+            n,
+        )
+        return True
+
+    def temizle(self) -> None:
+        with self._kilit:
+            self.toplam = 0
+            self._son_log = None
+
+
+INVALID_CALLER = _InvalidCaller()
+
+
+def _degraded_baslat(session: Session, satir: Oturum | ApiToken, an: datetime) -> datetime:
+    """Degraded başlangıcını ayrı işlemde yazar (istek geri alınsa da 10 dk sınırı kalıcı).
+
+    Satır zaten bir başlangıç taşıyorsa (eşzamanlı istek) onu kullanır. Ayrı işlem satır
+    kilidini bekleyemezse (bu isteğin işlemi satırı kilitlemiş) istek işleminde yazılır.
+    """
+    model = type(satir)
+    try:
+        with session_scope() as s:
+            s.execute(text("SET LOCAL lock_timeout = '2s'"))
+            s.execute(
+                update(model)
+                .where(model.id == satir.id, model.degraded_baslangic.is_(None))
+                .values(degraded_baslangic=an)
+            )
+            bas = s.scalar(select(model.degraded_baslangic).where(model.id == satir.id))
+    except DBAPIError:
+        log.warning("degraded başlangıcı ayrı işlemde yazılamadı; istek işleminde yazılıyor")
+        session.execute(update(model).where(model.id == satir.id).values(degraded_baslangic=an))
+        bas = an
+    bas = bas or an
+    set_committed_value(satir, "degraded_baslangic", bas)
+    return bas
+
+
 def _degraded_kabul(tur: str, uid: str, baslangic: datetime) -> None:
     n = DEGRADED_KABUL.artir(tur)
     log.warning(
@@ -532,8 +598,7 @@ def oturum_kontrol(session: Session, o: Oturum, user: AppUser) -> Kontrol:
         # Degraded: oturum en çok DEGRADED_MAX_S korunur (başlangıç ilk erişilemeyen kontrolde
         # yazılır); aşılınca yalnız bu oturum iptal edilir (home'un iptal kararı değil).
         if o.degraded_baslangic is None:
-            session.execute(update(Oturum).where(Oturum.id == o.id).values(degraded_baslangic=an))
-            o.degraded_baslangic = an
+            _degraded_baslat(session, o, an)
         elif _degraded_asildi(o.degraded_baslangic, an):
             log.error(
                 "aiprobe-home %d sn'den uzun süredir erişilemiyor; oturum kapatıldı (uid=%s)",
@@ -555,8 +620,9 @@ def oturum_kontrol(session: Session, o: Oturum, user: AppUser) -> Kontrol:
     if not sonuc.valid:
         iptal_et(o.external_uid, None, sonuc.reason or "gecersiz")
         return Kontrol.GECERSIZ
-    if user.rol not in sonuc.roles:
-        iptal_et(o.external_uid, sonuc.roles, "rol_kaldirildi")
+    roller = tp_rolleri(sonuc.roles, o.acr)
+    if user.rol not in roller:
+        iptal_et(o.external_uid, roller, "rol_kaldirildi")
         return Kontrol.GECERSIZ
     degerler: dict[str, Any] = {"son_kontrol": an, "degraded_baslangic": None}
     o.degraded_baslangic = None
@@ -649,10 +715,7 @@ def token_kontrol(
     except HomeUlasilamaz:
         baslangic = an if tok is None else tok.degraded_baslangic
         if tok is not None and baslangic is None:
-            session.execute(
-                update(ApiToken).where(ApiToken.id == tok.id).values(degraded_baslangic=an)
-            )
-            tok.degraded_baslangic = baslangic = an
+            baslangic = _degraded_baslat(session, tok, an)
         elif _degraded_asildi(baslangic, an):
             log.error(
                 "aiprobe-home %d sn'den uzun süredir erişilemiyor; token reddedildi (uid=%s)",
@@ -666,8 +729,9 @@ def token_kontrol(
     if not sonuc.valid:
         iptal_et(uid, None, sonuc.reason or "gecersiz")
         return False
-    if user.rol not in sonuc.roles:
-        iptal_et(uid, sonuc.roles, "rol_kaldirildi")
+    roller = tp_rolleri(sonuc.roles, kimlik.acr)
+    if user.rol not in roller:
+        iptal_et(uid, roller, "rol_kaldirildi")
         return False
     if tok is not None and tok.degraded_baslangic is not None:
         session.execute(
