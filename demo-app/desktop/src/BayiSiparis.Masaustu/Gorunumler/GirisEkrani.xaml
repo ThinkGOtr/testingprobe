@@ -1,0 +1,43 @@
+<!-- Giriş ekranı (web: LoginPage.tsx). -->
+<UserControl x:Class="BayiSiparis.Masaustu.Gorunumler.GirisEkrani"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:o="clr-namespace:BayiSiparis.Masaustu.Otomasyon"
+             AutomationProperties.AutomationId="page-login"
+             AutomationProperties.Name="Bayi girişi">
+  <Border Style="{StaticResource Panel}" Width="420" HorizontalAlignment="Center" VerticalAlignment="Top"
+          Margin="0,48,0,0" Padding="28">
+    <StackPanel>
+      <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+        <Border Width="32" Height="32" CornerRadius="8" Background="{StaticResource Birincil}" Margin="0,0,10,0" />
+        <TextBlock Text="Bayi Sipariş Portalı" FontWeight="SemiBold" FontSize="16" VerticalAlignment="Center" />
+      </StackPanel>
+      <TextBlock Text="Bayi girişi" Style="{StaticResource Baslik1}" />
+      <TextBlock Text="Sipariş vermek için bayi hesabınızla giriş yapın." Style="{StaticResource SolukMetin}" Margin="0,0,0,16" />
+
+      <Label Content="Kullanıcı adı" Target="{Binding ElementName=KullaniciAdiKutusu}" Padding="0,0,0,4" />
+      <TextBox x:Name="KullaniciAdiKutusu"
+               AutomationProperties.AutomationId="login-username"
+               AutomationProperties.Name="Kullanıcı adı"
+               Text="{Binding KullaniciAdi, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,12" />
+
+      <Label Content="Parola" Target="{Binding ElementName=ParolaKutusu}" Padding="0,0,0,4" />
+      <PasswordBox x:Name="ParolaKutusu"
+                   AutomationProperties.AutomationId="login-password"
+                   AutomationProperties.Name="Parola"
+                   PasswordChanged="ParolaDegisti" Margin="0,0,0,12" />
+
+      <o:Kosullu Goster="{Binding Hata, Converter={StaticResource DoluMu}}">
+        <Border Style="{StaticResource HataKutusu}">
+          <o:OtomasyonMetni AutomationProperties.AutomationId="login-error" Text="{Binding Hata}"
+                            Foreground="{StaticResource Tehlike}" TextWrapping="Wrap" />
+        </Border>
+      </o:Kosullu>
+
+      <Button Style="{StaticResource BirincilDugme}" IsDefault="True" Margin="0,8,0,0"
+              AutomationProperties.AutomationId="login-submit"
+              Content="{Binding GirisDugmesiMetni}"
+              Command="{Binding GirisKomutu}" />
+    </StackPanel>
+  </Border>
+</UserControl>

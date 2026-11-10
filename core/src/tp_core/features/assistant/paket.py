@@ -48,7 +48,8 @@ MAX_DOSYA_BAYT = 1_000_000  # daha büyük kaynak dosyası pakete alınmaz (uyar
 IZIN_LISTESI: tuple[str, ...] = (
     "review-portal/src/**/*.{ts,tsx,css}",
     "core/src/tp_core/**/*.py",
-    "docs/{ONBOARDING,DEMO-AKISI,CANLI-DEMO-SENARYOSU,CLAUDE-CODE-KANALI,MIMARI-SOZLESME,GERCEK-SISTEMLER}.md",
+    # CANLI-DEMO-SENARYOSU.md gitignore'ludur (portal parolaları içerir); pakete girmez.
+    "docs/{ONBOARDING,DEMO-AKISI,CLAUDE-CODE-KANALI,MIMARI-SOZLESME,GERCEK-SISTEMLER}.md",
     "README.md",
     "rules/assistant/*.yaml",
 )

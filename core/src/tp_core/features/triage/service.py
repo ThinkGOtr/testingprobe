@@ -46,6 +46,7 @@ from sqlalchemy.orm import Session
 from tp_core.audit import audit_on_commit
 from tp_core.events import publish_tx
 from tp_core.features.triage import evidence as ev
+from tp_core.features.triage import java as jv
 from tp_core.features.triage import services
 from tp_core.features.triage.rules import (
     Girdi,
@@ -56,7 +57,7 @@ from tp_core.features.triage.rules import (
     siniflandir,
 )
 from tp_core.features.triage.rules import sinyal as _sinyal
-from tp_core.models import BugDraft, Failure, Requirement, Run, TestCase, TestResult
+from tp_core.models import BugDraft, Failure, Requirement, Run, Script, TestCase, TestResult
 from tp_core.models.ci_feature import TestResultEk
 from tp_core.models.codegen_feature import ScriptCodegen, ScriptKontrol
 from tp_core.models.triage_feature import FailureEk, TriageKosu
@@ -74,7 +75,9 @@ KIRMA_TASLAK_YOK = (
     "yakaladı. Bug taslağı açılmaz, Jira'ya yazılmaz."
 )
 KIRMIZI_TEST = ("failed", "timedout", "flaky")
-STATIK_ADIMLAR = ("deps", "tsc", "eslint", "ast_guard")
+# TS (`deps → tsc → eslint → ast_guard`) + Java (009: `deps → guard → compile`). Adım bir
+# koşuda yoksa `atlandi` olur ve sayılmaz. `app` (uygulama ≠ commit) statik değil, ortamdır.
+STATIK_ADIMLAR = ("deps", "tsc", "eslint", "ast_guard", "guard", "compile")
 MAX_TEST = 50
 SUPURME_PENCERESI = timedelta(days=2)
 
@@ -90,6 +93,7 @@ KANIT_ETIKETI = {
     "error_context": "Hata anı sayfa snapshot'ı (error-context)",
     "screenshot": "Ekran görüntüsü",
     "video": "Video",
+    "page_source": "Hata anı sayfa kaynağı (Appium)",
 }
 
 
@@ -333,6 +337,7 @@ def _girdi_olustur(
     saglik: Mapping[str, Any] | None,
     uygunluk_: Uygunluk,
     ek: TestResultEk | None,
+    platform: str | None = None,
 ) -> tuple[Girdi, list[dict[str, Any]], str | None, str | None, list[str], dict[str, Any]]:
     """Bir testin girdisi + kanıt bağlantıları + trace yolu + test durumu + uyarılar + ham."""
     uyarilar: list[str] = []
@@ -404,8 +409,30 @@ def _girdi_olustur(
         tekrar_degerleri=tekrar_degerleri,
         deneme_durumlari=_deneme_durumlari(ana, ek),
         kirma=uygunluk_.kirma,
+        platform=platform,
     )
-    if g.gerceklesen is None and g.mesaj and not failure:
+    java_linkleri: list[dict[str, Any]] = []
+    if g.java:
+        # 009: uygulama testi kanıtı (target/kanit/<Sınıf.metot>/{ekran.png,sayfa-kaynagi.xml}).
+        jk = jv.sayfa_kaynagi_oku(kosu, kosu_rel, failure, dosya, test_adi)
+        g.sayfa_kaynagi, g.sayfa_kaynagi_rel = jk.sayfa_kaynagi, jk.kaynak_rel
+        if jk.uyari:
+            uyarilar.append(jk.uyari)
+        if jk.ekran_rel:
+            java_linkleri.append(
+                {"etiket": KANIT_ETIKETI["screenshot"], "yol": jk.ekran_rel, "tur": "screenshot"}
+            )
+        if jk.kaynak_rel:
+            java_linkleri.append(
+                {"etiket": KANIT_ETIKETI["page_source"], "yol": jk.kaynak_rel, "tur": "page_source"}
+            )
+        if g.gerceklesen is None and g.beklenen is None:
+            from tp_core.features.codegen.classify import java_beklenen_gorulen
+
+            exp, rec = java_beklenen_gorulen(g.mesaj)
+            g.beklenen = None if exp is None else ev.temiz(exp, 300)
+            g.gerceklesen = None if rec is None else ev.temiz(rec, 300)
+    if g.gerceklesen is None and g.mesaj and not failure and not g.java:
         # GitHub kipi / JSON'suz: Playwright mesajındaki Expected/Received satırları.
         from tp_core.features.codegen.classify import _EXPECTED, _RECEIVED
 
@@ -413,6 +440,8 @@ def _girdi_olustur(
         g.beklenen = me.group("v").strip() if me else None
         g.gerceklesen = mr.group("v").strip() if mr else None
     linkler = _kanit_linkleri(failure, kosu_rel, ek.ekler if ek else [])
+    gorulen_yollar = {lk["yol"] for lk in linkler}
+    linkler = (linkler + [lk for lk in java_linkleri if lk["yol"] not in gorulen_yollar])[:12]
     ham = _ham_girdi(failure, g, eslesen, ana)
     return g, linkler, trace_rel, str(ana.get("status") or "") or None, uyarilar, ham
 
@@ -468,7 +497,8 @@ def _story_ve_case(
     session: Session, run: Run, test_case_id: uuid.UUID | None, dosya: str | None
 ) -> tuple[str | None, str | None]:
     """Hatanın story'si ve (üretilen testse) case referansı (`TPD-1-C3`)."""
-    uretilen = "tests/generated/" in (dosya or "")
+    # Üretilen test: web `tests/generated/`, Java (009) `…/bayi/uretilen/`.
+    uretilen = any(k in (dosya or "") for k in ("tests/generated/", "/uretilen/"))
     if run.script_id is not None:
         cg = session.get(ScriptCodegen, run.script_id)
         if cg is not None and cg.story_key:
@@ -480,6 +510,22 @@ def _story_ve_case(
             ref = f"{req.jira_key}-C{tc.sira_no}" if uretilen and tc is not None else None
             return req.jira_key, ref
     return None, None
+
+
+def kosu_platformu(
+    session: Session, run: Run, rapor: Mapping[str, Any] | None = None
+) -> str | None:
+    """Koşunun platformu (009 §2.1): `run.ortam.platform` (test-runner/CI, Ş8) → koşu raporu
+    (`run.json` `platform`) → koşunun script'i (`script.platform`). Bilinmiyorsa None (test
+    bazında dosya adı / hata metninden çıkarılır: `triage.java.java_mi`)."""
+    for aday in ((run.ortam or {}).get("platform"), (rapor or {}).get("platform")):
+        if isinstance(aday, str) and aday in ("web", *jv.UYGULAMA_PLATFORMLARI):
+            return aday
+    if run.script_id is not None:
+        sc = session.get(Script, run.script_id)
+        if sc is not None and getattr(sc, "platform", None):
+            return str(sc.platform)
+    return None
 
 
 def kanitlari_topla(session: Session, run: Run, u: Uygunluk) -> tuple[list[TestKaniti], str | None]:
@@ -498,6 +544,7 @@ def kanitlari_topla(session: Session, run: Run, u: Uygunluk) -> tuple[list[TestK
             genel_uyari.append("run.json yok (koşu dizini temizlenmiş olabilir)")
     saglik = ev.mapping((rapor or {}).get("saglik")) or ev.mapping((run.ortam or {}).get("saglik"))
     saglik_ = dict(saglik) if saglik else None
+    platform = kosu_platformu(session, run, rapor)
 
     rows = session.execute(
         select(TestResult, TestResultEk)
@@ -520,6 +567,7 @@ def kanitlari_topla(session: Session, run: Run, u: Uygunluk) -> tuple[list[TestK
             saglik=saglik_,
             uygunluk_=u,
             ek=ek,
+            platform=platform,
         )
         out.append(
             TestKaniti(
@@ -556,6 +604,7 @@ def kanitlari_topla(session: Session, run: Run, u: Uygunluk) -> tuple[list[TestK
             saglik=saglik_,
             uygunluk_=u,
             ek=None,
+            platform=platform,
         )
         out.append(
             TestKaniti(
@@ -644,6 +693,8 @@ def _sembol_adaylari(
 
 def locator_analizi(g: Girdi, b: LocatorBaglami) -> LocatorAnalizi:
     """Kural 3'ün dış ölçümü. Öneri yalnızca tüm koşullar sağlanırsa üretilir (§8.6, §8.7)."""
+    if g.java:
+        return java_locator_analizi(g, b)
     sinyaller: list[dict[str, Any]] = []
     tids = ev.locator_test_idleri(g.locator) or ev.locator_test_idleri(g.mesaj)
     if not tids:
@@ -815,6 +866,139 @@ def locator_analizi(g: Girdi, b: LocatorBaglami) -> LocatorAnalizi:
         # Değerlendirilen ama kararı desteklemeyen trace kanıtı eşleşen sinyal değildir; burada
         # (`destekliyor=false`) not olarak saklanır ki portal karşı/okunamayan kanıtı gösterebilsin.
         "trace_dom": trace_dom,
+    }
+    return LocatorAnalizi(oneri, sinyaller, None)
+
+
+def java_locator_analizi(g: Girdi, b: LocatorBaglami) -> LocatorAnalizi:
+    """Kural 3'ün uygulama (Java/Appium) karşılığı (009; `triage.java`).
+
+    Web'deki rol + ad yoklamasının yerine hata anındaki sayfa kaynağı kullanılır (Java
+    kimliklerinde rol/ad yoktur, §2.5; çalışan cihaz CI'da ajan aracı olmadan yoklanamaz):
+
+    1. Hata metninden kırık kimlik (+ kapsayıcı): `kimlik 'kapsayıcı' içinde 'aranan'`.
+    2. Koşulan commit'in Java sembol tablosunda (`/symbols` + `platform`) o kimliği taşıyan TEK
+       sabit (`Grup.SABIT`, önek değil).
+    3. Hata anı sayfa kaynağında eski kimlik YOK, (kapsayıcı içinde) sembol tablosunda tanımsız ve
+       eski kimlikle ortak sözcüğü olan TEK kimlik var → öneri `{locator_key, old_testid,
+       new_testid}`. Onarım bunu Kimlikler.java'da yalnızca değer değişikliğiyle uygular ve
+       cihazda tam paketle yeniden doğrular.
+    """
+    sinyaller: list[dict[str, Any]] = []
+    hedef, kapsam, belirsiz = jv.kimlik_zinciri(g.locator, g.mesaj)
+    if belirsiz:
+        return LocatorAnalizi(
+            None, sinyaller, "Hata iki kimlikten birini bekliyordu ('ya da'); aday üretilmez"
+        )
+    if not hedef or not ev.TESTID_RE.match(hedef):
+        return LocatorAnalizi(None, sinyaller, "Hata metninde kimlik yok; aday üretilemez")
+    if not b.sha:
+        return LocatorAnalizi(None, sinyaller, "Koşunun commit'i bilinmiyor; sembol tablosu yok")
+    platform = g.platform if g.platform in jv.UYGULAMA_PLATFORMLARI else None
+    if platform is None:
+        return LocatorAnalizi(
+            None,
+            sinyaller,
+            "Uygulama testinin platformu bilinmiyor (run.ortam.platform / script.platform yok); "
+            "Java sembol tablosu istenemez",
+        )
+    tc = services.toolchain()
+    anahtar_s = f"semboller:{platform}"
+    if anahtar_s not in b.ortak:
+        try:
+            b.ortak[anahtar_s] = tc.symbols(b.sha, platform=platform)
+        except services.ToolchainHatasi as exc:
+            b.ortak[anahtar_s] = None
+            b.ortak[f"{anahtar_s}:hata"] = str(exc)
+    semboller = b.ortak[anahtar_s]
+    if semboller is None:
+        return LocatorAnalizi(
+            None, sinyaller, f"Sembol tablosu alınamadı: {b.ortak.get(f'{anahtar_s}:hata')}"
+        )
+    adaylar = _sembol_adaylari(semboller, hedef)
+    if not adaylar:
+        return LocatorAnalizi(
+            None, sinyaller, f"Kimlik '{hedef}' koşulan commit'in Kimlikler.java'sında yok"
+        )
+    if len(adaylar) > 1:
+        return LocatorAnalizi(
+            None,
+            sinyaller,
+            f"Kimlik '{hedef}' birden çok sabite uyuyor: " + ", ".join(a[0] for a in adaylar[:5]),
+        )
+    anahtar, loc, po_dosyalari = adaylar[0]
+    tid = str(loc.get("testId") or "")
+    sinyaller.append(
+        _sinyal(
+            "niyet_sembol_tablosu",
+            f"Kimlik sabiti '{anahtar}' niyeti",
+            f"toolchain /symbols (java, {platform}) @ {b.sha[:12]}",
+            loc.get("intent"),
+        )
+    )
+    if tid != hedef:
+        return LocatorAnalizi(None, sinyaller, "Önek kimlik (_ONEK; ürün koduna göre değişen)")
+    if not g.sayfa_kaynagi:
+        return LocatorAnalizi(None, sinyaller, "Hata anı sayfa kaynağı (sayfa-kaynagi.xml) yok")
+    try:
+        dugumler = jv.kimlik_dugumleri(g.sayfa_kaynagi, platform)
+    except jv.SayfaKaynagiHatasi as exc:
+        return LocatorAnalizi(None, sinyaller, f"Sayfa kaynağı okunamadı: {exc}")
+    sabit, onekler = jv.bilinen_kimlikler(semboller)
+    aday = jv.aday_kimlik(dugumler, hedef, kapsam, sabit, onekler)
+    if aday.eski_ekranda or aday.kapsam_bulundu is False:
+        return LocatorAnalizi(None, sinyaller, aday.neden)
+    sinyaller.append(
+        _sinyal(
+            "eski_kimlik_ekranda_yok",
+            f"Kimlik '{hedef}' hata anındaki ekranda yok"
+            + (f" ('{kapsam}' kapsayıcısı ekranda)" if kapsam else ""),
+            "sayfa-kaynagi.xml",
+            g.sayfa_kaynagi_rel,
+        )
+    )
+    if aday.yeni is None:
+        return LocatorAnalizi(None, sinyaller, aday.neden)
+    yeni = aday.yeni
+    sinyaller.append(
+        _sinyal(
+            "test_id_farkli",
+            f"Kimlik değişmiş: '{hedef}' → '{yeni}' (ekranda tek aday, sembol tablosunda tanımsız)",
+            "sayfa-kaynagi.xml",
+            None,
+        )
+    )
+    oneri = {
+        "locator_key": anahtar,
+        "old_testid": hedef,
+        "new_testid": yeni,
+        "dosya": str(loc.get("file") or ""),
+        "satir": loc.get("line") if isinstance(loc.get("line"), int) else None,
+        "page_objects": sorted({d for d in po_dosyalari if d}),
+        "rol": "",
+        "ad": "",
+        "intent": loc.get("intent"),
+        "within": None,
+        "scope_test_id": kapsam,
+        "url_path": None,
+        "sha": b.sha,
+        "platform": platform,
+        "kaynak": "sayfa_kaynagi",
+        "probe": {
+            "olculen": "hata_ani_sayfa_kaynagi",
+            "matches": 1,
+            "test_id": yeni,
+            "scope_test_id": kapsam,
+            "sha_eslesmesi": None,
+            "uyari": None,
+        },
+        "sayfa_kaynagi": {
+            "rel": g.sayfa_kaynagi_rel,
+            "eski_var": False,
+            "tanimsiz_kimlikler": aday.tanimsiz,
+            "aday_sayisi": 1,
+        },
+        "son_yesil_run_id": b.son_yesil_run_id,
     }
     return LocatorAnalizi(oneri, sinyaller, None)
 
@@ -1555,6 +1739,11 @@ def serialize(session: Session, f: Failure, ek: FailureEk | None, run: Run | Non
             "sha": o.get("sha"),
             "son_yesil_run_id": o.get("son_yesil_run_id"),
             "probe": o.get("probe"),
+            # 009: uygulama önerisinin kaynağı (`sayfa_kaynagi`), platformu ve hata anı sayfa
+            # kaynağı özeti (portal Ş7 gösterir).
+            "kaynak": o.get("kaynak"),
+            "platform": o.get("platform"),
+            "sayfa_kaynagi": o.get("sayfa_kaynagi"),
         }
         ek_gorunum = _onarim_gorunumu(session, f)
         if ek_gorunum:
@@ -1640,6 +1829,8 @@ def serialize(session: Session, f: Failure, ek: FailureEk | None, run: Run | Non
         "commit": run.commit if run else None,
         "tetik": run.tetik if run else None,
         "pr_no": run.pr_no if run else None,
+        # 009: hatanın platformu (run.ortam.platform → run.json → script.platform; web/None).
+        "platform": kosu_platformu(session, run) if run is not None else None,
     }
 
 

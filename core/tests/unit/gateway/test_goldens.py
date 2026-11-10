@@ -545,7 +545,7 @@ def test_input_match_declarations_are_well_formed(purpose: str, path: Path, gold
     assert (
         spec.get("acceptance_criteria") is not None or spec.get("contains") or spec.get("case_text")
     ), "boş beyan"
-    if purpose == "verify_and_map":
+    if purpose in ("verify_and_map", "verify_and_map_app"):
         # Kod üretimi golden'ı yalnızca kendi case bloğunun TAM metnine eşleşir (contains değil).
         case = golden["case"]
         assert spec["sources"] == [f"case:{case['jira_key']}-C{case['sira_no']}"], spec
@@ -553,7 +553,7 @@ def test_input_match_declarations_are_well_formed(purpose: str, path: Path, gold
         assert "contains" not in spec
     for ac in spec.get("acceptance_criteria") or []:
         assert re.match(r"AC\d+: \S", ac), ac
-    if path.stem.startswith("TPD-") and purpose != "verify_and_map":
+    if path.stem.startswith("TPD-") and purpose not in ("verify_and_map", "verify_and_map_app"):
         assert spec["sources"] == [f"jira:{path.stem.split('-r')[0]}"]
     # Bulguların atıf yaptığı AC'ler beyandaki dokümanda vardır.
     acs = {a.split(":", 1)[0] for a in spec.get("acceptance_criteria") or []}

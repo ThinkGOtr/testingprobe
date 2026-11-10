@@ -338,7 +338,9 @@ def test_0017_downgrade_ve_yeniden_yukseltme(pg: PgServer) -> None:
         with pytest.raises(Exception, match="tool_call_kanal_ck"):
             run_alembic(owner, "0016", "downgrade")
         with psycopg.connect(dsn, autocommit=True) as o:
-            assert o.execute("SELECT version_num FROM alembic_version").fetchone() == ("0017",)
+            # Geri alma tek işlemde: başarısız olunca sürüm head'de kalır (0018+ eklendikçe de).
+            surum = o.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+            assert surum >= "0017"
             assert o.execute("SELECT to_regclass('asistan_mesaj')").fetchone()[0] is not None
     finally:
         with pg.super_conn() as s:

@@ -1,0 +1,32 @@
+- list [id=com.android.settings:id/settings_homepage_container] [ref=e1]:
+  - button "Search Settings" [id=com.android.settings:id/search_action_bar] [ref=e2]:
+    - text "Search Settings" [id=com.android.settings:id/search_bar_title] [ref=e3]
+  - list [id=com.android.settings:id/main_content_scrollable_container] [ref=e4]:
+    - list [id=com.android.settings:id/recycler_view] [ref=e5]:
+      - button "Google Services & preferences" [ref=e6]:
+        - text "Google" [id=android:id/title] [ref=e7]
+        - text "Services & preferences" [id=android:id/summary] [ref=e8]
+      - button "Network & internet Mobile, Wi‑Fi, hotspot" [ref=e9]:
+        - text "Network & internet" [id=android:id/title] [ref=e10]
+        - text "Mobile, Wi‑Fi, hotspot" [id=android:id/summary] [ref=e11]
+      - button "Connected devices Bluetooth, pairing" [ref=e12]:
+        - text "Connected devices" [id=android:id/title] [ref=e13]
+        - text "Bluetooth, pairing" [id=android:id/summary] [ref=e14]
+      - button "Apps Assistant, recent apps, default apps" [ref=e15]:
+        - text "Apps" [id=android:id/title] [ref=e16]
+        - text "Assistant, recent apps, default apps" [id=android:id/summary] [ref=e17]
+      - button "Notifications Notification history, conversations" [ref=e18]:
+        - text "Notifications" [id=android:id/title] [ref=e19]
+        - text "Notification history, conversations" [id=android:id/summary] [ref=e20]
+      - button "Sound & vibration Volume and haptics" [ref=e21]:
+        - text "Sound & vibration" [id=android:id/title] [ref=e22]
+        - text "Volume and haptics" [id=android:id/summary] [ref=e23]
+      - button "Modes Do Not Disturb, Bedtime" [ref=e24]:
+        - text "Modes" [id=android:id/title] [ref=e25]
+        - text "Do Not Disturb, Bedtime" [id=android:id/summary] [ref=e26]
+      - button "Display & touch Dark theme, font size, touch" [ref=e27]:
+        - text "Display & touch" [id=android:id/title] [ref=e28]
+        - text "Dark theme, font size, touch" [id=android:id/summary] [ref=e29]
+      - button "Wallpaper & style Colors, themed icons, app grid" [ref=e30]:
+        - text "Wallpaper & style" [id=android:id/title] [ref=e31]
+        - text "Colors, themed icons, app grid" [id=android:id/summary] [ref=e32]

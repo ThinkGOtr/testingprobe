@@ -1,0 +1,303 @@
+# Windows masaüstü uygulaması e2e CI'ı — AI'sız (Constitution II, specs/009-mobil-masaustu §2.7).
+#
+# Bu workflow'da model anahtarı, MCP sunucusu (app-mcp dahil) veya ajan bağımlılığı YOKTUR; yalnızca
+# onaylanmış, deterministik Java + Appium + TestNG test kodu (demo-app/e2e-app) koşar.
+#
+# Akış (windows-latest, x64):
+#   WPF uygulamasını yayınla (demo-app/desktop/scripts/yayinla.ps1 -Rid win-x64, self-contained)
+#   → demo API'si DOĞRUDAN runner'da (uv + uvicorn, SQLite, test modu; 127.0.0.1:18000)
+#   → Appium 3 (tools/appium kilit dosyası) + NovaWindows sürücüsü (sabit sürüm, geçici APPIUM_HOME)
+#   → demo-app/ci/run-app-checks.sh windows (Git Bash)
+#
+# Neden docker/nginx/vite yok: Windows runner'ında Linux konteyneri çalışmaz. Masaüstü uygulaması
+# API'yi yalnızca `--api-url` kökünden çağırır (ApiIstemcisi: kök + "/auth/login" …) ve demo API'nin
+# uçları zaten kökte (`/auth/*`, `/products`, `/cart`, `/orders`; önek yok). Web'deki `/api` öneki
+# yalnızca nginx/vite vekilinin işidir; burada uygulamaya doğrudan `--api-url http://127.0.0.1:18000`
+# verilir, vekil gerekmez. Oturum çerezi `path=/` olduğundan önek farkı çerezi etkilemez.
+#
+# Check adı `masaustu-windows` (job adı). Platform etkinse zorunlu check listesine eklenir; bu yüzden
+# workflow düzeyinde `paths` filtresi YOKTUR (`changes` job'u + no-op deseni, ci.yml gibi).
+name: masaustu-windows
+run-name: >-
+  ${{ github.event_name == 'workflow_dispatch'
+      && format('masaustu-windows {0} [{1}]', inputs.tetik, inputs.istek_id || 'elle')
+    || github.event.pull_request.title || github.event.head_commit.message || 'masaustu-windows' }}
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  push:
+    branches: [main]
+  schedule:
+    # Gece koşusu: 03:30 UTC = 06:30 TR
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+    inputs:
+      tetik:
+        description: "Tetik türü (sonuç kaydında görünür)"
+        type: choice
+        options: [manual, nightly, deploy]
+        default: manual
+      istek_id:
+        description: "Çekirdeğin istek kimliği (koşu adında görünür; [A-Za-z0-9._-], ≤64)"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: masaustu-windows-${{ github.event_name }}-${{ github.event.pull_request.number || inputs.istek_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  APP_ROOT: demo-app
+  NODE_VERSION: "22"
+  JAVA_VERSION: "17"
+  DOTNET_VERSION: "8.0.x"
+  UV_VERSION: "0.8.24"
+  # NovaWindows sürücüsü tools/appium'da yok (yalnız Windows'ta çalışır); burada tam sürümle kurulur.
+  NOVAWINDOWS_VERSION: "1.5.0"
+  DEMO_API_PORT: "18000"
+  TP_ISTEK_ID: ${{ inputs.istek_id || '' }}
+
+jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run_tests: ${{ steps.decide.outputs.run_tests }}
+      trigger: ${{ steps.decide.outputs.trigger }}
+    steps:
+      - name: Değişiklikleri tespit et (yalnızca PR)
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            app:
+              - 'demo-app/desktop/**'
+              - 'demo-app/e2e-app/**'
+              - 'demo-app/api/**'
+              - 'demo-app/kimlikler.json'
+              - 'demo-app/ci/run-app-checks.sh'
+              - 'demo-app/ci/break-verify-app.sh'
+              - 'tools/appium/**'
+              - '.github/workflows/masaustu-windows.yml'
+
+      - name: Karar
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          APP: ${{ steps.filter.outputs.app }}
+          DISPATCH_TETIK: ${{ inputs.tetik }}
+        run: |
+          set -euo pipefail
+          if [ -n "$TP_ISTEK_ID" ] && ! [[ "$TP_ISTEK_ID" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
+            echo "::error::istek_id biçimi geçersiz ([A-Za-z0-9._-], en çok 64 karakter)"
+            exit 1
+          fi
+          case "$EVENT" in
+            pull_request)      trigger="pr" ;;
+            push)              trigger="push" ;;
+            schedule)          trigger="nightly" ;;
+            workflow_dispatch) trigger="${DISPATCH_TETIK:-manual}" ;;
+            *)                 trigger="$EVENT" ;;
+          esac
+          if [ "$EVENT" = "pull_request" ]; then run_tests="${APP:-false}"; else run_tests=true; fi
+          echo "run_tests=$run_tests" >> "$GITHUB_OUTPUT"
+          echo "trigger=$trigger" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Değişiklik tespiti (masaustu-windows)"
+            echo "| tetik | istek | testler |"
+            echo "|---|---|---|"
+            echo "| \`$trigger\` | \`${TP_ISTEK_ID:--}\` | $run_tests |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  masaustu-windows:
+    name: masaustu-windows
+    needs: changes
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      RUN_TESTS: ${{ needs.changes.outputs.run_tests }}
+      TP_TRIGGER: ${{ needs.changes.outputs.trigger }}
+      CI: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+    steps:
+      - name: No-op (uygulama değişmedi)
+        if: env.RUN_TESTS != 'true'
+        shell: bash
+        run: echo "Masaüstü uygulaması / e2e-app değişmedi; masaustu-windows no-op (başarılı)." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout
+        if: env.RUN_TESTS == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: .NET kurulumu
+        if: env.RUN_TESTS == 'true'
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Java kurulumu
+        if: env.RUN_TESTS == 'true'
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+          cache-dependency-path: demo-app/e2e-app/pom.xml
+
+      - name: Node kurulumu
+        if: env.RUN_TESTS == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: tools/appium/package-lock.json
+
+      - name: uv kurulumu
+        if: env.RUN_TESTS == 'true'
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: demo-app/api/uv.lock
+
+      - name: Uygulamayı yayınla (win-x64)
+        if: env.RUN_TESTS == 'true'
+        shell: pwsh
+        run: |
+          ./demo-app/desktop/scripts/yayinla.ps1 -Rid win-x64
+          $exe = Join-Path $env:GITHUB_WORKSPACE 'demo-app\desktop\build\win-x64\BayiSiparis.exe'
+          if (-not (Test-Path $exe)) { throw "BayiSiparis.exe yok: $exe" }
+          Add-Content -Path $env:GITHUB_ENV -Value "APP_PATH=$exe"
+
+      # Arka plan süreçleri pwsh Start-Process ile başlatılır (adım bitince sonlanmazlar; job sonunda
+      # runner temizler). Test uçlarının (/test/*) sırrı koşu başına üretilir.
+      - name: Demo API'sini başlat
+        if: env.RUN_TESTS == 'true'
+        shell: pwsh
+        run: |
+          $token = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(24)).ToLowerInvariant()
+          Write-Output "::add-mask::$token"
+          Add-Content -Path $env:GITHUB_ENV -Value "DEMOAPP_TEST_TOKEN=$token"
+          Add-Content -Path $env:GITHUB_ENV -Value "DEMO_API_URL=http://127.0.0.1:$($env:DEMO_API_PORT)"
+          New-Item -ItemType Directory -Force -Path tp-logs | Out-Null
+          Push-Location demo-app/api
+          uv sync --frozen --no-dev
+          if ($LASTEXITCODE -ne 0) { throw 'uv sync başarısız' }
+          Pop-Location
+          $db = (Join-Path $env:RUNNER_TEMP 'demoapp-qa.db') -replace '\\', '/'
+          $env:DEMOAPP_DATABASE_URL = "sqlite:///$db"
+          $env:DEMOAPP_TEST_MODE = '1'
+          $env:DEMOAPP_TEST_TOKEN = $token
+          Start-Process -FilePath uv -NoNewWindow -WorkingDirectory demo-app/api `
+            -ArgumentList 'run', '--frozen', '--no-dev', 'uvicorn', 'demoapp_api.main:app', '--host', '127.0.0.1', '--port', $env:DEMO_API_PORT `
+            -RedirectStandardOutput tp-logs/api.log -RedirectStandardError tp-logs/api.err.log
+          for ($i = 0; $i -lt 90; $i++) {
+            try {
+              Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 "http://127.0.0.1:$($env:DEMO_API_PORT)/health" | Out-Null
+              Write-Output "API hazır: http://127.0.0.1:$($env:DEMO_API_PORT)"
+              exit 0
+            } catch { Start-Sleep -Seconds 2 }
+          }
+          Get-Content tp-logs/api.err.log -Tail 100 -ErrorAction SilentlyContinue
+          throw 'Demo API 180 sn içinde hazır olmadı'
+
+      # Appium tools/appium kilit dosyasından; NovaWindows ayrı ve geçici APPIUM_HOME'a sabit sürümle
+      # (tools/appium/package.json değişmez). --relaxed-security YOK.
+      - name: Appium + NovaWindows başlat
+        if: env.RUN_TESTS == 'true'
+        shell: pwsh
+        run: |
+          Push-Location tools/appium
+          npm ci --no-audit --no-fund --loglevel=error
+          if ($LASTEXITCODE -ne 0) { throw 'npm ci başarısız' }
+          Pop-Location
+          $appium = Join-Path $env:GITHUB_WORKSPACE 'tools/appium/node_modules/appium/index.js'
+          $env:APPIUM_HOME = Join-Path $env:RUNNER_TEMP 'appium-home'
+          New-Item -ItemType Directory -Force -Path $env:APPIUM_HOME | Out-Null
+          node $appium driver install --source=npm "appium-novawindows-driver@$($env:NOVAWINDOWS_VERSION)"
+          if ($LASTEXITCODE -ne 0) { throw 'NovaWindows sürücüsü kurulamadı' }
+          node $appium driver list --installed
+          Start-Process -FilePath node -NoNewWindow `
+            -ArgumentList $appium, '--address', '127.0.0.1', '--port', '4723', '--log-no-colors', '--log-timestamp' `
+            -RedirectStandardOutput tp-logs/appium.log -RedirectStandardError tp-logs/appium.err.log
+          for ($i = 0; $i -lt 30; $i++) {
+            try {
+              Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 'http://127.0.0.1:4723/status' | Out-Null
+              Write-Output 'Appium hazır'
+              exit 0
+            } catch { Start-Sleep -Seconds 1 }
+          }
+          Get-Content tp-logs/appium.err.log -Tail 100 -ErrorAction SilentlyContinue
+          throw 'Appium 30 sn içinde hazır olmadı'
+
+      # APP_PATH (yayın adımı) ve APP_ARGS ortamdan okunur (Ayarlar.java: app.path / app.args);
+      # -D ile verilmez: boşluklu argüman Git Bash → mvnw zincirinde bölünmesin.
+      - name: Testler (masaüstünde)
+        if: env.RUN_TESTS == 'true'
+        id: tests
+        shell: bash
+        timeout-minutes: 40
+        env:
+          APP_ARGS: --api-url http://127.0.0.1:${{ env.DEMO_API_PORT }}
+        run: |
+          set -euo pipefail
+          bash demo-app/ci/run-app-checks.sh windows 2>&1 | tee tp-logs/run-app-checks.log
+
+      # --- Sonuçlar (mobil-android ile aynı düzen) ----------------------------------------------
+      - name: Sonuçları topla
+        if: always() && env.RUN_TESTS == 'true'
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.tests.outcome }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          out=tp-results
+          mkdir -p "$out"
+          target="$APP_ROOT/e2e-app/target"
+          for d in surefire-reports birim-raporlari allure-results kanit; do
+            if [ -d "$target/$d" ]; then cp -R "$target/$d" "$out/$d"; fi
+          done
+          if [ -d tp-logs ]; then cp -R tp-logs "$out/logs"; fi
+          # Test kodunun bıraktığı bağlar (symlink) maskeyi atlatıp yüklenmesin.
+          find "$out" -type l -delete
+          if [ -n "${DEMOAPP_TEST_TOKEN:-}" ]; then
+            { grep -rl -- "$DEMOAPP_TEST_TOKEN" "$out" || true; } | while read -r f; do
+              sed -i "s/$DEMOAPP_TEST_TOKEN/***/g" "$f"
+            done
+          fi
+          case "$OUTCOME" in success) durum=passed ;; failure) durum=failed ;; *) durum=error ;; esac
+          jq -n --arg platform windows --arg sha "$SHA" --arg tetik "$TP_TRIGGER" \
+            --arg istek "$TP_ISTEK_ID" --arg durum "$durum" --arg sonuc "$OUTCOME" \
+            --arg job masaustu-windows \
+            '{schema_version: 1, job: $job, platform: $platform, sha: $sha, tetik: $tetik,
+              istek_id: (if $istek == "" then null else $istek end), durum: $durum,
+              adim_sonucu: $sonuc}' > "$out/ci-meta.json"
+          n="$(find "$out/surefire-reports" -name 'TEST-*.xml' 2>/dev/null | wc -l | tr -d ' ')"
+          {
+            echo "### masaustu-windows (tetik: \`$TP_TRIGGER\`)"
+            echo "Durum: **$durum** · JUnit XML: $n dosya · commit \`${SHA:0:12}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Artefaktlar
+        if: always() && env.RUN_TESTS == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: masaustu-windows-results
+          retention-days: 14
+          if-no-files-found: warn
+          include-hidden-files: false
+          path: tp-results/

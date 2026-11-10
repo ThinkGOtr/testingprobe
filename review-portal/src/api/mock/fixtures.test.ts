@@ -314,7 +314,8 @@ describe("iç bağlantılar ölü değil", () => {
   /** Örnek verideki "/" ile başlayan her dizge (adres olarak kullanılabilecek her şey). */
   function yollar(x: unknown, yolAdi = "", cikti: [string, string][] = []): [string, string][] {
     if (typeof x === "string") {
-      if (x.startsWith("/")) cikti.push([yolAdi, x]);
+      // "//" ile başlayan dizge yol değil kod yorumudur (ör. üretilen Java testinin başlığı).
+      if (x.startsWith("/") && !x.startsWith("//")) cikti.push([yolAdi, x]);
     } else if (Array.isArray(x)) {
       x.forEach((e, i) => yollar(e, `${yolAdi}[${i}]`, cikti));
     } else if (x && typeof x === "object") {
@@ -340,7 +341,8 @@ describe("iç bağlantılar ölü değil", () => {
     ];
     for (const a of adresler) {
       if (a === null) continue;
-      expect(a.startsWith("#") || baglantiTuru(a) !== "metin", a).toBe(true);
+      // data: adresi gömülü örnek kanıttır (009 uygulama ekran görüntüsü / sayfa kaynağı); ölü bağlantı değil.
+      expect(a.startsWith("#") || a.startsWith("data:") || baglantiTuru(a) !== "metin", a.slice(0, 80)).toBe(true);
     }
   });
 

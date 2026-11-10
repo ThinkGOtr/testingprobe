@@ -57,6 +57,14 @@ purposes:
     max_input_tokens: 150000
     timeout_s: 300              # tur başına
     params: { effort: medium, thinking: { type: between_tools } }
+  verify_and_map_app:         # ajan: app-mcp (Appium) doğrulama döngüsü (009 §2.6; Android/iOS/Windows)
+    model: claude-sonnet-5-5
+    max_tokens: 8192
+    # verify_and_map ile aynı tavanlar: aynı 25 araç bütçesi; erişilebilirlik ağacı web
+    # snapshot'ından kısa (app-mcp ≤400 satır / 40 000 karakter keser).
+    max_input_tokens: 150000
+    timeout_s: 300              # tur başına (ilk app_launch Appium oturumu açar)
+    params: { effort: medium, thinking: { type: between_tools } }
   # Haiku sınıfı: triage ve özetleme
   triage:
     model: claude-haiku-5-5

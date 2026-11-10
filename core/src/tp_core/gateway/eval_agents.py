@@ -10,6 +10,10 @@ canlı değerlendirme ölçmesi gereken şeyi ölçmezdi):
   doğrulanamayan kanıt vakayı düşürür (§8.2b adım 4).
 - `browser`: kod üretiminin Playwright MCP oturumu (`AgentBrowser` + `McpBrowserSession`,
   doğrulama bayisi bayi3; `replay_check` ile aynı kurulum, ajan bayisi kilidi alınır).
+- `app:<platform>` (009 §2.6): mobil/masaüstü doğrulama ajanının app-mcp oturumu (`AgentApp` +
+  `McpBrowserSession(APP_MCP_URL)`, doğrulama bayisi bayi3, ajan bayisi kilidi; ilk araç
+  `app_launch`, `app_screenshot` ajana verilmez). Cihaz (`make cihaz-baslat PLATFORM=…`) ve compose
+  `mobil` profili (`app-mcp`) gerekir.
 - `assistant:<rol>` (AI-ASISTAN-PLANI §13): portal asistanı. Vaka geçide doğrudan değil, worker'ın
   işleyicisi `flow.cevapla` üzerinden koşar (`AsistanAkisi`, `eval_live --via-flow`): sözlük/şablon/
   kapalı dalları, üretim araçları (`tools.arac_seti`, rol kısıtı oturumdaki kullanıcıyla) ve §7.3
@@ -134,6 +138,43 @@ def _browser_env() -> ToolEnv:  # pragma: no cover - canlı yığın (Playwright
                 lock.__exit__(None, None, None)
 
     return ToolEnv("browser", session.tools, session.execute, close=close)
+
+
+def _app_env(platform: str) -> ToolEnv:  # pragma: no cover - canlı cihaz + app-mcp
+    from tp_core.config import get_settings
+    from tp_core.features.codegen.browser import (
+        AgentApp,
+        AgentConfig,
+        McpBrowserSession,
+        ajan_bayisi_kilidi,
+        reset_agent_cart,
+    )
+
+    lock: AbstractContextManager[Any] | None = None
+    try:
+        lock = ajan_bayisi_kilidi()
+        lock.__enter__()
+        cfg = AgentConfig.from_env()
+        reset_agent_cart(cfg)
+        mcp = McpBrowserSession(get_settings().app_mcp_url)
+        agent = AgentApp(mcp, platform=platform, config=cfg, case_dealers=["bayi1", "bayi2"])
+        tools = agent.tool_specs()
+    except (Exception, SystemExit) as exc:
+        if lock is not None:
+            lock.__exit__(None, None, None)
+        raise ToolEnvUnavailable(
+            f"app-mcp oturumu kurulamadı ({type(exc).__name__}: {str(exc)[:200]}); compose "
+            f"`mobil` profili (app-mcp), {platform} cihazı ve APP_MCP_URL gerekli"
+        ) from exc
+
+    def close() -> None:
+        try:
+            mcp.close()
+        finally:
+            if lock is not None:
+                lock.__exit__(None, None, None)
+
+    return ToolEnv(f"app:{platform}", tools, agent, close=close)
 
 
 # ------------------------------------------------------------------ asistan (AI-ASISTAN-PLANI §13)
@@ -426,6 +467,7 @@ def asistan_ortami(akis: AsistanAkisi, *, close: Callable[[], None] | None = Non
 ENVS: dict[str, EnvFactory] = {
     "consistency": _consistency_env,
     "browser": _browser_env,
+    **{f"app:{p}": partial(_app_env, p) for p in ("android", "ios", "windows")},
     **{f"{ASISTAN_ORTAM_ONEKI}{rol}": partial(_asistan_env, rol) for rol in ASISTAN_ROLLERI},
 }
 

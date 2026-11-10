@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import type { KontrolKulesi as Kule, KpiAnahtari } from "../api/types";
@@ -13,6 +13,65 @@ import { KosuTablosu } from "./Kosular";
 import { OnerilerOlcumKarti } from "../components/asistan/OnerilerOlcumKarti";
 import { tumuReplayMi } from "../lib/aiMaliyet";
 import { KaynakIpucu } from "../components/KaynakIpucu";
+import { PlatformSuzgeci } from "../components/Platform";
+import type { Script } from "../api/types";
+import { PLATFORMLAR, PLATFORM_ETIKETI, platformaGoreSuz, platformSecimiOku, type Platform, type PlatformSecimi } from "../lib/platform";
+
+/** Platform başına üretilen test sayıları (Kule "Platform dağılımı"; kapatılan kayıtlar sayılmaz). */
+export function platformDagilimi(scriptler: Script[]): { platform: Platform; toplam: number; pr_acik: number; birlesti: number; defect: number }[] {
+  return PLATFORMLAR.map((platform) => {
+    const ps = scriptler.filter((s) => (s.platform === undefined ? "web" : s.platform) === platform && s.durum !== "closed");
+    return {
+      platform,
+      toplam: ps.length,
+      pr_acik: ps.filter((s) => s.pr?.durum === "open").length,
+      birlesti: ps.filter((s) => s.pr?.durum === "merged" || s.durum === "merged").length,
+      defect: ps.filter((s) => s.yerel_sinif === "defect_adayi").length,
+    };
+  });
+}
+
+function PlatformDagilimiKarti({ scriptler, secim }: { scriptler: Script[] | null; secim: PlatformSecimi }) {
+  if (!scriptler) return null;
+  const satirlar = platformDagilimi(scriptler).filter((r) => secim === "tumu" || r.platform === secim);
+  return (
+    <Kart baslik="Üretilen testler (platform bazında)">
+      <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Platform dağılımı tablosu">
+        <table className="tablo tablo-sik">
+          <thead>
+            <tr>
+              <th scope="col">Platform</th>
+              <th scope="col" className="sayi">
+                Üretilen test
+              </th>
+              <th scope="col" className="sayi">
+                PR açık
+              </th>
+              <th scope="col" className="sayi">
+                Birleşti
+              </th>
+              <th scope="col" className="sayi">
+                Defect adayı
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {satirlar.map((r) => (
+              <tr key={r.platform} data-testid={`platform-dagilimi-${r.platform}`}>
+                <td>{PLATFORM_ETIKETI[r.platform]}</td>
+                <td className="sayi">{r.toplam}</td>
+                <td className="sayi">{r.pr_acik}</td>
+                <td className="sayi">{r.birlesti}</td>
+                <td className="sayi">{r.defect}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="kucuk soluk">Kaynak: üretilen testler (script tablosu, platform alanı); kapatılan kayıtlar sayılmaz.</p>
+    </Kart>
+  );
+}
 
 function KpiBaslik({ ad, k, anahtar }: { ad: string; k: Kule; anahtar: KpiAnahtari }): ReactNode {
   return (
@@ -24,7 +83,20 @@ function KpiBaslik({ ad, k, anahtar }: { ad: string; k: Kule; anahtar: KpiAnahta
 
 export function KontrolKulesi() {
   const v = useVeri(() => api.kontrolKulesi(), []);
-  const sessiz = useGeciktirilmis(() => void v.yenile(true), 500);
+  // 009: platform süzgeci (adres çubuğunda ?platform=). Platform taşıyan veriler: son koşular ve üretilen testler.
+  const scriptler = useVeri(() => api.scriptler().catch(() => null), []);
+  const [sorgu, setSorgu] = useSearchParams();
+  const secim = platformSecimiOku(sorgu.get("platform"));
+  const secimDegistir = (p: PlatformSecimi) => {
+    const y = new URLSearchParams(sorgu);
+    if (p === "tumu") y.delete("platform");
+    else y.set("platform", p);
+    setSorgu(y, { replace: true });
+  };
+  const sessiz = useGeciktirilmis(() => {
+    void v.yenile(true);
+    void scriptler.yenile(true);
+  }, 500);
   useOlay(sessiz, ["ci.status", "failure.classified", "case.generated", "bug.published", "script.updated"]);
 
   if (v.yukleniyor && !v.veri) return <Yukleniyor />;
@@ -38,6 +110,8 @@ export function KontrolKulesi() {
   // Kazanç yalnızca baz değeri story için ölçülmüş satırlardan (varsayılan baz değer kazanca girmez).
   const kazanc = kazancOzeti(k.hazirlik);
   const defectAdayi = k.karne.reduce((a, s) => a + s.acik_defect_adayi, 0);
+  const sonKosular = platformaGoreSuz(k.son_kosular, secim, (x) => x.platform);
+  const platformsuzKosu = secim === "tumu" ? 0 : k.son_kosular.filter((x) => !x.platform).length;
 
   return (
     <>
@@ -49,6 +123,18 @@ export function KontrolKulesi() {
         "Buton kimliğini değiştir" / "Demoyu sıfırla" (POST /demo/break-locator, /demo/reset) core'da henüz yok
         (Faz 4/5). Sahnede 404 göstermemek için düğmeler bu sayfada çizilmez; sıfırlama `make reset`.
       */}
+      <div className="kule-platform" data-testid="kule-platform">
+        <PlatformSuzgeci
+          etiket="Platform"
+          deger={secim}
+          degistir={secimDegistir}
+          ipucu={
+            secim === "tumu"
+              ? "Süzgeç son koşuları ve platform bazında üretilen test ölçülerini daraltır."
+              : `${PLATFORM_ETIKETI[secim]}: son koşular ve üretilen testler süzüldü. Geçme oranı, karne, AI katkısı ve erişilebilirlik çekirdekte platform ayrımı taşımaz; tüm platformlar içindir.`
+          }
+        />
+      </div>
       {k.uyarilar.length > 0 && (
         <Uyari ton="bilgi">
           <ul className="duz-liste kucuk">
@@ -307,8 +393,21 @@ export function KontrolKulesi() {
 
       <OnerilerOlcumKarti kule={k} />
 
+      <PlatformDagilimiKarti scriptler={scriptler.veri ?? null} secim={secim} />
+
       <Kart baslik="Son koşular" eylemler={<KaynakIpucu kaynak={k.kaynaklar.son_kosular} />}>
-        {k.son_kosular.length === 0 ? <BosDurum baslik="Henüz koşu yok." /> : <KosuTablosu kosular={k.son_kosular} kompakt />}
+        {k.son_kosular.length === 0 ? (
+          <BosDurum baslik="Henüz koşu yok." />
+        ) : sonKosular.length === 0 ? (
+          <BosDurum baslik={`${secim === "tumu" ? "" : `${PLATFORM_ETIKETI[secim]} için `}koşu yok.`} />
+        ) : (
+          <KosuTablosu kosular={sonKosular} kompakt />
+        )}
+        {platformsuzKosu > 0 && (
+          <p className="kucuk soluk" data-testid="platformsuz-kosu">
+            {platformsuzKosu} koşunun platformu bilinmiyor (çekirdek bildirmedi); süzgeçte yalnız “Tümü”nde görünür.
+          </p>
+        )}
       </Kart>
     </>
   );

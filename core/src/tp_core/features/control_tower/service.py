@@ -420,20 +420,36 @@ def _son_sonuc(
 
 
 def _acik_defect_adayi(session: Session, case_ids: list[uuid.UUID]) -> int:
-    """Güncel case'lerden en son script'i defect adayı (blocked) olanların sayısı."""
+    """Güncel case'lerden en son script'i defect adayı (blocked) olanların sayısı.
+
+    009: en son script platform başına aranır (bir platformun yeni script'i başka platformun
+    defect adayını gizlemez); case herhangi bir platformda defect adayıysa bir kez sayılır.
+    """
     if not case_ids:
         return 0
     adet = 0
     for cid in case_ids:
-        son = session.execute(
-            select(Script.durum, ScriptCodegen.engel_turu)
+        platformlar = session.scalars(
+            select(Script.platform)
             .join(ScriptCodegen, ScriptCodegen.script_id == Script.id)
             .where(ScriptCodegen.test_case_id == cid, Script.tur == "test")
-            .order_by(Script.olusturma.desc(), Script.id.desc())
-            .limit(1)
-        ).first()
-        if son is not None and son[0] == "blocked" and son[1] == "defect_candidate":
-            adet += 1
+            .distinct()
+        ).all()
+        for platform in platformlar:
+            son = session.execute(
+                select(Script.durum, ScriptCodegen.engel_turu)
+                .join(ScriptCodegen, ScriptCodegen.script_id == Script.id)
+                .where(
+                    ScriptCodegen.test_case_id == cid,
+                    Script.tur == "test",
+                    Script.platform == platform,
+                )
+                .order_by(Script.olusturma.desc(), Script.id.desc())
+                .limit(1)
+            ).first()
+            if son is not None and son[0] == "blocked" and son[1] == "defect_candidate":
+                adet += 1
+                break
     return adet
 
 

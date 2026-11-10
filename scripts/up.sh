@@ -30,6 +30,8 @@ failing_services() {
       printf '%s\tdurum=%s çıkış=%s\n' "$svc" "$state" "$code"; continue
     fi
     [ "$state" = "running" ] && [ "$health" = "healthy" ] && continue
+    # Sağlık denetimi tanımsız servis (ör. `mobil` profilindeki appium-gw): çalışıyorsa sağlıklı.
+    [ "$state" = "running" ] && [ "$health" = "-" ] && continue
     printf '%s\tdurum=%s sağlık=%s\n' "$svc" "$state" "$health"
   done
 }

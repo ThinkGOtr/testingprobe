@@ -60,6 +60,13 @@ bundles:
       ile tekrarlandı; model çıktısı elle hazırlandı. Bu model değerlendirmesi değildir. Değerlendirme
       seti: rules/evaluation/verify-and-map.json (ajan; araç ortamı `browser`, Playwright MCP). Canlı
       değerlendirme yapılmadı; onaylı istisna yok.'
+  verify-and-map-app:
+    version: 1
+    status: pending
+    note: '009 Ş6: mobil/masaüstü (app-mcp/Appium) doğrulama ve eşleme paketi v1. REPLAY golden''ı
+      (verify_and_map_app/golden/TPD-1-C2-android) elle hazırlandı; araç adımları app-mcp sözleşmesine
+      (docs/CIHAZ-ALTYAPISI.md §6) göre yazıldı, canlı cihazda kaydedilmedi. Bu model değerlendirmesi
+      değildir. Canlı değerlendirme yapılmadı; onaylı istisna yok.'
   triage:
     version: 2
     status: evaluated

@@ -22,6 +22,7 @@ import type {
   KosuKaynagi,
   PrCheck,
   PullRequest,
+  Platform,
   Script,
   ScriptDetay,
   ScriptDurumu,
@@ -36,6 +37,7 @@ import type {
 import { SCRIPT_DURUMLARI } from "./types";
 import { dizgeler, ilk, kimlik, metin, metinYaDaNull, modUyarla, nesneMi, sayi, sayiYaDaNull, type Ham } from "./uyum";
 import { hazirlikUyarla } from "./uyumFaz5";
+import { checkPlatformu, platformUyarla } from "../lib/platform";
 import type { AsistanKuleOlcumu, AsistanliKule, MaliyetGrubu } from "../components/asistan/OnerilerOlcumKarti";
 
 const nesne = (x: unknown): Ham => (nesneMi(x) ? x : {});
@@ -59,7 +61,8 @@ const bool = (x: unknown): boolean | null => {
 export function adresUyarla(x: unknown): string | null {
   const a = metinYaDaNull(x);
   if (!a) return null;
-  if (/^https?:\/\//i.test(a) || a.startsWith("data:image/")) return a;
+  // data: yalnız gömülü görüntü ve XML (009 örnek sayfa kaynağı; portal yalnız düz metin olarak gösterir, bağlantı yapmaz).
+  if (/^https?:\/\//i.test(a) || a.startsWith("data:image/") || /^data:(application|text)\/xml[;,]/.test(a)) return a;
   if (a.startsWith("/api/")) return a;
   if (a.startsWith("/")) return `/api${a}`;
   return null;
@@ -366,6 +369,8 @@ export function scriptUyarla(s: Ham): Script {
     engel: nesneMi(s.engel) && typeof s.engel.tur === "string" ? { tur: s.engel.tur, neden: metinYaDaNull(s.engel.neden) } : null,
     yerel_sinif: SINIF[sinifHam] ?? yk?.sinif ?? null,
     failure_id: metinYaDaNull(kimlik(s.failure_id)),
+    // 009: core her script'te platform gönderir; alan yoksa (009 öncesi core) yalnız web üretilebiliyordu.
+    platform: s.platform === undefined || s.platform === null ? "web" : platformUyarla(s.platform),
     mode: modUyarla(ilk(s, "mode", "uretim_modu")),
     olusturma: metin(s.olusturma),
     hata: metinYaDaNull(ilk(s, "hata", "son_hata")),
@@ -531,7 +536,40 @@ export function kosuUyarla(k: Ham): Kosu {
     saglik_hatasi:
       metinYaDaNull(k.saglik_hatasi) ?? (saglik.ok === false ? metin(saglik.hata, "Koşu öncesi sağlık yoklaması başarısız.") : null),
     ...githubArtefakti(k.github_artefakt),
+    platform: kosuPlatformu(k, ortam),
   };
+}
+
+/**
+ * Koşunun platformu: core `platform` → `ortam.platform` (test-runner/CI). Yoksa null (web varsayılmaz;
+ * commit'in check'leri koşunun değil commit'indir, platform onlardan türetilmez — uydurulmaz).
+ */
+function kosuPlatformu(k: Ham, ortam: Ham): Platform | null {
+  return platformUyarla(k.platform) ?? platformUyarla(ortam.platform);
+}
+
+/**
+ * Commit'in platform başına yerel CI kontrolleri: portal şekli `platform_kontrolleri[]` ya da core
+ * `checks.platformlar` (`{"local-ci-android": {durum, conclusion}}`). Yoksa null.
+ */
+export function platformKontrolleri(k: Ham): KosuDetay["platform_kontrolleri"] {
+  if (Array.isArray(k.platform_kontrolleri)) {
+    return dizi(k.platform_kontrolleri).map((c) => {
+      const ad = metin(c.ad, "local-ci");
+      return { ad, platform: platformUyarla(c.platform) ?? checkPlatformu(ad), durum: checkUyarla(c).durum };
+    });
+  }
+  const pl = nesne(nesne(k.checks).platformlar);
+  const out = Object.entries(pl)
+    .filter(([, v]) => nesneMi(v))
+    .map(([ad, v]) => {
+      const c = v as Ham;
+      // `conclusion` (success/failure) tamamlanmış sonucu, `durum` (status) yaşam döngüsünü taşır.
+      const ham = metin(c.conclusion) || metin(c.durum);
+      return { ad, platform: checkPlatformu(ad), durum: checkUyarla({ durum: ham }).durum };
+    })
+    .sort((a, b) => a.ad.localeCompare(b.ad));
+  return out.length ? out : null;
 }
 
 function githubArtefakti(x: unknown): Pick<Kosu, "github_artefakt"> {
@@ -599,6 +637,7 @@ export function kosuDetayUyarla(k: Ham): KosuDetay {
     uyarilar: dizgeler(k.uyarilar),
     adimlar: kosuAdimlari(k.adimlar),
     github: githubBilgisi(k.github),
+    platform_kontrolleri: platformKontrolleri(k),
   };
 }
 

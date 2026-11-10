@@ -690,6 +690,83 @@ def test_zorunlu_kontroller_yapilandirilabilir(bare: Path, artifacts: Path) -> N
         LocalForge(bare, artifacts, required_checks=())
 
 
+def _check(name: str, conclusion: str) -> dict[str, str]:
+    return {"name": name, "status": "completed", "conclusion": conclusion}
+
+
+def test_platform_kapisi_kayitli_uygulama_kontrolu_zorunlu(
+    forge: LocalForge, artifacts: Path
+) -> None:
+    """009 §2.7: web PR'ında davranış aynı; kayıtlı kırmızı local-ci-android merge'i durdurur."""
+    head = forge.commit_files("tp/w", {"web/src/x.ts": "1"}, "w")
+    pr = forge.open_pr("tp/w", "t", "b")
+    write_checks(
+        artifacts,
+        head,
+        {"checks": [_check("local-ci", "success"), _check("local-ci-android", "failure")]},
+    )
+    with pytest.raises(ForgeProtectionError, match="'local-ci-android' durumu: failure"):
+        forge.merge_pr(pr.number, "ali")
+    write_checks(
+        artifacts,
+        head,
+        {"checks": [_check("local-ci", "success"), _check("local-ci-android", "success")]},
+    )
+    assert forge.merge_pr(pr.number, "ali", expected_head_sha=head) == head
+
+
+def test_platform_kapisi_yalniz_e2e_app_degisikligi(forge: LocalForge, artifacts: Path) -> None:
+    """Yalnızca e2e-app/ değişen PR: web local-ci gerekmez, en az bir platform kontrolü gerekir."""
+    head = forge.commit_files(
+        "tp/case-a", {"e2e-app/src/test/java/a/XTest.java": "class XTest {}"}, "a"
+    )
+    pr = forge.open_pr("tp/case-a", "t", "b")
+    ci_green(artifacts, head)  # yalnızca web yeşili yetmez
+    with pytest.raises(ForgeProtectionError, match="en az bir uygulama kontrolü"):
+        forge.merge_pr(pr.number, "ali")
+    # Kaydedilmiş kırmızı web kontrolü yine durdurur (simetri).
+    write_checks(
+        artifacts,
+        head,
+        {"checks": [_check("local-ci", "failure"), _check("local-ci-ios", "success")]},
+    )
+    with pytest.raises(ForgeProtectionError, match="'local-ci' durumu: failure"):
+        forge.merge_pr(pr.number, "ali")
+    write_checks(artifacts, head, {"checks": [_check("local-ci-ios", "success")]})
+    result = forge.merge_pr_detailed(pr.number, "ali", expected_head_sha=head)
+    assert result.bypass is False and result.sha == head
+
+
+def test_platform_kapisi_karisik_degisiklik_iki_kontrol(forge: LocalForge, artifacts: Path) -> None:
+    head = forge.commit_files(
+        "tp/k", {"e2e-app/src/test/java/a/XTest.java": "x", "e2e/tests/a.spec.ts": "y"}, "k"
+    )
+    pr = forge.open_pr("tp/k", "t", "b")
+    write_checks(artifacts, head, {"checks": [_check("local-ci-android", "success")]})
+    with pytest.raises(ForgeProtectionError, match="'local-ci' durumu: yok"):
+        forge.merge_pr(pr.number, "ali")
+    ci_green(artifacts, head)
+    with pytest.raises(ForgeProtectionError, match="en az bir uygulama kontrolü"):
+        forge.merge_pr(pr.number, "ali")
+    # demo-admin bypass'ı nedenleri kayda yazar.
+    result = forge.merge_pr_detailed(pr.number, "demo-admin", expected_head_sha=head)
+    assert result.bypass is True and "uygulama kontrolü" in (result.bypass_reason or "")
+
+
+def test_zorunlu_kontroller_ortamdan(bare: Path, artifacts: Path) -> None:
+    forge = LocalForge.from_env(
+        {
+            "TP_FORGE_PATH": str(bare),
+            "TP_ARTIFACTS_PATH": str(artifacts),
+            "TP_REQUIRED_CHECKS": "local-ci, local-ci-android",
+        }
+    )
+    assert forge.required_checks == ("local-ci", "local-ci-android")
+    assert LocalForge.from_env(
+        {"TP_FORGE_PATH": str(bare), "TP_ARTIFACTS_PATH": str(artifacts)}
+    ).required_checks == ("local-ci",)
+
+
 # ---------------------------------------------------------------- demo yönetimi
 
 

@@ -421,6 +421,6 @@ describe("Kod üretimi listesi", () => {
     await u.click(screen.getByRole("checkbox", { name: /Kapatılanları göster \(1\)/ }));
     expect(within(screen.getByRole("region", { name: "Üretilen testler tablosu" })).getAllByRole("link", { name: "C7 testi" })).toHaveLength(2);
     await u.click(screen.getByRole("button", { name: "Yeniden üret" }));
-    await waitFor(() => expect(cagrilar.find((c) => c.url === "/code/generate")?.govde).toEqual({ case_ids: ["c-7"] }));
+    await waitFor(() => expect(cagrilar.find((c) => c.url === "/code/generate")?.govde).toEqual({ case_ids: ["c-7"], platform: "web" }));
   });
 });

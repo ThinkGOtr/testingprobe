@@ -125,10 +125,14 @@ class FakeToolchain:
     cagrilar: list[tuple[str, Any]] = field(default_factory=list)
     hata: Exception | None = None
 
-    def symbols(self, sha: str) -> dict[str, Any]:
-        self.cagrilar.append(("symbols", sha))
+    java_semboller: dict[str, Any] | None = None
+
+    def symbols(self, sha: str, *, platform: str | None = None) -> dict[str, Any]:
+        self.cagrilar.append(("symbols", sha) if platform is None else ("symbols", sha, platform))
         if self.hata:
             raise self.hata
+        if platform is not None and self.java_semboller is not None:
+            return self.java_semboller
         return self.semboller
 
     def locator_probe(

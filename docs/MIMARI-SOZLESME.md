@@ -16,6 +16,7 @@ bir Protocol arkasındadır; gerçek adaptör ve yerel simülatör aynı kodu (a
 | Git forge | `ForgePort` | GitHub (REST, App/token) | `LocalForge`: `tp_forge` volume'ünde bare git (`/forge/demo-app.git`, `scripts/forge-init.sh`) + PR kaydı `/forge/tp-prs.json` (dosya kilidi); "CI" = test-runner, sonuç `TP_ARTIFACTS_PATH/checks/<sha>.json` | `TP_FORGE=local\|github` |
 | Model | `ModelGateway` | Anthropic (Claude) | `replay` (rules/replay/ altındaki golden kayıtlar) | `TP_MODEL_MODE=auto\|live\|replay\|record` (auto: anahtar varsa live, yoksa replay; record: live + replay kaydı) |
 | Sauce Labs | — | GitHub Actions job'u (`saucectl`) | yok (yerel Chromium job'u) | GitHub secret'ları |
+| Mobil/masaüstü cihaz (009) | — (app-mcp / test-runner Appium'a W3C WebDriver ile bağlanır) | GitHub Actions emülatör / simülatör / `windows-latest` | hosttaki Appium 3 + Android emülatörü / iOS simülatörü (`make cihaz-*`); Windows: isteğe bağlı UTM VM | `APPIUM_URL_ANDROID\|IOS\|WINDOWS` (boş = platform kapalı) |
 
 REPLAY kullanılan her çıktı portalda **REPLAY** rozetiyle görünür (Constitution: sahte "canlı" gösterim yok).
 
@@ -30,6 +31,8 @@ REPLAY kullanılan her çıktı portalda **REPLAY** rozetiyle görünür (Consti
 | playwright-mcp | Doğrulama ajanının tarayıcısı; yalnızca `http://demo-app-web:8080` | — |
 | jira-sim | Jira Cloud REST v3 + Xray alt kümesi simülatörü (kalıcı: JSON dosyası) | `tp_jira` |
 | demo-app-api / web | Bayi Sipariş Portalı (Postgres `demoapp`) | Postgres `demoapp` |
+| app-mcp (009, `mobil` profili) | Uygulama doğrulama ajanının aracı (`toolchain/app-mcp`): `app_*` araçları, yalnız yapılandırılmış uygulama; core-worker'dan `APP_MCP_URL` (app-mcp-net) | — |
+| appium-gw (009, `mobil` profili) | test-runner → hosttaki Appium için sabit hedefli TCP yönlendirici (`host.docker.internal:4723`; appium-net → cihaz-net) | — |
 
 **Volume'ler:** `tp_forge` (core-worker rw, toolchain-worker ro, test-runner ro) · `tp_artifacts`
 (toolchain-worker rw, test-runner rw, core-api ro, core-worker ro) · `tp_codegen` (Faz 3: kod
@@ -121,6 +124,13 @@ core-worker paylaşılan `tp_artifacts`'a yazamaz; merge kapısı dosyasının t
   (allow-same-origin yok) açılır; core yanıtına bellek içi `localStorage` şimi ekler (Allure açılışta
   depoyu okur; şimsiz boş sayfa kalıyordu).
 
+**009 Java yolu (ayrıntı `toolchain/README.md`, `toolchain/java-araclar/README.md`):** `/symbols`,
+`/check`, `/ast-guard` isteğe bağlı `lang` (`ts|java`) ya da `platform` (`web|android|ios|windows`)
+alır; yoksa web/TS (eski gövde değişmez). Java'da sembol tablosu `java-araclar symbols` (aynı şema,
+`params[].type` Java türü), statik kapı Maven `test-compile` + `java-araclar guard`, `test_files`
+e2e-app köküne göre `src/test/java/…Test.java`. Kayıtlı kontrol adı platform başınadır:
+`local-ci-android|ios|windows` (web `local-ci` değişmez).
+
 ### test-runner HTTP API (:8200, yalnızca runner-net)
 - `POST /run {sha, grep?, repeat_each, retries, env:{BREAK_CAMPAIGN?}, run_id}` → `{status: passed|failed|error, junit, json, artifacts_dir, duration_ms, saglik:{ok, zaman, web:{url,status,ms,hata}, api:{url,status,ms,hata}, hata}}`
 - Koşudan önce `GET BASE_URL/` ve `GET DEMO_API_URL/health` (`TP_HEALTH_TIMEOUT_S`, 5 sn) yoklanır.
@@ -130,6 +140,9 @@ core-worker paylaşılan `tp_artifacts`'a yazamaz; merge kapısı dosyasının t
 - `env.BREAK_CAMPAIGN=1` Playwright sürecine geçer (API konteynerine değil): e2e fixture'ı koşunun
   bayisi için `POST /test/break {kullanici_adi, kampanya:true}` çağırır, teardown'da kapatır; diğer
   bayiler ve ajan tarayıcısı etkilenmez. Yeşil → kırmızı → yeşil kanıtı `demo-app/ci/break-verify.sh`.
+- **009:** `POST /run {…, lang:"java", platform}` `demo-app/e2e-app`'i (`TP_E2E_APP_ROOT`) Maven +
+  Surefire ile koşturur (`runner/java_run.py`); sağlık adımı ayrıca `APPIUM_URL_<PLATFORM>/status`
+  yoklar. Rapor: Surefire JUnit XML, Allure, kanıt `target/kanit/<Sınıf>.<metot>/`.
 
 ## 3. Kod sahipliği (şeritler)
 
@@ -969,6 +982,17 @@ varsayılan `scope="request"`) commit'i yanıt gönderildikten SONRA yapıyordu;
 5 ms sonra `/cart` isteyince oturum satırı henüz commit edilmemişti → 401 → uygulama giriş sayfasına
 döndü. `SessionDep` artık `scope="function"` (commit yanıttan önce); satır numaraları değişmedi
 (golden kanıt satırları aynı).
+
+**009 mobil/masaüstü ekleri** (`specs/009-mobil-masaustu/plan.md`, [MOBIL-MASAUSTU.md](MOBIL-MASAUSTU.md)):
+- core-worker: `APP_MCP_URL` (`http://app-mcp:8932/mcp`).
+- app-mcp: `APPIUM_URL_ANDROID|IOS|WINDOWS`, `APP_ANDROID_PACKAGE`, `APP_ANDROID_ACTIVITY`,
+  `APP_IOS_BUNDLE_ID`, `APP_IOS_UDID`, `APP_WINDOWS_APP`, `APP_MCP_*` (tam liste
+  [CIHAZ-ALTYAPISI.md §6.3](CIHAZ-ALTYAPISI.md)).
+- test-runner: `TP_E2E_APP_ROOT` (`e2e-app`), `APPIUM_URL_ANDROID|IOS|WINDOWS` (compose'da
+  `TP_RUNNER_APPIUM_URL_*`; varsayılan `http://appium-gw:4723`, Windows boş), `TP_APP_ID_<P>`,
+  `TP_APP_PATH_<P>`, `TP_DEVICE_UDID_<P>`.
+- Merge kapısı: `TP_REQUIRED_CHECKS` platform kontrolleri de alabilir (LocalForge ör.
+  `local-ci,local-ci-android`; GitHub ör. `…,mobil-android,masaustu-windows`, ruleset ile aynı tutulur).
 
 ## 7. Kalite kapısı (her şerit)
 - Python: `uv run ruff check`, `uv run ruff format --check`, `uv run pytest` yeşil.

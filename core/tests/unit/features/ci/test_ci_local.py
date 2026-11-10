@@ -101,6 +101,10 @@ def test_is_toolchain_check_cagirir_sonuclari_yazar(
         "var": True,
         "durum": "completed",
         "conclusion": "failure",
+        # 009: her kontrol (web dahil) platform tablosunda ayrıntı bağlantısıyla.
+        "platformlar": {
+            "local-ci": {"durum": "completed", "conclusion": "failure", "details_url": None}
+        },
     }
     assert a["sayilar"] == {"toplam": 9, "gecen": 4, "basarisiz": 3, "flaky": 1, "atlanan": 1}
     with Session(engine) as s:

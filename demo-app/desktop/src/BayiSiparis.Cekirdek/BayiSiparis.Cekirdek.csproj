@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Platformdan bağımsız çekirdek: API istemcisi, modeller, görünüm modelleri. WPF türü kullanılmaz;
+       bu sayede macOS'ta derlenir ve test edilir. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>BayiSiparis.Cekirdek</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="BayiSiparis.Cekirdek.Testler" />
+  </ItemGroup>
+</Project>
