@@ -762,8 +762,15 @@ $acilisKimligi = (Get-CimInstance -ClassName Win32_OperatingSystem).LastBootUpTi
 Invoke-Adim 'baslat-bayragi' {
     Remove-Item -Path $EkranDosyasi -Force -ErrorAction SilentlyContinue
     Set-Content -Path $BaslatBayragi -Value $acilisKimligi -Encoding ASCII
-    # Betik elle yeniden kosturulduysa ve oturum zaten aciksa gorevi yeniden tetikle.
+    # Otomatik oturum bu betik oturum.ps1'i yeniden yazmadan once acilabilir; o zaman gorev betigin
+    # ESKI surumunu bellege almistir. Bayraktan sonra gorev durdurulup yeniden baslatilir: guncel
+    # oturum.ps1 okunur (Appium bayraktan once baslamadigi icin kesilen bir is yoktur).
     if (-not (Test-AppiumHazir)) {
+        try { Stop-ScheduledTask -TaskName $GorevAdi -ErrorAction SilentlyContinue } catch { }
+        Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -like "*$OturumBetigi*" } |
+            ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        Start-Sleep -Seconds 2
         try { Start-ScheduledTask -TaskName $GorevAdi -ErrorAction SilentlyContinue } catch { }
     }
 }
