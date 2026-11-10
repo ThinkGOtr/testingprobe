@@ -492,7 +492,10 @@ services:
       - |
         h="$$HEDEF"
         port="$${h##*:}"
-        if ! printf '%s\n' "$$h" | grep -Eqx '[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?:[0-9]{1,5}' \
+        # Önce izinli karakter kümesi (tüm dize: satır sonu da reddedilir; grep satır satır eşler).
+        gecersiz=0
+        case "$$h" in ''|*[!A-Za-z0-9.:-]*) gecersiz=1 ;; esac
+        if [ "$$gecersiz" = 1 ] || ! printf '%s\n' "$$h" | grep -Eqx '[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?:[0-9]{1,5}' \
           || [ "$$port" -lt 1 ] || [ "$$port" -gt 65535 ]; then
           echo "TP_WINDOWS_VM_APPIUM host:port biçiminde olmalı (ör. 192.168.64.2:4723): '$$h'" >&2
           exit 64

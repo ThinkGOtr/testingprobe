@@ -119,8 +119,8 @@ test-runner ──appium-net (internal)──▶ appium-gw ──cihaz-net──
   boştur (Windows Java koşusu sağlık kontrolünde `error`); açmak için
   `TP_RUNNER_APPIUM_URL_WINDOWS=http://appium-gw-windows:4723`. Uygulama yolu/argümanları:
   `TP_APP_PATH_WINDOWS`, `TP_APP_ARGS_WINDOWS`, `TP_APP_WORKDIR_WINDOWS` (→ e2e-app `APP_PATH`,
-  `APP_ARGS`, `APP_WORKDIR`). Doğrulama (2026-11-09, yalıtılmış `tp-s10-gwtest` projesi): altı
-  hatalı hedef (`x:1,exec:sh`, portsuz, `:99999`, boşluklu, boş host, `-x:1`) 64 ile reddedildi;
+  `APP_ARGS`, `APP_WORKDIR`). Doğrulama (2026-11-09, yalıtılmış `tp-s10-gwtest` projesi): yedi
+  hatalı hedef (`x:1,exec:sh`, portsuz, `:99999`, boşluklu, boş host, `-x:1`, satır sonuyla eklenmiş ikinci satır) 64 ile reddedildi;
   geçerli hedefle (`host.docker.internal:4723`, VM yerine) `appium-net`'ten
   `GET http://appium-gw-windows:4723/status` → `ready=true`; konteyner `65534`, salt okunur,
   `CapDrop=[ALL]`, `no-new-privileges`, 64 MB. **VM ile denenmedi:** Docker Desktop'ın konteynerden
