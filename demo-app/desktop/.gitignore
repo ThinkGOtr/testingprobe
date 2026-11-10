@@ -1,0 +1,7 @@
+# Derleme ve yayın çıktıları
+bin/
+obj/
+build/
+TestResults/
+*.user
+.vs/

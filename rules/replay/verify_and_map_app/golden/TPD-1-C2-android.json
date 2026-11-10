@@ -1,0 +1,290 @@
+{
+  "kind": "agent",
+  "purpose": "verify_and_map_app",
+  "golden": "TPD-1-C2-android",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği; 009 mobil-masaüstü Ş6). Model çıktısı (platform/step_mapping/expects/missing_methods) elle hazırlandı (canlı model çıktısı değil; ai_call.model = golden-elle). Araç adımları gerçek cihazda KAYDEDİLMEDİ: app-mcp araç sözleşmesine (docs/CIHAZ-ALTYAPISI.md §6) uyan sahte oturumda yürütülerek yazıldı (core/tests/unit/gateway/build_app_goldens.py). Ajan uygulamada doğrulama bayisiyle (bayi3) girer; case'teki giriş verisi eşleme argümanıdır. Kimlik doğrulaması: eylemde kullanılan her kimlik ilk kullanımdan önce app_generate_locator ile doğrulanır (dönen id Kimlikler testId'si). Ref'ler oturuma özgüdür: adımın `hedef` alanı (rol/ad/kapsam) REPLAY'de ref'in canlı son snapshot'tan çözülmesi içindir. Canlı modelle ve gerçek cihazda yeniden kaydedilmeli (TP_MODEL_MODE=record, make cihaz-baslat PLATFORM=android). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), eşleşmezse REPLAY-MISS.",
+  "input_match": {
+    "sources": [
+      "case:TPD-1-C2"
+    ],
+    "case_text": "Başlık: 7 adet kampanyalı üründe 1 adet bedava verilir\nTür: positive · Risk: high\nKabul kriterleri: AC2\nÖn koşullar:\n- Sepet boş\n- P-001 \"6 al 1 bedava\" kampanyasında\nAdımlar:\nS1: Giriş sayfasını aç\n  Veri: (yok)\n  Beklenen: Giriş formu görüntülenir\nS2: Bayi kullanıcısıyla giriş yap\n  Veri: bayi1 / Demo123!\n  Beklenen: Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir\nS3: \"Portakal Gazozu 1L\" (P-001) kartında adedi 7 yapıp \"Sepete ekle\" butonuna bas\n  Veri: P-001 × 7\n  Beklenen: Sepet sayacı 7 olur\nS4: Üst menüden sepete git\n  Veri: (yok)\n  Beklenen: P-001 satırında adet 7, bedava adet 1; ara toplam 175,00 TL, indirim 25,00 TL, toplam 150,00 TL\nBeklenen sonuç: 7 adette 1 adet bedava verilir; indirim 25,00 TL, toplam 150,00 TL\nEtiketler: AI-generated"
+  },
+  "case": {
+    "jira_key": "TPD-1",
+    "sira_no": 2,
+    "title": "7 adet kampanyalı üründe 1 adet bedava verilir",
+    "case_golden": "TPD-1",
+    "platform": "android"
+  },
+  "steps": [
+    {
+      "tool": "app_launch",
+      "args": {
+        "platform": "android",
+        "reset": true
+      },
+      "result_summary": "Uygulama verisi sıfırlanarak başlatıldı: com.antreklabs.bayisiparis (android) | - Platform: android | - Uygulama: com.antreklabs.bayisiparis | - list [id=android:id/content] [ref=e1] | - text \"Bayi Sipariş Portalı\" [ref=e2] | - heading \"Bayi girişi\" [ref=e3] | - text \"Kullanıcı adı\" [ref=e5] | - textbox \"Kullanıcı adı\" [id=login-username] [ref=e6] | - text \"Parola\" [ref=e7] | - textbox \"Parola\" […",
+      "allowed": true
+    },
+    {
+      "tool": "app_generate_locator",
+      "args": {
+        "element": "textbox \"Kullanıcı adı\" (Giris.KULLANICI_ADI)",
+        "ref": "e6"
+      },
+      "result_summary": "### Locator\n{\"platform\": \"android\", \"strategy\": \"id\", \"id\": \"login-username\"}",
+      "allowed": true,
+      "hedef": {
+        "rol": "textbox",
+        "ad": "Kullanıcı adı"
+      }
+    },
+    {
+      "tool": "app_generate_locator",
+      "args": {
+        "element": "textbox \"Parola\" (Giris.PAROLA)",
+        "ref": "e8"
+      },
+      "result_summary": "### Locator\n{\"platform\": \"android\", \"strategy\": \"id\", \"id\": \"login-password\"}",
+      "allowed": true,
+      "hedef": {
+        "rol": "textbox",
+        "ad": "Parola"
+      }
+    },
+    {
+      "tool": "app_generate_locator",
+      "args": {
+        "element": "button \"Giriş yap\" (Giris.GIRIS_YAP)",
+        "ref": "e9"
+      },
+      "result_summary": "### Locator\n{\"platform\": \"android\", \"strategy\": \"id\", \"id\": \"login-submit\"}",
+      "allowed": true,
+      "hedef": {
+        "rol": "button",
+        "ad": "Giriş yap"
+      }
+    },
+    {
+      "tool": "app_type",
+      "args": {
+        "element": "textbox \"Kullanıcı adı\"",
+        "ref": "e6",
+        "text": "bayi3"
+      },
+      "result_summary": "Yazıldı: \"bayi3\" → Kullanıcı adı [ref=e6] | - Platform: android | - Uygulama: com.antreklabs.bayisiparis | - list [id=android:id/content] [ref=e1] | - text \"Bayi Sipariş Portalı\" [ref=e2] | - heading \"Bayi girişi\" [ref=e3] | - text \"Kullanıcı adı\" [ref=e5] | - textbox \"Kullanıcı adı\" [id=login-username] [ref=e6]: bayi3 | - text \"Parola\" [ref=e7] | - textbox \"Parola\" [id=login-password] [password]…",
+      "allowed": true,
+      "hedef": {
+        "rol": "textbox",
+        "ad": "Kullanıcı adı"
+      }
+    },
+    {
+      "tool": "app_type",
+      "args": {
+        "element": "textbox \"Parola\"",
+        "ref": "e8",
+        "text": "Demo123!"
+      },
+      "result_summary": "Yazıldı: *** → Parola [ref=e8] | - Platform: android | - Uygulama: com.antreklabs.bayisiparis | - list [id=android:id/content] [ref=e1] | - text \"Bayi Sipariş Portalı\" [ref=e2] | - heading \"Bayi girişi\" [ref=e3] | - text \"Kullanıcı adı\" [ref=e5] | - textbox \"Kullanıcı adı\" [id=login-username] [ref=e6]: bayi3 | - text \"Parola\" [ref=e7] | - textbox \"Parola\" [id=login-password] [password] [ref=e8]: …",
+      "allowed": true,
+      "hedef": {
+        "rol": "textbox",
+        "ad": "Parola"
+      }
+    },
+    {
+      "tool": "app_click",
+      "args": {
+        "element": "button \"Giriş yap\"",
+        "ref": "e9"
+      },
+      "result_summary": "Tıklandı: Giriş yap [ref=e9] | - Platform: android | - Uygulama: com.antreklabs.bayisiparis | - group [id=android:id/content] [ref=e10] | - text \"Bayi Sipariş Portalı\" [ref=e11] | - text \"Doğrulama Bayi\" [id=current-dealer] [ref=e12] | - button \"Çıkış yap\" [id=nav-logout] [ref=e13] | - list [ref=e14] | - heading \"Ürün kataloğu\" [ref=e15] | - group [id=product-list] [ref=e17] | - group [id=product…",
+      "allowed": true,
+      "hedef": {
+        "rol": "button",
+        "ad": "Giriş yap"
+      }
+    },
+    {
+      "tool": "app_generate_locator",
+      "args": {
+        "element": "P-001 kartında textbox \"Adet\" (Katalog.ADET_ONEK)",
+        "ref": "e25"
+      },
+      "result_summary": "### Locator\n{\"platform\": \"android\", \"strategy\": \"id\", \"id\": \"qty-input-P-001\"}",
+      "allowed": true,
+      "hedef": {
+        "rol": "textbox",
+        "ad": "Adet",
+        "kapsam": "text \"P-001\""
+      }
+    },
+    {
+      "tool": "app_generate_locator",
+      "args": {
+        "element": "P-001 kartında button \"Sepete ekle\" (Katalog.SEPETE_EKLE)",
+        "ref": "e26"
+      },
+      "result_summary": "### Locator\n{\"platform\": \"android\", \"strategy\": \"id\", \"id\": \"add-to-cart\"}",
+      "allowed": true,
+      "hedef": {
+        "rol": "button",
+        "ad": "Sepete ekle",
+        "kapsam": "text \"P-001\""
+      }
+    },
+    {
+      "tool": "app_type",
+      "args": {
+        "element": "P-001 kartında textbox \"Adet\"",
+        "ref": "e25",
+        "text": "7"
+      },
+      "result_summary": "Yazıldı: \"7\" → Adet [ref=e25] | - Platform: android | - Uygulama: com.antreklabs.bayisiparis | - group [id=android:id/content] [ref=e10] | - text \"Bayi Sipariş Portalı\" [ref=e11] | - text \"Doğrulama Bayi\" [id=current-dealer] [ref=e12] | - button \"Çıkış yap\" [id=nav-logout] [ref=e13] | - list [ref=e14] | - heading \"Ürün kataloğu\" [ref=e15] | - group [id=product-list] [ref=e17] | - group [id=produc…",
+      "allowed": true,
+      "hedef": {
+        "rol": "textbox",
+        "ad": "Adet",
+        "kapsam": "text \"P-001\""
+      }
+    },
+    {
+      "tool": "app_click",
+      "args": {
+        "element": "P-001 kartında button \"Sepete ekle\"",
+        "ref": "e26"
+      },
+      "result_summary": "Tıklandı: Sepete ekle [ref=e26] | - Platform: android | - Uygulama: com.antreklabs.bayisiparis | - group [id=android:id/content] [ref=e10] | - text \"Bayi Sipariş Portalı\" [ref=e11] | - text \"Doğrulama Bayi\" [id=current-dealer] [ref=e12] | - button \"Çıkış yap\" [id=nav-logout] [ref=e13] | - list [ref=e14] | - heading \"Ürün kataloğu\" [ref=e15] | - group [id=product-list] [ref=e17] | - group [id=prod…",
+      "allowed": true,
+      "hedef": {
+        "rol": "button",
+        "ad": "Sepete ekle",
+        "kapsam": "text \"P-001\""
+      }
+    },
+    {
+      "tool": "app_wait_for",
+      "args": {
+        "text": "7 adet sepete eklendi."
+      },
+      "result_summary": "Göründü: \"7 adet sepete eklendi.\" | - Platform: android | - Uygulama: com.antreklabs.bayisiparis | - group [id=android:id/content] [ref=e10] | - text \"Bayi Sipariş Portalı\" [ref=e11] | - text \"Doğrulama Bayi\" [id=current-dealer] [ref=e12] | - button \"Çıkış yap\" [id=nav-logout] [ref=e13] | - list [ref=e14] | - heading \"Ürün kataloğu\" [ref=e15] | - group [id=product-list] [ref=e17] | - group [id=pr…",
+      "allowed": true
+    },
+    {
+      "tool": "app_generate_locator",
+      "args": {
+        "element": "button \"Sepet\" (Menu.SEPET; sayaç içinde)",
+        "ref": "e46"
+      },
+      "result_summary": "### Locator\n{\"platform\": \"android\", \"strategy\": \"id\", \"id\": \"nav-cart\"}",
+      "allowed": true,
+      "hedef": {
+        "rol": "button",
+        "ad": "Sepet,"
+      }
+    },
+    {
+      "tool": "app_click",
+      "args": {
+        "element": "button \"Sepet\"",
+        "ref": "e46"
+      },
+      "result_summary": "Tıklandı: Sepet, 7 ürün [ref=e46] | - Platform: android | - Uygulama: com.antreklabs.bayisiparis | - group [id=android:id/content] [ref=e10] | - text \"Bayi Sipariş Portalı\" [ref=e11] | - text \"Doğrulama Bayi\" [id=current-dealer] [ref=e12] | - button \"Çıkış yap\" [id=nav-logout] [ref=e13] | - list [ref=e14] | - heading \"Sepetim\" [ref=e60] | - group [id=cart-table] [ref=e61] | - group [id=cart-line-…",
+      "allowed": true,
+      "hedef": {
+        "rol": "button",
+        "ad": "Sepet,"
+      }
+    },
+    {
+      "tool": "app_snapshot",
+      "args": {},
+      "result_summary": "- Platform: android | - Uygulama: com.antreklabs.bayisiparis | - group [id=android:id/content] [ref=e10] | - text \"Bayi Sipariş Portalı\" [ref=e11] | - text \"Doğrulama Bayi\" [id=current-dealer] [ref=e12] | - button \"Çıkış yap\" [id=nav-logout] [ref=e13] | - list [ref=e14] | - heading \"Sepetim\" [ref=e60] | - group [id=cart-table] [ref=e61] | - group [id=cart-line-P-001] [ref=e62] | - heading \"Portak…",
+      "allowed": true
+    }
+  ],
+  "output": {
+    "platform": "android",
+    "step_mapping": [
+      {
+        "step_id": "S1",
+        "po": "GirisEkrani",
+        "method": "ac",
+        "args": [],
+        "verified": true,
+        "evidence_ref": "Giriş ekranı (login-username, login-password, login-submit) app_launch sonrası"
+      },
+      {
+        "step_id": "S2",
+        "po": "GirisEkrani",
+        "method": "girisYap",
+        "args": [
+          "bayi1",
+          "Demo123!"
+        ],
+        "verified": true,
+        "evidence_ref": "login-submit → katalog (product-list); oturum \"Doğrulama Bayi\" (doğrulama bayisi bayi3; case'in bayisi bayi1 eşleme argümanıdır)"
+      },
+      {
+        "step_id": "S3",
+        "po": "KatalogEkrani",
+        "method": "sepeteEkle",
+        "args": [
+          "P-001",
+          7
+        ],
+        "verified": true,
+        "evidence_ref": "product-card-P-001 içinde qty-input-P-001 = 7, add-to-cart → \"7 adet sepete eklendi.\"; nav-cart \"Sepet, 7 ürün\""
+      },
+      {
+        "step_id": "S4",
+        "po": "KatalogEkrani",
+        "method": "sepetiAc",
+        "args": [],
+        "verified": true,
+        "evidence_ref": "nav-cart → sepet (cart-table); gözlenen: cart-line-qty-P-001 7, cart-line-free-P-001 1; ara toplam 175,00 TL; indirim 25,00 TL; toplam 150,00 TL"
+      }
+    ],
+    "expects": [
+      {
+        "po": "SepetEkrani",
+        "method": "dogrulaSatirAdedi",
+        "args": [
+          "P-001",
+          7
+        ]
+      },
+      {
+        "po": "SepetEkrani",
+        "method": "dogrulaBedavaAdet",
+        "args": [
+          "P-001",
+          1
+        ]
+      },
+      {
+        "po": "SepetEkrani",
+        "method": "dogrulaAraToplam",
+        "args": [
+          "175,00 TL"
+        ]
+      },
+      {
+        "po": "SepetEkrani",
+        "method": "dogrulaIndirim",
+        "args": [
+          "25,00 TL"
+        ]
+      },
+      {
+        "po": "SepetEkrani",
+        "method": "dogrulaToplam",
+        "args": [
+          "150,00 TL"
+        ]
+      }
+    ],
+    "missing_methods": []
+  }
+}

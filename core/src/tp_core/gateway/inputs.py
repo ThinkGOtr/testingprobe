@@ -91,10 +91,11 @@ def requirement_block(
 def wrap_tool_result(tool: str, text: str, *, ref: str | None = None) -> str:
     """Ajan araç sonucunu güvenilmeyen bloğa sarar (kaynak `tool:<araç>[:<ref>]`).
 
-    `ref` isteğe bağlı bağlamdır (ör. dosya yolu). Tarayıcı araçları `snapshot` türündedir.
+    `ref` isteğe bağlı bağlamdır (ör. dosya yolu). Tarayıcı ve app-mcp araçları `snapshot`
+    türündedir (009 §2.6).
     """
     kind: UntrustedKind = _TOOL_KINDS.get(
-        tool, "snapshot" if tool.startswith("browser_") else "text"
+        tool, "snapshot" if tool.startswith(("browser_", "app_")) else "text"
     )
     source = f"tool:{tool}" + (f":{ref}" if ref else "")
     return wrap_untrusted(text, source=source, kind=kind)

@@ -1,0 +1,11 @@
+{
+  "name": "testingprobe-appium",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Yerel cihaz altyapısı: Appium 3 + uiautomator2 + xcuitest sürücüleri. APPIUM_HOME bu dizindir; global kurulum yok. Kurulum: make cihaz-kur.",
+  "dependencies": {
+    "appium": "3.9.0",
+    "appium-uiautomator2-driver": "8.7.3",
+    "appium-xcuitest-driver": "12.22.8"
+  }
+}

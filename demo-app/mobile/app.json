@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "Bayi Sipariş",
+    "slug": "bayi-siparis-mobil",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "bundleIdentifier": "com.antreklabs.bayisiparis",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "com.antreklabs.bayisiparis",
+      "adaptiveIcon": {
+        "backgroundColor": "#0b5d7a",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": ["./plugins/ag-guvenligi"]
+  }
+}

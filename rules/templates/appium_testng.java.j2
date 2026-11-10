@@ -1,0 +1,46 @@
+{#-
+  CasesToCode Java şablonu (009 plan §2.4, §2.8; Constitution IV) — Android/iOS/Windows.
+
+  Model Java yazmaz: bu dosya yalnızca uygulamada (app-mcp) doğrulanmış ve deterministik
+  kontrollerden geçmiş adım → ekran nesnesi eşlemesinden render edilir
+  (tp_core.features.codegen.render.render_java_test).
+  - Her değer `java` süzgecinden geçer: Java literali (String/int/long/double/boolean; Unicode
+    kaçışı \uXXXX ÜRETİLMEZ — java-araclar guard reddeder; ASCII dışı karakter ham UTF-8 basılır;
+    kontrol/görünmez karakter reddedilir).
+  - Erişimci/metot/sınıf adları `ident` süzgecinden geçer (tanımlayıcı dilbilgisi + sembol tablosu).
+  - Yorum satırları `comment` süzgecinden geçer (tek satır, kontrol karakteri yok).
+  - Çıktı deterministiktir (golden testi: core/tests/unit/features/codegen/golden/).
+  - Biçim `java-araclar guard` izin listesidir: yalnız // yorumları, üç izinli import, en çok bir
+    @Bayi, TestTabani'ndan türeyen tek sınıf, tek parametresiz @Test metot, gövdede yalnız
+    `<erişimci>().<metot>(<literal>…);` deyimleri.
+-#}
+// AI-generated — AI Testing Probe (CasesToCode). Elle düzenlemeyin; değişiklik case'in yeniden
+// onayı ve yeniden üretimle yapılır.
+// Case: {{ case_ref | comment }} ({{ case_id | comment }}) · Story: {{ story_key | comment }} · Jira Test: {{ test_key | comment }}
+// Onaylı case hash: {{ case_hash | comment }}
+// Eşleme: verify_and_map_app · platform: {{ platform | comment }} · mod: {{ mode | comment }} · bundle: {{ bundle_hash | comment }}
+// Eşleme hash: {{ mapping_hash | comment }} · şablon: {{ template_hash | comment }}
+package com.antreklabs.bayi.uretilen;
+
+import com.antreklabs.bayi.altyapi.Bayi;
+import com.antreklabs.bayi.altyapi.TestTabani;
+import org.testng.annotations.Test;
+
+{% if dealer %}
+@Bayi({{ dealer | java }})
+{% endif %}
+public class {{ class_name | ident }} extends TestTabani {
+  @Test(groups = { {{- groups | map("java") | join(", ") -}} }, description = {{ description | java }})
+  public void senaryo() {
+{% for step in steps %}
+    // {{ step.label | comment }}
+{% for call in step.calls %}
+    {{ call.fixture | ident }}().{{ call.method | ident }}({{ call.args | jargs }});
+{% endfor %}
+{% endfor %}
+    // Beklenen sonuç (değerler onaylı case metninden)
+{% for call in expects %}
+    {{ call.fixture | ident }}().{{ call.method | ident }}({{ call.args | jargs }});
+{% endfor %}
+  }
+}

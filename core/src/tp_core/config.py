@@ -92,6 +92,9 @@ class Settings(BaseSettings):
     playwright_mcp_url: str = Field(
         default="http://playwright-mcp:8931/mcp", validation_alias="PLAYWRIGHT_MCP_URL"
     )
+    # 009 §2.6: mobil/masaüstü doğrulama ajanının aracı (app-mcp, compose `mobil` profili; yalnızca
+    # core-worker). Kapalı yığında bağlantı kurulamaz → script ortam hatasıyla insana düşer.
+    app_mcp_url: str = Field(default="http://app-mcp:8932/mcp", validation_alias="APP_MCP_URL")
     artifacts_path: str = Field(default="/artifacts", validation_alias="TP_ARTIFACTS_PATH")
     # Kod üretimi ajan ekran görüntüleri (core-worker rw, core-api ro; ayrı volume `tp_codegen`):
     # core-worker paylaşılan `tp_artifacts`'a (checks/<sha>.json merge kapısı) yazamaz. Boşsa

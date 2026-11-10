@@ -28,6 +28,41 @@ COPY symbols/src ./src
 COPY symbols/test ./test
 RUN npm run build && npm prune --omit=dev --no-audit --no-fund
 
+# Java araçları (009 §2.3–2.5): java-araclar.jar (JavaParser; yalnızca ayrıştırır) + Maven
+# dağıtımı + e2e-app bağımlılıklarının çevrimdışı deposu. Sürümler sabit: JDK imajı özetle,
+# Maven resmi SHA-512 ile, bağımlılıklar e2e-app-deps/pom.xml'le
+# (demo-app/e2e-app/pom.xml'in birebir kopyası; tests/test_java.py denetler).
+FROM eclipse-temurin:17.0.16_8-jdk-noble@sha256:bbc959486c469c589091571ba524e6a98f27e19bd99489c683d9b465e4f8db8d AS javabuild
+# Maven: java-araclar/.mvn/wrapper ile aynı sürüm; resmi SHA-512 ile doğrulanır. (mvnw unzip yoksa
+# tar.gz indirir ve zip'in sha256'sıyla karşılaştırıp başarısız olur; imajda doğrudan kurulur.)
+ARG MAVEN_VERSION=3.9.11
+ARG MAVEN_SHA512=bcfe4fe305c962ace56ac7b5fc7a08b87d5abd8b7e89027ab251069faebee516b0ded8961445d6d91ec1985dfe30f8153268843c89aa392733d1a3ec956c9978
+RUN mkdir -p /build/maven \
+ && curl -fsSL -o /tmp/maven.tar.gz \
+      "https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/${MAVEN_VERSION}/apache-maven-${MAVEN_VERSION}-bin.tar.gz" \
+ && echo "${MAVEN_SHA512}  /tmp/maven.tar.gz" | sha512sum -c - \
+ && tar -xzf /tmp/maven.tar.gz -C /build/maven --strip-components=1 \
+ && rm /tmp/maven.tar.gz \
+ && /build/maven/bin/mvn --version
+WORKDIR /build/java-araclar
+COPY java-araclar/ ./
+# Derle + JUnit golden testleri (sözleşme kırılırsa imaj derlenmez).
+RUN /build/maven/bin/mvn -B -q -Dmaven.repo.local=/build/m2-araclar package \
+ && cp target/java-araclar.jar /build/java-araclar.jar
+# e2e-app deposunu ısıt: güvenilir pom + java-araclar'ın fikstür ağacı (aynı API'ler) derlenir;
+# Surefire/TestNG sağlayıcısı da çekilir (test-runner'ın Java koşusu için). Ağ yalnızca burada.
+WORKDIR /build/e2e-app
+COPY e2e-app-deps/pom.xml ./pom.xml
+RUN cp -r /build/java-araclar/src/test/resources/e2e-app/src ./src \
+ && /build/maven/bin/mvn -B -q -Dmaven.repo.local=/build/e2e-m2 test-compile \
+ && /build/maven/bin/mvn -B -q -Dmaven.repo.local=/build/e2e-m2 surefire:test \
+      -Dtest=YokBoyleBirTest -Dsurefire.failIfNoSpecifiedTests=false \
+ && rm -rf target src \
+ && chmod -R a-w /build/e2e-m2 /build/maven
+# Çalışma zamanı JDK'sı: derleme için gereksiz jmods/kaynak/man atılır.
+RUN cp -a /opt/java/openjdk /build/jdk \
+ && rm -rf /build/jdk/jmods /build/jdk/lib/src.zip /build/jdk/man /build/jdk/demo
+
 FROM base AS ci
 ARG PLAYWRIGHT_VERSION
 LABEL org.opencontainers.image.title="testingprobe-toolchain" \
@@ -105,6 +140,19 @@ RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
     uv sync --frozen --no-dev --no-editable --no-cache
 
 COPY bin ./bin
+
+# Java (009): JDK 17 (başsız kullanım), sabit Maven, java-araclar.jar ve e2e-app'in çevrimdışı
+# deposu. Depo ve pom salt okunur: toolchain-worker `maven.repo.local.tail` olarak okur, koşu başına
+# geçici bir baş deposuna yazar (worker/java.py). Model/MCP/ajan bağımlılığı içermez (anayasa II).
+COPY --from=javabuild /build/jdk /opt/java/openjdk
+COPY --from=javabuild /build/maven /opt/maven
+COPY --from=javabuild /build/java-araclar.jar /opt/toolchain/java-araclar/java-araclar.jar
+COPY --from=javabuild /build/e2e-m2 /opt/e2e-app/m2
+COPY --chmod=444 e2e-app-deps/pom.xml /opt/e2e-app/pom.xml
+ENV JAVA_HOME=/opt/java/openjdk \
+    PATH=/opt/java/openjdk/bin:/opt/maven/bin:$PATH
+RUN java -version 2>&1 | head -n 1 \
+ && java -jar /opt/toolchain/java-araclar/java-araclar.jar --help >/dev/null
 
 # Bağlama noktaları pwuser'ın: boş bir named volume ilk bağlamada bu sahipliği alır.
 # /checks = merge kapısı volume'ü (tp_checks; yalnızca toolchain-worker rw, test-runner bağlamaz).

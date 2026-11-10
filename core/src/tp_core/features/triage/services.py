@@ -62,8 +62,12 @@ class TriageToolchain:
             raise ToolchainHatasi(f"toolchain-worker {yol}: yanıt nesne değil", r.status_code)
         return veri
 
-    def symbols(self, sha: str) -> dict[str, Any]:
-        return self._post("/symbols", {"sha": sha}, SYMBOLS_TIMEOUT_S)
+    def symbols(self, sha: str, *, platform: str | None = None) -> dict[str, Any]:
+        """`platform` (android | ios | windows) → Java sembol tablosu (009 §2.5); web/None → TS."""
+        govde: dict[str, Any] = {"sha": sha}
+        if platform and platform != "web":
+            govde["platform"] = platform
+        return self._post("/symbols", govde, SYMBOLS_TIMEOUT_S)
 
     def locator_probe(
         self, sha: str, role: str, name: str, url_path: str, scope_test_id: str | None

@@ -1,0 +1,28 @@
+- group [id=com.google.android.settings.intelligence:id/open_search_view_background] [ref=e1]:
+  - group [id=com.google.android.settings.intelligence:id/open_search_view_toolbar] [ref=e2]:
+    - button "Back" [ref=e3]
+    - textbox "Search settings" [id=com.google.android.settings.intelligence:id/open_search_view_edit_text] [ref=e4]: wifi
+    - button "Clear text" [id=com.google.android.settings.intelligence:id/open_search_view_clear_button] [ref=e5]
+  - group [id=com.google.android.settings.intelligence:id/open_search_view_divider] [ref=e6]
+  - list [id=com.google.android.settings.intelligence:id/search_scrollview] [ref=e7]:
+    - list [id=com.google.android.settings.intelligence:id/main_content_scrollable_container] [ref=e8]:
+      - list [id=com.google.android.settings.intelligence:id/list_results] [ref=e9]:
+        - button "Wi-Fi Network & internet, Internet" [ref=e10]:
+          - text "Wi-Fi" [id=android:id/title] [ref=e11]
+          - text "Network & internet, Internet" [id=com.google.android.settings.intelligence:id/breadcrumb] [ref=e12]
+          - switch "Wi-Fi" [id=android:id/switch_widget] [checked] [ref=e13]
+        - button "Wi-Fi hotspot Network & internet, Hotspot & tethering" [ref=e14]:
+          - text "Wi-Fi hotspot" [id=android:id/title] [ref=e15]
+          - text "Network & internet, Hotspot & tethering" [id=com.google.android.settings.intelligence:id/breadcrumb] [ref=e16]
+        - button "Wi-Fi Direct Wi-Fi preferences" [ref=e17]:
+          - text "Wi-Fi Direct" [id=android:id/title] [ref=e18]
+          - text "Wi-Fi preferences" [id=com.google.android.settings.intelligence:id/breadcrumb] [ref=e19]
+        - button "Wi-Fi scanning Location, Location services" [ref=e20]:
+          - text "Wi-Fi scanning" [id=android:id/title] [ref=e21]
+          - text "Location, Location services" [id=com.google.android.settings.intelligence:id/breadcrumb] [ref=e22]
+        - button "Wi-Fi scanning Location, Location services, Wi-Fi scanning" [ref=e23]:
+          - text "Wi-Fi scanning" [id=android:id/title] [ref=e24]
+          - text "Location, Location services, Wi-Fi scanning" [id=com.google.android.settings.intelligence:id/breadcrumb] [ref=e25]
+          - switch "Wi-Fi scanning" [id=android:id/switch_widget] [ref=e26]
+        - button "Wi-Fi control" [ref=e27]:
+          - text "Wi-Fi control" [id=android:id/title] [ref=e28]

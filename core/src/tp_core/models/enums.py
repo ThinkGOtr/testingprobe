@@ -29,6 +29,8 @@ FINDING_TUR = frozenset(
 SEVERITY = frozenset({"blocking", "warning"})
 FINDING_KARAR = KARARLAR["consistency_finding"]
 SCRIPT_TUR = frozenset({"test", "locator_fix"})
+# 009 §2.1: üretilen testin hedef platformu (web = Playwright/TS; diğerleri Appium/Java). 0018.
+PLATFORM = frozenset({"web", "android", "ios", "windows"})
 RUN_KAYNAK = frozenset({"local", "github", "sauce"})
 # CI ile ortak liste: .github/workflows/ci.yml `trigger` girdisi (workflow_dispatch → manual).
 RUN_TETIK = frozenset({"pr", "push", "nightly", "deploy", "break_verify", "local_check", "manual"})

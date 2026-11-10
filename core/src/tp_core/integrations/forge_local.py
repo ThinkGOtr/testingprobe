@@ -8,7 +8,10 @@
   geçici dosya + `os.replace` ile atomiktir. Okumalar kilitsizdir (salt-okunur bağlamalar için).
 - Dal koruması: `main`'e doğrudan commit yok; merge yalnızca `merge_pr` ile ve `local-ci`
   kontrolü başarılıysa yapılır. `demo-admin` bu şartı bypass edebilir; bypass PR kaydına ve
-  `MergeResult`'a yazılır. Bot (`tp-bot`) merge edemez.
+  `MergeResult`'a yazılır. Bot (`tp-bot`) merge edemez. Uygulama (Java + Appium) kontrolleri
+  platform başınadır (`local-ci-android|ios|windows`, 009 §2.7): head için kaydedilmiş her biri
+  de zorunludur; yalnızca `e2e-app/` değiştiren PR web `local-ci` yerine en az bir platform
+  kontrolü ister (`forge.local_required_checks`). Liste `TP_REQUIRED_CHECKS` ile değişir.
 - Güncel dal kuralı (GitHub "require branches to be up to date" / strict status checks): PR dalı
   `main`'in güncel head'ini içermiyorsa merge reddedilir — aksi halde hiçbir kontrolün koşmadığı
   bir birleşim ağacı `main`'e girerdi. Dal `update_branch` ile güncellenir (yeni head → PR CI'ı
@@ -41,6 +44,7 @@ from tp_core.integrations.forge import (
     BYPASS_ACTOR,
     LOCAL_REQUIRED_CHECKS,
     PROTECTED_BRANCHES,
+    REQUIRED_CHECKS_ENV,
     ForgeConflictError,
     ForgeError,
     ForgeNotFoundError,
@@ -50,6 +54,8 @@ from tp_core.integrations.forge import (
     MergeResult,
     evaluate_required_checks,
     is_sha,
+    local_required_checks,
+    parse_required_checks,
     validate_actor,
     validate_branch,
     validate_files,
@@ -173,6 +179,11 @@ class LocalForge:
             env.get("TP_FORGE_PATH") or DEFAULT_FORGE_PATH,
             env.get("TP_ARTIFACTS_PATH") or DEFAULT_ARTIFACTS_PATH,
             env.get("TP_FORGE_PRS_PATH") or None,
+            # MIMARI-SOZLESME: `TP_REQUIRED_CHECKS` boş = `local-ci` (ör. platform kontrolünü her
+            # PR'da zorunlu kılmak için `local-ci,local-ci-android`).
+            required_checks=parse_required_checks(
+                env.get(REQUIRED_CHECKS_ENV), LOCAL_REQUIRED_CHECKS
+            ),
             require_up_to_date=_env_flag(env.get(REQUIRE_UP_TO_DATE_ENV), default=True),
             checks_path=env.get("TP_CHECKS_PATH") or None,
         )
@@ -543,14 +554,21 @@ class LocalForge:
                 raise ForgeNotFoundError(f"temel dal bulunamadı: {rec['base']}")
 
             checks = self.checks(head)
-            verdict = evaluate_required_checks(checks, self.required_checks)
+            # Platform başına kapı (009 §2.7): kayıtlı uygulama kontrolleri de zorunlu; yalnızca
+            # e2e-app/ değiştiren PR web local-ci yerine platform kontrolü ister.
+            fark_tabani = self._merge_base(base_head, head)
+            degisen = self.changed_paths(fark_tabani, head) if is_sha(fark_tabani) else []
+            zorunlu, platform_eksik = local_required_checks(self.required_checks, checks, degisen)
+            verdict = evaluate_required_checks(checks, zorunlu)
             ihlaller: list[str] = []
-            if not verdict.passed:
+            nedenler = [r for r in (verdict.reason() if not verdict.passed else "",
+                                    platform_eksik or "") if r]  # fmt: skip
+            if nedenler:
                 if actor != BYPASS_ACTOR:
                     raise ForgeProtectionError(
-                        f"merge için zorunlu kontroller başarılı olmalı ({verdict.reason()})"
+                        f"merge için zorunlu kontroller başarılı olmalı ({'; '.join(nedenler)})"
                     )
-                ihlaller.append(verdict.reason())
+                ihlaller.extend(nedenler)
             # Güncel dal kuralı: kontroller yalnızca `head` üzerinde koştu; base ilerlemişse
             # merge ağacı (head + yeni base) hiç test edilmemiştir.
             if (

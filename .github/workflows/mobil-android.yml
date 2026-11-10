@@ -1,0 +1,312 @@
+# Android uygulama e2e CI'ı — AI'sız (Constitution II, specs/009-mobil-masaustu §2.7).
+#
+# Bu workflow'da model anahtarı, MCP sunucusu (app-mcp dahil) veya ajan bağımlılığı YOKTUR; yalnızca
+# onaylanmış, deterministik Java + Appium + TestNG test kodu (demo-app/e2e-app) koşar.
+#
+# Akış (ubuntu, KVM hızlandırmalı x86_64 emülatör):
+#   APK derle (demo-app/mobile/scripts/derle-android.sh, ANDROID_ABI=x86_64)
+#   → demo uygulaması (scripts/github-demo-serve.sh: API + vite preview /api vekili, 127.0.0.1:8081;
+#     emülatör hostun loopback'ine 10.0.2.2 ile ulaşır → uygulamanın varsayılan adresi
+#     http://10.0.2.2:8081/api değişmeden çalışır)
+#   → Appium 3 (tools/appium kilit dosyasından, APPIUM_HOME=tools/appium, 127.0.0.1:4723)
+#   → reactivecircus/android-emulator-runner içinde demo-app/ci/run-app-checks.sh android
+#
+# Check adı `mobil-android` (job adı). Platform etkinse zorunlu check listesine eklenir (TP_REQUIRED_CHECKS
+# + ruleset; .github/CI.md "Uygulama iş akışları"). Bu yüzden workflow düzeyinde `paths` filtresi
+# YOKTUR: değişiklik `changes` job'unda tespit edilir, ilgisiz PR'da job "no-op, başarılı" çıkar.
+name: mobil-android
+run-name: >-
+  ${{ github.event_name == 'workflow_dispatch'
+      && format('mobil-android {0} [{1}]', inputs.tetik, inputs.istek_id || 'elle')
+    || github.event.pull_request.title || github.event.head_commit.message || 'mobil-android' }}
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  push:
+    branches: [main]
+  schedule:
+    # Gece koşusu: 02:30 UTC = 05:30 TR (ci.yml'den yarım saat sonra; aynı bayilerle çakışmaz,
+    # ayrıca her koşu kendi runner'ında kendi SQLite veritabanıyla çalışır).
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+    inputs:
+      tetik:
+        description: "Tetik türü (sonuç kaydında görünür)"
+        type: choice
+        options: [manual, nightly, deploy]
+        default: manual
+      istek_id:
+        description: "Çekirdeğin istek kimliği (koşu adında görünür; [A-Za-z0-9._-], ≤64)"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobil-android-${{ github.event_name }}-${{ github.event.pull_request.number || inputs.istek_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  APP_ROOT: demo-app
+  NODE_VERSION: "22"
+  JAVA_VERSION: "17"
+  UV_VERSION: "0.8.24"
+  # Emülatör: x86_64 + google_apis (KVM). API düzeyi uygulamanın hedeflediği aralıkta, runner
+  # imajında hızlı açılan bir sürüm.
+  ANDROID_API_LEVEL: "34"
+  APK: demo-app/mobile/build/bayi-siparis.apk
+  TP_ISTEK_ID: ${{ inputs.istek_id || '' }}
+
+jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run_tests: ${{ steps.decide.outputs.run_tests }}
+      trigger: ${{ steps.decide.outputs.trigger }}
+    steps:
+      - name: Değişiklikleri tespit et (yalnızca PR)
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            app:
+              - 'demo-app/mobile/**'
+              - 'demo-app/e2e-app/**'
+              - 'demo-app/api/**'
+              - 'demo-app/web/**'
+              - 'demo-app/kimlikler.json'
+              - 'demo-app/ci/run-app-checks.sh'
+              - 'demo-app/ci/break-verify-app.sh'
+              - 'tools/appium/**'
+              - 'scripts/github-demo-serve.sh'
+              - '.github/workflows/mobil-android.yml'
+
+      - name: Karar
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          APP: ${{ steps.filter.outputs.app }}
+          DISPATCH_TETIK: ${{ inputs.tetik }}
+        run: |
+          set -euo pipefail
+          if [ -n "$TP_ISTEK_ID" ] && ! [[ "$TP_ISTEK_ID" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
+            echo "::error::istek_id biçimi geçersiz ([A-Za-z0-9._-], en çok 64 karakter)"
+            exit 1
+          fi
+          case "$EVENT" in
+            pull_request)      trigger="pr" ;;
+            push)              trigger="push" ;;
+            schedule)          trigger="nightly" ;;
+            workflow_dispatch) trigger="${DISPATCH_TETIK:-manual}" ;;
+            *)                 trigger="$EVENT" ;;
+          esac
+          if [ "$EVENT" = "pull_request" ]; then run_tests="${APP:-false}"; else run_tests=true; fi
+          echo "run_tests=$run_tests" >> "$GITHUB_OUTPUT"
+          echo "trigger=$trigger" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Değişiklik tespiti (mobil-android)"
+            echo "| tetik | istek | testler |"
+            echo "|---|---|---|"
+            echo "| \`$trigger\` | \`${TP_ISTEK_ID:--}\` | $run_tests |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  mobil-android:
+    # Zorunlu check adayı (platform etkinse). Uygulama/test değişmediyse no-op başarılı.
+    name: mobil-android
+    needs: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      RUN_TESTS: ${{ needs.changes.outputs.run_tests }}
+      TP_TRIGGER: ${{ needs.changes.outputs.trigger }}
+      CI: "true"
+    steps:
+      - name: No-op (uygulama değişmedi)
+        if: env.RUN_TESTS != 'true'
+        run: echo "Android uygulaması / e2e-app değişmedi; mobil-android no-op (başarılı)." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout
+        if: env.RUN_TESTS == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # android-emulator-runner belgelerindeki KVM izni (GitHub'ın Linux runner'larında /dev/kvm var,
+      # ancak runner kullanıcısı erişemez).
+      - name: KVM etkinleştir
+        if: env.RUN_TESTS == 'true'
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Java kurulumu
+        if: env.RUN_TESTS == 'true'
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+          cache-dependency-path: demo-app/e2e-app/pom.xml
+
+      - name: Node kurulumu
+        if: env.RUN_TESTS == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            demo-app/mobile/package-lock.json
+            demo-app/web/package-lock.json
+            tools/appium/package-lock.json
+
+      - name: uv kurulumu
+        if: env.RUN_TESTS == 'true'
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: demo-app/api/uv.lock
+
+      - name: Gradle önbelleği
+        if: env.RUN_TESTS == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('demo-app/mobile/package-lock.json', 'demo-app/mobile/app.json') }}
+
+      # Uygulamanın API adresi derleme anında gömülür; varsayılan http://10.0.2.2:8081/api
+      # (emülatör → host loopback) burada doğrudur.
+      - name: APK derle (x86_64)
+        if: env.RUN_TESTS == 'true'
+        env:
+          ANDROID_ABI: x86_64
+          TEMIZ: "1"
+        run: |
+          set -euo pipefail
+          # ANDROID_HOME runner imajından gelir (/usr/local/lib/android/sdk).
+          echo "ANDROID_HOME=${ANDROID_HOME:?runner imajında ANDROID_HOME yok}"
+          bash demo-app/mobile/scripts/derle-android.sh
+          test -f "$APK"
+
+      # ci.yml Sauce job'u ile aynı yol. Test uçlarının (/test/*) sırrı koşu başına üretilir;
+      # API (github-demo-serve.sh ortamından) ve Java testleri (DEMOAPP_TEST_TOKEN ortamı) aynı değeri
+      # alır. /test/* doğrudan API'ye gider (DEMO_API_URL); vite vekili /api/test/*'i de iletir ama
+      # testler sözleşmedeki gibi doğrudan API kökünü kullanır.
+      - name: Demo uygulamasını başlat
+        if: env.RUN_TESTS == 'true'
+        run: |
+          set -euo pipefail
+          token="$(openssl rand -hex 24)"
+          echo "::add-mask::$token"
+          echo "DEMOAPP_TEST_TOKEN=$token" >> "$GITHUB_ENV"
+          echo "DEMO_API_URL=http://127.0.0.1:18000" >> "$GITHUB_ENV"
+          mkdir -p tp-logs
+          PORT=8081 DEMO_API_PORT=18000 DEMOAPP_TEST_TOKEN="$token" \
+            nohup bash scripts/github-demo-serve.sh > tp-logs/serve.log 2>&1 &
+          for _ in $(seq 1 90); do
+            if curl -fsS "http://127.0.0.1:8081/api/health" >/dev/null 2>&1; then
+              echo "Uygulama hazır: http://127.0.0.1:8081 (emülatörden http://10.0.2.2:8081)"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Demo uygulaması 180 sn içinde hazır olmadı"
+          tail -n 100 tp-logs/serve.log
+          exit 1
+
+      # Appium + uiautomator2 sürücüsü tools/appium kilit dosyasından (scripts/cihaz/kur.sh ile aynı).
+      # --relaxed-security YOK (yerel kurulumla aynı: adb shell vb. kapalı).
+      - name: Appium başlat
+        if: env.RUN_TESTS == 'true'
+        run: |
+          set -euo pipefail
+          (cd tools/appium && npm ci --no-audit --no-fund --loglevel=error)
+          export APPIUM_HOME="$GITHUB_WORKSPACE/tools/appium"
+          mkdir -p tp-logs
+          nohup tools/appium/node_modules/.bin/appium --address 127.0.0.1 --port 4723 \
+            --log-no-colors --log-timestamp > tp-logs/appium.log 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -fsS -m 2 http://127.0.0.1:4723/status >/dev/null 2>&1 && { echo "Appium hazır"; exit 0; }
+            sleep 1
+          done
+          echo "::error::Appium 30 sn içinde hazır olmadı"
+          tail -n 100 tp-logs/appium.log
+          exit 1
+
+      # Not: android-emulator-runner `script:` satırlarını AYRI AYRI `sh -c` ile koşar; bu yüzden
+      # tek satır ve açık `bash -o pipefail`. Çıkış kodu adımın sonucudur (steps.tests.outcome).
+      - name: Testler (emülatörde)
+        if: env.RUN_TESTS == 'true'
+        id: tests
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: ${{ env.ANDROID_API_LEVEL }}
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
+          script: bash -o pipefail -c 'bash demo-app/ci/run-app-checks.sh android "-Dapp.path=$GITHUB_WORKSPACE/$APK" 2>&1 | tee tp-logs/run-app-checks.log'
+
+      # --- Sonuçlar -----------------------------------------------------------------------------
+      # Düz artefakt kökü: ci-meta.json, surefire-reports/ (cihaz koşusu JUnit XML), birim-raporlari/,
+      # allure-results/, kanit/<Sınıf>.<metot>/ (ekran.png + sayfa-kaynagi.xml; triage), günlükler.
+      - name: Sonuçları topla
+        if: always() && env.RUN_TESTS == 'true'
+        env:
+          OUTCOME: ${{ steps.tests.outcome }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          out=tp-results
+          mkdir -p "$out"
+          target="$APP_ROOT/e2e-app/target"
+          for d in surefire-reports birim-raporlari allure-results kanit; do
+            if [ -d "$target/$d" ]; then cp -R "$target/$d" "$out/$d"; fi
+          done
+          if [ -d tp-logs ]; then cp -R tp-logs "$out/logs"; fi
+          # Sır günlüklere yazılmaz; yine de koşu belirteci geçen dosyalarda maskelenir
+          # (GitHub maskesi yalnız iş günlüğüne uygulanır, artefakta değil). Belirteç onaltılıktır.
+          # Test kodunun bıraktığı bağlar (symlink) maskeyi atlatıp yüklenmesin.
+          find "$out" -type l -delete
+          if [ -n "${DEMOAPP_TEST_TOKEN:-}" ]; then
+            { grep -rl -- "$DEMOAPP_TEST_TOKEN" "$out" || true; } | while read -r f; do
+              sed -i "s/$DEMOAPP_TEST_TOKEN/***/g" "$f"
+            done
+          fi
+          case "$OUTCOME" in success) durum=passed ;; failure) durum=failed ;; *) durum=error ;; esac
+          jq -n --arg platform android --arg sha "$SHA" --arg tetik "$TP_TRIGGER" \
+            --arg istek "$TP_ISTEK_ID" --arg durum "$durum" --arg sonuc "$OUTCOME" \
+            --arg job mobil-android \
+            '{schema_version: 1, job: $job, platform: $platform, sha: $sha, tetik: $tetik,
+              istek_id: (if $istek == "" then null else $istek end), durum: $durum,
+              adim_sonucu: $sonuc}' > "$out/ci-meta.json"
+          n="$(find "$out/surefire-reports" -name 'TEST-*.xml' 2>/dev/null | wc -l | tr -d ' ')"
+          {
+            echo "### mobil-android (tetik: \`$TP_TRIGGER\`)"
+            echo "Durum: **$durum** · JUnit XML: $n dosya · commit \`${SHA:0:12}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Artefaktlar
+        if: always() && env.RUN_TESTS == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mobil-android-results
+          retention-days: 14
+          if-no-files-found: warn
+          include-hidden-files: false
+          path: tp-results/

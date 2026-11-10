@@ -63,6 +63,19 @@ def check_timeout_s() -> float:
 CHECK_TIMEOUT_S = check_timeout_s()
 WORKFLOW_FILE = "ci.yml"
 RESULTS_ARTIFACT = "test-local-results"
+# Uygulama platformu → iş akışı dosyası (009 §2.7; `forge.GITHUB_PLATFORM_WORKFLOWS` ile aynı).
+# Bilinen dosyalar dışında bir yol API'ye gitmez (yol enjeksiyonu yok).
+IZINLI_IS_AKISLARI = frozenset(
+    {WORKFLOW_FILE, "mobil-android.yml", "mobil-ios.yml", "masaustu-windows.yml"}
+)
+
+
+def _is_akisi(workflow: str) -> str:
+    if workflow not in IZINLI_IS_AKISLARI:
+        raise GitHubCiError(f"bilinmeyen iş akışı: {workflow!r}")
+    return workflow
+
+
 SAUCE_ARTIFACT = "sauce-results"
 MAX_ZIP_BAYT = 200 * 1024 * 1024
 # Rapor dışı küçük ekler (error-context.md): dosya başına ve toplam sınır (zip bombasına karşı).
@@ -179,6 +192,45 @@ def _zip_dosyalari(
         return dosya_sec(girdiler, adlar, ekler)
 
 
+MAX_SUREFIRE_TOPLAM_BAYT = 200 * 1024 * 1024
+
+
+def surefire_dosyalari(veri: bytes) -> tuple[dict[str, bytes], list[str]]:
+    """Uygulama iş akışı artefakt zip'inden cihaz koşusunun Surefire raporları
+    (`…/surefire-reports/TEST-*.xml`; `birim-raporlari/` dışarıda). Rapor sınırı dosya başına
+    `MAX_RAPOR_BAYT`, toplam `MAX_SUREFIRE_TOPLAM_BAYT`, sayı `MAX_SUREFIRE_DOSYA`; atlanan her
+    dosya uyarıdır (sessizce düşen rapor koşuyu yeşil/eksik göstermesin)."""
+    from tp_core.features.ci.parse import MAX_SUREFIRE_DOSYA, surefire_yolu_mu, temiz
+
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(veri))
+    except zipfile.BadZipFile as exc:
+        raise GitHubCiError(f"artefakt zip'i bozuk: {exc}") from exc
+    out: dict[str, bytes] = {}
+    uyarilar: list[str] = []
+    toplam = 0
+    with zf:
+        for info in zf.infolist():
+            if info.is_dir() or not surefire_yolu_mu(info.filename):
+                continue
+            ad = temiz(info.filename.rsplit("/", 1)[-1], 120)
+            if len(out) >= MAX_SUREFIRE_DOSYA:
+                uyarilar.append(f"{ad}: Surefire rapor sayısı sınırı ({MAX_SUREFIRE_DOSYA}) aşıldı")
+                continue
+            if (
+                info.file_size > MAX_RAPOR_BAYT
+                or toplam + info.file_size > MAX_SUREFIRE_TOPLAM_BAYT
+            ):
+                uyarilar.append(
+                    f"{ad}: Surefire raporu çok büyük ({info.file_size} bayt), okunmadı"
+                )
+                continue
+            icerik = zf.read(info)
+            toplam += len(icerik)
+            out[info.filename] = icerik
+    return out, uyarilar
+
+
 class GitHubCi:
     """GitHub Actions okuma + dispatch. `forge`: `GitHubForge` (kimlik yardımcısı)."""
 
@@ -197,8 +249,14 @@ class GitHubCi:
         return f"/repos/{self.repo}"
 
     def workflow_runs(
-        self, *, head_sha: str | None = None, event: str | None = None, per_page: int = 30
+        self,
+        *,
+        head_sha: str | None = None,
+        event: str | None = None,
+        per_page: int = 30,
+        workflow: str = WORKFLOW_FILE,
     ) -> list[dict[str, Any]]:
+        """`workflow`: iş akışı dosyası (web `ci.yml`; uygulama platformu `mobil-android.yml` …)."""
         params: dict[str, Any] = {"per_page": per_page}
         if head_sha:
             params["head_sha"] = head_sha
@@ -206,7 +264,7 @@ class GitHubCi:
             params["event"] = event
         data = self._istek(
             "GET",
-            f"{self._r}/actions/workflows/{quote(WORKFLOW_FILE, safe='')}/runs",
+            f"{self._r}/actions/workflows/{quote(_is_akisi(workflow), safe='')}/runs",
             "workflow koşuları",
             params=params,
         ).json()
@@ -264,10 +322,12 @@ class GitHubCi:
             json={"event_type": event_type, "client_payload": dict(payload)},
         )
 
-    def workflow_dispatch(self, ref: str, inputs: Mapping[str, str]) -> None:
+    def workflow_dispatch(
+        self, ref: str, inputs: Mapping[str, str], *, workflow: str = WORKFLOW_FILE
+    ) -> None:
         self._istek(
             "POST",
-            f"{self._r}/actions/workflows/{quote(WORKFLOW_FILE, safe='')}/dispatches",
+            f"{self._r}/actions/workflows/{quote(_is_akisi(workflow), safe='')}/dispatches",
             "workflow_dispatch",
             json={"ref": ref, "inputs": dict(inputs)},
         )

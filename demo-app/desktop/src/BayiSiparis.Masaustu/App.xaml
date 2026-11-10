@@ -1,0 +1,153 @@
+<Application x:Class="BayiSiparis.Masaustu.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:o="clr-namespace:BayiSiparis.Masaustu.Otomasyon"
+             xmlns:gm="clr-namespace:BayiSiparis.Cekirdek.GorunumModelleri;assembly=BayiSiparis.Cekirdek"
+             xmlns:g="clr-namespace:BayiSiparis.Masaustu.Gorunumler"
+             ShutdownMode="OnMainWindowClose">
+  <!-- Renkler web'deki styles.css :root değişkenleriyle aynıdır. -->
+  <Application.Resources>
+    <SolidColorBrush x:Key="Zemin" Color="#F4F6F8" />
+    <SolidColorBrush x:Key="Yuzey" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="Metin" Color="#17212B" />
+    <SolidColorBrush x:Key="Soluk" Color="#55606C" />
+    <SolidColorBrush x:Key="Cizgi" Color="#DDE3E9" />
+    <SolidColorBrush x:Key="Birincil" Color="#0B5D7A" />
+    <SolidColorBrush x:Key="BirincilKoyu" Color="#084A62" />
+    <SolidColorBrush x:Key="BirincilYumusak" Color="#E3F1F6" />
+    <SolidColorBrush x:Key="Vurgu" Color="#F29D38" />
+    <SolidColorBrush x:Key="VurguYumusak" Color="#FFF1DF" />
+    <SolidColorBrush x:Key="VurguMetin" Color="#8A4B00" />
+    <SolidColorBrush x:Key="Basari" Color="#1B7A43" />
+    <SolidColorBrush x:Key="Tehlike" Color="#B42318" />
+    <SolidColorBrush x:Key="TehlikeYumusak" Color="#FDECEA" />
+    <SolidColorBrush x:Key="UyariMetin" Color="#7A4100" />
+    <SolidColorBrush x:Key="UyariYumusak" Color="#FFF4E0" />
+    <SolidColorBrush x:Key="UyariCizgi" Color="#F0B860" />
+
+    <o:DoluMuDonusturucu x:Key="DoluMu" />
+    <o:EtkinMenuDonusturucu x:Key="EtkinMenu" />
+
+    <!-- Not: Application düzeyinde örtük TextBlock stili tanımlanmaz; şablonların ürettiği TextBlock'lara da
+         uygulanıp düğme metin rengini ezer. Metin rengi pencereden miras alınır (AnaPencere.Foreground). -->
+    <Style x:Key="Baslik1" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="24" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{StaticResource Metin}" />
+      <Setter Property="Margin" Value="0,0,0,4" />
+    </Style>
+    <Style x:Key="SolukMetin" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource Soluk}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <!-- Uyarı kutuları (web: .alert-error / .alert-warning) -->
+    <Style x:Key="HataKutusu" TargetType="Border">
+      <Setter Property="Background" Value="{StaticResource TehlikeYumusak}" />
+      <Setter Property="BorderBrush" Value="{StaticResource Tehlike}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="10,8" />
+      <Setter Property="Margin" Value="0,8" />
+    </Style>
+    <Style x:Key="UyariKutusu" TargetType="Border">
+      <Setter Property="Background" Value="{StaticResource UyariYumusak}" />
+      <Setter Property="BorderBrush" Value="{StaticResource UyariCizgi}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="10,8" />
+      <Setter Property="Margin" Value="0,8" />
+    </Style>
+
+    <Style x:Key="Panel" TargetType="Border">
+      <Setter Property="Background" Value="{StaticResource Yuzey}" />
+      <Setter Property="BorderBrush" Value="{StaticResource Cizgi}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="16" />
+    </Style>
+
+    <!-- Düğmeler: birincil, hayalet, bağlantı. Şablon yalnız görünüşü değiştirir; UIA eşi Button kalır. -->
+    <Style x:Key="DugmeTemel" TargetType="Button">
+      <Setter Property="Padding" Value="14,7" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Kutu" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="Kutu" Property="Opacity" Value="0.5" />
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="Kutu" Property="BorderBrush" Value="{StaticResource Vurgu}" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="BirincilDugme" TargetType="Button" BasedOn="{StaticResource DugmeTemel}">
+      <Setter Property="Background" Value="{StaticResource Birincil}" />
+      <Setter Property="BorderBrush" Value="{StaticResource Birincil}" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style x:Key="HayaletDugme" TargetType="Button" BasedOn="{StaticResource DugmeTemel}">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{StaticResource Cizgi}" />
+      <Setter Property="Foreground" Value="{StaticResource Metin}" />
+    </Style>
+    <Style x:Key="BaglantiDugmesi" TargetType="Button" BasedOn="{StaticResource DugmeTemel}">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="Foreground" Value="{StaticResource Birincil}" />
+      <Setter Property="Padding" Value="6,4" />
+    </Style>
+    <!-- Üst menü bağlantıları; etkin menü ItemStatus="current" ile işaretlenir. -->
+    <Style x:Key="MenuDugmesi" TargetType="Button" BasedOn="{StaticResource BaglantiDugmesi}">
+      <Setter Property="Foreground" Value="{StaticResource Soluk}" />
+      <Setter Property="Padding" Value="10,6" />
+      <Style.Triggers>
+        <Trigger Property="AutomationProperties.ItemStatus" Value="current">
+          <Setter Property="Foreground" Value="{StaticResource Birincil}" />
+          <Setter Property="FontWeight" Value="SemiBold" />
+          <Setter Property="Background" Value="{StaticResource BirincilYumusak}" />
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+
+    <Style TargetType="TextBox">
+      <Setter Property="Padding" Value="6,5" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="BorderBrush" Value="{StaticResource Cizgi}" />
+    </Style>
+    <Style TargetType="PasswordBox">
+      <Setter Property="Padding" Value="6,5" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="BorderBrush" Value="{StaticResource Cizgi}" />
+    </Style>
+
+    <!-- Görünüm modeli → ekran eşlemesi: yalnız etkin ekran görsel/UIA ağacındadır. -->
+    <DataTemplate DataType="{x:Type gm:GirisGorunumModeli}">
+      <g:GirisEkrani />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type gm:KatalogGorunumModeli}">
+      <g:KatalogEkrani />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type gm:SepetGorunumModeli}">
+      <g:SepetEkrani />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type gm:SiparisOnayGorunumModeli}">
+      <g:SiparisOnayEkrani />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type gm:SiparislerimGorunumModeli}">
+      <g:SiparislerimEkrani />
+    </DataTemplate>
+  </Application.Resources>
+</Application>

@@ -62,6 +62,8 @@ import {
   type MockVeri,
 } from "./fixtures";
 import { mockOlayYayinla } from "./olaylar";
+import { javaDosyaYolu, javaTestKodu, uygulamayaCevir } from "./platformlar";
+import { PLATFORMLAR, platformUyarla, type Platform } from "../../lib/platform";
 import { asistanMockSifirla, asistanRotalari } from "./asistan";
 import { oneriKuleOlcumu, oneriMockSifirla, oneriRotalari } from "./oneri";
 import type { AsistanliKule } from "../../components/asistan/OnerilerOlcumKarti";
@@ -970,22 +972,31 @@ const KOD_GOLDEN: Record<string, { adimlar: () => AjanAdimi[]; kaynak: Record<st
 
 function kodUret(govde: unknown): IsYaniti {
   rolGerekli("engineer");
-  const ids = ((govde ?? {}) as { case_ids?: string[] }).case_ids ?? [];
+  const g = (govde ?? {}) as { case_ids?: string[]; platform?: unknown };
+  const ids = g.case_ids ?? [];
   if (!Array.isArray(ids) || ids.length === 0) throw new ApiError(422, "En az bir case seçilmeli.");
+  // 009 §2.9: platform yoksa web; bilinmeyen değer 422 (core ile aynı).
+  const platform: Platform | null = g.platform === undefined || g.platform === null ? "web" : platformUyarla(g.platform);
+  if (!platform) throw new ApiError(422, `platform yalnızca ${PLATFORMLAR.join(", ")} olabilir.`);
+  const app = platform !== "web";
   const caseler = ids.map((id) => bul(veri.caseler, id, "Case"));
   const onaysiz = caseler.filter((c) => c.durum !== "approved" && c.durum !== "published");
   if (onaysiz.length) throw new ApiError(409, "Yalnızca onaylı case'ler için kod üretilebilir.");
   for (const c of caseler) {
     const id = yeniId("scr");
-    const branch = `tp/case-${sha256Hex(c.id).slice(0, 8)}`;
+    const kisa = sha256Hex(c.id).slice(0, 8);
+    // Uygulama dalı web dalıyla önek çakışmaz: tp/case-<platform>-<uuid> (aynı case'in platformları ayrı PR).
+    const branch = app ? `tp/case-${platform}-${kisa}` : `tp/case-${kisa}`;
     const golden = KOD_GOLDEN[c.id];
+    const java = app ? javaDosyaYolu(platform, c.jira_key ?? "SERBEST", c.sira_no, kisa) : null;
     const s: ScriptDetay = {
       id,
       case_ids: [c.id],
       requirement_key: c.jira_key,
       baslik: c.icerik.title,
-      dosya_yolu: `demo-app/e2e/tests/${(c.jira_key ?? "ft").toLowerCase()}/c${c.sira_no}.spec.ts`,
+      dosya_yolu: java ? java.yol : `demo-app/e2e/tests/${(c.jira_key ?? "ft").toLowerCase()}/c${c.sira_no}.spec.ts`,
       branch,
+      platform,
       durum: "pending",
       pr: null,
       pass_at_1: null,
@@ -1020,22 +1031,23 @@ function kodUret(govde: unknown): IsYaniti {
       ]);
       continue;
     }
-    const adimlar = golden.adimlar();
+    const adimlar = platform === "web" ? golden.adimlar() : uygulamayaCevir(golden.adimlar(), platform);
     let kontrolKosusu: KosuDetay | null = null;
     arkaPlan([
       ...adimlar.map((a) => () => {
         if (s.durum !== "verifying") gecir("script", s, "verifying");
         const yeniAdim = { ...a, zaman: simdi() };
         s.adimlar.push(yeniAdim);
-        mockOlayYayinla({ type: "agent.step", id: s.id, data: { ...yeniAdim } });
+        mockOlayYayinla({ type: "agent.step", id: s.id, data: { ...yeniAdim, platform } });
       }),
       () => {
         // Deterministik kontroller geçti: eşleme kaydı + şablondan kod; yerel kontrol başlar.
         gecir("script", s, "checking");
         s.eslemeler = eslemeler(adimlar, golden.kaynak);
-        s.kod = golden.kod;
+        s.kod = java ? javaTestKodu(platform as Exclude<Platform, "web">, java.sinif, c.icerik.title, adimlar) : golden.kod;
         kontrolKosusu = kosuOlustur("local_check", "local", false, null);
         kontrolKosusu.script_id = s.id;
+        kontrolKosusu.platform = platform;
         kontrolKosusu.durum = "running";
         s.yerel_kontrol = { ...yerelGecti(kontrolKosusu.id), sonuc: null, sinif: null };
         mockOlayYayinla({ type: "ci.status", id: s.id, data: { durum: "checking" } });
@@ -1071,23 +1083,30 @@ function kodUret(govde: unknown): IsYaniti {
         s.pr = {
           number: prNo,
           url: null,
-          baslik: `test(${c.jira_key ?? "FT"}): ${c.icerik.title} [AI-generated]`,
+          baslik: app
+            ? `[${c.jira_key ?? "SERBEST"}-C${c.sira_no} · ${platform}] ${c.icerik.title} [AI-generated]`
+            : `test(${c.jira_key ?? "FT"}): ${c.icerik.title} [AI-generated]`,
           branch,
           durum: "open",
           ci: "passed",
           icerik_hash: "", // hashleriTazele: dosya + kod
           head_sha: "",
-          checks: [{ ad: "local-ci", durum: "passed", zorunlu: true, url: null, aciklama: "tsc ✓ · eslint ✓ · AST koruması ✓ · Playwright 3/3" }],
+          // 009 §2.7: uygulama PR'ında platformun zorunlu check'i `local-ci-<platform>`.
+          checks: [
+            app
+              ? { ad: `local-ci-${platform}`, durum: "passed", zorunlu: true, url: null, aciklama: "javac ✓ · AST koruması ✓ · Appium 3/3 (cihazda)" }
+              : { ad: "local-ci", durum: "passed", zorunlu: true, url: null, aciklama: "tsc ✓ · eslint ✓ · AST koruması ✓ · Playwright 3/3" },
+          ],
           forge: "local",
         };
         denetimEkle("pr.open", `PR #${prNo}`, branch, "core-worker");
-        mockOlayYayinla({ type: "pr.opened", id: s.id, data: { number: prNo } });
+        mockOlayYayinla({ type: "pr.opened", id: s.id, data: { number: prNo, platform } });
       },
     ]);
   }
-  denetimEkle("code.generate", ids.join(","), "CasesToCode başlatıldı");
+  denetimEkle("code.generate", ids.join(","), app ? `CasesToCode başlatıldı (${platform})` : "CasesToCode başlatıldı");
   kaydet();
-  return is("started", `${caseler.length} case için kod üretimi başladı.`);
+  return is("started", `${caseler.length} case için kod üretimi başladı${app ? ` (${platform})` : ""}.`);
 }
 
 function ozetKosu(k: KosuDetay): Kosu {
@@ -1122,6 +1141,8 @@ function kosuOlustur(tetik: Kosu["tetik"], kaynak: Kosu["kaynak"], break_campaig
     hata: null,
     uyarilar: [],
     sonuclar: [],
+    // Örnek verideki CI tetikleri web paketini koşar; uygulama kontrol koşusu çağıranda platformu alır.
+    platform: "web",
   };
   veri.kosular.unshift(k);
   return k;
@@ -1162,6 +1183,7 @@ function kirarakDogrula(id: string): IsYaniti {
     () => {
       const k = kosuOlustur("break_verify", "local", kir, s.pr?.number ?? null);
       k.script_id = s.id;
+      k.platform = s.platform ?? "web";
       k.durum = "running";
       bv.asamalar[i] = { ...bv.asamalar[i], sonuc: "running", run_id: k.id, zaman: simdi() };
       mockOlayYayinla({ type: "ci.status", id: s.id, data: { asama: bv.asamalar[i].ad, sonuc: "running" } });

@@ -25,6 +25,9 @@ Akış (tek seferde bir koşu; bayi kullanıcıları bayi1/bayi2 koşular arası
      dışındakiler silinir. Core, sahibi script kapanınca işareti toolchain-worker
      `POST /runs/release` ile daha erken kaldırabilir (ekran görüntüsü saklamasıyla aynı yaşam).
 
+Java (009, `lang=java`, platform android|ios|windows): aynı kilit ve koşu dizini sözleşmesiyle
+`runner/java_run.py` (Maven + Appium; sonuç runner/surefire.py ile aynı biçimde).
+
 Eşzamanlılık: süreç içi `RUN_LOCK` + süreçler arası dosya kilidi (`TP_RUN_LOCK_PATH`, flock;
 toolchain_common/runlock.py). Konteynerde elle başlatılan koşular (`make e2e-smoke`) aynı kilidi
 `tp-run-lock` ile alır; böylece aynı bayilerle iki koşu asla üst üste binmez.
@@ -95,6 +98,9 @@ class RunRequest:
     test_files: list[str] = field(default_factory=list)
     workers: int | None = None
     keep: bool = False
+    # Dil (009 §2.1): "ts" Playwright (varsayılan), "java" Appium/TestNG (runner/java_run.py).
+    lang: str = "ts"
+    platform: str | None = None
 
 
 def now_iso() -> str:
@@ -385,6 +391,10 @@ def execute(cfg: Settings, req: RunRequest, *, http: httpx.Client | None = None)
 def _execute_locked(
     cfg: Settings, req: RunRequest, loc: repos.Located, http: httpx.Client | None
 ) -> dict[str, Any]:
+    if req.lang == "java":
+        from runner import java_run
+
+        return java_run.execute_locked(cfg, req, loc, http)
     full_sha = loc.sha
     dest = run_dir(cfg.artifacts_path, req.run_id)
     try:
