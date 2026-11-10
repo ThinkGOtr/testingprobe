@@ -6,6 +6,7 @@
 #
 # Komutlar:
 #   olustur  VM'i oluşturur (onay ister; EVET=1 ile atlanır). kurulum.ps1 her açılışta koşar.
+#   yeniden  VM'i yeniden başlatır ve bu açılışın HAZIR/HATA satırını bekler.
 #   ac       VM'i başlatır.            kapat  VM'i durdurur (disk ücreti sürer).
 #   durum    Durum + iç IP + seri porttaki son TP-WINDOWS-HAZIR/HATA satırı.
 #   bekle    Seri portta HAZIR görünene dek bekler; HATA ya da zaman aşımında ≠0.
@@ -89,9 +90,12 @@ vm_durumu() {
 }
 
 # Seri port 1'deki son HAZIR/HATA satırı (yoksa boş). Yalnızca bu satır yazdırılır.
+# TP_WINDOWS_VM_BEKLE_SONRA (UTC, ör. 2026-11-10T16:43:00) verilirse daha eski zaman damgalı satırlar
+# yok sayılır (yeniden başlatma sonrası önceki açılışın HATA/HAZIR satırı okunmasın).
 son_durum_satiri() {
   gc compute instances get-serial-port-output "$VM" --zone "$BOLGE" --port 1 2>/dev/null \
-    | tr -d '\r' | grep -Eo "${DURUM_DESENI}.*" | tail -n 1 || true
+    | tr -d '\r' | awk -v sonra="${TP_WINDOWS_VM_BEKLE_SONRA:-}" 'sonra == "" || $1 >= sonra' \
+    | grep -Eo "${DURUM_DESENI}.*" | tail -n 1 || true
 }
 
 izinli_kaynak() {
@@ -152,6 +156,15 @@ k_olustur() {
 k_ac() {
   gc_yaz compute instances start "$VM" --zone "$BOLGE"
   [[ "${DRY_RUN:-0}" == "1" ]] || tamam "Başlatıldı; hazır olmasını bekleyin: make windows-vm-bekle"
+}
+
+# Yeniden başlatır ve yalnızca bu açılışın durum satırını bekler.
+k_yeniden() {
+  local sonra
+  sonra="$(date -u +%Y-%m-%dT%H:%M:%S)"
+  gc_yaz compute instances reset "$VM" --zone "$BOLGE"
+  [[ "${DRY_RUN:-0}" == "1" ]] && return 0
+  TP_WINDOWS_VM_BEKLE_SONRA="$sonra" k_bekle
 }
 
 k_kapat() {
@@ -226,6 +239,7 @@ case "${1:-}" in
   olustur) k_olustur ;;
   ac) k_ac ;;
   kapat) k_kapat ;;
+  yeniden) k_yeniden ;;
   durum) k_durum ;;
   bekle) k_bekle ;;
   ekran) k_ekran ;;

@@ -10,7 +10,7 @@ export PLAYWRIGHT_VERSION := $(strip $(shell cat .playwright-version 2>/dev/null
 
 S ?=
 
-.PHONY: help env up asistan-paket status seed reset jira-seed forge-init break demo-break demo-reset demo-web-sync locator-break-verify demo-baseline export-audit security-check e2e-smoke demo-check demo-prova prova-temizle eval-live asistan-perf prune logs down cihaz-kur cihaz-baslat cihaz-durdur cihaz-durum cihaz-wda cihaz-ag windows-vm-olustur windows-vm-ac windows-vm-kapat windows-vm-durum windows-vm-bekle windows-vm-ekran windows-vm-sil windows-vm-ip windows-vm-selftest
+.PHONY: help env up asistan-paket status seed reset jira-seed forge-init break demo-break demo-reset demo-web-sync locator-break-verify demo-baseline export-audit security-check e2e-smoke demo-check demo-prova prova-temizle eval-live asistan-perf prune logs down cihaz-kur cihaz-baslat cihaz-durdur cihaz-durum cihaz-wda cihaz-ag windows-vm-olustur windows-vm-ac windows-vm-kapat windows-vm-yeniden windows-vm-durum windows-vm-bekle windows-vm-ekran windows-vm-sil windows-vm-ip windows-vm-selftest
 
 help: ## Hedefleri listeler
 	@echo "Kullanım: make <hedef>"
@@ -117,6 +117,9 @@ windows-vm-ac: ## tp-windows VM'ini başlatır (DRY_RUN=1 yalnızca yazdırır)
 
 windows-vm-kapat: ## tp-windows VM'ini durdurur — kullanılmıyorken kapatın (DRY_RUN=1 yalnızca yazdırır)
 	@deploy/gcp/windows-vm/vm.sh kapat
+
+windows-vm-yeniden: ## tp-windows'u yeniden başlatır, yalnızca bu açılışın HAZIR/HATA satırını bekler
+	@deploy/gcp/windows-vm/vm.sh yeniden
 
 windows-vm-durum: ## tp-windows durumu, iç IP ve seri porttaki son TP-WINDOWS-HAZIR/HATA satırı
 	@deploy/gcp/windows-vm/vm.sh durum
