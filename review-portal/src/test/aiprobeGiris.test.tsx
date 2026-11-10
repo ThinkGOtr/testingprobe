@@ -159,6 +159,21 @@ describe("aiprobe kip", () => {
     expect(band).toHaveAttribute("role", "status");
   });
 
+  it("AI Probe kaynaklı ad üst çubukta '(AI Probe)' ile işaretlenir", async () => {
+    sahteSunucu({ "GET /auth/me": { govde: { ...AIPROBE_ME, ad_kaynak: "aiprobe" } } }, AIPROBE_KIPI);
+    uygulama("/denetim");
+    const isaret = await screen.findByTestId("ad-kaynak");
+    expect(isaret).toHaveTextContent("(AI Probe)");
+    expect(isaret.closest(".kullanici-ad")).toHaveTextContent("Ayşe (AI Probe)");
+  });
+
+  it("yerel kaynaklı adda işaret yok", async () => {
+    sahteSunucu({ "GET /auth/me": { govde: AIPROBE_ME } }, AIPROBE_KIPI);
+    uygulama("/denetim");
+    expect(await screen.findByText("Ayşe")).toBeInTheDocument();
+    expect(screen.queryByTestId("ad-kaynak")).not.toBeInTheDocument();
+  });
+
   it("çıkış yanıttaki AI Probe çıkış sayfasına gider; yabancı köken yok sayılır", async () => {
     const f = sahteSunucu(
       {

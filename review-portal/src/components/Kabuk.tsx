@@ -311,6 +311,12 @@ function KabukIcerik() {
               </span>
               <span className="kullanici-ad" title={`${kullanici.gorunen_ad ?? ROL[kullanici.rol]} (${kullanici.kullanici_adi})`}>
                 {kullanici.ad_soyad || kullanici.kullanici_adi}
+                {kullanici.ad_soyad && kullanici.ad_kaynak === "aiprobe" && (
+                  <span className="kullanici-ad-kaynak" data-testid="ad-kaynak" title="Ad, AI Probe hesabından alındı">
+                    {" "}
+                    (AI Probe)
+                  </span>
+                )}
               </span>
               <span className="kullanici-rol">{ROL[kullanici.rol]}</span>
             </div>

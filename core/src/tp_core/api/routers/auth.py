@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from tp_core.audit import audit_on_commit
 from tp_core.auth.client_ip import client_address
 from tp_core.auth.deps import Codec, CurrentUser, DbSession, session_codec
-from tp_core.auth.display import configured_names, display_name, person_name
+from tp_core.auth.display import configured_names, display_name, kaynakli_ad, person_name
 from tp_core.auth.login import THROTTLE, OrtakKimlikGerekli, authenticate
 from tp_core.auth.sessions import (
     DEVICE_COOKIE_NAME,
@@ -50,6 +50,9 @@ class Me(BaseModel):
     # Yalnızca gösterim (yetki rolle): "Cengizhan Gunaydin · Analist"; ad tanımsızsa rol etiketi.
     gorunen_ad: str
     ad_soyad: str | None = None
+    # Adın kaynağı: "aiprobe" = AI Probe hesabından (JIT; TP doğrulamaz). Yerel/yapılandırılmış
+    # adda boş. `gorunen_ad` ve `kisiler`de bu adlar "(AI Probe)" ile işaretlidir.
+    ad_kaynak: str | None = None
     # Portalın denetim/onay görünümlerinde kullanıcı adlarını çevirmesi için tüm portal
     # kullanıcılarının görünen adları ({kullanici_adi: gorunen_ad}).
     kisiler: dict[str, str] = Field(default_factory=dict)
@@ -57,20 +60,29 @@ class Me(BaseModel):
 
 def me_of(session: Session, user_id: uuid.UUID, kullanici_adi: str, rol: str) -> Me:
     kullanicilar = session.execute(
-        select(AppUser.kullanici_adi, AppUser.rol, AppUser.ad_soyad)
+        select(AppUser.kullanici_adi, AppUser.rol, AppUser.ad_soyad, AppUser.ad_kaynak)
     ).all()
-    # Yapılandırılmış adlar önce gelir; JIT (AI Probe) hesaplarında ad veritabanındadır.
+    # Yapılandırılmış adlar önce gelir; JIT (AI Probe) hesaplarında ad veritabanındadır ve
+    # gösterimde "(AI Probe)" ile işaretlenir (kişinin kendi AI Probe hesabından, doğrulanmamış).
     names = configured_names()
-    for k, _r, ad_soyad in kullanicilar:
-        if ad_soyad and k.strip().lower() not in names:
-            names[k.strip().lower()] = ad_soyad
+    kisi_adi: dict[str, str] = {}
+    kaynak: str | None = None
+    for k, _r, ad_soyad, ad_kaynak in kullanicilar:
+        anahtar = k.strip().lower()
+        if ad_soyad and anahtar not in names:
+            kisi_adi[anahtar] = ad_soyad
+            names[anahtar] = kaynakli_ad(ad_soyad, ad_kaynak) or ad_soyad
+            if k == kullanici_adi:
+                kaynak = ad_kaynak
+    anahtar = kullanici_adi.strip().lower()
     return Me(
         id=user_id,
         kullanici_adi=kullanici_adi,
         rol=rol,
         gorunen_ad=display_name(kullanici_adi, rol, names),
-        ad_soyad=person_name(kullanici_adi, names),
-        kisiler={k: display_name(k, r, names) for k, r, _a in kullanicilar},
+        ad_soyad=kisi_adi.get(anahtar) or person_name(kullanici_adi, names),
+        ad_kaynak=kaynak,
+        kisiler={k: display_name(k, r, names) for k, r, _a, _k in kullanicilar},
     )
 
 

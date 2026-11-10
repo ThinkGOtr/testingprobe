@@ -298,7 +298,8 @@ def test_giris_turu_ve_jit(client: TestClient, home: SahteHome, engine: Engine) 
     assert me.status_code == 200
     assert me.json()["rol"] == "tester"
     assert me.json()["ad_soyad"] == "Ayşe Yılmaz"
-    assert me.json()["gorunen_ad"] == "Ayşe Yılmaz · Testçi"
+    assert me.json()["gorunen_ad"] == "Ayşe Yılmaz (AI Probe) · Testçi"
+    assert me.json()["ad_kaynak"] == "aiprobe"
     with engine.connect() as c:
         bag = c.execute(
             text(
@@ -730,8 +731,10 @@ def test_admin_kimlik_bagi_yalniz_home_servisi(
     r = client.put("/admin/kimlik-bagi", json=govde, headers=_yetki("home-ok"))
     assert r.status_code == 200, r.text
     assert r.json()["app_user_id"] == str(hedef.id) and r.json()["rol"] == "analyst"
-    # İdempotent; başka kişiye bağlama 409.
+    assert _epoch(engine, hedef.id) == 1  # bağlama, önceki yerel oturumları düşürür
+    # İdempotent (epoch yeniden artmaz); başka kişiye bağlama 409.
     assert client.put("/admin/kimlik-bagi", json=govde, headers=_yetki("home-ok")).is_success
+    assert _epoch(engine, hedef.id) == 1
     r = client.put(
         "/admin/kimlik-bagi",
         json={"external_uid": "baska", "app_user_id": str(hedef.id)},
@@ -747,7 +750,7 @@ def test_admin_kimlik_bagi_yalniz_home_servisi(
 
     r = client.delete(f"/admin/kimlik-bagi/{hedef.id}", headers=_yetki("home-ok"))
     assert r.status_code == 204
-    assert _epoch(engine, hedef.id) == 1
+    assert _epoch(engine, hedef.id) == 2
     assert {"admin.kimlik_bagi.bagla", "admin.kimlik_bagi.kaldir"} <= set(_eylemler(engine))
 
 
@@ -932,8 +935,9 @@ def test_alembic_tek_bas() -> None:
 
     script = ScriptDirectory.from_config(alembic_config())
     bas = script.get_heads()
-    assert bas == ["0019"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
+    assert bas == ["0020"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
     assert script.get_revision("0019").down_revision == "0018"
+    assert script.get_revision("0020").down_revision == "0019"
 
 
 # ------------------------------------------------------------------ inceleme bulguları (2026-11-10)
@@ -1251,3 +1255,183 @@ def test_me_roles_yalniz_ai_probe_nun_verdikleri(
     _giris(client, home, ["analyst"])  # po hesabı bağlı ama AI Probe'da rol yok
     me = client.get("/auth/me").json()
     assert me["id"] == str(analist.id) and me["roles"] == ["analyst"]
+
+
+# ------------------------------------------------------------------ güvenlik turu 4 (2026-11-10)
+
+
+def _check_yaniti(home: SahteHome, durum: int) -> None:
+    """`/v1/session/check` sabit `durum` kodu döner (diğer uçlar değişmez)."""
+    asil = home.handler
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/v1/session/check":
+            home.cagrilar.append((req.url.path, {}, ""))
+            return httpx.Response(durum, json={"error": "x"})
+        return asil(req)
+
+    aiprobe.configure(transport=httpx.MockTransport(handler))
+
+
+def _api_token(client: TestClient, session: Session) -> tuple[str, str]:
+    me = client.get("/auth/me").json()
+    p = Principal(uuid.UUID(me["id"]), me["kullanici_adi"], me["rol"])
+    _tok, raw = issue_token(
+        session, p, "publish", 3600, auth_time=1_762_780_000, acr="2", session_epoch_ms=EPOCH_MS
+    )
+    session.commit()
+    return me["id"], raw
+
+
+@pytest.mark.parametrize("durum", [400, 401, 403, 404])
+def test_check_4xx_fail_closed_iptal(
+    client: TestClient, home: SahteHome, engine: Engine, session: Session, durum: int
+) -> None:
+    _giris(client, home, ["analyst"])
+    uid_hesap, raw = _api_token(client, session)
+    _check_yaniti(home, durum)
+    _kontrol_zamanini_eskit(engine)
+    r = client.get("/auth/me")
+    assert r.status_code == 401 and "x-aiprobe-degraded" not in r.headers
+    assert _epoch(engine, uid_hesap) == 1  # iptal_et: kişinin hesapları düştü
+    with engine.connect() as c:
+        detay = c.execute(
+            text("SELECT ozet->>'neden' FROM audit_event WHERE eylem = 'auth.aiprobe_revoked'")
+        ).scalar_one()
+    assert detay == f"check_rejected_{durum}"
+    session.expire_all()
+    assert verify_bearer(session, raw, "publish") is None
+
+
+@pytest.mark.parametrize("durum", [400, 401, 403])
+def test_token_check_4xx_fail_closed(
+    client: TestClient, home: SahteHome, engine: Engine, session: Session, durum: int
+) -> None:
+    _giris(client, home, ["analyst"])
+    uid_hesap, raw = _api_token(client, session)
+    _check_yaniti(home, durum)
+    aiprobe.ONBELLEK.temizle()
+    assert verify_bearer(session, raw, "publish") is None
+    session.commit()
+    assert _epoch(engine, uid_hesap) == 1
+
+
+@pytest.mark.parametrize("durum", [500, 502, 503, 408, 429])
+def test_check_5xx_408_429_degraded(
+    client: TestClient, home: SahteHome, engine: Engine, session: Session, durum: int
+) -> None:
+    _giris(client, home, ["analyst"])
+    uid_hesap, raw = _api_token(client, session)
+    _check_yaniti(home, durum)
+    _kontrol_zamanini_eskit(engine)
+    r = client.get("/auth/me")
+    assert r.status_code == 200 and r.headers.get("x-aiprobe-degraded") == "1"
+    assert verify_bearer(session, raw, "publish") is not None
+    session.commit()
+    assert _epoch(engine, uid_hesap) == 0
+    assert aiprobe.DEGRADED_KABUL.degerler() == {"oturum": 1, "token": 1}
+
+
+def test_degraded_oturum_10_dk_ile_sinirli(
+    client: TestClient, home: SahteHome, engine: Engine
+) -> None:
+    _giris(client, home, ["tester"])
+    home.kapali = True
+    _kontrol_zamanini_eskit(engine)
+    assert client.get("/auth/me").headers.get("x-aiprobe-degraded") == "1"
+    with engine.connect() as c:
+        ilk = c.execute(text("SELECT degraded_baslangic FROM oturum")).scalar_one()
+    assert ilk is not None
+    # Sonraki degraded istek başlangıcı kaydırmaz; boşta süresi sınırın ötesine uzamaz.
+    with engine.begin() as c:
+        c.execute(text("UPDATE oturum SET son_kullanma = now() + interval '5 minutes'"))
+    aiprobe.ONBELLEK.temizle()
+    assert client.get("/auth/me").status_code == 200
+    with engine.connect() as c:
+        bas, son = c.execute(text("SELECT degraded_baslangic, son_kullanma FROM oturum")).one()
+    assert bas == ilk
+    assert son <= ilk + timedelta(seconds=aiprobe.DEGRADED_MAX_S, milliseconds=100)
+    with engine.begin() as c:
+        c.execute(text("UPDATE oturum SET degraded_baslangic = now() - interval '11 minutes'"))
+    aiprobe.ONBELLEK.temizle()
+    assert client.get("/auth/me").status_code == 401
+    assert "auth.aiprobe_degraded_timeout" in _eylemler(engine)
+    with engine.connect() as c:
+        assert c.execute(text("SELECT iptal_zamani IS NOT NULL FROM oturum")).scalar_one()
+        assert c.execute(text("SELECT auth_epoch FROM app_user")).scalar_one() == 0
+    # Home dönse de bu oturum geri gelmez.
+    home.kapali = False
+    aiprobe.ONBELLEK.temizle()
+    assert client.get("/auth/me").status_code == 401
+
+
+def test_degraded_sinir_basarili_kontrolde_sifirlanir(
+    client: TestClient, home: SahteHome, engine: Engine
+) -> None:
+    _giris(client, home, ["tester"])
+    home.kapali = True
+    _kontrol_zamanini_eskit(engine)
+    assert client.get("/auth/me").headers.get("x-aiprobe-degraded") == "1"
+    home.kapali = False
+    aiprobe.ONBELLEK.temizle()
+    r = client.get("/auth/me")
+    assert r.status_code == 200 and "x-aiprobe-degraded" not in r.headers
+    with engine.connect() as c:
+        assert c.execute(text("SELECT degraded_baslangic FROM oturum")).scalar_one() is None
+
+
+def test_degraded_token_10_dk_ile_sinirli(
+    client: TestClient, home: SahteHome, engine: Engine, session: Session
+) -> None:
+    _giris(client, home, ["analyst"])
+    _uid, raw = _api_token(client, session)
+    home.kapali = True
+    aiprobe.ONBELLEK.temizle()
+    assert verify_bearer(session, raw, "publish") is not None
+    session.commit()
+    with engine.begin() as c:
+        assert c.execute(text("SELECT degraded_baslangic FROM api_token")).scalar_one()
+        c.execute(text("UPDATE api_token SET degraded_baslangic = now() - interval '11 minutes'"))
+    session.expire_all()
+    aiprobe.ONBELLEK.temizle()
+    assert verify_bearer(session, raw, "publish") is None
+    session.rollback()
+    # Home dönünce yeniden doğrulanır ve pencere sıfırlanır.
+    home.kapali = False
+    aiprobe.ONBELLEK.temizle()
+    assert verify_bearer(session, raw, "publish") is not None
+    session.commit()
+    with engine.connect() as c:
+        assert c.execute(text("SELECT degraded_baslangic FROM api_token")).scalar_one() is None
+
+
+def test_acr_1_devirde_po_dusulur(client: TestClient, home: SahteHome, engine: Engine) -> None:
+    """Home `acr="1"`de `po`'yu yine de gönderse TP onu kabul etmez (derinlemesine savunma)."""
+    asil = home.handler
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/v1/handoff/redeem":
+            import json
+
+            kayit = home.kodlar.pop(json.loads(req.content)["code"])
+            return httpx.Response(200, json=kayit)  # süzmeden
+        return asil(req)
+
+    aiprobe.configure(transport=httpx.MockTransport(handler))
+    r = _giris(client, home, ["po"], acr="1")
+    assert r.status_code == 403
+    r = _giris(client, home, ["po", "tester"], acr="1")
+    assert r.status_code == 302
+    with engine.connect() as c:
+        assert c.execute(text("SELECT rol FROM app_user")).scalars().all() == ["tester"]
+    assert aiprobe.tp_rolleri(["po", "tester"], "2") == ("po", "tester")
+
+
+def test_jit_adi_aiprobe_kaynakli(client: TestClient, home: SahteHome, engine: Engine) -> None:
+    _giris(client, home, ["tester"])
+    with engine.connect() as c:
+        assert c.execute(text("SELECT ad_kaynak FROM app_user")).scalar_one() == "aiprobe"
+    me = client.get("/auth/me").json()
+    assert me["ad_soyad"] == "Ayşe Yılmaz" and me["ad_kaynak"] == "aiprobe"
+    assert me["kisiler"][me["kullanici_adi"]] == "Ayşe Yılmaz (AI Probe) · Testçi"
+

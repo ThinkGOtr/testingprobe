@@ -37,7 +37,7 @@ from tp_core.api.routers.auth import me_of, set_session_cookie
 from tp_core.audit import audit_on_commit
 from tp_core.auth import aiprobe
 from tp_core.auth.deps import Codec, CurrentUser, DbSession
-from tp_core.auth.display import display_name
+from tp_core.auth.display import display_name, kaynakli_ad
 from tp_core.auth.sessions import (
     SessionCodec,
     aiprobe_acik,
@@ -286,7 +286,7 @@ def callback(
             session, aiprobe.AKTOR, "auth.aiprobe_rejected", f"kimlik:{devir.uid}", {"neden": "org"}
         )
         return hata(403, "org_reddi", "Bu kuruluşun Testing Probe erişimi yok")
-    roller = aiprobe.tp_rolleri(devir.roles)
+    roller = aiprobe.tp_rolleri(devir.roles, devir.acr)
     if not roller:
         audit_on_commit(
             session, aiprobe.AKTOR, "auth.aiprobe_rejected", f"kimlik:{devir.uid}", {"neden": "rol"}
@@ -349,7 +349,8 @@ def _secim(request: Request, codec: SessionCodec) -> dict[str, Any] | None:
 
 
 def _hesap(u: AppUser) -> Hesap:
-    ad = {u.kullanici_adi.lower(): u.ad_soyad} if u.ad_soyad else None
+    ad_soyad = kaynakli_ad(u.ad_soyad, u.ad_kaynak)
+    ad = {u.kullanici_adi.lower(): ad_soyad} if ad_soyad else None
     return Hesap(
         id=u.id,
         kullanici_adi=u.kullanici_adi,

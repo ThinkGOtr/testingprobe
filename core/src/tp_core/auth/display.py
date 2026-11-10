@@ -47,6 +47,16 @@ def display_name(kullanici_adi: str, rol: str, names: Mapping[str, str] | None =
     return f"{ad} · {etiket}" if ad else etiket
 
 
+SSO_ISARETI = "(AI Probe)"
+
+
+def kaynakli_ad(ad: str | None, kaynak: str | None) -> str | None:
+    """AI Probe devrinden gelen (TP'nin doğrulamadığı) adı işaretler: "Ayşe (AI Probe)"."""
+    if ad and kaynak == "aiprobe":
+        return f"{ad} {SSO_ISARETI}"
+    return ad
+
+
 def person_name(kullanici_adi: str, names: Mapping[str, str] | None = None) -> str | None:
     """Rol etiketi olmadan kişi adı (yoksa None)."""
     names = configured_names() if names is None else names

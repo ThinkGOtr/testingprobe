@@ -168,6 +168,9 @@ def put_bag(body: BagIn, session: DbSession, home: HomeServisi) -> Bag:
             with session.begin_nested():
                 session.add(KimlikBagi(external_uid=body.external_uid, app_user_id=user.id))
                 session.flush()
+            # Hesabın bağdan önce açılmış yerel oturumları ve token'ları düşer: bundan sonra
+            # hesaba yalnız AI Probe kişisi (oturum kontrolüyle) erişir.
+            aiprobe.epoch_artir(session, [user.id])
         except IntegrityError:
             sahip = session.scalar(
                 select(KimlikBagi.external_uid).where(KimlikBagi.app_user_id == user.id)

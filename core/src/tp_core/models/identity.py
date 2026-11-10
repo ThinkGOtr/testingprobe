@@ -28,6 +28,9 @@ class AppUser(Base):
     auth_epoch: Mapped[int] = mapped_column(Integer, server_default=text("0"), default=0)
     # 0019: kişi adı (JIT hesabında devir yanıtındaki `name`); yalnızca gösterim.
     ad_soyad: Mapped[str | None]
+    # 0020: adın kaynağı; "aiprobe" = JIT'te AI Probe devrindeki `name` (TP doğrulamaz, portal
+    # "AI Probe" diye belirtir). Boş = yerel/yapılandırılmış.
+    ad_kaynak: Mapped[str | None]
 
 
 class ApiToken(Base):
@@ -58,6 +61,9 @@ class ApiToken(Base):
     acr: Mapped[str | None]
     session_epoch_ms: Mapped[int | None] = mapped_column(BigInteger)
     olusturma: Mapped[datetime] = olusturma_col()
+    # 0020: home'a ulaşılamayan ilk kontrol anı (kesintisiz degraded penceresi; başarılı kontrolde
+    # boşalır). `aiprobe.DEGRADED_MAX_S` aşılınca token home yeniden doğrulayana dek reddedilir.
+    degraded_baslangic: Mapped[datetime | None]
 
 
 class Oturum(Base):
@@ -81,6 +87,8 @@ class Oturum(Base):
     session_epoch_ms: Mapped[int | None] = mapped_column(BigInteger)
     son_kontrol: Mapped[datetime | None]
     urunler: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # 0020: home'a ulaşılamayan ilk kontrol anı; `aiprobe.DEGRADED_MAX_S` aşılınca oturum düşer.
+    degraded_baslangic: Mapped[datetime | None]
 
 
 class KimlikBagi(Base):

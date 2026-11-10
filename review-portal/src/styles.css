@@ -566,6 +566,11 @@ button.atla {
   font-size: 0.75rem;
   color: var(--muted);
 }
+.kullanici-ad-kaynak {
+  font-weight: 400;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
 
 .baglanti {
   display: inline-flex;

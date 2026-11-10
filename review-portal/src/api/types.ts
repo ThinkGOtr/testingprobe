@@ -20,6 +20,8 @@ export interface Kullanici {
   gorunen_ad?: string;
   /** Kişi adı (rol etiketsiz); tanımsızsa null. */
   ad_soyad?: string | null;
+  /** Adın kaynağı: "aiprobe" = kişinin AI Probe hesabından (TP doğrulamaz; arayüz belirtir). */
+  ad_kaynak?: string | null;
   /** Tüm portal kullanıcılarının görünen adları ({kullanici_adi: gorunen_ad}); denetim/onay görünümleri için. */
   kisiler?: Record<string, string>;
   /** Yalnız AI Probe oturumunda: katalogdaki ürün kimliği (`testing-probe`; değiştirici kullanır). */

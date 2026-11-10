@@ -37,7 +37,7 @@ from sqlalchemy.orm import Session
 
 from tp_core.audit import audit_on_commit
 from tp_core.config import get_settings
-from tp_core.models import AppUser, KimlikBagi, Oturum, enums, session_scope
+from tp_core.models import ApiToken, AppUser, KimlikBagi, Oturum, enums, session_scope
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +48,8 @@ KULLANILAMAZ_PAROLA = "!aiprobe"
 CONTINUE_MAX = 2048
 # `products/testing-probe.yaml` `code`: ürün→rol haritalarında TP'nin anahtarı.
 URUN_KODU = "tp"
+# `app_user.ad_kaynak`: ad AI Probe devrindeki `name`'den (JIT) geldi.
+AD_KAYNAGI = "aiprobe"
 
 
 class Kontrol(enum.Enum):
@@ -57,7 +59,16 @@ class Kontrol(enum.Enum):
 
 
 class HomeUlasilamaz(Exception):
-    """aiprobe-home erişilemedi, 5xx döndü ya da TP'nin servis kimliğini reddetti."""
+    """aiprobe-home erişilemedi (ağ hatası / zaman aşımı), 5xx, 408 ya da 429 döndü ya da yanıtı
+    anlaşılmadı. Yalnız bu durum "degraded"dır; diğer 4xx yanıtları fail-closed işlenir."""
+
+
+# Geçici sayılan 4xx'ler (platform kitaplığı `_TRANSIENT_4XX` ile aynı).
+GECICI_4XX = frozenset({408, 429})
+# Oturum / token başına kesintisiz degraded üst sınırı (platform `DEGRADED_MAX_SECONDS`).
+DEGRADED_MAX_S = 600
+# TP'nin AI Probe `admin_roles`'u (`products/testing-probe.yaml`); yalnız `acr="2"` (MFA) ile.
+ADMIN_ROLLERI = frozenset({"po"})
 
 
 class GecersizKod(Exception):
@@ -280,6 +291,7 @@ def reset() -> None:
     global _YAPI
     _YAPI = _Yapi()
     ONBELLEK.temizle()
+    DEGRADED_KABUL.temizle()
 
 
 def simdi() -> datetime:
@@ -333,14 +345,17 @@ class HomeIstemcisi:
                 )
         except httpx.HTTPError as exc:
             raise HomeUlasilamaz(f"{yol}: ağ hatası") from exc
-        if r.status_code >= 500 or r.status_code == 401:
-            # 401 invalid_caller: TP'nin servis kimliği yanlış yapılandırılmış (kullanıcı
-            # hatası değil).
+        if r.status_code >= 500 or r.status_code in GECICI_4XX:
             raise HomeUlasilamaz(f"{yol}: {r.status_code}")
         return r
 
     def redeem(self, code: str) -> DevirYaniti:
         r = self._post("/v1/handoff/redeem", {"code": code})
+        if r.status_code == 401:
+            # 401 invalid_caller: TP'nin servis kimliği yanlış yapılandırılmış (kullanıcı hatası
+            # değil); giriş yine reddedilir, yalnız hata 503 "kimlik servisi yok" olur.
+            log.error("aiprobe-home devir takasını reddetti: 401 (servis kimliği?)")
+            raise HomeUlasilamaz("/v1/handoff/redeem: 401")
         if r.status_code != 200:
             raise GecersizKod()
         try:
@@ -368,7 +383,10 @@ class HomeIstemcisi:
             govde["session_epoch_ms"] = kimlik.session_epoch_ms
         r = self._post("/v1/session/check", govde)
         if r.status_code != 200:
-            raise HomeUlasilamaz(f"/v1/session/check: {r.status_code}")
+            # 5xx/408/429 `_post`'ta degraded'e çevrildi; kalan 4xx (400 bad_request, 401
+            # invalid_caller, 403, 404 …) fail-closed: home oturumu onaylamıyor → geçersiz.
+            log.error("aiprobe-home oturum kontrolünü reddetti: %s", r.status_code)
+            return KontrolSonucu(False, reason=f"check_rejected_{r.status_code}")
         try:
             v = r.json()
             if v.get("valid") is True:
@@ -438,6 +456,46 @@ ONBELLEK = _Onbellek()
 ULASILAMADI_S = 15.0
 
 
+class _Sayac:
+    """Süreç içi sayaç (degraded kabuller): `{"oturum": n, "token": n}`. Her artış ayrıca
+    sayıyla birlikte WARNING loglanır (log tabanlı metrik: `aiprobe_degraded_kabul`)."""
+
+    def __init__(self) -> None:
+        self._n: dict[str, int] = {}
+        self._kilit = threading.Lock()
+
+    def artir(self, tur: str) -> int:
+        with self._kilit:
+            self._n[tur] = self._n.get(tur, 0) + 1
+            return self._n[tur]
+
+    def degerler(self) -> dict[str, int]:
+        with self._kilit:
+            return dict(self._n)
+
+    def temizle(self) -> None:
+        with self._kilit:
+            self._n.clear()
+
+
+DEGRADED_KABUL = _Sayac()
+
+
+def _degraded_kabul(tur: str, uid: str, baslangic: datetime) -> None:
+    n = DEGRADED_KABUL.artir(tur)
+    log.warning(
+        "aiprobe_degraded_kabul tur=%s uid=%s sure_s=%d toplam=%d",
+        tur,
+        uid,
+        int((simdi() - baslangic).total_seconds()),
+        n,
+    )
+
+
+def _degraded_asildi(baslangic: datetime | None, an: datetime) -> bool:
+    return baslangic is not None and an - baslangic >= timedelta(seconds=DEGRADED_MAX_S)
+
+
 def kontrol_et(uid: str, kimlik: OturumKimligi, *, taze: bool = False) -> KontrolSonucu:
     """Önbellekli `/v1/session/check`; erişilemezse `HomeUlasilamaz`."""
     ttl = float(get_settings().aiprobe_session_check_s)
@@ -471,6 +529,28 @@ def oturum_kontrol(session: Session, o: Oturum, user: AppUser) -> Kontrol:
     try:
         sonuc = kontrol_et(o.external_uid, OturumKimligi.of(o))
     except HomeUlasilamaz:
+        # Degraded: oturum en çok DEGRADED_MAX_S korunur (başlangıç ilk erişilemeyen kontrolde
+        # yazılır); aşılınca yalnız bu oturum iptal edilir (home'un iptal kararı değil).
+        if o.degraded_baslangic is None:
+            session.execute(update(Oturum).where(Oturum.id == o.id).values(degraded_baslangic=an))
+            o.degraded_baslangic = an
+        elif _degraded_asildi(o.degraded_baslangic, an):
+            log.error(
+                "aiprobe-home %d sn'den uzun süredir erişilemiyor; oturum kapatıldı (uid=%s)",
+                DEGRADED_MAX_S,
+                o.external_uid,
+            )
+            with session_scope() as s:
+                s.execute(update(Oturum).where(Oturum.id == o.id).values(iptal_zamani=an))
+                audit_on_commit(
+                    s,
+                    AKTOR,
+                    "auth.aiprobe_degraded_timeout",
+                    f"app_user:{user.id}",
+                    {"kanal": "oturum", "kimlik": o.external_uid},
+                )
+            return Kontrol.GECERSIZ
+        _degraded_kabul("oturum", o.external_uid, o.degraded_baslangic)
         return Kontrol.ULASILAMADI
     if not sonuc.valid:
         iptal_et(o.external_uid, None, sonuc.reason or "gecersiz")
@@ -478,7 +558,8 @@ def oturum_kontrol(session: Session, o: Oturum, user: AppUser) -> Kontrol:
     if user.rol not in sonuc.roles:
         iptal_et(o.external_uid, sonuc.roles, "rol_kaldirildi")
         return Kontrol.GECERSIZ
-    degerler: dict[str, Any] = {"son_kontrol": an}
+    degerler: dict[str, Any] = {"son_kontrol": an, "degraded_baslangic": None}
+    o.degraded_baslangic = None
     if sonuc.products is not None and sonuc.products != o.urunler:
         degerler["urunler"] = sonuc.products
         o.urunler = sonuc.products
@@ -487,13 +568,19 @@ def oturum_kontrol(session: Session, o: Oturum, user: AppUser) -> Kontrol:
 
 
 def sure_uzat(session: Session, o: Oturum) -> None:
-    """Boşta süresini kaydırır (mutlak sınırı aşmadan); ≥ 60 sn fark yoksa yazmaz."""
+    """Boşta süresini kaydırır (mutlak sınırı aşmadan); ≥ 60 sn fark yoksa yazmaz.
+
+    Degraded iken (home doğrulayamıyor) süre degraded üst sınırının ötesine uzatılmaz.
+    """
     ayar = get_settings()
     an = simdi()
-    hedef = min(
+    sinirlar = [
         o.olusturma + timedelta(seconds=ayar.aiprobe_absolute_s),
         an + timedelta(seconds=ayar.aiprobe_idle_s),
-    )
+    ]
+    if o.degraded_baslangic is not None:
+        sinirlar.append(o.degraded_baslangic + timedelta(seconds=DEGRADED_MAX_S))
+    hedef = min(sinirlar)
     if hedef - o.son_kullanma >= timedelta(seconds=60):
         session.execute(update(Oturum).where(Oturum.id == o.id).values(son_kullanma=hedef))
 
@@ -541,21 +628,40 @@ def bagli_uid(session: Session, user_id: uuid.UUID) -> str | None:
     return session.scalar(select(KimlikBagi.external_uid).where(KimlikBagi.app_user_id == user_id))
 
 
-def token_kontrol(session: Session, user: AppUser, kimlik: OturumKimligi) -> bool:
+def token_kontrol(
+    session: Session, user: AppUser, kimlik: OturumKimligi, tok: ApiToken | None = None
+) -> bool:
     """`tpt_` token'ı: sahip bir AI Probe kişisine bağlıysa önbellekli oturum kontrolü.
 
     `kimlik`: token'ı üreten AI Probe oturumunun alanları (`api_token.auth_time`, `acr`,
     `session_epoch_ms`); token yerel oturumdan üretilmişse `auth_time` = üretim anı, `acr` "1",
-    epoch yok. Erişilemezse token korunur.
+    epoch yok. Erişilemezse token korunur, ama `tok` verilmişse token başına en çok
+    `DEGRADED_MAX_S` (sonra home yeniden doğrulayana dek reddedilir).
     """
     uid = bagli_uid(session, user.id)
     if uid is None:
         # `aiprobe` kipinde yerel giriş yoktur: bağsız hesabın token'ı kabul edilmez (`both`
         # kipinde yerel hesabın token'ı yerel kural gibi geçer).
         return get_settings().auth_mode != "aiprobe"
+    an = simdi()
     try:
         sonuc = kontrol_et(uid, kimlik)
     except HomeUlasilamaz:
+        baslangic = an if tok is None else tok.degraded_baslangic
+        if tok is not None and baslangic is None:
+            session.execute(
+                update(ApiToken).where(ApiToken.id == tok.id).values(degraded_baslangic=an)
+            )
+            tok.degraded_baslangic = baslangic = an
+        elif _degraded_asildi(baslangic, an):
+            log.error(
+                "aiprobe-home %d sn'den uzun süredir erişilemiyor; token reddedildi (uid=%s)",
+                DEGRADED_MAX_S,
+                uid,
+            )
+            return False
+        assert baslangic is not None
+        _degraded_kabul("token", uid, baslangic)
         return True
     if not sonuc.valid:
         iptal_et(uid, None, sonuc.reason or "gecersiz")
@@ -563,6 +669,11 @@ def token_kontrol(session: Session, user: AppUser, kimlik: OturumKimligi) -> boo
     if user.rol not in sonuc.roles:
         iptal_et(uid, sonuc.roles, "rol_kaldirildi")
         return False
+    if tok is not None and tok.degraded_baslangic is not None:
+        session.execute(
+            update(ApiToken).where(ApiToken.id == tok.id).values(degraded_baslangic=None)
+        )
+        tok.degraded_baslangic = None
     return True
 
 
@@ -592,10 +703,16 @@ def izinli_org(org: str | None) -> bool:
     return bool(org) and org in izinli
 
 
-def tp_rolleri(roller: Iterable[str]) -> tuple[str, ...]:
-    """Devirdeki rollerden TP'nin tanıdıkları (sıra korunur, tekrarsız)."""
+def tp_rolleri(roller: Iterable[str], acr: str | None = None) -> tuple[str, ...]:
+    """Devirdeki rollerden TP'nin tanıdıkları (sıra korunur, tekrarsız).
+
+    Derinlemesine savunma: `acr` "2" (MFA) değilse yönetici rolleri (`ADMIN_ROLLERI`, TP'de
+    `po`) home göndermiş olsa bile düşülür (home `acr="1"`de zaten çıkarır; CONTRACT v1.2).
+    """
     gorulen: list[str] = []
     for r in roller:
+        if r in ADMIN_ROLLERI and acr != "2":
+            continue
         if r in enums.ROLLER and r not in gorulen:
             gorulen.append(r)
     return tuple(gorulen)
@@ -643,6 +760,8 @@ def jit_hesaplar(session: Session, devir: DevirYaniti, roller: Iterable[str]) ->
             rol=rol,
             parola_hash=KULLANILAMAZ_PAROLA,
             ad_soyad=devir.name[:120] or None,
+            # Ad, kişinin AI Probe hesabından gelir (TP doğrulamaz): portal bunu belirtir.
+            ad_kaynak=AD_KAYNAGI if devir.name else None,
         )
         session.add(u)
         session.flush()

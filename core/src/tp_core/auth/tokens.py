@@ -110,7 +110,7 @@ def verify_bearer(session: Session, raw: str | None, kapsam: str) -> Principal |
             return None
         else:  # yerel oturumdan üretildi: üretim anı, acr 1, epoch yok (v1.2 öncesi kural)
             kimlik = aiprobe.OturumKimligi(int(tok.olusturma.timestamp()))
-        if not aiprobe.token_kontrol(session, user, kimlik):
+        if not aiprobe.token_kontrol(session, user, kimlik, tok):
             return None
     session.execute(
         update(ApiToken).where(ApiToken.id == tok.id).values(son_kullanim=datetime.now(UTC))
