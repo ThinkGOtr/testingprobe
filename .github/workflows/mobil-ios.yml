@@ -75,7 +75,9 @@ env:
 jobs:
   mobil-ios:
     name: mobil-ios
-    runs-on: macos-15
+    # xcode-27 (önizleme): macos-15/26 imajlarındaki Xcode 26.x, expo-modules-jsi'yi derlemiyor
+    # ("sending 'slot' risks causing data races"); yerel doğrulama Xcode 27.2 ile.
+    runs-on: xcode-27
     timeout-minutes: 120
     env:
       CI: "true"
