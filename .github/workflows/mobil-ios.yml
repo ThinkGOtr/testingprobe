@@ -75,7 +75,9 @@ env:
 jobs:
   mobil-ios:
     name: mobil-ios
-    runs-on: macos-15
+    # xcode-27 (önizleme): macos-15/26 imajlarındaki Xcode 26.x, expo-modules-jsi'yi derlemiyor
+    # ("sending 'slot' risks causing data races"); yerel doğrulama Xcode 27.2 ile.
+    runs-on: xcode-27
     timeout-minutes: 120
     env:
       CI: "true"
@@ -161,9 +163,14 @@ jobs:
       - name: Simülatör oluştur ve aç
         run: |
           set -euo pipefail
-          read -r rt_id rt_ver < <(xcrun simctl list runtimes -j | jq -r '
+          # Çalışma zamanı Xcode'un simülatör SDK'sıyla aynı sürümden seçilir: build-wda cihazı
+          # `sdk == --sdk` ile arar; en yeni çalışma zamanı SDK'dan farklıysa (ör. 27.2.1 / 27.2)
+          # oluşturulan simülatörü bulamaz. Eşleşen yoksa en yenisi.
+          sdkver="$(xcrun --sdk iphonesimulator --show-sdk-version)"
+          read -r rt_id rt_ver < <(xcrun simctl list runtimes -j | jq -r --arg sdk "$sdkver" '
             [.runtimes[] | select(.platform == "iOS" and .isAvailable)]
-            | sort_by(.version | split(".") | map(tonumber)) | last
+            | sort_by(.version | split(".") | map(tonumber))
+            | ((map(select(.version == $sdk)) | last) // last)
             | "\(.identifier) \(.version)"')
           [ -n "${rt_id:-}" ] || { echo "::error::Kurulu iOS simülatör çalışma zamanı yok"; exit 1; }
           dt="$(xcrun simctl list runtimes -j | jq -r --arg id "$rt_id" --arg ad "$SIM_DEVICE_TYPE" '

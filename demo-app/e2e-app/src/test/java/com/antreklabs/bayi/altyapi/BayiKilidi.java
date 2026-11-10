@@ -14,11 +14,8 @@ import java.time.Duration;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -91,33 +88,26 @@ public final class BayiKilidi implements AutoCloseable {
 
   private static FileLock dosyaKilidi(
       FileChannel kanal, long kalanNs, String kullaniciAdi, Duration bekleme, Path dosya) throws IOException {
-    FileLock hemen = kanal.tryLock();
-    if (hemen != null) {
-      return hemen;
-    }
-    // Başka süreç tutuyor: bloklayan lock() ayrı iş parçacığında, süre dolunca kesilir
-    // (kesme kanalı kapatır ve beklemeyi bitirir).
-    ExecutorService yurutucu = Executors.newSingleThreadExecutor(r -> {
-      Thread t = new Thread(r, "bayi-kilidi-" + kullaniciAdi);
-      t.setDaemon(true);
-      return t;
-    });
-    try {
-      Future<FileLock> gelecek = yurutucu.submit(() -> kanal.lock());
-      try {
-        return gelecek.get(Math.max(0, kalanNs), TimeUnit.NANOSECONDS);
-      } catch (java.util.concurrent.TimeoutException e) {
-        gelecek.cancel(true);
-        throw zamanAsimi(kullaniciAdi, bekleme, dosya);
-      } catch (InterruptedException e) {
-        gelecek.cancel(true);
-        Thread.currentThread().interrupt();
-        throw new IllegalStateException("bayi kilidi beklenirken kesildi", e);
-      } catch (ExecutionException e) {
-        throw new IOException("bayi kilidi alınamadı: " + dosya, e.getCause());
+    // Başka süreç tutuyorsa süre dolana kadar kısa aralıklarla tryLock. Bloklayan lock() +
+    // kesme KULLANILMAZ: Windows'ta kanalı kapatmak bloklu LockFileEx bitene dek bekler ve kilit
+    // sahibi bırakmazsa süreç asılı kalır (masaustu-windows CI). parkNanos kilit yoklamasının
+    // bekleme aralığıdır; test akışında bekleme değildir (Bekle sınıfı oradadır).
+    long bitis = System.nanoTime() + Math.max(0, kalanNs);
+    long aralik = TimeUnit.MILLISECONDS.toNanos(20);
+    while (true) {
+      FileLock kilit = kanal.tryLock();
+      if (kilit != null) {
+        return kilit;
       }
-    } finally {
-      yurutucu.shutdownNow();
+      long kalan = bitis - System.nanoTime();
+      if (kalan <= 0) {
+        throw zamanAsimi(kullaniciAdi, bekleme, dosya);
+      }
+      LockSupport.parkNanos(Math.min(aralik, kalan));
+      if (Thread.currentThread().isInterrupted()) {
+        throw new IllegalStateException("bayi kilidi beklenirken kesildi");
+      }
+      aralik = Math.min(aralik * 2, TimeUnit.MILLISECONDS.toNanos(200));
     }
   }
 

@@ -105,7 +105,7 @@ copy_tracked() {
 }
 
 copy_tracked demo-app toolchain/ast-guard toolchain/security/no-mcp-in-image.sh \
-  .playwright-version .github/workflows/break-verify.yml .github/dependabot.yml \
+  .playwright-version .github/workflows/break-verify.yml .github/dependabot.yml .github/actionlint.yaml \
   .github/workflows/mobil-android.yml .github/workflows/mobil-ios.yml \
   .github/workflows/masaustu-windows.yml tools/appium/package.json tools/appium/package-lock.json \
   scripts/github-ast-guard-mode.sh scripts/github-ci-results.sh scripts/github-demo-serve.sh \
