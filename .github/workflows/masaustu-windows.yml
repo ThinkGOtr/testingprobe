@@ -182,9 +182,10 @@ jobs:
           if (-not (Test-Path $exe)) { throw "BayiSiparis.exe yok: $exe" }
           Add-Content -Path $env:GITHUB_ENV -Value "APP_PATH=$exe"
 
-      # Arka plan süreçleri pwsh Start-Process ile başlatılır (adım bitince sonlanmazlar; job sonunda
-      # runner temizler). Test uçlarının (/test/*) sırrı koşu başına üretilir.
-      - name: Demo API'sini başlat
+      # Test uçlarının (/test/*) sırrı koşu başına üretilir.
+      # Windows runner'ı bir adımda başlatılan arka plan süreçlerini adım bitince sonlandırır;
+      # API ve Appium bu yüzden test adımının içinde başlatılır (burada yalnız kurulum).
+      - name: Demo API'sini hazırla
         if: env.RUN_TESTS == 'true'
         shell: pwsh
         run: |
@@ -197,26 +198,10 @@ jobs:
           uv sync --frozen --no-dev
           if ($LASTEXITCODE -ne 0) { throw 'uv sync başarısız' }
           Pop-Location
-          $db = (Join-Path $env:RUNNER_TEMP 'demoapp-qa.db') -replace '\\', '/'
-          $env:DEMOAPP_DATABASE_URL = "sqlite:///$db"
-          $env:DEMOAPP_TEST_MODE = '1'
-          $env:DEMOAPP_TEST_TOKEN = $token
-          Start-Process -FilePath uv -NoNewWindow -WorkingDirectory demo-app/api `
-            -ArgumentList 'run', '--frozen', '--no-dev', 'uvicorn', 'demoapp_api.main:app', '--host', '127.0.0.1', '--port', $env:DEMO_API_PORT `
-            -RedirectStandardOutput tp-logs/api.log -RedirectStandardError tp-logs/api.err.log
-          for ($i = 0; $i -lt 90; $i++) {
-            try {
-              Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 "http://127.0.0.1:$($env:DEMO_API_PORT)/health" | Out-Null
-              Write-Output "API hazır: http://127.0.0.1:$($env:DEMO_API_PORT)"
-              exit 0
-            } catch { Start-Sleep -Seconds 2 }
-          }
-          Get-Content tp-logs/api.err.log -Tail 100 -ErrorAction SilentlyContinue
-          throw 'Demo API 180 sn içinde hazır olmadı'
 
       # Appium tools/appium kilit dosyasından; NovaWindows ayrı ve geçici APPIUM_HOME'a sabit sürümle
       # (tools/appium/package.json değişmez). --relaxed-security YOK.
-      - name: Appium + NovaWindows başlat
+      - name: Appium + NovaWindows kur
         if: env.RUN_TESTS == 'true'
         shell: pwsh
         run: |
@@ -230,31 +215,41 @@ jobs:
           node $appium driver install --source=npm "appium-novawindows-driver@$($env:NOVAWINDOWS_VERSION)"
           if ($LASTEXITCODE -ne 0) { throw 'NovaWindows sürücüsü kurulamadı' }
           node $appium driver list --installed
-          Start-Process -FilePath node -NoNewWindow `
-            -ArgumentList $appium, '--address', '127.0.0.1', '--port', '4723', '--log-no-colors', '--log-timestamp' `
-            -RedirectStandardOutput tp-logs/appium.log -RedirectStandardError tp-logs/appium.err.log
-          for ($i = 0; $i -lt 30; $i++) {
-            try {
-              Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 'http://127.0.0.1:4723/status' | Out-Null
-              Write-Output 'Appium hazır'
-              exit 0
-            } catch { Start-Sleep -Seconds 1 }
-          }
-          Get-Content tp-logs/appium.err.log -Tail 100 -ErrorAction SilentlyContinue
-          throw 'Appium 30 sn içinde hazır olmadı'
+          Add-Content -Path $env:GITHUB_ENV -Value "APPIUM_HOME=$($env:APPIUM_HOME)"
 
       # APP_PATH (yayın adımı) ve APP_ARGS ortamdan okunur (Ayarlar.java: app.path / app.args);
       # -D ile verilmez: boşluklu argüman Git Bash → mvnw zincirinde bölünmesin.
       - name: Testler (masaüstünde)
         if: env.RUN_TESTS == 'true'
         id: tests
-        shell: bash
+        shell: pwsh
         timeout-minutes: 40
         env:
           APP_ARGS: --api-url http://127.0.0.1:${{ env.DEMO_API_PORT }}
         run: |
-          set -euo pipefail
-          bash demo-app/ci/run-app-checks.sh windows 2>&1 | tee tp-logs/run-app-checks.log
+          $db = (Join-Path $env:RUNNER_TEMP 'demoapp-qa.db') -replace '\\', '/'
+          $env:DEMOAPP_DATABASE_URL = "sqlite:///$db"
+          $env:DEMOAPP_TEST_MODE = '1'
+          Start-Process -FilePath uv -NoNewWindow -WorkingDirectory demo-app/api `
+            -ArgumentList 'run', '--frozen', '--no-dev', 'uvicorn', 'demoapp_api.main:app', '--host', '127.0.0.1', '--port', $env:DEMO_API_PORT `
+            -RedirectStandardOutput tp-logs/api.log -RedirectStandardError tp-logs/api.err.log
+          $appium = Join-Path $env:GITHUB_WORKSPACE 'tools/appium/node_modules/appium/index.js'
+          Start-Process -FilePath node -NoNewWindow `
+            -ArgumentList $appium, '--address', '127.0.0.1', '--port', '4723', '--log-no-colors', '--log-timestamp' `
+            -RedirectStandardOutput tp-logs/appium.log -RedirectStandardError tp-logs/appium.err.log
+          function Bekle([string] $Url, [int] $Saniye, [string] $Ad, [string] $Log) {
+            for ($i = 0; $i -lt $Saniye; $i++) {
+              try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 $Url | Out-Null; Write-Output "$Ad hazır"; return }
+              catch { Start-Sleep -Seconds 1 }
+            }
+            Get-Content $Log -Tail 100 -ErrorAction SilentlyContinue
+            throw "$Ad $Saniye sn içinde hazır olmadı"
+          }
+          Bekle "http://127.0.0.1:$($env:DEMO_API_PORT)/health" 180 'Demo API' tp-logs/api.err.log
+          Bekle 'http://127.0.0.1:4723/status' 60 'Appium' tp-logs/appium.err.log
+          # Git Bash açıkça (PATH'teki bash.exe WSL olabilir); `shell: bash` ile aynı yorumlayıcı.
+          & "$env:ProgramFiles\Git\bin\bash.exe" -c 'set -o pipefail; bash demo-app/ci/run-app-checks.sh windows 2>&1 | tee tp-logs/run-app-checks.log'
+          exit $LASTEXITCODE
 
       # --- Sonuçlar (mobil-android ile aynı düzen) ----------------------------------------------
       - name: Sonuçları topla
