@@ -1,0 +1,6 @@
+# actionlint: GitHub'ın önizleme imaj etiketleri (henüz actionlint'in yerleşik listesinde yok).
+# xcode-27: mobil-ios.yml (Xcode 26.x expo-modules-jsi'yi derlemiyor; bkz. iş akışı açıklaması).
+self-hosted-runner:
+  labels:
+    - xcode-27
+    - xcode-27-xlarge
