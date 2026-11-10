@@ -11,6 +11,7 @@ from pydantic import BaseModel, ValidationError
 from tp_core import __version__, db
 from tp_core.api import errors, registry
 from tp_core.api.csrf import OriginGuard, parse_origins
+from tp_core.api.kimlik_kipi import KimlikKipiBasligi
 from tp_core.api.routers import admin_kimlik, aiprobe, audit, auth, events, tokens
 from tp_core.config import Settings, get_settings
 
@@ -69,6 +70,8 @@ def create_app() -> FastAPI:
     errors.install(app)
     # CSRF: başka kaynaktan (aynı sitedeki diğer yerel portlar dahil) gelen güvensiz istekler 403.
     app.add_middleware(OriginGuard, allowed_origins=_izinli_kaynaklar())
+    # AI Probe kipinde her yanıta `X-TP-Kimlik` (portal kipi öğrenir); `local`'de başlık yok.
+    app.add_middleware(KimlikKipiBasligi)
 
     @app.get("/health", response_model=Health)
     def health(db_durum: Annotated[str, Depends(check_db)]) -> JSONResponse:

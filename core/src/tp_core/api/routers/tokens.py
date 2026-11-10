@@ -71,7 +71,18 @@ def mcp_mounted(request: Request) -> bool:
 def create(body: TokenIn, request: Request, session: DbSession, user: Analyst) -> TokenCreated:
     if not mcp_mounted(request):
         raise HTTPException(501, "IDE (MCP) kanalı henüz etkin değil; token üretilemez")
-    tok, raw = issue_token(session, user, body.kapsam, get_settings().api_token_ttl_s)
+    # AI Probe oturumundan üretilen token oturumun `auth_time`/`acr`/`session_epoch_ms`'ini taşır
+    # (deps.current_user → request.state.oturum_durumu; yerel oturumda hepsi boş).
+    durum = getattr(request.state, "oturum_durumu", None)
+    tok, raw = issue_token(
+        session,
+        user,
+        body.kapsam,
+        get_settings().api_token_ttl_s,
+        auth_time=getattr(durum, "auth_time", None),
+        acr=getattr(durum, "acr", None),
+        session_epoch_ms=getattr(durum, "session_epoch_ms", None),
+    )
     return TokenCreated(
         id=tok.id,
         kapsam=tok.kapsam,

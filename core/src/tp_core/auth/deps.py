@@ -57,6 +57,7 @@ def current_user(
         # gösterir.
         response.headers[DEGRADED_HEADER] = "1"
     request.state.oturum_external_uid = durum.external_uid
+    request.state.oturum_durumu = durum
     p = Principal(user.id, user.kullanici_adi, user.rol)
     request.state.principal = p
     return p

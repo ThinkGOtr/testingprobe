@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import uuid
 from typing import Annotated
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -148,7 +149,13 @@ def login(body: LoginIn, request: Request, session: DbSession, codec: Codec) -> 
 @router.post("/logout")
 def logout(
     request: Request, session: DbSession, codec: Annotated[SessionCodec, Depends(session_codec)]
-) -> JSONResponse:
+) -> Response:
+    """Yerel oturumu kapatır. AI Probe oturumunda tüm ürünlerden çıkış sayfası
+    `{home}/logout?product=<id>&auto=1` (yerel çıkış yapıldı → home onay istemez).
+
+    Portal (fetch, JSON) `{"ok", "redirect"}` alır ve yönlendirmeyi kendisi izler; tarayıcı form
+    POST'u (`Accept: text/html`) 303 ile doğrudan oraya (AI Probe oturumu değilse `/giris`) gider.
+    """
     raw = request.cookies.get(cookie_name())
     veri = codec.loads(raw) if raw else None
     govde: dict[str, object] = {"ok": True}
@@ -166,17 +173,45 @@ def logout(
         # AI Probe oturumu: çıkış tüm ürünlerden yapılır (id. çıkış sayfası; PLAN §2.3).
         if harici is not None and aiprobe_acik():
             ayar = get_settings()
-            govde["redirect"] = (
-                f"{ayar.aiprobe_id_origin.rstrip('/')}/logout?product={ayar.aiprobe_product_id}"
+            govde["redirect"] = f"{ayar.aiprobe_id_origin.rstrip('/')}/logout?" + urlencode(
+                {"product": ayar.aiprobe_product_id, "auto": "1"}
             )
-    yanit = JSONResponse(govde)
+    yanit: Response
+    if "text/html" in request.headers.get("accept", "").lower():
+        yanit = RedirectResponse(str(govde.get("redirect") or "/giris"), status_code=303)
+    else:
+        yanit = JSONResponse(govde)
     yanit.delete_cookie(
         cookie_name(), path="/", httponly=True, samesite="lax", secure=cookie_secure()
     )
     return yanit
 
 
-@router.get("/me", response_model=Me)
-def me(user: CurrentUser, session: DbSession) -> Me:
+class MeYaniti(Me):
+    """`GET /auth/me`: AI Probe oturumunda ayrıca `product`, `roles` (değiştirici, "Rol değiştir").
+
+    Alanlar yalnız AI Probe oturumunda yazılır (`response_model_exclude_unset`): yerel oturumun
+    yanıtı bugünküyle aynıdır.
+    """
+
+    product: str | None = None
+    # Kişiye bağlı rol hesaplarının rolleri (sıralı).
+    roles: list[str] | None = None
+    # Kişinin tüm AI Probe ürünlerindeki rolleri (`{"tp": [...], "ap": [...]}`; devir/kontrol
+    # yanıtından, oturumda saklanır). Değiştirici diğer ürünlere erişimi buradan bilir.
+    products: dict[str, list[str]] | None = None
+
+
+@router.get("/me", response_model=MeYaniti, response_model_exclude_unset=True)
+def me(user: CurrentUser, request: Request, session: DbSession) -> MeYaniti:
     assert user.id is not None
-    return me_of(session, user.id, user.kullanici_adi, user.rol)
+    yanit = MeYaniti(**me_of(session, user.id, user.kullanici_adi, user.rol).model_dump())
+    uid = getattr(request.state, "oturum_external_uid", None)
+    if uid is not None:
+        from tp_core.auth import aiprobe
+
+        yanit.product = get_settings().aiprobe_product_id
+        yanit.roles = sorted({h.rol for h in aiprobe.bagli_hesaplar(session, uid)})
+        durum = getattr(request.state, "oturum_durumu", None)
+        yanit.products = getattr(durum, "urunler", None) or {}
+    return yanit

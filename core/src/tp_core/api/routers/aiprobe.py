@@ -9,12 +9,15 @@ Yalnız `TP_AUTH_MODE=aiprobe|both`; `local` kipte bütün uçlar 404 (rota yok 
 - `POST /auth/aiprobe/rol-sec {app_user_id}` → seçim çereziyle oturum.
 - `POST /auth/aiprobe/rol-degistir {app_user_id}` → bağ + rol taze kontrolle doğrulanır, yeni sid.
 
-Çerezler hep `__Host-` önekli (Secure, Path=/, alan adı yok). Hata gövdesi `{"detail", "kod"}`.
+Çerezler hep `__Host-` önekli (Secure, Path=/, alan adı yok). Hata gövdesi `{"detail", "kod"}`;
+`login` ve `callback` tarayıcı gezintisidir: istek `Accept: text/html` taşıyorsa aynı durum kodu
+Türkçe bir hata sayfasıyla döner ("Tekrar dene" → yeniden giriş; JSON gösterilmez).
 """
 
 from __future__ import annotations
 
 import hmac
+import html
 import logging
 import secrets
 import uuid
@@ -22,7 +25,7 @@ from typing import Annotated, Any
 from urllib.parse import quote, unquote, urlencode
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import JSONResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -62,12 +65,12 @@ def _acik() -> None:
 router.dependencies.append(Depends(_acik))
 
 
-def _yapilandirma() -> None:
+def _yapilandirma_eksik() -> bool:
     ayar = get_settings()
-    if not ayar.aiprobe_home_run_url or not ayar.aiprobe_id_origin:
-        raise KodluHata(
-            503, "kimlik_servisi_yok", "AI Probe girişi yapılandırılmamış (AIPROBE_* eksik)"
-        )
+    return not ayar.aiprobe_home_run_url or not ayar.aiprobe_id_origin
+
+
+YAPILANDIRMA_YOK = "AI Probe girişi yapılandırılmamış (AIPROBE_* eksik)"
 
 
 def _cerez(yanit: Response, ad: str, deger: str, max_age: int) -> None:
@@ -88,14 +91,89 @@ def _hata(status: int, kod: str, detail: str, *sil: str) -> JSONResponse:
     return yanit
 
 
+HATA_BASLIGI = {
+    "durum_uyusmuyor": "Giriş isteği doğrulanamadı",
+    "giris_kodu_gecersiz": "Giriş bağlantısının süresi doldu",
+    "kimlik_servisi_yok": "AI Probe kimlik servisine ulaşılamıyor",
+    "org_reddi": "Kuruluşunuzun erişimi yok",
+    "rol_yok": "Testing Probe'da rolünüz yok",
+}
+
+
+def _html_ister(request: Request) -> bool:
+    return "text/html" in request.headers.get("accept", "").lower()
+
+
+def _hata_sayfasi(
+    request: Request, status: int, kod: str, detail: str, devam: str, *sil: str
+) -> Response:
+    """Tarayıcı gezintisinde Türkçe hata sayfası (aynı durum kodu); API istemcisine JSON.
+
+    "Tekrar dene" göreli bağlantıdır (`login?continue=`): sayfa `…/auth/aiprobe/callback`
+    (portal önekiyle `/api/auth/aiprobe/callback`) altında sunulduğu için önekten bağımsız olarak
+    aynı dizindeki giriş ucuna gider. Betik yok (portal CSP'si `script-src 'self'`).
+    """
+    if not _html_ister(request):
+        return _hata(status, kod, detail, *sil)
+    baslik = html.escape(HATA_BASLIGI.get(kod, "Giriş yapılamadı"))
+    tekrar = html.escape("login?" + urlencode({"continue": aiprobe.guvenli_continue(devam)}))
+    govde = f"""<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{baslik} · Testing Probe</title>
+<style>
+:root {{ color-scheme: light dark; --zemin: #f6f7fb; --kart: #fff; --metin: #0b0b14;
+  --soluk: #4b5263; --kenar: #d9dbea; --vurgu: #4338ca; --vurgu-metin: #fff; }}
+@media (prefers-color-scheme: dark) {{ :root {{ --zemin: #07070f; --kart: #0f0f1c; --metin: #f0f0ff;
+  --soluk: #a3acbf; --kenar: #2e2e58; --vurgu: #6366f1; --vurgu-metin: #fff; }} }}
+* {{ box-sizing: border-box; }}
+body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px;
+  background: var(--zemin); color: var(--metin); font: 16px/1.5 system-ui, sans-serif; }}
+main {{ width: min(460px, 100%); background: var(--kart); border: 1px solid var(--kenar);
+  border-radius: 14px; padding: 28px 24px; }}
+h1 {{ margin: 0 0 8px; font-size: 1.35rem; }}
+p {{ margin: 0 0 12px; }}
+.kod {{ color: var(--soluk); font-size: .875rem; }}
+.eylemler {{ display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 20px; }}
+.dugme {{ display: inline-block; padding: 10px 18px; border-radius: 10px; background: var(--vurgu);
+  color: var(--vurgu-metin); text-decoration: none; font-weight: 600; }}
+a {{ color: inherit; }}
+a:focus-visible {{ outline: 2px solid var(--vurgu); outline-offset: 2px; }}
+</style>
+</head>
+<body>
+<main>
+<h1>{baslik}</h1>
+<p>{html.escape(detail)}.</p>
+<p class="kod">Hata kodu: <code>{html.escape(kod)}</code></p>
+<div class="eylemler">
+<a class="dugme" href="{tekrar}">Tekrar dene</a>
+<a href="/">Ana sayfa</a>
+</div>
+</main>
+</body>
+</html>
+"""
+    yanit = HTMLResponse(govde, status_code=status, headers={"Cache-Control": "no-store"})
+    for ad in sil:
+        _cerez_sil(yanit, ad)
+    return yanit
+
+
 # ------------------------------------------------------------------ giriş
 
 
 @router.get("/login")
-def login(continue_: Annotated[str | None, Query(alias="continue")] = None) -> Response:
-    _yapilandirma()
+def login(
+    request: Request, continue_: Annotated[str | None, Query(alias="continue")] = None
+) -> Response:
     ayar = get_settings()
     devam = aiprobe.guvenli_continue(continue_)
+    if _yapilandirma_eksik():
+        return _hata_sayfasi(request, 503, "kimlik_servisi_yok", YAPILANDIRMA_YOK, devam)
     state = secrets.token_urlsafe(32)
     hedef = f"{ayar.aiprobe_id_origin.rstrip('/')}/login?" + urlencode(
         {"product": ayar.aiprobe_product_id, "state": state, "continue": devam}
@@ -110,14 +188,22 @@ def _oturum_ac(
     codec: SessionCodec,
     user: AppUser,
     devir_uid: str,
-    auth_time: int,
+    kimlik: aiprobe.OturumKimligi,
+    urunler: dict[str, list[str]] | None,
     yanit: Response,
     *,
     eylem: str = "auth.login",
     ozet: dict[str, Any] | None = None,
 ) -> None:
     sid = open_session(
-        session, user.id, codec.max_age_s, external_uid=devir_uid, auth_time=auth_time
+        session,
+        user.id,
+        codec.max_age_s,
+        external_uid=devir_uid,
+        auth_time=kimlik.auth_time,
+        acr=kimlik.acr,
+        session_epoch_ms=kimlik.session_epoch_ms,
+        urunler=urunler,
     )
     audit_on_commit(
         session,
@@ -137,45 +223,47 @@ def callback(
     code: Annotated[str, Query(max_length=512)] = "",
     state: Annotated[str, Query(max_length=256)] = "",
 ) -> Response:
-    _yapilandirma()
     raw = request.cookies.get(STATE_COOKIE) or ""
     cerez_state, _, cerez_devam = raw.partition("|")
+    devam = aiprobe.guvenli_continue(unquote(cerez_devam) or "/")
+
+    def hata(status: int, kod: str, detail: str) -> Response:
+        return _hata_sayfasi(request, status, kod, detail, devam, STATE_COOKIE)
+
+    if _yapilandirma_eksik():
+        return hata(503, "kimlik_servisi_yok", YAPILANDIRMA_YOK)
     if not cerez_state or not state or not hmac.compare_digest(cerez_state, state):
         log.warning("AI Probe girişi: state uyuşmadı (login CSRF ya da süresi dolmuş çerez)")
         audit_on_commit(session, aiprobe.AKTOR, "auth.aiprobe_rejected", None, {"neden": "state"})
-        return _hata(400, "durum_uyusmuyor", "Giriş isteği doğrulanamadı; yeniden deneyin",
-                     STATE_COOKIE)  # fmt: skip
+        return hata(400, "durum_uyusmuyor", "Giriş isteği doğrulanamadı; yeniden deneyin")
     try:
         devir = aiprobe.home().redeem(code)
     except aiprobe.GecersizKod:
         audit_on_commit(session, aiprobe.AKTOR, "auth.aiprobe_rejected", None, {"neden": "kod"})
-        return _hata(400, "giris_kodu_gecersiz", "Giriş kodu geçersiz veya süresi dolmuş",
-                     STATE_COOKIE)  # fmt: skip
+        return hata(400, "giris_kodu_gecersiz", "Giriş kodu geçersiz veya süresi dolmuş")
     except aiprobe.HomeUlasilamaz:
-        return _hata(503, "kimlik_servisi_yok", "AI Probe kimlik servisine ulaşılamıyor",
-                     STATE_COOKIE)  # fmt: skip
+        return hata(503, "kimlik_servisi_yok", "AI Probe kimlik servisine ulaşılamıyor")
     if not hmac.compare_digest(devir.state, state):
         audit_on_commit(session, aiprobe.AKTOR, "auth.aiprobe_rejected", None, {"neden": "state"})
-        return _hata(400, "durum_uyusmuyor", "Giriş isteği doğrulanamadı; yeniden deneyin",
-                     STATE_COOKIE)  # fmt: skip
+        return hata(400, "durum_uyusmuyor", "Giriş isteği doğrulanamadı; yeniden deneyin")
     if not aiprobe.izinli_org(devir.org):
         audit_on_commit(
             session, aiprobe.AKTOR, "auth.aiprobe_rejected", f"kimlik:{devir.uid}", {"neden": "org"}
         )
-        return _hata(403, "org_reddi", "Bu kuruluşun Testing Probe erişimi yok", STATE_COOKIE)
+        return hata(403, "org_reddi", "Bu kuruluşun Testing Probe erişimi yok")
     roller = aiprobe.tp_rolleri(devir.roles)
     if not roller:
         audit_on_commit(
             session, aiprobe.AKTOR, "auth.aiprobe_rejected", f"kimlik:{devir.uid}", {"neden": "rol"}
         )
-        return _hata(403, "rol_yok", "Testing Probe'da rolünüz yok", STATE_COOKIE)
+        return hata(403, "rol_yok", "Testing Probe'da rolünüz yok")
 
     aiprobe.jit_hesaplar(session, devir, roller)
     adaylar = [h for h in aiprobe.bagli_hesaplar(session, devir.uid) if h.rol in roller]
-    devam = aiprobe.guvenli_continue(unquote(cerez_devam) or "/")
+    kimlik = aiprobe.OturumKimligi(devir.auth_time, devir.acr, devir.session_epoch_ms)
     if len(adaylar) == 1:
         yanit: Response = RedirectResponse(devam, status_code=302)
-        _oturum_ac(session, codec, adaylar[0], devir.uid, devir.auth_time, yanit,
+        _oturum_ac(session, codec, adaylar[0], devir.uid, kimlik, devir.products, yanit,
                    ozet={"acr": devir.acr})  # fmt: skip
         _cerez_sil(yanit, STATE_COOKIE)
         return yanit
@@ -186,6 +274,8 @@ def callback(
         "h": [str(h.id) for h in adaylar],
         "c": devam,
         "a": devir.acr,
+        "e": devir.session_epoch_ms,
+        "p": devir.products,
     }
     yanit = RedirectResponse(f"{ROL_SEC_SAYFASI}?continue={quote(devam, safe='')}", 302)
     _cerez(yanit, SECIM_COOKIE, codec.dumps_signed(SECIM_SALT, secim), SECIM_MAX_AGE_S)
@@ -266,7 +356,7 @@ def hesaplar(request: Request, session: DbSession, codec: Codec) -> JSONResponse
         raise KodluHata(403, "yasak", "Yalnız AI Probe oturumunda kullanılabilir")
     try:
         roller: frozenset[str] | None = aiprobe.kontrol_et(
-            o.external_uid, int(o.auth_time or 0)
+            o.external_uid, aiprobe.OturumKimligi.of(o)
         ).roles
     except aiprobe.HomeUlasilamaz:
         roller = None
@@ -298,8 +388,11 @@ def rol_sec(body: HesapSec, request: Request, session: DbSession, codec: Codec) 
         me_of(session, hedef.id, hedef.kullanici_adi, hedef.rol).model_dump(mode="json")
         | {"continue": aiprobe.guvenli_continue(secim["c"])}
     )
-    _oturum_ac(session, codec, hedef, secim["x"], int(secim["t"]), yanit,
-               ozet={"acr": secim.get("a"), "secim": True})  # fmt: skip
+    kimlik = aiprobe.OturumKimligi(
+        int(secim["t"]), str(secim.get("a") or "1"), int(secim["e"]) if secim.get("e") else None
+    )
+    _oturum_ac(session, codec, hedef, secim["x"], kimlik, secim.get("p"), yanit,
+               ozet={"acr": kimlik.acr, "secim": True})  # fmt: skip
     _cerez_sil(yanit, SECIM_COOKIE)
     return yanit
 
@@ -311,7 +404,7 @@ def rol_degistir(
     o = _oturum_satiri(request, session, codec)
     if o is None or o.external_uid is None:
         raise KodluHata(403, "yasak", "Rol değiştirme yalnız AI Probe oturumunda kullanılabilir")
-    uid, auth_time = o.external_uid, int(o.auth_time or 0)
+    uid, kimlik = o.external_uid, aiprobe.OturumKimligi.of(o)
     hedef = session.get(AppUser, body.app_user_id)
     bag = session.scalar(
         select(KimlikBagi.external_uid).where(KimlikBagi.app_user_id == body.app_user_id)
@@ -319,7 +412,7 @@ def rol_degistir(
     if hedef is None or bag != uid:
         raise KodluHata(403, "yasak", "Bu rol hesabı size bağlı değil")
     try:
-        sonuc = aiprobe.kontrol_et(uid, auth_time, taze=True)
+        sonuc = aiprobe.kontrol_et(uid, kimlik, taze=True)
     except aiprobe.HomeUlasilamaz as exc:
         raise KodluHata(
             503, "kimlik_servisi_yok", "AI Probe kimlik servisine ulaşılamıyor"
@@ -343,6 +436,6 @@ def rol_degistir(
     yanit = JSONResponse(
         me_of(session, hedef.id, hedef.kullanici_adi, hedef.rol).model_dump(mode="json")
     )
-    _oturum_ac(session, codec, hedef, uid, auth_time, yanit, eylem="auth.role_switch",
-               ozet={"onceki": user.kullanici_adi})  # fmt: skip
+    _oturum_ac(session, codec, hedef, uid, kimlik, sonuc.products or o.urunler, yanit,
+               eylem="auth.role_switch", ozet={"onceki": user.kullanici_adi})  # fmt: skip
     return yanit

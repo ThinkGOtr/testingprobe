@@ -39,6 +39,7 @@ HOME_SA = "home-run@aiprobe-platform.iam.gserviceaccount.com"
 TP_AUD = "https://testing.test"
 TP_SA_TOKEN = "tp-sa-id-token"
 UID = "uid-ayse"
+EPOCH_MS = 1_762_780_000_123
 
 
 @dataclass
@@ -63,6 +64,12 @@ class SahteHome:
             kayit = self.kodlar.pop(govde.get("code", ""), None)  # tek kullanımlık
             if kayit is None:
                 return httpx.Response(400, json={"error": "invalid_code"})
+            # Home `acr="1"` iken ürünün `admin_roles`'unu (TP: po) devre eklemez.
+            kayit = dict(kayit)
+            kayit["roles"] = _admin_suz(kayit["roles"], kayit.get("acr"))
+            kayit["products"] = {
+                k: _admin_suz(v, kayit.get("acr")) for k, v in kayit.get("products", {}).items()
+            }
             return httpx.Response(200, json=kayit)
         if req.url.path == "/v1/session/check":
             k = self.kisiler.get(govde["uid"])
@@ -70,11 +77,43 @@ class SahteHome:
                 return httpx.Response(200, json={"valid": False, "reason": "not_found"})
             if not k.get("valid", True):
                 return httpx.Response(200, json={"valid": False, "reason": k.get("reason")})
-            return httpx.Response(200, json={"valid": True, "roles": k["roles"], "acr_ok": True})
+            if _iptal_edildi(k, govde):
+                return httpx.Response(200, json={"valid": False, "reason": "revoked"})
+            roller = _admin_suz(k["roles"], govde.get("acr"))
+            if not roller:
+                return httpx.Response(200, json={"valid": False, "reason": "no_access"})
+            urunler = {"tp": roller, **k.get("diger", {})}
+            return httpx.Response(
+                200, json={"valid": True, "roles": roller, "products": urunler, "acr_ok": True}
+            )
         return httpx.Response(404)
+
+    def kontroller(self) -> list[dict[str, Any]]:
+        return [c[1] for c in self.cagrilar if c[0] == "/v1/session/check"]
 
     def sayi(self, yol: str) -> int:
         return sum(1 for c in self.cagrilar if c[0] == yol)
+
+
+ADMIN_ROLLERI = frozenset({"po"})  # products/testing-probe.yaml `admin_roles`
+
+
+def _admin_suz(roller: list[str], acr: Any) -> list[str]:
+    return list(roller) if acr == "2" else [r for r in roller if r not in ADMIN_ROLLERI]
+
+
+def _iptal_edildi(k: dict[str, Any], govde: dict[str, Any]) -> bool:
+    """CONTRACT v1.2 `revoked` kuralı: V = `valid_after` (sn), E = `session_epoch_ms`, R =
+    `revoked_at_ms` (home'un iptal anı, ms)."""
+    v, r = k.get("valid_after"), k.get("revoked_at_ms")
+    e = govde.get("session_epoch_ms")
+    if v is None and r is None:
+        return False
+    if e is None:
+        return v is not None and v > govde["auth_time"]
+    if r is not None and v is not None and r // 1000 == v:
+        return bool(r >= e)
+    return v is not None and v >= e // 1000
 
 
 def sahte_dogrulayici(token: str, audience: str) -> dict[str, Any]:
@@ -133,7 +172,9 @@ def _devir(state: str, roles: list[str], uid: str = UID, **ek: Any) -> dict[str,
         "roles": roles,
         "ap_uid": None,
         "auth_time": 1_762_780_000,
-        "acr": "1",
+        "session_epoch_ms": EPOCH_MS,
+        "acr": "2",
+        "products": {"tp": roles, "ap": ["user"]},
         "state": state,
         "continue": "/x",
         **ek,
@@ -422,7 +463,12 @@ def test_kontrol_60_sn_onbellekli(client: TestClient, home: SahteHome, engine: E
     assert client.get("/auth/me").status_code == 200
     assert client.get("/auth/me").status_code == 200
     assert home.sayi("/v1/session/check") == 1  # son_kontrol yenilendi
-    assert home.cagrilar[-1][1] == {"uid": UID, "auth_time": 1_762_780_000}
+    assert home.cagrilar[-1][1] == {
+        "uid": UID,
+        "auth_time": 1_762_780_000,
+        "acr": "2",
+        "session_epoch_ms": EPOCH_MS,
+    }
 
 
 def test_oturum_iptali_401_ve_tpt_token_reddi(
@@ -465,6 +511,93 @@ def test_tpt_token_kendi_kontroluyle_duser(
     session.commit()
     assert _epoch(engine, me["id"]) == 1
     assert client.get("/auth/me").status_code == 401  # aynı kişinin oturumu da düştü
+
+
+def _mcp_istemci(home: SahteHome) -> TestClient:
+    app = main.create_app()
+
+    @app.post("/mcp")
+    def _mcp() -> dict[str, Any]:  # POST /tokens yalnızca /mcp bağlıyken token üretir
+        return {}
+
+    return TestClient(app, base_url="https://testserver")
+
+
+def _token_auth_time(engine: Engine) -> list[int | None]:
+    with engine.connect() as c:
+        return list(c.execute(text("SELECT auth_time FROM api_token ORDER BY olusturma")).scalars())
+
+
+def test_tpt_token_oturumun_auth_time_ini_tasir(
+    home: SahteHome, engine: Engine, session: Session
+) -> None:
+    """Oturum açıldıktan sonra, token üretilmeden önce yapılan iptal token'ı da düşürür.
+
+    Token'ın kontrolü üretim anıyla yapılsaydı (iptal anı < üretim anı) iptal görülmezdi; token
+    oturumun `auth_time`/`acr`/`session_epoch_ms`'ini taşıdığı için görülür.
+    """
+    with _mcp_istemci(home) as client:
+        _giris(client, home, ["analyst"])
+        r = client.post("/tokens", json={"kapsam": "publish"})
+        assert r.status_code == 201, r.text
+        raw = r.json()["token"]
+    assert _token_auth_time(engine) == [1_762_780_000]
+    with engine.connect() as c:
+        assert tuple(c.execute(text("SELECT acr, session_epoch_ms FROM api_token")).one()) == (
+            "2",
+            EPOCH_MS,
+        )
+    # Kişi oturum açıldıktan 50 ms sonra (aynı saniye; token üretiminden önce) home üzerinden
+    # iptal edildi; TP'nin bunu henüz görmemiş olması önbellekten gelir.
+    iptal_ms = EPOCH_MS + 50
+    home.kisiler[UID] = {
+        "roles": ["analyst"],
+        "revoked_at_ms": iptal_ms,
+        "valid_after": iptal_ms // 1000,
+    }
+    aiprobe.ONBELLEK.temizle()
+    assert verify_bearer(session, raw, "publish") is None
+    session.commit()
+    assert home.kontroller()[-1] == {
+        "uid": UID,
+        "auth_time": 1_762_780_000,
+        "acr": "2",
+        "session_epoch_ms": EPOCH_MS,
+    }
+
+
+def test_yerel_oturumdan_uretilen_token_uretim_aniyla_kontrol_edilir(
+    home: SahteHome, engine: Engine, session: Session, make_user: MakeUser
+) -> None:
+    """`auth_time` boş token (yerel oturumdan üretildi): kontrol eskisi gibi üretim anıyla."""
+    u = make_user("analyst")
+    _bagla(engine, u)
+    tok, raw = issue_token(session, u, "publish", 3600)
+    session.commit()
+    assert tok.auth_time is None
+    uretim = int(tok.olusturma.timestamp())
+    home.kisiler[UID] = {"roles": ["analyst"], "valid_after": uretim - 60}
+    assert verify_bearer(session, raw, "publish") is not None
+    session.commit()
+    assert home.kontroller()[-1] == {"uid": UID, "auth_time": uretim, "acr": "1"}
+    home.kisiler[UID] = {"roles": ["analyst"], "valid_after": uretim + 60}
+    aiprobe.ONBELLEK.temizle()
+    assert verify_bearer(session, raw, "publish") is None
+
+
+def test_local_kipte_token_auth_time_bos(db: Db, make_user: MakeUser, engine: Engine) -> None:
+    app = main.create_app()
+
+    @app.post("/mcp")
+    def _mcp() -> dict[str, Any]:
+        return {}
+
+    u = make_user("analyst")
+    with TestClient(app) as client:
+        r = client.post("/auth/login", json={"kullanici_adi": u.kullanici_adi, "parola": PAROLA})
+        assert r.status_code == 200
+        assert client.post("/tokens", json={"kapsam": "publish"}).status_code == 201
+    assert _token_auth_time(engine) == [None]
 
 
 def test_rol_kaldirma_oturumu_dusurur(client: TestClient, home: SahteHome, engine: Engine) -> None:
@@ -529,8 +662,19 @@ def test_cikis_tum_urunlere_yonlendirir(client: TestClient, home: SahteHome) -> 
     _giris(client, home, ["tester"])
     r = client.post("/auth/logout")
     assert r.status_code == 200
-    assert r.json()["redirect"] == f"{ID}/logout?product=testing-probe"
+    assert r.json()["redirect"] == f"{ID}/logout?product=testing-probe&auto=1"
     assert client.get("/auth/me").status_code == 401
+
+
+def test_cikis_form_postu_303_ile_home_cikisina(client: TestClient, home: SahteHome) -> None:
+    _giris(client, home, ["tester"])
+    r = client.post("/auth/logout", headers={"accept": "text/html"}, follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"] == f"{ID}/logout?product=testing-probe&auto=1"
+    assert client.get("/auth/me").status_code == 401
+    # Oturum yokken form POST'u: yerel giriş ekranı.
+    r = client.post("/auth/logout", headers={"accept": "text/html"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/giris"
 
 
 def test_yerel_kipe_donulunce_aiprobe_oturumu_reddedilir(
@@ -623,3 +767,161 @@ def test_oturum_kontrolu_suresi_saatle(home: SahteHome) -> None:
     sabit = datetime(2026, 11, 10, 12, 0, tzinfo=UTC)
     aiprobe.configure(saat=lambda: sabit)
     assert aiprobe.simdi() == sabit
+
+
+# ------------------------------------------------------------------ portal sözleşmesi
+
+
+def test_kimlik_kipi_basligi_yalniz_aiprobe_kipinde(db: Db, make_user: MakeUser) -> None:
+    assert get_settings().auth_mode == "local"
+    with TestClient(main.create_app()) as c:
+        assert "x-tp-kimlik" not in c.get("/auth/me").headers
+        assert "x-tp-kimlik" not in c.get("/health").headers
+
+
+def test_kimlik_kipi_basligi_401_dahil(client: TestClient, home: SahteHome) -> None:
+    r = client.get("/auth/me")
+    assert r.status_code == 401
+    assert r.headers["x-tp-kimlik"] == f"kip=aiprobe; home={ID}; urun=testing-probe"
+
+
+def test_me_aiprobe_oturumunda_product_ve_roles(
+    client: TestClient, home: SahteHome, make_user: MakeUser, engine: Engine, db: Db
+) -> None:
+    analist, po = make_user("analyst"), make_user("po")
+    _bagla(engine, analist)
+    _bagla(engine, po)
+    _giris(client, home, ["analyst", "po"])
+    client.post("/auth/aiprobe/rol-sec", json={"app_user_id": str(po.id)})
+    me = client.get("/auth/me").json()
+    assert me["product"] == "testing-probe" and me["roles"] == ["analyst", "po"]
+
+
+def test_me_yerel_oturumda_ek_alan_yok(db: Db, make_user: MakeUser) -> None:
+    u = make_user("analyst")
+    with TestClient(main.create_app()) as c:
+        c.post("/auth/login", json={"kullanici_adi": u.kullanici_adi, "parola": PAROLA})
+        me = c.get("/auth/me").json()
+    assert "product" not in me and "roles" not in me
+
+
+HTML = {"accept": "text/html,application/xhtml+xml,*/*;q=0.8"}
+
+
+def test_callback_hatasi_tarayicida_turkce_sayfa(client: TestClient, home: SahteHome) -> None:
+    r = client.get("/auth/aiprobe/login", params={"continue": "/gereksinimler"},
+                   follow_redirects=False)  # fmt: skip
+    state = parse_qs(urlsplit(r.headers["location"]).query)["state"][0]
+    r = client.get(
+        "/auth/aiprobe/callback", params={"code": "k", "state": state + "x"}, headers=HTML
+    )
+    assert r.status_code == 400
+    assert r.headers["content-type"].startswith("text/html")
+    assert r.headers["cache-control"] == "no-store"
+    govde = r.text
+    assert '<html lang="tr">' in govde and "Giriş isteği doğrulanamadı" in govde
+    assert "Tekrar dene" in govde and 'href="login?continue=%2Fgereksinimler"' in govde
+    assert "<script" not in govde
+    assert home.cagrilar == []
+    # Geçersiz kod ve home kapalı da sayfa.
+    r = client.get("/auth/aiprobe/login", follow_redirects=False)
+    state = parse_qs(urlsplit(r.headers["location"]).query)["state"][0]
+    r = client.get("/auth/aiprobe/callback", params={"code": "yok", "state": state}, headers=HTML)
+    assert r.status_code == 400 and "Giriş bağlantısının süresi doldu" in r.text
+    home.kapali = True
+    r = client.get("/auth/aiprobe/login", follow_redirects=False)
+    state = parse_qs(urlsplit(r.headers["location"]).query)["state"][0]
+    r = client.get("/auth/aiprobe/callback", params={"code": "k", "state": state}, headers=HTML)
+    assert r.status_code == 503 and "kimlik servisine ulaşılamıyor" in r.text
+
+
+def test_callback_hata_sayfasi_kacislanir(client: TestClient, home: SahteHome) -> None:
+    r = client.get("/auth/aiprobe/login", params={"continue": '/x"><b>'}, follow_redirects=False)
+    state = parse_qs(urlsplit(r.headers["location"]).query)["state"][0]
+    r = client.get("/auth/aiprobe/callback", params={"code": "k", "state": "x"}, headers=HTML)
+    assert r.status_code == 400 and "<b>" not in r.text
+    assert state  # çerezdeki continue yalnız kaçışlı/kodlanmış olarak sayfaya girer
+
+
+def test_login_yapilandirma_eksik_sayfa(
+    client: TestClient, home: SahteHome, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AIPROBE_HOME_RUN_URL", "")
+    get_settings.cache_clear()
+    r = client.get("/auth/aiprobe/login", headers=HTML, follow_redirects=False)
+    assert r.status_code == 503 and "Tekrar dene" in r.text
+    r = client.get("/auth/aiprobe/login", follow_redirects=False)
+    assert r.status_code == 503 and r.json()["kod"] == "kimlik_servisi_yok"
+
+
+# ------------------------------------------------------------------ CONTRACT v1.2: acr + epoch
+
+
+def test_mfa_po_oturumu_ve_tokeni_kontrolde_korunur(
+    home: SahteHome, engine: Engine, session: Session
+) -> None:
+    """`acr=2` saklanır ve gönderilir: home `admin_roles` (po) süzgeci MFA'lı oturumu düşürmez."""
+    with _mcp_istemci(home) as client:
+        _giris(client, home, ["po"])
+        me = client.get("/auth/me").json()
+        assert me["rol"] == "po"
+        _kontrol_zamanini_eskit(engine)
+        assert client.get("/auth/me").status_code == 200
+        assert home.kontroller()[-1]["acr"] == "2"
+    with engine.connect() as c:
+        assert c.execute(text("SELECT acr FROM oturum")).scalar_one() == "2"
+    p = Principal(uuid.UUID(me["id"]), me["kullanici_adi"], "po")
+    _tok, raw = issue_token(session, p, "publish", 3600, auth_time=1_762_780_000, acr="2",
+                            session_epoch_ms=EPOCH_MS)  # fmt: skip
+    session.commit()
+    aiprobe.ONBELLEK.temizle()
+    assert verify_bearer(session, raw, "publish") is not None
+
+
+def test_acr1_devrinde_po_rolu_gelmez(client: TestClient, home: SahteHome, engine: Engine) -> None:
+    r = _giris(client, home, ["analyst", "po"], acr="1")
+    assert r.status_code == 302 and r.headers["location"] == "/x"  # tek aday: analyst
+    assert client.get("/auth/me").json()["rol"] == "analyst"
+    with engine.connect() as c:
+        assert c.execute(text("SELECT rol FROM app_user")).scalars().all() == ["analyst"]
+
+
+def test_ayni_saniyedeki_iptal_oturumu_dusurur_sonraki_giris_gecer(
+    client: TestClient, home: SahteHome, engine: Engine
+) -> None:
+    _giris(client, home, ["tester"])
+    iptal_ms = EPOCH_MS + 400  # girişle aynı saniye, sonra
+    home.kisiler[UID] = {
+        "roles": ["tester"],
+        "revoked_at_ms": iptal_ms,
+        "valid_after": iptal_ms // 1000,
+    }
+    _kontrol_zamanini_eskit(engine)
+    assert client.get("/auth/me").status_code == 401
+    # Çıkıştan sonra aynı saniyede yeni giriş (E > R) geçer.
+    r = _giris(client, home, ["tester"], session_epoch_ms=iptal_ms + 100)
+    assert r.status_code == 302
+    _kontrol_zamanini_eskit(engine)
+    assert client.get("/auth/me").status_code == 200
+
+
+def test_me_products_haritasi_devir_ve_kontrolden(
+    client: TestClient, home: SahteHome, engine: Engine
+) -> None:
+    _giris(client, home, ["tester"])
+    assert client.get("/auth/me").json()["products"] == {"tp": ["tester"], "ap": ["user"]}
+    home.kisiler[UID] = {"roles": ["tester"], "diger": {"ap": ["admin"]}}
+    _kontrol_zamanini_eskit(engine)
+    assert client.get("/auth/me").json()["products"] == {"tp": ["tester"], "ap": ["admin"]}
+
+
+def test_alembic_tek_bas() -> None:
+    """Göç zinciri tek başlı. `feat/mobil-masaustu`'nun `0018_script_platform`'u (down_revision
+    0017) bu dalla birleşince iki baş olur: `0019.down_revision = "0018"` yapın (tasks.md T051)."""
+    from alembic.script import ScriptDirectory
+
+    from tests.unit.conftest import alembic_config
+
+    script = ScriptDirectory.from_config(alembic_config())
+    bas = script.get_heads()
+    assert bas == ["0019"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"

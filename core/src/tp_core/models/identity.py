@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, Integer, false, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from tp_core.models import enums
@@ -48,6 +50,13 @@ class ApiToken(Base):
     parola_izi: Mapped[str | None]
     # 0019: üretim anındaki sahibin `app_user.auth_epoch`'u; dış iptalde token düşer.
     auth_epoch: Mapped[int] = mapped_column(Integer, server_default=text("0"), default=0)
+    # 0019: token'ı üreten AI Probe oturumunun `auth_time`'ı (epoch sn). Oturum kontrolü bu
+    # değerle yapılır: üretimden önceki iptal (`tokens_valid_after_time > auth_time`) de düşürür.
+    # Yerel oturumdan üretilmiş token'da boş (kontrol, sahip bağlıysa üretim anıyla yapılır).
+    # `acr` ve `session_epoch_ms` de üreten oturumdan kopyalanır (CONTRACT v1.2 session/check).
+    auth_time: Mapped[int | None] = mapped_column(BigInteger)
+    acr: Mapped[str | None]
+    session_epoch_ms: Mapped[int | None] = mapped_column(BigInteger)
     olusturma: Mapped[datetime] = olusturma_col()
 
 
@@ -62,11 +71,16 @@ class Oturum(Base):
     son_kullanma: Mapped[datetime]
     iptal_zamani: Mapped[datetime | None]
     olusturma: Mapped[datetime] = olusturma_col()
-    # 0019 (AI Probe oturumu; yerel oturumda boş): kişi uid'si, devirdeki auth_time (epoch sn) ve
-    # son başarılı `/v1/session/check` zamanı.
+    # 0019 (AI Probe oturumu; yerel oturumda boş): kişi uid'si, devirdeki `auth_time` (epoch sn),
+    # `acr` ("1"|"2"; MFA), `session_epoch_ms` (devir kodunun üretildiği an, ms; CONTRACT v1.2
+    # iptal kuralı), son başarılı `/v1/session/check` zamanı ve kişinin ürün→rol haritası
+    # (`products`, değiştirici için; devir/kontrol yanıtından).
     external_uid: Mapped[str | None]
     auth_time: Mapped[int | None] = mapped_column(BigInteger)
+    acr: Mapped[str | None]
+    session_epoch_ms: Mapped[int | None] = mapped_column(BigInteger)
     son_kontrol: Mapped[datetime | None]
+    urunler: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
 
 class KimlikBagi(Base):

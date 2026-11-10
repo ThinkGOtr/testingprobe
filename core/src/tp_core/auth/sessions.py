@@ -16,6 +16,7 @@ import hashlib
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy import delete, func, select, update
@@ -130,6 +131,9 @@ def open_session(
     *,
     external_uid: str | None = None,
     auth_time: int | None = None,
+    acr: str | None = None,
+    session_epoch_ms: int | None = None,
+    urunler: dict[str, Any] | None = None,
 ) -> uuid.UUID:
     """Yeni `oturum` satırı açar; kullanıcının süresi dolmuş/iptal edilmiş satırlarını siler.
 
@@ -153,6 +157,9 @@ def open_session(
             son_kullanma=simdi + timedelta(seconds=sure),
             external_uid=external_uid,
             auth_time=auth_time,
+            acr=acr,
+            session_epoch_ms=session_epoch_ms,
+            urunler=urunler,
             son_kontrol=simdi,
         )
     session.add(o)
@@ -181,6 +188,12 @@ class OturumDurumu:
 
     degraded: bool = False
     external_uid: str | None = None
+    # AI Probe oturumunun devirdeki `auth_time`, `acr`, `session_epoch_ms`'i (bu oturumdan üretilen
+    # `tpt_` token'a kopyalanır) ve ürün→rol haritası (`/auth/me` `products`).
+    auth_time: int | None = None
+    acr: str | None = None
+    session_epoch_ms: int | None = None
+    urunler: dict[str, Any] | None = None
 
 
 def session_valid(
@@ -225,6 +238,10 @@ def session_valid(
             return None
         if durum is not None:
             durum.external_uid = o.external_uid
+            durum.auth_time = o.auth_time
+            durum.acr = o.acr
+            durum.session_epoch_ms = o.session_epoch_ms
+            durum.urunler = o.urunler
             durum.degraded = sonuc is aiprobe.Kontrol.ULASILAMADI
         if uzat:
             aiprobe.sure_uzat(session, o)

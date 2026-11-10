@@ -135,6 +135,11 @@ def _metinler(*parcalar: Any) -> Iterator[str]:
 # ------------------------------------------------------------------ rotalar.json
 
 
+# Asistan bağlamı dışındaki portal ekranları: AI Probe rol seçici (specs/010-aiprobe-sso; oturum
+# öncesi/geçiş ekranı, Kabuk ve asistan yok). `rotalar.json`'a girmez (asistan bağlantı vermez).
+ASISTAN_DISI = frozenset({"/rol-sec"})
+
+
 def _app_rotalari() -> set[str]:
     """App.tsx `<Route path=…>` / `<Route index …>` (Kabuk altı "/" + giriş)."""
     src = (REPO / "review-portal" / "src" / "App.tsx").read_text(encoding="utf-8")
@@ -147,7 +152,7 @@ def _app_rotalari() -> set[str]:
         if path == "*":
             continue
         out.add(path if path.startswith("/") else "/" + path)
-    return out
+    return out - ASISTAN_DISI
 
 
 def _kalip_regex(kalip: str) -> str:
@@ -168,7 +173,7 @@ def test_rotalar_json_lib_rotalar_ts_ile_birebir() -> None:
     src = (REPO / "review-portal" / "src" / "lib" / "rotalar.ts").read_text(encoding="utf-8")
     desenler = re.search(r"ROTA_DESENLERI[^=]*=\s*\[(.*?)\];", src, re.DOTALL)
     if desenler:  # react-router desenleri (`:id`), kalıplar bunlardan türetilir
-        assert set(re.findall(r'"([^"]+)"', desenler.group(1))) == set(_rotalar())
+        assert set(re.findall(r'"([^"]+)"', desenler.group(1))) - ASISTAN_DISI == set(_rotalar())
         return
     blok = re.search(r"ROTA_KALIPLARI[^=]*=\s*\[(.*?)\];", src, re.DOTALL)
     assert blok, "lib/rotalar.ts ROTA_DESENLERI/ROTA_KALIPLARI bulunamadı"

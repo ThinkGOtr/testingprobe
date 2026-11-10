@@ -2,14 +2,17 @@
 
 - `kimlik_bagi(external_uid, app_user_id UNIQUE)`: AI Probe kişisi ↔ TP rol hesabı.
 - `app_user.auth_epoch` (iptal sayacı, varsayılan 0), `app_user.ad_soyad` (boş bırakılabilir).
-- `oturum.external_uid`, `oturum.auth_time` (epoch sn), `oturum.son_kontrol` (boş bırakılabilir;
-  yerel oturumda boş).
-- `api_token.auth_epoch` (varsayılan 0).
+- `oturum.external_uid`, `oturum.auth_time` (epoch sn), `oturum.acr`, `oturum.session_epoch_ms`
+  (CONTRACT v1.2), `oturum.son_kontrol`, `oturum.urunler` (JSONB ürün→rol haritası) — boş
+  bırakılabilir; yerel oturumda boş.
+- `api_token.auth_epoch` (varsayılan 0), `api_token.auth_time` / `acr` / `session_epoch_ms`
+  (üreten AI Probe oturumundan kopya; yerel oturumdan üretilen token'da boş).
 
 Tüm NOT NULL kolonlar `server_default`'lu: mevcut satırlar ve `local` kip etkilenmez.
 
-Not: `feat/mobil-masaustu` dalının `0018` göçü `dev`'e birleşince bu göçün `down_revision`'ı
-`"0018"` yapılır (tek baş kalmalı).
+Not: `feat/mobil-masaustu` dalında `0018_script_platform` (down_revision `0017`) var. O dal `dev`'e
+birleşince bu göçün `down_revision`'ı `"0018"` yapılır (tasks.md T051); tek baş kalmazsa
+`tests/unit/platform/test_aiprobe_sso.py::test_alembic_tek_bas` başarısız olur.
 
 Revision ID: 0019
 Revises: 0017
@@ -30,9 +33,15 @@ def upgrade() -> None:
     op.execute("ALTER TABLE app_user ADD COLUMN auth_epoch INTEGER DEFAULT 0 NOT NULL")
     op.execute("ALTER TABLE app_user ADD COLUMN ad_soyad TEXT")
     op.execute("ALTER TABLE api_token ADD COLUMN auth_epoch INTEGER DEFAULT 0 NOT NULL")
+    op.execute("ALTER TABLE api_token ADD COLUMN auth_time BIGINT")
+    op.execute("ALTER TABLE api_token ADD COLUMN acr TEXT")
+    op.execute("ALTER TABLE api_token ADD COLUMN session_epoch_ms BIGINT")
     op.execute("ALTER TABLE oturum ADD COLUMN external_uid TEXT")
     op.execute("ALTER TABLE oturum ADD COLUMN auth_time BIGINT")
     op.execute("ALTER TABLE oturum ADD COLUMN son_kontrol TIMESTAMP WITH TIME ZONE")
+    op.execute("ALTER TABLE oturum ADD COLUMN acr TEXT")
+    op.execute("ALTER TABLE oturum ADD COLUMN session_epoch_ms BIGINT")
+    op.execute("ALTER TABLE oturum ADD COLUMN urunler JSONB")
     op.execute(
         """
 CREATE TABLE kimlik_bagi (
@@ -52,9 +61,15 @@ CREATE TABLE kimlik_bagi (
 
 def downgrade() -> None:
     op.execute("DROP TABLE kimlik_bagi")
+    op.execute("ALTER TABLE oturum DROP COLUMN urunler")
+    op.execute("ALTER TABLE oturum DROP COLUMN session_epoch_ms")
+    op.execute("ALTER TABLE oturum DROP COLUMN acr")
     op.execute("ALTER TABLE oturum DROP COLUMN son_kontrol")
     op.execute("ALTER TABLE oturum DROP COLUMN auth_time")
     op.execute("ALTER TABLE oturum DROP COLUMN external_uid")
+    op.execute("ALTER TABLE api_token DROP COLUMN session_epoch_ms")
+    op.execute("ALTER TABLE api_token DROP COLUMN acr")
+    op.execute("ALTER TABLE api_token DROP COLUMN auth_time")
     op.execute("ALTER TABLE api_token DROP COLUMN auth_epoch")
     op.execute("ALTER TABLE app_user DROP COLUMN ad_soyad")
     op.execute("ALTER TABLE app_user DROP COLUMN auth_epoch")

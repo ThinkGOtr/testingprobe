@@ -75,6 +75,10 @@ class DevirYaniti:
     state: str
     continue_: str
     locale: str | None = None
+    # CONTRACT v1.2: devir kodunun üretildiği an (ms); oturumda saklanır, her kontrolde gönderilir.
+    session_epoch_ms: int | None = None
+    # Tüm ürünlerdeki roller (`{"tp": [...], "ap": [...]}`; değiştirici için).
+    products: dict[str, list[str]] | None = None
 
 
 @dataclass(frozen=True)
@@ -82,6 +86,38 @@ class KontrolSonucu:
     valid: bool
     roles: frozenset[str] = frozenset()
     reason: str | None = None
+    products: dict[str, list[str]] | None = None
+
+
+@dataclass(frozen=True)
+class OturumKimligi:
+    """`/v1/session/check`'e giden oturum alanları (CONTRACT v1.2): devirdeki `auth_time` (MFA
+    tazeliği), `acr` ("2" = MFA; "1"de home ürünün `admin_roles`'unu — TP'de `po` — çıkarır) ve
+    `session_epoch_ms` (iptal kuralı; yoksa eski `V > auth_time` kuralı)."""
+
+    auth_time: int
+    acr: str = "1"
+    session_epoch_ms: int | None = None
+
+    @classmethod
+    def of(cls, kaynak: Any) -> OturumKimligi:
+        """`oturum` ya da `api_token` satırından (alanlar boşsa güvenli varsayılan)."""
+        epoch = getattr(kaynak, "session_epoch_ms", None)
+        return cls(
+            int(getattr(kaynak, "auth_time", None) or 0),
+            str(getattr(kaynak, "acr", None) or "1"),
+            int(epoch) if epoch else None,
+        )
+
+
+def _urun_haritasi(deger: Any) -> dict[str, list[str]] | None:
+    if not isinstance(deger, Mapping):
+        return None
+    return {
+        str(k): [str(x) for x in v]
+        for k, v in deger.items()
+        if isinstance(k, str) and isinstance(v, list)
+    }
 
 
 # ------------------------------------------------------------------ servis kimliği (enjekte)
@@ -272,18 +308,27 @@ class HomeIstemcisi:
                 state=str(v.get("state") or ""),
                 continue_=str(v.get("continue") or "/"),
                 locale=v.get("locale"),
+                session_epoch_ms=int(v["session_epoch_ms"]) if v.get("session_epoch_ms") else None,
+                products=_urun_haritasi(v.get("products")),
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise HomeUlasilamaz("redeem yanıtı sözleşmeye uymuyor") from exc
 
-    def check(self, uid: str, auth_time: int) -> KontrolSonucu:
-        r = self._post("/v1/session/check", {"uid": uid, "auth_time": auth_time})
+    def check(self, uid: str, kimlik: OturumKimligi) -> KontrolSonucu:
+        govde: dict[str, Any] = {"uid": uid, "auth_time": kimlik.auth_time, "acr": kimlik.acr}
+        if kimlik.session_epoch_ms:
+            govde["session_epoch_ms"] = kimlik.session_epoch_ms
+        r = self._post("/v1/session/check", govde)
         if r.status_code != 200:
             raise HomeUlasilamaz(f"/v1/session/check: {r.status_code}")
         try:
             v = r.json()
             if v.get("valid") is True:
-                return KontrolSonucu(True, frozenset(str(x) for x in (v.get("roles") or [])))
+                return KontrolSonucu(
+                    True,
+                    frozenset(str(x) for x in (v.get("roles") or [])),
+                    products=_urun_haritasi(v.get("products")),
+                )
             return KontrolSonucu(False, reason=str(v.get("reason") or "bilinmiyor"))
         except (TypeError, ValueError, AttributeError) as exc:
             raise HomeUlasilamaz("check yanıtı sözleşmeye uymuyor") from exc
@@ -302,8 +347,11 @@ def home() -> HomeIstemcisi:
 # ------------------------------------------------------------------ oturum kontrolü + önbellek
 
 
+_Anahtar = tuple[str, OturumKimligi]
+
+
 class _Onbellek:
-    """Süreç içi `(uid, auth_time) → (zaman, sonuç)`; ömür `AIPROBE_SESSION_CHECK_S`.
+    """Süreç içi `(uid, OturumKimligi) → (zaman, sonuç)`; ömür `AIPROBE_SESSION_CHECK_S`.
 
     Yalnız başarılı yanıtlar saklanır (geçerli ya da geçersiz). Erişilemezlik ayrıca
     `ulasilamadi_s` boyunca hatırlanır: home kapalıyken her istek zaman aşımı beklemesin.
@@ -312,17 +360,17 @@ class _Onbellek:
     MAX = 10_000
 
     def __init__(self) -> None:
-        self._k: dict[tuple[str, int], tuple[float, KontrolSonucu | None]] = {}
+        self._k: dict[_Anahtar, tuple[float, KontrolSonucu | None]] = {}
         self._kilit = threading.Lock()
 
-    def al(self, anahtar: tuple[str, int], ttl_s: float) -> tuple[bool, KontrolSonucu | None]:
+    def al(self, anahtar: _Anahtar, ttl_s: float) -> tuple[bool, KontrolSonucu | None]:
         with self._kilit:
             kayit = self._k.get(anahtar)
             if kayit is None or time.monotonic() - kayit[0] >= ttl_s:
                 return False, None
             return True, kayit[1]
 
-    def koy(self, anahtar: tuple[str, int], sonuc: KontrolSonucu | None) -> None:
+    def koy(self, anahtar: _Anahtar, sonuc: KontrolSonucu | None) -> None:
         with self._kilit:
             if len(self._k) >= self.MAX:
                 self._k.clear()
@@ -342,10 +390,10 @@ ONBELLEK = _Onbellek()
 ULASILAMADI_S = 15.0
 
 
-def kontrol_et(uid: str, auth_time: int, *, taze: bool = False) -> KontrolSonucu:
+def kontrol_et(uid: str, kimlik: OturumKimligi, *, taze: bool = False) -> KontrolSonucu:
     """Önbellekli `/v1/session/check`; erişilemezse `HomeUlasilamaz`."""
     ttl = float(get_settings().aiprobe_session_check_s)
-    anahtar = (uid, int(auth_time))
+    anahtar = (uid, kimlik)
     if not taze:
         var, sonuc = ONBELLEK.al(anahtar, ttl)
         if var and sonuc is not None:
@@ -354,7 +402,7 @@ def kontrol_et(uid: str, auth_time: int, *, taze: bool = False) -> KontrolSonucu
         if var:  # yakın zamanda erişilemedi (sonuç None)
             raise HomeUlasilamaz("yakın zamanda erişilemedi")
     try:
-        sonuc = home().check(uid, int(auth_time))
+        sonuc = home().check(uid, kimlik)
     except HomeUlasilamaz:
         ONBELLEK.koy(anahtar, None)
         log.warning("aiprobe-home oturum kontrolü yapılamadı; oturum korunuyor", exc_info=True)
@@ -373,7 +421,7 @@ def oturum_kontrol(session: Session, o: Oturum, user: AppUser) -> Kontrol:
     ):
         return Kontrol.GECERLI
     try:
-        sonuc = kontrol_et(o.external_uid, int(o.auth_time or 0))
+        sonuc = kontrol_et(o.external_uid, OturumKimligi.of(o))
     except HomeUlasilamaz:
         return Kontrol.ULASILAMADI
     if not sonuc.valid:
@@ -382,7 +430,11 @@ def oturum_kontrol(session: Session, o: Oturum, user: AppUser) -> Kontrol:
     if user.rol not in sonuc.roles:
         iptal_et(o.external_uid, sonuc.roles, "rol_kaldirildi")
         return Kontrol.GECERSIZ
-    session.execute(update(Oturum).where(Oturum.id == o.id).values(son_kontrol=an))
+    degerler: dict[str, Any] = {"son_kontrol": an}
+    if sonuc.products is not None and sonuc.products != o.urunler:
+        degerler["urunler"] = sonuc.products
+        o.urunler = sonuc.products
+    session.execute(update(Oturum).where(Oturum.id == o.id).values(**degerler))
     return Kontrol.GECERLI
 
 
@@ -441,17 +493,18 @@ def bagli_uid(session: Session, user_id: uuid.UUID) -> str | None:
     return session.scalar(select(KimlikBagi.external_uid).where(KimlikBagi.app_user_id == user_id))
 
 
-def token_kontrol(session: Session, user: AppUser, uretim: datetime) -> bool:
+def token_kontrol(session: Session, user: AppUser, kimlik: OturumKimligi) -> bool:
     """`tpt_` token'ı: sahip bir AI Probe kişisine bağlıysa önbellekli oturum kontrolü.
 
-    `auth_time` olarak token'ın üretim anı kullanılır (token, o anda geçerli bir oturumdan
-    üretilmiştir). Erişilemezse token korunur.
+    `kimlik`: token'ı üreten AI Probe oturumunun alanları (`api_token.auth_time`, `acr`,
+    `session_epoch_ms`); token yerel oturumdan üretilmişse `auth_time` = üretim anı, `acr` "1",
+    epoch yok. Erişilemezse token korunur.
     """
     uid = bagli_uid(session, user.id)
     if uid is None:
         return True
     try:
-        sonuc = kontrol_et(uid, int(uretim.timestamp()))
+        sonuc = kontrol_et(uid, kimlik)
     except HomeUlasilamaz:
         return True
     if not sonuc.valid:

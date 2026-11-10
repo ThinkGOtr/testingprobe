@@ -30,7 +30,24 @@ def token_hash(raw: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def issue_token(session: Session, user: Principal, kapsam: str, ttl_s: int) -> tuple[ApiToken, str]:
+def issue_token(
+    session: Session,
+    user: Principal,
+    kapsam: str,
+    ttl_s: int,
+    *,
+    auth_time: int | None = None,
+    acr: str | None = None,
+    session_epoch_ms: int | None = None,
+) -> tuple[ApiToken, str]:
+    """Token üretir. `auth_time`/`acr`/`session_epoch_ms`: üreten AI Probe oturumunun alanları
+    (yerel oturumda None).
+
+    AI Probe oturumundan üretilen token o oturumun alanlarını taşır; böylece oturum açıldıktan
+    sonra ama token üretilmeden önce yapılan bir iptal (CONTRACT v1.2: `revoked_at_ms ≥
+    session_epoch_ms`) token'ı da düşürür ve MFA'lı (`acr=2`) oturumun `po` token'ı home'da
+    `admin_roles` süzgecine takılmaz. Yerel oturumdan üretilende boştur; kontrol üretim anıyla.
+    """
     if kapsam not in KAPSAMLAR:
         raise ValueError(f"geçersiz kapsam: {kapsam}")
     if user.id is None or user.kanal != "portal":
@@ -42,6 +59,9 @@ def issue_token(session: Session, user: Principal, kapsam: str, ttl_s: int) -> t
     tok = ApiToken(
         parola_izi=password_fingerprint(sahip.parola_hash),
         auth_epoch=sahip.auth_epoch,
+        auth_time=auth_time,
+        acr=acr,
+        session_epoch_ms=session_epoch_ms,
         user_id=user.id,
         kapsam=kapsam,
         token_hash=token_hash(raw),
@@ -82,7 +102,11 @@ def verify_bearer(session: Session, raw: str | None, kapsam: str) -> Principal |
     if aiprobe_acik():
         from tp_core.auth import aiprobe
 
-        if not aiprobe.token_kontrol(session, user, tok.olusturma):
+        if tok.auth_time is not None:
+            kimlik = aiprobe.OturumKimligi.of(tok)
+        else:  # yerel oturumdan üretildi: üretim anı, acr 1, epoch yok (v1.2 öncesi kural)
+            kimlik = aiprobe.OturumKimligi(int(tok.olusturma.timestamp()))
+        if not aiprobe.token_kontrol(session, user, kimlik):
             return None
     session.execute(
         update(ApiToken).where(ApiToken.id == tok.id).values(son_kullanim=datetime.now(UTC))
