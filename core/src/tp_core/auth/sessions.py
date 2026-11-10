@@ -227,6 +227,9 @@ def session_valid(
     )
     if o is None:
         return None
+    if o.external_uid is None and get_settings().auth_mode == "aiprobe":
+        # Yalnız ortak kimlik kipinde yerel oturum (kip değişmeden önce açılmış) kabul edilmez.
+        return None
     if o.external_uid is not None:
         # Yerel kipe dönülmüşse ortak kimlikle açılmış oturum kabul edilmez (fail-closed).
         if not aiprobe_acik():

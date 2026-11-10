@@ -1,7 +1,8 @@
 """POST /auth/login · POST /auth/logout · GET /auth/me
 
 `TP_AUTH_MODE=aiprobe` kipinde yerel giriş kapalıdır (`/auth/login` 404); giriş
-`/auth/aiprobe/*` uçlarındandır (api/routers/aiprobe.py, TEKNIK-TASARIM §8.14).
+`/auth/aiprobe/*` uçlarındandır (api/routers/aiprobe.py, TEKNIK-TASARIM §8.14). `both` kipinde
+bir AI Probe kişisine bağlı (`kimlik_bagi`) hesap yerel parolayla açılmaz (403 `aiprobe_gerekli`).
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ from typing import Annotated
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse, RedirectResponse, Response
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -20,7 +21,7 @@ from tp_core.audit import audit_on_commit
 from tp_core.auth.client_ip import client_address
 from tp_core.auth.deps import Codec, CurrentUser, DbSession, session_codec
 from tp_core.auth.display import configured_names, display_name, person_name
-from tp_core.auth.login import THROTTLE, authenticate
+from tp_core.auth.login import THROTTLE, OrtakKimlikGerekli, authenticate
 from tp_core.auth.sessions import (
     DEVICE_COOKIE_NAME,
     DEVICE_MAX_AGE_S,
@@ -118,7 +119,17 @@ def login(body: LoginIn, request: Request, session: DbSession, codec: Codec) -> 
             },
             status_code=429,
         )
-    user = authenticate(session, body.kullanici_adi, body.parola, client_address(request))
+    try:
+        user = authenticate(session, body.kullanici_adi, body.parola, client_address(request))
+    except OrtakKimlikGerekli:
+        THROTTLE.success(anahtar)
+        return JSONResponse(
+            {
+                "detail": "Bu hesap AI Probe hesabınıza bağlı; AI Probe ile giriş yapın",
+                "kod": "aiprobe_gerekli",
+            },
+            status_code=403,
+        )
     if user is None:
         # İstisna değil yanıt: başarısız deneme denetim kaydıyla birlikte commit edilir.
         return JSONResponse(
@@ -153,8 +164,8 @@ def logout(
     """Yerel oturumu kapatır. AI Probe oturumunda tüm ürünlerden çıkış sayfası
     `{home}/logout?product=<id>&auto=1` (yerel çıkış yapıldı → home onay istemez).
 
-    Portal (fetch, JSON) `{"ok", "redirect"}` alır ve yönlendirmeyi kendisi izler; tarayıcı form
-    POST'u (`Accept: text/html`) 303 ile doğrudan oraya (AI Probe oturumu değilse `/giris`) gider.
+    Yanıt her zaman JSON `{"ok", "redirect"?}`: portal (fetch) yönlendirmeyi kendisi izler. Form
+    POST'u ile 303 yönlendirme yoktur (CSP `form-action 'self'` home kaynağına izin vermez).
     """
     raw = request.cookies.get(cookie_name())
     veri = codec.loads(raw) if raw else None
@@ -176,11 +187,7 @@ def logout(
             govde["redirect"] = f"{ayar.aiprobe_id_origin.rstrip('/')}/logout?" + urlencode(
                 {"product": ayar.aiprobe_product_id, "auto": "1"}
             )
-    yanit: Response
-    if "text/html" in request.headers.get("accept", "").lower():
-        yanit = RedirectResponse(str(govde.get("redirect") or "/giris"), status_code=303)
-    else:
-        yanit = JSONResponse(govde)
+    yanit = JSONResponse(govde)
     yanit.delete_cookie(
         cookie_name(), path="/", httponly=True, samesite="lax", secure=cookie_secure()
     )
@@ -195,7 +202,7 @@ class MeYaniti(Me):
     """
 
     product: str | None = None
-    # Kişiye bağlı rol hesaplarının rolleri (sıralı).
+    # Kişiye bağlı rol hesaplarından AI Probe'un şu an verdiği rollerdekiler (sıralı).
     roles: list[str] | None = None
     # Kişinin tüm AI Probe ürünlerindeki rolleri (`{"tp": [...], "ap": [...]}`; devir/kontrol
     # yanıtından, oturumda saklanır). Değiştirici diğer ürünlere erişimi buradan bilir.
@@ -211,7 +218,20 @@ def me(user: CurrentUser, request: Request, session: DbSession) -> MeYaniti:
         from tp_core.auth import aiprobe
 
         yanit.product = get_settings().aiprobe_product_id
-        yanit.roles = sorted({h.rol for h in aiprobe.bagli_hesaplar(session, uid)})
         durum = getattr(request.state, "oturum_durumu", None)
-        yanit.products = getattr(durum, "urunler", None) or {}
+        urunler = getattr(durum, "urunler", None) or {}
+        yanit.products = urunler
+        # Yalnız AI Probe'un şu an verdiği roller (bağlı hesap rolleriyle kesişim): oturumdaki ürün
+        # haritası (devirde ve her kontrolde home'dan yenilenir); yoksa önbellekli kontrol; home'a
+        # ulaşılamazsa yalnız etkin rol.
+        tp_haritasi = urunler.get(aiprobe.URUN_KODU)
+        if isinstance(tp_haritasi, list):
+            verilen: set[str] = {str(r) for r in tp_haritasi}
+        else:
+            try:
+                verilen = set(aiprobe.kontrol_et(uid, aiprobe.OturumKimligi.of(durum)).roles)
+            except aiprobe.HomeUlasilamaz:
+                verilen = {user.rol}
+        bagli = {h.rol for h in aiprobe.bagli_hesaplar(session, uid)}
+        yanit.roles = sorted(bagli & verilen)
     return yanit

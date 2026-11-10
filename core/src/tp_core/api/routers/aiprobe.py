@@ -9,7 +9,9 @@ Yalnız `TP_AUTH_MODE=aiprobe|both`; `local` kipte bütün uçlar 404 (rota yok 
 - `POST /auth/aiprobe/rol-sec {app_user_id}` → seçim çereziyle oturum.
 - `POST /auth/aiprobe/rol-degistir {app_user_id}` → bağ + rol taze kontrolle doğrulanır, yeni sid.
 
-Çerezler hep `__Host-` önekli (Secure, Path=/, alan adı yok). Hata gövdesi `{"detail", "kod"}`;
+Çerezler hep `__Host-` önekli (Secure, Path=/, alan adı yok); tek istisna CONTRACT'a göre yerel
+geliştirme: düz `http://localhost` isteğinde state çerezi Secure'suz `aiprobe_state` adıyla
+yazılır. Hata gövdesi `{"detail", "kod"}`;
 `login` ve `callback` tarayıcı gezintisidir: istek `Accept: text/html` taşıyorsa aynı durum kodu
 Türkçe bir hata sayfasıyla döner ("Tekrar dene" → yeniden giriş; JSON gösterilmez).
 """
@@ -50,6 +52,9 @@ router = APIRouter(prefix="/auth/aiprobe", tags=["auth"])
 log = logging.getLogger(__name__)
 
 STATE_COOKIE = "__Host-aiprobe_state"
+# CONTRACT "Ürün tarafı": yerel http'de (yalnız localhost) Secure'suz ad.
+STATE_COOKIE_YEREL = "aiprobe_state"
+YEREL_HOSTLAR = frozenset({"localhost", "127.0.0.1", "::1"})
 STATE_MAX_AGE_S = 600
 SECIM_COOKIE = "__Host-tp_rol_secimi"
 SECIM_SALT = "tp-rol-secimi-v1"
@@ -73,14 +78,43 @@ def _yapilandirma_eksik() -> bool:
 YAPILANDIRMA_YOK = "AI Probe girişi yapılandırılmamış (AIPROBE_* eksik)"
 
 
+def _guvenli_cerez(ad: str) -> bool:
+    return ad != STATE_COOKIE_YEREL
+
+
 def _cerez(yanit: Response, ad: str, deger: str, max_age: int) -> None:
     yanit.set_cookie(
-        ad, deger, max_age=max_age, httponly=True, samesite="lax", secure=True, path="/"
+        ad,
+        deger,
+        max_age=max_age,
+        httponly=True,
+        samesite="lax",
+        secure=_guvenli_cerez(ad),
+        path="/",
     )
 
 
 def _cerez_sil(yanit: Response, ad: str) -> None:
-    yanit.delete_cookie(ad, path="/", httponly=True, samesite="lax", secure=True)
+    yanit.delete_cookie(ad, path="/", httponly=True, samesite="lax", secure=_guvenli_cerez(ad))
+
+
+def _state_cerezi(request: Request) -> str:
+    """İsteğin kanalına göre state çerezinin adı: düz http + localhost → Secure'suz yerel ad.
+
+    Okuma da aynı kuralla yapılır: https'de Secure'suz (araya girilerek yazılabilen) çerez kabul
+    edilmez.
+    """
+    if request.url.scheme == "http" and request.url.hostname in YEREL_HOSTLAR:
+        return STATE_COOKIE_YEREL
+    return STATE_COOKIE
+
+
+def _onceki_oturumu_kapat(request: Request, session: Session, codec: SessionCodec) -> bool:
+    """Tarayıcıda önceki bir oturum çerezi varsa o `oturum` satırı iptal edilir (yeni girişte eski
+    sid kopyası geçerli kalmasın). İptal edildiyse True."""
+    raw = request.cookies.get(cookie_name())
+    veri = codec.loads(raw) if raw else None
+    return veri is not None and revoke_session(session, veri)
 
 
 def _hata(status: int, kod: str, detail: str, *sil: str) -> JSONResponse:
@@ -179,7 +213,7 @@ def login(
         {"product": ayar.aiprobe_product_id, "state": state, "continue": devam}
     )
     yanit = RedirectResponse(hedef, status_code=302)
-    _cerez(yanit, STATE_COOKIE, f"{state}|{quote(devam, safe='')}", STATE_MAX_AGE_S)
+    _cerez(yanit, _state_cerezi(request), f"{state}|{quote(devam, safe='')}", STATE_MAX_AGE_S)
     return yanit
 
 
@@ -223,12 +257,13 @@ def callback(
     code: Annotated[str, Query(max_length=512)] = "",
     state: Annotated[str, Query(max_length=256)] = "",
 ) -> Response:
-    raw = request.cookies.get(STATE_COOKIE) or ""
+    state_adi = _state_cerezi(request)
+    raw = request.cookies.get(state_adi) or ""
     cerez_state, _, cerez_devam = raw.partition("|")
     devam = aiprobe.guvenli_continue(unquote(cerez_devam) or "/")
 
     def hata(status: int, kod: str, detail: str) -> Response:
-        return _hata_sayfasi(request, status, kod, detail, devam, STATE_COOKIE)
+        return _hata_sayfasi(request, status, kod, detail, devam, state_adi)
 
     if _yapilandirma_eksik():
         return hata(503, "kimlik_servisi_yok", YAPILANDIRMA_YOK)
@@ -261,11 +296,12 @@ def callback(
     aiprobe.jit_hesaplar(session, devir, roller)
     adaylar = [h for h in aiprobe.bagli_hesaplar(session, devir.uid) if h.rol in roller]
     kimlik = aiprobe.OturumKimligi(devir.auth_time, devir.acr, devir.session_epoch_ms)
+    onceki_kapandi = _onceki_oturumu_kapat(request, session, codec)
     if len(adaylar) == 1:
         yanit: Response = RedirectResponse(devam, status_code=302)
         _oturum_ac(session, codec, adaylar[0], devir.uid, kimlik, devir.products, yanit,
                    ozet={"acr": devir.acr})  # fmt: skip
-        _cerez_sil(yanit, STATE_COOKIE)
+        _cerez_sil(yanit, state_adi)
         return yanit
     secim = {
         "x": devir.uid,
@@ -279,7 +315,9 @@ def callback(
     }
     yanit = RedirectResponse(f"{ROL_SEC_SAYFASI}?continue={quote(devam, safe='')}", 302)
     _cerez(yanit, SECIM_COOKIE, codec.dumps_signed(SECIM_SALT, secim), SECIM_MAX_AGE_S)
-    _cerez_sil(yanit, STATE_COOKIE)
+    _cerez_sil(yanit, state_adi)
+    if onceki_kapandi:
+        _cerez_sil(yanit, cookie_name())
     return yanit
 
 
@@ -384,14 +422,28 @@ def rol_sec(body: HesapSec, request: Request, session: DbSession, codec: Codec) 
         or hedef.rol not in secim["r"]
     ):
         raise KodluHata(403, "yasak", "Bu rol hesabı size bağlı değil")
+    kimlik = aiprobe.OturumKimligi(
+        int(secim["t"]), str(secim.get("a") or "1"), int(secim["e"]) if secim.get("e") else None
+    )
+    # Seçim çerezi 10 dk geçerli: bu arada AI Probe'da iptal/rol kaldırma olmuş olabilir; oturum
+    # açmadan önce taze kontrol.
+    try:
+        sonuc = aiprobe.kontrol_et(secim["x"], kimlik, taze=True)
+    except aiprobe.HomeUlasilamaz as exc:
+        raise KodluHata(
+            503, "kimlik_servisi_yok", "AI Probe kimlik servisine ulaşılamıyor"
+        ) from exc
+    if not sonuc.valid:
+        aiprobe.iptal_et(secim["x"], None, sonuc.reason or "gecersiz")
+        return _hata(401, "yetkisiz", "Oturumunuz sonlandırıldı; yeniden giriş yapın", SECIM_COOKIE)
+    if hedef.rol not in sonuc.roles:
+        raise KodluHata(403, "yasak", "Bu rol AI Probe hesabınızda tanımlı değil")
+    _onceki_oturumu_kapat(request, session, codec)
     yanit = JSONResponse(
         me_of(session, hedef.id, hedef.kullanici_adi, hedef.rol).model_dump(mode="json")
         | {"continue": aiprobe.guvenli_continue(secim["c"])}
     )
-    kimlik = aiprobe.OturumKimligi(
-        int(secim["t"]), str(secim.get("a") or "1"), int(secim["e"]) if secim.get("e") else None
-    )
-    _oturum_ac(session, codec, hedef, secim["x"], kimlik, secim.get("p"), yanit,
+    _oturum_ac(session, codec, hedef, secim["x"], kimlik, sonuc.products or secim.get("p"), yanit,
                ozet={"acr": kimlik.acr, "secim": True})  # fmt: skip
     _cerez_sil(yanit, SECIM_COOKIE)
     return yanit

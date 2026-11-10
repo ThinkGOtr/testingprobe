@@ -112,13 +112,32 @@ kabul edilmez.
    bağ oluşur; aynı hesap başka kişiye bağlıysa 409.
 2. **Given** başka e-posta, doğrulanmamış token ya da token yok, **When** herhangi bir uç,
    **Then** 401/403.
-3. **Given** bağ kaldırılır, **Then** o hesabın epoch'u artar, açık oturumu düşer.
+3. **Given** bağ kaldırılır, **Then** o hesabın epoch'u artar, açık oturumu düşer. Bağı kaldırmak
+   **tek başına erişimi kesmez**: kişinin AI Probe'da TP rolü sürdükçe sonraki girişte JIT o rol
+   için yeni bir rol hesabı açar. Erişimi kesen, rolün AI Probe'dan (home/admin) kaldırılmasıdır;
+   bağ kaldırma yalnız kişiyi o belirli hesaptan ayırır.
+4. **Given** iki eşzamanlı `PUT` aynı hesabı farklı kişilere bağlamaya çalışır, **Then** biri 200,
+   diğeri 409 (`app_user_id UNIQUE` ihlali 500 değil).
 
 ### Edge Cases
 
 - `TP_AUTH_MODE=local`: hiçbir `aiprobe` ucu yok (404), dış çağrı yok, çerez `tp_session`,
   mevcut testler değişmeden yeşil.
 - `both`: yerel giriş de `__Host-tp_session` (Secure) kullanır; yerel oturumlar home'a sorulmaz.
+  Bir AI Probe kişisine bağlı (`kimlik_bagi` satırı olan) hesap yerel parolayla **açılmaz**: parola
+  doğruysa 403 `aiprobe_gerekli` (+ `auth.login_rejected`), yanlışsa her zamanki 401 (bağ durumu
+  parolayı bilmeyene sızmaz). Bağlı hesap yalnız AI Probe ile girer.
+- `aiprobe`: yerel oturum (`external_uid` boş; ör. `both`'ta açılmış) kabul edilmez; `tpt_` token'ı
+  yalnız sahibi bir kişiye bağlıysa ve token bir AI Probe oturumundan üretildiyse (`auth_time`
+  dolu) geçer.
+- Aynı kişinin eşzamanlı callback'leri (iki sekme) çift JIT hesabı açmaz ve 500 vermez: kişi başına
+  `pg_advisory_xact_lock`, mevcut hesaplar kilitten sonra okunur.
+- Yeni giriş (callback, rol seçimi) tarayıcıdaki önceki oturum satırını iptal eder.
+- Rol seçici: seçim çerezi 10 dk geçerli; oturum açılmadan önce home'a taze kontrol yapılır
+  (iptal → 401, rol kaldırıldı → 403, erişilemez → 503).
+- `/auth/me` `roles`: bağlı rol hesaplarından yalnız AI Probe'un şu an verdiği rollerdekiler.
+- Yerel geliştirme: düz `http://localhost` isteğinde state çerezi Secure'suz `aiprobe_state`
+  (CONTRACT); diğer her durumda `__Host-aiprobe_state`.
 - `local`'e dönülürse `external_uid`'li oturumlar reddedilir (fail-closed).
 - `continue=//evil`, `\`, şema, kontrol karakteri → `/`.
 - `org` izinli değil / TP rolü yok → 403, JIT yapılmaz.

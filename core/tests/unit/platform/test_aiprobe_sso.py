@@ -477,7 +477,9 @@ def test_oturum_iptali_401_ve_tpt_token_reddi(
     _giris(client, home, ["analyst"])
     me = client.get("/auth/me").json()
     p = Principal(uuid.UUID(me["id"]), me["kullanici_adi"], "analyst")
-    _tok, raw = issue_token(session, p, "publish", 3600)
+    _tok, raw = issue_token(
+        session, p, "publish", 3600, auth_time=1_762_780_000, acr="2", session_epoch_ms=EPOCH_MS
+    )
     session.commit()
     assert verify_bearer(session, raw, "publish") is not None
     session.commit()
@@ -503,7 +505,9 @@ def test_tpt_token_kendi_kontroluyle_duser(
     _giris(client, home, ["analyst"])
     me = client.get("/auth/me").json()
     p = Principal(uuid.UUID(me["id"]), me["kullanici_adi"], "analyst")
-    _tok, raw = issue_token(session, p, "publish", 3600)
+    _tok, raw = issue_token(
+        session, p, "publish", 3600, auth_time=1_762_780_000, acr="2", session_epoch_ms=EPOCH_MS
+    )
     session.commit()
     home.kisiler[UID] = {"valid": False, "reason": "disabled"}
     aiprobe.ONBELLEK.temizle()
@@ -567,9 +571,15 @@ def test_tpt_token_oturumun_auth_time_ini_tasir(
 
 
 def test_yerel_oturumdan_uretilen_token_uretim_aniyla_kontrol_edilir(
-    home: SahteHome, engine: Engine, session: Session, make_user: MakeUser
+    home: SahteHome,
+    engine: Engine,
+    session: Session,
+    make_user: MakeUser,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`auth_time` boş token (yerel oturumdan üretildi): kontrol eskisi gibi üretim anıyla."""
+    """`both` kipinde `auth_time` boş token (yerel oturumdan üretildi): kontrol üretim anıyla."""
+    monkeypatch.setenv("TP_AUTH_MODE", "both")
+    get_settings.cache_clear()
     u = make_user("analyst")
     _bagla(engine, u)
     tok, raw = issue_token(session, u, "publish", 3600)
@@ -666,15 +676,13 @@ def test_cikis_tum_urunlere_yonlendirir(client: TestClient, home: SahteHome) -> 
     assert client.get("/auth/me").status_code == 401
 
 
-def test_cikis_form_postu_303_ile_home_cikisina(client: TestClient, home: SahteHome) -> None:
+def test_cikis_html_istegine_de_json(client: TestClient, home: SahteHome) -> None:
+    """Form POST dalı yok (CSP `form-action 'self'`): `Accept: text/html` de JSON alır."""
     _giris(client, home, ["tester"])
     r = client.post("/auth/logout", headers={"accept": "text/html"}, follow_redirects=False)
-    assert r.status_code == 303
-    assert r.headers["location"] == f"{ID}/logout?product=testing-probe&auto=1"
+    assert r.status_code == 200
+    assert r.json()["redirect"] == f"{ID}/logout?product=testing-probe&auto=1"
     assert client.get("/auth/me").status_code == 401
-    # Oturum yokken form POST'u: yerel giriş ekranı.
-    r = client.post("/auth/logout", headers={"accept": "text/html"}, follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == "/giris"
 
 
 def test_yerel_kipe_donulunce_aiprobe_oturumu_reddedilir(
@@ -926,3 +934,320 @@ def test_alembic_tek_bas() -> None:
     bas = script.get_heads()
     assert bas == ["0019"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
     assert script.get_revision("0019").down_revision == "0018"
+
+
+# ------------------------------------------------------------------ inceleme bulguları (2026-11-10)
+
+
+def _bekleyen_kilit(engine: Engine, tur: str) -> bool:
+    with engine.connect() as c:
+        return bool(
+            c.execute(
+                text("SELECT count(*) FROM pg_locks WHERE locktype = :t AND NOT granted"),
+                {"t": tur},
+            ).scalar_one()
+        )
+
+
+def _bekle(kosul: Callable[[], bool], sure_s: float = 10.0) -> None:
+    import time
+
+    son = time.monotonic() + sure_s
+    while not kosul():
+        assert time.monotonic() < son, "koşul gerçekleşmedi"
+        time.sleep(0.05)
+
+
+def _giris_hazirla(client: TestClient, home: SahteHome, roles: list[str]) -> tuple[str, str]:
+    r = client.get("/auth/aiprobe/login", params={"continue": "/x"}, follow_redirects=False)
+    state = parse_qs(urlsplit(r.headers["location"]).query)["state"][0]
+    kod = uuid.uuid4().hex
+    home.kodlar[kod] = _devir(state, roles)
+    home.kisiler.setdefault(UID, {"roles": roles})
+    return kod, state
+
+
+def test_aiprobe_kipinde_yerel_oturum_reddedilir(
+    home: SahteHome, make_user: MakeUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`both` kipinde açılmış yerel oturum (`external_uid` boş) `aiprobe` kipinde geçmez."""
+    monkeypatch.setenv("TP_AUTH_MODE", "both")
+    get_settings.cache_clear()
+    u = make_user("analyst")
+    with TestClient(main.create_app(), base_url="https://testserver") as c:
+        assert c.post(
+            "/auth/login", json={"kullanici_adi": u.kullanici_adi, "parola": PAROLA}
+        ).is_success
+        cerez = c.cookies.get(AIPROBE_COOKIE_NAME)
+        assert c.get("/auth/me").status_code == 200
+    monkeypatch.setenv("TP_AUTH_MODE", "aiprobe")
+    get_settings.cache_clear()
+    with TestClient(main.create_app(), base_url="https://testserver") as c:
+        c.cookies.set(AIPROBE_COOKIE_NAME, cerez)
+        assert c.get("/auth/me").status_code == 401
+
+
+def test_aiprobe_kipinde_bagsiz_ve_auth_time_siz_token_reddi(
+    home: SahteHome, engine: Engine, session: Session, make_user: MakeUser
+) -> None:
+    bagsiz = make_user("analyst")
+    _tok, raw_bagsiz = issue_token(session, bagsiz, "publish", 3600)
+    bagli = make_user("tester")
+    _bagla(engine, bagli)
+    tok, raw_bagli = issue_token(session, bagli, "publish", 3600)
+    session.commit()
+    assert tok.auth_time is None
+    home.kisiler[UID] = {"roles": ["tester"]}
+    assert verify_bearer(session, raw_bagsiz, "publish") is None
+    assert verify_bearer(session, raw_bagli, "publish") is None
+    assert home.sayi("/v1/session/check") == 0
+
+
+def test_both_kipinde_bagli_hesap_yerel_parolayla_acilmaz(
+    home: SahteHome, make_user: MakeUser, engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TP_AUTH_MODE", "both")
+    get_settings.cache_clear()
+    u = make_user("analyst")
+    _bagla(engine, u)
+    with TestClient(main.create_app(), base_url="https://testserver") as c:
+        r = c.post("/auth/login", json={"kullanici_adi": u.kullanici_adi, "parola": "yanlis"})
+        assert r.status_code == 401  # yanlış parolada bağ durumu sızmaz
+        r = c.post("/auth/login", json={"kullanici_adi": u.kullanici_adi, "parola": PAROLA})
+        assert r.status_code == 403 and r.json()["kod"] == "aiprobe_gerekli"
+        assert AIPROBE_COOKIE_NAME not in r.cookies
+        assert c.get("/auth/me").status_code == 401
+    eylemler = _eylemler(engine)
+    assert "auth.login_rejected" in eylemler and "auth.login" not in eylemler
+
+
+def test_jit_kilidi_esz_girisi_bekletir_ve_cift_hesap_acmaz(
+    home: SahteHome, make_user: MakeUser, engine: Engine
+) -> None:
+    """Kilit tutulurken başka işlem kişiye hesap bağlar; callback kilidi bekler, kilitten sonra
+    okuduğu için JIT yapmaz."""
+    import threading
+
+    u = make_user("tester")
+    sonuc: dict[str, int] = {}
+    with TestClient(main.create_app(), base_url="https://testserver") as client:
+        kod, state = _giris_hazirla(client, home, ["tester"])
+        with engine.connect() as diger:
+            diger.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext(:u))"), {"u": f"tp-jit:{UID}"}
+            )
+            diger.execute(
+                text("INSERT INTO kimlik_bagi (external_uid, app_user_id) VALUES (:x, :i)"),
+                {"x": UID, "i": u.id},
+            )
+
+            def cagir() -> None:
+                r = client.get(
+                    "/auth/aiprobe/callback",
+                    params={"code": kod, "state": state},
+                    follow_redirects=False,
+                )
+                sonuc["durum"] = r.status_code
+
+            t = threading.Thread(target=cagir)
+            t.start()
+            _bekle(lambda: _bekleyen_kilit(engine, "advisory"))
+            assert t.is_alive()
+            diger.commit()
+        t.join(10)
+        assert sonuc["durum"] == 302
+        assert client.get("/auth/me").json()["id"] == str(u.id)
+    with engine.connect() as c:
+        assert c.execute(text("SELECT count(*) FROM app_user")).scalar_one() == 1
+
+
+def test_esz_callbackler_tek_jit_hesabi(home: SahteHome, engine: Engine) -> None:
+    import threading
+
+    istemciler = [TestClient(main.create_app(), base_url="https://testserver") for _ in range(3)]
+    kodlar = [_giris_hazirla(c, home, ["tester", "analyst"]) for c in istemciler]
+    engel = threading.Barrier(len(istemciler))
+    durumlar: list[int] = []
+
+    def cagir(c: TestClient, kod: str, state: str) -> None:
+        engel.wait()
+        r = c.get(
+            "/auth/aiprobe/callback", params={"code": kod, "state": state}, follow_redirects=False
+        )
+        durumlar.append(r.status_code)
+
+    isler = [
+        threading.Thread(target=cagir, args=(c, k, s))
+        for c, (k, s) in zip(istemciler, kodlar, strict=True)
+    ]
+    for t in isler:
+        t.start()
+    for t in isler:
+        t.join(20)
+    assert durumlar == [302, 302, 302]
+    with engine.connect() as c:
+        sql = (
+            "SELECT rol, count(*) FROM kimlik_bagi JOIN app_user ON app_user.id = app_user_id"
+            " GROUP BY rol ORDER BY rol"
+        )
+        assert c.execute(text(sql)).all() == [("analyst", 1), ("tester", 1)]
+
+
+def test_put_bag_yarisi_409(
+    client: TestClient, home: SahteHome, make_user: MakeUser, engine: Engine
+) -> None:
+    """Başka bir işlem aynı hesabı başka kişiye bağlarken PUT: benzersizlik ihlali 500 değil 409."""
+    import threading
+
+    hedef = make_user("analyst")
+    sonuc: dict[str, httpx.Response] = {}
+    with engine.connect() as diger:
+        diger.execute(
+            text("INSERT INTO kimlik_bagi (external_uid, app_user_id) VALUES ('baska', :i)"),
+            {"i": hedef.id},
+        )
+
+        def cagir() -> None:
+            sonuc["r"] = client.put(
+                "/admin/kimlik-bagi",
+                json={"external_uid": UID, "app_user_id": str(hedef.id)},
+                headers=_yetki("home-ok"),
+            )
+
+        t = threading.Thread(target=cagir)
+        t.start()
+        _bekle(lambda: _bekleyen_kilit(engine, "transactionid"))
+        diger.commit()
+    t.join(10)
+    assert sonuc["r"].status_code == 409, sonuc["r"].text
+    assert sonuc["r"].json()["kod"] == "cakisma"
+
+
+def test_bag_kaldirma_sonrasi_jit_yeni_hesap_acar(
+    client: TestClient, home: SahteHome, make_user: MakeUser, engine: Engine
+) -> None:
+    """Belgelenen davranış: bağı kaldırmak erişimi kesmez; AI Probe rolü sürdükçe JIT yeni hesap
+    açar (erişimi kesen rolün AI Probe'dan kaldırılmasıdır)."""
+    u = make_user("tester")
+    _bagla(engine, u)
+    _giris(client, home, ["tester"])
+    assert client.delete(f"/admin/kimlik-bagi/{u.id}", headers=_yetki("home-ok")).status_code == 204
+    _giris(client, home, ["tester"])
+    yeni = client.get("/auth/me").json()
+    assert yeni["rol"] == "tester" and yeni["id"] != str(u.id)
+
+
+def _rsa_jwk(kid: str) -> tuple[Any, dict[str, Any]]:
+    import json
+
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from jwt.algorithms import RSAAlgorithm
+
+    anahtar = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    jwk = json.loads(RSAAlgorithm.to_jwk(anahtar.public_key()))
+    jwk.update({"kid": kid, "alg": "RS256", "use": "sig"})
+    return anahtar, jwk
+
+
+def test_google_dogrulayici_baslik_ve_jwks_onbellegi() -> None:
+    import time as _t
+
+    import jwt
+
+    anahtar, jwk = _rsa_jwk("k1")
+    cekimler: list[str] = []
+
+    def jwks(req: httpx.Request) -> httpx.Response:
+        cekimler.append(str(req.url))
+        return httpx.Response(200, json={"keys": [jwk]})
+
+    saat = [1000.0]
+    d = aiprobe.GoogleIdTokenDogrulayici(httpx.MockTransport(jwks), saat=lambda: saat[0])
+    an = int(_t.time())
+    iddia = {"iss": "https://accounts.google.com", "aud": TP_AUD, "iat": an, "exp": an + 300,
+             "email": HOME_SA, "email_verified": True}  # fmt: skip
+
+    def imzali(kid: str, alg: str = "RS256", gizli: Any = anahtar) -> str:
+        return jwt.encode(iddia, gizli, algorithm=alg, headers={"kid": kid})
+
+    # Başlık reddi ağa çıkmadan.
+    with pytest.raises(ValueError):
+        d(jwt.encode(iddia, "x" * 32, algorithm="HS256", headers={"kid": "k1"}), TP_AUD)
+    with pytest.raises(ValueError):
+        d(imzali("../kotu kid"), TP_AUD)
+    with pytest.raises(jwt.DecodeError):
+        d("bozuk.token", TP_AUD)
+    assert cekimler == []
+
+    assert d(imzali("k1"), TP_AUD)["email"] == HOME_SA
+    assert d(imzali("k1"), TP_AUD)["email"] == HOME_SA
+    assert len(cekimler) == 1
+    # Bilinmeyen kid: 5 dk içinde yeniden çekim yok.
+    saat[0] += 10
+    for _ in range(5):
+        with pytest.raises(ValueError):
+            d(imzali("k2"), TP_AUD)
+    assert len(cekimler) == 1
+    saat[0] += aiprobe.GoogleIdTokenDogrulayici.MIN_CEKIM_S
+    with pytest.raises(ValueError):
+        d(imzali("k2"), TP_AUD)
+    assert len(cekimler) == 2
+
+
+def test_callback_onceki_oturumu_iptal_eder(client: TestClient, home: SahteHome) -> None:
+    _giris(client, home, ["tester"])
+    eski = client.cookies.get(AIPROBE_COOKIE_NAME)
+    _giris(client, home, ["tester"])
+    assert client.get("/auth/me").status_code == 200
+    with TestClient(main.create_app(), base_url="https://testserver") as c:
+        c.cookies.set(AIPROBE_COOKIE_NAME, eski)
+        assert c.get("/auth/me").status_code == 401
+
+
+def test_state_cerezi_yerel_http_de_secure_siz(home: SahteHome) -> None:
+    with TestClient(main.create_app(), base_url="http://localhost") as c:
+        r = c.get("/auth/aiprobe/login", follow_redirects=False)
+        cerez = r.headers["set-cookie"]
+        assert cerez.startswith("aiprobe_state=") and "secure" not in cerez.lower()
+        state = parse_qs(urlsplit(r.headers["location"]).query)["state"][0]
+        kod = uuid.uuid4().hex
+        home.kodlar[kod] = _devir(state, ["tester"])
+        home.kisiler[UID] = {"roles": ["tester"]}
+        r = c.get("/auth/aiprobe/callback", params={"code": kod, "state": state},
+                  follow_redirects=False)  # fmt: skip
+        assert r.status_code == 302 and r.headers["location"] == "/"
+    # https ve localhost olmayan http: `__Host-` (Secure).
+    for taban in ("https://localhost", "http://testserver"):
+        with TestClient(main.create_app(), base_url=taban) as c:
+            cerez = c.get("/auth/aiprobe/login", follow_redirects=False).headers["set-cookie"]
+            assert cerez.startswith("__Host-aiprobe_state=") and "secure" in cerez.lower()
+
+
+def test_rol_sec_taze_kontrol(
+    client: TestClient, home: SahteHome, make_user: MakeUser, engine: Engine
+) -> None:
+    analist, po = make_user("analyst"), make_user("po")
+    _bagla(engine, analist)
+    _bagla(engine, po)
+    assert _giris(client, home, ["analyst", "po"]).status_code == 302
+    # Seçim çerezi alındıktan sonra AI Probe'da po rolü kaldırıldı.
+    home.kisiler[UID] = {"roles": ["analyst"]}
+    r = client.post("/auth/aiprobe/rol-sec", json={"app_user_id": str(po.id)})
+    assert r.status_code == 403
+    # Kişi iptal edildi: oturum açılmaz.
+    home.kisiler[UID] = {"valid": False, "reason": "revoked"}
+    r = client.post("/auth/aiprobe/rol-sec", json={"app_user_id": str(analist.id)})
+    assert r.status_code == 401
+    assert client.get("/auth/me").status_code == 401
+    assert _epoch(engine, analist.id) == 1
+
+
+def test_me_roles_yalniz_ai_probe_nun_verdikleri(
+    client: TestClient, home: SahteHome, make_user: MakeUser, engine: Engine
+) -> None:
+    analist, po = make_user("analyst"), make_user("po")
+    _bagla(engine, analist)
+    _bagla(engine, po)
+    _giris(client, home, ["analyst"])  # po hesabı bağlı ama AI Probe'da rol yok
+    me = client.get("/auth/me").json()
+    assert me["id"] == str(analist.id) and me["roles"] == ["analyst"]

@@ -1,6 +1,18 @@
 <!--
 Sync Impact Report
-- Version change: 1.3.0 → 2.0.0 (MAJOR: İlke XII yeniden tanımlandı — TP, Agent Probe ile kod,
+- Version change: 2.0.0 → 2.0.1 (PATCH: İlke VII'deki kimlik servisi cümlesi koda uygun hale
+  getirildi — giden alanlar tam listelendi (`uid`, `auth_time`, `acr`, `session_epoch_ms`) ve
+  bağlama API'sinin rol hesaplarının `kullanici_adi`/`ad_soyad`/`rol`'ünü yalnız aiprobe-home
+  yöneticilerine açtığı yazıldı. Kural değişmedi — alan verisi gitmez — yalnız ifade
+  kesinleştirildi; 2.0.0 onaylandıktan sonraki metin değişikliği olduğu için ayrı PATCH sürümü)
+- Modified principles: VII. Veri Müşteride Kalır (ifade düzeltmesi)
+- Added sections: yok · Removed sections: yok
+- Templates requiring updates: yok ✅; bağlı belgeler docs/adr/0001-aiprobe-ortak-kimligi.md
+  (Karar 4–5) ve specs/010-aiprobe-sso/spec.md aynı dalda güncellendi ✅
+- Onay durumu: 2.0.0 onayı (2026-11-10) geçerli; 2.0.1 PATCH teknik lider + ürün sahibi onayı ⏳
+  (Governance), onaycı isimleri F0 notuna işlenecek
+- Follow-up TODOs: 2.0.1 onayı; onaycı isimlerinin F0 notuna işlenmesi
+- Önceki: 1.3.0 → 2.0.0 (MAJOR: İlke XII yeniden tanımlandı — TP, Agent Probe ile kod,
   ekran ve veritabanı paylaşmamaya devam eder; ortak AI Probe kimliğine YALNIZCA belgelenmiş HTTP
   kimlik API'si (giriş devri + oturum kontrolü) üzerinden bağlanabilir; Firebase SDK'sı TP'ye
   girmez. İlke VII'ye on-prem kimlik kuralı eklendi: `TP_AUTH_MODE=local` varsayılan, dış kimlik
@@ -95,7 +107,10 @@ her ortamda model geçidinde PII maskeleme zorunludur; yalnızca sentetik veriyl
 demo ortamında maskeleme kapalı olabilir. Müşteri verisi model eğitimi veya ince ayar için kullanılmaz.
 On-prem kurulum kendi kimliğiyle çalışır: `TP_AUTH_MODE=local` varsayılandır ve bu kipte hiçbir dış
 kimlik servisine çağrı yapılmaz. Ortak kimlik (`aiprobe`/`both`) yalnızca Antrek'in barındırdığı
-ortamda açılır; kimlik servisine yalnızca kişi kimliği (`uid`, `auth_time`) gider, alan verisi gitmez.
+ortamda açılır; kimlik servisine yalnızca oturum kimliği gider — `uid`, `auth_time`, `acr`,
+`session_epoch_ms` (ve girişte tek kullanımlık devir kodu) — alan verisi gitmez. Ters yönde bağlama
+API'si rol hesaplarının `kullanici_adi`, `ad_soyad` ve `rol`'ünü yalnızca `aiprobe-home` servis
+kimliğine, dolayısıyla yalnızca aiprobe-home yöneticilerine açar.
 
 ### VIII. Her Şey Kayıt Altında
 Her AI çağrısı, araç çağrısı, onay ve ret kaydedilir: model, sürüm, bundle hash'i, maskeli girdi,
@@ -179,4 +194,4 @@ ve etkisi yazılır ve teknik lider ile ürün sahibi tarafından onaylanır. S�
 kaldırma veya yeniden tanımlama MAJOR, yeni ilke veya bölüm MINOR, açıklama ve ifade düzeltmeleri
 PATCH. Çalışma zamanı rehberi için `docs/TEKNIK-TASARIM.md` ve `CLAUDE.md` kullanılır.
 
-**Version**: 2.0.0 | **Ratified**: 2026-10-30 | **Last Amended**: 2026-11-10
+**Version**: 2.0.1 | **Ratified**: 2026-10-30 | **Last Amended**: 2026-11-10

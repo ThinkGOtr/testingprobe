@@ -10,11 +10,14 @@ kipte 404.
 - `GET    /admin/kimlik-bagi/hesaplar` → TP rol hesapları (bağ ekranı için)
 - `PUT    /admin/kimlik-bagi {external_uid, app_user_id | kullanici_adi}` → bağ (aynıysa idempotent;
   hesap başka kişiye bağlıysa 409)
-- `DELETE /admin/kimlik-bagi/{app_user_id}` → bağı kaldırır; hesabın epoch'u artar, oturumu düşer
+- `DELETE /admin/kimlik-bagi/{app_user_id}` → bağı kaldırır; hesabın epoch'u artar, oturumu düşer.
+  Bağı kaldırmak tek başına erişimi kesmez: kişinin AI Probe'da TP rolü sürdükçe sonraki girişte
+  JIT o rol için yeni bir hesap açar. Erişimi kesen, rolün AI Probe'dan kaldırılmasıdır.
 """
 
 from __future__ import annotations
 
+import hmac
 import logging
 import uuid
 from datetime import datetime
@@ -24,6 +27,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from tp_core.api.errors import KodluHata
 from tp_core.audit import audit_on_commit
@@ -58,7 +62,9 @@ def home_servisi(request: Request) -> str:
             401, "yetkisiz", "Servis kimliği doğrulanamadı", {"WWW-Authenticate": "Bearer"}
         ) from exc
     email = str(iddialar.get("email") or "").strip().lower()
-    if iddialar.get("email_verified") is not True or email != beklenen:
+    if iddialar.get("email_verified") is not True or not hmac.compare_digest(
+        email.encode("utf-8"), beklenen.encode("utf-8")
+    ):
         log.warning("kimlik-bagi: yetkisiz servis hesabı reddedildi")
         raise KodluHata(403, "yasak", "Bu uç yalnız aiprobe-home servis kimliğine açıktır")
     return email
@@ -156,8 +162,20 @@ def put_bag(body: BagIn, session: DbSession, home: HomeServisi) -> Bag:
     if mevcut is not None and mevcut.external_uid != body.external_uid:
         raise KodluHata(409, "cakisma", "Bu rol hesabı başka bir kişiye bağlı")
     if mevcut is None:
-        session.add(KimlikBagi(external_uid=body.external_uid, app_user_id=user.id))
-        session.flush()
+        # Eşzamanlı iki PUT aynı hesaba farklı kişi bağlamaya çalışırsa `app_user_id UNIQUE`
+        # ikincisini durdurur: 500 değil 409 (aynı kişiyse idempotent sonuç).
+        try:
+            with session.begin_nested():
+                session.add(KimlikBagi(external_uid=body.external_uid, app_user_id=user.id))
+                session.flush()
+        except IntegrityError:
+            sahip = session.scalar(
+                select(KimlikBagi.external_uid).where(KimlikBagi.app_user_id == user.id)
+            )
+            if sahip != body.external_uid:
+                raise KodluHata(409, "cakisma", "Bu rol hesabı başka bir kişiye bağlı") from None
+            row = session.execute(_bag_sorgusu().where(KimlikBagi.app_user_id == user.id)).one()
+            return Bag.model_validate(row._asdict())
         audit_on_commit(
             session,
             AKTOR,

@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from tp_core.audit import audit_on_commit
 from tp_core.auth.sessions import aiprobe_acik, password_fingerprint
+from tp_core.config import get_settings
 from tp_core.models import ApiToken, AppUser
 from tp_core.workflow.service import Principal
 
@@ -104,6 +105,9 @@ def verify_bearer(session: Session, raw: str | None, kapsam: str) -> Principal |
 
         if tok.auth_time is not None:
             kimlik = aiprobe.OturumKimligi.of(tok)
+        elif get_settings().auth_mode == "aiprobe":
+            # Yerel oturumdan (kip değişmeden önce) üretilmiş token ortak kimlik kipinde geçmez.
+            return None
         else:  # yerel oturumdan üretildi: üretim anı, acr 1, epoch yok (v1.2 öncesi kural)
             kimlik = aiprobe.OturumKimligi(int(tok.olusturma.timestamp()))
         if not aiprobe.token_kontrol(session, user, kimlik):

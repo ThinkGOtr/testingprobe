@@ -15,7 +15,8 @@ from sqlalchemy.orm import Session
 
 from tp_core.audit import audit_on_commit
 from tp_core.auth.passwords import verify_password
-from tp_core.models import AppUser
+from tp_core.config import get_settings
+from tp_core.models import AppUser, KimlikBagi
 
 MAX_DENEME = 5
 ANONIM = "anonim"
@@ -113,10 +114,19 @@ class LoginThrottle:
 THROTTLE = LoginThrottle()
 
 
+class OrtakKimlikGerekli(Exception):
+    """Parola doğru ama hesap bir AI Probe kişisine bağlı (`both` kipi): yerel giriş reddedilir."""
+
+
 def authenticate(
     session: Session, kullanici_adi: str, parola: str, istemci: str | None = None
 ) -> AppUser | None:
-    """Doğrular ve denetime yazar (`auth.login` / `auth.login_failed`)."""
+    """Doğrular ve denetime yazar (`auth.login` / `auth.login_failed`).
+
+    `both` kipinde `kimlik_bagi` satırı olan hesap yerel parolayla açılmaz (AI Probe ile girmeli):
+    `auth.login_rejected` yazılır ve `OrtakKimlikGerekli` yükselir. Kontrol parola doğrulandıktan
+    sonra yapılır: bağ durumu parolayı bilmeyene sızmaz.
+    """
     ad = kullanici_adi.strip()[:64]
     user = session.scalars(select(AppUser).where(AppUser.kullanici_adi == ad)).first()
     ok = verify_password(user.parola_hash if user else None, parola)
@@ -126,5 +136,16 @@ def authenticate(
             ozet["istemci"] = istemci
         audit_on_commit(session, ANONIM, "auth.login_failed", None, ozet)
         return None
+    if get_settings().auth_mode != "local" and session.scalar(
+        select(KimlikBagi.app_user_id).where(KimlikBagi.app_user_id == user.id)
+    ):
+        audit_on_commit(
+            session,
+            user.kullanici_adi,
+            "auth.login_rejected",
+            f"app_user:{user.id}",
+            {"neden": "aiprobe_bagli"},
+        )
+        raise OrtakKimlikGerekli()
     audit_on_commit(session, user.kullanici_adi, "auth.login", f"app_user:{user.id}", {})
     return user

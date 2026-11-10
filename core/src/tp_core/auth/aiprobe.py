@@ -32,7 +32,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
 import httpx
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 
 from tp_core.audit import audit_on_commit
@@ -46,6 +46,8 @@ AKTOR = "aiprobe"
 # girişle açılamaz.
 KULLANILAMAZ_PAROLA = "!aiprobe"
 CONTINUE_MAX = 2048
+# `products/testing-probe.yaml` `code`: ürün→rol haritalarında TP'nin anahtarı.
+URUN_KODU = "tp"
 
 
 class Kontrol(enum.Enum):
@@ -169,25 +171,71 @@ class MetadataTokenSaglayici:
 GOOGLE_ISS = frozenset({"accounts.google.com", "https://accounts.google.com"})
 
 
+_KID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+
+
 class GoogleIdTokenDogrulayici:
-    """Google imzalı ID token'ı (RS256, Google JWKS) doğrular; iddiaları döner, hatada istisna."""
+    """Google imzalı ID token'ı (RS256, Google JWKS) doğrular; iddiaları döner, hatada istisna.
+
+    Ağdan önce başlık denetlenir (`alg` RS256, `kid` biçimi): bozuk token JWKS çekimi tetiklemez.
+    Anahtarlar önbellekte (`YENILE_S`); bilinmeyen `kid` en çok `MIN_CEKIM_S`'de bir yeniden
+    çekime yol açar (uydurma `kid`'lerle Google'a istek yağdırılamaz).
+    """
 
     JWKS_URL = "https://www.googleapis.com/oauth2/v3/certs"
+    YENILE_S = 3600.0
+    MIN_CEKIM_S = 300.0
+    HATA_SONRASI_S = 30.0
 
-    def __init__(self) -> None:
-        self._jwks: Any = None
+    def __init__(
+        self,
+        transport: httpx.BaseTransport | None = None,
+        saat: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._transport = transport
+        self._saat = saat
+        self._anahtarlar: dict[str, Any] = {}
+        self._cekim: float | None = None
         self._kilit = threading.Lock()
+
+    def _cek(self) -> None:
+        import jwt
+
+        basla = self._saat()
+        self._cekim = basla
+        try:
+            with httpx.Client(transport=self._transport, timeout=3.0) as c:
+                r = c.get(self.JWKS_URL)
+            r.raise_for_status()
+            kume = jwt.PyJWKSet.from_dict(r.json())
+        except (httpx.HTTPError, ValueError, jwt.PyJWKSetError, jwt.PyJWKError) as exc:
+            # Geçici hata: yeniden deneme MIN_CEKIM_S yerine HATA_SONRASI_S sonra.
+            self._cekim = basla - self.MIN_CEKIM_S + self.HATA_SONRASI_S
+            raise ValueError("JWKS alınamadı") from exc
+        self._anahtarlar = {k.key_id: k.key for k in kume.keys if k.key_id}
+
+    def _anahtar(self, kid: str) -> Any:
+        with self._kilit:
+            an = self._saat()
+            gecen = float("inf") if self._cekim is None else an - self._cekim
+            bilinmiyor = kid not in self._anahtarlar
+            if gecen >= self.YENILE_S or (bilinmiyor and gecen >= self.MIN_CEKIM_S):
+                self._cek()
+            anahtar = self._anahtarlar.get(kid)
+        if anahtar is None:
+            raise ValueError("bilinmeyen kid")
+        return anahtar
 
     def __call__(self, token: str, audience: str) -> Mapping[str, Any]:
         import jwt
 
-        with self._kilit:
-            if self._jwks is None:
-                self._jwks = jwt.PyJWKClient(self.JWKS_URL, cache_keys=True)
-        anahtar = self._jwks.get_signing_key_from_jwt(token)
+        baslik = jwt.get_unverified_header(token)
+        kid = baslik.get("kid")
+        if baslik.get("alg") != "RS256" or not isinstance(kid, str) or not _KID.match(kid):
+            raise ValueError("token başlığı geçersiz")
         iddialar = jwt.decode(
             token,
-            anahtar.key,
+            self._anahtar(kid),
             algorithms=["RS256"],
             audience=audience,
             options={"require": ["exp", "iat", "aud", "iss"]},
@@ -502,7 +550,9 @@ def token_kontrol(session: Session, user: AppUser, kimlik: OturumKimligi) -> boo
     """
     uid = bagli_uid(session, user.id)
     if uid is None:
-        return True
+        # `aiprobe` kipinde yerel giriş yoktur: bağsız hesabın token'ı kabul edilmez (`both`
+        # kipinde yerel hesabın token'ı yerel kural gibi geçer).
+        return get_settings().auth_mode != "aiprobe"
     try:
         sonuc = kontrol_et(uid, kimlik)
     except HomeUlasilamaz:
@@ -574,7 +624,15 @@ def _jit_ad(session: Session, email: str, rol: str) -> str:
 
 
 def jit_hesaplar(session: Session, devir: DevirYaniti, roller: Iterable[str]) -> list[AppUser]:
-    """Bağlı hesabı olmayan her TP rolü için yeni `app_user` + `kimlik_bagi` (JIT)."""
+    """Bağlı hesabı olmayan her TP rolü için yeni `app_user` + `kimlik_bagi` (JIT).
+
+    Aynı kişinin eşzamanlı girişleri (iki sekme) çift hesap açmasın: kişi başına işlem kilidi
+    (`pg_advisory_xact_lock`, işlem bitince bırakılır) alınır ve mevcut hesaplar kilitten **sonra**
+    okunur; ikinci istek birincinin commit'ini bekler ve onun hesaplarını görür.
+    """
+    session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:u))"), {"u": f"tp-jit:{devir.uid}"}
+    )
     mevcut = {h.rol for h in bagli_hesaplar(session, devir.uid)}
     yeni: list[AppUser] = []
     for rol in roller:

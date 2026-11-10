@@ -43,9 +43,16 @@ müşteri ortamında (on-prem, İlke VII) dış bir kimlik servisine bağımlıl
 4. **İlke VII korunur.** `TP_AUTH_MODE=local|aiprobe|both`; **varsayılan `local`** ve on-prem
    kurulumlar `local` çalışır: dış kimlik servisine hiçbir çağrı yapılmaz, davranış bugünküyle
    aynıdır (`tp_session` çerezi, argon2). `aiprobe` modu yalnızca Antrek'in barındırdığı SaaS/demo
-   ortamında açılır; `both` geçiş ve acil erişim içindir.
-5. **Müşteri verisi kimlik servisine gitmez.** `aiprobe-home`'a giden tek veri `uid` ve
-   `auth_time`'dır; TP'nin alan verisi (story, case, kanıt) platforma hiç çıkmaz.
+   ortamında açılır; `both` geçiş ve acil erişim içindir. `both` kipinde yerel parola yalnız
+   **bağsız** hesaplar içindir: bir AI Probe kişisine bağlanmış (`kimlik_bagi`) hesap yerel
+   parolayla açılmaz (403 `aiprobe_gerekli`); `aiprobe` kipinde yerel oturum ve bağsız/yerel
+   oturumdan üretilmiş `tpt_` token'ı kabul edilmez.
+5. **Müşteri verisi kimlik servisine gitmez.** `aiprobe-home`'a giden veri yalnız oturum kimliğidir:
+   `uid`, `auth_time`, `acr`, `session_epoch_ms` (CONTRACT v1.2 `/v1/session/check`; takasta
+   yalnız tek kullanımlık kod). TP'nin alan verisi (story, case, kanıt) platforma hiç çıkmaz. Ters
+   yönde bağlama API'si (`/admin/kimlik-bagi`) rol hesaplarının `kullanici_adi`, `ad_soyad` ve
+   `rol`'ünü yalnız `aiprobe-home` servis kimliğine — dolayısıyla home/admin'deki yöneticilere —
+   açar.
 
 ## Sonuçlar
 
