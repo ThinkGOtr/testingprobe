@@ -428,10 +428,20 @@ try {
 $env:APPIUM_HOME = '__APPIUM_HOME__'
 $env:Path = '__NODE_DIZINI__;' + $env:Path
 Yaz 'appium baslatiliyor'
-& '__NODE_DIZINI__\node.exe' '__APPIUM_HOME__\node_modules\appium\index.js' `
-    --address 0.0.0.0 --port __APPIUM_PORT__ --use-drivers novawindows `
-    --log '__LOG_DIZINI__\appium.log' --log-no-colors --log-timestamp *> $null
-Yaz ("appium cikti: kod $LASTEXITCODE")
+# Start-Process: PowerShell 5.1'de ErrorActionPreference=Stop iken yerel komutun stderr'ini
+# null'a yonlendirmek ilk uyari satirinda betigi durdurur ve Appium'u da oldurur. Cikti
+# dosyalara gider; kurulum.ps1 hata aninda bunlari seri porta yazar.
+try {
+    $arg = '"__APPIUM_HOME__\node_modules\appium\index.js" ' +
+        '--address 0.0.0.0 --port __APPIUM_PORT__ --use-drivers novawindows ' +
+        '--log "__LOG_DIZINI__\appium.log" --log-no-colors --log-timestamp'
+    $p = Start-Process -FilePath '__NODE_DIZINI__\node.exe' -ArgumentList $arg -RedirectStandardOutput '__LOG_DIZINI__\appium-stdout.log' `
+      -RedirectStandardError '__LOG_DIZINI__\appium-stderr.log' `
+      -WindowStyle Hidden -PassThru -Wait
+    Yaz ("appium cikti: kod " + $p.ExitCode)
+} catch {
+    Yaz ("appium cikti: baslatilamadi " + $_.Exception.Message)
+}
 exit 1
 '@
 
@@ -772,6 +782,8 @@ Invoke-Adim 'appium-bekle' {
         if ($cikti -or ((Get-Date) -gt $bitis)) {
             Write-LogKuyrugu $oturumLog 15
             Write-LogKuyrugu $appiumLog 40
+            Write-LogKuyrugu (Join-Path $LogDizini 'appium-stderr.log') 30
+            Write-LogKuyrugu (Join-Path $LogDizini 'appium-stdout.log') 15
         }
         if ($cikti) { throw "Appium oturumda cikti (bkz. TP-WINDOWS-LOG satirlari)" }
         if ((Get-Date) -gt $bitis) {

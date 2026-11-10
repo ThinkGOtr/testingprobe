@@ -177,7 +177,10 @@ def test_idempotent_ve_yeniden_baslatma_korumasi(metin: str) -> None:
     assert "--address 0.0.0.0 --port __APPIUM_PORT__ --use-drivers novawindows" in metin
     assert "--relaxed-security" not in metin.replace("--relaxed-security YOK", "")
     assert "-LogonType Interactive" in metin
-    assert "'__LOG_DIZINI__\\appium.log'" in metin
+    assert '--log "__LOG_DIZINI__\\appium.log"' in metin
+    # stderr yönlendirmesi PS 5.1'de Stop altında betiği öldürür → Start-Process ile dosyaya
+    assert "*> $null" not in metin
+    assert "-RedirectStandardError '__LOG_DIZINI__\\appium-stderr.log'" in metin
     assert "[Environment]::SetEnvironmentVariable('BAYI_API_URL', $ApiUrl, 'Machine')" in metin
     assert "$AppiumBeklemeSaniye = 600" in metin
     assert "http://127.0.0.1:$AppiumPort/status" in metin
