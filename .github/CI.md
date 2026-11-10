@@ -230,6 +230,11 @@ TP_REQUIRED_CHECKS=test-local,ast-guard,semgrep,mobil-android,masaustu-windows  
 scripts/github-ruleset.sh --checks test-local,ast-guard,semgrep,mobil-android,masaustu-windows --apply
 ```
 
+Kısa yol: core-worker `.env`'inde `TP_PLATFORMS=android,windows` verilirse çekirdek ve portal
+`mobil-android` / `masaustu-windows` check'lerini zorunlu listeye kendisi ekler; CI tetikleme ve
+sonuç okuma o platformun workflow dosyasını kullanır. `ios` bu listede kabul edilmez (aşağıya bakın);
+geçersiz değer portalda "Yapılandırma hatası" engeli olarak görünür. Ruleset yine elle güncellenir.
+
 `mobil-android` ve `masaustu-windows` bu yüzden ci.yml gibi `changes` job'u + "no-op, başarılı"
 desenini kullanır (workflow düzeyinde `paths` yok; ilgisiz PR beklemez). `mobil-ios` macOS dakikaları
 pahalı olduğundan (plan §5) workflow düzeyinde `paths` filtresiyle yalnız ilgili PR'da, gece ve elle
