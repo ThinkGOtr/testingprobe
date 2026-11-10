@@ -42,7 +42,9 @@ step "derleme: ./mvnw test-compile"
 
 if [[ "${SKIP_BIRIM:-0}" != "1" ]]; then
   step "birim testleri (cihazsız): -Dgroups=birim"
-  ./mvnw "${mvn_opts[@]}" -q surefire:test -Dgroups=birim -Draporlar.dizini=target/birim-raporlari
+  # -q yok: takılırsa hangi testte olduğu günlükte görünsün; surefire.timeout asılı çatalı keser.
+  ./mvnw "${mvn_opts[@]}" surefire:test -Dgroups=birim -Draporlar.dizini=target/birim-raporlari \
+    -Dsurefire.timeout=600
 fi
 
 step "cihaz koşusu: platform=$platform $*"
