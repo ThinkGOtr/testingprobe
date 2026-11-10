@@ -44,6 +44,7 @@ import type {
 } from "../types";
 import { kanonikJson, sha256Hex } from "../../lib/sha256";
 import { ekranGoruntusu } from "./ekran";
+import { uygulamaHatalari, uygulamaKosulari, uygulamaScriptleri } from "./platformlar";
 import kaynaklar from "./golden/kaynaklar.json";
 
 export interface MockVeri {
@@ -1017,12 +1018,14 @@ function scriptler(): ScriptDetay[] {
       uyarilar: [],
       engel: null,
     },
+    // 009: aynı onaylı case (C2) Android, iOS ve Windows'ta: platform başına ayrı script ve PR.
+    ...uygulamaScriptleri(),
   ];
 }
 
 // ------------------------------------------------------------------ koşular ve triage
 
-function sonuc(id: string, test_adi: string, durum: KosuDetay["sonuclar"][number]["durum"], sure_ms: number, ek: Partial<KosuDetay["sonuclar"][number]> = {}) {
+export function sonuc(id: string, test_adi: string, durum: KosuDetay["sonuclar"][number]["durum"], sure_ms: number, ek: Partial<KosuDetay["sonuclar"][number]> = {}) {
   return { id, test_adi, durum, sure_ms, retry: 0, hata_mesaji: null, failure_id: null, case_id: null, ...ek };
 }
 
@@ -1031,7 +1034,7 @@ export const TEST_C2 = `TPD-1 C2 · ${TPD1_GOLDEN_CASELER[1].title}`;
 export const TEST_C3 = "TPD-1 C3 · 6 adet kampanyalı üründe bedava ürün verilmez";
 const TEST_LOGIN = "Bayi girişi · hatalı parola mesajı (elle yazılmış)";
 
-function kosu(
+export function kosu(
   id: string,
   tetik: KosuDetay["tetik"],
   kaynak: KosuDetay["kaynak"],
@@ -1066,6 +1069,8 @@ function kosu(
     hata: null,
     uyarilar: [],
     sonuclar,
+    // 009: örnek verideki mevcut koşular web (Playwright) koşularıdır; uygulama koşuları platformlar.ts'te.
+    platform: "web",
     ...ek,
   };
 }
@@ -1268,10 +1273,12 @@ function kosular(): KosuDetay[] {
       commit: "1b7d40a",
       script_id: "scr-1",
     }),
+    // 009: Android gece koşusu (platform kontrolü + sayfa kaynağı kanıtlı triage).
+    ...uygulamaKosulari(),
   ];
 }
 
-const SAGLIK_OK = {
+export const SAGLIK_OK = {
   ok: true,
   zaman: t(30, "02:00"),
   web: { url: "http://demo-web:8080/", status: 200, ms: 41, hata: null },
@@ -1458,6 +1465,8 @@ function hatalar(): HataAnalizi[] {
       mode: null,
       zaman: t(30, "03:00"),
     },
+    // 009: Android kimlik değişikliği (hata anı sayfa kaynağı) → kimlik onarım önerisi.
+    ...uygulamaHatalari(),
   ];
 }
 
