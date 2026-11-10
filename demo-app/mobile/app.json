@@ -20,6 +20,6 @@
       },
       "predictiveBackGestureEnabled": false
     },
-    "plugins": ["./plugins/ag-guvenligi", "./plugins/swift5-uyumluluk"]
+    "plugins": ["./plugins/ag-guvenligi"]
   }
 }
