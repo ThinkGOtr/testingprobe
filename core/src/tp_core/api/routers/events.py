@@ -27,7 +27,7 @@ from fastapi import APIRouter, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 
 from tp_core.auth.deps import Codec, CurrentUser
-from tp_core.auth.sessions import COOKIE_NAME, SessionData, session_valid
+from tp_core.auth.sessions import SessionData, cookie_name, session_valid
 from tp_core.config import get_settings
 from tp_core.events.listener import Broadcaster, libpq_dsn
 from tp_core.models import new_session
@@ -68,8 +68,12 @@ def broadcaster_for(request: Request) -> Broadcaster:
 
 
 def _oturum_gecerli_mi(veri: SessionData) -> bool:
+    # AI Probe oturumunda aynı 60 sn önbellekli kontrol; `son_kontrol` güncellemesi commit edilir.
+    # Süre uzatılmaz (yalnız kullanıcı istekleri uzatır).
     with new_session() as s:
-        return session_valid(s, veri) is not None
+        gecerli = session_valid(s, veri) is not None
+        s.commit()
+        return gecerli
 
 
 def oturum_kontrolu(veri: SessionData) -> OturumKontrol:
@@ -129,7 +133,7 @@ async def _akis(
 
 @router.get("/events")
 async def events(request: Request, user: CurrentUser, codec: Codec) -> EventSourceResponse:
-    veri = codec.loads(request.cookies.get(COOKIE_NAME, ""))
+    veri = codec.loads(request.cookies.get(cookie_name(), ""))
     if veri is None:  # CurrentUser zaten doğruladı; yine de tür daraltma için
         raise HTTPException(401, "Oturumunuz geçersiz veya süresi dolmuş")
     b = broadcaster_for(request)

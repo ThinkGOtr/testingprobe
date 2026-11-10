@@ -47,6 +47,26 @@ class Settings(BaseSettings):
     # Yerel demo http üzerinden çalışır; TLS arkasında True yapılır.
     session_cookie_secure: bool = Field(default=False, validation_alias="TP_SESSION_COOKIE_SECURE")
     api_token_ttl_s: int = Field(default=8 * 3600, validation_alias="TP_API_TOKEN_TTL_S")
+
+    # --- AI Probe ortak kimliği (ADR-0001, TEKNIK-TASARIM §8.14). `local` (varsayılan, on-prem):
+    # bugünkü davranış, hiçbir dış çağrı yok. `aiprobe`: yalnız ortak giriş. `both`: ikisi birden.
+    auth_mode: Literal["local", "aiprobe", "both"] = Field(
+        default="local", validation_alias="TP_AUTH_MODE"
+    )
+    # Sunucudan sunucuya aiprobe-home adresi (TP'nin ID token audience'ı da budur).
+    aiprobe_home_run_url: str = Field(default="", validation_alias="AIPROBE_HOME_RUN_URL")
+    # Giriş/çıkış sayfasının origin'i (`id.`).
+    aiprobe_id_origin: str = Field(default="", validation_alias="AIPROBE_ID_ORIGIN")
+    aiprobe_product_id: str = Field(default="testing-probe", validation_alias="AIPROBE_PRODUCT_ID")
+    # Virgülle izinli org'lar; boş = herkes reddedilir (fail-closed, PLAN §2.4).
+    aiprobe_allowed_orgs: str = Field(default="", validation_alias="AIPROBE_ALLOWED_ORGS")
+    # /admin/kimlik-bagi'yi çağırabilecek tek servis hesabı (aiprobe-home) ve beklenen `aud`.
+    aiprobe_home_sa: str = Field(default="", validation_alias="AIPROBE_HOME_SA")
+    aiprobe_tp_audience: str = Field(default="", validation_alias="AIPROBE_TP_AUDIENCE")
+    aiprobe_session_check_s: int = Field(default=60, validation_alias="AIPROBE_SESSION_CHECK_S")
+    aiprobe_idle_s: int = Field(default=30 * 60, validation_alias="AIPROBE_IDLE_S")
+    aiprobe_absolute_s: int = Field(default=8 * 3600, validation_alias="AIPROBE_ABSOLUTE_S")
+    aiprobe_http_timeout_s: float = Field(default=5.0, validation_alias="AIPROBE_HTTP_TIMEOUT_S")
     # Portalda gösterilen kişi adları: `kullanici_adi=Ad Soyad` virgülle (ör.
     # `analist=Ayşe Yılmaz,sunucu=`). Boş = seed.GORUNEN_ADLAR demo varsayılanları. Yalnızca
     # gösterim; yetki kararları rolle verilir.

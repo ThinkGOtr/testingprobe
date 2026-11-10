@@ -10,9 +10,10 @@ import psycopg
 import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine
 
-from tests.unit.conftest import Db, PgServer, run_alembic
+from tests.unit.conftest import Db, PgServer, alembic_config, run_alembic
 from tp_core.models import Base, enums
 from tp_core.models import asistan as asistan
 
@@ -338,7 +339,9 @@ def test_0017_downgrade_ve_yeniden_yukseltme(pg: PgServer) -> None:
         with pytest.raises(Exception, match="tool_call_kanal_ck"):
             run_alembic(owner, "0016", "downgrade")
         with psycopg.connect(dsn, autocommit=True) as o:
-            assert o.execute("SELECT version_num FROM alembic_version").fetchone() == ("0017",)
+            # Tek işlemde geri alma başarısız olunca sürüm baş göçte kalır (0017 ya da sonrası).
+            bas = ScriptDirectory.from_config(alembic_config()).get_current_head()
+            assert o.execute("SELECT version_num FROM alembic_version").fetchone() == (bas,)
             assert o.execute("SELECT to_regclass('asistan_mesaj')").fetchone()[0] is not None
     finally:
         with pg.super_conn() as s:

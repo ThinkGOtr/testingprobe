@@ -2,7 +2,9 @@
 
 Token yalnızca üretimde bir kez gösterilir (`tpt_` önekli, 256 bit rastgele); veritabanında
 sha256 özeti saklanır. Doğrulama: özet eşleşir, iptal edilmemiş, süresi dolmamış, kapsam doğru ve
-kullanıcının parolası token üretildiğinden beri değişmemiş (`parola_izi`).
+kullanıcının parolası token üretildiğinden beri değişmemiş (`parola_izi`) ve dış iptal sayacı
+aynı (`auth_epoch`). AI Probe kipinde sahip bir kişiye bağlıysa en geç 60 sn'de bir (önbellekli)
+oturum kontrolü yapılır (`tp_core.auth.aiprobe.token_kontrol`; `local` kipte dış çağrı yok).
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from tp_core.audit import audit_on_commit
-from tp_core.auth.sessions import password_fingerprint
+from tp_core.auth.sessions import aiprobe_acik, password_fingerprint
 from tp_core.models import ApiToken, AppUser
 from tp_core.workflow.service import Principal
 
@@ -39,6 +41,7 @@ def issue_token(session: Session, user: Principal, kapsam: str, ttl_s: int) -> t
     raw = PREFIX + secrets.token_urlsafe(32)
     tok = ApiToken(
         parola_izi=password_fingerprint(sahip.parola_hash),
+        auth_epoch=sahip.auth_epoch,
         user_id=user.id,
         kapsam=kapsam,
         token_hash=token_hash(raw),
@@ -73,8 +76,14 @@ def verify_bearer(session: Session, raw: str | None, kapsam: str) -> Principal |
         or tok.son_kullanma <= datetime.now(UTC)
         or tok.kapsam != kapsam
         or tok.parola_izi != password_fingerprint(user.parola_hash)
+        or tok.auth_epoch != user.auth_epoch
     ):
         return None
+    if aiprobe_acik():
+        from tp_core.auth import aiprobe
+
+        if not aiprobe.token_kontrol(session, user, tok.olusturma):
+            return None
     session.execute(
         update(ApiToken).where(ApiToken.id == tok.id).values(son_kullanim=datetime.now(UTC))
     )

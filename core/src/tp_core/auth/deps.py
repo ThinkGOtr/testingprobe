@@ -9,12 +9,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from tp_core.auth.sessions import (
-    COOKIE_NAME,
+    OturumDurumu,
     SessionCodec,
+    cookie_name,
     session_valid,
 )
 from tp_core.auth.tokens import verify_bearer
@@ -35,16 +36,27 @@ def session_codec() -> SessionCodec:
 Codec = Annotated[SessionCodec, Depends(session_codec)]
 
 
-def current_user(request: Request, session: DbSession, codec: Codec) -> Principal:
-    raw = request.cookies.get(COOKIE_NAME)
+DEGRADED_HEADER = "X-Aiprobe-Degraded"
+
+
+def current_user(
+    request: Request, response: Response, session: DbSession, codec: Codec
+) -> Principal:
+    raw = request.cookies.get(cookie_name())
     if not raw:
         raise HTTPException(401, "Oturum açmanız gerekiyor")
     veri = codec.loads(raw)
     if veri is None:
         raise HTTPException(401, "Oturumunuz geçersiz veya süresi dolmuş")
-    user = session_valid(session, veri)
+    durum = OturumDurumu()
+    user = session_valid(session, veri, uzat=True, durum=durum)
     if user is None:
         raise HTTPException(401, "Oturumunuz geçersiz veya süresi dolmuş")
+    if durum.degraded:
+        # aiprobe-home erişilemedi: oturum süre sınırları içinde korunur; portal uyarı bandı
+        # gösterir.
+        response.headers[DEGRADED_HEADER] = "1"
+    request.state.oturum_external_uid = durum.external_uid
     p = Principal(user.id, user.kullanici_adi, user.rol)
     request.state.principal = p
     return p

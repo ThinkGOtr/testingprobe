@@ -1,12 +1,16 @@
-"""POST /auth/login · POST /auth/logout · GET /auth/me"""
+"""POST /auth/login · POST /auth/logout · GET /auth/me
+
+`TP_AUTH_MODE=aiprobe` kipinde yerel giriş kapalıdır (`/auth/login` 404); giriş
+`/auth/aiprobe/*` uçlarındandır (api/routers/aiprobe.py, TEKNIK-TASARIM §8.14).
+"""
 
 from __future__ import annotations
 
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,18 +18,20 @@ from sqlalchemy.orm import Session
 from tp_core.audit import audit_on_commit
 from tp_core.auth.client_ip import client_address
 from tp_core.auth.deps import Codec, CurrentUser, DbSession, session_codec
-from tp_core.auth.display import display_name, display_names, person_name
+from tp_core.auth.display import configured_names, display_name, person_name
 from tp_core.auth.login import THROTTLE, authenticate
 from tp_core.auth.sessions import (
-    COOKIE_NAME,
     DEVICE_COOKIE_NAME,
     DEVICE_MAX_AGE_S,
     SessionCodec,
+    aiprobe_acik,
+    cookie_name,
+    cookie_secure,
     open_session,
     revoke_session,
 )
 from tp_core.config import get_settings
-from tp_core.models import AppUser
+from tp_core.models import AppUser, Oturum
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -48,14 +54,34 @@ class Me(BaseModel):
 
 
 def me_of(session: Session, user_id: uuid.UUID, kullanici_adi: str, rol: str) -> Me:
-    kullanicilar = session.execute(select(AppUser.kullanici_adi, AppUser.rol)).all()
+    kullanicilar = session.execute(
+        select(AppUser.kullanici_adi, AppUser.rol, AppUser.ad_soyad)
+    ).all()
+    # Yapılandırılmış adlar önce gelir; JIT (AI Probe) hesaplarında ad veritabanındadır.
+    names = configured_names()
+    for k, _r, ad_soyad in kullanicilar:
+        if ad_soyad and k.strip().lower() not in names:
+            names[k.strip().lower()] = ad_soyad
     return Me(
         id=user_id,
         kullanici_adi=kullanici_adi,
         rol=rol,
-        gorunen_ad=display_name(kullanici_adi, rol),
-        ad_soyad=person_name(kullanici_adi),
-        kisiler=display_names((k, r) for k, r in kullanicilar),
+        gorunen_ad=display_name(kullanici_adi, rol, names),
+        ad_soyad=person_name(kullanici_adi, names),
+        kisiler={k: display_name(k, r, names) for k, r, _a in kullanicilar},
+    )
+
+
+def set_session_cookie(yanit: Response, codec: SessionCodec, user: AppUser, sid: uuid.UUID) -> None:
+    """Oturum çerezi: ad ve Secure kipe göre (`local` → `tp_session`, diğer → `__Host-`)."""
+    yanit.set_cookie(
+        cookie_name(),
+        codec.dumps(user.id, user.parola_hash, sid, user.auth_epoch or 0),
+        max_age=codec.max_age_s,
+        httponly=True,
+        samesite="lax",
+        secure=cookie_secure(),
+        path="/",
     )
 
 
@@ -78,6 +104,8 @@ def throttle_key(request: Request, kullanici_adi: str, codec: SessionCodec) -> s
 
 @router.post("/login", response_model=Me)
 def login(body: LoginIn, request: Request, session: DbSession, codec: Codec) -> JSONResponse:
+    if get_settings().auth_mode == "aiprobe":
+        raise HTTPException(404, "Yerel giriş kapalı; AI Probe hesabıyla giriş yapın")
     anahtar = throttle_key(request, body.kullanici_adi, codec)
     # Hak, (yavaş) argon2 doğrulamasından önce atomik olarak ayrılır: eşzamanlı yanlış parolalar
     # pencerede en çok MAX_DENEME kez doğrulanır.
@@ -100,15 +128,7 @@ def login(body: LoginIn, request: Request, session: DbSession, codec: Codec) -> 
     yanit = JSONResponse(
         me_of(session, user.id, user.kullanici_adi, user.rol).model_dump(mode="json")
     )
-    yanit.set_cookie(
-        COOKIE_NAME,
-        codec.dumps(user.id, user.parola_hash, sid),
-        max_age=codec.max_age_s,
-        httponly=True,
-        samesite="lax",
-        secure=get_settings().session_cookie_secure,
-        path="/",
-    )
+    set_session_cookie(yanit, codec, user, sid)
     # Tanınan cihaz: mevcut geçerli çerez korunur (cihaz kimliği sabit kalır), yoksa yenisi.
     raw = request.cookies.get(DEVICE_COOKIE_NAME)
     mevcut = codec.loads_device(raw) if raw else None
@@ -119,7 +139,7 @@ def login(body: LoginIn, request: Request, session: DbSession, codec: Codec) -> 
         max_age=DEVICE_MAX_AGE_S,
         httponly=True,
         samesite="strict",
-        secure=get_settings().session_cookie_secure,
+        secure=cookie_secure(),
         path="/",
     )
     return yanit
@@ -129,18 +149,30 @@ def login(body: LoginIn, request: Request, session: DbSession, codec: Codec) -> 
 def logout(
     request: Request, session: DbSession, codec: Annotated[SessionCodec, Depends(session_codec)]
 ) -> JSONResponse:
-    raw = request.cookies.get(COOKIE_NAME)
+    raw = request.cookies.get(cookie_name())
     veri = codec.loads(raw) if raw else None
+    govde: dict[str, object] = {"ok": True}
     if veri is not None:
         user = session.get(AppUser, veri.user_id)
+        harici = session.scalar(
+            select(Oturum.external_uid).where(Oturum.id == veri.sid, Oturum.user_id == veri.user_id)
+        )
         # Yalnızca etkin bir oturum iptal edildiyse denetime yazılır (çerez kopyasıyla tekrar
         # çıkış "logout" kaydı üretmez).
         if user is not None and revoke_session(session, veri):
             audit_on_commit(
                 session, user.kullanici_adi, "auth.logout", f"app_user:{user.id}", {"sid": veri.sid}
             )
-    yanit = JSONResponse({"ok": True})
-    yanit.delete_cookie(COOKIE_NAME, path="/", httponly=True, samesite="lax")
+        # AI Probe oturumu: çıkış tüm ürünlerden yapılır (id. çıkış sayfası; PLAN §2.3).
+        if harici is not None and aiprobe_acik():
+            ayar = get_settings()
+            govde["redirect"] = (
+                f"{ayar.aiprobe_id_origin.rstrip('/')}/logout?product={ayar.aiprobe_product_id}"
+            )
+    yanit = JSONResponse(govde)
+    yanit.delete_cookie(
+        cookie_name(), path="/", httponly=True, samesite="lax", secure=cookie_secure()
+    )
     return yanit
 
 

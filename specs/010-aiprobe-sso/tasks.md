@@ -20,33 +20,33 @@ description: "AI Probe ortak girişi (SSO) görev listesi"
 
 ## Phase 2: Foundational
 
-- [ ] T010 `core/src/tp_core/config.py` `TP_AUTH_MODE` + `AIPROBE_*`
-- [ ] T011 Göç `core/alembic/versions/0019_aiprobe_kimlik.py` + `models/identity.py` (`KimlikBagi`, yeni kolonlar)
-- [ ] T012 `auth/sessions.py` kip yardımcıları, çerez adı/Secure, `ae` alanı
-- [ ] T013 `auth/aiprobe.py` home istemcisi, ID token sağlayıcı/doğrulayıcı, önbellek, iptal
+- [x] T010 `core/src/tp_core/config.py` `TP_AUTH_MODE` + `AIPROBE_*`
+- [x] T011 Göç `core/alembic/versions/0019_aiprobe_kimlik.py` + `models/identity.py` (`KimlikBagi`, yeni kolonlar)
+- [x] T012 `auth/sessions.py` kip yardımcıları, çerez adı/Secure, `ae` alanı
+- [x] T013 `auth/aiprobe.py` home istemcisi, ID token sağlayıcı/doğrulayıcı, önbellek, iptal
 
 ## Phase 3: US1 — AI Probe ile giriş (P1) 🎯 MVP
 
-- [ ] T020 [US1] `api/routers/aiprobe.py` `/auth/aiprobe/login`, `/auth/aiprobe/callback`
-- [ ] T021 [US1] JIT `app_user` + bağ, denetim `auth.jit_user`
-- [ ] T022 [US1] `/auth/logout` AI Probe oturumunda `redirect`; `/auth/login` `aiprobe` kipinde 404
-- [ ] T023 [P] [US1] Testler: giriş turu, state uyuşmazlığı, JIT, `local` kipte uçlar yok
+- [x] T020 [US1] `api/routers/aiprobe.py` `/auth/aiprobe/login`, `/auth/aiprobe/callback`
+- [x] T021 [US1] JIT `app_user` + bağ, denetim `auth.jit_user`
+- [x] T022 [US1] `/auth/logout` AI Probe oturumunda `redirect`; `/auth/login` `aiprobe` kipinde 404
+- [x] T023 [P] [US1] Testler: giriş turu, state uyuşmazlığı, JIT, `local` kipte uçlar yok
 
 ## Phase 4: US2 — Rol seçici ve Rol değiştir (P1)
 
-- [ ] T030 [US2] `GET /auth/aiprobe/hesaplar`, `POST /auth/aiprobe/rol-sec`, `POST /auth/aiprobe/rol-degistir`
-- [ ] T031 [P] [US2] Testler: rol seçici, rol değiştir (yeni sid, bağsız hesap 403)
+- [x] T030 [US2] `GET /auth/aiprobe/hesaplar`, `POST /auth/aiprobe/rol-sec`, `POST /auth/aiprobe/rol-degistir`
+- [x] T031 [P] [US2] Testler: rol seçici, rol değiştir (yeni sid, bağsız hesap 403)
 
 ## Phase 5: US3/US4 — İptal ve süreler (P1/P2)
 
-- [ ] T035 [US3] `session_valid` / `verify_bearer` içinde 60 sn kontrol; epoch artışı; degraded başlığı
-- [ ] T036 [US4] Boşta 30 dk kayan / mutlak 8 sa (yalnız kullanıcı istekleri uzatır)
-- [ ] T037 [P] [US3] Testler: iptal → 401 + `tpt_` red; home erişilemez → oturum korunur
+- [x] T035 [US3] `session_valid` / `verify_bearer` içinde 60 sn kontrol; epoch artışı; degraded başlığı
+- [x] T036 [US4] Boşta 30 dk kayan / mutlak 8 sa (yalnız kullanıcı istekleri uzatır)
+- [x] T037 [P] [US3] Testler: iptal → 401 + `tpt_` red; home erişilemez → oturum korunur
 
 ## Phase 6: US6 — Yönetim ucu (P2)
 
-- [ ] T038 [US6] `api/routers/admin_kimlik.py` `/admin/kimlik-bagi` (yalnız `AIPROBE_HOME_SA`)
-- [ ] T039 [P] [US6] Testler: home olmayan çağıran reddedilir; bağ/kaldırma
+- [x] T038 [US6] `api/routers/admin_kimlik.py` `/admin/kimlik-bagi` (yalnız `AIPROBE_HOME_SA`)
+- [x] T039 [P] [US6] Testler: home olmayan çağıran reddedilir; bağ/kaldırma
 
 ## Phase 7: Portal (ayrı şerit, açık)
 

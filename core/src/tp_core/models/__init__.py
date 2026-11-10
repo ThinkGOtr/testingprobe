@@ -32,7 +32,7 @@ from tp_core.models.delivery import (
     TestResult,
 )
 from tp_core.models.guard import StateWriteForbidden
-from tp_core.models.identity import ApiToken, AppUser, Oturum
+from tp_core.models.identity import ApiToken, AppUser, KimlikBagi, Oturum
 from tp_core.models.requirements import (
     ConsistencyFinding,
     Requirement,
@@ -92,6 +92,7 @@ __all__ = [
     "ExternalRef",
     "Failure",
     "Job",
+    "KimlikBagi",
     "Oturum",
     "PullRequest",
     "Requirement",

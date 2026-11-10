@@ -34,7 +34,8 @@ SUNUCU_HATASI_METNI = "Sunucu hatası"
 
 # 5xx'te korunan tek kod ailesi: bilinçli hizmet durumu (iç hata değil). Yalnız `KodluHata` ile
 # ve yalnız 503'te geçerlidir; WorkflowError ve diğer 5xx'ler yine `ic_hata` olur.
-HIZMET_DURUMU_KODLARI = frozenset({"asistan_kapali"})
+# `kimlik_servisi_yok`: AI Probe kimlik servisine (aiprobe-home) ulaşılamıyor (§8.14).
+HIZMET_DURUMU_KODLARI = frozenset({"asistan_kapali", "kimlik_servisi_yok"})
 
 # Durum kodu → genel kod. Listede olmayan 4xx'ler `istek_hatasi`, her 5xx `ic_hata` alır.
 GENEL_KODLAR: Mapping[int, str] = {

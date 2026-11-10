@@ -11,7 +11,7 @@ from pydantic import BaseModel, ValidationError
 from tp_core import __version__, db
 from tp_core.api import errors, registry
 from tp_core.api.csrf import OriginGuard, parse_origins
-from tp_core.api.routers import audit, auth, events, tokens
+from tp_core.api.routers import admin_kimlik, aiprobe, audit, auth, events, tokens
 from tp_core.config import Settings, get_settings
 
 SERVICE = "core-api"
@@ -54,7 +54,14 @@ def _izinli_kaynaklar() -> frozenset[str]:
         return parse_origins(Settings.model_fields["allowed_origins"].default)
 
 
-PLATFORM_ROUTERS = [auth.router, audit.router, events.router, tokens.router]
+PLATFORM_ROUTERS = [
+    auth.router,
+    aiprobe.router,
+    admin_kimlik.router,
+    audit.router,
+    events.router,
+    tokens.router,
+]
 
 
 def create_app() -> FastAPI:
