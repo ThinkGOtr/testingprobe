@@ -8,6 +8,9 @@
 export const ROTA_DESENLERI: readonly string[] = [
   "/",
   "/giris",
+  // AI Probe rol seçici (yalnız TP_AUTH_MODE=aiprobe|both; oturum öncesi ekran, asistan yok →
+  // `rules/assistant/rotalar.json`'da değil, /giris gibi).
+  "/rol-sec",
   "/gereksinimler",
   "/gereksinimler/:id",
   "/gereksinimler/:id/caseler",

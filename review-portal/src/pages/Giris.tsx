@@ -2,6 +2,8 @@ import { useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { hataMesaji, mockZorunlu } from "../api/http";
 import { useOturum } from "../auth";
+import { useKimlikKipi } from "../lib/kimlikKipi";
+import { AiprobeGirisDugmesi, MarkaBasligi } from "./AiprobeGiris";
 
 export function Giris() {
   const { kullanici, girisYap } = useOturum();
@@ -12,9 +14,24 @@ export function Giris() {
   const git = useNavigate();
   const konum = useLocation();
   const hedef = (konum.state as { from?: string } | null)?.from;
+  const { kip } = useKimlikKipi();
 
   // Rol bazlı açılış "/" (AnaSayfa) üzerinden: canlı derlemede core'un sunduğu ekranlara göre seçilir.
   if (kullanici) return <Navigate to={hedef ?? "/"} replace />;
+
+  // TP_AUTH_MODE=aiprobe: yerel giriş kapalı (core `/auth/login` 404); tek yol AI Probe hesabı.
+  if (kip === "aiprobe") {
+    return (
+      <div className="giris-sayfa">
+        <main className="giris-kart">
+          <MarkaBasligi />
+          <h1>Oturum aç</h1>
+          <p className="soluk">Testing Probe'a AI Probe hesabınızla girersiniz. Her karar adınıza kayıt altına alınır.</p>
+          <AiprobeGirisDugmesi devam={hedef ?? "/"} birincil />
+        </main>
+      </div>
+    );
+  }
 
   async function gonder(e: FormEvent) {
     e.preventDefault();
@@ -81,6 +98,14 @@ export function Giris() {
             {gonderiliyor ? "Giriş yapılıyor…" : "Giriş yap"}
           </button>
         </form>
+        {kip === "both" && (
+          <div className="giris-aiprobe">
+            <p className="giris-ayrac" aria-hidden="true">
+              <span>ya da</span>
+            </p>
+            <AiprobeGirisDugmesi devam={hedef ?? "/"} />
+          </div>
+        )}
         <details className="giris-ipucu">
           <summary>Demo kullanıcıları</summary>
           <ul>

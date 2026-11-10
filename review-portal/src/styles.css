@@ -1819,6 +1819,124 @@ fieldset:disabled select {
   margin: 8px 0;
 }
 
+/* ---------------------------------------------------------------- AI Probe girişi (specs/010-aiprobe-sso)
+   Yalnız TP_AUTH_MODE=aiprobe|both'ta çizilir; local kipte bu kuralların eşleştiği öğe yoktur. */
+
+.giris-aiprobe {
+  margin-top: 14px;
+}
+.giris-ayrac {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.giris-ayrac::before,
+.giris-ayrac::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.giris-kart > .dugme {
+  margin-top: 18px;
+}
+.rol-secenekleri {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.rol-secenek {
+  display: grid;
+  width: 100%;
+  gap: 2px;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-kontrol);
+  padding: 12px 14px;
+  cursor: pointer;
+}
+.rol-secenek:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.rol-secenek:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.rol-secenek:disabled {
+  cursor: default;
+}
+.rol-secenek.aktif {
+  border-color: var(--accent);
+  border-left-width: 3px;
+}
+.rol-secenek[aria-busy="true"] {
+  opacity: 0.7;
+}
+.rol-secenek-rol {
+  font-weight: 700;
+}
+.rol-secenek-ad,
+.rol-secenek-not {
+  color: var(--text-2);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+.rol-sec .alan-hata + .dugme {
+  margin-top: 14px;
+}
+
+/* <aiprobe-switcher> (vendor, Shadow DOM): renkler portal token'larından (tema ile birlikte değişir). */
+.aiprobe-degistirici {
+  display: inline-flex;
+}
+aiprobe-switcher {
+  --aip-font: inherit;
+  --aip-surface: var(--surface);
+  --aip-surface-2: var(--surface-2);
+  --aip-border: var(--border);
+  --aip-text: var(--text);
+  --aip-text-2: var(--text-2);
+  --aip-muted: var(--muted);
+  --aip-accent: var(--accent);
+  --aip-focus: var(--focus);
+  --aip-tint-12: var(--accent-soft);
+  --aip-warn: var(--warn);
+  --aip-warn-bg: var(--warn-bg);
+  --aip-ai: var(--vurgu);
+  --aip-ai-bg: var(--vurgu-bg);
+  --aip-shadow-lg: var(--shadow);
+}
+/* "Rol değiştir": değiştiricinin kendi menü bağlantılarıyla aynı ölçü (yuva ışık DOM'unda). */
+.aip-menu-dugme {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.aip-menu-dugme:hover {
+  background: var(--accent-soft);
+}
+.aip-menu-dugme:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
 /* ---------------------------------------------------------------- akış adımları */
 
 .akis ol {

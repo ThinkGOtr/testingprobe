@@ -24,11 +24,18 @@ import { ScriptDetay } from "./pages/ScriptDetay";
 import { Yayin } from "./pages/Yayin";
 import { YolHaritasi } from "./pages/YolHaritasi";
 import { ROL } from "./lib/etiketler";
+import { useKimlikKipi } from "./lib/kimlikKipi";
+import { AiprobeGirisineYonlendir } from "./pages/AiprobeGiris";
+import { RolSec } from "./pages/RolSec";
 
 function OturumGerekli({ children }: { children: ReactNode }) {
   const { kullanici, yukleniyor } = useOturum();
+  const { kip } = useKimlikKipi();
   const konum = useLocation();
   if (yukleniyor) return <Yukleniyor metin="Oturum kontrol ediliyor…" />;
+  // Yalnız AI Probe kipinde (yerel giriş kapalı) oturum yoksa doğrudan AI Probe girişine gidilir;
+  // `local` ve `both` kipte giriş ekranı (both: yerel form + AI Probe düğmesi).
+  if (!kullanici && kip === "aiprobe") return <AiprobeGirisineYonlendir devam={konum.pathname + konum.search} />;
   if (!kullanici) return <Navigate to="/giris" replace state={{ from: konum.pathname + konum.search }} />;
   return <OlayProvider etkin>{children}</OlayProvider>;
 }
@@ -81,6 +88,7 @@ export function Rotalar() {
   return (
     <Routes>
       <Route path="/giris" element={<Giris />} />
+      <Route path="/rol-sec" element={<RolSec />} />
       <Route
         element={
           <OturumGerekli>

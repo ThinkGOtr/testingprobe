@@ -35,6 +35,8 @@ import type {
   Kosu,
   KosuDetay,
   Kullanici,
+  CikisYaniti,
+  AiprobeHesaplari,
   McpToken,
   McpTokenKaydi,
   PullRequest,
@@ -70,8 +72,15 @@ export const api = {
   // Oturum
   login: (kullanici_adi: string, parola: string) =>
     istek<Kullanici>("POST", "/auth/login", { govde: { kullanici_adi, parola } }),
-  logout: () => istek<void>("POST", "/auth/logout"),
+  /** AI Probe oturumunda yanıt `redirect` taşır (tüm ürünlerden çıkış sayfası; TEKNIK-TASARIM §8.14). */
+  logout: () => istek<CikisYaniti | undefined>("POST", "/auth/logout"),
   me: () => istek<Kullanici>("GET", "/auth/me"),
+  // AI Probe ortak girişi (yalnız TP_AUTH_MODE=aiprobe|both; specs/010-aiprobe-sso)
+  aiprobeHesaplar: () => istek<AiprobeHesaplari>("GET", "/auth/aiprobe/hesaplar"),
+  aiprobeRolSec: (app_user_id: string) =>
+    istek<Kullanici & { continue?: string }>("POST", "/auth/aiprobe/rol-sec", { govde: { app_user_id } }),
+  aiprobeRolDegistir: (app_user_id: string) =>
+    istek<Kullanici>("POST", "/auth/aiprobe/rol-degistir", { govde: { app_user_id } }),
 
   // Gereksinimler
   gereksinimler: async (): Promise<Gereksinim[]> => listeUyarla(await istek<unknown>("GET", "/requirements"), gereksinimUyarla),

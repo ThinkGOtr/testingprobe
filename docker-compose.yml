@@ -67,6 +67,16 @@ x-core-env: &core-env
   TP_MCP_PUBLIC_URL: ${TP_MCP_PUBLIC_URL:-http://127.0.0.1:${TP_API_PORT:-8000}/mcp}
   # HTTPS arkasında (GCP dış kapısı) oturum çerezi Secure olur; yerelde http → false.
   TP_SESSION_COOKIE_SECURE: ${TP_SESSION_COOKIE_SECURE:-false}
+  # AI Probe ortak girişi (TEKNIK-TASARIM §8.14, specs/010-aiprobe-sso). Varsayılan `local`: dış
+  # çağrı yok, davranış bugünküyle aynı. `aiprobe|both`'ta AIPROBE_* zorunlu (sır değildir; servis
+  # kimliği VM metadata'sından gelir). TP_ALLOWED_ORIGINS'e portalın https adresi eklenmeli.
+  TP_AUTH_MODE: ${TP_AUTH_MODE:-local}
+  AIPROBE_HOME_RUN_URL: ${AIPROBE_HOME_RUN_URL:-}
+  AIPROBE_ID_ORIGIN: ${AIPROBE_ID_ORIGIN:-}
+  AIPROBE_PRODUCT_ID: ${AIPROBE_PRODUCT_ID:-testing-probe}
+  AIPROBE_ALLOWED_ORGS: ${AIPROBE_ALLOWED_ORGS:-}
+  AIPROBE_HOME_SA: ${AIPROBE_HOME_SA:-}
+  AIPROBE_TP_AUDIENCE: ${AIPROBE_TP_AUDIENCE:-}
   TP_DAILY_BUDGET_USD: ${TP_DAILY_BUDGET_USD:-30}
   TP_WORKFLOW_BUDGET_USD: ${TP_WORKFLOW_BUDGET_USD:-2}
   # Gereksinim akışı (Faz 2): PO etiket sorgu aralığı, tutarlılık turu üst sınırı (core-api de
@@ -409,6 +419,11 @@ services:
     pull_policy: build
     ports:
       - "127.0.0.1:${TP_PORTAL_PORT:-8080}:8080"
+    environment:
+      # CSP kipe göre (review-portal/docker/40-tp-kimlik-csp.sh): local → değişmez; aiprobe/both →
+      # connect-src ve img-src'ye yalnız AI Probe başlangıç kökeni eklenir (değiştirici).
+      TP_AUTH_MODE: ${TP_AUTH_MODE:-local}
+      AIPROBE_HOME_ORIGIN: ${AIPROBE_ID_ORIGIN:-https://home.aiprobe.antreklabs.com}
     networks: [core-net]
     restart: unless-stopped
     depends_on:

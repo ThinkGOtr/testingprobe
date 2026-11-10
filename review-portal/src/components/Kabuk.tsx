@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { canliDerleme, cekirdekYetenekleri, mockDegisikligineAbone, mockUclari, mockZorunlu, ucVar, type Yetenekler } from "../api/http";
 import { useBaglantiDurumu, type BaglantiDurumu } from "../api/events";
 import type { Rol } from "../api/types";
@@ -11,6 +11,10 @@ import { OneriDugmesi } from "./asistan/OneriDugmesi";
 import { paneliAc, sekmeSec, useAsistanHazir } from "./asistan/kontrol";
 import { Ikon, type IkonAdi } from "./Ikon";
 import { KabukDurumuSaglayici, useKabukDurumu } from "./KabukDurumu";
+import { AiprobeDegistirici, useCikis } from "./AiprobeDegistirici";
+import { useBildirim } from "./Bildirim";
+import { useKimlikKipi, useKimlikServisiErisilemez } from "../lib/kimlikKipi";
+import { formlariGeriYukle } from "../lib/formYedegi";
 
 interface NavOgesi {
   yol: string;
@@ -138,14 +142,17 @@ export function Kabuk() {
 }
 
 function KabukIcerik() {
-  const { kullanici, cikisYap } = useOturum();
+  const { kullanici } = useOturum();
+  const cikis = useCikis();
+  const kip = useKimlikKipi();
+  const kimlikServisiYok = useKimlikServisiErisilemez();
+  const bildir = useBildirim();
   const baglanti = useBaglantiDurumu();
   const mockUclar = useMockUclari();
   const yetenekler = useCanliYetenekler();
   const [tema, temaDegistir] = useTema();
   const { menuAcik, menuAyarla: setMenuAcik } = useKabukDurumu()!;
   const konum = useLocation();
-  const git = useNavigate();
 
   const menuDugmesi = useRef<HTMLButtonElement>(null);
   const kabukRef = useRef<HTMLDivElement>(null);
@@ -228,6 +235,16 @@ function KabukIcerik() {
     };
   }, [menuAcik]);
 
+  // AI Probe kipinde 401 → yeniden giriş öncesi yedeklenen form verisi aynı adrese dönünce geri konur
+  // (lib/formYedegi.ts; yalnız aynı kullanıcı). `local` kipte yedek hiç yazılmaz.
+  const kullaniciId = kullanici?.id;
+  useEffect(() => {
+    if (!kullaniciId || kip.kip === "local") return;
+    return formlariGeriYukle(konum.pathname + konum.search, kullaniciId, (sayi) => {
+      if (sayi > 0) bildir("Oturum yenilendi; kaydedilmemiş form verileriniz geri yüklendi.", "bilgi");
+    });
+  }, [konum.pathname, konum.search, kullaniciId, kip.kip, bildir]);
+
   // Öneri kartındaki "Git" çapası (`#bulgular` vb.): hedef bölüme kaydırır.
   useCapayaKaydir();
 
@@ -283,6 +300,7 @@ function KabukIcerik() {
             <span className="nokta" aria-hidden="true" />
             <span className="baglanti-metin">{b.etiket}</span>
           </span>
+          {kip.kip !== "local" && <AiprobeDegistirici />}
           <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={temaDegistir} aria-label={`${TEMA_ETIKETI[tema]} (değiştir)`}>
             <Ikon ad={tema === "koyu" ? "ay" : tema === "acik" ? "gunes" : "sistem"} />
           </button>
@@ -300,10 +318,7 @@ function KabukIcerik() {
           <button
             type="button"
             className="dugme dugme-ikincil dugme-kucuk"
-            onClick={async () => {
-              await cikisYap();
-              git("/giris", { replace: true });
-            }}
+            onClick={() => void cikis()}
           >
             Çıkış
           </button>
@@ -361,6 +376,12 @@ function KabukIcerik() {
           />
         )}
         <main id="ana-icerik" className="icerik" tabIndex={-1}>
+          {kimlikServisiYok && (
+            <div className="uyari-kutusu uyari-uyari kimlik-servisi-bandi" role="status" data-testid="kimlik-servisi-bandi">
+              <strong>AI Probe kimlik servisine şu anda ulaşılamıyor.</strong> Oturumunuz süre sınırları içinde açık kalır; yeni
+              giriş ve rol değiştirme bağlantı düzelene kadar yapılamaz.
+            </div>
+          )}
           {mockAktif && (
             <div className={`uyari-kutusu uyari-uyari ornek-veri-bandi${mockZorunlu() ? " ornek-veri-tam" : ""}`} role="note" data-testid="ornek-veri-bandi">
               <strong>ÖRNEK VERİ — gerçek değil.</strong>{" "}

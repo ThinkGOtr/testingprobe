@@ -44,9 +44,9 @@ function abone(fn: () => void): () => void {
   };
 }
 
-/** Ekranın öneri sorgusu; portal dışı yol ve giriş ekranında null. */
+/** Ekranın öneri sorgusu; portal dışı yol, giriş ve rol seçimi ekranında null. */
 export function oneriSorgusu(ekran: EkranBaglami): OneriSorgusu | null {
-  if (!ekran.rota_kalibi || ekran.rota_kalibi === "/giris") return null;
+  if (!ekran.rota_kalibi || ekran.rota_kalibi === "/giris" || ekran.rota_kalibi === "/rol-sec") return null;
   const v = ekran.varlik;
   if (!v) return { rota: ekran.rota_kalibi };
   return { rota: ekran.rota_kalibi.replace(":id", encodeURIComponent(v.id)), varlik_tur: v.tur, varlik_id: v.id };

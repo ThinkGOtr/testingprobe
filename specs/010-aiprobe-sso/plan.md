@@ -94,7 +94,13 @@ core/tests/unit/platform/test_aiprobe_sso.py
   `(uid, auth_time) → sonuç` 60 sn. Geçersiz/rol düşmüş → ayrı işlemde (`session_scope`) epoch artışı
   + oturum iptali + denetim (istek 401 ile geri alınsa da kalıcı). Erişilemez → korunur, degraded.
 - **Token kontrolü**: `api_token.auth_epoch == app_user.auth_epoch`; sahip bağlıysa aynı önbellekli
-  kontrol, `auth_time` = token üretim anı.
+  kontrol, üreten AI Probe oturumunun `auth_time`/`acr`/`session_epoch_ms`'i ile (token üretiminde
+  kopyalanır; üretimden önceki iptal de görülür). Yerel oturumdan üretilen token: üretim anı, acr 1.
+- **CONTRACT v1.2**: `oturum.acr`, `oturum.session_epoch_ms` devirden saklanır, her
+  `/v1/session/check` `{uid, auth_time, acr, session_epoch_ms}` gönderir (acr yoksa home `po`'yu
+  süzer). `oturum.urunler` (ürün→rol) devir/kontrol yanıtından; `/auth/me` `products`.
+- **Portal kipi**: core `aiprobe|both`'ta her yanıta `X-TP-Kimlik: kip=…; home=…; urun=…` ekler
+  (saf ASGI ara katmanı); portal ek istek atmadan kipi öğrenir. `local`'de başlık yok.
 - **Boşta/mutlak**: AI Probe oturumunda `son_kullanma = min(olusturma + mutlak, şimdi + boşta)`;
   yalnız `current_user` uzatır (≥ 60 sn fark varsa yazılır).
 - **Seçim çerezi** (`tp_rol_secimi`, itsdangerous, 10 dk): `{x: uid, t: auth_time, r: roller,

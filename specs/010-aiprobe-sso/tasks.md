@@ -50,15 +50,31 @@ description: "AI Probe ortak girişi (SSO) görev listesi"
 
 ## Phase 7: Portal (ayrı şerit, açık)
 
-- [ ] T040 Portal 401'de kip `aiprobe` ise `/api/auth/aiprobe/login?continue=` (form verisi korunur)
-- [ ] T041 Portal `/rol-sec` sayfası (`GET /api/auth/aiprobe/hesaplar` + `rol-sec`)
-- [ ] T042 `<aiprobe-switcher>` `product-menu` yuvasında "Rol değiştir"; `X-Aiprobe-Degraded` bandı
-- [ ] T043 Çıkışta `redirect`'e gitme; `GET /auth/me` çıktısına `product`/`roles` (değiştirici)
+- [x] T040 Portal 401'de kip `aiprobe` ise `/api/auth/aiprobe/login?continue=` (form verisi
+  `sessionStorage` yedeğiyle korunur; yönlendirme döngüsü koruması). Kip core'un `X-TP-Kimlik`
+  yanıt başlığından (`local`'de başlık yok → arayüz değişmez). `both`: `/giris` yerel form + AI Probe
+- [x] T041 Portal `/rol-sec` sayfası (`GET /api/auth/aiprobe/hesaplar` + `rol-sec`; açık oturumda
+  `rol-degistir`). Asistan bağlamı dışında (`rotalar.json`'a girmez; core `ASISTAN_DISI`)
+- [x] T042 `<aiprobe-switcher>` 1.0.1 vendor (`review-portal/src/vendor/aiprobe-switcher/`, platform
+  `dist/switcher-1.0.1.js` = `web/home/sdk/switcher-1.0.1.js` ile bayt bayt aynı, sha384 testte), yalnız aiprobe/both'ta dinamik
+  yüklenir; `product-menu` yuvasında "Rol değiştir"; `X-Aiprobe-Degraded` bandı. CSP kipe göre
+  (`docker/40-tp-kimlik-csp.sh`: aiprobe/both → `connect-src`/`img-src` + home kökeni; local aynen)
+- [x] T043 Çıkışta `redirect`'e gitme (yalnız home/aynı köken); `GET /auth/me` → `product`, `roles`,
+  `products` (oturumda saklanan ürün→rol haritası). Callback/login hataları tarayıcıda Türkçe sayfa
+  ("Tekrar dene"), API istemcisine JSON
+- [x] T044 CONTRACT v1.2: oturum ve `tpt_` token `auth_time`, `acr`, `session_epoch_ms` saklar ve
+  `/v1/session/check`'e gönderir (MFA'lı `po` oturumu `admin_roles` süzgecine takılmaz; token
+  üreten oturumun alanlarını taşır → üretimden önceki iptal de token'ı düşürür)
+- [x] T045 `/api/health` → core `/health` (on-demand hazırlık yoklaması); compose `x-core-env`
+  `TP_AUTH_MODE` + `AIPROBE_*`, portal `TP_AUTH_MODE` + `AIPROBE_HOME_ORIGIN`
 
 ## Phase 8: Taşıma ve e2e (F4b, PLAN §6)
 
 - [ ] T050 `products/testing-probe.yaml` `callback_url` = `{app_url}/api/auth/aiprobe/callback` (platform şeridi)
-- [ ] T051 `feat/mobil-masaustu` göçü birleşince `0019.down_revision = "0018"`
+- [ ] T051 `feat/mobil-masaustu` göçü birleşince `0019.down_revision = "0018"` — o dalda
+  `0018_script_platform` (down_revision `0017`) var. Birleştirmede: `0019_aiprobe_kimlik.py`'de
+  `down_revision = "0018"` + başlıktaki `Revises:` satırı; `test_aiprobe_sso.py::test_alembic_tek_bas`
+  iki baş kalırsa başarısız olur
 - [ ] T052 CI'da emülatörlü `aiprobe-home` ile `both` e2e (yolculuk 6, 11, 13, 14)
 - [ ] T053 Taşımada `home` taslak bağ listesi → `PUT /admin/kimlik-bagi` (bulunamayan ad = no-go)
 

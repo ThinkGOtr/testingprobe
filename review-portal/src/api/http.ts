@@ -17,6 +17,7 @@
 
 import type { Kullanici } from "./types";
 import { gorunenMetinEkle, hataAdayi, hataKaydet } from "../lib/sonHata";
+import { yanitBasliklariniOku } from "../lib/kimlikKipi";
 
 /** `ApiError`'ın isteğe bağlı ek alanları (AI-ASISTAN-PLANI §5.5). */
 export interface ApiHataEki {
@@ -352,6 +353,8 @@ async function istekGonder<T>(
     if (e instanceof DOMException && e.name === "AbortError") throw e;
     throw new ApiError(0, "Sunucuya bağlanılamadı. Ağ bağlantısını ve core-api'yi kontrol edin.");
   }
+  // AI Probe kipi (`X-TP-Kimlik`) ve kimlik servisi uyarısı (`X-Aiprobe-Degraded`); local'de başlık yok.
+  yanitBasliklariniOku(res, path);
 
   if (res.ok) {
     if (res.status === 204) return undefined as T;

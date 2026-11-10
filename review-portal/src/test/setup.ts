@@ -4,6 +4,7 @@ import { afterEach, beforeAll, beforeEach } from "vitest";
 import { mockKayitlariniSifirla, yapilandir } from "../api/http";
 import { mockSifirla } from "../api/mock/handlers";
 import { asistanIceriginiYukle } from "../components/asistan/AsistanPaneli";
+import { kimlikKipiniAyarla } from "../lib/kimlikKipi";
 
 // Asistan paneli içeriği tarayıcıda ayrı parçadır (ilk açılışta yüklenir, Suspense). Testlerde önceden
 // yüklenir: panel açılınca içerik eş zamanlı çizilir, test sırası/tek test koşusu sonucu değiştirmez.
@@ -20,6 +21,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  // AI Probe kipi modül düzeyinde tutulur (yanıt başlığından); her test `local` ile başlar.
+  kimlikKipiniAyarla(null);
   sessionStorage.clear();
   localStorage.clear();
 });

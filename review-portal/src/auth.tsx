@@ -3,12 +3,20 @@ import { api } from "./api/client";
 import { ApiError, mockOturumuAyarla, yetkisizOlunca } from "./api/http";
 import type { Kullanici, Rol } from "./api/types";
 import { oturumVerileriniTemizle } from "./lib/oturumTemizligi";
+import { formlariSakla } from "./lib/formYedegi";
+import { aiprobeCikisAdresi, aiprobeKipinde, cikisYonlendirmesi, kimlikKipi, yonlendirmeSayaciniSifirla } from "./lib/kimlikKipi";
 
 interface OturumBaglami {
   kullanici: Kullanici | null;
   yukleniyor: boolean;
   girisYap: (kullaniciAdi: string, parola: string) => Promise<Kullanici>;
-  cikisYap: () => Promise<void>;
+  /**
+   * Çıkış. Dönen adres boş değilse çağıran oraya tam sayfa gider (AI Probe oturumu: tüm ürünlerden
+   * çıkış sayfası); `local` kipte her zaman null (bugünkü gibi `/giris`).
+   */
+  cikisYap: () => Promise<string | null>;
+  /** Sunucunun açtığı oturumu (AI Probe rol seçici / "Rol değiştir") istemciye işler. */
+  oturumKur: (k: Kullanici) => void;
 }
 
 const Baglam = createContext<OturumBaglami | null>(null);
@@ -33,10 +41,19 @@ export function OturumProvider({ children }: { children: ReactNode }) {
     let iptal = false;
     api
       .me()
-      .then((k) => !iptal && ayarla(k))
+      .then((k) => {
+        if (iptal) return;
+        yonlendirmeSayaciniSifirla();
+        ayarla(k);
+      })
       .catch(() => !iptal && ayarla(null))
       .finally(() => !iptal && setYukleniyor(false));
-    yetkisizOlunca(() => ayarla(null));
+    yetkisizOlunca(() => {
+      // AI Probe kipinde 401 yeniden giriş demektir (tam sayfa yönlendirme): ekrandaki form verisi
+      // önce yedeklenir, dönüşte geri konur (lib/formYedegi.ts). `local` kipte davranış aynı.
+      if (aiprobeKipinde()) formlariSakla(window.location.pathname + window.location.search, oncekiId.current);
+      ayarla(null);
+    });
     return () => {
       iptal = true;
       yetkisizOlunca(null);
@@ -55,18 +72,35 @@ export function OturumProvider({ children }: { children: ReactNode }) {
     [ayarla],
   );
 
-  const cikisYap = useCallback(async () => {
+  const cikisYap = useCallback(async (): Promise<string | null> => {
+    let hedef: string | null = null;
     try {
-      await api.logout();
+      const yanit = await api.logout();
+      hedef = cikisYonlendirmesi(yanit?.redirect);
     } catch (e) {
       // Oturum zaten düşmüşse (401) yine de yerelde çıkış yapılır.
       if (!(e instanceof ApiError)) throw e;
     } finally {
       ayarla(null);
     }
+    // Yalnız AI Probe kipinde yerel giriş yoktur: `/giris` yeniden AI Probe girişine götüreceği için
+    // çıkış (yanıt yönlendirme taşımasa da) AI Probe çıkış sayfasında biter.
+    if (!hedef && kimlikKipi().kip === "aiprobe") hedef = aiprobeCikisAdresi();
+    return hedef;
   }, [ayarla]);
 
-  const deger = useMemo(() => ({ kullanici, yukleniyor, girisYap, cikisYap }), [kullanici, yukleniyor, girisYap, cikisYap]);
+  const oturumKur = useCallback(
+    (k: Kullanici) => {
+      yonlendirmeSayaciniSifirla();
+      ayarla(k);
+    },
+    [ayarla],
+  );
+
+  const deger = useMemo(
+    () => ({ kullanici, yukleniyor, girisYap, cikisYap, oturumKur }),
+    [kullanici, yukleniyor, girisYap, cikisYap, oturumKur],
+  );
   return <Baglam.Provider value={deger}>{children}</Baglam.Provider>;
 }
 

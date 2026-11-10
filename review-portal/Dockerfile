@@ -12,7 +12,11 @@ ENV VITE_MOCK=${VITE_MOCK}
 RUN npm run build
 
 FROM nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
-COPY nginx.conf /etc/nginx/nginx.conf
+# CSP kimlik kipine göre (TP_AUTH_MODE=local|aiprobe|both): başlangıçta docker/40-tp-kimlik-csp.sh
+# değişmez şablondan etkin nginx.conf'u yazar (local → aynen). Etkin dosya nginx kullanıcısına ait.
+COPY nginx.conf /etc/nginx/tp/nginx.conf.sablon
+COPY --chown=nginx:nginx nginx.conf /etc/nginx/nginx.conf
+COPY --chmod=0755 docker/40-tp-kimlik-csp.sh /docker-entrypoint.d/40-tp-kimlik-csp.sh
 COPY --from=build /app/dist /usr/share/nginx/html
 USER nginx
 EXPOSE 8080

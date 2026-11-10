@@ -27,6 +27,7 @@ export interface EkranBaglami {
 export const EKRAN_ADLARI: Record<string, string> = {
   "/": "Ana sayfa",
   "/giris": "Giriş",
+  "/rol-sec": "Rol seçimi",
   "/gereksinimler": "Gereksinimler",
   "/gereksinimler/:id": "Gereksinim detayı",
   "/gereksinimler/:id/caseler": "Case inceleme",

@@ -19,6 +19,34 @@ export interface Kullanici {
   ad_soyad?: string | null;
   /** Tüm portal kullanıcılarının görünen adları ({kullanici_adi: gorunen_ad}); denetim/onay görünümleri için. */
   kisiler?: Record<string, string>;
+  /** Yalnız AI Probe oturumunda: katalogdaki ürün kimliği (`testing-probe`; değiştirici kullanır). */
+  product?: string;
+  /** Yalnız AI Probe oturumunda: kişiye bağlı rol hesaplarının rolleri ("Rol değiştir" için). */
+  roles?: Rol[];
+  /** Yalnız AI Probe oturumunda: kişinin tüm ürünlerdeki rolleri (`{tp: [...], ap: [...]}`; değiştirici). */
+  products?: Record<string, string[]>;
+}
+
+/** `POST /auth/logout`: AI Probe oturumunda `redirect` (tüm ürünlerden çıkış sayfası). */
+export interface CikisYaniti {
+  ok?: boolean;
+  redirect?: string;
+}
+
+/** AI Probe rol seçici / "Rol değiştir" hesabı (`GET /auth/aiprobe/hesaplar`). */
+export interface AiprobeHesabi {
+  id: string;
+  kullanici_adi: string;
+  rol: Rol;
+  gorunen_ad: string;
+}
+
+export interface AiprobeHesaplari {
+  hesaplar: AiprobeHesabi[];
+  /** Etkin oturumun hesabı ("Rol değiştir"); seçim çereziyle (girişte) boş. */
+  aktif_id?: string | null;
+  /** Girişteki rol seçicide dönülecek portal yolu. */
+  continue?: string;
 }
 
 // ---------------------------------------------------------------- Gereksinimler
