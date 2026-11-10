@@ -388,3 +388,151 @@ def sozlesme_basliklari(spec_metni: str, loc: LocatorRef) -> list[str]:
         if baslik and _grup_kullaniyor_mu(metin[m.end() : bitis], loc.grup, loc.anahtar):
             out.append(baslik)
     return out
+
+
+# ------------------------------------------------------------ Java (009 mobil-masaüstü)
+
+# e2e-app köküne göre ya da forge yolu: …/src/test/java/**/ekranlar/Kimlikler.java
+KIMLIKLER_FILE_RE = re.compile(
+    r"\A(?:[\w.-]+/)*src/test/java/(?:[A-Za-z_]\w*/)*ekranlar/Kimlikler\.java\Z"
+)
+KIMLIKLER_VARSAYILAN = "src/test/java/com/antreklabs/bayi/ekranlar/Kimlikler.java"
+_JAVA_ANAHTAR_RE = re.compile(r"\A(?:(?P<grup>[A-Z][A-Za-z0-9_]*)\.)?(?P<ad>[A-Z][A-Z0-9_]*)\Z")
+# `public static final String AD = "değer";` (Kimlikler saf veri sözleşmesi, §2.8)
+_JAVA_SABIT_RE = re.compile(
+    r"(?<![\w$])String\s+(?P<ad>[A-Za-z_$][\w$]*)\s*=\s*\"(?P<deger>(?:[^\"\\\n]|\\.)*)\"\s*;"
+)
+_UNICODE_KACIS_RE = re.compile(r"(?<!\\)(?:\\\\)*\\u")
+
+
+def _yorumda_mi(kaynak: str, konum: int) -> bool:
+    """`konum` bir satır ya da blok yorumunun içinde mi? (muhafazakâr: şüphede evet)."""
+    satir_bas = kaynak.rfind("\n", 0, konum) + 1
+    if "//" in kaynak[satir_bas:konum]:
+        return True
+    acik = kaynak.rfind("/*", 0, konum)
+    return acik >= 0 and kaynak.rfind("*/", acik, konum) < 0
+
+
+def _java_sinif_govdesi(kaynak: str, grup: str) -> tuple[int, int]:
+    """`class <grup> {` gövdesinin [başlangıç, bitiş) aralığı (yorum/dize/karakter farkında)."""
+    desen = re.compile(r"(?<![\w$])class\s+" + re.escape(grup) + r"\s*\{")
+    eslesmeler = [m for m in desen.finditer(kaynak) if not _yorumda_mi(kaynak, m.start())]
+    if not eslesmeler:
+        raise PatchError(f"'{grup}' grubu Kimlikler.java içinde bulunamadı")
+    if len(eslesmeler) > 1:
+        raise PatchError(f"'{grup}' grubu Kimlikler.java içinde birden çok kez geçiyor")
+    bas = eslesmeler[0].end()
+    derinlik, i = 1, bas
+    while i < len(kaynak):
+        c = kaynak[i]
+        if kaynak.startswith("//", i):
+            j = kaynak.find("\n", i)
+            i = len(kaynak) if j < 0 else j
+            continue
+        if kaynak.startswith("/*", i):
+            j = kaynak.find("*/", i + 2)
+            if j < 0:
+                break
+            i = j + 2
+            continue
+        if c in "\"'":
+            j = i + 1
+            while j < len(kaynak) and kaynak[j] != c:
+                j += 2 if kaynak[j] == "\\" else 1
+            i = j + 1
+            continue
+        if c == "{":
+            derinlik += 1
+        elif c == "}":
+            derinlik -= 1
+            if derinlik == 0:
+                return bas, i
+        i += 1
+    raise PatchError(f"'{grup}' grubunun kapanışı bulunamadı")
+
+
+def java_sabitleri(kaynak: str) -> list[tuple[str, str, int]]:
+    """Kimlikler.java'daki (sabit adı, değer, başlangıç) — yorumdakiler hariç."""
+    return [
+        (m.group("ad"), m.group("deger"), m.start())
+        for m in _JAVA_SABIT_RE.finditer(kaynak)
+        if not _yorumda_mi(kaynak, m.start())
+    ]
+
+
+def patch_kimlik(kaynak: str, anahtar: str, eski: str, yeni: str) -> str:
+    """Kimlikler.java'da YALNIZCA `anahtar` (`Grup.SABIT`) sabitinin string literal içeriğini
+    `eski` → `yeni` yapar (`java-araclar locators patch` kuralları; §2.2 "yalnızca kimlik değeri
+    değişir"):
+
+    - eski/yeni geçerli kimlik ve farklı; anahtar `_ONEK` ile bitmez (önek onarım kapsamı dışı);
+    - grup gövdesinde o adla TEK sabit ve literal'i tam olarak `"<eski>"` (kaçış dizisi yok);
+    - yeni kimlik dosyadaki başka bir sabitin değeri ya da `_ONEK` öneki değil (çakışma yok);
+    - kaynakta Unicode kaçışı yok (javac onu literal/yorum içinde bile işler);
+    - sonuç satır farkıyla yeniden doğrulanır (tek satır, yalnızca değer farklı).
+
+    Yetkili denetim toolchain `/ast-guard` Java repair korumasıdır (belirteç düzeyinde fark).
+    """
+    if not TESTID_RE.match(yeni or ""):
+        raise PatchError(f"yeni kimlik geçersiz: {yeni!r}")
+    if not TESTID_RE.match(eski or ""):
+        raise PatchError(f"eski kimlik geçersiz: {eski!r}")
+    if eski == yeni:
+        raise PatchError("eski ve yeni kimlik aynı")
+    m = _JAVA_ANAHTAR_RE.match(anahtar or "")
+    if m is None or not m.group("grup"):
+        raise PatchError(f"geçersiz kimlik anahtarı (Grup.SABIT): {anahtar!r}")
+    grup, ad = m.group("grup"), m.group("ad")
+    if ad.endswith("_ONEK"):
+        raise PatchError(f"{anahtar} önek kimliktir (_ONEK); onarım kapsamı dışı")
+    if _UNICODE_KACIS_RE.search(kaynak):
+        raise PatchError("Kimlikler.java Unicode kaçışı içeriyor; metin düzeyinde yamanamaz")
+    for diger_ad, deger, _ in java_sabitleri(kaynak):
+        if diger_ad == ad:
+            continue
+        if deger == yeni or (diger_ad.endswith("_ONEK") and deger and yeni.startswith(deger)):
+            raise PatchError(f"'{yeni}' başka bir kimliğin değeri ya da öneki ({diger_ad})")
+    bas, bit = _java_sinif_govdesi(kaynak, grup)
+    adaylar = [(d, b) for a, d, b in java_sabitleri(kaynak[bas:bit]) if a == ad]
+    if len(adaylar) != 1:
+        raise PatchError(
+            f"'{anahtar}' sabiti " + ("bulunamadı" if not adaylar else "birden çok kez geçiyor")
+        )
+    deger, goreli = adaylar[0]
+    if deger != eski:
+        raise PatchError(f"'{anahtar}' değeri '{deger[:80]}', beklenen '{eski}'")
+    sm = _JAVA_SABIT_RE.match(kaynak, bas + goreli)
+    if sm is None:  # pragma: no cover - savunma
+        raise PatchError("yama konumu doğrulanamadı")
+    deger_bas = sm.start("deger")
+    if kaynak[deger_bas - 1 : deger_bas + len(eski) + 1] != f'"{eski}"':  # pragma: no cover
+        raise PatchError(f"'{anahtar}' literal'i beklenen biçimde değil")
+    sonuc = kaynak[:deger_bas] + yeni + kaynak[deger_bas + len(eski) :]
+    dogrula_fark(kaynak, sonuc, eski, yeni)
+    return sonuc
+
+
+def java_sinif_adi(dosya: str) -> str:
+    """`…/src/test/java/com/x/YTest.java` ya da `com.x.YTest` → `com.x.YTest` (paketli sınıf)."""
+    d = (dosya or "").strip()
+    if d.endswith(".java"):
+        d = d[: -len(".java")].split("src/test/java/", 1)[-1].replace("/", ".")
+    return d
+
+
+def etkilenen_java_testler(dosyalar: Mapping[str, str], loc: LocatorRef) -> list[str]:
+    """Kimlik sabitini kullanan ekranı (erişimcisi `katalogEkrani()` ya da sınıf adı) ya da
+    sabitin kendisini (`Katalog.SEPETE_EKLE`) anan Java test dosyaları (forge yolları).
+
+    Yerel kontrol yine TAM paketi koşar; liste PR açıklaması ve kontrolün onları içerdiğinin
+    denetimi içindir (`_kontrol_ozeti`, paketli sınıf adlarıyla karşılaştırılır)."""
+    isaretler = {loc.tam_ad}
+    if loc.sinif:
+        isaretler |= {f"{_fixture_adi(loc.sinif)}()", loc.sinif}
+    isaretler.discard("")
+    return sorted(
+        yol
+        for yol, icerik in dosyalar.items()
+        if yol.endswith(".java") and any(i in icerik for i in isaretler)
+    )

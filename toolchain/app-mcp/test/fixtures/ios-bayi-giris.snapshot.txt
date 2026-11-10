@@ -1,0 +1,16 @@
+- heading "Bayi Sipariş Portalı" [ref=e1]
+- textbox "Kullanıcı adı" [id=login-username] [ref=e2]: bayi3
+- textbox "Parola" [id=login-password] [password] [ref=e3]: ***
+- switch "Beni hatırla" [id=login-remember] [checked] [ref=e4]
+- button "Giriş yap" [id=login-submit] [ref=e5]
+- text "Kullanıcı adı veya parola hatalı" [id=login-error] [ref=e6]
+- button "Kayıt ol" [disabled] [ref=e7]
+- combobox [id=login-language] [ref=e8]:
+  - combobox [ref=e9]: Türkçe
+- list [id=product-list] [ref=e10]:
+  - group [id=product-card-P-001] [ref=e11]:
+    - text "P-001" [ref=e12]
+    - button "Sepete ekle" [id=add-to-cart] [ref=e13]
+  - group [id=product-card-P-002] [ref=e14]:
+    - text "P-002" [ref=e15]
+    - button "Sepete ekle" [id=add-to-cart] [ref=e16]

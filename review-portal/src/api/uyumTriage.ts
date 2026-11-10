@@ -25,6 +25,7 @@ import type {
 } from "./types";
 import { dizgeler, ilk, jiraKayitAdresi, kimlik, metin, metinYaDaNull, modUyarla, nesneMi, sayiYaDaNull, type Ham } from "./uyum";
 import { adresUyarla, prUyarla } from "./uyumDemoB";
+import { platformUyarla } from "../lib/platform";
 
 const nesne = (x: unknown): Ham => (nesneMi(x) ? x : {});
 const dizi = (x: unknown): unknown[] => (Array.isArray(x) ? x : []);
@@ -289,6 +290,9 @@ export function onarimUyarla(o: Ham): LocatorOnarimi {
     degisen_dosyalar: dizgeler(ilk(o, "degisen_dosyalar", "changed_files")),
     yama: metinYaDaNull(ilk(o, "yama", "diff", "patch")),
     neden: metinYaDaNull(ilk(o, "neden", "hata", "reason")) ?? engelMetni(o.engel),
+    // 009: uygulama testinin kimlik onarımı (hata anı sayfa kaynağı); rol/ad/url_path boş gelir.
+    kaynak: metinYaDaNull(o.kaynak),
+    platform: platformUyarla(o.platform),
   };
 }
 
@@ -355,6 +359,7 @@ export function hataAnaliziUyarla(h: Ham): HataAnalizi {
     degerlendirme: degerlendirmeBul(h),
     zaman: metin(ilk(h, "zaman", "olusturma", "created_at")),
     script_id: metinYaDaNull(kimlik(h.script_id)),
+    platform: platformUyarla(h.platform) ?? platformUyarla(nesne(ilk(h, "oneri", "onarim")).platform),
   };
 }
 

@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tp:verify_and_map_app",
+  "title": "Doğrula ve eşle — mobil/masaüstü uygulama (009 §2.6)",
+  "x-version": 1,
+  "type": "object",
+  "properties": {
+    "platform": {
+      "type": "string",
+      "enum": [
+        "android",
+        "ios",
+        "windows"
+      ]
+    },
+    "step_mapping": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "step_id": {
+            "type": "string",
+            "pattern": "^S[0-9]+$"
+          },
+          "po": {
+            "type": "string",
+            "minLength": 1
+          },
+          "method": {
+            "type": "string",
+            "minLength": 1
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            }
+          },
+          "verified": {
+            "type": "boolean"
+          },
+          "evidence_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "step_id",
+          "po",
+          "method",
+          "args",
+          "verified",
+          "evidence_ref"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "expects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "po": {
+            "type": "string",
+            "minLength": 1
+          },
+          "method": {
+            "type": "string",
+            "minLength": 1
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "po",
+          "method",
+          "args"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "missing_methods": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "step_id": {
+            "type": "string",
+            "pattern": "^S[0-9]+$"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "step_id",
+          "reason"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "platform",
+    "step_mapping",
+    "expects",
+    "missing_methods"
+  ],
+  "additionalProperties": false
+}

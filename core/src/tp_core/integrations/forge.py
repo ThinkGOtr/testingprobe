@@ -242,6 +242,100 @@ def evaluate_required_checks(
     return RequiredChecksVerdict(passed=passed, required=list(required), states=states)
 
 
+# Uygulama (Java + Appium) kontrolleri platform başınadır (009 §2.7): toolchain-worker /check
+# `lang=java` kaydı `local-ci-<platform>`; web kaydı `local-ci` olarak kalır.
+APP_PLATFORMS: tuple[str, ...] = ("android", "ios", "windows")
+APP_PLATFORM_CHECKS: tuple[str, ...] = tuple(f"{REQUIRED_CHECK}-{p}" for p in APP_PLATFORMS)
+# LocalForge düzeninde Java e2e kökü (toolchain TP_E2E_APP_ROOT varsayılanı).
+LOCAL_APP_E2E_ROOT = "e2e-app/"
+
+
+def local_required_checks(
+    configured: Sequence[str], checks: Sequence[CheckRun], changed_paths: Sequence[str]
+) -> tuple[tuple[str, ...], str | None]:
+    """LocalForge merge kapısı: platform başına zorunlu kontroller + ek ihlal nedeni.
+
+    - Yapılandırılmış liste (varsayılan `local-ci`) aynen zorunludur; web PR'ı için davranış
+      değişmez.
+    - Bu head için KAYDEDİLMİŞ her `local-ci-<platform>` de zorunludur: kırmızı bir uygulama
+      kontrolü merge'i durdurur (yalnızca web yeşili yetmez).
+    - PR yalnızca `e2e-app/` altını değiştiriyorsa (uygulama testi / Kimlikler onarımı) web
+      `local-ci` gerekmez (kaydedilmişse yine yeşil olmalı); en az bir platform kontrolü olmalı.
+    - Yarıda kalmış (`in_progress`) bir kayıt merge'i durdurur; kontrol yeniden koşturulur
+      (aynı adın girdisi üzerine yazılır) ya da demo-admin bypass'ı kullanılır.
+    - `e2e-app/` değişip hiç platform kontrolü yoksa ikinci değer ihlal nedenidir.
+    """
+    platform_names = set(APP_PLATFORM_CHECKS)
+    recorded = [c.name for c in checks if c.name in platform_names]
+    touches_app = any(p.startswith(LOCAL_APP_E2E_ROOT) for p in changed_paths)
+    app_only = touches_app and all(p.startswith(LOCAL_APP_E2E_ROOT) for p in changed_paths)
+    # Kayıtlı her kontrol yeşil olmalı (simetri): web local-ci yalnızca KAYDEDİLMEMİŞSE düşer.
+    web_recorded = any(c.name == REQUIRED_CHECK for c in checks)
+    required = [
+        n
+        for n in configured
+        if not (app_only and recorded and n == REQUIRED_CHECK and not web_recorded)
+    ]
+    for name in recorded:
+        if name not in required:
+            required.append(name)
+    reason = None
+    if touches_app and not any(n in platform_names for n in required):
+        reason = (
+            f"{LOCAL_APP_E2E_ROOT} değişikliği için en az bir uygulama kontrolü gerekli "
+            f"({' | '.join(APP_PLATFORM_CHECKS)})"
+        )
+    return validate_required_checks(required or list(configured)), reason
+
+
+# GitHub forge kipi (009 §2.7, .github/CI.md "Uygulama iş akışları"): platform → iş akışı dosyası
+# ve check (= job) adı. Platform `TP_PLATFORMS` ile etkinleştirilince job adı zorunlu kontrol
+# listesine eklenir (GitHub ruleset'ine de `scripts/github-ruleset.sh --checks` ile eklenmelidir).
+PLATFORMS_ENV = "TP_PLATFORMS"
+GITHUB_PLATFORM_CHECKS: dict[str, str] = {
+    "android": "mobil-android",
+    "ios": "mobil-ios",
+    "windows": "masaustu-windows",
+}
+GITHUB_PLATFORM_WORKFLOWS: dict[str, str] = {
+    p: f"{ad}.yml" for p, ad in GITHUB_PLATFORM_CHECKS.items()
+}
+
+
+# Zorunlu check yapılabilen platform iş akışları (`changes` + no-op deseni; .github/CI.md).
+ZORUNLU_YAPILABILIR_PLATFORMLAR: tuple[str, ...] = ("android", "windows")
+
+
+def etkin_platformlar(env: Mapping[str, str] | None = None) -> tuple[str, ...]:
+    """`TP_PLATFORMS="android,windows"` → ("android", "windows"); boş → (). `web` yok sayılır
+    (her zaman etkin); bilinmeyen ad yanlış yapılandırmadır (`ForgeValidationError`)."""
+    env = os.environ if env is None else env
+    out: list[str] = []
+    for parca in (env.get(PLATFORMS_ENV) or "").split(","):
+        ad = parca.strip().lower()
+        if not ad or ad == "web":
+            continue
+        if ad not in APP_PLATFORMS:
+            raise ForgeValidationError(
+                f"{PLATFORMS_ENV} yalnızca {', '.join(APP_PLATFORMS)} içerebilir: {parca!r}"
+            )
+        if ad not in ZORUNLU_YAPILABILIR_PLATFORMLAR:
+            # mobil-ios.yml workflow düzeyinde `paths` süzgeçlidir ve push tetiği yoktur: ilgisiz
+            # PR'da check hiç oluşmaz → zorunlu yapılırsa her PR süresiz bekler (.github/CI.md).
+            raise ForgeValidationError(
+                f"{PLATFORMS_ENV}={ad}: bu platformun iş akışı zorunlu check olamaz (no-op deseni "
+                "yok); önce iş akışını `changes` + no-op desenine çevirin"
+            )
+        if ad not in out:
+            out.append(ad)
+    return tuple(out)
+
+
+def github_required_checks(configured: Sequence[str], platforms: Sequence[str]) -> tuple[str, ...]:
+    """GitHub zorunlu kontrolleri: yapılandırılmış liste + etkin platformların job adları."""
+    return validate_required_checks([*configured, *(GITHUB_PLATFORM_CHECKS[p] for p in platforms)])
+
+
 def get_forge(env: Mapping[str, str] | None = None) -> ForgePort:
     """`TP_FORGE`'a göre adaptör kurar (varsayılan: local)."""
     env = os.environ if env is None else env

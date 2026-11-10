@@ -84,8 +84,11 @@ from tp_core.gateway.replay import (
     replay_key,
 )
 from tp_core.gateway.snapshot_refs import (
+    APP_GENERATE_LOCATOR,
+    APP_SNAPSHOT_TOOL,
     SNAPSHOT_TOOL,
     Hedef,
+    app_locator,
     is_inline_snapshot,
     locate_ref,
     ref_arg,
@@ -141,6 +144,19 @@ ALLOWED_AGENT_TOOLS: Mapping[str, frozenset[str]] = MappingProxyType(
                 "browser_generate_locator",
             }
         ),
+        # 009 §2.6 mobil/masaüstü doğrulama ve eşleme: app-mcp (Appium) araçlarının Playwright
+        # MCP eşleri; `app_screenshot` yalnız çekirdeğin canlı görünüm kanalıdır (FORBIDDEN_TOOLS).
+        "verify_and_map_app": frozenset(
+            {
+                "app_launch",
+                "app_snapshot",
+                "app_click",
+                "app_type",
+                "app_select_option",
+                "app_wait_for",
+                "app_generate_locator",
+            }
+        ),
         # §8.2b tutarlılık denetimi: GitHub MCP salt okuma (repos, code_search) + db araçlarımız.
         "consistency_check": frozenset(
             {"search_code", "get_file_contents", "db_schema", "db_query"}
@@ -166,6 +182,9 @@ FORBIDDEN_TOOLS = frozenset(
         "browser_network_requests",
         "browser_install",
         "browser_pdf_save",
+        # app-mcp (009 §2.6): ekran görüntüsü yalnız çekirdeğin model dışı canlı görünüm kanalıdır;
+        # ajan erişilebilirlik ağacıyla çalışır (anayasa V).
+        "app_screenshot",
     }
 )
 # Verilen araçların bile hiçbir zaman sunulmayan/kabul edilmeyen argümanları (en az yetki,
@@ -230,6 +249,16 @@ REPLAY_SAVE_FAILED = "replay_kaydedilemedi"
 _CALLER_EK = "_cagiran_ek"
 DEFAULT_TOOL_CHANNEL = "agent"
 _CALL_ID_NAMESPACE = uuid5(NAMESPACE_URL, "tp:ai_call")
+
+
+def executor_secrets(execute: Any) -> frozenset[str]:
+    """Araç yürütücüsünün bildirdiği sır değerleri (`gateway_gizliler`; ör. `AgentApp`'in
+    snapshot'taki `[password]` işaretinden tanıdığı parola alanına yazılan metin). Bunlar
+    `tool_call` argüman/sonuç kaydından silinir; bildirmeyen yürütücüde boş küme (web değişmez)."""
+    degerler = getattr(execute, "gateway_gizliler", None)
+    if not degerler:
+        return frozenset()
+    return frozenset(v for v in degerler if isinstance(v, str) and v)
 
 
 def deterministic_call_id(job_id: UUID | str, step: str) -> UUID:
@@ -303,7 +332,7 @@ def default_is_snapshot(tool: str, text: str) -> bool:
     """Sonuç sayfa snapshot'ı mı? `browser_snapshot` ya da satır içi snapshot YAML'ı taşıyan
     eylem sonucu (Playwright MCP 1.64: `### Snapshot` + ```yaml```; eski `- Page Snapshot`).
     Eylemlerin dosya bağlantılı snapshot'ı (`- [Snapshot](…yml)`) snapshot sayılmaz."""
-    return tool == SNAPSHOT_TOOL or is_inline_snapshot(text)
+    return tool in (SNAPSHOT_TOOL, APP_SNAPSHOT_TOOL) or is_inline_snapshot(text)
 
 
 @dataclass
@@ -1259,6 +1288,7 @@ class Gateway:
                     result = strip_mcp_file_links(result)
                     result, _ = session.mask(result) if self._mask_tool_results else (result, [])
                     secrets.update(secret_tool_values(tc.args))
+                    secrets.update(executor_secrets(execute))
                     step = AgentStep(
                         tool=tc.name,
                         args=tc.args,
@@ -1557,6 +1587,7 @@ class Gateway:
                     if banned and recorded.tool in allowed
                     else f"Araç izinli değil: {recorded.tool}"
                 )
+            secrets.update(executor_secrets(execute))
             step = AgentStep(
                 tool=recorded.tool,
                 args=args,
@@ -1641,6 +1672,17 @@ def _replay_drift(recorded: AgentStep, result: str) -> str | None:
     - Eylem/gezinti adımları: kayıttaki sayfa yolu (`· URL /katalog`) ile canlı sayfa yolu farklıysa
       (örn. hatalı parola girişte kalmalıyken katalog açıldı) yörünge artık kanıt değildir.
     Not adım özetinin başına yazılır (denetim + insan)."""
+    if recorded.tool == APP_GENERATE_LOCATOR:
+        want_app = app_locator(recorded.result_summary)
+        if want_app is None:
+            return None
+        got_app = app_locator(result)
+        if got_app == want_app:
+            return None
+        return (
+            f"{REPLAY_DRIFT}: kayıtta kimlik {want_app[1] or '(yok)'} ({want_app[0]}), bu oturumda "
+            + (f"{got_app[1] or '(yok)'} ({got_app[0]})" if got_app else "(locator yok)")
+        )
     if recorded.tool != "browser_generate_locator":
         want_url = _url_path(recorded.result_summary)
         got_url = _url_path(result)

@@ -916,8 +916,8 @@ def test_me_products_haritasi_devir_ve_kontrolden(
 
 
 def test_alembic_tek_bas() -> None:
-    """Göç zinciri tek başlı. `feat/mobil-masaustu`'nun `0018_script_platform`'u (down_revision
-    0017) bu dalla birleşince iki baş olur: `0019.down_revision = "0018"` yapın (tasks.md T051)."""
+    """Göç zinciri tek başlı ve 0019, `feat/mobil-masaustu`'nun `0018_script_platform`'unun ardından
+    gelir (tasks.md T051)."""
     from alembic.script import ScriptDirectory
 
     from tests.unit.conftest import alembic_config
@@ -925,3 +925,4 @@ def test_alembic_tek_bas() -> None:
     script = ScriptDirectory.from_config(alembic_config())
     bas = script.get_heads()
     assert bas == ["0019"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
+    assert script.get_revision("0019").down_revision == "0018"

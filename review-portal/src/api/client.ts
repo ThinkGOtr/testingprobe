@@ -39,6 +39,7 @@ import type {
   AiprobeHesaplari,
   McpToken,
   McpTokenKaydi,
+  Platform,
   PullRequest,
   Script,
   ScriptDetay,
@@ -144,7 +145,9 @@ export const api = {
     yayinSonucuUyarla(await istek<unknown>("POST", "/publish", { govde: { case_ids: caseIds }, kaynak: CASE_KAYNAGI })),
 
   // Kod üretimi
-  kodUret: (caseIds: string[]) => istek<IsYaniti>("POST", "/code/generate", { govde: { case_ids: caseIds } }),
+  /** 009 §2.9: `platform` (web | android | ios | windows; varsayılan web). Aynı case için platform başına ayrı script/PR. */
+  kodUret: (caseIds: string[], platform: Platform = "web") =>
+    istek<IsYaniti>("POST", "/code/generate", { govde: { case_ids: caseIds, platform } }),
   scriptler: async (): Promise<Script[]> => listeUyarla(await istek<unknown>("GET", "/scripts"), scriptUyarla),
   script: async (id: string): Promise<ScriptDetay> => scriptDetayUyarla(nesne(await istek<unknown>("GET", `/scripts/${yol(id)}`))),
   kirarakDogrula: (id: string) => istek<IsYaniti>("POST", `/scripts/${yol(id)}/break-verify`, { kaynak: SCRIPT_KAYNAGI }),

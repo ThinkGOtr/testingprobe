@@ -1,0 +1,92 @@
+<!-- Sipariş geçmişi (web: OrdersPage.tsx). Satır kimlikleri sipariş numarasıyla: order-row-SP-000001 … -->
+<UserControl x:Class="BayiSiparis.Masaustu.Gorunumler.SiparislerimEkrani"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:o="clr-namespace:BayiSiparis.Masaustu.Otomasyon"
+             AutomationProperties.AutomationId="page-orders"
+             AutomationProperties.Name="Siparişlerim">
+  <UserControl.Resources>
+    <Style x:Key="SutunBasligi" TargetType="TextBlock" BasedOn="{StaticResource SolukMetin}">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+  </UserControl.Resources>
+  <StackPanel>
+    <TextBlock Text="Siparişlerim" Style="{StaticResource Baslik1}" />
+    <TextBlock Text="Onaylanan siparişleriniz, en yenisi üstte." Style="{StaticResource SolukMetin}" Margin="0,0,0,16" />
+
+    <o:Kosullu Goster="{Binding Hata, Converter={StaticResource DoluMu}}">
+      <Border Style="{StaticResource HataKutusu}">
+        <TextBlock Text="{Binding Hata}" Foreground="{StaticResource Tehlike}" TextWrapping="Wrap" />
+      </Border>
+    </o:Kosullu>
+    <o:Kosullu Goster="{Binding Yukleniyor}">
+      <TextBlock Text="Siparişler yükleniyor…" Style="{StaticResource SolukMetin}" />
+    </o:Kosullu>
+
+    <o:Kosullu Goster="{Binding Bos}">
+      <o:OtomasyonGrubu AutomationProperties.AutomationId="orders-empty" AutomationProperties.Name="Henüz siparişiniz yok.">
+        <Border Style="{StaticResource Panel}" Padding="32">
+          <StackPanel HorizontalAlignment="Center">
+            <o:OtomasyonMetni Text="Henüz siparişiniz yok." HorizontalAlignment="Center" Margin="0,0,0,12" />
+            <Button Style="{StaticResource BirincilDugme}" Content="Kataloğa git"
+                    Command="{Binding Kabuk.KatalogaGitKomutu}" HorizontalAlignment="Center" />
+          </StackPanel>
+        </Border>
+      </o:OtomasyonGrubu>
+    </o:Kosullu>
+
+    <o:Kosullu Goster="{Binding Dolu}">
+      <Border Style="{StaticResource Panel}">
+        <StackPanel>
+          <Grid Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="160" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="80" />
+              <ColumnDefinition Width="120" />
+              <ColumnDefinition Width="130" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="Sipariş no" Style="{StaticResource SutunBasligi}" />
+            <TextBlock Grid.Column="1" Text="Tarih" Style="{StaticResource SutunBasligi}" />
+            <TextBlock Grid.Column="2" Text="Adet" Style="{StaticResource SutunBasligi}" TextAlignment="Right" />
+            <TextBlock Grid.Column="3" Text="İndirim" Style="{StaticResource SutunBasligi}" TextAlignment="Right" />
+            <TextBlock Grid.Column="4" Text="Toplam" Style="{StaticResource SutunBasligi}" TextAlignment="Right" />
+          </Grid>
+          <o:OtomasyonListesi AutomationProperties.AutomationId="orders-table" AutomationProperties.Name="Sipariş geçmişi"
+                              ItemsSource="{Binding Siparisler}" Focusable="False">
+            <o:OtomasyonListesi.ItemTemplate>
+              <DataTemplate>
+                <o:OtomasyonGrubu Tur="DataItem"
+                                  AutomationProperties.AutomationId="{Binding Numara, StringFormat=order-row-{0}}"
+                                  AutomationProperties.Name="{Binding Numara}">
+                  <Border BorderBrush="{StaticResource Cizgi}" BorderThickness="0,1,0,0" Padding="0,8">
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="160" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="80" />
+                        <ColumnDefinition Width="120" />
+                        <ColumnDefinition Width="130" />
+                      </Grid.ColumnDefinitions>
+                      <!-- Web'de sipariş numarası onay sayfasına bağlantıdır (kimliksiz). -->
+                      <Button Grid.Column="0" Style="{StaticResource BaglantiDugmesi}" HorizontalAlignment="Left" Padding="0,2"
+                              Content="{Binding Numara}"
+                              CommandParameter="{Binding Numara}"
+                              Command="{Binding DataContext.Kabuk.SiparisAcKomutu, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+                      <o:OtomasyonMetni Grid.Column="1" Text="{Binding TarihMetni}" VerticalAlignment="Center" />
+                      <o:OtomasyonMetni Grid.Column="2" Text="{Binding AdetMetni}" TextAlignment="Right" VerticalAlignment="Center" />
+                      <o:OtomasyonMetni Grid.Column="3" Text="{Binding IndirimMetni}" TextAlignment="Right" VerticalAlignment="Center" />
+                      <o:OtomasyonMetni Grid.Column="4" AutomationProperties.AutomationId="{Binding Numara, StringFormat=order-total-{0}}"
+                                        Text="{Binding ToplamMetni}" TextAlignment="Right" VerticalAlignment="Center" FontWeight="SemiBold" />
+                    </Grid>
+                  </Border>
+                </o:OtomasyonGrubu>
+              </DataTemplate>
+            </o:OtomasyonListesi.ItemTemplate>
+          </o:OtomasyonListesi>
+        </StackPanel>
+      </Border>
+    </o:Kosullu>
+  </StackPanel>
+</UserControl>

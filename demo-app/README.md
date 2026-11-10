@@ -1,7 +1,7 @@
 # demo-app — Bayi Sipariş Portalı (örnek uygulama)
 
-AI Testing Probe'un test ettiği örnek uygulama: giriş, katalog, sepet, "6 al 1 bedava"
-kampanyası, minimum sipariş tutarı, sipariş onayı ve geçmiş. Marka yoktur, tüm veri sentetiktir.
+AI Testing Probe'un test ettiği örnek uygulama (web, Android/iOS ve Windows sürümleri): giriş,
+katalog, sepet, "6 al 1 bedava" kampanyası, minimum sipariş tutarı, sipariş onayı ve geçmiş. Marka yoktur, tüm veri sentetiktir.
 
 | Dizin | İçerik | Compose servisi |
 |---|---|---|
@@ -9,6 +9,11 @@ kampanyası, minimum sipariş tutarı, sipariş onayı ve geçmiş. Marka yoktur
 | `web/` | React 18 + Vite + TypeScript; nginx ile servis edilir (`/api/*` → API). `vite preview` aynı proxy'yi kullanır. | `demo-app-web` (host: `127.0.0.1:8081`) |
 | `e2e/` | Playwright: page object kütüphanesi (`pages/`), elle yazılmış testler (`tests/`). | `test-runner` içinde |
 | `ci/run-checks.sh` | `npm ci --ignore-scripts` → `tsc` → `eslint --no-inline-config` → `playwright test` (argümanlar aynen geçer). GitHub CI ve yerel test-runner aynı betiği kullanır. | — |
+| `mobile/` | Expo SDK 58 / React Native 0.88 mobil sürüm (iOS + Android), aynı API ve aynı kimlikler. `scripts/derle-android.sh` → `build/bayi-siparis.apk`, `scripts/derle-ios.sh` → `build/BayiSiparis.app` (simülatör). Ayrıntı: [mobile/README.md](mobile/README.md) | — (cihazda; `make cihaz-baslat` kurar) |
+| `desktop/` | WPF / .NET 8 Windows masaüstü sürümü, `AutomationId` = web `data-testid`. macOS'ta derlenir, yalnız Windows'ta çalışır; `scripts/yayinla.sh` → `build/<rid>/BayiSiparis.exe`. Ayrıntı: [desktop/README.md](desktop/README.md) | — (Windows VM / `windows-latest`) |
+| `e2e-app/` | Java 17 + Appium java-client + TestNG (Maven): ekran nesneleri (`ekranlar/`, kimlikler `Kimlikler.java`), referans testler, üretilen testler (`uretilen/`). Ayrıntı: [e2e-app/README.md](e2e-app/README.md) | `test-runner` içinde (Java yolu) ya da host |
+| `ci/run-app-checks.sh` · `ci/break-verify-app.sh` | `run-checks.sh` / `break-verify.sh`'in Java karşılıkları: `<android\|ios\|windows> [mvn argümanları]`. GitHub iş akışları (`mobil-android`, `mobil-ios`, `masaustu-windows`) aynı betiği kullanır. | — |
+| `kimlikler.json` | Erişilebilirlik kimliği sözleşmesi (009 plan §2.2): web `data-testid` listesi, ekran ve önek bilgisiyle. Web kaynağından üretilir (`cd mobile && npm run kimlik-uret`), elle düzenlenmez; mobil (`npm run kimlik-kontrol`) ve e2e-app birim denetimleri buna karşı koşar (masaüstü `scripts/kimlik-kontrol.py` web kaynağını doğrudan okur). | — |
 
 ## Demo bayileri
 

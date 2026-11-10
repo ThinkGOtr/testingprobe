@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- WPF kabuğu. EnableWindowsTargeting: macOS/Linux'ta da derlenir (çalıştırma yalnız Windows'ta). -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <RootNamespace>BayiSiparis.Masaustu</RootNamespace>
+    <AssemblyName>BayiSiparis</AssemblyName>
+    <Product>Bayi Sipariş Portalı</Product>
+    <Company>Antrek Labs</Company>
+    <Version>1.0.0</Version>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\BayiSiparis.Cekirdek\BayiSiparis.Cekirdek.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

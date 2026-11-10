@@ -9,6 +9,14 @@ import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { HATA_SINIFI, type Ton } from "../lib/etiketler";
 import { tarih } from "../lib/format";
 import { kisaKosuAdi } from "./Kosular";
+import { PlatformRozeti } from "../components/Platform";
+import { EkranGoruntusuKaniti, SayfaKaynagiGoruntuleyici } from "../components/SayfaKaynagi";
+import { PLATFORM_ETIKETI, uygulamaPlatformuMu } from "../lib/platform";
+
+/** 009: uygulama testinin kimlik onarımı (hata anı sayfa kaynağı); rol/ad/url_path boştur. */
+export function sayfaKaynagiOnerisiMi(o: Pick<LocatorOnarimi, "kaynak">): boolean {
+  return o.kaynak === "sayfa_kaynagi";
+}
 
 const ONARIM_DURUMU: Record<LocatorOnarimi["durum"], { etiket: string; ton: Ton }> = {
   proposed: { etiket: "Önerildi", ton: "notr" },
@@ -56,25 +64,29 @@ export function onarimAsamalari(o: LocatorOnarimi): Asama[] {
   const ast = o.ast_guard;
   const ileri = o.durum === "pr_open" || o.durum === "merged";
   const oneriVar = Boolean(o.eski_test_id && o.yeni_test_id);
+  // 009: uygulama testinde aria snapshot yok; onarım işi hata anı sayfa kaynağını yeniden okur.
+  const app = sayfaKaynagiOnerisiMi(o);
+  const ariaDurumu: Asama["durum"] =
+    o.aria_dogrulama?.eslesti === true ? "tamam" : o.aria_dogrulama?.eslesti === false ? "hata" : "bekliyor";
   return [
     {
-      ad: "Öneri (LLM'siz: DOM'dan okunan testId)",
+      ad: app ? "Öneri (LLM'siz: hata anı sayfa kaynağından okunan kimlik)" : "Öneri (LLM'siz: DOM'dan okunan testId)",
       durum: oneriVar ? "tamam" : o.durum === "failed" ? "hata" : "bekliyor",
       ayrinti: oneriVar ? `${o.eski_test_id} → ${o.yeni_test_id}` : "öneri üretilmedi",
     },
     {
       // Yalnızca onarım işinin kaydettiği sonuçtan: triage gözlemleri bu aşamayı tamamlamaz.
-      ad: ariaAsamaAdi(o),
-      durum: o.aria_dogrulama?.eslesti === true ? "tamam" : o.aria_dogrulama?.eslesti === false ? "hata" : "bekliyor",
+      ad: app ? "Sayfa kaynağında tek aday kimlik (sembol tablosunda tanımsız)" : ariaAsamaAdi(o),
+      durum: ariaDurumu,
       ayrinti: o.aria_dogrulama?.aciklama ?? null,
     },
     {
-      ad: "AST koruması (onarım modu: yalnızca testId değeri)",
+      ad: app ? "AST koruması (onarım modu: yalnızca kimlik değeri)" : "AST koruması (onarım modu: yalnızca testId değeri)",
       durum: ast?.ok === true ? "tamam" : ast?.ok === false ? "hata" : ileri ? "tamam" : o.durum === "checking" ? "suruyor" : "bekliyor",
       ayrinti: ast?.ihlaller.length ? ast.ihlaller.join(" · ") : null,
     },
     {
-      ad: `Yerel kontrol: etkilenen tüm testler${etk.length ? ` (${etk.length})` : ""}`,
+      ad: `Yerel kontrol${app && o.platform ? ` (${PLATFORM_ETIKETI[o.platform]} cihazında)` : ""}: etkilenen tüm testler${etk.length ? ` (${etk.length})` : ""}`,
       durum:
         yk?.sonuc === "passed" ? "tamam" : yk?.sonuc === "failed" || yk?.sonuc === "error" ? "hata" : yk?.sonuc === "pending" || o.durum === "checking" ? "suruyor" : ileri ? "tamam" : "bekliyor",
       ayrinti: yk && yk.gecen !== null && yk.toplam !== null ? `${yk.gecen}/${yk.toplam} geçti` : null,
@@ -103,6 +115,9 @@ function OnarimKarti({ o, hataId, yenile }: { o: LocatorOnarimi; hataId: string;
   const kontrolKirmizi = o.yerel_kontrol?.sonuc === "failed" || o.yerel_kontrol?.sonuc === "error";
   const pr = o.pr;
   const oneriVar = Boolean(o.eski_test_id && o.yeni_test_id);
+  const app = sayfaKaynagiOnerisiMi(o);
+  // Rol/ad/kapsam satırı yalnız değer varsa: uygulama önerisinde (sayfa kaynağı) boş gelir, boş satır çizilmez.
+  const niyetVar = Boolean(o.rol || o.ad || o.within);
   // Kardeş hata: onarım aynı koşudaki başka bir hata üzerinden yürüyor (bu hatanın onarım kaydı yok).
   const kardes = o.dogrulama_kaynagi !== "onarim" && (o.durum === "pr_open" || o.durum === "merged") && !pr;
   const mergeEngeli = !pr
@@ -118,7 +133,15 @@ function OnarimKarti({ o, hataId, yenile }: { o: LocatorOnarimi; hataId: string;
             : null; // CI özeti yoksa kapıyı core uygular (409 gerekçesi gösterilir)
   return (
     <Kart
-      baslik="Locator onarım önerisi"
+      baslik={
+        o.platform ? (
+          <span className="satir-ogeler">
+            Locator onarım önerisi <PlatformRozeti platform={o.platform} />
+          </span>
+        ) : (
+          "Locator onarım önerisi"
+        )
+      }
       eylemler={
         o.durum === "proposed" && oneriVar ? (
           <IslemDugmesi
@@ -153,13 +176,21 @@ function OnarimKarti({ o, hataId, yenile }: { o: LocatorOnarimi; hataId: string;
         ) : null
       }
     >
-      <p className="soluk kucuk">
-        Onarım yalnızca <span className="mono">{o.dosya}</span> içindeki ilgili <span className="mono">testId</span> değerini değiştirir;
-        anahtar, rol, ad, niyet{o.within ? " ve kapsam (within)" : ""} değişmez (AST koruması). Merge insan onayı ister.
-      </p>
+      {app ? (
+        <p className="soluk kucuk" data-testid="onarim-sayfa-kaynagi">
+          Uygulama testi: yeni kimlik hata anındaki sayfa kaynağından (Appium XML) bulundu. Onarım yalnızca{" "}
+          <span className="mono yol-kirilir">{o.dosya || "(dosya bilinmiyor)"}</span> içindeki ilgili kimlik değerini değiştirir; ekran nesnesi metotları ve test
+          adımları değişmez (AST koruması). Merge insan onayı ister.
+        </p>
+      ) : (
+        <p className="soluk kucuk">
+          Onarım yalnızca <span className="mono">{o.dosya}</span> içindeki ilgili <span className="mono">testId</span> değerini değiştirir;
+          anahtar, rol, ad, niyet{o.within ? " ve kapsam (within)" : ""} değişmez (AST koruması). Merge insan onayı ister.
+        </p>
+      )}
       {oneriVar ? (
         <div className="locator-fark" aria-label="Locator değişikliği">
-          <span className="mono">{o.anahtar}.testId</span>
+          <span className="mono">{app ? `${o.anahtar || "kimlik"} (kimlik)` : `${o.anahtar}.testId`}</span>
           <del className="mono">"{o.eski_test_id}"</del>
           <span aria-hidden="true">→</span>
           <span className="gorunmez">yeni değer</span>
@@ -167,25 +198,28 @@ function OnarimKarti({ o, hataId, yenile }: { o: LocatorOnarimi; hataId: string;
         </div>
       ) : (
         <p className="kucuk" data-testid="oneri-yok">
-          <span className="mono">{o.anahtar || "locator"}.testId</span> için değişiklik önerisi üretilmedi; yama yok.
+          <span className="mono">{app ? `${o.anahtar || "kimlik"} (kimlik)` : `${o.anahtar || "locator"}.testId`}</span> için değişiklik önerisi
+          üretilmedi; yama yok.
         </p>
       )}
-      <p className="kucuk">
-        Rol <span className="mono">{o.rol}</span> · ad <span className="mono">"{o.ad}"</span>
-        {o.within && (
-          <>
-            {" "}
-            · kapsam <span className="mono">{o.within}</span>
-            {o.scope_test_id && (
-              <>
-                {" "}
-                (<span className="mono">{o.scope_test_id}</span>)
-              </>
-            )}
-          </>
-        )}{" "}
-        (değişmez)
-      </p>
+      {niyetVar && (
+        <p className="kucuk" data-testid="onarim-niyet">
+          Rol <span className="mono">{o.rol}</span> · ad <span className="mono">"{o.ad}"</span>
+          {o.within && (
+            <>
+              {" "}
+              · kapsam <span className="mono">{o.within}</span>
+              {o.scope_test_id && (
+                <>
+                  {" "}
+                  (<span className="mono">{o.scope_test_id}</span>)
+                </>
+              )}
+            </>
+          )}{" "}
+          (değişmez)
+        </p>
+      )}
       {o.yama && (
         <pre className="kod-blok" aria-label="Onarım yaması" tabIndex={0}>
           {o.yama}
@@ -411,6 +445,7 @@ export function tekilLinkler(linkler: HataAnalizi["kanit_linkleri"]): HataAnaliz
 type KanitLinki = HataAnalizi["kanit_linkleri"][number];
 
 const KANIT_TURU_ETIKETI: Record<string, string> = {
+  page_source: "Hata anı sayfa kaynağı (Appium)",
   trace: "Playwright trace",
   screenshot: "Ekran görüntüsü",
   error_context: "Hata anı sayfa snapshot'ı (error-context)",
@@ -420,6 +455,8 @@ const KANIT_TURU_ETIKETI: Record<string, string> = {
 /** Kanıt türü: core `tur` (trace|screenshot|error_context|video ya da Playwright ek adı) ya da etiketten. */
 export function kanitTuru(l: KanitLinki): string {
   const ham = `${l.tur ?? ""} ${l.etiket}`.toLowerCase();
+  // 009: Appium sayfa kaynağı — "hata anı" etiketi error_context'ten ÖNCE ayrılır.
+  if (/page[-_ ]?source|sayfa kaynağı|sayfa-kaynagi\.xml/.test(ham)) return "page_source";
   if (/trace/.test(ham)) return "trace";
   if (/error[-_ ]?context|hata anı/.test(ham)) return "error_context";
   if (/screenshot|ekran görüntüsü|image\//.test(ham)) return "screenshot";
@@ -516,8 +553,34 @@ export function olasiMukerrerMetni(b: Pick<BugTaslagi, "mukerrer_adaylari" | "mu
   return `Olası mükerrer: ${ilk.key}${ilk.summary ? ` — ${ilk.summary}` : ""} (${ek})`;
 }
 
-function KanitKarti({ k, linkler }: { k: TriageKaniti | null | undefined; linkler: HataAnalizi["kanit_linkleri"] }) {
+/**
+ * 009: uygulama testinin hata anı kanıtları (core `kanit_linkleri` `tur`: page_source, screenshot).
+ * Ekran görüntüsü yalnız uygulama testinde satır içi gösterilir (web kanıtı bağlantı olarak kalır).
+ */
+export function uygulamaKanitlari(
+  linkler: HataAnalizi["kanit_linkleri"],
+  platform: HataAnalizi["platform"],
+): { sayfaKaynagi: KanitLinki | null; ekran: KanitLinki | null } {
+  const tekil = tekilLinkler(linkler);
+  const sayfaKaynagi = tekil.find((l) => kanitTuru(l) === "page_source") ?? null;
+  const app = sayfaKaynagi !== null || uygulamaPlatformuMu(platform ?? null);
+  const ekran = app ? (tekil.find((l) => kanitTuru(l) === "screenshot" && l.url) ?? null) : null;
+  return { sayfaKaynagi, ekran };
+}
+
+function KanitKarti({
+  k,
+  linkler,
+  platform,
+}: {
+  k: TriageKaniti | null | undefined;
+  linkler: HataAnalizi["kanit_linkleri"];
+  platform?: HataAnalizi["platform"];
+}) {
   if (!k && linkler.length === 0) return null;
+  const app = uygulamaKanitlari(linkler, platform);
+  // Sayfa kaynağı görüntüleyicide (kendi bağlantısıyla) gösterilir; listede tekrarlanmaz.
+  const listedeki = app.sayfaKaynagi ? linkler.filter((l) => kanitTuru(l) !== "page_source") : linkler;
   return (
     <Kart baslik="Kanıt">
       <div className="kanit-izgara">
@@ -551,6 +614,12 @@ function KanitKarti({ k, linkler }: { k: TriageKaniti | null | undefined; linkle
         {k?.locator_probe && <ProbeBolumu p={k.locator_probe} />}
         {k?.saglik && <SaglikBolumu s={k.saglik} />}
       </div>
+      {(app.sayfaKaynagi || app.ekran) && (
+        <div className="uygulama-kanit">
+          {app.ekran && <EkranGoruntusuKaniti url={app.ekran.url} etiket={`Hata anı ekran görüntüsü${platform ? ` (${PLATFORM_ETIKETI[platform]})` : ""}`} />}
+          {app.sayfaKaynagi && <SayfaKaynagiGoruntuleyici key={app.sayfaKaynagi.url ?? "yok"} url={app.sayfaKaynagi.url} />}
+        </div>
+      )}
       {k?.uyarilar && k.uyarilar.length > 0 && (
         <ul className="kucuk duz-liste" aria-label="Kanıt uyarıları">
           {k.uyarilar.map((x) => (
@@ -558,9 +627,9 @@ function KanitKarti({ k, linkler }: { k: TriageKaniti | null | undefined; linkle
           ))}
         </ul>
       )}
-      {linkler.length > 0 && (
+      {listedeki.length > 0 && (
         <ul className="duz-liste kanit-gruplari" aria-label="Kanıt bağlantıları">
-          {kanitGruplari(linkler).map((g) => (
+          {kanitGruplari(listedeki).map((g) => (
             <li key={g.etiket} className="kanit-grubu">
               {g.linkler.length === 1 ? (
                 <Baglanti href={g.linkler[0].url} yokNedeni="dosya sunucusu yok">
@@ -614,6 +683,7 @@ export function HataDetay() {
             {h.alt_tur && <span className="mono">{h.alt_tur}</span>}
             <Cip ton={h.karar_kaynagi === "rule" ? "notr" : "vurgu"}>{kararKaynagiMetni(h)}</Cip>
             <ReplayRozeti mode={h.mode} degerlendirme={h.degerlendirme} />
+            <PlatformRozeti platform={h.platform} />
           </p>
           <p className="soluk kucuk">
             Önce kural seti uygulanır; LLM yalnızca hiçbir kural eşleşmezse devreye girer ve ortam kararını ezemez. Sayısal güven yerine
@@ -692,7 +762,7 @@ export function HataDetay() {
         </div>
       </div>
 
-      <KanitKarti k={h.kanit} linkler={h.kanit_linkleri} />
+      <KanitKarti k={h.kanit} linkler={h.kanit_linkleri} platform={h.platform} />
     </>
   );
 }

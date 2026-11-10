@@ -15,6 +15,11 @@ Kurallar **sırayla** denenir; ilk eşleşen karar verir:
                      (eleman bulundu, değer okundu, sayfa snapshot'ı var; tekrarlar tutarlı).
 5. `test_data`     — test verisi ön koşulu sağlanamadı (seed/reset/fixture hatası).
 
+Java / Appium testleri (009 mobil-masaüstü; `triage.java`) aynı kurallardan geçer: oturum /
+bağlantı hatası → 1; `NoSuchElementException` / `TimeoutException` (eylem ön koşulu) → 3'ün ön
+koşulu (öneri sayfa kaynağından, `service.java_locator_analizi`); `java.lang.AssertionError`
+("beklenen <X>, görülen <Y>") + eleman okundu → 4.
+
 Hiçbiri eşleşmezse karar `None` döner ve çağıran LLM'e gider (§8.6 adım 3). Sayısal güven yoktur;
 her karar eşleşen sinyallerin listesini taşır (`{kod, aciklama, kaynak, kanit}`).
 
@@ -89,6 +94,22 @@ class Girdi:
     kirma: bool = False
     testsiz: bool = False  # koşu test üretmeden bitti (sağlık / runner)
     runner_hata: str | None = None
+    # 009: hedef platform (web | android | ios | windows; None = bilinmiyor) ve Java kanıtı.
+    platform: str | None = None
+    sayfa_kaynagi: str | None = None  # hata anı sayfa kaynağı XML'i (güvenilmeyen)
+    sayfa_kaynagi_rel: str | None = None
+
+    @property
+    def java(self) -> bool:
+        """Uygulama (Java/Appium) testi mi? (`triage.java.java_mi`)."""
+        from tp_core.features.triage.java import java_mi
+
+        return java_mi(self.platform, self.dosya, self.mesaj)
+
+    @property
+    def kaynak_adi(self) -> str:
+        """Sinyal kaynağının adı (hata metni Playwright'ın mı, Java testinin mi)."""
+        return "Java/Appium hata mesajı" if self.java else "Playwright hata mesajı"
 
     def tur(self) -> str:
         """Biçimsel tür: runner'ınki, yoksa mesaj kalıbından."""
@@ -97,6 +118,10 @@ class Girdi:
         m = self.mesaj or ""
         if _VERI_RE.search(m):
             return "test_data"
+        if self.java:
+            java = _java_turu(m)
+            if java is not None:
+                return java
         if _AG_RE.search(m):
             return "navigation"
         if _ASSERTION_RE.search(m) and (self.gerceklesen is not None or "Received" in m):
@@ -104,6 +129,23 @@ class Girdi:
         if _LOCATOR_MESAJ_RE.search(m.partition("Call log:")[0]):
             return "locator_timeout" if "Timeout" in m else "locator_not_found"
         return "other"
+
+
+def _java_turu(m: str) -> str | None:
+    """Java/Appium hata metni → test-runner `failure.type` sözlüğü (yoksa None)."""
+    from tp_core.features.codegen.classify import java_hata_turu
+
+    tur = java_hata_turu(m)
+    if tur == "ortam":
+        return "test_data" if _VERI_RE.search(m) else "navigation"
+    if tur == "assertion":
+        return "assertion"
+    if tur == "locator":
+        ilk = m.lstrip().splitlines()[0] if m.strip() else ""
+        if "StaleElementReference" in ilk:
+            return "other"  # eleman bulundu ama bayatladı: 0 eleman değil
+        return "locator_timeout" if "TimeoutException" in ilk else "locator_not_found"
+    return None
 
 
 @dataclass
@@ -199,8 +241,10 @@ def ortam_kurali(g: Girdi) -> list[dict[str, Any]]:
             out.append(
                 sinyal(
                     "ag_hatasi",
-                    "Ağ / sayfa yükleme hatası (uygulamaya erişilemedi)",
-                    "Playwright hata mesajı",
+                    "Ağ / sayfa yükleme hatası (uygulamaya erişilemedi)"
+                    if not g.java
+                    else "Appium oturumu / bağlantı hatası (uygulamaya erişilemedi)",
+                    g.kaynak_adi,
                     (g.mesaj or "").splitlines()[0] if g.mesaj else None,
                 )
             )
@@ -257,6 +301,8 @@ def urun_yapisi_beklenen(g: Girdi) -> list[dict[str, Any]]:
     mesaj = g.mesaj or ""
     if _BULUNAMADI_RE.search(mesaj.partition("Call log:")[0]):
         return []
+    if g.java and (g.gerceklesen == "(öğe yok)" or g.gerceklesen.startswith("(okunamadı")):
+        return []  # Ekran.java: doğrulanan öğe bulunamadı/okunamadı — değer farkı değil
     # Tekrarlar tutarlı olmalı: her kırmızı tekrar aynı doğrulamada aynı değerle kaldı.
     if len(set(g.tekrar_degerleri)) > 1:
         return []
@@ -264,14 +310,14 @@ def urun_yapisi_beklenen(g: Girdi) -> list[dict[str, Any]]:
         sinyal(
             "assertion_farki",
             f"Beklenen {g.beklenen}, gerçekleşen {g.gerceklesen}",
-            "Playwright hata mesajı",
+            g.kaynak_adi,
             (g.matcher and f"expect(...).{g.matcher}")
             or (mesaj.splitlines()[0] if mesaj else None),
         ),
         sinyal(
             "eleman_bulundu",
             "Doğrulanan eleman sayfada bulundu ve değeri okundu (locator hatası değil)",
-            "Playwright hata mesajı",
+            g.kaynak_adi,
             g.locator,
         ),
     ]
@@ -284,6 +330,16 @@ def urun_yapisi_beklenen(g: Girdi) -> list[dict[str, Any]]:
                 "karşılaştırılmadı",
                 f"error-context aria snapshot ({g.aria_kapsami or 'bilinmiyor'})",
                 None,
+            )
+        )
+    if g.sayfa_kaynagi:
+        out.append(
+            sinyal(
+                "sayfa_yapisi_beklenen",
+                "Hata anı sayfa kaynağı var (ekran render edilmişti); beklenen yapıyla ayrıca "
+                "karşılaştırılmadı",
+                "Java kanıtı sayfa-kaynagi.xml",
+                g.sayfa_kaynagi_rel,
             )
         )
     kirmizi = [d for d in g.tekrar_durumlari if d not in GECEN_DURUMLAR]
@@ -319,7 +375,7 @@ def veri_kurali(g: Girdi) -> list[dict[str, Any]]:
             sinyal(
                 "veri_on_kosulu",
                 "Test verisi ön koşulu sağlanamadı (sıfırlama / fixture hatası)",
-                "Playwright hata mesajı",
+                g.kaynak_adi,
                 (g.mesaj or "").splitlines()[0] if g.mesaj else None,
             )
         ]
@@ -388,5 +444,11 @@ def hata_imzasi(g: Girdi) -> str:
         tids = locator_test_idleri(g.locator)
         if tids:
             hedef = f"{hedef} {tids[-1]}".strip()
+    elif g.java:
+        from tp_core.features.triage.java import kimlik_zinciri
+
+        kimlik, _kapsam, _belirsiz = kimlik_zinciri(g.mesaj)
+        if kimlik:
+            hedef = f"{hedef} {kimlik}".strip()
     parcalar = [g.tur() if not g.testsiz else "kosu", yer, g.test_adi, hedef]
     return temiz(" · ".join(p for p in parcalar if p), 400)

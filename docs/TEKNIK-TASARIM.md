@@ -169,6 +169,7 @@ Demo story'si mutlaka `add-to-cart` ve kampanya hesabı adımlarını içerir.
 - **AI yalnızca core-worker'da:** Model anahtarı yalnızca core-worker'da; toolchain-worker ve CI'da yok.
 - **Portal asistanı salt okumadır (§8.13, constitution v1.3.0 İlke II):** eylem aracı yok; çıktısı karar dayanağı değildir ve hiçbir karar alanına girmez. core-api asistanın model durumunu worker'ın yazdığı `asistan_durum` satırından okur.
 - **Okuma MCP ile, yazma kendi aracımızla** (brief).
+- **Mobil/masaüstü (009, `specs/009-mobil-masaustu/plan.md`):** aynı hat `platform ∈ {web, android, ios, windows}` boyutuyla çalışır. Uygulama platformlarında doğrulama ajanının aracı kendi MCP sunucumuz **app-mcp**'dir (Appium istemcisi, `mobil` compose profili); Appium hostta koşar, test-runner'ın ona tek çıkışı **appium-gw**'dir. Ayrıntı: [MOBIL-MASAUSTU.md](MOBIL-MASAUSTU.md).
 
 ---
 
@@ -203,8 +204,11 @@ Demo story'si mutlaka `add-to-cart` ve kampanya hesabı adımlarını içerir.
 | Gereksinim okuma | Rovo MCP (`https://mcp.atlassian.com/v1/mcp`), API token (Basic), istemcide yalnızca okuma araçları; B planı `JiraRestReader` |
 | Test case yazma | `publish_test_cases` (Jira REST v3) + aynı servis MCP aracı olarak |
 | Web otomasyonu | `mcr.microsoft.com/playwright/mcp` (sürüm sabit) |
+| Mobil/masaüstü otomasyonu (009) | Appium 3 (`uiautomator2`, `xcuitest`, `novawindows`; sürümler `tools/appium` kilidinde ve iş akışında sabit); ajan aracı `toolchain/app-mcp` (Node + TypeScript, kapalı araç listesi) |
 | Üretilen kod | TypeScript + `@playwright/test` + `eslint-plugin-playwright` |
 | Sembol tablosu | `ts-morph` (toolchain-worker) |
+| Üretilen kod — uygulama (009) | Java 17 + Appium java-client + TestNG (Maven, `demo-app/e2e-app`); şablon `rules/templates/appium_testng.java.j2` |
+| Java araçları (009) | `toolchain/java-araclar` (JavaParser): `symbols` (TS sembol tablosuyla aynı şema), `guard` (üretilen test AST koruması), `locators` (onarımda yalnız kimlik değeri) |
 | Portal | React + Vite + TypeScript, build edilip nginx ile sunulur; SSE |
 | Kod ve CI | GitHub, GitHub Actions, GitHub App (bot) |
 | Örnek uygulama | FastAPI API + React web (nginx) |
@@ -324,6 +328,8 @@ FailureToFix(run_id)
 
 **Canlı görünürlük:** her ajan eyleminden sonra core-worker, model döngüsünün dışında ayrı bir MCP oturum çağrısıyla ekran görüntüsü alır ve SSE ile portala akıtır; görüntü modele gönderilmez.
 
+**Platform (009):** kod üretimi (case, platform) çiftinedir (`POST /code/generate {case_ids, platform?}`, varsayılan `web`). Uygulama platformlarında amaç `verify_and_map_app`, araç izin listesi `app_launch`, `app_snapshot`, `app_click`, `app_type`, `app_select_option`, `app_wait_for`, `app_generate_locator` (app-mcp); `app_screenshot` yalnız canlı görünüm içindir ve `FORBIDDEN_TOOLS`'tadır. Sembol tablosu `java-araclar symbols`, şablon Java/TestNG, statik kapı `javac` + `java-araclar guard`; dal `tp/case-<platform>-<uuid>`, merge kapısı `local-ci-<platform>`. Adımlar 1–6 ve kurallar değişmez. Ayrıntı: [MOBIL-MASAUSTU.md](MOBIL-MASAUSTU.md).
+
 ### 8.5 CI (AI'sız)
 - **Toolchain imajı:** ayrı `build-toolchain` workflow'u, `docker/build-push-action` ile `platforms: linux/amd64,linux/arm64` ve `cache-from/to: type=gha`; etiket `.playwright-version`'dan türetilir, kullanıldığı her yerde digest ile sabitlenir; GHCR paket ayarında `testingprobe` reposuna Actions erişimi verilir.
 - **Job:** `container: ghcr.io/thinkgotr/tp-toolchain@<digest>` (toolchain-worker ve test-runner ile aynı imaj: Playwright tarayıcıları + Node + Python + uv), `container.credentials: { username: ${{ github.actor }}, password: ${{ secrets.GITHUB_TOKEN }} }`; demo uygulaması her ortamda aynı yolla, Playwright `webServer` dizisiyle başlar: `uv run uvicorn` (API) ve `vite build && vite preview` (web); `BASE_URL` tek kaynaktan.
@@ -361,6 +367,7 @@ FailureToFix(run_id)
 - **AST koruması:** değişen dosyalar yalnızca `pages/**/locators.ts`; anahtar kümesi, `role`, `name`, `intent` değişmemiş; yalnızca ilgili `testId` string değeri değişmiş. Aynı kontrol CI'da zorunlu check.
 - **PR:** yerel kontrol **etkilenen tüm testlerde** yeşilse (AI'ın ürettikleri ve elle yazılmış olanlar) bot açar; insan onayı zorunlu.
 - **Birim testleri:** 0 eşleşme, çoklu eşleşme, anahtar/niyet değişikliği denemesi, test dosyasına dokunan yama.
+- **Uygulama platformları (009):** aynı kural Java'da: değişen tek dosya `demo-app/e2e-app/.../ekranlar/Kimlikler.java`, yalnız ilgili sabitin string değeri değişir (`java-araclar locators patch` / `locators diff`); triage kanıtı hata anının sayfa kaynağı XML'i + ekran görüntüsüdür.
 
 ### 8.8 Model geçidi
 - **İki giriş:** `gateway.call(purpose, bundle, messages, schema, max_tokens, budget)` ve `gateway.run_agent(purpose, bundle, tools, max_turns, budget)`.

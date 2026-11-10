@@ -10,7 +10,7 @@ export PLAYWRIGHT_VERSION := $(strip $(shell cat .playwright-version 2>/dev/null
 
 S ?=
 
-.PHONY: help env up asistan-paket status seed reset jira-seed forge-init break demo-break demo-reset demo-web-sync locator-break-verify demo-baseline export-audit security-check e2e-smoke demo-check demo-prova prova-temizle eval-live asistan-perf prune logs down
+.PHONY: help env up asistan-paket status seed reset jira-seed forge-init break demo-break demo-reset demo-web-sync locator-break-verify demo-baseline export-audit security-check e2e-smoke demo-check demo-prova prova-temizle eval-live asistan-perf prune logs down cihaz-kur cihaz-baslat cihaz-durdur cihaz-durum cihaz-wda cihaz-ag windows-vm-olustur windows-vm-ac windows-vm-kapat windows-vm-yeniden windows-vm-durum windows-vm-bekle windows-vm-ekran windows-vm-sil windows-vm-ip windows-vm-selftest
 
 help: ## Hedefleri listeler
 	@echo "Kullanım: make <hedef>"
@@ -85,6 +85,59 @@ eval-live: ## Prompt değerlendirme setini CANLI modelle koşturur, sert bütçe
 
 asistan-perf: ## Asistan süre testleri (§16.12 öneri ucu p95 < 300 ms; T132): TP_TEST_PERF=1 pytest -m perf (geçici test postgres'i; toplu gönderim öncesi)
 	@cd core && TP_TEST_PERF=1 TP_TEST_REQUIRE_DB=1 uv run pytest tests/unit/features/assistant -m perf -q
+
+# --- Cihaz altyapısı (009 mobil; docs/CIHAZ-ALTYAPISI.md) ---------------------------------------
+PLATFORM ?=
+
+cihaz-kur: ## Appium 3 + sürücüler (tools/appium) + AVD tp-android + simülatör "TP iPhone" + app-mcp (idempotent)
+	@scripts/cihaz/kur.sh
+
+cihaz-baslat: ## Cihazı açar, derleme varsa uygulamayı kurar, Appium 127.0.0.1:4723 (PLATFORM=android|ios; GORUNMEZ=1: penceresiz)
+	@scripts/cihaz/baslat.sh $(PLATFORM)
+
+cihaz-durdur: ## Appium + kanonik cihazları durdurur (PLATFORM=android|ios: yalnız o cihaz)
+	@scripts/cihaz/durdur.sh $(PLATFORM)
+
+cihaz-durum: ## Appium, cihaz ve uygulama derlemesi durumu
+	@scripts/cihaz/durum.sh
+
+cihaz-wda: ## iOS WebDriverAgent ön derlemesi (ilk xcuitest oturumu hızlanır; Xcode değişince yeniden)
+	@scripts/cihaz/wda.sh
+
+cihaz-ag: ## Konteyner → host.docker.internal:4723 erişimi + LAN'dan erişilemezlik doğrulaması
+	@scripts/cihaz/ag-dogrula.sh
+
+# --- GCP Windows VM (009 Windows masaüstü; specs/009-mobil-masaustu/windows-gcp.md) --------------
+# Tümü gcloud (Mac). Ortam: TP_GCP_PROJECT, TP_WINDOWS_VM_* ; DRY_RUN=1 yalnızca yazdırır.
+windows-vm-olustur: ## tp-windows VM'ini oluşturur (onay ister; EVET=1 atlar; DRY_RUN=1 yalnızca yazdırır)
+	@deploy/gcp/windows-vm/vm.sh olustur
+
+windows-vm-ac: ## tp-windows VM'ini başlatır (DRY_RUN=1 yalnızca yazdırır)
+	@deploy/gcp/windows-vm/vm.sh ac
+
+windows-vm-kapat: ## tp-windows VM'ini durdurur — kullanılmıyorken kapatın (DRY_RUN=1 yalnızca yazdırır)
+	@deploy/gcp/windows-vm/vm.sh kapat
+
+windows-vm-yeniden: ## tp-windows'u yeniden başlatır, yalnızca bu açılışın HAZIR/HATA satırını bekler
+	@deploy/gcp/windows-vm/vm.sh yeniden
+
+windows-vm-durum: ## tp-windows durumu, iç IP ve seri porttaki son TP-WINDOWS-HAZIR/HATA satırı
+	@deploy/gcp/windows-vm/vm.sh durum
+
+windows-vm-bekle: ## Seri portta TP-WINDOWS-HAZIR bekler; HATA/zaman aşımında ≠0 (TP_WINDOWS_VM_BEKLE_DK=45)
+	@deploy/gcp/windows-vm/vm.sh bekle
+
+windows-vm-ekran: ## tp-windows ekran görüntüsünü var/windows-vm/ altına kaydeder, yolu yazar
+	@deploy/gcp/windows-vm/vm.sh ekran
+
+windows-vm-sil: ## tp-windows VM'ini ve diskini siler (onay ister; EVET=1 atlar; DRY_RUN=1 yalnızca yazdırır)
+	@deploy/gcp/windows-vm/vm.sh sil
+
+windows-vm-ip: ## tp-windows iç IP'sini yazar (tp-demo .env: TP_WINDOWS_VM_APPIUM=<ip>:4723)
+	@deploy/gcp/windows-vm/vm.sh ip
+
+windows-vm-selftest: ## vm.sh öz testi (sahte gcloud; GCP'ye dokunmaz)
+	@deploy/gcp/windows-vm/vm-selftest.sh
 
 prune: ## Kullanılmayan (dangling) imajları ve build önbelleğini temizler; volume'lere dokunmaz
 	@echo "İmajlar:";        docker image prune -f | tail -n 1

@@ -83,14 +83,32 @@ class RepairToolchain:
             govde["scope_test_id"] = scope_test_id
         return self._post("/locator-probe", govde, PROBE_TIMEOUT_S)
 
-    def ast_guard(self, base_sha: str, head_sha: str) -> dict[str, Any]:
-        return self._post(
-            "/ast-guard",
-            {"base_sha": base_sha, "head_sha": head_sha, "mode": "repair"},
-            AST_TIMEOUT_S,
-        )
+    def symbols_platform(self, sha: str, platform: str) -> dict[str, Any]:
+        """Uygulama platformunun (android | ios | windows) Java sembol tablosu (009 §2.5)."""
+        tablo = self._post("/symbols", {"sha": sha, "platform": platform}, SYMBOLS_TIMEOUT_S)
+        if "page_objects" not in tablo:
+            raise ToolchainHatasi(200, "sembol tablosu page_objects içermiyor")
+        return tablo
 
-    def check(self, sha: str, base_sha: str, run_id: str, *, retries: int = 1) -> dict[str, Any]:
+    def ast_guard(
+        self, base_sha: str, head_sha: str, *, platform: str | None = None
+    ) -> dict[str, Any]:
+        """`platform` (android | ios | windows) → Java repair koruması (yalnızca Kimlikler.java
+        kimlik literal'i değişebilir); web/None → TS ast-guard repair modu."""
+        govde: dict[str, Any] = {"base_sha": base_sha, "head_sha": head_sha, "mode": "repair"}
+        if platform and platform != "web":
+            govde["platform"] = platform
+        return self._post("/ast-guard", govde, AST_TIMEOUT_S)
+
+    def check(
+        self,
+        sha: str,
+        base_sha: str,
+        run_id: str,
+        *,
+        retries: int = 1,
+        platform: str | None = None,
+    ) -> dict[str, Any]:
         """Tam paket (test_files boş: etkilenen tüm testler dahil), onarım modunda AST koruması.
 
         `retries` CI ile aynıdır (1): yeniden denemede geçen test raporda `flaky` olur ve
@@ -98,19 +116,21 @@ class RepairToolchain:
 
         `record_check` verilmez (None): tam kapsamlı, kırılmasız kontrol toolchain tarafından
         `local-ci` olarak kaydedilir; LocalForge merge kapısı bu head için onu okur.
+
+        `platform` (android | ios | windows): Java yolu (`app → deps → guard → compile → run`,
+        test-runner cihazda koşar); web/None → mevcut Playwright yolu.
         """
-        return self._post(
-            "/check",
-            {
-                "sha": sha,
-                "test_files": [],
-                "repeat_each": 1,
-                "retries": retries,
-                "env": {},
-                "base_sha": base_sha,
-                "ast_guard_mode": "repair",
-                "run_id": run_id,
-                "keep": True,
-            },
-            self.check_timeout_s,
-        )
+        govde: dict[str, Any] = {
+            "sha": sha,
+            "test_files": [],
+            "repeat_each": 1,
+            "retries": retries,
+            "env": {},
+            "base_sha": base_sha,
+            "ast_guard_mode": "repair",
+            "run_id": run_id,
+            "keep": True,
+        }
+        if platform and platform != "web":
+            govde["platform"] = platform
+        return self._post("/check", govde, self.check_timeout_s)

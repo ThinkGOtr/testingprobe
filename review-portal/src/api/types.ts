@@ -4,6 +4,9 @@
 // AI şemalarından gelen gömülü yükler (test case içeriği, bulgu kanıtı, bug taslağı içeriği,
 // ön inceleme soruları) TEKNIK-TASARIM'daki İngilizce şema adlarını aynen taşır.
 
+import type { Platform } from "../lib/platform";
+export type { Platform } from "../lib/platform";
+
 export type Rol = "analyst" | "engineer" | "presenter" | "po" | "tester";
 
 /** Model geçidi modu (§8.8). live dışındaki her değer portalda rozetle gösterilir. */
@@ -608,6 +611,11 @@ export interface Script {
   yerel_sinif: YerelKontrolSinifi | null;
   /** Defect adayının triage kaydı (core `script.failure_id`); yoksa null/yok. */
   failure_id?: string | null;
+  /**
+   * 009: testin platformu (core `script.platform`: web | android | ios | windows). 009 öncesi core
+   * alanı göndermez; o zaman yalnız web üretilebildiği için uyarlayıcı `web` yazar.
+   */
+  platform?: Platform | null;
   /** null: model çağrısı yok ya da mod bilinmiyor ("live" uydurulmaz). */
   mode: CiktiModu | null;
   olusturma: string;
@@ -739,6 +747,11 @@ export interface Kosu {
    * `mevcut`: bağlantılar core'dan; `hata` / `yok` / `budandi`: bağlantılar GitHub'a düşer.
    */
   github_artefakt?: { durum: string; hata: string | null } | null;
+  /**
+   * 009: koşunun platformu (core `platform` ya da `ortam.platform`; CI `run.ortam.platform`).
+   * Bilinmiyorsa null: hiçbir platforma yazılmaz (süzgeçte yalnız "Tümü"nde görünür).
+   */
+  platform?: Platform | null;
 }
 
 /** Playwright `test.step` ağacı (core results.json'dan; sınırlı). */
@@ -819,6 +832,11 @@ export interface KosuDetay extends Kosu {
   adimlar?: Record<string, KosuAdimi> | null;
   /** GitHub koşusu: işler + ci-meta.json özeti. */
   github?: GithubKosuBilgisi | null;
+  /**
+   * 009: commit'in platform başına yerel CI kontrolleri (core `checks.platformlar`:
+   * `local-ci-<platform>` → {durum, conclusion}). Yoksa null/yok.
+   */
+  platform_kontrolleri?: { ad: string; platform: Platform | null; durum: CheckDurumu }[] | null;
 }
 
 // ---------------------------------------------------------------- Triage
@@ -931,6 +949,13 @@ export interface LocatorOnarimi {
   yama?: string | null;
   /** Öneri neden PR'a dönüşmedi/başarısız (core'un Türkçe gerekçesi). */
   neden?: string | null;
+  /**
+   * 009: önerinin kaynağı. `sayfa_kaynagi`: uygulama testinin hata anı sayfa kaynağından (Appium XML)
+   * kimlik değişimi — rol/ad/url_path boştur ve gösterilmez. Yoksa web locator önerisi.
+   */
+  kaynak?: string | null;
+  /** 009: onarılan testin platformu (core `oneri.platform`). */
+  platform?: Platform | null;
 }
 
 export interface HataAnalizi {
@@ -963,6 +988,11 @@ export interface HataAnalizi {
   zaman: string;
   /** Kaynak script (kod üretimi defect adayı) varsa. */
   script_id?: string | null;
+  /**
+   * 009: başarısız testin platformu (core `platform`, yoksa `oneri.platform`; kanıtta Appium sayfa
+   * kaynağı varsa uygulama testi olduğu bilinir ama hangi platform olduğu uydurulmaz). Bilinmiyorsa null.
+   */
+  platform?: Platform | null;
 }
 
 // ---------------------------------------------------------------- Bug taslakları

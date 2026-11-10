@@ -35,7 +35,8 @@ REPLAY / REPLAY-MISS rozetini `ai_call.mod`'dan gösterir.
      **kullanılmaz** (başka bir dokümanın cevabıdır); nötr yedeğin çıktısı döner, köken
      `miss_neutral`, `cikti_kokeni = notr_yedek`. Yeni Jira story'si de serbest metin gibi bu
      yoldan ilerler (gereksinim akışı: denetim güvenilmez, "Son hal olarak onayla").
-   - **`"policy": "raise"`** (`case_generation`, `verify_and_map`, `bug_draft`, `dup_rank`):
+   - **`"policy": "raise"`** (`case_generation`, `verify_and_map`, `verify_and_map_app`,
+     `bug_draft`, `dup_rank`):
      çıktı yoktur; geçit `ReplayNoOutput` fırlatır
      ("REPLAY-MISS: bu girdi için kayıtlı model çıktısı yok; canlı model gerekir"), sıfır taslak.
    - Beyansız golden veya `on_miss.json`'u olmayan amaç: golden varsa çıktısı döner, köken
@@ -146,6 +147,7 @@ metinde `golden_name(FREE_TEXT_KEY)` → `SERBEST` / `SERBEST-r2`. `fix_doc` ön
 | `consistency_check` | `TPD-1-r2`, `SERBEST-r2` (2.+ tur) | Aşağıdaki düzeltilmiş metin |
 | `case_generation` | `TPD-1`, `SERBEST` | Düzeltilmiş metin; `TPD-3`, `TPD-4` özgün |
 | `verify_and_map` | `TPD-1-C1..C10`, `TPD-4-C1..C2` | case_generation golden'ındaki case (insan düzeltirse REPLAY-MISS) |
+| `verify_and_map_app` | `TPD-1-C2-android` | 009 mobil: aynı C2 case'i; platform golden adındadır (`<story>-C<n>-<platform>`), başka platform REPLAY-MISS. Araç adımları app-mcp sözleşmesine uyan sahte oturumda yazıldı (`core/tests/unit/gateway/build_app_goldens.py`), gerçek cihazda kaydedilmedi |
 | `consistency_check` | `f2-kod-hatasi/TPD-1-r2` | F2 `code_defect` yolu: AC2 özgün, AC3 düzeltilmiş (aşağıda "Demo-B") |
 | `case_generation` | `f2-kod-hatasi/TPD-1` | Aynı belge; ana golden'dan tek farkı C3 (6 adette bedava yok) |
 | `verify_and_map` | `f2-kod-hatasi/TPD-1-C3` | Senaryonun C3'ü; diğer case'ler ana golden'larla birebir aynı, ana golden eşleşir |

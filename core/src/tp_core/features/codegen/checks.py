@@ -24,6 +24,7 @@ Biri tutmazsa kod üretilmez; neden Türkçe ve adım kimliğiyle insana göster
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -136,15 +137,37 @@ def fixture_name(po_class: str) -> str:
     return po_class[:1].lower() + po_class[1:]
 
 
+INT_MIN, INT_MAX = -(2**31), 2**31 - 1
+LONG_MIN, LONG_MAX = -(2**63), 2**63 - 1
+
+
+def _tamsayi(deger: Any) -> bool:
+    return isinstance(deger, int) and not isinstance(deger, bool)
+
+
 def _tur_uyar(tip: str, deger: Any) -> bool | None:
-    """True/False: tür uyumu; None: desteklenmeyen parametre türü."""
+    """True/False: tür uyumu; None: desteklenmeyen parametre türü.
+
+    TypeScript (`string`/`number`/`boolean`) ve Java (009 §2.8: `String`/`int`/`long`/`double`/
+    `boolean`) türleri. Java literal uyumu `java-araclar guard` ile aynıdır: `int` yalnız 32 bit
+    tamsayı, `long` 64 bit tamsayı, `double` sonlu sayı (tamsayı genişletilir); kesirli değer `int`/
+    `long`'a, sayı `String`'e geçmez.
+    """
     t = (tip or "").strip()
-    if t == "string":
+    if t in ("string", "String"):
         return isinstance(deger, str)
     if t == "number":
         return isinstance(deger, int | float) and not isinstance(deger, bool)
     if t == "boolean":
         return isinstance(deger, bool)
+    if t == "int":
+        return _tamsayi(deger) and INT_MIN <= deger <= INT_MAX
+    if t == "long":
+        return _tamsayi(deger) and LONG_MIN <= deger <= LONG_MAX
+    if t == "double":
+        if _tamsayi(deger):
+            return LONG_MIN <= deger <= LONG_MAX
+        return isinstance(deger, float) and math.isfinite(deger)
     return None
 
 
@@ -292,6 +315,7 @@ def check_mapping(
     table: SymbolTable,
     *,
     fixtures: set[str] | None = None,
+    fixture_kaynagi: str = "tests/fixtures.ts",
 ) -> Sonuc:
     sonuc = Sonuc()
     b = sonuc.bulgular
@@ -380,7 +404,7 @@ def check_mapping(
                 b.append(
                     Bulgu(
                         "unknown_method",
-                        f"{po} için e2e fikstürü ({fixture_name(po)}) tests/fixtures.ts'te yok",
+                        f"{po} için e2e fikstürü ({fixture_name(po)}) {fixture_kaynagi} içinde yok",
                     )
                 )
     return sonuc

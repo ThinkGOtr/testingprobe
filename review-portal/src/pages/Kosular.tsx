@@ -9,6 +9,8 @@ import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { HATA_SINIFI, KAYNAK, KOSU_DURUMU, TETIK } from "../lib/etiketler";
 import { sure, tarih } from "../lib/format";
 import { CiAdimlari, githubYedekNotu, TestSonuclari } from "./KosuSonuclari";
+import { PlatformRozeti } from "../components/Platform";
+import { checkEtiketi, PLATFORMLAR, PLATFORM_ETIKETI, platformaGoreSuz, platformSecimiOku, type Platform } from "../lib/platform";
 
 const TETIK_TONU: Partial<Record<Tetik, "notr" | "bilgi" | "vurgu" | "uyari">> = {
   nightly: "notr",
@@ -61,6 +63,12 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
               <td>
                 <Cip ton={TETIK_TONU[k.tetik] ?? "notr"}>{TETIK[k.tetik] ?? k.tetik}</Cip>
                 {k.pr_no !== null && <span className="mono"> #{k.pr_no}</span>}
+                {k.platform && (
+                  <>
+                    {" "}
+                    <PlatformRozeti platform={k.platform} />
+                  </>
+                )}
               </td>
               {!kompakt && (
                 <td>
@@ -113,11 +121,12 @@ export function SauceCipi({ k }: { k: Pick<Kosu, "kaynak" | "durum" | "sauce_dur
   return null;
 }
 
-type Filtre = { tetik: Tetik | ""; kaynak: KosuKaynagi | ""; durum: Kosu["durum"] | ""; kirma: boolean };
+type Filtre = { tetik: Tetik | ""; kaynak: KosuKaynagi | ""; durum: Kosu["durum"] | ""; kirma: boolean; platform?: Platform | "" };
 
-/** Koşu listesinin süzgeci (adres çubuğunda: ?tetik=&kaynak=&durum=&kirma=1). */
+/** Koşu listesinin süzgeci (adres çubuğunda: ?tetik=&kaynak=&durum=&kirma=1&platform=). */
 export function kosulariSuz(kosular: Kosu[], f: Filtre): Kosu[] {
-  return kosular.filter(
+  // Platformu bilinmeyen koşu hiçbir platform seçimine girmez (uydurulmaz).
+  return platformaGoreSuz(kosular, f.platform || "tumu", (k) => k.platform).filter(
     (k) =>
       (!f.tetik || k.tetik === f.tetik) &&
       (!f.kaynak || k.kaynak === f.kaynak) &&
@@ -141,6 +150,10 @@ export function Kosular() {
     kaynak: (sorgu.get("kaynak") ?? "") as Filtre["kaynak"],
     durum: (sorgu.get("durum") ?? "") as Filtre["durum"],
     kirma: sorgu.get("kirma") !== "0",
+    platform: (() => {
+      const p = platformSecimiOku(sorgu.get("platform"));
+      return p === "tumu" ? "" : p;
+    })(),
   };
   const ayarla = (anahtar: string, deger: string) => {
     const y = new URLSearchParams(sorgu);
@@ -149,7 +162,12 @@ export function Kosular() {
     setSorgu(y, { replace: true });
   };
   const tum = v.veri ?? [];
-  const suzulen = useMemo(() => kosulariSuz(tum, filtre), [tum, filtre.tetik, filtre.kaynak, filtre.durum, filtre.kirma]);
+  const suzulen = useMemo(
+    () => kosulariSuz(tum, filtre),
+    [tum, filtre.tetik, filtre.kaynak, filtre.durum, filtre.kirma, filtre.platform],
+  );
+  // 009: platform süzgeci yalnız platformu bilinen koşu varsa (liste ucu taşımıyorsa gösterilmez).
+  const platformVar = tum.some((k) => k.platform) || !!filtre.platform;
   const tetikler = [...new Set(tum.map((k) => k.tetik))];
   // Kırma koşusu yoksa süzgeç işe yaramaz: gösterilmez (yerel kontrol / kırarak doğrulama koşuları
   // koşu tablosuna alındığında görünür hale gelir).
@@ -252,6 +270,19 @@ export function Kosular() {
                   ))}
                 </select>
               </label>
+              {platformVar && (
+                <label>
+                  Platform
+                  <select value={filtre.platform} onChange={(e) => ayarla("platform", e.target.value)}>
+                    <option value="">Tümü</option>
+                    {PLATFORMLAR.map((p) => (
+                      <option key={p} value={p}>
+                        {PLATFORM_ETIKETI[p]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               {kirmaVar && (
                 <label className="satir-ogeler">
                   <span>
@@ -307,11 +338,44 @@ function HataListesi({ k }: { k: KosuDetayTuru }) {
         {hatalar.map((h) => (
           <li key={h.id} className="satir-ogeler">
             <SinifCipi sinif={h.sinif} alt={h.alt_tur} />
+            {/* Koşunun platformu triage kayıtlarının platformudur (aynı koşu, aynı cihaz). */}
+            <PlatformRozeti platform={k.platform} />
             <span>{h.test_adi}</span>
             {h.ozet && <span className="kucuk soluk">{h.ozet}</span>}
             <Link to={`/hatalar/${encodeURIComponent(h.id)}`}>Triage sonucunu aç</Link>
           </li>
         ))}
+      </ul>
+    </Kart>
+  );
+}
+
+const PK_DURUMU: Record<string, { etiket: string; ton: "basari" | "hata" | "bilgi" | "notr" }> = {
+  passed: { etiket: "geçti", ton: "basari" },
+  failed: { etiket: "kırmızı", ton: "hata" },
+  error: { etiket: "hata", ton: "hata" },
+  pending: { etiket: "bekliyor", ton: "bilgi" },
+  skipped: { etiket: "atlandı", ton: "notr" },
+};
+
+/** 009: aynı commit'in platform başına yerel CI kontrolleri (`local-ci-<platform>`; core `checks.platformlar`). */
+function PlatformKontrolleri({ k }: { k: KosuDetayTuru }) {
+  const pk = k.platform_kontrolleri ?? [];
+  if (pk.length === 0) return null;
+  return (
+    <Kart baslik="Platform kontrolleri">
+      <p className="kucuk soluk">Bu koşunun commit'i için uygulama platformlarının yerel CI kontrolleri (her biri ayrı kayıt; Java PR'larında zorunlu check). Web kontrolü (local-ci) PR check'lerinde görünür.</p>
+      <ul className="duz-liste" aria-label="Platform kontrolleri">
+        {pk.map((c) => {
+          const d = PK_DURUMU[c.durum] ?? { etiket: c.durum, ton: "notr" as const };
+          return (
+            <li key={c.ad} className="satir-ogeler">
+              <span>{checkEtiketi(c.ad) ?? c.ad}</span>
+              <span className="mono kucuk soluk">{c.ad}</span>
+              <Cip ton={d.ton}>{d.etiket}</Cip>
+            </li>
+          );
+        })}
       </ul>
     </Kart>
   );
@@ -379,6 +443,7 @@ export function KosuDetay() {
               {k.pr_no !== null && ` #${k.pr_no}`}
             </Cip>
             <Cip ton="notr">{KAYNAK[k.kaynak] ?? k.kaynak}</Cip>
+            <PlatformRozeti platform={k.platform} />
             <SauceCipi k={k} />
             <span className="mono">{k.commit}</span>
             <span className="soluk">{tarih(k.baslangic)}</span>
@@ -444,6 +509,7 @@ export function KosuDetay() {
         </div>
       </Kart>
       <HataListesi k={k} />
+      <PlatformKontrolleri k={k} />
       <CiAdimlari k={k} />
       <TestSonuclari k={k} />
     </>

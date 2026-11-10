@@ -72,8 +72,9 @@ def _link(key: str | None, browse_url: str | None) -> str:
     return hucre(key, 40)
 
 
-def pr_title(case_ref: str, title: str) -> str:
-    metin = f"[{_tek_satir(case_ref, 40)}] {_tek_satir(title, 100)} (AI-generated)"
+def pr_title(case_ref: str, title: str, platform: str = "web") -> str:
+    etiket = _tek_satir(case_ref, 40) + ("" if platform == "web" else f" · {platform}")
+    metin = f"[{etiket}] {_tek_satir(title, 100)} (AI-generated)"
     return metin[:200]
 
 
@@ -99,20 +100,32 @@ def pr_body(
     template_hash: str,
     mapping_hash: str,
     ajan_bayileri: Mapping[str, str] | None = None,
+    platform: str = "web",
 ) -> str:
     """`ajan_bayileri`: doğrulama ajanının araç katmanında yerine geçirdiği bayiler
-    (`{"bayi1": "bayi3"}`); bu bayiyi argüman alan eşleme satırları açıkça işaretlenir."""
+    (`{"bayi1": "bayi3"}`); bu bayiyi argüman alan eşleme satırları açıkça işaretlenir.
+    `platform` (009 §2.1): `web` dışında Java/Appium testi (ekran nesnesi, app-mcp ajanı)."""
     adimlar = {str(s.get("id")): s for s in case.get("steps") or [] if isinstance(s, Mapping)}
+    uygulama = platform != "web"
+    giris = (
+        "> Bu PR AI Testing Probe tarafından açıldı (**AI-generated**). Model Java yazmadı: "
+        f"kod, uygulamada ({hucre(platform, 20)}, app-mcp) doğrulanmış adım → ekran nesnesi "
+        "eşlemesinden şablonla üretildi. Merge yalnızca insan onayıyla ve zorunlu kontroller "
+        "yeşilken yapılır."
+        if uygulama
+        else "> Bu PR AI Testing Probe tarafından açıldı (**AI-generated**). Model TypeScript "
+        "yazmadı: kod, uygulamada doğrulanmış adım → page object eşlemesinden şablonla üretildi. "
+        "Merge yalnızca insan onayıyla ve zorunlu kontroller yeşilken yapılır."
+    )
     out: list[str] = [
         f"## AI-generated test: {hucre(case_ref, 40)} — {hucre(case.get('title'), 120)}",
         "",
-        "> Bu PR AI Testing Probe tarafından açıldı (**AI-generated**). Model TypeScript yazmadı: "
-        "kod, uygulamada doğrulanmış adım → page object eşlemesinden şablonla üretildi. Merge "
-        "yalnızca insan onayıyla ve zorunlu kontroller yeşilken yapılır.",
+        giris,
         "",
         "| Alan | Değer |",
         "|---|---|",
         f"| Case | `{kod(case_id, 40)}` ({hucre(case_ref, 40)}) |",
+        *([f"| Platform | {hucre(platform, 20)} |"] if uygulama else []),
         f"| Onaylı case hash | `{kod(case_hash, 64)}` |",
         f"| Case onaylayan | {hucre(onaylayan or '-', 60)} |",
         f"| Story | {_link(story_key, browse_url)} |",
@@ -123,7 +136,9 @@ def pr_body(
         f"| Eşleme / şablon hash | `{kod(mapping_hash[:16], 20)}` / "
         f"`{kod(template_hash[:16], 20)}` |",
         "",
-        "### Doğrulama özeti (adım → page object)",
+        "### Doğrulama özeti (adım → ekran nesnesi)"
+        if uygulama
+        else "### Doğrulama özeti (adım → page object)",
         "",
         "| Adım | Eylem | Eşleme | Doğrulandı | Kanıt |",
         "|---|---|---|---|---|",
@@ -154,12 +169,20 @@ def pr_body(
         def isaret(v: Any) -> str:
             return "✓" if v is True else ("✗" if v is False else "—")
 
-        out.append(
-            f"- tsc {isaret(adim.get('tsc'))} · eslint {isaret(adim.get('eslint'))} · "
-            f"AST koruması {isaret(adim.get('ast_guard'))} · Playwright "
-            f"{kontrol.get('gecen', 0)}/{kontrol.get('toplam', 0)} geçti "
-            "(repeat-each=3, retries=0)"
-        )
+        if uygulama:
+            out.append(
+                f"- pom kilidi {isaret(adim.get('deps'))} · Java AST koruması "
+                f"{isaret(adim.get('guard'))} · test-compile {isaret(adim.get('compile'))} · "
+                f"Appium ({hucre(platform, 20)}) {kontrol.get('gecen', 0)}/"
+                f"{kontrol.get('toplam', 0)} geçti (repeat-each=3, retries=0)"
+            )
+        else:
+            out.append(
+                f"- tsc {isaret(adim.get('tsc'))} · eslint {isaret(adim.get('eslint'))} · "
+                f"AST koruması {isaret(adim.get('ast_guard'))} · Playwright "
+                f"{kontrol.get('gecen', 0)}/{kontrol.get('toplam', 0)} geçti "
+                "(repeat-each=3, retries=0)"
+            )
         out.append(f"- Sonuç: **{hucre(kontrol.get('aciklama'), 200)}**")
         if kontrol.get("run_id"):
             out.append(f"- Koşu: `{kod(kontrol.get('run_id'), 100)}`")

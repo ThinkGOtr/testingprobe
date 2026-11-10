@@ -4,7 +4,13 @@ toolchain-worker kod çalıştırmaz (sembol tablosu ts-morph ile ayrıştırıl
 sırayla `deps → tsc → eslint → ast-guard → test-runner /run` koşturur (CI ile aynı mekanizma,
 AI yok) ve kırılmasız koşuda `TP_ARTIFACTS_PATH/checks/<sha>.json`'a `local-ci` sonucunu yazar.
 
-Sembol tablosu commit'e bağlıdır (commit'ler değişmez): süreç içinde sha başına önbellek.
+Sembol tablosu commit'e bağlıdır (commit'ler değişmez): süreç içinde (sha, platform) başına
+önbellek.
+
+**Platform (009 §2.1):** `platform` verilirse (`android` | `ios` | `windows`) istek gövdesine
+eklenir; toolchain-worker Java yolunu seçer (`/symbols`: `java-araclar symbols` ile e2e-app ekran
+nesneleri; `/check`: `app → deps → guard → compile → run`, `test_files` e2e-app köküne göre).
+`web` ya da `None` gövdeye hiç yazılmaz (mevcut TS yolu, istek baytları değişmez).
 """
 
 from __future__ import annotations
@@ -40,7 +46,7 @@ class ToolchainError(RuntimeError):
         self.detail = detail
 
 
-_SYMBOL_CACHE: OrderedDict[tuple[str, str], dict[str, Any]] = OrderedDict()
+_SYMBOL_CACHE: OrderedDict[tuple[str, ...], dict[str, Any]] = OrderedDict()
 _LOCK = threading.Lock()
 
 
@@ -87,19 +93,27 @@ class ToolchainClient:
             raise ToolchainError(resp.status_code, f"toolchain-worker {path}: geçersiz yanıt")
         return data
 
-    def symbols(self, sha: str) -> dict[str, Any]:
-        anahtar = (self.base_url, sha)
+    def symbols(self, sha: str, *, platform: str | None = None) -> dict[str, Any]:
+        uygulama = bool(platform) and platform != "web"
+        # Java tablosu Android/iOS/Windows için aynıdır (ekran nesneleri platformdan bağımsız).
+        dil = ("java",) if uygulama else ()
+        anahtar = (self.base_url, sha, *dil)
         with _LOCK:
             if anahtar in _SYMBOL_CACHE:
                 _SYMBOL_CACHE.move_to_end(anahtar)
                 return _SYMBOL_CACHE[anahtar]
-        tablo = self._post("/symbols", {"sha": sha}, SYMBOLS_TIMEOUT_S)
+        govde: dict[str, Any] = {"sha": sha}
+        if uygulama:
+            govde["platform"] = platform
+        tablo = self._post("/symbols", govde, SYMBOLS_TIMEOUT_S)
         if "page_objects" not in tablo:
             raise ToolchainError(200, "sembol tablosu page_objects içermiyor")
+        if uygulama and tablo.get("lang") not in (None, "java"):
+            raise ToolchainError(200, f"Java sembol tablosu beklenirken lang={tablo.get('lang')}")
         with _LOCK:
             _SYMBOL_CACHE[anahtar] = tablo
             if tablo.get("sha") and tablo["sha"] != sha:
-                _SYMBOL_CACHE[(self.base_url, str(tablo["sha"]))] = tablo
+                _SYMBOL_CACHE[(self.base_url, str(tablo["sha"]), *dil)] = tablo
             while len(_SYMBOL_CACHE) > _CACHE_MAX:
                 _SYMBOL_CACHE.popitem(last=False)
         return tablo
@@ -114,9 +128,11 @@ class ToolchainClient:
         break_campaign: bool = False,
         run_id: str | None = None,
         keep: bool = False,
+        platform: str | None = None,
     ) -> dict[str, Any]:
         """`keep=True`: koşu dizini test-runner temizliğinde silinmez (`.keep`; kırarak doğrulama
-        ve defect adayı kanıtı, MIMARI-SOZLESME §2)."""
+        ve defect adayı kanıtı, MIMARI-SOZLESME §2). `platform` (`android|ios|windows`): Java
+        yolu; `test_files` e2e-app köküne göre (`src/test/java/…/<Ad>Test.java`)."""
         body: dict[str, Any] = {
             "sha": sha,
             "test_files": list(test_files),
@@ -127,4 +143,8 @@ class ToolchainClient:
         }
         if run_id:
             body["run_id"] = run_id
+        if platform and platform != "web":
+            # Ş8 sözleşmesi: Java yolu açıkça (`lang`) + Appium sürücüsü (`platform`).
+            body["lang"] = "java"
+            body["platform"] = platform
         return self._post("/check", body, self.check_timeout_s)

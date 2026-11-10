@@ -1,0 +1,201 @@
+{
+  "$aciklama": "Erişilebilirlik kimliği sözleşmesi (specs/009-mobil-masaustu/plan.md §2.2). Web data-testid değerlerinden üretilir: `cd demo-app/mobile && npm run kimlik-uret`. Elle düzenlemeyin. onek=true: kimlik önektir, sonuna ürün kodu / sipariş numarası eklenir (product-card-P-001). iOS: accessibilityIdentifier, Android: resource-id, Windows: AutomationId.",
+  "kaynak": "demo-app/web/src (data-testid)",
+  "kimlikler": [
+    {
+      "id": "add-to-cart",
+      "ekran": "katalog",
+      "onek": false
+    },
+    {
+      "id": "cart-count",
+      "ekran": "ortak",
+      "onek": false
+    },
+    {
+      "id": "cart-discount",
+      "ekran": "sepet",
+      "onek": false
+    },
+    {
+      "id": "cart-empty",
+      "ekran": "sepet",
+      "onek": false
+    },
+    {
+      "id": "cart-line-",
+      "ekran": "sepet",
+      "onek": true
+    },
+    {
+      "id": "cart-line-free-",
+      "ekran": "sepet",
+      "onek": true
+    },
+    {
+      "id": "cart-line-qty-",
+      "ekran": "sepet",
+      "onek": true
+    },
+    {
+      "id": "cart-line-remove-",
+      "ekran": "sepet",
+      "onek": true
+    },
+    {
+      "id": "cart-line-total-",
+      "ekran": "sepet",
+      "onek": true
+    },
+    {
+      "id": "cart-subtotal",
+      "ekran": "sepet",
+      "onek": false
+    },
+    {
+      "id": "cart-table",
+      "ekran": "sepet",
+      "onek": false
+    },
+    {
+      "id": "cart-total",
+      "ekran": "sepet",
+      "onek": false
+    },
+    {
+      "id": "checkout-error",
+      "ekran": "sepet",
+      "onek": false
+    },
+    {
+      "id": "checkout-submit",
+      "ekran": "sepet",
+      "onek": false
+    },
+    {
+      "id": "current-dealer",
+      "ekran": "ortak",
+      "onek": false
+    },
+    {
+      "id": "go-catalog",
+      "ekran": "siparis-onay",
+      "onek": false
+    },
+    {
+      "id": "go-orders",
+      "ekran": "siparis-onay",
+      "onek": false
+    },
+    {
+      "id": "login-error",
+      "ekran": "giris",
+      "onek": false
+    },
+    {
+      "id": "login-password",
+      "ekran": "giris",
+      "onek": false
+    },
+    {
+      "id": "login-submit",
+      "ekran": "giris",
+      "onek": false
+    },
+    {
+      "id": "login-username",
+      "ekran": "giris",
+      "onek": false
+    },
+    {
+      "id": "min-order-warning",
+      "ekran": "sepet",
+      "onek": false
+    },
+    {
+      "id": "nav-cart",
+      "ekran": "ortak",
+      "onek": false
+    },
+    {
+      "id": "nav-catalog",
+      "ekran": "ortak",
+      "onek": false
+    },
+    {
+      "id": "nav-logout",
+      "ekran": "ortak",
+      "onek": false
+    },
+    {
+      "id": "nav-orders",
+      "ekran": "ortak",
+      "onek": false
+    },
+    {
+      "id": "order-confirmation",
+      "ekran": "siparis-onay",
+      "onek": false
+    },
+    {
+      "id": "order-discount",
+      "ekran": "siparis-onay",
+      "onek": false
+    },
+    {
+      "id": "order-number",
+      "ekran": "siparis-onay",
+      "onek": false
+    },
+    {
+      "id": "order-row-",
+      "ekran": "siparisler",
+      "onek": true
+    },
+    {
+      "id": "order-total",
+      "ekran": "siparis-onay",
+      "onek": false
+    },
+    {
+      "id": "order-total-",
+      "ekran": "siparisler",
+      "onek": true
+    },
+    {
+      "id": "orders-empty",
+      "ekran": "siparisler",
+      "onek": false
+    },
+    {
+      "id": "orders-table",
+      "ekran": "siparisler",
+      "onek": false
+    },
+    {
+      "id": "product-card-",
+      "ekran": "katalog",
+      "onek": true
+    },
+    {
+      "id": "product-list",
+      "ekran": "katalog",
+      "onek": false
+    },
+    {
+      "id": "product-price-",
+      "ekran": "katalog",
+      "onek": true
+    },
+    {
+      "id": "product-status-",
+      "ekran": "katalog",
+      "onek": true
+    },
+    {
+      "id": "qty-input-",
+      "ekran": "katalog",
+      "onek": true
+    }
+  ]
+}

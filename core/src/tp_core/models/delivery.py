@@ -31,6 +31,7 @@ class Script(Base):
         in_check("tur", enums.SCRIPT_TUR, "script_tur_ck"),
         in_check("durum", enums.durumlar("script"), "script_durum_ck"),
         in_check("uretim_modu", enums.URETIM_MODU, "script_mod_ck", True),
+        in_check("platform", enums.PLATFORM, "script_platform_ck"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -53,6 +54,8 @@ class Script(Base):
         ForeignKey("failure.id", use_alter=True, name="script_failure_id_fkey")
     )
     uretim_modu: Mapped[str | None]
+    # 009 §2.1: hedef platform. Kod üretimi (case, platform) çiftinedir; `web` mevcut davranış.
+    platform: Mapped[str] = mapped_column(server_default="web", default="web")
     olusturma: Mapped[datetime] = olusturma_col()
     guncelleme: Mapped[datetime] = guncelleme_col()
 

@@ -218,7 +218,8 @@ describe("ekranlar", () => {
   it("script listesi: core durumu + türetilmiş işaret (merge'e hazır / zayıf test)", async () => {
     await oturumAc("muhendis");
     uygulama("/kod");
-    const hazir = (await screen.findByRole("link", { name: /7 adet kampanyalı/ })).closest("tr")!;
+    // 009: aynı case'in uygulama platformu script'leri de listede; web script'i ilk satır.
+    const hazir = (await screen.findAllByRole("link", { name: /7 adet kampanyalı/ }))[0].closest("tr")!;
     expect(within(hazir).getByText("PR açık")).toBeInTheDocument();
     expect(within(hazir).getByText("Merge'e hazır")).toBeInTheDocument();
     const zayif = screen.getByRole("link", { name: /sepet sayacı/ }).closest("tr")!;

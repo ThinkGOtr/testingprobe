@@ -71,7 +71,7 @@ description: "AI Probe ortak girişi (SSO) görev listesi"
 ## Phase 8: Taşıma ve e2e (F4b, PLAN §6)
 
 - [ ] T050 `products/testing-probe.yaml` `callback_url` = `{app_url}/api/auth/aiprobe/callback` (platform şeridi)
-- [ ] T051 `feat/mobil-masaustu` göçü birleşince `0019.down_revision = "0018"` — o dalda
+- [x] T051 `feat/mobil-masaustu` göçü birleşince `0019.down_revision = "0018"` — o dalda
   `0018_script_platform` (down_revision `0017`) var. Birleştirmede: `0019_aiprobe_kimlik.py`'de
   `down_revision = "0018"` + başlıktaki `Revises:` satırı; `test_aiprobe_sso.py::test_alembic_tek_bas`
   iki baş kalırsa başarısız olur

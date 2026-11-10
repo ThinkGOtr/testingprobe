@@ -1,0 +1,6 @@
+{
+  "kind": "agent",
+  "purpose": "verify_and_map_app",
+  "policy": "raise",
+  "note": "REPLAY-MISS politikası (golden değildir, model çıktısı değildir). Mobil/masaüstü doğrulama/eşleme çıktısı yalnızca kendi case'ine ve platformuna aittir (golden adı <story>-C<n>-<platform>): girdi golden'ın girdi beyanına (input_match) uymuyorsa ya da o platform için golden yoksa başka bir case'in ya da platformun eşlemesi döndürülmez. Geçit ReplayNoOutput fırlatır, ai_call'a mod replay_miss + hata yazılır; kod üretimi script'i 'İnsana düştü: REPLAY-MISS' ile durdurur. Bkz. rules/replay/README.md."
+}

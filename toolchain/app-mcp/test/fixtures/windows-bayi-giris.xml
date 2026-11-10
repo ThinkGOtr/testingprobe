@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-16"?>
+<!-- Elle yazılmış, NovaWindows (UI Automation) biçiminde: WPF Bayi Sipariş Portalı giriş penceresi.
+     Etiket = ControlType; AutomationProperties.AutomationId → AutomationId. Windows VM'de gerçek
+     kaynakla doğrulanacak (docs/CIHAZ-ALTYAPISI.md, açık işler). -->
+<Window AcceleratorKey="" AccessKey="" AutomationId="AnaPencere" ClassName="Window" FrameworkId="WPF" HasKeyboardFocus="False" HelpText="" IsContentElement="True" IsControlElement="True" IsEnabled="True" IsKeyboardFocusable="True" IsOffscreen="False" IsPassword="False" LocalizedControlType="window" Name="Bayi Sipariş Portalı" ProcessId="4312" x="100" y="100" width="1024" height="768">
+  <TitleBar AutomationId="TitleBar" ClassName="" FrameworkId="Win32" IsEnabled="True" IsOffscreen="False" IsPassword="False" LocalizedControlType="title bar" Name="Bayi Sipariş Portalı" x="108" y="101" width="1008" height="30">
+    <Button AutomationId="Close" ClassName="" FrameworkId="Win32" IsEnabled="True" IsOffscreen="False" IsPassword="False" LocalizedControlType="button" Name="Kapat" x="1070" y="101" width="46" height="30" />
+  </TitleBar>
+  <Custom AutomationId="" ClassName="GirisEkrani" FrameworkId="WPF" IsEnabled="True" IsOffscreen="False" IsPassword="False" LocalizedControlType="custom" Name="" x="108" y="131" width="1008" height="729">
+    <Text AutomationId="" ClassName="TextBlock" FrameworkId="WPF" IsEnabled="True" IsOffscreen="False" IsPassword="False" LocalizedControlType="text" Name="Bayi Sipariş Portalı" x="400" y="160" width="400" height="40" />
+    <Text AutomationId="" ClassName="TextBlock" FrameworkId="WPF" IsEnabled="True" IsOffscreen="False" IsPassword="False" LocalizedControlType="text" Name="Kullanıcı adı" x="400" y="220" width="400" height="20" />
+    <Edit AutomationId="login-username" ClassName="TextBox" FrameworkId="WPF" IsEnabled="True" IsKeyboardFocusable="True" IsOffscreen="False" IsPassword="False" LocalizedControlType="edit" Name="Kullanıcı adı" Value.Value="bayi3" x="400" y="244" width="400" height="30" />
+    <Edit AutomationId="login-password" ClassName="PasswordBox" FrameworkId="WPF" IsEnabled="True" IsKeyboardFocusable="True" IsOffscreen="False" IsPassword="True" LocalizedControlType="edit" Name="Parola" Value.Value="Ornek-Parola-9" x="400" y="300" width="400" height="30" />
+    <CheckBox AutomationId="login-remember" ClassName="CheckBox" FrameworkId="WPF" IsEnabled="True" IsOffscreen="False" IsPassword="False" LocalizedControlType="check box" Name="Beni hatırla" Toggle.ToggleState="On" x="400" y="345" width="200" height="20" />
+    <Button AutomationId="login-submit" ClassName="Button" FrameworkId="WPF" IsEnabled="True" IsOffscreen="False" IsPassword="False" LocalizedControlType="button" Name="Giriş yap" x="400" y="380" width="400" height="36">
+      <Text AutomationId="" ClassName="TextBlock" FrameworkId="WPF" IsEnabled="True" IsOffscreen="False" IsPassword="False" LocalizedControlType="text" Name="Giriş yap" x="570" y="388" width="60" height="20" />
+    </Button>
+    <Text AutomationId="login-error" ClassName="TextBlock" FrameworkId="WPF" IsEnabled="True" IsOffscreen="False" IsPassword="False" LocalizedControlType="text" Name="Kullanıcı adı veya parola hatalı" x="400" y="430" width="400" height="20" />
+    <ComboBox AutomationId="login-language" ClassName="ComboBox" FrameworkId="WPF" IsEnabled="True" IsOffscreen="False" IsPassword="False" LocalizedControlType="combo box" Name="Dil" Value.Value="Türkçe" x="400" y="470" width="400" height="30">
+      <ListItem AutomationId="" ClassName="ComboBoxItem" FrameworkId="WPF" IsEnabled="True" IsOffscreen="True" IsPassword="False" LocalizedControlType="list item" Name="English" x="0" y="0" width="0" height="0" />
+    </ComboBox>
+    <Button AutomationId="login-register" ClassName="Button" FrameworkId="WPF" IsEnabled="False" IsOffscreen="False" IsPassword="False" LocalizedControlType="button" Name="Kayıt ol" x="400" y="520" width="400" height="36" />
+    <Text AutomationId="login-hidden" ClassName="TextBlock" FrameworkId="WPF" IsEnabled="True" IsOffscreen="True" IsPassword="False" LocalizedControlType="text" Name="Gizli ipucu" x="400" y="570" width="400" height="20" />
+    <List AutomationId="product-list" ClassName="ListBox" FrameworkId="WPF" IsEnabled="True" IsOffscreen="False" IsPassword="False" LocalizedControlType="list" Name="" x="400" y="600" width="600" height="240">
+      <ListItem AutomationId="product-card-P-001" ClassName="ListBoxItem" FrameworkId="WPF" IsEnabled="True" IsOffscreen="False" IsPassword="False" LocalizedControlType="list item" Name="" SelectionItem.IsSelected="True" x="400" y="600" width="600" height="60">
+        <Text AutomationId="" ClassName="TextBlock" FrameworkId="WPF" IsEnabled="True" IsOffscreen="False" IsPassword="False" LocalizedControlType="text" Name="P-001" x="410" y="610" width="80" height="20" />
+        <Button AutomationId="add-to-cart" ClassName="Button" FrameworkId="WPF" IsEnabled="True" IsOffscreen="False" IsPassword="False" LocalizedControlType="button" Name="Sepete ekle" x="880" y="615" width="110" height="30" />
+      </ListItem>
+      <ListItem AutomationId="product-card-P-002" ClassName="ListBoxItem" FrameworkId="WPF" IsEnabled="True" IsOffscreen="False" IsPassword="False" LocalizedControlType="list item" Name="" x="400" y="660" width="600" height="60">
+        <Text AutomationId="" ClassName="TextBlock" FrameworkId="WPF" IsEnabled="True" IsOffscreen="False" IsPassword="False" LocalizedControlType="text" Name="P-002" x="410" y="670" width="80" height="20" />
+        <Button AutomationId="add-to-cart" ClassName="Button" FrameworkId="WPF" IsEnabled="True" IsOffscreen="False" IsPassword="False" LocalizedControlType="button" Name="Sepete ekle" x="880" y="675" width="110" height="30" />
+      </ListItem>
+    </List>
+    <ScrollBar AutomationId="VerticalScrollBar" ClassName="ScrollBar" FrameworkId="WPF" IsEnabled="True" IsOffscreen="False" IsPassword="False" LocalizedControlType="scroll bar" Name="" x="1100" y="131" width="16" height="729">
+      <Thumb AutomationId="" ClassName="Thumb" FrameworkId="WPF" IsEnabled="True" IsOffscreen="False" IsPassword="False" LocalizedControlType="thumb" Name="" x="1100" y="140" width="16" height="100" />
+    </ScrollBar>
+  </Custom>
+</Window>

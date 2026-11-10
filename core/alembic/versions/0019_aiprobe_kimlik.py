@@ -10,12 +10,11 @@
 
 Tüm NOT NULL kolonlar `server_default`'lu: mevcut satırlar ve `local` kip etkilenmez.
 
-Not: `feat/mobil-masaustu` dalında `0018_script_platform` (down_revision `0017`) var. O dal `dev`'e
-birleşince bu göçün `down_revision`'ı `"0018"` yapılır (tasks.md T051); tek baş kalmazsa
-`tests/unit/platform/test_aiprobe_sso.py::test_alembic_tek_bas` başarısız olur.
+Not: `feat/mobil-masaustu` birleştirildi; bu göç `0018_script_platform`'un ardından gelir (tasks.md
+T051). Tek baş kalmazsa `tests/unit/platform/test_aiprobe_sso.py::test_alembic_tek_bas` başarısız olur.
 
 Revision ID: 0019
-Revises: 0017
+Revises: 0018
 Create Date: 2026-11-10
 """
 
@@ -24,7 +23,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "0019"
-down_revision: str | None = "0017"
+down_revision: str | None = "0018"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

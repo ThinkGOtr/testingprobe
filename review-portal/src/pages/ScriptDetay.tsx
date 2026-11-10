@@ -11,6 +11,8 @@ import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { SCRIPT_DURUMU, scriptIsareti, scriptUretiliyor } from "../lib/etiketler";
 import { ENGEL_TURU, kosuKimligiMi, mergeEngelleri, mergeOnayNotu, mergeUyarilari, RET_NEDENI, YEREL_SINIF } from "../lib/kapi";
 import { saat, tarih } from "../lib/format";
+import { PlatformRozeti } from "../components/Platform";
+import { aracEtiketi, checkEtiketi, dikeyEkranMi, uygulamaPlatformuMu, type Platform } from "../lib/platform";
 
 const ASAMA_ADI = { baseline: "Bayraksız (yeşil olmalı)", broken: "BREAK_CAMPAIGN=1 (kırmızı olmalı)", restored: "Bayrak kaldırıldı (yeşil olmalı)" } as const;
 const SONUC = {
@@ -112,7 +114,7 @@ export function KirmaZaman({ bv, uygulanmaz = false }: { bv: BreakVerify; uygula
   );
 }
 
-function AjanAdimlari({ adimlar, canli }: { adimlar: AjanAdimi[]; canli: boolean }) {
+export function AjanAdimlari({ adimlar, canli, platform = null }: { adimlar: AjanAdimi[]; canli: boolean; platform?: Platform | null }) {
   const [secili, setSecili] = useState<number | null>(null);
   const aktif = adimlar.find((a) => a.sira === secili) ?? adimlar[adimlar.length - 1];
   if (adimlar.length === 0) {
@@ -135,7 +137,7 @@ function AjanAdimlari({ adimlar, canli }: { adimlar: AjanAdimi[]; canli: boolean
               </span>
               <span>{a.aciklama}</span>
               <span className="kucuk mono">
-                {a.po && a.method ? `${a.po}.${a.method}(${a.args.map((x) => JSON.stringify(x)).join(", ")})` : a.arac}
+                {a.po && a.method ? `${a.po}.${a.method}(${a.args.map((x) => JSON.stringify(x)).join(", ")})` : aracEtiketi(a.arac)}
               </span>
               {a.verified !== null && (
                 <span className={`kucuk ${a.verified ? "ok-metin" : "hata-metin"}`}>{a.verified ? "✓ snapshot'ta doğrulandı" : "✗ doğrulanamadı"}</span>
@@ -149,7 +151,8 @@ function AjanAdimlari({ adimlar, canli }: { adimlar: AjanAdimi[]; canli: boolean
           </li>
         )}
       </ol>
-      <figure className="ajan-ekran">
+      {/* Telefon görüntüsü dikeydir: çerçeve en çok yüksekliğe sığdırır, oranı korur (009). */}
+      <figure className={`ajan-ekran${dikeyEkranMi(platform) ? " ajan-ekran-dikey" : ""}`}>
         {aktif?.ekran_goruntusu_url ? (
           <img src={aktif.ekran_goruntusu_url} alt={`Adım ${aktif.sira} ekran görüntüsü: ${aktif.aciklama}`} />
         ) : (
@@ -157,7 +160,7 @@ function AjanAdimlari({ adimlar, canli }: { adimlar: AjanAdimi[]; canli: boolean
         )}
         <figcaption className="kucuk soluk">
           Adım {aktif?.sira}
-          {aktif?.step_id && ` (case ${aktif.step_id})`} · {aktif?.arac} · {saat(aktif?.zaman)}. Görüntü yalnızca izleme içindir; modele gönderilmez.
+          {aktif?.step_id && ` (case ${aktif.step_id})`} · {aktif ? <AracAdi arac={aktif.arac} /> : null} · {saat(aktif?.zaman)}. Görüntü yalnızca izleme içindir; modele gönderilmez.
         </figcaption>
         {aktif?.ham_cikti && (
           <details className="ham-cikti">
@@ -167,6 +170,17 @@ function AjanAdimlari({ adimlar, canli }: { adimlar: AjanAdimi[]; canli: boolean
         )}
       </figure>
     </div>
+  );
+}
+
+/** Aracın Türkçe adı; ham araç adı (app_click …) yanında eş genişlikli yazıyla. */
+function AracAdi({ arac }: { arac: string }) {
+  const ad = aracEtiketi(arac);
+  if (ad === arac) return <>{arac}</>;
+  return (
+    <>
+      {ad} <span className="mono">({arac})</span>
+    </>
   );
 }
 
@@ -379,7 +393,13 @@ function CheckListesi({ checks }: { checks: PrCheck[] }) {
             {CHECK_IKON[c.durum].ikon}
           </span>{" "}
           <Baglanti href={c.url}>
-            <span className="mono">{c.ad}</span>
+            {checkEtiketi(c.ad) ? (
+              <>
+                {checkEtiketi(c.ad)} <span className="mono kucuk">({c.ad})</span>
+              </>
+            ) : (
+              <span className="mono">{c.ad}</span>
+            )}
           </Baglanti>{" "}
           <span className="soluk kucuk">
             {CHECK_IKON[c.durum].etiket}
@@ -612,14 +632,17 @@ export function ScriptDetay() {
 
   const uretimKartlari = (
     <>
-      <Kart baslik="Ajan adımları (Playwright MCP)" eylemler={uretiliyor && <Cip ton="bilgi">Adımlar geliyor</Cip>}>
+      <Kart
+        baslik={uygulamaPlatformuMu(s.platform) ? "Ajan adımları (Appium · app-mcp)" : "Ajan adımları (Playwright MCP)"}
+        eylemler={uretiliyor && <Cip ton="bilgi">Adımlar geliyor</Cip>}
+      >
         {s.mode === "replay" && (
           <p className="kucuk soluk" data-testid="replay-bandi">
-            <span className="rozet rozet-replay">REPLAY</span> Model kararları kayıtlı golden çıktıdan; tarayıcı adımları çalışan uygulamada yeniden
+            <span className="rozet rozet-replay">REPLAY</span> Model kararları kayıtlı golden çıktıdan; {uygulamaPlatformuMu(s.platform) ? "cihaz" : "tarayıcı"} adımları çalışan uygulamada yeniden
             {uretiliyor ? " koşturuluyor (canlı model değil)." : " koşturuldu."}
           </p>
         )}
-        <AjanAdimlari adimlar={s.adimlar} canli={uretiliyor} />
+        <AjanAdimlari adimlar={s.adimlar} canli={uretiliyor} platform={s.platform} />
       </Kart>
 
       <Kart baslik="Eşlenen adımlar (adım → page object)">
@@ -898,6 +921,7 @@ export function ScriptDetay() {
             {isaret && <Cip ton={isaret.ton}>{isaret.etiket}</Cip>}
             {sinif && <Cip ton={sinif.ton}>{sinif.etiket}</Cip>}
             <ReplayRozeti mode={s.mode} />
+            <PlatformRozeti platform={s.platform} />
             {s.requirement_key && <span className="mono">{s.requirement_key}</span>}
             <span className="soluk">{tarih(s.olusturma)}</span>
           </span>
