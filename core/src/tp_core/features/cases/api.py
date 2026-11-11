@@ -23,10 +23,13 @@ from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from tp_core.auth.deps import CurrentUser, DbSession, require_role
-from tp_core.features.cases import gherkin, service
+from tp_core.features.cases import denetim_akisi, gherkin, review, service
 from tp_core.workflow.service import Principal
 
 router = APIRouter(tags=["cases"])
+# P8 review ve P9 denetim uçları (011 §4.4, D şeridi): `review.router`, `denetim_akisi.router`.
+router.include_router(review.router)
+router.include_router(denetim_akisi.router)
 
 Analyst = Annotated[Principal, Depends(require_role("analyst"))]
 

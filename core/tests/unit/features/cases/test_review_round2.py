@@ -51,8 +51,10 @@ def _story_degisti_ve_yeniden_onaylandi(rid: uuid.UUID, po) -> None:
 
 
 def test_story_degisince_yayinli_eski_caseler_tekrar_ve_kapsam_sayilmaz(
-    api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway, targets
+    api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway, targets, monkeypatch
 ) -> None:
+    # Yayın burada önceki-içerik kuralının aracıdır; denetim kapısı (011 K3) ayrıca sınanır.
+    monkeypatch.setenv("TP_DENETIM_KAPISI", "off")
     from tests.unit.features.publish.test_publish import _ctx
     from tp_core.features.publish import service as publish
 
@@ -224,8 +226,10 @@ def test_ortusen_goruntulemelerde_review_suresi_sisirilmez(
 
 
 def test_onceki_icerik_uyarisi_denetim_kaydinda(
-    api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway, targets
+    api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway, targets, monkeypatch
 ) -> None:
+    # Yayın burada önceki-içerik kuralının aracıdır; denetim kapısı (011 K3) ayrıca sınanır.
+    monkeypatch.setenv("TP_DENETIM_KAPISI", "off")
     from tests.unit.features.publish.test_publish import _ctx
     from tp_core.features.publish import service as publish
 

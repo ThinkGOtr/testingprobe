@@ -1,0 +1,47 @@
+{
+  "kind": "call",
+  "purpose": "case_audit",
+  "golden": "TPD-1",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı (model çıktısı değil; ai_call.model = golden-elle). Girdi beyanı: gereksinimin AC'leri + açıklaması ve setin kimliği (set_hash) — case_generation/TPD-1 golden'ındaki case'lerin tamamı, düzeltme ve ret olmadan. Set değişirse REPLAY-MISS (on_miss: raise). Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Üretici: core/tests/unit/gateway/build_review_goldens.py.",
+  "input_match": {
+    "acceptance_criteria": [
+      "AC1: Bayi katalogda bir ürün için \"Sepete ekle\" butonuna bastığında ürün sepete eklenir ve sepet sayacı artar.",
+      "AC2: Kampanyalı üründe her 6 adette 1 adet bedava verilir: bayi 5 adet öder, 1 adet bedava alır (6 adette 1, 12 adette 2 bedava).",
+      "AC3: Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL'dir; altında \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur.",
+      "AC4: Sipariş tutarı bayinin kredi limitini aşarsa \"Kredi limiti aşıldı\" uyarısı gösterilir ve sipariş onaylanamaz.",
+      "AC5: Sipariş onaylandığında sipariş numarası gösterilir ve sipariş, sipariş geçmişinde listelenir.",
+      "AC6: Kampanyalı siparişlerde minimum sipariş tutarı şartı aranmaz."
+    ],
+    "contains": [
+      "Bayi, katalogdan ürünleri sepete ekleyip kampanya indirimiyle siparişini onaylayabilmelidir.",
+      "Set özeti (set_hash): f5211771d566a98e53cbadf70f1d6a6b3b4bd48099b16a3366bc5e3994fc818f"
+    ]
+  },
+  "output": {
+    "decision": "KABUL",
+    "decision_rationale": "Beklenen sonuçlar AC1–AC6'ya dayanıyor, test verisi demo tohumundan ve sentetik, adımlar yalnız izinli demo ortamını hedefliyor; gizlilik, yan etki ya da gömülü talimat yok. Yalnız düşük riskli bulgular var (AP-001, AP-002).",
+    "findings": [
+      {
+        "finding_id": "AP-001",
+        "case_ref": 10,
+        "control_no": 6,
+        "issue": "C10, C2 ile aynı sepeti aynı beklenenle sınıyor.",
+        "rationale": "Tekrar case güvenlik ya da doğruluk riski taşımaz; bakım yükü ekler.",
+        "risk": "Düşük",
+        "suggested_fix": "C10'u kaldırın ya da C2 ile birleştirin."
+      },
+      {
+        "finding_id": "AP-002",
+        "case_ref": null,
+        "control_no": 6,
+        "issue": "AC2'nin ikinci bedava eşiği (12 adet) case'siz.",
+        "rationale": "Kural ilk eşikte sınanıyor; not_covered'da gerekçesi var.",
+        "risk": "Düşük",
+        "suggested_fix": "12 adet için sınır case'i ekleyin."
+      }
+    ],
+    "missing_scenarios": [
+      "12 adet kampanyalı üründe 2 adet bedava (AC2 ikinci eşik)."
+    ]
+  }
+}

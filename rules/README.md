@@ -36,6 +36,8 @@ rules/
 | `requirement_review` | `requirement-review` | Sonnet 5.5 | çağrı | §8.2a `questions[]`, `verdict` |
 | `consistency_check` | `consistency-check` | Sonnet 5.5 | ajan | §8.2b `findings[]` (kanıtlı) |
 | `case_generation` | `case-generation` | Sonnet 5.5 | çağrı | §7 test case şeması `cases[]` |
+| `case_review` | `case-review` | Sonnet 5.5 | çağrı | 011 F2 (P8) review: `items[12]` (UYGUN / UYGUN_DEGIL / ACIK_BILGI_GEREKLI), `score`, `missing_cases[]`, `remove_or_merge[]` |
+| `case_audit` | `case-audit` | Opus 5.5 | çağrı | 011 F5 (P9) Agent Probe denetimi: `decision` (KABUL / DÜZELTME_GEREKLİ / ENGELLE), `findings[]` (AP-nnn), `missing_scenarios[]`; kurum politikaları `agent-probe/politikalar.md` (varsayılan liste) |
 | `verify_and_map` | `verify-and-map` | Sonnet 5.5 | ajan | §8.4 `step_mapping[]`, `expects[]`, `missing_methods[]` |
 | `verify_and_map_app` | `verify-and-map-app` | Sonnet 5.5 | ajan | 009 §2.6 (app-mcp/Appium): `platform`, `step_mapping[]`, `expects[]`, `missing_methods[]` |
 | `triage` | `triage` | Haiku 5.5 | çağrı | §8.6 `class`, `signals[]`, `rationale` |
@@ -186,8 +188,13 @@ replay adımları da yeniden çalışır.
 
 ## Model ve parametre notları
 
-- Görev başına sabit model kimliği: case üretimi ve ajanlar `claude-sonnet-5-5`; triage ve
-  özetleme `claude-haiku-5-5`. Fiyatlar `models.yaml`'da.
+- Görev başına sabit model kimliği: case üretimi, review (P8) ve ajanlar `claude-sonnet-5-5`;
+  Agent Probe denetimi (P9, `case_audit`) `claude-opus-5-5`; triage ve özetleme `claude-haiku-5-5`.
+  Fiyatlar `models.yaml`'da.
+- Opus 5.5'te düşünme kapatılamaz (`thinking` gönderilmez, uyarlamalı) ve varsayılan çaba
+  `medium`'dur; denetim için `effort: high` açıkça yazılıdır. `max_tokens` ≥ 8192 olduğu için istek
+  akışla gider. Sunucu tarafı ret yedeği (`fallbacks: default`) açıktır; yanıtı başka model
+  üretirse `ai_call.model` onu gösterir.
 - `temperature: 0` tasarım gereği kayıtlıdır ve bundle hash'ine girer; ancak Anthropic API'si
   (2026-10-21) ve kurulu SDK örnekleme parametrelerini kabul etmez, Anthropic adaptörü göndermez.
   Determinizm replay ile sağlanır. Azure OpenAI adaptörü (iskelet) bu değeri kullanacaktır.
@@ -218,6 +225,8 @@ varsa çıkış 1. Bu tablo kayıtla aynı olmalıdır (`test_evaluation_status.
 | `requirement-review` | v3 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `consistency-check` | v4 | **canlı değerlendirme bekliyor** |
 | `case-generation` | v3 | **canlı değerlendirme bekliyor** |
+| `case-review` (011 P8; `case_review` golden'ları) | v1 | **canlı değerlendirme bekliyor** |
+| `case-audit` (011 P9, Agent Probe denetimi; `case_audit` golden'ları) | v1 | **canlı değerlendirme bekliyor** |
 | `verify-and-map` (+ `verify_and_map` golden'ları) | v3 | **canlı değerlendirme bekliyor** |
 | `verify-and-map-app` (+ `verify_and_map_app` golden'ları; 009 mobil/masaüstü) | v1 | **canlı değerlendirme bekliyor** |
 | `triage` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |

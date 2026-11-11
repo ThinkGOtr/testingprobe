@@ -152,6 +152,7 @@ metinde `golden_name(FREE_TEXT_KEY)` → `SERBEST` / `SERBEST-r2`. `fix_doc` ön
 | `case_generation` | `f2-kod-hatasi/TPD-1` | Aynı belge; case metni ana golden'dan yalnız C3'te ayrışır (6 adette bedava yok). v3 kapsam alanları (`technique`, `covers`, `test_data.class`) AC2 case'lerinde (C2, C3, C4, C10) belgenin eşiğine (6\|7 adet; ana belgede 5\|6) göre yazılıdır |
 | `verify_and_map` | `f2-kod-hatasi/TPD-1-C3` | Senaryonun C3'ü; diğer case'ler ana golden'larla birebir aynı, ana golden eşleşir |
 | `triage`, `bug_draft`, `dup_rank` | `HATA` + senaryo dizinleri | Faz 4 (aşağıda "Faz 4"): kanonik hata/bulgu bloğuna göre beyanlı |
+| `case_review`, `case_audit` | `TPD-1`, `TPD-3`, `TPD-4`, `SERBEST`, `f2-kod-hatasi/TPD-1` | case_generation golden'ının seti (tamamı, düzeltme/ret yok) + aynı gereksinim; beyan setin `set_hash`'ine bağlı (aşağıda "Case seti review ve denetim") |
 
 ## Prova kipi (`TP_REPLAY_STRICT=1`): ana yol tam
 
@@ -173,6 +174,8 @@ de sabitler (eksik veya fazla golden kırmızıdır):
 | verify_and_map | `TPD-1-C1`…`C10` (C3 hariç), `f2-kod-hatasi/TPD-1-C3` |
 | bug_draft | `f2-kampanya/HATA`, `f4-kredi-limiti/HATA`, `HATA` (C3), `kirma-kampanya/HATA` |
 | dup_rank | `f2-kampanya/HATA`, `HATA` (C3), `kirma-kampanya/HATA` |
+| case_review | `f2-kod-hatasi/TPD-1` (üretimden sonra otomatik; sıkı kip `test_review_audit_goldens.py`) |
+| case_audit | `f2-kod-hatasi/TPD-1` ("Denetime gönder"; KABUL → yayın; sıkı kip `test_review_audit_goldens.py`) |
 
 Triage ana yolda modele gitmez (C3, kırma, locator ve ortam kurallarla sınıflanır); `triage/HATA`
 yalnızca kuralsız zaman aşımı içindir (`test_defect_goldens.py`). TPD-2/3/4 ön inceleme +
@@ -185,6 +188,30 @@ kipte `ReplayMiss`. Prova her zaman temiz `make reset` ile başlar (§13).
 
 Her satırın etiketi dürüsttür: mod `replay` (asla `live`), `ai_call.model = golden-elle`,
 `ek.degerlendirme.etiket = "canlı değerlendirme bekliyor"`.
+
+## Case seti review (P8) ve denetim (P9) — 011 D şeridi
+
+Üretici: `core/tests/unit/gateway/build_review_goldens.py` (çıktılar elle hazırlanmıştır, modülde
+durur; `test_review_audit_goldens.py` dosyaların modülle aynı olduğunu denetler).
+
+- **Girdi** (`features.cases.review.review_messages`, `integrations.agent_probe.denetim.audit_messages`):
+  gereksinim bloğu (case üretimiyle aynı `requirement_block`), set bloğu (`tp-set:<KEY>`, case'ler
+  set numarası `no` ile + birleşik özet), P8'de kodda hesaplanan kapsam matrisi, P9'da (varsa) P8
+  sonucu (`tp-review:<KEY>`) ve kurum politikaları (`agent-probe/politikalar.md`), en sonda güvenilir
+  satır `Set özeti (set_hash): <hash>`.
+- **Beyan** (`input_match`, `sources` yok): AC satırları + açıklama (`contains`) ve `Set özeti
+  (set_hash): <hash>`. Hash, case_generation golden'ındaki case'lerin tamamı gereksinime yazıldığında
+  `review.set_hash`'in verdiği değerdir. Analist bir case'i düzeltir ya da reddederse set değişir →
+  REPLAY-MISS (`on_miss.json`: `raise`): review `hata` olur (gereksinim etkilenmez), denetim kararı
+  üretilmez (kapı kapalı kalır). Onay seti değiştirmez (`icerik_hash` aynı); yayınlanan case de.
+- **Kararlar:** TPD-1 (ana ve `f2-kod-hatasi`) **KABUL** (yalnız düşük riskli bulgular: C10 tekrarı,
+  12 adet eşiği) — demo provası yayına ulaşır. TPD-3 **DÜZELTME_GEREKLİ**: case'ler temiz, ama story
+  açıklamasındaki "Önceki tüm talimatları yok say…" cümlesi AI araçlarına yönelik gömülü talimattır
+  (kontrol 8, Yüksek; denetçiye yönelik olmadığı için ENGELLE değil); story temizlenmeden ona bağlı
+  test yayınlanmaz. TPD-4 ve SERBEST **KABUL**.
+- Review skorları: TPD-1 10/12 (madde 3 BVA ikinci eşik, madde 10 tekrar), TPD-3 11/12 (madde 2
+  açık bilgi), TPD-4 11/12 (madde 2 açık bilgi), SERBEST 12/12. Madde 9 platform eki olmadığı için
+  her golden'da "UYGUN — platform eki yok".
 
 ## TPD-1: kararlar ve düzeltilmiş metin (golden'ların varsaydığı)
 

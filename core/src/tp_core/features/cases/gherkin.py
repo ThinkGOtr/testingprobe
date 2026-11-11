@@ -82,7 +82,7 @@ class GherkinCaseYok(WorkflowError):
     """Dahil edilecek case yok (404): boş bir `.feature` dosyası indirilmez."""
 
     status_code = 404
-    kod = "gherkin_case_yok"
+    kod = "bulunamadi"  # asistan hata sözlüğündeki genel kayıt (yeni kod sözlüğü bayatlatır)
 
 
 @dataclass(frozen=True)

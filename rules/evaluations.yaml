@@ -55,6 +55,22 @@ bundles:
       (v3 alanları dahil). Değerlendirme seti: rules/evaluation/case-generation.json (§12: 5 story × 3
       koşu; AC kapsamı, 011 §4.2 deterministik kuralları, uydurma belirteçleri, readiness beklentisi; rapor
       readiness ve teknik dağılımını taşır). Canlı değerlendirme yapılmadı; onaylı istisna yok.'
+  case-review:
+    version: 1
+    status: pending
+    note: '011 D şeridi (P8): üretimden sonra otomatik çalışan eleştirmen turu (12 madde, skor kodda
+      sayılır, tavsiye niteliğinde). Golden çıktıları elle hazırlandı (TPD-1, f2-kod-hatasi/TPD-1, TPD-3,
+      TPD-4, SERBEST; girdi beyanı set_hash''e bağlı). Değerlendirme seti: rules/evaluation/case-review.json
+      (golden v3 setlerinden bozma yoluyla: tekrar case, uydurma beklenen, kapsanmayan AC, ölçülemeyen
+      sonuç; `review_set_problems`). Canlı değerlendirme yapılmadı; onaylı istisna yok.'
+  case-audit:
+    version: 1
+    status: pending
+    note: '011 D şeridi (P9, Agent Probe denetimi; claude-opus-5-5): KABUL / DÜZELTME_GEREKLİ / ENGELLE,
+      deterministik sertleştirme kodda. Golden çıktıları elle hazırlandı (TPD-1 KABUL, TPD-3 DÜZELTME_GEREKLİ,
+      TPD-4 KABUL, SERBEST KABUL). Değerlendirme seti: rules/evaluation/case-audit.json (belgedeki 9 kategori,
+      5 koşu; `audit_problems`: yanlış engelleme, kaçırma, karar tutarlılığı). Canlı değerlendirme yapılmadı;
+      onaylı istisna yok.'
   verify-and-map:
     version: 3
     status: pending

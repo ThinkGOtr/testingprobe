@@ -23,6 +23,7 @@ from sqlalchemy import Engine
 import tp_core.features.cases.jobs
 import tp_core.features.publish.jobs  # noqa: F401
 from tp_core.audit import PgCallRecorder
+from tp_core.features.cases import review as review_mod
 from tp_core.features.cases import service as cases_service
 from tp_core.features.publish import service as publish_service
 from tp_core.gateway import build_gateway
@@ -227,8 +228,17 @@ def fake_gateway(engine: Engine, monkeypatch: pytest.MonkeyPatch):
         cases_service.set_gateway_factory(lambda _e: gw)
         return provider
 
+    # Üretimden sonra kuyruğa alınan P8 review'u senaryodaki yanıtları tüketmesin: review geçidi
+    # bu fikstürde bağlı değil (review `hata` olur; tavsiye niteliğinde, gereksinimi etkilemez).
+    # Review'u sınayan testler `review.set_gateway_factory` ile kendi geçidini verir.
+    review_mod.set_gateway_factory(_review_gecidi_yok)
     yield _kur
     cases_service.set_gateway_factory(None)
+    review_mod.set_gateway_factory(None)
+
+
+def _review_gecidi_yok(_engine: Engine) -> Any:
+    raise RuntimeError("bu testte review geçidi bağlı değil")
 
 
 MakeUser = Callable[..., Principal]
@@ -279,14 +289,26 @@ def make_requirement(engine: Engine, make_user: MakeUser):
     return _make
 
 
-def run_jobs(engine: Engine, limit: int = 20) -> list[Any]:
+# Üretimin ardından kuyruğa alınan kalite işleri (011 D: P8 review, P9 denetim).
+KALITE_ISLERI = ["cases.review", "cases.audit"]
+
+
+def run_jobs(engine: Engine, limit: int = 20, *, kalite_dahil: bool = False) -> list[Any]:
+    """Kuyruktaki işleri işler. Kalite işleri (review/denetim) de koşar, ama sonuçları yalnız
+    `kalite_dahil=True` iken döner: üretim/yayın testleri yalnız kendi işlerinin sonucunu sayar."""
     sonuclar = []
     for _ in range(limit):
-        s = process_one(engine, "test-worker")
+        s = process_one(engine, "test-worker", haric=KALITE_ISLERI)
         if s is None:
             break
         sonuclar.append(s)
-    return sonuclar
+    kalite = []
+    for _ in range(limit):
+        s = process_one(engine, "test-worker", turler=KALITE_ISLERI)
+        if s is None:
+            break
+        kalite.append(s)
+    return sonuclar + kalite if kalite_dahil else sonuclar
 
 
 @pytest.fixture

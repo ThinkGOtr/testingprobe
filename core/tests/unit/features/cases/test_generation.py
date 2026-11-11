@@ -85,8 +85,8 @@ def test_replay_ile_uctan_uca_uretim(
             # Girdi golden'ın input_match beyanıyla eşleşir → REPLAY (asla "live").
             assert c["mode"] == "replay"
             assert c["karar"] is None and c["onaylanan_hash"] is None
-        ai = s.scalars(select(AiCall)).all()
-        assert {a.mod for a in ai} == {"replay"} and {a.amac for a in ai} == {"case_generation"}
+        ai = s.scalars(select(AiCall).where(AiCall.amac == "case_generation")).all()
+        assert {a.mod for a in s.scalars(select(AiCall))} == {"replay"} and len(ai) == 1
         assert s.scalar(select(Review.id).where(Review.nesne_turu == "test_case")) is None
         wf = s.execute(text("SELECT durum FROM workflow_instance")).scalars().all()
         assert wf == ["done"]

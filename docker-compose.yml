@@ -45,6 +45,8 @@ x-core-env: &core-env
   TP_TRUSTED_PROXIES: ${TP_TRUSTED_PROXIES:-review-portal}
   TP_MODEL_MODE: ${TP_MODEL_MODE:-auto}
   TP_RULES_DIR: /rules
+  # Denetim kapısı (011 K3): yayın önizlemesi (core-api) ve yayın işi (core-worker) aynı kararı okur.
+  TP_DENETIM_KAPISI: ${TP_DENETIM_KAPISI:-on}
   JIRA_BASE_URL: ${JIRA_BASE_URL:-http://jira-sim:8090}
   # Kullanıcıya gösterilen bağlantıların kökü (tarayıcıdan erişilebilir). Gerçek Jira'da boş
   # bırakılır → JIRA_BASE_URL kullanılır.

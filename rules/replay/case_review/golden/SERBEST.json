@@ -1,0 +1,133 @@
+{
+  "kind": "call",
+  "purpose": "case_review",
+  "golden": "SERBEST",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı (model çıktısı değil; ai_call.model = golden-elle). Girdi beyanı: gereksinimin AC'leri + açıklaması ve setin kimliği (set_hash) — case_generation/SERBEST golden'ındaki case'lerin tamamı, düzeltme ve ret olmadan. Set değişirse REPLAY-MISS (on_miss: raise). Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Üretici: core/tests/unit/gateway/build_review_goldens.py.",
+  "input_match": {
+    "acceptance_criteria": [
+      "AC1: Satırdaki \"Kaldır\" butonuna basıldığında ürün sepetten çıkar ve sepet sayacı azalır.",
+      "AC2: Kaldırma sonrası kampanya indirimi her 6 adette 1 bedava kuralıyla yeniden hesaplanır.",
+      "AC3: Sepette kampanyalı ürün yoksa ve sepet tutarı 750,00 TL altına düşerse \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur."
+    ],
+    "contains": [
+      "Bayi sepetteki bir ürün satırını kaldırabilmeli; toplamlar ve kampanya indirimi yeniden hesaplanmalıdır.",
+      "Set özeti (set_hash): 55ff7611d469f2aed913d28c0cba9ad371d195ce9dbb719861ac156d29e4c076"
+    ]
+  },
+  "output": {
+    "items": [
+      {
+        "no": 1,
+        "title": "İzlenebilirlik",
+        "verdict": "UYGUN",
+        "finding": "AC1 C1, AC2 C2, AC3 C3–C5 ile karşılanıyor.",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 2,
+        "title": "Denklik bölümleri (EP)",
+        "verdict": "UYGUN",
+        "finding": "Kaldırma işleminde girdi alanı yok; geçersiz bölüm DT-R1 (minimum altı) C3 ile sınanıyor.",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 3,
+        "title": "Sınır değerler (BVA)",
+        "verdict": "UYGUN",
+        "finding": "750,00 TL sınırı C4 ile; sınırın hemen altı (BV-2) demo fiyatlarıyla kurulamadığı için gerekçeyle out_of_scope.",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 4,
+        "title": "Karar tablosu (DT)",
+        "verdict": "UYGUN",
+        "finding": "Kampanya × tutar tablosu DT-R1–R3 case'li, DT-R4 gerekçeyle kapsanmadı.",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 5,
+        "title": "Durum geçişleri (ST)",
+        "verdict": "UYGUN",
+        "finding": "Durum geçişi yok; uygulanmaz.",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 6,
+        "title": "Negatif kapsam kararları",
+        "verdict": "UYGUN",
+        "finding": "DT-R1 tested, BV-2 gerekçeyle out_of_scope.",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 7,
+        "title": "Ölçülebilir beklenen sonuç",
+        "verdict": "UYGUN",
+        "finding": "Beklenenler tutar, sayaç ve uyarı metniyle ölçülebilir.",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 8,
+        "title": "Somut ve kaynaklı test verisi",
+        "verdict": "UYGUN",
+        "finding": "Ürün ve adetler demo tohumundan.",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 9,
+        "title": "Platform checklist'i",
+        "verdict": "UYGUN",
+        "finding": "UYGUN — platform eki yok",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 10,
+        "title": "Tekrar eden case",
+        "verdict": "UYGUN",
+        "finding": "Tekrar eden case yok.",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 11,
+        "title": "Öncelik",
+        "verdict": "UYGUN",
+        "finding": "Tutar etkili kurallar P1, ana akış P2.",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 12,
+        "title": "Case bağımsızlığı",
+        "verdict": "UYGUN",
+        "finding": "Her case kendi sepetini kurar.",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      }
+    ],
+    "score": 12,
+    "missing_cases": [],
+    "remove_or_merge": [],
+    "summary": "Set üç kabul kriterini ve kampanya × minimum tutar tablosunu kapsıyor; açık bulunmadı."
+  }
+}

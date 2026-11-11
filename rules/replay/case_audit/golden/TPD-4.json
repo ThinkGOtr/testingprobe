@@ -1,0 +1,32 @@
+{
+  "kind": "call",
+  "purpose": "case_audit",
+  "golden": "TPD-4",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı (model çıktısı değil; ai_call.model = golden-elle). Girdi beyanı: gereksinimin AC'leri + açıklaması ve setin kimliği (set_hash) — case_generation/TPD-4 golden'ındaki case'lerin tamamı, düzeltme ve ret olmadan. Set değişirse REPLAY-MISS (on_miss: raise). Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Üretici: core/tests/unit/gateway/build_review_goldens.py.",
+  "input_match": {
+    "acceptance_criteria": [
+      "AC1: Bayi geçerli kullanıcı adı ve parolayla giriş yaptığında ürün kataloğu açılır.",
+      "AC2: Hatalı parola girildiğinde \"Kullanıcı adı veya parola hatalı\" mesajı gösterilir ve giriş yapılmaz."
+    ],
+    "contains": [
+      "Bayi, kullanıcı adı ve parolasıyla portala giriş yapabilmelidir.",
+      "Set özeti (set_hash): 1875b145758f5eca0a4581c54a4ec0790ed9d484d7258731fb669e3aec5a5e24"
+    ]
+  },
+  "output": {
+    "decision": "KABUL",
+    "decision_rationale": "İki case de AC1–AC2'ye dayanıyor, test verisi demo tohumundan ve sentetik, ortam izinli demo uygulaması. Kayıtlı olmayan kullanıcı adının sonucu kaynakta olmadığı için case yazılmaması doğru (AP-001, Düşük).",
+    "findings": [
+      {
+        "finding_id": "AP-001",
+        "case_ref": null,
+        "control_no": 6,
+        "issue": "Kayıtlı olmayan kullanıcı adı senaryosu yok.",
+        "rationale": "Kaynak sonucu tanımlamıyor; gerekçeyle out_of_scope.",
+        "risk": "Düşük",
+        "suggested_fix": "PO yanıtından sonra case ekleyin."
+      }
+    ],
+    "missing_scenarios": []
+  }
+}

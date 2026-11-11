@@ -30,3 +30,14 @@ def _red_hiz_siniri_sifirla():
     server._son_red.clear()
     yield
     server._son_red.clear()
+
+
+@pytest.fixture(autouse=True)
+def _denetim_kapisi_kapali(monkeypatch: pytest.MonkeyPatch):
+    """MCP yayın testleri onay/hash kapısını sınar; denetim kapısı (011 K3) bağlı ama kapalı.
+    Kapının kendisi `features/cases/test_review_denetim.py`'de sınanır."""
+    from tp_core.features.cases import denetim_akisi
+
+    monkeypatch.setenv("TP_DENETIM_KAPISI", "off")
+    yield
+    denetim_akisi.bind_gate()

@@ -1,0 +1,6 @@
+{
+  "kind": "call",
+  "purpose": "case_review",
+  "policy": "raise",
+  "note": "REPLAY-MISS politikası (golden değildir). Review başka bir setin (ya da düzeltilmiş setin) çıktısı olamaz: girdi beyanı uymazsa geçit ReplayNoOutput fırlatır; review satırı 'hata' olur, gereksinim etkilenmez (tavsiye), portal 'review çalışmadı, yeniden dene' gösterir."
+}

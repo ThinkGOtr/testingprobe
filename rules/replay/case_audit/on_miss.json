@@ -1,0 +1,6 @@
+{
+  "kind": "call",
+  "purpose": "case_audit",
+  "policy": "raise",
+  "note": "REPLAY-MISS politikası (golden değildir). Denetim kararı başka bir setin kararı olamaz: girdi beyanı uymazsa geçit ReplayNoOutput fırlatır; karar üretilmez, yayın kapısı kapalı kalır (fail-closed)."
+}

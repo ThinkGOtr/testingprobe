@@ -8,6 +8,8 @@ Kaynaklar (docs/DEMO-VERISI.md):
 - rules/replay/consistency_check/golden/SERBEST.json → input_match (serbest metin golden'ının girdisi).
 - rules/replay/case_generation/golden/*.json → input_match AC'leri + output.cases + üst düzey
   listeler (`ozet`, şema v3).
+- rules/replay/case_review/golden/*.json, case_audit/golden/*.json → output (011 D şeridi: P8
+  review bulguları ve P9 denetim kararı; mock aynı golden adıyla eşler).
 - Senaryo golden'ları (`golden/<senaryo>/<ad>.json`, ör. ana demo yolu `f2-kod-hatasi/`): aynı
   sözlüklerde `<senaryo>/<ad>` anahtarıyla. Core gibi örnek veri de ana golden'ın girdi beyanı
   uymazsa senaryoları ada göre sıralı dener (`consistency_girdi` / `case_generation.girdi_ac`).
@@ -137,6 +139,8 @@ def main() -> None:
         "consistency_girdi": girdi_aclari("consistency_check"),
         "serbest_girdi": serbest_girdi(),
         "case_generation": case_goldenlari(),
+        "case_review": goldenlar("case_review"),
+        "case_audit": goldenlar("case_audit"),
     }
     json.dump(cikti, sys.stdout, ensure_ascii=False, indent=2, sort_keys=True)
     sys.stdout.write("\n")

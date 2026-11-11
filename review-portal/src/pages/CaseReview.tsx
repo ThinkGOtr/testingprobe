@@ -9,6 +9,7 @@ import { useKisiAdi, useOturum } from "../auth";
 import { BAZ_KAYNAGI } from "../components/BazDegerKarti";
 import { CaseKarti } from "../components/CaseKarti";
 import { GherkinIndir } from "../components/GherkinIndir";
+import { DenetimPaneli, ReviewPaneli } from "../components/KalitePanelleri";
 import { KapsamPaneli } from "../components/KapsamPaneli";
 import { BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, Metrik, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { HedefOlcer } from "../components/Grafikler";
@@ -155,18 +156,41 @@ export function CaseReview() {
       }),
     [id],
   );
+  // P8 review ve P9 denetim (011 D). Uç yoksa (eski core) panel gösterilmez.
+  const yoksaNull = (e: unknown) => {
+    if (e instanceof ApiError && (e.status === 404 || e.status === 501)) return null;
+    throw e;
+  };
+  const review = useVeri(() => api.caseReview(id).catch(yoksaNull), [id]);
+  const denetim = useVeri(() => api.caseDenetim(id).catch(yoksaNull), [id]);
+  const [kaliteIslem, setKaliteIslem] = useState<"review" | "denetim" | null>(null);
+  const [kaliteHata, setKaliteHata] = useState<string | null>(null);
+  const kaliteCalistir = async (tur: "review" | "denetim") => {
+    setKaliteIslem(tur);
+    setKaliteHata(null);
+    try {
+      if (tur === "review") review.setVeri(await api.caseReviewCalistir(id));
+      else denetim.setVeri(await api.caseDenetimGonder(id));
+    } catch (e) {
+      setKaliteHata(e instanceof Error ? e.message : String(e));
+    } finally {
+      setKaliteIslem(null);
+    }
+  };
   const [filtre, setFiltre] = useState<Filtre>("hepsi");
   const kisiAdi = useKisiAdi();
   const sessiz = useGeciktirilmis(() => {
     void caseler.yenile(true);
     void metrik.yenile(true);
     void kapsam.yenile(true);
+    void review.yenile(true);
+    void denetim.yenile(true);
   });
   useOlay((o) => {
     // Başka gereksinimin olayı bu listeyi yenilemez (gereksinim kimliği taşıyorsa).
     if (typeof o.data.requirement_id === "string" && o.data.requirement_id !== id) return;
     sessiz();
-  }, ["case.generated", "case.updated", "requirement.updated", "publish.updated"]);
+  }, ["case.generated", "case.updated", "requirement.updated", "publish.updated", "case.review", "case.audit"]);
 
   const liste = caseler.veri ?? [];
   const ozet = useMemo(() => caseOzeti(liste, metrik.veri), [liste, metrik.veri]);
@@ -324,6 +348,34 @@ export function CaseReview() {
         />
       )}
 
+      {kaliteHata && (
+        <Uyari baslik="İşlem yapılamadı">
+          <span data-testid="kalite-hata">{kaliteHata}</span>
+        </Uyari>
+      )}
+      {review.veri !== null && caseler.veri && liste.length > 0 && (
+        <ReviewPaneli
+          gorunum={review.veri}
+          yukleniyor={review.yukleniyor}
+          hata={review.hata}
+          hataKaynagi={review.hataNesnesi}
+          yenile={() => void review.yenile()}
+          calistir={() => void kaliteCalistir("review")}
+          calisiyor={kaliteIslem === "review"}
+        />
+      )}
+      {denetim.veri !== null && caseler.veri && liste.length > 0 && (
+        <DenetimPaneli
+          gorunum={denetim.veri}
+          yukleniyor={denetim.yukleniyor}
+          hata={denetim.hata}
+          hataKaynagi={denetim.hataNesnesi}
+          yenile={() => void denetim.yenile()}
+          gonder={() => void kaliteCalistir("denetim")}
+          gonderiliyor={kaliteIslem === "denetim"}
+        />
+      )}
+
       <div className="sekmeler sekmeler-yapiskan" role="group" aria-label="Case filtresi">
         {(
           [
@@ -357,8 +409,10 @@ export function CaseReview() {
               tc={c}
               guncellendi={(t) => {
                 caseler.setVeri(liste.map((x) => (x.id === t.id ? t : x)));
-                // Karar/düzeltme kapsamı ve hazır olma dağılımını değiştirir.
+                // Karar/düzeltme kapsamı, hazır olma dağılımını ve setin kimliğini değiştirir.
                 void kapsam.yenile(true);
+                void review.yenile(true);
+                void denetim.yenile(true);
               }}
               yenile={() => void caseler.yenile(true)}
             />

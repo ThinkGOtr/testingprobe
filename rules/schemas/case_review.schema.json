@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tp:case_review",
+  "title": "Case seti review'u (P8, specs/011 F2)",
+  "x-version": 1,
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "minItems": 12,
+      "maxItems": 12,
+      "description": "Tam 12 madde, no 1..12 sırasıyla (prompt'taki checklist).",
+      "items": {
+        "type": "object",
+        "properties": {
+          "no": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "UYGUN",
+              "UYGUN_DEGIL",
+              "ACIK_BILGI_GEREKLI"
+            ]
+          },
+          "finding": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 600
+          },
+          "missing_case": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 400
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "question": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 400
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "owner": {
+            "type": "string",
+            "maxLength": 40
+          }
+        },
+        "required": [
+          "no",
+          "title",
+          "verdict",
+          "finding",
+          "missing_case",
+          "question",
+          "owner"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "score": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 12,
+      "description": "UYGUN madde sayısı."
+    },
+    "missing_cases": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "properties": {
+          "ac_ref": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^AC[0-9]+$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "item": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 12
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400
+          },
+          "technique": {
+            "type": "string",
+            "enum": [
+              "EP",
+              "BVA",
+              "DT",
+              "ST",
+              "PW",
+              "UC",
+              "EG"
+            ]
+          }
+        },
+        "required": [
+          "ac_ref",
+          "item",
+          "description",
+          "technique"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "remove_or_merge": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "properties": {
+          "case_refs": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "remove",
+              "merge"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400
+          }
+        },
+        "required": [
+          "case_refs",
+          "action",
+          "reason"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 600
+    }
+  },
+  "required": [
+    "items",
+    "score",
+    "missing_cases",
+    "remove_or_merge",
+    "summary"
+  ],
+  "additionalProperties": false
+}
