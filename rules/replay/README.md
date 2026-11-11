@@ -174,8 +174,8 @@ de sabitler (eksik veya fazla golden kırmızıdır):
 | verify_and_map | `TPD-1-C1`…`C10` (C3 hariç), `f2-kod-hatasi/TPD-1-C3` |
 | bug_draft | `f2-kampanya/HATA`, `f4-kredi-limiti/HATA`, `HATA` (C3), `kirma-kampanya/HATA` |
 | dup_rank | `f2-kampanya/HATA`, `HATA` (C3), `kirma-kampanya/HATA` |
-| case_review | `f2-kod-hatasi/TPD-1` (üretimden sonra otomatik) |
-| case_audit | `f2-kod-hatasi/TPD-1` ("Denetime gönder"; KABUL → yayın) |
+| case_review | `f2-kod-hatasi/TPD-1` (üretimden sonra otomatik; sıkı kip `test_review_audit_goldens.py`) |
+| case_audit | `f2-kod-hatasi/TPD-1` ("Denetime gönder"; KABUL → yayın; sıkı kip `test_review_audit_goldens.py`) |
 
 Triage ana yolda modele gitmez (C3, kırma, locator ve ortam kurallarla sınıflanır); `triage/HATA`
 yalnızca kuralsız zaman aşımı içindir (`test_defect_goldens.py`). TPD-2/3/4 ön inceleme +

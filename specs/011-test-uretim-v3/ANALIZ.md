@@ -172,6 +172,17 @@ zincir 0021→0022→0023→0024→0025 olarak doğrusallaştırılır.
 `icerik_hash`'lerinin sıralı birleşiminin hash'i. Bir case değişir, eklenir ya da çıkarsa set hash'i
 değişir ve önceki denetim kararı geçersiz olur.
 
+Uygulamada netleşenler (D şeridi):
+- `set_hash` = sha256(`"\n".join(sorted(icerik_hash))`) (`features.cases.review.set_hash(session,
+  req) -> str | None`; v3 case yoksa None). Onay ve yayın seti değiştirmez (`icerik_hash` aynı).
+- İki tabloya ek kolonlar: `durum` (`bekliyor|tamamlandi|hata`), `hata`, `job_id`, `isteyen`,
+  `guncelleme`; `case_set_audit`'te ayrıca `model_karari` (modelin kararı; `karar` deterministik
+  sertleştirmeden sonraki karar, kapı bunu okur) ve `review_id` (girdi olan P8). Uygulama rolü
+  satır silmez (geçmiş korunur).
+- "Denetime gönder" koşulu: güncel setin review'u tamamlanmış **ya da** setin en az bir onaylı v3
+  case'i var; aynı set için review sürüyorsa beklenir.
+- Port hatası/REPLAY-MISS karar üretmez (fail-closed); review hatası gereksinimi etkilemez.
+
 ### 4.4 API (core-api) — yeni uçlar
 
 | Yöntem | Yol | Şerit | Açıklama |

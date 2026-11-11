@@ -553,12 +553,17 @@ def test_input_match_declarations_are_well_formed(purpose: str, path: Path, gold
         assert "contains" not in spec
     for ac in spec.get("acceptance_criteria") or []:
         assert re.match(r"AC\d+: \S", ac), ac
-    if path.stem.startswith("TPD-") and purpose not in ("verify_and_map", "verify_and_map_app"):
+    if purpose in ("case_review", "case_audit"):
+        # 011 D: beyan tüm mesaja bakar (`sources` yok): AC'ler + açıklama + setin kimliği; set
+        # kimliği güvenilir satırdadır, kaynaklı blokta değil (build_review_goldens).
+        assert "sources" not in spec
+        assert any(c.startswith("Set özeti (set_hash): ") for c in spec["contains"]), spec
+    elif path.stem.startswith("TPD-") and purpose not in ("verify_and_map", "verify_and_map_app"):
         assert spec["sources"] == [f"jira:{path.stem.split('-r')[0]}"]
     # Bulguların atıf yaptığı AC'ler beyandaki dokümanda vardır.
     acs = {a.split(":", 1)[0] for a in spec.get("acceptance_criteria") or []}
     for finding in golden["output"].get("findings", []):
-        for ref in re.findall(r"AC\d+", finding["doc_ref"]):
+        for ref in re.findall(r"AC\d+", finding.get("doc_ref", "")):
             assert ref in acs, (finding["id"], ref)
     for q in golden["output"].get("questions", []):
         assert q["ac_ref"] is None or q["ac_ref"] in acs, q
