@@ -294,6 +294,36 @@ portal örnek verisi ve prova bunlara dayanır; yalnız yeni alanlar ve üst dü
   (`review-portal/src/api/mock/golden/kaynaklar.json`) case'lerle birlikte üst düzey listeleri
   (`ozet`) de taşır: `npm run sozlesme:golden`.
 
+## 011 F4: platform ekli üretim ve derinleştirme golden'ları
+
+**Platform ekli üretim** (`case_generation/golden/platform-<ekler>/<story>.json`): analist platform
+seçerse (`requirement.uretim_secenekleri`) çağrının golden adı `secenekler.replay_adi` ile
+`platform-<ekler>/<story>` olur (ekler tekil, sıralı, `-` ile: `platform-web/TPD-4`,
+`platform-api-web/TPD-4`). Ana golden (`TPD-4`) bu girdiye hiç sorulmaz: platform girdisine
+platformsuz case seti dönmez. Girdi beyanı (`input_match.sources`) story bloğuna ek olarak analist
+seçenek bloğunu (`jira:TPD-4:secenekler`) kapsar ve `contains` ile seçimi beyan eder (`Platformlar:
+Web`, `Benimsenen standartlar: WCAG 2.2 AA`); platformsuz TPD-4 girdisinde bu blok olmadığından
+senaryo dizinleri taranırken platform golden'ı eşleşmez. Ek metni güvenilir bölümdedir (blok
+dışı) ve beyanda denetlenmez (prompt metni gibi; ek değişince birebir replay anahtarı değişir,
+golden ad ve beyanla bulunur). Platform seçilip golden'ı olmayan girdi `on_miss.json` (`raise`)
+ile dürüst REPLAY-MISS'tir (sıfır taslak, gereksinim `failed`). Platformsuz serbest seçenekler
+(yalnız roller / kapsam dışı) golden adını değiştirmez; ana golden'ın beyanı seçenek bloğunu
+denetlemez — canlı değerlendirmede ayrı vaka yoktur (açık nokta).
+
+`platform-web/TPD-4`: WCAG 2.2 AA benimsenmiş, tarayıcı/çözünürlük verilmiş Web üretimi. İlk iki
+case ana TPD-4 golden'ıyla birebir (platformdan bağımsız, `platform: null`), iki Web case'i
+benimsenen WCAG maddelerine bağlı; WSTG benimsenmediği için hesap kilidi konusu `observations`'tadır;
+`config_matrix` yalnız parametre taşır; atlanan Web kategorileri `not_covered`'da `Web:<kategori>`.
+
+**Derinleştirme** (`case_deepening/golden/negatif/<story>.json`,
+`case_deepening/golden/teknik-<teknik>/<story>.json`; `deepen.replay_name`): yalnız senaryo
+dizinleri vardır; tür/teknik golden adındadır, girdi beyanı story bloğunu denetler (mevcut set
+bloğu değişken olduğundan beyana girmez). Golden'ların varsaydığı mevcut set story'nin ana
+case_generation golden'ıdır; yeni kimlikler onunla çakışmaz (`negatif/TPD-1`: EP-I3, EG-1/2, Q1,
+A1/A2; `teknik-ep/TPD-4`: EP-I3, EP-I4, Q1, A1). Mevcut set farklıysa ve kimlik çakışırsa kod
+çıktıyı reddeder (`deepen.id_conflicts`; iş `failed`, set değişmez). `on_miss.json` `raise`:
+golden'ı olmayan tür/teknik REPLAY-MISS'tir.
+
 ## Kod üretimi (Demo-B): verify_and_map golden'ları
 
 ### REPLAY'de ajan nasıl oynatılır (tüm yörünge, tur başına değil)
