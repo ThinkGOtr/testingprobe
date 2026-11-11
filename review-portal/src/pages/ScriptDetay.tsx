@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import type { AdimEslemesi, AjanAdimi, BreakVerify, PrCheck, PullRequest, RetNedeni, ScriptDetay as Detay, YerelKontrol, YerelKontrolHatasi, YerelKontrolSinifi } from "../api/types";
-import { ajanAdimiUyarla } from "../api/uyumDemoB";
+import { ajanAdimiUyarla, kontrolAdimiGecti } from "../api/uyumDemoB";
 import { useBildirim } from "../components/Bildirim";
 import { KodGorunumu } from "../components/KodGorunumu";
 import { BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
@@ -320,7 +320,7 @@ export function defectOzeti(yk: YerelKontrol | null): string | null {
  * eski alanlar (`tsc` / `eslint` / `ast_guard`). Eski alanlar boşken Java dilinde adım adları dilden.
  */
 export function kontrolSatirlari(yk: YerelKontrol, dil: Dil | null = null): { ad: string; etiket: string; durum: boolean | null }[] {
-  if (yk.adimlar && yk.adimlar.length) return yk.adimlar.map((a) => ({ ad: a.ad, etiket: KONTROL_ADIMI[a.ad] ?? a.ad, durum: a.durum }));
+  if (yk.adimlar && yk.adimlar.length) return yk.adimlar.map((a) => ({ ad: a.ad, etiket: KONTROL_ADIMI[a.ad] ?? a.ad, durum: kontrolAdimiGecti(a.durum) }));
   const eski: Record<string, boolean | null> = { tsc: yk.tsc, eslint: yk.eslint, ast_guard: yk.ast_guard };
   const adlar = dil === "java" && yk.tsc === null && yk.eslint === null && yk.ast_guard === null ? kontrolAdimlari(dil) : ["tsc", "eslint", "ast_guard"];
   return adlar.map((ad) => ({ ad, etiket: KONTROL_ADIMI[ad] ?? ad, durum: eski[ad] ?? null }));

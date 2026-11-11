@@ -25,7 +25,7 @@ function uygulama(yol: string) {
 const menu = () => screen.getByRole("navigation", { name: "Ana menü" });
 
 describe("Test case'leri ekranı", () => {
-  it("tüm story'lerin güncel case'lerini listeler; satır story'nin case inceleme ekranına götürür", async () => {
+  it("tüm story'lerin güncel case'lerini listeler; satır case inceleme ekranında o case'e götürür", async () => {
     await oturumAc("analist");
     const tum = await api.caseler();
     const guncel = tum.filter((c) => c.durum !== "superseded");
@@ -37,7 +37,8 @@ describe("Test case'leri ekranı", () => {
     expect(screen.getByTestId("case-sayisi")).toHaveTextContent(`${guncel.length} case`);
     const ilk = guncel[0];
     const baglanti = within(tablo).getAllByRole("link", { name: ilk.icerik.title })[0];
-    expect(baglanti).toHaveAttribute("href", `/gereksinimler/${ilk.requirement_id}/caseler`);
+    // QA-O5: doğrudan case kartına (kalıcı çapa `#case-<id>`).
+    expect(baglanti).toHaveAttribute("href", `/gereksinimler/${ilk.requirement_id}/caseler#case-${ilk.id}`);
   });
 
   it("durum ve arama süzgeci listeyi daraltır; boş sonuçta süzgeç temizlenebilir", async () => {

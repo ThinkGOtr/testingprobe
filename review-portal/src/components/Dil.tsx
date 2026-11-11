@@ -21,6 +21,13 @@ export function DilRozeti({ dil, platform }: { dil: Dil | null | undefined; plat
   );
 }
 
+/**
+ * Algılamanın baktığı yerler (core `dil_algila`, 011 §2.4 / K-T7): TS `e2e/tests`, Java `e2e-java`
+ * (`src/test/java`), C# ve Python test projeleri. Algılama sonuçsuzsa (`kaynak="varsayilan"`) mesaj
+ * "depoda test yok" demez: yalnız bu yerlerde elle yazılmış test bulunamadığını söyler.
+ */
+export const ALGILAMA_KAPSAMI = "e2e/, e2e-java/, C# ve Python test projelerinde";
+
 /** Algılamanın dayanağı: "9 elle yazılmış test dosyası" (sayı bilinmiyorsa boş). */
 function dayanak(diller: KodDilleri): string {
   const n = diller.sayilar[diller.algilanan];
@@ -86,7 +93,7 @@ export function DilSecici({
             ? `${secili?.etiket ?? DIL_ETIKETI[deger]} elle seçildi.`
             : diller.kaynak === "algilandi"
               ? `${algilanan} repodan algılandı${dayanak(diller)}.`
-              : `Depoda elle yazılmış test bulunamadı; varsayılan dil ${algilanan}.`}
+              : `${ALGILAMA_KAPSAMI} elle yazılmış test bulunamadı; varsayılan: ${algilanan}.`}
         </span>
         {elle && (
           <button type="button" className="dugme-metin" onClick={algilananaDon} disabled={disabled}>

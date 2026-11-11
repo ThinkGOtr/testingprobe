@@ -676,10 +676,18 @@ export interface YerelKontrolHatasi {
   adim: string | null;
 }
 
-/** Yerel kontrolün bir statik adımı (core `yerel_kontrol.adimlar[]`): `durum` true geçti, false kaldı, null koşmadı/bilinmiyor. */
+/**
+ * Yerel kontrol adımının sonucu. TEK DOĞRU core `codegen/views.py` `_adim_durumu`: dizge
+ * `passed | failed | skipped` (`skipped` = adım koşmadı / sonucu bilinmiyor). Uyum katmanı
+ * (`uyumDemoB.kontrolAdimlariUyarla`) eski/toolchain biçimlerini (boolean, `ok`, `failure` …) de bu üç
+ * değere indirger; ekran yalnız bu kümeyi görür.
+ */
+export type KontrolAdimDurumu = "passed" | "failed" | "skipped";
+
+/** Yerel kontrolün bir statik adımı (core `yerel_kontrol.adimlar[]`: `{ad, durum}`). */
 export interface KontrolAdimi {
   ad: string;
-  durum: boolean | null;
+  durum: KontrolAdimDurumu;
 }
 
 export interface YerelKontrol {
@@ -1275,6 +1283,11 @@ export interface KontrolKulesi {
     kabul_hedefi: number;
     script_ilk_review: number | null;
     script_hedefi: number;
+    /**
+     * 011 MİM-Y2: son script'i doğrulanmamış (`unverified`; C# / Python) birim sayısı — review başarısının
+     * paydasına girmez, ayrı sayılır (core `ai_katkisi.script_dogrulanmamis`). Core vermezse null: gösterilmez.
+     */
+    script_dogrulanmamis?: number | null;
     /** pass@1 (yerel düzeltme turu öncesi) ve düzeltme sonrası ayrı (§12). */
     pass_at_1: number | null;
     duzeltme_sonrasi: number | null;

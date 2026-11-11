@@ -2,10 +2,13 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
-import { CASE_DURUMLARI, type CaseDurumu, type Gereksinim, type TestCase } from "../api/types";
+import { CASE_DURUMLARI, type CaseDurumu, type Gereksinim, type Script, type TestCase } from "../api/types";
+import { caseCapasi } from "../components/CaseKarti";
+import { DilRozeti } from "../components/Dil";
+import { PlatformRozeti } from "../components/Platform";
 import { BosDurum, Cip, DisBaglanti, HataKutusu, Kart, SayfaBasligi, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useVeri } from "../hooks";
-import { CASE_DURUMU, CASE_TURU, RISK } from "../lib/etiketler";
+import { CASE_DURUMU, CASE_TURU, RISK, SCRIPT_DURUMU } from "../lib/etiketler";
 import { guvenliDisAdres, tarih } from "../lib/format";
 
 const TURLER = ["positive", "negative", "boundary"] as const;
@@ -13,20 +16,38 @@ const RISKLER = ["high", "medium", "low"] as const;
 const BOS_FILTRE = { ara: "", durum: "", tur: "", risk: "", gereksinim: "" };
 
 /**
+ * Case'in otomasyon durumu: kapatılmamış script'leri (platform + dil, durum, PR). Veri `GET /scripts`
+ * listesinden istemci tarafında eşlenir (ek uç yok). Liste yüklenemezse null: hücre "—" der, uydurmaz.
+ */
+export function caseScriptleri(scriptler: readonly Script[] | null): Map<string, Script[]> | null {
+  if (!scriptler) return null;
+  const m = new Map<string, Script[]>();
+  for (const s of scriptler) {
+    if (s.durum === "closed") continue;
+    for (const id of s.case_ids) m.set(id, [...(m.get(id) ?? []), s]);
+  }
+  return m;
+}
+
+/**
  * Tüm story'lerin test case'leri tek listede (story'den bağımsız case görünümü). Salt okunur:
- * karar (onay / düzeltme / ret) case'in story'sindeki "Case inceleme" ekranında verilir; satır oraya
- * götürür. Yerini yenisi almış (superseded) sürümler varsayılan olarak gizlidir.
+ * karar (onay / düzeltme / ret) case'in story'sindeki "Case inceleme" ekranında verilir; satır doğrudan
+ * o case'in kartına götürür (`#case-<id>` çapası). Yerini yenisi almış (superseded) sürümler varsayılan
+ * olarak gizlidir. "Otomasyon" sütunu case'in kodunu (platform, dil, durum, PR) gösterir.
  */
 export function TestCaseleri() {
   const caseler = useVeri(() => api.caseler(), []);
   const gereksinimler = useVeri(() => api.gereksinimler(), []);
+  const scriptler = useVeri(() => api.scriptler(), []);
   const [filtre, setFiltre] = useState(BOS_FILTRE);
   const [eskiler, setEskiler] = useState(false);
   const sessizYenile = useGeciktirilmis(() => {
     void caseler.yenile(true);
     void gereksinimler.yenile(true);
+    void scriptler.yenile(true);
   });
-  useOlay(sessizYenile, ["case.generated", "case.updated", "requirement.updated"]);
+  useOlay(sessizYenile, ["case.generated", "case.updated", "requirement.updated", "script.updated", "pr.opened", "pr.merged"]);
+  const otomasyon = useMemo(() => caseScriptleri(scriptler.veri ?? null), [scriptler.veri]);
 
   const gMap = useMemo(() => new Map((gereksinimler.veri ?? []).map((g) => [g.id, g])), [gereksinimler.veri]);
   const tum = caseler.veri ?? [];
@@ -74,7 +95,7 @@ export function TestCaseleri() {
     <>
       <SayfaBasligi
         baslik="Test case'leri"
-        aciklama="Tüm story'lerin test case'leri tek listede. Karar vermek ya da adımları görmek için case'in story'sindeki inceleme ekranına geçin."
+        aciklama="Tüm story'lerin test case'leri tek listede. Karar vermek ya da adımları görmek için başlığa tıklayın: case'in story'sindeki inceleme ekranında o case açılır."
       />
       <Kart>
         {caseler.yukleniyor && !caseler.veri ? (
@@ -177,12 +198,13 @@ export function TestCaseleri() {
                       <th scope="col">Risk</th>
                       <th scope="col">Durum</th>
                       <th scope="col">Jira Test</th>
+                      <th scope="col">Otomasyon</th>
                       <th scope="col">Son karar</th>
                     </tr>
                   </thead>
                   <tbody>
                     {liste.map((c) => (
-                      <CaseSatiri key={c.id} c={c} g={gMap.get(c.requirement_id)} />
+                      <CaseSatiri key={c.id} c={c} g={gMap.get(c.requirement_id)} scriptler={otomasyon ? (otomasyon.get(c.id) ?? []) : null} />
                     ))}
                   </tbody>
                 </table>
@@ -201,7 +223,32 @@ function storyAdi(g: Gereksinim | undefined, c: TestCase | undefined): string {
   return anahtar ?? "Serbest metin gereksinim";
 }
 
-function CaseSatiri({ c, g }: { c: TestCase; g: Gereksinim | undefined }) {
+function OtomasyonHucresi({ scriptler }: { scriptler: Script[] | null }) {
+  if (scriptler === null) return <span className="soluk">—</span>;
+  if (scriptler.length === 0) return <span className="soluk kucuk">Kod yok</span>;
+  return (
+    <ul className="duz-liste otomasyon-liste">
+      {scriptler.map((s) => {
+        const d = SCRIPT_DURUMU[s.durum] ?? { etiket: s.durum, ton: "notr" as const };
+        return (
+          <li key={s.id} className="satir-ogeler kucuk" data-testid="otomasyon-script">
+            <PlatformRozeti platform={s.platform} />
+            <DilRozeti dil={s.dil} platform={s.platform} />
+            <Cip ton={d.ton}>{d.etiket}</Cip>
+            {s.pr && (
+              <span className="mono">
+                PR #{s.pr.number}
+                <span className="gorunmez"> ({s.pr.durum === "merged" ? "birleşti" : s.pr.durum === "open" ? "açık" : "kapalı"})</span>
+              </span>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function CaseSatiri({ c, g, scriptler }: { c: TestCase; g: Gereksinim | undefined; scriptler: Script[] | null }) {
   const durum = CASE_DURUMU[c.durum];
   const risk = RISK[c.icerik.risk];
   const gYolu = `/gereksinimler/${encodeURIComponent(c.requirement_id)}`;
@@ -217,7 +264,7 @@ function CaseSatiri({ c, g }: { c: TestCase; g: Gereksinim | undefined }) {
         #{c.sira_no}
       </td>
       <td data-etiket="Başlık">
-        <Link to={`${gYolu}/caseler`} className="satir-baglanti">
+        <Link to={`${gYolu}/caseler#${encodeURIComponent(caseCapasi(c.id))}`} className="satir-baglanti">
           {c.icerik.title}
         </Link>
         {c.kanal === "ide" && <span className="soluk"> · IDE kanalı</span>}
@@ -229,6 +276,9 @@ function CaseSatiri({ c, g }: { c: TestCase; g: Gereksinim | undefined }) {
       </td>
       <td className="mono" data-etiket="Jira Test">
         {!c.jira_test_key ? "—" : testAdresi ? <DisBaglanti href={testAdresi}>{c.jira_test_key}</DisBaglanti> : c.jira_test_key}
+      </td>
+      <td data-etiket="Otomasyon">
+        <OtomasyonHucresi scriptler={scriptler} />
       </td>
       <td className="tek-satir" data-etiket="Son karar">
         {c.karar_zamani ? tarih(c.karar_zamani) : "—"}

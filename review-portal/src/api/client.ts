@@ -162,7 +162,9 @@ export const api = {
     try {
       return kodDilleriUyarla(await istek<unknown>("GET", "/code/languages", { sorgu: { platform }, kaynak: SCRIPT_KAYNAGI }), platform);
     } catch (e) {
-      if (e instanceof ApiError && e.status === 501) return null;
+      // 501: uç yok (011 öncesi core). 403: uç yalnız engineer|presenter'a açık (011 K-T8); diğer roller
+      // Kod üretimi ekranını zaten görmez — seçici sessizce gizlenir, üretim algılanan dille sürer.
+      if (e instanceof ApiError && (e.status === 501 || e.status === 403)) return null;
       throw e;
     }
   },

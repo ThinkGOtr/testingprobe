@@ -324,9 +324,18 @@ function adimDurumu(x: unknown): boolean | null {
 export function kontrolAdimlariUyarla(x: unknown): KontrolAdimi[] | null {
   if (!Array.isArray(x)) return null;
   const liste = dizi(x)
-    .map((a) => ({ ad: metin(ilk(a, "ad", "name", "adim")), durum: adimDurumu(ilk(a, "durum", "ok", "sonuc", "status")) }))
+    .map((a): KontrolAdimi => {
+      // Core sözleşmesi dizgedir (`passed|failed|skipped`); boolean ve eski dizgeler de aynı kümeye iner.
+      const d = adimDurumu(ilk(a, "durum", "ok", "sonuc", "status"));
+      return { ad: metin(ilk(a, "ad", "name", "adim")), durum: d === true ? "passed" : d === false ? "failed" : "skipped" };
+    })
     .filter((a) => a.ad);
   return liste.length ? liste : null;
+}
+
+/** Adım sonucunun eski (boolean) gösterimi: ekran işareti ve `tsc`/`eslint`/`ast_guard` alanları için. */
+export function kontrolAdimiGecti(d: KontrolAdimi["durum"]): boolean | null {
+  return d === "passed" ? true : d === "failed" ? false : null;
 }
 
 export function yerelKontrolUyarla(x: unknown): YerelKontrol | null {
@@ -335,7 +344,7 @@ export function yerelKontrolUyarla(x: unknown): YerelKontrol | null {
   // 011: `adimlar` listeyse dile göre adım listesidir; eski alanlar listeden de doldurulur.
   const liste = kontrolAdimlariUyarla(x.adimlar);
   // core `script_codegen.yerel_kontrol` (classify.Siniflama.ozet): adım sonuçları `adimlar` sözlüğünde.
-  const adimlar: Ham = liste ? Object.fromEntries(liste.map((a) => [a.ad, a.durum])) : nesne(x.adimlar);
+  const adimlar: Ham = liste ? Object.fromEntries(liste.map((a) => [a.ad, kontrolAdimiGecti(a.durum)])) : nesne(x.adimlar);
   const sonucHam = metin(ilk(x, "sonuc", "status") ?? ilk(x, "run_status") ?? run.status).toLowerCase();
   const sonuc = KONTROL_SONUCU[sonucHam] ?? null;
   const sinifHam = metin(ilk(x, "sinif", "siniflandirma", "karar")).toLowerCase();
@@ -343,7 +352,7 @@ export function yerelKontrolUyarla(x: unknown): YerelKontrol | null {
   const tsc = bool(x.tsc ?? adimlar.tsc);
   const eslint = bool(x.eslint ?? adimlar.eslint);
   const ast = bool(x.ast_guard ?? adimlar.ast_guard);
-  if (!sinif && (tsc === false || eslint === false || ast === false || liste?.some((a) => a.durum === false))) sinif = "derleme";
+  if (!sinif && (tsc === false || eslint === false || ast === false || liste?.some((a) => a.durum === "failed"))) sinif = "derleme";
   if (!sinif && sonuc === "passed") sinif = "gecti";
   return {
     tsc,
@@ -836,6 +845,7 @@ export function kontrolKulesiUyarla(govde: unknown): KontrolKulesi & AsistanliKu
       kabul_hedefi: sayi(ai.kabul_hedefi, 0.7),
       script_ilk_review: sayiYaDaNull(ai.script_ilk_review),
       script_hedefi: sayi(ai.script_hedefi, 0.6),
+      script_dogrulanmamis: sayiYaDaNull(ai.script_dogrulanmamis),
       pass_at_1: sayiYaDaNull(ai.pass_at_1),
       duzeltme_sonrasi: sayiYaDaNull(ai.duzeltme_sonrasi),
       ort_ai_sure_ms: sayiYaDaNull(ai.ort_ai_sure_ms),

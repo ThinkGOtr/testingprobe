@@ -4909,3 +4909,35 @@ td > .satir-baglanti + .cip,
 .dil-rozeti {
   vertical-align: middle;
 }
+
+/* ---------------------------------------------------------------- 011 inceleme turu 1 (D4) */
+
+/* Test case'leri "Otomasyon" sütunu: case'in script'leri sıkı satırlar (her script platform + dil + durum + PR). */
+.otomasyon-liste li {
+  padding: 2px 0;
+  border-top: none;
+}
+
+/* Test case'leri satırından gelinen case kartı (`#case-<id>` çapası, programatik odak): halka görünür. */
+.case[tabindex="-1"]:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Kod üretimi "Üretilen testler" dar ekranda kart: Test hücresi kartın başlığıdır (etiketsiz, tam genişlik);
+   başlık ve dosya yolu sarılır, kesilmez. Özgüllük `.tablo.tablo-yigin tbody td:not(.adim-no)` ile aynı, sonra gelir. */
+@media (max-width: 640px) {
+  .tablo.tablo-yigin tbody td.yigin-baslik {
+    padding: 4px 0 6px;
+  }
+  .tablo-yigin td.yigin-baslik::before {
+    display: none;
+  }
+  /* Hata şeridi kartın sol kenarına taşınır (hücre içi şerit kart kipinde başlık metnine biner). */
+  .kod-tablosu .tablo-yigin tbody tr:has(.cip-hata) {
+    border-left: 3px solid var(--err);
+  }
+  .kod-tablosu .tablo-yigin tbody tr:has(.cip-hata) > td:first-child {
+    box-shadow: none;
+  }
+}

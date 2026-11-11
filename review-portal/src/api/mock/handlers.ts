@@ -65,7 +65,7 @@ import { mockOlayYayinla } from "./olaylar";
 import { javaDosyaYolu, javaTestKodu, uygulamayaCevir } from "./platformlar";
 import { PLATFORMLAR, PLATFORM_ETIKETI, platformUyarla, type Platform } from "../../lib/platform";
 import { DIL_ETIKETI, DILLER, dilUyarla, dogrulanmamisDilMi, gecerliCift, type Dil } from "../../lib/dil";
-import { algilananDil, csharpCiktisi, JAVA_KONTROL_ACIKLAMASI, javaWebCiktisi, javaYerelGecti, kodDilleriYaniti, pythonCiktisi } from "./diller";
+import { algilananDil, csharpCiktisi, JAVA_KONTROL_ACIKLAMASI, javaAdimlari, javaWebCiktisi, javaYerelGecti, kodDilleriYaniti, pythonCiktisi } from "./diller";
 import { asistanMockSifirla, asistanRotalari } from "./asistan";
 import { oneriKuleOlcumu, oneriMockSifirla, oneriRotalari } from "./oneri";
 import type { AsistanliKule } from "../../components/asistan/OnerilerOlcumKarti";
@@ -1005,14 +1005,10 @@ function kodUret(govde: unknown): IsYaniti {
     const golden = KOD_GOLDEN[c.id];
     const java = app ? javaDosyaYolu(platform, c.jira_key ?? "SERBEST", c.sira_no, kisa) : null;
     // Web'de TypeScript dışı dilin dosya yolu/kodu ajan adımlarından (eşleme) şablonla üretilir.
-    const webDilCiktisi = (adimlar: AjanAdimi[]) =>
-      javaWeb
-        ? javaWebCiktisi(c.jira_key, c.sira_no, kisa, c.id, c.icerik.title, adimlar)
-        : dil === "python"
-          ? pythonCiktisi(c.jira_key, c.sira_no, kisa, c.id, c.icerik.title, adimlar)
-          : dil === "csharp"
-            ? csharpCiktisi(c.jira_key, c.sira_no, kisa, c.id, c.icerik.title, adimlar)
-            : null;
+    const webDilCiktisi = (adimlar: AjanAdimi[]) => {
+      const g = { story: c.jira_key, siraNo: c.sira_no, kisa, caseId: c.id, baslik: c.icerik.title, adimlar, caseAdimlari: c.icerik.steps, testKey: c.jira_test_key };
+      return javaWeb ? javaWebCiktisi(g) : dil === "python" ? pythonCiktisi(g) : dil === "csharp" ? csharpCiktisi(g) : null;
+    };
     const onizleme = webDilCiktisi([]);
     const s: ScriptDetay = {
       id,
@@ -1060,7 +1056,8 @@ function kodUret(govde: unknown): IsYaniti {
       ]);
       continue;
     }
-    const adimlar = platform === "web" ? golden.adimlar() : uygulamayaCevir(golden.adimlar(), platform);
+    // Web + Java eşlemesi Java page object adlarıyla saklanır (core `java_eslemesi`: `goto` → `goTo`).
+    const adimlar = platform !== "web" ? uygulamayaCevir(golden.adimlar(), platform) : javaWeb ? javaAdimlari(golden.adimlar()) : golden.adimlar();
     let kontrolKosusu: KosuDetay | null = null;
     arkaPlan([
       ...adimlar.map((a) => () => {
@@ -1138,8 +1135,8 @@ function kodUret(govde: unknown): IsYaniti {
           checks: [
             app
               ? { ad: `local-ci-${platform}`, durum: "passed", zorunlu: true, url: null, aciklama: "javac ✓ · AST koruması ✓ · Appium 3/3 (cihazda)" }
-              : // 011 §2.6: web'de dil ne olursa olsun check adı `local-ci`; açıklama dilin adımlarıyla.
-                { ad: "local-ci", durum: "passed", zorunlu: true, url: null, aciklama: javaWeb ? JAVA_KONTROL_ACIKLAMASI : "tsc ✓ · eslint ✓ · AST koruması ✓ · Playwright 3/3" },
+              : // 011 K-T1: web + TS `local-ci`, web + Java `local-ci-web-java`; açıklama dilin adımlarıyla.
+                { ad: javaWeb ? "local-ci-web-java" : "local-ci", durum: "passed", zorunlu: true, url: null, aciklama: javaWeb ? JAVA_KONTROL_ACIKLAMASI : "tsc ✓ · eslint ✓ · AST koruması ✓ · Playwright 3/3" },
           ],
           forge: "local",
         };
@@ -1593,6 +1590,8 @@ function kontrolKulesi(): KontrolKulesi & AsistanliKule {
       kabul_hedefi: 0.7,
       script_ilk_review: null,
       script_hedefi: 0.6,
+      // core `script_dogrulanmamis`: son script'i doğrulanmamış (unverified) birimler; review paydasına girmez.
+      script_dogrulanmamis: new Set(veri.scriptler.filter((s) => s.durum === "unverified").map((s) => s.case_ids.join(","))).size,
       pass_at_1: scriptler.length ? scriptler.filter((s) => s.pass_at_1).length / scriptler.length : null,
       duzeltme_sonrasi: null,
       // core eşi: REPLAY'de model süresi ölçülmez (0/kayıt süresi ölçüm değil) — yalnız canlı case'lerden; hazirlik
