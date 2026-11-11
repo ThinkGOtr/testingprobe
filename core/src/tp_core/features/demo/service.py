@@ -1,4 +1,4 @@
-"""Sunucu (presenter) demo kontrolleri: locator kırılması ve demo sıfırlaması.
+"""Demo kontrolleri (admin, engineer; `TP_DEMO_MODE=1`): locator kırılması ve demo sıfırlaması.
 
 - `POST /demo/break-locator` → iş `demo.break_locator`: `demo/break-locator` dalı `demo-admin`
   kural bypass'ıyla merge edilir (`integrations.forge_demo.break_locator`; denetim "demo
@@ -469,7 +469,7 @@ def _web_ve_ci(engine: Engine, forge: Any, sha: str, eylem: str, isteyen: str) -
 
 
 def run_break(ctx: JobContext, engine: Engine) -> dict[str, Any]:
-    isteyen = str((ctx.yuk or {}).get("isteyen") or "presenter")
+    isteyen = str((ctx.yuk or {}).get("isteyen") or "system")
     forge = _forge()
     if not callable(getattr(forge, "merge_pr_detailed", None)):
         raise PermanentJobError("forge demo kırılmasını desteklemiyor (merge_pr_detailed yok)")
@@ -638,7 +638,7 @@ def _prlari_kapat(engine: Engine, forge: Any, isteyen: str) -> list[dict[str, An
 
 
 def run_reset(ctx: JobContext, engine: Engine) -> dict[str, Any]:
-    isteyen = str((ctx.yuk or {}).get("isteyen") or "presenter")
+    isteyen = str((ctx.yuk or {}).get("isteyen") or "system")
     forge = _forge()
     yerel = _yerel_forge_mu(forge)
     try:

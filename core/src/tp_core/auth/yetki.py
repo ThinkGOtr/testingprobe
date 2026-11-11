@@ -15,13 +15,13 @@ import logging
 from collections.abc import Callable
 from typing import Final
 
-from fastapi import Depends, Request
+from fastapi import Request
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from tp_core.api.errors import KodluHata
 from tp_core.audit.chain import append_audit
-from tp_core.auth.deps import DbSession, current_user
+from tp_core.auth.deps import CurrentUser, DbSession
 from tp_core.workflow.service import Principal
 
 log = logging.getLogger(__name__)
@@ -68,7 +68,8 @@ IZINLER: Final[dict[str, frozenset[str]]] = {
     # aksiyonlar
     "requirement.import": _r(ANALYST),
     "requirement.review": _r(ANALYST),
-    "requirement.doc_fix": _r(PO),
+    # Serbest metin gereksiniminde Jira kaydı yok: PO teyidi portaldan verilir (K6 istisnası).
+    "requirement.po_approve_free_text": _r(PO),
     "baseline.manage": _r(PO),
     "case.generate": _r(TESTER),
     "case.decide": _r(TESTER),
@@ -103,7 +104,8 @@ IZINLER: Final[dict[str, frozenset[str]]] = {
 
 # Durum makinesi kapılarında karar verebilecek roller (derinlemesine savunma; workflow/states.py).
 KARAR_IZNI: Final[dict[str, str]] = {
-    "requirement": "requirement.review",  # PO teyidi yalnız Jira kanalından (K6)
+    # PO teyidi: Jira kanalında (kullanıcısız) etiketle; portalda yalnız serbest metin (po).
+    "requirement": "requirement.po_approve_free_text",
     "consistency_finding": "requirement.review",
     "test_case": "case.decide",  # son onay: case.approve (S2)
     "bug_draft": "bug.decide",
@@ -163,13 +165,33 @@ def izin(izin_adi: str) -> Callable[..., Principal]:
     """FastAPI bağımlılığı: oturumdaki rol `izin_adi`'na sahip değilse 403 + `authz.denied`."""
     roller_icin(izin_adi)  # tanımsız izin modül yüklenirken yakalanır
 
-    def kontrol(
-        request: Request, session: DbSession, user: Principal = Depends(current_user)
-    ) -> Principal:
+    def kontrol(request: Request, session: DbSession, user: CurrentUser) -> Principal:
         if not izinli(user.rol, izin_adi):
             raise reddet(session, user, izin_adi, "rol", request.url.path)
         return user
 
     kontrol.__name__ = f"izin_{izin_adi.replace('.', '_')}"
     kontrol.izin_adi = izin_adi  # type: ignore[attr-defined]  # katalog testi okur
+    return kontrol
+
+
+def izinlerden_biri(*izin_adlari: str) -> Callable[..., Principal]:
+    """FastAPI bağımlılığı: rol verilen izinlerden en az birine sahip değilse 403 + `authz.denied`.
+
+    İzni gövdeye göre değişen uçlar içindir (ör. `POST /ci/trigger`: `tetik`e göre
+    `run.trigger_scheduled` ya da `run.trigger_manual`); uç kesin izni ayrıca `reddet` ile denetler.
+    """
+    if not izin_adlari:
+        raise ValueError("en az bir izin verilmeli")
+    for ad in izin_adlari:
+        roller_icin(ad)
+    birlesik = "|".join(izin_adlari)
+
+    def kontrol(request: Request, session: DbSession, user: CurrentUser) -> Principal:
+        if not any(izinli(user.rol, ad) for ad in izin_adlari):
+            raise reddet(session, user, birlesik, "rol", request.url.path)
+        return user
+
+    kontrol.__name__ = "izin_" + "_veya_".join(ad.replace(".", "_") for ad in izin_adlari)
+    kontrol.izin_adlari = izin_adlari  # type: ignore[attr-defined]  # katalog testi okur
     return kontrol

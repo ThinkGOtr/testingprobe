@@ -1,4 +1,4 @@
-"""GET /events — SSE olay akışı (oturum gerekir).
+"""GET /events — SSE olay akışı (oturum ve `events.read` izni gerekir; auditor/viewer hariç).
 
 İlk olay `stream.open`'dır (abonelik hazır). Sonra Postgres NOTIFY ile gelen her olay
 `event: <ad>` + `data: <JSON>` olarak akar; 15 sn'de bir ping (nginx 30 sn okuma zaman aşımı).
@@ -21,16 +21,18 @@ import json
 import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 
-from tp_core.auth.deps import Codec, CurrentUser
+from tp_core.auth.deps import Codec
 from tp_core.auth.sessions import SessionData, cookie_name, session_valid
+from tp_core.auth.yetki import izin
 from tp_core.config import get_settings
 from tp_core.events.listener import Broadcaster, libpq_dsn
 from tp_core.models import new_session
+from tp_core.workflow.service import Principal
 
 router = APIRouter(tags=["events"])
 log = logging.getLogger(__name__)
@@ -132,9 +134,11 @@ async def _akis(
 
 
 @router.get("/events")
-async def events(request: Request, user: CurrentUser, codec: Codec) -> EventSourceResponse:
+async def events(
+    request: Request, user: Annotated[Principal, Depends(izin("events.read"))], codec: Codec
+) -> EventSourceResponse:
     veri = codec.loads(request.cookies.get(cookie_name(), ""))
-    if veri is None:  # CurrentUser zaten doğruladı; yine de tür daraltma için
+    if veri is None:  # izin bağımlılığı oturumu zaten doğruladı; yine de tür daraltma için
         raise HTTPException(401, "Oturumunuz geçersiz veya süresi dolmuş")
     b = broadcaster_for(request)
     try:

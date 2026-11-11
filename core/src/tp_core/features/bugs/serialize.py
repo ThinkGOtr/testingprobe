@@ -20,6 +20,24 @@ from tp_core.features.bugs.service import _requirement_id, mod_label_of
 from tp_core.models import AppUser, BugDraft, Review
 from tp_core.models.bugs_feature import BugDraftEk
 
+# Developer yalnız Jira'ya açılmış ya da mevcut kayda bağlanmış bug'ları görür (specs/012-rol-yetki
+# §4.2 `bug.read`). `new` ve `link` kararlarının ikisi de yayınla `published` olur.
+DEVELOPER_BUG_DURUMLARI = frozenset({"published"})
+
+
+def gorunur_durumlar(rol: str | None) -> frozenset[str] | None:
+    """Rolün görebildiği bug taslağı durumları (None = kısıt yok)."""
+    from tp_core.auth import yetki
+
+    if rol is not None and yetki.normalize_rol(rol) == yetki.DEVELOPER:
+        return DEVELOPER_BUG_DURUMLARI
+    return None
+
+
+def gorunur_mu(rol: str | None, durum: str) -> bool:
+    izinli = gorunur_durumlar(rol)
+    return izinli is None or durum in izinli
+
 
 def _iso(v: Any) -> str | None:
     return v.isoformat() if v is not None else None
@@ -122,8 +140,13 @@ def bug_draft_list(
     s: Session,
     requirement_id: uuid.UUID | None = None,
     failure_id: uuid.UUID | None = None,
+    *,
+    rol: str | None = None,
 ) -> list[dict[str, Any]]:
     q = select(BugDraft).order_by(BugDraft.olusturma.desc())
+    durumlar = gorunur_durumlar(rol)
+    if durumlar is not None:
+        q = q.where(BugDraft.durum.in_(sorted(durumlar)))
     if failure_id is not None:
         # Kendi taslağı ya da aynı hata imzasıyla mevcut taslağa eklenmiş başarısızlık.
         ekli = select(BugDraftEk.bug_draft_id).where(

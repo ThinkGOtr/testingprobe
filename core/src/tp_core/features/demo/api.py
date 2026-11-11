@@ -1,10 +1,13 @@
-"""Sunucu demo kontrolleri (MIMARI-SOZLESME §5).
+"""Demo kontrolleri (MIMARI-SOZLESME §5; specs/012-rol-yetki §6).
 
-| Yöntem | Yol | Rol |
+| Yöntem | Yol | İzin |
 |---|---|---|
-| POST | `/demo/break-locator?zorla=` | presenter — locator kırılması (demo-admin bypass'ı) |
-| POST | `/demo/reset` | presenter — main → baseline, tp/* PR kapat, uygulama, AI Bug silme |
-| GET  | `/demo/status` | herkes — forge main/testid, uygulama commit'i, `onarim_on_kosulu` |
+| POST | `/demo/break-locator?zorla=` | `demo.manage` — locator kırılması (demo-admin bypass'ı) |
+| POST | `/demo/reset` | `demo.manage` — main → baseline, tp/* PR kapat, uygulama, AI Bug silme |
+| GET  | `/demo/status` | `dashboard.read` — forge main/testid, uygulama commit'i, `onarim_on_kosulu` |
+
+Yazan uçlar yalnız `TP_DEMO_MODE=1` iken çalışır; kapalıyken izinli rol de 403 (`yetki_yok`,
+denetimde `neden: demo_kapali`) alır. `/demo/status` yanıtı `demo_modu` alanını taşır.
 
 Kırılmadan önce yeşil temel koşu yoksa kırılma 409 + yönerge döner (`zorla=true` bilerek atlar):
 locator onarımı "son yeşil" kanıt ister. GitHub kipinde (TP_FORGE=github) kırılma/sıfırlama insan
@@ -13,17 +16,19 @@ olur ve 409 Türkçe neden döner (`/demo/status` → `locator_demo.kip`).
 
 Forge yazımı yalnızca core-worker'dadır: uçlar işi kuyruğa alır ve en çok `BEKLEME_S` bekler
 (bitti → 200 sonuç, sürüyor → 202 `{job_id}`, başarısız → 409 Türkçe neden).
-"""
+"""  # noqa: E501
 
 from __future__ import annotations
 
 import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.concurrency import run_in_threadpool
 
-from tp_core.auth.deps import CurrentUser, require_role
+from tp_core.auth.deps import DbSession
+from tp_core.auth.yetki import izin, reddet
+from tp_core.config import get_settings
 from tp_core.db import get_engine
 from tp_core.features.demo import service
 from tp_core.models import session_scope
@@ -31,7 +36,21 @@ from tp_core.workflow.service import Principal
 
 router = APIRouter(tags=["demo"])
 
-Presenter = Annotated[Principal, Depends(require_role("presenter"))]
+Okur = Annotated[Principal, Depends(izin("dashboard.read"))]
+
+
+def demo_yoneticisi(
+    request: Request,
+    session: DbSession,
+    user: Annotated[Principal, Depends(izin("demo.manage"))],
+) -> Principal:
+    """`demo.manage` + demo kipi (`TP_DEMO_MODE=1`); kapalıysa 403 ve `authz.denied`."""
+    if not get_settings().demo_mode:
+        raise reddet(session, user, "demo.manage", "demo_kapali", request.url.path)
+    return user
+
+
+DemoYoneticisi = Annotated[Principal, Depends(demo_yoneticisi)]
 BEKLEME_S = 20.0  # portal nginx /api/ zaman aşımı 30 sn
 
 
@@ -53,7 +72,9 @@ async def _calistir(istek: Any, user: Principal, response: Response) -> dict[str
 
 
 @router.post("/demo/break-locator")
-async def break_locator(user: Presenter, response: Response, zorla: bool = False) -> dict[str, Any]:
+async def break_locator(
+    user: DemoYoneticisi, response: Response, zorla: bool = False
+) -> dict[str, Any]:
     def istek(s: Any, u: Principal) -> dict[str, Any]:
         return service.request_break(s, u, zorla=zorla)
 
@@ -61,11 +82,11 @@ async def break_locator(user: Presenter, response: Response, zorla: bool = False
 
 
 @router.post("/demo/reset")
-async def reset(user: Presenter, response: Response) -> dict[str, Any]:
+async def reset(user: DemoYoneticisi, response: Response) -> dict[str, Any]:
     return await _calistir(service.request_reset, user, response)
 
 
 @router.get("/demo/status")
-def status(_user: CurrentUser) -> dict[str, Any]:
+def status(_user: Okur) -> dict[str, Any]:
     with session_scope() as s:
-        return service.durum(session=s)
+        return {**service.durum(session=s), "demo_modu": get_settings().demo_mode}

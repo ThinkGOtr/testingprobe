@@ -18,8 +18,9 @@ Kaynak sırası:
 ANSI/kontrol karakteri ve GitHub zaman damgası temizliği → `scrub_secret_patterns` + çalışma anı
 sır değerleri → `ara` (sabit metin, ±3 bağlam, ≤ 50 eşleşme) ya da son `satir` satır → ≤ 16 KB.
 Maskeleme ve `<untrusted kind=ci_log>` sarma ortak sarmalayıcıdadır (`tools.base`; araç kendisi
-maskelemez — ikinci maskeleme yer tutucuları etkisizleştirir). Rol kısıtı yok (koşu artefaktı ucu
-tüm oturumlara açık). Hata → "log alınamadı"; iş düşmez.
+maskelemez — ikinci maskeleme yer tutucuları etkisizleştirir). Rol kısıtı `run.artifacts`
+(specs/012-rol-yetki §4.2: ham log artefakttır; auditor ve viewer göremez). Hata → "log
+alınamadı"; iş düşmez.
 """
 
 from __future__ import annotations
@@ -311,6 +312,10 @@ def ci_log(baglam: AracBaglami, **arg: Any) -> AracSonucu:
     bilinmeyen = set(arg) - {"run_id", "ara", "satir"}
     if bilinmeyen:
         raise AracHatasi("Yalnız 'run_id', 'ara' ve 'satir' kabul edilir.")
+    from tp_core.auth import yetki
+
+    if not yetki.izinli(baglam.rol, "run.artifacts"):
+        raise AracHatasi("Koşu logu rolünüze açık değil (ham artefakt; run.artifacts).")
     run_id = _run_id(arg.get("run_id"))
     ara = _ara(arg.get("ara"))
     satir = _satir(arg.get("satir"))

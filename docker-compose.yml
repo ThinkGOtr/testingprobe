@@ -60,6 +60,9 @@ x-core-env: &core-env
   TP_JIRA_BOT_ACCOUNT_IDS: ${TP_JIRA_BOT_ACCOUNT_IDS:-}
   # YALNIZ TEST: 1 = ürünün Jira hesabının PO etiketi de onay sayılır (varsayılan kapalı)
   TP_TEST_TEK_HESAP: ${TP_TEST_TEK_HESAP:-0}
+  # Ortam ve demo kipi (specs/012-rol-yetki): prod + demo kipi birlikte verilirse çekirdek başlamaz.
+  TP_ORTAM: ${TP_ORTAM:-dev}
+  TP_DEMO_MODE: ${TP_DEMO_MODE:-0}
   XRAY_BASE_URL: ${XRAY_BASE_URL:-http://jira-sim:8090/xray}
   TP_FORGE: ${TP_FORGE:-local}
   TP_FORGE_PATH: /forge/demo-app.git

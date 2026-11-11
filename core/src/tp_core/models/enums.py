@@ -2,7 +2,11 @@
 
 from tp_core.workflow.states import KARARLAR, MACHINES, RET_NEDENLERI
 
-ROLLER = frozenset({"analyst", "engineer", "presenter", "po", "tester"})
+# TP rolleri (specs/012-rol-yetki §3). Tek kaynak `tp_core.auth.yetki.ROLLER`'dır; burada içe
+# aktarma döngüsü olmasın diye aynen tekrarlanır (eşitliği test_yetki doğrular). 0021.
+ROLLER = frozenset(
+    {"admin", "auditor", "analyst", "po", "tester", "engineer", "developer", "viewer"}
+)
 REQUIREMENT_KAYNAK = frozenset({"jira", "free_text"})
 URETIM_MODU = frozenset({"live", "replay", "replay_miss"})
 CASE_KANAL = frozenset({"portal", "ide"})

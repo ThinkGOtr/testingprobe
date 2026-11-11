@@ -12,7 +12,7 @@
 Öneri uçları (`/assistant/suggestions…`) Şerit R'nin `oneri_api.router`'ındadır; burada
 dahil edilir.
 
-- Tüm uçlar `CurrentUser` (yalnız çerez; bearer → 401). Rol kısıtı yok: herkes yalnız kendi
+- Tüm uçlar `assistant.use` (tüm roller; yalnız çerez; bearer → 401): herkes yalnız kendi
   kaynağını görür; başkasının ya da silinmiş sohbetin kaynağına her uç 404 (`ust_mesaj_id` dahil).
 - core-api model anahtarını ve kipini **bilmez** (İlke II): durum worker'ın yazdığı `asistan_durum`
   satırından okunur. Model gerekip gerekmediğine (sözlük/şablon) worker karar verir.
@@ -31,15 +31,16 @@ import logging
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from tp_core.api.errors import IC_HATA, SUNUCU_HATASI_METNI, KodluHata
-from tp_core.auth.deps import CurrentUser, DbSession
+from tp_core.auth.deps import DbSession
+from tp_core.auth.yetki import izin
 from tp_core.events import publish_tx
 from tp_core.features.assistant import budget, hiz
 from tp_core.features.assistant import oneri_api as _oneri_api
@@ -62,6 +63,9 @@ from tp_core.workflow.service import Principal
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["assistant"])
+
+# Asistan ve öneriler tüm rollere açık (`assistant.use`); araçlar rolün okuma izinleriyle süzülür.
+AsistanKullanicisi = Annotated[Principal, Depends(izin("assistant.use"))]
 
 SOHBET_LISTE_AZAMI = 50
 KALP_ATISI_AZAMI_S = 120
@@ -202,7 +206,7 @@ def _degerlendirme() -> dict[str, Any] | None:
 
 
 @router.get("/assistant/status")
-def durum(session: DbSession, user: CurrentUser) -> dict[str, Any]:
+def durum(session: DbSession, user: AsistanKullanicisi) -> dict[str, Any]:
     satir = session.get(AsistanDurum, 1)
     simdi = _db_simdi(session)
     neden = hizmet_nedeni(satir, simdi)
@@ -222,7 +226,7 @@ def durum(session: DbSession, user: CurrentUser) -> dict[str, Any]:
 
 
 @router.get("/assistant/conversations")
-def sohbetler(session: DbSession, user: CurrentUser) -> list[dict[str, Any]]:
+def sohbetler(session: DbSession, user: AsistanKullanicisi) -> list[dict[str, Any]]:
     satirlar = (
         session.query(AsistanSohbet)
         .filter(AsistanSohbet.kullanici_id == user.id, AsistanSohbet.silindi.is_(False))
@@ -235,7 +239,7 @@ def sohbetler(session: DbSession, user: CurrentUser) -> list[dict[str, Any]]:
 
 @router.post("/assistant/conversations", status_code=201)
 def sohbet_olustur(
-    session: DbSession, user: CurrentUser, govde: SohbetOlustur | None = None
+    session: DbSession, user: AsistanKullanicisi, govde: SohbetOlustur | None = None
 ) -> dict[str, Any]:
     baslik = (govde.baslik if govde else None) or None
     if baslik:
@@ -253,7 +257,7 @@ def sohbet_olustur(
 
 
 @router.delete("/assistant/conversations/{sohbet_id}", status_code=204)
-def sohbet_sil(sohbet_id: uuid.UUID, session: DbSession, user: CurrentUser) -> Response:
+def sohbet_sil(sohbet_id: uuid.UUID, session: DbSession, user: AsistanKullanicisi) -> Response:
     """Yumuşak silme. Sohbetin açık (`pending`/`running`) cevapları aynı transaction'da
     iptal edilir: silinen sohbetin mesajına iptal ucu 404 döndüğünden kullanıcı onları başka
     yoldan durduramaz (koşan iş geçitte `should_stop` ile sonraki turda durur)."""
@@ -287,7 +291,9 @@ def sohbet_sil(sohbet_id: uuid.UUID, session: DbSession, user: CurrentUser) -> R
 
 
 @router.get("/assistant/conversations/{sohbet_id}/messages")
-def mesajlar(sohbet_id: uuid.UUID, session: DbSession, user: CurrentUser) -> list[dict[str, Any]]:
+def mesajlar(
+    sohbet_id: uuid.UUID, session: DbSession, user: AsistanKullanicisi
+) -> list[dict[str, Any]]:
     s = _sohbet(session, sohbet_id, user)
     satirlar = (
         session.query(AsistanMesaj)
@@ -446,7 +452,7 @@ def _hizmet_kontrol(session: Session) -> None:
 
 @router.post("/assistant/conversations/{sohbet_id}/messages", status_code=202)
 def soru_gonder(
-    sohbet_id: uuid.UUID, govde: SoruGonder, session: DbSession, user: CurrentUser
+    sohbet_id: uuid.UUID, govde: SoruGonder, session: DbSession, user: AsistanKullanicisi
 ) -> dict[str, str]:
     derin = govde.ust_mesaj_id is not None
     soru = govde.soru
@@ -553,7 +559,7 @@ def soru_gonder(
 
 
 @router.get("/assistant/messages/{mesaj_id}")
-def mesaj(mesaj_id: uuid.UUID, session: DbSession, user: CurrentUser) -> dict[str, Any]:
+def mesaj(mesaj_id: uuid.UUID, session: DbSession, user: AsistanKullanicisi) -> dict[str, Any]:
     return mesaj_ozeti(_mesaj(session, mesaj_id, user))
 
 
@@ -573,7 +579,7 @@ def _iptal_et(session: Session, m: AsistanMesaj, user: Principal) -> None:
 
 
 @router.post("/assistant/messages/{mesaj_id}/cancel")
-def iptal(mesaj_id: uuid.UUID, session: DbSession, user: CurrentUser) -> dict[str, Any]:
+def iptal(mesaj_id: uuid.UUID, session: DbSession, user: AsistanKullanicisi) -> dict[str, Any]:
     """`pending` → `iptal` (iş kuyruktan düşer, ücret yok); `running` → `iptal` (worker tur
     başında durur, harcanan yazılır; süren iş bitene kadar sayaçlarda kalır). İdempotent."""
     m = _mesaj(session, mesaj_id, user, kilitle=True)
@@ -589,7 +595,7 @@ def iptal(mesaj_id: uuid.UUID, session: DbSession, user: CurrentUser) -> dict[st
 
 @router.post("/assistant/messages/{mesaj_id}/feedback")
 def geri_bildirim(
-    mesaj_id: uuid.UUID, govde: MesajGeriBildirim, session: DbSession, user: CurrentUser
+    mesaj_id: uuid.UUID, govde: MesajGeriBildirim, session: DbSession, user: AsistanKullanicisi
 ) -> dict[str, Any]:
     m = _mesaj(session, mesaj_id, user)
     if m.rol != "assistant":

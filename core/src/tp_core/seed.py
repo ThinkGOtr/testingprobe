@@ -1,4 +1,8 @@
-"""Deterministik başlangıç verisi: 5 demo kullanıcısı + zincirli `seed.applied` denetim kaydı."""
+"""Deterministik başlangıç verisi: rol başına bir demo kullanıcısı + `seed.applied` denetim kaydı.
+
+Roller specs/012-rol-yetki §3'tedir. Eski `sunucu` (presenter) hesabı 0021 göçüyle `admin` olur ve
+kurulumda kalır; yeni kurulumlarda Sistem Yöneticisi hesabı `yonetici`dir.
+"""
 
 import uuid
 from typing import Final
@@ -15,19 +19,26 @@ NAMESPACE_TP: Final = uuid.UUID("6f1d2c3a-8b4e-5f60-9a7b-1c2d3e4f5a6b")
 KULLANICILAR: Final[tuple[tuple[str, str], ...]] = (
     ("analist", "analyst"),
     ("muhendis", "engineer"),
-    ("sunucu", "presenter"),
+    ("yonetici", "admin"),
     ("po", "po"),
     ("testci", "tester"),
+    ("denetci", "auditor"),
+    ("gelistirici", "developer"),
+    ("izleyici", "viewer"),
 )
 
 # Portalda gösterilen kişi adları (demo varsayılanı; `TP_GORUNEN_ADLAR` ile değiştirilir). Ad
-# yalnızca gösterim içindir: yetki her zaman roldedir. Boş ad = yalnızca rol etiketi ("Sunucu").
+# yalnızca gösterim içindir: yetki her zaman roldedir. Boş ad = yalnızca rol etiketi
+# ("Sistem Yöneticisi").
 GORUNEN_ADLAR: Final[dict[str, str]] = {
     "analist": "Cengizhan Gunaydin",
     "po": "Cengizhan Gunaydin",
     "muhendis": "Gokhan Sipahi",
     "testci": "Fatih Arslan",
-    "sunucu": "",
+    "yonetici": "",
+    "denetci": "",
+    "gelistirici": "",
+    "izleyici": "",
 }
 
 

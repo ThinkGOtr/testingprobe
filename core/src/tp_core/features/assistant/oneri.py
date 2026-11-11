@@ -49,11 +49,14 @@ import yaml
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 
+from tp_core.auth import yetki as _yetki
 from tp_core.workflow.service import Principal
 
 log = logging.getLogger(__name__)
 
-ROLLER: Final = ("analyst", "po", "engineer", "tester", "presenter")
+# Öneri kurallarının rolleri: izin kataloğunun rolleri (specs/012-rol-yetki §3); kaldırılan
+# `presenter` kural dosyasında kabul edilmez (yerine `admin`).
+ROLLER: Final = tuple(sorted(_yetki.ROLLER))
 OPERATORLER: Final = ("_in", "_esit", "_gte", "_lte", "_var", "_yok")
 EYLEM_TURLERI: Final = ("rota", "jira_taslak", "jira_yorum", "jira_kaydi", "bilgi")
 OLGU_TURLERI: Final = (
@@ -540,6 +543,27 @@ def _gecerli_anahtar(deger: Any) -> str | None:
     return deger if isinstance(deger, str) and JIRA_ANAHTARI.match(deger) else None
 
 
+# Öneri varlık türü → okuma izni (specs/012-rol-yetki §4.2; `probe_get` ile aynı kural).
+VARLIK_IZNI: Final[dict[str, str]] = {
+    "requirement": "requirement.read",
+    "consistency_finding": "requirement.read",
+    "test_case": "case.read",
+    "script": "code.read",
+    "run": "run.read",
+    "failure": "failure.read",
+    "bug_draft": "bug.read",
+}
+
+
+def _okunabilir(rol: str, tur: str, obj: Any) -> bool:
+    from tp_core.features.assistant.tools.probe import gorunur_mu
+
+    if not _yetki.izinli(rol, VARLIK_IZNI[tur]):
+        return False
+    probe_turu = {"test_case": "case"}.get(tur, tur)
+    return gorunur_mu(rol, probe_turu, obj)
+
+
 def _model(tur: str) -> Any:
     from tp_core import models as m
 
@@ -762,7 +786,7 @@ def olgular(
     Varlık okuma kuralı `probe_get` ile aynıdır (detay uçları tüm rollere açık); rol oturumdan
     gelir ve bilinmeyen rol hiçbir şey okuyamaz. Varlık yoksa `VarlikBulunamadi`.
     """
-    if kullanici.rol not in ROLLER:
+    if _yetki.normalize_rol(kullanici.rol) not in ROLLER:
         raise VarlikBulunamadi("rol tanınmıyor")
     simdi = simdi or datetime.now(UTC)
     if varlik_tur is None:
@@ -770,7 +794,7 @@ def olgular(
     if varlik_tur not in VARLIK_TURLERI or varlik_id is None:
         raise VarlikBulunamadi("varlık türü veya kimliği geçersiz")
     obj = session.get(_model(varlik_tur), varlik_id)
-    if obj is None:
+    if obj is None or not _okunabilir(kullanici.rol, varlik_tur, obj):
         raise VarlikBulunamadi("varlık bulunamadı")
     if varlik_tur == "requirement":
         return _requirement_olgulari(session, obj, simdi)

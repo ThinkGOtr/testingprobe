@@ -6,7 +6,7 @@
 #
 # API çağrıları portal üzerinden yapılır (core-api host'a port açmaz):
 #   TP_API_URL          varsayılan http://127.0.0.1:${TP_PORTAL_PORT:-8080}/api
-#   TP_DEMO_USER        sunucu (presenter) kullanıcısı, varsayılan "sunucu" (seed)
+#   TP_DEMO_USER        Sistem Yöneticisi (admin) kullanıcısı, varsayılan "yonetici" (seed)
 #   TP_DEMO_PASSWORD    yoksa .env SEED_USER_PASSWORD
 # İstemci tarayıcı değildir (Origin / Sec-Fetch-Site göndermez): OriginGuard geçirir.
 
@@ -30,7 +30,7 @@ demo_api_login() {
   DEMO_COOKIES="$(mktemp "${TMPDIR:-/tmp}/tp-demo-cookie.XXXXXX")"
   trap 'rm -f "$DEMO_COOKIES"' EXIT
   local user pass body code
-  user="${TP_DEMO_USER:-sunucu}"
+  user="${TP_DEMO_USER:-yonetici}"
   pass="${TP_DEMO_PASSWORD:-$(env_get SEED_USER_PASSWORD)}"
   [ -n "$pass" ] || die "sunucu parolası yok (TP_DEMO_PASSWORD ya da .env SEED_USER_PASSWORD)"
   body="$(TP_U="$user" TP_P="$pass" python3 -c \

@@ -109,7 +109,12 @@ GITHUB_OLAY = {
     "push": ("push",),
     "nightly": ("schedule", "workflow_dispatch"),
     "deploy": ("repository_dispatch",),
+    # Elle koşu (specs/012-rol-yetki: `run.trigger_manual`) ci.yml workflow_dispatch `tetik=manual`.
+    "manual": ("workflow_dispatch",),
 }
+# Kullanıcının portaldan başlattığı tetikler (`POST /ci/trigger`). `manual` ci_tetik tablosuna
+# yazılmaz (webhook idempotency kaydı yok); koşu `run.tetik = manual` ile kaydedilir.
+ELLE_TETIKLER = ("deploy", "nightly", "manual")
 GITHUB_SONUC = {
     "success": "passed",
     "failure": "failed",
@@ -221,7 +226,7 @@ def _enqueue(
     script_id: uuid.UUID | None = None,
     dispatch: bool = False,
 ) -> dict[str, Any]:
-    if trigger not in CI_TETIK:
+    if trigger not in CI_TETIK and trigger != "manual":
         raise CiError(f"geçersiz tetik: {trigger!r} (pr | push | nightly | deploy)")
     if trigger == "pr" and pr_number is None:
         raise CiError("pr tetiği için pr_number gerekli")
@@ -386,13 +391,14 @@ def check_body_platformu(platform: str) -> dict[str, Any]:
 
 
 def trigger_manual(session: Session, tetik: str, isteyen: str) -> dict[str, Any]:
-    """Sunucu düğmesi (`POST /ci/trigger`): deploy | nightly, main'in o anki head'inde.
+    """Portal düğmesi (`POST /ci/trigger`): deploy | nightly | manual, main'in o anki head'inde.
 
     local: CI'yı main head'inde koşturur. github: iş `repository_dispatch` (deploy) ya da
-    `workflow_dispatch` (`tetik=nightly`) gönderir ve GitHub koşusunu alır.
+    `workflow_dispatch` (`tetik=nightly|manual`) gönderir ve GitHub koşusunu alır. Rol kontrolü
+    API'dedir (`run.trigger_scheduled` / `run.trigger_manual`).
     """
-    if tetik not in ("deploy", "nightly"):
-        raise CiError("tetik yalnızca deploy | nightly olabilir")
+    if tetik not in ELLE_TETIKLER:
+        raise CiError("tetik yalnızca deploy | nightly | manual olabilir")
     sonuc = _enqueue(session, None, tetik, isteyen=isteyen, dispatch=True)
     kaynak = _kaynak()
     if not sonuc["yeni"]:
@@ -400,7 +406,7 @@ def trigger_manual(session: Session, tetik: str, isteyen: str) -> dict[str, Any]
         durum = "zaten_kuyrukta"
     elif kaynak == "github":
         olay = (
-            "repository_dispatch (deploy)" if tetik == "deploy" else "workflow_dispatch (nightly)"
+            "repository_dispatch (deploy)" if tetik == "deploy" else f"workflow_dispatch ({tetik})"
         )
         mesaj = f"GitHub Actions tetikleniyor: {olay}; sonuç GitHub API'den alınacak."
         durum = "queued"
@@ -1009,7 +1015,7 @@ def _dispatch(engine: Engine, run_id: uuid.UUID) -> None:
         if tetik == "deploy":
             gh.repository_dispatch("deploy", {"tetik": "deploy", "tp_run_id": str(run_id)})
         else:
-            gh.workflow_dispatch(hedef_ref, {"tetik": "nightly"}, **is_akisi)
+            gh.workflow_dispatch(hedef_ref, {"tetik": tetik}, **is_akisi)
     except Exception as exc:
         # Yanıt okunamadıysa (zaman aşımı/bağlantı koptu) istek GitHub'a ulaşmış olabilir: `hata`
         # yazılmaz → sonraki deneme önce koşuyu arar (kör tekrar yok).
@@ -1059,7 +1065,7 @@ def _belirsiz_hata(exc: BaseException) -> bool:
 
 
 def _dispatch_olayi(tetik: str) -> str:
-    return "repository_dispatch:deploy" if tetik == "deploy" else "workflow_dispatch:nightly"
+    return "repository_dispatch:deploy" if tetik == "deploy" else f"workflow_dispatch:{tetik}"
 
 
 def _olaylar(run: Run) -> tuple[str, ...]:
@@ -1085,7 +1091,7 @@ def _aday_sec(
         if a.get("event") not in _olaylar(run):
             continue
         olusma = parse_gh_time(a.get("created_at"))
-        if run.tetik in ("nightly", "deploy") and (olusma is None or olusma < alt_sinir):
+        if run.tetik in ELLE_TETIKLER and (olusma is None or olusma < alt_sinir):
             continue
         if run.commit and run.tetik in ("pr", "push") and a.get("head_sha") != run.commit:
             continue

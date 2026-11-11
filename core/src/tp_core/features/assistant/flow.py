@@ -54,6 +54,7 @@ from typing import Any, Final, cast
 from sqlalchemy import Connection, Engine, text
 from sqlalchemy.orm import Session
 
+from tp_core.auth import yetki as _yetki
 from tp_core.events import publish_tx
 from tp_core.features.assistant import budget as asistan_budget
 from tp_core.features.assistant import durum as mesaj_durumu
@@ -102,12 +103,11 @@ KAPALI_DURUM_CIPI: Final = "{anahtar} neden bekliyor?"
 KAPALI_DURUM_GENEL: Final = "<Jira anahtarı> neden bekliyor?"
 ONERI_KAPALI_METNI: Final = "Ek öneri için canlı model gerekir; kural önerileri yukarıda."
 
+# Modele giden rol etiketi: izin kataloğunun etiketleri (specs/012-rol-yetki §3); PO açık adla.
 ROL_ETIKETI: Final = {
-    "analyst": "Analist",
-    "po": "Ürün sahibi (PO)",
-    "engineer": "Mühendis",
-    "tester": "Testçi",
-    "presenter": "Sunucu (sunum yapan)",
+    **{eski: _yetki.ROL_ETIKETLERI[yeni] for eski, yeni in _yetki.ESKI_ROLLER.items()},
+    **_yetki.ROL_ETIKETLERI,
+    _yetki.PO: "Ürün sahibi (PO)",
 }
 
 SessionFactory = Callable[[], Session]

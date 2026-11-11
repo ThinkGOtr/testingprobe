@@ -13,7 +13,7 @@ from tp_core.api import errors, registry
 from tp_core.api.csrf import OriginGuard, parse_origins
 from tp_core.api.kimlik_kipi import KimlikKipiBasligi
 from tp_core.api.routers import admin_kimlik, aiprobe, audit, auth, events, tokens
-from tp_core.config import Settings, get_settings
+from tp_core.config import Settings, baslangic_denetimi, get_settings
 
 SERVICE = "core-api"
 
@@ -41,6 +41,8 @@ def _kisa_hata(exc: BaseException) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Üretimde demo kipi açıksa başlamaz (specs/012-rol-yetki §2).
+    baslangic_denetimi()
     yield
     b = getattr(app.state, "broadcaster", None)
     if b is not None:

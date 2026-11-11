@@ -2,8 +2,8 @@
 `POST /assistant/suggestions/{kural_id}/feedback`.
 
 Modelsizdir: worker gerekmez, model kapalıyken de çalışır, `ai_call` yazmaz. Rol oturumdan gelir
-(`CurrentUser`: yalnız çerez; `tpt_` bearer 401). Liste ucu yalnız okur (tek yazım, ayrı bağlantıda
-hemen commit edilen hız sayacıdır);
+(`assistant.use`, tüm roller; yalnız çerez; `tpt_` bearer 401). Liste ucu yalnız okur (tek
+yazım, ayrı bağlantıda hemen commit edilen hız sayacıdır);
 geri bildirim ucu yalnız `asistan_oneri_geri_bildirim`'e satır ekler.
 
 `router` asistan uçlarıyla birlikte `features/assistant/api.py`'de bağlanır
@@ -16,12 +16,13 @@ from __future__ import annotations
 import uuid
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, HTTPException, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from tp_core.api.deps import CurrentUser, DbSession
+from tp_core.api.deps import DbSession, Principal
 from tp_core.api.errors import KodluHata
+from tp_core.auth.yetki import izin
 from tp_core.features.assistant import oneri
 from tp_core.features.assistant.hiz import (
     KOVA_ONERI_GERI_BILDIRIM,
@@ -30,6 +31,9 @@ from tp_core.features.assistant.hiz import (
 )
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
+
+# Asistan ve öneriler tüm rollere açık (`assistant.use`); araçlar rolün okuma izinleriyle süzülür.
+AsistanKullanicisi = Annotated[Principal, Depends(izin("assistant.use"))]
 
 KAPALI_MESAJI = "Öneriler bu kurulumda kapalı"
 HIZ_MESAJI = "Çok sık istek gönderildi; biraz sonra yeniden deneyin"
@@ -40,7 +44,7 @@ def _etkin() -> None:
         raise KodluHata(404, "bulunamadi", KAPALI_MESAJI)
 
 
-def _hiz(session: Session, kova: str, user: CurrentUser) -> None:
+def _hiz(session: Session, kova: str, user: AsistanKullanicisi) -> None:
     """Sayaç ayrı, hemen commit edilen kısa bir bağlantıda artar: isteğin kendi işlemi 404/422
     ile geri alınsa da istek sayılmış olur (geçersiz rota/varlık istekleri de sınıra takılır)."""
     with session.get_bind().begin() as conn:
@@ -52,7 +56,7 @@ def _hiz(session: Session, kova: str, user: CurrentUser) -> None:
 @router.get("/suggestions")
 def suggestions(
     session: DbSession,
-    user: CurrentUser,
+    user: AsistanKullanicisi,
     rota: Annotated[str, Query(min_length=1, max_length=300)],
     varlik_tur: Annotated[str | None, Query(max_length=40)] = None,
     varlik_id: Annotated[str | None, Query(max_length=64)] = None,
@@ -89,7 +93,7 @@ def suggestion_feedback(
     kural_id: Annotated[str, Path(max_length=100)],
     body: GeriBildirim,
     session: DbSession,
-    user: CurrentUser,
+    user: AsistanKullanicisi,
 ) -> dict[str, Any]:
     """Gizle (-1) / Faydalı (1) / Yaptım (2, isteğe bağlı Jira anahtarıyla)."""
     _etkin()
