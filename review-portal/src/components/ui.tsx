@@ -1,9 +1,10 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode, type RefObject } from "react";
 import { Link } from "react-router-dom";
 import { buFazdaYok } from "../api/http";
-import type { CiktiModu, Degerlendirme, Rol } from "../api/types";
-import { useOturum } from "../auth";
-import { ROL, type Ton } from "../lib/etiketler";
+import type { CiktiModu, Degerlendirme } from "../api/types";
+import { useIzin } from "../auth";
+import { type Ton } from "../lib/etiketler";
+import { izinNedeni, type Izin } from "../lib/yetki";
 import { baglantiTuru } from "../lib/rotalar";
 import { hataGosterildi, hataTazele } from "../lib/sonHata";
 import { asistanaSor, useAsistanHazir } from "./asistan/kontrol";
@@ -230,8 +231,11 @@ export function Kart({ baslik, eylemler, children, className, id }: { baslik?: R
 type DugmeTuru = "birincil" | "ikincil" | "tehlike" | "hayalet";
 
 interface IslemDugmesiOzellikleri extends ButtonHTMLAttributes<HTMLButtonElement> {
-  /** Bu düğmeyi kullanabilecek roller; boşsa herkes. */
-  roller?: Rol[];
+  /**
+   * Düğmenin gerektirdiği izin (birden çoksa herhangi biri; `/auth/me` → `izinler`). Yoksa herkes.
+   * Yetkisiz rolde düğme pasiftir ve gereken rolü söyler.
+   */
+  izin?: Izin | readonly Izin[];
   calisiyor?: boolean;
   tur?: DugmeTuru;
   kucuk?: boolean;
@@ -295,11 +299,12 @@ function useOrtakNeden(sarici: RefObject<HTMLElement>, neden: string | undefined
  * `aria-describedby` ile düğmeye bağlanır. Çalışırken (`calisiyor`) yazılmaz. Aynı gruptaki eş metinli
  * nedenler bir kez yazılır (`useOrtakNeden`).
  */
-export function IslemDugmesi({ roller, calisiyor, tur = "birincil", kucuk, disabled, children, title, className, nedenGizli, ...geri }: IslemDugmesiOzellikleri) {
-  const { kullanici } = useOturum();
+export function IslemDugmesi({ izin, calisiyor, tur = "birincil", kucuk, disabled, children, title, className, nedenGizli, ...geri }: IslemDugmesiOzellikleri) {
+  const istenen: Izin[] = izin === undefined ? [] : typeof izin === "string" ? [izin] : [...izin];
+  const izinli = useIzin(...istenen);
   const nedenId = useId();
-  const yetkili = !roller || roller.length === 0 || (!!kullanici && roller.includes(kullanici.rol));
-  const neden = !yetkili ? `Bu işlem için gereken rol: ${roller?.map((r) => ROL[r]).join(" / ")}` : title;
+  const yetkili = istenen.length === 0 || izinli;
+  const neden = !yetkili ? izinNedeni(...istenen) : title;
   const nedenGorunur = (!nedenGizli || !yetkili) && !calisiyor && (!!disabled || !yetkili) && !!neden?.trim();
   const sariciRef = useRef<HTMLSpanElement>(null);
   const nedenSahibi = useOrtakNeden(sariciRef, nedenGorunur ? neden : undefined, nedenId);

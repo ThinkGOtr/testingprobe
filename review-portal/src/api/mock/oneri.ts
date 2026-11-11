@@ -3,6 +3,7 @@
 // verisinin olgularıyla değerlendirilir. "Yaptım" (2) o kuralı o varlık aynı durumdayken tüm rollerde,
 // "Gizle" (-1) yalnız o kullanıcı için bastırır. `baglanti`'yı yalnız bu "sunucu" kurar (§17.4):
 // jira-sim gezinme adresi bilinen anahtar için; kayıt oluşturma sayfası simülatörde yok.
+import { IZINLER } from "../../lib/yetki";
 import type { AsistanKuleOlcumu, MaliyetGrubu } from "../../components/asistan/OnerilerOlcumKarti";
 import { ApiError, BU_FAZDA_YOK } from "../http";
 import { JIRA_ANAHTARI, type BastirilanOneri, type KuralOnerisi, type OneriEylemi, type OneriListesi } from "../asistan";
@@ -305,7 +306,7 @@ export const MOCK_KURALLAR: MockKural[] = [
   {
     id: "kosu-ortam-hatasi-bilgi",
     ekran: "/kosular/:id",
-    roller: ["presenter"],
+    roller: ["admin"],
     kosul: (o) => o.ci_sonuc === "error",
     oncelik: 60,
     baslik: "Koşu ortam hatasıyla bitti; mühendis inceliyor",
@@ -398,7 +399,7 @@ export const MOCK_KURALLAR: MockKural[] = [
   {
     id: "butce-uyarisi",
     ekran: "/kontrol-kulesi",
-    roller: ["presenter"],
+    roller: ["admin"],
     kosul: (o) => Number(o.butce_orani) >= 0.8,
     oncelik: 70,
     baslik: "Model bütçesinin %{butce_yuzde} kadarı kullanıldı",
@@ -410,7 +411,7 @@ export const MOCK_KURALLAR: MockKural[] = [
   {
     id: "guncel-kosu-yok",
     ekran: "/kosular",
-    roller: ["presenter"],
+    roller: ["admin"],
     kosul: (o) => Number(o.son_kosu_saat) >= 24,
     oncelik: 60,
     baslik: "Güncel koşu yok; demo öncesi koşu tetikleyin",
@@ -421,8 +422,8 @@ export const MOCK_KURALLAR: MockKural[] = [
   },
 ];
 
-/** `rotalar.json`'da rolü kısıtlı ekranlar (diğerleri herkese açık). */
-const EKRAN_ROLLERI: Record<string, Rol[]> = { "/claude-code": ["analyst"], "/demo": ["presenter"] };
+/** `rotalar.json`'da rolü kısıtlı ekranlar (diğerleri herkese açık); izinler `lib/yetki.ts` ile aynı. */
+const EKRAN_ROLLERI: Record<string, readonly Rol[]> = { "/claude-code": IZINLER["token.issue"], "/demo": IZINLER["demo.manage"] };
 
 /** Ekranın varlık türü (rotalar.json `varlik`). */
 const EKRAN_VARLIGI: Record<string, string> = {

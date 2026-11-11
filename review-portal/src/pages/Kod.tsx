@@ -58,7 +58,7 @@ export function Kod() {
         baslik="Kodu üretilecek onaylı case'ler"
         eylemler={
           <IslemDugmesi
-            roller={["engineer"]}
+            izin="code.generate"
             disabled={seciliAdaylar.length === 0}
             calisiyor={islem.calisiyor}
             onClick={async () => {
@@ -207,7 +207,7 @@ export function Kod() {
                           s.platform !== null &&
                           !(s.yerel_sinif === "defect_adayi" || s.engel?.tur === "defect_candidate") && (
                           <IslemDugmesi
-                            roller={["engineer"]}
+                            izin="code.generate"
                             tur="ikincil"
                             calisiyor={islem.calisiyor}
                             title="Aynı onaylı case için kodu yeniden üretir; bu kayıt kapatılır."

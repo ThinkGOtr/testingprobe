@@ -7,7 +7,8 @@
 import type { Platform } from "../lib/platform";
 export type { Platform } from "../lib/platform";
 
-export type Rol = "analyst" | "engineer" | "presenter" | "po" | "tester";
+/** TP rolleri (ANALIZ 012 §3; core `yetki.ROLLER`). `presenter` kalktı → `admin`. */
+export type Rol = "admin" | "auditor" | "analyst" | "po" | "tester" | "engineer" | "developer" | "viewer";
 
 /** Model geçidi modu (§8.8). live dışındaki her değer portalda rozetle gösterilir. */
 export type CiktiModu = "live" | "replay" | "replay_miss";
@@ -16,6 +17,11 @@ export interface Kullanici {
   id: string;
   kullanici_adi: string;
   rol: Rol;
+  /**
+   * Etkin rolün izin anahtarları (core `rol_izinleri`, ANALIZ 012 §4). Menü, sayfa ve düğmeler
+   * bununla gösterilir. Yoksa (eski core) portal katalogdan türetir (`lib/yetki.ts`).
+   */
+  izinler?: string[];
   /** Yalnızca gösterim (yetki her zaman `rol`): "Cengizhan Gunaydin · Analist"; ad yoksa rol etiketi. */
   gorunen_ad?: string;
   /** Kişi adı (rol etiketsiz); tanımsızsa null. */
@@ -348,7 +354,7 @@ export type RetNedeni =
   | "wrong_element";
 
 /** Test case durumları — core `test_case` makinesiyle birebir aynı küme. */
-export const CASE_DURUMLARI = ["draft", "approved", "rejected", "published", "superseded"] as const;
+export const CASE_DURUMLARI = ["draft", "ready", "approved", "rejected", "published", "superseded"] as const;
 export type CaseDurumu = (typeof CASE_DURUMLARI)[number];
 
 export interface TestCase {
@@ -360,8 +366,18 @@ export interface TestCase {
   surum: number;
   icerik: TestCaseIcerik;
   durum: CaseDurumu;
-  /** approve | edit | reject — son insan kararı */
-  karar: "approve" | "edit" | "reject" | null;
+  /**
+   * Son insan kararı: Testçi `accept` | `edit` | `reject`, Analist `approve` | `send_back`
+   * (ANALIZ 012 §5). Eski kayıtlarda Analist `approve`/`edit` kararı da olabilir.
+   */
+  karar: CaseKararTuru | null;
+  /** Son `send_back` gerekçesi (Analist geri gönderdiyse). */
+  gerekce?: string | null;
+  /** Testçinin son kararı (`accept` | `edit` | `reject`); Analist onayından sonra da korunur (ölçümler). */
+  testci_karari?: "accept" | "edit" | "reject" | null;
+  /** Son onayı veren Analist hesabı ve zamanı (`approve`). */
+  onaylayan?: string | null;
+  onay_zamani?: string | null;
   ret_nedeni: RetNedeni | null;
   karar_veren: string | null;
   karar_zamani: string | null;
@@ -435,10 +451,18 @@ export interface CaseMetrikleri {
   uyarilar?: string[];
 }
 
+/** Testçi kararları (`case.decide`). `reopen` "Taslağa al"dır. */
+export type TestciKarari = "accept" | "edit" | "reject" | "reopen";
+/** Analist son onay kararları (`case.approve`; yalnız `ready` case). */
+export type AnalistKarari = "approve" | "send_back";
+export type CaseKararTuru = TestciKarari | AnalistKarari;
+
 export interface CaseKararGirdisi {
   /** Ekranda görülen case içeriğinin hash'i (`TestCase.icerik_hash`); düzeltmede de düzeltme öncesi. */
   icerik_hash: string;
-  karar: "approve" | "edit" | "reject";
+  karar: CaseKararTuru;
+  /** `send_back` için zorunlu, diğerlerinde isteğe bağlı açıklama. */
+  gerekce?: string;
   icerik?: TestCaseIcerik;
   ret_nedeni?: RetNedeni;
   /**
@@ -1105,6 +1129,13 @@ export interface BugKararGirdisi {
 
 /** `GET /demo/status`: forge main ve çalışan demo uygulamasının durumu. */
 export interface DemoDurumu {
+  /**
+   * Demo kontrolleri açık mı (core `TP_DEMO_MODE=1`; ANALIZ 012 §6). `false`: demo kontrolleri
+   * kapalı (core kırma/sıfırlama uçlarında 403 verir). Core vermezse `undefined` (bilinmiyor).
+   */
+  demo_modu?: boolean | null;
+  /** Kurulum ortamı (core `TP_ORTAM`: dev | test | staging | prod); core vermezse yok. */
+  ortam?: string | null;
   forge: {
     main?: string | null;
     /** Uygulama tarafı (web/src) "Sepete ekle" testId'si. */

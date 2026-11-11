@@ -134,7 +134,7 @@ export function GereksinimDetay() {
         eylemler={
           <>
             <IslemDugmesi
-              roller={["analyst"]}
+              izin="requirement.review"
               tur={incelemeBaslatilabilir && !(uretimHatasi && caseUretilebilir) ? "birincil" : "ikincil"}
               disabled={!incelemeBaslatilabilir}
               calisiyor={islem.calisiyor && g.durum === "in_review"}
@@ -153,7 +153,7 @@ export function GereksinimDetay() {
             </IslemDugmesi>
             <IslemDugmesi
               id="case-uret"
-              roller={["analyst"]}
+              izin="case.generate"
               tur={uretimHatasi && caseUretilebilir ? "birincil" : undefined}
               disabled={!caseUretilebilir}
               title={caseUretNedeni}
@@ -308,7 +308,7 @@ export function GereksinimDetay() {
                   </span>
                 ) : (
                   <IslemDugmesi
-                    roller={["analyst"]}
+                    izin="requirement.doc_fix"
                     disabled={sonHalAcik ? false : yazilacak === 0 || turSiniri}
                     calisiyor={islem.calisiyor && g.durum === "in_review"}
                     // Tur sınırı nedeni aşağıdaki uyarı kutusunda (yalnız yazılacak düzeltme varken) görünür
@@ -535,9 +535,10 @@ export function caseUretHatasi(e: unknown): never {
   throw e;
 }
 
-function PoKarti({ g, yenile }: { g: Detay; yenile: () => void }) {
-  const islem = useIslem();
-  const bildir = useBildirim();
+/** PO onayı yalnız Jira'dan verilir (ANALIZ 012 K6); portalda PO onay düğmesi yoktur. */
+export const PO_ONAYI_JIRADA = "PO onayı Jira'da: story'ye tp-po-approved etiketi konur. Portalda PO onay düğmesi yoktur.";
+
+function PoKarti({ g }: { g: Detay; yenile?: () => void }) {
   const po = g.po;
   // Onay var ve içerik onaydan sonra değişmediyse kapı geçilmiştir; sabit kural metni "henüz
   // geçilmedi" gibi okunmasın.
@@ -569,30 +570,11 @@ function PoKarti({ g, yenile }: { g: Detay; yenile: () => void }) {
             <Cip ton="uyari">Bekliyor</Cip>{" "}
             {po.kanal === "jira"
               ? "PO soruları Jira'da cevaplayıp tp-po-approved etiketini koyduğunda akış devam eder (15 sn'de bir kontrol edilir)."
-              : "Serbest metin gereksinim: PO teyidi portalda verilir."}
+              : "PO teyidi bekleniyor."}
           </p>
-          {po.kanal === "portal" && g.icerik_hash && (
-            <p className="soluk kucuk">
-              Onay, ekranda gördüğünüz içeriğe bağlanır (<span className="mono">{kisaHash(g.icerik_hash)}</span>); arada değişirse reddedilir.
-            </p>
-          )}
-          {po.kanal === "portal" && (
-            <IslemDugmesi
-              roller={["po"]}
-              calisiyor={islem.calisiyor}
-              onClick={async () => {
-                // Gösterilen içeriğin hash'i gönderilir; arada değiştiyse 409 → ekran yenilenir.
-                const s = await islem.calistir(() => api.poOnayla(g), { cakismada: yenile });
-                if (s) {
-                  bildir("PO teyidi verildi.");
-                  yenile();
-                }
-              }}
-            >
-              PO olarak onayla
-            </IslemDugmesi>
-          )}
-          {islem.hata && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
+          <p className="soluk kucuk" data-testid="po-onay-ipucu">
+            {PO_ONAYI_JIRADA}
+          </p>
         </>
       ) : uretimHatasiMi(g) ? (
         <p className="soluk" data-testid="po-uretim-hatasi">

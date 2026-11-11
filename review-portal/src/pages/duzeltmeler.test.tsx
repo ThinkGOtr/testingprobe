@@ -115,7 +115,7 @@ describe("kabul kriteri eksik story (TPD-2): ön inceleme açık, case üretimi 
   });
 
   it("PO onaylı olsa da 'Case üret' pasif ve nedeni söylenir", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const g = gereksinim("req-tpd-2");
     g.durum = "po_approved";
     g.po = { durum: "approved", onaylayan: "po", zaman: "2026-10-30T10:00:00Z", kanal: "jira" };
@@ -200,14 +200,14 @@ describe("case review özeti: ölçülmeyen süre '0 ms' değil '—'", () => {
 
 describe("case düzeltme formu", () => {
   it("adım alanları çok satırlı; ön koşul, tür, risk ve AC atfı düzeltilip gönderilir", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const spy = vi.spyOn(api, "caseKarari");
     const guncellendi = vi.fn();
     const u = userEvent.setup();
     const tc = mockVerisi().caseler.find((c) => c.id === "case-1-5")!;
     sar(<CaseKarti tc={tc} guncellendi={guncellendi} />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Düzelt" })).toBeEnabled());
-    await u.click(screen.getByRole("button", { name: "Düzelt" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Düzelterek kabul" })).toBeEnabled());
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul" }));
     for (const ad of ["S1 eylem", "S1 veri", "S1 beklenen"]) expect(screen.getByLabelText(ad).tagName).toBe("TEXTAREA");
     const onKosul = screen.getByLabelText(/Ön koşullar/);
     await u.clear(onKosul);
@@ -217,7 +217,7 @@ describe("case düzeltme formu", () => {
     const ac = screen.getByLabelText("Kabul kriteri atıfları");
     await u.clear(ac);
     await u.type(ac, "ac2, AC3");
-    await u.click(screen.getByRole("button", { name: "Düzeltip onayla" }));
+    await u.click(screen.getByRole("button", { name: "Düzeltip kabul et" }));
     await waitFor(() => expect(spy).toHaveBeenCalled());
     const [, girdi] = spy.mock.calls[0];
     expect(girdi.karar).toBe("edit");
@@ -230,14 +230,14 @@ describe("case düzeltme formu", () => {
   });
 
   it("AC atfı boşsa gönderilmez, Türkçe uyarı verir", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const spy = vi.spyOn(api, "caseKarari");
     const u = userEvent.setup();
     sar(<CaseKarti tc={mockVerisi().caseler.find((c) => c.id === "case-1-5")!} guncellendi={() => {}} />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Düzelt" })).toBeEnabled());
-    await u.click(screen.getByRole("button", { name: "Düzelt" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Düzelterek kabul" })).toBeEnabled());
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul" }));
     await u.clear(screen.getByLabelText("Kabul kriteri atıfları"));
-    await u.click(screen.getByRole("button", { name: "Düzeltip onayla" }));
+    await u.click(screen.getByRole("button", { name: "Düzeltip kabul et" }));
     expect(screen.getByRole("alert")).toHaveTextContent("En az bir kabul kriteri atfı gerekir");
     expect(spy).not.toHaveBeenCalled();
   });
@@ -245,7 +245,7 @@ describe("case düzeltme formu", () => {
 
 describe("yayın önizleme: kapsanmayan kabul kriteri uyarısı", () => {
   it("bir AC'nin tek case'i reddedilmişse yayın ekranı uyarır", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     // req-tpd-1'de AC2'ye atıf yapan tüm case'ler reddedilmiş olsun.
     for (const c of mockVerisi().caseler) {
       if (c.requirement_id === "req-tpd-1" && c.icerik.acceptance_criteria_refs.includes("AC2")) c.durum = "rejected";
@@ -259,7 +259,7 @@ describe("yayın önizleme: kapsanmayan kabul kriteri uyarısı", () => {
   });
 
   it("tüm AC'ler kapsanıyorsa uyarı yok", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     expect((await api.caseMetrikleri("req-tpd-1")).kapsanmayan_ac).toEqual([]);
     uygulama("/gereksinimler/req-tpd-1/yayin");
     await screen.findByTestId("yayin-hedefi");

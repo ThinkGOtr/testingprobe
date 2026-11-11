@@ -2,8 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { canliDerleme, cekirdekYetenekleri, ucVar, type Yetenekler } from "./api/http";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { OlayProvider } from "./api/events";
-import type { Rol } from "./api/types";
-import { OturumProvider, useOturum, varsayilanSayfa } from "./auth";
+import { OturumProvider, useIzin, useIzinler, useOturum, varsayilanSayfa } from "./auth";
 import { BildirimProvider } from "./components/Bildirim";
 import { Kabuk } from "./components/Kabuk";
 import { AsistanPaneli } from "./components/asistan/AsistanPaneli";
@@ -23,7 +22,8 @@ import { KosuDetay, Kosular } from "./pages/Kosular";
 import { ScriptDetay } from "./pages/ScriptDetay";
 import { Yayin } from "./pages/Yayin";
 import { YolHaritasi } from "./pages/YolHaritasi";
-import { ROL } from "./lib/etiketler";
+import { ROTA_IZINLERI } from "./lib/yetki";
+import { IzinGerekli } from "./components/IzinGerekli";
 import { useKimlikKipi } from "./lib/kimlikKipi";
 import { AiprobeGirisineYonlendir } from "./pages/AiprobeGiris";
 import { RolSec } from "./pages/RolSec";
@@ -32,28 +32,19 @@ function OturumGerekli({ children }: { children: ReactNode }) {
   const { kullanici, yukleniyor } = useOturum();
   const { kip } = useKimlikKipi();
   const konum = useLocation();
+  const olaylar = useIzin("events.read");
   if (yukleniyor) return <Yukleniyor metin="Oturum kontrol ediliyor…" />;
   // Yalnız AI Probe kipinde (yerel giriş kapalı) oturum yoksa doğrudan AI Probe girişine gidilir;
   // `local` ve `both` kipte giriş ekranı (both: yerel form + AI Probe düğmesi).
   if (!kullanici && kip === "aiprobe") return <AiprobeGirisineYonlendir devam={konum.pathname + konum.search} />;
   if (!kullanici) return <Navigate to="/giris" replace state={{ from: konum.pathname + konum.search }} />;
-  return <OlayProvider etkin>{children}</OlayProvider>;
-}
-
-function RolGerekli({ roller, children }: { roller: Rol[]; children: ReactNode }) {
-  const { kullanici } = useOturum();
-  if (!kullanici || !roller.includes(kullanici.rol)) {
-    return (
-      <Kart>
-        <BosDurum baslik="Bu ekran için yetkiniz yok.">Gereken rol: {roller.map((r) => ROL[r]).join(" / ")}</BosDurum>
-      </Kart>
-    );
-  }
-  return <>{children}</>;
+  // Canlı olaylar (SSE) `events.read` ister: Denetçi ve Görüntüleyici için akış açılmaz (ANALIZ 012 §6).
+  return <OlayProvider etkin={olaylar}>{children}</OlayProvider>;
 }
 
 function AnaSayfa() {
   const { kullanici } = useOturum();
+  const izinler = useIzinler();
   const canli = canliDerleme();
   const [yetenekler, setYetenekler] = useState<Yetenekler | null | undefined>(canli ? undefined : null);
   useEffect(() => {
@@ -68,7 +59,7 @@ function AnaSayfa() {
   // Canlı derlemede core'un uç listesi okunana kadar bekle (henüz olmayan ekrana yönlendirme yok).
   if (yetenekler === undefined) return <Yukleniyor />;
   const y = yetenekler;
-  return <Navigate to={varsayilanSayfa(kullanici.rol, y ? (m, yol) => ucVar(y, m, yol) : undefined)} replace />;
+  return <Navigate to={varsayilanSayfa(kullanici.rol, y ? (m, yol) => ucVar(y, m, yol) : undefined, izinler)} replace />;
 }
 
 function Bulunamadi() {
@@ -82,6 +73,11 @@ function Bulunamadi() {
       </Kart>
     </>
   );
+}
+
+/** Sayfa koruması: rotanın izni `ROTA_IZINLERI`'nden (ANALIZ 012 §4.2; menü ve açılış ekranı aynı tablo). */
+function Korumali({ yol, children }: { yol: string; children: ReactNode }) {
+  return <IzinGerekli izin={ROTA_IZINLERI[yol]}>{children}</IzinGerekli>;
 }
 
 export function Rotalar() {
@@ -99,36 +95,23 @@ export function Rotalar() {
         }
       >
         <Route index element={<AnaSayfa />} />
-        <Route path="gereksinimler" element={<Gereksinimler />} />
-        <Route path="gereksinimler/:id" element={<GereksinimDetay />} />
-        <Route path="gereksinimler/:id/caseler" element={<CaseReview />} />
+        <Route path="gereksinimler" element={<Korumali yol="/gereksinimler"><Gereksinimler /></Korumali>} />
+        <Route path="gereksinimler/:id" element={<Korumali yol="/gereksinimler/:id"><GereksinimDetay /></Korumali>} />
+        <Route path="gereksinimler/:id/caseler" element={<Korumali yol="/gereksinimler/:id/caseler"><CaseReview /></Korumali>} />
+        {/* Yayın ekranı kendi bilgi kartıyla korunur (aynı izin: `case.publish`). */}
         <Route path="gereksinimler/:id/yayin" element={<Yayin />} />
-        <Route path="kod" element={<Kod />} />
-        <Route path="kod/:id" element={<ScriptDetay />} />
-        <Route path="kosular" element={<Kosular />} />
-        <Route path="kosular/:id" element={<KosuDetay />} />
-        <Route path="hatalar/:id" element={<HataDetay />} />
-        <Route path="bug-taslaklari" element={<BugTaslaklari />} />
-        <Route path="bug-taslaklari/:id" element={<BugTaslakDetay />} />
-        <Route path="kontrol-kulesi" element={<KontrolKulesi />} />
-        <Route path="yol-haritasi" element={<YolHaritasi />} />
-        <Route path="denetim" element={<Denetim />} />
-        <Route
-          path="claude-code"
-          element={
-            <RolGerekli roller={["analyst"]}>
-              <ClaudeCode />
-            </RolGerekli>
-          }
-        />
-        <Route
-          path="demo"
-          element={
-            <RolGerekli roller={["presenter"]}>
-              <DemoKontrolleri />
-            </RolGerekli>
-          }
-        />
+        <Route path="kod" element={<Korumali yol="/kod"><Kod /></Korumali>} />
+        <Route path="kod/:id" element={<Korumali yol="/kod/:id"><ScriptDetay /></Korumali>} />
+        <Route path="kosular" element={<Korumali yol="/kosular"><Kosular /></Korumali>} />
+        <Route path="kosular/:id" element={<Korumali yol="/kosular/:id"><KosuDetay /></Korumali>} />
+        <Route path="hatalar/:id" element={<Korumali yol="/hatalar/:id"><HataDetay /></Korumali>} />
+        <Route path="bug-taslaklari" element={<Korumali yol="/bug-taslaklari"><BugTaslaklari /></Korumali>} />
+        <Route path="bug-taslaklari/:id" element={<Korumali yol="/bug-taslaklari/:id"><BugTaslakDetay /></Korumali>} />
+        <Route path="kontrol-kulesi" element={<Korumali yol="/kontrol-kulesi"><KontrolKulesi /></Korumali>} />
+        <Route path="yol-haritasi" element={<Korumali yol="/yol-haritasi"><YolHaritasi /></Korumali>} />
+        <Route path="denetim" element={<Korumali yol="/denetim"><Denetim /></Korumali>} />
+        <Route path="claude-code" element={<Korumali yol="/claude-code"><ClaudeCode /></Korumali>} />
+        <Route path="demo" element={<Korumali yol="/demo"><DemoKontrolleri /></Korumali>} />
         <Route path="*" element={<Bulunamadi />} />
       </Route>
     </Routes>

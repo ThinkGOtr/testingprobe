@@ -7,7 +7,7 @@ import { ApiError } from "../http";
 import makineler from "../sozlesme/durum-makineleri.json";
 import { CASE_KARAR_HEDEFI, caseKarariVerilebilir, gecisVar, GECIS_YOK, yolGecerli } from "../sozlesme/durumMakinesi";
 import type { BugTaslagi, Bulgu, CaseKararGirdisi, TestCase } from "../types";
-import { ayar, mockVerisi } from "./handlers";
+import { ayar, mockPoEtiketi, mockVerisi } from "./handlers";
 import { oturumAc } from "../../test/yardimci";
 
 type Makine = { initial: string; states: string[]; transitions: Record<string, string[]> };
@@ -27,21 +27,32 @@ beforeEach(() => {
 });
 
 describe("test_case kararları ↔ core test_case makinesi", () => {
-  const kararlar: CaseKararGirdisi["karar"][] = ["approve", "edit", "reject"];
+  const kararlar: CaseKararGirdisi["karar"][] = ["accept", "edit", "reject", "approve", "send_back"];
   const durumlar = M.test_case.states as TestCase["durum"][];
+  /** Testçi kararları Testçi, son onay kararları Analist hesabıyla (ANALIZ 012 §5). */
+  const kararVeren = (k: CaseKararGirdisi["karar"]) => (k === "approve" || k === "send_back" ? "analist" : "testci");
 
-  it("tablo: kararlar yalnızca draft'tan; rejected onaylanamaz, approved reddedilemez", () => {
-    expect(caseKarariVerilebilir("draft", "approve")).toBe(true);
+  it("tablo: Testçi kararı yalnız draft'tan, Analist kararı yalnız ready'den", () => {
+    expect(caseKarariVerilebilir("draft", "accept")).toBe(true);
+    expect(caseKarariVerilebilir("draft", "edit")).toBe(true);
     expect(caseKarariVerilebilir("draft", "reject")).toBe(true);
+    expect(caseKarariVerilebilir("draft", "approve")).toBe(false);
+    expect(caseKarariVerilebilir("ready", "approve")).toBe(true);
+    expect(caseKarariVerilebilir("ready", "send_back")).toBe(true);
+    expect(caseKarariVerilebilir("ready", "accept")).toBe(false);
+    expect(caseKarariVerilebilir("approved", "send_back")).toBe(false);
     expect(caseKarariVerilebilir("rejected", "approve")).toBe(false);
     expect(caseKarariVerilebilir("rejected", "edit")).toBe(false);
     expect(caseKarariVerilebilir("approved", "reject")).toBe(false);
+    expect(caseKarariVerilebilir("ready", "reopen")).toBe(true);
+    expect(caseKarariVerilebilir("approved", "reopen")).toBe(true);
+    expect(caseKarariVerilebilir("published", "reopen")).toBe(false);
   });
 
   for (const durum of durumlar) {
     for (const karar of kararlar) {
       it(`${durum} + ${karar}`, async () => {
-        await oturumAc("analist");
+        await oturumAc(kararVeren(karar));
         const c = mockVerisi().caseler.find((x) => x.id === "case-1-7")!;
         c.durum = durum;
         const once = c.durum;
@@ -50,9 +61,11 @@ describe("test_case kararları ↔ core test_case makinesi", () => {
           karar,
           ...(karar === "reject" ? { ret_nedeni: "duplicate" as const } : {}),
           ...(karar === "edit" ? { icerik: { ...c.icerik, title: `${c.icerik.title} (d)` } } : {}),
+          ...(karar === "send_back" ? { gerekce: "AC2 eksik" } : {}),
         };
         const r = await sonuc(api.caseKarari(c.id, govde));
-        const izinli = gecisVar("test_case", once, CASE_KARAR_HEDEFI[karar]);
+        const izinli = caseKarariVerilebilir(once, karar);
+        if (izinli) expect(gecisVar("test_case", once, CASE_KARAR_HEDEFI[karar])).toBe(true);
         if (izinli) {
           expect(r.ok, JSON.stringify(r)).toBe(true);
           expect(mockVerisi().caseler.find((x) => x.id === c.id)!.durum).toBe(CASE_KARAR_HEDEFI[karar]);
@@ -68,12 +81,12 @@ describe("test_case kararları ↔ core test_case makinesi", () => {
     }
   }
 
-  it("bildirilen senaryo: reddedilmiş case #4 onaylanamaz, onaylı #5 reddedilemez", async () => {
-    await oturumAc("analist");
+  it("bildirilen senaryo: reddedilmiş case #4 kabul edilemez, onaylı #5 reddedilemez", async () => {
+    await oturumAc("testci");
     const v = mockVerisi();
     const red = v.caseler.find((c) => c.requirement_id === "req-tpd-1" && c.durum === "rejected")!;
     const onayli = v.caseler.find((c) => c.requirement_id === "req-tpd-1" && c.durum === "approved")!;
-    await expect(api.caseKarari(red.id, { icerik_hash: red.icerik_hash, karar: "approve" })).rejects.toMatchObject({ status: 409, detail: GECIS_YOK });
+    await expect(api.caseKarari(red.id, { icerik_hash: red.icerik_hash, karar: "accept" })).rejects.toMatchObject({ status: 409, detail: GECIS_YOK });
     await expect(
       api.caseKarari(onayli.id, { icerik_hash: onayli.icerik_hash, karar: "reject", ret_nedeni: "duplicate" }),
     ).rejects.toMatchObject({ status: 409, detail: GECIS_YOK });
@@ -127,13 +140,13 @@ describe("consistency_finding kararları ↔ core consistency_finding makinesi",
   }
 });
 
-describe("requirement PO teyidi ↔ core requirement makinesi", () => {
+describe("requirement PO teyidi ↔ core requirement makinesi (Jira etiketi; portal ucu 410)", () => {
   for (const durum of M.requirement.states) {
-    it(`${durum} + po-approve`, async () => {
+    it(`${durum} + tp-po-approved`, async () => {
       await oturumAc("po");
       const g = mockVerisi().gereksinimler.find((x) => x.id === "req-ft-1")!;
       g.durum = durum as typeof g.durum;
-      const r = await sonuc(api.poOnayla({ ...g }));
+      const r = await sonuc(Promise.resolve().then(() => mockPoEtiketi(g.id)));
       if (durum === "pending_po") {
         expect(gecisVar("requirement", durum, "po_approved")).toBe(true);
         expect(r.ok, JSON.stringify(r)).toBe(true);
@@ -174,21 +187,25 @@ describe("uçtan uca akışlar yalnızca izinli geçişlerden geçer", () => {
     kaydet();
     await api.bulguKarari("fnd-6", { icerik_hash: h("fnd-6"), karar: "accept_difference", gerekce: "Ürün kararı" });
     kaydet();
+    await oturumAc("po");
     await api.duzeltmeleriUygula("req-ft-1");
     kaydet();
     await bekle();
     kaydet();
-    await oturumAc("po");
-    await api.poOnayla(mockVerisi().gereksinimler.find((g) => g.id === "req-ft-1")!);
+    mockPoEtiketi("req-ft-1");
     kaydet();
-    await oturumAc("analist");
+    await oturumAc("testci");
     await api.caseUret("req-ft-1");
     kaydet();
     await bekle();
     kaydet();
     const c = mockVerisi().caseler.find((x) => x.requirement_id === "req-ft-1")!;
-    await api.caseKarari(c.id, { icerik_hash: c.icerik_hash, karar: "approve" });
+    await api.caseKarari(c.id, { icerik_hash: c.icerik_hash, karar: "accept" });
     kaydet();
+    await oturumAc("analist");
+    await api.caseKarari(c.id, { icerik_hash: mockVerisi().caseler.find((x) => x.id === c.id)!.icerik_hash, karar: "approve" });
+    kaydet();
+    await oturumAc("testci");
     // core ile aynı: serbest metnin Jira story'si yok → Test issue bağlanamaz, yayın engellenir.
     const engelli = await api.yayinla([c.id]);
     expect(engelli.sonuclar[0]).toMatchObject({ durum: "failed", hata: expect.stringContaining("story'si yok") });
@@ -205,7 +222,8 @@ describe("uçtan uca akışlar yalnızca izinli geçişlerden geçer", () => {
         (M[m].transitions[bas] ?? []).some((x) => x === hedef || (!gorulen.has(x) && (gorulen.add(x), ulasilir(x, hedef, gorulen))));
       expect(ulasilir(a, b), `${m}: ${a} → ${b}`).toBe(true);
     }
-    expect(izlenen).toContainEqual(["test_case", "draft", "approved"]);
+    expect(izlenen).toContainEqual(["test_case", "draft", "ready"]);
+    expect(izlenen).toContainEqual(["test_case", "ready", "approved"]);
     expect(izlenen).toContainEqual(["test_case", "approved", "published"]);
   });
 });

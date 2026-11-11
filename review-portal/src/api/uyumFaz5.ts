@@ -216,6 +216,8 @@ export function demoDurumuUyarla(x: unknown): DemoDurumu {
   const ld = nesneMi(d.locator_demo) ? d.locator_demo : null;
   return {
     ...(d as unknown as DemoDurumu),
+    demo_modu: typeof d.demo_modu === "boolean" ? d.demo_modu : typeof d.demo_mode === "boolean" ? d.demo_mode : null,
+    ortam: metinYaDaNull(ilk(d, "ortam", "env")),
     forge: nesneMi(d.forge) ? (d.forge as DemoDurumu["forge"]) : {},
     uygulama: nesneMi(d.uygulama) ? (d.uygulama as DemoDurumu["uygulama"]) : {},
     web_yenileme_istegi: d.web_yenileme_istegi ?? null,

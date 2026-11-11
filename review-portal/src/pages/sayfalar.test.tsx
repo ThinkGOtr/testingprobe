@@ -40,7 +40,7 @@ describe("oturum ve yönlendirme", () => {
     expect(screen.getByText("ÖRNEK VERİ")).toBeInTheDocument();
   });
 
-  it("menü role duyarlı: Claude Code kanalı yalnızca analiste görünür", async () => {
+  it("menü role duyarlı: Claude Code kanalı yalnızca Testçiye görünür", async () => {
     await oturumAc("muhendis");
     uygulama("/");
     expect(await screen.findByRole("heading", { name: "Kod üretimi", level: 1 })).toBeInTheDocument();
@@ -50,9 +50,10 @@ describe("oturum ve yönlendirme", () => {
   });
 
   it("yetkisiz rolde Claude Code ekranı erişim mesajı verir", async () => {
-    await oturumAc("testci");
+    await oturumAc("analist");
     uygulama("/claude-code");
     expect(await screen.findByText("Bu ekran için yetkiniz yok.")).toBeInTheDocument();
+    expect(screen.getByText("Gereken rol: Testçi")).toBeInTheDocument();
   });
 
   it("çıkış oturumu kapatır", async () => {
@@ -176,43 +177,15 @@ describe("ekranlar", () => {
     expect(screen.getByText("po@sim.local")).toBeInTheDocument();
   });
 
-  it("serbest metin: PO rolü portalda onaylar", async () => {
-    // Önce analist bulguları kapatır
-    const { api } = await import("../api/client");
-    await oturumAc("analist");
-    const bulgular = await api.bulgular("req-ft-1");
-    const hash = (id: string) => bulgular.find((b) => b.id === id)!.icerik_hash;
-    await api.bulguKarari("fnd-5", { icerik_hash: hash("fnd-5"), karar: "fix_doc" });
-    await api.bulguKarari("fnd-6", { icerik_hash: hash("fnd-6"), karar: "accept_difference", gerekce: "ok" });
-    await api.duzeltmeleriUygula("req-ft-1");
-    await new Promise((r) => setTimeout(r, 20));
-    await api.logout();
-    await oturumAc("po");
-    const u = userEvent.setup();
-    uygulama("/gereksinimler/req-ft-1");
-    const dugme = await screen.findByRole("button", { name: "PO olarak onayla" });
-    await u.click(dugme);
-    expect(await screen.findByText("Onaylı")).toBeInTheDocument();
-  });
-
-  it("PO onayı: içerik ekranda görüldükten sonra değiştiyse 409 → yeniden yükler, ikinci denemede onaylar", async () => {
+  it("PO onayı portalda verilmez: PO kartında düğme yok, Jira etiketi ipucu var (ANALIZ 012 K6)", async () => {
     const { mockVerisi } = await import("../api/mock/handlers");
     const g = mockVerisi().gereksinimler.find((x) => x.id === "req-ft-1")!;
     g.durum = "pending_po";
     g.po = { durum: "pending", onaylayan: null, zaman: null, kanal: "portal" };
     await oturumAc("po");
-    const u = userEvent.setup();
     uygulama("/gereksinimler/req-ft-1");
-    const dugme = await screen.findByRole("button", { name: "PO olarak onayla" });
-    // PO ekrana baktıktan sonra açıklama değişti (ör. analist düzeltme yazdı).
-    g.aciklama = `${g.aciklama} Ek cümle.`;
-    await u.click(dugme);
-    expect(await screen.findByRole("alert")).toHaveTextContent("İçerik değişti, yeniden inceleyin.");
-    expect(g.durum).toBe("pending_po");
-    expect(await screen.findByText(/Ek cümle\./)).toBeInTheDocument();
-    await u.click(screen.getByRole("button", { name: "PO olarak onayla" }));
-    expect(await screen.findByText("Onaylı")).toBeInTheDocument();
-    expect(g.durum).toBe("po_approved");
+    expect(await screen.findByTestId("po-onay-ipucu")).toHaveTextContent("tp-po-approved");
+    expect(screen.queryByRole("button", { name: "PO olarak onayla" })).toBeNull();
   });
 
   it("script listesi: core durumu + türetilmiş işaret (merge'e hazır / zayıf test)", async () => {
@@ -320,14 +293,20 @@ describe("ekranlar", () => {
     expect(screen.queryByRole("button", { name: "Buton kimliğini değiştir" })).toBeNull();
   });
 
-  it("denetim: zincir doğrulama sonucu", async () => {
+  it("denetim: zincir doğrulama sonucu (Denetçi); diğer roller yalnız kendi olaylarını, doğrulamasız görür", async () => {
+    await oturumAc("denetci");
+    const { unmount } = uygulama("/denetim");
+    expect(await screen.findByText("✓ Zincir doğrulandı")).toBeInTheDocument();
+    unmount();
     await oturumAc("analist");
     uygulama("/denetim");
-    expect(await screen.findByText("✓ Zincir doğrulandı")).toBeInTheDocument();
+    expect(await screen.findByText(/Yalnız sizin olaylarınız gösterilir/)).toBeInTheDocument();
+    expect(screen.queryByText("✓ Zincir doğrulandı")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Zinciri yeniden doğrula" })).toBeNull();
   });
 
   it("Claude Code kanalı: token ve .mcp.json", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const u = userEvent.setup();
     uygulama("/claude-code");
     await u.click(await screen.findByRole("button", { name: "8 saatlik token oluştur" }));

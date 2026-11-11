@@ -5,7 +5,7 @@ import { useState, type FormEvent } from "react";
 import { api } from "../api/client";
 import type { BazKaynagi, GereksinimDetay, ManuelBaz } from "../api/types";
 import { BAZ_NOT_EN_AZ, BAZ_NOT_EN_COK, BAZ_UST_SINIR_S } from "../api/uyumFaz5";
-import { useRol } from "../auth";
+import { useIzin } from "../auth";
 import { useIslem } from "../hooks";
 import { KisiAdi } from "./KisiAdi";
 import { sure, tarih } from "../lib/format";
@@ -69,7 +69,7 @@ function BazDegeri({ b }: { b: ManuelBaz }) {
 }
 
 export function BazDegerKarti({ g, guncellendi, id }: { g: Pick<GereksinimDetay, "id" | "manuel_baz">; guncellendi: (b: ManuelBaz | undefined) => void; id?: string }) {
-  const yetkili = useRol("analyst", "po");
+  const yetkili = useIzin("baseline.manage");
   const islem = useIslem();
   const bildir = useBildirim();
   const [acik, setAcik] = useState(false);
@@ -135,7 +135,7 @@ export function BazDegerKarti({ g, guncellendi, id }: { g: Pick<GereksinimDetay,
       eylemler={
         b !== undefined &&
         !acik && (
-          <IslemDugmesi roller={["analyst", "po"]} tur="ikincil" kucuk onClick={formuAc}>
+          <IslemDugmesi izin="baseline.manage" tur="ikincil" kucuk onClick={formuAc}>
             {b.kaynak === "olcum" ? "Ölçümü düzenle" : "Ölçüm gir"}
           </IslemDugmesi>
         )
@@ -182,7 +182,7 @@ export function BazDegerKarti({ g, guncellendi, id }: { g: Pick<GereksinimDetay,
             </p>
           )}
           <div className="satir-ogeler">
-            <IslemDugmesi roller={["analyst", "po"]} type="submit" calisiyor={islem.calisiyor}>
+            <IslemDugmesi izin="baseline.manage" type="submit" calisiyor={islem.calisiyor}>
               Kaydet
             </IslemDugmesi>
             <button type="button" className="dugme dugme-ikincil" onClick={() => setAcik(false)} disabled={islem.calisiyor}>
@@ -196,7 +196,7 @@ export function BazDegerKarti({ g, guncellendi, id }: { g: Pick<GereksinimDetay,
           {silOnayi ? (
             <>
               <span className="kucuk">Ölçüm silinsin mi? Kazanç bu story için artık hesaplanmaz (denetime yazılır).</span>
-              <IslemDugmesi roller={["analyst", "po"]} tur="tehlike" kucuk calisiyor={islem.calisiyor} onClick={() => void sil()}>
+              <IslemDugmesi izin="baseline.manage" tur="tehlike" kucuk calisiyor={islem.calisiyor} onClick={() => void sil()}>
                 Evet, sil
               </IslemDugmesi>
               <button type="button" className="dugme dugme-ikincil dugme-kucuk" onClick={() => setSilOnayi(false)}>

@@ -47,13 +47,14 @@ function konsolHatalariniTopla(page: Page): string[] {
   return hatalar;
 }
 
-const ROTALAR: { yol: string; ad: string; baslik: RegExp }[] = [
+/** `rol`: ekran yalnız o role açıksa (ANALIZ 012 §4.2) gezinti o hesapla yapılır; yoksa analist. */
+const ROTALAR: { yol: string; ad: string; baslik: RegExp; rol?: string }[] = [
   { yol: "/gereksinimler", ad: "01-gereksinimler", baslik: /^Gereksinimler$/ },
   { yol: "/gereksinimler/req-tpd-1", ad: "02-gereksinim-tpd1", baslik: /Kampanyalı sepet/ },
   { yol: "/gereksinimler/req-ft-1", ad: "03-gereksinim-serbest-metin", baslik: /Sepetten ürün çıkarma/ },
   { yol: "/gereksinimler/req-tpd-3", ad: "04-gereksinim-tpd3-injection", baslik: /Ürün arama/ },
   { yol: "/gereksinimler/req-tpd-1/caseler", ad: "05-case-review", baslik: /^Case review$/ },
-  { yol: "/gereksinimler/req-tpd-1/yayin", ad: "06-yayin-onizleme", baslik: /^Yayın önizleme$/ },
+  { yol: "/gereksinimler/req-tpd-1/yayin", ad: "06-yayin-onizleme", baslik: /^Yayın önizleme$/, rol: "testci" },
   { yol: "/kod", ad: "07-kod-uretimi", baslik: /^Kod üretimi$/ },
   { yol: "/kod/scr-2", ad: "08-script-detay", baslik: /7 adet kampanyalı/ },
   { yol: "/kod/scr-3", ad: "08b-script-defect-adayi", baslik: /6 adet kampanyalı/ },
@@ -65,13 +66,13 @@ const ROTALAR: { yol: string; ad: string; baslik: RegExp }[] = [
   { yol: "/bug-taslaklari/bug-1", ad: "14-bug-taslak-detay", baslik: /7 adet Portakal Gazozu/ },
   { yol: "/kontrol-kulesi", ad: "15-kontrol-kulesi", baslik: /^Kontrol Kulesi$/ },
   { yol: "/denetim", ad: "16-denetim", baslik: /^Denetim$/ },
-  { yol: "/claude-code", ad: "17-claude-code", baslik: /^Claude Code kanalı$/ },
+  { yol: "/claude-code", ad: "17-claude-code", baslik: /^Claude Code kanalı$/, rol: "testci" },
   { yol: "/hatalar/fail-4", ad: "40-triage-c3-defect", baslik: /^Triage sonucu$/ },
   { yol: "/hatalar/fail-3", ad: "41-triage-ortam", baslik: /^Triage sonucu$/ },
   { yol: "/bug-taslaklari/bug-4", ad: "42-bug-c3-taslak", baslik: /6 adet Portakal Gazozu/ },
   { yol: "/bug-taslaklari/bug-3", ad: "43-bug-f2-tutarlilik", baslik: /TPD-1 AC2/ },
   { yol: "/kosular/run-109", ad: "44-kosu-ortam-hatasi", baslik: /run-109/ },
-  { yol: "/yol-haritasi", ad: "52-yol-haritasi", baslik: /^Demo yol haritası$/ },
+  { yol: "/yol-haritasi", ad: "52-yol-haritasi", baslik: /^Demo yol haritası$/, rol: "sunucu" },
 ];
 
 test("giriş ekranı", async ({ page }) => {
@@ -83,13 +84,20 @@ test("giriş ekranı", async ({ page }) => {
   expect(hatalar).toEqual([]);
 });
 
-test("analist tüm rotaları gezer (ekran görüntüleri)", async ({ page }) => {
+test("tüm rotalar gezilir (ekran görüntüleri; rol kısıtlı ekranlar yetkili hesapla)", async ({ page }) => {
   const hatalar = konsolHatalariniTopla(page);
   await girisYap(page, "analist");
   await expect(page.getByText("ÖRNEK VERİ", { exact: true })).toBeVisible();
   // Örnek veri derlemesinde her ekranın üstünde tam genişlik "gerçek değil" bandı.
   await expect(page.getByTestId("ornek-veri-bandi")).toContainText("ÖRNEK VERİ — gerçek değil");
-  for (const r of ROTALAR) {
+  let aktif = "analist";
+  for (const r of [...ROTALAR].sort((a, b) => (a.rol ?? "").localeCompare(b.rol ?? ""))) {
+    const rol = r.rol ?? "analist";
+    if (rol !== aktif) {
+      await page.getByRole("button", { name: "Çıkış" }).click();
+      await girisYap(page, rol);
+      aktif = rol;
+    }
     await page.goto(r.yol);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(r.baslik);
     await expect(page.getByRole("status").filter({ hasText: "Yükleniyor" })).toHaveCount(0);
@@ -126,8 +134,12 @@ test("insan kapıları uçtan uca: bulgu kararı → düzeltme → PO teyidi", a
   await ucuncu.getByRole("button", { name: "Kararı kaydet" }).click();
   await expect(ucuncu.getByText("Aynı AC3 düzeltmesi bir önceki bulguda kabul edildi")).toBeVisible();
 
-  await expect(page.getByRole("button", { name: /Düzeltmeleri uygula \(2\) · tur 1\/3/ })).toBeEnabled();
+  // Doküman düzeltmesini PO uygular (requirement.doc_fix; ANALIZ 012 K7): Analistte pasif.
+  await expect(page.getByRole("button", { name: /Düzeltmeleri uygula \(2\) · tur 1\/3/ })).toBeDisabled();
   await page.screenshot({ path: `${EKRAN_DIZINI}/19-akis-kararlar-tur-sayaci.png`, fullPage: true });
+  await page.getByRole("button", { name: "Çıkış" }).click();
+  await girisYap(page, "po");
+  await page.goto("/gereksinimler/req-ft-1");
   await page.getByRole("button", { name: /Düzeltmeleri uygula/ }).click();
   await expect(page.locator(".sayfa-basligi").getByText("PO teyidi bekliyor")).toBeVisible();
   // Serbest metinde Jira yok: düzeltme dokümana uygulanır; akışın 1. adımı "Serbest metin".
@@ -136,30 +148,41 @@ test("insan kapıları uçtan uca: bulgu kararı → düzeltme → PO teyidi", a
   await expect(page.getByRole("navigation", { name: /14 adımlı akış/ }).getByText("Serbest metin")).toBeVisible();
   await page.screenshot({ path: `${EKRAN_DIZINI}/20-akis-po-bekliyor.png`, fullPage: true });
 
-  await page.getByRole("button", { name: "Çıkış" }).click();
-  await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
-  await girisYap(page, "po");
+  // PO onayı yalnız Jira etiketiyle (ANALIZ 012 K6): portalda düğme yok, ipucu var.
   await expect(page.locator(".kullanici-ad")).toHaveText("po");
-  await page.goto("/gereksinimler/req-ft-1");
-  await page.getByRole("button", { name: "PO olarak onayla" }).click();
-  await expect(page.locator(".sayfa-basligi").getByText("PO onaylı")).toBeVisible();
-  await page.screenshot({ path: `${EKRAN_DIZINI}/21-akis-po-onayli.png`, fullPage: true });
+  await expect(page.getByTestId("po-onay-ipucu")).toContainText("tp-po-approved");
+  await expect(page.getByRole("button", { name: "PO olarak onayla" })).toHaveCount(0);
+  await page.screenshot({ path: `${EKRAN_DIZINI}/21-akis-po-jira-ipucu.png`, fullPage: true });
 });
 
-test("Demo-A: case taslağa alma, yayın (kısmi sonuç, jira-sim bağlantıları), Claude Code token'ı", async ({ page }) => {
-  await girisYap(page, "analist");
+test("Demo-A: Testçi taslağa alır ve kabul eder, Analist onaylar; yayın (kısmi sonuç, jira-sim), Claude Code token'ı", async ({ page }) => {
+  await girisYap(page, "testci");
   await page.goto("/gereksinimler/req-tpd-1/caseler");
   const kart = (etiket: string) => page.getByRole("article").filter({ has: page.locator(".cip", { hasText: new RegExp(`^${etiket}$`) }) }).first();
   const red = kart("Reddedildi");
-  // Golden C10 (C2 tekrarı) de reddedilmiş olarak gelir: biri yeniden açılınca 1 ret kalır.
-  await red.getByRole("button", { name: "Yeniden aç" }).click();
+  // Golden C10 (C2 tekrarı) de reddedilmiş olarak gelir: biri taslağa alınınca 1 ret kalır.
+  await red.getByRole("button", { name: "Taslağa al" }).click();
   await expect(page.getByText("Reddedilen (1)")).toBeVisible();
   // Taslağa alınan case'e yeniden karar verilir (ölçüm görüntülemeden yeniden başlar).
   const taslak = page.getByRole("article").filter({ hasText: "taslağa alındı (önceki karar: ret)" });
-  await expect(taslak.getByRole("button", { name: "Onayla" })).toBeEnabled();
-  await taslak.getByRole("button", { name: "Onayla" }).click();
-  await expect(page.getByText("Reddedilen (1)")).toBeVisible();
+  await expect(taslak.getByRole("button", { name: "Kabul et" })).toBeEnabled();
+  await taslak.getByRole("button", { name: "Kabul et" }).click();
+  await expect(page.getByText("Onaya hazır (1)")).toBeVisible();
   await page.screenshot({ path: `${EKRAN_DIZINI}/26-case-taslaga-al.png`, fullPage: true });
+
+  // Analist son onayı verir (ANALIZ 012 §5).
+  await page.getByRole("button", { name: "Çıkış" }).click();
+  await girisYap(page, "analist");
+  await page.goto("/gereksinimler/req-tpd-1/caseler");
+  const hazir = kart("Onaya hazır");
+  await expect(hazir.getByRole("button", { name: "Onayla" })).toBeEnabled();
+  await hazir.getByRole("button", { name: "Onayla" }).click();
+  await expect(page.getByText("Onaya hazır (0)")).toBeVisible();
+  await page.screenshot({ path: `${EKRAN_DIZINI}/26b-case-analist-onayi.png`, fullPage: true });
+
+  // Yayın ve Claude Code token'ı Testçide.
+  await page.getByRole("button", { name: "Çıkış" }).click();
+  await girisYap(page, "testci");
 
   await page.goto("/gereksinimler/req-tpd-1/yayin");
   await expect(page.getByTestId("yayin-hedefi")).toContainText("Jira (Test issue) · proje TPD");
@@ -176,23 +199,23 @@ test("Demo-A: case taslağa alma, yayın (kısmi sonuç, jira-sim bağlantılar�
   await page.screenshot({ path: `${EKRAN_DIZINI}/28-claude-code-token.png`, fullPage: true });
 });
 
-test("case kararları durum makinesine uyar: reddedilen onaylanamaz, onaylı reddedilemez", async ({ page }) => {
-  await girisYap(page, "analist");
+test("case kararları durum makinesine uyar: reddedilen kabul edilemez, onaylı reddedilemez", async ({ page }) => {
+  await girisYap(page, "testci");
   await page.goto("/gereksinimler/req-tpd-1/caseler");
   const kart = (etiket: string) => page.getByRole("article").filter({ has: page.locator(".cip", { hasText: new RegExp(`^${etiket}$`) }) }).first();
   const red = kart("Reddedildi");
   await expect(red).toBeVisible();
-  // Karar verilmiş case'te karar düğmeleri hiç gösterilmez (pasif düğme yerine kilit notu + "Yeniden aç").
+  // Karar verilmiş case'te karar düğmeleri hiç gösterilmez (pasif düğme yerine kilit notu + "Taslağa al").
   await expect(red.getByTestId("case-karar-kilit")).toBeVisible();
-  for (const ad of ["Onayla", "Düzelt", "Reddet"]) await expect(red.getByRole("button", { name: ad })).toHaveCount(0);
+  for (const ad of ["Kabul et", "Düzelterek kabul", "Reddet"]) await expect(red.getByRole("button", { name: ad })).toHaveCount(0);
   // Karar değiştirmenin tek yolu taslağa almaktır (yeniden review).
-  await expect(red.getByRole("button", { name: "Yeniden aç" })).toBeEnabled();
+  await expect(red.getByRole("button", { name: "Taslağa al" })).toBeEnabled();
   const onayli = kart("Onaylı");
   await expect(onayli.getByTestId("case-karar-kilit")).toBeVisible();
-  for (const ad of ["Onayla", "Düzelt", "Reddet"]) await expect(onayli.getByRole("button", { name: ad })).toHaveCount(0);
-  // Taslak case'te kararlar açık ve çalışır.
+  for (const ad of ["Kabul et", "Düzelterek kabul", "Reddet"]) await expect(onayli.getByRole("button", { name: ad })).toHaveCount(0);
+  // Taslak case'te Testçi kararları açık ve çalışır.
   const taslak = kart("Karar bekliyor");
-  await expect(taslak.getByRole("button", { name: "Onayla" })).toBeEnabled();
+  await expect(taslak.getByRole("button", { name: "Kabul et" })).toBeEnabled();
   await page.screenshot({ path: `${EKRAN_DIZINI}/24-case-karar-kilidi.png`, fullPage: true });
 });
 
@@ -264,7 +287,7 @@ test("mühendis: kod üretimi canlı adımlar ve kırarak doğrulama", async ({ 
   expect(hatalar).toEqual([]);
 });
 
-test("sunucu: açılış Demo yol haritası; Kontrol Kulesi (KPI kaynağı), koşu süzgeci ve deploy tetiği", async ({ page }) => {
+test("Sistem Yöneticisi (sunucu): açılış Demo yol haritası; Kontrol Kulesi (KPI kaynağı), koşu süzgeci; deploy tetiği Automation Engineer'da", async ({ page }) => {
   const hatalar = konsolHatalariniTopla(page);
   await girisYap(page, "sunucu");
   await expect(page).toHaveURL(/\/yol-haritasi$/);
@@ -277,6 +300,11 @@ test("sunucu: açılış Demo yol haritası; Kontrol Kulesi (KPI kaynağı), ko�
   await page.goto("/kosular");
   await page.getByRole("combobox", { name: "Tetik" }).selectOption("break_verify");
   await expect(page).toHaveURL(/tetik=break_verify/);
+  // CI tetikleri Automation Engineer'dadır (ANALIZ 012 §6); Sistem Yöneticisi düğme görmez.
+  await expect(page.getByRole("button", { name: "Deploy sonrası testleri koş" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Çıkış" }).click();
+  await girisYap(page, "muhendis");
+  await page.goto("/kosular");
   await page.getByRole("button", { name: "Deploy sonrası testleri koş" }).click();
   await expect(page.getByText(/Deploy koşusu sıraya alındı/).first()).toBeVisible();
   await page.screenshot({ path: `${EKRAN_DIZINI}/27-kosular-suzgec.png`, fullPage: true });
@@ -460,7 +488,7 @@ test("CSP: önizleme nginx.conf başlığını gönderir; ekranlarda CSP ihlali 
 
 test("hiçbir rolde ölü iç bağlantı yok (her href bir ekrana çıkar)", async ({ page }) => {
   test.setTimeout(180_000);
-  for (const rol of ["analist", "muhendis", "sunucu", "po", "testci"]) {
+  for (const rol of ["analist", "muhendis", "sunucu", "po", "testci", "denetci", "gelistirici", "izleyici"]) {
     await girisYap(page, rol);
     const hrefler = new Set<string>();
     for (const r of ROTALAR) {
@@ -680,7 +708,7 @@ for (const tur of TEMA_TURLARI) {
       await page.getByRole("button", { name: "Çıkış" }).click();
       await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
 
-      // Demo kontrolleri yalnız sunucu rolünde (App.tsx RolGerekli presenter); onay grubu açık haliyle.
+      // Demo kontrolleri Sistem Yöneticisi + Automation Engineer'da (demo.manage); onay grubu açık haliyle.
       await girisYap(page, "sunucu");
       await page.goto("/demo");
       await page.getByRole("button", { name: "Buton kimliğini değiştir" }).click();
@@ -790,14 +818,15 @@ test("pasiflik nedeni yerleşimi (review 3): neden kendi düğmesinin altında, 
       return { sol: Math.min(...s.map((x) => x.left)), sag: Math.max(...s.map((x) => x.right)), satir: new Set(s.map((x) => Math.round(x.top))).size };
     });
 
-  // Case review, testci, 1440: karar verilmiş case satırında neden paragrafın değil 'Yeniden aç' düğmesinin altında.
+  // Case review, analist, 1440: karar verilmiş case satırında neden paragrafın değil 'Taslağa al' düğmesinin altında
+  // (Taslağa al Testçi kararıdır; Analistte pasif ve gerekçeli). Script detayında da Analist merge edemez.
   await page.setViewportSize({ width: 1440, height: 900 });
-  await girisYap(page, "testci");
+  await girisYap(page, "analist");
   await page.goto("/gereksinimler/req-tpd-1/caseler");
   const satir = page.locator(".satir-ogeler:has(> .neden-var)").first();
   await expect(satir).toBeVisible();
   await fontlariBekle(page);
-  const yenidenAc = await kutu(satir.getByRole("button", { name: "Yeniden aç" }));
+  const yenidenAc = await kutu(satir.getByRole("button", { name: "Taslağa al" }));
   const nedenK = await kutu(satir.locator(".dugme-neden"));
   expect(nedenK.x).toBeGreaterThanOrEqual(yenidenAc.x - 1);
   expect(nedenK.y).toBeGreaterThanOrEqual(yenidenAc.y + yenidenAc.height - 1);
@@ -808,7 +837,7 @@ test("pasiflik nedeni yerleşimi (review 3): neden kendi düğmesinin altında, 
   const yayinD = await kutu(yayin.getByRole("button", { name: "Yayın önizleme" }));
   expect(Math.abs(yayinNeden.sag - (yayinD.x + yayinD.width))).toBeLessThanOrEqual(1);
 
-  // Script detay, testci: sola yaslı merge grubunda neden metni düğmenin sol kenarından başlar; komşu kart başlıkları aynı hizada.
+  // Script detay, analist: sola yaslı merge grubunda neden metni düğmenin sol kenarından başlar; komşu kart başlıkları aynı hizada.
   for (const g of [1440, 1152]) {
     await page.setViewportSize({ width: g, height: 900 });
     await page.goto("/kod/scr-2");

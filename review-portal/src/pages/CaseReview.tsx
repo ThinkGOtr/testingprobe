@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import type { BazKaynagi, CaseMetrikleri, ManuelBaz, TestCase } from "../api/types";
 import { bazKaynagiUyarla, manuelBazUyarla } from "../api/uyumFaz5";
-import { useKisiAdi, useOturum } from "../auth";
+import { useCaseKisitli, useIzin, useKisiAdi } from "../auth";
 import { BAZ_KAYNAGI } from "../components/BazDegerKarti";
 import { CaseKarti } from "../components/CaseKarti";
 import { BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, Metrik, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
@@ -97,13 +97,19 @@ export function aiModu(caseler: TestCase[], m?: CaseMetrikleri | null): "live" |
   return modlar.size === 1 ? "live" : "karisik";
 }
 
+/** Testçinin kararı (ölçümler bunu sayar, ANALIZ 012 §5); eski kayıtlarda Analist `approve` kabul sayılır. */
+export const testciKarari = (c: TestCase) => c.testci_karari ?? (c.karar === "send_back" ? null : c.karar);
+
 export function caseOzeti(caseler: TestCase[], m?: CaseMetrikleri | null) {
   const onayli = caseler.filter((c) => ONAYLI.has(c.durum));
-  const onay = onayli.filter((c) => c.karar === "approve").length;
-  const duzeltilmis = onayli.filter((c) => c.karar === "edit").length;
-  const kucukDuzeltme = onayli.filter((c) => c.karar === "edit" && kucukMu(c)).length;
+  const kabulMu = (c: TestCase) => testciKarari(c) === "accept" || testciKarari(c) === "approve";
+  const onay = onayli.filter(kabulMu).length;
+  const duzeltilmis = onayli.filter((c) => testciKarari(c) === "edit").length;
+  const kararli = caseler.filter((c) => c.durum !== "draft");
+  const kucukDuzeltme = kararli.filter((c) => testciKarari(c) === "edit" && kucukMu(c)).length;
   const ret = caseler.filter((c) => c.durum === "rejected").length;
   const bekleyen = caseler.filter((c) => c.durum === "draft").length;
+  const hazir = caseler.filter((c) => c.durum === "ready").length;
   const olculen = caseler.filter((c) => c.review_sure_ms !== null);
   const yerel = {
     uretilen: caseler.length,
@@ -111,8 +117,10 @@ export function caseOzeti(caseler: TestCase[], m?: CaseMetrikleri | null) {
     duzeltilmis,
     ret,
     bekleyen,
+    /** Testçi kabul etti, Analist son onayı bekleniyor. */
+    hazir,
     /** Hiç karar yoksa null: "%0 hedefin altında" denmez. */
-    kabulOrani: caseler.length && caseler.some((c) => c.durum !== "draft") ? (onay + kucukDuzeltme) / caseler.length : (null as number | null),
+    kabulOrani: caseler.length && kararli.length ? (kararli.filter(kabulMu).length + kucukDuzeltme) / caseler.length : (null as number | null),
     /** Kabul oranının kaynağı: çekirdek ölçümü (ilk karara göre, §12) ya da ekrandaki son durum. */
     kabulKaynagi: "yerel" as "cekirdek" | "yerel",
     aiSure: caseler.reduce((a, c) => a + c.ai_sure_ms, 0),
@@ -134,7 +142,7 @@ export function caseOzeti(caseler: TestCase[], m?: CaseMetrikleri | null) {
   };
 }
 
-type Filtre = "hepsi" | "bekleyen" | "onayli" | "reddedilen";
+type Filtre = "hepsi" | "bekleyen" | "hazir" | "onayli" | "reddedilen";
 
 export function CaseReview() {
   const { id = "" } = useParams();
@@ -161,13 +169,16 @@ export function CaseReview() {
       ? true
       : filtre === "bekleyen"
         ? c.durum === "draft"
-        : filtre === "onayli"
+        : filtre === "hazir"
+          ? c.durum === "ready"
+          : filtre === "onayli"
           ? c.durum === "approved" || c.durum === "published"
           : c.durum === "rejected",
   );
   const g = gereksinim.veri;
-  const { kullanici } = useOturum();
-  const yayinYetkili = kullanici?.rol === "analyst";
+  const yayinYetkili = useIzin("case.publish");
+  // Developer: yalnız onaylı/yayınlanmış case'ler; karar özeti ve geçmişi yok (core süzgeci).
+  const kisitli = useCaseKisitli();
   const mod = aiModu(liste, metrik.veri);
   const aiOlculmedi = mod === "replay" || mod === "replay_miss";
   const baz = caseBazi(metrik.veri);
@@ -185,7 +196,7 @@ export function CaseReview() {
         baslik="Case review"
         aciklama={g ? `${g.jira_key ? `${g.jira_key} · ` : ""}${g.baslik}` : undefined}
         eylemler={
-          yayinYetkili ? (
+          kisitli ? undefined : yayinYetkili ? (
             <Link className="dugme dugme-birincil" to={`/gereksinimler/${encodeURIComponent(id)}/yayin`}>
               Yayın önizleme
             </Link>
@@ -197,9 +208,16 @@ export function CaseReview() {
         }
       />
 
+      {kisitli ? (
+        <Uyari ton="bilgi" baslik="Salt okunur görünüm">
+          Yalnız onaylı ve yayınlanmış case'ler gösterilir; karar geçmişi ve ölçümler bu rolde yer almaz.
+        </Uyari>
+      ) : (
+      <>
       <Kart baslik="Özet" eylemler={aiOlculmedi ? <ReplayRozeti mode={mod} /> : undefined}>
         <div className="metrik-izgara">
           <Metrik etiket="Üretilen" deger={ozet.uretilen} />
+          <Metrik etiket="Onaya hazır" deger={ozet.hazir} />
           <Metrik etiket="Onaylı" deger={ozet.onay} />
           <Metrik etiket="Düzeltilerek onaylı" deger={ozet.duzeltilmis} />
           <Metrik etiket="Reddedilen" deger={ozet.ret} />
@@ -300,6 +318,7 @@ export function CaseReview() {
           [
             ["hepsi", `Hepsi (${liste.length})`],
             ["bekleyen", `Karar bekleyen (${ozet.bekleyen})`],
+            ["hazir", `Onaya hazır (${ozet.hazir})`],
             ["onayli", `Onaylı (${liste.filter((c) => c.durum === "approved" || c.durum === "published").length})`],
             ["reddedilen", `Reddedilen (${ozet.ret})`],
           ] as [Filtre, string][]
@@ -309,6 +328,8 @@ export function CaseReview() {
           </button>
         ))}
       </div>
+      </>
+      )}
 
       {caseler.yukleniyor && !caseler.veri ? (
         <Yukleniyor />
@@ -317,7 +338,7 @@ export function CaseReview() {
       ) : gorunen.length === 0 ? (
         <Kart>
           <BosDurum baslik={liste.length ? "Bu filtrede case yok." : "Henüz case üretilmedi."}>
-            {!liste.length && "PO teyidinden sonra gereksinim ekranından 'Case üret' ile başlatın."}
+            {!liste.length && !kisitli && "PO teyidinden sonra gereksinim ekranından 'Case üret' ile başlatın (Testçi)."}
           </BosDurum>
         </Kart>
       ) : (

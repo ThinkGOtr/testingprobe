@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import type { YayinOnizlemeKalemi, YayinSonucu } from "../api/types";
 import { jiraKayitAdresi } from "../api/uyum";
-import { useOturum } from "../auth";
+import { useIzin, useOturum } from "../auth";
 import { useBildirim } from "../components/Bildirim";
 import { Baglanti, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
@@ -29,12 +29,13 @@ export function yayinOzeti(s: YayinSonucu) {
   return { olusan, vardi, basarisiz, kismi: basarisiz > 0 && olusan + vardi > 0 };
 }
 
-/** Yayın önizleme ve yayın analist rolüne açıktır (core `GET /publish/preview` → 403). */
-export const YAYIN_ROLU_GEREKLI = "Yayın analist rolü gerektirir";
+/** Yayın önizleme ve yayın Testçi rolüne açıktır (`case.publish`; core `GET /publish/preview` → 403). */
+export const YAYIN_ROLU_GEREKLI = "Yayın Testçi rolü gerektirir";
 
 export function Yayin() {
   const { kullanici } = useOturum();
-  if (kullanici && kullanici.rol !== "analyst") return <YayinYetkisiz />;
+  const yetkili = useIzin("case.publish");
+  if (kullanici && !yetkili) return <YayinYetkisiz />;
   return <YayinEkrani />;
 }
 
@@ -47,7 +48,7 @@ function YayinYetkisiz() {
         baslik="Yayın önizleme"
       />
       <Uyari ton="bilgi" baslik={YAYIN_ROLU_GEREKLI}>
-        Case'lerin test yönetimine yayını ve önizlemesi analist rolüyle yapılır. Case'lerin durumunu Case review ekranında
+        Case'lerin test yönetimine yayını ve önizlemesi Testçi rolüyle yapılır (Analist son onayından sonra). Case'lerin durumunu Case review ekranında
         görebilirsiniz.
       </Uyari>
     </>
@@ -139,7 +140,7 @@ function YayinEkrani() {
             baslik="Hedef"
             eylemler={
               <IslemDugmesi
-                roller={["analyst"]}
+                izin="case.publish"
                 disabled={secili.size === 0 || bekleyenIs !== null}
                 calisiyor={islem.calisiyor || bekleyenIs !== null}
                 onClick={yayinla}

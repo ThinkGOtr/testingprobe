@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type TextareaHTMLAttributes } from "react";
 import { api } from "../api/client";
-import { caseKarariVerilebilir, GECIS_YOK, gecisVar, type CaseKarari } from "../api/sozlesme/durumMakinesi";
-import { useKisiAdi, useOturum } from "../auth";
+import { caseKarariVerilebilir, GECIS_YOK, type CaseKarari } from "../api/sozlesme/durumMakinesi";
+import { useCaseKisitli, useIzin, useKisiAdi } from "../auth";
 import type { RetNedeni, TestCase, TestCaseIcerik } from "../api/types";
 import { useIslem } from "../hooks";
 import { CASE_DURUMU, CASE_TURU, RET_NEDENI, RISK } from "../lib/etiketler";
@@ -9,9 +9,23 @@ import { sure, tarih } from "../lib/format";
 import { FarkGorunumu } from "./FarkGorunumu";
 import { AlanHatasi, Cip, IslemDugmesi, ReplayRozeti } from "./ui";
 
-type Mod = "goster" | "duzenle" | "reddet";
+type Mod = "goster" | "duzenle" | "reddet" | "geriGonder";
 
-const KARAR_ADI = { approve: "onay", edit: "düzeltme", reject: "ret" } as const;
+const KARAR_ADI: Record<string, string> = {
+  accept: "kabul",
+  edit: "düzelterek kabul",
+  reject: "ret",
+  approve: "onay",
+  send_back: "geri gönderme",
+  reopen: "taslağa alma",
+};
+
+/** Karar sonrası durum notu (ANALIZ 012 §5). */
+const DURUM_NOTU: Partial<Record<TestCase["durum"], string>> = {
+  ready: "Testçi kabul etti; Analist son onayı bekleniyor. Değiştirmek için taslağa alın.",
+  approved: "Analist onayladı. Değiştirmek için taslağa alın; onay düşer ve yeniden karar gerekir.",
+  rejected: "Reddedildi. Yeniden değerlendirmek için taslağa alın.",
+};
 
 // Bu oturumda "görüntülendi" bildirilen case'ler (her case için tek istek).
 const goruntulenenler = new Set<string>();
@@ -22,7 +36,7 @@ export function goruntulenenleriSifirla(): void {
 }
 
 /**
- * Karar bekleyen case analistin ekranına ilk girdiğinde (kartın yarısı görünür olunca) core'a
+ * Karar bekleyen case Testçinin ekranına ilk girdiğinde (kartın yarısı görünür olunca) core'a
  * bildirilir; review süresi (`review_sure_ms`) sunucuda bu andan karara kadar ölçülür. Hata
  * sessizce yutulur: ölçüm kararın önüne geçmez (uç yoksa süre ölçülmez, karar yine verilir).
  */
@@ -67,20 +81,24 @@ export function CaseKarti({
   const [mod, setMod] = useState<Mod>("goster");
   const islem = useIslem();
   const id = useId();
-  const { kullanici } = useOturum();
+  const testci = useIzin("case.decide");
+  // Developer: yalnız onaylı/yayınlanmış case, karar geçmişi ve eylem yok (core süzgeciyle aynı).
+  const kisitli = useCaseKisitli();
   const kisiAdi = useKisiAdi();
-  // Yalnızca karar verecek rol (analist) ve karar bekleyen case için görüntüleme ölçülür.
-  const kartRef = useGoruntulemeBildir(tc, kullanici?.rol === "analyst" && tc.durum === "draft");
-  // core test_case: approved | rejected → draft (yeniden aç). Yayınlanmış case son durumdur.
-  const yenidenAcilabilir = gecisVar("test_case", tc.durum, "draft");
+  // Yalnızca karar verecek rol (Testçi) ve karar bekleyen case için görüntüleme ölçülür.
+  const kartRef = useGoruntulemeBildir(tc, testci && tc.durum === "draft");
+  // core test_case: ready | approved | rejected → draft ("Taslağa al"). Yayınlanmış case son durumdur.
+  const yenidenAcilabilir = caseKarariVerilebilir(tc.durum, "reopen");
   const d = CASE_DURUMU[tc.durum];
   const r = RISK[tc.icerik.risk];
   // Son durumlar (core): yayınlanan ve yerini yenisi alan case'e karar verilmez.
   const kilitli = tc.durum === "published" || tc.durum === "superseded";
-  // core test_case makinesi: kararlar yalnızca izinli geçişlerde (draft → approved | rejected).
+  // core test_case makinesi: Testçi kararı draft'tan (→ ready | rejected), Analist kararı ready'den.
   const verilebilir = (k: CaseKarari) => caseKarariVerilebilir(tc.durum, k);
   const gecisYokNedeni = (k: CaseKarari) => (verilebilir(k) ? undefined : `${GECIS_YOK} (${CASE_DURUMU[tc.durum].etiket})`);
-  const kararVerildi = !kilitli && !(["approve", "edit", "reject"] as const).some(verilebilir);
+  const testciKarari = !kilitli && tc.durum === "draft";
+  const analistKarari = !kilitli && tc.durum === "ready";
+  const kararVerildi = !kilitli && !testciKarari;
   // Kararlar ekranda görülen içeriğin hash'iyle gönderilir (düzeltmede düzeltme öncesi içerik).
   const bag = { icerik_hash: tc.icerik_hash };
 
@@ -177,6 +195,16 @@ export function CaseKarti({
         </>
       )}
 
+      {mod === "geriGonder" && (
+        <GeriGonderFormu
+          calisiyor={islem.calisiyor}
+          hata={islem.hata}
+          hataKaynagi={islem.hataNesnesi}
+          vazgec={() => setMod("goster")}
+          gonder={(gerekce) => karar(() => api.caseKarari(tc.id, { ...bag, karar: "send_back", gerekce }))}
+        />
+      )}
+
       {mod === "reddet" && (
         <RetFormu
           calisiyor={islem.calisiyor}
@@ -190,39 +218,47 @@ export function CaseKarti({
       <footer className="case-alt">
         <span className="soluk kucuk">
           {tc.mode === "replay" || tc.mode === "replay_miss" ? "AI: REPLAY — ölçülmedi" : `AI ${sure(tc.ai_sure_ms)}`}
-          {tc.review_sure_ms !== null && ` · review ${sure(tc.review_sure_ms)}`}
-          {tc.karar_veren && ` · ${kisiAdi(tc.karar_veren)}, ${tarih(tc.karar_zamani)}`}
-          {tc.durum === "draft" && tc.karar && ` · taslağa alındı (önceki karar: ${KARAR_ADI[tc.karar]})`}
-          {tc.ret_nedeni && tc.durum === "rejected" && ` · ret: ${RET_NEDENI[tc.ret_nedeni]}`}
-          {tc.duzeltme_olcusu !== null && tc.karar === "edit" && ` · düzeltme ölçüsü ${tc.duzeltme_olcusu.toLocaleString("tr-TR")}`}
-          {tc.karar === "edit" && <KucukDuzeltme tc={tc} />}
-          {tc.durum === "draft" && tc.goruntulenme && ` · review ${tarih(tc.goruntulenme)} itibarıyla sürüyor`}
+          {!kisitli && (
+            <>
+              {tc.review_sure_ms !== null && ` · review ${sure(tc.review_sure_ms)}`}
+              {tc.karar_veren && ` · ${kisiAdi(tc.karar_veren)}, ${tarih(tc.karar_zamani)}`}
+              {tc.onaylayan && ` · onay: ${kisiAdi(tc.onaylayan)}${tc.onay_zamani ? `, ${tarih(tc.onay_zamani)}` : ""}`}
+              {tc.durum === "draft" && tc.karar && tc.karar !== "send_back" && ` · taslağa alındı (önceki karar: ${KARAR_ADI[tc.karar] ?? tc.karar})`}
+              {tc.durum === "draft" && tc.karar === "send_back" && (
+                <span data-testid="case-geri-gonderildi">{` · Analist geri gönderdi${tc.gerekce ? `: ${tc.gerekce}` : ""}`}</span>
+              )}
+              {tc.ret_nedeni && tc.durum === "rejected" && ` · ret: ${RET_NEDENI[tc.ret_nedeni]}`}
+              {tc.duzeltme_olcusu !== null && (tc.testci_karari ?? tc.karar) === "edit" && ` · düzeltme ölçüsü ${tc.duzeltme_olcusu.toLocaleString("tr-TR")}`}
+              {(tc.testci_karari ?? tc.karar) === "edit" && <KucukDuzeltme tc={tc} />}
+              {tc.durum === "draft" && tc.goruntulenme && ` · review ${tarih(tc.goruntulenme)} itibarıyla sürüyor`}
+            </>
+          )}
         </span>
-        {/* Karar verilmiş case'te karar düğmeleri gösterilmez; yalnızca "Yeniden aç" (aşağıda). */}
-        {mod === "goster" && !kilitli && !kararVerildi && (
+        {/* Testçi kararı yalnız taslakta; Analist son onayı yalnız onaya hazır case'te (ANALIZ 012 §5). */}
+        {mod === "goster" && !kisitli && testciKarari && (
           <div className="eylemler">
             <IslemDugmesi
-              roller={["analyst"]}
+              izin="case.decide"
               kucuk
-              disabled={!verilebilir("approve")}
-              title={gecisYokNedeni("approve")}
+              disabled={!verilebilir("accept")}
+              title={gecisYokNedeni("accept")}
               calisiyor={islem.calisiyor}
-              onClick={() => karar(() => api.caseKarari(tc.id, { ...bag, karar: "approve" }))}
+              onClick={() => karar(() => api.caseKarari(tc.id, { ...bag, karar: "accept" }))}
             >
-              Onayla
+              Kabul et
             </IslemDugmesi>
             <IslemDugmesi
-              roller={["analyst"]}
+              izin="case.decide"
               kucuk
               tur="ikincil"
               disabled={!verilebilir("edit")}
               title={gecisYokNedeni("edit")}
               onClick={() => setMod("duzenle")}
             >
-              Düzelt
+              Düzelterek kabul
             </IslemDugmesi>
             <IslemDugmesi
-              roller={["analyst"]}
+              izin="case.decide"
               kucuk
               tur="tehlike"
               disabled={!verilebilir("reject")}
@@ -233,26 +269,44 @@ export function CaseKarti({
             </IslemDugmesi>
           </div>
         )}
-      </footer>
-      {mod === "goster" && kararVerildi && (
-        <div className="satir-ogeler">
-          <p className="soluk kucuk" data-testid="case-karar-kilit">
-            Karar verildi. Karar yalnızca taslaktaki case için verilir; değiştirmek için case'i yeniden açın (yeniden review gerekir).
-          </p>
-          {yenidenAcilabilir && (
+        {mod === "goster" && !kisitli && analistKarari && (
+          <div className="eylemler">
             <IslemDugmesi
-              roller={["analyst"]}
+              izin="case.approve"
+              kucuk
+              disabled={!verilebilir("approve")}
+              title={gecisYokNedeni("approve")}
+              calisiyor={islem.calisiyor}
+              onClick={() => karar(() => api.caseKarari(tc.id, { ...bag, karar: "approve" }))}
+            >
+              Onayla
+            </IslemDugmesi>
+            <IslemDugmesi
+              izin="case.approve"
               kucuk
               tur="ikincil"
-              calisiyor={islem.calisiyor}
-              onClick={() => karar(() => api.caseYenidenAc(tc))}
+              disabled={!verilebilir("send_back")}
+              title={gecisYokNedeni("send_back")}
+              onClick={() => setMod("geriGonder")}
             >
-              Yeniden aç
+              Geri gönder
+            </IslemDugmesi>
+          </div>
+        )}
+      </footer>
+      {mod === "goster" && !kisitli && kararVerildi && (
+        <div className="satir-ogeler">
+          <p className="soluk kucuk" data-testid="case-karar-kilit">
+            {DURUM_NOTU[tc.durum] ?? "Karar verildi."}
+          </p>
+          {yenidenAcilabilir && (
+            <IslemDugmesi izin="case.decide" kucuk tur="ikincil" calisiyor={islem.calisiyor} onClick={() => karar(() => api.caseYenidenAc(tc))}>
+              Taslağa al
             </IslemDugmesi>
           )}
         </div>
       )}
-      {tc.fark && tc.fark.length > 0 && (
+      {!kisitli && tc.fark && tc.fark.length > 0 && (
         <details className="case-fark" data-testid="case-fark">
           <summary className="kucuk">AI özgünü → insan düzeltmesi ({tc.fark.length} alan)</summary>
           {tc.duzeltme_nedeni && <p className="soluk kucuk">{tc.duzeltme_nedeni}</p>}
@@ -352,8 +406,60 @@ function RetFormu({
         <AlanHatasi asistan={uyari ? null : { hata, kaynak: hataKaynagi }}>{uyari ?? hata}</AlanHatasi>
       )}
       <div className="eylemler">
-        <IslemDugmesi roller={["analyst"]} type="submit" tur="tehlike" kucuk calisiyor={calisiyor}>
+        <IslemDugmesi izin="case.decide" type="submit" tur="tehlike" kucuk calisiyor={calisiyor}>
           Reddi kaydet
+        </IslemDugmesi>
+        <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={vazgec}>
+          Vazgeç
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** Analist "Geri gönder": gerekçe zorunlu (ready → draft; ANALIZ 012 §5). */
+function GeriGonderFormu({
+  gonder,
+  vazgec,
+  calisiyor,
+  hata,
+  hataKaynagi,
+}: {
+  gonder: (gerekce: string) => void;
+  vazgec: () => void;
+  calisiyor: boolean;
+  hata: string | null;
+  hataKaynagi?: unknown;
+}) {
+  const [gerekce, setGerekce] = useState("");
+  const [uyari, setUyari] = useState<string | null>(null);
+  const id = useId();
+  return (
+    <form
+      className="ret-formu"
+      data-testid="geri-gonder-formu"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!gerekce.trim()) return setUyari("Geri gönderme gerekçesi zorunludur.");
+        setUyari(null);
+        gonder(gerekce.trim());
+      }}
+      noValidate
+    >
+      <div className="alan">
+        <label htmlFor={`${id}-gerekce`}>Geri gönderme gerekçesi</label>
+        <OtoMetin
+          id={`${id}-gerekce`}
+          value={gerekce}
+          aria-required="true"
+          placeholder="Testçinin neyi düzeltmesi gerekiyor?"
+          onChange={(e) => setGerekce(e.target.value)}
+        />
+      </div>
+      {(uyari || hata) && <AlanHatasi asistan={uyari ? null : { hata, kaynak: hataKaynagi }}>{uyari ?? hata}</AlanHatasi>}
+      <div className="eylemler">
+        <IslemDugmesi izin="case.approve" type="submit" kucuk calisiyor={calisiyor}>
+          Geri gönder
         </IslemDugmesi>
         <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={vazgec}>
           Vazgeç
@@ -555,8 +661,8 @@ function CaseDuzenleyici({
         <AlanHatasi asistan={uyari ? null : { hata, kaynak: hataKaynagi }}>{uyari ?? hata}</AlanHatasi>
       )}
       <div className="eylemler">
-        <IslemDugmesi roller={["analyst"]} type="submit" kucuk calisiyor={calisiyor}>
-          Düzeltip onayla
+        <IslemDugmesi izin="case.decide" type="submit" kucuk calisiyor={calisiyor}>
+          Düzeltip kabul et
         </IslemDugmesi>
         <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={vazgec}>
           Vazgeç

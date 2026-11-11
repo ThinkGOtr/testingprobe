@@ -1,4 +1,4 @@
-// Sunucu (presenter) için demo kontrolleri: locator kırılması (TEKNIK-TASARIM §2 ikinci kırılma
+// Sistem Yöneticisi ve Automation Engineer için demo kontrolleri (`demo.manage`, yalnız TP_DEMO_MODE=1): locator kırılması (TEKNIK-TASARIM §2 ikinci kırılma
 // senaryosu, `make break` eşi) ve demo sıfırlama. Her ikisi de onay ister; ilerleme core olaylarından
 // (`demo.progress`) ve koşu listesinden izlenir — olay gelmese de koşu ve triage görünür.
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -429,7 +429,7 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
       eylemler={
         !onay && (
           <IslemDugmesi
-            roller={["presenter"]}
+            izin="demo.manage"
             tur="tehlike"
             calisiyor={calisiyor}
             disabled={(!!d && !d.bitti) || engelli}
@@ -530,7 +530,7 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
             merge edilene kadar katalog testleri kırmızı kalır.
           </p>
           <div className="satir-ogeler">
-            <IslemDugmesi roller={["presenter"]} tur="tehlike" calisiyor={calisiyor} onClick={() => void kir()}>
+            <IslemDugmesi izin="demo.manage" tur="tehlike" calisiyor={calisiyor} onClick={() => void kir()}>
               Evet, buton kimliğini değiştir
             </IslemDugmesi>
             <button type="button" className="dugme dugme-ikincil" onClick={() => setOnay(false)} disabled={calisiyor}>
@@ -705,7 +705,7 @@ function SifirlamaKarti() {
       baslik="Demo'yu sıfırla"
       eylemler={
         !onay && (
-          <IslemDugmesi roller={["presenter"]} tur="ikincil" calisiyor={calisiyor} onClick={() => setOnay(true)}>
+          <IslemDugmesi izin="demo.manage" tur="ikincil" calisiyor={calisiyor} onClick={() => setOnay(true)}>
             Demo'yu sıfırla
           </IslemDugmesi>
         )
@@ -725,7 +725,7 @@ function SifirlamaKarti() {
             <span>Forge main baseline'a dönecek ve açık demo PR'ları kapatılacak (kararlar ve Jira kayıtları bu düğmeyle sıfırlanmaz).</span>
           </label>
           <div className="satir-ogeler">
-            <IslemDugmesi roller={["presenter"]} tur="tehlike" calisiyor={calisiyor} disabled={!anladim} onClick={() => void sifirla()}>
+            <IslemDugmesi izin="demo.manage" tur="tehlike" calisiyor={calisiyor} disabled={!anladim} onClick={() => void sifirla()}>
               Sıfırla
             </IslemDugmesi>
             <button type="button" className="dugme dugme-ikincil" onClick={() => setOnay(false)} disabled={calisiyor}>
@@ -863,11 +863,26 @@ export function DemoKontrolleri() {
           </>
         }
       />
-      <div className="iki-sutun">
-        <LocatorKirmaKarti durum={durum} />
-        <SifirlamaKarti />
-      </div>
-      <DurumKarti d={durum} />
+      {durum?.demo_modu === false ? (
+        // core TP_DEMO_MODE=0: kırma/sıfırlama uçları 403 döner; kontroller gösterilmez (ANALIZ 012 §6).
+        <Uyari ton="bilgi" baslik="Demo kontrolleri kapalı">
+          Bu kurulumda demo kipi kapalı (<span className="mono">TP_DEMO_MODE=0</span>
+          {durum.ortam ? (
+            <>
+              , ortam <span className="mono">{durum.ortam}</span>
+            </>
+          ) : null}
+          ). Locator kırılması ve demo sıfırlama yalnız demo kipinde çalışır.
+        </Uyari>
+      ) : (
+        <>
+          <div className="iki-sutun">
+            <LocatorKirmaKarti durum={durum} />
+            <SifirlamaKarti />
+          </div>
+          <DurumKarti d={durum} />
+        </>
+      )}
     </>
   );
 }

@@ -120,9 +120,9 @@ describe("istemci ↔ sözleşme", () => {
       [() => api.bulgular("r1"), "GET", "/api/requirements/r1/findings"],
       [() => api.bulguKarari("f1", { icerik_hash: "sha256:h", karar: "fix_doc" }), "POST", "/api/findings/f1/decision"],
       [() => api.duzeltmeleriUygula("r1"), "POST", "/api/requirements/r1/apply-doc-fixes"],
-      [() => api.poOnayla({ id: "r1", icerik_hash: "sha256:h" }), "POST", "/api/requirements/r1/po-approve"],
       [() => api.caseUret("r1"), "POST", "/api/requirements/r1/generate-cases"],
-      [() => api.caseKarari("c1", { icerik_hash: "sha256:h", karar: "approve" }), "POST", "/api/cases/c1/decision"],
+      [() => api.caseKarari("c1", { icerik_hash: "sha256:h", karar: "accept" }), "POST", "/api/cases/c1/decision"],
+      [() => api.caseKarari("c1", { icerik_hash: "sha256:h", karar: "send_back", gerekce: "AC2 eksik" }), "POST", "/api/cases/c1/decision"],
       [() => api.yayinOnizleme("r1"), "GET", "/api/publish/preview?requirement_id=r1"],
       [() => api.yayinla(["c1"]), "POST", "/api/publish"],
       [() => api.kodUret(["c1"]), "POST", "/api/code/generate"],
@@ -176,9 +176,10 @@ describe("istemci ↔ sözleşme", () => {
     // Yeniden açma da görülen içeriğe bağlıdır (TestCase nesnesinin tamamı verilse de yalnızca hash).
     await api.caseYenidenAc({ id: "c1", icerik_hash: "sha256:y" });
     expect(govde()).toEqual({ karar: "reopen", icerik_hash: "sha256:y" });
-    // GereksinimDetay / PullRequest nesnesinin tamamı verilse de yalnızca bağ alanları gider.
-    await api.poOnayla({ id: "r1", icerik_hash: "sha256:r" });
-    expect(govde()).toEqual({ icerik_hash: "sha256:r" });
+    // Analist geri gönderme gerekçesiyle gider.
+    await api.caseKarari("c1", { icerik_hash: "sha256:s", karar: "send_back", gerekce: "AC2 eksik" });
+    expect(govde()).toEqual({ icerik_hash: "sha256:s", karar: "send_back", gerekce: "AC2 eksik" });
+    // PullRequest nesnesinin tamamı verilse de yalnızca bağ alanları gider.
     await api.prBirlestir({ number: 12, icerik_hash: "sha256:p", head_sha: head });
     expect(govde()).toEqual({ icerik_hash: "sha256:p", head_sha: head });
     expect((f.mock.calls.at(-1)![1] as RequestInit).headers).toMatchObject({ "Content-Type": "application/json" });
@@ -297,7 +298,9 @@ describe("core uç keşfi (openapi.json) — örnek veri uçlarına ağ isteği 
   it("case listesi örnek veriden geliyorsa yeniden açma da örnek veriye gider", async () => {
     yapilandir({ mockZorunlu: false, mockOtomatik: true, yetenekKesfi: true });
     vi.stubGlobal("fetch", sahteCore(OPENAPI));
-    mockOturumuAyarla(await api.login("analist", "Demo123!"));
+    // login çekirdekten (analist döner); örnek veri uçları Testçi oturumuyla çalışır (case.decide).
+    await api.login("testci", "Demo123!");
+    mockOturumuAyarla({ id: "u-testci", kullanici_adi: "testci", rol: "tester" });
     const caseler = await api.caseler("req-tpd-1");
     const red = caseler.find((c) => c.durum === "rejected")!;
     const acildi = await api.caseYenidenAc(red);

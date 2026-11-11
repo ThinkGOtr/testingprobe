@@ -27,15 +27,30 @@ export function yolGecerli(makine: MakineAdi, mevcut: string, yol: readonly stri
 
 export type CaseKarari = CaseKararGirdisi["karar"];
 
-/** core: approve | edit → approved kapısı, reject → rejected kapısı (yalnızca `draft`'tan). */
+/**
+ * Case kararlarının hedef durumu (ANALIZ 012 §5): Testçi `accept` | `edit` → `ready`,
+ * `reject` → `rejected`, `reopen` ("Taslağa al") → `draft`; Analist `approve` → `approved`,
+ * `send_back` → `draft`.
+ */
 export const CASE_KARAR_HEDEFI: Record<CaseKarari, CaseDurumu> = {
-  approve: "approved",
-  edit: "approved",
+  accept: "ready",
+  edit: "ready",
   reject: "rejected",
+  reopen: "draft",
+  approve: "approved",
+  send_back: "draft",
+};
+
+/** Geçişin yanında kaynağı da kısıtlı kararlar: geri gönderme yalnız onaya hazır case'te. */
+const CASE_KARAR_KAYNAGI: Partial<Record<CaseKarari, readonly CaseDurumu[]>> = {
+  send_back: ["ready"],
+  reopen: ["ready", "approved", "rejected"],
 };
 
 export const GECIS_YOK = "Bu durumdan bu karara geçilemez.";
 
 export function caseKarariVerilebilir(durum: CaseDurumu, karar: CaseKarari): boolean {
+  const kaynak = CASE_KARAR_KAYNAGI[karar];
+  if (kaynak && !kaynak.includes(durum)) return false;
   return gecisVar("test_case", durum, CASE_KARAR_HEDEFI[karar]);
 }
