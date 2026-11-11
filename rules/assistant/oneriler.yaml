@@ -584,9 +584,10 @@ bos_ekranlar:
   - {ekran: /gereksinimler/:id, roller: [engineer, tester, presenter]}
   - {ekran: /gereksinimler/:id/caseler, roller: [po, engineer, presenter]}
   - {ekran: /gereksinimler/:id/yayin, roller: [analyst, po, engineer, tester, presenter]}
-  - {ekran: /kod, roller: [analyst, po, engineer, tester, presenter]}
+  - {ekran: /caseler, roller: [analyst, po, engineer, tester, presenter]}
+  - {ekran: /kod, roller: [engineer, presenter]}
   - {ekran: /kod/:id, roller: [analyst, po, tester, presenter]}
-  - {ekran: /kosular, roller: [analyst, po, engineer, tester]}
+  - {ekran: /kosular, roller: [engineer]}
   - {ekran: /kosular/:id, roller: [analyst, po, tester]}
   - {ekran: /hatalar/:id, roller: [analyst, po, presenter]}
   - {ekran: /bug-taslaklari, roller: [analyst, po, engineer, tester, presenter]}

@@ -47,6 +47,10 @@ function konsolHatalariniTopla(page: Page): string[] {
   return hatalar;
 }
 
+// Kod üretimi ve Koşular listeleri yalnız mühendis + sunucuya açıktır (auth.tsx OTOMASYON_ROLLERI);
+// analist turunda atlanır, sunucu oturumunda gezilir.
+const OTOMASYON_LISTELERI = ["/kod", "/kosular"];
+
 const ROTALAR: { yol: string; ad: string; baslik: RegExp }[] = [
   { yol: "/gereksinimler", ad: "01-gereksinimler", baslik: /^Gereksinimler$/ },
   { yol: "/gereksinimler/req-tpd-1", ad: "02-gereksinim-tpd1", baslik: /Kampanyalı sepet/ },
@@ -54,6 +58,7 @@ const ROTALAR: { yol: string; ad: string; baslik: RegExp }[] = [
   { yol: "/gereksinimler/req-tpd-3", ad: "04-gereksinim-tpd3-injection", baslik: /Ürün arama/ },
   { yol: "/gereksinimler/req-tpd-1/caseler", ad: "05-case-review", baslik: /^Case review$/ },
   { yol: "/gereksinimler/req-tpd-1/yayin", ad: "06-yayin-onizleme", baslik: /^Yayın önizleme$/ },
+  { yol: "/caseler", ad: "06b-test-caseleri", baslik: /^Test case'leri$/ },
   { yol: "/kod", ad: "07-kod-uretimi", baslik: /^Kod üretimi$/ },
   { yol: "/kod/scr-2", ad: "08-script-detay", baslik: /7 adet kampanyalı/ },
   { yol: "/kod/scr-3", ad: "08b-script-defect-adayi", baslik: /6 adet kampanyalı/ },
@@ -89,12 +94,26 @@ test("analist tüm rotaları gezer (ekran görüntüleri)", async ({ page }) => 
   await expect(page.getByText("ÖRNEK VERİ", { exact: true })).toBeVisible();
   // Örnek veri derlemesinde her ekranın üstünde tam genişlik "gerçek değil" bandı.
   await expect(page.getByTestId("ornek-veri-bandi")).toContainText("ÖRNEK VERİ — gerçek değil");
-  for (const r of ROTALAR) {
-    await page.goto(r.yol);
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText(r.baslik);
-    await expect(page.getByRole("status").filter({ hasText: "Yükleniyor" })).toHaveCount(0);
-    await page.screenshot({ path: `${EKRAN_DIZINI}/${r.ad}.png`, fullPage: true });
-  }
+  const gez = async (rotalar: typeof ROTALAR) => {
+    for (const r of rotalar) {
+      await page.goto(r.yol);
+      await expect(page.getByRole("heading", { level: 1 })).toHaveText(r.baslik);
+      await expect(page.getByRole("status").filter({ hasText: "Yükleniyor" })).toHaveCount(0);
+      await page.screenshot({ path: `${EKRAN_DIZINI}/${r.ad}.png`, fullPage: true });
+    }
+  };
+  await gez(ROTALAR.filter((r) => !OTOMASYON_LISTELERI.includes(r.yol)));
+  // Analist otomasyon listelerini menüde görmez; adresle gelirse yetki mesajı alır.
+  const menu = page.getByRole("navigation", { name: "Ana menü" });
+  await expect(menu.getByRole("link", { name: /Test case'leri/ })).toBeVisible();
+  await expect(menu.getByText("Kod üretimi")).toHaveCount(0);
+  await expect(menu.getByText("Koşular")).toHaveCount(0);
+  await page.goto("/kod");
+  await expect(page.getByText("Bu ekran için yetkiniz yok.")).toBeVisible();
+  await page.getByRole("button", { name: "Çıkış" }).click();
+  await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
+  await girisYap(page, "sunucu");
+  await gez(ROTALAR.filter((r) => OTOMASYON_LISTELERI.includes(r.yol)));
   expect(hatalar).toEqual([]);
 });
 
@@ -560,6 +579,7 @@ const AXE_SAYFALARI: { yol: string; ad: string; hazir: (p: Page) => Promise<void
     hazir: (p) => expect(p.getByText("5 adet kampanyalı üründe bedava ürün verilmez").first()).toBeVisible(),
   },
   { yol: "/gereksinimler/req-tpd-1/yayin", ad: "06-yayin-onizleme", hazir: (p) => expect(p.getByText("Oluşturulacak kayıtlar").first()).toBeVisible() },
+  { yol: "/caseler", ad: "06b-test-caseleri", hazir: (p) => expect(p.getByRole("region", { name: "Test case'leri tablosu" })).toBeVisible() },
   { yol: "/kod", ad: "07-kod-uretimi", hazir: (p) => expect(p.getByRole("region", { name: "Üretilen testler tablosu" })).toBeVisible() },
   { yol: "/kod/scr-2", ad: "08-script-detay", hazir: (p) => expect(p.getByText("c2-kampanya-7-adet-1-bedava.spec.ts").first()).toBeVisible() },
   { yol: "/kosular", ad: "09-kosular", hazir: (p) => expect(p.getByRole("region", { name: "Koşular tablosu" })).toBeVisible() },
@@ -607,6 +627,7 @@ const F0_INCOMPLETE: Record<string, [number, number, number, number, number]> = 
   "/bug-taslaklari/bug-4": [0, 0, 0, 0, 0],
   "/yol-haritasi": [8, 8, 8, 8, 8],
   "/gereksinimler": [0, 0, 0, 0, 0],
+  "/caseler": [0, 0, 0, 0, 0],
   "/kod": [0, 0, 0, 0, 0],
   "/kosular": [0, 0, 0, 0, 0],
   "/kosular/run-107": [17, 17, 17, 17, 17],
@@ -672,7 +693,7 @@ for (const tur of TEMA_TURLARI) {
       await denetle("/giris", genislik, "00-giris");
 
       await girisYap(page, "analist");
-      for (const s of AXE_SAYFALARI) {
+      for (const s of AXE_SAYFALARI.filter((x) => !OTOMASYON_LISTELERI.includes(x.yol))) {
         await page.goto(s.yol);
         await s.hazir(page);
         await denetle(s.yol, genislik, s.ad);
@@ -682,6 +703,12 @@ for (const tur of TEMA_TURLARI) {
 
       // Demo kontrolleri yalnız sunucu rolünde (App.tsx RolGerekli presenter); onay grubu açık haliyle.
       await girisYap(page, "sunucu");
+      // Kod üretimi ve Koşular listeleri (yalnız mühendis + sunucu).
+      for (const s of AXE_SAYFALARI.filter((x) => OTOMASYON_LISTELERI.includes(x.yol))) {
+        await page.goto(s.yol);
+        await s.hazir(page);
+        await denetle(s.yol, genislik, s.ad);
+      }
       await page.goto("/demo");
       await page.getByRole("button", { name: "Buton kimliğini değiştir" }).click();
       await expect(page.getByRole("group", { name: "Buton kimliği değiştirme onayı" })).toBeVisible();

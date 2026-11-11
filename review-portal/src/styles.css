@@ -3274,6 +3274,16 @@ body:has(.asistan-panel:not(.asistan-panel-modal)) .bildirimler {
 .filtre-cubugu select {
   min-width: 140px;
 }
+/* Onay kutulu süzgeç (ör. "Eski sürümleri göster"): kutu ve etiketi yan yana, diğer alanlarla aynı tabanda. */
+.filtre-cubugu label.filtre-onay {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+}
+.filtre-cubugu .filtre-story {
+  max-width: 20rem;
+}
 /* Arama kutuları yer tutucuyu kesmesin. */
 #denetim-ara,
 .filtre-cubugu input[type="search"] {

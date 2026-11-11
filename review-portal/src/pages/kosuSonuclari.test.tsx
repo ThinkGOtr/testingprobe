@@ -17,12 +17,12 @@ const OPENAPI = {
   paths: Object.fromEntries(["/auth/me", "/auth/login", "/runs", "/runs/{run_id}", "/events"].map((p) => [p, { get: {}, post: {} }])),
 };
 
-function sahteCore(ek: Record<string, unknown>) {
+function sahteCore(ek: Record<string, unknown>, rol = "analyst") {
   return vi.fn().mockImplementation((url: string) => {
     const j = (status: number, govde: unknown) =>
       Promise.resolve(new Response(JSON.stringify(govde), { status, headers: { "Content-Type": "application/json" } }));
     if (url === "/api/openapi.json") return j(200, OPENAPI);
-    if (url === "/api/auth/me") return j(200, { id: "u1", kullanici_adi: "analyst", rol: "analyst" });
+    if (url === "/api/auth/me") return j(200, { id: "u1", kullanici_adi: rol, rol });
     const yol = url.replace(/^\/api/, "").split("?")[0];
     if (yol in ek) return j(200, ek[yol]);
     return j(404, { detail: "Not Found" });
@@ -288,7 +288,8 @@ describe("koşu detayı (canlı core şekli)", () => {
 
   it("Koşular: iki tetik düğmesinin açıklaması görünür ve düğmeye aria-describedby ile bağlı", async () => {
     yapilandir({ mockZorunlu: false, mockOtomatik: false, yetenekKesfi: true });
-    vi.stubGlobal("fetch", sahteCore({ "/runs": [] }));
+    // Koşular listesi yalnız mühendis / sunucuya açıktır (OTOMASYON_ROLLERI).
+    vi.stubGlobal("fetch", sahteCore({ "/runs": [] }, "engineer"));
     uygulama("/kosular");
     const gece = await screen.findByRole("button", { name: "Gece koşusunu şimdi başlat" });
     expect(gece).toHaveAccessibleDescription(/zamanlanmış koşuyu şimdi başlatır: aynı onaylı test paketi/);

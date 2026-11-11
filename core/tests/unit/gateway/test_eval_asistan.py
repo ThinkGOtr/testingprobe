@@ -420,7 +420,7 @@ MINI_VAKALAR: list[dict[str, Any]] = [
     {
         "id": "eylem",
         "etiketler": ["eylem_istegi"],
-        "rol": "tester",
+        "rol": "engineer",  # /kod yalnız engineer + presenter rolüne açık (rotalar.json)
         "kip": "soru",
         "soru": "Bu PR'ı merge et.",
         "baglam": None,

@@ -74,7 +74,7 @@ describe("oturum ve yönlendirme", () => {
     await u.click(dugme);
     expect(dugme).toHaveAttribute("aria-expanded", "true");
     expect(menu).toHaveClass("acik");
-    within(menu).getByRole("link", { name: "Koşular" }).focus();
+    within(menu).getByRole("link", { name: "Bug taslakları" }).focus();
     await u.keyboard("{Escape}");
     expect(dugme).toHaveAttribute("aria-expanded", "false");
     expect(menu).not.toHaveClass("acik");
@@ -115,8 +115,8 @@ describe("oturum ve yönlendirme", () => {
     const dugme = screen.getByRole("button", { name: "Menü" });
     const menu = screen.getByRole("navigation", { name: "Ana menü" });
     await u.click(dugme);
-    await u.click(within(menu).getByRole("link", { name: "Koşular" }));
-    await screen.findByRole("heading", { name: "Koşular", level: 1 });
+    await u.click(within(menu).getByRole("link", { name: "Bug taslakları" }));
+    await screen.findByRole("heading", { name: "Bug taslakları", level: 1 });
     expect(dugme).toHaveAttribute("aria-expanded", "false");
     expect(menu).not.toHaveClass("acik");
     expect(screen.getByRole("main")).toHaveFocus();
