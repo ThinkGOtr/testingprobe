@@ -323,7 +323,7 @@ gönderilir ve akış kapanır. Portal bunu alınca yeniden bağlanmaz, giriş e
 | GET · POST | `/assistant/conversations` | herkes (kendi) | Son 50 sohbet · yeni sohbet |
 | DELETE | `/assistant/conversations/{id}` | herkes (kendi) | Yumuşak silme |
 | GET | `/assistant/conversations/{id}/messages` | herkes (kendi) | Mesajlar (bekleyen dahil) |
-| POST | `/assistant/conversations/{id}/messages` `{soru ≤ 2000, baglam ≤ 2 KB, kip?: soru\|oneri, oneri_kural_id?}` veya `{ust_mesaj_id}` | herkes (kendi) | 202 `{mesaj_id}`; 422 `gecersiz_istek`/`sir_icerik`, 404, 409 `bekleyen_var`/`zaten_derin`/`oneri_gecersiz`, 429 `hiz_siniri`/`mesgul`, 402 `butce_asildi`, 503 `asistan_kapali` (+`neden`: `worker_yok`\|`maskeleme_kapali`) |
+| POST | `/assistant/conversations/{id}/messages` `{soru ≤ 2000, baglam ≤ 2 KB, kip?: soru\|oneri, oneri_kural_id?}` veya `{ust_mesaj_id}` | herkes (kendi) | 202 `{mesaj_id}`; 422 `gecersiz_istek`/`sir_icerik`, 404, 409 `bekleyen_var`/`zaten_derin`/`oneri_gecersiz`, 429 `hiz_siniri`/`mesgul`/`donduruldu` (+`kalan_s`), 402 `butce_asildi`, 503 `asistan_kapali` (+`neden`: `worker_yok`\|`maskeleme_kapali`) |
 | GET | `/assistant/messages/{id}` | herkes (kendi) | Tek mesaj (SSE yokken yoklama) |
 | POST | `/assistant/messages/{id}/cancel` · `/feedback` `{deger: -1\|1}` | herkes (kendi) | İptal (`pending` ücretsiz; `running` harcanan yazılır) · 👍/👎 |
 | GET | `/assistant/suggestions?rota=&varlik_tur=&varlik_id=` | herkes | Kural tabanlı öneriler (modelsiz, `ai_call` yazmaz): `{oneriler[{kural_id, baslik, neden, oncelik, eylem}], hesaplandi, ekranda_kural_var, bastirilan, diger_ekranlar}`; varlık yok/role kapalı 404; 60/dk |
@@ -373,6 +373,7 @@ korunur. Yeni değer yalnız bu tabloya eklenerek kullanılır; asistanın hata 
 | `butce_asildi` | 402 | `BudgetExceeded`; asistan bütçe ön kontrolü |
 | `kaynak_reddi` | 403 | CSRF/Origin reddi (`api/csrf.py`, ara katman) |
 | `sir_icerik` | 422 | asistan: soru/bağlamda sır deseni (değer yanıtta tekrarlanmaz) |
+| `donduruldu` | 429 | asistan: ardışık ciddi güvenlik olayı dondurması (specs/013 §6.2); gövdede `kalan_s` |
 | `bekleyen_var` | 409 | asistan: kullanıcının yanıt bekleyen sorusu var |
 | `zaten_derin` | 409 | asistan: bu mesaj için ayrıntılı inceleme zaten var |
 | `oneri_gecersiz` | 409 | asistan: `oneri_kural_id` artık geçerli değil |

@@ -14,7 +14,7 @@ Başkasının kaynağına her uç (cancel/feedback/`ust_mesaj_id` dahil) → 404
 | 3 | POST | `/assistant/conversations` | `{baslik?}` | 201 sohbet | |
 | 4 | DELETE | `/assistant/conversations/{id}` | — | 204 (yumuşak silme) | 404 |
 | 5 | GET | `/assistant/conversations/{id}/messages` | — | mesajlar (bekleyen dahil) | 404 |
-| 6 | POST | `/assistant/conversations/{id}/messages` | `{soru ≤ 2000, baglam ≤ 2 KB, kip?: "soru"\|"oneri", oneri_kural_id?}` **veya** `{ust_mesaj_id}` | 202 `{mesaj_id}` | 422 `gecersiz_istek` / `sir_icerik`; 404; 409 `bekleyen_var` / `zaten_derin` / `oneri_gecersiz`; 429 `hiz_siniri` / `mesgul`; 402 `butce_asildi`; 503 `asistan_kapali` (+ `neden`: `worker_yok`\|`maskeleme_kapali`) |
+| 6 | POST | `/assistant/conversations/{id}/messages` | `{soru ≤ 2000, baglam ≤ 2 KB, kip?: "soru"\|"oneri", oneri_kural_id?}` **veya** `{ust_mesaj_id}` | 202 `{mesaj_id}` | 422 `gecersiz_istek` / `sir_icerik`; 404; 409 `bekleyen_var` / `zaten_derin` / `oneri_gecersiz`; 429 `hiz_siniri` / `mesgul` / `donduruldu` (+ `kalan_s`); 402 `butce_asildi`; 503 `asistan_kapali` (+ `neden`: `worker_yok`\|`maskeleme_kapali`) |
 | 7 | GET | `/assistant/messages/{id}` | — | tek mesaj (SSE yokken yoklama) | 404 |
 | 8 | POST | `/assistant/messages/{id}/cancel` | — | `pending→iptal` (ücretsiz) / `running→iptal` (harcanan yazılır) | 404 |
 | 9 | POST | `/assistant/messages/{id}/feedback` | `{deger: -1\|1}` | 200 | 422 (`0`), 404 |
@@ -76,6 +76,7 @@ Her hata: `{"detail": "<Türkçe metin>", "kod": "<enum>"}` (+ uca özgü ek ala
 | | `oneri_gecersiz` | 409 | `oneri_kural_id` artık geçerli değil |
 | | `mesgul` | 429 | global bekleyen sınırı |
 | | `hiz_siniri` | 429 | saatlik soru / öneri kovaları |
+| | `donduruldu` | 429 | ardışık 3 ciddi güvenlik olayı → 10 dk dondurma (specs/013 §6.2); gövdede `kalan_s` (+ `Retry-After`) |
 | | `asistan_kapali` | 503 | `neden`: `worker_yok` \| `maskeleme_kapali` |
 
 **5xx istisnası**: `asistan_kapali` bilinçli hizmet durumudur, iç ayrıntı taşımaz; `kod` olarak

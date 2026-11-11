@@ -23,6 +23,7 @@ TABLOLAR = {
     "asistan_durum",
     "asistan_oneri_geri_bildirim",
     "asistan_hiz",
+    "asistan_guvenlik_olay",
 }
 
 
@@ -36,6 +37,11 @@ _HIZ_EKLE = (
 )
 _ONERI_EKLE = (
     "INSERT INTO asistan_oneri_geri_bildirim (kullanici_id, kural_id, deger) VALUES (%s, 'k', 1)"
+)
+
+_OLAY_EKLE = (
+    "INSERT INTO asistan_guvenlik_olay (kullanici_id, mesaj_id, tur, ciddi) "
+    "VALUES (%s, %s, 'sir_icerik', true)"
 )
 
 
@@ -152,6 +158,11 @@ def test_tp_app_asistan_tablolarinda_tam_dml(c: psycopg.Connection) -> None:
         (uid,),
     )
     c.execute(_HIZ_EKLE, (uid,))
+    c.execute(_OLAY_EKLE, (uid, mid))
+    c.execute(
+        "UPDATE asistan_guvenlik_olay SET ayrinti = '{\"sayi\": 1}'::jsonb WHERE kullanici_id = %s",
+        (uid,),
+    )
     for tablo in sorted(TABLOLAR):
         c.execute(f"DELETE FROM {tablo}")
 
@@ -301,9 +312,57 @@ def test_kullanici_silinince_kayitlari_silinir(db: Db, c: psycopg.Connection) ->
     _mesaj(c, sid, uid, 2, durum="done", amac="assistant_deep", ust_mesaj_id=ust)
     c.execute(_ONERI_EKLE, (uid,))
     c.execute(_HIZ_EKLE, (uid,))
+    c.execute(_OLAY_EKLE, (uid, ust))
     c.execute("DELETE FROM app_user WHERE id = %s", (uid,))
-    for tablo in ("asistan_sohbet", "asistan_mesaj", "asistan_oneri_geri_bildirim", "asistan_hiz"):
+    for tablo in (
+        "asistan_sohbet",
+        "asistan_mesaj",
+        "asistan_oneri_geri_bildirim",
+        "asistan_hiz",
+        "asistan_guvenlik_olay",
+    ):
         assert c.execute(f"SELECT count(*) FROM {tablo}").fetchone()[0] == 0
+
+
+# ------------------------------------------------------------------ güvenlik olayı (0021)
+
+
+@pytest.mark.parametrize(
+    ("tur", "ciddi"),
+    [("uydurma", False), ("sir_icerik", False), ("sinyal", True), ("donduruldu", True)],
+)
+def test_guvenlik_olay_tur_ve_ciddi_kisitlari(c: psycopg.Connection, tur: str, ciddi: bool) -> None:
+    uid = _kullanici(c)
+    with pytest.raises(psycopg.errors.CheckViolation):
+        c.execute(
+            "INSERT INTO asistan_guvenlik_olay (kullanici_id, tur, ciddi) VALUES (%s, %s, %s)",
+            (uid, tur, ciddi),
+        )
+
+
+def test_guvenlik_olay_gecerli_turler_ve_varsayilanlar(c: psycopg.Connection) -> None:
+    uid = _kullanici(c)
+    for tur in sorted(enums.ASISTAN_OLAY_TUR):
+        c.execute(
+            "INSERT INTO asistan_guvenlik_olay (kullanici_id, tur, ciddi) VALUES (%s, %s, %s)",
+            (uid, tur, tur in enums.ASISTAN_CIDDI_OLAY),
+        )
+    satir = c.execute(
+        "SELECT ayrinti, zaman IS NOT NULL FROM asistan_guvenlik_olay LIMIT 1"
+    ).fetchone()
+    assert satir == ({}, True)
+
+
+def test_guvenlik_olay_indeksi_ve_mesaj_silinince_kalir(c: psycopg.Connection) -> None:
+    uid = _kullanici(c)
+    mid = _mesaj(c, _sohbet(c, uid), uid, 1, durum="done")
+    c.execute(_OLAY_EKLE, (uid, mid))
+    c.execute("DELETE FROM asistan_mesaj WHERE id = %s", (mid,))
+    assert c.execute("SELECT mesaj_id FROM asistan_guvenlik_olay").fetchone() == (None,)
+    tanim = c.execute(
+        "SELECT indexdef FROM pg_indexes WHERE indexname = 'asistan_guvenlik_olay_kullanici_ix'"
+    ).fetchone()
+    assert tanim is not None and "(kullanici_id, zaman DESC)" in tanim[0]
 
 
 # ------------------------------------------------------------------ tool_call kanalı

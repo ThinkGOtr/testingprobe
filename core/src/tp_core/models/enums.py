@@ -63,6 +63,11 @@ ASISTAN_MOD = frozenset({"live", "off"})
 ASISTAN_GERI_BILDIRIM = frozenset({-1, 1})
 # Öneri geri bildirimi: -1 gizle, 1 faydalı, 2 yaptım (§17).
 ASISTAN_ONERI_DEGER = frozenset({-1, 1, 2})
+# Asistan güvenlik olayı (0021, specs/013 §6.1). Dondurma sayacı yalnız ciddi türleri sayar (K11).
+ASISTAN_OLAY_TUR = frozenset(
+    {"sir_icerik", "kisisel_veri", "kanarya", "istem_sizintisi", "sinyal", "donduruldu"}
+)
+ASISTAN_CIDDI_OLAY = frozenset({"sir_icerik", "kanarya", "istem_sizintisi"})
 
 
 def durumlar(entity: str) -> frozenset[str]:

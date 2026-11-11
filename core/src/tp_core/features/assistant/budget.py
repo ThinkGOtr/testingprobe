@@ -52,6 +52,11 @@ DERIN_AGIRLIK: Final = 2
 KULLANICI_BEKLEYEN: Final = 1
 VARSAYILAN_PARALEL: Final = 3
 
+# Dondurma (specs/013 §6.2, K4/K11): son kabul edilen sorudan sonra bu kadar ardışık ciddi güvenlik
+# olayı → son olaydan itibaren bu süre boyunca yeni soru 429 `donduruldu`.
+DONDURMA_ESIK: Final = 3
+DONDURMA_SURE_S: Final = 600
+
 ASISTAN_IS_TURU: Final = "assistant.answer"
 # `assistant.answer` işinin kuyruk zaman aşımı (yalnız emniyet; süre sınırı geçitte, 75 sn). Tek
 # kaynak: API POST'u, otomatik yükseltme ve `@job_handler` kaydı buradan okur.
