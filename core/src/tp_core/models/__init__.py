@@ -16,6 +16,7 @@ from tp_core.models import bugs_feature as bugs_feature
 from tp_core.models import ci_feature as ci_feature
 from tp_core.models import codegen_feature as codegen_feature
 from tp_core.models import guard as guard
+from tp_core.models import kalite_feature as kalite_feature
 from tp_core.models import requirements_feature as requirements_feature
 from tp_core.models import triage_feature as triage_feature
 from tp_core.models.base import Base
@@ -33,6 +34,14 @@ from tp_core.models.delivery import (
 )
 from tp_core.models.guard import StateWriteForbidden
 from tp_core.models.identity import ApiToken, AppUser, KimlikBagi, Oturum
+from tp_core.models.kalite_feature import (
+    CaseOracleKontrol,
+    HataKosusu,
+    HataKosusuAdim,
+    KararTablosu,
+    MetamorfikIliski,
+    MetamorfikTuretme,
+)
 from tp_core.models.requirements import (
     ConsistencyFinding,
     Requirement,
@@ -51,6 +60,8 @@ STATEFUL: dict[str, type[Base]] = {
     "test_case": TestCase,
     "script": Script,
     "bug_draft": BugDraft,
+    "karar_tablosu": KararTablosu,
+    "metamorfik_iliski": MetamorfikIliski,
     "workflow_instance": WorkflowInstance,
 }
 
@@ -88,11 +99,17 @@ __all__ = [
     "AuditEvent",
     "Base",
     "BugDraft",
+    "CaseOracleKontrol",
     "ConsistencyFinding",
     "ExternalRef",
     "Failure",
+    "HataKosusu",
+    "HataKosusuAdim",
     "Job",
+    "KararTablosu",
     "KimlikBagi",
+    "MetamorfikIliski",
+    "MetamorfikTuretme",
     "Oturum",
     "PullRequest",
     "Requirement",

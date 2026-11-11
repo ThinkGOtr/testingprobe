@@ -110,6 +110,8 @@ export const CORE_OLAYLARI = [
   "test_case.state",
   "script.state",
   "bug_draft.state",
+  "karar_tablosu.state",
+  "metamorfik_iliski.state",
   "workflow_instance.state",
   "review.recorded",
 ] as const;
@@ -122,6 +124,9 @@ const VARLIK_KONUSU: Record<string, string> = {
   test_case: "case.updated",
   script: "script.updated",
   bug_draft: "bug.updated",
+  // 012: karar tablosu ve ilişki aynı sayfadadır (Karar tabloları); tek konu.
+  karar_tablosu: "karar_tablosu.updated",
+  metamorfik_iliski: "karar_tablosu.updated",
   workflow_instance: "workflow.updated",
 };
 

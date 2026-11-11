@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tp:icerik/metamorfik_iliski",
+  "title": "Metamorfik ilişki içeriği (012 §4.5) — metamorfik_iliski.icerik",
+  "x-version": 1,
+  "type": "object",
+  "properties": {
+    "ad": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "ac_refs": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^AC[0-9]+$" },
+      "maxItems": 20,
+      "uniqueItems": true
+    },
+    "tablo_ref": { "type": "string", "pattern": "^T[1-9][0-9]{0,3}$" },
+    "on_kosul": { "$ref": "#/$defs/ifade" },
+    "donusum": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/ad" },
+      "additionalProperties": { "$ref": "#/$defs/ifade" },
+      "minProperties": 1,
+      "maxProperties": 12
+    },
+    "iliski": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/ad" },
+      "additionalProperties": { "$ref": "#/$defs/ifade" },
+      "minProperties": 1,
+      "maxProperties": 12
+    },
+    "aciklama": { "type": "string", "maxLength": 1000 }
+  },
+  "required": ["ad", "ac_refs", "on_kosul", "donusum", "iliski"],
+  "additionalProperties": false,
+  "$defs": {
+    "ad": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,39}$" },
+    "ifade": { "type": "string", "minLength": 1, "maxLength": 300 }
+  }
+}

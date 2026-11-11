@@ -64,6 +64,21 @@ ASISTAN_GERI_BILDIRIM = frozenset({-1, 1})
 # Öneri geri bildirimi: -1 gizle, 1 faydalı, 2 yaptım (§17).
 ASISTAN_ONERI_DEGER = frozenset({-1, 1, 2})
 
+# 012 test kalite doğrulama (0022; specs/012-test-kalite-dogrulama/ANALIZ.md §4–§5).
+# Karar tablosu kolon türleri (`icerik.girdiler[].tur`, `icerik.ciktilar[].tur`).
+KARAR_TABLOSU_TUR = frozenset({"sayi", "metin", "mantiksal"})
+ORACLE_SONUC = frozenset({"uyumlu", "uyumsuz", "kapsam_disi", "kontrol_edilemedi"})
+TURETME_SONUC = frozenset({"turetildi", "iliski_gecersiz", "belirsiz_alinti", "olgu_yok"})
+# `hata_kosusu.durum` workflow.MACHINES'e konmaz (insan kapısı yok; iş kendi yazar).
+HATA_KOSUSU_DURUM = frozenset({"queued", "running", "done", "failed", "cancelled"})
+HATA_KOSUSU_SUREN = frozenset({"queued", "running"})
+HATA_KOSUSU_ASAMA = frozenset({"temel", "hata", "kapanis"})
+HATA_KOSUSU_ADIM_SONUC = frozenset(
+    {"bekliyor", "yakalandi", "kacti", "gecersiz", "yesil", "kirmizi"}
+)
+# Ekilmiş hata türü (`rules/hata-katalogu.yaml` `tur`).
+HATA_TURU = frozenset({"kod", "veri"})
+
 
 def durumlar(entity: str) -> frozenset[str]:
     return MACHINES[entity].states

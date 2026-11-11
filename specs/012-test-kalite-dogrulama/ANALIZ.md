@@ -437,3 +437,130 @@ Kabul senaryoları (demo story TPD-1 üzerinde):
 | Uygulama platformlarında koşu uzun (hata başına 3–5 dk) | Platformlar ve hatalar seçilebilir; varsayılan yalnız web |
 | Windows VM ve cihazlar her zaman açık değil | Erişilemeyen platform `gecersiz` raporlanır, koşu düşmez |
 | Yerelde çalışan ana yığın | Denemeler ayrı adlı izole yığında koşar; ana yığına dokunulmaz |
+
+## 11. Ş0 notları
+
+Ş0 (temel) sırasında alınan kararlar. Diğer şeritler bunlara güvenir; değişiklik önce buraya yazılır.
+
+### 11.1 Dosya yolları
+
+| Ne | Yol |
+|---|---|
+| Migrasyon | `core/alembic/versions/0022_kalite_dogrulama.py` (`0022`, `down_revision="0020"`) |
+| Modeller | `core/src/tp_core/models/kalite_feature.py` (`tp_core.models`'ten de dışa aktarılır) |
+| Değer kümeleri | `core/src/tp_core/models/enums.py` (012 bloğu) |
+| İfade dili | `core/src/tp_core/features/karar_tablosu/ifade.py` |
+| Hata sınıfları | `core/src/tp_core/features/karar_tablosu/hatalar.py` |
+| İçerik şemaları | `rules/schemas/icerik/karar_tablosu.schema.json`, `rules/schemas/icerik/metamorfik_iliski.schema.json` |
+| Hata kataloğu | `rules/hata-katalogu.yaml` |
+
+**İçerik şemaları `rules/schemas/` altında değil, `rules/schemas/icerik/` altındadır** (§4.1 ve
+§4.5'teki yolun yerine). Neden: `rules/schemas/*.json` her dosyayı bir model amacının çıktı şeması
+sayar (`test_schema_compat.py`, `load_schema`); içerik şeması amaç değildir. Model çıktı şemaları
+(`decision_table_draft`, `case_facts`) Ş1 ve Ş2'nindir ve `rules/schemas/`'a girer.
+
+### 11.2 Durum makinesi ve servis çağrıları
+
+Tür adları `karar_tablosu` ve `metamorfik_iliski` (tablo adıyla aynı); ikisi aynı makinedir.
+Durumlar: `draft` (başlangıç), `pending_po`, `approved`, `superseded` (son durum). Kararlar:
+`approve`, `request_changes`; onaylayan karar `approve`; karar verebilen rol yalnız `po`;
+`CONTENT_FIELDS = ("icerik",)`. Tek insan kapısı `pending_po → approved`'dır.
+
+| Uç | Çağrı (aynı işlemde, sırayla) |
+|---|---|
+| submit (analyst) | `transition(s, n, "pending_po", user, "draft")` |
+| approve (po) | `record_approval(s, n, user, "approve", beklenen_hash=<gövdedeki icerik_hash>)` → `transition(s, n, "approved", user, "pending_po")` → `n.gereksinim_hash = content_hash_of(requirement)` |
+| request-changes (po) | `record_approval(s, n, user, "request_changes", beklenen_hash=…, gerekce=…)` → `transition(s, n, "draft", user, "pending_po")` |
+| withdraw (analyst) | `transition(s, n, "draft", user, "pending_po")` |
+| reopen (analyst) | `transition(s, n, "draft", user, "approved")` |
+| supersede (sistem) | `transition(s, n, "superseded", SYSTEM, <mevcut durum>)` |
+
+- `durum` ve `onaylanan_hash` yalnız `transition()` ile değişir (ORM yazma koruması). Yeni satır
+  `durum` verilmeden (ya da `draft`) ve `onaylanan_hash` boş eklenir. `approved`'a girişte
+  `onaylanan_hash` yazılır, `draft`'a dönüşte silinir. `gereksinim_hash` korunan alan değildir.
+- **`approved`'a giden tek yol approve ucudur ve her seferinde yeni `record_approval` yazar.**
+  Analistin geri çekme ve yeniden açma geçişleri onay kaydı yazmadığı için, içerik değişmeden
+  yeniden gönderilen bir tabloda eski `approve` kaydı kapıyı teknik olarak açık bırakır; servis
+  `approved` geçişini başka hiçbir yerden çağırmaz.
+- İçeriğin yalnız `draft`'ta değişmesini servis denetler (makine içerik yazımını engellemez).
+  İçerik yazan kod `icerik_hash = content_hash(icerik)` değerini de günceller.
+- "Bayat": `n.durum == "approved" and n.gereksinim_hash != content_hash_of(requirement)`.
+- `review` tablosunun `nesne_turu` CHECK'i iki türü kabul edecek şekilde genişletildi.
+- Portal: `durum-makineleri.json` yeniden üretildi; `events.tsx`'e `karar_tablosu.state` ve
+  `metamorfik_iliski.state` eklendi, ikisi de `karar_tablosu.updated` konusuna çevrilir;
+  `MakineAdi`'na iki tür eklendi.
+
+### 11.3 Veri modeli ekleri (§5'te yazmayanlar)
+
+- `karar_tablosu` ve `metamorfik_iliski`: `UNIQUE (requirement_id, sira_no)`. `sira_no` gereksinim
+  içinde artar ve yeniden kullanılmaz (`superseded` satırlar dahil); yeni satır `max + 1` alır.
+  `ai_generated` varsayılanı `false`'tur (elle tablo); AI taslağı `true` yazar.
+- `metamorfik_iliski.karar_tablosu_id`: `ON DELETE SET NULL`. `icerik.tablo_ref` (`T<sira_no>`,
+  isteğe bağlı) yalnız okunur bilgidir; yetkili bağ bu kolondur.
+- `case_oracle_kontrol.tablo_hashleri`: `{<karar_tablosu.id>: <icerik_hash>}`. `ai_icerik`: bu hash
+  AI'ın ürettiği (insan düzeltmesinden önceki) içeriğe aitse `true` (§4.7 sayımı).
+- `metamorfik_turetme`: `kaynak_case_id` `ON DELETE CASCADE`, `turetilen_case_id` `ON DELETE SET
+  NULL`. Atlanan sonuçlar da (`iliski_gecersiz` …) çifti tutar; yeniden deneme satırı günceller.
+- `hata_kosusu.durum` iş durumudur, `workflow.MACHINES`'te değildir (düz atanır). Varsayılan
+  `queued`; `ozet` `{}`, `uyarilar` `[]`. Süren koşu kümesi `enums.HATA_KOSUSU_SUREN`. Tek süren
+  koşu kuralını DB kısıtı değil servis sağlar (ör. `pg_advisory_xact_lock` + sorgu).
+- `hata_kosusu_adim`: `UNIQUE (kosu_id, sira)`; `sonuc` varsayılanı `bekliyor`; CHECK
+  `(asama = 'hata') = (hata_kodu IS NOT NULL)`; `platform` `enums.PLATFORM`'dan.
+- `tp_app` altı tabloda `SELECT, INSERT, UPDATE` yapar; `DELETE` ve `TRUNCATE` yoktur.
+
+### 11.4 İfade dili (§4.2'ye ekler)
+
+- Metin sabiti çift ya da tek tırnakla yazılır (`"a"`, `'a'`); kaçış yoktur. Anahtar sözcükler
+  yalnız küçük harf ve ASCII'dir (`değil` kabul edilmez).
+- `//` aşağı yuvarlar (`-7 // 2 = -4`), `%` bölenin işaretini alır (Python tam sayılarıyla aynı).
+  `min` ve `max` tam iki değer alır; `yuvarla` hanesi 0–12 arası tam sayıdır.
+- `ve`, `veya`, `eger` tembeldir (`b != 0 ve a / b > 2` sıfıra bölmez). Karşılaştırma zincirlenmez.
+- Tür denetimi statiktir (`dogrula` ifadeyi çalıştırmadan tür hatasını bulur); örtük dönüşüm yok.
+- Sayılar 60 anlamlı basamak, ROUND_HALF_UP; mutlak değeri 10^30 ve üstü hatadır.
+- `IfadeHatasi.konum` 0 tabanlı karakter indeksidir; `str(hata)` 1 tabanlı yazar ("… (konum 5)").
+- Kolon adı deseni `^[a-z][a-z0-9_]{0,39}$`; anahtar sözcük ve işlev adları ad olamaz; aynı ad hem
+  girdi hem çıktı olamaz. Satır kimliği `^R[0-9]{1,3}$`. Her satır her çıktıyı tanımlar. Çıktı
+  ifadeleri yalnız girdi adlarını kullanır. `tolerans` metindir (`"0.01"`), yalnız sayı çıktısında.
+- `dogrula` boş `girdiler` / `ciktilar` / `satirlar` / `ac_refs`'i kabul eder (elle açılan boş
+  taslak). PO'ya gönderim için `gonderim_hatalari(icerik)` her birinden en az bir tane ister.
+- `degerlendir`: tablonun herhangi bir ifadesinde geçen bir girdi verilmemişse `eksik_girdiler`
+  dolar ve hiçbir satır değerlendirilmez. Sayı girdisi `Decimal`, `int`, `float` ya da metin
+  (`"25.00"`, `"25,00 TL"`) olabilir. `Degerlendirme.as_dict()` sayıları metin olarak verir.
+- Sözleşmeye eklenen yardımcılar: `gonderim_hatalari`, `toleranslar(icerik)`, `girdi_donustur`,
+  tek ifade için `ayristir`, `adlar`, `ifade_turu`, `hesapla`; ilişki için
+  `iliski_dogrula(icerik, tablo_icerik=None)` ve `iliski_uygula(icerik, girdiler, ciktilar) →
+  IliskiSonucu(gecerli, girdiler, ciktilar, eksik, hata)`. İlişkide `on_kosul` zorunludur
+  (koşulsuz ilişki `"dogru"` yazar) ve yalnız kaynak girdileri görür; `donusum` ve `iliski`
+  kaynak girdi ve çıktıları görür.
+
+### 11.5 Sayı metni
+
+- `sayi_ayristir` metinde tek sayı ister. Önünde işaret, para/yüzde simgesi ya da boşlukla ayrılmış
+  kısa birim; arkasında en çok üç sözcüklük birim olabilir. `"AC2"`, `"P-004"`, `"3 koli 7 adet"`
+  sayı değildir (`None`).
+- Nokta ve virgül birlikteyse sonda gelen ondalıktır. Tek virgül ondalıktır (`"1,250"` → 1.250).
+  Tek nokta, ardında tam üç rakam ve önünde 1–3 rakam varsa binliktir (`"1.250"` → 1250); değilse
+  ondalıktır (`"1250.00"`, `"0.125"`). Boşluk binlik ayırıcı olabilir (`"1 250,00"`).
+- `sayi_bicimle` değeri **yuvarlamaz**: örneğin hane sayısına sığmayan değer gereken kadar haneyle
+  yazılır (`187.5`, `"125 TL"` → `"187,5 TL"`). Sonuç `sayi_ayristir` ile aynı değere geri
+  okunamıyorsa ya da örnek sayı değilse `ValueError` verir.
+- `esit_mi`: sayılar tolerans içinde; metin baş/son boşluk atılarak birebir; `bool` sayı değildir;
+  türler farklıysa `False`.
+
+### 11.6 Hata kodları ve asistan değerlendirme kaydı
+
+- Beş sınıf `hatalar.py`'dedir. `KararTablosuGecersiz(mesaj, hatalar)` ve `IliskiGecersiz(mesaj,
+  hatalar)` ayrıntıları hem `.hatalar`'da hem mesaj metninde taşır.
+- Sözlük kayıtlarının `rota`'ları var olan rotalardır (`/gereksinimler/:id/caseler`,
+  `/gereksinimler/:id`, `/kontrol-kulesi`); karar tabloları rotası Ş7 ile gelince güncellenebilir.
+- **Açık konu (ürün sahibi kararı):** `rules/assistant/hata-sozlugu.yaml` asistan paketinin içerik
+  hash'ine girer. Beş kaydın eklenmesiyle `assistant@v1` durumu `evaluated`'tan `icerik_degisti`'ye
+  döndü ve iki test kırmızıya döndü:
+  `tests/unit/features/demo/test_model_durumu.py::test_degerlendirme_durumu_durust_etiket` (izinli
+  durum listesinde `icerik_degisti` yok) ve
+  `tests/unit/gateway/test_evaluation_status.py::test_readme_status_table_matches_manifest`
+  (`rules/README.md` durum tablosu hâlâ "canlı değerlendirildi" diyor). `rules/evaluations.yaml`'daki
+  kayıtlı hash'e ve README tablosuna dokunulmadı: hash canlı değerlendirmenin kaydıdır. Çözüm
+  seçenekleri: asistanın canlı değerlendirmesini yeniden koşmak (`make eval-live
+  A=--update-status`), sahibin istisna yazması, ya da durumu `icerik_degisti` olarak kabul edip
+  README tablosunu ve testin durum listesini buna göre güncellemek.

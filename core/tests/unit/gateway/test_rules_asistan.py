@@ -200,6 +200,10 @@ def _normalize(metin: str) -> str:
 
 def _bilinen_kodlar() -> set[str]:
     from tp_core.api import csrf, errors
+
+    # 012: kodlu WorkflowError alt sınıfları tek modüldedir; içe aktarılmadan __subclasses__()
+    # onları göremez (test sırasına bağlı kalmasın).
+    from tp_core.features.karar_tablosu import hatalar as _kalite_hatalari  # noqa: F401
     from tp_core.workflow import service
 
     def alt_siniflar(cls: type) -> Iterator[type]:

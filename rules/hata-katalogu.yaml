@@ -1,0 +1,61 @@
+# Ekilmiş hata kataloğu (012 test kalite doğrulama; specs/012-test-kalite-dogrulama/ANALIZ.md §4.6).
+#
+# Demo uygulamaya yalnız test kipinde, bayi bazında uygulanan bilinçli hatalar. Ekilmiş hata
+# koşusu (Kontrol Kulesi → "Ekilmiş hata koşusu") her hata için onaylı suite'i koşar; en az bir
+# assertion kırmızıya dönerse hata "yakalandı", tümü yeşilse "kaçtı" sayılır.
+#
+# Kodların yetkili uygulaması demo uygulamadadır (`demo-app/api/src/demoapp_api/faults.py`,
+# `GET /test/faults`); bu dosya ürün tarafındaki kopyadır ve iki kataloğun eşitliği (kod, tür)
+# testle denetlenir. Core demo uygulamaya yazmaz: hatayı test fixture'ı uygular (`TP_FAULT=<kod>`).
+#
+# Alanlar: `kod` (tekil, ^[a-z0-9_]{1,40}$), `ad` (kısa görünen ad), `tur` (`kod` = demo
+# uygulamada bayraklı kod hatası · `veri` = bayi için okunurken ezilen parametre/veri hatası),
+# `aciklama` (hatanın etkisi), `yakalayan_kural` (hangi iş kuralının testlerinin bu hatayı
+# yakalaması beklenir). Metinler düz metindir.
+version: 1
+hatalar:
+  - kod: kampanya_bedava_yok
+    ad: Kampanyada bedava ürün verilmiyor
+    tur: kod
+    aciklama: Kampanyalı üründe bedava adet her zaman 0 hesaplanır (mevcut kırılma; BREAK_CAMPAIGN ile aynı etki).
+    yakalayan_kural: Kampanya (6 al 1 bedava)
+  - kod: kampanya_esik_7
+    ad: Kampanya eşiği 6 yerine 7
+    tur: kod
+    aciklama: Bedava adet, adet 6'ya değil 7'ye tam bölünerek hesaplanır.
+    yakalayan_kural: Kampanya (6'nın katlarında bedava adet)
+  - kod: kampanya_cift_indirim
+    ad: Kampanya indirimi iki kez düşülüyor
+    tur: kod
+    aciklama: Kampanya indirimi sepet toplamından iki kez düşülür.
+    yakalayan_kural: Kampanyalı sepetin toplamı
+  - kod: min_siparis_haric
+    ad: Minimum sipariş sınırı dahil değil
+    tur: kod
+    aciklama: Toplam minimum tutara eşitken sipariş kabul edilmez (sınır dahil olması gerekirken hariç tutulur).
+    yakalayan_kural: Minimum sipariş tutarı sınır değeri
+  - kod: min_siparis_muafiyet_yok
+    ad: Kampanyalı sepet minimumdan muaf değil
+    tur: kod
+    aciklama: Kampanyalı sepet de minimum sipariş tutarına tabi tutulur.
+    yakalayan_kural: Minimum sipariş muafiyeti (kampanyalı sepet)
+  - kod: min_siparis_500
+    ad: Minimum sipariş tutarı 500
+    tur: veri
+    aciklama: Minimum sipariş tutarı 750 yerine 500 okunur.
+    yakalayan_kural: Minimum sipariş tutarı
+  - kod: min_siparis_1000
+    ad: Minimum sipariş tutarı 1000
+    tur: veri
+    aciklama: Minimum sipariş tutarı 750 yerine 1000 okunur.
+    yakalayan_kural: Minimum sipariş tutarı
+  - kod: fiyat_p004_31
+    ad: P-004 fiyatı 31
+    tur: veri
+    aciklama: P-004 ürününün birim fiyatı 30 yerine 31 okunur.
+    yakalayan_kural: Satır ve sepet toplamı
+  - kod: kampanya_urunu_p002
+    ad: Kampanyalı ürün P-002
+    tur: veri
+    aciklama: Kampanyalı ürün P-001 yerine P-002 olarak okunur.
+    yakalayan_kural: Kampanya (kampanyalı ürün)
