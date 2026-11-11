@@ -343,15 +343,13 @@ def test_service_toolchain_hedefi_ve_kokler(monkeypatch: pytest.MonkeyPatch) -> 
     assert service.branch_for(cid, "web") == f"tp/case-{cid}"
 
 
-# ------------------------------------------------------------- render giriş noktası (asgari)
+# ------------------------------------------------------------- render giriş noktası
 
 
-def test_render_dil_gecersiz_cift_ve_sablonsuz() -> None:
-    with pytest.raises(RenderError, match="geçersiz platform/dil"):
+def test_render_dil_gecersiz_cift() -> None:
+    # Geçerli çiftlerin render'ı Ş2'nin `test_render_dil.py`'sinde; burada yalnız çift kuralı.
+    with pytest.raises(RenderError, match="yalnızca java"):
         render_dil(None, dil="ts", platform="android", rules=Path("."))  # type: ignore[arg-type]
-    # Ş1 worktree'sinde web + Java / C# / Python şablonu yoktur (Ş2); akış testleri sahte kullanır.
-    with pytest.raises(RenderError, match="şablon yok"):
-        render_dil(None, dil="csharp", platform="web", rules=Path("."))  # type: ignore[arg-type]
 
 
 # --------------------------------------------- web + Java: testId'ye dayalı çapraz kontrol
