@@ -9,7 +9,12 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select
 
-from tests.unit.features.publish.test_publish import _ctx, _label_count
+from tests.unit.features.publish.test_publish import (  # noqa: F401  (pytest fikstürleri)
+    _ctx,
+    _label_count,
+    yayin_analist,
+    yayin_testci,
+)
 from tests.unit.features.publish.test_publish import hazir as hazir_fikstur
 from tp_core.features.publish import service as publish
 from tp_core.integrations.jira import RestJira

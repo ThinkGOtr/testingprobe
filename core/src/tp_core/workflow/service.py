@@ -35,9 +35,11 @@ from tp_core.workflow.states import (
     CONTENT_FIELDS,
     DECISION_EDIT_REQUIRED,
     DECISION_EDITS,
+    DECISION_GEREKCE_REQUIRED,
     KARARLAR,
     MACHINES,
     RET_NEDENLERI,
+    TEST_CASE_KARAR_IZNI,
     Machine,
 )
 
@@ -206,6 +208,28 @@ def check_jira_approver(harici_onaylayan: str | None) -> str:
     return ad
 
 
+def karar_rolleri(kind: str, karar: str) -> frozenset[str]:
+    """Portal kanalında `kind` için `karar`'ı verebilecek roller (derinlemesine savunma).
+
+    test_case'te karar başına izin kataloğa (auth/yetki.py) bağlıdır: Testçi kararları
+    `case.decide`, son onay (`approve`/`send_back`) `case.approve`. Diğer türler
+    `APPROVER_ROLES`'taki tür düzeyi kümeyi kullanır (requirement: PO; PO teyidi Jira'dadır).
+    """
+    izin_adi = TEST_CASE_KARAR_IZNI.get(karar) if kind == "test_case" else None
+    if izin_adi is None:
+        return APPROVER_ROLES.get(kind, frozenset())
+    # Gecikmeli içe aktarma: yetki modülü bu modülün Principal'ını içe aktarır (döngü).
+    from tp_core.auth.yetki import roller_icin
+
+    return roller_icin(izin_adi)
+
+
+def _rol_karar_verebilir(rol: str, kind: str, karar: str) -> bool:
+    from tp_core.auth.yetki import normalize_rol
+
+    return normalize_rol(rol) in karar_rolleri(kind, karar)
+
+
 def _uygula_degisiklik(
     entity: Any, kind: str, karar: str, degisiklik: Mapping[str, Any] | None
 ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -296,8 +320,8 @@ def record_approval(
     elif kanal == "portal":
         if user is None or user.id is None or user.kanal != "portal":
             raise ApprovalNotAllowed("onay yalnızca portalda oturum açmış bir kullanıcıyla verilir")
-        if user.rol not in APPROVER_ROLES.get(kind, frozenset()):
-            raise ApprovalNotAllowed(f"{user.rol} rolü {kind} için karar veremez")
+        if not _rol_karar_verebilir(user.rol, kind, karar):
+            raise ApprovalNotAllowed(f"{user.rol} rolü {kind} için '{karar}' kararı veremez")
         aktor = user.kullanici_adi
         user_id = user.id
     else:
@@ -310,12 +334,8 @@ def record_approval(
         raise InvalidDecision("ret nedeni yalnızca 'reject' / 'request_changes' kararında verilir")
     if ret_nedeni is not None and ret_nedeni not in RET_NEDENLERI:
         raise InvalidDecision(f"ret nedeni taksonomiden olmalı: {sorted(RET_NEDENLERI)}")
-    if (
-        kind == "consistency_finding"
-        and karar == "accept_difference"
-        and not (gerekce or "").strip()
-    ):
-        raise InvalidDecision("'accept_difference' kararı gerekçe ister")
+    if karar in DECISION_GEREKCE_REQUIRED.get(kind, frozenset()) and not (gerekce or "").strip():
+        raise InvalidDecision(f"'{karar}' kararı gerekçe ister")
 
     session.flush()
     gorulen = content_hash_of(entity)

@@ -542,7 +542,7 @@ def test_tpt_token_oturumun_auth_time_ini_tasir(
     oturumun `auth_time`/`acr`/`session_epoch_ms`'ini taşıdığı için görülür.
     """
     with _mcp_istemci(home) as client:
-        _giris(client, home, ["analyst"])
+        _giris(client, home, ["tester"])
         r = client.post("/tokens", json={"kapsam": "publish"})
         assert r.status_code == 201, r.text
         raw = r.json()["token"]
@@ -556,7 +556,7 @@ def test_tpt_token_oturumun_auth_time_ini_tasir(
     # iptal edildi; TP'nin bunu henüz görmemiş olması önbellekten gelir.
     iptal_ms = EPOCH_MS + 50
     home.kisiler[UID] = {
-        "roles": ["analyst"],
+        "roles": ["tester"],
         "revoked_at_ms": iptal_ms,
         "valid_after": iptal_ms // 1000,
     }
@@ -603,7 +603,7 @@ def test_local_kipte_token_auth_time_bos(db: Db, make_user: MakeUser, engine: En
     def _mcp() -> dict[str, Any]:
         return {}
 
-    u = make_user("analyst")
+    u = make_user("tester")
     with TestClient(app) as client:
         r = client.post("/auth/login", json={"kullanici_adi": u.kullanici_adi, "parola": PAROLA})
         assert r.status_code == 200
@@ -935,7 +935,8 @@ def test_alembic_tek_bas() -> None:
 
     script = ScriptDirectory.from_config(alembic_config())
     bas = script.get_heads()
-    assert bas == ["0020"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
+    # 012 S2: 0021b (case ready). S1'in rol göçüyle birleşince zincir S1 → 0021b olur.
+    assert bas == ["0021b"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
     assert script.get_revision("0019").down_revision == "0018"
     assert script.get_revision("0020").down_revision == "0019"
 

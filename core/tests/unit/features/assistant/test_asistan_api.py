@@ -600,7 +600,7 @@ def test_origin_evil_403_ve_bearer_401(client: TestClient, make_user, engine, ca
 
     from tp_core.auth.tokens import verify_bearer
 
-    u = make_user("analyst")
+    u = make_user("tester")  # 012: MCP token'ı Testçinindir (token.issue)
     giris(client, u)
     s = sohbet_ac(client)
     r = client.post("/assistant/conversations", headers={"Origin": "http://evil"})

@@ -143,7 +143,7 @@ def test_uretim_girdisi_soru_cevap_ve_test_verisi_bloklarini_tasir(
                 verdict="needs_po",
             )
         )
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     run_jobs(engine)
     istek = provider.requests[0].messages[0]["content"]

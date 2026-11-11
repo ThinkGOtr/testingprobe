@@ -406,17 +406,21 @@ def test_degistirilmis_case_replay_miss_insana(
 ) -> None:
     cid = hazir["cases"][2]
     analist = hazir["analist"]
+    testci = make_user("tester")
     with session_scope() as s:
         tc = s.get(TestCase, cid)
-        transition(s, tc, "draft", analist, "approved")
+        transition(s, tc, "draft", testci, "approved")
     with session_scope() as s:
         tc = s.get(TestCase, cid)
         yeni = dict(tc.icerik, title="8 adet kampanyalı üründe 1 adet bedava verilir")
+        # 012: Testçi düzeltir (draft → ready), Analist son onayı verir (ready → approved).
         record_approval(
-            s, tc, analist, "edit", beklenen_hash=content_hash_of(tc), degisiklik={"icerik": yeni}
+            s, tc, testci, "edit", beklenen_hash=content_hash_of(tc), degisiklik={"icerik": yeni}
         )
         tc.icerik_hash = content_hash(yeni)
-        transition(s, tc, "approved", analist, "draft")
+        transition(s, tc, "ready", testci, "draft")
+        record_approval(s, tc, analist, "approve", beklenen_hash=content_hash_of(tc))
+        transition(s, tc, "approved", analist, "ready")
     sid = uret(api, [cid])["script_ids"][0]
     run_jobs(engine)
     sc, cg = script_of(sid)

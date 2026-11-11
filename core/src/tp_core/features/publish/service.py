@@ -3,7 +3,7 @@
 - **Girdi:** yalnızca case kimlikleri; içerik kabul edilmez (portal `POST /publish` ve IDE
   `publish_test_cases` aynı yolu kullanır).
 - **Kontrol (worker, her case için, yazmadan hemen önce ve sonra):** durum `approved` ve
-  `approved_hash_matches` (son insan kararı onaylayan bir karar, `review.onaylanan_hash ==
+  `approved_hash_matches` (son insan kararı Analistin son onayı `approve`, `review.onaylanan_hash ==
   test_case.icerik_hash == test_case.onaylanan_hash`) **ve** gereksinim `cases_ready|done` ve PO
   onayı güncel içerikte (`onaylanan_hash == content_hash_of(req)`; story değişip PO onayı
   sıfırlandıysa eski metnin case'i yayınlanmaz). Değilse o case yayınlanmaz.
@@ -18,8 +18,9 @@
   `tp-<uuid>` etiketiyle arar (`find_existing`); yeniden denemede ikinci issue açılmaz. Aynı hash
   `created` ise çağrı yapılmaz.
 - **Kısmi başarı:** her case ayrı sonuçlanır (`created` | `exists` | `failed` + hata).
-- **Gereksinim:** tüm onaylı case'ler yayınlanmış ve karar bekleyen case kalmamışsa `cases_ready →
-  done`. Story'ye yayın özeti ve denetim zincirinin son hash'i Jira yorumu olarak yazılır (§3/8).
+- **Gereksinim:** tüm onaylı case'ler yayınlanmış ve karar/son onay bekleyen (`draft`/`ready`)
+  case kalmamışsa `cases_ready → done`. Story'ye yayın özeti ve denetim zincirinin son hash'i
+  Jira yorumu olarak yazılır (§3/8).
 
 Jira/Xray yazma kimlikleri yalnızca core-worker'dadır (MIMARI-SOZLESME §6): core-api işi kuyruğa
 koyar (`request_publish`) ve sonucunu bekler (`await_job`).
@@ -39,6 +40,7 @@ from sqlalchemy import Engine, func, select, text
 from sqlalchemy.orm import Session
 
 from tp_core.audit import audit_on_commit, chain_tip
+from tp_core.auth.yetki import izinli
 from tp_core.events.bus import publish_tx
 from tp_core.features.cases.service import get_requirement, requirement_change_reason
 from tp_core.integrations import jira_notify
@@ -63,9 +65,11 @@ from tp_core.ports import JiraPort, TestManagementPort
 from tp_core.workflow.jobs import JobContext, PermanentJobError, enqueue
 from tp_core.workflow.service import (
     APPROVING,
+    ApprovalNotAllowed,
     InvalidDecision,
     Principal,
     approved_hash_matches,
+    latest_review,
     transition,
 )
 
@@ -165,8 +169,17 @@ def idempotency_key(hedef: str, tc: TestCase) -> str:
 def _engel(session: Session, tc: TestCase) -> str | None:
     """Yayın engeli (None = yayınlanabilir). Kararlar Postgres'teki onay kaydından okunur."""
     if tc.durum != "approved":
+        if tc.durum == "ready":
+            return "Analist son onayı bekleniyor (durum: ready)"
         return f"Onaylı değil (durum: {tc.durum})"
     if not approved_hash_matches(session, tc):
+        son = latest_review(session, "test_case", tc.id)
+        if son is not None and son.karar not in APPROVING["test_case"]:
+            # 012 öncesi `edit` ile onaylanmış case: yayın yalnız Analist son onayıyla açılır.
+            return (
+                f"Analist son onayı yok (son karar: {son.karar}); Taslağa alıp yeniden kabul "
+                "ve son onay gerekir"
+            )
         return "İçerik onaydan sonra değişmiş (onaylanan hash ≠ güncel hash)"
     gerekce = requirement_change_reason(session.get(Requirement, tc.requirement_id))
     if gerekce is not None:
@@ -331,6 +344,10 @@ def request_publish(
         raise InvalidDecision("yayın oturumlu kullanıcıyla istenir")
     if user.kanal == "ide" and user.kapsam != "publish":
         raise InvalidDecision("yayın için 'publish' kapsamlı token gerekir")
+    # Derinlemesine savunma: portal ucu `case.publish` ister; IDE token'ı da yayın yetkili rolün
+    # (Testçi) olmalıdır (token rolü üretim anındaki hesabın rolüdür).
+    if not izinli(user.rol, "case.publish"):
+        raise ApprovalNotAllowed(f"{user.rol} rolü case yayınlayamaz")
     ids = _parse_ids(case_ids)
     isteyen = {**user.as_dict(), "kanal": user.kanal}
     job_id = enqueue(
@@ -613,7 +630,12 @@ def _complete_requirements(req_ids: set[uuid.UUID], aktor: str) -> list[str]:
                     .group_by(TestCase.durum)
                 ).all()
             )
-            if sayim.get("published", 0) and not sayim.get("approved") and not sayim.get("draft"):
+            if (
+                sayim.get("published", 0)
+                and not sayim.get("approved")
+                and not sayim.get("draft")
+                and not sayim.get("ready")
+            ):
                 transition(
                     s, req, "done", aktor, "cases_ready", sebep="onaylı case'lerin tümü yayınlandı"
                 )

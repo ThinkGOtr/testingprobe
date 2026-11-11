@@ -2,8 +2,8 @@
 
 | Yöntem | Yol | Rol |
 |---|---|---|
-| GET  | `/publish/preview?requirement_id=` | analyst — hedef başına birebir gövde (dry-run) |
-| POST | `/publish` `{case_ids[]}` | analyst — worker'daki yayın işini başlatır ve sonucunu bekler |
+| GET  | `/publish/preview?requirement_id=` | `case.publish` (Testçi) — hedef başına birebir gövde |
+| POST | `/publish` `{case_ids[]}` | `case.publish` (Testçi) — yayın işini başlatır, sonucu bekler |
 | MCP  | `/mcp` | `Authorization: Bearer tpt_…` — `tp_core.mcp_server` (çerez kullanılmaz) |
 
 `POST /publish` işi kuyruğa koyar (Jira/Xray yazma kimliği yalnızca core-worker'da) ve en fazla
@@ -20,7 +20,8 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from tp_core.auth.deps import DbSession, require_role
+from tp_core.auth.deps import DbSession
+from tp_core.auth.yetki import izin
 from tp_core.db import get_engine
 from tp_core.features.publish import service
 from tp_core.integrations.jira import get_jira_settings
@@ -30,7 +31,7 @@ from tp_core.workflow.service import Principal
 
 router = APIRouter(tags=["publish"])
 
-Analyst = Annotated[Principal, Depends(require_role("analyst"))]
+Yayinci = Annotated[Principal, Depends(izin("case.publish"))]
 
 
 class PublishIn(BaseModel):
@@ -38,12 +39,12 @@ class PublishIn(BaseModel):
 
 
 @router.get("/publish/preview")
-def preview(requirement_id: uuid.UUID, session: DbSession, _user: Analyst) -> dict[str, Any]:
+def preview(requirement_id: uuid.UUID, session: DbSession, _user: Yayinci) -> dict[str, Any]:
     return service.preview(session, requirement_id)
 
 
 @router.post("/publish")
-async def publish(body: PublishIn, user: Analyst, response: Response) -> dict[str, Any]:
+async def publish(body: PublishIn, user: Yayinci, response: Response) -> dict[str, Any]:
     def kuyruga_al() -> uuid.UUID:
         with session_scope() as s:
             return service.request_publish(s, body.case_ids, user)

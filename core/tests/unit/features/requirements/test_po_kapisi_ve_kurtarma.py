@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select, text
 
+from tests.unit.features.cases.helpers import onayla, rol_ol
 from tp_core.features.cases import jobs as _case_jobs  # noqa: F401 — cases.generate işleyicisi
 from tp_core.features.requirements import flow
 from tp_core.features.requirements.settings import get_requirements_settings
@@ -38,6 +39,12 @@ def analist(api: TestClient, make_user) -> Any:
     u = make_user("analyst")
     login(api, u)
     return u
+
+
+@pytest.fixture
+def testci(make_user) -> Any:
+    """012: case üretimi ve kararı Testçinindir (gereksinim adımları Analistte kalır)."""
+    return make_user("tester")
 
 
 def _req_id(api: TestClient, key: str) -> str:
@@ -117,7 +124,7 @@ def test_son_halden_once_konan_etiket_poll_ile_kaldirilir(
 
 
 def test_case_uretiminden_sonra_geri_cekilen_onay_kapiyi_kapatir(
-    api: TestClient, analist: Any, engine: Engine, po: PoActions
+    api: TestClient, analist: Any, testci: Any, engine: Engine, po: PoActions
 ) -> None:
     """Canlıda bulunan hata: PO etiketi cases_ready'de kaldırıldığında gereksinim onaylı kalıyor
     ve onaylı case yayınlanabiliyordu. Artık poll geri çekilmeyi görür: gereksinim new, onaylanan
@@ -125,6 +132,7 @@ def test_case_uretiminden_sonra_geri_cekilen_onay_kapiyi_kapatir(
     from tp_core.features.publish.service import _engel
 
     rid = _po_onayli_tpd4(api, engine, po)
+    rol_ol(api, testci)
     r = api.post(f"/requirements/{rid}/generate-cases")
     assert r.status_code == 202, r.text
     run_jobs(engine)
@@ -132,10 +140,7 @@ def test_case_uretiminden_sonra_geri_cekilen_onay_kapiyi_kapatir(
     cases = api.get("/cases", params={"requirement_id": rid}).json()
     assert cases
     c0 = cases[0]
-    r = api.post(
-        f"/cases/{c0['id']}/decision", json={"karar": "approve", "icerik_hash": c0["icerik_hash"]}
-    )
-    assert r.status_code == 200, r.text
+    onayla(api, c0, testci, analist)
     # Etiket yerindeyken poll onayı korur.
     assert flow.run_po_poll(engine)["kontrol"][rid] == "onayli"
 
@@ -164,12 +169,13 @@ def test_case_uretiminden_sonra_geri_cekilen_onay_kapiyi_kapatir(
 
 
 def test_uretim_surerken_geri_cekilen_onay(
-    api: TestClient, analist: Any, engine: Engine, po: PoActions
+    api: TestClient, analist: Any, testci: Any, engine: Engine, po: PoActions
 ) -> None:
     """Etiket, üretim başladıktan sonra (iş kuyruktayken) kalkarsa bir sonraki poll gereksinimi
     (generating → failed → new) geri alır; üretim işi sonuç yazmaz. (Başlatma anında etiket
     yoksa generate-cases zaten 409 döner — aşağıdaki eşzamanlı denetim testi.)"""
     rid = _po_onayli_tpd4(api, engine, po)
+    rol_ol(api, testci)
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     po.remove_label("TPD-4")
     assert _durum(api, rid)["durum"] == "generating"
@@ -242,9 +248,10 @@ def test_zaman_asimi_sonrasi_supurme_gereksinimi_failed_yapar(
 
 
 def test_takili_generating_kurtarilir(
-    api: TestClient, analist: Any, engine: Engine, po: PoActions
+    api: TestClient, analist: Any, testci: Any, engine: Engine, po: PoActions
 ) -> None:
     rid = _po_onayli_tpd4(api, engine, po)
+    rol_ol(api, testci)
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     with engine.begin() as c:
         alinan = claim(c, "host-c:1", ["cases.generate"])
@@ -372,7 +379,7 @@ def test_po_etiketi_eszamanli_denetim(
 
 
 def test_etiket_kalktiktan_sonra_poll_beklenmeden_uretim_ve_ide_reddedilir(
-    api: TestClient, analist: Any, engine: Engine, po: PoActions
+    api: TestClient, analist: Any, testci: Any, engine: Engine, po: PoActions
 ) -> None:
     """Etiket kaldırıldı, poll henüz koşmadı (gereksinim hâlâ po_approved): case üretimi ve IDE
     taslağı eşzamanlı Jira denetimiyle 409 alır; gereksinim po_approved'da kalır."""
@@ -380,15 +387,16 @@ def test_etiket_kalktiktan_sonra_poll_beklenmeden_uretim_ve_ide_reddedilir(
     from tp_core.workflow.service import GateClosed, Principal
 
     rid = _po_onayli_tpd4(api, engine, po)
+    rol_ol(api, testci)
     po.remove_label("TPD-4")
     r = api.post(f"/requirements/{rid}/generate-cases")
     assert r.status_code == 409, r.text
     assert "tp-po-approved" in r.json()["detail"]
     assert _durum(api, rid)["durum"] == "po_approved"
     ide = Principal(
-        id=analist.id,
-        kullanici_adi=analist.kullanici_adi,
-        rol="analyst",
+        id=testci.id,
+        kullanici_adi=testci.kullanici_adi,
+        rol="tester",
         kanal="ide",
         kapsam="submit",
     )

@@ -263,3 +263,57 @@ def latest_cases(client: TestClient, rid: uuid.UUID) -> list[dict[str, Any]]:
     r = client.get("/cases", params={"requirement_id": str(rid)})
     assert r.status_code == 200, r.text
     return r.json()
+
+
+# ------------------------------------------------- 012 case akışı: Testçi kararı + Analist onayı
+
+
+def rol_ol(client: TestClient, user: Principal) -> None:
+    """Aynı istemcide hesap değiştir (K1: rol hesapları arasında geçiş)."""
+    client.post("/auth/logout")
+    login(client, user)
+
+
+def karar_ver(client: TestClient, c: dict[str, Any], **govde: Any) -> httpx.Response:
+    return client.post(
+        f"/cases/{c['id']}/decision", json={"icerik_hash": c["icerik_hash"], **govde}
+    )
+
+
+def onayla(
+    client: TestClient,
+    c: dict[str, Any],
+    testci: Principal,
+    analist: Principal,
+    *,
+    sonra: Principal | None = None,
+    icerik: dict[str, Any] | None = None,
+    **govde: Any,
+) -> dict[str, Any]:
+    """Testçi kabulü (`accept`; `icerik` verilirse `edit`) + Analist son onayı (`approve`).
+
+    Sonunda `sonra` (varsayılan: Testçi — yayın Testçinindir) oturumu açık kalır.
+    """
+    rol_ol(client, testci)
+    if icerik is None:
+        r = karar_ver(client, c, karar="accept", **govde)
+    else:
+        r = karar_ver(client, c, karar="edit", icerik=icerik, **govde)
+    assert r.status_code == 200, r.text
+    hazir = r.json()
+    assert hazir["durum"] == "ready", hazir
+    rol_ol(client, analist)
+    r = karar_ver(client, hazir, karar="approve")
+    assert r.status_code == 200, r.text
+    rol_ol(client, sonra or testci)
+    return r.json()
+
+
+def onayla_db(
+    session: Any, tc: Any, testci: Principal, analist: Principal, *, karar: str = "accept"
+) -> None:
+    """Servis düzeyinde 012 onayı: draft → ready (Testçi) → approved (Analist)."""
+    record_approval(session, tc, testci, karar, beklenen_hash=content_hash_of(tc))
+    transition(session, tc, "ready", testci, "draft")
+    record_approval(session, tc, analist, "approve", beklenen_hash=content_hash_of(tc))
+    transition(session, tc, "approved", analist, "ready")
