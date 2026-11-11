@@ -936,6 +936,10 @@ def run_generation(
             wf = s.get(WorkflowInstance, wf_id)
             if wf is not None and wf.durum == "running":
                 transition(s, wf, "done", SYSTEM, "running")
+        # P8 review (011 F2, K4): her üretimden sonra otomatik, tavsiye niteliğinde (ayrı iş).
+        from tp_core.features.cases import review
+
+        review.schedule_review(s, req, uretim_no)
         audit_on_commit(
             s,
             "system",

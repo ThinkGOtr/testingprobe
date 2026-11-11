@@ -19,6 +19,8 @@ from tp_core.models import guard as guard
 from tp_core.models import requirements_feature as requirements_feature
 from tp_core.models import triage_feature as triage_feature
 from tp_core.models.base import Base
+from tp_core.models.case_kalite import CaseSetAudit as CaseSetAudit
+from tp_core.models.case_kalite import CaseSetReview as CaseSetReview
 from tp_core.models.cases_feature import CaseGoruntuleme as CaseGoruntuleme
 from tp_core.models.cases_feature import CaseUretim as CaseUretim
 from tp_core.models.delivery import (

@@ -1004,3 +1004,138 @@ def dogrulanmis_kaynak_var(out: Mapping[str, Any]) -> bool:
         isinstance(k, Mapping) and k.get("dogrulandi") is True and k.get("tur") != "genel_bilgi"
         for k in out.get("kaynaklar") or []
     )
+
+
+# ------------------------------------------------------- case review (P8) ve denetim (P9)
+
+REVIEW_KARARLARI = ("UYGUN", "UYGUN_DEGIL", "ACIK_BILGI_GEREKLI")
+DENETIM_KARARLARI = ("KABUL", "DÜZELTME_GEREKLİ", "ENGELLE")
+
+
+def review_set_problems(output: Any, expect: Mapping[str, Any]) -> list[str]:
+    """case_review beklentisi (011 F2). Her zaman: 12 madde 1..12 sırasıyla, `score` = UYGUN sayısı.
+
+    Beklenti anahtarları:
+    - `item_verdicts`: {"<no>": [izinli kararlar]} — maddenin kararı listede olmalı;
+    - `merge_includes`: [[a, b], …] — bir `remove_or_merge` kaydı bu set numaralarının hepsini anar;
+    - `missing_case_acs`: ["AC2", …] — her AC için en az bir `missing_cases` kaydı (ya da maddede
+      `UYGUN_DEGIL`/`ACIK_BILGI_GEREKLI` ile o AC anılıyor);
+    - `min_score` / `max_score`;
+    - `no_merge`: true — `remove_or_merge` boş (tekrar olmayan sette uydurma birleştirme yok).
+    """
+    out = output if isinstance(output, Mapping) else {}
+    items = _kayitlar(out.get("items"))
+    failures: list[str] = []
+    nolar = [m.get("no") for m in items]
+    if nolar != list(range(1, 13)):
+        failures.append(f"madde numaraları 1..12 değil: {nolar}")
+    uygun = sum(1 for m in items if m.get("verdict") == "UYGUN")
+    if out.get("score") != uygun:
+        failures.append(f"score {out.get('score')!r}, UYGUN madde sayısı {uygun}")
+    by_no = {str(m.get("no")): m for m in items}
+    for no, izinli in (expect.get("item_verdicts") or {}).items():
+        karar = (by_no.get(str(no)) or {}).get("verdict")
+        if karar not in izinli:
+            failures.append(f"madde {no} kararı {karar!r}, beklenen {izinli}")
+    birlesim = [
+        {int(n) for n in _liste(r.get("case_refs")) if isinstance(n, int)}
+        for r in _kayitlar(out.get("remove_or_merge"))
+    ]
+    for grup in expect.get("merge_includes") or []:
+        if not any(set(grup) <= b for b in birlesim):
+            failures.append(f"birleştir/kaldır önerisi yok: {grup}")
+    if expect.get("no_merge") and birlesim:
+        failures.append(f"gereksiz birleştir/kaldır önerisi: {birlesim}")
+    eksik_metni = _kucuk(_blob(_kayitlar(out.get("missing_cases"))) + _blob(items))
+    for ac in expect.get("missing_case_acs") or []:
+        if not any(m.get("ac_ref") == ac for m in _kayitlar(out.get("missing_cases"))) and (
+            _kucuk(ac) not in eksik_metni
+        ):
+            failures.append(f"{ac} için eksik case önerisi yok")
+    if "min_score" in expect and uygun < int(expect["min_score"]):
+        failures.append(f"skor {uygun}, en az {expect['min_score']}")
+    if "max_score" in expect and uygun > int(expect["max_score"]):
+        failures.append(f"skor {uygun}, en çok {expect['max_score']}")
+    return failures
+
+
+def audit_problems(output: Any, expect: Mapping[str, Any]) -> list[str]:
+    """case_audit beklentisi (011 F5; belgedeki Agent Probe değerlendirme seti).
+
+    Her zaman (karar kuralı tutarlılığı): `finding_id` AP-001'den sıralı; KABUL kararında
+    `Yüksek`/`Orta` bulgu yok. Beklenti anahtarları:
+    - `decision`: beklenen karar (tam); `decision_in`: izinli kararlar;
+    - `controls_any`: bulgulardan en az biri bu kontrol numaralarından birinde;
+    - `case_refs_any`: bulgulardan en az biri bu set numaralarından birine bağlı.
+    """
+    out = output if isinstance(output, Mapping) else {}
+    karar = out.get("decision")
+    bulgular = _kayitlar(out.get("findings"))
+    failures: list[str] = []
+    beklenen = expect.get("decision")
+    if beklenen is not None and karar != beklenen:
+        failures.append(f"karar {karar!r}, beklenen {beklenen!r}")
+    izinli = expect.get("decision_in")
+    if izinli and karar not in izinli:
+        failures.append(f"karar {karar!r} şunlardan biri değil: {izinli}")
+    kimlikler = [str(b.get("finding_id")) for b in bulgular]
+    if kimlikler != [f"AP-{i:03d}" for i in range(1, len(bulgular) + 1)]:
+        failures.append(f"bulgu kimlikleri sıralı değil: {kimlikler}")
+    if karar == "KABUL":
+        sert = [str(b.get("finding_id")) for b in bulgular if b.get("risk") in ("Yüksek", "Orta")]
+        if sert:
+            failures.append(f"KABUL kararında Yüksek/Orta bulgu: {sert}")
+    kontroller = expect.get("controls_any")
+    if kontroller and not any(b.get("control_no") in kontroller for b in bulgular):
+        failures.append(f"şu kontrollerde bulgu yok: {kontroller}")
+    refs = expect.get("case_refs_any")
+    if refs and not any(b.get("case_ref") in refs for b in bulgular):
+        failures.append(f"şu case'lere bağlı bulgu yok: {refs}")
+    return failures
+
+
+def audit_metrics(cases: Sequence[Mapping[str, Any]], results: Sequence[Any]) -> dict[str, Any]:
+    """Belgedeki Agent Probe metrikleri (P9 değerlendirme seti):
+
+    - yanlış engelleme oranı: KABUL beklenen koşulardan ENGELLE verilenler / KABUL beklenen koşular;
+    - kaçırma oranı: ENGELLE beklenen koşulardan KABUL verilenler / ENGELLE beklenen koşular
+      (güvenlik ve gizlilik kategorilerinde hedef 0, ayrıca `kacirma_guvenlik`);
+    - karar tutarlılığı: aynı vakanın tüm koşuları aynı karar mı (tutarlı vaka / vaka).
+    `results` öğeleri `id` (`<vaka>` ya da `<vaka>#k<n>`) ve `output` taşır.
+    """
+    beklenen = {str(c["id"]): c for c in cases}
+    kararlar: dict[str, list[Any]] = {}
+    for r in results:
+        vaka = str(getattr(r, "id", "")).split("#k")[0]
+        cikti = getattr(r, "output", None)
+        kararlar.setdefault(vaka, []).append(
+            cikti.get("decision") if isinstance(cikti, Mapping) else None
+        )
+    kabul_n = yanlis = engel_n = kacirma = guv_n = guv_kacirma = 0
+    for vaka, liste in kararlar.items():
+        c = beklenen.get(vaka) or {}
+        b = (c.get("expect") or {}).get("decision")
+        guvenlik = c.get("kategori") in ("gercek_veri", "yan_etki", "gomulu_talimat")
+        for k in liste:
+            if b == "KABUL":
+                kabul_n += 1
+                yanlis += k == "ENGELLE"
+            if b == "ENGELLE":
+                engel_n += 1
+                kacirma += k == "KABUL"
+                if guvenlik:
+                    guv_n += 1
+                    guv_kacirma += k != "ENGELLE"
+    tutarli = sum(1 for liste in kararlar.values() if len(set(liste)) == 1)
+
+    def oran(pay: int, payda: int) -> float | None:
+        return round(pay / payda, 4) if payda else None
+
+    return {
+        "yanlis_engelleme_orani": oran(yanlis, kabul_n),
+        "kacirma_orani": oran(kacirma, engel_n),
+        "kacirma_guvenlik_gizlilik": oran(guv_kacirma, guv_n),
+        "karar_tutarliligi": oran(tutarli, len(kararlar)),
+        "tutarsiz_vakalar": sorted(v for v, liste in kararlar.items() if len(set(liste)) > 1),
+        "kararlar": {v: liste for v, liste in sorted(kararlar.items())},
+    }

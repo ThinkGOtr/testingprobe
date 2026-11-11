@@ -66,12 +66,15 @@ from tp_core.gateway.eval_agents import (
     TohumYok,
     ToolEnv,
     asistan_problems,
+    audit_metrics,
+    audit_problems,
     coverage_problems,
     dogrulanmis_kaynak_var,
     findings_problems,
     generation_stats,
     mapping_problems,
     review_problems,
+    review_set_problems,
 )
 from tp_core.gateway.evaluation import EVALUATIONS_FILE, prompt_versions
 from tp_core.ports import ModelMessage
@@ -161,6 +164,10 @@ def check_output(purpose: str, expect: Mapping[str, Any], output: Any) -> list[s
         failures += findings_problems(out, expect)
     elif purpose == "verify_and_map":
         failures += mapping_problems(out, expect)
+    elif purpose == "case_review":
+        failures += review_set_problems(out, expect)
+    elif purpose == "case_audit":
+        failures += audit_problems(out, expect)
     elif purpose in ASISTAN_AMACLARI:
         failures += asistan_problems(output, expect, purpose=purpose)
     else:
@@ -455,6 +462,9 @@ def write_report(
     }
     if data.get("purpose") == "case_generation":
         report["dagilim"] = uretim_dagilimi(results)
+    if data.get("purpose") == "case_audit":
+        # P9 metrikleri: yanlış engelleme, kaçırma (güvenlik/gizlilik ayrıca), karar tutarlılığı.
+        report["denetim_metrikleri"] = audit_metrics(data["cases"], results)
     path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return path
 

@@ -1,0 +1,152 @@
+{
+  "kind": "call",
+  "purpose": "case_review",
+  "golden": "f2-kod-hatasi/TPD-1",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı (model çıktısı değil; ai_call.model = golden-elle). Girdi beyanı: gereksinimin AC'leri + açıklaması ve setin kimliği (set_hash) — case_generation/f2-kod-hatasi/TPD-1 golden'ındaki case'lerin tamamı, düzeltme ve ret olmadan. Set değişirse REPLAY-MISS (on_miss: raise). Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Üretici: core/tests/unit/gateway/build_review_goldens.py.",
+  "input_match": {
+    "acceptance_criteria": [
+      "AC1: Bayi katalogda bir ürün için \"Sepete ekle\" butonuna bastığında ürün sepete eklenir ve sepet sayacı artar.",
+      "AC2: \"6 al 1 bedava\" kampanyasında kampanyalı üründen her 6 adet alımda 1 adet bedava verilir (7 adette 1 bedava).",
+      "AC3: Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL'dir; altında \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur.",
+      "AC4: Sipariş tutarı bayinin kredi limitini aşarsa \"Kredi limiti aşıldı\" uyarısı gösterilir ve sipariş onaylanamaz.",
+      "AC5: Sipariş onaylandığında sipariş numarası gösterilir ve sipariş, sipariş geçmişinde listelenir.",
+      "AC6: Kampanyalı siparişlerde minimum sipariş tutarı şartı aranmaz."
+    ],
+    "contains": [
+      "Bayi, katalogdan ürünleri sepete ekleyip kampanya indirimiyle siparişini onaylayabilmelidir.",
+      "Set özeti (set_hash): c327d943255e1935d766efd882ee6b1e99cb0c839076611842e49e423f060525"
+    ]
+  },
+  "output": {
+    "items": [
+      {
+        "no": 1,
+        "title": "İzlenebilirlik",
+        "verdict": "UYGUN",
+        "finding": "AC1–AC6'nın her biri en az bir case'te (matris: AC1 C1, AC2 C2–C4 ve C10, AC3 C5–C6, AC4 C7, AC5 C8, AC6 C9).",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 2,
+        "title": "Denklik bölümleri (EP)",
+        "verdict": "UYGUN",
+        "finding": "Geçersiz bölümler (EP-I1 minimum tutar altı, EP-I2 kredi limiti aşımı) C5 ve C7 ile sınanıyor; sepet adedinde tip/boş girdi kaynağın konusu değil.",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 3,
+        "title": "Sınır değerler (BVA)",
+        "verdict": "UYGUN_DEGIL",
+        "finding": "Bedava eşiği (7 adet) C3/C4 ile sınanıyor; ikinci eşik (11/12 adet, BV-3/BV-4) ve kredi limitine eşit tutar (BV-7) not_covered'da 10 case sınırı gerekçesiyle kaldı.",
+        "missing_case": "12 adet kampanyalı üründe 2 adet bedava verildiğini doğrulayan sınır case'i (BV-4); C10 yerine yazılabilir.",
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 4,
+        "title": "Karar tablosu (DT)",
+        "verdict": "UYGUN",
+        "finding": "Kampanya × minimum tutar koşulu AC3/AC6 ile iki satırda (C5–C6 kampanyasız, C9 kampanyalı) sınanıyor; diğer birleşimler kaynakta tanımlı değil.",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 5,
+        "title": "Durum geçişleri (ST)",
+        "verdict": "UYGUN",
+        "finding": "Story durum geçişi tanımlamıyor; sipariş onayı (C8) tek geçiştir.",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 6,
+        "title": "Negatif kapsam kararları",
+        "verdict": "UYGUN",
+        "finding": "EP-I1 ve EP-I2 tested; BV-6 ve BV-8 gerekçeyle out_of_scope (demo fiyatlarıyla 749,99 TL kurulamaz; limit üstü EP-I2 ile sınanıyor).",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 7,
+        "title": "Ölçülebilir beklenen sonuç",
+        "verdict": "UYGUN",
+        "finding": "Beklenen sonuçlar mesaj metni, tutar ve buton durumuyla ölçülebilir (\"Minimum sipariş tutarı 750,00 TL\", \"Kredi limiti aşıldı\").",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 8,
+        "title": "Somut ve kaynaklı test verisi",
+        "verdict": "UYGUN",
+        "finding": "Test verisi demo-app tohumundan (bayi1/bayi2, P-001…P-004); kaynakta olmayan kural ya da değer yok.",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 9,
+        "title": "Platform checklist'i",
+        "verdict": "UYGUN",
+        "finding": "UYGUN — platform eki yok",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 10,
+        "title": "Tekrar eden case",
+        "verdict": "UYGUN_DEGIL",
+        "finding": "C10, C2 ile aynı sepeti (P-001 × 7) aynı beklenenle sınıyor; yalnızca başlık farklı.",
+        "missing_case": "C10 kaldırılmalı ya da C2 ile birleştirilmeli.",
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 11,
+        "title": "Öncelik",
+        "verdict": "UYGUN",
+        "finding": "Para etkili kurallar (kampanya, minimum tutar, kredi limiti, sipariş onayı) P1; AC6 ve tekrar dışı akışlar uygun önceliklerde.",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 12,
+        "title": "Case bağımsızlığı",
+        "verdict": "UYGUN",
+        "finding": "Her case kendi sepetini kurar; başka case'in sonucuna bağlı ön koşul yok.",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      }
+    ],
+    "score": 10,
+    "missing_cases": [
+      {
+        "ac_ref": "AC2",
+        "item": 3,
+        "description": "12 adet kampanyalı ürün sepete eklenir; 2 adet bedava verilir ve bayi 10 adet öder.",
+        "technique": "BVA"
+      }
+    ],
+    "remove_or_merge": [
+      {
+        "case_refs": [
+          2,
+          10
+        ],
+        "action": "merge",
+        "reason": "C10 ile C2 aynı sepeti (P-001 × 7) aynı beklenen sonuçla sınıyor."
+      }
+    ],
+    "summary": "Set altı kabul kriterini kapsıyor; beklenenler kaynaklı ve ölçülebilir. İki açık var: C10, C2'nin tekrarı (birleştirilmeli) ve AC2'nin ikinci bedava eşiği (12 adet) case'siz kaldı."
+  }
+}

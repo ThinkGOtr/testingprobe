@@ -23,6 +23,7 @@ from sqlalchemy import Engine
 import tp_core.features.cases.jobs
 import tp_core.features.publish.jobs  # noqa: F401
 from tp_core.audit import PgCallRecorder
+from tp_core.features.cases import review as review_mod
 from tp_core.features.cases import service as cases_service
 from tp_core.features.publish import service as publish_service
 from tp_core.gateway import build_gateway
@@ -227,8 +228,17 @@ def fake_gateway(engine: Engine, monkeypatch: pytest.MonkeyPatch):
         cases_service.set_gateway_factory(lambda _e: gw)
         return provider
 
+    # Üretimden sonra kuyruğa alınan P8 review'u senaryodaki yanıtları tüketmesin: review geçidi
+    # bu fikstürde bağlı değil (review `hata` olur; tavsiye niteliğinde, gereksinimi etkilemez).
+    # Review'u sınayan testler `review.set_gateway_factory` ile kendi geçidini verir.
+    review_mod.set_gateway_factory(_review_gecidi_yok)
     yield _kur
     cases_service.set_gateway_factory(None)
+    review_mod.set_gateway_factory(None)
+
+
+def _review_gecidi_yok(_engine: Engine) -> Any:
+    raise RuntimeError("bu testte review geçidi bağlı değil")
 
 
 MakeUser = Callable[..., Principal]

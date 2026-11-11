@@ -36,6 +36,21 @@ purposes:
     max_tokens: 32000           # v3 çıktısı (kapsam öğeleri, test verisi, gerekçeler) v2'nin ~2 katı
     timeout_s: 600              # ~10K karakter Türkçe JSON + uyarlamalı düşünme: dakikalar sürebilir
     params: { effort: medium }
+  # 011 D şeridi: case seti review'u (P8; tavsiye) ve Agent Probe denetimi (P9; yayın kapısı, K8).
+  case_review:
+    model: claude-sonnet-5-5
+    max_tokens: 16000           # 12 madde + eksik case önerileri; uyarlamalı düşünme payı dahil
+    timeout_s: 300
+    params: { effort: medium }
+  case_audit:
+    model: claude-opus-5-5
+    max_tokens: 16000
+    timeout_s: 600              # Opus, büyük set + review girdisi: dakikalar sürebilir
+    # Opus 5.5'te düşünme kapatılamaz (thinking alanı gönderilmez, uyarlamalı); varsayılan çaba
+    # `medium`'dur, denetim kapısı için açıkça `high`. Sunucu tarafı ret yedeği (`fallbacks:
+    # default`) açık kalır: saldırı verisi içeren setler sınıflandırıcıya takılırsa sunucu başka
+    # modele yönlendirir; yanıtı üreten model `ai_call.model`'e yazılır (denetimde görünür).
+    params: { effort: high }
   consistency_check:          # ajan: kod (GitHub MCP, salt okuma) + veri (db_query) araçları
     model: claude-sonnet-5-5
     max_tokens: 8192

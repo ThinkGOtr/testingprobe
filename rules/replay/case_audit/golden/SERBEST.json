@@ -1,0 +1,23 @@
+{
+  "kind": "call",
+  "purpose": "case_audit",
+  "golden": "SERBEST",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı (model çıktısı değil; ai_call.model = golden-elle). Girdi beyanı: gereksinimin AC'leri + açıklaması ve setin kimliği (set_hash) — case_generation/SERBEST golden'ındaki case'lerin tamamı, düzeltme ve ret olmadan. Set değişirse REPLAY-MISS (on_miss: raise). Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Üretici: core/tests/unit/gateway/build_review_goldens.py.",
+  "input_match": {
+    "acceptance_criteria": [
+      "AC1: Satırdaki \"Kaldır\" butonuna basıldığında ürün sepetten çıkar ve sepet sayacı azalır.",
+      "AC2: Kaldırma sonrası kampanya indirimi her 6 adette 1 bedava kuralıyla yeniden hesaplanır.",
+      "AC3: Sepette kampanyalı ürün yoksa ve sepet tutarı 750,00 TL altına düşerse \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur."
+    ],
+    "contains": [
+      "Bayi sepetteki bir ürün satırını kaldırabilmeli; toplamlar ve kampanya indirimi yeniden hesaplanmalıdır.",
+      "Set özeti (set_hash): 55ff7611d469f2aed913d28c0cba9ad371d195ce9dbb719861ac156d29e4c076"
+    ]
+  },
+  "output": {
+    "decision": "KABUL",
+    "decision_rationale": "Beklenenler AC1–AC3'e dayanıyor ve ölçülebilir, test verisi demo tohumundan ve sentetik; yan etki, gizlilik ya da ortam sorunu yok. Bulgu yok.",
+    "findings": [],
+    "missing_scenarios": []
+  }
+}
