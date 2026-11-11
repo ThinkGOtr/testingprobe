@@ -20,6 +20,7 @@ from sqlalchemy import Engine, text
 from tests.unit.features.codegen.conftest import TOOLCHAIN
 from tp_core.features.codegen import dil_algila, service
 from tp_core.features.codegen import platform as p
+from tp_core.features.codegen import render as render_modulu
 from tp_core.features.codegen.browser import LocatorHedefi
 from tp_core.features.codegen.checks import SymbolTable
 from tp_core.features.codegen.render import RenderError, render_dil
@@ -95,9 +96,25 @@ def test_cati_ve_check_adi() -> None:
     assert p.cati("web", "csharp") == "Playwright .NET + NUnit"
     assert p.cati("web", "python") == "pytest-playwright"
     assert p.cati("android", "java") == "Appium + TestNG"
-    # Check adı platformundur, dile bakmaz.
-    assert p.check_adi("web") == "local-ci"
-    assert p.check_adi("ios") == "local-ci-ios"
+    # K-T1: web + ts `local-ci`, web + Java `local-ci-web-java`, uygulama `local-ci-<platform>`.
+    assert p.check_adi("web") == p.check_adi("web", "ts") == "local-ci"
+    assert p.check_adi("web", "java") == "local-ci-web-java"
+    assert p.check_adi("web", "csharp") == "local-ci"
+    assert p.check_adi("ios") == p.check_adi("ios", "java") == "local-ci-ios"
+
+
+def test_java_test_kalibi_tek_kaynak() -> None:
+    """K-T7: `*Test.java | *Testi.java | *Tests.java | *IT.java`; `birim/`, `uretilen/` hariç;
+    Kotlin `*Test.kt` yalnız istenirse (algılama sinyali)."""
+    kok = "e2e-java/src/test/java/com/x"
+    for ad in ("SepetTest.java", "SepetTesti.java", "SepetTests.java", "SepetIT.java"):
+        assert p.java_test_dosyasi_mi(f"{kok}/testler/{ad}"), ad
+    assert not p.java_test_dosyasi_mi(f"{kok}/ekranlar/Sepet.java")
+    assert not p.java_test_dosyasi_mi(f"{kok}/birim/KimliklerTest.java")
+    assert not p.java_test_dosyasi_mi(f"{kok}/uretilen/TPD1WebC1_0a1b2c3dTest.java")
+    assert p.java_test_dosyasi_mi(f"{kok}/uretilen/TPD1WebC1_0a1b2c3dTest.java", haric=("birim",))
+    assert not p.java_test_dosyasi_mi("src/test/kotlin/SepetTest.kt")
+    assert p.java_test_dosyasi_mi("src/test/kotlin/SepetTest.kt", kotlin=True)
 
 
 def test_durum_makinesi_unverified() -> None:
@@ -334,10 +351,13 @@ def test_service_toolchain_hedefi_ve_kokler(monkeypatch: pytest.MonkeyPatch) -> 
     )
     cid = uuid.UUID("0a1b2c3d-0000-0000-0000-000000000000")
     assert service.baslangic_dosya_yolu("java", "web", "TPD-1", 2, cid) == yol
-    assert service.baslangic_dosya_yolu("csharp", "web", "TPD-1", 2, cid).startswith(
-        "demo-app/e2e-csharp/"
-    )
-    assert service.baslangic_dosya_yolu("python", "web", "TPD-1", 2, cid).endswith(".py")
+    # K-T6: doğrulanmamış başlangıç yolu render'ın yol kuralıdır (uygulama kökü altında).
+    for dil, kok in (("csharp", "demo-app/e2e-csharp"), ("python", "demo-app/e2e-python")):
+        yol_d = service.baslangic_dosya_yolu(dil, "web", "TPD-1", 2, cid)
+        assert yol_d == render_modulu.dogrulanmamis_repo_path(dil, "TPD-1", 2, cid, kok)
+        assert yol_d.startswith(kok + "/tests/")
+    assert service.proje_dosyasi("java") == "demo-app/e2e-java/pom.xml"
+    assert service.proje_dosyasi("ts") == "demo-app/e2e/package.json"
     # Tekrar sayısı ve dal adı araç/ortam sorusudur: dile bakmaz.
     assert service.tekrar_sayisi("web") == 3
     assert service.branch_for(cid, "web") == f"tp/case-{cid}"
@@ -604,3 +624,324 @@ def muhendis(api: TestClient, make_user: Any) -> Any:
     u = make_user("engineer")
     login(api, u)
     return u
+
+
+# ------------------------------------------- dil algılama uç durumları (inceleme turu 1, K-T7)
+
+
+class SayanForge(SahteForge):
+    """Okunan dosyaları sayan sahte forge (okuma bütçesi testleri)."""
+
+    def __init__(self, dosyalar: dict[str, str], **kw: Any) -> None:
+        super().__init__(dosyalar, **kw)
+        self.okunan: list[str] = []
+
+    def read_file(self, path: str, ref: str = "main") -> str:
+        self.okunan.append(path)
+        return super().read_file(path, ref)
+
+
+def _algila(depo: dict[str, str], platform: str = "web") -> dil_algila.Algilama:
+    return dil_algila.algila(SahteForge(depo), "main", platform, uygulama_koku="")
+
+
+PW_POM = "<dependency><artifactId>playwright</artifactId></dependency>"
+
+
+def test_algila_kokte_standart_maven_ve_tum_java_kaliplari() -> None:
+    """QA-Y1: kökte Maven (`src/test/java`) + `*Test`, `*Tests`, `*IT`, `*Testi`; Kotlin sinyali."""
+    depo = {
+        "pom.xml": PW_POM,
+        "src/test/java/com/x/SepetTest.java": "",
+        "src/test/java/com/x/GirisTests.java": "",
+        "src/test/java/com/x/SiparisIT.java": "",
+        "src/test/java/com/x/KatalogTesti.java": "",
+        "src/test/kotlin/com/x/OdemeTest.kt": "",
+        "src/test/java/com/x/birim/HesapTest.java": "",  # birim testi sayılmaz
+        "src/main/java/com/x/Sepet.java": "",
+        "e2e/tests/a.spec.ts": "",
+    }
+    a = _algila(depo)
+    assert a.sayilar["java"] == 5 and a.dil == "java" and a.kaynak == "algilandi"
+    # Proje dosyası Playwright'a başvurmuyorsa (ör. backend birim testleri) sayılmaz.
+    depo["pom.xml"] = "<artifactId>junit</artifactId>"
+    dil_algila.onbellegi_temizle()
+    assert _algila(depo).sayilar["java"] == 0
+
+
+def test_algila_gradle_kotlin_projesi() -> None:
+    depo = {
+        "ui-tests/build.gradle.kts": 'testImplementation("com.microsoft.playwright:playwright")',
+        "ui-tests/src/test/kotlin/SepetTest.kt": "",
+        "ui-tests/src/test/kotlin/GirisTest.kt": "",
+    }
+    assert _algila(depo).sayilar["java"] == 2
+
+
+def test_algila_e2e_java_her_kalip_ve_e2e_app_web_sayimina_girmez() -> None:
+    kok = "e2e-java/src/test/java/com/antreklabs/bayi"
+    depo = {
+        "e2e-java/pom.xml": "<project/>",  # bilinen proje: işaret aranmaz
+        f"{kok}/testler/SepetTests.java": "",
+        f"{kok}/testler/GirisIT.java": "",
+        f"{kok}/uretilen/TPD1WebC1_0a1b2c3dTest.java": "",
+        "e2e-app/pom.xml": PW_POM,
+        "e2e-app/src/test/java/com/antreklabs/bayi/testler/SepetTesti.java": "",
+    }
+    a = _algila(depo)
+    assert a.sayilar["java"] == 2 and a.sayilar["csharp"] == a.sayilar["python"] == 0
+
+
+def test_algila_android_e2e_app_testi_kalibi() -> None:
+    """MİM-O3: e2e-app el testleri `*Testi.java` → android algılaması 0 değil."""
+    kok = "e2e-app/src/test/java/com/antreklabs/bayi"
+    depo = {
+        "e2e-app/pom.xml": "",
+        f"{kok}/testler/SepetTesti.java": "",
+        f"{kok}/testler/GirisTesti.java": "",
+        f"{kok}/birim/KimliklerTest.java": "",
+        f"{kok}/uretilen/TPD1AndroidC2_3f9b1c2eTest.java": "",
+    }
+    a = _algila(depo, "android")
+    assert a.sayilar == {"java": 2} and a.kaynak == "algilandi"
+
+
+def test_algila_dotnet_monorepo_okuma_butcesi_test_dizini_once() -> None:
+    """QA-Y1: 25 projeli .NET monorepo + `tests/E2E/E2E.csproj`: bütçe src/* projelerine
+    harcanmaz (yalnız altında test dosyası olan proje okunur, test adlı dizin önce); Python'un
+    bütçesi ayrıdır."""
+    depo: dict[str, str] = {}
+    for i in range(25):
+        depo[f"src/Modul{i:02d}/Modul{i:02d}.csproj"] = "<Project/>"
+        depo[f"src/Modul{i:02d}/Servis.cs"] = ""
+    for i in range(3):  # birim test projeleri (Playwright'sız): sayılmaz
+        depo[f"src/Modul{i:02d}.Tests/Modul{i:02d}.Tests.csproj"] = "<Project/>"
+        depo[f"src/Modul{i:02d}.Tests/ServisTests.cs"] = ""
+    depo["tests/E2E/E2E.csproj"] = '<PackageReference Include="Microsoft.Playwright.NUnit" />'
+    depo.update({f"tests/E2E/Akis{i}Tests.cs": "" for i in range(4)})
+    depo["ui/pyproject.toml"] = "dependencies = ['pytest-playwright']"
+    depo["ui/tests/test_sepet.py"] = ""
+    f = SayanForge(depo)
+    a = dil_algila.algila(f, "main", "web", uygulama_koku="")
+    assert a.sayilar["csharp"] == 4 and a.dil == "csharp"
+    assert a.sayilar["python"] == 1
+    assert "tests/E2E/E2E.csproj" in f.okunan
+    # Altında test dosyası olmayan 25 src/* projesi hiç okunmaz.
+    assert not any(y.startswith("src/Modul") and ".Tests" not in y for y in f.okunan)
+
+
+def test_algila_butce_dil_basina() -> None:
+    depo: dict[str, str] = {}
+    for i in range(dil_algila.MAX_ISARET_OKUMA + 5):
+        depo[f"t{i:02d}/T{i:02d}.csproj"] = "<Project/>"
+        depo[f"t{i:02d}/BirTests.cs"] = ""
+    depo["e2e-py/pyproject.toml"] = "pytest-playwright"
+    depo["e2e-py/tests/test_a.py"] = ""
+    f = SayanForge(depo)
+    a = dil_algila.algila(f, "main", "web", uygulama_koku="")
+    assert sum(y.endswith(".csproj") for y in f.okunan) == dil_algila.MAX_ISARET_OKUMA
+    assert a.sayilar["python"] == 1  # C# bütçeyi tüketti; Python'un kendi bütçesi var
+
+
+def test_algila_kok_pyproject_zayif_isaret() -> None:
+    """QA-O1: kökte `pytest-playwright` dev bağımlılığı + 30 api birim testi + 1 TS spec → ts."""
+    depo = {
+        "pyproject.toml": "[dependency-groups]\ndev = ['pytest-playwright']\n",
+        "e2e/package.json": "{}",
+        "e2e/tests/a.spec.ts": "",
+        **{f"api/tests/test_unit{i}.py": "def test_x():\n    assert 1\n" for i in range(30)},
+    }
+    a = _algila(depo)
+    assert a.sayilar["python"] == 0 and a.dil == "ts"
+    # Test dosyasının kendisi Playwright kullanıyorsa sayılır.
+    depo["ui/test_sepet.py"] = "from playwright.sync_api import Page\ndef test_s(page: Page): ...\n"
+    dil_algila.onbellegi_temizle()
+    assert _algila(depo).sayilar["python"] == 1
+    # Kökteki conftest.py Playwright fikstürü tanımlıyorsa güçlü işarettir.
+    depo["conftest.py"] = "import pytest\nfrom playwright.sync_api import Page\n"
+    dil_algila.onbellegi_temizle()
+    assert _algila(depo).sayilar["python"] == 31
+
+
+def test_algila_izlenmeyen_dizinler() -> None:
+    depo = {
+        "E2E/E2E.csproj": "Microsoft.Playwright",
+        "E2E/SepetTests.cs": "",
+        "E2E/bin/Debug/KopyaTests.cs": "",
+        "node_modules/x/pyproject.toml": "playwright",
+        "node_modules/x/test_y.py": "",
+    }
+    a = _algila(depo)
+    assert (a.sayilar["csharp"], a.sayilar["python"]) == (1, 0)
+
+
+class DepoluForge(SahteForge):
+    """`repo` kimliği taşıyan sahte forge (GitHubForge gibi; önbellek anahtarı)."""
+
+    repo = "org/depo"
+
+    def __init__(self, dosyalar: dict[str, str], **kw: Any) -> None:
+        super().__init__(dosyalar, **kw)
+        self.head_cagri = 0
+
+    def head_sha(self, ref: str = "main") -> str:
+        self.head_cagri += 1
+        return super().head_sha(ref)
+
+
+def test_head_sha_60_sn_onbellek_ve_hata_onbellegi(monkeypatch: pytest.MonkeyPatch) -> None:
+    """GÜV-D2: dal → sha 60 sn önbellekli (forge her istekte okunmaz); başarısız algılama kısa
+    süre önbellekli; sonuç `hata` taşır."""
+    saat = {"t": 1000.0}
+    monkeypatch.setattr(dil_algila, "_simdi", lambda: saat["t"])
+    f = DepoluForge(_depo())
+    for _ in range(3):
+        dil_algila.algila(DepoluForge(_depo()), "main", "web", uygulama_koku="")
+    f = DepoluForge(_depo())
+    dil_algila.algila(f, "main", "web", uygulama_koku="")
+    assert f.head_cagri == 0  # yeni nesne, aynı depo: önbellekten
+    saat["t"] += dil_algila.HEAD_TTL_S + 1
+    dil_algila.algila(f, "main", "web", uygulama_koku="")
+    assert f.head_cagri == 1
+
+    dil_algila.onbellegi_temizle()
+    bozuk = DepoluForge({}, hata=RuntimeError("hız sınırı"))
+    a = dil_algila.algila(bozuk, "main", "web", uygulama_koku="")
+    assert a.kaynak == "varsayilan" and a.hata and a.projeler == {}
+    dil_algila.algila(bozuk, "main", "web", uygulama_koku="")
+    assert bozuk.head_cagri == 1  # hata önbellekte
+    saat["t"] += dil_algila.HATA_TTL_S + 1
+    dil_algila.algila(bozuk, "main", "web", uygulama_koku="")
+    assert bozuk.head_cagri == 2
+
+
+# --------------------------------------------- K-T3 / MİM-L7: dil seçenekleri, GitHub kipi
+
+
+def _github_kipi(monkeypatch: pytest.MonkeyPatch, web_dilleri: str | None) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(service, "get_settings", lambda: SimpleNamespace(forge="github"))
+    if web_dilleri is None:
+        monkeypatch.delenv("TP_WEB_DILLERI", raising=False)
+    else:
+        monkeypatch.setenv("TP_WEB_DILLERI", web_dilleri)
+    monkeypatch.setenv("TP_FORGE_APP_ROOT", "demo-app")
+
+
+def _projeli_algilama() -> dil_algila.Algilama:
+    return dil_algila.Algilama(
+        "java", "algilandi", {"ts": 1, "java": 5, "csharp": 0, "python": 0},
+        {"ts": True, "java": True},
+    )  # fmt: skip
+
+
+def test_github_kipinde_java_tp_web_dillerine_bagli(monkeypatch: pytest.MonkeyPatch) -> None:
+    _github_kipi(monkeypatch, None)
+    monkeypatch.setattr(service, "_algila", lambda _p: _projeli_algilama())
+    d = service.dil_secenekleri("web")
+    java = next(x for x in d["secenekler"] if x["dil"] == "java")
+    assert java["kullanilabilir"] is False and "TP_WEB_DILLERI" in java["neden"]
+    # Algılanan dil üretilemiyorsa öneri varsayılana düşer.
+    assert (d["algilanan"], d["kaynak"]) == ("ts", "varsayilan")
+    with pytest.raises(service.GecersizDil, match="TP_WEB_DILLERI") as exc:
+        service.dil_coz("web", "java")
+    assert exc.value.status_code == 422
+    assert service.dil_coz("web", None) == ("ts", "varsayilan")
+
+    _github_kipi(monkeypatch, "ts,java")
+    d = service.dil_secenekleri("web")
+    assert next(x for x in d["secenekler"] if x["dil"] == "java")["kullanilabilir"] is True
+    assert service.dil_coz("web", "java") == ("java", "secildi")
+
+    _github_kipi(monkeypatch, "go")
+    with pytest.raises(service.GecersizDil, match="Yapılandırma hatası"):
+        service.dil_coz("web", "java")
+    # Uygulama platformu ve doğrulanmamış diller TP_WEB_DILLERI'ne bağlı değildir.
+    assert service.dil_coz("web", "csharp") == ("csharp", "secildi")
+
+
+def test_depo_okunamazsa_secenekler_bilinmiyor(monkeypatch: pytest.MonkeyPatch) -> None:
+    """MİM-L7: forge kurulamaz/okunamazsa seçenekler engellenmez ama neden dürüstçe yazılır."""
+
+    def kurulamaz() -> Any:
+        raise RuntimeError("GITHUB_READ_TOKEN yok")
+
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(service, "get_settings", lambda: SimpleNamespace(forge="local"))
+    monkeypatch.setattr(service, "_forge", kurulamaz)
+    d = service.dil_secenekleri("web")
+    assert d["kaynak"] == "varsayilan" and "Dil algılanamadı" in d["neden"]
+    assert all(x["kullanilabilir"] for x in d["secenekler"])
+    assert all(x["neden"] == service.DEPO_OKUNAMADI for x in d["secenekler"])
+
+
+def test_ajan_tablo_dili_k_t5(monkeypatch: pytest.MonkeyPatch) -> None:
+    """K-T5: web + Java tablosunda canlı ajana repoda TS projesi varsa TS tablosu; REPLAY'de ve
+    TS projesi yokken denetim tablosu; uygulama ve TS yolu değişmez."""
+    f = SahteForge({**_depo(), "e2e-java/pom.xml": ""})
+    monkeypatch.setattr(service, "beklenen_uretim_modu", lambda: "live")
+    monkeypatch.setenv("TP_FORGE_APP_ROOT", "")
+    sha = "a" * 40
+    assert service._ajan_tablo_dili(f, sha, "web", "java") == "ts"
+    assert service._ajan_tablo_dili(f, sha, "web", "ts") == "ts"
+    assert service._ajan_tablo_dili(f, sha, "android", "java") == "java"
+    yalniz_java = SahteForge({"e2e-java/pom.xml": ""})
+    dil_algila.onbellegi_temizle()
+    assert service._ajan_tablo_dili(yalniz_java, "b" * 40, "web", "java") == "java"
+    monkeypatch.setattr(service, "beklenen_uretim_modu", lambda: "replay")
+    assert service._ajan_tablo_dili(f, sha, "web", "java") == "java"
+
+
+def test_code_languages_yalniz_engineer_ve_presenter(
+    api: TestClient, codegen: Any, make_user: Any
+) -> None:
+    """K-T8 / GÜV-D2: `GET /code/languages` forge okur; yalnız engineer | presenter."""
+    from .conftest import login
+
+    for rol, beklenen in (("analyst", 403), ("po", 403), ("presenter", 200), ("engineer", 200)):
+        login(api, make_user(rol))
+        assert api.get("/code/languages").status_code == beklenen, rol
+
+
+# ---------------------------------------------------- dil çakışması ve görünüm (birim)
+
+
+def test_dil_cakismasi_yalniz_tam_hat_ve_baska_dilde_merged() -> None:
+    from types import SimpleNamespace
+
+    ts_merged = (SimpleNamespace(durum="merged", dil="ts"), None)
+    java_acik = (SimpleNamespace(durum="pr_open", dil="java"), None)
+    neden = service.dil_cakismasi([ts_merged], "web", "java")
+    assert neden == (
+        "Bu case'in web testi TypeScript ile merge edildi; dil değiştirmek için önce mevcut "
+        "testi kaldırın"
+    )
+    assert service.dil_cakismasi([ts_merged], "web", "ts") is None
+    assert service.dil_cakismasi([ts_merged], "web", "csharp") is None
+    assert service.dil_cakismasi([java_acik], "web", "ts") is None
+
+
+def test_views_web_java_kendi_checkini_bekler_ve_adim_listesi_tek_kaynak(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """MİM-L1 / K-T1: portal kapısı script'in check adını `platform.check_adi`'dan alır (web +
+    Java → `local-ci-web-java` kaydı yoksa "queued" olarak kapıya verilir)."""
+    from tp_core.features.codegen import classify, views
+
+    goren: dict[str, list[str]] = {}
+
+    def kapi(conf: Any, kosular: Any, degisen: Any) -> tuple[tuple[str, ...], None]:
+        goren[str(len(goren))] = [k.name for k in kosular]
+        return tuple(conf), None
+
+    monkeypatch.setattr(views, "local_required_checks", kapi)
+    monkeypatch.setattr(views, "required_checks", lambda: ("local-ci",))
+    views.yerel_zorunlu_checkler([], ["e2e-java/x/YTest.java"], "web", "java")
+    views.yerel_zorunlu_checkler([], ["e2e/tests/a.spec.ts"], "web", "ts")
+    views.yerel_zorunlu_checkler([], ["e2e-app/x/YTest.java"], "android", None)
+    assert goren == {"0": ["local-ci-web-java"], "1": [], "2": ["local-ci-android"]}
+    assert views.KONTROL_ADIMLARI is classify.GORUNEN_ADIMLAR
+    assert views.KONTROL_ADIMLARI["java"] == classify.JAVA_ADIMLARI
+    assert views.KONTROL_ADIMLARI["ts"] == ("tsc", "eslint", "ast_guard")

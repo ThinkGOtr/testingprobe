@@ -3,7 +3,7 @@
 | Yöntem | Yol | Rol |
 |---|---|---|
 | POST | `/code/generate` `{case_ids[], platform?, dil?}` | engineer — CasesToCode (202) |
-| GET  | `/code/languages?platform=` | herkes — algılanan dil + dil seçenekleri (011 §2.3) |
+| GET  | `/code/languages?platform=` | engineer, presenter — algılanan dil + seçenekler (K-T8) |
 | GET  | `/scripts` · `/scripts/{id}` | herkes — üretilen test, PR, adımlar, yerel kontrol |
 | GET  | `/scripts/{id}/screenshots/{n}` | herkes — ajan adımının ekran görüntüsü (PNG) |
 | POST | `/scripts/{id}/break-verify` | engineer — kırarak doğrula (202) |
@@ -17,6 +17,11 @@ head için ikinci istek aynı işi bekler (idempotent). Kırarak doğrulama `pas
 (açık insan kabulü) zorunludur; yoksa 409. `head_sha` yoksa 422; PR zaten merge edildiyse 409
 "PR zaten merge edildi". Dal main'in gerisindeyse (başka PR merge edildi) merge onay kaydı
 yazılmadan 409 döner; dal otomatik güncellenir (ya da `update-branch`).
+
+Rol kısıtı (K-T8): Kod üretimi / Koşular ekranlarının rol bazlı görünürlüğü **arayüz düzenidir,
+yetki sınırı değildir**; okuma uçları oturum açmış herkese açıktır. Tek istisna `GET
+/code/languages`: her çağrı forge'u okur (GitHub hız sınırı), bu yüzden yalnız üretimi başlatan
+(engineer) ve sunum yapan (presenter) rollere açıktır.
 
 Review (`karar` ∈ {degisiklik_iste, reddet}, `ret_nedeni` sabit taksonomiden) script'i kapatır ve
 `insan_review_sonucu`'nu yazar (Constitution X); PR worker'da kapatılır.
@@ -41,6 +46,7 @@ from tp_core.workflow.service import Principal
 router = APIRouter(tags=["codegen"])
 
 Engineer = Annotated[Principal, Depends(require_role("engineer"))]
+EngineerPresenter = Annotated[Principal, Depends(require_role("engineer", "presenter"))]
 MERGE_BEKLEME_S = 20.0  # portal nginx /api/ zaman aşımı 30 sn
 
 
@@ -74,7 +80,7 @@ def generate(body: KodUretGirdisi, session: DbSession, user: Engineer) -> dict[s
 
 @router.get("/code/languages")
 def languages(
-    _user: CurrentUser,
+    _user: EngineerPresenter,
     platform: Literal["web", "android", "ios", "windows"] = "web",
 ) -> dict[str, Any]:
     """Algılanan dil, depodaki elle yazılmış test sayıları ve platformun dil seçenekleri."""

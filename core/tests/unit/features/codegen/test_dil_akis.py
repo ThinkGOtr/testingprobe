@@ -1,19 +1,24 @@
-"""011 üretim dili — uçtan uca REPLAY akışları (Ş1 core-akış).
+"""011 üretim dili — uçtan uca REPLAY akışları (Ş1 core-akış; inceleme turu 1 MİM-O7, K-T4).
+
+Şablonlar **gerçektir** (`render.render_dil`; Ş2 şablonları), sembol tablosu gerçek e2e-java
+tablosudur (`symbols-java-web.json` = `java-araclar symbols --root demo-app/e2e-java`):
 
 - Web + Java: `POST /code/generate {dil: "java"}` → web ajanı (`verify_and_map`, Playwright MCP;
   REPLAY anahtarı dilden bağımsız) → e2e-java sembol tablosu (`/symbols {lang: java, platform:
-  web}`) → `goto` → `goTo` normalizasyonu → şablon (`render_dil`) → `<e2e-java>/…/uretilen/` →
-  `/check {lang: java, platform: web}` (3 tekrar) → PR (`local-ci`).
-- Doğrulanmamış dil (csharp, python): ajan yine tarayıcıda doğrular, referans tablo TS'dir;
-  render edilen kaynak `script_codegen.kaynak_kod`'a yazılır, commit/PR/yerel kontrol yoktur,
-  durum `unverified`; yeniden üretim aynı kaydı `pending`'e alır.
-
-Web Java / C# / Python şablonları Ş2'nindir: bu testler `render.render_dil`'i sahte ile değiştirir
-(ts yolu gerçek şablondur).
+  web}`) → `goto` → `goTo` normalizasyonu → `check_mapping` → gerçek Playwright for Java şablonu
+  (çıktı golden `TPD1WebC2_3f9b1c2eTest.java` ile aynı gövde) → `<e2e-java>/…/uretilen/` → sahte
+  toolchain `/check {lang: java, platform: web}` (3 tekrar) → PR.
+- Doğrulanmamış dil (csharp, python): ajan yine tarayıcıda doğrular, referans tablo TS'dir
+  (repoda yalnız e2e-java varsa Java; başlık bunu söyler); render edilen kaynak
+  `script_codegen.kaynak_kod`'a yazılır, commit/PR/yerel kontrol yoktur, durum `unverified`; yol
+  üretimden önce ve sonra aynıdır (K-T6); yeniden üretim aynı kaydı `pending`'e alır.
+- K-T4: doğrulanmamış üretim tam hat script'inin açık PR'ına / merge'üne dokunmaz; başka dilde merge
+  edilmiş script varken tam hat isteği 409.
 """
 
 from __future__ import annotations
 
+import json
 import shutil
 import uuid
 from pathlib import Path
@@ -22,25 +27,23 @@ from typing import Any
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, text
 
 from tests.unit.features.cases.helpers import run_jobs
 from tests.unit.features.codegen.conftest import REPO, git
-from tests.unit.features.codegen.test_dil import java_web_tablosu
-from tp_core.features.codegen import dil_algila
-from tp_core.features.codegen import render as render_modulu
-from tp_core.features.codegen.render import (
-    Rendered,
-    RenderInput,
-    java_class_name,
-    java_literal,
-    mapping_hash,
-)
+from tp_core.features.codegen import dil_algila, render
 from tp_core.models import AiCall, AuditEvent, Script, StepMapping, session_scope
 from tp_core.models.codegen_feature import ScriptCodegen
 
+HERE = Path(__file__).resolve().parent
 JAVA_KOK = "src/test/java/com/antreklabs/bayi"
 BAYILER = REPO / "demo-app/e2e-app/src/test/java/com/antreklabs/bayi/altyapi/Bayiler.java"
+GOLDEN_JAVA = HERE / "golden" / "TPD1WebC2_3f9b1c2eTest.java"
+
+
+def java_web_tablosu() -> dict[str, Any]:
+    """Gerçek e2e-java sembol tablosu (toolchain `/symbols {lang: java, platform: web}` yanıtı)."""
+    return {**json.loads((HERE / "symbols-java-web.json").read_text("utf-8")), "lang": "java"}
 
 
 def java_web_gecti(n: int = 3) -> dict[str, Any]:
@@ -63,64 +66,56 @@ def java_web_gecti(n: int = 3) -> dict[str, Any]:
     }
 
 
-def sahte_render_dil(gercek: Any) -> Any:
-    """Ş2'nin `render_dil`'i yerine: ts gerçek şablon; web Java / C# / Python deterministik metin
-    (eşlemedeki çağrılar satır satır, Java satırı `_JAVA_CAGRI_SATIRI` biçiminde)."""
-
-    def render_dil(inp: RenderInput, *, dil: str, platform: str, rules: Path) -> Rendered:
-        if dil == "ts":
-            return gercek(inp, dil=dil, platform=platform, rules=rules)
-        cagrilar = [*(inp.mapping.get("step_mapping") or []), *(inp.mapping.get("expects") or [])]
-        if dil == "java":
-            sinif = java_class_name(inp.story_key, platform, inp.sira_no, inp.case_id)
-            test_file = f"{JAVA_KOK}/uretilen/{sinif}.java"
-            satirlar = [
-                f"        {c['po'][:1].lower()}{c['po'][1:]}().{c['method']}("
-                + ", ".join(java_literal(a) for a in c.get("args") or [])
-                + ");"
-                for c in cagrilar
-            ]
-        elif dil == "csharp":
-            test_file = "Uretilen/SahteTests.cs"
-            satirlar = [f"        await {c['po']}.{c['method']}Async();" for c in cagrilar]
-        else:
-            test_file = "tests/uretilen/test_sahte.py"
-            satirlar = [f"    {c['po'].lower()}.{c['method']}()" for c in cagrilar]
-        icerik = f"// AI-generated ({dil}, {platform})\n" + "\n".join(satirlar) + "\n"
-        return Rendered(
-            content=icerik,
-            repo_path=f"{inp.e2e_root.strip('/')}/{test_file}",
-            test_file=test_file,
-            template_hash="t" * 64,
-            mapping_hash=mapping_hash(inp.mapping),
-            dealer="bayi1",
-        )
-
-    return render_dil
+def senaryo_govdesi(kaynak: str) -> list[str]:
+    """Java testinin `senaryo()` gövdesi (başlık/sınıf adı case kimliğine göre değişir)."""
+    satirlar = kaynak.splitlines()
+    bas = satirlar.index("  public void senaryo() {")
+    return satirlar[bas : satirlar.index("  }", bas) + 1]
 
 
 @pytest.fixture
-def dil_codegen(codegen: Any, monkeypatch: pytest.MonkeyPatch) -> Any:
-    monkeypatch.setattr(render_modulu, "render_dil", sahte_render_dil(render_modulu.render_dil))
+def dil_codegen(codegen: Any) -> Any:
     dil_algila.onbellegi_temizle()
+    tc = codegen.toolchain
+    eski = tc.handler
+    tablo = java_web_tablosu()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        govde = json.loads(request.content or b"{}")
+        if request.url.path == "/symbols" and govde.get("lang") == "java":
+            tc.istekler.append((request.url.path, govde))
+            return httpx.Response(200, json={**tablo, "sha": govde["sha"]})
+        if request.url.path == "/check" and govde.get("lang") == "java" and not tc.kontroller:
+            tc.kontroller.append(java_web_gecti())
+        return eski(request)
+
+    tc.handler = handler
     yield codegen
     dil_algila.onbellegi_temizle()
 
 
-def e2e_java_ekle(bare: Path, tmp_path: Path) -> None:
-    """Forge main'ine `e2e-java/` (pom + Bayiler + elle yazılmış testler) ekler."""
-    work = tmp_path / "e2e-java-ekle"
+def depo_degistir(
+    bare: Path, tmp_path: Path, *, e2e_java: bool = True, ts_sil: bool = False
+) -> None:
+    """Forge main'ine `e2e-java/` (pom + Bayiler + 12 elle yazılmış test) ekler; `ts_sil` →
+    `e2e/package.json` silinir (repoda TS test projesi kalmaz). Algılama önbelleği temizlenir
+    (dal → sha çözümü 60 sn önbellekli)."""
+    work = tmp_path / f"depo-{uuid.uuid4().hex[:6]}"
     git("clone", "-q", str(bare), str(work))
-    kok = work / "e2e-java"
-    (kok / JAVA_KOK / "altyapi").mkdir(parents=True)
-    (kok / JAVA_KOK / "testler").mkdir(parents=True)
-    (kok / "pom.xml").write_text("<project><artifactId>e2e-java</artifactId></project>\n")
-    shutil.copy(BAYILER, kok / JAVA_KOK / "altyapi" / "Bayiler.java")
-    for i in range(12):  # TS'den çok: algılama Java seçer
-        (kok / JAVA_KOK / "testler" / f"Elle{i}Test.java").write_text("class X {}\n")
+    if e2e_java:
+        kok = work / "e2e-java"
+        (kok / JAVA_KOK / "altyapi").mkdir(parents=True)
+        (kok / JAVA_KOK / "testler").mkdir(parents=True)
+        (kok / "pom.xml").write_text("<project><artifactId>e2e-java</artifactId></project>\n")
+        shutil.copy(BAYILER, kok / JAVA_KOK / "altyapi" / "Bayiler.java")
+        for i in range(12):  # TS'den çok: algılama Java seçer
+            (kok / JAVA_KOK / "testler" / f"Elle{i}Test.java").write_text("class X {}\n")
+    if ts_sil:
+        (work / "e2e" / "package.json").unlink()
     git("add", "-A", cwd=work)
-    git("commit", "-q", "-m", "e2e-java", cwd=work)
+    git("commit", "-q", "-m", "depo", cwd=work)
     git("push", "-q", "origin", "main", cwd=work)
+    dil_algila.onbellegi_temizle()
 
 
 def test_web_java_case_den_pr_a(
@@ -132,27 +127,12 @@ def test_web_java_case_den_pr_a(
     tmp_path: Path,
 ) -> None:
     o = dil_codegen
-    e2e_java_ekle(o.bare, tmp_path)
-    tablo = java_web_tablosu()
     tc = o.toolchain
-    eski = tc.handler
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        import json
-
-        govde = json.loads(request.content or b"{}")
-        if request.url.path == "/symbols" and govde.get("lang") == "java":
-            tc.istekler.append((request.url.path, govde))
-            return httpx.Response(200, json={"sha": govde["sha"], **tablo})
-        if request.url.path == "/check" and govde.get("lang") == "java" and not tc.kontroller:
-            tc.kontroller.append(java_web_gecti())
-        return eski(request)
-
-    tc.handler = handler
+    depo_degistir(o.bare, tmp_path)
 
     diller = api.get("/code/languages").json()
     assert diller["algilanan"] == "java" and diller["kaynak"] == "algilandi"
-    assert diller["sayilar"]["java"] == 12
+    assert diller["sayilar"]["java"] == 12 and diller["neden"] is None
     assert {x["dil"]: x["kullanilabilir"] for x in diller["secenekler"]}["java"] is True
 
     cid = hazir["cases"][2]
@@ -162,6 +142,8 @@ def test_web_java_case_den_pr_a(
     assert yanit["dil"] == "java" and yanit["dil_kaynagi"] == "secildi"
     assert yanit["sonuclar"][0]["dil"] == "java" and "(Java)." in yanit["mesaj"]
     sid = uuid.UUID(yanit["script_ids"][0])
+    with session_scope() as s:
+        baslangic = s.get(Script, sid).dosya_yolu
     run_jobs(engine)
 
     with session_scope() as s:
@@ -169,6 +151,7 @@ def test_web_java_case_den_pr_a(
         assert sc.durum == "pr_open", cg.engel_nedeni
         assert (sc.platform, sc.dil, sc.dil_kaynagi) == ("web", "java", "secildi")
         assert sc.branch == f"tp/case-{cid}"  # dal adı platformundur
+        assert sc.dosya_yolu == baslangic
         assert sc.dosya_yolu.startswith(f"e2e-java/{JAVA_KOK}/uretilen/TPD1WebC2_")
         assert cg.kaynak_kod is None and sc.pass_at_1 is True
         # Ajan web'dir: verify_and_map (Playwright MCP), REPLAY anahtarı web golden'ı.
@@ -180,8 +163,19 @@ def test_web_java_case_den_pr_a(
         # TS adlı golden (`goto`) Java adına normalize edildi; ham çıktı eşlemede kalır.
         assert (maps[0].po_sinifi, maps[0].po_metodu) == ("LoginPage", "goTo")
         assert cg.eslesme["step_mapping"][0]["method"] == "goto"
+        # REPLAY'de ajana da denetim tablosu (Java) verilir; audit hangisinin verildiğini yazar.
+        tablolar = s.scalars(
+            select(AuditEvent).where(
+                AuditEvent.eylem == "codegen.tablolar", AuditEvent.nesne == f"script:{sid}"
+            )
+        ).one()
+        assert tablolar.ozet["ajan_tablosu"] == "java"
+        assert tablolar.ozet["denetim_tablosu"] == "java"
         kod, dosya, head, pr_no = sc.icerik, sc.dosya_yolu, sc.head_sha, sc.pr_no
-    assert "loginPage().goTo();" in kod
+    # Gerçek şablon çıktısı: golden ile aynı gövde (başlık/sınıf adı case kimliğini taşır).
+    assert senaryo_govdesi(kod) == senaryo_govdesi(GOLDEN_JAVA.read_text("utf-8"))
+    assert "    loginPage().goTo();" in kod and '@Bayi("bayi1")' in kod
+    assert "package com.antreklabs.bayi.uretilen;" in kod
     assert o.forge.read_file(dosya, ref=f"tp/case-{cid}") == kod
     assert len(o.oturumlar) == 1 and o.oturumlar[0].closed
 
@@ -210,7 +204,7 @@ def test_web_java_case_den_pr_a(
     assert [a["ad"] for a in detay["yerel_kontrol"]["adimlar"]] == ["deps", "guard", "compile"]
     assert all(a["durum"] == "passed" for a in detay["yerel_kontrol"]["adimlar"])
 
-    # Aynı dil + aynı onaylı içerik: yeniden üretilmez; başka dil (ts) istemek yeniden üretir.
+    # Aynı dil + aynı onaylı içerik: yeniden üretilmez.
     tekrar = api.post("/code/generate", json={"case_ids": [str(cid)], "dil": "java"}).json()
     assert tekrar["sonuclar"][0]["durum"] == "pr_acik"
 
@@ -233,6 +227,7 @@ def test_web_java_case_den_pr_a(
     with session_scope() as s:
         assert s.get(ScriptCodegen, sid).break_durum == "passed"
 
+    # Başka tam hat dili (ts) istemek açık PR'ı kapatıp yeniden üretir (merge edilmemiş).
     ts = api.post("/code/generate", json={"case_ids": [str(cid)], "dil": "ts"}).json()
     assert ts["durum"] == "started" and ts["dil"] == "ts"
     with session_scope() as s:
@@ -252,15 +247,20 @@ def test_dogrulanmamis_dil_unverified_ve_yeniden_uretim(
     with session_scope() as s:
         sc = s.get(Script, sid)
         assert (sc.dil, sc.dil_kaynagi, sc.branch) == ("csharp", "secildi", None)
+        baslangic = sc.dosya_yolu
     run_jobs(engine)
 
     with session_scope() as s:
         sc, cg = s.get(Script, sid), s.get(ScriptCodegen, sid)
         assert sc.durum == "unverified", cg.engel_nedeni
         assert sc.icerik is None and sc.pr_no is None and sc.head_sha is None
-        assert sc.branch is None and sc.dosya_yolu == "e2e-csharp/Uretilen/SahteTests.cs"
-        assert cg.kaynak_kod.startswith("// AI-generated (csharp, web)")
-        assert "LoginPage.gotoAsync();" in cg.kaynak_kod  # TS referans tablosu: ad aynen
+        # K-T6: başlangıç yolu = render yolu = <e2e-csharp>/<alt yol>.
+        assert sc.branch is None and sc.dosya_yolu == baslangic
+        assert sc.dosya_yolu == render.dogrulanmamis_repo_path("csharp", "TPD-1", 2, cid)
+        assert sc.dosya_yolu.startswith("e2e-csharp/tests/Generated/")
+        # Gerçek şablon; referans tablo TS (MİM-O1: başlık tablonun dilini söyler).
+        assert "TypeScript tablosundan" in cg.kaynak_kod
+        assert "LoginPage" in cg.kaynak_kod and "P-001" in cg.kaynak_kod
         olay = s.scalars(
             select(AuditEvent).where(
                 AuditEvent.eylem == "codegen.unverified", AuditEvent.nesne == f"script:{sid}"
@@ -277,7 +277,7 @@ def test_dogrulanmamis_dil_unverified_ve_yeniden_uretim(
 
     detay = api.get(f"/scripts/{sid}").json()
     assert detay["dogrulanmamis"] is True and detay["durum"] == "unverified"
-    assert detay["kod"].startswith("// AI-generated (csharp, web)")
+    assert detay["kod"] == render_kaynak(sid)
     assert detay["pr"] is None and detay["merge_engelleri"] == []
 
     # Başka doğrulanmamış dilde yeniden üretim: aynı kayıt unverified → pending → unverified.
@@ -287,8 +287,9 @@ def test_dogrulanmamis_dil_unverified_ve_yeniden_uretim(
     with session_scope() as s:
         sc, cg = s.get(Script, sid), s.get(ScriptCodegen, sid)
         assert (sc.durum, sc.dil) == ("unverified", "python")
-        assert cg.kaynak_kod.startswith("// AI-generated (python, web)")
-        assert sc.dosya_yolu == "e2e-python/tests/uretilen/test_sahte.py"
+        assert "TypeScript tablosundan" in cg.kaynak_kod
+        assert sc.dosya_yolu == render.dogrulanmamis_repo_path("python", "TPD-1", 2, cid)
+        assert sc.dosya_yolu.startswith("e2e-python/tests/generated/test_")
 
     # Tam hat diline geçiş: aynı kayıt tam akıştan geçer (commit → kontrol → PR).
     r = api.post("/code/generate", json={"case_ids": [str(cid)]}).json()
@@ -300,6 +301,104 @@ def test_dogrulanmamis_dil_unverified_ve_yeniden_uretim(
         assert sc.durum == "pr_open", cg.engel_nedeni
         assert sc.dil == "ts" and cg.kaynak_kod is None and sc.dosya_yolu.endswith(".spec.ts")
     assert api.get(f"/scripts/{sid}").json()["dogrulanmamis"] is False
+
+
+def render_kaynak(sid: uuid.UUID) -> str:
+    with session_scope() as s:
+        return s.get(ScriptCodegen, sid).kaynak_kod
+
+
+def test_dogrulanmamis_uretim_tam_hat_scriptine_dokunmaz_ve_merge_cakismasi_409(
+    api: TestClient,
+    engine: Engine,
+    dil_codegen: Any,
+    hazir: dict[str, Any],
+    muhendis: Any,
+    tmp_path: Path,
+) -> None:
+    """MİM-Y1 / K-T4 regresyonu: (A) açık TS PR'ı varken C# üretimi TS script'ini ve PR'ını
+    kapatmaz; (B) TS merge edilmişken Java isteği 409 (repoda aynı case iki kez olmaz), C# ise
+    yine üretilir ve merge edilmiş script'e dokunmaz."""
+    o = dil_codegen
+    cid = hazir["cases"][2]
+    r = api.post("/code/generate", json={"case_ids": [str(cid)], "dil": "ts"}).json()
+    ts_sid = uuid.UUID(r["script_ids"][0])
+    run_jobs(engine)
+    with session_scope() as s:
+        ts = s.get(Script, ts_sid)
+        assert ts.durum == "pr_open", s.get(ScriptCodegen, ts_sid).engel_nedeni
+        pr_no = ts.pr_no
+
+    # (A) Açık TS PR'ı varken doğrulanmamış üretim: yeni kayıt, TS'e ve PR'a dokunulmaz.
+    r = api.post("/code/generate", json={"case_ids": [str(cid)], "dil": "csharp"})
+    assert r.status_code == 202, r.text
+    cs_sid = uuid.UUID(r.json()["script_ids"][0])
+    assert cs_sid != ts_sid
+    with session_scope() as s:
+        assert s.get(Script, ts_sid).durum == "pr_open"
+    run_jobs(engine)
+    with session_scope() as s:
+        assert s.get(Script, ts_sid).durum == "pr_open"
+        assert s.get(Script, cs_sid).durum == "unverified"
+        assert not s.scalars(
+            select(AuditEvent).where(AuditEvent.eylem == "codegen.pr_superseded")
+        ).all()
+    pr = o.forge.find_open_pr(f"tp/case-{cid}")
+    assert pr is not None and pr.number == pr_no
+
+    # (B) TS merge edildi (kayıt düzeyinde) + repoya e2e-java eklendi: Java isteği 409.
+    with session_scope() as s:
+        s.execute(text("UPDATE script SET durum = 'merged' WHERE id = :i"), {"i": ts_sid})
+    depo_degistir(o.bare, tmp_path)
+    r = api.post("/code/generate", json={"case_ids": [str(cid)], "dil": "java"})
+    assert r.status_code == 409, r.text
+    assert "TypeScript ile merge edildi" in r.text and "önce mevcut testi kaldırın" in r.text
+    assert r.json().get("kod") in (None, "dil_cakismasi")
+    with session_scope() as s:
+        assert s.get(Script, ts_sid).durum == "merged"
+        assert s.get(Script, cs_sid).durum == "unverified"
+    # Doğrulanmamış dil repoya yazmaz: merge edilmiş TS varken de üretilir (eski unverified kayıt
+    # yeniden kullanılır), TS'e dokunulmaz.
+    r = api.post("/code/generate", json={"case_ids": [str(cid)], "dil": "python"})
+    assert r.status_code == 202, r.text
+    assert r.json()["script_ids"] == [str(cs_sid)]
+    run_jobs(engine)
+    with session_scope() as s:
+        assert s.get(Script, ts_sid).durum == "merged"
+        assert (s.get(Script, cs_sid).durum, s.get(Script, cs_sid).dil) == ("unverified", "python")
+
+
+def test_yalniz_e2e_java_olan_repoda_referans_tablo_java(
+    api: TestClient,
+    engine: Engine,
+    dil_codegen: Any,
+    hazir: dict[str, Any],
+    muhendis: Any,
+    tmp_path: Path,
+) -> None:
+    """MİM-O1: repoda TS projesi yokken doğrulanmamış çıktının başlığı ve adları Java referans
+    tablosundandır; audit `referans_tablo` / `ajan_tablosu` aynı dili yazar."""
+    o = dil_codegen
+    depo_degistir(o.bare, tmp_path, ts_sil=True)
+    cid = hazir["cases"][2]
+    r = api.post("/code/generate", json={"case_ids": [str(cid)], "dil": "csharp"})
+    assert r.status_code == 202, r.text
+    sid = uuid.UUID(r.json()["script_ids"][0])
+    run_jobs(engine)
+    with session_scope() as s:
+        sc, cg = s.get(Script, sid), s.get(ScriptCodegen, sid)
+        assert sc.durum == "unverified", cg.engel_nedeni
+        assert "Java tablosundan" in cg.kaynak_kod and "TypeScript tablosundan" not in cg.kaynak_kod
+        ozetler = {
+            e.eylem: e.ozet
+            for e in s.scalars(select(AuditEvent).where(AuditEvent.nesne == f"script:{sid}")).all()
+        }
+    assert ozetler["codegen.unverified"]["referans_tablo"] == "java"
+    assert ozetler["codegen.tablolar"]["ajan_tablosu"] == "java"
+    main = o.forge.head_sha("main")
+    assert [b for p, b in o.toolchain.istekler if p == "/symbols"] == [
+        {"sha": main, "lang": "java", "platform": "web"}
+    ]
 
 
 @pytest.fixture
