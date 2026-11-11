@@ -142,8 +142,8 @@ Mevcut Bug kayıtları (story değil; mükerrer arama havuzu):
 - Açıklamaları da story'ler gibi görev şablonundadır (metinler aşağıda, TPD-4'ten sonra).
 
 Sunum notu: TPD-2 ve TPD-3 denetimi bir doğrulanmış **uyarı** bulgusuyla `findings_open`'da durur
-(her doğrulanmış bulgu analist kararı ister). Analist uyarıya karar verir ya da PO "Son hal olarak
-onayla" der (012: `apply-doc-fixes` PO'nun); ikincisinde kararsız uyarı "son hal onayı" gerekçesiyle `accept_difference` olarak
+(her doğrulanmış bulgu analist kararı ister). Analist uyarıya karar verir ya da "Son hal olarak
+onayla" der; ikincisinde kararsız uyarı "son hal onayı" gerekçesiyle `accept_difference` olarak
 kaydedilir ve PO yorumunda listelenir. REPLAY'de AI süresi ölçülmez; "AI + review" süresi yalnız
 review süresidir. Manuel baz değer story başınadır: ölçüm portaldan (gereksinim detayı → "Manuel baz
 değer") ya da `PUT /requirements/{id}/baseline` ile, giren ve kaynak notuyla girilir. Ölçümü olmayan

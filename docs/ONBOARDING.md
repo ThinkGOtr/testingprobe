@@ -77,8 +77,9 @@ make status
 | `127.0.0.1:55432` | Postgres |
 
 Roller (012; tablo `specs/012-rol-yetki/ANALIZ.md` §3–§4): **Analist** (`analyst`) gereksinim
-içe aktarma, ön inceleme ve bulgu kararları, case son onayı; **PO** (`po`) gereksinim teyidi yalnız
-Jira'da (jira-sim'de etiket), doküman düzeltmesini Jira'ya uygulama, manuel baz değer; **Testçi**
+içe aktarma, ön inceleme, bulgu kararları ve düzeltmeleri Jira'ya yazma ("Son hal"), case son onayı;
+**PO** (`po`) gereksinim teyidi (Jira story'sinde jira-sim'de etiket; serbest metin gereksinimde
+portalda), manuel baz değer; **Testçi**
 (`tester`) case üretimi, kabul/düzelt/reddet, yayın, Claude Code token'ı, bug taslağı kararları;
 **Automation Engineer** (`engineer`) kod üretimi, kırarak doğrula, PR inceleme/merge, locator onarımı,
 CI tetikleri; **Sistem Yöneticisi** (`admin`, eski `presenter`/`sunucu`) Kontrol Kulesi, denetim ve
@@ -158,8 +159,8 @@ make demo-web-sync A=--watch   # ayrı terminalde, portaldaki "Buton kimliğini 
 ```
 
 1. **Demo-A**: Analist → Gereksinimler → "Jira'dan çek" → TPD-1 → "Ön incelemeyi başlat" →
-   F1 ve F3 **Dokümanı düzelt**, F2 ve F4 **Kod/veri hatalı** → PO (portal) "Düzeltmeleri Jira'ya
-   yaz" → PO jira-sim'de onaylar → Testçi "Case üret" → kabul/düzelt → Analist son onay → Testçi
+   F1 ve F3 **Dokümanı düzelt**, F2 ve F4 **Kod/veri hatalı** → "Düzeltmeleri Jira'ya yaz" → PO
+   jira-sim'de onaylar → Testçi "Case üret" → kabul/düzelt → Analist son onay → Testçi
    yayın.
 2. `make demo-check` → çıkış `0` ve `C3 DEFECT ADAYI` (değilse F2 yanlış karar almıştır).
 3. **Demo-B** (Automation Engineer): Kod üretimi → C1, C2, C3, C5 → kırarak doğrula → merge → push CI.

@@ -110,8 +110,8 @@ PO'su `.env` → `JIRA_SIM_PO_PASSWORD` — parola yöneticisinden yapıştırı
 
 | Profil | Sekmeler | Giriş |
 |---|---|---|
-| **Analist** | Portal `http://127.0.0.1:8080` → Gereksinimler (ön inceleme, bulgu kararları) · Case review (son onay) · jira-sim `http://127.0.0.1:8090/browse/TPD-1` | portal `analist` |
-| **PO** | jira-sim `http://127.0.0.1:8090/browse/TPD-1` (onay etiketi) · Portal → Gereksinimler ("Düzeltmeleri Jira'ya yaz") | jira-sim `po@sim.local` (sayfadaki giriş); portal `po` |
+| **Analist** | Portal `http://127.0.0.1:8080` → Gereksinimler (ön inceleme, bulgu kararları, düzeltmeleri Jira'ya yaz) · Case review (son onay) · jira-sim `http://127.0.0.1:8090/browse/TPD-1` | portal `analist` |
+| **PO** | jira-sim `http://127.0.0.1:8090/browse/TPD-1` | jira-sim `po@sim.local` (sayfadaki giriş) |
 | **Automation Engineer** | Portal → Kod üretimi · Koşular (CI tetik) · Örnek uygulama `http://127.0.0.1:8081` (`bayi1` / `Demo123!`) | portal `muhendis` |
 | **Sistem Yöneticisi** | Portal → Demo yol haritası · Kontrol Kulesi · Koşular · Demo kontrolleri · Denetim | portal `sunucu` (rolü göçle `admin`) |
 | **Testçi** | Portal → Gereksinimler (case üret) · Case review (kabul/düzelt) · Yayın · Claude Code · Bug taslakları · jira-sim `http://127.0.0.1:8090/browse/TPD-5` | portal `testci` |
@@ -170,8 +170,8 @@ okuyarak verin.
 
 ## 3. Sahne sahne
 
-**Süre** sütunu konuşma dahil hedeftir (toplam **23 dk**; profil geçişleri — yaklaşık 14 kez
-Cmd + ters tırnak — sayılmadı, ~1 dk payla ≈ 24 dk). **Makine** sütunu provalarda ölçülen bekleme
+**Süre** sütunu konuşma dahil hedeftir (toplam **22,5 dk**; profil geçişleri — yaklaşık 13 kez
+Cmd + ters tırnak — sayılmadı, ~1 dk payla ≈ 23,5 dk). **Makine** sütunu provalarda ölçülen bekleme
 süresidir: API provası `rehearsal/reports/20261101-160303-k3` (3 ardışık PASS serisinin sonuncusu, özet
 `prova-ozeti-20261101-153953.md`) / arayüz provası `rehearsal/reports/20261101-161433-ui-canli-k1`; konuşma bu beklemenin üstüne değil, **içine**
 yerleştirilmiştir. **Ölçülen** sütunu elle, insan temposunda kronometreli provada doldurulur
@@ -189,7 +189,7 @@ Sırayla uygulanır; her biri yaklaşık kazancıyla:
 5. Adım 11 tek cümleye — yalnız AI katkısı ve "ölçülmedi" kutusu (≈ 0,5 dk).
 6. L3'te PR gövdesinin gezilmesi — yalnız 1 satırlık diff (≈ 0,5 dk).
 
-Atlanmayacaklar: REPLAY cümlesi, insan kapıları (2b, 2c, 3, 4b kararları, 4c onayı, 7, 13, L4), 5b defect adayı
+Atlanmayacaklar: REPLAY cümlesi, insan kapıları (2b, 3, 4b kararları, 4c onayı, 7, 13, L4), 5b defect adayı
 anı, F2 → TPD-5 bağlama.
 
 ### Açılış (≈1 dk)
@@ -206,14 +206,13 @@ bu ekrandaki 14 adım. Mor adımlar AI taslağı, yeşil adımlar insan kapısı
 kipinde; ekranın üstünde ve her AI çıktısının yanında REPLAY rozeti göreceksiniz. Sauce Labs adımı
 bugün yerel yedekte — bunu da ekran kendisi söylüyor."
 
-### Demo-A — gereksinimden yayınlanmış case'e (6,5 dk)
+### Demo-A — gereksinimden yayınlanmış case'e (6 dk)
 
 | # | Rol / ekran | Ne tıklanır | İzleyici ne görür | Söylenecek (iş değeri + dürüst not) | Süre | Makine (API / UI) | Ölçülen | Yedek |
 |---|---|---|---|---|---|---|---|---|
 | 1 | Analist · **Gereksinimler** | "Jira'dan çek" → TPD-1 "Kampanyalı sepet ve sipariş onayı" | Story listesi (TPD-1..TPD-4), TPD-1'in açıklaması ve 6 kabul kriteri | "Analistin bugünkü dokümanı, olduğu gibi. Ürün Jira'yı salt okur; yazma ayrı, yetkisi kısıtlı bir kullanıcıyla ve yalnızca onaylı içerikle yapılır. Bugün Jira yerine Jira Cloud API'sinin simülatörü var; aynı istemci kodu gerçek siteye bağlanır." | 0,5 dk | 0,1 sn / 2,0 sn | — | Liste boşsa: `make status` → jira-sim healthy mi; "Jira'dan çek"i tekrar. Hâlâ boşsa yedek video V1 |
 | 2a | Analist · TPD-1 | "Ön incelemeyi başlat" | Denetim sürüyor → 4 bulgu kartı: **F1** AC3↔AC6 çelişkisi, **F2** kampanya kodu (`campaign.py:23` `return adet // 6`), **F3** minimum tutar (veri: `ayar.min_siparis_tutari = 750.00`), **F4** kredi limiti uyarısı kodda yok. Her kartta kanıt (dosya:satır / SQL + sonuç) ve REPLAY rozeti | "AI dokümanı yalnızca kendi içinde değil, uygulamanın **koduyla ve verisiyle** karşılaştırdı — salt okunur erişimle. Her bulgunun kanıtı var ve kanıt ekrana gelmeden önce deterministik olarak yeniden doğrulanıyor: doğrulanamayan bulgu hiç gösterilmez. AI çıktısı REPLAY; kanıt doğrulaması canlı." | 1,5 dk | 3,1 sn / 2,3 sn | — | REPLAY-MISS rozeti çıkarsa: dürüstçe "kayıtla eşleşmedi" deyin; denetim güvenilmez işaretlenir. `make reset` sonrası tekrar denenir — sahnede değil; yedek video V1 |
-| 2b | Analist · bulgu kartları | **F1 → "Dokümanı düzelt"**, **F2 → "Kod/veri hatalı"**, **F3 → "Dokümanı düzelt"**, **F4 → "Kod/veri hatalı"** | Kararlar kayıtlı; F2 ve F4 için bug taslağı açıldı; "Düzeltmeleri Jira'ya yaz" düğmesi Analist'te yok (PO'nun işi) | "Analist her bulguya karar veriyor: doküman mı yanlış, kod mu? Kod hatalı dediği iki bulgu için sistem bug taslağı açtı — bunlar Faz 4'te testçinin önüne gelecek." | 0,5 dk | — (2b + 2c birlikte: 3,2 sn / 3,2 sn) | — | 409 "içerik değişti": sayfa yeniden yüklenir, kararı tekrar verin. Yanlış karar verildiyse sahnede düzeltmeye çalışmayın: Demo-B'de defect adayı anı olmaz, bunu söyleyip yedek video V2'ye geçin |
-| 2c | PO · portal TPD-1 | "Düzeltmeleri Jira'ya yaz" | Önerilen metin farkı (AC3 → "Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL…"); ikinci tur engelleyici bulgu bırakmaz → "Belge son hal yapıldı; PO teyidi bekleniyor." jira-sim sekmesinde TPD-1 açıklaması güncellenmiş, PO'ya soru yorumu ve `tp-po-pending` etiketi | "Doküman düzeltmesini Jira'ya PO uyguluyor; düzeltme ancak analistin kararından sonra, onaylanan içeriğin hash'iyle yazılıyor." | 0,5 dk | — | — | 409 "içerik değişti": sayfa yeniden yüklenir, tekrar basın. Düğme görünmüyorsa PO profiliyle değil başka rolle girilmiştir |
+| 2b | Analist · bulgu kartları | **F1 → "Dokümanı düzelt"**, **F2 → "Kod/veri hatalı"**, **F3 → "Dokümanı düzelt"**, **F4 → "Kod/veri hatalı"** → "Düzeltmeleri Jira'ya yaz" | Önerilen metin farkı (AC3 → "Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL…"); ikinci tur engelleyici bulgu bırakmaz → "Belge son hal yapıldı; PO teyidi bekleniyor." jira-sim sekmesinde TPD-1 açıklaması güncellenmiş, PO'ya soru yorumu ve `tp-po-pending` etiketi | "Analist her bulguya karar veriyor: doküman mı yanlış, kod mu? Kod hatalı dediği iki bulgu için sistem bug taslağı açtı — bunlar Faz 4'te testçinin önüne gelecek. Düzeltme Jira'ya ancak analist onayından sonra, onaylanan içeriğin hash'iyle yazılıyor." | 1 dk | 3,2 sn / 3,2 sn | — | 409 "içerik değişti": sayfa yeniden yüklenir, kararı tekrar verin. Yanlış karar verildiyse sahnede düzeltmeye çalışmayın: Demo-B'de defect adayı anı olmaz, bunu söyleyip yedek video V2'ye geçin |
 | 3 | PO · jira-sim TPD-1 | Soru yorumunu okuyun → "PO olarak" bölümünde kısa cevap yazın → onay düğmesi (`tp-po-approved`) | Jira'da PO cevabı ve onay etiketi; ≤15 sn sonra analist ekranında **PO onaylı** | "İnsan kapısı Jira'da: PO kendi aracında cevaplıyor ve onaylıyor. Ürün etiketi koyanın gerçekten izinli PO olduğunu changelog'dan doğruluyor; botun koyduğu etiket onay sayılmaz. Onaydan sonra içerik değişirse onay geçersizleşir." | 1 dk | 15,1 sn / 1,6 sn | — | Portal 30 sn'de güncellenmezse sayfayı yenileyin (PO sorgusu 15 sn'de bir). PO oturumu düştüyse jira-sim'e yeniden giriş |
 | 4a | Testçi · TPD-1 | "Case üret" | 10 case kartı (pozitif/negatif/sınır), her biri AC'ye bağlı; REPLAY rozeti; C3 = "6 adet kampanyalı üründe bedava ürün verilmez" | "Case'ler AC'lere ve PO cevaplarına bağlı, şemalı çıktı. Şemaya uymayan çıktı reddedilir. Hangi AC'nin kapsanmadığını da gösteriyor." | 0,5 dk | 3,1 sn / 15,4 sn | — | Hata: "Case üretimini yeniden dene". REPLAY-MISS'te üretim hiç taslak açmaz (politika: hata) — yedek video V1 |
 | 4b | Testçi · **Case review** | Birkaç case "Kabul et"; birinde "Düzelt" (küçük metin düzeltmesi, düzelterek kabul); kalanları kabul edin | Case'ler **son onay bekliyor** (`ready`); sayaç ve **kabul oranı** (Testçi'nin ilk kararına göre, hedef %70); düzeltmede alan bazlı fark | "Her karar ölçülüyor: kabul oranı, ret nedeni, düzeltme büyüklüğü. Süre sayacı gerçek review süresi. **Not:** REPLAY'de AI süresi ölçülmez; manuel baz değer ölçülmediyse kazanç oranı göstermiyoruz — uydurma rakam yok." | 1 dk | 0,2 sn / 1,8 sn | — | Zaman darsa "Düzelt"i atlayın (§3.1) |
@@ -297,8 +296,8 @@ Ekranlar ve sözler aynıdır; arkadaki mekanizma farklıdır (ayrıntı: `docs/
 
 Sunum sonrası: `make export-audit` (denetim kaydı `exports/` altına, `.sha256` ile).
 
-**Süre özeti (hedef):** açılış 1 + Demo-A 6,5 + Demo-B 8,5 + L1 0,5 + Faz 4 3 + L2–L4 2,5 + kapanış 1 =
-**23 dk**; profil geçişleriyle (~1 dk) ≈ 24 dk, isteğe bağlı Claude Code dakikasıyla ≈ 25 dk. Ölçülen
+**Süre özeti (hedef):** açılış 1 + Demo-A 6 + Demo-B 8,5 + L1 0,5 + Faz 4 3 + L2–L4 2,5 + kapanış 1 =
+**22,5 dk**; profil geçişleriyle (~1 dk) ≈ 23,5 dk, isteğe bağlı Claude Code dakikasıyla ≈ 24,5 dk. Ölçülen
 toplam: **henüz ölçülmedi** (§1.1 satır 3).
 
 ## 4. Aksaklık rehberi (genel)

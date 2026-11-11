@@ -32,10 +32,13 @@ sahipliklerini ve rol setini yeniden tanımladı.
 6. **K4 proje kapsamı:** tek proje; proje/tenant filtresi ve proje bazlı rol bu fazda yok.
 7. **K5 rol ataması AI Probe'da:** TP'de kullanıcı/rol yönetim ekranı, `access.assign` izni ve
    Erişim Yöneticisi rolü yoktur. AI Probe ürün kaydında `admin_roles: [admin, po]`.
-8. **K6 PO onayı yalnız Jira:** etiketi koyan aktör PO listesinde ve içerik hash'i eşleşir. Portal
-   PO onay ucu (`POST /requirements/{id}/po-approve`) 410 döner, düğmesi kalkar.
-9. **K7 paketin kapsamadığı özellikler:** sahibi PO (baz değer, doküman düzeltmesi). İstisnalar:
-   locator onarımı Automation Engineer, Claude Code yayın token'ı Testçi.
+8. **K6 PO onayı Jira'da:** etiketi koyan aktör PO listesinde ve içerik hash'i eşleşir. Jira
+   kaynaklı gereksinimde portal PO onay ucu (`POST /requirements/{id}/po-approve`) 410
+   `po_onayi_jira` döner, düğmesi kalkar. Serbest metin gereksinimde (`kaynak == free_text`, Jira'da
+   story yok) portal PO onayı kalır: izin `requirement.po_approve_free_text` (po), hash kontrolüyle.
+9. **K7 paketin kapsamadığı özellikler:** sahibi PO (baz değer). Doküman düzeltmesini Jira'ya
+   uygulama ve "Son hal olarak onayla" Analist'te kalır (`requirement.review`). İstisnalar: locator
+   onarımı Automation Engineer, Claude Code yayın token'ı Testçi.
 10. **Case akışı:** Testçi `accept`/`edit` → yeni `ready` durumu → Analist `approve` (ya da
     gerekçeli `send_back` → `draft`) → Testçi yayın. Yayın kapısı yalnız `approve`'u sayar.
 11. **Ortam bayrakları:** `TP_ORTAM` (`dev|test|staging|prod`, varsayılan `dev`) ve `TP_DEMO_MODE`

@@ -6,7 +6,7 @@ değişen** davranışı sınar. Her madde: nerede, ne yap, ne görmelisin. Sonu
 beklenenden farklıysa ekran görüntüsüyle bildir.
 
 > **012 rol notu (2026-11-11):** satırlardaki roller 012 rol modeline göre güncellendi: case üretimi,
-> kabul/düzelt ve yayın **Testçi**, case son onayı **Analist**, "Düzeltmeleri Jira'ya yaz" **PO**, CI
+> kabul/düzelt ve yayın **Testçi**, case son onayı **Analist**, CI
 > tetikleri **Automation Engineer**, demo kontrolleri ve yol haritası **Sistem Yöneticisi** (eski
 > "Sunucu"; demo kontrolleri `.env`'de `TP_DEMO_MODE=1` ister). Beklenen ekran metinleri 2026-11-03
 > sürümüne aittir.
@@ -33,7 +33,7 @@ Demo reposu: https://github.com/ThinkGOtr/testingprobe-demo-app
 | # | Ne yap | Beklenen | ☐ |
 |---|---|---|---|
 | 2.1 | Analist → Gereksinimler → "Jira'dan çek" → **TPD-1** | **Doküman** kartı Jira'daki gibi: bölüm başlıkları ayrı satır, maddeler liste, akış numaralı; kabul kriterleri (AC1…AC6) "🔑 Acceptance Criteria" başlığı altında, QA Checklist'ten **önce** | ☐ |
-| 2.2 | Analist: ön incelemeyi başlat → kararlar (F1/F3 dokümanı düzelt, F2/F4 kod hatalı) → PO: "Düzeltmeleri Jira'ya yaz" (bir kez) | Bittikten sonra tutarlılık kartının sağ üstünde düğme yerine **"✓ Doküman son hâl · PO teyidi bekliyor"** (sarı uyarı tonunda değil, mavi bilgi tonunda); altında "… karar gerekmez" notu | ☐ |
+| 2.2 | Analist: ön incelemeyi başlat → kararlar (F1/F3 dokümanı düzelt, F2/F4 kod hatalı) → "Düzeltmeleri Jira'ya yaz" (bir kez) | Bittikten sonra tutarlılık kartının sağ üstünde düğme yerine **"✓ Doküman son hâl · PO teyidi bekliyor"** (sarı uyarı tonunda değil, mavi bilgi tonunda); altında "… karar gerekmez" notu | ☐ |
 | 2.3 | Jira'da PO cevabı + `tp-po-approved` → portalda TPD-1'i yenile | PO kartında **"✓ İnsan kapısı geçildi: PO onayı alındı, case üretimine geçilebilir."** | ☐ |
 | 2.4 | Kontrol Kulesi → Hazırlık süresi | TPD-1 Manuel baz **2700 sn · ölçüm (Gokhan Sipahi)**; kazanç "(REPLAY: yalnız review)" etiketli | ☐ |
 

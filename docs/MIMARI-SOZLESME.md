@@ -255,7 +255,8 @@ Roller (8): `admin` Sistem Yöneticisi, `auditor` Denetçi, `analyst` Analist, `
 `admin`). Görevler ayrılığı role göredir (K2). Aşağıdaki tabloda "İzin" sütunu bu anahtardır.
 
 **İnsan kararlarında içerik bağı (TOCTOU):** her karar gövdesi (`/findings/{id}/decision`,
-`/cases/{id}/decision`, `/bug-drafts/{id}/decision`, `/prs/{number}/merge`) kullanıcının ekranda gördüğü içeriğin `icerik_hash`'ini taşır; router
+`/cases/{id}/decision`, `/bug-drafts/{id}/decision`, `/requirements/{id}/po-approve` (serbest metin),
+`/prs/{number}/merge`) kullanıcının ekranda gördüğü içeriğin `icerik_hash`'ini taşır; router
 bunu `record_approval(..., beklenen_hash=icerik_hash)` olarak geçirir. Portal kanalında zorunludur
 (eksikse 422); içerik o arada değiştiyse 409 döner ve portal içeriği yeniden yükler. Merge ayrıca
 onaylanan head sha'sını `ForgePort.merge_pr(..., expected_head_sha=...)` ile bağlar.
@@ -299,8 +300,8 @@ gönderilir ve akış kapanır. Portal bunu alınca yeniden bağlanmaz, giriş e
 | POST | `/requirements/{id}/review` | `requirement.review` | Ön inceleme + tutarlılık denetimi başlat |
 | GET | `/requirements/{id}/findings` | `requirement.read` | Tutarlılık bulguları (kanıtlı) |
 | POST | `/findings/{id}/decision` `{karar, metin?, gerekce?}` | `requirement.review` | fix_doc / code_defect / accept_difference |
-| POST | `/requirements/{id}/apply-doc-fixes` `{cakismayi_onayla?}` | `requirement.doc_fix` | Onaylı düzeltmeleri Jira'ya yaz + yeniden kontrol; yazılacak düzeltme ve açık engelleyici yoksa belgeyi açıkça son hal yapar (portal: "Son hal olarak onayla"). Düzeltme güncel döngüdeki bir `accept_difference` kararının maddesini yeniden yazıyorsa 409 (Türkçe, `F1 (tur 1)` etiketli); `cakismayi_onayla:true` ile uygulanır (`requirement.decision_conflict_confirmed`) |
-| POST | `/requirements/{id}/po-approve` | — | **Kaldırıldı (012 K6): 410.** PO teyidi yalnız Jira etiketiyle (etiketi koyan aktör PO listesinde, içerik hash'i eşleşir); simülatör kipinde simüle Jira'ya etiket konur |
+| POST | `/requirements/{id}/apply-doc-fixes` `{cakismayi_onayla?}` | `requirement.review` | Onaylı düzeltmeleri Jira'ya yaz + yeniden kontrol; yazılacak düzeltme ve açık engelleyici yoksa belgeyi açıkça son hal yapar (portal: "Son hal olarak onayla"). Düzeltme güncel döngüdeki bir `accept_difference` kararının maddesini yeniden yazıyorsa 409 (Türkçe, `F1 (tur 1)` etiketli); `cakismayi_onayla:true` ile uygulanır (`requirement.decision_conflict_confirmed`) |
+| POST | `/requirements/{id}/po-approve` `{icerik_hash}` | `requirement.po_approve_free_text` | Yalnız serbest metin gereksinimde (`kaynak == free_text`) PO teyidi; içerik hash'i kontrolü. Jira kaynaklı gereksinimde **410 `po_onayi_jira`** (012 K6): PO teyidi Jira etiketiyle (etiketi koyan aktör PO listesinde, içerik hash'i eşleşir; simülatör kipinde simüle Jira'ya etiket) |
 | POST | `/requirements/{id}/generate-cases` | `case.generate` | Case üretimi (gereksinim PO onaylı) |
 | GET | `/requirements/{id}/case-metrics` | `case.read` | Kabul oranı (ilk karara göre, hedef 0.70), ret nedenleri, AI/review süresi, maliyet, `ai_cagri_modlari`, `kapsanmayan_ac` (hiçbir güncel case'in atıf yapmadığı AC'ler), `manuel_baz_ms` (**yalnızca** story'nin kendi ölçümü; varsayılanda ve ölçülmediğinde null — env değeri yalnız `manuel_baz.varsayilan_s/varsayilan_ms` + `aciklama`'da), `manuel_baz_kaynagi` (`olcum\|varsayilan\|null`), `manuel_baz` (baseline nesnesi), `review_tabani_ms` |
 | POST | `/requirements/{id}/review-complete` | `case.approve` | Taslak kalmadıysa review'ı kapatır (denetim olayı); taslak varsa 409 |
@@ -316,7 +317,7 @@ gönderilir ve akış kapanır. Portal bunu alınca yeniden bağlanmaz, giriş e
 | POST | `/prs/{number}/review` `{karar: degisiklik_iste\|reddet, ret_nedeni, icerik_hash, head_sha, not?}` | `code.review` | Script review reddi; `ret_nedeni` sabit taksonomiden (422) |
 | POST | `/prs/{number}/update-branch` | `code.review` | Geride kalan bot PR dalını main'e taşır (202) |
 | POST | `/ci/trigger` `{tetik: deploy\|nightly\|manual}` | `run.trigger_scheduled` (`deploy`, `nightly`) · `run.trigger_manual` (`manual`) | Deploy/gece/manuel tetik. `developer` yalnız `manual` ve `TP_ORTAM≠prod` |
-| GET | `/runs` · `/runs/{id}` | `run.read` | Koşular, test sonuçları (ham artefakt bağlantısı ayrı izin: `run.artifacts`) |
+| GET | `/runs` · `/runs/{id}` | `run.read` | Koşular, test sonuçları. `run.artifacts` izni olmayan role imzalı rapor bağlantıları (`rapor_url`, `/artifacts/k/...`) yanıtta dönmez |
 | GET | `/artifacts/runs/{run_id}/{path}` | `run.artifacts` | Ham artefakt (ekran görüntüsü, iz, log); `auditor` ve `viewer` göremez |
 | GET | `/failures?run_id&sinif&karar_kaynagi&oneri_turu&oneri_durumu&script_id&kaynak&limit` · `/failures/{id}` | `failure.read` | Triage sonuçları (limit ≤200) / tekil (`HataAnalizi`) |
 | POST · GET | `/failures/{id}/fix` | `code.repair` · `code.read` | Locator onarım PR'ı (202; başarısız/engellenmiş denemede aynı script'le yeniden deneme) · onarım durumu (`LocatorOnarimi`: `yama` (unified diff), `engellendi`, `deneme`, kardeş hatada `paylasilan`/`paylasilan_failure_id`/`paylasilan_mesaj`, `yerel_kontrol.kirmizi_testler`/`flaky_testler`) |
@@ -369,6 +370,7 @@ korunur. Yeni değer yalnız bu tabloya eklenerek kullanılır; asistanın hata 
 | `yetkisiz` | 401 | genel |
 | `yasak` | 403 | genel |
 | `yetki_yok` | 403 | izin reddi (`auth/yetki.py` `izin()`; `authz.denied` denetim kaydı) |
+| `po_onayi_jira` | 410 | Jira kaynaklı gereksinimde portal PO onayı (onay Jira etiketiyle) |
 | `bulunamadi` | 404, 410 | genel |
 | `yontem_desteklenmiyor` | 405 | genel |
 | `cakisma` | 409 | genel (`kod`'suz `WorkflowError` dahil) |
@@ -401,8 +403,8 @@ sonuc:{<jira_key>: yeni|degismedi|guncellendi|yeniden_kontrol|sifirlandi|mesgul}
 yazılacak düzeltme ve engelleyici bulgu yoksa belgeyi son hale getirip `durum:"done"` döner).
 `GET /requirements/{id}/findings` yalnızca kanıtı doğrulanmış bulguları döner; elenen sayısı
 `X-Elenen-Bulgu-Sayisi` başlığında ve detayda `bulgu_sayaclari.elenen`. Detay `po` nesnesi
-`{durum, onaylayan, zaman, kanal, onaylanan_hash}`. `po-approve` ucu kaldırıldı (410, 012 K6); PO onayı
-yalnız Jira etiketiyle. Case `mode` IDE'den gelen case'lerde `null`'dur (model çağrısı yok; "live" yazılmaz).
+`{durum, onaylayan, zaman, kanal, onaylanan_hash}`. Jira yolunda `po-approve` 410 `po_onayi_jira`'dır
+(012 K6; onay Jira etiketiyle); portal PO onayı yalnız serbest metin gereksinimde. Case `mode` IDE'den gelen case'lerde `null`'dur (model çağrısı yok; "live" yazılmaz).
 Serbest metin gereksinimin case'leri story olmadığı için yayınlanamaz (`blocked_no_story`).
 Gereksinimin PO onayı güncel değilse (durum `cases_ready|done` değil ya da `onaylanan_hash` güncel
 içerikle eşleşmiyor) case kararları 409, yayın önizlemesi `blocked_requirement_changed`, yayın
@@ -410,7 +412,7 @@ içerikle eşleşmiyor) case kararları 409, yayın önizlemesi `blocked_require
 `submit_draft_cases` etiketin Jira'da hâlâ durduğunu eşzamanlı denetler (yoksa/okunamazsa 409);
 etiket sonradan kalkarsa PO sorgusu gereksinimi `new`'e döndürür (`requirement.po_withdrawn`).
 Son tutarlılık turu güvenilmezse (REPLAY-MISS ya da bulguların hepsi elendi) belge otomatik son hal
-olmaz: detayda `denetim_guvenilmez` (neden) + `insan_karari_gerekli=true`; PO apply-doc-fixes ile
+olmaz: detayda `denetim_guvenilmez` (neden) + `insan_karari_gerekli=true`; analist apply-doc-fixes ile
 açıkça son hal yapar. Önceki turda `code_defect`/`accept_difference` ile kapanmış aynı fark yeniden
 raporlanırsa bulgu `stale` + `onceki_karar` ile döner (karar istenmez).
 **Bulgu kararı (tur 2):** kanıtı doğrulanmış her bulgu, önem derecesi ne olursa olsun (uyarı dahil)

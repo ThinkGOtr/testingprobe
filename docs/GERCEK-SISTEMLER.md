@@ -234,8 +234,9 @@ make security-check     # 10/10; JIRA_WRITE_* yalnızca core-worker'da; okuma he
 Portalda: Analist **Gereksinimler → "Jira'dan çek"** → TPD-1..TPD-4 listelenir; story bağlantıları
 `https://<site>.atlassian.net/browse/...`'e gider. PO kapısı denemesi: inceleme sonrası PO Jira'da
 `tp-po-approved` etiketini koyar → ≤15 sn içinde portalda "PO onaylı"; aynı etiketi yazma (bot)
-kullanıcısı koyarsa onay **sayılmaz**. PO onayının tek kanalı Jira etiketidir; portalda PO onay
-ucu yoktur (012 K6, `POST /requirements/{id}/po-approve` → 410).
+kullanıcısı koyarsa onay **sayılmaz**. Jira story'sinde PO onayının tek kanalı Jira etiketidir; portal PO
+onay ucu 410 `po_onayi_jira` döner (012 K6). Portal PO onayı yalnız serbest metin gereksinimdedir
+(`requirement.po_approve_free_text`).
 
 > Not: Tasarım belgesindeki Rovo MCP okuma yolu bu sürümde yoktur; okuma da Jira REST v3 ve API
 > token'ıyla yapılır.
