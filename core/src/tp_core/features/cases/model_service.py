@@ -92,11 +92,8 @@ class DesignModelNotFound(WorkflowError):
     status_code = 404
 
 
-class ModelNotApproved(WorkflowError):
-    """İki turda case üretimi onaylı ve güncel model ister (409)."""
-
-    status_code = 409
-    kod = "model_onayli_degil"
+class ModelNotApproved(GateClosed):
+    """İki turda case üretimi onaylı ve güncel model ister (409, `kapi_kapali`)."""
 
 
 # --------------------------------------------------------------------- yardımcılar
@@ -542,7 +539,7 @@ def design_model_view(session: Session, requirement_id: uuid.UUID) -> dict[str, 
         try:
             require_approved_model(session, req)
             hazir = True
-        except (ModelNotApproved, GateClosed) as exc:
+        except GateClosed as exc:
             engel = str(exc)
     return {
         "requirement_id": str(req.id),

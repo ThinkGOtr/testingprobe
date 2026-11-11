@@ -331,3 +331,32 @@ def test_yalnizca_analist_karar_verir(
     login(api, make_user("po"))
     assert _karar(api, m, "approve").status_code == 403
     assert api.post(f"/requirements/{rid}/design-model").status_code == 403
+
+
+# --------------------------------------------------------------- değerlendirme seti
+
+
+def test_eval_seti_golden_ciktilariyla_gecer_ve_bozulmayi_yakalar() -> None:
+    """`rules/evaluation/design-model.json`: her vaka kendi golden'ıyla geçer (REPLAY duman);
+    sessiz konu kayda geçmezse ve uydurma kural modele girerse düşer."""
+    from tp_core.gateway.eval_set import check_output
+
+    veri = json.loads((RULES / "evaluation" / "design-model.json").read_text())
+    assert veri["purpose"] == "design_model" and len(veri["cases"]) == 5
+    goldenlar = {
+        "tpd-1-son-hal": "TPD-1",
+        "tpd-1-f2-kod-hatasi": "f2-kod-hatasi/TPD-1",
+        "tpd-3-arama": "TPD-3",
+        "tpd-4-giris": "TPD-4",
+        "serbest-son-hal": "SERBEST",
+    }
+    for vaka in veri["cases"]:
+        cikti = _golden(goldenlar[vaka["id"]])["output"]
+        assert check_output("design_model", vaka["expect"], cikti) == [], vaka["id"]
+    tpd4 = next(v for v in veri["cases"] if v["id"] == "tpd-4-giris")
+    sessiz = copy.deepcopy(_golden("TPD-4")["output"])
+    sessiz["model_issues"] = []
+    assert any("sessiz" in f for f in check_output("design_model", tpd4["expect"], sessiz))
+    uydurma = copy.deepcopy(_golden("TPD-4")["output"])
+    uydurma["conditions"][1]["statement"] += "; 3 hatalı denemede hesap kilitlenir"
+    assert any("uydurma" in f for f in check_output("design_model", tpd4["expect"], uydurma))

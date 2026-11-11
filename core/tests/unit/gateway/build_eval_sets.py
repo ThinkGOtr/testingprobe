@@ -563,6 +563,78 @@ def case_generation_cases() -> list[dict[str, Any]]:
     return out
 
 
+def _model_messages(req: Any, data_block: str) -> list[ModelMessage]:
+    """Tasarım modeli (011 F3, tur 1) girdisi: üretimin kurucusu, model görev cümlesiyle."""
+    from tp_core.features.cases.model_service import MODEL_GOREVI
+    from tp_core.features.cases.service import generation_messages
+
+    return list(
+        generation_messages(
+            req,
+            [],
+            test_verisi=data_block,
+            secenekler={"test_seviyesi": TEST_LEVEL},
+            gorev=MODEL_GOREVI,
+        )
+    )
+
+
+def design_model_cases() -> list[dict[str, Any]]:
+    """011 F3 (iki tur — tur 1): case üretimiyle aynı 5 son hal belge (golden girdi beyanları).
+
+    Beklentiler (`eval_agents.design_model_problems`): model kontrolleri her çıktıya; AC kapsamı
+    (her AC bir koşulda), en az AC sayısı kadar koşul, belgeden gelen metinler, uydurma
+    belirteçleri (soru / varsayım / model sorunu dışındaki model metninde) ve kaynağın sessiz
+    olduğu konuların açık soru / varsayım / model sorunu olarak kayda geçmesi."""
+    from types import SimpleNamespace
+
+    stories = _stories()
+    data_block = _test_data_block()
+    min_tl = "Minimum sipariş tutarı 750,00 TL"
+    plan = [
+        ("tpd-1-son-hal", "TPD-1", "TPD-1", {"contains": [min_tl, "Kredi limiti aşıldı"]}),
+        ("tpd-1-f2-kod-hatasi", "TPD-1", "f2-kod-hatasi/TPD-1", {"contains": [min_tl]}),
+        ("tpd-3-arama", "TPD-3", "TPD-3", {"contains": ["Ürün bulunamadı"]}),
+        ("tpd-4-giris", "TPD-4", "TPD-4", {"contains": ["Kullanıcı adı veya parola hatalı"]}),
+        (
+            "serbest-son-hal",
+            "SERBEST",
+            "SERBEST",
+            {"contains": ["750,00 TL"], "techniques_include": ["DT"]},
+        ),
+    ]
+    out = []
+    for case_id, key, golden, exp in plan:
+        st = stories[key]
+        acs = _golden_acs("design_model", golden)
+        req = SimpleNamespace(
+            id=FREE_TEXT_ID,
+            jira_key=None if key == "SERBEST" else key,
+            baslik=st["summary"],
+            aciklama=st["description"],
+            kabul_kriterleri=acs,
+            po_cevaplari=[],
+        )
+        expect: dict[str, Any] = {
+            "ac_coverage": _refs(acs),
+            "min_conditions": len(acs),
+            **exp,
+            "not_contains_any": FABRICATION[key],
+        }
+        if key in SILENT:
+            expect["silent_topics"] = SILENT[key]
+        out.append(
+            {
+                "id": case_id,
+                "description": f"{key} ({golden}): son hal belgeden test tasarım modeli",
+                "replay_key": _key(key),
+                "messages": _msgs(_model_messages(req, data_block)),
+                "expect": expect,
+            }
+        )
+    return out
+
+
 def consistency_check_cases() -> list[dict[str, Any]]:
     """Adım 2 tutarlılık (ajan): kod + veri araçları; kanıt yeniden doğrulanır (§8.2b adım 4)."""
     stories = _stories()
@@ -689,6 +761,7 @@ SETS: dict[str, tuple[str, Callable[[], list[dict[str, Any]]]]] = {
     "dup-rank": ("dup_rank", dup_rank_cases),
     "requirement-review": ("requirement_review", requirement_review_cases),
     "case-generation": ("case_generation", case_generation_cases),
+    "design-model": ("design_model", design_model_cases),
     "consistency-check": ("consistency_check", consistency_check_cases),
     "verify-and-map": ("verify_and_map", verify_and_map_cases),
     "verify-and-map-app": ("verify_and_map_app", verify_and_map_app_cases),
