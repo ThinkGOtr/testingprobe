@@ -1,6 +1,23 @@
 <!--
 Sync Impact Report
-- Version change: 2.0.0 → 2.0.1 (PATCH: İlke VII'deki kimlik servisi cümlesi koda uygun hale
+- Version change: 2.0.1 → 2.1.0 (MINOR: İlke IV, V, VI ve "Geliştirme Akışı ve Kalite Kapıları"
+  üretim dilinden bağımsız ifade edildi — specs/011-uretim-dili. Kural özü değişmedi: model hiçbir
+  dilde kod yazmaz (deterministik şablon), tam hat dillerinde (TypeScript, Java) derleme + koruma +
+  koşu her PR'da zorunlu; YENİ madde: derleme/koşu hattı olmayan "doğrulanmamış" diller (C#,
+  Python) yalnızca indirilebilir kaynak olarak üretilir, forge'a yazılmaz, PR'a ve merge'e giremez.
+  Yeni kural eklendiği için PATCH değil MINOR)
+- Modified principles: IV. Kütüphaneye Bağlı Kod (dil bağımsız + doğrulanmamış dil kuralı),
+  V. Uygulamayı Gerçekten Gör (web Playwright MCP / uygulama app-mcp; dil doğrulamayı değiştirmez),
+  VI. Onarım Yalnızca Locator'ı Kapsar (Java karşılığı `Kimlikler.java`)
+- Modified sections: Geliştirme Akışı ve Kalite Kapıları (merge koşulları ve CODEOWNERS dil bağımsız)
+- Added sections: yok · Removed sections: yok
+- Templates requiring updates: yok (şablonlar kuralı çalışma anında okur) ✅; bağlı belgeler
+  docs/TEKNIK-TASARIM.md v1.8 (§3 satır 4–6, §7, §8.4–8.7), docs/MIMARI-SOZLESME.md,
+  specs/011-uretim-dili/plan.md §4 aynı dalda güncellendi ✅
+- Onay durumu: teknik lider ⏳ + ürün sahibi ⏳ (Governance); 011 ürün sahibi kararları K1–K3
+  (2026-11-11) içeriği onaylı, metin onayı main birleştirme koşuludur
+- Follow-up TODOs: 2.1.0 onayı; onaycı isimlerinin F0 notuna işlenmesi
+- Önceki: 2.0.0 → 2.0.1 (PATCH: İlke VII'deki kimlik servisi cümlesi koda uygun hale
   getirildi — giden alanlar tam listelendi (`uid`, `auth_time`, `acr`, `session_epoch_ms`) ve
   bağlama API'sinin rol hesaplarının `kullanici_adi`/`ad_soyad`/`rol`'ünü yalnız aiprobe-home
   yöneticilerine açtığı yazıldı. Kural değişmedi — alan verisi gitmez — yalnız ifade
@@ -84,21 +101,29 @@ Her model çağrısı şemaya uyan yapılandırılmış çıktı üretir ve Pyda
 Serbest metin, kararın tek dayanağı olamaz.
 
 ### IV. Kütüphaneye Bağlı Kod
-Üretilen testler yalnızca page object kütüphanesindeki mevcut metotları kullanır. Model TypeScript
-yazmaz: kod, uygulamada doğrulanmış adım→page object eşlemesinden şablonla üretilir; değerler yalnızca
-`JSON.stringify` ile tür doğrulanmış literal olarak basılır. Assertion değerleri onaylı case'in beklenen
-sonuç metninden gelmek zorundadır. `tsc --strict` ve `eslint --no-inline-config` her PR'da zorunludur.
+Üretilen testler yalnızca hedef dilin page object kütüphanesindeki mevcut metotları kullanır. Model
+hiçbir dilde test kodu yazmaz: kod, uygulamada doğrulanmış adım→page object eşlemesinden şablonla
+(deterministik render) üretilir; değerler yalnızca dilin tür doğrulanmış, enjeksiyona kapalı literal
+süzgeciyle basılır (TypeScript'te `JSON.stringify`, diğer dillerde eşdeğer kaçışlı literal). Assertion
+değerleri onaylı case'in beklenen sonuç metninden gelmek zorundadır. **Tam hat dillerinde** derleme ve
+statik kapı her PR'da zorunludur: TypeScript'te `tsc --strict` ve `eslint --no-inline-config`;
+Java'da güvenilir pom ile bayt eşitlik (pom kilidi), üretilen test koruması ve derleme. Derleme, koruma
+ve koşu hattı olmayan diller **doğrulanmamıştır**: kaynak yalnızca indirilmek üzere üretilir, forge'a
+yazılmaz, PR'a ve `main`'e giremez; arayüz bunu her yerde açıkça etiketler.
 
 ### V. Uygulamayı Gerçekten Gör
-Kod yazılmadan önce her adım Playwright MCP ile uygulamanın eleman ağacında doğrulanır. Ekran
-görüntüsünden çıkarım yapılmaz; görsel yetenekler (`--caps=vision`) ve ekran görüntüsü aracı ajana
-verilmez.
+Kod yazılmadan önce her adım uygulamanın eleman ağacında doğrulanır: web'de Playwright MCP, mobil ve
+masaüstü uygulamalarda app-mcp (Appium) ile. Üretim dili bu kuralı değiştirmez; doğrulanmamış dilde
+üretilecek testin adımları da uygulamada doğrulanır. Ekran görüntüsünden çıkarım yapılmaz; görsel
+yetenekler (`--caps=vision`) ve ekran görüntüsü aracı ajana verilmez.
 
 ### VI. Onarım Yalnızca Locator'ı Kapsar
-Locator onarımı yalnızca `pages/**/locators.ts` içindeki ilgili `testId` değerini değiştirebilir.
-Anahtar kümesi, rol, ad ve niyet değişmez; test dosyaları ve assertion'lar asla otomatik değişmez.
-Bu kural AST korumasıyla hem çekirdekte hem CI'da zorunlu check olarak uygulanır. Beklenen sonuçtaki
-her sapma defect adayıdır.
+Locator onarımı yalnızca saf veri olan locator kaynağındaki ilgili `testId` değerini değiştirebilir:
+TypeScript'te `pages/**/locators.ts`, Java'da `ekranlar/Kimlikler.java` içindeki ilgili sabitin string
+değeri. Anahtar kümesi, rol, ad ve niyet değişmez; test dosyaları ve assertion'lar asla otomatik
+değişmez. Bu kural sözdizimi ağacı düzeyinde deterministik korumayla (TypeScript: AST koruması;
+Java: `java-araclar`) hem çekirdekte hem CI'da uygulanır. Beklenen sonuçtaki her sapma defect
+adayıdır.
 
 ### VII. Veri Müşteride Kalır
 Ürün müşteri ortamında (on-prem) çalışır; müşteri verisi müşteri ortamından çıkmaz. Ürün fazında model
@@ -177,11 +202,15 @@ sözleşme sunar; sağlayıcıya özgü özellikler yalnızca adaptörlerde bulu
   → implement → converge.
 - Kaynak tasarım `docs/TEKNIK-TASARIM.md`'dir; tasarımla çelişen spec önce tasarım güncellenmeden
   uygulanmaz.
-- `main`'e merge koşulları: CI yeşil (tsc, eslint, AST koruması, Playwright testleri, Semgrep),
-  en az 1 insan onayı, CODEOWNERS (`pages/**`, `.github/**`). Zorunlu check'ler her PR'da koşar;
-  atlama yerine job içinde no-op kullanılır.
-- Yerel kontrol CI ile aynı mekanizmayı kullanır (checkout edilen commit, Playwright `webServer`,
-  aynı toolchain imajı, tek `.playwright-version`).
+- `main`'e merge koşulları: CI yeşil (değişen test projesinin dilindeki derleme + statik kapılar,
+  locator koruması, testler, Semgrep), en az 1 insan onayı, CODEOWNERS (page object ve locator
+  kaynakları, üretilen testler, kalite kapısı yapılandırması, `.github/**`). Zorunlu check'ler her
+  PR'da koşar; atlama yerine job içinde no-op kullanılır. Doğrulanmamış dilde üretilen kod PR'a
+  girmez.
+- Yerel kontrol CI ile aynı mekanizmayı kullanır (checkout edilen commit, aynı toolchain imajı, tek
+  `.playwright-version`; web'de uygulama o commit'ten başlatılır). Check adı platform ve dilden tek
+  kaynakla türetilir (web + TypeScript `local-ci`, web + Java `local-ci-web-java`, uygulama
+  `local-ci-<platform>`).
 - Birim testleri zorunlu alanlar: şema doğrulama, Jira eşleme, idempotency, AST koruması, PII
   maskeleme/geri açma, onay hash kontrolü, hash zinciri, şablon enjeksiyonu, beklenen değer kaynağı.
 - Demo-A (story → case → onay → Jira) ≤ 7 iş günü sabittir; bu tarihi tehdit eden kapsam ertelenir.
@@ -194,4 +223,4 @@ ve etkisi yazılır ve teknik lider ile ürün sahibi tarafından onaylanır. S�
 kaldırma veya yeniden tanımlama MAJOR, yeni ilke veya bölüm MINOR, açıklama ve ifade düzeltmeleri
 PATCH. Çalışma zamanı rehberi için `docs/TEKNIK-TASARIM.md` ve `CLAUDE.md` kullanılır.
 
-**Version**: 2.0.1 | **Ratified**: 2026-10-30 | **Last Amended**: 2026-11-10
+**Version**: 2.1.0 | **Ratified**: 2026-10-30 | **Last Amended**: 2026-11-11

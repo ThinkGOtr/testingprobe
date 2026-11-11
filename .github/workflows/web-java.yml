@@ -80,7 +80,10 @@ jobs:
               - 'demo-app/ci/run-java-checks.sh'
               - 'demo-app/ci/break-verify-java.sh'
               - 'toolchain/java-araclar/**'
+              - 'toolchain/e2e-java-deps/**'
               - '.playwright-version'
+              # Sürüm tutarlılığı adımı @playwright/test sürümünü buradan okur.
+              - 'demo-app/e2e/package.json'
               - 'scripts/github-demo-serve.sh'
               - '.github/workflows/web-java.yml'
 

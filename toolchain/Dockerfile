@@ -123,13 +123,6 @@ RUN npm ci --ignore-scripts --no-audit --no-fund \
  && chmod -R a-w /opt/e2e
 WORKDIR /opt/toolchain
 
-COPY --from=nodebuild /build/ast-guard/package.json ./ast-guard/package.json
-COPY --from=nodebuild /build/ast-guard/dist ./ast-guard/dist
-COPY --from=nodebuild /build/ast-guard/node_modules ./ast-guard/node_modules
-COPY --from=nodebuild /build/symbols/package.json ./symbols/package.json
-COPY --from=nodebuild /build/symbols/dist ./symbols/dist
-COPY --from=nodebuild /build/symbols/node_modules ./symbols/node_modules
-COPY probe ./probe
 
 # Allure 3 CLI (Node, sabit sürüm): test-runner her koşudan sonra statik tek dosyalık Allure
 # raporu üretir (allure2 eklentisi, ALLURE_NO_ANALYTICS; ağ yok, AI yok). Yapılandırma güvenilir
@@ -142,18 +135,9 @@ RUN npm ci --ignore-scripts --omit=dev --no-audit --no-fund \
  && chmod -R a-w /opt/allure
 WORKDIR /opt/toolchain
 
-# Python: dependencies first (cache), then the project itself.
-COPY pyproject.toml uv.lock ./
-# uv is only mounted at build time; it is not shipped in the image.
-RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
-    uv sync --frozen --no-dev --no-install-project --no-cache
-COPY toolchain_common ./toolchain_common
-COPY worker ./worker
-COPY runner ./runner
-RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
-    uv sync --frozen --no-dev --no-editable --no-cache
-
-COPY bin ./bin
+# Katman sırası (OPS-L3): seyrek değişen Java katmanları ve ağsız duman testi, sık değişen kaynak
+# COPY'lerinden (ast-guard/symbols dist, probe, Python paketleri) ÖNCE gelir; Python/TS kaynak
+# değişikliği Java ısınmasını ve duman testini yeniden koşturmaz. Davranış aynıdır.
 
 # Java (009): JDK 17 (başsız kullanım), sabit Maven, java-araclar.jar ve e2e-app'in çevrimdışı
 # deposu. Depo ve pom salt okunur: toolchain-worker `maven.repo.local.tail` olarak okur, koşu başına
@@ -184,6 +168,27 @@ RUN --network=none cp /opt/e2e-java/pom.xml /tmp/e2e-java-duman/pom.xml \
  && grep -q 'tests="1" errors="0" skipped="0" failures="0"' \
       target/surefire-reports/TEST-com.antreklabs.bayi.birim.IsinmaTest.xml \
  && cd / && rm -rf /tmp/e2e-java-duman /tmp/playwright-java-*
+
+COPY --from=nodebuild /build/ast-guard/package.json ./ast-guard/package.json
+COPY --from=nodebuild /build/ast-guard/dist ./ast-guard/dist
+COPY --from=nodebuild /build/ast-guard/node_modules ./ast-guard/node_modules
+COPY --from=nodebuild /build/symbols/package.json ./symbols/package.json
+COPY --from=nodebuild /build/symbols/dist ./symbols/dist
+COPY --from=nodebuild /build/symbols/node_modules ./symbols/node_modules
+COPY probe ./probe
+
+# Python: dependencies first (cache), then the project itself.
+COPY pyproject.toml uv.lock ./
+# uv is only mounted at build time; it is not shipped in the image.
+RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
+    uv sync --frozen --no-dev --no-install-project --no-cache
+COPY toolchain_common ./toolchain_common
+COPY worker ./worker
+COPY runner ./runner
+RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
+    uv sync --frozen --no-dev --no-editable --no-cache
+
+COPY bin ./bin
 
 # Bağlama noktaları pwuser'ın: boş bir named volume ilk bağlamada bu sahipliği alır.
 # /checks = merge kapısı volume'ü (tp_checks; yalnızca toolchain-worker rw, test-runner bağlamaz).

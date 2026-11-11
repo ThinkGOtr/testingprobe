@@ -20,11 +20,28 @@
 /demo-app/e2e/package-lock.json      @gokhansipahi
 /demo-app/ci/                        @gokhansipahi
 
+# Java karşılıkları (009 uygulama hattı e2e-app, 011 web hattı e2e-java): page object'ler ve
+# Kimlikler (onarım PR'ları), üretilen testler (bot PR'ı), kalite kapısı yapılandırması (pom kilidi:
+# toolchain/e2e-java-deps/pom.xml ve toolchain/e2e-app-deps/pom.xml ile bayt eşit; TestNG takımı).
+/demo-app/e2e-java/src/test/java/com/antreklabs/bayi/ekranlar/  @gokhansipahi
+/demo-app/e2e-java/src/test/java/com/antreklabs/bayi/uretilen/  @gokhansipahi
+/demo-app/e2e-java/pom.xml           @gokhansipahi
+/demo-app/e2e-java/testng.xml        @gokhansipahi
+/demo-app/e2e-java/.mvn/             @gokhansipahi
+/demo-app/e2e-app/src/test/java/com/antreklabs/bayi/ekranlar/   @gokhansipahi
+/demo-app/e2e-app/src/test/java/com/antreklabs/bayi/uretilen/   @gokhansipahi
+/demo-app/e2e-app/pom.xml            @gokhansipahi
+/demo-app/e2e-app/testng.xml         @gokhansipahi
+/demo-app/e2e-app/.mvn/              @gokhansipahi
+
 # CI, workflow'lar ve bu dosya.
 /.github/                   @gokhansipahi
 
 # CI'da zorunlu check olan AST koruması ve Sauce yapılandırması.
 /toolchain/ast-guard/       @gokhansipahi
+/toolchain/java-araclar/     @gokhansipahi
+/toolchain/e2e-java-deps/    @gokhansipahi
+/toolchain/e2e-app-deps/     @gokhansipahi
 /demo-app/.sauce/           @gokhansipahi
 
 # Ruleset betiği.
