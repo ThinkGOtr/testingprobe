@@ -19,6 +19,16 @@ function uretimEtiketi(u: CaseUretimOzeti, cok: boolean): string {
   return cok ? ` · üretim ${u.uretim_no} (${URETIM_TURU[u.tur] ?? u.tur})` : "";
 }
 
+/** Derinleştirme üretimlerinin rozeti (011 P5/P6); ilk üretimde (tur "uretim") rozet yok. */
+export function UretimTuruRozeti({ tur }: { tur: string }) {
+  if (tur === "uretim") return null;
+  return (
+    <Cip ton="bilgi" title={tur === "negatif" || tur === "teknik" ? "Mevcut sete derinleştirmeyle eklenen taslaklar" : undefined}>
+      {URETIM_TURU[tur] ?? tur}
+    </Cip>
+  );
+}
+
 const oranMetni = (x: KapsamOrani) => (x.oran === null ? <Olculmedi metin="hesaplanamadı" /> : yuzde(x.oran));
 /** "kapsanan/toplam · açıklama" (core sayıları gelmediyse yalnız açıklama). */
 const oranAlt = (x: KapsamOrani, aciklama: string) => (x.kapsanan !== null && x.toplam !== null ? `${x.kapsanan}/${x.toplam} · ${aciklama}` : aciklama);
@@ -119,6 +129,20 @@ export function KapsamPaneli({
           </Uyari>
         </div>
       )}
+      {(cok || ozet.uretimler.some((u) => u.tur !== "uretim")) && (
+        <section aria-label="Üretimler" data-testid="kapsam-uretimler">
+          <h3>Üretimler ({ozet.uretimler.length})</h3>
+          <ul className="satir-ogeler kapsam-cipler">
+            {ozet.uretimler.map((u) => (
+              <li key={u.uretim_no}>
+                <span className="mono">Üretim {u.uretim_no}</span> <UretimTuruRozeti tur={u.tur} />
+                {typeof u.case_sayisi === "number" && <span className="soluk kucuk"> · {u.case_sayisi} case</span>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <div className="metrik-izgara" data-testid="kapsam-oranlar">
         <Metrik
           etiket="Gereksinim kapsamı"
@@ -351,55 +375,97 @@ export function KapsamPaneli({
         <details className="kapsam-ayrinti" data-testid="kapsam-diger">
           <summary>Gözlemler ve otomasyon notları ({gozlemler.length + otomasyon.length + bosluklar.length + parametreler.length + kisitlar.length})</summary>
           {gozlemler.length > 0 && (
-            <>
-              <h4>Gözlemler</h4>
+            <section aria-label="Gözlemler" data-testid="kapsam-gozlemler">
+              <h4>Gözlemler ({gozlemler.length})</h4>
+              <p className="soluk kucuk">
+                Gözlem — beklenen sonuç değildir. Benimsenmemiş standartların eşikleri ve platform notları burada yazılır; case'lerde
+                doğrulanmaz.
+              </p>
               <ul className="case-atif-listesi">
                 {gozlemler.map((g, i) => (
                   <li key={`${i}-${g.note}`}>
-                    {g.standard_ref && <span className="mono ac-ref">{g.standard_ref}</span>} {g.note}
+                    {g.standard_ref ? <span className="mono ac-ref">{g.standard_ref}</span> : <span className="soluk kucuk">Standart atfı yok</span>} {g.note}
                   </li>
                 ))}
               </ul>
-            </>
+            </section>
+          )}
+          {(parametreler.length > 0 || kisitlar.length > 0) && (
+            <section aria-label="Yapılandırma matrisi" data-testid="kapsam-yapilandirma">
+              <h4>Yapılandırma matrisi</h4>
+              <p className="soluk kucuk">Burada yalnız parametreler, değerleri ve kısıtlar yer alır; kombinasyon satırları PICT ile üretilir.</p>
+              {parametreler.length > 0 && (
+                <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Yapılandırma parametreleri tablosu">
+                  <table className="tablo tablo-sik tablo-yigin">
+                    <caption className="gorunmez">Yapılandırma parametreleri ve değerleri</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Parametre</th>
+                        <th scope="col">Değerler</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {parametreler.map((p, i) => (
+                        <tr key={`p-${i}-${p.name}`}>
+                          <td className="mono" data-etiket="Parametre">
+                            {p.name}
+                          </td>
+                          <td data-etiket="Değerler">{p.values.join(", ")}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {kisitlar.length > 0 && (
+                <>
+                  <h5 className="kucuk">Kısıtlar</h5>
+                  <ul className="case-atif-listesi">
+                    {kisitlar.map((k, i) => (
+                      <li key={`k-${i}-${k}`} className="mono">
+                        {k}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </section>
+          )}
+          {bosluklar.length > 0 && (
+            <section aria-label="Test edilebilirlik boşlukları" data-testid="kapsam-bosluklar">
+              <h4>Test edilebilirlik boşlukları ({bosluklar.length})</h4>
+              <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Test edilebilirlik boşlukları tablosu">
+                <table className="tablo tablo-sik tablo-yigin">
+                  <caption className="gorunmez">Test edilebilirlik boşlukları: kontrol ve eksik olan</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Kontrol</th>
+                      <th scope="col">Eksik</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bosluklar.map((b, i) => (
+                      <tr key={`${i}-${b.control}`}>
+                        <td data-etiket="Kontrol">{b.control}</td>
+                        <td className="mono" data-etiket="Eksik">
+                          {b.missing}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
           )}
           {otomasyon.length > 0 && (
-            <>
-              <h4>Otomasyon açık noktaları</h4>
+            <section aria-label="Otomasyon açık noktaları" data-testid="kapsam-otomasyon">
+              <h4>Otomasyon açık noktaları ({otomasyon.length})</h4>
               <ul className="case-atif-listesi">
                 {otomasyon.map((o, i) => (
                   <li key={`${i}-${o}`}>{o}</li>
                 ))}
               </ul>
-            </>
-          )}
-          {bosluklar.length > 0 && (
-            <>
-              <h4>Test edilebilirlik boşlukları</h4>
-              <ul className="case-atif-listesi">
-                {bosluklar.map((b, i) => (
-                  <li key={`${i}-${b.control}`}>
-                    {b.control} <span className="soluk kucuk">· eksik:</span> <span className="mono">{b.missing}</span>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-          {(parametreler.length > 0 || kisitlar.length > 0) && (
-            <>
-              <h4>Yapılandırma matrisi</h4>
-              <ul className="case-atif-listesi">
-                {parametreler.map((p, i) => (
-                  <li key={`p-${i}-${p.name}`}>
-                    <span className="mono">{p.name}</span>: {p.values.join(", ")}
-                  </li>
-                ))}
-                {kisitlar.map((k, i) => (
-                  <li key={`k-${i}-${k}`}>
-                    <span className="soluk kucuk">Kısıt:</span> {k}
-                  </li>
-                ))}
-              </ul>
-            </>
+            </section>
           )}
         </details>
       )}

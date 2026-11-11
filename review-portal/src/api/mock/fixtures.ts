@@ -40,8 +40,10 @@ import type {
   KosuDetay,
   ScriptDetay,
   CaseUretimOzeti,
+  DerinlestirmeDurumu,
   TestCase,
   TestCaseIcerik,
+  UretimSecenekleri,
 } from "../types";
 import { kanonikJson, sha256Hex } from "../../lib/sha256";
 import { ekranGoruntusu } from "./ekran";
@@ -72,6 +74,10 @@ export interface MockVeri {
    * Yalnız v3 üretimi olan gereksinimde vardır; eski şemalı gereksinimde anahtar yoktur.
    */
   caseUretimleri?: Record<string, CaseUretimOzeti[]>;
+  /** Gereksinimde saklanan son üretim seçenekleri (011 K5; gereksinim kimliği → seçenekler). */
+  uretimSecenekleri?: Record<string, UretimSecenekleri>;
+  /** Son derinleştirmenin durumu (011 P5/P6; gereksinim kimliği → durum). */
+  derinlestirmeler?: Record<string, DerinlestirmeDurumu>;
   sayac: number;
 }
 
@@ -116,6 +122,11 @@ export const KAYNAK = kaynaklar as unknown as {
   serbest_girdi: { acceptance_criteria?: string[]; contains?: string[] };
   /** case_generation golden'ları: girdi AC satırları ("ACn: …") ve çıktı case'leri. */
   case_generation: Record<string, { girdi_ac: string[]; cases: TestCaseIcerik[]; ozet?: Record<string, unknown> }>;
+  /**
+   * case_deepening golden'ları (011 P5/P6): `negatif/<kök>`, `teknik-<teknik>/<kök>` → case_generation
+   * v3 biçimi. Golden yoksa boş sözlük; eski kopyada anahtar hiç olmayabilir.
+   */
+  case_deepening?: Record<string, { girdi_ac: string[]; cases: TestCaseIcerik[]; ozet?: Record<string, unknown> }>;
 };
 
 /**
@@ -152,7 +163,10 @@ export function goldenCaseler(g: { jira_key: string | null; aciklama: string; ka
 /** Senaryo golden dizinleri (ör. `f2-kod-hatasi`), ada göre sıralı — core `ReplayStore` sırası. */
 export const SENARYOLAR: string[] = [
   ...new Set(
-    [...Object.keys(KAYNAK.consistency_check), ...Object.keys(KAYNAK.case_generation)].filter((a) => a.includes("/")).map((a) => a.split("/")[0]),
+    // `platform-*` dizinleri senaryo değildir: yalnız platform seçilen üretimde adıyla seçilir (011 K5).
+    [...Object.keys(KAYNAK.consistency_check), ...Object.keys(KAYNAK.case_generation)]
+      .filter((a) => a.includes("/") && !a.startsWith("platform-"))
+      .map((a) => a.split("/")[0]),
   ),
 ].sort();
 

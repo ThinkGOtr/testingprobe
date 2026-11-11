@@ -50,7 +50,14 @@ import type {
   TokenKapsami,
   YayinOnizleme,
   YayinSonucu,
+  DerinlestirmeDurumu,
+  DerinlestirmeGirdisi,
+  DerinlestirmeYaniti,
+  UretimGovdesi,
+  UretimSecenekleriYaniti,
 } from "./types";
+import { uretimSecenekleriYanitiUyarla } from "../lib/uretimSecenekleri";
+import { derinlestirmeDurumuUyarla } from "../lib/derinlestirme";
 
 const yol = (s: string) => encodeURIComponent(s);
 /** Gereksinim detayı + Faz 5 baz değeri (alan yoksa eklenmez: "çekirdek sunmuyor"). */
@@ -104,7 +111,19 @@ export const api = {
     detayUyarla(
       nesne(await istek<unknown>("POST", `/requirements/${yol(g.id)}/po-approve`, { govde: { icerik_hash: g.icerik_hash } })),
     ),
-  caseUret: (id: string) => istek<IsYaniti>("POST", `/requirements/${yol(id)}/generate-cases`),
+  /** `govde`: üretim seçenekleri (011 K5; isteğe bağlı — gövdesiz çağrı eski davranış). */
+  caseUret: (id: string, govde?: UretimGovdesi) =>
+    istek<IsYaniti>("POST", `/requirements/${yol(id)}/generate-cases`, govde ? { govde } : {}),
+  /** Üretim formu: kayıtlı son seçenekler, varsayılan ve ek bilgi alanı kataloğu (011 §4.4). */
+  uretimSecenekleri: async (id: string): Promise<UretimSecenekleriYaniti> =>
+    uretimSecenekleriYanitiUyarla(
+      await istek<unknown>("GET", `/requirements/${yol(id)}/generation-options`, { kaynak: GEREKSINIM_KAYNAGI }),
+    ),
+  /** Derinleştirme (P5 negatif / P6 teknik; K7): mevcut sete ek taslaklar (202). */
+  derinlestir: (id: string, g: DerinlestirmeGirdisi) =>
+    istek<DerinlestirmeYaniti>("POST", `/requirements/${yol(id)}/deepen`, { govde: g, kaynak: GEREKSINIM_KAYNAGI }),
+  derinlestirmeDurumu: async (id: string): Promise<DerinlestirmeDurumu> =>
+    derinlestirmeDurumuUyarla(await istek<unknown>("GET", `/requirements/${yol(id)}/deepen`, { kaynak: GEREKSINIM_KAYNAGI })),
   /**
    * Story başına manuel baz değer (Faz 5; analyst | po). Yanıt baz değer ya da gereksinim
    * detayıdır; ikisi de yoksa `undefined` (çağıran detayı yeniden okur).

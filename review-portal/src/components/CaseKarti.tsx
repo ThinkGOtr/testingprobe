@@ -454,7 +454,15 @@ function CaseV3Ozeti({ tc, hazirlik }: { tc: TestCase; hazirlik: CaseHazirlik })
         {(i.platform || i.requires_real_device) && (
           <div>
             <dt>Platform</dt>
-            <dd>{[i.platform, i.requires_real_device ? "gerçek cihaz gerekir" : null].filter(Boolean).join(" · ")}</dd>
+            <dd>
+              {i.platform}
+              {i.platform && i.requires_real_device && " · "}
+              {i.requires_real_device && (
+                <Cip ton="uyari" title="Bu case emülatör/simülatörde değil, gerçek cihazda koşulmalı">
+                  Gerçek cihaz gerekir
+                </Cip>
+              )}
+            </dd>
           </div>
         )}
         {(i.standard_refs?.length ?? 0) > 0 && (

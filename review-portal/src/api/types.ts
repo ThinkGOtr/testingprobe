@@ -1501,6 +1501,68 @@ export interface McpTokenKaydi {
   olusturma: string;
 }
 
+// ---------------------------------------------------------------- Üretim seçenekleri ve derinleştirme (011 §4.4, K5, K7)
+
+/** Analistin üretimi başlatırken seçtiği seçenekler (gereksinimde saklanır; sonraki üretimde varsayılan). */
+export interface UretimSecenekleri {
+  platformlar: string[];
+  test_seviyesi: string;
+  /** Benimsenen standart kodları (ör. "WCAG 2.2 AA"); yalnız bunlar beklenen sonuç olur. */
+  benimsenen_standartlar: string[];
+  kapsam_disi: string;
+  roller: string;
+  ek_bilgi: Record<string, string | boolean>;
+}
+
+export type EkBilgiTuru = "metin" | "secim" | "evet_hayir" | "uzun_metin";
+
+export interface EkBilgiAlani {
+  etiket: string;
+  tur: EkBilgiTuru;
+  secenekler?: string[];
+  /** Alanın görüneceği platformlar (seçili platformlardan biri listedeyse görünür). */
+  platformlar: string[];
+}
+
+/** `GET /requirements/{id}/generation-options`. */
+export interface UretimSecenekleriYaniti {
+  /** Gereksinimde kayıtlı son seçenekler (yoksa null). */
+  secenekler: UretimSecenekleri | null;
+  varsayilan: UretimSecenekleri;
+  platformlar: string[];
+  test_seviyeleri: string[];
+  ek_bilgi_alanlari: Record<string, EkBilgiAlani>;
+}
+
+/** `POST /requirements/{id}/generate-cases` gövdesi (tümü isteğe bağlı; gövdesiz çağrı geriye uyumlu). */
+export type UretimGovdesi = Partial<UretimSecenekleri>;
+
+export type DerinlestirmeTuru = "negatif" | "teknik";
+export type DerinlestirmeTeknigi = "EP" | "BVA" | "DT" | "ST" | "PW" | "UC" | "EG";
+
+/** `POST /requirements/{id}/deepen` gövdesi (`teknik` yalnız tur=teknik'te ve zorunlu). */
+export interface DerinlestirmeGirdisi {
+  tur: DerinlestirmeTuru;
+  teknik?: DerinlestirmeTeknigi;
+}
+
+/** `POST /requirements/{id}/deepen` → 202. */
+export interface DerinlestirmeYaniti extends IsYaniti {
+  workflow_id?: string | null;
+  uretim_no?: number | null;
+}
+
+/** `GET /requirements/{id}/deepen`: son derinleştirmenin durumu. */
+export interface DerinlestirmeDurumu {
+  durum: "yok" | "calisiyor" | "tamam" | "hata";
+  tur: DerinlestirmeTuru | null;
+  teknik: string | null;
+  uretim_no: number | null;
+  yeni_case_sayisi: number | null;
+  uyarilar: string[];
+  hata: string | null;
+}
+
 // ---------------------------------------------------------------- Genel işlem yanıtı
 
 /** Arka plan işi başlatan uçların yanıtı (POST review/generate/... → 202). */

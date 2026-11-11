@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { ApiError } from "../api/http";
@@ -8,6 +8,7 @@ import { AkisAdimlari } from "../components/AkisAdimlari";
 import { BazDegerKarti } from "../components/BazDegerKarti";
 import { useBildirim } from "../components/Bildirim";
 import { BulguKarti, SON_HAL_SONRASI } from "../components/BulguKarti";
+import { UretimFormu } from "../components/UretimFormu";
 import { BosDurum, Cip, DisBaglanti, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { akisAdimi, DENETIM_ISLERI, hataAdimi, URETIM_ISI } from "../lib/akis";
@@ -48,6 +49,8 @@ export function GereksinimDetay() {
   const kanit = useVeri(() => (tamamMi ? akisKanitlari(id) : Promise.resolve(null)), [id, tamamMi]);
   const islem = useIslem();
   const bildir = useBildirim();
+  // 011 K5: seçenekli üretim formu ("Case üret" düğmesi gövdesiz eski davranışı korur).
+  const [uretimFormu, setUretimFormu] = useState(false);
 
   const tumunuYenile = useCallback(() => {
     void detay.yenile(true);
@@ -161,6 +164,18 @@ export function GereksinimDetay() {
             >
               {uretimHatasi ? "Case üretimini yeniden dene" : "Case üret"}
             </IslemDugmesi>
+            <IslemDugmesi
+              id="uretim-formu-ac"
+              roller={["analyst"]}
+              tur="ikincil"
+              disabled={!caseUretilebilir}
+              title={caseUretilebilir ? "Platform, test seviyesi, standartlar ve kapsam dışı seçerek üretimi başlatır" : caseUretNedeni}
+              nedenGizli
+              aria-expanded={uretimFormu}
+              onClick={() => setUretimFormu((x) => !x)}
+            >
+              Seçeneklerle üret…
+            </IslemDugmesi>
             {caseVar && (
               <Link className="dugme dugme-ikincil" to={`/gereksinimler/${encodeURIComponent(g.id)}/caseler`}>
                 Case review
@@ -170,6 +185,18 @@ export function GereksinimDetay() {
         }
       />
       {islem.hata && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
+      {uretimFormu && caseUretilebilir && (
+        <UretimFormu
+          gereksinimId={g.id}
+          gonder={(govde) => api.caseUret(g.id, govde).catch(caseUretHatasi)}
+          basladi={() => {
+            setUretimFormu(false);
+            bildir("Case üretimi başlatıldı.");
+            tumunuYenile();
+          }}
+          kapat={() => setUretimFormu(false)}
+        />
+      )}
 
       <Kart>
         <AkisAdimlari adim={guncelAdim(g, kanit.veri ?? null, akisAdimi(g.durum, g.adim ?? hataAdimi(g.son_hata?.job_tur)))} kaynak={g.kaynak} />

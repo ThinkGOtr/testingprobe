@@ -8,6 +8,8 @@ Kaynaklar (docs/DEMO-VERISI.md):
 - rules/replay/consistency_check/golden/SERBEST.json → input_match (serbest metin golden'ının girdisi).
 - rules/replay/case_generation/golden/*.json → input_match AC'leri + output.cases + üst düzey
   listeler (`ozet`, şema v3).
+- rules/replay/case_deepening/golden/<negatif|teknik-xx>/<ad>.json → aynı biçim (`case_deepening`;
+  dizin yoksa boş sözlük).
 - Senaryo golden'ları (`golden/<senaryo>/<ad>.json`, ör. ana demo yolu `f2-kod-hatasi/`): aynı
   sözlüklerde `<senaryo>/<ad>` anahtarıyla. Core gibi örnek veri de ana golden'ın girdi beyanı
   uymazsa senaryoları ada göre sıralı dener (`consistency_girdi` / `case_generation.girdi_ac`).
@@ -80,6 +82,8 @@ def jira_seed() -> dict[str, Any]:
 def _dosyalar(amac: str) -> list[tuple[str, Path]]:
     """Ana golden'lar (`<ad>`) ve senaryo golden'ları (`<senaryo>/<ad>`), ada göre sıralı."""
     kok = REPLAY / amac / "golden"
+    if not kok.is_dir():
+        return []
     ana = [(p.stem, p) for p in sorted(kok.glob("*.json"))]
     senaryo = [
         (f"{d.name}/{p.stem}", p)
@@ -129,6 +133,23 @@ def case_goldenlari() -> dict[str, Any]:
     return out
 
 
+def case_derinlestirme() -> dict[str, Any]:
+    """case_deepening golden'ları (011 P5/P6): `negatif/<kök>`, `teknik-<teknik>/<kök>` → girdi AC
+    satırları + çıktı case'leri + üst düzey listeler (case_generation v3 ile aynı biçim). Örnek veri
+    derinleştirmede anahtar eşleşirse case'leri yeni üretim numarasıyla taslak ekler; yoksa
+    REPLAY-MISS. Dizin yoksa boş sözlük."""
+    out: dict[str, Any] = {}
+    for ad, p in _dosyalar("case_deepening"):
+        d = json.loads(p.read_text(encoding="utf-8"))
+        cikti = d.get("output") or {}
+        out[ad] = {
+            "girdi_ac": (d.get("input_match") or {}).get("acceptance_criteria", []),
+            "cases": cikti.get("cases", []),
+            "ozet": {k: v for k, v in cikti.items() if k != "cases"},
+        }
+    return out
+
+
 def main() -> None:
     cikti = {
         "jira_seed": jira_seed(),
@@ -137,6 +158,7 @@ def main() -> None:
         "consistency_girdi": girdi_aclari("consistency_check"),
         "serbest_girdi": serbest_girdi(),
         "case_generation": case_goldenlari(),
+        "case_deepening": case_derinlestirme(),
     }
     json.dump(cikti, sys.stdout, ensure_ascii=False, indent=2, sort_keys=True)
     sys.stdout.write("\n")

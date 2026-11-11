@@ -4919,3 +4919,6 @@ td > .satir-baglanti + .cip,
   max-height: 24rem;
   overflow: auto;
 }
+
+/* 011 P6: teknik seçimi + düğme aynı satırda (DerinlestirmePaneli). */
+.derinlestirme-teknik { display: inline-flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
