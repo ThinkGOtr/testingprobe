@@ -8,6 +8,7 @@ import { bazKaynagiUyarla, manuelBazUyarla } from "../api/uyumFaz5";
 import { useKisiAdi, useOturum } from "../auth";
 import { BAZ_KAYNAGI } from "../components/BazDegerKarti";
 import { CaseKarti } from "../components/CaseKarti";
+import { GherkinIndir } from "../components/GherkinIndir";
 import { KapsamPaneli } from "../components/KapsamPaneli";
 import { BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, Metrik, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { HedefOlcer } from "../components/Grafikler";
@@ -198,15 +199,18 @@ export function CaseReview() {
         baslik="Case review"
         aciklama={g ? `${g.jira_key ? `${g.jira_key} · ` : ""}${g.baslik}` : undefined}
         eylemler={
-          yayinYetkili ? (
-            <Link className="dugme dugme-birincil" to={`/gereksinimler/${encodeURIComponent(id)}/yayin`}>
-              Yayın önizleme
-            </Link>
-          ) : (
-            <IslemDugmesi tur="ikincil" disabled title={YAYIN_ROLU_GEREKLI}>
-              Yayın önizleme
-            </IslemDugmesi>
-          )
+          <>
+            <GherkinIndir requirementId={id} anahtar={g?.jira_key ?? id} caseler={liste} />
+            {yayinYetkili ? (
+              <Link className="dugme dugme-birincil" to={`/gereksinimler/${encodeURIComponent(id)}/yayin`}>
+                Yayın önizleme
+              </Link>
+            ) : (
+              <IslemDugmesi tur="ikincil" disabled title={YAYIN_ROLU_GEREKLI}>
+                Yayın önizleme
+              </IslemDugmesi>
+            )}
+          </>
         }
       />
 

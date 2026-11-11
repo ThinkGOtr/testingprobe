@@ -1,0 +1,108 @@
+# language: tr
+# Testing Probe — onaylı ve hazır case'lerden deterministik dönüşüm (model çağrısı yok).
+# 5 case · 5 senaryo (0 taslak)
+Özellik: SERBEST — Sepetten ürün kaldırma
+  # AC1: Satırdaki "Kaldır" butonuna basıldığında ürün sepetten çıkar ve sepet sayacı azalır.
+  # AC2: Kaldırma sonrası kampanya indirimi her 6 adette 1 bedava kuralıyla yeniden hesaplanır.
+  # AC3: Sepette kampanyalı ürün yoksa ve sepet tutarı 750,00 TL altına düşerse "Minimum sipariş tutarı 750,00 TL" uyarısı gösterilir ve onay butonu pasif olur.
+
+  @AC1 @UC @P2 @pozitif @tp-2da75294-877e-589a-a2b7-9807571ff0f3
+  Senaryo: Kaldır ile ürün satırı sepetten çıkar ve sepet sayacı azalır
+    Diyelim ki Sepet boş
+    Ve test verileri:
+      | ad                         | değer            | sınıf |
+      | bayi kullanıcısı           | bayi1 / Demo123! |       |
+      | sepette kalan ürün ve adet | P-002 × 2        |       |
+      | kaldırılan ürün ve adet    | P-003 × 1        |       |
+    Eğer ki Giriş sayfasını aç ve bayi kullanıcısıyla giriş yap, veri: "bayi1 / Demo123!"
+    O zaman Katalog sayfası "Merkez Bayi" oturumuyla görüntülenir
+    Eğer ki "Limonata 330ml" (P-002) kartında adedi 2 yapıp "Sepete ekle" butonuna bas, veri: "P-002 × 2"
+    O zaman Sepet sayacı 2 olur
+    Eğer ki "Maden Suyu 200ml" (P-003) kartında adedi 1 yapıp "Sepete ekle" butonuna bas, veri: "P-003 × 1"
+    O zaman Sepet sayacı 3 olur
+    Eğer ki Üst menüden sepete git ve P-003 satırındaki "Kaldır" butonuna bas, veri: "P-003"
+    O zaman P-003 satırı sepetten kalkar ve sepet sayacı 2 olur
+    Ve Kaldırılan ürün sepetten çıkar ve sepet sayacı 2 olur
+    # Temizlik: Sepeti boşalt
+
+  @AC2 @EP @P1 @pozitif @tp-9b0ebe76-548b-5ee2-a3e8-e00119b7cbd1
+  Senaryo: Kampanyalı satır kaldırılınca kampanya indirimi yeniden hesaplanır ve sıfırlanır
+    Diyelim ki Sepet boş
+    Ve P-001 "6 al 1 bedava" kampanyasında
+    Ve test verileri:
+      | ad                                     | değer            | sınıf |
+      | bayi kullanıcısı                       | bayi1 / Demo123! |       |
+      | kaldırılan kampanyalı ürün ve adet     | P-001 × 6        | EP-V1 |
+      | sepette kalan ürün ve adet (900,00 TL) | P-004 × 30       |       |
+    Eğer ki Giriş sayfasını aç ve bayi kullanıcısıyla giriş yap, veri: "bayi1 / Demo123!"
+    O zaman Katalog sayfası "Merkez Bayi" oturumuyla görüntülenir
+    Eğer ki "Portakal Gazozu 1L" (P-001) kartında adedi 6 yapıp "Sepete ekle" butonuna bas, veri: "P-001 × 6"
+    O zaman Sepet sayacı 6 olur
+    Eğer ki "Şeftalili Soğuk Çay 1L" (P-004) kartında adedi 30 yapıp "Sepete ekle" butonuna bas, veri: "P-004 × 30"
+    O zaman Sepet sayacı 36 olur
+    Eğer ki Üst menüden sepete git
+    O zaman P-001 satırında adet 6, bedava adet 1; ara toplam 1.050,00 TL, indirim 25,00 TL, toplam 1.025,00 TL
+    Eğer ki P-001 satırındaki "Kaldır" butonuna bas, veri: "P-001"
+    O zaman P-001 satırı sepetten kalkar ve sepet sayacı 30 olur; ara toplam 900,00 TL, indirim 0,00 TL, toplam 900,00 TL
+    Ve Kampanyalı satır kaldırılınca bedava adet kalmaz: indirim 0,00 TL, toplam 900,00 TL; minimum sipariş uyarısı gösterilmez
+    # Temizlik: Sepeti boşalt
+
+  @AC3 @DT @P1 @negatif @tp-751cc51d-72ed-5aba-a0b9-d730aae4bf74
+  Senaryo: Kaldırma sonrası kampanyasız sepet minimum tutarın altına düşünce uyarı gösterilir ve onay pasif olur
+    Diyelim ki Sepet boş
+    Ve Sepette kampanyalı ürün yok
+    Ve test verileri:
+      | ad                                    | değer            | sınıf |
+      | bayi kullanıcısı                      | bayi1 / Demo123! |       |
+      | kaldırılan ürün ve adet               | P-004 × 25       |       |
+      | sepette kalan ürün ve adet (15,00 TL) | P-002 × 1        | DT-R1 |
+    Eğer ki Giriş sayfasını aç ve bayi kullanıcısıyla giriş yap, veri: "bayi1 / Demo123!"
+    O zaman Katalog sayfası "Merkez Bayi" oturumuyla görüntülenir
+    Eğer ki "Şeftalili Soğuk Çay 1L" (P-004) kartında adedi 25 yapıp "Sepete ekle" butonuna bas, veri: "P-004 × 25"
+    O zaman Sepet sayacı 25 olur
+    Eğer ki "Limonata 330ml" (P-002) kartında adedi 1 yapıp "Sepete ekle" butonuna bas, veri: "P-002 × 1"
+    O zaman Sepet sayacı 26 olur
+    Eğer ki Üst menüden sepete git ve P-004 satırındaki "Kaldır" butonuna bas, veri: "P-004"
+    O zaman Toplam 15,00 TL; "Minimum sipariş tutarı 750,00 TL" uyarısı görünür ve "Siparişi onayla" butonu pasiftir
+    Ve "Minimum sipariş tutarı 750,00 TL" uyarısı gösterilir ve onay butonu pasif olur
+    # Temizlik: Sepeti boşalt
+
+  @AC3 @BVA @DT @P1 @sınır-değer @tp-163ecc34-7109-53fa-997a-1e4c60a4054b
+  Senaryo: Kaldırma sonrası toplam minimum tutara eşit kalınca uyarı gösterilmez ve onay aktif olur
+    Diyelim ki Sepet boş
+    Ve Sepette kampanyalı ürün yok
+    Ve test verileri:
+      | ad                                     | değer            | sınıf |
+      | bayi kullanıcısı                       | bayi1 / Demo123! |       |
+      | sepette kalan ürün ve adet (750,00 TL) | P-004 × 25       | BV-1  |
+      | kaldırılan ürün ve adet                | P-003 × 1        |       |
+    Eğer ki Giriş sayfasını aç ve bayi kullanıcısıyla giriş yap, veri: "bayi1 / Demo123!"
+    O zaman Katalog sayfası "Merkez Bayi" oturumuyla görüntülenir
+    Eğer ki "Şeftalili Soğuk Çay 1L" (P-004) kartında adedi 25 yapıp "Sepete ekle" butonuna bas, veri: "P-004 × 25"
+    O zaman Sepet sayacı 25 olur
+    Eğer ki "Maden Suyu 200ml" (P-003) kartında adedi 1 yapıp "Sepete ekle" butonuna bas, veri: "P-003 × 1"
+    O zaman Sepet sayacı 26 olur
+    Eğer ki Üst menüden sepete git ve P-003 satırındaki "Kaldır" butonuna bas, veri: "P-003"
+    O zaman Toplam 750,00 TL; minimum sipariş uyarısı görünmez ve "Siparişi onayla" butonu aktiftir
+    Ve Toplam 750,00 TL olduğunda uyarı gösterilmez ve sipariş onaylanabilir
+    # Temizlik: Sepeti boşalt
+
+  @AC3 @DT @P2 @sınır-değer @tp-4ebfc3a6-d75f-5106-bd36-e987bd0e41b3
+  Senaryo: Kaldırma sonrası kampanyalı sepette minimum tutar uyarısı gösterilmez
+    Diyelim ki Sepet boş
+    Ve P-001 "6 al 1 bedava" kampanyasında
+    Ve test verileri:
+      | ad                                                | değer            | sınıf |
+      | bayi kullanıcısı                                  | bayi1 / Demo123! |       |
+      | sepette kalan kampanyalı ürün ve adet (125,00 TL) | P-001 × 6        | DT-R3 |
+      | kaldırılan ürün ve adet                           | P-004 × 25       |       |
+    Eğer ki Giriş sayfasını aç ve bayi kullanıcısıyla giriş yap, veri: "bayi1 / Demo123!"
+    O zaman Katalog sayfası "Merkez Bayi" oturumuyla görüntülenir
+    Eğer ki "Portakal Gazozu 1L" (P-001) kartında adedi 6 yapıp "Sepete ekle" butonuna bas, veri: "P-001 × 6"
+    O zaman Sepet sayacı 6 olur
+    Eğer ki "Şeftalili Soğuk Çay 1L" (P-004) kartında adedi 25 yapıp "Sepete ekle" butonuna bas, veri: "P-004 × 25"
+    O zaman Sepet sayacı 31 olur
+    Eğer ki Üst menüden sepete git ve P-004 satırındaki "Kaldır" butonuna bas, veri: "P-004"
+    O zaman Toplam 125,00 TL; minimum sipariş uyarısı görünmez ve "Siparişi onayla" butonu aktiftir
+    Ve Kampanyalı sepette toplam 125,00 TL olsa da minimum sipariş uyarısı gösterilmez ve sipariş onaylanabilir
+    # Temizlik: Sepeti boşalt
