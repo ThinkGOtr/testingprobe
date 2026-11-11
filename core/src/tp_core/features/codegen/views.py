@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, object_session
 
 from tp_core.config import get_settings
+from tp_core.features.codegen import platform as platformlar
 from tp_core.features.codegen.browser import AgentConfig, sayfa_adresi
 from tp_core.features.codegen.ozet import ham_cikti, insan_ozeti
 from tp_core.features.codegen.service import (
@@ -302,6 +303,10 @@ def serialize(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any]
         "dosya_yolu": sc.dosya_yolu,
         # 009 §2.1: web | android | ios | windows (portal rozeti / Kontrol Kulesi süzgeci).
         "platform": sc.platform,
+        # 011 §2.3: üretim dili, nereden geldiği ve doğrulanmamış (csharp | python) bayrağı.
+        "dil": sc.dil,
+        "dil_kaynagi": sc.dil_kaynagi,
+        "dogrulanmamis": sc.durum == "unverified",
         "branch": sc.branch or "",
         "durum": sc.durum,
         # Faz 4: defect adayı script'in triage sonucu (portal "Triage sonucuna git").
@@ -328,13 +333,25 @@ def list_scripts(session: Session) -> list[dict[str, Any]]:
     return [serialize(session, sc, cg) for sc, cg in rows]
 
 
-def _yerel_kontrol(cg: ScriptCodegen) -> dict[str, Any] | None:
+# 011 §2.3: yerel kontrolün dile göre statik adımları (classify TS_ADIMLARI / JAVA_ADIMLARI ile
+# aynı sıra; `deps` TS'de de koşar ama portal kartı bugün göstermez).
+KONTROL_ADIMLARI = {"ts": ("tsc", "eslint", "ast_guard"), "java": ("deps", "guard", "compile")}
+
+
+def _adim_durumu(v: Any) -> str:
+    return "passed" if v is True else ("failed" if v is False else "skipped")
+
+
+def _yerel_kontrol(cg: ScriptCodegen, dil: str | None = None) -> dict[str, Any] | None:
     yk = cg.yerel_kontrol
     if not yk:
         return None
     adim = yk.get("adimlar") or {}
     run_status = yk.get("run_status")
+    adlar = KONTROL_ADIMLARI.get(dil or "ts", KONTROL_ADIMLARI["ts"])
     return {
+        # Dile göre adım listesi (Java web'de deps/guard/compile görünür); eski alanlar korunur.
+        "adimlar": [{"ad": ad, "durum": _adim_durumu(adim.get(ad))} for ad in adlar],
         "tsc": adim.get("tsc"),
         "eslint": adim.get("eslint"),
         "ast_guard": adim.get("ast_guard"),
@@ -472,8 +489,10 @@ def detail(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any]:
     kontroller = session.scalars(
         select(ScriptKontrol).where(ScriptKontrol.script_id == sc.id).order_by(ScriptKontrol.zaman)
     ).all()
+    dogrulanmamis = sc.durum == "unverified" or platformlar.dogrulanmamis_mi(sc.dil)
     out.update(
-        kod=sc.icerik,
+        # Doğrulanmamış dilde kod forge'a gitmez: gösterilen kaynak `script_codegen.kaynak_kod`.
+        kod=cg.kaynak_kod if dogrulanmamis else sc.icerik,
         adimlar=[_adim(sc.id, a, gizli) for a in adimlar],
         eslemeler=[
             {
@@ -490,7 +509,7 @@ def detail(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any]:
             }
             for m in eslemeler
         ],
-        yerel_kontrol=_yerel_kontrol(cg),
+        yerel_kontrol=_yerel_kontrol(cg, platformlar.dil(sc.platform, sc.dil)),
         merge_engelleri=merge_engelleri(sc, cg),
         # Kapı değil: merge isteğinde `onay_notu` (açık insan kabulü) zorunlu kılan uyarılar.
         merge_kabul_gerekli=merge_kabul_gerekceleri(sc, cg),

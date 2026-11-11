@@ -2,7 +2,8 @@
 
 | Yöntem | Yol | Rol |
 |---|---|---|
-| POST | `/code/generate` `{case_ids[], platform?}` | engineer — CasesToCode (202) |
+| POST | `/code/generate` `{case_ids[], platform?, dil?}` | engineer — CasesToCode (202) |
+| GET  | `/code/languages?platform=` | herkes — algılanan dil + dil seçenekleri (011 §2.3) |
 | GET  | `/scripts` · `/scripts/{id}` | herkes — üretilen test, PR, adımlar, yerel kontrol |
 | GET  | `/scripts/{id}/screenshots/{n}` | herkes — ajan adımının ekran görüntüsü (PNG) |
 | POST | `/scripts/{id}/break-verify` | engineer — kırarak doğrula (202) |
@@ -47,6 +48,8 @@ class KodUretGirdisi(BaseModel):
     case_ids: list[uuid.UUID] = Field(min_length=1, max_length=service.MAX_CASE)
     # 009 §2.1: üretilecek testin platformu; yoksa web (geriye uyum). Bilinmeyen değer 422.
     platform: Literal["web", "android", "ios", "windows"] = "web"
+    # 011 §2.3: üretim dili; yoksa hedef repodan algılanır. Geçersiz (platform, dil) çifti 422.
+    dil: Literal["ts", "java", "csharp", "python"] | None = None
 
 
 class MergeGirdisi(BaseModel):
@@ -66,7 +69,16 @@ class ReviewGirdisi(BaseModel):
 
 @router.post("/code/generate", status_code=202)
 def generate(body: KodUretGirdisi, session: DbSession, user: Engineer) -> dict[str, Any]:
-    return service.start_generation(session, body.case_ids, user, body.platform)
+    return service.start_generation(session, body.case_ids, user, body.platform, body.dil)
+
+
+@router.get("/code/languages")
+def languages(
+    _user: CurrentUser,
+    platform: Literal["web", "android", "ios", "windows"] = "web",
+) -> dict[str, Any]:
+    """Algılanan dil, depodaki elle yazılmış test sayıları ve platformun dil seçenekleri."""
+    return service.dil_secenekleri(platform)
 
 
 @router.get("/scripts")

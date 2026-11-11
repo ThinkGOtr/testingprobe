@@ -100,6 +100,9 @@ ACIKLAMA = {
     "gecti": "Yerel kontrol geçti (tsc, eslint, AST koruması, Playwright tekrarları yeşil).",
     "gecti_java": "Yerel kontrol geçti (pom kilidi, Java AST koruması, test-compile, Appium "
     "tekrarları yeşil).",
+    # 011: web + Java (Playwright for Java + TestNG; rapor `lang: "java"`, `platform: "web"`).
+    "gecti_java_web": "Yerel kontrol geçti (pom kilidi, Java AST koruması, test-compile, "
+    "Playwright tekrarları yeşil).",
     "derleme": "Derleme/lint/AST koruması başarısız: üretilen kod ya da kütüphane insan "
     "incelemesi ister.",
     "ortam": "Ortam hatası (uygulama/test-runner erişilemedi); test sonucu güvenilir değil, "
@@ -274,7 +277,12 @@ def classify(report: Mapping[str, Any]) -> Siniflama:
         "kirmizi_ok": (kd.get("ok") is True) if isinstance(kd, Mapping) else None,
     }
     if report.get("conclusion") == "success":
-        aciklama = ACIKLAMA["gecti_java"] if statik == JAVA_ADIMLARI else ACIKLAMA["gecti"]
+        if statik != JAVA_ADIMLARI:
+            aciklama = ACIKLAMA["gecti"]
+        elif report.get("platform") == "web":
+            aciklama = ACIKLAMA["gecti_java_web"]
+        else:
+            aciklama = ACIKLAMA["gecti_java"]
         return Siniflama("gecti", "success", aciklama, **ortak)
     app = report.get("app")
     if isinstance(app, Mapping) and not app.get("skipped") and app.get("ok") is False:

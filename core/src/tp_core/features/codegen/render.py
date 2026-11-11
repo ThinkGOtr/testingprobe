@@ -461,3 +461,21 @@ def render_java_test(inp: RenderInput, platform: str, rules_dir: Path) -> Render
         mapping_hash=ctx["mapping_hash"],
         dealer=ctx["dealer"],
     )
+
+
+# ----------------------------------------------------------- dil boyutu (011 §2.7)
+# Ş1 (core-akış) worktree'sinin ASGARİ tanımı: akış render'ı yalnız bu giriş noktasından çağırır.
+# Web + Java (`playwright_testng.java.j2`), C# ve Python şablonları Ş2'nindir; birleştirmede Ş2'nin
+# `render_dil` sürümü bu tanımın yerini alır.
+
+
+def render_dil(inp: RenderInput, *, dil: str, platform: str, rules: Path) -> Rendered:
+    """Tek render giriş noktası: (dil, platform) → şablon. `ts` → `render_test`; Java + uygulama
+    platformu → `render_java_test`. Şablonu olmayan çift `RenderError` (script insana düşer)."""
+    if not platformlar.gecerli_cift(platform, dil):
+        raise RenderError(f"geçersiz platform/dil çifti: {platform} + {dil}")
+    if dil == platformlar.TS:
+        return render_test(inp, rules)
+    if platformlar.java_mi(dil) and platformlar.uygulama_mi(platform):
+        return render_java_test(inp, platform, rules)
+    raise RenderError(f"{platform} + {dil} için şablon yok")
