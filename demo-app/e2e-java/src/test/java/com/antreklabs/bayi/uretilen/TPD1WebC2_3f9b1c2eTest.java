@@ -1,9 +1,9 @@
 // AI-generated — AI Testing Probe (CasesToCode). Elle düzenlemeyin; değişiklik case'in yeniden
 // onayı ve yeniden üretimle yapılır.
-// Case: TPD-1-C2 (3f9b1c2e-0000-5000-8000-0000000000c2) · Story: TPD-1 · Jira Test: TPD-12
+// Case: TPD-1 C2 (3f9b1c2e-0000-5000-8000-0000000000c2) · Story: TPD-1 · Jira Test: TPD-12
 // Onaylı case hash: 945c89ca5f30204174eb8922157a74aa16ea6d05258f1a073abb49005814dffd
 // Eşleme: verify_and_map · platform: web · dil: java · mod: replay · bundle: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-// Eşleme hash: cf31f88a3e9573641b0cbbbbbedc4af4af58f8eee0c9432845c6a88b9611c17f · şablon: ornek-referans-dosyasi
+// Eşleme hash: 4b3b68b7674af3882857ddb5feb392d744db588ce7fa4950d1bf85c536e80a0e · şablon: 5f2e3c8c1f5cd881b55072e014251629eeb61260e5d7ec6c6b4221463ffd3f34
 package com.antreklabs.bayi.uretilen;
 
 import com.antreklabs.bayi.altyapi.Bayi;

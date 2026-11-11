@@ -12,8 +12,11 @@ import com.microsoft.playwright.PlaywrightException;
 import com.microsoft.playwright.assertions.PlaywrightAssertions;
 import com.microsoft.playwright.options.RequestOptions;
 import java.lang.reflect.Method;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.testng.IHookCallBack;
@@ -28,6 +31,7 @@ import org.testng.annotations.Test;
  * <p>Her test için, sırasıyla:
  * <ol>
  *   <li>işçi yuvası alınır (en çok {@link Bayiler#E2E} kadar eşzamanlı test; TS {@code parallelIndex});
+ *       yuvalar doluysa biri boşalana dek bayi kilidi süresi kadar beklenir;
  *   <li>bayi seçilir ({@link Bayi} notasyonu ya da yuvanın bayisi) ve süreçler arası kilitle alınır;
  *   <li>bayinin verisi sıfırlanır ({@code POST /test/reset}) ya da yalnızca sepeti boşaltılır;
  *   <li>{@code BREAK_CAMPAIGN=1} ise bayinin kampanya kuralı bozulur ({@code POST /test/break});
@@ -46,6 +50,9 @@ import org.testng.annotations.Test;
  * <p>Hazırlık {@code @BeforeMethod} değil {@link IHookable} ile testin içinde koşar: hazırlık hatası
  * JUnit XML'de ayrı bir yapılandırma satırı olmaz, testin kendi hatası olur (hata türü korunur —
  * kırarak doğrula assertion hatasını kurulum hatasından ayırır).
+ *
+ * <p>Raporlar: test gruplarından Allure etiketleri ({@code tag}, Jira anahtarı → {@code story},
+ * {@code tp-case}) eklenir ({@link TestGruplari}).
  *
  * <p>Fikstür erişimi (009 §2.8, 011 §2.5): adlar TS {@code interface Fixtures} ile aynıdır —
  * {@code dealer()}, {@code signedIn()}, {@code loginPage()}, {@code catalogPage()}, {@code cartPage()},
@@ -80,11 +87,31 @@ public abstract class TestTabani implements IHookable {
   }
 
   private static final boolean[] YUVALAR = new boolean[Bayiler.E2E.size()];
+  /** Boş yuva sayısı: yuva bekleyen test, bir yuva boşalana dek (zaman aşımıyla) bekler. */
+  private static final Semaphore BOS_YUVA = new Semaphore(YUVALAR.length, true);
 
   private final ThreadLocal<Durum> durum = ThreadLocal.withInitial(Durum::new);
 
-  /** Boş işçi yuvası (TS: {@code testInfo.parallelIndex}); yoksa açıklayıcı hata. */
-  static int yuvaAl() {
+  /**
+   * Boş işçi yuvası (TS: {@code testInfo.parallelIndex}). Hepsi doluysa (thread-count > bayi
+   * sayısı) bir yuva boşalana dek en çok {@code bekleme} kadar bekler; süre dolarsa açıklayıcı hata.
+   */
+  public static int yuvaAl(Duration bekleme) {
+    boolean alindi;
+    try {
+      alindi = BOS_YUVA.tryAcquire(Math.max(0, bekleme.toMillis()), TimeUnit.MILLISECONDS);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("işçi yuvası beklenirken kesildi", e);
+    }
+    if (!alindi) {
+      throw new IllegalStateException(
+          "Boş işçi yuvası "
+              + bekleme.toMillis()
+              + " ms içinde açılmadı: en fazla "
+              + YUVALAR.length
+              + " eşzamanlı test (bayi kullanıcısı sayısı); testng.xml thread-count değerini düşürün.");
+    }
     synchronized (YUVALAR) {
       for (int i = 0; i < YUVALAR.length; i++) {
         if (!YUVALAR[i]) {
@@ -93,17 +120,22 @@ public abstract class TestTabani implements IHookable {
         }
       }
     }
-    throw new IllegalStateException(
-        "En fazla " + YUVALAR.length + " eşzamanlı test desteklenir (bayi kullanıcısı sayısı); testng.xml thread-count değerini düşürün.");
+    BOS_YUVA.release();
+    throw new IllegalStateException("işçi yuvası sayacı tutarsız"); // izin alındıysa boş yuva vardır
   }
 
-  static void yuvaBirak(int yuva) {
+  /** Yuvayı bırakır (bekleyen test varsa o alır); {@code yuva < 0} ya da zaten boşsa etkisiz. */
+  public static void yuvaBirak(int yuva) {
     if (yuva < 0) {
       return;
     }
     synchronized (YUVALAR) {
+      if (!YUVALAR[yuva]) {
+        return;
+      }
       YUVALAR[yuva] = false;
     }
+    BOS_YUVA.release();
   }
 
   /** Metodun TestNG grupları. */
@@ -116,6 +148,8 @@ public abstract class TestTabani implements IHookable {
   @Override
   public void run(IHookCallBack geriCagri, ITestResult sonuc) {
     Method metot = sonuc.getMethod().getConstructorOrMethod().getMethod();
+    // Allure: story / tp-case / gruplar etiket olarak (üretilen test notasyon taşımaz; gruplar yeter).
+    TestGruplari.allureyeEkle(sonuc.getMethod().getGroups());
     try {
       hazirla(metot);
       hazirlikSonrasi();
@@ -140,7 +174,7 @@ public abstract class TestTabani implements IHookable {
     if (kip == TestVerisi.Kip.YALNIZ_SEPET && grupta(metot, SIFIR_VERI)) {
       throw new SkipException("TP_E2E_NO_RESET=1: sipariş geçmişi silinemez, '" + SIFIR_VERI + "' testi atlandı");
     }
-    d.yuva = yuvaAl();
+    d.yuva = yuvaAl(d.ayarlar.bayiKilidiBekleme());
     d.bayi = Bayiler.sinifIcin(getClass(), d.yuva);
     d.kilit =
         BayiKilidi.al(

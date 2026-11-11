@@ -62,8 +62,15 @@ Her koşu iki okunur rapor kaynağı üretir; ikisi de test kodunda ek çağrı 
 | `extent.rapor.dizini` | `target/extent-report` | boş verilirse (`-Dextent.rapor.dizini=`) rapor üretilmez; birim adımı `target/birim-raporlari/extent-report`'a yazar |
 | `extent.tekrar` | — | tekrarlı koşuda `<i>/<n>` (test-runner verir): test adına `(tekrar 2/3)` eklenir |
 
-Aynı dizine yazan ardışık koşular (test-runner'ın `repeat_each` tekrarları) dizindeki `extent.json`
-arşivi üzerinden **tek raporda birleşir**; temiz rapor için dizini silin (`run-app-checks.sh` siler).
+Tekrarlar (test-runner'ın `repeat_each` koşuları, `extent.tekrar` `i > 1`) dizindeki `extent.json`
+arşivi üzerinden **tek raporda birleşir**. `extent.tekrar` verilmeyen koşu ve ilk tekrar arşivi siler:
+`clean`'siz yeniden koşuda eski sonuçlar rapora karışmaz.
+
+Test adı `@Test(description)` (yoksa `Sınıf › metot`), altında `Sınıf.metot`; kategoriler TestNG
+gruplarıdır, `tp-case-*` hariç (case kimliği ayrıntıda `Testing Probe case: <uuid>` satırı). Allure:
+`TestTabani` gruplardan etiket ekler — her grup `tag`, Jira anahtarı (`TPD-1`) `story`,
+`tp-case-<uuid>` ayrıca `tp-case=<uuid>` (`altyapi/TestGruplari`). Test JVM'i: pom `argLine` =
+`-Xmx512m -Dfile.encoding=UTF-8`.
 Raporlama hatası testi ya da koşuyu düşürmez: uyarı günlüğe yazılır, o koşuda Extent raporu kapanır.
 
 ## Ayarlar

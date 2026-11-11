@@ -5,6 +5,8 @@ import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertTha
 import com.antreklabs.bayi.altyapi.OturumAcik;
 import com.antreklabs.bayi.altyapi.TestTabani;
 import com.antreklabs.bayi.ekranlar.Kimlikler;
+import com.microsoft.playwright.Locator;
+import com.microsoft.playwright.options.AriaRole;
 import org.testng.annotations.Test;
 
 /**
@@ -48,8 +50,13 @@ public class SepetTest extends TestTabani {
     cartPage().expectFreeQuantity("P-001", 1);
     cartPage().expectSubtotal("175,00 TL");
     cartPage().expectDiscount("25,00 TL");
-    // İndirim varsa özet satırı eksi işaretiyle gösterilir.
-    assertThat(page().getByTestId(Kimlikler.Cart.DISCOUNT).locator("xpath=..")).hasText("−25,00 TL");
+    // İndirim varsa özet değeri eksi işaretiyle gösterilir (işaret kimliksiz ayrı metindir): indirim
+    // kimliğini içeren tanım değeri (<dd>, ARIA "definition") — DOM üst düğümüne (xpath) bağlı değil.
+    assertThat(
+            page()
+                .getByRole(AriaRole.DEFINITION)
+                .filter(new Locator.FilterOptions().setHas(page().getByTestId(Kimlikler.Cart.DISCOUNT))))
+        .hasText("−25,00 TL");
     cartPage().expectTotal("150,00 TL");
   }
 

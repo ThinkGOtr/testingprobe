@@ -20,6 +20,7 @@ import java.util.Comparator;
 import java.util.Date;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -43,9 +44,14 @@ import org.testng.ITestResult;
  *       ağ olmadan ve portalın sandbox'ında (çerezsiz, opak köken) tek istekle açılır.
  *   <li><b>Kanıt:</b> başarısız testin {@link Kanit} ekran görüntüsü ({@code kanit/<Sınıf>.<metot>/
  *       ekran.png}; bu testte yazıldıysa) rapora base64 gömülür.
- *   <li><b>Tekrarlı koşu:</b> her tekrar ayrı JVM'dir; önceki tekrarların testleri rapor
- *       dizinindeki {@code extent.json} arşivinden geri yüklenir, rapor tekrarları birlikte
- *       gösterir ({@code -Dextent.tekrar=2/3} test adına eklenir).
+ *   <li><b>Tekrarlı koşu:</b> her tekrar ayrı JVM'dir; {@code -Dextent.tekrar=<i>/<n>} ile
+ *       {@code i > 1} tekrarında önceki tekrarların testleri rapor dizinindeki {@code extent.json}
+ *       arşivinden geri yüklenir, rapor tekrarları birlikte gösterir (tekrar test adına eklenir).
+ *       Tekrarsız koşu ve ilk tekrar arşivi siler: {@code clean}'siz yeniden koşuda eski
+ *       koşunun sonuçları rapora karışmaz.
+ *   <li><b>Test adı:</b> {@code @Test(description)} (yoksa {@code Sınıf › metot}); alt bilgi
+ *       {@code Sınıf.metot}. Kategoriler TestNG gruplarıdır, {@code tp-case-*} hariç (case kimliği
+ *       test ayrıntısında ayrı satır; {@link TestGruplari}).
  *   <li><b>İç içe koşu:</b> bir testin kendi başlattığı TestNG koşusunun testleri rapora girmez
  *       (JUnit XML ile aynı test listesi).
  *   <li><b>İş parçacığı güvenliği:</b> test düğümleri sonuç nesnesine göre eşlenir; rapora yazım
@@ -198,11 +204,47 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
     return secim.isEmpty() ? null : Path.of(secim);
   }
 
-  /** Rapordaki test adı: {@code Sınıf › metot} (+ {@code (tekrar 2/3)}); JUnit kimliğiyle aynı biçim. */
+  /** Açıklamasız test adı: {@code Sınıf › metot} (+ {@code (tekrar 2/3)}); JUnit kimliğiyle aynı biçim. */
   public static String testAdi(String sinif, String metot, String tekrar) {
-    String basit = sinif.substring(sinif.lastIndexOf('.') + 1);
-    String ad = basit + " › " + metot;
+    return testAdi(sinif, metot, null, tekrar);
+  }
+
+  /**
+   * Rapordaki test adı: {@code @Test(description)}, yoksa {@code Sınıf › metot}; tekrarlı koşuda
+   * {@code (tekrar 2/3)} eklenir.
+   */
+  public static String testAdi(String sinif, String metot, String aciklama, String tekrar) {
+    String ad = aciklama == null || aciklama.isBlank() ? basitAd(sinif) + " › " + metot : aciklama.trim();
     return tekrar == null || tekrar.isBlank() ? ad : ad + " (tekrar " + tekrar.trim() + ")";
+  }
+
+  /** Test adının altındaki bilgi: {@code Sınıf.metot} (açıklama ad olduğunda testin kod kimliği). */
+  public static String altBilgi(String sinif, String metot) {
+    return basitAd(sinif) + "." + metot;
+  }
+
+  private static String basitAd(String sinif) {
+    return sinif.substring(sinif.lastIndexOf('.') + 1);
+  }
+
+  /**
+   * Önceki tekrarların arşivi geri yüklenir mi: yalnız {@code extent.tekrar} verilmiş ve ilk tekrar
+   * değilse ({@code 2/3}, {@code 3/3}). Sayı okunamayan boş olmayan değer tekrar sayılır.
+   */
+  public static boolean arsivGeriYuklenir(String tekrar) {
+    if (tekrar == null || tekrar.isBlank()) {
+      return false;
+    }
+    String sira = tekrar.trim().split("/", 2)[0].trim();
+    try {
+      return Integer.parseInt(sira) > 1;
+    } catch (NumberFormatException e) {
+      return true;
+    }
+  }
+
+  private String tekrar() {
+    return d.tekrar != null ? d.tekrar : System.getProperty("extent.tekrar");
   }
 
   private void baslat() throws IOException {
@@ -218,7 +260,10 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
       Files.createDirectories(d.dizin);
       ExtentReports r = new ExtentReports();
       Path arsiv = d.dizin.resolve(ARSIV);
-      if (Files.isRegularFile(arsiv)) {
+      if (!arsivGeriYuklenir(tekrar())) {
+        // Tekrarsız koşu / ilk tekrar: önceki koşunun arşivi bu rapora karışmaz.
+        Files.deleteIfExists(arsiv);
+      } else if (Files.isRegularFile(arsiv)) {
         try {
           r.createDomainFromJsonArchive(arsiv.toFile());
         } catch (IOException | RuntimeException e) {
@@ -273,11 +318,19 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
       ExtentTest t = d.testler.get(sonuc);
       if (t == null) {
         String sinif = sonuc.getTestClass() != null ? sonuc.getTestClass().getName() : "?";
-        String tekrar = d.tekrar != null ? d.tekrar : System.getProperty("extent.tekrar");
-        t = d.rapor.createTest(testAdi(sinif, sonuc.getMethod().getMethodName(), tekrar));
+        String metot = sonuc.getMethod().getMethodName();
+        t =
+            d.rapor.createTest(
+                // Extent adı/alt bilgiyi kaçışsız gömer; açıklama case başlığından gelir.
+                kacis(testAdi(sinif, metot, sonuc.getMethod().getDescription(), tekrar())),
+                kacis(altBilgi(sinif, metot)));
         String[] gruplar = sonuc.getMethod().getGroups();
-        if (gruplar != null && gruplar.length > 0) {
-          t.assignCategory(gruplar);
+        List<String> kategoriler = TestGruplari.kategoriler(gruplar);
+        if (!kategoriler.isEmpty()) {
+          t.assignCategory(kategoriler.stream().map(ExtentRaporu::kacis).toArray(String[]::new));
+        }
+        for (String kimlik : TestGruplari.caseler(gruplar)) {
+          t.info("Testing Probe case: " + kacis(kimlik));
         }
         t.assignDevice(PLATFORM);
         d.testler.put(sonuc, t);

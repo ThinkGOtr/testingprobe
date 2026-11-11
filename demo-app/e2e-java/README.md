@@ -51,6 +51,10 @@ taşıyan iç gruptadır — `Catalog.ProductCard.ADD_TO_CART` kapsayıcısı `C
 `@Test(groups = {"uretilen", "web", "tp-case-<uuid>", …}, description = "…")` metodu ve
 `erisimci().metot(literal, …);` satırları. `java-araclar guard` denetler.
 
+Örnek, Java web şablonunun gerçek render çıktısıdır: `core/tests/unit/features/codegen/golden/
+TPD1WebC2_3f9b1c2eTest.java` ile **bayt eşittir** (`test_e2e_java_esitlik.py` sabitler). Golden
+değişirse örneği kopyalayın ve `ci/run-java-checks.sh` ile guard + derleme + koşuyu doğrulayın.
+
 ## Kurulum ve koşu
 
 Java 17. Maven depoda yok: sarmalayıcı (`./mvnw`, 3.9.x, SHA-256 doğrulamalı). macOS'ta ilk kurulumda
@@ -78,6 +82,13 @@ BASE_URL=http://127.0.0.1:8081 DEMO_API_URL=http://127.0.0.1:18000 DEMOAPP_TEST_
 ../ci/break-verify-java.sh             # kırarak doğrula: yeşil → kırmızı → yeşil (token gerekir)
 ```
 
+`break-verify-java.sh` yalnız **`kampanya` grubunu** koşar (`BREAK_VERIFY_GROUPS` ile değişir);
+`uretilen/` testleri (grup `uretilen`, `web`, …) ve diğer gruplar kırarak doğrulamaya girmez —
+onların kırmızısı tam koşuda (`run-java-checks.sh`) görülür.
+
+Test JVM'i: pom `argLine` = `-Xmx512m -Dfile.encoding=UTF-8` (test-runner bellek sınırı; kodlama
+JVM açılışında verilir). `-DargLine=…` ile değiştirilebilir.
+
 Uygulamayı yerelde ayrı portlarda başlatmak (paylaşılan yığına dokunmadan):
 `PORT=18181 DEMO_API_PORT=18100 DEMOAPP_TEST_TOKEN=$(openssl rand -hex 24) scripts/github-demo-serve.sh`
 (repo kökünden), sonra `BASE_URL=http://127.0.0.1:18181 DEMO_API_URL=http://127.0.0.1:18100`.
@@ -95,7 +106,8 @@ Uygulamayı yerelde ayrı portlarda başlatmak (paylaşılan yığına dokunmada
 
 Veri yalıtımı TS fixtures ile aynıdır: her test bayisini (`bayi1`/`bayi2`, işçi yuvası ya da `@Bayi`)
 süreçler arası kilitle alır ve yalnız o bayinin verisini `POST /test/reset` ile sıfırlar; doğrulama
-ajanının bayisi (`bayi3`) hiçbir zaman kullanılmaz. Token yalnız `HttpClient` başlığında taşınır
+ajanının bayisi (`bayi3`) hiçbir zaman kullanılmaz. Eşzamanlı test sayısı bayi sayısını aşarsa
+(`thread-count`), yuva bekleyen test bir yuva boşalana dek `bayi.kilit.ms` kadar bekler; sonra hata. Token yalnız `HttpClient` başlığında taşınır
 (Playwright isteği olmadığı için trace'e düşmez).
 
 ## Raporlar ve kanıt (`target/`)
@@ -103,6 +115,14 @@ ajanının bayisi (`bayi3`) hiçbir zaman kullanılmaz. Token yalnız `HttpClien
 `surefire-reports/TEST-*.xml` (JUnit), `allure-results/`, `extent-report/index.html` (tek dosya, çevrimdışı),
 başarısız testte `kanit/<Sınıf>.<metot>/{ekran.png, trace.zip, sayfa.html}` (trace:
 `npx playwright show-trace trace.zip`), `guard.json` (run-java-checks.sh).
+
+- **Extent:** test adı `@Test(description)` (yoksa `Sınıf › metot`), altında `Sınıf.metot`;
+  kategoriler TestNG gruplarıdır, `tp-case-*` hariç (case kimliği testin ayrıntısında
+  `Testing Probe case: <uuid>` satırı). `extent.json` arşivi yalnız `-Dextent.tekrar=<i>/<n>` ile
+  `i > 1` tekrarında geri yüklenir (tekrarlar tek raporda); tekrarsız koşu ve ilk tekrar arşivi
+  siler — `clean`'siz yeniden koşuda eski sonuçlar rapora karışmaz.
+- **Allure:** `TestTabani` gruplardan etiket ekler: her grup `tag`, Jira anahtarı biçimindeki grup
+  (`TPD-1`) `story`, `tp-case-<uuid>` ayrıca `tp-case=<uuid>` (`altyapi/TestGruplari`).
 
 ## Sembol tablosu fikstürü
 

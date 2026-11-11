@@ -35,8 +35,14 @@ public class ExtentRaporuBirimTesti {
   private static final Pattern DIS_YUKLEME =
       Pattern.compile("(?:src|href)\\s*=\\s*[\"'](?:https?:)?//|url\\(\\s*[\"']?(?:https?:)?//");
 
-  /** Sahte TestNG sonucu: {@code a.b.Sinif#metot}. */
+  /** Sahte TestNG sonucu: {@code a.b.Sinif#metot} (açıklamasız, grup {@code duman}). */
   private static ITestResult sonuc(Class<?> sinif, String metot, Throwable hata, long baslangic) {
+    return sonuc(sinif, metot, null, new String[] {"duman"}, hata, baslangic);
+  }
+
+  /** Sahte TestNG sonucu: açıklama ve gruplarla. */
+  private static ITestResult sonuc(
+      Class<?> sinif, String metot, String aciklama, String[] gruplar, Throwable hata, long baslangic) {
     ClassLoader cl = ExtentRaporuBirimTesti.class.getClassLoader();
     IClass testSinifi =
         (IClass)
@@ -59,7 +65,8 @@ public class ExtentRaporuBirimTesti {
                 (v, m, a) ->
                     switch (m.getName()) {
                       case "getMethodName" -> metot;
-                      case "getGroups" -> new String[] {"duman"};
+                      case "getGroups" -> gruplar;
+                      case "getDescription" -> aciklama;
                       case "hashCode" -> System.identityHashCode(v);
                       case "equals" -> v == a[0];
                       default -> m.getReturnType() == boolean.class ? Boolean.FALSE : m.getReturnType().isPrimitive() ? 0 : null;
@@ -97,6 +104,90 @@ public class ExtentRaporuBirimTesti {
     assertEquals(ExtentRaporu.testAdi("a.b.SepetTesti", "kampanya", null), "SepetTesti › kampanya");
     assertEquals(ExtentRaporu.testAdi("Paketsiz", "m", " "), "Paketsiz › m");
     assertEquals(ExtentRaporu.testAdi("a.b.SepetTesti", "kampanya", "2/3"), "SepetTesti › kampanya (tekrar 2/3)");
+  }
+
+  @Test(groups = "birim")
+  public void testAdiAciklamadirAltBilgiSinifMetot() {
+    assertEquals(ExtentRaporu.testAdi("a.b.SepetTesti", "kampanya", " 7 adette 1 bedava ", null), "7 adette 1 bedava");
+    assertEquals(ExtentRaporu.testAdi("a.b.SepetTesti", "kampanya", "7 adette 1 bedava", "2/3"), "7 adette 1 bedava (tekrar 2/3)");
+    assertEquals(ExtentRaporu.testAdi("a.b.SepetTesti", "kampanya", " ", null), "SepetTesti › kampanya");
+    assertEquals(ExtentRaporu.altBilgi("a.b.SepetTesti", "kampanya"), "SepetTesti.kampanya");
+  }
+
+  @Test(groups = "birim")
+  public void arsivYalnizSonrakiTekrarlardaGeriYuklenir() {
+    assertFalse(ExtentRaporu.arsivGeriYuklenir(null));
+    assertFalse(ExtentRaporu.arsivGeriYuklenir(" "));
+    assertFalse(ExtentRaporu.arsivGeriYuklenir("1/3"), "ilk tekrar temiz başlar");
+    assertTrue(ExtentRaporu.arsivGeriYuklenir("2/3"));
+    assertTrue(ExtentRaporu.arsivGeriYuklenir(" 3 / 3 "));
+    assertTrue(ExtentRaporu.arsivGeriYuklenir("x"), "okunamayan tekrar değeri arşivi korur");
+  }
+
+  @Test(groups = "birim")
+  public void tekrarsizYenidenKosuEskiSonuclariGetirmez() throws Exception {
+    Path rapor = Files.createTempDirectory("extent-birim-");
+    // 1. koşu (clean yok): kırmızı.
+    ExtentRaporu ilk = new ExtentRaporu(rapor, rapor.resolve("kanit"), null);
+    ilk.onExecutionStart();
+    ITestResult eski = sonuc(ExtentRaporuBirimTesti.class, "eskiKirmizi", new AssertionError("eski koşu kaldı"), System.currentTimeMillis());
+    ilk.onTestStart(eski);
+    ilk.onTestFailure(eski);
+    ilk.onExecutionFinish();
+    assertTrue(Files.exists(rapor.resolve(ExtentRaporu.ARSIV)));
+    // 2. koşu aynı dizine, extent.tekrar yok: rapor yalnız bu koşudur.
+    ExtentRaporu ikinci = new ExtentRaporu(rapor, rapor.resolve("kanit"), null);
+    ikinci.onExecutionStart();
+    ITestResult yeni = sonuc(ExtentRaporuBirimTesti.class, "yesil", null, System.currentTimeMillis());
+    ikinci.onTestStart(yeni);
+    ikinci.onTestSuccess(yeni);
+    ikinci.onExecutionFinish();
+    String html = oku(rapor);
+    assertTrue(html.contains("ExtentRaporuBirimTesti › yesil"));
+    assertFalse(html.contains("eskiKirmizi"), "önceki koşunun testi rapora karışmamalı");
+    assertFalse(html.contains("eski koşu kaldı"));
+  }
+
+  @Test(groups = "birim")
+  public void aciklamaAdOlurCaseGrubuKategoriOlmaz() throws Exception {
+    Path rapor = Files.createTempDirectory("extent-birim-");
+    ExtentRaporu d = new ExtentRaporu(rapor, rapor.resolve("kanit"), null);
+    d.onExecutionStart();
+    String uuid = "3f9b1c2e-0000-5000-8000-0000000000c2";
+    ITestResult s =
+        sonuc(
+            ExtentRaporuBirimTesti.class,
+            "senaryo",
+            "7 adet kampanyalı üründe 1 adet bedava verilir",
+            new String[] {"uretilen", "web", "tp-case-" + uuid, "TPD-1"},
+            null,
+            System.currentTimeMillis());
+    d.onTestStart(s);
+    d.onTestSuccess(s);
+    d.onExecutionFinish();
+    String html = oku(rapor);
+    assertTrue(html.contains("7 adet kampanyalı üründe 1 adet bedava verilir"), "ad = açıklama");
+    assertTrue(html.contains("ExtentRaporuBirimTesti.senaryo"), "alt bilgi = Sınıf.metot");
+    assertFalse(html.contains("ExtentRaporuBirimTesti › senaryo"), "açıklama varken Sınıf › metot ad olmaz");
+    assertTrue(html.contains("Testing Probe case: " + uuid), "case kimliği ayrıntıda görünür");
+    assertFalse(html.contains("tp-case-" + uuid), "tp-case grubu kategori olmaz");
+    assertTrue(html.contains("TPD-1"), "story grubu kategoridir");
+    assertTrue(html.contains("uretilen"), "diğer gruplar kategoridir");
+  }
+
+  @Test(groups = "birim")
+  public void aciklamaRaporaHtmlSokamaz() throws Exception {
+    Path rapor = Files.createTempDirectory("extent-birim-");
+    ExtentRaporu d = new ExtentRaporu(rapor, rapor.resolve("kanit"), null);
+    d.onExecutionStart();
+    ITestResult s =
+        sonuc(ExtentRaporuBirimTesti.class, "m", "<img src=x onerror=alert(1)> başlık", new String[] {"tp-case-<b>x</b>"}, null, System.currentTimeMillis());
+    d.onTestStart(s);
+    d.onTestSuccess(s);
+    d.onExecutionFinish();
+    String html = oku(rapor);
+    assertFalse(html.contains("<img src=x"), "açıklama HTML olarak gömülmemeli");
+    assertFalse(html.contains("<b>x</b>"), "case kimliği HTML olarak gömülmemeli");
   }
 
   @Test(groups = "birim")
@@ -208,13 +299,14 @@ public class ExtentRaporuBirimTesti {
   public void bozukArsivRaporuEngellemez() throws Exception {
     Path rapor = Files.createTempDirectory("extent-birim-");
     Files.writeString(rapor.resolve("extent.json"), "{bozuk", StandardCharsets.UTF_8);
-    ExtentRaporu d = new ExtentRaporu(rapor, rapor.resolve("kanit"), null);
+    // Arşiv yalnız sonraki tekrarlarda okunur.
+    ExtentRaporu d = new ExtentRaporu(rapor, rapor.resolve("kanit"), "2/2");
     d.onExecutionStart();
     ITestResult s = sonuc(ExtentRaporuBirimTesti.class, "yesil", null, System.currentTimeMillis());
     d.onTestStart(s);
     d.onTestSuccess(s);
     d.onExecutionFinish();
-    assertTrue(oku(rapor).contains("ExtentRaporuBirimTesti › yesil"));
+    assertTrue(oku(rapor).contains("ExtentRaporuBirimTesti › yesil (tekrar 2/2)"));
   }
 
   @Test(groups = "birim")

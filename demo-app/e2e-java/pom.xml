@@ -51,6 +51,12 @@
     <extent.rapor.dizini>${project.build.directory}/extent-report</extent.rapor.dizini>
     <!-- JUnit XML dizini (Surefire TEST-*.xml). -->
     <raporlar.dizini>${project.build.directory}/surefire-reports</raporlar.dizini>
+    <!--
+      Surefire test JVM'i: yığın sınırı (test-runner 3 GB kapsayıcı sınırı: Maven JVM + test JVM +
+      Playwright sürücüsü + tarayıcılar) ve kodlama. file.encoding JVM başlarken verilmelidir;
+      sistem özelliği olarak verilirse JDK uyarır ve yok sayar. -DargLine=… ile değiştirilebilir.
+    -->
+    <argLine>-Xmx512m -Dfile.encoding=UTF-8</argLine>
   </properties>
 
   <dependencies>
@@ -185,7 +191,6 @@
             <allure.results.directory>${allure.results.directory}</allure.results.directory>
             <extent.rapor.dizini>${extent.rapor.dizini}</extent.rapor.dizini>
             <kanit.dizini>${project.build.directory}/kanit</kanit.dizini>
-            <file.encoding>UTF-8</file.encoding>
           </systemPropertyVariables>
           <properties>
             <property>

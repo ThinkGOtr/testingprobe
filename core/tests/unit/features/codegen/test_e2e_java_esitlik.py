@@ -39,6 +39,9 @@ TS_FIXTURES = REPO / "demo-app/e2e/tests/fixtures.ts"
 JAVA_ROOT = REPO / "demo-app/e2e-java"
 TEST_TABANI = JAVA_ROOT / "src/test/java/com/antreklabs/bayi/altyapi/TestTabani.java"
 JAR = REPO / "toolchain/java-araclar/target/java-araclar.jar"
+# Gerçek render çıktısı (test_render_dil golden'ı) ↔ e2e-java'daki derlenen/koşan örneği (MİM-O7).
+WEB_JAVA_GOLDEN = HERE / "golden/TPD1WebC2_3f9b1c2eTest.java"
+WEB_JAVA_ORNEK = JAVA_ROOT / "src/test/java/com/antreklabs/bayi/uretilen/TPD1WebC2_3f9b1c2eTest.java"
 JAVA = json.loads((HERE / "symbols-java-web.json").read_text("utf-8"))
 TS_FIXTURE = json.loads((HERE / "symbols.json").read_text("utf-8"))
 
@@ -142,4 +145,17 @@ def test_java_fikstur_guncel() -> None:
     ).stdout
     assert json.loads(cikti) == JAVA, (
         "symbols-java-web.json eski: modül belgesindeki komutla yenileyin"
+    )
+
+
+def test_uretilen_ornek_golden_ile_bayt_esit() -> None:
+    """e2e-java `uretilen/` örneği, Java web şablonunun golden çıktısıyla BAYT EŞİT.
+
+    Örnek, CI'da (run-java-checks.sh) guard'dan geçer, derlenir ve demo uygulamasına karşı koşar:
+    eşitlik, gerçek şablon çıktısının derlendiğini ve yeşil olduğunu kanıtlar (MİM-O7).
+    """
+    assert WEB_JAVA_ORNEK.read_bytes() == WEB_JAVA_GOLDEN.read_bytes(), (
+        "golden/TPD1WebC2_3f9b1c2eTest.java değişti: e2e-java örneği de güncellenmeli —\n"
+        f"  cp {WEB_JAVA_GOLDEN.relative_to(REPO)} {WEB_JAVA_ORNEK.relative_to(REPO)}\n"
+        "ardından demo-app/ci/run-java-checks.sh ile derleyip koşun."
     )
