@@ -111,7 +111,7 @@ describe("akış adımı core durum makinesinden türetilir", () => {
 
   it.skipIf(!existsSync(statesYolu))("portalın durum kümesi core REQUIREMENT kümesiyle birebir aynı ve her durum bir adıma eşlenir", () => {
     const core = coreGereksinimDurumlari();
-    expect(core).toHaveLength(10);
+    expect(core).toHaveLength(12); // 011 F3: + modeling, model_ready
     expect([...GEREKSINIM_DURUMLARI].sort()).toEqual(core);
     for (const d of core) {
       expect(DURUM_ADIMI).toHaveProperty(d);
