@@ -341,4 +341,8 @@ docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest -color
 docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:stable scripts/github-*.sh
 (cd toolchain/ast-guard && npm ci --ignore-scripts && npm test)   # ci.yml + betik sözleşme testleri dahil
 (cd core && uv run pytest -q tests/unit/integrations/test_forge_github_actions.py)  # GitHubForge Actions (MockTransport)
+make playwright-surum-denetle   # Playwright sürüm sabitleri (TS, MCP, imaj, Java sürücü çekirdeği)
 ```
+
+Playwright yükseltmesi: `docs/PLAYWRIGHT-YUKSELTME.md` (değişen dosyalar; Java `<playwright.version>`
+npm sürümünden farklı olabilir, belirleyici sürücünün paketlediği çekirdektir).

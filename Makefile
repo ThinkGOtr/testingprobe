@@ -43,6 +43,9 @@ jira-seed: ## Gerçek Jira'yı demo başlangıcına döndürür (önce plan; uyg
 forge-init: ## Yerel forge deposunu hazırlar (varsa dokunmaz; yeniden kurmak için: make forge-init F=--force)
 	@scripts/forge-init.sh $(F)
 
+playwright-surum-denetle: ## Playwright sürüm sabitlerini .playwright-version'a göre denetler (ağ yok; liste: scripts/playwright-surum.sh liste)
+	@scripts/playwright-surum.sh denetle
+
 forge-sync-dizin: ## Mevcut yerel forge'a demo-app/<D>'yi main'e tek commit ile ekler (PR kaydı korunur; ör. D=e2e-java B=--baseline)
 	@test -n "$(D)" || { echo "kullanım: make forge-sync-dizin D=e2e-java [B=--baseline]" >&2; exit 2; }
 	@scripts/forge-init.sh sync-dizin "$(D)" $(B)
