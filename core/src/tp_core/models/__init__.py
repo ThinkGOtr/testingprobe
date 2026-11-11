@@ -23,6 +23,7 @@ from tp_core.models.case_kalite import CaseSetAudit as CaseSetAudit
 from tp_core.models.case_kalite import CaseSetReview as CaseSetReview
 from tp_core.models.cases_feature import CaseGoruntuleme as CaseGoruntuleme
 from tp_core.models.cases_feature import CaseUretim as CaseUretim
+from tp_core.models.cases_feature import TasarimModeli as TasarimModeli
 from tp_core.models.delivery import (
     BugDraft,
     ExternalRef,

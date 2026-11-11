@@ -1,0 +1,396 @@
+{
+  "kind": "call",
+  "purpose": "design_model",
+  "golden": "TPD-1",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı (model çıktısı değil; ai_call.model = golden-elle). Test tasarım modeli (011 F3, iki tur — tur 1). coverage_items / open_questions / assumptions aynı adlı case_generation golden'ının üst listeleriyle BİREBİR aynıdır (tur-2 eşitlik kontrolü REPLAY'de geçer); girdi beyanı (input_match) case_generation golden'ınınkiyle aynıdır. Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record).",
+  "input_match": {
+    "sources": [
+      "jira:TPD-1"
+    ],
+    "acceptance_criteria": [
+      "AC1: Bayi katalogda bir ürün için \"Sepete ekle\" butonuna bastığında ürün sepete eklenir ve sepet sayacı artar.",
+      "AC2: Kampanyalı üründe her 6 adette 1 adet bedava verilir: bayi 5 adet öder, 1 adet bedava alır (6 adette 1, 12 adette 2 bedava).",
+      "AC3: Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL'dir; altında \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur.",
+      "AC4: Sipariş tutarı bayinin kredi limitini aşarsa \"Kredi limiti aşıldı\" uyarısı gösterilir ve sipariş onaylanamaz.",
+      "AC5: Sipariş onaylandığında sipariş numarası gösterilir ve sipariş, sipariş geçmişinde listelenir.",
+      "AC6: Kampanyalı siparişlerde minimum sipariş tutarı şartı aranmaz."
+    ],
+    "contains": [
+      "Bayi, katalogdan ürünleri sepete ekleyip kampanya indirimiyle siparişini onaylayabilmelidir."
+    ]
+  },
+  "output": {
+    "conditions": [
+      {
+        "id": "TCOND-1",
+        "ac_refs": [
+          "AC1"
+        ],
+        "statement": "\"Sepete ekle\" ile ürün sepete eklenir ve sepet sayacı artar",
+        "risk": "medium",
+        "rationale": "Ana akışın ilk adımı; para etkisi yok."
+      },
+      {
+        "id": "TCOND-2",
+        "ac_refs": [
+          "AC2"
+        ],
+        "statement": "Kampanyalı üründe bedava adet, alınan adede göre kampanya kuralıyla verilir",
+        "risk": "high",
+        "rationale": "Kampanya indirimi doğrudan sipariş tutarını etkiler."
+      },
+      {
+        "id": "TCOND-3",
+        "ac_refs": [
+          "AC3"
+        ],
+        "statement": "Kampanyasız siparişte 750,00 TL altında uyarı gösterilir ve onay pasif olur",
+        "risk": "high",
+        "rationale": "Minimum tutar kuralı siparişin onaylanabilirliğini belirler."
+      },
+      {
+        "id": "TCOND-4",
+        "ac_refs": [
+          "AC4"
+        ],
+        "statement": "Kredi limitini aşan sipariş \"Kredi limiti aşıldı\" uyarısıyla onaylanamaz",
+        "risk": "high",
+        "rationale": "Kredi limiti para ve risk kuralıdır."
+      },
+      {
+        "id": "TCOND-5",
+        "ac_refs": [
+          "AC5"
+        ],
+        "statement": "Onaylanan siparişin numarası gösterilir ve sipariş geçmişinde listelenir",
+        "risk": "high",
+        "rationale": "Sipariş onayı ana akışın sonucudur."
+      },
+      {
+        "id": "TCOND-6",
+        "ac_refs": [
+          "AC6"
+        ],
+        "statement": "Kampanyalı siparişte minimum sipariş tutarı şartı aranmaz",
+        "risk": "medium",
+        "rationale": "AC3'ün istisnası; yanlış uygulanırsa kampanyalı sipariş engellenir."
+      }
+    ],
+    "techniques": [
+      {
+        "condition_id": "TCOND-1",
+        "technique": "EP",
+        "rationale": "Tek geçerli sınıf: katalogdaki bir ürünün sepete eklenmesi."
+      },
+      {
+        "condition_id": "TCOND-2",
+        "technique": "EP",
+        "rationale": "Adet aralıkları aynı bedava sayısını verir (eşdeğer sınıflar)."
+      },
+      {
+        "condition_id": "TCOND-2",
+        "technique": "BVA",
+        "rationale": "Adet sıralı bir değerdir ve bedava eşikleri vardır."
+      },
+      {
+        "condition_id": "TCOND-3",
+        "technique": "EP",
+        "rationale": "Sepet toplamı 750,00 TL altı ve üstü olarak iki sınıfa ayrılır."
+      },
+      {
+        "condition_id": "TCOND-3",
+        "technique": "BVA",
+        "rationale": "Toplam sıralı bir tutardır; 750,00 TL sınırdır."
+      },
+      {
+        "condition_id": "TCOND-4",
+        "technique": "EP",
+        "rationale": "Sipariş tutarı limit içi ve limit üstü olarak iki sınıfa ayrılır."
+      },
+      {
+        "condition_id": "TCOND-4",
+        "technique": "BVA",
+        "rationale": "Tutar sıralıdır; kredi limiti sınırdır."
+      },
+      {
+        "condition_id": "TCOND-5",
+        "technique": "UC",
+        "rationale": "Uçtan uca sipariş akışı (giriş, sepet, onay, geçmiş)."
+      },
+      {
+        "condition_id": "TCOND-6",
+        "technique": "EP",
+        "rationale": "Kampanyalı sepetin 750,00 TL altı sınıfı ayrı davranır."
+      }
+    ],
+    "coverage_items": [
+      {
+        "id": "EP-V1",
+        "ac_ref": "AC1",
+        "definition": "Katalogdaki bir ürün için \"Sepete ekle\": ürün sepete eklenir, sepet sayacı eklenen adet kadar artar",
+        "valid": true
+      },
+      {
+        "id": "EP-V2",
+        "ac_ref": "AC2",
+        "definition": "Kampanyalı üründen 1–5 adet: bedava ürün verilmez",
+        "valid": true
+      },
+      {
+        "id": "EP-V3",
+        "ac_ref": "AC2",
+        "definition": "Kampanyalı üründen 6–11 adet: 1 adet bedava verilir",
+        "valid": true
+      },
+      {
+        "id": "EP-V4",
+        "ac_ref": "AC2",
+        "definition": "Kampanyalı üründen 12 ve üzeri adet: her 6 adet için 1 adet daha bedava (12 adette 2)",
+        "valid": true
+      },
+      {
+        "id": "BV-1",
+        "ac_ref": "AC2",
+        "definition": "5 adet (bedava eşiğinin hemen altı): bedava ürün verilmez",
+        "valid": true
+      },
+      {
+        "id": "BV-2",
+        "ac_ref": "AC2",
+        "definition": "6 adet (bedava eşiği): 1 adet bedava verilir",
+        "valid": true
+      },
+      {
+        "id": "BV-3",
+        "ac_ref": "AC2",
+        "definition": "11 adet (ikinci bedava eşiğinin hemen altı): 1 adet bedava",
+        "valid": true
+      },
+      {
+        "id": "BV-4",
+        "ac_ref": "AC2",
+        "definition": "12 adet (ikinci bedava eşiği): 2 adet bedava",
+        "valid": true
+      },
+      {
+        "id": "EP-I1",
+        "ac_ref": "AC3",
+        "definition": "Kampanyasız sepet toplamı 750,00 TL altında: \"Minimum sipariş tutarı 750,00 TL\" uyarısı, onay butonu pasif",
+        "valid": false
+      },
+      {
+        "id": "EP-V5",
+        "ac_ref": "AC3",
+        "definition": "Kampanyasız sepet toplamı 750,00 TL ve üzeri: uyarı yok, onay butonu aktif",
+        "valid": true
+      },
+      {
+        "id": "BV-5",
+        "ac_ref": "AC3",
+        "definition": "Kampanyasız sepet toplamı tam 750,00 TL (sınır dahil): uyarı yok, onay aktif",
+        "valid": true
+      },
+      {
+        "id": "BV-6",
+        "ac_ref": "AC3",
+        "definition": "Kampanyasız sepet toplamı 750,00 TL'nin hemen altında (749,99 TL): uyarı gösterilir, onay pasif",
+        "valid": false
+      },
+      {
+        "id": "EP-I2",
+        "ac_ref": "AC4",
+        "definition": "Sipariş tutarı bayinin kredi limitinin üzerinde: \"Kredi limiti aşıldı\" uyarısı, sipariş onaylanamaz",
+        "valid": false
+      },
+      {
+        "id": "EP-V6",
+        "ac_ref": "AC4",
+        "definition": "Sipariş tutarı bayinin kredi limiti içinde: kredi limiti uyarısı yok, sipariş onaylanabilir",
+        "valid": true
+      },
+      {
+        "id": "BV-7",
+        "ac_ref": "AC4",
+        "definition": "Sipariş tutarı kredi limitine eşit (limit aşılmaz): sipariş onaylanabilir",
+        "valid": true
+      },
+      {
+        "id": "BV-8",
+        "ac_ref": "AC4",
+        "definition": "Sipariş tutarı kredi limitinin hemen üzerinde (limit + 0,01 TL): \"Kredi limiti aşıldı\" uyarısı",
+        "valid": false
+      },
+      {
+        "id": "UC-MF",
+        "ac_ref": "AC5",
+        "definition": "Ana akış: bayi giriş yapar, ürünü sepete ekler, siparişi onaylar; sipariş numarası gösterilir ve sipariş geçmişinde listelenir",
+        "valid": true
+      },
+      {
+        "id": "EP-V7",
+        "ac_ref": "AC6",
+        "definition": "Kampanyalı sipariş, toplam 750,00 TL altında: minimum sipariş tutarı şartı aranmaz, onay aktif",
+        "valid": true
+      }
+    ],
+    "partitions": [
+      {
+        "field": "Sepete eklenen ürün",
+        "item_id": "EP-V1",
+        "definition": "Katalogdaki bir ürün",
+        "representative": "Katalogdaki herhangi bir ürün",
+        "valid": true
+      },
+      {
+        "field": "Kampanyalı ürün adedi",
+        "item_id": "EP-V2",
+        "definition": "1–5 adet: bedava yok",
+        "representative": "3",
+        "valid": true
+      },
+      {
+        "field": "Kampanyalı ürün adedi",
+        "item_id": "EP-V3",
+        "definition": "6–11 adet: 1 bedava",
+        "representative": "6",
+        "valid": true
+      },
+      {
+        "field": "Kampanyalı ürün adedi",
+        "item_id": "EP-V4",
+        "definition": "12 ve üzeri: her 6 adet için 1 bedava daha",
+        "representative": "12",
+        "valid": true
+      },
+      {
+        "field": "Kampanyasız sepet toplamı",
+        "item_id": "EP-I1",
+        "definition": "750,00 TL altı: uyarı, onay pasif",
+        "representative": "150,00 TL",
+        "valid": false
+      },
+      {
+        "field": "Kampanyasız sepet toplamı",
+        "item_id": "EP-V5",
+        "definition": "750,00 TL ve üzeri: uyarı yok, onay aktif",
+        "representative": "750,00 TL",
+        "valid": true
+      },
+      {
+        "field": "Sipariş tutarı (kredi limitine göre)",
+        "item_id": "EP-I2",
+        "definition": "Limitin üzerinde: \"Kredi limiti aşıldı\", onaylanamaz",
+        "representative": "750,00 TL (limit 500,00 TL)",
+        "valid": false
+      },
+      {
+        "field": "Sipariş tutarı (kredi limitine göre)",
+        "item_id": "EP-V6",
+        "definition": "Limit içinde: onaylanabilir",
+        "representative": "750,00 TL (limit 2.000,00 TL)",
+        "valid": true
+      },
+      {
+        "field": "Kampanyalı sepet toplamı",
+        "item_id": "EP-V7",
+        "definition": "750,00 TL altı: minimum şartı aranmaz",
+        "representative": "750,00 TL altında bir toplam",
+        "valid": true
+      }
+    ],
+    "boundaries": [
+      {
+        "field": "Kampanyalı ürün adedi",
+        "item_id": "BV-1",
+        "value": "5",
+        "side": "below",
+        "expected": "accept",
+        "inclusive_source": "AC2"
+      },
+      {
+        "field": "Kampanyalı ürün adedi",
+        "item_id": "BV-2",
+        "value": "6",
+        "side": "on",
+        "expected": "accept",
+        "inclusive_source": "AC2"
+      },
+      {
+        "field": "Kampanyalı ürün adedi",
+        "item_id": "BV-3",
+        "value": "11",
+        "side": "below",
+        "expected": "accept",
+        "inclusive_source": "AC2"
+      },
+      {
+        "field": "Kampanyalı ürün adedi",
+        "item_id": "BV-4",
+        "value": "12",
+        "side": "on",
+        "expected": "accept",
+        "inclusive_source": "AC2"
+      },
+      {
+        "field": "Kampanyasız sepet toplamı",
+        "item_id": "BV-5",
+        "value": "750,00 TL",
+        "side": "on",
+        "expected": "accept",
+        "inclusive_source": "AC3"
+      },
+      {
+        "field": "Kampanyasız sepet toplamı",
+        "item_id": "BV-6",
+        "value": "749,99 TL",
+        "side": "below",
+        "expected": "reject",
+        "inclusive_source": "AC3"
+      },
+      {
+        "field": "Sipariş tutarı (kredi limitine göre)",
+        "item_id": "BV-7",
+        "value": "kredi limiti",
+        "side": "on",
+        "expected": "accept",
+        "inclusive_source": "AC4"
+      },
+      {
+        "field": "Sipariş tutarı (kredi limitine göre)",
+        "item_id": "BV-8",
+        "value": "kredi limiti + 0,01 TL",
+        "side": "above",
+        "expected": "reject",
+        "inclusive_source": "AC4"
+      }
+    ],
+    "decision_tables": [],
+    "state_models": [],
+    "flows": [
+      {
+        "item_id": "UC-MF",
+        "kind": "MF",
+        "steps": [
+          "Bayi giriş yapar",
+          "Katalogdan ürünü sepete ekler",
+          "Siparişi onaylar",
+          "Sipariş numarası gösterilir",
+          "Sipariş geçmişinde listelenir"
+        ],
+        "condition": ""
+      }
+    ],
+    "pairwise": {
+      "parameters": [],
+      "constraints": []
+    },
+    "model_issues": [
+      {
+        "kind": "other",
+        "detail": "BV-6 (749,99 TL) demo ürün fiyatlarıyla kurulamayabilir; sınırın altı EP-I1 temsilcisiyle de sınanabilir."
+      }
+    ],
+    "open_questions": [],
+    "assumptions": []
+  }
+}

@@ -8,6 +8,9 @@ Kaynaklar (docs/DEMO-VERISI.md):
 - rules/replay/consistency_check/golden/SERBEST.json → input_match (serbest metin golden'ının girdisi).
 - rules/replay/case_generation/golden/*.json → input_match AC'leri + output.cases + üst düzey
   listeler (`ozet`, şema v3).
+- rules/replay/design_model/golden/*.json → input_match AC'leri + output (test tasarım modeli,
+  011 F3 iki tur). Model'in coverage_items / open_questions / assumptions'ı aynı adlı
+  case_generation golden'ının üst listeleriyle birebir aynıdır (tur-2 eşitlik kuralı).
 - rules/replay/case_review/golden/*.json, case_audit/golden/*.json → output (011 D şeridi: P8
   review bulguları ve P9 denetim kararı; mock aynı golden adıyla eşler).
 - Senaryo golden'ları (`golden/<senaryo>/<ad>.json`, ör. ana demo yolu `f2-kod-hatasi/`): aynı
@@ -131,6 +134,21 @@ def case_goldenlari() -> dict[str, Any]:
     return out
 
 
+def model_goldenlari() -> dict[str, Any]:
+    """design_model golden'ları (011 F3): girdi beyanındaki AC satırları + model çıktısı.
+    Dizin yoksa boş (örnek veri modeli case_generation golden'ının üst listelerinden türetir)."""
+    if not (REPLAY / "design_model" / "golden").is_dir():
+        return {}
+    out: dict[str, Any] = {}
+    for ad, p in _dosyalar("design_model"):
+        d = json.loads(p.read_text(encoding="utf-8"))
+        out[ad] = {
+            "girdi_ac": (d.get("input_match") or {}).get("acceptance_criteria", []),
+            "output": d["output"],
+        }
+    return out
+
+
 def main() -> None:
     cikti = {
         "jira_seed": jira_seed(),
@@ -139,6 +157,7 @@ def main() -> None:
         "consistency_girdi": girdi_aclari("consistency_check"),
         "serbest_girdi": serbest_girdi(),
         "case_generation": case_goldenlari(),
+        "design_model": model_goldenlari(),
         "case_review": goldenlar("case_review"),
         "case_audit": goldenlar("case_audit"),
     }

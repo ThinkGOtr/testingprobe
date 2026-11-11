@@ -939,7 +939,8 @@ def test_alembic_tek_bas() -> None:
     assert script.get_revision("0019").down_revision == "0018"
     assert script.get_revision("0020").down_revision == "0019"
     assert script.get_revision("0021").down_revision == "0020"
-    assert script.get_revision("0023").down_revision == "0021"
+    assert script.get_revision("0022").down_revision == "0021"
+    assert script.get_revision("0023").down_revision == "0022"
 
 
 # ------------------------------------------------------------------ inceleme bulguları (2026-11-10)

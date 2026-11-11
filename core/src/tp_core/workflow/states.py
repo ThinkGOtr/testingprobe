@@ -16,11 +16,20 @@ requirement (gereksinim; başlangıç ``new``)::
     findings_open  -> in_review, doc_final, new          (yeniden kontrol / bulgular kararlı)
     doc_final      -> pending_po, in_review, new         (doküman "son hal")
     pending_po     -> po_approved [KAPI: po_approve], in_review, new
-    po_approved    -> generating [KAPI: PO onayı hâlâ güncel içerikte; koşul: ac_missing değil], new
+    po_approved    -> generating | modeling [KAPI: PO onayı hâlâ güncel içerikte; koşul: ac_missing
+                      değil], new
+    modeling       -> model_ready, failed                       (iki tur — tur 1: tasarım modeli)
+    model_ready    -> generating [KAPI: PO onayı güncel; servis: onaylı + güncel model],
+                      modeling [KAPI] (model reddedildi / yeniden üret), new
     generating     -> cases_ready, failed
-    cases_ready    -> generating [KAPI: PO onayı hâlâ güncel], done, new
+    cases_ready    -> generating | modeling [KAPI: PO onayı hâlâ güncel], done, new
     done           -> new                                       (kaynak değişti → yeniden)
-    failed         -> in_review, generating [KAPI: PO onayı hâlâ güncel], new
+    failed         -> in_review, generating | modeling [KAPI: PO onayı hâlâ güncel], new
+
+    İki tur (011 F3, K1): `modeling` model üretimi (`model.generate`) sürerken, `model_ready`
+    modelin analist kararını ve onaylı modelden case üretimini bekler. Tek tur eski yoldur
+    (→ generating). `model_ready → generating` onaylı modelin varlığını kapı değil servis denetler
+    (`features.cases.model_service`); kapı yine PO onayının güncelliğidir.
 
     `po_approved`'a girişte onaylanan içerik hash'i `requirement.onaylanan_hash`'e yazılır; case
     üretimine giden her geçiş bu hash'i güncel içerikle yeniden karşılaştırır (PO'nun görmediği
@@ -46,6 +55,15 @@ test_case (başlangıç ``draft``)::
     approved   -> published [KAPI: onaylı hash hâlâ güncel], draft, superseded
     rejected   -> draft, superseded
     published, superseded: son durum
+
+design_model (tablo `tasarim_modeli`, 011 F3; başlangıç ``draft``)::
+
+    draft      -> approved [KAPI: approve | edit], rejected [KAPI: reject], superseded
+    approved   -> superseded
+    rejected   -> superseded
+    superseded: son durum
+
+    Yeni model üretimi ve story değişikliği önceki modelleri `superseded` yapar.
 
 script (üretilen test veya locator onarımı; başlangıç ``pending``)::
 
@@ -133,6 +151,7 @@ def _t(**kw: tuple[str, ...]) -> dict[str, frozenset[str]]:
 # `reopen` ("Taslağa al"): onaylı/reddedilmiş case'i taslağa döndüren kayıtlı karar. Onaylayan
 # değildir; son karar olduğu için eski bir `approve` kapıyı yeniden açamaz (Constitution I).
 TEST_CASE_KARARLARI = frozenset({"approve", "edit", "reject", "reopen"})
+DESIGN_MODEL_KARARLARI = frozenset({"approve", "edit", "reject"})
 REQUIREMENT_KARARLARI = frozenset({"po_approve"})
 BUG_DRAFT_KARARLARI = frozenset({"new", "link", "dismiss"})
 SCRIPT_KARARLARI = frozenset({"merge", "request_changes"})
@@ -141,6 +160,7 @@ FINDING_KARARLARI = frozenset({"fix_doc", "code_defect", "accept_difference"})
 # Onaylayan (kapıyı açan) kararlar; yayın/PR/bug kapıları bunlardan birini ister.
 APPROVING: dict[str, frozenset[str]] = {
     "test_case": frozenset({"approve", "edit"}),
+    "design_model": frozenset({"approve", "edit"}),
     "requirement": REQUIREMENT_KARARLARI,
     "bug_draft": frozenset({"new", "link"}),
     "script": frozenset({"merge"}),
@@ -149,6 +169,7 @@ APPROVING: dict[str, frozenset[str]] = {
 
 KARARLAR: dict[str, frozenset[str]] = {
     "test_case": TEST_CASE_KARARLARI,
+    "design_model": DESIGN_MODEL_KARARLARI,
     "requirement": REQUIREMENT_KARARLARI,
     "bug_draft": BUG_DRAFT_KARARLARI,
     "script": SCRIPT_KARARLARI,
@@ -158,6 +179,7 @@ KARARLAR: dict[str, frozenset[str]] = {
 # Karar verebilecek roller (API rol kontrolüne ek, derinlemesine savunma).
 APPROVER_ROLES: dict[str, frozenset[str]] = {
     "test_case": frozenset({"analyst"}),
+    "design_model": frozenset({"analyst"}),
     "requirement": frozenset({"po"}),
     "bug_draft": frozenset({"tester"}),
     "script": frozenset({"engineer"}),
@@ -194,26 +216,37 @@ REQUIREMENT = Machine(
         findings_open=("in_review", "doc_final", "new"),
         doc_final=("pending_po", "in_review", "new"),
         pending_po=("po_approved", "in_review", "new"),
-        po_approved=("generating", "new"),
+        po_approved=("generating", "modeling", "new"),
+        modeling=("model_ready", "failed"),
+        model_ready=("generating", "modeling", "new"),
         generating=("cases_ready", "failed"),
-        cases_ready=("generating", "done", "new"),
+        cases_ready=("generating", "modeling", "done", "new"),
         done=("new",),
-        failed=("in_review", "generating", "new"),
+        failed=("in_review", "generating", "modeling", "new"),
     ),
     gates={
         ("pending_po", "po_approved"): Gate(REQUIREMENT_KARARLARI),
-        # Case üretimi yalnızca PO'nun onayladığı içerikten (Constitution I).
+        # Case üretimi ve tasarım modeli yalnızca PO'nun onayladığı içerikten (Constitution I).
         ("po_approved", "generating"): Gate(REQUIREMENT_KARARLARI),
         ("cases_ready", "generating"): Gate(REQUIREMENT_KARARLARI),
         ("failed", "generating"): Gate(REQUIREMENT_KARARLARI),
+        ("model_ready", "generating"): Gate(REQUIREMENT_KARARLARI),
+        ("po_approved", "modeling"): Gate(REQUIREMENT_KARARLARI),
+        ("cases_ready", "modeling"): Gate(REQUIREMENT_KARARLARI),
+        ("failed", "modeling"): Gate(REQUIREMENT_KARARLARI),
+        ("model_ready", "modeling"): Gate(REQUIREMENT_KARARLARI),
     },
     approval_targets=frozenset({"po_approved"}),
-    approval_consumers=frozenset({"generating"}),
+    approval_consumers=frozenset({"generating", "modeling"}),
     guards={
         ("po_approved", "generating"): Guard(
             "kabul kriteri eksik (ac_missing) gereksinim case üretimine gönderilmez",
             lambda r: not getattr(r, "ac_missing", False),
-        )
+        ),
+        ("po_approved", "modeling"): Guard(
+            "kabul kriteri eksik (ac_missing) gereksinim tasarım modeline gönderilmez",
+            lambda r: not getattr(r, "ac_missing", False),
+        ),
     },
 )
 
@@ -263,6 +296,22 @@ TEST_CASE = Machine(
     },
     approval_targets=frozenset({"approved"}),
     approval_consumers=frozenset({"published"}),
+)
+
+DESIGN_MODEL = Machine(
+    entity="design_model",
+    initial="draft",
+    transitions=_t(
+        draft=("approved", "rejected", "superseded"),
+        approved=("superseded",),
+        rejected=("superseded",),
+        superseded=(),
+    ),
+    gates={
+        ("draft", "approved"): Gate(APPROVING["design_model"]),
+        ("draft", "rejected"): Gate(frozenset({"reject"})),
+    },
+    approval_targets=frozenset({"approved"}),
 )
 
 SCRIPT = Machine(
@@ -320,26 +369,36 @@ MACHINES: dict[str, Machine] = {
         REQUIREMENT_REVIEW,
         CONSISTENCY_FINDING,
         TEST_CASE,
+        DESIGN_MODEL,
         SCRIPT,
         BUG_DRAFT,
         WORKFLOW_INSTANCE,
     )
 }
 
+# Durum makinesi adı tablo adından farklı olan varlıklar (`review.nesne_turu` = makine adı).
+# `tasarim_modeli` tablosu `design_model` makinesidir (specs/011 §4.3).
+ENTITY_BY_TABLE: dict[str, str] = {"tasarim_modeli": "design_model"}
+
 # Kararın kendisiyle birlikte değiştirebileceği alanlar (`record_approval(degisiklik=...)`).
 # İnsanın gördüğü içerik hash'i değişiklik UYGULANMADAN önce, onaylanan hash SONRA hesaplanır.
 # consistency_finding'de `analist_karari`/`gerekce` kararın kendisinden yazılır (değişiklik değil).
 DECISION_EDITS: dict[str, dict[str, frozenset[str]]] = {
     "test_case": {"edit": frozenset({"icerik"})},
+    "design_model": {"edit": frozenset({"icerik"})},
     "bug_draft": {"new": frozenset({"icerik"}), "link": frozenset({"icerik"})},
     "consistency_finding": {"fix_doc": frozenset({"onerilen_metin"})},
 }
 # Bu kararlarda değişiklik zorunludur (ör. 'edit' içeriği değiştirmeden verilemez).
-DECISION_EDIT_REQUIRED: dict[str, frozenset[str]] = {"test_case": frozenset({"edit"})}
+DECISION_EDIT_REQUIRED: dict[str, frozenset[str]] = {
+    "test_case": frozenset({"edit"}),
+    "design_model": frozenset({"edit"}),
+}
 
 # İçerik hash'ine giren alanlar (kanonik JSON). Onay ve yayın kapıları bunu karşılaştırır.
 CONTENT_FIELDS: dict[str, tuple[str, ...]] = {
     "test_case": ("icerik",),
+    "design_model": ("icerik",),
     "bug_draft": ("icerik",),
     "script": ("dosya_yolu", "icerik", "head_sha"),
     "requirement": ("baslik", "aciklama", "kabul_kriterleri"),

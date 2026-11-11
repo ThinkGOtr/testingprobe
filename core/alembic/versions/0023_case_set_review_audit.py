@@ -9,7 +9,7 @@ review; `skor` UYGUN madde sayısı (0–12), `icerik` modelin çıktısı + cas
 İkisi de gereksinimin güncel v3 setinin `set_hash`'ine bağlıdır. Yalnız ekleme yapar.
 
 Revision ID: 0023
-Revises: 0021 (D şeridi; birleştirmede zincir 0021→0022→0023→… doğrusallaştırılır)
+Revises: 0022
 Create Date: 2026-11-11
 """
 
@@ -20,7 +20,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0023"
-down_revision: str | None = "0021"
+down_revision: str | None = "0022"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

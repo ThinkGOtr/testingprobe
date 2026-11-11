@@ -108,6 +108,7 @@ export const CORE_OLAYLARI = [
   "requirement_review.state",
   "consistency_finding.state",
   "test_case.state",
+  "design_model.state",
   "script.state",
   "bug_draft.state",
   "workflow_instance.state",
@@ -120,6 +121,8 @@ const VARLIK_KONUSU: Record<string, string> = {
   requirement_review: "requirement.updated",
   consistency_finding: "finding.updated",
   test_case: "case.updated",
+  // Tasarım modeli (011 F3) gereksinim sayfasının panelidir: gereksinim konusu yenilenir.
+  design_model: "requirement.updated",
   script: "script.updated",
   bug_draft: "bug.updated",
   workflow_instance: "workflow.updated",

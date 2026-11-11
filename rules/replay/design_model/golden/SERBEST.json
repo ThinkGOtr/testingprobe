@@ -1,0 +1,263 @@
+{
+  "kind": "call",
+  "purpose": "design_model",
+  "golden": "SERBEST",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı (model çıktısı değil; ai_call.model = golden-elle). Test tasarım modeli (011 F3, iki tur — tur 1). coverage_items / open_questions / assumptions aynı adlı case_generation golden'ının üst listeleriyle BİREBİR aynıdır (tur-2 eşitlik kontrolü REPLAY'de geçer); girdi beyanı (input_match) case_generation golden'ınınkiyle aynıdır. Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record).",
+  "input_match": {
+    "sources": [
+      "serbest:*"
+    ],
+    "acceptance_criteria": [
+      "AC1: Satırdaki \"Kaldır\" butonuna basıldığında ürün sepetten çıkar ve sepet sayacı azalır.",
+      "AC2: Kaldırma sonrası kampanya indirimi her 6 adette 1 bedava kuralıyla yeniden hesaplanır.",
+      "AC3: Sepette kampanyalı ürün yoksa ve sepet tutarı 750,00 TL altına düşerse \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur."
+    ],
+    "contains": [
+      "Bayi sepetteki bir ürün satırını kaldırabilmeli; toplamlar ve kampanya indirimi yeniden hesaplanmalıdır."
+    ]
+  },
+  "output": {
+    "conditions": [
+      {
+        "id": "TCOND-1",
+        "ac_refs": [
+          "AC1"
+        ],
+        "statement": "\"Kaldır\" ile satır sepetten çıkar ve sepet sayacı azalır",
+        "risk": "medium",
+        "rationale": "Sepet yönetiminin ana akışı."
+      },
+      {
+        "id": "TCOND-2",
+        "ac_refs": [
+          "AC2"
+        ],
+        "statement": "Kaldırma sonrası kampanya indirimi her 6 adette 1 bedava kuralıyla yeniden hesaplanır",
+        "risk": "high",
+        "rationale": "İndirim sipariş tutarını etkiler."
+      },
+      {
+        "id": "TCOND-3",
+        "ac_refs": [
+          "AC3"
+        ],
+        "statement": "Kampanyasız sepet 750,00 TL altına düşerse uyarı gösterilir ve onay pasif olur",
+        "risk": "high",
+        "rationale": "Minimum tutar kuralı siparişin onaylanabilirliğini belirler."
+      }
+    ],
+    "techniques": [
+      {
+        "condition_id": "TCOND-1",
+        "technique": "UC",
+        "rationale": "Satır kaldırma uçtan uca kullanıcı akışıdır."
+      },
+      {
+        "condition_id": "TCOND-2",
+        "technique": "EP",
+        "rationale": "Kaldırılan satır kampanyalı ya da kampanyasız olabilir (iki sınıf)."
+      },
+      {
+        "condition_id": "TCOND-3",
+        "technique": "DT",
+        "rationale": "Sonuç iki koşulun birleşimine bağlıdır: kampanyalı ürün varlığı ve tutar."
+      },
+      {
+        "condition_id": "TCOND-3",
+        "technique": "BVA",
+        "rationale": "Toplam sıralı bir tutardır; 750,00 TL sınırdır."
+      }
+    ],
+    "coverage_items": [
+      {
+        "id": "UC-MF",
+        "ac_ref": "AC1",
+        "definition": "Ana akış: sepetteki bir satır \"Kaldır\" ile çıkarılır; satır sepetten kalkar ve sepet sayacı azalır",
+        "valid": true
+      },
+      {
+        "id": "EP-V1",
+        "ac_ref": "AC2",
+        "definition": "Kampanyalı satır kaldırılır: bedava adet ve kampanya indirimi yeniden hesaplanır (indirim sıfırlanır)",
+        "valid": true
+      },
+      {
+        "id": "EP-V2",
+        "ac_ref": "AC2",
+        "definition": "Kampanyasız satır kaldırılır, kampanyalı satır sepette kalır: kampanya indirimi değişmez",
+        "valid": true
+      },
+      {
+        "id": "DT-R1",
+        "ac_ref": "AC3",
+        "definition": "Sepette kampanyalı ürün yok ve toplam 750,00 TL altında: \"Minimum sipariş tutarı 750,00 TL\" uyarısı, onay pasif",
+        "valid": false
+      },
+      {
+        "id": "DT-R2",
+        "ac_ref": "AC3",
+        "definition": "Sepette kampanyalı ürün yok ve toplam 750,00 TL ya da üzeri: uyarı yok, onay aktif",
+        "valid": true
+      },
+      {
+        "id": "DT-R3",
+        "ac_ref": "AC3",
+        "definition": "Sepette kampanyalı ürün var ve toplam 750,00 TL altında: uyarı yok, onay aktif",
+        "valid": true
+      },
+      {
+        "id": "DT-R4",
+        "ac_ref": "AC3",
+        "definition": "Sepette kampanyalı ürün var ve toplam 750,00 TL ya da üzeri: uyarı yok, onay aktif",
+        "valid": true
+      },
+      {
+        "id": "BV-1",
+        "ac_ref": "AC3",
+        "definition": "Kaldırma sonrası kampanyasız sepet toplamı tam 750,00 TL (sınır): uyarı yok, onay aktif",
+        "valid": true
+      },
+      {
+        "id": "BV-2",
+        "ac_ref": "AC3",
+        "definition": "Kaldırma sonrası kampanyasız sepet toplamı 750,00 TL'nin hemen altında (749,99 TL): uyarı gösterilir, onay pasif",
+        "valid": false
+      }
+    ],
+    "partitions": [
+      {
+        "field": "Kaldırılan satır",
+        "item_id": "EP-V1",
+        "definition": "Kampanyalı satır: indirim yeniden hesaplanır",
+        "representative": "Kampanyalı ürün satırı",
+        "valid": true
+      },
+      {
+        "field": "Kaldırılan satır",
+        "item_id": "EP-V2",
+        "definition": "Kampanyasız satır, kampanyalı satır kalır: indirim değişmez",
+        "representative": "Kampanyasız ürün satırı",
+        "valid": true
+      }
+    ],
+    "boundaries": [
+      {
+        "field": "Kaldırma sonrası kampanyasız sepet toplamı",
+        "item_id": "BV-1",
+        "value": "750,00 TL",
+        "side": "on",
+        "expected": "accept",
+        "inclusive_source": "AC3"
+      },
+      {
+        "field": "Kaldırma sonrası kampanyasız sepet toplamı",
+        "item_id": "BV-2",
+        "value": "749,99 TL",
+        "side": "below",
+        "expected": "reject",
+        "inclusive_source": "AC3"
+      }
+    ],
+    "decision_tables": [
+      {
+        "id": "DT1",
+        "conditions": [
+          "Sepette kampanyalı ürün var",
+          "Toplam 750,00 TL altında"
+        ],
+        "actions": [
+          "\"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir",
+          "Onay butonu pasif olur"
+        ],
+        "rules": [
+          {
+            "item_id": "DT-R1",
+            "condition_values": [
+              {
+                "condition": "Sepette kampanyalı ürün var",
+                "value": "hayır"
+              },
+              {
+                "condition": "Toplam 750,00 TL altında",
+                "value": "evet"
+              }
+            ],
+            "actions": [
+              "\"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir",
+              "Onay butonu pasif olur"
+            ]
+          },
+          {
+            "item_id": "DT-R2",
+            "condition_values": [
+              {
+                "condition": "Sepette kampanyalı ürün var",
+                "value": "hayır"
+              },
+              {
+                "condition": "Toplam 750,00 TL altında",
+                "value": "hayır"
+              }
+            ],
+            "actions": []
+          },
+          {
+            "item_id": "DT-R3",
+            "condition_values": [
+              {
+                "condition": "Sepette kampanyalı ürün var",
+                "value": "evet"
+              },
+              {
+                "condition": "Toplam 750,00 TL altında",
+                "value": "evet"
+              }
+            ],
+            "actions": []
+          },
+          {
+            "item_id": "DT-R4",
+            "condition_values": [
+              {
+                "condition": "Sepette kampanyalı ürün var",
+                "value": "evet"
+              },
+              {
+                "condition": "Toplam 750,00 TL altında",
+                "value": "hayır"
+              }
+            ],
+            "actions": []
+          }
+        ],
+        "undefined_combinations": []
+      }
+    ],
+    "state_models": [],
+    "flows": [
+      {
+        "item_id": "UC-MF",
+        "kind": "MF",
+        "steps": [
+          "Bayi sepeti açar",
+          "Bir satırda \"Kaldır\"a basar",
+          "Satır sepetten çıkar",
+          "Sepet sayacı azalır"
+        ],
+        "condition": ""
+      }
+    ],
+    "pairwise": {
+      "parameters": [],
+      "constraints": []
+    },
+    "model_issues": [
+      {
+        "kind": "other",
+        "detail": "BV-2 (749,99 TL) demo ürün fiyatlarıyla kurulamayabilir; sınırın altı DT-R1 ile sınanabilir."
+      }
+    ],
+    "open_questions": [],
+    "assumptions": []
+  }
+}

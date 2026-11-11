@@ -827,6 +827,69 @@ def coverage_problems(output: Any, expect: Mapping[str, Any]) -> list[str]:
     return failures
 
 
+# ------------------------------------------------------------ tasarım modeli (011 F3)
+
+# Kaynağın adını andığı ama sonucu tanımlamadığı konuların aranacağı alanlar (açık soru,
+# varsayım, model sorunu); uydurma belirteçleri bunların DIŞINDAKİ model metninde aranır.
+_MODEL_BILINMEYEN_ALANLARI = ("open_questions", "assumptions", "model_issues")
+
+
+def _model_metni(out: Mapping[str, Any], *, bilinmeyenler: bool) -> str:
+    """Modelin metni: `bilinmeyenler=True` → yalnız soru/varsayım/sorun; False → geri kalanı."""
+    parcalar = {k: v for k, v in out.items() if (k in _MODEL_BILINMEYEN_ALANLARI) == bilinmeyenler}
+    return _kucuk(_blob([parcalar]))
+
+
+def design_model_problems(output: Any, expect: Mapping[str, Any]) -> list[str]:
+    """design_model beklentisi (deterministik).
+
+    Her zaman: model kontrolleri (`features.cases.model.model_problems`: kimlik tekilliği,
+    koşul ↔ teknik, ayrıntılı öğe ↔ coverage_items, geçerlilik, ref'ler). Beklenti anahtarları:
+    - `ac_coverage`: her AC en az bir koşulun `ac_refs`'inde; belgede olmayan AC yok;
+    - `min_conditions`;
+    - `techniques_include`: bu tekniklerin her biri seçilmiş olmalı (ör. SERBEST için DT);
+    - `contains`: model metninde geçmesi gereken kaynak metinleri (büyük/küçük harf duyarlı);
+    - `not_contains_any`: uydurma belirteçleri; soru/varsayım/model sorunu DIŞINDAKİ model
+      metninde hiçbiri geçmez (kaynakta olmayan kural modele girmemeli);
+    - `silent_topics`: `[{"topic", "keywords"}]` — kaynağın sessiz olduğu bilinen konu; anahtar
+      sözcüklerden biri açık soru, varsayım ya da model sorunu metninde geçmeli (sessizlik kayda
+      geçirilmeli, sonuç seçilmemeli).
+    """
+    from tp_core.features.cases.model import model_problems
+
+    out = output if isinstance(output, Mapping) else {}
+    acs = list(expect.get("ac_coverage") or [])
+    failures = [f"model: {s}" for s in model_problems(out, acs or None)]
+    refs = {str(r) for c in _kayitlar(out.get("conditions")) for r in _liste(c.get("ac_refs"))}
+    failures += [f"{ac} hiçbir koşulda yok" for ac in acs if ac not in refs]
+    if acs and refs - set(acs):
+        failures.append(f"belgede olmayan AC: {sorted(refs - set(acs))}")
+    kosul = len(_kayitlar(out.get("conditions")))
+    if kosul < int(expect.get("min_conditions", 1)):
+        failures.append(f"{kosul} koşul, en az {expect.get('min_conditions', 1)}")
+    secilen = {str(t.get("technique")) for t in _kayitlar(out.get("techniques"))}
+    failures += [
+        f"{t} tekniği seçilmemiş"
+        for t in expect.get("techniques_include") or []
+        if t not in secilen
+    ]
+    tum = _blob([out])
+    failures += [f"'{n}' geçmiyor" for n in expect.get("contains") or [] if n not in tum]
+    model_metni = _model_metni(out, bilinmeyenler=False)
+    for belirtec in expect.get("not_contains_any") or []:
+        if _belirtec_var(str(belirtec), model_metni):
+            failures.append(f"uydurma belirteci '{belirtec}' modelde")
+    bilinmeyen = _model_metni(out, bilinmeyenler=True)
+    for konu in expect.get("silent_topics") or []:
+        anahtarlar = [_kucuk(str(a)) for a in konu.get("keywords") or []]
+        if not any(a in bilinmeyen for a in anahtarlar):
+            failures.append(
+                f"kaynak '{konu.get('topic')}' konusunda sessiz; açık soru / varsayım / model "
+                "sorunu olarak kayda geçmeli"
+            )
+    return failures
+
+
 def review_problems(output: Any, expect: Mapping[str, Any]) -> list[str]:
     """requirement_review beklentisi: karar, soru türleri, AC atıfları belge içinde."""
     out = output if isinstance(output, Mapping) else {}

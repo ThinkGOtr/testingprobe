@@ -71,6 +71,7 @@ import { denetimBaslat, denetimGorunumu, denetimTamamla, gonderEngeli, reviewCal
 import { javaDosyaYolu, javaTestKodu, uygulamayaCevir } from "./platformlar";
 import { PLATFORMLAR, platformUyarla, type Platform } from "../../lib/platform";
 import { asistanMockSifirla, asistanRotalari } from "./asistan";
+import { modelUretimiBaslat, onayliModel, tasarimModeliRotalari, type ModelBaglami } from "./tasarimModeli";
 import { oneriKuleOlcumu, oneriMockSifirla, oneriRotalari } from "./oneri";
 import type { AsistanliKule } from "../../components/asistan/OnerilerOlcumKarti";
 import { kirmaTaslagiMi } from "../../lib/yolHaritasi";
@@ -656,14 +657,20 @@ function poOnayla(id: string, govde: unknown): GereksinimDetay {
   return cikti(g);
 }
 
-function caseUret(id: string): IsYaniti {
+function caseUret(id: string, govde?: unknown): IsYaniti {
   rolGerekli("analyst");
   const g = bul(veri.gereksinimler, id, "Gereksinim");
+  // 011 K1: gövdesiz çağrı tek tur (geriye uyum); iki turda model onayından önce model üretilir.
+  const kip = (govde as { kip?: unknown } | null | undefined)?.kip === "iki_tur" ? "iki_tur" : "tek_tur";
+  if (kip === "iki_tur" && g.durum !== "model_ready") return modelUretimiBaslat(modelBaglami, g);
+  if (kip === "iki_tur" && !onayliModel(veri, g)) {
+    throw new ApiError(409, "Onaylı ve güncel tasarım modeli yok; önce modeli onaylayın ya da yeniden üretin.");
+  }
   if (g.po.durum !== "approved") throw new ApiError(409, "PO teyidi olmadan case üretilemez.");
   if (g.ac_missing) throw new ApiError(409, "Kabul kriteri olmayan story case üretimine gönderilmez.");
   // core URETIM_BASLANGIC: düşen case üretimi (failed) yeniden denenebilir; PO güncelliği yukarıda.
-  const uretimHatasi = g.durum === "failed" && g.son_hata?.job_tur === "cases.generate";
-  if (!["po_approved", "cases_ready"].includes(g.durum) && !uretimHatasi) throw new ApiError(409, "Bu durumda case üretilemez.");
+  const uretimHatasi = g.durum === "failed" && ["cases.generate", "model.generate"].includes(g.son_hata?.job_tur ?? "");
+  if (!["po_approved", "cases_ready", "model_ready"].includes(g.durum) && !uretimHatasi) throw new ApiError(409, "Bu durumda case üretilemez.");
   if (g.po.onaylanan_hash && g.icerik_hash && g.po.onaylanan_hash !== g.icerik_hash) {
     throw new ApiError(409, "İçerik PO onayından sonra değişmiş; yeniden PO teyidi gerekir.");
   }
@@ -739,8 +746,27 @@ function caseUret(id: string): IsYaniti {
       mockOlayYayinla({ type: "case.review", id, data: { requirement_id: id, durum: r.durum } });
     },
   ]);
-  return is("started", "Case üretimi başlatıldı.");
+  return {
+    ...is("started", kip === "iki_tur" ? "Onaylı tasarım modelinden case üretimi başlatıldı." : "Case üretimi başlatıldı."),
+    kip,
+    asama: "case",
+    uretim_no: (veri.caseUretimleri?.[id]?.length ?? 0) + 1,
+  };
 }
+
+/** Tasarım modeli mock'u (api/mock/tasarimModeli.ts) için iç yardımcılar. */
+const modelBaglami: ModelBaglami = {
+  veri: () => veri,
+  girisGerekli,
+  rolGerekli,
+  gecir: (g, ...yol) => gecir("requirement", g, ...yol),
+  arkaPlan,
+  yeniId,
+  simdi,
+  denetimEkle,
+  gereksinimOlayi,
+  is,
+};
 
 function caseKarari(id: string, govde: unknown): TestCase {
   const k = rolGerekli("analyst");
@@ -1949,7 +1975,9 @@ const ROTALAR: Rota[] = [
   ["POST", /^\/findings\/([^/]+)\/decision$/, (m, _q, g) => bulguKarari(decodeURIComponent(m[1]), g)],
   ["POST", /^\/requirements\/([^/]+)\/apply-doc-fixes$/, (m) => duzeltmeleriUygula(decodeURIComponent(m[1]))],
   ["POST", /^\/requirements\/([^/]+)\/po-approve$/, (m, _q, g) => poOnayla(decodeURIComponent(m[1]), g)],
-  ["POST", /^\/requirements\/([^/]+)\/generate-cases$/, (m) => caseUret(decodeURIComponent(m[1]))],
+  ["POST", /^\/requirements\/([^/]+)\/generate-cases$/, (m, _q, govde) => caseUret(decodeURIComponent(m[1]), govde)],
+  // Test tasarım modeli (011 F3, iki tur): api/mock/tasarimModeli.ts.
+  ...tasarimModeliRotalari(modelBaglami),
   [
     "GET",
     /^\/cases$/,

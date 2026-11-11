@@ -131,8 +131,8 @@ export function demoAdimlari(x: YolGirdisi): YolAdimi[] {
   const adim = (n: number, a: Omit<YolAdimi, "no" | "ad" | "tur">): YolAdimi => ({ no: n, ad: ad(n).ad, tur: ad(n).tur, ...a });
   const gYolu = g ? `/gereksinimler/${kodla(g.id)}` : "/gereksinimler";
   const cs = x.caseler.filter((c) => c.durum !== "superseded");
-  const denetimSonrasi = ["doc_final", "pending_po", "po_approved", "generating", "cases_ready", "done"];
-  const poSonrasi = ["po_approved", "generating", "cases_ready", "done"];
+  const denetimSonrasi = ["doc_final", "pending_po", "po_approved", "modeling", "model_ready", "generating", "cases_ready", "done"];
+  const poSonrasi = ["po_approved", "modeling", "model_ready", "generating", "cases_ready", "done"];
 
   // Simülatörler: sunucu sahnede adını söyler (DEMO-AKISI); "tamam" gerçek dış sistem sanılmasın.
   const jiraSim = jiraSimMi(x) === true ? JIRA_SIM : null;
@@ -189,8 +189,15 @@ export function demoAdimlari(x: YolGirdisi): YolAdimi[] {
   const a4 =
     cs.length === 0
       ? adim(4, {
-          hal: g?.durum === "generating" ? "suruyor" : "bekliyor",
-          kanit: g?.durum === "generating" ? "Case üretimi sürüyor." : "Henüz case yok.",
+          hal: g?.durum === "generating" || g?.durum === "modeling" ? "suruyor" : "bekliyor",
+          kanit:
+            g?.durum === "generating"
+              ? "Case üretimi sürüyor."
+              : g?.durum === "modeling"
+                ? "Test tasarım modeli üretiliyor (iki tur)."
+                : g?.durum === "model_ready"
+                  ? "Tasarım modeli analist onayı bekliyor; onaydan sonra case üretilir."
+                  : "Henüz case yok.",
           ipucu: poGuncel ? "Analist: \"Case üret\"." : null,
           baglanti: g ? { yol: gYolu, etiket: "Story" } : null,
         })

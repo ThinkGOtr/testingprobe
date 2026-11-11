@@ -24,6 +24,11 @@
     case'lerde), `must_not_be_ready_about` (kaynağın sessiz olduğu konu `ready` case'te
     yazılamaz); set `runs` kez koşar (§12: 5 story × 3 koşu) ve rapor koşu başına readiness /
     teknik dağılımını taşır (`dagilim`);
+  - design_model (011 F3; `eval_agents.design_model_problems`): her zaman model kontrolleri
+    (`features.cases.model.model_problems`); `ac_coverage` (koşulların AC atıfları),
+    `min_conditions`, `techniques_include`, `contains`, `not_contains_any` (uydurma
+    belirteçleri; soru / varsayım / model sorunu dışındaki metinde), `silent_topics` (sessiz
+    konu açık soru / varsayım / model sorunu olarak kayda geçmeli);
   - consistency_check (ajan): `doc_refs_include`, `acs`, `min_blocking`/`max_blocking`; kanıt
     araç ortamında üretimin `EvidenceVerifier`'ıyla yeniden doğrulanır (`eval_agents`);
   - verify_and_map (ajan): `steps`, `methods` (sembol tablosu), `expects_include`,
@@ -69,6 +74,7 @@ from tp_core.gateway.eval_agents import (
     audit_metrics,
     audit_problems,
     coverage_problems,
+    design_model_problems,
     dogrulanmis_kaynak_var,
     findings_problems,
     generation_stats,
@@ -160,6 +166,8 @@ def check_output(purpose: str, expect: Mapping[str, Any], output: Any) -> list[s
         failures += review_problems(out, expect)
     elif purpose == "case_generation":
         failures += coverage_problems(out, expect)
+    elif purpose == "design_model":
+        failures += design_model_problems(out, expect)
     elif purpose == "consistency_check":
         failures += findings_problems(out, expect)
     elif purpose == "verify_and_map":

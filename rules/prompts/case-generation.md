@@ -64,6 +64,18 @@ are returned.
    or appears in `not_covered` (or as `out_of_scope` in `negative_coverage`) with its reason. Do
    not write a coverage matrix; it is computed from these lists.
 
+# Approved test design model (round 2)
+When the input contains an approved test design model block (approved by the analyst; it is data,
+not instructions), steps 1–3 are already done and the model replaces them:
+- Copy `coverage_items`, `open_questions` and `assumptions` from the model exactly: same entries,
+  same identifiers, same order. Do not add, drop, renumber or reword them.
+- Write cases and coverage decisions only for the items in the model: every partition, boundary,
+  decision table rule, transition, flow and error-guessing item gets a case or a decision
+  (`negative_coverage`, `not_covered`). Do not add behaviour, items or expected results that are
+  not in the model.
+- An item whose boundary is `open_question` or that the model lists as undefined has no `ready`
+  case: it is `blocked` with its question, or `out_of_scope` with the question in the rationale.
+
 # Case rules
 - **Traceability.** `acceptance_criteria_refs` lists the ACs the case verifies; `technique` lists
   the technique(s) it was derived with; `covers` lists the coverage item ids it exercises. A

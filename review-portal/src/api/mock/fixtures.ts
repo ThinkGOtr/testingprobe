@@ -47,6 +47,7 @@ import { kanonikJson, sha256Hex } from "../../lib/sha256";
 import { ekranGoruntusu } from "./ekran";
 import { uygulamaHatalari, uygulamaKosulari, uygulamaScriptleri } from "./platformlar";
 import kaynaklar from "./golden/kaynaklar.json";
+import type { TasarimModeliKaydi } from "../tasarimModeliTipleri";
 import type { KaliteKaydi } from "./kalite";
 
 import { uretimOzetiUyarla } from "../uyum";
@@ -73,6 +74,8 @@ export interface MockVeri {
    * Yalnız v3 üretimi olan gereksinimde vardır; eski şemalı gereksinimde anahtar yoktur.
    */
   caseUretimleri?: Record<string, CaseUretimOzeti[]>;
+  /** Test tasarım modelleri (011 F3, iki tur; gereksinim kimliği → sürümler, eskiden yeniye). */
+  tasarimModelleri?: Record<string, TasarimModeliKaydi[]>;
   /** Case seti review (P8) ve denetim (P9) kayıtları (gereksinim kimliği → kayıt; mock/kalite.ts). */
   kalite?: Record<string, KaliteKaydi>;
   sayac: number;

@@ -51,6 +51,29 @@
       ]
     }
   },
+  "design_model": {
+    "initial": "draft",
+    "states": [
+      "approved",
+      "draft",
+      "rejected",
+      "superseded"
+    ],
+    "transitions": {
+      "approved": [
+        "superseded"
+      ],
+      "draft": [
+        "approved",
+        "rejected",
+        "superseded"
+      ],
+      "rejected": [
+        "superseded"
+      ],
+      "superseded": []
+    }
+  },
   "requirement": {
     "initial": "new",
     "states": [
@@ -61,6 +84,8 @@
       "findings_open",
       "generating",
       "in_review",
+      "model_ready",
+      "modeling",
       "new",
       "pending_po",
       "po_approved"
@@ -69,6 +94,7 @@
       "cases_ready": [
         "done",
         "generating",
+        "modeling",
         "new"
       ],
       "doc_final": [
@@ -82,6 +108,7 @@
       "failed": [
         "generating",
         "in_review",
+        "modeling",
         "new"
       ],
       "findings_open": [
@@ -98,6 +125,15 @@
         "failed",
         "findings_open"
       ],
+      "model_ready": [
+        "generating",
+        "modeling",
+        "new"
+      ],
+      "modeling": [
+        "failed",
+        "model_ready"
+      ],
       "new": [
         "failed",
         "in_review"
@@ -109,6 +145,7 @@
       ],
       "po_approved": [
         "generating",
+        "modeling",
         "new"
       ]
     }

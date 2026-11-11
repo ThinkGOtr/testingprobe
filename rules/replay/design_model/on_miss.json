@@ -1,0 +1,6 @@
+{
+  "kind": "call",
+  "purpose": "design_model",
+  "policy": "raise",
+  "note": "REPLAY-MISS politikası (golden değildir, model çıktısı değildir). Tasarım modeli şeması en az bir koşul ister; nötr çıktı yoktur. Girdi adlandırılmış golden'ın girdi beyanına (input_match) uymadığında veya bu anahtar için golden yoksa golden'ın modeli başka bir dokümana aittir: geçit onu döndürmez, ReplayNoOutput fırlatır, ai_call'a mod replay_miss + hata yazılır, model oluşmaz ve gereksinim failed olur. Analist tek tur üretime geçebilir veya canlı model kullanılır. Bkz. rules/replay/README.md."
+}

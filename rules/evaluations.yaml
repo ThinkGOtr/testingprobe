@@ -55,6 +55,14 @@ bundles:
       (v3 alanları dahil). Değerlendirme seti: rules/evaluation/case-generation.json (§12: 5 story × 3
       koşu; AC kapsamı, 011 §4.2 deterministik kuralları, uydurma belirteçleri, readiness beklentisi; rapor
       readiness ve teknik dağılımını taşır). Canlı değerlendirme yapılmadı; onaylı istisna yok.'
+  design-model:
+    version: 1
+    status: pending
+    note: '011 F3 (iki tur — tur 1): test tasarım modeli v1 (koşullar, teknikler, kapsam öğeleri, ayrıntılı
+      modeller, model sorunları, açık soru / varsayım). Golden çıktıları elle hazırlandı; coverage_items /
+      open_questions / assumptions case_generation golden''larıyla birebir aynı. Değerlendirme seti:
+      rules/evaluation/design-model.json (5 story; AC kapsamı, model kontrolleri, sessiz noktalar için açık
+      soru beklentisi, uydurma belirteçleri). Canlı değerlendirme yapılmadı; onaylı istisna yok.'
   case-review:
     version: 1
     status: pending

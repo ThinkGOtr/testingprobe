@@ -38,7 +38,7 @@ from tp_core.models.requirements_feature import (
 )
 from tp_core.workflow.service import content_hash_of
 
-PO_ONAYLI = ("po_approved", "generating", "cases_ready", "done")
+PO_ONAYLI = ("po_approved", "modeling", "model_ready", "generating", "cases_ready", "done")
 
 
 def _iso(value: Any) -> str | None:

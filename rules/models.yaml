@@ -36,6 +36,11 @@ purposes:
     max_tokens: 32000           # v3 çıktısı (kapsam öğeleri, test verisi, gerekçeler) v2'nin ~2 katı
     timeout_s: 600              # ~10K karakter Türkçe JSON + uyarlamalı düşünme: dakikalar sürebilir
     params: { effort: medium }
+  design_model:               # 011 F3 iki tur — tur 1: test tasarım modeli (case yazılmaz)
+    model: claude-sonnet-5-5
+    max_tokens: 16000           # koşullar + öğeler + ayrıntılı modeller; case çıktısının yaklaşık yarısı
+    timeout_s: 420
+    params: { effort: medium }
   # 011 D şeridi: case seti review'u (P8; tavsiye) ve Agent Probe denetimi (P9; yayın kapısı, K8).
   case_review:
     model: claude-sonnet-5-5
