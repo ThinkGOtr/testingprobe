@@ -16,6 +16,7 @@ ajan bağımlılığı **yoktur**; yalnızca onaylanmış, deterministik test ko
 | `workflows/mobil-android.yml` | `pull_request`, `push` (main), gece `30 2 * * *`, `workflow_dispatch` (`tetik`, `istek_id`) — aşağıda "Uygulama iş akışları" | `contents: read` (`changes`: + `pull-requests: read`) |
 | `workflows/mobil-ios.yml` | yalnız ilgili yollar değişen `pull_request` (workflow düzeyinde `paths`), gece `0 3 * * *`, `workflow_dispatch` | `contents: read` |
 | `workflows/masaustu-windows.yml` | `pull_request`, `push` (main), gece `30 3 * * *`, `workflow_dispatch` (`tetik`, `istek_id`) | `contents: read` (`changes`: + `pull-requests: read`) |
+| `workflows/web-java.yml` | `pull_request`, `push` (main), gece `15 2 * * *`, `workflow_dispatch` (`tetik`, `istek_id`) — aşağıda "Web Java iş akışı (011)" | `contents: read` (`changes`: + `pull-requests: read`) |
 
 Her üçüncü taraf Action tam 40 karakterlik commit SHA'sıyla, sürüm yorumuyla sabitlenmiştir;
 Semgrep imajı sürüm + digest ile sabitlenmiştir. `dependabot.yml` bunları aylık günceller.
@@ -247,6 +248,32 @@ da kopyalanır.
 Doğrulanmamış (GitHub'da koşturulmadı; yalnız `actionlint` + YAML ayrıştırma): emülatör/simülatör
 açılış süreleri, runner imajındaki Xcode'un Expo SDK 58 / RN 0.88 için yeterliliği, NovaWindows'un
 `windows-latest` etkileşimli masaüstü oturumunda çalışması ve Git Bash altında `mvnw`.
+
+## Web Java iş akışı (011)
+
+`specs/011-uretim-dili/plan.md` §2.5, §2.8. ci.yml `test-local`'in Java karşılığı (AI'sız; Playwright
+MCP, model anahtarı ve ajan yoktur): `demo-app/e2e-java` (Playwright for Java + TestNG)
+`demo-app/ci/run-java-checks.sh` ile koşar — pom kilidi (`toolchain/e2e-java-deps/pom.xml` ile bayt
+eşit) → `java-araclar guard --kimlikler` (üretilen testler) → `./mvnw test-compile` → birim testleri →
+tarayıcı koşusu (`testng.xml`, 2 iş parçacığı = 2 bayi).
+
+| Job (= check adı) | Runner | Uygulama | Tarayıcı |
+|---|---|---|---|
+| `web-java` | `ubuntu-24.04` | `scripts/github-demo-serve.sh` (API `127.0.0.1:18000` + vite preview `/api` vekili `127.0.0.1:8081`); `BASE_URL`, `DEMO_API_URL`, koşu başına `DEMOAPP_TEST_TOKEN` | `npx playwright@<.playwright-version> install --with-deps chromium` (`~/.cache/ms-playwright` önbellekli); testler indirme yapmaz (`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD`) |
+
+Değişiklik tespiti (`changes` job'u, PR): `demo-app/e2e-java/**`, `demo-app/{api,web}/**`,
+`demo-app/kimlikler.json`, `demo-app/ci/*java*`, `toolchain/java-araclar/**`, `.playwright-version`,
+`scripts/github-demo-serve.sh`, iş akışının kendisi; ilgisiz PR'da "no-op, başarılı" (workflow düzeyinde
+`paths` yok — zorunlu check yapılabilir).
+
+Artefakt `web-java-results`: `ci-meta.json` (`job: web-java`, `platform: web`, `dil: java`, `sha`,
+`tetik`, `istek_id`, `durum`), `surefire-reports/TEST-*.xml`, `birim-raporlari/`, `allure-results/`,
+`extent-report/index.html`, `kanit/<Sınıf>.<metot>/{ekran.png, trace.zip, sayfa.html}` (triage: web
+yöntemi), `guard.json`, `logs/` (`serve.log`, `run-java-checks.log`). Koşu belirteci artefaktta maskelenir.
+
+**Zorunlu check.** GitHub kipinde web + java üretimi kullanılacaksa `web-java` hem
+`TP_REQUIRED_CHECKS`'e hem ruleset'e (`scripts/github-ruleset.sh --checks …,web-java --apply`) eklenir;
+yerel (local-forge) kipte check adı dil ne olursa olsun `local-ci`'dır (011 §2.6).
 
 ## Ruleset
 
