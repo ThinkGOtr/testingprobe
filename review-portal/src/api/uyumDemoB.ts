@@ -39,6 +39,7 @@ import { dizgeler, ilk, kimlik, metin, metinYaDaNull, modUyarla, nesneMi, sayi, 
 import { hazirlikUyarla } from "./uyumFaz5";
 import { checkPlatformu, platformUyarla } from "../lib/platform";
 import type { AsistanKuleOlcumu, AsistanliKule, MaliyetGrubu } from "../components/asistan/OnerilerOlcumKarti";
+import { kosuHataAlanlari, kuleKaliteUyarla } from "./uyumKule";
 
 const nesne = (x: unknown): Ham => (nesneMi(x) ? x : {});
 const dizi = (x: unknown): Ham[] => (Array.isArray(x) ? x.filter(nesneMi) : []);
@@ -537,6 +538,8 @@ export function kosuUyarla(k: Ham): Kosu {
       metinYaDaNull(k.saglik_hatasi) ?? (saglik.ok === false ? metin(saglik.hata, "Koşu öncesi sağlık yoklaması başarısız.") : null),
     ...githubArtefakti(k.github_artefakt),
     platform: kosuPlatformu(k, ortam),
+    // 012/Ş8: ekilmiş hata koşusunun adımıysa `ortam.hata_kodu` (yoksa alan eklenmez).
+    ...kosuHataAlanlari(k, ortam),
   };
 }
 
@@ -656,6 +659,9 @@ const KPI_ANAHTARLARI: KpiAnahtari[] = [
   "a11y",
   "son_kosular",
   "asistan",
+  // 012/Ş8 (§4.7)
+  "beklenti_dogrulugu",
+  "hata_yakalama",
 ];
 
 function kaynaklarUyarla(x: unknown): KontrolKulesi["kaynaklar"] {
@@ -773,5 +779,7 @@ export function kontrolKulesiUyarla(govde: unknown): KontrolKulesi & AsistanliKu
     kaynaklar: kaynaklarUyarla(g.kaynaklar),
     uyarilar: dizgeler(g.uyarilar),
     asistan: asistanOlcumuUyarla(g.asistan),
+    // 012/Ş8 (§4.7): anahtar yoksa (eski core) alan da yok; sıfır uydurulmaz.
+    ...kuleKaliteUyarla(g),
   };
 }

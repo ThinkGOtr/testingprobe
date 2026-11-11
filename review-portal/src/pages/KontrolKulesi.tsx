@@ -16,6 +16,8 @@ import { KaynakIpucu } from "../components/KaynakIpucu";
 import { PlatformSuzgeci } from "../components/Platform";
 import type { Script } from "../api/types";
 import { PLATFORMLAR, PLATFORM_ETIKETI, platformaGoreSuz, platformSecimiOku, type Platform, type PlatformSecimi } from "../lib/platform";
+import { BeklentiDogruluguKarosu, HataYakalamaKarosu } from "../components/kule/KaliteKpilari";
+import { HataKosusuKarti } from "../components/kule/HataKosusuKarti";
 
 /** Platform başına üretilen test sayıları (Kule "Platform dağılımı"; kapatılan kayıtlar sayılmaz). */
 export function platformDagilimi(scriptler: Script[]): { platform: Platform; toplam: number; pr_acik: number; birlesti: number; defect: number }[] {
@@ -185,6 +187,9 @@ export function KontrolKulesi() {
           deger={<span data-testid="hazirlik-kazanci">{kazanc.oran === null ? <Olculmedi metin={kazanc.replay_haric > 0 ? "REPLAY: hesaplanmaz" : "ölçülmüş baz yok"} /> : yuzde(kazanc.oran)}</span>}
           alt={<span data-testid="kazanc-kapsam">{kazanc.kapsam}</span>}
         />
+        {/* 012 §4.7: kalite KPI'ları (components/kule). Değer yoksa "ölçülmedi"; sıfır uydurulmaz. */}
+        <BeklentiDogruluguKarosu k={k} />
+        <HataYakalamaKarosu k={k} />
       </div>
 
       <div className="kule-izgara">
@@ -315,6 +320,9 @@ export function KontrolKulesi() {
             </ul>
           )}
         </Kart>
+
+        {/* 012 §4.6: ekilmiş hata koşusu (başlat, ilerleme, hata × platform tablosu, kaçan hatalar). */}
+        <HataKosusuKarti olcuDegisti={() => void v.yenile(true)} />
       </div>
 
       {k.hazirlik.length > 0 && <HazirlikKarti k={k} kazanc={kazanc} />}

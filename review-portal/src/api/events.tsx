@@ -70,6 +70,8 @@ export const BILINEN_OLAYLAR = [
   // veri `{mesaj_id, kullanici_id, adim_kodu}` / `{mesaj_id, kullanici_id, durum}`.
   "assistant.step",
   "assistant.answered",
+  // 012/Ş8 ekilmiş hata koşusu (ANALIZ §4.6): veri `{id, durum, platform, hata_kodu, asama, sonuc}`.
+  "hata_kosusu.ilerleme",
 ] as const;
 
 /** Ayrıntılı olayın ek konuları (sayfalar konuya abone olur, olay adına değil). */
