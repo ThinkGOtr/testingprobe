@@ -33,8 +33,8 @@ Hedef:
 | K3 | PR kuralı | "PR yazarı kendi PR'ını onaylayamaz" kaldırıldı. Automation Engineer rolü yeterli; yeşil CI ve korumalı dal (bugünkü merge kapısı) kalır |
 | K4 | Proje kapsamı | Tek proje. Proje/tenant filtresi ve proje bazlı rol bu fazda yok |
 | K5 | Rol ataması | AI Probe platformunda. Paketteki "Kullanıcı ve rol yönetimi" sayfası ve `access.assign` TP'ye yazılmaz; Erişim Yöneticisi rolü TP'de yoktur |
-| K6 | PO onayı | Dokümandaki gibi yalnız Jira: etiketi koyan aktör PO listesinde, içerik hash'i eşleşir. Portaldaki PO onay ucu ve düğmesi kalkar |
-| K7 | Paketin kapsamadığı özellikler | Sahibi PO (baz değer, Jira'ya doküman düzeltmesi). İstisna: locator onarımı → Automation Engineer, Claude Code yayın token'ı → Testçi |
+| K6 | PO onayı | Dokümandaki gibi Jira: etiketi koyan aktör PO listesinde, içerik hash'i eşleşir. Jira kaynaklı gereksinimde portal PO onay ucu 410 döner, düğmesi kalkar. İstisna (2026-11-11 ek karar): serbest metin gereksinimde (`kaynak == free_text`, Jira'da story yok) portal PO onayı kalır (`requirement.po_approve_free_text`, hash kontrolü bugünkü gibi) |
+| K7 | Paketin kapsamadığı özellikler | Sahibi PO (baz değer). Doküman düzeltmesini Jira'ya uygulama ve "Son hal olarak onayla" Analist'te kalır (2026-11-11 ek karar; `requirement.review`). İstisna: locator onarımı → Automation Engineer, Claude Code yayın token'ı → Testçi |
 
 Uygulama sırasında verilen teknik kararlar (ürün kararı değil; gerekçesiyle):
 
@@ -66,7 +66,7 @@ Uygulama sırasında verilen teknik kararlar (ürün kararı değil; gerekçesiy
 | `admin` | Sistem Yöneticisi | Sistem ayarı ve demo işletimi; iş akışında onay vermez |
 | `auditor` | Denetçi | Denetim kaydını ve zincir doğrulamasını salt okunur inceler |
 | `analyst` | Analist | Gereksinim içe aktarma ve ön inceleme; case son onayı |
-| `po` | PO | Gereksinim teyidi (yalnız Jira); baz değer ve doküman düzeltmesi |
+| `po` | PO | Gereksinim teyidi (Jira; serbest metinde portal); baz değer |
 | `tester` | Testçi | Case üretimi, kararı, düzenlemesi, yayını; bug kararı; yayın token'ı |
 | `engineer` | Automation Engineer | Test kodu, kırarak doğrulama, PR inceleme/merge, locator onarımı, koşular |
 | `developer` | Developer | Onaylı case ve koşuları görür; non-prod'da manuel koşu başlatır |
@@ -82,10 +82,10 @@ oturumu ve Jira PO kanalını kabul eder).
 | İzin | Roller | Uçlar | Ek koşul |
 |---|---|---|---|
 | `requirement.import` | analyst | `POST /requirements/sync`, `POST /requirements/free-text` | |
-| `requirement.review` | analyst | `POST /requirements/{id}/review`, `POST /findings/{id}/decision` | |
-| `requirement.doc_fix` | po | `POST /requirements/{id}/apply-doc-fixes` | K7 |
+| `requirement.review` | analyst | `POST /requirements/{id}/review`, `POST /findings/{id}/decision`, `POST /requirements/{id}/apply-doc-fixes` (düzeltmeleri Jira'ya yaz / "Son hal olarak onayla") | |
+| `requirement.po_approve_free_text` | po | `POST /requirements/{id}/po-approve` | yalnız `kaynak == free_text`; hash kontrolü (mevcut). Jira kaynaklı gereksinimde 410 `po_onayi_jira` (izin kontrolünden sonra) |
 | `baseline.manage` | po | `PUT/DELETE /requirements/{id}/baseline`, `POST /baseline-file/apply` | K7 |
-| `case.generate` | tester | `POST /requirements/{id}/cases/generate` | gereksinim PO onaylı (mevcut kapı) |
+| `case.generate` | tester | `POST /requirements/{id}/generate-cases` | gereksinim PO onaylı (mevcut kapı) |
 | `case.decide` | tester | `POST /cases/{id}/decision` karar ∈ `accept`, `edit`, `reject`, `reopen`; `POST /cases/{id}/viewed` | ret nedeni zorunlu (mevcut) |
 | `case.approve` | analyst | `POST /cases/{id}/decision` karar ∈ `approve`, `send_back`; `POST /requirements/{id}/review-complete` | yalnız `ready` case; `send_back` gerekçe ister |
 | `case.publish` | tester | `POST /publish`, `GET /publish/preview` | onaylı + hash değişmemiş (mevcut kapı) |
@@ -107,10 +107,10 @@ oturumu ve Jira PO kanalını kabul eder).
 |---|---|---|
 | `dashboard.read` | hepsi | Kontrol Kulesi uçları, `GET /demo/status`, `GET /auth/me` |
 | `requirement.read` | admin, analyst, po, tester, engineer, developer | gereksinim listesi/detayı, bulgular, baz değer okuma |
-| `case.read` | admin, analyst, po, tester, engineer, developer* | *developer yalnız `approved`/`published` case; karar geçmişi ve chat yok |
-| `code.read` | admin, analyst, tester, engineer | script listesi/detayı, ekran görüntüleri, onarım durumu |
+| `case.read` | admin, analyst, po, tester, engineer, developer* | case listesi/detayı, `GET /requirements/{id}/case-metrics`; *developer yalnız `approved`/`published` case; karar geçmişi ve chat yok |
+| `code.read` | admin, analyst, tester, engineer | script listesi/detayı, ekran görüntüleri (`GET /scripts/{id}/screenshots/{n}`), onarım durumu (`GET /failures/{id}/fix`) |
 | `run.read` | hepsi | koşu listesi/detayı |
-| `run.artifacts` | admin, analyst, po, tester, engineer, developer | ham artefaktlar (auditor ve viewer hariç) |
+| `run.artifacts` | admin, analyst, po, tester, engineer, developer | ham artefaktlar, `GET /artifacts/runs/{run_id}/{yol}` (auditor ve viewer hariç) |
 | `failure.read` | admin, analyst, po, tester, engineer, developer | hata sınıflaması |
 | `bug.read` | admin, analyst, po, tester, engineer, developer* | *developer yalnız açılmış / bağlanmış bug |
 | `audit.read_all` | admin, auditor | tüm denetim kaydı |
@@ -118,6 +118,10 @@ oturumu ve Jira PO kanalını kabul eder).
 | `events.read` | admin, analyst, po, tester, engineer, developer | `GET /events` (SSE) |
 | `assistant.use` | hepsi | asistan ve öneriler |
 | `token.read` | hepsi | kendi token'ları (`GET/DELETE /tokens`) |
+
+İmzalı, oturumsuz rapor bağlantıları (`GET /artifacts/k/{token}/runs/...`, koşu yanıtındaki `rapor_url`)
+uç düzeyinde izin taşımaz (imza kanıttır); `run.artifacts` izni olmayan role koşu yanıtlarında bu
+bağlantılar hiç dönmez (alan boş/yok).
 
 Kapsam dışı kalan uçlar: `/auth/*`, `/api/auth/aiprobe/*` (giriş akışı), `/admin/kimlik-bagi`
 (servis kimliği; değişmez), `/mcp` (bearer token kapsamı; değişmez), `/health`.
@@ -163,13 +167,13 @@ Kapsam dışı kalan uçlar: `/auth/*`, `/api/auth/aiprobe/*` (giriş akışı),
 
 | Konu | Bugün | Yeni |
 |---|---|---|
-| PO onayı | Jira etiketi veya portal | Yalnız Jira (`POST /requirements/{id}/po-approve` → 410). Simülatör kipinde PO onayı simüle Jira'ya etiket koyarak verilir |
+| PO onayı | Jira etiketi veya portal | Jira kaynaklı gereksinim: yalnız Jira etiketi (`POST /requirements/{id}/po-approve` → 410 `po_onayi_jira`; simülatör kipinde simüle Jira'ya etiket). Serbest metin gereksinim (`kaynak == free_text`): portal PO onayı (`requirement.po_approve_free_text`, po; hash kontrolü) |
 | CI tetik | presenter | engineer (`deploy`/`nightly`), engineer + developer (`manual`) |
 | Demo kontrolleri | presenter, her kipte | admin + engineer, yalnız `TP_DEMO_MODE=1` |
 | Denetim kaydı | oturum açan herkes tümünü görür | admin/auditor tümünü; diğerleri kendi olaylarını; doğrulama admin/auditor |
 | Canlı olaylar | herkes | auditor ve viewer hariç |
 | Yayın token'ı | analyst | tester |
-| Baz değer, doküman düzeltmesi | analyst (+po) | po |
+| Baz değer | analyst (+po) | po |
 
 ## 7. AI Probe tarafı (`aiprobe-platform` reposu)
 
@@ -204,3 +208,28 @@ QA, frontend), hedefli testler, tam paket, Chrome for Testing ile rol rol ekran 
 - **Paket önerisi dışında kalan:** acil erişim (break-glass), proje kapsamı, Erişim Yöneticisi
   ekranı, bildirim tablosunun yeniden yazımı (Jira bahsetmeleri bugünkü roller üzerinden kalır,
   yalnız yayın bildirimi Testçi'ye gider).
+
+### Deploy notları
+
+- **Göç kendiliğinden koşar:** `make up` (tp-vm'de `deploy/aiprobe/bin/up.sh` → `make up`) compose'un
+  `migrate` servisini (`alembic upgrade head`) çalıştırır; `core-api` ve `core-worker`
+  `migrate: service_completed_successfully` koşuluyla başlar. `presenter` → `admin` ve case durum
+  göçleri için elle adım yoktur.
+- **Ortam değişkenleri:** tp-vm'de `.env` her açılışta `tp-env` sırrından (`/run/tp/tp.env`) yazılır;
+  `TP_DEMO_MODE=1` (ve gerekiyorsa `TP_ORTAM`) bu sırra eklenmelidir. Sır güncellemesi GCP'ye
+  yazmadır, ayrı onayla yapılır. Compose `x-core-env` değişkenleri tek tek listeler (`env_file` yok):
+  `TP_ORTAM` ve `TP_DEMO_MODE` `docker-compose.yml`'a eklenmeden `.env` değeri konteynere ulaşmaz
+  (şerit tablosunda sahibi yok; S1 `config.py` ile birlikte ekler).
+- **AI Probe:** ürün kaydı değişikliği (`products/testing-probe.yaml`, üretilen
+  `products_config.json` aiprobe-home imajına gömülür) ancak aiprobe-home yeniden deploy edilince
+  etkinleşir. Kişilerin canlı rol kayıtlarının (`presenter` → `admin`) güncellenmesi ayrı onaylı
+  yazmadır; o zamana kadar TP `presenter`'ı `admin` sayar (`yetki.ESKI_ROLLER`). `admin` artık
+  `admin_roles`'tadır: MFA'sız (`acr=1`) devirde `admin` rolü dönmez.
+- **`docs/CANLI-DEMO-SENARYOSU.md` elle güncellenmeli:** dosya `.gitignore`'dadır (yalnız ana
+  checkout'ta), şeritlerin commit'leriyle değişmez. DEMO-AKISI'na yazılan değişiklikler aynen
+  uygulanır: "Sunucu" profili → Sistem Yöneticisi (`sunucu` hesabı, rol `admin`); case adımı ikiye
+  ayrılır — "Case üret" ve kabul/düzelt/reddet Testçi profilinde, son onay ("Onayla" / gerekçeli
+  "Geri gönder") Analist profilinde; yayın ve Claude Code token'ı Testçi; "Deploy sonrası testleri
+  koş" / "Gece koşusu" Automation Engineer; demo kontrolleri ("Buton kimliğini değiştir", sıfırlama)
+  Sistem Yöneticisi ya da Automation Engineer ve `.env`'de `TP_DEMO_MODE=1` gerekir; bulgu kararları
+  ve "Düzeltmeleri Jira'ya yaz" Analist'te kalır; Jira story'sinde PO onayı Jira etiketiyle (değişmez).
