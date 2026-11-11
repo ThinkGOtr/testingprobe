@@ -127,11 +127,18 @@ class FakeToolchain:
 
     java_semboller: dict[str, Any] | None = None
 
-    def symbols(self, sha: str, *, platform: str | None = None) -> dict[str, Any]:
-        self.cagrilar.append(("symbols", sha) if platform is None else ("symbols", sha, platform))
+    def symbols(
+        self, sha: str, *, platform: str | None = None, lang: str | None = None
+    ) -> dict[str, Any]:
+        if lang is not None:
+            self.cagrilar.append(("symbols", sha, platform, lang))
+        else:
+            self.cagrilar.append(
+                ("symbols", sha) if platform is None else ("symbols", sha, platform)
+            )
         if self.hata:
             raise self.hata
-        if platform is not None and self.java_semboller is not None:
+        if (platform is not None or lang == "java") and self.java_semboller is not None:
             return self.java_semboller
         return self.semboller
 

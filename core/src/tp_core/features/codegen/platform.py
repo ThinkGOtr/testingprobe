@@ -36,3 +36,35 @@ def uygulama_mi(platform: str | None) -> bool:
 def dil(platform: str | None) -> str:
     """toolchain-worker `lang` karşılığı: web → `ts`, diğerleri → `java`."""
     return "java" if uygulama_mi(platform) else "ts"
+
+
+# --------------------------------------------------------------------------- üretim dili (011)
+# GEÇİCİ ASGARİ TANIM (Ş5 ci-triage worktree'si; specs/011-uretim-dili §2.1). Bu bölümün sahibi
+# Ş1'dir: birleştirmede Ş1'in sürümü kazanır. Adlar sözleşmedeki adlardır.
+
+Dil = Literal["ts", "java", "csharp", "python"]
+DILLER: tuple[str, ...] = ("ts", "java", "csharp", "python")
+TAM_HAT_DILLERI: tuple[str, ...] = ("ts", "java")
+DOGRULANMAMIS_DILLER: tuple[str, ...] = ("csharp", "python")
+
+
+def varsayilan_dil(platform: str | None) -> str:
+    """Algılama yoksa / eski kayıt: `web → ts`, uygulama → `java` (geriye uyum)."""
+    return "java" if uygulama_mi(platform) else "ts"
+
+
+def java_mi(dil: str | None) -> bool:
+    """Kod/derleme/yama sorusu: üretim dili Java mı?"""
+    return dil == "java"
+
+
+def tam_hat_mi(dil: str | None) -> bool:
+    """Derlenen + koşulan + PR'a giren dil mi (`ts` | `java`)?"""
+    return dil in TAM_HAT_DILLERI
+
+
+def gecerli_cift(platform: str | None, dil: str | None) -> bool:
+    """`web` × herhangi bir dil; `android|ios|windows` × yalnız `java`."""
+    if dil not in DILLER:
+        return False
+    return dil == "java" if uygulama_mi(platform) else (platform or WEB) == WEB

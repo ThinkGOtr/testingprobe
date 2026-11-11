@@ -64,9 +64,10 @@ CHECK_TIMEOUT_S = check_timeout_s()
 WORKFLOW_FILE = "ci.yml"
 RESULTS_ARTIFACT = "test-local-results"
 # Uygulama platformu → iş akışı dosyası (009 §2.7; `forge.GITHUB_PLATFORM_WORKFLOWS` ile aynı).
+# Web + Java (011 §2.8): `web-java.yml` (`forge.WEB_JAVA_WORKFLOW` ile aynı).
 # Bilinen dosyalar dışında bir yol API'ye gitmez (yol enjeksiyonu yok).
 IZINLI_IS_AKISLARI = frozenset(
-    {WORKFLOW_FILE, "mobil-android.yml", "mobil-ios.yml", "masaustu-windows.yml"}
+    {WORKFLOW_FILE, "mobil-android.yml", "mobil-ios.yml", "masaustu-windows.yml", "web-java.yml"}
 )
 
 
