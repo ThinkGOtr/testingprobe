@@ -1,10 +1,10 @@
 // Mock arka uç: asistan uçları, assistant.* olayları ve kodlu hatalar (AI-ASISTAN-PLANI §9, §13).
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { asistanApi, BEKLEYEN_VAR_METNI, gonderimHataMetni } from "../asistan";
-import { ApiError, mockUclari } from "../http";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { asistanApi, BEKLEYEN_VAR_METNI, dondurmaKalanS, dondurulduMetni, gonderimHataMetni, KISISEL_VERI_METNI } from "../asistan";
+import { ApiError, mockUclari, yapilandir } from "../http";
 import type { PortalOlayi } from "../types";
 import { oturumAc } from "../../test/yardimci";
-import { asistanMockAyarla, asistanMockIsle } from "./asistan";
+import { asistanMockAyarla, asistanMockIsle, mockKartVar } from "./asistan";
 import { mockOlaylaraAbone } from "./olaylar";
 
 let olaylar: PortalOlayi[] = [];
@@ -193,5 +193,121 @@ describe("asistan mock uçları", () => {
     expect((await asistanApi.mesaj(b.mesaj_id)).geri_bildirim).toBe(1);
     const soruMesaji = (await asistanApi.mesajlar(s.id)).find((m) => m.rol === "user")!;
     expect(await kodu(asistanApi.geriBildirim(soruMesaji.id, 1))).toEqual({ status: 422, kod: "gecersiz_istek" });
+  });
+});
+
+describe("013 güvenlik: kisisel_veri, donduruldu, kip rozeti alanları", () => {
+  const sahteToken = "gh" + "p_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4";
+
+  async function hata(p: Promise<unknown>): Promise<ApiError> {
+    const e = await p.then(
+      () => null,
+      (x: unknown) => x,
+    );
+    expect(e).toBeInstanceOf(ApiError);
+    return e as ApiError;
+  }
+
+  it("status: varsayılan ve derin model kimliği (kip rozeti)", async () => {
+    expect(await asistanApi.durum()).toMatchObject({ varsayilan_model: "claude-haiku-5-5", derin_model: "claude-sonnet-5-5" });
+  });
+
+  it("kart dedektörü: Luhn + ayraç; test kartları, Luhn'suz sayı ve URL içi geçer", () => {
+    expect(mockKartVar("Müşterinin kartı 5105 1051 0510 5100")).toBe(true);
+    expect(mockKartVar("kart 5105.1051.0510.5100 reddedildi")).toBe(true);
+    expect(mockKartVar("kart 5105-1051-0510-5100")).toBe(true);
+    expect(mockKartVar("5105 1051 0510 5101")).toBe(false); // Luhn tutmaz
+    expect(mockKartVar("test kartı 4111 1111 1111 1111")).toBe(false);
+    expect(mockKartVar("4242424242424242 ile ödeme")).toBe(false);
+    expect(mockKartVar("1234 5678 9012 3456")).toBe(false);
+    expect(mockKartVar("https://ornek.test/odeme/5105105105105100?x=1")).toBe(false);
+    expect(mockKartVar("Commit 7acd95ba12c4e5f60718293a4b5c6d7e8f901234")).toBe(false);
+  });
+
+  it("422 kisisel_veri: soru ya da bağlamda kart; dondurma sayacına girmez", async () => {
+    const s = await asistanApi.sohbetOlustur(null);
+    for (let i = 0; i < 4; i++) {
+      const e = await hata(asistanApi.soruGonder(s.id, { soru: "Müşterinin kartı 5105 1051 0510 5100" }));
+      expect([e.status, e.kod]).toEqual([422, "kisisel_veri"]);
+      expect(gonderimHataMetni(e)).toBe(KISISEL_VERI_METNI);
+    }
+    const b = await hata(asistanApi.soruGonder(s.id, { soru: "x", baglam: { secili_eleman: { ad: "5105105105105100" } } }));
+    expect(b.kod).toBe("kisisel_veri");
+    // Dört kişisel veri reddinden sonra soru yine kabul edilir (dondurma yok).
+    await asistanApi.soruGonder(s.id, { soru: "Bugün ne yapmalıyım?" });
+  });
+
+  it("art arda 3 sır reddi → sonraki POST 429 donduruldu (kalan_s 600); süre dolunca açılır", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const s = await asistanApi.sohbetOlustur(null);
+      for (let i = 0; i < 3; i++) {
+        expect((await hata(asistanApi.soruGonder(s.id, { soru: `bu ne ${sahteToken}` }))).kod).toBe("sir_icerik");
+      }
+      const e = await hata(asistanApi.soruGonder(s.id, { soru: "Bugün ne yapmalıyım?" }));
+      expect([e.status, e.kod, e.ek.kalan_s]).toEqual([429, "donduruldu", 600]);
+      expect(dondurmaKalanS(e)).toBe(600);
+      expect(gonderimHataMetni(e)).toBe("Asistan, art arda engellenen istekler nedeniyle ~10 dk kullanılamıyor.");
+      // Donmuşken sır denemesi bile 429 (sır taramasından önce): sayaç büyümez.
+      expect((await hata(asistanApi.soruGonder(s.id, { soru: `bu ne ${sahteToken}` }))).kod).toBe("donduruldu");
+      vi.setSystemTime(Date.now() + 599_000);
+      const e2 = await hata(asistanApi.soruGonder(s.id, { soru: "Bugün ne yapmalıyım?" }));
+      expect(e2.ek.kalan_s).toBe(1);
+      expect(gonderimHataMetni(e2)).toMatch(/~1 dk/);
+      vi.setSystemTime(Date.now() + 1_500);
+      await asistanApi.soruGonder(s.id, { soru: "Bugün ne yapmalıyım?" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("kabul edilen soru ardışık sayacı sıfırlar; sayaç kullanıcı başına", async () => {
+    const s = await asistanApi.sohbetOlustur(null);
+    for (let i = 0; i < 2; i++) await hata(asistanApi.soruGonder(s.id, { soru: `bu ne ${sahteToken}` }));
+    const a = await asistanApi.soruGonder(s.id, { soru: "Bugün ne yapmalıyım?" });
+    asistanMockIsle(a.mesaj_id);
+    for (let i = 0; i < 2; i++) await hata(asistanApi.soruGonder(s.id, { soru: `bu ne ${sahteToken}` }));
+    const b = await asistanApi.soruGonder(s.id, { soru: "Bugün ne yapmalıyım?" });
+    asistanMockIsle(b.mesaj_id);
+    for (let i = 0; i < 3; i++) await hata(asistanApi.soruGonder(s.id, { soru: `bu ne ${sahteToken}` }));
+    expect((await hata(asistanApi.soruGonder(s.id, { soru: "x" }))).kod).toBe("donduruldu");
+    await oturumAc("analist");
+    const s2 = await asistanApi.sohbetOlustur(null);
+    await asistanApi.soruGonder(s2.id, { soru: "Bugün ne yapmalıyım?" });
+  });
+
+  it("canlı görünen mock cevabı kaynak=model; şablon/sözlük/kapalı kaynakları rozet için dolu", async () => {
+    const s = await asistanApi.sohbetOlustur(null);
+    const a = await asistanApi.soruGonder(s.id, { soru: "Kırarak doğrula neden gri?" });
+    asistanMockIsle(a.mesaj_id);
+    expect(await asistanApi.mesaj(a.mesaj_id)).toMatchObject({ kaynak: "model", amac: "assistant" });
+    const d = await asistanApi.derinIncele(s.id, a.mesaj_id);
+    asistanMockIsle(d.mesaj_id);
+    expect(await asistanApi.mesaj(d.mesaj_id)).toMatchObject({ kaynak: "model", amac: "assistant_deep" });
+  });
+
+  it("dondurulduMetni: N = ⌈kalan_s/60⌉, en az 1; ApiError dışı / başka kod null", () => {
+    expect(dondurulduMetni(600)).toMatch(/~10 dk/);
+    expect(dondurulduMetni(61)).toMatch(/~2 dk/);
+    expect(dondurulduMetni(1)).toMatch(/~1 dk/);
+    expect(dondurulduMetni(0)).toMatch(/~1 dk/);
+    expect(dondurmaKalanS(new Error("x"))).toBeNull();
+    expect(dondurmaKalanS(new ApiError(429, "x", { kod: "hiz_siniri", ek: { kalan_s: 5 } }))).toBeNull();
+    expect(dondurmaKalanS(new ApiError(429, "x", { kod: "donduruldu" }))).toBe(600);
+    expect(dondurmaKalanS(new ApiError(429, "x", { kod: "donduruldu", ek: { kalan_s: -3 } }))).toBe(600);
+  });
+
+  it("gerçek uç: hata gövdesindeki sayısal alanlar (kalan_s) ApiError.ek'e taşınır, metin alanları taşınmaz", async () => {
+    yapilandir({ mockZorunlu: false, mockOtomatik: false, yetenekKesfi: false });
+    const govde = { detail: "Dondu.", kod: "donduruldu", kalan_s: 125, neden: "gizli" };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(govde), { status: 429, headers: { "Content-Type": "application/json" } })));
+    try {
+      const e = await hata(asistanApi.soruGonder("s-1", { soru: "x" }));
+      expect([e.status, e.kod, e.detail]).toEqual([429, "donduruldu", "Dondu."]);
+      expect(e.ek).toEqual({ kalan_s: 125 });
+      expect(gonderimHataMetni(e)).toBe("Asistan, art arda engellenen istekler nedeniyle ~3 dk kullanılamıyor.");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

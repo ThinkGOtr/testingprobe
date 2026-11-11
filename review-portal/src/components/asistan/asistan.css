@@ -145,6 +145,9 @@
   .asistan-sekmeler {
     padding-bottom: 8px;
   }
+  .asistan-yz-bildirimi {
+    margin-bottom: 6px;
+  }
   .asistan-girdi {
     padding: 8px 16px 10px;
     gap: 6px;
@@ -208,6 +211,36 @@
 .asistan-denetim-notu {
   margin: 0;
   padding: 0 16px 12px;
+}
+/* Yapay zekâ bildirimi (013 §7, K12): kalıcı, kapatılamaz tek satır; her sekmede başlığın altında.
+   AI tonu (mor yalnız AI): --vurgu-bg zemin + sol --vurgu şeridi; metin --text-2 (tonlu zeminde --muted
+   yok). Dar panelde sarar; anlam metindedir. */
+.asistan-yz-bildirimi {
+  margin: 0 16px 8px;
+  padding: 4px 10px;
+  border-left: 3px solid var(--vurgu);
+  border-radius: var(--radius-sm);
+  background: var(--vurgu-bg);
+  color: var(--text-2);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+/* Kip rozeti (cevap kartı): CANLI · model = AI moru; ŞABLON / MODEL KAPALI = nötr. Metin anlamı taşır. */
+.rozet-kip {
+  cursor: help;
+}
+.rozet-kip-canli {
+  background: var(--vurgu-bg);
+  color: var(--vurgu);
+  border-color: color-mix(in srgb, var(--vurgu) 30%, transparent);
+}
+.rozet-kip-sablon,
+.rozet-kip-kapali {
+  background: var(--notr-bg);
+  color: var(--notr);
+  border-color: color-mix(in srgb, var(--notr) 30%, transparent);
 }
 
 /* Sekme şeridi: portalın sekme kalıbı (.sekme — hap, seçili = --accent-solid dolgu + beyaz). Şeridin
