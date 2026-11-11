@@ -163,10 +163,14 @@ def id_conflicts(yeni: Mapping[str, Any], mevcut: Mapping[str, Any]) -> list[str
 
 
 def _case_ozeti(tc: TestCase) -> dict[str, Any]:
-    i = tc.icerik or {}
+    return case_ozeti(tc.icerik or {}, f"U{tc.uretim_no}-{tc.sira_no}", tc.durum)
+
+
+def case_ozeti(i: Mapping[str, Any], ref: str, durum: str) -> dict[str, Any]:
+    """Mevcut case'in modele giden özeti (`U<üretim>-<sıra>` referansıyla)."""
     return {
-        "ref": f"U{tc.uretim_no}-{tc.sira_no}",
-        "durum": tc.durum,
+        "ref": ref,
+        "durum": durum,
         "title": i.get("title"),
         "type": i.get("type"),
         "technique": i.get("technique") or [],

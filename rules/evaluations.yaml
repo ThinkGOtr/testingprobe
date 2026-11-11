@@ -152,3 +152,35 @@ bundles:
             sure_s:
               medyan: 7.62
               p90: 13.522
+  platform-common:
+    version: 1
+    status: pending
+    note: "011 F4: Ortak platform eki kuralları (kontrol listesi/kota değil, benimsenen standart → beklenen sonuç, aksi gözlem, config_matrix satırsız, requires_real_device, testability_gaps, test türü kuralları). Seti: evaluation/platform-common.json (çağrı case-generation ile; ek metni girdide). İçerik hash'i ek + ev sahibi prompt + şema + case_generation ayarını kapsar. Canlı değerlendirme yapılmadı; onaylı istisna yok."
+  platform-web:
+    version: 1
+    status: pending
+    note: "011 F4: P1 Web eki. Golden: replay/case_generation/golden/platform-web/TPD-4.json (elle hazırlandı). Seti: evaluation/platform-web.json. Canlı değerlendirme yapılmadı; onaylı istisna yok."
+  platform-mobile:
+    version: 1
+    status: pending
+    note: "011 F4: P2 Mobil eki. Golden yok (REPLAY duman koşusu REPLAY-MISS verir). Seti: evaluation/platform-mobile.json. Canlı değerlendirme yapılmadı; onaylı istisna yok."
+  platform-desktop:
+    version: 1
+    status: pending
+    note: "011 F4: P3 Desktop eki. Golden yok. Seti: evaluation/platform-desktop.json. Canlı değerlendirme yapılmadı; onaylı istisna yok."
+  platform-api:
+    version: 1
+    status: pending
+    note: "011 F4: P4 API eki. Golden yok. Seti: evaluation/platform-api.json. Canlı değerlendirme yapılmadı; onaylı istisna yok."
+  platform-data:
+    version: 1
+    status: pending
+    note: "011 F4: P4.5 Data/entegrasyon eki. Golden yok. Seti: evaluation/platform-data.json. Canlı değerlendirme yapılmadı; onaylı istisna yok."
+  case-negative:
+    version: 1
+    status: pending
+    note: "011 F4: P5 negatif kapsam genişletme (amaç case_deepening). Golden: replay/case_deepening/golden/negatif/TPD-1.json (elle hazırlandı). Seti: evaluation/case-negative.json. Canlı değerlendirme yapılmadı; onaylı istisna yok."
+  case-technique:
+    version: 1
+    status: pending
+    note: "011 F4: P6 teknikle derinleştirme (amaç case_deepening). Golden: replay/case_deepening/golden/teknik-ep/TPD-4.json (elle hazırlandı). Seti: evaluation/case-technique.json. Canlı değerlendirme yapılmadı; onaylı istisna yok."

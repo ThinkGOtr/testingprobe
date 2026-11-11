@@ -67,6 +67,7 @@ from tp_core.gateway.eval_agents import (
     ToolEnv,
     asistan_problems,
     coverage_problems,
+    deepening_problems,
     dogrulanmis_kaynak_var,
     findings_problems,
     generation_stats,
@@ -157,6 +158,8 @@ def check_output(purpose: str, expect: Mapping[str, Any], output: Any) -> list[s
         failures += review_problems(out, expect)
     elif purpose == "case_generation":
         failures += coverage_problems(out, expect)
+    elif purpose == "case_deepening":
+        failures += deepening_problems(out, expect)
     elif purpose == "consistency_check":
         failures += findings_problems(out, expect)
     elif purpose == "verify_and_map":
@@ -166,6 +169,13 @@ def check_output(purpose: str, expect: Mapping[str, Any], output: Any) -> list[s
     else:
         raise GatewayConfigError(f"değerlendirme beklentisi tanımlı değil: {purpose}")
     return failures
+
+
+def call_bundle(data: Mapping[str, Any]) -> str:
+    """Geçide giden prompt paketi. Platform eki setleri (011 F4) kendi paketlerini (`bundle`,
+    durum kaydı) değerlendirir ama çağrı ev sahibi paketle yapılır (`call_bundle`:
+    `case-generation`); ek metni girdidedir."""
+    return str(data.get("call_bundle") or data["bundle"])
 
 
 def case_replay_key(data: Mapping[str, Any], case: Mapping[str, Any]) -> dict[str, Any]:
@@ -202,7 +212,7 @@ def run_case(
     düşürür, koşuyu değil (`eval_live` vaka başına bütçe denetimi için bunu tek tek çağırır).
 
     Ajan setleri (`agent`) üretimdeki araç ortamıyla (`env`) koşar; ortam yoksa vaka çağrılmaz."""
-    purpose, bundle = str(data["purpose"]), str(data["bundle"])
+    purpose, bundle = str(data["purpose"]), call_bundle(data)
     cid = case_id or str(case["id"])
     expect = case.get("expect") or {}
     agent = data.get("agent")

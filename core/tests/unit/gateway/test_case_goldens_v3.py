@@ -24,12 +24,16 @@ from tests.unit.gateway import case_v3_rules as v3
 from tests.unit.gateway.demo_sources import RULES, load_golden
 from tp_core.features.cases import schema as case_schema
 from tp_core.gateway.eval_agents import (
+    PLATFORM_KATEGORISI,
     coverage_problems,
     generation_stats,
 )
 from tp_core.gateway.eval_set import CaseResult, check_output, uretim_dagilimi, write_report
 
-GOLDENS = ["TPD-1", "TPD-3", "TPD-4", "SERBEST", "f2-kod-hatasi/TPD-1"]
+GOLDENS = ["TPD-1", "TPD-3", "TPD-4", "SERBEST", "f2-kod-hatasi/TPD-1", "platform-web/TPD-4"]
+# Platform eki seçilmemiş üretimler (platform alanları boş); platform golden'ı
+# test_platform_goldens.py'de.
+PLATFORMSUZ = [g for g in GOLDENS if not g.startswith("platform-")]
 V2_FIELDS = (
     "title",
     "type",
@@ -217,7 +221,7 @@ def test_readiness_distribution_of_the_goldens() -> None:
     assert "assumption_dependent" in note and "blocked" in note
 
 
-@pytest.mark.parametrize("name", GOLDENS)
+@pytest.mark.parametrize("name", PLATFORMSUZ)
 def test_v3_fields_follow_the_prompt(name: str) -> None:
     out = _golden(name)["output"]
     # Platform bölümü yok: platform alanları ve üst düzey platform listeleri boş.
@@ -266,7 +270,11 @@ def test_negative_and_uncovered_decisions_are_explicit() -> None:
         out_of_scope = {
             d["item"] for d in out["negative_coverage"] if d["decision"] == "out_of_scope"
         }
-        assert uncovered == {n["item"] for n in out["not_covered"]} | out_of_scope, name
+        # Platform ekinde atlanan kategori (`Web:Responsive`) kapsam öğesi değildir.
+        kapsanmayan = {
+            n["item"] for n in out["not_covered"] if not PLATFORM_KATEGORISI.fullmatch(n["item"])
+        }
+        assert uncovered == kapsanmayan | out_of_scope, name
     tpd4 = _golden("TPD-4")["output"]
     assert [d["decision"] for d in tpd4["negative_coverage"]] == ["tested", "out_of_scope"]
     blob = json.dumps(tpd4["cases"], ensure_ascii=False)

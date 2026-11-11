@@ -2,7 +2,7 @@
   "kind": "call",
   "purpose": "case_deepening",
   "golden": "negatif/TPD-1",
-  "note": "Derinleştirme golden'ı (011 P5 negatif genişletme). Elle hazırlandı (model çıktısı değil). Mevcut set olarak TPD-1 ana golden'ının case'leri varsayılır (yeni kimlikler: EP-I3, EG-1/2, Q1, A1/A2 — ana golden'da yok). Girdi beyanı mevcut set bloğunu denetlemez; kimlik çakışmasını kod reddeder (deepen.id_conflicts). Mesaj metni kaynakta olmayan negatifte 'mesaj metni: AÇIK NOKTA' yazılır, beklenen sonuç uydurulmaz.",
+  "note": "Derinleştirme golden'ı (011 P5 negatif genişletme). Elle hazırlandı (model çıktısı değil). Mevcut set olarak TPD-1 ana golden'ının case'leri varsayılır (yeni kimlikler: EP-I3, EG-1/2, Q1, A1/A2 — ana golden'da yok). Girdi beyanı mevcut set bloğunu denetlemez; kimlik çakışmasını kod reddeder (deepen.id_conflicts). Mesaj metni kaynakta olmayan negatifte 'mesaj metni: AÇIK NOKTA' yazılır, beklenen sonuç uydurulmaz. Tür/teknik golden adındadır (`negatif/…`, `teknik-ep/…`; deepen.replay_name); girdi beyanı story bloğunu denetler.",
   "input_match": {
     "sources": [
       "jira:TPD-1"
@@ -16,8 +16,7 @@
       "AC6: Kampanyalı siparişlerde minimum sipariş tutarı şartı aranmaz."
     ],
     "contains": [
-      "Bayi, katalogdan ürünleri sepete ekleyip kampanya indirimiyle siparişini onaylayabilmelidir.",
-      "Derinleştirme turu: negatif kapsam genişletme (P5)."
+      "Bayi, katalogdan ürünleri sepete ekleyip kampanya indirimiyle siparişini onaylayabilmelidir."
     ]
   },
   "output": {

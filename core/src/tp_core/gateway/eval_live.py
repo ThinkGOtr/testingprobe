@@ -92,6 +92,7 @@ from tp_core.gateway.eval_set import (
     GUARDRAILS,
     CaseResult,
     asistan_olcumleri,
+    call_bundle,
     case_messages,
     case_replay_key,
     flow_env_name,
@@ -381,7 +382,7 @@ def estimate_case(gw: Gateway, data: Mapping[str, Any], case: Mapping[str, Any])
     purpose = str(data["purpose"])
     cfg = gw.models.purpose(purpose)
     schema = load_schema(gw.rules_dir, purpose)
-    system = gw.bundle(str(data["bundle"]), schema, cfg).system_prompt
+    system = gw.bundle(call_bundle(data), schema, cfg).system_prompt
     chars = len(system) + len(json.dumps(case["messages"], ensure_ascii=False))
     tokens = math.ceil(chars / CHARS_PER_TOKEN)
     price = gw.models.price(cfg.model)
@@ -814,7 +815,7 @@ def run_live(
                         if record_dir is not None and result.mode == "live" and not agent:
                             info = gw.replay_key_for_call(
                                 purpose,
-                                str(data["bundle"]),
+                                call_bundle(data),
                                 case_messages(case),
                                 schema,
                                 replay_key=case_replay_key(data, case),

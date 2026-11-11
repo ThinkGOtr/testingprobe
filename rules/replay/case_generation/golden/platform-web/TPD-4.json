@@ -2,10 +2,11 @@
   "kind": "call",
   "purpose": "case_generation",
   "golden": "platform-web/TPD-4",
-  "note": "Senaryo golden'ı (011 F4, P1 Web eki): TPD-4 için Web platformu, benimsenen standart WCAG 2.2 AA, tarayıcılar ve çözünürlükler seçilmiş üretim. Elle hazırlandı (model çıktısı değil). Girdi beyanı platform eki başlığını ve analist seçenek bloğunu içerir; platformsuz TPD-4 girdisi bu golden'a eşleşmez. İlk iki case ana TPD-4 golden'ıyla aynıdır (platformdan bağımsız, platform null); iki Web case'i benimsenen WCAG maddelerine bağlıdır; WSTG benimsenmediği için gözlemdir; config_matrix yalnız parametre içerir (satır yok).",
+  "note": "Senaryo golden'ı (011 F4, P1 Web eki): TPD-4 için Web platformu, benimsenen standart WCAG 2.2 AA, tarayıcılar ve çözünürlükler seçilmiş üretim. Elle hazırlandı (model çıktısı değil). Girdi beyanı analist seçenek bloğunu (`jira:TPD-4:secenekler`: Platformlar: Web, Benimsenen standartlar: WCAG 2.2 AA) içerir; golden adı `secenekler.replay_adi` ile platformdan türer; platformsuz TPD-4 girdisi bu golden'a eşleşmez. İlk iki case ana TPD-4 golden'ıyla aynıdır (platformdan bağımsız, platform null); iki Web case'i benimsenen WCAG maddelerine bağlıdır; WSTG benimsenmediği için gözlemdir; config_matrix yalnız parametre içerir (satır yok).",
   "input_match": {
     "sources": [
-      "jira:TPD-4"
+      "jira:TPD-4",
+      "jira:TPD-4:secenekler"
     ],
     "acceptance_criteria": [
       "AC1: Bayi geçerli kullanıcı adı ve parolayla giriş yaptığında ürün kataloğu açılır.",
@@ -13,8 +14,6 @@
     ],
     "contains": [
       "Bayi, kullanıcı adı ve parolasıyla portala giriş yapabilmelidir.",
-      "### Platform eki: platform-common@v1",
-      "### Platform eki: platform-web@v1",
       "Platformlar: Web",
       "Benimsenen standartlar: WCAG 2.2 AA"
     ]
