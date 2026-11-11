@@ -63,7 +63,9 @@ import {
 } from "./fixtures";
 import { mockOlayYayinla } from "./olaylar";
 import { javaDosyaYolu, javaTestKodu, uygulamayaCevir } from "./platformlar";
-import { PLATFORMLAR, platformUyarla, type Platform } from "../../lib/platform";
+import { PLATFORMLAR, PLATFORM_ETIKETI, platformUyarla, type Platform } from "../../lib/platform";
+import { DIL_ETIKETI, DILLER, dilUyarla, dogrulanmamisDilMi, gecerliCift, type Dil } from "../../lib/dil";
+import { algilananDil, csharpCiktisi, JAVA_KONTROL_ACIKLAMASI, javaWebCiktisi, javaYerelGecti, kodDilleriYaniti, pythonCiktisi } from "./diller";
 import { asistanMockSifirla, asistanRotalari } from "./asistan";
 import { oneriKuleOlcumu, oneriMockSifirla, oneriRotalari } from "./oneri";
 import type { AsistanliKule } from "../../components/asistan/OnerilerOlcumKarti";
@@ -972,31 +974,58 @@ const KOD_GOLDEN: Record<string, { adimlar: () => AjanAdimi[]; kaynak: Record<st
 
 function kodUret(govde: unknown): IsYaniti {
   rolGerekli("engineer");
-  const g = (govde ?? {}) as { case_ids?: string[]; platform?: unknown };
+  const g = (govde ?? {}) as { case_ids?: string[]; platform?: unknown; dil?: unknown };
   const ids = g.case_ids ?? [];
   if (!Array.isArray(ids) || ids.length === 0) throw new ApiError(422, "En az bir case seçilmeli.");
   // 009 §2.9: platform yoksa web; bilinmeyen değer 422 (core ile aynı).
   const platform: Platform | null = g.platform === undefined || g.platform === null ? "web" : platformUyarla(g.platform);
   if (!platform) throw new ApiError(422, `platform yalnızca ${PLATFORMLAR.join(", ")} olabilir.`);
+  // 011 §2.3: `dil` yoksa repodan algılanan (dil_kaynagi=algilandi); varsa elle seçilmiş (secildi).
+  // Geçersiz değer ya da geçersiz (platform, dil) çifti 422 (core ile aynı, Türkçe ileti).
+  const dilVar = g.dil !== undefined && g.dil !== null;
+  const dil: Dil | null = dilVar ? dilUyarla(g.dil) : algilananDil(platform);
+  if (!dil) throw new ApiError(422, `dil yalnızca ${DILLER.join(", ")} olabilir.`);
+  if (!gecerliCift(platform, dil)) throw new ApiError(422, `${PLATFORM_ETIKETI[platform]} platformunda yalnız Java üretilebilir.`);
+  const dilKaynagi = dilVar ? ("secildi" as const) : ("algilandi" as const);
+  const dogrulanmamis = dogrulanmamisDilMi(dil);
+  const javaWeb = platform === "web" && dil === "java";
   const app = platform !== "web";
   const caseler = ids.map((id) => bul(veri.caseler, id, "Case"));
   const onaysiz = caseler.filter((c) => c.durum !== "approved" && c.durum !== "published");
   if (onaysiz.length) throw new ApiError(409, "Yalnızca onaylı case'ler için kod üretilebilir.");
   for (const c of caseler) {
+    // 011 §2.2: etkin anahtar (case, platform); doğrulanmamış script başka dilde yeniden üretilince kapanır.
+    for (const eski of veri.scriptler) {
+      if (eski.durum === "unverified" && eski.case_ids.includes(c.id) && (eski.platform ?? "web") === platform) gecir("script", eski, "closed");
+    }
     const id = yeniId("scr");
     const kisa = sha256Hex(c.id).slice(0, 8);
     // Uygulama dalı web dalıyla önek çakışmaz: tp/case-<platform>-<uuid> (aynı case'in platformları ayrı PR).
     const branch = app ? `tp/case-${platform}-${kisa}` : `tp/case-${kisa}`;
     const golden = KOD_GOLDEN[c.id];
     const java = app ? javaDosyaYolu(platform, c.jira_key ?? "SERBEST", c.sira_no, kisa) : null;
+    // Web'de TypeScript dışı dilin dosya yolu/kodu ajan adımlarından (eşleme) şablonla üretilir.
+    const webDilCiktisi = (adimlar: AjanAdimi[]) =>
+      javaWeb
+        ? javaWebCiktisi(c.jira_key, c.sira_no, kisa, c.id, c.icerik.title, adimlar)
+        : dil === "python"
+          ? pythonCiktisi(c.jira_key, c.sira_no, kisa, c.id, c.icerik.title, adimlar)
+          : dil === "csharp"
+            ? csharpCiktisi(c.jira_key, c.sira_no, kisa, c.id, c.icerik.title, adimlar)
+            : null;
+    const onizleme = webDilCiktisi([]);
     const s: ScriptDetay = {
       id,
       case_ids: [c.id],
       requirement_key: c.jira_key,
       baslik: c.icerik.title,
-      dosya_yolu: java ? java.yol : `demo-app/e2e/tests/${(c.jira_key ?? "ft").toLowerCase()}/c${c.sira_no}.spec.ts`,
-      branch,
+      dosya_yolu: java ? java.yol : (onizleme?.dosya_yolu ?? `demo-app/e2e/tests/${(c.jira_key ?? "ft").toLowerCase()}/c${c.sira_no}.spec.ts`),
+      // Doğrulanmamış dil forge'a commit edilmez: dal yok.
+      branch: dogrulanmamis ? "" : branch,
       platform,
+      dil,
+      dil_kaynagi: dilKaynagi,
+      dogrulanmamis: false,
       durum: "pending",
       pr: null,
       pass_at_1: null,
@@ -1041,25 +1070,39 @@ function kodUret(govde: unknown): IsYaniti {
         mockOlayYayinla({ type: "agent.step", id: s.id, data: { ...yeniAdim, platform } });
       }),
       () => {
+        if (dogrulanmamis) {
+          // 011 §2.7: doğrulanmamış dil — render sonrası kaynak saklanır; commit, yerel kontrol ve PR yok.
+          s.eslemeler = eslemeler(adimlar, golden.kaynak);
+          const cikti = webDilCiktisi(adimlar)!;
+          s.kod = cikti.kod;
+          s.dosya_yolu = cikti.dosya_yolu;
+          s.dogrulanmamis = true;
+          gecir("script", s, "unverified");
+          denetimEkle("code.render", s.id, `${DIL_ETIKETI[dil]} kaynağı üretildi (doğrulanmamış: derlenmedi, koşulmadı, PR yok)`, "core-worker");
+          mockOlayYayinla({ type: "script.updated", id: s.id, data: { durum: "unverified", dil } });
+          return;
+        }
         // Deterministik kontroller geçti: eşleme kaydı + şablondan kod; yerel kontrol başlar.
         gecir("script", s, "checking");
         s.eslemeler = eslemeler(adimlar, golden.kaynak);
-        s.kod = java ? javaTestKodu(platform as Exclude<Platform, "web">, java.sinif, c.icerik.title, adimlar) : golden.kod;
+        s.kod = java ? javaTestKodu(platform as Exclude<Platform, "web">, java.sinif, c.icerik.title, adimlar) : javaWeb ? webDilCiktisi(adimlar)!.kod : golden.kod;
         kontrolKosusu = kosuOlustur("local_check", "local", false, null);
         kontrolKosusu.script_id = s.id;
         kontrolKosusu.platform = platform;
         kontrolKosusu.durum = "running";
-        s.yerel_kontrol = { ...yerelGecti(kontrolKosusu.id), sonuc: null, sinif: null };
+        s.yerel_kontrol = { ...(javaWeb ? javaYerelGecti(kontrolKosusu.id)! : yerelGecti(kontrolKosusu.id)), sonuc: null, sinif: null };
         mockOlayYayinla({ type: "ci.status", id: s.id, data: { durum: "checking" } });
       },
       () => {
+        // Doğrulanmamış dilde yerel kontrol ve PR adımı yoktur (önceki adımda unverified'a geçti).
+        if (dogrulanmamis) return;
         const k = kontrolKosusu;
         if (k) kosuBitir(k, !golden.defect, `${c.jira_key ?? "FT"} C${c.sira_no} · ${c.icerik.title}`, golden.defect ? "Beklenen: \"0\" · Gerçekleşen: \"1\" (bedava adet)" : undefined);
         if (golden.defect) {
           s.pass_at_1 = false;
           s.yerel_sinif = "defect_adayi";
           s.yerel_kontrol = {
-            ...yerelGecti(k?.id ?? ""),
+            ...(javaWeb ? javaYerelGecti(k?.id ?? "")! : yerelGecti(k?.id ?? "")),
             sonuc: "failed",
             sinif: "defect_adayi",
             gecen: 0,
@@ -1075,7 +1118,7 @@ function kodUret(govde: unknown): IsYaniti {
           mockOlayYayinla({ type: "ci.status", id: s.id, data: { durum: "blocked" } });
           return;
         }
-        s.yerel_kontrol = yerelGecti(k?.id ?? "");
+        s.yerel_kontrol = javaWeb ? javaYerelGecti(k?.id ?? "") : yerelGecti(k?.id ?? "");
         s.yerel_sinif = "gecti";
         const prNo = yeniPrNo();
         gecir("script", s, "pr_open");
@@ -1085,7 +1128,7 @@ function kodUret(govde: unknown): IsYaniti {
           url: null,
           baslik: app
             ? `[${c.jira_key ?? "SERBEST"}-C${c.sira_no} · ${platform}] ${c.icerik.title} [AI-generated]`
-            : `test(${c.jira_key ?? "FT"}): ${c.icerik.title} [AI-generated]`,
+            : `test(${c.jira_key ?? "FT"}): ${c.icerik.title}${javaWeb ? " [Java]" : ""} [AI-generated]`,
           branch,
           durum: "open",
           ci: "passed",
@@ -1095,7 +1138,8 @@ function kodUret(govde: unknown): IsYaniti {
           checks: [
             app
               ? { ad: `local-ci-${platform}`, durum: "passed", zorunlu: true, url: null, aciklama: "javac ✓ · AST koruması ✓ · Appium 3/3 (cihazda)" }
-              : { ad: "local-ci", durum: "passed", zorunlu: true, url: null, aciklama: "tsc ✓ · eslint ✓ · AST koruması ✓ · Playwright 3/3" },
+              : // 011 §2.6: web'de dil ne olursa olsun check adı `local-ci`; açıklama dilin adımlarıyla.
+                { ad: "local-ci", durum: "passed", zorunlu: true, url: null, aciklama: javaWeb ? JAVA_KONTROL_ACIKLAMASI : "tsc ✓ · eslint ✓ · AST koruması ✓ · Playwright 3/3" },
           ],
           forge: "local",
         };
@@ -1104,9 +1148,11 @@ function kodUret(govde: unknown): IsYaniti {
       },
     ]);
   }
-  denetimEkle("code.generate", ids.join(","), app ? `CasesToCode başlatıldı (${platform})` : "CasesToCode başlatıldı");
+  // Denetim yüküne dil eklenir (§2.3); varsayılan (web+ts, uygulama+java) ileti bugünküyle aynı kalır.
+  const dilEki = dilVar || javaWeb || dogrulanmamis ? ` · ${DIL_ETIKETI[dil]}${dogrulanmamis ? ", doğrulanmamış" : ""}` : "";
+  denetimEkle("code.generate", ids.join(","), app ? `CasesToCode başlatıldı (${platform}${dilEki})` : `CasesToCode başlatıldı${dilEki ? ` (${dilEki.slice(3)})` : ""}`);
   kaydet();
-  return is("started", `${caseler.length} case için kod üretimi başladı${app ? ` (${platform})` : ""}.`);
+  return is("started", `${caseler.length} case için kod üretimi başladı${app ? ` (${platform})` : ""}${dilEki ? ` (${dilEki.slice(3)})` : ""}.`);
 }
 
 function ozetKosu(k: KosuDetay): Kosu {
@@ -1785,6 +1831,17 @@ const ROTALAR: Rota[] = [
   ["GET", /^\/publish\/preview$/, (_m, q) => yayinOnizleme(q)],
   ["POST", /^\/publish$/, (_m, _q, g) => yayinla(g)],
   ["POST", /^\/code\/generate$/, (_m, _q, g) => kodUret(g)],
+  [
+    "GET",
+    /^\/code\/languages$/,
+    (_m, q) => {
+      girisGerekli();
+      const ham = q.get("platform");
+      const p = ham === null || ham === "" ? "web" : platformUyarla(ham);
+      if (!p) throw new ApiError(422, `platform yalnızca ${PLATFORMLAR.join(", ")} olabilir.`);
+      return kodDilleriYaniti(p);
+    },
+  ],
   [
     "GET",
     /^\/scripts$/,

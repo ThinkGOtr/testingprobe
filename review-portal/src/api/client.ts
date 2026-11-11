@@ -12,7 +12,7 @@ import {
 } from "./uyum";
 import { bugIcerikCoreBicimi, bugTaslagiUyarla, hataAnaliziUyarla } from "./uyumTriage";
 import { nesneMi } from "./uyum";
-import { kontrolKulesiUyarla, kosuDetayUyarla, kosuUyarla, scriptDetayUyarla, scriptUyarla } from "./uyumDemoB";
+import { kodDilleriUyarla, kontrolKulesiUyarla, kosuDetayUyarla, kosuUyarla, scriptDetayUyarla, scriptUyarla } from "./uyumDemoB";
 import { bazYanitiUyarla, demoDurumuUyarla, gereksinimBazi } from "./uyumFaz5";
 import type {
   BazDegerGirdisi,
@@ -24,6 +24,7 @@ import type {
   CaseMetrikleri,
   DemoDurumu,
   DenetimYaniti,
+  Dil,
   Gereksinim,
   GereksinimDetay,
   ManuelBaz,
@@ -31,6 +32,7 @@ import type {
   RetNedeni,
   HataAnalizi,
   IsYaniti,
+  KodDilleri,
   KontrolKulesi,
   Kosu,
   KosuDetay,
@@ -145,9 +147,25 @@ export const api = {
     yayinSonucuUyarla(await istek<unknown>("POST", "/publish", { govde: { case_ids: caseIds }, kaynak: CASE_KAYNAGI })),
 
   // Kod üretimi
-  /** 009 §2.9: `platform` (web | android | ios | windows; varsayılan web). Aynı case için platform başına ayrı script/PR. */
-  kodUret: (caseIds: string[], platform: Platform = "web") =>
-    istek<IsYaniti>("POST", "/code/generate", { govde: { case_ids: caseIds, platform } }),
+  /**
+   * 009 §2.9: `platform` (web | android | ios | windows; varsayılan web). Aynı case için platform başına ayrı script/PR.
+   * 011 §2.3: `dil` yalnız kullanıcı elle seçtiyse gönderilir (core `dil_kaynagi="secildi"` yazar);
+   * gönderilmezse core repodan algılanan dili kullanır. Alan yokken gövde 011 öncesiyle aynıdır.
+   */
+  kodUret: (caseIds: string[], platform: Platform = "web", dil?: Dil | null) =>
+    istek<IsYaniti>("POST", "/code/generate", { govde: { case_ids: caseIds, platform, ...(dil ? { dil } : {}) } }),
+  /**
+   * 011 §2.3: platformun dil seçenekleri ve repodan algılanan dil. Uç yoksa (011 öncesi core) `null`:
+   * dil seçici çizilmez, üretim bugünkü gibi sürer. Script'ler çekirdekten geliyorsa örnek veriye düşülmez.
+   */
+  kodDilleri: async (platform: Platform): Promise<KodDilleri | null> => {
+    try {
+      return kodDilleriUyarla(await istek<unknown>("GET", "/code/languages", { sorgu: { platform }, kaynak: SCRIPT_KAYNAGI }), platform);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 501) return null;
+      throw e;
+    }
+  },
   scriptler: async (): Promise<Script[]> => listeUyarla(await istek<unknown>("GET", "/scripts"), scriptUyarla),
   script: async (id: string): Promise<ScriptDetay> => scriptDetayUyarla(nesne(await istek<unknown>("GET", `/scripts/${yol(id)}`))),
   kirarakDogrula: (id: string) => istek<IsYaniti>("POST", `/scripts/${yol(id)}/break-verify`, { kaynak: SCRIPT_KAYNAGI }),

@@ -5,7 +5,9 @@
 // ön inceleme soruları) TEKNIK-TASARIM'daki İngilizce şema adlarını aynen taşır.
 
 import type { Platform } from "../lib/platform";
+import type { Dil, DilKaynagi } from "../lib/dil";
 export type { Platform } from "../lib/platform";
+export type { Dil, DilKaynagi } from "../lib/dil";
 
 export type Rol = "analyst" | "engineer" | "presenter" | "po" | "tester";
 
@@ -590,8 +592,10 @@ export interface BreakVerify {
 /**
  * Script durumları — core `script` makinesiyle birebir aynı küme. "Merge'e hazır" ve "zayıf test"
  * durum değildir: `pr_open` + `break_verify.durum` / `zayif_test` alanlarından türetilir.
+ * 011: `unverified` doğrulanmamış dilin (C#, Python) uç durumudur — kod üretildi ama derlenmedi ve
+ * koşulmadı; PR yok, merge yok (`verifying → unverified`; yeniden üretimle `pending` ya da `closed`).
  */
-export const SCRIPT_DURUMLARI = ["pending", "verifying", "checking", "blocked", "pr_open", "merged", "closed", "failed"] as const;
+export const SCRIPT_DURUMLARI = ["pending", "verifying", "checking", "blocked", "pr_open", "merged", "closed", "failed", "unverified"] as const;
 export type ScriptDurumu = (typeof SCRIPT_DURUMLARI)[number];
 
 export interface Script {
@@ -618,6 +622,15 @@ export interface Script {
    * alanı göndermez; o zaman yalnız web üretilebildiği için uyarlayıcı `web` yazar.
    */
   platform?: Platform | null;
+  /**
+   * 011: üretim dili (core `script.dil`: ts | java | csharp | python). 011 öncesi core alanı
+   * göndermez; uyarlayıcı platformun varsayılanını yazar (web → ts, uygulama → java).
+   */
+  dil?: Dil | null;
+  /** 011: dilin kaynağı (core `script.dil_kaynagi`: algilandi | secildi | varsayilan); bilinmiyorsa null. */
+  dil_kaynagi?: DilKaynagi | null;
+  /** 011: doğrulanmamış dilde üretildi (core `dogrulanmamis` = `durum == "unverified"`): derlenmedi, koşulmadı, PR yok. */
+  dogrulanmamis?: boolean;
   /** null: model çağrısı yok ya da mod bilinmiyor ("live" uydurulmaz). */
   mode: CiktiModu | null;
   olusturma: string;
@@ -663,10 +676,21 @@ export interface YerelKontrolHatasi {
   adim: string | null;
 }
 
+/** Yerel kontrolün bir statik adımı (core `yerel_kontrol.adimlar[]`): `durum` true geçti, false kaldı, null koşmadı/bilinmiyor. */
+export interface KontrolAdimi {
+  ad: string;
+  durum: boolean | null;
+}
+
 export interface YerelKontrol {
   tsc: boolean | null;
   eslint: boolean | null;
   ast_guard: boolean | null;
+  /**
+   * 011: dile göre adım listesi (ts: tsc / eslint / ast_guard; java: deps / guard / compile). Core
+   * göndermiyorsa null: portal eski `tsc` / `eslint` / `ast_guard` alanlarına düşer.
+   */
+  adimlar?: KontrolAdimi[] | null;
   tekrar: number;
   /** Playwright koşusunun sonucu; koşu yapılmadıysa null. */
   sonuc: "passed" | "failed" | "error" | null;
@@ -704,6 +728,31 @@ export interface ScriptDetay extends Script {
   uyarilar: string[];
   /** Adım 5 (ajan) gecikme bütçesi, saniye (core `TP_CODEGEN_STEP5_BUDGET_S`); bilinmiyorsa yok. */
   gecikme_butcesi_s?: number | null;
+}
+
+// ---------------------------------------------------------------- Üretim dili (011)
+
+/** `GET /code/languages` seçeneği: `hat` tam (derleme + koşu + PR) ya da doğrulanmamış (yalnız kaynak). */
+export interface DilSecenegi {
+  dil: Dil;
+  etiket: string;
+  /** Test çatısı (ör. "Playwright for Java + TestNG"). */
+  cati: string;
+  hat: "tam" | "dogrulanmamis";
+  /** false: bu dilde üretilemez (ör. depoda o dilin test projesi yok); `neden` Türkçe gerekçedir. */
+  kullanilabilir: boolean;
+  neden: string | null;
+}
+
+/** `GET /code/languages?platform=`: platformun dil seçenekleri ve repodan algılanan dil. */
+export interface KodDilleri {
+  platform: Platform;
+  algilanan: Dil;
+  /** `algilandi`: repodaki elle yazılmış testlerden sayıldı; `varsayilan`: algılama sonuçsuz. */
+  kaynak: "algilandi" | "varsayilan";
+  /** Dil başına elle yazılmış test dosyası sayısı (algılamanın dayanağı). */
+  sayilar: Partial<Record<Dil, number>>;
+  secenekler: DilSecenegi[];
 }
 
 // ---------------------------------------------------------------- Koşular
@@ -756,6 +805,8 @@ export interface Kosu {
    * Bilinmiyorsa null: hiçbir platforma yazılmaz (süzgeçte yalnız "Tümü"nde görünür).
    */
   platform?: Platform | null;
+  /** 011: koşunun dili (core `dil` ya da `ortam.dil`; yalnız tam hat dilleri koşar). Bilinmiyorsa null (uydurulmaz). */
+  dil?: Dil | null;
 }
 
 /** Playwright `test.step` ağacı (core results.json'dan; sınırlı). */

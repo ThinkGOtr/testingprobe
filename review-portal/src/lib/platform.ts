@@ -23,6 +23,17 @@ export const PLATFORM_ACIKLAMASI: Record<Platform, string> = {
   windows: "Masaüstü · Appium + Java",
 };
 
+/**
+ * 011: dil ayrı seçildiğinde platformun yalnız ortam/araç açıklaması (dil adı yok: "Playwright +
+ * TypeScript" Java seçiliyken yanlış olurdu). Dil seçici yokken (011 öncesi core) `PLATFORM_ACIKLAMASI` kalır.
+ */
+export const PLATFORM_ORTAMI: Record<Platform, string> = {
+  web: "Tarayıcı · Playwright",
+  android: "Emülatör · Appium",
+  ios: "Simülatör · Appium",
+  windows: "Masaüstü · Appium",
+};
+
 const PLATFORM_KUMESI = new Set<string>(PLATFORMLAR);
 
 export function platformMi(x: unknown): x is Platform {

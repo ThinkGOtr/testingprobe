@@ -2360,6 +2360,10 @@ article.bulgu:is([data-durum="decided"], [data-durum="resolved"], [data-durum="s
 .tk-fonksiyon {
   color: var(--tk-fonksiyon);
 }
+/* Java @Annotation, C# [Attribute], Python @decorator: fonksiyon tonuyla (kontrastı ölçülmüş renk). */
+.tk-ek {
+  color: var(--tk-fonksiyon);
+}
 
 /* ---------------------------------------------------------------- case */
 
@@ -4832,4 +4836,76 @@ td > .satir-baglanti + .cip,
 .sayfa-kaynagi-xml {
   max-height: 24rem;
   overflow: auto;
+}
+
+/* ---------------------------------------------------------------- 011 üretim dili (Ş6) */
+
+/* Dil seçici platform seçicinin hemen altında, aynı segment görünümünde. Kaynak notu (repodan algılandı /
+   elle seçildi / varsayılan) grubun altında; "Algılanana dön" metin düğmesi notun yanında. */
+.dil-secici .platform-secici {
+  margin-bottom: 4px;
+}
+.dil-notu {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin: 0 0 12px;
+  color: var(--text-2);
+}
+.dil-bilgi {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 0 0 12px;
+}
+.dil-bilgi-etiket {
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+.dil-yukleniyor {
+  margin: 0 0 12px;
+}
+/* Kullanılamayan seçenek: seçilemez ama odaklanır; neden seçeneğin içinde görünür yazılır (yalnız title değil). */
+.platform-secenek.pasif {
+  border-style: dashed;
+  background: var(--surface-3);
+  color: var(--text-2);
+  cursor: not-allowed;
+}
+.platform-secenek.pasif:hover {
+  background: var(--surface-3);
+}
+.platform-secenek-neden {
+  display: block;
+  color: var(--text);
+  font-weight: 500;
+}
+/* Doğrulanmamış script bandı: indirme + başka dilde yeniden üretim, dar ekranda alt alta. */
+.dogrulanmamis-bandi .uyari-kutusu > div {
+  flex: 1 1 100%;
+}
+.dogrulanmamis-bandi p {
+  margin: 0 0 8px;
+}
+.dogrulanmamis-eylemler {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  justify-content: flex-start;
+}
+.dil-yeniden {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.dil-yeniden select {
+  margin-left: 4px;
+  min-width: 9rem;
+}
+.dil-rozeti {
+  vertical-align: middle;
 }

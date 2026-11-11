@@ -10,6 +10,7 @@ import { HATA_SINIFI, KAYNAK, KOSU_DURUMU, TETIK } from "../lib/etiketler";
 import { sure, tarih } from "../lib/format";
 import { CiAdimlari, githubYedekNotu, TestSonuclari } from "./KosuSonuclari";
 import { PlatformRozeti } from "../components/Platform";
+import { DilRozeti } from "../components/Dil";
 import { checkEtiketi, PLATFORMLAR, PLATFORM_ETIKETI, platformaGoreSuz, platformSecimiOku, type Platform } from "../lib/platform";
 
 const TETIK_TONU: Partial<Record<Tetik, "notr" | "bilgi" | "vurgu" | "uyari">> = {
@@ -67,6 +68,10 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
                   <>
                     {" "}
                     <PlatformRozeti platform={k.platform} />
+            {/* 011 §2.8: koşunun dili (core `dil` / `ortam.dil`); bilinmiyorsa çizilmez. */}
+            <DilRozeti dil={k.dil} platform={k.platform} />
+                    {/* 011 §2.8: koşunun dili (core `dil` / `ortam.dil`); bilinmiyorsa çizilmez. */}
+                    <DilRozeti dil={k.dil} platform={k.platform} />
                   </>
                 )}
               </td>
@@ -340,6 +345,8 @@ function HataListesi({ k }: { k: KosuDetayTuru }) {
             <SinifCipi sinif={h.sinif} alt={h.alt_tur} />
             {/* Koşunun platformu triage kayıtlarının platformudur (aynı koşu, aynı cihaz). */}
             <PlatformRozeti platform={k.platform} />
+            {/* 011 §2.8: koşunun dili (core `dil` / `ortam.dil`); bilinmiyorsa çizilmez. */}
+            <DilRozeti dil={k.dil} platform={k.platform} />
             <span>{h.test_adi}</span>
             {h.ozet && <span className="kucuk soluk">{h.ozet}</span>}
             <Link to={`/hatalar/${encodeURIComponent(h.id)}`}>Triage sonucunu aç</Link>
@@ -444,6 +451,8 @@ export function KosuDetay() {
             </Cip>
             <Cip ton="notr">{KAYNAK[k.kaynak] ?? k.kaynak}</Cip>
             <PlatformRozeti platform={k.platform} />
+            {/* 011 §2.8: koşunun dili (core `dil` / `ortam.dil`); bilinmiyorsa çizilmez. */}
+            <DilRozeti dil={k.dil} platform={k.platform} />
             <SauceCipi k={k} />
             <span className="mono">{k.commit}</span>
             <span className="soluk">{tarih(k.baslangic)}</span>
