@@ -22,6 +22,7 @@ sayfa.html}` altındadır ve web yöntemiyle (Playwright trace + hata anı DOM'u
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
@@ -36,6 +37,12 @@ KANIT_EKRAN = jv.KANIT_EKRAN
 MAX_DOM = 4 * 1024 * 1024
 MAX_DUGUM = 50_000
 MAX_DERINLIK = 512
+# GÜV-O1: testId'li düğüm sayısı ve her düğümde saklanan kapsayıcı zinciri ayrıca sınırlıdır
+# (düğüm × derinlik kopyası bellek patlatmasın); ayrıştırma süre bütçelidir.
+MAX_TESTID_DUGUM = 5_000
+MAX_ZINCIR = 16  # her düğümde dıştan içe en yakın 16 kapsayıcı testId
+MAX_SURE_S = 2.0
+_SURE_KONTROL_ARALIGI = 1_000  # her N başlangıç etiketinde bir saat okunur
 # Koşu dizini içinde kanıt kökünün olası yerleri (test-runner Java yolu; tekrarlı koşuda
 # `kanit/tekrar-N/`). Rapor `failure.evidence.*.rel` verirse o önceliklidir.
 KANIT_KOKLERI = (
@@ -240,6 +247,10 @@ _BOS_OGELER = frozenset(
 
 
 class _TestIdToplayici(HTMLParser):
+    """`data-testid`'li öğeleri toplar. Kapsayıcı zinciri tam kopya değildir: açık testId'lerin
+    ayrı yığını tutulur ve her düğüme yalnız en yakın `MAX_ZINCIR` kapsayıcı yazılır (O(1)
+    bellek/düğüm). testId'li düğüm sayısı `MAX_TESTID_DUGUM`, süre `MAX_SURE_S` ile sınırlıdır."""
+
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         # açık öğeler: (etiket, testId | None)
@@ -247,26 +258,33 @@ class _TestIdToplayici(HTMLParser):
         # [kimlik, etiket, metin parçaları, kapsayıcılar]
         self.dugumler: list[list[Any]] = []
         self._acik: list[int] = []  # açık testId'li öğelerin `dugumler` indeksleri
+        self._tid_yigin: list[str] = []  # açık testId'li öğelerin kimlikleri (dıştan içe)
         self.sayac = 0
+        self._son_an = time.monotonic() + MAX_SURE_S
 
     def _zincir(self) -> tuple[str, ...]:
-        return tuple(t for _e, t in self.yigin if t)
+        return tuple(self._tid_yigin[-MAX_ZINCIR:])
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         self.sayac += 1
         if self.sayac > MAX_DUGUM or len(self.yigin) > MAX_DERINLIK:
             raise DomHatasi("hata anı DOM'u düğüm/derinlik sınırını aşıyor")
+        if self.sayac % _SURE_KONTROL_ARALIGI == 0 and time.monotonic() > self._son_an:
+            raise DomHatasi("hata anı DOM'u süre bütçesini aşıyor")
         tid: str | None = None
         for ad, deger in attrs:
             if ad == "data-testid" and deger and ev.TESTID_RE.match(deger.strip()):
                 tid = deger.strip()
                 break
         if tid:
+            if len(self.dugumler) >= MAX_TESTID_DUGUM:
+                raise DomHatasi("hata anı DOM'u testId'li düğüm sınırını aşıyor")
             self.dugumler.append([tid, tag[:80], [], self._zincir()])
         if tag not in _BOS_OGELER:
             self.yigin.append((tag, tid))
             if tid:
                 self._acik.append(len(self.dugumler) - 1)
+                self._tid_yigin.append(tid)
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         bos = tag in _BOS_OGELER
@@ -281,6 +299,7 @@ class _TestIdToplayici(HTMLParser):
                 for _e, t in self.yigin[i:]:
                     if t and self._acik:
                         self._acik.pop()
+                        self._tid_yigin.pop()
                 del self.yigin[i:]
                 return
 
@@ -295,8 +314,9 @@ class _TestIdToplayici(HTMLParser):
 
 
 def dom_dugumleri(html: str | None) -> list[jv.KimlikDugumu]:
-    """Hata anı DOM'undaki `data-testid`'li öğeler (belge sırası) + kapsayıcı testId zinciri.
-    Güvenilmeyen girdi: boyut, düğüm ve derinlik sınırlı; yalnızca geçerli testId'ler alınır."""
+    """Hata anı DOM'undaki `data-testid`'li öğeler (belge sırası) + kapsayıcı testId zinciri
+    (en yakın `MAX_ZINCIR`). Güvenilmeyen girdi: boyut, düğüm, testId'li düğüm, derinlik ve süre
+    sınırlı; yalnızca geçerli testId'ler alınır."""
     if not html:
         return []
     if len(html.encode("utf-8", "replace")) > MAX_DOM:

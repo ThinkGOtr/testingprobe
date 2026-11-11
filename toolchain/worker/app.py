@@ -290,8 +290,9 @@ class CheckBody(LangMixin):
 
     @model_validator(mode="after")
     def _record(self) -> CheckBody:
-        # `lang=java` + platform yok/web = web + Java (Playwright for Java; kayıt `local-ci`);
-        # uygulama platformunda koşu Appium sürücüsüne gider, kayıt `local-ci-<platform>`.
+        # `lang=java` + platform yok/web = web + Java (Playwright for Java; kayıt
+        # `local-ci-web-java`); uygulama platformunda koşu Appium sürücüsüne gider, kayıt
+        # `local-ci-<platform>`.
         if self.dil == "java" and (self.grep or self.affected_by):
             raise ValueError(
                 "Java yolunda grep ve affected_by henüz desteklenmiyor (test_files kullanın)"

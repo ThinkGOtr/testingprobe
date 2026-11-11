@@ -113,17 +113,32 @@ def test_local_required_checks_web_java_yolu() -> None:
         return CheckRun(name=ad, status="completed", conclusion="success")
 
     kimlikler = "e2e-java/src/test/java/com/antreklabs/bayi/ekranlar/Kimlikler.java"
-    # Yalnız e2e-java/ değişen PR: web kontrolü `local-ci` zorunlu (dil ne olursa olsun).
-    assert local_required_checks(("local-ci",), [], [kimlikler]) == (("local-ci",), None)
-    # Yapılandırma local-ci'ı içermese de web testi değişen PR onu ister.
+    # K-T1 (MİM-Y3): yalnız e2e-java/ değişen PR web + Java kontrolünü ister; TS `local-ci`
+    # (kaydedilmemişse) gerekmez — yeşil TS koşusu Java'nın yerine geçemez.
+    assert local_required_checks(("local-ci",), [], [kimlikler]) == (("local-ci-web-java",), None)
+    # Kaydedilmiş TS kontrolü yine yeşil olmalı (simetri).
+    zorunlu, _ = local_required_checks(("local-ci",), [c("local-ci")], [kimlikler])
+    assert zorunlu == ("local-ci", "local-ci-web-java")
+    # Yapılandırma ne olursa olsun e2e-java/ değişikliği local-ci-web-java ister.
     zorunlu, neden = local_required_checks(("local-ci-android",), [], [kimlikler])
-    assert zorunlu == ("local-ci", "local-ci-android") and neden is None
+    assert zorunlu == ("local-ci-android", "local-ci-web-java") and neden is None
+    # e2e/ + e2e-java/ birlikte: ikisi de gerekir.
+    zorunlu, _ = local_required_checks(("local-ci",), [], ["e2e/tests/a.spec.ts", kimlikler])
+    assert zorunlu == ("local-ci", "local-ci-web-java")
+    # Yalnız e2e/ değişse de head'de kayıtlı (kırmızı olabilir) Java kontrolü zorunludur.
+    zorunlu, _ = local_required_checks(
+        ("local-ci",), [c("local-ci-web-java")], ["e2e/tests/a.spec.ts"]
+    )
+    assert zorunlu == ("local-ci", "local-ci-web-java")
     # Uygulama kuralı değişmez: yalnız e2e-app/ değişen PR'da kayıtlı platform kontrolü yeterli.
     app = "e2e-app/src/test/java/com/antreklabs/bayi/ekranlar/Kimlikler.java"
     assert local_required_checks(("local-ci",), [c("local-ci-android")], [app]) == (
         ("local-ci-android",),
         None,
     )
-    # e2e-java + e2e-app birlikte: ikisi de gerekir.
+    # e2e-java + e2e-app birlikte: kendi kontrolleri gerekir (web TS kontrolü değil).
     zorunlu, _ = local_required_checks(("local-ci",), [c("local-ci-android")], [app, kimlikler])
-    assert zorunlu == ("local-ci", "local-ci-android")
+    assert zorunlu == ("local-ci-web-java", "local-ci-android")
+    # Uygulama kodu da değiştiyse TS local-ci yine gerekir.
+    zorunlu, _ = local_required_checks(("local-ci",), [], [kimlikler, "web/src/App.tsx"])
+    assert zorunlu == ("local-ci", "local-ci-web-java")

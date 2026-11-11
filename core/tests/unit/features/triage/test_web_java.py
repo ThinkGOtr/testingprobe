@@ -122,6 +122,67 @@ def test_dom_dugumleri_kapsayici_zinciri_ve_sinirlar() -> None:
         jw.dom_dugumleri("<div>" * (jw.MAX_DERINLIK + 5))
 
 
+def _saldiri_dom(ic_ice: int, yaprak: int) -> str:
+    """GÜV-O1 saldırı girdisi: `ic_ice` iç içe testId'li div + en içte `yaprak` testId'li <i>."""
+    return (
+        "".join(f'<div data-testid="k{i}">' for i in range(ic_ice))
+        + "".join(f'<i data-testid="y{i}"></i>' for i in range(yaprak))
+        + "</div>" * ic_ice
+    )
+
+
+def _olc(html: str) -> tuple[Any, int, float]:
+    import time
+    import tracemalloc
+
+    tracemalloc.start()
+    t0 = time.perf_counter()
+    try:
+        sonuc: Any = jw.dom_dugumleri(html)
+    except jw.DomHatasi as exc:
+        sonuc = exc
+    sure = time.perf_counter() - t0
+    _, tepe = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    return sonuc, tepe, sure
+
+
+def test_dom_dugumleri_saldiri_girdisi_bellek_ve_sure_sinirli() -> None:
+    """GÜV-O1 regresyonu: 510 iç içe testId'li div + 49.000 testId'li <i> (~1,1 MB) eskiden her
+    düğümde 510'luk zincir kopyası tutuyordu (~410 MB RSS, saniyeler). Artık testId'li düğüm
+    sınırında (5.000) hızla reddedilir; bellek/süre üst sınırı ölçülür (tracemalloc)."""
+    html = _saldiri_dom(510, 49_000)
+    assert len(html.encode()) < jw.MAX_DOM  # boyut sınırı tek başına engellemiyor
+    sonuc, tepe, sure = _olc(html)
+    assert isinstance(sonuc, jw.DomHatasi) and "testId" in str(sonuc)
+    assert tepe < 32 * 1024 * 1024, f"tepe bellek {tepe / 1e6:.1f} MB"
+    assert sure < 2.0, f"süre {sure:.2f} sn"
+
+
+def test_dom_dugumleri_derin_zincir_sinirli_kopya() -> None:
+    """Sınır altında (510 iç içe + 4.000 yaprak) ayrıştırma başarılı; her düğümde en yakın
+    `MAX_ZINCIR` kapsayıcı (dıştan içe) saklanır, bellek düğüm × derinlik büyümez."""
+    sonuc, tepe, sure = _olc(_saldiri_dom(510, 4_000))
+    assert isinstance(sonuc, list) and len(sonuc) == 4_510
+    yaprak = next(d for d in sonuc if d.kimlik == "y0")
+    assert len(yaprak.kapsayicilar) == jw.MAX_ZINCIR
+    assert yaprak.kapsayicilar == tuple(f"k{i}" for i in range(510 - jw.MAX_ZINCIR, 510))
+    assert max(len(d.kapsayicilar) for d in sonuc) <= jw.MAX_ZINCIR
+    assert tepe < 32 * 1024 * 1024, f"tepe bellek {tepe / 1e6:.1f} MB"
+    assert sure < 2.0, f"süre {sure:.2f} sn"
+    # Kapanıştan sonra zincir doğru geri sarılır.
+    d = jw.dom_dugumleri(
+        '<div data-testid="a"><b data-testid="b"></b></div><p data-testid="c">x</p>'
+    )
+    assert [(x.kimlik, x.kapsayicilar) for x in d] == [("a", ()), ("b", ("a",)), ("c", ())]
+
+
+def test_dom_dugumleri_sure_butcesi(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(jw, "MAX_SURE_S", -1.0)  # bütçe baştan dolmuş
+    with pytest.raises(jw.DomHatasi, match="süre"):
+        jw.dom_dugumleri("<p></p>" * 2_000)
+
+
 def test_girdi_dil_java_web_kurallari() -> None:
     g = Girdi(test_adi="t", dosya=SINIF, mesaj=PW_TIMEOUT, platform="web", dil="java")
     assert g.java and g.web_java and g.tur() == "locator_timeout"

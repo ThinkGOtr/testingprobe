@@ -72,6 +72,7 @@ from sqlalchemy.orm import Session
 
 from tp_core.audit import append_audit, audit_on_commit
 from tp_core.events.bus import publish_tx
+from tp_core.features.codegen import platform as platformlar
 from tp_core.features.repair import aria, locators
 from tp_core.features.repair.toolchain import RepairToolchain, ToolchainHatasi
 from tp_core.integrations.forge import (
@@ -192,11 +193,7 @@ def e2e_app_root() -> str:
     """Forge deposunda Java test projesinin kökü (`e2e-app` ya da `demo-app/e2e-app`)."""
     from tp_core.features.codegen import service as cg
 
-    kok_f = getattr(cg, "e2e_app_root", None)
-    if callable(kok_f):
-        return str(kok_f())
-    kok = cg.app_root()
-    return f"{kok}/e2e-app" if kok else "e2e-app"
+    return cg.e2e_app_root()
 
 
 def forge_yolu_java(goreli: str, kok: str | None = None) -> str:
@@ -208,9 +205,9 @@ def forge_yolu_java(goreli: str, kok: str | None = None) -> str:
 
 def e2e_java_root() -> str:
     """Forge deposunda web + Java test projesinin kökü (`e2e-java` ya da `demo-app/e2e-java`)."""
-    from tp_core.features.ci.dil import e2e_java_root as _kok
+    from tp_core.features.codegen import service as cg
 
-    return _kok()
+    return cg.e2e_java_root()
 
 
 def onarim_dili(session: Session, f: Failure, oneri: Mapping[str, Any], platform: str) -> str:
@@ -224,11 +221,11 @@ def onarim_dili(session: Session, f: Failure, oneri: Mapping[str, Any], platform
         adaylar += [(run.ortam or {}).get("dil"), (run.ortam or {}).get("lang")]
         if run.script_id is not None:
             sc = session.get(Script, run.script_id)
-            adaylar.append(getattr(sc, "dil", None) if sc is not None else None)
+            adaylar.append(sc.dil if sc is not None else None)
     for a in adaylar:
-        if a in ("ts", "java"):
+        if a in platformlar.TAM_HAT_DILLERI:
             return str(a)
-    return "ts"
+    return platformlar.TS
 
 
 def onarim_platformu(session: Session, f: Failure, oneri: Mapping[str, Any]) -> str:

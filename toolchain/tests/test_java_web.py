@@ -158,16 +158,45 @@ def test_runner_body_web_java() -> None:
         assert resp.status_code == 422, bad
 
 
-def test_check_name_web_is_local_ci() -> None:
-    assert checks.CheckRequest(sha="x", lang="java", platform="web").check_name == "local-ci"
+def test_check_name_web_java_is_local_ci_web_java() -> None:
+    """011 K-T1: web + Java kendi kaydını yazar (core `platform.check_adi` ile aynı)."""
+    req = checks.CheckRequest(sha="x", lang="java", platform="web")
+    assert req.check_name == "local-ci-web-java"
+    assert checks.CheckRequest(sha="x", lang="ts", platform="web").check_name == "local-ci"
     assert checks.CheckRequest(sha="x", lang="java", platform="ios").check_name == "local-ci-ios"
+
+
+def test_ts_and_java_checks_on_same_sha_do_not_overwrite(tmp_path: Path) -> None:
+    """Aynı sha'nın TS ve Java kardeş koşuları `checks/<sha>.json`'da ayrı girdilerdir: sonra
+    yazan öncekini ezmez (MİM-Y3)."""
+    sha = "b" * 40
+    path = tmp_path / f"{sha}.json"
+    ts = {"conclusion": "success", "lang": "ts"}
+    java = {"conclusion": "failure", "lang": "java", "platform": "web"}
+    path.write_text(json.dumps(checks.checks_document(sha, "completed", ts, "local-ci")))
+    doc = checks.checks_document(sha, "completed", java, "local-ci-web-java", existing=path)
+    path.write_text(json.dumps(doc))
+    doc = json.loads(path.read_text())
+    assert [(c["name"], c["conclusion"]) for c in doc["checks"]] == [
+        ("local-ci", "success"),
+        ("local-ci-web-java", "failure"),
+    ]
+    assert doc["reports"]["local-ci"] == ts and doc["reports"]["local-ci-web-java"] == java
+    # TS yeniden koşsa Java girdisi korunur.
+    doc = checks.checks_document(sha, "in_progress", None, "local-ci", existing=path)
+    assert [(c["name"], c["status"]) for c in doc["checks"]] == [
+        ("local-ci", "in_progress"),
+        ("local-ci-web-java", "completed"),
+    ]
 
 
 # ------------------------------------------------------------------ worker /check, /symbols
 
 
 @requires_jar
-def test_check_web_java_full_scope_records_local_ci(web_env: Path, forge: Forge, env: Path) -> None:
+def test_check_web_java_full_scope_records_local_ci_web_java(
+    web_env: Path, forge: Forge, env: Path
+) -> None:
     head = forge.commit("tp/web-java", web_files())
     client, calls = runner_client()
     report = checks.execute(
@@ -175,7 +204,7 @@ def test_check_web_java_full_scope_records_local_ci(web_env: Path, forge: Forge,
     )
     assert report["conclusion"] == "success", report
     assert report["lang"] == "java" and report["platform"] == "web"
-    assert report["check_name"] == "local-ci" and report["check_recorded"] is True
+    assert report["check_name"] == "local-ci-web-java" and report["check_recorded"] is True
     assert [report[s]["ok"] for s in javayol.STEPS] == [True] * len(javayol.STEPS)
     assert report["guard"]["report"]["root"] == "e2e-java"
     assert report["guard"]["report"]["files"] == [GEN]
@@ -185,9 +214,9 @@ def test_check_web_java_full_scope_records_local_ci(web_env: Path, forge: Forge,
     (call,) = calls
     assert call["body"]["lang"] == "java" and call["body"]["platform"] == "web"
     doc = json.loads((env / "checks" / f"{head}.json").read_text())
-    assert [c["name"] for c in doc["checks"]] == ["local-ci"]
+    assert [c["name"] for c in doc["checks"]] == ["local-ci-web-java"]
     assert doc["checks"][0]["conclusion"] == "success"
-    assert doc["reports"]["local-ci"]["platform"] == "web"
+    assert doc["reports"]["local-ci-web-java"]["platform"] == "web"
 
 
 @requires_jar
@@ -304,7 +333,9 @@ def fake_web_mvn(tmp_path: Path, xml: str) -> Path:
                 "ANTHROPIC_API_KEY", "TP_RUN_ID", "CI")
         with pathlib.Path({str(tmp_path / "mvn.log")!r}).open("a") as fh:
             fh.write(json.dumps({{"argv": args, "cwd": os.getcwd(),
-                                  "env": {{k: os.environ.get(k) for k in keys}}}}) + "\\n")
+                                  "env": {{k: os.environ.get(k) for k in keys}},
+                                  "tmp": [os.environ.get("TMPDIR"),
+                                          os.path.isdir(os.environ.get("TMPDIR") or "")]}}) + "\\n")
         rd = pathlib.Path(props["raporlar.dizini"]); rd.mkdir(parents=True, exist_ok=True)
         (rd / "TEST-TestSuite.xml").write_text({xml!r}, encoding="utf-8")
         kd = pathlib.Path(props["kanit.dizini"]) / "DEMO12C1_ab12cd34Test.senaryo"
@@ -385,12 +416,16 @@ def test_web_java_run_repeat_env_health_and_reports(
         "PLATFORM": None,
         "APP_ID": None,
         "MAVEN_SKIP_RC": "1",
-        "MAVEN_OPTS": None,
+        "MAVEN_OPTS": "-Xmx384m",
         "JAVA_TOOL_OPTIONS": None,
         "ANTHROPIC_API_KEY": None,
         "TP_RUN_ID": "w1",
         "CI": "1",
     }
+    # OPS-O6: geçici dosyalar koşu dizini altında (`<run>/tmp`); koşu sonunda silinir.
+    tmp = env / "runs" / "w1" / "tmp"
+    assert all(c["tmp"] == [str(tmp), True] for c in calls)
+    assert not tmp.exists()
     # Artefakt listesi: kanıt (target/kanit/**), Allure, Extent, Surefire, junit.
     rep = data["reports"]
     assert rep["kanit"]["rel"] == "runs/w1/src/e2e-java/target/kanit" and rep["kanit"]["exists"]

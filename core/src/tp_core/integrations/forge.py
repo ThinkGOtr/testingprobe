@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
+from tp_core.features.codegen import platform as platformlar
 from tp_core.ports import CheckRun
 
 if TYPE_CHECKING:
@@ -25,7 +26,7 @@ PROTECTED_BRANCHES: frozenset[str] = frozenset({"main"})
 # - LocalForge: yerel CI runner'ının (test-runner) yazdığı tek check.
 # - GitHubForge: `.github/workflows/ci.yml` iş adları = `scripts/github-ruleset.sh` CHECKS.
 #   `TP_REQUIRED_CHECKS` (virgüllü) ile değiştirilebilir; ruleset ile aynı tutulmalıdır.
-REQUIRED_CHECK = "local-ci"  # geriye uyumluluk: LocalForge'un tek zorunlu kontrolü
+REQUIRED_CHECK = platformlar.YEREL_CHECK  # `local-ci`: LocalForge'un varsayılan zorunlu kontrolü
 LOCAL_REQUIRED_CHECKS: tuple[str, ...] = (REQUIRED_CHECK,)
 GITHUB_REQUIRED_CHECKS: tuple[str, ...] = ("test-local", "ast-guard", "semgrep")
 REQUIRED_CHECKS_ENV = "TP_REQUIRED_CHECKS"
@@ -242,54 +243,67 @@ def evaluate_required_checks(
     return RequiredChecksVerdict(passed=passed, required=list(required), states=states)
 
 
-# Uygulama (Java + Appium) kontrolleri platform başınadır (009 §2.7): toolchain-worker /check
-# `lang=java` kaydı `local-ci-<platform>`; web kaydı `local-ci` olarak kalır.
-APP_PLATFORMS: tuple[str, ...] = ("android", "ios", "windows")
-APP_PLATFORM_CHECKS: tuple[str, ...] = tuple(f"{REQUIRED_CHECK}-{p}" for p in APP_PLATFORMS)
+# Kontrol adları `platform.check_adi`'dandır (011 K-T1): web + TS `local-ci`, web + Java
+# `local-ci-web-java` (GitHub karşılığı `web-java`), uygulama (Java + Appium; 009 §2.7)
+# `local-ci-<platform>`. toolchain-worker /check her birini ayrı girdi olarak yazar.
+APP_PLATFORMS: tuple[str, ...] = platformlar.UYGULAMA_PLATFORMLARI
+APP_PLATFORM_CHECKS: tuple[str, ...] = tuple(
+    platformlar.check_adi(p, platformlar.JAVA) for p in APP_PLATFORMS
+)
+LOCAL_WEB_JAVA_CHECK = platformlar.check_adi(platformlar.WEB, platformlar.JAVA)
 # LocalForge düzeninde Java e2e kökü (toolchain TP_E2E_APP_ROOT varsayılanı).
-LOCAL_APP_E2E_ROOT = "e2e-app/"
-# LocalForge düzeninde web test kökleri: TS (`e2e/`) ve web + Java (`e2e-java/`, toolchain
-# TP_E2E_JAVA_ROOT varsayılanı; 011 §2.6). İkisinin de kontrolü `local-ci`'dir: web'de check adı
-# dile bakmaz.
+LOCAL_APP_E2E_ROOT = f"{platformlar.E2E_APP_DIZINI}/"
+# LocalForge düzeninde web test kökleri: TS (`e2e/`, kontrolü `local-ci`) ve web + Java
+# (`e2e-java/`, toolchain TP_E2E_JAVA_ROOT varsayılanı; kontrolü `local-ci-web-java`).
 LOCAL_WEB_E2E_ROOT = "e2e/"
-LOCAL_WEB_JAVA_E2E_ROOT = "e2e-java/"
+LOCAL_WEB_JAVA_E2E_ROOT = f"{platformlar.E2E_JAVA_DIZINI}/"
 LOCAL_WEB_E2E_ROOTS: tuple[str, ...] = (LOCAL_WEB_E2E_ROOT, LOCAL_WEB_JAVA_E2E_ROOT)
+# Web yerine geçebilen (kendi kontrolü olan) test kökleri: yalnız bunları değiştiren PR web
+# `local-ci`'ı (kaydedilmemişse) istemez.
+_KENDI_KONTROLLU_KOKLER: tuple[str, ...] = (LOCAL_APP_E2E_ROOT, LOCAL_WEB_JAVA_E2E_ROOT)
 
 
 def local_required_checks(
     configured: Sequence[str], checks: Sequence[CheckRun], changed_paths: Sequence[str]
 ) -> tuple[tuple[str, ...], str | None]:
-    """LocalForge merge kapısı: platform başına zorunlu kontroller + ek ihlal nedeni.
+    """LocalForge merge kapısı: platform/dil başına zorunlu kontroller + ek ihlal nedeni.
 
-    - Yapılandırılmış liste (varsayılan `local-ci`) aynen zorunludur; web PR'ı için davranış
+    - Yapılandırılmış liste (varsayılan `local-ci`) aynen zorunludur; web + TS PR'ı için davranış
       değişmez.
-    - Bu head için KAYDEDİLMİŞ her `local-ci-<platform>` de zorunludur: kırmızı bir uygulama
-      kontrolü merge'i durdurur (yalnızca web yeşili yetmez).
-    - PR yalnızca `e2e-app/` altını değiştiriyorsa (uygulama testi / Kimlikler onarımı) web
-      `local-ci` gerekmez (kaydedilmişse yine yeşil olmalı); en az bir platform kontrolü olmalı.
-    - PR bir web test kökünü (`e2e/` ya da `e2e-java/`; 011 §2.8) değiştiriyorsa `local-ci`
-      zorunludur — yalnız `e2e-java/` değiştiren web + Java PR'ı (üretilen test / Kimlikler
-      onarımı) dahil: web'de check adı dile bakmaz, uygulama kontrolü onun yerine geçmez.
+    - Bu head için KAYDEDİLMİŞ her `local-ci-<platform>` ve `local-ci-web-java` de zorunludur:
+      kırmızı bir uygulama / Java kontrolü merge'i durdurur (yalnızca web + TS yeşili yetmez).
+    - PR `e2e-java/` altını değiştiriyorsa `local-ci-web-java` zorunludur (011 K-T1: web + Java
+      PR'ı Java derlenip koşmadan merge edilemez).
+    - PR `e2e/` altını değiştiriyorsa `local-ci` zorunludur (yapılandırma düşürmüş olsa bile).
+    - PR yalnızca kendi kontrolü olan kökleri (`e2e-app/`, `e2e-java/`) değiştiriyorsa web
+      `local-ci` gerekmez (kaydedilmişse yine yeşil olmalı); yerine o köklerin kontrolü gelir.
     - Yarıda kalmış (`in_progress`) bir kayıt merge'i durdurur; kontrol yeniden koşturulur
       (aynı adın girdisi üzerine yazılır) ya da demo-admin bypass'ı kullanılır.
     - `e2e-app/` değişip hiç platform kontrolü yoksa ikinci değer ihlal nedenidir.
     """
     platform_names = set(APP_PLATFORM_CHECKS)
-    recorded = [c.name for c in checks if c.name in platform_names]
+    kendi_kontrollu = platform_names | {LOCAL_WEB_JAVA_CHECK}
+    recorded = [c.name for c in checks if c.name in kendi_kontrollu]
     touches_app = any(p.startswith(LOCAL_APP_E2E_ROOT) for p in changed_paths)
-    app_only = touches_app and all(p.startswith(LOCAL_APP_E2E_ROOT) for p in changed_paths)
+    touches_java = any(p.startswith(LOCAL_WEB_JAVA_E2E_ROOT) for p in changed_paths)
+    touches_ts = any(p.startswith(LOCAL_WEB_E2E_ROOT) for p in changed_paths)
+    own_only = bool(changed_paths) and all(
+        p.startswith(_KENDI_KONTROLLU_KOKLER) for p in changed_paths
+    )
     # Kayıtlı her kontrol yeşil olmalı (simetri): web local-ci yalnızca KAYDEDİLMEMİŞSE düşer.
     web_recorded = any(c.name == REQUIRED_CHECK for c in checks)
+    yerine_gecen = bool(recorded) or touches_java
     required = [
         n
         for n in configured
-        if not (app_only and recorded and n == REQUIRED_CHECK and not web_recorded)
+        if not (own_only and yerine_gecen and n == REQUIRED_CHECK and not web_recorded)
     ]
-    touches_web = any(p.startswith(LOCAL_WEB_E2E_ROOTS) for p in changed_paths)
-    if touches_web and REQUIRED_CHECK not in required:
+    if touches_ts and REQUIRED_CHECK not in required:
         # Yapılandırma `local-ci`'ı düşürmüş olsa bile (ör. yalnızca platform kontrolü isteyen
         # `TP_REQUIRED_CHECKS`) web testini değiştiren PR web kontrolü olmadan merge edilemez.
         required.insert(0, REQUIRED_CHECK)
+    if touches_java and LOCAL_WEB_JAVA_CHECK not in required:
+        required.append(LOCAL_WEB_JAVA_CHECK)
     for name in recorded:
         if name not in required:
             required.append(name)
@@ -322,7 +336,7 @@ GITHUB_PLATFORM_WORKFLOWS: dict[str, str] = {
 WEB_JAVA_CHECK = "web-java"
 WEB_JAVA_WORKFLOW = f"{WEB_JAVA_CHECK}.yml"
 WEB_DILLERI_ENV = "TP_WEB_DILLERI"
-WEB_TAM_HAT_DILLERI: tuple[str, ...] = ("ts", "java")
+WEB_TAM_HAT_DILLERI: tuple[str, ...] = platformlar.TAM_HAT_DILLERI
 
 # Zorunlu check yapılabilen platform iş akışları (`changes` + no-op deseni; .github/CI.md).
 ZORUNLU_YAPILABILIR_PLATFORMLAR: tuple[str, ...] = ("android", "windows")

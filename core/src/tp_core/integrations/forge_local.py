@@ -11,8 +11,9 @@
   `MergeResult`'a yazılır. Bot (`tp-bot`) merge edemez. Uygulama (Java + Appium) kontrolleri
   platform başınadır (`local-ci-android|ios|windows`, 009 §2.7): head için kaydedilmiş her biri
   de zorunludur; yalnızca `e2e-app/` değiştiren PR web `local-ci` yerine en az bir platform
-  kontrolü ister (`forge.local_required_checks`). Web'de check adı dile bakmaz (011 §2.8):
-  `e2e/` (TS) ya da `e2e-java/` (Playwright for Java) değiştiren PR `local-ci` ister. Liste
+  kontrolü ister (`forge.local_required_checks`). Web'de check adı dile göredir (011 K-T1):
+  `e2e/` (TS) değiştiren PR `local-ci`, `e2e-java/` (Playwright for Java) değiştiren PR
+  `local-ci-web-java` ister (yalnız `e2e-java/` değiştiren PR web `local-ci`'ı istemez). Liste
   `TP_REQUIRED_CHECKS` ile değişir.
 - Güncel dal kuralı (GitHub "require branches to be up to date" / strict status checks): PR dalı
   `main`'in güncel head'ini içermiyorsa merge reddedilir — aksi halde hiçbir kontrolün koşmadığı
@@ -556,8 +557,8 @@ class LocalForge:
                 raise ForgeNotFoundError(f"temel dal bulunamadı: {rec['base']}")
 
             checks = self.checks(head)
-            # Platform başına kapı (009 §2.7): kayıtlı uygulama kontrolleri de zorunlu; yalnızca
-            # e2e-app/ değiştiren PR web local-ci yerine platform kontrolü ister.
+            # Platform/dil başına kapı (009 §2.7, 011 K-T1): kayıtlı uygulama / web + Java
+            # kontrolleri de zorunlu; e2e-java/ değiştiren PR local-ci-web-java ister.
             fark_tabani = self._merge_base(base_head, head)
             degisen = self.changed_paths(fark_tabani, head) if is_sha(fark_tabani) else []
             zorunlu, platform_eksik = local_required_checks(self.required_checks, checks, degisen)
