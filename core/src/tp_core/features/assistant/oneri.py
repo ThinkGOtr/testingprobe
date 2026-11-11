@@ -628,11 +628,16 @@ def _requirement_olgulari(session: Session, req: Any, simdi: datetime) -> dict[s
     sayilar = dict(
         session.execute(
             select(TestCase.durum, func.count())
-            .where(TestCase.requirement_id == req.id, TestCase.durum.in_(("draft", "approved")))
+            .where(
+                TestCase.requirement_id == req.id,
+                TestCase.durum.in_(("draft", "ready", "approved")),
+            )
             .group_by(TestCase.durum)
         ).all()
     )
     o["inceleme_bekleyen_case"] = int(sayilar.get("draft", 0))
+    # `ready`: Testçi kabul etti, Analist son onayı bekliyor (specs/012-rol-yetki §5).
+    o["son_onay_bekleyen_case"] = int(sayilar.get("ready", 0))
     o["onayli_case"] = int(sayilar.get("approved", 0))
     return o
 
@@ -756,6 +761,7 @@ OLGU_HESAPLAYICILARI: Final[Mapping[str, frozenset[str]]] = {
     "ac_eksik": frozenset({"requirement"}),
     "acik_bulgu_sayisi": frozenset({"requirement"}),
     "inceleme_bekleyen_case": frozenset({"requirement"}),
+    "son_onay_bekleyen_case": frozenset({"requirement"}),
     "onayli_case": frozenset({"requirement"}),
     "kirarak_dogrulama": frozenset({"script"}),
     "defect_adayi": frozenset({"script"}),

@@ -57,7 +57,7 @@ def test_olcum_varsayilan_olculmedi_ve_kazanc(
     dort_story: dict[str, uuid.UUID],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    login(api, make_user("analyst"))
+    login(api, make_user("po"))
     r = api.put(
         f"/requirements/{dort_story['TPD-1']}/baseline",
         json={"deger_s": 3600, "not": "F0 ölçümü – İsmail"},
@@ -168,7 +168,7 @@ def test_replay_hazirlik_suresi_yalniz_review(
     assert h["ai_olculmedi"] is True and h["review_olculmedi"] is False
     assert h["toplam_yontemi"] == "yalniz_review" and h["toplam_ms"] == h["review_sure_ms"]
     assert h["kazanc_orani"] is None  # ölçüm yok → kazanç yok
-    login(api, make_user("analyst"))
+    login(api, make_user("po"))
     r = api.put(f"/requirements/{rid}/baseline", json={"deger_s": 3600, "not": "F0 ölçümü"})
     assert r.status_code == 200, r.text
     k = _kule(engine)
@@ -215,7 +215,7 @@ def test_replay_review_uzunsa_bile_baslik_kazanci_yok(
         "requirement_metrics",
         lambda session, rid: {**gercek(session, rid), "review_sure_ms": 54_000},
     )
-    login(api, make_user("analyst"))
+    login(api, make_user("po"))
     for key in ("TPD-1", "TPD-2"):
         r = api.put(
             f"/requirements/{make_requirement_case.reqs[key]}/baseline",

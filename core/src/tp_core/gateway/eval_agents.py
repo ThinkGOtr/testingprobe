@@ -179,17 +179,9 @@ def _app_env(platform: str) -> ToolEnv:  # pragma: no cover - canlı cihaz + app
 
 # ------------------------------------------------------------------ asistan (AI-ASISTAN-PLANI §13)
 
-# Eval ortamı başına rol (`assistant:<rol>`): izin kataloğunun rolleri (specs/012-rol-yetki §3).
-ASISTAN_ROLLERI: tuple[str, ...] = (
-    "analyst",
-    "po",
-    "engineer",
-    "tester",
-    "admin",
-    "auditor",
-    "developer",
-    "viewer",
-)
+# Eval ortamı başına rol (`assistant:<rol>`): eval setinde vakası olan roller. `presenter` 012'de
+# `admin` oldu; auditor/developer/viewer için henüz vaka yok (asistan okuma izinleriyle süzülür).
+ASISTAN_ROLLERI: tuple[str, ...] = ("analyst", "po", "engineer", "tester", "admin")
 ASISTAN_ORTAM_ONEKI = "assistant:"
 ASISTAN_AMACLARI: tuple[str, ...] = ("assistant", "assistant_deep")
 TOHUM = "<tohum>"

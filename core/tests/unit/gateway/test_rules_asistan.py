@@ -30,7 +30,7 @@ from tp_core.gateway import ALLOWED_AGENT_TOOLS, FORBIDDEN_TOOLS, load_schema
 from tp_core.gateway.bundle import parse_prompt_file
 
 ASISTAN = RULES / "assistant"
-ROLLER = ("analyst", "po", "engineer", "tester", "presenter")
+ROLLER = ("admin", "auditor", "analyst", "po", "tester", "engineer", "developer", "viewer")
 VARLIKLAR = (
     "requirement",
     "consistency_finding",
@@ -69,6 +69,7 @@ OLGU_ADLARI = frozenset(
         "ac_eksik",
         "acik_bulgu_sayisi",
         "inceleme_bekleyen_case",
+        "son_onay_bekleyen_case",
         "onayli_case",
         "kirarak_dogrulama",
         "defect_adayi",
@@ -758,11 +759,17 @@ def test_degerdeki_suslu_parantez_yer_tutucu_sayilmaz() -> None:
 
 
 def _uc_rolleri() -> dict[str, frozenset[str]]:
-    """FastAPI rotası → `require_role` kümesi (`auth/deps.require_role` kapanışından)."""
+    """FastAPI rotası → izinli roller: `yetki.izin(...)`/`izinlerden_biri(...)` bağımlılığının
+    katalog rolleri ya da (S2 birleşene kadar) `require_role` kapanışındaki küme."""
     from tp_core.api.main import create_app
+    from tp_core.auth import yetki
 
     def roller(dep: Any) -> Iterator[frozenset[str]]:
         call = dep.call
+        if hasattr(call, "izin_adi"):
+            yield yetki.roller_icin(call.izin_adi)
+        if hasattr(call, "izin_adlari"):
+            yield frozenset().union(*(yetki.roller_icin(i) for i in call.izin_adlari))
         if getattr(call, "__name__", "").startswith("require_role_"):
             for cell in call.__closure__ or ():
                 if isinstance(cell.cell_contents, frozenset):
@@ -797,7 +804,8 @@ def test_rol_hizalama_rota_eylemleri_ucun_rolleriyle() -> None:
     uclar = _uc_rolleri()
     # Denetim gerçekten rol okuyor (her şeye izin veren varsayılana düşmüyor).
     assert uclar["POST /requirements/{req_id}/po-approve"] == {"po"}
-    assert uclar["POST /ci/trigger"] == {"presenter"}
+    assert uclar["POST /ci/trigger"] == {"engineer", "developer"}
+    assert uclar["POST /demo/reset"] == {"admin", "engineer"}
     for kural in _oneriler()["kurallar"]:
         eylem = kural["eylem"]
         if eylem["tur"] != "rota":
@@ -900,7 +908,7 @@ def test_asistan_eval_iskeleti() -> None:
     assert {f"S{i}" for i in range(1, 14)} <= set(etiketler)
     assert etiketler.count("injection") >= 6 and etiketler.count("eylem_istegi") >= 4
     assert etiketler.count("oneri_modu") >= 3
-    assert {c["rol"] for c in cases} == set(ROLLER)
+    assert {c["rol"] for c in cases} == {"analyst", "po", "engineer", "tester", "admin"}
     rotalar = _rotalar()
     kaynak_turleri = set(
         load_schema(RULES, "assistant")["properties"]["kaynaklar"]["items"]["properties"]["tur"][

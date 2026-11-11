@@ -17,6 +17,7 @@ from sqlalchemy import Engine, text
 
 from tests.unit.conftest import PAROLA, Db
 from tp_core.api import main
+from tp_core.auth import yetki
 from tp_core.auth.login import THROTTLE
 from tp_core.config import get_settings
 from tp_core.features.assistant import hiz, oneri, oneri_api
@@ -76,6 +77,10 @@ def test_oneriler_rol_oturumdan(
     tohum.bulgu(req)
     _giris(client, make_user(rol))
     r = client.get(UC, params={"rota": f"/gereksinimler/{req}", "rol": "analyst"})
+    if not yetki.izinli(rol, "requirement.read"):
+        # Gereksinim okuma izni yok (auditor, viewer): varlık yokmuş gibi 404.
+        assert r.status_code == 404, r.text
+        return
     assert r.status_code == 200, r.text
     govde = r.json()
     assert govde["rota_kalibi"] == "/gereksinimler/:id"
@@ -241,7 +246,7 @@ def test_hiz_siniri_liste_60_geri_bildirim_30(
     make_user: MakeUser,
     sabit_hiz_penceresi: int,
 ) -> None:
-    _giris(client, make_user("presenter"))
+    _giris(client, make_user("admin"))
     for i in range(60):
         r = client.get(UC, params={"rota": "/kosular"})
         assert r.status_code == 200, (i, r.text)
@@ -280,7 +285,7 @@ def test_sunucu_onbellegi_kullanici_ve_varlik_bazinda(
 def test_bayrak_kapaliyken_404(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, make_user: MakeUser
 ) -> None:
-    _giris(client, make_user("presenter"))
+    _giris(client, make_user("admin"))
     monkeypatch.setenv("TP_ASISTAN_ONERI", "0")
     r = client.get(UC, params={"rota": "/kosular"})
     assert r.status_code == 404 and r.json()["kod"] == "bulunamadi"

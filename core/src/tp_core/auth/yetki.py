@@ -104,8 +104,8 @@ IZINLER: Final[dict[str, frozenset[str]]] = {
 
 # Durum makinesi kapılarında karar verebilecek roller (derinlemesine savunma; workflow/states.py).
 KARAR_IZNI: Final[dict[str, str]] = {
-    # PO teyidi: Jira kanalında (kullanıcısız) etiketle; portalda yalnız serbest metin (po).
-    "requirement": "requirement.po_approve_free_text",
+    # `requirement` yok: PO teyidi Jira kanalından (kullanıcısız) ya da serbest metinde portal
+    # ucundan (`requirement.po_approve_free_text`) gelir; onay rolü {po} durum makinesinde kalır.
     "consistency_finding": "requirement.review",
     "test_case": "case.decide",  # son onay: case.approve (S2)
     "bug_draft": "bug.decide",

@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
@@ -26,13 +27,13 @@ def _kosu(engine: Engine) -> uuid.UUID:
     return rid
 
 
-def test_trigger_yalniz_sunucu_ve_tekrari_kuyrukta(api: TestClient, make_user, engine) -> None:
-    analist = make_user("analyst")
-    login(api, analist)
-    r = api.post("/ci/trigger", json={"tetik": "deploy"})
-    assert r.status_code == 403
-    api.post("/auth/logout")
-    login(api, make_user("presenter"))
+def test_trigger_yalniz_engineer_ve_tekrari_kuyrukta(api: TestClient, make_user, engine) -> None:
+    for rol in ("analyst", "admin"):
+        login(api, make_user(rol))
+        r = api.post("/ci/trigger", json={"tetik": "deploy"})
+        assert r.status_code == 403
+        api.post("/auth/logout")
+    login(api, make_user("engineer"))
     assert api.post("/ci/trigger", json={"tetik": "push"}).status_code == 422
     r = api.post("/ci/trigger", json={"tetik": "deploy"})
     assert r.status_code == 202, r.text
@@ -176,3 +177,16 @@ def _kosu_baska(engine: Engine) -> uuid.UUID:
         rid = enqueue_ci(s, SHA, "pr", 4)
     run_jobs(engine)
     return rid
+
+
+def test_manuel_tetik_kosuyu_manual_olarak_kaydeder(api: TestClient, make_user, engine) -> None:
+    """`manual` tetiği deploy gibi main'de koşar; koşu `tetik=manual` ile kaydedilir."""
+    login(api, make_user("developer"))
+    r = api.post("/ci/trigger", json={"tetik": "manual"})
+    assert r.status_code == 202, r.text
+    assert r.json()["tetik"] == "manual" and r.json()["durum"] == "queued"
+    with engine.connect() as c:
+        tetik = c.execute(
+            text("SELECT tetik FROM run WHERE id = :i"), {"i": r.json()["run_id"]}
+        ).scalar_one()
+    assert tetik == "manual"

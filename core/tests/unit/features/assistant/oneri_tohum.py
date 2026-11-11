@@ -431,7 +431,7 @@ VAKALAR: dict[str, tuple[str, Kurulum, Kurulum]] = {
         _script("blocked", "not_started", engel_turu="defect_candidate"),
     ),
     "kosu-ortam-hatasi-task": ("engineer", _kosu("error"), _kosu("failed")),
-    "kosu-ortam-hatasi-bilgi": ("presenter", _kosu("error"), _kosu("passed")),
+    "kosu-ortam-hatasi-bilgi": ("admin", _kosu("error"), _kosu("passed")),
     "hata-bakim-onarim": (
         "engineer",
         _hata("test_maintenance"),
@@ -447,6 +447,6 @@ VAKALAR: dict[str, tuple[str, Kurulum, Kurulum]] = {
     "hata-test-verisi-bilgi": ("engineer", _hata("test_data"), _hata("unknown")),
     "bug-taslagi-karari": ("tester", _bug("draft"), _bug("dismissed")),
     "bug-taslagi-bulgudan": ("analyst", _bug("draft", bulgu=True), _bug("draft")),
-    "butce-uyarisi": ("presenter", _butce("8.5"), _butce("7.9", gun_sonra=2)),
-    "guncel-kosu-yok": ("presenter", _son_kosu(30), _son_kosu(3)),
+    "butce-uyarisi": ("admin", _butce("8.5"), _butce("7.9", gun_sonra=2)),
+    "guncel-kosu-yok": ("engineer", _son_kosu(30), _son_kosu(3)),
 }

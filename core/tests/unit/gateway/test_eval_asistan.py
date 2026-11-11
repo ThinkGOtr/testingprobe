@@ -429,7 +429,7 @@ MINI_VAKALAR: list[dict[str, Any]] = [
     {
         "id": "emin-degil",
         "etiketler": ["otomatik_derin"],
-        "rol": "presenter",
+        "rol": "admin",
         "kip": "soru",
         "soru": "Kontrol Kulesi'ndeki pass@1 oranı hangi koşuları hariç tutuyor?",
         "baglam": {"rota_kalibi": "/kontrol-kulesi", "ekran": "Kontrol Kulesi"},

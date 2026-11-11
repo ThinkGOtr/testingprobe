@@ -222,7 +222,7 @@ def test_yalniz_rota_kalibina_uyan_ic_rota_baglanti_olur() -> None:
     ("rol", "beklenen"),
     [
         ("tester", ["/kosular"]),  # /demo yalnız presenter, /claude-code yalnız analyst
-        ("presenter", ["/demo", "/kosular"]),
+        ("admin", ["/demo", "/kosular"]),
         ("analyst", ["/claude-code", "/kosular"]),
         (None, ["/demo", "/claude-code", "/kosular"]),  # rol bilinmiyor → süzgeç yok
     ],
@@ -722,7 +722,7 @@ def test_modelin_bug_taslagi_her_ekranda_bilgiye_duser(
     ("rol", "rota", "beklenen"),
     [
         ("tester", "/demo", "bilgi"),  # yalnız presenter
-        ("presenter", "/demo", "rota"),
+        ("admin", "/demo", "rota"),
         ("tester", "/claude-code", "bilgi"),  # yalnız analyst
         ("analyst", "/claude-code", "rota"),
         ("tester", "/kod/0f3c-1", "rota"),  # roller null → herkes
@@ -955,9 +955,9 @@ def _probe_havuzu(arac: str, metin: str) -> KanitHavuzu:
     ("soru", "baglam", "rol", "beklenen"),
     [
         # Bağlamsız eylem: kural dosyasındaki ifade → ekran (eval eylem-kosu-tetikle).
-        ("Yeni bir gece koşusu başlat.", None, "presenter", ["/kosular"]),
+        ("Yeni bir gece koşusu başlat.", None, "admin", ["/kosular"]),
         # Bulunulan ekran ve ifade aynı (eval eylem-demo-sifirla).
-        ("Demo verisini sıfırla.", {"rota_kalibi": "/demo"}, "presenter", ["/demo"]),
+        ("Demo verisini sıfırla.", {"rota_kalibi": "/demo"}, "admin", ["/demo"]),
         # Rolün açamadığı ekran bağlantı olmaz (`/demo` yalnız Sunucu).
         ("Demo verisini sıfırla.", {"rota_kalibi": "/demo"}, "tester", []),
         # `:id` bağlamdaki varlıktan; ifade eşleşmezse bulunulan ekran.
@@ -1028,17 +1028,17 @@ def test_eylem_reddinde_id_arac_sonucundaki_kayittan_anahtarla_secilir() -> None
 def test_modelin_gecerli_yonlendirmesi_varsa_eylem_kurali_eklenmez() -> None:
     cevap = isle(
         _cikti(eylem_reddi=True, yonlendirmeler=[{"etiket": "Koşu", "rota": f"/kosular/{REQ}"}]),
-        SonIslemBaglami(soru="Yeni bir gece koşusu başlat.", rol="presenter"),
+        SonIslemBaglami(soru="Yeni bir gece koşusu başlat.", rol="admin"),
     )
     assert [y["rota"] for y in cevap["yonlendirmeler"]] == [f"/kosular/{REQ}"]
     # Rota dışı model rotası düşer, kural bağlantısı gelir (eval s8 `/kuyruk` deseni).
     cevap = isle(
         _cikti(eylem_reddi=True, yonlendirmeler=[{"etiket": "Kuyruk", "rota": "/kuyruk"}]),
-        SonIslemBaglami(soru="Yeni bir gece koşusu başlat.", rol="presenter"),
+        SonIslemBaglami(soru="Yeni bir gece koşusu başlat.", rol="admin"),
     )
     assert [y["rota"] for y in cevap["yonlendirmeler"]] == ["/kosular"]
     # Eylem reddi olmayan cevaba bağlantı eklenmez.
-    cevap = isle(_cikti(), SonIslemBaglami(soru="Yeni bir gece koşusu başlat.", rol="presenter"))
+    cevap = isle(_cikti(), SonIslemBaglami(soru="Yeni bir gece koşusu başlat.", rol="admin"))
     assert cevap["yonlendirmeler"] == []
 
 

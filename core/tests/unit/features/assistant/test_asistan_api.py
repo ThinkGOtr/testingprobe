@@ -26,7 +26,7 @@ from tp_core.features.assistant import api as asistan_api
 from tp_core.features.assistant import budget, hiz
 from tp_core.workflow.service import Principal
 
-ROLLER = ("analyst", "po", "engineer", "tester", "presenter")
+ROLLER = ("analyst", "po", "engineer", "tester", "admin")
 REPO = Path(__file__).resolve().parents[5]
 
 
@@ -582,7 +582,7 @@ def test_sir_degerinin_oneki_422_vermez_tami_verir(
 
 
 def test_feedback_dogrulama(client: TestClient, make_user, engine, canli) -> None:
-    giris(client, make_user("presenter"))
+    giris(client, make_user("admin"))
     s = sohbet_ac(client)
     mid = soru_sor_ve_bitir(client, engine, s)
     assert client.post(f"/assistant/messages/{mid}/feedback", json={"deger": 0}).status_code == 422
@@ -893,7 +893,7 @@ def test_global_sinir_paralel_ortamdan(client: TestClient, make_user, canli, mon
 def test_saatlik_sinir_iptal_ve_hata_dahil_derin_iki(
     client: TestClient, make_user, engine, canli
 ) -> None:
-    u = make_user("presenter")
+    u = make_user("admin")
     giris(client, u)
     s = sohbet_ac(client)
     ust = soru_sor_ve_bitir(client, engine, s)  # 1

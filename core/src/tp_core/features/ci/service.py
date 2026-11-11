@@ -112,8 +112,8 @@ GITHUB_OLAY = {
     # Elle koşu (specs/012-rol-yetki: `run.trigger_manual`) ci.yml workflow_dispatch `tetik=manual`.
     "manual": ("workflow_dispatch",),
 }
-# Kullanıcının portaldan başlattığı tetikler (`POST /ci/trigger`). `manual` ci_tetik tablosuna
-# yazılmaz (webhook idempotency kaydı yok); koşu `run.tetik = manual` ile kaydedilir.
+# Kullanıcının portaldan başlattığı tetikler (`POST /ci/trigger`); koşu `run.tetik`'ine aynen
+# yazılır (`manual` deploy gibi main'in head'inde koşar).
 ELLE_TETIKLER = ("deploy", "nightly", "manual")
 GITHUB_SONUC = {
     "success": "passed",
@@ -226,7 +226,7 @@ def _enqueue(
     script_id: uuid.UUID | None = None,
     dispatch: bool = False,
 ) -> dict[str, Any]:
-    if trigger not in CI_TETIK and trigger != "manual":
+    if trigger not in CI_TETIK:
         raise CiError(f"geçersiz tetik: {trigger!r} (pr | push | nightly | deploy)")
     if trigger == "pr" and pr_number is None:
         raise CiError("pr tetiği için pr_number gerekli")

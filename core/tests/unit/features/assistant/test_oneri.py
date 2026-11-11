@@ -434,7 +434,7 @@ def test_ekran_coz_rol_ve_varlik_denetimi() -> None:
     e = oneri.ekran_coz(_kisi("analyst"), "/gereksinimler/:id", "requirement", str(vid))
     assert e.varlik_id == vid
     # Varlıksız ekranda istemcinin varlık parametreleri yok sayılır.
-    e = oneri.ekran_coz(_kisi("presenter"), "/kosular", "run", str(vid))
+    e = oneri.ekran_coz(_kisi("admin"), "/kosular", "run", str(vid))
     assert (e.varlik_tur, e.varlik_id) == (None, None)
     with pytest.raises(oneri.EkranBulunamadi):  # rolüne kapalı ekran
         oneri.ekran_coz(_kisi("engineer"), "/claude-code", None, None)

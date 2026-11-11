@@ -92,6 +92,11 @@ olgular:
     varliklar: [requirement]
     kaynak: gereksinimin `draft` test_case sayısı (superseded hariç)
     yer_tutucu: true
+  son_onay_bekleyen_case:
+    tur: sayi
+    varliklar: [requirement]
+    kaynak: gereksinimin `ready` test_case sayısı (Testçi kabul etti, Analist son onayı bekliyor)
+    yer_tutucu: true
   onayli_case:
     tur: sayi
     varliklar: [requirement]

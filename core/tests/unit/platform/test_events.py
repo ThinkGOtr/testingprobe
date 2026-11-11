@@ -91,7 +91,7 @@ def test_events_oturum_ister(db: Db) -> None:
 
 
 def test_sse_canli_akis(sunucu: str, make_user: MakeUser, engine: Engine) -> None:
-    u = make_user("presenter")
+    u = make_user("admin")
     with httpx.Client(base_url=sunucu, timeout=10) as c:
         r = c.post("/auth/login", json={"kullanici_adi": u.kullanici_adi, "parola": PAROLA})
         assert r.status_code == 200
@@ -135,7 +135,7 @@ def test_sse_cikistan_sonra_olay_teslim_etmez_ve_kapanir(
     sunucu: str, make_user: MakeUser, engine: Engine
 ) -> None:
     """Açık akış, çıkıştan sonra yayımlanan olayı almaz; session.ended ile kapanır."""
-    u = make_user("presenter")
+    u = make_user("admin")
     with httpx.Client(base_url=sunucu, timeout=10) as c:
         assert (
             c.post(
@@ -159,7 +159,7 @@ def test_sse_cikistan_sonra_olay_teslim_etmez_ve_kapanir(
 
 
 def test_sse_parola_degisince_kapanir(sunucu: str, make_user: MakeUser, engine: Engine) -> None:
-    u = make_user("presenter")
+    u = make_user("admin")
     with httpx.Client(base_url=sunucu, timeout=10) as c:
         c.post("/auth/login", json={"kullanici_adi": u.kullanici_adi, "parola": PAROLA})
         with c.stream("GET", "/events") as akis:

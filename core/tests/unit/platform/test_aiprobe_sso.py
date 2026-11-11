@@ -95,7 +95,7 @@ class SahteHome:
         return sum(1 for c in self.cagrilar if c[0] == yol)
 
 
-ADMIN_ROLLERI = frozenset({"po"})  # products/testing-probe.yaml `admin_roles`
+ADMIN_ROLLERI = frozenset({"admin", "po"})  # products/testing-probe.yaml `admin_roles`
 
 
 def _admin_suz(roller: list[str], acr: Any) -> list[str]:
@@ -346,8 +346,24 @@ def test_kod_tekrari_ve_org_reddi(client: TestClient, home: SahteHome) -> None:
     assert r.status_code == 400 and r.json()["kod"] == "giris_kodu_gecersiz"
     r = _giris(client, home, ["tester"], org="baska-org")
     assert r.status_code == 403 and r.json()["kod"] == "org_reddi"
-    r = _giris(client, home, ["admin"])  # TP rolü değil
+    r = _giris(client, home, ["yonetici"])  # TP rolü değil
     assert r.status_code == 403 and r.json()["kod"] == "rol_yok"
+    # Eski `presenter` `admin` sayılır ve MFA ister: home süzmese de (eski ad) acr="1"'de düşer.
+    r = _giris(client, home, ["presenter"], acr="1")
+    assert r.status_code == 403 and r.json()["kod"] == "rol_yok"
+
+
+def test_presenter_rolu_admin_hesabi_acar(
+    client: TestClient, home: SahteHome, engine: Engine
+) -> None:
+    """AI Probe'daki canlı kayıt güncellenene kadar `presenter` → `admin` (JIT `admin` hesabı)."""
+    r = _giris(client, home, ["presenter"])
+    assert r.status_code in (200, 302, 303), r.text
+    me = client.get("/auth/me").json()
+    assert me["rol"] == "admin" and "demo.manage" in me["izinler"]
+    with engine.connect() as c:
+        roller = set(c.execute(text("SELECT rol FROM app_user")).scalars())
+    assert roller == {"admin"}
 
 
 @pytest.mark.parametrize(
@@ -935,9 +951,10 @@ def test_alembic_tek_bas() -> None:
 
     script = ScriptDirectory.from_config(alembic_config())
     bas = script.get_heads()
-    assert bas == ["0020"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
+    assert bas == ["0021"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
     assert script.get_revision("0019").down_revision == "0018"
     assert script.get_revision("0020").down_revision == "0019"
+    assert script.get_revision("0021").down_revision == "0020"  # 012 rol modeli v2
 
 
 # ------------------------------------------------------------------ inceleme bulguları (2026-11-10)

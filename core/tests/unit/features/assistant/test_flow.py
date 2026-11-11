@@ -323,8 +323,8 @@ def test_sablon_dali_durum_rol_kisiti_ve_tool_call(
             {"etiket": "Gereksinim ekranı", "rota": f"/gereksinimler/{veri['req']}"}
         ]
         assert m["cevap"]["jira_anahtarlari"] == ["TPD-3"]
-        # Rol kısıtı aracın kendisinde: Testçi analiste özel yayın önizlemesini görmez.
-        assert ("yayin_onizleme" in metin) is (rol == "analyst")
+        # Rol kısıtı aracın kendisinde: yayın önizlemesi `case.publish` (Testçi) ister.
+        assert ("yayin_onizleme" in metin) is (rol == "tester")
         with engine.connect() as c:
             tc = c.execute(
                 text(
@@ -1543,7 +1543,8 @@ def test_yan_etkisizlik_soru_oneri_ve_otomatik_yukseltme(
     assert r.status_code == 200, r.text
     with engine.connect() as c:
         assert verify_chain(c).ok
-    # Aynı doğrulama uç üzerinden (yetki, serileştirme, çapalar dahil).
+    # Aynı doğrulama uç üzerinden (yetki, serileştirme, çapalar dahil); `audit.verify` denetçide.
+    giris(client, make_user("auditor"))
     r = client.get("/audit", params={"verify": "true"})
     assert r.status_code == 200, r.text
     dogrulama = r.json()["verify"]
@@ -1563,11 +1564,11 @@ def test_hata_kodu_eslemesi() -> None:
 
 def test_principal_ve_rol_oturumdan(client: TestClient, make_user, engine: Engine) -> None:
     """Rol bağlamdan değil oturum kullanıcısından okunur (§5.5)."""
-    u: Principal = make_user("presenter")
+    u: Principal = make_user("admin")
     giris(client, u)
     _, mid = soru_gonder(
         client, engine, "Script ekranı ne yapar?", baglam={**GRI_BAGLAM, "rol": "analyst"}
     )
     gecit = Gecit(engine, [bitir()])
     assert cevapla(engine, mid, gecit) == "done"
-    assert "Kullanıcının rolü: Sunucu (sunum yapan)" in gecit.ilk_istek()
+    assert "Kullanıcının rolü: Sistem Yöneticisi" in gecit.ilk_istek()
