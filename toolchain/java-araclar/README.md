@@ -76,6 +76,11 @@ taşıyabilir.
 (+ `--kimlikler`: `forbidden_statement`, `non_literal_value`, `invalid_testid`, `duplicate_key`,
 `locator_file_missing`).
 
+`raw_driver` hem Appium/Selenium sürücüsünü (`driver`, `driver()`, …) hem Playwright for Java
+tutamaçlarını (web projesi `e2e-java`, 011 §2.6: `page`, `page()`, `browser()`, `context()`,
+`playwright` ve Türkçe karşılıkları `sayfa`, `tarayici`, `baglam`) kapsar: üretilen test yalnızca ekran
+erişimcilerini çağırır.
+
 Unicode kaçışları (`\uXXXX`) her yerde yasaktır: javac onları yorum ve literal içinde bile ayrıştırmadan
 önce işler (`// … \u000a kod`). Görünmez/yön denetimi karakterleri de reddedilir.
 

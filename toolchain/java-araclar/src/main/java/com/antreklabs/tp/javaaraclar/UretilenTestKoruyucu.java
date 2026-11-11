@@ -103,7 +103,16 @@ public final class UretilenTestKoruyucu {
   static final Pattern INT = Pattern.compile("^(0|[1-9][0-9]*)$");
   static final Pattern LONG = Pattern.compile("^(0|[1-9][0-9]*)[lL]$");
   static final Pattern DOUBLE = Pattern.compile("^[0-9]+(\\.[0-9]+([eE][+-]?[0-9]+)?[dD]?|[eE][+-]?[0-9]+[dD]?|[dD])$");
-  static final Set<String> SURUCU = Set.of("driver", "surucu", "getDriver", "webDriver", "appiumDriver");
+  /**
+   * Ham sürücü adları ({@code raw_driver}): Appium/Selenium sürücüsü (uygulama projesi) ve Playwright
+   * for Java tutamaçları (web projesi, 011 §2.6: {@code page()}, {@code browser()}, {@code context()},
+   * {@code playwright()} ve Türkçe karşılıkları). Üretilen test bunlara erişemez; yalnızca ekran
+   * erişimcilerini çağırır.
+   */
+  static final Set<String> SURUCU = Set.of(
+      "driver", "surucu", "getDriver", "webDriver", "appiumDriver",
+      "page", "getPage", "sayfa", "browser", "getBrowser", "tarayici", "context", "browserContext",
+      "getContext", "baglam", "playwright", "getPlaywright");
 
   /** İhlal. */
   public record Ihlal(String kod, String dosya, int satir, String mesaj) {

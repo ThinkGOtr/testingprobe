@@ -78,6 +78,16 @@ class Settings:
     mvn_timeout_s: float = 300
     # Boş = imajdaki `TOOLCHAIN_HOME/java-araclar/java-araclar.jar` (geliştirmede target/ yolu).
     java_araclar_jar_path: Path | None = None
+    # Web + Java (011 §2.5–2.6; Playwright for Java + TestNG): hedef proje kökü (forge'da;
+    # local-forge `e2e-java`, GitHub monorepo `demo-app/e2e-java`) ve imajdaki güvenilir pom +
+    # ikinci ısıtılmış Maven deposu (`/opt/e2e-java/{pom.xml,m2}`).
+    e2e_java_root: str = "e2e-java"
+    e2e_java_deps: Path = Path("/opt/e2e-java")
+
+    @property
+    def e2e_java_m2(self) -> Path:
+        """Web + Java hattının çevrimdışı Maven deposu (salt okunur kuyruk)."""
+        return self.e2e_java_deps / "m2"
 
     @property
     def java_araclar_jar(self) -> Path:
@@ -187,4 +197,6 @@ def settings() -> Settings:
         java_araclar_jar_path=(
             Path(env("TP_JAVA_ARACLAR_JAR")) if env("TP_JAVA_ARACLAR_JAR", "").strip() else None
         ),
+        e2e_java_root=env("TP_E2E_JAVA_ROOT", "e2e-java"),
+        e2e_java_deps=Path(env("TP_E2E_JAVA_DEPS", "/opt/e2e-java")),
     )

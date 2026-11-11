@@ -79,8 +79,11 @@ install_error_handlers(app)
 Ref = Annotated[str, AfterValidator(validate_ref)]
 # `/health` dışındaki her uç (toolchain_common/auth.py).
 AUTH = [Depends(require_token)]
-# Dil boyutu (009 §2.1): `lang` (ts | java) ya da `platform` (web | android | ios | windows).
-# İkisi de verilmezse `ts` — mevcut Playwright/TypeScript yolu, davranışı değişmez.
+# Dil boyutu (009 §2.1, 011 §2.1/§2.6): `lang` (ts | java) ve/ya da `platform` (web | android | ios
+# | windows). İkisi de verilmezse `ts` — mevcut Playwright/TypeScript yolu, davranışı değişmez.
+# Geçerli çiftler: web × (ts | java), uygulama × java. `lang=java` tek başına (ya da `platform=web`
+# ile) web + Java hattıdır (Playwright for Java, `TP_E2E_JAVA_ROOT`); uygulama hattı platformu
+# açıkça ister. `csharp|python` toolchain'e hiç gelmez (doğrulanmamış diller; 422).
 Lang = Literal["ts", "java"]
 Platform = Literal["web", "android", "ios", "windows"]
 
@@ -98,6 +101,11 @@ class LangMixin(BaseModel):
     def dil(self) -> str:
         return javayol.resolve_lang(self.lang, self.platform)
 
+    @property
+    def hedef_platform(self) -> str:
+        """Etkin platform (verilmediyse `web`)."""
+        return javayol.resolve_platform(self.lang, self.platform)
+
 
 def _resolve(cfg: Settings, ref: str, prefer: Path | None = None) -> repos.Located:
     """Yerel forge ya da (GitHub modunda) aynadan; eksik commit uzak depodan çekilir."""
@@ -111,7 +119,7 @@ def _resolve(cfg: Settings, ref: str, prefer: Path | None = None) -> repos.Locat
 
 # ------------------------------------------------------------------------------- /symbols
 
-_SYMBOL_CACHE: OrderedDict[tuple[str, str, str], dict[str, Any]] = OrderedDict()
+_SYMBOL_CACHE: OrderedDict[tuple[str, str, str, str], dict[str, Any]] = OrderedDict()
 _SYMBOL_CACHE_LOCK = threading.Lock()
 _SYMBOL_CACHE_MAX = 32
 
@@ -122,21 +130,28 @@ class SymbolsBody(LangMixin):
 
 
 def extract_symbols(
-    cfg: Settings, full_sha: str, repo: Path | None = None, lang: str = "ts"
+    cfg: Settings,
+    full_sha: str,
+    repo: Path | None = None,
+    lang: str = "ts",
+    platform: str | None = "android",
 ) -> dict[str, Any]:
-    """Commit'in e2e/pages (ts) ya da e2e-app (java) ağacından sembol tablosu.
+    """Commit'in e2e/pages (ts) ya da Java projesinin (java) ağacından sembol tablosu.
 
-    Commit değişmez → (depo, sha, dil) anahtarıyla önbellekli. Java tablosu `java-araclar
+    Java kökü platforma göredir (`java_kok`): uygulama → `e2e-app`, web → `e2e-java`. Commit
+    değişmez → (depo, sha, dil, kök) anahtarıyla önbellekli: aynı commit'in iki Java projesi
+    (ve kök ayarı değişmiş bir süreç) birbirinin tablosunu döndürmez. Java tablosu `java-araclar
     symbols` ile TS `tp-symbols` şemasındadır (009 §2.5).
     """
     repo = repo or cfg.forge_path
-    key = (str(repo), full_sha, lang)
+    kok = javayol.java_kok(cfg, platform) if lang == "java" else None
+    key = (str(repo), full_sha, lang, kok.root if kok else cfg.e2e_root)
     with _SYMBOL_CACHE_LOCK:
         if key in _SYMBOL_CACHE:
             _SYMBOL_CACHE.move_to_end(key)
             return _SYMBOL_CACHE[key]
-    if lang == "java":
-        with gitforge.checkout(repo, full_sha, cfg.e2e_app_root, cfg.git_timeout_s) as root:
+    if kok is not None:
+        with gitforge.checkout(repo, full_sha, kok.root, cfg.git_timeout_s) as root:
             res = javayol.run_symbols(cfg, root)
     else:
         with gitforge.checkout(repo, full_sha, cfg.e2e_root, cfg.git_timeout_s) as e2e:
@@ -156,8 +171,11 @@ def extract_symbols(
             422, f"Sembol tablosu çıkarılamadı: {table.get('error', res.stderr[:300])}"
         )
     table = {"sha": full_sha, **table}
-    if lang != "ts":
+    if kok is not None:
         table["lang"] = lang
+        if kok.web:
+            # Uygulama tablosu (009) platform taşımaz; web + Java tablosu açıkça işaretlenir.
+            table["platform"] = kok.platform
     with _SYMBOL_CACHE_LOCK:
         _SYMBOL_CACHE[key] = table
         while len(_SYMBOL_CACHE) > _SYMBOL_CACHE_MAX:
@@ -170,7 +188,10 @@ def symbols(body: SymbolsBody) -> dict[str, Any]:
     cfg = settings()
     loc = _resolve(cfg, body.sha)
     try:
-        return {**extract_symbols(cfg, loc.sha, loc.repo, body.dil), "kaynak": loc.kaynak}
+        return {
+            **extract_symbols(cfg, loc.sha, loc.repo, body.dil, body.hedef_platform),
+            "kaynak": loc.kaynak,
+        }
     except gitforge.ForgeError as exc:
         raise HTTPException(503, f"Forge okunamadı: {exc}") from exc
 
@@ -198,10 +219,9 @@ def ast_guard(body: AstGuardBody) -> dict[str, Any]:
         )
     try:
         if body.dil == "java":
-            with gitforge.checkout(
-                head_loc.repo, head, cfg.e2e_app_root, cfg.git_timeout_s
-            ) as root:
-                report = javayol.guard_report(cfg, head_loc.repo, base, head, body.mode, root)
+            kok = javayol.java_kok(cfg, body.hedef_platform)
+            with gitforge.checkout(head_loc.repo, head, kok.root, cfg.git_timeout_s) as root:
+                report = javayol.guard_report(cfg, head_loc.repo, base, head, body.mode, root, kok)
         else:
             report = run_ast_guard(cfg, base, head, body.mode, head_loc.repo)
     except (AstGuardError, javayol.JavaAracError) as exc:
@@ -226,7 +246,8 @@ class CheckBody(LangMixin):
 
     sha: Ref
     # `lang`/`platform` (LangMixin) alanları test_files'tan önce doğrulanır: Java'da test dosyası
-    # e2e-app köküne göre `src/test/java/**/<Ad>Test.java`, TS'de `tests/**.spec.ts`.
+    # proje köküne (e2e-app | e2e-java) göre `src/test/java/**/<Ad>Test.java`, TS'de
+    # `tests/**.spec.ts`.
     test_files: list[str] = Field(default_factory=list)
     repeat_each: int = Field(3, ge=1, le=10)
     retries: int = Field(0, ge=0, le=3)
@@ -269,10 +290,8 @@ class CheckBody(LangMixin):
 
     @model_validator(mode="after")
     def _record(self) -> CheckBody:
-        if self.dil == "java" and self.platform not in checks.JAVA_PLATFORMS:
-            # Koşu bir Appium sürücüsüne gider ve kapı kaydı platform başınadır
-            # (`local-ci-<platform>`): platformsuz Java kontrolü anlamsızdır.
-            raise ValueError(f"Java kontrolü platform ister: {checks.JAVA_PLATFORMS}")
+        # `lang=java` + platform yok/web = web + Java (Playwright for Java; kayıt `local-ci`);
+        # uygulama platformunda koşu Appium sürücüsüne gider, kayıt `local-ci-<platform>`.
         if self.dil == "java" and (self.grep or self.affected_by):
             raise ValueError(
                 "Java yolunda grep ve affected_by henüz desteklenmiyor (test_files kullanın)"
@@ -323,7 +342,8 @@ def check(body: CheckBody) -> dict[str, Any]:
         keep=body.keep,
         affected_by=body.affected_by,
         lang=body.dil,
-        platform=body.platform,
+        # Java'da etkin platform (verilmediyse `web`); TS gövdesinde alan olduğu gibi kalır.
+        platform=body.hedef_platform if body.dil == "java" else body.platform,
     )
     try:
         return checks.execute(cfg, req)
