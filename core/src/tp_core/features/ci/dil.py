@@ -26,7 +26,7 @@ TS = "ts"
 JAVA = "java"
 # Forge deposunda web + Java test projesinin kökü (uygulama köküne göre); toolchain
 # `TP_E2E_JAVA_ROOT` varsayılanıyla aynı (011 §2.6).
-E2E_JAVA_DIZINI = "e2e-java"
+E2E_JAVA_DIZINI = platformlar.E2E_JAVA_DIZINI
 # Paket koşusunda sayılan Java testleri: `*Test.java` / `*Testi.java`; tarayıcısız birim testleri
 # (`birim/`) koşu sayılmaz (Surefire'da `birim-raporlari/` ayrıdır).
 _JAVA_TEST_SONEKLERI = ("Test.java", "Testi.java")
@@ -61,13 +61,9 @@ def web_java_mi(platform: str | None, dil: str | None) -> bool:
 
 def e2e_java_root() -> str:
     """Forge deposunda web + Java test projesinin kökü (`e2e-java` ya da `demo-app/e2e-java`)."""
-    from tp_core.features.codegen import service as cg
+    from tp_core.features.codegen import service as cg  # döngüsel içe aktarmayı önlemek için geç
 
-    kok_f = getattr(cg, "e2e_java_root", None)  # Ş1 eklediyse tek kaynak odur
-    if callable(kok_f):
-        return str(kok_f())
-    kok = cg.app_root()
-    return f"{kok}/{E2E_JAVA_DIZINI}" if kok else E2E_JAVA_DIZINI
+    return cg.e2e_java_root()
 
 
 def java_testi_mi(yol: str) -> bool:

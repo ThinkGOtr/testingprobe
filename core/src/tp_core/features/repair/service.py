@@ -603,10 +603,8 @@ def request_fix(session: Session, failure_id: uuid.UUID, user: Principal) -> dic
             uretim_modu=None,  # model çağrısı yok (deterministik)
             platform=platform,
         )
-        if hasattr(Script, "dil"):
-            # 011: merge sonrası `push` koşusu onarılan testin dilinde koşar (`ci.enqueue_ci`).
-            # `Script.dil` kolonu Ş1'indir (0021); yoksa (eski şema) yazılmaz.
-            sc.dil = dil
+        # 011: merge sonrası `push` koşusu onarılan testin dilinde koşar (`ci.enqueue_ci`).
+        sc.dil = dil
         session.add(sc)
         session.flush()
         deneme = 1
