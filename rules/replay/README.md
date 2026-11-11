@@ -31,7 +31,7 @@ REPLAY / REPLAY-MISS rozetini `ai_call.mod`'dan gösterir.
    (`input_match`) taşıyorsa **veya golden hiç yoksa** (ör. demo sırasında jira-sim'de açılan
    TPD-24) amacın `<amaç>/on_miss.json` politikası uygulanır:
    - **nötr yedek** (`output` alanı; `requirement_review`, `consistency_check`, `triage` →
-     sınıf `unknown`): golden çıktısı
+     sınıf `unknown`, `decision_table_draft` → boş taslak): golden çıktısı
      **kullanılmaz** (başka bir dokümanın cevabıdır); nötr yedeğin çıktısı döner, köken
      `miss_neutral`, `cikti_kokeni = notr_yedek`. Yeni Jira story'si de serbest metin gibi bu
      yoldan ilerler (gereksinim akışı: denetim güvenilmez, "Son hal olarak onayla").
@@ -148,6 +148,7 @@ metinde `golden_name(FREE_TEXT_KEY)` → `SERBEST` / `SERBEST-r2`. `fix_doc` ön
 | `case_generation` | `TPD-1`, `SERBEST` | Düzeltilmiş metin; `TPD-3`, `TPD-4` özgün |
 | `verify_and_map` | `TPD-1-C1..C10`, `TPD-4-C1..C2` | case_generation golden'ındaki case (insan düzeltirse REPLAY-MISS) |
 | `verify_and_map_app` | `TPD-1-C2-android` | 009 mobil: aynı C2 case'i; platform golden adındadır (`<story>-C<n>-<platform>`), başka platform REPLAY-MISS. Araç adımları app-mcp sözleşmesine uyan sahte oturumda yazıldı (`core/tests/unit/gateway/build_app_goldens.py`), gerçek cihazda kaydedilmedi |
+| `decision_table_draft` | `TPD-1` | 012 karar tablosu: demo ana yolunun (`f2-kod-hatasi`) PO onaylı metni — AC2 özgün (7 adette 1 bedava → `adet // 7`; kod `// 6` uygular, tablo story'yi izler), AC3 düzeltilmiş (kampanyasız 750,00 TL), AC6. Başka metin (fix_doc yolu dahil) nötr REPLAY-MISS: boş taslak (`on_miss.json`) |
 | `consistency_check` | `f2-kod-hatasi/TPD-1-r2` | F2 `code_defect` yolu: AC2 özgün, AC3 düzeltilmiş (aşağıda "Demo-B") |
 | `case_generation` | `f2-kod-hatasi/TPD-1` | Aynı belge; ana golden'dan tek farkı C3 (6 adette bedava yok) |
 | `verify_and_map` | `f2-kod-hatasi/TPD-1-C3` | Senaryonun C3'ü; diğer case'ler ana golden'larla birebir aynı, ana golden eşleşir |

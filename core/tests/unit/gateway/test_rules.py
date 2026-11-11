@@ -21,6 +21,8 @@ PURPOSES = {
     # Portal asistanı: iki amaç tek prompt paketini paylaşır (AI-ASISTAN-PLANI §6.1).
     "assistant": "assistant",
     "assistant_deep": "assistant",
+    # 012 karar tablosu taslağı (ANALIZ §4.1).
+    "decision_table_draft": "decision-table-draft",
 }
 
 

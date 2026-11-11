@@ -572,6 +572,57 @@ def verify_and_map_app_cases() -> list[dict[str, Any]]:
     return out
 
 
+def decision_table_draft_cases() -> list[dict[str, Any]]:
+    """012 karar tablosu taslağı: PO onaylı story bloğu + PO cevapları (üretimin
+    `taslak_mesajlari` kurucusu; kod, veri ve case yok). TPD-1 demo ana yolunun (f2-kod-hatasi)
+    metni; hesaplama kuralı olmayan TPD-3/TPD-4'te tablo beklenmez. `evaluate`: tablonun bu
+    girdilerle vermesi gereken çıktılar (story metninden: 7 adette 1 bedava, 6 adette yok)."""
+    from types import SimpleNamespace
+
+    from tp_core.features.karar_tablosu.service import taslak_mesajlari
+
+    stories = _stories()
+    plan = [
+        (
+            "tpd-1-f2-kod-hatasi",
+            "TPD-1",
+            _golden_acs("case_generation", "f2-kod-hatasi/TPD-1"),
+            {
+                "ac_refs_include": ["AC2", "AC3", "AC6"],
+                "min_tables": 2,
+                "evaluate": [
+                    {"ac": "AC2", "girdiler": {"adet": 7}, "ciktilar": {"bedava_adet": "1"}},
+                    {"ac": "AC2", "girdiler": {"adet": 6}, "ciktilar": {"bedava_adet": "0"}},
+                    {"ac": "AC2", "girdiler": {"adet": 14}, "ciktilar": {"bedava_adet": "2"}},
+                ],
+            },
+        ),
+        ("tpd-3-arama", "TPD-3", None, {"max_tables": 0}),
+        ("tpd-4-giris", "TPD-4", None, {"max_tables": 0}),
+    ]
+    out = []
+    for case_id, key, acs, exp in plan:
+        st = stories[key]
+        req = SimpleNamespace(
+            id=FREE_TEXT_ID,
+            jira_key=key,
+            baslik=st["summary"],
+            aciklama=st["description"],
+            kabul_kriterleri=list(acs if acs is not None else st["acs"]),
+            po_cevaplari=[],
+        )
+        out.append(
+            {
+                "id": case_id,
+                "description": f"{key}: PO onaylı story'den karar tablosu taslağı",
+                "replay_key": _key(key),
+                "messages": _msgs(taslak_mesajlari(req)),
+                "expect": exp,
+            }
+        )
+    return out
+
+
 SETS: dict[str, tuple[str, Callable[[], list[dict[str, Any]]]]] = {
     "triage": ("triage", triage_cases),
     "bug-draft": ("bug_draft", bug_draft_cases),
@@ -581,6 +632,7 @@ SETS: dict[str, tuple[str, Callable[[], list[dict[str, Any]]]]] = {
     "consistency-check": ("consistency_check", consistency_check_cases),
     "verify-and-map": ("verify_and_map", verify_and_map_cases),
     "verify-and-map-app": ("verify_and_map_app", verify_and_map_app_cases),
+    "decision-table-draft": ("decision_table_draft", decision_table_draft_cases),
 }
 # Set düzeyi ek alanlar: §12 koşu sayısı, ajan araç ortamı (`tp_core.gateway.eval_agents`).
 EXTRA: dict[str, dict[str, Any]] = {
