@@ -108,6 +108,7 @@
         "po_approved"
       ],
       "po_approved": [
+        "done",
         "generating",
         "new"
       ]
