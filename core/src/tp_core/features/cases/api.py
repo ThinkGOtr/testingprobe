@@ -5,7 +5,7 @@
 | POST | `/requirements/{id}/generate-cases` | `case.generate` — yalnızca PO onaylı gereksinim |
 | GET  | `/cases?requirement_id=` | `case.read` (developer: yalnız approved/published, geçmiş yok) |
 | GET  | `/cases/{id}` | `case.read` (developer: aynı süzgeç; görünmeyen case 404) |
-| POST | `/cases/{id}/viewed` | `case.decide` — ilk görüntüleme (review süresinin başlangıcı) |
+| POST | `/cases/{id}/viewed` | `case.decide` veya `case.approve` — ilk görüntüleme (review süresinin başlangıcı) |
 | POST | `/cases/{id}/decision` (aşağıda `CaseKararGirdisi`) | karar başına: `case.decide` (accept, edit, reject, reopen) / `case.approve` (approve, send_back) |
 | GET  | `/requirements/{id}/case-metrics` | `case.read` — kabul oranı ve süreler (§12); developer: yalnız durum sayıları |
 | POST | `/requirements/{id}/review-complete` | `case.approve` |
@@ -29,7 +29,6 @@ router = APIRouter(tags=["cases"])
 
 Uretici = Annotated[Principal, Depends(izin("case.generate"))]
 Okuyucu = Annotated[Principal, Depends(izin("case.read"))]
-Karar = Annotated[Principal, Depends(izin("case.decide"))]
 SonOnay = Annotated[Principal, Depends(izin("case.approve"))]
 
 
@@ -91,7 +90,12 @@ def get_case(case_id: uuid.UUID, session: DbSession, user: Okuyucu) -> dict[str,
 
 
 @router.post("/cases/{case_id}/viewed")
-def mark_viewed(case_id: uuid.UUID, session: DbSession, user: Karar) -> dict[str, Any]:
+def mark_viewed(
+    case_id: uuid.UUID, request: Request, session: DbSession, user: CurrentUser
+) -> dict[str, Any]:
+    # Testçi kararı ya da Analist son onayı için review süresinin başlangıcı.
+    if not (izinli(user.rol, "case.decide") or izinli(user.rol, "case.approve")):
+        raise reddet(session, user, "case.decide", "rol", request.url.path)
     return service.mark_viewed(session, case_id, user)
 
 

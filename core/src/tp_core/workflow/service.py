@@ -162,13 +162,32 @@ def approved_hash_matches(
     kind = entity_kind(entity)
     kararlar = kararlar if kararlar is not None else APPROVING.get(kind, frozenset())
     son = latest_review(session, kind, entity.id)
-    if son is None or son.karar not in kararlar:
+    if son is None:
+        return False
+    if son.karar not in kararlar and not (
+        "approve" in kararlar and eski_analist_onayi(session, son)
+    ):
         return False
     guncel = content_hash_of(entity)
     if son.onaylanan_hash != guncel:
         return False
     kayitli = getattr(entity, "onaylanan_hash", None)
     return kayitli is None or kayitli == guncel
+
+
+def eski_analist_onayi(session: Session, review: Review) -> bool:
+    """012 öncesi son onay: analist hesabının test_case `edit` kararı.
+
+    012'den sonra analist `edit` veremez (`record_approval` karar başına izin ister); bu yüzden
+    analist rolündeki hesabın `edit` kaydı tanım gereği eski akışın onayıdır ve yayın / kod
+    üretimi kapısında `approve` sayılır (hash eşleşmesi yine şarttır). Testçi `edit`'i sayılmaz.
+    """
+    if review.nesne_turu != "test_case" or review.karar != "edit" or review.user_id is None:
+        return False
+    from tp_core.models import AppUser
+
+    rol = session.scalar(select(AppUser.rol).where(AppUser.id == review.user_id))
+    return rol == "analyst"
 
 
 # Jira simülatörünün bot kimlikleri: yapılandırmadan bağımsız olarak her zaman ayrılmıştır.

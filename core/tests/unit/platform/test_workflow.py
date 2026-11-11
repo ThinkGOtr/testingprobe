@@ -166,6 +166,36 @@ def test_testci_kabulu_yayin_kapisini_acmaz(session: Session, make_user: MakeUse
     assert approved_hash_matches(session, c, frozenset({"accept", "edit"}))
 
 
+def test_eski_analist_edit_onayi_yayin_kapisini_acar(session: Session, make_user: MakeUser) -> None:
+    """012 öncesi: analistin `edit`'i (son kayıt) `approve` sayılır; Testçinin `edit`'i sayılmaz.
+    Hash eşleşmesi yine şarttır."""
+    from tp_core.models import Review
+
+    c = _case(session)
+    testci, analist = make_user("tester"), make_user("analyst")
+    _onayla(session, c, testci, analist)
+
+    def edit_kaydi(user: Principal) -> None:
+        session.add(
+            Review(
+                nesne_turu="test_case",
+                nesne_id=c.id,
+                user_id=user.id,
+                kanal="portal",
+                karar="edit",
+                onaylanan_hash=content_hash_of(c),
+            )
+        )
+        session.flush()
+
+    edit_kaydi(testci)
+    assert not approved_hash_matches(session, c)
+    edit_kaydi(analist)
+    assert approved_hash_matches(session, c)
+    c.icerik = {**CASE, "risk": "low"}  # onaydan sonra değişti
+    assert not approved_hash_matches(session, c)
+
+
 def test_karar_rolleri_karara_gore(session: Session, make_user: MakeUser) -> None:
     """Testçi son onay veremez, Analist Testçi kararı veremez (derinlemesine savunma)."""
     c = _case(session)

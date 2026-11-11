@@ -69,6 +69,7 @@ from tp_core.workflow.service import (
     InvalidDecision,
     Principal,
     approved_hash_matches,
+    eski_analist_onayi,
     latest_review,
     transition,
 )
@@ -122,16 +123,23 @@ def set_targets_factory(factory: Callable[[], Targets] | None) -> None:
 
 
 def approver_of(session: Session, tc: TestCase) -> str | None:
-    son = session.scalars(
-        select(Review)
-        .where(
-            Review.nesne_turu == "test_case",
-            Review.nesne_id == tc.id,
-            Review.karar.in_(APPROVING["test_case"]),
-        )
-        .order_by(Review.sira.desc())
-        .limit(1)
-    ).first()
+    """Son onaylayan: Analistin `approve`'u ya da 012 öncesi analist `edit`'i."""
+    son = next(
+        (
+            r
+            for r in session.scalars(
+                select(Review)
+                .where(
+                    Review.nesne_turu == "test_case",
+                    Review.nesne_id == tc.id,
+                    Review.karar.in_((*APPROVING["test_case"], "edit")),
+                )
+                .order_by(Review.sira.desc())
+            )
+            if r.karar in APPROVING["test_case"] or eski_analist_onayi(session, r)
+        ),
+        None,
+    )
     if son is None or son.user_id is None:
         return None
     return session.scalar(select(AppUser.kullanici_adi).where(AppUser.id == son.user_id))
@@ -174,8 +182,12 @@ def _engel(session: Session, tc: TestCase) -> str | None:
         return f"Onaylı değil (durum: {tc.durum})"
     if not approved_hash_matches(session, tc):
         son = latest_review(session, "test_case", tc.id)
-        if son is not None and son.karar not in APPROVING["test_case"]:
-            # 012 öncesi `edit` ile onaylanmış case: yayın yalnız Analist son onayıyla açılır.
+        if (
+            son is not None
+            and son.karar not in APPROVING["test_case"]
+            and not eski_analist_onayi(session, son)
+        ):
+            # Son karar onaylayan değil (ör. Testçi `edit`'i): yayın Analist son onayıyla açılır.
             return (
                 f"Analist son onayı yok (son karar: {son.karar}); Taslağa alıp yeniden kabul "
                 "ve son onay gerekir"

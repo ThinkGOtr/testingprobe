@@ -147,26 +147,50 @@ def test_yayin_yalnizca_son_onaydan_sonra(
     assert sonuc["durum"] == "created", sonuc
 
 
-def test_eski_akista_edit_ile_onaylanan_case_son_onay_ister(
-    engine: Engine, jira: RestJira, targets, hazir, yayin_analist
-) -> None:
-    """012 öncesi `edit` (analist) ile onaylanmış case: yayın kapısı yalnız `approve` sayar."""
+def _son_kayit_edit(case_id: str, user_id: uuid.UUID) -> None:
+    """Approved case'in son kaydı olarak `edit` ekler (append-only tabloya doğrudan; eski akış)."""
     from tp_core.models import Review
     from tp_core.workflow.service import content_hash_of
 
-    _, _, a, _ = hazir
     with session_scope() as s:
-        tc = s.get(TestCase, uuid.UUID(a["id"]))
-        # Eski akışın son kaydı: analistin `edit`'i (append-only tabloya doğrudan eklenir).
+        tc = s.get(TestCase, uuid.UUID(case_id))
         s.add(
             Review(
                 nesne_turu="test_case",
                 nesne_id=tc.id,
-                user_id=yayin_analist.id,
+                user_id=user_id,
                 kanal="portal",
                 karar="edit",
                 onaylanan_hash=content_hash_of(tc),
             )
+        )
+
+
+def test_eski_akista_analist_edit_onayi_yayinlanir(
+    engine: Engine, jira: RestJira, targets, hazir, make_user
+) -> None:
+    """012 öncesi analistin `edit`'i (son kayıt) son onay sayılır; onaylayan o analisttir."""
+    _, _, a, _ = hazir
+    eski_analist = make_user("analyst", ad="eski_analist")
+    _son_kayit_edit(a["id"], eski_analist.id)
+    with session_scope() as s:
+        tc = s.get(TestCase, uuid.UUID(a["id"]))
+        assert publish._engel(s, tc) is None
+        assert publish.approver_of(s, tc) == "eski_analist"
+    sonuc = publish.run_publish(_ctx([a["id"]]), engine)["sonuclar"][0]
+    assert sonuc["durum"] == "created", sonuc
+    assert sonuc["onaylayan"] == "eski_analist"
+
+
+def test_testci_edit_son_kayitsa_yayin_son_onay_ister(
+    engine: Engine, jira: RestJira, targets, hazir, yayin_testci
+) -> None:
+    """Testçinin `edit`'i onay değildir: son kayıt oysa yayın kapısı kapalıdır."""
+    _, analist, a, _ = hazir
+    _son_kayit_edit(a["id"], yayin_testci.id)
+    with session_scope() as s:
+        assert publish.approver_of(s, s.get(TestCase, uuid.UUID(a["id"]))) == (
+            analist.kullanici_adi
         )
     sonuc = publish.run_publish(_ctx([a["id"]]), engine)["sonuclar"][0]
     assert sonuc["durum"] == "failed" and "Analist son onayı yok" in sonuc["hata"]

@@ -303,17 +303,34 @@ def test_hazir_case_testci_taslaga_alabilir(api: TestClient, hazir) -> None:
     assert r.status_code == 200 and r.json()["durum"] == "draft"
 
 
-def test_goruntuleme_yalnizca_testci(api: TestClient, make_user, hazir) -> None:
-    rid, _, _ = hazir
-    c = latest_cases(api, rid)[0]
-    for rol in ("po", "engineer", "analyst"):
-        rol_ol(api, make_user(rol))
-        r = api.post(f"/cases/{c['id']}/viewed")
-        assert r.status_code == 403, (rol, r.text)
+def test_goruntuleme_testci_ve_analist(api: TestClient, make_user, hazir) -> None:
+    """`viewed`: Testçi (karar) ve Analist (son onay) kaydeder; diğer roller 403 + denetim."""
     from tp_core.models import CaseGoruntuleme
 
+    rid, testci, analist = hazir
+    c = latest_cases(api, rid)[0]
+    for rol in ("po", "engineer"):
+        rol_ol(api, make_user(rol))
+        r = api.post(f"/cases/{c['id']}/viewed")
+        assert r.status_code == 403 and r.json()["kod"] == "yetki_yok", (rol, r.text)
+    assert {e["rol"] for e in _authz_red("case.decide")} == {"po", "engineer"}
     with session_scope() as s:
         assert s.scalar(select(CaseGoruntuleme.id)) is None
+
+    # Analistin son onay review süresi kaydedilir.
+    rol_ol(api, testci)
+    hazir_c = _karar(api, c, karar="accept").json()
+    rol_ol(api, analist)
+    r = api.post(f"/cases/{c['id']}/viewed")
+    assert r.status_code == 200 and r.json()["yeni"] is True
+    time.sleep(0.05)
+    out = _karar(api, hazir_c, karar="approve").json()
+    assert out["durum"] == "approved"
+    with session_scope() as s:
+        rv = s.scalars(
+            select(Review).where(Review.nesne_id == uuid.UUID(c["id"]), Review.karar == "approve")
+        ).one()
+        assert rv.duzeltme_olculeri["review_sure_ms"] >= 40
 
 
 def test_po_rolu_karar_veremez(api: TestClient, make_user, hazir) -> None:
