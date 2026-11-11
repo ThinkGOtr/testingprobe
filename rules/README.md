@@ -21,6 +21,7 @@ rules/
 ├── models.yaml              # amaç → model, max_tokens, params (effort, thinking); fiyat tablosu
 ├── pii-allowlist.yaml       # maskelenmeyecek sentetik değerler (simülatör kullanıcıları)
 ├── assistant/               # portal asistanı ve Öneri düğmesi kuralları (modelsiz; aşağıda)
+├── agent-probe/urunler.yaml # Agent Probe ajan ürünleri (011 F6; süreç içi simülatörün verisi)
 ├── prompts/
 │   ├── _guardrails.md       # her prompt'a eklenen ortak güvenlik kuralları (<untrusted> blokları)
 │   └── <bundle>.md          # YAML ön bilgisi (id, version, purpose) + sistem prompt'u
@@ -43,6 +44,7 @@ rules/
 | `dup_rank` | `dup-rank` | Haiku 5.5 | çağrı | §8.12 mükerrer aday sıralaması |
 | `assistant` | `assistant` | Haiku 5.5 | ajan | Asistan cevabı (AI-ASISTAN-PLANI §7.2): `cevap_bloklari[]`, `kaynaklar[]`, `oneriler[]` |
 | `assistant_deep` | `assistant` | Sonnet 5.5 | ajan | `assistant` ile aynı şema ("Daha ayrıntılı incele", otomatik yükseltme) |
+| `assistant_guard` | `assistant-guard` | Haiku 5.5 | çağrı | 011 F7 asistan denetimi: `puan` (0–100), `kategoriler[]`, `gerekce`; karar kodda (`TP_ASISTAN_DENETIM_ENGEL`/`_UYARI`) |
 
 ## Portal asistanı kuralları (`assistant/`)
 
@@ -223,7 +225,8 @@ varsa çıkış 1. Bu tablo kayıtla aynı olmalıdır (`test_evaluation_status.
 | `triage` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `bug-draft` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `dup-rank` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
-| `assistant` (portal asistanı; `assistant` + `assistant_deep` amaçları, `assistant/*` kuralları) | v1 | **canlı değerlendirildi** (2026-11-04; Haiku 38/40, Sonnet 40/40; `evaluation/results/`) |
+| `assistant` (portal asistanı; `assistant` + `assistant_deep` amaçları, `assistant/*` kuralları) | v1 | **değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)** — 2026-11-04 canlı değerlendirildi (Haiku 38/40, Sonnet 40/40); 011 ile `/ajan-urunleri` rotası ve asistan denetimi (`assistant-guard`) eklendi, denetim açık `--via-flow` yeniden koşusu gerekir |
+| `assistant-guard` (011 F7 asistan denetimi; Agent Probe portu) | v1 | **canlı değerlendirme bekliyor** |
 
 2026-11-01'de `requirement-review` v3, `triage`, `bug-draft` ve `dup-rank` v2 canlı modelle
 (`make eval-live A='--bundle … --update-status'`, sert bütçe tavanı 1,50 USD, gerçek harcama

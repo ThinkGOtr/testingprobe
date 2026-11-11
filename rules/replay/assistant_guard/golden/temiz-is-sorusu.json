@@ -1,0 +1,13 @@
+{
+  "kind": "call",
+  "purpose": "assistant_guard",
+  "golden": "temiz-is-sorusu",
+  "note": "Örnek golden kayıt; elle hazırlandı, model çıktısı değildir. Temiz iş sorusu (beklenen karar: geç). Yalnız şema/kural testleri ve REPLAY duman koşusu içindir: asistan denetimi çalışma zamanında replay kullanmaz (canlı geçit; model kapalıyken kural tabanlı sim). Değerlendirme seti: rules/evaluation/assistant-guard.json.",
+  "output": {
+    "puan": 96,
+    "kategoriler": [
+      "temiz"
+    ],
+    "gerekce": "Testing Probe iş akışı hakkında olağan bir soru; risk sinyali yok."
+  }
+}

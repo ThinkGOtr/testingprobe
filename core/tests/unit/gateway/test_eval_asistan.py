@@ -67,6 +67,9 @@ def _anahtarsiz(monkeypatch: pytest.MonkeyPatch) -> None:
     for ad in ("ANTHROPIC_API_KEY", "ANTHROPIC_WORKSPACE_ID", "TP_EVAL_BUDGET_USD"):
         monkeypatch.delenv(ad, raising=False)
     monkeypatch.delenv("TP_ASISTAN_OTOMATIK_DERIN", raising=False)
+    # Sahte sağlayıcı betikleri yalnız asistan çağrılarını içerir; denetim açıkken eval akışı
+    # `test_denetim_eval.py`'de ayrıca sınanır (011 F7).
+    monkeypatch.setenv("TP_ASISTAN_DENETIM", "off")
 
 
 # ------------------------------------------------------------------ set kuralları (gerçek rules/)

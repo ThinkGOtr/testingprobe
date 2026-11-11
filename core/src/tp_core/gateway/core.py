@@ -725,7 +725,10 @@ class Gateway:
         max_tokens: int = 4096,
         workflow_id: UUID | None = None,
         call_id: UUID | None = None,
+        ek: Mapping[str, Any] | None = None,
     ) -> CallResult:
+        """`ek`: her `ai_call` satırının `ek`ine eklenen çağıran alanları (asistan denetimi:
+        `kullanici_id` → kullanıcı günlük bütçesi; vars. eski davranış)."""
         cfg = self.models.purpose(purpose)
         bnd, session, masked, mask_diff, digest, key = self._key_material(
             purpose, cfg, bundle, schema, messages, replay_key, workflow_id
@@ -752,6 +755,7 @@ class Gateway:
                 workflow_id,
                 root_id=root_id,
                 parent_id=call_id if root_id is None else None,
+                ek=ek,
             )
 
         conversation: list[dict[str, Any]] = list(masked)
@@ -786,6 +790,7 @@ class Gateway:
                 mode="live",
                 key=key,
                 row_id=root_id if attempt == 1 else None,
+                ek=ek,
             )
             row.update(
                 maskeli_girdi=conversation if attempt == 1 else conversation[-2:],
@@ -819,6 +824,7 @@ class Gateway:
                     workflow_id,
                     parent_id=first_id or failed_id,
                     live_failure=_live_failure(exc, failed_id),
+                    ek=ek,
                 )
             cost = _response_cost(self.models, cfg, response)
             row.update(_fallback_fields(response, self.models))
@@ -899,6 +905,7 @@ class Gateway:
         root_id: UUID | None = None,
         parent_id: UUID | None = None,
         live_failure: dict[str, Any] | None = None,
+        ek: Mapping[str, Any] | None = None,
     ) -> CallResult:
         record, mode, path = self._lookup_audited(
             purpose,
@@ -912,6 +919,7 @@ class Gateway:
             root_id=root_id,
             parent_id=parent_id,
             live_failure=live_failure,
+            ek=ek,
         )
         output = record["output"]
         errors = _schema_errors(validator, output)
@@ -924,6 +932,7 @@ class Gateway:
             mode=mode,
             key=key,
             row_id=root_id,
+            ek=ek,
         )
         if live_failure is not None:
             row["canli_hata_yedegi"] = live_failure

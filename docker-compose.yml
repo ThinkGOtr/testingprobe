@@ -117,6 +117,8 @@ x-core-env: &core-env
   TP_WORKER_ASISTAN_PARALEL: ${TP_WORKER_ASISTAN_PARALEL:-3}
   # Öneri "Jira'yı aç" (yeni kayıt) adresi; kökeni JIRA_BROWSE_URL ile aynı olmalı. Boş = varsayılan.
   JIRA_CREATE_URL: ${JIRA_CREATE_URL:-}
+  # Agent Probe portu (011 §4.5): tp | sim (core-api ajan ürünleri/testleri, core-worker denetim).
+  TP_AGENT_PROBE: ${TP_AGENT_PROBE:-tp}
 
 # İmajı yalnızca toolchain-worker derler (`ci` hedefi, MCP yok); test-runner aynı yerel imajı
 # kullanır. playwright-mcp ayrı `mcp` hedefini derler (Constitution II: CI imajında ajan yok).
@@ -265,6 +267,10 @@ services:
       TP_ASISTAN_VERI_ROLLERI: ${TP_ASISTAN_VERI_ROLLERI:-}
       # 0 = asistan şeridi ve kalp atışı yok → asistan etkin=false (worker_yok).
       TP_WORKER_ASISTAN_SERIT: ${TP_WORKER_ASISTAN_SERIT:-1}
+      # Asistan denetimi (011 F7): on | off; puan < ENGEL → engelle, < UYARI → uyarı notu.
+      TP_ASISTAN_DENETIM: ${TP_ASISTAN_DENETIM:-on}
+      TP_ASISTAN_DENETIM_ENGEL: ${TP_ASISTAN_DENETIM_ENGEL:-40}
+      TP_ASISTAN_DENETIM_UYARI: ${TP_ASISTAN_DENETIM_UYARI:-70}
       # ci_log için yalnız actions:read token (sır; boş = mevcut okuma kimliği).
       GITHUB_ACTIONS_READ_TOKEN: ${GITHUB_ACTIONS_READ_TOKEN:-}
       <<: *core-env

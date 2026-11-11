@@ -30,7 +30,7 @@ class Saat:
 
 
 @pytest.fixture
-def saat(db) -> Iterator[Saat]:  # noqa: ANN001
+def saat(db) -> Iterator[Saat]:
     s = Saat()
     set_agent_probe_factory(lambda: SimAgentProbe(SimAjanTestleri(PgDeposu(), saat=s)))
     yield s
@@ -38,7 +38,7 @@ def saat(db) -> Iterator[Saat]:  # noqa: ANN001
 
 
 @pytest.fixture
-def analist(api: TestClient, make_user) -> TestClient:  # noqa: ANN001
+def analist(api: TestClient, make_user) -> TestClient:
     login(api, make_user("analyst"))
     return api
 
@@ -128,9 +128,7 @@ def test_kalan_ajan_testi_bulgu_ve_yeniden_test(
     assert v["talep"]["talep_no"] != v["gecmis"][0]["talep_no"]
 
 
-def test_yetki_ve_engeller(
-    api: TestClient, saat: Saat, make_requirement, make_user
-) -> None:
+def test_yetki_ve_engeller(api: TestClient, saat: Saat, make_requirement, make_user) -> None:
     rid = make_requirement(po_onayli=False)
     login(api, make_user("tester"))
     r = api.put(f"/requirements/{rid}/agent-product", json={"urun_kodu": "destek-asistani"})
@@ -162,9 +160,7 @@ def test_icerik_degisirse_gecen_test_gereksinimi_ilerletmez(
         assert s.get(Requirement, rid).durum == "po_approved"
 
 
-def test_case_varken_baglanamaz(
-    analist: TestClient, saat: Saat, make_requirement, engine
-) -> None:
+def test_case_varken_baglanamaz(analist: TestClient, saat: Saat, make_requirement, engine) -> None:
     rid = make_requirement()
     with session_scope() as s:
         s.execute(

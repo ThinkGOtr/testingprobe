@@ -77,15 +77,20 @@ class IcerikKaynagi:
 # `rules/assistant/*.yaml` ve `rules/assistant/rotalar.json` (model çıktısındaki rotanın bağlantıya
 # dönüşmesini ve öneri kurallarının ekran/eylem doğrulamasını belirler; plandaki listeye eklendi).
 # Değerlendirme seti (`evaluation/assistant.json`) ölçüttür, içerik değil; hash'e girmez.
+# 011 F7: asistan denetimi (`assistant-guard` prompt'u, şeması, `assistant_guard` amaç ayarı)
+# asistanın kullanıcıya gösterdiği cevabı belirler (engel/uyarı); `--via-flow` koşusu denetim açık
+# koşar, bu yüzden asistan içeriğine dahildir.
 ICERIK_KAYNAKLARI: Mapping[str, IcerikKaynagi] = {
     "assistant": IcerikKaynagi(
         dosyalar=(
             "prompts/assistant.md",
             "schemas/assistant.schema.json",
             "schemas/assistant_deep.schema.json",
+            "prompts/assistant-guard.md",
+            "schemas/assistant_guard.schema.json",
         ),
         globlar=("assistant/*.yaml", "assistant/*.json"),
-        model_amaclari=("assistant", "assistant_deep"),
+        model_amaclari=("assistant", "assistant_deep", "assistant_guard"),
     ),
 }
 

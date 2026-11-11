@@ -51,7 +51,8 @@ without such an id use the list screen.
 - `/kosular` (Koşular: koşu tetikleme), `/kosular/:id` (Koşu detay), `/hatalar/:id` (Hata detay:
   triage, otomatik onarım)
 - `/bug-taslaklari`, `/bug-taslaklari/:id` (Bug taslağı kararı)
-- `/kontrol-kulesi` (Kontrol Kulesi), `/yol-haritasi` (Yol haritası), `/denetim` (Denetim)
+- `/kontrol-kulesi` (Kontrol Kulesi), `/yol-haritasi` (Yol haritası), `/denetim` (Denetim),
+  `/ajan-urunleri` (Ajan ürünleri: Agent Probe'da test edilen AI ajan ürünleri)
 - `/claude-code` (Claude Code kanalı; yalnız Analist), `/demo` (Demo kontrolleri: demo verisi
   sıfırlama; yalnız Sunucu)
 This list is reference data: you may point to these screens in `yonlendirmeler` without a tool

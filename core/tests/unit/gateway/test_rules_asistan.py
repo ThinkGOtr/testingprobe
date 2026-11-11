@@ -200,7 +200,11 @@ def _normalize(metin: str) -> str:
 
 def _bilinen_kodlar() -> set[str]:
     from tp_core.api import csrf, errors
+    from tp_core.api.registry import discover_feature_routers
     from tp_core.workflow import service
+
+    # Özellik modüllerinin hata sınıfları yüklensin (sıra bağımsız: ör. agent_probe.service).
+    discover_feature_routers()
 
     def alt_siniflar(cls: type) -> Iterator[type]:
         for alt in cls.__subclasses__():

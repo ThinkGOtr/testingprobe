@@ -20,6 +20,9 @@
    olarak eklenir; "Neden? Sor" sohbetinde öneri bağlamı sunucuda kuraldan yeniden üretilir.
 6. §7.3 son işlem (`sonislem.isle`) → otomatik yükseltme kararı (§6.2) → `done` (+ gerekirse çocuk
    mesaj ve işi, **aynı transaction**) → `assistant.answered {…, derin_bekliyor}`.
+6b. **Denetim** (011 F7; `denetim.py`, `TP_ASISTAN_DENETIM`): soru kural ön denetimi her yolda
+   (2'den önce); canlı yolda soru port ile modelden önce, cevap port ile yazmadan önce puanlanır.
+   `engelle` → `kaynak='denetim'` açıklama; `uyar` → not; port hatası → fail-closed.
 7. İstisnalar yakalanır → `error` + `hata_kodu` (`butce_asildi`, `girdi_tavani`, `zaman_asimi`,
    `model_hatasi`); iptal hata değildir (durum `iptal` kalır). Kayda yalnız sınıf adı yazılır
    (`str(exc)` soru/araç metni taşıyabilir); şerit çökmez.
@@ -56,6 +59,7 @@ from sqlalchemy.orm import Session
 
 from tp_core.events import publish_tx
 from tp_core.features.assistant import budget as asistan_budget
+from tp_core.features.assistant import denetim as asistan_denetim
 from tp_core.features.assistant import durum as mesaj_durumu
 from tp_core.features.assistant import siniflandir, sonislem, sozluk
 from tp_core.features.assistant.sablon import sablon_cevabi
@@ -660,6 +664,60 @@ def _modelsiz_yaz(
     return "done"
 
 
+def _denetim_yaz(
+    session_factory: SessionFactory,
+    m: Mesaj,
+    cevap: dict[str, Any],
+    harcama: Harcama | None,
+    *,
+    model_calisti: bool,
+) -> str:
+    """Denetimin engellediği / denetimsiz kalan mesaj (`kaynak='denetim'`; derin incelenemez)."""
+    with session_factory() as s:
+        conn = s.connection()
+        h = harcama or Harcama()
+        mesaj_durumu.harcama_yaz(
+            conn,
+            m.id,
+            maliyet_usd=h.maliyet,
+            token_girdi=h.girdi,
+            token_cikti=h.cikti,
+            sure_ms=_sure_ms(conn, m.id),
+        )
+        yazildi = mesaj_durumu.sonuc_yaz(
+            conn,
+            m.id,
+            durum="done",
+            cevap=cevap,
+            kaynak=asistan_denetim.KAYNAK,
+            amac=m.hedef_amac,
+            **({} if model_calisti else {"ai_call_id": None}),
+        )
+        if not yazildi:
+            son = _mevcut_durum(conn, m.id) or "iptal"
+            s.commit()
+            return son
+        _cevaplandi(conn, m, "done")
+        s.commit()
+    return "done"
+
+
+def _harcama_ekle(a: Harcama, b: Harcama) -> Harcama:
+    return Harcama(a.maliyet + b.maliyet, a.girdi + b.girdi, a.cikti + b.cikti, a.toparlama)
+
+
+def _denetim_harcamasi(engine: Engine | None, d: Any, gw: Any) -> Harcama:
+    toplam = Harcama()
+    if engine is None:
+        return toplam
+    for cid in d.ai_call_ids:
+        try:
+            toplam = _harcama_ekle(toplam, harcama_oku(engine, cid, gw))
+        except Exception:
+            continue
+    return toplam
+
+
 def _hata_yaz(
     session_factory: SessionFactory, m: Mesaj, kod: str | None, harcama: Harcama | None
 ) -> str:
@@ -749,6 +807,8 @@ def cevapla(
     canli = False
     gw: Any = None
     engine: Engine | None = None
+    denetim_acik = asistan_denetim.acik()
+    d = asistan_denetim.Denetim()
     try:
         from tp_core.features.assistant.maskeleme import mesaj_oturumu
         from tp_core.features.assistant.tools import arac_baglami
@@ -764,6 +824,28 @@ def cevapla(
         oneri_var = oneri_baglami is not None
         dogrudan = m.kip == "soru" and not m.derin and not oneri_var
 
+        # (1b) Denetim: kural ön denetimi (modelsiz; her yol). Engel → model çağrılmaz.
+        on_puan: Any = None
+        if denetim_acik:
+            on_puan = asistan_denetim.kural_puani(m.icerik or "", "soru", m.id)
+            if on_puan.karar == "engelle":
+                d.soru.append(on_puan)
+                asistan_denetim.kaydet(session_factory, m.id, m.kullanici_adi, on_puan)
+                return _denetim_yaz(
+                    session_factory,
+                    m,
+                    asistan_denetim.engel_cevabi(d, "soru"),
+                    None,
+                    model_calisti=False,
+                )
+
+        def modelsiz(cevap: dict[str, Any], kaynak: str) -> str:
+            if on_puan is not None:
+                d.soru.append(on_puan)
+                asistan_denetim.kaydet(session_factory, m.id, m.kullanici_adi, on_puan)
+                cevap = asistan_denetim.isaretle(cevap, d)
+            return _modelsiz_yaz(session_factory, m, cevap, kaynak)
+
         # (2) Sözlük
         son_hata = (m.baglam or {}).get("son_hata")
         if dogrudan and son_hata and siniflandir.sozluk_sorusu(m.icerik, m.baglam):
@@ -772,7 +854,7 @@ def cevapla(
                 cevap = sozluk.cevap(kayit, m.baglam, rules_dir=rules_dir)
                 if musteri_verisi:
                     cevap, _ = oturum.mask(cevap)
-                return _modelsiz_yaz(session_factory, m, cevap, "sozluk")
+                return modelsiz(cevap, "sozluk")
 
         # (3) Şablon
         if dogrudan:
@@ -780,11 +862,11 @@ def cevapla(
                 ab, m.icerik, jira_adresi=jira.kayit, musteri_verisi=musteri_verisi
             )
             if sablon is not None:
-                return _modelsiz_yaz(session_factory, m, sablon.cevap, "sablon")
+                return modelsiz(sablon.cevap, "sablon")
 
         # (4) Kapalı kip: geçit kurulmaz.
         if not model_hazir:
-            return _modelsiz_yaz(session_factory, m, kapali_cevabi(m.kip, m.baglam), "kapali")
+            return modelsiz(kapali_cevabi(m.kip, m.baglam), "kapali")
 
         # (5) Canlı
         canli = True
@@ -796,6 +878,38 @@ def cevapla(
         kural_onerileri = _kural_onerileri(session_factory, m) if m.kip == "oneri" else None
         butce = asistan_budget.AsistanBudget(engine, kullanici_id=m.kullanici_id, kok_id=kok)
         gw = (gateway_factory or varsayilan_gecit_fabrikasi(engine))(budget=butce)
+
+        # (5a) Denetim: soru asistan modeline gitmeden (derinde üst mesajın puanı kullanılır).
+        if denetim_acik:
+            if on_puan is not None and on_puan.karar != "gec":
+                d.soru.append(on_puan)
+            onceki = (
+                asistan_denetim.onceki_soru_puani(session_factory, m.ust_mesaj_id)
+                if m.derin and m.ust_mesaj_id is not None
+                else None
+            )
+            if onceki is not None:
+                d.soru.append(onceki)
+                asistan_denetim.kaydet(session_factory, m.id, m.kullanici_adi, *d.soru)
+            else:
+                try:
+                    p = asistan_denetim.port_puani(
+                        m.icerik or "", "soru", mesaj_id=m.id, kullanici_id=m.kullanici_id, gw=gw
+                    )
+                except asistan_denetim.DenetimCalismiyor as exc:
+                    return _denetim_calismiyor(session_factory, m, d, "soru", str(exc), engine, gw)
+                d.soru.append(p)
+                if p.skor.ai_call_id:
+                    d.ai_call_ids.append(p.skor.ai_call_id)
+                asistan_denetim.kaydet(session_factory, m.id, m.kullanici_adi, *d.soru)
+            if d.soru_karari() == "engelle":
+                return _denetim_yaz(
+                    session_factory,
+                    m,
+                    asistan_denetim.engel_cevabi(d, "soru"),
+                    _denetim_harcamasi(engine, d, gw),
+                    model_calisti=False,
+                )
         if arac_seti_fabrikasi is None:
             araclar, varsayilan_dogrulayici = varsayilan_araclar(ab)
         else:
@@ -873,6 +987,36 @@ def cevapla(
             cevap = sonislem.isle(sonuc.output, sb)
         finally:
             araclar.havuz.temizle()
+        # (6a) Denetim: cevap kullanıcıya gösterilmeden.
+        if denetim_acik:
+            try:
+                p = asistan_denetim.port_puani(
+                    _cevap_metni(cevap) or "(boş cevap)",
+                    "cevap",
+                    mesaj_id=m.id,
+                    kullanici_id=m.kullanici_id,
+                    gw=gw,
+                    soru=m.icerik,
+                    kaynak_ozetleri=asistan_denetim.kaynak_ozetleri(cevap),
+                )
+            except asistan_denetim.DenetimCalismiyor as exc:
+                return _denetim_calismiyor(
+                    session_factory, m, d, "cevap", str(exc), engine, gw, harcama=harcama
+                )
+            d.cevap = p
+            if p.skor.ai_call_id:
+                d.ai_call_ids.append(p.skor.ai_call_id)
+            asistan_denetim.kaydet(session_factory, m.id, m.kullanici_adi, p)
+            harcama = _harcama_ekle(harcama, _denetim_harcamasi(engine, d, gw))
+            if p.karar == "engelle":
+                return _denetim_yaz(
+                    session_factory,
+                    m,
+                    asistan_denetim.engel_cevabi(d, "cevap"),
+                    harcama,
+                    model_calisti=True,
+                )
+            cevap = asistan_denetim.isaretle(cevap, d)
         return model_cevabini_yaz(session_factory, m, cevap, harcama)
     except Exception as exc:
         kod = hata_kodu(exc)
@@ -889,6 +1033,39 @@ def cevapla(
         except Exception as yazma:
             log.warning("asistan mesajı %s hata olarak yazılamadı (%s)", m.id, type(yazma).__name__)
             return "error"
+
+
+def _denetim_calismiyor(
+    session_factory: SessionFactory,
+    m: Mesaj,
+    d: Any,
+    yon: str,
+    neden: str,
+    engine: Engine | None,
+    gw: Any,
+    *,
+    harcama: Harcama | None = None,
+) -> str:
+    """Fail-closed: denetim yoksa asistan cevap vermez (K11)."""
+    log.warning("asistan mesajı %s: denetim çalışmıyor (%s, %s)", m.id, yon, neden)
+    asistan_denetim.calismiyor_kaydet(session_factory, m.id, yon, neden)
+    toplam = _harcama_ekle(harcama or Harcama(), _denetim_harcamasi(engine, d, gw))
+    if engine is not None:
+        # Başarısız denetim çağrısının maliyeti (`ai_call` kök satırı + yeniden istemeler).
+        from tp_core.gateway.core import deterministic_call_id
+
+        try:
+            ek = harcama_oku(engine, deterministic_call_id(m.id, f"assistant_guard:{yon}"), gw)
+            toplam = _harcama_ekle(toplam, ek)
+        except Exception:
+            pass
+    return _denetim_yaz(
+        session_factory,
+        m,
+        asistan_denetim.calismiyor_cevabi(d, yon),
+        toplam,
+        model_calisti=yon == "cevap",
+    )
 
 
 def _tek_sefer(kur: Callable[[], Any]) -> Callable[[], Any]:

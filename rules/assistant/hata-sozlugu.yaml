@@ -100,6 +100,30 @@ kayitlar:
     neden: İş akışındaki her geçiş, bir önceki adımın geçerli insan onayına bağlıdır (ör. case üretimi için PO onayı).
     cozum: Bekleyen onayı ilgili rolden isteyin; ekrandaki durum ve "bekleyen kapı" bilgisine bakın.
     rota: null
+  - id: ajan-urunu
+    kodlar: [ajan_urunu]
+    metinler: []
+    baslik: Ajan ürünü — test Agent Probe'da koşar
+    anlam: Bu gereksinim bir AI ajan ürününe bağlı; case üretimi ve case incelemesi yapılmaz.
+    neden: AI ajan ürünlerinin testi Agent Probe'da koşar; Testing Probe yalnız sonuca göre süreci yürütür.
+    cozum: Gereksinim detayında "Agent Probe'da test başlat"ı kullanın ya da ürün bağlantısını kaldırın.
+    rota: /gereksinimler/:id
+  - id: ajan-urunu-baglanamaz
+    kodlar: [ajan_urunu_baglanamaz]
+    metinler: []
+    baslik: Ajan ürünü bağlanamadı
+    anlam: Gereksinim seçilen ajan ürününe bağlanamadı ya da bağlantı değiştirilemedi.
+    neden: Ürün Agent Probe'da hazır değil, gereksinimin case'leri var ya da süren bir ajan testi talebi var.
+    cozum: Ajan ürünleri ekranında hazır ürünlere bakın; süren talebin bitmesini bekleyin.
+    rota: /ajan-urunleri
+  - id: ajan-testi-baslatilamaz
+    kodlar: [ajan_testi_baslatilamaz]
+    metinler: []
+    baslik: Ajan testi başlatılamadı
+    anlam: Agent Probe'a test talebi atılamadı.
+    neden: Gereksinim PO onaylı değil, onaydan sonra içerik değişti, ürün bağlı değil ya da süren bir talep var.
+    cozum: Gereksinim detayındaki engel açıklamasına bakın; gerekirse yeniden PO onayı isteyin.
+    rota: /gereksinimler/:id
   - id: gecersiz-gecis
     kodlar: [gecersiz_gecis]
     metinler: []

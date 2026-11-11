@@ -152,3 +152,11 @@ bundles:
             sure_s:
               medyan: 7.62
               p90: 13.522
+  assistant-guard:
+    version: 1
+    status: pending
+    note: '011 F7 asistan denetimi (Agent Probe portu, purpose assistant_guard, Haiku 5.5): soru/cevap
+      puanı + kategoriler; karar kodda (eşikler 40/70 + kategori tabanları). Golden çıktıları elle hazırlandı.
+      Değerlendirme seti: rules/evaluation/assistant-guard.json (17 Türkçe vaka; karar beklentisi, yanlış
+      engelleme ve kaçırma sayımı, güvenlik/gizlilik kaçırma hedefi 0). Canlı değerlendirme yapılmadı; onaylı
+      istisna yok.'
