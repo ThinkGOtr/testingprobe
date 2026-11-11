@@ -288,6 +288,8 @@ export interface IstekSecenegi {
    * yoktur; sahte başarı gösterilmez), 501 `UC_YOK` döner. Kaynak da örnek veriyse işlem de oraya gider.
    */
   kaynak?: readonly [string, string];
+  /** Yanıt JSON değil düz metindir (ör. `cases.feature`): gövde ayrıştırılmadan döner. */
+  metin?: boolean;
 }
 
 /**
@@ -343,7 +345,7 @@ async function istekGonder<T>(
       method,
       credentials: "same-origin",
       headers: {
-        Accept: "application/json",
+        Accept: secenek.metin ? "text/plain" : "application/json",
         ...(secenek.govde !== undefined ? { "Content-Type": "application/json" } : {}),
       },
       body: secenek.govde !== undefined ? JSON.stringify(secenek.govde) : undefined,
@@ -359,6 +361,7 @@ async function istekGonder<T>(
   if (res.ok) {
     if (res.status === 204) return undefined as T;
     const metin = await res.text();
+    if (secenek.metin) return metin as T;
     if (!metin) return undefined as T;
     try {
       return JSON.parse(metin) as T;

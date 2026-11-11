@@ -146,6 +146,17 @@ export const api = {
   caseSummary: async (requirementId: string): Promise<CaseKapsamOzeti | null> =>
     caseKapsamOzetiUyarla(await istek<unknown>("GET", `/requirements/${yol(requirementId)}/case-summary`, { kaynak: CASE_KAYNAGI })),
 
+  /**
+   * Onaylı ve hazır case'lerin Türkçe Gherkin'i (011 F8; `text/plain`). Uygun case yoksa 404.
+   * Dönüşüm yalnız çekirdektedir; örnek veri katmanı sabit bir örnek döner.
+   */
+  gherkin: (requirementId: string, yalnizYayinlanan = false) =>
+    istek<string>("GET", `/requirements/${yol(requirementId)}/cases.feature`, {
+      sorgu: yalnizYayinlanan ? { yalniz_yayinlanan: 1 } : undefined,
+      kaynak: CASE_KAYNAGI,
+      metin: true,
+    }),
+
   // Yayın
   yayinOnizleme: async (requirementId: string): Promise<YayinOnizleme> =>
     yayinOnizlemeUyarla(await istek<unknown>("GET", "/publish/preview", { sorgu: { requirement_id: requirementId } })),

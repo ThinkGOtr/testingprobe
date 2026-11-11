@@ -879,6 +879,41 @@ function caseSummary(rid: string) {
   });
 }
 
+/**
+ * core `GET /requirements/{id}/cases.feature` (011 F8). Dönüşüm yalnız çekirdektedir; örnek veri
+ * katmanı uygun case sayısını denetler ve SABİT küçük bir örnek döner (case içeriğinden üretmez).
+ */
+function gherkinOrnegi(rid: string, q: URLSearchParams): string {
+  girisGerekli();
+  const g = bul(veri.gereksinimler, rid, "Gereksinim");
+  const yalnizYayinlanan = q.get("yalniz_yayinlanan") === "1";
+  const uygun = veri.caseler.filter(
+    (c) =>
+      c.requirement_id === rid &&
+      (yalnizYayinlanan ? c.durum === "published" : c.durum === "approved" || c.durum === "published") &&
+      (c.readiness ?? c.icerik.readiness ?? "ready") === "ready",
+  );
+  if (!uygun.length) {
+    throw new ApiError(404, "Gherkin'e aktarılacak case yok: yalnız onaylı (ya da yayınlanmış) ve hazır olan güncel case'ler dahil edilir.");
+  }
+  return GHERKIN_ORNEGI(g.jira_key ?? g.id, g.baslik, uygun.length);
+}
+
+const GHERKIN_ORNEGI = (anahtar: string, baslik: string, n: number) =>
+  [
+    "# language: tr",
+    "# Örnek veri: dönüşüm çekirdekte yapılır; bu sabit bir örnektir.",
+    `# ${n} case`,
+    `Özellik: ${anahtar} — ${baslik}`,
+    "",
+    "  @AC1 @EP @P1 @pozitif @tp-ornek",
+    "  Senaryo: Geçerli bilgilerle giriş",
+    "    Diyelim ki bayi1 kullanıcısı tanımlı",
+    "    Eğer ki Giriş sayfasını aç",
+    "    O zaman Giriş formu görüntülenir",
+    "",
+  ].join("\n");
+
 const acAnahtari = (r: string) => r.replace(/\s/g, "").toUpperCase();
 
 /** core `GET /requirements/{id}/case-metrics` ile aynı alanlar (mock son karara göre sayar). */
@@ -1851,6 +1886,7 @@ const ROTALAR: Rota[] = [
   ["POST", /^\/cases\/([^/]+)\/viewed$/, (m) => caseGoruntulendi(decodeURIComponent(m[1]))],
   ["GET", /^\/requirements\/([^/]+)\/case-metrics$/, (m) => caseMetrikleri(decodeURIComponent(m[1]))],
   ["GET", /^\/requirements\/([^/]+)\/case-summary$/, (m) => caseSummary(decodeURIComponent(m[1]))],
+  ["GET", /^\/requirements\/([^/]+)\/cases\.feature$/, (m, q) => gherkinOrnegi(decodeURIComponent(m[1]), q)],
   ["GET", /^\/publish\/preview$/, (_m, q) => yayinOnizleme(q)],
   ["POST", /^\/publish$/, (_m, _q, g) => yayinla(g)],
   ["POST", /^\/code\/generate$/, (_m, _q, g) => kodUret(g)],
