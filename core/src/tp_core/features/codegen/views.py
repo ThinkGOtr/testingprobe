@@ -312,6 +312,8 @@ def serialize(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any]
         "break_verify": _break_verify(sc, cg),
         "yerel_sinif": None if yk.get("atlandi") else yk.get("sinif"),
         "mode": cg.uretim_modu,
+        # 013 §3.2: elle (kod üretimi ekranı) | otomatik (case onayı sonrası).
+        "tetik": cg.tetik,
         "engel": ({"tur": cg.engel_turu, "neden": cg.engel_nedeni} if cg.engel_turu else None),
         "olusturma": sc.olusturma.isoformat(),
         "hata": cg.engel_nedeni,

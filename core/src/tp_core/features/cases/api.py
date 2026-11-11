@@ -6,7 +6,8 @@
 | GET  | `/cases?requirement_id=` | herkes |
 | GET  | `/cases/{id}` | herkes |
 | POST | `/cases/{id}/viewed` | analyst — ilk görüntüleme (review süresinin başlangıcı) |
-| POST | `/cases/{id}/decision` (aşağıda `CaseKararGirdisi`) | analyst |
+| POST | `/cases/{id}/decision` (aşağıda `CaseKararGirdisi`) | analyst — yanıtta `otomatik_kod` |
+| POST | `/cases/bulk-decision` (aşağıda `TopluKararGirdisi`) | analyst — yalnız approve (013) |
 | GET  | `/requirements/{id}/case-metrics` | herkes — kabul oranı ve süreler (§12) |
 | POST | `/requirements/{id}/review-complete` | analyst |
 """
@@ -21,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from tp_core.auth.deps import CurrentUser, DbSession, require_role
 from tp_core.features.cases import service
+from tp_core.features.otomasyon.otokod import kuyruga_al
 from tp_core.workflow.service import Principal
 
 router = APIRouter(tags=["cases"])
@@ -57,6 +59,16 @@ class CaseKararGirdisi(BaseModel):
     beklenen_anlam_degisti: bool | None = None
 
 
+class TopluKararOgesi(BaseModel):
+    case_id: uuid.UUID
+    icerik_hash: str = Field(min_length=1, max_length=200)
+
+
+class TopluKararGirdisi(BaseModel):
+    karar: Literal["approve"]
+    ogeler: list[TopluKararOgesi] = Field(min_length=1, max_length=service.TOPLU_KARAR_MAX)
+
+
 @router.post(
     "/requirements/{requirement_id}/generate-cases", response_model=IsYaniti, status_code=202
 )
@@ -73,14 +85,19 @@ def generate_cases(requirement_id: uuid.UUID, session: DbSession, user: Analyst)
 
 @router.get("/cases")
 def list_cases(
-    session: DbSession, _user: CurrentUser, requirement_id: uuid.UUID | None = None
+    session: DbSession, user: CurrentUser, requirement_id: uuid.UUID | None = None
 ) -> list[dict[str, Any]]:
-    return service.list_cases(session, requirement_id)
+    return service.list_cases(session, requirement_id, user.id)
 
 
 @router.get("/cases/{case_id}")
-def get_case(case_id: uuid.UUID, session: DbSession, _user: CurrentUser) -> dict[str, Any]:
-    return service.serialize_cases(session, [service.get_case(session, case_id)])[0]
+def get_case(case_id: uuid.UUID, session: DbSession, user: CurrentUser) -> dict[str, Any]:
+    return service.serialize_cases(session, [service.get_case(session, case_id)], user.id)[0]
+
+
+@router.post("/cases/bulk-decision")
+def bulk_decision(body: TopluKararGirdisi, session: DbSession, user: Analyst) -> dict[str, Any]:
+    return service.bulk_decide(session, [(o.case_id, o.icerik_hash) for o in body.ogeler], user)
 
 
 @router.post("/cases/{case_id}/viewed")
@@ -104,7 +121,10 @@ def decide(
         beklenen_anlam_degisti=body.beklenen_anlam_degisti,
     )
     session.flush()
-    return service.serialize_cases(session, [tc])[0]
+    # 013 §3.2 (K4): onaylayan karar (approve | edit) otomatik kod üretimini kuyruğa alır;
+    # üretimin reddi/hatası onayı geri almaz.
+    otomatik_kod = kuyruga_al(session, tc, user) if body.karar in ("approve", "edit") else None
+    return {**service.serialize_cases(session, [tc], user.id)[0], "otomatik_kod": otomatik_kod}
 
 
 @router.get("/requirements/{requirement_id}/case-metrics")

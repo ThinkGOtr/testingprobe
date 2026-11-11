@@ -24,6 +24,7 @@ import tp_core.features.cases.jobs
 import tp_core.features.publish.jobs  # noqa: F401
 from tp_core.audit import PgCallRecorder
 from tp_core.features.cases import service as cases_service
+from tp_core.features.otomasyon.ayarlar import OTOMATIK_KOD
 from tp_core.features.publish import service as publish_service
 from tp_core.gateway import build_gateway
 from tp_core.gateway.config import GatewaySettings
@@ -31,6 +32,7 @@ from tp_core.gateway.testing import FakeProvider
 from tp_core.integrations.jira import RestJira
 from tp_core.integrations.testmgmt import JiraTestManagement
 from tp_core.models import Requirement, session_scope
+from tp_core.models.otomasyon_feature import OtomasyonAyari
 from tp_core.workflow.jobs import process_one
 from tp_core.workflow.service import (
     SYSTEM,
@@ -246,10 +248,24 @@ def worker(engine: Engine) -> Iterator[None]:
     t.join(timeout=10)
 
 
+def otomatik_kod_ayari(acik: bool) -> None:
+    """013 §3.2: onay sonrası otomatik kod üretimi ayarı (denetim kaydı yazmadan; test kurulumu)."""
+    with session_scope() as s:
+        satir = s.get(OtomasyonAyari, OTOMATIK_KOD)
+        if satir is None:
+            s.add(OtomasyonAyari(anahtar=OTOMATIK_KOD, deger={"acik": acik}, guncelleyen="test"))
+        else:
+            satir.deger = {"acik": acik}
+
+
 @pytest.fixture
 def api(db: Any) -> Iterator[TestClient]:
+    """Uygulama istemcisi. Otomatik kod üretimi (ürün varsayılanı açık) burada KAPALI başlar:
+    bu fikstürü kullanan akış testleri onay sonrası `codegen.generate` işi beklemez (iş kuyruğu
+    ve script sayıları değişmesin). Otomatik kodu sınayan testler `otomatik_kod_ayari(True)`."""
     from tp_core.api.main import create_app
 
+    otomatik_kod_ayari(False)
     with TestClient(create_app(), base_url="http://127.0.0.1:8000") as c:
         yield c
 

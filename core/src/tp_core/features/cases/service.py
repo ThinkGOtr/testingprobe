@@ -1141,6 +1141,60 @@ def _reopen(
     return tc
 
 
+TOPLU_KARAR_MAX = 200
+GORULMEDI_NEDENI = "Bu case'i açıp görmediniz"
+
+
+def bulk_decide(
+    session: Session, ogeler: Sequence[tuple[uuid.UUID, str]], user: Principal
+) -> dict[str, Any]:
+    """Toplu onay (013 §3.2, K3): her öğe kendi SAVEPOINT'inde tekli `decide(approve)` kurallarıyla.
+
+    Görülme şartı: kullanıcının bu case'i son karardan sonra açmış olması (`goruldu_kumesi`);
+    yoksa `atlandi`. Bir öğenin hatası (hash uyuşmazlığı, durum, gereksinim değişimi …) yalnız o
+    öğeyi düşürür (`hata`). Onaylanan her case için otomatik kod üretimi kuyruğa alınır.
+    """
+    from tp_core.features.otomasyon.otokod import kuyruga_al, savepoint
+
+    if not 1 <= len(ogeler) <= TOPLU_KARAR_MAX:
+        raise InvalidDecision(f"Toplu kararda 1..{TOPLU_KARAR_MAX} case olmalı")
+    if user.id is None:
+        raise InvalidDecision("toplu karar yalnızca oturumlu kullanıcıyla verilir")
+    gorulen = goruldu_kumesi(session, [cid for cid, _ in ogeler], user.id)
+    sonuclar: list[dict[str, Any]] = []
+    islenen: set[uuid.UUID] = set()
+    for cid, icerik_hash in ogeler:
+        sonuc: dict[str, Any] = {"case_id": str(cid), "durum": "onaylandi", "neden": None,
+                                 "otomatik_kod": None}  # fmt: skip
+        sonuclar.append(sonuc)
+        if cid in islenen:
+            sonuc.update(durum="atlandi", neden="Case istekte birden çok kez var")
+            continue
+        islenen.add(cid)
+        if cid not in gorulen:
+            sonuc.update(durum="atlandi", neden=GORULMEDI_NEDENI)
+            continue
+        try:
+            with savepoint(session):
+                tc = decide(session, cid, user, karar="approve", icerik_hash=icerik_hash)
+                session.flush()
+        except WorkflowError as exc:
+            sonuc.update(durum="hata", neden=str(exc))
+            continue
+        sonuc["otomatik_kod"] = kuyruga_al(session, tc, user)
+    ozet = {
+        d: sum(1 for s in sonuclar if s["durum"] == d) for d in ("onaylandi", "atlandi", "hata")
+    }
+    audit_on_commit(
+        session,
+        user.kullanici_adi,
+        "cases.bulk_decision",
+        None,
+        {"istenen": len(ogeler), **ozet},
+    )
+    return {"sonuclar": sonuclar, "ozet": ozet}
+
+
 # --------------------------------------------------------------------- listeleme
 
 
@@ -1199,9 +1253,42 @@ def _usernames(session: Session, ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:
     )  # type: ignore[arg-type]
 
 
-def serialize_cases(session: Session, cases: Sequence[TestCase]) -> list[dict[str, Any]]:
-    """Portal `TestCase` biçimi (review-portal/src/api/types.ts) + ek alanlar."""
+def goruldu_kumesi(
+    session: Session, ids: Sequence[uuid.UUID], kullanici_id: uuid.UUID | None
+) -> set[uuid.UUID]:
+    """Kullanıcının son karardan (reopen dahil; `mark_viewed` ile aynı eşik) SONRA görüntülediği
+    case'ler (013 §3.2 toplu onay görülme şartı)."""
+    if kullanici_id is None or not ids:
+        return set()
+    son_karar = (
+        select(Review.zaman)
+        .where(Review.nesne_turu == "test_case", Review.nesne_id == CaseGoruntuleme.test_case_id)
+        .order_by(Review.sira.desc())
+        .limit(1)
+        .correlate(CaseGoruntuleme)
+        .scalar_subquery()
+    )
+    return set(
+        session.scalars(
+            select(CaseGoruntuleme.test_case_id)
+            .where(
+                CaseGoruntuleme.user_id == kullanici_id,
+                CaseGoruntuleme.test_case_id.in_(ids),
+                (son_karar.is_(None)) | (CaseGoruntuleme.zaman > son_karar),
+            )
+            .distinct()
+        )
+    )
+
+
+def serialize_cases(
+    session: Session, cases: Sequence[TestCase], kullanici_id: uuid.UUID | None = None
+) -> list[dict[str, Any]]:
+    """Portal `TestCase` biçimi (review-portal/src/api/types.ts) + ek alanlar.
+
+    `goruldu`: `kullanici_id` bu case'i son karardan sonra açtı mı (verilmezse False)."""
     ids = [c.id for c in cases]
+    gorulen = goruldu_kumesi(session, ids, kullanici_id)
     reviews = _reviews_by_case(session, ids)
     refs = _external_keys(session, ids)
     call_ids = {c.ai_call_id for c in cases if c.ai_call_id}
@@ -1285,16 +1372,19 @@ def serialize_cases(session: Session, cases: Sequence[TestCase]) -> list[dict[st
                 if son and son.karar == "edit"
                 else None,
                 "olusturma": c.olusturma,
+                "goruldu": c.id in gorulen,
             }
         )
     return out
 
 
-def list_cases(session: Session, requirement_id: uuid.UUID | None) -> list[dict[str, Any]]:
+def list_cases(
+    session: Session, requirement_id: uuid.UUID | None, kullanici_id: uuid.UUID | None = None
+) -> list[dict[str, Any]]:
     q = select(TestCase).order_by(TestCase.uretim_no, TestCase.sira_no)
     if requirement_id is not None:
         q = q.where(TestCase.requirement_id == requirement_id)
-    return serialize_cases(session, session.scalars(q).all())
+    return serialize_cases(session, session.scalars(q).all(), kullanici_id)
 
 
 # ------------------------------------------------------------------------- ölçüm

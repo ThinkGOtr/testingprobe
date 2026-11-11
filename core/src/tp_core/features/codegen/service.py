@@ -110,7 +110,7 @@ from tp_core.models import (
     WorkflowInstance,
     session_scope,
 )
-from tp_core.models.codegen_feature import ScriptAdim, ScriptCodegen, ScriptKontrol
+from tp_core.models.codegen_feature import TETIK, ScriptAdim, ScriptCodegen, ScriptKontrol
 from tp_core.ports import AgentResult, AgentStep, ForgePort, ModelGateway, ModelMessage
 from tp_core.workflow.jobs import JobContext, PermanentJobError, enqueue, start_workflow
 from tp_core.workflow.service import (
@@ -478,12 +478,20 @@ def start_generation(
     case_ids: Sequence[uuid.UUID],
     user: Principal,
     platform: str = platformlar.WEB,
+    tetik: str = "elle",
+    tetikleyen: str | None = None,
 ) -> dict[str, Any]:
     """`POST /code/generate`: uygun case'ler için script + iş akışı + `codegen.generate` işi.
 
     `platform` (009 §2.1; varsayılan `web`): üretilecek testin hedefi. Aynı case'in başka
     platformdaki script'i/PR'ı bu istekten etkilenmez.
+
+    `tetik` (013 §3.2): `elle` (kod üretimi ekranı) | `otomatik` (case onayı sonrası,
+    `features/otomasyon/otokod.py`); `script_codegen.tetik`e yazılır. `tetikleyen`: otomatik
+    üretimi doğuran onaylayan kullanıcının adı (iş akışı yükü + denetim).
     """
+    if tetik not in TETIK:
+        raise CodegenRejected(f"geçersiz tetik: {tetik} (elle | otomatik)")
     try:
         platform = platformlar.gecerli(platform)
     except ValueError as exc:
@@ -564,14 +572,22 @@ def start_generation(
             sira_no=tc.sira_no,
             baslik=str(tc.icerik.get("title") or "")[:300],
             uretim_modu=sc.uretim_modu,
+            tetik=tetik,
         )
         session.add_all([cg, ScriptTestCase(script_id=sc.id, test_case_id=cid)])
         session.flush()
+        yuk: dict[str, Any] = {
+            "script_id": str(sc.id),
+            "baslatan": user.as_dict(),
+            "platform": platform,
+        }
+        otomatik_ek = {"tetik": tetik, "tetikleyen": tetikleyen} if tetik != "elle" else {}
+        yuk.update(otomatik_ek)
         wf_id, job_id = start_workflow(
             session.connection(),
             WORKFLOW_TUR,
             user.kullanici_adi,
-            yuk={"script_id": str(sc.id), "baslatan": user.as_dict(), "platform": platform},
+            yuk=yuk,
             job_tur=GEN_JOB,
             nesne_turu="script",
             nesne_id=sc.id,
@@ -590,6 +606,7 @@ def start_generation(
                 "workflow_id": wf_id,
                 "job_id": job_id,
                 "platform": platform,
+                **otomatik_ek,
             },
         )
         sonuclar.append(
