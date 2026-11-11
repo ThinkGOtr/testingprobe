@@ -55,7 +55,7 @@
       }
      ],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "Sepet satırındaki adedi doğrular.",
      "line": 38
@@ -75,7 +75,7 @@
       }
      ],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "Sepet satırında kampanyayla bedava verilen adedi doğrular.",
      "line": 43
@@ -95,7 +95,7 @@
       }
      ],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "Sepet satırının indirim sonrası tutarını doğrular (ör.",
      "line": 48
@@ -110,7 +110,7 @@
       }
      ],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "Ara toplamı doğrular (ör.",
      "line": 53
@@ -125,7 +125,7 @@
       }
      ],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "Kampanya indirimi tutarını doğrular (ör.",
      "line": 58
@@ -140,7 +140,7 @@
       }
      ],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "İndirim sonrası genel toplamı doğrular (ör.",
      "line": 63
@@ -155,7 +155,7 @@
       }
      ],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "Minimum sipariş uyarısının verilen metni içerdiğini doğrular (ör.",
      "line": 68
@@ -164,7 +164,7 @@
      "name": "expectNoMinOrderWarning",
      "params": [],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "Minimum sipariş uyarısının gösterilmediğini doğrular.",
      "line": 73
@@ -173,7 +173,7 @@
      "name": "expectCheckoutDisabled",
      "params": [],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "\"Siparişi onayla\" butonunun pasif olduğunu doğrular.",
      "line": 78
@@ -182,7 +182,7 @@
      "name": "expectCheckoutEnabled",
      "params": [],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "\"Siparişi onayla\" butonunun aktif olduğunu doğrular.",
      "line": 83
@@ -197,7 +197,7 @@
       }
      ],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "Sepette ürünün bulunmadığını doğrular.",
      "line": 88
@@ -212,7 +212,7 @@
       }
      ],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "Üst menüdeki sepet sayacının verilen adet olduğunu doğrular (sepet sayfasında).",
      "line": 93
@@ -221,7 +221,7 @@
      "name": "expectEmpty",
      "params": [],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "Sepetin boş olduğunu doğrular.",
      "line": 98
@@ -429,7 +429,7 @@
       }
      ],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "Ürün kartının katalogda göründüğünü doğrular.",
      "line": 64
@@ -449,7 +449,7 @@
       }
      ],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "Ürün kartındaki fiyatın verilen tutar olduğunu doğrular (ör.",
      "line": 69
@@ -469,7 +469,7 @@
       }
      ],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "Ürün kartında verilen kampanya adının göründüğünü doğrular (ör.",
      "line": 74
@@ -484,7 +484,7 @@
       }
      ],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "Üst menüdeki sepet sayacının verilen adet olduğunu doğrular.",
      "line": 79
@@ -618,7 +618,7 @@
       }
      ],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "Giriş hatası mesajının verilen metin olduğunu doğrular.",
      "line": 35
@@ -633,7 +633,7 @@
       }
      ],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "Verilen bayi adıyla oturum açıldığını ve kataloğun açıldığını doğrular.",
      "line": 40
@@ -642,7 +642,7 @@
      "name": "expectOnLoginPage",
      "params": [],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "Giriş sayfasında olunduğunu doğrular.",
      "line": 46
@@ -741,7 +741,7 @@
      "name": "expectConfirmation",
      "params": [],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "Sipariş onayının ve sipariş numarasının gösterildiğini doğrular.",
      "line": 43
@@ -756,7 +756,7 @@
       }
      ],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "Onaylanan siparişin genel toplamını doğrular (ör.",
      "line": 49
@@ -765,7 +765,7 @@
      "name": "expectConfirmedOrderInHistory",
      "params": [],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "Onay sayfasında gösterilen siparişin sipariş geçmişinde listelendiğini doğrular.",
      "line": 54
@@ -780,7 +780,7 @@
       }
      ],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "Verilen sipariş numarasının sipariş geçmişinde listelendiğini doğrular.",
      "line": 61
@@ -800,7 +800,7 @@
       }
      ],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "Sipariş geçmişindeki siparişin genel toplamını doğrular.",
      "line": 66
@@ -809,7 +809,7 @@
      "name": "expectNoOrders",
      "params": [],
      "returns": "void",
-     "kind": "action",
+     "kind": "expect",
      "async": false,
      "doc": "Sipariş geçmişinin boş olduğunu doğrular.",
      "line": 71

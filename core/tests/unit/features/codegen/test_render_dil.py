@@ -33,6 +33,7 @@ import pytest
 
 from tp_core.audit import content_hash
 from tp_core.features.codegen import checks, render
+from tp_core.features.codegen import platform as platformlar
 from tp_core.features.codegen.render import RenderError, RenderInput
 
 from .test_checks import FIXTURES, RULES, golden_case, golden_mapping, symbols
@@ -49,9 +50,9 @@ DEALERS = {
     "bayi2": {"password": "Demo123!", "name": "Sahil Bayi"},
 }
 GOLDEN_NOLAR = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
-# TS page object metodu `goto` Java'da ayrılmış sözcüktür: Java tablosunda aynı adla bulunamaz
-# (011 §2.5 "birebir" kuralının tek istisnası; adı Ş4 belirler). Testte yer tutucu ad.
-JAVA_GOTO = "open"
+# TS page object metodu `goto` Java'da ayrılmış sözcüktür; Java adı tek kaynak tablodan
+# (011 §2.5 "birebir" kuralının tek istisnası).
+JAVA_GOTO = platformlar.JAVA_AD_ESLEME["goto"]
 UYARI = (
     "Doğrulanmamış çıktı: adımlar tarayıcıda doğrulandı; bu kod derlenmedi ve koşulmadı; "
     "page object kütüphanesi TypeScript tablosundan türetilen adları varsayar."
@@ -412,7 +413,7 @@ def test_web_java_guard_bozuk_ciktiyi_yakalar(tmp_path: Path) -> None:
     ad = Path(r.test_file).name
     for bozuk, kod in (
         (r.content.replace("catalogPage().openCart();",
-                           "catalogPage().openCart(); page().close();"), "unknown_accessor"),
+                           "catalogPage().openCart(); page().close();"), "raw_driver"),
         (r.content.replace("import org.testng",
                            "import com.microsoft.playwright.Page;\nimport org.testng"),
          "forbidden_import"),

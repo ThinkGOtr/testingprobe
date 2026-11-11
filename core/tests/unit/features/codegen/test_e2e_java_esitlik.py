@@ -30,6 +30,8 @@ from pathlib import Path
 
 import pytest
 
+from tp_core.features.codegen import platform as platformlar
+
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[4]
 TS_PAGES = REPO / "demo-app/e2e/pages"
@@ -40,8 +42,8 @@ JAR = REPO / "toolchain/java-araclar/target/java-araclar.jar"
 JAVA = json.loads((HERE / "symbols-java-web.json").read_text("utf-8"))
 TS_FIXTURE = json.loads((HERE / "symbols.json").read_text("utf-8"))
 
-# TS metot adı Java ayrılmış sözcüğüyse Java adı (tek kaynak; Ş1: platform.JAVA_AD_ESLEME).
-JAVA_AD_ESLEME = {"goto": "goTo"}
+# TS metot adı Java ayrılmış sözcüğüyse Java adı (tek kaynak).
+JAVA_AD_ESLEME = platformlar.JAVA_AD_ESLEME
 TUR = {"string": {"String"}, "number": {"int", "double"}, "boolean": {"boolean"}}
 EXPECT_ADI = re.compile(r"^expect(?:$|[A-Z0-9_])")  # toolchain/symbols ile aynı kural
 
@@ -120,11 +122,6 @@ def test_tek_sozlesme_hatasi_okuma_metodu() -> None:
     assert [e["message"].split(":")[0] for e in JAVA["errors"]] == ["readOrderNumber"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="java-araclar kind kuralı yalnız 'dogrula' önekini tanıyor; web Java'da expect* → "
-    "kind:'expect' olmalı (Ş3: SembolCikarici.tur, TS EXPECT_ADI kuralı eklenmeli)",
-)
 def test_kind_ts_ile_ayni() -> None:
     for sinif, metotlar in _java_tablosu().items():
         for m in metotlar:
