@@ -1,8 +1,10 @@
 # AI Automation Testing (Test Engineering Suite) — Demo Teknik Tasarımı
 
-> **Sürüm:** v1.7 · 2026-11-10 · **Hazırlayan:** Gökhan Sipahi · **Gözden geçirecek:** Cengizhan Bey, Hakan, İsmail
+> **Sürüm:** v1.8 · 2026-11-11 · **Hazırlayan:** Gökhan Sipahi · **Gözden geçirecek:** Cengizhan Bey, Hakan, İsmail
 > **Bağlayıcı kaynak:** "AI Automation Testing — Geliştirme Ekibi için Ürün Brief'i" (Cengizhan Bey, 30.10.2026). Bu doküman o brief'in **demo dilimini** tarif eder. Brief'ten sapmalar §19'dadır.
 > **Spec Kit nedir:** GitHub'ın açık kaynak "spesifikasyon güdümlü geliştirme" aracı. Bu doküman önce projenin değişmez kurallarına (constitution, §3), sonra her kilometre taşı için ayrı spec → plan → görev → uygulama döngüsüne (§21) girdi olur.
+>
+> **v1.7 → v1.8 (2026-11-11, 012 rol ve yetki modeli v2, ADR-0002):** 8 rol (`admin` Sistem Yöneticisi, `auditor` Denetçi, `analyst` Analist, `po` PO, `tester` Testçi, `engineer` Automation Engineer, `developer` Developer, `viewer` Görüntüleyici); `presenter` kalktı (→ `admin`). Her uç bir izin anahtarı ister (`tp_core/auth/yetki.py`, MIMARI-SOZLESME §5); red 403 `yetki_yok` + `authz.denied`. Case kararı ve yayını Testçi'ye geçti, son onay Analist'te (yeni `ready` durumu); PO onayı yalnız Jira (portal ucu 410); CI tetik Automation Engineer; demo kontrolleri `TP_DEMO_MODE=1` ile Sistem Yöneticisi/Automation Engineer. §2, §2.1, §7, §8.10, §8.13, §8.14 güncellendi. Spec `specs/012-rol-yetki/ANALIZ.md`.
 >
 > **v1.6 → v1.7 (2026-11-10, ADR-0001 onaylandı):** **AI Probe ortak kimliği** (§8.14; §3 satır 12, §8.10, §9, §14 güncellendi). Constitution v2.0.0 (MAJOR): İlke XII — AP ile kod/ekran/DB paylaşımı yok, ortak kimliğe yalnızca belgelenmiş HTTP kimlik API'si (devir + oturum kontrolü) ile bağlanılır, Firebase SDK'sı TP'ye girmez; İlke VII — on-prem `TP_AUTH_MODE=local` varsayılan. Spec `specs/010-aiprobe-sso/`.
 >
@@ -77,13 +79,13 @@ Renkler ekibin diyagramıyla aynı: **AI adımı (taslak)** · **İnsan kapısı
 | # | Adım (diyagram) | Tür | Kim | Sistem davranışı | Ekranda |
 |---|---|---|---|---|---|
 | 1 | **Jira** — AC ve açıklama | Sistem | Analist | Rovo MCP ile story, açıklama ve kabul kriterleri okunur | Story listesi |
-| 2 | **Ön inceleme** — soru, eksik ve **kod/veri tutarlılığı** | AI + İnsan | AI, Analist | (a) İç tutarlılık: belirsizlik, eksik AC, çelişki, test edilemeyen madde. (b) **Kodla karşılaştırma:** uygulamanın GitHub reposu salt okunur incelenir. (c) **Veriyle karşılaştırma:** uygulamanın veritabanı salt okunur sorgulanır. Her bulgu kanıtlıdır (dosya:satır, sorgu + sonuç) ve kanıt deterministik olarak yeniden doğrulanır. Analist her bulgu için: **dokümanı düzelt** (AI önerisi → onay → sistem Jira'daki açıklama/AC'yi günceller) · **kod/veri hatalı** (bug taslağı) · **bilinçli fark** (gerekçeli). Engelleyici bulgu kalmayana kadar yeniden kontrol → doküman "son hal". Kalan sorular Jira yorumu olarak yazılır, `tp-po-pending` etiketi eklenir (§8.2b) | Portal: bulgu kartları + kanıt; önerilen metin farkı; Jira'da güncellenmiş story |
+| 2 | **Ön inceleme** — soru, eksik ve **kod/veri tutarlılığı** | AI + İnsan | AI, Analist | (a) İç tutarlılık: belirsizlik, eksik AC, çelişki, test edilemeyen madde. (b) **Kodla karşılaştırma:** uygulamanın GitHub reposu salt okunur incelenir. (c) **Veriyle karşılaştırma:** uygulamanın veritabanı salt okunur sorgulanır. Her bulgu kanıtlıdır (dosya:satır, sorgu + sonuç) ve kanıt deterministik olarak yeniden doğrulanır. Analist her bulgu için: **dokümanı düzelt** (AI önerisi → Analist kararı → PO düzeltmeyi uygular, sistem Jira'daki açıklama/AC'yi günceller) · **kod/veri hatalı** (bug taslağı) · **bilinçli fark** (gerekçeli). Engelleyici bulgu kalmayana kadar yeniden kontrol → doküman "son hal". Kalan sorular Jira yorumu olarak yazılır, `tp-po-pending` etiketi eklenir (§8.2b) | Portal: bulgu kartları + kanıt; önerilen metin farkı; Jira'da güncellenmiş story |
 | 3 | **PO teyidi** — insan kapısı | İnsan | PO | PO Jira'da soruları cevaplar (gerekirse AC'yi günceller) ve `tp-po-approved` etiketini koyar; ürün etiketi okur, story'yi güncel haliyle yeniden çeker. Etiket yoksa case üretimine geçilmez | Jira'da PO cevabı → portalda "PO onaylı" |
-| 4 | **Test case** — AI iskelet, QA onay | AI + İnsan | AI, Analist (QA) | Şemalı pozitif/negatif/sınır case'ler (AC ve PO cevaplarına bağlı); QA onay/düzelt/reddet; onaylılar `publish_test_cases` ile Jira'ya (önizleme → yayın). **Claude kanalı:** Claude Code taslak üretir → `submit_draft_cases` → aynı QA onayı | Case kartları, sayaç, kabul oranı; Jira'da Test issue'ları |
-| 5 | **Kod taslağı** — AI, ayrı dalda PR | AI | Mühendis + AI | Playwright MCP ile adımlar uygulamada doğrulanır → page object eşlemesi → şablonla TypeScript test → yerel kontrol → bot ayrı dalda PR açar | Adım ekran görüntüleri; PR linki |
-| 6 | **Review** — insan + kasıtlı kırma | İnsan | Mühendis | Mühendis kodu inceler. **Kasıtlı kırma (a), hata yakalama kanıtı:** portaldaki "kırarak doğrula" düğmesi uygulamayı `BREAK_CAMPAIGN` bayrağıyla açar ve testi koşturur; test **kırmızı** olmalı (değilse PR "zayıf test" işaretlenir). Sonra bayraksız yeşil. Ardından merge | Yeşil → kırmızı → yeşil; "test hata yakalıyor ✓" |
+| 4 | **Test case** — AI iskelet, Testçi kararı, Analist onayı | AI + İnsan | AI, Testçi, Analist | Şemalı pozitif/negatif/sınır case'ler (AC ve PO cevaplarına bağlı); Testçi üretir ve kabul/düzelt/reddet kararı verir (`ready`); Analist son onayı verir ya da gerekçeyle geri gönderir; onaylıları Testçi `publish_test_cases` ile Jira'ya yayınlar (önizleme → yayın). **Claude kanalı:** Claude Code taslak üretir → `submit_draft_cases` → aynı Testçi kararı ve Analist onayı (token'ı Testçi alır) | Case kartları, sayaç, kabul oranı; Jira'da Test issue'ları |
+| 5 | **Kod taslağı** — AI, ayrı dalda PR | AI | Automation Engineer + AI | Playwright MCP ile adımlar uygulamada doğrulanır → page object eşlemesi → şablonla TypeScript test → yerel kontrol → bot ayrı dalda PR açar | Adım ekran görüntüleri; PR linki |
+| 6 | **Review** — insan + kasıtlı kırma | İnsan | Automation Engineer | Automation Engineer kodu inceler. **Kasıtlı kırma (a), hata yakalama kanıtı:** portaldaki "kırarak doğrula" düğmesi uygulamayı `BREAK_CAMPAIGN` bayrağıyla açar ve testi koşturur; test **kırmızı** olmalı (değilse PR "zayıf test" işaretlenir). Sonra bayraksız yeşil. Ardından merge | Yeşil → kırmızı → yeşil; "test hata yakalıyor ✓" |
 | 7 | **Kurum git'i** — korumalı ana dal | Sistem | — | Ruleset: doğrudan push yok, CI + 1 insan onayı ile merge | Merge edilmiş PR |
-| 8 | **CI runner** — gece ve deploy | Sistem | — | Workflow tetikleri: PR, `main` push, **gece** (`schedule`), **deploy** (`repository_dispatch`, demoda portal düğmesiyle elle) | Tetiklenen koşu |
+| 8 | **CI runner** — gece ve deploy | Sistem | — | Workflow tetikleri: PR, `main` push, **gece** (`schedule`), **deploy** (`repository_dispatch`, demoda Automation Engineer portal düğmesiyle elle) | Tetiklenen koşu |
 | 9 | **Cihaz ve API** — Sauce, QA ortamı | Sistem | — | Onaylı testler **Sauce Labs** bulut tarayıcısında (Sauce Connect) ve yerel yedek job'da koşar; uygulama QA ortamı olarak CI'da ayağa kalkar | Sauce video linki |
 | 10 | **Sonuçlar** — JUnit XML, Allure | Sistem | — | Playwright reporter'ları: `junit` (JUnit XML), `allure-playwright` (allure-results), JSON; artefakt olarak saklanır ve çekirdek tarafından alınır | Allure raporu linki |
 | 11 | **Kontrol Kulesi** — kalite, flaky, karne | Sistem | — | Çekirdek JUnit XML'i ayrıştırıp veritabanına yazar; portalda tek ekran: son koşular, geçme oranı, flaky testler (aynı commit'te değişen sonuç / retry ile geçen), uygulama/story karnesi, AI katkısı (kabul oranı, süre) | Kontrol Kulesi ekranı |
@@ -93,7 +95,7 @@ Renkler ekibin diyagramıyla aynı: **AI adımı (taslak)** · **İnsan kapısı
 
 **Demoda iki kırılma senaryosu** (karar §0-16):
 - **Hata yakalama (adım 6 ve 12–14):** `BREAK_CAMPAIGN` ile kampanya indirimi yanlış hesaplanır → test kırmızı → triage "gerçek defect" → mükerrer kontrolü → taslak → testçi onayı → Jira'da Bug.
-- **Locator kırılması (adım 12, bakım yolu):** `make break` (`add-to-cart` → `cart-add`) → triage "test bakımı/locator" → yalnızca locator'ı değiştiren onarım PR'ı → mühendis onayı → yeşil.
+- **Locator kırılması (adım 12, bakım yolu):** `make break` (`add-to-cart` → `cart-add`) → triage "test bakımı/locator" → yalnızca locator'ı değiştiren onarım PR'ı → Automation Engineer onayı → yeşil.
 
 Demo story'si mutlaka `add-to-cart` ve kampanya hesabı adımlarını içerir.
 
@@ -111,7 +113,7 @@ Demo story'si mutlaka `add-to-cart` ve kampanya hesabı adımlarını içerir.
 | PII maskeleme | Her model çağrısında | Demoda kapalı (sentetik veri, karar §0-23); geçitte kanca hazır, müşteri verisinde zorunlu |
 | Güvenlik gösterimi | Opsiyonel adım | Kapsam dışı |
 | Erişilebilirlik denetimi | WCAG 2.2 AA, CI'da her koşuda (§20.1) | `@axe-core/playwright` ile demo story'sinin sayfalarında kontrol; ihlal sayısı Kontrol Kulesi'nde; kritik ihlal için bug taslağı |
-| Serbest metin gereksinim | Ürün özelliği (§20.1) | Portalda gereksinim kutusu; PO teyidi Jira yerine portalda (PO rolü); sonra aynı akış |
+| Serbest metin gereksinim | Ürün özelliği (§20.1) | Portalda gereksinim kutusu; sonra aynı akış. PO teyidi 012'den beri yalnız Jira kanalından (portal PO ucu 410; simülatör kipinde simüle Jira'ya etiket) |
 | Test yönetimi arka uçları | Jira, Xray, TestRail, Zephyr, Octane | Jira + **Xray Cloud (deneme sürümü)**; TestRail ve Zephyr sonra |
 
 ---
@@ -223,7 +225,7 @@ Demo story'si mutlaka `add-to-cart` ve kampanya hesabı adımlarını içerir.
 
 | Tablo | Alanlar (özet) |
 |---|---|
-| `app_user` | id, ad, rol (`analyst`/`engineer`/`presenter`), parola hash'i |
+| `app_user` | id, ad, rol (`admin`/`auditor`/`analyst`/`po`/`tester`/`engineer`/`developer`/`viewer`; 012 göçü `presenter` → `admin`), parola hash'i |
 | `requirement` | id, jira_key, başlık, kabul kriterleri, kaynak_hash, çekim_zamanı, `ac_missing` |
 | `test_case` | id (deterministik: `uuid5(jira_key + case_sıra_no + üretim_no)`), requirement_id, kanal (`portal`/`ide`), sürüm, tür, risk, ön koşul, adımlar, beklenen sonuç, AC referansları, durum, `ai_generated`, içerik_hash, onaylanan_hash |
 | `review` | id, test_case_id, user_id, karar, ret_nedeni, önce/sonra, düzeltme_ölçüleri (§12), onaylanan_hash, zaman |
@@ -388,7 +390,8 @@ FailureToFix(run_id)
 
 ### 8.10 Review Portal
 - **Ekranlar:** Story listesi · Case review (onay/düzelt/reddet, ret nedeni, fark, AI süresi, kabul oranı) · Yayın önizlemesi · Kod üretimi (adım ekran görüntüleri canlı, PR linki) · Koşu ve triage (sinyaller, öneri, PR linki, **denetim paneli** ve zincir doğrulaması).
-- **Kimlik (demo):** seed kullanıcılar (`analist`, `muhendis`), oturum çerezi; her karar kullanıcı adına imzalı. `aiprobe`/`both` kipinde giriş AI Probe hesabıyla (§8.14): çok rol hesabına bağlı kişiye rol seçici, üst çubukta "Rol değiştir".
+- **Kimlik (demo):** seed kullanıcılar (rol başına bir hesap: `analist`, `po`, `testci`, `muhendis`, `sunucu` → `admin`; yeni roller için hesaplar `seed.py`'de), oturum çerezi; her karar kullanıcı adına imzalı.
+- **Yetki (012):** her uç bir izin anahtarı ister (`tp_core/auth/yetki.py` `IZINLER`, `izin("case.approve")` bağımlılığı); katalogda olmayan izin reddedilir (yazma ve okuma). Red 403 `yetki_yok` + `authz.denied` denetim kaydı. `GET /auth/me` `izinler` listesini döner; portal menü, sayfa (`IzinGerekli`) ve düğmeleri (`useIzin`) buna göre gösterir — gizleme kontrol değildir, kontrol çekirdektedir. Görevler ayrılığı role göredir: bir kişi birden çok rol alır, rol hesapları arasında geçer (K1, K2). Rol ataması AI Probe'dadır (K5). Okuma süzgeçleri: `developer` yalnız onaylı/yayınlı case ve açılmış/bağlanmış bug görür, `TP_ORTAM=prod` iken koşu başlatamaz; `auditor` ve `viewer` ham artefakt ve canlı olay görmez; denetim kaydının tamamını `admin`/`auditor`, diğerleri kendi olaylarını görür. Rol ve izin tablosu: `specs/012-rol-yetki/ANALIZ.md` §3–§4. `aiprobe`/`both` kipinde giriş AI Probe hesabıyla (§8.14): çok rol hesabına bağlı kişiye rol seçici, üst çubukta "Rol değiştir".
 - **REPLAY rozeti** kayıtlı çıktı kullanıldığında görünür.
 
 ---
@@ -440,7 +443,7 @@ FailureToFix(run_id)
 
 **Bilgi kaynakları (13 salt okuma araç, `ALLOWED_AGENT_TOOLS["assistant"|"assistant_deep"]`):**
 - Ürünün kendisi: `product_search`, `product_read` — imaja değil, `make up` ön adımında üretilen ve yalnız core-worker'a `:ro` bağlanan **bilgi paketinden** (`var/tp-bilgi/`, izin listeli portal/core kaynakları ve dokümanlar, MANIFEST + sha256 + üretim sır taraması).
-- Testing Probe verisi: `probe_get`, `probe_list`, `probe_jobs`, `probe_audit`, `probe_my_queue` — mevcut GET servis fonksiyonları, uç-düzeyi rol kısıtları aynen.
+- Testing Probe verisi: `probe_get`, `probe_list`, `probe_jobs`, `probe_audit`, `probe_my_queue` — mevcut GET servis fonksiyonları; araç → uç tablosu izin kataloğundan türetilir, asistanın okuduğu veri rolün okuma izinlerini aşmaz (012).
 - Test edilen uygulama: mevcut `search_code`, `get_file_contents`, `db_schema`, `db_query` (§8.2b erişim kuralları).
 - Canlı Jira: `jira_issue` — yalnız Testing Probe'da kaydı olan anahtarlar, dar `JiraOkuyucu` (yazma metodu yok, httpx katmanında yalnız GET), kısıtlı yorumlar elenir, kişi kimlikleri modele gitmez; global Jira kovası 30/dk.
 - CI: `ci_log` — DB adım özeti → güvenli açılan yerel log (`O_NOFOLLOW` + inode) → GitHub iş logu (`actions:read`); ≤ 16 KB, sır temizliği + maskeleme.
@@ -451,7 +454,7 @@ FailureToFix(run_id)
 
 **Otomatik yükseltme:** Haiku cevabı ürüne özgü soruda "Emin değil" (veya "Kısmen"/toparlama) ise ve bütçe ön koşulları tutarsa (kalanlar ≥ $0.20, global sayaç) aynı transaction'da **ayrı çocuk mesaj** (`assistant_deep`, `tetik='otomatik'`) açılır; zincir yok; `unique(ust_mesaj_id)` elle basışla yarışı çözer.
 
-**Öneri:** `rules/assistant/oneriler.yaml` kural dosyası (İlke IX), kapalı olgu ve operatör kümesi, ifade değerlendirme yok (İlke XI); modelsiz `GET /assistant/suggestions` (model kapalıyken de çalışır, `ai_call` yazmaz). Eylem: iç rota ("Git"), Jira yorum/kayıt taslağı (kullanıcı kopyalar ve kendisi açar; "Jira'yı aç" bağlantısını yalnız sunucu kurar), Jira kaydı, bilgi. Testing Probe'un kendi onaylı hattı olan işlerde (bug taslağı, case yayını, tutarlılık bulgusu) Jira eylemi yasak. Rol hizalama testi: `rota` eylemli kuralın rolleri, ilgili ucun `require_role` kümesinin alt kümesi. "Neden? Sor" öneriyi sohbete bağlam olarak taşır; "Başka ne yapabilirim?" model destekli ≤ 3 ek öneri ("AI önerisi · doğrulanmadı").
+**Öneri:** `rules/assistant/oneriler.yaml` kural dosyası (İlke IX), kapalı olgu ve operatör kümesi, ifade değerlendirme yok (İlke XI); modelsiz `GET /assistant/suggestions` (model kapalıyken de çalışır, `ai_call` yazmaz). Eylem: iç rota ("Git"), Jira yorum/kayıt taslağı (kullanıcı kopyalar ve kendisi açar; "Jira'yı aç" bağlantısını yalnız sunucu kurar), Jira kaydı, bilgi. Testing Probe'un kendi onaylı hattı olan işlerde (bug taslağı, case yayını, tutarlılık bulgusu) Jira eylemi yasak. Rol hizalama testi: `rota` eylemli kuralın rolleri, ilgili ucun izin anahtarına sahip rollerin (`yetki.py`) alt kümesi. "Neden? Sor" öneriyi sohbete bağlam olarak taşır; "Başka ne yapabilirim?" model destekli ≤ 3 ek öneri ("AI önerisi · doğrulanmadı").
 
 **Bütçe ve hız (K3):** asistan günlük $10, kullanıcı günlük $1, kök soru başı $0.50 (çocuklar dahil); kullanıcı saatte 30 soru, kullanıcı başı 1 bekleyen (kısmi tekil indeks), global 6 bekleyen (advisory lock). Beklenen ≈ $0.03/soru.
 
@@ -465,7 +468,7 @@ FailureToFix(run_id)
 
 **Kip:** `TP_AUTH_MODE=local|aiprobe|both`. `local` (varsayılan; on-prem, İlke VII) bugünkü davranıştır: argon2 giriş, `tp_session` çerezi, dış çağrı yok. `aiprobe`: yalnız ortak kimlik (`POST /auth/login` 404). `both`: ikisi birden (geçiş ve acil erişim); yerel parola yalnız bağsız hesaplar içindir — `kimlik_bagi`'lı hesap yerel girişte 403 `aiprobe_gerekli`. `aiprobe`'da yerel oturum ve bağsız/yerel oturumdan üretilmiş `tpt_` token'ı reddedilir. `aiprobe`/`both`'ta oturum çerezi `__Host-tp_session` (Secure, HttpOnly, SameSite=Lax, Path=/), durum çerezi `__Host-aiprobe_state` (yalnız düz `http://localhost` geliştirmesinde Secure'suz `aiprobe_state`, CONTRACT).
 
-**Giriş devri (PLAN §2.3, CONTRACT "Ürün tarafı"):** `GET /auth/aiprobe/login?continue=` → 32 baytlık `state` + çerez (10 dk) → `{AIPROBE_ID_ORIGIN}/login?product=testing-probe&state=&continue=`. Dönüş `GET /auth/aiprobe/callback?code=&state=` → çerezle sabit zamanlı karşılaştırma → `POST {AIPROBE_HOME_RUN_URL}/v1/handoff/redeem` (TP servis hesabının Google ID token'ı; sağlayıcı enjekte edilebilir, varsayılan GCE metadata sunucusu) → yanıtın `state`'i de eşleşmeli, `org` ∈ `AIPROBE_ALLOWED_ORGS` (boşsa red, fail-closed) → TP rolleri = `roles` ∩ TP rolleri. `continue` yalnız `/` ile başlayan göreli yol (`//`, `\`, kontrol karakteri reddedilir → `/`).
+**Giriş devri (PLAN §2.3, CONTRACT "Ürün tarafı"):** `GET /auth/aiprobe/login?continue=` → 32 baytlık `state` + çerez (10 dk) → `{AIPROBE_ID_ORIGIN}/login?product=testing-probe&state=&continue=`. Dönüş `GET /auth/aiprobe/callback?code=&state=` → çerezle sabit zamanlı karşılaştırma → `POST {AIPROBE_HOME_RUN_URL}/v1/handoff/redeem` (TP servis hesabının Google ID token'ı; sağlayıcı enjekte edilebilir, varsayılan GCE metadata sunucusu) → yanıtın `state`'i de eşleşmeli, `org` ∈ `AIPROBE_ALLOWED_ORGS` (boşsa red, fail-closed) → TP rolleri = `roles` ∩ TP rolleri (012: devirde gelen `presenter`, AI Probe'daki rol kayıtları güncellenene kadar `admin` sayılır). `continue` yalnız `/` ile başlayan göreli yol (`//`, `\`, kontrol karakteri reddedilir → `/`).
 
 **Kişi ↔ rol hesabı:** `kimlik_bagi(external_uid, app_user_id UNIQUE)`. Aday hesaplar = kişiye bağlı ve rolü `roles` içinde olan `app_user`'lar. **JIT:** `roles`'taki bir rol için bağlı hesap yoksa o rol adına yeni `app_user` (`ad_soyad` = devirdeki `name`; kullanılamaz parola özeti → yerel girişle açılamaz) + bağ (`auth.jit_user` denetimi). Tek aday → oturum; birden çok → imzalı 10 dk'lık seçim çerezi + portal `/rol-sec` → `POST /auth/aiprobe/rol-sec`. **Rol değiştir:** `POST /auth/aiprobe/rol-degistir` — parola yok; sunucu bağı ve rolü taze oturum kontrolüyle yeniden doğrular, eski oturumu iptal eder, **yeni oturum kimliği** verir.
 

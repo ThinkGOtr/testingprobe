@@ -70,16 +70,23 @@ make status
 
 | Adres | Ne |
 |---|---|
-| http://127.0.0.1:8080 | Review portal — kullanıcılar `analist`, `muhendis`, `sunucu`, `po`, `testci`; parola `.env` → `SEED_USER_PASSWORD` |
+| http://127.0.0.1:8080 | Review portal — rol başına bir seed hesabı (`analist`, `muhendis`, `sunucu` → `admin`, `po`, `testci` ve yeni roller); parola `.env` → `SEED_USER_PASSWORD` |
 | http://127.0.0.1:8000/health | core-api sağlık |
 | http://127.0.0.1:8081 | Örnek uygulama (`bayi1` / `Demo123!`, bkz. [DEMO-VERISI.md](DEMO-VERISI.md)) |
 | http://127.0.0.1:8090 | Jira simülatörü (PO: `po@sim.local`, parola `.env` → `JIRA_SIM_PO_PASSWORD`) |
 | `127.0.0.1:55432` | Postgres |
 
-Roller: **analist** gereksinim, bulgu, case ve yayın; **po** serbest metin gereksinimde PO teyidi
-(Jira yolunda PO jira-sim'de onaylar); **muhendis** kod üretimi, kırarak doğrula, merge, locator
-onarımı; **testci** bug taslağı kararları; **sunucu** deploy/gece tetikleri, demo kontrolleri,
-Kontrol Kulesi.
+Roller (012; tablo `specs/012-rol-yetki/ANALIZ.md` §3–§4): **Analist** (`analyst`) gereksinim
+içe aktarma, ön inceleme ve bulgu kararları, case son onayı; **PO** (`po`) gereksinim teyidi yalnız
+Jira'da (jira-sim'de etiket), doküman düzeltmesini Jira'ya uygulama, manuel baz değer; **Testçi**
+(`tester`) case üretimi, kabul/düzelt/reddet, yayın, Claude Code token'ı, bug taslağı kararları;
+**Automation Engineer** (`engineer`) kod üretimi, kırarak doğrula, PR inceleme/merge, locator onarımı,
+CI tetikleri; **Sistem Yöneticisi** (`admin`, eski `presenter`/`sunucu`) Kontrol Kulesi, denetim ve
+zincir doğrulaması, demo kontrolleri; **Denetçi** (`auditor`) denetim kaydı ve zincir doğrulaması,
+salt okunur; **Developer** (`developer`) onaylı case ve koşuları görür, prod dışında manuel koşu
+başlatır; **Görüntüleyici** (`viewer`) Kontrol Kulesi ve koşu özetleri. Demo kontrolleri (Sistem
+Yöneticisi, Automation Engineer) yalnız `.env`'de `TP_DEMO_MODE=1` iken açıktır. Bir kişi birden çok
+rol alabilir; "Rol değiştir" ile geçer.
 
 ### 2.4 Eksik sır senaryosu (opsiyonel doğrulama)
 
@@ -150,13 +157,14 @@ make demo-reset          # main → demo-baseline, demo-app-web derlenir, baseli
 make demo-web-sync A=--watch   # ayrı terminalde, portaldaki "Buton kimliğini değiştir" için açık kalır
 ```
 
-1. **Demo-A** (analist): Gereksinimler → "Jira'dan çek" → TPD-1 → "Ön incelemeyi başlat" →
-   F1 ve F3 **Dokümanı düzelt**, F2 ve F4 **Kod/veri hatalı** → "Düzeltmeleri Jira'ya yaz" → PO
-   jira-sim'de onaylar → "Case üret" → onay → yayın.
+1. **Demo-A**: Analist → Gereksinimler → "Jira'dan çek" → TPD-1 → "Ön incelemeyi başlat" →
+   F1 ve F3 **Dokümanı düzelt**, F2 ve F4 **Kod/veri hatalı** → PO (portal) "Düzeltmeleri Jira'ya
+   yaz" → PO jira-sim'de onaylar → Testçi "Case üret" → kabul/düzelt → Analist son onay → Testçi
+   yayın.
 2. `make demo-check` → çıkış `0` ve `C3 DEFECT ADAYI` (değilse F2 yanlış karar almıştır).
-3. **Demo-B** (muhendis): Kod üretimi → C1, C2, C3, C5 → kırarak doğrula → merge → push CI.
-4. **Faz 4**: C3 defect adayı → triage → testçi "TPD-5 kaydına bağla"; sunucu "Buton kimliğini değiştir" →
-   muhendis "Onarım PR'ı aç" → merge → yeşil.
+3. **Demo-B** (Automation Engineer): Kod üretimi → C1, C2, C3, C5 → kırarak doğrula → merge → push CI.
+4. **Faz 4**: C3 defect adayı → triage → Testçi "TPD-5 kaydına bağla"; Sistem Yöneticisi "Buton
+   kimliğini değiştir" (`TP_DEMO_MODE=1`) → Automation Engineer "Onarım PR'ı aç" → merge → yeşil.
 
 Bütün AI çıktıları **REPLAY** rozetlidir; bu, dış hesap bağlanana kadar beklenen durumdur.
 
@@ -259,7 +267,7 @@ Erişimi verin; izinden önce başlamış Appium izni görmez, yeniden başlatı
 | `TP_TOOLCHAIN_TOKEN` / `DEMOAPP_RO_PASSWORD` eksik hatası | Eski bir `.env`: `make env` yalnızca boş anahtarları doldurur, sonra `make up` |
 | `make status` "çalışmıyor" | Ortam kapalı; `make up` |
 | Docker daemon'a bağlanılamıyor | Docker Desktop'ı (veya Colima'yı) başlatın, `docker info` ile doğrulayın |
-| "Manuel baz değer girilmedi" / "Varsayılan manuel baz değer yok" | Bilgi: manuel case hazırlama süresi story başına ölçülmedikçe kazanç oranı gösterilmez. Ölçüm portalda gereksinim detayından (analist/PO) giren ve kaynak notuyla girilir; değer uydurulmaz. `TP_MANUAL_BASELINE_S` yalnızca "varsayılan"dır ve kazanca girmez |
+| "Manuel baz değer girilmedi" / "Varsayılan manuel baz değer yok" | Bilgi: manuel case hazırlama süresi story başına ölçülmedikçe kazanç oranı gösterilmez. Ölçüm portalda gereksinim detayından (PO) giren ve kaynak notuyla girilir; değer uydurulmaz. `TP_MANUAL_BASELINE_S` yalnızca "varsayılan"dır ve kazanca girmez |
 
 **Demo**
 

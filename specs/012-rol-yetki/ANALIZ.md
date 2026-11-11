@@ -204,3 +204,20 @@ QA, frontend), hedefli testler, tam paket, Chrome for Testing ile rol rol ekran 
 - **Paket önerisi dışında kalan:** acil erişim (break-glass), proje kapsamı, Erişim Yöneticisi
   ekranı, bildirim tablosunun yeniden yazımı (Jira bahsetmeleri bugünkü roller üzerinden kalır,
   yalnız yayın bildirimi Testçi'ye gider).
+
+### Deploy notları
+
+- **Göç kendiliğinden koşar:** `make up` (tp-vm'de `deploy/aiprobe/bin/up.sh` → `make up`) compose'un
+  `migrate` servisini (`alembic upgrade head`) çalıştırır; `core-api` ve `core-worker`
+  `migrate: service_completed_successfully` koşuluyla başlar. `presenter` → `admin` ve case durum
+  göçleri için elle adım yoktur.
+- **Ortam değişkenleri:** tp-vm'de `.env` her açılışta `tp-env` sırrından (`/run/tp/tp.env`) yazılır;
+  `TP_DEMO_MODE=1` (ve gerekiyorsa `TP_ORTAM`) bu sırra eklenmelidir. Sır güncellemesi GCP'ye
+  yazmadır, ayrı onayla yapılır. Compose `x-core-env` değişkenleri tek tek listeler (`env_file` yok):
+  `TP_ORTAM` ve `TP_DEMO_MODE` `docker-compose.yml`'a eklenmeden `.env` değeri konteynere ulaşmaz
+  (şerit tablosunda sahibi yok; S1 `config.py` ile birlikte ekler).
+- **AI Probe:** ürün kaydı değişikliği (`products/testing-probe.yaml`, üretilen
+  `products_config.json` aiprobe-home imajına gömülür) ancak aiprobe-home yeniden deploy edilince
+  etkinleşir. Kişilerin canlı rol kayıtlarının (`presenter` → `admin`) güncellenmesi ayrı onaylı
+  yazmadır; o zamana kadar TP `presenter`'ı `admin` sayar (`yetki.ESKI_ROLLER`). `admin` artık
+  `admin_roles`'tadır: MFA'sız (`acr=1`) devirde `admin` rolü dönmez.

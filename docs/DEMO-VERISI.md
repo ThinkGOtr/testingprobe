@@ -27,11 +27,11 @@ ajan); sunum sırasında `make demo-check` koşturmak kod üretimini bozmaz, yal
 | 6 adet sınırı | Bugünkü kod `adet // 6` → 1 bedava; test `expectFreeQuantity("P-001", 0)` kırmızı | `defect_candidate`, "beklenen "0", gerçekleşen "1" (3/3 tekrar)", **PR açılmaz**, onarım yok |
 | Kırarak doğrula (C2) | bayraksız → `BREAK_CAMPAIGN=1` → bayrak kaldırıldı | yeşil → kırmızı (assertion; `kirma_beklenen_kirmizi`) → yeşil = "Test hata yakalıyor ✓" |
 | Kırarak doğrula (C1, C5) | Kampanya dışı davranış | `weak` (zayıf test): merge engellenmez, açık insan kabulü (`onay_notu`) ister |
-| Merge | İnsan (muhendis) portalda; zorunlu `local-ci` yeşil | push CI koşusu (main) otomatik; deploy/nightly sunucu tetikler |
+| Merge | İnsan (Automation Engineer, `muhendis`) portalda; zorunlu `local-ci` yeşil | push CI koşusu (main) otomatik; deploy/nightly Automation Engineer tetikler |
 | Faz 4: C3 → bug | C3 defect adayı → triage `product_defect` (kural; sinyaller assertion_farki, eleman_bulundu, sayfa_yapisi_beklenen, tutarli_tekrar) → bug taslağı (REPLAY `bug_draft/HATA`) → JQL araması yalnızca **TPD-5**'i bulur → dup_rank `high` + öneri **bağla** | Canlı yığında doğrulandı (2026-10-31): testci "TPD-5 kaydına bağla" → TPD-5'e tek kanıt yorumu, `Relates` TPD-1, `Test` TPD-10 (C3'ün Test issue'su); yeni Bug yok; ikinci karar/yayın 409 (idempotent) |
 | Faz 4: F2/F4 taslakları | Demo-A `code_defect` kararı taslağı hemen mükerrer hattına alır | F2 → TPD-5 `high`/bağla (golden `f2-kampanya`); F4 → tohum Bug'larında JQL aday bulmaz (`aday yok`, dup_rank çağrılmaz), öneri `new`; demo sırasında açılmış kampanya Bug'ları aramaya girerse golden `f4-kredi-limiti` (`optional`/`by_summary`) bunları `low` sıralar (REPLAY-MISS değil); "Onayla ve Jira'da aç" yeni Bug açar (`Relates` TPD-1). Canlı yığında doğrulandı (2026-11-01): F2 → TPD-5'e ikinci kanıt yorumu, bağlantılar tekrarlanmaz; F4 → yeni Bug + `Relates` TPD-1 |
 | Faz 4: kırma koşusu | C2 "Kırarak doğrula" kırmızı aşaması → `product_defect` (`kaynak=kirma`, `kasitli_kirilma`) → taslak (golden `kirma-kampanya`) | dup_rank golden'ları aday kümesini `required`/`optional` + demo sırasında açılabilecek Bug'ların özetleriyle (`by_summary`) beyan eder: TPD-5 ters belirtidir (6 adette erken bedava; kırmada 7 adette bedava yok) → `medium`, öneri **yeni kayıt** (`new`); testçi "Onayla ve Jira'da aç" ile Bug açar (`Relates` TPD-1, `Test` TPD-9 — C2'nin Test issue'su). Önceki kırma Bug'ı aramadaysa o `high`/bağla önerilir. Canlı yığında doğrulandı (2026-11-01). Sıra kısıtı yok. Tek istisna: testçi yayınlanmış bir Bug'ın özetini Jira'da değiştirirse o aday beyan dışı kalır → dürüst REPLAY-MISS |
-| Faz 4: locator | `make break` (ya da sunucu "Buton kimliğini değiştir" + `make demo-web-sync`) → demo-app-web main'den derlenir → push CI 19 kırmızı (Demo-B'de C1/C2/C5 merge edildiyse 22), hepsi `test_maintenance/locator` (`catalog.addToCart` add-to-cart → cart-add, kapsam `product-card-P-00x`, sha eşleşiyor) | muhendis "Onarım PR'ı aç" → yalnızca `e2e/pages/catalog/locators.ts` testId (1 satır), AST repair ✓, tam paket ✓ → PR → merge (hash + head bağlı) → push CI yeşil. **Ana demo yolu (Demo-B C1/C2/C5 merge edildi):** 22/36 kırmızı, 21 kardeş hata aynı PR'la `merged`, tam paket ve push CI 36/36 yeşil (prova k3 raporu). Merge'süz yol: 19 kırmızı, 18 kardeş, 33/33 |
+| Faz 4: locator | `make break` (ya da Sistem Yöneticisi "Buton kimliğini değiştir" + `make demo-web-sync`; `TP_DEMO_MODE=1`) → demo-app-web main'den derlenir → push CI 19 kırmızı (Demo-B'de C1/C2/C5 merge edildiyse 22), hepsi `test_maintenance/locator` (`catalog.addToCart` add-to-cart → cart-add, kapsam `product-card-P-00x`, sha eşleşiyor) | Automation Engineer "Onarım PR'ı aç" → yalnızca `e2e/pages/catalog/locators.ts` testId (1 satır), AST repair ✓, tam paket ✓ → PR → merge (hash + head bağlı) → push CI yeşil. **Ana demo yolu (Demo-B C1/C2/C5 merge edildi):** 22/36 kırmızı, 21 kardeş hata aynı PR'la `merged`, tam paket ve push CI 36/36 yeşil (prova k3 raporu). Merge'süz yol: 19 kırmızı, 18 kardeş, 33/33 |
 | Faz 4: ortam | demo-app-web durdurulup CI tetiklenir | `saglik.ok=false` → `environment` (kural, AI çağrısı yok); "Onarım PR'ı aç" 409 |
 
 **Sahne notu (F2 bug taslağı):** Demo-A'da F2 `code_defect` kararı bir tutarlılık bug taslağı
@@ -40,7 +40,7 @@ girer ve AI TPD-5'i `high` + "bağla" önerir; sahnede "TPD-5 kaydına bağla" s
 
 **Sahne notu (locator):** `make break`'i önceki push/baseline CI koşusu bittikten sonra çalıştırın:
 uygulama koşu ortasında yeniden derlenirse o koşunun kalan testleri yeni testId'yi görür ve dürüstçe
-`unknown`/`environment` sınıflanır (onarım önerisi üretilmez). Sunucu düğmesi kullanılıyorsa host'ta
+`unknown`/`environment` sınıflanır (onarım önerisi üretilmez). Portal düğmesi kullanılıyorsa host'ta
 `make demo-web-sync A=--watch` açık olmalıdır (core-worker imaj derleyemez). Yeşil koşularda
 `locators.spec.ts` her sayfanın aria snapshot'ını `results/artifacts/<test>/<sayfa>.aria.yml` olarak
 yazar (yalnızca sözleşme geçtiyse); onarımın rol+ad doğrulaması son yeşil koşunun `katalog.aria.yml`
@@ -56,7 +56,7 @@ başlangıç testId'sinde (`add-to-cart`) olmasını ister. `make break` + onar�
 tekrar oynatmadan önce `make demo-baseline` (ya da demo sıfırlaması) çalıştırın; aksi halde
 `POST /code/generate` erken ve Türkçe bir mesajla reddeder (canlı modda engel yok).
 
-**Sahne notu (`make demo-reset`):** sunucu sıfırlaması forge'u, açık PR'ları ve demo uygulamasını
+**Sahne notu (`make demo-reset`):** demo sıfırlaması forge'u, açık PR'ları ve demo uygulamasını
 başlangıca döndürür, veritabanını korur. jira-sim **sıfırlanmaz** (anahtar sayacı geri sarılsaydı yeni
 Bug'lar veritabanındaki eski `external_ref` anahtarlarıyla çakışırdı): yalnızca bu sistemin açtığı
 Bug'lar (issuetype Bug + `AI-generated` + `tp-<uuid>` etiketi) silinir; TPD-5, Story/Test issue'ları ve
@@ -142,8 +142,8 @@ Mevcut Bug kayıtları (story değil; mükerrer arama havuzu):
 - Açıklamaları da story'ler gibi görev şablonundadır (metinler aşağıda, TPD-4'ten sonra).
 
 Sunum notu: TPD-2 ve TPD-3 denetimi bir doğrulanmış **uyarı** bulgusuyla `findings_open`'da durur
-(her doğrulanmış bulgu analist kararı ister). Analist uyarıya karar verir ya da "Son hal olarak
-onayla" der; ikincisinde kararsız uyarı "son hal onayı" gerekçesiyle `accept_difference` olarak
+(her doğrulanmış bulgu analist kararı ister). Analist uyarıya karar verir ya da PO "Son hal olarak
+onayla" der (012: `apply-doc-fixes` PO'nun); ikincisinde kararsız uyarı "son hal onayı" gerekçesiyle `accept_difference` olarak
 kaydedilir ve PO yorumunda listelenir. REPLAY'de AI süresi ölçülmez; "AI + review" süresi yalnız
 review süresidir. Manuel baz değer story başınadır: ölçüm portaldan (gereksinim detayı → "Manuel baz
 değer") ya da `PUT /requirements/{id}/baseline` ile, giren ve kaynak notuyla girilir. Ölçümü olmayan
@@ -409,5 +409,6 @@ cevap yazar ve `tp-po-approved` etiketi koyar). Etiketler: `tp-po-pending`, `tp-
 `AI-generated`, `tp-<uuid>`.
 
 ## Portal kullanıcıları
-`analist` (analyst), `muhendis` (engineer), `sunucu` (presenter), `po` (po), `testci` (tester);
-parola `.env`'deki `SEED_USER_PASSWORD`.
+`analist` (analyst), `muhendis` (engineer), `sunucu` (012 göçüyle `admin`, eski presenter), `po` (po),
+`testci` (tester); `auditor`, `developer`, `viewer` rolleri için seed hesapları `seed.py`'dedir.
+Parola `.env`'deki `SEED_USER_PASSWORD`. Rol ve izinler: `specs/012-rol-yetki/ANALIZ.md` §3–§4.

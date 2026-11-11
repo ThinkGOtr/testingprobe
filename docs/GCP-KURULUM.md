@@ -29,7 +29,7 @@ Yayına çıkan adresler (`antreklabs.com` DNS'i odeaweb cPanel'de; §3.3'te iki
 
 | Adres | Ne |
 |---|---|
-| `https://testing-probe.antreklabs.com` | Review portal (analist, PO, mühendis, testçi, sunucu) |
+| `https://testing-probe.antreklabs.com` | Review portal (8 rol: Sistem Yöneticisi, Denetçi, Analist, PO, Testçi, Automation Engineer, Developer, Görüntüleyici) |
 | `https://bayi.testing-probe.antreklabs.com` | Demo uygulaması (Bayi Sipariş Portalı) |
 
 Jira (iyzitrace.atlassian.net), Xray, GitHub (ThinkGOtr/testingprobe-demo-app + Actions), Sauce ve
@@ -300,7 +300,8 @@ systemctl status tp-demo-web-sync --no-pager | head -5
 ## 9. Tarayıcıdan doğrula
 
 1. `https://testing-probe.antreklabs.com` → portal girişi
-   (`sunucu` / `.env`'deki `SEED_USER_PASSWORD`) → **Demo yol haritası** açılır, "0/14".
+   (`sunucu` — Sistem Yöneticisi, rol `admin` / `.env`'deki `SEED_USER_PASSWORD`) → **Demo yol haritası**
+   açılır, "0/14". Demo kontrolleri için sunucudaki `.env`'de `TP_DEMO_MODE=1` olmalı.
 2. `https://bayi.testing-probe.antreklabs.com` → bayi girişi (`bayi1` / `Demo123!`).
 3. Portalda **Koşular** ekranında `make demo-reset`'in kuyruğa aldığı GitHub koşusunun yeşil
    bittiğini gör.
