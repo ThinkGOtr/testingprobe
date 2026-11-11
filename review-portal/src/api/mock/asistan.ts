@@ -481,6 +481,44 @@ function cevapUret(m: MockMesaj): { cevap: AsistanCevabi; kaynak: AsistanMesaji[
     };
   }
 
+  // Asistan denetimi (011 F7): talimat manipülasyonu sorusu modele gitmeden engellenir; rakip
+  // firma hakkında soru uyarı notuyla cevaplanır (core'da kararı kod verir; burada örnek).
+  if (/önceki (tüm )?talimat|sistem prompt/i.test(soru)) {
+    return {
+      kaynak: "denetim",
+      amac: null,
+      cevap: bos({
+        cevap_bloklari: [
+          { tur: "paragraf", metin: `${ORNEK} Bu soru denetimden geçmedi (Talimat manipülasyonu); asistana iletilmedi. Sorunuzu iş akışıyla ilgili olarak yeniden yazabilirsiniz.` },
+        ],
+        denetim: {
+          karar: "engelle",
+          engellenen: "soru",
+          soru: { puan: 8, karar: "engelle", kategoriler: ["prompt_injection"], gerekce: "Sistem talimatlarını açıklatma girişimi.", kaynak: "sim" },
+          cevap: null,
+        },
+      }),
+    };
+  }
+  if (asistanMockAyar.mod !== "off" && /rakip/i.test(soru)) {
+    return {
+      kaynak: "model",
+      amac: derin ? "assistant_deep" : "assistant",
+      cevap: bos({
+        cevap_bloklari: [{ tur: "paragraf", metin: `${ORNEK} Rakip ürünler hakkında doğrulanmamış karşılaştırma yapmıyorum; kendi ürünümüzün test durumunu anlatabilirim.` }],
+        guven: "orta",
+        guven_gosterimi: "Genel bilgi",
+        notlar: ["Denetim uyarısı: soru rakip firmaya ilişkin (Rekabete aykırı); cevabı dikkatle değerlendirin."],
+        denetim: {
+          karar: "uyar",
+          engellenen: null,
+          soru: { puan: 62, karar: "uyar", kategoriler: ["rekabete_aykiri"], gerekce: "Rakip firma hakkında yorum isteniyor.", kaynak: "sim" },
+          cevap: { puan: 90, karar: "gec", kategoriler: ["temiz"], gerekce: "Cevap tarafsız.", kaynak: "sim" },
+        },
+      }),
+    };
+  }
+
   // Sözlük: son hata bağlamı + "ne demek/neden" sınıfı (modelsiz, ücretsiz).
   if (!derin && sonHata && /ne demek|neden|hata/i.test(soru)) {
     const metin = sonHata.gorunen_metin || sonHata.detail || "bu hata";

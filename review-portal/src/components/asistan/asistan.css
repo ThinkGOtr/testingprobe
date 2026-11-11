@@ -871,3 +871,15 @@ html:has(.asistan-bune-bindirme):has(.asistan-bune-ipucu) {
     scroll-padding-top: 136px;
   }
 }
+
+/* Asistan denetimi (011 F7): engel/uyarı kutusu ve uyarı notu. */
+.asistan-denetim {
+  margin: 6px 0;
+}
+.asistan-denetim .satir-ogeler {
+  margin-top: 4px;
+}
+.asistan-not-denetim {
+  border-left: 3px solid var(--warn);
+  padding-left: 8px;
+}

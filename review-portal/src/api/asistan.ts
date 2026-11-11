@@ -28,7 +28,27 @@ export interface Sohbet {
 }
 
 export type MesajDurumu = "pending" | "running" | "done" | "error" | "iptal";
-export type CevapKaynagi = "model" | "sozluk" | "sablon" | "kapali";
+export type CevapKaynagi = "model" | "sozluk" | "sablon" | "kapali" | "denetim";
+
+/** Asistan denetimi (011 F7, K11): soru/cevap puanı. Kararı core'daki kod verir (eşikler + kategori kuralları). */
+export type DenetimKarari = "gec" | "uyar" | "engelle";
+
+export interface DenetimOzeti {
+  /** 0 = en riskli, 100 = temiz. */
+  puan: number;
+  karar: DenetimKarari;
+  kategoriler: string[];
+  gerekce: string;
+  kaynak: "tp-gecit" | "sim" | "agent-probe" | string;
+}
+
+export interface CevapDenetimi {
+  /** Genel sonuç; `calismiyor`: denetim erişilemedi, asistan cevap vermedi (fail-closed). */
+  karar: DenetimKarari | "calismiyor";
+  engellenen: "soru" | "cevap" | null;
+  soru: DenetimOzeti | null;
+  cevap: DenetimOzeti | null;
+}
 export type AsistanAmaci = "assistant" | "assistant_deep";
 
 export type BlokTuru = "baslik" | "paragraf" | "liste" | "kod";
@@ -96,6 +116,8 @@ export interface AsistanCevabi {
   derin_onerilir?: boolean;
   /** Mock arka uç cevabı: arayüz "ÖRNEK VERİ" gösterir. */
   ornek_veri?: boolean;
+  /** Asistan denetimi sonucu (011 F7); denetim kapalıysa yok. */
+  denetim?: CevapDenetimi | null;
 }
 
 export interface AsistanMesaji {

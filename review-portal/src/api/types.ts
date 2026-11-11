@@ -1536,3 +1536,59 @@ export interface PortalOlayi {
   id?: string;
   data: Record<string, unknown>;
 }
+
+// ------------------------------------------------------------------ Agent Probe (011 F6, K10)
+
+/** Agent Probe'da ön tanımları tamamlanmış (Testing Probe'da görünür) AI ajan ürünü. */
+export interface AjanUrunu {
+  kod: string;
+  ad: string;
+  aciklama: string;
+  hazir: boolean;
+}
+
+export interface AjanUrunleriYaniti {
+  kip: "tp" | "sim" | string;
+  /** Bu sürümde Agent Probe simüle edilir (her zaman true). */
+  simulasyon: boolean;
+  urunler: AjanUrunu[];
+}
+
+export type AjanTestiDurumu = "queued" | "running" | "passed" | "failed" | "error";
+
+export interface AjanTestiAyrintisi {
+  senaryo: string;
+  kategori: string;
+  sonuc: "passed" | "failed";
+  aciklama: string;
+}
+
+export interface AjanTestiTalebi {
+  talep_no: string;
+  urun_kodu: string;
+  durum: AjanTestiDurumu;
+  ozet: string;
+  sonuc: { toplam?: number; gecen?: number; kalan?: number; ayrintilar?: AjanTestiAyrintisi[] };
+  url: string | null;
+  simulasyon: boolean;
+  baslatan: string | null;
+  olusturma: string;
+  guncelleme: string;
+  islenme: string | null;
+  /** Testing Probe'un sonuca göre sürdürdüğü süreç. */
+  surec: "tamamlandi" | "bulgu" | "onay_gecersiz" | "hata" | null;
+  surec_notu: string | null;
+}
+
+export interface AjanTestiGorunumu {
+  requirement_id: string;
+  urun_kodu: string | null;
+  urun: AjanUrunu | null;
+  baglayan: string | null;
+  baglanma: string | null;
+  simulasyon: boolean;
+  baslatilabilir: boolean;
+  engel: string | null;
+  talep: AjanTestiTalebi | null;
+  gecmis: AjanTestiTalebi[];
+}

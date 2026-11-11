@@ -70,6 +70,7 @@ import { mockOlayYayinla } from "./olaylar";
 import { javaDosyaYolu, javaTestKodu, uygulamayaCevir } from "./platformlar";
 import { PLATFORMLAR, platformUyarla, type Platform } from "../../lib/platform";
 import { asistanMockSifirla, asistanRotalari } from "./asistan";
+import { AJAN_URUNU_CASE_YOK, ajanMockSifirla, ajanProbeRotalari, ajanUrunuBagli } from "./ajanProbe";
 import { oneriKuleOlcumu, oneriMockSifirla, oneriRotalari } from "./oneri";
 import type { AsistanliKule } from "../../components/asistan/OnerilerOlcumKarti";
 import { kirmaTaslagiMi } from "../../lib/yolHaritasi";
@@ -130,6 +131,7 @@ export function mockSifirla(): void {
   veri = ilkVeri();
   demoKirik = false;
   asistanMockSifirla();
+  ajanMockSifirla();
   oneriMockSifirla();
   mockOturumuAyarla(null);
   try {
@@ -658,6 +660,8 @@ function poOnayla(id: string, govde: unknown): GereksinimDetay {
 function caseUret(id: string): IsYaniti {
   rolGerekli("analyst");
   const g = bul(veri.gereksinimler, id, "Gereksinim");
+  // 011 F6: ajan ürününe bağlı gereksinimde test Agent Probe'da koşar (core 409 `ajan_urunu`).
+  if (ajanUrunuBagli(g.id)) throw new ApiError(409, AJAN_URUNU_CASE_YOK, { kod: "ajan_urunu" });
   if (g.po.durum !== "approved") throw new ApiError(409, "PO teyidi olmadan case üretilemez.");
   if (g.ac_missing) throw new ApiError(409, "Kabul kriteri olmayan story case üretimine gönderilmez.");
   // core URETIM_BASLANGIC: düşen case üretimi (failed) yeniden denenebilir; PO güncelliği yukarıda.
@@ -1777,6 +1781,8 @@ const ROTALAR: Rota[] = [
   ...asistanRotalari(girisGerekli),
   // Öneri düğmesi (§17, uç 10–11): api/mock/oneri.ts.
   ...oneriRotalari(girisGerekli, () => veri),
+  // Agent Probe ajan ürünleri ve testleri (011 F6; simülasyon): api/mock/ajanProbe.ts.
+  ...ajanProbeRotalari(rolGerekli, girisGerekli),
   ["POST", /^\/auth\/login$/, (_m, _q, g) => login(g)],
   ["POST", /^\/auth\/logout$/, () => logout()],
   ["GET", /^\/auth\/me$/, () => girisGerekli()],

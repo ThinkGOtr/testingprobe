@@ -12,6 +12,7 @@ import { uygulamaRotasiMi } from "../../lib/rotalar";
 import { Ikon } from "../Ikon";
 import { Cip, DisBaglanti } from "../ui";
 import { AiOneriKarti } from "./OneriKarti";
+import { DenetimKutusu, DenetimRozeti } from "./DenetimKutusu";
 
 // Renk disiplini (TASARIM-YENILEME-PLANI §3.2, §4.6): kırmızı yalnız hata/engel, indigo yalnız etkileşim/süren.
 // "Emin değil" bir hata değil, dikkat çağrısıdır (doğrulayın) → amber; "Genel bilgi" kategoriktir → nötr.
@@ -33,6 +34,7 @@ const KAYNAK_NOTU: Record<string, string> = {
   sozluk: "Hazır cevap · hata sözlüğü",
   sablon: "Hazır cevap · kayıt durumu",
   kapali: "Hazır cevap",
+  denetim: "Denetim",
 };
 
 /** Göreli zaman tek yerde (lib/format); eski içe aktarımlar için yeniden dışa aktarılır. */
@@ -230,10 +232,12 @@ export interface CevapKartiOzellikleri {
   onGit?: () => void;
 }
 
-export function CevapKarti({ mesaj, baslik, derinIncelenebilir, derinIncele, derinCalisiyor, geriBildir, kalanSoru, onGit }: CevapKartiOzellikleri) {
+export function CevapKarti({ mesaj, baslik, derinIncelenebilir: derinIstegi, derinIncele, derinCalisiyor, geriBildir, kalanSoru, onGit }: CevapKartiOzellikleri) {
   const derinNotId = useId();
   const c = mesaj.cevap;
   if (!c) return null;
+  // Denetimin engellediği/denetimsiz kalan cevap ayrıntılı incelenemez (core 422; 011 F7).
+  const derinIncelenebilir = derinIstegi && mesaj.kaynak !== "denetim";
   const guven = c.guven_gosterimi ?? null;
   const ornek = c.ornek_veri === true || mockZorunlu();
   const yonlendirmeler = (c.yonlendirmeler ?? []).filter((y) => uygulamaRotasiMi(y.rota));
@@ -259,16 +263,18 @@ export function CevapKarti({ mesaj, baslik, derinIncelenebilir, derinIncele, der
           </Cip>
         )}
         {mesaj.kaynak && KAYNAK_NOTU[mesaj.kaynak] && <span className="soluk kucuk">{KAYNAK_NOTU[mesaj.kaynak]}</span>}
+        {c.denetim && <DenetimRozeti denetim={c.denetim} />}
         {ornek && (
           <span className="rozet rozet-mock" title="Örnek veri: hazırlanmış cevap, gerçek asistan cevabı değil.">
             ÖRNEK VERİ
           </span>
         )}
       </div>
+      <DenetimKutusu denetim={c.denetim} />
       <Bloklar bloklar={c.cevap_bloklari ?? []} />
       {c.eylem_reddi && <p className="asistan-not">Asistan işlem yapmaz; bu işlemi ilgili ekranda siz yaparsınız.</p>}
       {(c.notlar ?? []).map((n, i) => (
-        <p key={i} className="asistan-not">
+        <p key={i} className={n.startsWith("Denetim uyarısı") ? "asistan-not asistan-not-denetim" : "asistan-not"}>
           {n}
         </p>
       ))}
