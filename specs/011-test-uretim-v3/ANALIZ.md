@@ -1,6 +1,6 @@
 # 011 — Gereksinimden test üretimi v3 ("Prompt Seti v2") — Analiz
 
-Tarih: 2026-11-11 · Dal: `feat/case-gen-v3` (dev'den) · Durum: kararlar alındı, geliştirme başlıyor
+Tarih: 2026-11-11 · Dal: `feat/case-gen-v3` (dev'den) · Durum: dalga 1–2 birleştirildi; review döngüsü (dalga 4) sürüyor
 
 Kaynak: Cengizhan Günaydın, "Test Probe & Agent Probe – Gereksinimden Test Üretim Prompt Seti (v2)"
 (3 PDF; `.docs/` altında, repoya girmez). 1. belge P0, P0.5, P8, P9; 2. belge P1–P7 ekleri;
@@ -48,6 +48,20 @@ tp-vm'e deploy (ayrıca istenecek).
 | K13 | Kapsam öğeleri | Tek ortak `coverage_items` listesi (kimlik, AC, tanım, geçerli/geçersiz) hem tek turda hem onaylı modelde; kapsam matrisi kodda hesaplanır |
 | K14 | Gherkin | Dahil: onaylı ve hazır case'ler için "Gherkin indir" (kodda dönüşüm, model çağrısı yok) |
 | K15 | Demo provası | Tam yeni akış kayıtlı çıktılarla (strict REPLAY): model onayı, review, denetim kapısı provada oynanır |
+
+
+İnceleme döngüsü sonrası kararlar (2026-11-11, ürün sahibi):
+
+| # | Konu | Karar |
+|---|---|---|
+| K16 | Açık soru / varsayım döngüsü | "Açık soruları PO'ya gönder": sorular mevcut ön inceleme hattıyla story'ye Jira yorumu olarak gider; PO yanıtı geri okunup soruya bağlanır ve case'in beklenen sonucunun kaynağı olarak görünür; yanıtlanan soruya bağlı case için yeniden üret / düzelt önerilir |
+| K17 | Sınır değer kapsamı | Story başına case tavanı 10 → 15. Test verisiyle kurulamayan sınırda en yakın ulaşılabilir değer seçilir ya da "test verisi hazırlığı" ön koşulu yazılır. P1 sınır öğesi `out_of_scope` bırakılamaz; review bunu ACIK_BILGI_GEREKLI sayar |
+| K18 | Risk / öncelik | v3 case'te `risk` kalkar; risk değerlendirmesi `priority_rationale`'de. P1 seçicilik kuralı: yalnız para, güvenlik, veri kaybı ya da ana akışı kıran hata. Eski case'lerde risk gösterilmeye devam eder |
+| K19 | Kontrol listesi tekniği | Teknik listesine `CL` (kontrol listesine dayalı, ISTQB deneyime dayalı) ve `CL-n` kapsam öğeleri; platform eki kategorileri bunlara bağlanır, `a11y` / `security` etiketleri |
+| K20 | İki tur yükü | Model onayından sonra tur 2 otomatik başlar; kip tercihi üretim seçenekleriyle saklanır; "Seçilenleri onayla" (her case için ayrı review kaydı ve görülen hash); "Varsayım doğrulandı" tek eylem (denetim zincirine düzeltme olarak) |
+| K21 | Kalite metrikleri | Kontrol Kulesi'nde "Case kalitesi" bölümü: kapsam oranları (hazır kapsam dahil), P8 skor dağılımı, P9 kararları, tekrar oranı, asistan denetimi; prompt sürümüne göre kırılım |
+| K22 | Terimler | Hazır olma: Hazır / Varsayıma bağlı / Soru bekliyor. Yayın engelleri "Yayınlanamaz: …". P9: "Agent Probe denetimi", düğme "Agent Probe'a gönder". Asistan: "İçerik kontrolü". Menü: "Denetim kaydı". Tutarlılık kontrolü: "Yeniden kontrol et" |
+| K23 | Önceki varsayılanlar | TPD-3 (açıklamada injection) denetimi DÜZELTME_GEREKLİ kalır; başarısız Agent Probe testinde bug taslağı açılmaz |
 
 Uygulama sırasında verilen teknik kararlar (ürün kararı değil; gerekçesiyle):
 
