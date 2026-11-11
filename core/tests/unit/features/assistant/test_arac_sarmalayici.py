@@ -247,7 +247,8 @@ def test_kayit_defteri_gecit_izin_listesiyle_ayni() -> None:
     assert [s.name for s in tool_specs()] == list(ARAC_ADLARI)
 
 
-def test_arac_seti_tum_rollere_ayni_liste_veri_rol_kisiti_uygulamada() -> None:
+def test_arac_seti_veri_rol_kisiti_tanimda_ve_uygulamada() -> None:
+    """Spec 013 §4: daraltılan rol `db_*` tanımını görmez; yürütücü yine de reddeder."""
     veri_cagrildi: list[str] = []
 
     class SahteVeri:
@@ -275,7 +276,8 @@ def test_arac_seti_tum_rollere_ayni_liste_veri_rol_kisiti_uygulamada() -> None:
         )
         for rol in ("analyst", "tester")
     }
-    assert setler["analyst"].adlar == setler["tester"].adlar == frozenset(ARAC_ADLARI)
+    assert setler["analyst"].adlar == frozenset(ARAC_ADLARI)
+    assert setler["tester"].adlar == frozenset(ARAC_ADLARI) - {"db_schema", "db_query"}
     assert setler["analyst"].execute("db_schema", {}).startswith("[kanit:k1]")
     with pytest.raises(AracHatasi, match="rolünüze açık değil"):
         setler["tester"].execute("db_schema", {})
