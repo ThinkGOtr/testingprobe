@@ -226,6 +226,11 @@ Demo story'si mutlaka `add-to-cart` ve kampanya hesabı adımlarını içerir.
 | `app_user` | id, ad, rol (`analyst`/`engineer`/`presenter`), parola hash'i |
 | `requirement` | id, jira_key, başlık, kabul kriterleri, kaynak_hash, çekim_zamanı, `ac_missing` |
 | `test_case` | id (deterministik: `uuid5(jira_key + case_sıra_no + üretim_no)`), requirement_id, kanal (`portal`/`ide`), sürüm, tür, risk, ön koşul, adımlar, beklenen sonuç, AC referansları, durum, `ai_generated`, içerik_hash, onaylanan_hash |
+| `case_uretim` | id, requirement_id, uretim_no (gereksinim içinde tekil), kanal (`portal`/`ide`), tur (`uretim`/`negatif`/`teknik`), ai_call_id, `ozet` (JSONB: üretimin case dışındaki üst düzey listeleri, aşağıda), oluşturma — migrasyon 0021 (specs/011 §4.3) |
+| `tasarim_modeli` | id, requirement_id, sürüm, içerik (JSONB), içerik_hash, onaylanan_hash, durum (`draft`/`approved`/`rejected`/`superseded`), ai_call_id, üretim_modu — iki turlu üretimin onaylı test tasarım modeli (F3, 0022) |
+| `case_set_review` · `case_set_audit` | P8 review (uretim_no, set_hash, skor, içerik) ve P9 denetim kararı (set_hash, karar `KABUL`/`DUZELTME_GEREKLI`/`ENGELLE`, kaynak `tp-gecit`/`agent-probe`, talep_no) (F2/F5, 0023) |
+| `requirement.uretim_secenekleri` | Analistin son üretim seçimi (kip, platformlar, test seviyesi, benimsenen standartlar, kapsam dışı); sonraki üretimde varsayılan (K5, 0024) |
+| `ajan_urunu_baglantisi` · `ajan_testi_talebi` · `asistan_denetim` | AI ajan ürünü bağlantısı ve Agent Probe test talebi (F6); asistan sorusu/cevabı puanı (yon, puan, kategoriler, karar `gec`/`uyar`/`engelle`) (F7, 0025) |
 | `review` | id, test_case_id, user_id, karar, ret_nedeni, önce/sonra, düzeltme_ölçüleri (§12), onaylanan_hash, zaman |
 | `api_token` | id, user_id, kapsam (`publish`/`submit`), son_kullanma, iptal |
 | `step_mapping` | id, test_case_id, adım_no, po_sınıfı, po_metodu, argümanlar, doğrulandı, ekran_görüntüsü_ref |
@@ -250,19 +255,42 @@ Demo story'si mutlaka `add-to-cart` ve kampanya hesabı adımlarını içerir.
 
 `ai_call`, `tool_call`, `audit_event` için uygulama rolünün yalnızca INSERT/SELECT yetkisi vardır. Asistan tabloları append-only değildir (sohbet 90 gün saklanır); asistanın denetim izi `ai_call.ek` (`{kanal:"asistan", kullanici_id, mesaj_id}`) ve `tool_call` (`kanal='asistan'`) üzerinden kalıcıdır.
 
-**Test case şeması:**
-```json
-{
-  "title": "string (≤120)",
-  "type": "positive | negative | boundary",
-  "risk": "high | medium | low",
-  "acceptance_criteria_refs": ["AC1"],
-  "preconditions": ["string"],
-  "steps": [{"id": "S1", "action": "string", "data": "string|null", "expected": "string"}],
-  "expected_result": "string",
-  "tags": ["AI-generated"]
-}
-```
+**Test case şeması (v3, specs/011 §4.1):** tek kaynak `rules/schemas/case_generation.schema.json`
+(`cases.items`); model çıktısı, insan düzeltmesi (`edit`) ve IDE taslağı aynı şemayla doğrulanır.
+v2 alanları korunur, v3 alanları eklenir (hepsi zorunlu; boş liste / `null` olabilenler belirtilmiştir):
+
+| Alan | Değer | Not |
+|---|---|---|
+| `title`, `risk`, `acceptance_criteria_refs`, `preconditions`, `steps[{id S1…, action, data\|null, expected}]`, `expected_result`, `tags` | v2 ile aynı | `tags` içinde `AI-generated`; ≤ 8 adım |
+| `type` | `positive`/`negative`/`boundary`/`authorization`/`integration` | son ikisi v3'te eklendi (Jira'da "yetki", "entegrasyon") |
+| `technique[]` | `EP`/`BVA`/`DT`/`ST`/`PW`/`UC`/`EG` | `covers` önekleriyle çift yönlü uyumlu (BVA ↔ `BV-`) |
+| `covers[]` | kapsam öğesi kimlikleri (`EP-V1`, `EP-I2`, `BV-3`, `DT-R2`, `ST-S1>S2`, `PW-1`, `UC-MF\|AF1\|EF1`, `EG-1`) | `coverage_items`'ta tanımlı olmalı |
+| `priority`, `priority_rationale` | `P1`/`P2`/`P3` + gerekçe (etki, olasılık, iş kritikliği) | |
+| `test_level` | `UNIT`…`UAT` ya da `null` | üretim girdisindeki seviye (varsayılan `SYSTEM`) |
+| `verification_point` | `UI`/`API`/`event`/`DB`/`log`/`other` | beklenen sonucun doğrulandığı yer |
+| `readiness` | `ready`/`assumption_dependent`/`blocked` | aşağıdaki kural |
+| `assumption_refs[]`, `open_question_refs[]` | `A1…`, `Q1…` | üst listelerde tanımlı olmalı |
+| `test_data[{name, value, class, synthetic, is_attack_payload}]` | `synthetic: true` zorunlu | saldırı metni yalnız burada (`is_attack_payload: true`) |
+| `teardown[]` | temizlik adımları | gerekmiyorsa boş |
+| `platform`, `requires_real_device`, `standard_refs[]` | platform ya da `null`; boolean; standart maddeleri | platform eki yoksa `null` / `false` / boş |
+
+**Üretimin üst düzey listeleri** (`case_uretim.ozet`; hepsi zorunlu, boş olabilir):
+`open_questions[{id Qn, question, owner}]`, `assumptions[{id An, statement, owner}]`,
+`coverage_items[{id, ac_ref, definition, valid}]`, `negative_coverage[{item, decision:
+tested|covered_by|out_of_scope, rationale}]`, `not_covered[{item, reason}]`,
+`observations[{standard_ref, note}]`, `automation_open_points[]`,
+`config_matrix{parameters[{name, values[]}], constraints[]}`, `testability_gaps[{control, missing}]`.
+Kapsam matrisi modele yazdırılmaz; `coverage_matrix` kodda hesaplanır (§12).
+
+**Hazır olma (`readiness`) kuralı:** `ready` → iki atıf listesi boş, `expected_result` ve bütün
+adım beklenenleri dolu; `assumption_dependent` → en az bir `assumption_refs`, beklenenler dolu;
+`blocked` → en az bir `open_question_refs`, `expected_result` boş (adım beklenenleri boş olabilir).
+Yalnız `ready` case onaylanır (K6), yayınlanır ve Gherkin'e aktarılır.
+
+**Eski (v2) case kuralı (K9):** `readiness` anahtarı olmayan içerik eskidir (`legacy: true`): hazır
+sayılır, olduğu gibi kalır, düzeltmesi yalnız v2 zorunlu alanlarıyla doğrulanır (düzeltmeye
+`readiness` eklenirse tam v3 aranır), tutarlılık kuralları ve denetim kapısı aranmaz. IDE taslağı
+her zaman tam v3 ister. Canlı ortamdaki v2 case'ler böylece korunur; migrasyonlar yalnız ekleme yapar.
 
 **Ret nedeni taksonomisi:** halüsinasyon adımı · eksik kabul kriteri · yanlış test verisi · kapsam dışı · tekrar · yanlış eleman/aksiyon.
 
@@ -292,6 +320,13 @@ FailureToFix(run_id)
 - **Diğer aktiviteler:** idempotent; dış etkili olanlar `external_ref` kaydına bağlı.
 - **Sürümleme:** iş akışı değişiklikleri `workflow.patched` ile.
 
+**Case üretimi v3 (specs/011 §3):** `RequirementToCases` şu sırayla ilerler (köşeli parantez = insan):
+`[üretim formu: kip, platformlar, test seviyesi, benimsenen standartlar, kapsam dışı]` →
+(iki tur: tasarım modeli üretimi → `[model onayı]` →) case üretimi → otomatik review (P8, tavsiye)
+→ isteğe bağlı derinleştirme (negatif / teknik; ek taslak) → `[case kararları]` → `[review tamam]`
+→ denetim (P9, Agent Probe portu) → `[yayın]` → Gherkin dışa aktarımı (isteğe bağlı, §8.3).
+Kısa bölümler: §8.2c (üretim ve tutarlılık), §8.2d (iki tur, review, denetim, platform; dalga 2).
+
 ### 8.2 Gereksinim okuma
 - Rovo MCP, demo projesinde salt okuma kullanıcı + API token; istemci izin listesi yalnızca okuma araçları.
 - Çekilen: özet, açıklama, kabul kriterleri. (Confluence sayfası varsa özetlenir; demoda zorunlu değil.)
@@ -299,16 +334,106 @@ FailureToFix(run_id)
 - İstek sınırı: çağrı sayacı, küçük JQL, 5 dk önbellek.
 - **B planı:** `JiraRestReader` (aynı arayüz). Demo günü Rovo bağlantısı prova edilir; sorun varsa B planı varsayılan olur.
 
+### 8.2c Case üretimi v3: tutarlılık ve onay (specs/011 §4.2)
+
+- **Çıktı:** case'ler + üretimin üst düzey listeleri (§7). Liste kısmı `case_uretim.ozet`'e,
+  case'ler `test_case`'e `draft` olarak yazılır; aynı üretim numarası ikisini bağlar.
+- **Case düzeyi kurallar** (`schema.consistency_problems`, eski case'te aranmaz): (1) `covers`
+  kimlikleri `coverage_items`'ta tanımlı; (2) `technique` ↔ `covers` öneki çift yönlü uyumlu;
+  (3) `assumption_refs` / `open_question_refs` üst listelerde tanımlı; (4) `readiness` kuralı (§7);
+  (5) test verisi sentetik; (6) saldırı verisinin metni case'in başka hiçbir alanında (başlık, ön
+  koşul, adım, adım verisi, beklenen, temizlik) geçmez (büyük/küçük harf ve boşluk sadeleştirilmiş
+  alt dizgi); (7) AC atıfları gereksinimde var.
+- **Set düzeyi kurallar** (`set_problems`): her geçersiz (`valid:false`) öğenin negatif kapsam kararı
+  var; `tested`/`covered_by` kararlı öğe en az bir case'in `covers`'ında; kapsanmayan öğe/AC
+  `not_covered`'da ya da `out_of_scope` kararında gerekçeli. Set ihlali 422 değil, `uyarilar` ve
+  denetim kaydıdır (IDE taslağı parça parça gelebilir).
+- **Uygulama:** model çıktısındaki ihlalde case yine taslak yazılır, `uyarilar`'da gösterilir ve
+  **onay reddedilir**; insan düzeltmesinde ve IDE taslağında case düzeyi ihlal 422'dir.
+- **Onay kuralı (K6):** yalnız hazır (`ready`) ve tutarlı case onaylanır; `serialize_cases`
+  `onay_engeli` alanında nedeni döner (varsayıma bağlı / engelli / tutarsız). Analist "Düzelt" ile
+  hazır yapar ya da reddeder. Eski (v2) case hazır sayılır (K9).
+- **Sınırlar:** story başına ≤ 10 case, case başına ≤ 8 adım; sığmayan öğe `not_covered`'a
+  gerekçesiyle yazılır. Başlığa teknik öneki yazılmaz; case kimliği deterministik `uuid5`'tir.
+- **Özet ucu:** `GET /requirements/{id}/case-summary` üretim başına üst listeleri, kodda hesaplanan
+  kapsam matrisini (`coverage_matrix` → `{satirlar, oranlar}`; birden çok üretimin özetleri
+  birleştirilir, aynı kimlikte sonraki üretim geçerli) ve teknik/readiness dağılımını döner.
+
+### 8.2d Dalga 2 bileşenleri (specs/011 §4.3–§4.6)
+
+- **İki tur (F3, K1):** varsayılan; önce test tasarım modeli (`design-model` v1, `tasarim_modeli`),
+  analist onayı, sonra yalnız onaylı modelden case. "Tek tur (hızlı)" seçilebilir; IDE kanalı tek turdur.
+- **Review (F2, K4):** her üretimden sonra ayrı çağrı (`case-review` v1, eleştirmen rolü, 12 madde);
+  tavsiye niteliğinde, onayı ve yayını engellemez, denetime girdi olur (`case_set_review`).
+- **Denetim kapısı (F5, K2–K3):** `case-audit` v1 (Opus) Agent Probe portu arkasında; karar
+  `KABUL`/`DUZELTME_GEREKLI`/`ENGELLE` setin güncel `set_hash`'ine bağlanır (`case_set_audit`).
+  `set_hash` = güncel v3 case'lerin içerik hash'lerinin sıralı birleşiminin hash'i; set değişince
+  önceki karar geçersizdir. `TP_DENETIM_KAPISI=off` kapıyı kapatır.
+- **Platform ve derinleştirme (F4, K5, K7):** platform ekleri (Web, Mobil, Desktop, API, Data)
+  üretim girdisine eklenir, seçim `requirement.uretim_secenekleri`'nde saklanır; "Negatif genişlet"
+  / "Teknik derinleştir" mevcut sete ek taslak üretir (mevcut kimliklerle çakışmayan öğe numaraları).
+- **AI ajan ürünleri ve asistan denetimi (F6, F7):** ajan ürününde test Agent Probe'da koşar (bu
+  sürümde simülatör); asistan sorusu ve cevabı `assistant-guard` v1 (Haiku) ile puanlanır,
+  erişilemezse kapalı (fail-closed).
+
 ### 8.3 `publish_test_cases`
 - **Girdi:** yalnızca `approved` durumundaki case kimlikleri; içerik kabul etmez.
 - **Kontrol:** her case için `içerik_hash == onaylanan_hash`; değilse red.
 - **Eşleme:** issue türü `Test` (yoksa `Task` + `test-case` etiketi); özet, etiketler `AI-generated` ve `tp-<uuid>`, story bağlantısı (`is tested by`, yoksa `relates to`). Açıklama müşterinin **Jira görev şablonundadır** (`jira_adf.template_doc`; başlıklar iki dilli, içerik Türkçe): 🎯 Objective (doğrulanan davranış, onaylayan) · 🚀 Scope (tür, risk, kapsanan AC) · 🔄 User Flow (ön koşullar + ADF adım tablosu; Xray'de adımlar Xray adım alanında) · 🔗 Dependencies & Integration (kaynak story) · ℹ️ Other Information & Assets (üretim modu) · 🔑 Acceptance Criteria (beklenen sonuç) · 🧪 QA Checklist (adım başına beklenen); son satır `Kimlik: tp-<uuid> · onaylanan içerik hash: …` (idempotency işareti). Boş bölüm "Not applicable". Ürünün açtığı Bug da aynı şablondadır (`bugs/content.py description_adf`: amaç = özet + beklenen/gerçekleşen, akış = adımlar, bağımlılık = story/test, diğer = ortam/önem/kanıt).
+- **Yayın engeli sırası (specs/011 §4.7):** durum `approved` → onaylanan hash = güncel hash →
+  gereksinim PO onayı güncel → hazır (`readiness_of == ready`; eski case hazır) → (v3 case ve kapı
+  açıksa) setin güncel `set_hash`'i için `KABUL`. Önizleme her kalemde ilk engeli `islem`
+  (`blocked_not_approved`/`blocked_hash_mismatch`/`blocked_requirement_changed`/`blocked_not_ready`/
+  `blocked_gate`) ve Türkçe `neden` ile gösterir.
+- **v3 eşlemesine eklenenler:** Scope bölümüne teknik (kod + Türkçe ad), kapsam öğeleri, öncelik
+  (+ gerekçe), doğrulama noktası, test seviyesi, platform / gerçek cihaz, standart atıfları; User
+  Flow'a test verisi tablosu (Ad, Değer, Sınıf) ve numaralı temizlik adımları. Saldırı verisi
+  (`is_attack_payload`) tabloya yazılmaz: hücrede "kod bloğunda (tablonun altında)", değer tablonun
+  altında "güvenlik testi girdisi" notuyla, biçimlendirilmeden kod bloğunda. Tür karşılıkları
+  `authorization` → "yetki", `integration` → "entegrasyon".
+- **Etiketler:** `AI-generated`, `tp-<uuid>`, üretim modu `tp-mod-…`; v3 case'te ayrıca
+  `tp-tech-<TEKNİK>` ve `tp-P1|P2|P3`. Yalnız şemadaki değerler etiket olur (serbest metin etikete taşınmaz).
 - **Idempotency:** önce `external_ref` (`intent` yazılır → create → `created` + anahtar); yeniden denemede önce bu tablo, kayıt yoksa `tp-<uuid>` JQL'i. Aynı hash'te çağrı yapılmaz.
 - **Dry-run, hata yönetimi:** önizleme portalda; 429/5xx üstel geri çekilme (≤3); kısmi başarı raporlanır.
 - **MCP araçları (IDE kanalı):**
   - `submit_draft_cases(requirement_key, cases[])`: IDE'deki Copilot'un ürettiği şemalı taslakları `draft` olarak portala düşürür; şema doğrulanır; Jira'ya yazmaz.
   - `publish_test_cases(case_ids: list[uuid])`: yalnızca onaylı kimliklerle yayın.
   - Kimlik: portalın kullanıcıya verdiği kısa ömürlü (8 saat), kapsamlı bearer token (`Authorization` başlığı); sunucu yalnızca `127.0.0.1`; kayıtta kanal = `ide`, çağıran ve onaylayan ayrı.
+
+### 8.3a Gherkin dışa aktarımı (specs/011 F8, K14)
+
+`GET /requirements/{id}/cases.feature[?yalniz_yayinlanan=1]` (herkes okur) gereksinimin onaylı
+(`approved`/`published`; isteğe bağlı yalnız `published`) ve hazır güncel case'lerinden Türkçe
+Gherkin üretir (`features/cases/gherkin.py`). Dönüşüm koddadır, **model çağrısı yoktur**; aynı
+girdi aynı baytları verir. Yanıt `text/plain; charset=utf-8`, `Content-Disposition: attachment;
+filename="<anahtar>.feature"`, `X-TP-Case-Sayisi` / `X-TP-Senaryo-Sayisi` / `X-TP-Taslak-Sayisi`.
+
+- **Dahil olan:** onaylı/yayınlanmış + `readiness_of == ready` (eski v2 case dahil) + önceki
+  (PO onayı yenilenmiş) içeriğe ait değil + `approved` case'in onaylanan hash'i güncel. Uygun case
+  yoksa **404** (boş `.feature` indirilmez; portal düğmeyi zaten kapatır); gereksinim PO onayı
+  dışındaysa **409** (yayınla aynı kural).
+- **Biçim:** `# language: tr`, `Özellik: <anahtar> — <başlık>` (AC'ler yorum), case başına
+  `Senaryo:`; ön koşullar `Diyelim ki`/`Ve`, test verisi `test verileri:` adımına bağlı
+  `| ad | değer | sınıf |` tablosu; her adım `Eğer ki <eylem>` + `O zaman <beklenen>` (adım–beklenen
+  eşlemesi korunur); genel beklenen son beklenenden farklıysa `Ve`. Adım verisi tek satır ve
+  tırnaksızsa `, veri: "<değer>"`, değilse docstring. Temizlik sonda `# Temizlik:` yorumudur
+  (`Ve` adımı olsa `O zaman`'a bağlanıp doğrulama gibi okunurdu; otomasyonda hook'a dönüşür).
+- **Etiketler:** `@AC2 @BVA @EP @P1 @sınır-değer @tp-<uuid>` (AC, teknik, öncelik, Türkçe tür, case).
+- **Senaryo taslağı:** aynı AC kümesi, birincil teknik, tür, öncelik, doğrulama noktası, test
+  seviyesi, platform, ön koşullar, temizlik, adım kimlikleri ve test verisi adları olan v3 case'ler
+  — eylemleri yalnız ≤ 3 kelimelik bir aralıkta, girdileri birbirinden farklıysa — `Senaryo taslağı:`
+  olur. Örnekler belgedeki kolonlarla başlar (`| teknik | bölüm_id | girdi | beklenen |`; gerekirse
+  `girdi_2`, `sınıf`, `ara_beklenen…`). Her case kendi `Örnekler:` bloğundadır (adı case başlığı,
+  etiketi `@tp-<uuid>`). Kural tutmazsa (sütun sınırı aşılır, çok satırlı/tırnaklı veri, metinde
+  `<girdi>` gibi yer tutucu) birleştirilmez. Testler her örnek satırının açılmış hâlinin case'in
+  tek başına senaryosuyla adım adım aynı olduğunu `gherkin-official` ayrıştırıcısıyla doğrular.
+- **Kaçış:** tablo hücresinde `\` → `\\`, `|` → `\|`, satır sonu → `\n`; docstring'de `"""` →
+  `\"\"\"`; tek satırlık alanlarda satır sonu boşluk olur; etiketteki boşluk/`#`/`@` `-` olur.
+  Saldırı verisi yalnız tabloda, kaçışlı ve önünde `# güvenlik testi girdisi` yorumuyla. Sınır:
+  Gherkin hücre kenarındaki boşlukları kırpar (baş/son boşluklu değer kırpılmış okunur).
+- **Kullanım:** Case review ekranında "Gherkin indir" (uygun case sayısını gösterir; yoksa kapalı ve
+  nedenli). Dosya Cucumber/Behave/SpecFlow projesine doğrudan konur; `--tags @tp-<uuid>` tek case'i,
+  `--tags @P1` öncelik dilimini seçer. Taslak anahtar kelimesi parser'daki yazımıyla `Senaryo taslağı`dır.
 
 ### 8.4 Kod üretimi: doğrula → eşle → şablon
 1. **Bağlam:** onaylı case (≤5 adım demo için) + sembol tablosu (page object sınıfları, metotları, imzaları, locator niyetleri, `expect*` doğrulama metotları) + `rules/verify-and-map.md`.
@@ -488,6 +613,8 @@ FailureToFix(run_id)
 | GET | `/api/cases?requirement=` | Case listesi |
 | POST | `/api/cases/{id}/decision` | Onay/düzelt/reddet (Update) |
 | POST | `/api/requirements/{key}/review-complete` | Review tamam (Update) |
+| GET | `/api/requirements/{id}/case-summary` | Üretim özetleri + kapsam matrisi + teknik/readiness dağılımı (§8.2c) |
+| GET | `/api/requirements/{id}/cases.feature` | Gherkin dışa aktarımı (text/plain, §8.3a) |
 | GET | `/api/publish/preview?requirement=` | Dry-run gövdesi |
 | POST | `/api/publish` | Yayın (Update, imzalı) |
 | POST | `/api/code/generate` | `CasesToCode(case_ids)` başlat |
@@ -557,6 +684,20 @@ Tek doğruluk kaynağı repo kökündeki `docker-compose.yml`'dir; ayrıntılar 
 | Triage doğruluğu | İnsanla eşleşen sınıf / örneklem; kural ve LLM kararları ayrı | Faz 3 |
 | Hazırlık süresi | Story başına AI + review süresi (canlı ölçülür) ile manuel baz değer yan yana. **Baz değer:** İsmail, 4 demo story'si için manuel case hazırlama süresini F0 haftasında ölçer; ortalama demoda sayacın yanında gösterilir | %30–50 |
 | AI maliyeti | İş akışı başına token ve USD | Raporlanır |
+
+**Case üretimi v3 ölçüleri (specs/011 §4.9; `case-metrics` ve `case-summary`):**
+
+| Ölçü | Tanım |
+|---|---|
+| Teknik dağılımı | Güncel case'lerde tekniğe göre sayım (`teknik_dagilimi`; bir case birden çok tekniğe sayılabilir) |
+| Readiness dağılımı | `ready` / `assumption_dependent` / `blocked` sayımı (`readiness_dagilimi`; eski case `ready`) |
+| Gereksinim kapsamı | En az bir güncel case'in atıf yaptığı AC / toplam AC (`kapsam_oranlari.gereksinim_kapsami`) |
+| Öğe (bölüm) kapsamı | Bir case'in `covers`'ında yer alan kapsam öğesi / toplam öğe (`oge_kapsami`) |
+| Negatif karar kapsamı | Negatif kapsam kararı olan geçersiz öğe / toplam geçersiz öğe (`negatif_karar_kapsami`) |
+| Review skoru · denetim kararı · asistan denetimi | P8 skoru, P9 karar dağılımı, asistanda engel/uyarı oranı (dalga 2) |
+
+Belgedeki başlangıç hedefleri (ör. öğe kapsamı, negatif karar kapsamı eşikleri) **ekip hedefidir,
+standart değildir**: gösterilir, kod kapısı (eşik) yapılmaz.
 
 **Değerlendirme seti (demo):** 5 story, her biri 3 kez (~120 case); ortalama ve sapma. Prompt/kural değişikliğinde canlı modelle koşan değerlendirme işi (replay değil). Brief'teki 30 story'lik insan etiketli set demodan sonradır.
 

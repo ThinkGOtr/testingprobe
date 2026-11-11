@@ -21,15 +21,31 @@ Claude Code ──publish_test_cases──▶ core-api /mcp ──▶ worker: pu
 | Araç | Kapsam | Ne yapar | Ne yapmaz |
 |---|---|---|---|
 | `get_requirement(requirement_key)` | `submit` | Case yazılacak **PO onaylı** metni döner: `girdi` (story + kabul kriterleri, PO cevapları sorularıyla, demo uygulamasının test verisi — hepsi `<untrusted>` veri bloklarında; portal üretimiyle aynı girdi), `kabul_kriterleri` (AC kimlikleri), `onaylanan_hash`. Çağrı `tool_call`'a yazılır. | Yazmaz. PO onaylı olmayan ya da onaydan sonra değişmiş gereksinimde hata döner. |
-| `submit_draft_cases(requirement_key, onaylanan_hash, cases[])` | `submit` | §7 şemasındaki taslakları gereksinime `draft` olarak ekler (kanal `ide`). `onaylanan_hash` `get_requirement`'tan okunan değerdir; metin arada değiştiyse taslaklar reddedilir. Tek bir case şemaya uymazsa **hiçbiri** kaydedilmez; hata case sıra numarasıyla döner. Aynı içerik tekrar gönderilirse atlanır. | Jira'ya yazmaz, onaylamaz. PO onayı olmayan (ya da PO onayından sonra değişmiş) gereksinime taslak kabul etmez. |
+| `submit_draft_cases(requirement_key, onaylanan_hash, cases[], ozet?)` | `submit` | §7 şemasındaki (v3) taslakları gereksinime `draft` olarak ekler (kanal `ide`). `onaylanan_hash` `get_requirement`'tan okunan değerdir; metin arada değiştiyse taslaklar reddedilir. Tek bir case şemaya uymazsa **hiçbiri** kaydedilmez; hata case sıra numarasıyla döner. Aynı içerik tekrar gönderilirse atlanır. | Jira'ya yazmaz, onaylamaz. PO onayı olmayan (ya da PO onayından sonra değişmiş) gereksinime taslak kabul etmez. |
 | `publish_test_cases(case_ids[])` | `publish` | Portaldaki yayınla aynı iş (`publish.cases`): her case için `durum = approved`, onaylanan hash = güncel hash **ve** gereksinimin PO onayı hâlâ güncel (`cases_ready`/`done`) kontrolü, `external_ref` ile idempotent yazım, kısmi başarı raporu. Test issue'suna üretim modu etiketi (`tp-mod-ide`) ve yorumu eklenir. | İçerik almaz; onaysız, onaydan sonra değişmiş ya da story'si değişmiş (PO onayı sıfırlanmış) case'i yayınlamaz. |
 
 - `requirement_key`: Jira story anahtarı (ör. `TPD-1`); serbest metin gereksinimde gereksinim
   kimliği (uuid).
-- Case şeması: `rules/schemas/case_generation.schema.json` → `cases.items` (başlık ≤ 120, `type`
-  positive|negative|boundary, `risk`, `acceptance_criteria_refs` gereksinimde olan AC'ler,
-  `steps[{id: S1…, action, data|null, expected}]` ≤ 8, `expected_result`, `tags` içinde
-  `AI-generated`). Araç listesi (`tools/list`) şemanın tamamını döner.
+- Case şeması (v3, TEKNIK-TASARIM §7): `rules/schemas/case_generation.schema.json` → `cases.items`
+  (başlık ≤ 120, `type` positive|negative|boundary|authorization|integration, `risk`,
+  `acceptance_criteria_refs` gereksinimde olan AC'ler, `steps[{id: S1…, action, data|null,
+  expected}]` ≤ 8, `expected_result`, `tags` içinde `AI-generated` **ve** v3 alanları: `technique`,
+  `covers`, `priority` + `priority_rationale`, `test_level`, `verification_point`, `readiness`,
+  `assumption_refs`, `open_question_refs`, `test_data` (sentetik), `teardown`, `platform`,
+  `requires_real_device`, `standard_refs`). IDE taslağı **her zaman tam v3** ister; eski (v2)
+  biçimli case 422 alır. Araç listesi (`tools/list`) şemanın tamamını döner.
+- `ozet` (isteğe bağlı): üretimin üst düzey listeleri (`open_questions`, `assumptions`,
+  `coverage_items`, `negative_coverage`, `not_covered`, `observations`, `automation_open_points`,
+  `config_matrix`, `testability_gaps`; hepsi isteğe bağlı, verilmeyen boş sayılır). Verilirse
+  şemayla ve yinelenen kimlik denetimiyle doğrulanır, case'lerin atıfları buna karşı denetlenir ve
+  `case_uretim`'e (kanal `ide`) yazılır. **Verilmezse** kapsam öğesi tanımlılığı (kural 1) atlanır;
+  açık soruya / varsayıma atıf yapan (`Q…`/`A…`) case ise **422** alır (metni gösterilemez). Diğer
+  tutarlılık kuralları (teknik ↔ öğe öneki, hazır olma, sentetik veri, saldırı verisinin başka
+  alanda geçmemesi, AC atfı) case düzeyinde 422'dir; set düzeyi eksikler (negatif kapsam kararı,
+  kapsanmayan öğe) 422 değil, yanıttaki `uyarilar`'dır — taslaklar parça parça gönderilebilir.
+- Onay portalda: yalnız hazır (`readiness: ready`) ve tutarlı taslak onaylanır (K6). Onaylı
+  case'lerin Gherkin'i portaldan ("Gherkin indir") ya da `GET /requirements/{id}/cases.feature`
+  ile alınır (TEKNIK-TASARIM §8.3a).
 - Kimliği doğrulanmış her çağrı `tool_call` tablosuna yazılır (reddedilen istekler için bkz.
   "Güvenlik sınırları"): kanal `ide`, çağıran kullanıcı, argüman özeti (taslak
   içerik hash'leri / case kimlikleri), sonuç özeti, izin. Yayında **onaylayanlar** ayrıca kaydedilir
