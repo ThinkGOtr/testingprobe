@@ -69,6 +69,9 @@ class Requirement(Base):
     po_cevaplari: Mapped[list[Any]] = mapped_column(JSONB, server_default=EMPTY_LIST, default=list)
     # PO onayıyla (`po_approved`'a giriş) yazılan içerik hash'i; case üretimi bunu yeniden denetler.
     onaylanan_hash: Mapped[str | None]
+    # Jira durum tetiği (013): son görülen Jira durumu ve tetikle otomatik akışa alındığı an.
+    jira_durumu: Mapped[str | None]
+    qa_tetik_zamani: Mapped[datetime | None]
     # İçerik alanlarının (baslik/aciklama/kabul_kriterleri) en son değiştiği an. ORM bunu içerik
     # değişince kendisi günceller; Jira'dan ilk çekimde senkron kodu Jira changelog'undaki açıklama
     # değişim zamanını verebilir. Jira kanalındaki PO onayı (etiket zamanı) bundan önceyse geçersiz.

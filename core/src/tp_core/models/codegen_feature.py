@@ -52,6 +52,8 @@ ENGEL_TURU = frozenset(
     }
 )
 BREAK_DURUM = frozenset({"not_started", "running", "passed", "weak", "failed"})
+# 013: üretimi başlatan (portal/MCP düğmesi = elle, case onayı = otomatik)
+TETIK = frozenset({"elle", "otomatik"})
 KONTROL_TUR = frozenset(
     {"local_check", "remap_check", "break_baseline", "break_red", "break_green"}
 )
@@ -79,6 +81,7 @@ class ScriptCodegen(Base):
     __table_args__ = (
         in_check("engel_turu", ENGEL_TURU, "script_codegen_engel_ck", True),
         in_check("break_durum", BREAK_DURUM, "script_codegen_break_ck"),
+        in_check("tetik", TETIK, "script_codegen_tetik_ck"),
         Index("script_codegen_case_ix", "test_case_id"),
     )
 
@@ -117,6 +120,10 @@ class ScriptCodegen(Base):
     # `codegen.update_branch` işi dalı günceller (yeni head → PR CI, yeni onay, yeni kırma kanıtı).
     dal: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     break_durum: Mapped[str] = mapped_column(server_default="not_started", default="not_started")
+    # 013: üretimde çözülen test verisi anahtarlarının sürümleri ({anahtar: surum}); katalogda
+    # sürüm ilerlediyse portal "veri değişti" uyarısı gösterir.
+    veri_izi: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    tetik: Mapped[str] = mapped_column(server_default="elle", default="elle")
     olusturma: Mapped[datetime] = olusturma_col()
     guncelleme: Mapped[datetime] = guncelleme_col()
 
