@@ -22,7 +22,8 @@
 #   PLAYWRIGHT_BROWSERS_PATH  Chromium önbelleği (test sırasında indirme yok)
 #   TP_JAVA_ARACLAR_JAR       java-araclar.jar (varsayılan: <repo>/toolchain/java-araclar/target/java-araclar.jar;
 #                             yoksa derlenir)
-#   TP_E2E_JAVA_DEPS_POM      güvenilir pom (varsayılan: <repo>/toolchain/e2e-java-deps/pom.xml); bayt eşit olmalı
+#   TP_E2E_JAVA_DEPS_POM      güvenilir pom (varsayılan: <repo>/toolchain/e2e-java-deps/pom.xml); bayt eşit olmalı.
+#                             CI=true iken dosya yoksa betik HATA ile durur; yerelde yalnız uyarı.
 #   SKIP_INSTALL=1   bağımlılıklar ~/.m2'de hazır: Maven çevrimdışı (-o)
 #   SKIP_BIRIM=1     birim adımını atla (break-verify-java.sh tekrar koşularında)
 #   SKIP_GUARD=1     pom kilidi + koruma adımlarını atla (break-verify-java.sh tekrar koşularında)
@@ -52,8 +53,13 @@ if [[ "${SKIP_GUARD:-0}" != "1" ]]; then
       exit 1
     }
     echo "pom.xml = $guvenilir ✓"
+  elif [[ "${CI:-}" == "true" ]]; then
+    # CI'da kilit sessizce kapanamaz (OPS-Y1): güvenilir pom yoksa bağımlılık değişikliği denetimsiz geçer.
+    echo "HATA: güvenilir pom yok ($guvenilir); CI'da pom kilidi zorunludur." >&2
+    echo "      Demo deposunda toolchain/e2e-java-deps/pom.xml bulunmalı (scripts/github-demo-repo-init.sh)." >&2
+    exit 1
   else
-    echo "UYARI: güvenilir pom yok ($guvenilir); kilit denetimi atlandı"
+    echo "UYARI: güvenilir pom yok ($guvenilir); kilit denetimi atlandı (yerel; CI=true iken hata)"
   fi
 
   step "üretilen test koruması: java-araclar guard --kimlikler"

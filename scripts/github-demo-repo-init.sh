@@ -20,6 +20,10 @@
 #   .github/workflows/break-verify.yml  elle "kırarak doğrula" kanıtı (zorunlu değil)
 #   .github/workflows/{mobil-android,mobil-ios,masaustu-windows}.yml  uygulama e2e (009; Java +
 #                              Appium; platform etkinse mobil-android / masaustu-windows zorunlu check)
+#   .github/workflows/web-java.yml  web e2e Java hattı (011; Playwright for Java + TestNG; check
+#                              `web-java`, TP_WEB_DILLERI java içerince zorunlu)
+#   toolchain/java-araclar/    üretilen Java test koruması (guard; web-java ve run-java-checks.sh)
+#   toolchain/e2e-java-deps/pom.xml  güvenilir pom (demo-app/e2e-java/pom.xml ile bayt eşit; CI'da kilit)
 #   tools/appium/package{,-lock}.json   Appium 3 + sürücüler (uygulama iş akışları npm ci ile kurar)
 #   .github/CODEOWNERS         /demo-app/e2e/pages/, tests/generated/, kalite kapısı yapılandırması,
 #                              /.github/, /toolchain/ast-guard/, /scripts/github-*.sh → @<codeowner>
@@ -46,7 +50,7 @@ CALLER_PWD="$PWD"  # lib.sh depo köküne geçer; göreli --out çağıranın di
 # shellcheck source=scripts/lib.sh
 . "$(dirname "$0")/lib.sh"
 
-usage() { sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,47p' "$0" | sed 's/^# \{0,1\}//'; }
 
 REPO="${GITHUB_REPO:-ThinkGOtr/testingprobe-demo-app}"
 OUT=""
@@ -108,14 +112,25 @@ copy_tracked demo-app toolchain/ast-guard toolchain/security/no-mcp-in-image.sh 
   .playwright-version .github/workflows/break-verify.yml .github/dependabot.yml .github/actionlint.yaml \
   .github/workflows/mobil-android.yml .github/workflows/mobil-ios.yml \
   .github/workflows/masaustu-windows.yml tools/appium/package.json tools/appium/package-lock.json \
+  .github/workflows/web-java.yml toolchain/java-araclar toolchain/e2e-java-deps \
   scripts/github-ast-guard-mode.sh scripts/github-ci-results.sh scripts/github-demo-serve.sh \
   scripts/github-sauce-summary.sh scripts/github-break-verify-result.sh
 [ -f "$DEST/demo-app/web/Dockerfile" ] || die "demo-app/web/Dockerfile kopyalanmadı"
 [ -f "$DEST/demo-app/e2e/pages/catalog/locators.ts" ] || die "demo-app/e2e/pages/catalog/locators.ts yok"
+# Java web hattı (011): e2e-java gönderiliyorsa web-java iş akışı, java-araclar (guard) ve güvenilir
+# pom da gider; yoksa GitHub kipinde Java kardeş koşusu gelmeyen check'i bekler (OPS-Y1).
+if [ -d "$DEST/demo-app/e2e-java" ]; then
+  for f in .github/workflows/web-java.yml toolchain/java-araclar/pom.xml toolchain/e2e-java-deps/pom.xml; do
+    [ -f "$DEST/$f" ] || die "demo-app/e2e-java var ama $f kopyalanmadı"
+  done
+  cmp -s "$DEST/demo-app/e2e-java/pom.xml" "$DEST/toolchain/e2e-java-deps/pom.xml" \
+    || die "demo-app/e2e-java/pom.xml ↔ toolchain/e2e-java-deps/pom.xml bayt eşit değil (pom kilidi)"
+fi
 
 SOURCE_SHA="$(git -C "$TP_REPO_ROOT" rev-parse --short=12 HEAD 2>/dev/null || echo bilinmiyor)"
 DIRTY=""
-git -C "$TP_REPO_ROOT" diff --quiet -- demo-app .github toolchain/ast-guard scripts/github-*.sh \
+git -C "$TP_REPO_ROOT" diff --quiet -- demo-app .github toolchain/ast-guard toolchain/java-araclar \
+  toolchain/e2e-java-deps scripts/github-*.sh \
   2>/dev/null || DIRTY=" (+ commit edilmemiş değişiklikler)"
 
 # ci.yml: golden-drift job'u çıkarılır; başlığa kaynak notu eklenir. CODEOWNERS sahibi değiştirilir.
@@ -188,6 +203,8 @@ tüm veri sentetiktir). Bu depo \`testing-probe\` ürün deposundan
 | \`demo-app/\` | Uygulama (\`api/\`, \`web/\`, \`e2e/\` page object kütüphanesi + testler, \`ci/run-checks.sh\`) |
 | \`.github/workflows/ci.yml\` | Zorunlu check'ler: \`test-local\`, \`ast-guard\`, \`semgrep\` (CI'da AI yok) |
 | \`toolchain/ast-guard/\` | Locator onarımı yalnızca \`testId\` değiştirebilir (AST koruması) |
+| \`demo-app/e2e-java/\` | Web e2e Java hattı (Playwright for Java + TestNG; \`ci/run-java-checks.sh\`, check \`web-java\`) |
+| \`toolchain/java-araclar/\`, \`toolchain/e2e-java-deps/\` | Üretilen Java test koruması ve güvenilir pom (pom kilidi) |
 
 Kurallar (ruleset \`tp-main\`): \`main\`'e yalnızca PR ile; 1 insan onayı + CODEOWNERS; bot (GitHub
 App) PR açar ama **merge etmez**; ruleset bypass yalnızca \`demo-admin\` takımındadır.

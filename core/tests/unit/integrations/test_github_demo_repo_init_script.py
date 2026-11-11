@@ -66,6 +66,14 @@ def test_kuru_calisma_duzen_ve_cikti(agac: tuple[Path, subprocess.CompletedProce
         "toolchain/ast-guard/src/guard.ts",
         "toolchain/security/no-mcp-in-image.sh",
         ".playwright-version",
+        # Java web hattı (011, OPS-Y1): e2e-java ile birlikte iş akışı, guard aracı ve güvenilir pom.
+        "demo-app/e2e-java/pom.xml",
+        "demo-app/ci/run-java-checks.sh",
+        ".github/workflows/web-java.yml",
+        "toolchain/java-araclar/pom.xml",
+        "toolchain/java-araclar/mvnw",
+        "toolchain/java-araclar/src/main/java/com/antreklabs/tp/javaaraclar/Main.java",
+        "toolchain/e2e-java-deps/pom.xml",
         "README.md",
         ".gitignore",
     ):
@@ -75,6 +83,11 @@ def test_kuru_calisma_duzen_ve_cikti(agac: tuple[Path, subprocess.CompletedProce
                 ".github/workflows/build-toolchain.yml", "scripts/lib.sh"):  # fmt: skip
         assert not (out / yok).exists(), yok
     assert not [p for p in out.rglob(".env*") if ".git" not in p.parts]
+    # pom kilidi: gönderilen hedef pom güvenilir pom ile bayt eşit.
+    assert (out / "demo-app/e2e-java/pom.xml").read_bytes() == (
+        out / "toolchain/e2e-java-deps/pom.xml"
+    ).read_bytes()
+    assert os.access(out / "toolchain/java-araclar/mvnw", os.X_OK)
     assert not [p for p in out.rglob("node_modules")]
 
 
@@ -92,6 +105,8 @@ def test_ci_zorunlu_checkler_ve_golden_drift_yok(
     assert "github-demo-repo-init.sh ile üretildi" in metin.splitlines()[1]
     for ad in ("ANTHROPIC", "anthropic_api_key", "mcp-server"):
         assert ad not in metin
+    wj = yaml.safe_load((out / ".github/workflows/web-java.yml").read_text())["jobs"]
+    assert wj["web-java"]["name"] == "web-java"
     if shutil.which("actionlint"):
         r = subprocess.run(["actionlint", "-no-color"], cwd=out, capture_output=True, text=True)
         assert r.returncode == 0, r.stdout + r.stderr
