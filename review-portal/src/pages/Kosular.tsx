@@ -474,6 +474,8 @@ export function KosuDetay() {
               Allure ham sonuçları (JSON listesi)
             </Baglanti>
           )}
+          {/* Extent raporunu yalnızca Java (Appium + TestNG) koşusu üretir: yoksa satır hiç görünmez. */}
+          {k.extent_url && <Baglanti href={k.extent_url}>Extent raporu</Baglanti>}
           {(k.kaynak === "sauce" || k.sauce_url) && (
             <Baglanti href={k.sauce_url} yokNedeni="Sauce bağlantısı yok">
               Sauce Labs videosu

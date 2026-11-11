@@ -42,8 +42,29 @@ DEVICE_UDID="$(cat ../../var/cihaz/ios.udid)" \
 ```
 
 `run-app-checks.sh`: `test-compile` → birim (`target/birim-raporlari/`) → cihaz koşusu. Sonuçlar
-`target/surefire-reports/TEST-*.xml` (JUnit XML; `core/src/tp_core/features/ci/parse.py`), `target/allure-results/`, başarısız
+`target/surefire-reports/TEST-*.xml` (JUnit XML; `core/src/tp_core/features/ci/parse.py`), `target/allure-results/`,
+`target/extent-report/index.html` (Extent raporu), başarısız
 testin kanıtı `target/kanit/<Sınıf>.<metot>/{ekran.png,sayfa-kaynagi.xml}` (triage okur).
+
+### Raporlar: Allure ve Extent
+
+Her koşu iki okunur rapor kaynağı üretir; ikisi de test kodunda ek çağrı istemez:
+
+- **Allure** — `allure-testng` `target/allure-results/` yazar; HTML raporu test-runner üretir.
+- **Extent (Spark)** — `altyapi/ExtentRaporu` TestNG dinleyicisi (`src/test/resources/META-INF/services/
+  org.testng.ITestNGListener` ile kendiliğinden yüklenir; testng.xml ve `-Dgroups` koşusunda aynı)
+  `target/extent-report/index.html` yazar. Rapor **tek dosyadır ve dış kaynak yüklemez** (css/js/simge
+  yazı tipi gömülü): tarayıcıda doğrudan, ağ olmadan ve portalın sandbox'ında açılır. Başarısız testin
+  kanıt ekran görüntüsü rapora gömülür. Her testten sonra yazılır (koşu yarıda kesilse de rapor kalır).
+
+| Özellik | Varsayılan | Not |
+| --- | --- | --- |
+| `extent.rapor.dizini` | `target/extent-report` | boş verilirse (`-Dextent.rapor.dizini=`) rapor üretilmez; birim adımı `target/birim-raporlari/extent-report`'a yazar |
+| `extent.tekrar` | — | tekrarlı koşuda `<i>/<n>` (test-runner verir): test adına `(tekrar 2/3)` eklenir |
+
+Aynı dizine yazan ardışık koşular (test-runner'ın `repeat_each` tekrarları) dizindeki `extent.json`
+arşivi üzerinden **tek raporda birleşir**; temiz rapor için dizini silin (`run-app-checks.sh` siler).
+Raporlama hatası testi ya da koşuyu düşürmez: uyarı günlüğe yazılır, o koşuda Extent raporu kapanır.
 
 ## Ayarlar
 

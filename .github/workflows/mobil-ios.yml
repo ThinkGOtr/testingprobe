@@ -255,7 +255,7 @@ jobs:
           out=tp-results
           mkdir -p "$out"
           target="$APP_ROOT/e2e-app/target"
-          for d in surefire-reports birim-raporlari allure-results kanit; do
+          for d in surefire-reports birim-raporlari allure-results extent-report kanit; do
             if [ -d "$target/$d" ]; then cp -R "$target/$d" "$out/$d"; fi
           done
           if [ -d tp-logs ]; then cp -R tp-logs "$out/logs"; fi

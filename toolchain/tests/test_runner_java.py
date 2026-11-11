@@ -59,8 +59,9 @@ XML_FAILED = f"""<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
-def fake_mvn(tmp_path: Path, xml: str | None, exit_code: int = 0) -> Path:
-    """`mvn` yerine: argv/ortamı kaydeder, raporu ve (başarısızlıkta) kanıtı yazar."""
+def fake_mvn(tmp_path: Path, xml: str | None, exit_code: int = 0, extent: bool = True) -> Path:
+    """`mvn` yerine: argv/ortamı kaydeder, raporu ve (başarısızlıkta) kanıtı yazar. `extent`:
+    e2e-app'in Extent dinleyicisi gibi `extent.rapor.dizini/index.html` yazar (tekrarlar eklenir)."""
     return make_fake_node(
         tmp_path,
         f"""
@@ -81,9 +82,13 @@ def fake_mvn(tmp_path: Path, xml: str | None, exit_code: int = 0) -> Path:
             kd.mkdir(parents=True, exist_ok=True)
             (kd / "ekran.png").write_bytes(b"png")
             (kd / "sayfa-kaynagi.xml").write_text("<hierarchy/>")
+            if {extent!r}:
+                ed = pathlib.Path(props["extent.rapor.dizini"]); ed.mkdir(parents=True, exist_ok=True)
+                with (ed / "index.html").open("a", encoding="utf-8") as fh:
+                    fh.write("<html>Extent " + props.get("extent.tekrar", "tek") + "</html>")
         sys.exit({exit_code})
         """,
-        name=f"fake-mvn-{exit_code}",
+        name=f"fake-mvn-{exit_code}-{int(extent)}",
     )
 
 
@@ -162,6 +167,17 @@ def test_java_run_passed_hardening_and_layout(
     assert argv[-2:] == ["test-compile", "surefire:test"]
     assert any(a.startswith("-Dmaven.repo.local.tail=") for a in argv)
     assert call["cwd"] == str(run_dir / "src" / "e2e-app")
+    # Extent raporu: dinleyici koşu dizinindeki target/extent-report'a yazar; tek koşuda tekrar
+    # etiketi verilmez. Rapor `reports.extent_html` ile bildirilir (Allure ile aynı biçim).
+    extent_dir = run_dir / "src" / "e2e-app" / "target" / "extent-report"
+    assert f"-Dextent.rapor.dizini={extent_dir}" in argv
+    assert not any(a.startswith("-Dextent.tekrar=") for a in argv)
+    assert data["reports"]["extent_html"] == {
+        "path": str(extent_dir),
+        "rel": "runs/j1/src/e2e-app/target/extent-report",
+        "exists": True,
+    }
+    assert (extent_dir / "index.html").read_text() == "<html>Extent tek</html>"
     assert call["env"] == {
         "PLATFORM": "android",
         "APPIUM_URL": f"{java_runner.url}/appium",
@@ -240,6 +256,25 @@ def test_java_run_repeat_each(
     assert "test-compile" in calls[0]["argv"] and "test-compile" not in calls[1]["argv"]
     assert [t["repeat_index"] for t in data["tests"]] == [0, 0, 1, 1, 2, 2]
     assert data["failure_groups"] == []
+    # Extent: tekrarlar AYNI rapor dizinine yazar (dinleyici birleştirir), her biri etiketiyle.
+    extent_dir = env / "runs" / "j1" / "src" / "e2e-app" / "target" / "extent-report"
+    for i, c in enumerate(calls):
+        assert f"-Dextent.rapor.dizini={extent_dir}" in c["argv"]
+        assert f"-Dextent.tekrar={i + 1}/3" in c["argv"]
+    assert (extent_dir / "index.html").read_text().count("Extent ") == 3
+    assert data["reports"]["extent_html"]["exists"] is True
+
+
+def test_java_run_without_extent_report(
+    java_runner: DemoApi, forge: Forge, env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dinleyicisi olmayan (eski) commit rapor yazmaz: koşu sonucu değişmez, bağlantı bildirilmez."""
+    monkeypatch.setenv("TP_MVN", str(fake_mvn(tmp_path, XML_PASSED, extent=False)))
+    head = forge.commit("tp/case-e", e2e_app_files())
+    data = _run(sha=head, test_files=[GEN]).json()
+    assert data["status"] == "passed", data["error"]
+    assert data["reports"]["extent_html"]["exists"] is False
+    assert data["reports"]["allure_html"]["exists"] is False
 
 
 def test_java_run_environment_errors(

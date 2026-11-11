@@ -43,7 +43,7 @@ Case platformdan bağımsızdır: iş dilinde bir kez yazılır ve onaylanır. K
 | Kırarak doğrula | `BREAK_CAMPAIGN=1` → `/test/break` (bayi kapsamlı) | aynısı; kırmızı adım denetimi `araclar/KirmiziDenetimi.java` (kırmızılar yalnız assertion) |
 | Merge kapısı (LocalForge) | `local-ci` | `local-ci-<platform>` (head için kaydedilmiş her biri zorunlu) |
 | CI (GitHub) | `ci.yml` → `test-local` | `mobil-android`, `mobil-ios`, `masaustu-windows` |
-| Rapor | Playwright JSON + JUnit + Allure | Surefire JUnit XML + Allure (`core/src/tp_core/features/ci/parse.py` JUnit yolu) |
+| Rapor | Playwright JSON + JUnit + Allure | Surefire JUnit XML + Allure + Extent (`core/src/tp_core/features/ci/parse.py` JUnit yolu; Extent: `altyapi/ExtentRaporu` → `target/extent-report/index.html`, portalda "Extent raporu") |
 | Triage kanıtı | trace, aria snapshot, ekran görüntüsü | `target/kanit/<Sınıf>.<metot>/{ekran.png,sayfa-kaynagi.xml}` |
 | Locator onarımı | yalnız `locators.ts` içindeki `testId` değeri | yalnız `ekranlar/Kimlikler.java` içindeki sabit değeri (`java-araclar locators patch`) |
 
@@ -212,7 +212,7 @@ Cihaz hazırlığı: `make cihaz-kur` (bir kez), `make cihaz-baslat PLATFORM=and
 | Kontrol adı | `local-ci-android`, `local-ci-ios`, `local-ci-windows` | `mobil-android`, `mobil-ios`, `masaustu-windows` |
 | Zorunluluk | head için kaydedilmiş her `local-ci-<platform>` zorunlu; yalnız `e2e-app/` değiştiren PR en az bir platform kontrolü ister | platform etkinleştirilince job adı hem `TP_REQUIRED_CHECKS`'e hem ruleset'e (`scripts/github-ruleset.sh --checks …`) eklenir; `mobil-ios` varsayılan olarak zorunlu değil (yol süzgeçli, pahalı macOS dakikası) |
 | Windows | `appium-gw-windows` + GCP `tp-windows` VM (tp-demo'da; [WINDOWS-GCP.md](WINDOWS-GCP.md)); isteğe bağlı UTM VM ([WINDOWS-VM.md §5.3](WINDOWS-VM.md)) | `masaustu-windows`, `windows-latest` x64 |
-| Artefakt | `runs/<id>/` (Surefire özeti, `junit.xml`, Allure, kanıt) | `<job>-results`: `ci-meta.json`, `surefire-reports/`, `allure-results/`, `kanit/`, `logs/` |
+| Artefakt | `runs/<id>/` (Surefire özeti, `junit.xml`, Allure, Extent raporu, kanıt) | `<job>-results`: `ci-meta.json`, `surefire-reports/`, `allure-results/`, `extent-report/`, `kanit/`, `logs/` |
 
 Her iki kipte de CI'da AI yoktur: app-mcp, model anahtarı ve ajan yalnız kod üretiminde (core-worker)
 kullanılır.

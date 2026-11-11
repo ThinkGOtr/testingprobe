@@ -525,6 +525,7 @@ export function kosuUyarla(k: Ham): Kosu {
     atlanan: say("atlanan", (t) => t.durum === "skipped"),
     allure_url: adresUyarla(ilk(k, "allure_url") ?? ilk(art, "allure_url", "allure")),
     allure_sonuclari_url: adresUyarla(ilk(k, "allure_sonuclari_url")),
+    extent_url: adresUyarla(ilk(k, "extent_url")),
     rapor_url: adresUyarla(ilk(k, "rapor_url", "html_url", "playwright_report_url") ?? ilk(art, "rapor_url", "html_url", "html", "report")),
     junit_url: junitAdresi(k, art),
     sauce_url: adresUyarla(ilk(k, "sauce_url") ?? ilk(art, "sauce_url", "sauce")),
