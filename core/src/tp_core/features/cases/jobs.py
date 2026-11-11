@@ -1,4 +1,5 @@
-"""`cases.generate` işi (core-worker): model geçidiyle case üretimi."""
+"""`cases.generate` ve `cases.deepen` işleri (core-worker): model geçidiyle case üretimi ve
+derinleştirme (011 P5/P6)."""
 
 from __future__ import annotations
 
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from tp_core.db import get_engine
 from tp_core.features.cases import denetim_akisi, review
+from tp_core.features.cases.deepen import DEEPEN_JOB, run_deepening
 from tp_core.features.cases.service import GEN_JOB, run_generation, sweep_stuck_generations
 from tp_core.workflow.jobs import JobContext, job_handler
 
@@ -31,6 +33,11 @@ def review_cases(ctx: JobContext) -> dict[str, Any]:
 def audit_cases(ctx: JobContext) -> dict[str, Any]:
     """P9 denetim (Agent Probe portu; hata = karar yok, kapı kapalı)."""
     return denetim_akisi.run_audit(ctx, get_engine())
+
+
+@job_handler(DEEPEN_JOB, max_deneme=2, zaman_asimi_s=600)
+def deepen_cases(ctx: JobContext) -> dict[str, Any]:
+    return run_deepening(ctx, get_engine())
 
 
 def on_worker_start(conn: Connection) -> None:

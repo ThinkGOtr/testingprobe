@@ -1105,6 +1105,198 @@ def case_audit_cases() -> list[dict[str, Any]]:
     ]
 
 
+# ---------------------------------------------- 011 F4: platform ekleri ve derinleştirme
+
+# Platform eki vakaları: (vaka, story, seçenekler, benimsenmeyen eşik belirteçleri). Eşikler
+# benimsenmeyen standart/rehber hedefleridir; beklenen sonuçta geçmemeli (gözlem olmalı).
+_WEB_TPD4 = (
+    "tpd-4-web",
+    "TPD-4",
+    {
+        "platformlar": ["Web"],
+        "benimsenen_standartlar": ["WCAG 2.2 AA"],
+        "ek_bilgi": {
+            "tarayicilar": "Chrome son 2, Firefox son 2",
+            "cozunurlukler": "1366x768, 375x812",
+        },
+    },
+    ["44×44", "44 pt", "48 dp", "16 ms"],
+)
+_MOBIL_ESIKLERI = ["24×24", "44×44", "44 pt", "48 dp", "16 ms", "2 sn"]
+PLATFORM_PLAN: dict[str, list[tuple[str, str, dict[str, Any], list[str]]]] = {
+    "platform-common": [
+        _WEB_TPD4,
+        ("tpd-1-web-api", "TPD-1", {"platformlar": ["Web", "API"]}, _MOBIL_ESIKLERI),
+    ],
+    "platform-web": [_WEB_TPD4],
+    "platform-mobile": [
+        (
+            "tpd-1-mobil",
+            "TPD-1",
+            {
+                "platformlar": ["Mobil-iOS", "Mobil-Android"],
+                "ek_bilgi": {"os_matrisi": "Android 14–15, iOS 17–18", "uygulama_tipi": "native"},
+            },
+            _MOBIL_ESIKLERI,
+        )
+    ],
+    "platform-desktop": [
+        (
+            "tpd-1-desktop",
+            "TPD-1",
+            {
+                "platformlar": ["Desktop-Win"],
+                "ek_bilgi": {"os_matrisi": "Windows 11 24H2", "teknoloji": "WPF"},
+            },
+            _MOBIL_ESIKLERI,
+        )
+    ],
+    "platform-api": [
+        (
+            "tpd-4-api",
+            "TPD-4",
+            {"platformlar": ["API"], "ek_bilgi": {"auth_tipi": "oturum çerezi"}},
+            [],
+        )
+    ],
+    "platform-data": [
+        (
+            "tpd-1-data",
+            "TPD-1",
+            {
+                "platformlar": ["Data"],
+                "ek_bilgi": {"sistemler": "Sipariş servisi → sipariş veritabanı"},
+            },
+            [],
+        )
+    ],
+}
+_MESAJLAR = {
+    "TPD-1": ["Minimum sipariş tutarı 750,00 TL", "Kredi limiti aşıldı"],
+    "TPD-3": ["Ürün bulunamadı"],
+    "TPD-4": ["Kullanıcı adı veya parola hatalı"],
+}
+
+
+def _req(key: str) -> Any:
+    from types import SimpleNamespace
+
+    st = _stories()[key]
+    return SimpleNamespace(
+        id=FREE_TEXT_ID,
+        jira_key=None if key == "SERBEST" else key,
+        baslik=st["summary"],
+        aciklama=st["description"],
+        kabul_kriterleri=_golden_acs("case_generation", key),
+        po_cevaplari=[],
+    )
+
+
+def platform_cases(bundle: str) -> list[dict[str, Any]]:
+    """Platform eki seti: üretimin `generation_messages` kurucusu, seçeneklerle (ek metni ve analist
+    seçenek bloğu girdide); golden kökü `secenekler.replay_adi` (`platform-<ekler>/<story>`)."""
+    from tp_core.features.cases import secenekler
+    from tp_core.features.cases.service import generation_messages
+
+    data_block = _test_data_block()
+    out = []
+    for case_id, key, ham, esikler in PLATFORM_PLAN[bundle]:
+        sec = secenekler.dogrula({**ham, "test_seviyesi": TEST_LEVEL})
+        acs = _golden_acs("case_generation", key)
+        expect: dict[str, Any] = {
+            "ac_coverage": _refs(acs),
+            "ready_ac_coverage": _refs(acs),
+            "min_cases": len(acs),
+            "max_cases": MAX_CASES,
+            "contains": _MESAJLAR[key][:1],
+            "not_contains_any": FABRICATION[key],
+            "platforms": sec["platformlar"],
+            "observation_thresholds": esikler,
+        }
+        if key in SILENT:
+            expect["must_not_be_ready_about"] = SILENT[key]
+        if case_id == "tpd-4-web":
+            expect["observations_min"] = 1
+        out.append(
+            {
+                "id": case_id,
+                "description": f"{key}: {', '.join(sec['platformlar'])} platform eki ile üretim",
+                "replay_key": {
+                    **_key(key),
+                    "name": secenekler.replay_adi(_key(key)["name"], sec),
+                },
+                "messages": _msgs(
+                    generation_messages(_req(key), [], test_verisi=data_block, secenekler=sec)
+                ),
+                "expect": expect,
+            }
+        )
+    return out
+
+
+DEEPENING_PLAN: dict[str, list[tuple[str, str, str | None, int]]] = {
+    # (vaka, story, teknik, en az yeni case). Mevcut set = story'nin ana case_generation golden'ı.
+    "case-negative": [("tpd-1-negatif", "TPD-1", None, 1), ("tpd-4-negatif", "TPD-4", None, 0)],
+    "case-technique": [("tpd-4-ep", "TPD-4", "EP", 1), ("tpd-1-bva", "TPD-1", "BVA", 0)],
+}
+_BIRLESIK_ALANLAR = (
+    "coverage_items",
+    "open_questions",
+    "assumptions",
+    "negative_coverage",
+    "not_covered",
+)
+
+
+def deepening_cases(bundle: str) -> list[dict[str, Any]]:
+    """Derinleştirme seti (P5/P6): girdi üretimin `deepening_messages` kurucusuyla; mevcut set
+    story'nin ana golden'ıdır (case'ler `U1-n`, özet birleşik)."""
+    from tp_core.features.cases import deepen
+
+    tur = "negatif" if bundle == "case-negative" else "teknik"
+    data_block = _test_data_block()
+    out = []
+    for case_id, key, teknik, en_az in DEEPENING_PLAN[bundle]:
+        golden = load_golden("case_generation", key)["output"]
+        mevcut = [
+            deepen.case_ozeti(c, f"U1-{n}", "draft") for n, c in enumerate(golden["cases"], 1)
+        ]
+        birlesik = {k: golden.get(k) or [] for k in _BIRLESIK_ALANLAR}
+        expect: dict[str, Any] = {
+            "min_cases": en_az,
+            "max_cases": deepen.MAX_YENI_CASE,
+            "existing_titles": [c["title"] for c in golden["cases"]],
+            "existing_items": {o["id"]: o["definition"] for o in golden["coverage_items"]},
+            "source_messages": _MESAJLAR[key],
+            "not_contains_any": FABRICATION[key],
+        }
+        if tur == "negatif":
+            expect["negative"] = True
+        else:
+            expect["technique"] = teknik
+        out.append(
+            {
+                "id": case_id,
+                "description": f"{key}: {'negatif genişletme' if tur == 'negatif' else teknik}",
+                "replay_key": {**_key(key), "name": deepen.replay_name(key, tur, teknik)},
+                "messages": _msgs(
+                    deepen.deepening_messages(
+                        _req(key),
+                        [],
+                        mevcut,
+                        birlesik,
+                        tur=tur,
+                        teknik=teknik,
+                        test_verisi=data_block,
+                        test_seviyesi=TEST_LEVEL,
+                    )
+                ),
+                "expect": expect,
+            }
+        )
+    return out
+
+
 SETS: dict[str, tuple[str, Callable[[], list[dict[str, Any]]]]] = {
     "triage": ("triage", triage_cases),
     "bug-draft": ("bug_draft", bug_draft_cases),
@@ -1117,6 +1309,11 @@ SETS: dict[str, tuple[str, Callable[[], list[dict[str, Any]]]]] = {
     "verify-and-map-app": ("verify_and_map_app", verify_and_map_app_cases),
     "case-review": ("case_review", case_review_cases),
     "case-audit": ("case_audit", case_audit_cases),
+    **{ek: ("case_generation", (lambda ek=ek: platform_cases(ek))) for ek in PLATFORM_PLAN},
+    **{
+        paket: ("case_deepening", (lambda paket=paket: deepening_cases(paket)))
+        for paket in DEEPENING_PLAN
+    },
 }
 # Set düzeyi ek alanlar: §12 koşu sayısı, ajan araç ortamı (`tp_core.gateway.eval_agents`).
 EXTRA: dict[str, dict[str, Any]] = {
@@ -1126,6 +1323,8 @@ EXTRA: dict[str, dict[str, Any]] = {
     "consistency-check": {"agent": {"tool_env": "consistency", "max_turns": 15}},
     "verify-and-map": {"agent": {"tool_env": "browser", "max_turns": 20}},
     "verify-and-map-app": {"agent": {"tool_env": "app:android", "max_turns": 20}},
+    # Platform eki setleri ev sahibi paketle çağrılır (eval_set.call_bundle).
+    **{ek: {"call_bundle": "case-generation"} for ek in PLATFORM_PLAN},
 }
 DEFECT_SETS = ("triage", "bug-draft", "dup-rank")
 

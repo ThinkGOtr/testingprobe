@@ -52,7 +52,14 @@ import type {
   TokenKapsami,
   YayinOnizleme,
   YayinSonucu,
+  DerinlestirmeDurumu,
+  DerinlestirmeGirdisi,
+  DerinlestirmeYaniti,
+  UretimGovdesi,
+  UretimSecenekleriYaniti,
 } from "./types";
+import { uretimSecenekleriYanitiUyarla } from "../lib/uretimSecenekleri";
+import { derinlestirmeDurumuUyarla } from "../lib/derinlestirme";
 
 import type {
   TasarimModeliKaydi,
@@ -116,11 +123,13 @@ export const api = {
       nesne(await istek<unknown>("POST", `/requirements/${yol(g.id)}/po-approve`, { govde: { icerik_hash: g.icerik_hash } })),
     ),
   /**
-   * Üretimi başlatır (011 K1). `kip` verilirse gövdeyle gönderilir (`UretimBaslatGirdisi`); portal formu
-   * her zaman açıkça gönderir. Gövdesiz çağrı core'da tek tur (geriye uyum).
+   * Üretimi başlatır. `kip` (011 K1) ve `secenekler` (011 K5) gövdede gider (`UretimBaslatGirdisi`);
+   * portal kipi her zaman açıkça gönderir. Gövdesiz çağrı core'da tek tur, kayıtlı seçeneklerle.
    */
-  caseUret: (id: string, kip?: UretimKipi) =>
-    istek<IsYaniti>("POST", `/requirements/${yol(id)}/generate-cases`, kip ? { govde: { kip } satisfies UretimBaslatGirdisi } : {}),
+  caseUret: (id: string, kip?: UretimKipi, secenekler?: UretimGovdesi) => {
+    const govde = { ...(secenekler ?? {}), ...(kip ? { kip } : {}) } satisfies Partial<UretimBaslatGirdisi> & UretimGovdesi;
+    return istek<IsYaniti>("POST", `/requirements/${yol(id)}/generate-cases`, Object.keys(govde).length ? { govde } : {});
+  },
   /** Test tasarım modeli (iki tur, 011 F3): son model + geçmiş özeti. */
   tasarimModeli: async (id: string): Promise<TasarimModeliYaniti> =>
     tasarimModeliYanitiUyarla(await istek<unknown>("GET", `/requirements/${yol(id)}/design-model`, { kaynak: GEREKSINIM_KAYNAGI })),
@@ -131,6 +140,16 @@ export const api = {
     tasarimModeliKaydiUyarla(
       nesne(await istek<unknown>("POST", `/design-models/${yol(modelId)}/decision`, { govde: g, kaynak: GEREKSINIM_KAYNAGI })),
     ),
+  /** Üretim formu: kayıtlı son seçenekler, varsayılan ve ek bilgi alanı kataloğu (011 §4.4). */
+  uretimSecenekleri: async (id: string): Promise<UretimSecenekleriYaniti> =>
+    uretimSecenekleriYanitiUyarla(
+      await istek<unknown>("GET", `/requirements/${yol(id)}/generation-options`, { kaynak: GEREKSINIM_KAYNAGI }),
+    ),
+  /** Derinleştirme (P5 negatif / P6 teknik; K7): mevcut sete ek taslaklar (202). */
+  derinlestir: (id: string, g: DerinlestirmeGirdisi) =>
+    istek<DerinlestirmeYaniti>("POST", `/requirements/${yol(id)}/deepen`, { govde: g, kaynak: GEREKSINIM_KAYNAGI }),
+  derinlestirmeDurumu: async (id: string): Promise<DerinlestirmeDurumu> =>
+    derinlestirmeDurumuUyarla(await istek<unknown>("GET", `/requirements/${yol(id)}/deepen`, { kaynak: GEREKSINIM_KAYNAGI })),
   /**
    * Story başına manuel baz değer (Faz 5; analyst | po). Yanıt baz değer ya da gereksinim
    * detayıdır; ikisi de yoksa `undefined` (çağıran detayı yeniden okur).

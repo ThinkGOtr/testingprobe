@@ -39,6 +39,7 @@ rules/
 | `design_model` | `design-model` | Sonnet 5.5 | çağrı | 011 F3 (iki tur — tur 1): test tasarım modeli `conditions[]`, `techniques[]`, `coverage_items[]`, ayrıntılı modeller (bölüm, sınır, karar tablosu, durum, akış, pairwise), `model_issues[]`, açık soru / varsayım |
 | `case_review` | `case-review` | Sonnet 5.5 | çağrı | 011 F2 (P8) review: `items[12]` (UYGUN / UYGUN_DEGIL / ACIK_BILGI_GEREKLI), `score`, `missing_cases[]`, `remove_or_merge[]` |
 | `case_audit` | `case-audit` | Opus 5.5 | çağrı | 011 F5 (P9) Agent Probe denetimi: `decision` (KABUL / DÜZELTME_GEREKLİ / ENGELLE), `findings[]` (AP-nnn), `missing_scenarios[]`; kurum politikaları `agent-probe/politikalar.md` (varsayılan liste) |
+| `case_deepening` | `case-negative`, `case-technique` | Sonnet 5.5 | çağrı | 011 P5/P6: `case_generation` v3 ile aynı yapı (`case_deepening.schema.json`, 0–10 yeni case) |
 | `verify_and_map` | `verify-and-map` | Sonnet 5.5 | ajan | §8.4 `step_mapping[]`, `expects[]`, `missing_methods[]` |
 | `verify_and_map_app` | `verify-and-map-app` | Sonnet 5.5 | ajan | 009 §2.6 (app-mcp/Appium): `platform`, `step_mapping[]`, `expects[]`, `missing_methods[]` |
 | `triage` | `triage` | Haiku 5.5 | çağrı | §8.6 `class`, `signals[]`, `rationale` |
@@ -212,6 +213,42 @@ replay adımları da yeniden çalışır.
 - Prompt veya kural değişikliği, değerlendirme seti canlı modelle koşturulmadan birleştirilmez
   (constitution X).
 
+## Platform ekleri ve derinleştirme (011 F4)
+
+**Platform ekleri** (`prompts/platform-*.md`, ön bilgi `kind: platform_ek`, `host: case-generation`):
+analist üretimi başlatırken platform seçerse (`requirement.uretim_secenekleri`,
+`features/cases/secenekler.py`) `platform-common` + seçili platformların ekleri case üretim
+girdisine eklenir. Mimari karar: ekler **sistem prompt'una değil, kullanıcı mesajına** "Platform
+eki" bölümü olarak girer. Ek bizim metnimizdir (güvenilir talimat, `<untrusted>` bloğu değil);
+analistin serbest metinleri (standart kodları, roller, kapsam dışı, ek bilgi) ayrı bir
+`<kaynak>:secenekler` güvenilmeyen bloğundadır ve ekler bu bloğun satırlarına adıyla başvurur.
+Gerekçe: (1) `case-generation` paketi ve bundle hash'i tek kalır, 5 ekin kombinasyonları ayrı paket
+olmaz (değerlendirme durumu, golden ve replay mekanizması değişmez); (2) sistem prompt'u
+önbellekte kalır; (3) geçit tek paket yükler, değişiklik gerekmez. İzlenebilirlik: her ek başlığı
+`id@vN (sha256:…)` taşır (girdinin parçası: ek değişince birebir replay anahtarı da değişir) ve
+kullanılan ekler `ai_call.ek.platform_ekleri`'ne (geçit `call(ek=)`) ve `cases.generated`
+denetim kaydına yazılır. Golden adı platformdan türer (`platform-<ekler>/<story>`, ör.
+`platform-web/TPD-4`; `secenekler.replay_adi`).
+
+**Değerlendirme kapısı** gevşetilmedi: her ek ayrı prompt dosyasıdır, `evaluations.yaml`'da kendi
+kaydı ve `evaluation/<ek>.json` seti vardır. Ek setleri ev sahibi paketle çağrılır
+(`"call_bundle": "case-generation"`, `eval_set.call_bundle`) ama durumu ekin kaydına yazılır.
+Ekin içerik hash'i (`evaluation.ICERIK_KAYNAKLARI`) ek + `platform-common` + `case-generation.md` +
+`case_generation.schema.json` + `case_generation` amaç ayarını kapsar: ev sahibi değişirse ekin
+`evaluated` kaydı `icerik_degisti` olur. Denetleyici: `eval_agents.platform_problems` (seçilmemiş
+platform yok, benimsenmeyen standart eşiği beklenen sonuçta yok → gözlem, `config_matrix` satırsız).
+Atlanan platform kategorisi `not_covered`'a `<Platform>:<kategori>` (ör. `Web:Responsive`) olarak
+yazılır.
+
+**Derinleştirme** (`prompts/case-negative.md` P5, `prompts/case-technique.md` P6; amaç
+`case_deepening`): mevcut sete ek taslak (K7). Girdi: story + PO cevapları + mevcut set (güncel
+case'ler ve birleşik özet, güvenilmeyen blok) + `Mevcut kimlikler` / `Yeni kimlik numaraları`
+satırları (+ `Teknik:`). Kod, mevcut sette farklı tanımlı kimlik kullanan çıktıyı reddeder
+(`deepen.id_conflicts`). Golden'lar `replay/case_deepening/golden/negatif/<story>.json` ve
+`teknik-<teknik>/<story>.json`; denetleyici `eval_agents.deepening_problems` (tekrar yok, kimlik
+çakışması yok, mesaj uydurulmamış — kaynakta yoksa "mesaj metni: AÇIK NOKTA", saldırı verisi
+yalnız `test_data`'da işaretli).
+
 ## Canlı değerlendirme durumu
 
 Makine okunur kayıt: [`evaluations.yaml`](evaluations.yaml) (her prompt paketi için `version` +
@@ -229,6 +266,14 @@ varsa çıkış 1. Bu tablo kayıtla aynı olmalıdır (`test_evaluation_status.
 | `design-model` (011 F3 iki tur; `design_model` golden'ları) | v1 | **canlı değerlendirme bekliyor** |
 | `case-review` (011 P8; `case_review` golden'ları) | v1 | **canlı değerlendirme bekliyor** |
 | `case-audit` (011 P9, Agent Probe denetimi; `case_audit` golden'ları) | v1 | **canlı değerlendirme bekliyor** |
+| `platform-common` (011 F4 ortak platform eki; `case-generation` girdisine eklenir) | v1 | **canlı değerlendirme bekliyor** |
+| `platform-web` (P1; golden `case_generation/golden/platform-web/TPD-4`) | v1 | **canlı değerlendirme bekliyor** |
+| `platform-mobile` (P2) | v1 | **canlı değerlendirme bekliyor** |
+| `platform-desktop` (P3) | v1 | **canlı değerlendirme bekliyor** |
+| `platform-api` (P4) | v1 | **canlı değerlendirme bekliyor** |
+| `platform-data` (P4.5) | v1 | **canlı değerlendirme bekliyor** |
+| `case-negative` (P5; `case_deepening`) | v1 | **canlı değerlendirme bekliyor** |
+| `case-technique` (P6; `case_deepening`) | v1 | **canlı değerlendirme bekliyor** |
 | `verify-and-map` (+ `verify_and_map` golden'ları) | v3 | **canlı değerlendirme bekliyor** |
 | `verify-and-map-app` (+ `verify_and_map_app` golden'ları; 009 mobil/masaüstü) | v1 | **canlı değerlendirme bekliyor** |
 | `triage` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |

@@ -10,6 +10,7 @@ import { BAZ_KAYNAGI } from "../components/BazDegerKarti";
 import { CaseKarti } from "../components/CaseKarti";
 import { GherkinIndir } from "../components/GherkinIndir";
 import { DenetimPaneli, ReviewPaneli } from "../components/KalitePanelleri";
+import { DerinlestirmePaneli } from "../components/DerinlestirmePaneli";
 import { KapsamPaneli } from "../components/KapsamPaneli";
 import { BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, Metrik, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { HedefOlcer } from "../components/Grafikler";
@@ -335,6 +336,19 @@ export function CaseReview() {
           başlar.
         </p>
       </Kart>
+
+      {/* 011 P5/P6: derinleştirme bitince case listesi, kapsam özeti ve ölçümler tazelenir. */}
+      {caseler.veri && liste.length > 0 && (
+        <DerinlestirmePaneli
+          gereksinim={g}
+          tazele={() => {
+            void gereksinim.yenile(true);
+            void caseler.yenile(true);
+            void metrik.yenile(true);
+            void kapsam.yenile(true);
+          }}
+        />
+      )}
 
       {caseler.veri && (
         <KapsamPaneli

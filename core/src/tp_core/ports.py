@@ -195,6 +195,7 @@ class ModelGateway(Protocol):
         max_tokens: int = 4096,
         workflow_id: UUID | None = None,
         call_id: UUID | None = None,  # deterministik (iş + adım) → yeniden denemede tek çağrı
+        ek: Mapping[str, Any] | None = None,  # çağıranın ai_call.ek alanları (011 platform ekleri)
     ) -> CallResult: ...
 
     def run_agent(

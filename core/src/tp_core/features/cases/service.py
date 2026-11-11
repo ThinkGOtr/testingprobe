@@ -482,6 +482,11 @@ def generation_messages(
             "yalnızca buradan ve AC/PO cevabından türet):",
             test_verisi,
         ]
+    # Platform ekleri + analist seçenekleri (011 K5/F4; `secenekler.mesaj_parcalari`). Varsayılan
+    # seçeneklerde boş: girdi dalga 1'deki gibi kalır.
+    from tp_core.features.cases import secenekler as secenek_modulu
+
+    parcalar += secenek_modulu.mesaj_parcalari(secenekler, kaynak, tur)
     seviye = str((secenekler or {}).get("test_seviyesi") or VARSAYILAN_TEST_SEVIYESI)
     if seviye not in TEST_SEVIYELERI:
         raise ValueError(f"geçersiz test seviyesi: {seviye}")
@@ -517,26 +522,39 @@ def _olay(session: Session, ad: str, veri: Mapping[str, Any]) -> None:
 
 
 def start_generation(
-    session: Session, requirement_id: uuid.UUID, user: Principal, *, kip: str = "tek_tur"
+    session: Session,
+    requirement_id: uuid.UUID,
+    user: Principal,
+    *,
+    kip: str = "tek_tur",
+    secenekler: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """`POST /requirements/{id}/generate-cases`: kapıdan geçir, iş akışını ve işi aç.
 
     `kip="iki_tur"` (011 F3): gereksinim `model_ready` değilse tasarım modeli üretimi başlar
     (`asama: "model"`); `model_ready` ise onaylı ve güncel modelden case üretimi (tur 2, `asama:
     "case"`). `tek_tur` eski yoldur (gövdesiz çağrı).
+
+    `secenekler` (011 K5) verilirse doğrulanır ve gereksinimde saklanır (iki turda model
+    aşamasında da; tur 2 aynı seçenekleri kullanır); verilmezse kayıtlı son seçenekler (yoksa
+    None = bugünkü davranış) kullanılır. İş yükünde (`yuk.secenekler`) taşınır.
     """
+    from tp_core.features.cases import secenekler as secenek_modulu
+
     if kip not in KIPLER:
         raise InvalidDecision(f"geçersiz üretim kipi: {kip} (iki_tur | tek_tur)")
+    if secenekler is not None:
+        secenekler = secenek_modulu.dogrula(secenekler)
     tasarim_modeli_id: uuid.UUID | None = None
     if kip == "iki_tur":
         from tp_core.features.cases import model_service
 
         req = get_requirement(session, requirement_id, lock=True)
         if req.durum != "model_ready":
-            return {
-                **model_service.start_model_generation(session, requirement_id, user),
-                "kip": kip,
-            }
+            sonuc = model_service.start_model_generation(session, requirement_id, user)
+            if secenekler is not None:
+                req.uretim_secenekleri = secenekler
+            return {**sonuc, "kip": kip}
         tasarim_modeli_id = model_service.require_approved_model(session, req).id
     req = get_requirement(session, requirement_id, lock=True)
     if req.durum == "generating":
@@ -552,18 +570,25 @@ def start_generation(
     if onceki == "po_approved":
         # po_approved'a yalnızca (yeni) PO onayıyla girilir: önceki case'ler eski metne aittir.
         invalidate_cases(session, req, user, "yeni PO onayı; önceki case'ler eski metne ait")
+    if secenekler is not None:
+        req.uretim_secenekleri = secenekler
+    else:
+        secenekler = secenek_modulu.kayitli(req.uretim_secenekleri)
     uretim_no = next_uretim_no(session, req.id)
+    yuk: dict[str, Any] = {
+        "requirement_id": str(req.id),
+        "uretim_no": uretim_no,
+        "baslatan": user.as_dict(),
+        "kip": kip,
+        "tasarim_modeli_id": str(tasarim_modeli_id) if tasarim_modeli_id else None,
+    }
+    if secenekler is not None:
+        yuk["secenekler"] = secenekler
     wf_id, job_id = start_workflow(
         session.connection(),
         WORKFLOW_TUR,
         user.kullanici_adi,
-        yuk={
-            "requirement_id": str(req.id),
-            "uretim_no": uretim_no,
-            "baslatan": user.as_dict(),
-            "kip": kip,
-            "tasarim_modeli_id": str(tasarim_modeli_id) if tasarim_modeli_id else None,
-        },
+        yuk=yuk,
         job_tur=GEN_JOB,
         nesne_turu="requirement",
         nesne_id=req.id,
@@ -868,6 +893,7 @@ def run_generation(
         po_onayi_guncel = req.onaylanan_hash is not None and req.onaylanan_hash == content_hash_of(
             req
         )
+        from tp_core.features.cases import secenekler as secenek_modulu
         from tp_core.features.cases import testdata
 
         onayli_model: dict[str, Any] | None = None
@@ -878,13 +904,17 @@ def run_generation(
             onayli_model, model_engeli = model_service.approved_content(
                 s, req, uuid.UUID(str(yuk["tasarim_modeli_id"]))
             )
+        secenekler = yuk.get("secenekler")
         messages = generation_messages(
             req,
             _onaylanan_sorular(s, req.id),
             test_verisi=testdata.block(),
+            secenekler=secenekler,
             onayli_model=onayli_model,
         )
         replay_key = replay_key_for(req)
+        replay_key["name"] = secenek_modulu.replay_adi(replay_key["name"], secenekler)
+        cagri_eki = secenek_modulu.ai_call_eki(secenekler)
     if model_engeli is not None:
         _fail_requirement(engine, rid, model_engeli)
         raise PermanentJobError(model_engeli)
@@ -903,6 +933,7 @@ def run_generation(
             replay_key=replay_key,
             workflow_id=wf_id,
             call_id=deterministic_call_id(ctx.job_id, PURPOSE),
+            **({"ek": cagri_eki} if cagri_eki else {}),
         )
     except BudgetExceeded as exc:
         _fail_requirement(engine, rid, f"bütçe aşıldı: {exc}")
@@ -1036,6 +1067,7 @@ def run_generation(
                 "kip": yuk.get("kip") or "tek_tur",
                 "tasarim_modeli_id": yuk.get("tasarim_modeli_id"),
                 "tur2_farklari": tur2_farklari,
+                **cagri_eki,
             },
         )
         for tc in eklenen:

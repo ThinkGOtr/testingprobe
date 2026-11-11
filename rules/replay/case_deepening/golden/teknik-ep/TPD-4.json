@@ -1,0 +1,191 @@
+{
+  "kind": "call",
+  "purpose": "case_deepening",
+  "golden": "teknik-ep/TPD-4",
+  "note": "Derinleştirme golden'ı (011 P6.1 eşdeğerlik bölümleme). Elle hazırlandı (model çıktısı değil). Mevcut set olarak TPD-4 ana golden'ı varsayılır (EP-V1, EP-I1, EP-I2 mevcut; yeni bölümler EP-I3, EP-I4). Kaynağın sessiz olduğu boş parola engelli (Q1), harf duyarlılığı varsayıma bağlı (A1). Tür/teknik golden adındadır (`negatif/…`, `teknik-ep/…`; deepen.replay_name); girdi beyanı story bloğunu denetler.",
+  "input_match": {
+    "sources": [
+      "jira:TPD-4"
+    ],
+    "acceptance_criteria": [
+      "AC1: Bayi geçerli kullanıcı adı ve parolayla giriş yaptığında ürün kataloğu açılır.",
+      "AC2: Hatalı parola girildiğinde \"Kullanıcı adı veya parola hatalı\" mesajı gösterilir ve giriş yapılmaz."
+    ],
+    "contains": [
+      "Bayi, kullanıcı adı ve parolasıyla portala giriş yapabilmelidir."
+    ]
+  },
+  "output": {
+    "open_questions": [
+      {
+        "id": "Q1",
+        "question": "Parola alanı boş bırakılıp \"Giriş yap\"a basılırsa hangi davranış ve mesaj beklenir?",
+        "owner": "PO"
+      }
+    ],
+    "assumptions": [
+      {
+        "id": "A1",
+        "statement": "Parola büyük/küçük harfe duyarlıdır; doğru parolanın harf büyüklüğü farklı yazımı hatalı paroladır.",
+        "owner": "developer"
+      }
+    ],
+    "coverage_items": [
+      {
+        "id": "EP-I3",
+        "ac_ref": "AC2",
+        "definition": "Kayıtlı kullanıcı adı ve boş parola (beklenen sonuç kaynakta tanımsız, Q1)",
+        "valid": false
+      },
+      {
+        "id": "EP-I4",
+        "ac_ref": "AC2",
+        "definition": "Kayıtlı kullanıcı adı ve doğru parolanın harf büyüklüğü farklı yazımı: hatalı parola sayılır (varsayım A1)",
+        "valid": false
+      }
+    ],
+    "negative_coverage": [
+      {
+        "item": "EP-I3",
+        "decision": "tested",
+        "rationale": "Boş parola ayrı geçersiz bölümdür; beklenen sonuç Q1 yanıtlanınca yazılır (engelli case)."
+      },
+      {
+        "item": "EP-I4",
+        "decision": "tested",
+        "rationale": "Harf duyarlılığı parola bölümünün sınırını belirler; AC2 mesajı varsayım A1 ile beklenir."
+      }
+    ],
+    "not_covered": [],
+    "observations": [],
+    "automation_open_points": [],
+    "config_matrix": {
+      "parameters": [],
+      "constraints": []
+    },
+    "testability_gaps": [],
+    "cases": [
+      {
+        "title": "Boş parola ile Giriş yap'a basılır",
+        "type": "negative",
+        "risk": "medium",
+        "acceptance_criteria_refs": [
+          "AC2"
+        ],
+        "preconditions": [
+          "Oturum açık değil"
+        ],
+        "steps": [
+          {
+            "id": "S1",
+            "action": "Giriş sayfasını aç",
+            "data": null,
+            "expected": "Giriş formu görüntülenir"
+          },
+          {
+            "id": "S2",
+            "action": "Kullanıcı adını gir, parola alanını boş bırakıp \"Giriş yap\" butonuna bas",
+            "data": "bayi1",
+            "expected": ""
+          }
+        ],
+        "expected_result": "",
+        "tags": [
+          "AI-generated"
+        ],
+        "technique": [
+          "EP"
+        ],
+        "covers": [
+          "EP-I3"
+        ],
+        "priority": "P3",
+        "priority_rationale": "Boş parolayla giriş açılırsa yetkisiz erişim olur; form davranışı tanımsız olduğundan önce PO yanıtı gerekir; olasılık düşük.",
+        "platform": null,
+        "test_level": "SYSTEM",
+        "verification_point": "UI",
+        "requires_real_device": false,
+        "standard_refs": [],
+        "readiness": "blocked",
+        "assumption_refs": [],
+        "open_question_refs": [
+          "Q1"
+        ],
+        "test_data": [
+          {
+            "name": "kayıtlı kullanıcı adı",
+            "value": "bayi1",
+            "class": "EP-I3",
+            "synthetic": true,
+            "is_attack_payload": false
+          }
+        ],
+        "teardown": []
+      },
+      {
+        "title": "Doğru parolanın harf büyüklüğü farklı yazımında hata mesajı gösterilir ve giriş yapılmaz",
+        "type": "negative",
+        "risk": "medium",
+        "acceptance_criteria_refs": [
+          "AC2"
+        ],
+        "preconditions": [
+          "Oturum açık değil"
+        ],
+        "steps": [
+          {
+            "id": "S1",
+            "action": "Giriş sayfasını aç",
+            "data": null,
+            "expected": "Giriş formu görüntülenir"
+          },
+          {
+            "id": "S2",
+            "action": "Kullanıcı adını ve harf büyüklüğü değiştirilmiş parolayı gir, \"Giriş yap\" butonuna bas",
+            "data": "bayi1 / demo123!",
+            "expected": "\"Kullanıcı adı veya parola hatalı\" mesajı görünür ve giriş sayfasında kalınır"
+          }
+        ],
+        "expected_result": "\"Kullanıcı adı veya parola hatalı\" mesajı gösterilir ve giriş yapılmaz",
+        "tags": [
+          "AI-generated"
+        ],
+        "technique": [
+          "EP"
+        ],
+        "covers": [
+          "EP-I4"
+        ],
+        "priority": "P2",
+        "priority_rationale": "Parola harf duyarsız kabul edilirse parola gücü düşer (güvenlik); olasılık düşük, etki orta.",
+        "platform": null,
+        "test_level": "SYSTEM",
+        "verification_point": "UI",
+        "requires_real_device": false,
+        "standard_refs": [],
+        "readiness": "assumption_dependent",
+        "assumption_refs": [
+          "A1"
+        ],
+        "open_question_refs": [],
+        "test_data": [
+          {
+            "name": "kayıtlı kullanıcı adı",
+            "value": "bayi1",
+            "class": null,
+            "synthetic": true,
+            "is_attack_payload": false
+          },
+          {
+            "name": "harf büyüklüğü değişmiş parola",
+            "value": "demo123!",
+            "class": "EP-I4",
+            "synthetic": true,
+            "is_attack_payload": false
+          }
+        ],
+        "teardown": []
+      }
+    ]
+  }
+}

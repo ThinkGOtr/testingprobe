@@ -72,6 +72,7 @@ import { javaDosyaYolu, javaTestKodu, uygulamayaCevir } from "./platformlar";
 import { PLATFORMLAR, platformUyarla, type Platform } from "../../lib/platform";
 import { asistanMockSifirla, asistanRotalari } from "./asistan";
 import { modelUretimiBaslat, onayliModel, tasarimModeliRotalari, type ModelBaglami } from "./tasarimModeli";
+import { derinlestirmeRotalari, PLATFORM_REPLAY_MISS, platformGoldenAdi, platformGoldeni, uretimGovdesiniDogrula } from "./derinlestirme";
 import { oneriKuleOlcumu, oneriMockSifirla, oneriRotalari } from "./oneri";
 import type { AsistanliKule } from "../../components/asistan/OnerilerOlcumKarti";
 import { kirmaTaslagiMi } from "../../lib/yolHaritasi";
@@ -662,7 +663,14 @@ function caseUret(id: string, govde?: unknown): IsYaniti {
   const g = bul(veri.gereksinimler, id, "Gereksinim");
   // 011 K1: gövdesiz çağrı tek tur (geriye uyum); iki turda model onayından önce model üretilir.
   const kip = (govde as { kip?: unknown } | null | undefined)?.kip === "iki_tur" ? "iki_tur" : "tek_tur";
-  if (kip === "iki_tur" && g.durum !== "model_ready") return modelUretimiBaslat(modelBaglami, g);
+  // 011 K5: gövdedeki üretim seçenekleri (isteğe bağlı) önce doğrulanır (422); gövdesiz çağrı eski davranış.
+  const secenekler = uretimGovdesiniDogrula(govde);
+  if (kip === "iki_tur" && g.durum !== "model_ready") {
+    // core gibi: seçenekler model aşamasında da saklanır; tur 2 aynı seçenekleri kullanır.
+    const sonuc = modelUretimiBaslat(modelBaglami, g);
+    if (secenekler) (veri.uretimSecenekleri ??= {})[id] = secenekler;
+    return sonuc;
+  }
   if (kip === "iki_tur" && !onayliModel(veri, g)) {
     throw new ApiError(409, "Onaylı ve güncel tasarım modeli yok; önce modeli onaylayın ya da yeniden üretin.");
   }
@@ -674,16 +682,34 @@ function caseUret(id: string, govde?: unknown): IsYaniti {
   if (g.po.onaylanan_hash && g.icerik_hash && g.po.onaylanan_hash !== g.icerik_hash) {
     throw new ApiError(409, "İçerik PO onayından sonra değişmiş; yeniden PO teyidi gerekir.");
   }
+  // Seçenekler gereksinimde saklanır; sonraki generation-options'ta `secenekler` olarak döner.
+  if (secenekler) (veri.uretimSecenekleri ??= {})[id] = secenekler;
   gecir("requirement", g, "generating");
   delete g.son_hata;
   gereksinimOlayi(g);
   const mevcut = veri.caseler.filter((c) => c.requirement_id === id).length;
+  // Platform seçildiyse golden `platform-<ekler>/<kök>`; kayıt yoksa core gibi REPLAY-MISS: iş
+  // başarısız, gereksinim `failed` (case üretimi yeniden denenebilir), case eklenmez.
+  const platformAdi = secenekler ? platformGoldenAdi(g, secenekler.platformlar) : null;
+  const platformCaseleri = platformAdi ? platformGoldeni(platformAdi, g) : undefined;
+  if (platformAdi && !platformCaseleri) {
+    arkaPlan([
+      () => {
+        gecir("requirement", g, "failed");
+        const neden = PLATFORM_REPLAY_MISS(platformAdi);
+        g.son_hata = { neden, zaman: simdi(), job_tur: "cases.generate", is_hatasi: neden, oneri: "Aynı girdiyle yeniden denemek sonucu değiştirmez.", yeniden_denemek_ise_yarar: false };
+        denetimEkle("ai_call", g.id, `Case üretimi: ${neden}`, "core-worker");
+        gereksinimOlayi(g);
+      },
+    ]);
+    return is("started", "Case üretimi başlatıldı.");
+  }
   // Golden kaydı güncel AC'lerle birebir eşleşirse onun case'leri (REPLAY); değilse kural tabanlı
   // yedek iskelet (REPLAY-MISS: canlı model çıktısı değil, öyle de gösterilmez).
-  const golden = goldenCaseler(g);
+  const golden = platformCaseleri ?? goldenCaseler(g);
   const mod = golden ? ("replay" as const) : ("replay_miss" as const);
   // Golden v3 ise üretimin üst düzey listeleri (core `case_uretim.ozet`) de saklanır: case-summary bunlardan hesaplanır.
-  const goldenAdi = golden ? goldenCaseKaydi(g) : undefined;
+  const goldenAdi = platformCaseleri ? platformAdi! : golden ? goldenCaseKaydi(g) : undefined;
   const uretimNo = (veri.caseUretimleri?.[id]?.length ?? 0) + 1;
   const uretimOzeti = goldenAdi ? goldenUretimOzeti(goldenAdi, uretimNo) : undefined;
   const uretilecek: { ref: string; metin: string; golden?: TestCaseIcerik }[] = golden
@@ -1978,6 +2004,18 @@ const ROTALAR: Rota[] = [
   ["POST", /^\/requirements\/([^/]+)\/generate-cases$/, (m, _q, govde) => caseUret(decodeURIComponent(m[1]), govde)],
   // Test tasarım modeli (011 F3, iki tur): api/mock/tasarimModeli.ts.
   ...tasarimModeliRotalari(modelBaglami),
+  // Üretim seçenekleri ve derinleştirme (011 K5, P5/P6): api/mock/derinlestirme.ts.
+  ...derinlestirmeRotalari({
+    veri: () => veri,
+    girisGerekli,
+    rolGerekli,
+    gereksinim: (id) => bul(veri.gereksinimler, id, "Gereksinim"),
+    arkaPlan,
+    yeniId,
+    kaydet,
+    denetimEkle,
+    gereksinimOlayi,
+  }),
   [
     "GET",
     /^\/cases$/,

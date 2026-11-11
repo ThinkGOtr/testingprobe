@@ -77,6 +77,25 @@ class IcerikKaynagi:
 # `rules/assistant/*.yaml` ve `rules/assistant/rotalar.json` (model çıktısındaki rotanın bağlantıya
 # dönüşmesini ve öneri kurallarının ekran/eylem doğrulamasını belirler; plandaki listeye eklendi).
 # Değerlendirme seti (`evaluation/assistant.json`) ölçüttür, içerik değil; hash'e girmez.
+# 011 F4 platform ekleri: ek kendi paketidir (kayıt + set) ama ev sahibi `case-generation` ile
+# çağrılır; değerlendirilen içerik ek + ortak ek + ev sahibi prompt + şema + amaç ayarıdır. Ev
+# sahibi prompt/şema değişirse ekin `evaluated` kaydı `icerik_degisti` olur (kapı kapanır).
+_PLATFORM_EV_SAHIBI = (
+    "prompts/platform-common.md",
+    "prompts/case-generation.md",
+    "schemas/case_generation.schema.json",
+)
+_PLATFORM_EKLERI = (
+    "platform-common",
+    "platform-web",
+    "platform-mobile",
+    "platform-desktop",
+    "platform-api",
+    "platform-data",
+)
+# 011 P5/P6 derinleştirme: prompt + kendi şeması (case_generation kopyası) + amaç ayarı.
+_DERINLESTIRME = ("case-negative", "case-technique")
+
 ICERIK_KAYNAKLARI: Mapping[str, IcerikKaynagi] = {
     "assistant": IcerikKaynagi(
         dosyalar=(
@@ -87,6 +106,20 @@ ICERIK_KAYNAKLARI: Mapping[str, IcerikKaynagi] = {
         globlar=("assistant/*.yaml", "assistant/*.json"),
         model_amaclari=("assistant", "assistant_deep"),
     ),
+    **{
+        ek: IcerikKaynagi(
+            dosyalar=tuple(sorted({f"prompts/{ek}.md", *_PLATFORM_EV_SAHIBI})),
+            model_amaclari=("case_generation",),
+        )
+        for ek in _PLATFORM_EKLERI
+    },
+    **{
+        paket: IcerikKaynagi(
+            dosyalar=(f"prompts/{paket}.md", "schemas/case_deepening.schema.json"),
+            model_amaclari=("case_deepening",),
+        )
+        for paket in _DERINLESTIRME
+    },
 }
 
 

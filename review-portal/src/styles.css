@@ -4944,3 +4944,5 @@ td > .satir-baglanti + .cip,
   margin: 0 0 0.4rem;
   font-size: 0.95rem;
 }
+/* 011 P6: teknik seçimi + düğme aynı satırda (DerinlestirmePaneli). */
+.derinlestirme-teknik { display: inline-flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }

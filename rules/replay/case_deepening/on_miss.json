@@ -1,0 +1,6 @@
+{
+  "kind": "call",
+  "purpose": "case_deepening",
+  "policy": "raise",
+  "note": "REPLAY-MISS politikası (golden değildir). Derinleştirme golden'ları `golden/negatif/<ad>.json` ve `golden/teknik-<teknik>/<ad>.json` senaryo adlarıyla aranır; girdi beyanı (input_match) uymazsa ya da golden yoksa başka dokümanın case'leri taslak olarak döndürülmez: ReplayNoOutput ('REPLAY-MISS: bu girdi için kayıtlı model çıktısı yok; canlı model gerekir'), ai_call'a mod replay_miss yazılır, yeni taslak oluşmaz, mevcut set değişmez. Bkz. rules/replay/README.md."
+}

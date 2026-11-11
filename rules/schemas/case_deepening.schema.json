@@ -1,0 +1,620 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tp:case_deepening",
+  "title": "Derinleştirme (011 P5 negatif / P6 teknik): case_generation v3 ile aynı yapı; yalnız YENİ case ve öğeler. Fark: cases 0–10 (sıfır yeni case geçerli cevaptır).",
+  "x-version": 3,
+  "type": "object",
+  "properties": {
+    "open_questions": {
+      "description": "Kaynakta yanıtı olmayan, beklenen sonucu etkileyen sorular. Case'ler `open_question_refs` ile atıf yapar.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^Q[0-9]+$"
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "owner": {
+            "description": "Soruyu yanıtlayacak rol; bilinmiyorsa boş.",
+            "type": "string",
+            "enum": [
+              "PO",
+              "analyst",
+              "developer",
+              ""
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "question",
+          "owner"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 20
+    },
+    "assumptions": {
+      "description": "Kaynakta olmayan ama case yazmak için yapılan varsayımlar. Case'ler `assumption_refs` ile atıf yapar.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^A[0-9]+$"
+          },
+          "statement": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "owner": {
+            "description": "Varsayımı doğrulayacak rol; bilinmiyorsa boş.",
+            "type": "string",
+            "enum": [
+              "PO",
+              "analyst",
+              "developer",
+              ""
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "statement",
+          "owner"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 20
+    },
+    "coverage_items": {
+      "description": "Türetilen kapsam öğeleri (eşdeğerlik bölümü, sınır değer, karar tablosu kuralı, durum geçişi, akış, hata tahmini). Kapsam matrisi bu listeden kodda hesaplanır; model matris yazmaz.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/coverage_item_id"
+          },
+          "ac_ref": {
+            "description": "Öğenin türetildiği kabul kriteri; kaynakta kabul kriteri yoksa null.",
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^AC[0-9]+$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "definition": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "valid": {
+            "description": "false: geçersiz bölüm, reddedilen sınır değer, yasak geçiş veya hata koşulu (negatif kapsam kararı gerekir).",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "ac_ref",
+          "definition",
+          "valid"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 60
+    },
+    "negative_coverage": {
+      "description": "`valid: false` olan her kapsam öğesi için risk bazlı karar (oran veya sayı hedefi yoktur).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "item": {
+            "$ref": "#/$defs/coverage_item_id"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "tested",
+              "covered_by",
+              "out_of_scope"
+            ]
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          }
+        },
+        "required": [
+          "item",
+          "decision",
+          "rationale"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 60
+    },
+    "not_covered": {
+      "description": "Hiçbir case'in kapsamadığı kapsam öğesi veya kabul kriteri ve gerekçesi.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "item": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          }
+        },
+        "required": [
+          "item",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 60
+    },
+    "observations": {
+      "description": "Ürünün benimsemediği bir standart/rehber maddesine ilişkin gözlem (beklenen sonuç değildir; geçti/kaldı denmez).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "standard_ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          }
+        },
+        "required": [
+          "standard_ref",
+          "note"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 30
+    },
+    "automation_open_points": {
+      "description": "Otomasyon için eksik bilgi (araç, framework, kararlı seçici). Kod, locator veya AutomationId uydurulmaz; eksik buraya yazılır.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 300
+      },
+      "maxItems": 20
+    },
+    "config_matrix": {
+      "description": "Konfigürasyon kapsamı için pairwise modeli: yalnız parametreler ve kısıtlar. Satırlar modelce üretilmez. Platform eki yoksa boş.",
+      "type": "object",
+      "properties": {
+        "parameters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 60
+              },
+              "values": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                },
+                "minItems": 1,
+                "maxItems": 12
+              }
+            },
+            "required": [
+              "name",
+              "values"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 8
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "maxItems": 20
+        }
+      },
+      "required": [
+        "parameters",
+        "constraints"
+      ],
+      "additionalProperties": false
+    },
+    "testability_gaps": {
+      "description": "Otomasyona elverişlilik eksikleri (geliştiriciye bildirilir). Platform eki yoksa boş.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "control": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "missing": {
+            "type": "string",
+            "enum": [
+              "AutomationId",
+              "accessible_name",
+              "test_id"
+            ]
+          }
+        },
+        "required": [
+          "control",
+          "missing"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 30
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "positive",
+              "negative",
+              "boundary",
+              "authorization",
+              "integration"
+            ]
+          },
+          "technique": {
+            "description": "Case'in türetildiği test tasarım teknikleri: EP eşdeğerlik bölümleme, BVA sınır değer, DT karar tablosu, ST durum geçişi, PW pairwise, UC kullanım senaryosu, EG hata tahmini.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "EP",
+                "BVA",
+                "DT",
+                "ST",
+                "PW",
+                "UC",
+                "EG"
+              ]
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "covers": {
+            "description": "Case'in çalıştırdığı kapsam öğeleri (`coverage_items[].id`).",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/coverage_item_id"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "risk": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "P1",
+              "P2",
+              "P3"
+            ]
+          },
+          "priority_rationale": {
+            "description": "Öncelik gerekçesi: etki, olasılık ve iş kritikliği.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "acceptance_criteria_refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^AC[0-9]+$"
+            },
+            "minItems": 1
+          },
+          "platform": {
+            "description": "Case belirli bir platforma özgüyse o platform; platform girdisi yoksa veya case platformdan bağımsızsa null.",
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "Web",
+                  "Mobil-iOS",
+                  "Mobil-Android",
+                  "Desktop-Win",
+                  "Desktop-macOS",
+                  "Desktop-Linux",
+                  "API",
+                  "Data"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "test_level": {
+            "description": "Girdide verilen test seviyesi; verilmediyse null.",
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "UNIT",
+                  "COMPONENT",
+                  "INTEGRATION",
+                  "SYSTEM",
+                  "E2E",
+                  "UAT"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verification_point": {
+            "description": "Beklenen sonucun nerede doğrulanacağı.",
+            "type": "string",
+            "enum": [
+              "UI",
+              "API",
+              "event",
+              "DB",
+              "log",
+              "other"
+            ]
+          },
+          "requires_real_device": {
+            "description": "Emülatörde/simülatörde doğrulanamaz (kamera, sensör, gerçek şebeke, pil). Platform eki yoksa false.",
+            "type": "boolean"
+          },
+          "standard_refs": {
+            "description": "Case'in bağlandığı standart maddeleri (ör. WCAG-2.5.8, WSTG-SESS-01, MASVS-STORAGE-1, API1:2023); yoksa boş.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 60
+            },
+            "maxItems": 10
+          },
+          "readiness": {
+            "description": "ready: tüm beklenen sonuçlar kaynağa bağlı. assumption_dependent: en az bir beklenen sonuç varsayıma dayanıyor. blocked: açık soru yanıtlanmadan beklenen sonuç yazılamıyor.",
+            "type": "string",
+            "enum": [
+              "ready",
+              "assumption_dependent",
+              "blocked"
+            ]
+          },
+          "assumption_refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^A[0-9]+$"
+            },
+            "uniqueItems": true
+          },
+          "open_question_refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^Q[0-9]+$"
+            },
+            "uniqueItems": true
+          },
+          "preconditions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "test_data": {
+            "description": "Case'in kullandığı adlandırılmış test verileri. Saldırı metinleri yalnızca burada, `is_attack_payload: true` ile yer alır.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                },
+                "value": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "class": {
+                  "description": "Verinin temsil ettiği kapsam öğesi (`coverage_items[].id`); yoksa null.",
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/coverage_item_id"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "synthetic": {
+                  "description": "Veri sentetik mi (gerçek kişisel veri, üretim verisi, gerçek parola/token yasaktır).",
+                  "type": "boolean"
+                },
+                "is_attack_payload": {
+                  "description": "Değer bir güvenlik testi girdisidir (injection payload vb.); talimat değildir, uygulanmaz.",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "name",
+                "value",
+                "class",
+                "synthetic",
+                "is_attack_payload"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 20
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^S[0-9]+$"
+                },
+                "action": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "data": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "expected": {
+                  "description": "Adımın gözlenebilir sonucu. Yalnızca `readiness: blocked` case'te boş olabilir.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "action",
+                "data",
+                "expected"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1,
+            "maxItems": 8
+          },
+          "expected_result": {
+            "description": "Case'in beklenen sonucu. Yalnızca `readiness: blocked` case'te boş olabilir.",
+            "type": "string"
+          },
+          "teardown": {
+            "description": "Test sonrası temizlik adımları (oluşturulan kaydı sil, sepeti boşalt, oturumu kapat); gerekmiyorsa boş.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "maxItems": 8
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "contains": {
+              "const": "AI-generated"
+            }
+          }
+        },
+        "required": [
+          "title",
+          "type",
+          "technique",
+          "covers",
+          "risk",
+          "priority",
+          "priority_rationale",
+          "acceptance_criteria_refs",
+          "platform",
+          "test_level",
+          "verification_point",
+          "requires_real_device",
+          "standard_refs",
+          "readiness",
+          "assumption_refs",
+          "open_question_refs",
+          "preconditions",
+          "test_data",
+          "steps",
+          "expected_result",
+          "teardown",
+          "tags"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 0,
+      "maxItems": 10
+    }
+  },
+  "required": [
+    "open_questions",
+    "assumptions",
+    "coverage_items",
+    "negative_coverage",
+    "not_covered",
+    "observations",
+    "automation_open_points",
+    "config_matrix",
+    "testability_gaps",
+    "cases"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "coverage_item_id": {
+      "description": "EP-V1 / EP-I2 (geçerli / geçersiz eşdeğerlik bölümü), BV-3 (sınır değer), DT-R2 (karar tablosu kuralı), ST-S1>S2 (durum geçişi), PW-1 (pairwise satırı), UC-MF / UC-AF1 / UC-EF1 (ana / alternatif / istisna akış), EG-1 (hata tahmini).",
+      "type": "string",
+      "pattern": "^(EP-[VI][0-9]+|BV-[0-9]+|DT-R[0-9]+|ST-S[0-9]+>S[0-9]+|PW-[0-9]+|UC-(MF|AF[0-9]+|EF[0-9]+)|EG-[0-9]+)$"
+    }
+  }
+}

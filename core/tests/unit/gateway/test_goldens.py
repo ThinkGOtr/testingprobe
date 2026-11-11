@@ -39,6 +39,7 @@ from tests.unit.gateway.demo_sources import (
     normalized_text_values,
     page_object_methods,
     readonly_tables,
+    scenario_goldens,
     seed_setting,
     story_acs,
 )
@@ -62,7 +63,8 @@ def _ids(items: list[tuple[str, Path, Any]]) -> list[str]:
 
 def test_every_model_purpose_has_a_golden() -> None:
     purposes = set(load_model_table(RULES).purposes)
-    have = {p for p, _, _ in ALL_GOLDENS}
+    # Yalnız senaryo golden'ı olan amaç (case_deepening: `negatif/`, `teknik-*/`) da sayılır.
+    have = {p for p, _, _ in ALL_GOLDENS} | {p for p, _, _ in scenario_goldens()}
     assert purposes <= have, f"golden'ı olmayan amaç(lar): {sorted(purposes - have)}"
 
 

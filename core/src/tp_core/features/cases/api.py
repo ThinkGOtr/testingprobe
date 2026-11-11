@@ -11,6 +11,8 @@
 | GET  | `/requirements/{id}/case-summary` | herkes — üretim özetleri + kapsam matrisi (011 §4.4) |
 | POST | `/requirements/{id}/review-complete` | analyst |
 | GET  | `/requirements/{id}/cases.feature[?yalniz_yayinlanan=1]` | herkes — Gherkin (011 F8) |
+| GET  | `/requirements/{id}/generation-options` | herkes — kayıtlı seçenekler + katalog (K5) |
+| POST | `/requirements/{id}/deepen` (GET: son durum) | analyst — derinleştirme (P5/P6) |
 """
 
 from __future__ import annotations
@@ -20,10 +22,12 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from tp_core.auth.deps import CurrentUser, DbSession, require_role
+from tp_core.features.cases import deepen as deepen_modulu
 from tp_core.features.cases import denetim_akisi, gherkin, review, service
+from tp_core.features.cases import secenekler as secenek_modulu
 from tp_core.workflow.service import Principal
 
 router = APIRouter(tags=["cases"])
@@ -43,16 +47,6 @@ class IsYaniti(BaseModel):
     # 011 K1: üretim kipi ve aşama (iki turda önce "model", onaylı modelden sonra "case").
     kip: Literal["iki_tur", "tek_tur"] | None = None
     asama: Literal["model", "case"] | None = None
-
-
-class UretimBaslatGirdisi(BaseModel):
-    """Üretim başlatma gövdesi (011 §4.4). Gövdesiz çağrı geriye uyum için tek turdur.
-
-    `kip`: `iki_tur` (varsayılan; önce test tasarım modeli, analist onayı, sonra yalnız onaylı
-    modelden case) | `tek_tur` (hızlı; doğrudan case). IDE/MCP kanalı tek turdur.
-    """
-
-    kip: Literal["iki_tur", "tek_tur"] = "iki_tur"
 
 
 class CaseKararGirdisi(BaseModel):
@@ -76,6 +70,37 @@ class CaseKararGirdisi(BaseModel):
     beklenen_anlam_degisti: bool | None = None
 
 
+class UretimBaslatGirdisi(BaseModel):
+    """`POST generate-cases` gövdesi (isteğe bağlı; gövdesiz çağrı geriye uyumlu).
+
+    `kip` (011 F3): `iki_tur` (gövde verildiğinde varsayılan; önce test tasarım modeli, analist
+    onayı, sonra yalnız onaylı modelden case) | `tek_tur` (hızlı; doğrudan case). Gövdesiz çağrı
+    geriye uyum için tek turdur; IDE/MCP kanalı tek turdur.
+
+    Diğer alanlar üretim seçenekleridir (011 K5; anlamsal doğrulama `secenekler.dogrula`, 422).
+    Seçenek alanlarından hiçbiri verilmezse gereksinimde kayıtlı son seçenekler kullanılır.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kip: Literal["iki_tur", "tek_tur"] = "iki_tur"
+
+    platformlar: list[str] | None = None
+    test_seviyesi: str | None = None
+    benimsenen_standartlar: list[str] | None = None
+    kapsam_disi: str | None = None
+    roller: str | None = None
+    ek_bilgi: dict[str, str | bool] | None = None
+
+    def secenekler(self) -> dict[str, Any] | None:
+        alanlar = {
+            k: v
+            for k in secenek_modulu.UretimSecenekleri.model_fields
+            if (v := getattr(self, k)) is not None
+        }
+        return alanlar or None
+
+
 @router.post(
     "/requirements/{requirement_id}/generate-cases", response_model=IsYaniti, status_code=202
 )
@@ -86,7 +111,13 @@ def generate_cases(
     body: UretimBaslatGirdisi | None = None,
 ) -> IsYaniti:
     kip = body.kip if body is not None else "tek_tur"
-    sonuc = service.start_generation(session, requirement_id, user, kip=kip)
+    sonuc = service.start_generation(
+        session,
+        requirement_id,
+        user,
+        kip=kip,
+        secenekler=body.secenekler() if body else None,
+    )
     model_asamasi = sonuc.get("asama") == "model"
     return IsYaniti(
         job_id=sonuc["job_id"],
@@ -184,3 +215,48 @@ def cases_feature(
             "X-TP-Taslak-Sayisi": str(cikti.taslak_sayisi),
         },
     )
+
+
+@router.get("/requirements/{requirement_id}/generation-options")
+def generation_options(
+    requirement_id: uuid.UUID, session: DbSession, _user: CurrentUser
+) -> dict[str, Any]:
+    """Üretim formu: kayıtlı son seçenekler (yoksa null), varsayılan ve katalog (011 K5)."""
+    req = service.get_requirement(session, requirement_id)
+    return {
+        "secenekler": secenek_modulu.kayitli(req.uretim_secenekleri),
+        "varsayilan": secenek_modulu.varsayilan(),
+        **secenek_modulu.katalog(),
+    }
+
+
+class DerinlestirmeGirdisi(BaseModel):
+    """`POST /requirements/{id}/deepen` (011 P5/P6, K7)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tur: Literal["negatif", "teknik"]
+    teknik: Literal["EP", "BVA", "DT", "ST", "PW", "UC", "EG"] | None = None
+
+
+@router.post("/requirements/{requirement_id}/deepen", response_model=IsYaniti, status_code=202)
+def deepen(
+    requirement_id: uuid.UUID, body: DerinlestirmeGirdisi, session: DbSession, user: Analyst
+) -> IsYaniti:
+    sonuc = deepen_modulu.start_deepening(
+        session, requirement_id, user, tur=body.tur, teknik=body.teknik
+    )
+    return IsYaniti(
+        job_id=sonuc["job_id"],
+        workflow_id=sonuc["workflow_id"],
+        uretim_no=sonuc["uretim_no"],
+        durum="started",
+        mesaj="Derinleştirme başlatıldı; yeni taslaklar mevcut sete eklenecek.",
+    )
+
+
+@router.get("/requirements/{requirement_id}/deepen")
+def deepen_status(
+    requirement_id: uuid.UUID, session: DbSession, _user: CurrentUser
+) -> dict[str, Any]:
+    return deepen_modulu.deepening_status(session, requirement_id)

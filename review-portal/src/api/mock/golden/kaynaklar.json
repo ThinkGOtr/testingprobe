@@ -102,6 +102,473 @@
       ]
     }
   },
+  "case_deepening": {
+    "negatif/TPD-1": {
+      "cases": [
+        {
+          "acceptance_criteria_refs": [
+            "AC1"
+          ],
+          "assumption_refs": [
+            "A2"
+          ],
+          "covers": [
+            "EP-I3"
+          ],
+          "expected_result": "Ürün sepete eklenmez ve sepet sayacı değişmez; hata gösterilir (mesaj metni: AÇIK NOKTA)",
+          "open_question_refs": [],
+          "platform": null,
+          "preconditions": [
+            "Sepet boş"
+          ],
+          "priority": "P2",
+          "priority_rationale": "0 adetli satır sepete düşerse sipariş tutarı ve kampanya hesabı bozulur; olasılık düşük, iş kritikliği orta.",
+          "readiness": "assumption_dependent",
+          "requires_real_device": false,
+          "risk": "medium",
+          "standard_refs": [],
+          "steps": [
+            {
+              "action": "Giriş sayfasını aç",
+              "data": null,
+              "expected": "Giriş formu görüntülenir",
+              "id": "S1"
+            },
+            {
+              "action": "Bayi kullanıcısıyla giriş yap",
+              "data": "bayi1 / Demo123!",
+              "expected": "Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir",
+              "id": "S2"
+            },
+            {
+              "action": "\"Portakal Gazozu 1L\" (P-001) kartında adedi 0 yapıp \"Sepete ekle\" butonuna bas",
+              "data": "P-001 × 0",
+              "expected": "Ürün sepete eklenmez, sepet sayacı 0 kalır; hata gösterilir (mesaj metni: AÇIK NOKTA)",
+              "id": "S3"
+            }
+          ],
+          "tags": [
+            "AI-generated",
+            "N3"
+          ],
+          "teardown": [
+            "Sepeti boşalt"
+          ],
+          "technique": [
+            "EP"
+          ],
+          "test_data": [
+            {
+              "class": null,
+              "is_attack_payload": false,
+              "name": "bayi kullanıcısı",
+              "synthetic": true,
+              "value": "bayi1 / Demo123!"
+            },
+            {
+              "class": "EP-I3",
+              "is_attack_payload": false,
+              "name": "ürün ve sıfır adet",
+              "synthetic": true,
+              "value": "P-001 × 0"
+            }
+          ],
+          "test_level": "SYSTEM",
+          "title": "Adet 0 iken Sepete ekle ile ürün sepete eklenmez ve sepet sayacı değişmez",
+          "type": "negative",
+          "verification_point": "UI"
+        },
+        {
+          "acceptance_criteria_refs": [
+            "AC5"
+          ],
+          "assumption_refs": [
+            "A1"
+          ],
+          "covers": [
+            "EG-1"
+          ],
+          "expected_result": "Çift tıklamada tek sipariş oluşur ve sipariş geçmişinde bir kez listelenir",
+          "open_question_refs": [],
+          "platform": null,
+          "preconditions": [
+            "Sepet boş"
+          ],
+          "priority": "P1",
+          "priority_rationale": "Çift sipariş bayiye mükerrer tutar yansıtır (para etkisi); çift tıklama sık görüldüğünden olasılık orta, iş kritikliği yüksek.",
+          "readiness": "assumption_dependent",
+          "requires_real_device": false,
+          "risk": "high",
+          "standard_refs": [],
+          "steps": [
+            {
+              "action": "Giriş sayfasını aç",
+              "data": null,
+              "expected": "Giriş formu görüntülenir",
+              "id": "S1"
+            },
+            {
+              "action": "Bayi kullanıcısıyla giriş yap",
+              "data": "bayi1 / Demo123!",
+              "expected": "Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir",
+              "id": "S2"
+            },
+            {
+              "action": "\"Şeftalili Soğuk Çay 1L\" (P-004) kartında adedi 25 yapıp \"Sepete ekle\" butonuna bas",
+              "data": "P-004 × 25",
+              "expected": "Sepet sayacı 25 olur",
+              "id": "S3"
+            },
+            {
+              "action": "Üst menüden sepete git",
+              "data": null,
+              "expected": "Toplam 750,00 TL ve \"Siparişi onayla\" butonu aktiftir",
+              "id": "S4"
+            },
+            {
+              "action": "\"Siparişi onayla\" butonuna art arda iki kez bas",
+              "data": null,
+              "expected": "Tek sipariş numarası gösterilir",
+              "id": "S5"
+            },
+            {
+              "action": "Sipariş geçmişini aç",
+              "data": null,
+              "expected": "Bu sepet için sipariş geçmişinde tek sipariş listelenir",
+              "id": "S6"
+            }
+          ],
+          "tags": [
+            "AI-generated",
+            "N8"
+          ],
+          "teardown": [
+            "Oluşturulan sipariş, sipariş geçmişinde kalır; test ortamı sıfırlanırken temizle"
+          ],
+          "technique": [
+            "EG"
+          ],
+          "test_data": [
+            {
+              "class": null,
+              "is_attack_payload": false,
+              "name": "bayi kullanıcısı",
+              "synthetic": true,
+              "value": "bayi1 / Demo123!"
+            },
+            {
+              "class": null,
+              "is_attack_payload": false,
+              "name": "ürün ve adet (toplam 750,00 TL)",
+              "synthetic": true,
+              "value": "P-004 × 25"
+            }
+          ],
+          "test_level": "SYSTEM",
+          "title": "Siparişi onayla butonuna çift tıklamada tek sipariş oluşur",
+          "type": "negative",
+          "verification_point": "UI"
+        },
+        {
+          "acceptance_criteria_refs": [
+            "AC5"
+          ],
+          "assumption_refs": [],
+          "covers": [
+            "EG-2"
+          ],
+          "expected_result": "",
+          "open_question_refs": [
+            "Q1"
+          ],
+          "platform": null,
+          "preconditions": [
+            "Oturum açık değil"
+          ],
+          "priority": "P2",
+          "priority_rationale": "Oturumsuz sepet erişimi başka bayinin verisini açığa çıkarabilir (güvenlik); olasılık düşük, etki yüksek.",
+          "readiness": "blocked",
+          "requires_real_device": false,
+          "risk": "high",
+          "standard_refs": [],
+          "steps": [
+            {
+              "action": "Tarayıcıda sepet sayfasının adresini doğrudan aç",
+              "data": null,
+              "expected": "",
+              "id": "S1"
+            }
+          ],
+          "tags": [
+            "AI-generated",
+            "N6"
+          ],
+          "teardown": [],
+          "technique": [
+            "EG"
+          ],
+          "test_data": [],
+          "test_level": "SYSTEM",
+          "title": "Oturum açmadan sepet sayfasına doğrudan erişim denenir",
+          "type": "authorization",
+          "verification_point": "UI"
+        }
+      ],
+      "girdi_ac": [
+        "AC1: Bayi katalogda bir ürün için \"Sepete ekle\" butonuna bastığında ürün sepete eklenir ve sepet sayacı artar.",
+        "AC2: Kampanyalı üründe her 6 adette 1 adet bedava verilir: bayi 5 adet öder, 1 adet bedava alır (6 adette 1, 12 adette 2 bedava).",
+        "AC3: Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL'dir; altında \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur.",
+        "AC4: Sipariş tutarı bayinin kredi limitini aşarsa \"Kredi limiti aşıldı\" uyarısı gösterilir ve sipariş onaylanamaz.",
+        "AC5: Sipariş onaylandığında sipariş numarası gösterilir ve sipariş, sipariş geçmişinde listelenir.",
+        "AC6: Kampanyalı siparişlerde minimum sipariş tutarı şartı aranmaz."
+      ],
+      "ozet": {
+        "assumptions": [
+          {
+            "id": "A1",
+            "owner": "PO",
+            "statement": "\"Siparişi onayla\" butonuna art arda iki kez basıldığında tek sipariş oluşur."
+          },
+          {
+            "id": "A2",
+            "owner": "PO",
+            "statement": "Adet alanına 0 girilip \"Sepete ekle\"ye basıldığında ürün sepete eklenmez."
+          }
+        ],
+        "automation_open_points": [],
+        "config_matrix": {
+          "constraints": [],
+          "parameters": []
+        },
+        "coverage_items": [
+          {
+            "ac_ref": "AC1",
+            "definition": "Adet 0 ile \"Sepete ekle\": ürün sepete eklenmez (varsayım A2)",
+            "id": "EP-I3",
+            "valid": false
+          },
+          {
+            "ac_ref": "AC5",
+            "definition": "\"Siparişi onayla\" butonuna çift tıklama: tek sipariş oluşmalı (varsayım A1)",
+            "id": "EG-1",
+            "valid": false
+          },
+          {
+            "ac_ref": "AC5",
+            "definition": "Oturum açmadan sepet sayfasına doğrudan erişim (beklenen sonuç kaynakta yok, Q1)",
+            "id": "EG-2",
+            "valid": false
+          }
+        ],
+        "negative_coverage": [
+          {
+            "decision": "tested",
+            "item": "EP-I3",
+            "rationale": "N3 aşırı/sıfır değer: adet alanı sipariş tutarını belirler; 0 adetle sepete ekleme ayrı case ile sınanıyor."
+          },
+          {
+            "decision": "tested",
+            "item": "EG-1",
+            "rationale": "N8 çift tıklama: çift sipariş para etkilidir; davranış varsayım A1'e dayalı."
+          },
+          {
+            "decision": "tested",
+            "item": "EG-2",
+            "rationale": "N6 yetki: oturumsuz erişim; beklenen sonuç açık soru Q1 yanıtlanınca yazılır."
+          }
+        ],
+        "not_covered": [],
+        "observations": [],
+        "open_questions": [
+          {
+            "id": "Q1",
+            "owner": "PO",
+            "question": "Oturum açmamış kullanıcı sepet sayfasının adresine doğrudan giderse ne olur (giriş sayfasına yönlendirme mi, hata mı)?"
+          }
+        ],
+        "testability_gaps": []
+      }
+    },
+    "teknik-ep/TPD-4": {
+      "cases": [
+        {
+          "acceptance_criteria_refs": [
+            "AC2"
+          ],
+          "assumption_refs": [],
+          "covers": [
+            "EP-I3"
+          ],
+          "expected_result": "",
+          "open_question_refs": [
+            "Q1"
+          ],
+          "platform": null,
+          "preconditions": [
+            "Oturum açık değil"
+          ],
+          "priority": "P3",
+          "priority_rationale": "Boş parolayla giriş açılırsa yetkisiz erişim olur; form davranışı tanımsız olduğundan önce PO yanıtı gerekir; olasılık düşük.",
+          "readiness": "blocked",
+          "requires_real_device": false,
+          "risk": "medium",
+          "standard_refs": [],
+          "steps": [
+            {
+              "action": "Giriş sayfasını aç",
+              "data": null,
+              "expected": "Giriş formu görüntülenir",
+              "id": "S1"
+            },
+            {
+              "action": "Kullanıcı adını gir, parola alanını boş bırakıp \"Giriş yap\" butonuna bas",
+              "data": "bayi1",
+              "expected": "",
+              "id": "S2"
+            }
+          ],
+          "tags": [
+            "AI-generated"
+          ],
+          "teardown": [],
+          "technique": [
+            "EP"
+          ],
+          "test_data": [
+            {
+              "class": "EP-I3",
+              "is_attack_payload": false,
+              "name": "kayıtlı kullanıcı adı",
+              "synthetic": true,
+              "value": "bayi1"
+            }
+          ],
+          "test_level": "SYSTEM",
+          "title": "Boş parola ile Giriş yap'a basılır",
+          "type": "negative",
+          "verification_point": "UI"
+        },
+        {
+          "acceptance_criteria_refs": [
+            "AC2"
+          ],
+          "assumption_refs": [
+            "A1"
+          ],
+          "covers": [
+            "EP-I4"
+          ],
+          "expected_result": "\"Kullanıcı adı veya parola hatalı\" mesajı gösterilir ve giriş yapılmaz",
+          "open_question_refs": [],
+          "platform": null,
+          "preconditions": [
+            "Oturum açık değil"
+          ],
+          "priority": "P2",
+          "priority_rationale": "Parola harf duyarsız kabul edilirse parola gücü düşer (güvenlik); olasılık düşük, etki orta.",
+          "readiness": "assumption_dependent",
+          "requires_real_device": false,
+          "risk": "medium",
+          "standard_refs": [],
+          "steps": [
+            {
+              "action": "Giriş sayfasını aç",
+              "data": null,
+              "expected": "Giriş formu görüntülenir",
+              "id": "S1"
+            },
+            {
+              "action": "Kullanıcı adını ve harf büyüklüğü değiştirilmiş parolayı gir, \"Giriş yap\" butonuna bas",
+              "data": "bayi1 / demo123!",
+              "expected": "\"Kullanıcı adı veya parola hatalı\" mesajı görünür ve giriş sayfasında kalınır",
+              "id": "S2"
+            }
+          ],
+          "tags": [
+            "AI-generated"
+          ],
+          "teardown": [],
+          "technique": [
+            "EP"
+          ],
+          "test_data": [
+            {
+              "class": null,
+              "is_attack_payload": false,
+              "name": "kayıtlı kullanıcı adı",
+              "synthetic": true,
+              "value": "bayi1"
+            },
+            {
+              "class": "EP-I4",
+              "is_attack_payload": false,
+              "name": "harf büyüklüğü değişmiş parola",
+              "synthetic": true,
+              "value": "demo123!"
+            }
+          ],
+          "test_level": "SYSTEM",
+          "title": "Doğru parolanın harf büyüklüğü farklı yazımında hata mesajı gösterilir ve giriş yapılmaz",
+          "type": "negative",
+          "verification_point": "UI"
+        }
+      ],
+      "girdi_ac": [
+        "AC1: Bayi geçerli kullanıcı adı ve parolayla giriş yaptığında ürün kataloğu açılır.",
+        "AC2: Hatalı parola girildiğinde \"Kullanıcı adı veya parola hatalı\" mesajı gösterilir ve giriş yapılmaz."
+      ],
+      "ozet": {
+        "assumptions": [
+          {
+            "id": "A1",
+            "owner": "developer",
+            "statement": "Parola büyük/küçük harfe duyarlıdır; doğru parolanın harf büyüklüğü farklı yazımı hatalı paroladır."
+          }
+        ],
+        "automation_open_points": [],
+        "config_matrix": {
+          "constraints": [],
+          "parameters": []
+        },
+        "coverage_items": [
+          {
+            "ac_ref": "AC2",
+            "definition": "Kayıtlı kullanıcı adı ve boş parola (beklenen sonuç kaynakta tanımsız, Q1)",
+            "id": "EP-I3",
+            "valid": false
+          },
+          {
+            "ac_ref": "AC2",
+            "definition": "Kayıtlı kullanıcı adı ve doğru parolanın harf büyüklüğü farklı yazımı: hatalı parola sayılır (varsayım A1)",
+            "id": "EP-I4",
+            "valid": false
+          }
+        ],
+        "negative_coverage": [
+          {
+            "decision": "tested",
+            "item": "EP-I3",
+            "rationale": "Boş parola ayrı geçersiz bölümdür; beklenen sonuç Q1 yanıtlanınca yazılır (engelli case)."
+          },
+          {
+            "decision": "tested",
+            "item": "EP-I4",
+            "rationale": "Harf duyarlılığı parola bölümünün sınırını belirler; AC2 mesajı varsayım A1 ile beklenir."
+          }
+        ],
+        "not_covered": [],
+        "observations": [],
+        "open_questions": [
+          {
+            "id": "Q1",
+            "owner": "PO",
+            "question": "Parola alanı boş bırakılıp \"Giriş yap\"a basılırsa hangi davranış ve mesaj beklenir?"
+          }
+        ],
+        "testability_gaps": []
+      }
+    }
+  },
   "case_generation": {
     "SERBEST": {
       "cases": [
@@ -3029,6 +3496,377 @@
         ],
         "observations": [],
         "open_questions": [],
+        "testability_gaps": []
+      }
+    },
+    "platform-web/TPD-4": {
+      "cases": [
+        {
+          "acceptance_criteria_refs": [
+            "AC1"
+          ],
+          "assumption_refs": [],
+          "covers": [
+            "EP-V1"
+          ],
+          "expected_result": "Bayi başarıyla giriş yapar ve katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir",
+          "open_question_refs": [],
+          "platform": null,
+          "preconditions": [
+            "Oturum açık değil"
+          ],
+          "priority": "P1",
+          "priority_rationale": "Giriş çalışmazsa bayi portalı hiç kullanamaz (ana akış durur); her oturumda kullanıldığı için olasılık yüksek, iş kritikliği yüksek.",
+          "readiness": "ready",
+          "requires_real_device": false,
+          "risk": "medium",
+          "standard_refs": [],
+          "steps": [
+            {
+              "action": "Giriş sayfasını aç",
+              "data": null,
+              "expected": "Giriş formu görüntülenir",
+              "id": "S1"
+            },
+            {
+              "action": "Kullanıcı adı ve parola gir, \"Giriş yap\" butonuna bas",
+              "data": "bayi1 / Demo123!",
+              "expected": "Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir",
+              "id": "S2"
+            }
+          ],
+          "tags": [
+            "AI-generated"
+          ],
+          "teardown": [
+            "Çıkış yap"
+          ],
+          "technique": [
+            "EP"
+          ],
+          "test_data": [
+            {
+              "class": "EP-V1",
+              "is_attack_payload": false,
+              "name": "geçerli kullanıcı adı ve parola",
+              "synthetic": true,
+              "value": "bayi1 / Demo123!"
+            }
+          ],
+          "test_level": "SYSTEM",
+          "title": "Geçerli kullanıcı adı ve parola ile giriş yapılır",
+          "type": "positive",
+          "verification_point": "UI"
+        },
+        {
+          "acceptance_criteria_refs": [
+            "AC2"
+          ],
+          "assumption_refs": [],
+          "covers": [
+            "EP-I1"
+          ],
+          "expected_result": "\"Kullanıcı adı veya parola hatalı\" mesajı gösterilir ve giriş yapılmaz",
+          "open_question_refs": [],
+          "platform": null,
+          "preconditions": [
+            "Oturum açık değil"
+          ],
+          "priority": "P1",
+          "priority_rationale": "Hatalı parolayla giriş yapılabilmesi yetkisiz erişim demektir (güvenlik); parola hataları sık olduğundan olasılık yüksek, iş kritikliği yüksek.",
+          "readiness": "ready",
+          "requires_real_device": false,
+          "risk": "medium",
+          "standard_refs": [],
+          "steps": [
+            {
+              "action": "Giriş sayfasını aç",
+              "data": null,
+              "expected": "Giriş formu görüntülenir",
+              "id": "S1"
+            },
+            {
+              "action": "Kullanıcı adı ve hatalı parola gir, \"Giriş yap\" butonuna bas",
+              "data": "bayi1 / Yanlis123!",
+              "expected": "\"Kullanıcı adı veya parola hatalı\" mesajı görünür ve giriş sayfasında kalınır",
+              "id": "S2"
+            }
+          ],
+          "tags": [
+            "AI-generated"
+          ],
+          "teardown": [],
+          "technique": [
+            "EP"
+          ],
+          "test_data": [
+            {
+              "class": null,
+              "is_attack_payload": false,
+              "name": "kayıtlı kullanıcı adı",
+              "synthetic": true,
+              "value": "bayi1"
+            },
+            {
+              "class": "EP-I1",
+              "is_attack_payload": false,
+              "name": "hatalı parola",
+              "synthetic": true,
+              "value": "Yanlis123!"
+            }
+          ],
+          "test_level": "SYSTEM",
+          "title": "Hatalı parola ile girişte hata mesajı gösterilir",
+          "type": "negative",
+          "verification_point": "UI"
+        },
+        {
+          "acceptance_criteria_refs": [
+            "AC1"
+          ],
+          "assumption_refs": [],
+          "covers": [
+            "EP-V1"
+          ],
+          "expected_result": "Giriş yalnız klavyeyle tamamlanır; odak sırası kullanıcı adı → parola → \"Giriş yap\" olur ve ürün kataloğu açılır",
+          "open_question_refs": [],
+          "platform": "Web",
+          "preconditions": [
+            "Oturum açık değil"
+          ],
+          "priority": "P2",
+          "priority_rationale": "Klavyeyle giriş yapılamazsa klavye kullanan bayiler portala giremez (erişilebilirlik, benimsenen WCAG 2.2 AA); olasılık düşük, etkisi yüksek.",
+          "readiness": "ready",
+          "requires_real_device": false,
+          "risk": "medium",
+          "standard_refs": [
+            "WCAG-2.1.1",
+            "WCAG-2.4.3"
+          ],
+          "steps": [
+            {
+              "action": "Giriş sayfasını aç",
+              "data": null,
+              "expected": "Giriş formu görüntülenir",
+              "id": "S1"
+            },
+            {
+              "action": "Fareyi kullanmadan Tab ile kullanıcı adı alanına gel ve kullanıcı adını yaz",
+              "data": "bayi1",
+              "expected": "Odak kullanıcı adı alanındadır ve görünür",
+              "id": "S2"
+            },
+            {
+              "action": "Tab ile parola alanına geç ve parolayı yaz",
+              "data": "Demo123!",
+              "expected": "Odak parola alanına geçer",
+              "id": "S3"
+            },
+            {
+              "action": "Tab ile \"Giriş yap\" butonuna gel ve Enter'a bas",
+              "data": null,
+              "expected": "Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir",
+              "id": "S4"
+            }
+          ],
+          "tags": [
+            "AI-generated"
+          ],
+          "teardown": [
+            "Çıkış yap"
+          ],
+          "technique": [
+            "EP"
+          ],
+          "test_data": [
+            {
+              "class": "EP-V1",
+              "is_attack_payload": false,
+              "name": "geçerli kullanıcı adı ve parola",
+              "synthetic": true,
+              "value": "bayi1 / Demo123!"
+            }
+          ],
+          "test_level": "SYSTEM",
+          "title": "Giriş yalnız klavyeyle (Tab ve Enter) tamamlanır ve ürün kataloğu açılır",
+          "type": "positive",
+          "verification_point": "UI"
+        },
+        {
+          "acceptance_criteria_refs": [
+            "AC2"
+          ],
+          "assumption_refs": [],
+          "covers": [
+            "EP-I1"
+          ],
+          "expected_result": "\"Kullanıcı adı veya parola hatalı\" mesajı gösterilir, alanla ilişkilidir (erişilebilir açıklama) ve giriş yapılmaz",
+          "open_question_refs": [],
+          "platform": "Web",
+          "preconditions": [
+            "Oturum açık değil"
+          ],
+          "priority": "P3",
+          "priority_rationale": "Mesaj alana bağlı değilse ekran okuyucu kullanan bayi hatayı anlayamaz (benimsenen WCAG 2.2 AA); olasılık düşük, etkisi orta.",
+          "readiness": "ready",
+          "requires_real_device": false,
+          "risk": "medium",
+          "standard_refs": [
+            "WCAG-3.3.1",
+            "WCAG-1.3.1"
+          ],
+          "steps": [
+            {
+              "action": "Giriş sayfasını aç",
+              "data": null,
+              "expected": "Giriş formu görüntülenir",
+              "id": "S1"
+            },
+            {
+              "action": "Kullanıcı adı ve hatalı parola gir, \"Giriş yap\" butonuna bas",
+              "data": "bayi1 / Yanlis123!",
+              "expected": "\"Kullanıcı adı veya parola hatalı\" mesajı görünür",
+              "id": "S2"
+            },
+            {
+              "action": "Parola alanının erişilebilir açıklamasını ekran okuyucuyla ya da erişilebilirlik ağacından oku",
+              "data": null,
+              "expected": "Açıklama \"Kullanıcı adı veya parola hatalı\" mesajını içerir",
+              "id": "S3"
+            }
+          ],
+          "tags": [
+            "AI-generated"
+          ],
+          "teardown": [],
+          "technique": [
+            "EP"
+          ],
+          "test_data": [
+            {
+              "class": null,
+              "is_attack_payload": false,
+              "name": "kayıtlı kullanıcı adı",
+              "synthetic": true,
+              "value": "bayi1"
+            },
+            {
+              "class": "EP-I1",
+              "is_attack_payload": false,
+              "name": "hatalı parola",
+              "synthetic": true,
+              "value": "Yanlis123!"
+            }
+          ],
+          "test_level": "SYSTEM",
+          "title": "Hatalı parola mesajı ekran okuyucuya parola alanıyla ilişkili olarak duyurulur",
+          "type": "negative",
+          "verification_point": "UI"
+        }
+      ],
+      "girdi_ac": [
+        "AC1: Bayi geçerli kullanıcı adı ve parolayla giriş yaptığında ürün kataloğu açılır.",
+        "AC2: Hatalı parola girildiğinde \"Kullanıcı adı veya parola hatalı\" mesajı gösterilir ve giriş yapılmaz."
+      ],
+      "ozet": {
+        "assumptions": [],
+        "automation_open_points": [
+          "Otomasyon aracı verilmedi; giriş formu için seçici önerilmedi."
+        ],
+        "config_matrix": {
+          "constraints": [],
+          "parameters": [
+            {
+              "name": "Tarayıcı",
+              "values": [
+                "Chrome son 2",
+                "Firefox son 2"
+              ]
+            },
+            {
+              "name": "Çözünürlük",
+              "values": [
+                "1366x768",
+                "375x812"
+              ]
+            }
+          ]
+        },
+        "coverage_items": [
+          {
+            "ac_ref": "AC1",
+            "definition": "Geçerli kullanıcı adı ve geçerli parola: giriş yapılır, ürün kataloğu açılır",
+            "id": "EP-V1",
+            "valid": true
+          },
+          {
+            "ac_ref": "AC2",
+            "definition": "Kayıtlı kullanıcı adı ve hatalı parola: \"Kullanıcı adı veya parola hatalı\" mesajı, giriş yapılmaz",
+            "id": "EP-I1",
+            "valid": false
+          },
+          {
+            "ac_ref": "AC2",
+            "definition": "Kayıtlı olmayan kullanıcı adı (beklenen sonuç kaynakta tanımsız)",
+            "id": "EP-I2",
+            "valid": false
+          }
+        ],
+        "negative_coverage": [
+          {
+            "decision": "tested",
+            "item": "EP-I1",
+            "rationale": "Hatalı parola AC2'de mesajıyla tanımlı ve yetkisiz erişimi önleyen kural; ayrı case ile sınanıyor. Web eki: aynı öğe erişilebilirlik case'iyle de sınanıyor."
+          },
+          {
+            "decision": "out_of_scope",
+            "item": "EP-I2",
+            "rationale": "AC2 yalnızca hatalı parolayı tanımlar; kayıtlı olmayan kullanıcı adında gösterilecek sonuç kaynakta yok. Beklenen sonuç uydurulmadı, case yazılmadı."
+          }
+        ],
+        "not_covered": [
+          {
+            "item": "Web:Tarayıcı davranışı",
+            "reason": "Story'de form ortasında yenileme, geri/ileri ya da çift gönderim için tanımlı davranış yok; beklenen sonuç uydurulmadı."
+          },
+          {
+            "item": "Web:Oturum ve durum",
+            "reason": "Story'de oturum süresi, çıkış ve \"beni hatırla\" yok."
+          },
+          {
+            "item": "Web:URL ve yetki",
+            "reason": "Story yalnız giriş formunu tanımlar; korunan sayfaya doğrudan erişim davranışı kaynakta yok."
+          },
+          {
+            "item": "Web:Responsive",
+            "reason": "Kırılım noktaları verilmedi (Q1); çözünürlükler config_matrix'te."
+          },
+          {
+            "item": "Web:Girdi güvenliği",
+            "reason": "Story'de girdi doğrulama kuralı yok; hesap kilidi/deneme sınırı tanımsız."
+          },
+          {
+            "item": "Web:Ağ",
+            "reason": "500/503/zaman aşımında arayüz davranışı kaynakta yok."
+          },
+          {
+            "item": "Web:Yerelleştirme",
+            "reason": "Story'de dil değişimi ya da biçimlendirilen tarih/tutar yok."
+          }
+        ],
+        "observations": [
+          {
+            "note": "Kaynakta hesap kilitleme veya deneme sınırı yok; WSTG benimsenen standartlarda olmadığından beklenen sonuç değil, gözlemdir.",
+            "standard_ref": "WSTG-ATHN-03"
+          }
+        ],
+        "open_questions": [
+          {
+            "id": "Q1",
+            "owner": "PO",
+            "question": "Giriş sayfası için tasarımda tanımlı responsive kırılım noktaları (breakpoint) var mı?"
+          }
+        ],
         "testability_gaps": []
       }
     }

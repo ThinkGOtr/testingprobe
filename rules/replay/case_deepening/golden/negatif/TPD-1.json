@@ -1,0 +1,298 @@
+{
+  "kind": "call",
+  "purpose": "case_deepening",
+  "golden": "negatif/TPD-1",
+  "note": "Derinleştirme golden'ı (011 P5 negatif genişletme). Elle hazırlandı (model çıktısı değil). Mevcut set olarak TPD-1 ana golden'ının case'leri varsayılır (yeni kimlikler: EP-I3, EG-1/2, Q1, A1/A2 — ana golden'da yok). Girdi beyanı mevcut set bloğunu denetlemez; kimlik çakışmasını kod reddeder (deepen.id_conflicts). Mesaj metni kaynakta olmayan negatifte 'mesaj metni: AÇIK NOKTA' yazılır, beklenen sonuç uydurulmaz. Tür/teknik golden adındadır (`negatif/…`, `teknik-ep/…`; deepen.replay_name); girdi beyanı story bloğunu denetler.",
+  "input_match": {
+    "sources": [
+      "jira:TPD-1"
+    ],
+    "acceptance_criteria": [
+      "AC1: Bayi katalogda bir ürün için \"Sepete ekle\" butonuna bastığında ürün sepete eklenir ve sepet sayacı artar.",
+      "AC2: Kampanyalı üründe her 6 adette 1 adet bedava verilir: bayi 5 adet öder, 1 adet bedava alır (6 adette 1, 12 adette 2 bedava).",
+      "AC3: Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL'dir; altında \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur.",
+      "AC4: Sipariş tutarı bayinin kredi limitini aşarsa \"Kredi limiti aşıldı\" uyarısı gösterilir ve sipariş onaylanamaz.",
+      "AC5: Sipariş onaylandığında sipariş numarası gösterilir ve sipariş, sipariş geçmişinde listelenir.",
+      "AC6: Kampanyalı siparişlerde minimum sipariş tutarı şartı aranmaz."
+    ],
+    "contains": [
+      "Bayi, katalogdan ürünleri sepete ekleyip kampanya indirimiyle siparişini onaylayabilmelidir."
+    ]
+  },
+  "output": {
+    "open_questions": [
+      {
+        "id": "Q1",
+        "question": "Oturum açmamış kullanıcı sepet sayfasının adresine doğrudan giderse ne olur (giriş sayfasına yönlendirme mi, hata mı)?",
+        "owner": "PO"
+      }
+    ],
+    "assumptions": [
+      {
+        "id": "A1",
+        "statement": "\"Siparişi onayla\" butonuna art arda iki kez basıldığında tek sipariş oluşur.",
+        "owner": "PO"
+      },
+      {
+        "id": "A2",
+        "statement": "Adet alanına 0 girilip \"Sepete ekle\"ye basıldığında ürün sepete eklenmez.",
+        "owner": "PO"
+      }
+    ],
+    "coverage_items": [
+      {
+        "id": "EP-I3",
+        "ac_ref": "AC1",
+        "definition": "Adet 0 ile \"Sepete ekle\": ürün sepete eklenmez (varsayım A2)",
+        "valid": false
+      },
+      {
+        "id": "EG-1",
+        "ac_ref": "AC5",
+        "definition": "\"Siparişi onayla\" butonuna çift tıklama: tek sipariş oluşmalı (varsayım A1)",
+        "valid": false
+      },
+      {
+        "id": "EG-2",
+        "ac_ref": "AC5",
+        "definition": "Oturum açmadan sepet sayfasına doğrudan erişim (beklenen sonuç kaynakta yok, Q1)",
+        "valid": false
+      }
+    ],
+    "negative_coverage": [
+      {
+        "item": "EP-I3",
+        "decision": "tested",
+        "rationale": "N3 aşırı/sıfır değer: adet alanı sipariş tutarını belirler; 0 adetle sepete ekleme ayrı case ile sınanıyor."
+      },
+      {
+        "item": "EG-1",
+        "decision": "tested",
+        "rationale": "N8 çift tıklama: çift sipariş para etkilidir; davranış varsayım A1'e dayalı."
+      },
+      {
+        "item": "EG-2",
+        "decision": "tested",
+        "rationale": "N6 yetki: oturumsuz erişim; beklenen sonuç açık soru Q1 yanıtlanınca yazılır."
+      }
+    ],
+    "not_covered": [],
+    "observations": [],
+    "automation_open_points": [],
+    "config_matrix": {
+      "parameters": [],
+      "constraints": []
+    },
+    "testability_gaps": [],
+    "cases": [
+      {
+        "title": "Adet 0 iken Sepete ekle ile ürün sepete eklenmez ve sepet sayacı değişmez",
+        "type": "negative",
+        "risk": "medium",
+        "acceptance_criteria_refs": [
+          "AC1"
+        ],
+        "preconditions": [
+          "Sepet boş"
+        ],
+        "steps": [
+          {
+            "id": "S1",
+            "action": "Giriş sayfasını aç",
+            "data": null,
+            "expected": "Giriş formu görüntülenir"
+          },
+          {
+            "id": "S2",
+            "action": "Bayi kullanıcısıyla giriş yap",
+            "data": "bayi1 / Demo123!",
+            "expected": "Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir"
+          },
+          {
+            "id": "S3",
+            "action": "\"Portakal Gazozu 1L\" (P-001) kartında adedi 0 yapıp \"Sepete ekle\" butonuna bas",
+            "data": "P-001 × 0",
+            "expected": "Ürün sepete eklenmez, sepet sayacı 0 kalır; hata gösterilir (mesaj metni: AÇIK NOKTA)"
+          }
+        ],
+        "expected_result": "Ürün sepete eklenmez ve sepet sayacı değişmez; hata gösterilir (mesaj metni: AÇIK NOKTA)",
+        "tags": [
+          "AI-generated",
+          "N3"
+        ],
+        "technique": [
+          "EP"
+        ],
+        "covers": [
+          "EP-I3"
+        ],
+        "priority": "P2",
+        "priority_rationale": "0 adetli satır sepete düşerse sipariş tutarı ve kampanya hesabı bozulur; olasılık düşük, iş kritikliği orta.",
+        "platform": null,
+        "test_level": "SYSTEM",
+        "verification_point": "UI",
+        "requires_real_device": false,
+        "standard_refs": [],
+        "readiness": "assumption_dependent",
+        "assumption_refs": [
+          "A2"
+        ],
+        "open_question_refs": [],
+        "test_data": [
+          {
+            "name": "bayi kullanıcısı",
+            "value": "bayi1 / Demo123!",
+            "class": null,
+            "synthetic": true,
+            "is_attack_payload": false
+          },
+          {
+            "name": "ürün ve sıfır adet",
+            "value": "P-001 × 0",
+            "class": "EP-I3",
+            "synthetic": true,
+            "is_attack_payload": false
+          }
+        ],
+        "teardown": [
+          "Sepeti boşalt"
+        ]
+      },
+      {
+        "title": "Siparişi onayla butonuna çift tıklamada tek sipariş oluşur",
+        "type": "negative",
+        "risk": "high",
+        "acceptance_criteria_refs": [
+          "AC5"
+        ],
+        "preconditions": [
+          "Sepet boş"
+        ],
+        "steps": [
+          {
+            "id": "S1",
+            "action": "Giriş sayfasını aç",
+            "data": null,
+            "expected": "Giriş formu görüntülenir"
+          },
+          {
+            "id": "S2",
+            "action": "Bayi kullanıcısıyla giriş yap",
+            "data": "bayi1 / Demo123!",
+            "expected": "Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir"
+          },
+          {
+            "id": "S3",
+            "action": "\"Şeftalili Soğuk Çay 1L\" (P-004) kartında adedi 25 yapıp \"Sepete ekle\" butonuna bas",
+            "data": "P-004 × 25",
+            "expected": "Sepet sayacı 25 olur"
+          },
+          {
+            "id": "S4",
+            "action": "Üst menüden sepete git",
+            "data": null,
+            "expected": "Toplam 750,00 TL ve \"Siparişi onayla\" butonu aktiftir"
+          },
+          {
+            "id": "S5",
+            "action": "\"Siparişi onayla\" butonuna art arda iki kez bas",
+            "data": null,
+            "expected": "Tek sipariş numarası gösterilir"
+          },
+          {
+            "id": "S6",
+            "action": "Sipariş geçmişini aç",
+            "data": null,
+            "expected": "Bu sepet için sipariş geçmişinde tek sipariş listelenir"
+          }
+        ],
+        "expected_result": "Çift tıklamada tek sipariş oluşur ve sipariş geçmişinde bir kez listelenir",
+        "tags": [
+          "AI-generated",
+          "N8"
+        ],
+        "technique": [
+          "EG"
+        ],
+        "covers": [
+          "EG-1"
+        ],
+        "priority": "P1",
+        "priority_rationale": "Çift sipariş bayiye mükerrer tutar yansıtır (para etkisi); çift tıklama sık görüldüğünden olasılık orta, iş kritikliği yüksek.",
+        "platform": null,
+        "test_level": "SYSTEM",
+        "verification_point": "UI",
+        "requires_real_device": false,
+        "standard_refs": [],
+        "readiness": "assumption_dependent",
+        "assumption_refs": [
+          "A1"
+        ],
+        "open_question_refs": [],
+        "test_data": [
+          {
+            "name": "bayi kullanıcısı",
+            "value": "bayi1 / Demo123!",
+            "class": null,
+            "synthetic": true,
+            "is_attack_payload": false
+          },
+          {
+            "name": "ürün ve adet (toplam 750,00 TL)",
+            "value": "P-004 × 25",
+            "class": null,
+            "synthetic": true,
+            "is_attack_payload": false
+          }
+        ],
+        "teardown": [
+          "Oluşturulan sipariş, sipariş geçmişinde kalır; test ortamı sıfırlanırken temizle"
+        ]
+      },
+      {
+        "title": "Oturum açmadan sepet sayfasına doğrudan erişim denenir",
+        "type": "authorization",
+        "risk": "high",
+        "acceptance_criteria_refs": [
+          "AC5"
+        ],
+        "preconditions": [
+          "Oturum açık değil"
+        ],
+        "steps": [
+          {
+            "id": "S1",
+            "action": "Tarayıcıda sepet sayfasının adresini doğrudan aç",
+            "data": null,
+            "expected": ""
+          }
+        ],
+        "expected_result": "",
+        "tags": [
+          "AI-generated",
+          "N6"
+        ],
+        "technique": [
+          "EG"
+        ],
+        "covers": [
+          "EG-2"
+        ],
+        "priority": "P2",
+        "priority_rationale": "Oturumsuz sepet erişimi başka bayinin verisini açığa çıkarabilir (güvenlik); olasılık düşük, etki yüksek.",
+        "platform": null,
+        "test_level": "SYSTEM",
+        "verification_point": "UI",
+        "requires_real_device": false,
+        "standard_refs": [],
+        "readiness": "blocked",
+        "assumption_refs": [],
+        "open_question_refs": [
+          "Q1"
+        ],
+        "test_data": [],
+        "teardown": []
+      }
+    ]
+  }
+}

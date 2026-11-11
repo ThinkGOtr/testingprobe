@@ -562,6 +562,9 @@ TEKNIK_ONEKI: dict[str, str] = {
     "EG": "EG-",
 }
 READINESS = ("ready", "assumption_dependent", "blocked")
+# Platform ekinde atlanan kategori (011 F4, `platform-common`): `not_covered.item` =
+# `<Platform>:<kategori>`.
+PLATFORM_KATEGORISI = re.compile(r"(Web|Mobil|Desktop|API|Data):[^\n]{1,32}")
 
 
 def _liste(deger: Any) -> list[Any]:
@@ -668,10 +671,13 @@ def case_rule_problems(case: Mapping[str, Any], output: Mapping[str, Any]) -> li
     return sorunlar
 
 
-def generation_rule_problems(output: Any) -> list[str]:
+def generation_rule_problems(output: Any, *, ek_set: bool = False) -> list[str]:
     """011 §4.2 deterministik kurallarının tamamı, bir üretim çıktısının bütününe uygulanır:
     her case için `case_rule_problems` + set düzeyi (negatif kapsam kararı, kapsanmayan gerekçesi).
-    AC atıfı (kural 7) belgeyi bilen `coverage_problems`'tedir (`ac_coverage`)."""
+    AC atıfı (kural 7) belgeyi bilen `coverage_problems`'tedir (`ac_coverage`).
+
+    `ek_set=True` (derinleştirme, P5/P6): çıktı mevcut sete EKtir; `covered_by` kararı ve yeniden
+    anılan mevcut öğe mevcut case'lerle kapsanır, AC kapsamı tek başına aranmaz."""
     out = output if isinstance(output, Mapping) else {}
     cases = _kayitlar(out.get("cases"))
     sorunlar = [
@@ -703,6 +709,7 @@ def generation_rule_problems(output: Any) -> list[str]:
             for n in kapsanmayan
             if str(n.get("item")) not in kimlikler
             and not re.fullmatch(r"AC[0-9]+", str(n.get("item")))
+            and not PLATFORM_KATEGORISI.fullmatch(str(n.get("item")))
         }
     )
     if tanimsiz:
@@ -722,13 +729,16 @@ def generation_rule_problems(output: Any) -> list[str]:
             elif not str(karar_listesi[0].get("rationale") or "").strip():
                 sorunlar.append(f"{kimlik}: negatif kapsam kararının gerekçesi yok")
         for karar in karar_listesi:
-            if karar.get("decision") in ("tested", "covered_by") and kimlik not in kapsanan:
+            kararlar_ = ("tested",) if ek_set else ("tested", "covered_by")
+            if karar.get("decision") in kararlar_ and kimlik not in kapsanan:
                 sorunlar.append(
                     f"{kimlik}: karar {karar.get('decision')} ama hiçbir case kapsamıyor"
                 )
+        if ek_set:
+            continue
         if kimlik not in kapsanan and kimlik not in gerekceli and not kapsam_disi:
             sorunlar.append(f"{kimlik}: kapsanmıyor ve gerekçesi yok")
-    for ac in sorted(acler - ac_kapsanan - gerekceli):
+    for ac in sorted(acler - ac_kapsanan - gerekceli if not ek_set else set()):
         sorunlar.append(f"{ac}: hiçbir case'te yok ve gerekçesi yok")
     return sorunlar
 
@@ -824,6 +834,8 @@ def coverage_problems(output: Any, expect: Mapping[str, Any]) -> list[str]:
                 f"kaynak '{konu.get('topic')}' konusunda sessiz; "
                 f"hazır (ready) case yazılamaz: {nerede}"
             )
+    if "platforms" in expect:
+        failures += platform_problems(out, expect)
     return failures
 
 
@@ -888,6 +900,115 @@ def design_model_problems(output: Any, expect: Mapping[str, Any]) -> list[str]:
                 "sorunu olarak kayda geçmeli"
             )
     return failures
+
+
+def _beklenen_metinleri(case: Mapping[str, Any]) -> list[str]:
+    out = [str(case.get("expected_result") or "")]
+    out += [str(s.get("expected") or "") for s in _kayitlar(case.get("steps"))]
+    return [m for m in out if m]
+
+
+def platform_problems(out: Mapping[str, Any], expect: Mapping[str, Any]) -> list[str]:
+    """Platform eki beklentileri (011 F4):
+
+    - `platforms`: case `platform` alanı seçili platformlardan biri ya da null;
+    - `observation_thresholds`: benimsenmeyen standart/rehber eşikleri (ör. `44×44`, `48 dp`);
+      hiçbir case'in beklenen sonucunda geçmez (gözlem olmalıydı);
+    - `observations_min`: en az bu kadar gözlem;
+    - config_matrix yalnız parametre + kısıt: satır yok, her parametrenin değeri var.
+    """
+    failures: list[str] = []
+    cases = _kayitlar(out.get("cases"))
+    izinli = set(expect.get("platforms") or [])
+    for n, c in enumerate(cases, start=1):
+        p = c.get("platform")
+        if p is not None and p not in izinli:
+            failures.append(f"C{n}: seçilmemiş platform {p!r}")
+        metin = _kucuk("\n".join(_beklenen_metinleri(c)))
+        for esik in expect.get("observation_thresholds") or []:
+            if _kucuk(str(esik)) in metin:
+                failures.append(
+                    f"C{n}: benimsenmeyen standart eşiği beklenen sonuçta: '{esik}' "
+                    "(observations'a yazılmalıydı)"
+                )
+    if len(_kayitlar(out.get("observations"))) < int(expect.get("observations_min", 0)):
+        failures.append(f"gözlem sayısı {expect.get('observations_min')} altında")
+    matris = out.get("config_matrix") if isinstance(out.get("config_matrix"), Mapping) else {}
+    if any(k not in ("parameters", "constraints") for k in matris):
+        failures.append("config_matrix yalnız parameters/constraints taşır (satır üretilmez)")
+    for prm in _kayitlar(matris.get("parameters")):
+        if not _liste(prm.get("values")):
+            failures.append(f"config_matrix parametresi değersiz: {prm.get('name')!r}")
+    return failures
+
+
+NEGATIF_TURLER = ("negative", "authorization", "boundary")
+_N_ETIKETI = re.compile(r"^N(10|[1-9])$")
+_MESAJ_ANILIYOR = re.compile(r"mesaj|hata göster|uyarı göster", re.IGNORECASE)
+
+
+def deepening_problems(output: Any, expect: Mapping[str, Any]) -> list[str]:
+    """case_deepening beklentisi (011 P5/P6; deterministik).
+
+    Her zaman: 011 §4.2 kuralları (`generation_rule_problems`; saldırı verisi yalnız test_data'da
+    ve işaretli dahil). Beklenti anahtarları:
+    - `existing_titles`: yeni case başlığı mevcut bir case'i tekrar etmez (sade karşılaştırma);
+    - `existing_items`: `{kimlik: tanım}` — aynı kimlik farklı tanımla yeniden tanımlanmaz
+      (kimlik çakışması); aynı tanımla tekrar mevcut öğeye atıftır;
+    - `min_cases` / `max_cases` (varsayılan 0 / 10);
+    - `negative`: her case `negative|authorization|boundary` ve `N1`…`N10` etiketli;
+    - `technique`: her case'in `technique`'inde bu teknik var;
+    - `source_messages`: kaynaktaki mesaj metinleri. Beklenen sonucunda mesaj/uyarı anan case ya
+      kaynaktaki bir mesajı birebir içerir ya da "AÇIK NOKTA" der (mesaj uydurulmaz);
+    - `not_contains_any`: uydurma belirteçleri `ready` case'lerde geçmez.
+    """
+    out = output if isinstance(output, Mapping) else {}
+    cases = _kayitlar(out.get("cases"))
+    failures = list(generation_rule_problems(out, ek_set=True))
+    if len(cases) < int(expect.get("min_cases", 0)):
+        failures.append(f"{len(cases)} yeni case, en az {expect.get('min_cases')}")
+    if len(cases) > int(expect.get("max_cases", 10)):
+        failures.append(f"{len(cases)} yeni case, en çok {expect.get('max_cases', 10)}")
+    mevcut = {_sade(t) for t in expect.get("existing_titles") or []}
+    for n, c in enumerate(cases, start=1):
+        if _sade(c.get("title")) in mevcut:
+            failures.append(f"C{n}: mevcut case tekrar edildi ({c.get('title')!r})")
+        if expect.get("negative"):
+            if c.get("type") not in NEGATIF_TURLER:
+                failures.append(f"C{n}: negatif genişletmede tür {c.get('type')!r}")
+            if not any(_N_ETIKETI.match(str(t)) for t in _liste(c.get("tags"))):
+                failures.append(f"C{n}: N-kategori etiketi yok")
+        if "technique" in expect and expect["technique"] not in _liste(c.get("technique")):
+            failures.append(f"C{n}: {expect['technique']} tekniği yok")
+        if "source_messages" in expect:
+            mesajlar = [str(m) for m in expect["source_messages"]]
+            for metin in _beklenen_metinleri(c):
+                if not _MESAJ_ANILIYOR.search(metin):
+                    continue
+                if "AÇIK NOKTA" in metin or any(m in metin for m in mesajlar):
+                    continue
+                failures.append(
+                    f'C{n}: kaynakta olmayan mesaj ("mesaj metni: AÇIK NOKTA" yazılmalıydı): '
+                    f"{metin[:80]!r}"
+                )
+    eski = {str(k): _sade(v) for k, v in (expect.get("existing_items") or {}).items()}
+    for o in _kayitlar(out.get("coverage_items")):
+        kimlik = str(o.get("id"))
+        if kimlik in eski and eski[kimlik] != _sade(o.get("definition")):
+            failures.append(f"kimlik çakışması: {kimlik} mevcut sette farklı tanımlı")
+    hazir = [
+        (n, _kucuk(_case_metni(c)))
+        for n, c in enumerate(cases, start=1)
+        if c.get("readiness") == READY_DEGERI
+    ]
+    for belirtec in expect.get("not_contains_any") or []:
+        nerede = [f"C{n}" for n, metin in hazir if _belirtec_var(str(belirtec), metin)]
+        if nerede:
+            failures.append(f"uydurma belirteci '{belirtec}' hazır case'te: {nerede}")
+    return failures
+
+
+READY_DEGERI = "ready"
 
 
 def review_problems(output: Any, expect: Mapping[str, Any]) -> list[str]:
