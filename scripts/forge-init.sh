@@ -8,6 +8,9 @@
 #   scripts/forge-init.sh status     # forge main sha'sı ve "Sepete ekle" testid durumu
 #   scripts/forge-init.sh sync-web   # forge main ≠ demo-baseline ise demo-app-web'i forge main'den
 #                                    # yeniden derler (make up, kırık demoyu çalışma ağacıyla ezmesin)
+#   scripts/forge-init.sh sync-dizin <dizin> [--baseline]
+#                                    # MEVCUT depoya demo-app/<dizin>'i main'e TEK commit ile ekler /
+#                                    # eşitler (ör. e2e-java); PR kaydı ve diğer dallar korunur
 #
 # GitHub kipi (TP_FORGE=github): break/baseline core-worker'da insan kimliğiyle (GITHUB_MERGE_TOKEN,
 #   demo-admin bypass) PR olarak yapılır (bot kullanılmaz); demo-app-web ardından
@@ -28,6 +31,16 @@
 #          TP_DEMO_WEB_DEPLOY=0 → yalnızca imajı derler, servisi yeniden oluşturmaz,
 #          TP_DEMO_WEB_FORCE=1 (ya da --force) → güncel olsa / iş koşsa da derler + oluşturur.
 #
+# sync-dizin <dizin>: --force'un aksine depoyu silmez. demo-app/<dizin>'in çalışma ağacındaki içeriği
+#   (init ile aynı dışlamalar + alt .gitignore'lar) main'in üstüne tek commit olarak yazılır ve
+#   fast-forward gönderilir; değişiklik yoksa hiçbir şey yazılmaz (idempotent). Commit yalnızca
+#   <dizin>/ altına dokunur; tp-prs.json, açık PR dalları ve demo-app-web.sha değişmez. Uygulama
+#   dizinleri (web, api) kabul edilmez (çalışan uygulama eşleşmesi: make reset).
+#   --baseline: main demo-baseline'dayken etiketi de yeni commit'e taşır ve demo/break-locator'ı
+#   (tek commit) onun üstüne yeniden kurar; böylece make demo-reset/make break eklenen dizini
+#   silmez. --baseline olmadan sıfırlama (main → demo-baseline) eklenen dizini geri alır.
+#   Örnek (011, mevcut LocalForge'a web + Java projesi): make forge-sync-dizin D=e2e-java B=--baseline
+
 # Oluşan içerik (/forge/demo-app.git):
 #   main                 ← demo-app/ dizininin ŞU ANKİ içeriği (api/, web/, e2e/, ci/, README) kök olarak
 #   demo-baseline (tag)  ← main'in ilk commit'i (make reset buraya döner)
@@ -51,17 +64,38 @@ set -euo pipefail
 
 FORCE=0
 MODE=init
-for arg in "$@"; do
-  case "$arg" in
+DIZIN=""
+BASELINE=0
+KULLANIM="forge-init.sh [--force] | break | baseline | status | sync-web | sync-dizin <dizin> [--baseline]"
+while [ $# -gt 0 ]; do
+  case "$1" in
     --force) FORCE=1 ;;
-    break|baseline|status|sync-web) MODE="$arg" ;;
-    -h|--help) sed -n '2,47p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) die "bilinmeyen argüman: $arg (kullanım: forge-init.sh [--force] | break | baseline | status | sync-web)" ;;
+    --baseline) BASELINE=1 ;;
+    break|baseline|status|sync-web) MODE="$1" ;;
+    sync-dizin)
+      MODE=sync-dizin
+      [ $# -ge 2 ] || die "sync-dizin bir dizin adı ister (ör. e2e-java)"
+      DIZIN="$2"
+      shift
+      ;;
+    -h|--help) sed -n '2,60p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) die "bilinmeyen argüman: $1 (kullanım: $KULLANIM)" ;;
   esac
+  shift
 done
+[ "$BASELINE" = 0 ] || [ "$MODE" = sync-dizin ] || die "--baseline yalnızca sync-dizin ile anlamlıdır"
+if [ "$MODE" = sync-dizin ]; then
+  # Yalnızca demo-app'in tek bir üst düzey dizini; yol geçişi ve uygulama dizinleri reddedilir.
+  printf '%s' "$DIZIN" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$' \
+    || die "geçersiz dizin adı: '$DIZIN' (demo-app altında tek düzey, ör. e2e-java)"
+  case "$DIZIN" in
+    web|api) die "sync-dizin $DIZIN: uygulama dizini eşitlenmez (çalışan demo-app-web eşleşmesi); make reset kullanın" ;;
+  esac
+  [ "$FORCE" = 0 ] || die "sync-dizin --force ile birlikte kullanılamaz (--force depoyu siler)"
+fi
 
 # --------------------------------------------------------------- demo kırılması / sıfırlama
-if [ "$MODE" != init ]; then
+if [ "$MODE" != init ] && [ "$MODE" != sync-dizin ]; then
   command -v docker >/dev/null 2>&1 || die "docker bulunamadı"
   # shellcheck disable=SC2206  # komut öneki bilerek kelimelere bölünür
   EXEC=(${TP_FORGE_EXEC:-docker compose exec -T core-worker})
@@ -247,6 +281,95 @@ if ! docker volume inspect "$VOLUME" >/dev/null 2>&1; then
     --label com.docker.compose.project="$TP_PROJECT" \
     --label com.docker.compose.volume="${VOLUME#"${TP_PROJECT}"_}" \
     "$VOLUME" >/dev/null
+fi
+
+if [ "$MODE" = sync-dizin ]; then
+  [ -d "$SRC_ABS/$DIZIN" ] || die "kaynak dizin yok: $SRC/$DIZIN"
+  [ ! -L "$SRC_ABS/$DIZIN" ] || die "$SRC/$DIZIN sembolik bağ olamaz"
+  docker volume inspect "$VOLUME" >/dev/null 2>&1 \
+    || die "forge volume'ü yok ($VOLUME); önce make forge-init"
+  docker run --rm -i --network none --user 0:0 \
+    -e DIZIN="$DIZIN" -e BASELINE="$BASELINE" \
+    -v "$VOLUME:/forge" \
+    -v "$SRC_ABS:/src:ro" \
+    --entrypoint sh "$IMAGE" -eu -s <<'INNER'
+# FORGE_DIR / SRC_DIR yalnızca testler içindir (konteynerde /forge ve /src).
+F="${FORGE_DIR:-/forge}"
+S="${SRC_DIR:-/src}"
+REPO="$F/demo-app.git"
+export HOME="${TMPDIR:-/tmp}" LC_ALL=C GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
+export GIT_AUTHOR_NAME=tp-bot GIT_AUTHOR_EMAIL=bot@testingprobe.local
+export GIT_COMMITTER_NAME=tp-bot GIT_COMMITTER_EMAIL=bot@testingprobe.local
+export GIT_AUTHOR_DATE="2026-01-01T00:00:00+0000" GIT_COMMITTER_DATE="2026-01-01T00:00:00+0000"
+g() { git -c safe.directory='*' "$@"; }
+
+[ -d "$REPO" ] || { echo "HATA: forge deposu yok ($REPO); önce make forge-init" >&2; exit 2; }
+[ -d "$S/$DIZIN" ] || { echo "HATA: kaynak dizin yok: $DIZIN" >&2; exit 2; }
+eski_main="$(g --git-dir="$REPO" rev-parse --verify -q refs/heads/main)" \
+  || { echo "HATA: forge'da main yok" >&2; exit 2; }
+base="$(g --git-dir="$REPO" rev-parse --verify -q 'refs/tags/demo-baseline^{commit}' || true)"
+if [ "$BASELINE" = 1 ]; then
+  [ -n "$base" ] || { echo "HATA: demo-baseline etiketi yok" >&2; exit 2; }
+  if [ "$(g --git-dir="$REPO" rev-parse "$eski_main^{tree}")" != "$(g --git-dir="$REPO" rev-parse "$base^{tree}")" ]; then
+    echo "HATA: --baseline: main demo-baseline'da değil (ör. make break sonrası). Önce make demo-baseline." >&2
+    exit 2
+  fi
+fi
+
+W="$(mktemp -d)"
+trap 'rm -rf "$W"' EXIT
+g clone -q --branch main "$REPO" "$W/r"
+cd "$W/r"
+rm -rf "./$DIZIN"
+mkdir -p "./$DIZIN"
+tar -C "$S/$DIZIN" \
+  --exclude=node_modules --exclude=.venv --exclude=__pycache__ --exclude=.pytest_cache \
+  --exclude=.ruff_cache --exclude=dist --exclude=test-results --exclude=playwright-report \
+  --exclude=blob-report --exclude=.DS_Store --exclude=.git --exclude='.env' --exclude='.env.*' \
+  --exclude='*.db' --exclude='*.sqlite' -cf - . | tar --no-same-owner -C "./$DIZIN" -xf -
+g add -A -- "./$DIZIN"
+if g diff --cached --quiet; then
+  echo "forge main zaten demo-app/$DIZIN ile aynı; commit yazılmadı."
+  degisti=0
+else
+  disarida="$(g diff --cached --name-only | grep -v "^$DIZIN/" || true)"
+  [ -z "$disarida" ] || { echo "HATA: $DIZIN/ dışında değişiklik: $disarida" >&2; exit 3; }
+  n="$(g diff --cached --name-only | wc -l | tr -d ' ')"
+  g commit -q -m "forge: $DIZIN/ demo-app çalışma ağacıyla eşitlendi (forge-init sync-dizin; $n dosya)"
+  # Fast-forward: arada main ilerlediyse git reddeder (yeniden çalıştırın).
+  g push -q origin main
+  degisti=1
+  echo "forge main: ${eski_main%"${eski_main#????????????}"} → $(g rev-parse --short=12 HEAD) ($DIZIN/, $n dosya)"
+fi
+yeni="$(g rev-parse HEAD)"
+if [ "$BASELINE" = 1 ] && [ "$base" != "$yeni" ]; then
+  # demo/break-locator: demo-baseline üstünde tek commit (forge-init init). Yeni etiketin üstüne aynı
+  # değişiklik yeniden uygulanır; break merge'ü eklenen dizini silmez.
+  if g fetch -q origin refs/heads/demo/break-locator 2>/dev/null; then
+    kir="$(g rev-parse FETCH_HEAD)"
+    if [ "$(g rev-parse "$kir^")" != "$base" ]; then
+      echo "HATA: demo/break-locator demo-baseline üstünde tek commit değil; etiket taşınmadı" >&2
+      exit 3
+    fi
+    g checkout -q -b tp-kir "$yeni"
+    g cherry-pick "$kir" >/dev/null
+    g push -q -f origin "HEAD:refs/heads/demo/break-locator"
+    g checkout -q main
+  fi
+  g tag -f demo-baseline "$yeni" >/dev/null
+  g push -q -f origin refs/tags/demo-baseline
+  echo "demo-baseline → $(g rev-parse --short=12 "$yeni") (demo/break-locator yeniden kuruldu)"
+elif [ "$degisti" = 1 ] && [ -n "$base" ]; then
+  echo "NOT: demo-baseline taşınmadı; make demo-reset/make reset main'i baseline'a döndürünce $DIZIN/ değişikliği geri alınır (kalıcı için --baseline)."
+fi
+cd /
+# İzinler (init ile aynı); kök değilken (testler) sahiplik değiştirilemez.
+chown -R 10001:1001 "$REPO" 2>/dev/null || [ "$(id -u)" != 0 ]
+chmod -R a+rwX "$REPO"
+echo "forge: $REPO"
+g --git-dir="$REPO" for-each-ref --format='  %(refname:short)  %(objectname:short)' refs/heads refs/tags
+INNER
+  exit 0
 fi
 
 docker run --rm -i --network none --user 0:0 \

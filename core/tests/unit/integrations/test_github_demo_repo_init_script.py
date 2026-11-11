@@ -66,7 +66,7 @@ def test_kuru_calisma_duzen_ve_cikti(agac: tuple[Path, subprocess.CompletedProce
         "toolchain/ast-guard/src/guard.ts",
         "toolchain/security/no-mcp-in-image.sh",
         ".playwright-version",
-        # Java web hattı (011, OPS-Y1): e2e-java ile birlikte iş akışı, guard aracı ve güvenilir pom.
+        # Java web hattı (011, OPS-Y1): e2e-java ile iş akışı, guard aracı ve güvenilir pom.
         "demo-app/e2e-java/pom.xml",
         "demo-app/ci/run-java-checks.sh",
         ".github/workflows/web-java.yml",

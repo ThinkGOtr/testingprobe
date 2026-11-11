@@ -10,7 +10,7 @@ export PLAYWRIGHT_VERSION := $(strip $(shell cat .playwright-version 2>/dev/null
 
 S ?=
 
-.PHONY: help env up asistan-paket status seed reset jira-seed forge-init break demo-break demo-reset demo-web-sync locator-break-verify demo-baseline export-audit security-check e2e-smoke demo-check demo-prova prova-temizle eval-live asistan-perf prune logs down cihaz-kur cihaz-baslat cihaz-durdur cihaz-durum cihaz-wda cihaz-ag windows-vm-olustur windows-vm-ac windows-vm-kapat windows-vm-yeniden windows-vm-durum windows-vm-bekle windows-vm-ekran windows-vm-sil windows-vm-ip windows-vm-selftest
+.PHONY: help env up asistan-paket status seed reset jira-seed forge-init forge-sync-dizin playwright-surum-denetle break demo-break demo-reset demo-web-sync locator-break-verify demo-baseline export-audit security-check e2e-smoke demo-check demo-prova prova-temizle eval-live asistan-perf prune logs down cihaz-kur cihaz-baslat cihaz-durdur cihaz-durum cihaz-wda cihaz-ag windows-vm-olustur windows-vm-ac windows-vm-kapat windows-vm-yeniden windows-vm-durum windows-vm-bekle windows-vm-ekran windows-vm-sil windows-vm-ip windows-vm-selftest
 
 help: ## Hedefleri listeler
 	@echo "Kullanım: make <hedef>"
@@ -42,6 +42,10 @@ jira-seed: ## Gerçek Jira'yı demo başlangıcına döndürür (önce plan; uyg
 
 forge-init: ## Yerel forge deposunu hazırlar (varsa dokunmaz; yeniden kurmak için: make forge-init F=--force)
 	@scripts/forge-init.sh $(F)
+
+forge-sync-dizin: ## Mevcut yerel forge'a demo-app/<D>'yi main'e tek commit ile ekler (PR kaydı korunur; ör. D=e2e-java B=--baseline)
+	@test -n "$(D)" || { echo "kullanım: make forge-sync-dizin D=e2e-java [B=--baseline]" >&2; exit 2; }
+	@scripts/forge-init.sh sync-dizin "$(D)" $(B)
 
 break: ## Demo locator kırılması: yeşil temel koşu ön denetimi + demo/break-locator demo-admin bypass merge + demo-app-web (Z=1: denetimi atla)
 	@scripts/demo-break.sh --make $(if $(Z),--zorla,)
