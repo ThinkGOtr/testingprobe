@@ -17,8 +17,9 @@ da dosya `failure` ile kapatılır: yarım kalmış kontrol asla başarı sayıl
 
 **Tek yazar:** `checks/<sha>.json`'ı yalnızca bu modül yazar (core salt okur; LocalForge.checks()).
 
-**Kontrol adı platform başınadır** (009 §2.7): web (TS/Playwright) `local-ci` (değişmedi), Java
-(Appium) `local-ci-<platform>` (`local-ci-android`, `local-ci-ios`, `local-ci-windows`). Dosya bir
+**Kontrol adı platform başınadır** (009 §2.7, 011 §2.6): web'de dil ne olursa olsun `local-ci`
+(TS/Playwright ve Java/Playwright for Java), uygulamada (Java/Appium) `local-ci-<platform>`
+(`local-ci-android`, `local-ci-ios`, `local-ci-windows`). Dosya bir
 kontrol listesidir; her yazım YALNIZCA kendi adındaki girdiyi değiştirir, diğer platformların
 girdileri korunur (eskiden tek girdiydi: son yazan kazanırdı). `report` son yazılan kontrolün
 raporudur; `reports` ad → rapor eşlemesidir.
@@ -64,8 +65,9 @@ from worker import java as javayol
 from worker.astguard import AstGuardError, run_ast_guard
 
 CHECK_NAME = "local-ci"
-# Java (Appium) kontrolleri platform başına ayrı kayıttır: `local-ci-<platform>`.
-JAVA_PLATFORMS = ("android", "ios", "windows")
+# Java (Appium) kontrolleri platform başına ayrı kayıttır: `local-ci-<platform>`. Web + Java
+# (Playwright for Java) platformun kendi kaydını (`local-ci`) yazar.
+JAVA_PLATFORMS = javayol.APP_PLATFORMS
 CHECK_LOCK = threading.Lock()
 STEPS = ("app", "deps", "tsc", "eslint", "ast_guard", "run")
 
@@ -94,8 +96,9 @@ class CheckRequest:
     # Etkilenen testler (Faz 4 onarım): e2e köküne göre değişen kaynaklar ya da ["@diff"]
     # (base_sha..sha farkı). İçe aktarma grafiğiyle spec dosyalarına çevrilir (worker/affected.py).
     affected_by: list[str] = field(default_factory=list)
-    # Dil (009 §2.1): "ts" = Playwright/TypeScript (varsayılan, mevcut yol), "java" = Appium/TestNG
-    # (`e2e-app`, worker/java.py). `platform` Java koşusunda test-runner'a iletilir.
+    # Dil (009 §2.1, 011 §2.6): "ts" = Playwright/TypeScript (varsayılan, mevcut yol), "java" =
+    # TestNG (worker/java.py): uygulama platformunda Appium (`e2e-app`), `web`de (ya da platform
+    # yokken) Playwright for Java (`e2e-java`). `platform` Java koşusunda test-runner'a iletilir.
     lang: str = "ts"
     platform: str | None = None
 
@@ -105,8 +108,8 @@ class CheckRequest:
 
     @property
     def check_name(self) -> str | None:
-        """Merge kapısındaki kayıt adı: web `local-ci`, Java `local-ci-<platform>`; Java'da
-        platform yoksa None (kayıt yazılmaz; API platformu zaten zorunlu tutar)."""
+        """Merge kapısındaki kayıt adı: web `local-ci` (ts ve java), uygulama Java
+        `local-ci-<platform>`; bilinmeyen platformda None (kayıt yazılmaz; API zaten reddeder)."""
         try:
             return check_name(self.lang, self.platform)
         except ValueError:
@@ -200,11 +203,12 @@ def _counts(tests: list[dict[str, Any]]) -> dict[str, int]:
 
 
 def check_name(lang: str, platform: str | None) -> str:
-    """`local-ci` (TS/web) ya da `local-ci-<platform>` (Java). Java'da platform zorunludur."""
-    if lang != "java":
+    """Platformun check'i: web'de dil ne olursa olsun `local-ci`, uygulamada (Java)
+    `local-ci-<platform>`. `lang=java` + platform yok = web + Java (011 §2.6)."""
+    if lang != "java" or platform in (None, javayol.WEB):
         return CHECK_NAME
     if platform not in JAVA_PLATFORMS:
-        raise ValueError(f"Java kontrolü platform ister: {JAVA_PLATFORMS}")
+        raise ValueError(f"Java kontrolü platformu: {(javayol.WEB, *JAVA_PLATFORMS)}")
     return f"{CHECK_NAME}-{platform}"
 
 
@@ -356,7 +360,7 @@ def _execute_locked(
             report["check_name"] = req.check_name
             if req.lang != "ts":
                 report["lang"] = req.lang
-                report["platform"] = req.platform
+                report["platform"] = req.platform or javayol.WEB
             if path is not None:
                 atomic_write_json(
                     path,
@@ -488,17 +492,19 @@ def _run_java_steps(
     runner_client: httpx.Client | None,
     steps: dict[str, dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
-    """Java yolu (009 §2.3–2.5): app → deps (pom kilidi) → guard → compile → run.
+    """Java yolu (009 §2.3–2.5, 011 §2.6): app → deps (pom kilidi) → guard → compile → run.
 
     Koruma derlemeden ÖNCE koşar: yalnızca ayrıştırır; Maven ise (güvenilir pom'la da olsa)
-    derleyici eklentilerini çalıştırır. Kapsam (`test_files`) e2e-app köküne göredir.
+    derleyici eklentilerini çalıştırır. Kapsam (`test_files`) proje köküne göredir: uygulama
+    platformunda `e2e-app`, web'de `e2e-java` (worker/java.py `java_kok`).
     """
     full = head.sha
+    kok = javayol.java_kok(cfg, req.platform)
     steps["app"] = app_step(cfg, head)
     if not steps["app"]["ok"]:
         return steps
     base_sha = base or gitforge.merge_base(head.repo, full, "main", cfg.git_timeout_s) or full
-    with gitforge.checkout(head.repo, full, cfg.e2e_app_root, cfg.git_timeout_s) as root:
+    with gitforge.checkout(head.repo, full, kok.root, cfg.git_timeout_s) as root:
         missing = [f for f in req.test_files if not (root / f).is_file()]
         if missing:
             steps["deps"] = {
@@ -507,11 +513,13 @@ def _run_java_steps(
                 "missing_test_files": missing,
             }
             return steps
-        steps["deps"] = javayol.check_deps(cfg, root)
+        steps["deps"] = javayol.check_deps(cfg, root, kok)
         if not steps["deps"]["ok"]:
             return steps
         try:
-            guard = javayol.guard_report(cfg, head.repo, base_sha, full, req.ast_guard_mode, root)
+            guard = javayol.guard_report(
+                cfg, head.repo, base_sha, full, req.ast_guard_mode, root, kok
+            )
             steps["guard"] = {
                 "ok": bool(guard.get("ok")),
                 "mode": req.ast_guard_mode,
@@ -522,7 +530,7 @@ def _run_java_steps(
             steps["guard"] = {"ok": False, "mode": req.ast_guard_mode, "error": str(exc)}
         if not steps["guard"]["ok"]:
             return steps
-        steps["compile"] = javayol.run_test_compile(cfg, root)
+        steps["compile"] = javayol.run_test_compile(cfg, root, kok)
         if not steps["compile"]["ok"]:
             return steps
 
@@ -534,10 +542,10 @@ def _run_java_steps(
         "test_files": list(req.test_files),
         "env": {"BREAK_CAMPAIGN": "1"} if req.break_campaign else {},
         "keep": req.keep,
-        # test-runner'ın Java yolu (Ş8): dil + platform (Appium sürücüsü seçimi).
+        # test-runner'ın Java yolu (Ş8): dil + platform (Appium sürücüsü seçimi; web = Playwright
+        # for Java, Appium yok).
         "lang": "java",
+        "platform": kok.platform,
     }
-    if req.platform:
-        body["platform"] = req.platform
     steps["run"] = _call_runner(cfg, body, runner_client)
     return steps

@@ -1,4 +1,5 @@
-"""Surefire JUnit XML'lerinin (Java + Appium + TestNG, `demo-app/e2e-app`) özeti — 009 §2.7, Ş8.
+"""Surefire JUnit XML'lerinin (Java + TestNG) özeti — 009 §2.7 (Appium, `demo-app/e2e-app`) ve
+011 §2.6 (Playwright for Java, `demo-app/e2e-java`).
 
 Çıktı, Playwright yolundaki `results.summarize()` ile AYNI biçimdedir (`{stats, tests, errors}`;
 test girdisi ve `failure` alanları aynı adlarla): `failures_of`, `failure_groups`,
@@ -20,9 +21,20 @@ koşu dizini içindeyse döner.
 - `locator_timeout`   — diğer `TimeoutException` (ör. "öğe tıklanabilir olmadı: kimlik …")
 - `other`             — Appium oturumu açılamadı, beklenmeyen istisna …
 
+**Playwright for Java (web)** — istisna `com.microsoft.playwright.*` ya da
+`org.opentest4j.AssertionFailedError` (`PlaywrightAssertions.assertThat`) ise hata METNİ Playwright
+sürücüsünün metnidir ("Call log: … waiting for getByTestId(\"x\")"); tür TS yoluyla aynı kural
+sırasıyla çıkar (`results.classify_error` karşılığı): `test_data` → `navigation` (net::ERR_…,
+`page.navigate`) → `locator_ambiguous` (strict mode violation) → `locator_not_found`
+("element(s) not found") → `locator_timeout` (`TimeoutError` + "waiting for <locator>") →
+`assertion` (`AssertionFailedError` / `AssertionError`) → `other`. Locator metninden testId zinciri
+ve rol + ad çıkarılır (`locator_test_id`, `locator_role`, `locator_name`). Proje kendi `Bekle`
+yardımcısıyla `java.lang.AssertionError` atıyorsa yukarıdaki (e2e-app) kurallar aynen geçerlidir.
+
 Kanıt: `kanit/<Sınıf>.<metot>/{ekran.png, sayfa-kaynagi.xml}` (`altyapi/Kanit.java`) →
 `evidence.screenshot`, `evidence.page_source` (+ `page_source_rel`; triage'ın erişilebilirlik
-ağacı girdisi).
+ağacı girdisi). Web + Java'da aynı dizinde `trace.zip` → `evidence.trace` (+ `trace_rel`) ve
+`sayfa.html` → `evidence.page_html` (+ `page_html_rel`); olmayan dosyanın alanı `None` kalır.
 """
 
 from __future__ import annotations
@@ -35,12 +47,43 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from runner.results import MAX_ERROR, MAX_FIELD, MAX_TESTS, _clip, safe_read_bytes
+from runner.results import (
+    _EXPECTED_RE,
+    _LOCATOR_LINE_RE,
+    _NAV_RE,
+    _RECEIVED_RE,
+    _WAITING_RE,
+    MAX_ERROR,
+    MAX_FIELD,
+    MAX_TESTS,
+    _clip,
+    _first,
+    _unquote,
+    parse_locator,
+    safe_read_bytes,
+)
 
 MAX_XML = 32 * 1024 * 1024  # tek TEST-*.xml üst sınırı (bayt)
 MAX_XML_FILES = 200
 JAVA_SRC = "src/test/java"
 ASSERTION = "java.lang.AssertionError"
+# Playwright for Java (011 §2.6): istisna paketi ve `assertThat(...)` doğrulama hatası.
+PLAYWRIGHT_PKG = "com.microsoft.playwright."
+PLAYWRIGHT_ASSERTION = "org.opentest4j.AssertionFailedError"
+# Sürücü metni: "Timeout 5000ms exceeded." / "Locator expected … with timeout 5000ms".
+_PW_TIMEOUT_RE = re.compile(r"Timeout (\d+)\s*ms exceeded|with timeout (\d+)\s*ms")
+# Java gezinme eylemleri (TS `page.goto` karşılığı `page.navigate`).
+_PW_NAV_RE = re.compile(r"\bpage\.(?:navigate|reload|goBack|goForward|waitForURL):")
+# PlaywrightException iletisi "Error {\n  message='<sürücü iletisi>\n  name='…" biçimindedir.
+_PW_MESSAGE_RE = re.compile(r"^\s*message='(.+)$", re.M)
+_PW_STRICT_RE = re.compile(r"strict mode violation: (.+?) resolved to \d+ elements")
+# Java sürücüsünün locator yazımı: getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions()
+# .setName("Sepete ekle")) — TS yazımını `parse_locator` çözer, bunu aşağıdaki kalıp.
+_PW_ROLE_JAVA_RE = re.compile(
+    r"getByRole\(\s*AriaRole\.([A-Z_]+)"
+    r"(?:\s*,\s*new [\w.]+\(\)(?:\.set(?!Name\()\w+\([^()]*\))*"
+    r"\.setName\(\s*\"((?:[^\"\\]|\\.)*)\"\s*\))?"
+)
 # KirmiziDenetimi.KURULUM birebir: AssertionError bu kalıba uyarsa kurulumdur (kırmızı sayılmaz).
 _KURULUM_RE = re.compile(r"/test/|giriş başarısız|DEMOAPP_TEST_TOKEN")
 # Assertion dışı istisnalarda ek hazırlık mesajları (TestVerisi): yalnızca tür ayrımı içindir;
@@ -127,6 +170,8 @@ def _frames(text: str) -> list[dict[str, Any]]:
 
 def classify(tag: str, exc_type: str, message: str, body: str) -> dict[str, Any]:
     """Tek bir `<failure|error>` → biçimsel tür + çıkarılan alanlar (bkz. modül belgesi)."""
+    if exc_type.startswith(PLAYWRIGHT_PKG) or exc_type == PLAYWRIGHT_ASSERTION:
+        return _classify_playwright(exc_type, message, body)
     text = f"{message}\n{body}"
     signals: list[str] = []
     expected = received = None
@@ -187,12 +232,85 @@ def classify(tag: str, exc_type: str, message: str, body: str) -> dict[str, Any]
     }
 
 
+def _classify_playwright(exc_type: str, message: str, body: str) -> dict[str, Any]:
+    """Playwright for Java hatası: TS yolundaki `results.classify_error` ile aynı kural sırası."""
+    text = f"{message}\n{body}"
+    simple = exc_type.rsplit(".", 1)[-1]
+    signals: list[str] = []
+    locator = (
+        _first(_LOCATOR_LINE_RE, text) or _first(_WAITING_RE, text) or _first(_PW_STRICT_RE, text)
+    )
+    ids = parse_locator(locator)
+    role = _PW_ROLE_JAVA_RE.search(locator or "")
+    if role and ids["locator_role"] is None:
+        # Zincirin sonu rol + adsa aranan eleman odur; testId (varsa) kapsayıcıdır.
+        if ids["locator_test_id"] and (locator or "").rfind("getByTestId") < role.start():
+            ids["locator_scope_test_id"], ids["locator_test_id"] = ids["locator_test_id"], None
+        if ids["locator_test_id"] is None:
+            ids["locator_role"] = _clip(role.group(1).lower(), 40)
+            name = _unquote(None, role.group(2)) if role.group(2) is not None else None
+            ids["locator_name"] = _clip(name, 200) if name is not None else None
+    expected = _first(_EXPECTED_RE, text)
+    received = _first(_RECEIVED_RE, text)
+    tm = _PW_TIMEOUT_RE.search(text)
+    timeout_ms = int(next(g for g in tm.groups() if g)) if tm else None
+    action_m = re.search(r"\b((?:locator|page|frame)\.[A-Za-z]+):", message)
+    action = action_m.group(1) if action_m else None
+    is_assertion = exc_type == PLAYWRIGHT_ASSERTION
+    if _KURULUM_RE.search(message) or _KURULUM_EK_RE.search(message):
+        kind = "test_data"
+        signals.append("veri hazırlığı (/test/*, giriş) başarısız")
+    elif _NAV_RE.search(text) or _PW_NAV_RE.search(message):
+        kind = "navigation"
+        signals.append("sayfa yüklenemedi / gezinme hatası")
+    elif "strict mode violation" in text:
+        kind = "locator_ambiguous"
+        signals.append("strict mode: locator birden çok elemana çözüldü")
+    elif "element(s) not found" in text:
+        kind = "locator_not_found"
+        signals.append("element(s) not found")
+    elif simple == "TimeoutError" and _WAITING_RE.search(text):
+        kind = "locator_timeout"
+        signals.append(f"{action or 'eylem'}: locator beklenirken zaman aşımı")
+    elif is_assertion:
+        kind = "assertion"
+        signals.append("beklenen ≠ gerçekleşen")
+    else:
+        kind = "other"
+        if "Executable doesn't exist" in text or "Failed to launch" in text:
+            signals.append("tarayıcı başlatılamadı")
+    first = (
+        _first(_PW_MESSAGE_RE, message)
+        or next((ln.strip() for ln in message.splitlines() if ln.strip()), "")
+        or simple
+    )
+    return {
+        "type": kind,
+        "first_line": _clip(first, MAX_FIELD),
+        "matcher": None,
+        "action": action,
+        "exception": _clip(exc_type, 200) or None,
+        "locator": _clip(locator, MAX_FIELD) if locator else None,
+        **ids,
+        "expected": _clip(expected, MAX_FIELD) if expected is not None else None,
+        "received": _clip(received, MAX_FIELD) if received is not None else None,
+        "timeout_ms": timeout_ms,
+        "signals": signals,
+    }
+
+
 def _evidence(kanit_dir: Path, simple_class: str, method: str, rel_root: Path | None) -> dict:
     """`Kanit.dizin` adlandırması: `[^A-Za-z0-9._-]` → `_`."""
     ad = re.sub(r"[^A-Za-z0-9._-]", "_", f"{simple_class}.{method}")
     base = kanit_dir / ad
     out: dict[str, Any] = {"trace": None, "error_context": None, "screenshot": None, "video": None}
-    for key, name in (("screenshot", "ekran.png"), ("page_source", "sayfa-kaynagi.xml")):
+    for key, name in (
+        ("screenshot", "ekran.png"),
+        ("page_source", "sayfa-kaynagi.xml"),
+        # Web + Java (Playwright for Java): iz ve sayfanın HTML'i.
+        ("trace", "trace.zip"),
+        ("page_html", "sayfa.html"),
+    ):
         p = base / name
         ok = False
         try:
@@ -294,7 +412,8 @@ def summarize(
                     "aria_snapshot_scope": None,
                     "aria_snapshot_rel": None,
                     "page_source_rel": (page_source or {}).get("rel"),
-                    "trace_rel": None,
+                    "page_html_rel": (evidence.get("page_html") or {}).get("rel"),
+                    "trace_rel": (evidence.get("trace") or {}).get("rel"),
                     "page_location": screen_loc,
                 }
             stats[status] += 1
@@ -335,20 +454,20 @@ def summarize(
     return {"stats": stats, "tests": tests, "errors": errors[:20]}
 
 
-def write_junit(repeats: list[Repeat], out: Path) -> int:
+def write_junit(repeats: list[Repeat], out: Path, name: str = "e2e-app") -> int:
     """Tüm tekrarların `<testcase>`'lerini tek `<testsuites>` belgesine yazar (core JUnit girdisi).
 
     Yalnızca bilinen öznitelikler ve ilk sonuç öğesi (mesaj + kırpılmış metin) taşınır;
     `<properties>`, `system-out/err` atılır. Dönen: yazılan test sayısı.
     """
-    root = ET.Element("testsuites", {"name": "e2e-app"})
+    root = ET.Element("testsuites", {"name": name})
     n = 0
     for rep in repeats:
         cases, _errs = _testcases(rep.reports_dir)
         suite = ET.SubElement(
             root,
             "testsuite",
-            {"name": f"tekrar-{rep.index + 1}" if len(repeats) > 1 else "e2e-app"},
+            {"name": f"tekrar-{rep.index + 1}" if len(repeats) > 1 else name},
         )
         for tc in cases:
             if n >= MAX_TESTS:

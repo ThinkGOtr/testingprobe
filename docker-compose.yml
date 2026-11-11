@@ -324,6 +324,9 @@ services:
       # Java e2e kökü (009 §2.3; /symbols, /check, /ast-guard `lang=java`): LocalForge 'e2e-app';
       # TP_FORGE=github iken 'demo-app/e2e-app'.
       TP_E2E_APP_ROOT: ${TP_E2E_APP_ROOT:-e2e-app}
+      # Web + Java kökü (011 §2.6; `lang=java` + `platform=web`): LocalForge 'e2e-java';
+      # TP_FORGE=github iken 'demo-app/e2e-java'.
+      TP_E2E_JAVA_ROOT: ${TP_E2E_JAVA_ROOT:-e2e-java}
       # Çalışan uygulamanın commit eşleşmesinde karşılaştırılan uygulama yolları (/check `app`,
       # /locator-probe): LocalForge 'web,api'; TP_FORGE=github iken 'demo-app/web,demo-app/api'.
       TP_APP_PATHS: ${TP_APP_PATHS:-web,api}
@@ -367,6 +370,9 @@ services:
       # /test/* sıfırlaması (DEMO_API_URL) her zaman bu yığının demo-app-api'sidir; Windows
       # uygulaması aynı API'ye dış kapıdan (TP_APP_ARGS_WINDOWS=--api-url https://<bayi>/api) gider.
       TP_E2E_APP_ROOT: ${TP_E2E_APP_ROOT:-e2e-app}
+      # Web + Java koşusu (011 §2.6, Playwright for Java): Appium yok; BASE_URL/DEMO_API_URL ve
+      # imajdaki /ms-playwright tarayıcısı (indirme kapalı) kullanılır.
+      TP_E2E_JAVA_ROOT: ${TP_E2E_JAVA_ROOT:-e2e-java}
       APPIUM_URL_ANDROID: ${TP_RUNNER_APPIUM_URL_ANDROID:-http://appium-gw:4723}
       APPIUM_URL_IOS: ${TP_RUNNER_APPIUM_URL_IOS:-http://appium-gw:4723}
       APPIUM_URL_WINDOWS: ${TP_RUNNER_APPIUM_URL_WINDOWS:-}

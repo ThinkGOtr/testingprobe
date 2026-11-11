@@ -238,7 +238,9 @@ def test_check_java_guard_blocks_compile(java_env: Path, forge: Forge) -> None:
     head = forge.commit("tp/java-bad", files)
     client, calls = runner_client()
     report = checks.execute(
-        settings(), checks.CheckRequest(sha=head, lang="java"), runner_client=client
+        settings(),
+        checks.CheckRequest(sha=head, lang="java", platform="android"),
+        runner_client=client,
     )
     assert report["conclusion"] == "failure"
     assert report["failed_steps"] == ["guard"]
@@ -255,7 +257,9 @@ def test_check_java_pom_mismatch_and_compile_error(
     files = fixture_files()
     files["e2e-app/pom.xml"] += "<!-- değişti -->\n"
     head = forge.commit("tp/java-pom", files)
-    report = checks.execute(settings(), checks.CheckRequest(sha=head, lang="java"))
+    report = checks.execute(
+        settings(), checks.CheckRequest(sha=head, lang="java", platform="android")
+    )
     assert report["failed_steps"] == ["deps"] and "pom.xml" in report["deps"]["error"]
 
     head = forge.commit("tp/java-ok", fixture_files())
@@ -270,7 +274,9 @@ def test_check_java_pom_mismatch_and_compile_error(
             )
         ),
     )
-    report = checks.execute(settings(), checks.CheckRequest(sha=head, lang="java"))
+    report = checks.execute(
+        settings(), checks.CheckRequest(sha=head, lang="java", platform="android")
+    )
     assert report["failed_steps"] == ["compile"]
     assert report["compile"]["diagnostics"][0]["line"] == 3
     assert report["run"]["skipped"]
@@ -284,7 +290,14 @@ def test_ast_guard_java_repair(client: TestClient, forge: Forge) -> None:
         "tp/java-base", {f"e2e-app/{KIMLIK}": text.replace('"cart-total"', '"cart-sum"')}
     )
     resp = client.post(
-        "/ast-guard", json={"base_sha": base, "head_sha": ok, "mode": "repair", "lang": "java"}
+        "/ast-guard",
+        json={
+            "base_sha": base,
+            "head_sha": ok,
+            "mode": "repair",
+            "lang": "java",
+            "platform": "android",
+        },
     )
     data = resp.json()
     assert resp.status_code == 200 and data["ok"] is True, data
@@ -312,7 +325,7 @@ def test_ast_guard_java_repair(client: TestClient, forge: Forge) -> None:
     assert {"non_testid_change", "non_locator_file_changed"} <= codes
     # pr modu: yalnızca üretilen test + Kimlikler saflığı (README/niyet değişikliği serbest).
     data = client.post(
-        "/ast-guard", json={"base_sha": ok, "head_sha": bad, "mode": "pr", "lang": "java"}
+        "/ast-guard", json={"base_sha": ok, "head_sha": bad, "mode": "pr", "platform": "android"}
     ).json()
     assert data["ok"] is True, data
 

@@ -319,12 +319,14 @@ def test_java_run_environment_errors(
 def test_run_body_lang_rules(env: Path) -> None:
     c = TestClient(app)
     for body in (
-        {"lang": "java"},  # platform yok
         {"lang": "java", "platform": "android", "grep": "kampanya"},
+        {"lang": "java", "platform": "web", "grep": "kampanya"},
+        {"lang": "java", "workers": 1},
         {"lang": "java", "platform": "android", "workers": 1},
         {"lang": "java", "platform": "android", "test_files": ["tests/a.spec.ts"]},
-        {"lang": "java", "platform": "web"},
-        {"platform": "android"},  # lang=ts ile platform
+        {"lang": "java", "platform": "web", "test_files": ["tests/a.spec.ts"]},
+        {"platform": "android"},  # lang=ts ile uygulama platformu
+        {"lang": "ts", "platform": "ios"},
         {"lang": "java", "platform": "android", "test_files": ["src/test/java/../x/YTest.java"]},
         {"lang": "kotlin"},
     ):
@@ -376,10 +378,15 @@ def test_checks_document_keeps_other_platforms(tmp_path: Path) -> None:
 def test_check_names() -> None:
     assert checks.check_name("ts", None) == "local-ci"
     assert checks.check_name("java", "ios") == "local-ci-ios"
+    # 011 §2.6: web'de dil ne olursa olsun `local-ci` (platform yok = web).
+    assert checks.check_name("java", None) == "local-ci"
+    assert checks.check_name("java", "web") == "local-ci"
+    assert checks.check_name("ts", "web") == "local-ci"
     with pytest.raises(ValueError):
-        checks.check_name("java", None)
+        checks.check_name("java", "symbian")
     req = checks.CheckRequest(sha="x", lang="java", platform=None)
-    assert req.check_name is None and req.records_check() is False
+    assert req.check_name == "local-ci" and req.records_check() is True
+    assert checks.CheckRequest(sha="x", lang="java", platform="symbian").records_check() is False
     assert checks.CheckRequest(sha="x", lang="java", platform="windows").records_check() is True
 
 
