@@ -1824,6 +1824,9 @@ def serialize_runs(session: Session, runs: Sequence[Run]) -> list[dict[str, Any]
                 "ci_url": a.get("ci_url"),
                 "log_url": _url(r.id, a.get("log"), dizin),
                 "break_campaign": bool(o.get("break_campaign")),
+                # 012 §4.6 (V6): ekilmiş hata koşusunun adımıysa hata kodu ve bağlı koşu.
+                "hata_kodu": o.get("hata_kodu"),
+                "hata_kosusu_id": o.get("hata_kosusu_id"),
                 "script_id": str(r.script_id) if r.script_id else None,
                 "platform": o.get("platform") or script_platform.get(r.script_id) or WEB,
                 "saglik_hatasi": (saglik or {}).get("hata")
