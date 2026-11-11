@@ -71,3 +71,59 @@ def test_github_forge_from_env_platform_checkleri() -> None:
     )
     with pytest.raises(ForgeValidationError):
         GitHubForge.from_env({"GITHUB_REPO": "o/r", "GITHUB_TOKEN": "t", "TP_PLATFORMS": "x"})
+
+
+# ------------------------------------------------------------- üretim dili (011 §2.8, Ş5)
+
+
+def test_web_java_check_ve_is_akisi_adi() -> None:
+    from tp_core.integrations.forge import WEB_JAVA_CHECK, WEB_JAVA_WORKFLOW
+
+    assert (WEB_JAVA_CHECK, WEB_JAVA_WORKFLOW) == ("web-java", "web-java.yml")
+
+
+def test_etkin_web_dilleri() -> None:
+    from tp_core.integrations.forge import etkin_web_dilleri
+
+    assert etkin_web_dilleri({}) == ("ts",)
+    assert etkin_web_dilleri({"TP_WEB_DILLERI": " Java ,ts"}) == ("ts", "java")
+    # Doğrulanmamış diller CI'a/PR'a girmez (K3).
+    with pytest.raises(ForgeValidationError):
+        etkin_web_dilleri({"TP_WEB_DILLERI": "ts,csharp"})
+
+
+def test_github_required_checks_web_java() -> None:
+    assert github_required_checks(("test-local",), (), ("ts",)) == ("test-local",)
+    assert github_required_checks(("test-local",), ("android",), ("ts", "java")) == (
+        "test-local",
+        "mobil-android",
+        "web-java",
+    )
+    f = GitHubForge.from_env(
+        {"GITHUB_REPO": "o/r", "GITHUB_TOKEN": "t", "TP_WEB_DILLERI": "ts,java"}
+    )
+    assert f.required_checks == ("test-local", "ast-guard", "semgrep", "web-java")
+
+
+def test_local_required_checks_web_java_yolu() -> None:
+    from tp_core.integrations.forge import local_required_checks
+    from tp_core.ports import CheckRun
+
+    def c(ad: str) -> CheckRun:
+        return CheckRun(name=ad, status="completed", conclusion="success")
+
+    kimlikler = "e2e-java/src/test/java/com/antreklabs/bayi/ekranlar/Kimlikler.java"
+    # Yalnız e2e-java/ değişen PR: web kontrolü `local-ci` zorunlu (dil ne olursa olsun).
+    assert local_required_checks(("local-ci",), [], [kimlikler]) == (("local-ci",), None)
+    # Yapılandırma local-ci'ı içermese de web testi değişen PR onu ister.
+    zorunlu, neden = local_required_checks(("local-ci-android",), [], [kimlikler])
+    assert zorunlu == ("local-ci", "local-ci-android") and neden is None
+    # Uygulama kuralı değişmez: yalnız e2e-app/ değişen PR'da kayıtlı platform kontrolü yeterli.
+    app = "e2e-app/src/test/java/com/antreklabs/bayi/ekranlar/Kimlikler.java"
+    assert local_required_checks(("local-ci",), [c("local-ci-android")], [app]) == (
+        ("local-ci-android",),
+        None,
+    )
+    # e2e-java + e2e-app birlikte: ikisi de gerekir.
+    zorunlu, _ = local_required_checks(("local-ci",), [c("local-ci-android")], [app, kimlikler])
+    assert zorunlu == ("local-ci", "local-ci-android")

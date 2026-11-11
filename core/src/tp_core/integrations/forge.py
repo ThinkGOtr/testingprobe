@@ -248,6 +248,12 @@ APP_PLATFORMS: tuple[str, ...] = ("android", "ios", "windows")
 APP_PLATFORM_CHECKS: tuple[str, ...] = tuple(f"{REQUIRED_CHECK}-{p}" for p in APP_PLATFORMS)
 # LocalForge düzeninde Java e2e kökü (toolchain TP_E2E_APP_ROOT varsayılanı).
 LOCAL_APP_E2E_ROOT = "e2e-app/"
+# LocalForge düzeninde web test kökleri: TS (`e2e/`) ve web + Java (`e2e-java/`, toolchain
+# TP_E2E_JAVA_ROOT varsayılanı; 011 §2.6). İkisinin de kontrolü `local-ci`'dir: web'de check adı
+# dile bakmaz.
+LOCAL_WEB_E2E_ROOT = "e2e/"
+LOCAL_WEB_JAVA_E2E_ROOT = "e2e-java/"
+LOCAL_WEB_E2E_ROOTS: tuple[str, ...] = (LOCAL_WEB_E2E_ROOT, LOCAL_WEB_JAVA_E2E_ROOT)
 
 
 def local_required_checks(
@@ -261,6 +267,9 @@ def local_required_checks(
       kontrolü merge'i durdurur (yalnızca web yeşili yetmez).
     - PR yalnızca `e2e-app/` altını değiştiriyorsa (uygulama testi / Kimlikler onarımı) web
       `local-ci` gerekmez (kaydedilmişse yine yeşil olmalı); en az bir platform kontrolü olmalı.
+    - PR bir web test kökünü (`e2e/` ya da `e2e-java/`; 011 §2.8) değiştiriyorsa `local-ci`
+      zorunludur — yalnız `e2e-java/` değiştiren web + Java PR'ı (üretilen test / Kimlikler
+      onarımı) dahil: web'de check adı dile bakmaz, uygulama kontrolü onun yerine geçmez.
     - Yarıda kalmış (`in_progress`) bir kayıt merge'i durdurur; kontrol yeniden koşturulur
       (aynı adın girdisi üzerine yazılır) ya da demo-admin bypass'ı kullanılır.
     - `e2e-app/` değişip hiç platform kontrolü yoksa ikinci değer ihlal nedenidir.
@@ -276,6 +285,11 @@ def local_required_checks(
         for n in configured
         if not (app_only and recorded and n == REQUIRED_CHECK and not web_recorded)
     ]
+    touches_web = any(p.startswith(LOCAL_WEB_E2E_ROOTS) for p in changed_paths)
+    if touches_web and REQUIRED_CHECK not in required:
+        # Yapılandırma `local-ci`'ı düşürmüş olsa bile (ör. yalnızca platform kontrolü isteyen
+        # `TP_REQUIRED_CHECKS`) web testini değiştiren PR web kontrolü olmadan merge edilemez.
+        required.insert(0, REQUIRED_CHECK)
     for name in recorded:
         if name not in required:
             required.append(name)
@@ -301,6 +315,14 @@ GITHUB_PLATFORM_WORKFLOWS: dict[str, str] = {
     p: f"{ad}.yml" for p, ad in GITHUB_PLATFORM_CHECKS.items()
 }
 
+
+# Web + Java (Playwright for Java + TestNG; 011 §2.8): iş akışı `web-java.yml`, check (= job) adı
+# `web-java`. Web + TS `ci.yml`'in `test-local`'ıdır (değişmez). `TP_WEB_DILLERI` içinde `java`
+# varsa `web-java` GitHub zorunlu kontrol listesine eklenir (ruleset'e de eklenmelidir).
+WEB_JAVA_CHECK = "web-java"
+WEB_JAVA_WORKFLOW = f"{WEB_JAVA_CHECK}.yml"
+WEB_DILLERI_ENV = "TP_WEB_DILLERI"
+WEB_TAM_HAT_DILLERI: tuple[str, ...] = ("ts", "java")
 
 # Zorunlu check yapılabilen platform iş akışları (`changes` + no-op deseni; .github/CI.md).
 ZORUNLU_YAPILABILIR_PLATFORMLAR: tuple[str, ...] = ("android", "windows")
@@ -331,9 +353,37 @@ def etkin_platformlar(env: Mapping[str, str] | None = None) -> tuple[str, ...]:
     return tuple(out)
 
 
-def github_required_checks(configured: Sequence[str], platforms: Sequence[str]) -> tuple[str, ...]:
-    """GitHub zorunlu kontrolleri: yapılandırılmış liste + etkin platformların job adları."""
-    return validate_required_checks([*configured, *(GITHUB_PLATFORM_CHECKS[p] for p in platforms)])
+def etkin_web_dilleri(env: Mapping[str, str] | None = None) -> tuple[str, ...]:
+    """`TP_WEB_DILLERI="ts,java"` → ("ts", "java"); boş → ("ts",) (bugünkü davranış). `ts` her
+    zaman etkindir. Yalnızca tam hat dilleri (`ts` | `java`) yazılabilir: doğrulanmamış diller
+    (csharp | python) PR'a ve CI'a girmez (011 K3) → `ForgeValidationError`."""
+    env = os.environ if env is None else env
+    out = ["ts"]
+    for parca in (env.get(WEB_DILLERI_ENV) or "").split(","):
+        ad = parca.strip().lower()
+        if not ad:
+            continue
+        if ad not in WEB_TAM_HAT_DILLERI:
+            raise ForgeValidationError(
+                f"{WEB_DILLERI_ENV} yalnızca {', '.join(WEB_TAM_HAT_DILLERI)} içerebilir: {parca!r}"
+            )
+        if ad not in out:
+            out.append(ad)
+    return tuple(out)
+
+
+def github_required_checks(
+    configured: Sequence[str], platforms: Sequence[str], web_dilleri: Sequence[str] = ()
+) -> tuple[str, ...]:
+    """GitHub zorunlu kontrolleri: yapılandırılmış liste + etkin platformların job adları +
+    (web dillerinde `java` etkinse) `web-java`."""
+    return validate_required_checks(
+        [
+            *configured,
+            *(GITHUB_PLATFORM_CHECKS[p] for p in platforms),
+            *((WEB_JAVA_CHECK,) if "java" in web_dilleri else ()),
+        ]
+    )
 
 
 def get_forge(env: Mapping[str, str] | None = None) -> ForgePort:

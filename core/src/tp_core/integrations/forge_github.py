@@ -100,6 +100,7 @@ from tp_core.integrations.forge import (
     ForgeValidationError,
     MergeResult,
     etkin_platformlar,
+    etkin_web_dilleri,
     evaluate_required_checks,
     github_required_checks,
     is_sha,
@@ -626,9 +627,11 @@ class GitHubForge:
             merge_auth=TokenAuth(merge_token) if merge_token else None,
             # 009 §2.7: etkin uygulama platformlarının iş akışı check'leri de zorunlu
             # (`TP_PLATFORMS=android,windows` → `mobil-android`, `masaustu-windows`).
+            # 011 §2.8: web + Java etkinse (`TP_WEB_DILLERI=ts,java`) `web-java` de zorunlu.
             required_checks=github_required_checks(
                 parse_required_checks(env.get(REQUIRED_CHECKS_ENV), GITHUB_REQUIRED_CHECKS),
                 etkin_platformlar(env),
+                etkin_web_dilleri(env),
             ),
             transport=transport,
         )

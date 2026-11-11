@@ -11,7 +11,9 @@
   `MergeResult`'a yazılır. Bot (`tp-bot`) merge edemez. Uygulama (Java + Appium) kontrolleri
   platform başınadır (`local-ci-android|ios|windows`, 009 §2.7): head için kaydedilmiş her biri
   de zorunludur; yalnızca `e2e-app/` değiştiren PR web `local-ci` yerine en az bir platform
-  kontrolü ister (`forge.local_required_checks`). Liste `TP_REQUIRED_CHECKS` ile değişir.
+  kontrolü ister (`forge.local_required_checks`). Web'de check adı dile bakmaz (011 §2.8):
+  `e2e/` (TS) ya da `e2e-java/` (Playwright for Java) değiştiren PR `local-ci` ister. Liste
+  `TP_REQUIRED_CHECKS` ile değişir.
 - Güncel dal kuralı (GitHub "require branches to be up to date" / strict status checks): PR dalı
   `main`'in güncel head'ini içermiyorsa merge reddedilir — aksi halde hiçbir kontrolün koşmadığı
   bir birleşim ağacı `main`'e girerdi. Dal `update_branch` ile güncellenir (yeni head → PR CI'ı
