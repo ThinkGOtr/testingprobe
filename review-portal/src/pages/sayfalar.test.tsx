@@ -177,15 +177,67 @@ describe("ekranlar", () => {
     expect(screen.getByText("po@sim.local")).toBeInTheDocument();
   });
 
-  it("PO onayı portalda verilmez: PO kartında düğme yok, Jira etiketi ipucu var (ANALIZ 012 K6)", async () => {
+  it("serbest metin: PO rolü portalda onaylar", async () => {
+    // Önce analist bulguları kapatır
+    const { api } = await import("../api/client");
+    await oturumAc("analist");
+    const bulgular = await api.bulgular("req-ft-1");
+    const hash = (id: string) => bulgular.find((b) => b.id === id)!.icerik_hash;
+    await api.bulguKarari("fnd-5", { icerik_hash: hash("fnd-5"), karar: "fix_doc" });
+    await api.bulguKarari("fnd-6", { icerik_hash: hash("fnd-6"), karar: "accept_difference", gerekce: "ok" });
+    await api.duzeltmeleriUygula("req-ft-1"); // Analist (requirement.review)
+    await new Promise((r) => setTimeout(r, 20));
+    await api.logout();
+    await oturumAc("po");
+    const u = userEvent.setup();
+    uygulama("/gereksinimler/req-ft-1");
+    const dugme = await screen.findByRole("button", { name: "PO olarak onayla" });
+    await u.click(dugme);
+    expect(await screen.findByText("Onaylı")).toBeInTheDocument();
+  });
+
+  it("PO onayı: içerik ekranda görüldükten sonra değiştiyse 409 → yeniden yükler, ikinci denemede onaylar", async () => {
     const { mockVerisi } = await import("../api/mock/handlers");
     const g = mockVerisi().gereksinimler.find((x) => x.id === "req-ft-1")!;
     g.durum = "pending_po";
     g.po = { durum: "pending", onaylayan: null, zaman: null, kanal: "portal" };
     await oturumAc("po");
+    const u = userEvent.setup();
     uygulama("/gereksinimler/req-ft-1");
+    const dugme = await screen.findByRole("button", { name: "PO olarak onayla" });
+    // PO ekrana baktıktan sonra açıklama değişti (ör. analist düzeltme yazdı).
+    g.aciklama = `${g.aciklama} Ek cümle.`;
+    await u.click(dugme);
+    expect(await screen.findByRole("alert")).toHaveTextContent("İçerik değişti, yeniden inceleyin.");
+    expect(g.durum).toBe("pending_po");
+    expect(await screen.findByText(/Ek cümle\./)).toBeInTheDocument();
+    await u.click(screen.getByRole("button", { name: "PO olarak onayla" }));
+    expect(await screen.findByText("Onaylı")).toBeInTheDocument();
+    expect(g.durum).toBe("po_approved");
+  });
+
+  it("Jira story'sinde PO onay düğmesi yok, Jira etiketi ipucu var (ANALIZ 012 K6)", async () => {
+    const { mockVerisi } = await import("../api/mock/handlers");
+    const g = mockVerisi().gereksinimler.find((x) => x.id === "req-tpd-1")!;
+    g.durum = "pending_po";
+    g.po = { durum: "pending", onaylayan: null, zaman: null, kanal: "jira" };
+    await oturumAc("po");
+    uygulama("/gereksinimler/req-tpd-1");
     expect(await screen.findByTestId("po-onay-ipucu")).toHaveTextContent("tp-po-approved");
     expect(screen.queryByRole("button", { name: "PO olarak onayla" })).toBeNull();
+  });
+
+  it("serbest metinde PO onay düğmesi PO olmayan rolde pasif ve gereken rolü söyler", async () => {
+    const { mockVerisi } = await import("../api/mock/handlers");
+    const g = mockVerisi().gereksinimler.find((x) => x.id === "req-ft-1")!;
+    g.durum = "pending_po";
+    g.po = { durum: "pending", onaylayan: null, zaman: null, kanal: "portal" };
+    await oturumAc("analist");
+    uygulama("/gereksinimler/req-ft-1");
+    const d = await screen.findByRole("button", { name: "PO olarak onayla" });
+    await waitFor(() => expect(d).toBeDisabled());
+    expect(d).toHaveAttribute("title", "Bu işlem için gereken rol: PO");
+    expect(screen.queryByTestId("po-onay-ipucu")).toBeNull();
   });
 
   it("script listesi: core durumu + türetilmiş işaret (merge'e hazır / zayıf test)", async () => {

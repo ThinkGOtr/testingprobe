@@ -176,7 +176,7 @@ export function demoAdimlari(x: YolGirdisi): YolAdimi[] {
         ? adim(3, {
             hal: "suruyor",
             kanit: "PO cevabı bekleniyor.",
-            ipucu: g.kaynak === "jira" ? "PO Jira'da (po@sim.local) cevaplar ve tp-po-approved etiketini koyar; 15 sn'de bir okunur." : "PO onayı Jira'da (tp-po-approved etiketi); portalda PO onay düğmesi yok.",
+            ipucu: g.kaynak === "jira" ? "PO Jira'da (po@sim.local) cevaplar ve tp-po-approved etiketini koyar; 15 sn'de bir okunur." : "Serbest metin: PO portalda onaylar (\"PO olarak onayla\").",
             baglanti: { yol: gYolu, etiket: "PO teyidi" },
           })
         : adim(3, { hal: "bekliyor", kanit: "Doküman son hâl olunca PO teyidi istenir." });

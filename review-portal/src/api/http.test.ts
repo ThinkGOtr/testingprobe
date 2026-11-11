@@ -120,6 +120,7 @@ describe("istemci ↔ sözleşme", () => {
       [() => api.bulgular("r1"), "GET", "/api/requirements/r1/findings"],
       [() => api.bulguKarari("f1", { icerik_hash: "sha256:h", karar: "fix_doc" }), "POST", "/api/findings/f1/decision"],
       [() => api.duzeltmeleriUygula("r1"), "POST", "/api/requirements/r1/apply-doc-fixes"],
+      [() => api.poOnayla({ id: "r1", icerik_hash: "sha256:h" }), "POST", "/api/requirements/r1/po-approve"],
       [() => api.caseUret("r1"), "POST", "/api/requirements/r1/generate-cases"],
       [() => api.caseKarari("c1", { icerik_hash: "sha256:h", karar: "accept" }), "POST", "/api/cases/c1/decision"],
       [() => api.caseKarari("c1", { icerik_hash: "sha256:h", karar: "send_back", gerekce: "AC2 eksik" }), "POST", "/api/cases/c1/decision"],
@@ -179,7 +180,9 @@ describe("istemci ↔ sözleşme", () => {
     // Analist geri gönderme gerekçesiyle gider.
     await api.caseKarari("c1", { icerik_hash: "sha256:s", karar: "send_back", gerekce: "AC2 eksik" });
     expect(govde()).toEqual({ icerik_hash: "sha256:s", karar: "send_back", gerekce: "AC2 eksik" });
-    // PullRequest nesnesinin tamamı verilse de yalnızca bağ alanları gider.
+    // GereksinimDetay / PullRequest nesnesinin tamamı verilse de yalnızca bağ alanları gider.
+    await api.poOnayla({ id: "r1", icerik_hash: "sha256:r" });
+    expect(govde()).toEqual({ icerik_hash: "sha256:r" });
     await api.prBirlestir({ number: 12, icerik_hash: "sha256:p", head_sha: head });
     expect(govde()).toEqual({ icerik_hash: "sha256:p", head_sha: head });
     expect((f.mock.calls.at(-1)![1] as RequestInit).headers).toMatchObject({ "Content-Type": "application/json" });

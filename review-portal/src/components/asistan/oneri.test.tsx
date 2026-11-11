@@ -614,3 +614,19 @@ describe.each([
     expect(sekme().textContent).not.toMatch(yabanci);
   });
 });
+
+describe("öneri kuralları rol modeli v2 (ANALIZ 012 §5)", () => {
+  const kimlikler = (l: OneriListesi) => l.oneriler.map((o) => (o as unknown as { kural_id?: string; id?: string }).kural_id ?? (o as { id?: string }).id);
+
+  it("case kararı bekleyen → Testçi; son onay bekleyen → Analist; yayına hazır → Testçi", async () => {
+    const { mockVerisi } = await import("../../api/mock/handlers");
+    await oturumAc("testci");
+    expect(kimlikler(await oneriApi.liste({ rota: "/gereksinimler/req-tpd-1/caseler" }))).toContain("case-inceleme-bekliyor");
+    await oturumAc("analist");
+    expect(kimlikler(await oneriApi.liste({ rota: "/gereksinimler/req-tpd-1/caseler" }))).not.toContain("case-inceleme-bekliyor");
+    for (const c of mockVerisi().caseler) if (c.requirement_id === "req-tpd-1" && c.durum === "draft") c.durum = "ready";
+    expect(kimlikler(await oneriApi.liste({ rota: "/gereksinimler/req-tpd-1/caseler" }))).toContain("case-son-onay-bekliyor");
+    await oturumAc("testci");
+    expect(kimlikler(await oneriApi.liste({ rota: "/gereksinimler/req-tpd-1/caseler" }))).toContain("case-inceleme-analistte");
+  });
+});

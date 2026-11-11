@@ -113,10 +113,10 @@ export function Giris() {
               <code>sunucu</code> — Sistem Yöneticisi: demo kontrolleri ve sistem işletimi
             </li>
             <li>
-              <code>analist</code> — Analist: gereksinim içe aktarma, ön inceleme, case son onayı
+              <code>analist</code> — Analist: gereksinim içe aktarma, ön inceleme ve doküman düzeltmesi, case son onayı
             </li>
             <li>
-              <code>po</code> — PO: baz değer ve doküman düzeltmesi (PO onayı Jira'da)
+              <code>po</code> — PO: baz değer; serbest metinde PO teyidi (Jira story'sinde onay Jira etiketiyle)
             </li>
             <li>
               <code>testci</code> — Testçi: case üretimi, kararı ve yayını; bug kararı

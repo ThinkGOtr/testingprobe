@@ -134,12 +134,8 @@ test("insan kapıları uçtan uca: bulgu kararı → düzeltme → PO teyidi", a
   await ucuncu.getByRole("button", { name: "Kararı kaydet" }).click();
   await expect(ucuncu.getByText("Aynı AC3 düzeltmesi bir önceki bulguda kabul edildi")).toBeVisible();
 
-  // Doküman düzeltmesini PO uygular (requirement.doc_fix; ANALIZ 012 K7): Analistte pasif.
-  await expect(page.getByRole("button", { name: /Düzeltmeleri uygula \(2\) · tur 1\/3/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /Düzeltmeleri uygula \(2\) · tur 1\/3/ })).toBeEnabled();
   await page.screenshot({ path: `${EKRAN_DIZINI}/19-akis-kararlar-tur-sayaci.png`, fullPage: true });
-  await page.getByRole("button", { name: "Çıkış" }).click();
-  await girisYap(page, "po");
-  await page.goto("/gereksinimler/req-ft-1");
   await page.getByRole("button", { name: /Düzeltmeleri uygula/ }).click();
   await expect(page.locator(".sayfa-basligi").getByText("PO teyidi bekliyor")).toBeVisible();
   // Serbest metinde Jira yok: düzeltme dokümana uygulanır; akışın 1. adımı "Serbest metin".
@@ -148,11 +144,15 @@ test("insan kapıları uçtan uca: bulgu kararı → düzeltme → PO teyidi", a
   await expect(page.getByRole("navigation", { name: /14 adımlı akış/ }).getByText("Serbest metin")).toBeVisible();
   await page.screenshot({ path: `${EKRAN_DIZINI}/20-akis-po-bekliyor.png`, fullPage: true });
 
-  // PO onayı yalnız Jira etiketiyle (ANALIZ 012 K6): portalda düğme yok, ipucu var.
+  // Serbest metin gereksinimde PO teyidi portalda (requirement.po_approve_free_text; Jira story'de etiketle).
+  await page.getByRole("button", { name: "Çıkış" }).click();
+  await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
+  await girisYap(page, "po");
   await expect(page.locator(".kullanici-ad")).toHaveText("po");
-  await expect(page.getByTestId("po-onay-ipucu")).toContainText("tp-po-approved");
-  await expect(page.getByRole("button", { name: "PO olarak onayla" })).toHaveCount(0);
-  await page.screenshot({ path: `${EKRAN_DIZINI}/21-akis-po-jira-ipucu.png`, fullPage: true });
+  await page.goto("/gereksinimler/req-ft-1");
+  await page.getByRole("button", { name: "PO olarak onayla" }).click();
+  await expect(page.locator(".sayfa-basligi").getByText("PO onaylı")).toBeVisible();
+  await page.screenshot({ path: `${EKRAN_DIZINI}/21-akis-po-onayli.png`, fullPage: true });
 });
 
 test("Demo-A: Testçi taslağa alır ve kabul eder, Analist onaylar; yayın (kısmi sonuç, jira-sim), Claude Code token'ı", async ({ page }) => {

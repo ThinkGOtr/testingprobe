@@ -140,7 +140,7 @@ describe("consistency_finding kararları ↔ core consistency_finding makinesi",
   }
 });
 
-describe("requirement PO teyidi ↔ core requirement makinesi (Jira etiketi; portal ucu 410)", () => {
+describe("requirement PO teyidi ↔ core requirement makinesi (Jira etiketi simülatörü)", () => {
   for (const durum of M.requirement.states) {
     it(`${durum} + tp-po-approved`, async () => {
       await oturumAc("po");
@@ -187,12 +187,12 @@ describe("uçtan uca akışlar yalnızca izinli geçişlerden geçer", () => {
     kaydet();
     await api.bulguKarari("fnd-6", { icerik_hash: h("fnd-6"), karar: "accept_difference", gerekce: "Ürün kararı" });
     kaydet();
-    await oturumAc("po");
     await api.duzeltmeleriUygula("req-ft-1");
     kaydet();
     await bekle();
     kaydet();
-    mockPoEtiketi("req-ft-1");
+    await oturumAc("po");
+    await api.poOnayla(mockVerisi().gereksinimler.find((g) => g.id === "req-ft-1")!);
     kaydet();
     await oturumAc("testci");
     await api.caseUret("req-ft-1");

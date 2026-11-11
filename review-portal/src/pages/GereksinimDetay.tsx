@@ -308,7 +308,7 @@ export function GereksinimDetay() {
                   </span>
                 ) : (
                   <IslemDugmesi
-                    izin="requirement.doc_fix"
+                    izin="requirement.review"
                     disabled={sonHalAcik ? false : yazilacak === 0 || turSiniri}
                     calisiyor={islem.calisiyor && g.durum === "in_review"}
                     // Tur sınırı nedeni aşağıdaki uyarı kutusunda (yalnız yazılacak düzeltme varken) görünür
@@ -535,11 +535,15 @@ export function caseUretHatasi(e: unknown): never {
   throw e;
 }
 
-/** PO onayı yalnız Jira'dan verilir (ANALIZ 012 K6); portalda PO onay düğmesi yoktur. */
+/** Jira kaynaklı story'de PO onayı yalnız Jira'dan verilir (ANALIZ 012 K6); portalda düğme yoktur. */
 export const PO_ONAYI_JIRADA = "PO onayı Jira'da: story'ye tp-po-approved etiketi konur. Portalda PO onay düğmesi yoktur.";
 
-function PoKarti({ g }: { g: Detay; yenile?: () => void }) {
+function PoKarti({ g, yenile }: { g: Detay; yenile: () => void }) {
+  const islem = useIslem();
+  const bildir = useBildirim();
   const po = g.po;
+  // Serbest metin gereksinimin Jira story'si yok: PO teyidi portalda (`requirement.po_approve_free_text`).
+  const serbest = g.kaynak === "free_text";
   // Onay var ve içerik onaydan sonra değişmediyse kapı geçilmiştir; sabit kural metni "henüz
   // geçilmedi" gibi okunmasın.
   const kapiGecildi =
@@ -568,13 +572,37 @@ function PoKarti({ g }: { g: Detay; yenile?: () => void }) {
         <>
           <p>
             <Cip ton="uyari">Bekliyor</Cip>{" "}
-            {po.kanal === "jira"
-              ? "PO soruları Jira'da cevaplayıp tp-po-approved etiketini koyduğunda akış devam eder (15 sn'de bir kontrol edilir)."
-              : "PO teyidi bekleniyor."}
+            {serbest
+              ? "Serbest metin gereksinim: PO teyidi portalda verilir."
+              : "PO soruları Jira'da cevaplayıp tp-po-approved etiketini koyduğunda akış devam eder (15 sn'de bir kontrol edilir)."}
           </p>
-          <p className="soluk kucuk" data-testid="po-onay-ipucu">
-            {PO_ONAYI_JIRADA}
-          </p>
+          {!serbest && (
+            <p className="soluk kucuk" data-testid="po-onay-ipucu">
+              {PO_ONAYI_JIRADA}
+            </p>
+          )}
+          {serbest && g.icerik_hash && (
+            <p className="soluk kucuk">
+              Onay, ekranda gördüğünüz içeriğe bağlanır (<span className="mono">{kisaHash(g.icerik_hash)}</span>); arada değişirse reddedilir.
+            </p>
+          )}
+          {serbest && (
+            <IslemDugmesi
+              izin="requirement.po_approve_free_text"
+              calisiyor={islem.calisiyor}
+              onClick={async () => {
+                // Gösterilen içeriğin hash'i gönderilir; arada değiştiyse 409 → ekran yenilenir.
+                const s = await islem.calistir(() => api.poOnayla(g), { cakismada: yenile });
+                if (s) {
+                  bildir("PO teyidi verildi.");
+                  yenile();
+                }
+              }}
+            >
+              PO olarak onayla
+            </IslemDugmesi>
+          )}
+          {islem.hata && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
         </>
       ) : uretimHatasiMi(g) ? (
         <p className="soluk" data-testid="po-uretim-hatasi">

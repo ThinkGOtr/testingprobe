@@ -41,7 +41,7 @@ export const IZINLER = {
   // aksiyonlar
   "requirement.import": ["analyst"],
   "requirement.review": ["analyst"],
-  "requirement.doc_fix": ["po"],
+  "requirement.po_approve_free_text": ["po"],
   "baseline.manage": ["po"],
   "case.generate": ["tester"],
   "case.decide": ["tester"],

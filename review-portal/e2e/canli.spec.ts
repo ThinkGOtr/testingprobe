@@ -131,11 +131,7 @@ test("Demo-A: ön inceleme → 4 doğrulanmış bulgu → düzeltme → Jira PO 
     await expect(kart.getByText(/Karar:/)).toBeVisible({ timeout: 15_000 });
   }
   await ekran("02-kararlar");
-  // Doküman düzeltmesini PO yazar (requirement.doc_fix; ANALIZ 012 K7).
   const gereksinimYolu = new URL(page.url()).pathname;
-  await page.getByRole("button", { name: "Çıkış" }).click();
-  await girisCanli(page, "po");
-  await page.goto(gereksinimYolu);
   await page.getByRole("button", { name: /Düzeltmeleri Jira'ya yaz/ }).click();
   // 2. tur (TPD-1-r2) temiz → son hal → PO soru yorumu + tp-po-pending.
   await expect(page.getByText("PO teyidi bekliyor").first()).toBeVisible({ timeout: 120_000 });

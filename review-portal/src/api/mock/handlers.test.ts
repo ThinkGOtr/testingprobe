@@ -96,10 +96,21 @@ describe("mock arka uç: oturum ve roller", () => {
     await expect(api.demoSifirla()).resolves.toMatchObject({ durum: "done" });
   });
 
-  it("portal PO onay ucu kalktı (410); denetim kaydı rolün kapsamıyla", async () => {
+  it("portal PO onayı Jira story'sinde 410 (po_onayi_jira); serbest metinde hash ister; denetim kaydı rolün kapsamıyla", async () => {
     await girisYap("po");
-    const { istek } = await import("../http");
-    await expect(istek("POST", "/requirements/req-ft-1/po-approve", { govde: {} })).rejects.toMatchObject({ status: 410 });
+    const tpd = v().gereksinimler.find((g) => g.id === "req-tpd-1")!;
+    tpd.durum = "pending_po";
+    await expect(api.poOnayla(tpd)).rejects.toMatchObject({ status: 410, kod: "po_onayi_jira" });
+    expect(tpd.durum).toBe("pending_po");
+    const ft = v().gereksinimler.find((g) => g.id === "req-ft-1")!;
+    ft.durum = "pending_po";
+    const gorulen = { id: ft.id, icerik_hash: ft.icerik_hash };
+    await expect(api.poOnayla({ id: ft.id } as never)).rejects.toMatchObject({ status: 422 });
+    ft.aciklama = `${ft.aciklama} (PO görmeden değişti)`;
+    await expect(api.poOnayla(gorulen)).rejects.toMatchObject({ status: 409 });
+    await expect(api.poOnayla(await api.gereksinim("req-ft-1"))).resolves.toMatchObject({ durum: "po_approved" });
+    await girisYap("analist");
+    await expect(api.poOnayla(await api.gereksinim("req-ft-1"))).rejects.toMatchObject({ status: 403 });
     await girisYap("testci");
     const kendi = await api.denetim(false);
     expect(kendi.olaylar.every((o) => o.aktor === "testci")).toBe(true);
@@ -127,24 +138,24 @@ describe("mock arka uç: tutarlılık → PO → case (insan kapıları)", () =>
   });
 
   it("serbest metin akışı: kararlar → düzeltmeler → PO teyidi → case üretimi", async () => {
-    await girisYap("po");
-    await expect(api.duzeltmeleriUygula("req-ft-1")).rejects.toMatchObject({ status: 409 });
     await girisYap("testci");
     await expect(api.caseUret("req-ft-1")).rejects.toMatchObject({ status: 409 });
     await girisYap("analist");
+    await expect(api.duzeltmeleriUygula("req-ft-1")).rejects.toMatchObject({ status: 409 });
 
     const bulgular = await api.bulgular("req-ft-1");
     const h5 = bulgular.find((b) => b.id === "fnd-5")!.icerik_hash;
     const h6 = bulgular.find((b) => b.id === "fnd-6")!.icerik_hash;
     await api.bulguKarari("fnd-5", { icerik_hash: h5, karar: "fix_doc", metin: "Kaldırma sonrası indirim her 6 adette 1 bedava kuralıyla hesaplanır." });
     await api.bulguKarari("fnd-6", { icerik_hash: h6, karar: "accept_difference", gerekce: "Ayar değeri ürün kararıyla 750" });
-    // Doküman düzeltmesini PO uygular (requirement.doc_fix).
-    await expect(api.duzeltmeleriUygula("req-ft-1")).rejects.toMatchObject({ status: 403 });
+    // Doküman düzeltmesini Analist uygular (requirement.review); PO uygulayamaz.
     await girisYap("po");
+    await expect(api.duzeltmeleriUygula("req-ft-1")).rejects.toMatchObject({ status: 403, kod: "yetki_yok" });
+    await girisYap("analist");
     await api.duzeltmeleriUygula("req-ft-1");
     await bekleIsler();
 
-    const g = await api.gereksinim("req-ft-1");
+    let g = await api.gereksinim("req-ft-1");
     expect(g.durum).toBe("pending_po");
     expect(g.kabul_kriterleri[1].metin).toBe("Kaldırma sonrası indirim her 6 adette 1 bedava kuralıyla hesaplanır.");
     expect(g.kontrol_turu).toBe(2);
@@ -156,8 +167,11 @@ describe("mock arka uç: tutarlılık → PO → case (insan kapıları)", () =>
       ["fnd-9", "stale"],
     ]);
 
-    // PO teyidi yalnız Jira etiketiyle (simülatör); case üretimi Testçide.
-    expect(mockPoEtiketi("req-ft-1").po).toMatchObject({ durum: "approved", onaylayan: "po@sim.local", kanal: "jira" });
+    // Serbest metinde PO teyidi portalda yalnız PO rolüyle (requirement.po_approve_free_text); case üretimi Testçide.
+    await expect(api.poOnayla(g)).rejects.toMatchObject({ status: 403 });
+    await girisYap("po");
+    g = await api.poOnayla(g);
+    expect(g.po).toMatchObject({ durum: "approved", onaylayan: "po", kanal: "portal" });
 
     await girisYap("testci");
     await api.caseUret("req-ft-1");
@@ -176,11 +190,11 @@ describe("mock arka uç: tutarlılık → PO → case (insan kapıları)", () =>
     await api.bulguKarari("fnd-5", { icerik_hash: h("fnd-5"), karar: "fix_doc" });
     await api.bulguKarari("fnd-6", { icerik_hash: h("fnd-6"), karar: "fix_doc" });
     await api.bulguKarari("fnd-9", { icerik_hash: h("fnd-9"), karar: "accept_difference", gerekce: "F2 ile aynı AC3 düzeltmesi" });
-    await girisYap("po");
     await api.duzeltmeleriUygula("req-ft-1");
     await bekleIsler();
     expect((await api.gereksinim("req-ft-1")).durum).toBe("pending_po");
-    mockPoEtiketi("req-ft-1");
+    await girisYap("po");
+    await api.poOnayla(await api.gereksinim("req-ft-1"));
     await girisYap("testci");
     await api.caseUret("req-ft-1");
     await bekleIsler();

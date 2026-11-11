@@ -612,7 +612,7 @@ function bulguKarari(id: string, govde: unknown): Bulgu {
 }
 
 function duzeltmeleriUygula(id: string): IsYaniti {
-  izinGerekli("requirement.doc_fix");
+  izinGerekli("requirement.review");
   const g = bul(veri.gereksinimler, id, "Gereksinim");
   const uygulanacak = veri.bulgular.filter((b) => b.requirement_id === id && b.karar === "fix_doc" && b.durum === "decided");
   if (uygulanacak.length === 0) throw new ApiError(409, "Uygulanacak onaylı doküman düzeltmesi yok.");
@@ -656,6 +656,28 @@ function duzeltmeleriUygula(id: string): IsYaniti {
     },
   ]);
   return is("started", `${uygulanacak.length} düzeltme yazılıyor.`);
+}
+
+/**
+ * core `POST /requirements/{id}/po-approve` (ANALIZ 012 K6): yalnız serbest metin gereksinimde ve
+ * `requirement.po_approve_free_text` (PO) izniyle; Jira kaynaklı story'de 410 `po_onayi_jira`
+ * (onay Jira etiketiyle). İçerik hash'i ekranda görülene bağlıdır.
+ */
+function poOnayla(id: string, govde: unknown): GereksinimDetay {
+  const k = izinGerekli("requirement.po_approve_free_text");
+  const g = bul(veri.gereksinimler, id, "Gereksinim");
+  if (g.kaynak !== "free_text") {
+    throw new ApiError(410, "Jira kaynaklı story'de PO onayı Jira'dan verilir: tp-po-approved etiketi.", { kod: "po_onayi_jira" });
+  }
+  hashGerekli(govde, g.icerik_hash);
+  if (g.durum !== "pending_po") throw new ApiError(409, "Gereksinim PO teyidi beklemiyor.");
+  gecir("requirement", g, "po_approved");
+  g.po = { durum: "approved", onaylayan: k.kullanici_adi, zaman: simdi(), kanal: "portal" };
+  g.po.onaylanan_hash = g.icerik_hash;
+  denetimEkle("po.approve", g.id, `PO teyidi (portal, serbest metin) · ${g.icerik_hash}`);
+  gereksinimOlayi(g);
+  mockOlayYayinla({ type: "po.approved", id: g.id, data: { onaylayan: k.kullanici_adi, kanal: "portal" } });
+  return cikti(g);
 }
 
 /**
@@ -1859,14 +1881,7 @@ const ROTALAR: Rota[] = [
   ],
   ["POST", /^\/findings\/([^/]+)\/decision$/, (m, _q, g) => bulguKarari(decodeURIComponent(m[1]), g)],
   ["POST", /^\/requirements\/([^/]+)\/apply-doc-fixes$/, (m) => duzeltmeleriUygula(decodeURIComponent(m[1]))],
-  [
-    "POST",
-    /^\/requirements\/([^/]+)\/po-approve$/,
-    () => {
-      girisGerekli();
-      throw new ApiError(410, "PO onayı yalnız Jira'dan verilir: story'ye tp-po-approved etiketi konur.", { kod: "po_onayi_jirada" });
-    },
-  ],
+  ["POST", /^\/requirements\/([^/]+)\/po-approve$/, (m, _q, g) => poOnayla(decodeURIComponent(m[1]), g)],
   ["POST", /^\/requirements\/([^/]+)\/generate-cases$/, (m) => caseUret(decodeURIComponent(m[1]))],
   [
     "GET",

@@ -97,7 +97,14 @@ export const api = {
   /** `cakismayiOnayla`: düzeltme bir 'bilinçli fark' kararıyla çelişiyorsa (409) yine de uygula (denetlenir). */
   duzeltmeleriUygula: (id: string, cakismayiOnayla = false) =>
     istek<IsYaniti>("POST", `/requirements/${yol(id)}/apply-doc-fixes`, cakismayiOnayla ? { govde: { cakismayi_onayla: true } } : {}),
-  // PO onayı yalnız Jira'dan (etiket tp-po-approved; ANALIZ 012 K6): portal ucu kalktı (410).
+  /**
+   * Serbest metin gereksinimde PO teyidi (`requirement.po_approve_free_text`). Jira kaynaklı story'de
+   * core 410 (`po_onayi_jira`) döner: onay Jira etiketiyle. `icerik_hash` aynen gönderilir (TOCTOU bağı).
+   */
+  poOnayla: async (g: Pick<GereksinimDetay, "id" | "icerik_hash">): Promise<GereksinimDetay> =>
+    detayUyarla(
+      nesne(await istek<unknown>("POST", `/requirements/${yol(g.id)}/po-approve`, { govde: { icerik_hash: g.icerik_hash } })),
+    ),
   caseUret: (id: string) => istek<IsYaniti>("POST", `/requirements/${yol(id)}/generate-cases`),
   /**
    * Story başına manuel baz değer (Faz 5; analyst | po). Yanıt baz değer ya da gereksinim
