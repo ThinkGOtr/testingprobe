@@ -33,7 +33,7 @@ purposes:
     params: { effort: medium }
   case_generation:
     model: claude-sonnet-5-5
-    max_tokens: 16000
+    max_tokens: 32000           # v3 çıktısı (kapsam öğeleri, test verisi, gerekçeler) v2'nin ~2 katı
     timeout_s: 600              # ~10K karakter Türkçe JSON + uyarlamalı düşünme: dakikalar sürebilir
     params: { effort: medium }
   consistency_check:          # ajan: kod (GitHub MCP, salt okuma) + veri (db_query) araçları
