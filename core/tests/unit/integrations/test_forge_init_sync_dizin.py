@@ -108,7 +108,9 @@ def ortam(tmp_path: Path) -> Any:
     (w / "web" / "src" / "Katalog.tsx").write_text('<button data-testid="cart-add" />\n')
     _git(w, "commit", "-q", "-am", "kirilma")
     bare = forge / "demo-app.git"
-    _git(w, "init", "-q", "--bare", "-b", "main", str(bare))
+    # forge-init init ile aynı: --shared=0666 → receive.denyNonFastforwards=true (zorla push reddedilir).
+    _git(w, "init", "-q", "--bare", "--shared=0666", "-b", "main", str(bare))
+    assert _git(bare, "config", "receive.denyNonFastforwards", bare=True) == "true"
     _git(w, "push", "-q", str(bare), "main", "demo/break-locator", "refs/tags/demo-baseline")
     # Açık bir PR dalı ve PR kaydı: sync-dizin bunlara dokunmamalı.
     _git(w, "push", "-q", str(bare), "main:refs/heads/tp/case-1")
@@ -123,6 +125,10 @@ def ortam(tmp_path: Path) -> Any:
     (src / "e2e-java" / ".gitignore").write_text("target/\n")
     (src / "e2e-java" / "target").mkdir()
     (src / "e2e-java" / "target" / "x.class").write_text("ikili\n")
+    # .gitignore'da olmasa da Java koşu çıktıları (results/, kanit/) depoya girmez (GÜV-Y6).
+    for d in ("results", "kanit"):
+        (src / "e2e-java" / d).mkdir()
+        (src / "e2e-java" / d / "r.json").write_text("{}\n")
 
     def run(*args: str) -> subprocess.CompletedProcess[str]:
         env = {
@@ -165,7 +171,7 @@ def test_tek_commit_yalniz_dizin_pr_kaydi_korunur(ortam: Any) -> None:
         "e2e-java/.gitignore",
         "e2e-java/pom.xml",
         "e2e-java/src/SepetTest.java",
-    ]  # target/ girmez
+    ]  # target/, results/, kanit/ girmez
     # PR kaydı, açık PR dalı, kırılma dalı, etiket ve çalışan uygulama sha'sı değişmez.
     assert (ortam.forge / "tp-prs.json").read_text() == prs
     assert (ortam.forge / "demo-app-web.sha").read_text() == web_sha
@@ -214,12 +220,48 @@ def test_baseline_main_baseline_degilse_reddedilir(ortam: Any) -> None:
     assert _ref(bare, "main") == once
 
 
+def test_baseline_ikinci_kosu_noop(ortam: Any) -> None:
+    assert ortam("sync-dizin", "e2e-java", "--baseline").returncode == 0
+    refs = {r: _ref(ortam.bare, r) for r in ("main", "demo/break-locator", "demo-baseline")}
+    r = ortam("sync-dizin", "e2e-java", "--baseline")
+    assert r.returncode == 0, r.stderr
+    assert "commit yazılmadı" in r.stdout
+    assert {k: _ref(ortam.bare, k) for k in refs} == refs
+
+
+def test_baseline_basarisizsa_hicbir_ref_degismez(ortam: Any) -> None:
+    """Kırılma dalı beklenen biçimde değilse main de ilerlemez (yarım durum yok, OPS-Y1)."""
+    bare = ortam.bare
+    w = ortam.forge.parent / "w2"
+    _git(ortam.forge, "clone", "-q", "--branch", "demo/break-locator", str(bare), str(w))
+    (w / "ek.txt").write_text("ikinci commit\n")
+    _git(w, "add", "-A")
+    _git(w, "commit", "-q", "-m", "ikinci")
+    _git(w, "push", "-q", "origin", "demo/break-locator")
+    once = {r: _ref(bare, r) for r in ("main", "demo/break-locator", "demo-baseline")}
+    r = ortam("sync-dizin", "e2e-java", "--baseline")
+    assert r.returncode != 0 and "tek commit değil" in r.stderr
+    assert {k: _ref(bare, k) for k in once} == once
+
+
+def test_ic_betik_safe_directory_global_yapilandirmadan() -> None:
+    """git 2.39'da yerel clone/push alt süreçleri `-c safe.directory`'yi görmez (OPS-Y1): iç betik
+    safe.directory'yi GIT_CONFIG_GLOBAL dosyasından verir ve zorla push kullanmaz."""
+    ic = SCRIPT.read_text().split('if [ "$MODE" = sync-dizin ]; then\n  [ -d "$SRC_ABS/$DIZIN" ]')[1]
+    ic = ic.split("INNER\n  exit 0")[0]
+    assert "directory = *" in ic and 'GIT_CONFIG_GLOBAL="$W/gitconfig"' in ic
+    assert "push -q -f" not in ic and "push -f" not in ic
+    assert "fetch -q --atomic" in ic
+
+
 @pytest.mark.parametrize(
     ("args", "mesaj"),
     [
         (("sync-dizin",), "dizin adı ister"),
         (("sync-dizin", "../core"), "geçersiz dizin adı"),
         (("sync-dizin", "a/b"), "geçersiz dizin adı"),
+        (("sync-dizin", "..\ne2e-java"), "geçersiz dizin adı"),
+        (("sync-dizin", "e2e-java\n"), "geçersiz dizin adı"),
         (("sync-dizin", "web"), "uygulama dizini"),
         (("sync-dizin", "yok-boyle"), "kaynak dizin yok"),
         (("sync-dizin", "e2e-java", "--force"), "--force ile birlikte"),
@@ -232,3 +274,62 @@ def test_hatali_argumanlar(ortam: Any, args: tuple[str, ...], mesaj: str) -> Non
     assert r.returncode != 0
     assert mesaj in r.stderr
     assert _ref(ortam.bare, "main") == once
+
+
+DUMAN_IMAJ = os.environ.get("TP_FORGE_IMAGE_DUMAN", "testingprobe-core:local")
+
+
+@pytest.mark.skipif(
+    os.environ.get("TP_DOCKER_DUMAN") != "1" or shutil.which("docker") is None,
+    reason="docker duman testi: TP_DOCKER_DUMAN=1 ile açılır (gerçek core imajı, geçici volume)",
+)
+def test_docker_duman_kok_konteyner_10001_deposu(tmp_path: Path) -> None:
+    """Gerçek forge koşulu (OPS-Y1): `forge-init` init depoyu 10001:1001 + --shared=0666 kurar;
+    sync-dizin kök konteynerde (git 2.39) çalışır. Geçici volume testin sonunda silinir."""
+    if subprocess.run(["docker", "image", "inspect", DUMAN_IMAJ], capture_output=True).returncode:
+        pytest.skip(f"{DUMAN_IMAJ} imajı yok")
+    vol = f"tpduman{os.getpid()}_tp_forge"
+    src = tmp_path / "demo-app"
+    yoksay = shutil.ignore_patterns("node_modules", "target", "results", "kanit", "e2e-java")
+    shutil.copytree(REPO / "demo-app", src, ignore=yoksay)
+    env = {
+        **{k: v for k, v in os.environ.items() if not k.startswith(("TP_FORGE", "GIT_"))},
+        "COMPOSE_PROJECT_NAME": f"tpduman{os.getpid()}",
+        "TP_FORGE_VOLUME": vol,
+        "TP_FORGE_SRC": str(src),
+        "TP_FORGE_IMAGE": DUMAN_IMAJ,
+    }
+
+    def kos(*a: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["bash", str(SCRIPT), *a], env=env, capture_output=True, text=True, timeout=300
+        )
+
+    def depo(komut: str) -> str:
+        return subprocess.run(
+            ["docker", "run", "--rm", "--user", "10001:1001", "-v", f"{vol}:/forge",
+             "--entrypoint", "sh", DUMAN_IMAJ, "-c",
+             f"g(){{ git -c safe.directory='*' --git-dir=/forge/demo-app.git \"$@\"; }}; {komut}"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+    try:
+        r = kos()
+        assert r.returncode == 0, r.stderr + r.stdout
+        assert depo("g config receive.denyNonFastforwards") == "true"
+        shutil.copytree(
+            REPO / "demo-app" / "e2e-java", src / "e2e-java",
+            ignore=shutil.ignore_patterns("target", "results", "kanit"),
+        )
+        r = kos("sync-dizin", "e2e-java", "--baseline")
+        assert r.returncode == 0, r.stderr + r.stdout
+        main, base, kir_ust = depo(
+            "g rev-parse main 'demo-baseline^{commit}' demo/break-locator^"
+        ).split()
+        assert main == base == kir_ust
+        assert depo("g cat-file -t demo/break-locator:e2e-java/pom.xml") == "blob"
+        assert depo("find /forge/demo-app.git ! -uid 10001 | head -1") == ""
+        r = kos("sync-dizin", "e2e-java", "--baseline")
+        assert r.returncode == 0 and "commit yazılmadı" in r.stdout, r.stderr
+    finally:
+        subprocess.run(["docker", "volume", "rm", "-f", vol], capture_output=True)

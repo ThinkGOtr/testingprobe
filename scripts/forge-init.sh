@@ -32,8 +32,10 @@
 #          TP_DEMO_WEB_FORCE=1 (ya da --force) → güncel olsa / iş koşsa da derler + oluşturur.
 #
 # sync-dizin <dizin>: --force'un aksine depoyu silmez. demo-app/<dizin>'in çalışma ağacındaki içeriği
-#   (init ile aynı dışlamalar + alt .gitignore'lar) main'in üstüne tek commit olarak yazılır ve
-#   fast-forward gönderilir; değişiklik yoksa hiçbir şey yazılmaz (idempotent). Commit yalnızca
+#   (init ile aynı dışlamalar + target/results/kanit + alt .gitignore'lar) main'in üstüne tek commit
+#   olarak yazılır ve hızlı ileri (fast-forward) eklenir; değişiklik yoksa hiçbir şey yazılmaz
+#   (idempotent). Tüm ref'ler yerelde hazırlanıp depoya tek atomik `git fetch` ile yazılır (depo
+#   receive.denyNonFastforwards=true; bir adım düşerse hiçbir ref değişmez). Commit yalnızca
 #   <dizin>/ altına dokunur; tp-prs.json, açık PR dalları ve demo-app-web.sha değişmez. Uygulama
 #   dizinleri (web, api) kabul edilmez (çalışan uygulama eşleşmesi: make reset).
 #   --baseline: main demo-baseline'dayken etiketi de yeni commit'e taşır ve demo/break-locator'ı
@@ -86,7 +88,8 @@ done
 [ "$BASELINE" = 0 ] || [ "$MODE" = sync-dizin ] || die "--baseline yalnızca sync-dizin ile anlamlıdır"
 if [ "$MODE" = sync-dizin ]; then
   # Yalnızca demo-app'in tek bir üst düzey dizini; yol geçişi ve uygulama dizinleri reddedilir.
-  printf '%s' "$DIZIN" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$' \
+  # bash regex tüm dizeyi eşler (satır tabanlı grep'in aksine yeni satırlı '..\ne2e-java' geçmez).
+  [[ "$DIZIN" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] \
     || die "geçersiz dizin adı: '$DIZIN' (demo-app altında tek düzey, ör. e2e-java)"
   case "$DIZIN" in
     web|api) die "sync-dizin $DIZIN: uygulama dizini eşitlenmez (çalışan demo-app-web eşleşmesi); make reset kullanın" ;;
@@ -297,7 +300,13 @@ if [ "$MODE" = sync-dizin ]; then
 F="${FORGE_DIR:-/forge}"
 S="${SRC_DIR:-/src}"
 REPO="$F/demo-app.git"
-export HOME="${TMPDIR:-/tmp}" LC_ALL=C GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
+W="$(mktemp -d)"
+trap 'rm -rf "$W"' EXIT
+# Konteyner kök (0:0), depo 10001'e ait. git 2.39 yerel clone/push'un upload-pack/receive-pack alt
+# süreçleri komut satırındaki `-c safe.directory` değerini GÖRMEZ ("dubious ownership", rc=128):
+# safe.directory geçici bir global yapılandırmadan verilir (alt süreçler ortamı devralır).
+printf '[safe]\n\tdirectory = *\n' > "$W/gitconfig"
+export HOME="$W" LC_ALL=C GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$W/gitconfig"
 export GIT_AUTHOR_NAME=tp-bot GIT_AUTHOR_EMAIL=bot@testingprobe.local
 export GIT_COMMITTER_NAME=tp-bot GIT_COMMITTER_EMAIL=bot@testingprobe.local
 export GIT_AUTHOR_DATE="2026-01-01T00:00:00+0000" GIT_COMMITTER_DATE="2026-01-01T00:00:00+0000"
@@ -316,17 +325,17 @@ if [ "$BASELINE" = 1 ]; then
   fi
 fi
 
-W="$(mktemp -d)"
-trap 'rm -rf "$W"' EXIT
-g clone -q --branch main "$REPO" "$W/r"
+g clone -q --no-tags --branch main "$REPO" "$W/r"
 cd "$W/r"
 rm -rf "./$DIZIN"
 mkdir -p "./$DIZIN"
+# Java/Maven çıktıları (target, results, kanit) da girmez (alt .gitignore olmasa bile).
 tar -C "$S/$DIZIN" \
   --exclude=node_modules --exclude=.venv --exclude=__pycache__ --exclude=.pytest_cache \
   --exclude=.ruff_cache --exclude=dist --exclude=test-results --exclude=playwright-report \
   --exclude=blob-report --exclude=.DS_Store --exclude=.git --exclude='.env' --exclude='.env.*' \
-  --exclude='*.db' --exclude='*.sqlite' -cf - . | tar --no-same-owner -C "./$DIZIN" -xf -
+  --exclude='*.db' --exclude='*.sqlite' --exclude=target --exclude=results --exclude=kanit \
+  -cf - . | tar --no-same-owner -C "./$DIZIN" -xf -
 g add -A -- "./$DIZIN"
 if g diff --cached --quiet; then
   echo "forge main zaten demo-app/$DIZIN ile aynı; commit yazılmadı."
@@ -336,28 +345,41 @@ else
   [ -z "$disarida" ] || { echo "HATA: $DIZIN/ dışında değişiklik: $disarida" >&2; exit 3; }
   n="$(g diff --cached --name-only | wc -l | tr -d ' ')"
   g commit -q -m "forge: $DIZIN/ demo-app çalışma ağacıyla eşitlendi (forge-init sync-dizin; $n dosya)"
-  # Fast-forward: arada main ilerlediyse git reddeder (yeniden çalıştırın).
-  g push -q origin main
   degisti=1
-  echo "forge main: ${eski_main%"${eski_main#????????????}"} → $(g rev-parse --short=12 HEAD) ($DIZIN/, $n dosya)"
 fi
 yeni="$(g rev-parse HEAD)"
+
+# Tüm ref güncellemeleri ÖNCE yerelde hazırlanır, sonra depoya TEK atomik fetch ile yazılır: main
+# hızlı ileri (arada ilerlediyse reddedilir), demo/break-locator ve demo-baseline zorla. Depo
+# `--shared=0666` ile kurulduğundan receive.denyNonFastforwards=true: zorla push reddedilir; fetch
+# (receive-pack'ten geçmez) bu yüzden kullanılır. Bir adım düşerse hiçbir ref değişmez (yarım durum yok).
+set -- "refs/heads/main:refs/heads/main"
+tasindi=0
 if [ "$BASELINE" = 1 ] && [ "$base" != "$yeni" ]; then
   # demo/break-locator: demo-baseline üstünde tek commit (forge-init init). Yeni etiketin üstüne aynı
   # değişiklik yeniden uygulanır; break merge'ü eklenen dizini silmez.
-  if g fetch -q origin refs/heads/demo/break-locator 2>/dev/null; then
-    kir="$(g rev-parse FETCH_HEAD)"
-    if [ "$(g rev-parse "$kir^")" != "$base" ]; then
-      echo "HATA: demo/break-locator demo-baseline üstünde tek commit değil; etiket taşınmadı" >&2
+  if kir="$(g --git-dir="$REPO" rev-parse --verify -q refs/heads/demo/break-locator)"; then
+    if [ "$(g --git-dir="$REPO" rev-parse "$kir^")" != "$base" ]; then
+      echo "HATA: demo/break-locator demo-baseline üstünde tek commit değil; hiçbir ref değiştirilmedi" >&2
       exit 3
     fi
     g checkout -q -b tp-kir "$yeni"
     g cherry-pick "$kir" >/dev/null
-    g push -q -f origin "HEAD:refs/heads/demo/break-locator"
     g checkout -q main
+    set -- "$@" "+refs/heads/tp-kir:refs/heads/demo/break-locator"
   fi
   g tag -f demo-baseline "$yeni" >/dev/null
-  g push -q -f origin refs/tags/demo-baseline
+  set -- "$@" "+refs/tags/demo-baseline:refs/tags/demo-baseline"
+  tasindi=1
+fi
+if [ "$degisti" = 1 ] || [ "$tasindi" = 1 ]; then
+  g --git-dir="$REPO" fetch -q --atomic --no-tags "$W/r" "$@" \
+    || { echo "HATA: forge ref'leri güncellenemedi (main arada ilerlemiş olabilir; yeniden çalıştırın). Hiçbir ref değişmedi." >&2; exit 3; }
+fi
+if [ "$degisti" = 1 ]; then
+  echo "forge main: ${eski_main%"${eski_main#????????????}"} → $(g rev-parse --short=12 HEAD) ($DIZIN/, $n dosya)"
+fi
+if [ "$tasindi" = 1 ]; then
   echo "demo-baseline → $(g rev-parse --short=12 "$yeni") (demo/break-locator yeniden kuruldu)"
 elif [ "$degisti" = 1 ] && [ -n "$base" ]; then
   echo "NOT: demo-baseline taşınmadı; make demo-reset/make reset main'i baseline'a döndürünce $DIZIN/ değişikliği geri alınır (kalıcı için --baseline)."
