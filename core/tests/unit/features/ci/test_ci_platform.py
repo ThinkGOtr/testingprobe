@@ -14,11 +14,12 @@ from typing import Any
 
 import httpx
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from tests.unit.features.ci.helpers import SHA, UZAK_KOK, FakeToolchain, run_jobs
+from tests.unit.features.ci.helpers import SHA, UZAK_KOK, FakeToolchain, login, run_jobs
 from tp_core.features.ci import clients, enqueue_ci, service
 from tp_core.features.ci.parse import java_test_kimligi, surefire_ayristir
 from tp_core.models import Run, Script, TestResult
@@ -43,12 +44,45 @@ def _script(engine: Engine, platform: str) -> uuid.UUID:
     return sid
 
 
-def _java_yaniti(kok: Path, platform: str = "android", kirmizi: Any = None):
+EXTENT_HTML = "<html><head><title>Extent</title></head><body>Extent raporu</body></html>"
+
+
+def _java_yaniti(kok: Path, platform: str = "android", kirmizi: Any = None, raporlar: bool = False):
+    """`raporlar`: test-runner'ın Java koşusunda bıraktığı Maven `target/` düzeni (Extent + Allure
+    raporu, derleme çıktısı) diske yazılır ve `run.reports` ile bildirilir."""
+
     def yanit(body: dict[str, Any]) -> httpx.Response:
         run_dir = body["run_id"]
         yerel = kok / "runs" / run_dir
         (yerel / "results").mkdir(parents=True)
         (yerel / "results" / "junit.xml").write_bytes(JUNIT)
+        uzak_target = f"{UZAK_KOK}/runs/{run_dir}/src/e2e-app/target"
+        ek: dict[str, Any] = {}
+        if raporlar:
+            target = yerel / "src" / "e2e-app" / "target"
+            for dizin, icerik in (
+                ("extent-report", EXTENT_HTML),
+                ("allure-report", "<html>A</html>"),
+            ):
+                (target / dizin).mkdir(parents=True)
+                (target / dizin / "index.html").write_text(icerik, encoding="utf-8")
+            (target / "extent-report" / "extent.json").write_text("[]")
+            (target / "allure-results").mkdir()
+            (target / "allure-results" / "x-result.json").write_text("{}")
+            (target / "classes").mkdir()
+            (target / "classes" / "Gizli.class").write_bytes(b"\xca\xfe")
+            (target / "surefire-reports").mkdir()
+            (target / "surefire-reports" / "TEST-TestSuite.xml").write_bytes(JUNIT)
+            ek = {
+                "allure_dir": f"{uzak_target}/allure-results",
+                "reports": {
+                    ad: {"path": f"{uzak_target}/{dizin}", "rel": "", "exists": True}
+                    for ad, dizin in (
+                        ("allure_html", "allure-report"),
+                        ("extent_html", "extent-report"),
+                    )
+                },
+            }
         (kok / "checks").mkdir(exist_ok=True)
         (kok / "checks" / f"{body['sha']}.json").write_text(
             json.dumps(
@@ -92,6 +126,7 @@ def _java_yaniti(kok: Path, platform: str = "android", kirmizi: Any = None):
                     "log": f"{uzak}/runner.log",
                     "saglik": {"ok": True},
                     "kirmizi_denetimi": kirmizi,
+                    **ek,
                 },
                 "duration_ms": 30000,
             },
@@ -138,6 +173,93 @@ def test_enqueue_platformu_scriptten_ve_check_govdesi_java(
     assert set(satirlar) == {"GirisTesti › girisYap", "TPD1AndroidC2_0a1b2c3dTest › senaryo"}
     kirmizi = satirlar["TPD1AndroidC2_0a1b2c3dTest › senaryo"]
     assert (kirmizi.dosya, kirmizi.sonuc) == (DOSYA, "failed")
+
+
+def test_java_kosusunun_extent_raporu_allure_yaninda_sunulur(
+    api: TestClient, make_user, engine: Engine, toolchain: FakeToolchain, artefakt_kok: Path
+) -> None:
+    """Java koşusu raporları Maven `target/` altına yazar: Extent raporu `extent_url` ile bildirilir
+    ve sandbox'lı, oturumlu artefakt ucundan açılır; `target/`'ın geri kalanı sunulmaz."""
+    sid = _script(engine, "android")
+    toolchain.yanit = _java_yaniti(artefakt_kok, raporlar=True)
+    with Session(engine) as s, s.begin():
+        rid = enqueue_ci(s, SHA, "pr", 7, script_id=sid)
+    run_jobs(engine)
+    with Session(engine) as s:
+        assert s.get(Run, rid).artefaktlar["extent_html"] == (
+            "src/e2e-app/target/extent-report/index.html"
+        )
+    temel = f"/artifacts/runs/{rid}"
+    assert api.get(f"{temel}/src/e2e-app/target/extent-report/index.html").status_code == 401
+    login(api, make_user("analyst"))
+    k = next(x for x in api.get("/runs").json() if x["id"] == str(rid))
+    assert k["extent_url"] == f"/api{temel}/src/e2e-app/target/extent-report/index.html"
+    assert k["allure_url"] == f"/api{temel}/src/e2e-app/target/allure-report/index.html"
+    assert k["allure_rapor"] is True
+    rapor = api.get(k["extent_url"].removeprefix("/api"))
+    assert rapor.status_code == 200 and rapor.headers["content-type"].startswith("text/html")
+    # Rapor tek dosyadır ve depo kullanmaz: içerik değişmeden (şimsiz) sunulur, opak kökende çalışır.
+    assert rapor.text == EXTENT_HTML
+    csp = rapor.headers["content-security-policy"]
+    assert csp.startswith("sandbox ") and "allow-scripts" in csp
+    assert "allow-same-origin" not in csp
+    assert rapor.headers["x-content-type-options"] == "nosniff"
+    assert api.get(k["allure_url"].removeprefix("/api")).status_code == 200
+    assert api.get(k["allure_sonuclari_url"].removeprefix("/api")).json()["dosyalar"] == [
+        {"ad": "x-result.json", "dizin": False, "boyut": 2}
+    ]
+    # `target/`'ın tamamı açılmaz: yalnızca rapor dizinleri (derleme çıktısı, kaynak, Surefire yok).
+    for yol in (
+        "src/e2e-app/target/classes/Gizli.class",
+        "src/e2e-app/target/surefire-reports/TEST-TestSuite.xml",
+        "src/e2e-app/target",
+        "src/e2e-app/extent-report/index.html",
+        "target/extent-report/index.html",
+        "src/e2e-app/target/extent-report/../classes/Gizli.class",
+    ):
+        assert api.get(f"{temel}/{yol}").status_code in (400, 404), yol
+    assert api.get(f"{temel}/src/e2e-app/target/classes/Gizli.class").status_code == 400
+
+
+def test_extent_raporu_uretilmediyse_baglanti_yok(
+    engine: Engine, toolchain: FakeToolchain, artefakt_kok: Path
+) -> None:
+    """Dinleyicisi olmayan eski commit / raporsuz koşu: `extent_url` null, anahtar yazılmaz."""
+    sid = _script(engine, "android")
+    toolchain.yanit = _java_yaniti(artefakt_kok)
+    with Session(engine) as s, s.begin():
+        rid = enqueue_ci(s, SHA, "pr", 7, script_id=sid)
+    run_jobs(engine)
+    with Session(engine) as s:
+        run = s.get(Run, rid)
+        assert "extent_html" not in run.artefaktlar
+        assert service.serialize_runs(s, [run])[0]["extent_url"] is None
+
+
+def test_izinli_mi_target_rapor_dizinleri() -> None:
+    from tp_core.features.ci.artifacts import izinli_mi
+
+    for yol in (
+        "src/e2e-app/target/extent-report/index.html",
+        "src/e2e-app/target/extent-report",
+        "src/e2e-app/target/allure-report/index.html",
+        "src/e2e-app/target/allure-results/a-result.json",
+        "src/demo-app/e2e-app/target/extent-report/index.html",
+        "src/e2e/results/junit.xml",
+        "run.json",
+    ):
+        assert izinli_mi(tuple(yol.split("/"))), yol
+    for yol in (
+        "src/e2e-app/target/classes/A.class",
+        "src/e2e-app/target/test-classes/extent-report",
+        "src/e2e-app/target",
+        "src/e2e-app/extent-report/index.html",
+        "src/extent-report/target/index.html",
+        "target/extent-report/index.html",
+        "extent-report/index.html",
+        "src/e2e-app/src/test/java/A.java",
+    ):
+        assert not izinli_mi(tuple(yol.split("/"))), yol
 
 
 def test_serialize_runs_platformu_eski_kayitta_scriptten(engine: Engine) -> None:

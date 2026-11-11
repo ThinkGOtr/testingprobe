@@ -24,6 +24,11 @@ Akış (run.py ile aynı kilit ve koşu dizini sözleşmesi):
      `failure.type` ile yapılır (runner/surefire.py aynı sınıflandırmayı üretir).
   5. Sonuç: Surefire `TEST-*.xml` → `results.summarize` biçiminde özet + tek `junit.xml`
      (`runs/<id>/results/junit.xml`), Allure raporu, kanıt `target/kanit/`.
+  6. Extent raporu: e2e-app'in TestNG dinleyicisi (`altyapi/ExtentRaporu`) koşu sırasında tek
+     dosyalık, dış kaynak yüklemeyen `target/extent-report/index.html` yazar
+     (`reports.extent_html`). Ayrı üretim adımı yoktur; tekrarlar (`repeat_each`) aynı dizine
+     yazar ve dinleyici önceki tekrarları rapora geri yükler (`-Dextent.tekrar=<i>/<n>` test
+     adına eklenir).
 
 Uygulama seçimi Appium hostundaki kurulu uygulamadır (`TP_APP_ID_<P>`; isteğe bağlı
 `TP_APP_PATH_<P>` Appium hostundaki dosya yolu). Retries (`--retries`) Java'da yoktur (TestNG
@@ -68,6 +73,7 @@ APP_ENV = {
 }
 PASS_ENV = ("PATH", "HOME", "LANG", "LC_ALL", "TZ", "TMPDIR", "JAVA_HOME")
 SUREFIRE_DIR = "surefire-reports"
+EXTENT_REPORT_DIR = "extent-report"
 
 
 def appium_url(platform: str) -> str:
@@ -146,6 +152,7 @@ def maven_argv(
     test_files: list[str],
     *,
     compile_first: bool,
+    repeat_count: int = 1,
 ) -> list[str]:
     argv = [
         cfg.mvn,
@@ -161,7 +168,11 @@ def maven_argv(
         f"-Draporlar.dizini={rep.reports_dir}",
         f"-Dallure.results.directory={allure_dir}",
         f"-Dkanit.dizini={rep.kanit_dir}",
+        # Extent raporu tekrarlar arasında ortak dizine yazılır (dinleyici birleştirir).
+        f"-Dextent.rapor.dizini={allure_dir.parent / EXTENT_REPORT_DIR}",
     ]
+    if repeat_count > 1:
+        argv.append(f"-Dextent.tekrar={rep.index + 1}/{repeat_count}")
     if test_files:
         argv += [f"-Dtest={test_selector(test_files)}", "-Dsurefire.failIfNoSpecifiedTests=true"]
     argv += ["test-compile", "surefire:test"] if compile_first else ["surefire:test"]
@@ -389,7 +400,7 @@ def _run_maven(
                 return None, True, total_ms
             argv = maven_argv(
                 cfg, root, Path(head_repo), platform, rep, allure_dir, req.test_files,
-                compile_first=i == 0,
+                compile_first=i == 0, repeat_count=len(repeats),
             )  # fmt: skip
             res = proc.run(argv, cwd=root, env=env, timeout_s=left)
             total_ms += res.duration_ms
@@ -416,6 +427,7 @@ def _reports(cfg: Settings, target: Path, junit: Path) -> dict[str, dict[str, An
         ("surefire", target / SUREFIRE_DIR, None),
         ("allure", target / "allure-results", None),
         ("allure_html", target / "allure-report", "index.html"),
+        ("extent_html", target / EXTENT_REPORT_DIR, "index.html"),
         ("kanit", target / "kanit", None),
     ):
         probe = path / marker if marker else path

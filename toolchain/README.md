@@ -258,7 +258,7 @@ written. Empty token → endpoints open and `/health` `auth: ok (uyarı: …)`; 
   `surefire_dir`, `kanit_dir`, `appium_url`, `compile_diagnostics` (javac errors when Maven failed
   without a report), `kirmizi_denetimi` (break runs: `{ok, kirmizi, kotu}` — the
   `araclar/KirmiziDenetimi.java` rule: every red test is an assertion, at least one red; setup,
-  locator, other errors and skipped tests are not "red"). `reports:{junit,surefire,allure,allure_html,kanit}`.
+  locator, other errors and skipped tests are not "red"). `reports:{junit,surefire,allure,allure_html,extent_html,kanit}`.
 - `failure.type` (same set as Playwright): `assertion` (`<failure type=java.lang.AssertionError>`,
   `Bekle.dogrula`; `expected`/`received`/`timeout_ms` parsed), `locator_not_found` (Timeout "öğe
   görünmedi: kimlik …" / NoSuchElement), `locator_timeout` (other TimeoutException), `test_data`
@@ -266,6 +266,13 @@ written. Empty token → endpoints open and `/health` `auth: ok (uyarı: …)`; 
   `locator_scope_test_id` come from the `kimlik '…'` text; `page_location` is the first
   `ekranlar/` stack frame; `evidence.screenshot` / `evidence.page_source` (+ `page_source_rel`) are
   `target/kanit/<Class>.<method>/{ekran.png,sayfa-kaynagi.xml}`.
+- Extent report: the e2e-app TestNG listener (`altyapi/ExtentRaporu`, dependency
+  `com.aventstack:extentreports` in the trusted pom) writes a single-file, offline Spark report
+  `target/extent-report/index.html` during the run (`reports.extent_html` = `{path, rel, exists}`;
+  the portal's "Extent raporu" link). No generation step in the runner: it only passes
+  `-Dextent.rapor.dizini=<target>/extent-report` (shared by all repeats; the listener merges earlier
+  repeats from `extent.json`) and, when `repeat_each` > 1, `-Dextent.tekrar=<i>/<n>`. A commit
+  without the listener simply has `exists:false`; the run status never depends on it.
 - Network: Appium runs on the host; test-runner reaches it **only** through `appium-gw`
   (compose profile `mobil`, see `docs/CIHAZ-ALTYAPISI.md` §5.1).
 

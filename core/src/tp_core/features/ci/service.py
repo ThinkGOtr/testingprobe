@@ -593,14 +593,19 @@ def _rel(yol: Any, uzak_dizin: str | None) -> str | None:
     return rel.as_posix() or None
 
 
-def _allure_html(rr: Mapping[str, Any], uzak: str | None) -> str | None:
-    """`reports.allure_html` (`allure-report/` + `index.html`) varsa koşu dizinine göre yolu."""
+def _rapor_html(rr: Mapping[str, Any], uzak: str | None, ad: str) -> str | None:
+    """`reports.<ad>` (rapor dizini + `index.html`) üretildiyse koşu dizinine göre yolu."""
     raporlar = rr.get("reports") if isinstance(rr.get("reports"), Mapping) else {}
-    ah = (raporlar or {}).get("allure_html")
+    ah = (raporlar or {}).get(ad)
     if not isinstance(ah, Mapping) or not ah.get("exists"):
         return None
     dizin = _rel(ah.get("path"), uzak)
     return f"{dizin.rstrip('/')}/index.html" if dizin else None
+
+
+def _allure_html(rr: Mapping[str, Any], uzak: str | None) -> str | None:
+    """`reports.allure_html` (`allure-report/` + `index.html`) varsa koşu dizinine göre yolu."""
+    return _rapor_html(rr, uzak, "allure_html")
 
 
 def _adim_ozeti(adim: Any) -> dict[str, Any]:
@@ -715,6 +720,9 @@ def ingest_check_report(session: Session, run: Run, report: Mapping[str, Any]) -
         "allure": _rel(rr.get("allure_dir"), uzak),
         # test-runner'ın ürettiği statik, tek dosyalık Allure raporu (yalnızca üretildiyse).
         "allure_html": _allure_html(rr, uzak),
+        # Java (Appium + TestNG) koşusunun Extent raporu (`target/extent-report/index.html`);
+        # web koşusu ve dinleyicisi olmayan eski commit üretmez → anahtar yazılmaz.
+        "extent_html": _rapor_html(rr, uzak, "extent_html"),
         "log": _rel(rr.get("log"), uzak),
     }
     uyarilar: list[str] = []
@@ -1782,7 +1790,11 @@ def serialize_runs(session: Session, runs: Sequence[Run]) -> list[dict[str, Any]
         if saglik is not None and saglik.get("ok") is False:
             # Sağlık kontrolü başarısız: Playwright başlatılmadı, rapor dosyaları yok
             # (toolchain yolları yine bildirir; kırık bağlantı gösterilmez).
-            a = {k: v for k, v in a.items() if k not in ("html", "allure", "allure_html", "junit")}
+            a = {
+                k: v
+                for k, v in a.items()
+                if k not in ("html", "allure", "allure_html", "extent_html", "junit")
+            }
         sauce = a.get("sauce") if isinstance(a.get("sauce"), dict) else {}
         gy = _github_yerel_ozeti(a)
         if gy["kullanilir"]:
@@ -1813,6 +1825,8 @@ def serialize_runs(session: Session, runs: Sequence[Run]) -> list[dict[str, Any]
                 or a.get("allure_url"),
                 "allure_rapor": bool(a.get("allure_html")),
                 "allure_sonuclari_url": _url(r.id, a.get("allure"), dizin),
+                # Extent (Spark) raporu: yalnızca Java koşusu üretir; yoksa null (bağlantı yok).
+                "extent_url": _url(r.id, a.get("extent_html"), dizin),
                 # Playwright HTML raporu imzalı yoldan: rapor içi ekran görüntüsü/ekler çerezsiz
                 # yüklenir. JUnit bağlantısı ayrıca verilir (portal rapor yolundan türetmesin).
                 "rapor_url": _imzali_url(r.id, _html_index(a.get("html")), dizin)

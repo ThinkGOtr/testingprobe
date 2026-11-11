@@ -217,8 +217,8 @@ koşu başına rastgele üretilir, maskelenir ve yalnızca ortamla geçer.
 Java testleri `/test/*` uçlarına her platformda doğrudan API kökünden (`DEMO_API_URL=http://127.0.0.1:18000`)
 gider. Artefakt (`<job>-results`): `ci-meta.json` (`job`, `platform`, `sha`, `tetik`, `istek_id`,
 `durum` = passed|failed|error), `surefire-reports/TEST-*.xml` (cihaz koşusu JUnit XML),
-`birim-raporlari/`, `allure-results/`, `kanit/<Sınıf>.<metot>/` (ekran görüntüsü + sayfa kaynağı;
-triage), `logs/` (`serve.log`/`api.log`, `appium.log`, `run-app-checks.log`, iOS'ta `wda-derleme.log`).
+`birim-raporlari/`, `allure-results/`, `extent-report/index.html` (Extent raporu: tek dosya, indirip
+tarayıcıda açılır), `kanit/<Sınıf>.<metot>/` (ekran görüntüsü + sayfa kaynağı; triage), `logs/` (`serve.log`/`api.log`, `appium.log`, `run-app-checks.log`, iOS'ta `wda-derleme.log`).
 
 **Zorunlu check'ler (platform başına).** Varsayılan ruleset ve `TP_REQUIRED_CHECKS` değişmez
 (`test-local,ast-guard,semgrep`). Bir platform etkinleştirildiğinde onun job adı iki yere birlikte

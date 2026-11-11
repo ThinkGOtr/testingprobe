@@ -730,6 +730,8 @@ export interface Kosu {
   allure_url: string | null;
   /** Ham allure-results dizini (JSON listesi); rapor varken ikincil bağlantı. */
   allure_sonuclari_url?: string | null;
+  /** Extent (Spark) HTML raporu; yalnızca Java (Appium + TestNG) koşusu üretir, yoksa null. */
+  extent_url?: string | null;
   /** Playwright HTML raporu. */
   rapor_url: string | null;
   /** JUnit XML (core `junit_url`; yoksa yerel artefakt düzeninden türetilir). */
