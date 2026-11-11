@@ -41,7 +41,9 @@ TEST_TABANI = JAVA_ROOT / "src/test/java/com/antreklabs/bayi/altyapi/TestTabani.
 JAR = REPO / "toolchain/java-araclar/target/java-araclar.jar"
 # Gerçek render çıktısı (test_render_dil golden'ı) ↔ e2e-java'daki derlenen/koşan örneği (MİM-O7).
 WEB_JAVA_GOLDEN = HERE / "golden/TPD1WebC2_3f9b1c2eTest.java"
-WEB_JAVA_ORNEK = JAVA_ROOT / "src/test/java/com/antreklabs/bayi/uretilen/TPD1WebC2_3f9b1c2eTest.java"
+WEB_JAVA_ORNEK = (
+    JAVA_ROOT / "src/test/java/com/antreklabs/bayi/uretilen/TPD1WebC2_3f9b1c2eTest.java"
+)
 JAVA = json.loads((HERE / "symbols-java-web.json").read_text("utf-8"))
 TS_FIXTURE = json.loads((HERE / "symbols.json").read_text("utf-8"))
 
