@@ -44,10 +44,11 @@ def _kisi(rol: str) -> Principal:
 # ------------------------------------------------------------------ yükleyici
 
 
-def test_kural_seti_yuklenir_ve_ilk_set_26_kural() -> None:
+def test_kural_seti_yuklenir_ve_ilk_set_27_kural() -> None:
     ks = _ks()
-    assert len(ks.kurallar) == 26
-    assert len({k.id for k in ks.kurallar}) == 26
+    # §17.3'ün 26 kuralı + 011 `script-dogrulanmamis`.
+    assert len(ks.kurallar) == 27
+    assert len({k.id for k in ks.kurallar}) == 27
     assert set(ks.taslaklar) == {
         "po-hatirlatma",
         "ac-eksik",

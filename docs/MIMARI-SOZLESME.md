@@ -162,7 +162,9 @@ e2e-app köküne göre `src/test/java/…Test.java`. Kayıtlı kontrol adı plat
 - **011:** `POST /run {…, lang:"java", platform:"web"}` `demo-app/e2e-java`'yı (`TP_E2E_JAVA_ROOT`)
   koşturur: Appium sağlık kontrolü yok, API + web origin yoklanır, `repeat_each` desteklenir (web
   varsayılanı 3), tarayıcı imajdaki `/ms-playwright`. Kanıt `target/kanit/<Sınıf>.<metot>/{ekran.png,
-  trace.zip, sayfa.html}` (triage web yöntemi). Bellek: Surefire `argLine -Xmx`, `MAVEN_OPTS`.
+  trace.zip, sayfa.html}` (triage web yöntemi). Bellek: Surefire `argLine -Xmx512m -Dfile.encoding=UTF-8`.
+  Raporlar: Extent test adı = TestNG description (`Sınıf.metot` alt bilgi; `tp-case-*` kategoriye
+  girmez), Allure etiketleri `story`, `tp-case`, `tag` TestTabani'ndan.
 
 ## 3. Kod sahipliği (şeritler)
 
@@ -501,7 +503,7 @@ eski kısıt `NOT VALID` olarak yalnızca yeni satırlara uygulanır.
   platform)` ile önbelleklenir, forge hatası üretimi engellemez. Uç `engineer|presenter`'a açıktır;
   Kod üretimi/Koşular ekranlarındaki rol kısıtı **arayüz düzenidir, yetki sınırı değildir** (K-T8).
   Script serileştirmesi ek alanlar: `dil`, `dil_kaynagi`, `dogrulanmamis` (`durum == "unverified"`),
-  doğrulanmamışta `kod` = `kaynak_kod`; `yerel_kontrol.adimlar[{ad, durum: passed|failed|skipped}]`
+  doğrulanmamışta `kod` = `kaynak_kod` (yol K-T6: `<e2e-csharp kökü>/tests/Generated/<Story>WebC<n>_<u8>Tests.cs` (C# metotları `…Async`) · `<e2e-python kökü>/tests/generated/test_<slug>.py`); `yerel_kontrol.adimlar[{ad, durum: passed|failed|skipped}]`
   (ts: tsc/eslint/ast_guard; java: deps/guard/compile; eski alanlar korunur). Denetim ve SSE
   yükleri (`codegen.requested` vb.) `dil` taşır.
 - `GET /scripts` · `/scripts/{id}`: `engel{tur, neden}`, `adimlar[]` (`arguman`, `izinli`,

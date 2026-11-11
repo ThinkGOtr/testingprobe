@@ -1,4 +1,4 @@
-# Değişiklik test rehberi — 2026-11-03 sürümü
+# Değişiklik test rehberi — 2026-11-03 sürümü (+ 2026-11-11: 011 üretim dili, §4a)
 
 Bu sürümde canlıya giden değişiklikleri **tek tek doğrulamak** için kontrol listesi. Tam demo
 akışı için [CANLI-DEMO-SENARYOSU.md](CANLI-DEMO-SENARYOSU.md); bu belge yalnızca **yeni ve
@@ -49,6 +49,28 @@ Demo reposu: https://github.com/ThinkGOtr/testingprobe-demo-app
 | 4.4 | GitHub'da C1 PR'ını Approve → portalda "Uyarıyı gördüm…" kutusu + Merge et | PR birleşir; GitHub PR'ında **"Testing Probe — açık kabulle merge"** yorumu (uyarı, kabul eden, not, kırarak doğrulama sonucu) | ☐ |
 | 4.5 | Kod üretimi → Üretilen testler | Merge edilen C1 için Kırarak doğrula sütunu **"Kırma etkilemedi · kabulle birleşti"** | ☐ |
 | 4.6 | Bir PR'da "Değişiklik iste" → (ret nedeni seç) → onayla | PR kapanır; o case üstteki **listeye geri gelir**, yeniden kod üretilebilir | ☐ |
+
+## 4a. Üretim dili (011): web + Java ve doğrulanmamış diller
+
+Ön koşul: 011 dağıtımı yapıldı (`docs/GCP-KURULUM.md` §10.2). GitHub kipinde web + Java için demo
+deposunda `demo-app/e2e-java/` + `web-java.yml` merge edilmiş, ruleset'te `web-java` var ve `.env`'de
+`TP_WEB_DILLERI=ts,java`; LocalForge'da `make forge-sync-dizin D=e2e-java B=--baseline` yapılmış.
+Sunucu ve mühendis rolleri dil seçiciyi görür; Kod üretimi/Koşular ekranlarındaki rol kısıtı arayüz
+düzenidir, yetki sınırı değildir (üretim ucu engineer ister).
+
+| # | Ne yap | Beklenen | ☐ |
+|---|---|---|---|
+| 4a.1 | Mühendis → Kod üretimi → platform **Web** | Platform seçicinin yanında **dil seçici**; algılanan dil seçili gelir ve yanında "repodan algılandı" (sayılar ve nereye bakıldığı görünür). Değiştirince "elle seçildi" | ☐ |
+| 4a.2 | `TP_WEB_DILLERI` boşken (GitHub kipi) dil seçici | **Java pasif**, nedeni görünür ("… TP_WEB_DILLERI …"); C# ve Python seçilebilir, "Doğrulanmamış" etiketli | ☐ |
+| 4a.3 | Dil **Java** → C2 → kod üret | PR açılır; dosya `demo-app/e2e-java/src/test/java/com/antreklabs/bayi/uretilen/TPD1WebC2_<uuid8>Test.java` biçiminde; Kontroller'de **deps / guard / compile** adımları; kontrol adı **`local-ci-web-java`** (LocalForge) ya da **`web-java`** (GitHub); Kırarak doğrula çalışır | ☐ |
+| 4a.4 | Java PR'ını merge et → Koşular | Merge sonrası push paket koşusu **iki dilde** koşar (TS + Java kardeş koşu); Java koşusunda **dil rozeti tek** ("Java", "Java Java" değil); rapor bağlantılarında Extent (test adları case açıklaması; `tp-case-*` kategori yok) ve Allure (story / tp-case etiketleri) | ☐ |
+| 4a.5 | Aynı case (C2) için dil **TypeScript** seç → kod üret | **409**: "Bu case'in web testi Java ile merge edildi; dil değiştirmek için önce mevcut testi kaldırın" (başka dilde merge edilmiş script varken tam hat dili değiştirilemez) | ☐ |
+| 4a.6 | Başka bir case (C5) için dil **C#** → üretimden önce uyarı → onayla | Ajan adımları tarayıcıda yine doğrulanır; durum **"Doğrulanmamış"**; kalıcı uyarı bandı + **"Kodu indir"**; PR / kırarak doğrula / merge kartları yerine "bu dilde yok" açıklaması; forge'da yeni dal/PR **yok** | ☐ |
+| 4a.7 | C5'in açık TS PR'ı varken C# (ya da Python) üret | Açık TS PR'ı **kapanmaz**, script'i değişmez (doğrulanmamış kayıt etkin script sayılmaz); yalnız önceki doğrulanmamış kayıt "kapandı" olur | ☐ |
+| 4a.8 | Doğrulanmamış Python çıktısını indir (C# için de) | Yol `…/tests/generated/test_<slug>.py` (C#: `…/tests/Generated/<Story>WebC<n>_<u8>Tests.cs`, metotlar `…Async`); dosya başlığı gereken PO sınıf/metot imzalarını ve `conftest.py` marker parçasını içerir; "Elle düzenlemeyin" yazmaz; portalda gösterilen yol indirilen dosyanınkiyle aynı | ☐ |
+| 4a.9 | Kontrol Kulesi | "Doğrulanmamış" ayrı sayaçta; ilk review başarısı oranı doğrulanmamış script'lerden **etkilenmez** | ☐ |
+| 4a.10 | Yalnız `demo-app/e2e-java/` değiştiren bir PR (GitHub) | `web-java` koşar; ci.yml `test-local` **no-op (başarılı)**. LocalForge'da yalnız `local-ci-web-java` aranır | ☐ |
+| 4a.11 | "Yeniden üret" (algılanmış dille üretilmiş bir script) | Script'in dil kaynağı **"algılandı"** kalır ("elle seçildi"ye kaymaz) | ☐ |
 
 ## 5. Koşular, raporlar, Sauce
 
