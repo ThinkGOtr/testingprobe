@@ -1,0 +1,8 @@
+# aiprobe-platform tp-vm katmanı (deploy/gcp/docker-compose.gcp.yml'nin üstüne):
+# Caddyfile'ı JSON erişim loglu sürümle değiştirir ve logu VM veri diskine yazar.
+# Etkinleştirme (tp-env sırrı): COMPOSE_FILE=docker-compose.yml:deploy/gcp/docker-compose.gcp.yml:deploy/aiprobe/docker-compose.aiprobe.yml
+services:
+  edge:
+    volumes:
+      - ./deploy/aiprobe/Caddyfile:/etc/caddy/Caddyfile:ro
+      - /mnt/tp-data/caddy-logs:/var/log/caddy
