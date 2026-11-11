@@ -1,0 +1,58 @@
+{#-
+  CasesToCode C# şablonu (011 plan §2.7, K3; Constitution IV) — Playwright .NET + NUnit.
+  DOĞRULANMAMIŞ dil: çıktı derlenmez, koşulmaz, forge'a yazılmaz, PR'a giremez.
+
+  Model C# yazmaz: bu dosya yalnızca tarayıcıda doğrulanmış ve deterministik kontrollerden geçmiş
+  adım → page object eşlemesinden render edilir (tp_core.features.codegen.render.render_dil).
+  - Her değer `cs` süzgecinden geçer: düz "…" dize (verbatim @"…" / interpolasyon $"…" / ham
+    """…""" YOK), int / long / double, true / false, null.
+  - Sınıf, değişken ve metot adları `ident` süzgecinden geçer; metot adı referans sembol
+    tablosundaki adın PascalCase biçimidir (`addToCart` → `AddToCart`).
+  - Yorumlar `comment` süzgecinden geçer (tek satır //; blok yorumu yok).
+  - Varsayımlar (hedef projede page object kütüphanesi yoktur): sınıflar `{{ "<Sınıf>(IPage)" }}`
+    kurucusuyla `Antreklabs.Bayi.Pages` ad alanındadır, metotlar `Task` döner.
+  - Çıktı deterministiktir (golden testi: core/tests/unit/features/codegen/golden/).
+-#}
+// AI-generated — AI Testing Probe (CasesToCode). Elle düzenlemeyin; değişiklik case'in yeniden
+// onayı ve yeniden üretimle yapılır.
+// {{ unverified_note | comment }}
+// Case: {{ case_ref | comment }} ({{ case_id | comment }}) · Story: {{ story_key | comment }} · Jira Test: {{ test_key | comment }}
+// Onaylı case hash: {{ case_hash | comment }}
+// Eşleme: verify_and_map · platform: web · dil: csharp (Playwright .NET + NUnit) · mod: {{ mode | comment }} · bundle: {{ bundle_hash | comment }}
+// Eşleme hash: {{ mapping_hash | comment }} · şablon: {{ template_hash | comment }}
+using System.Threading.Tasks;
+using {{ po_namespace }};
+using Microsoft.Playwright.NUnit;
+using NUnit.Framework;
+
+namespace {{ namespace }};
+
+[TestFixture]
+{% for tag in tags %}
+[Category({{ tag | cs }})]
+{% endfor %}
+{% if dealer %}
+[Property("dealerUsername", {{ dealer | cs }})]
+{% endif %}
+public class {{ class_name | ident }} : PageTest
+{
+    [Test]
+    [Description({{ description | cs }})]
+    public async Task {{ test_method | ident }}()
+    {
+{% for o in objects %}
+        var {{ o.degisken | ident }} = new {{ o.sinif | ident }}(Page);
+{% endfor %}
+
+{% for step in steps %}
+        // {{ step.label | comment }}
+{% for call in step.calls %}
+        await {{ call.fixture | ident }}.{{ call.method | ident }}({{ call.args | csargs }});
+{% endfor %}
+{% endfor %}
+        // Beklenen sonuç (değerler onaylı case metninden)
+{% for call in expects %}
+        await {{ call.fixture | ident }}.{{ call.method | ident }}({{ call.args | csargs }});
+{% endfor %}
+    }
+}
