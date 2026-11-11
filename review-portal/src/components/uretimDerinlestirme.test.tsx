@@ -308,8 +308,6 @@ const OZET = (uretimler = [V3_URETIM]): CaseKapsamOzeti => ({
   readiness_dagilimi: {},
   kapsanmayan: [],
   uyarilar: [],
-  son_kullanim: null,
-  olusturma: "2026-11-01T00:00:00Z",
 });
 
 describe("KapsamPaneli: dalga 2 bölümleri", () => {
