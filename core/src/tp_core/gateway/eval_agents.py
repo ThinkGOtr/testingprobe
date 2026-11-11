@@ -562,6 +562,9 @@ TEKNIK_ONEKI: dict[str, str] = {
     "EG": "EG-",
 }
 READINESS = ("ready", "assumption_dependent", "blocked")
+# Platform ekinde atlanan kategori (011 F4, `platform-common`): `not_covered.item` =
+# `<Platform>:<kategori>`.
+PLATFORM_KATEGORISI = re.compile(r"(Web|Mobil|Desktop|API|Data):[^\n]{1,32}")
 
 
 def _liste(deger: Any) -> list[Any]:
@@ -703,6 +706,7 @@ def generation_rule_problems(output: Any) -> list[str]:
             for n in kapsanmayan
             if str(n.get("item")) not in kimlikler
             and not re.fullmatch(r"AC[0-9]+", str(n.get("item")))
+            and not PLATFORM_KATEGORISI.fullmatch(str(n.get("item")))
         }
     )
     if tanimsiz:

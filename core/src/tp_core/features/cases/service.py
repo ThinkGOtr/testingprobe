@@ -469,6 +469,11 @@ def generation_messages(
             "yalnızca buradan ve AC/PO cevabından türet):",
             test_verisi,
         ]
+    # Platform ekleri + analist seçenekleri (011 K5/F4; `secenekler.mesaj_parcalari`). Varsayılan
+    # seçeneklerde boş: girdi dalga 1'deki gibi kalır.
+    from tp_core.features.cases import secenekler as secenek_modulu
+
+    parcalar += secenek_modulu.mesaj_parcalari(secenekler, kaynak, tur)
     seviye = str((secenekler or {}).get("test_seviyesi") or VARSAYILAN_TEST_SEVIYESI)
     if seviye not in TEST_SEVIYELERI:
         raise ValueError(f"geçersiz test seviyesi: {seviye}")
@@ -494,10 +499,22 @@ def _olay(session: Session, ad: str, veri: Mapping[str, Any]) -> None:
 
 
 def start_generation(
-    session: Session, requirement_id: uuid.UUID, user: Principal
+    session: Session,
+    requirement_id: uuid.UUID,
+    user: Principal,
+    *,
+    secenekler: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """`POST /requirements/{id}/generate-cases`: kapıdan geçir, iş akışını ve işi aç."""
+    """`POST /requirements/{id}/generate-cases`: kapıdan geçir, iş akışını ve işi aç.
+
+    `secenekler` (011 K5) verilirse doğrulanır ve gereksinimde saklanır; verilmezse kayıtlı son
+    seçenekler (yoksa None = bugünkü davranış) kullanılır. İş yükünde (`yuk.secenekler`) taşınır.
+    """
+    from tp_core.features.cases import secenekler as secenek_modulu
+
     req = get_requirement(session, requirement_id, lock=True)
+    if secenekler is not None:
+        secenekler = secenek_modulu.dogrula(secenekler)
     if req.durum == "generating":
         recover_stuck_generation(session, req)
     if req.durum not in URETIM_BASLANGIC:
@@ -511,12 +528,23 @@ def start_generation(
     if onceki == "po_approved":
         # po_approved'a yalnızca (yeni) PO onayıyla girilir: önceki case'ler eski metne aittir.
         invalidate_cases(session, req, user, "yeni PO onayı; önceki case'ler eski metne ait")
+    if secenekler is not None:
+        req.uretim_secenekleri = secenekler
+    else:
+        secenekler = secenek_modulu.kayitli(req.uretim_secenekleri)
     uretim_no = next_uretim_no(session, req.id)
+    yuk: dict[str, Any] = {
+        "requirement_id": str(req.id),
+        "uretim_no": uretim_no,
+        "baslatan": user.as_dict(),
+    }
+    if secenekler is not None:
+        yuk["secenekler"] = secenekler
     wf_id, job_id = start_workflow(
         session.connection(),
         WORKFLOW_TUR,
         user.kullanici_adi,
-        yuk={"requirement_id": str(req.id), "uretim_no": uretim_no, "baslatan": user.as_dict()},
+        yuk=yuk,
         job_tur=GEN_JOB,
         nesne_turu="requirement",
         nesne_id=req.id,
@@ -815,12 +843,16 @@ def run_generation(
         po_onayi_guncel = req.onaylanan_hash is not None and req.onaylanan_hash == content_hash_of(
             req
         )
+        from tp_core.features.cases import secenekler as secenek_modulu
         from tp_core.features.cases import testdata
 
+        secenekler = yuk.get("secenekler")
         messages = generation_messages(
-            req, _onaylanan_sorular(s, req.id), test_verisi=testdata.block()
+            req, _onaylanan_sorular(s, req.id), test_verisi=testdata.block(), secenekler=secenekler
         )
         replay_key = replay_key_for(req)
+        replay_key["name"] = secenek_modulu.replay_adi(replay_key["name"], secenekler)
+        cagri_eki = secenek_modulu.ai_call_eki(secenekler)
     if not po_onayi_guncel:
         neden = "gereksinim içeriği PO onayından sonra değişmiş"
         _fail_requirement(engine, rid, neden)
@@ -836,6 +868,7 @@ def run_generation(
             replay_key=replay_key,
             workflow_id=wf_id,
             call_id=deterministic_call_id(ctx.job_id, PURPOSE),
+            **({"ek": cagri_eki} if cagri_eki else {}),
         )
     except BudgetExceeded as exc:
         _fail_requirement(engine, rid, f"bütçe aşıldı: {exc}")
@@ -955,6 +988,7 @@ def run_generation(
                 "tutarsiz": {str(k): v for k, v in tutarsiz.items()},
                 "set_sorunlari": set_sorunlari,
                 "readiness": _readiness_dagilimi([tc.icerik for tc in eklenen]),
+                **cagri_eki,
             },
         )
         for tc in eklenen:

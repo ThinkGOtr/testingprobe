@@ -36,6 +36,11 @@ purposes:
     max_tokens: 32000           # v3 çıktısı (kapsam öğeleri, test verisi, gerekçeler) v2'nin ~2 katı
     timeout_s: 600              # ~10K karakter Türkçe JSON + uyarlamalı düşünme: dakikalar sürebilir
     params: { effort: medium }
+  case_deepening:             # 011 P5 negatif genişletme / P6 teknik derinleştirme (case-negative, case-technique)
+    model: claude-sonnet-5-5
+    max_tokens: 32000           # case_generation ile aynı çıktı yapısı (en çok 10 yeni case)
+    timeout_s: 600
+    params: { effort: medium }
   consistency_check:          # ajan: kod (GitHub MCP, salt okuma) + veri (db_query) araçları
     model: claude-sonnet-5-5
     max_tokens: 8192
