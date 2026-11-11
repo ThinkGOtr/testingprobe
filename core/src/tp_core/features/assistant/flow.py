@@ -57,7 +57,7 @@ from sqlalchemy.orm import Session
 from tp_core.events import publish_tx
 from tp_core.features.assistant import budget as asistan_budget
 from tp_core.features.assistant import durum as mesaj_durumu
-from tp_core.features.assistant import siniflandir, sonislem, sozluk
+from tp_core.features.assistant import guvenlik_cikti, olay, siniflandir, sonislem, sozluk
 from tp_core.features.assistant.sablon import sablon_cevabi
 from tp_core.features.assistant.tools.base import sir_temizle
 from tp_core.gateway.errors import AgentDeadlineExceeded, AgentStopped, BudgetExceeded
@@ -840,6 +840,7 @@ def cevapla(
                 bitis=bitis,
                 should_stop=mesaj_durumu.durdurma_kontrolu(engine, m.id),
                 toparlama=True,
+                sistem_eki=guvenlik_cikti.sistem_eki(),
             )
             with engine.begin() as conn:
                 _adim(conn, m, ADIM_DOGRULANIYOR)
@@ -871,6 +872,17 @@ def cevapla(
                 baglam=m.baglam if isinstance(m.baglam, Mapping) else None,
             )
             cevap = sonislem.isle(sonuc.output, sb)
+            # Kanarya / istem sızıntısı (specs/013 §6.3): cevap değişir, ciddi olay yazılır.
+            sizinti = guvenlik_cikti.sizinti_var(
+                cevap, guvenlik_cikti.kanarya(), guvenlik_cikti.izleri_yukle(rules_dir)
+            )
+            if sizinti is not None:
+                cevap = guvenlik_cikti.istem_sizintisi_cevabi()
+                try:
+                    with engine.begin() as conn:
+                        olay.olay_yaz(conn, m.kullanici_id, sizinti, mesaj_id=m.id)
+                except Exception as exc:  # kayıt hatası değiştirilmiş cevabı düşürmez
+                    log.warning("asistan güvenlik olayı yazılamadı (%s)", type(exc).__name__)
         finally:
             araclar.havuz.temizle()
         return model_cevabini_yaz(session_factory, m, cevap, harcama)

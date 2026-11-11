@@ -16,7 +16,8 @@ dahil edilir.
   kaynağını görür; başkasının ya da silinmiş sohbetin kaynağına her uç 404 (`ust_mesaj_id` dahil).
 - core-api model anahtarını ve kipini **bilmez** (İlke II): durum worker'ın yazdığı `asistan_durum`
   satırından okunur. Model gerekip gerekmediğine (sözlük/şablon) worker karar verir.
-- POST mesaj transaction sırası: doğrulama (422, sır → `sir_icerik`) → sahiplik (404) → hizmet
+- POST mesaj transaction sırası: dondurma (429 `donduruldu` + `kalan_s`; specs/013 §6.2) →
+  doğrulama (422, sır → `sir_icerik` + güvenlik olayı) → sahiplik (404) → hizmet
   durumu (503) → öneri geçerliliği (409 `oneri_gecersiz`) → saatlik hak (429 `hiz_siniri`) → bütçe
   (402) → `budget.global_kilit` → kullanıcı işi (409 `bekleyen_var`) ve global sayaç (429 `mesgul`)
   → mesaj INSERT (kısıt ihlali kısıt adına göre 409) → `assistant.answer` işi (aynı transaction).
@@ -29,6 +30,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -41,7 +43,7 @@ from sqlalchemy.orm import Session
 from tp_core.api.errors import IC_HATA, SUNUCU_HATASI_METNI, KodluHata
 from tp_core.auth.deps import CurrentUser, DbSession
 from tp_core.events import publish_tx
-from tp_core.features.assistant import budget, hiz
+from tp_core.features.assistant import budget, hiz, olay
 from tp_core.features.assistant import oneri_api as _oneri_api
 from tp_core.features.assistant.schemas import (
     ONERI_SORUSU,
@@ -304,24 +306,61 @@ def mesajlar(sohbet_id: uuid.UUID, session: DbSession, user: CurrentUser) -> lis
 KISMI_SIR = "known_value_partial"  # `gateway.masking.find_secret_patterns` bulgu adı
 
 
-def _sir_kontrol(*metinler: str) -> None:
+def _sir_kontrol(*metinler: str, olay_yaz: Callable[[str], None] | None = None) -> None:
     """Soru/bağlamda sır deseni ya da çalışma anı sır değeri → 422 `sir_icerik` (değer yazılmaz).
 
     Kullanıcı girdisinde yalnız biçim desenleri ve TAM değer aranır: kesme sınırı koruması
     (`known_value_partial`, öneki ≥ 8 karakter) kırpılmış araç çıktısı içindir; burada 422'yi
-    karakter karakter tahminle sır çıkaran bir doğrulama aracına (oracle) çevirirdi."""
+    karakter karakter tahminle sır çıkaran bir doğrulama aracına (oracle) çevirirdi.
+
+    `olay_yaz(desen_adi)`: reddi güvenlik olayına yazar (dondurma sayacı; yalnız desen adı)."""
     from tp_core.gateway.factory import known_secret_values
     from tp_core.gateway.masking import find_secret_patterns
 
     degerler = known_secret_values()
     for metin in metinler:
-        if metin and any(f.name != KISMI_SIR for f in find_secret_patterns(metin, degerler)):
+        bulgular = [f for f in find_secret_patterns(metin, degerler) if f.name != KISMI_SIR]
+        if metin and bulgular:
+            if olay_yaz is not None:
+                olay_yaz(bulgular[0].name)
             raise KodluHata(
                 422,
                 "sir_icerik",
                 "Soru veya bağlam gizli bilgi (token, parola, anahtar) içeriyor; "
                 "çıkarıp yeniden deneyin.",
             )
+
+
+def _sir_olayi(session: Session, user: Principal) -> Callable[[str], None]:
+    """422 isteği geri alır: olay ayrı, hemen commit edilen bağlantıda (§6.2)."""
+
+    def yaz(desen: str) -> None:
+        with session.get_bind().begin() as conn:
+            olay.olay_yaz(conn, user.id, olay.TUR_SIR, ayrinti={"desen": desen})
+
+    return yaz
+
+
+def _dondurma_kontrol(session: Session, user: Principal) -> None:
+    """Ardışık ciddi olay dondurması (specs/013 §6.2) → 429 `donduruldu` + `kalan_s`.
+
+    Sır taramasından ÖNCE: donmuş kullanıcı sır denemesiyle sayacı büyütemez, deneme bilgisi de
+    sızmaz. Dondurmanın ilk reddinde `donduruldu` olayı ve `asistan.supheli` denetimi ayrı, hemen
+    commit edilen bağlantıda yazılır (429 isteği geri alır)."""
+    conn = session.connection()
+    kalan = olay.dondurma_kalan_s(conn, user.id, _db_simdi(session))
+    if kalan is None:
+        return
+    with session.get_bind().begin() as ayri:
+        olay.dondurma_baslat(ayri, user.id, user.kullanici_adi)
+    dakika = max(1, -(-kalan // 60))
+    raise KodluHata(
+        429,
+        "donduruldu",
+        f"Asistan, art arda engellenen istekler nedeniyle ~{dakika} dk kullanılamıyor.",
+        {"Retry-After": str(kalan)},
+        ek={"kalan_s": kalan},
+    )
 
 
 def oneri_gecerli_mi(
@@ -448,6 +487,7 @@ def _hizmet_kontrol(session: Session) -> None:
 def soru_gonder(
     sohbet_id: uuid.UUID, govde: SoruGonder, session: DbSession, user: CurrentUser
 ) -> dict[str, str]:
+    _dondurma_kontrol(session, user)
     derin = govde.ust_mesaj_id is not None
     soru = govde.soru
     if not derin:
@@ -458,6 +498,7 @@ def soru_gonder(
         _sir_kontrol(
             soru,
             json.dumps(govde.baglam, ensure_ascii=False) if govde.baglam else "",
+            olay_yaz=_sir_olayi(session, user),
         )
 
     s = _sohbet(session, sohbet_id, user, kilitle=True)

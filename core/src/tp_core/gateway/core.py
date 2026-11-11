@@ -1032,6 +1032,7 @@ class Gateway:
         bitis: float | None = None,
         should_stop: Callable[[], bool] | None = None,
         toparlama: bool = False,
+        sistem_eki: str | None = None,
     ) -> AgentResult:
         """Araçlı ajan döngüsü.
 
@@ -1045,6 +1046,9 @@ class Gateway:
         - `should_stop`: her tur başında doğruysa `AgentStopped` (yazılmış turlar kayıtta kalır).
         - `toparlama`: girdi tavanının %75'i aşılınca ya da sondan bir önceki tur bitince model
           eldekiyle `submit_result` çağırmaya yönlendirilir (nudge geçmişte kalıcıdır).
+        - `sistem_eki`: canlı isteğin sistem metninin EN SONUNA eklenir (asistan kanaryası;
+          specs/013 §6.3). Replay anahtarı, girdi özeti ve bundle hash'i bundan hesaplanmaz;
+          replay kipinde sistem metni kullanılmadığından etkisizdir.
         """
         self._check_agent_tools(purpose, tools)
         # Model yasak argümanları (dosya yazma vb.) hiç görmez; anahtar da daraltılmış şemadandır.
@@ -1104,6 +1108,8 @@ class Gateway:
             input_schema=output_schema,
         )
         system = f"{bnd.system_prompt}\n\n{AGENT_ADDENDUM}"
+        if sistem_eki:
+            system = f"{system}\n\n{sistem_eki}"
         turns: list[_Turn] = []
         agent_started = self._clock()
         steps: list[AgentStep] = []
