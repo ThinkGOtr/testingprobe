@@ -289,14 +289,26 @@ def make_requirement(engine: Engine, make_user: MakeUser):
     return _make
 
 
-def run_jobs(engine: Engine, limit: int = 20) -> list[Any]:
+# Üretimin ardından kuyruğa alınan kalite işleri (011 D: P8 review, P9 denetim).
+KALITE_ISLERI = ["cases.review", "cases.audit"]
+
+
+def run_jobs(engine: Engine, limit: int = 20, *, kalite_dahil: bool = False) -> list[Any]:
+    """Kuyruktaki işleri işler. Kalite işleri (review/denetim) de koşar, ama sonuçları yalnız
+    `kalite_dahil=True` iken döner: üretim/yayın testleri yalnız kendi işlerinin sonucunu sayar."""
     sonuclar = []
     for _ in range(limit):
-        s = process_one(engine, "test-worker")
+        s = process_one(engine, "test-worker", haric=KALITE_ISLERI)
         if s is None:
             break
         sonuclar.append(s)
-    return sonuclar
+    kalite = []
+    for _ in range(limit):
+        s = process_one(engine, "test-worker", turler=KALITE_ISLERI)
+        if s is None:
+            break
+        kalite.append(s)
+    return sonuclar + kalite if kalite_dahil else sonuclar
 
 
 @pytest.fixture
