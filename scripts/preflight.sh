@@ -34,7 +34,12 @@ fi
 # 2) Boş disk. Docker Desktop/Colima verisini $HOME altındaki bir disk imajında tutar;
 #    imaj dinamik büyüdüğü için gerçek sınır host'taki boş alandır → $HOME'un bulunduğu
 #    birimde `df` ile ölçülür (yaklaşık değer; VM disk imajı üst sınırı ayrıca dolabilir).
-avail_kb="$(df -Pk "$HOME" | awk 'NR == 2 { print $4 }')"
+#    Linux'ta Docker verisi ayrı bir diskte olabilir (ör. tp-vm: data-root /mnt/tp-data/docker):
+#    DockerRootDir host'ta varsa orası ölçülür.
+disk_yolu="$HOME"
+docker_kok="$(docker info -f '{{.DockerRootDir}}' 2>/dev/null || true)"
+if [ -n "$docker_kok" ] && [ -d "$docker_kok" ]; then disk_yolu="$docker_kok"; fi
+avail_kb="$(df -Pk "$disk_yolu" | awk 'NR == 2 { print $4 }')"
 avail_gb=$((avail_kb / 1024 / 1024))
 if [ "$avail_gb" -ge "$MIN_DISK_GB" ]; then
   ok "Boş disk: ${avail_gb} GB (en az ${MIN_DISK_GB} GB)"
