@@ -63,9 +63,20 @@ def seed() -> int:
     return yeni
 
 
+def seed_test_verisi() -> int:
+    """Test verisi kataloğu tohumu (013 §3.3; idempotent). core-api demo DB'ye bağlanmaz: burada
+    yalnız sabitler eklenir, demo DB kayıtlarını worker açılışı ekler."""
+    from tp_core.features.testveri.service import tohumla
+    from tp_core.models import session_scope
+
+    with session_scope() as s:
+        return tohumla(s)
+
+
 def main() -> None:
     yeni = seed()
     print(f"seed: {len(KULLANICILAR)} kullanıcı (yeni: {yeni})")
+    print(f"seed: test verisi kataloğu (yeni: {seed_test_verisi()})")
 
 
 if __name__ == "__main__":

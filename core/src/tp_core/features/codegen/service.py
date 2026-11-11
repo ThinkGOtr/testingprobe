@@ -97,6 +97,7 @@ from tp_core.features.codegen.render import (
     ts_literal,
 )
 from tp_core.features.codegen.toolchain import ToolchainClient, ToolchainError
+from tp_core.features.testveri import service as testveri
 from tp_core.integrations.forge import CASE_BRANCH_PREFIX, ForgeError, ForgeNotFoundError
 from tp_core.models import (
     AiCall,
@@ -513,6 +514,15 @@ def start_generation(
             )
             continue
         h = content_hash(tc.icerik)
+        # 013 §3.3: atıflar şimdi çözülebilmeli; veri sürümü değiştiyse açık PR atlatmaz.
+        try:
+            _, veri_izi = testveri.case_coz(session, tc.icerik)
+        except testveri.TestVerisiCozulemedi as exc:
+            sonuclar.append(
+                {"case_id": str(cid), "platform": platform, "durum": "reddedildi",
+                 "neden": f"Test verisi çözülemedi: {exc}"}
+            )  # fmt: skip
+            continue
         atla: dict[str, Any] | None = None
         for sc, cg in _mevcut_scriptler(session, cid, platform):
             if sc.durum in AKTIF and recover_stuck(session, sc, cg):
@@ -520,7 +530,11 @@ def start_generation(
             if sc.durum in AKTIF:
                 atla = {"durum": "suruyor", "script_id": str(sc.id), "neden": "üretim sürüyor"}
                 break
-            if sc.durum in ("pr_open", "merged") and cg.case_hash == h:
+            if (
+                sc.durum in ("pr_open", "merged")
+                and cg.case_hash == h
+                and (cg.veri_izi or {}) == veri_izi
+            ):
                 atla = {
                     "durum": "pr_acik" if sc.durum == "pr_open" else "merge_edildi",
                     "script_id": str(sc.id),
@@ -564,6 +578,7 @@ def start_generation(
             sira_no=tc.sira_no,
             baslik=str(tc.icerik.get("title") or "")[:300],
             uretim_modu=sc.uretim_modu,
+            veri_izi=veri_izi,
         )
         session.add_all([cg, ScriptTestCase(script_id=sc.id, test_case_id=cid)])
         session.flush()
@@ -1769,13 +1784,21 @@ def run_generation(ctx: JobContext, engine: Engine) -> dict[str, Any]:
         engel = case_blocker(s, tc)
         if engel is None and content_hash(tc.icerik) != cg.case_hash:
             engel = "case içeriği istekten sonra değişmiş"
-        case = dict(tc.icerik)
+        # 013 §3.3: doğrulama ajanı / kontroller / şablon / PR çözülmüş metni görür (replay
+        # girdisi bugünküyle aynı); çözülemeyen atıf üretimi durdurur.
+        veri_engeli = None
+        try:
+            case, cg.veri_izi = testveri.case_coz(s, tc.icerik)
+        except testveri.TestVerisiCozulemedi as exc:
+            case, veri_engeli = dict(tc.icerik), f"Test verisi çözülemedi: {exc}"
         case_id, story, sira_no = tc.id, cg.story_key, cg.sira_no
         platform = sc.platform or platformlar.WEB
-        if engel is None:
+        if engel is None and veri_engeli is None:
             transition(s, sc, "verifying", SYSTEM, "pending", sebep="doğrulama ajanı")
     if engel is not None:
         return _insana(engine, sid, "case_changed", engel, hedef="failed")
+    if veri_engeli is not None:
+        return _insana(engine, sid, "unsourced_value", veri_engeli, hedef="failed")
     ref = case_ref(story, sira_no)
     uygulama = platformlar.uygulama_mi(platform)
 

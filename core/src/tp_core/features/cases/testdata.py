@@ -23,11 +23,15 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Sequence
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 log = logging.getLogger(__name__)
 
 KAYNAK = "testdata:demo-app"
+VERITABANI_YOK = "Veritabanı okunamadı"
 # docs/DEMO-VERISI.md: "bayi1 / Demo123!", "bayi2 / Demo123!" (yerel demo; gerçek kimlik değil).
 DEMO_PAROLA = "Demo123!"
 # demo-app/web arayüzündeki sabit etiketler (LoginPage, CatalogPage, CartPage, Layout).
@@ -102,7 +106,7 @@ def build_text(sorgu: Sorgu | None) -> str:
             satirlar.append(f"- {anahtar} = {deger}{ek}")
     else:
         satirlar.append(
-            f"- Veritabanı okunamadı; yalnızca sabit bilgiler. Test kullanıcılarının parolası: "
+            f"- {VERITABANI_YOK}; yalnızca sabit bilgiler. Test kullanıcılarının parolası: "
             f"{DEMO_PAROLA}"
         )
     satirlar.append("Arayüz etiketleri: " + ", ".join(f'"{e}"' for e in UI_ETIKETLERI))
@@ -131,8 +135,14 @@ def set_query_factory(fabrika: Callable[[], Sorgu | None] | None) -> None:
     _sorgu_fabrikasi = fabrika or demo_db_query
 
 
-def block() -> str:
-    """Modele giden güvenilmeyen veri bloğu (kaynak `testdata:demo-app`)."""
+def block(session: Session | None = None) -> str:
+    """Modele giden güvenilmeyen veri bloğu (kaynak `testdata:demo-app`).
+
+    `session` verilir ve test verisi kataloğu doluysa (specs/013 §3.3) metin katalogdan kurulur;
+    ancak model girdisi (replay anahtarları) değişmesin diye DB tabanlı metinle birebir aynı
+    olmalıdır. Farklıysa (katalog düzenlenmiş, demo DB okunamıyor vb.) eski metin kullanılır ve
+    uyarı loglanır.
+    """
     from tp_core.gateway import wrap_untrusted
 
     try:
@@ -140,4 +150,29 @@ def block() -> str:
     except Exception as exc:
         log.warning("Test verisi kaynağı açılamadı: %s", exc)
         sorgu = None
-    return wrap_untrusted(build_text(sorgu), source=KAYNAK, kind="data")
+    metin = build_text(sorgu)
+    if session is not None:
+        metin = _katalog_metni_ya_da(session, metin)
+    return wrap_untrusted(metin, source=KAYNAK, kind="data")
+
+
+def _katalog_metni_ya_da(session: Session, eski: str) -> str:
+    from tp_core.features.testveri.service import blok_metni
+
+    try:
+        katalogdan = blok_metni(session)
+    except Exception as exc:  # katalog okunamazsa model girdisi yine eski yoldan
+        log.warning("Test verisi bloğu katalogdan kurulamadı: %s", exc)
+        return eski
+    if katalogdan is None:
+        return eski
+    if katalogdan != eski:
+        if VERITABANI_YOK in eski:  # demo DB'siz süreç (core-api): beklenen fark, uyarı değil
+            log.info("Test verisi bloğu: demo DB okunamadı; model girdisi eski yoldan")
+            return eski
+        log.warning(
+            "Test verisi kataloğu demo DB bloğundan farklı; model girdisi eski yoldan kuruldu "
+            "(replay anahtarları korunur)"
+        )
+        return eski
+    return katalogdan

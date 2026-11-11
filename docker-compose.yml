@@ -50,6 +50,9 @@ x-core-env: &core-env
   # bırakılır → JIRA_BASE_URL kullanılır.
   JIRA_BROWSE_URL: ${JIRA_BROWSE_URL:-http://127.0.0.1:${JIRA_SIM_PORT:-8090}}
   JIRA_PROJECT: ${JIRA_PROJECT:-TPD}
+  # Test verisi kataloğunun gizli kaydı `ortak.demo_parola` (specs/013 §3.3): değer kataloğa
+  # yazılmaz, bu ortam sırrından okunur (eşleme core-api/worker, çözüm kod üretimi).
+  TP_TESTVERI_DEMO_PAROLA: ${TP_TESTVERI_DEMO_PAROLA:-Demo123!}
   JIRA_READ_EMAIL: ${JIRA_READ_EMAIL:-reader@sim.local}
   JIRA_READ_TOKEN: ${JIRA_READ_TOKEN:-sim}
   TP_TEST_MGMT: ${TP_TEST_MGMT:-jira}

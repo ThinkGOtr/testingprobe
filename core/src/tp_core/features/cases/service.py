@@ -50,6 +50,8 @@ from tp_core.features.cases.schema import (
     uncovered_acs,
     unknown_ac_refs,
 )
+from tp_core.features.testveri import atif
+from tp_core.features.testveri import service as testveri
 from tp_core.models import (
     AiCall,
     AppUser,
@@ -500,6 +502,9 @@ def store_cases(
         if cid_ not in eski
     }
     mevcut_hashler = set(guncel.values()) | _original_content_hashes(session, guncel)
+    # 013 §3.3: katalogdaki test verisi değerleri `{veri:anahtar}` atfına çevrilir (K9; katalog
+    # boşsa içerik aynen kalır). Hash eşlenmiş içerikten.
+    esleme = testveri.eslem_katalogu(session)
     eklenen: list[TestCase] = []
     tekrar: list[int] = []
     for sira, icerik in enumerate(cases, start=1):
@@ -508,8 +513,12 @@ def store_cases(
         if var is not None:
             eklenen.append(var)
             continue
+        ham_h = content_hash(dict(icerik))
+        if esleme:
+            icerik = atif.case_esle(icerik, esleme)
         h = content_hash(dict(icerik))
-        if h in mevcut_hashler:
+        # Katalogdan önce yazılmış (eşlenmemiş) aynı içerik de tekrar sayılır.
+        if h in mevcut_hashler or ham_h in mevcut_hashler:
             tekrar.append(sira)
             continue
         tc = TestCase(
@@ -677,7 +686,7 @@ def run_generation(
         from tp_core.features.cases import testdata
 
         messages = generation_messages(
-            req, _onaylanan_sorular(s, req.id), test_verisi=testdata.block()
+            req, _onaylanan_sorular(s, req.id), test_verisi=testdata.block(s)
         )
         replay_key = replay_key_for(req)
     if not po_onayi_guncel:
@@ -861,7 +870,7 @@ def requirement_for_ide(session: Session, requirement_key_: str) -> dict[str, An
     if sebep is not None:
         raise GateClosed(sebep)
     mesaj = generation_messages(
-        req, _onaylanan_sorular(session, req.id), test_verisi=testdata.block()
+        req, _onaylanan_sorular(session, req.id), test_verisi=testdata.block(session)
     )[0]
     return {
         "requirement_id": str(req.id),
@@ -1067,6 +1076,11 @@ def decide(
         hatalar = content_errors(dict(icerik), req.kabul_kriterleri)
         if hatalar:
             raise InvalidCaseContent("Düzenlenen case şemaya uymuyor", hatalar)
+        bilinmeyen_veri = atif.bilinmeyen_atiflar(icerik, testveri.anahtarlar(session))
+        if bilinmeyen_veri:
+            raise InvalidCaseContent(
+                "Katalogda olmayan test verisi anahtarı: " + ", ".join(bilinmeyen_veri)
+            )
         if content_hash(dict(icerik)) == tc.icerik_hash:
             raise InvalidDecision("Düzenlenen içerik mevcut içerikle aynı; 'approve' kullanın")
         olculer = metrics.edit_metrics(
@@ -1220,6 +1234,7 @@ def serialize_cases(session: Session, cases: Sequence[TestCase]) -> list[dict[st
     eski: set[uuid.UUID] = set()
     for r in reqs.values():
         eski |= old_content_case_ids(session, r)
+    veri_haritasi = testveri.veri_haritasi(session)
     out = []
     for c in cases:
         rs = reviews.get(c.id, [])
@@ -1285,6 +1300,8 @@ def serialize_cases(session: Session, cases: Sequence[TestCase]) -> list[dict[st
                 if son and son.karar == "edit"
                 else None,
                 "olusturma": c.olusturma,
+                # 013 §3.3: case'in test verisi atıfları (gizli → deger null).
+                "veri": testveri.case_verisi(veri_haritasi, c.icerik),
             }
         )
     return out

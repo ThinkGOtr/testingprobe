@@ -30,6 +30,7 @@ from tp_core.features.codegen.service import (
     merge_kabul_gerekceleri,
     screenshot_url,
 )
+from tp_core.features.testveri import service as testveri
 from tp_core.integrations.forge import (
     APP_PLATFORMS,
     GITHUB_REQUIRED_CHECKS,
@@ -315,6 +316,9 @@ def serialize(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any]
         "engel": ({"tur": cg.engel_turu, "neden": cg.engel_nedeni} if cg.engel_turu else None),
         "olusturma": sc.olusturma.isoformat(),
         "hata": cg.engel_nedeni,
+        # 013 §3.3 (K10): üretimde kullanılan test verisi sürümleri; güncel sürüm farklıysa uyarı.
+        "veri_izi": cg.veri_izi or {},
+        "veri_degisti": testveri.veri_degisti(session, cg.veri_izi),
     }
 
 
