@@ -386,6 +386,31 @@ def _blok(veri: Any, *, kaynak: str, tur: str) -> str:
     return wrap_untrusted(metin, source=kaynak, kind=cast(UntrustedKind, tur))
 
 
+def _girdi_sinyalleri(m: Mesaj) -> list[Any]:
+    """Sorunun (`m.icerik`) niyet sinyalleri (specs/013 §5.2). Yalnız sinyaldir: desen dosyası
+    bozuksa cevap düşmez, sinyalsiz devam edilir (dosya hatası birim testinde yakalanır)."""
+    from tp_core.features.assistant import guvenlik
+
+    try:
+        return list(guvenlik.girdi_sinyalleri(m.icerik or ""))
+    except guvenlik.SinyalHatasi as exc:
+        log.warning("asistan: niyet sinyalleri yüklenemedi (%s)", exc)
+        return []
+
+
+def _sinyal_satiri(m: Mesaj) -> str | None:
+    """Sunucu notu: `Sunucu sinyalleri: <id> — <ipucu>; …` (güvenilmeyen blok değildir)."""
+    sinyaller = _girdi_sinyalleri(m)
+    if not sinyaller:
+        return None
+    return "Sunucu sinyalleri: " + "; ".join(f"{s.id} — {s.ipucu}" for s in sinyaller)
+
+
+def sinyalli(m: Mesaj, cevap: Mapping[str, Any]) -> dict[str, Any]:
+    """Saklanan cevaba girdi sinyali kimlikleri (`sinyaller`: id listesi; değer/metin yok)."""
+    return {**cevap, "sinyaller": [s.id for s in _girdi_sinyalleri(m)]}
+
+
 def ilk_mesaj(
     m: Mesaj,
     *,
@@ -394,15 +419,17 @@ def ilk_mesaj(
     gecmis: str | None,
     sir_degerleri: Iterable[str] = (),
 ) -> list[ModelMessage]:
-    """Rol ve bağlam sabit önekte değil ilk kullanıcı mesajında (§6.5 önbellek).
+    """Rol ve bağlam sabit önekte değil ilk kullanıcı mesajında (§6.5 önbellek). Sorunun niyet
+    sinyalleri varsa rol satırının altına sunucu notu olarak eklenir (specs/013 §5.2).
 
     Bütün metin worker'ın sır değerleriyle (`sir_temizle`) bir kez daha süzülür: core-api'nin
     422 `sir_icerik` taraması yalnız kendi ortamındaki değerleri bilir (Jira/GitHub okuma
     token'ları yalnız worker'dadır); soru, bağlam ve geçmiş modele sırsız gider."""
-    parcalar = [
-        f"Kullanıcının rolü: {ROL_ETIKETI.get(m.rol, m.rol)}",
-        f"kip={m.kip}",
-    ]
+    parcalar = [f"Kullanıcının rolü: {ROL_ETIKETI.get(m.rol, m.rol)}"]
+    sinyal_satiri = _sinyal_satiri(m)
+    if sinyal_satiri:
+        parcalar.append(sinyal_satiri)
+    parcalar.append(f"kip={m.kip}")
     if m.derin:
         parcalar.append(
             "Bu soru daha önce kısa yoldan cevaplandı; şimdi ayrıntılı ve kaynakla doğrulayarak "
@@ -615,7 +642,7 @@ def model_cevabini_yaz(
             sure_ms=_sure_ms(conn, m.id),
         )
         yazildi = mesaj_durumu.sonuc_yaz(
-            conn, m.id, durum="done", cevap=cevap, kaynak="model", amac=m.hedef_amac
+            conn, m.id, durum="done", cevap=sinyalli(m, cevap), kaynak="model", amac=m.hedef_amac
         )  # (2)
         if not yazildi:  # kullanıcı iptal etti / uzlaştırıldı: yalnız harcama kalır
             son = _mevcut_durum(conn, m.id) or "iptal"
@@ -649,7 +676,7 @@ def _modelsiz_yaz(
         conn = s.connection()
         mesaj_durumu.harcama_yaz(conn, m.id, sure_ms=_sure_ms(conn, m.id))
         yazildi = mesaj_durumu.sonuc_yaz(
-            conn, m.id, durum="done", cevap=cevap, kaynak=kaynak, ai_call_id=None
+            conn, m.id, durum="done", cevap=sinyalli(m, cevap), kaynak=kaynak, ai_call_id=None
         )
         if not yazildi:
             son = _mevcut_durum(conn, m.id) or "iptal"

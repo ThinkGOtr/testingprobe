@@ -16,11 +16,12 @@ dahil edilir.
   kaynağını görür; başkasının ya da silinmiş sohbetin kaynağına her uç 404 (`ust_mesaj_id` dahil).
 - core-api model anahtarını ve kipini **bilmez** (İlke II): durum worker'ın yazdığı `asistan_durum`
   satırından okunur. Model gerekip gerekmediğine (sözlük/şablon) worker karar verir.
-- POST mesaj transaction sırası: doğrulama (422, sır → `sir_icerik`) → sahiplik (404) → hizmet
-  durumu (503) → öneri geçerliliği (409 `oneri_gecersiz`) → saatlik hak (429 `hiz_siniri`) → bütçe
-  (402) → `budget.global_kilit` → kullanıcı işi (409 `bekleyen_var`) ve global sayaç (429 `mesgul`)
-  → mesaj INSERT (kısıt ihlali kısıt adına göre 409) → `assistant.answer` işi (aynı transaction).
-  Kilit, otomatik yükseltme transaction'ıyla aynı anahtardır ve ilk yazımdan önce alınır.
+- POST mesaj transaction sırası: doğrulama (422, sır → `sir_icerik`, kart → `kisisel_veri`) →
+  sahiplik (404) → hizmet durumu (503) → öneri geçerliliği (409 `oneri_gecersiz`) → saatlik hak
+  (429 `hiz_siniri`) → bütçe (402) → `budget.global_kilit` → kullanıcı işi (409 `bekleyen_var`)
+  ve global sayaç (429 `mesgul`) → mesaj INSERT (kısıt ihlali kısıt adına göre 409) →
+  `assistant.answer` işi (aynı transaction). Kilit, otomatik yükseltme transaction'ıyla aynı
+  anahtardır ve ilk yazımdan önce alınır.
 - İş yükü daima `{mesaj_id, kullanici_id, tetik}`; idempotency anahtarı `assistant.answer:<id>`.
 """
 
@@ -324,6 +325,20 @@ def _sir_kontrol(*metinler: str) -> None:
             )
 
 
+def _kisisel_veri_kontrol(*metinler: str) -> None:
+    """Soru/bağlamda Luhn'lu kart numarası → 422 `kisisel_veri` (değer yazılmaz; specs/013 §5.1).
+
+    Dondurma sayacına girmez (K11). TCKN/IBAN reddedilmez, worker'da her zaman maskelenir."""
+    from tp_core.features.assistant.guvenlik import kart_bul
+
+    if any(kart_bul(m) for m in metinler if m):
+        raise KodluHata(
+            422,
+            "kisisel_veri",
+            "Soru kart numarası gibi kişisel veri içeriyor; çıkarıp yeniden deneyin.",
+        )
+
+
 def oneri_gecerli_mi(
     session: Session, kullanici: Principal, kural_id: str, baglam: dict[str, Any] | None
 ) -> bool:
@@ -456,6 +471,10 @@ def soru_gonder(
         if not soru:
             raise KodluHata(422, "gecersiz_istek", "Soru boş olamaz.")
         _sir_kontrol(
+            soru,
+            json.dumps(govde.baglam, ensure_ascii=False) if govde.baglam else "",
+        )
+        _kisisel_veri_kontrol(
             soru,
             json.dumps(govde.baglam, ensure_ascii=False) if govde.baglam else "",
         )

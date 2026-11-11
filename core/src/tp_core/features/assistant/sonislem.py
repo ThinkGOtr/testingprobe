@@ -915,6 +915,21 @@ def _sir_temizle_tum(deger: Any, sirlar: tuple[str, ...]) -> Any:
     return deger
 
 
+def _cikti_sinyali_notlari(out: dict[str, Any]) -> None:
+    """Görünür cevap metnindeki çıktı sinyallerinin sabit notları (tekil; specs/013 §5.2).
+    Cevap değişmez; desen dosyası bozuksa not eklenmeden devam edilir."""
+    from tp_core.features.assistant import guvenlik
+
+    try:
+        sinyaller = guvenlik.cikti_sinyalleri(out)
+    except guvenlik.SinyalHatasi as exc:
+        log.warning("asistan: çıktı sinyalleri yüklenemedi (%s)", exc)
+        return
+    for s in sinyaller:
+        if s.not_ and s.not_ not in out["notlar"]:
+            out["notlar"].append(s.not_)
+
+
 def isle(cikti: Any, b: SonIslemBaglami) -> dict[str, Any]:
     """Model çıktısı → saklanan cevap. Çıktı şemaya uymasa da (savunma) çökmez."""
     cikti = cikti if isinstance(cikti, Mapping) else {}
@@ -944,6 +959,7 @@ def isle(cikti: Any, b: SonIslemBaglami) -> dict[str, Any]:
         out["notlar"].append(NOT_TOPARLAMA)
     if emin_degilim_gerekir(out):
         out["notlar"].append(NOT_EMIN_DEGILIM)
+    _cikti_sinyali_notlari(out)
     out = _sir_temizle_tum(out, b.sir_degerleri)
     if b.musteri_verisi and b.oturum is not None:
         out, _ = b.oturum.mask(out)

@@ -68,6 +68,8 @@ HARIC_LISTESI: tuple[str, ...] = (
     "**/dist/**",
     "deploy/**",
     "**/__pycache__/**",
+    # Niyet sinyali desenleri asistanın okuyabileceği pakete girmez (spec 013 K7).
+    "rules/assistant/sinyaller.yaml",
 )
 # Yürünmeyen dizinler (izin listesi bunların altını zaten kapsamaz; hız ve symlink güvenliği).
 _ATLANAN_DIZINLER = frozenset({".git", "node_modules", "dist", "__pycache__", ".venv", "var"})
