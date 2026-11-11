@@ -1,0 +1,111 @@
+{
+  "kind": "call",
+  "purpose": "design_model",
+  "golden": "TPD-4",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı (model çıktısı değil; ai_call.model = golden-elle). Test tasarım modeli (011 F3, iki tur — tur 1). coverage_items / open_questions / assumptions aynı adlı case_generation golden'ının üst listeleriyle BİREBİR aynıdır (tur-2 eşitlik kontrolü REPLAY'de geçer); girdi beyanı (input_match) case_generation golden'ınınkiyle aynıdır. Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record).",
+  "input_match": {
+    "sources": [
+      "jira:TPD-4"
+    ],
+    "acceptance_criteria": [
+      "AC1: Bayi geçerli kullanıcı adı ve parolayla giriş yaptığında ürün kataloğu açılır.",
+      "AC2: Hatalı parola girildiğinde \"Kullanıcı adı veya parola hatalı\" mesajı gösterilir ve giriş yapılmaz."
+    ],
+    "contains": [
+      "Bayi, kullanıcı adı ve parolasıyla portala giriş yapabilmelidir."
+    ]
+  },
+  "output": {
+    "conditions": [
+      {
+        "id": "TCOND-1",
+        "ac_refs": [
+          "AC1"
+        ],
+        "statement": "Geçerli kullanıcı adı ve parolayla giriş yapılır, katalog açılır",
+        "risk": "high",
+        "rationale": "Giriş tüm akışların ön koşuludur."
+      },
+      {
+        "id": "TCOND-2",
+        "ac_refs": [
+          "AC2"
+        ],
+        "statement": "Hatalı parolada \"Kullanıcı adı veya parola hatalı\" mesajı gösterilir ve giriş yapılmaz",
+        "risk": "high",
+        "rationale": "Yetkisiz erişimi önleyen güvenlik kuralı."
+      }
+    ],
+    "techniques": [
+      {
+        "condition_id": "TCOND-1",
+        "technique": "EP",
+        "rationale": "Geçerli kimlik bilgisi sınıfı."
+      },
+      {
+        "condition_id": "TCOND-2",
+        "technique": "EP",
+        "rationale": "Hatalı parola ve kayıtlı olmayan kullanıcı adı geçersiz sınıflardır."
+      }
+    ],
+    "coverage_items": [
+      {
+        "id": "EP-V1",
+        "ac_ref": "AC1",
+        "definition": "Geçerli kullanıcı adı ve geçerli parola: giriş yapılır, ürün kataloğu açılır",
+        "valid": true
+      },
+      {
+        "id": "EP-I1",
+        "ac_ref": "AC2",
+        "definition": "Kayıtlı kullanıcı adı ve hatalı parola: \"Kullanıcı adı veya parola hatalı\" mesajı, giriş yapılmaz",
+        "valid": false
+      },
+      {
+        "id": "EP-I2",
+        "ac_ref": "AC2",
+        "definition": "Kayıtlı olmayan kullanıcı adı (beklenen sonuç kaynakta tanımsız)",
+        "valid": false
+      }
+    ],
+    "partitions": [
+      {
+        "field": "Kimlik bilgisi",
+        "item_id": "EP-V1",
+        "definition": "Geçerli kullanıcı adı + geçerli parola",
+        "representative": "Kayıtlı bayi ve parolası",
+        "valid": true
+      },
+      {
+        "field": "Kimlik bilgisi",
+        "item_id": "EP-I1",
+        "definition": "Kayıtlı kullanıcı adı + hatalı parola",
+        "representative": "Kayıtlı bayi + yanlış parola",
+        "valid": false
+      },
+      {
+        "field": "Kimlik bilgisi",
+        "item_id": "EP-I2",
+        "definition": "Kayıtlı olmayan kullanıcı adı (sonuç kaynakta tanımsız)",
+        "representative": "Kayıtlı olmayan bir kullanıcı adı",
+        "valid": false
+      }
+    ],
+    "boundaries": [],
+    "decision_tables": [],
+    "state_models": [],
+    "flows": [],
+    "pairwise": {
+      "parameters": [],
+      "constraints": []
+    },
+    "model_issues": [
+      {
+        "kind": "other",
+        "detail": "Kayıtlı olmayan kullanıcı adıyla girişte gösterilecek sonuç kaynakta yok (AC2 yalnız hatalı parolayı tanımlar); EP-I2 kapsam dışı bırakılmalı, beklenen sonuç uydurulmaz."
+      }
+    ],
+    "open_questions": [],
+    "assumptions": []
+  }
+}

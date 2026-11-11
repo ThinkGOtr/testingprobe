@@ -89,7 +89,7 @@ export function ozettenModel(ozet: Partial<CaseUretimOzeti> | Record<string, unk
       .filter((x) => x.id.startsWith("BV-"))
       .map((x) => ({ field: x.ac_ref ?? "girdi", item_id: x.id, value: x.definition, side: "on" as const, expected: x.valid ? ("accept" as const) : ("reject" as const), inclusive_source: x.ac_ref })),
     decision_tables: dt.length
-      ? [{ id: "DT1", conditions: ["Koşul"], actions: ["Sonuç"], rules: dt.map((x) => ({ item_id: x.id, condition_values: { Koşul: x.definition }, actions: [x.valid ? "kabul" : "ret"] })), undefined_combinations: [] }]
+      ? [{ id: "DT1", conditions: ["Koşul"], actions: ["Sonuç"], rules: dt.map((x) => ({ item_id: x.id, condition_values: [{ condition: "Koşul", value: x.definition.slice(0, 40) }], actions: [x.valid ? "kabul" : "ret"] })), undefined_combinations: [] }]
       : [],
     flows: ogeler.filter((x) => x.id.startsWith("UC-")).map((x) => ({ item_id: x.id, kind: x.id === "UC-MF" ? ("MF" as const) : x.id.startsWith("UC-AF") ? ("AF" as const) : ("EF" as const), steps: [x.definition], condition: "" })),
     open_questions: kopyala(o.open_questions ?? []),

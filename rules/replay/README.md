@@ -35,7 +35,7 @@ REPLAY / REPLAY-MISS rozetini `ai_call.mod`'dan gösterir.
      **kullanılmaz** (başka bir dokümanın cevabıdır); nötr yedeğin çıktısı döner, köken
      `miss_neutral`, `cikti_kokeni = notr_yedek`. Yeni Jira story'si de serbest metin gibi bu
      yoldan ilerler (gereksinim akışı: denetim güvenilmez, "Son hal olarak onayla").
-   - **`"policy": "raise"`** (`case_generation`, `verify_and_map`, `verify_and_map_app`,
+   - **`"policy": "raise"`** (`case_generation`, `design_model`, `verify_and_map`, `verify_and_map_app`,
      `bug_draft`, `dup_rank`):
      çıktı yoktur; geçit `ReplayNoOutput` fırlatır
      ("REPLAY-MISS: bu girdi için kayıtlı model çıktısı yok; canlı model gerekir"), sıfır taslak.
@@ -293,6 +293,28 @@ portal örnek verisi ve prova bunlara dayanır; yalnız yeni alanlar ve üst dü
   bozulmuş golden'ın üçünde de yakalandığını doğrular. Portal kopyası
   (`review-portal/src/api/mock/golden/kaynaklar.json`) case'lerle birlikte üst düzey listeleri
   (`ozet`) de taşır: `npm run sozlesme:golden`.
+
+### design_model golden'ları (011 F3, iki tur — tur 1)
+
+`design_model/golden/{TPD-1,TPD-3,TPD-4,SERBEST}.json` ve ana demo senaryosu
+`design_model/golden/f2-kod-hatasi/TPD-1.json` **elle hazırlandı** (model çıktısı değil). Girdi
+beyanı (`input_match`) aynı adlı case_generation golden'ınınkiyle aynıdır (model üretimi aynı story
+bloğunu, test verisini ve test seviyesini gönderir). REPLAY-MISS: `design_model/on_miss.json`
+(`"policy": "raise"`; model oluşmaz, gereksinim `failed`).
+
+- **Tur-2 eşitliği:** modelin `coverage_items`, `open_questions`, `assumptions` listeleri aynı adlı
+  case_generation golden'ının `output` üst listeleriyle **birebir** aynıdır (kimlik, metin, sıra).
+  Tur 2'de case üretimi onaylı modeli ayrı bir güvenilmeyen blokta (`tasarim-modeli:<kaynak>`)
+  alır; golden `input_match`'i yalnız story bloğuna baktığı için tur-2 çağrısı da aynı
+  case_generation golden'ına `golden_matched` ile düşer ve `run_generation` sonundaki eşitlik
+  kontrolü (`features.cases.model.round2_differences`) uyarı üretmez.
+- **Ayrıntılı modeller:** her `EP`/`BVA`/`DT`/`ST`/`UC` öğesi bir ayrıntılı satıra bağlıdır
+  (`model_problems` boş). TPD-1: 9 bölüm, 8 sınır (iki değerli; dahil/hariç kaynağı AC2/AC3/AC4),
+  ana akış. SERBEST: 2 bölüm, 2 sınır, 4 kurallı karar tablosu (DT1), ana akış. TPD-3: 3 bölüm +
+  EG öğeleri; büyük/küçük harf `Q1` ve `model_issues`'ta. TPD-4: 3 bölüm; kayıtlı olmayan kullanıcı
+  adı (`EP-I2`) sonucu tanımsız: case golden'ında soru olmadığından (eşitlik) `model_issues`'ta.
+- **Denetim:** `core/tests/unit/features/cases/test_design_model.py` her golden'ı şemaya,
+  `model_problems`'a ve case_generation eşitliğine sorar.
 
 ## Kod üretimi (Demo-B): verify_and_map golden'ları
 

@@ -128,7 +128,7 @@ export function TasarimModeliTablolari({ m }: { m: DesignModel }) {
                   <tr key={r.item_id}>
                     <td className="mono">{r.item_id}</td>
                     {d.conditions.map((c) => (
-                      <td key={c}>{r.condition_values[c] ?? "—"}</td>
+                      <td key={c}>{r.condition_values.find((v) => v.condition === c)?.value ?? "—"}</td>
                     ))}
                     <td>{r.actions.join("; ")}</td>
                   </tr>

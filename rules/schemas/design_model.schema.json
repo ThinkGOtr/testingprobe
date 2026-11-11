@@ -1,0 +1,660 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tp:design_model",
+  "title": "Test tasarım modeli v1 (011 F3, iki tur — tur 1): koşullar, teknikler, kapsam öğeleri ve tekniğe göre ayrıntılı modeller; case yazılmaz",
+  "x-version": 1,
+  "type": "object",
+  "properties": {
+    "conditions": {
+      "description": "Test koşulları: her biri tek bir doğrulanabilir iddia.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^TCOND-[0-9]+$"
+          },
+          "ac_refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^AC[0-9]+$"
+            },
+            "uniqueItems": true
+          },
+          "statement": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "risk": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          }
+        },
+        "required": [
+          "id",
+          "ac_refs",
+          "statement",
+          "risk",
+          "rationale"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 40,
+      "minItems": 1
+    },
+    "techniques": {
+      "description": "Koşul başına seçilen teknik ve gerekçesi (bir koşula birden çok teknik seçilebilir).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "condition_id": {
+            "type": "string",
+            "pattern": "^TCOND-[0-9]+$"
+          },
+          "technique": {
+            "type": "string",
+            "enum": [
+              "EP",
+              "BVA",
+              "DT",
+              "ST",
+              "PW",
+              "UC",
+              "EG"
+            ]
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          }
+        },
+        "required": [
+          "condition_id",
+          "technique",
+          "rationale"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 80,
+      "minItems": 1
+    },
+    "coverage_items": {
+      "description": "Türetilen kapsam öğeleri (eşdeğerlik bölümü, sınır değer, karar tablosu kuralı, durum geçişi, akış, hata tahmini). Kapsam matrisi bu listeden kodda hesaplanır; model matris yazmaz.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/coverage_item_id"
+          },
+          "ac_ref": {
+            "description": "Öğenin türetildiği kabul kriteri; kaynakta kabul kriteri yoksa null.",
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^AC[0-9]+$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "definition": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "valid": {
+            "description": "false: geçersiz bölüm, reddedilen sınır değer, yasak geçiş veya hata koşulu (negatif kapsam kararı gerekir).",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "ac_ref",
+          "definition",
+          "valid"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 60
+    },
+    "partitions": {
+      "description": "EP: alan başına eşdeğerlik bölümleri (her bölüm bir kapsam öğesi).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "item_id": {
+            "$ref": "#/$defs/coverage_item_id"
+          },
+          "definition": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "representative": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "valid": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "field",
+          "item_id",
+          "definition",
+          "representative",
+          "valid"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 60
+    },
+    "boundaries": {
+      "description": "BVA (iki değer): sınır değerin kendisi ve komşu bölümdeki en yakın değer.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "item_id": {
+            "$ref": "#/$defs/coverage_item_id"
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "on",
+              "below",
+              "above"
+            ]
+          },
+          "expected": {
+            "type": "string",
+            "enum": [
+              "accept",
+              "reject",
+              "open_question"
+            ]
+          },
+          "inclusive_source": {
+            "description": "Sınırın dahil/hariç olduğunu söyleyen kaynak (ACn ya da PO cevabı); kaynak sessizse null ve açık soru.",
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "field",
+          "item_id",
+          "value",
+          "side",
+          "expected",
+          "inclusive_source"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 60
+    },
+    "decision_tables": {
+      "description": "DT: koşul × aksiyon tablosu; her uygulanabilir kural bir kapsam öğesi.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^DT[0-9]+$"
+          },
+          "conditions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "maxItems": 8,
+            "minItems": 1
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "maxItems": 10,
+            "minItems": 1
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "item_id": {
+                  "$ref": "#/$defs/coverage_item_id"
+                },
+                "condition_values": {
+                  "description": "Tablodaki her koşulun bu kuraldaki değeri (koşul adı tablodaki `conditions` ile aynı).",
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "condition": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      },
+                      "value": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40
+                      }
+                    },
+                    "required": [
+                      "condition",
+                      "value"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 8,
+                  "minItems": 1
+                },
+                "actions": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160
+                  },
+                  "maxItems": 10
+                }
+              },
+              "required": [
+                "item_id",
+                "condition_values",
+                "actions"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 32,
+            "minItems": 1
+          },
+          "undefined_combinations": {
+            "description": "Kaynağın sonucunu tanımlamadığı kombinasyonlar (her biri açık soru).",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "maxItems": 16
+          }
+        },
+        "required": [
+          "id",
+          "conditions",
+          "actions",
+          "rules",
+          "undefined_combinations"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 6
+    },
+    "state_models": {
+      "description": "ST: durumlar, geçerli/geçersiz geçişler; tanımsız geçiş açık sorudur.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^SM[0-9]+$"
+          },
+          "states": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 60
+            },
+            "maxItems": 15,
+            "minItems": 1
+          },
+          "valid_transitions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "item_id": {
+                  "$ref": "#/$defs/coverage_item_id"
+                },
+                "from": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                },
+                "event": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "to": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                }
+              },
+              "required": [
+                "item_id",
+                "from",
+                "event",
+                "to"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 40
+          },
+          "invalid_transitions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "item_id": {
+                  "$ref": "#/$defs/coverage_item_id"
+                },
+                "from": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                },
+                "event": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                }
+              },
+              "required": [
+                "item_id",
+                "from",
+                "event"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 40
+          },
+          "undefined_transitions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "maxItems": 20
+          }
+        },
+        "required": [
+          "id",
+          "states",
+          "valid_transitions",
+          "invalid_transitions",
+          "undefined_transitions"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 4
+    },
+    "flows": {
+      "description": "UC: ana (MF), alternatif (AF) ve istisna (EF) akışlar.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "$ref": "#/$defs/coverage_item_id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "MF",
+              "AF",
+              "EF"
+            ]
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "maxItems": 12,
+            "minItems": 1
+          },
+          "condition": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "item_id",
+          "kind",
+          "steps",
+          "condition"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 20
+    },
+    "pairwise": {
+      "description": "Konfigürasyon kapsamı için pairwise modeli: yalnız parametreler ve kısıtlar. Satırlar modelce üretilmez. Platform eki yoksa boş.",
+      "type": "object",
+      "properties": {
+        "parameters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 60
+              },
+              "values": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                },
+                "minItems": 1,
+                "maxItems": 12
+              }
+            },
+            "required": [
+              "name",
+              "values"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 8
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "maxItems": 20
+        }
+      },
+      "required": [
+        "parameters",
+        "constraints"
+      ],
+      "additionalProperties": false
+    },
+    "model_issues": {
+      "description": "Modelin kendi denetimi: çakışan bölüm, eksik sınır, ulaşılamayan durum/düğüm, tanımsız kombinasyon.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "overlap",
+              "missing_boundary",
+              "unreachable",
+              "undefined_combination",
+              "other"
+            ]
+          },
+          "detail": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          }
+        },
+        "required": [
+          "kind",
+          "detail"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 30
+    },
+    "open_questions": {
+      "description": "Kaynakta yanıtı olmayan, beklenen sonucu etkileyen sorular. Case'ler `open_question_refs` ile atıf yapar.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^Q[0-9]+$"
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "owner": {
+            "description": "Soruyu yanıtlayacak rol; bilinmiyorsa boş.",
+            "type": "string",
+            "enum": [
+              "PO",
+              "analyst",
+              "developer",
+              ""
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "question",
+          "owner"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 20
+    },
+    "assumptions": {
+      "description": "Kaynakta olmayan ama case yazmak için yapılan varsayımlar. Case'ler `assumption_refs` ile atıf yapar.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^A[0-9]+$"
+          },
+          "statement": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "owner": {
+            "description": "Varsayımı doğrulayacak rol; bilinmiyorsa boş.",
+            "type": "string",
+            "enum": [
+              "PO",
+              "analyst",
+              "developer",
+              ""
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "statement",
+          "owner"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 20
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "coverage_item_id": {
+      "description": "EP-V1 / EP-I2 (geçerli / geçersiz eşdeğerlik bölümü), BV-3 (sınır değer), DT-R2 (karar tablosu kuralı), ST-S1>S2 (durum geçişi), PW-1 (pairwise satırı), UC-MF / UC-AF1 / UC-EF1 (ana / alternatif / istisna akış), EG-1 (hata tahmini).",
+      "type": "string",
+      "pattern": "^(EP-[VI][0-9]+|BV-[0-9]+|DT-R[0-9]+|ST-S[0-9]+>S[0-9]+|PW-[0-9]+|UC-(MF|AF[0-9]+|EF[0-9]+)|EG-[0-9]+)$"
+    }
+  },
+  "required": [
+    "conditions",
+    "techniques",
+    "coverage_items",
+    "partitions",
+    "boundaries",
+    "decision_tables",
+    "state_models",
+    "flows",
+    "pairwise",
+    "model_issues",
+    "open_questions",
+    "assumptions"
+  ]
+}

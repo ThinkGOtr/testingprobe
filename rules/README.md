@@ -36,6 +36,7 @@ rules/
 | `requirement_review` | `requirement-review` | Sonnet 5.5 | çağrı | §8.2a `questions[]`, `verdict` |
 | `consistency_check` | `consistency-check` | Sonnet 5.5 | ajan | §8.2b `findings[]` (kanıtlı) |
 | `case_generation` | `case-generation` | Sonnet 5.5 | çağrı | §7 test case şeması `cases[]` |
+| `design_model` | `design-model` | Sonnet 5.5 | çağrı | 011 F3 (iki tur — tur 1): test tasarım modeli `conditions[]`, `techniques[]`, `coverage_items[]`, ayrıntılı modeller (bölüm, sınır, karar tablosu, durum, akış, pairwise), `model_issues[]`, açık soru / varsayım |
 | `verify_and_map` | `verify-and-map` | Sonnet 5.5 | ajan | §8.4 `step_mapping[]`, `expects[]`, `missing_methods[]` |
 | `verify_and_map_app` | `verify-and-map-app` | Sonnet 5.5 | ajan | 009 §2.6 (app-mcp/Appium): `platform`, `step_mapping[]`, `expects[]`, `missing_methods[]` |
 | `triage` | `triage` | Haiku 5.5 | çağrı | §8.6 `class`, `signals[]`, `rationale` |
@@ -218,6 +219,7 @@ varsa çıkış 1. Bu tablo kayıtla aynı olmalıdır (`test_evaluation_status.
 | `requirement-review` | v3 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `consistency-check` | v4 | **canlı değerlendirme bekliyor** |
 | `case-generation` | v3 | **canlı değerlendirme bekliyor** |
+| `design-model` (011 F3 iki tur; `design_model` golden'ları) | v1 | **canlı değerlendirme bekliyor** |
 | `verify-and-map` (+ `verify_and_map` golden'ları) | v3 | **canlı değerlendirme bekliyor** |
 | `verify-and-map-app` (+ `verify_and_map_app` golden'ları; 009 mobil/masaüstü) | v1 | **canlı değerlendirme bekliyor** |
 | `triage` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |

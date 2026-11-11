@@ -54,7 +54,7 @@ export interface KararTablosu {
   id: string;
   conditions: string[];
   actions: string[];
-  rules: { item_id: string; condition_values: Record<string, string>; actions: string[] }[];
+  rules: { item_id: string; condition_values: { condition: string; value: string }[]; actions: string[] }[];
   undefined_combinations: string[];
 }
 

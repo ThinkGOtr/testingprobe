@@ -71,7 +71,7 @@ const ORNEK: DesignModel = modelTamamla({
       id: "DT1",
       conditions: ["Kampanyalı", "Tutar"],
       actions: ["Uyarı"],
-      rules: [{ item_id: "DT-R1", condition_values: { Kampanyalı: "hayır", Tutar: "< 750" }, actions: ["Uyarı göster"] }],
+      rules: [{ item_id: "DT-R1", condition_values: [{ condition: "Kampanyalı", value: "hayır" }, { condition: "Tutar", value: "< 750" }], actions: ["Uyarı göster"] }],
       undefined_combinations: ["Kampanyalı ve kampanyasız ürün birlikte"],
     },
   ],
