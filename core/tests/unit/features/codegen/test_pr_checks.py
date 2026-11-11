@@ -313,6 +313,21 @@ def test_github_platform_checkleri_tp_platforms(
     assert views.required_checks() == ("local-ci",)
 
 
+def test_github_web_java_checki_tp_web_dilleri(
+    engine: Engine, kip: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """OPS-O1: portal zorunlu listesi GitHubForge ile aynı (`TP_WEB_DILLERI` java → `web-java`);
+    geçersiz değer portalda engel olarak görünür."""
+    kip("github")
+    monkeypatch.delenv("TP_PLATFORMS", raising=False)
+    monkeypatch.setenv("TP_WEB_DILLERI", "ts,java")
+    assert views.required_checks() == ("test-local", "ast-guard", "semgrep", "web-java")
+    monkeypatch.setenv("TP_WEB_DILLERI", "csharp")
+    assert views.required_checks() == ("test-local", "ast-guard", "semgrep")
+    _, _, engeller = views.pr_checks(_sha(), None)
+    assert any(e.startswith("Yapılandırma hatası") for e in engeller)
+
+
 # ---------------------------------------------------------------- migrasyon
 
 KOLONLAR = ("checks", "checks_sha", "checks_zaman")

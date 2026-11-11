@@ -249,6 +249,12 @@ def _adim_ok(report: Mapping[str, Any], ad: str) -> bool | None:
 # Statik adımlar: TS (`deps → tsc → eslint → ast_guard`) ve Java (`deps → guard → compile`).
 TS_ADIMLARI = ("deps", "tsc", "eslint", "ast_guard")
 JAVA_ADIMLARI = ("deps", "guard", "compile")
+# Portal yerel kontrol kartında dile göre gösterilen adımlar (tek kaynak; `views._yerel_kontrol`).
+# TS'de `deps` (bağımlılık kilidi) koşar ama kart bugün göstermez.
+GORUNEN_ADIMLAR: dict[str, tuple[str, ...]] = {
+    "ts": tuple(a for a in TS_ADIMLARI if a != "deps"),
+    "java": JAVA_ADIMLARI,
+}
 
 
 def java_raporu_mu(report: Mapping[str, Any]) -> bool:

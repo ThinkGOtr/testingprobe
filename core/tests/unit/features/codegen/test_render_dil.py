@@ -660,7 +660,9 @@ def test_python_golden_cikti() -> None:
     r = render.render_dil(girdi(), dil="python", platform="web", rules=RULES)
     # Uzantı `.golden`: pytest `test_*.py` toplar, ruff `.py` denetler; golden ikisine de girmez.
     golden_karsilastir("test_tpd_1_c2_3f9b1c2e.py.golden", r.content)
-    assert r.repo_path == r.test_file == "tests/generated/test_tpd_1_c2_3f9b1c2e.py"
+    # K-T6: repo_path = <inp.e2e_root>/<alt yol> (core e2e-python kökünü verir).
+    assert r.test_file == "tests/generated/test_tpd_1_c2_3f9b1c2e.py"
+    assert r.repo_path == f"e2e-python/{r.test_file}"
     assert (r.dil, r.sinif_adi, r.test_adi, r.dealer) == (
         "python", None, "test_tpd_1_c2_3f9b1c2e", "bayi1",
     )  # fmt: skip
@@ -729,7 +731,8 @@ def test_python_enjeksiyona_kapali() -> None:
 def test_csharp_golden_cikti() -> None:
     r = render.render_dil(girdi(), dil="csharp", platform="web", rules=RULES)
     golden_karsilastir("TPD1C2_3f9b1c2eTests.cs", r.content)
-    assert r.repo_path == r.test_file == "tests/Generated/TPD1C2_3f9b1c2eTests.cs"
+    assert r.test_file == "tests/Generated/TPD1C2_3f9b1c2eTests.cs"
+    assert r.repo_path == f"e2e-csharp/{r.test_file}"
     assert (r.dil, r.sinif_adi, r.test_adi, r.dealer) == (
         "csharp", "TPD1C2_3f9b1c2eTests", "Senaryo", "bayi1",
     )  # fmt: skip

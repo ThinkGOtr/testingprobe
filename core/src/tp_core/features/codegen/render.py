@@ -578,6 +578,7 @@ CS_TEMPLATE_NAME = "playwright_nunit.cs.j2"
 PY_TEMPLATE_NAME = "pytest_playwright.py.j2"
 CS_GENERATED_DIR = "tests/Generated"
 PY_GENERATED_DIR = "tests/generated"
+DOGRULANMAMIS_KOKLER: dict[str, str] = {"csharp": "e2e-csharp", "python": "e2e-python"}
 CS_NAMESPACE = "Antreklabs.Bayi.Tests.Generated"
 CS_PO_NAMESPACE = "Antreklabs.Bayi.Pages"
 CS_TEST_METODU = "Senaryo"
@@ -993,11 +994,42 @@ def build_unverified_context(
     }
 
 
+def dogrulanmamis_alt_yol(dil: str, story_key: str | None, sira_no: int, case_id: uuid.UUID) -> str:
+    """Doğrulanmamış çıktının proje köküne göre yolu (`Rendered.test_file`):
+    `tests/Generated/<Sinif>.cs` | `tests/generated/test_<slug>.py`."""
+    if dil == "csharp":
+        return f"{CS_GENERATED_DIR}/{cs_class_name(story_key, sira_no, case_id)}.cs"
+    if dil == "python":
+        return f"{PY_GENERATED_DIR}/{py_test_name(story_key, sira_no, case_id)}.py"
+    raise RenderError(f"doğrulanmamış dil yalnızca csharp ya da python olabilir: {dil!r}")
+
+
+def dogrulanmamis_repo_path(
+    dil: str,
+    story_key: str | None,
+    sira_no: int,
+    case_id: uuid.UUID,
+    kok: str | None = None,
+) -> str:
+    """Doğrulanmamış çıktının önerilen depo yolu (K-T6 tek kaynak): `<kök>/<alt yol>`.
+
+    `kok` verilmezse (ya da boş / ts kökü `e2e` ise) `e2e-csharp` / `e2e-python`; GitHub kipinde
+    service `<uygulama kökü>/e2e-<dil>` verir. `render_unverified_test` ve service
+    `baslangic_dosya_yolu` bu işlevi çağırır (yol üretimden önce ve sonra aynıdır).
+    """
+    alt = dogrulanmamis_alt_yol(dil, story_key, sira_no, case_id)
+    temiz = (kok or "").strip("/")
+    if temiz in ("", E2E_ROOT):
+        temiz = DOGRULANMAMIS_KOKLER[dil]
+    return f"{temiz}/{alt}"
+
+
 def render_unverified_test(
     inp: RenderInput, dil: str, rules_dir: Path, referans_dil: str = "ts"
 ) -> Rendered:
-    """Doğrulanmamış dil (`csharp` | `python`) çıktısı. `repo_path` forge yolu DEĞİLDİR: önerilen
-    dosya yolu / indirme adıdır (`tests/Generated/<Sinif>.cs`, `tests/generated/test_<slug>.py`)."""
+    """Doğrulanmamış dil (`csharp` | `python`) çıktısı. `repo_path` forge'a yazılmaz: önerilen
+    dosya yolu / indirme adıdır, `<inp.e2e_root>/<alt yol>` (`dogrulanmamis_repo_path`);
+    `test_file` alt yoldur (`tests/Generated/<Sinif>.cs`, `tests/generated/test_<slug>.py`)."""
     if dil not in DOGRULANMAMIS_DILLER:
         raise RenderError(f"doğrulanmamış dil yalnızca csharp ya da python olabilir: {dil!r}")
     template, template_hash = _dil_template(str(templates_dir(rules_dir)), dil)
@@ -1007,14 +1039,15 @@ def render_unverified_test(
     except jinja2.TemplateError as exc:  # pragma: no cover - şablon hatası (geliştirici)
         raise RenderError(f"şablon render edilemedi: {exc}") from exc
     if dil == "csharp":
-        yol = f"{CS_GENERATED_DIR}/{ctx['class_name']}.cs"
         sinif, test = ctx["class_name"], ctx["test_method"]
     else:
-        yol = f"{PY_GENERATED_DIR}/{ctx['test_name']}.py"
         sinif, test = None, ctx["test_name"]
+    yol = dogrulanmamis_alt_yol(dil, inp.story_key, inp.sira_no, inp.case_id)
     return Rendered(
         content=content,
-        repo_path=yol,
+        repo_path=dogrulanmamis_repo_path(
+            dil, inp.story_key, inp.sira_no, inp.case_id, inp.e2e_root
+        ),
         test_file=yol,
         template_hash=template_hash,
         mapping_hash=ctx["mapping_hash"],
@@ -1037,6 +1070,7 @@ def render_dil(
     platform: str,
     rules: Path,
     referans_dil: str | None = None,
+    sembol_tablosu: Mapping[str, Any] | None = None,
 ) -> Rendered:
     """(platform, dil) çiftine göre testi render eder (011 §2.1, §2.7).
 
@@ -1044,6 +1078,7 @@ def render_dil(
       (`inp.e2e_root` = e2e-java kökü); uygulama × `java` → `appium_testng.java.j2`.
     - `web` × `csharp` | `python` → doğrulanmamış çıktı; `referans_dil` adların türetildiği sembol
       tablosunun dilidir (`ts` varsayılan; repoda TS yoksa `java`). Tam hat dillerinde yok sayılır.
+      `sembol_tablosu`: o tablonun ham `/symbols` çıktısı (parametre türleri için; D2).
     - Geçersiz dil / platform / çift → `RenderError` (API zaten 422 verir; savunma katmanı).
     """
     if platform not in platformlar.PLATFORMLAR:

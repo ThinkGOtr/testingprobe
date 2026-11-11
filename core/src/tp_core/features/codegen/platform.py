@@ -8,9 +8,12 @@ Appium + Java + TestNG hattıdır (`demo-app/e2e-app`, `toolchain/java-araclar`,
 üretilebilir (`ts` | `java` | `csharp` | `python`), uygulama platformları yalnız `java` ile.
 "Platform = dil" çıkarımı yapılmaz; iki ayrı soru vardır:
 
-- **araç/ortam** (ajan aracı, tarayıcı/cihaz, tekrar sayısı, check adı) → platform (`uygulama_mi`);
+- **araç/ortam** (ajan aracı, tarayıcı/cihaz, tekrar sayısı) → platform (`uygulama_mi`);
 - **kod/derleme/yama** (sembol tablosu, şablon, literal, derleme adımları) → dil (`java_mi`,
   `tam_hat_mi`).
+
+Yerel CI check adı ikisine birden bakar (`check_adi(platform, dil)`, K-T1): web + ts `local-ci`,
+web + Java `local-ci-web-java`, uygulama `local-ci-<platform>`.
 
 Tam hat dilleri (`ts`, `java`) derlenir, koşulur ve PR'a girer; doğrulanmamış diller (`csharp`,
 `python`) yalnız üretilir (commit/PR/yerel kontrol yok, script durumu `unverified`).
@@ -40,7 +43,6 @@ TAM_HAT_DILLERI: tuple[str, ...] = ("ts", "java")
 DOGRULANMAMIS_DILLER: tuple[str, ...] = ("csharp", "python")
 # Sıra aynı zamanda algılama eşitlik önceliğidir (011 §2.4): ts > java > csharp > python.
 DILLER: tuple[str, ...] = (*TAM_HAT_DILLERI, *DOGRULANMAMIS_DILLER)
-DIL_KAYNAKLARI: tuple[str, ...] = ("algilandi", "secildi", "varsayilan")
 DIL_ETIKETI: dict[str, str] = {
     "ts": "TypeScript",
     "java": "Java",
@@ -54,6 +56,12 @@ _WEB_CATISI: dict[str, str] = {
     "python": "pytest-playwright",
 }
 UYGULAMA_CATISI = "Appium + TestNG"
+# Java test dosyası kalıbı (K-T7, tek kaynak: `dil_algila` ve `ci/dil` kullanır). Tam hat sayımı
+# bu sonekleri sayar; algılama ayrıca Kotlin testlerini (`*Test.kt`) Java sinyali sayar. Tarayıcısız
+# birim testleri (`birim/`) ve aracın ürettikleri (`uretilen/`) elle yazılmış test sayılmaz.
+JAVA_TEST_SONEKLERI: tuple[str, ...] = ("Test.java", "Testi.java", "Tests.java", "IT.java")
+KOTLIN_TEST_SONEKLERI: tuple[str, ...] = ("Test.kt",)
+JAVA_HARIC_DIZINLER: tuple[str, ...] = ("birim", "uretilen")
 # TS page object adı Java'da ayrılmış sözcük (ya da geçersiz) ise Java page object'teki karşılığı.
 # `goto` Java'da ayrılmış sözcüktür: e2e-java `LoginPage.goTo()` (011 §2.5 eşitliğinin tek
 # istisnası).
@@ -153,10 +161,32 @@ def java_eslemesi(output: Any) -> Any:
     return out
 
 
-def check_adi(platform: str | None) -> str:
-    """Yerel CI check adı platformundur, dile bakmaz (011 §2.6): web `local-ci`, uygulama
-    `local-ci-<platform>`."""
-    return f"local-ci-{platform}" if uygulama_mi(platform) else "local-ci"
+YEREL_CHECK = "local-ci"
+WEB_JAVA_CHECK_EKI = "web-java"
+
+
+def check_adi(platform: str | None, dil: str | None = None) -> str:
+    """Yerel CI check adı (K-T1, tek kaynak): web + ts `local-ci` (değişmez); web + Java
+    `local-ci-web-java` (GitHub karşılığı `web-java`); uygulama `local-ci-<platform>` (değişmez,
+    dil her zaman Java). Doğrulanmamış diller CI'a girmez; verilirse web `local-ci` döner."""
+    if uygulama_mi(platform):
+        return f"{YEREL_CHECK}-{platform}"
+    if java_mi(dil):
+        return f"{YEREL_CHECK}-{WEB_JAVA_CHECK_EKI}"
+    return YEREL_CHECK
+
+
+def java_test_dosyasi_mi(
+    yol: str, *, kotlin: bool = False, haric: tuple[str, ...] = JAVA_HARIC_DIZINLER
+) -> bool:
+    """Forge yolu elle yazılmış bir Java testi mi (K-T7)? Ad `JAVA_TEST_SONEKLERI`'nden biriyle
+    biter (`kotlin=True` → `*Test.kt` de) ve `haric` dizinlerinin (varsayılan `birim/`,
+    `uretilen/`) altında değildir. Paket koşusu üretilenleri de koşacaksa `haric=("birim",)`."""
+    sonekler = (*JAVA_TEST_SONEKLERI, *KOTLIN_TEST_SONEKLERI) if kotlin else JAVA_TEST_SONEKLERI
+    if not yol.endswith(sonekler):
+        return False
+    parcalar = yol.split("/")[:-1]
+    return not any(h in parcalar for h in haric)
 
 
 def dil(platform: str | None, dil: str | None = None) -> str:

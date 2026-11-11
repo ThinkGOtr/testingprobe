@@ -100,7 +100,6 @@ from tp_core.features.codegen.render import (
     Rendered,
     RenderError,
     RenderInput,
-    java_class_name,
     java_literal,
     java_repo_path,
     parse_dealers,
@@ -267,19 +266,17 @@ def e2e_goreli(dosya_yolu: str | None, platform: str | None = None, dil: str | N
 def baslangic_dosya_yolu(
     dil: str, platform: str, story: str | None, sira_no: int, case_id: uuid.UUID
 ) -> str:
-    """Script'in üretim başlamadan gösterilen dosya yolu; gerçek yol render sonrası
-    (`Rendered.repo_path`) yazılır."""
+    """Script'in üretim başlamadan gösterilen dosya yolu; render sonrası `Rendered.repo_path`
+    yazılır ve aynıdır: yollar render'ın kendi kuralından türetilir (K-T6, tek kaynak)."""
     if platformlar.java_mi(dil):
         # Web + Java sınıf adı da platformu taşır (`TPD1WebC3_<uuid8>Test`): `java-araclar guard`
         # dosya adı kuralı ve e2e-app adlarıyla aynı biçim.
         return java_repo_path(java_koku(platform), story, platform, sira_no, case_id)
-    ad = slug(story, sira_no, case_id)
-    if dil == "csharp":
-        sinif = java_class_name(story, platform, sira_no, case_id).removesuffix("Test")
-        return f"{uretim_koku(dil, platform)}/Uretilen/{sinif}Tests.cs"
-    if dil == "python":
-        return f"{uretim_koku(dil, platform)}/tests/uretilen/test_{ad.replace('-', '_')}.py"
-    return f"{e2e_root()}/tests/generated/{ad}.spec.ts"
+    if platformlar.dogrulanmamis_mi(dil):
+        return render_modulu.dogrulanmamis_repo_path(
+            dil, story, sira_no, case_id, uretim_koku(dil, platform)
+        )
+    return f"{e2e_root()}/tests/generated/{slug(story, sira_no, case_id)}.spec.ts"
 
 
 def toolchain_hedefi(platform: str | None, dil: str | None) -> dict[str, str]:
@@ -314,6 +311,12 @@ class GecersizDil(CodegenRejected):
     """Bilinmeyen dil, geçersiz (platform, dil) çifti ya da repoda projesi olmayan dil (422)."""
 
     status_code = 422
+
+
+class DilCakismasi(CodegenRejected):
+    """Case'in bu platformdaki testi başka bir tam hat dilinde merge edilmiş (409; K-T4)."""
+
+    kod = "dil_cakismasi"
 
 
 class MergeGirdisiHatali(WorkflowError):
@@ -551,41 +554,89 @@ def replay_temel_durum_engeli() -> str | None:
     return REPLAY_TEMEL_ENGELI if durum == NEW_TESTID else None
 
 
-PROJE_DOSYASI = {"ts": "e2e/package.json", "java": "e2e-java/pom.xml"}
+def proje_dosyasi(dil: str, platform: str | None = platformlar.WEB) -> str:
+    """Tam hat dilinin forge'daki test projesi dosyası (uygulama köküne göre; `TP_FORGE_APP_ROOT`):
+    ts → `<e2e>/package.json`, Java → `<e2e-java|e2e-app>/pom.xml`."""
+    if platformlar.java_mi(dil):
+        return f"{java_koku(platform)}/pom.xml"
+    return f"{e2e_root()}/package.json"
+
+
+DEPO_OKUNAMADI = (
+    "Depo okunamadı; bu dilin test projesi doğrulanamadı (kullanılabilirlik bilinmiyor)"
+)
+
+
+def _github_dil_engeli(platform: str, dil: str) -> str | None:
+    """K-T3: GitHub kipinde web + Java yalnız `java ∈ TP_WEB_DILLERI` iken üretilebilir (iş akışı
+    `web-java` zorunlu check'i ve kardeş koşu buna bağlı). LocalForge'da repodaki dosyalar
+    belirler. Geçersiz değer yapılandırma hatasıdır (GitHubForge da kurulamaz)."""
+    if (
+        get_settings().forge != "github"
+        or platformlar.uygulama_mi(platform)
+        or not platformlar.java_mi(dil)
+    ):
+        return None
+    import os
+
+    from tp_core.integrations.forge import (
+        WEB_DILLERI_ENV,
+        ForgeValidationError,
+        etkin_web_dilleri,
+    )
+
+    try:
+        etkin = etkin_web_dilleri(os.environ)
+    except ForgeValidationError as exc:
+        return f"Yapılandırma hatası: {exc}"
+    if platformlar.JAVA in etkin:
+        return None
+    return (
+        f"GitHub kipinde Java web hattı etkin değil ({WEB_DILLERI_ENV} java içermiyor; "
+        "web-java iş akışı zorunlu check değil)"
+    )
 
 
 def _proje_engeli(alg: dil_algila.Algilama, platform: str, dil: str) -> str | None:
     """Dil bu repoda üretilemiyorsa Türkçe neden; üretilebiliyorsa (ya da repo okunamadığı için
     bilinmiyorsa) None. Tam hat dili kendi test projesini ister; doğrulanmamış dil referans tablo
-    için bir tam hat projesi ister (011 §2.3, §2.7)."""
+    için bir tam hat projesi ister (011 §2.3, §2.7). GitHub kipinde Java web ayrıca
+    `TP_WEB_DILLERI`'ne bağlıdır (K-T3)."""
+    github = _github_dil_engeli(platform, dil)
+    if github:
+        return github
     if not alg.projeler:
         return None  # forge okunamadı: engelleme (işte ortam hatası olarak görünür)
     if platformlar.uygulama_mi(platform):
         return (
             None
             if alg.projeler.get(platformlar.JAVA)
-            else "Depoda Java uygulama test projesi (e2e-app/pom.xml) yok"
+            else f"Depoda Java uygulama test projesi ({proje_dosyasi(platformlar.JAVA, platform)}) "
+            "yok"
         )
     if platformlar.tam_hat_mi(dil):
         if alg.projeler.get(dil):
             return None
         ad = "TypeScript" if dil == platformlar.TS else "Java web"
-        return f"Depoda {ad} test projesi ({PROJE_DOSYASI[dil]}) yok"
+        return f"Depoda {ad} test projesi ({proje_dosyasi(dil, platform)}) yok"
     if any(alg.projeler.get(d) for d in platformlar.TAM_HAT_DILLERI):
         return None
     return (
-        "Depoda referans alınacak tam hat test projesi (e2e/package.json ya da "
-        "e2e-java/pom.xml) yok"
+        f"Depoda referans alınacak tam hat test projesi ({proje_dosyasi(platformlar.TS)} ya da "
+        f"{proje_dosyasi(platformlar.JAVA)}) yok"
     )
 
 
 def _algila(platform: str) -> dil_algila.Algilama:
-    """`main`'deki testlerden dil algılama; forge kurulamaz/okunamazsa varsayılan."""
+    """`main`'deki testlerden dil algılama; forge kurulamaz/okunamazsa varsayılan (`hata` dolu).
+
+    core-api forge'u yalnız okumak için kurar (GitHub kipinde `GITHUB_READ_TOKEN`); kurulamazsa
+    algılama atlanır ve `/code/languages` sonucu "bilinmiyor" diye işaretler."""
     try:
         forge = _forge()
     except Exception as exc:  # core-api forge'a erişemiyorsa algılama atlanır
         log.warning("dil algılama için forge kurulamadı: %s", exc)
-        return dil_algila.varsayilan(platform)
+        return dil_algila.varsayilan(platform, hata=f"forge kurulamadı: {type(exc).__name__}")
     return dil_algila.algila(forge, "main", platform, uygulama_koku=app_root())
 
 
@@ -629,17 +680,38 @@ def dil_secenekleri(platform: str | None) -> dict[str, Any]:
                 "etiket": platformlar.DIL_ETIKETI[d],
                 "cati": platformlar.cati(p, d),
                 "hat": "tam" if platformlar.tam_hat_mi(d) else "dogrulanmamis",
+                # Depo okunamadıysa engellenmez ama "bilinmiyor" nedeni dürüstçe yazılır.
                 "kullanilabilir": neden is None,
-                "neden": neden,
+                "neden": neden or (DEPO_OKUNAMADI if alg.hata else None),
             }
         )
     return {
         "platform": p,
         "algilanan": algilanan,
         "kaynak": kaynak,
+        # Algılama yapılamadıysa nedeni (kaynak `varsayilan`); yapıldıysa null.
+        "neden": f"Dil algılanamadı ({alg.hata}); varsayılan dil önerildi" if alg.hata else None,
         "sayilar": {d: int(alg.sayilar.get(d, 0)) for d in platformlar.platform_dilleri(p)},
         "secenekler": secenekler,
     }
+
+
+def dil_cakismasi(
+    mevcut: Sequence[tuple[Script, ScriptCodegen]], platform: str, dil: str
+) -> str | None:
+    """K-T4: tam hat isteğinde aynı case+platformun başka dilde **merge edilmiş** script'i varsa
+    Türkçe neden (409); yoksa None. Doğrulanmamış istek repoya yazmadığı için çakışmaz."""
+    if not platformlar.tam_hat_mi(dil):
+        return None
+    for sc, _cg in mevcut:
+        onceki = platformlar.dil(platform, sc.dil)
+        if sc.durum == "merged" and onceki != dil:
+            yer = "web testi" if platform == platformlar.WEB else f"{platform} testi"
+            return (
+                f"Bu case'in {yer} {platformlar.DIL_ETIKETI.get(onceki, onceki)} ile merge "
+                "edildi; dil değiştirmek için önce mevcut testi kaldırın"
+            )
+    return None
 
 
 def _yeniden_bekleyene_al(session: Session, sc: Script, cg: ScriptCodegen, user: Principal) -> None:
@@ -671,9 +743,19 @@ def start_generation(
     platformdaki script'i/PR'ı bu istekten etkilenmez.
 
     `dil` (011 §2.3): üretim dili. Verilmezse hedef repodan algılanır (`dil_kaynagi="algilandi"`,
-    sonuçsuzsa `varsayilan`); verilirse `secildi`. Etkin script anahtarı (case, platform)'dur:
-    başka dilde istek aynı case+platformun açık PR'ını kapatıp yeniden üretir; aynı dil + aynı
-    onaylı içerik için açık/merge edilmiş PR varsa yeniden üretilmez.
+    sonuçsuzsa `varsayilan`); verilirse `secildi`.
+
+    Etkin script anahtarı (case, platform)'dur ve yalnız **tam hat** (ts, java) script'leri etkin
+    sayılır (inceleme turu 1, K-T4):
+
+    - Tam hat isteği: başka dildeki açık PR'ı kapatıp yeniden üretir (dil değiştirmek = yeniden
+      üretmek); aynı dil + aynı onaylı içerik için açık/merge edilmiş PR varsa yeniden üretilmez.
+      Aynı case+platformda **başka dilde merge edilmiş** script varsa istek reddedilir (409): repoda
+      aynı case iki kez olmasın. En yeni `unverified` kayıt yeniden kullanılır.
+    - Doğrulanmamış (csharp, python) istek: tam hat script'lerine (`pr_open`, `merged`, süren
+      üretim) **dokunmaz** — kapatma yok, forge'a yazma yok. Yalnız doğrulanmamış kayıtlar
+      değerlendirilir: süren üretim atlatır, en yeni `unverified` yeniden kullanılır, eskileri
+      `closed` olur.
     """
     try:
         platform = platformlar.gecerli(platform)
@@ -708,7 +790,19 @@ def start_generation(
         h = content_hash(tc.icerik)
         atla: dict[str, Any] | None = None
         yeniden: tuple[Script, ScriptCodegen] | None = None
-        for sc, cg in _mevcut_scriptler(session, cid, platform):
+        mevcut = _mevcut_scriptler(session, cid, platform)
+        cakisma = dil_cakismasi(mevcut, platform, dil)
+        if cakisma:
+            # Hiçbir kayda dokunulmadan reddedilir (kapatma/geçiş yok).
+            sonuclar.append(
+                {"case_id": str(cid), "platform": platform, "dil": dil, "durum": "cakisma",
+                 "neden": cakisma}
+            )  # fmt: skip
+            continue
+        for sc, cg in mevcut:
+            if not platformlar.tam_hat_mi(dil) and not platformlar.dogrulanmamis_mi(sc.dil):
+                # K-T4: doğrulanmamış üretim tam hat script'ine (PR'ı, merge'ü, süren işi) dokunmaz.
+                continue
             if sc.durum in AKTIF and recover_stuck(session, sc, cg):
                 pass  # iş dışı çöküşle takılmıştı: failed'a alındı, aşağıda kapanır
             if sc.durum in AKTIF:
@@ -836,9 +930,12 @@ def start_generation(
             }
         )
     baslayan = [s for s in sonuclar if s["durum"] == "basladi"]
-    hatali = [s for s in sonuclar if s["durum"] in ("bulunamadi", "reddedildi")]
+    hatali = [s for s in sonuclar if s["durum"] in ("bulunamadi", "reddedildi", "cakisma")]
     if not baslayan and hatali and len(hatali) == len(sonuclar):
-        raise CodegenRejected(
+        if len(hatali) == 1 and hatali[0]["durum"] == "cakisma":
+            raise DilCakismasi(hatali[0]["neden"])
+        hata = DilCakismasi if any(s["durum"] == "cakisma" for s in hatali) else CodegenRejected
+        raise hata(
             "Kod üretimi başlatılamadı: "
             + "; ".join(f"{s['case_id'][:8]}: {s['neden']}" for s in hatali)
         )
@@ -2042,9 +2139,11 @@ def _eski_prlari_kapat(
     """Yeniden üretimle `closed`'a alınan eski script'lerin forge'da hâlâ açık PR'larını kapatır
     (yalnızca aynı platformun script'leri: başka platformun PR'ı bu üretimin yerine geçmez).
 
-    `start_generation` (core-api) forge'a erişemez; script'i kapatır, PR'ı worker kapatır. Forge
-    kapatma desteklemiyorsa ya da kapatma başarısızsa PR'a yorum yazılır ve kayıt açık kalır
-    (LocalForge ve GitHubForge `close_pr` destekler); denetime ikisi de yazılır.
+    Yalnız tam hat üretiminde çağrılır (K-T4: doğrulanmamış üretim başka script'in PR'ına
+    dokunmaz). `start_generation` (core-api) forge'a **yazmaz** (yazma kimliği yalnız
+    core-worker'dadır; core-api forge'u yalnız dil algılaması için okur): script'i kapatır, PR'ı
+    worker kapatır. Forge kapatma desteklemiyorsa ya da kapatma başarısızsa PR'a yorum yazılır ve
+    kayıt açık kalır (LocalForge ve GitHubForge `close_pr` destekler); denetime ikisi de yazılır.
     """
     with session_scope() as s:
         hedefler = [
@@ -2114,6 +2213,19 @@ def _tablo_dili(forge: ForgePort, sha: str, platform: str, dil: str) -> str:
         None,
         "referans sembol tablosu için depoda tam hat test projesi (e2e ya da e2e-java) yok",
     )
+
+
+def _ajan_tablo_dili(forge: ForgePort, sha: str, platform: str, tablo_dili: str) -> str:
+    """Doğrulama ajanına verilecek sembol tablosunun dili (K-T5). Web + Java tablosunda, **canlı**
+    kipte ve repoda TS projesi varsa `ts` (prompt rol + ad ile bulmayı TS tablosuyla anlatır; §2.5
+    PO eşitliği adları aynı kılar); aksi halde denetim tablosunun dili. REPLAY'de ajan kayıtlı
+    çıktıyı döndürür: tablo değişmez (ek `/symbols` çağrısı da yapılmaz)."""
+    if platformlar.uygulama_mi(platform) or not platformlar.java_mi(tablo_dili):
+        return tablo_dili
+    if beklenen_uretim_modu() != "live":
+        return tablo_dili
+    projeler = dil_algila.algila(forge, sha, platform, uygulama_koku=app_root()).projeler
+    return platformlar.TS if projeler.get(platformlar.TS) else tablo_dili
 
 
 def _dogrulanmamis_bitir(
@@ -2187,16 +2299,28 @@ def run_generation(ctx: JobContext, engine: Engine) -> dict[str, Any]:
 
     try:
         forge = _forge()
-        _eski_prlari_kapat(engine, forge, case_id, sid, platform)
+        if tam_hat:
+            # K-T4: doğrulanmamış üretim başka script'in PR'ına dokunmaz (forge'a yazma yok).
+            _eski_prlari_kapat(engine, forge, case_id, sid, platform)
         main_sha = forge.head_sha("main")
         # Kod sorusu: sembol tablosu, fikstürler ve bayiler HEDEF DİLİN projesinden okunur
         # (doğrulanmamış dilde repodaki tam hat dilinin "referans tablo"su; 011 §2.7).
         tablo_dili = _tablo_dili(forge, main_sha, platform, dil)
         java_tablo = platformlar.java_mi(tablo_dili)
+        # K-T5: canlı web ajanına repoda TS projesi varsa TS tablosu verilir (rol + ad ile bulma,
+        # §2.5 PO eşitliği); denetim ve render hedef dilin tablosuyla yapılır.
+        ajan_tablo_dili = _ajan_tablo_dili(forge, main_sha, platform, tablo_dili)
         client = _toolchain()
         try:
             table = kontroller.SymbolTable(
                 client.symbols(main_sha, **toolchain_hedefi(platform, tablo_dili))
+            )
+            ajan_table = (
+                table
+                if ajan_tablo_dili == tablo_dili
+                else kontroller.SymbolTable(
+                    client.symbols(main_sha, **toolchain_hedefi(platform, ajan_tablo_dili))
+                )
             )
         finally:
             client.close()
@@ -2223,11 +2347,24 @@ def run_generation(ctx: JobContext, engine: Engine) -> dict[str, Any]:
         # Üretimin tabanı: sembol tablosu, fikstürler ve dal aynı main commit'inden (symbols_sha).
         cg.symbols_sha = main_sha
         sc.branch = branch
+        audit_on_commit(
+            s,
+            "system",
+            "codegen.tablolar",
+            f"script:{sid}",
+            {
+                "dil": dil,
+                "platform": platform,
+                "symbols_sha": main_sha,
+                "denetim_tablosu": tablo_dili,
+                "ajan_tablosu": ajan_tablo_dili,
+            },
+        )
 
     # ---- 1. tur eşleme
     sonuc = _eslemeyi_al(
         engine, ctx, sid, wf_id, case_id, case, ref, story, sira_no, table, dealers, 1,
-        fixtures=fixtures, platform=platform, tablo_dili=tablo_dili,
+        fixtures=fixtures, platform=platform, tablo_dili=tablo_dili, ajan_table=ajan_table,
     )  # fmt: skip
     if isinstance(sonuc, dict):
         return sonuc
@@ -2237,8 +2374,9 @@ def run_generation(ctx: JobContext, engine: Engine) -> dict[str, Any]:
         _, cg = _yukle(s, sid)
         cg.ilk_eslesme = dict(result.output or {})
     rendered = _render(
-        engine, sid, case_id, case, story, sira_no, result, denetim, dealers, platform, dil
-    )
+        engine, sid, case_id, case, story, sira_no, result, denetim, dealers, platform, dil,
+        tablo_dili, table.raw,
+    )  # fmt: skip
     if isinstance(rendered, dict):
         return rendered
     if not tam_hat:
@@ -2283,6 +2421,7 @@ def run_generation(ctx: JobContext, engine: Engine) -> dict[str, Any]:
             fixtures=fixtures,
             platform=platform,
             tablo_dili=tablo_dili,
+            ajan_table=ajan_table,
         )
         if isinstance(sonuc, dict):
             return sonuc
@@ -2296,8 +2435,9 @@ def run_generation(ctx: JobContext, engine: Engine) -> dict[str, Any]:
                 "(Constitution VI: assertion'lar otomatik değişmez).",
             )
         rendered = _render(
-            engine, sid, case_id, case, story, sira_no, result, denetim, dealers, platform, dil
-        )
+            engine, sid, case_id, case, story, sira_no, result, denetim, dealers, platform, dil,
+            tablo_dili, table.raw,
+        )  # fmt: skip
         if isinstance(rendered, dict):
             return rendered
         commit = _commit(engine, sid, forge, rendered, ref, case, "verifying", main_sha)
@@ -2434,17 +2574,19 @@ def _eslemeyi_al(
     fixtures: set[str] | None = None,
     platform: str = platformlar.WEB,
     tablo_dili: str | None = None,
+    ajan_table: kontroller.SymbolTable | None = None,
 ) -> tuple[AgentResult, kontroller.Sonuc] | dict[str, Any]:
-    """`tablo_dili`: sembol tablosunun dili (yoksa platformun varsayılanı). Ajan ve araç platforma
-    bağlıdır; locator çapraz kontrolünün yöntemi ve fikstür kaynağı tablonun diline."""
+    """`tablo_dili`: denetim sembol tablosunun (`table`) dili (yoksa platformun varsayılanı). Ajan
+    ve araç platforma bağlıdır; locator çapraz kontrolünün yöntemi ve fikstür kaynağı tablonun
+    diline. `ajan_table`: ajana verilen tablo (K-T5; yoksa `table`)."""
     from tp_core.gateway.errors import BudgetExceeded, GatewayError
 
     uygulama = platformlar.uygulama_mi(platform)
     java_tablo = platformlar.java_mi(platformlar.dil(platform, tablo_dili))
     try:
         kosu = _run_agent(
-            engine, sid, ctx.job_id, wf_id, case, ref, story, sira_no, table, dealers, tur,
-            feedback, platform,
+            engine, sid, ctx.job_id, wf_id, case, ref, story, sira_no, ajan_table or table,
+            dealers, tur, feedback, platform,
         )  # fmt: skip
     except BudgetExceeded as exc:
         return _insana(engine, sid, "agent_error", f"bütçe aşıldı: {exc}", hedef="failed")
@@ -2603,8 +2745,13 @@ def _render(
     dealers: Mapping[str, Any],
     platform: str = platformlar.WEB,
     dil: str | None = None,
+    tablo_dili: str | None = None,
+    sembol_tablosu: Mapping[str, Any] | None = None,
 ) -> Rendered | dict[str, Any]:
-    """Şablon (dil, platform) çiftine göre tek giriş noktasından seçilir (`render.render_dil`)."""
+    """Şablon (dil, platform) çiftine göre tek giriş noktasından seçilir (`render.render_dil`).
+    `tablo_dili`: eşlemenin denetlendiği sembol tablosunun dili; doğrulanmamış dilde başlık ve
+    adlar (ve parametre türleri: `sembol_tablosu`, ham `/symbols` çıktısı) bu "referans
+    tablo"dan türetilir (`referans_dil`; tam hat dillerinde yok sayılır)."""
     dil = platformlar.dil(platform, dil)
     with session_scope() as s:
         _, cg = _yukle(s, sid)
@@ -2622,7 +2769,14 @@ def _render(
             e2e_root=uretim_koku(dil, platform),
         )
     try:
-        rendered = render_modulu.render_dil(inp, dil=dil, platform=platform, rules=_rules_dir())
+        rendered = render_modulu.render_dil(
+            inp,
+            dil=dil,
+            platform=platform,
+            rules=_rules_dir(),
+            referans_dil=tablo_dili,
+            sembol_tablosu=sembol_tablosu,
+        )
     except RenderError as exc:
         return _insana(engine, sid, "unknown_method", f"şablon reddetti: {exc}")
     with session_scope() as s:
