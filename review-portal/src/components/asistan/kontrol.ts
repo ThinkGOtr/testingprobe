@@ -165,10 +165,12 @@ export interface SohbetTaslagi {
   notlar: Record<string, string>;
   /** Mesaj kimliği → son adım kodu (SSE `assistant.step`). */
   adimlar: Record<string, string>;
+  /** 429 `donduruldu` (013 §6.2): gönderimin yeniden açılacağı an (istemci saati, ms); yoksa null. */
+  dondurmaBitis: number | null;
 }
 
 function bosTaslak(): SohbetTaslagi {
-  return { girdi: "", ekranKaldirilan: null, hataKaldirilan: null, secilenHataId: null, hataNotu: null, bekletilen: null, notlar: {}, adimlar: {} };
+  return { girdi: "", ekranKaldirilan: null, hataKaldirilan: null, secilenHataId: null, hataNotu: null, bekletilen: null, notlar: {}, adimlar: {}, dondurmaBitis: null };
 }
 
 /**

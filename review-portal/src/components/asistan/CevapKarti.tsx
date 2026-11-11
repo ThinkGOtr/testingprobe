@@ -4,7 +4,7 @@
 // soldurulmaz); bağlantılar yalnız iç rota (Git) ve sunucunun kurduğu Jira adresidir.
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { kaynakDogrulandi, type AsistanMesaji, type CevapBlogu, type CevapKaynagiOgesi, type GuvenGosterimi } from "../../api/asistan";
+import { kaynakDogrulandi, kipRozeti, type AsistanDurumu, type AsistanMesaji, type CevapBlogu, type CevapKaynagiOgesi, type GuvenGosterimi } from "../../api/asistan";
 import { mockZorunlu } from "../../api/http";
 import { dolar, goreliZaman, guvenliDisAdres } from "../../lib/format";
 import type { Ton } from "../../lib/etiketler";
@@ -29,11 +29,24 @@ const GUVEN_ACIKLAMASI: Record<GuvenGosterimi, string> = {
   "Genel bilgi": "Ürüne özgü olmayan genel QA bilgisi.",
 };
 
-const KAYNAK_NOTU: Record<string, string> = {
-  sozluk: "Hazır cevap · hata sözlüğü",
-  sablon: "Hazır cevap · kayıt durumu",
-  kapali: "Hazır cevap",
-};
+/**
+ * Kip rozeti (013 §7, K12): `CANLI · Haiku 5.5` / `ŞABLON` / `MODEL KAPALI`. Eski "Hazır cevap · …"
+ * etiketi rozetin açıklamasıdır (title + ekran okuyucu metni): kartta iki ayrı etiket olmaz. Anlam
+ * metinde; renk ek ipucudur (canlı = AI moru, şablon/kapalı = nötr).
+ */
+export function KipRozeti({ mesaj, modeller }: { mesaj: Pick<AsistanMesaji, "kaynak" | "amac">; modeller?: Pick<AsistanDurumu, "varsayilan_model" | "derin_model"> | null }) {
+  const r = kipRozeti(mesaj, modeller);
+  if (!r) return null;
+  // Açıklama rozetin dışında: .rozet büyük harfe çevirir, ekran okuyucu metni olduğu gibi okunsun.
+  return (
+    <>
+      <span className={`rozet rozet-kip rozet-kip-${r.tur}`} title={r.aciklama} data-testid="kip-rozeti">
+        {r.metin}
+      </span>
+      <span className="gorunmez">{r.aciklama}</span>
+    </>
+  );
+}
 
 /** Göreli zaman tek yerde (lib/format); eski içe aktarımlar için yeniden dışa aktarılır. */
 export { goreliZaman };
@@ -228,9 +241,11 @@ export interface CevapKartiOzellikleri {
   kalanSoru?: number | null;
   /** Git bağlantısına basılınca (mobilde panel kapanır). */
   onGit?: () => void;
+  /** `/assistant/status` model kimlikleri: kip rozetindeki kısa model adı. */
+  modeller?: Pick<AsistanDurumu, "varsayilan_model" | "derin_model"> | null;
 }
 
-export function CevapKarti({ mesaj, baslik, derinIncelenebilir, derinIncele, derinCalisiyor, geriBildir, kalanSoru, onGit }: CevapKartiOzellikleri) {
+export function CevapKarti({ mesaj, baslik, derinIncelenebilir, derinIncele, derinCalisiyor, geriBildir, kalanSoru, onGit, modeller }: CevapKartiOzellikleri) {
   const derinNotId = useId();
   const c = mesaj.cevap;
   if (!c) return null;
@@ -258,7 +273,7 @@ export function CevapKarti({ mesaj, baslik, derinIncelenebilir, derinIncele, der
             {guven}
           </Cip>
         )}
-        {mesaj.kaynak && KAYNAK_NOTU[mesaj.kaynak] && <span className="soluk kucuk">{KAYNAK_NOTU[mesaj.kaynak]}</span>}
+        <KipRozeti mesaj={mesaj} modeller={modeller} />
         {ornek && (
           <span className="rozet rozet-mock" title="Örnek veri: hazırlanmış cevap, gerçek asistan cevabı değil.">
             ÖRNEK VERİ

@@ -28,6 +28,8 @@ export interface ApiHataEki {
   yol?: string;
   /** Başka bir hatadan dönüştürülen hata, son hata kaydının kimliğini taşır. */
   kayitId?: string;
+  /** Hata gövdesinin ek sayısal alanları (ör. 429 `donduruldu` → `kalan_s`); metin alanı taşınmaz. */
+  ek?: Record<string, number>;
 }
 
 let kayitSayaci = 0;
@@ -45,6 +47,8 @@ export class ApiError extends Error {
   yol?: string;
   /** Son hata deposundaki kaydın kimliği ("Asistana sor" bu kaydın bağlamıyla açar). */
   readonly kayitId: string;
+  /** Gövdenin ek sayısal alanları (`ApiHataEki.ek`). */
+  readonly ek: Readonly<Record<string, number>>;
 
   constructor(status: number, detail: string, ek: ApiHataEki = {}) {
     super(detail);
@@ -55,6 +59,7 @@ export class ApiError extends Error {
     this.method = ek.method;
     this.yol = ek.yol;
     this.kayitId = ek.kayitId ?? yeniKayitId();
+    this.ek = ek.ek ?? {};
   }
 }
 
@@ -220,7 +225,13 @@ function sorguMetni(sorgu?: Sorgu): URLSearchParams {
   return p;
 }
 
-export async function detayOku(res: Response): Promise<{ detail: string | null; json: boolean; kod?: string }> {
+/** Gövdenin üst düzey sonlu sayı alanları (`kalan_s` …); metin ve iç içe alanlar alınmaz. */
+function sayisalEk(govde: object): Record<string, number> | undefined {
+  const ek = Object.fromEntries(Object.entries(govde).filter(([, v]) => typeof v === "number" && Number.isFinite(v))) as Record<string, number>;
+  return Object.keys(ek).length ? ek : undefined;
+}
+
+export async function detayOku(res: Response): Promise<{ detail: string | null; json: boolean; kod?: string; ek?: Record<string, number> }> {
   const metin = await res.text().catch(() => "");
   if (!metin) return { detail: null, json: false };
   try {
@@ -228,18 +239,19 @@ export async function detayOku(res: Response): Promise<{ detail: string | null; 
     if (govde && typeof govde === "object") {
       const hamKod = (govde as { kod?: unknown }).kod;
       const kod = typeof hamKod === "string" && hamKod ? hamKod : undefined;
+      const ek = Array.isArray(govde) ? undefined : sayisalEk(govde);
       if ("detail" in govde) {
         const d = (govde as { detail: unknown }).detail;
-        if (typeof d === "string") return { detail: d, json: true, kod };
+        if (typeof d === "string") return { detail: d, json: true, kod, ek };
         // FastAPI doğrulama hataları: [{loc, msg, type}]
         if (Array.isArray(d)) {
           const mesajlar = d
             .map((x) => (x && typeof x === "object" && "msg" in x ? String((x as { msg: unknown }).msg) : ""))
             .filter(Boolean);
-          return { detail: mesajlar.join("; ") || "Geçersiz istek", json: true, kod };
+          return { detail: mesajlar.join("; ") || "Geçersiz istek", json: true, kod, ek };
         }
       }
-      return { detail: null, json: true, kod };
+      return { detail: null, json: true, kod, ek };
     }
     return { detail: null, json: true };
   } catch {
@@ -367,7 +379,7 @@ async function istekGonder<T>(
     }
   }
 
-  const { detail, json, kod } = await detayOku(res);
+  const { detail, json, kod, ek } = await detayOku(res);
   if (res.status === 404 && ayarlar.mockOtomatik && (detail === "Not Found" || !json)) {
     // Kaynağı çekirdekten gelen bir işlem örnek veriye düşmez (bkz. IstekSecenegi.kaynak).
     if (secenek.kaynak && !mockUclar.has(ucuNormallestir(...secenek.kaynak))) throw new ApiError(501, UC_YOK);
@@ -376,7 +388,7 @@ async function istekGonder<T>(
   // Canlı derlemede genel 404 (FastAPI'de rota yok) "bu fazda yok" demektir; ham "Not Found" gösterilmez.
   if (res.status === 404 && !ayarlar.mockOtomatik && (detail === "Not Found" || !json)) throw new ApiError(501, BU_FAZDA_YOK);
   if (res.status === 401 && !path.startsWith("/auth/")) yetkisizDinleyici?.();
-  throw new ApiError(res.status, detail ?? VARSAYILAN_HATA[res.status] ?? `Beklenmeyen hata (HTTP ${res.status}).`, { kod });
+  throw new ApiError(res.status, detail ?? VARSAYILAN_HATA[res.status] ?? `Beklenmeyen hata (HTTP ${res.status}).`, { kod, ek });
 }
 
 /** Karar uçlarında 409'un kullanıcıya gösterilen hâli (içerik görüntülendikten sonra değişti). */

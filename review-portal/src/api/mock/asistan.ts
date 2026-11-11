@@ -1,7 +1,8 @@
 // Mock arka uç: portal asistanı uçları (AI-ASISTAN-PLANI §9). Gerçek API'nin kurallarını taklit
 // eder — kullanıcı başı tek bekleyen soru (409 `bekleyen_var`), `ust_mesaj_id` doğrulaması
-// (409 `zaten_derin`), sır içeriği (422 `sir_icerik`), kapalı asistan (503 `asistan_kapali`),
-// hız/bütçe (429/402) — ve `assistant.step` / `assistant.answered` olaylarını süreç içi olay
+// (409 `zaten_derin`), sır içeriği (422 `sir_icerik`), kart numarası (422 `kisisel_veri`), art arda
+// 3 sır reddinden sonra 10 dk dondurma (429 `donduruldu`, gövdede `kalan_s`; 013 §6.2), kapalı asistan
+// (503 `asistan_kapali`), hız/bütçe (429/402) — ve `assistant.step` / `assistant.answered` olaylarını süreç içi olay
 // yolundan yayımlar. Cevaplar hazırlanmış örneklerdir ve `ornek_veri: true` taşır: arayüz
 // "ÖRNEK VERİ" gösterir (sahte canlı gösterim yok). Model çağrısı yapılmaz.
 import { ApiError, BU_FAZDA_YOK } from "../http";
@@ -84,6 +85,11 @@ interface MockMesaj extends AsistanMesaji {
   oneri_kural_id: string | null;
 }
 
+/** 013 §6.2 dondurma: kullanıcı → son kabul edilen sorudan sonraki ciddi olayların zamanları (ms). */
+const ciddiOlaylar = new Map<string, number[]>();
+export const MOCK_DONDURMA_ESIK = 3;
+export const MOCK_DONDURMA_SURE_S = 600;
+
 let sohbetler: MockSohbet[] = [];
 let mesajlar: MockMesaj[] = [];
 let sayac = 0;
@@ -93,6 +99,7 @@ export function asistanMockSifirla(): void {
   zamanlayicilar.forEach((z) => clearTimeout(z));
   zamanlayicilar.clear();
   kapananlar.clear();
+  ciddiOlaylar.clear();
   sohbetler = [];
   mesajlar = [];
   sayac = 0;
@@ -136,6 +143,47 @@ function sirVar(metin: string): boolean {
   return SIR_DESENLERI.some((d) => d.test(metin));
 }
 
+// Core `guvenlik.kart_bul` (013 §5.1) karşılığı: 13–19 hane, boşluk/tire/nokta ayraçlı, Luhn geçerli;
+// URL içindekiler ve herkese açık test kartları hariç.
+const TEST_KARTLARI = new Set(["4111111111111111", "5555555555554444", "4242424242424242", "5528790000000008", "4000056655665556"]);
+
+function luhn(hane: string): boolean {
+  let top = 0;
+  for (let i = 0; i < hane.length; i++) {
+    let d = Number(hane[hane.length - 1 - i]);
+    if (i % 2 === 1) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    top += d;
+  }
+  return top % 10 === 0;
+}
+
+export function mockKartVar(metin: string): boolean {
+  const urlsuz = metin.replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, " ");
+  for (const m of urlsuz.matchAll(/(?<![\d.-])\d(?:[ .-]?\d){12,18}(?![\d])/g)) {
+    const hane = m[0].replace(/\D/g, "");
+    if (hane.length >= 13 && hane.length <= 19 && !TEST_KARTLARI.has(hane) && luhn(hane)) return true;
+  }
+  return false;
+}
+
+/** Dondurma sürüyorsa kalan saniye; yoksa null (son ciddi olaydan 10 dk). */
+function dondurmaKalani(k: Kullanici): number | null {
+  const olaylar = ciddiOlaylar.get(k.id) ?? [];
+  if (olaylar.length < MOCK_DONDURMA_ESIK) return null;
+  const kalanMs = olaylar[olaylar.length - 1] + MOCK_DONDURMA_SURE_S * 1000 - Date.now();
+  return kalanMs > 0 ? Math.ceil(kalanMs / 1000) : null;
+}
+
+function dondurmaKontrol(k: Kullanici): void {
+  const kalan = dondurmaKalani(k);
+  if (kalan !== null) {
+    throw new ApiError(429, "Art arda engellenen istekler nedeniyle asistan geçici olarak kullanılamıyor.", { kod: "donduruldu", ek: { kalan_s: kalan } });
+  }
+}
+
 function durum(k: Kullanici): AsistanDurumu {
   if (asistanMockAyar.statusYok) throw new ApiError(501, BU_FAZDA_YOK);
   const kalan = Math.max(0, asistanMockAyar.kalanSoru);
@@ -145,6 +193,7 @@ function durum(k: Kullanici): AsistanDurumu {
     neden: asistanMockAyar.etkin ? null : asistanMockAyar.neden ?? "worker_yok",
     mod: asistanMockAyar.mod,
     varsayilan_model: "claude-haiku-5-5",
+    derin_model: "claude-sonnet-5-5",
     degerlendirme: { durum: "pending", etiket: null },
     paket_commit: "ornek-veri",
     kalan_soru: kalan,
@@ -214,6 +263,8 @@ function soruGonder(sohbetId: string, govde: unknown, k: Kullanici): { mesaj_id:
   const s = sohbetBul(sohbetId, k);
   const g = (govde && typeof govde === "object" ? govde : {}) as Record<string, unknown>;
   if (!asistanMockAyar.etkin) throw new ApiError(503, "Asistan şu an kapalı.", { kod: "asistan_kapali" });
+  // Core sırası (013 §6.2): dondurma denetimi sır taramasından önce; donmuş kullanıcı sayacı büyütemez.
+  dondurmaKontrol(k);
 
   // "Daha ayrıntılı incele": soru ve amaç üst mesajdan türetilir (istemcinin sorusu yok sayılır).
   if (typeof g.ust_mesaj_id === "string") {
@@ -246,7 +297,12 @@ function soruGonder(sohbetId: string, govde: unknown, k: Kullanici): { mesaj_id:
   const baglamMetni = baglam ? JSON.stringify(baglam) : "";
   if (new TextEncoder().encode(baglamMetni).length > 2048) throw new ApiError(422, "Ekran bağlamı 2 KB'ı aşıyor.", { kod: "gecersiz_istek" });
   if (sirVar(soru) || sirVar(baglamMetni)) {
+    ciddiOlaylar.set(k.id, [...(ciddiOlaylar.get(k.id) ?? []), Date.now()]);
     throw new ApiError(422, "Soru veya bağlam gizli bilgi (token/parola) içeriyor.", { kod: "sir_icerik" });
+  }
+  // Kart numarası: 422 `kisisel_veri`; dondurma sayacına girmez (K11).
+  if (mockKartVar(soru) || mockKartVar(baglamMetni)) {
+    throw new ApiError(422, "Soru kişisel veri (kart numarası) içeriyor.", { kod: "kisisel_veri" });
   }
   const oneriKuralId = typeof g.oneri_kural_id === "string" ? g.oneri_kural_id : null;
   if (oneriKuralId && asistanMockAyar.gecersizOneriler.includes(oneriKuralId)) {
@@ -262,6 +318,8 @@ function soruGonder(sohbetId: string, govde: unknown, k: Kullanici): { mesaj_id:
   bekleyenVarKontrol(k);
   hizKontrol(1);
 
+  // Kabul edilen soru ardışık sayacı sıfırlar (K11).
+  ciddiOlaylar.delete(k.id);
   if (oneriKuralId) s.oneri_kural_id = oneriKuralId;
   if (!s.baslik) s.baslik = soru.slice(0, 60);
   yeniMesaj(s, k, { rol: "user", icerik: soru, durum: "done", kip, adim_kodu: null, baglam, tamamlanma: simdi() });

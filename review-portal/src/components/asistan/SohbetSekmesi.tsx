@@ -9,6 +9,8 @@ import {
   baglamiSigdir,
   BEKLEYEN_VAR_METNI,
   bekliyor,
+  dondurmaKalanS,
+  dondurulduMetni,
   gonderimHataMetni,
   mesajHataMetni,
   SORU_AZAMI,
@@ -155,6 +157,30 @@ export function SohbetSekmesi({
   const [hataNotu, setHataNotu] = useTaslak("hataNotu");
   /** Bekleme sürerken girdiye bırakılan dış soru: girdiden gönderilince seçenekleriyle gider. */
   const [bekletilen, setBekletilen] = useTaslak("bekletilen");
+  /** 429 `donduruldu`: bitişe kadar gönderim kapalı; süre dolunca (istemci saati) kendiliğinden açılır.
+   * Taslakta tutulur: sekme geçişinde / panel kapanıp açılınca sayaç sıfırlanmaz. */
+  const [dondurmaBitis, setDondurmaBitis] = useTaslak("dondurmaBitis");
+  const donmus = dondurmaBitis !== null && Date.now() < dondurmaBitis;
+  useEffect(() => {
+    if (dondurmaBitis === null) return;
+    const kalan = dondurmaBitis - Date.now();
+    if (kalan <= 0) {
+      setDondurmaBitis(null);
+      return;
+    }
+    const z = setTimeout(() => setDondurmaBitis(null), kalan);
+    return () => clearTimeout(z);
+  }, [dondurmaBitis, setDondurmaBitis]);
+  /** Gönderim hatası 429 `donduruldu` ise dondurmayı başlatır (metin dondurma süresinden üretilir). */
+  const dondurmaHatasi = useCallback(
+    (e: unknown): boolean => {
+      const kalanS = dondurmaKalanS(e);
+      if (kalanS === null) return false;
+      setDondurmaBitis(Date.now() + kalanS * 1000);
+      return true;
+    },
+    [setDondurmaBitis],
+  );
   /** Ekran okuyucuya yalnız sonuç duyurulur (liste kabı canlı bölge değildir). */
   const [duyuru, setDuyuru] = useState("");
   const duyuruZamanlayici = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -378,6 +404,11 @@ export function SohbetSekmesi({
     async (soru: string, secenek: GonderSecenegi = {}) => {
       const metin = soru.trim();
       if (!metin) return;
+      // Dondurma sürerken soru gönderilmez; girdide kalır (süre dolunca kullanıcı gönderir).
+      if (donmus) {
+        setGirdi(metin);
+        return;
+      }
       // Yanıt bekleyen soru varken (bu sekmede) ya da önceki gönderim sürerken yeni soru
       // gönderilmez: sunucu 409 bekleyen_var döndürür. Yeni sohbete de geçilmez; soru girdide
       // kalır, cevap gelince gönderilir. Öneri kuralı / hedef sohbet de saklanır (§17.6): girdiden
@@ -442,7 +473,8 @@ export function SohbetSekmesi({
         }
         // Hedef öneri sohbeti silinmiş: eşleme düşer, sonraki çip yeni sohbet açar.
         if (secenek.sohbetId && e instanceof ApiError && e.status === 404) oneriSohbetiUnut(secenek.sohbetId);
-        setGonderimHatasi(gonderimHataMetni(e));
+        // Dondurma: metin dondurma durumundan çizilir (süre dolunca kendiliğinden kalkar); girdi korunur.
+        setGonderimHatasi(dondurmaHatasi(e) ? null : gonderimHataMetni(e));
         // Öneri geçersizleşti: Öneriler sekmesi/rozet eski kartı göstermesin, bu ekranın önerileri yenilenir.
         if (e instanceof ApiError && e.kod === "oneri_gecersiz") {
           const sorgu = oneriSorgusu(ekran);
@@ -454,7 +486,7 @@ export function SohbetSekmesi({
         setGonderiyor(false);
       }
     },
-    [gonderiyor, kullaniciBekliyor, baglamUret, seciliTemizle, yukle, durumYenile, ekran, ekranAnahtari, kullanici],
+    [gonderiyor, kullaniciBekliyor, donmus, dondurmaHatasi, baglamUret, seciliTemizle, yukle, durumYenile, ekran, ekranAnahtari, kullanici],
   );
 
   // Dış istek: "Asistana sor" (hata kaydı) ya da "Neden? Sor" (öneri kuralı + soru).
@@ -572,7 +604,7 @@ export function SohbetSekmesi({
       await yukle(sohbetRef.current, true);
       durumYenile();
     } catch (e) {
-      setGonderimHatasi(gonderimHataMetni(e));
+      setGonderimHatasi(dondurmaHatasi(e) ? null : gonderimHataMetni(e));
     } finally {
       setDerinCalisan(null);
     }
@@ -608,12 +640,13 @@ export function SohbetSekmesi({
 
   const kartOzellikleri = (m: AsistanMesaji, cocukVar: boolean) => ({
     derinIncelenebilir:
-      modelAcik && m.kip === "soru" && m.amac !== "assistant_deep" && m.kaynak !== "kapali" && !cocukVar && !kullaniciBekliyor,
+      modelAcik && m.kip === "soru" && m.amac !== "assistant_deep" && m.kaynak !== "kapali" && !cocukVar && !kullaniciBekliyor && !donmus,
     derinIncele: () => void derinIncele(m),
     derinCalisiyor: derinCalisan === m.id,
     geriBildir: (d: -1 | 1) => void geriBildir(m, d),
     kalanSoru: m.id === sonCevapId ? (asistan.kalan_soru ?? null) : null,
     onGit,
+    modeller: asistan,
   });
 
   const cevapGrubu = (m: AsistanMesaji) => {
@@ -740,7 +773,9 @@ export function SohbetSekmesi({
     return { ...bekletilen.secenek, oneriKuralId: null };
   };
   const sayac = girdi.length;
-  const gonderilemez = !girdi.trim() || sayac > SORU_AZAMI || gonderiyor || kullaniciBekliyor;
+  const gonderilemez = !girdi.trim() || sayac > SORU_AZAMI || gonderiyor || kullaniciBekliyor || donmus;
+  const hataMetni = donmus ? dondurulduMetni((dondurmaBitis! - Date.now()) / 1000) : gonderimHatasi;
+  const gonderAciklamasi = [sohbetteBekleyen ? "asistan-sohbet-kilit" : null, donmus ? "asistan-gonderim-hatasi" : null].filter(Boolean).join(" ") || undefined;
   const kokler = mesajlar.filter((m) => !m.ust_mesaj_id);
 
   return (
@@ -786,7 +821,7 @@ export function SohbetSekmesi({
               <ul className="asistan-soru-onerileri" aria-label="Soru önerileri">
                 {oneriler.map((s) => (
                   <li key={s.metin}>
-                    <button type="button" className="cip cip-notr asistan-oneri-cipi" onClick={() => void gonder(s.metin)} disabled={kullaniciBekliyor}>
+                    <button type="button" className="cip cip-notr asistan-oneri-cipi" onClick={() => void gonder(s.metin)} disabled={kullaniciBekliyor || donmus}>
                       {s.metin}
                     </button>
                   </li>
@@ -879,7 +914,7 @@ export function SohbetSekmesi({
             className="dugme dugme-birincil dugme-kucuk"
             disabled={gonderilemez}
             aria-busy={gonderiyor || undefined}
-            aria-describedby={sohbetteBekleyen ? "asistan-sohbet-kilit" : undefined}
+            aria-describedby={gonderAciklamasi}
           >
             Asistana sor <Ikon ad="gonder" />
           </button>
@@ -904,9 +939,9 @@ export function SohbetSekmesi({
             {hataNotu}
           </p>
         )}
-        {gonderimHatasi && (
-          <div className="uyari-kutusu uyari-hata" role="alert">
-            {gonderimHatasi}
+        {hataMetni && (
+          <div className="uyari-kutusu uyari-hata" role="alert" id="asistan-gonderim-hatasi" data-testid="asistan-gonderim-hatasi">
+            {hataMetni}
           </div>
         )}
       </form>
