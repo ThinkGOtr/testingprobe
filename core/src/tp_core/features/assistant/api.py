@@ -17,7 +17,7 @@ dahil edilir.
 - core-api model anahtarını ve kipini **bilmez** (İlke II): durum worker'ın yazdığı `asistan_durum`
   satırından okunur. Model gerekip gerekmediğine (sözlük/şablon) worker karar verir.
 - POST mesaj transaction sırası: dondurma (429 `donduruldu` + `kalan_s`; specs/013 §6.2) →
-  doğrulama (422, sır → `sir_icerik` + güvenlik olayı) → sahiplik (404) → hizmet
+  doğrulama (422, sır → `sir_icerik` + güvenlik olayı, kart → `kisisel_veri`) → sahiplik (404) → hizmet
   durumu (503) → öneri geçerliliği (409 `oneri_gecersiz`) → saatlik hak (429 `hiz_siniri`) → bütçe
   (402) → `budget.global_kilit` → kullanıcı işi (409 `bekleyen_var`) ve global sayaç (429 `mesgul`)
   → mesaj INSERT (kısıt ihlali kısıt adına göre 409) → `assistant.answer` işi (aynı transaction).
@@ -365,6 +365,20 @@ def _dondurma_kontrol(session: Session, user: Principal) -> None:
     )
 
 
+def _kisisel_veri_kontrol(*metinler: str) -> None:
+    """Soru/bağlamda Luhn'lu kart numarası → 422 `kisisel_veri` (değer yazılmaz; specs/013 §5.1).
+
+    Dondurma sayacına girmez (K11). TCKN/IBAN reddedilmez, worker'da her zaman maskelenir."""
+    from tp_core.features.assistant.guvenlik import kart_bul
+
+    if any(kart_bul(m) for m in metinler if m):
+        raise KodluHata(
+            422,
+            "kisisel_veri",
+            "Soru kart numarası gibi kişisel veri içeriyor; çıkarıp yeniden deneyin.",
+        )
+
+
 def oneri_gecerli_mi(
     session: Session, kullanici: Principal, kural_id: str, baglam: dict[str, Any] | None
 ) -> bool:
@@ -501,6 +515,10 @@ def soru_gonder(
             soru,
             json.dumps(govde.baglam, ensure_ascii=False) if govde.baglam else "",
             olay_yaz=_sir_olayi(session, user),
+        )
+        _kisisel_veri_kontrol(
+            soru,
+            json.dumps(govde.baglam, ensure_ascii=False) if govde.baglam else "",
         )
 
     s = _sohbet(session, sohbet_id, user, kilitle=True)
