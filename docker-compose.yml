@@ -67,6 +67,14 @@ x-core-env: &core-env
   GITHUB_REPO: ${GITHUB_REPO:-}
   GITHUB_READ_TOKEN: ${GITHUB_READ_TOKEN:-}
   GITHUB_API_URL: ${GITHUB_API_URL:-}
+  # GitHub kipinde zorunlu iş akışı check'leri (sır değil; core-api de okur: kod üretimi ekranının
+  # merge kapısı listesi ve `/code/languages` kullanılabilirliği core-worker ile aynı olmalı).
+  # TP_PLATFORMS: android,windows → mobil-android / masaustu-windows (009; boş = yalnız web).
+  # TP_WEB_DILLERI: ts,java → web-java zorunlu; GitHub kipinde web + Java üretimi ve Java kardeş
+  # koşusu yalnız `java` buradayken açılır (011 K-T3). Boş = yalnız ts. LocalForge'da etkisizdir
+  # (repodaki dosyalar belirler). Geçersiz değer GitHubForge'u başlatmaz (bkz. .env.example).
+  TP_PLATFORMS: ${TP_PLATFORMS:-}
+  TP_WEB_DILLERI: ${TP_WEB_DILLERI:-}
   TOOLCHAIN_URL: http://toolchain-worker:8100
   # toolchain-worker belirteci: core → toolchain-worker. test-runner'a VERİLMEZ (security-check 4/5).
   TP_TOOLCHAIN_TOKEN: ${TP_TOOLCHAIN_TOKEN:?make env çalıştırın}
