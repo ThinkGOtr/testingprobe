@@ -10,5 +10,5 @@ git clone -q --depth 1 --no-local "file://$PWD" "$work/src"
 rm -rf "$work/src/.git/hooks"
 tmp="$work/src"
 mkdir -p "$tmp/bin" && cp deploy/aiprobe/bin/up.sh deploy/aiprobe/bin/down.sh "$tmp/bin/" && chmod +x "$tmp/bin/"*.sh
-tar --uid 0 --gid 0 -czf "$out" -C "$tmp" .
+COPYFILE_DISABLE=1 tar --no-xattrs --uid 0 --gid 0 -czf "$out" -C "$tmp" .
 echo "paket: $out ($(git rev-parse --short HEAD))"
