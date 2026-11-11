@@ -1,22 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Bayi Sipariş Portalı — web arayüzü uçtan uca testleri (Java hattı).
+  Bayi Sipariş Portalı — web uçtan uca testleri (Java hattı).
   Java 17 + Playwright for Java + TestNG. TypeScript karşılığı: ../e2e (Playwright Test);
-  uygulama (Appium) karşılığı: ../e2e-app. Page object'ler ../e2e/pages ile birebir aynı sözleşmedir.
+  uygulama (Appium) karşılığı: ../e2e-app.
 
-  Koşum (bkz. README.md):
+  Koşum:
     ./mvnw -q test-compile                     derleme (tarayıcı gerekmez)
-    ./mvnw -q test -Dgroups=birim              birim testleri (tarayıcı ve uygulama gerekmez)
-    ./mvnw test                                tarayıcı koşusu (testng.xml: testler + uretilen, 2 iş parçacığı)
-    ./mvnw test -Dgroups=kampanya              yalnız bir grup (testng.xml devre dışı kalır, tek iş parçacığı)
+    ./mvnw -q test -Dgroups=birim              birim testleri (tarayıcı gerekmez)
+    ./mvnw test                                tarayıcı koşusu (testng.xml: testler + uretilen)
+    ./mvnw test -Dgroups=kampanya              yalnız bir grup (testng.xml devre dışı kalır)
 
-  Sistem özellikleri (ortam değişkeni karşılığı parantezde; ikisi de verilmezse varsayılan):
-    base.url (BASE_URL)                 web kökü; varsayılan http://127.0.0.1:8081
-    demo.api.url (DEMO_API_URL | API_URL)  /test/* uçları için API kökü; varsayılan <base.url>/api
-    demoapp.test.token (DEMOAPP_TEST_TOKEN)  /test/* paylaşılan sırrı — ORTAMDAN verin, depoya yazmayın
-    headless (HEADLESS)                 varsayılan true; pencereli koşu için false
-  Tarayıcı PLAYWRIGHT_BROWSERS_PATH'ten (ya da Playwright'ın varsayılan önbelleğinden) açılır; test
-  sırasında indirme yapılmaz. Tümü: src/test/java/com/antreklabs/bayi/altyapi/Ayarlar.java
+  Ortam (TS e2e ile aynı hedef):
+    BASE_URL              web origin (ör. http://localhost:8080)
+    API_URL               /test/* uçları için API kökü
+    DEMOAPP_TEST_TOKEN    /test/* paylaşılan sırrı — ORTAMDAN verin, depoya yazmayın
+    PLAYWRIGHT_BROWSERS_PATH, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+                          tarayıcı önceden kurulu dizinden; test sırasında indirme yok
+
+  Playwright sürümü: Playwright for Java <playwright.version>, depo kökündeki .playwright-version
+  ile AYNI tarayıcı derlemelerini kullanır (Java 1.64.0 sürücüsü = playwright-core 1.64.1).
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -35,25 +37,19 @@
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
     <!-- Sürümler sabittir (aralık yok): çevrimdışı ve tekrarlanabilir derleme. -->
-    <!--
-      Playwright for Java: depo kökündeki .playwright-version (npm @playwright/test) ile AYNI
-      tarayıcı derlemelerini kullanan sürüm. Java 1.64.0 sürücüsü Playwright çekirdeği 1.64.1'i
-      paketler (Java'da 1.64.1 yayımlanmadı); eşitlik birim/SurumBirimTesti ile sabitlenir
-      (driver/package/package.json sürümü = .playwright-version). .playwright-version yükselince
-      aynı çekirdeği paketleyen Java sürümüne geçilir.
-    -->
     <playwright.version>1.64.0</playwright.version>
     <testng.version>7.12.0</testng.version>
     <allure.version>2.35.5</allure.version>
     <extent.version>5.1.2</extent.version>
     <slf4j.version>2.0.20</slf4j.version>
+    <surefire.version>3.5.6</surefire.version>
 
-    <!-- Varsayılan tarayıcı süiti; -Dgroups verilirse "gruplu" profili bunu devre dışı bırakır. -->
+    <!-- Varsayılan süit; -Dgroups verilirse "gruplu" profili bunu devre dışı bırakır. -->
     <testng.suite>testng.xml</testng.suite>
     <allure.results.directory>${project.build.directory}/allure-results</allure.results.directory>
-    <!-- Extent (Spark) HTML raporu: <dizin>/index.html; birim koşusu ayrı dizine yazar (tarayıcı raporunu ezmez). -->
+    <!-- Extent (Spark) HTML raporu: <dizin>/index.html. -->
     <extent.rapor.dizini>${project.build.directory}/extent-report</extent.rapor.dizini>
-    <!-- JUnit XML dizini; birim koşusu ayrı dizine yazar (ci/run-java-checks.sh), tarayıcı raporunu ezmez. -->
+    <!-- JUnit XML dizini (Surefire TEST-*.xml). -->
     <raporlar.dizini>${project.build.directory}/surefire-reports</raporlar.dizini>
   </properties>
 
@@ -63,6 +59,21 @@
       <artifactId>playwright</artifactId>
       <version>${playwright.version}</version>
       <scope>test</scope>
+      <exclusions>
+        <!--
+          Playwright'in JUnit 5 bütünleşmesi (com.microsoft.playwright.junit) kullanılmaz. JUnit
+          Platform sınıf yolunda kalırsa Surefire sağlayıcıyı ondan seçer ve TestNG testleri HİÇ
+          koşmaz ("0 test, yeşil"). opentest4j kalır: assertThat(...) AssertionFailedError atar.
+        -->
+        <exclusion>
+          <groupId>org.junit.jupiter</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.junit.platform</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.testng</groupId>
@@ -119,7 +130,7 @@
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-surefire-plugin</artifactId>
-          <version>3.5.6</version>
+          <version>${surefire.version}</version>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
@@ -140,24 +151,33 @@
         <configuration>
           <release>17</release>
           <compilerArgs>
-            <arg>-Xlint:all,-processing</arg>
+            <!-- classfile: Playwright'in (dışlanan) JUnit bütünleşmesine başvuran sınıf dosyaları. -->
+            <arg>-Xlint:all,-processing,-classfile</arg>
           </compilerArgs>
         </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
+        <dependencies>
+          <!-- Sağlayıcı açıkça TestNG'dir (otomatik seçim sınıf yoluna göre değişmesin). -->
+          <dependency>
+            <groupId>org.apache.maven.surefire</groupId>
+            <artifactId>surefire-testng</artifactId>
+            <version>${surefire.version}</version>
+          </dependency>
+        </dependencies>
         <configuration>
           <suiteXmlFiles>
             <suiteXmlFile>${testng.suite}</suiteXmlFile>
           </suiteXmlFiles>
-          <!-- -Dgroups ile (testng.xml'siz) taranan sınıflar: adlar *Test / *Testi, iç sınıf yok. -->
+          <!-- -Dgroups ile (testng.xml'siz) taranan sınıflar: adlar *Testi / *Test, iç sınıf yok. -->
           <includes>
             <include>**/testler/**/*.java</include>
             <include>**/uretilen/**/*.java</include>
             <include>**/birim/**/*.java</include>
           </includes>
-          <!-- JUnit XML: target/surefire-reports/TEST-*.xml (ci/parse.py JUnit yolu). -->
+          <!-- JUnit XML: target/surefire-reports/TEST-*.xml. -->
           <reportsDirectory>${raporlar.dizini}</reportsDirectory>
           <trimStackTrace>false</trimStackTrace>
           <redirectTestOutputToFile>true</redirectTestOutputToFile>
@@ -165,7 +185,6 @@
             <allure.results.directory>${allure.results.directory}</allure.results.directory>
             <extent.rapor.dizini>${extent.rapor.dizini}</extent.rapor.dizini>
             <kanit.dizini>${project.build.directory}/kanit</kanit.dizini>
-            <playwright.surumu>${playwright.version}</playwright.surumu>
             <file.encoding>UTF-8</file.encoding>
           </systemPropertyVariables>
           <properties>
@@ -185,9 +204,6 @@
       -Dgroups=<grup>[,<grup>] verilince testng.xml yerine Surefire'ın grup süzgeci kullanılır
       (Surefire, suiteXmlFiles varken groups'u yok sayar). Örn. birim testleri:
         ./mvnw -q test -Dgroups=birim
-      Bu kipte koşu tek iş parçacığıdır (yalnız bayi1; "kırarak doğrula" kırmızı adımı böyle koşar).
-      Tarayıcı grupları (duman, kampanya, uretilen) birim paketini içermez; birim testler "birim"
-      dışındaki gruplarda yer almaz.
     -->
     <profile>
       <id>gruplu</id>
