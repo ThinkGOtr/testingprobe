@@ -7,19 +7,28 @@
   - Her değer `cs` süzgecinden geçer: düz "…" dize (verbatim @"…" / interpolasyon $"…" / ham
     """…""" YOK), int / long / double, true / false, null.
   - Sınıf, değişken ve metot adları `ident` süzgecinden geçer; metot adı referans sembol
-    tablosundaki adın PascalCase biçimidir (`addToCart` → `AddToCart`).
+    tablosundaki adın PascalCase + `Async` biçimidir (`addToCart` → `AddToCartAsync`).
   - Yorumlar `comment` süzgecinden geçer (tek satır //; blok yorumu yok).
   - Varsayımlar (hedef projede page object kütüphanesi yoktur): sınıflar `{{ "<Sınıf>(IPage)" }}`
-    kurucusuyla `Antreklabs.Bayi.Pages` ad alanındadır, metotlar `Task` döner.
+    kurucusuyla `Antreklabs.Bayi.Pages` ad alanındadır, metotlar `Task` döner ve Playwright .NET
+    konvansiyonuyla `…Async` adını taşır. Başlık bu imzaları listeler (uyarlama için; K-T9).
   - Çıktı deterministiktir (golden testi: core/tests/unit/features/codegen/golden/).
 -#}
-// AI-generated — AI Testing Probe (CasesToCode). Elle düzenlemeyin; değişiklik case'in yeniden
-// onayı ve yeniden üretimle yapılır.
+// AI-generated — AI Testing Probe (CasesToCode). Hedef projeye uyarlanmak üzere verilir:
+// page object adlarını ve imzalarını projenize göre düzenleyebilirsiniz.
 // {{ unverified_note | comment }}
 // Case: {{ case_ref | comment }} ({{ case_id | comment }}) · Story: {{ story_key | comment }} · Jira Test: {{ test_key | comment }}
 // Onaylı case hash: {{ case_hash | comment }}
 // Eşleme: verify_and_map · platform: web · dil: csharp (Playwright .NET + NUnit) · mod: {{ mode | comment }} · bundle: {{ bundle_hash | comment }}
 // Eşleme hash: {{ mapping_hash | comment }} · şablon: {{ template_hash | comment }}
+//
+// Varsayılan page object imzaları ({{ po_namespace | comment }}; kurucu: new <Sınıf>(IPage page)):
+{% for s in imzalar %}
+//   {{ s.sinif | comment }}
+{% for m in s.metotlar %}
+//     Task {{ m.imza | comment }}
+{% endfor %}
+{% endfor %}
 using System.Threading.Tasks;
 using {{ po_namespace }};
 using Microsoft.Playwright.NUnit;
