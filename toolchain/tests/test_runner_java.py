@@ -73,7 +73,9 @@ def fake_mvn(tmp_path: Path, xml: str | None, exit_code: int = 0, extent: bool =
                 "JAVA_TOOL_OPTIONS", "ANTHROPIC_API_KEY", "TP_RUN_ID", "CI")
         with log.open("a") as fh:
             fh.write(json.dumps({{"argv": args, "cwd": os.getcwd(),
-                                  "env": {{k: os.environ.get(k) for k in keys}}}}) + "\\n")
+                                  "env": {{k: os.environ.get(k) for k in keys}},
+                                  "tmp": [os.environ.get("TMPDIR"),
+                                          os.path.isdir(os.environ.get("TMPDIR") or "")]}}) + "\\n")
         xml = {xml!r}
         if xml is not None and "surefire:test" in args:
             rd = pathlib.Path(props["raporlar.dizini"]); rd.mkdir(parents=True, exist_ok=True)
@@ -187,12 +189,14 @@ def test_java_run_passed_hardening_and_layout(
         "DEMOAPP_TEST_TOKEN": "test-belirteci",
         "BREAK_CAMPAIGN": "",
         "MAVEN_SKIP_RC": "1",
-        "MAVEN_OPTS": None,
+        "MAVEN_OPTS": "-Xmx384m",
         "JAVA_TOOL_OPTIONS": None,
         "ANTHROPIC_API_KEY": None,
         "TP_RUN_ID": "j1",
         "CI": "1",
     }
+    # OPS-O6: TMPDIR koşu dizini altında (`<run>/tmp`), koşu sonunda silinir.
+    assert call["tmp"] == [str(run_dir / "tmp"), True] and not (run_dir / "tmp").exists()
 
 
 def test_java_run_failures_classified_and_break_restored(
@@ -378,14 +382,14 @@ def test_checks_document_keeps_other_platforms(tmp_path: Path) -> None:
 def test_check_names() -> None:
     assert checks.check_name("ts", None) == "local-ci"
     assert checks.check_name("java", "ios") == "local-ci-ios"
-    # 011 §2.6: web'de dil ne olursa olsun `local-ci` (platform yok = web).
-    assert checks.check_name("java", None) == "local-ci"
-    assert checks.check_name("java", "web") == "local-ci"
+    # 011 K-T1: web + Java ayrı kayıttır `local-ci-web-java` (platform yok = web).
+    assert checks.check_name("java", None) == "local-ci-web-java"
+    assert checks.check_name("java", "web") == "local-ci-web-java"
     assert checks.check_name("ts", "web") == "local-ci"
     with pytest.raises(ValueError):
         checks.check_name("java", "symbian")
     req = checks.CheckRequest(sha="x", lang="java", platform=None)
-    assert req.check_name == "local-ci" and req.records_check() is True
+    assert req.check_name == "local-ci-web-java" and req.records_check() is True
     assert checks.CheckRequest(sha="x", lang="java", platform="symbian").records_check() is False
     assert checks.CheckRequest(sha="x", lang="java", platform="windows").records_check() is True
 

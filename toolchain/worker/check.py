@@ -17,12 +17,12 @@ da dosya `failure` ile kapatılır: yarım kalmış kontrol asla başarı sayıl
 
 **Tek yazar:** `checks/<sha>.json`'ı yalnızca bu modül yazar (core salt okur; LocalForge.checks()).
 
-**Kontrol adı platform başınadır** (009 §2.7, 011 §2.6): web'de dil ne olursa olsun `local-ci`
-(TS/Playwright ve Java/Playwright for Java), uygulamada (Java/Appium) `local-ci-<platform>`
-(`local-ci-android`, `local-ci-ios`, `local-ci-windows`). Dosya bir
-kontrol listesidir; her yazım YALNIZCA kendi adındaki girdiyi değiştirir, diğer platformların
-girdileri korunur (eskiden tek girdiydi: son yazan kazanırdı). `report` son yazılan kontrolün
-raporudur; `reports` ad → rapor eşlemesidir.
+**Kontrol adı platform ve dil başınadır** (009 §2.7, 011 K-T1; core `platform.check_adi`'nın
+aynası): web + TS `local-ci`, web + Java (Playwright for Java) `local-ci-web-java`, uygulamada
+(Java/Appium) `local-ci-<platform>` (`local-ci-android`, `local-ci-ios`, `local-ci-windows`).
+Dosya bir kontrol listesidir; her yazım YALNIZCA kendi adındaki girdiyi değiştirir, diğer
+platform/dil girdileri korunur: aynı sha'nın TS ve Java kardeş koşuları birbirini ezmez.
+`report` son yazılan kontrolün raporudur; `reports` ad → rapor eşlemesidir.
 
 Hangi kontrol `local-ci` kaydı olur (`record_check`):
 
@@ -66,7 +66,8 @@ from worker.astguard import AstGuardError, run_ast_guard
 
 CHECK_NAME = "local-ci"
 # Java (Appium) kontrolleri platform başına ayrı kayıttır: `local-ci-<platform>`. Web + Java
-# (Playwright for Java) platformun kendi kaydını (`local-ci`) yazar.
+# (Playwright for Java) ayrı kaydını yazar: `local-ci-web-java` (011 K-T1; GitHub `web-java`).
+WEB_JAVA_CHECK_NAME = f"{CHECK_NAME}-web-java"
 JAVA_PLATFORMS = javayol.APP_PLATFORMS
 CHECK_LOCK = threading.Lock()
 STEPS = ("app", "deps", "tsc", "eslint", "ast_guard", "run")
@@ -108,8 +109,9 @@ class CheckRequest:
 
     @property
     def check_name(self) -> str | None:
-        """Merge kapısındaki kayıt adı: web `local-ci` (ts ve java), uygulama Java
-        `local-ci-<platform>`; bilinmeyen platformda None (kayıt yazılmaz; API zaten reddeder)."""
+        """Merge kapısındaki kayıt adı: web + TS `local-ci`, web + Java `local-ci-web-java`,
+        uygulama Java `local-ci-<platform>`; bilinmeyen platformda None (kayıt yazılmaz; API
+        zaten reddeder)."""
         try:
             return check_name(self.lang, self.platform)
         except ValueError:
@@ -203,10 +205,13 @@ def _counts(tests: list[dict[str, Any]]) -> dict[str, int]:
 
 
 def check_name(lang: str, platform: str | None) -> str:
-    """Platformun check'i: web'de dil ne olursa olsun `local-ci`, uygulamada (Java)
-    `local-ci-<platform>`. `lang=java` + platform yok = web + Java (011 §2.6)."""
-    if lang != "java" or platform in (None, javayol.WEB):
+    """Koşunun check'i (core `platform.check_adi` ile aynı): web + TS `local-ci`, web + Java
+    `local-ci-web-java`, uygulamada (Java) `local-ci-<platform>`. `lang=java` + platform yok =
+    web + Java (011 §2.6)."""
+    if lang != "java":
         return CHECK_NAME
+    if platform in (None, javayol.WEB):
+        return WEB_JAVA_CHECK_NAME
     if platform not in JAVA_PLATFORMS:
         raise ValueError(f"Java kontrolü platformu: {(javayol.WEB, *JAVA_PLATFORMS)}")
     return f"{CHECK_NAME}-{platform}"

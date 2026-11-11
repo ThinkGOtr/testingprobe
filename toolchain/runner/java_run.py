@@ -87,6 +87,12 @@ APP_ENV = {
 }
 PASS_ENV = ("PATH", "HOME", "LANG", "LC_ALL", "TZ", "TMPDIR", "JAVA_HOME")
 SUREFIRE_DIR = "surefire-reports"
+# OPS-O6: test-runner kapsayıcısı 3 GB sınırlıdır (Maven JVM + Surefire çatalı + Node sürücüsü +
+# Chromium). Maven JVM'inin yığını sabittir (ortamdaki MAVEN_OPTS geçmez; bu değer verilir);
+# Surefire çatalının sınırı pom'un `argLine`'ıdır.
+MAVEN_OPTS = "-Xmx384m"
+# Koşunun geçici dosyaları (JVM, Playwright sürücüsü) koşu dizini altında: `<run>/tmp`.
+RUN_TMP_DIR = "tmp"
 EXTENT_REPORT_DIR = "extent-report"
 
 
@@ -201,9 +207,16 @@ def maven_argv(
     return argv
 
 
-def maven_env(cfg: Settings, req: RunRequest, platform: str) -> dict[str, str]:
-    """İzin listesi: sistem + proje ayarları (MAVEN_*/JVM seçenekleri geçmez)."""
+def maven_env(
+    cfg: Settings, req: RunRequest, platform: str, tmp_dir: Path | None = None
+) -> dict[str, str]:
+    """İzin listesi: sistem + proje ayarları (ortamdaki MAVEN_*/JVM seçenekleri geçmez).
+    `MAVEN_OPTS` sabittir (bellek sınırı, OPS-O6); `tmp_dir` verilirse `TMPDIR` odur (koşu
+    dizini altı; ortamdaki TMPDIR'in yerine geçer)."""
     env = {k: os.environ[k] for k in PASS_ENV if k in os.environ}
+    env["MAVEN_OPTS"] = MAVEN_OPTS
+    if tmp_dir is not None:
+        env["TMPDIR"] = str(tmp_dir)
     if platform == WEB:
         env.update(
             {
@@ -322,7 +335,7 @@ def execute_locked(
                         target.unlink()
                     ran = True
                     exit_code, timed_out, duration_ms = _run_maven(
-                        cfg, req, platform, root, repeats, allure_dir, log_parts, kok
+                        cfg, req, platform, root, repeats, allure_dir, log_parts, kok, dest
                     )
     finally:
         if req.break_campaign and saglik["ok"]:
@@ -436,12 +449,36 @@ def _run_maven(
     allure_dir: Path,
     log_parts: list[str],
     kok: javayol.JavaKok | None = None,
+    run_tmp: Path | None = None,
 ) -> tuple[int | None, bool, int]:
-    """Tekrarları sırayla koşar; (son sıfırdan farklı çıkış kodu, süre aşımı, toplam süre)."""
+    """Tekrarları sırayla koşar; (son sıfırdan farklı çıkış kodu, süre aşımı, toplam süre).
+    `run_tmp` koşu dizinidir: geçici dosyalar `<run>/tmp`'ye (TMPDIR) yazılır, sonda silinir."""
+    tmp_dir = run_tmp / RUN_TMP_DIR if run_tmp is not None else None
+    if tmp_dir is not None:
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+    env = maven_env(cfg, req, platform, tmp_dir)
+    try:
+        return _run_repeats(cfg, req, platform, root, repeats, allure_dir, log_parts, kok, env)
+    finally:
+        if tmp_dir is not None:
+            # Geçici dosyalar kanıt değildir: koşu dizininde (artefakt) kalmaz.
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _run_repeats(
+    cfg: Settings,
+    req: RunRequest,
+    platform: str,
+    root: Path,
+    repeats: list[surefire.Repeat],
+    allure_dir: Path,
+    log_parts: list[str],
+    kok: javayol.JavaKok | None,
+    env: dict[str, str],
+) -> tuple[int | None, bool, int]:
     deadline = time.monotonic() + cfg.run_timeout_s
     exit_code: int | None = 0
     total_ms = 0
-    env = maven_env(cfg, req, platform)
     with tempfile.TemporaryDirectory(prefix="tp-m2-run-") as head_repo:
         for i, rep in enumerate(repeats):
             left = deadline - time.monotonic()

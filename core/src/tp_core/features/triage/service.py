@@ -45,6 +45,7 @@ from sqlalchemy.orm import Session
 
 from tp_core.audit import audit_on_commit
 from tp_core.events import publish_tx
+from tp_core.features.codegen import platform as platformlar
 from tp_core.features.triage import evidence as ev
 from tp_core.features.triage import java as jv
 from tp_core.features.triage import java_web as jw
@@ -559,13 +560,12 @@ def kosu_dili(session: Session, run: Run, rapor: Mapping[str, Any] | None = None
     bazında dosya adından çıkarılır: `triage.java.java_mi`)."""
     o = run.ortam or {}
     for aday in (o.get("dil"), o.get("lang"), (rapor or {}).get("lang")):
-        if aday in ("ts", "java"):
+        if aday in platformlar.TAM_HAT_DILLERI:
             return str(aday)
     if run.script_id is not None:
         sc = session.get(Script, run.script_id)
-        d = getattr(sc, "dil", None) if sc is not None else None
-        if d in ("ts", "java"):
-            return str(d)
+        if sc is not None and sc.dil in platformlar.TAM_HAT_DILLERI:
+            return str(sc.dil)
     return None
 
 

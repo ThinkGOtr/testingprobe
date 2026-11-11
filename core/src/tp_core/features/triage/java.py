@@ -29,9 +29,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from tp_core.features.codegen import platform as platformlar
 from tp_core.features.triage import evidence as ev
 
-UYGULAMA_PLATFORMLARI = frozenset({"android", "ios", "windows"})
+UYGULAMA_PLATFORMLARI = frozenset(platformlar.UYGULAMA_PLATFORMLARI)
 MAX_SAYFA_KAYNAGI = 4 * 1024 * 1024
 MAX_DUGUM = 20_000
 MAX_DERINLIK = 200

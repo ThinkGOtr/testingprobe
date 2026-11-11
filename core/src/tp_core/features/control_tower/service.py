@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 from tp_core.config import get_settings
 from tp_core.features.ci import service as ci
 from tp_core.features.ci import services as ci_services
+from tp_core.features.codegen import platform as platformlar
 from tp_core.features.control_tower import asistan
 from tp_core.integrations.forge_demo import AUDIT_BREAK
 from tp_core.models import (
@@ -556,6 +557,9 @@ def script_olculeri(session: Session) -> dict[str, Any]:
       defect adayı (doğru test, uygulama hatası), page object'te eksik metot (`missing_method`:
       PR yok, insan review'u yok — ör. F4 code_defect) ve REPLAY-MISS (`replay_miss`: kayıtlı
       doğrulama yok) ayrı sayılır, paydaya girmez.
+    - **Doğrulanmamış (011 K3, MİM-Y2):** C# / Python script'leri derlenmez, PR'a ve insan
+      review'una girmez: hiçbir birime ve paydaya (review, pass@1) katılmaz. `unverified`
+      durumundakiler `script_dogrulanmamis`'ta ayrı sayılır.
     - **pass@1:** her birimin İLK script'inin ilk yerel kontrolü; ilk kontrol `defect_adayi` ise
       (test doğru, uygulama yanlış) paydaya girmez, `pass_at_1_defect_adayi`'da ayrı raporlanır.
     - **Düzeltme sonrası:** birimin ilk script'inde locator düzeltme turu koştuysa onun sonucu.
@@ -572,7 +576,11 @@ def script_olculeri(session: Session) -> dict[str, Any]:
         .order_by(Script.olusturma, Script.id)
     ).all()
     birimler: dict[tuple[str, ...], list[tuple[Any, uuid.UUID | None, str | None]]] = {}
+    dogrulanmamis = 0
     for sc, case_id, case_hash, engel in satirlar:
+        if sc.durum == "unverified" or platformlar.dogrulanmamis_mi(sc.dil):
+            dogrulanmamis += int(sc.durum == "unverified")
+            continue
         if case_id is None:
             case_id = session.scalar(
                 select(ScriptTestCase.test_case_id).where(ScriptTestCase.script_id == sc.id)
@@ -644,6 +652,7 @@ def script_olculeri(session: Session) -> dict[str, Any]:
         "script_defect_adayi": defect,
         "script_eksik_metot": eksik_metot,
         "script_replay_miss": replay_miss,
+        "script_dogrulanmamis": dogrulanmamis,
         "script_birim_sayisi": len(birimler),
         "script_uretim_sayisi": len(satirlar),
         "pass_at_1": _oran(p1_pay, p1_payda),
