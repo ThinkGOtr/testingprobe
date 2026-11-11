@@ -12,17 +12,32 @@
   - Yorumlar `comment` süzgecinden geçer (tek satır #; docstring yok). İlk iki satır sabit metindir
     (Python kodlama bildirimi yalnız o satırlarda anlam taşır).
   - Varsayımlar (hedef projede page object kütüphanesi yoktur): sınıflar `<Sınıf>(page)`
-    kurucusuyla `pages/<sınıf>.py` modüllerindedir.
+    kurucusuyla `pages/<sınıf>.py` modüllerindedir. Başlık bu imzaları ve `--strict-markers` için
+    işaret kaydını (`conftest.py` parçası, `PY_ISARETLER`) listeler (uyarlama için; K-T9).
   - Çıktı deterministiktir (golden testi: core/tests/unit/features/codegen/golden/).
 -#}
-# AI-generated — AI Testing Probe (CasesToCode). Elle düzenlemeyin; değişiklik case'in yeniden
-# onayı ve yeniden üretimle yapılır.
+# AI-generated — AI Testing Probe (CasesToCode). Hedef projeye uyarlanmak üzere verilir:
+# page object adlarını ve imzalarını projenize göre düzenleyebilirsiniz.
 # {{ unverified_note | comment }}
 # Case: {{ case_ref | comment }} ({{ case_id | comment }}) · Story: {{ story_key | comment }} · Jira Test: {{ test_key | comment }}
 # Başlık: {{ description | comment }}
 # Onaylı case hash: {{ case_hash | comment }}
 # Eşleme: verify_and_map · platform: web · dil: python (pytest-playwright) · mod: {{ mode | comment }} · bundle: {{ bundle_hash | comment }}
 # Eşleme hash: {{ mapping_hash | comment }} · şablon: {{ template_hash | comment }}
+#
+# Varsayılan page object imzaları (kurucu: <Sınıf>(page: Page); metotlar None döner):
+{% for s in imzalar %}
+#   {{ po_package | comment }}.{{ s.modul | comment }}.{{ s.sinif | comment }}
+{% for m in s.metotlar %}
+#     def {{ m.imza | comment }} -> None
+{% endfor %}
+{% endfor %}
+#
+# --strict-markers kullanıyorsanız işaretleri conftest.py'de kaydedin:
+#   def pytest_configure(config):
+{% for mk in markers %}
+#       config.addinivalue_line("markers", "{{ mk.ad | comment }}: {{ mk.aciklama | comment }}")
+{% endfor %}
 import pytest
 from playwright.sync_api import Page
 

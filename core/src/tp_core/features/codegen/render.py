@@ -46,7 +46,9 @@ GENERATED_DIR = "tests/generated"  # e2e köküne göre
 E2E_ROOT = "e2e"  # forge deposunda (LocalForge düzeni; GitHub'da `<uygulama kökü>/e2e`)
 URETILEN_ETIKETI = "@tp-uretilen"
 _KONTROL = re.compile(r"[\x00-\x1f\x7f\u0085\u2028\u2029\u200b-\u200f\u202a-\u202e\u2066-\u2069]")
-_STORY_RE = re.compile(r"^[A-Z][A-Z0-9]*-\d+$")
+# Doğrulama kalıpları çapasızdır ve hep `fullmatch` ile kullanılır: `^…$` + `match` sondaki `\n`'i
+# geçirirdi (GÜV-D1). Rakamlar `[0-9]` (`\d` Unicode rakamlarını da kabul eder).
+_STORY_RE = re.compile(r"[A-Z][A-Z0-9]*-[0-9]+")
 _DEALER_RE = re.compile(
     r"\{\s*username:\s*\"(?P<u>[A-Za-z0-9_.-]+)\"\s*,\s*password:\s*\"(?P<p>[^\"\\]*)\"\s*,"
     r"\s*name:\s*\"(?P<n>[^\"\\]*)\"\s*\}"
@@ -81,7 +83,7 @@ def ts_literal(value: Any) -> str:
 
 
 def ident(value: Any) -> str:
-    if not isinstance(value, str) or not IDENT_RE.match(value):
+    if not isinstance(value, str) or not IDENT_RE.fullmatch(value):
         raise RenderError(f"geçersiz tanımlayıcı: {value!r}")
     return value
 
@@ -158,7 +160,8 @@ class RenderInput:
 class Rendered:
     content: str
     # Tam hat dillerinde forge deposundaki yol (e2e/tests/generated/…). Doğrulanmamış dillerde
-    # forge'a yazılmaz: önerilen dosya yolu / indirme adıdır (`tests/Generated/<Sinif>Tests.cs`).
+    # forge'a yazılmaz: önerilen depo yolu / indirme adıdır (`dogrulanmamis_repo_path`:
+    # `e2e-csharp/tests/Generated/<Story>WebC<n>_<uuid8>Tests.cs`).
     repo_path: str
     test_file: str  # test projesi köküne göre (toolchain /check `test_files`)
     template_hash: str
@@ -178,7 +181,7 @@ class Rendered:
 
 
 def slug(story_key: str | None, sira_no: int, case_id: uuid.UUID) -> str:
-    kok = story_key.lower() if story_key and _STORY_RE.match(story_key) else "serbest"
+    kok = story_key.lower() if story_key and _STORY_RE.fullmatch(story_key) else "serbest"
     return f"{kok}-c{int(sira_no)}-{case_id.hex[:8]}"
 
 
@@ -225,7 +228,7 @@ def build_context(inp: RenderInput, template_hash: str) -> dict[str, Any]:
         eylem = (adimlar.get(sid) or {}).get("action") or ""
         steps.append({"sid": sid, "label": f"{sid} — {eylem}", "calls": [cagri(m)]})
     expects = [cagri(e) for e in inp.mapping.get("expects") or []]
-    story = inp.story_key if inp.story_key and _STORY_RE.match(inp.story_key) else None
+    story = inp.story_key if inp.story_key and _STORY_RE.fullmatch(inp.story_key) else None
     case_ref = f"{story or 'SERBEST'}-C{int(inp.sira_no)}"
     tags = [f"@tp-case-{inp.case_id}"] + ([f"@{story}"] if story else [])
     return {
@@ -291,10 +294,10 @@ E2E_APP_ROOT = platformlar.E2E_APP_DIZINI  # LocalForge düzeni; GitHub: `<uygul
 JAVA_URETILEN_GRUBU = "uretilen"
 # Java giriş metodu (bayi sabitleme): web `LoginPage.login` ↔ `GirisEkrani.girisYap`.
 LOGIN_METOTLARI = frozenset({"login", "girisYap"})
-_JAVA_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-_JAVA_SINIF_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*C[0-9]+_[0-9a-f]{8}Test$")
-_JAVA_GRUP_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$")
-_JAVA_BAYI_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+_JAVA_IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_JAVA_SINIF_RE = re.compile(r"[A-Za-z][A-Za-z0-9]*C[0-9]+_[0-9a-f]{8}Test")
+_JAVA_GRUP_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}")
+_JAVA_BAYI_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
 _JAVA_DOUBLE_RE = re.compile(r"-?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?")
 # Java string literalinde kaçışlı basılanlar; diğer kontrol/biçim karakterleri reddedilir.
 _JAVA_KACIS = {"\\": "\\\\", '"': '\\"', "\n": "\\n", "\r": "\\r", "\t": "\\t"}
@@ -421,7 +424,7 @@ def java_args(args: Sequence[Any]) -> str:
 
 
 def java_ident(value: Any) -> str:
-    if not isinstance(value, str) or not _JAVA_IDENT_RE.match(value):
+    if not isinstance(value, str) or not _JAVA_IDENT_RE.fullmatch(value):
         raise RenderError(f"geçersiz Java tanımlayıcısı: {value!r}")
     if value in _JAVA_ANAHTAR:
         # Ör. TS page object metodu `goto`: Java'da ayrılmış sözcük, metot adı olamaz (011 §2.5).
@@ -431,10 +434,10 @@ def java_ident(value: Any) -> str:
 
 def java_class_name(story_key: str | None, platform: str, sira_no: int, case_id: uuid.UUID) -> str:
     """`<Story><Platform>C<sıra>_<uuid8>Test` (Java tanımlayıcısı; guard dosya adı kuralı)."""
-    kok = story_key if story_key and _STORY_RE.match(story_key) else "Serbest"
+    kok = story_key if story_key and _STORY_RE.fullmatch(story_key) else "Serbest"
     kok = re.sub(r"[^A-Za-z0-9]", "", kok)
     ad = f"{kok}{platform[:1].upper()}{platform[1:]}C{int(sira_no)}_{case_id.hex[:8]}Test"
-    if not _JAVA_SINIF_RE.match(ad):
+    if not _JAVA_SINIF_RE.fullmatch(ad):
         raise RenderError(f"üretilen Java sınıf adı geçersiz: {ad}")
     return ad
 
@@ -501,13 +504,13 @@ def build_java_context(inp: RenderInput, platform: str, template_hash: str) -> d
         eylem = (adimlar.get(sid) or {}).get("action") or ""
         steps.append({"sid": sid, "label": f"{sid} — {eylem}", "calls": [cagri(m)]})
     expects = [cagri(e) for e in inp.mapping.get("expects") or []]
-    story = inp.story_key if inp.story_key and _STORY_RE.match(inp.story_key) else None
+    story = inp.story_key if inp.story_key and _STORY_RE.fullmatch(inp.story_key) else None
     gruplar = [JAVA_URETILEN_GRUBU, platform, f"tp-case-{inp.case_id}"] + ([story] if story else [])
     for g in gruplar:
-        if not _JAVA_GRUP_RE.match(g):
+        if not _JAVA_GRUP_RE.fullmatch(g):
             raise RenderError(f"geçersiz TestNG grubu: {g!r}")
     dealer = _pinned_dealer(inp.mapping, inp.dealers, LOGIN_METOTLARI)
-    if dealer is not None and not _JAVA_BAYI_RE.match(dealer):
+    if dealer is not None and not _JAVA_BAYI_RE.fullmatch(dealer):
         raise RenderError(f"geçersiz bayi adı: {dealer!r}")
     ref = f"{story or 'SERBEST'} C{int(inp.sira_no)}"
     return {
@@ -564,9 +567,17 @@ def render_java_test(inp: RenderInput, platform: str, rules_dir: Path) -> Render
 # `csharp` (Playwright .NET + NUnit) ve `python` (pytest-playwright) için aynı eşlemeden idiomatik
 # test render edilir; çıktı DERLENMEZ / KOŞULMAZ (K3): forge'a yazılmaz, PR açılmaz. Page object
 # kütüphanesi bu dillerde yoktur: adlar referans sembol tablosundaki (ts, yoksa java) adlardan
-# türetilir — sınıf adı aynı; C#'ta metot PascalCase (`addToCart` → `AddToCart`), Python'da metot,
-# değişken ve modül snake_case (`addToCart` → `add_to_cart`, `LoginPage` → `pages.login_page`).
-# Dosya başlığı bunu açıkça yazar (`DOGRULANMAMIS_BASLIK`).
+# türetilir — sınıf adı aynı; C#'ta metot PascalCase + `Async` (`addToCart` → `AddToCartAsync`),
+# Python'da metot, değişken ve modül snake_case (`addToCart` → `add_to_cart`, `LoginPage` →
+# `pages.login_page`).
+# Dosya başlığı bunu açıkça yazar (`DOGRULANMAMIS_BASLIK`) ve testin varsaydığı page object
+# sınıflarını / metot imzalarını listeler (çıktı hedef projeye uyarlanmak üzere verilir; K-T9).
+# C# metotları Playwright .NET konvansiyonuyla `…Async` adını alır (`goto` → `GotoAsync`).
+#
+# Yol (K-T6, tek kaynak): `<kök>/<alt yol>`; kök `e2e-csharp` / `e2e-python` (GitHub monoreposunda
+# `<uygulama kökü>/e2e-csharp`; `RenderInput.e2e_root` verilirse o), alt yol C# için
+# `tests/Generated/<Story>WebC<sıra>_<uuid8>Tests.cs`, Python için `tests/generated/test_<slug>.py`.
+# `dogrulanmamis_repo_path` service'in başlangıç yolu (`baslangic_dosya_yolu`) ile ortaktır.
 #
 # Enjeksiyon: değerler `cs_literal` / `py_literal` ile yalnız düz (önek almayan) çift tırnaklı dize,
 # sayı, bool ve null literali olur — C#'ta verbatim (`@"…"`) / interpolasyon (`$"…"`) / ham dize
@@ -581,7 +592,30 @@ PY_GENERATED_DIR = "tests/generated"
 CS_NAMESPACE = "Antreklabs.Bayi.Tests.Generated"
 CS_PO_NAMESPACE = "Antreklabs.Bayi.Pages"
 CS_TEST_METODU = "Senaryo"
+CS_ASYNC_SONEKI = "Async"  # Playwright .NET: `GotoAsync`, `LoginAsync`, `ExpectTotalAsync`
 PY_PO_PAKETI = "pages"
+# Doğrulanmamış dillerin varsayılan proje kökleri (LocalForge düzeni; forge'a yazılmaz).
+DOGRULANMAMIS_KOKLER: dict[str, str] = {"csharp": "e2e-csharp", "python": "e2e-python"}
+# Python şablonunun kullandığı pytest işaretleri (ad, açıklama): `--strict-markers` için başlıktaki
+# `conftest.py` parçası bu listeden basılır; şablondaki dekoratörlerle birebir (test sabitler).
+PY_ISARETLER: tuple[tuple[str, str], ...] = (
+    ("uretilen", "AI Testing Probe tarafından üretilen test"),
+    ("web", "web platformu testi"),
+    ("tp_case(case_id)", "AI Testing Probe test case kimliği"),
+    ("story(anahtar)", "Jira story anahtarı"),
+    ("dealer(kullanici)", "testin sabitlendiği e2e bayisi"),
+)
+# Referans sembol tablosu parametre türü → (C#, Python) türü. TS: string/number/boolean;
+# Java: String/int/long/double/boolean. Tabloda olmayan tür argüman değerinden türetilir.
+_HEDEF_TUR: dict[str, tuple[str, str]] = {
+    "string": ("string", "str"),
+    "String": ("string", "str"),
+    "number": ("double", "float"),
+    "boolean": ("bool", "bool"),
+    "int": ("int", "int"),
+    "long": ("long", "int"),
+    "double": ("double", "float"),
+}
 DILLER: tuple[str, ...] = platformlar.DILLER  # tek kaynak platform.py
 DOGRULANMAMIS_DILLER: tuple[str, ...] = platformlar.DOGRULANMAMIS_DILLER
 REFERANS_DIL_ETIKETI = {"ts": "TypeScript", "java": "Java"}
@@ -592,8 +626,8 @@ DOGRULANMAMIS_BASLIK = (
 _DUZ_KACIS = {"\\": "\\\\", '"': '\\"', "\n": "\\n", "\r": "\\r", "\t": "\\t"}
 # `\uXXXX` ile basılan kategoriler (yedek çift — Cs — reddedilir: UTF-8'e yazılamaz).
 _KACISLI_KATEGORI = frozenset({"Cc", "Cf", "Zl", "Zp", "Co", "Cn"})
-_CS_SINIF_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*C[0-9]+_[0-9a-f]{8}Tests$")
-_PY_TEST_RE = re.compile(r"^test_[a-z0-9_]+$")
+_CS_SINIF_RE = re.compile(r"[A-Za-z][A-Za-z0-9]*C[0-9]+_[0-9a-f]{8}Tests")
+_PY_TEST_RE = re.compile(r"test_[a-z0-9_]+")
 _ETIKET_RE = _JAVA_GRUP_RE
 _DEVE_SINIRI = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 _CS_ANAHTAR = frozenset(
@@ -821,7 +855,7 @@ def py_comment(value: Any) -> str:
 
 def _duz_ident(value: Any, dil: str) -> str:
     """ASCII tanımlayıcı (`$` yok: TS'te geçerli, C#/Python'da değil)."""
-    if not isinstance(value, str) or not _JAVA_IDENT_RE.match(value):
+    if not isinstance(value, str) or not _JAVA_IDENT_RE.fullmatch(value):
         raise RenderError(f"geçersiz {dil} tanımlayıcısı: {value!r}")
     return value
 
@@ -843,9 +877,11 @@ def py_ident(value: Any) -> str:
 
 
 def cs_method_name(ad: str) -> str:
-    """Referans tablodaki metot adı → C# PascalCase (`addToCart` → `AddToCart`)."""
+    """Referans tablodaki metot adı → C# PascalCase + `Async` (Playwright .NET konvansiyonu:
+    `addToCart` → `AddToCartAsync`, `goto` → `GotoAsync`; zaten `…Async` ise sonek eklenmez)."""
     kaynak = _duz_ident(ad, "C#")
-    return cs_ident(kaynak[:1].upper() + kaynak[1:])
+    pascal = cs_ident(kaynak[:1].upper() + kaynak[1:])
+    return pascal if pascal.endswith(CS_ASYNC_SONEKI) else cs_ident(pascal + CS_ASYNC_SONEKI)
 
 
 def cs_variable_name(po_class: str) -> str:
@@ -869,10 +905,10 @@ def py_name(ad: str) -> str:
 
 
 def cs_class_name(story_key: str | None, sira_no: int, case_id: uuid.UUID) -> str:
-    """`<Story>C<sıra>_<uuid8>Tests` (ör. `TPD1C2_3f9b1c2eTests`)."""
-    kok = story_key if story_key and _STORY_RE.match(story_key) else "Serbest"
-    ad = f"{re.sub(r'[^A-Za-z0-9]', '', kok)}C{int(sira_no)}_{case_id.hex[:8]}Tests"
-    if not _CS_SINIF_RE.match(ad):
+    """`<Story>WebC<sıra>_<uuid8>Tests` (ör. `TPD1WebC2_3f9b1c2eTests`): web + Java sınıf adıyla
+    (`java_class_name`, `…Test`) aynı kural, NUnit konvansiyonuyla `Tests` soneki."""
+    ad = java_class_name(story_key, platformlar.WEB, sira_no, case_id) + "s"
+    if not _CS_SINIF_RE.fullmatch(ad):  # pragma: no cover - java_class_name zaten denetler
         raise RenderError(f"üretilen C# sınıf adı geçersiz: {ad}")
     return ad
 
@@ -880,9 +916,82 @@ def cs_class_name(story_key: str | None, sira_no: int, case_id: uuid.UUID) -> st
 def py_test_name(story_key: str | None, sira_no: int, case_id: uuid.UUID) -> str:
     """`test_<slug>` (slug'daki `-` → `_`; modül ve işlev adı): `test_tpd_1_c2_3f9b1c2e`."""
     ad = "test_" + slug(story_key, sira_no, case_id).replace("-", "_")
-    if not _PY_TEST_RE.match(ad):
+    if not _PY_TEST_RE.fullmatch(ad):
         raise RenderError(f"üretilen Python test adı geçersiz: {ad}")
     return ad
+
+
+def dogrulanmamis_alt_yol(dil: str, story_key: str | None, sira_no: int, case_id: uuid.UUID) -> str:
+    """Doğrulanmamış çıktının proje köküne göre yolu (`Rendered.test_file`):
+    `tests/Generated/<Sinif>.cs` | `tests/generated/test_<slug>.py`."""
+    if dil == "csharp":
+        return f"{CS_GENERATED_DIR}/{cs_class_name(story_key, sira_no, case_id)}.cs"
+    if dil == "python":
+        return f"{PY_GENERATED_DIR}/{py_test_name(story_key, sira_no, case_id)}.py"
+    raise RenderError(f"doğrulanmamış dil yalnızca csharp ya da python olabilir: {dil!r}")
+
+
+def dogrulanmamis_repo_path(
+    dil: str,
+    story_key: str | None,
+    sira_no: int,
+    case_id: uuid.UUID,
+    kok: str | None = None,
+) -> str:
+    """Doğrulanmamış çıktının önerilen depo yolu (K-T6 tek kaynak): `<kök>/<alt yol>`.
+
+    `kok` verilmezse (ya da boş / ts kökü `e2e` ise) `e2e-csharp` / `e2e-python`; GitHub kipinde
+    service `<uygulama kökü>/e2e-<dil>` verir. `render_unverified_test` ve service
+    `baslangic_dosya_yolu` bu işlevi çağırır (yol üretimden önce ve sonra aynıdır).
+    """
+    alt = dogrulanmamis_alt_yol(dil, story_key, sira_no, case_id)
+    temiz = (kok or "").strip("/")
+    if temiz in ("", E2E_ROOT):
+        temiz = DOGRULANMAMIS_KOKLER[dil]
+    return f"{temiz}/{alt}"
+
+
+def _deger_turu(deger: Any, cs: bool) -> str:
+    """Tabloda türü olmayan parametre: argüman değerinden hedef dil türü."""
+    if isinstance(deger, bool):
+        return "bool"
+    if isinstance(deger, int):
+        return ("int" if _JAVA_INT[0] <= deger <= _JAVA_INT[1] else "long") if cs else "int"
+    if isinstance(deger, float):
+        return "double" if cs else "float"
+    if isinstance(deger, str):
+        return "string" if cs else "str"
+    return "object"
+
+
+def _tablo_parametreleri(
+    tablo: Mapping[str, Any] | None,
+) -> dict[tuple[str, str], list[tuple[str, str]]]:
+    """Referans sembol tablosu (`/symbols` çıktısı) → (sınıf, metot) → [(parametre adı, tür)]."""
+    out: dict[tuple[str, str], list[tuple[str, str]]] = {}
+    if not isinstance(tablo, Mapping):
+        return out
+    for po in tablo.get("page_objects") or []:
+        if not isinstance(po, Mapping):
+            continue
+        for m in po.get("methods") or []:
+            if isinstance(m, Mapping):
+                params = [p for p in m.get("params") or [] if isinstance(p, Mapping)]
+                out[(str(po.get("class")), str(m.get("name")))] = [
+                    (str(p.get("name")), str(p.get("type"))) for p in params
+                ]
+    return out
+
+
+def _parametre_adi(ad: str | None, sira: int, cs: bool) -> str:
+    """İmza listesindeki parametre adı: tablodaki ad hedef dile uygunsa o (Python: snake_case),
+    değilse `argN`."""
+    if ad is not None:
+        try:
+            return cs_ident(ad) if cs else py_name(ad)
+        except RenderError:
+            pass
+    return f"arg{sira}"
 
 
 def _dil_env(templates_dir: Path, dil: str) -> jinja2.Environment:
@@ -909,9 +1018,15 @@ def _dil_template(templates_dir: str, dil: str) -> tuple[jinja2.Template, str]:
 
 
 def build_unverified_context(
-    inp: RenderInput, dil: str, referans_dil: str, template_hash: str
+    inp: RenderInput,
+    dil: str,
+    referans_dil: str,
+    template_hash: str,
+    sembol_tablosu: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """C# / Python şablon bağlamı: page object başına bir yerel değişken, adlar türetilmiş."""
+    """C# / Python şablon bağlamı: page object başına bir yerel değişken, adlar türetilmiş.
+    `imzalar`: testin varsaydığı sınıf → metot(parametre türleri) listesi (başlık yorumu); türler
+    `sembol_tablosu` (referans dil) verilmişse oradan hedef dile çevrilir, yoksa değerden."""
     if referans_dil not in REFERANS_DIL_ETIKETI:
         raise RenderError(f"referans dil yalnızca ts ya da java olabilir: {referans_dil!r}")
     cs = dil == "csharp"
@@ -919,6 +1034,8 @@ def build_unverified_context(
     adimlar = {str(s.get("id")): s for s in case.get("steps") or [] if isinstance(s, Mapping)}
     nesneler: dict[str, dict[str, str]] = {}  # sınıf → {sinif, degisken, modul}
     ayrilmis_sinif = _CS_AYRILMIS_SINIF if cs else _PY_AYRILMIS_SINIF
+    tablo_turleri = _tablo_parametreleri(sembol_tablosu)
+    imzalar: dict[str, list[dict[str, str]]] = {}  # sınıf → [{ad, parametreler}] (ilk kullanım)
 
     def nesne(po: Any) -> str:
         sinif = (cs_ident if cs else py_ident)(str(po))
@@ -934,16 +1051,30 @@ def build_unverified_context(
         nesneler[sinif] = {"sinif": sinif, "degisken": degisken, "modul": degisken}
         return degisken
 
+    def imza(sinif: str, ref_metot: str, hedef_metot: str, args: list[Any]) -> None:
+        """`AddToCartAsync(string productCode, int quantity)` | `add_to_cart(self, product_code:
+        str, quantity: int)` (yalnız çağrıda verilen argümanlar)."""
+        ref_params = tablo_turleri.get((sinif, ref_metot)) or []
+        parcalar = [] if cs else ["self"]
+        for i, a in enumerate(args):
+            ref_ad, ref_tur = ref_params[i] if i < len(ref_params) else (None, "")
+            hedef = _HEDEF_TUR.get(ref_tur)
+            tur = hedef[0 if cs else 1] if hedef else _deger_turu(a, cs)
+            ad = _parametre_adi(ref_ad, i + 1, cs)
+            parcalar.append(f"{tur} {ad}" if cs else f"{ad}: {tur}")
+        kayit = {"ad": hedef_metot, "imza": f"{hedef_metot}({', '.join(parcalar)})"}
+        if kayit not in imzalar.setdefault(sinif, []):
+            imzalar[sinif].append(kayit)
+
     def cagri(item: Mapping[str, Any]) -> dict[str, Any]:
         metot = str(item.get("method"))
         args = list(item["args"])
         for a in args:  # basılamayan değer şablondan (ve eşleme hash'inden) önce reddedilir
             (cs_literal if cs else py_literal)(a)
-        return {
-            "fixture": nesne(item.get("po")),
-            "method": cs_method_name(metot) if cs else py_name(metot),
-            "args": args,
-        }
+        degisken = nesne(item.get("po"))
+        hedef_metot = cs_method_name(metot) if cs else py_name(metot)
+        imza(str(item.get("po")), metot, hedef_metot, args)
+        return {"fixture": degisken, "method": hedef_metot, "args": args}
 
     steps: list[dict[str, Any]] = []
     for m in inp.mapping.get("step_mapping") or []:
@@ -956,14 +1087,14 @@ def build_unverified_context(
     expects = [cagri(e) for e in inp.mapping.get("expects") or []]
     if not nesneler:
         raise RenderError("eşleme boş: render edilecek çağrı yok")
-    story = inp.story_key if inp.story_key and _STORY_RE.match(inp.story_key) else None
+    story = inp.story_key if inp.story_key and _STORY_RE.fullmatch(inp.story_key) else None
     etiketler = [JAVA_URETILEN_GRUBU, platformlar.WEB, f"tp-case-{inp.case_id}"]
     etiketler += [story] if story else []
     for e in etiketler:
-        if not _ETIKET_RE.match(e):
+        if not _ETIKET_RE.fullmatch(e):
             raise RenderError(f"geçersiz etiket: {e!r}")
     dealer = _pinned_dealer(inp.mapping, inp.dealers, LOGIN_METOTLARI)
-    if dealer is not None and not _JAVA_BAYI_RE.match(dealer):
+    if dealer is not None and not _JAVA_BAYI_RE.fullmatch(dealer):
         raise RenderError(f"geçersiz bayi adı: {dealer!r}")
     ref = f"{story or 'SERBEST'} C{int(inp.sira_no)}"
     return {
@@ -988,34 +1119,41 @@ def build_unverified_context(
         "test_method": CS_TEST_METODU,
         "test_name": py_test_name(inp.story_key, inp.sira_no, inp.case_id),
         "objects": sorted(nesneler.values(), key=lambda n: n["sinif"]),
+        "imzalar": [{**nesneler[s], "metotlar": imzalar[s]} for s in sorted(imzalar)],
+        "markers": [{"ad": ad, "aciklama": aciklama} for ad, aciklama in PY_ISARETLER],
         "steps": steps,
         "expects": expects,
     }
 
 
 def render_unverified_test(
-    inp: RenderInput, dil: str, rules_dir: Path, referans_dil: str = "ts"
+    inp: RenderInput,
+    dil: str,
+    rules_dir: Path,
+    referans_dil: str = "ts",
+    sembol_tablosu: Mapping[str, Any] | None = None,
 ) -> Rendered:
-    """Doğrulanmamış dil (`csharp` | `python`) çıktısı. `repo_path` forge yolu DEĞİLDİR: önerilen
-    dosya yolu / indirme adıdır (`tests/Generated/<Sinif>.cs`, `tests/generated/test_<slug>.py`)."""
+    """Doğrulanmamış dil (`csharp` | `python`) çıktısı. `repo_path` forge'a yazılmaz: önerilen
+    depo yolu / indirme adıdır (`dogrulanmamis_repo_path`: `e2e-csharp/tests/Generated/<Sinif>.cs`,
+    `e2e-python/tests/generated/test_<slug>.py`); `test_file` proje köküne göre alt yoldur."""
     if dil not in DOGRULANMAMIS_DILLER:
         raise RenderError(f"doğrulanmamış dil yalnızca csharp ya da python olabilir: {dil!r}")
     template, template_hash = _dil_template(str(templates_dir(rules_dir)), dil)
-    ctx = build_unverified_context(inp, dil, referans_dil, template_hash)
+    ctx = build_unverified_context(inp, dil, referans_dil, template_hash, sembol_tablosu)
     try:
         content = template.render(**ctx)
     except jinja2.TemplateError as exc:  # pragma: no cover - şablon hatası (geliştirici)
         raise RenderError(f"şablon render edilemedi: {exc}") from exc
     if dil == "csharp":
-        yol = f"{CS_GENERATED_DIR}/{ctx['class_name']}.cs"
         sinif, test = ctx["class_name"], ctx["test_method"]
     else:
-        yol = f"{PY_GENERATED_DIR}/{ctx['test_name']}.py"
         sinif, test = None, ctx["test_name"]
     return Rendered(
         content=content,
-        repo_path=yol,
-        test_file=yol,
+        repo_path=dogrulanmamis_repo_path(
+            dil, inp.story_key, inp.sira_no, inp.case_id, inp.e2e_root
+        ),
+        test_file=dogrulanmamis_alt_yol(dil, inp.story_key, inp.sira_no, inp.case_id),
         template_hash=template_hash,
         mapping_hash=ctx["mapping_hash"],
         dealer=ctx["dealer"],
@@ -1037,13 +1175,17 @@ def render_dil(
     platform: str,
     rules: Path,
     referans_dil: str | None = None,
+    sembol_tablosu: Mapping[str, Any] | None = None,
 ) -> Rendered:
     """(platform, dil) çiftine göre testi render eder (011 §2.1, §2.7).
 
     - `web` × `ts` → `playwright_test.ts.j2`; `web` × `java` → `playwright_testng.java.j2`
       (`inp.e2e_root` = e2e-java kökü); uygulama × `java` → `appium_testng.java.j2`.
     - `web` × `csharp` | `python` → doğrulanmamış çıktı; `referans_dil` adların türetildiği sembol
-      tablosunun dilidir (`ts` varsayılan; repoda TS yoksa `java`). Tam hat dillerinde yok sayılır.
+      tablosunun dilidir (`ts` varsayılan; repoda TS yoksa `java`); `sembol_tablosu` o tablonun
+      `/symbols` çıktısıdır (başlıktaki imza listesinin parametre türleri; verilmezse türler
+      argüman değerlerinden). Tam hat dillerinde ikisi de yok sayılır. `inp.e2e_root`
+      doğrulanmamışta `e2e-csharp` / `e2e-python` köküdür (ts kökü `e2e` verilirse varsayılan).
     - Geçersiz dil / platform / çift → `RenderError` (API zaten 422 verir; savunma katmanı).
     """
     if platform not in platformlar.PLATFORMLAR:
@@ -1056,4 +1198,4 @@ def render_dil(
         return render_test(inp, rules)
     if dil == "java":
         return render_java_test(inp, platform, rules)
-    return render_unverified_test(inp, dil, rules, referans_dil or "ts")
+    return render_unverified_test(inp, dil, rules, referans_dil or "ts", sembol_tablosu)

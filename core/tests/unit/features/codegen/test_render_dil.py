@@ -565,9 +565,10 @@ def test_cs_py_yorum_tek_satir(deger: Any, beklenen: str) -> None:
 
 
 def test_ad_turetme() -> None:
-    assert render.cs_method_name("addToCart") == "AddToCart"
-    assert render.cs_method_name("goto") == "Goto"
-    assert render.cs_method_name("expectHTTPStatus") == "ExpectHTTPStatus"
+    assert render.cs_method_name("addToCart") == "AddToCartAsync"
+    assert render.cs_method_name("goto") == "GotoAsync"
+    assert render.cs_method_name("expectHTTPStatus") == "ExpectHTTPStatusAsync"
+    assert render.cs_method_name("loadAsync") == "LoadAsync"  # sonek iki kez eklenmez
     assert render.cs_variable_name("CartPage") == "cartPage"
     assert render.cs_variable_name("Object") == "objectNesnesi"  # C# anahtar sözcüğü
     assert render.py_name("addToCart") == "add_to_cart"
@@ -577,8 +578,12 @@ def test_ad_turetme() -> None:
     assert render.py_name("goto") == "goto"
     assert render.py_name("step2Done") == "step2_done"
     assert render.py_name("pass") == "pass_" and render.py_name("Import") == "import_"
-    assert render.cs_class_name("TPD-1", 2, CASE_ID) == "TPD1C2_3f9b1c2eTests"
-    assert render.cs_class_name("../x", 3, CASE_ID) == "SerbestC3_3f9b1c2eTests"
+    # C# sınıf adı web + Java adıyla aynı kural (`…WebC<n>_<uuid8>Test` + `s`).
+    assert render.cs_class_name("TPD-1", 2, CASE_ID) == "TPD1WebC2_3f9b1c2eTests"
+    assert render.cs_class_name("TPD-1", 2, CASE_ID) == (
+        render.java_class_name("TPD-1", "web", 2, CASE_ID) + "s"
+    )
+    assert render.cs_class_name("../x", 3, CASE_ID) == "SerbestWebC3_3f9b1c2eTests"
     assert render.py_test_name("TPD-1", 2, CASE_ID) == "test_tpd_1_c2_3f9b1c2e"
     assert render.py_test_name(None, 3, CASE_ID) == "test_serbest_c3_3f9b1c2e"
     for kotu in ("a b", "a;b", "a$b", "é", "", "1a", "a-b", "a\nb", None, 7):
@@ -657,10 +662,13 @@ def _beklenen_cagrilar(mapping: dict[str, Any]) -> list[tuple[str, str, list[Any
 
 
 def test_python_golden_cikti() -> None:
-    r = render.render_dil(girdi(), dil="python", platform="web", rules=RULES)
+    r = render.render_dil(
+        girdi(), dil="python", platform="web", rules=RULES, sembol_tablosu=SEMBOLLER
+    )
     # Uzantı `.golden`: pytest `test_*.py` toplar, ruff `.py` denetler; golden ikisine de girmez.
     golden_karsilastir("test_tpd_1_c2_3f9b1c2e.py.golden", r.content)
-    assert r.repo_path == r.test_file == "tests/generated/test_tpd_1_c2_3f9b1c2e.py"
+    assert r.test_file == "tests/generated/test_tpd_1_c2_3f9b1c2e.py"
+    assert r.repo_path == "e2e-python/tests/generated/test_tpd_1_c2_3f9b1c2e.py"
     assert (r.dil, r.sinif_adi, r.test_adi, r.dealer) == (
         "python", None, "test_tpd_1_c2_3f9b1c2e", "bayi1",
     )  # fmt: skip
@@ -727,11 +735,14 @@ def test_python_enjeksiyona_kapali() -> None:
 
 
 def test_csharp_golden_cikti() -> None:
-    r = render.render_dil(girdi(), dil="csharp", platform="web", rules=RULES)
-    golden_karsilastir("TPD1C2_3f9b1c2eTests.cs", r.content)
-    assert r.repo_path == r.test_file == "tests/Generated/TPD1C2_3f9b1c2eTests.cs"
+    r = render.render_dil(
+        girdi(), dil="csharp", platform="web", rules=RULES, sembol_tablosu=SEMBOLLER
+    )
+    golden_karsilastir("TPD1WebC2_3f9b1c2eTests.cs", r.content)
+    assert r.test_file == "tests/Generated/TPD1WebC2_3f9b1c2eTests.cs"
+    assert r.repo_path == "e2e-csharp/tests/Generated/TPD1WebC2_3f9b1c2eTests.cs"
     assert (r.dil, r.sinif_adi, r.test_adi, r.dealer) == (
-        "csharp", "TPD1C2_3f9b1c2eTests", "Senaryo", "bayi1",
+        "csharp", "TPD1WebC2_3f9b1c2eTests", "Senaryo", "bayi1",
     )  # fmt: skip
     assert r.dogrulanmamis and r.referans_dil == "ts"
     k = r.content
@@ -744,14 +755,14 @@ def test_csharp_golden_cikti() -> None:
         "Microsoft.Playwright.NUnit",
         "NUnit.Framework",
     ]
-    assert "public class TPD1C2_3f9b1c2eTests : PageTest" in k
+    assert "public class TPD1WebC2_3f9b1c2eTests : PageTest" in k
     assert f'[Category("tp-case-{CASE_ID}")]' in k and '[Category("uretilen")]' in k
     assert '[Property("dealerUsername", "bayi1")]' in k
     assert '    [Description("7 adet kampanyalı üründe 1 adet bedava verilir")]' in k
     assert "        var loginPage = new LoginPage(Page);" in satirlar
-    assert '        await loginPage.Login("bayi1", "Demo123!");' in satirlar
-    assert '        await catalogPage.AddToCart("P-001", 7);' in satirlar
-    assert '        await cartPage.ExpectTotal("150,00 TL");' in satirlar
+    assert '        await loginPage.LoginAsync("bayi1", "Demo123!");' in satirlar
+    assert '        await catalogPage.AddToCartAsync("P-001", 7);' in satirlar
+    assert '        await cartPage.ExpectTotalAsync("150,00 TL");' in satirlar
     for yasak in ('$"', '@"', '"""', "/*", "#", "unsafe", "dynamic"):
         assert yasak not in k, yasak
 
@@ -788,7 +799,7 @@ def test_csharp_enjeksiyona_kapali_sozdizimsel() -> None:
         # Her kötü değer tek bir düz dize literali olarak tek çağrıda.
         for deger in degerler:
             assert (
-                f"        await cartPage.ExpectMinOrderWarning({render.cs_literal(deger)});"
+                f"        await cartPage.ExpectMinOrderWarningAsync({render.cs_literal(deger)});"
                 in satirlar
             )
 
@@ -818,7 +829,7 @@ def test_dogrulanmamis_bayisiz_ve_serbest_case() -> None:
         girdi(mapping=m, story_key=None, test_key=None), dil="csharp", platform="web", rules=RULES
     )
     assert cs.dealer is None and "[Property(" not in cs.content
-    assert cs.sinif_adi == "SerbestC2_3f9b1c2eTests" and "TPD-1" not in cs.content
+    assert cs.sinif_adi == "SerbestWebC2_3f9b1c2eTests" and "TPD-1" not in cs.content
     py = render.render_dil(
         girdi(mapping=m, story_key=None), dil="python", platform="web", rules=RULES
     )
@@ -978,8 +989,8 @@ def test_csharp_derleyici_bozuk_ciktiyi_yakalar(tmp_path: Path) -> None:
     r = render.render_dil(girdi(), dil="csharp", platform="web", rules=RULES)
     for i, (eski, yeni, hata) in enumerate(
         (
-            ("cartPage.ExpectTotal(", "cartPage.expectTotal(", "CS1061"),
-            ('AddToCart("P-001", 7)', 'AddToCart("P-001", "7")', "CS1503"),
+            ("cartPage.ExpectTotalAsync(", "cartPage.ExpectTotal(", "CS1061"),
+            ('AddToCartAsync("P-001", 7)', 'AddToCartAsync("P-001", "7")', "CS1503"),
             ('"150,00 TL");', '"150,00 TL"); System.Environment.Exit(0) //', "CS1002"),
         )
     ):
@@ -1071,3 +1082,168 @@ def test_referans_tablo_turleri_csharp_python_literaline_uyar() -> None:
     assert checks._tur_uyar("number", float("nan")) is True  # TS `number`: render reddeder
     with pytest.raises(RenderError):
         render.py_literal(float("nan"))
+
+
+# ============================================================ inceleme turu 1 (D2 render-şablon)
+
+SONEKLER = ("\n", "\r\n", " ")
+
+
+@pytest.mark.parametrize("sonek", SONEKLER)
+def test_suzgecler_sondaki_satir_sonunu_reddeder(sonek: str) -> None:
+    """GÜV-D1: `^…$` + `match` sondaki `\\n`'i geçirirdi; tüm kalıplar `fullmatch` ile."""
+    for f, ad in (
+        (render.ident, "addToCart"),
+        (render.java_ident, "addToCart"),
+        (render.cs_ident, "AddToCart"),
+        (render.py_ident, "add_to_cart"),
+        (render.py_name, "addToCart"),
+        (render.cs_method_name, "addToCart"),
+        (render.cs_variable_name, "CartPage"),
+    ):
+        f(ad)  # sonek olmadan geçer
+        with pytest.raises(RenderError):
+            f(ad + sonek)
+    assert checks.IDENT_RE.match("addToCart" + sonek) is None
+    assert checks.IDENT_RE.fullmatch("addToCart" + sonek) is None
+    # Story anahtarı sonekle geçersizdir: sınıf / test / dosya adlarına girmez ("Serbest").
+    story = "TPD-1" + sonek
+    assert render.slug(story, 2, CASE_ID) == "serbest-c2-3f9b1c2e"
+    assert render.java_class_name(story, "web", 2, CASE_ID) == "SerbestWebC2_3f9b1c2eTest"
+    assert render.cs_class_name(story, 2, CASE_ID) == "SerbestWebC2_3f9b1c2eTests"
+    assert render.py_test_name(story, 2, CASE_ID) == "test_serbest_c2_3f9b1c2e"
+    for kalip, gecerli in (
+        (render._JAVA_SINIF_RE, "TPD1WebC2_3f9b1c2eTest"),
+        (render._CS_SINIF_RE, "TPD1WebC2_3f9b1c2eTests"),
+        (render._PY_TEST_RE, "test_tpd_1_c2_3f9b1c2e"),
+        (render._JAVA_GRUP_RE, "tp-case-x"),
+        (render._JAVA_BAYI_RE, "bayi1"),
+        (render._STORY_RE, "TPD-1"),
+    ):
+        assert kalip.fullmatch(gecerli) and not kalip.fullmatch(gecerli + sonek)
+    # Eşlemede sonekli ad: kontroller insana, render reddeder.
+    m = copy.deepcopy(golden_mapping(2))
+    m["expects"][0]["method"] = "expectTotal" + sonek
+    bulgular = checks._imza(
+        symbols(), "CartPage", m["expects"][0]["method"], ["x"], "expect",
+        "beklenen", "s1",
+    )  # fmt: skip
+    assert [b.tur for b in bulgular] == ["unknown_method"] and "geçersiz ad" in bulgular[0].mesaj
+    for dil in ("ts", "java", "csharp", "python"):
+        with pytest.raises(RenderError):
+            render.render_dil(girdi(mapping=m), dil=dil, platform="web", rules=RULES)
+    # Bayi adı sonekle sabitlenmez (bilinen bayi listesinde yok) ve doğrudan da reddedilir.
+    assert render._JAVA_BAYI_RE.fullmatch("bayi1" + sonek) is None
+
+
+def test_story_rakamlari_ascii() -> None:
+    assert render.slug("TPD-١٢", 2, CASE_ID) == "serbest-c2-3f9b1c2e"  # Unicode rakam
+
+
+def test_dogrulanmamis_yol_tek_kaynak() -> None:
+    """K-T6: `<e2e-csharp|e2e-python kökü>/<alt yol>`; render ve başlangıç yolu aynı işlev."""
+    yol = render.dogrulanmamis_repo_path
+    assert yol("csharp", "TPD-1", 2, CASE_ID) == (
+        "e2e-csharp/tests/Generated/TPD1WebC2_3f9b1c2eTests.cs"
+    )
+    assert yol("python", "TPD-1", 2, CASE_ID) == (
+        "e2e-python/tests/generated/test_tpd_1_c2_3f9b1c2e.py"
+    )
+    assert yol("csharp", "TPD-1", 2, CASE_ID, "demo-app/e2e-csharp/") == (
+        "demo-app/e2e-csharp/tests/Generated/TPD1WebC2_3f9b1c2eTests.cs"
+    )
+    # Boş ya da ts kökü (`RenderInput` varsayılanı) → dilin varsayılan kökü.
+    for kok in (None, "", "/", "e2e"):
+        assert yol("python", None, 3, CASE_ID, kok) == (
+            "e2e-python/tests/generated/test_serbest_c3_3f9b1c2e.py"
+        )
+    with pytest.raises(RenderError):
+        yol("ts", "TPD-1", 2, CASE_ID)
+    for dil in ("csharp", "python"):
+        for kok, beklenen in (
+            (render.E2E_ROOT, None),
+            ("demo-app/e2e-" + dil, "demo-app/e2e-" + dil),
+        ):
+            r = render.render_dil(girdi(e2e_root=kok), dil=dil, platform="web", rules=RULES)
+            assert r.repo_path == yol(dil, "TPD-1", 2, CASE_ID, beklenen)
+            assert r.repo_path.endswith("/" + r.test_file)
+        # Sınıf / test adı yolun dosya adıyla aynı kuralı kullanır.
+        r = render.render_dil(girdi(), dil=dil, platform="web", rules=RULES)
+        assert Path(r.repo_path).stem == (r.sinif_adi or r.test_adi)
+
+
+@pytest.mark.parametrize("dil", ["csharp", "python"])
+def test_dogrulanmamis_baslik_uyarlama_ve_imzalar(dil: str) -> None:
+    """K-T9 küçük kısım: "Elle düzenlemeyin" yok; varsayılan PO imzaları listelenir. Tablo
+    verilmezse türler değerden, adlar `argN`."""
+    on = "//" if dil == "csharp" else "#"
+    r = render.render_dil(girdi(), dil=dil, platform="web", rules=RULES)
+    assert "Elle düzenlemeyin" not in r.content
+    assert "uyarlanmak üzere" in r.content.splitlines()[0]
+    satirlar = r.content.splitlines()
+    if dil == "csharp":
+        assert f"{on}     Task AddToCartAsync(string arg1, int arg2)" in satirlar
+        assert f"{on}     Task GotoAsync()" in satirlar
+        assert f"{on}   CartPage" in satirlar
+    else:
+        assert f"{on}     def add_to_cart(self, arg1: str, arg2: int) -> None" in satirlar
+        assert f"{on}   pages.catalog_page.CatalogPage" in satirlar
+    # Tablolu: referans türleri hedef dile çevrilir (TS number → double / float; Java int → int).
+    java_tablo = json.loads((HERE / "symbols-java-web.json").read_text(encoding="utf-8"))
+    tr = render.render_dil(
+        girdi(),
+        dil=dil,
+        platform="web",
+        rules=RULES,
+        referans_dil="java",
+        sembol_tablosu=java_tablo,
+    )
+    beklenen = (
+        f"{on}     Task AddToCartAsync(string productCode, int quantity)"
+        if dil == "csharp"
+        else f"{on}     def add_to_cart(self, product_code: str, quantity: int) -> None"
+    )
+    assert beklenen in tr.content.splitlines()
+    # Tablodaki kötü parametre adı / bilinmeyen tür imzaya taşınmaz (`argN`, değerden tür).
+    kotu = copy.deepcopy(SEMBOLLER)
+    for po in kotu["page_objects"]:
+        for m in po["methods"]:
+            for p in m["params"]:
+                p["name"] = 'x");\nEvil(); //'
+                p["type"] = "Promise<any>"
+    kr = render.render_dil(girdi(), dil=dil, platform="web", rules=RULES, sembol_tablosu=kotu)
+    assert kr.content == r.content.replace(r.template_hash, kr.template_hash)
+
+
+@pytest.mark.parametrize("dil", ["ts", "java"])
+def test_tam_hat_basligi_degismedi(dil: str) -> None:
+    """Tam hat dillerinde başlık ("Elle düzenlemeyin") ve çıktı aynen kalır."""
+    inp = girdi() if dil == "ts" else java_web_girdi()
+    r = render.render_dil(inp, dil=dil, platform="web", rules=RULES, sembol_tablosu=SEMBOLLER)
+    assert r == render.render_dil(inp, dil=dil, platform="web", rules=RULES)
+    assert "Elle düzenlemeyin" in r.content
+
+
+def test_python_strict_markers_parcasi_sablonla_birebir() -> None:
+    """QA-O7: başlıktaki `conftest.py` parçası çalıştırılınca şablonun kullandığı tüm işaretleri
+    kaydeder (`--strict-markers` kırılmaz)."""
+    r = render.render_dil(girdi(), dil="python", platform="web", rules=RULES)
+    satirlar = r.content.splitlines()
+    bas = satirlar.index("#   def pytest_configure(config):")
+    parca = []
+    for satir in satirlar[bas:]:
+        if not satir.startswith("#   "):
+            break
+        parca.append(satir[4:])
+    kayitlar: list[tuple[str, str]] = []
+
+    class Config:
+        def addinivalue_line(self, ad: str, deger: str) -> None:
+            kayitlar.append((ad, deger))
+
+    alan: dict[str, Any] = {}
+    exec(compile("\n".join(parca), "conftest.py", "exec"), alan)  # sabit parça (şablondan)
+    alan["pytest_configure"](Config())
+    kayitli = {d.split(":")[0].split("(")[0] for ad, d in kayitlar if ad == "markers"}
+    kullanilan = {i[0] for i in _py_yapi(r.content)["isaretler"]}  # story + dealer dahil
+    assert kullanilan == kayitli == {ad.split("(")[0] for ad, _ in render.PY_ISARETLER}
