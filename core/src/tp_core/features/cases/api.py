@@ -10,6 +10,7 @@
 | GET  | `/requirements/{id}/case-metrics` | herkes — kabul oranı ve süreler (§12) |
 | GET  | `/requirements/{id}/case-summary` | herkes — üretim özetleri + kapsam matrisi (011 §4.4) |
 | POST | `/requirements/{id}/review-complete` | analyst |
+| GET  | `/requirements/{id}/cases.feature[?yalniz_yayinlanan=1]` | herkes — Gherkin (011 F8) |
 """
 
 from __future__ import annotations
@@ -18,10 +19,11 @@ import uuid
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from tp_core.auth.deps import CurrentUser, DbSession, require_role
-from tp_core.features.cases import service
+from tp_core.features.cases import gherkin, service
 from tp_core.workflow.service import Principal
 
 router = APIRouter(tags=["cases"])
@@ -125,3 +127,29 @@ def case_summary(
 @router.post("/requirements/{requirement_id}/review-complete")
 def review_complete(requirement_id: uuid.UUID, session: DbSession, user: Analyst) -> dict[str, Any]:
     return service.review_complete(session, requirement_id, user)
+
+
+@router.get("/requirements/{requirement_id}/cases.feature", response_class=PlainTextResponse)
+def cases_feature(
+    requirement_id: uuid.UUID,
+    session: DbSession,
+    _user: CurrentUser,
+    yalniz_yayinlanan: bool = False,
+) -> PlainTextResponse:
+    """Onaylı ve hazır güncel case'lerin Türkçe Gherkin'i (deterministik; `gherkin.py`).
+
+    Uygun case yoksa 404 (boş dosya indirilmez); gereksinim PO onayı dışındaysa 409.
+    """
+    cikti = gherkin.requirement_feature(
+        session, requirement_id, yalniz_yayinlanan=yalniz_yayinlanan
+    )
+    return PlainTextResponse(
+        cikti.metin,
+        media_type="text/plain; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{cikti.dosya_adi}"',
+            "X-TP-Case-Sayisi": str(cikti.case_sayisi),
+            "X-TP-Senaryo-Sayisi": str(cikti.senaryo_sayisi),
+            "X-TP-Taslak-Sayisi": str(cikti.taslak_sayisi),
+        },
+    )
