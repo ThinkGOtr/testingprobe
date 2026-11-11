@@ -21,7 +21,7 @@ from tp_core.workflow.service import (
     transition,
 )
 
-from .helpers import case_icerik, latest_cases, login, run_jobs
+from .helpers import case_icerik, latest_cases, login, run_jobs, uretim_cikti
 
 
 @pytest.fixture
@@ -32,7 +32,7 @@ def hazir(api: TestClient, engine: Engine, make_user, make_requirement, fake_gat
         case_icerik(title="Hatalı parola mesajı", ref="AC2", type="negative"),
         case_icerik(title="Boş kullanıcı adı", ref="AC2", type="boundary"),
     ]
-    fake_gateway([text_response({"cases": cases})])
+    fake_gateway([text_response(uretim_cikti(cases))])
     rid = make_requirement()
     analist = make_user("analyst")
     login(api, analist)

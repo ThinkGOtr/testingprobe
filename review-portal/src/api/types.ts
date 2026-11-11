@@ -327,16 +327,82 @@ export interface TestAdimi {
   expected: string;
 }
 
-/** TEKNIK-TASARIM §7 test case şeması. */
+/** Test tasarım teknikleri (şema v3 `technique[]`): kısaltmalar ISTQB adlarının karşılığıdır. */
+export const CASE_TEKNIKLERI = ["EP", "BVA", "DT", "ST", "PW", "UC", "EG"] as const;
+export type CaseTeknigi = (typeof CASE_TEKNIKLERI)[number];
+
+export const CASE_ONCELIKLERI = ["P1", "P2", "P3"] as const;
+export type CaseOnceligi = (typeof CASE_ONCELIKLERI)[number];
+
+/** Hazır olma durumu (şema v3 `readiness`). Eski (v2) case'te alan yoktur; hazır sayılır (K9). */
+export const CASE_HAZIRLIKLARI = ["ready", "assumption_dependent", "blocked"] as const;
+export type CaseHazirlik = (typeof CASE_HAZIRLIKLARI)[number];
+
+export const DOGRULAMA_NOKTALARI = ["UI", "API", "event", "DB", "log", "other"] as const;
+export type DogrulamaNoktasi = (typeof DOGRULAMA_NOKTALARI)[number];
+
+export const TEST_SEVIYELERI = ["UNIT", "COMPONENT", "INTEGRATION", "SYSTEM", "E2E", "UAT"] as const;
+
+export const CASE_TURLERI = ["positive", "negative", "boundary", "authorization", "integration"] as const;
+export type CaseTuru = (typeof CASE_TURLERI)[number];
+
+/** Şema v3 `test_data[]`. `value` güvenilmeyen metindir: yalnız düz metin/kod olarak gösterilir. */
+export interface TestVerisi {
+  name: string;
+  value: string;
+  /** Verinin temsil ettiği kapsam öğesi (`coverage_items[].id`); yoksa null. */
+  class: string | null;
+  synthetic: boolean;
+  /** Güvenlik testi girdisi (saldırı verisi): işaretli ve kod olarak gösterilir, asla işlenmez. */
+  is_attack_payload: boolean;
+}
+
+/**
+ * Test case içeriği. v2 alanları her case'te vardır (TEKNIK-TASARIM §7). v3 alanları
+ * (`rules/schemas/case_generation.schema.json`, 011 §4.1) yalnız v3 case'te bulunur: eski case'te
+ * bu anahtarların HİÇBİRİ yoktur ve düzeltmede de eklenmez (K9: eski alan kümesiyle doğrulanır).
+ * v3 ayırt edici alanı `readiness`'tir.
+ */
 export interface TestCaseIcerik {
   title: string;
-  type: "positive" | "negative" | "boundary";
+  type: CaseTuru;
   risk: "high" | "medium" | "low";
   acceptance_criteria_refs: string[];
   preconditions: string[];
   steps: TestAdimi[];
   expected_result: string;
   tags: string[];
+  // ---- v3 (isteğe bağlı; eski case'te yok)
+  technique?: CaseTeknigi[];
+  /** Case'in çalıştırdığı kapsam öğeleri (`coverage_items[].id`; ör. EP-V1, BV-3). */
+  covers?: string[];
+  priority?: CaseOnceligi;
+  priority_rationale?: string;
+  platform?: string | null;
+  test_level?: string | null;
+  verification_point?: DogrulamaNoktasi;
+  requires_real_device?: boolean;
+  standard_refs?: string[];
+  readiness?: CaseHazirlik;
+  assumption_refs?: string[];
+  open_question_refs?: string[];
+  test_data?: TestVerisi[];
+  teardown?: string[];
+}
+
+/** Açık soru (`open_questions[]`): yanıtlanmadan atıf yapan case hazır olamaz. */
+export interface AcikSoru {
+  id: string;
+  question: string;
+  /** PO | analyst | developer | "" (belirsiz). */
+  owner: string;
+}
+
+/** Varsayım (`assumptions[]`): atıf yapan case "varsayıma bağlı"dır. */
+export interface Varsayim {
+  id: string;
+  statement: string;
+  owner: string;
 }
 
 export type RetNedeni =
@@ -391,6 +457,18 @@ export interface TestCase {
   duzeltme_nedeni?: string | null;
   /** Case gereksinimin önceki (PO onayı değişmiş) içeriğine ait. */
   onceki_icerik?: boolean;
+  /** Hazır olma durumu (core `readiness_of`): eski case'te her zaman "ready". Yoksa içerikten türetilir. */
+  readiness?: CaseHazirlik;
+  /** Eski (v2) şemalı case: `icerik.readiness` anahtarı yok (K9). Yoksa içerikten türetilir. */
+  legacy?: boolean;
+  /** Case'in atıf yaptığı açık soruların çözülmüş metinleri (`icerik.open_question_refs`). */
+  acik_sorular?: AcikSoru[];
+  /** Case'in atıf yaptığı varsayımların çözülmüş metinleri (`icerik.assumption_refs`). */
+  varsayimlar?: Varsayim[];
+  /** Onay engelinin core metni (K6: hazır değil / tutarlılık ihlali); engel yoksa null. */
+  onay_engeli?: string | null;
+  /** Case'i üreten üretimin numarası (`case_uretim.uretim_no`). */
+  uretim_no?: number;
 }
 
 export interface CaseAlanFarki {
@@ -433,6 +511,10 @@ export interface CaseMetrikleri {
   kapsanmayan_ac?: string[];
   /** Çekirdeğin ölçüm uyarıları (ör. manuel baz değer yok; REPLAY'de AI süresi ölçülmez). */
   uyarilar?: string[];
+  /** v3 (011 §4.9): güncel case'lerin teknik ve hazır olma dağılımı, kapsam oranları. */
+  teknik_dagilimi?: Record<string, number>;
+  readiness_dagilimi?: Record<string, number>;
+  kapsam_oranlari?: Record<string, KapsamOrani>;
 }
 
 export interface CaseKararGirdisi {
@@ -446,6 +528,101 @@ export interface CaseKararGirdisi {
    * sonuç metni değiştiyse analist seçer; gönderilmezse core metin karşılaştırmasına düşer.
    */
   beklenen_anlam_degisti?: boolean;
+}
+
+// ---------------------------------------------------------------- Case özeti (kapsam ve açık noktalar)
+
+/** Kapsam öğesi (`coverage_items[]`). Kimlik biçimi: EP-V1, EP-I2, BV-3, DT-R2, ST-S1>S2, PW-1, UC-MF, EG-1. */
+export interface KapsamOgesi {
+  id: string;
+  ac_ref: string | null;
+  definition: string;
+  /** false: geçersiz bölüm / reddedilen sınır / yasak geçiş / hata koşulu (negatif kapsam kararı gerekir). */
+  valid: boolean;
+}
+
+export type NegatifKarar = "tested" | "covered_by" | "out_of_scope";
+
+export interface NegatifKapsamKarari {
+  item: string;
+  decision: NegatifKarar;
+  rationale: string;
+}
+
+/** Bir üretimin (`case_uretim.ozet`) üst düzey listeleri. Eksik liste boş diziye tamamlanır. */
+export interface CaseUretimOzeti {
+  uretim_no: number;
+  kanal: string;
+  /** uretim | negatif | teknik */
+  tur: string;
+  open_questions: AcikSoru[];
+  assumptions: Varsayim[];
+  coverage_items: KapsamOgesi[];
+  negative_coverage: NegatifKapsamKarari[];
+  not_covered: { item: string; reason: string }[];
+  observations: { standard_ref: string; note: string }[];
+  automation_open_points: string[];
+  config_matrix: { parameters: { name: string; values: string[] }[]; constraints: string[] };
+  testability_gaps: { control: string; missing: string }[];
+  /** Üretimin case sayısı ve güncel case sayısı (core; yoksa tanımsız). */
+  case_sayisi?: number;
+  guncel_case_sayisi?: number;
+  /** Üretimin özeti (üst listeler) kayıtlı mı; eski üretimde false. Alan yoksa kayıtlı sayılır. */
+  ozet_var?: boolean;
+}
+
+/** Kodda hesaplanan kapsam matrisi satırı (core `coverage_matrix`). */
+export interface KapsamSatiri {
+  item: string;
+  /** "ac": kabul kriteri; "oge": kapsam öğesi. */
+  tur: "ac" | "oge";
+  tanim: string;
+  /** Kapsam öğesinin geçerli/geçersiz sınıfı; kabul kriteri satırında null. */
+  valid: boolean | null;
+  /** Kapsayan case'lerin sıra numaraları (`TestCase.sira_no`). */
+  covered_by: number[];
+  /** Kapsanmıyorsa gerekçe (`not_covered` / `out_of_scope` kararı); yoksa null. */
+  gerekce: string | null;
+  /** Geçersiz öğenin negatif kapsam kararı (tested | covered_by | out_of_scope); yoksa null. */
+  karar?: string | null;
+  /** Öğenin türetildiği kabul kriteri (öğe satırında; yoksa null). */
+  ac_ref?: string | null;
+  /**
+   * Kapsayan case'ler (core `covered_by_cases`). Bağlantı bununla kurulur: `sira_no` üretimler
+   * arasında tekil değildir. Alan yoksa yalnız `covered_by` sıra numaraları gösterilir.
+   */
+  kapsayanlar?: KapsayanCase[];
+}
+
+export interface KapsayanCase {
+  id: string;
+  sira_no: number;
+  uretim_no: number | null;
+  title: string;
+}
+
+/** Oran: kapsanan / toplam; payda 0 ise `oran` null (core `{kapsanan, toplam, oran}`). */
+export interface KapsamOrani {
+  kapsanan: number | null;
+  toplam: number | null;
+  oran: number | null;
+}
+
+/** `GET /requirements/{id}/case-summary` (011 §4.4). Oranlar 0–1; hesaplanamıyorsa null. */
+export interface CaseKapsamOzeti {
+  requirement_id: string;
+  jira_key?: string | null;
+  uretimler: CaseUretimOzeti[];
+  /** Güncel (reddedilmemiş, yerini yenisi almamış, güncel içeriğe ait) case sayısı. */
+  guncel_case_sayisi?: number;
+  /** Güncel case'lerden eski (v2) şemalı olanların sayısı. */
+  legacy_case_sayisi?: number;
+  kapsam_matrisi: KapsamSatiri[];
+  oranlar: { gereksinim_kapsami: KapsamOrani; oge_kapsami: KapsamOrani; negatif_karar_kapsami: KapsamOrani };
+  teknik_dagilimi: Record<string, number>;
+  readiness_dagilimi: Record<string, number>;
+  kapsanmayan: { item: string; tur?: "ac" | "oge"; tanim?: string; karar?: string | null; gerekce: string }[];
+  uyarilar: string[];
 }
 
 // ---------------------------------------------------------------- Yayın
@@ -466,8 +643,14 @@ export interface YayinOnizlemeKalemi {
     | "blocked_hash_mismatch"
     | "blocked_not_approved"
     | "blocked_no_story"
-    | "blocked_requirement_changed";
+    | "blocked_requirement_changed"
+    /** Onaylı ama hazır olmayan (varsayıma bağlı / engelli) case yayınlanmaz (011 §4.7, K6). */
+    | "blocked_not_ready"
+    /** Denetim kapısı (011 §4.7, K3): setin güncel içeriği için KABUL yok. */
+    | "blocked_gate";
   external_key: string | null;
+  /** Engelin nedeni (core metni); yoksa null. */
+  neden?: string | null;
 }
 
 export interface YayinOnizleme {

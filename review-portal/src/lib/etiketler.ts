@@ -104,7 +104,72 @@ export const CASE_DURUMU: Record<CaseDurumu, { etiket: string; ton: Ton }> = {
   superseded: { etiket: "Yerini yenisi aldı", ton: "notr" },
 };
 
-export const CASE_TURU: Record<string, string> = { positive: "Pozitif", negative: "Negatif", boundary: "Sınır" };
+export const CASE_TURU: Record<string, string> = {
+  positive: "Pozitif",
+  negative: "Negatif",
+  boundary: "Sınır",
+  authorization: "Yetki",
+  integration: "Entegrasyon",
+};
+
+/** Test tasarım tekniği kısaltması → tam Türkçe ad (rozetin `title`'ı ve erişilebilir adı). */
+export const CASE_TEKNIGI: Record<string, string> = {
+  EP: "eşdeğerlik bölümleme",
+  BVA: "sınır değer analizi",
+  DT: "karar tablosu",
+  ST: "durum geçişi",
+  PW: "pairwise",
+  UC: "kullanım senaryosu",
+  EG: "hata tahmini",
+};
+
+/** Hazır olma durumu: renk tek başına anlam taşımaz; metin + işaret birlikte gösterilir. */
+export const CASE_HAZIRLIK: Record<string, { etiket: string; ton: Ton; isaret: string; aciklama: string }> = {
+  ready: { etiket: "Hazır", ton: "basari", isaret: "✓", aciklama: "Beklenen sonuçlar yazılı; açık soru ya da varsayıma bağlı değil." },
+  assumption_dependent: {
+    etiket: "Varsayıma bağlı",
+    ton: "uyari",
+    isaret: "⚠",
+    aciklama: "Beklenen sonuç bir varsayıma dayanıyor; varsayım doğrulanmadan onaylanamaz.",
+  },
+  blocked: { etiket: "Engelli", ton: "hata", isaret: "✗", aciklama: "Açık soru yanıtlanmadan beklenen sonuç yazılamıyor; onaylanamaz." },
+};
+
+export const CASE_ONCELIGI: Record<string, { etiket: string; ton: Ton; aciklama: string }> = {
+  P1: { etiket: "P1", ton: "hata", aciklama: "Öncelik 1 (en yüksek)" },
+  P2: { etiket: "P2", ton: "uyari", aciklama: "Öncelik 2 (orta)" },
+  P3: { etiket: "P3", ton: "notr", aciklama: "Öncelik 3 (düşük)" },
+};
+
+export const DOGRULAMA_NOKTASI: Record<string, string> = {
+  UI: "Arayüz (UI)",
+  API: "API",
+  event: "Olay (event)",
+  DB: "Veritabanı",
+  log: "Log",
+  other: "Diğer",
+};
+
+export const TEST_SEVIYESI: Record<string, string> = {
+  UNIT: "Birim",
+  COMPONENT: "Bileşen",
+  INTEGRATION: "Entegrasyon",
+  SYSTEM: "Sistem",
+  E2E: "Uçtan uca",
+  UAT: "Kullanıcı kabul",
+};
+
+/** Açık soru / varsayım sahibi (şema: PO | analyst | developer | ""). */
+export const SORU_SAHIBI: Record<string, string> = { PO: "PO", analyst: "Analist", developer: "Geliştirici", "": "Belirsiz" };
+
+export const NEGATIF_KARAR: Record<string, { etiket: string; ton: Ton }> = {
+  tested: { etiket: "Test ediliyor", ton: "basari" },
+  covered_by: { etiket: "Başka case kapsıyor", ton: "bilgi" },
+  out_of_scope: { etiket: "Kapsam dışı", ton: "notr" },
+};
+
+/** Üretim türü (`case_uretim.tur`). */
+export const URETIM_TURU: Record<string, string> = { uretim: "Üretim", negatif: "Negatif genişletme", teknik: "Teknik derinleştirme" };
 export const RISK: Record<string, { etiket: string; ton: Ton }> = {
   high: { etiket: "Yüksek risk", ton: "hata" },
   medium: { etiket: "Orta risk", ton: "uyari" },

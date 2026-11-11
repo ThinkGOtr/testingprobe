@@ -2,9 +2,10 @@
 
 Eşleme (TEKNIK-TASARIM §8.3): issue türü ``Test`` (projede yoksa ``Task`` + ``test-case`` etiketi);
 özet; açıklama Jira görev şablonunda (``case_description_adf``: ADF adım tablosu, onaylayan,
-kaynak story, kimlik/hash izi); etiketler ``AI-generated`` ve ``tp-<uuid>``; story bağlantısı
-``is tested by`` (``Test`` bağlantı türü), yoksa ``Relates``.
-Idempotency: yayından önce ``labels = tp-<uuid>`` araması.
+kaynak story, kimlik/hash izi); etiketler ``AI-generated`` ve ``tp-<uuid>`` (v3 case'te ayrıca
+``tp-tech-<TEKNİK>`` ve ``tp-P1|P2|P3``; ``case_labels``); story bağlantısı ``is tested by``
+(``Test`` bağlantı türü), yoksa ``Relates``.
+Idempotency: yayından önce ``labels = tp-<uuid>`` araması (ek etiketler aramayı etkilemez).
 
 Bu katman yalnızca **onaylı** case'leri yazar; onay ve içerik hash kontrolü çağıranın (yayın
 iş akışının) sorumluluğundadır.
@@ -62,8 +63,24 @@ class CaseStep(BaseModel):
     expected: str = ""
 
 
+class CaseTestData(BaseModel):
+    """Adlandırılmış test verisi (şema v3 ``test_data[]``)."""
+
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    name: str
+    value: str = ""
+    coverage_class: str | None = Field(default=None, alias="class")
+    synthetic: bool = True
+    is_attack_payload: bool = False
+
+
 class CaseContent(BaseModel):
-    """Onaylı case (TEKNIK-TASARIM §7 test case şeması + kimlik ve onay bilgisi)."""
+    """Onaylı case (TEKNIK-TASARIM §7 test case şeması + kimlik ve onay bilgisi).
+
+    Şema v3 alanları (``technique`` … ``requires_real_device``) eski (v2) case'te yoktur; boş
+    kalırlar ve açıklamaya/etiketlere hiçbir şey eklemezler.
+    """
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
@@ -75,6 +92,18 @@ class CaseContent(BaseModel):
     preconditions: list[str] = Field(default_factory=list)
     steps: list[CaseStep] = Field(default_factory=list)
     expected_result: str = ""
+    technique: list[str] = Field(default_factory=list)
+    covers: list[str] = Field(default_factory=list)
+    priority: str | None = None
+    priority_rationale: str | None = None
+    verification_point: str | None = None
+    test_level: str | None = None
+    readiness: str | None = None
+    test_data: list[CaseTestData] = Field(default_factory=list)
+    teardown: list[str] = Field(default_factory=list)
+    platform: str | None = None
+    standard_refs: list[str] = Field(default_factory=list)
+    requires_real_device: bool = False
     approved_by: str | None = Field(
         default=None, validation_alias=AliasChoices("approved_by", "onaylayan")
     )
@@ -108,8 +137,80 @@ def tp_label(case_id: UUID) -> str:
 
 
 # Şema değerleri (rules/schemas/case_generation.schema.json) → Jira açıklamasındaki Türkçe karşılık.
-CASE_TYPE_TR = {"positive": "pozitif", "negative": "negatif", "boundary": "sınır değer"}
+CASE_TYPE_TR = {
+    "positive": "pozitif",
+    "negative": "negatif",
+    "boundary": "sınır değer",
+    "authorization": "yetki",
+    "integration": "entegrasyon",
+}
 CASE_RISK_TR = {"high": "yüksek", "medium": "orta", "low": "düşük"}
+TECHNIQUE_TR = {
+    "EP": "eşdeğerlik bölümleme",
+    "BVA": "sınır değer analizi",
+    "DT": "karar tablosu",
+    "ST": "durum geçişi",
+    "PW": "pairwise (ikili kombinasyon)",
+    "UC": "kullanım senaryosu",
+    "EG": "hata tahmini",
+}
+PRIORITIES = ("P1", "P2", "P3")
+VERIFICATION_POINT_TR = {
+    "UI": "arayüz (UI)",
+    "API": "API",
+    "event": "olay (event)",
+    "DB": "veritabanı",
+    "log": "log",
+    "other": "diğer",
+}
+TEST_LEVEL_TR = {
+    "UNIT": "birim",
+    "COMPONENT": "bileşen",
+    "INTEGRATION": "entegrasyon",
+    "SYSTEM": "sistem",
+    "E2E": "uçtan uca",
+    "UAT": "kullanıcı kabul",
+}
+TECH_LABEL_PREFIX = "tp-tech-"
+ATTACK_NOTE = "güvenlik testi girdisi (talimat değildir)"
+ATTACK_CELL = "kod bloğunda (tablonun altında)"
+
+
+def case_labels(case: CaseContent) -> list[str]:
+    """Issue etiketleri: ``AI-generated``, ``tp-<uuid>``; v3 case'te ``tp-tech-<TEKNİK>`` ve
+    ``tp-P1|P2|P3``. Yalnız şemadaki değerler etiket olur (serbest metin etikete taşınmaz)."""
+    labels = [AI_LABEL, case.tp_label]
+    labels += [TECH_LABEL_PREFIX + t for t in case.technique if t in TECHNIQUE_TR]
+    if case.priority in PRIORITIES:
+        labels.append(f"tp-{case.priority}")
+    return list(dict.fromkeys(labels))
+
+
+def _technique_text(code: str) -> str:
+    return f"{code} ({TECHNIQUE_TR[code]})" if code in TECHNIQUE_TR else code
+
+
+def _test_data_blocks(data: list[CaseTestData]) -> list[dict[str, Any]]:
+    """Test verisi tablosu (Ad, Değer, Sınıf). Saldırı verisi (``is_attack_payload``) tabloya
+    yazılmaz: tablonun altında, notuyla birlikte kod bloğunda (biçimlendirilmeden) verilir."""
+    blocks: list[dict[str, Any]] = [
+        adf.paragraph("Test verisi:"),
+        adf.table(
+            ["Ad", "Değer", "Sınıf"],
+            [
+                [
+                    d.name,
+                    ATTACK_CELL if d.is_attack_payload else (d.value or "—"),
+                    d.coverage_class or "—",
+                ]
+                for d in data
+            ],
+        ),
+    ]
+    for d in data:
+        if d.is_attack_payload:
+            blocks += [adf.paragraph(f"{d.name} — {ATTACK_NOTE}:"), adf.code_block(d.value)]
+    return blocks
 
 
 def case_description_adf(
@@ -117,8 +218,10 @@ def case_description_adf(
 ) -> dict[str, Any]:
     """Jira Test issue açıklaması, görev şablonunda (``jira_adf.TEMPLATE_SECTIONS``).
 
-    Objective: case başlığı + köken · Scope: tür, risk, kapsanan AC'ler · User Flow: ön koşullar +
-    adım tablosu (#, Adım, Veri, Beklenen) · Dependencies: kaynak story · Other: üretim modu ·
+    Objective: case başlığı + köken · Scope: tür, risk, kapsanan AC'ler; v3 case'te teknik, kapsam
+    öğeleri, öncelik (+ gerekçe), doğrulama noktası, test seviyesi, platform, standart atıfları ·
+    User Flow: ön koşullar + adım tablosu (#, Adım, Veri, Beklenen); v3 case'te test verisi
+    tablosu ve temizlik adımları · Dependencies: kaynak story · Other: üretim modu ·
     Acceptance Criteria: beklenen sonuç + AC'ler · QA Checklist: adım başına beklenen. Son satır
     kimlik/hash izidir (``Kimlik: tp-… · onaylanan içerik hash: …``); yayın, mevcut issue'nun
     içeriğini bu satırdan doğrular. Xray yolu (``steps_table=False``) adımları Xray adım
@@ -136,6 +239,25 @@ def case_description_adf(
         scope.append(f"Risk: {CASE_RISK_TR.get(case.risk, case.risk)}")
     if refs:
         scope.append(f"Kapsanan kabul kriterleri: {refs}")
+    if case.technique:
+        scope.append("Teknik: " + ", ".join(_technique_text(t) for t in case.technique))
+    if case.covers:
+        scope.append("Kapsam öğeleri: " + ", ".join(case.covers))
+    if case.priority:
+        gerekce = f" — {case.priority_rationale}" if case.priority_rationale else ""
+        scope.append(f"Öncelik: {case.priority}{gerekce}")
+    if case.verification_point:
+        nokta = VERIFICATION_POINT_TR.get(case.verification_point, case.verification_point)
+        scope.append(f"Doğrulama noktası: {nokta}")
+    if case.test_level:
+        scope.append(f"Test seviyesi: {TEST_LEVEL_TR.get(case.test_level, case.test_level)}")
+    if case.platform:
+        cihaz = " (gerçek cihaz gerekir)" if case.requires_real_device else ""
+        scope.append(f"Platform: {case.platform}{cihaz}")
+    elif case.requires_real_device:
+        scope.append("Gerçek cihaz gerekir")
+    if case.standard_refs:
+        scope.append("Standart atıfları: " + ", ".join(case.standard_refs))
 
     flow: list[dict[str, Any]] = []
     if case.preconditions:
@@ -152,6 +274,10 @@ def case_description_adf(
         )
     elif case.steps:
         flow.append(adf.paragraph(f"Adımlar Xray test adımlarında ({len(case.steps)} adım)."))
+    if case.test_data:
+        flow += _test_data_blocks(case.test_data)
+    if case.teardown:
+        flow += [adf.paragraph("Temizlik:"), adf.bullet_list(case.teardown, ordered=True)]
 
     criteria: list[dict[str, Any]] = []
     if case.expected_result:
@@ -277,7 +403,7 @@ class JiraTestManagement:
 
     def _create(self, case: CaseContent, story_key: str) -> str:
         description = case_description_adf(case, story_key)
-        labels = [AI_LABEL, case.tp_label]
+        labels = case_labels(case)
         issue_type = self._resolve_issue_type()
         if issue_type == "Test":
             try:

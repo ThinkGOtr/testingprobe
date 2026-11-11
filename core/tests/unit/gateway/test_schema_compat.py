@@ -117,7 +117,15 @@ def test_source_schema_is_valid_and_closed(purpose: str) -> None:
     for path, sub in _subschemas(schema):
         bad = sorted(set(sub) & FORBIDDEN_SOURCE_KEYS)
         assert not bad, f"{purpose} {path}: desteklenmeyen anahtar {bad}"
-        assert "$ref" not in sub, f"{purpose} {path}: $ref kullanılmıyor (özyineleme yasak)"
+        if "$ref" in sub:
+            # Yalnız yerel, özyinelemesiz `$defs` atfı (structured outputs destekler; özyineleme
+            # yasak): hedef tanımlı ve kendisi `$ref` içermiyor.
+            assert set(sub) <= {"$ref", "description"}, f"{purpose} {path}: $ref yanında kısıt"
+            name = sub["$ref"].removeprefix("#/$defs/")
+            target = (schema.get("$defs") or {}).get(name)
+            assert target is not None, f"{purpose} {path}: tanımsız $ref {sub['$ref']}"
+            assert "$ref" not in json.dumps(target), f"{purpose} {path}: özyinelemeli $ref"
+            continue
         assert "type" in sub or "anyOf" in sub or "allOf" in sub or "const" in sub, path
         if sub.get("type") == "object":
             assert sub.get("additionalProperties") is False, f"{purpose} {path}: açık nesne"

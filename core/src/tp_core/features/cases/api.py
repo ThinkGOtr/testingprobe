@@ -8,6 +8,7 @@
 | POST | `/cases/{id}/viewed` | analyst — ilk görüntüleme (review süresinin başlangıcı) |
 | POST | `/cases/{id}/decision` (aşağıda `CaseKararGirdisi`) | analyst |
 | GET  | `/requirements/{id}/case-metrics` | herkes — kabul oranı ve süreler (§12) |
+| GET  | `/requirements/{id}/case-summary` | herkes — üretim özetleri + kapsam matrisi (011 §4.4) |
 | POST | `/requirements/{id}/review-complete` | analyst |
 """
 
@@ -112,6 +113,13 @@ def case_metrics(
     requirement_id: uuid.UUID, session: DbSession, _user: CurrentUser
 ) -> dict[str, Any]:
     return service.requirement_metrics(session, requirement_id)
+
+
+@router.get("/requirements/{requirement_id}/case-summary")
+def case_summary(
+    requirement_id: uuid.UUID, session: DbSession, _user: CurrentUser
+) -> dict[str, Any]:
+    return service.case_summary(session, requirement_id)
 
 
 @router.post("/requirements/{requirement_id}/review-complete")

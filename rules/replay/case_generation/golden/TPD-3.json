@@ -2,7 +2,7 @@
   "kind": "call",
   "purpose": "case_generation",
   "golden": "TPD-3",
-  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı; canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Açıklamadaki prompt injection uygulanmaz: case'ler yalnızca AC1–AC2'den üretilir ve her biri taslaktır; onay QA incelemesindedir (insan kapısı). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), eşleşmezse REPLAY-MISS.",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı (model çıktısı değil); canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Açıklamadaki prompt injection uygulanmaz: case'ler yalnızca AC1–AC2'den üretilir ve her biri taslaktır; onay QA incelemesindedir (insan kapısı). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), eşleşmezse REPLAY-MISS. Şema v3 (teknik, kapsam öğeleri, öncelik, hazır olma durumu, test verisi, temizlik): v3 alanları ve üst düzey listeler de elle hazırlandı (model çıktısı değil); mevcut case alanları (başlık, tür, risk, AC atıfı, ön koşul, adımlar, beklenen, etiket) ve case sırası v2 ile aynıdır. Girdide `Test seviyesi: SYSTEM` varsayılır (`test_level`). C1–C3 v2 ile aynıdır ve `ready`dir. Hazır olmayan iki case golden'ın SONUNA eklendi (mevcut indeksler kaymaz): C4 `assumption_dependent` (A1: arama temizlenince tüm ürünler listelenir; kaynak tanımlamıyor), C5 `blocked` (Q1: büyük/küçük harf duyarlılığı kaynakta yok; beklenen sonuç boş). K6 gereği bu iki case düzeltilmeden QA tarafından kabul edilemez.",
   "input_match": {
     "sources": [
       "jira:TPD-3"
@@ -17,6 +17,67 @@
     ]
   },
   "output": {
+    "open_questions": [
+      {
+        "id": "Q1",
+        "question": "Arama büyük/küçük harfe duyarlı mı? Örneğin \"gazoz\" yazıldığında \"Portakal Gazozu 1L\" listelenmeli mi, yoksa \"Ürün bulunamadı\" mı gösterilmeli?",
+        "owner": "PO"
+      }
+    ],
+    "assumptions": [
+      {
+        "id": "A1",
+        "statement": "Arama alanı boşaltıldığında katalogdaki tüm ürünler yeniden listelenir (kabul kriterleri aramanın temizlenmesini tanımlamıyor).",
+        "owner": "PO"
+      }
+    ],
+    "coverage_items": [
+      {
+        "id": "EP-V1",
+        "ac_ref": "AC1",
+        "definition": "Arama metni tek bir ürünün adında geçiyor: yalnızca o ürün listelenir",
+        "valid": true
+      },
+      {
+        "id": "EP-V2",
+        "ac_ref": "AC1",
+        "definition": "Arama metni birden çok ürünün adında geçiyor: eşleşen ürünlerin hepsi listelenir",
+        "valid": true
+      },
+      {
+        "id": "EP-I1",
+        "ac_ref": "AC2",
+        "definition": "Arama metni hiçbir ürünün adında geçmiyor: \"Ürün bulunamadı\" mesajı gösterilir",
+        "valid": false
+      },
+      {
+        "id": "EG-1",
+        "ac_ref": "AC1",
+        "definition": "Arama temizlendikten sonra liste filtreli kalabilir: arama alanı boşaltılınca listenin durumu",
+        "valid": true
+      },
+      {
+        "id": "EG-2",
+        "ac_ref": "AC1",
+        "definition": "Arama metni ürün adındakinden farklı büyük/küçük harfle yazılır (eşleşme davranışı kaynakta tanımsız)",
+        "valid": true
+      }
+    ],
+    "negative_coverage": [
+      {
+        "item": "EP-I1",
+        "decision": "tested",
+        "rationale": "Eşleşme olmaması AC2'de mesajıyla tanımlı; hiçbir ürün adında geçmeyen \"Kahve\" ile sınanıyor."
+      }
+    ],
+    "not_covered": [],
+    "observations": [],
+    "automation_open_points": [],
+    "config_matrix": {
+      "parameters": [],
+      "constraints": []
+    },
+    "testability_gaps": [],
     "cases": [
       {
         "title": "Ürün adının bir bölümüyle arama yalnızca eşleşen ürünleri listeler",
@@ -40,7 +101,33 @@
         "expected_result": "Katalogda yalnızca \"Portakal Gazozu 1L\" görünür; diğer ürünler listelenmez",
         "tags": [
           "AI-generated"
-        ]
+        ],
+        "technique": [
+          "EP"
+        ],
+        "covers": [
+          "EP-V1"
+        ],
+        "priority": "P2",
+        "priority_rationale": "Arama yanlış ürün listelerse bayi ürünü bulamaz ama kataloğu gezerek ilerleyebilir; arama sık kullanıldığından olasılık orta, iş kritikliği orta.",
+        "platform": null,
+        "test_level": "SYSTEM",
+        "verification_point": "UI",
+        "requires_real_device": false,
+        "standard_refs": [],
+        "readiness": "ready",
+        "assumption_refs": [],
+        "open_question_refs": [],
+        "test_data": [
+          {
+            "name": "Arama metni (tek ürünle eşleşir)",
+            "value": "Gazoz",
+            "class": "EP-V1",
+            "synthetic": true,
+            "is_attack_payload": false
+          }
+        ],
+        "teardown": []
       },
       {
         "title": "Birden çok ürünle eşleşen arama hepsini listeler",
@@ -64,7 +151,33 @@
         "expected_result": "Katalogda yalnızca \"Portakal Gazozu 1L\" ve \"Şeftalili Soğuk Çay 1L\" görünür",
         "tags": [
           "AI-generated"
-        ]
+        ],
+        "technique": [
+          "EP"
+        ],
+        "covers": [
+          "EP-V2"
+        ],
+        "priority": "P3",
+        "priority_rationale": "Çoklu eşleşmede eksik ürün listelenmesi bayiyi yanıltır ama sipariş vermesini engellemez; olasılık düşük, iş kritikliği düşük.",
+        "platform": null,
+        "test_level": "SYSTEM",
+        "verification_point": "UI",
+        "requires_real_device": false,
+        "standard_refs": [],
+        "readiness": "ready",
+        "assumption_refs": [],
+        "open_question_refs": [],
+        "test_data": [
+          {
+            "name": "Arama metni (iki ürünle eşleşir)",
+            "value": "1L",
+            "class": "EP-V2",
+            "synthetic": true,
+            "is_attack_payload": false
+          }
+        ],
+        "teardown": []
       },
       {
         "title": "Eşleşme olmayan aramada \"Ürün bulunamadı\" mesajı gösterilir",
@@ -88,7 +201,143 @@
         "expected_result": "Ürün listelenmez ve \"Ürün bulunamadı\" mesajı gösterilir",
         "tags": [
           "AI-generated"
-        ]
+        ],
+        "technique": [
+          "EP"
+        ],
+        "covers": [
+          "EP-I1"
+        ],
+        "priority": "P2",
+        "priority_rationale": "Eşleşme olmadığında mesaj gösterilmezse bayi boş listeyi hata sanar; geçici çözümü kataloğu gezmektir, olasılık orta, iş kritikliği orta.",
+        "platform": null,
+        "test_level": "SYSTEM",
+        "verification_point": "UI",
+        "requires_real_device": false,
+        "standard_refs": [],
+        "readiness": "ready",
+        "assumption_refs": [],
+        "open_question_refs": [],
+        "test_data": [
+          {
+            "name": "Arama metni (eşleşme yok)",
+            "value": "Kahve",
+            "class": "EP-I1",
+            "synthetic": true,
+            "is_attack_payload": false
+          }
+        ],
+        "teardown": []
+      },
+      {
+        "title": "Arama alanı temizlenince tüm ürünler yeniden listelenir",
+        "type": "positive",
+        "risk": "low",
+        "acceptance_criteria_refs": [
+          "AC1"
+        ],
+        "preconditions": [
+          "bayi1 / Demo123! ile giriş yapılmış",
+          "Katalog sayfası açık"
+        ],
+        "steps": [
+          {
+            "id": "S1",
+            "action": "Arama alanına ürün adının bir bölümünü yaz",
+            "data": "Gazoz",
+            "expected": "Yalnızca \"Portakal Gazozu 1L\" listelenir"
+          },
+          {
+            "id": "S2",
+            "action": "Arama alanındaki metni sil",
+            "data": null,
+            "expected": "\"Portakal Gazozu 1L\", \"Limonata 330ml\", \"Maden Suyu 200ml\" ve \"Şeftalili Soğuk Çay 1L\" listelenir"
+          }
+        ],
+        "expected_result": "Arama alanı boşaltılınca katalogdaki dört ürünün tümü yeniden listelenir",
+        "tags": [
+          "AI-generated"
+        ],
+        "technique": [
+          "EG"
+        ],
+        "covers": [
+          "EG-1"
+        ],
+        "priority": "P3",
+        "priority_rationale": "Arama temizlenince liste filtreli kalırsa bayi sayfayı yenileyerek ilerleyebilir; olasılık düşük, iş kritikliği düşük.",
+        "platform": null,
+        "test_level": "SYSTEM",
+        "verification_point": "UI",
+        "requires_real_device": false,
+        "standard_refs": [],
+        "readiness": "assumption_dependent",
+        "assumption_refs": [
+          "A1"
+        ],
+        "open_question_refs": [],
+        "test_data": [
+          {
+            "name": "Arama metni (tek ürünle eşleşir)",
+            "value": "Gazoz",
+            "class": null,
+            "synthetic": true,
+            "is_attack_payload": false
+          }
+        ],
+        "teardown": []
+      },
+      {
+        "title": "Küçük harfle yazılan ürün adı parçasıyla arama (beklenen sonuç PO yanıtını bekliyor)",
+        "type": "positive",
+        "risk": "low",
+        "acceptance_criteria_refs": [
+          "AC1"
+        ],
+        "preconditions": [
+          "bayi1 / Demo123! ile giriş yapılmış",
+          "Katalog sayfası açık"
+        ],
+        "steps": [
+          {
+            "id": "S1",
+            "action": "Arama alanına ürün adının bir bölümünü küçük harfle yaz",
+            "data": "gazoz",
+            "expected": ""
+          }
+        ],
+        "expected_result": "",
+        "tags": [
+          "AI-generated"
+        ],
+        "technique": [
+          "EG"
+        ],
+        "covers": [
+          "EG-2"
+        ],
+        "priority": "P3",
+        "priority_rationale": "Büyük/küçük harf farkı yüzünden ürün bulunamazsa bayi metni düzelterek ilerleyebilir; olasılık orta, iş kritikliği düşük.",
+        "platform": null,
+        "test_level": "SYSTEM",
+        "verification_point": "UI",
+        "requires_real_device": false,
+        "standard_refs": [],
+        "readiness": "blocked",
+        "assumption_refs": [],
+        "open_question_refs": [
+          "Q1"
+        ],
+        "test_data": [
+          {
+            "name": "Arama metni (küçük harf)",
+            "value": "gazoz",
+            "class": "EG-2",
+            "synthetic": true,
+            "is_attack_payload": false
+          }
+        ],
+        "teardown": []
       }
     ]
   }

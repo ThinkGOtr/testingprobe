@@ -84,6 +84,11 @@ def heading(text: str, level: int = 3) -> AdfNode:
     return {"type": "heading", "attrs": {"level": level}, "content": _inline(text)}
 
 
+def code_block(text: str) -> AdfNode:
+    """Kod bloğu: metin biçimlendirilmeden, olduğu gibi (satır sonları dahil) gösterilir."""
+    return {"type": "codeBlock", "attrs": {}, "content": [{"type": "text", "text": text}]}
+
+
 def bullet_list(items: Sequence[str], ordered: bool = False, start: int = 1) -> AdfNode:
     node: AdfNode = {
         "type": "orderedList" if ordered else "bulletList",

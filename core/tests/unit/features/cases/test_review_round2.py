@@ -14,7 +14,7 @@ from tp_core.features.cases import metrics
 from tp_core.gateway.testing import text_response
 from tp_core.models import AuditEvent, Requirement, TestCase, session_scope
 
-from .helpers import case_icerik, latest_cases, login, run_jobs
+from .helpers import case_icerik, latest_cases, login, run_jobs, uretim_cikti
 
 
 def _karar(api: TestClient, c: dict[str, Any], **govde: Any):
@@ -57,7 +57,7 @@ def test_story_degisince_yayinli_eski_caseler_tekrar_ve_kapsam_sayilmaz(
     from tp_core.features.publish import service as publish
 
     ciktilar = [case_icerik(), case_icerik(title="Hatalı parola", ref="AC2")]
-    fake_gateway([text_response({"cases": ciktilar}), text_response({"cases": ciktilar})])
+    fake_gateway([text_response(uretim_cikti(ciktilar)), text_response(uretim_cikti(ciktilar))])
     rid = make_requirement()
     analist = make_user("analyst")
     po = make_user("po")
@@ -118,7 +118,7 @@ def test_portal_uretimi_ide_taslaklarini_korur(
         sonuc = submit_drafts(s, "TPD-4", [case_icerik(title="IDE: kilitli hesap", ref="AC2")], ide)
     (ide_case,) = sonuc["eklenen"]
 
-    fake_gateway([text_response({"cases": [case_icerik()]})])
+    fake_gateway([text_response(uretim_cikti([case_icerik()]))])
     login(api, analist)
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     (is_,) = run_jobs(engine)
@@ -136,7 +136,7 @@ def test_portal_uretimi_ide_taslaklarini_korur(
 def test_duzeltilen_case_ai_ozgunu_fark_ve_neden_doner(
     api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway
 ) -> None:
-    fake_gateway([text_response({"cases": [case_icerik(), case_icerik(title="B", ref="AC2")]})])
+    fake_gateway([text_response(uretim_cikti([case_icerik(), case_icerik(title="B", ref="AC2")]))])
     rid = make_requirement()
     login(api, make_user("analyst"))
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
@@ -197,7 +197,7 @@ def test_ortusen_goruntulemelerde_review_suresi_sisirilmez(
     api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway
 ) -> None:
     cases = [case_icerik(title=f"Case {i}", ref="AC1") for i in range(3)]
-    fake_gateway([text_response({"cases": cases})])
+    fake_gateway([text_response(uretim_cikti(cases))])
     rid = make_requirement()
     analist = make_user("analyst")
     login(api, analist)
@@ -230,7 +230,7 @@ def test_onceki_icerik_uyarisi_denetim_kaydinda(
     from tp_core.features.publish import service as publish
 
     cikti = [case_icerik()]
-    fake_gateway([text_response({"cases": cikti}), text_response({"cases": cikti})])
+    fake_gateway([text_response(uretim_cikti(cikti)), text_response(uretim_cikti(cikti))])
     rid = make_requirement()
     login(api, make_user("analyst"))
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202

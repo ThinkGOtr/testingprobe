@@ -17,6 +17,7 @@ from tests.unit.features.cases.helpers import (
     latest_cases,
     login,
     run_jobs,
+    uretim_cikti,
 )
 from tp_core.features.publish import service as publish
 from tp_core.gateway.testing import text_response
@@ -31,7 +32,11 @@ from tp_core.workflow.jobs import JobContext
 def hazir(api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway):
     """İki case'li TPD-4: ilki onaylı, ikincisi taslak; analist oturumu açık."""
     fake_gateway(
-        [text_response({"cases": [case_icerik(), case_icerik(title="Hatalı parola", ref="AC2")]})]
+        [
+            text_response(
+                uretim_cikti([case_icerik(), case_icerik(title="Hatalı parola", ref="AC2")])
+            )
+        ]
     )
     rid = make_requirement()
     analist = make_user("analyst")
@@ -60,6 +65,10 @@ def _issue(sim: TestClient, key: str) -> dict[str, Any]:
     return sim.get(f"/rest/api/3/issue/{key}", auth=READ).json()["fields"]
 
 
+def _etiketler(case: dict[str, Any]) -> list[str]:
+    return ["AI-generated", f"tp-{case['id']}", "tp-tech-UC", "tp-P2"]
+
+
 def _label_count(jira: RestJira, cid: str) -> int:
     return len(jira.search(f'project = "TPD" AND labels = "tp-{cid}"', max_results=10))
 
@@ -75,7 +84,8 @@ def test_onizleme_islemleri_ve_gonderilen_govdeyle_ayni(
     assert islem == {a["id"]: "create", b["id"]: "blocked_not_approved"}
     kalem = next(k for k in on["kalemler"] if k["case_id"] == a["id"])
     # FakeProvider geçidin canlı yolundan geçer: mod "live" (REPLAY olsa tp-mod-replay).
-    assert kalem["labels"] == ["AI-generated", f"tp-{a['id']}", "tp-mod-live"]
+    # v3 case (helpers.case_icerik: teknik UC, öncelik P2): teknik ve öncelik etiketleri de gider.
+    assert kalem["labels"] == [*_etiketler(a), "tp-mod-live"]
     assert kalem["uretim_modu"] == "live"
     assert kalem["onaylayan"] == analist.kullanici_adi
 
@@ -117,7 +127,7 @@ def test_api_ile_yayin_kismi_sonuc_ve_gereksinim_done(
     assert durum[a["id"]]["durum"] == "created"
     assert durum[b["id"]]["durum"] == "failed" and "Onaylı değil" in durum[b["id"]]["hata"]
     key = durum[a["id"]]["external_key"]
-    assert _issue(sim, key)["labels"] == ["AI-generated", f"tp-{a['id']}", "tp-mod-live"]
+    assert _issue(sim, key)["labels"] == [*_etiketler(a), "tp-mod-live"]
     assert _label_count(jira, b["id"]) == 0  # onaysız case Jira'ya hiç gitmedi
 
     cases = {c["id"]: c for c in latest_cases(api, rid)}
@@ -282,7 +292,7 @@ def test_kismi_hata_sonra_yeniden_deneme(
 def test_serbest_metin_gereksinim_yayini_engellenir(
     api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway, targets
 ) -> None:
-    fake_gateway([text_response({"cases": [case_icerik()]})])
+    fake_gateway([text_response(uretim_cikti([case_icerik()]))])
     rid = make_requirement(jira_key=None, baslik="Serbest", aciklama="Serbest metin gereksinim")
     login(api, make_user("analyst"))
     api.post(f"/requirements/{rid}/generate-cases")
@@ -325,7 +335,7 @@ def test_xray_hedefi_onizleme_ve_yayin(
     kalem = next(k for k in on["kalemler"] if k["case_id"] == a["id"])
     imp = kalem["payload"]["xray_import"]
     assert imp[0]["testtype"] == "Manual"
-    assert imp[0]["fields"]["labels"] == ["AI-generated", f"tp-{a['id']}"]
+    assert imp[0]["fields"]["labels"] == _etiketler(a)
     assert [s["action"] for s in imp[0]["steps"]] == [s["action"] for s in a["icerik"]["steps"]]
 
     tm = get_test_management(
@@ -446,7 +456,7 @@ def test_yeni_po_onayiyla_uretimde_eski_caseler_superseded(
         transition(s, req, "pending_po", SYSTEM, "doc_final")
         record_approval(s, req, po, "po_approve", beklenen_hash=content_hash_of(req))
         transition(s, req, "po_approved", po, "pending_po")
-    fake_gateway([text_response({"cases": [case_icerik(title="Yeni kurala göre giriş")]})])
+    fake_gateway([text_response(uretim_cikti([case_icerik(title="Yeni kurala göre giriş")]))])
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     run_jobs(engine)
     durum = {c["id"]: c["durum"] for c in latest_cases(api, rid)}

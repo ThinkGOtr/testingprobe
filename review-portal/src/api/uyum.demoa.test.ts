@@ -124,7 +124,13 @@ describe("bulgu", () => {
 describe("case", () => {
   it("portal şekli değişmeden geçer", () => {
     for (const c of ilkVeri().caseler) {
-      expect(caseUyarla(JSON.parse(JSON.stringify(c)))).toEqual({ ...c, goruntulenme: c.goruntulenme ?? null });
+      // v3 (011): core alanları yoksa readiness/legacy içerikten türetilir (eski case: hazır + legacy).
+      expect(caseUyarla(JSON.parse(JSON.stringify(c)))).toEqual({
+        ...c,
+        goruntulenme: c.goruntulenme ?? null,
+        readiness: c.icerik.readiness ?? "ready",
+        legacy: c.icerik.readiness === undefined,
+      });
     }
   });
 

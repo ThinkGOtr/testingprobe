@@ -323,7 +323,7 @@ def test_max_tokens_default_uses_purpose_config(make_gateway, rules_dir) -> None
             load_schema(rules_dir, "case_generation"),
             replay_key=KEY,
         )
-    assert provider.requests[0].max_tokens == 16000
+    assert provider.requests[0].max_tokens == 32000  # models.yaml: case_generation (şema v3)
 
 
 def test_rows_match_platform_ai_call_columns(make_gateway, rules_dir, recorder) -> None:

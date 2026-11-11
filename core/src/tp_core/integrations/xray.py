@@ -22,10 +22,10 @@ from tp_core.integrations.jira import (
     send_with_retry,
 )
 from tp_core.integrations.testmgmt import (
-    AI_LABEL,
     CaseContent,
     TestManagementError,
     case_description_text,
+    case_labels,
     find_by_label,
     link_to_story,
 )
@@ -149,7 +149,12 @@ def _error_text(resp: httpx.Response) -> str:
 
 
 class XrayTestManagement:
-    """Onaylı case'i Xray Cloud Manual Test'i olarak yayınlar (adımlar Xray adım alanında)."""
+    """Onaylı case'i Xray Cloud Manual Test'i olarak yayınlar (adımlar Xray adım alanında).
+
+    Şema v3 bilgileri (teknik, öncelik + gerekçe, doğrulama noktası, test verisi, temizlik…)
+    açıklama metninde ve etiketlerde taşınır (``case_labels``). Jira ``priority`` alanına yazılmaz:
+    öncelik şeması proje yapılandırmasına bağlıdır.
+    """
 
     name = "xray"
 
@@ -168,7 +173,7 @@ class XrayTestManagement:
                 "project": {"key": self.project},
                 "summary": case.title[:255],
                 "description": case_description_text(case, story_key, steps_table=False),
-                "labels": [AI_LABEL, case.tp_label],
+                "labels": case_labels(case),
             },
             "steps": [
                 {"action": s.action, "data": s.data or "", "result": s.expected or ""}

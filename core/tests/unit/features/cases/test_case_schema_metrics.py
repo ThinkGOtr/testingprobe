@@ -9,7 +9,9 @@ import pytest
 from tp_core.features.cases import metrics
 from tp_core.features.cases.schema import (
     acceptance_criteria,
+    consistency_problems,
     content_errors,
+    normalize_ozet,
     unknown_ac_refs,
     validate_case,
 )
@@ -22,8 +24,11 @@ GOLDENS = sorted((find_rules_dir() / "replay" / "case_generation" / "golden").gl
 
 @pytest.mark.parametrize("path", GOLDENS, ids=lambda p: p.stem)
 def test_golden_caseleri_tek_case_semasina_uyar(path) -> None:
-    for case in json.loads(path.read_text(encoding="utf-8"))["output"]["cases"]:
+    cikti = json.loads(path.read_text(encoding="utf-8"))["output"]
+    for case in cikti["cases"]:
         assert validate_case(case) == []
+        # v3: golden case'leri kendi üretim özetleriyle tutarlıdır (specs/011 §4.2).
+        assert consistency_problems(case, normalize_ozet(cikti)) == []
 
 
 @pytest.mark.parametrize(

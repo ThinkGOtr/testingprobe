@@ -6,7 +6,9 @@
   `approved_hash_matches` (son insan kararı onaylayan bir karar, `review.onaylanan_hash ==
   test_case.icerik_hash == test_case.onaylanan_hash`) **ve** gereksinim `cases_ready|done` ve PO
   onayı güncel içerikte (`onaylanan_hash == content_hash_of(req)`; story değişip PO onayı
-  sıfırlandıysa eski metnin case'i yayınlanmaz). Değilse o case yayınlanmaz.
+  sıfırlandıysa eski metnin case'i yayınlanmaz) **ve** case hazır (`readiness == ready`; eski
+  v2 case hazır sayılır) **ve** v3 case'te denetim kapısı (`set_gate_check`; bağlı değilse engel
+  yok). Değilse o case yayınlanmaz.
 - **Mevcut issue:** adaptör `tp-<uuid>` etiketli issue bulursa onu döndürür ve içeriğini
   güncellemez. Bu yüzden yazmadan önce bulunan issue'nun açıklamasındaki onaylanan içerik hash'i
   güncel hash'le karşılaştırılır; farklıysa (onaydan sonra düzeltilmiş case) yayın açık hatayla
@@ -40,16 +42,17 @@ from sqlalchemy.orm import Session
 
 from tp_core.audit import audit_on_commit, chain_tip
 from tp_core.events.bus import publish_tx
+from tp_core.features.cases.schema import is_legacy, readiness_of
 from tp_core.features.cases.service import get_requirement, requirement_change_reason
 from tp_core.integrations import jira_notify
 from tp_core.integrations.jira import get_jira_settings
 from tp_core.integrations.jira_adf import strip_bot_header
 from tp_core.integrations.testmgmt import (
-    AI_LABEL,
     RELATES_LINK,
     TEST_LINK,
     CaseContent,
     case_description_adf,
+    case_labels,
 )
 from tp_core.models import (
     AppUser,
@@ -162,16 +165,60 @@ def idempotency_key(hedef: str, tc: TestCase) -> str:
     return f"publish:{hedef}:test_case:{tc.id}:{tc.icerik_hash}"
 
 
+# Denetim kapısı (ANALIZ §4.7, K3): yalnız v3 case'ler için, hazır olma kontrolünden sonra çağrılır.
+# Dönen metin yayın engelidir (None = engel yok). Varsayılan: kapı bağlı değil, engel yok.
+GateCheck = Callable[[Session, TestCase], str | None]
+_gate_check: GateCheck | None = None
+
+
+def set_gate_check(check: GateCheck | None) -> None:
+    """Denetim kapısını bağlar (None → kapı yok). Eski (v2) case'ler için çağrılmaz (K9)."""
+    global _gate_check
+    _gate_check = check
+
+
+NOT_READY_NEDEN = {
+    "assumption_dependent": (
+        "Hazır değil: varsayıma bağlı (varsayım doğrulanıp case düzeltilmeden yayınlanamaz)"
+    ),
+    "blocked": (
+        "Hazır değil: açık soru bekliyor (soru yanıtlanıp beklenen sonuç yazılmadan yayınlanamaz)"
+    ),
+}
+
+
+def _yayin_engeli(
+    session: Session, tc: TestCase, gereksinim_engeli: str | None
+) -> tuple[str, str] | None:
+    """(önizleme `islem` değeri, neden) ya da None. Sıra (ANALIZ §4.7): durum `approved` → hash
+    eşleşmesi → gereksinim güncel → hazır (`readiness`) → denetim kapısı (yalnız v3 case)."""
+    if tc.durum != "approved":
+        return "blocked_not_approved", f"Onaylı değil (durum: {tc.durum})"
+    if not approved_hash_matches(session, tc):
+        return (
+            "blocked_hash_mismatch",
+            "İçerik onaydan sonra değişmiş (onaylanan hash ≠ güncel hash)",
+        )
+    if gereksinim_engeli is not None:
+        return "blocked_requirement_changed", gereksinim_engeli
+    hazirlik = readiness_of(tc.icerik)
+    if hazirlik != "ready":
+        return "blocked_not_ready", NOT_READY_NEDEN.get(
+            hazirlik, f"Hazır değil (readiness: {hazirlik!r})"
+        )
+    if _gate_check is not None and not is_legacy(tc.icerik):
+        kapi = _gate_check(session, tc)
+        if kapi:
+            return "blocked_gate", kapi
+    return None
+
+
 def _engel(session: Session, tc: TestCase) -> str | None:
     """Yayın engeli (None = yayınlanabilir). Kararlar Postgres'teki onay kaydından okunur."""
-    if tc.durum != "approved":
-        return f"Onaylı değil (durum: {tc.durum})"
-    if not approved_hash_matches(session, tc):
-        return "İçerik onaydan sonra değişmiş (onaylanan hash ≠ güncel hash)"
-    gerekce = requirement_change_reason(session.get(Requirement, tc.requirement_id))
-    if gerekce is not None:
-        return gerekce
-    return None
+    engel = _yayin_engeli(
+        session, tc, requirement_change_reason(session.get(Requirement, tc.requirement_id))
+    )
+    return engel[1] if engel else None
 
 
 # ---------------------------------------------------------------------- üretim modu
@@ -224,7 +271,7 @@ def preview_payload(hedef: str, proje: str, content: CaseContent, story_key: str
         "project": {"key": proje},
         "issuetype": {"name": "Test"},
         "summary": content.title[:255],
-        "labels": list(dict.fromkeys([AI_LABEL, content.tp_label])),
+        "labels": case_labels(content),
         "description": case_description_adf(content, story_key),
     }
     return {"jira_issue": {"fields": fields}, "issue_link": link}
@@ -257,16 +304,14 @@ def preview(session: Session, requirement_id: uuid.UUID) -> dict[str, Any]:
     kalemler = []
     for tc in cases:
         ref = _created_ref(session, tc.id)
+        engel = None if tc.durum == "published" else _yayin_engeli(session, tc, gereksinim_engeli)
+        neden: str | None = None
         if tc.durum == "published":
             islem = "skip_existing"
-        elif tc.durum != "approved":
-            islem = "blocked_not_approved"
-        elif not approved_hash_matches(session, tc):
-            islem = "blocked_hash_mismatch"
-        elif gereksinim_engeli is not None:
-            islem = "blocked_requirement_changed"
+        elif engel is not None:
+            islem, neden = engel
         elif not req.jira_key:
-            islem = "blocked_no_story"
+            islem, neden = "blocked_no_story", STORY_YOK
         else:
             islem = "create"
         content = CaseContent.from_mapping(case_mapping(session, tc))
@@ -282,11 +327,14 @@ def preview(session: Session, requirement_id: uuid.UUID) -> dict[str, Any]:
                 "title": content.title,
                 "issue_type": "Test",
                 "summary": content.title[:255],
-                "labels": [AI_LABEL, content.tp_label, mode_label(mod)],
+                "labels": [*case_labels(content), mode_label(mod)],
                 "uretim_modu": mod,
                 "link": {"type": TEST_LINK, "story_key": req.jira_key},
                 "adim_sayisi": len(content.steps),
                 "islem": islem,
+                # Engelin Türkçe nedeni (`blocked_*` dışında None); yayındaki `hata` ile aynı.
+                "neden": neden,
+                "readiness": readiness_of(tc.icerik),
                 "external_key": ref.external_key if ref else None,
                 "icerik_hash": tc.icerik_hash,
                 "onaylayan": content.approved_by,

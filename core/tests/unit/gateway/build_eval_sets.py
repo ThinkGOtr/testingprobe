@@ -390,12 +390,117 @@ def _test_data_block() -> str:
     return wrap_untrusted(text, source=testdata.KAYNAK, kind="data")
 
 
+# Uydurma belirteçleri (011 §4.2 "beklenen sonuç kaynaktan gelir"): hiçbir demo story'sinde
+# yanıt kodu, zaman aşımı, hız sınırı, yeniden deneme ya da idempotency kuralı yoktur. `ready`
+# bir case bunlardan birini anıyorsa beklenen sonuç uydurulmuştur.
+FABRICATION_COMMON = [
+    "HTTP 2",
+    "HTTP 4",
+    "HTTP 5",
+    "status code",
+    "durum kodu",
+    "401",
+    "403",
+    "404",
+    "429",
+    "timeout",
+    "zaman aşımı",
+    "rate limit",
+    "hız sınırı",
+    "retry",
+    "yeniden dene",
+    "idempot",
+    "milisaniye",
+    "saniye içinde",
+]
+# Sepet / sipariş story'leri: kaynakta stok, vergi, kargo, bildirim kuralı yok.
+FABRICATION_ORDER = ["stok", "KDV", "kargo", "e-posta", "SMS"]
+FABRICATION = {
+    "TPD-1": [*FABRICATION_COMMON, *FABRICATION_ORDER],
+    # Arama: en az karakter, öneri/otomatik tamamlama, sayfalama kuralı yok.
+    "TPD-3": [
+        *FABRICATION_COMMON,
+        "en az 2 karakter",
+        "en az 3 karakter",
+        "karakter sınırı",
+        "otomatik tamamla",
+        "öneri listesi",
+        "sayfalama",
+    ],
+    # Giriş: hesap kilidi, deneme hakkı, captcha, parola sıfırlama, zorunlu alan mesajı yok.
+    "TPD-4": [
+        *FABRICATION_COMMON,
+        "kilitlen",
+        "bloke",
+        "captcha",
+        "deneme hakkı",
+        "3 hatalı",
+        "5 hatalı",
+        "şifremi unuttum",
+        "parolamı unuttum",
+        "zorunlu alan",
+        "boş bırakılamaz",
+        "e-posta",
+        "SMS",
+    ],
+    # Sepetten çıkarma: onay penceresi, geri alma kuralı yok.
+    "SERBEST": [
+        *FABRICATION_COMMON,
+        *FABRICATION_ORDER,
+        "emin misiniz",
+        "onay penceresi",
+        "geri al",
+    ],
+}
+# Kaynağın sessiz olduğu bilinen noktalar: bu konudaki case `ready` yazılamaz (varsayıma bağlı ya
+# da engelli olur, ya da hiç yazılmaz). Golden'lar: TPD-3 C5 `blocked` (Q1), TPD-4 `out_of_scope`.
+SILENT = {
+    "TPD-3": [
+        {
+            "topic": "aramada büyük/küçük harf duyarlılığı",
+            "keywords": ["küçük harf", "büyük harf", "büyük/küçük", "harf duyarl", "harfe duyarl"],
+        }
+    ],
+    "TPD-4": [
+        {
+            "topic": "kayıtlı olmayan kullanıcı adıyla giriş",
+            "keywords": [
+                "kayıtlı olmayan",
+                "kayıtsız kullanıcı",
+                "bilinmeyen kullanıcı",
+                "olmayan kullanıcı",
+                "tanımsız kullanıcı",
+                "geçersiz kullanıcı adı",
+                "hatalı kullanıcı adı",
+                "yanlış kullanıcı adı",
+            ],
+        }
+    ],
+}
+MAX_CASES = 10  # case-generation.md: "at most 10 cases per story"
+TEST_LEVEL = "SYSTEM"
+
+
+def _generation_messages(req: Any, data_block: str) -> list[ModelMessage]:
+    """Üretimin `generation_messages` kurucusu, üretim seçenekleriyle (011 K5): girdi
+    `Test seviyesi: SYSTEM` satırını taşır (golden'ların `test_level` alanı bununla tutarlıdır)."""
+    from tp_core.features.cases.service import generation_messages
+
+    return list(
+        generation_messages(
+            req, [], test_verisi=data_block, secenekler={"test_seviyesi": TEST_LEVEL}
+        )
+    )
+
+
 def case_generation_cases() -> list[dict[str, Any]]:
     """Adım 4 (§12): 5 story × 3 koşu. PO onaylı (son hal) belgeler golden girdi beyanlarından;
-    girdi üretimin `generation_messages` kurucusuyla (story bloğu + test verisi)."""
-    from types import SimpleNamespace
+    girdi üretimin `generation_messages` kurucusuyla (story bloğu + test verisi + test seviyesi).
 
-    from tp_core.features.cases.service import generation_messages
+    Beklentiler (şema v3, `eval_agents.coverage_problems`): AC kapsamı, her AC için hazır case,
+    case sayısı sınırları, belgeden gelen metinler, uydurma belirteçleri ve kaynağın sessiz olduğu
+    konular; 011 §4.2 deterministik kuralları her çıktıya ayrıca uygulanır."""
+    from types import SimpleNamespace
 
     stories = _stories()
     data_block = _test_data_block()
@@ -436,17 +541,23 @@ def case_generation_cases() -> list[dict[str, Any]]:
             kabul_kriterleri=acs,
             po_cevaplari=[],
         )
+        expect: dict[str, Any] = {
+            "ac_coverage": _refs(acs),
+            "ready_ac_coverage": _refs(acs),
+            "min_cases": len(acs),
+            "max_cases": MAX_CASES,
+            **exp,
+            "not_contains_any": FABRICATION[key],
+        }
+        if key in SILENT:
+            expect["must_not_be_ready_about"] = SILENT[key]
         out.append(
             {
                 "id": case_id,
                 "description": f"{key} ({golden}): son hal belgeden case üretimi",
                 "replay_key": _key(key),
-                "messages": _msgs(generation_messages(req, [], test_verisi=data_block)),
-                "expect": {
-                    "ac_coverage": _refs(acs),
-                    "min_cases": len(acs),
-                    **exp,
-                },
+                "messages": _msgs(_generation_messages(req, data_block)),
+                "expect": expect,
             }
         )
     return out

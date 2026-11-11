@@ -591,7 +591,9 @@ def test_prompt_states_the_limits_the_goldens_are_checked_against() -> None:
     """Golden'lar, yönerge ve README aynı kuralı söyler (constitution X değerlendirme referansı)."""
     assert f"≤ {MAX_CASE_STEPS} steps" in PROMPT
     assert f"at most {MAX_CASES} cases per story" in PROMPT
-    assert "Every AC is covered by at least one case" in PROMPT
+    assert "every acceptance criterion and every coverage item is listed" in " ".join(
+        PROMPT.split()
+    )
     readme = (RULES / "replay" / "README.md").read_text(encoding="utf-8")
     assert f"≤ {MAX_CASE_STEPS} adım" in readme and f"≤ {MAX_CASES} case" in readme
     assert "≤ 5 adım" not in readme and "6–8" not in readme

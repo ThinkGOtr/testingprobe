@@ -139,7 +139,8 @@ describe("ekranlar", () => {
     expect(screen.getByText("Review + kırma")).toBeInTheDocument();
     // TPD-1 case sayacı: 9 üretildi, 1 reddedildi → süitte 8; 4'ü onaylı/yayında
     expect(screen.getByText("4/8")).toBeInTheDocument();
-    expect(screen.getByText("Serbest metin")).toBeInTheDocument();
+    // İki serbest metin gereksinimi: req-ft-1 ve şema v3 örneği (req-ft-2).
+    expect(screen.getAllByText("Serbest metin")).toHaveLength(2);
   });
 
   it("serbest metin formu gereksinim oluşturup detaya gider", async () => {

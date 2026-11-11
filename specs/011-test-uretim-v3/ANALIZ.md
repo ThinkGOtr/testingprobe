@@ -134,6 +134,23 @@ reddedilir** (bugünkü "bilinmeyen AC" davranışı). İnsan düzeltmesinde ve 
 `[{item, tur: "ac"|"oge", tanim, valid, covered_by: [sira_no…], gerekce}]` + oranlar
 (gereksinim kapsamı, öğe kapsamı, negatif karar kapsamı).
 
+Uygulamada netleşenler (T1, kabul edildi):
+- Set düzeyi ihlaller (`set_problems`) 422 değil, `uyarilar` + denetim kaydıdır (IDE taslağı parça
+  parça gelebilir); 422 yalnız case düzeyi ihlallerdedir.
+- Kural 2 çift yönlüdür: `technique`'teki her teknik için `covers`'ta önekli öğe aranır ve
+  `covers`'taki her öğenin tekniği `technique`'te olmalıdır (üretim kuralı, eval denetleyicisi ve
+  test yardımcısı aynı kuralı uygular; çapraz test `test_case_goldens_v3.py`).
+- Prompt netleştirmeleri (T4 önerileri): test verisiyle kurulamayan sınır değer `out_of_scope`;
+  kaynağın sessiz olduğu öğe `out_of_scope` + gerekçede soru kimliği; geri alınamayan kayıt için
+  tek satırlık temizlik notu; `not_covered.item` = öğe kimliği ya da `ACn`; sınır aşılınca önce
+  en riskli öğeler.
+- Kural 6 büyük/küçük harf ve boşluk sadeleştirilmiş alt dizgi aramasıdır; adım `data`'sı da kapsanır.
+- IDE taslağı `ozet` göndermezse kapsam öğesi tanımlılığı atlanır; Q/A atıflı case 422 alır.
+- `coverage_matrix` → `{satirlar, oranlar}`; birden çok üretimde güncel case'i olan üretimlerin
+  özetleri birleştirilir (aynı kimlikte sonraki üretim geçerli). Derinleştirme üretimleri (P şeridi)
+  mevcut kimliklerle çakışmayan yeni kimlik numaraları kullanmalıdır.
+- `serialize_cases` ayrıca `onay_engeli` (approve'un 422 metni ya da null) döner.
+
 Eski case (K9): `readiness` anahtarı yoksa `legacy`; `validate_case(..., legacy=True)` yalnız v2
 zorunlu alanlarını arar; `readiness_of(icerik)` `"ready"` döner. IDE taslağı (`submit_drafts`) her
 zaman tam v3 ister.

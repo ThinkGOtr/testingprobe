@@ -12,7 +12,7 @@ from tp_core.audit import content_hash, verify_chain
 from tp_core.gateway.testing import text_response
 from tp_core.models import AiCall, Requirement, Review, TestCase, case_id, session_scope
 
-from .helpers import TPD3_INJECTION, TPD4, case_icerik, latest_cases, login, run_jobs
+from .helpers import TPD3_INJECTION, TPD4, case_icerik, latest_cases, login, run_jobs, uretim_cikti
 
 
 def _durum(rid: uuid.UUID) -> str:
@@ -145,7 +145,7 @@ def test_fake_provider_po_cevaplari_ayri_blok_ve_tekrar_eleme(
     api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway
 ) -> None:
     a, b = case_icerik(), case_icerik(title="Hatalı parola mesajı", ref="AC2")
-    provider = fake_gateway([text_response({"cases": [a, b, dict(a)]})])
+    provider = fake_gateway([text_response(uretim_cikti([a, b, dict(a)]))])
     rid = make_requirement(po_cevaplari=[{"soru": "Kilit var mı?", "cevap": "Hayır"}])
     login(api, make_user("analyst"))
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
@@ -165,7 +165,7 @@ def test_yeniden_uretim_taslaklari_superseded_onaylilari_korur(
 ) -> None:
     a, b = case_icerik(), case_icerik(title="Hatalı parola mesajı", ref="AC2")
     c = case_icerik(title="Boş parola", ref="AC2", type="negative")
-    fake_gateway([text_response({"cases": [a, b]}), text_response({"cases": [a, c]})])
+    fake_gateway([text_response(uretim_cikti([a, b])), text_response(uretim_cikti([a, c]))])
     rid = make_requirement()
     login(api, make_user("analyst"))
     api.post(f"/requirements/{rid}/generate-cases")
@@ -210,7 +210,7 @@ def test_basarisiz_uretim_gereksinimi_failed_yapar(
 def test_is_kuyruktayken_icerik_degisirse_uretim_failed(
     api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway
 ) -> None:
-    provider = fake_gateway([text_response({"cases": [case_icerik()]})])
+    provider = fake_gateway([text_response(uretim_cikti([case_icerik()]))])
     rid = make_requirement()
     login(api, make_user("analyst"))
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
@@ -229,7 +229,7 @@ def test_ayni_ciktiyla_yeniden_uretim_taslaklari_silmez(
 ) -> None:
     """REPLAY'de yeniden üretim hep aynı çıktıyı verir: taslak sayısı korunmalı (sıfır değil)."""
     a, b = case_icerik(), case_icerik(title="Hatalı parola mesajı", ref="AC2")
-    fake_gateway([text_response({"cases": [a, b]}), text_response({"cases": [a, b]})])
+    fake_gateway([text_response(uretim_cikti([a, b])), text_response(uretim_cikti([a, b]))])
     rid = make_requirement()
     login(api, make_user("analyst"))
     api.post(f"/requirements/{rid}/generate-cases")
@@ -256,7 +256,7 @@ def test_bilinmeyen_ac_ve_kapsam_deterministik_denetlenir(
 ) -> None:
     """Model AC9'a atıf yapar ve AC2'yi kapsamaz: kayıt + uyarı; düz onay reddedilir."""
     fake_gateway(
-        [text_response({"cases": [case_icerik(), case_icerik(title="Uydurma", ref="AC9")]})]
+        [text_response(uretim_cikti([case_icerik(), case_icerik(title="Uydurma", ref="AC9")]))]
     )
     rid = make_requirement()
     login(api, make_user("analyst"))
@@ -292,7 +292,7 @@ def test_son_denemede_is_disi_cokme_gereksinimi_generatingde_birakmaz(
     from tp_core.features.cases.jobs import on_worker_start
     from tp_core.workflow.jobs import release_orphans
 
-    fake_gateway([text_response({"cases": [case_icerik()]})])
+    fake_gateway([text_response(uretim_cikti([case_icerik()]))])
     rid = make_requirement()
     login(api, make_user("analyst"))
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
@@ -321,7 +321,7 @@ def test_son_denemede_is_disi_cokme_gereksinimi_generatingde_birakmaz(
 def test_takili_generating_yeniden_baslatmada_kurtarilir(
     api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway
 ) -> None:
-    fake_gateway([text_response({"cases": [case_icerik()]})])
+    fake_gateway([text_response(uretim_cikti([case_icerik()]))])
     rid = make_requirement()
     login(api, make_user("analyst"))
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
@@ -341,7 +341,7 @@ def test_duzeltilip_onaylanan_ai_case_yeniden_uretimde_tekrar_sayilir(
 ) -> None:
     """Düzeltilen case'in AI özgün içeriği yeniden üretilince kopya taslak düşmez (TPD-4 C1)."""
     a, b = case_icerik(), case_icerik(title="Hatalı parola mesajı", ref="AC2")
-    fake_gateway([text_response({"cases": [a, b]}), text_response({"cases": [a, b]})])
+    fake_gateway([text_response(uretim_cikti([a, b])), text_response(uretim_cikti([a, b]))])
     rid = make_requirement()
     login(api, make_user("analyst"))
     api.post(f"/requirements/{rid}/generate-cases")

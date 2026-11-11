@@ -145,11 +145,11 @@ metinde `golden_name(FREE_TEXT_KEY)` → `SERBEST` / `SERBEST-r2`. `fix_doc` ön
 | `requirement_review` | `TPD-1..4`, `SERBEST` | Özgün (jira-sim seed / girilen serbest metin). Düzeltmeden sonra yeniden ön inceleme yapılırsa nötr REPLAY-MISS olur (`make reset` önerilir) |
 | `consistency_check` | `TPD-1..4`, `SERBEST` (1. tur) | Özgün; düzeltilmiş metinle 1. tur `-r2`'ye düşer (arama sırası 3) |
 | `consistency_check` | `TPD-1-r2`, `SERBEST-r2` (2.+ tur) | Aşağıdaki düzeltilmiş metin |
-| `case_generation` | `TPD-1`, `SERBEST` | Düzeltilmiş metin; `TPD-3`, `TPD-4` özgün |
+| `case_generation` | `TPD-1`, `SERBEST` | Düzeltilmiş metin; `TPD-3`, `TPD-4` özgün. Şema v3 (aşağıda "case_generation golden'ları (şema v3)") |
 | `verify_and_map` | `TPD-1-C1..C10`, `TPD-4-C1..C2` | case_generation golden'ındaki case (insan düzeltirse REPLAY-MISS) |
 | `verify_and_map_app` | `TPD-1-C2-android` | 009 mobil: aynı C2 case'i; platform golden adındadır (`<story>-C<n>-<platform>`), başka platform REPLAY-MISS. Araç adımları app-mcp sözleşmesine uyan sahte oturumda yazıldı (`core/tests/unit/gateway/build_app_goldens.py`), gerçek cihazda kaydedilmedi |
 | `consistency_check` | `f2-kod-hatasi/TPD-1-r2` | F2 `code_defect` yolu: AC2 özgün, AC3 düzeltilmiş (aşağıda "Demo-B") |
-| `case_generation` | `f2-kod-hatasi/TPD-1` | Aynı belge; ana golden'dan tek farkı C3 (6 adette bedava yok) |
+| `case_generation` | `f2-kod-hatasi/TPD-1` | Aynı belge; case metni ana golden'dan yalnız C3'te ayrışır (6 adette bedava yok). v3 kapsam alanları (`technique`, `covers`, `test_data.class`) AC2 case'lerinde (C2, C3, C4, C10) belgenin eşiğine (6\|7 adet; ana belgede 5\|6) göre yazılıdır |
 | `verify_and_map` | `f2-kod-hatasi/TPD-1-C3` | Senaryonun C3'ü; diğer case'ler ana golden'larla birebir aynı, ana golden eşleşir |
 | `triage`, `bug_draft`, `dup_rank` | `HATA` + senaryo dizinleri | Faz 4 (aşağıda "Faz 4"): kanonik hata/bulgu bloğuna göre beyanlı |
 
@@ -263,6 +263,36 @@ bağlı); `TPD-1-C10` verify_and_map golden'ı C2'nin kaydından türetilmiştir
 denetler): her AC en az bir case ile kapsanır (kural/limit/hata mesajı içeren AC'de negatif/sınır
 case'ler kapsamdır; ayrı pozitif zorunlu değil — TPD-1 AC3/AC4, SERBEST AC3 böyledir), case başına
 ≤ 8 adım, story başına ≤ 10 case (1–2 AC'li story'de 4'ten az olabilir).
+
+### case_generation golden'ları (şema v3)
+
+Golden'lar şema v3'tedir (specs/011; `prompts/case-generation.md` v3) ve v3 alanları da **elle
+hazırlandı** (model çıktısı değil). Mevcut case alanları (başlık, tür, risk, AC atıfı, ön koşul,
+adımlar, beklenen, etiket) ve case sırası v2 ile aynıdır: verify_and_map / codegen golden'ları,
+portal örnek verisi ve prova bunlara dayanır; yalnız yeni alanlar ve üst düzey listeler eklendi.
+
+- **Üst düzey listeler:** `coverage_items` (EP / BVA / DT / UC / EG öğeleri, AC'ye bağlı),
+  `negative_coverage` (her `valid: false` öğe için tek karar), `not_covered` (gerekçeli),
+  `open_questions`, `assumptions`; platform bölümü olmadığından `observations`,
+  `automation_open_points`, `config_matrix`, `testability_gaps` boştur.
+- **Case alanları:** `technique` ↔ `covers` öneki uyumlu; `priority` + tek cümlelik gerekçe (para,
+  limit, sipariş onayı = P1); `verification_point: UI`; `test_level: SYSTEM` (üretim girdisinin
+  `Test seviyesi: SYSTEM` satırı); `test_data` adımlardaki somut verilerle aynı ve sentetik;
+  `teardown` (sepeti değiştiren case: "Sepeti boşalt"); `platform: null`.
+- **Hazır olma durumu:** `TPD-1` (10 case; provanın "hepsini onayla" adımı), `f2-kod-hatasi/TPD-1`,
+  `TPD-4` (her case'in verify_and_map golden'ı var) ve `SERBEST` tümüyle `ready`. Hazır olmayan
+  iki örnek `TPD-3`'ün SONUNDADIR (C1–C3 indeksleri kaymaz): C4 `assumption_dependent` (A1: arama
+  temizlenince tüm ürünler listelenir), C5 `blocked` (Q1: büyük/küçük harf duyarlılığı; beklenen
+  boş). K6 gereği bu iki case düzeltilmeden onaylanamaz. `TPD-4`'te kaynağın sessiz kaldığı bölüm
+  (kayıtlı olmayan kullanıcı adı) `out_of_scope` kararıdır; case yazılmaz.
+- **Kapsanmayanlar gerçektir:** `TPD-1`'de AC2'nin ikinci eşiği (11/12 adet) ve AC4'ün sınır
+  değerleri 10 case sınırı nedeniyle `not_covered` / `out_of_scope` olarak gerekçelidir.
+- **Denetim:** `test_case_goldens_v3.py` her golden'ı 011 §4.2 deterministik kurallarına üç ayrı
+  uygulamayla sorar (test yardımcısı `case_v3_rules.py`, değerlendirme
+  `eval_agents.generation_rule_problems`, üretim `features.cases.schema`) ve kural başına bir
+  bozulmuş golden'ın üçünde de yakalandığını doğrular. Portal kopyası
+  (`review-portal/src/api/mock/golden/kaynaklar.json`) case'lerle birlikte üst düzey listeleri
+  (`ozet`) de taşır: `npm run sozlesme:golden`.
 
 ## Kod üretimi (Demo-B): verify_and_map golden'ları
 

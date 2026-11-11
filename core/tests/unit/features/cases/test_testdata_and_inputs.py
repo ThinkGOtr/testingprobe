@@ -16,7 +16,7 @@ from tp_core.features.requirements.datatools import DemoDb
 from tp_core.gateway.testing import text_response
 from tp_core.models import Requirement, RequirementReview, session_scope
 
-from .helpers import case_icerik, login, run_jobs
+from .helpers import case_icerik, login, run_jobs, uretim_cikti
 
 GOLDEN = Path(__file__).resolve().parents[5] / "rules" / "replay" / "case_generation" / "golden"
 
@@ -123,7 +123,7 @@ def test_uretim_girdisi_soru_cevap_ve_test_verisi_bloklarini_tasir(
     api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway
 ) -> None:
     provider = fake_gateway(
-        [text_response({"cases": [case_icerik(), case_icerik(title="Hatalı", ref="AC2")]})]
+        [text_response(uretim_cikti([case_icerik(), case_icerik(title="Hatalı", ref="AC2")]))]
     )
     rid = make_requirement(
         po_cevaplari=[{"id": "9", "metin": "Kilit yok", "yazar": "po@x", "zaman": "2026-01-01"}]

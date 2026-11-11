@@ -10,7 +10,7 @@ import sys
 import threading
 import time
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -66,7 +66,10 @@ TPD3_INJECTION = (
 )
 
 
-def case_icerik(title: str = "Geçerli bilgilerle giriş", ref: str = "AC1", **over: Any) -> dict:
+def eski_case_icerik(
+    title: str = "Geçerli bilgilerle giriş", ref: str = "AC1", **over: Any
+) -> dict:
+    """Eski (v2) case: `readiness` yok (K9; tp-vm'deki mevcut case'lerin biçimi)."""
     icerik = {
         "title": title,
         "type": "positive",
@@ -87,6 +90,66 @@ def case_icerik(title: str = "Geçerli bilgilerle giriş", ref: str = "AC1", **o
     }
     icerik.update(over)
     return icerik
+
+
+def case_icerik(title: str = "Geçerli bilgilerle giriş", ref: str = "AC1", **over: Any) -> dict:
+    """v3 case (hazır, `UC-MF` ana akışını kapsar). Özeti `ozet_icerik` / `uretim_cikti` kurar."""
+    icerik = eski_case_icerik(title, ref)
+    icerik.update(
+        {
+            "technique": ["UC"],
+            "covers": ["UC-MF"],
+            "priority": "P2",
+            "priority_rationale": "Ana akış; hata girişi engeller, olasılık orta.",
+            "platform": None,
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": False,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "test_data": [],
+            "teardown": [],
+        }
+    )
+    icerik.update(over)
+    return icerik
+
+
+def ozet_icerik(cases: Sequence[dict] = (), **over: Any) -> dict:
+    """Üretim özeti (üst düzey listeler). `coverage_items` verilmezse case'lerin `covers`'ından
+    türetilir (öğenin AC'si = onu ilk kapsayan case'in ilk AC atıfı; `EP-I…` geçersiz bölüm)."""
+    ogeler: dict[str, dict] = {}
+    for c in cases:
+        for kimlik in c.get("covers") or []:
+            ogeler.setdefault(
+                kimlik,
+                {
+                    "id": kimlik,
+                    "ac_ref": (c.get("acceptance_criteria_refs") or [None])[0],
+                    "definition": f"{kimlik} kapsam öğesi",
+                    "valid": not kimlik.startswith("EP-I"),
+                },
+            )
+    ozet = {
+        "open_questions": [],
+        "assumptions": [],
+        "coverage_items": list(ogeler.values()),
+        "negative_coverage": [],
+        "not_covered": [],
+        "observations": [],
+        "automation_open_points": [],
+        "config_matrix": {"parameters": [], "constraints": []},
+        "testability_gaps": [],
+    }
+    ozet.update(over)
+    return ozet
+
+
+def uretim_cikti(cases: Sequence[dict], **ozet: Any) -> dict:
+    """Modelin v3 üretim çıktısı: üst düzey listeler + `cases` (FakeProvider senaryoları için)."""
+    return {**ozet_icerik(cases, **ozet), "cases": list(cases)}
 
 
 class SimTransport(httpx.BaseTransport):

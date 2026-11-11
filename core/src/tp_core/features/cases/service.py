@@ -14,15 +14,23 @@ Akış:
    içeriğinin hash'i) tekrar eklenmez. Girdiye demo
    uygulamasının test verisi eklenir (`testdata`); çıktıdaki AC atıfları ve AC kapsamı
    deterministik denetlenir (bilinmeyen AC'li case düzeltilmeden onaylanamaz).
+   Çıktının case dışındaki üst düzey listeleri (açık sorular, varsayımlar, kapsam öğeleri…)
+   `case_uretim.ozet`'e yazılır; case'ler bu özetle tutarlılık kurallarından (specs/011 §4.2)
+   geçirilir: ihlalli case taslak olarak yazılır, uyarısı gösterilir, düzeltilmeden onaylanamaz.
    Gereksinim `po_approved`'dan (yeni PO onayı) üretime geçerken eski case'ler `superseded` olur;
    iş dışı çöküşle `generating`'de kalan gereksinim yeniden başlatmada `failed`'a alınır.
 3. `decide` (portal, analist): approve | edit | reject | reopen. Kararlar `record_approval` ile
-   (görülen içerik hash'i zorunlu) `review`'a yazılır; `edit` içeriği şemayla doğrulanır,
+   (görülen içerik hash'i zorunlu) `review`'a yazılır; hazır olmayan (`readiness != ready`) ya da
+   tutarlılık ihlali olan case onaylanamaz (K6); `edit` içeriği şema + tutarlılıkla doğrulanır
+   (eski v2 case'te yalnız v2 alanlarıyla, K9),
    düzeltme ölçüsü ve review süresi `review.duzeltme_olculeri`'ndedir. `reopen` ("Taslağa al")
    approved/rejected → draft geçişidir ve denetim zincirine yazılır. Karar yalnızca gereksinim
    `cases_ready|done` ve PO onayı güncel içerikteyken verilir (story değişince 409).
-4. `submit_drafts` (IDE/MCP, `submit` kapsamlı token): şemalı taslaklar `kanal='ide'` ile `draft`
-   olarak düşer; Jira'ya yazılmaz; onay yine portalda insandır.
+4. `submit_drafts` (IDE/MCP, `submit` kapsamlı token): şemalı (her zaman tam v3) taslaklar ve
+   isteğe bağlı üretim özeti `kanal='ide'` ile `draft` olarak düşer; Jira'ya yazılmaz; onay yine
+   portalda insandır.
+5. `case_summary` (`GET /requirements/{id}/case-summary`): üretim başına özet listeleri, güncel
+   case'lerden hesaplanan kapsam matrisi ve oranlar, teknik / hazır olma dağılımı.
 
 Gereksinim içeriği, PO cevapları ve IDE'den gelen case metinleri güvenilmeyen girdidir (§5): modele
 yalnızca `wrap_untrusted` ile gider; içlerindeki talimatlar (ör. TPD-3) hiçbir durumu değiştiremez —
@@ -45,15 +53,26 @@ from tp_core.audit import audit_on_commit, content_hash
 from tp_core.events.bus import publish_tx
 from tp_core.features.cases import metrics
 from tp_core.features.cases.schema import (
+    OZET_ALANLARI,
+    READINESS,
+    READY,
     acceptance_criteria,
+    consistency_problems,
     content_errors,
+    coverage_matrix,
+    is_legacy,
+    normalize_ozet,
+    readiness_of,
+    set_problems,
     uncovered_acs,
     unknown_ac_refs,
+    validate_summary,
 )
 from tp_core.models import (
     AiCall,
     AppUser,
     CaseGoruntuleme,
+    CaseUretim,
     ExternalRef,
     Requirement,
     RequirementReview,
@@ -91,6 +110,15 @@ KARARLAR = frozenset({"approve", "edit", "reject", "reopen"})
 CASE_KULLANILIR = frozenset({"cases_ready", "done"})
 # Bir sonraki üretimde/IDE taslağında eski metne ait sayılan (karar verilmemiş/onaylı/ret) case'ler.
 BAYAT_CASE = ("draft", "approved", "rejected")
+# Üretim girdisindeki test seviyesi (şema `test_level` değerleri). Varsayılan sabittir; üretim
+# seçenekleri (specs/011 K5) `generation_messages(secenekler=...)` ile verilir.
+TEST_SEVIYELERI = ("UNIT", "COMPONENT", "INTEGRATION", "SYSTEM", "E2E", "UAT")
+VARSAYILAN_TEST_SEVIYESI = "SYSTEM"
+READINESS_TR = {
+    "ready": "hazır",
+    "assumption_dependent": "varsayıma bağlı",
+    "blocked": "engelli (açık soru bekliyor)",
+}
 
 
 class CaseNotFound(WorkflowError):
@@ -161,10 +189,113 @@ def requirement_key(req: Requirement) -> str:
 
 
 def next_uretim_no(session: Session, requirement_id: uuid.UUID) -> int:
+    """Sıradaki üretim numarası (case yazmamış ama özeti kayıtlı üretim de numarasını tutar)."""
     son = session.scalar(
         select(func.max(TestCase.uretim_no)).where(TestCase.requirement_id == requirement_id)
     )
-    return int(son or 0) + 1
+    son_ozet = session.scalar(
+        select(func.max(CaseUretim.uretim_no)).where(CaseUretim.requirement_id == requirement_id)
+    )
+    return max(int(son or 0), int(son_ozet or 0)) + 1
+
+
+def write_summary(
+    session: Session,
+    req: Requirement,
+    *,
+    uretim_no: int,
+    kanal: str,
+    ozet: Mapping[str, Any] | None,
+    ai_call_id: uuid.UUID | None = None,
+    tur: str = "uretim",
+) -> CaseUretim:
+    """Üretimin üst düzey listelerini `case_uretim`'e yazar (aynı üretim no: satır güncellenir).
+
+    `ozet=None` (IDE özet göndermedi) boş nesne olarak saklanır: "özet yok" demektir, kapsam
+    öğesi tanımlılığı denetlenmez (`_ozet_of`).
+    """
+    satir = session.scalars(
+        select(CaseUretim).where(
+            CaseUretim.requirement_id == req.id, CaseUretim.uretim_no == uretim_no
+        )
+    ).first()
+    icerik = normalize_ozet(ozet) if ozet is not None else {}
+    if satir is None:
+        satir = CaseUretim(
+            requirement_id=req.id,
+            uretim_no=uretim_no,
+            kanal=kanal,
+            tur=tur,
+            ai_call_id=ai_call_id,
+            ozet=icerik,
+        )
+        session.add(satir)
+    else:  # iş yeniden denemesi
+        satir.kanal, satir.tur, satir.ai_call_id, satir.ozet = kanal, tur, ai_call_id, icerik
+    session.flush()
+    return satir
+
+
+def _ozet_of(satir: CaseUretim | None) -> dict[str, Any] | None:
+    """Üretim satırının özeti; satır yoksa ya da özet boşsa (IDE özetsiz gönderdi) None."""
+    return dict(satir.ozet) if satir is not None and satir.ozet else None
+
+
+def summaries(
+    session: Session, requirement_ids: set[uuid.UUID]
+) -> dict[tuple[uuid.UUID, int], CaseUretim]:
+    """`(requirement_id, uretim_no)` → üretim satırı."""
+    if not requirement_ids:
+        return {}
+    return {
+        (u.requirement_id, u.uretim_no): u
+        for u in session.scalars(
+            select(CaseUretim).where(CaseUretim.requirement_id.in_(requirement_ids))
+        )
+    }
+
+
+def summary_for(session: Session, tc: TestCase) -> dict[str, Any] | None:
+    """Case'in üretildiği üretimin özeti (tutarlılık kuralları buna karşı denetlenir)."""
+    return _ozet_of(
+        session.scalars(
+            select(CaseUretim).where(
+                CaseUretim.requirement_id == tc.requirement_id,
+                CaseUretim.uretim_no == tc.uretim_no,
+            )
+        ).first()
+    )
+
+
+def approval_block(
+    icerik: Mapping[str, Any], kabul_kriterleri: Sequence[Any], ozet: Mapping[str, Any] | None
+) -> tuple[str, list[str]] | None:
+    """Case bu içerikle onaylanamıyorsa `(Türkçe neden, ayrıntılar)`; onaylanabiliyorsa None.
+
+    Sıra: gereksinimde olmayan AC atıfı → hazır olmama (K6) → tutarlılık ihlali (§4.2).
+    """
+    bilinmeyen = unknown_ac_refs(icerik, kabul_kriterleri)
+    if bilinmeyen:
+        return (
+            "Case gereksinimde olmayan kabul kriterine atıf yapıyor; 'Düzelt' ile düzeltin "
+            "ya da reddedin",
+            ["acceptance_criteria_refs: " + ", ".join(bilinmeyen)],
+        )
+    durum = readiness_of(icerik)
+    if durum != READY:
+        return (
+            f"Case hazır değil ({READINESS_TR.get(durum, durum)}); hazır olmayan case "
+            "onaylanamaz. 'Düzelt' ile hazır hale getirin (varsayımı / açık soruyu çözüp beklenen "
+            "sonucu yazın) ya da reddedin",
+            [f"readiness: {durum}"],
+        )
+    sorunlar = consistency_problems(icerik, ozet)
+    if sorunlar:
+        return (
+            "Case üretim özetiyle tutarsız; 'Düzelt' ile düzeltin ya da reddedin",
+            sorunlar,
+        )
+    return None
 
 
 def requirement_change_reason(req: Requirement | None) -> str | None:
@@ -290,8 +421,14 @@ def generation_messages(
     req: Requirement,
     sorular: Sequence[Mapping[str, Any]] = (),
     test_verisi: str | None = None,
+    *,
+    secenekler: Mapping[str, Any] | None = None,
 ) -> list[ModelMessage]:
     """Case üretim girdisi: PO onaylı story + kabul kriterleri + PO cevapları (güvenilmeyen).
+
+    `secenekler` üretim seçenekleridir (specs/011 K5); bugün yalnız `test_seviyesi` okunur
+    (varsayılan `SYSTEM`) ve girdinin sonuna `Test seviyesi: <SEVİYE>` satırı olarak eklenir.
+    Seçenek değerleri güvenilir (kodda doğrulanmış) metindir; serbest metin buraya konmaz.
 
     Story bloğu geçidin kanonik `requirement_block`'uyla kurulur (kaynak `jira:<KEY>` ya da
     `serbest:<id>`): aynı story her zaman aynı replay anahtarına ve golden `input_match`'ine varır.
@@ -332,6 +469,10 @@ def generation_messages(
             "yalnızca buradan ve AC/PO cevabından türet):",
             test_verisi,
         ]
+    seviye = str((secenekler or {}).get("test_seviyesi") or VARSAYILAN_TEST_SEVIYESI)
+    if seviye not in TEST_SEVIYELERI:
+        raise ValueError(f"geçersiz test seviyesi: {seviye}")
+    parcalar.append(f"Test seviyesi: {seviye}")
     return [ModelMessage(role="user", content="\n\n".join(parcalar))]
 
 
@@ -719,6 +860,7 @@ def run_generation(
         raise
 
     cases = list((result.output or {}).get("cases") or [])
+    ozet = normalize_ozet(result.output or {})
     with session_scope() as s:
         req = get_requirement(s, rid, lock=True)
         if req.durum != "generating":
@@ -745,12 +887,22 @@ def run_generation(
             ai_call_id=result.call_id,
             uretim_modu=result.mode,
         )
+        write_summary(
+            s, req, uretim_no=uretim_no, kanal="portal", ozet=ozet, ai_call_id=result.call_id
+        )
         # Deterministik AC denetimi (XI): gereksinimde olmayan AC'ye atıf ve kapsanmayan AC.
         bilinmeyen = {
             tc.sira_no: refs
             for tc in eklenen
             if (refs := unknown_ac_refs(tc.icerik, req.kabul_kriterleri))
         }
+        # Tutarlılık (specs/011 §4.2): ihlalli case taslak kalır, düzeltilmeden onaylanamaz.
+        tutarsiz = {
+            tc.sira_no: sorunlar
+            for tc in eklenen
+            if (sorunlar := consistency_problems(tc.icerik, ozet))
+        }
+        set_sorunlari = set_problems(cases, ozet, req.kabul_kriterleri)
         kapsanmayan = coverage_gaps(s, req)
         onceki_icerik, onceki_uyari = _old_content_warning(s, req)
         uyarilar = [onceki_uyari] if onceki_uyari else []
@@ -759,6 +911,13 @@ def run_generation(
                 f"IDE'den (Claude Code) gelen {korunan_ide} taslak korundu; yeni üretimle "
                 "birlikte karar bekliyor."
             )
+        if tutarsiz:
+            uyarilar.append(
+                f"{len(tutarsiz)} case üretim özetiyle tutarsız (sıra: "
+                + ", ".join(str(k) for k in sorted(tutarsiz))
+                + "); düzeltilmeden onaylanamaz."
+            )
+        uyarilar += set_sorunlari
         transition(
             s,
             req,
@@ -793,6 +952,9 @@ def run_generation(
                 "bilinmeyen_ac": {str(k): v for k, v in bilinmeyen.items()},
                 "kapsanmayan_ac": kapsanmayan,
                 "onceki_icerik_case_ids": onceki_icerik,
+                "tutarsiz": {str(k): v for k, v in tutarsiz.items()},
+                "set_sorunlari": set_sorunlari,
+                "readiness": _readiness_dagilimi([tc.icerik for tc in eklenen]),
             },
         )
         for tc in eklenen:
@@ -817,6 +979,8 @@ def run_generation(
             "bilinmeyen_ac": {str(k): v for k, v in bilinmeyen.items()},
             "kapsanmayan_ac": kapsanmayan,
             "onceki_icerik_case_ids": onceki_icerik,
+            "tutarsiz": {str(k): v for k, v in tutarsiz.items()},
+            "set_sorunlari": set_sorunlari,
             "uyarilar": uyarilar,
         }
 
@@ -885,12 +1049,19 @@ def submit_drafts(
     *,
     beklenen_hash: str | None = None,
     hash_zorunlu: bool = False,
+    ozet: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """`submit_draft_cases`: IDE'nin şemalı taslaklarını `draft` (kanal `ide`) olarak yazar.
 
     Hepsi-ya-hiç doğrulama: tek bir case şemaya uymazsa hiçbir şey yazılmaz (hatalar sıra no'yla
     döner). Jira'ya yazılmaz. Gereksinim PO onaylı ve onay güncel olmalı. `beklenen_hash` verilirse
     (MCP'de zorunlu) IDE'nin `get_requirement` ile okuduğu PO onaylı hash'le aynı olmalı.
+
+    Case'ler her zaman tam v3 şemasıyla doğrulanır (eski v2 biçimi kabul edilmez). `ozet` üretimin
+    üst düzey listeleridir (`open_questions`, `assumptions`, `coverage_items`, …; hepsi isteğe
+    bağlı): case'lerdeki açık soru / varsayım / kapsam öğesi atıfları buna karşı doğrulanır ve
+    özet `case_uretim`'e (kanal `ide`) yazılır. Özet verilmezse kapsam öğelerinin tanımlılığı
+    denetlenmez; açık soruya / varsayıma atıf yapan case ise reddedilir (metni gösterilemez).
     """
     if caller.kanal != "ide" or caller.kapsam != "submit" or caller.id is None:
         raise InvalidDecision("taslak yalnızca 'submit' kapsamlı IDE token'ıyla gönderilir")
@@ -915,13 +1086,22 @@ def submit_drafts(
             "Taslaklar gereksinimin güncel PO onaylı metnine ait değil (onaylanan_hash farklı); "
             "get_requirement ile yeniden okuyun"
         )
+    if ozet is not None:
+        ozet_hatalari = validate_summary(ozet)
+        if ozet_hatalari:
+            raise InvalidCaseContent(
+                "Özet (ozet) şemaya uymuyor; hiçbir case kaydedilmedi", {"ozet": ozet_hatalari}
+            )
+        ozet = normalize_ozet(ozet)
     hatalar = {
         str(i): e
         for i, c in enumerate(cases, start=1)
-        if (e := content_errors(c, req.kabul_kriterleri))
+        if (e := content_errors(c, req.kabul_kriterleri, ozet=ozet))
     }
     if hatalar:
-        raise InvalidCaseContent("Case'ler şemaya uymuyor; hiçbiri kaydedilmedi", hatalar)
+        raise InvalidCaseContent(
+            "Case'ler şemaya uymuyor ya da özetle tutarsız; hiçbiri kaydedilmedi", hatalar
+        )
 
     aktor = f"ide:{caller.kullanici_adi}"
     if req.durum == "po_approved":
@@ -939,6 +1119,14 @@ def submit_drafts(
         ai_call_id=None,
         uretim_modu=None,
     )
+    write_summary(session, req, uretim_no=uretim_no, kanal="ide", ozet=ozet)
+    # Set düzeyi kurallar (negatif kapsam kararı, kapsanmayanın gerekçesi) IDE'de uyarıdır:
+    # taslaklar parça parça gönderilebilir; kapsam portalda (case-summary) izlenir.
+    set_sorunlari = (
+        set_problems([dict(c) for c in cases], ozet, req.kabul_kriterleri)
+        if ozet is not None
+        else []
+    )
     onceki_icerik, onceki_uyari = _old_content_warning(session, req)
     audit_on_commit(
         session,
@@ -951,6 +1139,9 @@ def submit_drafts(
             "case_ids": [tc.id for tc in eklenen],
             "tekrar_sira": tekrar,
             "onceki_icerik_case_ids": onceki_icerik,
+            "ozet_var": ozet is not None,
+            "set_sorunlari": set_sorunlari,
+            "readiness": _readiness_dagilimi([tc.icerik for tc in eklenen]),
         },
     )
     for tc in eklenen:
@@ -964,6 +1155,7 @@ def submit_drafts(
                 "kanal": "ide",
             },
         )
+    hazir_degil = sum(readiness_of(tc.icerik) != READY for tc in eklenen)
     return {
         "requirement_id": str(req.id),
         "requirement_key": requirement_key(req),
@@ -974,9 +1166,15 @@ def submit_drafts(
         "mesaj": (
             f"{len(eklenen)} taslak portala düştü; onay portalda analistindir."
             + (f" {len(tekrar)} tekrar case atlandı." if tekrar else "")
+            + (
+                f" {hazir_degil} case hazır değil (varsayıma bağlı / engelli); hazır hale "
+                "getirilmeden onaylanamaz."
+                if hazir_degil
+                else ""
+            )
             + (f" {onceki_uyari}" if onceki_uyari else "")
         ),
-        "uyarilar": [onceki_uyari] if onceki_uyari else [],
+        "uyarilar": ([onceki_uyari] if onceki_uyari else []) + set_sorunlari,
     }
 
 
@@ -1054,19 +1252,35 @@ def decide(
     olculer: dict[str, Any] = {}
     degisiklik: dict[str, Any] | None = None
     if karar == "approve":
-        bilinmeyen = unknown_ac_refs(tc.icerik, req.kabul_kriterleri)
-        if bilinmeyen:
-            raise InvalidCaseContent(
-                "Case gereksinimde olmayan kabul kriterine atıf yapıyor; 'Düzelt' ile düzeltin "
-                "ya da reddedin",
-                ["acceptance_criteria_refs: " + ", ".join(bilinmeyen)],
-            )
+        # K6: hazır olmayan ya da tutarlılık ihlali olan case onaylanamaz (bilinmeyen AC gibi).
+        engel = approval_block(tc.icerik, req.kabul_kriterleri, summary_for(session, tc))
+        if engel is not None:
+            raise InvalidCaseContent(*engel)
     if karar == "edit":
         if icerik is None:
             raise InvalidDecision("Düzeltme kararı düzenlenmiş içerikle verilir")
-        hatalar = content_errors(dict(icerik), req.kabul_kriterleri)
+        # K9: eski (v2) case eski alan kümesiyle düzeltilir. Düzeltme `readiness` taşıyorsa (v3'e
+        # yükseltme) ya da case v3 ise tam şema + aynı üretimin özetiyle tutarlılık aranır.
+        eski_bicim = is_legacy(tc.icerik) and is_legacy(icerik)
+        hatalar = content_errors(
+            dict(icerik),
+            req.kabul_kriterleri,
+            ozet=summary_for(session, tc),
+            legacy=eski_bicim,
+        )
         if hatalar:
-            raise InvalidCaseContent("Düzenlenen case şemaya uymuyor", hatalar)
+            raise InvalidCaseContent(
+                "Düzenlenen case şemaya uymuyor ya da üretim özetiyle tutarsız", hatalar
+            )
+        if readiness_of(icerik) != READY:
+            # Düzeltme case'i onaylar (draft → approved): hazır olmayan içerik onaylanamaz (K6).
+            durum = readiness_of(icerik)
+            raise InvalidCaseContent(
+                f"Düzeltme case'i onaylar; içerik hazır değil ({READINESS_TR.get(durum, durum)}). "
+                "Varsayımı / açık soruyu çözüp beklenen sonucu yazın ve hazır olma durumunu "
+                "'ready' yapın ya da case'i reddedin",
+                [f"readiness: {durum}"],
+            )
         if content_hash(dict(icerik)) == tc.icerik_hash:
             raise InvalidDecision("Düzenlenen içerik mevcut içerikle aynı; 'approve' kullanın")
         olculer = metrics.edit_metrics(
@@ -1220,6 +1434,7 @@ def serialize_cases(session: Session, cases: Sequence[TestCase]) -> list[dict[st
     eski: set[uuid.UUID] = set()
     for r in reqs.values():
         eski |= old_content_case_ids(session, r)
+    ozetler = summaries(session, set(reqs))
     out = []
     for c in cases:
         rs = reviews.get(c.id, [])
@@ -1232,10 +1447,13 @@ def serialize_cases(session: Session, cases: Sequence[TestCase]) -> list[dict[st
         pay = max(batch.get(c.ai_call_id, 1), 1) if c.ai_call_id else 1
         olcu = (son.duzeltme_olculeri or {}) if son else {}
         uyarilar = []
+        ozet = _ozet_of(ozetler.get((c.requirement_id, c.uretim_no)))
         if req is not None:
             bilinmeyen = unknown_ac_refs(c.icerik, req.kabul_kriterleri)
             if bilinmeyen:
                 uyarilar.append("Gereksinimde olmayan kabul kriteri: " + ", ".join(bilinmeyen))
+        uyarilar += consistency_problems(c.icerik, ozet)
+        engel = approval_block(c.icerik, req.kabul_kriterleri if req else [], ozet)
         if c.id in eski:
             uyarilar.append(
                 "Bu case gereksinimin önceki (PO onayı yenilenmiş) içeriği için üretildi; "
@@ -1257,6 +1475,13 @@ def serialize_cases(session: Session, cases: Sequence[TestCase]) -> list[dict[st
                 "surum": c.surum,
                 "icerik": c.icerik,
                 "durum": c.durum,
+                # v3 (specs/011): hazır olma durumu (eski v2 case `ready` + `legacy: true`),
+                # atıf yapılan açık soruların / varsayımların tam kayıtları, onay engeli (K6).
+                "readiness": readiness_of(c.icerik),
+                "legacy": is_legacy(c.icerik),
+                "acik_sorular": _atiflar(c.icerik, ozet, "open_question_refs", "open_questions"),
+                "varsayimlar": _atiflar(c.icerik, ozet, "assumption_refs", "assumptions"),
+                "onay_engeli": engel[0] if engel else None,
                 "karar": son.karar if son else None,
                 "ret_nedeni": son.ret_nedeni if son else None,
                 "karar_veren": users.get(son.user_id) if son and son.user_id else None,
@@ -1290,11 +1515,171 @@ def serialize_cases(session: Session, cases: Sequence[TestCase]) -> list[dict[st
     return out
 
 
+def _atiflar(
+    icerik: Mapping[str, Any], ozet: Mapping[str, Any] | None, ref_alani: str, liste_alani: str
+) -> list[dict[str, Any]]:
+    """Case'in atıf yaptığı açık soruların / varsayımların özetteki tam kayıtları (atıf sırasıyla).
+
+    Özette bulunmayan atıf listede yer almaz (tutarlılık uyarısı olarak `uyarilar`'da görünür).
+    """
+    kayitlar = {
+        str(x.get("id")): dict(x)
+        for x in ((ozet or {}).get(liste_alani) or [])
+        if isinstance(x, Mapping)
+    }
+    return [kayitlar[r] for r in (str(x) for x in icerik.get(ref_alani) or []) if r in kayitlar]
+
+
 def list_cases(session: Session, requirement_id: uuid.UUID | None) -> list[dict[str, Any]]:
     q = select(TestCase).order_by(TestCase.uretim_no, TestCase.sira_no)
     if requirement_id is not None:
         q = q.where(TestCase.requirement_id == requirement_id)
     return serialize_cases(session, session.scalars(q).all())
+
+
+# ------------------------------------------------------------- üretim özeti ve kapsam
+
+
+def _readiness_dagilimi(icerikler: Sequence[Mapping[str, Any]]) -> dict[str, int]:
+    """Hazır olma durumu → case sayısı (üç durum her zaman bulunur; eski v2 case `ready`)."""
+    out = dict.fromkeys(READINESS, 0)
+    for icerik in icerikler:
+        durum = readiness_of(icerik)
+        out[durum] = out.get(durum, 0) + 1
+    return out
+
+
+def _coverage_state(session: Session, req: Requirement) -> dict[str, Any]:
+    """Gereksinimin güncel case'leri üzerinden kapsam durumu (case-summary ve case-metrics).
+
+    Güncel case = `superseded`/`rejected` olmayan ve gereksinimin güncel PO onaylı içeriği için
+    üretilmiş case (`coverage_gaps` ile aynı küme). Matris, güncel case'i olan üretimlerin
+    özetlerinin birleşimine karşı hesaplanır: aynı kimlikli kapsam öğesi / karar / gerekçe için
+    sonraki üretimin kaydı geçerlidir; kimlik farklı üretimlerde farklı tanımlıysa uyarı verilir.
+    """
+    eski = old_content_case_ids(session, req)
+    tum = session.scalars(
+        select(TestCase)
+        .where(TestCase.requirement_id == req.id)
+        .order_by(TestCase.uretim_no, TestCase.sira_no)
+    ).all()
+    guncel = [tc for tc in tum if tc.durum not in ("superseded", "rejected") and tc.id not in eski]
+    satirlar = sorted(summaries(session, {req.id}).values(), key=lambda u: u.uretim_no)
+    guncel_uretimler = {tc.uretim_no for tc in guncel}
+    uyarilar: list[str] = []
+    ogeler: dict[str, Any] = {}
+    kararlar: dict[str, Any] = {}
+    nedenler: dict[str, Any] = {}
+    ozet_var = False
+    for u in satirlar:
+        ozet = _ozet_of(u)
+        if ozet is None or u.uretim_no not in guncel_uretimler:
+            continue
+        ozet_var = True
+        for o in ozet.get("coverage_items") or []:
+            kimlik = str(o.get("id"))
+            onceki = ogeler.get(kimlik)
+            if onceki is not None and onceki.get("definition") != o.get("definition"):
+                uyarilar.append(
+                    f"Kapsam öğesi {kimlik} farklı üretimlerde farklı tanımlı; matris son "
+                    f"üretimin (#{u.uretim_no}) tanımını gösterir."
+                )
+            ogeler[kimlik] = o
+        for k in ozet.get("negative_coverage") or []:
+            kararlar[str(k.get("item"))] = k
+        for n in ozet.get("not_covered") or []:
+            nedenler[str(n.get("item"))] = n
+    birlesik = {
+        "coverage_items": list(ogeler.values()),
+        "negative_coverage": list(kararlar.values()),
+        "not_covered": list(nedenler.values()),
+    }
+    icerikler = [tc.icerik for tc in guncel]
+    matris = coverage_matrix(icerikler, birlesik, req.kabul_kriterleri)
+    for satir in matris["satirlar"]:
+        kapsayan = [guncel[i - 1] for i in satir["covered_by"]]
+        satir["covered_by"] = [tc.sira_no for tc in kapsayan]
+        satir["covered_by_cases"] = [
+            {
+                "id": str(tc.id),
+                "sira_no": tc.sira_no,
+                "uretim_no": tc.uretim_no,
+                "title": tc.icerik.get("title"),
+            }
+            for tc in kapsayan
+        ]
+    ozet_of = {u.uretim_no: _ozet_of(u) for u in satirlar}
+    tutarsiz = [tc for tc in guncel if consistency_problems(tc.icerik, ozet_of.get(tc.uretim_no))]
+    if tutarsiz:
+        uyarilar.append(
+            f"{len(tutarsiz)} case üretim özetiyle tutarsız; düzeltilmeden onaylanamaz."
+        )
+    if ozet_var:
+        uyarilar += set_problems(icerikler, birlesik, req.kabul_kriterleri)
+    teknikler: dict[str, int] = defaultdict(int)
+    for icerik in icerikler:
+        for t in icerik.get("technique") or []:
+            teknikler[str(t)] += 1
+    return {
+        "tum": tum,
+        "guncel": guncel,
+        "uretimler": satirlar,
+        "matris": matris["satirlar"],
+        "oranlar": matris["oranlar"],
+        "teknik_dagilimi": dict(sorted(teknikler.items())),
+        "readiness_dagilimi": _readiness_dagilimi(icerikler),
+        "uyarilar": uyarilar,
+    }
+
+
+def case_summary(session: Session, requirement_id: uuid.UUID) -> dict[str, Any]:
+    """`GET /requirements/{id}/case-summary`: üretim özetleri + hesaplanan kapsam (specs/011 §4.4).
+
+    `uretimler`: `case_uretim` satırları (üst düzey listeler düz alanlar olarak). Kapsam matrisi,
+    oranlar ve dağılımlar güncel case'lerden hesaplanır (`_coverage_state`); `kapsanmayan` hiçbir
+    güncel case'in kapsamadığı AC / kapsam öğesi satırlarıdır (gerekçesi yoksa `gerekce: null`).
+    """
+    req = get_requirement(session, requirement_id)
+    durum = _coverage_state(session, req)
+    guncel_ids = {tc.id for tc in durum["guncel"]}
+    sayim: dict[int, list[int]] = defaultdict(lambda: [0, 0])
+    for tc in durum["tum"]:
+        sayim[tc.uretim_no][0] += 1
+        sayim[tc.uretim_no][1] += tc.id in guncel_ids
+    uretimler = []
+    for u in durum["uretimler"]:
+        ozet = normalize_ozet(u.ozet)
+        uretimler.append(
+            {
+                "uretim_no": u.uretim_no,
+                "kanal": u.kanal,
+                "tur": u.tur,
+                "ai_call_id": str(u.ai_call_id) if u.ai_call_id else None,
+                "olusturma": u.olusturma,
+                "ozet_var": bool(u.ozet),
+                "case_sayisi": sayim[u.uretim_no][0],
+                "guncel_case_sayisi": sayim[u.uretim_no][1],
+                **{alan: ozet[alan] for alan in OZET_ALANLARI},
+            }
+        )
+    onceki_uyari = _old_content_warning(session, req)[1]
+    return {
+        "requirement_id": str(req.id),
+        "jira_key": req.jira_key,
+        "uretimler": uretimler,
+        "guncel_case_sayisi": len(durum["guncel"]),
+        "legacy_case_sayisi": sum(is_legacy(tc.icerik) for tc in durum["guncel"]),
+        "kapsam_matrisi": durum["matris"],
+        "oranlar": durum["oranlar"],
+        "teknik_dagilimi": durum["teknik_dagilimi"],
+        "readiness_dagilimi": durum["readiness_dagilimi"],
+        "kapsanmayan": [
+            {k: s[k] for k in ("item", "tur", "tanim", "valid", "karar", "gerekce")}
+            for s in durum["matris"]
+            if not s["covered_by"]
+        ],
+        "uyarilar": ([onceki_uyari] if onceki_uyari else []) + durum["uyarilar"],
+    }
 
 
 # ------------------------------------------------------------------------- ölçüm
@@ -1354,6 +1739,7 @@ def requirement_metrics(session: Session, requirement_id: uuid.UUID) -> dict[str
     )
     uretilen = len(ai_cases)
     onceki_icerik, onceki_uyari = _old_content_warning(session, req)
+    kapsam = _coverage_state(session, req)
     baz = story_baseline(session, req.id)
     manuel_baz = baz["deger_ms"]
     ai_sure_ms = sum(v[0] for v in ai.values())
@@ -1394,6 +1780,11 @@ def requirement_metrics(session: Session, requirement_id: uuid.UUID) -> dict[str
         "ai_cagri_modlari": {str(k): int(v) for k, v in modlar.items()},
         # Deterministik kapsam denetimi: hiçbir güncel case'in atıf yapmadığı AC'ler.
         "kapsanmayan_ac": coverage_gaps(session, req),
+        # specs/011 §4.9: güncel case'lerin teknik ve hazır olma dağılımı, kapsam oranları
+        # (gereksinim / öğe / negatif karar). Ekip hedefleri gösterilir; kod kapısı değildir.
+        "teknik_dagilimi": kapsam["teknik_dagilimi"],
+        "readiness_dagilimi": kapsam["readiness_dagilimi"],
+        "kapsam_oranlari": kapsam["oranlar"],
         "onceki_icerik_case_ids": onceki_icerik,
         "uyarilar": uyarilar,
         # Manuel test tasarımı baz süresi: yalnızca story'nin kendi ölçümü (F0; portal ya da

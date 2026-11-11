@@ -138,12 +138,35 @@ def test_scenario_round_two_findings_inherit_round_one_code_defects() -> None:
     assert key(r1["F2"]) in {key(f) for f in r2}
 
 
+# Onaylı case metnini (`approved_case_text`, verify_and_map girdi beyanı) oluşturan v2 alanları.
+CASE_TEXT_FIELDS = (
+    "title",
+    "type",
+    "risk",
+    "acceptance_criteria_refs",
+    "preconditions",
+    "steps",
+    "expected_result",
+    "tags",
+)
+# AC2'nin case'leri (7 / 6 / 5 / 7 adet): senaryo belgesinde bedava eşiği 6|7, ana belgede 5|6.
+AC2_CASES = (2, 3, 4, 10)
+
+
 def test_scenario_cases_differ_from_the_main_golden_only_in_the_ac2_boundary() -> None:
+    """Case metni (v2 alanları) yalnız C3'te ayrışır: verify_and_map ana golden'ları diğer
+    case'lerle eşleşir. Şema v3 kapsam alanları (`technique`, `covers`, `test_data.class`) belgenin
+    eşiğine göre yazıldığından AC2 case'lerinde farklı olabilir; başka hiçbir alan ayrışmaz."""
     base = load_golden("case_generation", "TPD-1")["output"]["cases"]
     variant = load_golden("case_generation", f"{SCENARIO}/TPD-1")["output"]["cases"]
     assert len(base) == len(variant)
-    differing = [n for n, (a, b) in enumerate(zip(base, variant, strict=True), 1) if a != b]
-    assert differing == [3]
+    pairs = list(enumerate(zip(base, variant, strict=True), 1))
+    text_differs = [n for n, (a, b) in pairs if any(a[k] != b[k] for k in CASE_TEXT_FIELDS)]
+    assert text_differs == [3]
+    for n, (a, b) in pairs:
+        other = {k for k in a.keys() | b.keys() if a.get(k) != b.get(k)} - set(CASE_TEXT_FIELDS)
+        allowed = {"technique", "covers", "test_data"} if n in AC2_CASES else set()
+        assert other <= allowed, (n, sorted(other))
     c3 = variant[2]
     assert c3["type"] == "boundary" and c3["acceptance_criteria_refs"] == ["AC2"]
     assert "bedava adet 0" in _expected_text(c3)

@@ -17,7 +17,13 @@ const ISLEM: Record<YayinOnizlemeKalemi["islem"], { etiket: string; ton: Ton }> 
   blocked_not_approved: { etiket: "Engelli: onaylı değil", ton: "uyari" },
   blocked_no_story: { etiket: "Engelli: Jira story'si yok", ton: "uyari" },
   blocked_requirement_changed: { etiket: "Engelli: story değişti, PO onayı yenilenmeli", ton: "hata" },
+  blocked_not_ready: { etiket: "Engelli: hazır değil", ton: "uyari" },
+  blocked_gate: { etiket: "Engelli: denetim kapısı", ton: "uyari" },
 };
+
+/** Core neden metni göndermediyse gösterilen açıklama (011 §4.7: yalnız hazır case yayınlanır). */
+const HAZIR_DEGIL_NEDENI =
+  "Case hazır değil (varsayıma bağlı ya da engelli). Case review ekranında \"Düzelt\" ile hazır yapın ya da reddedin.";
 
 const HEDEF = { jira: "Jira (Test issue)", xray: "Xray Cloud" } as const;
 
@@ -230,6 +236,11 @@ function YayinEkrani() {
                           <td className="sayi">{k.adim_sayisi}</td>
                           <td>
                             <Cip ton={i.ton}>{i.etiket}</Cip>
+                            {(k.neden || k.islem === "blocked_not_ready") && (
+                              <span className="yayin-neden soluk kucuk" data-testid="yayin-engel-nedeni">
+                                {k.neden ?? HAZIR_DEGIL_NEDENI}
+                              </span>
+                            )}
                             {k.external_key && (
                               <>
                                 {" "}

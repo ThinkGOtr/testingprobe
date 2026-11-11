@@ -9,8 +9,21 @@ import type {
   BulguDurumu,
   BulguKarari,
   BulguTuru,
+  AcikSoru,
   CaseAlanFarki,
   CaseDurumu,
+  CaseHazirlik,
+  CaseKapsamOzeti,
+  CaseTeknigi,
+  CaseUretimOzeti,
+  DogrulamaNoktasi,
+  KapsamOgesi,
+  KapsamOrani,
+  KapsamSatiri,
+  KapsayanCase,
+  NegatifKapsamKarari,
+  TestVerisi,
+  Varsayim,
   CiktiModu,
   Gereksinim,
   GereksinimDetay,
@@ -385,10 +398,29 @@ function adimUyarla(x: unknown, i: number): TestAdimi | null {
 
 export const dizgeler = (x: unknown): string[] => (Array.isArray(x) ? x.filter((y): y is string => typeof y === "string") : []);
 
-/** Case içeriği (şema §7). Eksik dizi alanları boş diziye tamamlanır (ekran çökmesin). */
+const HAZIRLIKLAR = new Set(["ready", "assumption_dependent", "blocked"]);
+const hazirlikUyarla = (x: unknown): CaseHazirlik | undefined => (typeof x === "string" && HAZIRLIKLAR.has(x) ? (x as CaseHazirlik) : undefined);
+
+function testVerisiUyarla(x: unknown): TestVerisi | null {
+  if (!nesneMi(x)) return null;
+  return {
+    name: metin(x.name),
+    // Değer güvenilmeyen metindir; sayı/boolean gelirse metne çevrilir, asla işlenmez.
+    value: typeof x.value === "string" ? x.value : x.value === null || x.value === undefined ? "" : String(x.value),
+    class: metinYaDaNull(x.class),
+    synthetic: x.synthetic !== false,
+    is_attack_payload: x.is_attack_payload === true,
+  };
+}
+
+/**
+ * Case içeriği (şema §7 + v3). Eksik dizi alanları boş diziye tamamlanır (ekran çökmesin).
+ * v3 alanları yalnız v3 içerikte (`readiness` anahtarı var) eklenir: eski case'in içeriğine anahtar
+ * eklenmez (düzeltmede eski alan kümesiyle gönderilir, K9).
+ */
 export function caseIcerikUyarla(x: unknown): TestCaseIcerik {
   const i = nesneMi(x) ? x : {};
-  return {
+  const v2: TestCaseIcerik = {
     title: metin(i.title),
     type: (metin(i.type, "positive") as TestCaseIcerik["type"]),
     risk: (metin(i.risk, "medium") as TestCaseIcerik["risk"]),
@@ -398,10 +430,46 @@ export function caseIcerikUyarla(x: unknown): TestCaseIcerik {
     expected_result: metin(i.expected_result),
     tags: dizgeler(i.tags),
   };
+  if (!("readiness" in i)) return v2;
+  return {
+    title: v2.title,
+    type: v2.type,
+    technique: dizgeler(i.technique) as CaseTeknigi[],
+    covers: dizgeler(i.covers),
+    risk: v2.risk,
+    priority: (metin(i.priority, "P2") as TestCaseIcerik["priority"]),
+    priority_rationale: metin(i.priority_rationale),
+    acceptance_criteria_refs: v2.acceptance_criteria_refs,
+    platform: metinYaDaNull(i.platform),
+    test_level: metinYaDaNull(i.test_level),
+    verification_point: (metin(i.verification_point, "other") as DogrulamaNoktasi),
+    requires_real_device: i.requires_real_device === true,
+    standard_refs: dizgeler(i.standard_refs),
+    readiness: hazirlikUyarla(i.readiness) ?? "ready",
+    assumption_refs: dizgeler(i.assumption_refs),
+    open_question_refs: dizgeler(i.open_question_refs),
+    preconditions: v2.preconditions,
+    test_data: Array.isArray(i.test_data) ? i.test_data.map(testVerisiUyarla).filter((v): v is TestVerisi => v !== null) : [],
+    steps: v2.steps,
+    expected_result: v2.expected_result,
+    teardown: dizgeler(i.teardown),
+    tags: v2.tags,
+  };
 }
+
+function acikSoruUyarla(x: Ham): AcikSoru {
+  return { id: metin(x.id), question: metin(ilk(x, "question", "soru", "metin")), owner: metin(ilk(x, "owner", "sahip")) };
+}
+
+function varsayimUyarla(x: Ham): Varsayim {
+  return { id: metin(x.id), statement: metin(ilk(x, "statement", "varsayim", "metin")), owner: metin(ilk(x, "owner", "sahip")) };
+}
+
+const nesneler = <T>(x: unknown, donustur: (h: Ham) => T): T[] => (Array.isArray(x) ? x.filter(nesneMi).map(donustur) : []);
 
 export function caseUyarla(c: Ham): TestCase {
   const karar = metin(ilk(c, "karar", "son_karar"));
+  const icerik = caseIcerikUyarla(c.icerik);
   return {
     id: kimlik(c.id),
     requirement_id: kimlik(c.requirement_id),
@@ -409,7 +477,7 @@ export function caseUyarla(c: Ham): TestCase {
     sira_no: sayi(c.sira_no),
     kanal: c.kanal === "ide" ? "ide" : "portal",
     surum: sayi(c.surum, 1),
-    icerik: caseIcerikUyarla(c.icerik),
+    icerik,
     durum: metin(c.durum, "draft") as CaseDurumu,
     karar: karar === "approve" || karar === "edit" || karar === "reject" ? karar : null,
     ret_nedeni: (metinYaDaNull(c.ret_nedeni) as RetNedeni | null),
@@ -432,14 +500,126 @@ export function caseUyarla(c: Ham): TestCase {
     ...(Array.isArray(c.fark) ? { fark: c.fark.filter(nesneMi).map(farkUyarla) } : {}),
     ...(c.duzeltme_nedeni !== undefined ? { duzeltme_nedeni: metinYaDaNull(c.duzeltme_nedeni) } : {}),
     ...(c.onceki_icerik === true ? { onceki_icerik: true } : {}),
+    // v3 (011 §4.4): core alanları yoksa içerikten türetilir (eski core / eski case: hazır + legacy).
+    readiness: hazirlikUyarla(c.readiness) ?? icerik.readiness ?? "ready",
+    legacy: typeof c.legacy === "boolean" ? c.legacy : icerik.readiness === undefined,
+    ...(Array.isArray(c.acik_sorular) ? { acik_sorular: nesneler(c.acik_sorular, acikSoruUyarla) } : {}),
+    ...(Array.isArray(c.varsayimlar) ? { varsayimlar: nesneler(c.varsayimlar, varsayimUyarla) } : {}),
+    ...(c.onay_engeli !== undefined ? { onay_engeli: metinYaDaNull(c.onay_engeli) } : {}),
+    ...(typeof c.uretim_no === "number" ? { uretim_no: c.uretim_no } : {}),
   };
+}
+
+/** Üretim özeti (`case_uretim` satırı ya da golden çıktısının üst düzey listeleri). */
+export function uretimOzetiUyarla(u: Ham): CaseUretimOzeti {
+  // Üst listeler doğrudan üretim nesnesinde ya da `ozet` altında gelebilir (case_uretim.ozet JSONB).
+  const o = nesneMi(u.ozet) ? { ...u.ozet, ...u } : u;
+  const cm = nesneMi(o.config_matrix) ? o.config_matrix : {};
+  return {
+    uretim_no: sayi(o.uretim_no, 1),
+    kanal: metin(o.kanal, "portal"),
+    tur: metin(o.tur, "uretim"),
+    open_questions: nesneler(o.open_questions, acikSoruUyarla),
+    assumptions: nesneler(o.assumptions, varsayimUyarla),
+    coverage_items: nesneler(o.coverage_items, (k): KapsamOgesi => ({
+      id: metin(k.id),
+      ac_ref: metinYaDaNull(k.ac_ref),
+      definition: metin(k.definition),
+      valid: k.valid !== false,
+    })),
+    negative_coverage: nesneler(o.negative_coverage, (k): NegatifKapsamKarari => {
+      const d = metin(k.decision);
+      return { item: metin(k.item), decision: d === "tested" || d === "covered_by" ? d : "out_of_scope", rationale: metin(k.rationale) };
+    }),
+    not_covered: nesneler(o.not_covered, (k) => ({ item: metin(k.item), reason: metin(ilk(k, "reason", "gerekce")) })),
+    observations: nesneler(o.observations, (k) => ({ standard_ref: metin(k.standard_ref), note: metin(k.note) })),
+    automation_open_points: dizgeler(o.automation_open_points),
+    config_matrix: {
+      parameters: nesneler(cm.parameters, (k) => ({ name: metin(k.name), values: dizgeler(k.values) })),
+      constraints: dizgeler(cm.constraints),
+    },
+    testability_gaps: nesneler(o.testability_gaps, (k) => ({ control: metin(k.control), missing: metin(k.missing) })),
+    ...(typeof o.case_sayisi === "number" ? { case_sayisi: o.case_sayisi } : {}),
+    ...(typeof o.guncel_case_sayisi === "number" ? { guncel_case_sayisi: o.guncel_case_sayisi } : {}),
+    ...(typeof o.ozet_var === "boolean" ? { ozet_var: o.ozet_var } : {}),
+  };
+}
+
+const sayiSozlugu = (x: unknown): Record<string, number> =>
+  nesneMi(x) ? Object.fromEntries(Object.entries(x).filter((e): e is [string, number] => typeof e[1] === "number" && Number.isFinite(e[1]))) : {};
+
+/**
+ * `GET /requirements/{id}/case-summary` (011 §4.4). Eksik alanlar boş değere tamamlanır; nesne
+ * olmayan yanıt (eski core, boş gövde) `null` döner — ekran "özet yok" boş durumunu gösterir.
+ */
+export function caseKapsamOzetiUyarla(govde: unknown): CaseKapsamOzeti | null {
+  if (!nesneMi(govde)) return null;
+  const oran = nesneMi(govde.oranlar) ? govde.oranlar : {};
+  return {
+    requirement_id: kimlik(govde.requirement_id),
+    uretimler: nesneler(govde.uretimler, uretimOzetiUyarla),
+    kapsam_matrisi: nesneler(govde.kapsam_matrisi, (k): KapsamSatiri => ({
+      item: metin(k.item),
+      tur: k.tur === "ac" ? "ac" : "oge",
+      tanim: metin(ilk(k, "tanim", "definition")),
+      valid: typeof k.valid === "boolean" ? k.valid : null,
+      covered_by: Array.isArray(k.covered_by) ? k.covered_by.filter((n): n is number => typeof n === "number") : [],
+      gerekce: metinYaDaNull(ilk(k, "gerekce", "reason")),
+      karar: metinYaDaNull(k.karar),
+      ac_ref: metinYaDaNull(k.ac_ref),
+      ...(Array.isArray(k.covered_by_cases)
+        ? {
+            kapsayanlar: nesneler(k.covered_by_cases, (c): KapsayanCase => ({
+              id: kimlik(c.id),
+              sira_no: sayi(c.sira_no),
+              uretim_no: sayiYaDaNull(c.uretim_no),
+              title: metin(c.title),
+            })),
+          }
+        : {}),
+    })),
+    oranlar: {
+      gereksinim_kapsami: kapsamOraniUyarla(oran.gereksinim_kapsami),
+      oge_kapsami: kapsamOraniUyarla(oran.oge_kapsami),
+      negatif_karar_kapsami: kapsamOraniUyarla(oran.negatif_karar_kapsami),
+    },
+    teknik_dagilimi: sayiSozlugu(govde.teknik_dagilimi),
+    readiness_dagilimi: sayiSozlugu(govde.readiness_dagilimi),
+    kapsanmayan: nesneler(govde.kapsanmayan, (k) => ({
+      item: metin(k.item),
+      ...(k.tur === "ac" || k.tur === "oge" ? { tur: k.tur } : {}),
+      ...(typeof k.tanim === "string" ? { tanim: k.tanim } : {}),
+      ...(k.karar !== undefined ? { karar: metinYaDaNull(k.karar) } : {}),
+      gerekce: metin(ilk(k, "gerekce", "reason")),
+    })),
+    uyarilar: dizgeler(govde.uyarilar),
+    ...(govde.jira_key !== undefined ? { jira_key: metinYaDaNull(govde.jira_key) } : {}),
+    ...(typeof govde.guncel_case_sayisi === "number" ? { guncel_case_sayisi: govde.guncel_case_sayisi } : {}),
+    ...(typeof govde.legacy_case_sayisi === "number" ? { legacy_case_sayisi: govde.legacy_case_sayisi } : {}),
+  };
+}
+
+/** Oran: core `{kapsanan, toplam, oran}`; yalın sayı (eski biçim) da kabul edilir. */
+export function kapsamOraniUyarla(x: unknown): KapsamOrani {
+  if (typeof x === "number" && Number.isFinite(x)) return { kapsanan: null, toplam: null, oran: x };
+  if (!nesneMi(x)) return { kapsanan: null, toplam: null, oran: null };
+  return { kapsanan: sayiYaDaNull(x.kapsanan), toplam: sayiYaDaNull(x.toplam), oran: sayiYaDaNull(x.oran) };
 }
 
 function farkUyarla(f: Ham): CaseAlanFarki {
   return { alan: metin(f.alan), etiket: metin(f.etiket, metin(f.alan)), once: metin(f.once), sonra: metin(f.sonra) };
 }
 
-const ONIZLEME_ISLEMLERI = new Set(["create", "skip_existing", "blocked_hash_mismatch", "blocked_not_approved", "blocked_no_story"]);
+const ONIZLEME_ISLEMLERI = new Set([
+  "create",
+  "skip_existing",
+  "blocked_hash_mismatch",
+  "blocked_not_approved",
+  "blocked_no_story",
+  "blocked_requirement_changed",
+  "blocked_not_ready",
+  "blocked_gate",
+]);
 
 function onizlemeKalemiUyarla(k: Ham): YayinOnizlemeKalemi {
   const link = nesneMi(k.link) ? k.link : {};
@@ -454,6 +634,7 @@ function onizlemeKalemiUyarla(k: Ham): YayinOnizlemeKalemi {
     adim_sayisi: sayi(k.adim_sayisi),
     islem: (ONIZLEME_ISLEMLERI.has(islem) ? islem : "blocked_not_approved") as YayinOnizlemeKalemi["islem"],
     external_key: metinYaDaNull(k.external_key),
+    neden: metinYaDaNull(ilk(k, "neden", "islem_nedeni", "gerekce", "reason")),
   };
 }
 

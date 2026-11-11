@@ -16,9 +16,14 @@
     `recommendation`, `link_key`;
   - requirement_review: `verdict`, `question_types`, `ac_refs_within`, `ac_refs_any`,
     `max_questions`;
-  - case_generation: `ac_coverage` (AC1..ACn hepsi bir case'te, fazlası yok), `min_cases`,
-    `contains` / `not_contains` (case'lerin birleşik metni); set `runs` kez koşar (§12: 5 story ×
-    3 koşu);
+  - case_generation (şema v3; `eval_agents.coverage_problems`): her zaman 011 §4.2 deterministik
+    kuralları (teknik ↔ kapsam öneki, tanımsız öğe/atıf, readiness ↔ beklenen, sentetik veri,
+    saldırı verisi, negatif kapsam kararı, kapsanmayan gerekçesi); `ac_coverage` (AC1..ACn hepsi
+    bir case'te, fazlası yok), `ready_ac_coverage`, `min_cases` / `max_cases`, `contains` /
+    `not_contains` (case'lerin birleşik metni), `not_contains_any` (uydurma belirteçleri; `ready`
+    case'lerde), `must_not_be_ready_about` (kaynağın sessiz olduğu konu `ready` case'te
+    yazılamaz); set `runs` kez koşar (§12: 5 story × 3 koşu) ve rapor koşu başına readiness /
+    teknik dağılımını taşır (`dagilim`);
   - consistency_check (ajan): `doc_refs_include`, `acs`, `min_blocking`/`max_blocking`; kanıt
     araç ortamında üretimin `EvidenceVerifier`'ıyla yeniden doğrulanır (`eval_agents`);
   - verify_and_map (ajan): `steps`, `methods` (sembol tablosu), `expects_include`,
@@ -64,6 +69,7 @@ from tp_core.gateway.eval_agents import (
     coverage_problems,
     dogrulanmis_kaynak_var,
     findings_problems,
+    generation_stats,
     mapping_problems,
     review_problems,
 )
@@ -447,8 +453,34 @@ def write_report(
         "cases": [r.__dict__ for r in results],
         **dict(extra or {}),
     }
+    if data.get("purpose") == "case_generation":
+        report["dagilim"] = uretim_dagilimi(results)
     path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return path
+
+
+def uretim_dagilimi(results: Sequence[CaseResult]) -> dict[str, Any]:
+    """case_generation raporu: koşu başına ve toplamda case sayısı, readiness ve teknik dağılımı,
+    kapsam öğesi sayıları (`eval_agents.generation_stats`) ve uydurma/readiness beklentisine takılan
+    koşular. Çıktısı olmayan koşu (geçit hatası) sayılmaz."""
+    kosular = {r.id: generation_stats(r.output) for r in results if isinstance(r.output, Mapping)}
+    toplam: dict[str, Any] = {"kosu": len(kosular), "readiness": {}, "technique": {}}
+    for ad in ("case", "coverage_items", "covered_items", "not_covered", "open_questions"):
+        toplam[ad] = sum(int(k[ad]) for k in kosular.values())
+    for kosu in kosular.values():
+        for alan in ("readiness", "technique"):
+            for anahtar, adet in kosu[alan].items():
+                toplam[alan][anahtar] = toplam[alan].get(anahtar, 0) + adet
+    toplam["readiness"] = dict(sorted(toplam["readiness"].items()))
+    toplam["technique"] = dict(sorted(toplam["technique"].items()))
+    return {
+        "toplam": toplam,
+        "kosular": kosular,
+        "uydurma": sorted(r.id for r in results if any("uydurma" in f for f in r.failures)),
+        "readiness_ihlali": sorted(
+            r.id for r in results if any("hazır (ready) case" in f for f in r.failures)
+        ),
+    }
 
 
 def report_stem(data: Mapping[str, Any], today: dt.date, tag: str | None = None) -> str:

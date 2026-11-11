@@ -48,10 +48,13 @@ bundles:
       seti: rules/evaluation/consistency-check.json (ajan; araç ortamı `consistency`, kanıt yeniden doğrulanır).
       Canlı değerlendirme yapılmadı; onaylı istisna yok.'
   case-generation:
-    version: 2
+    version: 3
     status: pending
-    note: 'Golden çıktıları elle hazırlandı. Değerlendirme seti: rules/evaluation/case-generation.json
-      (§12: 5 story × 3 koşu, AC kapsamı). Canlı değerlendirme yapılmadı; onaylı istisna yok.'
+    note: '011 (test üretimi v3): şema ve prompt v3 (teknik, kapsam öğeleri, öncelik, hazır olma durumu,
+      açık soru / varsayım, negatif kapsam kararı, test verisi, temizlik). Golden çıktıları elle hazırlandı
+      (v3 alanları dahil). Değerlendirme seti: rules/evaluation/case-generation.json (§12: 5 story × 3
+      koşu; AC kapsamı, 011 §4.2 deterministik kuralları, uydurma belirteçleri, readiness beklentisi; rapor
+      readiness ve teknik dağılımını taşır). Canlı değerlendirme yapılmadı; onaylı istisna yok.'
   verify-and-map:
     version: 3
     status: pending

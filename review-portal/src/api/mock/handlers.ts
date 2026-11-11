@@ -33,12 +33,17 @@ import type {
 } from "../types";
 import { CASE_KARAR_HEDEFI, GECIS_YOK, type MakineAdi, yolGecerli } from "../sozlesme/durumMakinesi";
 import { duzeltmeOlcusu } from "../../lib/diff";
+import { caseHazirlik, eskiIcerik, tutarlilikSorunlari } from "../../lib/caseV3";
+import { CASE_HAZIRLIK } from "../../lib/etiketler";
+import { birlesikOzet, caseKapsamOzeti, caseV3Alanlari } from "./caseV3";
 import { kanonikJson, sha256Hex } from "../../lib/sha256";
 import {
   bulguCiktisi,
   caseSayilari,
   goldenBulgular,
+  goldenCaseKaydi,
   goldenCaseler,
+  goldenUretimOzeti,
   turGoldenAdi,
   goldenInceleme,
   goldenKoku,
@@ -93,7 +98,7 @@ const KULLANICILAR: Record<string, Kullanici> = {
 
 const OTURUM_ANAHTARI = "tp-mock-oturum";
 // v3: örnek veri simülatör seed'i ve golden çıktılarla hizalandı (eski oturum verisi okunmaz).
-const VERI_ANAHTARI = "tp-mock-veri-v5";
+const VERI_ANAHTARI = "tp-mock-veri-v6";
 
 const testModu = import.meta.env.MODE === "test";
 const GECIKME_MS = testModu ? 0 : 120;
@@ -669,6 +674,10 @@ function caseUret(id: string): IsYaniti {
   // yedek iskelet (REPLAY-MISS: canlı model çıktısı değil, öyle de gösterilmez).
   const golden = goldenCaseler(g);
   const mod = golden ? ("replay" as const) : ("replay_miss" as const);
+  // Golden v3 ise üretimin üst düzey listeleri (core `case_uretim.ozet`) de saklanır: case-summary bunlardan hesaplanır.
+  const goldenAdi = golden ? goldenCaseKaydi(g) : undefined;
+  const uretimNo = (veri.caseUretimleri?.[id]?.length ?? 0) + 1;
+  const uretimOzeti = goldenAdi ? goldenUretimOzeti(goldenAdi, uretimNo) : undefined;
   const uretilecek: { ref: string; metin: string; golden?: TestCaseIcerik }[] = golden
     ? golden.map((c) => ({ ref: c.acceptance_criteria_refs[0] ?? "", metin: c.title, golden: c }))
     : g.kabul_kriterleri.slice(0, 4);
@@ -714,6 +723,7 @@ function caseUret(id: string): IsYaniti {
       mockOlayYayinla({ type: "case.generated", id: tc.id, data: { requirement_id: id, title: icerik.title } });
     }),
     () => {
+      if (uretimOzeti) (veri.caseUretimleri ??= {})[id] = [...(veri.caseUretimleri?.[id] ?? []), uretimOzeti];
       gecir("requirement", g, "cases_ready");
       denetimEkle("ai_call", g.id, `Case üretimi: ${uretilecek.length} case (${mod})`, "core-worker");
       gereksinimOlayi(g);
@@ -737,6 +747,15 @@ function caseKarari(id: string, govde: unknown): TestCase {
   // core test_case makinesi: kararlar yalnızca draft'tan (draft → approved | rejected).
   const hedef = CASE_KARAR_HEDEFI[g.karar];
   if (!yolGecerli("test_case", c.durum, [hedef])) throw new ApiError(409, GECIS_YOK);
+  const uretimler = veri.caseUretimleri?.[c.requirement_id];
+  if (g.karar === "approve") {
+    // K6 (011 §4.2): hazır olmayan ya da tutarlılık uyarısı olan case onaylanamaz (core 422).
+    const v3 = caseV3Alanlari(c, uretimler);
+    if (v3.onay_engeli) {
+      const ayrinti = v3.readiness !== "ready" ? [`readiness: ${v3.readiness}`] : (v3.uyarilar ?? []);
+      throw new ApiError(422, `${v3.onay_engeli} — ${JSON.stringify(ayrinti)}`);
+    }
+  }
   if (g.karar === "reject") {
     if (!g.ret_nedeni) throw new ApiError(422, "Ret için neden seçilmelidir.");
     gecir("test_case", c, "rejected");
@@ -745,6 +764,22 @@ function caseKarari(id: string, govde: unknown): TestCase {
   } else if (g.karar === "edit") {
     if (!g.icerik) throw new ApiError(422, "Düzeltme için içerik zorunludur.");
     if (!g.icerik.title.trim() || g.icerik.steps.length === 0) throw new ApiError(422, "Başlık ve en az bir adım zorunlu.");
+    // K9: eski case eski alan kümesiyle kalır; v3 case'in düzeltmesi tutarlılık kurallarından geçer (422).
+    if (eskiIcerik(c.icerik) !== eskiIcerik(g.icerik)) {
+      throw new ApiError(422, eskiIcerik(c.icerik) ? "Eski şemalı case'e v3 alanı eklenemez." : "v3 case'in düzeltmesi v3 alanlarını (readiness …) taşımalı.");
+    }
+    const sorunlar = tutarlilikSorunlari(g.icerik, birlesikOzet(uretimler));
+    if (sorunlar.length) {
+      throw new ApiError(422, `Düzenlenen case şemaya uymuyor ya da üretim özetiyle tutarsız — ${JSON.stringify(sorunlar)}`);
+    }
+    // core: düzeltme case'i onaylar (draft → approved); hazır olmayan içerik onaylanamaz (K6).
+    const hazirlik = g.icerik.readiness ?? "ready";
+    if (hazirlik !== "ready") {
+      throw new ApiError(
+        422,
+        `Düzeltme case'i onaylar; içerik hazır değil (${CASE_HAZIRLIK[hazirlik].etiket}). Varsayımı / açık soruyu çözüp beklenen sonucu yazın ve hazır olma durumunu "Hazır" yapın ya da case'i reddedin — ${JSON.stringify([`readiness: ${hazirlik}`])}`,
+      );
+    }
     const once = kanonikJson(c.icerik);
     // core metrics.edit_metrics: insan beyanı varsa o; yoksa beklenen sonuç metni karşılaştırılır.
     const beklenenDegisti =
@@ -786,7 +821,7 @@ function caseKarari(id: string, govde: unknown): TestCase {
   const req = veri.gereksinimler.find((r) => r.id === c.requirement_id);
   if (req) gereksinimOlayi(req);
   else kaydet();
-  return cikti(c);
+  return caseCikti(c);
 }
 
 /**
@@ -824,7 +859,24 @@ function caseYenidenAc(id: string, govde: unknown): TestCase {
   const req = veri.gereksinimler.find((r) => r.id === c.requirement_id);
   if (req) gereksinimOlayi(req);
   else kaydet();
-  return cikti(c);
+  return caseCikti(c);
+}
+
+/** core `serialize_cases`: case + readiness, legacy, çözülmüş açık soru/varsayım atıfları, tutarlılık uyarıları. */
+function caseCikti(c: TestCase): TestCase {
+  return cikti({ ...c, ...caseV3Alanlari(c, veri.caseUretimleri?.[c.requirement_id]) });
+}
+
+/** core `GET /requirements/{id}/case-summary` (011 §4.4). */
+function caseSummary(rid: string) {
+  girisGerekli();
+  const g = bul(veri.gereksinimler, rid, "Gereksinim");
+  const o = caseKapsamOzeti(g, veri.caseler, veri.caseUretimleri?.[rid]);
+  // Yanıt core biçiminde: kapsayan case'ler `covered_by_cases` adıyla (portal `kapsayanlar`a uyarlar).
+  return cikti({
+    ...o,
+    kapsam_matrisi: o.kapsam_matrisi.map(({ kapsayanlar, ...satir }) => ({ ...satir, covered_by_cases: kapsayanlar ?? [] })),
+  });
 }
 
 const acAnahtari = (r: string) => r.replace(/\s/g, "").toUpperCase();
@@ -870,6 +922,11 @@ function caseMetrikleri(rid: string): CaseMetrikleri {
       return a;
     }, {}),
     kapsanmayan_ac: kapsanmayan,
+    // v3 (011 §4.9): case-summary ile aynı hesap.
+    ...(() => {
+      const o = caseKapsamOzeti(g, veri.caseler, veri.caseUretimleri?.[rid]);
+      return { teknik_dagilimi: o.teknik_dagilimi, readiness_dagilimi: o.readiness_dagilimi, kapsam_oranlari: o.oranlar };
+    })(),
     // core ile aynı: story ölçümü → (mock'ta varsayılan yok) → ölçülmedi; kaynak her zaman bildirilir.
     ...(() => {
       const b = manuelBaz(rid);
@@ -903,6 +960,7 @@ function yayinOnizleme(q: URLSearchParams): YayinOnizleme {
       labels: ["AI-generated", `tp-${c.id}`],
       link: { type: "is tested by", story_key: g.jira_key },
       adim_sayisi: c.icerik.steps.length,
+      // core engel sırası (011 §4.7): onaylı → hash → hazır olma → story bağı.
       islem:
         c.durum === "published"
           ? "skip_existing"
@@ -910,10 +968,16 @@ function yayinOnizleme(q: URLSearchParams): YayinOnizleme {
             ? "blocked_not_approved"
             : c.onaylanan_hash !== c.icerik_hash
               ? "blocked_hash_mismatch"
-              : !g.jira_key
-                ? "blocked_no_story"
-                : "create",
+              : caseHazirlik(c) !== "ready"
+                ? "blocked_not_ready"
+                : !g.jira_key
+                  ? "blocked_no_story"
+                  : "create",
       external_key: c.jira_test_key,
+      neden:
+        c.durum === "approved" && c.onaylanan_hash === c.icerik_hash && caseHazirlik(c) !== "ready"
+          ? `Case hazır değil (${CASE_HAZIRLIK[caseHazirlik(c)].etiket.toLocaleLowerCase("tr-TR")}); yalnız hazır case yayınlanır.`
+          : null,
     })),
   };
 }
@@ -930,6 +994,7 @@ function yayinla(govde: unknown): YayinSonucu {
     if (c.onaylanan_hash !== c.icerik_hash) {
       return { case_id: id, durum: "failed" as const, external_key: null, hata: "İçerik onaydan sonra değişmiş" };
     }
+    if (caseHazirlik(c) !== "ready") return { case_id: id, durum: "failed" as const, external_key: null, hata: "Case hazır değil" };
     if (!veri.gereksinimler.find((r) => r.id === c.requirement_id)?.jira_key) {
       return { case_id: id, durum: "failed" as const, external_key: null, hata: "Serbest metin gereksinimin Jira story'si yok; Test issue story'ye bağlanamaz" };
     }
@@ -1776,12 +1841,16 @@ const ROTALAR: Rota[] = [
     (_m, q) => {
       girisGerekli();
       const rid = q.get("requirement_id");
-      return veri.caseler.filter((c) => !rid || c.requirement_id === rid).sort((a, b) => a.sira_no - b.sira_no);
+      return veri.caseler
+        .filter((c) => !rid || c.requirement_id === rid)
+        .sort((a, b) => a.sira_no - b.sira_no)
+        .map((c) => ({ ...c, ...caseV3Alanlari(c, veri.caseUretimleri?.[c.requirement_id]) }));
     },
   ],
   ["POST", /^\/cases\/([^/]+)\/decision$/, (m, _q, g) => caseKarari(decodeURIComponent(m[1]), g)],
   ["POST", /^\/cases\/([^/]+)\/viewed$/, (m) => caseGoruntulendi(decodeURIComponent(m[1]))],
   ["GET", /^\/requirements\/([^/]+)\/case-metrics$/, (m) => caseMetrikleri(decodeURIComponent(m[1]))],
+  ["GET", /^\/requirements\/([^/]+)\/case-summary$/, (m) => caseSummary(decodeURIComponent(m[1]))],
   ["GET", /^\/publish\/preview$/, (_m, q) => yayinOnizleme(q)],
   ["POST", /^\/publish$/, (_m, _q, g) => yayinla(g)],
   ["POST", /^\/code\/generate$/, (_m, _q, g) => kodUret(g)],

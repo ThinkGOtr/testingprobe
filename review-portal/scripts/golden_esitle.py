@@ -6,7 +6,8 @@ Kaynaklar (docs/DEMO-VERISI.md):
 - rules/replay/requirement_review/golden/*.json → output (ön inceleme soruları, verdict).
 - rules/replay/consistency_check/golden/*.json → output (tutarlılık bulguları).
 - rules/replay/consistency_check/golden/SERBEST.json → input_match (serbest metin golden'ının girdisi).
-- rules/replay/case_generation/golden/*.json → input_match AC'leri + output.cases.
+- rules/replay/case_generation/golden/*.json → input_match AC'leri + output.cases + üst düzey
+  listeler (`ozet`, şema v3).
 - Senaryo golden'ları (`golden/<senaryo>/<ad>.json`, ör. ana demo yolu `f2-kod-hatasi/`): aynı
   sözlüklerde `<senaryo>/<ad>` anahtarıyla. Core gibi örnek veri de ana golden'ın girdi beyanı
   uymazsa senaryoları ada göre sıralı dener (`consistency_girdi` / `case_generation.girdi_ac`).
@@ -113,14 +114,17 @@ def serbest_girdi() -> dict[str, Any]:
 
 
 def case_goldenlari() -> dict[str, Any]:
-    """case_generation golden'ları: girdi beyanındaki AC satırları + çıktı case'leri. Örnek veri
-    case üretiminde yalnızca AC'ler birebir eşleşirse REPLAY der (core input_match ile aynı)."""
+    """case_generation golden'ları: girdi beyanındaki AC satırları + çıktı case'leri + üretimin
+    üst düzey listeleri (`ozet`; şema v3: açık soru, varsayım, kapsam öğeleri, negatif kapsam
+    kararı, kapsanmayanlar — core `case_uretim.ozet` ile aynı içerik). Örnek veri case üretiminde
+    yalnızca AC'ler birebir eşleşirse REPLAY der (core input_match ile aynı)."""
     out: dict[str, Any] = {}
     for ad, p in _dosyalar("case_generation"):
         d = json.loads(p.read_text(encoding="utf-8"))
         out[ad] = {
             "girdi_ac": (d.get("input_match") or {}).get("acceptance_criteria", []),
             "cases": d["output"]["cases"],
+            "ozet": {k: v for k, v in d["output"].items() if k != "cases"},
         }
     return out
 

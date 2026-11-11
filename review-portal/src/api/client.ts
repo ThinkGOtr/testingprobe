@@ -2,6 +2,7 @@
 import { ApiError, istek } from "./http";
 import {
   bulguUyarla,
+  caseKapsamOzetiUyarla,
   caseUyarla,
   denetimiUyarla,
   gereksinimDetayUyarla,
@@ -20,6 +21,7 @@ import type {
   BulguKararGirdisi,
   BugKararGirdisi,
   BugTaslagi,
+  CaseKapsamOzeti,
   CaseKararGirdisi,
   CaseMetrikleri,
   DemoDurumu,
@@ -137,6 +139,12 @@ export const api = {
   /** §12 ölçümleri (kabul oranı ilk karara göre, AI + review süresi, maliyet). */
   caseMetrikleri: (requirementId: string) =>
     istek<CaseMetrikleri>("GET", `/requirements/${yol(requirementId)}/case-metrics`, { kaynak: CASE_KAYNAGI }),
+  /**
+   * Kapsam ve açık noktalar özeti (011 §4.4): üretim başına üst listeler + hesaplanan kapsam
+   * matrisi + teknik/readiness dağılımı. Yalnız eski şemalı case'i olan gereksinimde `uretimler` boştur.
+   */
+  caseSummary: async (requirementId: string): Promise<CaseKapsamOzeti | null> =>
+    caseKapsamOzetiUyarla(await istek<unknown>("GET", `/requirements/${yol(requirementId)}/case-summary`, { kaynak: CASE_KAYNAGI })),
 
   // Yayın
   yayinOnizleme: async (requirementId: string): Promise<YayinOnizleme> =>

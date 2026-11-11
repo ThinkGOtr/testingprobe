@@ -6,7 +6,7 @@ import sys
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from tp_core import ports
 from tp_core.integrations.jira import JiraSettings, RestJira
 from tp_core.integrations.jira_adf import adf_to_text
+from tp_core.integrations.testmgmt import CaseContent
 from tp_core.integrations.xray import XrayClient, XrayError, XrayTestManagement, get_xray_client
 
 SIM_SRC = Path(__file__).resolve().parents[4] / "sims" / "jira-sim" / "src"
@@ -205,3 +206,59 @@ def test_bulk_import_post_not_resent_on_502_but_auth_is(sim: TestClient) -> None
     with pytest.raises(XrayError, match="502"):
         client.import_tests([{"fields": {"summary": "x"}}])
     assert transport.paths.count("/xray/api/v2/import/test/bulk") == 1
+
+
+def test_v3_case_description_and_labels_no_priority_field(
+    sim: TestClient, xray: XrayClient, jira: RestJira
+) -> None:
+    """Şema v3 bilgileri Xray'e açıklama + etiketle gider; Jira `priority` alanına yazılmaz."""
+    saldiri = "'; DROP TABLE siparis; --"
+    c = case(
+        technique=["DT"],
+        covers=["DT-R2"],
+        priority="P2",
+        priority_rationale="Hatalı mesaj destek yükü üretir",
+        test_level=None,
+        verification_point="UI",
+        readiness="ready",
+        test_data=[
+            {
+                "name": "parola",
+                "value": saldiri,
+                "class": "DT-R2",
+                "synthetic": True,
+                "is_attack_payload": True,
+            }
+        ],
+        teardown=["Oturumu kapat"],
+        platform="Web",
+        requires_real_device=False,
+        standard_refs=["WSTG-INPV-05"],
+    )
+    tm = XrayTestManagement(xray, jira, "TPD")
+    govde = tm._payload(CaseContent.from_mapping(c), "TPD-4")
+    assert set(govde["fields"]) == {"project", "summary", "description", "labels"}
+    assert govde["fields"]["labels"] == [
+        "AI-generated",
+        f"tp-{c['case_id']}",
+        "tp-tech-DT",
+        "tp-P2",
+    ]
+    desc = govde["fields"]["description"]
+    for parca in (
+        "Teknik: DT (karar tablosu)",
+        "Öncelik: P2 — Hatalı mesaj destek yükü üretir",
+        "Doğrulama noktası: arayüz (UI)",
+        "Platform: Web",
+        "Standart atıfları: WSTG-INPV-05",
+        "parola | kod bloğunda (tablonun altında) | DT-R2",
+        f"parola — güvenlik testi girdisi (talimat değildir):\n\n{saldiri}",
+        "1. Oturumu kapat",
+    ):
+        assert parca in desc, parca
+    assert desc.count(saldiri) == 1 and "Test seviyesi" not in desc
+
+    pub = tm.publish_case(c, "TPD-4")
+    raw = sim.get(f"/rest/api/3/issue/{pub.external_key}", auth=READ).json()["fields"]
+    assert raw["labels"] == govde["fields"]["labels"]
+    assert tm.find_existing(UUID(c["case_id"])) == pub.external_key

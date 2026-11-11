@@ -39,6 +39,7 @@ import type {
   HataAnalizi,
   KosuDetay,
   ScriptDetay,
+  CaseUretimOzeti,
   TestCase,
   TestCaseIcerik,
 } from "../types";
@@ -46,6 +47,9 @@ import { kanonikJson, sha256Hex } from "../../lib/sha256";
 import { ekranGoruntusu } from "./ekran";
 import { uygulamaHatalari, uygulamaKosulari, uygulamaScriptleri } from "./platformlar";
 import kaynaklar from "./golden/kaynaklar.json";
+
+import { uretimOzetiUyarla } from "../uyum";
+import { V3_AC, V3_ACIKLAMA, V3_BASLIK, V3_GEREKSINIM_ID, V3_ICERIKLER, V3_URETIM } from "./caseV3";
 
 export interface MockVeri {
   gereksinimler: GereksinimDetay[];
@@ -63,6 +67,11 @@ export interface MockVeri {
    * story için değer uydurmaz: başlangıçta boştur, yalnızca portaldan girilen değer saklanır.
    */
   manuelBazlar?: Record<string, ManuelBaz>;
+  /**
+   * Case üretimlerinin üst düzey listeleri (core `case_uretim.ozet`; gereksinim kimliği → üretimler).
+   * Yalnız v3 üretimi olan gereksinimde vardır; eski şemalı gereksinimde anahtar yoktur.
+   */
+  caseUretimleri?: Record<string, CaseUretimOzeti[]>;
   sayac: number;
 }
 
@@ -106,8 +115,27 @@ export const KAYNAK = kaynaklar as unknown as {
   /** Serbest metin golden'ının (SERBEST) girdi beyanı: AC satırları ve açıklamada geçen metin. */
   serbest_girdi: { acceptance_criteria?: string[]; contains?: string[] };
   /** case_generation golden'ları: girdi AC satırları ("ACn: …") ve çıktı case'leri. */
-  case_generation: Record<string, { girdi_ac: string[]; cases: TestCaseIcerik[] }>;
+  case_generation: Record<string, { girdi_ac: string[]; cases: TestCaseIcerik[]; ozet?: Record<string, unknown> }>;
 };
+
+/**
+ * Golden kaydının üretim özeti (şema v3 üst düzey listeleri: açık soru, varsayım, kapsam öğeleri,
+ * negatif kapsam kararı, kapsanmayanlar — core `case_uretim.ozet`). Eski (v2) golden'da `ozet`
+ * yoktur ya da case'ler `readiness` taşımaz: undefined döner (eski şemalı üretim, özet yok).
+ */
+export function goldenUretimOzeti(ad: string, uretim_no = 1): CaseUretimOzeti | undefined {
+  const kayit = KAYNAK.case_generation[ad];
+  if (!kayit?.ozet || !kayit.cases.some((c) => c.readiness !== undefined)) return undefined;
+  return uretimOzetiUyarla({ ...kayit.ozet, uretim_no, kanal: "portal", tur: "uretim" });
+}
+
+/** `goldenCaseler` ile aynı eşleşme kuralı: eşleşen golden kaydının adı (yoksa undefined). */
+export function goldenCaseKaydi(g: { jira_key: string | null; aciklama: string; kabul_kriterleri: { ref: string; metin: string }[] }): string | undefined {
+  const kok = goldenKoku(g);
+  if (!kok) return undefined;
+  const acler = acSatirlari(g.kabul_kriterleri);
+  return adaylar(kok, KAYNAK.case_generation).find((a) => ayniAc(KAYNAK.case_generation[a].girdi_ac, acler));
+}
 
 /**
  * Case üretimi golden'ı: kayıt kökü (goldenKoku) için kayıt varsa ve gereksinimin güncel AC'leri
@@ -377,6 +405,27 @@ function gereksinimler(): GereksinimDetay[] {
       jira_url: null,
       uyarilar: [],
     },
+    // Şema v3 örneği (011): hazır / varsayıma bağlı / engelli case'ler, açık soru, varsayım, saldırı verisi.
+    {
+      id: V3_GEREKSINIM_ID,
+      kaynak: "free_text",
+      jira_key: null,
+      baslik: V3_BASLIK,
+      aciklama: V3_ACIKLAMA,
+      kabul_kriterleri: kopyala(V3_AC),
+      ac_missing: false,
+      durum: "cases_ready",
+      cekim_zamani: t(30, "13:05"),
+      po: { durum: "approved", onaylayan: "po", zaman: t(30, "13:40"), kanal: "portal" },
+      sayaclar: { bulgu_acik: 0, case_toplam: 0, case_onayli: 0 },
+      on_inceleme: null,
+      kontrol_turu: 1,
+      kontrol_turu_ust_sinir: 3,
+      elenen_bulgu: 0,
+      icerik_hash: "", // hashleriTazele doldurur
+      jira_url: null,
+      uyarilar: [],
+    },
   ];
 }
 
@@ -600,6 +649,26 @@ function caseler(): TestCase[] {
     karar("case-1-9", 9, G[8], { durum: "draft" }),
     // Golden C10 bilinçli olarak C2'nin tekrarı: analist "duplicate" gerekçesiyle reddeder.
     karar("case-1-10", 10, G[9], { ...analist, durum: "rejected", karar: "reject", ret_nedeni: "duplicate", karar_zamani: t(30, "10:44"), review_sure_ms: 21000 }),
+    ...v3Caseler(karar),
+  ];
+}
+
+/**
+ * Şema v3 örnek case'leri (req-ft-2): 1 hazır, 2 varsayıma bağlı, 3 engelli, 4 saldırı verili güvenlik
+ * (hepsi taslak); 5 hazır + onaylı; 6 varsayıma bağlı ama onaylı (onay kapısından önceki kayıt:
+ * yayın kapısının ayrıca denetlediği `blocked_not_ready` örneği).
+ */
+function v3Caseler(karar: (id: string, sira_no: number, icerik: TestCaseIcerik, ek: Partial<TestCase> & Pick<TestCase, "durum">) => TestCase): TestCase[] {
+  const V = kopyala(V3_ICERIKLER);
+  const ek = { requirement_id: V3_GEREKSINIM_ID, jira_key: null, ai_sure_ms: 2140 };
+  const analist = { karar_veren: "analist" };
+  return [
+    karar("case-v3-1", 1, V[0], { ...ek, durum: "draft" }),
+    karar("case-v3-2", 2, V[1], { ...ek, durum: "draft" }),
+    karar("case-v3-3", 3, V[2], { ...ek, durum: "draft" }),
+    karar("case-v3-4", 4, V[3], { ...ek, durum: "draft" }),
+    karar("case-v3-5", 5, V[4], { ...ek, ...analist, durum: "approved", karar: "approve", karar_zamani: t(30, "14:02"), duzeltme_olcusu: 0, review_sure_ms: 47000 }),
+    karar("case-v3-6", 6, V[5], { ...ek, ...analist, durum: "approved", karar: "approve", karar_zamani: t(30, "14:06"), duzeltme_olcusu: 0, review_sure_ms: 73000 }),
   ];
 }
 
@@ -1820,6 +1889,11 @@ export function ilkVeri(): MockVeri {
     hatalar: hatalar(),
     bugTaslaklari: bugTaslaklari(),
     denetim: denetim(),
+    caseUretimleri: {
+      [V3_GEREKSINIM_ID]: [kopyala(V3_URETIM)],
+      // TPD-1 case'leri ana senaryo golden'ından gelir; golden v3 ise üretim özeti de ondan.
+      ...((o): Record<string, CaseUretimOzeti[]> => (o ? { "req-tpd-1": [o] } : {}))(goldenUretimOzeti(`${ANA_SENARYO}/TPD-1`)),
+    },
     sayac: 200,
   };
   // Sayaçlar elle yazılmaz: liste, detay ve karne aynı koleksiyondan hesaplar.

@@ -2,14 +2,17 @@ import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
+import { ApiError } from "../api/http";
 import type { BazKaynagi, CaseMetrikleri, ManuelBaz, TestCase } from "../api/types";
 import { bazKaynagiUyarla, manuelBazUyarla } from "../api/uyumFaz5";
 import { useKisiAdi, useOturum } from "../auth";
 import { BAZ_KAYNAGI } from "../components/BazDegerKarti";
 import { CaseKarti } from "../components/CaseKarti";
+import { KapsamPaneli } from "../components/KapsamPaneli";
 import { BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, Metrik, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { HedefOlcer } from "../components/Grafikler";
 import { useGeciktirilmis, useVeri } from "../hooks";
+import { caseEski } from "../lib/caseV3";
 import { dolar, sure, yuzde } from "../lib/format";
 import { YAYIN_ROLU_GEREKLI } from "./Yayin";
 
@@ -142,11 +145,21 @@ export function CaseReview() {
   const caseler = useVeri(() => api.caseler(id), [id]);
   // Çekirdek ölçümü yoksa (uç henüz yok / hata) sayaçlar listeden hesaplanır.
   const metrik = useVeri(() => api.caseMetrikleri(id).catch(() => null), [id]);
+  // Kapsam ve açık noktalar (011 §4.4). Uç yoksa (eski core: 404/501) özet yok sayılır; diğer hatalar gösterilir.
+  const kapsam = useVeri(
+    () =>
+      api.caseSummary(id).catch((e: unknown) => {
+        if (e instanceof ApiError && (e.status === 404 || e.status === 501)) return null;
+        throw e;
+      }),
+    [id],
+  );
   const [filtre, setFiltre] = useState<Filtre>("hepsi");
   const kisiAdi = useKisiAdi();
   const sessiz = useGeciktirilmis(() => {
     void caseler.yenile(true);
     void metrik.yenile(true);
+    void kapsam.yenile(true);
   });
   useOlay((o) => {
     // Başka gereksinimin olayı bu listeyi yenilemez (gereksinim kimliği taşıyorsa).
@@ -295,6 +308,18 @@ export function CaseReview() {
         </p>
       </Kart>
 
+      {caseler.veri && (
+        <KapsamPaneli
+          ozet={kapsam.veri}
+          yukleniyor={kapsam.yukleniyor}
+          hata={kapsam.hata}
+          hataKaynagi={kapsam.hataNesnesi}
+          yenile={() => void kapsam.yenile()}
+          caseSayisi={liste.length}
+          eskiSema={liste.length > 0 && liste.every(caseEski)}
+        />
+      )}
+
       <div className="sekmeler sekmeler-yapiskan" role="group" aria-label="Case filtresi">
         {(
           [
@@ -326,7 +351,11 @@ export function CaseReview() {
             <CaseKarti
               key={c.id}
               tc={c}
-              guncellendi={(t) => caseler.setVeri(liste.map((x) => (x.id === t.id ? t : x)))}
+              guncellendi={(t) => {
+                caseler.setVeri(liste.map((x) => (x.id === t.id ? t : x)));
+                // Karar/düzeltme kapsamı ve hazır olma dağılımını değiştirir.
+                void kapsam.yenile(true);
+              }}
               yenile={() => void caseler.yenile(true)}
             />
           ))}

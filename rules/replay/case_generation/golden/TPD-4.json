@@ -2,7 +2,7 @@
   "kind": "call",
   "purpose": "case_generation",
   "golden": "TPD-4",
-  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı; canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), eşleşmezse REPLAY-MISS.",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı (model çıktısı değil); canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), eşleşmezse REPLAY-MISS. Şema v3 (teknik, kapsam öğeleri, öncelik, hazır olma durumu, test verisi, temizlik): v3 alanları ve üst düzey listeler de elle hazırlandı (model çıktısı değil); mevcut case alanları (başlık, tür, risk, AC atıfı, ön koşul, adımlar, beklenen, etiket) ve case sırası v2 ile aynıdır. Girdide `Test seviyesi: SYSTEM` varsayılır (`test_level`). İki case de `ready`dir. Kayıtlı olmayan kullanıcı adı (EP-I2) kaynakta tanımsızdır: beklenen sonuç uydurulmaz, `negative_coverage` kararı `out_of_scope`tur ve case yazılmaz (bu golden'ın her case'i verify_and_map golden'ına ve yayın testlerine bağlıdır; hazır olmayan case örnekleri TPD-3'tedir).",
   "input_match": {
     "sources": [
       "jira:TPD-4"
@@ -16,6 +16,48 @@
     ]
   },
   "output": {
+    "open_questions": [],
+    "assumptions": [],
+    "coverage_items": [
+      {
+        "id": "EP-V1",
+        "ac_ref": "AC1",
+        "definition": "Geçerli kullanıcı adı ve geçerli parola: giriş yapılır, ürün kataloğu açılır",
+        "valid": true
+      },
+      {
+        "id": "EP-I1",
+        "ac_ref": "AC2",
+        "definition": "Kayıtlı kullanıcı adı ve hatalı parola: \"Kullanıcı adı veya parola hatalı\" mesajı, giriş yapılmaz",
+        "valid": false
+      },
+      {
+        "id": "EP-I2",
+        "ac_ref": "AC2",
+        "definition": "Kayıtlı olmayan kullanıcı adı (beklenen sonuç kaynakta tanımsız)",
+        "valid": false
+      }
+    ],
+    "negative_coverage": [
+      {
+        "item": "EP-I1",
+        "decision": "tested",
+        "rationale": "Hatalı parola AC2'de mesajıyla tanımlı ve yetkisiz erişimi önleyen kural; ayrı case ile sınanıyor."
+      },
+      {
+        "item": "EP-I2",
+        "decision": "out_of_scope",
+        "rationale": "AC2 yalnızca hatalı parolayı tanımlar; kayıtlı olmayan kullanıcı adında gösterilecek sonuç kaynakta yok. Beklenen sonuç uydurulmadı, case yazılmadı."
+      }
+    ],
+    "not_covered": [],
+    "observations": [],
+    "automation_open_points": [],
+    "config_matrix": {
+      "parameters": [],
+      "constraints": []
+    },
+    "testability_gaps": [],
     "cases": [
       {
         "title": "Geçerli kullanıcı adı ve parola ile giriş yapılır",
@@ -44,6 +86,34 @@
         "expected_result": "Bayi başarıyla giriş yapar ve katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir",
         "tags": [
           "AI-generated"
+        ],
+        "technique": [
+          "EP"
+        ],
+        "covers": [
+          "EP-V1"
+        ],
+        "priority": "P1",
+        "priority_rationale": "Giriş çalışmazsa bayi portalı hiç kullanamaz (ana akış durur); her oturumda kullanıldığı için olasılık yüksek, iş kritikliği yüksek.",
+        "platform": null,
+        "test_level": "SYSTEM",
+        "verification_point": "UI",
+        "requires_real_device": false,
+        "standard_refs": [],
+        "readiness": "ready",
+        "assumption_refs": [],
+        "open_question_refs": [],
+        "test_data": [
+          {
+            "name": "geçerli kullanıcı adı ve parola",
+            "value": "bayi1 / Demo123!",
+            "class": "EP-V1",
+            "synthetic": true,
+            "is_attack_payload": false
+          }
+        ],
+        "teardown": [
+          "Çıkış yap"
         ]
       },
       {
@@ -73,7 +143,40 @@
         "expected_result": "\"Kullanıcı adı veya parola hatalı\" mesajı gösterilir ve giriş yapılmaz",
         "tags": [
           "AI-generated"
-        ]
+        ],
+        "technique": [
+          "EP"
+        ],
+        "covers": [
+          "EP-I1"
+        ],
+        "priority": "P1",
+        "priority_rationale": "Hatalı parolayla giriş yapılabilmesi yetkisiz erişim demektir (güvenlik); parola hataları sık olduğundan olasılık yüksek, iş kritikliği yüksek.",
+        "platform": null,
+        "test_level": "SYSTEM",
+        "verification_point": "UI",
+        "requires_real_device": false,
+        "standard_refs": [],
+        "readiness": "ready",
+        "assumption_refs": [],
+        "open_question_refs": [],
+        "test_data": [
+          {
+            "name": "kayıtlı kullanıcı adı",
+            "value": "bayi1",
+            "class": null,
+            "synthetic": true,
+            "is_attack_payload": false
+          },
+          {
+            "name": "hatalı parola",
+            "value": "Yanlis123!",
+            "class": "EP-I1",
+            "synthetic": true,
+            "is_attack_payload": false
+          }
+        ],
+        "teardown": []
       }
     ]
   }

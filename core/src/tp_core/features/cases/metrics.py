@@ -2,7 +2,8 @@
 
 **Düzeltme ölçüsü (alan bazlı normalize karakter düzenleme mesafesi):** case şemasının her alanı
 (başlık, tür, risk, AC referansları, ön koşullar, her adımın eylem/veri/beklenen metni, beklenen
-sonuç, etiketler) NFKC + küçük harf + boşluk sadeleştirmesiyle normalize edilir. Alan başına
+sonuç, etiketler; v3 case'te ayrıca teknik, kapsam öğeleri, öncelik, hazır olma durumu, atıflar,
+test verisi, temizlik…) NFKC + küçük harf + boşluk sadeleştirmesiyle normalize edilir. Alan başına
 Levenshtein mesafesi hesaplanır; toplam mesafe / toplam (alan başına uzun olanın uzunluğu)
 = `mesafe` (0 = aynı, 1 = tamamen farklı).
 
@@ -51,6 +52,52 @@ def _liste(deger: Any) -> str:
     return "\n".join(normalize_text(x) for x in (deger or []))
 
 
+# v3 alanları (specs/011 §4.1): yalnız içerikte bulunan alan ölçüye/farka girer; eski (v2)
+# case'lerin alan kümesi ve ölçüsü değişmez. (alan, liste mi, sıralanır mı)
+V3_ALANLARI: tuple[tuple[str, bool, bool], ...] = (
+    ("technique", True, True),
+    ("covers", True, True),
+    ("priority", False, False),
+    ("priority_rationale", False, False),
+    ("platform", False, False),
+    ("test_level", False, False),
+    ("verification_point", False, False),
+    ("requires_real_device", False, False),
+    ("standard_refs", True, True),
+    ("readiness", False, False),
+    ("assumption_refs", True, True),
+    ("open_question_refs", True, True),
+    ("teardown", True, False),
+)
+TEST_VERISI_ALANLARI = ("name", "value", "class", "synthetic", "is_attack_payload")
+
+
+def _v3_degerleri(icerik: Mapping[str, Any]) -> dict[str, Any]:
+    """İçerikte bulunan v3 alanlarının ham değerleri (`test_data` konuma göre açılır)."""
+    out: dict[str, Any] = {}
+    for alan, liste, sirali in V3_ALANLARI:
+        if alan not in icerik:
+            continue
+        deger = icerik.get(alan)
+        if liste:
+            deger = ["" if x is None else str(x) for x in (deger or [])]
+            deger = sorted(deger) if sirali else deger
+        out[alan] = deger
+    if "test_data" in icerik:
+        for i, veri in enumerate(icerik.get("test_data") or [], start=1):
+            veri = veri if isinstance(veri, Mapping) else {}
+            for alan in TEST_VERISI_ALANLARI:
+                out[f"test_data[{i}].{alan}"] = veri.get(alan)
+    return out
+
+
+def _metin(deger: Any) -> str:
+    """Mantıksal değerler JSON yazımıyla (`true`/`false`); diğerleri olduğu gibi."""
+    if isinstance(deger, bool):
+        return "true" if deger else "false"
+    return "" if deger is None else str(deger)
+
+
 def fields(icerik: Mapping[str, Any]) -> dict[str, str]:
     """Case içeriğinin normalize alanları (adımlar konuma göre: `steps[1].action` …)."""
     out = {
@@ -66,6 +113,8 @@ def fields(icerik: Mapping[str, Any]) -> dict[str, str]:
         adim = adim if isinstance(adim, Mapping) else {}
         for alan in ("action", "data", "expected"):
             out[f"steps[{i}].{alan}"] = normalize_text(adim.get(alan))
+    for alan, deger in _v3_degerleri(icerik).items():
+        out[alan] = _liste(deger) if isinstance(deger, list) else normalize_text(_metin(deger))
     return out
 
 
@@ -128,8 +177,32 @@ ALAN_ETIKETI = {
     "preconditions": "Ön koşullar",
     "expected_result": "Beklenen sonuç",
     "tags": "Etiketler",
+    "technique": "Teknik",
+    "covers": "Kapsam öğeleri",
+    "priority": "Öncelik",
+    "priority_rationale": "Öncelik gerekçesi",
+    "platform": "Platform",
+    "test_level": "Test seviyesi",
+    "verification_point": "Doğrulama noktası",
+    "requires_real_device": "Gerçek cihaz gerekir",
+    "standard_refs": "Standart atıfları",
+    "readiness": "Hazır olma durumu",
+    "assumption_refs": "Varsayım atıfları",
+    "open_question_refs": "Açık soru atıfları",
+    "teardown": "Temizlik",
 }
 ADIM_ETIKETI = {"action": "eylem", "data": "veri", "expected": "beklenen"}
+TEST_VERISI_ETIKETI = {
+    "name": "ad",
+    "value": "değer",
+    "class": "kapsam öğesi",
+    "synthetic": "sentetik",
+    "is_attack_payload": "saldırı verisi",
+}
+# Gösterimde virgülle ayrılan (kısa kimlik/etiket) listeler; diğer listeler satır satır.
+VIRGULLU_LISTELER = frozenset(
+    {"technique", "covers", "standard_refs", "assumption_refs", "open_question_refs"}
+)
 
 
 def _ham(deger: Any, ayirici: str = "\n") -> str:
@@ -155,6 +228,11 @@ def display_fields(icerik: Mapping[str, Any]) -> dict[str, str]:
         adim = adim if isinstance(adim, Mapping) else {}
         for alan in ("action", "data", "expected"):
             out[f"steps[{i}].{alan}"] = _ham(adim.get(alan))
+    for alan, deger in _v3_degerleri(icerik).items():
+        if isinstance(deger, list):
+            out[alan] = _ham(deger, ", " if alan in VIRGULLU_LISTELER else "\n")
+        else:
+            out[alan] = _metin(deger)
     return out
 
 
@@ -164,6 +242,9 @@ def _etiket(alan: str) -> str:
     m = re.fullmatch(r"steps\[(\d+)\]\.(\w+)", alan)
     if m:
         return f"Adım {m.group(1)} — {ADIM_ETIKETI.get(m.group(2), m.group(2))}"
+    m = re.fullmatch(r"test_data\[(\d+)\]\.(\w+)", alan)
+    if m:
+        return f"Test verisi {m.group(1)} — {TEST_VERISI_ETIKETI.get(m.group(2), m.group(2))}"
     return alan
 
 

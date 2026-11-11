@@ -549,9 +549,241 @@ def findings_problems(output: Any, expect: Mapping[str, Any]) -> list[str]:
     return failures
 
 
+# ------------------------------------------------------------------ case üretimi v3 (011 §4.2)
+
+# Teknik ↔ kapsam öğesi kimliği öneki (rules/schemas/case_generation.schema.json).
+TEKNIK_ONEKI: dict[str, str] = {
+    "EP": "EP-",
+    "BVA": "BV-",
+    "DT": "DT-",
+    "ST": "ST-",
+    "PW": "PW-",
+    "UC": "UC-",
+    "EG": "EG-",
+}
+READINESS = ("ready", "assumption_dependent", "blocked")
+
+
+def _liste(deger: Any) -> list[Any]:
+    return list(deger) if isinstance(deger, (list, tuple)) else []
+
+
+def _kayitlar(deger: Any) -> list[Mapping[str, Any]]:
+    return [x for x in _liste(deger) if isinstance(x, Mapping)]
+
+
+def _sade(deger: Any) -> str:
+    """Boşlukları teke indirir, büyük/küçük harfi eşitler (saldırı verisi karşılaştırması)."""
+    return re.sub(r"\s+", " ", str(deger or "")).strip().casefold()
+
+
+def _saldiri_alanlari(case: Mapping[str, Any]) -> list[str]:
+    """Saldırı verisinin GEÇMEMESİ gereken alanlar: başlık, ön koşul, adım, beklenen, temizlik."""
+    parcalar = [str(case.get("title") or ""), str(case.get("expected_result") or "")]
+    parcalar += [str(p) for p in _liste(case.get("preconditions"))]
+    parcalar += [str(t) for t in _liste(case.get("teardown"))]
+    for step in _kayitlar(case.get("steps")):
+        parcalar += [str(step.get(k) or "") for k in ("action", "data", "expected")]
+    return parcalar
+
+
+def _case_metni(case: Mapping[str, Any]) -> str:
+    """Case'in okunan metni (başlık, ön koşul, adımlar, beklenen, temizlik, test verisi)."""
+    parcalar = _saldiri_alanlari(case)
+    for veri in _kayitlar(case.get("test_data")):
+        parcalar += [str(veri.get("name") or ""), str(veri.get("value") or "")]
+    return "\n".join(p for p in parcalar if p)
+
+
+def case_rule_problems(case: Mapping[str, Any], output: Mapping[str, Any]) -> list[str]:
+    """011 §4.2 case düzeyi kurallar (1–6); `output` aynı üretimin üst düzey listeleri.
+
+    Üretimdeki karşılığı `features.cases.schema.consistency_problems`'tir; değerlendirme geçidin
+    içinde kalsın diye (özellik katmanına bağımlılık yok) burada bağımsız uygulanır."""
+    sorunlar: list[str] = []
+    ogeler = {str(o.get("id")) for o in _kayitlar(output.get("coverage_items"))}
+    sorular = {str(q.get("id")) for q in _kayitlar(output.get("open_questions"))}
+    varsayimlar = {str(a.get("id")) for a in _kayitlar(output.get("assumptions"))}
+    teknikler = [str(t) for t in _liste(case.get("technique"))]
+    kapsar = [str(k) for k in _liste(case.get("covers"))]
+    durum = case.get("readiness")
+    for ad, deger in (("technique", teknikler), ("covers", kapsar)):
+        if not deger:
+            sorunlar.append(f"{ad} boş")
+    if case.get("priority") not in ("P1", "P2", "P3"):
+        sorunlar.append("priority boş")
+    if not str(case.get("priority_rationale") or "").strip():
+        sorunlar.append("priority_rationale boş")
+    if durum not in READINESS:
+        sorunlar.append(f"readiness geçersiz: {durum!r}")
+    # 1. Tanımsız kapsam öğesi yok.
+    tanimsiz = sorted(k for k in kapsar if k not in ogeler)
+    if tanimsiz:
+        sorunlar.append(f"tanımsız kapsam öğesi: {tanimsiz}")
+    # 2. Teknik ↔ kapsam öneki: her tekniğin `covers`'ta en az bir öğesi var (yönerge kuralı).
+    for teknik in teknikler:
+        onek = TEKNIK_ONEKI.get(teknik)
+        if onek is None or not any(k.startswith(onek) for k in kapsar):
+            sorunlar.append(f"teknik {teknik} için kapsam öğesi yok")
+    onekler = {TEKNIK_ONEKI[t] for t in teknikler if t in TEKNIK_ONEKI}
+    sahipsiz = sorted(k for k in kapsar if not any(k.startswith(o) for o in onekler))
+    if sahipsiz:
+        sorunlar.append(f"tekniği technique'te olmayan kapsam öğesi: {sahipsiz}")
+    # 3. Varsayım / açık soru atıfları üst listelerde tanımlı.
+    a_refs = [str(r) for r in _liste(case.get("assumption_refs"))]
+    q_refs = [str(r) for r in _liste(case.get("open_question_refs"))]
+    eksik = sorted(
+        {r for r in a_refs if r not in varsayimlar} | {r for r in q_refs if r not in sorular}
+    )
+    if eksik:
+        sorunlar.append(f"tanımsız varsayım/soru atıfı: {eksik}")
+    # 4. Hazır olma durumu ↔ atıflar ve beklenenler.
+    beklenen = str(case.get("expected_result") or "").strip()
+    adimlar = _kayitlar(case.get("steps"))
+    bos_adim = [str(s.get("id")) for s in adimlar if not str(s.get("expected") or "").strip()]
+    if durum == "ready":
+        if a_refs or q_refs:
+            sorunlar.append("ready case varsayım/soru atıfı taşıyor")
+        if not beklenen or bos_adim:
+            sorunlar.append("ready case'te beklenen sonuç boş")
+    elif durum == "assumption_dependent":
+        if not a_refs:
+            sorunlar.append("assumption_dependent case'te varsayım atıfı yok")
+        if not beklenen or bos_adim:
+            sorunlar.append("assumption_dependent case'te beklenen sonuç boş")
+    elif durum == "blocked":
+        if not q_refs:
+            sorunlar.append("blocked case'te açık soru atıfı yok")
+        if beklenen:
+            sorunlar.append("blocked case'te expected_result dolu")
+    # 5–6. Test verisi: sentetik; saldırı verisi başka alanda geçmez.
+    alanlar = [_sade(alan) for alan in _saldiri_alanlari(case)]
+    for veri in _kayitlar(case.get("test_data")):
+        if veri.get("synthetic") is not True:
+            sorunlar.append(f"test verisi sentetik değil: {veri.get('name')}")
+        deger = _sade(veri.get("value"))
+        saldiri = veri.get("is_attack_payload") is True and bool(deger)
+        if saldiri and any(deger in alan for alan in alanlar):
+            sorunlar.append(f"saldırı verisi başka alanda geçiyor: {veri.get('name')}")
+    return sorunlar
+
+
+def generation_rule_problems(output: Any) -> list[str]:
+    """011 §4.2 deterministik kurallarının tamamı, bir üretim çıktısının bütününe uygulanır:
+    her case için `case_rule_problems` + set düzeyi (negatif kapsam kararı, kapsanmayan gerekçesi).
+    AC atıfı (kural 7) belgeyi bilen `coverage_problems`'tedir (`ac_coverage`)."""
+    out = output if isinstance(output, Mapping) else {}
+    cases = _kayitlar(out.get("cases"))
+    sorunlar = [
+        f"C{n}: {s}" for n, case in enumerate(cases, start=1) for s in case_rule_problems(case, out)
+    ]
+    ogeler = _kayitlar(out.get("coverage_items"))
+    kimlikler = [str(o.get("id")) for o in ogeler]
+    for ad, liste in (
+        ("kapsam öğesi", kimlikler),
+        ("açık soru", [str(q.get("id")) for q in _kayitlar(out.get("open_questions"))]),
+        ("varsayım", [str(a.get("id")) for a in _kayitlar(out.get("assumptions"))]),
+    ):
+        cift = sorted({k for k in liste if liste.count(k) > 1})
+        if cift:
+            sorunlar.append(f"yinelenen {ad} kimliği: {cift}")
+    kapsanan = {str(k) for c in cases for k in _liste(c.get("covers"))}
+    ac_kapsanan = {str(r) for c in cases for r in _liste(c.get("acceptance_criteria_refs"))}
+    kararlar: dict[str, list[Mapping[str, Any]]] = {}
+    for karar in _kayitlar(out.get("negative_coverage")):
+        kararlar.setdefault(str(karar.get("item")), []).append(karar)
+    kapsanmayan = _kayitlar(out.get("not_covered"))
+    gerekceli = {str(n.get("item")) for n in kapsanmayan if str(n.get("reason") or "").strip()}
+    acler = {str(o.get("ac_ref")) for o in ogeler if o.get("ac_ref")}
+    # Karar yalnız tanımlı öğeye; kapsanmayan kaydı tanımlı öğeye ya da bir kabul kriterine (ACn).
+    tanimsiz = sorted(
+        {k for k in kararlar if k not in kimlikler}
+        | {
+            str(n.get("item"))
+            for n in kapsanmayan
+            if str(n.get("item")) not in kimlikler
+            and not re.fullmatch(r"AC[0-9]+", str(n.get("item")))
+        }
+    )
+    if tanimsiz:
+        sorunlar.append(f"tanımsız kapsam öğesine karar/gerekçe: {tanimsiz}")
+    for oge in ogeler:
+        kimlik = str(oge.get("id"))
+        karar_listesi = kararlar.get(kimlik, [])
+        kapsam_disi = any(
+            k.get("decision") == "out_of_scope" and str(k.get("rationale") or "").strip()
+            for k in karar_listesi
+        )
+        if oge.get("valid") is False:
+            if len(karar_listesi) != 1:
+                sorunlar.append(
+                    f"{kimlik}: negatif kapsam kararı {len(karar_listesi)} adet (1 olmalı)"
+                )
+            elif not str(karar_listesi[0].get("rationale") or "").strip():
+                sorunlar.append(f"{kimlik}: negatif kapsam kararının gerekçesi yok")
+        for karar in karar_listesi:
+            if karar.get("decision") in ("tested", "covered_by") and kimlik not in kapsanan:
+                sorunlar.append(
+                    f"{kimlik}: karar {karar.get('decision')} ama hiçbir case kapsamıyor"
+                )
+        if kimlik not in kapsanan and kimlik not in gerekceli and not kapsam_disi:
+            sorunlar.append(f"{kimlik}: kapsanmıyor ve gerekçesi yok")
+    for ac in sorted(acler - ac_kapsanan - gerekceli):
+        sorunlar.append(f"{ac}: hiçbir case'te yok ve gerekçesi yok")
+    return sorunlar
+
+
+def generation_stats(output: Any) -> dict[str, Any]:
+    """Bir üretim çıktısının dağılımı (eval raporu: kapsam, readiness ve teknik dağılımı)."""
+    out = output if isinstance(output, Mapping) else {}
+    cases = _kayitlar(out.get("cases"))
+    hazirlik: dict[str, int] = {}
+    teknik: dict[str, int] = {}
+    for case in cases:
+        durum = str(case.get("readiness") or "yok")
+        hazirlik[durum] = hazirlik.get(durum, 0) + 1
+        for t in _liste(case.get("technique")):
+            teknik[str(t)] = teknik.get(str(t), 0) + 1
+    ogeler = _kayitlar(out.get("coverage_items"))
+    kapsanan = {str(k) for c in cases for k in _liste(c.get("covers"))}
+    return {
+        "case": len(cases),
+        "readiness": dict(sorted(hazirlik.items())),
+        "technique": dict(sorted(teknik.items())),
+        "coverage_items": len(ogeler),
+        "covered_items": sum(1 for o in ogeler if str(o.get("id")) in kapsanan),
+        "invalid_items": sum(1 for o in ogeler if o.get("valid") is False),
+        "not_covered": len(_liste(out.get("not_covered"))),
+        "open_questions": len(_liste(out.get("open_questions"))),
+        "assumptions": len(_liste(out.get("assumptions"))),
+    }
+
+
+def _belirtec_var(belirtec: str, metin: str) -> bool:
+    """Uydurma belirteci aranır (büyük/küçük harf duyarsız). Salt rakam belirteç (ör. `429`)
+    tutarın parçasıysa (`1.429,00 TL`, `4290`) sayılmaz."""
+    b = _kucuk(belirtec)
+    if b.isdigit():
+        return re.search(rf"(?<![\d.,]){re.escape(b)}(?![.,]?\d)", metin) is not None
+    return b in metin
+
+
 def coverage_problems(output: Any, expect: Mapping[str, Any]) -> list[str]:
-    """case_generation beklentisi: her AC en az bir case'te, bilinmeyen AC yok, case sayısı,
-    metin içerir/içermez (tüm case'lerin birleşik metni)."""
+    """case_generation beklentisi (deterministik).
+
+    Her zaman: 011 §4.2 kuralları çıktının tamamına (`generation_rule_problems`).
+    Beklenti anahtarları:
+    - `ac_coverage`: her AC en az bir case'te, belgede olmayan AC yok;
+    - `ready_ac_coverage`: bu AC'lerin her biri en az bir `ready` case'te (kaynağın açık olduğu
+      kural engellenmiş/varsayıma bağlı bırakılmaz);
+    - `min_cases` / `max_cases`;
+    - `contains` / `not_contains`: case'lerin birleşik metni (büyük/küçük harf duyarlı);
+    - `not_contains_any`: uydurma belirteçleri (kaynakta olmayan HTTP kodu, zaman aşımı, kilit…);
+      `ready` case'lerin metninde hiçbiri geçmez (büyük/küçük harf duyarsız). Hazır olmayan case
+      bilinmeyeni adıyla anabilir; kaynağa dayalı diye sunulan (`ready`) case anamaz;
+    - `must_not_be_ready_about`: `[{"topic", "keywords": [...]}]` — kaynağın sessiz olduğu bilinen
+      konu. Anahtar sözcüklerden birini içeren case `ready` olamaz (hiç yazılmaması da geçerlidir).
+    """
     out = output if isinstance(output, Mapping) else {}
     cases = [c for c in out.get("cases") or [] if isinstance(c, Mapping)]
     failures: list[str] = []
@@ -566,9 +798,32 @@ def coverage_problems(output: Any, expect: Mapping[str, Any]) -> list[str]:
             failures.append(f"belgede olmayan AC: {extra}")
     if len(cases) < int(expect.get("min_cases", 1)):
         failures.append(f"{len(cases)} case, en az {expect.get('min_cases', 1)}")
+    if "max_cases" in expect and len(cases) > int(expect["max_cases"]):
+        failures.append(f"{len(cases)} case, en çok {expect['max_cases']}")
     blob = _blob(cases)
     failures += [f"'{n}' geçmiyor" for n in expect.get("contains") or [] if n not in blob]
     failures += [f"'{n}' geçmemeli" for n in expect.get("not_contains") or [] if n in blob]
+    failures += generation_rule_problems(out)
+    hazir = [(n, c) for n, c in enumerate(cases, start=1) if c.get("readiness") == "ready"]
+    hazir_refs = {str(r) for _, c in hazir for r in c.get("acceptance_criteria_refs") or []}
+    failures += [
+        f"{ac} için hazır (ready) case yok"
+        for ac in expect.get("ready_ac_coverage") or []
+        if ac not in hazir_refs
+    ]
+    metinler = [(n, _kucuk(_case_metni(c))) for n, c in hazir]
+    for belirtec in expect.get("not_contains_any") or []:
+        nerede = [f"C{n}" for n, metin in metinler if _belirtec_var(str(belirtec), metin)]
+        if nerede:
+            failures.append(f"uydurma belirteci '{belirtec}' hazır case'te: {nerede}")
+    for konu in expect.get("must_not_be_ready_about") or []:
+        anahtarlar = [_kucuk(str(a)) for a in konu.get("keywords") or []]
+        nerede = [f"C{n}" for n, metin in metinler if any(a in metin for a in anahtarlar)]
+        if nerede:
+            failures.append(
+                f"kaynak '{konu.get('topic')}' konusunda sessiz; "
+                f"hazır (ready) case yazılamaz: {nerede}"
+            )
     return failures
 
 

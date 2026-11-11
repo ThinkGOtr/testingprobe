@@ -2436,6 +2436,102 @@ article.bulgu:is([data-durum="decided"], [data-durum="resolved"], [data-durum="s
   padding-top: 10px;
   margin-top: 10px;
 }
+/* ---- Case şeması v3 (011 §4.8): özellik listesi, atıf blokları, test verisi, kapsam paneli */
+.case-v3 {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.case-v3 .uyari-kutusu {
+  margin: 0;
+}
+.case-ozellik {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 6px 16px;
+  margin: 0;
+}
+.case-ozellik dt {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.case-ozellik dd {
+  margin: 0;
+}
+.case-atif-listesi {
+  margin: 0;
+  padding-left: 18px;
+}
+.case-atif-listesi li + li {
+  margin-top: 4px;
+}
+.case-temizlik {
+  margin: 2px 0 0;
+  padding-left: 22px;
+}
+.case-hata-listesi {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+/* Test verisi değeri: güvenilmeyen metin, kod olarak ve kırpılmadan (uzun değer satır kırar). */
+.veri-deger {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.veri-duzenle {
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr auto auto;
+  gap: 6px;
+  align-items: start;
+  margin-bottom: 6px;
+}
+.veri-duzenle-isaret {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.85rem;
+}
+.yayin-neden {
+  display: block;
+  margin-top: 4px;
+  max-width: 32ch;
+}
+.kapsam-dagilim {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0 24px;
+}
+.kapsam-paneli h3,
+.kapsam-ayrinti h4 {
+  font-size: 0.9rem;
+  font-weight: 700;
+  margin: 14px 0 6px;
+}
+.kapsam-cipler {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.kapsam-ayrinti {
+  border-top: 1px solid var(--border-soft);
+  margin-top: 14px;
+  padding-top: 10px;
+}
+.kapsam-ayrinti > summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.kapsam-ayrinti > .tablo-sarici {
+  margin-top: 8px;
+}
+@media (max-width: 760px) {
+  .veri-duzenle {
+    grid-template-columns: 1fr;
+  }
+}
+
 .ret-formu,
 .case-duzenle {
   border-top: 1px dashed var(--border);

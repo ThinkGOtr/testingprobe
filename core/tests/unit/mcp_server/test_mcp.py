@@ -15,7 +15,7 @@ from sqlalchemy import Engine, select
 
 from tests.unit.features.cases.helpers import case_icerik, latest_cases, login
 from tp_core.auth.tokens import issue_token, revoke_token
-from tp_core.models import Requirement, TestCase, ToolCall, session_scope
+from tp_core.models import CaseUretim, Requirement, TestCase, ToolCall, session_scope
 from tp_core.workflow.service import Principal
 
 URL = "http://127.0.0.1:8000/mcp"
@@ -77,7 +77,20 @@ def test_arac_listesi_sdk_istemcisiyle(api: TestClient, make_user) -> None:
     sema = adlar["submit_draft_cases"].input_schema
     assert sema["required"] == ["requirement_key", "onaylanan_hash", "cases"]
     assert adlar["get_requirement"].input_schema["required"] == ["requirement_key"]
-    assert "steps" in sema["properties"]["cases"]["items"]["properties"]
+    case_sema = sema["properties"]["cases"]["items"]
+    assert "steps" in case_sema["properties"]
+    # v3: case alt şeması tam (readiness zorunlu), `$ref` hedefi kökte, özet isteğe bağlı.
+    assert "readiness" in case_sema["required"] and "$defs" not in case_sema
+    assert "coverage_item_id" in sema["$defs"]
+    assert set(sema["properties"]["ozet"]["properties"]) >= {
+        "open_questions",
+        "assumptions",
+        "coverage_items",
+        "negative_coverage",
+        "not_covered",
+    }
+    assert "cases" not in sema["properties"]["ozet"]["properties"]
+    assert "ozet" in adlar["submit_draft_cases"].description
 
 
 def test_submit_draft_cases_taslak_dusurur_jiraya_yazmaz(
@@ -145,6 +158,70 @@ def test_semaya_uymayan_taslak_hicbirini_yazmaz(
         assert s.scalar(select(TestCase.id)) is None
     (tc,) = _tool_calls()
     assert tc.izin_verildi is True and "şemaya uymuyor" in tc.sonuc_ozeti
+
+
+def test_submit_draft_cases_ozet_ve_v3_kurallari(
+    api: TestClient, make_user, make_requirement
+) -> None:
+    rid = make_requirement()
+    token = _token(make_user("analyst"), "submit")
+    ozet = {
+        "open_questions": [{"id": "Q1", "question": "Kilit süresi nedir?", "owner": "PO"}],
+        "coverage_items": [
+            {"id": "UC-MF", "ac_ref": "AC1", "definition": "Ana akış", "valid": True},
+            {"id": "EP-I1", "ac_ref": "AC2", "definition": "Kilitli hesap", "valid": False},
+        ],
+        "negative_coverage": [{"item": "EP-I1", "decision": "tested", "rationale": "Riskli"}],
+    }
+    engelli = case_icerik(
+        title="Kilitli hesap",
+        ref="AC2",
+        type="negative",
+        technique=["EP"],
+        covers=["EP-I1"],
+        readiness="blocked",
+        open_question_refs=["Q1"],
+        expected_result="",
+    )
+    govde = {"requirement_key": "TPD-4", "onaylanan_hash": _hash()}
+
+    # Özette tanımlı olmayan soruya atıf: hiçbiri yazılmaz.
+    bozuk = {**engelli, "open_question_refs": ["Q2"]}
+    sonuc = _cagir(
+        api, token, "submit_draft_cases", {**govde, "cases": [case_icerik(), bozuk], "ozet": ozet}
+    )
+    assert sonuc.is_error is True and "Q2" in sonuc.structured_content["hata"]
+    # Eski (v2) biçim kabul edilmez.
+    eski = {k: v for k, v in case_icerik().items() if k != "readiness"}
+    sonuc = _cagir(api, token, "submit_draft_cases", {**govde, "cases": [eski]})
+    assert sonuc.is_error is True and "readiness" in sonuc.structured_content["hata"]
+    with session_scope() as s:
+        assert s.scalar(select(TestCase.id)) is None
+
+    sonuc = _cagir(
+        api, token, "submit_draft_cases", {**govde, "cases": [case_icerik(), engelli], "ozet": ozet}
+    )
+    assert sonuc.is_error is False, sonuc
+    assert "1 case hazır değil" in sonuc.structured_content["mesaj"]
+    with session_scope() as s:
+        (u,) = s.scalars(select(CaseUretim)).all()
+        assert u.kanal == "ide" and u.ozet["open_questions"] == ozet["open_questions"]
+    kayit = _tool_calls()[-1]
+    assert kayit.arguman_ozeti["ozet_hash"] and kayit.arguman_ozeti["case_sayisi"] == 2
+
+    login(api, make_user("analyst"))
+    hazir, bloklu = latest_cases(api, rid)
+    assert bloklu["readiness"] == "blocked" and bloklu["acik_sorular"] == ozet["open_questions"]
+    r = api.post(
+        f"/cases/{bloklu['id']}/decision",
+        json={"karar": "approve", "icerik_hash": bloklu["icerik_hash"]},
+    )
+    assert r.status_code == 422 and "hazır değil" in r.json()["detail"]
+    r = api.post(
+        f"/cases/{hazir['id']}/decision",
+        json={"karar": "approve", "icerik_hash": hazir["icerik_hash"]},
+    )
+    assert r.status_code == 200, r.text
 
 
 def test_po_onaysiz_gereksinime_taslak_gonderilemez(
@@ -227,7 +304,8 @@ def test_publish_test_cases_portal_onayi_ve_hash_kapisi(
     assert sonuc.structured_content["ozet"] == {"created": 1, "exists": 0, "failed": 1}
     key = durum[a_id]["external_key"]
     # IDE taslağı: üretim modu etiketi "ide" (REPLAY/canlı model değil).
-    assert jira.get_issue(key).labels == ["AI-generated", f"tp-{a_id}", "tp-mod-ide"]
+    # (v3 case'te yayın şeridi teknik / öncelik etiketlerini de ekler.)
+    assert {"AI-generated", f"tp-{a_id}", "tp-mod-ide"} <= set(jira.get_issue(key).labels)
 
     kayit = [t for t in _tool_calls() if t.arac == "publish_test_cases"][-1]
     assert kayit.kanal == "ide" and kayit.cagiran_user_id == gelistirici.id

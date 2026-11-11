@@ -23,8 +23,8 @@ are returned.
    source is silent, ambiguous or contradictory about something that changes an expected result,
    record an entry in `open_questions` (`Q1`, `Q2`, …) with the role who can answer it (`PO`,
    `analyst`, `developer`, or `""` when unknown). If you need to assume something to write a case,
-   record it in `assumptions` (`A1`, …) with the role who must confirm it. Do not record questions
-   about things that no case depends on.
+   record it in `assumptions` (`A1`, …) with the role who must confirm it. Record a question only
+   when a case or a coverage decision depends on it.
 2. **Choose techniques.** For each statement pick the technique that fits its shape:
    - `EP` equivalence partitioning: an input or output whose values fall into classes that behave
      the same way.
@@ -54,7 +54,11 @@ are returned.
    entry: `tested` (a case exists for it), `covered_by` (a case written for another item also
    exercises it) or `out_of_scope` (no case; say why). Decide by the risk and by what the story
    states. There is no target number or ratio of negative cases; do not add a negative case that
-   no rule or risk in the source calls for.
+   no rule or risk in the source calls for. A boundary value that cannot be built with the given
+   test data (for example no product combination reaches exactly that amount) is `out_of_scope`
+   with that reason. When an item has no case because the source is silent about its outcome, the
+   decision is `out_of_scope`, the rationale names the open question (`Q…`), and that question is
+   listed in `open_questions`.
 5. **Write the cases** (rules below), then **check yourself**: every acceptance criterion and
    every coverage item is listed in the `covers` / `acceptance_criteria_refs` of at least one case,
    or appears in `not_covered` (or as `out_of_scope` in `negative_coverage`) with its reason. Do
@@ -64,7 +68,8 @@ are returned.
 - **Traceability.** `acceptance_criteria_refs` lists the ACs the case verifies; `technique` lists
   the technique(s) it was derived with; `covers` lists the coverage item ids it exercises. A
   technique in `technique` must have at least one matching item in `covers` (`EP`→`EP-…`,
-  `BVA`→`BV-…`, `DT`→`DT-…`, `ST`→`ST-…`, `PW`→`PW-…`, `UC`→`UC-…`, `EG`→`EG-…`).
+  `BVA`→`BV-…`, `DT`→`DT-…`, `ST`→`ST-…`, `PW`→`PW-…`, `UC`→`UC-…`, `EG`→`EG-…`), and every item
+  in `covers` belongs to a technique listed in `technique`.
 - **Type.** `positive` for a success path; `negative` for a rejected input or error condition;
   `boundary` for a value at or next to a limit; `authorization` for role or permission checks;
   `integration` for behaviour across a system boundary. For an AC that states a rule, limit or
@@ -111,7 +116,9 @@ are returned.
   expected result.
 - **Independence.** Each case runs on its own: preconditions, test data and cleanup are stated in
   the case. `teardown` lists the cleanup steps (empty the cart, delete the created record, log
-  out); leave it empty when the case changes nothing.
+  out); leave it empty when the case changes nothing. When the case creates a record that the
+  user cannot remove (for example a confirmed order), write one teardown line that says so, so the
+  tester uses a fresh test environment or account.
 - **Automation honesty.** No automation tool, framework or stable selector is given unless the
   input states one. Do not write code, locators or automation ids; list what is missing in
   `automation_open_points`.
@@ -127,4 +134,5 @@ are returned.
   Always include the tag `AI-generated`.
 - Keep each case ≤ 8 steps. Write at most 10 cases per story; prefer 4–10, fewer only when the
   story has one or two ACs. If the limit forces you to leave an item without a case, put it in
-  `not_covered` with the reason.
+  `not_covered` with the reason; spend the cases on the highest-risk items first.
+- `not_covered[].item` is a coverage item id (`BV-3`) or an acceptance criterion id (`AC2`).
