@@ -893,7 +893,10 @@ def test_asistan_eval_iskeleti() -> None:
     from tp_core.gateway.eval_set import load_set
 
     data = load_set(RULES, "assistant")
-    assert data["purpose"] == "assistant" and data["version"] == 1
+    meta, _ = parse_prompt_file(
+        (RULES / "prompts" / "assistant.md").read_text(encoding="utf-8"), Path("assistant.md")
+    )
+    assert data["purpose"] == "assistant" and data["version"] == meta["version"]
     cases = data["cases"]
     assert len(cases) >= 12
     etiketler = [e for c in cases for e in c["etiketler"]]

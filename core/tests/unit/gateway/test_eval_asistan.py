@@ -52,6 +52,7 @@ from tp_core.gateway.eval_set import (
 from tp_core.gateway.evaluation import (
     evaluation_status,
     icerik_hash,
+    prompt_versions,
 )
 from tp_core.gateway.evaluation import (
     main as status_main,
@@ -59,6 +60,7 @@ from tp_core.gateway.evaluation import (
 from tp_core.gateway.testing import FakeProvider
 
 veri = _probe.veri
+SURUM = prompt_versions(RULES)["assistant"]  # sürüm artınca testler değişmez
 TODAY = dt.date(2026, 11, 2)
 
 
@@ -140,8 +142,8 @@ def test_kuru_kosu_iki_amaci_gosterir(capsys: pytest.CaptureFixture[str]) -> Non
 
     assert main(["--dry-run", "--bundle", "assistant"], provider_factory=reddet) == 0
     out = capsys.readouterr().out
-    assert "assistant@v1 [assistant]: " in out and "claude-haiku-5-5" in out
-    assert "assistant@v1 [assistant_deep]: " in out and "claude-sonnet-5-5" in out
+    assert f"assistant@v{SURUM} [assistant]: " in out and "claude-haiku-5-5" in out
+    assert f"assistant@v{SURUM} [assistant_deep]: " in out and "claude-sonnet-5-5" in out
     assert main(["--dry-run", "--bundle", "assistant", "--purpose", "assistant_deep"]) == 0
     out = capsys.readouterr().out
     assert "[assistant_deep]" in out and "[assistant]:" not in out
@@ -535,7 +537,7 @@ def test_via_flow_tam_kosu_rapor_ve_icerik_hashli_durum(
     sonuc = mini / "evaluation" / "results"
     for amac in ("assistant", "assistant_deep"):
         rapor = json.loads(
-            (sonuc / f"assistant-v1-{amac}-2026-11-02.json").read_text(encoding="utf-8")
+            (sonuc / f"assistant-v{SURUM}-{amac}-2026-11-02.json").read_text(encoding="utf-8")
         )
         assert rapor["passed"] == rapor["total"] == 4 and rapor["via_flow"] is True
         assert rapor["amac"] == amac and rapor["icerik_hash"] == icerik_hash(mini, "assistant")
@@ -549,7 +551,7 @@ def test_via_flow_tam_kosu_rapor_ve_icerik_hashli_durum(
         assert olcum["maliyet_usd"]["medyan"] is not None and olcum["sure_s"]["p90"] is not None
         assert rapor["dagilim"]["maliyet_usd"]["p90"] >= rapor["dagilim"]["maliyet_usd"]["medyan"]
         assert all(e["gecti"] for e in olcum["esikler"])
-        assert (sonuc / f"assistant-v1-{amac}-2026-11-02.calls.jsonl").is_file()
+        assert (sonuc / f"assistant-v{SURUM}-{amac}-2026-11-02.calls.jsonl").is_file()
     assert "eşik beklenti_gecis_min: 1.0 (sınır 1.0) tamam" in out
     # Durum: evaluated + içerik hash'i + amaç başına model.
     st = evaluation_status(mini, "assistant")

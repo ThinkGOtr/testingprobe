@@ -15,6 +15,10 @@ Kaynak plan: [docs/AI-ASISTAN-PLANI.md](../../docs/AI-ASISTAN-PLANI.md) (v6). Bu
 **ne/neden** kısmıdır; bağlayıcı arayüzler [contracts/](./contracts/), veri modeli
 [data-model.md](./data-model.md), kod gerçekliğine karşı doğrulama notları [research.md](./research.md).
 
+> **Not (2026-11-11)**: Asistanın güvenlik katmanı (rol bazlı araç daraltma, niyet sinyalleri,
+> kesin kişisel veri engeli, kanarya/istem sızıntısı, ardışık red dondurma, şeffaflık rozeti) bu
+> spec'i genişletir: [013-asistan-guvenlik/ANALIZ.md](../013-asistan-guvenlik/ANALIZ.md).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Ekranda takılınca soru sormak (Priority: P1)
