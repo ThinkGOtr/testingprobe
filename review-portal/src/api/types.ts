@@ -68,6 +68,8 @@ export const GEREKSINIM_DURUMLARI = [
   "doc_final", // doküman son hâlinde
   "pending_po", // PO teyidi bekleniyor
   "po_approved",
+  "modeling", // iki tur: test tasarım modeli üretiliyor (011 F3)
+  "model_ready", // iki tur: model onayı / onaylı modelden case üretimi bekleniyor
   "generating", // case üretimi sürüyor
   "cases_ready", // case review
   "done", // case'ler yayınlandı; akış koda/CI'ya geçti
@@ -1510,6 +1512,11 @@ export interface IsYaniti {
   mesaj?: string;
   /** apply-doc-fixes "son hâl onayı": kararsız uyarıların accept_difference olarak kaydı (ör. "F2 (tur 1)"). */
   kabul_edilen_uyarilar?: string[];
+  /** Üretim başlatma (011 K1): kip ve aşama (iki turda önce "model", onaydan sonra "case"). */
+  kip?: "iki_tur" | "tek_tur";
+  asama?: "model" | "case";
+  uretim_no?: number | null;
+  workflow_id?: string | null;
 }
 
 // ---------------------------------------------------------------- SSE

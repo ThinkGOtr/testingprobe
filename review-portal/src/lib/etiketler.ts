@@ -33,6 +33,8 @@ export const GEREKSINIM_DURUMU: Record<GereksinimDurumu, { etiket: string; ton: 
   doc_final: { etiket: "Doküman son hâlinde", ton: "basari" },
   pending_po: { etiket: "PO teyidi bekliyor", ton: "uyari" },
   po_approved: { etiket: "PO onaylı", ton: "basari" },
+  modeling: { etiket: "Tasarım modeli üretiliyor", ton: "bilgi" },
+  model_ready: { etiket: "Tasarım modeli onayı bekliyor", ton: "uyari" },
   generating: { etiket: "Case üretiliyor", ton: "bilgi" },
   cases_ready: { etiket: "Case review", ton: "bilgi" },
   done: { etiket: "Case'ler yayınlandı", ton: "basari" },

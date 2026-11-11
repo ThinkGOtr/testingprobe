@@ -69,9 +69,10 @@ describe("case üretimi hata ile bitti: yeniden denenir, denetim yeniden başlat
     // Yeniden denetle ikincil ve yeni PO teyidi gerektirdiğini söyler.
     expect(screen.getByRole("button", { name: "Yeniden denetle" })).toHaveAttribute("title", expect.stringMatching(/yeni PO teyidi/));
     await u.click(dugme);
-    await waitFor(() => expect(spy).toHaveBeenCalledWith("req-tpd-1"));
+    // Üretim formunun kipi açıkça gönderilir (011 K1; varsayılan iki tur → önce tasarım modeli).
+    await waitFor(() => expect(spy).toHaveBeenCalledWith("req-tpd-1", "iki_tur"));
     await waitFor(() => expect(g.durum).not.toBe("failed"));
-    expect(["generating", "cases_ready"]).toContain(g.durum);
+    expect(["modeling", "model_ready", "generating", "cases_ready"]).toContain(g.durum);
   });
 
   it("core failed'da PO onayını göstermese de (not_requested) yeniden deneme açık; PO kartı 'henüz istenmedi' demez", async () => {

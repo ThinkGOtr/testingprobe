@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { ApiError } from "../api/http";
@@ -15,6 +15,9 @@ import { akisKanitlari, guncelAdim } from "../lib/yolHaritasi";
 import { AC_EKSIK, gereksinimDurumu, SORU_TURU } from "../lib/etiketler";
 import { tarih } from "../lib/format";
 import { dokumanBloklari } from "../lib/dokuman";
+import type { UretimKipi } from "../api/tasarimModeliTipleri";
+import { MODEL_ASAMASI, TasarimModeliPaneli } from "../components/TasarimModeliPaneli";
+import { UretimKipiSecici, VARSAYILAN_KIP } from "../components/UretimKipiSecici";
 
 /**
  * Onaylı düzeltmeleri uygular. Düzeltme aynı döngüdeki 'bilinçli fark' kararıyla çelişirse core 409
@@ -48,6 +51,8 @@ export function GereksinimDetay() {
   const kanit = useVeri(() => (tamamMi ? akisKanitlari(id) : Promise.resolve(null)), [id, tamamMi]);
   const islem = useIslem();
   const bildir = useBildirim();
+  // 011 K1: üretim kipi (iki tur varsayılan); "Case üret" seçili kipi açıkça gönderir.
+  const [kip, setKip] = useState<UretimKipi>(VARSAYILAN_KIP);
 
   const tumunuYenile = useCallback(() => {
     void detay.yenile(true);
@@ -103,7 +108,10 @@ export function GereksinimDetay() {
   const caseUretilebilir =
     !g.ac_missing &&
     ((poGuncel && ["po_approved", "cases_ready"].includes(g.durum)) || (uretimHatasi && poYenidenDenemedeGecerli(g)));
-  const caseUretNedeni = caseUretilebilir
+  const modelAsamasi = MODEL_ASAMASI.has(g.durum);
+  const caseUretNedeni = modelAsamasi
+    ? "İki tur sürüyor: tasarım modeli panelinden ilerleyin (onay → Case'leri üret)"
+    : caseUretilebilir
     ? uretimHatasi
       ? "Case üretimi hata ile bitti; yeniden dener. PO onayının güncelliği sunucuda yeniden doğrulanır."
       : undefined
@@ -157,7 +165,12 @@ export function GereksinimDetay() {
               tur={uretimHatasi && caseUretilebilir ? "birincil" : undefined}
               disabled={!caseUretilebilir}
               title={caseUretNedeni}
-              onClick={() => eylem(() => api.caseUret(g.id).catch(caseUretHatasi), "Case üretimi başlatıldı.")}
+              onClick={() =>
+                eylem(
+                  () => api.caseUret(g.id, kip).catch(caseUretHatasi),
+                  kip === "iki_tur" ? "Tasarım modeli üretimi başlatıldı (iki tur)." : "Case üretimi başlatıldı.",
+                )
+              }
             >
               {uretimHatasi ? "Case üretimini yeniden dene" : "Case üret"}
             </IslemDugmesi>
@@ -170,6 +183,13 @@ export function GereksinimDetay() {
         }
       />
       {islem.hata && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
+
+      {caseUretilebilir && (
+        <Kart>
+          <UretimKipiSecici kip={kip} degistir={setKip} />
+        </Kart>
+      )}
+      <TasarimModeliPaneli g={g} yenile={tumunuYenile} />
 
       <Kart>
         <AkisAdimlari adim={guncelAdim(g, kanit.veri ?? null, akisAdimi(g.durum, g.adim ?? hataAdimi(g.son_hata?.job_tur)))} kaynak={g.kaynak} />
@@ -503,7 +523,8 @@ export const AC_YOK_CASE_URETILEMEZ = "Kabul kriteri yok; case üretilemez";
 
 /** Gereksinim, case üretimi işi hata ile bittiği için mi `failed`? */
 export function uretimHatasiMi(g: Pick<Detay, "durum" | "son_hata">): boolean {
-  return g.durum === "failed" && g.son_hata?.job_tur === URETIM_ISI;
+  // İki turda model üretimi (`model.generate`) de üretim işidir: yeniden denenir (011 F3).
+  return g.durum === "failed" && (g.son_hata?.job_tur === URETIM_ISI || g.son_hata?.job_tur === "model.generate");
 }
 
 /** PO onayı var ve onaylanan içerik hâlâ ekrandaki içerik mi (hash'ler biliniyorsa)? */

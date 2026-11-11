@@ -52,6 +52,15 @@ import type {
   YayinSonucu,
 } from "./types";
 
+import type {
+  TasarimModeliKaydi,
+  TasarimModeliKararGirdisi,
+  TasarimModeliYaniti,
+  UretimBaslatGirdisi,
+  UretimKipi,
+} from "./tasarimModeliTipleri";
+import { tasarimModeliKaydiUyarla, tasarimModeliYanitiUyarla } from "./uyumTasarimModeli";
+
 const yol = (s: string) => encodeURIComponent(s);
 /** Gereksinim detayı + Faz 5 baz değeri (alan yoksa eklenmez: "çekirdek sunmuyor"). */
 function detayUyarla(ham: Record<string, unknown>): GereksinimDetay {
@@ -104,7 +113,22 @@ export const api = {
     detayUyarla(
       nesne(await istek<unknown>("POST", `/requirements/${yol(g.id)}/po-approve`, { govde: { icerik_hash: g.icerik_hash } })),
     ),
-  caseUret: (id: string) => istek<IsYaniti>("POST", `/requirements/${yol(id)}/generate-cases`),
+  /**
+   * Üretimi başlatır (011 K1). `kip` verilirse gövdeyle gönderilir (`UretimBaslatGirdisi`); portal formu
+   * her zaman açıkça gönderir. Gövdesiz çağrı core'da tek tur (geriye uyum).
+   */
+  caseUret: (id: string, kip?: UretimKipi) =>
+    istek<IsYaniti>("POST", `/requirements/${yol(id)}/generate-cases`, kip ? { govde: { kip } satisfies UretimBaslatGirdisi } : {}),
+  /** Test tasarım modeli (iki tur, 011 F3): son model + geçmiş özeti. */
+  tasarimModeli: async (id: string): Promise<TasarimModeliYaniti> =>
+    tasarimModeliYanitiUyarla(await istek<unknown>("GET", `/requirements/${yol(id)}/design-model`, { kaynak: GEREKSINIM_KAYNAGI })),
+  /** Modeli yeniden üret (reddedilmiş/onaysız model; 202, asama "model"). */
+  tasarimModeliUret: (id: string) => istek<IsYaniti>("POST", `/requirements/${yol(id)}/design-model`, { kaynak: GEREKSINIM_KAYNAGI }),
+  /** approve | edit | reject; gövde ekranda görülen içeriğin hash'ini taşır. */
+  tasarimModeliKarari: async (modelId: string, g: TasarimModeliKararGirdisi): Promise<TasarimModeliKaydi> =>
+    tasarimModeliKaydiUyarla(
+      nesne(await istek<unknown>("POST", `/design-models/${yol(modelId)}/decision`, { govde: g, kaynak: GEREKSINIM_KAYNAGI })),
+    ),
   /**
    * Story başına manuel baz değer (Faz 5; analyst | po). Yanıt baz değer ya da gereksinim
    * detayıdır; ikisi de yoksa `undefined` (çağıran detayı yeniden okur).

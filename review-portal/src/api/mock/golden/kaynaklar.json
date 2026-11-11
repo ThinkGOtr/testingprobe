@@ -3227,6 +3227,7 @@
       "AC6: Kampanyalı siparişlerde minimum sipariş tutarı şartı aranmaz."
     ]
   },
+  "design_model": {},
   "jira_seed": {
     "TPD-1": {
       "ac": [

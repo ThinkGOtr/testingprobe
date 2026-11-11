@@ -171,7 +171,7 @@ export function kabulKriteriUyarla(x: unknown, i: number): KabulKriteri | null {
   };
 }
 
-const PO_ONAYLI_DURUMLAR = new Set(["po_approved", "generating", "cases_ready", "done"]);
+const PO_ONAYLI_DURUMLAR = new Set(["po_approved", "modeling", "model_ready", "generating", "cases_ready", "done"]);
 
 export function poUyarla(g: Ham): PoDurumu {
   const kanalVarsayilan: PoDurumu["kanal"] = g.kaynak === "free_text" ? "portal" : "jira";

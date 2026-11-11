@@ -13,6 +13,8 @@ export const DURUM_ADIMI: Record<GereksinimDurumu, number | null> = {
   doc_final: 2, // Ön inceleme tamam, PO'ya gidecek
   pending_po: 3, // PO teyidi
   po_approved: 4, // Test case
+  modeling: 4, // iki tur: test tasarım modeli (011 F3)
+  model_ready: 4,
   generating: 4,
   cases_ready: 4,
   done: 5, // Case'ler yayınlandı → kod taslağı ve sonrası
@@ -53,6 +55,7 @@ export const HATA_ADIMI: Record<string, number> = {
   "requirements.po_request": 3,
   "requirements.po_poll": 3,
   "cases.generate": 4,
+  "model.generate": 4,
 };
 
 /** Denetim (ön inceleme/tutarlılık) aşamasının işleri: yalnızca bunlar düşünce "denetim tamamlanmadı" denir. */
