@@ -234,3 +234,86 @@ class EventBus(Protocol):
     """Portala SSE ile akan olaylar (case.generated, agent.step, pr.opened, ci.status, ...)."""
 
     def publish(self, event: str, data: Mapping[str, Any]) -> None: ...
+
+
+# ------------------------------------------------------------------ Agent Probe (011 §4.5)
+# Agent Probe, Testing Probe çıktısını ve asistan trafiğini denetleyen ayrı üründür. Bu sürümde
+# port arkasındadır: denetim (P9) ve asistan puanı Testing Probe geçidinde ayrı model çağrısıyla,
+# ajan ürünleri ve ajan testi talepleri süreç içi simülatörle karşılanır (TP_AGENT_PROBE).
+
+DenetimKarari = Literal["KABUL", "DÜZELTME_GEREKLİ", "ENGELLE"]
+AsistanKarari = Literal["gec", "uyar", "engelle"]
+
+
+class CaseSetAuditRequest(BaseModel):
+    """P9 girdisi: gereksinim, üretilmiş set (case'ler + üst düzey listeler), varsa P8 sonucu."""
+
+    requirement_id: UUID
+    requirement_key: str
+    set_hash: str
+    requirement_block: str  # güvenilmeyen veri bloğu olarak hazırlanmış gereksinim metni
+    generated_set: Mapping[str, Any]  # {"cases": [...], "ozet": {...}}
+    review_result: Mapping[str, Any] | None = None
+    policies: Sequence[str] = ()
+
+
+class CaseSetAuditResult(BaseModel):
+    decision: DenetimKarari
+    decision_rationale: str
+    findings: list[dict[str, Any]] = Field(default_factory=list)
+    missing_scenarios: list[str] = Field(default_factory=list)
+    talep_no: str  # Agent Probe tarafındaki kayıt numarası
+    kaynak: Literal["tp-gecit", "agent-probe", "sim"]
+    ai_call_id: UUID | None = None
+
+
+class MessageScore(BaseModel):
+    """Asistan sorusu/cevabı için denetim puanı (0 = en riskli, 100 = temiz)."""
+
+    puan: int = Field(ge=0, le=100)
+    kategoriler: list[str] = Field(default_factory=list)
+    karar: AsistanKarari
+    gerekce: str = ""
+    talep_no: str
+    kaynak: Literal["tp-gecit", "agent-probe", "sim"]
+    ai_call_id: UUID | None = None
+
+
+class AgentProduct(BaseModel):
+    """Agent Probe'da ön tanımları tamamlanmış (Testing Probe'da görünür) AI ajan ürünü."""
+
+    kod: str
+    ad: str
+    aciklama: str = ""
+    hazir: bool = True
+
+
+class AgentTestTicket(BaseModel):
+    talep_no: str
+    urun_kodu: str
+    requirement_id: UUID
+    durum: Literal["queued", "running", "passed", "failed", "error"]
+    ozet: str = ""
+    sonuc: dict[str, Any] = Field(default_factory=dict)
+    url: str | None = None
+    simulasyon: bool = True
+    guncelleme: datetime | None = None
+
+
+@runtime_checkable
+class AgentProbePort(Protocol):
+    name: str
+
+    def audit_case_set(self, istek: CaseSetAuditRequest) -> CaseSetAuditResult: ...
+
+    def score_message(
+        self, metin: str, yon: Literal["soru", "cevap"], baglam: Mapping[str, Any]
+    ) -> MessageScore: ...
+
+    def list_products(self) -> list[AgentProduct]: ...
+
+    def start_agent_test(
+        self, urun_kodu: str, requirement_id: UUID, gereksinim: Mapping[str, Any]
+    ) -> AgentTestTicket: ...
+
+    def get_agent_test(self, talep_no: str) -> AgentTestTicket: ...
