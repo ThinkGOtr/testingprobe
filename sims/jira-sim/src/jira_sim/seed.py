@@ -46,6 +46,8 @@ LINK_TYPES = [
 STATUSES = {
     "To Do": {"id": "10", "key": "new", "name": "To Do"},
     "In Progress": {"id": "20", "key": "indeterminate", "name": "In Progress"},
+    # Sprint otomasyonu (specs/013 §3.4): geliştirmesi biten story testçiye bu durumla gelir.
+    "QA To Do": {"id": "40", "key": "indeterminate", "name": "QA To Do"},
     "Done": {"id": "30", "key": "done", "name": "Done"},
 }
 

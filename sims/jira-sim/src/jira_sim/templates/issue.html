@@ -108,7 +108,7 @@
       <h2>Ayrıntılar</h2>
       <dl>
         <dt>Tür</dt><dd>{{ it.issuetype }}</dd>
-        <dt>Durum</dt><dd><span class="status {% if it.status == 'Done' %}done{% elif it.status == 'In Progress' %}prog{% endif %}">{{ {'To Do': 'Yapılacak', 'In Progress': 'Sürüyor', 'Done': 'Tamamlandı'}.get(it.status, it.status) }}</span></dd>
+        <dt>Durum</dt><dd><span class="status {% if it.status == 'Done' %}done{% elif it.status in ('In Progress', 'QA To Do') %}prog{% endif %}">{{ {'To Do': 'Yapılacak', 'In Progress': 'Sürüyor', 'QA To Do': 'QA bekliyor', 'Done': 'Tamamlandı'}.get(it.status, it.status) }}</span></dd>
         <dt>Raporlayan</dt><dd>{{ it.reporter | kisi }}</dd>
         <dt>Oluşturma</dt><dd>{{ it.created | zaman }}</dd>
         <dt>Güncellenme</dt><dd>{{ it.updated | zaman }}</dd>

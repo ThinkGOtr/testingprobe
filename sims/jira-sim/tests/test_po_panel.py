@@ -83,8 +83,10 @@ def test_transitions_api(client: TestClient) -> None:
     r = client.get("/rest/api/3/issue/TPD-5/transitions", auth=WRITER)
     assert r.status_code == 200
     ts = r.json()["transitions"]
-    assert {t["to"]["name"] for t in ts} == {"In Progress", "Done"}
+    assert {t["to"]["name"] for t in ts} == {"In Progress", "QA To Do", "Done"}
     done = next(t for t in ts if t["to"]["statusCategory"]["key"] == "done")
+    qa = next(t for t in ts if t["to"]["name"] == "QA To Do")
+    assert qa["to"]["statusCategory"]["key"] == "indeterminate"
     assert (
         client.post(
             "/rest/api/3/issue/TPD-5/transitions",
