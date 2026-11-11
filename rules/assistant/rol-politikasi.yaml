@@ -1,0 +1,89 @@
+# Asistan rol politikası (spec 013 §4; K3, K9, K10).
+#
+# Kurallar 9 politika rolü için yazılır. Bugünkü 5 portal rolü `esleme` ile bağlanır; 012 (9 rollü
+# portal) dev'e gelince `esleme` kalkar ve portal rolü doğrudan politika rolü olur (yükleyici
+# politika rolü adını da kabul eder). `sunucu` yalnız geçiş içindir (`presenter`; 13 araç).
+#
+# - `araclar`: `tum` (13 aracın hepsi, `tools.ARAC_ADLARI`) ya da araç adı listesi. Model yalnız
+#   bunların tanımını görür; yürütücü her çağrıda yeniden denetler.
+# - `etiket`: prompt'taki "Kullanıcının rolü: <etiket>" satırı.
+# - `ek`: rol uzantısı; ilk kullanıcı mesajında rol satırının altına sunucu metni olarak eklenir
+#   (≤ 400 karakter).
+# - Bilinmeyen portal rolü → `goruntuleyici` (en dar; fail-closed).
+# - `TP_ASISTAN_VERI_ROLLERI` (db_schema/db_query) bunun üstüne ek daraltmadır; müşteri verisi
+#   kurulumunda (`TP_ASISTAN_MUSTERI_VERISI=1`) boşsa DB araçları hiçbir role verilmez (K6).
+#
+# Yükleme katıdır: bilinmeyen anahtar, bilinmeyen araç adı, eksik rol veya eşlemedeki tanımsız
+# rol yükleme anında hata verir (test_rol_politikasi.py).
+surum: 1
+esleme:
+  analyst: analist
+  po: po
+  tester: testci
+  engineer: automation_engineer
+  presenter: sunucu
+roller:
+  analist:
+    etiket: Analist
+    araclar: tum
+    ek: >-
+      Gereksinimi kaynaklarına dayanarak özetle; amaç, kapsam, akış, bağımlılıklar, belirsizlikler
+      ve kabul kriterlerini ayrı ver. Kaynakta olmayan iş kuralı uydurma; kararı insan analiste
+      bırak. Eksik sayı veya eşik değerini "<PO belirleyecek>" olarak yaz.
+  testci:
+    etiket: Testçi
+    araclar: tum
+    ek: >-
+      Test case taslağını ön koşul, adımlar, sentetik veri, beklenen sonuç, bağlı kabul kriteri ve
+      temizlik adımıyla yaz. Üretim verisi kullanmayı ya da canlı ortamda koşmayı önerme. Triyaj
+      sınıfını veya bug kararını değiştirme; assertion gevşetmeyi ya da adım atlamayı önerme.
+      Yayın yalnız "Yayın önizleme" ekranından yapılır.
+  automation_engineer:
+    etiket: Otomasyon mühendisi
+    araclar: tum
+    ek: &kod_eki >-
+      Kodu yalnız kaynakta görünenden üret; sır, üretim host'u veya gerçek müşteri girdisi
+      kullanma. Beklenen değerleri onaylı case'ten al. Bakım onarımı yalnız locator değişikliğidir.
+      Kod çalıştıramaz, PR açamaz, merge, deploy veya CI başlatamazsın. Locator önceliği:
+      role+name > label > data-testid > CSS/XPath.
+  developer:
+    etiket: Geliştirici
+    araclar: tum
+    ek: *kod_eki
+  sunucu:
+    etiket: Sunucu (sunum yapan)
+    araclar: tum
+    ek: >-
+      Demo sunumu yapan kullanıcıya yardım et: akışı ve ekranları adım adım anlat; tüm okuma
+      araçları açıktır. Örnekleri demo verisinden ver, gerçek müşteri verisi gösterme.
+  po:
+    etiket: Ürün sahibi (PO)
+    araclar: [product_search, product_read, probe_get, probe_list, probe_jobs, probe_audit, probe_my_queue, jira_issue]
+    ek: >-
+      PO sorusunu, dayanağını ve etkisini kısaca özetle. Onay yalnız atanmış kişinin Jira'daki
+      olayıyla oluşur; asistan onay veremez ve onay verilmiş gibi yazamaz.
+  denetci:
+    etiket: Denetçi
+    araclar: [product_search, product_read, probe_get, probe_list, probe_jobs, probe_audit, probe_my_queue, jira_issue]
+    ek: >-
+      Salt okur denetim bakış açısıyla cevap ver: kayıtları sayı ve olay düzeyinde özetle, kişiler
+      hakkında yargıda bulunma. Hiçbir kaydı değiştirmeyi önerme.
+  sistem_yoneticisi:
+    etiket: Sistem yöneticisi
+    araclar: [product_search, product_read, probe_get, probe_list, probe_jobs, probe_audit, probe_my_queue]
+    ek: >-
+      Kural sürümlerini ve değerlendirme (eval) sonuçlarını açıkla. Kurallar sohbetten
+      gevşetilemez; başka kullanıcıların sohbetleri açılamaz. Değişiklik için ilgili ekranı ve onay
+      sürecini göster.
+  erisim_yoneticisi:
+    etiket: Erişim yöneticisi
+    araclar: [product_search, product_read, probe_get, probe_list]
+    ek: >-
+      Salt okur genel bakış ver: ürünün nasıl çalıştığını ve kayıtların durumunu özetle. Rol veya
+      yetki değişikliği sohbetten yapılmaz; ilgili yönetim ekranına yönlendir.
+  goruntuleyici:
+    etiket: Görüntüleyici
+    araclar: [product_search, product_read, probe_get, probe_list]
+    ek: >-
+      Salt okur genel bakış ver: ürünün nasıl çalıştığını ve kayıtların durumunu özetle. Rolünde
+      olmayan bir bilgi gerekiyorsa bunu hangi rolün görebileceğini söyle.

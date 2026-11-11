@@ -57,7 +57,7 @@ from sqlalchemy.orm import Session
 from tp_core.events import publish_tx
 from tp_core.features.assistant import budget as asistan_budget
 from tp_core.features.assistant import durum as mesaj_durumu
-from tp_core.features.assistant import siniflandir, sonislem, sozluk
+from tp_core.features.assistant import rol_politikasi, siniflandir, sonislem, sozluk
 from tp_core.features.assistant.sablon import sablon_cevabi
 from tp_core.features.assistant.tools.base import sir_temizle
 from tp_core.gateway.errors import AgentDeadlineExceeded, AgentStopped, BudgetExceeded
@@ -101,14 +101,6 @@ KAPALI_CIPLERI: Final = (
 KAPALI_DURUM_CIPI: Final = "{anahtar} neden bekliyor?"
 KAPALI_DURUM_GENEL: Final = "<Jira anahtarı> neden bekliyor?"
 ONERI_KAPALI_METNI: Final = "Ek öneri için canlı model gerekir; kural önerileri yukarıda."
-
-ROL_ETIKETI: Final = {
-    "analyst": "Analist",
-    "po": "Ürün sahibi (PO)",
-    "engineer": "Mühendis",
-    "tester": "Testçi",
-    "presenter": "Sunucu (sunum yapan)",
-}
 
 SessionFactory = Callable[[], Session]
 GatewayFactory = Callable[..., Any]
@@ -396,11 +388,15 @@ def ilk_mesaj(
 ) -> list[ModelMessage]:
     """Rol ve bağlam sabit önekte değil ilk kullanıcı mesajında (§6.5 önbellek).
 
+    Rol satırı politika etiketiyle (`rol_politikasi`, spec 013 §4); altındaki rol uzantısı sunucu
+    metnidir (güvenilmeyen blok değil).
+
     Bütün metin worker'ın sır değerleriyle (`sir_temizle`) bir kez daha süzülür: core-api'nin
     422 `sir_icerik` taraması yalnız kendi ortamındaki değerleri bilir (Jira/GitHub okuma
     token'ları yalnız worker'dadır); soru, bağlam ve geçmiş modele sırsız gider."""
     parcalar = [
-        f"Kullanıcının rolü: {ROL_ETIKETI.get(m.rol, m.rol)}",
+        f"Kullanıcının rolü: {rol_politikasi.etiket(m.rol)}",
+        f"Rol uzantısı: {rol_politikasi.rol_eki(m.rol)}",
         f"kip={m.kip}",
     ]
     if m.derin:
