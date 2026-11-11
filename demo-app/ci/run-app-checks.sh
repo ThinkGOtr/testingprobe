@@ -16,6 +16,7 @@
 #   APPIUM_URL (http://127.0.0.1:4723) · APP_PATH ya da APP_ID · DEVICE_NAME · DEVICE_UDID
 #   DEMO_API_URL (/test/* kökü) + DEMOAPP_TEST_TOKEN — ya da yalnızca sepet yalıtımı: TP_E2E_NO_RESET=1
 #   BREAK_CAMPAIGN=1 (bayi kapsamlı kırılma; bkz. break-verify-app.sh)
+#   TP_FAULT=<kod>   (bayi kapsamlı ekilmiş hata; demo API faults.py, GET /test/faults)
 #   SKIP_INSTALL=1   bağımlılıklar ~/.m2'de hazır: Maven çevrimdışı (-o)
 #   SKIP_BIRIM=1     birim adımını atla (break-verify-app.sh tekrar koşularında)
 # Token yalnızca ortamdan okunur; komut satırına (-D) yazmayın, süreç listesinde görünür.

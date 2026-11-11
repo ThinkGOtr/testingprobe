@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.UnaryOperator;
+import java.util.regex.Pattern;
 
 /**
  * Koşum ayarları: önce sistem özelliği ({@code -Dad=değer}), yoksa ortam değişkeni, yoksa varsayılan.
@@ -30,6 +31,7 @@ public final class Ayarlar {
           Map.entry("demo.api.url", "DEMO_API_URL"),
           Map.entry("demoapp.test.token", "DEMOAPP_TEST_TOKEN"),
           Map.entry("break.campaign", "BREAK_CAMPAIGN"),
+          Map.entry("tp.fault", "TP_FAULT"),
           Map.entry("tp.e2e.no.reset", "TP_E2E_NO_RESET"),
           Map.entry("bekleme.ms", "BEKLEME_MS"),
           Map.entry("bayi.kilit.ms", "BAYI_KILIT_MS"),
@@ -37,6 +39,9 @@ public final class Ayarlar {
           Map.entry("kimlik.android", "KIMLIK_ANDROID"),
           Map.entry("kimlik.ios", "KIMLIK_IOS"),
           Map.entry("kimlik.windows", "KIMLIK_WINDOWS"));
+
+  /** Ekilmiş hata kodunun biçimi (web: fixtures.ts FAULT_PATTERN; toolchain `fault`). */
+  static final Pattern HATA_KODU = Pattern.compile("^[a-z0-9_]{1,40}$");
 
   private final UnaryOperator<String> ozellik;
   private final UnaryOperator<String> ortam;
@@ -155,6 +160,20 @@ public final class Ayarlar {
   /** "Kırarak doğrula": BREAK_CAMPAIGN=1 iken bayinin kampanya kuralı test süresince bozulur. */
   public boolean kampanyaKirik() {
     return "1".equals(deger("break.campaign", ""));
+  }
+
+  /**
+   * "Ekilmiş hata koşusu": TP_FAULT=&lt;kod&gt; iken bayinin hesabı test süresince katalogdaki o
+   * hatayla çalışır (demo API {@code faults.py}). {@code BREAK_CAMPAIGN=1} ile birlikte verilirse
+   * TP_FAULT geçerlidir. Biçimi bozuk kod açıklayıcı hatadır; kodun katalogda olup olmadığına API
+   * karar verir (bilinmeyen kod → 422).
+   */
+  public Optional<String> ekilmisHata() {
+    Optional<String> kod = deger("tp.fault");
+    if (kod.isPresent() && !HATA_KODU.matcher(kod.get()).matches()) {
+      throw new IllegalArgumentException("TP_FAULT geçersiz: '" + kod.get() + "' (beklenen biçim: " + HATA_KODU.pattern() + ")");
+    }
+    return kod;
   }
 
   /** TP_E2E_NO_RESET=1: token yokken yalnızca sepet yalıtımı. */

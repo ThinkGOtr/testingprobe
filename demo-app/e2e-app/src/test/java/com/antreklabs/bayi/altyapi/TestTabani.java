@@ -9,6 +9,7 @@ import com.antreklabs.bayi.ekranlar.SiparisEkrani;
 import io.appium.java_client.AppiumDriver;
 import java.lang.reflect.Method;
 import java.util.Arrays;
+import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.openqa.selenium.WebDriverException;
@@ -26,7 +27,8 @@ import org.testng.annotations.Test;
  * <ol>
  *   <li>bayi seçilir ({@link Bayi} notasyonu ya da işçi bayisi) ve süreçler arası kilitle alınır;
  *   <li>bayinin verisi sıfırlanır ({@code /test/reset}) ya da yalnızca sepeti boşaltılır;
- *   <li>{@code BREAK_CAMPAIGN=1} ise bayinin kampanya kuralı bozulur ({@code /test/break});
+ *   <li>{@code TP_FAULT=<kod>} ise bayi için o ekilmiş hata, yoksa {@code BREAK_CAMPAIGN=1} ise
+ *       kampanya kırılması açılır ({@code /test/break});
  *   <li>uygulama sıfırdan başlatılır (yeni Appium oturumu);
  *   <li>{@link OturumAcik} sınıflarda arayüzden giriş yapılır; sonra {@link #hazirlikSonrasi()}.
  * </ol>
@@ -51,7 +53,7 @@ public abstract class TestTabani implements IHookable {
   private Bayiler.BayiBilgisi bayi;
   private BayiKilidi kilit;
   private TestVerisi veri;
-  private boolean kirildi;
+  private TestVerisi.Kirilma kirilma;
   private AppiumDriver surucu;
   private UygulamaOturumu oturum;
   private String metotAdi;
@@ -117,9 +119,10 @@ public abstract class TestTabani implements IHookable {
     veri = new TestVerisi(ayarlar);
     if (kip == TestVerisi.Kip.SIFIRLAMA) {
       veri.sifirla(bayi.kullaniciAdi());
-      if (ayarlar.kampanyaKirik()) {
-        kirildi = true;
-        veri.kampanyayiKir(bayi.kullaniciAdi(), true);
+      Optional<TestVerisi.Kirilma> istenen = TestVerisi.kirilma(ayarlar);
+      if (istenen.isPresent()) {
+        kirilma = istenen.get();
+        veri.kir(kirilma, bayi.kullaniciAdi(), true);
       }
     } else {
       veri.sepetiBosalt(bayi);
@@ -153,12 +156,12 @@ public abstract class TestTabani implements IHookable {
             LOG.log(Level.WARNING, "Appium oturumu kapatılamadı", e);
           }
         }
-        if (kirildi && veri != null) {
+        if (kirilma != null && veri != null) {
           try {
-            veri.kampanyayiKir(bayi.kullaniciAdi(), false);
+            veri.kir(kirilma, bayi.kullaniciAdi(), false);
           } catch (RuntimeException e) {
             // Sonraki testin /test/reset'i kırılmayı da kaldırır.
-            LOG.log(Level.WARNING, "kampanya kırılması geri alınamadı", e);
+            LOG.log(Level.WARNING, "kırılma (kampanya / ekilmiş hata) geri alınamadı", e);
           }
         }
       } finally {
@@ -169,7 +172,7 @@ public abstract class TestTabani implements IHookable {
         oturum = null;
         kilit = null;
         veri = null;
-        kirildi = false;
+        kirilma = null;
         girisEkrani = null;
         katalogEkrani = null;
         sepetEkrani = null;

@@ -367,7 +367,11 @@ def test_break_bayi_kapsamli_ac_kapa(client):
     giris(client, "bayi1")
     assert _yedi_p001(client)["indirim"] == "25.00"
 
-    assert _kir(client, "bayi1", True).json() == {"kullanici_adi": "bayi1", "kampanya": True}
+    assert _kir(client, "bayi1", True).json() == {
+        "kullanici_adi": "bayi1",
+        "kampanya": True,
+        "hata": "kampanya_bedava_yok",
+    }
     bozuk = client.get("/cart").json()
     assert bozuk["satirlar"][0]["bedava_adet"] == 0
     assert (bozuk["indirim"], bozuk["toplam"]) == ("0.00", "175.00")
