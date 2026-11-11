@@ -15,7 +15,7 @@ from typing import Any
 from sqlalchemy import event, inspect
 from sqlalchemy.orm import Session, UOWTransaction
 
-from tp_core.workflow.states import MACHINES
+from tp_core.workflow.states import ENTITY_BY_TABLE, MACHINES
 
 KORUNAN_ALANLAR = ("durum", "onaylanan_hash")
 
@@ -36,7 +36,9 @@ def allow_state_write() -> Iterator[None]:
 
 
 def _tablo(obj: Any) -> str | None:
-    return getattr(type(obj), "__tablename__", None)
+    """Nesnenin durum makinesi adı (tablo adı; `ENTITY_BY_TABLE` farklı adları eşler)."""
+    tablo = getattr(type(obj), "__tablename__", None)
+    return ENTITY_BY_TABLE.get(tablo or "", tablo)
 
 
 def _denetle(session: Session, _flush_context: UOWTransaction, _instances: Any) -> None:

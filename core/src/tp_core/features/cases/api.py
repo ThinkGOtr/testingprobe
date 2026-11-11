@@ -2,7 +2,7 @@
 
 | Yöntem | Yol | Rol |
 |---|---|---|
-| POST | `/requirements/{id}/generate-cases` | analyst — yalnızca PO onaylı gereksinim |
+| POST | `/requirements/{id}/generate-cases` (`UretimBaslatGirdisi`?) | analyst — PO onaylı |
 | GET  | `/cases?requirement_id=` | herkes |
 | GET  | `/cases/{id}` | herkes |
 | POST | `/cases/{id}/viewed` | analyst — ilk görüntüleme (review süresinin başlangıcı) |
@@ -35,6 +35,19 @@ class IsYaniti(BaseModel):
     mesaj: str | None = None
     workflow_id: uuid.UUID | None = None
     uretim_no: int | None = None
+    # 011 K1: üretim kipi ve aşama (iki turda önce "model", onaylı modelden sonra "case").
+    kip: Literal["iki_tur", "tek_tur"] | None = None
+    asama: Literal["model", "case"] | None = None
+
+
+class UretimBaslatGirdisi(BaseModel):
+    """Üretim başlatma gövdesi (011 §4.4). Gövdesiz çağrı geriye uyum için tek turdur.
+
+    `kip`: `iki_tur` (varsayılan; önce test tasarım modeli, analist onayı, sonra yalnız onaylı
+    modelden case) | `tek_tur` (hızlı; doğrudan case). IDE/MCP kanalı tek turdur.
+    """
+
+    kip: Literal["iki_tur", "tek_tur"] = "iki_tur"
 
 
 class CaseKararGirdisi(BaseModel):
@@ -61,14 +74,29 @@ class CaseKararGirdisi(BaseModel):
 @router.post(
     "/requirements/{requirement_id}/generate-cases", response_model=IsYaniti, status_code=202
 )
-def generate_cases(requirement_id: uuid.UUID, session: DbSession, user: Analyst) -> IsYaniti:
-    sonuc = service.start_generation(session, requirement_id, user)
+def generate_cases(
+    requirement_id: uuid.UUID,
+    session: DbSession,
+    user: Analyst,
+    body: UretimBaslatGirdisi | None = None,
+) -> IsYaniti:
+    kip = body.kip if body is not None else "tek_tur"
+    sonuc = service.start_generation(session, requirement_id, user, kip=kip)
+    model_asamasi = sonuc.get("asama") == "model"
     return IsYaniti(
         job_id=sonuc["job_id"],
         workflow_id=sonuc["workflow_id"],
         uretim_no=sonuc["uretim_no"],
         durum="started",
-        mesaj="Case üretimi başlatıldı.",
+        mesaj=(
+            "Test tasarım modeli üretimi başlatıldı (iki tur)."
+            if model_asamasi
+            else "Onaylı tasarım modelinden case üretimi başlatıldı."
+            if kip == "iki_tur"
+            else "Case üretimi başlatıldı."
+        ),
+        kip=kip,
+        asama=sonuc.get("asama", "case"),
     )
 
 

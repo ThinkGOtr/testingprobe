@@ -305,6 +305,8 @@ REQUIREMENT_KAPILARI: dict[str, Kapi] = {
     "doc_final": Kapi("Doküman son hal; PO onayına gönderilmeli", "analyst"),
     "pending_po": Kapi("PO onayı bekleniyor", "po"),
     "po_approved": Kapi("PO onayladı; case üretimi başlatılmalı", "analyst"),
+    "modeling": Kapi("Test tasarım modeli üretiliyor (iki tur)", SISTEM),
+    "model_ready": Kapi("Tasarım modeli kararı ve onaylı modelden case üretimi", "analyst"),
     "generating": Kapi("Case üretimi sürüyor", SISTEM),
     "cases_ready": Kapi("Case incelemesi ve yayın", "analyst"),
     "failed": Kapi("Son işlem başarısız; neden incelenip yeniden denenmeli", "analyst"),
@@ -719,7 +721,15 @@ def _kuyruk_kaynaklari(rol: str) -> list[tuple[str, Any, Callable[[Any], str]]]:
     """(tür, sorgu, neden) — rolün kapısındaki varlıklar (APPROVER_ROLES + durum makineleri)."""
     out: list[tuple[str, Any, Callable[[Any], str]]] = []
     if rol == "analyst":
-        for durum in ("findings_open", "doc_final", "po_approved", "cases_ready", "failed", "new"):
+        for durum in (
+            "findings_open",
+            "doc_final",
+            "po_approved",
+            "model_ready",
+            "cases_ready",
+            "failed",
+            "new",
+        ):
             out.append(
                 (
                     "requirement",

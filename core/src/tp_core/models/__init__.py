@@ -21,6 +21,7 @@ from tp_core.models import triage_feature as triage_feature
 from tp_core.models.base import Base
 from tp_core.models.cases_feature import CaseGoruntuleme as CaseGoruntuleme
 from tp_core.models.cases_feature import CaseUretim as CaseUretim
+from tp_core.models.cases_feature import TasarimModeli as TasarimModeli
 from tp_core.models.delivery import (
     BugDraft,
     ExternalRef,

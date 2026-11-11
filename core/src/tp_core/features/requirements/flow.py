@@ -148,9 +148,17 @@ NS = uuid.UUID("6f0f3f5e-2b8e-5d0c-9a51-3c1e1b6f7a02")
 _PROJE_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,19}$")
 ACIK_BULGU = ("open", "decided")
 # Jira'da PO onay etiketinin izlendiği durumlar (geri çekilirse kapı kapanır, §2 adım 3).
-PO_IZLENEN = ("pending_po", "po_approved", "generating", "cases_ready", "done")
+PO_IZLENEN = (
+    "pending_po",
+    "po_approved",
+    "modeling",
+    "model_ready",
+    "generating",
+    "cases_ready",
+    "done",
+)
 # İşi yarıda kalırsa takılabilecek durumlar (kurtarma süpürmesi).
-IS_BEKLEYEN = ("in_review", "generating")
+IS_BEKLEYEN = ("in_review", "generating", "modeling")
 # Önceki insan kararı sonraki turlara devredilebilen kararlar (fix_doc belgeyi değiştirir).
 DEVREDILEN_KARARLAR = ("code_defect", "accept_difference")
 # Bitmiş PO sorgu işleri bu süreden sonra silinir (her 15 sn'de bir satır birikmesin).
@@ -238,6 +246,15 @@ def cycle_start(session: Session, req_id: uuid.UUID) -> datetime | None:
             RequirementReview.durum != "superseded",
         )
     )
+
+
+def _tasarim_modellerini_gecersizle(
+    session: Session, req: Requirement, actor: Actor, sebep: str
+) -> None:
+    """Story değişti / PO onayı geri çekildi: eski metne ait tasarım modelleri `superseded`."""
+    from tp_core.features.cases.model_service import supersede_models
+
+    supersede_models(session, req, actor, sebep)
 
 
 def supersede_reviews(session: Session, req_id: uuid.UUID, actor: Actor) -> None:
@@ -418,7 +435,7 @@ def apply_content_change(
     - diğerleri: `new`'e döner (PO onayı ve onaylanan hash silinir).
     """
     durum = req.durum
-    if durum in ("in_review", "generating"):
+    if durum in ("in_review", "generating", "modeling"):
         return "mesgul"
     onceki = content_hash_of(req)
     req.baslik, req.aciklama, req.kabul_kriterleri = baslik, aciklama, list(acs)
@@ -454,6 +471,7 @@ def apply_content_change(
         req.kontrol_turu = 0
         _po_temizle(req)
         supersede_reviews(session, req.id, actor)
+        _tasarim_modellerini_gecersizle(session, req, actor, sebep)
         emit_requirement(session, req, olay="content_changed")
         return "sifirlandi"
     emit_requirement(session, req, olay="content_changed")
@@ -2280,13 +2298,14 @@ def withdraw_po(req_id: uuid.UUID, key: str, durum: str) -> str:
             return "durum_degisti"
         onceki_onaylayan = req.po_onaylayan
         sebep = "PO onay etiketi kaldırıldı"
-        if durum == "generating":
-            transition(s, req, "failed", SYSTEM, "generating", sebep=sebep)
+        if durum in ("generating", "modeling"):
+            transition(s, req, "failed", SYSTEM, durum, sebep=sebep)
             durum = "failed"
         transition(s, req, "new", SYSTEM, durum, sebep=sebep)
         _po_temizle(req)
         req.kontrol_turu = 0
         supersede_reviews(s, req.id, SYSTEM)
+        _tasarim_modellerini_gecersizle(s, req, SYSTEM, sebep)
         stale_findings(s, req.id, SYSTEM, sebep)
         # Case'lere dokunulmaz: yayın kapısı gereksinimin güncel PO onayını ister
         # (`publish.requirement_change_reason`; `new` → engelli) ve yeni üretim eski case'leri
@@ -2565,7 +2584,7 @@ def po_check(engine: Engine, jira: Any, req_id: uuid.UUID, hesaplar: frozenset[s
     etiket_var = PO_APPROVED_LABEL in issue.labels
     onaylar = jira.po_approvals(key, sorted(hesaplar)) if etiket_var else []
 
-    if durum in ("po_approved", "generating", "cases_ready", "done"):
+    if durum in ("po_approved", "modeling", "model_ready", "generating", "cases_ready", "done"):
         if onaylar:
             return "onayli"
         return withdraw_po(req_id, key, durum)

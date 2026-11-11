@@ -35,6 +35,7 @@ from tp_core.workflow.states import (
     CONTENT_FIELDS,
     DECISION_EDIT_REQUIRED,
     DECISION_EDITS,
+    ENTITY_BY_TABLE,
     KARARLAR,
     MACHINES,
     RET_NEDENLERI,
@@ -115,7 +116,8 @@ def actor_name(actor: Actor) -> str:
 
 
 def entity_kind(entity: Any) -> str:
-    kind = getattr(type(entity), "__tablename__", None)
+    tablo = getattr(type(entity), "__tablename__", None)
+    kind = ENTITY_BY_TABLE.get(tablo or "", tablo)
     if kind not in MACHINES:
         raise TypeError(f"durum makinesi olmayan nesne: {type(entity).__name__}")
     return kind
@@ -221,7 +223,7 @@ def _uygula_degisiklik(
     once = {a: getattr(entity, a) for a in degisiklik}
     for alan, deger in degisiklik.items():
         setattr(entity, alan, deger)
-    if kind in ("test_case", "bug_draft") and "icerik" in degisiklik:
+    if kind in ("test_case", "bug_draft", "design_model") and "icerik" in degisiklik:
         entity.icerik_hash = content_hash(degisiklik["icerik"])
     return once, dict(degisiklik)
 
