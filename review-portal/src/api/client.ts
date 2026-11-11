@@ -21,9 +21,11 @@ import type {
   BulguKararGirdisi,
   BugKararGirdisi,
   BugTaslagi,
+  CaseDenetimGorunumu,
   CaseKapsamOzeti,
   CaseKararGirdisi,
   CaseMetrikleri,
+  CaseReviewGorunumu,
   DemoDurumu,
   DenetimYaniti,
   Gereksinim,
@@ -145,6 +147,19 @@ export const api = {
    */
   caseSummary: async (requirementId: string): Promise<CaseKapsamOzeti | null> =>
     caseKapsamOzetiUyarla(await istek<unknown>("GET", `/requirements/${yol(requirementId)}/case-summary`, { kaynak: CASE_KAYNAGI })),
+
+  /** P8 review (011 F2): son review + güncel set hash'i + bayat mı. */
+  caseReview: (requirementId: string) =>
+    istek<CaseReviewGorunumu>("GET", `/requirements/${yol(requirementId)}/case-review`, { kaynak: CASE_KAYNAGI }),
+  /** Review'u yeniden çalıştır (analist; tavsiye niteliğinde). */
+  caseReviewCalistir: (requirementId: string) =>
+    istek<CaseReviewGorunumu>("POST", `/requirements/${yol(requirementId)}/case-review`, { kaynak: CASE_KAYNAGI }),
+  /** P9 denetim (011 F5): son karar, güncel set, yayın kapısı durumu. */
+  caseDenetim: (requirementId: string) =>
+    istek<CaseDenetimGorunumu>("GET", `/requirements/${yol(requirementId)}/case-audit`, { kaynak: CASE_KAYNAGI }),
+  /** "Denetime gönder" (analist). */
+  caseDenetimGonder: (requirementId: string) =>
+    istek<CaseDenetimGorunumu>("POST", `/requirements/${yol(requirementId)}/case-audit`, { kaynak: CASE_KAYNAGI }),
 
   // Yayın
   yayinOnizleme: async (requirementId: string): Promise<YayinOnizleme> =>

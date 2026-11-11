@@ -6,6 +6,7 @@ import type { YayinOnizlemeKalemi, YayinSonucu } from "../api/types";
 import { jiraKayitAdresi } from "../api/uyum";
 import { useOturum } from "../auth";
 import { useBildirim } from "../components/Bildirim";
+import { DenetimOzeti } from "../components/KalitePanelleri";
 import { Baglanti, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import type { Ton } from "../lib/etiketler";
@@ -66,6 +67,8 @@ function YayinEkrani() {
   const gereksinim = useVeri(() => api.gereksinim(id), [id]);
   // Kapsam denetimi (core case-metrics `kapsanmayan_ac`): yayında test edilmeyen AC kalmasın.
   const metrik = useVeri(() => api.caseMetrikleri(id).catch(() => null), [id]);
+  // Denetim kapısı (011 K3): güncel setin kararı; uç yoksa (eski core) özet gösterilmez.
+  const denetim = useVeri(() => api.caseDenetim(id).catch(() => null), [id]);
   const [secili, setSecili] = useState<Set<string>>(new Set());
   const [sonuc, setSonuc] = useState<YayinSonucu | null>(null);
   /** POST /publish arka plan işi döndürdüyse: sonuç `publish.*` olaylarıyla gelir. */
@@ -75,6 +78,7 @@ function YayinEkrani() {
   const sessiz = useGeciktirilmis(() => {
     void onizleme.yenile(true);
     void metrik.yenile(true);
+    void denetim.yenile(true);
   });
   useOlay(
     (o) => {
@@ -82,7 +86,7 @@ function YayinEkrani() {
       sessiz();
       if (/^publish\.(completed|done|failed)$/.test(o.type)) setBekleyenIs(null);
     },
-    ["publish.updated", "case.updated"],
+    ["publish.updated", "case.updated", "case.audit"],
   );
 
   const kalemler = onizleme.veri?.kalemler ?? [];
@@ -141,6 +145,7 @@ function YayinEkrani() {
         <HataKutusu hata={onizleme.hata} kaynak={onizleme.hataNesnesi} yenile={() => void onizleme.yenile()} />
       ) : o ? (
         <>
+          <DenetimOzeti gorunum={denetim.veri} reviewYolu={`/gereksinimler/${encodeURIComponent(id)}/caseler`} />
           <Kart
             baslik="Hedef"
             eylemler={

@@ -1536,3 +1536,115 @@ export interface PortalOlayi {
   id?: string;
   data: Record<string, unknown>;
 }
+
+// ------------------------------------------------- case seti review (P8) ve denetim (P9), 011 D
+
+export type ReviewKarari = "UYGUN" | "UYGUN_DEGIL" | "ACIK_BILGI_GEREKLI";
+export type DenetimKarari = "KABUL" | "DÜZELTME_GEREKLİ" | "ENGELLE";
+export type KaliteDurumu = "bekliyor" | "tamamlandi" | "hata";
+
+export interface ReviewMaddesi {
+  no: number;
+  title: string;
+  verdict: ReviewKarari;
+  finding: string;
+  missing_case: string | null;
+  question: string | null;
+  owner: string;
+}
+
+/** Set numarası → case (review/denetim içeriğindeki `case_haritasi`). */
+export type CaseHaritasi = Record<string, { id: string; sira_no: number; uretim_no: number; title: string | null; durum?: string }>;
+
+export interface CaseReviewIcerik {
+  items?: ReviewMaddesi[];
+  score?: number;
+  missing_cases?: { ac_ref: string | null; item: number | null; description: string; technique: string }[];
+  remove_or_merge?: { case_refs: number[]; action: "remove" | "merge"; reason: string }[];
+  summary?: string;
+  case_haritasi?: CaseHaritasi;
+  mode?: string | null;
+}
+
+export interface CaseReviewKaydi {
+  id: string;
+  durum: KaliteDurumu;
+  set_hash: string;
+  uretim_no: number | null;
+  skor: number | null;
+  icerik: CaseReviewIcerik;
+  hata: string | null;
+  isteyen: string;
+  mode: "live" | "replay" | "replay_miss" | null;
+  olusturma: string;
+  guncelleme: string;
+  bayat: boolean;
+}
+
+/** core `GET /requirements/{id}/case-review`. */
+export interface CaseReviewGorunumu {
+  requirement_id: string;
+  set_hash: string | null;
+  review: CaseReviewKaydi | null;
+  bayat: boolean;
+  calisiyor: boolean;
+  yeniden_calistirilabilir: boolean;
+}
+
+export interface DenetimBulgusu {
+  finding_id: string;
+  case_ref: number | null;
+  control_no: number;
+  issue: string;
+  rationale: string;
+  risk: "Yüksek" | "Orta" | "Düşük";
+  suggested_fix: string;
+}
+
+export interface DeterministikBulgu {
+  kural: string;
+  case_ref: number | null;
+  alt_sinir: DenetimKarari;
+  aciklama: string;
+}
+
+export interface CaseDenetimKaydi {
+  id: string;
+  durum: KaliteDurumu;
+  set_hash: string;
+  karar: DenetimKarari | null;
+  model_karari: DenetimKarari | null;
+  icerik: {
+    decision?: DenetimKarari;
+    decision_rationale?: string;
+    findings?: DenetimBulgusu[];
+    missing_scenarios?: string[];
+    deterministik_bulgular?: DeterministikBulgu[];
+    sertlestirildi?: boolean;
+    case_haritasi?: CaseHaritasi;
+    mode?: string | null;
+  };
+  kaynak: "tp-gecit" | "agent-probe" | "sim";
+  talep_no: string | null;
+  hata: string | null;
+  isteyen: string;
+  olusturma: string;
+  guncelleme: string;
+  guncel: boolean;
+}
+
+/** core `GET /requirements/{id}/case-audit`. */
+export interface CaseDenetimGorunumu {
+  requirement_id: string;
+  set_hash: string | null;
+  /** Son denetim kaydı (bayat ya da hatalı olabilir). */
+  denetim: CaseDenetimKaydi | null;
+  /** Güncel set için son tamamlanmış karar (yayın kapısı bunu okur). */
+  guncel_karar: CaseDenetimKaydi | null;
+  calisiyor: boolean;
+  /** "Denetime gönder" neden kapalı (null = gönderilebilir). */
+  gonder_engeli: string | null;
+  kapi_acik: boolean;
+  /** Yayın kapısının bu set için engeli (null = yayına açık). */
+  yayin_engeli: string | null;
+}

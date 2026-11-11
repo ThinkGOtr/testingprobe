@@ -67,6 +67,7 @@ import {
   type MockVeri,
 } from "./fixtures";
 import { mockOlayYayinla } from "./olaylar";
+import { denetimBaslat, denetimGorunumu, denetimTamamla, gonderEngeli, reviewCalistir, reviewGorunumu, setImzasi, yayinEngeli } from "./kalite";
 import { javaDosyaYolu, javaTestKodu, uygulamayaCevir } from "./platformlar";
 import { PLATFORMLAR, platformUyarla, type Platform } from "../../lib/platform";
 import { asistanMockSifirla, asistanRotalari } from "./asistan";
@@ -726,7 +727,16 @@ function caseUret(id: string): IsYaniti {
       if (uretimOzeti) (veri.caseUretimleri ??= {})[id] = [...(veri.caseUretimleri?.[id] ?? []), uretimOzeti];
       gecir("requirement", g, "cases_ready");
       denetimEkle("ai_call", g.id, `Case üretimi: ${uretilecek.length} case (${mod})`, "core-worker");
+      // P8 review (011 F2): üretimden sonra otomatik; golden'ı üretim golden'ı adıyla eşlenir.
+      (veri.kalite ??= {})[id] = { golden: goldenAdi, uretimImzasi: setImzasi(veri.caseler, id), denetimler: [] };
       gereksinimOlayi(g);
+    },
+    () => {
+      const k = veri.kalite?.[id];
+      if (!k) return;
+      const r = reviewCalistir(k, veri.caseler, id, simdi());
+      denetimEkle(r.durum === "tamamlandi" ? "cases.reviewed" : "cases.review_failed", g.id, r.durum === "tamamlandi" ? `Review ${r.skor}/12` : (r.hata ?? ""), "core-worker");
+      mockOlayYayinla({ type: "case.review", id, data: { requirement_id: id, durum: r.durum } });
     },
   ]);
   return is("started", "Case üretimi başlatıldı.");
@@ -867,6 +877,70 @@ function caseCikti(c: TestCase): TestCase {
   return cikti({ ...c, ...caseV3Alanlari(c, veri.caseUretimleri?.[c.requirement_id]) });
 }
 
+// ------------------------------------------------- 011 D: review (P8) ve denetim (P9)
+
+function caseReviewGor(rid: string) {
+  girisGerekli();
+  const g = bul(veri.gereksinimler, rid, "Gereksinim");
+  return cikti(reviewGorunumu(veri.kalite?.[rid], veri.caseler, rid, g.durum));
+}
+
+function caseReviewCalistir(rid: string) {
+  const k = rolGerekli("analyst");
+  const g = bul(veri.gereksinimler, rid, "Gereksinim");
+  if (!["cases_ready", "done"].includes(g.durum)) throw new ApiError(409, `Review yalnızca case'leri hazır gereksinimde çalıştırılır (durum: ${g.durum})`);
+  if (!setImzasi(veri.caseler, rid)) throw new ApiError(409, "Gereksinimin güncel v3 case'i yok; review edilecek set boş");
+  const kayit = ((veri.kalite ??= {})[rid] ??= { denetimler: [] });
+  kayit.review = { ...(kayit.review ?? reviewCalistir(kayit, veri.caseler, rid, simdi())), durum: "bekliyor", hata: null };
+  denetimEkle("cases.review_requested", rid, "Review yeniden istendi", k.kullanici_adi);
+  arkaPlan([
+    () => {
+      reviewCalistir(kayit, veri.caseler, rid, simdi(), k.kullanici_adi);
+      mockOlayYayinla({ type: "case.review", id: rid, data: { requirement_id: rid, durum: kayit.review?.durum } });
+    },
+  ]);
+  kaydet();
+  return cikti(reviewGorunumu(kayit, veri.caseler, rid, g.durum));
+}
+
+function caseDenetimGor(rid: string) {
+  girisGerekli();
+  const g = bul(veri.gereksinimler, rid, "Gereksinim");
+  return cikti(denetimGorunumu(veri.kalite?.[rid], veri.caseler, rid, g.durum));
+}
+
+function caseDenetimGonder(rid: string) {
+  const k = rolGerekli("analyst");
+  const g = bul(veri.gereksinimler, rid, "Gereksinim");
+  const kayit = ((veri.kalite ??= {})[rid] ??= { denetimler: [] });
+  const gor = denetimGorunumu(kayit, veri.caseler, rid, g.durum);
+  if (gor.calisiyor) return cikti(gor);
+  const engel = gonderEngeli(kayit, veri.caseler, rid, g.durum);
+  if (engel) throw new ApiError(409, engel);
+  const d = denetimBaslat(kayit, veri.caseler, rid, simdi(), k.kullanici_adi);
+  denetimEkle("cases.audit_requested", rid, `Denetime gönderildi · ${d.set_hash}`, k.kullanici_adi);
+  arkaPlan([
+    () => {
+      denetimTamamla(kayit, d, veri.caseler, rid, simdi());
+      denetimEkle(d.durum === "tamamlandi" ? "cases.audited" : "cases.audit_failed", rid, d.karar ?? d.hata ?? "", "core-worker");
+      mockOlayYayinla({ type: "case.audit", id: rid, data: { requirement_id: rid, durum: d.durum, karar: d.karar } });
+    },
+  ]);
+  kaydet();
+  return cikti(denetimGorunumu(kayit, veri.caseler, rid, g.durum));
+}
+
+/**
+ * v3 hazır onaylı case için denetim kapısı (core `gate_check`; eski case'e uygulanmaz). Örnek
+ * verinin önceden hazırlanmış gereksinimleri (kalite kaydı yok: D şeridinden önceki durumun
+ * anlık görüntüsü, core'da `TP_DENETIM_KAPISI=off` ile hazırlanmış sayılır) kapıya girmez; kapı
+ * bu oturumda üretilen setlerde uygulanır.
+ */
+function denetimKapisi(c: TestCase): string | null {
+  if (eskiIcerik(c.icerik) || !veri.kalite?.[c.requirement_id]) return null;
+  return yayinEngeli(veri.kalite?.[c.requirement_id], veri.caseler, c.requirement_id);
+}
+
 /** core `GET /requirements/{id}/case-summary` (011 §4.4). */
 function caseSummary(rid: string) {
   girisGerekli();
@@ -970,14 +1044,18 @@ function yayinOnizleme(q: URLSearchParams): YayinOnizleme {
               ? "blocked_hash_mismatch"
               : caseHazirlik(c) !== "ready"
                 ? "blocked_not_ready"
-                : !g.jira_key
-                  ? "blocked_no_story"
-                  : "create",
+                : denetimKapisi(c)
+                  ? "blocked_gate"
+                  : !g.jira_key
+                    ? "blocked_no_story"
+                    : "create",
       external_key: c.jira_test_key,
       neden:
         c.durum === "approved" && c.onaylanan_hash === c.icerik_hash && caseHazirlik(c) !== "ready"
           ? `Case hazır değil (${CASE_HAZIRLIK[caseHazirlik(c)].etiket.toLocaleLowerCase("tr-TR")}); yalnız hazır case yayınlanır.`
-          : null,
+          : c.durum === "approved" && c.onaylanan_hash === c.icerik_hash
+            ? denetimKapisi(c)
+            : null,
     })),
   };
 }
@@ -995,6 +1073,8 @@ function yayinla(govde: unknown): YayinSonucu {
       return { case_id: id, durum: "failed" as const, external_key: null, hata: "İçerik onaydan sonra değişmiş" };
     }
     if (caseHazirlik(c) !== "ready") return { case_id: id, durum: "failed" as const, external_key: null, hata: "Case hazır değil" };
+    const kapi = denetimKapisi(c);
+    if (kapi) return { case_id: id, durum: "failed" as const, external_key: null, hata: kapi };
     if (!veri.gereksinimler.find((r) => r.id === c.requirement_id)?.jira_key) {
       return { case_id: id, durum: "failed" as const, external_key: null, hata: "Serbest metin gereksinimin Jira story'si yok; Test issue story'ye bağlanamaz" };
     }
@@ -1851,6 +1931,10 @@ const ROTALAR: Rota[] = [
   ["POST", /^\/cases\/([^/]+)\/viewed$/, (m) => caseGoruntulendi(decodeURIComponent(m[1]))],
   ["GET", /^\/requirements\/([^/]+)\/case-metrics$/, (m) => caseMetrikleri(decodeURIComponent(m[1]))],
   ["GET", /^\/requirements\/([^/]+)\/case-summary$/, (m) => caseSummary(decodeURIComponent(m[1]))],
+  ["GET", /^\/requirements\/([^/]+)\/case-review$/, (m) => caseReviewGor(decodeURIComponent(m[1]))],
+  ["POST", /^\/requirements\/([^/]+)\/case-review$/, (m) => caseReviewCalistir(decodeURIComponent(m[1]))],
+  ["GET", /^\/requirements\/([^/]+)\/case-audit$/, (m) => caseDenetimGor(decodeURIComponent(m[1]))],
+  ["POST", /^\/requirements\/([^/]+)\/case-audit$/, (m) => caseDenetimGonder(decodeURIComponent(m[1]))],
   ["GET", /^\/publish\/preview$/, (_m, q) => yayinOnizleme(q)],
   ["POST", /^\/publish$/, (_m, _q, g) => yayinla(g)],
   ["POST", /^\/code\/generate$/, (_m, _q, g) => kodUret(g)],

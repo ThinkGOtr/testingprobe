@@ -47,6 +47,7 @@ import { kanonikJson, sha256Hex } from "../../lib/sha256";
 import { ekranGoruntusu } from "./ekran";
 import { uygulamaHatalari, uygulamaKosulari, uygulamaScriptleri } from "./platformlar";
 import kaynaklar from "./golden/kaynaklar.json";
+import type { KaliteKaydi } from "./kalite";
 
 import { uretimOzetiUyarla } from "../uyum";
 import { V3_AC, V3_ACIKLAMA, V3_BASLIK, V3_GEREKSINIM_ID, V3_ICERIKLER, V3_URETIM } from "./caseV3";
@@ -72,6 +73,8 @@ export interface MockVeri {
    * Yalnız v3 üretimi olan gereksinimde vardır; eski şemalı gereksinimde anahtar yoktur.
    */
   caseUretimleri?: Record<string, CaseUretimOzeti[]>;
+  /** Case seti review (P8) ve denetim (P9) kayıtları (gereksinim kimliği → kayıt; mock/kalite.ts). */
+  kalite?: Record<string, KaliteKaydi>;
   sayac: number;
 }
 
