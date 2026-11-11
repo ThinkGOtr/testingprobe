@@ -3,13 +3,19 @@ import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import { useBildirim } from "../components/Bildirim";
-import { BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Yukleniyor } from "../components/ui";
+import { BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { SCRIPT_DURUMU, scriptIsareti } from "../lib/etiketler";
 import { YEREL_SINIF } from "../lib/kapi";
 import { tarih } from "../lib/format";
 import { PlatformRozeti, PlatformSecici } from "../components/Platform";
 import { PLATFORM_ETIKETI, type Platform } from "../lib/platform";
+import { DilRozeti, DilSecici } from "../components/Dil";
+import { DIL_ETIKETI, dogrulanmamisDilMi, type Dil } from "../lib/dil";
+import type { Script } from "../api/types";
+
+/** Doğrulanmamış dil (C#, Python) seçiliyken üretim düğmesinin yanında duran açık uyarı. */
+export const DOGRULANMAMIS_UYARISI = "Kod derlenmez ve koşulmaz; PR açılmaz.";
 
 export function Kod() {
   const scriptler = useVeri(() => api.scriptler(), []);
@@ -18,6 +24,18 @@ export function Kod() {
   const [kapatilanlar, setKapatilanlar] = useState(false);
   // 009: üretimin hedef platformu (varsayılan Web). Aynı case her platformda ayrı script/PR alır.
   const [platform, setPlatform] = useState<Platform>("web");
+  // 011: üretim dili ayrı boyuttur. Seçenekler ve repodan algılanan dil core'dan (`GET /code/languages`);
+  // uç yoksa (011 öncesi core) `null` döner: seçici çizilmez, üretim bugünkü gibi sürer.
+  const diller = useVeri(() => api.kodDilleri(platform), [platform]);
+  // Kullanıcının elle seçtiği dil (yalnız algılanandan farklıysa); platform değişince sıfırlanır.
+  const [elleDil, setElleDil] = useState<Dil | null>(null);
+  const dilVerisi = diller.veri ?? null;
+  const elleGecerli = !!dilVerisi && !!elleDil && dilVerisi.secenekler.some((s) => s.dil === elleDil && s.kullanilabilir) && elleDil !== dilVerisi.algilanan;
+  const seciliDil: Dil | null = dilVerisi ? (elleGecerli && elleDil ? elleDil : dilVerisi.algilanan) : null;
+  const seciliSecenek = dilVerisi?.secenekler.find((s) => s.dil === seciliDil) ?? null;
+  const dogrulanmamis = seciliSecenek ? seciliSecenek.hat === "dogrulanmamis" : dogrulanmamisDilMi(seciliDil);
+  // Algılanan dil bu depoda üretilemiyorsa (seçenek pasif) üretim başlatılmaz: neden seçenekte yazılıdır.
+  const dilEngeli = seciliSecenek && !seciliSecenek.kullanilabilir ? (seciliSecenek.neden ?? `${seciliSecenek.etiket} bu depoda üretilemiyor.`) : null;
   const islem = useIslem();
   const bildir = useBildirim();
   const sessiz = useGeciktirilmis(() => {
@@ -39,8 +57,11 @@ export function Kod() {
   // Yeniden üretimle kapatılan eski kayıtlar varsayılan olarak gizlenir (aynı test iki kez görünmesin).
   const gorunen = kapatilanlar ? tumScriptler : tumScriptler.filter((s) => s.durum !== "closed");
 
-  const yenidenUret = async (caseIds: string[], p: Platform) => {
-    const s = await islem.calistir(() => api.kodUret(caseIds, p));
+  // Yeniden üretim script'in dilini taşır (dil değiştirmek ayrı karar: script detayında). Dil alanı yalnız
+  // core dil boyutunu sunuyorsa gönderilir; 011 öncesi core'da gövde bugünküyle aynıdır.
+  const yenidenUret = async (sc: Script, p: Platform) => {
+    const dil = dilVerisi && sc.dil ? sc.dil : null;
+    const s = await islem.calistir(() => (dil ? api.kodUret(sc.case_ids, p, dil) : api.kodUret(sc.case_ids, p)));
     if (s) {
       bildir(s.mesaj ?? "Yeniden üretim başladı; eski kayıt kapatılır.");
       void scriptler.yenile(true);
@@ -51,7 +72,11 @@ export function Kod() {
     <>
       <SayfaBasligi
         baslik="Kod üretimi"
-        aciklama="Onaylı case'ler seçilen platformda adım adım doğrulanır (Web: Playwright MCP; Android, iOS, Windows: Appium), page object'lere eşlenir ve şablondan teste dönüşür (Web: TypeScript, uygulamalar: Java). Model kod yazmaz; yerel kontrol yeşilse bot ayrı dalda PR açar."
+        aciklama={
+          dilVerisi
+            ? "Onaylı case'ler seçilen platformda adım adım doğrulanır (Web: Playwright MCP; Android, iOS, Windows: Appium), page object'lere eşlenir ve seçilen dilde şablondan teste dönüşür. Model kod yazmaz; TypeScript ve Java'da yerel kontrol yeşilse bot ayrı dalda PR açar, C# ve Python kodu doğrulanmamış olarak çıkar."
+            : "Onaylı case'ler seçilen platformda adım adım doğrulanır (Web: Playwright MCP; Android, iOS, Windows: Appium), page object'lere eşlenir ve şablondan teste dönüşür (Web: TypeScript, uygulamalar: Java). Model kod yazmaz; yerel kontrol yeşilse bot ayrı dalda PR açar."
+        }
       />
 
       <Kart
@@ -59,10 +84,14 @@ export function Kod() {
         eylemler={
           <IslemDugmesi
             roller={["engineer"]}
-            disabled={seciliAdaylar.length === 0}
+            disabled={seciliAdaylar.length === 0 || !!dilEngeli}
             calisiyor={islem.calisiyor}
+            title={dilEngeli ?? undefined}
+            aria-describedby={dogrulanmamis ? "dogrulanmamis-dil-uyarisi" : undefined}
             onClick={async () => {
-              const s = await islem.calistir(() => api.kodUret(seciliAdaylar, platform));
+              // `dil` yalnız elle seçimde gönderilir (core `dil_kaynagi="secildi"`); aksi halde core algılar.
+              const dil = elleGecerli ? seciliDil : null;
+              const s = await islem.calistir(() => (dil ? api.kodUret(seciliAdaylar, platform, dil) : api.kodUret(seciliAdaylar, platform)));
               if (s) {
                 bildir(s.mesaj ?? "Kod üretimi başladı.");
                 setSecili(new Set());
@@ -72,6 +101,9 @@ export function Kod() {
             }}
           >
             Seçilenler için kod üret ({seciliAdaylar.length}){platform !== "web" && ` · ${PLATFORM_ETIKETI[platform]}`}
+            {/* Dil düğmede yalnız algılanandan saparken yazılır; "doğrulanmamış" uyarısı düğmeye tanım olarak bağlı
+                (390 px'te düğme adı kısa kalır, sayfa yatay kaymaz). */}
+            {seciliDil && (elleGecerli || dogrulanmamis) && ` · ${DIL_ETIKETI[seciliDil]}`}
           </IslemDugmesi>
         }
       >
@@ -82,11 +114,45 @@ export function Kod() {
             // Bir platform için seçilen case başka platforma taşınmaz: seçim temizlenir.
             setPlatform(p);
             setSecili(new Set());
+            // Dil seçenekleri platforma bağlıdır: elle seçim taşınmaz, yeni platformun algılananı gelir.
+            setElleDil(null);
           }}
           disabled={islem.calisiyor}
           aciklamali
+          dilAyri={!!dilVerisi}
           ipucu="Aynı onaylı case her platform için ayrı test ve ayrı PR olur; listede yalnızca bu platformda kodu üretilmemiş case'ler görünür."
         />
+        {dilVerisi && seciliDil ? (
+          <DilSecici
+            diller={dilVerisi}
+            deger={seciliDil}
+            degistir={(d) => setElleDil(d === dilVerisi.algilanan ? null : d)}
+            elle={elleGecerli}
+            algilananaDon={() => setElleDil(null)}
+            disabled={islem.calisiyor}
+          />
+        ) : diller.yukleniyor ? (
+          <p className="kucuk soluk dil-yukleniyor" role="status">
+            Dil seçenekleri yükleniyor…
+          </p>
+        ) : (
+          diller.hata && (
+            <Uyari ton="bilgi" baslik="Dil seçenekleri yüklenemedi">
+              {diller.hata} Üretim, repodan algılanan dille sürer.{" "}
+              <button type="button" className="dugme-metin" onClick={() => void diller.yenile()}>
+                Yeniden dene
+              </button>
+            </Uyari>
+          )
+        )}
+        {dogrulanmamis && seciliDil && (
+          <div data-testid="dogrulanmamis-dil-uyarisi">
+            <Uyari ton="uyari" baslik={`Doğrulanmamış dil: ${DIL_ETIKETI[seciliDil]}`} id="dogrulanmamis-dil-uyarisi">
+              {DOGRULANMAMIS_UYARISI} Adımlar tarayıcıda yine doğrulanır; kod "Doğrulanmamış" etiketiyle çıkar, script detayından indirilir. Derleme,
+              koşu ve PR için TypeScript ya da Java seçin.
+            </Uyari>
+          </div>
+        )}
         {islem.hata && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
         {caseler.yukleniyor && !caseler.veri ? (
           <Yukleniyor />
@@ -166,6 +232,8 @@ export function Kod() {
                         </Link>
                         <div className="satir-ogeler kucuk">
                           <PlatformRozeti platform={s.platform} />
+                          {/* Dil rozeti yalnız core dil boyutunu sunuyorsa (alan uyarlayıcı varsayılanı değil, kayıtlı dil). */}
+                          {dilVerisi && <DilRozeti dil={s.dil} platform={s.platform} />}
                           <span className="mono soluk">{s.dosya_yolu}</span>
                         </div>
                       </td>
@@ -185,9 +253,19 @@ export function Kod() {
                           <ReplayRozeti mode={s.mode} />
                         </span>
                       </td>
-                      <td>{s.pr ? <span className="mono">#{s.pr.number} · {s.pr.durum === "merged" ? "birleşti" : s.pr.durum === "open" ? "açık" : "kapalı"}</span> : "—"}</td>
                       <td>
-                        {s.break_verify.durum === "passed"
+                        {s.pr ? (
+                          <span className="mono">#{s.pr.number} · {s.pr.durum === "merged" ? "birleşti" : s.pr.durum === "open" ? "açık" : "kapalı"}</span>
+                        ) : s.durum === "unverified" ? (
+                          <span className="soluk kucuk">Bu dilde yok</span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td>
+                        {s.durum === "unverified" ? (
+                          <span className="soluk kucuk">Bu dilde yok</span>
+                        ) : s.break_verify.durum === "passed"
                           ? "✓ hata yakalıyor"
                           : s.break_verify.durum === "weak"
                             ? s.pr?.durum === "merged"
@@ -211,7 +289,7 @@ export function Kod() {
                             tur="ikincil"
                             calisiyor={islem.calisiyor}
                             title="Aynı onaylı case için kodu yeniden üretir; bu kayıt kapatılır."
-                            onClick={() => yenidenUret(s.case_ids, s.platform === undefined ? "web" : (s.platform as Platform))}
+                            onClick={() => yenidenUret(s, s.platform === undefined ? "web" : (s.platform as Platform))}
                           >
                             Yeniden üret
                           </IslemDugmesi>

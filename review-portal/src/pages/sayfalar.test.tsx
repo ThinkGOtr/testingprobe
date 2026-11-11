@@ -137,8 +137,8 @@ describe("ekranlar", () => {
     // TPD-1: core durumu `done`, akış ipucu 6 (Review + kırma)
     expect(screen.getByText("Case'ler yayınlandı")).toBeInTheDocument();
     expect(screen.getByText("Review + kırma")).toBeInTheDocument();
-    // TPD-1 case sayacı: 9 üretildi, 1 reddedildi → süitte 8; 4'ü onaylı/yayında
-    expect(screen.getByText("4/8")).toBeInTheDocument();
+    // TPD-1 case sayacı: 10 üretildi, 2 reddedildi → süitte 8; 6'sı onaylı/yayında
+    expect(screen.getByText("6/8")).toBeInTheDocument();
     expect(screen.getByText("Serbest metin")).toBeInTheDocument();
   });
 
