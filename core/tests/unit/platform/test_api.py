@@ -422,7 +422,7 @@ def test_mcp_ucu_yokken_token_uretilmez(
     # Özellik router'ları (ve onlarla gelen /mcp) olmadan kurulan uygulama.
     monkeypatch.setattr(registry, "discover_feature_routers", lambda *a, **k: [])
     with TestClient(main.create_app()) as client:
-        _giris(client, make_user("analyst"))
+        _giris(client, make_user("tester"))
         r = client.post("/tokens", json={"kapsam": "submit"})
     assert r.status_code == 501
     assert "MCP" in r.json()["detail"]
@@ -433,7 +433,7 @@ def test_mcp_ucu_yokken_token_uretilmez(
 def test_parola_degisince_token_gecersiz(
     mcp_client: TestClient, make_user: MakeUser, engine: Engine
 ) -> None:
-    u = make_user("analyst")
+    u = make_user("tester")
     _giris(mcp_client, u)
     raw = mcp_client.post("/tokens", json={"kapsam": "submit"}).json()["token"]
     with Session(engine) as s:
@@ -452,7 +452,7 @@ def test_token_uret_listele_iptal(
     mcp_client: TestClient, make_user: MakeUser, engine: Engine
 ) -> None:
     client = mcp_client
-    u = make_user("analyst")
+    u = make_user("tester")
     _giris(client, u)
     r = client.post("/tokens", json={"kapsam": "submit"})
     assert r.status_code == 201
@@ -486,7 +486,7 @@ def test_suresi_dolan_token_gecersiz(
     mcp_client: TestClient, make_user: MakeUser, engine: Engine
 ) -> None:
     client = mcp_client
-    _giris(client, make_user("analyst"))
+    _giris(client, make_user("tester"))
     raw = client.post("/tokens", json={"kapsam": "publish"}).json()["token"]
     with engine.begin() as c:
         c.execute(text("UPDATE api_token SET son_kullanma = now() - interval '1 second'"))
@@ -494,18 +494,26 @@ def test_suresi_dolan_token_gecersiz(
         assert verify_bearer(s, raw, "publish") is None
 
 
-@pytest.mark.parametrize("rol", ["engineer", "admin", "po", "tester"])
-def test_token_yalnizca_analist(client: TestClient, make_user: MakeUser, rol: str) -> None:
+@pytest.mark.parametrize("rol", ["engineer", "admin", "po", "analyst"])
+def test_token_yalnizca_testci(
+    client: TestClient, make_user: MakeUser, engine: Engine, rol: str
+) -> None:
+    """012: yayın / IDE token'ı Testçinindir (`token.issue`); red `authz.denied` yazar."""
     _giris(client, make_user(rol))
     r = client.post("/tokens", json={"kapsam": "submit"})
     assert r.status_code == 403 and r.json() == {
         "detail": "Bu işlem için yetkiniz yok",
-        "kod": "yasak",
+        "kod": "yetki_yok",
     }
+    with engine.connect() as c:
+        ozet = c.execute(
+            text("SELECT ozet FROM audit_event WHERE eylem = 'authz.denied'")
+        ).scalar_one()
+    assert ozet["izin"] == "token.issue" and ozet["rol"] == rol
 
 
 def test_gecersiz_kapsam(client: TestClient, make_user: MakeUser) -> None:
-    _giris(client, make_user("analyst"))
+    _giris(client, make_user("tester"))
     assert client.post("/tokens", json={"kapsam": "admin"}).status_code == 422
 
 
@@ -518,7 +526,7 @@ def test_bearer_bagimliligi(db: Db, make_user: MakeUser, engine: Engine) -> None
         return {"kanal": p.kanal, "kapsam": p.kapsam}
 
     app.include_router(router)
-    u = make_user("analyst")
+    u = make_user("tester")
     from tp_core.auth.tokens import issue_token
 
     with Session(engine) as s:
@@ -680,7 +688,7 @@ def test_ozellik_router_icindeki_mcp_ucu_gorunur(
     client: TestClient, make_user: MakeUser, engine: Engine
 ) -> None:
     """`/mcp` bir özellik router'ı içinden (include_router sarmalayıcısında) bağlanır; görülmeli."""
-    _giris(client, make_user("analyst"))
+    _giris(client, make_user("tester"))
     r = client.post("/tokens", json={"kapsam": "submit"})
     assert r.status_code == 201, r.text
     assert r.json()["mcp_url"].endswith("/mcp")

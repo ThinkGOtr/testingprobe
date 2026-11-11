@@ -96,14 +96,32 @@ def _case(session: Session, req: Requirement | None = None, sira_no: int = 1) ->
 # ------------------------------------------------------------------ test_case
 
 
+def _hazir(session: Session, c: TestCase, testci: Principal) -> None:
+    """Testçi kabulü: draft → ready (`accept`)."""
+    record_approval(session, c, testci, "accept")
+    transition(session, c, "ready", testci, "draft")
+
+
+def _onayla(session: Session, c: TestCase, testci: Principal, analist: Principal) -> None:
+    """012 akışı: Testçi kabulü (draft → ready) + Analist son onayı (ready → approved)."""
+    _hazir(session, c, testci)
+    record_approval(session, c, analist, "approve")
+    transition(session, c, "approved", analist, "ready")
+
+
 def test_case_onay_ve_yayin_mutlu_yol(session: Session, make_user: MakeUser) -> None:
-    analist = make_user("analyst")
+    testci, analist = make_user("tester"), make_user("analyst")
     c = _case(session)
     assert c.durum == "draft"
     assert content_hash_of(c) == c.icerik_hash
+    rv = record_approval(session, c, testci, "accept")
+    assert rv.onaylanan_hash == c.icerik_hash and rv.user_id == testci.id
+    transition(session, c, "ready", testci, "draft")
+    assert (c.durum, c.onaylanan_hash) == ("ready", None)
+    assert not approved_hash_matches(session, c)  # Testçi kabulü yayını açmaz
     rv = record_approval(session, c, analist, "approve")
-    assert rv.onaylanan_hash == c.icerik_hash and rv.user_id == analist.id
-    transition(session, c, "approved", analist, "draft")
+    assert rv.user_id == analist.id
+    transition(session, c, "approved", analist, "ready")
     assert (c.durum, c.onaylanan_hash) == ("approved", c.icerik_hash)
     assert approved_hash_matches(session, c)
     transition(session, c, "published", SYSTEM, "approved")
@@ -114,24 +132,113 @@ def test_case_onay_ve_yayin_mutlu_yol(session: Session, make_user: MakeUser) -> 
         text("SELECT eylem FROM audit_event WHERE nesne = :n ORDER BY id"),
         {"n": f"test_case:{c.id}"},
     ).scalars()
-    assert list(eylemler) == ["review.approve", "test_case.transition", "test_case.transition"]
+    assert list(eylemler) == [
+        "review.accept",
+        "test_case.transition",
+        "review.approve",
+        "test_case.transition",
+        "test_case.transition",
+    ]
     assert verify_chain(conn).ok
 
 
 def test_onaysiz_kapi_kapali(session: Session, make_user: MakeUser) -> None:
     c = _case(session)
     with pytest.raises(GateClosed):
-        transition(session, c, "approved", make_user("analyst"), "draft")
+        transition(session, c, "ready", make_user("tester"), "draft")
     assert c.durum == "draft"
+    # Taslaktan doğrudan onaya geçiş yoktur (son onay Testçi kabulünden sonra).
+    with pytest.raises(InvalidTransition):
+        transition(session, c, "approved", make_user("analyst"), "draft")
+    _hazir(session, c, make_user("tester"))
+    with pytest.raises(GateClosed):
+        transition(session, c, "approved", make_user("analyst"), "ready")
+    assert c.durum == "ready"
+
+
+def test_testci_kabulu_yayin_kapisini_acmaz(session: Session, make_user: MakeUser) -> None:
+    """012: yayın kapısı yalnız Analistin `approve` kararını sayar (`edit` artık saymaz)."""
+    c = _case(session)
+    testci = make_user("tester")
+    record_approval(session, c, testci, "edit", degisiklik={"icerik": {**CASE, "risk": "low"}})
+    transition(session, c, "ready", testci, "draft")
+    assert not approved_hash_matches(session, c)
+    assert approved_hash_matches(session, c, frozenset({"accept", "edit"}))
+
+
+def test_eski_analist_edit_onayi_yayin_kapisini_acar(session: Session, make_user: MakeUser) -> None:
+    """012 öncesi: analistin `edit`'i (son kayıt) `approve` sayılır; Testçinin `edit`'i sayılmaz.
+    Hash eşleşmesi yine şarttır."""
+    from tp_core.models import Review
+
+    c = _case(session)
+    testci, analist = make_user("tester"), make_user("analyst")
+    _onayla(session, c, testci, analist)
+
+    def edit_kaydi(user: Principal) -> None:
+        session.add(
+            Review(
+                nesne_turu="test_case",
+                nesne_id=c.id,
+                user_id=user.id,
+                kanal="portal",
+                karar="edit",
+                onaylanan_hash=content_hash_of(c),
+            )
+        )
+        session.flush()
+
+    edit_kaydi(testci)
+    assert not approved_hash_matches(session, c)
+    edit_kaydi(analist)
+    assert approved_hash_matches(session, c)
+    c.icerik = {**CASE, "risk": "low"}  # onaydan sonra değişti
+    assert not approved_hash_matches(session, c)
+
+
+def test_karar_rolleri_karara_gore(session: Session, make_user: MakeUser) -> None:
+    """Testçi son onay veremez, Analist Testçi kararı veremez (derinlemesine savunma)."""
+    c = _case(session)
+    testci, analist = make_user("tester"), make_user("analyst")
+    for karar in ("approve", "send_back"):
+        with pytest.raises(ApprovalNotAllowed, match="rolü"):
+            record_approval(session, c, testci, karar, gerekce="x")
+    for karar, kw in (
+        ("accept", {}),
+        ("reject", {"ret_nedeni": "duplicate"}),
+        ("reopen", {}),
+        ("edit", {"degisiklik": {"icerik": {**CASE, "risk": "low"}}}),
+    ):
+        with pytest.raises(ApprovalNotAllowed, match="rolü"):
+            record_approval(session, c, analist, karar, **kw)
+    for rol in ("po", "engineer", "presenter"):
+        with pytest.raises(ApprovalNotAllowed):
+            record_approval(session, c, make_user(rol), "accept")
+    assert _review_sayisi(session) == 0
+
+
+def test_geri_gonderme_gerekce_ister_ve_taslaga_doner(
+    session: Session, make_user: MakeUser
+) -> None:
+    c = _case(session)
+    testci, analist = make_user("tester"), make_user("analyst")
+    _hazir(session, c, testci)
+    for bos in (None, "  "):
+        with pytest.raises(InvalidDecision, match="gerekçe"):
+            record_approval(session, c, analist, "send_back", gerekce=bos)
+    rv = record_approval(session, c, analist, "send_back", gerekce="AC2 adımı eksik")
+    assert rv.gerekce == "AC2 adımı eksik"
+    with pytest.raises(GateClosed):  # son karar onaylamayan send_back
+        transition(session, c, "approved", analist, "ready")
+    transition(session, c, "draft", analist, "ready")
+    assert (c.durum, c.onaylanan_hash) == ("draft", None)
 
 
 def test_onaydan_sonra_icerik_degisirse_yayin_reddedilir(
     session: Session, make_user: MakeUser
 ) -> None:
-    analist = make_user("analyst")
     c = _case(session)
-    record_approval(session, c, analist, "approve")
-    transition(session, c, "approved", analist, "draft")
+    _onayla(session, c, make_user("tester"), make_user("analyst"))
     c.icerik = {**CASE, "expected_result": "2 adet bedava"}  # onaydan sonra değişti
     assert not approved_hash_matches(session, c)
     with pytest.raises(GateClosed):
@@ -140,18 +247,20 @@ def test_onaydan_sonra_icerik_degisirse_yayin_reddedilir(
 
 def test_duzeltip_onay_yeni_hash(session: Session, make_user: MakeUser) -> None:
     """Portal 'edit': insan düzenlemeden ÖNCEKİ içeriği gördü (görülen hash), düzenlenmiş içerik
-    onaylanır. Router içeriği kendisi değiştirmez; `degisiklik` ile verir."""
-    analist = make_user("analyst")
+    kabul edilir. Router içeriği kendisi değiştirmez; `degisiklik` ile verir."""
+    testci, analist = make_user("tester"), make_user("analyst")
     c = _case(session)
     gorulen = content_hash_of(c)  # ekrandaki (düzenleme öncesi) içerik
     yeni = {**CASE, "title": "Kampanyalı sepet (düzeltildi)"}
     rv = _record_approval(
-        session, c, analist, "edit", beklenen_hash=gorulen, degisiklik={"icerik": yeni}
+        session, c, testci, "edit", beklenen_hash=gorulen, degisiklik={"icerik": yeni}
     )
     assert rv.onaylanan_hash == content_hash(yeni) != gorulen
     assert (c.icerik, c.icerik_hash) == (yeni, content_hash(yeni))
     assert rv.once == {"icerik": CASE} and rv.sonra == {"icerik": yeni}
-    transition(session, c, "approved", analist, "draft")
+    transition(session, c, "ready", testci, "draft")
+    record_approval(session, c, analist, "approve")
+    transition(session, c, "approved", analist, "ready")
     assert c.onaylanan_hash == content_hash(yeni)
     transition(session, c, "published", SYSTEM, "approved")
     session.commit()
@@ -169,55 +278,53 @@ def test_duzenleme_sonrasi_gorulen_hash_ile_karar_409_degil(
 ) -> None:
     """Regresyon: eskiden router düzenlemeyi önce uygulayınca görülen hash hiç eşleşmezdi (her
     zaman 409), sonra uygulayınca kapı açılmazdı. Artık iki sıra da tek çağrıdadır."""
-    analist = make_user("analyst")
+    testci = make_user("tester")
     c = _case(session)
     gorulen = content_hash_of(c)
     yeni = {**CASE, "risk": "low"}
-    _record_approval(
-        session, c, analist, "edit", beklenen_hash=gorulen, degisiklik={"icerik": yeni}
-    )
-    transition(session, c, "approved", analist, "draft")  # GateClosed fırlatmaz
-    assert approved_hash_matches(session, c)
+    _record_approval(session, c, testci, "edit", beklenen_hash=gorulen, degisiklik={"icerik": yeni})
+    transition(session, c, "ready", testci, "draft")  # GateClosed fırlatmaz
+    assert approved_hash_matches(session, c, frozenset({"edit"}))
 
 
 def test_edit_karari_degisiklik_kurallari(session: Session, make_user: MakeUser) -> None:
-    analist = make_user("analyst")
+    testci = make_user("tester")
     c = _case(session)
     h = content_hash_of(c)
     with pytest.raises(InvalidDecision, match="düzenlenmiş içerikle"):
-        _record_approval(session, c, analist, "edit", beklenen_hash=h)
+        _record_approval(session, c, testci, "edit", beklenen_hash=h)
     with pytest.raises(InvalidDecision, match="değiştiremez"):
-        _record_approval(session, c, analist, "approve", beklenen_hash=h, degisiklik={"icerik": {}})
+        _record_approval(session, c, testci, "accept", beklenen_hash=h, degisiklik={"icerik": {}})
     with pytest.raises(InvalidDecision, match="değiştiremez"):
         _record_approval(
-            session, c, analist, "edit", beklenen_hash=h, degisiklik={"durum": "approved"}
+            session, c, testci, "edit", beklenen_hash=h, degisiklik={"durum": "approved"}
         )
     # Görülen hash eski ise düzenleme de uygulanmaz.
     with pytest.raises(GateClosed):
         _record_approval(
-            session, c, analist, "edit", beklenen_hash="0" * 64, degisiklik={"icerik": {}}
+            session, c, testci, "edit", beklenen_hash="0" * 64, degisiklik={"icerik": {}}
         )
     assert c.icerik == CASE
     assert _review_sayisi(session) == 0
 
 
 def test_son_karar_gecerlidir(session: Session, make_user: MakeUser) -> None:
-    analist = make_user("analyst")
+    testci = make_user("tester")
     c = _case(session)
-    record_approval(session, c, analist, "approve")
-    record_approval(session, c, analist, "reject", ret_nedeni="duplicate")
+    record_approval(session, c, testci, "accept")
+    record_approval(session, c, testci, "reject", ret_nedeni="duplicate")
     with pytest.raises(GateClosed):
-        transition(session, c, "approved", analist, "draft")
-    transition(session, c, "rejected", analist, "draft")
+        transition(session, c, "ready", testci, "draft")
+    transition(session, c, "rejected", testci, "draft")
     assert c.durum == "rejected"
 
 
 def test_onaydan_taslaga_donus_onay_hashini_temizler(session: Session, make_user: MakeUser) -> None:
-    analist = make_user("analyst")
+    testci = make_user("tester")
     c = _case(session)
-    record_approval(session, c, analist, "approve")
-    transition(session, c, "approved", analist, "draft")
-    transition(session, c, "draft", analist, "approved")
+    _onayla(session, c, testci, make_user("analyst"))
+    assert c.onaylanan_hash == c.icerik_hash
+    transition(session, c, "draft", testci, "approved")
     assert c.onaylanan_hash is None
 
 
@@ -226,7 +333,8 @@ def test_onaydan_taslaga_donus_onay_hashini_temizler(session: Session, make_user
     [
         ("reject", {}, InvalidDecision),
         ("reject", {"ret_nedeni": "uydurma"}, InvalidDecision),
-        ("approve", {"ret_nedeni": "duplicate"}, InvalidDecision),
+        ("accept", {"ret_nedeni": "duplicate"}, InvalidDecision),
+        ("approve", {}, ApprovalNotAllowed),
         ("merge", {}, InvalidDecision),
     ],
 )
@@ -234,7 +342,7 @@ def test_gecersiz_kararlar(
     session: Session, make_user: MakeUser, karar: str, kw: dict, hata: type
 ) -> None:
     with pytest.raises(hata):
-        record_approval(session, _case(session), make_user("analyst"), karar, **kw)
+        record_approval(session, _case(session), make_user("tester"), karar, **kw)
 
 
 def test_rol_ide_ve_sistem_onay_veremez(session: Session, make_user: MakeUser) -> None:

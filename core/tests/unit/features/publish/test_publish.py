@@ -14,8 +14,11 @@ from tests.unit.features.cases.helpers import (
     READ,
     SimTransport,
     case_icerik,
+    karar_ver,
     latest_cases,
     login,
+    onayla,
+    rol_ol,
     run_jobs,
 )
 from tp_core.features.publish import service as publish
@@ -28,25 +31,39 @@ from tp_core.workflow.jobs import JobContext
 
 
 @pytest.fixture
-def hazir(api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway):
-    """İki case'li TPD-4: ilki onaylı, ikincisi taslak; analist oturumu açık."""
+def yayin_testci(make_user):
+    return make_user("tester")
+
+
+@pytest.fixture
+def yayin_analist(make_user):
+    return make_user("analyst")
+
+
+@pytest.fixture
+def hazir(
+    api: TestClient,
+    engine: Engine,
+    make_requirement,
+    fake_gateway,
+    yayin_testci,
+    yayin_analist,
+):
+    """İki case'li TPD-4: ilki onaylı (Testçi kabulü + Analist son onayı), ikincisi taslak;
+    Testçi (yayıncı) oturumu açık. Dönüş: (gereksinim, onaylayan analist, a, b)."""
     fake_gateway(
         [text_response({"cases": [case_icerik(), case_icerik(title="Hatalı parola", ref="AC2")]})]
     )
     rid = make_requirement()
-    analist = make_user("analyst")
-    login(api, analist)
+    login(api, yayin_testci)
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     run_jobs(engine)
     a, b = latest_cases(api, rid)
-    r = api.post(
-        f"/cases/{a['id']}/decision", json={"karar": "approve", "icerik_hash": a["icerik_hash"]}
-    )
-    assert r.status_code == 200, r.text
-    return rid, analist, a, b
+    onayla(api, a, yayin_testci, yayin_analist)
+    return rid, yayin_analist, a, b
 
 
-def _ctx(case_ids: list[str], kullanici: str = "analist") -> JobContext:
+def _ctx(case_ids: list[str], kullanici: str = "testci") -> JobContext:
     return JobContext(
         uuid.uuid4(),
         publish.PUBLISH_JOB,
@@ -98,11 +115,86 @@ def test_onizleme_islemleri_ve_gonderilen_govdeyle_ayni(
     assert k2["islem"] == "skip_existing" and k2["external_key"] == key
 
 
-def test_onizleme_analist_ister(api: TestClient, make_user, hazir) -> None:
-    rid, *_ = hazir
-    api.post("/auth/logout")
-    login(api, make_user("engineer"))
-    assert api.get("/publish/preview", params={"requirement_id": str(rid)}).status_code == 403
+def test_onizleme_ve_yayin_testci_ister(api: TestClient, make_user, engine: Engine, hazir) -> None:
+    rid, _, a, _ = hazir
+    for rol in ("engineer", "analyst", "po"):
+        rol_ol(api, make_user(rol))
+        r = api.get("/publish/preview", params={"requirement_id": str(rid)})
+        assert r.status_code == 403 and r.json()["kod"] == "yetki_yok", rol
+        assert api.post("/publish", json={"case_ids": [a["id"]]}).status_code == 403, rol
+    with engine.connect() as c:
+        izinler = c.execute(
+            text("SELECT ozet->>'izin' FROM audit_event WHERE eylem = 'authz.denied'")
+        ).scalars()
+        assert set(izinler) == {"case.publish"}
+
+
+def test_yayin_yalnizca_son_onaydan_sonra(
+    api: TestClient, engine: Engine, jira: RestJira, targets, hazir, yayin_analist
+) -> None:
+    """Testçi kabulü (ready) yayını açmaz; Analist son onayından sonra yayınlanır."""
+    rid, _, _, b = hazir
+    b_hazir = karar_ver(api, b, karar="accept").json()
+    assert b_hazir["durum"] == "ready"
+    on = api.get("/publish/preview", params={"requirement_id": str(rid)}).json()
+    assert {k["case_id"]: k["islem"] for k in on["kalemler"]}[b["id"]] == "blocked_not_approved"
+    sonuc = publish.run_publish(_ctx([b["id"]]), engine)["sonuclar"][0]
+    assert sonuc["durum"] == "failed" and "son onayı bekleniyor" in sonuc["hata"]
+    assert _label_count(jira, b["id"]) == 0
+    rol_ol(api, yayin_analist)
+    assert karar_ver(api, b_hazir, karar="approve").json()["durum"] == "approved"
+    sonuc = publish.run_publish(_ctx([b["id"]]), engine)["sonuclar"][0]
+    assert sonuc["durum"] == "created", sonuc
+
+
+def _son_kayit_edit(case_id: str, user_id: uuid.UUID) -> None:
+    """Approved case'in son kaydı olarak `edit` ekler (append-only tabloya doğrudan; eski akış)."""
+    from tp_core.models import Review
+    from tp_core.workflow.service import content_hash_of
+
+    with session_scope() as s:
+        tc = s.get(TestCase, uuid.UUID(case_id))
+        s.add(
+            Review(
+                nesne_turu="test_case",
+                nesne_id=tc.id,
+                user_id=user_id,
+                kanal="portal",
+                karar="edit",
+                onaylanan_hash=content_hash_of(tc),
+            )
+        )
+
+
+def test_eski_akista_analist_edit_onayi_yayinlanir(
+    engine: Engine, jira: RestJira, targets, hazir, make_user
+) -> None:
+    """012 öncesi analistin `edit`'i (son kayıt) son onay sayılır; onaylayan o analisttir."""
+    _, _, a, _ = hazir
+    eski_analist = make_user("analyst", ad="eski_analist")
+    _son_kayit_edit(a["id"], eski_analist.id)
+    with session_scope() as s:
+        tc = s.get(TestCase, uuid.UUID(a["id"]))
+        assert publish._engel(s, tc) is None
+        assert publish.approver_of(s, tc) == "eski_analist"
+    sonuc = publish.run_publish(_ctx([a["id"]]), engine)["sonuclar"][0]
+    assert sonuc["durum"] == "created", sonuc
+    assert sonuc["onaylayan"] == "eski_analist"
+
+
+def test_testci_edit_son_kayitsa_yayin_son_onay_ister(
+    engine: Engine, jira: RestJira, targets, hazir, yayin_testci
+) -> None:
+    """Testçinin `edit`'i onay değildir: son kayıt oysa yayın kapısı kapalıdır."""
+    _, analist, a, _ = hazir
+    _son_kayit_edit(a["id"], yayin_testci.id)
+    with session_scope() as s:
+        assert publish.approver_of(s, s.get(TestCase, uuid.UUID(a["id"]))) == (
+            analist.kullanici_adi
+        )
+    sonuc = publish.run_publish(_ctx([a["id"]]), engine)["sonuclar"][0]
+    assert sonuc["durum"] == "failed" and "Analist son onayı yok" in sonuc["hata"]
+    assert _label_count(jira, a["id"]) == 0
 
 
 def test_api_ile_yayin_kismi_sonuc_ve_gereksinim_done(
@@ -215,7 +307,7 @@ def test_intent_sonrasi_cokme_yeniden_denemede_mukerrer_acmaz(
 
 
 def test_worker_cokmesi_sonrasi_otomatik_yeniden_deneme_tamamlar(
-    api: TestClient, engine: Engine, jira: RestJira, targets, hazir
+    api: TestClient, engine: Engine, jira: RestJira, targets, hazir, yayin_testci
 ) -> None:
     """claim → issue oluşturuldu → çöküş → release_orphans → yeniden deneme: created, tek issue."""
     from tp_core.workflow.jobs import release_orphans
@@ -226,8 +318,10 @@ def test_worker_cokmesi_sonrasi_otomatik_yeniden_deneme_tamamlar(
         json={"karar": "reject", "icerik_hash": b["icerik_hash"], "ret_nedeni": "duplicate"},
     )
     assert r.status_code == 200, r.text
+    with session_scope() as s, pytest.raises(publish.ApprovalNotAllowed):  # yayın Testçinindir
+        publish.request_publish(s, [a["id"]], analist)
     with session_scope() as s:
-        job_id = publish.request_publish(s, [a["id"]], analist)
+        job_id = publish.request_publish(s, [a["id"]], yayin_testci)
     with engine.begin() as c:  # worker işi aldı (claim) ...
         c.execute(
             text(
@@ -250,13 +344,17 @@ def test_worker_cokmesi_sonrasi_otomatik_yeniden_deneme_tamamlar(
 
 
 def test_kismi_hata_sonra_yeniden_deneme(
-    api: TestClient, engine: Engine, sim: TestClient, jira: RestJira, targets, hazir
+    api: TestClient,
+    engine: Engine,
+    sim: TestClient,
+    jira: RestJira,
+    targets,
+    hazir,
+    yayin_testci,
+    yayin_analist,
 ) -> None:
     _, _, a, b = hazir
-    r = api.post(
-        f"/cases/{b['id']}/decision", json={"karar": "approve", "icerik_hash": b["icerik_hash"]}
-    )
-    assert r.status_code == 200
+    onayla(api, b, yayin_testci, yayin_analist)
     # İlk Test issue oluşturma isteği 500 alır (POST yeniden gönderilmez → o case başarısız).
     sim.post(
         "/sim/faults",
@@ -284,13 +382,12 @@ def test_serbest_metin_gereksinim_yayini_engellenir(
 ) -> None:
     fake_gateway([text_response({"cases": [case_icerik()]})])
     rid = make_requirement(jira_key=None, baslik="Serbest", aciklama="Serbest metin gereksinim")
-    login(api, make_user("analyst"))
+    testci = make_user("tester")
+    login(api, testci)
     api.post(f"/requirements/{rid}/generate-cases")
     run_jobs(engine)
     (c,) = latest_cases(api, rid)
-    api.post(
-        f"/cases/{c['id']}/decision", json={"karar": "approve", "icerik_hash": c["icerik_hash"]}
-    )
+    onayla(api, c, testci, make_user("analyst"))
     on = api.get("/publish/preview", params={"requirement_id": str(rid)}).json()
     assert on["kalemler"][0]["islem"] == "blocked_no_story" and on["uyarilar"]
     sonuc = publish.run_publish(_ctx([c["id"]]), engine)
@@ -408,9 +505,9 @@ def test_story_degisince_onayli_case_yayinlanmaz_portal_onizleme_ve_karar(
     assert sonuc["durum"] == "failed" and "PO onaylı" in sonuc["hata"]
     assert _label_count(jira, a["id"]) == 0  # Jira'ya hiç gitmedi
 
-    # Eski metnin taslağı da onaylanamaz (cases.decide gereksinimi denetler).
+    # Eski metnin taslağı da kabul edilemez (cases.decide gereksinimi denetler).
     r = api.post(
-        f"/cases/{b['id']}/decision", json={"karar": "approve", "icerik_hash": b["icerik_hash"]}
+        f"/cases/{b['id']}/decision", json={"karar": "accept", "icerik_hash": b["icerik_hash"]}
     )
     assert r.status_code == 409 and "PO onaylı" in r.json()["detail"]
     with session_scope() as s:
@@ -418,13 +515,15 @@ def test_story_degisince_onayli_case_yayinlanmaz_portal_onizleme_ve_karar(
 
 
 def test_story_degisince_mcp_yayini_da_reddedilir(
-    api: TestClient, engine: Engine, make_user, jira: RestJira, targets, hazir, worker
+    api: TestClient, engine: Engine, make_user, jira: RestJira, targets, hazir, worker, yayin_testci
 ) -> None:
     from tests.unit.mcp_server.test_mcp import _cagir, _token
 
-    rid, analist, a, _ = hazir
+    rid, _, a, _ = hazir
     _story_degisti(rid)
-    sonuc = _cagir(api, _token(analist, "publish"), "publish_test_cases", {"case_ids": [a["id"]]})
+    sonuc = _cagir(
+        api, _token(yayin_testci, "publish"), "publish_test_cases", {"case_ids": [a["id"]]}
+    )
     (kalem,) = sonuc.structured_content["sonuclar"]
     assert kalem["durum"] == "failed" and "PO onaylı" in kalem["hata"]
     assert _label_count(jira, a["id"]) == 0
@@ -461,7 +560,14 @@ def test_yeni_po_onayiyla_uretimde_eski_caseler_superseded(
 
 
 def test_kismi_hata_duzeltme_sonrasi_eski_issue_yayinlandi_sayilmaz(
-    api: TestClient, engine: Engine, sim: TestClient, jira: RestJira, targets, hazir
+    api: TestClient,
+    engine: Engine,
+    sim: TestClient,
+    jira: RestJira,
+    targets,
+    hazir,
+    yayin_testci,
+    yayin_analist,
 ) -> None:
     rid, _, a, _ = hazir
     # Issue oluşur, story bağlantısı (iki tür de) 400 alır → kısmi başarı (anahtar kayıtlı).
@@ -474,18 +580,14 @@ def test_kismi_hata_duzeltme_sonrasi_eski_issue_yayinlandi_sayilmaz(
     key = ilk["external_key"]
     eski_baslik = jira.get_issue(key).summary
 
-    # Analist taslağa alır ve başlığı düzeltip onaylar (yeni hash).
+    # Testçi taslağa alır ve başlığı düzeltir; Analist yeni içeriği onaylar (yeni hash).
     r = api.post(
         f"/cases/{a['id']}/decision", json={"karar": "reopen", "icerik_hash": a["icerik_hash"]}
     )
     assert r.status_code == 200, r.text
     yeni = {**a["icerik"], "title": "TAMAMEN YENI BASLIK"}
-    r = api.post(
-        f"/cases/{a['id']}/decision",
-        json={"karar": "edit", "icerik_hash": a["icerik_hash"], "icerik": yeni},
-    )
-    assert r.status_code == 200, r.text
-    assert r.json()["durum"] == "approved"
+    out = onayla(api, a, yayin_testci, yayin_analist, icerik=yeni)
+    assert out["durum"] == "approved"
 
     sonuc = publish.run_publish(_ctx([a["id"]]), engine)["sonuclar"][0]
     assert sonuc["durum"] == "failed" and sonuc["external_key"] == key
@@ -509,16 +611,14 @@ def test_replay_caseleri_jirada_replay_olarak_etiketlenir(
     api: TestClient, engine: Engine, make_user, make_requirement, replay_gateway, jira, targets
 ) -> None:
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    testci = make_user("tester")
+    login(api, testci)
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     run_jobs(engine)
     cases = latest_cases(api, rid)
     assert {c["mode"] for c in cases} <= {"replay", "replay_miss"}
     c = cases[0]
-    r = api.post(
-        f"/cases/{c['id']}/decision", json={"karar": "approve", "icerik_hash": c["icerik_hash"]}
-    )
-    assert r.status_code == 200, r.text
+    onayla(api, c, testci, make_user("analyst"))
     on = api.get("/publish/preview", params={"requirement_id": str(rid)}).json()
     kalem = next(k for k in on["kalemler"] if k["case_id"] == c["id"])
     mod = c["mode"]

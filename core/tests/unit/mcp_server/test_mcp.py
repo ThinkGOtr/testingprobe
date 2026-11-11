@@ -13,7 +13,7 @@ from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from sqlalchemy import Engine, select
 
-from tests.unit.features.cases.helpers import case_icerik, latest_cases, login
+from tests.unit.features.cases.helpers import case_icerik, latest_cases, login, onayla
 from tp_core.auth.tokens import issue_token, revoke_token
 from tp_core.models import Requirement, TestCase, ToolCall, session_scope
 from tp_core.workflow.service import Principal
@@ -66,7 +66,7 @@ def _jira_issue_count(jira) -> int:
 
 
 def test_arac_listesi_sdk_istemcisiyle(api: TestClient, make_user) -> None:
-    token = _token(make_user("analyst"), "submit")
+    token = _token(make_user("tester"), "submit")
 
     async def fn(client: Client):
         return await client.list_tools()
@@ -84,7 +84,7 @@ def test_submit_draft_cases_taslak_dusurur_jiraya_yazmaz(
     api: TestClient, make_user, make_requirement, jira
 ) -> None:
     rid = make_requirement()
-    gelistirici = make_user("analyst")
+    gelistirici = make_user("tester")
     token = _token(gelistirici, "submit")
     once = _jira_issue_count(jira)
     cases = [case_icerik(), case_icerik(title="Hatalı parola", ref="AC2")]
@@ -121,7 +121,7 @@ def test_submit_draft_cases_taslak_dusurur_jiraya_yazmaz(
     assert tekrar.structured_content["tekrar_sira"] == [1, 2]
 
     # Portalda görünür; mod yok (IDE çıktısı asla "live" etiketlenmez).
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     gorunen = latest_cases(api, rid)
     assert {c["kanal"] for c in gorunen} == {"ide"} and {c["mode"] for c in gorunen} == {None}
 
@@ -130,7 +130,7 @@ def test_semaya_uymayan_taslak_hicbirini_yazmaz(
     api: TestClient, make_user, make_requirement
 ) -> None:
     make_requirement()
-    token = _token(make_user("analyst"), "submit")
+    token = _token(make_user("tester"), "submit")
     cases = [case_icerik(), case_icerik(tags=["manual"]), case_icerik(ref="AC9")]
     sonuc = _cagir(
         api,
@@ -151,7 +151,7 @@ def test_po_onaysiz_gereksinime_taslak_gonderilemez(
     api: TestClient, make_user, make_requirement
 ) -> None:
     make_requirement(po_onayli=False)
-    token = _token(make_user("analyst"), "submit")
+    token = _token(make_user("tester"), "submit")
     sonuc = _cagir(
         api,
         token,
@@ -165,7 +165,7 @@ def test_yanlis_kapsam_reddedilir_ve_kaydedilir(
     api: TestClient, make_user, make_requirement
 ) -> None:
     make_requirement()
-    u = make_user("analyst")
+    u = make_user("tester")
     token = _token(u, "publish")
     sonuc = _cagir(
         api,
@@ -184,7 +184,7 @@ def test_publish_test_cases_portal_onayi_ve_hash_kapisi(
     api: TestClient, engine: Engine, make_user, make_requirement, jira, targets, worker
 ) -> None:
     make_requirement()
-    gelistirici = make_user("analyst", ad="gelistirici")
+    gelistirici = make_user("tester", ad="gelistirici")
     submit = _token(gelistirici, "submit")
     yayin = _token(gelistirici, "publish")
     cases = [case_icerik(), case_icerik(title="Hatalı parola", ref="AC2")]
@@ -205,18 +205,15 @@ def test_publish_test_cases_portal_onayi_ve_hash_kapisi(
     assert sonuc.structured_content["sonuclar"][0]["durum"] == "failed"
     assert "Onaylı değil" in sonuc.structured_content["sonuclar"][0]["hata"]
 
-    # Portalda başka bir analist onaylar; IDE yalnızca kimlikle yayınlar.
+    # Portalda Testçi kabul eder, Analist son onayı verir; IDE yalnızca kimlikle yayınlar.
     onaylayan = make_user("analyst", ad="qa_onaylayan")
-    login(api, onaylayan)
+    login(api, gelistirici)
     a = next(
         c
         for c in latest_cases(api, eklenen.structured_content["requirement_id"])
         if c["id"] == a_id
     )
-    r = api.post(
-        f"/cases/{a_id}/decision", json={"karar": "approve", "icerik_hash": a["icerik_hash"]}
-    )
-    assert r.status_code == 200, r.text
+    onayla(api, a, gelistirici, onaylayan)
 
     sonuc = _cagir(api, yayin, "publish_test_cases", {"case_ids": [a_id, b_id]})
     durum = {s["case_id"]: s for s in sonuc.structured_content["sonuclar"]}
@@ -264,7 +261,7 @@ def test_claude_code_el_sikismasi_ve_arac_cagrisi(
     api: TestClient, make_user, make_requirement
 ) -> None:
     make_requirement()
-    token = _token(make_user("analyst"), "submit")
+    token = _token(make_user("tester"), "submit")
     r = _raw(api, token, INIT)
     assert r.status_code == 200, r.text
     assert r.json()["result"]["serverInfo"]["name"] == "testing-probe"
@@ -291,7 +288,7 @@ def test_claude_code_el_sikismasi_ve_arac_cagrisi(
 
 
 def test_tokensiz_gecersiz_iptal_ve_cerezle_401(api: TestClient, make_user) -> None:
-    u = make_user("analyst")
+    u = make_user("tester")
     assert _raw(api, None, INIT).status_code == 401
     assert _raw(api, "tpt_uydurma", INIT).status_code == 401
     r = _raw(api, None, INIT, Authorization="Basic eHg6eXk=")
@@ -309,7 +306,7 @@ def test_tokensiz_gecersiz_iptal_ve_cerezle_401(api: TestClient, make_user) -> N
 
 
 def test_yalnizca_localhost_ve_vekilsiz(api: TestClient, make_user) -> None:
-    token = _token(make_user("analyst"), "submit")
+    token = _token(make_user("tester"), "submit")
     assert _raw(api, token, INIT, Host="core-api:8000").status_code == 421
     assert _raw(api, token, INIT, Host="evil.example").status_code == 421
     assert _raw(api, token, INIT, Host="localhost:8000").status_code == 200
@@ -317,7 +314,7 @@ def test_yalnizca_localhost_ve_vekilsiz(api: TestClient, make_user) -> None:
 
 
 def test_tarayici_kaynakli_istek_reddedilir(api: TestClient, make_user) -> None:
-    token = _token(make_user("analyst"), "submit")
+    token = _token(make_user("tester"), "submit")
     # Başka siteden gelen tarayıcı isteği OriginGuard'da durur (bearer olsa bile).
     r = _raw(api, token, INIT, Origin="http://evil.example")
     assert r.status_code == 403
@@ -325,9 +322,32 @@ def test_tarayici_kaynakli_istek_reddedilir(api: TestClient, make_user) -> None:
     assert r.status_code == 403
 
 
+@pytest.mark.parametrize("rol", ["analyst", "engineer", "po"])
+@pytest.mark.parametrize(
+    ("kapsam", "arac"), [("submit", "submit_draft_cases"), ("publish", "publish_test_cases")]
+)
+def test_ide_kanali_testcinin(
+    api: TestClient, make_user, make_requirement, rol: str, kapsam: str, arac: str
+) -> None:
+    """012: IDE taslak/yayın araçları Testçinindir; başka rolün token'ı araç kullanamaz."""
+    make_requirement()
+    token = _token(make_user(rol), kapsam)
+    arg = (
+        {"requirement_key": "TPD-4", "onaylanan_hash": _hash(), "cases": [case_icerik()]}
+        if kapsam == "submit"
+        else {"case_ids": [str(uuid.uuid4())]}
+    )
+    sonuc = _cagir(api, token, arac, arg)
+    assert sonuc.is_error is True
+    (kayit,) = _tool_calls()
+    assert kayit.izin_verildi is False
+    with session_scope() as s:
+        assert s.scalar(select(TestCase.id)) is None
+
+
 def test_ide_tokeni_portal_kararinda_gecmez(api: TestClient, make_user, make_requirement) -> None:
     rid = make_requirement()
-    u = make_user("analyst")
+    u = make_user("tester")
     token = _token(u, "submit")
     sonuc = _cagir(
         api,
@@ -340,7 +360,7 @@ def test_ide_tokeni_portal_kararinda_gecmez(api: TestClient, make_user, make_req
         h = s.get(TestCase, uuid.UUID(cid)).icerik_hash
     r = api.post(
         f"/cases/{cid}/decision",
-        json={"karar": "approve", "icerik_hash": h},
+        json={"karar": "accept", "icerik_hash": h},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert r.status_code == 401  # onay yalnızca portal oturumuyla
@@ -349,7 +369,7 @@ def test_ide_tokeni_portal_kararinda_gecmez(api: TestClient, make_user, make_req
 
 @pytest.mark.parametrize("kapsam", ["submit", "publish"])
 def test_bilinmeyen_arac_kaydedilir(api: TestClient, make_user, kapsam: str) -> None:
-    token = _token(make_user("analyst"), kapsam)
+    token = _token(make_user("tester"), kapsam)
     sonuc = _cagir(api, token, "delete_everything", {})
     assert sonuc.is_error is True
     (tc,) = _tool_calls()
@@ -363,7 +383,7 @@ def test_get_requirement_po_onayli_metni_guvenilmeyen_blokta_doner(
     api: TestClient, make_user, make_requirement
 ) -> None:
     rid = make_requirement(po_cevaplari=[{"id": "1", "metin": "Kilit yok", "yazar": "po@x"}])
-    u = make_user("analyst")
+    u = make_user("tester")
     token = _token(u, "submit")
     sonuc = _cagir(api, token, "get_requirement", {"requirement_key": "TPD-4"})
     assert sonuc.is_error is False, sonuc
@@ -398,7 +418,7 @@ def test_get_requirement_po_onaysiz_ve_publish_kapsami_reddedilir(
     api: TestClient, make_user, make_requirement
 ) -> None:
     make_requirement(po_onayli=False)
-    u = make_user("analyst")
+    u = make_user("tester")
     sonuc = _cagir(api, _token(u, "submit"), "get_requirement", {"requirement_key": "TPD-4"})
     assert sonuc.is_error is True and "PO onaylı değil" in sonuc.structured_content["hata"]
     sonuc = _cagir(api, _token(u, "publish"), "get_requirement", {"requirement_key": "TPD-4"})
@@ -409,7 +429,7 @@ def test_submit_hashsiz_ya_da_bayat_hashle_reddedilir(
     api: TestClient, make_user, make_requirement
 ) -> None:
     make_requirement()
-    token = _token(make_user("analyst"), "submit")
+    token = _token(make_user("tester"), "submit")
     hashsiz = _cagir(
         api, token, "submit_draft_cases", {"requirement_key": "TPD-4", "cases": [case_icerik()]}
     )

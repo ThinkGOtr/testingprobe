@@ -64,20 +64,7 @@ KARAR_BAZLI: frozenset[tuple[str, str]] = frozenset(
 
 # GEÇİCİ — S2 (case akışı) şeridinin uçları: S2 birleşince `izin(...)` taşırlar ve bu küme
 # silinir. Küme yalnız bugün izinsiz olanları kapsar; S2 birleşince test bunu hatırlatır.
-S2_GECICI: frozenset[tuple[str, str]] = frozenset(
-    {
-        ("POST", "/requirements/{requirement_id}/generate-cases"),
-        ("GET", "/cases"),
-        ("GET", "/cases/{case_id}"),
-        ("GET", "/requirements/{requirement_id}/case-metrics"),
-        ("POST", "/requirements/{requirement_id}/review-complete"),
-        ("GET", "/publish/preview"),
-        ("POST", "/publish"),
-        ("POST", "/tokens"),
-        ("GET", "/tokens"),
-        ("DELETE", "/tokens/{token_id}"),
-    }
-)
+S2_GECICI: frozenset[tuple[str, str]] = frozenset()  # 012 birleşmesiyle boşaldı
 
 
 def _rotalar(routes: Iterable[Any], prefix: str = "") -> Iterator[tuple[str, APIRoute]]:

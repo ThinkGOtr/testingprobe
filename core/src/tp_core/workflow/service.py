@@ -35,9 +35,11 @@ from tp_core.workflow.states import (
     CONTENT_FIELDS,
     DECISION_EDIT_REQUIRED,
     DECISION_EDITS,
+    DECISION_GEREKCE_REQUIRED,
     KARARLAR,
     MACHINES,
     RET_NEDENLERI,
+    TEST_CASE_KARAR_IZNI,
     Machine,
 )
 
@@ -160,13 +162,32 @@ def approved_hash_matches(
     kind = entity_kind(entity)
     kararlar = kararlar if kararlar is not None else APPROVING.get(kind, frozenset())
     son = latest_review(session, kind, entity.id)
-    if son is None or son.karar not in kararlar:
+    if son is None:
+        return False
+    if son.karar not in kararlar and not (
+        "approve" in kararlar and eski_analist_onayi(session, son)
+    ):
         return False
     guncel = content_hash_of(entity)
     if son.onaylanan_hash != guncel:
         return False
     kayitli = getattr(entity, "onaylanan_hash", None)
     return kayitli is None or kayitli == guncel
+
+
+def eski_analist_onayi(session: Session, review: Review) -> bool:
+    """012 öncesi son onay: analist hesabının test_case `edit` kararı.
+
+    012'den sonra analist `edit` veremez (`record_approval` karar başına izin ister); bu yüzden
+    analist rolündeki hesabın `edit` kaydı tanım gereği eski akışın onayıdır ve yayın / kod
+    üretimi kapısında `approve` sayılır (hash eşleşmesi yine şarttır). Testçi `edit`'i sayılmaz.
+    """
+    if review.nesne_turu != "test_case" or review.karar != "edit" or review.user_id is None:
+        return False
+    from tp_core.models import AppUser
+
+    rol = session.scalar(select(AppUser.rol).where(AppUser.id == review.user_id))
+    return rol == "analyst"
 
 
 # Jira simülatörünün bot kimlikleri: yapılandırmadan bağımsız olarak her zaman ayrılmıştır.
@@ -204,6 +225,28 @@ def check_jira_approver(harici_onaylayan: str | None) -> str:
     if izinli and ad.casefold() not in izinli:
         raise ApprovalNotAllowed(f"{ad} PO onaylayıcıları listesinde (TP_PO_JIRA_USERS) değil")
     return ad
+
+
+def karar_rolleri(kind: str, karar: str) -> frozenset[str]:
+    """Portal kanalında `kind` için `karar`'ı verebilecek roller (derinlemesine savunma).
+
+    test_case'te karar başına izin kataloğa (auth/yetki.py) bağlıdır: Testçi kararları
+    `case.decide`, son onay (`approve`/`send_back`) `case.approve`. Diğer türler
+    `APPROVER_ROLES`'taki tür düzeyi kümeyi kullanır (requirement: PO; PO teyidi Jira'dadır).
+    """
+    izin_adi = TEST_CASE_KARAR_IZNI.get(karar) if kind == "test_case" else None
+    if izin_adi is None:
+        return APPROVER_ROLES.get(kind, frozenset())
+    # Gecikmeli içe aktarma: yetki modülü bu modülün Principal'ını içe aktarır (döngü).
+    from tp_core.auth.yetki import roller_icin
+
+    return roller_icin(izin_adi)
+
+
+def _rol_karar_verebilir(rol: str, kind: str, karar: str) -> bool:
+    from tp_core.auth.yetki import normalize_rol
+
+    return normalize_rol(rol) in karar_rolleri(kind, karar)
 
 
 def _uygula_degisiklik(
@@ -296,8 +339,8 @@ def record_approval(
     elif kanal == "portal":
         if user is None or user.id is None or user.kanal != "portal":
             raise ApprovalNotAllowed("onay yalnızca portalda oturum açmış bir kullanıcıyla verilir")
-        if user.rol not in APPROVER_ROLES.get(kind, frozenset()):
-            raise ApprovalNotAllowed(f"{user.rol} rolü {kind} için karar veremez")
+        if not _rol_karar_verebilir(user.rol, kind, karar):
+            raise ApprovalNotAllowed(f"{user.rol} rolü {kind} için '{karar}' kararı veremez")
         aktor = user.kullanici_adi
         user_id = user.id
     else:
@@ -310,12 +353,8 @@ def record_approval(
         raise InvalidDecision("ret nedeni yalnızca 'reject' / 'request_changes' kararında verilir")
     if ret_nedeni is not None and ret_nedeni not in RET_NEDENLERI:
         raise InvalidDecision(f"ret nedeni taksonomiden olmalı: {sorted(RET_NEDENLERI)}")
-    if (
-        kind == "consistency_finding"
-        and karar == "accept_difference"
-        and not (gerekce or "").strip()
-    ):
-        raise InvalidDecision("'accept_difference' kararı gerekçe ister")
+    if karar in DECISION_GEREKCE_REQUIRED.get(kind, frozenset()) and not (gerekce or "").strip():
+        raise InvalidDecision(f"'{karar}' kararı gerekçe ister")
 
     session.flush()
     gorulen = content_hash_of(entity)

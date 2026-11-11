@@ -14,7 +14,7 @@ from tp_core.features.cases import metrics
 from tp_core.gateway.testing import text_response
 from tp_core.models import AuditEvent, Requirement, TestCase, session_scope
 
-from .helpers import case_icerik, latest_cases, login, run_jobs
+from .helpers import case_icerik, latest_cases, login, onayla, run_jobs
 
 
 def _karar(api: TestClient, c: dict[str, Any], **govde: Any):
@@ -59,14 +59,14 @@ def test_story_degisince_yayinli_eski_caseler_tekrar_ve_kapsam_sayilmaz(
     ciktilar = [case_icerik(), case_icerik(title="Hatalı parola", ref="AC2")]
     fake_gateway([text_response({"cases": ciktilar}), text_response({"cases": ciktilar})])
     rid = make_requirement()
-    analist = make_user("analyst")
+    testci, analist = make_user("tester"), make_user("analyst")
     po = make_user("po")
-    login(api, analist)
+    login(api, testci)
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     run_jobs(engine)
     eskiler = latest_cases(api, rid)
     for c in eskiler:
-        assert _karar(api, c, karar="approve").status_code == 200
+        onayla(api, c, testci, analist)
     sonuc = publish.run_publish(_ctx([c["id"] for c in eskiler]), engine)
     assert [r["durum"] for r in sonuc["sonuclar"]] == ["created", "created"]
 
@@ -112,14 +112,14 @@ def test_portal_uretimi_ide_taslaklarini_korur(
     from tp_core.workflow.service import Principal
 
     rid = make_requirement()
-    analist = make_user("analyst")
-    ide = Principal(analist.id, analist.kullanici_adi, "analyst", kanal="ide", kapsam="submit")
+    testci = make_user("tester")
+    ide = Principal(testci.id, testci.kullanici_adi, "tester", kanal="ide", kapsam="submit")
     with session_scope() as s:
         sonuc = submit_drafts(s, "TPD-4", [case_icerik(title="IDE: kilitli hesap", ref="AC2")], ide)
     (ide_case,) = sonuc["eklenen"]
 
     fake_gateway([text_response({"cases": [case_icerik()]})])
-    login(api, analist)
+    login(api, testci)
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     (is_,) = run_jobs(engine)
     assert is_.deger["korunan_ide_taslak"] == 1 and is_.deger["superseded"] == 0
@@ -138,7 +138,7 @@ def test_duzeltilen_case_ai_ozgunu_fark_ve_neden_doner(
 ) -> None:
     fake_gateway([text_response({"cases": [case_icerik(), case_icerik(title="B", ref="AC2")]})])
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     run_jobs(engine)
     a, b = latest_cases(api, rid)
@@ -162,7 +162,7 @@ def test_duzeltilen_case_ai_ozgunu_fark_ve_neden_doner(
     assert "Küçük düzeltme sayılmadı" in tek["duzeltme_nedeni"]
     assert "beklenen sonuç" in tek["duzeltme_nedeni"]
 
-    # Analist "beklenen sonuç anlamca değişmedi" derse küçük düzeltme sayılır ve nedeni yazılır.
+    # Testçi "beklenen sonuç anlamca değişmedi" derse küçük düzeltme sayılır ve nedeni yazılır.
     yeni_b = {**b["icerik"], "title": b["icerik"]["title"] + "!"}
     assert _karar(api, b, karar="edit", icerik=yeni_b, beklenen_anlam_degisti=False).status_code
     tek_b = api.get(f"/cases/{b['id']}").json()
@@ -199,8 +199,8 @@ def test_ortusen_goruntulemelerde_review_suresi_sisirilmez(
     cases = [case_icerik(title=f"Case {i}", ref="AC1") for i in range(3)]
     fake_gateway([text_response({"cases": cases})])
     rid = make_requirement()
-    analist = make_user("analyst")
-    login(api, analist)
+    testci = make_user("tester")
+    login(api, testci)
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     run_jobs(engine)
     kartlar = latest_cases(api, rid)
@@ -212,10 +212,10 @@ def test_ortusen_goruntulemelerde_review_suresi_sisirilmez(
                     "INSERT INTO case_goruntuleme (id, test_case_id, user_id, zaman) "
                     "VALUES (:id, :c, :u, now() - interval '60 seconds')"
                 ),
-                {"id": uuid.uuid4(), "c": uuid.UUID(k["id"]), "u": analist.id},
+                {"id": uuid.uuid4(), "c": uuid.UUID(k["id"]), "u": testci.id},
             )
     for k in kartlar:
-        assert _karar(api, k, karar="approve").status_code == 200
+        assert _karar(api, k, karar="accept").status_code == 200
     m = api.get(f"/requirements/{rid}/case-metrics").json()
     assert m["review_sure_yontemi"] == "aralik_birlesimi"
     assert m["kart_sure_toplam_ms"] >= 3 * 60000  # kart başına süreler (bilgi amaçlı)
@@ -232,11 +232,12 @@ def test_onceki_icerik_uyarisi_denetim_kaydinda(
     cikti = [case_icerik()]
     fake_gateway([text_response({"cases": cikti}), text_response({"cases": cikti})])
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    testci = make_user("tester")
+    login(api, testci)
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     run_jobs(engine)
     (a,) = latest_cases(api, rid)
-    assert _karar(api, a, karar="approve").status_code == 200
+    onayla(api, a, testci, make_user("analyst"))
     publish.run_publish(_ctx([a["id"]]), engine)
     _story_degisti_ve_yeniden_onaylandi(rid, make_user("po"))
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202

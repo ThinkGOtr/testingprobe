@@ -1,31 +1,35 @@
-"""Case uçları (MIMARI-SOZLESME §5; TEKNIK-TASARIM §9).
+"""Case uçları (MIMARI-SOZLESME §5; TEKNIK-TASARIM §9; specs/012-rol-yetki/ANALIZ.md §4–§5).
 
-| Yöntem | Yol | Rol |
+| Yöntem | Yol | İzin |
 |---|---|---|
-| POST | `/requirements/{id}/generate-cases` | analyst — yalnızca PO onaylı gereksinim |
-| GET  | `/cases?requirement_id=` | herkes |
-| GET  | `/cases/{id}` | herkes |
-| POST | `/cases/{id}/viewed` | analyst — ilk görüntüleme (review süresinin başlangıcı) |
-| POST | `/cases/{id}/decision` (aşağıda `CaseKararGirdisi`) | analyst |
-| GET  | `/requirements/{id}/case-metrics` | herkes — kabul oranı ve süreler (§12) |
-| POST | `/requirements/{id}/review-complete` | analyst |
-"""
+| POST | `/requirements/{id}/generate-cases` | `case.generate` — yalnızca PO onaylı gereksinim |
+| GET  | `/cases?requirement_id=` | `case.read` (developer: yalnız approved/published, geçmiş yok) |
+| GET  | `/cases/{id}` | `case.read` (developer: aynı süzgeç; görünmeyen case 404) |
+| POST | `/cases/{id}/viewed` | `case.decide` veya `case.approve` — ilk görüntüleme (review süresinin başlangıcı) |
+| POST | `/cases/{id}/decision` (aşağıda `CaseKararGirdisi`) | karar başına: `case.decide` (accept, edit, reject, reopen) / `case.approve` (approve, send_back) |
+| GET  | `/requirements/{id}/case-metrics` | `case.read` — kabul oranı ve süreler (§12); developer: yalnız durum sayıları |
+| POST | `/requirements/{id}/review-complete` | `case.approve` |
+"""  # noqa: E501
 
 from __future__ import annotations
 
 import uuid
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
-from tp_core.auth.deps import CurrentUser, DbSession, require_role
+from tp_core.auth.deps import CurrentUser, DbSession
+from tp_core.auth.yetki import izin, izinli, reddet
 from tp_core.features.cases import service
 from tp_core.workflow.service import Principal
+from tp_core.workflow.states import TEST_CASE_KARAR_IZNI
 
 router = APIRouter(tags=["cases"])
 
-Analyst = Annotated[Principal, Depends(require_role("analyst"))]
+Uretici = Annotated[Principal, Depends(izin("case.generate"))]
+Okuyucu = Annotated[Principal, Depends(izin("case.read"))]
+SonOnay = Annotated[Principal, Depends(izin("case.approve"))]
 
 
 class IsYaniti(BaseModel):
@@ -37,7 +41,8 @@ class IsYaniti(BaseModel):
 
 
 class CaseKararGirdisi(BaseModel):
-    karar: Literal["approve", "edit", "reject", "reopen"]
+    # Testçi: accept | edit | reject | reopen · Analist (son onay): approve | send_back.
+    karar: Literal["accept", "edit", "reject", "reopen", "approve", "send_back"]
     # Kullanıcının ekranda gördüğü içeriğin hash'i (edit'te düzeltme ÖNCESİ). Portalda zorunlu.
     icerik_hash: str | None = None
     icerik: dict[str, Any] | None = None
@@ -52,6 +57,7 @@ class CaseKararGirdisi(BaseModel):
         ]
         | None
     ) = None
+    # `send_back`'te zorunlu; `reject`/`reopen`'da isteğe bağlı not.
     gerekce: str | None = Field(default=None, max_length=2000)
     # §12 "beklenen sonuç anlamca değişmedi" insan yargısı (verilmezse metin karşılaştırması).
     beklenen_anlam_degisti: bool | None = None
@@ -60,7 +66,7 @@ class CaseKararGirdisi(BaseModel):
 @router.post(
     "/requirements/{requirement_id}/generate-cases", response_model=IsYaniti, status_code=202
 )
-def generate_cases(requirement_id: uuid.UUID, session: DbSession, user: Analyst) -> IsYaniti:
+def generate_cases(requirement_id: uuid.UUID, session: DbSession, user: Uretici) -> IsYaniti:
     sonuc = service.start_generation(session, requirement_id, user)
     return IsYaniti(
         job_id=sonuc["job_id"],
@@ -73,25 +79,38 @@ def generate_cases(requirement_id: uuid.UUID, session: DbSession, user: Analyst)
 
 @router.get("/cases")
 def list_cases(
-    session: DbSession, _user: CurrentUser, requirement_id: uuid.UUID | None = None
+    session: DbSession, user: Okuyucu, requirement_id: uuid.UUID | None = None
 ) -> list[dict[str, Any]]:
-    return service.list_cases(session, requirement_id)
+    return service.list_cases(session, requirement_id, user)
 
 
 @router.get("/cases/{case_id}")
-def get_case(case_id: uuid.UUID, session: DbSession, _user: CurrentUser) -> dict[str, Any]:
-    return service.serialize_cases(session, [service.get_case(session, case_id)])[0]
+def get_case(case_id: uuid.UUID, session: DbSession, user: Okuyucu) -> dict[str, Any]:
+    return service.get_case_view(session, case_id, user)
 
 
 @router.post("/cases/{case_id}/viewed")
-def mark_viewed(case_id: uuid.UUID, session: DbSession, user: Analyst) -> dict[str, Any]:
+def mark_viewed(
+    case_id: uuid.UUID, request: Request, session: DbSession, user: CurrentUser
+) -> dict[str, Any]:
+    # Testçi kararı ya da Analist son onayı için review süresinin başlangıcı.
+    if not (izinli(user.rol, "case.decide") or izinli(user.rol, "case.approve")):
+        raise reddet(session, user, "case.decide", "rol", request.url.path)
     return service.mark_viewed(session, case_id, user)
 
 
 @router.post("/cases/{case_id}/decision")
 def decide(
-    case_id: uuid.UUID, body: CaseKararGirdisi, session: DbSession, user: Analyst
+    case_id: uuid.UUID,
+    body: CaseKararGirdisi,
+    request: Request,
+    session: DbSession,
+    user: CurrentUser,
 ) -> dict[str, Any]:
+    # İzin karara göre: Testçi kararları `case.decide`, son onay `case.approve` (ANALIZ §4.1).
+    izin_adi = TEST_CASE_KARAR_IZNI[body.karar]
+    if not izinli(user.rol, izin_adi):
+        raise reddet(session, user, izin_adi, "rol", request.url.path)
     tc = service.decide(
         session,
         case_id,
@@ -104,16 +123,16 @@ def decide(
         beklenen_anlam_degisti=body.beklenen_anlam_degisti,
     )
     session.flush()
-    return service.serialize_cases(session, [tc])[0]
+    return service.serialize_cases(session, [tc], user)[0]
 
 
 @router.get("/requirements/{requirement_id}/case-metrics")
-def case_metrics(
-    requirement_id: uuid.UUID, session: DbSession, _user: CurrentUser
-) -> dict[str, Any]:
+def case_metrics(requirement_id: uuid.UUID, session: DbSession, user: Okuyucu) -> dict[str, Any]:
+    if service.kisitli_gorunum(user):
+        return service.requirement_metrics_kisitli(session, requirement_id)
     return service.requirement_metrics(session, requirement_id)
 
 
 @router.post("/requirements/{requirement_id}/review-complete")
-def review_complete(requirement_id: uuid.UUID, session: DbSession, user: Analyst) -> dict[str, Any]:
+def review_complete(requirement_id: uuid.UUID, session: DbSession, user: SonOnay) -> dict[str, Any]:
     return service.review_complete(session, requirement_id, user)
