@@ -14,16 +14,12 @@ import type {
   SoruTuru,
   Tetik,
 } from "../api/types";
+import { ROL_ETIKETLERI } from "./yetki";
 
 export type Ton = "notr" | "bilgi" | "basari" | "uyari" | "hata" | "vurgu";
 
-export const ROL: Record<Rol, string> = {
-  analyst: "Analist",
-  engineer: "Mühendis",
-  presenter: "Sunucu",
-  po: "Ürün sahibi (PO)",
-  tester: "Testçi",
-};
+/** Rol etiketleri (core `yetki.ROL_ETIKETLERI`; tek kaynak `lib/yetki.ts`). */
+export const ROL: Record<Rol, string> = ROL_ETIKETLERI;
 
 /** core REQUIREMENT durum makinesinin her durumu için Türkçe etiket (eksik anahtar derleme hatasıdır). */
 export const GEREKSINIM_DURUMU: Record<GereksinimDurumu, { etiket: string; ton: Ton }> = {
@@ -98,6 +94,7 @@ export const BULGU_DURUMU: Record<BulguDurumu, { etiket: string; ton: Ton }> = {
 
 export const CASE_DURUMU: Record<CaseDurumu, { etiket: string; ton: Ton }> = {
   draft: { etiket: "Karar bekliyor", ton: "uyari" },
+  ready: { etiket: "Onaya hazır", ton: "bilgi" },
   approved: { etiket: "Onaylı", ton: "basari" },
   rejected: { etiket: "Reddedildi", ton: "hata" },
   published: { etiket: "Yayınlandı", ton: "basari" },

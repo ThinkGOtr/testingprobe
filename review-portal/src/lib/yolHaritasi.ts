@@ -176,7 +176,7 @@ export function demoAdimlari(x: YolGirdisi): YolAdimi[] {
         ? adim(3, {
             hal: "suruyor",
             kanit: "PO cevabı bekleniyor.",
-            ipucu: g.kaynak === "jira" ? "PO Jira'da (po@sim.local) cevaplar ve tp-po-approved etiketini koyar; 15 sn'de bir okunur." : "PO portalda onaylar.",
+            ipucu: g.kaynak === "jira" ? "PO Jira'da (po@sim.local) cevaplar ve tp-po-approved etiketini koyar; 15 sn'de bir okunur." : "Serbest metin: PO portalda onaylar (\"PO olarak onayla\").",
             baglanti: { yol: gYolu, etiket: "PO teyidi" },
           })
         : adim(3, { hal: "bekliyor", kanit: "Doküman son hâl olunca PO teyidi istenir." });
@@ -185,20 +185,29 @@ export function demoAdimlari(x: YolGirdisi): YolAdimi[] {
   const onayli = cs.filter((c) => c.durum === "approved" || c.durum === "published").length;
   const yayinli = cs.filter((c) => c.durum === "published" || c.jira_test_key).length;
   const taslak = cs.filter((c) => c.durum === "draft").length;
+  const hazir = cs.filter((c) => c.durum === "ready").length;
   const mode4 = cs.find((c) => c.mode)?.mode ?? null;
   const a4 =
     cs.length === 0
       ? adim(4, {
           hal: g?.durum === "generating" ? "suruyor" : "bekliyor",
           kanit: g?.durum === "generating" ? "Case üretimi sürüyor." : "Henüz case yok.",
-          ipucu: poGuncel ? "Analist: \"Case üret\"." : null,
+          ipucu: poGuncel ? "Testçi: \"Case üret\"." : null,
           baglanti: g ? { yol: gYolu, etiket: "Story" } : null,
         })
       : adim(4, {
-          hal: taslak === 0 && yayinli > 0 ? "tamam" : "suruyor",
-          kanit: `${cs.length} case · ${onayli} onaylı · ${yayinli} Jira'da${taslak ? ` · ${taslak} karar bekliyor` : ""}`,
-          ipucu: taslak ? "QA (analist) case'lere karar verir." : yayinli < onayli ? "Onaylı case'leri yayınla (önizleme → yayın)." : null,
-          baglanti: g ? { yol: taslak || yayinli >= onayli ? `${gYolu}/caseler` : `${gYolu}/yayin`, etiket: taslak || yayinli >= onayli ? "Case review" : "Yayın" } : null,
+          hal: taslak === 0 && hazir === 0 && yayinli > 0 ? "tamam" : "suruyor",
+          kanit: `${cs.length} case · ${onayli} onaylı · ${yayinli} Jira'da${taslak ? ` · ${taslak} karar bekliyor` : ""}${hazir ? ` · ${hazir} onaya hazır` : ""}`,
+          ipucu: taslak
+            ? "Testçi case'lere karar verir (kabul / düzelterek kabul / ret)."
+            : hazir
+              ? "Analist onaya hazır case'leri onaylar ya da gerekçeyle geri gönderir."
+              : yayinli < onayli
+                ? "Testçi: onaylı case'leri yayınla (önizleme → yayın)."
+                : null,
+          baglanti: g
+            ? { yol: taslak || hazir || yayinli >= onayli ? `${gYolu}/caseler` : `${gYolu}/yayin`, etiket: taslak || hazir || yayinli >= onayli ? "Case review" : "Yayın" }
+            : null,
           mode: mode4,
         });
 
@@ -304,7 +313,7 @@ export function sonrakiAdimlar(x: SonrakiGirdi): YolAdimi[] {
       : adim(8, {
           hal: anaTetik ? "tamam" : "suruyor",
           kanit: `Tetikler: ${tetikler.map((t) => TETIK_ADI[t] ?? t).join(", ")} · ${ci.length} koşu`,
-          ipucu: anaTetik ? null : "Sunucu: Koşular → \"Deploy sonrası testleri koş\" ya da \"Gece koşusunu şimdi başlat\" (merge sonrası push CI otomatik).",
+          ipucu: anaTetik ? null : "Automation Engineer: Koşular → \"Deploy sonrası testleri koş\" ya da \"Gece koşusunu şimdi başlat\" (merge sonrası push CI otomatik).",
           baglanti: { yol: "/kosular", etiket: "Koşular" },
           simulator: ciSim,
         });
@@ -498,7 +507,7 @@ export function locatorAdimlari(x: Pick<YolGirdisi, "demo" | "hatalar" | "kosula
     yap("L2", "Buton kimliğini değiştir (add-to-cart → cart-add)", "insan", {
       hal: kirildi ? "tamam" : "bekliyor",
       kanit: kirildi ? `Uygulama testId: ${typeof d?.forge?.testid === "string" ? d.forge.testid : "cart-add"}` : "Main baseline'da.",
-      ipucu: kirildi ? null : "Sunucu: Demo kontrolleri → \"Buton kimliğini değiştir\" (host'ta make demo-web-sync A=--watch açık) ya da make break.",
+      ipucu: kirildi ? null : "Sistem Yöneticisi / Automation Engineer: Demo kontrolleri → \"Buton kimliğini değiştir\" (host'ta make demo-web-sync A=--watch açık) ya da make break.",
       baglanti: { yol: "/demo", etiket: "Demo kontrolleri" },
     }),
     yap("L3", "Push CI kırmızı → triage: test bakımı / locator", "ai", {

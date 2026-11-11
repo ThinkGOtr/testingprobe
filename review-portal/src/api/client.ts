@@ -97,7 +97,10 @@ export const api = {
   /** `cakismayiOnayla`: düzeltme bir 'bilinçli fark' kararıyla çelişiyorsa (409) yine de uygula (denetlenir). */
   duzeltmeleriUygula: (id: string, cakismayiOnayla = false) =>
     istek<IsYaniti>("POST", `/requirements/${yol(id)}/apply-doc-fixes`, cakismayiOnayla ? { govde: { cakismayi_onayla: true } } : {}),
-  /** `g`: ekranda görülen gereksinim; `icerik_hash` aynen gönderilir (TOCTOU bağı). */
+  /**
+   * Serbest metin gereksinimde PO teyidi (`requirement.po_approve_free_text`). Jira kaynaklı story'de
+   * core 410 (`po_onayi_jira`) döner: onay Jira etiketiyle. `icerik_hash` aynen gönderilir (TOCTOU bağı).
+   */
   poOnayla: async (g: Pick<GereksinimDetay, "id" | "icerik_hash">): Promise<GereksinimDetay> =>
     detayUyarla(
       nesne(await istek<unknown>("POST", `/requirements/${yol(g.id)}/po-approve`, { govde: { icerik_hash: g.icerik_hash } })),
@@ -182,7 +185,8 @@ export const api = {
   },
 
   // CI ve koşular
-  ciTetikle: (tetik: "deploy" | "nightly") => istek<IsYaniti>("POST", "/ci/trigger", { govde: { tetik } }),
+  /** deploy | nightly: Automation Engineer; manual: Automation Engineer + Developer (prod'da developer 403). */
+  ciTetikle: (tetik: "deploy" | "nightly" | "manual") => istek<IsYaniti>("POST", "/ci/trigger", { govde: { tetik } }),
   kosular: async (): Promise<Kosu[]> => listeUyarla(await istek<unknown>("GET", "/runs"), kosuUyarla),
   kosu: async (id: string): Promise<KosuDetay> => kosuDetayUyarla(nesne(await istek<unknown>("GET", `/runs/${yol(id)}`))),
 

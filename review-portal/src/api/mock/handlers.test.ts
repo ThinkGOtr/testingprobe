@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { api } from "../client";
 import { ApiError } from "../http";
 import { sha256Hex, kanonikJson } from "../../lib/sha256";
-import { ayar, mockVerisi } from "./handlers";
+import { ayar, mockOrtam, mockPoEtiketi, mockVerisi } from "./handlers";
 
 // Mock arka plan işleri setTimeout zinciridir; sabit süre yük altında yetmez: işler bitene dek bekle.
 const bekleIsler = async () => {
@@ -18,12 +18,19 @@ const v = () => mockVerisi();
 const bulguH = (id: string) => ({ icerik_hash: v().bulgular.find((b) => b.id === id)!.icerik_hash });
 const caseH = (id: string) => ({ icerik_hash: v().caseler.find((c) => c.id === id)!.icerik_hash });
 const bugH = (id: string) => ({ icerik_hash: v().bugTaslaklari.find((b) => b.id === id)!.icerik_hash });
-const gereksinim = (id: string) => v().gereksinimler.find((g) => g.id === id)!;
 const scriptPr = (id: string) => v().scriptler.find((s) => s.id === id)!.pr!;
 
 async function girisYap(k: string) {
   await api.logout().catch(() => undefined);
   return api.login(k, "Demo123!");
+}
+
+/** Testçi kabul eder, Analist son onayı verir (ANALIZ 012 §5); oturum Analist'te kalır. */
+async function kabulVeOnay(id: string) {
+  await girisYap("testci");
+  await api.caseKarari(id, { ...caseH(id), karar: "accept" });
+  await girisYap("analist");
+  return api.caseKarari(id, { ...caseH(id), karar: "approve" });
 }
 
 describe("mock arka uç: oturum ve roller", () => {
@@ -40,10 +47,80 @@ describe("mock arka uç: oturum ve roller", () => {
   it("rol yetkisi her uçta kontrol edilir", async () => {
     await girisYap("muhendis");
     await expect(api.jiradanCek()).rejects.toMatchObject({ status: 403 });
-    await expect(api.poOnayla(gereksinim("req-ft-1"))).rejects.toMatchObject({ status: 403 });
+    await expect(api.caseUret("req-tpd-1")).rejects.toMatchObject({ status: 403, kod: "yetki_yok" });
     await expect(api.bugKarari("bug-1", { ...bugH("bug-1"), karar: "new" })).rejects.toMatchObject({ status: 403 });
-    await expect(api.ciTetikle("deploy")).rejects.toMatchObject({ status: 403 });
     await expect(api.tokenOlustur("submit")).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("/auth/me izinleri rolün katalogdaki izinleridir (core rol_izinleri)", async () => {
+    const { rolIzinleri } = await import("../../lib/yetki");
+    for (const k of ["sunucu", "denetci", "analist", "po", "testci", "muhendis", "gelistirici", "izleyici"]) {
+      await girisYap(k);
+      const me = await api.me();
+      expect(me.izinler).toEqual(rolIzinleri(me.rol));
+    }
+    await girisYap("sunucu");
+    expect((await api.me()).rol).toBe("admin");
+  });
+
+  it("CI tetikleri: engineer hepsi; developer yalnız manuel ve prod dışında; diğerleri 403", async () => {
+    await girisYap("muhendis");
+    await expect(api.ciTetikle("deploy")).resolves.toMatchObject({ durum: "queued" });
+    await expect(api.ciTetikle("manual")).resolves.toMatchObject({ durum: "queued" });
+    await girisYap("gelistirici");
+    await expect(api.ciTetikle("nightly")).rejects.toMatchObject({ status: 403, kod: "yetki_yok" });
+    await expect(api.ciTetikle("manual")).resolves.toMatchObject({ durum: "queued" });
+    mockOrtam.ortam = "prod";
+    try {
+      await expect(api.ciTetikle("manual")).rejects.toMatchObject({ status: 403 });
+    } finally {
+      mockOrtam.ortam = "dev";
+    }
+    for (const k of ["sunucu", "testci", "izleyici"]) {
+      await girisYap(k);
+      await expect(api.ciTetikle("manual")).rejects.toMatchObject({ status: 403 });
+    }
+  });
+
+  it("demo kontrolleri: admin + engineer, yalnız demo kipinde", async () => {
+    await girisYap("testci");
+    await expect(api.demoSifirla()).rejects.toMatchObject({ status: 403, kod: "yetki_yok" });
+    await girisYap("muhendis");
+    mockOrtam.demoModu = false;
+    try {
+      expect((await api.demoDurumu()).demo_modu).toBe(false);
+      await expect(api.demoSifirla()).rejects.toMatchObject({ status: 403 });
+    } finally {
+      mockOrtam.demoModu = true;
+    }
+    await expect(api.demoSifirla()).resolves.toMatchObject({ durum: "done" });
+  });
+
+  it("portal PO onayı Jira story'sinde 410 (po_onayi_jira); serbest metinde hash ister; denetim kaydı rolün kapsamıyla", async () => {
+    await girisYap("po");
+    const tpd = v().gereksinimler.find((g) => g.id === "req-tpd-1")!;
+    tpd.durum = "pending_po";
+    await expect(api.poOnayla(tpd)).rejects.toMatchObject({ status: 410, kod: "po_onayi_jira" });
+    expect(tpd.durum).toBe("pending_po");
+    const ft = v().gereksinimler.find((g) => g.id === "req-ft-1")!;
+    ft.durum = "pending_po";
+    const gorulen = { id: ft.id, icerik_hash: ft.icerik_hash };
+    await expect(api.poOnayla({ id: ft.id } as never)).rejects.toMatchObject({ status: 422 });
+    ft.aciklama = `${ft.aciklama} (PO görmeden değişti)`;
+    await expect(api.poOnayla(gorulen)).rejects.toMatchObject({ status: 409 });
+    await expect(api.poOnayla(await api.gereksinim("req-ft-1"))).resolves.toMatchObject({ durum: "po_approved" });
+    await girisYap("analist");
+    await expect(api.poOnayla(await api.gereksinim("req-ft-1"))).rejects.toMatchObject({ status: 403 });
+    await girisYap("testci");
+    const kendi = await api.denetim(false);
+    expect(kendi.olaylar.every((o) => o.aktor === "testci")).toBe(true);
+    await expect(api.denetim(true)).rejects.toMatchObject({ status: 403 });
+    await girisYap("denetci");
+    const tum = await api.denetim(true);
+    expect(tum.dogrulama?.gecerli).toBe(true);
+    expect(new Set(tum.olaylar.map((o) => o.aktor)).size).toBeGreaterThan(1);
+    await girisYap("izleyici");
+    await expect(api.denetim(false)).rejects.toMatchObject({ status: 403 });
   });
 });
 
@@ -61,8 +138,9 @@ describe("mock arka uç: tutarlılık → PO → case (insan kapıları)", () =>
   });
 
   it("serbest metin akışı: kararlar → düzeltmeler → PO teyidi → case üretimi", async () => {
-    await girisYap("analist");
+    await girisYap("testci");
     await expect(api.caseUret("req-ft-1")).rejects.toMatchObject({ status: 409 });
+    await girisYap("analist");
     await expect(api.duzeltmeleriUygula("req-ft-1")).rejects.toMatchObject({ status: 409 });
 
     const bulgular = await api.bulgular("req-ft-1");
@@ -70,6 +148,10 @@ describe("mock arka uç: tutarlılık → PO → case (insan kapıları)", () =>
     const h6 = bulgular.find((b) => b.id === "fnd-6")!.icerik_hash;
     await api.bulguKarari("fnd-5", { icerik_hash: h5, karar: "fix_doc", metin: "Kaldırma sonrası indirim her 6 adette 1 bedava kuralıyla hesaplanır." });
     await api.bulguKarari("fnd-6", { icerik_hash: h6, karar: "accept_difference", gerekce: "Ayar değeri ürün kararıyla 750" });
+    // Doküman düzeltmesini Analist uygular (requirement.review); PO uygulayamaz.
+    await girisYap("po");
+    await expect(api.duzeltmeleriUygula("req-ft-1")).rejects.toMatchObject({ status: 403, kod: "yetki_yok" });
+    await girisYap("analist");
     await api.duzeltmeleriUygula("req-ft-1");
     await bekleIsler();
 
@@ -85,14 +167,13 @@ describe("mock arka uç: tutarlılık → PO → case (insan kapıları)", () =>
       ["fnd-9", "stale"],
     ]);
 
-    // PO teyidi yalnızca PO rolüyle; Jira yolunda portaldan verilemez.
+    // Serbest metinde PO teyidi portalda yalnız PO rolüyle (requirement.po_approve_free_text); case üretimi Testçide.
     await expect(api.poOnayla(g)).rejects.toMatchObject({ status: 403 });
     await girisYap("po");
-    await expect(api.poOnayla(await api.gereksinim("req-tpd-3"))).rejects.toMatchObject({ status: 409 });
     g = await api.poOnayla(g);
     expect(g.po).toMatchObject({ durum: "approved", onaylayan: "po", kanal: "portal" });
 
-    await girisYap("analist");
+    await girisYap("testci");
     await api.caseUret("req-ft-1");
     await bekleIsler();
     const caseler = await api.caseler("req-ft-1");
@@ -114,7 +195,7 @@ describe("mock arka uç: tutarlılık → PO → case (insan kapıları)", () =>
     expect((await api.gereksinim("req-ft-1")).durum).toBe("pending_po");
     await girisYap("po");
     await api.poOnayla(await api.gereksinim("req-ft-1"));
-    await girisYap("analist");
+    await girisYap("testci");
     await api.caseUret("req-ft-1");
     await bekleIsler();
     const { KAYNAK } = await import("./fixtures");
@@ -133,8 +214,8 @@ describe("mock arka uç: tutarlılık → PO → case (insan kapıları)", () =>
 });
 
 describe("mock arka uç: case kararı ve yayın", () => {
-  it("ret nedeni zorunlu; düzeltme hash'i günceller; yalnızca onaylılar yayınlanır", async () => {
-    await girisYap("analist");
+  it("ret nedeni zorunlu; düzeltme hash'i günceller; Analist onaylar; yalnızca onaylılar yayınlanır", async () => {
+    await girisYap("testci");
     await expect(api.caseKarari("case-1-5", { ...caseH("case-1-5"), karar: "reject" })).rejects.toMatchObject({ status: 422 });
 
     const once = (await api.caseler("req-tpd-1")).find((c) => c.id === "case-1-5")!;
@@ -148,16 +229,44 @@ describe("mock arka uç: case kararı ve yayın", () => {
       karar: "edit",
       icerik: { ...once.icerik, title: `${once.icerik.title} (düzeltildi)` },
     });
-    expect(duzeltilmis.durum).toBe("approved");
+    expect(duzeltilmis.durum).toBe("ready");
     expect(duzeltilmis.icerik_hash).not.toBe(once.icerik_hash);
-    expect(duzeltilmis.onaylanan_hash).toBe(duzeltilmis.icerik_hash);
+    expect(duzeltilmis.onaylanan_hash).toBeNull();
     expect(duzeltilmis.duzeltme_olcusu).toBeGreaterThan(0);
+    // Testçi son onayı veremez; Analist yalnız `ready` case'i onaylar.
+    await expect(api.caseKarari("case-1-5", { ...caseH("case-1-5"), karar: "approve" })).rejects.toMatchObject({ status: 403 });
+    p = await api.yayinOnizleme("req-tpd-1");
+    expect(p.kalemler.find((k) => k.case_id === "case-1-5")?.islem).toBe("blocked_not_approved");
+    await girisYap("analist");
+    await expect(api.caseKarari("case-1-5", { ...caseH("case-1-5"), karar: "accept" })).rejects.toMatchObject({ status: 403 });
+    const onayli = await api.caseKarari("case-1-5", { ...caseH("case-1-5"), karar: "approve" });
+    expect(onayli).toMatchObject({ durum: "approved", onaylayan: "analist", testci_karari: "edit" });
+    expect(onayli.onaylanan_hash).toBe(onayli.icerik_hash);
+    await expect(api.yayinOnizleme("req-tpd-1")).rejects.toMatchObject({ status: 403 });
 
+    await girisYap("testci");
     p = await api.yayinOnizleme("req-tpd-1");
     expect(p.kalemler.find((k) => k.case_id === "case-1-5")?.islem).toBe("create");
     const s = await api.yayinla(["case-1-5", "case-1-1", "case-1-6"]);
     expect(s.sonuclar.map((x) => x.durum)).toEqual(["created", "exists", "failed"]);
-    await expect(api.caseKarari("case-1-5", { ...caseH("case-1-5"), karar: "approve" })).rejects.toMatchObject({ status: 409 });
+    await expect(api.caseKarari("case-1-5", { ...caseH("case-1-5"), karar: "accept" })).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("Analist geri gönderme gerekçe ister ve case'i taslağa döndürür; developer yalnız onaylıları görür", async () => {
+    await girisYap("testci");
+    await api.caseKarari("case-1-5", { ...caseH("case-1-5"), karar: "accept" });
+    await girisYap("analist");
+    await expect(api.caseKarari("case-1-5", { ...caseH("case-1-5"), karar: "send_back" })).rejects.toMatchObject({ status: 422 });
+    const geri = await api.caseKarari("case-1-5", { ...caseH("case-1-5"), karar: "send_back", gerekce: "AC2 adımı eksik" });
+    expect(geri).toMatchObject({ durum: "draft", karar: "send_back", gerekce: "AC2 adımı eksik" });
+    await expect(api.caseKarari("case-1-5", { ...caseH("case-1-5"), karar: "send_back", gerekce: "x" })).rejects.toMatchObject({ status: 409 });
+
+    await girisYap("gelistirici");
+    const gorunen = await api.caseler("req-tpd-1");
+    expect(gorunen.length).toBeGreaterThan(0);
+    expect(gorunen.every((c) => c.durum === "approved" || c.durum === "published")).toBe(true);
+    expect(gorunen.every((c) => c.karar === null && c.karar_veren === null)).toBe(true);
+    await expect(api.caseKarari("case-1-5", { ...caseH("case-1-5"), karar: "accept" })).rejects.toMatchObject({ status: 403 });
   });
 });
 
@@ -279,7 +388,7 @@ describe("mock arka uç: kod, kırma, merge, onarım, bug", () => {
 
 describe("mock arka uç: denetim zinciri", () => {
   it("zincir sha256(prev_hash + kanonik JSON) ile hesaplanır ve doğrulanır", async () => {
-    await girisYap("analist");
+    await girisYap("denetci");
     const d = await api.denetim(true);
     expect(d.dogrulama?.gecerli).toBe(true);
     const sirali = [...d.olaylar].sort((a, b) => a.sira - b.sira);
@@ -323,29 +432,16 @@ describe("mock arka uç: karar içerik bağı (icerik_hash, TOCTOU — MIMARI-SO
     await expect(api.bulguKarari("fnd-6", { ...bulguH("fnd-6"), karar: "fix_doc", metin: "x" })).rejects.toMatchObject({ status: 409 });
   });
 
-  it("case kararı: hash yoksa 422, düzeltme sonrası eski hash'le onay 409", async () => {
-    await girisYap("analist");
-    await expect(api.caseKarari("case-1-7", { karar: "approve" } as never)).rejects.toMatchObject({ status: 422 });
+  it("case kararı: hash yoksa 422, düzeltme sonrası eski hash'le kabul 409", async () => {
+    await girisYap("testci");
+    await expect(api.caseKarari("case-1-7", { karar: "accept" } as never)).rejects.toMatchObject({ status: 422 });
     const gorulen = caseH("case-1-7");
     const c = v().caseler.find((x) => x.id === "case-1-7")!;
     // Aynı case başka kanaldan (IDE) düzeltildi: içerik ve hash değişti.
     c.icerik = { ...c.icerik, title: `${c.icerik.title} (IDE)` };
     c.icerik_hash = `sha256:${"0".repeat(16)}`;
-    await expect(api.caseKarari("case-1-7", { ...gorulen, karar: "approve" })).rejects.toMatchObject({ status: 409 });
+    await expect(api.caseKarari("case-1-7", { ...gorulen, karar: "accept" })).rejects.toMatchObject({ status: 409 });
     expect(v().caseler.find((x) => x.id === "case-1-7")!.durum).toBe("draft");
-  });
-
-  it("PO onayı: hash yoksa 422, açıklama değiştiyse 409", async () => {
-    await girisYap("po");
-    const g = gereksinim("req-ft-1");
-    g.durum = "pending_po";
-    const gorulen = { id: g.id, icerik_hash: g.icerik_hash };
-    await expect(api.poOnayla({ id: g.id } as never)).rejects.toMatchObject({ status: 422 });
-    g.aciklama = `${g.aciklama} (PO görmeden değişti)`;
-    await expect(api.poOnayla(gorulen)).rejects.toMatchObject({ status: 409 });
-    expect(gereksinim("req-ft-1").durum).toBe("pending_po");
-    const guncel = await api.gereksinim("req-ft-1");
-    await expect(api.poOnayla(guncel)).resolves.toMatchObject({ durum: "po_approved" });
   });
 
   it("bug kararı: hash yoksa 422, taslak değiştiyse 409", async () => {
@@ -416,29 +512,31 @@ describe("mock arka uç: Demo-A ölçüm, yeniden açma, token, olaylar", () => 
   });
 
   it("review süresi ilk görüntülemeden karara kadar ölçülür; görüntüleme idempotenttir", async () => {
-    await girisYap("analist");
+    await girisYap("testci");
     // core yanıtı: {case_id, ilk_goruntuleme, yeni}
     const ilk = (await api.caseGoruntulendi("case-1-7")) as { case_id: string; ilk_goruntuleme: string; yeni: boolean };
     expect(ilk).toMatchObject({ case_id: "case-1-7", yeni: true });
     await new Promise((r) => setTimeout(r, 15));
     const ikinci = (await api.caseGoruntulendi("case-1-7")) as typeof ilk;
     expect(ikinci).toEqual({ ...ilk, yeni: false });
-    const karar = await api.caseKarari("case-1-7", { ...caseH("case-1-7"), karar: "approve" });
+    const karar = await api.caseKarari("case-1-7", { ...caseH("case-1-7"), karar: "accept" });
     expect(karar.review_sure_ms).toBeGreaterThanOrEqual(10);
     // Görüntülenmeden verilen kararda süre uydurulmaz.
     const olcumsuz = await api.caseKarari("case-1-8", { ...caseH("case-1-8"), karar: "reject", ret_nedeni: "out_of_scope" });
     expect(olcumsuz.review_sure_ms).toBeNull();
   });
 
-  it("yeniden aç: onaylı/reddedilmiş case taslağa döner (hash zorunlu); yayınlanmış case açılamaz", async () => {
-    await girisYap("analist");
+  it("taslağa al: onaylı/reddedilmiş case taslağa döner (hash zorunlu); yayınlanmış case açılamaz", async () => {
+    await girisYap("testci");
     await expect(api.caseYenidenAc({ id: "case-1-6", icerik_hash: "" })).rejects.toMatchObject({ status: 422 });
     await expect(api.caseYenidenAc({ id: "case-1-6", icerik_hash: "sha256:eski" })).rejects.toMatchObject({ status: 409 });
     const acildi = await api.caseYenidenAc({ id: "case-1-6", ...caseH("case-1-6") });
     // core: durum draft, onay hash'i düşer; son karar kaydı (reject) değişmez (yeni karar gerekir).
     expect(acildi).toMatchObject({ durum: "draft", karar: "reject", onaylanan_hash: null });
-    const yeniKarar = await api.caseKarari("case-1-6", { ...caseH("case-1-6"), karar: "approve" });
-    expect(yeniKarar).toMatchObject({ durum: "approved", karar: "approve" });
+    const yeniKarar = await api.caseKarari("case-1-6", { ...caseH("case-1-6"), karar: "accept" });
+    expect(yeniKarar).toMatchObject({ durum: "ready", karar: "accept" });
+    // Onaya hazır case de taslağa alınabilir (Testçi).
+    expect((await api.caseYenidenAc({ id: "case-1-6", ...caseH("case-1-6") })).durum).toBe("draft");
     const onayli = await api.caseYenidenAc({ id: "case-1-4", ...caseH("case-1-4") });
     expect(onayli.durum).toBe("draft");
     // Yeniden açılan onaylı case yayın önizlemesinde artık engelli (onaylı değil).
@@ -460,8 +558,8 @@ describe("mock arka uç: Demo-A ölçüm, yeniden açma, token, olaylar", () => 
   });
 
   it("yayın sonucu Jira adresini taşır; önizleme browse kökünü verir", async () => {
-    await girisYap("analist");
-    await api.caseKarari("case-1-7", { ...caseH("case-1-7"), karar: "approve" });
+    await kabulVeOnay("case-1-7");
+    await girisYap("testci");
     const p = await api.yayinOnizleme("req-tpd-1");
     expect(p.jira_browse_url).toBe("http://127.0.0.1:8090");
     const s = await api.yayinla(["case-1-7"]);
@@ -469,7 +567,7 @@ describe("mock arka uç: Demo-A ölçüm, yeniden açma, token, olaylar", () => 
   });
 
   it("token listesi ham token içermez; iptal edilen token listede iptal görünür", async () => {
-    await girisYap("analist");
+    await girisYap("testci");
     const t = await api.tokenOlustur("publish");
     const liste = await api.tokenlar();
     expect(liste).toHaveLength(1);
@@ -488,13 +586,12 @@ describe("mock arka uç: Demo-A ölçüm, yeniden açma, token, olaylar", () => 
     await api.incelemeBaslat(g.id);
     await bekleIsler();
     expect(gelen).toContain("finding.verified");
-    // Bulgusuz serbest metin: doküman son hâl → PO bekler; PO portalda onaylar.
+    // Bulgusuz serbest metin: doküman son hâl → PO bekler; PO Jira etiketiyle onaylar (simülatör).
     const temiz = await api.serbestMetin({ baslik: "Giriş", aciklama: "a", ac: ["Bayi giriş yapar"] });
     await api.incelemeBaslat(temiz.id);
     await bekleIsler();
-    await girisYap("po");
-    const onayli = await api.poOnayla(await api.gereksinim(temiz.id));
-    expect(onayli.po).toMatchObject({ durum: "approved", onaylayan: "po", kanal: "portal", onaylanan_hash: onayli.icerik_hash });
+    const onayli = mockPoEtiketi(temiz.id);
+    expect(onayli.po).toMatchObject({ durum: "approved", kanal: "jira", onaylanan_hash: onayli.icerik_hash });
     expect(gelen).toContain("po.approved");
     iptal();
   });

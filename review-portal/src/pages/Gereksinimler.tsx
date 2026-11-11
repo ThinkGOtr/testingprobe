@@ -40,7 +40,7 @@ export function Gereksinimler() {
         eylemler={
           <>
             <IslemDugmesi
-              roller={["analyst"]}
+              izin="requirement.import"
               tur="ikincil"
               calisiyor={cek.calisiyor}
               onClick={async () => {
@@ -53,7 +53,7 @@ export function Gereksinimler() {
             >
               Jira'dan çek
             </IslemDugmesi>
-            <IslemDugmesi roller={["analyst"]} onClick={() => setFormAcik((a) => !a)} aria-expanded={formAcik} aria-controls="serbest-metin">
+            <IslemDugmesi izin="requirement.import" onClick={() => setFormAcik((a) => !a)} aria-expanded={formAcik} aria-controls="serbest-metin">
               {formAcik ? "Formu kapat" : "Serbest metin gereksinim"}
             </IslemDugmesi>
           </>
@@ -195,7 +195,7 @@ function SerbestMetinFormu({ kapat }: { kapat: () => void }) {
       </p>
       <div className="satir-ogeler">
         <IslemDugmesi
-          roller={["analyst", "presenter"]}
+          izin="requirement.import"
           tur="ikincil"
           kucuk
           onClick={() => {
@@ -252,7 +252,7 @@ function SerbestMetinFormu({ kapat }: { kapat: () => void }) {
           <AlanHatasi asistan={dogrulama ? null : { hata: islem.hata, kaynak: islem.hataNesnesi }}>{dogrulama ?? islem.hata}</AlanHatasi>
         )}
         <div className="eylemler">
-          <IslemDugmesi roller={["analyst"]} type="submit" calisiyor={islem.calisiyor}>
+          <IslemDugmesi izin="requirement.import" type="submit" calisiyor={islem.calisiyor}>
             Gereksinimi oluştur
           </IslemDugmesi>
           <button type="button" className="dugme dugme-hayalet" onClick={kapat}>

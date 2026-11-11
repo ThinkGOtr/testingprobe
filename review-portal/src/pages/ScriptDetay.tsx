@@ -711,7 +711,7 @@ export function ScriptDetay() {
                   : (s.pr.dal.neden ?? "Başka bir PR merge edildi; önce dalı güncelleyin. Güncelleme yeni head ve yeni CI üretir, yeniden incelemeniz gerekir.")}
                 <div className="eylemler">
                   <IslemDugmesi
-                    roller={["engineer"]}
+                    izin="code.review"
                     tur="ikincil"
                     calisiyor={islem.calisiyor}
                     disabled={!!s.pr.dal.guncelleme}
@@ -775,7 +775,7 @@ export function ScriptDetay() {
         {s.pr && prAcik && (
           <div className="eylemler">
             <IslemDugmesi
-              roller={["engineer"]}
+              izin="code.merge"
               disabled={!mergeHazir}
               calisiyor={islem.calisiyor}
               // Merge engelleri hemen üstte (kapi-nedenleri) görünür yazılı; tekrarlanmaz, düğmeye bağlanır.
@@ -827,7 +827,7 @@ export function ScriptDetay() {
               {(["degisiklik_iste", "reddet"] as const).map((karar) => (
                 <IslemDugmesi
                   key={karar}
-                  roller={["engineer"]}
+                  izin="code.review"
                   tur="ikincil"
                   disabled={!retNedeni}
                   calisiyor={islem.calisiyor}
@@ -863,7 +863,7 @@ export function ScriptDetay() {
         eylemler={
           !prBirlesti && (
           <IslemDugmesi
-            roller={["engineer"]}
+            izin="code.break_verify"
             tur="ikincil"
             disabled={!prAcik || defectAdayi || s.break_verify.durum === "running"}
             calisiyor={s.break_verify.durum === "running"}

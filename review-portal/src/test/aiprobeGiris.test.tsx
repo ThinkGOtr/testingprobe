@@ -262,7 +262,7 @@ describe("/rol-sec", () => {
     expect(await screen.findByRole("heading", { name: "Rol değiştir" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /PO/ }));
     await waitFor(() => expect(cagrildi(f, "POST", "/auth/aiprobe/rol-degistir")).toHaveLength(1));
-    expect(await screen.findByText("Rol değiştirildi: Ürün sahibi (PO).")).toBeInTheDocument();
+    expect(await screen.findByText("Rol değiştirildi: PO.")).toBeInTheDocument();
   });
 
   it("403 (bağlı olmayan hesap) Türkçe hata olarak gösterilir, oturum değişmez", async () => {

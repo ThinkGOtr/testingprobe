@@ -709,7 +709,7 @@ describe('"? Bu ne?"', () => {
   });
 
   it("data-asistan-gizli kuralı: ClaudeCode token'ı yalnız pre/code/gizli alanlarda; kart tanımı token taşımaz", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const u = userEvent.setup();
     const token = "tpk" + "_" + "mock_" + "0123456789abcdef0123456789abcdef01234567";
     vi.spyOn(api, "tokenOlustur").mockResolvedValue({ id: "tok-1", token, kapsam: "submit", son_kullanma: new Date(Date.now() + 3600_000).toISOString(), mcp_url: "http://127.0.0.1:8000/mcp" });

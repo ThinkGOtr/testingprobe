@@ -4,6 +4,7 @@ import { ApiError, mockOturumuAyarla, yetkisizOlunca } from "./api/http";
 import type { Kullanici, Rol } from "./api/types";
 import { oturumVerileriniTemizle } from "./lib/oturumTemizligi";
 import { formlariSakla } from "./lib/formYedegi";
+import { izinVar, KISITLI_CASE_ROLLERI, normalizeRol, oturumIzinleri, ROTA_IZINLERI, type Izin } from "./lib/yetki";
 import { aiprobeCikisAdresi, aiprobeKipinde, cikisYonlendirmesi, kimlikKipi, yonlendirmeSayaciniSifirla } from "./lib/kimlikKipi";
 
 interface OturumBaglami {
@@ -126,10 +127,25 @@ export function useKisiAdi(): (ad: string | null | undefined) => string {
   return useCallback((ad: string | null | undefined) => kisiAdiCevir(kisiler, ad), [kisiler]);
 }
 
-/** Kullanıcı verilen rollerden birine sahip mi? */
-export function useRol(...roller: Rol[]): boolean {
-  const { kullanici } = useOturum();
-  return !!kullanici && roller.includes(kullanici.rol);
+/** Oturumun etkin izinleri (`/auth/me` → `izinler`; yoksa katalogdan rolün izinleri). */
+export function useIzinler(): ReadonlySet<string> {
+  // Sağlayıcı dışında (bileşen testleri) oturum yok: izin yok.
+  const kullanici = useContext(Baglam)?.kullanici ?? null;
+  return useMemo(() => oturumIzinleri(kullanici), [kullanici]);
+}
+
+/** Oturum verilen izinlerden en az birine sahip mi? (`useIzin("case.approve")`) */
+export function useIzin(...izinler: Izin[]): boolean {
+  return izinVar(useIzinler(), ...izinler);
+}
+
+/**
+ * Case'i kısıtlı görüyor mu (developer): yalnız onaylı/yayınlanmış case, karar geçmişi ve sohbet
+ * yok. Core süzgeci aynı kuralı uygular; portal yalnızca bu panelleri çizmez.
+ */
+export function useCaseKisitli(): boolean {
+  const rol = normalizeRol(useContext(Baglam)?.kullanici?.rol);
+  return !!rol && KISITLI_CASE_ROLLERI.includes(rol);
 }
 
 /** Ekranın core'daki veri ucu (canlı derlemede ekran ancak uç varsa açılış sayfası olur). */
@@ -140,23 +156,33 @@ const EKRAN_UCU: Record<string, readonly [string, string]> = {
   "/bug-taslaklari": ["GET", "/bug-drafts"],
   "/gereksinimler": ["GET", "/requirements"],
   "/yol-haritasi": ["GET", "/requirements"],
+  "/denetim": ["GET", "/audit"],
 };
 
+/** Rolün asıl çalışma alanı sırasıyla; izni olmayan ekran atlanır. */
 const ROL_SAYFALARI: Record<Rol, string[]> = {
-  engineer: ["/kod", "/kosular", "/gereksinimler"],
-  presenter: ["/yol-haritasi", "/kontrol-kulesi", "/kosular", "/gereksinimler"],
-  tester: ["/bug-taslaklari", "/kosular", "/gereksinimler"],
+  admin: ["/yol-haritasi", "/kontrol-kulesi", "/kosular"],
+  auditor: ["/denetim", "/kontrol-kulesi"],
   analyst: ["/gereksinimler"],
   po: ["/gereksinimler"],
+  tester: ["/gereksinimler", "/bug-taslaklari", "/kosular"],
+  engineer: ["/kod", "/kosular", "/gereksinimler"],
+  developer: ["/kosular", "/gereksinimler"],
+  viewer: ["/kontrol-kulesi", "/kosular"],
 };
 
 /**
- * Rol bazlı varsayılan açılış ekranı: sunucu → Demo yol haritası, mühendis → Kod üretimi, testçi →
- * Bug taslakları. `ucVar` verilirse (canlı derleme, core'un uç listesi) core'un henüz sunmadığı
- * ekran atlanır — kullanıcı "bu fazda yok" ekranına düşmez, sıradaki ekrana gider.
+ * Rol bazlı varsayılan açılış ekranı (izni olan ilk ekran): sistem yöneticisi → Demo yol haritası,
+ * Automation Engineer → Kod üretimi, denetçi → Denetim, görüntüleyici → Kontrol Kulesi. `ucVar`
+ * verilirse (canlı derleme, core'un uç listesi) core'un henüz sunmadığı ekran atlanır.
  */
-export function varsayilanSayfa(rol: Rol, ucVar?: (method: string, yol: string) => boolean): string {
-  const adaylar = ROL_SAYFALARI[rol] ?? ["/gereksinimler"];
-  if (!ucVar) return adaylar[0];
-  return adaylar.find((y) => !EKRAN_UCU[y] || ucVar(...EKRAN_UCU[y])) ?? "/gereksinimler";
+export function varsayilanSayfa(
+  rol: Rol,
+  ucVar?: (method: string, yol: string) => boolean,
+  izinler: ReadonlySet<string> = oturumIzinleri({ rol }),
+): string {
+  const adaylar = (ROL_SAYFALARI[normalizeRol(rol) ?? rol] ?? ["/kontrol-kulesi"]).filter((y) => izinVar(izinler, ...(ROTA_IZINLERI[y] ?? [])));
+  const son = "/kontrol-kulesi";
+  if (!ucVar) return adaylar[0] ?? son;
+  return adaylar.find((y) => !EKRAN_UCU[y] || ucVar(...EKRAN_UCU[y])) ?? son;
 }

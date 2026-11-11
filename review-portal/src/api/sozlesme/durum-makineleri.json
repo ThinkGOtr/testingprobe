@@ -182,6 +182,7 @@
       "approved",
       "draft",
       "published",
+      "ready",
       "rejected",
       "superseded"
     ],
@@ -192,11 +193,16 @@
         "superseded"
       ],
       "draft": [
-        "approved",
+        "ready",
         "rejected",
         "superseded"
       ],
       "published": [],
+      "ready": [
+        "approved",
+        "draft",
+        "superseded"
+      ],
       "rejected": [
         "draft",
         "superseded"

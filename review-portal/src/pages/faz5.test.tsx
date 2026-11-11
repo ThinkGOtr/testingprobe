@@ -168,9 +168,9 @@ describe("manuel baz değer uyarlayıcısı", () => {
 // ------------------------------------------------------------------ gereksinim detayı: baz değer kartı
 
 describe("Gereksinim detayı: manuel baz değer", () => {
-  it("analist ölçüm girer (doğrulamayla), kaynak 'Ölçüm' + giren/not görünür, sonra siler", async () => {
+  it("PO ölçüm girer (doğrulamayla), kaynak 'Ölçüm' + giren/not görünür, sonra siler", async () => {
     const u = userEvent.setup();
-    await oturumAc("analist");
+    await oturumAc("po");
     uygulama("/gereksinimler/req-tpd-1");
     const kart = await screen.findByRole("region", { name: "Manuel baz değer" });
     expect(within(kart).getByTestId("baz-deger")).toHaveTextContent("ölçülmedi");
@@ -188,9 +188,9 @@ describe("Gereksinim detayı: manuel baz değer", () => {
     await waitFor(() => expect(within(kart).getByTestId("baz-deger-sure")).toHaveTextContent("45 dk 00 sn"));
     expect(within(kart).getByText("Ölçüm")).toBeInTheDocument();
     // Giren kullanıcı görünen adıyla gösterilir (yalnızca gösterim; kayıtta kullanıcı adı).
-    expect(kart).toHaveTextContent("Cengizhan Gunaydin · Analist");
+    expect(kart).toHaveTextContent("Cengizhan Gunaydin · PO");
     expect(kart).toHaveTextContent("İsmail, F0 haftası kronometre");
-    expect(mockVerisi().manuelBazlar?.["req-tpd-1"]).toMatchObject({ deger_s: 2700, kaynak: "olcum", giren: "analist" });
+    expect(mockVerisi().manuelBazlar?.["req-tpd-1"]).toMatchObject({ deger_s: 2700, kaynak: "olcum", giren: "po" });
     expect(mockVerisi().denetim.at(-1)).toMatchObject({ eylem: "requirement.baseline_set", nesne: "TPD-1" });
 
     await u.click(within(kart).getByRole("button", { name: "Ölçümü sil" }));
@@ -249,7 +249,7 @@ describe("Kontrol Kulesi: kazanç yalnızca ölçülmüş story'lerde", () => {
     expect(screen.getByTestId("kazanc-kapsam")).toHaveTextContent(/Kazanç hesaplanmaz/);
     ilk.unmount();
 
-    await oturumAc("analist");
+    await oturumAc("po");
     await api.bazDegerKaydet("req-tpd-1", { deger_s: 3600, not: "F0 ölçümü (analist)" });
     await oturumAc("sunucu");
     uygulama("/kontrol-kulesi");

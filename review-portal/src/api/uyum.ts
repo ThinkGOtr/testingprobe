@@ -400,8 +400,12 @@ export function caseIcerikUyarla(x: unknown): TestCaseIcerik {
   };
 }
 
+const CASE_KARARLARI = new Set(["accept", "edit", "reject", "reopen", "approve", "send_back"]);
+const TESTCI_KARARLARI = new Set(["accept", "edit", "reject"]);
+
 export function caseUyarla(c: Ham): TestCase {
   const karar = metin(ilk(c, "karar", "son_karar"));
+  const testciKarari = metin(ilk(c, "testci_karari", "tester_karar"));
   return {
     id: kimlik(c.id),
     requirement_id: kimlik(c.requirement_id),
@@ -411,7 +415,11 @@ export function caseUyarla(c: Ham): TestCase {
     surum: sayi(c.surum, 1),
     icerik: caseIcerikUyarla(c.icerik),
     durum: metin(c.durum, "draft") as CaseDurumu,
-    karar: karar === "approve" || karar === "edit" || karar === "reject" ? karar : null,
+    karar: CASE_KARARLARI.has(karar) ? (karar as TestCase["karar"]) : null,
+    ...(c.gerekce !== undefined ? { gerekce: metinYaDaNull(c.gerekce) } : {}),
+    ...(TESTCI_KARARLARI.has(testciKarari) ? { testci_karari: testciKarari as NonNullable<TestCase["testci_karari"]> } : {}),
+    ...(c.onaylayan !== undefined ? { onaylayan: metinYaDaNull(c.onaylayan) } : {}),
+    ...(c.onay_zamani !== undefined ? { onay_zamani: metinYaDaNull(c.onay_zamani) } : {}),
     ret_nedeni: (metinYaDaNull(c.ret_nedeni) as RetNedeni | null),
     karar_veren: metinYaDaNull(c.karar_veren),
     karar_zamani: metinYaDaNull(c.karar_zamani),
