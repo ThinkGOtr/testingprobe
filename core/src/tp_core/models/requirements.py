@@ -69,7 +69,7 @@ class Requirement(Base):
     po_cevaplari: Mapped[list[Any]] = mapped_column(JSONB, server_default=EMPTY_LIST, default=list)
     # PO onayıyla (`po_approved`'a giriş) yazılan içerik hash'i; case üretimi bunu yeniden denetler.
     onaylanan_hash: Mapped[str | None]
-    # Analistin son üretim seçenekleri (specs/011 K5; `features.cases.secenekler`); null = seçim yok.
+    # Analistin son üretim seçenekleri (011 K5; `features.cases.secenekler`); null = seçim yok.
     uretim_secenekleri: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     # İçerik alanlarının (baslik/aciklama/kabul_kriterleri) en son değiştiği an. ORM bunu içerik
     # değişince kendisi günceller; Jira'dan ilk çekimde senkron kodu Jira changelog'undaki açıklama

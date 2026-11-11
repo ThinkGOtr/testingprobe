@@ -939,7 +939,8 @@ def test_alembic_tek_bas() -> None:
     assert script.get_revision("0019").down_revision == "0018"
     assert script.get_revision("0020").down_revision == "0019"
     assert script.get_revision("0021").down_revision == "0020"
-    assert script.get_revision("0024").down_revision == "0021"  # 011 P şeridi (birleştirmede sıralanır)
+    # 011 P şeridi (birleştirmede 0021→0022→0023→0024→0025 sıralanır).
+    assert script.get_revision("0024").down_revision == "0021"
 
 
 # ------------------------------------------------------------------ inceleme bulguları (2026-11-10)
