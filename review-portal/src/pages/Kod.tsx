@@ -57,10 +57,11 @@ export function Kod() {
   // Yeniden üretimle kapatılan eski kayıtlar varsayılan olarak gizlenir (aynı test iki kez görünmesin).
   const gorunen = kapatilanlar ? tumScriptler : tumScriptler.filter((s) => s.durum !== "closed");
 
-  // Yeniden üretim script'in dilini taşır (dil değiştirmek ayrı karar: script detayında). Dil alanı yalnız
-  // core dil boyutunu sunuyorsa gönderilir; 011 öncesi core'da gövde bugünküyle aynıdır.
+  // Yeniden üretim: dil yalnız kullanıcı onu elle seçtiyse (`dil_kaynagi="secildi"`) taşınır; algılanan ya da
+  // varsayılan dilde `dil` gönderilmez, core yeniden algılar ve kaynak `algilandi` kalır (dil kaynağı
+  // `secildi`'ye kaymaz). Dil değiştirmek ayrı karar: script detayında. 011 öncesi core'da gövde bugünküyle aynıdır.
   const yenidenUret = async (sc: Script, p: Platform) => {
-    const dil = dilVerisi && sc.dil ? sc.dil : null;
+    const dil = dilVerisi && sc.dil && sc.dil_kaynagi === "secildi" ? sc.dil : null;
     const s = await islem.calistir(() => (dil ? api.kodUret(sc.case_ids, p, dil) : api.kodUret(sc.case_ids, p)));
     if (s) {
       bildir(s.mesaj ?? "Yeniden üretim başladı; eski kayıt kapatılır.");
@@ -206,7 +207,8 @@ export function Kod() {
           <BosDurum baslik="Açık üretilen test yok; kapatılanlar gizli." />
         ) : (
           <div className="tablo-sarici kod-tablosu" tabIndex={0} role="region" aria-label="Üretilen testler tablosu">
-            <table className="tablo">
+            {/* ≤ 640 px'te satırlar kart olur (`tablo-yigin`): başlık ve dosya yolu kesilmez, sayfa yatay kaymaz. */}
+            <table className="tablo tablo-yigin">
               <thead>
                 <tr>
                   <th scope="col">Test</th>
@@ -224,9 +226,14 @@ export function Kod() {
                   const d = SCRIPT_DURUMU[s.durum] ?? { etiket: s.durum, ton: "notr" as const };
                   const isaret = scriptIsareti(s);
                   const sinif = s.yerel_sinif && s.yerel_sinif !== "gecti" ? YEREL_SINIF[s.yerel_sinif] : null;
+                  const yenidenUretilebilir =
+                    (s.durum === "blocked" || s.durum === "failed") &&
+                    s.case_ids.length > 0 &&
+                    s.platform !== null &&
+                    !(s.yerel_sinif === "defect_adayi" || s.engel?.tur === "defect_candidate");
                   return (
                     <tr key={s.id}>
-                      <td>
+                      <td className="yigin-baslik" data-etiket="Test">
                         <Link to={`/kod/${encodeURIComponent(s.id)}`} className="satir-baglanti">
                           {s.baslik}
                         </Link>
@@ -237,7 +244,7 @@ export function Kod() {
                           <span className="mono soluk">{s.dosya_yolu}</span>
                         </div>
                       </td>
-                      <td>
+                      <td data-etiket="Durum">
                         <span className="satir-ogeler">
                           <Cip ton={d.ton}>{d.etiket}</Cip>
                           {isaret && (
@@ -253,7 +260,7 @@ export function Kod() {
                           <ReplayRozeti mode={s.mode} />
                         </span>
                       </td>
-                      <td>
+                      <td data-etiket="PR">
                         {s.pr ? (
                           <span className="mono">#{s.pr.number} · {s.pr.durum === "merged" ? "birleşti" : s.pr.durum === "open" ? "açık" : "kapalı"}</span>
                         ) : s.durum === "unverified" ? (
@@ -262,7 +269,7 @@ export function Kod() {
                           "—"
                         )}
                       </td>
-                      <td>
+                      <td data-etiket="Kırarak doğrula">
                         {s.durum === "unverified" ? (
                           <span className="soluk kucuk">Bu dilde yok</span>
                         ) : s.break_verify.durum === "passed"
@@ -277,13 +284,12 @@ export function Kod() {
                                 ? "Tamamlanamadı"
                                 : "—"}
                       </td>
-                      <td className="tek-satir">{tarih(s.olusturma)}</td>
-                      <td>
+                      <td className="tek-satir" data-etiket="Oluşturma">
+                        {tarih(s.olusturma)}
+                      </td>
+                      <td className={yenidenUretilebilir ? undefined : "bos-hucre"} data-etiket="Eylem">
                         {/* Defect adayının testi doğru (uygulama farklı davranıyor): yeniden üretim önerilmez, karar triage'da. */}
-                        {(s.durum === "blocked" || s.durum === "failed") &&
-                          s.case_ids.length > 0 &&
-                          s.platform !== null &&
-                          !(s.yerel_sinif === "defect_adayi" || s.engel?.tur === "defect_candidate") && (
+                        {yenidenUretilebilir && (
                           <IslemDugmesi
                             roller={["engineer"]}
                             tur="ikincil"

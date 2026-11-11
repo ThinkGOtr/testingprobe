@@ -32,6 +32,12 @@ describe("platform yardımcıları", () => {
     expect(checkPlatformu("local-ci")).toBe("web");
     expect(checkPlatformu("local-ci-ios")).toBe("ios");
     expect(checkPlatformu("test-local")).toBeNull();
+    // 011 K-T1: web + Java `local-ci-web-java`; `web-java` platform sanılmaz.
+    expect(checkEtiketi("local-ci-web-java")).toBe("Yerel CI · Web · Java");
+    expect(checkPlatformu("local-ci-web-java")).toBe("web");
+    expect(checkEtiketi("local-ci-web")).toBeNull();
+    expect(checkPlatformu("local-ci-web")).toBeNull();
+    expect(checkEtiketi("local-ci-web-kotlin")).toBeNull();
   });
 
   it("app_* araçları Türkçe; browser_* ham kalır", () => {

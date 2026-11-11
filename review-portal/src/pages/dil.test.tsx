@@ -61,12 +61,17 @@ describe("uyum katmanı (core şekli, §2.3)", () => {
   });
 
   it("yerel kontrol: `adimlar: [{ad, durum}]` listesi; yoksa eski tsc/eslint/ast_guard alanları", () => {
+    // Core sözleşmesi dizgedir (`passed|failed|skipped`, MİM-L5); boolean ve eski dizgeler de aynı kümeye iner.
     const yeni = yerelKontrolUyarla({ adimlar: [{ ad: "deps", durum: true }, { ad: "guard", durum: "ok" }, { ad: "compile", durum: false }], run_status: "failed" })!;
     expect(yeni.adimlar).toEqual([
-      { ad: "deps", durum: true },
-      { ad: "guard", durum: true },
-      { ad: "compile", durum: false },
+      { ad: "deps", durum: "passed" },
+      { ad: "guard", durum: "passed" },
+      { ad: "compile", durum: "failed" },
     ]);
+    const core = yerelKontrolUyarla({ adimlar: [{ ad: "deps", durum: "passed" }, { ad: "guard", durum: "skipped" }, { ad: "compile", durum: "failed" }] })!;
+    expect(core.adimlar!.map((a) => a.durum)).toEqual(["passed", "skipped", "failed"]);
+    expect(kontrolSatirlari(core, "java").map((a) => a.durum)).toEqual([true, null, false]);
+    expect(core.sinif).toBe("derleme");
     expect(yeni.sinif).toBe("derleme");
     expect(kontrolSatirlari(yeni, "java").map((a) => a.etiket)).toEqual(["pom kilidi", "Java AST koruması", "derleme"]);
     // 011 öncesi core: sözlük `adimlar` → eski alanlar, liste yok.
@@ -149,10 +154,13 @@ describe("örnek arka uç: dil boyutu", () => {
     await waitFor(() => expect(bul().durum).toBe("pr_open"));
     const s = bul();
     expect(s).toMatchObject({ dil: "java", dil_kaynagi: "secildi" });
-    expect(s.dosya_yolu).toMatch(/^demo-app\/e2e-java\/src\/test\/java\/com\/antreklabs\/bayi\/uretilen\/TPD1C5_[0-9a-f]{8}Test\.java$/);
-    expect(s.kod).toContain("public class TPD1C5_");
-    expect(s.kod).toContain('cart.expectMinOrderWarning("Minimum sipariş tutarı 750,00 TL");');
-    expect(s.pr!.checks![0]).toMatchObject({ ad: "local-ci", aciklama: expect.stringContaining("pom kilidi") });
+    // Gerçek şablon biçimi (golden TPD1WebC2_3f9b1c2eTest.java): `<Story>WebC<n>_<uuid8>Test`, erişimci çağrısı.
+    expect(s.dosya_yolu).toMatch(/^demo-app\/e2e-java\/src\/test\/java\/com\/antreklabs\/bayi\/uretilen\/TPD1WebC5_[0-9a-f]{8}Test\.java$/);
+    expect(s.kod).toContain("public class TPD1WebC5_");
+    expect(s.kod).toContain("    loginPage().goTo();");
+    expect(s.kod).toContain('    cartPage().expectMinOrderWarning("Minimum sipariş tutarı 750,00 TL");');
+    expect(s.eslemeler[0]).toMatchObject({ po: "LoginPage", method: "goTo" });
+    expect(s.pr!.checks![0]).toMatchObject({ ad: "local-ci-web-java", aciklama: expect.stringContaining("pom kilidi") });
     expect(s.yerel_kontrol!.adimlar!.map((a) => a.ad)).toEqual(["deps", "guard", "compile"]);
     await expect(api.kodUret(["case-1-4"], "android", "python")).rejects.toMatchObject({ status: 422 });
     await expect(api.kodUret(["case-1-4"], "web", "kotlin" as never)).rejects.toMatchObject({ status: 422 });
@@ -164,9 +172,14 @@ describe("örnek arka uç: dil boyutu", () => {
     const bul = () => mockVerisi().scriptler.find((s) => s.case_ids.includes("case-1-4") && s.platform === "web" && s.durum !== "closed")!;
     await waitFor(() => expect(bul().durum).toBe("unverified"));
     expect(bul()).toMatchObject({ dil: "csharp", dogrulanmamis: true, pr: null, branch: "", yerel_kontrol: null });
-    expect(bul().dosya_yolu).toMatch(/\.cs$/);
+    // Gerçek şablon biçimi (golden TPD1WebC2_3f9b1c2eTests.cs, K-T6 yolu): `…Async` metotlar, PO imzaları başlıkta.
+    expect(bul().dosya_yolu).toMatch(/^demo-app\/e2e-csharp\/tests\/Generated\/TPD1WebC5_[0-9a-f]{8}Tests\.cs$/);
     expect(bul().kod).toContain("[TestFixture]");
-    expect(bul().kod).toContain('await cart.ExpectMinOrderWarning("Minimum sipariş tutarı 750,00 TL");');
+    expect(bul().kod).toContain("namespace Antreklabs.Bayi.Tests.Generated;");
+    expect(bul().kod).toContain('        await cartPage.ExpectMinOrderWarningAsync("Minimum sipariş tutarı 750,00 TL");');
+    expect(bul().kod).toContain("        await loginPage.GotoAsync();");
+    expect(bul().kod).toContain("//     Task LoginAsync(string username, string password)");
+    expect(bul().kod).not.toContain("Elle düzenlemeyin");
     // Başka dilde (algılanan) yeniden üretim: doğrulanmamış kayıt kapanır, yeni script ts.
     const eskiId = bul().id;
     await api.kodUret(["case-1-4"], "web");
@@ -258,7 +271,7 @@ describe("Kod üretimi: dil seçici", () => {
     await oturumAc("muhendis");
     vi.spyOn(api, "kodDilleri").mockResolvedValue({ ...WEB_DILLERI, kaynak: "varsayilan", sayilar: {} });
     uygulama("/kod");
-    expect(await screen.findByTestId("dil-notu")).toHaveTextContent("Depoda elle yazılmış test bulunamadı; varsayılan dil TypeScript.");
+    expect(await screen.findByTestId("dil-notu")).toHaveTextContent("e2e/, e2e-java/, C# ve Python test projelerinde elle yazılmış test bulunamadı; varsayılan: TypeScript.");
   });
 
   it("uç yoksa (011 öncesi core) dil seçici ve dil rozeti yok; üretim bugünkü gibi", async () => {
@@ -283,7 +296,7 @@ describe("Script detayı: dil", () => {
     const birak = vi.fn();
     Object.assign(URL, { createObjectURL: olustur, revokeObjectURL: birak });
     const tikla = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
-      expect(this.download).toMatch(/^test_tpd1_c8_[0-9a-f]{8}\.py$/);
+      expect(this.download).toMatch(/^test_tpd_1_c8_[0-9a-f]{8}\.py$/);
       expect(this.href).toBe("blob:ornek");
     });
     const u = userEvent.setup();
@@ -335,7 +348,7 @@ describe("Script detayı: dil", () => {
     const satirlar = within(liste).getAllByRole("listitem").map((li) => li.textContent?.replace(/\s+/g, " ").trim());
     expect(satirlar.slice(0, 3)).toEqual(["✓ pom kilidi: geçti", "✓ Java AST koruması: geçti", "✓ derleme: geçti"]);
     expect(satirlar[3]).toContain("Playwright (Java) --repeat-each=3");
-    expect(screen.getByRole("list", { name: "PR check'leri" })).toHaveTextContent("Yerel CI · Web (local-ci)");
+    expect(screen.getByRole("list", { name: "PR check'leri" })).toHaveTextContent("Yerel CI · Web · Java (local-ci-web-java)");
     expect(screen.getByTestId("yerel-sinif")).toHaveTextContent("pom kilidi · Java AST koruması · derleme · Playwright (Java) (repeat-each) geçti.");
     expect(screen.getByTestId("yerel-sinif")).not.toHaveTextContent("tsc");
     expect(screen.getByRole("button", { name: "Merge et" })).toBeInTheDocument();

@@ -598,7 +598,7 @@ function caseler(): TestCase[] {
     // Kredi limiti case'i bilinen kod hatasını hedefler (golden etiketi expected-code-defect).
     karar("case-1-5", 7, G[6], { durum: "draft", kanal: "ide", mode: "replay" }),
     // 011: C8 (sipariş geçmişi) ve C9 (kampanyalı sepette minimum tutar yok) yayınlandı; kodları üretim dili
-    // örnekleridir (C8 web + Java PR'ı, C9 doğrulanmamış Python kaynağı).
+    // örnekleridir (C9 web + Java PR'ı, C8 doğrulanmamış Python kaynağı).
     karar("case-1-8", 8, G[7], { ...analist, durum: "published", karar: "approve", karar_zamani: t(30, "10:42"), duzeltme_olcusu: 0, review_sure_ms: 47000, jira_test_key: "TPD-12" }),
     karar("case-1-9", 9, G[8], { ...analist, durum: "published", karar: "approve", karar_zamani: t(30, "10:43"), duzeltme_olcusu: 0, review_sure_ms: 39000, jira_test_key: "TPD-13" }),
     // Golden C10 bilinçli olarak C2'nin tekrarı: analist "duplicate" gerekçesiyle reddeder.

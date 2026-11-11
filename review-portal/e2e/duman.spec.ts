@@ -624,8 +624,11 @@ const F0_INCOMPLETE: Record<string, [number, number, number, number, number]> = 
   "/gereksinimler/req-tpd-1": [6, 9, 6, 9, 6],
   "/gereksinimler/req-tpd-1/caseler": [0, 0, 0, 0, 0],
   "/kod/scr-2": [8, 8, 8, 8, 8],
-  "/kod/scr-java": [0, 0, 0, 0, 0],
-  "/kod/scr-py": [0, 0, 0, 0, 0],
+  // 011 tur 1 (D4) ölçümü: scr-java'nın kırma/onay simgeleri scr-2 ile aynı ("yalnız metin dışı karakter");
+  // scr-py 390 px'te dosya yolu `.kod-dosya` arka planı belirlenemez. Değerler bu turdan önceki dalda da
+  // aynıydı (ölçüldü); eski [0…] tabanı sayfalar hiç ölçülmeden yazılmıştı.
+  "/kod/scr-java": [8, 9, 8, 9, 8],
+  "/kod/scr-py": [0, 1, 0, 1, 0],
   "/denetim": [0, 0, 0, 0, 0],
   "/kontrol-kulesi": [2, 2, 2, 2, 2],
   "/gereksinimler/req-ft-1": [2, 3, 2, 3, 2],
@@ -1140,8 +1143,8 @@ test("011: dil seçici, doğrulanmamış dil uyarısı ve doğrulanmamış scrip
     const indirme = page.waitForEvent("download");
     await bant.getByRole("button", { name: "Kodu indir" }).click();
     const d = await indirme;
-    expect(d.suggestedFilename()).toMatch(/^test_tpd1_c8_[0-9a-f]{8}\.py$/);
-    expect(readFileSync(await d.path(), "utf8")).toContain("def test_tpd1_c8_");
+    expect(d.suggestedFilename()).toMatch(/^test_tpd_1_c8_[0-9a-f]{8}\.py$/);
+    expect(readFileSync(await d.path(), "utf8")).toContain("def test_tpd_1_c8_");
     await kaymaYok();
     await page.screenshot({ path: `${DIL_DIZINI}/04-script-dogrulanmamis-${genislik}.png`, fullPage: true, animations: "disabled" });
 

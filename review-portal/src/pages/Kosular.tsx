@@ -68,8 +68,6 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
                   <>
                     {" "}
                     <PlatformRozeti platform={k.platform} />
-            {/* 011 §2.8: koşunun dili (core `dil` / `ortam.dil`); bilinmiyorsa çizilmez. */}
-            <DilRozeti dil={k.dil} platform={k.platform} />
                     {/* 011 §2.8: koşunun dili (core `dil` / `ortam.dil`); bilinmiyorsa çizilmez. */}
                     <DilRozeti dil={k.dil} platform={k.platform} />
                   </>
@@ -483,7 +481,7 @@ export function KosuDetay() {
               Allure ham sonuçları (JSON listesi)
             </Baglanti>
           )}
-          {/* Extent raporunu yalnızca Java (Appium + TestNG) koşusu üretir: yoksa satır hiç görünmez. */}
+          {/* Extent raporunu Java koşuları üretir (uygulama: Appium + TestNG; web: Playwright for Java + TestNG); yoksa satır hiç görünmez. */}
           {k.extent_url && <Baglanti href={k.extent_url}>Extent raporu</Baglanti>}
           {(k.kaynak === "sauce" || k.sauce_url) && (
             <Baglanti href={k.sauce_url} yokNedeni="Sauce bağlantısı yok">
