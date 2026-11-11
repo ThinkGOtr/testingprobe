@@ -32,6 +32,8 @@ from toolchain_common import (
 from toolchain_common.api import install_error_handlers
 from toolchain_common.settings import settings
 from toolchain_common.validation import (
+    resolve_fault,
+    validate_fault,
     validate_grep,
     validate_ref,
     validate_run_id,
@@ -39,7 +41,7 @@ from toolchain_common.validation import (
 )
 from worker.java import validate_java_test_file
 
-ALLOWED_ENV = {"BREAK_CAMPAIGN"}
+ALLOWED_ENV = {"BREAK_CAMPAIGN", "TP_FAULT"}
 
 app = create_app(
     "test-runner",
@@ -68,6 +70,9 @@ class RunBody(BaseModel):
     # Sözleşme: env.BREAK_CAMPAIGN="1"; `break_campaign: true` eş anlamlıdır.
     env: dict[str, str] = Field(default_factory=dict)
     break_campaign: bool = False
+    # Ekilmiş hata (012 §4.6): demo API kataloğundaki kod; env.TP_FAULT eş anlamlıdır. Test
+    # sürecine TP_FAULT olarak geçer; BREAK_CAMPAIGN ile birlikteyse fixture TP_FAULT'u uygular.
+    fault: Annotated[str | None, AfterValidator(validate_fault)] = None
     test_files: list[str] = Field(default_factory=list)
     workers: int | None = Field(None, ge=1, le=2)
     # Kanıt olarak saklanacak koşu (kırarak doğrulama, triage): temizlikte silinmez (`.keep`).
@@ -93,6 +98,7 @@ class RunBody(BaseModel):
                 raise ValueError("Java koşusu tek cihazda tek iş parçacığıdır (workers verilemez)")
         elif self.platform is not None:
             raise ValueError("platform yalnızca lang=java ile verilir (web: lang=ts)")
+        self.fault = resolve_fault(self.fault, self.env)
         return self
 
     @field_validator("env")
@@ -101,10 +107,12 @@ class RunBody(BaseModel):
         extra = set(v) - ALLOWED_ENV
         if extra:
             raise ValueError(
-                f"izin verilmeyen ortam değişkeni: {sorted(extra)} (yalnızca BREAK_CAMPAIGN)"
+                f"izin verilmeyen ortam değişkeni: {sorted(extra)} "
+                f"(yalnızca {', '.join(sorted(ALLOWED_ENV))})"
             )
         if v.get("BREAK_CAMPAIGN", "") not in ("", "0", "1"):
             raise ValueError("BREAK_CAMPAIGN yalnızca '1', '0' veya boş olabilir")
+        validate_fault(v.get("TP_FAULT"))
         return v
 
     def to_request(self) -> runner.RunRequest:
@@ -115,6 +123,7 @@ class RunBody(BaseModel):
             repeat_each=self.repeat_each,
             retries=self.retries,
             break_campaign=self.break_campaign or self.env.get("BREAK_CAMPAIGN") == "1",
+            fault=self.fault,
             test_files=self.test_files,
             workers=self.workers,
             keep=self.keep,

@@ -50,6 +50,8 @@ from toolchain_common.auth import check_auth, require_token
 from toolchain_common.settings import Settings, settings
 from toolchain_common.validation import (
     TESTID_RE,
+    resolve_fault,
+    validate_fault,
     validate_grep,
     validate_name,
     validate_ref,
@@ -232,6 +234,9 @@ class CheckBody(LangMixin):
     retries: int = Field(0, ge=0, le=3)
     env: dict[str, str] = Field(default_factory=dict)
     break_campaign: bool = Field(False, validation_alias=AliasChoices("break_campaign", "break"))
+    # Ekilmiş hata (012 §4.6): demo API kataloğundaki kod; env.TP_FAULT eş anlamlıdır. Kırılmalı
+    # kontrol gibi bilerek kırmızı beklenen denemedir: asla local-ci kaydı olmaz.
+    fault: Annotated[str | None, AfterValidator(validate_fault)] = None
     grep: Annotated[str | None, AfterValidator(validate_grep)] = None
     base_sha: Annotated[str | None, AfterValidator(lambda v: v and validate_ref(v))] = None
     ast_guard_mode: Literal["pr", "repair"] = "pr"
@@ -284,9 +289,14 @@ class CheckBody(LangMixin):
                 "etkilenen testlerle kapsamlı kontrol local-ci kaydı olamaz "
                 "(record_check=true yalnızca tam kapsamlı kontrolde)"
             )
+        self.fault = resolve_fault(self.fault, self.env)
         if self.record_check and (self.break_campaign or self.env.get("BREAK_CAMPAIGN") == "1"):
             raise ValueError(
                 "kırarak doğrulama local-ci kaydı olamaz (record_check=true verilemez)"
+            )
+        if self.record_check and self.fault:
+            raise ValueError(
+                "ekilmiş hata koşusu local-ci kaydı olamaz (record_check=true verilemez)"
             )
         if self.record_check and (self.test_files or self.grep):
             # Merge kapısı tüm testlerin sonucunu ister; kapsamlı yeşil bir head'i geçirmemeli.
@@ -299,10 +309,11 @@ class CheckBody(LangMixin):
     @field_validator("env")
     @classmethod
     def _env(cls, v: dict[str, str]) -> dict[str, str]:
-        if set(v) - {"BREAK_CAMPAIGN"}:
-            raise ValueError("yalnızca BREAK_CAMPAIGN ortam değişkeni verilebilir")
+        if set(v) - {"BREAK_CAMPAIGN", "TP_FAULT"}:
+            raise ValueError("yalnızca BREAK_CAMPAIGN ve TP_FAULT ortam değişkenleri verilebilir")
         if v.get("BREAK_CAMPAIGN", "") not in ("", "0", "1"):
             raise ValueError("BREAK_CAMPAIGN yalnızca '1', '0' veya boş olabilir")
+        validate_fault(v.get("TP_FAULT"))
         return v
 
 
@@ -315,6 +326,7 @@ def check(body: CheckBody) -> dict[str, Any]:
         repeat_each=body.repeat_each,
         retries=body.retries,
         break_campaign=body.break_campaign or body.env.get("BREAK_CAMPAIGN") == "1",
+        fault=body.fault,
         grep=body.grep,
         base_sha=body.base_sha,
         ast_guard_mode=body.ast_guard_mode,

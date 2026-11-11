@@ -9,9 +9,11 @@ Akış (tek seferde bir koşu; bayi kullanıcıları bayi1/bayi2 koşular arası
      kopyası kanıt olarak kalır); commit'teki `results/` ve `node_modules` silinir, bağımlılıklar
      imajdan (`/opt/e2e/node_modules`) bağlanır.
   3. `playwright test --project=chromium` (BASE_URL, DEMO_API_URL, DEMOAPP_TEST_TOKEN; kırılma
-     istenirse BREAK_CAMPAIGN=1 → e2e fixture'ı koşunun bayisi için `/test/break` açar/kapatır).
-  4. Kırılma istendiyse koşu nasıl biterse bitsin (hata, süre aşımı) her bayi için
-     `/test/break {kampanya:false}` ile geri alınır (fixture teardown'ı koşmamış olabilir).
+     istenirse BREAK_CAMPAIGN=1 → e2e fixture'ı koşunun bayisi için `/test/break` açar/kapatır;
+     ekilmiş hata istenirse TP_FAULT=<kod> → aynı fixture `/test/break {hata}` ile açar/kapatır).
+  4. Kırılma ya da ekilmiş hata istendiyse koşu nasıl biterse bitsin (hata, süre aşımı) her bayi
+     için `/test/break {kampanya:false}` ile geri alınır (fixture teardown'ı koşmamış olabilir;
+     bu gövde bayide hangi hata açıksa onu kaldırır).
   5. Raporlar config'teki yerlerinde kalır: `src/e2e/results/{junit.xml,results.json,
      allure-results/,html/,artifacts/}`; özet `run.json`, süreç çıktısı `runner.log`.
   5a. `allure-results/`'tan statik, tek dosyalık Allure raporu üretilir
@@ -101,6 +103,14 @@ class RunRequest:
     # Dil (009 §2.1): "ts" Playwright (varsayılan), "java" Appium/TestNG (runner/java_run.py).
     lang: str = "ts"
     platform: str | None = None
+    # Ekilmiş hata kodu (012 §4.6); test sürecine TP_FAULT olarak geçer. Kırılma koşusunun bütün
+    # kuralları (belirteç şartı, koşu sonu geri alma, Java kırmızı denetimi) buna da uygulanır.
+    fault: str | None = None
+
+    @property
+    def breaks_app(self) -> bool:
+        """Koşu demo uygulamayı bilerek bozuyor mu (kampanya kırılması ya da ekilmiş hata)."""
+        return self.break_campaign or bool(self.fault)
 
 
 def now_iso() -> str:
@@ -135,6 +145,7 @@ def playwright_env(cfg: Settings, req: RunRequest) -> dict[str, str]:
             "DEMO_API_URL": cfg.demo_api_url,
             "DEMOAPP_TEST_TOKEN": cfg.demoapp_test_token,
             "BREAK_CAMPAIGN": "1" if req.break_campaign else "",
+            "TP_FAULT": req.fault or "",
             "TP_RUN_ID": req.run_id,
         }
     )
@@ -142,7 +153,9 @@ def playwright_env(cfg: Settings, req: RunRequest) -> dict[str, str]:
 
 
 def restore_break(cfg: Settings, client: httpx.Client | None = None) -> dict[str, Any]:
-    """Her koşu bayisi için kampanya kırılmasını kapatır (idempotent)."""
+    """Her koşu bayisi için kırılmayı (kampanya ya da ekilmiş hata) kapatır (idempotent).
+
+    `kampanya: false` demo API'de bayinin etkin hatasını, hangisi olursa olsun, kaldırır."""
     results: dict[str, str] = {}
     own = client is None
     http = client or httpx.Client(timeout=10)
@@ -161,6 +174,10 @@ def restore_break(cfg: Settings, client: httpx.Client | None = None) -> dict[str
         if own:
             http.close()
     return {"ok": all(v == "ok" for v in results.values()), "bayiler": results}
+
+
+def restore_error(req: RunRequest) -> str:
+    return "Ekilmiş hata geri alınamadı." if req.fault else "Kampanya kırılması geri alınamadı."
 
 
 def _probe(http: httpx.Client, url: str, timeout_s: float) -> dict[str, Any]:
@@ -364,8 +381,9 @@ def prune_runs(cfg: Settings, current: str) -> dict[str, Any]:
 
 
 def execute(cfg: Settings, req: RunRequest, *, http: httpx.Client | None = None) -> dict[str, Any]:
-    if req.break_campaign and not cfg.demoapp_test_token:
-        raise RunRejected("Kırarak doğrulama için DEMOAPP_TEST_TOKEN gerekir (test-runner ortamı).")
+    if req.breaks_app and not cfg.demoapp_test_token:
+        ne = "Ekilmiş hata koşusu" if req.fault else "Kırarak doğrulama"
+        raise RunRejected(f"{ne} için DEMOAPP_TEST_TOKEN gerekir (test-runner ortamı).")
     # Yerel forge ya da (GitHub modunda toolchain-worker'ın çektiği) ayna; test-runner çekmez.
     loc = repos.locate(cfg, req.sha)
     deadline = time.monotonic() + cfg.run_queue_wait_s
@@ -410,6 +428,7 @@ def _execute_locked(
         "repeat_each": req.repeat_each,
         "retries": req.retries,
         "break_campaign": req.break_campaign,
+        "fault": req.fault,
         "workers": req.workers,
         "keep": req.keep,
         "base_url": cfg.base_url,
@@ -446,7 +465,7 @@ def _execute_locked(
                 )
     finally:
         # Playwright hiç başlamadıysa kırılma da uygulanmamıştır; geri alma gerekmez.
-        if req.break_campaign and saglik["ok"]:
+        if req.breaks_app and saglik["ok"]:
             restore = restore_break(cfg, http)
         nm = e2e / "node_modules"
         if nm.is_symlink():
@@ -483,7 +502,7 @@ def _execute_locked(
     if restore is not None and not restore["ok"]:
         # Kırılma geri alınamadıysa uygulama durumu belirsizdir: koşu "error", ayrıntı kayıtta.
         status = "error"
-        error = (error + " · " if error else "") + "Kampanya kırılması geri alınamadı."
+        error = (error + " · " if error else "") + restore_error(req)
 
     report = {
         **base,

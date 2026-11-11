@@ -86,12 +86,13 @@ written. Empty token → endpoints open and `/health` `auth: ok (uyarı: …)`; 
 - `POST /ast-guard {base_sha, head_sha, mode?: "repair"(default)|"pr"}` → `{ok, violations, base_sha,
   head_sha, mode, report}` (`report` = full ast-guard JSON). Runs the CLI in git-ref mode directly on
   the bare forge (`--repo $TP_FORGE_PATH --root e2e`), which reads the same trees two checkouts would.
-- `POST /check {sha, test_files?, repeat_each=3, retries=0, env?:{BREAK_CAMPAIGN}, break?, grep?,
+- `POST /check {sha, test_files?, repeat_each=3, retries=0, env?:{BREAK_CAMPAIGN, TP_FAULT}, break?,
+  fault?: string|null, grep?,
   base_sha?, ast_guard_mode="pr", run_id?, record_check?: bool|null, keep?: bool, affected_by?:
   [e2e-relative paths | "@diff"]}` → `{sha,
   conclusion:"success"|"failure", ok, failed_steps, summary, saglik, failures, failure_groups,
   test_counts, deps, tsc, eslint, ast_guard, run:{…/run response…, junit_path, json_path}, kapsam,
-  check_recorded, checks_path, break_campaign, duration_ms}`. Steps, stopping at the first failure
+  check_recorded, checks_path, break_campaign, fault, duration_ms}`. Steps, stopping at the first failure
   (like `ci/run-checks.sh`): every `test_files` entry exists in the commit (else `deps` fails with
   `missing_test_files`) → lockfile equals the image's → `tsc --noEmit` (whole `tsconfig.json`, which
   includes `tests/**/*.ts`, so `tests/generated/*.spec.ts` is compiled) → `eslint --no-inline-config
@@ -187,12 +188,26 @@ written. Empty token → endpoints open and `/health` `auth: ok (uyarı: …)`; 
 
 ### test-runner (:8200)
 
-- `POST /run {sha, run_id, grep?, repeat_each=1, retries=0, env?:{BREAK_CAMPAIGN:"1"}, break_campaign?,
-  test_files?, workers?, keep?}` → `{run_id, sha, status:"passed"|"failed"|"error", error, exit_code,
+- `POST /run {sha, run_id, grep?, repeat_each=1, retries=0, env?:{BREAK_CAMPAIGN:"1", TP_FAULT},
+  break_campaign?, fault?: string|null, test_files?, workers?, keep?}` → `{run_id, sha, status:"passed"|"failed"|"error", error, exit_code,
   duration_ms, junit, json, allure_dir, html_dir, traces_dir, log, artifacts_dir, artifacts_rel,
   reports, stats:{expected,unexpected,flaky,skipped,duration_ms}, tests:[{id,title,file,line,column,
   project,status,tags,repeat_index,attempts,attempt_results,duration_ms,error,failure,attachments}],
   failures, failure_groups, report_errors, break_restore, saglik, cleanup}` (see "Failure inputs").
+  The report also echoes the request (`break_campaign`, `fault`, `grep`, `test_files`, …).
+- **Seeded fault (`fault`, spec 012 §4.6).** `fault` is a code from the demo API catalogue
+  (`demo-app/api/src/demoapp_api/faults.py`, `GET /test/faults`), validated only by shape
+  (`^[a-z0-9_]{1,40}$`; `""`/`null` = none). `env.TP_FAULT` is a synonym; giving both with different
+  values is 422. It reaches the Playwright / Maven process as `TP_FAULT`, where the e2e fixture
+  (`tests/fixtures.ts`, Java `TestTabani`) applies it for the test's dealer with
+  `/test/break {hata}` exactly where `BREAK_CAMPAIGN` is applied (if both are set the fixture
+  applies `TP_FAULT`). An unknown code is rejected by the demo API (422), so every test fails in
+  setup as `test_data`. Every rule of a break run applies to a fault run: it needs
+  `DEMOAPP_TEST_TOKEN` (else 422), the runner restores all `TP_RUN_DEALERS` at the end
+  (`break_restore`; `/test/break {kampanya:false}` clears whichever fault is active), a failed
+  restore makes the run `error`, the Java report carries `kirmizi_denetimi`, and `/check` never
+  records it as `local-ci` / `local-ci-<platform>` (`record_check: true` with `fault` is 422;
+  `kapsam.fault` and top-level `fault` are in the `/check` report next to `break_campaign`).
 - `saglik` = pre-run health check (TEKNIK-TASARIM §8.6, triage rule 1 → `environment`):
   `{ok, zaman, web:{url,status,ms,hata}, api:{url,status,ms,hata}, hata}`; probes `GET BASE_URL/` and
   `GET DEMO_API_URL/health` (`TP_HEALTH_TIMEOUT_S`, default 5 s; ok = both 2xx). On failure Playwright
@@ -219,7 +234,7 @@ written. Empty token → endpoints open and `/health` `auth: ok (uyarı: …)`; 
   leak `BREAK_CAMPAIGN` into another run.
   `checks/*.json` reports may then point at deleted run paths.
 - Playwright gets only `PATH/HOME/LANG/…`, `BASE_URL`, `DEMO_API_URL`, `DEMOAPP_TEST_TOKEN`, `CI=1`,
-  `BREAK_CAMPAIGN`, `TP_RUN_ID`. With `BREAK_CAMPAIGN=1` the e2e fixture breaks the campaign for the
+  `BREAK_CAMPAIGN`, `TP_FAULT`, `TP_RUN_ID`. With `BREAK_CAMPAIGN=1` the e2e fixture breaks the campaign for the
   run's dealers via `/test/break`; afterwards the runner **always** (failure, timeout) calls
   `/test/break {kampanya:false}` for each of `TP_RUN_DEALERS` (bayi1,bayi2); if that fails the run is `error`.
 - Status: `failed` = some test unexpected; `error` = health check failed, timeout, no/corrupt report, report-level errors,
@@ -247,7 +262,7 @@ written. Empty token → endpoints open and `/health` `auth: ok (uyarı: …)`; 
   `retries` has no Java equivalent: ignored, reported as `retries_yok_sayildi:true`.
 - Health (`saglik`): `{ok, zaman, web:null, api, appium, hata}` — `GET DEMO_API_URL/health` and
   Appium `GET APPIUM_URL_<PLATFORM>/status`; failure → `error`, Maven never starts.
-- Maven env: `PLATFORM`, `APPIUM_URL`, `DEMO_API_URL`, `DEMOAPP_TEST_TOKEN`, `BREAK_CAMPAIGN`,
+- Maven env: `PLATFORM`, `APPIUM_URL`, `DEMO_API_URL`, `DEMOAPP_TEST_TOKEN`, `BREAK_CAMPAIGN`, `TP_FAULT`,
   `TP_RUN_ID`, `CI=1` and the app/device settings from `TP_APP_ID_<P>` (default
   `com.antreklabs.bayisiparis` for android/ios), `TP_APP_PATH_<P>` (path on the **Appium host**),
   `TP_APP_ACTIVITY_<P>` (android default `.MainActivity` when no path), `TP_APP_ARGS_<P>`, `TP_APP_WORKDIR_<P>` (Windows: NovaWindows `appArguments` / `appWorkingDir`),

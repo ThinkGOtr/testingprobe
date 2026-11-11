@@ -18,8 +18,9 @@ Akış (run.py ile aynı kilit ve koşu dizini sözleşmesi):
   3. Tekrar başına (`repeat_each`) `mvn … [test-compile] surefire:test -Dplatform=<p>`; kapsam
      `test_files` → `-Dtest=<yol>` (testng.xml devre dışı), yoksa `testng.xml` (testler + uretilen).
      Birim testleri (cihazsız) burada koşmaz: GitHub iş akışı `run-app-checks.sh` ile koşar.
-  4. Kırılma (BREAK_CAMPAIGN=1) web ile aynı yoldur: testin hazırlığı `/test/break` açar, koşu
-     nasıl biterse bitsin her bayi için `restore_break` geri alır. Kırmızı adımın denetimi
+  4. Kırılma (BREAK_CAMPAIGN=1) ve ekilmiş hata (TP_FAULT=<kod>) web ile aynı yoldur: testin
+     hazırlığı `/test/break` açar, koşu nasıl biterse bitsin her bayi için `restore_break` geri
+     alır. Kırmızı adımın denetimi
      (`araclar/KirmiziDenetimi.java`: kırmızılar YALNIZCA assertion) çekirdekte, test bazındaki
      `failure.type` ile yapılır (runner/surefire.py aynı sınıflandırmayı üretir).
   5. Sonuç: Surefire `TEST-*.xml` → `results.summarize` biçiminde özet + tek `junit.xml`
@@ -181,6 +182,7 @@ def maven_env(cfg: Settings, req: RunRequest, platform: str) -> dict[str, str]:
             "DEMO_API_URL": cfg.demo_api_url,
             "DEMOAPP_TEST_TOKEN": cfg.demoapp_test_token,
             "BREAK_CAMPAIGN": "1" if req.break_campaign else "",
+            "TP_FAULT": req.fault or "",
             "TP_RUN_ID": req.run_id,
         }
     )
@@ -222,6 +224,7 @@ def execute_locked(
         "repeat_each": req.repeat_each,
         "retries": req.retries,
         "break_campaign": req.break_campaign,
+        "fault": req.fault,
         "workers": None,
         "keep": req.keep,
         "base_url": None,
@@ -269,7 +272,7 @@ def execute_locked(
                         cfg, req, platform, root, repeats, allure_dir, log_parts
                     )
     finally:
-        if req.break_campaign and saglik["ok"]:
+        if req.breaks_app and saglik["ok"]:
             restore = runmod.restore_break(cfg, http)
 
     summary: dict[str, Any] | None = None
@@ -310,7 +313,7 @@ def execute_locked(
             error = f"Maven çıkış kodu {exit_code}"
     if restore is not None and not restore["ok"]:
         status = "error"
-        error = (error + " · " if error else "") + "Kampanya kırılması geri alınamadı."
+        error = (error + " · " if error else "") + runmod.restore_error(req)
 
     report = {
         **base,
@@ -332,8 +335,9 @@ def execute_locked(
         "saglik": saglik,
         "retries_yok_sayildi": req.retries > 0,
         "compile_diagnostics": diagnostics,
-        # Kırarak doğrulamanın kırmızı adım denetimi (KirmiziDenetimi.java ile aynı kural).
-        "kirmizi_denetimi": red_check(summary["tests"]) if summary and req.break_campaign else None,
+        # Kırarak doğrulamanın ve ekilmiş hata koşusunun kırmızı adım denetimi
+        # (KirmiziDenetimi.java ile aynı kural).
+        "kirmizi_denetimi": red_check(summary["tests"]) if summary and req.breaks_app else None,
         "stats": summary["stats"] if summary else None,
         "tests": summary["tests"] if summary else [],
         "failures": failures_of(summary["tests"]) if summary else [],
@@ -352,8 +356,9 @@ def execute_locked(
 
 
 def red_check(tests: list[dict[str, Any]]) -> dict[str, Any]:
-    """`ci/break-verify-app.sh` 2. adımı (`KirmiziDenetimi.java`): BREAK_CAMPAIGN=1 koşusunda
-    kırmızı testlerin HEPSİ doğrulama (assertion) hatası olmalı ve en az bir kırmızı olmalı.
+    """`ci/break-verify-app.sh` 2. adımı (`KirmiziDenetimi.java`): BREAK_CAMPAIGN=1 (ya da
+    ekilmiş hata, TP_FAULT) koşusunda kırmızı testlerin HEPSİ doğrulama (assertion) hatası olmalı
+    ve en az bir kırmızı olmalı.
     Kurulum (`test_data`), locator, diğer hatalar ve atlanan test kırmızı sayılmaz.
 
     Karar yine çekirdeğindir (kırarak doğrulama akışı); bu alan aynı kuralın deterministik özeti.
