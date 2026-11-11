@@ -935,7 +935,7 @@ def test_alembic_tek_bas() -> None:
 
     script = ScriptDirectory.from_config(alembic_config())
     bas = script.get_heads()
-    assert bas == ["0020"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
+    assert bas == ["0021"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
     assert script.get_revision("0019").down_revision == "0018"
     assert script.get_revision("0020").down_revision == "0019"
 
