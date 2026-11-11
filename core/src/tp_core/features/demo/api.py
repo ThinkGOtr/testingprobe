@@ -5,6 +5,7 @@
 | POST | `/demo/break-locator?zorla=` | presenter — locator kırılması (demo-admin bypass'ı) |
 | POST | `/demo/reset` | presenter — main → baseline, tp/* PR kapat, uygulama, AI Bug silme |
 | GET  | `/demo/status` | herkes — forge main/testid, uygulama commit'i, `onarim_on_kosulu` |
+| POST | `/demo/jira-status` | presenter — jira-sim'de story'yi duruma taşı (gerçek Jira'da 409) |
 
 Kırılmadan önce yeşil temel koşu yoksa kırılma 409 + yönerge döner (`zorla=true` bilerek atlar):
 locator onarımı "son yeşil" kanıt ister. GitHub kipinde (TP_FORGE=github) kırılma/sıfırlama insan
@@ -22,6 +23,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.concurrency import run_in_threadpool
+from pydantic import BaseModel, Field
 
 from tp_core.auth.deps import CurrentUser, require_role
 from tp_core.db import get_engine
@@ -69,3 +71,19 @@ async def reset(user: Presenter, response: Response) -> dict[str, Any]:
 def status(_user: CurrentUser) -> dict[str, Any]:
     with session_scope() as s:
         return service.durum(session=s)
+
+
+class JiraDurumIstegi(BaseModel):
+    jira_key: str = Field(min_length=3, max_length=40)
+    durum: str = Field(min_length=1, max_length=100)
+
+
+@router.post("/demo/jira-status")
+def jira_status(body: JiraDurumIstegi, user: Presenter) -> dict[str, Any]:
+    """jira-sim'deki story'yi verilen duruma taşır (ör. "QA To Do": Jira durum tetiği provası)."""
+    from tp_core.integrations.jira import JiraError
+
+    try:
+        return service.jira_durum_tasi(user, body.jira_key, body.durum)
+    except JiraError as exc:
+        raise HTTPException(502, f"Jira'ya erişilemedi: {exc}") from exc

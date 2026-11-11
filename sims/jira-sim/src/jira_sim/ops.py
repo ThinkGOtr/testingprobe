@@ -418,6 +418,7 @@ def create_issue(
 TRANSITIONS = [
     {"id": "11", "name": "To Do", "to": "To Do"},
     {"id": "21", "name": "In Progress", "to": "In Progress"},
+    {"id": "41", "name": "QA To Do", "to": "QA To Do"},
     {"id": "31", "name": "Done", "to": "Done"},
 ]
 

@@ -802,3 +802,72 @@ def durum(forge: Any | None = None, session: Session | None = None) -> dict[str,
             out["uygulama"]["yonerge"] = web.YONERGE
     out["web_yenileme_istegi"] = web.bekleyen_istek()
     return out
+
+
+# ------------------------------------------------------------- Jira durum (yalnız jira-sim)
+
+_JIRA_KEY = re.compile(r"^[A-Z][A-Z0-9_]{0,19}-[1-9][0-9]{0,8}$")
+
+
+class DemoJiraYok(WorkflowError):
+    """Demo Jira kontrolü yalnız jira-sim'e karşı çalışır (gerçek Jira'ya demo yazımı yok)."""
+
+    status_code = 409
+
+
+class DemoJiraGecisYok(WorkflowError):
+    status_code = 409
+
+
+class DemoJiraIssueYok(WorkflowError):
+    status_code = 404
+
+
+def _jira_sim_mi() -> bool:
+    f = _factories.get("jira_sim_mi")
+    if f is not None:
+        return bool(f())
+    from tp_core.integrations.jira import get_jira_settings
+
+    return get_jira_settings().is_simulator
+
+
+def jira_durum_tasi(user: Principal, jira_key: str, durum: str) -> dict[str, Any]:
+    """`POST /demo/jira-status`: jira-sim'deki story'yi verilen duruma taşır (gerçek Jira
+    biçimindeki geçiş uçlarıyla). Sprint otomasyonu provası: story "QA To Do"ya gelince Jira
+    durum tetiği onu çeker (specs/013 §3.4). Gerçek Jira'da 409; hiçbir istek gönderilmez.
+    """
+    from tp_core.features.requirements import services as req_services
+    from tp_core.integrations.jira import JiraNotFound
+
+    if not _jira_sim_mi():
+        raise DemoJiraYok("Demo Jira kontrolü yalnız jira-sim ile çalışır (gerçek Jira bağlı)")
+    key = jira_key.strip().upper()
+    if not _JIRA_KEY.fullmatch(key):
+        raise DemoJiraIssueYok(f"Geçersiz Jira anahtarı: {jira_key!r}")
+    hedef = " ".join(durum.split())
+    jira = req_services.jira()
+    try:
+        onceki = jira.get_issue(key).status
+        if " ".join(onceki.split()).casefold() == hedef.casefold():
+            return {"jira_key": key, "onceki": onceki, "durum": onceki, "degisti": False}
+        gecis = next(
+            (
+                t for t in jira.transitions(key)
+                if " ".join(str((t.get("to") or {}).get("name") or "").split()).casefold()
+                == hedef.casefold()
+            ),
+            None,
+        )  # fmt: skip
+        if gecis is None:
+            raise DemoJiraGecisYok(f"{key} için '{hedef}' durumuna geçiş yok")
+        jira.transition(key, str(gecis["id"]))
+    except JiraNotFound as exc:
+        raise DemoJiraIssueYok(f"Jira kaydı bulunamadı: {key}") from exc
+    yeni = str((gecis.get("to") or {}).get("name") or hedef)
+    with session_scope() as s:
+        audit_on_commit(
+            s, user.kullanici_adi, "demo.jira_status", f"jira:{key}",
+            {"onceki": onceki, "durum": yeni},
+        )  # fmt: skip
+    return {"jira_key": key, "onceki": onceki, "durum": yeni, "degisti": True}

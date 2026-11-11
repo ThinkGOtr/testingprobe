@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% macro status_badge(name) -%}
-<span class="status {% if name == 'Done' %}done{% elif name == 'In Progress' %}prog{% endif %}">{{ {'To Do': 'Yapılacak', 'In Progress': 'Sürüyor', 'Done': 'Tamamlandı'}.get(name, name) }}</span>
+<span class="status {% if name == 'Done' %}done{% elif name in ('In Progress', 'QA To Do') %}prog{% endif %}">{{ {'To Do': 'Yapılacak', 'In Progress': 'Sürüyor', 'QA To Do': 'QA bekliyor', 'Done': 'Tamamlandı'}.get(name, name) }}</span>
 {%- endmacro %}
 {% block content %}
 <h1>Kayıtlar</h1>

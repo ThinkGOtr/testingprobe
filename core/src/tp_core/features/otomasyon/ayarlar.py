@@ -13,6 +13,10 @@ from sqlalchemy.orm import Session
 
 from tp_core.audit.session import audit_on_commit
 from tp_core.models.otomasyon_feature import OtomasyonAyari
+from tp_core.workflow.service import Principal
+
+# Otomatik işlerin (onay sonrası kod, Jira tetiği, otomatik case) tek sistem aktörü.
+OTOMASYON_AKTORU = Principal(None, "otomasyon", "system", "system")
 
 OTOMATIK_KOD = "otomatik_kod_uretimi"
 JIRA_TETIK = "jira_tetik"

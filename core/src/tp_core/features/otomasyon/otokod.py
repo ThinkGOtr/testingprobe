@@ -28,7 +28,7 @@ from tp_core.workflow.service import Principal
 
 log = logging.getLogger(__name__)
 
-OTOMASYON_AKTORU = Principal(None, "otomasyon", "system", "system")
+OTOMASYON_AKTORU = ayarlar.OTOMASYON_AKTORU
 
 # start_generation'ın "zaten var" sonuçları: yeni üretim gerekmiyor.
 ATLANAN_SONUCLAR = frozenset({"suruyor", "pr_acik", "merge_edildi"})
