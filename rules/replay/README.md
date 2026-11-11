@@ -611,6 +611,15 @@ Başka herhangi bir serbest metin `serbest:*` deseniyle bu golden'a düşer ve b
 ön inceleme ve denetim nötr REPLAY-MISS çıktısı verir (yukarıda), soru/bulgu göstermez; case
 üretimi `ReplayNoOutput` ile sıfır taslak verir (başka özelliğin case'leri gelmez).
 
+## Asistan denetimi (`assistant_guard`, 011 F7)
+
+`assistant_guard/golden/` (`temiz-is-sorusu`, `irkci-soru`, `yanlis-bilgi-cevap`) **elle
+hazırlanmış** örneklerdir; asistan golden'ları gibi yalnız şema/kural testleri ve değerlendirme
+setinin REPLAY duman koşusu içindir. Asistan denetimi çalışma zamanında replay kullanmaz: asistanın
+canlı geçidinden geçer (`TP_ASISTAN_MODEL_MODE=live`); asistan modeli kapalıyken (REPLAY demo,
+prova) soru kural tabanlı simülatörle (`integrations/agent_probe/sim.py`, kaynak `sim`) denetlenir,
+model çağrısı yapılmaz. Golden çıktısı yalnız puan + kategori + gerekçedir; kararı kod verir.
+
 ## Veri kanıtı özeti (`result_digest`)
 
 `tp_core.gateway.result_digest(rows)`: her satırın değerleri SELECT sırasıyla `=` ile, satırlar

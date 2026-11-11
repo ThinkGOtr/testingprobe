@@ -71,6 +71,7 @@ def test_degerlendirme_durumu_durust_etiket() -> None:
     paketler = {x["paket"]: x for x in d}
     assert "triage" in paketler
     for x in d:
-        assert x["durum"] in ("pending", "evaluated", "waived", "stale", "missing")
+        durumlar = ("pending", "evaluated", "waived", "stale", "icerik_degisti", "missing")
+        assert x["durum"] in durumlar
         if x["durum"] == "pending":
             assert x["etiket"] == "canlı değerlendirme bekliyor"

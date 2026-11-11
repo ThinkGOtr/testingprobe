@@ -9,7 +9,10 @@ kod sabitidir (contracts/env.md): asistan günlük $10, kullanıcı günlük $1,
   olabilir: kök yukarı, harcama aşağı doğru özyinelemeli bulunur. Soru başı harcama = ağaçtaki
   mesajların `ai_call_id` kökleri + bu köklerin `parent_call_id` turları.
 - **Kullanıcı günlük**: `ai_call.ek->>'kullanici_id'` (İlke VIII kişi bağı), UTC günü.
-- **Asistan günlük**: `ai_call.amac IN ('assistant', 'assistant_deep')`, UTC günü.
+- **Asistan günlük**: `ai_call.amac IN ('assistant', 'assistant_deep', 'assistant_guard')`, UTC
+  günü (011 F7: soru/cevap denetim çağrıları asistanın bütçesindendir).
+- **Denetim çağrıları** (`assistant_guard`): `ek.kullanici_id` taşır (kullanıcı günlük); soru başı
+  harcamaya `asistan_denetim.ai_call_id` ile girer.
 - **Sayaçlar** `job` tablosundaki bitmemiş `assistant.answer` işlerinden (iptal edilmiş ama süren iş
   dahil): global sınır 2 × `TP_WORKER_ASISTAN_PARALEL`; kullanıcı başı yalnız `tetik='kullanici'`.
   Global sayım ve ekleme `global_kilit` altında yapılır; API POST ve otomatik yükseltme aynı kilidi
@@ -102,7 +105,9 @@ def soru_harcamasi_usd(conn: Connection, kok_id: uuid.UUID) -> Decimal:
                 " UNION ALL"
                 " SELECT a.id, a.ai_call_id, g.derinlik + 1 FROM asistan_mesaj a"
                 " JOIN agac g ON a.ust_mesaj_id = g.id WHERE g.derinlik < 10), "
-                "kokler AS (SELECT ai_call_id FROM agac WHERE ai_call_id IS NOT NULL) "
+                "kokler AS (SELECT ai_call_id FROM agac WHERE ai_call_id IS NOT NULL "
+                " UNION SELECT d.ai_call_id FROM asistan_denetim d"
+                " WHERE d.ai_call_id IS NOT NULL AND d.mesaj_id IN (SELECT id FROM agac)) "
                 "SELECT COALESCE(SUM(maliyet), 0) FROM ai_call "
                 "WHERE id IN (SELECT ai_call_id FROM kokler) "
                 "   OR parent_call_id IN (SELECT ai_call_id FROM kokler)"
@@ -134,7 +139,7 @@ def asistan_gunluk_usd(conn: Connection, gun: date | None = None) -> Decimal:
             text(
                 "SELECT COALESCE(SUM(maliyet), 0) FROM ai_call "
                 "WHERE olusturma >= :bas AND olusturma < :bit "
-                "AND amac IN ('assistant', 'assistant_deep')"
+                "AND amac IN ('assistant', 'assistant_deep', 'assistant_guard')"
             ),
             {"bas": bas, "bit": bit},
         ).scalar_one()

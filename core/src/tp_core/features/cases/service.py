@@ -155,6 +155,13 @@ class InvalidCaseContent(WorkflowError):
 # ---------------------------------------------------------------------- yardımcılar
 
 
+def _ajan_urunu_engeli(session: Session, requirement_id: uuid.UUID) -> None:
+    """011 F6: AI ajan ürününe bağlı gereksinimde test Agent Probe'da koşar (409 `ajan_urunu`)."""
+    from tp_core.features.agent_probe.service import ajan_urunu_engeli
+
+    ajan_urunu_engeli(session, requirement_id)
+
+
 def get_requirement(
     session: Session, requirement_id: uuid.UUID, *, lock: bool = False
 ) -> Requirement:
@@ -557,6 +564,7 @@ def start_generation(
             return {**sonuc, "kip": kip}
         tasarim_modeli_id = model_service.require_approved_model(session, req).id
     req = get_requirement(session, requirement_id, lock=True)
+    _ajan_urunu_engeli(session, req.id)
     if req.durum == "generating":
         recover_stuck_generation(session, req)
     if req.durum not in URETIM_BASLANGIC:
@@ -1184,6 +1192,7 @@ def submit_drafts(
     if len(cases) > 50:
         raise InvalidCaseContent("Tek seferde en fazla 50 case gönderilebilir")
     req = requirement_by_key(session, requirement_key_, lock=True)
+    _ajan_urunu_engeli(session, req.id)
     if req.durum not in IDE_KABUL:
         raise WorkflowError(
             f"Taslaklar yalnızca PO onaylı gereksinime gönderilebilir (durum: {req.durum})"

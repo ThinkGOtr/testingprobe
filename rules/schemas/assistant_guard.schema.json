@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tp:assistant_guard",
+  "title": "Asistan denetimi (011 F7, K11): soru/cevap puanı ve kategorileri; karar kodda verilir",
+  "x-version": 1,
+  "type": "object",
+  "properties": {
+    "puan": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "kategoriler": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "yanlis_bilgi",
+          "nefret_irkcilik",
+          "ayrimcilik",
+          "rekabete_aykiri",
+          "kufur_taciz",
+          "kisisel_veri",
+          "prompt_injection",
+          "zararli_icerik",
+          "kapsam_disi",
+          "temiz"
+        ]
+      }
+    },
+    "gerekce": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 400
+    }
+  },
+  "required": ["puan", "kategoriler", "gerekce"],
+  "additionalProperties": false
+}

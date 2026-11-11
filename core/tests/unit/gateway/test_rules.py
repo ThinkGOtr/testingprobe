@@ -21,6 +21,8 @@ PURPOSES = {
     # Portal asistanı: iki amaç tek prompt paketini paylaşır (AI-ASISTAN-PLANI §6.1).
     "assistant": "assistant",
     "assistant_deep": "assistant",
+    # 011 F7 asistan denetimi (Agent Probe portu).
+    "assistant_guard": "assistant-guard",
 }
 
 
@@ -40,7 +42,7 @@ def test_model_classes_per_task() -> None:
     table = load_model_table(REAL_RULES)
     for p in ("requirement_review", "case_generation", "consistency_check", "verify_and_map"):
         assert table.purpose(p).model == "claude-sonnet-5-5"
-    for p in ("triage", "bug_draft", "dup_rank", "assistant"):
+    for p in ("triage", "bug_draft", "dup_rank", "assistant", "assistant_guard"):
         assert table.purpose(p).model == "claude-haiku-5-5"
     assert table.purpose("assistant_deep").model == "claude-sonnet-5-5"
     for cfg in table.purposes.values():

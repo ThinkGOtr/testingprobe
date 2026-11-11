@@ -594,5 +594,6 @@ bos_ekranlar:
   - {ekran: /kontrol-kulesi, roller: [analyst, po, engineer, tester]}
   - {ekran: /yol-haritasi, roller: [analyst, po, engineer, tester, presenter]}
   - {ekran: /denetim, roller: [analyst, po, engineer, tester, presenter]}
+  - {ekran: /ajan-urunleri, roller: [analyst, po, engineer, tester, presenter]}
   - {ekran: /claude-code, roller: [analyst]}
   - {ekran: /demo, roller: [presenter]}

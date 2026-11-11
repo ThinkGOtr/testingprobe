@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { ApiError } from "../api/http";
 import { useOlay } from "../api/events";
 import type { Bulgu, GereksinimDetay as Detay } from "../api/types";
+import { AjanUrunuPaneli, useAjanTesti } from "../components/AjanUrunuPaneli";
 import { AkisAdimlari } from "../components/AkisAdimlari";
 import { BazDegerKarti } from "../components/BazDegerKarti";
 import { useBildirim } from "../components/Bildirim";
@@ -14,6 +15,7 @@ import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { akisAdimi, DENETIM_ISLERI, hataAdimi, URETIM_ISI } from "../lib/akis";
 import { akisKanitlari, guncelAdim } from "../lib/yolHaritasi";
 import { AC_EKSIK, gereksinimDurumu, SORU_TURU } from "../lib/etiketler";
+import { AJAN_URUNU_NEDENI } from "../lib/ajanProbe";
 import { tarih } from "../lib/format";
 import { dokumanBloklari } from "../lib/dokuman";
 import type { UretimKipi } from "../api/tasarimModeliTipleri";
@@ -47,6 +49,8 @@ export function GereksinimDetay() {
   const { id = "" } = useParams();
   const detay = useVeri(() => api.gereksinim(id), [id]);
   const bulgular = useVeri(() => api.bulgular(id), [id]);
+  // 011 F6: ajan ürününe bağlı gereksinimde test Agent Probe'da koşar (case akışı kapalı).
+  const ajan = useAjanTesti(id);
   // Gereksinim makinesi `done` ile biter; kod → bug adımları (5–14) yol haritasıyla aynı kanıtlardan.
   const tamamMi = detay.veri?.durum === "done";
   const kanit = useVeri(() => (tamamMi ? akisKanitlari(id) : Promise.resolve(null)), [id, tamamMi]);
@@ -108,7 +112,9 @@ export function GereksinimDetay() {
   // Ön incelemeyi baştan başlatmak gerekmez — o yol Jira story'sinde yeni PO teyidi ister.
   const uretimHatasi = uretimHatasiMi(g);
   const poGuncel = poOnayiGuncel(g);
+  const ajanBagli = !!ajan.veri?.urun_kodu;
   const caseUretilebilir =
+    !ajanBagli &&
     !g.ac_missing &&
     ((poGuncel && ["po_approved", "cases_ready"].includes(g.durum)) || (uretimHatasi && poYenidenDenemedeGecerli(g)));
   const modelAsamasi = MODEL_ASAMASI.has(g.durum);
@@ -118,7 +124,9 @@ export function GereksinimDetay() {
     ? uretimHatasi
       ? "Case üretimi hata ile bitti; yeniden dener. PO onayının güncelliği sunucuda yeniden doğrulanır."
       : undefined
-    : g.ac_missing
+    : ajanBagli
+      ? AJAN_URUNU_NEDENI
+      : g.ac_missing
       ? AC_YOK_CASE_URETILEMEZ
       : uretimHatasi
         ? "İçerik PO onayından sonra değişti; yeniden PO teyidi gerekir"
@@ -189,7 +197,12 @@ export function GereksinimDetay() {
             >
               Seçeneklerle üret…
             </IslemDugmesi>
-            {caseVar && (
+            {caseVar && ajanBagli && (
+              <span className="dugme dugme-ikincil" aria-disabled="true" title={AJAN_URUNU_NEDENI}>
+                Case review
+              </span>
+            )}
+            {caseVar && !ajanBagli && (
               <Link className="dugme dugme-ikincil" to={`/gereksinimler/${encodeURIComponent(g.id)}/caseler`}>
                 Case review
               </Link>
@@ -252,6 +265,8 @@ export function GereksinimDetay() {
 
             <PoKarti g={g} yenile={tumunuYenile} />
           </div>
+
+          <AjanUrunuPaneli id={g.id} ajan={ajan} caseVar={caseVar} degisti={tumunuYenile} />
 
           <BazDegerKarti
             id={BOLUM_ID.baz}

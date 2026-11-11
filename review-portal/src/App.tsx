@@ -11,6 +11,7 @@ import { BosDurum, Kart, SayfaBasligi, Yukleniyor } from "./components/ui";
 import { BugTaslakDetay, BugTaslaklari } from "./pages/BugTaslaklari";
 import { CaseReview } from "./pages/CaseReview";
 import { ClaudeCode } from "./pages/ClaudeCode";
+import { AjanUrunleri } from "./pages/AjanUrunleri";
 import { Denetim } from "./pages/Denetim";
 import { DemoKontrolleri } from "./pages/DemoKontrolleri";
 import { GereksinimDetay } from "./pages/GereksinimDetay";
@@ -113,6 +114,7 @@ export function Rotalar() {
         <Route path="kontrol-kulesi" element={<KontrolKulesi />} />
         <Route path="yol-haritasi" element={<YolHaritasi />} />
         <Route path="denetim" element={<Denetim />} />
+        <Route path="ajan-urunleri" element={<AjanUrunleri />} />
         <Route
           path="claude-code"
           element={

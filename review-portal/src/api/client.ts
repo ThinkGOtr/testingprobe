@@ -16,6 +16,8 @@ import { nesneMi } from "./uyum";
 import { kontrolKulesiUyarla, kosuDetayUyarla, kosuUyarla, scriptDetayUyarla, scriptUyarla } from "./uyumDemoB";
 import { bazYanitiUyarla, demoDurumuUyarla, gereksinimBazi } from "./uyumFaz5";
 import type {
+  AjanTestiGorunumu,
+  AjanUrunleriYaniti,
   BazDegerGirdisi,
   Bulgu,
   BulguKararGirdisi,
@@ -327,6 +329,13 @@ export const api = {
   kontrolKulesi: async (): Promise<KontrolKulesi> => kontrolKulesiUyarla(await istek<unknown>("GET", "/control-tower")),
   denetim: async (dogrula = true): Promise<DenetimYaniti> =>
     denetimiUyarla(await istek<unknown>("GET", "/audit", { sorgu: { verify: dogrula } })),
+
+  // Agent Probe: AI ajan ürünleri ve ajan testi talepleri (011 F6; bu sürümde simülasyon)
+  ajanUrunleri: () => istek<AjanUrunleriYaniti>("GET", "/agent-probe/products"),
+  ajanTesti: (id: string) => istek<AjanTestiGorunumu>("GET", `/requirements/${yol(id)}/agent-test`),
+  ajanUrunuBagla: (id: string, urunKodu: string | null) =>
+    istek<AjanTestiGorunumu>("PUT", `/requirements/${yol(id)}/agent-product`, { govde: { urun_kodu: urunKodu } }),
+  ajanTestiBaslat: (id: string) => istek<AjanTestiGorunumu>("POST", `/requirements/${yol(id)}/agent-test`),
 
   // Claude Code kanalı
   tokenOlustur: (kapsam: TokenKapsami) => istek<McpToken>("POST", "/tokens", { govde: { kapsam } }),

@@ -428,7 +428,13 @@ def _derin_ust(
     ust = session.get(AsistanMesaj, ust_id)
     if ust is None or ust.kullanici_id != user.id or ust.sohbet_id != s.id:
         raise _bulunamadi("Mesaj")
-    if ust.rol != "assistant" or ust.durum != "done" or ust.amac == "assistant_deep":
+    # `denetim`: denetimin engellediği ya da denetimsiz kalan cevap incelenmez (011 F7).
+    if (
+        ust.rol != "assistant"
+        or ust.durum != "done"
+        or ust.amac == "assistant_deep"
+        or ust.kaynak == "denetim"
+    ):
         raise KodluHata(422, "gecersiz_istek", "Bu cevap ayrıntılı incelenemez.")
     var = session.execute(
         text("SELECT 1 FROM asistan_mesaj WHERE ust_mesaj_id = :u"), {"u": ust.id}

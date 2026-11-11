@@ -73,6 +73,7 @@ import { PLATFORMLAR, platformUyarla, type Platform } from "../../lib/platform";
 import { asistanMockSifirla, asistanRotalari } from "./asistan";
 import { modelUretimiBaslat, onayliModel, tasarimModeliRotalari, type ModelBaglami } from "./tasarimModeli";
 import { derinlestirmeRotalari, PLATFORM_REPLAY_MISS, platformGoldenAdi, platformGoldeni, uretimGovdesiniDogrula } from "./derinlestirme";
+import { AJAN_URUNU_CASE_YOK, ajanMockSifirla, ajanProbeRotalari, ajanUrunuBagli } from "./ajanProbe";
 import { oneriKuleOlcumu, oneriMockSifirla, oneriRotalari } from "./oneri";
 import type { AsistanliKule } from "../../components/asistan/OnerilerOlcumKarti";
 import { kirmaTaslagiMi } from "../../lib/yolHaritasi";
@@ -133,6 +134,7 @@ export function mockSifirla(): void {
   veri = ilkVeri();
   demoKirik = false;
   asistanMockSifirla();
+  ajanMockSifirla();
   oneriMockSifirla();
   mockOturumuAyarla(null);
   try {
@@ -661,6 +663,8 @@ function poOnayla(id: string, govde: unknown): GereksinimDetay {
 function caseUret(id: string, govde?: unknown): IsYaniti {
   rolGerekli("analyst");
   const g = bul(veri.gereksinimler, id, "Gereksinim");
+  // 011 F6: ajan ürününe bağlı gereksinimde test Agent Probe'da koşar (core 409 `ajan_urunu`).
+  if (ajanUrunuBagli(g.id)) throw new ApiError(409, AJAN_URUNU_CASE_YOK, { kod: "ajan_urunu" });
   // 011 K1: gövdesiz çağrı tek tur (geriye uyum); iki turda model onayından önce model üretilir.
   const kip = (govde as { kip?: unknown } | null | undefined)?.kip === "iki_tur" ? "iki_tur" : "tek_tur";
   // 011 K5: gövdedeki üretim seçenekleri (isteğe bağlı) önce doğrulanır (422); gövdesiz çağrı eski davranış.
@@ -1944,6 +1948,8 @@ const ROTALAR: Rota[] = [
   ...asistanRotalari(girisGerekli),
   // Öneri düğmesi (§17, uç 10–11): api/mock/oneri.ts.
   ...oneriRotalari(girisGerekli, () => veri),
+  // Agent Probe ajan ürünleri ve testleri (011 F6; simülasyon): api/mock/ajanProbe.ts.
+  ...ajanProbeRotalari(rolGerekli, girisGerekli),
   ["POST", /^\/auth\/login$/, (_m, _q, g) => login(g)],
   ["POST", /^\/auth\/logout$/, () => logout()],
   ["GET", /^\/auth\/me$/, () => girisGerekli()],

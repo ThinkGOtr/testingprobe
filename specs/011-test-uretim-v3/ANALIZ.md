@@ -284,6 +284,39 @@ Dalga 4 — eleştiri döngüsü: farklı rollerden bağımsız inceleme (test m
 Bitiş: `feat/case-gen-v3` → `dev` → `main` (iki dal eşit, force-push yok, push öncesi sır taraması,
 imzasız commit). Deploy yok.
 
+
+### 5.1 Birleştirmede netleşenler (dalga 2 → `feat/case-gen-v3`)
+
+- **Migrasyon zinciri** doğrusal: 0021 `case_uretim` → 0022 `tasarim_modeli` → 0023 review/denetim →
+  0024 `uretim_secenekleri` → 0025 Agent Probe + `asistan_denetim`.
+- **Üretim başlatma gövdesi** tek modeldir (`UretimBaslatGirdisi`): `kip` + üretim seçenekleri.
+  Gövdesiz çağrı tek tur + kayıtlı seçenekler (geriye uyum, prova); gövde varsa `kip` varsayılanı
+  `iki_tur`. Seçenekler iki turun model aşamasında da gereksinime yazılır; tur 2 aynı seçenekleri
+  kullanır. Portal `caseUret(id, kip, secenekler)`; seçenek formu seçili kipi gönderir.
+- **Otomatik review (K4)** hem `run_generation` hem derinleştirme (`run_deepening`) sonrasında
+  `review.schedule_review` ile planlanır. IDE taslağından sonra planlanmaz (açık nokta).
+- **Yayın kapısı (K3):** `features/publish/__init__.py` yüklenirken `denetim_akisi.bind_gate()`;
+  `TP_DENETIM_KAPISI=on|off`. Denetim kararı `model_karari` ve kod kararı ayrı saklanır; kod yalnız
+  sertleştirir (Constitution XI).
+- **Ek API uçları:** `GET /requirements/{id}/generation-options`, `GET /requirements/{id}/deepen`
+  (son derinleştirme durumu), `PUT /requirements/{id}/agent-product`.
+- **Durum makinesi:** requirement'a `modeling`, `model_ready` (iki tur) ve `po_approved → done`
+  (yalnız Agent Probe testi bu içerik için geçen AI ajan ürünü gereksinimi; case akışı çalışmaz)
+  eklendi; `design_model` makinesi (tablo `tasarim_modeli`, `states.ENTITY_BY_TABLE`).
+- **Asistan:** `asistan_mesaj.kaynak` += `denetim` (engellenen / denetimsiz kalan mesaj). Soru/cevap
+  metni `asistan_denetim`'e yazılmaz; yalnız puan, kategori, karar.
+- **Geçit:** `Gateway.call(..., ek=)` — çağıranın `ai_call.ek` alanları (platform ekleri, asistan
+  denetiminde kullanıcı kimliği → bütçe).
+- **Platform ekleri:** sistem prompt'una değil kullanıcı mesajına "Platform eki" bölümü olarak
+  girer (`id@vN (sha256)` başlıklı); her ekin kendi `evaluations.yaml` kaydı ve seti vardır, ev
+  sahibi `case-generation` paketiyle çağrılır (`call_bundle`); ev sahibi prompt/şema değişirse
+  ekin değerlendirmesi bayatlar.
+- **Gherkin 404** asistan hata sözlüğündeki genel `bulunamadi` kodunu kullanır (yeni kod asistan
+  kurallarının değerlendirmesini bayatlatırdı).
+- **Ürün kararı bekleyen:** TPD-3 golden'ında (açıklamada prompt injection) denetim kararı
+  DÜZELTME_GEREKLİ (story temizlenmeden ona bağlı test yayınlanmasın). Agent Probe testi
+  başarısız olunca bug taslağı üretilmez (kayıt ve kanıt Agent Probe'da).
+
 ## 6. Riskler ve açık noktalar
 
 - **Canlı eval kapısı:** `guardrails`, `consistency-check`, `verify-and-map(-app)` kayıtları bu işten

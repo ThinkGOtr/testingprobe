@@ -727,8 +727,9 @@ class Gateway:
         call_id: UUID | None = None,
         ek: Mapping[str, Any] | None = None,
     ) -> CallResult:
-        """`ek`: çağıranın `ai_call.ek` alanları (ör. case üretiminde kullanılan platform ekleri,
-        specs/011 F4); geçidin kendi alanları çakışmada önceliklidir."""
+        """`ek`: her `ai_call` satırının `ek`ine eklenen çağıran alanları (ör. case üretiminde
+        kullanılan platform ekleri, specs/011 F4; asistan denetiminde `kullanici_id` → kullanıcı
+        günlük bütçesi); geçidin kendi alanları çakışmada önceliklidir. Vars. eski davranış."""
         cfg = self.models.purpose(purpose)
         bnd, session, masked, mask_diff, digest, key = self._key_material(
             purpose, cfg, bundle, schema, messages, replay_key, workflow_id

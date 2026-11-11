@@ -16,6 +16,9 @@ varsayılan. Repo public → commit öncesi sır taraması.
 | `TP_WORKER_ASISTAN_PARALEL` | `3` | `x-core-env` | asistan şeridi iş parçacığı; global bekleyen sınırı = 2 × bu (core-api de okur) |
 | `JIRA_CREATE_URL` | boş | `x-core-env` | "Jira'yı aç" (yeni kayıt) adresi; `https` (simülatörde `http://127.0.0.1`) ve kökeni `JIRA_BROWSE_URL` ile aynı olmalı, değilse yok sayılır + uyarı |
 | `GITHUB_ACTIONS_READ_TOKEN` | boş | yalnız core-worker (**sır**) | `ci_log` GitHub iş logu için yalnız `actions:read` token; boşsa mevcut okuma kimliği. `SECRET_ENV_VARS`'a ve `make security-check` 6'ya eklenir |
+| `TP_ASISTAN_DENETIM` | `on` | yalnız core-worker | 011 F7: `off` → asistan denetimi kapalı (011 öncesi davranış). Açıkken soru modelden önce, cevap gösterilmeden önce puanlanır; port hatası fail-closed |
+| `TP_ASISTAN_DENETIM_ENGEL` / `TP_ASISTAN_DENETIM_UYARI` | `40` / `70` | yalnız core-worker | puan < engel → engelle; < uyarı → uyarı notu; kategori tabanları ayrıca (`integrations/agent_probe/asistan.py`) |
+| `TP_AGENT_PROBE` | `tp` | `x-core-env` | 011 §4.5 Agent Probe portu: `tp` (geçitte model) \| `sim` (kurallar, model yok) |
 
 Mevcut ve değişmeyen: `ANTHROPIC_API_KEY` (yalnız core-worker), `TP_PII_MASKING`, `JIRA_READ_*`
 (`jira_issue` okuyucusu), `JIRA_BROWSE_URL`, `JIRA_PROJECT`, `JIRA_HESAP_*` (yorum yazarı rol etiketi),

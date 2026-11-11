@@ -17,7 +17,9 @@ requirement (gereksinim; başlangıç ``new``)::
     doc_final      -> pending_po, in_review, new         (doküman "son hal")
     pending_po     -> po_approved [KAPI: po_approve], in_review, new
     po_approved    -> generating | modeling [KAPI: PO onayı hâlâ güncel içerikte; koşul: ac_missing
-                      değil], new
+                      değil], new,
+                      done [KAPI: PO onayı güncel; koşul: AI ajan ürünü — son Agent Probe testi
+                      bu içerik için geçti (011 F6); case akışı çalışmaz]
     modeling       -> model_ready, failed                       (iki tur — tur 1: tasarım modeli)
     model_ready    -> generating [KAPI: PO onayı güncel; servis: onaylı + güncel model],
                       modeling [KAPI] (model reddedildi / yeniden üret), new
@@ -207,6 +209,13 @@ def _gerekce_var(f: Any) -> bool:
     return karar != "accept_difference" or bool((getattr(f, "gerekce", None) or "").strip())
 
 
+def _ajan_testi_gecti(r: Any) -> bool:
+    """011 F6: gereksinim ajan ürününe bağlı ve son Agent Probe testi bu içerik için geçti."""
+    from tp_core.features.agent_probe.service import ajan_testi_gecti
+
+    return ajan_testi_gecti(r)
+
+
 REQUIREMENT = Machine(
     entity="requirement",
     initial="new",
@@ -216,7 +225,7 @@ REQUIREMENT = Machine(
         findings_open=("in_review", "doc_final", "new"),
         doc_final=("pending_po", "in_review", "new"),
         pending_po=("po_approved", "in_review", "new"),
-        po_approved=("generating", "modeling", "new"),
+        po_approved=("generating", "modeling", "new", "done"),
         modeling=("model_ready", "failed"),
         model_ready=("generating", "modeling", "new"),
         generating=("cases_ready", "failed"),
@@ -235,6 +244,8 @@ REQUIREMENT = Machine(
         ("cases_ready", "modeling"): Gate(REQUIREMENT_KARARLARI),
         ("failed", "modeling"): Gate(REQUIREMENT_KARARLARI),
         ("model_ready", "modeling"): Gate(REQUIREMENT_KARARLARI),
+        # AI ajan ürünü: test Agent Probe'da koşar; geçen sonuç PO onaylı içeriğe ait olmalı.
+        ("po_approved", "done"): Gate(REQUIREMENT_KARARLARI),
     },
     approval_targets=frozenset({"po_approved"}),
     approval_consumers=frozenset({"generating", "modeling"}),
@@ -246,6 +257,10 @@ REQUIREMENT = Machine(
         ("po_approved", "modeling"): Guard(
             "kabul kriteri eksik (ac_missing) gereksinim tasarım modeline gönderilmez",
             lambda r: not getattr(r, "ac_missing", False),
+        ),
+        ("po_approved", "done"): Guard(
+            "yalnız Agent Probe testi geçen AI ajan ürünü gereksinimi case'siz tamamlanır",
+            _ajan_testi_gecti,
         ),
     },
 )

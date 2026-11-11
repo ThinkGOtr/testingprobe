@@ -421,8 +421,12 @@ def _golden_specs() -> list[tuple[str, dict]]:
     out = []
     for path in sorted((REPO / "rules" / "replay").glob("*/golden/**/TPD-*.json")):
         spec = json.loads(path.read_text(encoding="utf-8")).get("input_match") or {}
+        ad = str(path.relative_to(REPO / "rules" / "replay"))
+        # Platform eki golden'ları (011 F4) seçenek bloğunu da beyan eder: story şablonu değil.
+        if "/platform-" in ad:
+            continue
         if any(src.startswith("jira:") for src in spec.get("sources") or []):
-            out.append((str(path.relative_to(REPO / "rules" / "replay")), spec))
+            out.append((ad, spec))
     return out
 
 
@@ -434,7 +438,9 @@ def test_golden_specs_cover_every_round_and_scenario() -> None:
     assert "consistency_check/golden/TPD-1-r2.json" in names
     assert "consistency_check/golden/f2-kod-hatasi/TPD-1-r2.json" in names
     assert "case_generation/golden/f2-kod-hatasi/TPD-1.json" in names
-    assert len(names) == 14
+    assert "design_model/golden/f2-kod-hatasi/TPD-1.json" in names
+    # 14 (011 öncesi) + design_model (TPD-1, f2, TPD-3, TPD-4) + case_deepening (2)
+    assert len(names) == 20
 
 
 @pytest.mark.parametrize(("name", "spec"), GOLDEN_SPECS, ids=[n for n, _ in GOLDEN_SPECS])

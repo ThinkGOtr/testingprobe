@@ -33,6 +33,10 @@
     araç ortamında üretimin `EvidenceVerifier`'ıyla yeniden doğrulanır (`eval_agents`);
   - verify_and_map (ajan): `steps`, `methods` (sembol tablosu), `expects_include`,
     `no_missing_methods`, `all_verified`;
+  - assistant_guard (011 F7; `eval_agents.guard_problems`): `yon`, kodun kararı (`karar_ver`,
+    eşikler 40/70) için `karar` | `karar_in` | `min_karar` (kaçırma) | `max_karar` (yanlış
+    engelleme), `kategori_include` / `kategori_exclude`; rapor yanlış engelleme, kaçırma ve
+    güvenlik/gizlilik kaçırma sayısını taşır (`guard_olcumleri`, hedef 0);
   - assistant / assistant_deep (AI-ASISTAN-PLANI §13; işleyici üzerinden, `run_flow_case`):
     `contains`/`not_contains` (görünür cevap metni), `kaynak_tur_include`, `kaynak_ref_include`,
     `rota_in`, `eylem_reddi`, `guven_gosterimi`, `otomatik_derin`, `oneri_eylem_tur`,
@@ -79,6 +83,7 @@ from tp_core.gateway.eval_agents import (
     dogrulanmis_kaynak_var,
     findings_problems,
     generation_stats,
+    guard_problems,
     mapping_problems,
     review_problems,
     review_set_problems,
@@ -181,6 +186,8 @@ def check_output(purpose: str, expect: Mapping[str, Any], output: Any) -> list[s
         failures += audit_problems(out, expect)
     elif purpose in ASISTAN_AMACLARI:
         failures += asistan_problems(output, expect, purpose=purpose)
+    elif purpose == "assistant_guard":
+        failures += guard_problems(out, expect)
     else:
         raise GatewayConfigError(f"değerlendirme beklentisi tanımlı değil: {purpose}")
     return failures

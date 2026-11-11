@@ -608,7 +608,7 @@ export function SohbetSekmesi({
 
   const kartOzellikleri = (m: AsistanMesaji, cocukVar: boolean) => ({
     derinIncelenebilir:
-      modelAcik && m.kip === "soru" && m.amac !== "assistant_deep" && m.kaynak !== "kapali" && !cocukVar && !kullaniciBekliyor,
+      modelAcik && m.kip === "soru" && m.amac !== "assistant_deep" && m.kaynak !== "kapali" && m.kaynak !== "denetim" && !cocukVar && !kullaniciBekliyor,
     derinIncele: () => void derinIncele(m),
     derinCalisiyor: derinCalisan === m.id,
     geriBildir: (d: -1 | 1) => void geriBildir(m, d),

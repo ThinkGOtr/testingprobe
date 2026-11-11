@@ -25,6 +25,7 @@ export const ROTA_DESENLERI: readonly string[] = [
   "/kontrol-kulesi",
   "/yol-haritasi",
   "/denetim",
+  "/ajan-urunleri",
   "/claude-code",
   "/demo",
 ];

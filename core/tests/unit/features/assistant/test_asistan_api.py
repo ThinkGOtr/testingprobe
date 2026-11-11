@@ -1188,11 +1188,20 @@ def test_core_api_ortaminda_model_anahtari_ve_kipi_yok() -> None:
         "TP_WORKER_ASISTAN_PARALEL",
         "TP_ASISTAN_ONERI",
         "TP_ASISTAN_SAKLAMA_GUN",
+        "TP_ASISTAN_DENETIM",  # 011 F7
+        "TP_ASISTAN_DENETIM_ENGEL",
+        "TP_ASISTAN_DENETIM_UYARI",
+        "TP_AGENT_PROBE",
     ):
         assert ad in worker_env, ad
     assert worker_env["TP_ASISTAN_MODEL_MODE"] == "${TP_ASISTAN_MODEL_MODE:-off}"
     # core-api de paylaşılan (gizli olmayan) ayarları alır: global sayaç paralellikten türer.
-    for ad in ("TP_WORKER_ASISTAN_PARALEL", "TP_ASISTAN_ONERI", "JIRA_CREATE_URL"):
+    for ad in (
+        "TP_WORKER_ASISTAN_PARALEL",
+        "TP_ASISTAN_ONERI",
+        "JIRA_CREATE_URL",
+        "TP_AGENT_PROBE",
+    ):
         assert ad in api_env, ad
 
 
@@ -1216,5 +1225,9 @@ def test_env_example_asistan_satirlari_degersiz() -> None:
         "TP_WORKER_ASISTAN_PARALEL",
         "JIRA_CREATE_URL",
         "GITHUB_ACTIONS_READ_TOKEN",
+        "TP_AGENT_PROBE",
+        "TP_ASISTAN_DENETIM",
+        "TP_ASISTAN_DENETIM_ENGEL",
+        "TP_ASISTAN_DENETIM_UYARI",
     ):
         assert satirlar.get(ad) == "", ad

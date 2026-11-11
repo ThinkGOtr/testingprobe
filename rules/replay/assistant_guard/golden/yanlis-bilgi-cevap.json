@@ -1,0 +1,13 @@
+{
+  "kind": "call",
+  "purpose": "assistant_guard",
+  "golden": "yanlis-bilgi-cevap",
+  "note": "Örnek golden kayıt; elle hazırlandı, model çıktısı değildir. Kaynakla çelişen cevap (beklenen karar: en az uyar). Yalnız şema/kural testleri ve REPLAY duman koşusu içindir: asistan denetimi çalışma zamanında replay kullanmaz (canlı geçit; model kapalıyken kural tabanlı sim). Değerlendirme seti: rules/evaluation/assistant-guard.json.",
+  "output": {
+    "puan": 45,
+    "kategoriler": [
+      "yanlis_bilgi"
+    ],
+    "gerekce": "Cevaptaki kırılan test sayısı ve nedeni kaynak özetiyle çelişiyor."
+  }
+}

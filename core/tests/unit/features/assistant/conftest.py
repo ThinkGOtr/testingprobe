@@ -39,3 +39,11 @@ def sabit_hiz_penceresi(monkeypatch: pytest.MonkeyPatch) -> int:
 @pytest.fixture(autouse=True)
 def _canli_anahtar_yok(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _denetim_varsayilan_kapali(monkeypatch: pytest.MonkeyPatch) -> None:
+    """011 F7: mevcut akış testleri sahte sağlayıcı betiğini sırayla tüketir; denetim açıkken
+    soru/cevap denetim çağrıları betiğin ilk yanıtlarını alırdı. Denetimin kendisi
+    `test_denetim.py`'de (açık) sınanır; diğer testler bugünkü davranışı (kapalı) sınar."""
+    monkeypatch.setenv("TP_ASISTAN_DENETIM", "off")

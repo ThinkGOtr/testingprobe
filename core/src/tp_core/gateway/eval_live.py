@@ -378,6 +378,24 @@ class CaseEstimate:
     worst_usd: float  # şema yeniden istemleri dahil en kötü durum (bütçe denetimi bunu kullanır)
 
 
+GUARD_INPUT_CHARS = 8000  # soru/cevap + kaynak özetleri (asistan.METIN_TAVANI + KAYNAK_TAVANI)
+
+
+def _guard_estimate(gw: Gateway) -> tuple[float, float]:
+    """Bir asistan denetimi çağrısının (tipik, en kötü) maliyeti; denetim kapalıysa 0."""
+    from tp_core.features.assistant.denetim import acik
+
+    if not acik() or "assistant_guard" not in gw.models.purposes:
+        return 0.0, 0.0
+    cfg = gw.models.purpose("assistant_guard")
+    schema = load_schema(gw.rules_dir, "assistant_guard")
+    system = gw.bundle("assistant-guard", schema, cfg).system_prompt
+    tokens = math.ceil((len(system) + GUARD_INPUT_CHARS) / CHARS_PER_TOKEN)
+    price = gw.models.price(cfg.model)
+    one = (tokens * price.input * CACHE_WRITE_FACTOR + cfg.max_tokens * price.output) / 1_000_000
+    return one, one * (1 + MAX_SCHEMA_REASKS)
+
+
 def estimate_case(gw: Gateway, data: Mapping[str, Any], case: Mapping[str, Any]) -> CaseEstimate:
     purpose = str(data["purpose"])
     cfg = gw.models.purpose(purpose)
@@ -406,6 +424,10 @@ def estimate_case(gw: Gateway, data: Mapping[str, Any], case: Mapping[str, Any])
             + turns * min(cap, tokens * 4) * price.cache_read
         ) / 1_000_000
         single = attempt_cost(0) * min(turns, AGENT_TYPICAL_TURNS)
+        if is_flow_set(data):
+            # 011 F7: işleyici her mesajda soru + cevap denetimi (assistant_guard) çağırır.
+            guard = _guard_estimate(gw)
+            single, worst = single + 2 * guard[0], worst + 2 * guard[1]
         return CaseEstimate(tokens, out_tokens * turns, round(single, 6), round(worst, 6))
     worst = sum(attempt_cost(a * (out_tokens + REASK_OVERHEAD_TOKENS)) for a in range(attempts))
     return CaseEstimate(tokens, out_tokens, round(attempt_cost(0), 6), round(worst, 6))
@@ -977,6 +999,10 @@ def _finish_run(
     total = len(data["cases"]) * runs_of(data)
     if flow or data.get("esikler"):
         run.olcum = asistan_olcumleri(data, run.results, purpose)
+    elif purpose == "assistant_guard":
+        from tp_core.gateway.eval_agents import guard_olcumleri
+
+        run.olcum = guard_olcumleri(data, run.results)
     if run.results:
         day = today or dt.date.today()
         run.report = write_report(
