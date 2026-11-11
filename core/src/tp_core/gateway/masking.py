@@ -265,7 +265,9 @@ def _onekli(onek: str, govde: str, en_az: int) -> str:
 # `generic_assignment` anahtar adları (büyük/küçük harf duyarsız) ve değer karakterleri.
 _SIR_ANAHTARI = (
     r"(?:password|passwd|secret[_-]?key|secret|client[_-]?secret|token|access[_-]?token"
-    r"|auth[_-]?token|refresh[_-]?token|api[_-]?key|access[_-]?key|private[_-]?key)"
+    r"|auth[_-]?token|refresh[_-]?token|api[_-]?key|access[_-]?key|private[_-]?key"
+    # Türkçe anahtar adları (013 §9: "parola: Gizli123Abc"); değer kuralı aynı (harf + rakam).
+    r"|parola|sifre|şifre)"
 )
 _SIR_KARAKTERI = r"A-Za-z0-9_\-+/=.~@#%^&!"
 # Rastgele görünümlü değer: ≥ 8 karakter, harf VE rakam (kaynak koddaki `token`, `None`, `str`

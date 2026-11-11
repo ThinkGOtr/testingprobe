@@ -4,9 +4,9 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { asistanApi, kipRozeti, modelKisaAdi, type AsistanMesaji } from "../../api/asistan";
-import { ApiError } from "../../api/http";
+import { ApiError, mockZorunlu, yapilandir } from "../../api/http";
 import { asistanMockAyarla, asistanMockBekleyenler, asistanMockIsle } from "../../api/mock/asistan";
 import { OturumProvider } from "../../auth";
 import { oturumAc } from "../../test/yardimci";
@@ -156,6 +156,10 @@ describe("kip rozeti", () => {
   });
 
   it("kartta tek rozet: metin + açıklama (title ve ekran okuyucu metni); ayrı 'Hazır cevap' etiketi yok", () => {
+    // Gerçek derleme davranışı: örnek veri zorunlu değil (mock derlemesinde CANLI gösterilmez).
+    const onceki = mockZorunlu();
+    yapilandir({ mockZorunlu: false });
+    onTestFinished(() => yapilandir({ mockZorunlu: onceki }));
     const { unmount } = kart(mesaj({ kaynak: "model" }), { varsayilan_model: "claude-haiku-5-5" });
     const r = screen.getByTestId("kip-rozeti");
     expect(r).toHaveTextContent(/^CANLI · Haiku 5\.5$/);
@@ -178,7 +182,7 @@ describe("kip rozeti", () => {
     expect(screen.getByTestId("kip-rozeti")).toHaveClass("rozet-kip-kapali");
   });
 
-  it("panelde: canlı cevap 'CANLI · Haiku 5.5' (status modeli), şablon cevabı 'ŞABLON'", async () => {
+  it("panelde (örnek veri): model cevabında CANLI yok, ÖRNEK VERİ var; şablon cevabı 'ŞABLON'", async () => {
     await oturumAc("analist");
     const u = userEvent.setup();
     yalnizPanel();
@@ -187,7 +191,9 @@ describe("kip rozeti", () => {
     await waitFor(() => expect(asistanMockBekleyenler()).toHaveLength(1));
     act(() => asistanMockIsle(asistanMockBekleyenler()[0]));
     const k1 = await within(p).findByRole("article", { name: "Asistan cevabı" }, { timeout: 5000 });
-    expect(within(k1).getByTestId("kip-rozeti")).toHaveTextContent("CANLI · Haiku 5.5");
+    // Örnek veri derlemesi: hazırlanmış "model" cevabı CANLI gösterilmez, yalnız ÖRNEK VERİ.
+    expect(within(k1).queryByTestId("kip-rozeti")).toBeNull();
+    expect(within(k1).getByText("ÖRNEK VERİ")).toBeInTheDocument();
     await yaz(u, "Bugün ne yapmalıyım?");
     await waitFor(() => expect(asistanMockBekleyenler()).toHaveLength(1));
     act(() => asistanMockIsle(asistanMockBekleyenler()[0]));

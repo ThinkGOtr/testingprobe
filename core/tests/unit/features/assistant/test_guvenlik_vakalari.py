@@ -179,13 +179,7 @@ EKG: tuple[Vaka, ...] = (
 DENEME: tuple[Vaka, ...] = (
     # Atlatma — kesin (5).
     Vaka("den-kart-noktali", "kart", f"Müşterinin kartı {_bloklu(KART, '.')}"),
-    Vaka(
-        "den-parola-tr",
-        "sir",
-        f"parola: {PAROLA}",
-        xfail="`_SIR_ANAHTARI` Türkçe anahtarları (parola/şifre) tanımıyor; masking.py hiçbir "
-        "şeridin dosya listesinde değil (entegrasyonda)",
-    ),
+    Vaka("den-parola-tr", "sir", f"parola: {PAROLA}"),
     Vaka(
         "den-baglanti-dizesi",
         "sir",

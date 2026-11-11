@@ -253,8 +253,15 @@ def sablon_cevabi(
     jira_adresi: Callable[[str], str | None] | None = None,
     musteri_verisi: bool = False,
 ) -> SablonCevabi | None:
-    """Sorunun şablon sınıfı varsa modelsiz cevap; yoksa None."""
-    anahtar = siniflandir.durum_sorusu(soru)
+    """Sorunun şablon sınıfı varsa modelsiz cevap; yoksa None.
+
+    Şablon, modelin kullanacağı aracı doğrudan çağırır; bu yüzden rol politikası (013 §4)
+    burada da uygulanır: araç rolün izinli kümesinde değilse şablon atlanır (model dalı da o
+    aracı görmez)."""
+    from tp_core.features.assistant.rol_politikasi import izinli_araclar
+
+    izinli = izinli_araclar(baglam.rol)
+    anahtar = siniflandir.durum_sorusu(soru) if "probe_get" in izinli else None
     if anahtar is not None:
         cevap = durum_cevabi(
             baglam,
@@ -265,7 +272,7 @@ def sablon_cevabi(
         )
         if cevap is not None:
             return cevap
-    if siniflandir.kuyruk_sorusu(soru):
+    if "probe_my_queue" in izinli and siniflandir.kuyruk_sorusu(soru):
         return kuyruk_cevabi(baglam, kaydedici=kaydedici, musteri_verisi=musteri_verisi)
     return None
 

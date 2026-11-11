@@ -273,7 +273,9 @@ export function CevapKarti({ mesaj, baslik, derinIncelenebilir, derinIncele, der
             {guven}
           </Cip>
         )}
-        <KipRozeti mesaj={mesaj} modeller={modeller} />
+        {/* Örnek veri derlemesinde hazırlanmış "model" cevabı canlı gösterilmez (sahte CANLI yok):
+            o kartta yalnız ÖRNEK VERİ rozeti; şablon/kapalı rozetleri doğru olduğu için kalır. */}
+        {!(ornek && mesaj.kaynak === "model") && <KipRozeti mesaj={mesaj} modeller={modeller} />}
         {ornek && (
           <span className="rozet rozet-mock" title="Örnek veri: hazırlanmış cevap, gerçek asistan cevabı değil.">
             ÖRNEK VERİ

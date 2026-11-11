@@ -139,6 +139,40 @@ def test_kabul_edilen_soru_sayaci_sifirlar(
     assert _supheli(engine) == 0
 
 
+def test_sizintili_cevaplar_sayaci_sifirlamaz_ve_dondurur(
+    client: TestClient, make_user, engine: Engine, canli
+) -> None:
+    """K11: kanarya/istem sızıntısıyla biten soru temiz kabul değildir; üç ardışık sızıntı
+    (aralarındaki kabul edilen sorulara rağmen) dondurur. Temiz biten soru yine sıfırlar."""
+    u = make_user("analyst")
+    giris(client, u)
+    s = sohbet_ac(client)
+    for _ in range(3):
+        r = sor(client, s)
+        assert r.status_code == 202, r.text
+        mid = r.json()["mesaj_id"]
+        mesaj_bitir(engine, mid, amac="assistant")
+        with engine.begin() as c:
+            olay.olay_yaz(c, u.id, "istem_sizintisi", mesaj_id=uuid.UUID(mid))
+    with engine.connect() as c:
+        assert olay.ardisik_ciddi(c, u.id)[0] == 3
+    r = sor(client, s)
+    assert r.status_code == 429 and r.json()["kod"] == "donduruldu", r.text
+
+    v = make_user("analyst")
+    giris(client, v)
+    s2 = sohbet_ac(client)
+    r = sor(client, s2)
+    mid = r.json()["mesaj_id"]
+    mesaj_bitir(engine, mid, amac="assistant")
+    with engine.begin() as c:
+        olay.olay_yaz(c, v.id, "kanarya", mesaj_id=uuid.UUID(mid))
+    r = sor(client, s2)  # temiz biten soru
+    mesaj_bitir(engine, r.json()["mesaj_id"], amac="assistant")
+    with engine.connect() as c:
+        assert olay.ardisik_ciddi(c, v.id)[0] == 0
+
+
 def test_on_dakikadan_eski_ucuncu_olay_dondurmaz(
     client: TestClient, make_user, engine: Engine, canli
 ) -> None:

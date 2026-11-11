@@ -182,11 +182,11 @@ def _db_simdi(session: Session) -> datetime:
     return session.execute(text("SELECT now()")).scalar_one()
 
 
-def _varsayilan_model() -> str | None:
+def _varsayilan_model(amac: str = "assistant") -> str | None:
     try:
         from tp_core.gateway.config import find_rules_dir, load_model_table
 
-        return load_model_table(find_rules_dir()).purpose("assistant").model
+        return load_model_table(find_rules_dir()).purpose(amac).model
     except Exception:  # kural dosyası yoksa durum ucu yine yanıt verir
         return None
 
@@ -214,6 +214,8 @@ def durum(session: DbSession, user: CurrentUser) -> dict[str, Any]:
         "mod": satir.mod if satir is not None else "off",
         "model_hazir": bool(satir is not None and satir.model_hazir and neden is None),
         "varsayilan_model": _varsayilan_model(),
+        # 013 §7: derin cevabın kip rozeti ("CANLI · Sonnet 5.5") bu modeli gösterir.
+        "derin_model": _varsayilan_model("assistant_deep"),
         "degerlendirme": _degerlendirme(),
         "paket_commit": satir.paket_commit if satir is not None else None,
         "kalan_soru": budget.kalan_soru(session.connection(), user.id),

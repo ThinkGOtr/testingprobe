@@ -414,3 +414,29 @@ def test_ilk_mesaj_rol_satiri_ve_ek(rol: str, beklenen: str) -> None:
     # Rol eki sunucu metnidir: güvenilmeyen blok içinde değildir.
     assert "<untrusted" not in satirlar[1]
     assert icerik.endswith("Soru: Bu ekran ne yapar?")
+
+
+# ------------------------------------------------------------------ şablon dalı (entegrasyon)
+
+
+def test_sablon_rolun_izinli_olmayan_aracini_cagirmaz() -> None:
+    """Şablon cevapları aracı doğrudan çağırır; politika dışı araçta şablon atlanır."""
+    import uuid
+
+    from tp_core.features.assistant.maskeleme import mesaj_oturumu
+    from tp_core.features.assistant.sablon import sablon_cevabi
+    from tp_core.features.assistant.tools import arac_baglami
+    from tp_core.gateway.masking import PiiMasker
+
+    def db_yok():  # araç çağrılırsa test düşer
+        raise AssertionError("şablon politika dışı aracı çağırdı")
+
+    for rol in ("erisim_yoneticisi", "goruntuleyici"):
+        b = arac_baglami(
+            uuid.uuid4(),
+            rol,
+            mesaj_oturumu(PiiMasker(enabled=False)),
+            db=db_yok,
+            sir_degerleri=(),
+        )
+        assert sablon_cevabi(b, "Bugün ne yapmalıyım?") is None

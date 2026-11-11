@@ -9,7 +9,7 @@ Başkasının kaynağına her uç (cancel/feedback/`ust_mesaj_id` dahil) → 404
 
 | # | Yöntem | Yol | Gövde / sorgu | Başarı | Hatalar |
 |---|---|---|---|---|---|
-| 1 | GET | `/assistant/status` | — | `{etkin, neden?, mod, varsayilan_model, degerlendirme, paket_commit, kalan_soru}` | — (kalp atışı > 2 dk → `etkin=false, neden="worker_yok"`) |
+| 1 | GET | `/assistant/status` | — | `{etkin, neden?, mod, varsayilan_model, derin_model, degerlendirme, paket_commit, kalan_soru}` | — (kalp atışı > 2 dk → `etkin=false, neden="worker_yok"`) |
 | 2 | GET | `/assistant/conversations` | — | kendi sohbetleri, son 50 | |
 | 3 | POST | `/assistant/conversations` | `{baslik?}` | 201 sohbet | |
 | 4 | DELETE | `/assistant/conversations/{id}` | — | 204 (yumuşak silme) | 404 |

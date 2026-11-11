@@ -110,7 +110,19 @@ _ARDISIK = text(
     WHERE o.kullanici_id = :k AND o.ciddi
       AND o.zaman > COALESCE(
             (SELECT max(m.olusturma) FROM asistan_mesaj m
-             WHERE m.kullanici_id = :k AND m.rol = 'user' AND m.tetik = 'kullanici'),
+             WHERE m.kullanici_id = :k AND m.rol = 'user' AND m.tetik = 'kullanici'
+               -- K11: yalnız TEMİZ biten soru sıfırlar. Cevabı (ya da onun "Daha ayrıntılı"
+               -- çocuğu; bir sonraki kullanıcı sorusuna kadarki asistan mesajları) kanarya /
+               -- istem sızıntısı olayı almış soru sıfırlama noktası değildir; yoksa her
+               -- sızıntıyı izleyen soru sayacı sıfırlar ve sızıntılar eşiğe hiç ulaşmazdı.
+               AND NOT EXISTS (
+                 SELECT 1 FROM asistan_guvenlik_olay so
+                 JOIN asistan_mesaj a ON a.id = so.mesaj_id
+                 WHERE so.ciddi AND a.sohbet_id = m.sohbet_id AND a.sira > m.sira
+                   AND NOT EXISTS (
+                     SELECT 1 FROM asistan_mesaj q2
+                     WHERE q2.sohbet_id = m.sohbet_id AND q2.rol = 'user'
+                       AND q2.sira > m.sira AND q2.sira < a.sira))),
             '-infinity'::timestamptz)
     """
 )

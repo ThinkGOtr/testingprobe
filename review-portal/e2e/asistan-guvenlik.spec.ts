@@ -64,7 +64,7 @@ async function bildirimGorunur(p: Locator) {
   await expect(not).toHaveText(YZ_BILDIRIMI);
 }
 
-test("bildirim her sekmede; canlı cevapta CANLI · Haiku 5.5, kart numarası 422 kisisel_veri", async ({ page }) => {
+test("bildirim her sekmede; örnek cevapta sahte CANLI yok, kart numarası 422 kisisel_veri", async ({ page }) => {
   const hatalar = konsolHatalariniTopla(page);
   await girisYap(page, "analist");
   await page.goto("/kosular");
@@ -78,10 +78,10 @@ test("bildirim her sekmede; canlı cevapta CANLI · Haiku 5.5, kart numarası 42
 
   await sor(p, "Kırarak doğrula neden gri?");
   const kart = await sonCevap(p);
-  const rozet = kart.getByTestId("kip-rozeti");
-  await expect(rozet).toHaveText("CANLI · Haiku 5.5");
-  await expect(rozet).toHaveAttribute("title", "Canlı model cevabı");
-  await page.screenshot({ path: `${EKRAN_DIZINI}/01-canli-rozet.png` });
+  // Örnek veri derlemesi: hazırlanmış model cevabı CANLI gösterilmez (sahte canlı yok).
+  await expect(kart.getByTestId("kip-rozeti")).toHaveCount(0);
+  await expect(kart.getByText("ÖRNEK VERİ")).toBeVisible();
+  await page.screenshot({ path: `${EKRAN_DIZINI}/01-ornek-veri-rozeti.png` });
 
   const kartSorusu = "Müşterinin kartı 5105 1051 0510 5100 neden reddedildi?";
   await sor(p, kartSorusu);
