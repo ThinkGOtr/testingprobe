@@ -70,11 +70,17 @@ x-core-env: &core-env
   # GitHub kipinde zorunlu iş akışı check'leri (sır değil; core-api de okur: kod üretimi ekranının
   # merge kapısı listesi ve `/code/languages` kullanılabilirliği core-worker ile aynı olmalı).
   # TP_PLATFORMS: android,windows → mobil-android / masaustu-windows (009; boş = yalnız web).
-  # TP_WEB_DILLERI: ts,java → web-java zorunlu; GitHub kipinde web + Java üretimi ve Java kardeş
-  # koşusu yalnız `java` buradayken açılır (011 K-T3). Boş = yalnız ts. LocalForge'da etkisizdir
+  # TP_WEB_DILLERI: ts,java → GitHub kipinde web + Java üretimi ve Java kardeş koşusu yalnız `java`
+  # buradayken açılır (011 K-T3). `web-java` check'i ise web-java.yml depoda olduğu sürece her zaman
+  # zorunludur (K-T10; ilgisiz PR'da no-op ile hızla yeşil). Boş = yalnız ts. LocalForge'da etkisizdir
   # (repodaki dosyalar belirler). Geçersiz değer GitHubForge'u başlatmaz (bkz. .env.example).
   TP_PLATFORMS: ${TP_PLATFORMS:-}
   TP_WEB_DILLERI: ${TP_WEB_DILLERI:-}
+  # Merge kapısının zorunlu check'leri (boş = adaptör varsayılanı: local-ci / ruleset listesi).
+  # core-api de okur (kod üretimi ekranının merge kapısı listesi) → ortak blokta (OPS-L2 tur 2).
+  # Platform/dil check'lerini (local-ci-web-java, web-java, mobil-android...) BURAYA YAZMAYIN: yol
+  # kuralı ve TP_PLATFORMS/web-java.yml onları gerektiğinde ekler; burada yazılanlar HER PR'da zorunludur.
+  TP_REQUIRED_CHECKS: ${TP_REQUIRED_CHECKS:-}
   TOOLCHAIN_URL: http://toolchain-worker:8100
   # toolchain-worker belirteci: core → toolchain-worker. test-runner'a VERİLMEZ (security-check 4/5).
   TP_TOOLCHAIN_TOKEN: ${TP_TOOLCHAIN_TOKEN:?make env çalıştırın}
@@ -240,8 +246,6 @@ services:
       GH_APP_PRIVATE_KEY: ${GH_APP_PRIVATE_KEY:-}
       GH_APP_PRIVATE_KEY_PATH: ${GH_APP_PRIVATE_KEY_PATH:-}
       GH_APP_INSTALLATION_ID: ${GH_APP_INSTALLATION_ID:-}
-      # Merge kapısının zorunlu check'leri (boş = adaptör varsayılanı: local-ci / ruleset listesi)
-      TP_REQUIRED_CHECKS: ${TP_REQUIRED_CHECKS:-}
       # Jira yorumlarında rol @bahsetmeleri (accountId; boş = yok). Yalnızca bildirim, yetki değil.
       JIRA_HESAP_ANALIST: ${JIRA_HESAP_ANALIST:-}
       JIRA_HESAP_PO: ${JIRA_HESAP_PO:-}
@@ -326,6 +330,8 @@ services:
       # Uç noktalar (/health hariç) Bearer belirteç ister; belirteçsiz başlatma 503 + degraded.
       TP_TOOLCHAIN_TOKEN: ${TP_TOOLCHAIN_TOKEN:?make env çalıştırın}
       TP_TOOLCHAIN_REQUIRE_TOKEN: "1"
+      # Yalnız tanı: GitHub kipinde Java kökleri LocalForge varsayılanındaysa başlangıç uyarısı (OPS-L7).
+      TP_FORGE: ${TP_FORGE:-local}
       # Forge deposunda e2e kökü: LocalForge 'e2e'; TP_FORGE=github iken 'demo-app/e2e'
       # (core TP_FORGE_APP_ROOT varsayılanı 'demo-app' ile eşleşmeli).
       TP_E2E_ROOT: ${TP_E2E_ROOT:-e2e}

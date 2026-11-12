@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -200,3 +201,32 @@ def settings() -> Settings:
         e2e_java_root=env("TP_E2E_JAVA_ROOT", "e2e-java"),
         e2e_java_deps=Path(env("TP_E2E_JAVA_DEPS", "/opt/e2e-java")),
     )
+
+
+def github_kipi(cfg: Settings, env: Mapping[str, str] | None = None) -> bool:
+    """Forge GitHub monoreposu mu? `TP_FORGE=github` (compose verir), uzak ayna adresi ya da
+    `demo-app/` önekli e2e kökü bunu gösterir (toolchain davranışı buna bağlı değil)."""
+    env = os.environ if env is None else env
+    return (
+        (env.get("TP_FORGE") or "").strip().lower() == "github"
+        or bool(cfg.forge_remote_url)
+        or cfg.e2e_root.strip().startswith("demo-app/")
+    )
+
+
+def kok_uyarilari(cfg: Settings, env: Mapping[str, str] | None = None) -> list[str]:
+    """OPS-L7 (011 tur 2): GitHub kipinde Java kökleri LocalForge varsayılanında bırakılmışsa
+    (`e2e-java` / `e2e-app`) Java koşuları "proje yok" ile düşer; başlangıçta uyarılır."""
+    if not github_kipi(cfg, env):
+        return []
+    uyarilar = []
+    for ad, deger, beklenen in (
+        ("TP_E2E_JAVA_ROOT", cfg.e2e_java_root, "demo-app/e2e-java"),
+        ("TP_E2E_APP_ROOT", cfg.e2e_app_root, "demo-app/e2e-app"),
+    ):
+        if deger.strip().strip("/") in ("e2e-java", "e2e-app"):
+            uyarilar.append(
+                f"GitHub kipi ama {ad}={deger!r} (LocalForge varsayılanı); monorepoda "
+                f"{beklenen!r} bekleniyor — .env'de {ad}={beklenen} verin"
+            )
+    return uyarilar

@@ -116,7 +116,8 @@ jobs:
               - 'docs/DEMO-VERISI.md'
               - '.github/golden-drift/**'
 
-      # OPS-L2 (011): yalnız Java web projesini (demo-app/e2e-java, ci/*java*) değiştiren PR TS
+      # OPS-L2 (011): yalnız Java web projesini (demo-app/e2e-java, ci/run-java-checks.sh,
+      # ci/break-verify-java.sh) değiştiren PR TS
       # test-local'ini koşmaz; onu web-java.yml doğrular. `every`: dosya demo-app altında VE Java
       # yollarının dışında olmalı. Diğer her demo-app değişikliği (api, web, e2e, e2e-app, ci, ...)
       # TS testlerini tetiklemeye devam eder.
@@ -130,7 +131,9 @@ jobs:
             app:
               - 'demo-app/**'
               - '!demo-app/e2e-java/**'
-              - '!demo-app/ci/*java*'
+              # Açık dosya adları: `*java*` deseni `*javascript*` adlarını da dışlardı (OPS-L1 tur 2).
+              - '!demo-app/ci/run-java-checks.sh'
+              - '!demo-app/ci/break-verify-java.sh'
 
       - name: Karar
         id: decide

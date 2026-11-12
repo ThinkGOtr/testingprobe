@@ -626,3 +626,43 @@ def test_dockerfile_warms_web_java_repo() -> None:
 
 def test_runner_java_module_constants() -> None:
     assert java_run.WEB == "web" and java_run.BROWSERS_PATH == "/ms-playwright"
+
+
+# ---------------------------------------------------------------- OPS-L7 başlangıç uyarısı
+
+
+def test_github_kipi_varsayilan_java_koku_uyarir(monkeypatch: pytest.MonkeyPatch) -> None:
+    from toolchain_common.settings import kok_uyarilari
+
+    for k in (
+        "TP_FORGE",
+        "TP_FORGE_REMOTE_URL",
+        "TP_E2E_ROOT",
+        "TP_E2E_JAVA_ROOT",
+        "TP_E2E_APP_ROOT",
+    ):
+        monkeypatch.delenv(k, raising=False)
+    assert kok_uyarilari(settings()) == []  # LocalForge: varsayılanlar doğru
+    monkeypatch.setenv("TP_FORGE", "github")
+    uyarilar = kok_uyarilari(settings())
+    assert len(uyarilar) == 2 and "demo-app/e2e-java" in uyarilar[0]
+    monkeypatch.setenv("TP_E2E_JAVA_ROOT", "demo-app/e2e-java")
+    monkeypatch.setenv("TP_E2E_APP_ROOT", "demo-app/e2e-app")
+    assert kok_uyarilari(settings()) == []
+    # TP_FORGE verilmese de uzak ayna / demo-app önekli e2e kökü GitHub kipini gösterir.
+    monkeypatch.delenv("TP_FORGE")
+    monkeypatch.delenv("TP_E2E_JAVA_ROOT")
+    monkeypatch.setenv("TP_E2E_ROOT", "demo-app/e2e")
+    assert any("TP_E2E_JAVA_ROOT" in u for u in kok_uyarilari(settings()))
+    monkeypatch.delenv("TP_E2E_ROOT")
+    monkeypatch.setenv("TP_FORGE_REMOTE_URL", "https://github.com/o/r.git")
+    assert any("TP_E2E_JAVA_ROOT" in u for u in kok_uyarilari(settings()))
+
+
+def test_health_java_kokleri_uyarisi(monkeypatch: pytest.MonkeyPatch) -> None:
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("TP_FORGE", "github")
+    monkeypatch.delenv("TP_E2E_JAVA_ROOT", raising=False)
+    r = TestClient(worker_app.app).get("/health")
+    assert r.json()["checks"]["java_kokleri"].startswith("ok (uyarı: GitHub kipi")

@@ -13,6 +13,7 @@ toolchain-worker test kodu çalıştırmaz; testler yalnızca test-runner'da ko�
 from __future__ import annotations
 
 import json
+import sys
 import threading
 from collections import OrderedDict
 from pathlib import Path
@@ -47,7 +48,7 @@ from toolchain_common import (
 from toolchain_common.api import install_error_handlers
 from toolchain_common.artifacts import release_keep
 from toolchain_common.auth import check_auth, require_token
-from toolchain_common.settings import Settings, settings
+from toolchain_common.settings import Settings, kok_uyarilari, settings
 from toolchain_common.validation import (
     TESTID_RE,
     validate_grep,
@@ -72,6 +73,9 @@ app = create_app(
         "artifacts": check_artifacts,
         "checks_volume": check_checks_volume,
         "auth": check_auth,
+        "java_kokleri": lambda: (
+            "ok (uyarı: " + "; ".join(u) + ")" if (u := kok_uyarilari(settings())) else "ok"
+        ),
     },
 )
 install_error_handlers(app)
@@ -667,4 +671,8 @@ def release_runs(body: ReleaseBody) -> dict[str, Any]:
 
 
 def main() -> None:
+    # OPS-L7: GitHub kipinde Java kökü LocalForge varsayılanındaysa başlangıçta uyar (çalışmayı
+    # durdurmaz; /health `java_kokleri` de aynı uyarıyı gösterir).
+    for uyari in kok_uyarilari(settings()):
+        print(f"UYARI: {uyari}", file=sys.stderr, flush=True)
     uvicorn.run(app, host="0.0.0.0", port=8100)

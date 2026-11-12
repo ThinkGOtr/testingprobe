@@ -108,7 +108,8 @@ def ortam(tmp_path: Path) -> Any:
     (w / "web" / "src" / "Katalog.tsx").write_text('<button data-testid="cart-add" />\n')
     _git(w, "commit", "-q", "-am", "kirilma")
     bare = forge / "demo-app.git"
-    # forge-init init ile aynı: --shared=0666 → receive.denyNonFastforwards=true (zorla push reddedilir).
+    # forge-init init ile aynı: --shared=0666 → receive.denyNonFastforwards=true
+    # (zorla push reddedilir).
     _git(w, "init", "-q", "--bare", "--shared=0666", "-b", "main", str(bare))
     assert _git(bare, "config", "receive.denyNonFastforwards", bare=True) == "true"
     _git(w, "push", "-q", str(bare), "main", "demo/break-locator", "refs/tags/demo-baseline")
@@ -247,7 +248,9 @@ def test_baseline_basarisizsa_hicbir_ref_degismez(ortam: Any) -> None:
 def test_ic_betik_safe_directory_global_yapilandirmadan() -> None:
     """git 2.39'da yerel clone/push alt süreçleri `-c safe.directory`'yi görmez (OPS-Y1): iç betik
     safe.directory'yi GIT_CONFIG_GLOBAL dosyasından verir ve zorla push kullanmaz."""
-    ic = SCRIPT.read_text().split('if [ "$MODE" = sync-dizin ]; then\n  [ -d "$SRC_ABS/$DIZIN" ]')[1]
+    ic = SCRIPT.read_text().split('if [ "$MODE" = sync-dizin ]; then\n  [ -d "$SRC_ABS/$DIZIN" ]')[
+        1
+    ]
     ic = ic.split("INNER\n  exit 0")[0]
     assert "directory = *" in ic and 'GIT_CONFIG_GLOBAL="$W/gitconfig"' in ic
     assert "push -q -f" not in ic and "push -f" not in ic
@@ -307,10 +310,23 @@ def test_docker_duman_kok_konteyner_10001_deposu(tmp_path: Path) -> None:
 
     def depo(komut: str) -> str:
         return subprocess.run(
-            ["docker", "run", "--rm", "--user", "10001:1001", "-v", f"{vol}:/forge",
-             "--entrypoint", "sh", DUMAN_IMAJ, "-c",
-             f"g(){{ git -c safe.directory='*' --git-dir=/forge/demo-app.git \"$@\"; }}; {komut}"],
-            capture_output=True, text=True, check=True,
+            [
+                "docker",
+                "run",
+                "--rm",
+                "--user",
+                "10001:1001",
+                "-v",
+                f"{vol}:/forge",
+                "--entrypoint",
+                "sh",
+                DUMAN_IMAJ,
+                "-c",
+                "g(){ git -c safe.directory='*' --git-dir=/forge/demo-app.git \"$@\"; }; " + komut,
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout.strip()
 
     try:
@@ -318,7 +334,8 @@ def test_docker_duman_kok_konteyner_10001_deposu(tmp_path: Path) -> None:
         assert r.returncode == 0, r.stderr + r.stdout
         assert depo("g config receive.denyNonFastforwards") == "true"
         shutil.copytree(
-            REPO / "demo-app" / "e2e-java", src / "e2e-java",
+            REPO / "demo-app" / "e2e-java",
+            src / "e2e-java",
             ignore=shutil.ignore_patterns("target", "results", "kanit"),
         )
         r = kos("sync-dizin", "e2e-java", "--baseline")
