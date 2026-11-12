@@ -206,6 +206,7 @@ def test_yeni_taslak_onceki_ai_taslaklarini_gecersiz_kilar(
         t = s.get(KararTablosu, eski[0].id)
         transition(s, t, "pending_po", analist, "draft")
         record_approval(s, t, po, "approve", beklenen_hash=content_hash_of(t))
+        t.gereksinim_hash = "sha256:gereksinim"  # 0022 onay_hash_ck
         transition(s, t, "approved", po, "pending_po")
     login(api, analist)
     elle = api.post(f"/requirements/{rid}/decision-tables", json={}).json()
@@ -315,10 +316,14 @@ def test_replay_golden_tpd1(
         girdi = {"kampanyali_sepet": kampanyali, "sepet_tutari": tutar}
         return ifade.degerlendir(minimum.icerik, girdi).ciktilar["minimum_uyarisi"]
 
-    # PO onaylı (F3 fix_doc sonrası) metin: kampanyasız siparişte minimum 750,00 TL.
+    # PO onaylı (F3 fix_doc sonrası) metin: kampanyasız siparişte minimum 750,00 TL. AI taslağı
+    # sınırı bilerek yanlış yorumlar (`<= 750`: tam 750,00 TL'de de uyarı) ve PO'ya soru bırakır;
+    # demo hikâyesinde PO sınır örneklerinde yakalar (review 2 u2 N2).
     assert uyari(False, "749,99 TL") is True
-    assert uyari(False, "750,00 TL") is False
+    assert uyari(False, "750,00 TL") is True  # AI'ın sınır hatası
+    assert uyari(False, "750,01 TL") is False
     assert uyari(True, "100,00 TL") is False
+    assert "PO sorusu" in load_golden("decision_table_draft", "TPD-1")["output"]["notes"]
 
     (iliski,) = _nesneler(rid, MetamorfikIliski)
     assert iliski.karar_tablosu_id == kampanya.id and iliski.icerik["tablo_ref"] == "T1"

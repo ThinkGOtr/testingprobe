@@ -262,7 +262,10 @@ def test_oracle_kaydi_triagea_ulasir_c3_product_defect(
     rid, cid, h = _kur(engine)
 
     kayit = _oracle_kontrolu(engine, cid, h)
-    assert (kayit.sonuc, kayit.icerik_hash) == ("uyumlu", h)
+    # Beklenen alandaki tutarlar bu tablonun kolonu değil (`ignored`): kontrol kısmen (012 review
+    # 2); doğrulanmış karşılaştırmalar triage'da yine kullanılır.
+    assert (kayit.sonuc, kayit.icerik_hash) == ("kismen", h)
+    assert kayit.ayrintilar["kismen_nedeni"] == ["yok_sayilan"]
     assert len(olgu_modeli.requests) == 1  # gerçek kontrol işi modeli bir kez çağırdı
     [grup] = kayit.ayrintilar["gruplar"]
     assert grup["satir_id"] == "R2"

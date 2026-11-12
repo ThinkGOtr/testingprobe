@@ -2,6 +2,7 @@
 
 `TABLOLAR`: Ş1'in AI taslak golden'ından (`rules/replay/decision_table_draft/golden/TPD-1.json`)
 YÜKLENİR — analistin düzenleyip PO'nun demoda onayladığı tablolar bunlardır; burada kopya yoktur.
+T2'de AI'ın sınır yorumu yanlıştır (`<= 750`, `T2_TASLAK`); onaylı T2 `< 750`'dir (review 2 u2 N2).
 Model çıktısı `karar_tablosu.service.taslak_tablo_icerigi` ile içerik biçimine çevrilir (worker'ın
 yazdığıyla aynı). T1 "Kampanya: 6 al 1 bedava (7 adette 1 bedava)" (AC2; girdiler `adet`,
 `birim_fiyat`; çıktılar `bedava_adet = adet // 7`, `indirim`), T2 "Minimum sipariş tutarı" (AC3,
@@ -73,7 +74,25 @@ def _iliski() -> dict[str, Any]:
     return {**icerik, "tablo_ref": oge["tablo_ref"]}
 
 
-TABLOLAR = _tablolar()  # sira_no → içerik (ref `T<sira_no>`)
+def _t2_duzeltilmis(taslak: dict[str, Any]) -> dict[str, Any]:
+    """AI taslağının T2'si sınırı yanlış yorumlar (`sepet_tutari <= 750`: tam 750,00 TL'de uyarı;
+    review 2 u2 N2). Demo: PO sınır örneklerinde yakalar → değişiklik ister → analist `< 750`
+    yapar → PO onaylar. Onaylı (düzeltilmiş) T2 budur; oracle testleri bunu kullanır."""
+    out = json.loads(json.dumps(taslak))
+    for satir in out["satirlar"]:
+        if satir["id"] == "R2":
+            assert satir["kosul"] == "sepet_tutari <= 750", satir
+            satir["kosul"] = "sepet_tutari < 750"
+            satir["aciklama"] = "AC3: 750,00 TL altında uyarı"
+        elif satir["id"] == "R3":
+            satir["aciklama"] = "750,00 TL ve üstü: uyarı yok"
+    return out
+
+
+_TASLAK = _tablolar()  # AI taslağı (golden'daki hâli)
+T2_TASLAK = _TASLAK[2]
+# sira_no → PO'nun onayladığı içerik (ref `T<sira_no>`): T1 taslakla aynı, T2 düzeltilmiş.
+TABLOLAR = {1: _TASLAK[1], 2: _t2_duzeltilmis(T2_TASLAK)}
 T1, T2 = TABLOLAR[1], TABLOLAR[2]
 ILISKI = _iliski()  # T1: adet 7'nin katıyken ×2 → bedava adet ve indirim ×2
 
@@ -152,9 +171,13 @@ def _yok(field: str, quote: str, reason: str) -> dict[str, str]:
     return {"field": field, "quote": quote, "reason": reason}
 
 
-def _sayac(n: int) -> dict[str, str]:
-    """T2 case'lerinde sepet sayacı tablonun kolonu değildir (`ignored`)."""
-    return _yok(S3_BEKLENEN, f"Sepet sayacı {n}", "sepetteki ürün adedi; tabloda kolonu yok")
+def _sayac(n: int, urun: str) -> list[dict[str, str]]:
+    """T2 case'lerinde sepet sayacı ve S3 verisindeki ürün adedi tablonun kolonu değildir
+    (`ignored`; review 2 g2 Y14: girdi alanlarındaki sayılar da taranır)."""
+    return [
+        _yok(S3_VERI, f"{urun} × {n}", "ürün kodu ve adedi; tabloda kolonu yok"),
+        _yok(S3_BEKLENEN, f"Sepet sayacı {n}", "sepetteki ürün adedi; tabloda kolonu yok"),
+    ]
 
 
 KAMPANYASIZ = (False, "preconditions[1]", "Sepette kampanyalı ürün yok")
@@ -204,7 +227,7 @@ OLGULAR: dict[int, dict[str, Any]] = {
                 ((S4, f"{UYARI} görünür"), (SONUC, f"{UYARI} gösterilir")),
             )
         ],
-        [_sayac(10)],
+        _sayac(10, "P-002"),
     ),
     6: _cikti(
         [
@@ -216,7 +239,7 @@ OLGULAR: dict[int, dict[str, Any]] = {
                 ((S4, "minimum sipariş uyarısı görünmez"), (SONUC, "uyarı gösterilmez")),
             )
         ],
-        [_sayac(25)],
+        _sayac(25, "P-004"),
     ),
     9: _cikti(
         [
@@ -231,7 +254,7 @@ OLGULAR: dict[int, dict[str, Any]] = {
                 ),
             )
         ],
-        [_sayac(7)],
+        _sayac(7, "P-001"),
     ),
     # C10, C2'nin bilerek tekrarıdır; başlığında "7" geçer, bedava adet geçmez.
     10: _cikti(
@@ -244,8 +267,8 @@ OLGULAR[10]["groups"][0]["expected"][1] = _o("bedava_adet", "1", SONUC, "1 adet"
 # Senaryo (demo ana yolu) C3: "6 adette bedava adet 0 olur (bedava 7. adette başlar)".
 SENARYO_OLGULARI: dict[int, dict[str, Any]] = {
     3: _cikti(
+        # "7. adette" sıra sayısıdır; tamlık denetimi saymaz (`ignored` gerekmez).
         [_kampanya("6", "0", "150,00", "0,00", "150,00", adet_baslikta=True, bedava_metinde=False)],
-        [_yok(SONUC, "7. adette", "kuralın açıklaması (sıra sayısı); tabloda kolonu yok")],
     ),
 }
 
@@ -312,7 +335,7 @@ VARYANT_OLGULARI: dict[tuple[str, int], dict[str, Any]] = {
                 ((SONUC, f"{UYARI} gösterilir"),),
             )
         ],
-        [_sayac(10)],
+        _sayac(10, "P-002"),
     ),
     (AI_HATASI, 6): _cikti(
         [
@@ -324,7 +347,7 @@ VARYANT_OLGULARI: dict[tuple[str, int], dict[str, Any]] = {
                 ((S4, f"{UYARI} görünür"), (SONUC, f"{UYARI} gösterilir")),
             )
         ],
-        [_sayac(25)],
+        _sayac(25, "P-004"),
     ),
 }
 # Rehber C5'inde S4 artık "uyarısı görünmez" der: mantıksal olgu `false`.
@@ -344,6 +367,9 @@ BEKLENEN_SONUC_ANA_YOL: dict[int, str] = {
     2: "uyumlu",  # bedava 1 = 7 // 7; indirim 25,00 = 175 / 7; toplam 150,00
     3: "uyumlu",  # bedava 0, indirim 0, toplam = ara toplam (uygulama 6 // 6 = 1 → defect adayı)
     4: "uyumlu",
+    # T2 case'leri: S3 beklenendeki sepet sayacı ("Sepet sayacı 10") `ignored`'da (tabloda kolonu
+    # yok) ama S3 verisindeki adedi ("P-002 × 10") yineler: kısmen yapmaz, kayıtta
+    # `yankilanan_girdi` (review 2 ürün sahibi kararı).
     5: "uyumlu",
     6: "uyumlu",
     7: "kapsam_disi",

@@ -646,8 +646,9 @@ def onayla(
     son = son_duzenleyen(session, n)
     oz_onay = oz_onay_mi(session, n, user)
     record_approval(session, n, user, "approve", beklenen_hash=icerik_hash, sonra=sonra)
-    transition(session, n, "approved", user, "pending_po")
+    # Geçişten önce: `approved` satırı `gereksinim_hash`'siz olamaz (0022 `*_onay_hash_ck`).
     n.gereksinim_hash = content_hash_of(req)
+    transition(session, n, "approved", user, "pending_po")
     session.flush()
     ek: dict[str, Any] = {
         "son_duzenleyen": son["kullanici_adi"] if son else None,
@@ -700,8 +701,16 @@ def tablo_degerlendir(
     girdiler: Mapping[str, Any],
     icerik: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """ "Örnekle dene": kayıtlı (ya da verilen, kaydedilmemiş) içerikle değerlendirir; yazmaz."""
+    """ "Örnekle dene": kayıtlı (ya da verilen, kaydedilmemiş) içerikle değerlendirir; yazmaz.
+
+    Verilen içerik tablo içeriğiyle aynı şema sınırlarından geçer (12 girdi, 12 çıktı, 60 satır,
+    ifade 300 karakter …; review 2 güvenlik 13): aşarsa 422 `karar_tablosu_gecersiz`. Anlam
+    hataları (taslakta olağan) değerlendirme sonucunda `hata` olarak döner."""
     t = getir(session, TABLO, tablo_id)
+    if icerik is not None:
+        hatalar = ifade.sema_hatalari(dict(icerik)) if isinstance(icerik, Mapping) else ["(kök)"]
+        if hatalar:
+            raise KararTablosuGecersiz("Denenecek karar tablosu içeriği geçersiz", hatalar)
     veri = dict(icerik) if icerik is not None else dict(t.icerik)
     return ifade.degerlendir(veri, dict(girdiler)).as_dict()
 
@@ -1111,7 +1120,10 @@ def _ai_taslaklari_gecersiz_kil(
     session: Session, req: Requirement
 ) -> tuple[dict[str, int], dict[str, int]]:
     """Hâlâ `draft` olan AI öğelerini geçersiz kılar; insanın düzenlediği ya da PO kararı almış
-    olanlar (`insan_dokunanlar`) korunur. (geçersiz kılınan, korunan) sayıları döner."""
+    olanlar (`insan_dokunanlar`) korunur. (geçersiz kılınan, korunan) sayıları döner.
+
+    Kilit sırası `id`'dir: `karar_tablosu`'nu çok satırlı kilitleyen her yol (onay kapısı
+    `oracle.kapi._tablolari_kilitle` dahil) aynı sırayı kullanır (review 2 t2 N5)."""
     sayi = {TABLO: 0, ILISKI: 0}
     korunan = {TABLO: 0, ILISKI: 0}
     for tur in (ILISKI, TABLO):
@@ -1123,9 +1135,10 @@ def _ai_taslaklari_gecersiz_kil(
                 model.ai_generated.is_(True),
                 model.durum == "draft",
             )
-            .order_by(model.sira_no)
+            .order_by(model.id)
             .with_for_update()
         ).all()
+        adaylar = sorted(adaylar, key=lambda n: n.sira_no)
         dokunulan = insan_dokunanlar(session, tur, [n.id for n in adaylar])
         for n in adaylar:
             if n.id in dokunulan:

@@ -139,10 +139,29 @@ def test_t2_para_sinirlari_kurus_adimiyla() -> None:
         if o["girdiler"] == {"kampanyali_sepet": False, "sepet_tutari": "750.00"}
     )
     assert tam["satir_id"] == "R3" and tam["ciktilar"] == {"minimum_uyarisi": False}
-    # Kampanyalı sepet + 749,99: R1 ve R2 birlikte sağlanır, çıktıları farklı → örtüşme uyarısı.
+    # Kampanyalı sepet + 749,99: R1 ve R2 birlikte sağlanır, çıktıları farklı → örtüşme. R1
+    # (kampanyalı) ve R2 (tutar) farklı girdileri kısıtlar: tasarım gereği öncelik, `bilgi`.
     [ortusme] = [u for u in sonuc["uyarilar"] if u["tur"] == "ortusme"]
     assert ortusme["satirlar"] == ["R1", "R2"]
     assert ortusme["girdiler"]["kampanyali_sepet"] is True
+    assert ortusme["onem"] == "bilgi" and "önceliklidir" in ortusme["mesaj"]
+
+
+def test_ortusme_onemi_ayni_girdide_uyari() -> None:
+    """Aynı girdiyi kısıtlayan iki satırın örtüşmesi sınır belirsizliğidir (`uyari`)."""
+    t = copy.deepcopy(T2)
+    t["satirlar"][0] = {
+        "id": "R1",
+        "kosul": "sepet_tutari <= 750",
+        "cikti": {"minimum_uyarisi": "dogru"},
+    }
+    t["satirlar"][1] = {
+        "id": "R2",
+        "kosul": "sepet_tutari >= 750",
+        "cikti": {"minimum_uyarisi": "yanlis"},
+    }
+    [ortusme] = [u for u in ifade.sinir_ornekleri(t)["uyarilar"] if u["tur"] == "ortusme"]
+    assert ortusme["onem"] == "uyari" and ortusme["girdiler"]["sepet_tutari"] == "750.00"
 
 
 def test_ortusen_hic_eslesmeyen_golgede_ve_satir_yok() -> None:

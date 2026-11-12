@@ -16,12 +16,20 @@
 - review_nesne_turu_ck: `karar_tablosu` ve `metamorfik_iliski` eklenir (PO kararı `review`'a
   yazılır). Kararlar (`approve`, `request_changes`) zaten `review_karar_ck`'dedir.
 
-`tp_app` yeni tablolarda SELECT, INSERT, UPDATE yapar; DELETE verilmez (kontrol, istisna ve koşu
-kayıtları silinmez). `oracle_istisna` yalnız SELECT, INSERT (append-only).
+`tp_app` yeni tablolarda SELECT, INSERT, UPDATE yapar; DELETE verilmez (uygulama bu kayıtları
+silmez; ama "asla silinmez" değildir: gereksinim / case silinince `ON DELETE CASCADE` ile giderler
+ve `case_oracle_kontrol` yeniden kontrolde yerinde güncellenir — review 1 mimari 18).
+`oracle_istisna` yalnız SELECT, INSERT (append-only).
 
 Review turu 1 (2026-11-12): dal dev'e girmediği için yerinde güncellendi (§13.2): `kismen` sonucu,
 `case_oracle_kontrol.guncelleme`, `oracle_istisna`, `metamorfik_turetme.sonuc`
 `tutarsiz_kalan_deger`.
+
+Review turu 2 (2026-11-12, yerinde): `karar_tablosu_onay_hash_ck` / `metamorfik_iliski_onay_hash_ck`
+(onaylı satır `onaylanan_hash` ve `gereksinim_hash` taşır; mimari 17) ve `job` üzerinde oracle ifade
+indeksleri (`job_oracle_case_ix`, `job_oracle_gereksinim_ix`, `job_oracle_isteyen_ix`; t2 N10).
+Bitmiş `oracle.check_*` işleri için saklama (silme) süpürmesi ertelendi: `job`'da DELETE yetkisi
+iş kuyruğu şeridinindir; hacim case başına dakikada en çok 10 yeni iştir (hız sınırı).
 
 V7 (review 2 düzeltmesi): `feat/case-gen-v3` `0021`–`0028`'i kullanıyor (kendi `0022`'si
 `0022_tasarim_modeli`). İki dal birleşirken bu dosya `0029_kalite_dogrulama.py` olur
@@ -86,6 +94,7 @@ CREATE TABLE karar_tablosu (
     CONSTRAINT karar_tablosu_durum_ck CHECK (durum IN ('approved', 'draft', 'pending_po', 'superseded')),
     CONSTRAINT karar_tablosu_uretim_modu_ck CHECK (uretim_modu IS NULL OR uretim_modu IN ('live', 'replay', 'replay_miss')),
     CONSTRAINT karar_tablosu_sira_uq UNIQUE (requirement_id, sira_no),
+    CONSTRAINT karar_tablosu_onay_hash_ck CHECK (durum <> 'approved' OR (onaylanan_hash IS NOT NULL AND gereksinim_hash IS NOT NULL)),
     FOREIGN KEY(requirement_id) REFERENCES requirement (id) ON DELETE CASCADE,
     FOREIGN KEY(olusturan_id) REFERENCES app_user (id)
 )
@@ -111,6 +120,7 @@ CREATE TABLE metamorfik_iliski (
     CONSTRAINT metamorfik_iliski_durum_ck CHECK (durum IN ('approved', 'draft', 'pending_po', 'superseded')),
     CONSTRAINT metamorfik_iliski_uretim_modu_ck CHECK (uretim_modu IS NULL OR uretim_modu IN ('live', 'replay', 'replay_miss')),
     CONSTRAINT metamorfik_iliski_sira_uq UNIQUE (requirement_id, sira_no),
+    CONSTRAINT metamorfik_iliski_onay_hash_ck CHECK (durum <> 'approved' OR (onaylanan_hash IS NOT NULL AND gereksinim_hash IS NOT NULL)),
     FOREIGN KEY(requirement_id) REFERENCES requirement (id) ON DELETE CASCADE,
     FOREIGN KEY(karar_tablosu_id) REFERENCES karar_tablosu (id) ON DELETE SET NULL,
     FOREIGN KEY(olusturan_id) REFERENCES app_user (id)
@@ -225,9 +235,31 @@ CREATE TABLE hata_kosusu_adim (
     "CREATE INDEX hata_kosusu_adim_run_ix ON hata_kosusu_adim (run_id)",
 )
 
+# Oracle hız sınırı ve gereksinim işi birleştirme sorguları için `job` ifade indeksleri (review 2
+# t2 N10; `yuk->>'…'` taraması yerine). Geri almada düşer.
+JOB_INDEXES: tuple[tuple[str, str], ...] = (
+    (
+        "job_oracle_case_ix",
+        "CREATE INDEX job_oracle_case_ix ON job ((yuk ->> 'case_id'), olusturma) "
+        "WHERE tur = 'oracle.check_case'",
+    ),
+    (
+        "job_oracle_gereksinim_ix",
+        "CREATE INDEX job_oracle_gereksinim_ix ON job ((yuk ->> 'requirement_id'), olusturma) "
+        "WHERE tur IN ('oracle.check_case', 'oracle.check_requirement')",
+    ),
+    (
+        "job_oracle_isteyen_ix",
+        "CREATE INDEX job_oracle_isteyen_ix ON job ((yuk ->> 'isteyen_id'), olusturma) "
+        "WHERE tur = 'oracle.check_case'",
+    ),
+)
+
 
 def upgrade() -> None:
     for stmt in CREATE_STATEMENTS:
+        op.execute(stmt)
+    for _ad, stmt in JOB_INDEXES:
         op.execute(stmt)
     guncellenen = [t for t in TABLES if t not in APPEND_ONLY]
     op.execute(f"GRANT SELECT, INSERT, UPDATE ON {', '.join(guncellenen)} TO tp_app")
@@ -245,5 +277,7 @@ def downgrade() -> None:
         "ALTER TABLE review ADD CONSTRAINT review_nesne_turu_ck "
         f"CHECK (nesne_turu IN ({_NESNE_ESKI})) NOT VALID"
     )
+    for ad, _stmt in JOB_INDEXES:
+        op.execute(f"DROP INDEX IF EXISTS {ad}")
     for tablo in reversed(TABLES):
         op.execute(f"DROP TABLE IF EXISTS {tablo}")

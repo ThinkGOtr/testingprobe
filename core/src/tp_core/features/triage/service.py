@@ -535,7 +535,9 @@ def _story_ve_case(
 
 # ============================================================================= 012 karar tablosu
 
-ORACLE_KARAR_SONUCLARI = ("uyumlu", "uyumsuz")
+# `kismen` kaydının karşılaştırmaları da tek tek doğrulanmıştır (fark varsa sonuç `uyumsuz`
+# olurdu); yalnız `karsilastirmalar` okunur, `karsilastirilamayan` okunmaz (012 review 2).
+ORACLE_KARAR_SONUCLARI = ("uyumlu", "uyumsuz", "kismen")
 ONAYLI_CASE_DURUMLARI = ("approved", "published")
 
 
@@ -640,8 +642,9 @@ def oracle_baglamlari(
 
     Kayıt: `case_oracle_kontrol` satırı, `icerik_hash = test_case.onaylanan_hash` (case
     `approved` ya da `published`; yayın kapısı onaylı hash'in güncel olmasını ister, hash yayında
-    korunur) ve `sonuc` `uyumlu` | `uyumsuz` (diğer sonuçlar — `kismen`, `kontrol_edilemedi`,
-    `kapsam_disi` — karar vermez, okunmaz). Kontrolden sonra değişen (içerik hash'i farklı, onayı
+    korunur) ve `sonuc` `uyumlu` | `uyumsuz` | `kismen` (`kismen`'in yalnız doğrulanmış
+    `karsilastirmalar`'ı; `kontrol_edilemedi` ve `kapsam_disi` karar vermez, okunmaz).
+    Kontrolden sonra değişen (içerik hash'i farklı, onayı
     geri çekilmiş, bayat) tablonun grupları atılır (`kayit_tablosu_gecerli`).
 
     **İstisna (review K2, t2 N9):** case'in o içeriği tabloya rağmen gerekçeli `uyumsuz`

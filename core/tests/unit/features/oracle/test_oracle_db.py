@@ -159,7 +159,14 @@ def test_tpd1_replay_akisi_golden_sonuclari(
     assert r.status_code == 422 and r.json()["kod"] == "oracle_kontrolsuz", r.text
     r = _karar(api, c3, karar="edit", icerik=yeni, oracle_istisna_turu="uyumsuz")
     assert r.status_code == 422 and r.json()["kod"] == "gecersiz_karar"  # tür sonuca uymaz
-    r = _karar(api, c3, karar="edit", icerik=yeni, oracle_istisna_gerekce=UZUN_GEREKCE)
+    r = _karar(
+        api,
+        c3,
+        karar="edit",
+        icerik=yeni,
+        oracle_istisna_gerekce=UZUN_GEREKCE,
+        oracle_istisna_turu="kontrolsuz",
+    )
     assert r.status_code == 200, r.text
     with session_scope() as s:
         [ist] = s.scalars(select(OracleIstisna)).all()
@@ -219,13 +226,13 @@ def test_onay_kapisi_matrisi(api: TestClient, engine: Engine, kur, durum: str, r
     elif durum in ("uyumsuz", "uyumsuz_istisna"):
         kayit_yaz(cid, "uyumsuz", uyumsuz_ayrinti(str(k["tid"])))
         if durum == "uyumsuz_istisna":
-            govde["oracle_istisna_gerekce"] = UZUN_GEREKCE
+            govde.update(oracle_istisna_gerekce=UZUN_GEREKCE, oracle_istisna_turu="uyumsuz")
     elif durum == "kismen":
         kayit_yaz(cid, "kismen")
     elif durum in ("kontrol_edilemedi", "kontrol_edilemedi_gerekce"):
         kayit_yaz(cid, "kontrol_edilemedi")
         if durum == "kontrol_edilemedi_gerekce":
-            govde["oracle_istisna_gerekce"] = UZUN_GEREKCE
+            govde.update(oracle_istisna_gerekce=UZUN_GEREKCE, oracle_istisna_turu="kontrolsuz")
     elif durum == "bayat_kayit":
         kayit_yaz(cid, "uyumlu", hashler={str(k["tid"]): "sha256:eski"})
     onceki_is = _kuyruktaki(engine, service.CHECK_CASE_JOB)
@@ -268,13 +275,23 @@ def test_istisna_gerekcesi_en_az_20_karakter(api: TestClient, kur) -> None:
     k = kur([basit_case(toplam="40,00")])
     c = latest_cases(api, k["rid"])[0]
     kayit_yaz(uuid.UUID(c["id"]), "uyumsuz", uyumsuz_ayrinti(str(k["tid"])))
-    r = _karar(api, c, karar="approve", oracle_istisna_gerekce="  kısa gerekçe     ")
+    r = _karar(
+        api,
+        c,
+        karar="approve",
+        oracle_istisna_turu="uyumsuz",
+        oracle_istisna_gerekce="  kısa gerekçe     ",
+    )
     assert r.status_code == 422 and r.json()["kod"] == "gecersiz_karar"
     assert "20" in r.json()["detail"]
     assert _kayitlar(c["id"])[0].istisna_gerekce is None
-    r = _karar(api, c, karar="approve", oracle_istisna_gerekce="x" * 2001)
+    r = _karar(
+        api, c, karar="approve", oracle_istisna_turu="uyumsuz", oracle_istisna_gerekce="x" * 2001
+    )
     assert r.status_code == 422  # gövde sınırı
-    r = _karar(api, c, karar="approve", oracle_istisna_gerekce=UZUN_GEREKCE)
+    r = _karar(
+        api, c, karar="approve", oracle_istisna_turu="uyumsuz", oracle_istisna_gerekce=UZUN_GEREKCE
+    )
     assert r.status_code == 200, r.text
     ev = _denetim("oracle.exception")[0]
     assert ev.ozet["gerekce"] == UZUN_GEREKCE and ev.aktor == k["analist"].kullanici_adi
@@ -513,7 +530,13 @@ def test_model_hatasi_son_denemede_kontrol_edilemedi(api: TestClient, engine: En
     # Yüksek risk + kontrol edilemedi (K10): gerekçesiz 422, gerekçeyle kontrolsüz onay.
     r = _karar(api, c, karar="approve")
     assert r.status_code == 422 and r.json()["kod"] == "oracle_kontrolsuz"
-    r = _karar(api, c, karar="approve", oracle_istisna_gerekce=UZUN_GEREKCE)
+    r = _karar(
+        api,
+        c,
+        karar="approve",
+        oracle_istisna_gerekce=UZUN_GEREKCE,
+        oracle_istisna_turu="kontrolsuz",
+    )
     assert r.status_code == 200, r.text
 
 
@@ -564,10 +587,12 @@ def test_uclar_ve_roller(api: TestClient, engine: Engine, kur, make_user) -> Non
     assert o["oracle"] == {
         "sonuc": None,
         "icerik_hash": c["icerik_hash"],
+        "damga": "yok",
         "ozet": "Tablo kontrolü sürüyor.",
         "karsilastirmalar": [],
         "karsilastirilamayan": [],
         "degerler": {"uyumlu": 0, "uyumsuz": 0, "karsilastirilamayan": 0, "atilan": 0},
+        "kismen_nedeni": None,
         "istisna": None,
         "neden": None,
         "kontrol_suruyor": True,

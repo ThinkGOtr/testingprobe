@@ -79,8 +79,8 @@ def _tablo_onayla(s: Any, t: KararTablosu, req: Requirement, po: Principal) -> N
     """Tablo onayı (oracle işi açmadan; işi test_olay_denetim_ve_oracle_isi sayar)."""
     transition(s, t, "pending_po", SYSTEM, "draft")
     record_approval(s, t, po, "approve", beklenen_hash=content_hash_of(t))
+    t.gereksinim_hash = content_hash_of(req)  # geçişten önce (0022 onay_hash_ck)
     transition(s, t, "approved", po, "pending_po")
-    t.gereksinim_hash = content_hash_of(req)
 
 
 @pytest.fixture

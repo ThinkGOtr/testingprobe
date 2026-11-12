@@ -103,12 +103,6 @@
         ]
       }
     ],
-    "ignored": [
-      {
-        "field": "expected_result",
-        "quote": "7. adette",
-        "reason": "kuralın açıklaması (sıra sayısı); tabloda kolonu yok"
-      }
-    ]
+    "ignored": []
   }
 }

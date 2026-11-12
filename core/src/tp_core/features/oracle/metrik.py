@@ -3,7 +3,10 @@
 
 Okuma anında hesaplanır (Kontrol Kulesi'nin kendi tablosu yoktur). Sayım, superseded olmayan
 AI üretimi case'lerin **AI içeriğinin** (insan düzeltmesinden önceki hash; `ai_icerik=true`)
-geçerli kontrol kayıtları üzerindendir (kaydın `tablo_hashleri` güncel kapsayan tablolarla aynı).
+geçerli kontrol kayıtları üzerindendir (kaydın `tablo_hashleri` güncel kapsayan tablolarla —
+taban ∪ içerik AC'leri — aynı). Tablosu yeniden açılan / değişen / bayatlayan kaydın sonucu
+(ör. insanın yanlış tablosundan gelen `uyumsuz`) sayılmaz; tablo yeniden onaylanınca kontrol
+yeniden koşar (review 2 u2 N1 çekirdek kısmı). Tablolar işlem başına önbelleklenir (t2 N11).
 
 - Tekrar: aynı gereksinimde aynı tablo satırını aynı girdilerle aynı beklenen değerlere karşı
   denetleyen case'ler tek sayılır (ör. TPD-1 C10 = C2; review 1 bağımsızlık S2); `tekrar` sayısı
@@ -88,6 +91,7 @@ def beklenti_dogrulugu(session: Session, requirement_id: uuid.UUID | None = None
     tablolu_story: set[uuid.UUID] = set()
     if cases:
         ai = service.ai_icerikleri(session, cases)
+        tabanlar = service.tabanlar(session, cases)
         hedef = {c.id: content_hash(ai[c.id]) for c in cases}
         tablolar = service.gecerli_tablolar_toplu(session, {c.requirement_id for c in cases})
         tablolu_story = {rid for rid, t in tablolar.items() if t}
@@ -106,9 +110,13 @@ def beklenti_dogrulugu(session: Session, requirement_id: uuid.UUID | None = None
             if c.requirement_id in tablolu_story:
                 tablolu_case += 1
             k = kayitlar.get((c.id, hedef[c.id]))
-            if k is None or not service.gecerli_mi(
-                k, kapsayanlar(tablolar[c.requirement_id], ai[c.id])
-            ):
+            kapsayan = kapsayanlar(
+                tablolar[c.requirement_id],
+                ai[c.id],
+                service.kontrol_refleri(tabanlar[c.id], ai[c.id]),
+            )
+            # Geçersizleşmiş kayıt (tablosu yeniden açıldı / değişti / bayat) sayılmaz (u2 N1).
+            if k is None or not service.gecerli_mi(k, kapsayan):
                 continue
             if k.sonuc in _TEKILLESEN:
                 imza = _imza(c.requirement_id, k)

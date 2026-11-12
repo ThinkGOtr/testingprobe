@@ -59,6 +59,9 @@ class CaseKararGirdisi(BaseModel):
     oracle_istisna_gerekce: str | None = Field(default=None, max_length=2000)
     # 012 §13.2: `uyumsuz` (tabloya rağmen) | `kontrolsuz` (kontrol edilemedi); verilmezse sonuçtan.
     oracle_istisna_turu: Literal["uyumsuz", "kontrolsuz"] | None = None
+    # 012 review 2 g2 Y9: görülen kontrol kaydının damgası (`oracle.damga`); güncel kaydınkine
+    # uymazsa 409 `oracle_kayit_degisti`. Gerekçe verildiyse `oracle_istisna_turu` zorunludur.
+    oracle_kayit_damgasi: str | None = Field(default=None, max_length=64)
 
 
 @router.post(
@@ -108,6 +111,7 @@ def decide(
         beklenen_anlam_degisti=body.beklenen_anlam_degisti,
         oracle_istisna_gerekce=body.oracle_istisna_gerekce,
         oracle_istisna_turu=body.oracle_istisna_turu,
+        oracle_kayit_damgasi=body.oracle_kayit_damgasi,
     )
     session.flush()
     return service.serialize_cases(session, [tc])[0]
