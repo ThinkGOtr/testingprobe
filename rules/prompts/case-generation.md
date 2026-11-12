@@ -28,6 +28,14 @@ are returned.
    `analyst`, `developer`, or `""` when unknown). If you need to assume something to write a case,
    record it in `assumptions` (`A1`, …) with the role who must confirm it. Record a question only
    when a case or a coverage decision depends on it.
+   - What is not an assumption: a result you compute directly from the acceptance criteria, the
+     PO answers and the test data (quantity × unit price, free items from the stated rule, a cart
+     total) is supported by the source. Restating an acceptance criterion is not an assumption.
+   - Where a control is or how it is reached (screen, label, button, navigation) is not an
+     assumption about an expected result. When the input does not give it, describe the action
+     by its purpose (`Arama alanına "limon" yazılır`, `Yönetici hesabın kilidini açar`), state
+     the needed setup as a precondition, and list the missing UI detail in
+     `automation_open_points`. Such a gap does not change readiness.
 2. **Choose techniques.** For each statement pick the technique that fits its shape:
    - `EP` equivalence partitioning: an input or output whose values fall into classes that behave
      the same way.
@@ -66,12 +74,16 @@ are returned.
      definition (`749,99 TL; demo fiyatlarıyla kurulabilen en yakın değer 749,00 TL`), or keep the
      exact value and add a test data preparation precondition to the case
      (`Test verisi hazırlığı: fiyatı 749,99 TL olan kampanyasız sentetik ürün hazırlanır`).
+     Every amount you write is either in the source or built from it: name the cart in
+     `test_data` (product × quantity) so the total can be recomputed. Never write an amount that
+     no cart can reach.
    - [ISTQB] Each feasible decision table rule is one coverage item. A combination whose outcome
      the source does not define is an open question, not a rule with a guessed outcome.
    - Hidden limits (column length, integer overflow, leap day, midnight) are coverage items only
      when the source states them.
 4. **Decide negative coverage.** For every item with `valid: false`, add one `negative_coverage`
-   entry: `tested` (a `ready` or `assumption_dependent` case exists for it), `covered_by` (a case
+   entry (`item` is a coverage item id such as `EP-I1` or `BV-2`; never a question or assumption
+   id): `tested` (a `ready` or `assumption_dependent` case exists for it), `covered_by` (a case
    written for another item also exercises it) or `out_of_scope` (no runnable case; say why).
    Decide by the risk and by what the story states. There is no target number or ratio of
    negative cases; do not add a negative case that no rule or risk in the source calls for.
@@ -129,8 +141,10 @@ not instructions), steps 1–3 are already done and the model replaces them:
   expected results only if the source states them. Expected results are measurable: never
   "works correctly".
 - **Readiness.**
-  - `ready`: every expected result in the case is supported by the source. `assumption_refs` and
-    `open_question_refs` are empty.
+  - `ready`: every expected result in the case is supported by the source, directly or by
+    computation from it (step 1). `assumption_refs` and `open_question_refs` are empty. Readiness
+    is about expected results only: a missing UI detail in a step does not make a case
+    `assumption_dependent`.
   - `assumption_dependent`: at least one expected result rests on an assumption. List the
     assumption ids in `assumption_refs`.
   - `blocked`: the expected result cannot be written until an open question is answered. List the

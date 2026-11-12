@@ -822,7 +822,7 @@ def duplicate_cases(cases: Sequence[Mapping[str, Any]]) -> list[list[int]]:
 
 
 # Uydurma ölçümü (011 #4): hazır case'in beklenen sonucundaki tırnak içi metin kaynakta birebir
-# geçer; TL tutarı kaynakta geçer ya da bir kaynak tutarının tamsayı katıdır (adet × birim fiyat).
+# geçer; TL tutarı kaynakta geçer ya da kaynak tutarlarından kurulabilen bir sepettir.
 TUTAR = re.compile(r"(?<![\d.,])(\d{1,3}(?:\.\d{3})*,\d{2})\s?TL\b")
 TIRNAK_ICI = re.compile(
     r'"([^"\n]{2,160})"|“([^”\n]{2,160})”|«([^»\n]{2,160})»|(?<!\w)\'([^\'\n]{2,80})\'(?!\w)'
@@ -842,9 +842,9 @@ def source_problems(metinler: Sequence[tuple[str, str]], kaynak: str) -> list[st
     """`(etiket, metin)` listesinde kaynağa dayanmayan tırnak içi metin ve TL tutarı.
 
     Tırnak içi metin kaynakta (girdi mesajı: gereksinim, AC, PO cevabı, test verisi bloğu) boşluk
-    sadeleştirilmiş olarak BİREBİR geçmelidir. TL tutarı kaynakta geçmeli ya da bir kaynak
-    tutarının 2–999 katı olmalıdır (ara toplam = adet × birim fiyat); uydurma eşik, ücret ya da
-    limit kaynakta yoktur."""
+    sadeleştirilmiş olarak BİREBİR geçmelidir. TL tutarı kaynakta geçmeli ya da kaynak
+    tutarlarının tamsayı birleşimi olmalıdır (sepet = Σ adet × birim fiyat); kurulamayan tutar
+    (ör. fiyatlarla oluşamayan 749,99 TL) uydurmadır."""
     kaynak_sade = _bosluk(kaynak)
     kaynak_tutar = {_kurus(t) for t in TUTAR.findall(kaynak)} | {
         _kurus(t) for t in re.findall(r"(?<![\d.,])(\d{1,3}(?:\.\d{3})*,\d{2})(?![\d])", kaynak)
@@ -852,9 +852,23 @@ def source_problems(metinler: Sequence[tuple[str, str]], kaynak: str) -> list[st
     kaynak_tutar.discard(0)
 
     def turetilir(kurus: int) -> bool:
+        """Kaynak tutarlarının negatif olmayan tamsayı birleşimi (sepet: Σ adet × birim fiyat;
+        K17: sınır değeri test verisinden kurulabilen sepetle seçilir). Bit kümesiyle sınırsız
+        sırt çantası; en çok MAX_KAT adet × en büyük kaynak tutarı kadar."""
         if kurus == 0 or kurus in kaynak_tutar:
             return True
-        return any(kurus % a == 0 and 2 <= kurus // a <= MAX_KAT for a in kaynak_tutar)
+        if not kaynak_tutar or kurus > MAX_KAT * max(kaynak_tutar):
+            return False
+        maske = (1 << (kurus + 1)) - 1
+        erisim = 1
+        for a in sorted(kaynak_tutar):
+            if a > kurus:
+                continue
+            adim = a
+            while adim <= kurus:  # ikiye katlama: erişim ∪ erişim+a ∪ erişim+2a ∪ …
+                erisim |= (erisim << adim) & maske
+                adim <<= 1
+        return bool((erisim >> kurus) & 1)
 
     out: list[str] = []
     for etiket, metin in metinler:
