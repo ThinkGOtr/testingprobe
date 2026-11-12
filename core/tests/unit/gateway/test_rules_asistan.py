@@ -852,7 +852,7 @@ def test_asistan_promptu_oneri_kipini_ve_araclari_anlatir() -> None:
         assert f"`{arac}`" in body, arac
     assert "kip=oneri" in body and "`oneriler`" in body
     assert "eylem_reddi" in body and "Never write a URL" in body
-    assert "Sunucu (sunum yapan)" in body
+    assert "Sistem Yöneticisi" in body and "Sunucu" not in body  # 012: presenter → admin
 
 
 def test_asistan_arac_izin_listesi() -> None:
