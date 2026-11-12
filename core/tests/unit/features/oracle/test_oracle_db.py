@@ -127,6 +127,9 @@ def test_tpd1_replay_akisi_golden_sonuclari(
     # Birim fiyat case'te yok: 7 adette yalnız bedava adet karşılaştırılır (indirim dışarıda).
     assert {k["column"] for k in c2["oracle"]["karsilastirmalar"]} == {"bedava_adet"}
     assert "karşılaştırılamadı" in c2["oracle"]["ozet"]
+    assert {(k["column"], k["case_degeri"]) for k in c2["oracle"]["karsilastirilamayan"]} == {
+        ("indirim", "25.00")
+    }
     assert all(k["uyumlu"] for k in c2["oracle"]["karsilastirmalar"])
     assert {k["tablo_ad"] for k in c2["oracle"]["karsilastirmalar"]} == {tpd1.T1["ad"]}
     with session_scope() as s:
@@ -454,6 +457,7 @@ def test_uclar_ve_roller(api: TestClient, engine: Engine, kur, make_user) -> Non
         "icerik_hash": c["icerik_hash"],
         "ozet": "Tablo kontrolü sürüyor.",
         "karsilastirmalar": [],
+        "karsilastirilamayan": [],
         "istisna": None,
         "kontrol_suruyor": True,
     }
