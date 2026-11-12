@@ -410,7 +410,20 @@ def test_uyumsuz_tek_karsilastirma_yeter() -> None:
         }
     ]
     assert ayr["degerler"]["uyumsuz"] == 1
-    assert "uyuşmuyor" in d.ozet(sonuc, ayr)
+    assert d.ozet(sonuc, ayr) == (
+        "1 beklenen değer tabloyla uyuşmuyor; ör. indirim: case “30,00 TL”, tablo 25,00."
+    )
+
+
+def test_ozet_deger_metni_turkce() -> None:
+    """Özet ve 422 metni Python `True`/`25.00` yazmaz (izole yığın ekran turu)."""
+    assert (d.deger_metni(True), d.deger_metni(False)) == ("doğru", "yanlış")
+    assert (d.deger_metni("25.00"), d.deger_metni("-3.5"), d.deger_metni("7")) == (
+        "25,00",
+        "-3,5",
+        "7",
+    )
+    assert d.deger_metni("metin.a") == "metin.a"
 
 
 def test_tolerans_icinde_uyumlu_disinda_uyumsuz() -> None:
