@@ -40,15 +40,24 @@ export function baslamayanlar(y: KodUretYaniti | null | undefined): UretimSonucu
 
 /**
  * Bildirim metni: core iletisi + başlamayan case sayısı (çakışma ayrıca sayılır). Ayrıntı listede durur
- * (bildirim kaybolur, liste kalır).
+ * (bildirim kaybolur, liste kalır). MİM-D1/D2: core `cakisma_sayisi` döndürüyorsa iletisi çakışan case'leri
+ * zaten söyler (K-T12) — portal yalnız çakışma dışında başlamayanları ekler (metin kalıbına bakılmaz).
+ * Alan yoksa (eski core) çakışma `sonuclar`'dan sayılır.
  */
 export function uretimBildirimi(y: KodUretYaniti, varsayilan: string): string {
   const temel = y.mesaj ?? varsayilan;
   const atlanan = baslamayanlar(y);
-  if (atlanan.length === 0) return temel;
-  const cakisan = atlanan.filter((s) => s.durum === "cakisma").length;
-  const ek = `${atlanan.length} case için üretim başlamadı${cakisan ? ` (${cakisan} dil çakışması)` : ""}; ayrıntı listede.`;
-  return /başlamadı|çakış/i.test(temel) ? temel : `${temel.replace(/\.?\s*$/, ".")} ${ek}`;
+  const cakisanListede = atlanan.filter((s) => s.durum === "cakisma").length;
+  const digerleri = atlanan.length - cakisanListede;
+  const nokta = (m: string) => m.replace(/\.?\s*$/, ".");
+  if (y.cakisma_sayisi !== undefined && y.mesaj !== undefined) {
+    return digerleri > 0 ? `${nokta(temel)} Ayrıca ${digerleri} case için üretim başlamadı; ayrıntı listede.` : temel;
+  }
+  const cakisan = y.cakisma_sayisi ?? cakisanListede;
+  const toplam = digerleri + cakisan;
+  if (toplam === 0) return temel;
+  const ek = `${toplam} case için üretim başlamadı${cakisan ? ` (${cakisan} dil çakışması)` : ""}; ayrıntı listede.`;
+  return `${nokta(temel)} ${ek}`;
 }
 
 /** 409 `dil_cakismasi`: core iletisi + çıkış yolu. */

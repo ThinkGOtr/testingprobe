@@ -162,6 +162,19 @@ describe("K-T12: kod üretiminde dil çakışması", () => {
     expect(uretimBildirimi(y, "x")).toBe("1 case için kod üretimi başlatıldı. 2 case için üretim başlamadı (1 dil çakışması); ayrıntı listede.");
     expect(kodUretYanitiUyarla({ job_id: "j", durum: "started" }).sonuclar).toEqual([]);
     expect(uretimBildirimi(kodUretYanitiUyarla({ durum: "started" }), "Kod üretimi başladı.")).toBe("Kod üretimi başladı.");
+    // MİM-D1/D2: `cakisma_sayisi` varsa core iletisi çakışmayı söyler; ileti hangi kelimeyle olursa olsun yinelenmez.
+    const coreMesaji = "1 case için kod üretimi başlatıldı. 1 case başka dilde merge edilmiş testi olduğu için üretilmedi (mevcut test dosyasını silen bir PR'ı merge edin, sonra yeniden üretin).";
+    const yapisal = kodUretYanitiUyarla({ durum: "started", mesaj: coreMesaji, cakisma_sayisi: 1, sonuclar: [
+      { case_id: "a", durum: "basladi" }, { case_id: "b", durum: "cakisma", neden: "x" },
+    ] });
+    expect(yapisal.cakisma_sayisi).toBe(1);
+    expect(uretimBildirimi(yapisal, "x")).toBe(coreMesaji);
+    const karisik = kodUretYanitiUyarla({ ...yapisal, sonuclar: [...yapisal.sonuclar, { case_id: "c", durum: "pr_acik" }] });
+    expect(uretimBildirimi(karisik, "x")).toBe(`${coreMesaji} Ayrıca 1 case için üretim başlamadı; ayrıntı listede.`);
+    // core mesaj vermeyip yalnız sayıyı verirse sayı yapısal alandan.
+    expect(uretimBildirimi({ ...yapisal, mesaj: undefined, sonuclar: [] }, "Başladı")).toBe("Başladı. 1 case için üretim başlamadı (1 dil çakışması); ayrıntı listede.");
+    // Geçersiz sayı alınmaz.
+    expect(kodUretYanitiUyarla({ durum: "started", cakisma_sayisi: "2" }).cakisma_sayisi).toBeUndefined();
     expect(dilCakismasiMi(new ApiError(409, "x", { kod: "dil_cakismasi" }))).toBe(true);
     expect(dilCakismasiMi(new ApiError(409, "Yalnızca onaylı case'ler için kod üretilebilir."))).toBe(false);
   });
@@ -177,7 +190,12 @@ describe("K-T12: kod üretiminde dil çakışması", () => {
       ["case-1-2", "merge_edildi"],
       ["case-1-4", "basladi"],
     ]);
-    expect(y.sonuclar[0].neden).toBe("Bu case'in web testi Java ile merge edildi; dil değiştirmek için önce mevcut testi kaldırın");
+    expect(y.sonuclar[0].neden).toBe("Bu case'in web testi Java ile merge edildi; dil değiştirmek için önce mevcut testi kaldırın: mevcut test dosyasını silen bir PR'ı merge edin, sonra yeniden üretin");
+    // MİM-D1/D2: core'un birebir iletisi ve yapısal `cakisma_sayisi`.
+    expect(y.cakisma_sayisi).toBe(1);
+    expect(y.mesaj).toBe(
+      "1 case için kod üretimi başlatıldı. 1 case başka dilde merge edilmiş testi olduğu için üretilmedi (mevcut test dosyasını silen bir PR'ı merge edin, sonra yeniden üretin).",
+    );
     // Doğrulanmamış dil tam hat testine dokunmaz: çakışma yok.
     const py = await api.kodUret(["case-1-9"], "web", "python");
     expect(py.sonuclar[0].durum).toBe("basladi");
@@ -192,8 +210,10 @@ describe("K-T12: kod üretiminde dil çakışması", () => {
     await u.click(screen.getByRole("button", { name: "Seçilenler için kod üret (1)" }));
     const kutu = await screen.findByTestId("dil-cakismasi");
     expect(within(kutu).getByRole("alert")).toHaveTextContent("Kod üretilemedi: dil çakışması");
-    expect(kutu).toHaveTextContent("Bu case'in web testi Java ile merge edildi; dil değiştirmek için önce mevcut testi kaldırın.");
-    expect(kutu).toHaveTextContent(`Çıkış yolu: ${DIL_CAKISMASI_CIKIS}`);
+    expect(kutu).toHaveTextContent("Bu case'in web testi Java ile merge edildi; dil değiştirmek için önce mevcut testi kaldırın: mevcut test dosyasını silen bir PR'ı merge edin, sonra yeniden üretin");
+    // core iletisi çıkış yolunu söylüyor: portal yinelemez.
+    expect(kutu).not.toHaveTextContent("Çıkış yolu");
+    expect(kutu.textContent!.match(/silen bir PR/gi)).toHaveLength(1);
   });
 
   it("core iletisi çıkış yolunu söylüyorsa yinelenmez", async () => {
@@ -226,7 +246,12 @@ describe("K-T12: kod üretiminde dil çakışması", () => {
     expect(cakisan).toHaveTextContent(/TPD-13 · .+ — Dil çakışması: Bu case'in web testi Java ile merge edildi/);
     expect(merged).toHaveTextContent(/TPD-10 · .+ — Zaten merge edildi: bu onaylı içerik için bu platformda PR zaten var/);
     expect(liste).toHaveTextContent(`Dil çakışmasından çıkış: ${DIL_CAKISMASI_CIKIS}`);
-    expect(await screen.findByText(/1 case için kod üretimi başladı\. 2 case için üretim başlamadı \(1 dil çakışması\); ayrıntı listede\./)).toBeInTheDocument();
+    // MİM-D1: çakışma core iletisinde bir kez; portal yalnız çakışma dışında başlamayanı ekler.
+    const bildirim = await screen.findByText(/^1 case için kod üretimi başlatıldı\. 1 case başka dilde merge edilmiş testi olduğu için üretilmedi/);
+    expect(bildirim).toHaveTextContent(
+      "1 case için kod üretimi başlatıldı. 1 case başka dilde merge edilmiş testi olduğu için üretilmedi (mevcut test dosyasını silen bir PR'ı merge edin, sonra yeniden üretin). Ayrıca 1 case için üretim başlamadı; ayrıntı listede.",
+    );
+    expect(bildirim.textContent!.match(/üretilmedi|çakışma/gi)).toHaveLength(1);
     await u.click(within(liste).getByRole("button", { name: "Listeyi kapat" }));
     await waitFor(() => expect(screen.queryByTestId("uretim-atlananlar")).toBeNull());
   });

@@ -1178,7 +1178,7 @@ test("011 tur 2: dil algılanamadı, dil çakışması ve Otomasyon sütunu list
     await page.goto("/kod");
     await page.getByRole("checkbox", { name: /TPD-13/ }).check();
     await page.getByRole("button", { name: "Seçilenler için kod üret (1)" }).click();
-    await expect(page.getByTestId("dil-cakismasi")).toContainText("Çıkış yolu:");
+    await expect(page.getByTestId("dil-cakismasi")).toContainText("silen bir PR'ı merge edin");
     await page.getByRole("checkbox", { name: /TPD-10/ }).check();
     await page.getByRole("checkbox", { name: /minimum tutarın altında/ }).check();
     await page.getByRole("button", { name: "Seçilenler için kod üret (3)" }).click();

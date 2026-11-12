@@ -515,11 +515,13 @@ export function kodUretYanitiUyarla(govde: unknown): KodUretYaniti {
       script_id: metinYaDaNull(s.script_id),
     });
   }
+  const { cakisma_sayisi: cakismaSayisi, ...geri } = g;
   return {
-    ...(g as unknown as IsYaniti),
+    ...(geri as unknown as IsYaniti),
     job_id: metinYaDaNull(g.job_id),
     durum: metin(g.durum),
     ...(typeof g.mesaj === "string" ? { mesaj: g.mesaj } : {}),
+    ...(typeof cakismaSayisi === "number" && Number.isInteger(cakismaSayisi) && cakismaSayisi >= 0 ? { cakisma_sayisi: cakismaSayisi } : {}),
     sonuclar,
   };
 }
