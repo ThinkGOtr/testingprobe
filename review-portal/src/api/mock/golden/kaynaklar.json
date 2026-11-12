@@ -1091,10 +1091,12 @@
         "not_covered": [
           {
             "item": "EP-V2",
+            "question_ref": null,
             "reason": "Ayrı case yazılmadı: AC3 için yazılan kampanyalı sepet case'inde kampanyalı satır sepette kalıyor ve toplam (125,00 TL) indirimi içeriyor, ancak indirim tutarı ayrıca doğrulanmıyor."
           },
           {
             "item": "DT-R4",
+            "question_ref": null,
             "reason": "Sonucu DT-R3 ile aynı (kampanyalı sepette minimum şartı aranmaz); kampanyalı sepet kuralı DT-R3 case'iyle sınanıyor, ayrı case yazılmadı."
           }
         ],
@@ -2462,7 +2464,13 @@
             "rationale": "Yalnız kampanyasız ürünlü sepette minimum tutar altı AC3'te tanımlı; EP-I1 ile aynı case (150,00 TL) sınıyor."
           }
         ],
-        "not_covered": [],
+        "not_covered": [
+          {
+            "item": "AC3",
+            "question_ref": "Q1",
+            "reason": "Karma sepette (kampanyalı + kampanyasız ürün, toplam 750,00 TL altı) minimum tutar şartının aranıp aranmadığı kaynakta yok; beklenen sonuç uydurulmadı, case yazılmadı, PO'ya soruldu."
+          }
+        ],
         "observations": [],
         "open_questions": [
           {
@@ -4335,7 +4343,13 @@
             "rationale": "Yalnız kampanyasız ürünlü sepette minimum tutar altı AC3'te tanımlı; EP-I1 ile aynı case (150,00 TL) sınıyor."
           }
         ],
-        "not_covered": [],
+        "not_covered": [
+          {
+            "item": "AC3",
+            "question_ref": "Q1",
+            "reason": "Karma sepette (kampanyalı + kampanyasız ürün, toplam 750,00 TL altı) minimum tutar şartının aranıp aranmadığı kaynakta yok; beklenen sonuç uydurulmadı, case yazılmadı, PO'ya soruldu."
+          }
+        ],
         "observations": [],
         "open_questions": [
           {
@@ -4772,26 +4786,32 @@
         "not_covered": [
           {
             "item": "Web:Tarayıcı davranışı",
+            "question_ref": null,
             "reason": "Story'de form ortasında yenileme, geri/ileri ya da çift gönderim için tanımlı davranış yok; beklenen sonuç uydurulmadı."
           },
           {
             "item": "Web:Oturum ve durum",
+            "question_ref": null,
             "reason": "Story'de oturum süresi, çıkış ve \"beni hatırla\" yok."
           },
           {
             "item": "Web:URL ve yetki",
+            "question_ref": null,
             "reason": "Story yalnız giriş formunu tanımlar; korunan sayfaya doğrudan erişim davranışı kaynakta yok."
           },
           {
             "item": "Web:Responsive",
+            "question_ref": "Q2",
             "reason": "Kırılım noktaları verilmedi (Q2); çözünürlükler config_matrix'te."
           },
           {
             "item": "Web:Ağ",
+            "question_ref": null,
             "reason": "500/503/zaman aşımında arayüz davranışı kaynakta yok."
           },
           {
             "item": "Web:Yerelleştirme",
+            "question_ref": null,
             "reason": "Story'de dil değişimi ya da biçimlendirilen tarih/tutar yok."
           }
         ],
