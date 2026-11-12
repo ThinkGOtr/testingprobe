@@ -443,38 +443,41 @@ def test_gecerli_tablolar_ac_suzgeci_ve_sira(rol: Roller, make_requirement) -> N
         assert service.gecerli_tablolar(s, uuid.uuid4()) == []
 
 
+def _isleri_bitir(tur: str) -> None:
+    """Bekleyen işleri koşmuş say (işleyici bu testin konusu değil)."""
+    with session_scope() as s:
+        s.execute(text("UPDATE job SET durum = 'done' WHERE tur = :t"), {"t": tur})
+
+
 def test_onay_ve_yeniden_acma_oracle_isini_kuyruga_ekler(rol: Roller, make_requirement) -> None:
     rid = make_requirement()
     t = _onayli(rol, rid, KAMPANYA)
     isler = _isler(service.ORACLE_JOB)
     assert len(isler) == 1
-    yuk, anahtar = isler[0]
-    assert yuk == {"requirement_id": str(rid), "neden": "tablo_onaylandi"}
-    assert anahtar.startswith(f"oracle.check_requirement:{rid}:{t['id']}:tablo_onaylandi:")
+    assert isler[0][0] == {"requirement_id": str(rid), "neden": "tablo_onaylandi"}
+    # Birleştirme (oracle `gereksinim_kontrolu_kuyruga_al`): bekleyen iş varken gelen olay yeni
+    # iş açmaz, nedeni o işe eklenir; iş koşunca onaylı tablo kümesinin son hâlini tarar.
     rol("analyst").post(f"/decision-tables/{t['id']}/reopen")
     isler = _isler(service.ORACLE_JOB)
-    assert len(isler) == 2
-    assert isler[1][0] == {"requirement_id": str(rid), "neden": "tablo_degisti"}
-    assert isler[1][1].startswith(f"oracle.check_requirement:{rid}:{t['id']}:tablo_degisti:")
-    # Birleştirme: aynı içeriğin yeniden onayı ve ikinci yeniden açma da iş açar (anahtar olay
-    # başına tekil; önceki `…:acik` / `…:<hash>` anahtarı bunları yutuyordu).
+    assert len(isler) == 1
+    assert isler[0][0]["nedenler"] == ["tablo_onaylandi", "tablo_degisti"]
+    # İş koştuktan sonra gelen olaylar yutulmaz: aynı içeriğin yeniden onayı ve ikinci yeniden
+    # açma yeni (birleşik) iş açar.
+    _isleri_bitir(service.ORACLE_JOB)
     h = rol("analyst").post(f"/decision-tables/{t['id']}/submit").json()["icerik_hash"]
     r = rol("po").post(f"/decision-tables/{t['id']}/approve", json={"icerik_hash": h})
     assert r.status_code == 200, r.text
     rol("analyst").post(f"/decision-tables/{t['id']}/reopen")
     isler = _isler(service.ORACLE_JOB)
-    assert [y["neden"] for y, _ in isler] == [
-        "tablo_onaylandi",
-        "tablo_degisti",
-        "tablo_onaylandi",
-        "tablo_degisti",
-    ]
-    assert len({a for _, a in isler}) == 4
+    assert len(isler) == 2
+    assert isler[1][0]["requirement_id"] == str(rid)
+    assert isler[1][0]["nedenler"] == ["tablo_onaylandi", "tablo_degisti"]
     # Geri çekme / değişiklik isteği / ilişki onayı kontrolü tetiklemez.
+    _isleri_bitir(service.ORACLE_JOB)
     n = _tablo(rol, rid, MINIMUM)
     rol("analyst").post(f"/decision-tables/{n['id']}/submit")
     rol("analyst").post(f"/decision-tables/{n['id']}/withdraw")
-    assert len(_isler(service.ORACLE_JOB)) == 4
+    assert len(_isler(service.ORACLE_JOB)) == 2
 
 
 # ---------------------------------------------------------------------- metamorfik ilişki

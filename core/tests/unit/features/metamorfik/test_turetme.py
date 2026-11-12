@@ -233,9 +233,8 @@ def test_olay_denetim_ve_oracle_isi(
             text("SELECT aktor, nesne, ozet FROM audit_event WHERE eylem = 'metamorfik.derived'")
         ).all()
     assert len(isler) == 1
+    # Oracle birleştirmesi: gereksinim başına tek bekleyen iş (anahtarsız).
     assert isler[0].yuk == {"requirement_id": str(k.rid), "neden": "metamorfik"}
-    assert str(k.iliski_id) in isler[0].idempotency_key
-    assert str(yeni_id) in isler[0].idempotency_key
     assert len(denetim) == 1
     assert denetim[0].aktor == k.analist.kullanici_adi
     assert denetim[0].nesne == f"metamorfik_iliski:{k.iliski_id}"

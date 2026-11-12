@@ -44,7 +44,7 @@ cases (012 §4.1). Your draft is useful only if it says exactly what the story s
 # Table format (`tables[]`)
 - `ad`: short Turkish name (≤ 120 chars). `aciklama`: one or two sentences, may be empty.
 - `girdiler` / `ciktilar`: columns `{ad, tur, birim, aciklama}` (+ `tolerans` for outputs).
-  - `ad`: lower-case ASCII snake case, `^[a-z][a-z0-9_]{0,39}$` (e.g. `adet`, `birim_fiyat`,
+  - `ad`: lower-case ASCII snake case, `^[a-z][a-z0-9_]{0,39}$` (e.g. `adet`, `ara_toplam`,
     `sepet_tutari`, `kampanyali_sepet`). A name is either an input or an output, never both.
     Keywords and function names (`ve`, `veya`, `degil`, `dogru`, `yanlis`, `min`, `max`, `yuvarla`,
     `taban`, `tavan`, `eger`) cannot be names.
@@ -68,8 +68,9 @@ Pure expressions; no assignment, no loops, at most 300 characters.
   type; text and numbers never mix. Keywords are lower-case ASCII (`degil`, not `değil`).
 
 Examples:
-- `adet >= 7` · `(adet // 7) * birim_fiyat` · `kampanyali_sepet == yanlis ve sepet_tutari < 750`
-- `eger(adet > 0, adet * birim_fiyat, 0)` · `yuvarla(tutar / 3, 2)`
+- `adet >= 7` · `yuvarla(ara_toplam / adet * (adet // 7), 2)` ·
+  `kampanyali_sepet == yanlis ve sepet_tutari < 750`
+- `eger(adet > 0, ara_toplam / adet, 0)` · `yuvarla(tutar / 3, 2)`
 
 # Relation format (`relations[]`)
 A metamorphic relation states how the expected result of a test changes when its inputs are

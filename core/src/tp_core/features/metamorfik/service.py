@@ -51,7 +51,11 @@ from tp_core.features.karar_tablosu.hatalar import IliskiGecersiz
 from tp_core.features.karar_tablosu.service import iliski_tablo_engeli
 from tp_core.features.metamorfik import yeniden_yazim
 from tp_core.features.metamorfik.iliskiler import bayat_mi
-from tp_core.features.oracle.service import gecerli_kayit, kapsayan_tablolar
+from tp_core.features.oracle.service import (
+    gecerli_kayit,
+    gereksinim_kontrolu_kuyruga_al,
+    kapsayan_tablolar,
+)
 from tp_core.models import (
     CaseOracleKontrol,
     MetamorfikIliski,
@@ -60,7 +64,6 @@ from tp_core.models import (
     TestCase,
     case_id,
 )
-from tp_core.workflow.jobs import enqueue
 from tp_core.workflow.service import Principal, WorkflowError
 
 ORACLE_IS = "oracle.check_requirement"
@@ -315,15 +318,9 @@ def turet(
         )
     is_id = None
     if yeniler:
-        is_id = enqueue(
-            session.connection(),
-            ORACLE_IS,
-            {"requirement_id": str(req.id), "neden": "metamorfik"},
-            idempotency_key=(
-                f"{ORACLE_IS}:metamorfik:{iliski.id}:"
-                + ",".join(sorted(str(y.id) for y in yeniler))
-            ),
-        )
+        # Gereksinim başına tek bekleyen kontrol işi (oracle birleştirmesi); tekrar denemede yeni
+        # case yoksa iş açılmaz.
+        is_id = gereksinim_kontrolu_kuyruga_al(session, req.id, "metamorfik")
     audit_on_commit(
         session,
         user.kullanici_adi,

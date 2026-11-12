@@ -59,7 +59,7 @@ from tp_core.models import (
     session_scope,
 )
 from tp_core.ports import CallResult, ModelGateway, ModelMessage
-from tp_core.workflow.jobs import JobContext, PermanentJobError, enqueue, start_workflow
+from tp_core.workflow.jobs import JobContext, PermanentJobError, start_workflow
 from tp_core.workflow.service import (
     SYSTEM,
     InvalidDecision,
@@ -369,19 +369,17 @@ def iliski_bayat_mi(session: Session, iliski: MetamorfikIliski, req: Requirement
 def oracle_kontrolu_iste(session: Session, tablo: KararTablosu, neden: str) -> uuid.UUID:
     """Gereksinimin beklenen sonuç kontrolünü kuyruğa ekler (işleyici: oracle şeridi).
 
-    `neden`: `tablo_onaylandi` | `tablo_degisti`. Her durum olayı (onay, yeniden açma, geçersiz
-    kılma) kendi işini açar: anahtar olay başına tekildir (birleştirme notu: önceki anahtar
-    `…:<onaylanan_hash | acik>` ikinci yeniden açmayı ve aynı içeriğin yeniden onayını yutuyordu;
-    kayıtlar eski tablo kümesinde kalıp onay kapısı 409'da takılıyordu). Gereksiz kontrolü
-    işleyici önler: geçerli kaydı olan içerik için `oracle.check_case` açılmaz.
+    `neden`: `tablo_onaylandi` | `tablo_degisti`. İş oracle servisinin birleştirmesiyle açılır
+    (`gereksinim_kontrolu_kuyruga_al`): gereksinim başına tek bekleyen iş; art arda gelen olaylar
+    (onay, yeniden açma, geçersiz kılma, case üretimi) o işin `nedenler` listesine eklenir ve
+    işleyici koştuğu andaki onaylı tablo kümesini tarar. Koşmakta olan iş varsa yeni iş açılır;
+    hiçbir olay yutulmaz. Gereksiz kontrolü işleyici önler: geçerli kaydı olan içerik için
+    `oracle.check_case` açılmaz.
     """
-    rid = tablo.requirement_id
-    return enqueue(
-        session.connection(),
-        ORACLE_JOB,
-        {"requirement_id": str(rid), "neden": neden},
-        idempotency_key=f"{ORACLE_JOB}:{rid}:{tablo.id}:{neden}:{uuid.uuid4().hex}",
-    )
+    # Döngüsel içe aktarma: oracle.tablolar bu modülü içe aktarır.
+    from tp_core.features.oracle.service import gereksinim_kontrolu_kuyruga_al
+
+    return gereksinim_kontrolu_kuyruga_al(session, tablo.requirement_id, neden)
 
 
 def gecersiz_kil(session: Session, nesne: Any, sebep: str) -> None:
