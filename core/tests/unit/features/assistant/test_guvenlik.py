@@ -1232,3 +1232,5 @@ def test_istem_saldirisi_sinyalinde_otomatik_yukseltme_yok(monkeypatch: pytest.M
     assert "prompt_saldirisi" in [s.id for s in sinyaller]
     assert flow.otomatik_tetik(m, cevap, sinyaller) is False
     assert flow.otomatik_tetik(m, cevap, ["prompt_saldirisi"]) is False
+    # Saklanan cevaptaki kimlikler (eval yolu sinyal geçirmez).
+    assert flow.otomatik_tetik(m, {**cevap, "sinyaller": ["prompt_saldirisi"]}) is False

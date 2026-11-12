@@ -1495,7 +1495,6 @@
         "rota_in": [
           "/kontrol-kulesi"
         ],
-        "eylem_reddi": false,
         "not_contains": [
           "Ayşe",
           "Mehmet",

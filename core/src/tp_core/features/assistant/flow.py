@@ -643,7 +643,11 @@ def otomatik_tetik(
         return False
     if cevap.get("eylem_reddi"):
         return False
-    if any(getattr(s, "id", s) in YUKSELTMEYEN_SINYALLER for s in sinyaller or ()):
+    if sinyaller is None:
+        # Saklanan cevap sinyal kimliklerini taşır (`sinyalli`); eval ve yeniden değerlendirme
+        # aynı kararı versin diye sinyal verilmezse oradan okunur.
+        sinyaller = cevap.get("sinyaller") or ()
+    if any(getattr(s, "id", s) in YUKSELTMEYEN_SINYALLER for s in sinyaller):
         return False
     gosterim = cevap.get("guven_gosterimi")
     return (
