@@ -1,0 +1,714 @@
+{
+  "bundle": "platform-web",
+  "version": 1,
+  "date": "2026-11-13",
+  "model": "claude-sonnet-5-5",
+  "provider": "anthropic",
+  "mode": "live",
+  "passed": 1,
+  "total": 1,
+  "runs": 1,
+  "cases": [
+    {
+      "id": "tpd-4-web",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "open_questions": [
+          {
+            "id": "Q1",
+            "question": "Geçersiz (var olmayan) kullanıcı adı ile giriş denendiğinde hangi mesaj gösterilir? AC2 yalnızca hatalı parolayı tanımlıyor.",
+            "owner": "PO"
+          },
+          {
+            "id": "Q2",
+            "question": "Kullanıcı adı veya parola boş bırakıldığında beklenen davranış ve mesaj nedir?",
+            "owner": "PO"
+          },
+          {
+            "id": "Q3",
+            "question": "Art arda hatalı parola denemesinde hesap kilitleme veya gecikme var mı; varsa eşik ve süre nedir?",
+            "owner": "PO"
+          },
+          {
+            "id": "Q4",
+            "question": "Oturum zaman aşımı süresi ve çıkış sonrası Geri davranışı nedir?",
+            "owner": "PO"
+          },
+          {
+            "id": "Q5",
+            "question": "Ürün hangi tarayıcı sürümlerini destekliyor? ('son 2' somut sürüm numarası verilmedi.)",
+            "owner": "PO"
+          }
+        ],
+        "assumptions": [],
+        "coverage_items": [
+          {
+            "id": "EP-V1",
+            "ac_ref": "AC1",
+            "definition": "Geçerli kullanıcı adı ve geçerli parola (bayi1 / Demo123!)",
+            "valid": true
+          },
+          {
+            "id": "EP-I1",
+            "ac_ref": "AC2",
+            "definition": "Geçerli kullanıcı adı, hatalı parola",
+            "valid": false
+          },
+          {
+            "id": "EP-I2",
+            "ac_ref": "AC2",
+            "definition": "Var olmayan kullanıcı adı; sonuç kaynakta tanımsız (Q1)",
+            "valid": false
+          },
+          {
+            "id": "EP-I3",
+            "ac_ref": "AC2",
+            "definition": "Boş kullanıcı adı veya parola; sonuç kaynakta tanımsız (Q2)",
+            "valid": false
+          },
+          {
+            "id": "UC-MF",
+            "ac_ref": "AC1",
+            "definition": "Ana akış: Giriş yap ile giriş, ürün kataloğu açılır",
+            "valid": true
+          },
+          {
+            "id": "UC-EF1",
+            "ac_ref": "AC2",
+            "definition": "İstisna akış: hatalı parola, hata mesajı, giriş yapılmaz",
+            "valid": false
+          },
+          {
+            "id": "EG-1",
+            "ac_ref": "AC2",
+            "definition": "Parola alanına SQL enjeksiyonu metni girilir; giriş yapılmaz, AC2 hatası görünür",
+            "valid": false
+          },
+          {
+            "id": "CL-1",
+            "ac_ref": "AC2",
+            "definition": "Web:Girdi güvenliği — SQL enjeksiyonu (WSTG-INPV-05)",
+            "valid": false
+          },
+          {
+            "id": "CL-2",
+            "ac_ref": "AC1",
+            "definition": "Web:Erişilebilirlik — klavyeyle giriş tamamlama (WCAG-2.1.1)",
+            "valid": true
+          },
+          {
+            "id": "CL-3",
+            "ac_ref": "AC2",
+            "definition": "Web:Erişilebilirlik — hata mesajının programatik olarak alanla ilişkilendirilmesi / durum mesajı (WCAG-3.3.1, WCAG-4.1.3)",
+            "valid": true
+          }
+        ],
+        "negative_coverage": [
+          {
+            "item": "EP-I1",
+            "decision": "tested",
+            "rationale": "AC2'nin ana kuralı; para/güvenlik riski taşıyan kimlik doğrulama reddi."
+          },
+          {
+            "item": "EP-I2",
+            "decision": "out_of_scope",
+            "rationale": "Var olmayan kullanıcı sonucu kaynakta yok; Q1 yanıtlanmalı."
+          },
+          {
+            "item": "EP-I3",
+            "decision": "out_of_scope",
+            "rationale": "Boş alan davranışı kaynakta yok; Q2 yanıtlanmalı."
+          },
+          {
+            "item": "UC-EF1",
+            "decision": "covered_by",
+            "rationale": "Hatalı parola case'i bu akışı da çalıştırır."
+          },
+          {
+            "item": "EG-1",
+            "decision": "tested",
+            "rationale": "Giriş formu enjeksiyon riski taşır; beklenen sonuç AC2'den."
+          },
+          {
+            "item": "CL-1",
+            "decision": "covered_by",
+            "rationale": "Enjeksiyon case'i bu kontrol listesi maddesini çalıştırır."
+          }
+        ],
+        "not_covered": [
+          {
+            "item": "AC2",
+            "reason": "Var olmayan kullanıcı adı ve boş alan sonuçları kaynakta tanımlı değil.",
+            "question_ref": "Q1"
+          },
+          {
+            "item": "AC2",
+            "reason": "Boş alan davranışı kaynakta yok.",
+            "question_ref": "Q2"
+          },
+          {
+            "item": "Web:Oturum",
+            "reason": "Story oturum süresi/zaman aşımı vermiyor; kilitleme ve zaman aşımı kuralları belirsiz.",
+            "question_ref": "Q4"
+          },
+          {
+            "item": "Web:Kaba kuvvet",
+            "reason": "Kilitleme/gecikme kuralı kaynakta yok.",
+            "question_ref": "Q3"
+          },
+          {
+            "item": "Web:Uyumluluk",
+            "reason": "Tarayıcı sürüm politikası somut değil.",
+            "question_ref": "Q5"
+          },
+          {
+            "item": "Web:Responsive",
+            "reason": "Story ve tasarım kırılım noktası vermiyor; çözünürlükler yalnızca config_matrix'te.",
+            "question_ref": null
+          },
+          {
+            "item": "Web:Ağ",
+            "reason": "Ağ hatasında UI tepkisi kaynakta yok.",
+            "question_ref": null
+          },
+          {
+            "item": "Web:Yerelleştirme",
+            "reason": "Story dil/format kuralı içermiyor.",
+            "question_ref": null
+          },
+          {
+            "item": "Web:Tarayıcı davranışı",
+            "reason": "Geri/yenile/çift tıklama davranışı kaynakta tanımlı değil.",
+            "question_ref": null
+          }
+        ],
+        "observations": [],
+        "automation_open_points": [
+          "Otomasyon aracı bilinmiyor; giriş formu alanları ve düğmeleri için kararlı seçici bilgisi yok.",
+          "Kullanıcı adı ve parola alanlarının ekran etiketleri girdide verilmedi.",
+          "Hata mesajının gösterildiği alan/bileşen bilgisi yok.",
+          "Giriş sayfasının URL'si ve çıkış sonrası dönüş sayfası belirtilmedi."
+        ],
+        "config_matrix": {
+          "parameters": [
+            {
+              "name": "Tarayıcı",
+              "values": [
+                "Chrome son 2",
+                "Firefox son 2"
+              ]
+            },
+            {
+              "name": "Çözünürlük",
+              "values": [
+                "1366x768",
+                "375x812"
+              ]
+            }
+          ],
+          "constraints": []
+        },
+        "testability_gaps": [],
+        "cases": [
+          {
+            "title": "Geçerli bayi bilgileriyle giriş yapılınca ürün kataloğu açılır",
+            "type": "positive",
+            "technique": [
+              "EP",
+              "UC"
+            ],
+            "covers": [
+              "EP-V1",
+              "UC-MF"
+            ],
+            "priority": "P1",
+            "priority_rationale": "Giriş ana akıştır; bozulursa bayi portalı hiç kullanılamaz ve alternatif yoktur.",
+            "acceptance_criteria_refs": [
+              "AC1"
+            ],
+            "platform": "Web",
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "bayi1 kullanıcısı mevcut ve oturum açık değil"
+            ],
+            "test_data": [
+              {
+                "name": "kullanici_adi",
+                "value": "bayi1",
+                "class": "EP-V1",
+                "synthetic": true,
+                "is_attack_payload": false
+              },
+              {
+                "name": "parola",
+                "value": "Demo123!",
+                "class": "EP-V1",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Giriş sayfası açılır",
+                "data": null,
+                "expected": "Giriş formu görüntülenir"
+              },
+              {
+                "id": "S2",
+                "action": "Kullanıcı adı alanına değer girilir",
+                "data": "bayi1",
+                "expected": "Değer alana girilir"
+              },
+              {
+                "id": "S3",
+                "action": "Parola alanına değer girilir",
+                "data": "Demo123!",
+                "expected": "Değer alana girilir"
+              },
+              {
+                "id": "S4",
+                "action": "\"Giriş yap\" düğmesine tıklanır",
+                "data": null,
+                "expected": "Ürün kataloğu açılır"
+              }
+            ],
+            "expected_result": "Geçerli kullanıcı adı ve parola ile giriş yapılır ve ürün kataloğu açılır.",
+            "teardown": [
+              "\"Çıkış yap\" ile oturum kapatılır"
+            ],
+            "tags": [
+              "AI-generated",
+              "smoke"
+            ]
+          },
+          {
+            "title": "Hatalı parolada \"Kullanıcı adı veya parola hatalı\" gösterilir, giriş yapılmaz",
+            "type": "negative",
+            "technique": [
+              "EP",
+              "UC"
+            ],
+            "covers": [
+              "EP-I1",
+              "UC-EF1"
+            ],
+            "priority": "P1",
+            "priority_rationale": "Hatalı kimlik bilgisiyle girişin engellenmesi güvenlik kontrolüdür; açık kalırsa yetkisiz erişim olur.",
+            "acceptance_criteria_refs": [
+              "AC2"
+            ],
+            "platform": "Web",
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "bayi1 kullanıcısı mevcut ve oturum açık değil"
+            ],
+            "test_data": [
+              {
+                "name": "kullanici_adi",
+                "value": "bayi1",
+                "class": "EP-I1",
+                "synthetic": true,
+                "is_attack_payload": false
+              },
+              {
+                "name": "hatali_parola",
+                "value": "Yanlis456!",
+                "class": "EP-I1",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Giriş sayfası açılır",
+                "data": null,
+                "expected": "Giriş formu görüntülenir"
+              },
+              {
+                "id": "S2",
+                "action": "Kullanıcı adı alanına değer girilir",
+                "data": "bayi1",
+                "expected": "Değer alana girilir"
+              },
+              {
+                "id": "S3",
+                "action": "Parola alanına hatalı parola girilir",
+                "data": "Yanlis456!",
+                "expected": "Değer alana girilir"
+              },
+              {
+                "id": "S4",
+                "action": "\"Giriş yap\" düğmesine tıklanır",
+                "data": null,
+                "expected": "\"Kullanıcı adı veya parola hatalı\" mesajı gösterilir; ürün kataloğu açılmaz"
+              }
+            ],
+            "expected_result": "\"Kullanıcı adı veya parola hatalı\" mesajı gösterilir ve giriş yapılmaz.",
+            "teardown": [],
+            "tags": [
+              "AI-generated",
+              "security"
+            ]
+          },
+          {
+            "title": "Parola alanına SQL enjeksiyonu girilince giriş yapılmaz, AC2 hatası görünür",
+            "type": "negative",
+            "technique": [
+              "EG",
+              "CL",
+              "EP"
+            ],
+            "covers": [
+              "EG-1",
+              "CL-1",
+              "EP-I1"
+            ],
+            "priority": "P1",
+            "priority_rationale": "Kimlik doğrulama formunda enjeksiyon, yetkisiz erişim ve veri sızıntısı riski taşır.",
+            "acceptance_criteria_refs": [
+              "AC2"
+            ],
+            "platform": "Web",
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [
+              "WSTG-INPV-05"
+            ],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "İzin verilen test ortamı; bayi1 kullanıcısı mevcut ve oturum açık değil"
+            ],
+            "test_data": [
+              {
+                "name": "kullanici_adi",
+                "value": "bayi1",
+                "class": "EP-I1",
+                "synthetic": true,
+                "is_attack_payload": false
+              },
+              {
+                "name": "sql_payload",
+                "value": "' OR '1'='1' --",
+                "class": "EG-1",
+                "synthetic": true,
+                "is_attack_payload": true
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Giriş sayfası açılır",
+                "data": null,
+                "expected": "Giriş formu görüntülenir"
+              },
+              {
+                "id": "S2",
+                "action": "Kullanıcı adı alanına değer girilir",
+                "data": "bayi1",
+                "expected": "Değer alana girilir"
+              },
+              {
+                "id": "S3",
+                "action": "Parola alanına sql_payload girilir",
+                "data": "sql_payload",
+                "expected": "Değer alana girilir"
+              },
+              {
+                "id": "S4",
+                "action": "\"Giriş yap\" düğmesine tıklanır",
+                "data": null,
+                "expected": "\"Kullanıcı adı veya parola hatalı\" mesajı gösterilir; giriş yapılmaz; yanıtta SQL veya stack trace görünmez"
+              }
+            ],
+            "expected_result": "Giriş yapılmaz, \"Kullanıcı adı veya parola hatalı\" mesajı gösterilir ve yanıtta SQL hatası ya da stack trace bulunmaz.",
+            "teardown": [],
+            "tags": [
+              "AI-generated",
+              "security"
+            ]
+          },
+          {
+            "title": "Giriş yalnızca klavyeyle tamamlanır ve katalog açılır",
+            "type": "positive",
+            "technique": [
+              "CL"
+            ],
+            "covers": [
+              "CL-2"
+            ],
+            "priority": "P2",
+            "priority_rationale": "Klavye kullanıcıları için erişilebilirlik; WCAG 2.2 AA benimsenmiş, fakat fiyat/para etkisi yok ve düzeltme sonrası kullanılabilir.",
+            "acceptance_criteria_refs": [
+              "AC1"
+            ],
+            "platform": "Web",
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [
+              "WCAG-2.1.1"
+            ],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "bayi1 kullanıcısı mevcut ve oturum açık değil",
+              "Yalnızca klavye kullanılır"
+            ],
+            "test_data": [
+              {
+                "name": "kullanici_adi",
+                "value": "bayi1",
+                "class": "EP-V1",
+                "synthetic": true,
+                "is_attack_payload": false
+              },
+              {
+                "name": "parola",
+                "value": "Demo123!",
+                "class": "EP-V1",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Giriş sayfasında Tab ile kullanıcı adı alanına odaklanılır",
+                "data": null,
+                "expected": "Kullanıcı adı alanı odak alır ve odak görünür"
+              },
+              {
+                "id": "S2",
+                "action": "Kullanıcı adı yazılır",
+                "data": "bayi1",
+                "expected": "Değer girilir"
+              },
+              {
+                "id": "S3",
+                "action": "Tab ile parola alanına geçilir ve parola yazılır",
+                "data": "Demo123!",
+                "expected": "Parola alanı odak alır, değer girilir"
+              },
+              {
+                "id": "S4",
+                "action": "Tab ile \"Giriş yap\" düğmesine geçilip Enter basılır",
+                "data": null,
+                "expected": "Ürün kataloğu açılır"
+              }
+            ],
+            "expected_result": "Tüm giriş adımları fare kullanılmadan tamamlanır ve ürün kataloğu açılır.",
+            "teardown": [
+              "\"Çıkış yap\" ile oturum kapatılır"
+            ],
+            "tags": [
+              "AI-generated",
+              "a11y"
+            ]
+          },
+          {
+            "title": "Hatalı parola mesajı ekran okuyucuya duyurulur ve girişle ilişkilendirilir",
+            "type": "negative",
+            "technique": [
+              "CL"
+            ],
+            "covers": [
+              "CL-3"
+            ],
+            "priority": "P3",
+            "priority_rationale": "Hata mesajının programatik erişilebilirliği; etki sınırlı, kullanıcı mesajı yine görebilir.",
+            "acceptance_criteria_refs": [
+              "AC2"
+            ],
+            "platform": "Web",
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [
+              "WCAG-3.3.1",
+              "WCAG-4.1.3"
+            ],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "Ekran okuyucu veya erişilebilirlik ağacı denetleyicisi kullanılabilir"
+            ],
+            "test_data": [
+              {
+                "name": "kullanici_adi",
+                "value": "bayi1",
+                "class": "EP-I1",
+                "synthetic": true,
+                "is_attack_payload": false
+              },
+              {
+                "name": "hatali_parola",
+                "value": "Yanlis456!",
+                "class": "EP-I1",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Giriş sayfası açılır, kullanıcı adı girilir",
+                "data": "bayi1",
+                "expected": "Değer girilir"
+              },
+              {
+                "id": "S2",
+                "action": "Hatalı parola girilir",
+                "data": "Yanlis456!",
+                "expected": "Değer girilir"
+              },
+              {
+                "id": "S3",
+                "action": "\"Giriş yap\" düğmesine tıklanır",
+                "data": null,
+                "expected": "\"Kullanıcı adı veya parola hatalı\" mesajı gösterilir"
+              },
+              {
+                "id": "S4",
+                "action": "Erişilebilirlik ağacında/ekran okuyucuda mesaj kontrol edilir",
+                "data": null,
+                "expected": "Mesaj metni ekran okuyucu tarafından duyurulur veya erişilebilirlik ağacında bulunur"
+              }
+            ],
+            "expected_result": "\"Kullanıcı adı veya parola hatalı\" mesajı yardımcı teknolojilere iletilir.",
+            "teardown": [],
+            "tags": [
+              "AI-generated",
+              "a11y"
+            ]
+          }
+        ]
+      },
+      "mode": "live",
+      "error": null,
+      "cost_usd": 0.068879,
+      "sure_ms": 32920
+    }
+  ],
+  "tamamlandi": true,
+  "set_vaka_sayisi": 1,
+  "kosu_sayisi": 1,
+  "maliyet_usd": 0.068879,
+  "butce_usd": 2.0,
+  "calisma_alani_basligi": true,
+  "guardrails_version": 1,
+  "kayit_adaylari": null,
+  "cagri_kaydi": "platform-web-v1-2026-11-13.calls.jsonl",
+  "cagri_sayisi": 1,
+  "cagri_defteri": "/Users/gokhansipahi/projects/agent-probe/tp-wt-v3/exports/eval-live/ai_call.jsonl",
+  "amac": "case_generation",
+  "via_flow": false,
+  "output_check": true,
+  "icerik_hash": "sha256:e7fda723944d94d09b86605fe1b444efe316a336ed1f95f1cc11569978bfcb93",
+  "olcumler": {
+    "amac": "case_generation",
+    "output_check": true,
+    "vaka": 1,
+    "ilk_deneme_gecis": 1,
+    "ilk_deneme_gecis_orani": 1.0,
+    "kural_yeniden_isteme_orani": 0.0,
+    "sema_yeniden_isteme_orani": 0.0,
+    "duzelme_orani": null,
+    "kalan_kural_ihlali": 0,
+    "ek_maliyet_usd": 0.0,
+    "ek_maliyet_orani": 0.0,
+    "ek_sure_ms": {
+      "p50": null,
+      "p95": null
+    },
+    "kural_turu_histogrami": {},
+    "esikler": [
+      {
+        "ad": "ham_gecis_alt_siniri (bilgi)",
+        "deger": 1.0,
+        "esik": 0.7,
+        "gecti": true,
+        "bagliyici": false
+      }
+    ]
+  },
+  "dagilim": {
+    "toplam": {
+      "kosu": 1,
+      "readiness": {
+        "ready": 5
+      },
+      "technique": {
+        "CL": 3,
+        "EG": 1,
+        "EP": 3,
+        "UC": 2
+      },
+      "priority": {
+        "P1": 3,
+        "P2": 1,
+        "P3": 1
+      },
+      "case": 5,
+      "coverage_items": 10,
+      "covered_items": 8,
+      "not_covered": 9,
+      "open_questions": 5,
+      "yetim_soru": 0,
+      "tekrar": 0,
+      "tekrar_orani": 0.0,
+      "p1_orani": 0.6
+    },
+    "kosular": {
+      "tpd-4-web": {
+        "case": 5,
+        "tekrar": 0,
+        "tekrar_ciftleri": [],
+        "readiness": {
+          "ready": 5
+        },
+        "technique": {
+          "CL": 3,
+          "EG": 1,
+          "EP": 3,
+          "UC": 2
+        },
+        "priority": {
+          "P1": 3,
+          "P2": 1,
+          "P3": 1
+        },
+        "p1_orani": 0.6,
+        "coverage_items": 10,
+        "covered_items": 8,
+        "invalid_items": 6,
+        "not_covered": 9,
+        "open_questions": 5,
+        "yetim_soru": 0,
+        "assumptions": 0,
+        "observations": 0
+      }
+    },
+    "uydurma": [],
+    "readiness_ihlali": []
+  }
+}

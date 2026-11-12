@@ -61,14 +61,14 @@ bundles:
   design-model:
     version: 1
     status: evaluated
-    note: 'Canlı değerlendirme 2026-11-12, claude-sonnet-5-5 (anthropic), 6/6 vaka geçti: evaluation/results/design-model-v1-2026-11-12.json'
+    note: 'Canlı değerlendirme 2026-11-13, claude-sonnet-5-5 (anthropic), 6/6 vaka geçti: evaluation/results/design-model-v1-2026-11-13.json'
     evaluation:
-      date: '2026-11-12'
+      date: '2026-11-13'
       model: claude-sonnet-5-5
       provider: anthropic
-      results: evaluation/results/design-model-v1-2026-11-12.json
+      results: evaluation/results/design-model-v1-2026-11-13.json
       guardrails_version: 1
-      calls: evaluation/results/design-model-v1-2026-11-12.calls.jsonl
+      calls: evaluation/results/design-model-v1-2026-11-13.calls.jsonl
   case-review:
     version: 1
     status: evaluated
@@ -203,15 +203,15 @@ bundles:
   platform-web:
     version: 1
     status: evaluated
-    note: 'Canlı değerlendirme 2026-11-12, claude-sonnet-5-5 (anthropic), 1/1 vaka geçti: evaluation/results/platform-web-v1-2026-11-12.json'
+    note: 'Canlı değerlendirme 2026-11-13, claude-sonnet-5-5 (anthropic), 1/1 vaka geçti: evaluation/results/platform-web-v1-2026-11-13.json'
     evaluation:
-      date: '2026-11-12'
+      date: '2026-11-13'
       model: claude-sonnet-5-5
       provider: anthropic
-      results: evaluation/results/platform-web-v1-2026-11-12.json
+      results: evaluation/results/platform-web-v1-2026-11-13.json
       guardrails_version: 1
-      calls: evaluation/results/platform-web-v1-2026-11-12.calls.jsonl
-      icerik_hash: sha256:ab3bd2b17bbd971c13f9bb8fa4497fabeba526705c204a7a167c0b42507d1aa8
+      calls: evaluation/results/platform-web-v1-2026-11-13.calls.jsonl
+      icerik_hash: sha256:e7fda723944d94d09b86605fe1b444efe316a336ed1f95f1cc11569978bfcb93
   platform-mobile:
     version: 1
     status: evaluated
