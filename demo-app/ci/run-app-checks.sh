@@ -11,7 +11,7 @@
 #   allure-results/               Allure sonuçları
 #   extent-report/index.html      Extent (Spark) HTML raporu — tek dosya, çevrimdışı açılır
 #   kanit/<Sınıf>.<metot>/        başarısız testin ekran görüntüsü + sayfa kaynağı (triage)
-#   birim-raporlari/              birim testlerinin JUnit XML'i (+ extent-report/: birim Extent raporu)
+#   birim-raporlari/              birim testlerinin JUnit XML'i (+ extent-report/, allure-results/)
 #
 # Ortam (sistem özelliği karşılıkları: e2e-app/pom.xml, Ayarlar.java):
 #   APPIUM_URL (http://127.0.0.1:4723) · APP_PATH ya da APP_ID · DEVICE_NAME · DEVICE_UDID
@@ -44,9 +44,10 @@ step "derleme: ./mvnw test-compile"
 if [[ "${SKIP_BIRIM:-0}" != "1" ]]; then
   step "birim testleri (cihazsız): -Dgroups=birim"
   # -q yok: takılırsa hangi testte olduğu günlükte görünsün; surefire.timeout asılı çatalı keser.
-  # Birim Extent raporu ayrı dizine: cihaz koşusunun raporuna (target/extent-report) karışmasın.
+  # Birim Extent ve Allure sonuçları ayrı dizine: cihaz koşusunun raporlarına karışmasın.
   ./mvnw "${mvn_opts[@]}" surefire:test -Dgroups=birim -Draporlar.dizini=target/birim-raporlari \
-    -Dextent.rapor.dizini=target/birim-raporlari/extent-report -Dsurefire.timeout=600
+    -Dextent.rapor.dizini=target/birim-raporlari/extent-report \
+    -Dallure.results.directory=target/birim-raporlari/allure-results -Dsurefire.timeout=600
 fi
 
 step "cihaz koşusu: platform=$platform $*"
