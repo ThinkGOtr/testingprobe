@@ -824,12 +824,19 @@ class DemoJiraIssueYok(WorkflowError):
 
 
 def _jira_sim_mi() -> bool:
+    """Demo Jira kontrolü yalnız jira-sim'e: yapılandırma simülatörü göstermeli VE uç kendini
+    jira-sim olarak tanıtmalı (`RestJira.simulator_mu`, sim'e özgü `/health`). Host adına tek
+    başına güvenilmez (localhost tüneli/proxy gerçek Jira'ya çıkabilir)."""
     f = _factories.get("jira_sim_mi")
     if f is not None:
         return bool(f())
+    from tp_core.features.requirements import services as req_services
     from tp_core.integrations.jira import get_jira_settings
 
-    return get_jira_settings().is_simulator
+    if not get_jira_settings().is_simulator:
+        return False
+    dogrula = getattr(req_services.jira(), "simulator_mu", None)
+    return bool(dogrula()) if callable(dogrula) else False
 
 
 def jira_durum_tasi(user: Principal, jira_key: str, durum: str) -> dict[str, Any]:

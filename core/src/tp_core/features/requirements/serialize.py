@@ -98,7 +98,23 @@ def list_requirements(s: Session) -> list[dict[str, Any]]:
     )
     sayac = counts_for(s, [r.id for r in reqs])
     bazlar = baseline.baselines_for(s, [r.id for r in reqs])
-    return [{**requirement_summary(r, sayac[r.id]), "baseline": bazlar[r.id]} for r in reqs]
+    akislar = _otomatik_akislar(s, reqs)
+    return [
+        {
+            **requirement_summary(r, sayac[r.id]),
+            "baseline": bazlar[r.id],
+            "otomatik_akis": akislar[r.id],
+        }
+        for r in reqs
+    ]
+
+
+def _otomatik_akislar(s: Session, reqs: list[Requirement]) -> dict[uuid.UUID, Any]:
+    """Jira durum tetiği rozeti (specs/013 K15): `{tetik_zamani, durum: suruyor|durdu|tamam,
+    neden}` ya da null (elle akış). Kurallar `otomasyon.jira_tetik.otomatik_akis_hepsi`'nde."""
+    from tp_core.features.otomasyon import jira_tetik
+
+    return jira_tetik.otomatik_akis_hepsi(s, reqs)
 
 
 _SORU_ETIKETI = re.compile(r"(?<![\w])Q(\d{1,2})\s*[:.)\-–]\s*", re.IGNORECASE)
@@ -270,6 +286,8 @@ def requirement_detail(s: Session, req: Requirement) -> dict[str, Any]:
             # Story başına manuel baz değer: {deger_s, kaynak: olcum|varsayilan|null, giren,
             # zaman, not, …}; kaynak null = ölçülmedi (sayı yok, uydurulmaz).
             "baseline": baseline.baseline_for(s, req.id),
+            # Jira durum tetiğiyle akışa alındıysa rozet (bkz. `_otomatik_akislar`), yoksa null.
+            "otomatik_akis": _otomatik_akislar(s, [req])[req.id],
         }
     )
     return out

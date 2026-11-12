@@ -2671,9 +2671,10 @@ def _otomatik_case(s: Session, req: Requirement) -> None:
     if req.qa_tetik_zamani is None:
         return  # elle çekilmiş gereksinim: davranış değişmez
     from tp_core.features.otomasyon import jira_tetik
+    from tp_core.features.otomasyon.otokod import savepoint
 
     try:
-        with s.begin_nested():
+        with savepoint(s):  # geri alımda bekleyen denetim kayıtları da düşer
             jira_tetik.po_onayi_sonrasi(s, req)
     except Exception as exc:
         log.warning("%s: otomatik case üretimi kuyruğa alınamadı: %s", req.jira_key, exc)
