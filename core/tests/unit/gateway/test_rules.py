@@ -21,6 +21,8 @@ PURPOSES = {
     # Portal asistanı: iki amaç tek prompt paketini paylaşır (AI-ASISTAN-PLANI §6.1).
     "assistant": "assistant",
     "assistant_deep": "assistant",
+    # 012 test kalite doğrulama: case değer çıkarma (karar tablosu kontrolü).
+    "case_facts": "case-facts",
 }
 
 
@@ -40,7 +42,7 @@ def test_model_classes_per_task() -> None:
     table = load_model_table(REAL_RULES)
     for p in ("requirement_review", "case_generation", "consistency_check", "verify_and_map"):
         assert table.purpose(p).model == "claude-sonnet-5-5"
-    for p in ("triage", "bug_draft", "dup_rank", "assistant"):
+    for p in ("triage", "bug_draft", "dup_rank", "assistant", "case_facts"):
         assert table.purpose(p).model == "claude-haiku-5-5"
     assert table.purpose("assistant_deep").model == "claude-sonnet-5-5"
     for cfg in table.purposes.values():

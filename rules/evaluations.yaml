@@ -149,3 +149,9 @@ bundles:
             sure_s:
               medyan: 7.62
               p90: 13.522
+  case-facts:
+    version: 1
+    status: pending
+    note: '012 Ş2: case değer çıkarma paketi v1 (karar tablosu kontrolü). REPLAY golden''ları (case_facts/golden/TPD-1-C*)
+      elle hazırlandı; alıntılar deterministik doğrulamadan geçer. Değerlendirme seti: rules/evaluation/case-facts.json.
+      Canlı değerlendirme yapılmadı; onaylı istisna yok.'

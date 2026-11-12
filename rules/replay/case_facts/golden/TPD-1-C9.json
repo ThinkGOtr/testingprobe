@@ -1,0 +1,53 @@
+{
+  "kind": "call",
+  "purpose": "case_facts",
+  "golden": "TPD-1-C9",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Olgular elle hazırlandı (canlı model çıktısı değil; ai_call.model = golden-elle): case_generation/golden/TPD-1 case'inden dikkatli bir modelin çıkaracağı değerler, alıntılar case alanlarından birebir. Kolon adları TPD-1 demo tablolarınındır (T1 kampanya, T2 minimum sipariş; core/tests/unit/features/oracle/tpd1.py). Üretildi: python -m tests.unit.features.oracle.tpd1 (elle düzenlemeyin). Girdi beyanı (input_match.case_text) eşleşirse mod REPLAY (köken golden_matched); case düzeltilir ya da önerilen içerik farklıysa REPLAY-MISS ve nötr çıktı (groups: [] → kontrol_edilemedi). Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record).",
+  "input_match": {
+    "sources": [
+      "case:TPD-1-C9"
+    ],
+    "case_text": "Başlık: Kampanyalı siparişte minimum sipariş tutarı şartı aranmaz\nTür: positive · Risk: medium\nKabul kriterleri: AC6\nÖn koşullar:\n- Sepet boş\n- P-001 \"6 al 1 bedava\" kampanyasında\nAdımlar:\nS1: Giriş sayfasını aç\n  Veri: (yok)\n  Beklenen: Giriş formu görüntülenir\nS2: Bayi kullanıcısıyla giriş yap\n  Veri: bayi1 / Demo123!\n  Beklenen: Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir\nS3: \"Portakal Gazozu 1L\" (P-001) kartında adedi 7 yapıp \"Sepete ekle\" butonuna bas\n  Veri: P-001 × 7\n  Beklenen: Sepet sayacı 7 olur\nS4: Üst menüden sepete git\n  Veri: (yok)\n  Beklenen: Toplam 150,00 TL; minimum sipariş uyarısı görünmez ve \"Siparişi onayla\" butonu aktiftir\nBeklenen sonuç: Kampanyalı sepette toplam 150,00 TL olsa da minimum sipariş uyarısı gösterilmez ve sipariş onaylanabilir\nEtiketler: AI-generated"
+  },
+  "case": {
+    "jira_key": "TPD-1",
+    "sira_no": 9,
+    "title": "Kampanyalı siparişte minimum sipariş tutarı şartı aranmaz",
+    "case_golden": "TPD-1"
+  },
+  "output": {
+    "groups": [
+      {
+        "table_ref": "T2",
+        "inputs": [
+          {
+            "column": "toplam",
+            "value": "150.00",
+            "field": "steps[3].expected",
+            "quote": "150,00 TL"
+          },
+          {
+            "column": "kampanyali",
+            "value": true,
+            "field": "preconditions[1]",
+            "quote": "P-001 \"6 al 1 bedava\" kampanyasında"
+          }
+        ],
+        "expected": [
+          {
+            "column": "minimum_uyarisi",
+            "value": false,
+            "field": "steps[3].expected",
+            "quote": "uyarısı görünmez"
+          },
+          {
+            "column": "onay_aktif",
+            "value": true,
+            "field": "steps[3].expected",
+            "quote": "butonu aktiftir"
+          }
+        ]
+      }
+    ]
+  }
+}

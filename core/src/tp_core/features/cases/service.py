@@ -752,6 +752,11 @@ def run_generation(
             if (refs := unknown_ac_refs(tc.icerik, req.kabul_kriterleri))
         }
         kapsanmayan = coverage_gaps(s, req)
+        # --- 012 oracle kancası: beklenen sonuç kontrolü işleri (features/oracle) ---
+        from tp_core.features.oracle import service as oracle_service
+
+        oracle_service.uretim_sonrasi(s, req.id)
+        # --- /012 ---
         onceki_icerik, onceki_uyari = _old_content_warning(s, req)
         uyarilar = [onceki_uyari] if onceki_uyari else []
         if korunan_ide:
@@ -1032,6 +1037,7 @@ def decide(
     ret_nedeni: str | None = None,
     gerekce: str | None = None,
     beklenen_anlam_degisti: bool | None = None,
+    oracle_istisna_gerekce: str | None = None,
 ) -> TestCase:
     """Portal kararı (Constitution I): görülen hash ile `review` kaydı + durum geçişi."""
     if karar not in KARARLAR:
@@ -1077,6 +1083,21 @@ def decide(
         raise InvalidDecision("İçerik yalnızca 'edit' kararında gönderilir")
     elif karar == "approve":
         olculer = {"mesafe": 0.0, "kucuk_duzeltme": True, "degisen_alanlar": []}
+    # --- 012 oracle kancası: karar tablosu onay kapısı (features/oracle/kapi.py) ---
+    if karar in ("approve", "edit"):
+        from tp_core.features.oracle import kapi as oracle_kapi
+
+        oracle_uyarilari = oracle_kapi.onay_denetimi(
+            session,
+            tc,
+            content_hash(dict(icerik)) if icerik is not None else tc.icerik_hash,
+            oracle_istisna_gerekce,
+            user,
+            icerik=icerik,
+        )
+        if oracle_uyarilari:
+            olculer["oracle_uyarilari"] = oracle_uyarilari
+    # --- /012 ---
     olculer["review_sure_ms"] = _review_sure_ms(session, tc, user)
     olculer["ilk_karar"] = latest_review(session, "test_case", tc.id) is None
     record_approval(
@@ -1220,6 +1241,11 @@ def serialize_cases(session: Session, cases: Sequence[TestCase]) -> list[dict[st
     eski: set[uuid.UUID] = set()
     for r in reqs.values():
         eski |= old_content_case_ids(session, r)
+    # --- 012 oracle kancası: karar tablosu kontrol sonucu (features/oracle) ---
+    from tp_core.features.oracle import service as oracle_service
+
+    oracle_ozetleri = oracle_service.case_oracle_ozetleri(session, cases)
+    # --- /012 ---
     out = []
     for c in cases:
         rs = reviews.get(c.id, [])
@@ -1241,6 +1267,7 @@ def serialize_cases(session: Session, cases: Sequence[TestCase]) -> list[dict[st
                 "Bu case gereksinimin önceki (PO onayı yenilenmiş) içeriği için üretildi; "
                 "yeni metne göre gözden geçirin."
             )
+        uyarilar += list(olcu.get("oracle_uyarilari") or [])  # 012: kararda kayda geçen uyarılar
         # AI özgün içeriği = ilk düzeltme kararından ÖNCEKİ içerik (§8.10 "fark").
         ilk_edit = next((r for r in rs if r.karar == "edit"), None)
         ai_icerik = (
@@ -1285,6 +1312,7 @@ def serialize_cases(session: Session, cases: Sequence[TestCase]) -> list[dict[st
                 if son and son.karar == "edit"
                 else None,
                 "olusturma": c.olusturma,
+                "oracle": oracle_ozetleri.get(c.id),  # 012
             }
         )
     return out
@@ -1402,7 +1430,15 @@ def requirement_metrics(session: Session, requirement_id: uuid.UUID) -> dict[str
         "manuel_baz_ms": manuel_baz,
         "manuel_baz_kaynagi": baz["kaynak"],
         "manuel_baz": baz,
+        # 012 §4.7: AI'ın beklenen değerlerinin karar tablosuyla uyuşması (features/oracle).
+        "beklenti_dogrulugu": _beklenti_dogrulugu(session, req.id),
     }
+
+
+def _beklenti_dogrulugu(session: Session, requirement_id: uuid.UUID) -> dict[str, Any]:
+    from tp_core.features.oracle import metrik as oracle_metrik
+
+    return oracle_metrik.beklenti_dogrulugu(session, requirement_id)
 
 
 # Demo-A (§17, başarı ölçütü 6): "AI + review süresi manuel baz değerle yan yana". Baz değer
