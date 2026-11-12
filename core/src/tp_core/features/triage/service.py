@@ -176,6 +176,10 @@ def uygunluk(session: Session, run: Run, *, son_deneme: bool = False) -> Uygunlu
                 kontrol=kontrol,
             )
         return Uygunluk(True, None, "codegen", kirma, kontrol)
+    if run.tetik == "break_verify" and ortam.get("hata_kosusu_id"):
+        # 012 §4.6: ekilmiş hata koşusunun kırmızısı beklenen sonuçtur; sonucu hata koşusu
+        # kaydındadır. Sınıflandırılmaz, bug taslağı açılmaz.
+        return Uygunluk(False, "ekilmiş hata koşusu (triage yapılmaz)", "kirma", True, None)
     if run.tetik == "break_verify":
         if kirma and not services.kirma_triage():
             return Uygunluk(
