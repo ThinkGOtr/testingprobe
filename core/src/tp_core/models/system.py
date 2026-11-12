@@ -34,6 +34,13 @@ class Job(Base):
             unique=True,
             postgresql_where=text("idempotency_key IS NOT NULL"),
         ),
+        # 0030: gereksinim → son otomatik case işi (otomatik akış rozeti, 013 §9).
+        Index(
+            "job_otomatik_case_req_ix",
+            text("(yuk ->> 'requirement_id')"),
+            "olusturma",
+            postgresql_where=text("tur = 'requirements.otomatik_case'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()

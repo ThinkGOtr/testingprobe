@@ -9,9 +9,14 @@ durumda son gördüğü değerdir (durumdan çıkan story'de tam listeli turda N
 
 - İşaret yoksa (ilk tur; tetik açıldı ya da `durum` değişti → `ayarlar.yaz` işareti siler) tur
   **taban turudur**: o anda durumda olan her story yalnız işaretlenir (`jira_durumu` yazılır;
-  TP'de yoksa okunarak gereksinim olarak eklenir), hiçbiri tetiklenmez. Arama ve tüm story'ler
-  hatasız işlenirse işaret yazılır; aksi halde sonraki tur tabanı yeniden kurar (işaretleme
-  idempotenttir, tetik yoktur).
+  TP'de yoksa okunarak gereksinim olarak eklenir), hiçbiri tetiklenmez. Arama başarılıysa işaret
+  story hatalarına rağmen yazılır; işaretlenemeyen story'ler işaretin `bekleyen_isaret`
+  listesinde tutulur. Gerekçe: tek bir kalıcı hatalı story (ör. Postgres'in reddettiği NUL
+  karakterli özet) işareti hiç yazdırmasaydı her tur taban turu olur ve hiçbir yeni giriş
+  tetiklenmezdi (K14'ün "sonradan giren tetiklenir" sözü kapanırdı). Bekleyen story sonraki
+  turlarda "giren" SAYILMAZ (taban anında zaten durumdaydı): yalnız işaretleme yeniden denenir;
+  başarılı olunca ya da story durumdan çıkınca (tam listeli tur) listeden düşer. Böylece hatalı
+  story yanlışlıkla tetiklenmez, diğerleri normal işlenir.
 - İşaret varsa: `jira_durumu` bu durumu göstermeyen (yeni ya da durumdan çıkıp geri gelen) story
   duruma **girmiştir**: çekilir (`upsert_issue`), `jira_durumu` yazılır ve gereksinim durumuna
   göre:
@@ -28,9 +33,15 @@ durumda son gördüğü değerdir (durumdan çıkan story'de tam listeli turda N
   ön inceleme yeniden başlar (`yeniden_tetiklendi`, K15a). Ön inceleme gereksinimi aynı işlemde
   `new`'den çıkardığı için çift tetik olmaz. Taban turunda işaretlenmiş (tetiklenmemiş) story'nin
   içeriğine tetik dokunmaz (elle eşitleme yapar).
-- Tur başına en çok `TETIK_SINIRI` (10) tetik (`tetiklendi`, `yeniden_tetiklendi`,
-  `case_uretimi`); kalan story'ler hiç yazılmadan `ertelendi` olur ve sonraki turda yine "giren"
-  sayılır.
+- Tur başına en çok `TETIK_SINIRI` (10) model işi başlatan eylem: tetik (`tetiklendi`,
+  `yeniden_tetiklendi`, `case_uretimi`) ve tutarlılık denetimini yeniden koşturan içerik çekimi
+  (`yeniden_kontrol`; giren story'de de, durumda kalan tetikli story'de de). Bütçe dolunca iş
+  başlatabilecek story'ler hiç yazılmadan `ertelendi` olur ve sonraki turda yeniden
+  değerlendirilir. İş başlatmayan çekim (`mesgul`, yalnız içerik yazımı) bütçe harcamaz; aksi
+  halde süren işi olan story'ler her tur bütçeyi tüketip diğerlerini aç bırakırdı.
+- Eylemli sonuçlar (`tetiklendi`…`dokunulmadi`, `hata`) denetime (`requirements.jira_tetik`)
+  yazılır; `son_tetiklenenler` story başına son eylemli sonucu gösterir (ör. "neden
+  tetiklenmedi" bir tur sonra kaybolmaz). `hata` aynı story için art arda yinelenmez.
 - Her story kendi işleminde işlenir: biri hata verirse atlanır (`hata`), diğerleri sürer. Jira
   erişilemezse tur boş geçer (sabit Türkçe "Jira'ya erişilemedi"; ayrıntı yalnız log'da).
 - Ayar kapalıysa Jira'ya gidilmez; iş yalnız kendini yeniden planlar.
@@ -83,6 +94,9 @@ SON_TETIKLENEN_SAYISI = 10
 ETKIN_CASE = ("draft", "approved", "published")
 AKIS_SURUYOR = ("in_review", "findings_open", "doc_final", "pending_po")
 TETIK_SONUCLARI = frozenset({"tetiklendi", "yeniden_tetiklendi", "case_uretimi"})
+# İçerik çekiminin model işi başlatan sonucu (tutarlılık denetimi yeniden koşar): bütçeden düşer.
+BUTCE_CEKIMLERI = frozenset({"yeniden_kontrol"})
+SON_TETIK_TARAMA = 100  # son_tetiklenenler: story başına tekilleştirmeden önce okunan kayıt
 
 JIRA_HATASI = "Jira'ya erişilemedi"
 YAPILANDIRMA_HATASI = "Jira tetiği yapılandırması geçersiz (JIRA_PROJECT)"
@@ -90,6 +104,10 @@ STORY_HATASI = "Story işlenemedi; ayrıntı sunucu günlüğünde"
 ISARET_NEDENI = "Tetik açıldığında zaten bu durumdaydı; tetiklenmedi"
 ERTELEME_NEDENI = f"Tur başına en çok {TETIK_SINIRI} tetik; sonraki turda işlenecek"
 DURUMDA_NEDENI = "Önceki turda işlendi; değişiklik yok"
+AKISA_ALINDI_NEDENI = "Akış sürüyor; PO onayı gelince case üretimi otomatik başlar"
+AKISA_ALINDI_ELLE_NEDENI = (
+    "Akış sürüyor; otomatik case üretimi kapalı: PO onayından sonra case üretimini elle başlatın"
+)
 YENIDEN_INCELEME_NEDENI = "İçerik değişti; sonraki turda yeniden ön incelemeye girer"
 ELLE_BASLAT_NEDENI = "İçerik değişti; story tetik durumunda değil, ön incelemeyi elle başlatın"
 _CEKIM_NEDENI = {
@@ -191,20 +209,48 @@ def _etkin_case_var(s: Session, req_id: uuid.UUID) -> bool:
     return bool(n)
 
 
-def _denetle(s: Session, req: Requirement, sonuc: str, **ek: Any) -> None:
+def _denetle(s: Session, req: Requirement, sonuc: str, neden: str | None = None, **ek: Any) -> None:
     audit_on_commit(
         s,
         CEKIM_AKTORU,
         "requirements.jira_tetik",
         f"requirement:{req.id}",
-        {"jira_key": req.jira_key, "durum": req.jira_durumu, "sonuc": sonuc, **ek},
+        {"jira_key": req.jira_key, "durum": req.jira_durumu, "sonuc": sonuc, "neden": neden, **ek},
     )
+
+
+def _islem_zamani(s: Session) -> datetime:
+    """İşlemin DB saati (`now()`): aynı işlemde eklenen işin `job.olusturma`'sıyla aynı değer.
+    `qa_tetik_zamani` bununla yazılır; rozet "bu akışın işi"ni saat kaymasından etkilenmeden
+    ayırt eder (Python saati işlem başlangıcından hep sonradır)."""
+    return s.scalar(select(func.now()))
+
+
+def _hata_denetle(key: str, durum: str) -> None:
+    """Story işlenemedi: denetime (ayrı işlemde) `hata`; aynı story'nin son kaydı zaten `hata`
+    ise yinelenmez (story her turda yeniden denenir)."""
+    with session_scope() as s:
+        son = s.execute(
+            text(
+                "SELECT ozet->>'sonuc' FROM audit_event WHERE eylem = 'requirements.jira_tetik' "
+                "AND ozet->>'jira_key' = :k ORDER BY id DESC LIMIT 1"
+            ),
+            {"k": key},
+        ).scalar_one_or_none()
+        if son == "hata":
+            return
+        rid = s.scalar(select(Requirement.id).where(Requirement.jira_key == key))
+        audit_on_commit(
+            s, CEKIM_AKTORU, "requirements.jira_tetik",
+            f"requirement:{rid}" if rid else f"jira:{key}",
+            {"jira_key": key, "durum": durum, "sonuc": "hata", "neden": STORY_HATASI},
+        )  # fmt: skip
 
 
 def _incelemeye_al(
     s: Session, req: Requirement, sonuc: str, cekim: str | None
 ) -> tuple[str, str | None]:
-    req.qa_tetik_zamani = flow.now()
+    req.qa_tetik_zamani = _islem_zamani(s)
     basladi = flow.start_review(s, req, JIRA_TETIK_AKTORU)
     _denetle(s, req, sonuc, cekim=cekim, workflow_id=basladi.workflow_id, job_id=basladi.job_id)
     return sonuc, None
@@ -219,20 +265,25 @@ def isaretle(s: Session, issue: Any, durum: str, kayit: _Kayit | None) -> tuple[
 
 
 def giris_isle(
-    s: Session, issue: Any, durum: str, ayar: ayarlar.JiraTetik
+    s: Session, issue: Any, durum: str, ayar: ayarlar.JiraTetik, iz: dict[str, Any] | None = None
 ) -> tuple[str, str | None]:
-    """Duruma yeni giren story: çek, `jira_durumu` yaz, gereksinim durumuna göre akışa al."""
+    """Duruma yeni giren story: çek, `jira_durumu` yaz, gereksinim durumuna göre akışa al.
+    `iz["cekim"]`: `upsert_issue` sonucu (tur bütçesi için)."""
     cekim = flow.upsert_issue(s, issue, CEKIM_AKTORU)
+    if iz is not None:
+        iz["cekim"] = cekim
     req = _kilitle(s, issue.key)
     _durum_yaz(req, issue, durum)
     if req.durum == "new":
         return _incelemeye_al(s, req, "tetiklendi", cekim)
     if req.durum == "po_approved":
         if _etkin_case_var(s, req.id):
-            return "dokunulmadi", "PO onaylı; etkin case'leri var"
+            return _dokunulmadi(s, req, "PO onaylı; etkin case'leri var", cekim)
         if not ayar.otomatik_case:
-            return "dokunulmadi", "PO onaylı; otomatik case üretimi kapalı, elle başlatın"
-        req.qa_tetik_zamani = flow.now()
+            return _dokunulmadi(
+                s, req, "PO onaylı; otomatik case üretimi kapalı, elle başlatın", cekim
+            )
+        req.qa_tetik_zamani = _islem_zamani(s)
         zaman = req.qa_tetik_zamani.isoformat()
         job_id = enqueue(
             s.connection(),
@@ -243,19 +294,31 @@ def giris_isle(
         _denetle(s, req, "case_uretimi", cekim=cekim, job_id=job_id)
         return "case_uretimi", None
     if req.durum in AKIS_SURUYOR:
-        req.qa_tetik_zamani = flow.now()
-        _denetle(s, req, "akisa_alindi", cekim=cekim)
-        return "akisa_alindi", "Akış sürüyor; PO onayı gelince case üretimi otomatik başlar"
-    return "dokunulmadi", f"Gereksinim durumu: {req.durum}"
+        req.qa_tetik_zamani = _islem_zamani(s)
+        neden = AKISA_ALINDI_NEDENI if ayar.otomatik_case else AKISA_ALINDI_ELLE_NEDENI
+        _denetle(s, req, "akisa_alindi", neden, cekim=cekim)
+        return "akisa_alindi", neden
+    return _dokunulmadi(s, req, f"Gereksinim durumu: {req.durum}", cekim)
 
 
-def durumda_isle(s: Session, issue: Any) -> tuple[str, str | None]:
+def _dokunulmadi(
+    s: Session, req: Requirement, neden: str, cekim: str | None
+) -> tuple[str, str | None]:
+    _denetle(s, req, "dokunulmadi", neden, cekim=cekim)
+    return "dokunulmadi", neden
+
+
+def durumda_isle(
+    s: Session, issue: Any, iz: dict[str, Any] | None = None
+) -> tuple[str, str | None]:
     """Durumda kalan, tetikle akışa alınmış story: içerik değiştiyse çek; `new`'e döndüyse
-    ön incelemeyi yeniden başlat (K15a)."""
+    ön incelemeyi yeniden başlat (K15a). `iz["cekim"]`: `upsert_issue` sonucu."""
     req = _kilitle(s, issue.key)
     cekim = None
     if req.qa_tetik_zamani is not None and flow.content_hash_of(req) != _issue_hash(issue):
         cekim = flow.upsert_issue(s, issue, CEKIM_AKTORU)
+        if iz is not None:
+            iz["cekim"] = cekim
     if req.durum == "new" and req.qa_tetik_zamani is not None:
         return _incelemeye_al(s, req, "yeniden_tetiklendi", cekim)
     if cekim is None:
@@ -320,13 +383,18 @@ def tur(engine: Engine | None = None, jira: Any = None) -> dict[str, Any]:
     with session_scope() as s:
         kayitlar = _kayitlar(s, [i.key for i in eslesen])
 
+    bekleyen = set(taban.get("bekleyen_isaret") or []) if taban_var and taban else set()
     sonuclar: list[dict[str, Any]] = []
     hata_sayisi = 0
+    butce = 0  # TETIK_SINIRI: bu turda model işi başlatan eylem sayısı
+    isaretlenemeyen: list[str] = []
     for issue in eslesen:
         kayit = kayitlar.get(issue.key)
         durumda = kayit is not None and _ayni_durum(kayit.jira_durumu, ayar.durum)
+        iz: dict[str, Any] = {}
         try:
-            if not taban_var:
+            if not taban_var or issue.key in bekleyen:
+                # Taban turu ya da taban turunda işaretlenemeyen story: yalnız işaretleme.
                 if durumda:
                     sonuc: tuple[str, str | None] = ("isaretlendi", ISARET_NEDENI)
                 else:
@@ -339,11 +407,11 @@ def tur(engine: Engine | None = None, jira: Any = None) -> dict[str, Any]:
                 )
                 if not is_var:
                     sonuc = ("durumda", DURUMDA_NEDENI)
-                elif ozet["tetiklenen"] >= TETIK_SINIRI:
+                elif butce >= TETIK_SINIRI:
                     sonuc = ("ertelendi", ERTELEME_NEDENI)
                 else:
                     with session_scope() as s:
-                        sonuc = durumda_isle(s, issue)
+                        sonuc = durumda_isle(s, issue, iz)
             else:
                 sayilir = (
                     kayit is None
@@ -353,15 +421,23 @@ def tur(engine: Engine | None = None, jira: Any = None) -> dict[str, Any]:
                         kayit.durum == "po_approved" and not kayit.etkin_case and ayar.otomatik_case
                     )
                 )
-                if sayilir and ozet["tetiklenen"] >= TETIK_SINIRI:
+                if sayilir and butce >= TETIK_SINIRI:
                     sonuc = ("ertelendi", ERTELEME_NEDENI)
                 else:
                     with session_scope() as s:
-                        sonuc = giris_isle(s, issue, ayar.durum, ayar)
+                        sonuc = giris_isle(s, issue, ayar.durum, ayar, iz)
         except Exception:  # tek story'nin hatası turu durdurmaz; ayrıntı yalnız log'da
             log.warning("Jira tetiği: %s işlenemedi", issue.key, exc_info=True)
             sonuc = ("hata", STORY_HATASI)
             hata_sayisi += 1
+            if not taban_var or issue.key in bekleyen:
+                isaretlenemeyen.append(issue.key)
+            try:
+                _hata_denetle(issue.key, ayar.durum)
+            except Exception:
+                log.warning("Jira tetiği: %s hata denetimi yazılamadı", issue.key, exc_info=True)
+        if sonuc[0] in TETIK_SONUCLARI or iz.get("cekim") in BUTCE_CEKIMLERI:
+            butce += 1
         if sonuc[0] in TETIK_SONUCLARI:
             ozet["tetiklenen"] += 1
             ozet["tetiklenenler"].append(issue.key)
@@ -375,9 +451,18 @@ def tur(engine: Engine | None = None, jira: Any = None) -> dict[str, Any]:
                 _durumdan_cikanlar(s, [i.key for i in eslesen])
         except Exception:
             log.warning("Jira tetiği: durumdan çıkanlar temizlenemedi", exc_info=True)
-    if not taban_var and hata_sayisi == 0:
+    if not taban_var:
+        # Arama başarılı: işaret story hatalarına rağmen yazılır (bkz. modül belgesi).
         with session_scope() as s:
-            ayarlar.tetik_tabani_yaz(s, ayar.durum, ozet["zaman"])
+            ayarlar.tetik_tabani_yaz(s, ayar.durum, ozet["zaman"], isaretlenemeyen)
+    elif bekleyen:
+        # Bekleyenlerden işaretlenen ya da (tam listede) durumdan çıkan düşer.
+        gorulen = {i.key for i in eslesen}
+        hatali = set(isaretlenemeyen)
+        kalan = sorted(k for k in bekleyen if k in hatali or (not tam and k not in gorulen))
+        if kalan != sorted(bekleyen):
+            with session_scope() as s:
+                ayarlar.tetik_tabani_bekleyen_yaz(s, ayar.durum, kalan)
     if hata_sayisi:
         ozet["hata"] = f"{hata_sayisi} story işlenemedi"
     # Önce eylemli sonuçlar; liste sınırlı (iş sonucu ve API yanıtı büyümesin).
@@ -532,7 +617,11 @@ def _case_isi_akisi(req: Requirement, is_: Any, otomatik_case: bool) -> dict[str
         if not otomatik_case:
             return _akis("durdu", "Otomatik case üretimi kapalı; case üretimini elle başlatın", req)
         return _akis("durdu", "Otomatik case üretimi başlatılmadı; elle başlatın", req)
-    if is_.durum in ("queued", "running", "retry"):
+    if is_.durum == "queued":
+        return _akis("suruyor", "Otomatik case üretimi kuyrukta", req)
+    if is_.durum == "retry":
+        return _akis("suruyor", "Otomatik case üretimi yeniden denenecek", req)
+    if is_.durum == "running":
         return _akis("suruyor", "Case üretimi başlatılıyor", req)
     if is_.durum != "done":
         return _akis(
@@ -547,6 +636,18 @@ def _case_isi_akisi(req: Requirement, is_: Any, otomatik_case: bool) -> dict[str
     if d == "atlandi":
         return _akis("durdu", "Otomatik case üretimi atlandı; elle başlatın", req)
     return _akis("suruyor", "Case üretimi başlatıldı", req)
+
+
+def _bu_akisin_isi(is_: Any, tetik_zamani: datetime) -> bool:
+    """İş bu tetik akışına mı ait: giriş yolu işi yükünde `tetik_zamani`nı taşır (birebir eşleşme);
+    PO onayı yolu işi akışa alındıktan sonraki bir işlemde eklenir (`olusturma >= tetik`).
+    `qa_tetik_zamani` işlemin DB saatiyle yazıldığından aynı işlemdeki iş de `>=` sağlar."""
+    if is_.tetik_zamani:
+        try:
+            return datetime.fromisoformat(is_.tetik_zamani) == tetik_zamani
+        except ValueError:
+            return False
+    return is_.olusturma >= tetik_zamani
 
 
 def otomatik_akis_hepsi(s: Session, reqs: list[Requirement]) -> dict[uuid.UUID, Any]:
@@ -569,14 +670,16 @@ def otomatik_akis_hepsi(s: Session, reqs: list[Requirement]) -> dict[uuid.UUID, 
     onayli = [str(r.id) for r in tetikli if r.durum == "po_approved"]
     isler: dict[str, Any] = {}
     if onayli:
+        # Tek sorgu; süzgeç `job_otomatik_case_req_ix` kısmi ifade indeksiyle aynı (tür sabiti
+        # sorguda gömülü: kısmi indeks yüklemi planlayıcıda eşleşsin).
         for row in s.execute(
             text(
                 "SELECT DISTINCT ON (yuk->>'requirement_id') yuk->>'requirement_id' AS rid, "
-                "durum, sonuc, olusturma FROM job WHERE tur = :t "
-                "AND yuk->>'requirement_id' = ANY(:ids) "
+                "durum, sonuc, olusturma, yuk->>'tetik_zamani' AS tetik_zamani FROM job "
+                f"WHERE tur = '{JOB_OTOMATIK_CASE}' AND (yuk->>'requirement_id') = ANY(:ids) "
                 "ORDER BY yuk->>'requirement_id', olusturma DESC"
             ),
-            {"t": JOB_OTOMATIK_CASE, "ids": onayli},
+            {"ids": onayli},
         ):
             isler[row.rid] = row
     out: dict[uuid.UUID, Any] = {}
@@ -604,7 +707,7 @@ def otomatik_akis_hepsi(s: Session, reqs: list[Requirement]) -> dict[uuid.UUID, 
             out[r.id] = _akis("durdu", neden, r)
         elif d == "po_approved":
             is_ = isler.get(str(r.id))
-            if is_ is not None and is_.olusturma < r.qa_tetik_zamani:
+            if is_ is not None and not _bu_akisin_isi(is_, r.qa_tetik_zamani):
                 is_ = None  # önceki akışın işi
             out[r.id] = _case_isi_akisi(r, is_, ayar.otomatik_case)
         elif d == "new" and ayar.acik and _ayni_durum(r.jira_durumu, ayar.durum):
@@ -650,20 +753,35 @@ def durum_ozeti(s: Session) -> dict[str, Any]:
                 x for x in (_sonuc_satiri(r) for r in son.get("sonuclar") or []) if x is not None
             ],
         }
-    satirlar = s.execute(
+    # Story başına son eylemli sonuç (en yeni önce); son `SON_TETIK_TARAMA` kayıttan.
+    satirlar: list[Any] = []
+    gorulen: set[str] = set()
+    for r in s.execute(
         text(
-            "SELECT ozet->>'jira_key' AS jira_key, ozet->>'sonuc' AS sonuc, zaman "
-            "FROM audit_event WHERE eylem = 'requirements.jira_tetik' ORDER BY id DESC LIMIT :n"
+            "SELECT ozet->>'jira_key' AS jira_key, ozet->>'sonuc' AS sonuc, "
+            "ozet->>'neden' AS neden, zaman FROM audit_event "
+            "WHERE eylem = 'requirements.jira_tetik' ORDER BY id DESC LIMIT :n"
         ),
-        {"n": SON_TETIKLENEN_SAYISI},
-    ).all()
+        {"n": SON_TETIK_TARAMA},
+    ):
+        if r.jira_key in gorulen:
+            continue
+        gorulen.add(r.jira_key)
+        satirlar.append(r)
+        if len(satirlar) >= SON_TETIKLENEN_SAYISI:
+            break
     return {
         "acik": ayar.acik,
         "durum": ayar.durum,
         "aralik_s": ayar.aralik_s,
         "son_tur": son_tur,
         "son_tetiklenenler": [
-            {"jira_key": r.jira_key, "zaman": r.zaman, "sonuc": r.sonuc or "tetiklendi"}
+            {
+                "jira_key": r.jira_key,
+                "zaman": r.zaman,
+                "sonuc": r.sonuc or "tetiklendi",
+                "neden": r.neden,
+            }
             for r in satirlar
         ],
     }

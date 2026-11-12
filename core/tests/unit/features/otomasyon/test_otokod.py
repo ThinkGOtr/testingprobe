@@ -285,9 +285,79 @@ def test_toplu_onay_ayar_kapali_is_yok(api: TestClient, hazir, db) -> None:
             "ogeler": [{"case_id": c["id"], "icerik_hash": c["icerik_hash"]}],
         },
     )
-    assert r.json()["otomatik_kod"] == {"durum": "kapali", "job_id": None, "case_sayisi": 0}
+    assert r.json()["otomatik_kod"] == {
+        "durum": "kapali", "job_id": None, "case_sayisi": 0, "atlanan": [],
+    }  # fmt: skip
     with session_scope() as s:
         assert s.scalars(select(Job).where(Job.tur == "codegen.otomatik")).first() is None
+
+
+def test_toplu_kuyruga_al_sureni_once_ayirir_is_sonucu_uctan_okunur(
+    api: TestClient, hazir, engine: Engine, make_user
+) -> None:
+    """QA #3: üretimi süren case işe alınmaz (`atlanan` + neden); `case_sayisi` yalnız işe
+    alınanlar; iş sonucu case başına `GET /automation/codegen-jobs/{id}`'den okunur."""
+    rid, analist = hazir
+    c1, c2 = latest_cases(api, rid)
+    assert _onayla(api, c1).json()["otomatik_kod"]["durum"] == "kuyrukta"  # script pending
+    otomatik_kod_ayari(False)
+    assert _onayla(api, c2).status_code == 200
+    otomatik_kod_ayari(True)
+    with session_scope() as s:
+        ok = otokod.toplu_kuyruga_al(s, [uuid.UUID(c1["id"]), uuid.UUID(c2["id"])], analist)
+    assert ok["durum"] == "kuyrukta" and ok["case_sayisi"] == 1
+    assert ok["atlanan"] == [{"case_id": c1["id"], "neden": otokod.SURUYOR_NEDENI}]
+    with session_scope() as s:
+        assert s.get(Job, uuid.UUID(ok["job_id"])).yuk["case_ids"] == [c2["id"]]
+        # Tümü atlanırsa iş yok.
+        hepsi = otokod.toplu_kuyruga_al(s, [uuid.UUID(c1["id"])], analist)
+    assert hepsi["durum"] == "yok" and hepsi["job_id"] is None and len(hepsi["atlanan"]) == 1
+
+    login(api, make_user("po"))
+    r = api.get(f"/automation/codegen-jobs/{ok['job_id']}")
+    assert r.status_code == 200, r.text
+    assert r.json()["durum"] == "queued" and r.json()["sonuclar"] == []
+    assert r.json()["case_ids"] == [c2["id"]] and r.json()["hata"] is None
+    while process_one(engine, "test-worker") is not None:
+        with session_scope() as s:
+            if s.get(Job, uuid.UUID(ok["job_id"])).durum == "done":
+                break
+    g = api.get(f"/automation/codegen-jobs/{ok['job_id']}").json()
+    assert g["durum"] == "done" and g["ozet"] == {"kuyrukta": 1}
+    [o] = g["sonuclar"]
+    assert o["case_id"] == c2["id"] and o["durum"] == "kuyrukta" and o["script_id"]
+    assert api.get(f"/automation/codegen-jobs/{uuid.uuid4()}").status_code == 404
+    with session_scope() as s:
+        baska = s.scalars(select(Job).where(Job.tur != "codegen.otomatik")).first()
+    if baska is not None:
+        assert api.get(f"/automation/codegen-jobs/{baska.id}").status_code == 404
+
+
+def test_toplu_uret_parca_hatasi_sonraki_parcalari_dusurmez(
+    api: TestClient, hazir, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mimar #6: bir parçadaki beklenmeyen hata yalnız o parçayı `hata` yapar ve denetlenir."""
+    rid, _ = hazir
+    otomatik_kod_ayari(False)
+    cs = latest_cases(api, rid)
+    for c in cs:
+        assert _onayla(api, c).status_code == 200
+    otomatik_kod_ayari(True)
+    monkeypatch.setattr(otokod, "MAX_CASE", 1)
+    asil = otokod.start_generation
+
+    def ilki_patlar(session, case_ids, user, **kw):
+        if str(case_ids[0]) == cs[0]["id"]:
+            raise RuntimeError("forge erişilemedi")
+        return asil(session, case_ids, user, **kw)
+
+    monkeypatch.setattr(otokod, "start_generation", ilki_patlar)
+    out = otokod.toplu_uret({"case_ids": [c["id"] for c in cs], "tetikleyen": "analist"})
+    assert [o["durum"] for o in out["sonuclar"]] == ["hata", "kuyrukta"]
+    assert out["sonuclar"][0]["neden"] == otokod.PARCA_HATA_NEDENI
+    assert out["ozet"] == {"hata": 1, "kuyrukta": 1}
+    [d] = _denetim("codegen.otomatik_hata")
+    assert d.ozet["case_ids"] == [cs[0]["id"]] and d.ozet["hata"] == "RuntimeError"
 
 
 # --------------------------------------------------------------------- ayar API'si
@@ -324,3 +394,28 @@ def test_ayar_api_rol_kapisi_ve_dogrulama(api: TestClient, make_user) -> None:
     assert api.put("/automation-settings/jira_tetik", json=[1]).status_code == 422
     assert api.get("/automation-settings").json()["jira_tetik"]["aralik_s"] == 120
     assert len(_denetim("otomasyon.ayar")) == 2
+
+
+def test_demo_ayarlari_otomatik_kodu_kapatir_k20(engine: Engine) -> None:
+    """K20: seed (yalnız satır yoksa) ve demo sıfırlaması (zorla) otomatik kodu denetimli kapatır;
+    ürün varsayılanı açık kalır."""
+    from tp_core.features.demo import service as demo_service
+    from tp_core.features.otomasyon import ayarlar
+    from tp_core.seed import seed_otomasyon_demo
+
+    with session_scope() as s:
+        assert ayarlar.otomatik_kod(s).acik is True  # ürün varsayılanı
+    assert seed_otomasyon_demo() == {"otomatik_kod_uretimi": "yazildi"}
+    with session_scope() as s:
+        assert ayarlar.otomatik_kod(s).acik is False
+    [d] = _denetim("otomasyon.ayar")
+    assert d.aktor == "seed" and d.ozet["yeni"] == {"acik": False}
+    otomatik_kod_ayari(True)  # kullanıcı bilerek açtı
+    assert seed_otomasyon_demo() == {"otomatik_kod_uretimi": "korundu"}
+    with session_scope() as s:
+        assert ayarlar.otomatik_kod(s).acik is True
+    assert demo_service._otomasyon_demo_ayarlari() == {"otomatik_kod_uretimi": "yazildi"}
+    assert demo_service._otomasyon_demo_ayarlari() == {"otomatik_kod_uretimi": "zaten"}
+    with session_scope() as s:
+        assert ayarlar.otomatik_kod(s).acik is False
+    assert [d.aktor for d in _denetim("otomasyon.ayar")][-1] == "demo"

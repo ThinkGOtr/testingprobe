@@ -533,9 +533,22 @@ def case_uret(b: Baglam) -> None:
         mod_kontrol(b, f"C{n}", c.get("mode"))
 
 
+def otomatik_kod_kapali(b: Baglam) -> None:
+    """013 K20: demo ortamında onay sonrası otomatik kod KAPALI olmalı (seed / make reset /
+    demo-reset yazar). Açıksa her onay web kod üretimi başlatır; `kod_uret` adımı 4 yeni script
+    alamaz ve strict REPLAY'de kaydı olmayan üretimler REPLAY-MISS verir."""
+    ayar = (b.api.get("analist", "/automation-settings") or {}).get("otomatik_kod_uretimi") or {}
+    b.kontrol(
+        "onay sonrası otomatik kod kapalı (013 K20; make reset/seed yazar)",
+        ayar.get("acik") is False,
+        f"otomatik_kod_uretimi.acik={ayar.get('acik')!r}",
+    )
+
+
 def qa_kararlari(b: Baglam) -> None:
     req_id = b.veri["req_id"]
     if b.prova:
+        otomatik_kod_kapali(b)
         for _n, c in sorted(caseler(b, req_id).items()):
             if c["durum"] != "draft":
                 continue

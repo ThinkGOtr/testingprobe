@@ -190,6 +190,24 @@ def test_durumdan_cikan_temizlenir_geri_gelen_yeniden_giris_sayilir(
     assert _req("TPD-4").durum == "pending_po" and _req("TPD-4").jira_durumu == QA
 
 
+def test_akisa_alindi_nedeni_otomatik_case_ayarina_gore(engine: Engine, jira: RestJira) -> None:
+    """PO #7: `otomatik_case` kapalıyken neden elle başlatmayı söyler."""
+    _taban(engine)
+    _tasi(jira, "TPD-4")
+    jira_tetik.tur(engine)
+    run_jobs(engine)
+    assert _req("TPD-4").durum == "pending_po"
+    _ayar(otomatik_case=False)
+    _tasi(jira, "TPD-4", "To Do")
+    jira_tetik.tur(engine)
+    _tasi(jira, "TPD-4")
+    r = _sonuc(jira_tetik.tur(engine), "TPD-4")
+    assert r == {"jira_key": "TPD-4", "sonuc": "akisa_alindi",
+                 "neden": jira_tetik.AKISA_ALINDI_ELLE_NEDENI}  # fmt: skip
+    assert "elle başlatın" in r["neden"]
+    assert _denetim(engine, "requirements.jira_tetik")[-1].ozet["neden"] == r["neden"]
+
+
 def test_elle_cekilip_new_kalan_story_girince_tetiklenir(
     api: TestClient, make_user: Any, engine: Engine, jira: RestJira
 ) -> None:
@@ -226,6 +244,35 @@ def test_tur_basina_en_cok_10_tetik_kalan_sonraki_tura(engine: Engine) -> None:
     assert _req("TPD-111").durum == "in_review"
 
 
+def test_durumdaki_tetikli_storylerin_icerik_degisimi_tur_sinirina_tabi(engine: Engine) -> None:
+    """Mimar #4: durumda kalan tetikli story'nin tutarlılık denetimini yeniden koşturan içerik
+    çekimi de tur bütçesinden düşer; iş başlatmayan çekim (`mesgul`) düşmez."""
+    from tp_core.models.guard import allow_state_write
+
+    _taban(engine)
+    hikayeler = [_story(i) for i in range(12)]
+    sahte = _SahteJira(hikayeler)
+    jira_tetik.tur(engine, sahte)
+    assert jira_tetik.tur(engine, sahte)["tetiklenen"] == 2  # 12 story de tetikli (in_review)
+    sahte.issues = [
+        h.model_copy(update={"description": h.description + " (güncel)"}) for h in hikayeler
+    ]
+    # in_review: çekim `mesgul` (iş başlatmaz) → bütçe harcanmaz, hiçbiri ertelenmez.
+    ozet = jira_tetik.tur(engine, sahte)
+    assert ozet["ertelenen"] == 0 and ozet["tetiklenen"] == 0, ozet["sonuclar"]
+    with allow_state_write(), session_scope() as s:
+        for r in s.scalars(select(Requirement).where(Requirement.jira_key.like("TPD-1__"))):
+            r.durum = "pending_po"
+    ozet = jira_tetik.tur(engine, sahte)
+    assert ozet["tetiklenen"] == 0 and ozet["ertelenen"] == 2, ozet["sonuclar"]
+    yeniden = [r for r in ozet["sonuclar"] if r["sonuc"] == "guncellendi"]
+    assert len(yeniden) == jira_tetik.TETIK_SINIRI
+    assert all("yeniden koşuyor" in r["neden"] for r in yeniden)
+    ozet = jira_tetik.tur(engine, sahte)  # kalan 2 sonraki turda
+    assert ozet["ertelenen"] == 0
+    assert sum(r["sonuc"] == "guncellendi" for r in ozet["sonuclar"]) == 2
+
+
 def test_tetik_yeniden_acilinca_taban_yeniden_kurulur(engine: Engine, jira: RestJira) -> None:
     _taban(engine)
     _ayar(acik=False)
@@ -249,9 +296,12 @@ def test_tetik_yeniden_acilinca_taban_yeniden_kurulur(engine: Engine, jira: Rest
         assert ayarlar.tetik_tabani(s)["durum"] == QA
 
 
-def test_taban_turunda_story_hatasi_isaret_yazdirmaz(
+def test_taban_turunda_kalici_hatali_story_tetigi_kilitlemez(
     engine: Engine, jira: RestJira, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Mimar #2: taban turunda bir story kalıcı hata verse de işaret yazılır (hatalı story
+    `bekleyen_isaret`te); sonradan giren story tetiklenir; hatalı story "giren" sayılmaz, yalnız
+    işaretleme yeniden denenir ve başarılı olunca listeden düşer. Hata denetime bir kez yazılır."""
     _tasi(jira, "TPD-3")
     asil = flow.upsert_issue
 
@@ -262,16 +312,29 @@ def test_taban_turunda_story_hatasi_isaret_yazdirmaz(
 
     monkeypatch.setattr(flow, "upsert_issue", bozuk)
     ozet = jira_tetik.tur(engine)
-    assert ozet["hata"] == "1 story işlenemedi"
+    assert ozet["taban"] is True and ozet["hata"] == "1 story işlenemedi"
     assert _sonuc(ozet, "TPD-3") == {
         "jira_key": "TPD-3", "sonuc": "hata", "neden": jira_tetik.STORY_HATASI,
     }  # fmt: skip
     with new_session() as s:
-        assert ayarlar.tetik_tabani(s) is None
+        taban = ayarlar.tetik_tabani(s)
+    assert taban is not None and taban["bekleyen_isaret"] == ["TPD-3"]
+    # Sonraki tur taban turu değil: giren TPD-4 tetiklenir; TPD-3 yine hatalı ama tetiklenmez.
+    _tasi(jira, "TPD-4")
+    ozet = jira_tetik.tur(engine)
+    assert ozet["taban"] is False and ozet["tetiklenenler"] == ["TPD-4"]
+    assert _sonuc(ozet, "TPD-3")["sonuc"] == "hata"
+    hatalar = [d for d in _denetim(engine, "requirements.jira_tetik") if d.ozet["sonuc"] == "hata"]
+    assert len(hatalar) == 1 and hatalar[0].ozet["jira_key"] == "TPD-3"
+    assert "gizli" not in str(hatalar[0].ozet)
+    # Hata giderilince yalnız işaretlenir (tetik yok) ve bekleyen listeden düşer.
     monkeypatch.setattr(flow, "upsert_issue", asil)
-    ozet = jira_tetik.tur(engine)  # yeniden taban: yine yalnız işaret
-    assert ozet["taban"] is True and _sonuc(ozet, "TPD-3")["sonuc"] == "isaretlendi"
-    assert _req("TPD-3").durum == "new"
+    ozet = jira_tetik.tur(engine)
+    assert _sonuc(ozet, "TPD-3")["sonuc"] == "isaretlendi" and ozet["tetiklenen"] == 0
+    assert _req("TPD-3").durum == "new" and _req("TPD-3").qa_tetik_zamani is None
+    with new_session() as s:
+        assert "bekleyen_isaret" not in ayarlar.tetik_tabani(s)
+    assert _sonuc(jira_tetik.tur(engine), "TPD-3")["sonuc"] == "durumda"
 
 
 def test_ayar_kapali_jiraya_gidilmez(engine: Engine, jira: RestJira) -> None:
@@ -345,6 +408,38 @@ def test_acik_varsayilani_simde_acik_gercek_jirada_kapali(
 
 
 # ------------------------------------------------------------------ worker işi + API
+
+
+def test_sim_dogrulamasi_host_adina_dayanmaz_ve_onbelleklenir(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Güvenlik #6: host adı sim olsa da `/health` doğrulaması yoksa varsayılan kapalı; doğrulama
+    önbellekli (her okumada ağ çağrısı yok)."""
+    cagri: list[int] = []
+
+    def dogrula() -> bool:
+        cagri.append(1)
+        return False
+
+    ayarlar.sim_onbellegini_temizle()
+    monkeypatch.setattr(ayarlar, "_sim_dogrula", dogrula)
+    try:
+        with new_session() as s:
+            assert ayarlar.jira_tetik(s).acik is False
+            assert ayarlar.hepsi(s)["jira_tetik"]["acik"] is False
+            assert ayarlar.jira_tetik(s).acik is False
+        assert cagri == [1]
+
+        def patlar() -> bool:
+            raise RuntimeError("ağ yok")
+
+        ayarlar.sim_onbellegini_temizle()
+        monkeypatch.setattr(ayarlar, "_sim_dogrula", patlar)
+        assert ayarlar.jira_sim_mi() is False
+    finally:
+        ayarlar.sim_onbellegini_temizle()
+    monkeypatch.undo()
+    assert ayarlar.jira_sim_mi() is True  # süreç içi jira-sim kendini tanıtır
 
 
 def test_is_kendini_yeniden_planlar_ve_api_son_turu_gosterir(
@@ -471,7 +566,7 @@ def test_uctan_uca_qa_to_do_tetik_on_inceleme_po_onayi_otomatik_case(
     time.sleep(0.01)
     po.add_label("TPD-4")
     assert flow.run_po_poll(engine)["kontrol"][rid] == "onaylandi"
-    assert _akis(api, rid)["neden"] == "Case üretimi başlatılıyor"
+    assert _akis(api, rid) == {**a, "neden": "Otomatik case üretimi kuyrukta"}
     [is_] = _isler(engine, jira_tetik.JOB_OTOMATIK_CASE)
     assert is_.yuk["requirement_id"] == rid and is_.durum == "queued"
     run_jobs(engine)
@@ -534,13 +629,22 @@ def test_po_onayli_casesiz_story_girince_case_uretimi_hemen_baslar(
     assert _sonuc(ozet, "TPD-4")["sonuc"] == "case_uretimi" and ozet["tetiklenen"] == 1
     [is_] = _isler(engine, jira_tetik.JOB_OTOMATIK_CASE)
     assert is_.yuk["tetik_zamani"]
+    # Mimar #3 / PO #4: kuyruktaki iş bu akışın işi sayılır; rozet "durdu" demez.
+    a = _akis(api, str(req.id))
+    assert a["durum"] == "suruyor" and a["neden"] == "Otomatik case üretimi kuyrukta", a
     run_jobs(engine)
     assert _req("TPD-4").durum == "cases_ready"
-    # Etkin case'i olan story yeniden girerse dokunulmaz.
+    # Etkin case'i olan story yeniden girerse dokunulmaz; neden kalıcı (denetim + API).
     _tasi(jira, "TPD-4", "To Do")
     jira_tetik.tur(engine)
     _tasi(jira, "TPD-4")
     assert _sonuc(jira_tetik.tur(engine), "TPD-4")["sonuc"] == "dokunulmadi"
+    son = _denetim(engine, "requirements.jira_tetik")[-1].ozet
+    assert son["sonuc"] == "dokunulmadi" and son["neden"] == "Gereksinim durumu: cases_ready"
+    assert _sonuc(jira_tetik.tur(engine), "TPD-4")["sonuc"] == "durumda"
+    g = api.get("/automation/jira-trigger").json()
+    [t] = [t for t in g["son_tetiklenenler"] if t["jira_key"] == "TPD-4"]  # story başına tek
+    assert t["sonuc"] == "dokunulmadi" and t["neden"] == "Gereksinim durumu: cases_ready"
 
 
 def test_otomatik_case_kapaliyken_kuyruga_girmez_rozet_durdu(
