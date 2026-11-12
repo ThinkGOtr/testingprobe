@@ -487,7 +487,10 @@
           }
         ],
         "undefined_combinations": [
-          "Kampanyalı ürün var = evet, kampanyasız ürün var = evet, toplam 750,00 TL altında = evet: minimum şartının aranıp aranmayacağı AC3 ile AC6 arasında tanımsız (Q1)."
+          {
+            "description": "Kampanyalı ürün var = evet, kampanyasız ürün var = evet, toplam 750,00 TL altında = evet: minimum şartının aranıp aranmayacağı AC3 ile AC6 arasında tanımsız",
+            "question_ref": "Q1"
+          }
         ]
       }
     ],

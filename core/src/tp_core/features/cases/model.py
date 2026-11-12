@@ -52,7 +52,7 @@ MAX_HATA = 30
 # Tur 2'de modelden aynen kopyalanan üst düzey listeler (case-generation v3 ile ortak biçim).
 MODEL_OZET_ALANLARI = ("coverage_items", "open_questions", "assumptions")
 # Ayrıntılı model gerektirmeyen teknikler (hata tahmini; pairwise satırı üretilmez).
-AYRINTISIZ = frozenset({"EG", "PW"})
+AYRINTISIZ = frozenset({"EG", "PW", "CL"})  # hata tahmini, pairwise, kontrol listesi
 
 
 @lru_cache(maxsize=4)
@@ -220,7 +220,10 @@ def model_problems(
         if beklenen in ("accept", "reject") and not str(b.get("inclusive_source") or "").strip():
             s.append(f"{k}: sınırın dahil/hariç kaynağı (inclusive_source) yok")
     for sm in _kayitlar(model.get("state_models")):
-        durumlar = {str(x) for x in sm.get("states") or []}
+        # Durumlar kimlikli nesnedir (`{id: S1, name}`); geçişler kimliğe bağlanır.
+        durumlar = {
+            str(x.get("id")) if isinstance(x, Mapping) else str(x) for x in sm.get("states") or []
+        }
         for t in _kayitlar(sm.get("valid_transitions")):
             k = str(t.get("item_id"))
             if gecerli(k) is False:

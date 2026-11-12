@@ -615,7 +615,8 @@ def test_duplicate_detector_and_report_ratio(tmp_path: Path) -> None:
     assert stats["tekrar"] == 1 and stats["tekrar_ciftleri"] == [[2, 10]]
     assert generation_stats(_golden("TPD-4")["output"])["tekrar"] == 0
     dagilim = uretim_dagilimi([CaseResult("tpd-1#k1", True, [], tpd1)])
-    assert dagilim["toplam"]["tekrar"] == 1 and dagilim["toplam"]["tekrar_orani"] == 0.1
+    # 15 case içinde 1 tekrar (011 K17: C11–C15 sona eklendi).
+    assert dagilim["toplam"]["tekrar"] == 1 and dagilim["toplam"]["tekrar_orani"] == 0.0667
 
 
 def test_audit_metrics_count_any_non_accept_as_false_block_and_report_hardened() -> None:

@@ -319,7 +319,7 @@ def test_tur2_ozeti_onayli_modelin_listelerini_alir() -> None:
     }
     oz = round2_summary(m, uretim)
     assert oz["coverage_items"] == m["coverage_items"]
-    assert oz["open_questions"] == m["open_questions"] == []
+    assert oz["open_questions"] == m["open_questions"] and m["open_questions"][0]["id"] == "Q1"
     assert oz["not_covered"] == uretim["not_covered"]  # modelde olmayan listeler üretimden
 
 
