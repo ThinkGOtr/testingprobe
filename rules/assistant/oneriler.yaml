@@ -270,7 +270,7 @@ kurallar:
       yetki: {uc: "POST /requirements/{req_id}/po-approve", onay_varligi: requirement}
     aciklama: >-
       Gereksinim dokümanı son hâline geldi ve onayınızı bekliyor. Onay, gördüğünüz içeriğe bağlanır;
-      içerik sonradan değişirse onay yenilenmelidir. Onayınızdan sonra analist case üretimini başlatır.
+      içerik sonradan değişirse onay yenilenmelidir. Onayınızdan sonra Testçi case üretimini başlatır.
 
   - id: gereksinim-po-onayi-jira                                    # §17.3 #7
     ekran: /gereksinimler/:id

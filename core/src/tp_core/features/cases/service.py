@@ -646,7 +646,7 @@ def _supersede_previous(
     """Önceki portal üretimlerinin taslak/ret case'lerini `superseded` yapar; (sayı, korunan IDE).
 
     IDE'den (Claude Code) gelen ve henüz karar verilmemiş taslaklar KORUNUR: onlar bir insanın
-    bilinçli katkısıdır, portal üretimi onları sessizce geçersiz kılmaz (analist karar verir).
+    bilinçli katkısıdır, portal üretimi onları sessizce geçersiz kılmaz (Testçi karar verir).
     """
     eskiler = session.scalars(
         select(TestCase).where(

@@ -106,11 +106,16 @@ Parola: `.env` → `SEED_USER_PASSWORD` (`make seed` yükler).
 
 | Kullanıcı | Rol | Ne yapar |
 |---|---|---|
-| `analist` | analyst | Jira'dan çeker, ön inceleme/tutarlılık bulgularına karar verir, case üretir ve onaylar, yayınlar; Claude Code token'ı |
-| `po` | po | Serbest metin gereksinimde PO teyidi (Jira yolunda PO onayı Jira etiketiyle verilir) |
-| `muhendis` | engineer | Kod üretimi, kırarak doğrula, PR review ve merge, locator onarım PR'ı |
-| `testci` | tester | Bug taslağı: yeni kayıt aç / mevcut kayda bağla / düzelt / reddet |
-| `sunucu` | presenter | Deploy ve gece koşusu tetikleri, demo kontrolleri (locator kırma, demo sıfırlama), Kontrol Kulesi |
+| `analist` | analyst | Jira'dan çeker, ön inceleme/tutarlılık bulgularına karar verir, düzeltmeleri Jira'ya yazar; case'lere **son onay** (onayla / geri gönder) |
+| `po` | po | Serbest metin gereksinimde PO teyidi ve geri çevirme (Jira yolunda PO onayı Jira etiketiyle verilir); baz değer |
+| `testci` | tester | Case üretir, kabul eder / düzelterek kabul eder / reddeder, yayınlar; Claude Code token'ı; bug taslağı kararları |
+| `muhendis` | engineer | Kod üretimi, kırarak doğrula, PR review ve merge, locator onarım PR'ı; deploy, gece ve manuel koşu tetikleri |
+| `sunucu` | admin | Sistem Yöneticisi: demo kontrolleri (locator kırma, demo sıfırlama), Kontrol Kulesi, denetim doğrulaması |
+| `denetci` | auditor | Denetim kaydı ve zincir doğrulaması (salt okunur); koşu özetleri |
+| `gelistirici` | developer | Onaylı case'leri ve koşuları görür; non-prod'da manuel koşu |
+| `izleyici` | viewer | Kontrol Kulesi ve koşu özetleri |
+
+Rol ve izin kataloğu: `core/src/tp_core/auth/yetki.py` ([specs/012-rol-yetki/ANALIZ.md](specs/012-rol-yetki/ANALIZ.md)).
 
 jira-sim kullanıcıları: `reader@sim.local` (okuma), `writer@sim.local` (ürünün yazma kullanıcısı),
 `po@sim.local` (PO; parola `.env` → `JIRA_SIM_PO_PASSWORD`). Örnek uygulama: `bayi1` / `Demo123!`

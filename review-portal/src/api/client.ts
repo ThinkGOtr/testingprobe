@@ -149,7 +149,7 @@ export const api = {
         }),
       ),
     ),
-  /** Analist case'i ilk kez gördü: review süresi (`review_sure_ms`) sunucuda bu andan ölçülür. */
+  /** Testçi (taslak) ya da Analist (onaya hazır) case'i ilk kez gördü: review süresi (`review_sure_ms`) sunucuda bu andan ölçülür. */
   caseGoruntulendi: (id: string) => istek<unknown>("POST", `/cases/${yol(id)}/viewed`, { kaynak: CASE_KAYNAGI }),
   /** §12 ölçümleri (kabul oranı ilk karara göre, AI + review süresi, maliyet). */
   caseMetrikleri: (requirementId: string) =>
