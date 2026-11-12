@@ -266,15 +266,11 @@ def summaries(
 
 
 def summary_for(session: Session, tc: TestCase) -> dict[str, Any] | None:
-    """Case'in üretildiği üretimin özeti (tutarlılık kuralları buna karşı denetlenir)."""
-    return _ozet_of(
-        session.scalars(
-            select(CaseUretim).where(
-                CaseUretim.requirement_id == tc.requirement_id,
-                CaseUretim.uretim_no == tc.uretim_no,
-            )
-        ).first()
-    )
+    """Case'in tutarlılık kurallarına karşı denetlendiği özet (`ozet.audit_summary`): üretiminin
+    özeti; derinleştirme case'inde önceki birleşik özet + kendi özeti."""
+    from tp_core.features.cases import ozet as ozet_modulu
+
+    return ozet_modulu.audit_summary(session, tc)
 
 
 def approval_block(
@@ -1554,10 +1550,12 @@ def serialize_cases(session: Session, cases: Sequence[TestCase]) -> list[dict[st
         )
     }
     users = _usernames(session, {r.user_id for rs in reviews.values() for r in rs if r.user_id})
+    from tp_core.features.cases import ozet as ozet_modulu
+
     eski: set[uuid.UUID] = set()
     for r in reqs.values():
         eski |= old_content_case_ids(session, r)
-    ozetler = summaries(session, set(reqs))
+    denetim_ozetleri = {rid_: ozet_modulu.AuditSummaries(session, r) for rid_, r in reqs.items()}
     out = []
     for c in cases:
         rs = reviews.get(c.id, [])
@@ -1570,7 +1568,8 @@ def serialize_cases(session: Session, cases: Sequence[TestCase]) -> list[dict[st
         pay = max(batch.get(c.ai_call_id, 1), 1) if c.ai_call_id else 1
         olcu = (son.duzeltme_olculeri or {}) if son else {}
         uyarilar = []
-        ozet = _ozet_of(ozetler.get((c.requirement_id, c.uretim_no)))
+        oz = denetim_ozetleri.get(c.requirement_id)
+        ozet = oz.of(c.uretim_no) if oz is not None else None
         if req is not None:
             bilinmeyen = unknown_ac_refs(c.icerik, req.kabul_kriterleri)
             if bilinmeyen:
@@ -1675,48 +1674,30 @@ def _readiness_dagilimi(icerikler: Sequence[Mapping[str, Any]]) -> dict[str, int
 def _coverage_state(session: Session, req: Requirement) -> dict[str, Any]:
     """Gereksinimin güncel case'leri üzerinden kapsam durumu (case-summary ve case-metrics).
 
-    Güncel case = `superseded`/`rejected` olmayan ve gereksinimin güncel PO onaylı içeriği için
-    üretilmiş case (`coverage_gaps` ile aynı küme). Matris, güncel case'i olan üretimlerin
-    özetlerinin birleşimine karşı hesaplanır: aynı kimlikli kapsam öğesi / karar / gerekçe için
-    sonraki üretimin kaydı geçerlidir; kimlik farklı üretimlerde farklı tanımlıysa uyarı verilir.
+    Güncel case = `ozet.current_cases` (superseded/ret olmayan, güncel PO onaylı içerik için
+    üretilmiş). Matris, güncel case'i olan üretimlerin birleşik özetine (`ozet.merged_summary`;
+    aynı kimlikte sonraki üretim geçerli) karşı hesaplanır; kimlik farklı üretimlerde farklı
+    tanımlıysa uyarı verilir.
     """
-    eski = old_content_case_ids(session, req)
+    from tp_core.features.cases import ozet as ozet_modulu
+
     tum = session.scalars(
         select(TestCase)
         .where(TestCase.requirement_id == req.id)
         .order_by(TestCase.uretim_no, TestCase.sira_no)
     ).all()
-    guncel = [tc for tc in tum if tc.durum not in ("superseded", "rejected") and tc.id not in eski]
-    satirlar = sorted(summaries(session, {req.id}).values(), key=lambda u: u.uretim_no)
+    guncel = ozet_modulu.current_cases(session, req)
+    satir_haritasi = ozet_modulu.summary_rows(session, req)
+    satirlar = sorted(satir_haritasi.values(), key=lambda u: u.uretim_no)
     guncel_uretimler = {tc.uretim_no for tc in guncel}
-    uyarilar: list[str] = []
-    ogeler: dict[str, Any] = {}
-    kararlar: dict[str, Any] = {}
-    nedenler: dict[str, Any] = {}
-    ozet_var = False
-    for u in satirlar:
-        ozet = _ozet_of(u)
-        if ozet is None or u.uretim_no not in guncel_uretimler:
-            continue
-        ozet_var = True
-        for o in ozet.get("coverage_items") or []:
-            kimlik = str(o.get("id"))
-            onceki = ogeler.get(kimlik)
-            if onceki is not None and onceki.get("definition") != o.get("definition"):
-                uyarilar.append(
-                    f"Kapsam öğesi {kimlik} farklı üretimlerde farklı tanımlı; matris son "
-                    f"üretimin (#{u.uretim_no}) tanımını gösterir."
-                )
-            ogeler[kimlik] = o
-        for k in ozet.get("negative_coverage") or []:
-            kararlar[str(k.get("item"))] = k
-        for n in ozet.get("not_covered") or []:
-            nedenler[str(n.get("item"))] = n
-    birlesik = {
-        "coverage_items": list(ogeler.values()),
-        "negative_coverage": list(kararlar.values()),
-        "not_covered": list(nedenler.values()),
-    }
+    kullanilan = [
+        (u.uretim_no, o)
+        for u in satirlar
+        if u.uretim_no in guncel_uretimler and (o := _ozet_of(u)) is not None
+    ]
+    ozet_var = bool(kullanilan)
+    uyarilar: list[str] = ozet_modulu.definition_conflicts(kullanilan)
+    birlesik = ozet_modulu.merged_summary(session, req, guncel, satirlar=satir_haritasi)
     icerikler = [tc.icerik for tc in guncel]
     matris = coverage_matrix(icerikler, birlesik, req.kabul_kriterleri)
     for satir in matris["satirlar"]:
@@ -1731,8 +1712,10 @@ def _coverage_state(session: Session, req: Requirement) -> dict[str, Any]:
             }
             for tc in kapsayan
         ]
-    ozet_of = {u.uretim_no: _ozet_of(u) for u in satirlar}
-    tutarsiz = [tc for tc in guncel if consistency_problems(tc.icerik, ozet_of.get(tc.uretim_no))]
+    denetim_ozeti = ozet_modulu.AuditSummaries(session, req)
+    tutarsiz = [
+        tc for tc in guncel if consistency_problems(tc.icerik, denetim_ozeti.of(tc.uretim_no))
+    ]
     if tutarsiz:
         uyarilar.append(
             f"{len(tutarsiz)} case üretim özetiyle tutarsız; düzeltilmeden onaylanamaz."

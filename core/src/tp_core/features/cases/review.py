@@ -36,10 +36,8 @@ from tp_core.audit import audit_on_commit
 from tp_core.auth.deps import CurrentUser, DbSession, require_role
 from tp_core.events.bus import publish_tx
 from tp_core.features.cases.schema import (
-    OZET_ALANLARI,
     acceptance_criteria,
     coverage_matrix,
-    is_legacy,
     normalize_ozet,
 )
 from tp_core.models import AiCall, CaseSetReview, Requirement, TestCase, session_scope
@@ -97,23 +95,10 @@ def hash_of(icerik_hashleri: Sequence[str]) -> str | None:
 
 
 def current_cases(session: Session, req: Requirement) -> list[TestCase]:
-    """Setin case'leri: `_coverage_state`'in `guncel` kümesi (superseded/ret olmayan, eski PO
-    içeriğine ait olmayan) içinden v3 (legacy olmayan) case'ler; üretim + sıra no sırasıyla."""
-    from tp_core.features.cases.service import old_content_case_ids
+    """Setin case'leri: güncel v3 case'ler (`ozet.current_cases(include_legacy=False)`)."""
+    from tp_core.features.cases import ozet
 
-    eski = old_content_case_ids(session, req)
-    return [
-        tc
-        for tc in session.scalars(
-            select(TestCase)
-            .where(
-                TestCase.requirement_id == req.id,
-                TestCase.durum.notin_(("superseded", "rejected")),
-            )
-            .order_by(TestCase.uretim_no, TestCase.sira_no)
-        ).all()
-        if tc.id not in eski and not is_legacy(tc.icerik)
-    ]
+    return ozet.current_cases(session, req, include_legacy=False)
 
 
 def set_hash(session: Session, req: Requirement) -> str | None:
@@ -121,50 +106,12 @@ def set_hash(session: Session, req: Requirement) -> str | None:
     return hash_of([tc.icerik_hash for tc in current_cases(session, req)])
 
 
-def _birlesik_ozet(session: Session, req: Requirement, uretimler: set[int]) -> dict[str, Any]:
-    """Setin case'i olan üretimlerin özetleri birleşik: kimlikli kayıtlar (`id`/`item`) için
-    sonraki üretim geçerli; diğer listeler sırayla birleşir (tekrarsız)."""
-    from tp_core.features.cases.service import summaries
-
-    out = normalize_ozet(None)
-    satirlar = sorted(
-        (u for u in summaries(session, {req.id}).values() if u.uretim_no in uretimler and u.ozet),
-        key=lambda u: u.uretim_no,
-    )
-    for u in satirlar:
-        ozet = normalize_ozet(u.ozet)
-        for alan in OZET_ALANLARI:
-            if alan == "config_matrix":
-                for k in ("parameters", "constraints"):
-                    for x in ozet[alan][k]:
-                        if x not in out[alan][k]:
-                            out[alan][k].append(x)
-                continue
-            for x in ozet[alan]:
-                anahtar = (
-                    x.get("id") or x.get("item") or x.get("control")
-                    if isinstance(x, Mapping)
-                    else None
-                )
-                if anahtar is not None:
-                    out[alan] = [
-                        y
-                        for y in out[alan]
-                        if not (
-                            isinstance(y, Mapping)
-                            and (y.get("id") or y.get("item") or y.get("control")) == anahtar
-                        )
-                    ]
-                    out[alan].append(x)
-                elif x not in out[alan]:
-                    out[alan].append(x)
-    return out
-
-
 def snapshot(session: Session, req: Requirement) -> SetGirdisi:
     """Güncel v3 setin review/denetim girdisi (matris covered_by = set numaraları)."""
+    from tp_core.features.cases.ozet import merged_summary
+
     cases = current_cases(session, req)
-    ozet = _birlesik_ozet(session, req, {tc.uretim_no for tc in cases})
+    ozet = merged_summary(session, req, cases)
     matris = coverage_matrix([tc.icerik for tc in cases], ozet, req.kabul_kriterleri)
     return SetGirdisi(
         req=req,
