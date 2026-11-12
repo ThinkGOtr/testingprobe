@@ -618,6 +618,36 @@ def decision_table_draft_cases() -> list[dict[str, Any]]:
                 "replay_key": _key(key),
                 "messages": _msgs(taslak_mesajlari(req)),
                 "expect": exp,
+def case_facts_cases() -> list[dict[str, Any]]:
+    """Değer çıkarma (012 §4.3): üretimin `facts_messages` kurucusu, TPD-1 demo tabloları
+    (`tests.unit.features.oracle.tpd1`); beklenen olgular golden'ın olgularıdır."""
+    from tests.unit.features.oracle import tpd1
+    from tp_core.features.oracle.cikarma import case_ref, facts_messages, replay_key_for
+
+    cases = tpd1.tpd1_cases()
+    tables = tpd1.kolon_girdisi()
+    out = []
+    for n, title in ((2, "7 adette 1 bedava (T1)"), (5, "minimum altı, kampanyasız (T2)")):
+        case = cases[n - 1]
+        refs = {"AC2": "T1", "AC3": "T2", "AC6": "T2"}
+        covering = {refs[r] for r in case["acceptance_criteria_refs"] if r in refs}
+        facts = [
+            {"table_ref": g["table_ref"], "kind": kind, "column": f["column"], "value": f["value"]}
+            for g in tpd1.OLGULAR[n]
+            for kind in ("inputs", "expected")
+            for f in g[kind]
+        ]
+        out.append(
+            {
+                "id": f"tpd-1-c{n}",
+                "description": f"TPD-1-C{n}: {title}",
+                "replay_key": replay_key_for("TPD-1", n),
+                "messages": _msgs(
+                    facts_messages(
+                        case, case_ref("TPD-1", n), [t for t in tables if t["ref"] in covering]
+                    )
+                ),
+                "expect": {"table_refs": sorted(covering), "facts": facts},
             }
         )
     return out
@@ -633,6 +663,7 @@ SETS: dict[str, tuple[str, Callable[[], list[dict[str, Any]]]]] = {
     "verify-and-map": ("verify_and_map", verify_and_map_cases),
     "verify-and-map-app": ("verify_and_map_app", verify_and_map_app_cases),
     "decision-table-draft": ("decision_table_draft", decision_table_draft_cases),
+    "case-facts": ("case_facts", case_facts_cases),
 }
 # Set düzeyi ek alanlar: §12 koşu sayısı, ajan araç ortamı (`tp_core.gateway.eval_agents`).
 EXTRA: dict[str, dict[str, Any]] = {

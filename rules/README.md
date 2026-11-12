@@ -44,6 +44,7 @@ rules/
 | `assistant` | `assistant` | Haiku 5.5 | ajan | Asistan cevabı (AI-ASISTAN-PLANI §7.2): `cevap_bloklari[]`, `kaynaklar[]`, `oneriler[]` |
 | `assistant_deep` | `assistant` | Sonnet 5.5 | ajan | `assistant` ile aynı şema ("Daha ayrıntılı incele", otomatik yükseltme) |
 | `decision_table_draft` | `decision-table-draft` | Sonnet 5.5 | çağrı | 012 §4.1: karar tablosu `tables[]`, metamorfik ilişki `relations[]`, `notes` |
+| `case_facts` | `case-facts` | Haiku 5.5 | çağrı | 012 §4.3 değer çıkarma: `groups[]` (`table_ref`, `inputs[]`, `expected[]`; olgu `{column, value, field, quote}`) |
 
 ## Portal asistanı kuralları (`assistant/`)
 
@@ -226,6 +227,7 @@ varsa çıkış 1. Bu tablo kayıtla aynı olmalıdır (`test_evaluation_status.
 | `dup-rank` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `assistant` (portal asistanı; `assistant` + `assistant_deep` amaçları, `assistant/*` kuralları) | v1 | **canlı değerlendirildi** (2026-11-04; Haiku 38/40, Sonnet 40/40; `evaluation/results/`) |
 | `decision-table-draft` (+ `decision_table_draft` golden'ı; 012 karar tablosu) | v1 | **canlı değerlendirme bekliyor** |
+| `case-facts` (+ `case_facts` golden'ları; 012 karar tablosu kontrolü) | v1 | **canlı değerlendirme bekliyor** |
 
 2026-11-01'de `requirement-review` v3, `triage`, `bug-draft` ve `dup-rank` v2 canlı modelle
 (`make eval-live A='--bundle … --update-status'`, sert bütçe tavanı 1,50 USD, gerçek harcama

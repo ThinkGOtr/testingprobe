@@ -107,3 +107,9 @@ purposes:
     max_tokens: 8192
     timeout_s: 300
     params: { effort: medium }
+  # 012 test kalite doğrulama (Ş2): case'ten karar tablosu kolonlarına karşılık gelen değerleri
+  # alıntısıyla çıkarır; doğrulama ve karşılaştırma deterministiktir (features/oracle).
+  case_facts:
+    model: claude-haiku-5-5
+    max_tokens: 4096
+    params: { effort: low }

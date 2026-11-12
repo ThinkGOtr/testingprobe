@@ -55,6 +55,8 @@ class CaseKararGirdisi(BaseModel):
     gerekce: str | None = Field(default=None, max_length=2000)
     # §12 "beklenen sonuç anlamca değişmedi" insan yargısı (verilmezse metin karşılaştırması).
     beklenen_anlam_degisti: bool | None = None
+    # 012 §4.3: karar tablosu uyuşmazlığına gerekçeli istisna (en az 20 karakter; V1).
+    oracle_istisna_gerekce: str | None = Field(default=None, max_length=2000)
 
 
 @router.post(
@@ -102,6 +104,7 @@ def decide(
         ret_nedeni=body.ret_nedeni,
         gerekce=body.gerekce,
         beklenen_anlam_degisti=body.beklenen_anlam_degisti,
+        oracle_istisna_gerekce=body.oracle_istisna_gerekce,
     )
     session.flush()
     return service.serialize_cases(session, [tc])[0]
