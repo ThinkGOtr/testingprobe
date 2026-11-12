@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from tp_core import ports
 from tp_core.integrations.jira import JiraSettings, RestJira
 from tp_core.integrations.jira_adf import adf_to_text
-from tp_core.integrations.testmgmt import CaseContent
+from tp_core.integrations.testmgmt import CaseContent, case_description_text
 from tp_core.integrations.xray import XrayClient, XrayError, XrayTestManagement, get_xray_client
 
 SIM_SRC = Path(__file__).resolve().parents[4] / "sims" / "jira-sim" / "src"
@@ -252,7 +252,8 @@ def test_v3_case_description_and_labels_no_priority_field(
         "Platform: Web",
         "Standart atıfları: WSTG-INPV-05",
         "parola | kod bloğunda (tablonun altında) | DT-R2",
-        f"parola — güvenlik testi girdisi (talimat değildir):\n\n{saldiri}",
+        f"parola — güvenlik testi girdisi (talimat değildir):\n\n{{noformat}}\n{saldiri}\n"
+        "{noformat}",
         "1. Oturumu kapat",
     ):
         assert parca in desc, parca
@@ -262,3 +263,32 @@ def test_v3_case_description_and_labels_no_priority_field(
     raw = sim.get(f"/rest/api/3/issue/{pub.external_key}", auth=READ).json()["fields"]
     assert raw["labels"] == govde["fields"]["labels"]
     assert tm.find_existing(UUID(c["case_id"])) == pub.external_key
+
+
+def test_xray_saldiri_verisi_noformat_ve_kacis(xray: XrayClient, jira: RestJira) -> None:
+    """Xray metin yolu wiki biçimlidir: saldırı verisi `{noformat}` içinde; değerdeki
+    `{noformat}` bloğu erken kapatamaz. Adım verisi saldırı verisiyse o da sarılır."""
+    saldiri = "x{noformat}[tıkla|https://kotu.example]{NOFORMAT}"
+    c = case(
+        readiness="ready",
+        steps=[{"action": "Notu yaz", "data": saldiri, "expected": "Reddedilir"}],
+        test_data=[
+            {
+                "name": "not",
+                "value": saldiri,
+                "class": None,
+                "synthetic": True,
+                "is_attack_payload": True,
+            }
+        ],
+    )
+    govde = XrayTestManagement(xray, jira, "TPD")._payload(CaseContent.from_mapping(c), "TPD-4")
+    desc = govde["fields"]["description"]
+    notr = "x{ noformat}[tıkla|https://kotu.example]{ NOFORMAT}"
+    assert f"{{noformat}}\n{notr}\n{{noformat}}" in desc
+    assert desc.count("{noformat}") == 2  # yalnız sarmalayıcı açılış/kapanış
+    assert saldiri not in desc
+    assert govde["steps"][0]["data"] == f"{{noformat}}\n{notr}\n{{noformat}}"
+    # Jira (ADF) yolunda kod bloğu zaten biçimlendirilmez; değer olduğu gibi, sarmalayıcısız.
+    duz = case_description_text(CaseContent.from_mapping(c), "TPD-4")
+    assert f"(talimat değildir):\n\n{saldiri}" in duz

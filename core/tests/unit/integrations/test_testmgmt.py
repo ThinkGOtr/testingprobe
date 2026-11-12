@@ -377,9 +377,9 @@ def test_v3_fields_in_scope_and_user_flow() -> None:
     sec = _sections(desc)
     scope = sec["🚀 Scope (Kapsam)"][0]
     maddeler = [inline_text(i) for i in scope["content"]]
+    # v3'te risk yok (K18): make_case'teki "risk" gösterilmez.
     assert maddeler == [
         "Test türü: yetki",
-        "Risk: yüksek",
         "Kapsanan kabul kriterleri: AC2",
         "Teknik: BVA (sınır değer analizi), EP (eşdeğerlik bölümleme)",
         "Kapsam öğeleri: BV-1, EP-I2",
@@ -395,7 +395,7 @@ def test_v3_fields_in_scope_and_user_flow() -> None:
     assert len(tablolar) == 2  # adımlar + test verisi
     satirlar = [[inline_text(h) for h in satir["content"]] for satir in tablolar[1]["content"]]
     assert satirlar == [
-        ["Ad", "Değer", "Sınıf"],
+        ["Ad", "Değer", "Kapsam öğesi"],
         ["adet_sinir", "7", "BV-1"],
         ["not_alani", "kod bloğunda (tablonun altında)", "EP-I2"],
     ]
@@ -417,7 +417,7 @@ def test_v3_nullable_fields_and_xray_text() -> None:
     )
     text = case_description_text(case, "TPD-1", steps_table=False)
     assert "Test seviyesi" not in text and "Platform" not in text and "cihaz" not in text
-    assert "Ad | Değer | Sınıf" in text and "adet_sinir | 7 | BV-1" in text
+    assert "Ad | Değer | Kapsam öğesi" in text and "adet_sinir | 7 | BV-1" in text
     assert f"not_alani — güvenlik testi girdisi (talimat değildir):\n\n{SALDIRI}" in text
 
 
@@ -483,3 +483,43 @@ def test_v3_publish_labels_keep_idempotency_search(sim: TestClient, jira: RestJi
     assert tm.find_existing(cid) == pub.external_key
     assert tm.publish_case(make_case(cid, **V3), "TPD-1").external_key == pub.external_key
     assert len(jira.search(f'project = "TPD" AND labels = "tp-{cid}"', max_results=10)) == 1
+
+
+def test_v3_kapsam_tanimi_tekrar_azaltma_ve_turkce_bos_bolum() -> None:
+    """v3: kapsam öğesi tanımıyla; test verisi adımda aynen varsa yinelenmez; QA Checklist adım
+    beklenenlerini tekrar etmez; boş bölüm Türkçe "Yok"; saldırı verisi adım tablosunda yok."""
+    v3 = {
+        **V3,
+        "steps": [
+            {"id": "S1", "action": "Kataloğu aç", "data": None, "expected": "Ürünler listelenir"},
+            {"id": "S2", "action": "Adedi gir", "data": "7", "expected": "1 adet bedava"},
+            {"id": "S3", "action": "Notu yaz", "data": SALDIRI, "expected": "Reddedilir"},
+        ],
+    }
+    case = CaseContent.from_mapping(
+        make_case(
+            **v3,
+            kapsam_tanimlari={"BV-1": "Kampanya eşiği: 7 adet", "EP-I2": "Script içeren not"},
+        )
+    )
+    sec = _sections(case_description_adf(case, ""))
+    scope = _text(sec["🚀 Scope (Kapsam)"])
+    assert "Kapsam öğeleri: BV-1 (Kampanya eşiği: 7 adet), EP-I2 (Script içeren not)" in scope
+    assert "Risk" not in scope
+    flow = sec["🔄 User Flow (Kullanıcı Akışı)"]
+    adimlar, veri = [n for n in flow if n["type"] == "table"]
+    satirlar = [[inline_text(h) for h in r["content"]] for r in veri["content"]]
+    assert satirlar[1:] == [
+        ["adet_sinir", "adım 2 verisi", "BV-1 (Kampanya eşiği: 7 adet)"],
+        ["not_alani", "kod bloğunda (tablonun altında)", "EP-I2 (Script içeren not)"],
+    ]
+    adim3 = [inline_text(h) for h in adimlar["content"][3]["content"]]
+    assert adim3 == ["3", "Notu yaz", "not_alani — kod bloğunda (tablonun altında)", "Reddedilir"]
+    tasiyanlar = [n for n in _walk(case_description_adf(case, "")) if SALDIRI in n.get("text", "")]
+    assert len(tasiyanlar) == 1  # yalnız kod bloğu
+    qa = _text(sec["🧪 QA Checklist"])
+    assert "Ürünler listelenir" not in qa and "1 adet bedava" not in qa
+    assert "Adım beklenenleri doğrulandı (adım 1–3)" in qa
+    assert "Kapsam öğeleri doğrulandı: BV-1, EP-I2" in qa and "Temizlik adımları uygulandı" in qa
+    other = _text(sec["ℹ️ Other Information & Assets (Diğer Bilgiler & Kaynaklar)"])
+    assert other == "Yok" and NOT_APPLICABLE not in _text(case_description_adf(case, "")["content"])

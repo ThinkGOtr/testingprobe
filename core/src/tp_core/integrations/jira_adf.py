@@ -223,6 +223,7 @@ def template_doc(
     *,
     preamble: Sequence[AdfNode] = (),
     trailer: Sequence[AdfNode] = (),
+    empty: str = NOT_APPLICABLE,
 ) -> AdfNode:
     """Görev şablonunda ADF belgesi: her bölüm seviye-3 başlık + içerik, şablon sırasıyla.
 
@@ -230,13 +231,15 @@ def template_doc(
     verilmemiş bölüm ``Not applicable`` olur (şablon her bölümü ister); ``parse_description`` AC
     bölümündeki ``Not applicable``'ı AC saymaz. ``preamble`` ilk bölümden
     önce (ör. ürün imi), ``trailer`` son bölümden sonra (ör. kimlik/hash satırı) gelir.
+    ``empty``: boş bölüm metni (v3 test case açıklaması Türkçe "Yok" yazar; ikisi de
+    ``parse_description``'da boş bölüm işaretidir).
     """
     content: list[AdfNode] = list(preamble)
     for key, title, _ in TEMPLATE_SECTIONS:
         value = sections.get(key)
         blocks = text_to_blocks(value.strip()) if isinstance(value, str) else list(value or [])
         content.append(heading(title, 3))
-        content.extend(blocks or [paragraph(NOT_APPLICABLE)])
+        content.extend(blocks or [paragraph(empty)])
     content.extend(trailer)
     return doc(content)
 

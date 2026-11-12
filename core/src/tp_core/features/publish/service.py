@@ -145,6 +145,20 @@ def case_mapping(session: Session, tc: TestCase) -> dict[str, Any]:
         "onaylayan": approver_of(session, tc),
         "onaylanan_hash": tc.onaylanan_hash,
         "uretim_modu": MOD_ETIKETI.get(mod, mod.upper()),
+        "kapsam_tanimlari": _kapsam_tanimlari(session, tc),
+    }
+
+
+def _kapsam_tanimlari(session: Session, tc: TestCase) -> dict[str, str]:
+    """Case'in kapsadığı / test verisinde andığı kapsam öğelerinin tanımları (üretim özetinden;
+    açıklamada "EP-V1 (tanım)" olarak yazılır). Özet yoksa boş: açıklama yalnız kimliği yazar."""
+    from tp_core.features.cases.service import summary_for
+
+    ozet = summary_for(session, tc) or {}
+    return {
+        str(o.get("id")): str(o.get("definition") or "")
+        for o in ozet.get("coverage_items") or []
+        if isinstance(o, Mapping) and o.get("id") and o.get("definition")
     }
 
 
