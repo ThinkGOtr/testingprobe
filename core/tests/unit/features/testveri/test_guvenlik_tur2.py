@@ -48,9 +48,10 @@ def test_takma_deger_atfa_esler_cakisan_katalog_degerini_ezmez() -> None:
     assert "{veri:ortak.p}" not in str(e)
 
 
-def test_maskeleme_kelime_siniri_en_az_uzunluk_ve_yapisal_alanlar() -> None:
-    # Güvenlik #10: kısa değer ve kelime içi geçiş maskelenmez; yapısal alanlar korunur.
-    assert atif.maskele("ab 1234 x1234y", ["ab", "1234"]) == "ab ••• x1234y"
+def test_maskeleme_en_az_uzunluk_alt_dize_ve_yapisal_alanlar() -> None:
+    # Güvenlik #10: kısa değer maskelenmez; yapısal alanlar korunur. Güvenlik tur 3 #2: kelime
+    # içi (bitişik) geçiş de maskelenir (alt dize).
+    assert atif.maskele("ab 1234 x1234y", ["ab", "1234"]) == "ab ••• x•••y"
     assert atif.maskele("bayi1/Demo123! ok", [DEMO_PAROLA]) == "bayi1/••• ok"
     obj = {
         "id": "aa-1234-bb",
@@ -165,7 +166,7 @@ def test_ide_blogu_katalogdan_gizli_atifla(
 def test_case_api_ve_kullanim_basligi_maskeli(
     api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway, katalog: int
 ) -> None:
-    """Güvenlik #7: başlıktaki (eşlenmeyen) parola API'de düz dönmez; onay hash'i değişmez."""
+    """Güvenlik #7 / K22: başlıktaki parola üretimde atfa çevrilir; API'de düz dönmez."""
     ham = case_icerik()
     ham["title"] = f"bayi1 / {DEMO_PAROLA} ile giriş"
     fake_gateway([text_response({"cases": [ham]})])
@@ -174,12 +175,12 @@ def test_case_api_ve_kullanim_basligi_maskeli(
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     run_jobs(engine)
     (c,) = latest_cases(api, rid)
-    assert c["icerik"]["title"] == "bayi1 / ••• ile giriş"
+    assert c["icerik"]["title"] == f"bayi1 / {PAROLA_ATFI} ile giriş"
     with session_scope() as s:
         from tp_core.models import TestCase
 
         tc = s.get(TestCase, uuid.UUID(c["id"]))
-        assert DEMO_PAROLA in tc.icerik["title"]  # saklanan içerik ham (hash ondan)
+        assert tc.icerik["title"] == f"bayi1 / {PAROLA_ATFI} ile giriş"  # K22: saklanan da atıf
         assert c["icerik_hash"] == tc.icerik_hash
         kullanan = service.anahtar_kullanimi(s, "ortak.demo_parola")
     assert kullanan and DEMO_PAROLA not in str(kullanan)

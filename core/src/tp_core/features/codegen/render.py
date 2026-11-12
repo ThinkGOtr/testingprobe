@@ -17,9 +17,10 @@ deterministik kontrollerden geçmiş `step_mapping` / `expects` ile render edili
   parola kalmaz; e2e sözleşmeleri (eslint `generatedTestSyntax`, `java-araclar guard`) yalnız bu
   biçimi ve `TP_TESTVERI_*` adlarını kabul eder. Şablonlar değişmez (süzgeç düzeyinde).
   Render sonrası tarama (güvenlik #4/#5): `RenderInput.gizli_taranacak` (bilinen tüm gizli
-  değerler; sırrı tanımsız olanlar dahil) çıktıda kelime sınırında geçerse `GizliSizinti`
-  (fail-closed; servis `test_verisi` engeliyle durdurur, commit/PR yok). Etiket/başlık maskesi
-  de bu listeyi kullanır.
+  değerler; sırrı tanımsız olanlar dahil) çıktıda alt dize olarak geçerse (kelime sınırı yok:
+  `Demo123!x`, kaçışlı biçim; güvenlik tur 3 #2) `GizliSizinti` (fail-closed; servis
+  `test_verisi` engeliyle durdurur, commit/PR yok). Etiket/başlık maskesi de bu listeyi ve
+  `atif.maskele` kuralını kullanır.
 - Çıktı deterministiktir (zaman/rastgelelik yok); dosya adı case'e göre sabittir
   (`<e2e kökü>/tests/generated/<story>-c<sıra>-<case uuid'nin ilk 8'i>.spec.ts`; e2e kökü
   LocalForge'da `e2e`, GitHub monoreposunda `demo-app/e2e`). Yeniden üretim aynı dosya yolunu
@@ -93,9 +94,10 @@ def _gizli_arg(value: Any, gizli_ortam: Mapping[str, str]) -> Any:
 
 
 def _maskeli(metin: str, gizli: Iterable[str]) -> str:
-    for g in sorted({g for g in gizli if g}, key=len, reverse=True):
-        metin = metin.replace(g, GIZLI_MASKE)
-    return metin
+    """Etiket / başlık maskesi: `atif.maskele` ile aynı kural (alt dize, en az `MIN_DEGER`)."""
+    from tp_core.features.testveri.atif import maskele
+
+    return maskele(metin, gizli)
 
 
 def _tum_gizliler(inp: RenderInput) -> tuple[str, ...]:
