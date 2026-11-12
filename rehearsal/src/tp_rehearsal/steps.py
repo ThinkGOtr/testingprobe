@@ -835,9 +835,7 @@ def ci_tetikleri(b: Baglam) -> None:
     push = kosu_bekle(
         b,
         "son merge'ün push CI'ı bitti",
-        lambda ks: next(
-            (k for k in ks if k.get("tetik") == "push" and k.get("commit") == sha), None
-        ),
+        lambda ks: next((k for k in ks if _ts_push(k) and k.get("commit") == sha), None),
         300,
     )
     b.kontrol(
@@ -1365,9 +1363,15 @@ def locator_kir(b: Baglam) -> None:
         )
 
 
+def _ts_push(k: dict[str, Any]) -> bool:
+    """Provanın push koşusu: Playwright TypeScript hattı (011 üretim diliyle aynı push için
+    Java web koşusu da açılır; beklenen sayılar ve triage akışı TS paketine göredir)."""
+    return k.get("tetik") == "push" and (k.get("dil") or "ts") == "ts"
+
+
 def _kirmizi_push(ks: list[dict[str, Any]], sha: str | None) -> dict[str, Any] | None:
     for k in ks:
-        if k.get("tetik") != "push":
+        if not _ts_push(k):
             continue
         if sha and k.get("commit") == sha:
             return k
@@ -1539,9 +1543,7 @@ def ci_yesil(b: Baglam) -> None:
     k = kosu_bekle(
         b,
         "onarım merge'ünün push CI'ı bitti",
-        lambda ks: next(
-            (x for x in ks if x.get("tetik") == "push" and x.get("commit") == sha), None
-        ),
+        lambda ks: next((x for x in ks if _ts_push(x) and x.get("commit") == sha), None),
         300,
     )
     b.kanit["push"] = {
