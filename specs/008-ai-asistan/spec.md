@@ -18,6 +18,8 @@ Kaynak plan: [docs/AI-ASISTAN-PLANI.md](../../docs/AI-ASISTAN-PLANI.md) (v6). Bu
 > **Not (2026-11-11)**: Asistanın güvenlik katmanı (rol bazlı araç daraltma, niyet sinyalleri,
 > kesin kişisel veri engeli, kanarya/istem sızıntısı, ardışık red dondurma, şeffaflık rozeti) bu
 > spec'i genişletir: [013-asistan-guvenlik/ANALIZ.md](../013-asistan-guvenlik/ANALIZ.md).
+> Rol etiketleri portaldakiyle aynıdır (Analist, Ürün sahibi (PO), Mühendis, Testçi, Sunucu); veri
+> envanteri ve bilinen sınırlar 013 ANALIZ §12–13'tedir.
 
 ## User Scenarios & Testing *(mandatory)*
 

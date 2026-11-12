@@ -623,9 +623,16 @@ ASISTAN_BEKLENTILERI = frozenset(
 )
 
 
+_KESME_ISARETLERI = str.maketrans({"’": "'", "‘": "'", "ʼ": "'", "`": "'", "´": "'"})
+
+
 def _kucuk(metin: str) -> str:
-    """Türkçe duyarlı küçük harf (I → ı, İ → i) — `contains` büyük/küçük harfe bakmaz."""
-    return metin.replace("I", "ı").replace("İ", "i").lower()
+    """Türkçe duyarlı küçük harf (I → ı, İ → i) — `contains` büyük/küçük harfe bakmaz.
+
+    Kıvrık/tipografik kesme işaretleri (’ ‘ ʼ ` ´) düz `'`e, ardışık boşluklar tek boşluğa iner:
+    model "KVKK’ya" ya da satır kırarak yazsa da `contains`/`not_contains` aynı sonucu verir."""
+    duz = metin.translate(_KESME_ISARETLERI).replace("I", "ı").replace("İ", "i").lower()
+    return " ".join(duz.split())
 
 
 def asistan_metni(out: Mapping[str, Any]) -> str:

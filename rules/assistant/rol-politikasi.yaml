@@ -39,7 +39,7 @@ roller:
       sınıfını veya bug kararını değiştirme; assertion gevşetmeyi ya da adım atlamayı önerme.
       Yayın yalnız "Yayın önizleme" ekranından yapılır.
   automation_engineer:
-    etiket: Otomasyon mühendisi
+    etiket: Mühendis
     araclar: tum
     ek: &kod_eki >-
       Kodu yalnız kaynakta görünenden üret; sır, üretim host'u veya gerçek müşteri girdisi
@@ -51,7 +51,7 @@ roller:
     araclar: tum
     ek: *kod_eki
   sunucu:
-    etiket: Sunucu (sunum yapan)
+    etiket: Sunucu
     araclar: tum
     ek: >-
       Demo sunumu yapan kullanıcıya yardım et: akışı ve ekranları adım adım anlat; tüm okuma
