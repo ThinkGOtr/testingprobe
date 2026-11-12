@@ -570,4 +570,163 @@ public class ExtentRaporuBirimTesti {
     assertTrue(html.contains("OutOfMemoryError"));
     assertFalse(Files.exists(rapor.resolve("index.html.tmp")));
   }
+
+  /** Kanıt dizininde {@code ad} testleri için ekran görüntüsü yazar. */
+  private static void ekranlar(Path kanit, String onEk, int n) throws Exception {
+    for (int i = 0; i < n; i++) {
+      Path k = Kanit.dizin(kanit, "ExtentRaporuBirimTesti", onEk + i);
+      Files.createDirectories(k);
+      Files.write(k.resolve(Kanit.EKRAN), PNG);
+    }
+  }
+
+  private static int adet(String metin, String aranan) {
+    return metin.split(Pattern.quote(aranan), -1).length - 1;
+  }
+
+  @Test(groups = "birim")
+  public void tekrarlardaGomuluEkranSiniriKosuGeneliArsivYolTutar() throws Exception {
+    // Y-1: sınır JVM başına değil koşu genelidir; arşiv base64 değil dosya yolu taşır (bellek ve
+    // extent.json tekrar sayısıyla büyümez).
+    Path kok = Files.createTempDirectory("extent-birim-");
+    Path rapor = kok.resolve("extent-report");
+    int tekrar = 3;
+    int test = ExtentRaporu.EN_COK_GOMULU_EKRAN / 2 + 3;
+    for (int i = 1; i <= tekrar; i++) {
+      Path kanit = kok.resolve("kanit").resolve("tekrar-" + i);
+      ekranlar(kanit, "kirmizi", test);
+      ExtentRaporu d = new ExtentRaporu(rapor, kanit, i + "/" + tekrar);
+      d.onExecutionStart();
+      long simdi = System.currentTimeMillis();
+      for (int j = 0; j < test; j++) {
+        ITestResult s = sonuc(ExtentRaporuBirimTesti.class, "kirmizi" + j, new AssertionError("x"), simdi);
+        d.onTestStart(s);
+        d.onTestFailure(s);
+      }
+      d.onExecutionFinish();
+      assertFalse(d.kapali());
+      String arsiv = Files.readString(rapor.resolve(ExtentRaporu.ARSIV), StandardCharsets.UTF_8);
+      assertFalse(arsiv.contains(PNG_B64), "arşivde base64 ekran olmamalı (tekrar " + i + ")");
+      assertTrue(arsiv.contains("kanit/tekrar-" + i + "/"), "arşiv ekranın yolunu taşır");
+      String html = oku(rapor);
+      assertEquals(adet(html, PNG_B64), Math.min(i * test, ExtentRaporu.EN_COK_GOMULU_EKRAN), "gömülü ekran (tekrar " + i + ")");
+      assertEquals(adet(html, "rapora gömülmedi"), Math.max(0, i * test - ExtentRaporu.EN_COK_GOMULU_EKRAN));
+      assertFalse(html.contains("<img data-featherlight='"), "gömülen yol başvurusu kalmaz");
+      assertEquals(dosyalar(rapor), List.of("extent.json", "index.html"));
+    }
+  }
+
+  @Test(groups = "birim")
+  public void ekranYoluRaporDizininUstuDisinaCikamaz() throws Exception {
+    Path kok = Files.createTempDirectory("extent-birim-");
+    Path rapor = kok.resolve("a").resolve("extent-report");
+    Files.createDirectories(rapor);
+    Path disari = kok.resolve("ekran.png");
+    Files.write(disari, PNG);
+    Path ici = kok.resolve("a").resolve("kanit").resolve("ekran.png");
+    Files.createDirectories(ici.getParent());
+    Files.write(ici, PNG);
+    Files.write(kok.resolve("a").resolve("kanit").resolve("baska.png"), PNG);
+    Path html = rapor.resolve("index.html");
+    Files.writeString(
+        html,
+        "<html><body><img data-featherlight='../../ekran.png' src=\"../../ekran.png\">"
+            + "<img data-featherlight='../kanit/baska.png' src=\"../kanit/baska.png\">"
+            + "<img data-featherlight='../kanit/ekran.png' src=\"../kanit/ekran.png\"></body></html>");
+    ExtentRaporu.tekDosya(html, true);
+    String s = Files.readString(html, StandardCharsets.UTF_8);
+    assertEquals(adet(s, PNG_B64), 1, s);
+    assertTrue(s.contains("<img data-featherlight='../../ekran.png'"), "üst dizin dışı gömülmez");
+    assertTrue(s.contains("<img data-featherlight='../kanit/baska.png'"), "ekran.png olmayan gömülmez");
+  }
+
+  @Test(groups = "birim")
+  public void yazimHatasiOncekiGecerliRaporuKorur() throws Exception {
+    // Y-1: 2. tekrarın raporu (ör. OOM ile) üretilemezse 1. tekrarın geçerli raporu kalır + uyarı.
+    Path rapor = Files.createTempDirectory("extent-birim-");
+    ExtentRaporu ilk = new ExtentRaporu(rapor, rapor.resolve("kanit"), "1/2");
+    ilk.onExecutionStart();
+    ITestResult a = sonuc(ExtentRaporuBirimTesti.class, "ilkTekrar", null, System.currentTimeMillis());
+    ilk.onTestStart(a);
+    ilk.onTestSuccess(a);
+    ilk.onExecutionFinish();
+    String gecerli = oku(rapor);
+    String arsiv = Files.readString(rapor.resolve(ExtentRaporu.ARSIV), StandardCharsets.UTF_8);
+
+    ExtentRaporu ikinci = new ExtentRaporu(rapor, rapor.resolve("kanit"), "2/2");
+    ikinci.onExecutionStart();
+    Object bellekYiyen =
+        new Object() {
+          @Override
+          public String toString() {
+            throw new OutOfMemoryError("Java heap space (deney)");
+          }
+        };
+    ITestResult s =
+        sonuc(ExtentRaporuBirimTesti.class, "kirmizi", null, new String[] {"duman"}, new AssertionError("x"), System.currentTimeMillis(), new Object[] {bellekYiyen});
+    ikinci.onTestStart(s);
+    ikinci.onTestFailure(s);
+    ikinci.onExecutionFinish();
+    assertTrue(ikinci.kapali());
+    assertEquals(oku(rapor), gecerli, "önceki geçerli rapor korunur");
+    assertEquals(Files.readString(rapor.resolve(ExtentRaporu.ARSIV), StandardCharsets.UTF_8), arsiv, "arşiv korunur");
+    String uyari = Files.readString(rapor.resolve(ExtentRaporu.UYARI), StandardCharsets.UTF_8);
+    assertTrue(uyari.contains("OutOfMemoryError"), uyari);
+    assertFalse(Files.exists(rapor.resolve("index.html.tmp")));
+
+    // Sonraki temiz koşu eski raporu, uyarıyı ve arşivi siler.
+    ExtentRaporu temiz = new ExtentRaporu(rapor, rapor.resolve("kanit"), null);
+    temiz.onExecutionStart();
+    assertFalse(Files.exists(rapor.resolve(ExtentRaporu.UYARI)));
+    assertFalse(Files.exists(rapor.resolve("index.html")), "eski koşunun raporu geçerliymiş gibi kalmaz");
+    temiz.onExecutionFinish();
+  }
+
+  @Test(groups = "birim")
+  public void kesintideSonDurumYazilir() throws Exception {
+    // D-1: ara yazım eşiğinin altında kesinti (SIGTERM): kapanış kancası tüm testleri yazar.
+    Path rapor = Files.createTempDirectory("extent-birim-");
+    ExtentRaporu d = new ExtentRaporu(rapor, rapor.resolve("kanit"), null);
+    d.onExecutionStart();
+    long simdi = System.currentTimeMillis();
+    int n = ExtentRaporu.ARA_YAZIM_TEST - 1;
+    for (int i = 0; i < n; i++) {
+      ITestResult s = sonuc(ExtentRaporuBirimTesti.class, "kesinti" + i, null, simdi);
+      d.onTestStart(s);
+      d.onTestSuccess(s);
+    }
+    assertFalse(Files.exists(rapor.resolve("index.html")), "eşik altında ara yazım yok");
+    d.kesintideYaz();
+    assertTrue(d.kapali(), "kesintiden sonra gelen olaylar raporu açmaz");
+    String html = oku(rapor);
+    for (int i = 0; i < n; i++) {
+      assertTrue(html.contains("ExtentRaporuBirimTesti › kesinti" + i + "<"), "kesinti" + i);
+    }
+    assertFalse(html.contains("spark/"), "kesintide de tek dosya");
+    ITestResult gec = sonuc(ExtentRaporuBirimTesti.class, "gec", null, simdi);
+    d.onTestStart(gec);
+    d.onTestSuccess(gec);
+    d.onExecutionFinish();
+    assertFalse(oku(rapor).contains("ExtentRaporuBirimTesti › gec<"));
+    assertEquals(dosyalar(rapor), List.of("extent.json", "index.html"));
+  }
+
+  @Test(groups = "birim")
+  public void zamanCizelgesiEtiketleriTarayicidaCozulur() throws Exception {
+    // N-1: canvas HTML varlığı çözmez; çözücü spark-script.js'ten önce gelir, yalnız altı varlık.
+    Path rapor = Files.createTempDirectory("extent-birim-");
+    ExtentRaporu d = new ExtentRaporu(rapor, rapor.resolve("kanit"), null);
+    d.onExecutionStart();
+    ITestResult s = sonuc(ExtentRaporuBirimTesti.class, "m", "API'de \"x\" & <y>", new String[] {"duman"}, null, System.currentTimeMillis());
+    d.onTestStart(s);
+    d.onTestSuccess(s);
+    d.onExecutionFinish();
+    String html = oku(rapor);
+    int zaman = html.indexOf("var timeline");
+    int cozucu = html.indexOf(ExtentRaporu.ZAMAN_CIZELGESI_COZUCU);
+    int cizim = html.indexOf("drawTimelineChart");
+    assertTrue(zaman >= 0 && cozucu > zaman && cizim > cozucu, "sıra: timeline → çözücü → çizim");
+    assertEquals(adet(html, ExtentRaporu.ZAMAN_CIZELGESI_COZUCU), 1);
+    assertTrue(html.contains("\"API&#39;de &quot;x&quot; &amp; &lt;y&gt;\":"), "JS dizesi kaçışlı kalır");
+  }
 }

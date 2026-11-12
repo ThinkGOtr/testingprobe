@@ -55,7 +55,10 @@ Her koşu iki okunur rapor kaynağı üretir; ikisi de test kodunda ek çağrı 
   org.testng.ITestNGListener` ile kendiliğinden yüklenir; testng.xml ve `-Dgroups` koşusunda aynı)
   `target/extent-report/index.html` yazar. Rapor **tek dosyadır ve dış kaynak yüklemez** (css/js/simge
   yazı tipi gömülü): tarayıcıda doğrudan, ağ olmadan ve portalın sandbox'ında açılır. Başarısız testin
-  kanıt ekran görüntüsü rapora gömülür. Her testten sonra yazılır (koşu yarıda kesilse de rapor kalır).
+  kanıt ekran görüntüsü modele ve arşive dosya yolu olarak girer, koşu sonunda rapora gömülür (en çok 50,
+  koşu geneli — önceki tekrarlar dahil; fazlası `../kanit/…` bağlantısı). Ara yazım her 25 testte / 30 sn'de
+  bir; kesintide (SIGTERM) kapanış kancası son durumu yazar. Rapor ve arşiv atomik taşınır: yazım yarıda
+  kalırsa önceki geçerli `index.html` kalır ve yanına `index.uyari.txt` yazılır.
 
 | Özellik | Varsayılan | Not |
 | --- | --- | --- |

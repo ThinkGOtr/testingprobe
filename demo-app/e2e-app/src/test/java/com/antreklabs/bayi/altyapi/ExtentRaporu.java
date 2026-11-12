@@ -4,6 +4,9 @@ import com.aventstack.extentreports.ExtentReports;
 import com.aventstack.extentreports.ExtentTest;
 import com.aventstack.extentreports.Status;
 import com.aventstack.extentreports.markuputils.MarkupHelper;
+import com.aventstack.extentreports.model.Log;
+import com.aventstack.extentreports.model.Media;
+import com.aventstack.extentreports.model.ScreenCapture;
 import com.aventstack.extentreports.reporter.ExtentSparkReporter;
 import com.aventstack.extentreports.reporter.JsonFormatter;
 import java.io.IOException;
@@ -44,17 +47,24 @@ import org.testng.ITestResult;
  *       kopyaladığı css/js/yazı tipi dosyaları {@code index.html} içine gömülür ve silinir. Rapor
  *       ağ olmadan ve portalın sandbox'ında (çerezsiz, opak köken) tek istekle açılır.
  *   <li><b>Kanıt:</b> başarısız testin {@link Kanit} ekran görüntüsü ({@code kanit/<Sınıf>.<metot>/
- *       ekran.png}; bu testte yazıldıysa) rapora base64 gömülür — ilk {@value #EN_COK_GOMULU_EKRAN}
- *       başarısız test için; sonrakilerde rapor dizininden göreli bağlantı ve açıklama satırı (rapor
- *       ve bellek test sayısıyla büyümez).
+ *       ekran.png}; bu testte yazıldıysa) rapor modeline ve arşive <em>dosya yolu</em> olarak girer;
+ *       koşu sonunda tek dosyaya gömülürken yoldan okunup base64 gömülür. Gömme sınırı
+ *       ({@value #EN_COK_GOMULU_EKRAN}) koşu geneli sayılır (önceki tekrarlardan arşivle gelen
+ *       ekranlar dahil); sonrakilerde rapor dizininden göreli bağlantı ve açıklama satırı. Model,
+ *       arşiv ve bellek ekran sayısıyla / tekrar sayısıyla büyümez.
  *   <li><b>Yazım:</b> ara yazım seyrektir (her {@value #ARA_YAZIM_TEST} testte bir ya da
- *       {@value #ARA_YAZIM_MS} ms'de bir; koşu süre sınırında kesilse de o ana kadarki rapor kalır,
- *       ara raporun css/js'i yanındaki dizindedir). Tek dosyaya gömme yalnız koşu sonunda yapılır.
+ *       {@value #ARA_YAZIM_MS} ms'de bir; ara raporun css/js'i yanındaki dizindedir). Kesintide
+ *       (SIGTERM, JVM kapanışı) kapanış kancası son durumu en çok {@value #KESINTI_SURE_MS} ms'de
+ *       yazar. Tek dosyaya gömme koşu sonunda yapılır.
+ *   <li><b>Atomik yazım:</b> Spark ve arşiv önce geçici dosyalara yazar; yalnız tamamlanmış çıktı
+ *       {@code index.html} / {@code extent.json} yerine taşınır. Yazım (ör. {@link OutOfMemoryError}
+ *       ile) yarıda kalırsa önceki geçerli rapor (son ara yazım ya da önceki tekrar) kalır, yanına
+ *       {@value #UYARI} yazılır; önceki rapor yoksa kısa açıklama sayfası.
  *   <li><b>Tekrarlı koşu:</b> her tekrar ayrı JVM'dir; {@code -Dextent.tekrar=<i>/<n>} ile
  *       {@code i > 1} tekrarında önceki tekrarların testleri rapor dizinindeki {@code extent.json}
  *       arşivinden geri yüklenir, rapor tekrarları birlikte gösterir (tekrar test adına eklenir).
- *       Tekrarsız koşu ve ilk tekrar arşivi siler: {@code clean}'siz yeniden koşuda eski
- *       koşunun sonuçları rapora karışmaz.
+ *       Tekrarsız koşu ve ilk tekrar arşivi ve eski raporu siler: {@code clean}'siz yeniden koşuda
+ *       eski koşunun sonuçları rapora karışmaz.
  *   <li><b>Test adı:</b> {@code @Test(description)} (yoksa {@code Sınıf › metot}); alt bilgi
  *       {@code Sınıf.metot}. Kategoriler TestNG gruplarıdır, {@code tp-case-*} hariç (case kimliği
  *       test ayrıntısında ayrı satır; {@link TestGruplari}).
@@ -63,11 +73,11 @@ import org.testng.ITestResult;
  *   <li><b>İş parçacığı güvenliği:</b> test düğümleri sonuç nesnesine göre eşlenir; rapora yazım
  *       tek kilit altındadır.
  *   <li><b>Koşuyu düşürmez:</b> raporlama hatası ({@link OutOfMemoryError} dahil) yalnızca günlüğe
- *       yazılır, rapor kapatılır ve {@code index.html} kısa bir açıklama sayfasıyla değiştirilir;
- *       testler ve Surefire JUnit XML'i etkilenmez.
+ *       yazılır ve rapor kapatılır (bkz. atomik yazım); testler ve Surefire JUnit XML'i etkilenmez.
  *   <li><b>Kaçış:</b> ad, alt bilgi, kategori, cihaz ve bilgi satırları HTML'e kaçışlı girer
  *       ({@code & < > " ' \}); Spark test adını {@code <script>} içindeki bir JS dizesine de
- *       yazar (zaman çizelgesi), tırnak ve ters bölü oradan da çıkamaz.
+ *       yazar (zaman çizelgesi), tırnak ve ters bölü oradan da çıkamaz. Grafik etiketleri tarayıcıda
+ *       bu altı varlıktan çözülür (yalnız canvas metni; HTML'e geri yazılmaz).
  * </ul>
  *
  * <p>Dizin: sistem özelliği {@code extent.rapor.dizini} (pom: {@code target/extent-report}); boş
@@ -85,6 +95,14 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
   static final long EN_BUYUK_EKRAN = 10L * 1024 * 1024;
   /** Rapora gömülen ekran görüntüsü sayısının üst sınırı (sonrakiler göreli bağlantı). */
   public static final int EN_COK_GOMULU_EKRAN = 50;
+  /** Kesintide (kapanış kancası) son durumu yazmaya ayrılan en uzun süre (ms). */
+  public static final long KESINTI_SURE_MS = 10_000;
+  /** Spark'ın yazdığı geçici rapor (tamamlanınca {@link #RAPOR} yerine taşınır). */
+  static final String YENI_RAPOR = ".index.yeni.html";
+  /** Arşivin geçici dosyası (tamamlanınca {@link #ARSIV} yerine taşınır). */
+  static final String YENI_ARSIV = ".extent.yeni.json";
+  /** Rapor güncellenemediğinde önceki raporun yanına yazılan uyarı. */
+  public static final String UYARI = "index.uyari.txt";
   /** Ara yazım: bu kadar test bittiğinde … */
   public static final int ARA_YAZIM_TEST = 25;
   /** … ya da son yazımdan bu kadar süre (ms) geçtiğinde. */
@@ -94,12 +112,26 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
   /** Süreç genelinde tek rapor: TestNG dinleyiciyi her (iç içe) koşu için yeniden örnekler. */
   private static final Durum ORTAK = new Durum(null, null, null);
 
+  /** Rapor modeline yol olarak girebilen ekran görüntüsü yolu (Spark yolu kaçışsız yazar). */
+  private static final String GUVENLI_YOL = "[A-Za-z0-9._/-]+";
+  private static final Pattern GUVENLI_YOL_DESENI = Pattern.compile(GUVENLI_YOL);
+  /**
+   * Zaman çizelgesi etiketleri: Spark adı JS dizesine kaçışlı (HTML varlığı) yazar; canvas varlık
+   * çözmez. Bu betik {@code spark-script.js}'ten (grafik çizimi) hemen önce yalnız bilinen altı
+   * varlığı düz metne çevirir; sonuç yalnız canvas etiketi olur, DOM'a HTML olarak yazılmaz.
+   */
+  public static final String ZAMAN_CIZELGESI_COZUCU =
+      "<script>if(typeof timeline!==\"undefined\"){(function(){"
+          + "var c={\"&amp;\":\"&\",\"&lt;\":\"<\",\"&gt;\":\">\",\"&quot;\":'\"',\"&#39;\":\"'\",\"&#92;\":\"\\\\\"},y={};"
+          + "for(var k in timeline){y[k.replace(/&(?:amp|lt|gt|quot|#39|#92);/g,function(e){return c[e];})]=timeline[k];}"
+          + "timeline=y;})();}</script>";
   /** Rapor sayfasındaki yerel başvurular: css {@code <link>}, simge {@code <link>}, betik, {@code url(…)}. */
   private static final Pattern GOMULECEK =
       Pattern.compile(
           "<link\\b[^>]*\\bhref=\"(?<css>[^\"]+\\.css)\"[^>]*>"
               + "|(?<simgeOn><link\\b[^>]*\\bhref=\")(?<simge>[^\"]+\\.(?:png|ico|svg))(?<simgeSon>\"[^>]*>)"
               + "|<script\\b[^>]*\\bsrc=\"(?<js>[^\"]+\\.js)\"[^>]*>\\s*</script>"
+              + "|<img data-featherlight='(?<ekran>" + GUVENLI_YOL + ")' src=\"\\k<ekran>\">"
               + "|url\\(\\s*['\"]?(?<url>[^'\")]+?)['\"]?\\s*\\)");
   private static final Pattern SATIR_SONU = Pattern.compile("[\\r\\n\\u2028\\u2029\\u0085]+\\s*");
   private static final Pattern CSS_URL = Pattern.compile("url\\(\\s*['\"]?([^'\")]+?)['\"]?\\s*\\)");
@@ -119,8 +151,10 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
     /** Son yazımdan bu yana biten test sayısı ve son yazımın zamanı ({@link System#nanoTime}). */
     private int yazilmayan;
     private long sonYazim;
-    /** Bu JVM'de rapora gömülen ekran görüntüsü sayısı. */
+    /** Koşu genelinde (arşivden gelen önceki tekrarlar dahil) gömülecek ekran görüntüsü sayısı. */
     private int gomuluEkran;
+    /** Kesintide son durumu yazan kapanış kancası (koşu sonunda kaldırılır). */
+    private Thread kanca;
 
     /** {@code null} verilen değer sistem özelliğinden okunur (birim testleri açıkça verir). */
     Durum(Path dizin, Path kanitKoku, String tekrar) {
@@ -186,6 +220,7 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
               d.rapor = null;
               d.testler.clear();
               d.gomuluEkran = 0;
+              kancaKaldir();
             }
           }
         });
@@ -289,26 +324,34 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
       Files.createDirectories(d.dizin);
       ExtentReports r = new ExtentReports();
       Path arsiv = d.dizin.resolve(ARSIV);
+      int onceki = 0;
+      for (String gecici : List.of(YENI_RAPOR, YENI_ARSIV, RAPOR + ".tmp", UYARI)) {
+        Files.deleteIfExists(d.dizin.resolve(gecici));
+      }
       if (!arsivGeriYuklenir(tekrar())) {
-        // Tekrarsız koşu / ilk tekrar: önceki koşunun arşivi bu rapora karışmaz.
+        // Tekrarsız koşu / ilk tekrar: önceki koşunun arşivi ve raporu bu koşuya karışmaz (bu
+        // koşunun raporu üretilemezse eski koşunun raporu geçerliymiş gibi kalmasın).
         Files.deleteIfExists(arsiv);
+        Files.deleteIfExists(d.dizin.resolve(RAPOR));
       } else if (Files.isRegularFile(arsiv)) {
         try {
           r.createDomainFromJsonArchive(arsiv.toFile());
+          onceki = ekranSayisi(r);
         } catch (IOException | RuntimeException e) {
           // Bozuk arşiv: önceki tekrarlar raporda görünmez; bu koşunun raporu yine üretilir.
           LOG.log(Level.WARNING, "Extent arşivi okunamadı; önceki tekrarlar rapora eklenmedi", e);
           r = new ExtentReports();
         }
       }
-      ExtentSparkReporter spark = new ExtentSparkReporter(d.dizin.resolve(RAPOR).toFile());
+      // Spark ve arşiv geçici dosyalara yazar; tamamlanan çıktı taşınır (bkz. yaz).
+      ExtentSparkReporter spark = new ExtentSparkReporter(d.dizin.resolve(YENI_RAPOR).toFile());
       // Çevrimdışı kip: css/js CDN yerine rapor dizinine kopyalanır (sonra index.html'e gömülür).
       spark.config().enableOfflineMode(true);
       spark.config().setEncoding(StandardCharsets.UTF_8.name());
       spark.config().setDocumentTitle("Bayi Sipariş Portalı — Extent raporu");
       spark.config().setReportName("Uygulama e2e (Appium + TestNG)");
       spark.config().setTimeStampFormat("dd.MM.yyyy HH:mm:ss");
-      r.attachReporter(new JsonFormatter(arsiv.toFile()), spark);
+      r.attachReporter(new JsonFormatter(d.dizin.resolve(YENI_ARSIV).toFile()), spark);
       String platform = ozellik("platform", "PLATFORM");
       if (platform != null) {
         r.setSystemInfo("Platform", kacis(platform));
@@ -320,8 +363,102 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
       r.setSystemInfo("Java", kacis(System.getProperty("java.version", "?")));
       r.setSystemInfo("İşletim sistemi", kacis(System.getProperty("os.name", "?")));
       d.rapor = r;
+      d.gomuluEkran = onceki;
       d.yazilmayan = 0;
       d.sonYazim = System.nanoTime();
+      kancaKur();
+    }
+  }
+
+  /** Raporda (arşivden geri yüklenen testler dahil) bulunan ekran görüntüsü sayısı. */
+  private static int ekranSayisi(ExtentReports r) {
+    int n = 0;
+    for (com.aventstack.extentreports.model.Test t : r.getReport().getTestList()) {
+      n += ekranSayisi(t);
+    }
+    return n;
+  }
+
+  private static int ekranSayisi(com.aventstack.extentreports.model.Test t) {
+    int n = 0;
+    for (Media m : t.getMedia()) {
+      n += m instanceof ScreenCapture ? 1 : 0;
+    }
+    for (Log l : t.getLogs()) {
+      n += l.getMedia() instanceof ScreenCapture ? 1 : 0;
+    }
+    for (com.aventstack.extentreports.model.Test c : t.getChildren()) {
+      n += ekranSayisi(c);
+    }
+    return n;
+  }
+
+  // ------------------------------------------------------------------ kesinti
+
+  /** Kapanış kancasını kurar ({@code d} kilidi altında çağrılır). */
+  private void kancaKur() {
+    if (d.kanca != null) {
+      return;
+    }
+    Thread k = new Thread(this::kesintideYaz, "extent-raporu-kesinti");
+    try {
+      Runtime.getRuntime().addShutdownHook(k);
+      d.kanca = k;
+    } catch (IllegalStateException | SecurityException e) {
+      // JVM zaten kapanıyor ya da kanca kurulamıyor: kesintide yalnız son ara yazım kalır.
+    }
+  }
+
+  /** Koşu normal bittiyse kancayı kaldırır ({@code d} kilidi altında çağrılır). */
+  private void kancaKaldir() {
+    Thread k = d.kanca;
+    d.kanca = null;
+    if (k == null || Thread.currentThread() == k) {
+      return;
+    }
+    try {
+      Runtime.getRuntime().removeShutdownHook(k);
+    } catch (IllegalStateException | SecurityException e) {
+      // JVM kapanıyor: kanca zaten çalışıyor/çalışacak; rapor kapalıysa hiçbir şey yazmaz.
+    }
+  }
+
+  /**
+   * Kesinti (SIGTERM / JVM kapanışı, koşu bitmeden): o ana kadarki testleri koşu sonu gibi yazar.
+   * Yazım ayrı bir iş parçacığında en çok {@link #KESINTI_SURE_MS} ms beklenir (kapanış uzamaz);
+   * {@link OutOfMemoryError} dahil hata önceki geçerli raporu bozmaz (atomik yazım). Kapanış
+   * kancası çağırır; birim testleri doğrudan çağırabilir.
+   */
+  public void kesintideYaz() {
+    Thread yazici =
+        new Thread(
+            () -> {
+              try {
+                synchronized (d) {
+                  if (d.rapor == null || d.kapali) {
+                    return;
+                  }
+                  d.kanca = null;
+                  try {
+                    yaz(true);
+                  } finally {
+                    d.rapor = null;
+                    d.testler.clear();
+                    d.kapali = true; // kapanış sürerken gelen olaylar raporu yeniden açmaz
+                  }
+                }
+              } catch (Throwable e) {
+                LOG.log(Level.WARNING, "Extent raporu kesintide yazılamadı", e);
+                kapanisSayfasi(d.dizin, "kesinti", e);
+              }
+            },
+            "extent-raporu-kesinti-yazim");
+    yazici.setDaemon(true);
+    yazici.start();
+    try {
+      yazici.join(KESINTI_SURE_MS);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
     }
   }
 
@@ -457,26 +594,22 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
   }
 
   /**
-   * Bu testte toplanan kanıt ekran görüntüsünü ekler: ilk {@link #EN_COK_GOMULU_EKRAN} görüntü
-   * base64 gömülür, sonrakiler rapor dizininden göreli bağlantı ve açıklama satırıdır.
+   * Bu testte toplanan kanıt ekran görüntüsünü ekler: koşu genelinde ilk
+   * {@link #EN_COK_GOMULU_EKRAN} görüntü modele (ve arşive) rapor dizininden göreli <em>yol</em>
+   * olarak girer — base64'e koşu sonunda {@link #tekDosya} çevirir; sonrakiler göreli bağlantı ve
+   * açıklama satırıdır.
    */
   private void ekranEkle(ExtentTest t, ITestResult sonuc) throws IOException {
     Path png = ekranDosyasi(sonuc);
     if (png == null) {
       return;
     }
-    if (d.gomuluEkran < EN_COK_GOMULU_EKRAN) {
-      String veri;
-      try {
-        veri = Base64.getEncoder().encodeToString(Files.readAllBytes(png));
-      } catch (IOException e) {
-        return;
-      }
-      t.addScreenCaptureFromBase64String(veri, "Ekran görüntüsü");
+    String yol = goreliYol(d.dizin, png);
+    if (d.gomuluEkran < EN_COK_GOMULU_EKRAN && GUVENLI_YOL_DESENI.matcher(yol).matches()) {
+      t.addScreenCaptureFromPath(yol, "Ekran görüntüsü");
       d.gomuluEkran++;
       return;
     }
-    String yol = goreliYol(d.dizin, png);
     t.info(
         "Ekran görüntüsü rapora gömülmedi (ilk "
             + EN_COK_GOMULU_EKRAN
@@ -527,12 +660,68 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
       if (d.rapor == null) {
         return;
       }
+      Path yeniRapor = d.dizin.resolve(YENI_RAPOR);
+      Path yeniArsiv = d.dizin.resolve(YENI_ARSIV);
+      Files.deleteIfExists(yeniRapor);
+      Files.deleteIfExists(yeniArsiv);
       d.rapor.flush();
       d.yazilmayan = 0;
       d.sonYazim = System.nanoTime();
-      if (son) {
-        tekDosya(d.dizin.resolve(RAPOR), true);
+      // Extent yazım hatasını yalnız günlüğe yazar: yarım dosya önceki geçerli çıktının yerine geçmez.
+      if (tamamlanmis(yeniArsiv, "]", "}")) {
+        tasi(yeniArsiv, d.dizin.resolve(ARSIV));
+      } else {
+        Files.deleteIfExists(yeniArsiv);
+        LOG.warning("Extent arşivi yazılamadı; önceki arşiv korunuyor");
       }
+      if (!tamamlanmis(yeniRapor, "</html>")) {
+        Files.deleteIfExists(yeniRapor);
+        if (son) {
+          throw new IOException("Spark raporu tamamlanamadı");
+        }
+        LOG.warning("Extent ara raporu yazılamadı; önceki rapor korunuyor");
+        return;
+      }
+      if (son) {
+        tekDosya(yeniRapor, d.dizin.resolve(RAPOR), true);
+      } else {
+        tasi(yeniRapor, d.dizin.resolve(RAPOR));
+      }
+    }
+  }
+
+  /** Dosya var ve (boşluklar hariç) verilen sonlardan biriyle bitiyor mu (yarım yazım değil). */
+  private static boolean tamamlanmis(Path dosya, String... sonlar) throws IOException {
+    if (!Files.isRegularFile(dosya)) {
+      return false;
+    }
+    long boy = Files.size(dosya);
+    if (boy == 0) {
+      return false;
+    }
+    byte[] kuyruk = new byte[(int) Math.min(256, boy)];
+    try (var k = java.nio.channels.FileChannel.open(dosya)) {
+      java.nio.ByteBuffer b = java.nio.ByteBuffer.wrap(kuyruk);
+      long konum = boy - kuyruk.length;
+      while (b.hasRemaining() && k.read(b, konum + b.position()) > 0) {
+        // kuyruğun tamamı okunana dek
+      }
+    }
+    String son = new String(kuyruk, StandardCharsets.UTF_8).strip().toLowerCase(Locale.ROOT);
+    for (String s : sonlar) {
+      if (son.endsWith(s)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Atomik taşıma (dosya sistemi desteklemiyorsa yerine yazarak). */
+  private static void tasi(Path kaynak, Path hedef) throws IOException {
+    try {
+      Files.move(kaynak, hedef, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+    } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+      Files.move(kaynak, hedef, StandardCopyOption.REPLACE_EXISTING);
     }
   }
 
@@ -544,12 +733,25 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
    * Bulunamayan ya da rapor dizini dışına çıkan başvuruya dokunulmaz.
    */
   public static void tekDosya(Path html, boolean temizle) throws IOException {
+    tekDosya(html, html, temizle);
+  }
+
+  /**
+   * {@link #tekDosya(Path, boolean)}; {@code kaynak} raporu okunur, sonuç önce {@code <hedef>.tmp}'ye
+   * yazılıp {@code hedef}'in yerine atomik taşınır (yarıda kalan yazım {@code hedef}'i bozmaz).
+   * Modeldeki ekran görüntüsü yolları ({@code <img data-featherlight='yol' …>}) base64 gömülür:
+   * yalnız rapor dizininin üst dizini altındaki {@link Kanit#EKRAN} dosyaları, en çok
+   * {@link #EN_COK_GOMULU_EKRAN} tane.
+   */
+  static void tekDosya(Path kaynakHtml, Path hedef, boolean temizle) throws IOException {
+    Path html = kaynakHtml;
     if (!Files.isRegularFile(html)) {
       return;
     }
     // Mutlak yol: rapor dizini göreli verilse de (-Dextent.rapor.dizini=target/…) başvurular çözülür.
     Path mutlak = html.toAbsolutePath().normalize();
     Path kok = mutlak.getParent();
+    int ekranlar = 0;
     // Tek geçiş (bellek: kaynak metin + çıktı; ara kopya yok): css/js dosyaları gömülür, simge ve
     // satır içi stil başvuruları (logo) veri adresine çevrilir.
     String kaynak = Files.readString(html, StandardCharsets.UTF_8);
@@ -570,7 +772,19 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
         Path js = yerel(kok, kok, m.group("js"));
         if (js != null) {
           gomulen.add(js);
-          yeni = "<script>" + Files.readString(js, StandardCharsets.UTF_8).replace("</script", "<\\/script") + "</script>";
+          // Grafik çizimi spark-script.js'tedir: zaman çizelgesi etiketleri ondan önce çözülür.
+          String once = js.getFileName().toString().equals("spark-script.js") ? ZAMAN_CIZELGESI_COZUCU : "";
+          yeni = once + "<script>" + Files.readString(js, StandardCharsets.UTF_8).replace("</script", "<\\/script") + "</script>";
+        }
+      } else if (m.group("ekran") != null) {
+        Path png = ekranlar < EN_COK_GOMULU_EKRAN ? ekranYolu(kok, m.group("ekran")) : null;
+        if (png != null) {
+          ekranlar++;
+          // Extent'in base64 ekran biçimi (tıklanınca büyür); veri tek kez yer alır.
+          yeni =
+              "<a href=\"data:image/png;base64,"
+                  + Base64.getEncoder().encodeToString(Files.readAllBytes(png))
+                  + "\" data-featherlight=\"image\"><span class=\"badge badge-gradient-primary\">base64 img</span></a>";
         }
       } else if (m.group("simge") != null) {
         Path simge = yerel(kok, kok, m.group("simge"));
@@ -581,17 +795,24 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
       sonuc.append(kaynak, son, m.start()).append(yeni != null ? yeni : m.group());
       son = m.end();
     }
-    if (gomulen.isEmpty()) {
+    boolean ayni = mutlak.equals(hedef.toAbsolutePath().normalize());
+    if (gomulen.isEmpty() && ekranlar == 0) {
+      if (!ayni) {
+        tasi(html, hedef);
+      }
       return;
     }
     sonuc.append(kaynak, son, kaynak.length());
     kaynak = null; // yazım sırasında yalnız çıktı bellekte kalsın
-    Path gecici = html.resolveSibling(RAPOR + ".tmp");
+    Path gecici = hedef.resolveSibling(hedef.getFileName() + ".tmp");
     try (Writer w = Files.newBufferedWriter(gecici, StandardCharsets.UTF_8)) {
       w.append(sonuc);
     }
     sonuc = null;
-    Files.move(gecici, html, StandardCopyOption.REPLACE_EXISTING);
+    tasi(gecici, hedef);
+    if (!ayni) {
+      Files.deleteIfExists(html);
+    }
     if (!temizle) {
       return;
     }
@@ -602,6 +823,27 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
         sil(ust);
       }
     }
+  }
+
+  /**
+   * Modeldeki ekran görüntüsü yolunun dosyası: rapor dizinine göre çözülür; rapor dizininin üst
+   * dizini dışına çıkan, {@link Kanit#EKRAN} adlı olmayan, eksik ya da büyük dosya → null.
+   */
+  private static Path ekranYolu(Path kok, String yol) throws IOException {
+    Path sinir = kok.getParent() != null ? kok.getParent() : kok;
+    Path p;
+    try {
+      p = kok.resolve(yol).normalize();
+    } catch (InvalidPathException e) {
+      return null;
+    }
+    if (!p.startsWith(sinir)
+        || !Kanit.EKRAN.equals(String.valueOf(p.getFileName()))
+        || !Files.isRegularFile(p)
+        || Files.size(p) > EN_BUYUK_EKRAN) {
+      return null;
+    }
+    return p;
   }
 
   private static String cssGom(Path kok, Path css, String icerik) throws IOException {
@@ -733,6 +975,7 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
         d.rapor = null;
         d.testler.clear();
         dizin = d.dizin;
+        kancaKaldir();
       }
       LOG.log(Level.WARNING, "Extent raporu devre dışı (" + adim + ")", e);
       kapanisSayfasi(dizin, adim, e);
@@ -740,15 +983,32 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
   }
 
   /**
-   * Yarıda kalmış (ya da eksik) rapor yerine kısa bir açıklama sayfası yazar; yazılamazsa sessizce
-   * geçer (rapor dizini hiç oluşmamış olabilir).
+   * Raporlama hatasında: önceki geçerli {@code index.html} (bu koşunun son ara yazımı ya da önceki
+   * tekrar) varsa korunur ve yanına {@link #UYARI} yazılır; yoksa kısa bir açıklama sayfası
+   * yazılır. Geçici dosyalar silinir. Yazılamazsa sessizce geçer (rapor dizini hiç oluşmamış
+   * olabilir).
    */
   private static void kapanisSayfasi(Path dizin, String adim, Throwable hata) {
     if (dizin == null || !Files.isDirectory(dizin)) {
       return;
     }
     try {
-      Files.deleteIfExists(dizin.resolve(RAPOR + ".tmp"));
+      for (String gecici : List.of(RAPOR + ".tmp", YENI_RAPOR, YENI_ARSIV)) {
+        Files.deleteIfExists(dizin.resolve(gecici));
+      }
+      if (Files.isRegularFile(dizin.resolve(RAPOR))) {
+        Files.writeString(
+            dizin.resolve(UYARI),
+            "Extent raporu bu koşuda güncellenemedi ("
+                + adim
+                + ": "
+                + hata.getClass().getSimpleName()
+                + ").\nindex.html önceki geçerli raporu gösterir (bu koşunun son ara yazımı ya da önceki"
+                + " tekrar); sonraki testler eksik olabilir.\nTest sonuçları etkilenmedi: JUnit XML"
+                + " (surefire-reports) ve Allure sonuçlarına bakın.\n",
+            StandardCharsets.UTF_8);
+        return;
+      }
       String sayfa =
           "<!doctype html><html lang=\"tr\"><head><meta charset=\"utf-8\"><title>Extent raporu üretilemedi</title>"
               + "</head><body><h1>Extent raporu üretilemedi</h1><p>Raporlama hatası ("

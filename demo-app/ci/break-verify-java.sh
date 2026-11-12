@@ -14,7 +14,8 @@
 # Kullanım: ci/break-verify-java.sh [mvn argümanları...]
 # Ortam: run-java-checks.sh ile aynı; DEMOAPP_TEST_TOKEN ZORUNLU (kırılma /test/break ister).
 #        BREAK_VERIFY_GROUPS (varsayılan: kampanya) — TestNG grubu.
-# Her adımın JUnit XML'i (+ kırmızıda kanıt): demo-app/e2e-java/target/kirarak-dogrula/<adım>/
+# Her adımın JUnit XML'i, Extent raporu (extent-report/index.html) ve (kırmızıda) kanıtı:
+#   demo-app/e2e-java/target/kirarak-dogrula/<adım>/
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -32,6 +33,9 @@ run() {  # $1 = BREAK_CAMPAIGN değeri, $2 = adım adı; çıkış kodunu dönd�
   mkdir -p "$cikti/$2"
   cp "$proje"/target/surefire-reports/TEST-*.xml "$cikti/$2/" 2>/dev/null || true
   [[ -d "$proje/target/kanit" ]] && cp -R "$proje/target/kanit" "$cikti/$2/kanit"
+  # Extent raporu sonraki adımda silinir (run-java-checks.sh): adımın raporu kanıtla birlikte
+  # saklanır. Gömülmeyen ekranların bağlantısı ../kanit/… olduğundan dizin düzeni aynı kalır.
+  [[ -d "$proje/target/extent-report" ]] && cp -R "$proje/target/extent-report" "$cikti/$2/extent-report"
   return "$rc"
 }
 

@@ -121,6 +121,11 @@ başarısız testte `kanit/<Sınıf>.<metot>/{ekran.png, trace.zip, sayfa.html}`
   `Testing Probe case: <uuid>` satırı). `extent.json` arşivi yalnız `-Dextent.tekrar=<i>/<n>` ile
   `i > 1` tekrarında geri yüklenir (tekrarlar tek raporda); tekrarsız koşu ve ilk tekrar arşivi
   siler — `clean`'siz yeniden koşuda eski sonuçlar rapora karışmaz.
+- **Extent ekran/bellek:** başarısız testin `ekran.png`'si modele ve arşive dosya yolu olarak girer,
+  koşu sonunda base64 gömülür; en çok 50 ekran (koşu geneli, önceki tekrarlar dahil), fazlası
+  `../kanit/…` bağlantısı. Rapor ve arşiv geçici dosyaya yazılıp atomik taşınır: yazım (ör. bellek
+  yetersizliği) yarıda kalırsa önceki geçerli `index.html` kalır, yanına `index.uyari.txt` yazılır.
+  Ara yazım her 25 testte / 30 sn'de bir; kesintide (SIGTERM) kapanış kancası son durumu yazar.
 - **Allure:** `TestTabani` gruplardan etiket ekler: her grup `tag`, Jira anahtarı biçimindeki grup
   (`TPD-1`) `story`, `tp-case-<uuid>` ayrıca `tp-case=<uuid>` (`altyapi/TestGruplari`).
 
