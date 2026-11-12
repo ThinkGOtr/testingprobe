@@ -270,7 +270,7 @@ _TR_PAROLA = r"(?:parola|s[iı]fre|şifre)(?:s[iı](?:n[iı])?|m(?:[iı]z)?|n(?:
 _SIR_ANAHTARI = (
     r"(?:password|passwd|secret[_-]?key|secret|client[_-]?secret|token|access[_-]?token"
     r"|auth[_-]?token|refresh[_-]?token|api[_-]?key|access[_-]?key|private[_-]?key"
-    # Türkçe anahtar adları (013 §9: "parola: Gizli123Abc"); değer kuralı aynı (harf + rakam).
+    # Türkçe anahtar adları (013 §9: `parola: <değer>`); değer kuralı aynı (harf + rakam).
     rf"|{_TR_PAROLA})"
 )
 _SIR_KARAKTERI = r"A-Za-z0-9_\-+/=.~@#%^&!"
@@ -343,8 +343,8 @@ SECRET_PATTERNS: tuple[SecretPattern, ...] = (
         re.compile(
             rf"(?P<keep>(?:--{_SIR_ANAHTARI}\b(?:\s*=\s*|\s+)"
             rf"|(?<![\w-])(?:[A-Za-z0-9]+_)*{_SIR_ANAHTARI}\b[\"']?\s*[:=]\s*"
-            # Türkçe parola anahtarından sonra ayraçsız (yalnız boşluk) değer: `parola
-            # Gizli123Abc`, `şifre admin123` ("parola alanı boş olamaz" değer kuralına uymaz).
+            # Türkçe parola anahtarından sonra ayraçsız (yalnız boşluk) değer: `parola <değer>`,
+            # `şifre <değer>` ("parola alanı boş olamaz" değer kuralına uymaz: rakam yok).
             rf"|(?<![\w-])(?:[A-Za-z0-9]+_)*{_TR_PAROLA}[ \t]+)[\"']?)"
             rf"{_RASTGELE_DEGER}(?=[\s'\"`,;)}}\]]|\Z)",
             re.IGNORECASE,
