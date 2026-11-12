@@ -664,7 +664,9 @@ def ozet_hesapla(
     kıran test varsa `yakalanan`, yoksa `kacan`. Kaynak platformun temel koşusunda hiç test
     taşımıyorsa o platformda ölçülmez. `oran` = AI (üretilen testler) oranı; `el_yazisi` el yazısı
     suite; `tum_testler` iki kaynak birlikte (adımın kendi sonucu). `gecersiz` paydaya girmez.
-    `kapsam.tam_katalog` koşu kataloğun tüm hatalarını içeriyorsa doğrudur. `kapsam.yeterli`:
+    `kapsam.tam_katalog` koşu kataloğun tüm hatalarını içeriyorsa doğrudur. `kacanlar`: hiçbir
+    testin yakalamadığı (`kacti`) hatalar; `ai_kacanlar`: AI ölçülen platformda üretilen testlerin
+    kaçırdığı hatalar (el yazısı yakalamış olabilir). `kapsam.yeterli`:
     her platformda geçerli hata adımı ≥ `esik` × katalog (Y10; Kule yalnız bu durumda oran verir);
     değilse `kapsam.not` nedeni söyler.
     """
@@ -674,6 +676,7 @@ def ozet_hesapla(
     adlar = _adlar()
     out_pl: list[dict[str, Any]] = []
     kacanlar: list[dict[str, Any]] = []
+    ai_kacanlar: list[dict[str, Any]] = []
     top_ai: dict[str, int] | None = None
     top_el: dict[str, int] | None = None
     top_tum = _sayac()
@@ -703,14 +706,15 @@ def ozet_hesapla(
             for kaynak, s in (("ai", ai), ("el", el)):
                 if s is not None:
                     s["yakalanan" if kaynak in kaynaklar else "kacan"] += 1
+            kayit = {
+                "hata_kodu": a.hata_kodu,
+                "ad": adlar.get(a.hata_kodu or "", a.hata_kodu),
+                "platform": p,
+            }
+            if a.sonuc == "kacti":
+                kacanlar.append(kayit)  # hiçbir test (hiçbir kaynak) yakalamadı
             if ai is not None and "ai" not in kaynaklar:
-                kacanlar.append(
-                    {
-                        "hata_kodu": a.hata_kodu,
-                        "ad": adlar.get(a.hata_kodu or "", a.hata_kodu),
-                        "platform": p,
-                    }
-                )
+                ai_kacanlar.append(kayit)  # üretilen testler ölçülen platformda kaçırdı
         for k in top:
             top[k] += say[k]
         for k in top_tum:
@@ -771,6 +775,7 @@ def ozet_hesapla(
         },
         "platformlar": out_pl,
         "kacanlar": kacanlar,
+        "ai_kacanlar": ai_kacanlar,
     }
 
 
@@ -788,9 +793,11 @@ def hata_yakalama_ozeti(session: Session) -> dict[str, Any] | None:
 
     Şekil: `{son_kosu: {id, bitis, durum}, oran, yakalanan, kacan, gecersiz, el_yazisi: {oran,
     yakalanan, kacan}, tum_testler: {…}, kapsam: {kosulan_hata, katalog, platformlar,
-    tam_katalog, gecerli_adim}, platformlar: [{platform, oran, yakalanan, kacan, gecersiz,
-    el_yazisi}], kacanlar: [{hata_kodu, ad, platform}], kaynak}` (`kaynak`'ı Kule `kaynaklar`'a
-    taşır). Sayılar okuma anında `hata_kosusu_adim` satırlarından hesaplanır.
+    tam_katalog, gecerli_adim, esik, yeterli, not}, platformlar: [{platform, oran, yakalanan,
+    kacan, gecersiz, el_yazisi}], kacanlar: [{hata_kodu, ad, platform}], ai_kacanlar: […],
+    kaynak}` (`kaynak`'ı Kule `kaynaklar`'a taşır). `kacanlar`: hiçbir testin (hiçbir kaynak)
+    yakalamadığı hatalar (`kacti`; kabul senaryosu 12); `ai_kacanlar`: üretilen testlerin ölçüldüğü
+    platformlarda üretilen testlerin kaçırdığı hatalar. Sayılar okuma anında `hata_kosusu_adim` satırlarından hesaplanır.
     """
     kosular = session.scalars(
         select(HataKosusu)
@@ -853,6 +860,7 @@ def _kule_sekli(kosu: HataKosusu, oz: Mapping[str, Any]) -> dict[str, Any]:
             for p in oz["platformlar"]
         ],
         "kacanlar": oz["kacanlar"],
+        "ai_kacanlar": oz["ai_kacanlar"],
         "kaynak": kaynak,
     }
 

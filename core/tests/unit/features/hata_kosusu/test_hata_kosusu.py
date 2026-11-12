@@ -762,7 +762,9 @@ def test_ai_el_ayrimi(engine: Engine, muhendis: Principal, toolchain: FakeToolch
     assert (oz["oran"], oz["yakalanan"], oz["kacan"]) == (round(2 / 3, 4), 2, 1)
     assert oz["el_yazisi"] == {"oran": round(2 / 3, 4), "yakalanan": 2, "kacan": 1}
     assert oz["tum_testler"] == {"oran": 1.0, "yakalanan": 3, "kacan": 0}
-    assert oz["kacanlar"] == [
+    # Her hata en az bir testle yakalandı: `kacanlar` boş; AI testleri birini kaçırdı.
+    assert oz["kacanlar"] == []
+    assert oz["ai_kacanlar"] == [
         {"hata_kodu": "kampanya_tek_bedava", "ad": "Kampanyada en çok 1 bedava", "platform": "web"}
     ]
     web = oz["platformlar"][0]
@@ -1252,7 +1254,8 @@ def test_ozet_hesabi() -> None:
         10,
     )
     assert ios["oran"] is None and ios["el_yazisi"]["oran"] is None and ios["gecersiz"] == 1
-    assert [k["hata_kodu"] for k in oz["kacanlar"]] == ["min_siparis_500", "fiyat_p004_31"]
+    assert [k["hata_kodu"] for k in oz["kacanlar"]] == ["fiyat_p004_31"]
+    assert [k["hata_kodu"] for k in oz["ai_kacanlar"]] == ["min_siparis_500", "fiyat_p004_31"]
     assert service.ozet_hesapla([], ["web"])["oran"] is None
 
 
@@ -1298,6 +1301,7 @@ def test_hata_yakalama_ozeti_kule_sekli_ve_kapsam(
         "kapsam",
         "platformlar",
         "kacanlar",
+        "ai_kacanlar",
         "kaynak",
     }
     assert hy["son_kosu"]["id"] == str(tam) and hy["son_kosu"]["durum"] == "done"
@@ -1314,7 +1318,7 @@ def test_hata_yakalama_ozeti_kule_sekli_ve_kapsam(
             "el_yazisi": {"oran": 0.0, "yakalanan": 0, "kacan": 9},
         }
     ]
-    assert hy["kacanlar"] == [
+    assert hy["kacanlar"] == hy["ai_kacanlar"] == [
         {"hata_kodu": "min_siparis_500", "ad": "Minimum sipariş tutarı 500", "platform": "web"}
     ]
     assert "yakalanan 8, kaçan 1" in hy["kaynak"] and "9/9 hata" in hy["kaynak"]
@@ -1562,7 +1566,9 @@ def test_uretilenlerin_hepsi_temelde_kirmiziysa_ai_olculmedi_n3(
     oz = detay(engine, kid)["ozet"]
     web = oz["platformlar"][0]
     assert (web["uretilen_test"], web["el_test"]) == (0, 1)
-    assert oz["oran"] is None and web["oran"] is None and oz["kacanlar"] == []
+    assert oz["oran"] is None and web["oran"] is None
+    # AI ölçülmeyen platformda `ai_kacanlar`'a yazılmaz; el yazısı yakaladı: `kacanlar` boş.
+    assert oz["kacanlar"] == [] and oz["ai_kacanlar"] == []
     assert oz["el_yazisi"] == {"oran": 1.0, "yakalanan": 1, "kacan": 0}
 
 
