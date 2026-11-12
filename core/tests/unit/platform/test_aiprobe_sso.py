@@ -935,7 +935,7 @@ def test_alembic_tek_bas() -> None:
 
     script = ScriptDirectory.from_config(alembic_config())
     bas = script.get_heads()
-    assert bas == ["0025"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
+    assert bas == ["0028"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
     assert script.get_revision("0019").down_revision == "0018"
     assert script.get_revision("0020").down_revision == "0019"
     assert script.get_revision("0021").down_revision == "0020"
@@ -943,6 +943,8 @@ def test_alembic_tek_bas() -> None:
     assert script.get_revision("0023").down_revision == "0022"
     assert script.get_revision("0024").down_revision == "0023"
     assert script.get_revision("0025").down_revision == "0024"
+    # D6 (0028) bu dalda 0025'in ardından; birleştirmede D1 0026 / D4 0027 ile doğrusallaşır.
+    assert script.get_revision("0028").down_revision == "0025"
 
 
 # ------------------------------------------------------------------ inceleme bulguları (2026-11-10)

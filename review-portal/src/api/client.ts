@@ -1,4 +1,5 @@
 // MIMARI-SOZLESME §5'teki her uç için türlü istemci.
+import type { AcikSorularYaniti } from "./acikSoruTipleri";
 import { ApiError, istek } from "./http";
 import {
   bulguUyarla,
@@ -209,6 +210,18 @@ export const api = {
   /** Review'u yeniden çalıştır (analist; tavsiye niteliğinde). */
   caseReviewCalistir: (requirementId: string) =>
     istek<CaseReviewGorunumu>("POST", `/requirements/${yol(requirementId)}/case-review`, { kaynak: CASE_KAYNAGI }),
+  /** Açık sorular (011 K16): güncel setin soruları/varsayımları, PO'ya gönderim durumu ve yanıtı. */
+  acikSorular: (requirementId: string) =>
+    istek<AcikSorularYaniti>("GET", `/requirements/${yol(requirementId)}/open-questions`, { kaynak: CASE_KAYNAGI }),
+  /** "Açık soruları PO'ya gönder" (analist): gönderilmemiş sorular story'ye tek Jira yorumu olarak gider. */
+  acikSorulariGonder: (requirementId: string, varsayimlar = false) =>
+    istek<AcikSorularYaniti>("POST", `/requirements/${yol(requirementId)}/open-questions/send`, {
+      govde: { varsayimlar },
+      kaynak: CASE_KAYNAGI,
+    }),
+  /** PO yanıtlarını şimdi oku (analist; periyodik sorguyu beklemeden). */
+  acikSoruYanitlariniOku: (requirementId: string) =>
+    istek<AcikSorularYaniti>("POST", `/requirements/${yol(requirementId)}/open-questions/refresh`, { kaynak: CASE_KAYNAGI }),
   /** P9 denetim (011 F5): son karar, güncel set, yayın kapısı durumu. */
   caseDenetim: (requirementId: string) =>
     istek<CaseDenetimGorunumu>("GET", `/requirements/${yol(requirementId)}/case-audit`, { kaynak: CASE_KAYNAGI }),

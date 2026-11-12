@@ -32,6 +32,7 @@ import {
   TEST_SEVIYESI,
 } from "../lib/etiketler";
 import { sure, tarih } from "../lib/format";
+import { AtifPoDurumu, DuzeltmeKaynaklari, PoYanitOnerisi } from "./AcikSorular";
 import { FarkGorunumu } from "./FarkGorunumu";
 import { AlanHatasi, Cip, IslemDugmesi, ReplayRozeti, Uyari } from "./ui";
 
@@ -164,23 +165,27 @@ export function CaseKarti({
       </header>
 
       {mod === "duzenle" ? (
-        <CaseDuzenleyici
-          ilk={tc.icerik}
-          calisiyor={islem.calisiyor}
-          hata={islem.hata}
-          hataKaynagi={islem.hataNesnesi}
-          vazgec={() => setMod("goster")}
-          kaydet={(icerik, beklenenAnlamDegisti) =>
-            karar(() =>
-              api.caseKarari(tc.id, {
-                ...bag,
-                karar: "edit",
-                icerik,
-                ...(beklenenAnlamDegisti !== undefined ? { beklenen_anlam_degisti: beklenenAnlamDegisti } : {}),
-              }),
-            )
-          }
-        />
+        <>
+          {/* 011 K16: yanıtlanan sorunun PO yanıtı düzeltmede beklenen sonucun kaynağıdır. */}
+          <DuzeltmeKaynaklari sorular={tc.acik_sorular} varsayimlar={tc.varsayimlar} />
+          <CaseDuzenleyici
+            ilk={tc.icerik}
+            calisiyor={islem.calisiyor}
+            hata={islem.hata}
+            hataKaynagi={islem.hataNesnesi}
+            vazgec={() => setMod("goster")}
+            kaydet={(icerik, beklenenAnlamDegisti) =>
+              karar(() =>
+                api.caseKarari(tc.id, {
+                  ...bag,
+                  karar: "edit",
+                  icerik,
+                  ...(beklenenAnlamDegisti !== undefined ? { beklenen_anlam_degisti: beklenenAnlamDegisti } : {}),
+                }),
+              )
+            }
+          />
+        </>
       ) : (
         <>
           <h3 id={`${id}-baslik`} className="case-ad">
@@ -387,6 +392,7 @@ function AtifListesi({ kayitlar, metin }: { kayitlar: (AcikSoru | Varsayim | { i
           {"owner" in k ? (
             <>
               {metin(k)} <span className="soluk kucuk">· Sahibi: {SORU_SAHIBI[k.owner] ?? k.owner}</span>
+              <AtifPoDurumu kayit={k} />
             </>
           ) : (
             <span className="soluk">metni bu yanıtta yok (Kapsam ve açık noktalar paneline bakın)</span>
@@ -472,6 +478,7 @@ function CaseV3Ozeti({ tc, hazirlik }: { tc: TestCase; hazirlik: CaseHazirlik })
           </div>
         )}
       </dl>
+      <PoYanitOnerisi tc={tc} />
       {sorular.length > 0 && (
         <div data-testid="case-acik-sorular">
           <Uyari baslik={hazirlik === "blocked" ? "Açık sorular (yanıtlanmadan bu case hazır olamaz)" : "Açık sorular"}>

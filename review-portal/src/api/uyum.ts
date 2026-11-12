@@ -10,6 +10,7 @@ import type {
   BulguKarari,
   BulguTuru,
   AcikSoru,
+  PoSoruDurumu,
   CaseAlanFarki,
   CaseDurumu,
   CaseHazirlik,
@@ -457,12 +458,39 @@ export function caseIcerikUyarla(x: unknown): TestCaseIcerik {
   };
 }
 
-function acikSoruUyarla(x: Ham): AcikSoru {
-  return { id: metin(x.id), question: metin(ilk(x, "question", "soru", "metin")), owner: metin(ilk(x, "owner", "sahip")) };
+/** 011 K16: PO'ya gönderim durumu alanları (core `case_fields`); yoksa hiç eklenmez. */
+function poSoruDurumuUyarla(x: Ham): PoSoruDurumu {
+  const d = metin(x.po_durumu);
+  const y = nesneMi(x.po_yaniti) ? (x.po_yaniti as Ham) : null;
+  return {
+    ...(x.po_etiketi !== undefined ? { po_etiketi: metinYaDaNull(x.po_etiketi) } : {}),
+    ...(d === "gonderilmedi" || d === "gonderildi" || d === "yanitlandi" ? { po_durumu: d } : {}),
+    ...(x.po_yaniti !== undefined
+      ? { po_yaniti: y ? { metin: metin(y.metin), yazar: metinYaDaNull(y.yazar), zaman: metinYaDaNull(y.zaman) } : null }
+      : {}),
+  };
 }
 
-function varsayimUyarla(x: Ham): Varsayim {
-  return { id: metin(x.id), statement: metin(ilk(x, "statement", "varsayim", "metin")), owner: metin(ilk(x, "owner", "sahip")) };
+/** Core `po_sorulari` (atıf kimliği → PO durumu) atıf kaydına katılır. */
+const poDurumu = (po: unknown, id: string): PoSoruDurumu => {
+  const k = nesneMi(po) ? (po as Ham)[id] : undefined;
+  return nesneMi(k) ? poSoruDurumuUyarla(k as Ham) : {};
+};
+
+function acikSoruUyarla(x: Ham, po?: unknown): AcikSoru {
+  const id = metin(x.id);
+  return { id, question: metin(ilk(x, "question", "soru", "metin")), owner: metin(ilk(x, "owner", "sahip")), ...poDurumu(po, id) };
+}
+
+function varsayimUyarla(x: Ham, po?: unknown): Varsayim {
+  const id = metin(x.id);
+  return { id, statement: metin(ilk(x, "statement", "varsayim", "metin")), owner: metin(ilk(x, "owner", "sahip")), ...poDurumu(po, id) };
+}
+
+function poYanitOnerisiUyarla(x: unknown): TestCase["po_yanit_onerisi"] {
+  if (!nesneMi(x)) return null;
+  const o = x as Ham;
+  return { eylem: "duzelt_veya_yeniden_uret", etiketler: Array.isArray(o.etiketler) ? dizgeler(o.etiketler) : [], mesaj: metin(o.mesaj) };
 }
 
 const nesneler = <T>(x: unknown, donustur: (h: Ham) => T): T[] => (Array.isArray(x) ? x.filter(nesneMi).map(donustur) : []);
@@ -503,10 +531,11 @@ export function caseUyarla(c: Ham): TestCase {
     // v3 (011 §4.4): core alanları yoksa içerikten türetilir (eski core / eski case: hazır + legacy).
     readiness: hazirlikUyarla(c.readiness) ?? icerik.readiness ?? "ready",
     legacy: typeof c.legacy === "boolean" ? c.legacy : icerik.readiness === undefined,
-    ...(Array.isArray(c.acik_sorular) ? { acik_sorular: nesneler(c.acik_sorular, acikSoruUyarla) } : {}),
-    ...(Array.isArray(c.varsayimlar) ? { varsayimlar: nesneler(c.varsayimlar, varsayimUyarla) } : {}),
+    ...(Array.isArray(c.acik_sorular) ? { acik_sorular: nesneler(c.acik_sorular, (x) => acikSoruUyarla(x, c.po_sorulari)) } : {}),
+    ...(Array.isArray(c.varsayimlar) ? { varsayimlar: nesneler(c.varsayimlar, (x) => varsayimUyarla(x, c.po_sorulari)) } : {}),
     ...(c.onay_engeli !== undefined ? { onay_engeli: metinYaDaNull(c.onay_engeli) } : {}),
     ...(typeof c.uretim_no === "number" ? { uretim_no: c.uretim_no } : {}),
+    ...(c.po_yanit_onerisi !== undefined ? { po_yanit_onerisi: poYanitOnerisiUyarla(c.po_yanit_onerisi) } : {}),
   };
 }
 

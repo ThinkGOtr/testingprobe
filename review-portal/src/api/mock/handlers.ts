@@ -36,6 +36,7 @@ import { duzeltmeOlcusu } from "../../lib/diff";
 import { caseHazirlik, eskiIcerik, tutarlilikSorunlari } from "../../lib/caseV3";
 import { CASE_HAZIRLIK } from "../../lib/etiketler";
 import { birlesikOzet, caseKapsamOzeti, caseV3Alanlari } from "./caseV3";
+import { acikSoruRotalari, caseAcikSoruAlanlari, duzeltmeKaynagi, type AcikSoruBaglami } from "./acikSorular";
 import { kanonikJson, sha256Hex } from "../../lib/sha256";
 import {
   bulguCiktisi,
@@ -851,6 +852,7 @@ function caseKarari(id: string, govde: unknown): TestCase {
     const beklenenDegisti =
       typeof g.beklenen_anlam_degisti === "boolean" ? g.beklenen_anlam_degisti : c.icerik.expected_result !== g.icerik.expected_result;
     const kaynakInsan = typeof g.beklenen_anlam_degisti === "boolean";
+    duzeltmeKaynagi(acikSoruBaglami, c, g.icerik);
     c.icerik = g.icerik;
     c.surum += 1;
     c.icerik_hash = icerikHash(g.icerik);
@@ -930,8 +932,23 @@ function caseYenidenAc(id: string, govde: unknown): TestCase {
 
 /** core `serialize_cases`: case + readiness, legacy, çözülmüş açık soru/varsayım atıfları, tutarlılık uyarıları. */
 function caseCikti(c: TestCase): TestCase {
-  return cikti({ ...c, ...caseV3Alanlari(c, veri.caseUretimleri?.[c.requirement_id]) });
+  return cikti(caseZengin(c));
 }
+
+/** v3 alanları + 011 K16 PO soru durumu (core `serialize_cases` + `acik_sorular.case_fields`). */
+function caseZengin(c: TestCase): TestCase {
+  const v3 = { ...c, ...caseV3Alanlari(c, veri.caseUretimleri?.[c.requirement_id]) };
+  return { ...v3, ...caseAcikSoruAlanlari(veri, v3) };
+}
+
+const acikSoruBaglami: AcikSoruBaglami = {
+  veri: () => veri,
+  girisGerekli,
+  rolGerekli,
+  gereksinim: (id) => bul(veri.gereksinimler, id, "Gereksinim"),
+  kaydet,
+  denetimEkle,
+};
 
 // ------------------------------------------------- 011 D: review (P8) ve denetim (P9)
 
@@ -2010,6 +2027,8 @@ const ROTALAR: Rota[] = [
   ["POST", /^\/requirements\/([^/]+)\/generate-cases$/, (m, _q, govde) => caseUret(decodeURIComponent(m[1]), govde)],
   // Test tasarım modeli (011 F3, iki tur): api/mock/tasarimModeli.ts.
   ...tasarimModeliRotalari(modelBaglami),
+  // Açık soruların PO'ya gönderimi (011 K16): api/mock/acikSorular.ts.
+  ...acikSoruRotalari(acikSoruBaglami),
   // Üretim seçenekleri ve derinleştirme (011 K5, P5/P6): api/mock/derinlestirme.ts.
   ...derinlestirmeRotalari({
     veri: () => veri,
@@ -2031,7 +2050,7 @@ const ROTALAR: Rota[] = [
       return veri.caseler
         .filter((c) => !rid || c.requirement_id === rid)
         .sort((a, b) => a.sira_no - b.sira_no)
-        .map((c) => ({ ...c, ...caseV3Alanlari(c, veri.caseUretimleri?.[c.requirement_id]) }));
+        .map(caseZengin);
     },
   ],
   ["POST", /^\/cases\/([^/]+)\/decision$/, (m, _q, g) => caseKarari(decodeURIComponent(m[1]), g)],

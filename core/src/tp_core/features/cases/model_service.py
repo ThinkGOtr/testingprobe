@@ -285,8 +285,14 @@ def run_model_generation(
         if req.durum != "modeling":
             return {"atlandi": True, "durum": req.durum}
         po_guncel = _po_guncel(req)
+        from tp_core.features.cases import acik_sorular
+
         messages = generation_messages(
-            req, _onaylanan_sorular(s, req.id), test_verisi=testdata.block(), gorev=MODEL_GOREVI
+            req,
+            _onaylanan_sorular(s, req.id),
+            test_verisi=testdata.block(),
+            gorev=MODEL_GOREVI,
+            acik_soru_yanitlari=acik_sorular.generation_input(s, req),
         )
         replay_key = replay_key_for(req)
         gereksinim_hash = req.onaylanan_hash

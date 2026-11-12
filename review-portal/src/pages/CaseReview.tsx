@@ -7,6 +7,7 @@ import type { BazKaynagi, CaseMetrikleri, ManuelBaz, TestCase } from "../api/typ
 import { bazKaynagiUyarla, manuelBazUyarla } from "../api/uyumFaz5";
 import { useKisiAdi, useOturum } from "../auth";
 import { BAZ_KAYNAGI } from "../components/BazDegerKarti";
+import { AcikSorularPaneli } from "../components/AcikSorular";
 import { CaseKarti } from "../components/CaseKarti";
 import { GherkinIndir } from "../components/GherkinIndir";
 import { DenetimPaneli, ReviewPaneli } from "../components/KalitePanelleri";
@@ -361,6 +362,9 @@ export function CaseReview() {
           eskiSema={liste.length > 0 && liste.every(caseEski)}
         />
       )}
+
+      {/* 011 K16: açık soruların PO'ya gönderimi ve yanıtları; gönderim/yanıt case listesini tazeler. */}
+      {caseler.veri && liste.length > 0 && <AcikSorularPaneli requirementId={id} tazele={() => void caseler.yenile(true)} />}
 
       {kaliteHata && (
         <Uyari baslik="İşlem yapılamadı">

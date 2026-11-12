@@ -392,8 +392,16 @@ export interface TestCaseIcerik {
   teardown?: string[];
 }
 
+/** PO'ya gönderim durumu (011 K16; core `case_fields`): case listesinde atıf kayıtlarına eklenir. */
+export interface PoSoruDurumu {
+  /** PO'nun yanıtta kullandığı kimlik (CQ1 / CA1); gönderilmediyse null. */
+  po_etiketi?: string | null;
+  po_durumu?: "gonderilmedi" | "gonderildi" | "yanitlandi";
+  po_yaniti?: { metin: string; yazar: string | null; zaman: string | null } | null;
+}
+
 /** Açık soru (`open_questions[]`): yanıtlanmadan atıf yapan case hazır olamaz. */
-export interface AcikSoru {
+export interface AcikSoru extends PoSoruDurumu {
   id: string;
   question: string;
   /** PO | analyst | developer | "" (belirsiz). */
@@ -401,7 +409,7 @@ export interface AcikSoru {
 }
 
 /** Varsayım (`assumptions[]`): atıf yapan case "varsayıma bağlı"dır. */
-export interface Varsayim {
+export interface Varsayim extends PoSoruDurumu {
   id: string;
   statement: string;
   owner: string;
@@ -471,6 +479,8 @@ export interface TestCase {
   onay_engeli?: string | null;
   /** Case'i üreten üretimin numarası (`case_uretim.uretim_no`). */
   uretim_no?: number;
+  /** 011 K16: atıf yaptığı soru PO tarafından yanıtlandı → düzelt / yeniden üret önerisi. */
+  po_yanit_onerisi?: { eylem: "duzelt_veya_yeniden_uret"; etiketler: string[]; mesaj: string } | null;
 }
 
 export interface CaseAlanFarki {

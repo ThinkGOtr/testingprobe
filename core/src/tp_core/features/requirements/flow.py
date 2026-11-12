@@ -2409,6 +2409,13 @@ def run_po_poll(engine: Engine) -> dict[str, Any]:
             except Exception as exc:
                 log.warning("PO kontrolü başarısız (%s): %s", rid, exc)
                 sonuc[str(rid)] = f"hata: {type(exc).__name__}: {str(exc)[:200]}"
+        # 011 K16 (D6): case üretimi açık sorularına PO yanıtları (gönderilmiş, yanıtsız sorular).
+        try:
+            from tp_core.features.cases import acik_sorular
+
+            acik_sorular.poll(jira, hesaplar)
+        except Exception as exc:
+            log.warning("Açık soru yanıtları okunamadı: %s", exc)
     silinen = purge_po_poll_jobs(engine)
     return {
         "kontrol": sonuc,

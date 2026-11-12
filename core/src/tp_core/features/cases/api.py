@@ -13,6 +13,9 @@
 | GET  | `/requirements/{id}/cases.feature[?yalniz_yayinlanan=1]` | herkes — Gherkin (011 F8) |
 | GET  | `/requirements/{id}/generation-options` | herkes — kayıtlı seçenekler + katalog (K5) |
 | POST | `/requirements/{id}/deepen` (GET: son durum) | analyst — derinleştirme (P5/P6) |
+| GET  | `/requirements/{id}/open-questions` | herkes — açık sorular, PO durumu/yanıtı (K16) |
+| POST | `/requirements/{id}/open-questions/send` (`{varsayimlar?}`) | analyst — PO'ya Jira yorumu |
+| POST | `/requirements/{id}/open-questions/refresh` | analyst — PO yanıtlarını şimdi oku |
 """
 
 from __future__ import annotations
@@ -25,8 +28,8 @@ from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from tp_core.auth.deps import CurrentUser, DbSession, require_role
+from tp_core.features.cases import acik_sorular, denetim_akisi, gherkin, review, service
 from tp_core.features.cases import deepen as deepen_modulu
-from tp_core.features.cases import denetim_akisi, gherkin, review, service
 from tp_core.features.cases import secenekler as secenek_modulu
 from tp_core.workflow.service import Principal
 
@@ -34,6 +37,8 @@ router = APIRouter(tags=["cases"])
 # P8 review ve P9 denetim uçları (011 §4.4, D şeridi): `review.router`, `denetim_akisi.router`.
 router.include_router(review.router)
 router.include_router(denetim_akisi.router)
+# 011 K16 (D6): açık soruların PO'ya gönderimi ve yanıtları (`acik_sorular.router`).
+router.include_router(acik_sorular.router)
 
 Analyst = Annotated[Principal, Depends(require_role("analyst"))]
 

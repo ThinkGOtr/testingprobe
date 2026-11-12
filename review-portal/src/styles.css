@@ -4946,3 +4946,26 @@ td > .satir-baglanti + .cip,
 }
 /* 011 P6: teknik seçimi + düğme aynı satırda (DerinlestirmePaneli). */
 .derinlestirme-teknik { display: inline-flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+
+/* 011 K16 (D6): açık sorular ve PO yanıtları (components/AcikSorular.tsx). */
+.acik-soru-listesi {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.acik-soru-listesi > li {
+  padding: 10px 0;
+  border-top: 1px solid var(--border-soft);
+}
+.acik-soru-listesi > li p {
+  margin: 6px 0 0;
+}
+.po-yaniti {
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--ok);
+  background: var(--ok-bg);
+  border-radius: 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

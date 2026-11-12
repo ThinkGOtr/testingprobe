@@ -10,6 +10,7 @@ from contextlib import contextmanager
 
 from sqlalchemy.orm import Session
 
+from tp_core.models import acik_soru as acik_soru
 from tp_core.models import agent_probe_feature as agent_probe_feature
 from tp_core.models import asistan as asistan
 from tp_core.models import baseline_feature as baseline_feature
