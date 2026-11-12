@@ -63,10 +63,10 @@ bundles:
   verify-and-map-app:
     version: 1
     status: pending
-    note: '009 Ş6: mobil/masaüstü (app-mcp/Appium) doğrulama ve eşleme paketi v1. REPLAY golden''ı
-      (verify_and_map_app/golden/TPD-1-C2-android) elle hazırlandı; araç adımları app-mcp sözleşmesine
-      (docs/CIHAZ-ALTYAPISI.md §6) göre yazıldı, canlı cihazda kaydedilmedi. Bu model değerlendirmesi
-      değildir. Canlı değerlendirme yapılmadı; onaylı istisna yok.'
+    note: '009 Ş6: mobil/masaüstü (app-mcp/Appium) doğrulama ve eşleme paketi v1. REPLAY golden''ı (verify_and_map_app/golden/TPD-1-C2-android)
+      elle hazırlandı; araç adımları app-mcp sözleşmesine (docs/CIHAZ-ALTYAPISI.md §6) göre yazıldı, canlı
+      cihazda kaydedilmedi. Bu model değerlendirmesi değildir. Canlı değerlendirme yapılmadı; onaylı istisna
+      yok.'
   triage:
     version: 2
     status: evaluated
@@ -101,51 +101,51 @@ bundles:
       guardrails_version: 1
       calls: evaluation/results/dup-rank-v2-2026-11-01.calls.jsonl
   assistant:
-    version: 1
+    version: 2
     status: evaluated
-    note: 'Canlı değerlendirme 2026-11-04, assistant=claude-haiku-5-5, assistant_deep=claude-sonnet-5-5
-      (anthropic), 78/80 vaka geçti: evaluation/results/assistant-v1-assistant-2026-11-04.json'
+    note: 'Canlı değerlendirme 2026-11-12, assistant=claude-haiku-5-5, assistant_deep=claude-sonnet-5-5
+      (anthropic), 109/112 vaka geçti: evaluation/results/assistant-v2-assistant-2026-11-12.json'
     evaluation:
-      date: '2026-11-04'
+      date: '2026-11-12'
       model: assistant=claude-haiku-5-5, assistant_deep=claude-sonnet-5-5
       provider: anthropic
-      results: evaluation/results/assistant-v1-assistant-2026-11-04.json
+      results: evaluation/results/assistant-v2-assistant-2026-11-12.json
       guardrails_version: 1
-      calls: evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl
-      icerik_hash: sha256:7400c2f8dd1929ac3c4b1ca15c1b839642286a153715735bdfc36938927415fe
+      calls: evaluation/results/assistant-v2-assistant-2026-11-12.calls.jsonl
+      icerik_hash: sha256:22f2bd82afe57ed3cbd26d42abb727aaa4ca79195b8c7708e1ec0a87d72153c5
       amaclar:
         assistant:
           model: claude-haiku-5-5
-          results: evaluation/results/assistant-v1-assistant-2026-11-04.json
-          calls: evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl
-          passed: 38
-          total: 40
+          results: evaluation/results/assistant-v2-assistant-2026-11-12.json
+          calls: evaluation/results/assistant-v2-assistant-2026-11-12.calls.jsonl
+          passed: 54
+          total: 56
           olcumler:
-            beklenti_gecis_orani: 0.95
-            dogrulanmis_kaynak_orani: 1.0
+            beklenti_gecis_orani: 0.9643
+            dogrulanmis_kaynak_orani: 0.9
             eylem_ve_injection_orani: 1.0
-            otomatik_derin_orani: 0.1379
+            otomatik_derin_orani: 0.2
             maliyet_usd:
-              medyan: 0.001236
-              p90: 0.002686
-              toplam: 0.058964
+              medyan: 0.001021
+              p90: 0.002521
+              toplam: 0.075575
             sure_s:
-              medyan: 8.313
-              p90: 15.375
+              medyan: 7.706
+              p90: 13.807
         assistant_deep:
           model: claude-sonnet-5-5
-          results: evaluation/results/assistant-v1-assistant_deep-2026-11-04.json
-          calls: evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl
-          passed: 40
-          total: 40
+          results: evaluation/results/assistant-v2-assistant_deep-2026-11-12.json
+          calls: evaluation/results/assistant-v2-assistant_deep-2026-11-12.calls.jsonl
+          passed: 55
+          total: 56
           olcumler:
-            beklenti_gecis_orani: 1.0
+            beklenti_gecis_orani: 0.9821
             dogrulanmis_kaynak_orani: 1.0
             eylem_ve_injection_orani: 1.0
             maliyet_usd:
-              medyan: 0.016143
-              p90: 0.032227
-              toplam: 0.784258
+              medyan: 0.019141
+              p90: 0.031984
+              toplam: 1.157585
             sure_s:
-              medyan: 7.62
-              p90: 13.522
+              medyan: 8.367
+              p90: 12.05

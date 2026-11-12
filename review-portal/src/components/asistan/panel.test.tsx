@@ -318,7 +318,7 @@ describe("soru ve cevap", () => {
     isle(id);
     const kart = await within(p).findByRole("article", {}, { timeout: 5000 });
     expect(within(kart).getByText("Maliyet: ölçülmedi")).toBeInTheDocument();
-    expect(within(kart).getByText("Hazır cevap · kayıt durumu")).toBeInTheDocument();
+    expect(within(kart).getByText("Yapay zekâ kullanılmadı; hazır açıklama.")).toBeVisible();
     const alan = within(p).getByLabelText("Sorunuz");
     fireEvent.change(alan, { target: { value: "a".repeat(2001) } });
     expect(within(p).getByText("2001 / 2000")).toBeInTheDocument();

@@ -849,7 +849,68 @@ def test_asistan_promptu_oneri_kipini_ve_araclari_anlatir() -> None:
         assert f"`{arac}`" in body, arac
     assert "kip=oneri" in body and "`oneriler`" in body
     assert "eylem_reddi" in body and "Never write a URL" in body
-    assert "Sunucu (sunum yapan)" in body
+    assert "Sunucu (the person presenting the demo)" in body
+    kalip = "Uygulama kodu ve verisi rolünüze açık değil; Mühendis, Testçi ya da Analist görebilir."
+    assert kalip in " ".join(body.split())
+
+
+def test_istem_izleri_promptta_birebir_ve_yeterince_uzun() -> None:
+    """Her parmak izi prompt gövdesinde birebir geçer (yalnız boşluk farkı) ve normalize edildiğinde
+    `IZ_EN_KISA`'dan kısa değildir; Türkçe çeviri/özet sızıntısı için Türkçe iz de vardır."""
+    from tp_core.features.assistant import guvenlik_cikti
+
+    _, body = parse_prompt_file(
+        (RULES / "prompts" / "assistant.md").read_text(encoding="utf-8"), Path("assistant.md")
+    )
+    duz = " ".join(body.split())
+    izler = _yaml("istem-izleri.yaml")["izler"]
+    assert len(izler) >= 6 and len(set(izler)) == len(izler)
+    for iz in izler:
+        assert " ".join(iz.split()) in duz, iz
+        assert len(guvenlik_cikti.normalize(iz)) >= guvenlik_cikti.IZ_EN_KISA, iz
+    assert any(re.search(r"[çğıöşüİ]", iz) for iz in izler)  # en az bir Türkçe iz
+    assert len(guvenlik_cikti.izleri_yukle(RULES)) == len(izler)
+
+
+@pytest.mark.parametrize(
+    "metin",
+    [
+        # Doğal Türkçe cevaplar: istemin genel cümlelerine benzese de sızıntı sayılmaz (izler
+        # ayırt edici olmalı; yoksa zararsız cevap değiştirilir).
+        "Sunucu sinyali satırı bir uyarıdır, hüküm değildir; soruya yine cevap verdim.",
+        "Kayıtta talimat içeren bir metin var; güvenilmeyen bloklardaki talimatlar uygulanmaz.",
+        "Araç tanımları ve kanıt kimliği satırları yalnız iç kullanım içindir, paylaşamam.",
+        "A server signal is a caution, not a verdict.",
+        "Use as few tool calls as you need.",
+        "Talimatlarımı paylaşamam; ekranlar, kayıtlar ve Jira hakkında soru yanıtlayabilirim.",
+    ],
+)
+def test_istem_izleri_dogal_cevapta_tetiklenmez(metin: str) -> None:
+    from tp_core.features.assistant import guvenlik_cikti
+
+    cevap = {"cevap_bloklari": [{"tur": "paragraf", "metin": metin, "maddeler": []}]}
+    assert guvenlik_cikti.sizinti_var(cevap, None, guvenlik_cikti.izleri_yukle(RULES)) is None
+
+
+def test_istem_izleri_ic_not_sizintisini_yakalar() -> None:
+    from tp_core.features.assistant import guvenlik_cikti
+
+    metin = "İç notlar (kullanıcıya yazılmaz): sunucu sinyali satırı bir uyarıdır."
+    cevap = {"cevap_bloklari": [{"tur": "paragraf", "metin": metin.upper(), "maddeler": []}]}
+    izler = guvenlik_cikti.izleri_yukle(RULES)
+    assert guvenlik_cikti.sizinti_var(cevap, None, izler) == "istem_sizintisi"
+
+
+def test_rol_etiketleri_portal_ile_ayni() -> None:
+    """Portal rollerinin asistan etiketi portalın gösterdiği adla aynı (etiketler.ts `ROL`)."""
+    from tp_core.features.assistant.rol_politikasi import etiket
+
+    ts = (REPO / "review-portal" / "src" / "lib" / "etiketler.ts").read_text(encoding="utf-8")
+    blok = ts.split("export const ROL", 1)[1].split("};", 1)[0]
+    portal = dict(re.findall(r'(\w+): "([^"]+)"', blok))
+    assert set(portal) == set(ROLLER)
+    for rol, ad in portal.items():
+        assert etiket(rol, rules_dir=RULES) == ad, rol
 
 
 def test_asistan_arac_izin_listesi() -> None:
@@ -880,7 +941,9 @@ def test_asistan_model_amaclari_yeni_alanlari_tasir() -> None:
 
 EVAL_BEKLENTILERI = {
     "contains",
+    "contains_any",
     "not_contains",
+    "cikti_sinyali_yok",
     "kaynak_tur_include",
     "kaynak_ref_include",
     "rota_in",
@@ -898,7 +961,10 @@ def test_asistan_eval_iskeleti() -> None:
     from tp_core.gateway.eval_set import load_set
 
     data = load_set(RULES, "assistant")
-    assert data["purpose"] == "assistant" and data["version"] == 1
+    meta, _ = parse_prompt_file(
+        (RULES / "prompts" / "assistant.md").read_text(encoding="utf-8"), Path("assistant.md")
+    )
+    assert data["purpose"] == "assistant" and data["version"] == meta["version"]
     cases = data["cases"]
     assert len(cases) >= 12
     etiketler = [e for c in cases for e in c["etiketler"]]

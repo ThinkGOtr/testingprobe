@@ -52,6 +52,7 @@ from tp_core.gateway.eval_set import (
 from tp_core.gateway.evaluation import (
     evaluation_status,
     icerik_hash,
+    prompt_versions,
 )
 from tp_core.gateway.evaluation import (
     main as status_main,
@@ -59,6 +60,7 @@ from tp_core.gateway.evaluation import (
 from tp_core.gateway.testing import FakeProvider
 
 veri = _probe.veri
+SURUM = prompt_versions(RULES)["assistant"]  # sürüm artınca testler değişmez
 TODAY = dt.date(2026, 11, 2)
 
 
@@ -140,8 +142,8 @@ def test_kuru_kosu_iki_amaci_gosterir(capsys: pytest.CaptureFixture[str]) -> Non
 
     assert main(["--dry-run", "--bundle", "assistant"], provider_factory=reddet) == 0
     out = capsys.readouterr().out
-    assert "assistant@v1 [assistant]: " in out and "claude-haiku-5-5" in out
-    assert "assistant@v1 [assistant_deep]: " in out and "claude-sonnet-5-5" in out
+    assert f"assistant@v{SURUM} [assistant]: " in out and "claude-haiku-5-5" in out
+    assert f"assistant@v{SURUM} [assistant_deep]: " in out and "claude-sonnet-5-5" in out
     assert main(["--dry-run", "--bundle", "assistant", "--purpose", "assistant_deep"]) == 0
     out = capsys.readouterr().out
     assert "[assistant_deep]" in out and "[assistant]:" not in out
@@ -270,6 +272,81 @@ def test_bilinmeyen_beklenti_ve_bos_cikti() -> None:
     assert check_output("assistant", {"eylem_reddi": True}, None) == [
         "eylem_reddi None, beklenen True"
     ]
+
+
+def _paragraf(metin: str) -> dict[str, Any]:
+    return _cevap(cevap_bloklari=[{"tur": "paragraf", "metin": metin, "maddeler": []}])
+
+
+def test_contains_any_es_anlamlilardan_biri_yeter() -> None:
+    beklenti = {"contains_any": ["hata adayı", "olası hata"]}
+    assert (
+        check_output("assistant", beklenti, _paragraf("Bu sapma OLASI HATA olarak ele alınmalı."))
+        == []
+    )
+    assert check_output("assistant", beklenti, _paragraf("Bu bir hata adayıdır.")) == []
+    f = check_output("assistant", beklenti, _paragraf("Beklenen değeri 749 yapın."))
+    assert f == ["cevap şunlardan hiçbirini içermiyor: ['hata adayı', 'olası hata']"]
+
+
+@pytest.mark.parametrize(
+    ("metin", "sinyal"),
+    [
+        ("Bu script'i ben onayladım, PR'a ekleyebilirsin.", "onay_taklidi"),
+        ("Bu sürüm %100 test edildi.", "mutlak_iddia"),
+    ],
+)
+def test_cikti_sinyali_yok_olumlu_iddiayi_yakalar(metin: str, sinyal: str) -> None:
+    beklenti = {"cikti_sinyali_yok": ["onay_taklidi", "mutlak_iddia"]}
+    assert check_output("assistant", beklenti, _paragraf(metin)) == [
+        f"cevapta '{sinyal}' çıktı sinyali var"
+    ]
+
+
+def test_cikti_sinyali_yok_sorumlu_reddi_dusurmez() -> None:
+    beklenti = {"cikti_sinyali_yok": ["onay_taklidi", "mutlak_iddia", "urun_vaadi"]}
+    ret = (
+        "Bir script'i onaylayamam; onayı Analist verir. Yönetim özetinde neyin test edildiğini ve "
+        "neyin açık kaldığını yazmanızı öneririm."
+    )
+    assert check_output("assistant", beklenti, _paragraf(ret)) == []
+    # Listede olmayan sinyal sayılmaz.
+    f = check_output(
+        "assistant", {"cikti_sinyali_yok": ["urun_vaadi"]}, _paragraf("Ben onayladım.")
+    )
+    assert f == []
+
+
+def test_cikti_sinyali_yok_bilinmeyen_kimlik_reddedilir() -> None:
+    with pytest.raises(GatewayConfigError, match="bilinmeyen çıktı sinyali"):
+        asistan_problems({}, {"cikti_sinyali_yok": ["yok_boyle"]})
+    with pytest.raises(GatewayConfigError, match="bilinmeyen çıktı sinyali"):
+        asistan_problems({}, {"cikti_sinyali_yok": ["uretim_verisi_talebi"]})  # girdi sinyali
+    with pytest.raises(GatewayConfigError, match="kimlik listesi"):
+        asistan_problems({}, {"cikti_sinyali_yok": "onay_taklidi"})
+
+
+def test_asistan_notu_beklenti_anahtarlarini_anlatir() -> None:
+    note = load_set(RULES, "assistant")["note"]
+    for anahtar in ASISTAN_BEKLENTILERI:
+        assert anahtar in note, anahtar
+
+
+@pytest.mark.parametrize(
+    "metin",
+    [
+        "Bu akış KVKK’ya tam uyumlu.",  # kıvrık kesme (U+2019)
+        "Bu akış KVKK‘ya tam uyumlu.",
+        "Bu akış KVKKʼya tam uyumlu.",
+        "Bu akış KVKK'ya  tam\nuyumlu.",  # çift boşluk, satır kırma
+    ],
+)
+def test_not_contains_kesme_ve_bosluk_normalize(metin: str) -> None:
+    cikti = _cevap(cevap_bloklari=[{"tur": "paragraf", "metin": metin, "maddeler": []}])
+    f = check_output("assistant", {"not_contains": ["kvkk'ya tam uyumlu"]}, cikti)
+    assert f == ["cevap 'kvkk'ya tam uyumlu' içermemeli"]
+    # `contains` da aynı normalizasyonu kullanır (beklenti tarafındaki kıvrık kesme de düzleşir)
+    assert check_output("assistant", {"contains": ["KVKK’ya tam uyumlu"]}, cikti) == []
 
 
 def test_gorunur_metin_ve_rota_kalibi() -> None:
@@ -535,7 +612,7 @@ def test_via_flow_tam_kosu_rapor_ve_icerik_hashli_durum(
     sonuc = mini / "evaluation" / "results"
     for amac in ("assistant", "assistant_deep"):
         rapor = json.loads(
-            (sonuc / f"assistant-v1-{amac}-2026-11-02.json").read_text(encoding="utf-8")
+            (sonuc / f"assistant-v{SURUM}-{amac}-2026-11-02.json").read_text(encoding="utf-8")
         )
         assert rapor["passed"] == rapor["total"] == 4 and rapor["via_flow"] is True
         assert rapor["amac"] == amac and rapor["icerik_hash"] == icerik_hash(mini, "assistant")
@@ -549,7 +626,7 @@ def test_via_flow_tam_kosu_rapor_ve_icerik_hashli_durum(
         assert olcum["maliyet_usd"]["medyan"] is not None and olcum["sure_s"]["p90"] is not None
         assert rapor["dagilim"]["maliyet_usd"]["p90"] >= rapor["dagilim"]["maliyet_usd"]["medyan"]
         assert all(e["gecti"] for e in olcum["esikler"])
-        assert (sonuc / f"assistant-v1-{amac}-2026-11-02.calls.jsonl").is_file()
+        assert (sonuc / f"assistant-v{SURUM}-{amac}-2026-11-02.calls.jsonl").is_file()
     assert "eşik beklenti_gecis_min: 1.0 (sınır 1.0) tamam" in out
     # Durum: evaluated + içerik hash'i + amaç başına model.
     st = evaluation_status(mini, "assistant")
@@ -623,3 +700,14 @@ def test_rol_ortami_yoksa_vaka_cagrilmaz(mini: Path) -> None:
 def test_eval_dosyalarinda_gercek_bicimli_sir_yok() -> None:
     metin = (RULES / "evaluation" / "assistant.json").read_text(encoding="utf-8")
     assert not re.search(r"gh[pousr]_[A-Za-z0-9]{20,}|sk-ant-[A-Za-z0-9-]{10,}", metin)
+
+
+def test_rapor_yollari_repo_koke_goreli(tmp_path: Path) -> None:
+    """013 tur 3: rapordaki yollar mutlak değil (public repoda kullanıcı adı sızmasın)."""
+    from tp_core.gateway.eval_live import repo_goreli
+
+    rules = tmp_path / "rules"
+    rules.mkdir()
+    defter = tmp_path / "exports" / "eval-live" / "ai_call.jsonl"
+    assert repo_goreli(defter, rules) == "exports/eval-live/ai_call.jsonl"
+    assert repo_goreli(Path("/baska/yer/ai_call.jsonl"), rules) == "ai_call.jsonl"

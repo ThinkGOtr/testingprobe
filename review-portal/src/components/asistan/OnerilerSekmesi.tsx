@@ -160,7 +160,7 @@ export function OnerilerSekmesi({ ekran, asistan, oneriKuralId, onGit }: Onerile
       )}
 
       {digerSatiri}
-      {modelAcik && <OneriEkOneriler ekran={ekran} onGit={onGit} />}
+      {modelAcik && <OneriEkOneriler ekran={ekran} onGit={onGit} rol={kullanici?.rol ?? null} />}
     </div>
   );
 }

@@ -292,7 +292,10 @@ test("son hata çipi ve sözlük cevabı (S2, mock örneği)", async ({ page }) 
   await expect(cipler.getByText(/Son hata: Gereksinim bulunamadı/)).toBeVisible();
   await p.getByRole("list", { name: "Soru önerileri" }).getByRole("button", { name: "Az önceki hata ne demek?" }).click();
   const kart = await sonCevap(p);
-  await expect(kart.getByText("Hazır cevap · hata sözlüğü")).toBeVisible();
+  // 013 K12: "Hazır cevap" etiketi kip rozetine birleşti (ŞABLON; açıklama rozetin yanında görünür).
+  await expect(kart.getByTestId("kip-rozeti")).toHaveText("ŞABLON");
+  await expect(kart.getByTestId("kip-aciklamasi")).toHaveText("Yapay zekâ kullanılmadı; hazır açıklama.");
+  await expect(kart.getByTestId("kip-aciklamasi")).toBeVisible();
   await expect(kart.getByText(/Maliyet: ölçülmedi/)).toBeVisible();
   // 404 konsol hatası beklenen (bulunamayan kayıt); başka hata yok.
   expect(hatalar.filter((h) => !/404|Not Found|bulunamadı/i.test(h))).toEqual([]);
@@ -309,7 +312,10 @@ test("dar ekran: panel modal dialog; şablon cevabındaki Git paneli kapatır, s
   await expect(d).toHaveAttribute("aria-modal", "true");
   await d.getByRole("button", { name: "Bugün ne yapmalıyım?" }).click();
   const kart = await sonCevap(d);
-  await expect(kart.getByText("Hazır cevap · kayıt durumu")).toBeVisible();
+  // 013 K12: "Hazır cevap" etiketi kip rozetine birleşti (ŞABLON; açıklama rozetin yanında görünür).
+  await expect(kart.getByTestId("kip-rozeti")).toHaveText("ŞABLON");
+  await expect(kart.getByTestId("kip-aciklamasi")).toHaveText("Yapay zekâ kullanılmadı; hazır açıklama.");
+  await expect(kart.getByTestId("kip-aciklamasi")).toBeVisible();
   await page.screenshot({ path: `${EKRAN_DIZINI}/04-dar-ekran.png` });
 
   // Git: dar ekranda panel kapanır; yeniden açınca aynı sohbet.

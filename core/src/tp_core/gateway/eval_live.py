@@ -176,6 +176,16 @@ def redact(text: Any, secrets: Iterable[str] = ()) -> str:
 LEDGER_NAME = "ai_call.jsonl"
 
 
+def repo_goreli(yol: Path, rules_dir: Path) -> str:
+    """Rapora yazılan yol: repo kökünün altındaysa ona göre göreli (repo public; mutlak yol
+    kullanıcı adını ve yerel dizin yapısını sızdırır), değilse yalnız dosya/dizin adı."""
+    kok = rules_dir.resolve().parent
+    try:
+        return yol.resolve().relative_to(kok).as_posix()
+    except ValueError:
+        return yol.name
+
+
 def default_ledger_path(rules_dir: Path) -> Path:
     """Host'taki canlı çağrıların ekle-yalnız defteri (git dışı `exports/`)."""
     return rules_dir.resolve().parent / "exports" / "eval-live" / LEDGER_NAME
@@ -995,10 +1005,12 @@ def _finish_run(
                 "butce_usd": budget,
                 "calisma_alani_basligi": header == "gönderildi",
                 "guardrails_version": guard_version,
-                "kayit_adaylari": str(record_dir) if record_dir is not None else None,
+                "kayit_adaylari": (
+                    repo_goreli(record_dir, rules_dir) if record_dir is not None else None
+                ),
                 "cagri_kaydi": f"{report_stem(data, day, run.tag)}.calls.jsonl",
                 "cagri_sayisi": len(run.rows),
-                "cagri_defteri": str(ledger.path),
+                "cagri_defteri": repo_goreli(ledger.path, rules_dir),
                 "amac": purpose,
                 "via_flow": flow,
                 "icerik_hash": icerik_hash(rules_dir, str(data["bundle"])),

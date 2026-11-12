@@ -19,6 +19,8 @@
   `varlik_durum` sunucuda hesaplanır, gizlenen öneri varlık aynı durumdayken gösterilmez.
 - `asistan_hiz`: sabit pencere hız sayacı (`INSERT … ON CONFLICT DO UPDATE SET sayi = sayi + 1`).
   `kullanici_id` boş olabilir (global kova, ör. `jira_global`); tekillik NULLS NOT DISTINCT'tir.
+- `asistan_guvenlik_olay` (0021, specs/013 §6.1): sır/kişisel veri reddi, kanarya, istem
+  sızıntısı, sinyal ve dondurma olayları; `ciddi` türden türetilir (kısıtla zorlanır).
 
 Model ↔ şema eşitliği tests/unit/features/assistant/test_migration.py'de doğrulanır.
 """
@@ -220,3 +222,39 @@ class AsistanHiz(Base):
     kova: Mapped[str]
     pencere_baslangic: Mapped[datetime]
     sayi: Mapped[int] = mapped_column(Integer, server_default=text("1"), default=1)
+
+
+class AsistanGuvenlikOlay(Base):
+    """Asistan güvenlik olayı (0021, specs/013 §6.1). `ayrinti` yalnız kimlik/sayı taşır."""
+
+    __tablename__ = "asistan_guvenlik_olay"
+    __table_args__ = (
+        in_check("tur", enums.ASISTAN_OLAY_TUR, "asistan_guvenlik_olay_tur_ck"),
+        CheckConstraint(
+            "ciddi = (tur IN ("
+            + ", ".join(f"'{t}'" for t in sorted(enums.ASISTAN_CIDDI_OLAY))
+            + "))",
+            name="asistan_guvenlik_olay_ciddi_ck",
+        ),
+        Index("asistan_guvenlik_olay_kullanici_ix", "kullanici_id", text("zaman DESC")),
+        # Dondurma sayımı "ciddi olay almış soru" denetimini soru kimliğiyle yapar (K11).
+        Index(
+            "asistan_guvenlik_olay_mesaj_ix",
+            "mesaj_id",
+            postgresql_where=text("mesaj_id IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    kullanici_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"))
+    # Olayın ait olduğu kullanıcı sorusu (`rol='user'`; `olay.soru_kimligi`). Reddedilen sorunun
+    # mesajı yoktur; mesaj saklama temizliğiyle silinince olay kalır.
+    mesaj_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("asistan_mesaj.id", ondelete="SET NULL")
+    )
+    tur: Mapped[str]
+    ciddi: Mapped[bool] = mapped_column(Boolean)
+    ayrinti: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, server_default=text("'{}'::jsonb"), default=dict
+    )
+    zaman: Mapped[datetime] = olusturma_col()
