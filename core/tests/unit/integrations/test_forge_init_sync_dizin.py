@@ -3,13 +3,16 @@
 Docker sahte: PATH'teki `docker`, `run ... -s` çağrısında iç betiği yerelde `sh -eu -s` ile koşar;
 `/forge` volume'ü geçici dizine, `/src` bağlaması kaynak dizine eşlenir (FORGE_DIR / SRC_DIR).
 Beklenen: main'e yalnız `<dizin>/` altına dokunan TEK commit (fast-forward), PR kaydı ve diğer
-dallar korunur, ikinci koşu no-op; `--baseline` etiketi ve demo/break-locator'ı yeni commit'e taşır.
+dallar korunur, ikinci koşu no-op; `--baseline` etiketi ve demo/break-locator'ı yeni commit'e taşır;
+`--koru` alt yolları forge main'deki hâliyle kalır (K-T14); forge deposunun hook'ları çalışmaz
+(GÜV-Y2); volume yoksa oluşturulmadan hata verilir (OPS-D2).
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -32,7 +35,9 @@ st = os.environ["FAKE_STATE"]
 a = sys.argv[1:]
 with open(os.path.join(st, "docker.log"), "a") as f:
     f.write(" ".join(a) + "\n")
-if a[:2] in (["image", "inspect"], ["volume", "inspect"]):
+if a[:2] == ["volume", "inspect"]:
+    sys.exit(1 if os.environ.get("FAKE_NO_VOLUME") == "1" else 0)
+if a[:2] == ["image", "inspect"]:
     sys.exit(0)
 if a[:1] == ["run"]:
     if "command -v git" in a:
@@ -131,7 +136,7 @@ def ortam(tmp_path: Path) -> Any:
         (src / "e2e-java" / d).mkdir()
         (src / "e2e-java" / d / "r.json").write_text("{}\n")
 
-    def run(*args: str) -> subprocess.CompletedProcess[str]:
+    def run(*args: str, **ek: str) -> subprocess.CompletedProcess[str]:
         env = {
             **{k: v for k, v in os.environ.items() if not k.startswith(("TP_FORGE", "GIT_"))},
             "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
@@ -140,6 +145,7 @@ def ortam(tmp_path: Path) -> Any:
             "TP_FORGE_IMAGE": "sahte-core:local",
             "TP_FORGE_SRC": str(src),
             "TMPDIR": str(tmp_path),
+            **ek,
         }
         return subprocess.run(
             ["bash", str(SCRIPT), *args], env=env, capture_output=True, text=True, timeout=60
@@ -148,6 +154,7 @@ def ortam(tmp_path: Path) -> Any:
     run.bare = bare  # type: ignore[attr-defined]
     run.forge = forge  # type: ignore[attr-defined]
     run.src = src  # type: ignore[attr-defined]
+    run.state = state  # type: ignore[attr-defined]
     return run
 
 
@@ -245,6 +252,100 @@ def test_baseline_basarisizsa_hicbir_ref_degismez(ortam: Any) -> None:
     assert {k: _ref(bare, k) for k in once} == once
 
 
+def _forge_main_commit(ortam: Any, dosyalar: dict[str, str]) -> str:
+    """Forge main'e merge edilmiş bir PR'ı taklit eden commit (ör. üretilen test)."""
+    w = ortam.forge.parent / "merge-w"
+    if w.exists():
+        shutil.rmtree(w)
+    _git(ortam.forge, "clone", "-q", "--branch", "main", str(ortam.bare), str(w))
+    for yol, icerik in dosyalar.items():
+        (w / yol).parent.mkdir(parents=True, exist_ok=True)
+        (w / yol).write_text(icerik)
+    _git(w, "add", "-A")
+    _git(w, "commit", "-q", "-m", "merge: uretilen test")
+    _git(w, "push", "-q", "origin", "main")
+    return _git(w, "rev-parse", "HEAD")
+
+
+URETILEN = "e2e-java/src/test/java/com/antreklabs/bayi/uretilen"
+
+
+def test_koru_uretilen_forge_mainde_kalir(ortam: Any) -> None:
+    """K-T14: güvenilir pom değişince e2e-java eşitlenir; merge edilmiş üretilen testler (forge
+    main) korunur, çalışma ağacındaki uretilen/ içeriği forge'a girmez."""
+    assert ortam("sync-dizin", "e2e-java").returncode == 0
+    merge = _forge_main_commit(
+        ortam,
+        {
+            f"{URETILEN}/MergeEdilenTest.java": "class MergeEdilenTest {}\n",
+            "e2e-java/src/test/java/com/antreklabs/bayi/birim/uretilen/IcTest.java": "class I {}\n",
+        },
+    )
+    kaynak_uretilen = ortam.src / URETILEN
+    kaynak_uretilen.mkdir(parents=True)
+    (kaynak_uretilen / "YerelTest.java").write_text("class YerelTest {}\n")
+    (kaynak_uretilen / ".gitkeep").write_text("")
+    (ortam.src / "e2e-java" / "pom.xml").write_text("<project><tmpdir/></project>\n")
+
+    r = ortam("sync-dizin", "e2e-java", "--koru", "uretilen")
+    assert r.returncode == 0, r.stderr + r.stdout
+    assert "forge main'deki 2 dosya olduğu gibi kaldı" in r.stdout
+    assert _ref(ortam.bare, "main^") == merge
+    degisen = _git(ortam.bare, "diff", "--name-status", merge, "main", bare=True).splitlines()
+    assert degisen == ["M\te2e-java/pom.xml"]
+    agac = _git(ortam.bare, "ls-tree", "-r", "--name-only", "main", bare=True).splitlines()
+    assert f"{URETILEN}/MergeEdilenTest.java" in agac
+    assert f"{URETILEN}/YerelTest.java" not in agac
+
+    # Korumasız eşitleme merge edilmiş testi siler (seçeneğin neden gerektiğinin kanıtı).
+    r = ortam("sync-dizin", "e2e-java")
+    assert r.returncode == 0, r.stderr
+    agac = _git(ortam.bare, "ls-tree", "-r", "--name-only", "main", bare=True).splitlines()
+    assert f"{URETILEN}/MergeEdilenTest.java" not in agac
+    assert f"{URETILEN}/YerelTest.java" in agac
+
+
+def test_koru_yol_ve_cok_deger(ortam: Any) -> None:
+    """`/` içeren yol <dizin>'e göre korunur (ör. e2e tests/generated); virgül + tekrar birleşir."""
+    merge = _forge_main_commit(ortam, {"e2e/tests/generated/merged.spec.ts": "m\n"})
+    (ortam.src / "e2e" / "tests" / "generated").mkdir(parents=True)
+    (ortam.src / "e2e" / "tests" / "generated" / "yerel.spec.ts").write_text("y\n")
+    (ortam.src / "e2e" / "a.spec.ts").write_text("test v2\n")
+    r = ortam("sync-dizin", "e2e", "--koru", "tests/generated,yok-boyle", "--koru", "uretilen")
+    assert r.returncode == 0, r.stderr + r.stdout
+    degisen = _git(ortam.bare, "diff", "--name-status", merge, "main", bare=True).splitlines()
+    assert degisen == ["M\te2e/a.spec.ts"]
+
+
+def test_forge_hooklari_calismaz_fetch_head_yazilmaz(ortam: Any) -> None:
+    """GÜV-Y2: root git forge deposunun hook'larını (deponun core.hooksPath'i dahil) çalıştırmaz."""
+    isaret = ortam.state / "kanca-calisti"
+    kanca = f"#!/bin/sh\necho calisti >> '{isaret}'\n"
+    hooks = ortam.bare / "hooks"
+    hooks.mkdir(exist_ok=True)
+    ozel = ortam.bare / "ozel-hooks"
+    ozel.mkdir()
+    for d in (hooks, ozel):
+        for ad in ("reference-transaction", "post-checkout", "pre-auto-gc", "post-merge"):
+            (d / ad).write_text(kanca)
+            (d / ad).chmod(0o755)
+    _git(ortam.bare, "config", "core.hooksPath", str(ozel), bare=True)
+    r = ortam("sync-dizin", "e2e-java", "--baseline", "--koru", "uretilen")
+    assert r.returncode == 0, r.stderr + r.stdout
+    assert _ref(ortam.bare, "demo-baseline^{commit}") == _ref(ortam.bare, "main")
+    assert not isaret.exists(), isaret.read_text()
+    assert not (ortam.bare / "FETCH_HEAD").exists()
+
+
+def test_volume_yoksa_olusturmadan_hata(ortam: Any) -> None:
+    """OPS-D2: yanlış COMPOSE_PROJECT_NAME'de boş volume oluşturulup bırakılmaz."""
+    r = ortam("sync-dizin", "e2e-java", FAKE_NO_VOLUME="1")
+    assert r.returncode != 0 and "forge volume'ü yok" in r.stderr
+    log = (ortam.state / "docker.log").read_text() if (ortam.state / "docker.log").exists() else ""
+    assert "volume create" not in log
+    assert "run " not in log
+
+
 def test_ic_betik_safe_directory_global_yapilandirmadan() -> None:
     """git 2.39'da yerel clone/push alt süreçleri `-c safe.directory`'yi görmez (OPS-Y1): iç betik
     safe.directory'yi GIT_CONFIG_GLOBAL dosyasından verir ve zorla push kullanmaz."""
@@ -254,7 +355,18 @@ def test_ic_betik_safe_directory_global_yapilandirmadan() -> None:
     ic = ic.split("INNER\n  exit 0")[0]
     assert "directory = *" in ic and 'GIT_CONFIG_GLOBAL="$W/gitconfig"' in ic
     assert "push -q -f" not in ic and "push -f" not in ic
-    assert "fetch -q --atomic" in ic
+    assert "fetch -q --atomic --no-tags --no-write-fetch-head" in ic
+    assert "hooksPath = /dev/null" in ic
+    assert "g() { git -c safe.directory='*' -c core.hooksPath=/dev/null" in ic
+    # Tüm git çağrıları g() üzerinden (doğrudan `git ` yalnız g tanımında).
+    git_satirlari = [
+        s
+        for s in ic.splitlines()
+        if re.search(r"(?<![.\w-])git\s", s) and not s.lstrip().startswith("#")
+    ]
+    assert git_satirlari == [
+        "g() { git -c safe.directory='*' -c core.hooksPath=/dev/null \"$@\"; }"
+    ]
 
 
 @pytest.mark.parametrize(
@@ -269,6 +381,14 @@ def test_ic_betik_safe_directory_global_yapilandirmadan() -> None:
         (("sync-dizin", "yok-boyle"), "kaynak dizin yok"),
         (("sync-dizin", "e2e-java", "--force"), "--force ile birlikte"),
         (("--baseline",), "yalnızca sync-dizin"),
+        (("--koru", "uretilen"), "yalnızca sync-dizin"),
+        (("sync-dizin", "e2e-java", "--koru"), "alt yol ister"),
+        (("sync-dizin", "e2e-java", "--koru", "../core"), "geçersiz --koru"),
+        (("sync-dizin", "e2e-java", "--koru", "/etc"), "geçersiz --koru"),
+        (("sync-dizin", "e2e-java", "--koru", "a/../../b"), "geçersiz --koru"),
+        (("sync-dizin", "e2e-java", "--koru", "uret*"), "geçersiz --koru"),
+        (("sync-dizin", "e2e-java", "--koru", "a,,b"), "geçersiz --koru"),
+        (("sync-dizin", "e2e-java", "--koru", "uretilen\nx"), "geçersiz --koru"),
     ],
 )
 def test_hatali_argumanlar(ortam: Any, args: tuple[str, ...], mesaj: str) -> None:
@@ -288,7 +408,8 @@ DUMAN_IMAJ = os.environ.get("TP_FORGE_IMAGE_DUMAN", "testingprobe-core:local")
 )
 def test_docker_duman_kok_konteyner_10001_deposu(tmp_path: Path) -> None:
     """Gerçek forge koşulu (OPS-Y1): `forge-init` init depoyu 10001:1001 + --shared=0666 kurar;
-    sync-dizin kök konteynerde (git 2.39) çalışır. Geçici volume testin sonunda silinir."""
+    sync-dizin kök konteynerde (git 2.39) çalışır; --koru uretilen merge edilmiş testi korur, depo
+    hook'u çalışmaz (K-T14, GÜV-Y2). Geçici volume testin sonunda silinir."""
     if subprocess.run(["docker", "image", "inspect", DUMAN_IMAJ], capture_output=True).returncode:
         pytest.skip(f"{DUMAN_IMAJ} imajı yok")
     vol = f"tpduman{os.getpid()}_tp_forge"
@@ -348,5 +469,33 @@ def test_docker_duman_kok_konteyner_10001_deposu(tmp_path: Path) -> None:
         assert depo("find /forge/demo-app.git ! -uid 10001 | head -1") == ""
         r = kos("sync-dizin", "e2e-java", "--baseline")
         assert r.returncode == 0 and "commit yazılmadı" in r.stdout, r.stderr
+
+        # K-T14 + GÜV-Y2: forge main'e merge edilmiş üretilen test (10001 olarak) + depoya hook;
+        # kök konteynerde --koru uretilen eşitlemesi testi korur, hook'u çalıştırmaz.
+        uretilen = "e2e-java/src/test/java/com/antreklabs/bayi/uretilen"
+        depo(
+            "export HOME=/tmp; cd /tmp && "
+            "git -c safe.directory='*' clone -q /forge/demo-app.git c && cd c && "
+            f"printf 'class MergeTest {{}}\\n' > {uretilen}/MergeTest.java && git add -A && "
+            "git -c user.name=t -c user.email=t@x commit -q -m merge && git push -q origin main && "
+            "printf '#!/bin/sh\\ntouch /forge/kanca-calisti\\n' "
+            "> /forge/demo-app.git/hooks/reference-transaction && "
+            "chmod +x /forge/demo-app.git/hooks/reference-transaction"
+        )
+        merge = depo("g rev-parse main")
+        (src / uretilen / "YerelTest.java").write_text("class YerelTest {}\n")
+        pom = src / "e2e-java" / "pom.xml"
+        pom.write_text(pom.read_text() + "<!-- duman -->\n")
+        r = kos("sync-dizin", "e2e-java", "--koru", "uretilen")
+        assert r.returncode == 0, r.stderr + r.stdout
+        assert depo("g rev-parse main^") == merge
+        assert depo(f"g diff --name-only {merge} main") == "e2e-java/pom.xml"
+        assert depo(f"g cat-file -t main:{uretilen}/MergeTest.java") == "blob"
+        assert depo(f"g ls-tree --name-only main {uretilen}/YerelTest.java") == ""
+        assert (
+            depo("ls /forge/kanca-calisti /forge/demo-app.git/FETCH_HEAD 2>/dev/null; true") == ""
+        )
+        r = kos("sync-dizin", "e2e-app", "--koru", "uretilen")
+        assert r.returncode == 0, r.stderr + r.stdout
     finally:
         subprocess.run(["docker", "volume", "rm", "-f", vol], capture_output=True)

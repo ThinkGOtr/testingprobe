@@ -8,7 +8,7 @@
 #   scripts/forge-init.sh status     # forge main sha'sı ve "Sepete ekle" testid durumu
 #   scripts/forge-init.sh sync-web   # forge main ≠ demo-baseline ise demo-app-web'i forge main'den
 #                                    # yeniden derler (make up, kırık demoyu çalışma ağacıyla ezmesin)
-#   scripts/forge-init.sh sync-dizin <dizin> [--baseline]
+#   scripts/forge-init.sh sync-dizin <dizin> [--baseline] [--koru <alt-yol>[,<alt-yol>...]]
 #                                    # MEVCUT depoya demo-app/<dizin>'i main'e TEK commit ile ekler /
 #                                    # eşitler (ör. e2e-java); PR kaydı ve diğer dallar korunur
 #
@@ -41,7 +41,15 @@
 #   --baseline: main demo-baseline'dayken etiketi de yeni commit'e taşır ve demo/break-locator'ı
 #   (tek commit) onun üstüne yeniden kurar; böylece make demo-reset/make break eklenen dizini
 #   silmez. --baseline olmadan sıfırlama (main → demo-baseline) eklenen dizini geri alır.
+#   --koru <alt-yol>: <dizin> altındaki bu yollar forge main'deki hâliyle KALIR (çalışma ağacındaki
+#   içerik yok sayılır; forge'da yoksa eklenmez). Tek ad (ör. `uretilen`) her derinlikteki o adlı
+#   dizini (ör. src/test/java/**/uretilen/**: merge edilmiş üretilen Java testleri), `/` içeren
+#   yol (ör. `tests/generated`) <dizin>/'e göre o yolu korur. Virgülle ya da tekrarla birden çok.
+#   Kaynak deposunun hook'ları çalışmaz (tüm git çağrıları core.hooksPath=/dev/null; GÜV-Y2).
+#   Volume yoksa oluşturulmaz, hata verilir (yanlış COMPOSE_PROJECT_NAME'de boş volume kalmasın).
 #   Örnek (011, mevcut LocalForge'a web + Java projesi): make forge-sync-dizin D=e2e-java B=--baseline
+#   Örnek (011 dağıtımı, K-T14: güvenilir pom değişti, merge edilmiş testler korunur):
+#     make forge-sync-dizin D=e2e-app K=uretilen   ve   make forge-sync-dizin D=e2e-java K=uretilen
 
 # Oluşan içerik (/forge/demo-app.git):
 #   main                 ← demo-app/ dizininin ŞU ANKİ içeriği (api/, web/, e2e/, ci/, README) kök olarak
@@ -68,11 +76,17 @@ FORCE=0
 MODE=init
 DIZIN=""
 BASELINE=0
-KULLANIM="forge-init.sh [--force] | break | baseline | status | sync-web | sync-dizin <dizin> [--baseline]"
+KORU=""
+KULLANIM="forge-init.sh [--force] | break | baseline | status | sync-web | sync-dizin <dizin> [--baseline] [--koru <alt-yol>]"
 while [ $# -gt 0 ]; do
   case "$1" in
     --force) FORCE=1 ;;
     --baseline) BASELINE=1 ;;
+    --koru)
+      [ $# -ge 2 ] || die "--koru bir alt yol ister (ör. uretilen)"
+      KORU="${KORU:+$KORU,}$2"
+      shift
+      ;;
     break|baseline|status|sync-web) MODE="$1" ;;
     sync-dizin)
       MODE=sync-dizin
@@ -80,12 +94,13 @@ while [ $# -gt 0 ]; do
       DIZIN="$2"
       shift
       ;;
-    -h|--help) sed -n '2,60p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '/^set -euo/q;2,$p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "bilinmeyen argüman: $1 (kullanım: $KULLANIM)" ;;
   esac
   shift
 done
 [ "$BASELINE" = 0 ] || [ "$MODE" = sync-dizin ] || die "--baseline yalnızca sync-dizin ile anlamlıdır"
+[ -z "$KORU" ] || [ "$MODE" = sync-dizin ] || die "--koru yalnızca sync-dizin ile anlamlıdır"
 if [ "$MODE" = sync-dizin ]; then
   # Yalnızca demo-app'in tek bir üst düzey dizini; yol geçişi ve uygulama dizinleri reddedilir.
   # bash regex tüm dizeyi eşler (satır tabanlı grep'in aksine yeni satırlı '..\ne2e-java' geçmez).
@@ -95,6 +110,12 @@ if [ "$MODE" = sync-dizin ]; then
     web|api) die "sync-dizin $DIZIN: uygulama dizini eşitlenmez (çalışan demo-app-web eşleşmesi); make reset kullanın" ;;
   esac
   [ "$FORCE" = 0 ] || die "sync-dizin --force ile birlikte kullanılamaz (--force depoyu siler)"
+  # --koru: <dizin>'e göre alt yollar; her parça harf/rakamla başlar (.., mutlak yol, glob yok).
+  # bash regex tüm dizeyi eşler (yeni satır, boş parça, glob, '..' geçmez).
+  koru_yol='[A-Za-z0-9][A-Za-z0-9._-]{0,63}(/[A-Za-z0-9][A-Za-z0-9._-]{0,63}){0,15}'
+  if [ -n "$KORU" ] && ! [[ "$KORU" =~ ^${koru_yol}(,${koru_yol}){0,15}$ ]]; then
+    die "geçersiz --koru yolu: '$KORU' (<dizin>'e göre alt yol(lar), ör. uretilen ya da tests/generated)"
+  fi
 fi
 
 # --------------------------------------------------------------- demo kırılması / sıfırlama
@@ -268,6 +289,11 @@ command -v docker >/dev/null 2>&1 || die "docker bulunamadı"
 [ -d "$SRC" ] || die "kaynak dizin yok: $SRC"
 SRC_ABS="$(cd "$SRC" && pwd)"
 
+if [ "$MODE" = sync-dizin ] && ! docker volume inspect "$VOLUME" >/dev/null 2>&1; then
+  # OPS-D2: yanlış COMPOSE_PROJECT_NAME / TP_FORGE_VOLUME'de boş volume oluşturup bırakmasın.
+  die "forge volume'ü yok ($VOLUME); COMPOSE_PROJECT_NAME / TP_FORGE_VOLUME doğru mu? İlk kurulum: make forge-init"
+fi
+
 image_has_git() {
   docker run --rm --network none --entrypoint sh "$IMAGE" -c 'command -v git' >/dev/null 2>&1
 }
@@ -289,10 +315,8 @@ fi
 if [ "$MODE" = sync-dizin ]; then
   [ -d "$SRC_ABS/$DIZIN" ] || die "kaynak dizin yok: $SRC/$DIZIN"
   [ ! -L "$SRC_ABS/$DIZIN" ] || die "$SRC/$DIZIN sembolik bağ olamaz"
-  docker volume inspect "$VOLUME" >/dev/null 2>&1 \
-    || die "forge volume'ü yok ($VOLUME); önce make forge-init"
   docker run --rm -i --network none --user 0:0 \
-    -e DIZIN="$DIZIN" -e BASELINE="$BASELINE" \
+    -e DIZIN="$DIZIN" -e BASELINE="$BASELINE" -e KORU="$KORU" \
     -v "$VOLUME:/forge" \
     -v "$SRC_ABS:/src:ro" \
     --entrypoint sh "$IMAGE" -eu -s <<'INNER'
@@ -305,12 +329,14 @@ trap 'rm -rf "$W"' EXIT
 # Konteyner kök (0:0), depo 10001'e ait. git 2.39 yerel clone/push'un upload-pack/receive-pack alt
 # süreçleri komut satırındaki `-c safe.directory` değerini GÖRMEZ ("dubious ownership", rc=128):
 # safe.directory geçici bir global yapılandırmadan verilir (alt süreçler ortamı devralır).
-printf '[safe]\n\tdirectory = *\n' > "$W/gitconfig"
+# core.hooksPath=/dev/null (GÜV-Y2): kök konteyner forge deposunun (ve klonun) hook'larını
+# çalıştırmaz — hem global yapılandırmada (alt süreçler) hem her komutta (-c).
+printf '[safe]\n\tdirectory = *\n[core]\n\thooksPath = /dev/null\n' > "$W/gitconfig"
 export HOME="$W" LC_ALL=C GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$W/gitconfig"
 export GIT_AUTHOR_NAME=tp-bot GIT_AUTHOR_EMAIL=bot@testingprobe.local
 export GIT_COMMITTER_NAME=tp-bot GIT_COMMITTER_EMAIL=bot@testingprobe.local
 export GIT_AUTHOR_DATE="2026-01-01T00:00:00+0000" GIT_COMMITTER_DATE="2026-01-01T00:00:00+0000"
-g() { git -c safe.directory='*' "$@"; }
+g() { git -c safe.directory='*' -c core.hooksPath=/dev/null "$@"; }
 
 [ -d "$REPO" ] || { echo "HATA: forge deposu yok ($REPO); önce make forge-init" >&2; exit 2; }
 [ -d "$S/$DIZIN" ] || { echo "HATA: kaynak dizin yok: $DIZIN" >&2; exit 2; }
@@ -336,6 +362,25 @@ tar -C "$S/$DIZIN" \
   --exclude=blob-report --exclude=.DS_Store --exclude=.git --exclude='.env' --exclude='.env.*' \
   --exclude='*.db' --exclude='*.sqlite' --exclude=target --exclude=results --exclude=kanit \
   -cf - . | tar --no-same-owner -C "./$DIZIN" -xf -
+# --koru: korunan yollar çalışma ağacından SİLİNİR ve forge main'deki (HEAD) hâlleriyle geri yüklenir.
+korunan=0
+if [ -n "${KORU:-}" ]; then
+  eski_ifs="$IFS"; IFS=,
+  for k in $KORU; do
+    IFS="$eski_ifs"
+    case "$k" in
+      */*) rm -rf "./$DIZIN/$k"; spec=":(literal)$DIZIN/$k" ;;
+      *) find "./$DIZIN" -depth -name "$k" -exec rm -rf {} + ; spec=":(glob)$DIZIN/**/$k/**" ;;
+    esac
+    if [ -n "$(g ls-files -- "$spec" | head -n 1)" ]; then
+      g checkout -q HEAD -- "$spec"
+      korunan=$((korunan + $(g ls-files -- "$spec" | wc -l)))
+    fi
+    IFS=,
+  done
+  IFS="$eski_ifs"
+  echo "korunan ($KORU): forge main'deki $korunan dosya olduğu gibi kaldı."
+fi
 g add -A -- "./$DIZIN"
 if g diff --cached --quiet; then
   echo "forge main zaten demo-app/$DIZIN ile aynı; commit yazılmadı."
@@ -373,7 +418,7 @@ if [ "$BASELINE" = 1 ] && [ "$base" != "$yeni" ]; then
   tasindi=1
 fi
 if [ "$degisti" = 1 ] || [ "$tasindi" = 1 ]; then
-  g --git-dir="$REPO" fetch -q --atomic --no-tags "$W/r" "$@" \
+  g --git-dir="$REPO" fetch -q --atomic --no-tags --no-write-fetch-head "$W/r" "$@" \
     || { echo "HATA: forge ref'leri güncellenemedi (main arada ilerlemiş olabilir; yeniden çalıştırın). Hiçbir ref değişmedi." >&2; exit 3; }
 fi
 if [ "$degisti" = 1 ]; then

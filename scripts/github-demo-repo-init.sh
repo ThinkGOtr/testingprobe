@@ -44,13 +44,15 @@
 # token'da `workflow` izni gerekir). Betik token okumaz/yazmaz. Uzak depoda main varsa --update
 # olmadan durur: --update yeni ağacı uzak main'in üstüne tek commit olarak `altyapi/bootstrap-<zaman>`
 # dalına gönderir; PR'ı siz açar ve insan olarak merge edersiniz (ruleset). Etiketin taşınması
-# ayrı ve bilinçli bir yönetici adımıdır (yazdırılır).
+# ayrı ve bilinçli bir yönetici adımıdır (yazdırılır). --update merge edilmiş ÜRETİLEN testleri
+# uzak main'deki hâliyle bırakır (K-T14): demo-app/e2e/tests/generated/ ve demo-app/{e2e-java,e2e-app}/
+# src/test/java/**/uretilen/ (ürün deposundaki içerikleri gönderilmez; uzakta silinmez).
 set -euo pipefail
 CALLER_PWD="$PWD"  # lib.sh depo köküne geçer; göreli --out çağıranın dizinine göredir
 # shellcheck source=scripts/lib.sh
 . "$(dirname "$0")/lib.sh"
 
-usage() { sed -n '2,47p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,49p' "$0" | sed 's/^# \{0,1\}//'; }
 
 REPO="${GITHUB_REPO:-ThinkGOtr/testingprobe-demo-app}"
 OUT=""
@@ -297,6 +299,21 @@ fi
 BRANCH="altyapi/bootstrap-$(date -u +%Y%m%d%H%M%S)"
 gnet fetch -q "$URL" "+refs/heads/main:refs/remotes/uzak/main"
 PARENT="$(g rev-parse refs/remotes/uzak/main)"
+# K-T14: merge edilmiş üretilen testler uzak main'deki hâliyle kalır (güncelleme PR'ı onları silmez,
+# ürün deposundaki örnekleri de eklemez). Ağaç index üzerinden yeniden yazılır.
+URETILEN_RE='^demo-app/(e2e/tests/generated/|(e2e-java|e2e-app)/src/test/java/(.+/)?uretilen/)'
+uretilen_suz() {
+  local kayit
+  while IFS= read -r -d '' kayit; do
+    [[ "${kayit#*$'\t'}" =~ $URETILEN_RE ]] && printf '%s\0' "$kayit"
+  done
+  return 0
+}
+g ls-files -z | uretilen_suz | g update-index -z --force-remove --stdin
+g ls-tree -r -z "$PARENT" | uretilen_suz | g update-index -z --index-info
+TREE_SHA="$(g write-tree)"
+KORUNAN="$(g ls-tree -r -z "$PARENT" | uretilen_suz | tr -cd '\0' | wc -c | tr -d ' ')"
+echo "Üretilen testler uzak main'deki hâliyle korundu: $KORUNAN dosya (demo-app/e2e/tests/generated, **/uretilen)."
 if [ "$(g rev-parse "$PARENT^{tree}")" = "$TREE_SHA" ]; then
   echo "Uzak main zaten bu ağaçta (${PARENT:0:12}); gönderilecek değişiklik yok."
   exit 0

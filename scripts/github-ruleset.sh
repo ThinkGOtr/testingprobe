@@ -16,15 +16,18 @@
 # DİKKAT: --checks listeyi DEĞİŞTİRİR (PUT tüm kuralı yazar): orada olmayan mevcut check'ler (ör.
 # mobil-android, masaustu-windows, web-java) silinir. Mevcut kurala yalnız ekleme için --add-checks:
 # --apply'da mevcut ruleset'in zorunlu check'leri okunur ve verilenlerle BİRLEŞTİRİLİR (hiçbiri
-# silinmez; ruleset yoksa --checks + --add-checks). Kuru çalışmada mevcut liste GitHub'dan okunmaz:
+# silinmez; ruleset yoksa ya da ruleset'te required_status_checks kuralı yok/boşsa --checks +
+# --add-checks — taban check'ler düşmez). Kuru çalışmada mevcut liste GitHub'dan okunmaz:
 # --existing-json <dosya> (gh api repos/O/R/rulesets/<id> çıktısı) verilirse onunla birleştirilir.
+# --apply'da --existing-json YOK SAYILIR (her zaman canlı ruleset okunur); dosyadaki liste canlıdan
+# farklıysa uyarı yazılır (kuru çalışma eski bir dosyayla yapılmış olabilir).
 # K-T10 (011): demo deposunda .github/workflows/web-java.yml varsa `web-java` her zaman zorunludur.
 #
 # Bypass aktörü: repo ruleset'lerinde bypass listesi takım/rol/App kabul eder. "demo-admin" insan
 # hesabını içeren tek üyeli bir org takımı (slug: demo-admin) oluşturun; bot App'i eklemeyin.
 set -euo pipefail
 
-usage() { sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '/^set -euo/q;2,$p' "$0" | sed 's/^# \{0,1\}//'; }
 
 REPO="${GITHUB_REPO:-}"
 APPLY=0
@@ -89,13 +92,24 @@ birlestir() {
     '[($a | split(",")), ($b | split(","))] | add | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))
      | reduce .[] as $c ([]; if index([$c]) then . else . + [$c] end) | join(",")'
 }
+# Birleştirme tabanı: mevcut ruleset'in zorunlu check'leri; kural yok ya da liste boşsa --checks
+# (OPS-D1: boş tabana yalnız --add-checks yazılıp test-local/ast-guard/semgrep düşmesin).
+taban() {
+  if [ -n "$1" ]; then printf '%s' "$1"; else printf '%s' "$CHECKS"; fi
+}
 MERGE_NOTE=""
-if [ -n "$ADD_CHECKS" ]; then
+if [ -n "$ADD_CHECKS" ] && [ "$APPLY" -eq 0 ]; then
   if [ -n "$EXISTING_JSON" ]; then
     [ -r "$EXISTING_JSON" ] || { echo "--existing-json okunamadı: $EXISTING_JSON" >&2; exit 2; }
-    CHECKS="$(birlestir "$(mevcut_checks <"$EXISTING_JSON")" "$ADD_CHECKS")"
-    MERGE_NOTE="mevcut ($EXISTING_JSON) + --add-checks"
-  elif [ "$APPLY" -eq 0 ]; then
+    dosya_checks="$(mevcut_checks <"$EXISTING_JSON")" \
+      || { echo "--existing-json ruleset JSON'u değil: $EXISTING_JSON" >&2; exit 2; }
+    CHECKS="$(birlestir "$(taban "$dosya_checks")" "$ADD_CHECKS")"
+    if [ -n "$dosya_checks" ]; then
+      MERGE_NOTE="mevcut ($EXISTING_JSON) + --add-checks"
+    else
+      MERGE_NOTE="mevcut ($EXISTING_JSON) zorunlu check içermiyor → --checks + --add-checks"
+    fi
+  else
     CHECKS="$(birlestir "$CHECKS" "$ADD_CHECKS")"
     MERGE_NOTE="--apply'da mevcut ruleset'in check'leriyle BİRLEŞTİRİLİR (aşağıdaki liste yalnız --checks + --add-checks)"
   fi
@@ -154,10 +168,20 @@ EOF
 fi
 
 EXISTING_ID="$(gh api "repos/$REPO/rulesets" --paginate --jq ".[] | select(.name == \"$NAME\") | .id" | head -n1)"
-if [ -n "$ADD_CHECKS" ] && [ -z "$EXISTING_JSON" ]; then
+if [ -n "$EXISTING_JSON" ]; then
+  echo "UYARI: --apply'da --existing-json yok sayılır; canlı ruleset okunur." >&2
+fi
+if [ -n "$ADD_CHECKS" ]; then
   if [ -n "$EXISTING_ID" ]; then
     mevcut="$(gh api "repos/$REPO/rulesets/$EXISTING_ID" | mevcut_checks)"
-    CHECKS="$(birlestir "$mevcut" "$ADD_CHECKS")"
+    if [ -n "$EXISTING_JSON" ] && [ -r "$EXISTING_JSON" ]; then
+      dosya_checks="$(mevcut_checks <"$EXISTING_JSON" 2>/dev/null || echo '?')"
+      if [ "$dosya_checks" != "$mevcut" ]; then
+        echo "UYARI: --existing-json listesi canlı ruleset'ten farklı (dosya: '${dosya_checks}', canlı: '${mevcut}'); canlı liste kullanılıyor." >&2
+      fi
+    fi
+    [ -n "$mevcut" ] || echo "UYARI: canlı ruleset'te zorunlu check yok; --checks ($CHECKS) taban alınıyor." >&2
+    CHECKS="$(birlestir "$(taban "$mevcut")" "$ADD_CHECKS")"
   else
     CHECKS="$(birlestir "$CHECKS" "$ADD_CHECKS")"
   fi

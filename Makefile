@@ -46,14 +46,15 @@ forge-init: ## Yerel forge deposunu hazırlar (varsa dokunmaz; yeniden kurmak i�
 playwright-surum-denetle: ## Playwright sürüm sabitlerini .playwright-version'a göre denetler (ağ yok; liste: scripts/playwright-surum.sh liste)
 	@scripts/playwright-surum.sh denetle
 
-forge-sync-dizin: ## Mevcut yerel forge'a demo-app/<D>'yi main'e tek commit ile ekler (PR kaydı korunur; ör. D=e2e-java B=--baseline)
-	@# D/B kabuğa make genişletmesiyle değil ortamdan geçer (tırnak/komut ikamesi enjeksiyonu olmaz);
-	@# dizin adı forge-init.sh'ta bash regex'iyle ayrıca doğrulanır.
-	@test -n "$$TP_SYNC_D" || { echo "kullanım: make forge-sync-dizin D=e2e-java [B=--baseline]" >&2; exit 2; }
+forge-sync-dizin: ## Mevcut yerel forge'a demo-app/<D>'yi main'e tek commit ile ekler (PR kaydı korunur; ör. D=e2e-java B=--baseline; merge edilmiş testleri koru: K=uretilen)
+	@# D/B/K kabuğa make genişletmesiyle değil ortamdan geçer (tırnak/komut ikamesi enjeksiyonu olmaz);
+	@# dizin adı ve --koru yolları forge-init.sh'ta bash regex'iyle ayrıca doğrulanır.
+	@test -n "$$TP_SYNC_D" || { echo "kullanım: make forge-sync-dizin D=e2e-java [B=--baseline] [K=uretilen]" >&2; exit 2; }
 	@case "$$TP_SYNC_B" in ""|--baseline) ;; *) echo "B yalnız --baseline olabilir" >&2; exit 2 ;; esac
-	@scripts/forge-init.sh sync-dizin "$$TP_SYNC_D" $${TP_SYNC_B:+"$$TP_SYNC_B"}
+	@scripts/forge-init.sh sync-dizin "$$TP_SYNC_D" $${TP_SYNC_B:+"$$TP_SYNC_B"} $${TP_SYNC_K:+--koru "$$TP_SYNC_K"}
 forge-sync-dizin: export TP_SYNC_D = $(value D)
 forge-sync-dizin: export TP_SYNC_B = $(value B)
+forge-sync-dizin: export TP_SYNC_K = $(value K)
 
 break: ## Demo locator kırılması: yeşil temel koşu ön denetimi + demo/break-locator demo-admin bypass merge + demo-app-web (Z=1: denetimi atla)
 	@scripts/demo-break.sh --make $(if $(Z),--zorla,)
