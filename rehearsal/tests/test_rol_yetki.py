@@ -214,4 +214,6 @@ def test_d2_java_kardes_kosuyu_atlar() -> None:
     ]
     assert _kirmizi_push(ks, "abc")["dil"] == "ts"
     assert _kirmizi_push(ks, None)["basarisiz"] == 19
-    assert _kirmizi_push([{"tetik": "push", "commit": "abc", "durum": "failed", "basarisiz": 19}], "abc")
+    assert _kirmizi_push(
+        [{"tetik": "push", "commit": "abc", "durum": "failed", "basarisiz": 19}], "abc"
+    )
