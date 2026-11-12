@@ -287,7 +287,7 @@ bundles:
   assistant-guard:
     version: 1
     status: evaluated
-    note: 'Canlı değerlendirme 2026-11-12, claude-haiku-5-5 (anthropic), 17/17 vaka geçti: evaluation/results/assistant-guard-v1-2026-11-12.json'
+    note: 'Canlı değerlendirme 2026-11-12, claude-haiku-5-5 (anthropic), 18/18 vaka geçti: evaluation/results/assistant-guard-v1-2026-11-12.json'
     evaluation:
       date: '2026-11-12'
       model: claude-haiku-5-5
@@ -295,4 +295,4 @@ bundles:
       results: evaluation/results/assistant-guard-v1-2026-11-12.json
       guardrails_version: 1
       calls: evaluation/results/assistant-guard-v1-2026-11-12.calls.jsonl
-      icerik_hash: sha256:f106a86989c742f625fff0c0e212c6f8187b1a34fe15cd551f70079270d3e45a
+      icerik_hash: sha256:5d9bd148735976909e1d337d6eb23855a06e3c80e687d0df309546c3d889e0bb
