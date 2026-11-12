@@ -39,7 +39,7 @@ import { dizgeler, ilk, kimlik, metin, metinYaDaNull, modUyarla, nesneMi, sayi, 
 import { hazirlikUyarla } from "./uyumFaz5";
 import { checkPlatformu, platformUyarla } from "../lib/platform";
 import type { AsistanKuleOlcumu, AsistanliKule, MaliyetGrubu } from "../components/asistan/OnerilerOlcumKarti";
-import { kosuHataAlanlari, kuleKaliteUyarla } from "./uyumKule";
+import { kosuHataAlanlari, kuleKaliteKaynaklari, kuleKaliteUyarla } from "./uyumKule";
 
 const nesne = (x: unknown): Ham => (nesneMi(x) ? x : {});
 const dizi = (x: unknown): Ham[] => (Array.isArray(x) ? x.filter(nesneMi) : []);
@@ -776,7 +776,7 @@ export function kontrolKulesiUyarla(govde: unknown): KontrolKulesi & AsistanliKu
             sayfalar: dizi(a.sayfalar).map((p) => ({ yol: metin(p.yol), ihlal: sayi(p.ihlal), kritik: sayi(p.kritik) })),
           }
         : null,
-    kaynaklar: kaynaklarUyarla(g.kaynaklar),
+    kaynaklar: kuleKaliteKaynaklari(g, kaynaklarUyarla(g.kaynaklar)),
     uyarilar: dizgeler(g.uyarilar),
     asistan: asistanOlcumuUyarla(g.asistan),
     // 012/Ş8 (§4.7): anahtar yoksa (eski core) alan da yok; sıfır uydurulmaz.

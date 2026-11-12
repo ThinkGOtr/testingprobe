@@ -43,10 +43,22 @@ function oran(x: unknown): number | null {
   return o !== null && Number.isFinite(o) ? o : null;
 }
 
+const adimSonucu = (x: unknown): HataAdimSonucu | null => (typeof x === "string" && SONUCLAR.has(x) ? (x as HataAdimSonucu) : null);
+
 function platformOzetiUyarla(x: Ham): HataYakalamaPlatformu | null {
   const p = platformUyarla(x.platform);
   if (!p) return null;
-  return { platform: p, oran: oran(x.oran), yakalanan: sayi(x.yakalanan), kacan: sayi(x.kacan), gecersiz: sayi(x.gecersiz) };
+  return {
+    platform: p,
+    oran: oran(x.oran),
+    yakalanan: sayi(x.yakalanan),
+    kacan: sayi(x.kacan),
+    gecersiz: sayi(x.gecersiz),
+    // Koşu özetinin ek alanları (core `ozet_hesapla`); Kule ölçüsü bunları vermez → alan eklenmez.
+    ...("bekleyen" in x ? { bekleyen: sayi(x.bekleyen) } : {}),
+    ...("temel" in x ? { temel: adimSonucu(x.temel) } : {}),
+    ...("kapanis" in x ? { kapanis: adimSonucu(x.kapanis) } : {}),
+  };
 }
 
 function kacanUyarla(x: Ham): KacanHata | null {
@@ -65,6 +77,7 @@ function ozetUyarla(x: unknown): HataKosusuOzeti | null {
     yakalanan: sayi(x.yakalanan),
     kacan: sayi(x.kacan),
     gecersiz: sayi(x.gecersiz),
+    ...("bekleyen" in x ? { bekleyen: sayi(x.bekleyen) } : {}),
     platformlar: dizi(x.platformlar).map(platformOzetiUyarla).filter(dolu),
     kacanlar: dizi(x.kacanlar).map(kacanUyarla).filter(dolu),
   };
@@ -104,6 +117,7 @@ export function hataKosusuAdimiUyarla(x: Ham, i = 0): HataKosusuAdimi | null {
     neden: metinYaDaNull(x.neden),
     sure_ms: sayiYaDaNull(x.sure_ms),
     sira: sayi(x.sira, i),
+    hata_adi: metinYaDaNull(x.hata_adi),
   };
 }
 
@@ -169,6 +183,19 @@ function hataYakalamaUyarla(x: Ham): KuleHataYakalama | null {
     platformlar: dizi(x.platformlar).map(platformOzetiUyarla).filter(dolu),
     kacanlar: dizi(x.kacanlar).map(kacanUyarla).filter(dolu),
   };
+}
+
+/**
+ * İki kalite ölçüsünün kaynak metni: core bunu `kaynaklar[<anahtar>]`'a yazar; değerin içinde `kaynak`
+ * alanı gelirse (ör. `/requirements/{id}/case-metrics` biçimi) yalnız `kaynaklar`'da yoksa o kullanılır.
+ */
+export function kuleKaliteKaynaklari<T extends Partial<Record<"beklenti_dogrulugu" | "hata_yakalama", string>>>(g: Ham, kaynaklar: T): T {
+  const sonuc: T = { ...kaynaklar };
+  for (const a of ["beklenti_dogrulugu", "hata_yakalama"] as const) {
+    const ic = nesneMi(g[a]) ? metinYaDaNull(g[a].kaynak) : null;
+    if (!sonuc[a] && ic) sonuc[a] = ic;
+  }
+  return sonuc;
 }
 
 /**

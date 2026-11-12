@@ -50,6 +50,23 @@ describe("triage: test beklentisi (karar tablosu)", () => {
     expect(screen.queryByText("Öneri üretilmedi")).toBeNull();
   });
 
+  it("gerçek core şekli (`GET /failures/{id}` case/gereksinim kimliği taşımaz): script'e, o da yoksa koşuya bağlanır", async () => {
+    await oturumAc("analist");
+    const h = mockVerisi().hatalar.find((x) => x.id === "fail-2")!;
+    const ortak = { sinif: "test_maintenance", alt_tur: "beklenti", oneri: null, oneri_yok_nedeni: "Case'in beklenen değeri onaylı karar tablosuyla uyuşmuyor; case düzeltilmeli" };
+    Object.assign(h, { ...ortak, script_id: "scr-2" });
+    delete (h as { case_id?: unknown }).case_id;
+    delete (h as { requirement_id?: unknown }).requirement_id;
+    const ilk = uygulama("/hatalar/fail-2");
+    expect(within(await screen.findByTestId("case-duzeltilmeli")).getByRole("link", { name: "Script ve bağlı case'i aç" })).toHaveAttribute("href", "/kod/scr-2");
+    ilk.unmount();
+    Object.assign(h, { script_id: null });
+    uygulama("/hatalar/fail-2");
+    const link = within(await screen.findByTestId("case-duzeltilmeli")).getByRole("link", { name: /^Koşuyu aç/ });
+    expect(link).toHaveAttribute("href", `/kosular/${h.run_id}`);
+    expect(link).toHaveTextContent(h.test_adi);
+  });
+
   it("diğer alt türlerde mevcut görünüm korunur", async () => {
     await oturumAc("analist");
     uygulama("/hatalar/fail-2");

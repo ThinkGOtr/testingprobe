@@ -241,11 +241,11 @@ export const EKILMIS_HATA_ADI: Record<string, string> = {
   kampanya_esik_7: "Kampanya eşiği 6 yerine 7",
   kampanya_cift_indirim: "Kampanya indirimi iki kez düşülüyor",
   min_siparis_haric: "Minimum sipariş sınırı dahil değil",
-  min_siparis_muafiyet_yok: "Kampanyalı sepet minimum siparişten muaf değil",
-  min_siparis_500: "Minimum sipariş 750 yerine 500",
-  min_siparis_1000: "Minimum sipariş 750 yerine 1000",
-  fiyat_p004_31: "P-004 fiyatı 30 yerine 31",
-  kampanya_urunu_p002: "Kampanyalı ürün P-001 yerine P-002",
+  min_siparis_muafiyet_yok: "Kampanyalı sepet minimumdan muaf değil",
+  min_siparis_500: "Minimum sipariş tutarı 500",
+  min_siparis_1000: "Minimum sipariş tutarı 1000",
+  fiyat_p004_31: "P-004 fiyatı 31",
+  kampanya_urunu_p002: "Kampanyalı ürün P-002",
 };
 
 export function ekilmisHataAdi(kod: string, katalogAdi?: string | null): string {

@@ -9,6 +9,7 @@ import { Rotalar } from "../../App";
 import { api } from "../../api/client";
 import { bekleyenMockIs, mockVerisi } from "../../api/mock/handlers";
 import { kaliteVerisi } from "../../api/mock/kalite";
+import { MIN_SIPARIS_TABLOSU } from "../../api/mock/kaliteVerisi";
 import { mockOlayYayinla } from "../../api/mock/olaylar";
 import { OturumProvider } from "../../auth";
 import { BildirimProvider } from "../../components/Bildirim";
@@ -97,9 +98,8 @@ describe("düzenleyici", () => {
     const yeni = satirlar[3];
     expect(within(yeni).getByText("R4")).toBeInTheDocument();
     await waitFor(() => expect(within(yeni).getByLabelText("Koşul")).toHaveFocus());
-    await userEvent.type(within(yeni).getByLabelText("Koşul"), "toplam < 0");
-    await userEvent.type(within(yeni).getByLabelText(/uyari_gosterilir ifadesi/), "dogru");
-    await userEvent.type(within(yeni).getByLabelText(/onay_aktif ifadesi/), "yanlis");
+    await userEvent.type(within(yeni).getByLabelText("Koşul"), "sepet_tutari < 0");
+    await userEvent.type(within(yeni).getByLabelText(/minimum_uyarisi ifadesi/), "dogru");
     // R4'ü en üste taşı, sonra R1'i kaldır.
     await userEvent.click(within(yeni).getByRole("button", { name: "Satır R4 yukarı taşı" }));
     await userEvent.click(within(form).getByRole("button", { name: "Satır R4 yukarı taşı" }));
@@ -109,10 +109,10 @@ describe("düzenleyici", () => {
     await userEvent.click(within(form).getByRole("button", { name: "Satır R1 kaldır" }));
     expect(within(form).getAllByTestId("kt-satir")).toHaveLength(3);
     await waitFor(() => expect(within(form).getByRole("button", { name: "Satır ekle" })).toHaveFocus());
-    // Sınır düzeltmesi: `toplam > 750` → `toplam >= 750`.
+    // Sınır düzeltmesi (golden'daki gibi): `sepet_tutari <= 750` → `sepet_tutari < 750`.
     const r2 = within(form).getByRole("group", { name: "Satır R2" });
     await userEvent.clear(within(r2).getByLabelText("Koşul"));
-    await userEvent.type(within(r2).getByLabelText("Koşul"), "toplam >= 750");
+    await userEvent.type(within(r2).getByLabelText("Koşul"), "sepet_tutari < 750");
     const kaydet = vi.spyOn(api, "kararTablosuKaydet");
     const onceki = kalite().tablolar.find((x) => x.id === "kt-2")!.icerik_hash;
     await userEvent.click(within(form).getByRole("button", { name: "Kaydet" }));
@@ -120,12 +120,12 @@ describe("düzenleyici", () => {
     expect(kaydet).toHaveBeenCalledWith("kt-2", expect.objectContaining({ icerik_hash: onceki }));
     const t = kalite().tablolar.find((x) => x.id === "kt-2")!;
     expect(t.icerik.satirlar.map((s) => [s.id, s.kosul])).toEqual([
-      ["R4", "toplam < 0"],
-      ["R2", "toplam >= 750"],
-      ["R3", "toplam <= 750"],
+      ["R4", "sepet_tutari < 0"],
+      ["R2", "sepet_tutari < 750"],
+      ["R3", "dogru"],
     ]);
     expect(t.icerik_hash).not.toBe(onceki);
-    expect(within(t2).getByText("toplam >= 750")).toBeInTheDocument();
+    expect(within(t2).getByText("sepet_tutari < 750")).toBeInTheDocument();
     await waitFor(() => expect(within(t2).getByRole("button", { name: "Düzenle" })).toHaveFocus());
   });
 
@@ -138,35 +138,35 @@ describe("düzenleyici", () => {
     expect(within(form).getAllByTestId("kt-girdiler")).toHaveLength(2);
     // Kaldırınca odak "Girdi ekle"ye geçer (sonraki yazım oraya kaçmasın diye beklenir).
     await waitFor(() => expect(within(form).getByRole("button", { name: "Girdi ekle" })).toHaveFocus());
-    const cikti = within(form).getAllByTestId("kt-ciktilar")[1];
+    const cikti = within(form).getAllByTestId("kt-ciktilar")[0];
     await userEvent.clear(within(cikti).getByLabelText("Ad"));
-    await userEvent.type(within(cikti).getByLabelText("Ad"), "siparis_acik");
-    expect(within(form).getAllByLabelText(/siparis_acik ifadesi/)).toHaveLength(3);
+    await userEvent.type(within(cikti).getByLabelText("Ad"), "uyari_var");
+    expect(within(form).getAllByLabelText(/uyari_var ifadesi/)).toHaveLength(3);
     // Mantıksal çıktıda tolerans kullanılmaz.
     expect(within(cikti).getByLabelText("Tolerans")).toHaveAttribute("readonly");
     await userEvent.click(within(form).getByRole("button", { name: "Kaydet" }));
-    await waitFor(() => expect(kalite().tablolar.find((x) => x.id === "kt-2")!.icerik.ciktilar[1].ad).toBe("siparis_acik"));
-    expect(kalite().tablolar.find((x) => x.id === "kt-2")!.icerik.satirlar[0].cikti).toEqual({ uyari_gosterilir: "yanlis", siparis_acik: "dogru" });
+    await waitFor(() => expect(kalite().tablolar.find((x) => x.id === "kt-2")!.icerik.ciktilar[0].ad).toBe("uyari_var"));
+    expect(kalite().tablolar.find((x) => x.id === "kt-2")!.icerik.satirlar[0].cikti).toEqual({ uyari_var: "yanlis" });
   });
 
   it("422 karar_tablosu_gecersiz: mesajlar ilgili alanın yanında, alan aria-invalid; düzenleme açık kalır", async () => {
     const { t2, form } = await ac();
     const r1 = within(form).getByRole("group", { name: "Satır R1" });
     await userEvent.clear(within(r1).getByLabelText("Koşul"));
-    await userEvent.type(within(r1).getByLabelText("Koşul"), "kampanyali ve bilinmeyen");
-    await userEvent.clear(within(r1).getByLabelText(/onay_aktif ifadesi/));
-    const girdi = within(form).getAllByTestId("kt-girdiler")[0];
+    await userEvent.type(within(r1).getByLabelText("Koşul"), "kampanyali_sepet ve bilinmeyen");
+    await userEvent.clear(within(r1).getByLabelText(/minimum_uyarisi ifadesi/));
+    const girdi = within(form).getAllByTestId("kt-girdiler")[1];
     await userEvent.clear(within(girdi).getByLabelText("Ad"));
-    await userEvent.type(within(girdi).getByLabelText("Ad"), "1toplam");
+    await userEvent.type(within(girdi).getByLabelText("Ad"), "1tutar");
     await userEvent.click(within(form).getByRole("button", { name: "Kaydet" }));
     expect(await within(form).findByTestId("kt-kayit-hatasi")).toHaveTextContent("doğrulama hatası");
     const kosul = within(r1).getByLabelText("Koşul");
     expect(kosul).toHaveAttribute("aria-invalid", "true");
     expect(document.getElementById(kosul.getAttribute("aria-describedby")!)).toHaveTextContent(/bilinmeyen/);
-    expect(within(r1).getByLabelText(/onay_aktif ifadesi/)).toHaveAttribute("aria-invalid", "true");
+    expect(within(r1).getByLabelText(/minimum_uyarisi ifadesi/)).toHaveAttribute("aria-invalid", "true");
     expect(within(girdi).getByLabelText("Ad")).toHaveAttribute("aria-invalid", "true");
     expect(within(t2).getByTestId("kt-duzenleyici")).toBeInTheDocument();
-    expect(kalite().tablolar.find((x) => x.id === "kt-2")!.icerik.girdiler[0].ad).toBe("toplam");
+    expect(kalite().tablolar.find((x) => x.id === "kt-2")!.icerik.girdiler[1].ad).toBe("sepet_tutari");
     // Yapı değişince eski yol mesajları temizlenir (yanlış alana düşmez).
     await userEvent.click(within(form).getByRole("button", { name: "Satır ekle" }));
     expect(within(form).queryByTestId("kt-kayit-hatasi")).toBeNull();
@@ -181,7 +181,7 @@ describe("düzenleyici", () => {
     await userEvent.click(within(form).getByRole("button", { name: "Kaydet" }));
     expect(await within(form).findByText(/değişti|değişmiş/)).toBeInTheDocument();
     expect(kalite().tablolar.find((x) => x.id === "kt-2")!.icerik.ad).toBe("Minimum sipariş (başkası)");
-    expect(within(form).getByLabelText("Tablo adı")).toHaveValue("Minimum sipariş tutarı (benim)");
+    expect(within(form).getByLabelText("Tablo adı")).toHaveValue(`${MIN_SIPARIS_TABLOSU.ad} (benim)`);
     await userEvent.click(within(form).getByRole("button", { name: "Güncel içeriği yükle" }));
     await waitFor(() => expect(within(form).getByLabelText("Tablo adı")).toHaveValue("Minimum sipariş (başkası)"));
     await userEvent.click(within(form).getByRole("button", { name: "Kaydet" }));
@@ -195,7 +195,7 @@ describe("düzenleyici", () => {
     await userEvent.type(within(form).getByLabelText("Tablo adı"), "!!!");
     await userEvent.click(within(form).getByRole("button", { name: "Vazgeç" }));
     await waitFor(() => expect(within(t2).getByRole("button", { name: "Düzenle" })).toHaveFocus());
-    expect(kalite().tablolar.find((x) => x.id === "kt-2")!.icerik.ad).toBe("Minimum sipariş tutarı");
+    expect(kalite().tablolar.find((x) => x.id === "kt-2")!.icerik.ad).toBe(MIN_SIPARIS_TABLOSU.ad);
   });
 
   it("boş tablo ekle: elle tablo düzenleyicide açılır; eksik içerik PO'ya gönderilemez (mesajlar listelenir)", async () => {
@@ -308,7 +308,7 @@ describe("örnekle dene", () => {
   it("eşleşen satır ve çıktılar", async () => {
     await oturumAc("po");
     uygulama();
-    const d = await dene(KAMPANYA, { adet: "14", ara_toplam: "350,00" });
+    const d = await dene(KAMPANYA, { adet: "14", birim_fiyat: "25,00" });
     const s = await within(d).findByTestId("kt-dene-sonuc");
     expect(s).toHaveTextContent("Eşleşen satır: R1");
     expect(within(s).getByRole("row", { name: /bedava_adet 2/ })).toBeInTheDocument();
@@ -321,7 +321,7 @@ describe("örnekle dene", () => {
     uygulama();
     const d = await dene(KAMPANYA, { adet: "7" });
     expect(await within(d).findByText("Eksik girdi")).toBeInTheDocument();
-    expect(within(d).getByTestId("kt-dene-sonuc")).toHaveTextContent("ara_toplam");
+    expect(within(d).getByTestId("kt-dene-sonuc")).toHaveTextContent("birim_fiyat");
   });
 
   it("eşleşen satır yok", async () => {
@@ -329,14 +329,14 @@ describe("örnekle dene", () => {
     const t = kalite().tablolar.find((x) => x.id === "kt-1")!;
     t.icerik = { ...t.icerik, satirlar: t.icerik.satirlar.filter((s) => s.id === "R1") };
     uygulama();
-    const d = await dene(KAMPANYA, { adet: "3", ara_toplam: "75" });
+    const d = await dene(KAMPANYA, { adet: "3", birim_fiyat: "25" });
     expect(await within(d).findByText("Eşleşen satır yok")).toBeInTheDocument();
   });
 
   it("hata: sayı girdisine metin", async () => {
     await oturumAc("analist");
     uygulama();
-    const d = await dene(KAMPANYA, { adet: "yedi", ara_toplam: "75" });
+    const d = await dene(KAMPANYA, { adet: "yedi", birim_fiyat: "25" });
     expect(await within(d).findByText("Değerlendirilemedi")).toBeInTheDocument();
     expect(within(d).getByTestId("kt-dene-sonuc")).toHaveTextContent("'adet' girdisi sayi türünde olmalı");
   });
@@ -344,7 +344,7 @@ describe("örnekle dene", () => {
   it("mantıksal girdi seçimle: kampanyalı sepet R1", async () => {
     await oturumAc("analist");
     uygulama();
-    const d = await dene(MIN, { toplam: "500", kampanyali: "dogru" });
+    const d = await dene(MIN, { sepet_tutari: "500", kampanyali_sepet: "dogru" });
     expect(await within(d).findByTestId("kt-dene-sonuc")).toHaveTextContent("Eşleşen satır: R1");
   });
 });
@@ -486,17 +486,17 @@ describe("çekirdek sözleşmesi: son taslak, elle ilişki, örnekle dene (kayde
     const form = within(t2).getByTestId("kt-duzenleyici");
     const r2 = within(form).getByRole("group", { name: "Satır R2" });
     await userEvent.clear(within(r2).getByLabelText("Koşul"));
-    await userEvent.type(within(r2).getByLabelText("Koşul"), "toplam >= 750");
+    await userEvent.type(within(r2).getByLabelText("Koşul"), "sepet_tutari >= 750");
     const dene = vi.spyOn(api, "kararTablosuDene");
     const d = within(t2).getByTestId("kt-dene");
     await userEvent.click(within(d).getByText("Örnekle dene"));
     expect(within(d).getByText("Düzenleyicideki kaydedilmemiş içerikle denenir.")).toBeInTheDocument();
-    await userEvent.type(within(d).getByLabelText(/^toplam/), "750");
-    await userEvent.selectOptions(within(d).getByLabelText(/^kampanyali/), "yanlis");
+    await userEvent.type(within(d).getByLabelText(/^sepet_tutari/), "750");
+    await userEvent.selectOptions(within(d).getByLabelText(/^kampanyali_sepet/), "yanlis");
     await userEvent.click(within(d).getByRole("button", { name: "Dene" }));
     expect(await within(d).findByTestId("kt-dene-sonuc")).toHaveTextContent("Eşleşen satır: R2");
-    expect(dene).toHaveBeenCalledWith("kt-2", { toplam: "750", kampanyali: false }, expect.objectContaining({ satirlar: expect.any(Array) }));
-    expect(kalite().tablolar.find((x) => x.id === "kt-2")!.icerik.satirlar[1].kosul).toBe("toplam > 750");
+    expect(dene).toHaveBeenCalledWith("kt-2", { kampanyali_sepet: false, sepet_tutari: "750" }, expect.objectContaining({ satirlar: expect.any(Array) }));
+    expect(kalite().tablolar.find((x) => x.id === "kt-2")!.icerik.satirlar[1].kosul).toBe("sepet_tutari <= 750");
   });
 
   it("Yeni ilişki: form odak alır, tabloya bağlanarak oluşturulur", async () => {

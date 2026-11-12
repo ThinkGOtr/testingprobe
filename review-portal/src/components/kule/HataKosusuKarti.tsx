@@ -34,7 +34,7 @@ const ASAMA_ADI: Record<HataKosusuAdimi["asama"], string> = {
 };
 
 function adimAdi(a: HataKosusuAdimi, katalog: Map<string, HataKatalogOgesi>): string {
-  return a.asama === "hata" && a.hata_kodu ? ekilmisHataAdi(a.hata_kodu, katalog.get(a.hata_kodu)?.ad) : ASAMA_ADI[a.asama];
+  return a.asama === "hata" && a.hata_kodu ? ekilmisHataAdi(a.hata_kodu, katalog.get(a.hata_kodu)?.ad ?? a.hata_adi) : ASAMA_ADI[a.asama];
 }
 
 /** Oran metni: "%78 (7/9)"; payda 0 ise null (çağıran "ölçülmedi" yazar). */

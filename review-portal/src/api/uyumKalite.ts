@@ -219,6 +219,17 @@ export function oracleUyarla(x: unknown): CaseOracle | null {
     sonuc,
     ozet: metin(x.ozet),
     karsilastirmalar: dizi(x.karsilastirmalar).filter(nesneMi).map(karsilastirmaUyarla),
+    karsilastirilamayan: dizi(x.karsilastirilamayan)
+      .filter(nesneMi)
+      .map((k) => ({
+        tablo_id: metinYaDaNull(k.tablo_id),
+        tablo_ad: metinYaDaNull(k.tablo_ad),
+        column: metin(k.column),
+        alan: metin(k.alan),
+        alinti: metin(k.alinti),
+        case_degeri: deger(k.case_degeri),
+        neden: metin(k.neden),
+      })),
     istisna: i ? { gerekce: metin(i.gerekce), veren: metinYaDaNull(i.veren), zaman: metinYaDaNull(i.zaman) } : null,
     icerik_hash: metinYaDaNull(x.icerik_hash),
     kontrol_suruyor: suruyor,
@@ -229,6 +240,16 @@ export function oracleUyarla(x: unknown): CaseOracle | null {
 export function caseOracleAlani(ham: unknown): { oracle?: CaseOracle | null } {
   if (!nesneMi(ham) || !("oracle" in ham)) return {};
   return { oracle: oracleUyarla(ham.oracle) };
+}
+
+/**
+ * `GET /cases/{id}/oracle` yanıtı: çekirdek `{case_id, icerik_hash, guncel_icerik, kapsayan_tablolar,
+ * oracle}` sarmalar; kontrol nesnesi `oracle` alanındadır (null: kapsayan tablo yok). Sarmalanmamış
+ * (yalın kontrol nesnesi) gövde de okunur.
+ */
+export function caseOracleYanitiUyarla(x: unknown): CaseOracle | null {
+  if (nesneMi(x) && ("oracle" in x || "case_id" in x || "kapsayan_tablolar" in x)) return oracleUyarla(x.oracle);
+  return oracleUyarla(x);
 }
 
 export function oracleKontrolUyarla(x: unknown): OracleKontrolYaniti {

@@ -22,6 +22,18 @@
 .oracle-farkli > td:first-child {
   box-shadow: inset 3px 0 0 var(--err);
 }
+/* Karşılaştırılamayan değerler: ayrı, soluk grup (sonuca girmez). Opak zemin, soluk metin token'ı. */
+.oracle-karsilastirilamadi > tr > th[scope="rowgroup"] {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-2);
+  background: var(--surface-2);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.oracle-karsilastirilamadi td {
+  color: var(--text-2);
+}
 .oracle-kapi {
   margin-top: 10px;
 }

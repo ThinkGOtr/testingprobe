@@ -4,7 +4,6 @@
 // `hata_kosusu.ilerleme` olayı. Koşu tek bir zamanlayıcıyla ilerler; `kuleMockSifirla` zamanlayıcıyı
 // temizler (testler arasında sızmaz) ve testler `kuleMockIlerlet` ya da sahte saatle adım adım sürer.
 import { ApiError } from "../http";
-import { EKILMIS_HATA_ADI } from "../../lib/etiketler";
 import { PLATFORMLAR, platformUyarla, type Platform } from "../../lib/platform";
 import type {
   HataKosusu,
@@ -19,7 +18,7 @@ import type {
 } from "../types";
 import { yakalamaOrani } from "../uyumKule";
 import { mockOlayYayinla } from "./olaylar";
-import { adimiSonuclandir, adimIskeleti, HATA_KATALOGU, ilkHataKosulari, MOCK_BEKLENTI, PAKET_TESTLERI } from "./kuleVerisi";
+import { adimiSonuclandir, adimIskeleti, HATA_KATALOGU, ilkHataKosulari, KULE_KALITE_KAYNAKLARI, MOCK_BEKLENTI, PAKET_TESTLERI } from "./kuleVerisi";
 
 const testModu = import.meta.env.MODE === "test";
 /** Bir adımın süresi (ms). Testler değiştirebilir; `kuleMockSifirla` varsayılana döndürür. */
@@ -33,21 +32,35 @@ let kosular: HataKosusuDetay[] = [];
 let sayac = 1;
 let zamanlayici: ReturnType<typeof setTimeout> | null = null;
 
+const katalogAdi = (kod: string | null): string | null => (kod ? (HATA_KATALOGU.find((h) => h.kod === kod)?.ad ?? kod) : null);
+
+/** core `ozet_hesapla`: platform başına sayılar + `bekleyen`, `temel`, `kapanis`; toplamda `bekleyen`. */
 function ozetHesapla(k: HataKosusuDetay): HataKosusuOzeti {
   const platformlar: HataYakalamaPlatformu[] = k.platformlar.map((platform) => {
-    const { oran, yakalanan, kacan, gecersiz } = yakalamaOrani(k.adimlar.filter((a) => a.platform === platform));
-    return { platform, oran, yakalanan, kacan, gecersiz };
+    const pa = k.adimlar.filter((a) => a.platform === platform);
+    const { oran, yakalanan, kacan, gecersiz, bekleyen } = yakalamaOrani(pa);
+    return {
+      platform,
+      oran,
+      yakalanan,
+      kacan,
+      gecersiz,
+      bekleyen,
+      temel: pa.find((a) => a.asama === "temel")?.sonuc ?? null,
+      kapanis: pa.find((a) => a.asama === "kapanis")?.sonuc ?? null,
+    };
   });
-  const { oran, yakalanan, kacan, gecersiz } = yakalamaOrani(k.adimlar);
+  const { oran, yakalanan, kacan, gecersiz, bekleyen } = yakalamaOrani(k.adimlar);
   return {
     oran,
     yakalanan,
     kacan,
     gecersiz,
+    bekleyen,
     platformlar,
     kacanlar: k.adimlar
       .filter((a) => a.asama === "hata" && a.sonuc === "kacti" && a.hata_kodu)
-      .map((a) => ({ hata_kodu: a.hata_kodu as string, ad: EKILMIS_HATA_ADI[a.hata_kodu as string] ?? (a.hata_kodu as string), platform: a.platform })),
+      .map((a) => ({ hata_kodu: a.hata_kodu as string, ad: katalogAdi(a.hata_kodu) as string, platform: a.platform })),
   };
 }
 
@@ -137,7 +150,7 @@ export function kuleMockIlerlet(): boolean {
   return true;
 }
 
-function baslat(kullanici: Kullanici, govde: unknown): HataKosusu {
+function baslat(kullanici: Kullanici, govde: unknown): Pick<HataKosusu, "id" | "durum"> {
   const g = (govde && typeof govde === "object" ? govde : {}) as { platformlar?: unknown; hatalar?: unknown };
   if (suren()) throw new ApiError(409, "Süren bir ekilmiş hata koşusu var; bitmeden yenisi başlatılamaz.", { kod: "hata_kosusu_suruyor" });
   const ham = Array.isArray(g.platformlar) ? g.platformlar : [];
@@ -173,19 +186,21 @@ function baslat(kullanici: Kullanici, govde: unknown): HataKosusu {
   kosular.unshift(k);
   olay(k, null);
   planla();
-  return ozet(k);
+  // core 202 gövdesi: yalnız `{id, durum}`.
+  return { id: k.id, durum: k.durum };
 }
 
-function iptal(id: string): HataKosusu {
+function iptal(id: string, kullanici: Kullanici): Pick<HataKosusu, "id" | "durum"> {
   const k = bul(id);
-  if (k.durum !== "queued" && k.durum !== "running") throw new ApiError(409, "Koşu sürmüyor; iptal edilecek bir şey yok.");
+  // core `iptal`: bitmiş koşu (done | failed | cancelled) → 409 (WorkflowError, kod `cakisma`).
+  if (k.durum !== "queued" && k.durum !== "running") throw new ApiError(409, `Koşu iptal edilemez (durum: ${k.durum}).`, { kod: "cakisma" });
   zamanlayiciyiTemizle();
   k.durum = "cancelled";
   k.bitis = new Date().toISOString();
   k.ozet = ozetHesapla(k);
-  k.uyarilar.push("Koşu iptal edildi; koşmayan adımlar sonuçsuz kaldı.");
+  k.uyarilar.push(`${kullanici.kullanici_adi} tarafından iptal edildi.`);
   olay(k, null);
-  return ozet(k);
+  return { id: k.id, durum: k.durum };
 }
 
 function bul(id: string): HataKosusuDetay {
@@ -252,10 +267,45 @@ function adimKosusu(runId: string): KosuDetay & { ortam: Record<string, unknown>
 /** Kule yanıtına eklenen iki anahtar (§4.7): son BİTMİŞ koşudan; hiç bitmiş koşu yoksa `hata_yakalama: null`. */
 export function kuleKaliteOlcumu(): Required<Pick<KontrolKulesi, "beklenti_dogrulugu" | "hata_yakalama">> {
   const son = kosular.find((k) => k.durum === "done");
-  const o = son ? (son.ozet ?? ozetHesapla(son)) : null;
+  const o = son ? ozetHesapla(son) : null;
   return {
     beklenti_dogrulugu: { ...MOCK_BEKLENTI },
-    hata_yakalama: son && o ? { son_kosu: { id: son.id, bitis: son.bitis, durum: son.durum }, ...o } : null,
+    // core `hata_yakalama_ozeti`: platformlar yalnız sayılar (bekleyen/temel/kapanış koşu özetinde kalır).
+    hata_yakalama:
+      son && o
+        ? {
+            son_kosu: { id: son.id, bitis: son.bitis, durum: son.durum },
+            oran: o.oran,
+            yakalanan: o.yakalanan,
+            kacan: o.kacan,
+            gecersiz: o.gecersiz,
+            platformlar: o.platformlar.map(({ platform, oran, yakalanan, kacan, gecersiz }) => ({ platform, oran, yakalanan, kacan, gecersiz })),
+            kacanlar: o.kacanlar,
+          }
+        : null,
+  };
+}
+
+/** core `hata_yakalama_ozeti` kaynak metni (İstanbul saatiyle bitiş, platformlar, sayılar, oran). */
+export function kuleKaliteKaynaklariMock(): { beklenti_dogrulugu: string; hata_yakalama: string } {
+  const son = kosular.find((k) => k.durum === "done");
+  if (!son) return { ...KULE_KALITE_KAYNAKLARI };
+  const o = ozetHesapla(son);
+  const p = son.bitis
+    ? Object.fromEntries(
+        new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Istanbul", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+          .formatToParts(new Date(son.bitis))
+          .map((x) => [x.type, x.value]),
+      )
+    : null;
+  const tarih = p ? `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}` : "?";
+  const oranMetni = o.oran !== null ? `oran %${Math.round(o.oran * 100)}` : "oran ölçülmedi";
+  return {
+    beklenti_dogrulugu: KULE_KALITE_KAYNAKLARI.beklenti_dogrulugu,
+    hata_yakalama:
+      `Son tamamlanan ekilmiş hata koşusu (${tarih}; ${son.platformlar.join(", ")}): ` +
+      `yakalanan ${o.yakalanan}, kaçan ${o.kacan}, geçersiz ${o.gecersiz}; ${oranMetni}. ` +
+      "Oran = yakalanan / (yakalanan + kaçan); geçersiz adımlar paydaya girmez (hata_kosusu, hata_kosusu_adim).",
   };
 }
 
@@ -287,15 +337,16 @@ export function kuleRotalari(girisGerekli: () => Kullanici, rolGerekli: (...roll
       /^\/fault-runs\/([^/]+)$/,
       (m) => {
         girisGerekli();
-        return bul(decodeURIComponent(m[1]));
+        // core `_adim_sozluk`: adımda katalog adı (`hata_adi`).
+        const k = bul(decodeURIComponent(m[1]));
+        return { ...k, adimlar: k.adimlar.map((a) => ({ ...a, hata_adi: katalogAdi(a.hata_kodu) })) };
       },
     ],
     [
       "POST",
       /^\/fault-runs\/([^/]+)\/cancel$/,
       (m) => {
-        rolGerekli(...BASLATAN_ROLLER);
-        return iptal(decodeURIComponent(m[1]));
+        return iptal(decodeURIComponent(m[1]), rolGerekli(...BASLATAN_ROLLER));
       },
     ],
     // Ekilmiş hata adımlarının koşu kayıtları (kimlik `hk-<n>-r<sıra>`); diğer koşular handlers.ts'te.

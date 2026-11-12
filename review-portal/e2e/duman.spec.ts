@@ -23,6 +23,16 @@ async function girisYap(page: Page, kullanici: string) {
   await fontlariBekle(page);
 }
 
+/**
+ * Tam sayfa görüntüsü sayfa tepesinden: sayfa kaydırılmışken (ör. tıklanan düğme görünüme kaydırıldı)
+ * Chromium tam sayfa yakalamada yapışkan üst çubuk ve yan menüyü o kaydırma konumunda çizer; görüntüde
+ * sayfanın ortasında ikinci bir başlık varmış gibi görünür (yerleşim hatası değil, viewport'ta tektir).
+ */
+async function tamSayfaUstten(page: Page, path: string) {
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({ path, fullPage: true });
+}
+
 /** Akış göstergesinde kutuları üst üste binen adım adı çiftleri (1 px tolerans). */
 async function akisAdCakismalari(page: Page): Promise<string[]> {
   return page.evaluate(() => {
@@ -294,17 +304,17 @@ test("sunucu: Kontrol Kulesi'nde ekilmiş hata koşusu başlatır (web); ilerlem
   await page.goto("/kontrol-kulesi");
   // KPI şeridi: iki kalite karosu ve kaynak ipuçları.
   await expect(page.getByTestId("beklenti-dogrulugu")).toHaveText("%83");
-  await expect(page.getByTestId("hata-yakalama")).toHaveText("%71");
-  await expect(page.getByRole("img", { name: /^Kaynak: hata_kosusu_adim/ })).toBeVisible();
+  await expect(page.getByTestId("hata-yakalama")).toHaveText("%88");
+  await expect(page.getByRole("img", { name: /^Kaynak: Son tamamlanan ekilmiş hata koşusu/ })).toBeVisible();
   const kart = page.getByRole("region", { name: "Ekilmiş hata koşusu" });
-  // Örnek verideki bitmiş koşu (web + android): geçersiz adım orana girmez; kaçan hatalar ayrı listede.
-  await expect(kart.getByTestId("hk-oran-web")).toHaveText("%78 (7/9)");
-  await expect(kart.getByTestId("hk-oran-android")).toContainText("%63 (5/8)");
+  // Örnek verideki bitmiş koşu (web + android): web demo uygulamada ölçülen gerçek matris (8/9, yalnız
+  // kampanya_esik_7 kaçar); geçersiz adım orana girmez; kaçan hatalar ayrı listede.
+  await expect(kart.getByTestId("hk-oran-web")).toHaveText("%89 (8/9)");
+  await expect(kart.getByTestId("hk-oran-android")).toContainText("%88 (7/8)");
   await expect(kart.getByTestId("hk-oran-android")).toContainText("1 geçersiz (orana girmez)");
-  await expect(kart.getByTestId("hk-hucre-android-min_siparis_1000")).toContainText("Neden: Appium oturumu koptu");
-  await expect(kart.getByTestId("hk-kacanlar").getByRole("listitem")).toHaveCount(3);
-  await kart.scrollIntoViewIfNeeded();
-  await page.screenshot({ path: `${EKRAN_DIZINI}/60-kule-ekilmis-hata.png`, fullPage: true });
+  await expect(kart.getByTestId("hk-hucre-android-min_siparis_1000")).toContainText("Neden: Cihaz/Appium erişilemiyor");
+  await expect(kart.getByTestId("hk-kacanlar").getByRole("listitem")).toHaveCount(1);
+  await tamSayfaUstten(page, `${EKRAN_DIZINI}/60-kule-ekilmis-hata.png`);
 
   // Yalnız iki hatayla web koşusu (web işaretli gelir; uygulama platformları işaretsiz).
   await expect(kart.getByRole("checkbox", { name: "Web" })).toBeChecked();
@@ -312,11 +322,11 @@ test("sunucu: Kontrol Kulesi'nde ekilmiş hata koşusu başlatır (web); ilerlem
   for (const ad of [
     "Kampanya indirimi iki kez düşülüyor",
     "Minimum sipariş sınırı dahil değil",
-    "Kampanyalı sepet minimum siparişten muaf değil",
-    "Minimum sipariş 750 yerine 500",
-    "Minimum sipariş 750 yerine 1000",
-    "P-004 fiyatı 30 yerine 31",
-    "Kampanyalı ürün P-001 yerine P-002",
+    "Kampanyalı sepet minimumdan muaf değil",
+    "Minimum sipariş tutarı 500",
+    "Minimum sipariş tutarı 1000",
+    "P-004 fiyatı 31",
+    "Kampanyalı ürün P-002",
   ]) {
     await kart.getByRole("checkbox", { name: ad }).uncheck();
   }
@@ -325,7 +335,7 @@ test("sunucu: Kontrol Kulesi'nde ekilmiş hata koşusu başlatır (web); ilerlem
   await expect(kart.getByTestId("hk-ilerleme")).toBeVisible();
   await expect(kart.getByTestId("hk-sayac")).toContainText("/ 4");
   await expect(kart.getByRole("button", { name: "Koşuyu başlat" })).toBeDisabled();
-  await page.screenshot({ path: `${EKRAN_DIZINI}/61-kule-ekilmis-hata-ilerleme.png`, fullPage: true });
+  await tamSayfaUstten(page, `${EKRAN_DIZINI}/61-kule-ekilmis-hata-ilerleme.png`);
   // Koşu biter: ilerleme kapanır, tablo yeni koşuyu gösterir.
   await expect(kart.getByTestId("hk-ilerleme")).toHaveCount(0, { timeout: 30_000 });
   await expect(kart.getByTestId("hk-sonuc")).toHaveAttribute("data-kosu", "hk-2");
@@ -339,7 +349,7 @@ test("sunucu: Kontrol Kulesi'nde ekilmiş hata koşusu başlatır (web); ilerlem
   // Kule ölçüsü son bitmiş koşudan; geçmişte iki koşu.
   await expect(page.getByTestId("hata-yakalama")).toHaveText("%50");
   await expect(kart.getByTestId("hk-gecmis").getByRole("row")).toHaveCount(3);
-  await page.screenshot({ path: `${EKRAN_DIZINI}/62-kule-ekilmis-hata-sonuc.png`, fullPage: true });
+  await tamSayfaUstten(page, `${EKRAN_DIZINI}/62-kule-ekilmis-hata-sonuc.png`);
   // Hücre kendi koşusuna bağlanır.
   await kart.getByTestId("hk-hucre-web-kampanya_bedava_yok").getByRole("link").click();
   await expect(page).toHaveURL(/\/kosular\/hk-2-r2$/);

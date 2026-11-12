@@ -75,8 +75,8 @@ import {
   kaliteTaslakUyarla,
   kararTablolariUyarla,
   kararTablosuUyarla,
+  caseOracleYanitiUyarla,
   oracleKontrolUyarla,
-  oracleUyarla,
   turetmelerUyarla,
   turetmeUyarla,
 } from "./uyumKalite";
@@ -328,7 +328,7 @@ export const api = {
     turetmeUyarla(await istek<unknown>("POST", `/requirements/${yol(requirementId)}/metamorphic-cases`, { govde: g, kaynak: KALITE_KAYNAGI })),
   /** Kontrol sonucu: güncel içerik ya da (`icerikHash` verilirse) önerilen içerik; kayıt yoksa null. */
   caseOracle: async (id: string, icerikHash?: string): Promise<CaseOracle | null> =>
-    oracleUyarla(await istek<unknown>("GET", `/cases/${yol(id)}/oracle`, { sorgu: { icerik_hash: icerikHash }, kaynak: CASE_KAYNAGI })),
+    caseOracleYanitiUyarla(await istek<unknown>("GET", `/cases/${yol(id)}/oracle`, { sorgu: { icerik_hash: icerikHash }, kaynak: CASE_KAYNAGI })),
   /** Önerilen (düzeltme formundaki) içerik için kontrol ister (analyst; 202). Sonuç `oracle.checked` ile gelir. */
   caseOracleKontrol: async (id: string, icerik?: TestCaseIcerik): Promise<OracleKontrolYaniti> =>
     oracleKontrolUyarla(await istek<unknown>("POST", `/cases/${yol(id)}/oracle-check`, { govde: icerik ? { icerik } : {}, kaynak: CASE_KAYNAGI })),
