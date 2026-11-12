@@ -571,7 +571,8 @@ def ortam_nedeni(report: Mapping[str, Any], sinif: Any) -> str:
     if saglik and saglik.get("ok") is False:
         appium = saglik.get("appium") if isinstance(saglik.get("appium"), Mapping) else None
         if appium and appium.get("hata"):
-            return f"Cihaz/Appium erişilemiyor ({appium.get('url') or '?'}): {appium['hata']}"
+            url = f" ({appium['url']})" if appium.get("url") else ""
+            return f"Cihaz/Appium erişilemiyor{url}: {appium['hata']}"
         return str(saglik.get("hata") or "Uygulama sağlık kontrolü başarısız.")
     if rr.get("status") == "error":
         return f"Test koşucusu hata verdi: {rr.get('error') or report.get('summary') or '?'}"

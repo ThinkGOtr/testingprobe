@@ -742,3 +742,18 @@ def test_codegen_toolchain_istemcisi_fault_alani() -> None:
     # Verilmezse gövdeye yazılmaz: eski toolchain'lerle istek baytları aynı kalır.
     assert "fault" not in govdeler[0]
     assert govdeler[1]["fault"] == "kampanya_esik_7" and govdeler[1]["lang"] == "java"
+
+
+def test_ortam_nedeni_appium_adresi_yoksa_parantez_yazmaz() -> None:
+    """Windows VM yapılandırılmamışken neden metni "(?)" taşımaz (izole yığında görüldü)."""
+    sinif = type("S", (), {"sinif": "ortam", "hata": "x", "aciklama": "x"})()
+
+    def rapor(appium: dict[str, Any]) -> dict[str, Any]:
+        return {"run": {"saglik": {"ok": False, "appium": appium}}}
+
+    assert service.ortam_nedeni(
+        rapor({"url": None, "hata": "APPIUM_URL_WINDOWS yapılandırılmamış"}), sinif
+    ) == ("Cihaz/Appium erişilemiyor: APPIUM_URL_WINDOWS yapılandırılmamış")
+    assert service.ortam_nedeni(
+        rapor({"url": "http://appium-gw:4723/status", "hata": "ConnectError"}), sinif
+    ) == ("Cihaz/Appium erişilemiyor (http://appium-gw:4723/status): ConnectError")
