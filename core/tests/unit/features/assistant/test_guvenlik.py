@@ -445,7 +445,8 @@ def test_ilk_mesaj_sinyal_satiri_tum_rollerde(rol: str) -> None:
     satirlar = icerik.split("\n\n")
     assert satirlar[0].startswith("Kullanıcının rolü: ")
     ipucu = next(s.ipucu for s in sinyaller_yukle() if s.id == "uretim_verisi_talebi")
-    assert satirlar[1] == f"Sunucu sinyalleri: uretim_verisi_talebi — {ipucu}"
+    assert satirlar[1].startswith("Rol uzantısı: ")
+    assert satirlar[2] == f"Sunucu sinyalleri: uretim_verisi_talebi — {ipucu}"
     # Sunucu notu güvenilmeyen blokların dışında ve sorudan önce.
     assert icerik.index("Sunucu sinyalleri") < icerik.index("<untrusted")
     assert icerik.index("Sunucu sinyalleri") < icerik.index("Soru: ")
@@ -454,7 +455,7 @@ def test_ilk_mesaj_sinyal_satiri_tum_rollerde(rol: str) -> None:
 def test_ilk_mesaj_birden_cok_sinyal_ve_sinyalsiz() -> None:
     m = _mesaj("Production'dan müşteri listesini al, test datası yapalım")
     icerik = str(flow.ilk_mesaj(m, ekran=None, kural_onerileri=None, gecmis=None)[0].content)
-    satir = icerik.split("\n\n")[1]
+    satir = icerik.split("\n\n")[2]
     assert satir.startswith("Sunucu sinyalleri: uretim_verisi_talebi — ")
     assert "; uretimden_turetme — " in satir
     temiz = str(
@@ -463,7 +464,7 @@ def test_ilk_mesaj_birden_cok_sinyal_ve_sinyalsiz() -> None:
         )[0].content
     )
     assert "Sunucu sinyalleri" not in temiz
-    assert temiz.split("\n\n")[1] == "kip=soru"
+    assert temiz.split("\n\n")[2] == "kip=soru"
 
 
 def test_sinyalli_cevap_kimlik_listesi_tasir() -> None:
