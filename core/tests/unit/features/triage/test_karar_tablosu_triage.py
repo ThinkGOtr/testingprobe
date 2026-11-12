@@ -254,7 +254,7 @@ def test_senaryo9_beklenti_tabloda_uygulama_farkli_product_defect_ve_bug_taslagi
     assert kodlar[-1] == "karar_tablosu_uyumlu"
     sinyal = f.eslesen_sinyaller[-1]
     assert "Kampanya toplamı" in sinyal["aciklama"]
-    assert sinyal["baslik"] == "Uygulama onaylı kurala aykırı (T1 · R1: adet 6 → toplam 150.00)"
+    assert sinyal["baslik"] == "Uygulama onaylı kurala aykırı (T1 · R1: adet 6 → toplam 150,00)"
     assert str(k.case) in sinyal["kanit"] and k.case_hash in sinyal["kanit"]
     # Bug taslağı bugünkü product_defect ile aynı biçimde istenir.
     assert sonuc["bug_taslagi_istenen"] == 1 and cagrilar == [f.id]

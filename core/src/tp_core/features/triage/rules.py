@@ -525,9 +525,12 @@ def _esit(a: Any, b: Any, tolerans: Decimal) -> bool:
 
 
 def _goster(deger: Any) -> str:
+    """Sinyal metninde değer: mantıksal doğru/yanlış, ondalık sayı virgülle (`150,00`; Python
+    biçimi `150.00` kullanıcıya gösterilmez — birleştirme turu 2 ekran turu)."""
     if isinstance(deger, bool):
         return "doğru" if deger else "yanlış"
-    return str(deger)
+    metin = str(deger)
+    return metin.replace(".", ",") if re.fullmatch(r"-?\d+\.\d+", metin) else metin
 
 
 def _kural_ozeti(o: OracleKarsilastirma, tablo: Any) -> str:

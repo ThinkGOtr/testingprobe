@@ -381,7 +381,7 @@ def test_expected_substring_tocontaintext() -> None:
     g.mesaj, g.matcher = mesaj, "toContainText"
     g.beklenen, g.gerceklesen = satir["beklenen"], satir["gerceklesen"]
     s = _tablo_sinyali(_karar(g))
-    assert s["kod"] == "karar_tablosu_uyumlu" and "gerçekleşen 125.00" in s["aciklama"]
+    assert s["kod"] == "karar_tablosu_uyumlu" and "gerçekleşen 125,00" in s["aciklama"]
 
 
 @pytest.mark.parametrize(
@@ -407,7 +407,7 @@ def test_bicimli_metin_tek_sayisiyla_karsilastirilir() -> None:
     k = _karar(_playwright("Toplam: 150,00 TL", "Toplam: 125,00 TL", [_o("150.00", "150.00")]))
     s = _tablo_sinyali(k)
     assert s["kod"] == "karar_tablosu_uyumlu"
-    assert "test beklentisi 150.00, gerçekleşen 125.00" in s["aciklama"]
+    assert "test beklentisi 150,00, gerçekleşen 125,00" in s["aciklama"]
     # Birden çok sayı: karşılaştırılamaz → bugünkü davranış.
     k2 = _karar(_playwright("6 adet, 150,00 TL", "6 adet, 125,00 TL", [_o("150.00", "150.00")]))
     assert k2.kural == "product_defect"
@@ -419,10 +419,20 @@ def test_testng_bigdecimal_noktali_uc_hane_ondaliktir() -> None:
     k = _karar(_testng("2.500", "3.000", [_o("2.5", "2.5", column="indirim_orani")]))
     s = _tablo_sinyali(k)
     assert s["kod"] == "karar_tablosu_uyumlu"
-    assert "test beklentisi 2.500, gerçekleşen 3.000, tablo 2.5" in s["aciklama"]
+    assert "test beklentisi 2,500, gerçekleşen 3,000, tablo 2,5" in s["aciklama"]
     # TestNG'de 2500 değildir: 2500'lük kayıtla eşleşmez.
     k2 = _karar(_testng("2.500", "3.000", [_o("2500", "2500", column="indirim_orani")]))
     assert k2.kural == "product_defect"
     # Ekran metni (Bekle.dogrula): Türkçe yazım, 2.500 = 2500.
     k3 = _karar(_java("2.500", "3.000", [_o("2500", "2500", column="adet")]))
     assert _tablo_sinyali(k3)["kod"] == "karar_tablosu_uyumlu"
+
+
+def test_sinyal_degerleri_turkce_ondalik() -> None:
+    """Birleştirme turu 2 ekran turu: başlıkta `ara_toplam 150.00` değil `150,00`."""
+    from tp_core.features.triage import rules
+
+    assert rules._goster("150.00") == "150,00"
+    assert rules._goster("0") == "0"
+    assert rules._goster(True) == "doğru"
+    assert rules._goster("P-001") == "P-001"
