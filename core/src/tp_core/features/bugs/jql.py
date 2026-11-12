@@ -101,12 +101,16 @@ def _fold(s: str) -> str:
     return unicodedata.normalize("NFC", s).casefold().replace("i̇", "i")
 
 
-def key_terms(metinler: Iterable[str | None], limit: int = MAX_TERIM) -> list[str]:
+def key_terms(
+    metinler: Iterable[str | None], limit: int = MAX_TERIM, gizliler: Iterable[str] = ()
+) -> list[str]:
     """Metinlerden mükerrer araması terimleri: sıra korunur, tekrarsız, güvenli.
 
     Yalnızca harf/rakam dizileri; sayılar, ayrılmış sözcükler, yaygın sözcükler ve çok kısa/uzun
-    terimler atılır.
+    terimler atılır. 013 K19 (güvenlik #1): bilinen bir gizli değerin (katlanmış biçiminde)
+    parçası olan terim de atılır; parola Jira aramasına, `ek.jql`'e ve denetime girmez.
     """
+    katli = [_fold(g) for g in gizliler if isinstance(g, str) and g]
     out: list[str] = []
     gorulen: set[str] = set()
     for metin in metinler:
@@ -123,6 +127,7 @@ def key_terms(metinler: Iterable[str | None], limit: int = MAX_TERIM) -> list[st
                 or k.startswith(DURAK_ONEK)
                 or _AC_NO.fullmatch(k)
                 or k in gorulen
+                or any(k in g for g in katli)
             ):
                 continue
             gorulen.add(k)

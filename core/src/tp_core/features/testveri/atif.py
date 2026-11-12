@@ -14,8 +14,14 @@ Sözleşme:
   (`etiket.*`, `ayar.*` katalogda kalır, eşlenmez). Tutar biçimli değerler (`… TL`, salt sayı)
   yalnız `steps[].data` ve `preconditions`'ta eşlenir: beklenen sonuçtaki hesaplanmış bir toplam
   tesadüfen kredi limitine eşit diye atfa dönmez.
+- QA #11: değerin tekilliği (belirsizlik) **tüm katalogla** sınanır, grup/tutar süzgeci sonra
+  uygulanır: bir ürün değeri bir `etiket.*` değeriyle aynıysa belirsizdir, eşlenmez.
+- `case_esle(..., takma=...)`: katalog dışı bilinen değer → anahtar eşlemesi (ör. DB bloğunun
+  sabit demo parolası → `ortak.demo_parola`; K19 "sır tanımsız → engel" yolu için).
 - `maskele` / `maskele_obje`: bilinen gizli değerlerin geçişlerini `•••` yapar (K19; kullanıcıya
-  görünen içerik, yayın, bug taslağı).
+  görünen içerik, yayın, bug taslağı). Eşlemedeki gibi en az `MIN_DEGER` karakter ve kelime
+  sınırı kuralı (alt dize yan etkisi yok); `maskele_obje` yapısal alanlara (id, hash, sha,
+  durum...) dokunmaz.
 """
 
 from __future__ import annotations
@@ -46,21 +52,22 @@ def atiflar(metin: str) -> list[str]:
     return list(dict.fromkeys(ATIF_RE.findall(metin or "")))
 
 
-def _tekil_degerler(katalog: Mapping[str, str]) -> dict[str, str]:
-    """değer → anahtar; belirsiz (birden çok anahtarlı) ve kısa değerler çıkarılır."""
+def _sayac(katalog: Mapping[str, str]) -> dict[str, list[str]]:
+    """değer → anahtarlar (yalnız eşlenebilir uzunluktaki, kırpılmış değerler)."""
     sayac: dict[str, list[str]] = {}
     for anahtar, deger in katalog.items():
         if isinstance(deger, str) and len(deger.strip()) >= MIN_DEGER and deger == deger.strip():
             sayac.setdefault(deger, []).append(anahtar)
-    return {d: a[0] for d, a in sayac.items() if len(a) == 1}
+    return sayac
 
 
-def esle(metin: str, katalog: Mapping[str, str]) -> str:
-    """Değerleri atfa çevirir (yukarıdaki kurallar). `katalog`: anahtar → değer."""
-    if not metin:
-        return metin
-    tekil = _tekil_degerler(katalog)
-    if not tekil:
+def _tekil_degerler(katalog: Mapping[str, str]) -> dict[str, str]:
+    """değer → anahtar; belirsiz (birden çok anahtarlı) ve kısa değerler çıkarılır."""
+    return {d: a[0] for d, a in _sayac(katalog).items() if len(a) == 1}
+
+
+def _esle_tekil(metin: str, tekil: Mapping[str, str]) -> str:
+    if not metin or not tekil:
         return metin
     degerler = sorted(tekil, key=len, reverse=True)
     desen = re.compile(r"(?<![\w])(" + "|".join(re.escape(d) for d in degerler) + r")(?![\w])")
@@ -73,6 +80,13 @@ def esle(metin: str, katalog: Mapping[str, str]) -> str:
         son = m.end()
     out.append(desen.sub(lambda x: atif(tekil[x.group(1)]), metin[son:]))
     return "".join(out)
+
+
+def esle(metin: str, katalog: Mapping[str, str]) -> str:
+    """Değerleri atfa çevirir (yukarıdaki kurallar). `katalog`: anahtar → değer."""
+    if not metin:
+        return metin
+    return _esle_tekil(metin, _tekil_degerler(katalog))
 
 
 def coz(metin: str, degerler: Mapping[str, str], *, bilinmeyen: str = "hata") -> str:
@@ -124,11 +138,32 @@ def tutar_mi(deger: str) -> bool:
     return bool(TUTAR_RE.match(deger.strip()))
 
 
-def case_esle(case: Mapping[str, Any], katalog: Mapping[str, str]) -> dict[str, Any]:
-    """K18 kurallarıyla eşleme: grup süzgeci; tutar değerleri yalnız veri/ön koşul alanlarında."""
-    tum = {a: d for a, d in katalog.items() if eslenebilir_mi(a)}
-    serbest = {a: d for a, d in tum.items() if not (isinstance(d, str) and tutar_mi(d))}
-    return _alanlari_donustur(case, lambda m: esle(m, tum), lambda m: esle(m, serbest))
+def case_esle(
+    case: Mapping[str, Any],
+    katalog: Mapping[str, str],
+    takma: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """K18 kurallarıyla eşleme: grup süzgeci; tutar değerleri yalnız veri/ön koşul alanlarında.
+
+    Tekillik tüm katalogla sınanır, süzgeç sonra (QA #11). `takma`: değer → anahtar (katalogda
+    değeri olmayan bilinen değerler); katalogdaki bir değerle çakışmıyorsa eklenir.
+    """
+    sayac = _sayac(katalog)
+    tekil = {d: a[0] for d, a in sayac.items() if len(a) == 1}
+    tum = {d: a for d, a in tekil.items() if eslenebilir_mi(a)}
+    for d, a in (takma or {}).items():
+        if (
+            isinstance(d, str)
+            and len(d.strip()) >= MIN_DEGER
+            and d == d.strip()
+            and eslenebilir_mi(a)
+            and all(x == a for x in sayac.get(d, [a]))
+        ):
+            tum.setdefault(d, a)
+    serbest = {d: a for d, a in tum.items() if not tutar_mi(d)}
+    return _alanlari_donustur(
+        case, lambda m: _esle_tekil(m, tum), lambda m: _esle_tekil(m, serbest)
+    )
 
 
 def case_coz(
@@ -154,31 +189,63 @@ def bilinmeyen_atiflar(case: Mapping[str, Any], anahtarlar: Iterable[str]) -> li
 
 
 def _maske_listesi(gizliler: Iterable[str]) -> list[str]:
-    return sorted({g for g in gizliler if isinstance(g, str) and g.strip()}, key=len, reverse=True)
+    return sorted(
+        {g for g in gizliler if isinstance(g, str) and len(g.strip()) >= MIN_DEGER},
+        key=len,
+        reverse=True,
+    )
+
+
+def _maske_deseni(gizliler: Iterable[str]) -> re.Pattern[str] | None:
+    liste = _maske_listesi(gizliler)
+    if not liste:
+        return None
+    return re.compile(r"(?<![\w])(?:" + "|".join(re.escape(g) for g in liste) + r")(?![\w])")
+
+
+# Maskelenmeyen yapısal alanlar (güvenlik #10): kimlik, özet, durum; değerleri sırrı taşımaz,
+# alt dize değişimi bunları bozardı.
+YAPISAL_ALANLAR = frozenset(
+    {"id", "ids", "case_ids", "durum", "sha", "hash", "branch", "veri_izi", "mode", "platform"}
+)
+_YAPISAL_SONEK = ("_id", "_ids", "_hash", "_sha", "_key", "_url", "_zamani")
+
+
+def yapisal_mi(anahtar: Any) -> bool:
+    return isinstance(anahtar, str) and (
+        anahtar in YAPISAL_ALANLAR or anahtar.endswith(_YAPISAL_SONEK)
+    )
+
+
+def gizli_geciyor_mu(metin: str, gizliler: Iterable[str]) -> list[str]:
+    """Metinde kelime sınırında geçen bilinen gizli değerler (render taraması; boş = temiz)."""
+    desen = _maske_deseni(gizliler)
+    if desen is None or not metin:
+        return []
+    return list(dict.fromkeys(m.group(0) for m in desen.finditer(metin)))
 
 
 def maskele(metin: str, gizliler: Iterable[str]) -> str:
-    """Bilinen gizli değerlerin her geçişini `•••` yapar (uzundan kısaya)."""
+    """Bilinen gizli değerlerin geçişlerini `•••` yapar (uzundan kısaya; en az `MIN_DEGER`
+    karakter, kelime sınırında)."""
     if not metin:
         return metin
-    for g in _maske_listesi(gizliler):
-        metin = metin.replace(g, MASKE)
-    return metin
+    desen = _maske_deseni(gizliler)
+    return desen.sub(MASKE, metin) if desen is not None else metin
 
 
 def maskele_obje(obj: Any, gizliler: Iterable[str]) -> Any:
-    """`maskele`'nin JSON benzeri yapılar (dict / list / str) için özyinelemeli hâli."""
-    liste = _maske_listesi(gizliler)
-    if not liste:
+    """`maskele`'nin JSON benzeri yapılar (dict / list / str) için özyinelemeli hâli; yapısal
+    alanlar (`yapisal_mi`) olduğu gibi kalır."""
+    desen = _maske_deseni(gizliler)
+    if desen is None:
         return obj
 
     def _m(x: Any) -> Any:
         if isinstance(x, str):
-            for g in liste:
-                x = x.replace(g, MASKE)
-            return x
+            return desen.sub(MASKE, x)
         if isinstance(x, Mapping):
-            return {k: _m(v) for k, v in x.items()}
+            return {k: (v if yapisal_mi(k) else _m(v)) for k, v in x.items()}
         if isinstance(x, list | tuple):
             return [_m(v) for v in x]
         return x

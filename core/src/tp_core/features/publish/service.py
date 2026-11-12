@@ -529,7 +529,8 @@ def _publish_one(
         mapping = case_mapping(s, tc)
         story_key = req.jira_key
         icerik_hash = tc.icerik_hash
-        baslik = str(tc.icerik.get("title") or "")
+        # Jira'ya giden başlık maskelidir (K19); mevcut issue karşılaştırması da o başlıkla.
+        baslik = str(mapping.get("title") or "")
         mod = mode_of(tc)
         # intent commit edilir: dış çağrıdan sonra çöksek de kayıt (ve tp-<uuid> araması) kalır.
     try:

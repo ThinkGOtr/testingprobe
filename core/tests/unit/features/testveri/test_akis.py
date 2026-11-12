@@ -68,9 +68,14 @@ def test_case_uretimi_eslenir_hash_eslenmis_icerikten(
     assert cozulmus == ham
     assert izi == {
         "bayi.bayi1.kullanici_adi": service.deger_ozeti("bayi1"),
-        "ortak.demo_parola": service.deger_ozeti(DEMO_PAROLA),
+        "ortak.demo_parola": service.deger_ozeti(DEMO_PAROLA, gizli=True),
     }
-    assert all(len(v) == 12 for v in izi.values())
+    # §10: tuzlu (sunucu anahtarlı HMAC) özet; gizli değerin düz sha256'sı izde yok.
+    import hashlib
+
+    assert all(v.startswith("h1:") and len(v) == 19 for v in izi.values())
+    duz = hashlib.sha256(DEMO_PAROLA.encode()).hexdigest()
+    assert all(v[3:] not in duz for v in izi.values())
 
 
 def test_ayni_icerik_yeniden_uretimde_tekrar_sayilir(
@@ -109,7 +114,7 @@ def test_ide_taslaklari_da_eslenir(engine: Engine, make_user, make_requirement, 
         assert tc.icerik_hash == content_hash(tc.icerik)
 
 
-def test_parola_sirri_yoksa_parola_eslenmez(
+def test_parola_sirri_yoksa_sabit_parola_yine_atfa_eslenir(
     api: TestClient,
     engine: Engine,
     make_user,
@@ -118,10 +123,19 @@ def test_parola_sirri_yoksa_parola_eslenmez(
     katalog,
     monkeypatch,
 ) -> None:
+    """Güvenlik #5: sır tanımsızken DB bloğunun sabit parolası düz kalmaz; atfa çevrilir ve
+    kod üretimi `test_verisi` ("sırrı tanımsız") engeliyle durur."""
     monkeypatch.delenv(service.DEMO_PAROLA_SIRRI)
     rid, _ = _uret(api, engine, make_user, make_requirement, fake_gateway, [case_icerik()])
     (c,) = latest_cases(api, rid)
-    assert c["icerik"]["steps"][1]["data"] == f"{BAYI_ATFI} / {DEMO_PAROLA}"
+    assert c["icerik"]["steps"][1]["data"] == f"{BAYI_ATFI} / {PAROLA_ATFI}"
+    with session_scope() as s:
+        try:
+            service.case_coz(s, c["icerik"])
+        except service.TestVerisiCozulemedi as exc:
+            assert "sırrı tanımsız: ortak.demo_parola" in str(exc)
+        else:  # pragma: no cover
+            raise AssertionError("sır tanımsızken çözüm başarılı olmamalı")
 
 
 def _duzelt(api: TestClient, c: dict[str, Any], icerik: dict[str, Any]):

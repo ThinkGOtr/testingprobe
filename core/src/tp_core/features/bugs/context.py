@@ -151,7 +151,8 @@ class BugContext:
     def terms(self) -> list[str]:
         """Mükerrer araması terimleri: önce ayırt edici metinler (AC/bulgu, case başlığı)."""
         return jql.key_terms(
-            [
+            gizliler=self.gizli_degerler,
+            metinler=[
                 *self.ac_metinleri,
                 self.iddia,
                 self.case_baslik,
@@ -160,11 +161,18 @@ class BugContext:
                 self.test_adi,
                 self.belge_metni,
                 self.gozlem,
-            ]
+            ],
         )
 
     def imza(self) -> dict[str, Any]:
-        """Hata imzası (TEKNIK-TASARIM §8.12): test adı, hata türü, sayfa/AC, anahtar terimler."""
+        """Hata imzası (TEKNIK-TASARIM §8.12): test adı, hata türü, sayfa/AC, anahtar terimler.
+
+        013 K19 (güvenlik #1): bilinen gizli değerler maskeli (taslak API'si ve denetim)."""
+        from tp_core.features.testveri.atif import maskele_obje
+
+        return maskele_obje(self._imza(), self.gizli_degerler)
+
+    def _imza(self) -> dict[str, Any]:
         return {
             "kaynak": self.kaynak,
             "test_adi": self.test_adi,

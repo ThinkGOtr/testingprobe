@@ -84,6 +84,7 @@ from tp_core.features.codegen.classify import Siniflama, classify, kirma_sinifi
 from tp_core.features.codegen.ozet import adim_ozeti, ham_cikti, insan_ozeti  # noqa: F401
 from tp_core.features.codegen.prbody import pr_body, pr_title
 from tp_core.features.codegen.render import (
+    GizliSizinti,
     Rendered,
     RenderError,
     RenderInput,
@@ -560,7 +561,7 @@ def start_generation(
             if sc.durum in ("pr_open", "merged") and cg.case_hash == h:
                 if cozum is None:
                     cozum = _veri_coz(session, tc.icerik)
-                if cozum[1] is None and (cg.veri_izi or {}) == cozum[0]:
+                if cozum[1] is None and testveri.izler_ayni(session, cg.veri_izi, cozum[0]):
                     atla = {
                         "durum": "pr_acik" if sc.durum == "pr_open" else "merge_edildi",
                         "script_id": str(sc.id),
@@ -764,8 +765,12 @@ def _insana(
     hedef: str = "blocked",
     dogrulama: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Script'i insana düşürür (`blocked`; ortam/beklenmeyen hatada `failed`)."""
+    """Script'i insana düşürür (`blocked`; ortam/beklenmeyen hatada `failed`).
+
+    013 K19 / güvenlik #8: neden (çözülmüş case metni, assertion beklenen değeri, istisna metni
+    taşıyabilir) engel kaydına, geçişe, iş akışına ve denetime maskeli yazılır."""
     with session_scope() as s:
+        neden = atif.maskele(neden, testveri.gizli_degerler(s))
         sc, cg = _yukle(s, sid, lock=True)
         mevcut = sc.durum
         if mevcut in ("blocked", "failed", "closed", "merged"):
@@ -2252,6 +2257,7 @@ def _render(
     with session_scope() as s:
         _, cg = _yukle(s, sid)
         gizli_ortam = testveri.gizli_ortam_adlari(s)
+        gizli_tara = testveri.gizli_degerler(s)
         inp = RenderInput(
             case_id=case_id,
             case=case,
@@ -2265,6 +2271,7 @@ def _render(
             dealers=dealers,
             e2e_root=e2e_app_root() if uygulama else e2e_root(),
             gizli_ortam=gizli_ortam,
+            gizli_taranacak=tuple(gizli_tara),
         )
     try:
         rendered = (
@@ -2272,6 +2279,9 @@ def _render(
             if uygulama
             else render_test(inp, _rules_dir())
         )
+    except GizliSizinti as exc:
+        # 013 K19 / güvenlik #4-#5: PR'da düz sır yok (fail-closed); sır tanımsızsa da buraya düşer.
+        return _insana(engine, sid, "test_verisi", str(exc), hedef="failed")
     except RenderError as exc:
         return _insana(engine, sid, "unknown_method", f"şablon reddetti: {exc}")
     with session_scope() as s:

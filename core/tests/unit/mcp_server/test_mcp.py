@@ -375,7 +375,9 @@ def test_get_requirement_po_onayli_metni_guvenilmeyen_blokta_doner(
     girdi = govde["girdi"]
     assert 'source="jira:TPD-4"' in girdi and "Hatalı parola girildiğinde" in girdi
     assert 'source="jira:TPD-4:po"' in girdi and "Kilit yok" in girdi
-    assert 'source="testdata:demo-app"' in girdi and "Demo123!" in girdi
+    # Güvenlik #3: çözülmüş parola IDE'ye dönmez; atıf olarak verilir.
+    assert 'source="testdata:demo-app"' in girdi and "{veri:ortak.demo_parola}" in girdi
+    assert "Demo123!" not in girdi
     (tc,) = _tool_calls()
     assert tc.arac == "get_requirement" and tc.izin_verildi is True and tc.kanal == "ide"
     assert tc.arguman_ozeti == {"requirement_key": "TPD-4"}

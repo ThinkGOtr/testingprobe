@@ -288,7 +288,7 @@ def serialize(
     session: Session,
     sc: Script,
     cg: ScriptCodegen,
-    guncel_ozetler: Mapping[str, str] | None = None,
+    guncel_ozetler: Mapping[str, tuple[str | None, str]] | None = None,
 ) -> dict[str, Any]:
     """`guncel_ozetler`: liste için tüm script'lerin test verisi özetleri tek sorguda (N+1 yok)."""
     veri_degisen = testveri.degisen_anahtarlar(session, cg.veri_izi, guncel_ozetler)
@@ -325,9 +325,9 @@ def serialize(
         "engel": ({"tur": cg.engel_turu, "neden": cg.engel_nedeni} if cg.engel_turu else None),
         "olusturma": sc.olusturma.isoformat(),
         "hata": cg.engel_nedeni,
-        # 013 §3.3 (K10) / §9: üretimde kullanılan test verisi değer özetleri
-        # ({anahtar: sha256[:12]}); değeri değişen / silinen anahtarlar `veri_degisen`.
-        "veri_izi": cg.veri_izi or {},
+        # 013 §3.3 (K10) / §10: üretimde kullanılan test verisi değer özetleri (tuzlu HMAC,
+        # {anahtar: "h1:…"}; eski düz özetler null); değişen / silinen anahtarlar `veri_degisen`.
+        "veri_izi": testveri.api_veri_izi(cg.veri_izi),
         "veri_degisen": veri_degisen,
         "veri_degisti": bool(veri_degisen),
     }
