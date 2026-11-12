@@ -93,12 +93,12 @@ Ayrıntı: [specs/012-test-kalite-dogrulama/ANALIZ.md](../specs/012-test-kalite-
 |---|---|---|---|
 | 8.1 | Analist → TPD-1 → Karar tabloları → "AI taslağı" | İki tablo (Kampanya: 7 adette 1 bedava; Minimum sipariş 750) + bir ilişki, mor "AI" taslak; "örnekle dene" 6 adet → bedava 0, 7 adet → 1 | ☐ |
 | 8.2 | Analist "PO onayına gönder" → PO "Onayla" | Tablo `approved`, onaylayan ve zaman görünür; case kartlarında kontrol çipleri birkaç saniyede dolar | ☐ |
-| 8.3 | Case review: C3 (6 adette bedava yok) | "Tabloyla uyumlu ✓"; karşılaştırma bedava adet 0 = 0, indirim 0,00 = 0; "Onayla" serbest | ☐ |
-| 8.4 | C2 kartı | "Tabloyla uyumlu ✓"; özet "indirim karşılaştırılamadı (birim fiyat)" der | ☐ |
+| 8.3 | Case review: C3 (6 adette bedava yok) | "Tabloyla uyumlu ✓"; karşılaştırma bedava adet 0 = 0, indirim 0,00 = 0, toplam 150,00 = ara toplam; "Onayla" serbest | ☐ |
+| 8.4 | C2 kartı | "Tabloyla uyumlu ✓"; 7 değer karşılaştırıldı: bedava adet 1, indirim 25,00 (= 175,00 / 7), toplam 150,00; karşılaştırılamayan yok | ☐ |
 | 8.5 | C1, C7, C8 | "Tablo yok" (kapsam dışı) | ☐ |
-| 8.6 | C5'i düzelt: beklenen "uyarısı görünmez" yap, gönder | Önce kontrol beklenir; sonra "Tabloyla uyuşmuyor ✗", "Onayla" pasif, API 422 `oracle_uyumsuz` | ☐ |
-| 8.7 | Aynı düzeltmeyi 20+ karakter gerekçeyle "İstisnayla onayla" | Onaylanır; denetimde `oracle.exception`; Kontrol Kulesi istisna sayacı 1 | ☐ |
-| 8.8 | Kontrol Kulesi | "Beklenti doğruluğu" %100 (7 uyumlu, 3 kapsam dışı, kapsam %70); ekilmiş hata koşusu yoksa "Hata yakalama oranı" ölçülmedi; kaynak metinleri görünür | ☐ |
+| 8.6 | C5'i düzelt: yalnız S4 "Beklenen" alanını şu metinle değiştir (birebir kopyala; başka alana dokunma), gönder: `Toplam 150,00 TL; "Minimum sipariş tutarı 750,00 TL" uyarısı görünmez ve "Siparişi onayla" butonu aktiftir` | Önce kontrol beklenir; sonra "Tabloyla uyuşmuyor ✗" (REPLAY golden `case_facts/golden/rehber-duzeltme/TPD-1-C5`; metin farklıysa "kontrol edilemedi" olur), "Onayla" pasif, API 422 `oracle_uyumsuz` | ☐ |
+| 8.7 | Aynı düzeltmeyi gerekçeyle (en az 20 karakter, 10 harf) "İstisnayla onayla" | Onaylanır; denetimde `oracle.exception`; Kontrol Kulesi istisna sayacı 1 | ☐ |
+| 8.8 | Kontrol Kulesi | "Beklenti doğruluğu" %100 (7 uyumlu, 0 kısmen, 3 kapsam dışı; tablosu olan story'lerde kapsam %70; n ve "REPLAY / elle golden" etiketi görünür — gösterge, model ölçümü değil); ekilmiş hata koşusu yoksa "Hata yakalama oranı" ölçülmedi; kaynak metinleri görünür | ☐ |
 | 8.9 | Karar tabloları → İlişkiler → "Ek case türet" | C2 ve C10'dan iki `draft` case (14 adet, bedava 2, indirim 50,00); C3, C4 "ön koşul sağlanmadı"; ek case'ler beklenti doğruluğunu değiştirmez | ☐ |
 | 8.10 | Gereksinim metnini değiştir | Tablolar "bayat"; kontrolde kullanılmaz | ☐ |
 | 8.11 | C3 testinin kırmızı koşusu (uygulama 6 adette 1 bedava) → Hata detay | "Ürün hatası"; sinyal "Test beklentisi onaylı karar tablosu … ile aynı, uygulama tablodan farklı (test beklentisi 0, gerçekleşen 1, tablo 0)" | ☐ |

@@ -158,8 +158,9 @@ bundles:
       rules/evaluation/decision-table-draft.json. Bu model değerlendirmesi değildir. Canlı
       değerlendirme yapılmadı; onaylı istisna yok.'
   case-facts:
-    version: 1
+    version: 2
     status: pending
-    note: '012 Ş2: case değer çıkarma paketi v1 (karar tablosu kontrolü). REPLAY golden''ları (case_facts/golden/TPD-1-C*)
-      elle hazırlandı; alıntılar deterministik doğrulamadan geçer. Değerlendirme seti: rules/evaluation/case-facts.json.
-      Canlı değerlendirme yapılmadı; onaylı istisna yok.'
+    note: '012 Ş2: case değer çıkarma paketi v2 (karar tablosu kontrolü; review 1: her geçiş ayrı olgu,
+      kolonsuz sayılar ignored, model tablo adı/açıklaması görmez). REPLAY golden''ları (case_facts/golden/TPD-1-C*,
+      rehber-duzeltme/, ai-sinir-hatasi/) elle hazırlandı; alıntılar deterministik doğrulamadan geçer. Değerlendirme
+      seti: rules/evaluation/case-facts.json. Canlı değerlendirme yapılmadı; onaylı istisna yok.'
