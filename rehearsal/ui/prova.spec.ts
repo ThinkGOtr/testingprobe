@@ -481,7 +481,7 @@ canliTesti("canlı: 14 adım + locator kırma/onarım arayüzden", async ({ page
     await expect(panel.getByTestId("model-kararlar")).toContainText("Onay — analist", { timeout: 30_000 });
   });
   await adim(page, "Case üretimi (tur 2, onaylı modelden 15 case)", async () => {
-    await page.getByTestId("tasarim-modeli-paneli").getByRole("button", { name: "Case'leri üret" }).click();
+    // 011 K20: tur 2 model onayıyla kendiliğinden başlar; ayrı düğme yok.
     await expect(page.getByRole("link", { name: "Case review" })).toBeVisible({ timeout: 120_000 });
   });
   await adim(page, "Otomatik review (P8): skor 10/12", async () => {

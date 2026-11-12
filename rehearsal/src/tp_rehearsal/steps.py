@@ -593,11 +593,15 @@ def model_onayi(b: Baglam) -> None:
             beklenen=(200,),
         )
         b.kontrol("model onaylandı", y.get("durum") == "approved", str(y.get("durum")))
-        g = tasarim_modeli(b)
+        # 011 K20: onaydan sonra tur 2 kendiliğinden başlar (ayrı "Case üret" yok).
+        tur2 = y.get("tur2") or {}
+        b.veri["tur2"] = tur2
         b.kontrol(
-            "tur 2 hazır (case_uretimi_hazir)",
-            g.get("case_uretimi_hazir") is True,
-            str(g.get("engel")),
+            "tur 2 otomatik başladı (iki tur, aşama case)",
+            y.get("tur2_baslatildi") is True
+            and tur2.get("kip") == "iki_tur"
+            and tur2.get("asama") == "case",
+            f"{y.get('tur2_baslatildi')} {tur2} {y.get('tur2_engeli')}",
         )
     m = tasarim_modeli(b).get("model") or {}
     kararlar = m.get("kararlar") or []
@@ -631,14 +635,7 @@ def case_uret(b: Baglam) -> None:
     """İki tur, tur 2: yalnız onaylı modelden case üretimi (15 case)."""
     req_id = b.veri["req_id"]
     if b.prova:
-        y = b.api.post(
-            "analist", f"/requirements/{req_id}/generate-cases", {"kip": "iki_tur"}, beklenen=(202,)
-        )
-        b.kontrol(
-            "tur 2 başladı: aşama case",
-            y.get("kip") == "iki_tur" and y.get("asama") == "case",
-            f"kip={y.get('kip')!r} asama={y.get('asama')!r}",
-        )
+        # Tur 2 model onayıyla başladı (K20); burada yalnız sonucu beklenir.
         gereksinim_bekle(
             b,
             f"{CASE_SAYISI} case üretildi",
@@ -777,7 +774,11 @@ def qa_kararlari(b: Baglam) -> None:
             )
     cs = caseler(b, req_id)
     onayli = [n for n, c in cs.items() if c["durum"] in ("approved", "published")]
-    b.kontrol(f"{CASE_SAYISI} case QA onaylı (analist)", len(onayli) == CASE_SAYISI, f"{len(onayli)}/{len(cs)}")
+    b.kontrol(
+        f"{CASE_SAYISI} case QA onaylı (analist)",
+        len(onayli) == CASE_SAYISI,
+        f"{len(onayli)}/{len(cs)}",
+    )
     m = b.api.get("analist", f"/requirements/{req_id}/case-metrics")
     b.kanit["kabul_orani"] = m.get("kabul_orani")
     b.kontrol(
@@ -1910,7 +1911,7 @@ def adimlar(kirma_yayinla: bool = False) -> list[Adim]:
         Adim("A5", "PO teyidi (jira-sim, tp-po-approved)", "po", "3", 60, po_teyidi),
         Adim(
             "A6",
-            "Tasarım modeli (iki tur, tur 1: 18 kapsam öğesi)",
+            "Tasarım modeli (iki tur, tur 1: 21 kapsam öğesi)",
             "analist",
             "4",
             60,
@@ -1936,7 +1937,7 @@ def adimlar(kirma_yayinla: bool = False) -> list[Adim]:
             case_review,
             ai_adimi=True,
         ),
-        Adim("A10", "QA kararları (10 onay)", "analist", "4", 60, qa_kararlari),
+        Adim("A10", "QA kararları (15 onay)", "analist", "4", 60, qa_kararlari),
         Adim(
             "A11",
             "Denetime gönder (P9, Agent Probe) → KABUL, yayın kapısı açık",

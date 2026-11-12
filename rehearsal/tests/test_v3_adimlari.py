@@ -90,7 +90,13 @@ def test_model_onayi_hash_ile_onaylar(baglam):
 
     def onay():
         durum["m"] = _model("approved")
-        return {"durum": "approved"}
+        # 011 K20: onay yanıtı tur 2'nin kendiliğinden başladığını söyler.
+        return {
+            "durum": "approved",
+            "tur2_baslatildi": True,
+            "tur2": {"kip": "iki_tur", "asama": "case", "uretim_no": 1},
+            "tur2_engeli": None,
+        }
 
     api = Api(
         {
