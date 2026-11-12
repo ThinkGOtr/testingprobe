@@ -128,6 +128,7 @@ export function mockSifirla(): void {
   asistanMockSifirla();
   oneriMockSifirla();
   otomasyonMockSifirla();
+  goruntulemeKayitlari.clear();
   mockOturumuAyarla(null);
   try {
     sessionStorage.removeItem(VERI_ANAHTARI);
@@ -785,6 +786,7 @@ function caseKarari(id: string, govde: unknown): TestCase {
   c.karar = g.karar;
   c.karar_veren = k.kullanici_adi;
   c.karar_zamani = simdi();
+  goruntulemeleriUnut(c.id);
   // core gibi: review süresi ilk görüntülemeden (POST /cases/{id}/view) karara kadar ölçülür.
   c.review_sure_ms = c.goruntulenme ? Math.max(0, Date.parse(c.karar_zamani) - Date.parse(c.goruntulenme)) : null;
   denetimEkle("case.decision", c.id, g.karar === "reject" ? `reject: ${g.ret_nedeni}` : g.karar);
@@ -799,8 +801,11 @@ function caseKarari(id: string, govde: unknown): TestCase {
  * Review süresi bu andan karara kadar ölçülür.
  */
 function caseGoruntulendi(id: string): { case_id: string; ilk_goruntuleme: string; yeni: boolean } {
-  girisGerekli();
+  const k = girisGerekli();
   const c = bul(veri.caseler, id, "Case");
+  // 013 K13: kişiye bağlı görüntüleme kaydı (son karardan sonraki ilk görüntüleme).
+  const anahtar = goruntulemeAnahtari(c.id, k.kullanici_adi);
+  if (!goruntulemeKayitlari.has(anahtar)) goruntulemeKayitlari.set(anahtar, Date.now());
   const yeni = !c.goruntulenme;
   if (yeni) {
     c.goruntulenme = simdi();
@@ -825,6 +830,7 @@ function caseYenidenAc(id: string, govde: unknown): TestCase {
   const onceki = c.karar;
   c.onaylanan_hash = null;
   c.goruntulenme = null;
+  goruntulemeleriUnut(c.id);
   denetimEkle("case.reopen", c.id, `Taslağa alındı (önceki karar: ${onceki ?? "—"})`);
   const req = veri.gereksinimler.find((r) => r.id === c.requirement_id);
   if (req) gereksinimOlayi(req);
@@ -1710,19 +1716,48 @@ function tokenIptal(id: string): void {
 
 // ------------------------------------------------------------------ 013 toplu onay ve otomatik kod
 
-/** Case yanıtı + 013 alanları (`goruldu`: örnek veride görüntüleme kişiye bağlı değil; `veri`). */
+/** K13: görüntüleme ile toplu karar arasında en az bu kadar süre (core ile aynı). */
+export const GORULDU_ESIK_MS = 3000;
+export const GORULMEDI_NEDENI = "Case en az 3 saniye ekranda kalmadı";
+
+// Kişiye bağlı görüntüleme kayıtları (core `case_goruntuleme`): case + kullanıcı → ilk görüntüleme (ms).
+// Karar ya da yeniden açma o case'in kayıtlarını siler (sunucuda eşik son karar anıdır).
+const goruntulemeKayitlari = new Map<string, number>();
+const goruntulemeAnahtari = (caseId: string, kullanici: string) => `${caseId}\u0000${kullanici}`;
+function goruntulemeleriUnut(caseId: string): void {
+  for (const a of [...goruntulemeKayitlari.keys()]) if (a.startsWith(`${caseId}\u0000`)) goruntulemeKayitlari.delete(a);
+}
+/** Testler için: bir kullanıcının görüntüleme kaydını ekler (varsayılan: eşikten önce, "görüldü"). */
+export function mockGoruntulemeEkle(caseId: string, kullanici: string, zamanMs = Date.now() - GORULDU_ESIK_MS - 1000): void {
+  goruntulemeKayitlari.set(goruntulemeAnahtari(caseId, kullanici), zamanMs);
+}
+/** core `goruldu`: bu kullanıcının son karardan sonraki görüntülemesi en az 3 sn önce. */
+function gorulduMu(caseId: string, kullanici: string | null): boolean {
+  if (!kullanici) return false;
+  const t = goruntulemeKayitlari.get(goruntulemeAnahtari(caseId, kullanici));
+  return t !== undefined && Date.now() - t >= GORULDU_ESIK_MS;
+}
+
+/** core `onay_engeli` (taklit: taslakta katalogda olmayan atıf). */
+function onayEngeli(c: TestCase): string | null {
+  if (c.durum !== "draft") return null;
+  const b = bilinmeyenAtiflar(c.icerik);
+  return b.length ? `Katalogda olmayan test verisi anahtarı: ${b.join(", ")}` : null;
+}
+
+/** Case yanıtı + 013 alanları (`goruldu` istekte bulunan kullanıcıya göre; `onay_engeli`; `veri`). */
 function caseGorunumu(c: TestCase): TestCase {
-  return { ...c, goruldu: !!c.goruntulenme, veri: caseVerisi(c.icerik) };
+  return { ...c, goruldu: gorulduMu(c.id, oturum()?.kullanici_adi ?? null), onay_engeli: onayEngeli(c), veri: caseVerisi(c.icerik) };
 }
 
 /**
- * core `otokod.kuyruga_al` taklidi: ayar kapalıysa `kapali`; açıksa kuyruğa alındı sayılır. Örnek veri
- * script üretmez (kod üretimi ekranında elle başlatılır); yanıt yalnız durumu gösterir.
+ * core `otokod.kuyruga_al` taklidi (tekli onay): ayar kapalıysa `kapali`; süren ya da açık PR'ı olan
+ * script'e dokunulmaz (K16); değilse kuyruğa alındı sayılır. Örnek veri script üretmez.
  */
 function otomatikKod(c: TestCase): NonNullable<TestCase["otomatik_kod"]> {
   if (!otomatikKodAcik()) return { durum: "kapali", neden: null, script_id: null };
-  const acik = veri.scriptler.find((s) => s.case_ids.includes(c.id) && s.durum !== "closed");
-  if (acik) return { durum: "atlandi", neden: "Bu case için süren ya da açık bir üretim var.", script_id: acik.id };
+  const acik = veri.scriptler.find((s) => s.case_ids.includes(c.id) && s.durum !== "closed" && s.durum !== "merged" && s.durum !== "failed");
+  if (acik) return { durum: "atlandi", neden: "Açık PR var; yeniden üretim mühendis kararıyla", script_id: acik.id };
   return { durum: "kuyrukta", neden: null, script_id: null };
 }
 
@@ -1732,9 +1767,12 @@ function tekliKarar(id: string, govde: unknown): TestCase {
   return { ...caseGorunumu(c), ...(karar === "approve" || karar === "edit" ? { otomatik_kod: otomatikKod(c) } : {}) };
 }
 
-/** core `POST /cases/bulk-decision` (013 §3.2): her öğe kendi hash'iyle; görülmeyen atlanır; biri diğerini bozmaz. */
+/**
+ * core `POST /cases/bulk-decision` (013 §3.2, §9): her öğe kendi hash'iyle; görülmeyen (K13) atlanır;
+ * biri diğerini bozmaz. Öğe `otomatik_kod` null; kod üretimi üst düzeyde tek iş (K16).
+ */
 function topluKarar(govde: unknown) {
-  rolGerekli("analyst");
+  const k = rolGerekli("analyst");
   const g = (govde ?? {}) as { karar?: unknown; ogeler?: unknown };
   if (g.karar !== "approve") throw new ApiError(422, "Toplu karar yalnız approve olabilir.");
   if (!Array.isArray(g.ogeler) || g.ogeler.length < 1 || g.ogeler.length > 200) throw new ApiError(422, "1 ile 200 arasında öğe gönderin.");
@@ -1745,19 +1783,26 @@ function topluKarar(govde: unknown) {
     gorulen.add(case_id);
     const c = veri.caseler.find((x) => x.id === case_id);
     if (!c) return { case_id, durum: "hata", neden: `Case bulunamadı: ${case_id}`, otomatik_kod: null };
-    if (c.durum === "draft" && !c.goruntulenme) return { case_id, durum: "atlandi", neden: "Bu case'i açıp görmediniz", otomatik_kod: null };
+    if (c.durum === "draft" && !gorulduMu(c.id, k.kullanici_adi)) return { case_id, durum: "atlandi", neden: GORULMEDI_NEDENI, otomatik_kod: null };
     try {
-      const y = caseKarari(case_id, { karar: "approve", icerik_hash: o.icerik_hash });
-      return { case_id, durum: "onaylandi", neden: null, otomatik_kod: otomatikKod(y) };
+      caseKarari(case_id, { karar: "approve", icerik_hash: o.icerik_hash });
+      return { case_id, durum: "onaylandi", neden: null, otomatik_kod: null };
     } catch (e) {
       const neden = e instanceof ApiError ? e.detail : "Beklenmeyen hata";
       return { case_id, durum: e instanceof ApiError && e.status === 409 ? "atlandi" : "hata", neden, otomatik_kod: null };
     }
   });
   const say = (d: string) => sonuclar.filter((s) => s.durum === d).length;
+  const onaylanan = sonuclar.filter((s) => s.durum === "onaylandi").map((s) => veri.caseler.find((c) => c.id === s.case_id)!);
+  const uretilecek = onaylanan.filter((c) => otomatikKod(c).durum === "kuyrukta");
+  const otomatik_kod = !otomatikKodAcik()
+    ? { durum: "kapali", job_id: null, case_sayisi: 0 }
+    : uretilecek.length
+      ? { durum: "kuyrukta", job_id: `job-otokod-${Date.now()}`, case_sayisi: uretilecek.length }
+      : { durum: "yok", job_id: null, case_sayisi: 0 };
   denetimEkle("cases.bulk_decision", "toplu", `istenen ${sonuclar.length}, onaylandı ${say("onaylandi")}, atlandı ${say("atlandi")}`);
   kaydet();
-  return { sonuclar, ozet: { onaylandi: say("onaylandi"), atlandi: say("atlandi"), hata: say("hata") } };
+  return { sonuclar, ozet: { onaylandi: say("onaylandi"), atlandi: say("atlandi"), hata: say("hata") }, otomatik_kod };
 }
 
 // ------------------------------------------------------------------ yönlendirme

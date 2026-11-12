@@ -1,3 +1,4 @@
+import { OtomatikAkisRozeti } from "../components/OtomatikAkisRozeti";
 import { useCallback } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
@@ -126,6 +127,7 @@ export function GereksinimDetay() {
         aciklama={
           <span className="satir-ogeler">
             <Cip ton={d.ton}>{d.etiket}</Cip>
+            <OtomatikAkisRozeti akis={g.otomatik_akis} />
             <span>{g.kaynak === "jira" ? "Jira story'si" : "Serbest metin gereksinim"}</span>
             {g.jira_url && <DisBaglanti href={g.jira_url}>Jira'da aç</DisBaglanti>}
             <span className="soluk">Çekim: {tarih(g.cekim_zamani)}</span>

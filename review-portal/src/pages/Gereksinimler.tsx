@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import type { Gereksinim } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
+import { OtomatikAkisRozeti } from "../components/OtomatikAkisRozeti";
 import { AlanHatasi, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { adimAdi, akisAdimi } from "../lib/akis";
@@ -137,6 +138,11 @@ function GereksinimSatiri({ g, kanit }: { g: Gereksinim; kanit: Omit<SonrakiGird
       </td>
       <td data-etiket="Durum">
         <Cip ton={d.ton}>{d.etiket}</Cip>
+        {g.otomatik_akis && (
+          <div>
+            <OtomatikAkisRozeti akis={g.otomatik_akis} />
+          </div>
+        )}
       </td>
       <td data-etiket="Adım">
         <span className="mono">

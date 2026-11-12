@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Rotalar } from "../App";
 import { api } from "../api/client";
 import { ApiError, istek, yapilandir } from "../api/http";
-import { mockIstek, mockVerisi } from "../api/mock/handlers";
+import { mockGoruntulemeEkle, mockIstek, mockVerisi } from "../api/mock/handlers";
 import type { TestCase } from "../api/types";
 import { atifYapanlarUyarla, testVerisiUyarla, topluKararUyarla } from "../api/uyumOtomasyon";
 import { OturumProvider } from "../auth";
@@ -48,7 +48,7 @@ function izle(ozel?: (c: Cagri) => unknown) {
   return cagrilar;
 }
 
-/** Birinci gereksinime üç taslak case: #1 ve #2 görüntülenmiş, #3 görülmemiş. */
+/** Birinci gereksinime üç taslak case: #1 ve #2 analist tarafından en az 3 sn görülmüş, #3 görülmemiş. */
 function taslaklariKur(): { rid: string; caseler: TestCase[] } {
   const v = mockVerisi();
   const rid = v.gereksinimler[0].id;
@@ -69,6 +69,8 @@ function taslaklariKur(): { rid: string; caseler: TestCase[] } {
   })) as TestCase[];
   v.caseler = [...v.caseler.filter((c) => c.requirement_id !== rid), ...caseler];
   v.scriptler = v.scriptler.filter((s) => !s.case_ids.some((id) => id.startsWith("tc-013-")));
+  // K13: "görüldü" kişiye bağlı (oturumdaki analist) ve görüntüleme ≥ 3 sn önce.
+  for (const c of caseler.slice(0, 2)) mockGoruntulemeEkle(c.id, "analist");
   return { rid, caseler };
 }
 
@@ -103,22 +105,29 @@ describe("Case review: toplu onay", () => {
     const cagrilar = izle();
     uygulama(`/gereksinimler/${rid}/caseler`);
     const tumu = await screen.findByRole("button", { name: "Tümünü onayla (2)" });
-    expect(screen.getByTestId("toplu-onay-notu")).toHaveTextContent("1 case açılmadığı için dışarıda.");
+    expect(screen.getByTestId("toplu-onay-notu")).toHaveTextContent("Toplu onaya yalnız en az 3 saniye ekranda kalan case'ler");
+    expect(screen.getByTestId("toplu-onay-notu")).toHaveTextContent("1 case en az 3 saniye ekranda kalmadığı için dışarıda.");
     expect(screen.getByRole("button", { name: "Seçili onayla (0)" })).toBeDisabled();
-    // Görülmeyen #3'ün kutusu pasif.
+    // Görülmeyen #3'ün kutusu pasif ve nedeni görünür metin.
     expect(screen.getByRole("checkbox", { name: /#3 toplu onay için seç/ })).toBeDisabled();
+    const neden = screen.getByTestId("case-sec-neden");
+    expect(neden).toBeVisible();
+    expect(neden).toHaveTextContent("en az 3 saniye ekranda kalan case'ler");
+    expect(screen.getByRole("checkbox", { name: /#3 toplu onay için seç/ })).toHaveAccessibleDescription(/en az 3 saniye/);
 
     const u = userEvent.setup();
     await u.click(tumu);
     const teyit = screen.getByRole("group", { name: "Toplu onay teyidi" });
     const onayla = within(teyit).getByRole("button", { name: "Onayla (2)" });
     expect(onayla).toBeDisabled();
+    // K16: otomatik kod açıkken teyit kod üretimini söyler.
+    await waitFor(() => expect(teyit).toHaveTextContent("Onaylanan 2 case için web kodu üretilecek"));
     await u.click(within(teyit).getByRole("checkbox"));
     await u.click(onayla);
 
     const sonuc = await screen.findByTestId("toplu-onay-sonucu");
     expect(sonuc).toHaveTextContent("Toplu onay: 2 onaylandı · 0 atlandı");
-    expect(screen.getByTestId("toplu-otokod")).toHaveTextContent("Otomatik kod üretimi: 2 kuyrukta");
+    expect(screen.getByTestId("toplu-otokod")).toHaveTextContent("Otomatik kod üretimi: 2 case için web kodu üretimi kuyruğa alındı (tek arka plan işi).");
     const istek = cagrilar.find((c) => c.method === "POST" && c.path === "/cases/bulk-decision");
     const hash = (id: string) => mockVerisi().caseler.find((x) => x.id === id)!.icerik_hash;
     expect(istek?.govde).toEqual({
@@ -139,10 +148,11 @@ describe("Case review: toplu onay", () => {
       c.path === "/cases/bulk-decision"
         ? {
             sonuclar: [
-              { case_id: caseler[0].id, durum: "onaylandi", neden: null, otomatik_kod: { durum: "reddedildi", neden: "test verisi sırrı tanımsız: ortak.demo_parola", script_id: null } },
-              { case_id: caseler[1].id, durum: "atlandi", neden: "Bu case'i açıp görmediniz", otomatik_kod: null },
+              { case_id: caseler[0].id, durum: "onaylandi", neden: null, otomatik_kod: null },
+              { case_id: caseler[1].id, durum: "atlandi", neden: "Case en az 3 saniye ekranda kalmadı", otomatik_kod: null },
             ],
             ozet: { onaylandi: 1, atlandi: 1, hata: 0 },
+            otomatik_kod: { durum: "kuyrukta", job_id: "job-1", case_sayisi: 1 },
           }
         : undefined,
     );
@@ -156,8 +166,9 @@ describe("Case review: toplu onay", () => {
     await u.click(within(teyit).getByRole("button", { name: "Onayla (2)" }));
     const sonuc = await screen.findByTestId("toplu-onay-sonucu");
     expect(sonuc).toHaveTextContent("1 onaylandı · 1 atlandı");
-    expect(within(sonuc).getByRole("list", { name: "Onaylanmayan case'ler" })).toHaveTextContent("#2 Taslak 2 — Bu case'i açıp görmediniz");
-    expect(within(sonuc).getByRole("list", { name: "Otomatik kod üretimi notları" })).toHaveTextContent("test verisi sırrı tanımsız");
+    expect(within(sonuc).getByRole("list", { name: "Onaylanmayan case'ler" })).toHaveTextContent("#2 Taslak 2 — Case en az 3 saniye ekranda kalmadı");
+    expect(within(sonuc).getByTestId("toplu-otokod")).toHaveTextContent("1 case için web kodu üretimi kuyruğa alındı");
+    expect(within(sonuc).queryByRole("list", { name: "Otomatik kod üretimi notları" })).toBeNull();
     expect((cagrilar.find((c) => c.path === "/cases/bulk-decision")?.govde as { ogeler: unknown[] }).ogeler).toHaveLength(2);
   });
 
@@ -288,8 +299,9 @@ describe("Test verisi sayfası", () => {
     await u.click(screen.getByRole("button", { name: "bayi.bayi2.kredi_limiti sil" }));
     await u.click(within(satir()).getByRole("button", { name: "Evet, sil" }));
     const liste = await screen.findByTestId("atif-yapan-caseler");
-    // Core `kullanan[{case_id, case_ref, baslik, durum}]`: gereksinim kimliği yok, bağlantısız satır.
-    expect(liste).toHaveTextContent("#1 · Taslak 1 (draft)");
+    // Core `kullanan[{case_id, case_ref, baslik, durum, requirement_id}]`: durum Türkçe, case review'a bağlantı.
+    expect(liste).toHaveTextContent("#1 · Taslak 1 (Karar bekliyor)");
+    expect(within(liste).getByRole("link", { name: /Taslak 1/ })).toHaveAttribute("href", expect.stringMatching(/^\/gereksinimler\/.+\/caseler$/));
     expect(screen.getByText(/1 etkin case bu test verisine atıf yapıyor/)).toBeInTheDocument();
 
     await u.click(screen.getByRole("button", { name: "kampanya.k6_1.ad sil" }));
@@ -341,13 +353,76 @@ describe("Otomasyon sayfası", () => {
     expect(await within(jiraKarti).findByText("Sorgu aralığı 30–3600 saniye arasında tam sayı olmalı.")).toBeInTheDocument();
     await u.clear(aralik);
     await u.type(aralik, "120");
+    // K14: durum alanı yalnız engineer'a açık; analist için pasif + görünür neden.
     const durum = screen.getByLabelText("Tetikleyen Jira durumu");
-    await u.clear(durum);
-    await u.type(durum, "QA Ready");
+    expect(durum).toBeDisabled();
+    expect(durum).toHaveAccessibleDescription("Tetikleyen Jira durumunu yalnız Otomasyon mühendisi değiştirir.");
     await u.click(within(jiraKarti).getByRole("button", { name: "Kaydet" }));
     await screen.findByText("Jira tetiği ayarı kaydedildi.");
-    expect(cagrilar.find((c) => c.method === "PUT" && c.path === "/automation-settings/jira_tetik")?.govde).toEqual({ durum: "QA Ready", aralik_s: 120 });
-    await waitFor(() => expect(screen.getByTestId("jira-tetik-son-tur")).toHaveTextContent('"QA Ready" · her 120 sn'));
+    expect(cagrilar.find((c) => c.method === "PUT" && c.path === "/automation-settings/jira_tetik")?.govde).toEqual({ aralik_s: 120 });
+    await waitFor(() => expect(screen.getByTestId("jira-tetik-son-tur")).toHaveTextContent('"QA To Do" · her 120 sn'));
+    // Jira'ya yazım ve K14 kapsamı açıkça yazılır.
+    expect(screen.getByTestId("jira-yazim-notu")).toHaveTextContent(
+      "Tetik Jira'yı okur; başlattığı ön inceleme bulgusuz biterse PO'ya Jira yorumu ve etiketi yazılır",
+    );
+    expect(screen.getByTestId("tetik-kapsam-notu")).toHaveTextContent("yalnız sonradan bu duruma giren story'ler tetiklenir");
+    expect(screen.getByTestId("tetik-kapsam-notu")).toHaveTextContent("en çok 10 story");
+  });
+
+  it("mühendis tetikleyen durumu değiştirir; analistin durum gönderimi sunucuda 403", async () => {
+    await oturumAc("muhendis");
+    const cagrilar = izle();
+    uygulama("/otomasyon");
+    const u = userEvent.setup();
+    const durum = await screen.findByLabelText("Tetikleyen Jira durumu");
+    expect(durum).toBeEnabled();
+    await u.clear(durum);
+    await u.type(durum, "QA Ready");
+    await u.click(within(durum.closest("section") as HTMLElement).getByRole("button", { name: "Kaydet" }));
+    await screen.findByText("Jira tetiği ayarı kaydedildi.");
+    expect(cagrilar.find((c) => c.method === "PUT")?.govde).toEqual({ durum: "QA Ready" });
+    await oturumAc("analist");
+    await expect(api.otomasyonAyariKaydet("jira_tetik", { durum: "X" })).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("son tur story sonuçları tablo + gereksinime bağlantı", async () => {
+    const g = mockVerisi().gereksinimler.find((x) => x.jira_key)!;
+    await oturumAc("analist");
+    izle((c) =>
+      c.path === "/automation/jira-trigger"
+        ? {
+            acik: true,
+            durum: "QA To Do",
+            aralik_s: 60,
+            son_tur: {
+              zaman: "2026-11-12T10:00:00+03:00",
+              bulunan: 3,
+              tetiklenen: 1,
+              ertelenen: 2,
+              taban: true,
+              hata: null,
+              sonuclar: [
+                { jira_key: g.jira_key, sonuc: "akisa_alindi", neden: null },
+                { jira_key: "TPD-99", sonuc: "isaretlendi", neden: "Tetik açıldığında zaten durumdaydı" },
+                { jira_key: "TPD-98", sonuc: "durumda", neden: null },
+              ],
+            },
+            son_tetiklenenler: [{ jira_key: g.jira_key, zaman: "2026-11-12T10:00:00+03:00", sonuc: "akisa_alindi" }],
+          }
+        : undefined,
+    );
+    uygulama("/otomasyon");
+    const tablo = await screen.findByTestId("jira-tetik-sonuclar");
+    await waitFor(() => expect(within(tablo).getByRole("link", { name: g.jira_key! })).toHaveAttribute("href", `/gereksinimler/${g.id}`));
+    expect(tablo).toHaveTextContent("Akışa alındı (PO onayı bekleniyor)");
+    expect(tablo).toHaveTextContent("TPD-99İşaretlendi (zaten durumdaydı, tetiklenmedi)Tetik açıldığında zaten durumdaydı");
+    expect(within(tablo).queryByRole("link", { name: "TPD-99" })).toBeNull();
+    // `durumda` satırları varsayılan gizli; istenirse gösterilir.
+    expect(tablo).not.toHaveTextContent("TPD-98");
+    await userEvent.click(screen.getByRole("button", { name: "Tümünü göster" }));
+    expect(screen.getByTestId("jira-tetik-sonuclar")).toHaveTextContent("TPD-98Durumda (değişiklik yok)");
+    expect(screen.getByText(/İlk tur: mevcut story'ler işaretlendi, tetiklenmedi/)).toBeInTheDocument();
+    expect(screen.getByTestId("jira-tetik-ertelenen")).toHaveTextContent("2 story tur sınırı (10)");
   });
 
   it("PO ayarları görür ama değiştiremez", async () => {
@@ -364,32 +439,78 @@ describe("Otomasyon sayfası", () => {
 describe("Kod üretimi ve demo", () => {
   it("otomatik tetik rozeti ve 'test verisi değişti' uyarısı (liste + detay)", async () => {
     const s = mockVerisi().scriptler[0];
-    Object.assign(s, { tetik: "otomatik", veri_degisti: true, veri_izi: { "urun.p_001.ad": 1 } });
+    Object.assign(s, { tetik: "otomatik", durum: "pr_open", veri_degisti: true, veri_izi: { "urun.p_001.ad": "a1b2c3d4e5f6" }, veri_degisen: ["urun.p_001.ad"] });
     await oturumAc("muhendis");
     uygulama("/kod");
-    expect(await screen.findByText("Onayla otomatik")).toBeInTheDocument();
-    expect(screen.getByText("Test verisi değişti; yeniden üretin")).toBeInTheDocument();
+    expect(await screen.findByText("Onay sonrası otomatik")).toBeInTheDocument();
+    expect(screen.getByText("Test verisi değişti; yeniden üretin")).toHaveAttribute("title", "Değeri değişen test verisi: urun.p_001.ad");
+  });
+
+  it("Yeniden üret yalnız güncel ve süren olmayan kayıtta; daha yeni script varsa eski kayıtta gizli", async () => {
+    const v = mockVerisi();
+    const s = v.scriptler.find((x) => x.case_ids.length > 0 && x.durum !== "closed")!;
+    const yeni = { ...JSON.parse(JSON.stringify(s)), id: "scr-yeni", durum: "pr_open", olusturma: "2099-01-01T00:00:00Z", veri_degisti: false };
+    Object.assign(s, { durum: "merged", veri_degisti: true, veri_degisen: ["urun.p_001.ad"], platform: "web" });
+    yeni.platform = "web";
+    const suren = { ...JSON.parse(JSON.stringify(s)), id: "scr-suren", case_ids: ["baska-case"], durum: "verifying", veri_degisti: true, veri_degisen: ["x.y"] };
+    Object.assign(s, { baslik: "Eski birleşmiş test" });
+    Object.assign(yeni, { baslik: "Yeni üretilmiş test" });
+    Object.assign(suren, { baslik: "Süren üretim testi" });
+    const guncel = { ...JSON.parse(JSON.stringify(yeni)), id: "scr-guncel", case_ids: ["guncel-case"], baslik: "Güncel veri değişti testi", veri_degisti: true, veri_degisen: ["a.b"], yerel_sinif: null, engel: null };
+    v.scriptler.push(yeni, suren, guncel);
+    await oturumAc("muhendis");
+    uygulama("/kod");
+    const satir = async (ad: string) => (await screen.findByText(ad)).closest("tr") as HTMLElement;
+    for (const ad of ["Eski birleşmiş test", "Süren üretim testi"]) {
+      const r = await satir(ad);
+      expect(within(r).queryByText("Test verisi değişti; yeniden üretin")).toBeNull();
+      expect(within(r).queryByRole("button", { name: "Yeniden üret" })).toBeNull();
+    }
+    const r = await satir("Güncel veri değişti testi");
+    expect(within(r).getByText("Test verisi değişti; yeniden üretin")).toBeInTheDocument();
+    expect(within(r).getByRole("button", { name: "Yeniden üret" })).toHaveAttribute("title", expect.stringContaining("güncel test verisiyle"));
   });
 
   it("script detayında veri değişti uyarısı üretimde kullanılan sürümü gösterir", async () => {
     const s = mockVerisi().scriptler[0];
-    Object.assign(s, { tetik: "otomatik", veri_degisti: true, veri_izi: { "urun.p_001.ad": 1 } });
+    Object.assign(s, { tetik: "otomatik", durum: "pr_open", veri_degisti: true, veri_izi: { "urun.p_001.ad": "a1b2c3d4e5f6" }, veri_degisen: ["urun.p_001.ad"] });
     await oturumAc("muhendis");
     uygulama(`/kod/${s.id}`);
-    expect(await screen.findByText("Onayla otomatik")).toBeInTheDocument();
+    expect(await screen.findByText("Onay sonrası otomatik")).toBeInTheDocument();
     const u = screen.getByText("Test verisi değişti; yeniden üretin").closest(".uyari-kutusu") as HTMLElement;
-    expect(u).toHaveTextContent("urun.p_001.ad s1");
+    expect(u).toHaveTextContent("(değişen: urun.p_001.ad)");
+    // Değer özeti (veri_izi) ve sürüm gösterilmez.
+    expect(u).not.toHaveTextContent("a1b2c3d4e5f6");
   });
 
-  it("demo: story'yi QA To Do'ya taşı (presenter)", async () => {
+  it("demo: story serbest metin + öneri listesi; TP durumu ve tetik ipucu; taşı (presenter)", async () => {
+    const v = mockVerisi();
+    const yeniStory = v.gereksinimler.find((g) => g.jira_key && g.durum === "new");
+    const ileri = v.gereksinimler.find((g) => g.jira_key && g.durum !== "new" && !(g.durum === "po_approved" && g.sayaclar.case_toplam === 0))!;
     await oturumAc("sunucu");
     const cagrilar = izle();
     uygulama("/demo");
     const d = await screen.findByRole("button", { name: "Story'yi QA To Do'ya taşı" });
-    await waitFor(() => expect((screen.getByLabelText("Story") as HTMLSelectElement).value).toMatch(/^TPD-/));
-    await userEvent.click(d);
+    const giris = screen.getByLabelText("Story") as HTMLInputElement;
+    expect(giris.tagName).toBe("INPUT");
+    const liste = document.getElementById(giris.getAttribute("list")!)!;
+    await waitFor(() => expect(liste.querySelectorAll("option").length).toBeGreaterThan(0));
+    expect(d).toBeDisabled();
+    const u = userEvent.setup();
+    // TP'de olmayan story de yazılabilir.
+    await u.type(giris, "TPD-777");
+    expect(screen.getByTestId("jira-tetik-ipucu")).toHaveTextContent("TP'de yok: tetik story'yi çeker ve ön incelemeye alır (tetiklenir).");
+    await u.clear(giris);
+    await u.type(giris, ileri.jira_key!);
+    expect(screen.getByTestId("jira-tetik-ipucu")).toHaveTextContent(/^TP'de: .+ Tetiklenmez: TP'de durum/);
+    if (yeniStory) {
+      await u.clear(giris);
+      await u.type(giris, yeniStory.jira_key!.toLowerCase());
+      expect(screen.getByTestId("jira-tetik-ipucu")).toHaveTextContent("Tetiklenir: ön incelemeye girer");
+    }
+    await u.click(d);
     const c = cagrilar.find((x) => x.path === "/demo/jira-status");
-    expect(c?.govde).toEqual({ jira_key: (screen.getByLabelText("Story") as HTMLSelectElement).value, durum: "QA To Do" });
+    expect(c?.govde).toEqual({ jira_key: giris.value.trim().toUpperCase(), durum: "QA To Do" });
     expect((await screen.findAllByText(/jira-sim'de "QA To Do" durumuna taşındı/)).length).toBeGreaterThan(0);
   });
 });
@@ -399,6 +520,13 @@ describe("013 uyarlayıcıları ve hata gövdesi", () => {
     const y = topluKararUyarla({ sonuclar: [{ case_id: "a", durum: "onaylandi", otomatik_kod: { durum: "hata", neden: "onay geçerli, elle başlatın" } }, { case_id: "b", durum: "?" }] });
     expect(y.ozet).toEqual({ onaylandi: 1, atlandi: 0, hata: 1 });
     expect(y.sonuclar[0].otomatik_kod).toEqual({ durum: "hata", neden: "onay geçerli, elle başlatın", script_id: null });
+    expect(y.otomatik_kod).toBeNull();
+  });
+
+  it("toplu karar yanıtı: üst düzey otomatik_kod (K16)", () => {
+    const y = topluKararUyarla({ sonuclar: [], ozet: { onaylandi: 0, atlandi: 0, hata: 0 }, otomatik_kod: { durum: "kuyrukta", job_id: 7, case_sayisi: 3 } });
+    expect(y.otomatik_kod).toEqual({ durum: "kuyrukta", job_id: "7", case_sayisi: 3 });
+    expect(topluKararUyarla({ sonuclar: [], otomatik_kod: { durum: "?" } }).otomatik_kod).toBeNull();
   });
 
   it("gizli kaydın değeri sunucu gönderse de süzülür", () => {

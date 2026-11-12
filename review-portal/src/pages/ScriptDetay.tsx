@@ -12,7 +12,7 @@ import { SCRIPT_DURUMU, scriptIsareti, scriptUretiliyor } from "../lib/etiketler
 import { ENGEL_TURU, kosuKimligiMi, mergeEngelleri, mergeOnayNotu, mergeUyarilari, RET_NEDENI, YEREL_SINIF } from "../lib/kapi";
 import { saat, tarih } from "../lib/format";
 import { PlatformRozeti } from "../components/Platform";
-import { OTOMATIK_TETIK_ACIKLAMA, VERI_DEGISTI_METNI } from "./Kod";
+import { OTOMATIK_TETIK_ACIKLAMA, OTOMATIK_TETIK_ROZETI, VERI_DEGISTI_METNI } from "./Kod";
 import { aracEtiketi, checkEtiketi, dikeyEkranMi, uygulamaPlatformuMu, type Platform } from "../lib/platform";
 
 const ASAMA_ADI = { baseline: "Bayraksız (yeşil olmalı)", broken: "BREAK_CAMPAIGN=1 (kırmızı olmalı)", restored: "Bayrak kaldırıldı (yeşil olmalı)" } as const;
@@ -925,7 +925,7 @@ export function ScriptDetay() {
             <PlatformRozeti platform={s.platform} />
             {s.tetik === "otomatik" && (
               <Cip ton="bilgi" title={OTOMATIK_TETIK_ACIKLAMA}>
-                Onayla otomatik
+                {OTOMATIK_TETIK_ROZETI}
               </Cip>
             )}
             {s.requirement_key && <span className="mono">{s.requirement_key}</span>}
@@ -949,17 +949,17 @@ export function ScriptDetay() {
         // Script kaydının saklı hatası API hatası değildir: asistanın "son hata" bağlamına gitmez (§5.5).
         s.hata && <HataKutusu hata={s.hata} kayitDisi />
       )}
-      {s.veri_degisti && (
+      {s.veri_degisti && s.durum !== "closed" && (
         <Uyari ton="uyari" baslik={VERI_DEGISTI_METNI}>
-          Bu test üretildikten sonra kullandığı test verisi katalogda değişti
-          {s.veri_izi && Object.keys(s.veri_izi).length > 0 && (
+          Bu test üretildikten sonra kullandığı test verisinin değeri katalogda değişti
+          {s.veri_degisen && s.veri_degisen.length > 0 && (
             <>
               {" "}
-              (üretimde kullanılan:{" "}
-              {Object.entries(s.veri_izi).map(([k, v], i) => (
+              (değişen:{" "}
+              {s.veri_degisen.map((k, i) => (
                 <span key={k}>
                   {i > 0 && ", "}
-                  <span className="mono">{k}</span> s{v}
+                  <span className="mono">{k}</span>
                 </span>
               ))}
               )
