@@ -35,8 +35,8 @@ export function hazirlikSorunlari(i: TestCaseIcerik): string[] {
     if (!beklenenDolu) s.push('"Varsayıma bağlı" case\'in beklenen sonucu dolu olmalı.');
     if (bosAdimlar.length) s.push(`"Varsayıma bağlı" case'te her adımın beklenen sonucu dolu olmalı (boş: ${bosAdimlar.join(", ")}).`);
   } else if (i.readiness === "blocked") {
-    if (!soru.length) s.push('"Engelli" case en az bir açık soruya atıf yapmalı (ör. Q1).');
-    if (beklenenDolu) s.push('"Engelli" case\'in beklenen sonucu boş olmalı (soru yanıtlanınca yazılır).');
+    if (!soru.length) s.push('"Soru bekliyor" case en az bir açık soruya atıf yapmalı (ör. Q1).');
+    if (beklenenDolu) s.push('"Soru bekliyor" case\'in beklenen sonucu boş olmalı (soru yanıtlanınca yazılır).');
   }
   for (const v of i.test_data ?? []) {
     if (!v.synthetic) s.push(`Test verisi "${v.name}" sentetik olmalı (gerçek veri kullanılmaz).`);

@@ -81,6 +81,9 @@ export function useIslem(): IslemDurumu {
   const [hata, setHata] = useState<string | null>(null);
   const [hataNesnesi, setHataNesnesi] = useState<unknown>(null);
   const bagli = useRef(true);
+  // Yeniden giriş kilidi: state güncellemesi bir sonraki çizime kadar görünmez; aynı olay
+  // döngüsündeki ikinci tıklama (çift tıklama) ikinci isteği göndermesin diye ref ile kilitlenir.
+  const kilit = useRef(false);
   useEffect(() => {
     bagli.current = true;
     return () => {
@@ -88,6 +91,8 @@ export function useIslem(): IslemDurumu {
     };
   }, []);
   const calistir = useCallback(async <T,>(fn: () => Promise<T>, secenek?: IslemSecenegi) => {
+    if (kilit.current) return undefined;
+    kilit.current = true;
     setCalisiyor(true);
     setHata(null);
     setHataNesnesi(null);
@@ -106,6 +111,7 @@ export function useIslem(): IslemDurumu {
       }
       return undefined;
     } finally {
+      kilit.current = false;
       if (bagli.current) setCalisiyor(false);
     }
   }, []);

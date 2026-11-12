@@ -386,3 +386,69 @@ export function Baglanti({ href, children, yokNedeni }: { href: string | null | 
     </span>
   );
 }
+
+/**
+ * Sayfa içi onay (tarayıcı `confirm` yerine): geri alınması zor eylemden önce sonucu söyleyen kutu.
+ * Açılınca "Vazgeç" odak alır (yanlışlıkla Enter'la onaylanmasın); Esc vazgeçer. Kutu `role="group"`
+ * ve başlığıyla adlanır; eylem düğmesi metni sonucu söyler (ör. "Evet, yeniden üret").
+ */
+export function SayfaIciOnay({
+  baslik,
+  children,
+  onayMetni,
+  onayla,
+  vazgec,
+  calisiyor,
+  tehlikeli,
+  testId,
+}: {
+  baslik: string;
+  children?: ReactNode;
+  onayMetni: string;
+  onayla: () => void;
+  vazgec: () => void;
+  calisiyor?: boolean;
+  /** Yıkıcı eylem (mevcut veriyi değiştirir): onay düğmesi tehlike tonunda. */
+  tehlikeli?: boolean;
+  testId?: string;
+}) {
+  const baslikId = useId();
+  const vazgecRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    vazgecRef.current?.focus();
+  }, []);
+  return (
+    <div
+      role="group"
+      aria-labelledby={baslikId}
+      className="uyari-kutusu uyari-uyari sayfa-ici-onay"
+      data-testid={testId}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          vazgec();
+        }
+      }}
+    >
+      <strong id={baslikId}>{baslik}</strong>
+      <div>
+        {children}
+        <div className="eylemler sayfa-ici-onay-eylemler">
+          <button
+            type="button"
+            className={`dugme ${tehlikeli ? "dugme-tehlike" : "dugme-birincil"} dugme-kucuk`}
+            onClick={onayla}
+            disabled={calisiyor}
+            aria-busy={calisiyor || undefined}
+          >
+            {calisiyor && <span className="donen donen-kucuk" aria-hidden="true" />}
+            {onayMetni}
+          </button>
+          <button ref={vazgecRef} type="button" className="dugme dugme-ikincil dugme-kucuk" onClick={vazgec} disabled={calisiyor}>
+            Vazgeç
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

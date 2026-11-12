@@ -4946,3 +4946,8 @@ td > .satir-baglanti + .cip,
 }
 /* 011 P6: teknik seçimi + düğme aynı satırda (DerinlestirmePaneli). */
 .derinlestirme-teknik { display: inline-flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+
+/* Sayfa içi onay (011 D5): tarayıcı confirm yerine; eylemler kutunun altında. */
+.sayfa-ici-onay .sayfa-ici-onay-eylemler {
+  margin-top: 0.5rem;
+}

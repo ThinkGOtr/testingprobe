@@ -36,7 +36,7 @@ export const GEREKSINIM_DURUMU: Record<GereksinimDurumu, { etiket: string; ton: 
   modeling: { etiket: "Tasarım modeli üretiliyor", ton: "bilgi" },
   model_ready: { etiket: "Tasarım modeli onayı bekliyor", ton: "uyari" },
   generating: { etiket: "Case üretiliyor", ton: "bilgi" },
-  cases_ready: { etiket: "Case review", ton: "bilgi" },
+  cases_ready: { etiket: "Case review aşamasında", ton: "bilgi" },
   done: { etiket: "Case'ler yayınlandı", ton: "basari" },
   failed: { etiket: "Hata", ton: "hata" },
 };
@@ -134,7 +134,7 @@ export const CASE_HAZIRLIK: Record<string, { etiket: string; ton: Ton; isaret: s
     isaret: "⚠",
     aciklama: "Beklenen sonuç bir varsayıma dayanıyor; varsayım doğrulanmadan onaylanamaz.",
   },
-  blocked: { etiket: "Engelli", ton: "hata", isaret: "✗", aciklama: "Açık soru yanıtlanmadan beklenen sonuç yazılamıyor; onaylanamaz." },
+  blocked: { etiket: "Soru bekliyor", ton: "uyari", isaret: "?", aciklama: "Açık soru PO yanıtını bekliyor; yanıt gelmeden beklenen sonuç yazılamaz ve case onaylanamaz." },
 };
 
 export const CASE_ONCELIGI: Record<string, { etiket: string; ton: Ton; aciklama: string }> = {
