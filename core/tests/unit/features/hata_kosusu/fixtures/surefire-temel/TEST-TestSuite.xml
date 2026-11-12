@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report.xsd" version="3.0.2" name="TestSuite" time="41.318" tests="4" errors="0" skipped="0" failures="1">
+  <properties>
+    <property name="java.version" value="17.0.12"/>
+    <property name="surefire.test.class.path" value="target/test-classes"/>
+  </properties>
+  <testcase name="ondortAdetteIkiBedava" classname="com.antreklabs.bayi.uretilen.TPD1AndroidC11_1a2b3c4dTest" time="9.412"/>
+  <testcase name="siparisOnaylanir" classname="com.antreklabs.bayi.testler.SiparisTesti" time="11.205"/>
+  <testcase name="minimumUyarisiGorunur" classname="com.antreklabs.bayi.testler.SepetTesti" time="8.733"/>
+  <testcase name="krediLimitiUyarisi" classname="com.antreklabs.bayi.testler.SepetTesti" time="11.968">
+    <failure message="'credit-warning' metni: beklenen &lt;Kredi limiti aşıldı&gt;, görülen &lt;(öğe yok)&gt; (10000 ms)" type="java.lang.AssertionError"><![CDATA[java.lang.AssertionError: 'credit-warning' metni: beklenen <Kredi limiti aşıldı>, görülen <(öğe yok)> (10000 ms)
+	at com.antreklabs.bayi.altyapi.Bekle.dogrula(Bekle.java:76)
+	at com.antreklabs.bayi.ekranlar.SepetEkrani.dogrulaKrediUyarisi(SepetEkrani.java:88)
+	at com.antreklabs.bayi.testler.SepetTesti.krediLimitiUyarisi(SepetTesti.java:61)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at org.testng.internal.invokers.MethodInvocationHelper.invokeMethod(MethodInvocationHelper.java:139)
+]]></failure>
+  </testcase>
+</testsuite>

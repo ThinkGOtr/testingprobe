@@ -5,16 +5,19 @@
 1. Gereksinim kilitlenir (sıra no ayırma yarışını kapatır); case'leri kullanılabilir olmalı
    (`cases_ready | done`, PO onayı güncel) — değilse 409.
 2. İlişki gereksinime ait, `approved` ve bayat olmamalı (`IliskiGecersiz`, 422). Bağlı karar tablosu
-   (`karar_tablosu_id`) yoksa da `IliskiGecersiz`: olgu grupları tabloya göre seçilir.
+   (`karar_tablosu_id`) olmalı, `approved` ve bayat olmamalı ve ilişkinin onaylandığı sürümde
+   olmalı (`karar_tablosu.service.iliski_tablo_engeli`); değilse `IliskiGecersiz`.
 3. Kaynak case'ler: verilmezse gereksinimin `superseded` olmayan, AC atıfları ilişkinin
    `ac_refs`'iyle kesişen ve kendisi metamorfik türetme ürünü olmayan case'leri (zincirleme ×2 ×2
    varsayılan olmasın). Verilen `case_ids` gereksinime ait, `superseded` olmayan ve AC'si kesişen
    case'ler olmalı (değilse 404 / 422); türetilmiş bir case açıkça verilirse kaynak olabilir.
 4. Her kaynak için: (ilişki, kaynak) çifti zaten `turetildi` ise atlanır (`zaten_turetildi`, satıra
-   dokunulmaz). Değilse case'in GÜNCEL içeriğine (`icerik_hash`) ait kontrol kaydı aranır; kayıt yok
-   ya da ilişkinin tablosuna ait grubun girdi olgusu yoksa `olgu_yok`. Gruplar kayıttaki sırayla
-   denenir; **türetebilen ilk grup** kullanılır (çift başına tek türetilen case). Hiçbiri
-   türetemezse ilk grubun nedeni raporlanır. Türetilen içerik case içerik denetiminden
+   dokunulmaz). Değilse case'in GÜNCEL içeriğine ait **geçerli** kontrol kaydı aranır (oracle'ın
+   tek geçerlilik tanımı: `oracle.service.gecerli_kayit` — güncel kapsayan tablo hash'leriyle
+   yapılmış kayıt). Kayıt yoksa, sonucu `uyumlu` değilse ya da ilişkinin tablosuna ait uyumlu
+   grubun girdi olgusu yoksa `olgu_yok`. Gruplar kayıttaki sırayla denenir; **türetebilen ilk
+   grup** kullanılır (çift başına tek türetilen case). Hiçbiri türetemezse ilk grubun nedeni
+   raporlanır. Türetilen içerik case içerik denetiminden
    (`content_errors`: şema + AC atıfları) geçmezse `iliski_gecersiz`.
 5. Türetilen case `draft`, kaynağın `uretim_no`'su, o üretimdeki sıradaki boş `sira_no`, kimlik
    `case_id(req, sira_no, uretim_no)`; `kanal` ve `uretim_modu` kaynaktan, `ai_generated=False`
@@ -45,8 +48,10 @@ from tp_core.features.cases.service import (
     requirement_change_reason,
 )
 from tp_core.features.karar_tablosu.hatalar import IliskiGecersiz
+from tp_core.features.karar_tablosu.service import iliski_tablo_engeli
 from tp_core.features.metamorfik import yeniden_yazim
 from tp_core.features.metamorfik.iliskiler import bayat_mi
+from tp_core.features.oracle.service import gecerli_kayit, kapsayan_tablolar
 from tp_core.models import (
     CaseOracleKontrol,
     MetamorfikIliski,
@@ -63,7 +68,10 @@ ZATEN = "zaten_turetildi"
 
 
 class IliskiBulunamadi(WorkflowError):
+    """İlişki yok ya da başka bir gereksinime ait (404)."""
+
     status_code = 404
+    kod = "iliski_bulunamadi"
 
 
 # ---------------------------------------------------------------------- yardımcılar
@@ -84,6 +92,9 @@ def _iliski(session: Session, req: Requirement, iliski_id: uuid.UUID) -> Metamor
         )
     if iliski.karar_tablosu_id is None:
         raise IliskiGecersiz("İlişkinin bağlı karar tablosu yok; olgular tabloya göre seçilir")
+    engel = iliski_tablo_engeli(session, iliski, req)
+    if engel is not None:
+        raise IliskiGecersiz("İlişki kullanılamaz", [engel])
     return iliski
 
 
@@ -128,21 +139,29 @@ def _kaynaklar(
 
 
 def _kontrol(session: Session, tc: TestCase) -> CaseOracleKontrol | None:
-    """Case'in güncel içeriğine ait oracle kontrol kaydı."""
-    return session.scalars(
-        select(CaseOracleKontrol).where(
-            CaseOracleKontrol.test_case_id == tc.id,
-            CaseOracleKontrol.icerik_hash == tc.icerik_hash,
-        )
-    ).first()
+    """Case'in güncel içeriğine ait, güncel kapsayan tablolarla yapılmış (geçerli) kontrol kaydı.
+    Geçerlilik oracle'ın tek tanımıdır (`gecerli_kayit`); burada yeniden yazılmaz."""
+    return gecerli_kayit(session, tc, tc.icerik_hash, kapsayan_tablolar(session, tc))
 
 
 def kaynak_turet(
     tc: TestCase, kontrol: CaseOracleKontrol | None, iliski: MetamorfikIliski
 ) -> yeniden_yazim.Sonuc:
-    """Bir kaynak case için türetme sonucu (DB'ye yazmaz): türetebilen ilk grup kullanılır."""
+    """Bir kaynak case için türetme sonucu (DB'ye yazmaz): türetebilen ilk grup kullanılır.
+
+    `kontrol` case'in güncel içeriğine ait GEÇERLİ kayıt olmalıdır (`_kontrol`); sonucu `uyumlu`
+    değilse türetilmez (tabloyla çelişen ya da kısmen kontrol edilmiş case çoğaltılmaz)."""
     if kontrol is None:
-        return yeniden_yazim.Sonuc("olgu_yok", "Case'in güncel içeriği için oracle kontrolü yok")
+        return yeniden_yazim.Sonuc(
+            "olgu_yok",
+            "Case'in güncel içeriği için güncel tablolarla yapılmış oracle kontrolü yok",
+        )
+    if kontrol.sonuc != "uyumlu":
+        return yeniden_yazim.Sonuc(
+            "olgu_yok",
+            f"Kaynak case'in oracle kontrol sonucu uyumlu değil ({kontrol.sonuc}); yalnız tabloyla "
+            "uyumlu case'ten türetilir",
+        )
     tablo = str(iliski.karar_tablosu_id)
     gruplar = [
         g
@@ -345,4 +364,40 @@ def turetmeler(session: Session, requirement_id: uuid.UUID) -> list[dict[str, An
     ]
 
 
-__all__ = ["ORACLE_IS", "IliskiBulunamadi", "kaynak_turet", "turet", "turetmeler"]
+def turetilen_olgulari(session: Session, tc: TestCase) -> dict[str, Any] | None:
+    """Türetilen case'in olguları, değer çıkarma (`case_facts`) çıktısı biçiminde; model çağrısı
+    yerine oracle'a verilebilir (`oracle.dogrulama.degerlendir(icerik, tablolar, cikti)`).
+
+    Case bir türetme ürünü değilse, kaynak ya da ilişki artık geçerli değilse ya da türetme bugün
+    yeniden yapıldığında case'in GÜNCEL içeriğini (`icerik_hash`) vermiyorsa (ör. analist
+    düzeltmiş) None döner; çağıran o zaman normal değer çıkarmayı kullanır.
+    """
+    satir = session.scalars(
+        select(MetamorfikTuretme).where(
+            MetamorfikTuretme.turetilen_case_id == tc.id,
+            MetamorfikTuretme.sonuc == "turetildi",
+        )
+    ).first()
+    if satir is None:
+        return None
+    kaynak = session.get(TestCase, satir.kaynak_case_id)
+    iliski = session.get(MetamorfikIliski, satir.iliski_id)
+    if kaynak is None or iliski is None or iliski.durum != "approved":
+        return None
+    req = session.get(Requirement, tc.requirement_id)
+    if req is None or bayat_mi(iliski, req) or iliski_tablo_engeli(session, iliski, req):
+        return None
+    sonuc = kaynak_turet(kaynak, _kontrol(session, kaynak), iliski)
+    if sonuc.icerik is None or content_hash(sonuc.icerik) != tc.icerik_hash:
+        return None
+    return sonuc.olgular
+
+
+__all__ = [
+    "ORACLE_IS",
+    "IliskiBulunamadi",
+    "kaynak_turet",
+    "turet",
+    "turetilen_olgulari",
+    "turetmeler",
+]

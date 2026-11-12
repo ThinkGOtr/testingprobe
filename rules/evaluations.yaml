@@ -150,7 +150,7 @@ bundles:
               medyan: 7.62
               p90: 13.522
   decision-table-draft:
-    version: 1
+    version: 2
     status: pending
     note: '012 Ş1: karar tablosu ve metamorfik ilişki taslağı paketi v1. REPLAY golden''ı
       (decision_table_draft/golden/TPD-1, demo ana yolu f2-kod-hatasi metni) elle hazırlandı; çıktı

@@ -21,6 +21,7 @@ from tests.unit.features.metamorfik.ornek import ILISKI, TABLO, ayrintilar, case
 from tp_core.audit import content_hash
 from tp_core.features.cases import service as cases_service
 from tp_core.features.cases.schema import content_errors
+from tp_core.features.karar_tablosu import service as kt_service
 from tp_core.features.karar_tablosu.hatalar import IliskiGecersiz
 from tp_core.features.metamorfik import service
 from tp_core.features.metamorfik.iliskiler import gecerli_iliskiler
@@ -70,9 +71,16 @@ def _iliski_ekle(
 
 
 def _onayla(s: Any, n: MetamorfikIliski, req: Requirement, po: Principal) -> None:
-    record_approval(s, n, po, "approve", beklenen_hash=content_hash_of(n))
-    transition(s, n, "approved", po, "pending_po")
-    n.gereksinim_hash = content_hash_of(req)
+    """İlişki onayı servis yolundan: bağlı tablonun onaylı sürümü review'a yazılır."""
+    kt_service.onayla(s, kt_service.ILISKI, n.id, po, n.icerik_hash)
+
+
+def _tablo_onayla(s: Any, t: KararTablosu, req: Requirement, po: Principal) -> None:
+    """Tablo onayı (oracle işi açmadan; işi test_olay_denetim_ve_oracle_isi sayar)."""
+    transition(s, t, "pending_po", SYSTEM, "draft")
+    record_approval(s, t, po, "approve", beklenen_hash=content_hash_of(t))
+    transition(s, t, "approved", po, "pending_po")
+    t.gereksinim_hash = content_hash_of(req)
 
 
 @pytest.fixture
@@ -85,6 +93,7 @@ def kur(engine: Engine, make_user: Callable[..., Principal], make_requirement: C
         oracle: bool = True,
         icerik: dict | None = None,
         hazir: bool = True,
+        tablo_durum: str = "approved",
     ) -> Kurulum:
         analist, po = make_user("analyst"), make_user("po")
         rid = make_requirement(
@@ -113,6 +122,8 @@ def kur(engine: Engine, make_user: Callable[..., Principal], make_requirement: C
             )
             s.add(tablo)
             s.flush()
+            if tablo_durum == "approved":
+                _tablo_onayla(s, tablo, req, po)
             n = _iliski_ekle(s, req, tablo, iliski or ILISKI, 1, iliski_durum)
             if iliski_durum == "approved":
                 _onayla(s, n, req, po)
@@ -274,12 +285,14 @@ def test_oracle_kaydi_yoksa_olgu_yok_sonra_yeniden_denenir(
     # Kontrol sonradan gelir: aynı çift yeniden değerlendirilir, satır güncellenir.
     with session_scope() as s:
         tc = s.get(TestCase, k.kaynaklar[0])
+        tablo = s.get(KararTablosu, k.tablo_id)
         s.add(
             CaseOracleKontrol(
                 test_case_id=tc.id,
                 icerik_hash=tc.icerik_hash,
                 sonuc="uyumlu",
                 ayrintilar=ayrintilar(grup(tablo_id=str(k.tablo_id))),
+                tablo_hashleri={str(tablo.id): tablo.icerik_hash},
             )
         )
     sonuc = _turet(k)
@@ -302,12 +315,14 @@ def test_eski_icerigin_kontrolu_ve_baska_tablonun_grubu_sayilmaz(
                 ayrintilar=ayrintilar(grup(tablo_id=str(k.tablo_id))),
             )
         )
+        tablo = s.get(KararTablosu, k.tablo_id)
         s.add(
             CaseOracleKontrol(
                 test_case_id=tc.id,
                 icerik_hash=tc.icerik_hash,
                 sonuc="uyumlu",
                 ayrintilar=ayrintilar(grup(tablo_id=str(uuid.uuid4()))),
+                tablo_hashleri={str(tablo.id): tablo.icerik_hash},
             )
         )
     [a] = _turet(k)["atlanan"]

@@ -24,7 +24,7 @@ TUR_KOD = "kod"
 TUR_VERI = "veri"
 
 KAMPANYA_BEDAVA_YOK = "kampanya_bedava_yok"
-KAMPANYA_ESIK_7 = "kampanya_esik_7"
+KAMPANYA_TEK_BEDAVA = "kampanya_tek_bedava"
 KAMPANYA_CIFT_INDIRIM = "kampanya_cift_indirim"
 MIN_SIPARIS_HARIC = "min_siparis_haric"
 MIN_SIPARIS_MUAFIYET_YOK = "min_siparis_muafiyet_yok"
@@ -53,10 +53,11 @@ KATALOG: tuple[Hata, ...] = (
         "Kampanyalı satırda bedava adet her zaman 0 olur; indirim uygulanmaz.",
     ),
     Hata(
-        KAMPANYA_ESIK_7,
+        KAMPANYA_TEK_BEDAVA,
         TUR_KOD,
-        "Kampanya: eşik 6 yerine 7",
-        "Bedava adet her 6 adette değil her 7 adette 1 verilir (adet // 7).",
+        "Kampanya: en çok 1 bedava",
+        "Bedava adet en çok 1 verilir (min(1, adet // 6)): 6 ve 7 adette doğru görünür, 12 ve "
+        "üstünde eksik kalır (14 adette 2 yerine 1).",
     ),
     Hata(
         KAMPANYA_CIFT_INDIRIM,
@@ -80,7 +81,8 @@ KATALOG: tuple[Hata, ...] = (
         MIN_SIPARIS_500,
         TUR_VERI,
         "Minimum sipariş tutarı 500,00 TL",
-        "Minimum sipariş tutarı 750,00 TL yerine 500,00 TL okunur.",
+        "Minimum sipariş tutarı 750,00 TL yerine 500,00 TL okunur (story metnindeki eski değer; "
+        "onaylı kural 750,00 TL).",
     ),
     Hata(
         MIN_SIPARIS_1000,
@@ -135,8 +137,8 @@ def satir_hatasi(satir) -> str | None:
 def bedava_adet(adet: int, hata: str | None = None) -> int:
     """Kampanyalı satırın bedava adedi; normal kural `campaign.bedava_adet` içindedir."""
     normal = campaign.bedava_adet(adet, hata == KAMPANYA_BEDAVA_YOK)
-    if hata == KAMPANYA_ESIK_7:
-        return min(normal, adet // 7)  # süreç geneli BREAK_CAMPAIGN=1 yine 0 verir
+    if hata == KAMPANYA_TEK_BEDAVA:
+        return min(normal, 1)  # = min(1, adet // 6); süreç geneli BREAK_CAMPAIGN=1 yine 0 verir
     return normal
 
 

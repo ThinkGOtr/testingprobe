@@ -16,7 +16,13 @@ cevaplarıdır (case üretiminin kurucularıyla aynı bloklar; kod, veri, case v
 verilmez). Çıktının her öğesi `ifade.dogrula` / `ifade.iliski_dogrula` ile denetlenir; geçersiz öğe
 yazılmaz, özette raporlanır. Geçerli öğeler `draft`, `ai_generated=true` yazılır; ilişkinin
 `tablo_ref`'i (çıktıdaki `T<n>`) yeni tablonun kimliğine çözülür. Yeni taslak, gereksinimin hâlâ
-`draft` olan önceki AI öğelerini geçersiz kılar (onaylılar kalır).
+`draft` olan önceki AI öğelerini geçersiz kılar; onaylılar ve insanın düzenlediği ya da PO kararı
+almış taslaklar (`insan_dokunanlar`) kalır.
+
+İlişki bağlı tablonun onaylı sürümüne bağlıdır: gönderim ve onay için tablo gerekir, onayda tablo
+`approved` ve bayat olmamalıdır; onay anındaki tablo `onaylanan_hash`'i saklanır, tablo değişince
+ilişki bayattır (`iliski_tablo_engeli`, `gecerli_iliskiler`). PO onay denetimi, onaylayan içeriği
+son yazan (yoksa oluşturan) kişiyse `oz_onay: true` taşır (engellemez).
 """
 
 from __future__ import annotations
@@ -30,6 +36,7 @@ from sqlalchemy import Engine, func, select, text
 from sqlalchemy.orm import Session
 
 from tp_core.audit import audit_on_commit, content_hash
+from tp_core.audit.session import pending_audit
 from tp_core.events.bus import publish_tx
 from tp_core.features.cases.schema import acceptance_criteria
 from tp_core.features.cases.service import (
@@ -43,6 +50,7 @@ from tp_core.features.karar_tablosu import ifade
 from tp_core.features.karar_tablosu.hatalar import IliskiGecersiz, KararTablosuGecersiz
 from tp_core.models import (
     AppUser,
+    AuditEvent,
     KararTablosu,
     MetamorfikIliski,
     Requirement,
@@ -80,8 +88,23 @@ ORACLE_JOB = "oracle.check_requirement"
 OLAY = "karar_tablosu.updated"
 
 # PO onaylı gereksinim durumları (`po_approved` ve sonrası). `failed` hem onaydan önce hem sonra
-# görülebildiği için ayrıca `onaylanan_hash`'in güncel içerikle eşleşmesi aranır.
-ONAYLI_GEREKSINIM = frozenset({"po_approved", "generating", "cases_ready", "done", "failed"})
+# görülebildiği için ayrıca `onaylanan_hash`'in güncel içerikle eşleşmesi aranır. v3 (011) iki
+# turlu üretimin `modeling` / `model_ready` durumları makinede varsa onlar da onay sonrasıdır
+# (burada durum eklenmez; yalnız var olanlar kabul edilir).
+_V3_ONAY_SONRASI = frozenset({"modeling", "model_ready"})
+
+
+def _onayli_gereksinim_durumlari() -> frozenset[str]:
+    from tp_core.workflow.states import MACHINES
+
+    makine = MACHINES.get("requirement")
+    durumlar = makine.states if makine is not None else frozenset()
+    return frozenset({"po_approved", "generating", "cases_ready", "done", "failed"}) | (
+        _V3_ONAY_SONRASI & durumlar
+    )
+
+
+ONAYLI_GEREKSINIM = _onayli_gereksinim_durumlari()
 
 TASLAK_TALIMATI = (
     "Aşağıdaki PO onaylı story'nin hesaplama kurallarını karar tablosu ve metamorfik ilişki "
@@ -209,6 +232,137 @@ def _icerik_yaz(nesne: Any, icerik: dict[str, Any]) -> None:
     nesne.icerik_hash = content_hash(icerik)
 
 
+# ---------------------------------------------------------------------- düzenleme ve bağ kayıtları
+#
+# Şemada (0022) "son düzenleyen", "insan düzenledi" ve ilişkinin onaylandığı tablo sürümü için
+# kolon yoktur. Bu üç bilgi aşağıdaki erişimcilerin arkasındadır; birleştirmede kolon eklenirse
+# (`son_duzenleyen_id`, `insan_duzenledi`, `metamorfik_iliski.tablo_onaylanan_hash`) yalnız bu
+# işlevler değişir:
+#
+# - son düzenleyen / insan düzenledi: nesnenin `<tur>.created|updated|ai_draft` denetim kayıtları
+#   (`audit_event`, aynı işlemde bekleyenler dahil). `created` / `updated` özeti `kullanici_id`
+#   taşır.
+# - ilişkinin tablo sürümü: ilişkinin son `approve` review'unun `sonra.bagli_tablo`'su
+#   (`{id, onaylanan_hash}`), onay anında yazılır.
+
+_DUZENLEME_FIILLERI = ("created", "updated", "ai_draft")
+
+
+def _nesne_anahtari(nesne: Any) -> str:
+    return f"{_tur(nesne)}:{nesne.id}"
+
+
+def son_duzenleyen(session: Session, nesne: Any) -> dict[str, Any] | None:
+    """İçeriği son yazan: `{kullanici_adi, kullanici_id, eylem}` (AI taslağında aktör `system`,
+    kimlik `None`); kayıt yoksa None."""
+    tur, anahtar = _tur(nesne), _nesne_anahtari(nesne)
+    eylemler = [f"{tur}.{f}" for f in _DUZENLEME_FIILLERI]
+    for aktor, eylem, hedef, ozet in reversed(pending_audit(session)):
+        if hedef == anahtar and eylem in eylemler:
+            return _duzenleyen(aktor, eylem, ozet)
+    row = session.execute(
+        select(AuditEvent.aktor, AuditEvent.eylem, AuditEvent.ozet)
+        .where(AuditEvent.nesne == anahtar, AuditEvent.eylem.in_(eylemler))
+        .order_by(AuditEvent.id.desc())
+        .limit(1)
+    ).first()
+    return _duzenleyen(row.aktor, row.eylem, row.ozet) if row is not None else None
+
+
+def _duzenleyen(aktor: str, eylem: str, ozet: Any) -> dict[str, Any]:
+    kid = ozet.get("kullanici_id") if isinstance(ozet, Mapping) else None
+    return {"kullanici_adi": aktor, "kullanici_id": kid, "eylem": eylem.rsplit(".", 1)[-1]}
+
+
+def insan_dokunanlar(session: Session, tur: str, ids: Sequence[uuid.UUID]) -> set[uuid.UUID]:
+    """İnsanın içeriğini düzenlediği (`<tur>.updated`) ya da hakkında PO kararı (review) olan
+    nesneler. Yeni AI taslağı bunları geçersiz kılmaz."""
+    if not ids:
+        return set()
+    anahtarlar = {f"{tur}:{i}": i for i in ids}
+    out = {
+        anahtarlar[hedef]
+        for _a, eylem, hedef, _o in pending_audit(session)
+        if eylem == f"{tur}.updated" and hedef in anahtarlar
+    }
+    out |= {
+        anahtarlar[hedef]
+        for hedef in session.scalars(
+            select(AuditEvent.nesne).where(
+                AuditEvent.eylem == f"{tur}.updated", AuditEvent.nesne.in_(list(anahtarlar))
+            )
+        ).all()
+    }
+    out |= set(
+        session.scalars(
+            select(Review.nesne_id).where(Review.nesne_turu == tur, Review.nesne_id.in_(list(ids)))
+        ).all()
+    )
+    return out
+
+
+def oz_onay_mi(session: Session, nesne: Any, user: Principal) -> bool:
+    """Onaylayan, içeriği son yazan (yoksa oluşturan) kişi mi? Engellemez; denetime yazılır."""
+    son = son_duzenleyen(session, nesne)
+    if son is None:
+        return nesne.olusturan_id is not None and nesne.olusturan_id == user.id
+    if son["kullanici_id"] is not None:
+        return str(son["kullanici_id"]) == str(user.id)
+    return son["kullanici_adi"] == user.kullanici_adi
+
+
+def iliski_tablo_kaydi(session: Session, iliski: MetamorfikIliski) -> dict[str, Any] | None:
+    """İlişkinin son PO onayında bağlı olduğu tablo sürümü: `{id, onaylanan_hash}` ya da None."""
+    sonra = session.scalars(
+        select(Review.sonra)
+        .where(
+            Review.nesne_turu == ILISKI,
+            Review.nesne_id == iliski.id,
+            Review.karar == "approve",
+        )
+        .order_by(Review.sira.desc())
+        .limit(1)
+    ).first()
+    kayit = (sonra or {}).get("bagli_tablo") if isinstance(sonra, Mapping) else None
+    return dict(kayit) if isinstance(kayit, Mapping) else None
+
+
+def iliski_tablo_engeli(session: Session, iliski: MetamorfikIliski, req: Requirement) -> str | None:
+    """İlişkinin bağlı tablosu onun kullanılmasına engel mi? Engel metni ya da None.
+
+    Bağlı tablo olmalı, `approved` ve bayat olmamalı; ilişki onaylıysa tablonun onaylanan
+    içeriği ilişkinin onaylandığı sürümle aynı olmalı (tablo sonradan değiştiyse ilişki bayattır).
+    """
+    if iliski.karar_tablosu_id is None:
+        return "ilişkinin bağlı karar tablosu yok"
+    tablo = session.get(KararTablosu, iliski.karar_tablosu_id)
+    if tablo is None or tablo.requirement_id != iliski.requirement_id:
+        return "ilişkinin bağlı karar tablosu bulunamadı"
+    if tablo.durum != "approved":
+        return f"bağlı karar tablosu (T{tablo.sira_no}) PO onaylı değil (durum: {tablo.durum})"
+    if bayat_mi(tablo, req):
+        return f"bağlı karar tablosu (T{tablo.sira_no}) bayat: gereksinim onaydan sonra değişmiş"
+    if iliski.durum == "approved":
+        kayit = iliski_tablo_kaydi(session, iliski)
+        if (
+            kayit is None
+            or kayit.get("id") != str(tablo.id)
+            or kayit.get("onaylanan_hash") != tablo.onaylanan_hash
+        ):
+            return (
+                f"bağlı karar tablosu (T{tablo.sira_no}) ilişki onaylandıktan sonra değişmiş; "
+                "ilişki yeniden onaylanmalı"
+            )
+    return None
+
+
+def iliski_bayat_mi(session: Session, iliski: MetamorfikIliski, req: Requirement) -> bool:
+    """Onaylı ilişki bayat mı: gereksinim değişti ya da bağlı tablo onaylandığı sürümde değil."""
+    if iliski.durum != "approved":
+        return False
+    return bayat_mi(iliski, req) or iliski_tablo_engeli(session, iliski, req) is not None
+
+
 # ---------------------------------------------------------------------- oracle kancası
 
 
@@ -272,7 +426,7 @@ def tablo_olustur(
     )
     session.add(t)
     session.flush()
-    _denetim(session, user, t, "created", hash=t.icerik_hash)
+    _denetim(session, user, t, "created", hash=t.icerik_hash, kullanici_id=str(user.id))
     _olay(session, t, "created")
     return t
 
@@ -292,7 +446,15 @@ def tablo_guncelle(
     onceki = t.icerik_hash
     _icerik_yaz(t, veri)
     session.flush()
-    _denetim(session, user, t, "updated", onceki_hash=onceki, hash=t.icerik_hash)
+    _denetim(
+        session,
+        user,
+        t,
+        "updated",
+        onceki_hash=onceki,
+        hash=t.icerik_hash,
+        kullanici_id=str(user.id),
+    )
     _olay(session, t, "updated")
     return t
 
@@ -361,7 +523,15 @@ def iliski_olustur(
     )
     session.add(n)
     session.flush()
-    _denetim(session, user, n, "created", hash=n.icerik_hash, karar_tablosu_id=n.karar_tablosu_id)
+    _denetim(
+        session,
+        user,
+        n,
+        "created",
+        hash=n.icerik_hash,
+        karar_tablosu_id=n.karar_tablosu_id,
+        kullanici_id=str(user.id),
+    )
     _olay(session, n, "created")
     return n
 
@@ -397,6 +567,7 @@ def iliski_guncelle(
         onceki_hash=onceki,
         hash=n.icerik_hash,
         karar_tablosu_id=n.karar_tablosu_id,
+        kullanici_id=str(user.id),
     )
     _olay(session, n, "updated")
     return n
@@ -409,6 +580,11 @@ def _gonderim_hatalari(session: Session, nesne: Any) -> list[str]:
     if isinstance(nesne, KararTablosu):
         return ifade.gonderim_hatalari(dict(nesne.icerik))
     tablo = _bagli_tablo(session, nesne.requirement_id, nesne.karar_tablosu_id)
+    if tablo is None:
+        return [
+            "karar_tablosu_id: ilişki bir karar tablosuna bağlı olmalı (olgular tabloya göre "
+            "seçilir)"
+        ]
     hatalar = _iliski_hatalari(dict(nesne.icerik), tablo)
     if not hatalar and not nesne.icerik.get("ac_refs"):
         hatalar.append("ac_refs: en az bir kabul kriteri olmalı")
@@ -428,7 +604,11 @@ def gonder(
         sinif = KararTablosuGecersiz if tur == TABLO else IliskiGecersiz
         raise sinif("PO onayına gönderilemez", hatalar)
     transition(session, n, "pending_po", user, "draft")
-    _denetim(session, user, n, "submitted", hash=n.icerik_hash)
+    ek: dict[str, Any] = {}
+    if isinstance(n, KararTablosu):
+        uyarilar = ifade.sinir_ornekleri(dict(n.icerik))["uyarilar"]
+        ek["sinir_uyarilari"] = sorted({u["tur"] for u in uyarilar})
+    _denetim(session, user, n, "submitted", hash=n.icerik_hash, **ek)
     return n
 
 
@@ -457,11 +637,37 @@ def onayla(
     n = getir(session, tur, nid, lock=True)
     req = get_requirement(session, n.requirement_id)
     _onayli_gereksinim_iste(req)
-    record_approval(session, n, user, "approve", beklenen_hash=icerik_hash)
+    sonra: dict[str, Any] | None = None
+    if isinstance(n, MetamorfikIliski):
+        # İlişki bağlı tablonun onaylı sürümüne bağlanır (tablo değişirse ilişki bayat olur).
+        engel = iliski_tablo_engeli(session, n, req)
+        if engel is not None:
+            raise IliskiGecersiz("İlişki onaylanamaz", [engel])
+        tablo = session.get(KararTablosu, n.karar_tablosu_id)
+        sonra = {"bagli_tablo": {"id": str(tablo.id), "onaylanan_hash": tablo.onaylanan_hash}}
+    son = son_duzenleyen(session, n)
+    oz_onay = oz_onay_mi(session, n, user)
+    record_approval(session, n, user, "approve", beklenen_hash=icerik_hash, sonra=sonra)
     transition(session, n, "approved", user, "pending_po")
     n.gereksinim_hash = content_hash_of(req)
     session.flush()
-    _denetim(session, user, n, "approved", hash=n.onaylanan_hash, gereksinim_hash=n.gereksinim_hash)
+    ek: dict[str, Any] = {
+        "son_duzenleyen": son["kullanici_adi"] if son else None,
+        "son_duzenleyen_id": son["kullanici_id"] if son else None,
+    }
+    if oz_onay:
+        ek["oz_onay"] = True
+    if sonra is not None:
+        ek["bagli_tablo"] = sonra["bagli_tablo"]
+    _denetim(
+        session,
+        user,
+        n,
+        "approved",
+        hash=n.onaylanan_hash,
+        gereksinim_hash=n.gereksinim_hash,
+        **ek,
+    )
     if isinstance(n, KararTablosu):
         oracle_kontrolu_iste(session, n, "tablo_onaylandi")
     return n
@@ -502,6 +708,13 @@ def tablo_degerlendir(
     return ifade.degerlendir(veri, dict(girdiler)).as_dict()
 
 
+def tablo_ornekleri(session: Session, tablo_id: uuid.UUID) -> dict[str, Any]:
+    """`GET /decision-tables/{id}/ornekler`: kayıtlı içeriğin sınır örnekleri ve satır uyarıları
+    (`ifade.sinir_ornekleri`); yazmaz."""
+    t = getir(session, TABLO, tablo_id)
+    return ifade.sinir_ornekleri(dict(t.icerik))
+
+
 # ---------------------------------------------------------------------- okuma
 
 
@@ -538,8 +751,16 @@ def _ac(ref: Any) -> str:
 
 
 def gecerli_iliskiler(session: Session, requirement_id: uuid.UUID) -> list[MetamorfikIliski]:
-    """Türetmede kullanılacak ilişkiler: onaylı ve bayat değil; `sira_no` sırasıyla."""
-    return list(_gecerli(session, ILISKI, requirement_id))  # type: ignore[arg-type]
+    """Türetmede kullanılacak ilişkiler: onaylı, bayat değil ve bağlı tablosu onaylandığı sürümde
+    onaylı ve bayat değil (`iliski_tablo_engeli`); `sira_no` sırasıyla."""
+    req = session.get(Requirement, requirement_id)
+    if req is None:
+        return []
+    return [
+        n
+        for n in _gecerli(session, ILISKI, requirement_id)
+        if iliski_tablo_engeli(session, n, req) is None  # type: ignore[arg-type]
+    ]
 
 
 def _zaman(deger: Any) -> str | None:
@@ -617,12 +838,47 @@ def serialize(
         }
         if isinstance(n, MetamorfikIliski):
             oge["karar_tablosu_id"] = str(n.karar_tablosu_id) if n.karar_tablosu_id else None
+            engel = iliski_tablo_engeli(session, n, r) if n.durum == "approved" else None
+            oge["tablo_engeli"] = engel
+            oge["bayat"] = oge["bayat"] or engel is not None
+        son_yazan = son_duzenleyen(session, n)
+        oge["son_duzenleyen"] = son_yazan["kullanici_adi"] if son_yazan else None
         out.append(oge)
     return out
 
 
+# İş hatası kullanıcıya ham gösterilmez (iç ayrıntı sızabilir): işleyici (`jobs.py`) ayrıntıyı
+# denetime yazar ve işi aşağıdaki sınıflandırılmış metinle bitirir. `son_taslak` yalnız bu
+# metinleri gösterir; tanımadığı metni (eski iş, çalıştırıcı hatası) genel metne çevirir.
+TASLAK_HATALARI: dict[str, str] = {
+    "gereksinim_degisti": (
+        "Gereksinim PO onaylı değil ya da taslak üretimi sırasında değişti; taslağı yeniden "
+        "başlatın."
+    ),
+    "butce_asildi": "Model bütçesi doldu; taslak üretilmedi.",
+    "model_hatasi": (
+        "Model çağrısı ya da model çıktısı başarısız oldu; taslak üretilmedi. Ayrıntı denetim "
+        "kaydındadır."
+    ),
+    "ic_hata": "Taslak üretilemedi (sunucu hatası). Ayrıntı denetim kaydındadır.",
+}
+
+
+def taslak_hatasi(son_hata: str | None) -> dict[str, str] | None:
+    """İşin `son_hata` metni → `{kod, mesaj}` (yalnız sınıflandırılmış metinler)."""
+    if not son_hata:
+        return None
+    for kod, mesaj in TASLAK_HATALARI.items():
+        if son_hata == mesaj:
+            return {"kod": kod, "mesaj": mesaj}
+    # Bütçe istisnası türünü korumak için olduğu gibi yükselir; metni gösterilmez.
+    kod = "butce_asildi" if "bütçe" in son_hata.lower() else "ic_hata"
+    return {"kod": kod, "mesaj": TASLAK_HATALARI[kod]}
+
+
 def son_taslak(session: Session, requirement_id: uuid.UUID) -> dict[str, Any] | None:
-    """Gereksinimin son AI taslak işi: `{job_id, workflow_id, durum, sonuc, hata, olusturma}`."""
+    """Gereksinimin son AI taslak işi: `{job_id, workflow_id, durum, sonuc, hata, hata_kodu,
+    olusturma}`; `hata` sınıflandırılmış metindir (`TASLAK_HATALARI`), ham iş hatası değil."""
     row = session.execute(
         text(
             "SELECT w.id AS wf, j.id AS job, j.durum, j.sonuc, j.son_hata, w.olusturma "
@@ -633,12 +889,14 @@ def son_taslak(session: Session, requirement_id: uuid.UUID) -> dict[str, Any] | 
     ).first()
     if row is None:
         return None
+    hata = taslak_hatasi(row.son_hata)
     return {
         "job_id": str(row.job) if row.job else None,
         "workflow_id": str(row.wf),
         "durum": row.durum,
         "sonuc": row.sonuc,
-        "hata": row.son_hata,
+        "hata": hata["mesaj"] if hata else None,
+        "hata_kodu": hata["kod"] if hata else None,
         "olusturma": _zaman(row.olusturma),
     }
 
@@ -707,12 +965,15 @@ def taslak_baslat(session: Session, requirement_id: uuid.UUID, user: Principal) 
 # ---------------------------------------------------------------------- AI taslağı (worker)
 
 
-def taslak_mesajlari(req: Any, sorular: Sequence[Mapping[str, Any]] = ()) -> list[ModelMessage]:
+def taslak_mesajlari(
+    req: Any, sorular: Sequence[Mapping[str, Any]] = (), acik_soru_yanitlari: str = ""
+) -> list[ModelMessage]:
     """Taslak girdisi: YALNIZ PO onaylı story bloğu + PO cevapları (§4.1 bağımsızlık).
 
     Bloklar case üretimiyle aynı kurucularla kurulur (`requirement_block`, kaynak `jira:<KEY>` ya
-    da `serbest:<id>`; PO cevapları `<kaynak>:po`). Test verisi, kod, case ve mevcut tablolar
-    verilmez.
+    da `serbest:<id>`; PO cevapları `<kaynak>:po`). v3 (011) PO'nun açık soru yanıtları varsa
+    (`acik_soru_yanitlari`) onlar da PO cevabıdır ve ayrı güvenilmeyen blokta eklenir. Test verisi,
+    kod, case ve mevcut tablolar verilmez.
     """
     from tp_core.gateway import wrap_untrusted
     from tp_core.gateway.inputs import requirement_block
@@ -738,7 +999,27 @@ def taslak_mesajlari(req: Any, sorular: Sequence[Mapping[str, Any]] = ()) -> lis
     po = _po_cevaplari_metni(req.po_cevaplari, sorular)
     if po:
         parcalar += ["PO cevapları:", wrap_untrusted(po, source=f"{kaynak}:po", kind=tur)]
+    if acik_soru_yanitlari.strip():
+        parcalar += [
+            "PO'nun açık soru yanıtları:",
+            wrap_untrusted(acik_soru_yanitlari, source=f"{kaynak}:po-acik-soru", kind=tur),
+        ]
     return [ModelMessage(role="user", content="\n\n".join(parcalar))]
+
+
+def acik_soru_yanitlari(session: Session, req: Requirement) -> str:
+    """v3 (011 K16) açık soru yanıtları; modül/işlev yoksa (v3 birleşmeden) boş metin."""
+    import importlib
+
+    try:
+        modul = importlib.import_module("tp_core.features.cases.acik_sorular")
+    except ImportError:
+        return ""
+    girdi = getattr(modul, "generation_input", None)
+    if not callable(girdi):
+        return ""
+    metin = girdi(session, req)
+    return metin if isinstance(metin, str) else ""
 
 
 GatewayFactory = Callable[[Engine], ModelGateway]
@@ -828,11 +1109,16 @@ def taslak_iliski_icerigi(oge: Mapping[str, Any]) -> tuple[dict[str, Any], list[
     return icerik, hatalar
 
 
-def _ai_taslaklari_gecersiz_kil(session: Session, req: Requirement) -> dict[str, int]:
+def _ai_taslaklari_gecersiz_kil(
+    session: Session, req: Requirement
+) -> tuple[dict[str, int], dict[str, int]]:
+    """Hâlâ `draft` olan AI öğelerini geçersiz kılar; insanın düzenlediği ya da PO kararı almış
+    olanlar (`insan_dokunanlar`) korunur. (geçersiz kılınan, korunan) sayıları döner."""
     sayi = {TABLO: 0, ILISKI: 0}
+    korunan = {TABLO: 0, ILISKI: 0}
     for tur in (ILISKI, TABLO):
         model = _model(tur)
-        for n in session.scalars(
+        adaylar = session.scalars(
             select(model)
             .where(
                 model.requirement_id == req.id,
@@ -841,10 +1127,15 @@ def _ai_taslaklari_gecersiz_kil(session: Session, req: Requirement) -> dict[str,
             )
             .order_by(model.sira_no)
             .with_for_update()
-        ).all():
+        ).all()
+        dokunulan = insan_dokunanlar(session, tur, [n.id for n in adaylar])
+        for n in adaylar:
+            if n.id in dokunulan:
+                korunan[tur] += 1
+                continue
             gecersiz_kil(session, n, "yeni AI taslağı")
             sayi[tur] += 1
-    return sayi
+    return sayi, korunan
 
 
 def taslaklari_yaz(
@@ -860,8 +1151,8 @@ def taslaklari_yaz(
     Geçersiz öğe yazılmaz (`atilan`). Önceki AI taslakları (hâlâ `draft`) geçersiz kılınır;
     model çıktısı yoksa (REPLAY-MISS nötr yedeği) mevcut taslaklara dokunulmaz.
     """
-    gecersiz = (
-        {TABLO: 0, ILISKI: 0}
+    gecersiz, korunan = (
+        ({TABLO: 0, ILISKI: 0}, {TABLO: 0, ILISKI: 0})
         if uretim_modu == "replay_miss"
         else _ai_taslaklari_gecersiz_kil(session, req)
     )
@@ -926,6 +1217,7 @@ def taslaklari_yaz(
         "iliskiler": [str(n.id) for n in iliskiler],
         "atilan": atilan,
         "gecersiz_kilinan": gecersiz,
+        "korunan": korunan,
         "notes": str(cikti.get("notes") or ""),
         "mode": uretim_modu,
         "ai_call_id": str(ai_call_id) if ai_call_id else None,
@@ -954,7 +1246,7 @@ def taslak_calistir(
                 "gereksinim PO onaylı değil ya da içerik onaydan sonra değişmiş; taslak üretilmedi"
             )
         gorulen = content_hash_of(req)
-        messages = taslak_mesajlari(req, _onaylanan_sorular(s, req.id))
+        messages = taslak_mesajlari(req, _onaylanan_sorular(s, req.id), acik_soru_yanitlari(s, req))
         replay_key = replay_key_for(req)
 
     gw = gateway or _gateway_factory(engine)

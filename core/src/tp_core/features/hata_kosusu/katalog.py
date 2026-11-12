@@ -18,8 +18,14 @@ import yaml
 from tp_core.models import enums
 
 KOD_RE = re.compile(r"^[a-z0-9_]{1,40}$")
-ALANLAR = ("kod", "ad", "tur", "aciklama", "yakalayan_kural")
+AC_RE = re.compile(r"^AC[1-9][0-9]{0,2}$")
+TABLO_RE = re.compile(r"^T[1-9][0-9]{0,2}$")
+METIN = ("kod", "ad", "tur", "aciklama", "yakalayan_kural")
+ALANLAR = (*METIN, "ac_refs", "tablo", "ayirt_edici")
 ZORUNLU = ("kod", "ad", "tur", "aciklama")
+# K9: her kayıtta bulunmalı (`ac_refs` boş, `tablo` null olabilir).
+ZORUNLU_ANAHTAR = ("ac_refs", "tablo", "ayirt_edici")
+AYIRT_EDICI = ("girdi", "dogru", "hatali")
 
 _LOCK = threading.Lock()
 _ONBELLEK: dict[Path, list[dict[str, Any]]] = {}
@@ -62,10 +68,55 @@ def dogrula(veri: Any) -> list[dict[str, Any]]:
         kural = h.get("yakalayan_kural")
         if kural is not None and not isinstance(kural, str):
             raise KatalogHatasi(f"{kod}: yakalayan_kural metin olmalı")
+        eksik_anahtar = [a for a in ZORUNLU_ANAHTAR if a not in h]
+        if eksik_anahtar:
+            raise KatalogHatasi(f"{kod}: eksik alan: {', '.join(eksik_anahtar)}")
         gorulen.add(kod)
-        out.append({a: (h.get(a).strip() if isinstance(h.get(a), str) else None) for a in ALANLAR})
+        kayit: dict[str, Any] = {
+            a: (h.get(a).strip() if isinstance(h.get(a), str) else None) for a in METIN
+        }
+        kayit["ac_refs"] = _ac_refs(kod, h["ac_refs"])
+        kayit["tablo"] = _tablo(kod, h["tablo"])
+        kayit["ayirt_edici"] = _ayirt_edici(kod, h["ayirt_edici"])
+        out.append(kayit)
     if not out:
         raise KatalogHatasi("hata kataloğu boş")
+    return out
+
+
+def _ac_refs(kod: str, v: Any) -> list[str]:
+    if not isinstance(v, list) or not all(isinstance(x, str) and AC_RE.match(x) for x in v):
+        raise KatalogHatasi(f"{kod}: ac_refs AC<n> listesi olmalı (boş olabilir)")
+    if len(set(v)) != len(v):
+        raise KatalogHatasi(f"{kod}: ac_refs tekrar içeriyor")
+    return list(v)
+
+
+def _tablo(kod: str, v: Any) -> str | None:
+    if v is None:
+        return None
+    if not isinstance(v, str) or not TABLO_RE.match(v):
+        raise KatalogHatasi(f"{kod}: tablo T<n> ya da null olmalı")
+    return v
+
+
+def _deger_sozlugu(kod: str, ad: str, v: Any) -> dict[str, Any]:
+    if not isinstance(v, dict) or not v:
+        raise KatalogHatasi(f"{kod}: ayirt_edici.{ad} boş olmayan nesne olmalı")
+    for k, x in v.items():
+        if not isinstance(k, str) or not isinstance(x, (str, int, float, bool)):
+            raise KatalogHatasi(f"{kod}: ayirt_edici.{ad}.{k} düz değer olmalı")
+    return dict(v)
+
+
+def _ayirt_edici(kod: str, v: Any) -> dict[str, dict[str, Any]]:
+    if not isinstance(v, dict) or set(v) != set(AYIRT_EDICI):
+        raise KatalogHatasi(f"{kod}: ayirt_edici {{girdi, dogru, hatali}} olmalı")
+    out = {a: _deger_sozlugu(kod, a, v[a]) for a in AYIRT_EDICI}
+    if set(out["dogru"]) != set(out["hatali"]):
+        raise KatalogHatasi(f"{kod}: ayirt_edici.dogru ve hatali aynı çıktıları vermeli")
+    if out["dogru"] == out["hatali"]:
+        raise KatalogHatasi(f"{kod}: ayirt_edici doğru ve hatalı çıktıyı ayırt etmiyor")
     return out
 
 
@@ -78,7 +129,8 @@ def yukle(yol: Path) -> list[dict[str, Any]]:
 
 
 def katalog() -> list[dict[str, Any]]:
-    """Doğrulanmış katalog (`kod, ad, tur, aciklama, yakalayan_kural`); kopyası döner."""
+    """Doğrulanmış katalog (`kod, ad, tur, aciklama, yakalayan_kural, ac_refs, tablo,
+    ayirt_edici: {girdi, dogru, hatali}`); kopyası döner."""
     yol = katalog_yolu()
     with _LOCK:
         if yol not in _ONBELLEK:

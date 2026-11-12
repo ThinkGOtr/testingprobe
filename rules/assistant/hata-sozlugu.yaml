@@ -270,3 +270,11 @@ kayitlar:
     neden: Geçici bir altyapı sorunu ya da hata olabilir.
     cozum: Bir süre sonra yeniden deneyin; sürerse Denetim ekranındaki kayıtlarla birlikte yöneticiye iletin.
     rota: /denetim
+  - id: iliski-bulunamadi
+    kodlar: [iliski_bulunamadi]
+    metinler: []
+    baslik: İlişki bulunamadı
+    anlam: İstenen metamorfik ilişki bu gereksinimde yok; ek case türetilmedi.
+    neden: İlişki başka bir gereksinime ait olabilir ya da bağlantı eski olabilir.
+    cozum: Gereksinimin karar tabloları ekranını yenileyin ve listedeki onaylı ilişkilerden birini seçin.
+    rota: /gereksinimler/:id

@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select, text
+from sqlalchemy import text
 
 from tests.unit.features.cases.helpers import login
 from tp_core.features.karar_tablosu import service
@@ -521,13 +521,21 @@ def test_iliski_akisi_ve_tablo_bagi(rol: Roller, make_requirement) -> None:
     i = r.json()
 
     assert rol("analyst").post(f"/relations/{i['id']}/submit").status_code == 200
+    # Bağlı tablo onaylı değilken ilişki onaylanamaz (422); ilişki PO onayında bekler.
+    r = rol("po").post(f"/relations/{i['id']}/approve", json={"icerik_hash": i["icerik_hash"]})
+    assert r.status_code == 422 and r.json()["kod"] == "iliski_gecersiz"
+    assert "PO onaylı değil" in r.json()["detail"]
+    assert rol("analyst").post(f"/decision-tables/{t['id']}/submit").status_code == 200
+    rol("po").post(f"/decision-tables/{t['id']}/approve", json={"icerik_hash": t["icerik_hash"]})
+    is_sayisi = len(_isler(service.ORACLE_JOB))
     r = rol("po").post(f"/relations/{i['id']}/approve", json={"icerik_hash": i["icerik_hash"]})
     assert r.status_code == 200, r.text
-    assert r.json()["durum"] == "approved"
+    assert r.json()["durum"] == "approved" and r.json()["tablo_engeli"] is None
     assert r.json()["onaylayan"] == rol.users["po"].kullanici_adi
     with session_scope() as s:
         assert [str(x.id) for x in service.gecerli_iliskiler(s, rid)] == [i["id"]]
-    assert _isler(service.ORACLE_JOB) == []  # ilişki onayı tablo kontrolü değildir
+    # ilişki onayı tablo kontrolü değildir
+    assert len(_isler(service.ORACLE_JOB)) == is_sayisi
     r = rol("analyst").post(f"/relations/{i['id']}/reopen")
     assert r.json()["durum"] == "draft"
     rol("analyst").post(f"/relations/{i['id']}/submit")
@@ -559,8 +567,10 @@ def test_iliski_dogrulama_ve_baska_gereksinimin_tablosu(rol: Roller, make_requir
     r = rol("analyst").post(f"/requirements/{rid}/relations", json={"icerik": {"ad": "x"}})
     assert r.status_code == 422 and len(r.json()["hatalar"]) >= 1
     # AC'siz ilişki taslak olarak kaydedilir ama PO'ya gönderilemez.
+    t = _tablo(rol, rid, KAMPANYA)
     r = rol("analyst").post(
-        f"/requirements/{rid}/relations", json={"icerik": {**ILISKI, "ac_refs": []}}
+        f"/requirements/{rid}/relations",
+        json={"icerik": {**ILISKI, "ac_refs": []}, "karar_tablosu_id": t["id"]},
     )
     assert r.status_code == 201
     r = rol("analyst").post(f"/relations/{r.json()['id']}/submit")
@@ -571,13 +581,16 @@ def test_iliski_dogrulama_ve_baska_gereksinimin_tablosu(rol: Roller, make_requir
 
 def test_iliski_bayatlar(rol: Roller, make_requirement) -> None:
     rid = make_requirement()
-    r = rol("analyst").post(f"/requirements/{rid}/relations", json={"icerik": ILISKI})
+    t = _onayli(rol, rid, KAMPANYA)
+    r = rol("analyst").post(
+        f"/requirements/{rid}/relations", json={"icerik": ILISKI, "karar_tablosu_id": t["id"]}
+    )
     i = r.json()
     rol("analyst").post(f"/relations/{i['id']}/submit")
-    rol("po").post(f"/relations/{i['id']}/approve", json={"icerik_hash": i["icerik_hash"]})
+    r = rol("po").post(f"/relations/{i['id']}/approve", json={"icerik_hash": i["icerik_hash"]})
+    assert r.status_code == 200, r.text
     _gereksinimi_degistir(rid)
     liste = rol("tester").get(f"/requirements/{rid}/decision-tables").json()
     assert liste["iliskiler"][0]["bayat"] is True
     with session_scope() as s:
         assert service.gecerli_iliskiler(s, rid) == []
-        assert s.scalars(select(KararTablosu)).all() == []

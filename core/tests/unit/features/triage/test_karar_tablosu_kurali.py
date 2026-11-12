@@ -14,6 +14,7 @@ import pytest
 
 from tp_core.features.triage.rules import (
     BEKLENTI_ONERISI,
+    TABLO_SUPHESI,
     Girdi,
     Karar,
     OracleKarsilastirma,
@@ -25,6 +26,8 @@ CASE_ID = "11111111-1111-1111-1111-111111111111"
 TABLO_ID = "22222222-2222-2222-2222-222222222222"
 HASH = "c" * 64
 ARIA = '- main:\n  - definition: "125,00 TL"'
+# Başarısız doğrulamanın case alanı (`triage.adim.hata_alanlari`; servis doldurur).
+ALANLAR = frozenset({"steps[2].expected"})
 
 
 def _o(case: Any, tablo: Any, tolerans: str = "0", **kw: Any) -> OracleKarsilastirma:
@@ -56,6 +59,7 @@ def _playwright(beklenen: str, gerceklesen: str, oracle: list[OracleKarsilastirm
         aria=ARIA,
         platform="web",
         oracle=oracle,
+        adim_alanlari=ALANLAR,
     )
 
 
@@ -69,6 +73,7 @@ def _java(beklenen: str, gerceklesen: str, oracle: list[OracleKarsilastirma] | N
         gerceklesen=gerceklesen,
         platform="android",
         oracle=oracle,
+        adim_alanlari=ALANLAR,
     )
 
 
@@ -81,6 +86,7 @@ def _testng(beklenen: str, gerceklesen: str, oracle: list[OracleKarsilastirma] |
         gerceklesen=gerceklesen,
         platform="windows",
         oracle=oracle,
+        adim_alanlari=ALANLAR,
     )
 
 
@@ -102,7 +108,11 @@ def _kodlar(k: Karar) -> list[str]:
 
 
 def _tablo_sinyali(k: Karar) -> dict[str, Any]:
-    [s] = [s for s in k.sinyaller if str(s["kod"]).startswith("karar_tablosu_")]
+    [s] = [
+        s
+        for s in k.sinyaller
+        if str(s["kod"]).startswith("karar_tablosu_") and s["kod"] != "karar_tablosu_tablo_suphesi"
+    ]
     return s
 
 
@@ -145,6 +155,13 @@ def test_satir2_beklenti_farkli_uygulama_tabloda_test_maintenance_beklenti(bicim
     s = _tablo_sinyali(k)
     assert s["kod"] == "karar_tablosu_beklenti_farkli"
     assert "test beklentisi 125" in s["aciklama"] and "gerçekleşen 150" in s["aciklama"]
+    # Review O7: tablo tek doğruluk kaynağı değil; insan bunu görür.
+    [suphe] = [x for x in k.sinyaller if x["kod"] == "karar_tablosu_tablo_suphesi"]
+    assert suphe["aciklama"] == TABLO_SUPHESI
+    assert TABLO_SUPHESI == (
+        "Tablo da yanlış olabilir; uygulama ile tablo aynı yanlış okumayı paylaşıyor olabilir"
+    )
+    assert suphe["baslik"] == "Tablo da yanlış olabilir"
 
 
 def test_satir3_ikisi_de_farkli_product_defect(bicim: Any) -> None:
@@ -284,3 +301,128 @@ def test_asistan_kapisi_beklenti_icin_onarim_onermez() -> None:
         Failure(sinif="test_maintenance", alt_tur="locator", oneri_durumu="proposed")
     )
     assert locator is not None and "onarım" in locator.ad
+
+
+# ----------------------------------------------------------------------------- adım eşlemesi (O6)
+
+
+def test_adim_belirlenemediyse_inceltme_yok(bicim: Any) -> None:
+    """Başarısız doğrulamanın case alanı bilinmiyorsa (adım başlığı / üretilen test satırı yok)
+    karar tablosu kullanılmaz: bugünkü product_defect."""
+    yap, yaz = bicim
+    g = yap(yaz(125), yaz(150), [_o("125.00", "150.00")])
+    g.adim_alanlari = None
+    k = _karar(g)
+    assert (k.sinif, k.kural) == ("product_defect", "product_defect")
+
+
+def test_baska_adimin_karsilastirmasi_kullanilmaz() -> None:
+    """Review O6 karşı örneği: case "5 adette bedava adet 1" (tablo 0) uyarıyla onaylanmış;
+    sepete ekleme bozulur, S3'teki sepet sayacı 1 beklenir, 0 görülür. Beklenen 1 = case'in bedava
+    adedi, gerçekleşen 0 = tablo; ama karşılaştırma S4'e (`steps[3].expected`) ait → inceltme
+    yok (gerçek hata `test_maintenance/beklenti` ile gizlenmez)."""
+    oracle = [_o("1", "0", column="bedava_adet", alan="steps[3].expected")]
+    g = _playwright("1", "0", oracle)
+    g.adim_alanlari = frozenset({"steps[2].expected"})
+    k = _karar(g)
+    assert (k.sinif, k.alt_tur, k.kural) == ("product_defect", None, "product_defect")
+    # Aynı değerler S4'ün doğrulamasında olsaydı inceltilirdi.
+    g.adim_alanlari = frozenset({"steps[3].expected", "expected_result"})
+    assert (_karar(g).sinif, _karar(g).alt_tur) == ("test_maintenance", "beklenti")
+
+
+# ----------------------------------------------------------------------------- sinyal başlığı
+
+
+def test_sinyal_basligi_tablo_satir_ve_kural() -> None:
+    o = OracleKarsilastirma(
+        case_degeri="0",
+        tablo_degeri="0",
+        column="bedava_adet",
+        alan="steps[2].expected",
+        tablo_id=TABLO_ID,
+        tablo_ad="Kampanya: 6 al 1 bedava",
+        test_case_id=CASE_ID,
+        icerik_hash=HASH,
+        tablo_ref="T1",
+        satir_id="R2",
+        girdiler=(("adet", "6"),),
+    )
+    k = _karar(_playwright("0", "1", [o]))
+    s = _tablo_sinyali(k)
+    assert s["baslik"] == "Uygulama onaylı kurala aykırı (T1 · R2: adet 6 → bedava_adet 0)"
+    assert "\n" not in s["baslik"] and len(s["baslik"]) <= 160
+    # Ayrıntı açıklamada: tablo adı, değerler, satır ve alan.
+    assert "Kampanya: 6 al 1 bedava" in s["aciklama"]
+    assert "test beklentisi 0, gerçekleşen 1, tablo 0" in s["aciklama"]
+    assert "T1 · R2 · alan steps[2].expected" in s["aciklama"]
+    k2 = _karar(_playwright("1", "0", [o.__class__(**{**o.__dict__, "case_degeri": "1"})]))
+    assert _tablo_sinyali(k2)["baslik"].startswith("Test beklentisi onaylı kurala aykırı (T1 · R2")
+    k3 = _karar(_playwright("1", "2", [o.__class__(**{**o.__dict__, "case_degeri": "1"})]))
+    assert _tablo_sinyali(k3)["baslik"].startswith("Test ve uygulama onaylı kurala aykırı (T1")
+
+
+# ----------------------------------------------------------------------------- ayrıştırma (S4)
+
+
+def test_expected_substring_tocontaintext() -> None:
+    """toContainText: `Expected substring:` / `Received string:` satırları okunur."""
+    from tp_core.features.codegen.classify import _hata_satiri
+
+    mesaj = (
+        "Error: expect(locator).toContainText(expected) failed\n\n"
+        "Locator: getByTestId('cart-total')\n"
+        'Expected substring: "150,00 TL"\n'
+        'Received string:    "Toplam: 125,00 TL"'
+    )
+    satir = _hata_satiri({"title": "t", "error": mesaj})
+    assert (satir["beklenen"], satir["gerceklesen"]) == ('"150,00 TL"', '"Toplam: 125,00 TL"')
+    g = _playwright("150,00 TL", "x", [_o("150.00", "150.00")])
+    g.mesaj, g.matcher = mesaj, "toContainText"
+    g.beklenen, g.gerceklesen = satir["beklenen"], satir["gerceklesen"]
+    s = _tablo_sinyali(_karar(g))
+    assert s["kod"] == "karar_tablosu_uyumlu" and "gerçekleşen 125.00" in s["aciklama"]
+
+
+@pytest.mark.parametrize(
+    ("metin", "sayi"),
+    [
+        ("Toplam: 150,00 TL", Decimal("150.00")),
+        ("İndirim: −25,00 TL", Decimal("-25.00")),
+        ("Sepet 6 ürün", Decimal(6)),
+        ("Toplam: 1.250,00 TL.", Decimal("1250.00")),
+        ("P-001 satırı 6", Decimal(6)),  # ürün kodu sayı değildir
+        ("P-001 satırı 6 adet, 150,00 TL", None),  # iki sayı: belirsiz
+        ("Sipariş tarihi 12.11.2026", None),
+        ("Toplam bilinmiyor", None),
+    ],
+)
+def test_bicimli_metindeki_tek_sayi(metin: str, sayi: Decimal | None) -> None:
+    from tp_core.features.triage.rules import tek_sayi
+
+    assert tek_sayi(metin) == sayi
+
+
+def test_bicimli_metin_tek_sayisiyla_karsilastirilir() -> None:
+    k = _karar(_playwright("Toplam: 150,00 TL", "Toplam: 125,00 TL", [_o("150.00", "150.00")]))
+    s = _tablo_sinyali(k)
+    assert s["kod"] == "karar_tablosu_uyumlu"
+    assert "test beklentisi 150.00, gerçekleşen 125.00" in s["aciklama"]
+    # Birden çok sayı: karşılaştırılamaz → bugünkü davranış.
+    k2 = _karar(_playwright("6 adet, 150,00 TL", "6 adet, 125,00 TL", [_o("150.00", "150.00")]))
+    assert k2.kural == "product_defect"
+
+
+def test_testng_bigdecimal_noktali_uc_hane_ondaliktir() -> None:
+    """TestNG `expected [2.500]` Java `toString()`'dir (BigDecimal ölçek 3): 2,5 — Türkçe binlik
+    (2500) değil. `Bekle.dogrula`'nın ekran metni `2.500` ise 2500'dür."""
+    k = _karar(_testng("2.500", "3.000", [_o("2.5", "2.5", column="indirim_orani")]))
+    s = _tablo_sinyali(k)
+    assert s["kod"] == "karar_tablosu_uyumlu"
+    assert "test beklentisi 2.500, gerçekleşen 3.000, tablo 2.5" in s["aciklama"]
+    # TestNG'de 2500 değildir: 2500'lük kayıtla eşleşmez.
+    k2 = _karar(_testng("2.500", "3.000", [_o("2500", "2500", column="indirim_orani")]))
+    assert k2.kural == "product_defect"
+    # Ekran metni (Bekle.dogrula): Türkçe yazım, 2.500 = 2500.
+    k3 = _karar(_java("2.500", "3.000", [_o("2500", "2500", column="adet")]))
+    assert _tablo_sinyali(k3)["kod"] == "karar_tablosu_uyumlu"

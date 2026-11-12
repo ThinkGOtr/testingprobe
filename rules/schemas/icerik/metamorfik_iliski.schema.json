@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "tp:icerik/metamorfik_iliski",
   "title": "Metamorfik ilişki içeriği (012 §4.5) — metamorfik_iliski.icerik",
-  "x-version": 1,
+  "x-version": 2,
   "type": "object",
   "properties": {
     "ad": { "type": "string", "minLength": 1, "maxLength": 120 },
@@ -28,7 +28,14 @@
       "minProperties": 1,
       "maxProperties": 12
     },
-    "aciklama": { "type": "string", "maxLength": 1000 }
+    "aciklama": { "type": "string", "maxLength": 1000 },
+    "degismez": {
+      "description": "Dönüşümde aynı kalan metin parçaları (ör. \"6 al 1 bedava\", \"30,00 TL\"). Türetmede değişen alanda olgusu olmayan sayı yalnız bu parçalardan birinin içindeyse kabul edilir.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1, "maxLength": 80 },
+      "maxItems": 20,
+      "uniqueItems": true
+    }
   },
   "required": ["ad", "ac_refs", "on_kosul", "donusum", "iliski"],
   "additionalProperties": false,

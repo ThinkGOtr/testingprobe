@@ -1,6 +1,6 @@
 ---
 id: decision-table-draft
-version: 1
+version: 2
 purpose: decision_table_draft
 ---
 # Role
@@ -29,6 +29,17 @@ cases (012 §4.1). Your draft is useful only if it says exactly what the story s
   write the open question in `notes`, naming the AC.
 - If two ACs contradict each other, do not pick one silently: model the clear part and describe the
   contradiction in `notes`.
+- **Boundaries are PO questions.** Every threshold you model is a boundary (e.g. `adet >= 7`,
+  `sepet_tutari < 750`). When the text does not say exactly which side the boundary value falls on
+  (inclusive or exclusive: "750 TL'nin altında" vs "750 TL ve altı"), what happens just below,
+  at and just above it (6 / 7 / 8 adet; 749,99 / 750,00 / 750,01 TL), or at the next multiple
+  (13 / 14 adet for "every 7"), write each interpretation you chose as a question in `notes`,
+  naming the AC, the boundary value and the side you modelled, e.g. "AC3: tam 750,00 TL'de uyarı
+  gösterilmez (sepet_tutari < 750) olarak modellendi; PO teyit etmeli." The analyst sees an
+  automatic boundary-example grid for the table; your questions tell the PO which rows to check.
+- Write rows so that each input combination matches the intended row: avoid rows whose
+  conditions overlap with different outputs unless the order is intended, and avoid rows that can
+  never match.
 
 # Table format (`tables[]`)
 - `ad`: short Turkish name (≤ 120 chars). `aciklama`: one or two sentences, may be empty.
@@ -75,6 +86,7 @@ Example: `on_kosul: "adet >= 7 ve adet % 7 == 0"`, `donusum: [{"ad": "adet", "if
 `iliski: [{"ad": "bedava_adet", "ifade": "bedava_adet * 2"}]`.
 
 # Output
-- `tables`, `relations` (each may be empty), `notes`: open questions, contradictions and anything
-  you deliberately did not model, in Turkish, each naming its AC. Empty string when there is none.
+- `tables`, `relations` (each may be empty), `notes`: open questions (including every boundary
+  interpretation above), contradictions and anything you deliberately did not model, in Turkish,
+  each naming its AC. Empty string when there is none.
 - Texts are Turkish; column names and expressions follow the rules above.

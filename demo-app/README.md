@@ -240,33 +240,45 @@ ile çalışır (web fixture, Java `TestTabani`, toolchain `/run` ve `/check` `f
 | Kod | Tür | Etki |
 |---|---|---|
 | `kampanya_bedava_yok` | kod | Bedava adet 0 (`kampanya: true` ile aynı) |
-| `kampanya_esik_7` | kod | Bedava adet `adet // 7` |
+| `kampanya_tek_bedava` | kod | Bedava adet en çok 1: `min(1, adet // 6)` (6 ve 7 adette doğru görünür; 14 adette 2 yerine 1) |
 | `kampanya_cift_indirim` | kod | Kampanya indirimi iki kez düşülür |
 | `min_siparis_haric` | kod | Minimum sınır dahil değil (`toplam > min`) |
 | `min_siparis_muafiyet_yok` | kod | Kampanyalı sepet de minimuma tabi |
-| `min_siparis_500` | veri | Minimum 750,00 → 500,00 |
+| `min_siparis_500` | veri | Minimum 750,00 → 500,00 (story AC3 metnindeki eski değer) |
 | `min_siparis_1000` | veri | Minimum 750,00 → 1.000,00 |
 | `fiyat_p004_31` | veri | P-004 fiyatı 30,00 → 31,00 |
 | `kampanya_urunu_p002` | veri | Kampanyalı ürün P-001 → P-002 |
 
-**Hata → kırmızı test matrisi** (el yazımı web testleri, 33 test, Chromium, webServer + SQLite,
-`workers: 2` → bayi1 ve bayi2; `TP_FAULT=<kod> npx playwright test`; hatasız temel ve kapanış
-koşuları 33/33 yeşil; 2026-11-11):
+Ürün tarafındaki kopya `rules/hata-katalogu.yaml` her hata için ayrıca ilgili kabul kriterlerini
+(`ac_refs`), onaylı karar tablosunu (`tablo`: `T1` kampanya, `T2` minimum sipariş) ve hatayı
+gösteren en küçük girdiyi (`ayirt_edici`: girdi, doğru ve hatalı çıktı) taşır. `kampanya_esik_7`
+(`adet // 7`) katalogdan çıkarıldı: story'nin "7 adette 1 bedava" kuralıyla aynı davranıştır,
+hata değildir (012 §13 K9).
 
-| Kod | Kırmızı | Kıran testler |
-|---|---|---|
-| `kampanya_bedava_yok` | 3 | cart `kampanya: 7 adet P-001 → 1 bedava`; order `onaylanan sipariş numarasıyla gösterilir…`; page-objects `7 adet Portakal Gazozu sepette 1 bedava…` |
-| `kampanya_esik_7` | 0 — **kaçtı** | — (el yazımı testler bilerek 6. adet sınırını doğrulamaz: `tools/scenario-neutral-check.js`; 7 ve 14 adette iki kural aynı sonucu verir) |
-| `kampanya_cift_indirim` | 2 | cart `kampanya: 7 adet P-001…`; order `onaylanan sipariş numarasıyla…` |
-| `min_siparis_haric` | 2 | cart `minimum tutara ulaşınca uyarı kalkar…`; page-objects `onaylanan sipariş geçmişte numarasıyla bulunur` (onay butonu pasif → `locator.click` zaman aşımı, assertion değil) |
-| `min_siparis_muafiyet_yok` | 1 | cart `kampanyalı siparişte minimum tutar aranmaz` |
-| `min_siparis_500` | 4 | a11y `sepet sayfası (uyarı ve satırlarla)`; cart `kampanyasız siparişte minimum tutar altında uyarı…`; order `minimum tutarın altındaki sepet API'de de reddedilir`; page-objects `indirimsiz sepette minimum tutar uyarısı…` |
-| `min_siparis_1000` | 7 | a11y `sepet sayfası…`; cart `kampanyasız siparişte minimum…`, `minimum tutara ulaşınca…`; order `minimum tutarın altındaki sepet…`; page-objects `indirimsiz sepette…`, `onaylanan sipariş geçmişte…` (click zaman aşımı); locators `menü, katalog, sepet ve sipariş sayfaları` (click zaman aşımı) |
-| `fiyat_p004_31` | 5 | cart `katalog ürünleri ve fiyatları…`, `minimum tutara ulaşınca…`; mobile `satır tutarı ve Kaldır butonu…`; order `onaylanan sipariş numarasıyla…`; page-objects `onaylanan sipariş geçmişte…` |
-| `kampanya_urunu_p002` | 8 | a11y `sepet sayfası…`; cart `katalog ürünleri…`, `kampanya: 7 adet P-001…`, `kampanyasız üründe bedava adet verilmez`, `kampanyasız siparişte minimum…`, `kampanyalı siparişte minimum tutar aranmaz`; order `onaylanan sipariş numarasıyla…`; page-objects `7 adet Portakal Gazozu…` |
+**Hata → kırmızı test matrisi** (el yazımı web testleri, 33 test, Chromium, yerleşik webServer +
+SQLite, `DEMO_API_PORT=18200 DEMO_WEB_PREVIEW_PORT=18281`, `workers: 2` → bayi1 ve bayi2;
+`TP_FAULT=<kod> npx playwright test`; hatasız temel ve kapanış koşuları 33/33 yeşil; 2026-11-12).
+Sayım 012 K12'ye göredir: bir test hatayı ancak temelde yeşilken hatalı koşuda **assertion** ile
+kırmızıya dönerse yakalar; locator/zaman aşımı kırmızısı kanıt sayılmaz (tür toolchain'in
+`failure.type`'ından). `tests/generated/` depoda boş olduğu için kıran testlerin tamamı el
+yazısıdır (`el`): ürünün ana oranı (yalnız üretilen testler) bu suite'le **ölçülmez**; aşağıdaki
+oran el yazısı suite'in oranıdır.
 
-Yakalanan 8/9; kaçan `kampanya_esik_7` (el yazımı testler bu hatayı yakalamak için değiştirilmez;
-sınır vakası üretilen testlerin işidir).
+| Kod | Kırmızı | Assertion ile kıran testler | Kanıt sayılmayan (locator/zaman aşımı) | Sonuç |
+|---|---|---|---|---|
+| `kampanya_bedava_yok` | 3 | cart `kampanya: 7 adet P-001 → 1 bedava…`; order `onaylanan sipariş numarasıyla gösterilir…`; page-objects `7 adet Portakal Gazozu sepette 1 bedava…` | — | yakalandı |
+| `kampanya_tek_bedava` | 0 | — | — | **kaçtı** (el yazımı testler kampanyalı üründe en çok 7 adet dener; 6 ve 7 adette iki kural aynı sonucu verir. Ayırt edici girdi 14 adet: üretilen testin işi) |
+| `kampanya_cift_indirim` | 2 | cart `kampanya: 7 adet P-001…`; order `onaylanan sipariş numarasıyla…` | — | yakalandı |
+| `min_siparis_haric` | 2 | cart `minimum tutara ulaşınca uyarı kalkar…` | page-objects `onaylanan sipariş geçmişte numarasıyla bulunur` (onay butonu pasif → `locator.click` zaman aşımı) | yakalandı |
+| `min_siparis_muafiyet_yok` | 1 | cart `kampanyalı siparişte minimum tutar aranmaz` | — | yakalandı |
+| `min_siparis_500` | 4 | a11y `sepet sayfası (uyarı ve satırlarla)`; cart `kampanyasız siparişte minimum tutar altında uyarı…`; order `minimum tutarın altındaki sepet API'de de reddedilir`; page-objects `indirimsiz sepette minimum tutar uyarısı…` | — | yakalandı |
+| `min_siparis_1000` | 7 | a11y `sepet sayfası…`; cart `kampanyasız siparişte minimum…`, `minimum tutara ulaşınca…`; order `minimum tutarın altındaki sepet…`; page-objects `indirimsiz sepette…` | page-objects `onaylanan sipariş geçmişte…`, locators `menü, katalog, sepet ve sipariş sayfaları` (ikisi de `locator.click` zaman aşımı) | yakalandı |
+| `fiyat_p004_31` | 5 | cart `katalog ürünleri ve fiyatları…`, `minimum tutara ulaşınca…`; mobile `satır tutarı ve Kaldır butonu…`; order `onaylanan sipariş numarasıyla…`; page-objects `onaylanan sipariş geçmişte…` | — | yakalandı |
+| `kampanya_urunu_p002` | 8 | cart `katalog ürünleri…`, `kampanya: 7 adet P-001…`, `kampanyasız üründe bedava adet verilmez`, `kampanyasız siparişte minimum…`, `kampanyalı siparişte minimum tutar aranmaz`; order `onaylanan sipariş numarasıyla…`; page-objects `7 adet Portakal Gazozu…` | a11y `sepet sayfası…` (`toContainText` zaman aşımı, öğe yok → `locator_not_found`) | yakalandı |
+
+El yazısı suite: yakalanan 8/9 (oran %89); kaçan `kampanya_tek_bedava`. Temelde kırmızı test yok,
+kapanış yeşil: kredi geri alınmadı. El yazımı testler bu hatayı yakalamak için değiştirilmez; sınır
+vakası onaylı T1'den üretilen testlerin işidir.
 
 ## Yerel çalıştırma
 

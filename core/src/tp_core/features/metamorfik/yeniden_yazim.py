@@ -5,11 +5,22 @@ gruplar[]`) ve ilişki içeriği. Çıktı: türetilen case içeriği ya da atla
 
 Kurallar (spesifikasyonun sustuğu yerlerde burada sabitlenir):
 
+- **Yalnız uyumlu grup.** Grubun `durum`'u varsa `uyumlu` olmalı (değilse `olgu_yok`): tabloyla
+  çelişen ya da değerlendirilemeyen bir case'in değerleri ilişkiyle çoğaltılmaz.
 - **Doğrulanmış olgu.** Grubun `girdiler[]` olguları (`{column, value, field, quote}`) girdi,
   `karsilastirmalar[]` (`{column, alan, alinti, case_degeri}`) çıktı olgusudur. Kontrol kaydı
   yalnız doğrulanmış olguları taşır; yine de burada yeniden doğrulanır: alan case'te bulunmalı,
   alıntı o alanda geçmeli ve sayı alıntısı `sayi_ayristir` ile değere eşit okunmalı. Tutmayan
-  olgu yok sayılır.
+  olgu yok sayılır. `uyumlu: false` karşılaştırma olgu sayılmaz.
+- **Karşılaştırılamayan değer dönüştürülmez.** `karsilastirilamayan[]` (tablonun eksik girdi
+  yüzünden hesaplayamadığı beklenen değer) doğrulanmamış bir beklentidir: ilişkiyle yeni değere
+  taşınmaz. Grupta böyle bir değer varsa ve alıntısı tümüyle bir `degismez` parçasında değilse
+  türetme yapılmaz (`tutarsiz_kalan_deger`): eski değer türetilen case'te yanlış kalırdı.
+- **Kalan değer denetimi.** Değişen (yeniden yazılan) her alanda, hiçbir olgunun alıntısıyla ya
+  da ilişkinin `degismez` parçalarıyla örtülmeyen bir sayı varsa türetme yapılmaz
+  (`tutarsiz_kalan_deger`): ör. 7 → 14 adette "ara toplam 175,00 TL" kaynaktaki değerde kalırdı.
+  Sonuç kodu `TUTARSIZ_KALAN_DEGER` değer kümesinde (`enums.TURETME_SONUC`) yoksa `belirsiz_alinti`
+  yazılır ve `neden` `tutarsiz_kalan_deger:` ile başlar.
 - Aynı kolon için farklı değerli iki olgu → `belirsiz_alinti` (hangisinin dönüştürüleceği belli
   değil).
 - `iliski_uygula`: eksik ad, ifade hatası ya da sağlanmayan `on_kosul` → `iliski_gecersiz`.
@@ -26,6 +37,10 @@ Kurallar (spesifikasyonun sustuğu yerlerde burada sabitlenir):
 - Başlığa ` (ilişki: <ad>)` eklenir; başlık 120 karakteri aşacaksa özgün başlık kısaltılır.
   `tags`'e `metamorfik` eklenir; şemanın istediği `AI-generated` etiketi korunur (case şeması onu
   her case'te ister).
+- **Bilinen olgular.** Türetilen case'in beklenen değerleri deterministik olarak bilinir:
+  `Sonuc.olgular`, değer çıkarma (`case_facts`) çıktısı biçimindedir (`{groups: [{table_ref,
+  inputs, expected}]}`; alıntılar yeni metinler) ve model çağırmadan oracle değerlendirmesine
+  (`oracle.dogrulama.degerlendir`) verilebilir.
 """
 
 from __future__ import annotations
@@ -38,6 +53,7 @@ from decimal import Decimal
 from typing import Any
 
 from tp_core.features.karar_tablosu import ifade
+from tp_core.models import enums
 
 ETIKET = "metamorfik"
 BASLIK_AZAMI = 120
@@ -46,6 +62,17 @@ _ALAN_DESENI = re.compile(
     r"|steps\[(?P<adim>\d+)\]\.(?P<adim_alan>action|data|expected))$"
 )
 _SAYI_GOVDESI = re.compile(r"\d+(?:([.,])(\d+))?")
+# Metindeki bağımsız sayı (kod ya da sözcüğün parçası olmayan): "P-004", "S2", "bayi1" sayı değil.
+_SERBEST_SAYI = re.compile(r"(?<![\w.,\-−])\d+(?:[.,]\d+)*(?!\w)")
+
+TUTARSIZ_KALAN_DEGER = "tutarsiz_kalan_deger"
+
+
+def _tutarsiz(neden: str) -> Sonuc:
+    """`tutarsiz_kalan_deger` sonucu; değer kümesinde yoksa `belirsiz_alinti` + önekli neden."""
+    if TUTARSIZ_KALAN_DEGER in enums.TURETME_SONUC:
+        return Sonuc(TUTARSIZ_KALAN_DEGER, neden)
+    return Sonuc("belirsiz_alinti", f"{TUTARSIZ_KALAN_DEGER}: {neden}")
 
 
 @dataclass(frozen=True)
@@ -66,6 +93,8 @@ class Sonuc:
     sonuc: str
     neden: str | None = None
     icerik: dict[str, Any] | None = None
+    # Türetilen case'in olguları (`case_facts` çıktı biçimi); yalnız `turetildi`'de dolu.
+    olgular: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------- alan yolu
@@ -176,26 +205,18 @@ def _olgu_degeri(deger: Any, alinti: str) -> Any:
 def grup_olgulari(icerik: Mapping[str, Any], grup: Mapping[str, Any]) -> list[Olgu]:
     """Grubun yeniden doğrulanmış girdi ve çıktı olguları (sıra korunur).
 
-    Çıktı olguları `karsilastirmalar[]` ve `karsilastirilamayan[]`'dır (ikincisi: tablonun eksik
-    girdi yüzünden hesaplayamadığı ama case'te doğrulanmış beklenen değerler, olgu biçiminde;
-    birleştirme notu §12). İkisi de case'in kendi değeridir; ilişki onları dönüştürür."""
-    hamlar: list[tuple[Any, Any, Any, Any, bool]] = (
-        [
-            (o.get("column"), o.get("field"), o.get("quote"), o.get("value"), False)
-            for o in grup.get("girdiler") or []
-            if isinstance(o, Mapping)
-        ]
-        + [
-            (k.get("column"), k.get("alan"), k.get("alinti"), k.get("case_degeri"), True)
-            for k in grup.get("karsilastirmalar") or []
-            if isinstance(k, Mapping)
-        ]
-        + [
-            (o.get("column"), o.get("field"), o.get("quote"), o.get("value"), True)
-            for o in grup.get("karsilastirilamayan") or []
-            if isinstance(o, Mapping)
-        ]
-    )
+    Çıktı olguları tabloyla uyumlu `karsilastirmalar[]`'dır. `karsilastirilamayan[]` (tablonun
+    eksik girdi yüzünden hesaplayamadığı beklenen değerler) olgu sayılmaz: doğrulanmamış değer
+    ilişkiyle dönüştürülmez (`turet` onları `tutarsiz_kalan_deger` için ayrıca denetler)."""
+    hamlar: list[tuple[Any, Any, Any, Any, bool]] = [
+        (o.get("column"), o.get("field"), o.get("quote"), o.get("value"), False)
+        for o in grup.get("girdiler") or []
+        if isinstance(o, Mapping)
+    ] + [
+        (k.get("column"), k.get("alan"), k.get("alinti"), k.get("case_degeri"), True)
+        for k in grup.get("karsilastirmalar") or []
+        if isinstance(k, Mapping) and k.get("uyumlu", True) is True
+    ]
     out: list[Olgu] = []
     for column, alan, alinti, deger, cikti in hamlar:
         if not (isinstance(column, str) and isinstance(alan, str) and isinstance(alinti, str)):
@@ -242,8 +263,58 @@ def _baslik(baslik: str, ad: str) -> str:
     return baslik + ek
 
 
+def _degismez_parcalar(iliski: Mapping[str, Any]) -> list[str]:
+    return [p for p in iliski.get("degismez") or [] if isinstance(p, str) and p.strip()]
+
+
+def _parca_konumlari(metin: str, parcalar: Sequence[str]) -> list[tuple[int, int]]:
+    out: list[tuple[int, int]] = []
+    for p in parcalar:
+        bas = metin.find(p)
+        while bas >= 0:
+            out.append((bas, bas + len(p)))
+            bas = metin.find(p, bas + 1)
+    return out
+
+
+def _ortulmeyen_sayilar(metin: str, ortu: Sequence[tuple[int, int]]) -> list[str]:
+    """`metin`'deki, hiçbir `ortu` aralığının içinde kalmayan bağımsız sayılar."""
+    return [
+        m[0]
+        for m in _SERBEST_SAYI.finditer(metin)
+        if not any(b <= m.start() and m.end() <= s for b, s in ortu)
+    ]
+
+
+def _karsilastirilamayan_engeli(
+    icerik: Mapping[str, Any], grup: Mapping[str, Any], degismez: Sequence[str]
+) -> str | None:
+    for o in grup.get("karsilastirilamayan") or []:
+        if not isinstance(o, Mapping):
+            continue
+        alan, alinti = o.get("field"), o.get("quote")
+        metin = alan_oku(icerik, alan) if isinstance(alan, str) else None
+        if metin is None or not isinstance(alinti, str) or not alinti.strip():
+            continue
+        konumlar = _konumlar(metin, alinti) or (
+            [(metin.find(alinti), metin.find(alinti) + len(alinti))] if alinti in metin else []
+        )
+        parcalar = _parca_konumlari(metin, degismez)
+        if konumlar and all(any(b <= x and y <= s for b, s in parcalar) for x, y in konumlar):
+            continue
+        return (
+            f"'{o.get('column')}' değeri ({alinti}, {alan}) tabloyla karşılaştırılamadı; "
+            "doğrulanmamış değer ilişkiyle dönüştürülmez ve eski hâliyle türetilen case'te yanlış "
+            "kalır"
+        )
+    return None
+
+
 def turet(icerik: Mapping[str, Any], grup: Mapping[str, Any], iliski: Mapping[str, Any]) -> Sonuc:
     """Bir oracle grubunun olgularıyla ilişkiyi uygular ve case'i deterministik yeniden yazar."""
+    durum = grup.get("durum")
+    if durum is not None and durum != "uyumlu":
+        return Sonuc("olgu_yok", f"Grup tabloyla uyumlu değil (durum: {durum})")
     olgular = grup_olgulari(icerik, grup)
     girdi_olgulari = [o for o in olgular if not o.cikti]
     if not girdi_olgulari:
@@ -252,6 +323,10 @@ def turet(icerik: Mapping[str, Any], grup: Mapping[str, Any], iliski: Mapping[st
     ciktilar, cakisma2 = _kolon_degerleri([o for o in olgular if o.cikti])
     if cakisma or cakisma2:
         return Sonuc("belirsiz_alinti", cakisma or cakisma2)
+    degismez = _degismez_parcalar(iliski)
+    engel = _karsilastirilamayan_engeli(icerik, grup, degismez)
+    if engel is not None:
+        return _tutarsiz(engel)
 
     uygulama = ifade.iliski_uygula(iliski, girdiler, ciktilar)
     if uygulama.eksik:
@@ -291,6 +366,23 @@ def turet(icerik: Mapping[str, Any], grup: Mapping[str, Any], iliski: Mapping[st
                 f"'{o.alinti}' alıntısı {o.alan} alanında farklı yeni değerlere ait olgularda",
             )
         yeni[anahtar] = metin
+
+    # Değişen alanda olgusu ve `degismez` parçası olmayan sayı eski değerde kalırdı (ör. 14 adette
+    # "ara toplam 175,00 TL"): tutarsız case yazılmaz.
+    for alan in sorted({a for (a, alinti), m in yeni.items() if m != alinti}):
+        metin = alan_oku(icerik, alan)
+        assert metin is not None
+        if any(not _konumlar(metin, a) for (al, a) in yeni if al == alan):
+            continue  # alıntı ayrı değer olarak yok: aşağıda `belirsiz_alinti`
+        ortu = [k for o in olgular if o.alan == alan for k in _konumlar(metin, o.alinti)]
+        ortu += _parca_konumlari(metin, degismez)
+        kalan = _ortulmeyen_sayilar(metin, ortu)
+        if kalan:
+            return _tutarsiz(
+                f"{alan} alanında ilişkinin belirlemediği değer var ({', '.join(kalan)}); "
+                "dönüşümden sonra eski hâliyle yanlış kalırdı. Değer tablo kolonu değilse "
+                "ilişkinin 'degismez' listesine yazın"
+            )
 
     # Değişen bir alıntı, olgusu olmayan bir alanda da geçiyorsa o kopya eski değerde kalırdı
     # (ör. veri "50" ama beklenen "25 adet görünür"): tutarsız case yazılmaz.
@@ -340,7 +432,60 @@ def turet(icerik: Mapping[str, Any], grup: Mapping[str, Any], iliski: Mapping[st
     if ETIKET not in etiketler:
         etiketler.append(ETIKET)
     sonuc["tags"] = etiketler
-    return Sonuc("turetildi", icerik=sonuc)
+    return Sonuc(
+        "turetildi", icerik=sonuc, olgular=_turetilen_olgular(grup, olgular, yeni, uygulama)
+    )
 
 
-__all__ = ["ETIKET", "Olgu", "Sonuc", "alan_oku", "bicimle", "grup_olgulari", "turet"]
+def _gosterim(deger: Any) -> Any:
+    return str(deger) if isinstance(deger, Decimal) else deger
+
+
+def _turetilen_olgular(
+    grup: Mapping[str, Any],
+    olgular: Sequence[Olgu],
+    yeni: Mapping[tuple[str, str], str],
+    uygulama: ifade.IliskiSonucu,
+) -> dict[str, Any]:
+    """Türetilen case'in olguları, değer çıkarma (`case_facts`) çıktı biçiminde.
+
+    Değerler ilişkinin hesapladığı yeni değerler, alıntılar yeniden yazılmış metinlerdir; alan
+    yolları aynı kalır (başlığa yalnız ek yapılır). `table_ref` grubun `tablo_id`'sidir (oracle
+    tabloyu kimliğiyle de bulur)."""
+    inputs: list[dict[str, Any]] = []
+    expected: list[dict[str, Any]] = []
+    for o in olgular:
+        deger = uygulama.ciktilar[o.column] if o.cikti else uygulama.girdiler[o.column]
+        kayit = {
+            "column": o.column,
+            "value": _gosterim(deger),
+            "field": o.alan,
+            "quote": yeni[(o.alan, o.alinti)],
+        }
+        (expected if o.cikti else inputs).append(kayit)
+    return {
+        "groups": [
+            {"table_ref": str(grup.get("tablo_id") or ""), "inputs": inputs, "expected": expected}
+        ]
+    }
+
+
+def turetilen_olgular(
+    icerik: Mapping[str, Any], grup: Mapping[str, Any], iliski: Mapping[str, Any]
+) -> dict[str, Any] | None:
+    """Kaynak case + uyumlu oracle grubu + ilişki → türetilen case'in olguları (`case_facts`
+    çıktısı biçimi) ya da türetme yapılamıyorsa None. Model çağrısı yoktur."""
+    return turet(icerik, grup, iliski).olgular
+
+
+__all__ = [
+    "ETIKET",
+    "TUTARSIZ_KALAN_DEGER",
+    "Olgu",
+    "Sonuc",
+    "alan_oku",
+    "bicimle",
+    "grup_olgulari",
+    "turet",
+    "turetilen_olgular",
+]

@@ -6,7 +6,9 @@
 | GET  | `/requirements/{id}/metamorphic-derivations` | herkes |
 
 POST yanıtı: `{turetilen: [{case_id, kaynak_case_id, baslik}], atlanan: [{kaynak_case_id, sonuc,
-neden}]}`. `atlanan[].sonuc`: `iliski_gecersiz | belirsiz_alinti | olgu_yok | zaten_turetildi`.
+neden}]}`. `atlanan[].sonuc`: `iliski_gecersiz | belirsiz_alinti | olgu_yok | zaten_turetildi`
+(`tutarsiz_kalan_deger` değer kümesine eklenene dek `belirsiz_alinti` + `neden`
+"tutarsiz_kalan_deger: …"). İlişki bulunamazsa 404 `iliski_bulunamadi`.
 """
 
 from __future__ import annotations
