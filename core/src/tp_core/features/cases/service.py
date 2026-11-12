@@ -528,6 +528,13 @@ def store_cases(
         mevcut_hashler.add(h)
         eklenen.append(tc)
     session.flush()
+    # --- 012 oracle kancası: case'lerin yazıldığı tek yer (portal üretimi, IDE/MCP taslakları);
+    # geçerli karar tablosu varsa beklenen sonuç kontrolü işleri (features/oracle) ---
+    if eklenen:
+        from tp_core.features.oracle import service as oracle_service
+
+        oracle_service.uretim_sonrasi(session, req.id)
+    # --- /012 ---
     return eklenen, tekrar
 
 
@@ -752,11 +759,6 @@ def run_generation(
             if (refs := unknown_ac_refs(tc.icerik, req.kabul_kriterleri))
         }
         kapsanmayan = coverage_gaps(s, req)
-        # --- 012 oracle kancası: beklenen sonuç kontrolü işleri (features/oracle) ---
-        from tp_core.features.oracle import service as oracle_service
-
-        oracle_service.uretim_sonrasi(s, req.id)
-        # --- /012 ---
         onceki_icerik, onceki_uyari = _old_content_warning(s, req)
         uyarilar = [onceki_uyari] if onceki_uyari else []
         if korunan_ide:
@@ -1038,6 +1040,7 @@ def decide(
     gerekce: str | None = None,
     beklenen_anlam_degisti: bool | None = None,
     oracle_istisna_gerekce: str | None = None,
+    oracle_istisna_turu: str | None = None,
 ) -> TestCase:
     """Portal kararı (Constitution I): görülen hash ile `review` kaydı + durum geçişi."""
     if karar not in KARARLAR:
@@ -1046,7 +1049,13 @@ def decide(
     if icerik_hash is None:
         raise InvalidDecision("karar, görüntülenen içeriğin hash'ini (icerik_hash) taşımalı")
     if karar == "reopen":
-        return _reopen(session, tc, user, icerik_hash, gerekce)
+        tc = _reopen(session, tc, user, icerik_hash, gerekce)
+        # --- 012 oracle kancası: taslağa alınan case'in güncel hash'i kontrol edilir ---
+        from tp_core.features.oracle import service as oracle_service
+
+        oracle_service.karar_sonrasi(session, tc)
+        # --- /012 ---
+        return tc
     if tc.durum != "draft":
         raise WorkflowError(
             f"Karar yalnızca taslak durumundaki case için verilir (durum: {tc.durum}); "
@@ -1094,6 +1103,7 @@ def decide(
             oracle_istisna_gerekce,
             user,
             icerik=icerik,
+            istisna_turu=oracle_istisna_turu,
         )
         if oracle_uyarilari:
             olculer["oracle_uyarilari"] = oracle_uyarilari
@@ -1115,6 +1125,13 @@ def decide(
         tc.surum += 1
     hedef = "rejected" if karar == "reject" else "approved"
     transition(session, tc, hedef, user, "draft", sebep=f"karar: {karar}")
+    # --- 012 oracle kancası: düzeltilen case'in yeni güncel hash'i aynı işlemde kontrol kuyruğuna
+    # girer (kapı kayıt istemediyse de; onaylı-uyumsuz sinyali için) ---
+    if karar == "edit":
+        from tp_core.features.oracle import service as oracle_service
+
+        oracle_service.karar_sonrasi(session, tc)
+    # --- /012 ---
     return tc
 
 

@@ -6,8 +6,10 @@
   `(requirement_id, sira_no)` tekildir.
 - metamorfik_iliski: PO onaylı metamorfik ilişki (§4.5); aynı durum makinesi. `karar_tablosu_id`
   ilişkinin kolon adlarını aldığı tablo (olmayabilir).
-- case_oracle_kontrol: case içeriğinin (hash'iyle) karar tablolarına göre kontrol sonucu (§4.3) ve
-  gerekçeli istisna; `(test_case_id, icerik_hash)` tekildir.
+- case_oracle_kontrol: case içeriğinin (hash'iyle) karar tablolarına göre kontrol sonucu (§4.3);
+  `(test_case_id, icerik_hash)` tekildir. `guncelleme` son yeniden hesaplamadır (review 1).
+- oracle_istisna: gerekçeli istisnaların append-only kaydı (review 1 V10, §13.2); `tp_app` yalnız
+  SELECT, INSERT.
 - metamorfik_turetme: `(iliski_id, kaynak_case_id)` başına tek türetme kaydı (§4.5).
 - hata_kosusu, hata_kosusu_adim: ekilmiş hata koşusu ve platform × hata adımları (§4.6). Temel ve
   kapanış adımlarında `hata_kodu` boştur.
@@ -15,7 +17,11 @@
   yazılır). Kararlar (`approve`, `request_changes`) zaten `review_karar_ck`'dedir.
 
 `tp_app` yeni tablolarda SELECT, INSERT, UPDATE yapar; DELETE verilmez (kontrol, istisna ve koşu
-kayıtları silinmez).
+kayıtları silinmez). `oracle_istisna` yalnız SELECT, INSERT (append-only).
+
+Review turu 1 (2026-11-12): dal dev'e girmediği için yerinde güncellendi (§13.2): `kismen` sonucu,
+`case_oracle_kontrol.guncelleme`, `oracle_istisna`, `metamorfik_turetme.sonuc`
+`tutarsiz_kalan_deger`.
 
 V7: `feat/case-gen-v3` `0021`'i kullanıyor; iki dal birleşirken `down_revision` `"0021"` yapılır.
 
@@ -40,10 +46,14 @@ TABLES = (
     "karar_tablosu",
     "metamorfik_iliski",
     "case_oracle_kontrol",
+    "oracle_istisna",
     "metamorfik_turetme",
     "hata_kosusu",
     "hata_kosusu_adim",
 )
+
+# Yalnız SELECT, INSERT (append-only; UPDATE de verilmez).
+APPEND_ONLY = ("oracle_istisna",)
 
 _NESNE_ESKI = "'bug_draft', 'consistency_finding', 'requirement', 'script', 'test_case'"
 _NESNE_YENI = (
@@ -118,14 +128,32 @@ CREATE TABLE case_oracle_kontrol (
     istisna_veren_id UUID,
     istisna_zamani TIMESTAMP WITH TIME ZONE,
     olusturma TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    guncelleme TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
     PRIMARY KEY (id),
-    CONSTRAINT case_oracle_kontrol_sonuc_ck CHECK (sonuc IN ('kapsam_disi', 'kontrol_edilemedi', 'uyumlu', 'uyumsuz')),
+    CONSTRAINT case_oracle_kontrol_sonuc_ck CHECK (sonuc IN ('kapsam_disi', 'kismen', 'kontrol_edilemedi', 'uyumlu', 'uyumsuz')),
     CONSTRAINT case_oracle_kontrol_uretim_modu_ck CHECK (uretim_modu IS NULL OR uretim_modu IN ('live', 'replay', 'replay_miss')),
     CONSTRAINT case_oracle_kontrol_case_hash_uq UNIQUE (test_case_id, icerik_hash),
     FOREIGN KEY(test_case_id) REFERENCES test_case (id) ON DELETE CASCADE,
     FOREIGN KEY(istisna_veren_id) REFERENCES app_user (id)
 )
 """,  # noqa: E501
+    """
+CREATE TABLE oracle_istisna (
+    id UUID DEFAULT gen_random_uuid() NOT NULL,
+    test_case_id UUID NOT NULL,
+    icerik_hash TEXT NOT NULL,
+    tur TEXT NOT NULL,
+    gerekce TEXT NOT NULL,
+    veren_id UUID,
+    tablo_hashleri JSONB DEFAULT '{}'::jsonb NOT NULL,
+    zaman TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT oracle_istisna_tur_ck CHECK (tur IN ('kontrolsuz', 'uyumsuz')),
+    FOREIGN KEY(test_case_id) REFERENCES test_case (id) ON DELETE CASCADE,
+    FOREIGN KEY(veren_id) REFERENCES app_user (id)
+)
+""",
+    "CREATE INDEX oracle_istisna_case_ix ON oracle_istisna (test_case_id, icerik_hash)",
     """
 CREATE TABLE metamorfik_turetme (
     id UUID DEFAULT gen_random_uuid() NOT NULL,
@@ -137,7 +165,7 @@ CREATE TABLE metamorfik_turetme (
     olusturan_id UUID,
     olusturma TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
     PRIMARY KEY (id),
-    CONSTRAINT metamorfik_turetme_sonuc_ck CHECK (sonuc IN ('belirsiz_alinti', 'iliski_gecersiz', 'olgu_yok', 'turetildi')),
+    CONSTRAINT metamorfik_turetme_sonuc_ck CHECK (sonuc IN ('belirsiz_alinti', 'iliski_gecersiz', 'olgu_yok', 'turetildi', 'tutarsiz_kalan_deger')),
     CONSTRAINT metamorfik_turetme_cift_uq UNIQUE (iliski_id, kaynak_case_id),
     FOREIGN KEY(iliski_id) REFERENCES metamorfik_iliski (id) ON DELETE CASCADE,
     FOREIGN KEY(kaynak_case_id) REFERENCES test_case (id) ON DELETE CASCADE,
@@ -197,7 +225,9 @@ CREATE TABLE hata_kosusu_adim (
 def upgrade() -> None:
     for stmt in CREATE_STATEMENTS:
         op.execute(stmt)
-    op.execute(f"GRANT SELECT, INSERT, UPDATE ON {', '.join(TABLES)} TO tp_app")
+    guncellenen = [t for t in TABLES if t not in APPEND_ONLY]
+    op.execute(f"GRANT SELECT, INSERT, UPDATE ON {', '.join(guncellenen)} TO tp_app")
+    op.execute(f"GRANT SELECT, INSERT ON {', '.join(APPEND_ONLY)} TO tp_app")
     op.drop_constraint("review_nesne_turu_ck", "review", type_="check")
     op.create_check_constraint("review_nesne_turu_ck", "review", f"nesne_turu IN ({_NESNE_YENI})")
 

@@ -98,11 +98,20 @@ SONUC = "expected_result"
 
 
 def _kampanya(
-    adet: str, bedava: str, indirim: str, *, adet_baslikta: bool, bedava_metinde: bool
+    adet: str,
+    bedava: str,
+    ara_toplam: str,
+    indirim: str,
+    toplam: str,
+    *,
+    adet_baslikta: bool,
+    bedava_metinde: bool,
 ) -> dict[str, Any]:
-    """T1 grubu. Adet: S3 eylemi ("adedi 7"), verisi ("P-001 × 7"), beklenen sayaç ("Sepet sayacı
-    7"), S4 satırı ("adet 7"), sonuç ("7 adette") ve varsa başlık. Bedava: S4 ve sonuçtaki
-    "bedava adet N" ("adet N" alıntısı) ya da "N adet bedava" ("N adet"). İndirim: S4 ve sonuç."""
+    """T1 grubu (V9: girdiler adet, ara_toplam; çıktılar bedava_adet, indirim, toplam). Adet: S3
+    eylemi ("adedi 7"), verisi ("P-001 × 7"), beklenen sayaç ("Sepet sayacı 7"), S4 satırı
+    ("adet 7"), sonuç ("7 adette") ve varsa başlık. Bedava: S4 ve sonuçtaki "bedava adet N"
+    ("adet N" alıntısı) ya da "N adet bedava" ("N adet"). Ara toplam yalnız S4'te; indirim ve
+    toplam S4 ve sonuçta. Her geçiş ayrı olgudur (prompt: değerin her geçişi)."""
     girdi = [
         _o("adet", adet, alan, adet)
         for alan in (
@@ -114,6 +123,7 @@ def _kampanya(
             SONUC,
         )
     ]
+    girdi.append(_o("ara_toplam", _ondalik(ara_toplam), S4, f"{ara_toplam} TL"))
     bedava_olgulari = [_o("bedava_adet", bedava, S4, f"adet {bedava}")]
     if bedava_metinde:  # "… 1 adet bedava verilir" (başlık ve sonuç)
         bedava_olgulari = [
@@ -123,16 +133,28 @@ def _kampanya(
         ]
     else:  # "… bedava adet 0 olur" (sonuç)
         bedava_olgulari.append(_o("bedava_adet", bedava, SONUC, f"adet {bedava}"))
-    deger = indirim.replace(",", ".")
     return {
         "table_ref": "T1",
         "inputs": girdi,
         "expected": [
             *bedava_olgulari,
-            _o("indirim", deger, S4, f"{indirim} TL"),
-            _o("indirim", deger, SONUC, f"{indirim} TL"),
+            *(_o("indirim", _ondalik(indirim), a, f"{indirim} TL") for a in (S4, SONUC)),
+            *(_o("toplam", _ondalik(toplam), a, f"{toplam} TL") for a in (S4, SONUC)),
         ],
     }
+
+
+def _ondalik(tl: str) -> str:
+    return tl.replace(".", "").replace(",", ".")
+
+
+def _yok(field: str, quote: str, reason: str) -> dict[str, str]:
+    return {"field": field, "quote": quote, "reason": reason}
+
+
+def _sayac(n: int) -> dict[str, str]:
+    """T2 case'lerinde sepet sayacı tablonun kolonu değildir (`ignored`)."""
+    return _yok(S3_BEKLENEN, f"Sepet sayacı {n}", "sepetteki ürün adedi; tabloda kolonu yok")
 
 
 KAMPANYASIZ = (False, "preconditions[1]", "Sepette kampanyalı ürün yok")
@@ -150,73 +172,177 @@ def _minimum(
         "table_ref": "T2",
         "inputs": [
             _o("kampanyali_sepet", kampanyali, k_alan, k_alinti),
-            *[
-                _o("sepet_tutari", tutar.replace(",", "."), a, f"{tutar} TL")
-                for a in tutar_alanlari
-            ],
+            *[_o("sepet_tutari", _ondalik(tutar), a, f"{tutar} TL") for a in tutar_alanlari],
         ],
         "expected": [_o("minimum_uyarisi", uyari, a, q) for a, q in uyari_alintilari],
     }
 
 
-C2 = _kampanya("7", "1", "25,00", adet_baslikta=True, bedava_metinde=True)
-OLGULAR: dict[int, list[dict[str, Any]]] = {
-    2: [C2],
+def _cikti(groups: list[dict[str, Any]], ignored: list[dict[str, str]] | None = None) -> dict:
+    return {"groups": groups, "ignored": list(ignored or [])}
+
+
+UYARI = '"Minimum sipariş tutarı 750,00 TL" uyarısı'
+C2 = _kampanya("7", "1", "175,00", "25,00", "150,00", adet_baslikta=True, bedava_metinde=True)
+# case no → model çıktısı `{groups, ignored}` (ana golden; C3 fix_doc alternatifi).
+OLGULAR: dict[int, dict[str, Any]] = {
+    2: _cikti([C2]),
     # Ana golden C3 (fix_doc alternatifi: "6 adette 1 bedava"): story tablosuyla uyuşmaz.
-    3: [_kampanya("6", "1", "25,00", adet_baslikta=True, bedava_metinde=True)],
-    4: [_kampanya("5", "0", "0,00", adet_baslikta=True, bedava_metinde=False)],
-    5: [
-        _minimum(
-            KAMPANYASIZ,
-            "150,00",
-            (S4,),
-            True,
-            (
-                (S4, '"Minimum sipariş tutarı 750,00 TL" uyarısı görünür'),
-                (SONUC, '"Minimum sipariş tutarı 750,00 TL" uyarısı gösterilir'),
-            ),
-        )
-    ],
-    6: [
-        _minimum(
-            KAMPANYASIZ,
-            "750,00",
-            (S4, SONUC),
-            False,
-            ((S4, "minimum sipariş uyarısı görünmez"), (SONUC, "uyarı gösterilmez")),
-        )
-    ],
-    9: [
-        _minimum(
-            (True, SONUC, "Kampanyalı sepette"),
-            "150,00",
-            (S4, SONUC),
-            False,
-            (
-                (S4, "minimum sipariş uyarısı görünmez"),
-                (SONUC, "minimum sipariş uyarısı gösterilmez"),
-            ),
-        )
-    ],
+    3: _cikti(
+        [_kampanya("6", "1", "150,00", "25,00", "125,00", adet_baslikta=True, bedava_metinde=True)]
+    ),
+    4: _cikti(
+        [_kampanya("5", "0", "125,00", "0,00", "125,00", adet_baslikta=True, bedava_metinde=False)]
+    ),
+    5: _cikti(
+        [
+            _minimum(
+                KAMPANYASIZ,
+                "150,00",
+                (S4,),
+                True,
+                ((S4, f"{UYARI} görünür"), (SONUC, f"{UYARI} gösterilir")),
+            )
+        ],
+        [_sayac(10)],
+    ),
+    6: _cikti(
+        [
+            _minimum(
+                KAMPANYASIZ,
+                "750,00",
+                (S4, SONUC),
+                False,
+                ((S4, "minimum sipariş uyarısı görünmez"), (SONUC, "uyarı gösterilmez")),
+            )
+        ],
+        [_sayac(25)],
+    ),
+    9: _cikti(
+        [
+            _minimum(
+                (True, SONUC, "Kampanyalı sepette"),
+                "150,00",
+                (S4, SONUC),
+                False,
+                (
+                    (S4, "minimum sipariş uyarısı görünmez"),
+                    (SONUC, "minimum sipariş uyarısı gösterilmez"),
+                ),
+            )
+        ],
+        [_sayac(7)],
+    ),
     # C10, C2'nin bilerek tekrarıdır; başlığında "7" geçer, bedava adet geçmez.
-    10: [_kampanya("7", "1", "25,00", adet_baslikta=True, bedava_metinde=False)],
+    10: _cikti(
+        [_kampanya("7", "1", "175,00", "25,00", "150,00", adet_baslikta=True, bedava_metinde=False)]
+    ),
 }
 # C10'un sonuç metni "7 adette 1 adet bedava verilir" (C2 ile aynı): bedava olgusu "1 adet".
-OLGULAR[10][0]["expected"][1] = _o("bedava_adet", "1", SONUC, "1 adet")
+OLGULAR[10]["groups"][0]["expected"][1] = _o("bedava_adet", "1", SONUC, "1 adet")
 
 # Senaryo (demo ana yolu) C3: "6 adette bedava adet 0 olur (bedava 7. adette başlar)".
-SENARYO_OLGULARI: dict[int, list[dict[str, Any]]] = {
-    3: [_kampanya("6", "0", "0,00", adet_baslikta=True, bedava_metinde=False)],
+SENARYO_OLGULARI: dict[int, dict[str, Any]] = {
+    3: _cikti(
+        [_kampanya("6", "0", "150,00", "0,00", "150,00", adet_baslikta=True, bedava_metinde=False)],
+        [_yok(SONUC, "7. adette", "kuralın açıklaması (sıra sayısı); tabloda kolonu yok")],
+    ),
 }
+
+# ------------------------------------------------------------------ varyant golden'lar
+#
+# case_generation golden'ında OLMAYAN iki içerik; aynı case numarasının senaryo golden'ı olarak
+# (`<varyant>/TPD-1-C<n>`) girdi beyanıyla eşleşir. Kapının REPLAY'de gösterimi içindir.
+
+REHBER = "rehber-duzeltme"  # docs/DEGISIKLIK-TEST-REHBERI.md §8.6
+AI_HATASI = "ai-sinir-hatasi"  # analist/PO review 1 #3a: AI'ın sınır hatası
+
+# Rehber §8.6: analist C5'in S4 beklenenini aşağıdaki metinle değiştirir (başka alan değişmez).
+C5_REHBER_S4 = (
+    'Toplam 150,00 TL; "Minimum sipariş tutarı 750,00 TL" uyarısı görünmez ve '
+    '"Siparişi onayla" butonu aktiftir'
+)
+
+
+def _degistir(case: dict[str, Any], **alanlar: Any) -> dict[str, Any]:
+    out = json.loads(json.dumps(case))
+    for yol, deger in alanlar.items():
+        if yol.startswith("S"):
+            out["steps"][int(yol[1:]) - 1]["expected"] = deger
+        else:
+            out[yol] = deger
+    return out
+
+
+def _ana_yol_case(n: int) -> dict[str, Any]:
+    return tpd1_cases(SENARYO)[n - 1]
+
+
+def c5_rehber_duzeltme() -> dict[str, Any]:
+    """Rehber §8.6'daki düzeltilmiş C5 (yalnız S4 beklenen değişir)."""
+    return _degistir(_ana_yol_case(5), S4=C5_REHBER_S4)
+
+
+def c6_ai_sinir_hatasi() -> dict[str, Any]:
+    """AI'ın klasik sınır hatası: tam 750,00 TL'de uyarı görünür sanılır (tablo R3: uyarı yok)."""
+    return _degistir(
+        _ana_yol_case(6),
+        title=(
+            "Kampanyasız siparişte minimum tutara eşit toplamda uyarı gösterilir ve onay pasif olur"
+        ),
+        S4=(
+            'Toplam 750,00 TL; "Minimum sipariş tutarı 750,00 TL" uyarısı görünür ve '
+            '"Siparişi onayla" butonu pasiftir'
+        ),
+        expected_result=(
+            'Toplam 750,00 TL olduğunda "Minimum sipariş tutarı 750,00 TL" uyarısı gösterilir '
+            "ve sipariş onaylanamaz"
+        ),
+    )
+
+
+VARYANT_OLGULARI: dict[tuple[str, int], dict[str, Any]] = {
+    (REHBER, 5): _cikti(
+        [
+            _minimum(
+                KAMPANYASIZ,
+                "150,00",
+                (S4,),
+                True,  # sonuç metni hâlâ "uyarısı gösterilir" der
+                ((SONUC, f"{UYARI} gösterilir"),),
+            )
+        ],
+        [_sayac(10)],
+    ),
+    (AI_HATASI, 6): _cikti(
+        [
+            _minimum(
+                KAMPANYASIZ,
+                "750,00",
+                (S4, SONUC),
+                True,
+                ((S4, f"{UYARI} görünür"), (SONUC, f"{UYARI} gösterilir")),
+            )
+        ],
+        [_sayac(25)],
+    ),
+}
+# Rehber C5'inde S4 artık "uyarısı görünmez" der: mantıksal olgu `false`.
+VARYANT_OLGULARI[(REHBER, 5)]["groups"][0]["expected"].insert(
+    0, _o("minimum_uyarisi", False, S4, f"{UYARI} görünmez")
+)
+VARYANT_CASELERI = {(REHBER, 5): c5_rehber_duzeltme, (AI_HATASI, 6): c6_ai_sinir_hatasi}
+BEKLENEN_SONUC_VARYANT = {(REHBER, 5): "uyumsuz", (AI_HATASI, 6): "uyumsuz"}
 
 # Golden'ı olmayan (hiçbir tabloyla kesişmeyen) case'ler.
 KAPSAM_DISI = (1, 7, 8)
 
-# Story tablolarıyla (T1 `adet // 7`, T2 eşik 750) dürüst sonuçlar. Ana yol = senaryo.
+# Story tablolarıyla (T1 `adet // 7`, indirim ve toplam ara toplamdan; T2 eşik 750) dürüst
+# sonuçlar. Ana yol = senaryo.
 BEKLENEN_SONUC_ANA_YOL: dict[int, str] = {
     1: "kapsam_disi",
-    2: "uyumlu",  # bedava 1 = 7 // 7; indirim karşılaştırılamadı (birim fiyat case'te yok)
-    3: "uyumlu",  # bedava 0, indirim 0 = R2 (uygulama 6 // 6 = 1 verir → defect adayı)
+    2: "uyumlu",  # bedava 1 = 7 // 7; indirim 25,00 = 175 / 7; toplam 150,00
+    3: "uyumlu",  # bedava 0, indirim 0, toplam = ara toplam (uygulama 6 // 6 = 1 → defect adayı)
     4: "uyumlu",
     5: "uyumlu",
     6: "uyumlu",
@@ -231,17 +357,28 @@ BEKLENEN_SONUC_ANA_YOL: dict[int, str] = {
 BEKLENEN_SONUC_FIX_DOC = {**BEKLENEN_SONUC_ANA_YOL, 3: "uyumsuz"}
 
 NOTE = (
-    "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Olgular elle hazırlandı (canlı model çıktısı "
-    "değil; ai_call.model = golden-elle): case_generation golden'ındaki case'ten dikkatli bir "
-    "modelin çıkaracağı değerler, alıntılar case alanlarından birebir; birim fiyat case'te "
-    "yazmadığı için çıkarılmadı. Kolon adları Ş1'in TPD-1 taslak golden'ındaki demo "
-    "tablolarınındır (T1 kampanya: adet, birim_fiyat → bedava_adet, indirim; T2 minimum sipariş: "
-    "kampanyali_sepet, sepet_tutari → minimum_uyarisi). Üretildi: python -m "
-    "tests.unit.features.oracle.tpd1 (elle düzenlemeyin). Girdi beyanı (input_match.case_text) "
-    "eşleşirse mod REPLAY (köken golden_matched); case düzeltilir ya da önerilen içerik farklıysa "
-    "REPLAY-MISS ve nötr çıktı (groups: [] → kontrol_edilemedi). Canlı modelle yeniden "
-    "kaydedilmeli (TP_MODEL_MODE=record)."
+    "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Olgular elle hazırlandı (canlı model "
+    "çıktısı değil; ai_call.model = golden-elle): case metninden dikkatli bir modelin çıkaracağı "
+    "değerler, alıntılar case alanlarından birebir, bir değerin her geçişi ayrı olgu; beklenen "
+    "alanlardaki kolonsuz sayılar ignored'da. Kolon adları Ş1'in TPD-1 taslak golden'ındaki "
+    "demo tablolarınındır (T1 kampanya: adet, ara_toplam → bedava_adet, indirim, toplam; T2 "
+    "minimum sipariş: kampanyali_sepet, sepet_tutari → minimum_uyarisi). Elle golden'la ölçülen "
+    "doğruluk bir model ölçümü değildir. Üretildi: python -m tests.unit.features.oracle.tpd1 "
+    "(elle düzenlemeyin). Girdi beyanı (input_match.case_text) eşleşirse mod REPLAY (köken "
+    "golden_matched); case başka bir metne düzeltilirse REPLAY-MISS ve nötr çıktı (groups: [] → "
+    "kontrol_edilemedi). Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record)."
 )
+VARYANT_NOTU = {
+    REHBER: (
+        "Varyant: docs/DEGISIKLIK-TEST-REHBERI.md §8.6'da analistin yazdığı düzeltilmiş C5 "
+        "(S4 beklenen: uyarı görünmez). Kapının (422 oracle_uyumsuz) REPLAY'de gösterimi. "
+    ),
+    AI_HATASI: (
+        "Varyant: AI'ın klasik sınır hatası (tam 750,00 TL'de uyarı görünür; tablo R3 uyarı "
+        "yok). case_generation golden'ında yoktur; içerik bu metinle geldiğinde (IDE taslağı ya "
+        "da ileride bir case_generation senaryosu) eşleşir. "
+    ),
+}
 
 
 def tpd1_cases(senaryo: str | None = None) -> list[dict[str, Any]]:
@@ -255,35 +392,48 @@ def ana_yol_cases() -> list[dict[str, Any]]:
     return tpd1_cases(SENARYO)
 
 
-def _golden(senaryo: str | None, n: int, groups: list[dict[str, Any]]) -> tuple[str, dict]:
-    case = tpd1_cases(senaryo)[n - 1]
+def _golden(
+    ad_on_eki: str | None,
+    n: int,
+    case: dict[str, Any],
+    cikti: dict[str, Any],
+    case_golden: str,
+    not_: str = NOTE,
+) -> tuple[str, dict]:
     ad = golden_name(STORY, case_no=n)
-    tam = f"{senaryo}/{ad}" if senaryo else ad
+    tam = f"{ad_on_eki}/{ad}" if ad_on_eki else ad
     return tam, {
         "kind": "call",
         "purpose": "case_facts",
         "golden": tam,
-        "note": NOTE,
+        "note": not_,
         "input_match": {"sources": [f"case:{ad}"], "case_text": approved_case_text(case)},
         "case": {
             "jira_key": STORY,
             "sira_no": n,
             "title": case["title"],
-            "case_golden": f"{senaryo}/{STORY}" if senaryo else STORY,
+            "case_golden": case_golden,
         },
-        "output": {"groups": groups},
+        "output": cikti,
     }
 
 
 def build_goldens() -> dict[str, dict[str, Any]]:
     """`<ad>` ya da `<senaryo>/<ad>` → golden kaydı."""
-    out = dict(_golden(None, n, g) for n, g in OLGULAR.items())
-    out.update(_golden(SENARYO, n, g) for n, g in SENARYO_OLGULARI.items())
+    out = dict(_golden(None, n, tpd1_cases()[n - 1], g, STORY) for n, g in OLGULAR.items())
+    out.update(
+        _golden(SENARYO, n, _ana_yol_case(n), g, f"{SENARYO}/{STORY}")
+        for n, g in SENARYO_OLGULARI.items()
+    )
+    out.update(
+        _golden(v, n, VARYANT_CASELERI[(v, n)](), g, f"{SENARYO}/{STORY}", VARYANT_NOTU[v] + NOTE)
+        for (v, n), g in VARYANT_OLGULARI.items()
+    )
     return out
 
 
-def olgular(n: int, senaryo: str | None = SENARYO) -> list[dict[str, Any]] | None:
-    """Case'in golden olguları (senaryo case'i varsa o; golden yoksa None)."""
+def olgular(n: int, senaryo: str | None = SENARYO) -> dict[str, Any] | None:
+    """Case'in golden çıktısı `{groups, ignored}` (senaryo case'i varsa o; golden yoksa None)."""
     if senaryo and n in SENARYO_OLGULARI:
         return SENARYO_OLGULARI[n]
     return OLGULAR.get(n)

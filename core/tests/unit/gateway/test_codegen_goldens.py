@@ -80,6 +80,7 @@ VERIFY = [*goldens("verify_and_map"), *scenario_goldens("verify_and_map")]
 # Demo-A/B senaryo golden'ları (f2-kod-hatasi). Faz 4 amaçlarının (triage, bug_draft, dup_rank)
 # senaryo dizinleri hata türüne göredir; test_defect_goldens.py denetler.
 DEFECT_PURPOSES = ("triage", "bug_draft", "dup_rank")
+CASE_FACTS_SCENARIOS = ("ai-sinir-hatasi", "rehber-duzeltme")
 SCENARIOS = [g for g in scenario_goldens() if g[0] not in DEFECT_PURPOSES]
 METHODS = page_object_methods()
 E2E_DEALERS = ("bayi1", "bayi2")
@@ -108,7 +109,9 @@ def _expected_text(case: dict[str, Any]) -> str:
 def test_scenario_goldens_are_declared_and_valid(purpose: str, path: Path, golden: dict) -> None:
     assert golden["purpose"] == purpose
     assert golden["golden"] == golden_ref(path)
-    assert path.parent.name == SCENARIO
+    # case_facts (012) ek senaryoları: rehberdeki analist düzeltmesi ve AI sınır hatası örneği.
+    izinli = {SCENARIO, *CASE_FACTS_SCENARIOS} if purpose == "case_facts" else {SCENARIO}
+    assert path.parent.name in izinli
     # Senaryo golden'ı yalnızca girdi beyanıyla döner; beyansız olamaz.
     assert isinstance(golden.get("input_match"), dict) and golden["input_match"]
     assert "Elle hazırlandı" in golden["note"] or "elle hazırlandı" in golden["note"]

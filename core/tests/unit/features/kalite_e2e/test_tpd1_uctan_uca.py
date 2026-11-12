@@ -8,8 +8,10 @@ ve Kontrol Kulesi) → onaylı ilişkiden metamorfik ek case (metriğe girmez) �
 uygulamasına karşı kırmızı koşusu (Playwright rapor fikstürü) `classify_run`'da `product_defect` +
 `karar_tablosu_uyumlu` (oracle kaydı yukarıdaki gerçek kontrolden gelir).
 
-Canlı model yoktur: tüm çağrılar REPLAY golden'larıdır; yalnız düzeltilmiş C5 içeriğinin değer
-çıkarması sahte modeldir (golden'ı yoktur, REPLAY-MISS nötr çıktı verirdi).
+Canlı model yoktur: tüm çağrılar REPLAY golden'larıdır. Düzeltilmiş C5, rehber §8.6'daki metindir
+(`case_facts/golden/rehber-duzeltme/TPD-1-C5`); metamorfik türetilen case'in olguları dönüşümden
+gelir (model çağrısı yok). Review turu 1 (§13): T1 ara toplam/toplam (V9), kısmen/kontrolsüz
+sonuçları, append-only istisna, tekrar case'in tek sayılması.
 """
 
 from __future__ import annotations
@@ -17,7 +19,6 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import Iterator
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -40,83 +41,31 @@ from tp_core.features.oracle import service as oracle_service
 from tp_core.features.triage import classify_run
 from tp_core.gateway import build_gateway
 from tp_core.gateway.config import GatewaySettings
-from tp_core.gateway.matching import untrusted_blocks
 from tp_core.models import (
     AiCall,
     AuditEvent,
     CaseOracleKontrol,
     Failure,
+    OracleIstisna,
     TestCase,
     TestResult,
     session_scope,
 )
 
 GEREKCE = "PO ile görüşüldü: kampanya dışı istisna, tablo güncellenecek."
-# Analistin düzelttiği C5: toplam 150 TL iken "uyarı görünmez" (T2: 750 altında uyarı görünür).
-C5_YANLIS_S4 = (
-    'Toplam 150,00 TL; "Minimum sipariş tutarı 750,00 TL" uyarısı görünmez ve "Siparişi onayla" '
-    "butonu aktiftir"
-)
-
-
-class OracleGecidi:
-    """REPLAY geçidi; yalnız düzeltilmiş C5 içeriğinin `case_facts` çağrısı sahte modeldir."""
-
-    def __init__(self, gw: Any) -> None:
-        self.gw = gw
-        self.rules_dir = gw.rules_dir
-        self.sahte_cagri = 0
-
-    def call(self, purpose: str, bundle: str, messages: Any, schema: Any, **kw: Any) -> Any:
-        bloklar = untrusted_blocks([m.model_dump(mode="json") for m in messages])
-        govde = next((b.body for b in bloklar if b.source.startswith("case:")), None)
-        case = json.loads(govde) if govde else {}
-        adimlar = case.get("steps") or []
-        if purpose == "case_facts" and len(adimlar) > 3 and adimlar[3]["expected"] == C5_YANLIS_S4:
-            self.sahte_cagri += 1
-            s4 = "steps[3].expected"
-            o = lambda c, v, f, q: {"column": c, "value": v, "field": f, "quote": q}  # noqa: E731
-            assert case["preconditions"][1] == "Sepette kampanyalı ürün yok"
-            cikti = {
-                "groups": [
-                    {
-                        "table_ref": "T2",
-                        "inputs": [
-                            o(
-                                "kampanyali_sepet",
-                                False,
-                                "preconditions[1]",
-                                case["preconditions"][1],
-                            ),
-                            o("sepet_tutari", "150.00", s4, "150,00 TL"),
-                        ],
-                        "expected": [
-                            o(
-                                "minimum_uyarisi",
-                                False,
-                                s4,
-                                '"Minimum sipariş tutarı 750,00 TL" uyarısı görünmez',
-                            )
-                        ],
-                    }
-                ]
-            }
-            return SimpleNamespace(output=cikti, call_id=None, mode="live")
-        return self.gw.call(purpose, bundle, messages, schema, **kw)
 
 
 @pytest.fixture
-def gecit(engine: Engine, monkeypatch: pytest.MonkeyPatch) -> Iterator[OracleGecidi]:
+def gecit(engine: Engine, monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
     monkeypatch.setenv("TP_MODEL_MODE", "replay")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("TP_REPLAY_STRICT", raising=False)
     monkeypatch.delenv("TP_RULES_DIR", raising=False)
     gw = build_gateway(PgCallRecorder(engine), settings=GatewaySettings(), engine=engine)
-    oracle = OracleGecidi(gw)
     cases_service.set_gateway_factory(lambda _e: gw)
     kt_service.set_gateway_factory(lambda _e: gw)
-    oracle_service.set_gateway_factory(lambda _e: oracle)  # type: ignore[arg-type,return-value]
-    yield oracle
+    oracle_service.set_gateway_factory(lambda _e: gw)
+    yield gw
     cases_service.set_gateway_factory(None)
     kt_service.set_gateway_factory(None)
     oracle_service.set_gateway_factory(None)
@@ -142,7 +91,7 @@ def test_tpd1_kalite_dogrulama_uctan_uca(
     engine: Engine,
     make_user,
     make_requirement,
-    gecit: OracleGecidi,
+    gecit: Any,
     triage_env: Any,  # noqa: F811  (sahte toolchain, artefakt kökü)
     artefakt_kok: Any,  # noqa: F811
 ) -> None:
@@ -189,14 +138,16 @@ def test_tpd1_kalite_dogrulama_uctan_uca(
     sonuclar = {n: (c["oracle"] or {}).get("sonuc") for n, c in cases.items()}
     assert sonuclar == tpd1.BEKLENEN_SONUC_ANA_YOL
     c3 = cases[3]["oracle"]
-    assert {(k["column"], k["case_degeri"], k["tablo_degeri"]) for k in c3["karsilastirmalar"]} == {
-        ("bedava_adet", "0", "0"),
-        ("indirim", "0.00", "0"),
+    assert {(k["column"], k["case_degeri"]) for k in c3["karsilastirmalar"]} == {
+        ("bedava_adet", "0"),
+        ("indirim", "0.00"),
+        ("toplam", "150.00"),
     }
-    assert [k["column"] for k in cases[2]["oracle"]["karsilastirilamayan"]] == [
-        "indirim",
-        "indirim",
-    ]
+    assert all(k["uyumlu"] for k in c3["karsilastirmalar"]) and c3["karsilastirilamayan"] == []
+    # V9: C2'de indirim ve toplam da ara toplamdan karşılaştırılır (karşılaştırılamayan yok).
+    c2 = cases[2]["oracle"]
+    assert {k["column"] for k in c2["karsilastirmalar"]} == {"bedava_adet", "indirim", "toplam"}
+    assert c2["karsilastirilamayan"] == [] and c2["degerler"]["uyumsuz"] == 0
     with session_scope() as s:
         modlar = s.scalars(select(AiCall.mod).where(AiCall.amac == "case_facts")).all()
     assert sorted(modlar) == ["replay"] * 7  # C2–C6, C9, C10; AC1/AC4/AC5 modele gitmez
@@ -210,11 +161,12 @@ def test_tpd1_kalite_dogrulama_uctan_uca(
     )
     assert r["durum"] == "approved" and not any("tablo" in u for u in r["uyarilar"])
 
-    # 6) Analist C5'i (yüksek risk) yanlış düzeltir: önerilen içerik kontrol edilir → uyumsuz.
+    # 6) Analist C5'i (yüksek risk) rehber §8.6'daki metinle yanlış düzeltir: önerilen içerik
+    # REPLAY golden'ıyla kontrol edilir → uyumsuz.
     c5 = cases[5]
     yanlis = json.loads(json.dumps(c5["icerik"]))
-    yanlis["steps"][3]["expected"] = C5_YANLIS_S4
-    yanlis["expected_result"] = "Minimum sipariş uyarısı gösterilmez ve sipariş onaylanabilir"
+    yanlis["steps"][3]["expected"] = tpd1.C5_REHBER_S4
+    assert yanlis == tpd1.c5_rehber_duzeltme()
     karar = {"karar": "edit", "icerik_hash": c5["icerik_hash"], "icerik": yanlis}
     r = api.post(f"/cases/{c5['id']}/decision", json=karar)
     assert r.status_code == 409 and r.json()["kod"] == "oracle_bekleniyor"  # V3
@@ -222,10 +174,20 @@ def test_tpd1_kalite_dogrulama_uctan_uca(
         "icerik_hash"
     ]
     run_jobs(engine)
-    assert gecit.sahte_cagri == 1
     o = _ok(api.get(f"/cases/{c5['id']}/oracle", params={"icerik_hash": h}))["oracle"]
     assert o["sonuc"] == "uyumsuz"
-    assert o["karsilastirmalar"][0]["tablo_degeri"] is True
+    bozuk = [k for k in o["karsilastirmalar"] if not k["uyumlu"]]
+    assert [(k["alan"], k["case_degeri"], k["tablo_degeri"]) for k in bozuk] == [
+        ("steps[3].expected", False, True)
+    ]
+    with session_scope() as s:
+        mod, kok = s.execute(
+            select(AiCall.mod, AiCall.ek["replay_kokeni"].astext)
+            .where(AiCall.amac == "case_facts")
+            .order_by(AiCall.olusturma.desc())
+            .limit(1)
+        ).one()
+    assert (mod, kok) == ("replay", "golden_matched")
     r = api.post(f"/cases/{c5['id']}/decision", json=karar)
     assert r.status_code == 422 and r.json()["kod"] == "oracle_uyumsuz"
     # 7) Gerekçeli istisna: onaylanır, denetime ve sayaca düşer.
@@ -236,16 +198,29 @@ def test_tpd1_kalite_dogrulama_uctan_uca(
     with session_scope() as s:
         ev = s.scalars(select(AuditEvent).where(AuditEvent.eylem == "oracle.exception")).one()
         assert ev.ozet["gerekce"] == GEREKCE and ev.aktor == analist.kullanici_adi
+        assert ev.ozet["tur"] == "uyumsuz"
+        [ist] = s.scalars(select(OracleIstisna)).all()
+        assert (ist.tur, ist.icerik_hash) == ("uyumsuz", h)
 
     # 8) Beklenti doğruluğu: AI içeriği üzerinden (C5'in AI içeriği uyumluydu; düzeltme sayılmaz).
+    # C10 = C2 (aynı satır, aynı değerler) tek sayılır; kapsam payda: tablolu story'deki 9 AI
+    # case (tekrar hariç). Tüm kayıtlar elle golden'dan (REPLAY): gösterge.
     beklenen_metrik = {
         "oran": 1.0,
-        "uyumlu": 7,
+        "uyumlu": 6,
         "uyumsuz": 0,
-        "kapsam_disi": 3,
+        "kismen": 0,
         "kontrol_edilemedi": 0,
+        "kapsam_disi": 3,
         "istisna": 1,
-        "kapsam_orani": 0.7,
+        "kontrolsuz_onay": 0,
+        "n_case": 6,
+        "n_story": 1,
+        "tablolu_story": 1,
+        "toplam_story": 1,
+        "kapsam_orani": round(6 / 9, 4),
+        "golden_kaynakli": 6,
+        "tekrar": 1,
     }
     m = _ok(api.get(f"/requirements/{rid}/case-metrics"))["beklenti_dogrulugu"]
     assert {k: v for k, v in m.items() if k != "kaynak"} == beklenen_metrik
@@ -253,6 +228,7 @@ def test_tpd1_kalite_dogrulama_uctan_uca(
     assert kule["beklenti_dogrulugu"] == beklenen_metrik
     assert kule["kaynaklar"]["beklenti_dogrulugu"] == m["kaynak"]
     assert kule["hata_yakalama"] is None
+    assert kule["onayli_uyumsuz"] == []  # C5 uyumsuz ama geçerli istisnayla onaylı
 
     # 9) Onaylı ilişkiden ek case: 7'nin katı olan C2 ve C10 türer; C3, C4 ön koşulu sağlamaz.
     t = _ok(api.post(f"/requirements/{rid}/metamorphic-cases", json={"iliski_id": iliski["id"]}))
@@ -274,15 +250,19 @@ def test_tpd1_kalite_dogrulama_uctan_uca(
         assert turev.icerik["steps"][2]["data"] == "P-001 × 14"
         assert "adet 14, bedava adet 2" in turev.icerik["steps"][3]["expected"]
         assert "indirim 50,00 TL" in turev.icerik["steps"][3]["expected"]
-        # Bilinen sınır: tabloda kolonu olmayan ara toplam/toplam kaynaktaki değerde kalır.
-        assert "ara toplam 175,00 TL" in turev.icerik["steps"][3]["expected"]
+        # V9: ilişki ara toplamı da dönüştürür, toplam ilişkiyle türetilir (eski değer kalmaz).
+        s4 = turev.icerik["steps"][3]["expected"]
+        assert "ara toplam 350,00 TL" in s4 and "toplam 300,00 TL" in s4
+        assert "175,00" not in s4 and "150,00" not in s4
         turev_id = turev.id
     run_jobs(engine, limit=50)
     with session_scope() as s:
         k = s.scalars(
             select(CaseOracleKontrol).where(CaseOracleKontrol.test_case_id == turev_id)
         ).one()
-        assert k.sonuc == "kontrol_edilemedi" and k.ai_icerik is False  # golden'ı yok: nötr
+        # Olgular dönüşümden bilinir: model çağrılmaz, gerçek sonuç (kontrol_edilemedi değil).
+        assert k.sonuc == "uyumlu" and k.ai_icerik is False, (k.sonuc, k.ayrintilar)
+        assert k.ayrintilar["kaynak"] == "metamorfik" and k.ai_call_id is None
     m2 = _ok(api.get(f"/requirements/{rid}/case-metrics"))["beklenti_dogrulugu"]
     assert {k: v for k, v in m2.items() if k != "kaynak"} == beklenen_metrik  # türetilen sayılmaz
 

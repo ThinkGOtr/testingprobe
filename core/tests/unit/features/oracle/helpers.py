@@ -165,13 +165,20 @@ def olgu_modeli(request: Any) -> Any:
                 "quote": adet.group(0),
             }
         )
+    # Beklenen alanlardaki her geçiş ayrı olgu (tamlık denetimi; prompt v2).
+    alanlar = [("expected_result", case["expected_result"])] + [
+        (f"steps[{i}].expected", adim.get("expected") or "") for i, adim in enumerate(case["steps"])
+    ]
     if toplam:
-        grup["expected"].append(
-            {
-                "column": "toplam",
-                "value": toplam.group(1).replace(",", "."),
-                "field": "expected_result",
-                "quote": f"{toplam.group(1)} TL",
-            }
-        )
-    return text_response({"groups": [grup]})
+        for alan, metin in alanlar:
+            m = re.search(r"(\d+,\d\d) TL", metin)
+            if m:
+                grup["expected"].append(
+                    {
+                        "column": "toplam",
+                        "value": m.group(1).replace(",", "."),
+                        "field": alan,
+                        "quote": f"{m.group(1)} TL",
+                    }
+                )
+    return text_response({"groups": [grup], "ignored": []})

@@ -41,6 +41,7 @@ from tp_core.models.kalite_feature import (
     KararTablosu,
     MetamorfikIliski,
     MetamorfikTuretme,
+    OracleIstisna,
 )
 from tp_core.models.requirements import (
     ConsistencyFinding,
@@ -110,6 +111,7 @@ __all__ = [
     "KimlikBagi",
     "MetamorfikIliski",
     "MetamorfikTuretme",
+    "OracleIstisna",
     "Oturum",
     "PullRequest",
     "Requirement",

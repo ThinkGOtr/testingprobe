@@ -1,4 +1,5 @@
-"""Kontrol Kulesi'nin 012 anahtarları (§4.7): `beklenti_dogrulugu` ve `hata_yakalama`.
+"""Kontrol Kulesi'nin 012 anahtarları (§4.7, §13.2): `beklenti_dogrulugu`, `onayli_uyumsuz` ve
+`hata_yakalama`.
 
 Kule kuralı: KPI değeri kaynak metni taşımaz, kaynak `kaynaklar[<kpi>]`'dadır. Ölçülmeyen değer
 uydurulmaz (`oran: null`, koşu yoksa `hata_yakalama: null`). Gerçek sayıların uçtan uca akışı
@@ -16,35 +17,39 @@ from sqlalchemy.orm import Session
 
 from tests.unit.features.ci.helpers import login
 from tp_core.features.control_tower import service as ct
+from tp_core.features.hata_kosusu import katalog
 from tp_core.features.oracle import metrik
 from tp_core.models import HataKosusu, HataKosusuAdim
 
 pytestmark = pytest.mark.usefixtures("ci_env")
 
-BEKLENTI_ALANLARI = {
-    "oran",
-    "uyumlu",
-    "uyumsuz",
-    "kapsam_disi",
-    "kontrol_edilemedi",
-    "istisna",
-    "kapsam_orani",
+BOS_BEKLENTI = {
+    "oran": None,
+    "uyumlu": 0,
+    "uyumsuz": 0,
+    "kismen": 0,
+    "kontrol_edilemedi": 0,
+    "kapsam_disi": 0,
+    "istisna": 0,
+    "kontrolsuz_onay": 0,
+    "n_case": 0,
+    "n_story": 0,
+    "tablolu_story": 0,
+    "toplam_story": 0,
+    "kapsam_orani": None,
+    "golden_kaynakli": 0,
+    "tekrar": 0,
 }
+BEKLENTI_ALANLARI = set(BOS_BEKLENTI)
 
 
 def test_bos_veritabaninda_olculmedi(engine: Engine) -> None:
     with Session(engine) as s:
         k = ct.control_tower(s)
-    assert k["beklenti_dogrulugu"] == {
-        "oran": None,
-        "uyumlu": 0,
-        "uyumsuz": 0,
-        "kapsam_disi": 0,
-        "kontrol_edilemedi": 0,
-        "istisna": 0,
-        "kapsam_orani": None,
-    }
+    assert k["beklenti_dogrulugu"] == BOS_BEKLENTI
+    assert k["onayli_uyumsuz"] == []
     assert k["hata_yakalama"] is None
+    assert k["kaynaklar"]["onayli_uyumsuz"] == ct.ONAYLI_UYUMSUZ_KAYNAGI
     assert k["kaynaklar"]["beklenti_dogrulugu"] == metrik.KAYNAK
     assert k["kaynaklar"]["hata_yakalama"] == ct.HATA_YAKALAMA_KOSU_YOK
 
@@ -54,16 +59,7 @@ def test_beklenti_kaynagi_degerden_kaynaklara_tasinir(
 ) -> None:
     def sahte(session: Session, requirement_id=None) -> dict:
         assert requirement_id is None  # Kule tüm story'leri sayar
-        return {
-            "oran": 0.75,
-            "uyumlu": 3,
-            "uyumsuz": 1,
-            "kapsam_disi": 2,
-            "kontrol_edilemedi": 1,
-            "istisna": 1,
-            "kapsam_orani": 0.7143,
-            "kaynak": "ölçüm kaynağı",
-        }
+        return {**BOS_BEKLENTI, "oran": 0.75, "uyumlu": 3, "kaynak": "ölçüm kaynağı"}
 
     monkeypatch.setattr(metrik, "beklenti_dogrulugu", sahte)
     with Session(engine) as s:
@@ -77,43 +73,70 @@ def _kosu(s: Session, durum: str, bitis: datetime | None, adimlar: list[tuple]) 
     kosu = HataKosusu(durum=durum, platformlar=["web"], hatalar=[], bitis=bitis)
     s.add(kosu)
     s.flush()
-    for sira, (asama, sonuc, kod) in enumerate(adimlar, start=1):
+    for sira, (asama, sonuc, kod, kiran) in enumerate(adimlar, start=1):
         s.add(
             HataKosusuAdim(
-                kosu_id=kosu.id, platform="web", hata_kodu=kod, asama=asama, sonuc=sonuc, sira=sira
+                kosu_id=kosu.id,
+                platform="web",
+                hata_kodu=kod,
+                asama=asama,
+                sonuc=sonuc,
+                sira=sira,
+                kiran_testler=kiran,
             )
         )
     s.flush()
     return kosu
 
 
-def test_hata_yakalama_son_tamamlanan_kosudan(engine: Engine) -> None:
+def test_hata_yakalama_son_tam_katalog_kosusundan(engine: Engine) -> None:
+    """Tam katalog koşusu (R4 §13.2 şekli): ilk hata AI testiyle, ikincisi yalnız el yazısıyla
+    yakalanır, biri geçersiz, kalanlar kaçar. Kısmi ve süren koşu ölçünün yerini almaz."""
+    kodlar = katalog.kodlar()
+    assert "kampanya_tek_bedava" in kodlar and "kampanya_esik_7" not in kodlar
+    ai = [{"test": "tests/generated/c2.spec.ts", "kaynak": "ai"}]
+    el = [{"test": "tests/cart.spec.ts", "kaynak": "el"}]
+    hata_adimlari = []
+    for i, kod in enumerate(kodlar):
+        if i == 0:
+            hata_adimlari.append(("hata", "yakalandi", kod, ai))
+        elif i == 1:
+            hata_adimlari.append(("hata", "yakalandi", kod, el))
+        elif i == 2:
+            hata_adimlari.append(("hata", "gecersiz", kod, []))
+        else:
+            hata_adimlari.append(("hata", "kacti", kod, []))
     with Session(engine) as s:
         tamam = _kosu(
             s,
             "done",
             datetime(2026, 11, 12, 9, 30, tzinfo=UTC),
-            [
-                ("temel", "yesil", None),
-                ("hata", "yakalandi", "kampanya_esik_7"),
-                ("hata", "kacti", "min_siparis_500"),
-                ("hata", "gecersiz", "fiyat_p004_31"),
-                ("kapanis", "yesil", None),
-            ],
+            [("temel", "yesil", None, []), *hata_adimlari, ("kapanis", "yesil", None, [])],
         )
-        _kosu(s, "running", None, [("temel", "bekliyor", None)])  # süren koşu yerini almaz
+        # Daha yeni ama kısmi koşu (tek hata) ve süren koşu ölçüye girmez.
+        _kosu(
+            s,
+            "done",
+            datetime(2026, 11, 12, 10, 0, tzinfo=UTC),
+            [("temel", "yesil", None, []), ("hata", "yakalandi", kodlar[0], ai)],
+        )
+        _kosu(s, "running", None, [("temel", "bekliyor", None, [])])
         s.commit()
         k = ct.control_tower(s)
     hy = k["hata_yakalama"]
     assert "kaynak" not in hy
     assert hy["son_kosu"]["id"] == str(tamam.id) and hy["son_kosu"]["durum"] == "done"
-    assert (hy["oran"], hy["yakalanan"], hy["kacan"], hy["gecersiz"]) == (0.5, 1, 1, 1)
-    assert hy["platformlar"] == [
-        {"platform": "web", "oran": 0.5, "yakalanan": 1, "kacan": 1, "gecersiz": 1}
-    ]
-    assert [x["hata_kodu"] for x in hy["kacanlar"]] == ["min_siparis_500"]
-    kaynak = k["kaynaklar"]["hata_yakalama"]
-    assert "yakalanan 1, kaçan 1, geçersiz 1" in kaynak and "%50" in kaynak
+    n = len(kodlar)
+    gecerli = n - 1
+    assert (hy["yakalanan"], hy["kacan"], hy["gecersiz"]) == (1, gecerli - 1, 1)
+    assert hy["oran"] == round(1 / gecerli, 4)
+    assert (hy["el_yazisi"]["yakalanan"], hy["el_yazisi"]["kacan"]) == (1, gecerli - 1)
+    assert hy["kapsam"]["tam_katalog"] is True and hy["kapsam"]["katalog"] == n
+    assert hy["kapsam"]["kosulan_hata"] == n and hy["kapsam"]["gecerli_adim"] == gecerli
+    assert hy["platformlar"][0]["platform"] == "web"
+    assert kodlar[1] in [x["hata_kodu"] for x in hy["kacanlar"]]  # AI testleri kaçırdı
+    assert kodlar[0] not in [x["hata_kodu"] for x in hy["kacanlar"]]
+    assert "yakalanan 1" in k["kaynaklar"]["hata_yakalama"]
 
 
 def test_api_iki_anahtari_ve_kaynaklari_tasir(api: TestClient, make_user, engine: Engine) -> None:
@@ -121,4 +144,5 @@ def test_api_iki_anahtari_ve_kaynaklari_tasir(api: TestClient, make_user, engine
     k = api.get("/control-tower").json()
     assert set(k["beklenti_dogrulugu"]) == BEKLENTI_ALANLARI
     assert k["hata_yakalama"] is None
-    assert {"beklenti_dogrulugu", "hata_yakalama"} <= set(k["kaynaklar"])
+    assert k["onayli_uyumsuz"] == []
+    assert {"beklenti_dogrulugu", "onayli_uyumsuz", "hata_yakalama"} <= set(k["kaynaklar"])

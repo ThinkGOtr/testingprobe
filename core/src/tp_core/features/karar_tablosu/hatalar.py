@@ -31,6 +31,21 @@ class OracleBekleniyor(WorkflowError):
     kod = "oracle_bekleniyor"
 
 
+class OracleKontrolsuz(WorkflowError):
+    """Yüksek riskli, tablo kapsamındaki case'in beklenen değerleri kontrol edilemedi; gerekçe
+    (tür `kontrolsuz`) olmadan onaylanamaz (review 1 K10)."""
+
+    status_code = 422
+    kod = "oracle_kontrolsuz"
+
+
+class OracleKontrolSiniri(WorkflowError):
+    """Aynı case için kısa sürede çok fazla karar tablosu kontrolü istendi (review 1 güv. 10)."""
+
+    status_code = 429
+    kod = "oracle_kontrol_siniri"
+
+
 class KararTablosuGecersiz(WorkflowError):
     """Karar tablosu içeriği şemaya ya da ifade diline uymuyor; `hatalar` ayrıntıları taşır."""
 
@@ -65,5 +80,7 @@ __all__ = [
     "IliskiGecersiz",
     "KararTablosuGecersiz",
     "OracleBekleniyor",
+    "OracleKontrolSiniri",
+    "OracleKontrolsuz",
     "OracleUyumsuz",
 ]

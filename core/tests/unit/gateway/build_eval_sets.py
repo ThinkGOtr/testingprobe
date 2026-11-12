@@ -576,7 +576,8 @@ def decision_table_draft_cases() -> list[dict[str, Any]]:
     """012 karar tablosu taslağı: PO onaylı story bloğu + PO cevapları (üretimin
     `taslak_mesajlari` kurucusu; kod, veri ve case yok). TPD-1 demo ana yolunun (f2-kod-hatasi)
     metni; hesaplama kuralı olmayan TPD-3/TPD-4'te tablo beklenmez. `evaluate`: tablonun bu
-    girdilerle vermesi gereken çıktılar (story metninden: 7 adette 1 bedava, 6 adette yok)."""
+    girdilerle vermesi gereken çıktılar (story metninden: 7 adette 1 bedava, 6 adette yok; V9:
+    indirim bedava adetlerin birim fiyatı, toplam = ara toplam - indirim)."""
     from types import SimpleNamespace
 
     from tp_core.features.karar_tablosu.service import taslak_mesajlari
@@ -591,9 +592,21 @@ def decision_table_draft_cases() -> list[dict[str, Any]]:
                 "ac_refs_include": ["AC2", "AC3", "AC6"],
                 "min_tables": 2,
                 "evaluate": [
-                    {"ac": "AC2", "girdiler": {"adet": 7}, "ciktilar": {"bedava_adet": "1"}},
-                    {"ac": "AC2", "girdiler": {"adet": 6}, "ciktilar": {"bedava_adet": "0"}},
-                    {"ac": "AC2", "girdiler": {"adet": 14}, "ciktilar": {"bedava_adet": "2"}},
+                    {
+                        "ac": "AC2",
+                        "girdiler": {"adet": 7, "ara_toplam": "175.00"},
+                        "ciktilar": {"bedava_adet": "1", "indirim": "25.00", "toplam": "150.00"},
+                    },
+                    {
+                        "ac": "AC2",
+                        "girdiler": {"adet": 6, "ara_toplam": "150.00"},
+                        "ciktilar": {"bedava_adet": "0", "indirim": "0", "toplam": "150.00"},
+                    },
+                    {
+                        "ac": "AC2",
+                        "girdiler": {"adet": 14, "ara_toplam": "350.00"},
+                        "ciktilar": {"bedava_adet": "2", "indirim": "50.00", "toplam": "300.00"},
+                    },
                 ],
             },
         ),
@@ -633,16 +646,22 @@ def case_facts_cases() -> list[dict[str, Any]]:
 
     tables = tpd1.kolon_girdisi()
     plan = [
-        ("tpd-1-c2", 2, None, "7 adette 1 bedava; birim fiyat yazmıyor (T1)"),
+        ("tpd-1-c2", 2, None, "7 adette 1 bedava; ara toplam, indirim, toplam (T1)"),
         ("tpd-1-c3-f2", 3, tpd1.SENARYO, "6 adette bedava yok — demo ana yolu (T1)"),
         ("tpd-1-c5", 5, None, "minimum altı, kampanyasız (T2)"),
+        # Tuzaklı vakalar: case yanlış; model düzeltmeden, yazıldığı gibi çıkarmalı (olumsuzluk
+        # alıntıda kalır).
+        ("tpd-1-c5-rehber", 5, tpd1.REHBER, "analistin yanlış düzeltmesi: uyarı görünmez (T2)"),
+        ("tpd-1-c6-ai-hatasi", 6, tpd1.AI_HATASI, "AI sınır hatası: 750,00 TL'de uyarı (T2)"),
     ]
     out = []
     for case_id, n, senaryo, title in plan:
-        case = tpd1.tpd1_cases(senaryo)[n - 1]
+        varyant = (senaryo, n) in tpd1.VARYANT_CASELERI
+        case = tpd1.VARYANT_CASELERI[(senaryo, n)]() if varyant else tpd1.tpd1_cases(senaryo)[n - 1]
         refs = {"AC2": "T1", "AC3": "T2", "AC6": "T2"}
         covering = {refs[r] for r in case["acceptance_criteria_refs"] if r in refs}
-        groups = tpd1.olgular(n, senaryo) or []
+        cikti = tpd1.VARYANT_OLGULARI[(senaryo, n)] if varyant else tpd1.olgular(n, senaryo)
+        groups = (cikti or {}).get("groups") or []
         facts = list(
             {
                 (g["table_ref"], kind, f["column"], json.dumps(f["value"])): {

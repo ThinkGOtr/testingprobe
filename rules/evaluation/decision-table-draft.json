@@ -1,7 +1,7 @@
 {
   "bundle": "decision-table-draft",
   "purpose": "decision_table_draft",
-  "version": 1,
+  "version": 2,
   "note": "Üretildi: core/tests/unit/gateway/build_eval_sets.py (elle düzenlemeyin). Canlı koşu: make eval-live A='--bundle decision-table-draft'",
   "cases": [
     {
@@ -28,28 +28,37 @@
           {
             "ac": "AC2",
             "girdiler": {
-              "adet": 7
+              "adet": 7,
+              "ara_toplam": "175.00"
             },
             "ciktilar": {
-              "bedava_adet": "1"
+              "bedava_adet": "1",
+              "indirim": "25.00",
+              "toplam": "150.00"
             }
           },
           {
             "ac": "AC2",
             "girdiler": {
-              "adet": 6
+              "adet": 6,
+              "ara_toplam": "150.00"
             },
             "ciktilar": {
-              "bedava_adet": "0"
+              "bedava_adet": "0",
+              "indirim": "0",
+              "toplam": "150.00"
             }
           },
           {
             "ac": "AC2",
             "girdiler": {
-              "adet": 14
+              "adet": 14,
+              "ara_toplam": "350.00"
             },
             "ciktilar": {
-              "bedava_adet": "2"
+              "bedava_adet": "2",
+              "indirim": "50.00",
+              "toplam": "300.00"
             }
           }
         ]

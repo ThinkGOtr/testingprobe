@@ -1,8 +1,9 @@
 """Değer çıkarma model girdisi (amaç `case_facts`, paket `case-facts`; 012 ANALIZ §4.3 adım 2).
 
-Bağımsızlık kuralı 2 (§4.1): model case içeriğini ve kapsayan tabloların YALNIZ kolon
-tanımlarını görür — tablo adı, kimliği, kolonların `ad`, `tur`, `birim`, `aciklama` alanları.
-Satırlar, koşullar, çıktı ifadeleri, toleranslar ve tablonun açıklaması modele gitmez.
+Bağımsızlık kuralı 2 (§4.1, review turu 1 O1): model case içeriğini ve kapsayan tabloların YALNIZ
+kolon tanımlarını görür — tablonun kısa ref'i (`T1`) ve kolonların `ad`, `tur`, `birim` alanları.
+Tablo adı, kimliği ve açıklaması, kolon açıklamaları (serbest metin; kuralı sızdırabilir: "7
+adette 1 bedava"), satırlar, koşullar, çıktı ifadeleri ve toleranslar modele gitmez.
 
 İki güvenilmeyen blok gider: `case:<STORY>-C<sira>` (case JSON'u; golden `input_match.case_text`
 bu bloğun kanonik metnidir) ve `karar-tablosu:kolonlar`. Replay anahtarı codegen'deki gibi
@@ -20,7 +21,7 @@ from tp_core.ports import ModelMessage
 
 PURPOSE = "case_facts"
 BUNDLE = "case-facts"
-KOLON_ALANLARI = ("ad", "tur", "birim", "aciklama")
+KOLON_ALANLARI = ("ad", "tur", "birim")
 KOLON_KAYNAGI = "karar-tablosu:kolonlar"
 
 
@@ -38,16 +39,14 @@ def replay_key_for(story_key: str | None, sira_no: int) -> dict[str, str]:
 
 
 def kolon_tanimlari(tablolar: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """Modele giden tablo görünümü: `{ref, id, ad, girdiler, ciktilar}` (kolonların yalnız
-    `ad`, `tur`, `birim`, `aciklama` alanları). `tablolar` öğeleri `{ref, id, icerik}`'tir."""
+    """Modele giden tablo görünümü: `{ref, girdiler, ciktilar}` (kolonların yalnız `ad`, `tur`,
+    `birim` alanları). `tablolar` öğeleri `{ref, id, icerik}`'tir (`id` modele gitmez)."""
     out = []
     for t in tablolar:
         icerik = t.get("icerik") or {}
         out.append(
             {
                 "ref": str(t["ref"]),
-                "id": str(t["id"]),
-                "ad": str(icerik.get("ad") or ""),
                 "girdiler": [
                     {k: kolon[k] for k in KOLON_ALANLARI if k in kolon}
                     for kolon in icerik.get("girdiler") or []
