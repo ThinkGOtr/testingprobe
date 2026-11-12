@@ -22,6 +22,7 @@ from jsonschema import Draft202012Validator
 
 from drift_sources import (
     DEMO_APP,
+    RULES,
     arg_matches,
     cart,
     demo_module,
@@ -55,7 +56,10 @@ def _ids(items: list[tuple[str, Path, Any]]) -> list[str]:
 
 def test_every_model_purpose_has_a_golden() -> None:
     purposes = model_purposes()
-    have = {p for p, _, _ in ALL_GOLDENS}
+    # Yalnız senaryo golden'ı olan amaç da sayılır (case_deepening: `negatif/`, `teknik-*/`;
+    # tür/teknik golden adındadır, ana golden'ı tasarım gereği yoktur — core testiyle aynı kural).
+    senaryo = {p.parent.parent.parent.name for p in (RULES / "replay").glob("*/golden/*/*.json")}
+    have = {p for p, _, _ in ALL_GOLDENS} | senaryo
     assert purposes <= have, f"golden'ı olmayan amaç(lar): {sorted(purposes - have)}"
 
 
@@ -72,9 +76,11 @@ def test_golden_matches_schema_and_name(purpose: str, path: Path, golden: dict) 
     for step in golden.get("steps", []):
         # `hedef` (isteğe bağlı): ref alan adımın yapılandırılmış hedefi; REPLAY ref'i canlı
         # snapshot'tan bununla çözer (tp_core.gateway.snapshot_refs.Hedef).
-        assert {"tool", "args", "result_summary", "allowed"} <= set(step) <= {
-            "tool", "args", "result_summary", "allowed", "hedef"
-        }
+        assert (
+            {"tool", "args", "result_summary", "allowed"}
+            <= set(step)
+            <= {"tool", "args", "result_summary", "allowed", "hedef"}
+        )
         if "hedef" in step:
             h = step["hedef"]
             assert isinstance(h, dict) and isinstance(h.get("rol"), str) and h["rol"], step
