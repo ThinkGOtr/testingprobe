@@ -36,6 +36,14 @@ literal'i (`locators.patch_kimlik`, `java-araclar locators patch` kurallarıyla)
 7. `/check` tam paket + `platform` (cihazda Appium koşusu). Script `platform`'u onarılan testin
 platformudur.
 
+Web + Java (Playwright for Java; 011 üretim dili §2.8) hataları da aynı kapılardan geçer: hat
+koşunun DİLİNE göre seçilir (`onarim_dili`), araç/ortam platforma göre. Aday web yöntemiyle
+(triage önerisinin hata anı DOM'u `sayfa.html` / trace DOM'u; mümkünse koşu dizininden yeniden
+okunup aday yeniden hesaplanır), yama Java yöntemiyle (`<e2e-java kökü>/…/ekranlar/Kimlikler.java`,
+`locators.patch_kimlik`), sembol tablosu / koruma / yerel kontrol `{lang: java, platform: web}`
+(check adı `local-ci-web-java`, K-T1), etkilenen testler `e2e-java/src/test/java` (`uretilen/` +
+`testler/`).
+
 Uygunluk (Constitution XI): yalnızca deterministik kuralın (`karar_kaynagi='rule'`) locator önerisi
 (`oneri_turu='locator_fix'`, `failure_ek.oneri`) onarılır; model etiketi yetmez.
 
@@ -65,6 +73,7 @@ from sqlalchemy.orm import Session
 
 from tp_core.audit import append_audit, audit_on_commit
 from tp_core.events.bus import publish_tx
+from tp_core.features.codegen import platform as platformlar
 from tp_core.features.repair import aria, locators
 from tp_core.features.repair.toolchain import RepairToolchain, ToolchainHatasi
 from tp_core.integrations.forge import (
@@ -185,17 +194,39 @@ def e2e_app_root() -> str:
     """Forge deposunda Java test projesinin kökü (`e2e-app` ya da `demo-app/e2e-app`)."""
     from tp_core.features.codegen import service as cg
 
-    kok_f = getattr(cg, "e2e_app_root", None)
-    if callable(kok_f):
-        return str(kok_f())
-    kok = cg.app_root()
-    return f"{kok}/e2e-app" if kok else "e2e-app"
+    return cg.e2e_app_root()
 
 
-def forge_yolu_java(goreli: str) -> str:
-    """Java sembol tablosu yolu (e2e-app köküne göre `src/test/java/...`) → forge yolu."""
-    kok = e2e_app_root()
+def forge_yolu_java(goreli: str, kok: str | None = None) -> str:
+    """Java sembol tablosu yolu (Java proje köküne göre `src/test/java/...`) → forge yolu.
+    `kok` verilmezse uygulama (Appium) kökü `e2e-app`; web + Java'da `e2e_java_root()`."""
+    kok = kok or e2e_app_root()
     return goreli if goreli.startswith(kok + "/") else f"{kok}/{goreli}"
+
+
+def e2e_java_root() -> str:
+    """Forge deposunda web + Java test projesinin kökü (`e2e-java` ya da `demo-app/e2e-java`)."""
+    from tp_core.features.codegen import service as cg
+
+    return cg.e2e_java_root()
+
+
+def onarim_dili(session: Session, f: Failure, oneri: Mapping[str, Any], platform: str) -> str:
+    """Onarılan testin üretim dili (011): uygulama → `java`; web: triage önerisi → koşu ortamı
+    (`dil` / `lang`) → koşunun script'i (`script.dil`) → `ts`."""
+    if platform != "web":
+        return "java"
+    adaylar: list[Any] = [oneri.get("dil")]
+    run = session.get(Run, f.run_id)
+    if run is not None:
+        adaylar += [(run.ortam or {}).get("dil"), (run.ortam or {}).get("lang")]
+        if run.script_id is not None:
+            sc = session.get(Script, run.script_id)
+            adaylar.append(sc.dil if sc is not None else None)
+    for a in adaylar:
+        if a in platformlar.TAM_HAT_DILLERI:
+            return str(a)
+    return platformlar.TS
 
 
 def onarim_platformu(session: Session, f: Failure, oneri: Mapping[str, Any]) -> str:
@@ -531,7 +562,12 @@ def request_fix(session: Session, failure_id: uuid.UUID, user: Principal) -> dic
         )
     oneri = _oneri(session, f.id)
     platform = onarim_platformu(session, f, oneri)
-    if platform == "web":
+    dil = onarim_dili(session, f, oneri, platform)
+    if platform == "web" and dil == "java":
+        dosya = forge_yolu_java(
+            str(oneri.get("dosya") or locators.KIMLIKLER_VARSAYILAN), e2e_java_root()
+        )
+    elif platform == "web":
         dosya = forge_yolu(str(oneri.get("dosya") or "pages/locators.ts"))
     else:
         dosya = forge_yolu_java(str(oneri.get("dosya") or locators.KIMLIKLER_VARSAYILAN))
@@ -565,6 +601,8 @@ def request_fix(session: Session, failure_id: uuid.UUID, user: Principal) -> dic
             uretim_modu=None,  # model çağrısı yok (deterministik)
             platform=platform,
         )
+        # 011: merge sonrası `push` koşusu onarılan testin dilinde koşar (`ci.enqueue_ci`).
+        sc.dil = dil
         session.add(sc)
         session.flush()
         deneme = 1
@@ -972,6 +1010,7 @@ def _onar(engine: Engine, sid: uuid.UUID, fid: uuid.UUID, kayit: dict[str, Any])
         kirik_run = s.get(Run, f.run_id)
         kayit["kirik_commit"] = kirik_run.commit if kirik_run is not None else None
         platform = onarim_platformu(s, f, oneri)
+        dil = onarim_dili(s, f, oneri, platform)
         kirik_dizin = (kirik_run.artefaktlar or {}).get("dizin") if kirik_run is not None else None
         kayit.update(
             test=test_adi,
@@ -980,8 +1019,14 @@ def _onar(engine: Engine, sid: uuid.UUID, fid: uuid.UUID, kayit: dict[str, Any])
             sinyaller=list(f.eslesen_sinyaller or [])[:20],
             triage_onerisi=bool(oneri),
             platform=platform,
+            dil=dil,
         )
-    if platform != "web":
+    web_java = platform == "web" and dil == "java"
+    if web_java:
+        from tp_core.features.triage.java_web import kirik_kimlik
+
+        eski_tid, kapsam, _belirsiz = kirik_kimlik(metin)
+    elif platform != "web":
         from tp_core.features.triage.java import kimlik_zinciri
 
         eski_tid, kapsam, _belirsiz = kimlik_zinciri(metin)
@@ -1000,7 +1045,7 @@ def _onar(engine: Engine, sid: uuid.UUID, fid: uuid.UUID, kayit: dict[str, Any])
         raise _Engel("forge", f"Forge okunamadı: {exc}", "environment") from exc
     kayit["main_sha"] = main_sha
 
-    if platform != "web":
+    if platform != "web" or web_java:
         with _toolchain() as tc:
             rapor, run_uuid, hata, etkilenen, yeni_j = _onar_java(
                 engine, tc, sid, fid, kayit, forge, main_sha, oneri, eski, kapsam, platform,
@@ -1217,7 +1262,8 @@ def _kontrol_sonrasi(
     yeni: str,
 ) -> dict[str, Any]:
     """Adım 7'nin değerlendirmesi (web ve uygulama ortak) + adım 8 (bot PR)."""
-    java = (kayit.get("platform") or "web") != "web"
+    platform = kayit.get("platform") or "web"
+    java = platform != "web" or kayit.get("dil") == "java"
     kayit["yerel_kontrol"] = _kontrol_ozeti(
         rapor,
         run_uuid,
@@ -1225,6 +1271,7 @@ def _kontrol_sonrasi(
         etkilenen,
         (str(kayit.get("eski_test_id") or ""), str(yeni)),
         java=java,
+        kok=e2e_java_root() if platform == "web" and java else None,
     )
     if rapor is None:
         raise _Engel("yerel_kontrol", f"Yerel kontrol koşturulamadı: {hata}", "environment")
@@ -1340,14 +1387,19 @@ def _onar_java(
     platform: str,
     kirik_dizin: Any,
 ) -> tuple[dict[str, Any] | None, str | None, str | None, list[str], str]:
-    """Uygulama (Java/Appium) onarımının 2–7. adımları (009; yalnızca kimlik değeri değişir).
+    """Java onarımının 2–7. adımları (yalnızca kimlik değeri değişir).
 
-    Aday triage kuralının hata anı sayfa kaynağı önerisidir (Java kimliklerinde rol/ad yok; CI'da
-    cihaz ajan aracı olmadan yoklanamaz). Yerel kontrol (cihazda tam paket) asıl doğrulamadır.
+    Uygulama (009, Appium): aday triage kuralının hata anı sayfa kaynağı önerisidir (Java
+    kimliklerinde rol/ad yok; CI'da cihaz ajan aracı olmadan yoklanamaz). Web + Java (011,
+    `platform == "web"`): aday hata anı DOM'u önerisidir (web yöntemi), yama ve koruma Java
+    yöntemi, kök `e2e-java`. Yerel kontrol (tam paket) asıl doğrulamadır.
     """
+    web = platform == "web"
+    kok = e2e_java_root() if web else e2e_app_root()
+    dil_alani: dict[str, Any] = {"lang": "java"} if web else {}
     # 2) sembol tablosu (Java) → kimlik sabiti
     try:
-        semboller = tc.symbols_platform(main_sha, platform)
+        semboller = tc.symbols_platform(main_sha, platform, **dil_alani)
     except ToolchainHatasi as exc:
         raise _Engel("semboller", exc.detay, "environment") from exc
     anahtar = oneri.get("locator_key")
@@ -1365,16 +1417,29 @@ def _onar_java(
             + ", ".join(f"{a.dosya}:{a.tam_ad}" for a in adaylar),
         )
     loc = adaylar[0]
-    dosya = forge_yolu_java(loc.dosya)
-    if not locators.KIMLIKLER_FILE_RE.match(dosya):
+    dosya = forge_yolu_java(loc.dosya, kok)
+    if not dosya.startswith(kok + "/") or not locators.KIMLIKLER_FILE_RE.match(dosya):
         raise _Engel("semboller", f"kimlik dosyası ekranlar/Kimlikler.java değil: {dosya}")
     if loc.anahtar.endswith("_ONEK"):
         raise _Engel("semboller", f"{loc.tam_ad} önek kimliktir (_ONEK); onarım kapsamı dışı")
     kayit["locator"] = {**loc.as_dict(), "dosya": dosya, "kapsayici_rol": None}
-    _adim(engine, sid, fid, "semboller", "ok", f"{loc.sinif} · {loc.tam_ad} ({platform})")
+    hat = "web, Playwright for Java" if web else platform
+    _adim(engine, sid, fid, "semboller", "ok", f"{loc.sinif} · {loc.tam_ad} ({hat})")
 
-    # 3) aday: triage önerisinin hata anı sayfa kaynağı kanıtı
-    if oneri.get("kaynak") != "sayfa_kaynagi" or oneri.get("platform") != platform:
+    # 3) aday: triage önerisinin hata anı kanıtı (uygulama: sayfa kaynağı; web + Java: DOM)
+    if web and (
+        oneri.get("kaynak") != "hata_ani_dom"
+        or oneri.get("platform") != "web"
+        or oneri.get("dil") != "java"
+    ):
+        raise _Engel(
+            "yoklama",
+            "Web + Java (Playwright for Java) onarımı yalnızca hata anı DOM'undan gelen kural "
+            f"önerisiyle yapılır (öneri kaynağı {oneri.get('kaynak') or '—'}, platform "
+            f"{oneri.get('platform') or '—'}, dil {oneri.get('dil') or '—'}); Java kimliklerinde "
+            "rol + ad olmadığından çalışan uygulamada yoklama yapılamaz — insan incelemesi.",
+        )
+    if not web and (oneri.get("kaynak") != "sayfa_kaynagi" or oneri.get("platform") != platform):
         raise _Engel(
             "yoklama",
             "Uygulama onarımı yalnızca hata anı sayfa kaynağından gelen kural önerisiyle yapılır "
@@ -1389,32 +1454,40 @@ def _onar_java(
     cakisan = locators.cakisma(semboller, yeni, loc)
     if cakisan:
         raise _Engel("yoklama", f"Aday çakışıyor: {cakisan}")
-    sk = oneri.get("sayfa_kaynagi") if isinstance(oneri.get("sayfa_kaynagi"), Mapping) else {}
+    kanit_anahtari = "dom" if web else "sayfa_kaynagi"
+    sk = oneri.get(kanit_anahtari) if isinstance(oneri.get(kanit_anahtari), Mapping) else {}
     kayit["probe"] = {
         **{k: v for k, v in dict(oneri.get("probe") or {}).items() if k != "url_path"},
-        "url_path": None,
-        "sayfa_kaynagi": sk.get("rel"),
+        "url_path": oneri.get("url_path") if web else None,
+        kanit_anahtari: sk.get("rel"),
     }
     kayit.update(eski_test_id=eski, yeni_test_id=yeni, scope_test_id=kapsam)
     _adim(engine, sid, fid, "yoklama", "ok", f"Aday kimlik: {eski} → {yeni}")
 
-    # 4) kanıt: hata anı sayfa kaynağı (mümkünse yeniden okunup aday yeniden hesaplanır)
+    # 4) kanıt: hata anı sayfa kaynağı / DOM (mümkünse yeniden okunup aday yeniden hesaplanır)
+    kanit_adi = "hata anı DOM'u" if web else "hata anı sayfa kaynağı"
     if sk.get("eski_var") is not False or sk.get("aday_sayisi") != 1:
-        raise _Engel("aria", "Triage önerisinde hata anı sayfa kaynağı kanıtı eksik")
-    yeniden, not_ = _sayfa_kaynagi_yeniden(
-        kirik_dizin, sk.get("rel"), eski, kapsam, platform, semboller
-    )
+        raise _Engel("aria", f"Triage önerisinde {kanit_adi} kanıtı eksik")
+    if web:
+        yeniden, not_ = _dom_yeniden(
+            kirik_dizin, sk.get("rel"), sk.get("kaynak"), eski, kapsam, semboller
+        )
+    else:
+        yeniden, not_ = _sayfa_kaynagi_yeniden(
+            kirik_dizin, sk.get("rel"), eski, kapsam, platform, semboller
+        )
     if yeniden is not None and yeniden != yeni:
         raise _Engel(
             "aria",
-            f"Sayfa kaynağından yeniden hesaplanan aday ({yeniden}) öneriden ({yeni}) farklı",
+            ("Hata anı DOM'undan" if web else "Sayfa kaynağından")
+            + f" yeniden hesaplanan aday ({yeniden}) öneriden ({yeni}) farklı",
         )
     kayit["aria"] = {
         "gecerli": True,
-        "kaynak": "hata_ani_sayfa_kaynagi",
+        "kaynak": "hata_ani_dom" if web else "hata_ani_sayfa_kaynagi",
         "ref": sk.get("rel"),
         "neden": (
-            f"Hata anı sayfa kaynağında '{eski}' yok, tek aday '{yeni}'"
+            f"{kanit_adi[0].upper()}{kanit_adi[1:]}nda '{eski}' yok, tek aday '{yeni}'"
             + (f" ('{kapsam}' içinde)" if kapsam else "")
             + f"; kanıt {not_}"
         ),
@@ -1436,7 +1509,8 @@ def _onar_java(
     dal = _bos_dal(forge, fid)
     mesaj = (
         f"fix(kimlikler): {loc.tam_ad} kimlik {eski} → {yeni}\n\n"
-        f"Kimlik onarımı ({platform}; deterministik, AI yok). Hata: {fid}"
+        f"Kimlik onarımı ({'web, Playwright for Java' if web else platform}; deterministik, "
+        f"AI yok). Hata: {fid}"
     )
     try:
         head = forge.commit_files(dal, {dosya: sonra}, mesaj, base=main_sha)
@@ -1460,7 +1534,7 @@ def _onar_java(
 
     # 6) AST koruması (Java repair: yalnızca Kimlikler.java kimlik literal'i)
     try:
-        ast = tc.ast_guard(main_sha, head, platform=platform)
+        ast = tc.ast_guard(main_sha, head, platform=platform, **dil_alani)
     except ToolchainHatasi as exc:
         raise _Engel("ast_guard", f"AST koruması çalışamadı: {exc.detay}", "environment") from exc
     kayit["ast_guard"] = {
@@ -1476,21 +1550,68 @@ def _onar_java(
         )
     _adim(engine, sid, fid, "ast_guard", "ok", "Java koruması (repair): yalnızca kimlik değeri")
 
-    # 7) yerel kontrol: tam paket, cihazda (platform)
-    etkilenen = _etkilenen_java(forge, main_sha, loc)
+    # 7) yerel kontrol: tam paket, cihazda (platform) / tarayıcıda (web + Java)
+    etkilenen = _etkilenen_java(forge, main_sha, loc, kok)
     kayit["etkilenen_testler"] = etkilenen
-    rapor, run_uuid, hata = _yerel_kontrol(tc, sid, head, main_sha, platform)
+    rapor, run_uuid, hata = _yerel_kontrol(
+        tc, sid, head, main_sha, platform, dil="java" if web else None
+    )
     return rapor, run_uuid, hata, etkilenen, yeni
 
 
-def _etkilenen_java(forge: ForgePort, sha: str, loc: locators.LocatorRef) -> list[str]:
-    """Kimlik sabitini kullanan ekranın erişimcisini çağıran Java testleri (forge yolları)."""
-    kok = e2e_app_root()
+def _dom_yeniden(
+    kirik_dizin: Any, rel: Any, kaynak: Any, eski: str, kapsam: str | None, semboller: Any
+) -> tuple[str | None, str | None]:
+    """Web + Java: kırık koşunun dizinindeki hata anı DOM'undan (`sayfa.html`; öneri trace'ten
+    geldiyse trace DOM snapshot'ı) aday yeniden hesaplanır. Dönüş: (aday | None, Türkçe not);
+    dosya okunamıyorsa aday None ve çağıran triage kaydına (append-only) dayanır."""
+    from tp_core.features.triage import evidence as ev
+    from tp_core.features.triage import java as jv
+    from tp_core.features.triage import java_web as jw
+
+    kosu = ev.kosu_dizini(_artifacts_root(), kirik_dizin)
+    if kosu is None or not isinstance(rel, str) or not rel:
+        return None, "koşu dizini/kanıt yolu yok"
+    if kaynak == "trace.zip":
+        trace = ev.trace_oku(kosu, rel)
+        if not trace.dom_kullanilabilir:
+            return None, f"trace okunamadı: {trace.hata or 'DOM yok'}"
+        dugumler = [
+            jv.KimlikDugumu(str(e["test_id"]), str(e.get("etiket") or ""), "")
+            for e in trace.elemanlar
+        ]
+    else:
+        try:
+            veri = ev.guvenli_oku(kosu / rel, kosu, jw.MAX_DOM)
+        except ev.KanitHatasi as exc:
+            return None, f"okunamadı: {exc}"
+        if veri is None:
+            return None, "kanıt dosyası yok (koşu dizini temizlenmiş olabilir)"
+        try:
+            dugumler = jw.dom_dugumleri(veri.decode("utf-8", "replace"))
+        except jw.DomHatasi as exc:
+            raise _Engel("aria", f"Hata anı DOM'u ayrıştırılamadı: {exc}") from exc
+    sabit, onek = jv.bilinen_kimlikler(semboller)
+    aday = jv.aday_kimlik(dugumler, eski, kapsam, sabit, onek)
+    if aday.yeni is None:
+        raise _Engel("aria", f"Hata anı DOM'u adayı doğrulamıyor: {aday.neden}")
+    return aday.yeni, "yeniden hesaplandı"
+
+
+def _etkilenen_java(
+    forge: ForgePort, sha: str, loc: locators.LocatorRef, kok: str | None = None
+) -> list[str]:
+    """Kimlik sabitini kullanan ekranın erişimcisini çağıran Java testleri (forge yolları).
+    `kok`: Java proje kökü (uygulama `e2e-app`, web + Java `e2e-java`); `src/test/java` altındaki
+    `uretilen/` ve `testler/` testleri taranır, tarayıcısız birim testleri (`birim/`) hariç.
+    Kalıp `platform.JAVA_KAPSAM_SONEKLERI`'dir: sonuç `/check` `test_files`'a gider ve toolchain
+    yalnız `<Ad>Test.java | <Ad>Testi.java` kabul eder (MİM-B4; gerekçeli alt küme)."""
+    kok = kok or e2e_app_root()
     try:
         yollar = [
             y
             for y in forge.list_files(f"{kok}/src/test/java/", sha)
-            if y.endswith("Test.java") or y.endswith("Testi.java")
+            if platformlar.java_kapsam_dosyasi_mi(y)
         ]
     except ForgeError:
         return []
@@ -1531,10 +1652,18 @@ def _etkilenen(forge: ForgePort, sha: str, loc: locators.LocatorRef) -> list[str
 
 
 def _yerel_kontrol(
-    tc: RepairToolchain, sid: uuid.UUID, head: str, base: str, platform: str | None = None
+    tc: RepairToolchain,
+    sid: uuid.UUID,
+    head: str,
+    base: str,
+    platform: str | None = None,
+    *,
+    dil: str | None = None,
 ) -> tuple[dict[str, Any] | None, str | None, str | None]:
     """`/check` (tam paket) + `run` kaydı (tetik `local_check`). `platform` (android | ios |
-    windows) → Java yolu (cihazda Appium koşusu); web/None → mevcut Playwright yolu."""
+    windows) → Java yolu (cihazda Appium koşusu); web + `dil="java"` → `{lang: java, platform:
+    web}` (Playwright for Java, kayıt `local-ci-web-java`); web/None → mevcut Playwright yolu."""
+    web_java = (platform or "web") == "web" and dil == "java"
     toolchain_run_id = f"rp-{sid.hex[:8]}-{uuid.uuid4().hex[:6]}"
     baslama = datetime.now(UTC)
     rapor: dict[str, Any] | None = None
@@ -1543,6 +1672,10 @@ def _yerel_kontrol(
         if platform and platform != "web":
             rapor = tc.check(
                 head, base, toolchain_run_id, retries=KONTROL_RETRIES, platform=platform
+            )
+        elif web_java:
+            rapor = tc.check(
+                head, base, toolchain_run_id, retries=KONTROL_RETRIES, platform="web", lang="java"
             )
         else:
             rapor = tc.check(head, base, toolchain_run_id, retries=KONTROL_RETRIES)
@@ -1568,6 +1701,7 @@ def _yerel_kontrol(
                     "onarim": True,
                     "ast_guard_mode": "repair",
                     **({"platform": platform} if platform and platform != "web" else {}),
+                    **({"platform": "web", "dil": "java"} if web_java else {}),
                 },
                 artefaktlar={},
             )
@@ -1608,6 +1742,7 @@ def _kontrol_ozeti(
     test_idler: tuple[str, ...] = (),
     *,
     java: bool = False,
+    kok: str | None = None,
 ) -> dict[str, Any]:
     if rapor is None:
         return {"sonuc": "error", "hata": hata, "run_id": run_uuid}
@@ -1618,7 +1753,7 @@ def _kontrol_ozeti(
         # `src/test/java/…/X.java` olabilir: ikisi de paketli sınıf adına indirgenir.
         dosyalar = sorted({locators.java_sinif_adi(str(t.get("file"))) for t in testler
                            if t.get("file")})  # fmt: skip
-        kok = e2e_app_root()
+        kok = kok or e2e_app_root()
         goreli = [locators.java_sinif_adi(e[len(kok) + 1 :] if e.startswith(kok + "/") else e)
                   for e in etkilenen]  # fmt: skip
     else:

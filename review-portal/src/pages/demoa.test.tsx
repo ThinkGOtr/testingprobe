@@ -112,18 +112,18 @@ describe("case review", () => {
     uygulama("/gereksinimler/req-tpd-1/caseler");
     await screen.findByText("Case review");
     // K13: gözlenen (karar bekleyen) kartlar görünür olur, 3 sn dolar.
-    await waitFor(() => expect(g.gozlenenler().length).toBe(4));
+    await waitFor(() => expect(g.gozlenenler().length).toBe(2));
     for (const el of g.gozlenenler()) g.goster(el);
     await act(async () => void (await vi.advanceTimersByTimeAsync(3000)));
-    await waitFor(() => expect(casus).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(casus).toHaveBeenCalledTimes(2));
     const bildirilen = casus.mock.calls.map((c) => c[0]).sort();
-    // Yalnızca taslak (karar bekleyen) case'ler: case-1-5, 1-7, 1-8, 1-9
-    expect(bildirilen).toEqual(["case-1-5", "case-1-7", "case-1-8", "case-1-9"]);
+    // Yalnızca taslak (karar bekleyen) case'ler: case-1-5, 1-7 (C8 ve C9 yayınlandı: 011 dil örnekleri)
+    expect(bildirilen).toEqual(["case-1-5", "case-1-7"]);
     await waitFor(() => expect(mockVerisi().caseler.find((c) => c.id === "case-1-7")!.goruntulenme).toBeTruthy());
     const kart = screen.getAllByRole("article").find((a) => within(a).queryByText(/^#6$/))!;
     await u.click(within(kart).getByRole("button", { name: "Onayla" }));
     await waitFor(() => expect(mockVerisi().caseler.find((c) => c.id === "case-1-7")!.review_sure_ms).not.toBeNull());
-    expect(casus).toHaveBeenCalledTimes(4);
+    expect(casus).toHaveBeenCalledTimes(2);
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
@@ -157,7 +157,7 @@ describe("case review", () => {
     await oturumAc("analist");
     uygulama("/gereksinimler/req-tpd-1/caseler");
     expect(await screen.findByText("AI + review")).toBeInTheDocument();
-    expect(screen.getByText(/6 case · ort\./)).toBeInTheDocument();
+    expect(screen.getByText(/8 case · ort\./)).toBeInTheDocument();
     // Çekirdek ölçümü geldiğinde kabul oranı ilk karara göre etiketlenir.
     expect(await screen.findByText("Kabul oranı (ilk karar: onay + küçük düzeltme / üretilen)")).toBeInTheDocument();
   });

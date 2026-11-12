@@ -25,8 +25,9 @@ Akış (tek seferde bir koşu; bayi kullanıcıları bayi1/bayi2 koşular arası
      dışındakiler silinir. Core, sahibi script kapanınca işareti toolchain-worker
      `POST /runs/release` ile daha erken kaldırabilir (ekran görüntüsü saklamasıyla aynı yaşam).
 
-Java (009, `lang=java`, platform android|ios|windows): aynı kilit ve koşu dizini sözleşmesiyle
-`runner/java_run.py` (Maven + Appium; sonuç runner/surefire.py ile aynı biçimde).
+Java (009 + 011 §2.6, `lang=java`): aynı kilit ve koşu dizini sözleşmesiyle `runner/java_run.py`
+(Maven; platform android|ios|windows → Appium, platform web → Playwright for Java; sonuç
+runner/surefire.py ile aynı biçimde).
 
 Eşzamanlılık: süreç içi `RUN_LOCK` + süreçler arası dosya kilidi (`TP_RUN_LOCK_PATH`, flock;
 toolchain_common/runlock.py). Konteynerde elle başlatılan koşular (`make e2e-smoke`) aynı kilidi
@@ -109,7 +110,8 @@ class RunRequest:
     test_files: list[str] = field(default_factory=list)
     workers: int | None = None
     keep: bool = False
-    # Dil (009 §2.1): "ts" Playwright (varsayılan), "java" Appium/TestNG (runner/java_run.py).
+    # Dil (009 §2.1): "ts" Playwright (varsayılan), "java" TestNG (runner/java_run.py): uygulama
+    # platformunda Appium, `web`de Playwright for Java.
     lang: str = "ts"
     platform: str | None = None
 

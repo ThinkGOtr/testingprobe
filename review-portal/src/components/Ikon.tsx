@@ -46,6 +46,12 @@ const CIZIM = {
       <path d="M14 3v5h5M9 13h6M9 17h4" />
     </>
   ),
+  caseler: (
+    <>
+      <rect x="4.5" y="4" width="15" height="16" rx="2" />
+      <path d="m8 9 1.2 1.2L11.5 8M14 9.5h2.5M8 14.5l1.2 1.2 2.3-2.2M14 15h2.5" />
+    </>
+  ),
   kod: <path d="m9 7-5 5 5 5M15 7l5 5-5 5" />,
   kosu: (
     <>

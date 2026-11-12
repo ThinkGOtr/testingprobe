@@ -19,6 +19,7 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from tp_core.features.codegen import platform as platformlar
 from tp_core.features.codegen.render import ts_literal
 
 MAX_BODY = 60000
@@ -72,8 +73,11 @@ def _link(key: str | None, browse_url: str | None) -> str:
     return hucre(key, 40)
 
 
-def pr_title(case_ref: str, title: str, platform: str = "web") -> str:
+def pr_title(case_ref: str, title: str, platform: str = "web", dil: str | None = None) -> str:
+    """`[TPD-1-C3] …`; uygulamada `· android`; varsayılan dışı dilde `· Java` (011)."""
     etiket = _tek_satir(case_ref, 40) + ("" if platform == "web" else f" · {platform}")
+    if dil and dil != platformlar.varsayilan_dil(platform):
+        etiket += f" · {platformlar.DIL_ETIKETI.get(dil, dil)}"
     metin = f"[{etiket}] {_tek_satir(title, 100)} (AI-generated)"
     return metin[:200]
 
@@ -101,19 +105,27 @@ def pr_body(
     mapping_hash: str,
     ajan_bayileri: Mapping[str, str] | None = None,
     platform: str = "web",
+    dil: str | None = None,
+    tekrar: int = 3,
 ) -> str:
     """`ajan_bayileri`: doğrulama ajanının araç katmanında yerine geçirdiği bayiler
     (`{"bayi1": "bayi3"}`); bu bayiyi argüman alan eşleme satırları açıkça işaretlenir.
-    `platform` (009 §2.1): `web` dışında Java/Appium testi (ekran nesnesi, app-mcp ajanı)."""
+    `platform` (009 §2.1): `web` dışında Java/Appium testi (ekran nesnesi, app-mcp ajanı).
+    `dil` (011): üretilen kodun dili (yoksa platformun varsayılanı); "model X yazmadı" ve yerel
+    kontrol adımları dile, ajan/sürücü metni platforma bakar. `tekrar`: yerel kontrolün
+    repeat-each değeri."""
     adimlar = {str(s.get("id")): s for s in case.get("steps") or [] if isinstance(s, Mapping)}
-    uygulama = platform != "web"
+    uygulama = platformlar.uygulama_mi(platform)
+    dil = platformlar.dil(platform, dil)
+    java = platformlar.java_mi(dil)
+    dil_adi = platformlar.DIL_ETIKETI.get(dil, dil)
     giris = (
-        "> Bu PR AI Testing Probe tarafından açıldı (**AI-generated**). Model Java yazmadı: "
-        f"kod, uygulamada ({hucre(platform, 20)}, app-mcp) doğrulanmış adım → ekran nesnesi "
-        "eşlemesinden şablonla üretildi. Merge yalnızca insan onayıyla ve zorunlu kontroller "
-        "yeşilken yapılır."
+        f"> Bu PR AI Testing Probe tarafından açıldı (**AI-generated**). Model {dil_adi} "
+        f"yazmadı: kod, uygulamada ({hucre(platform, 20)}, app-mcp) doğrulanmış adım → ekran "
+        "nesnesi eşlemesinden şablonla üretildi. Merge yalnızca insan onayıyla ve zorunlu "
+        "kontroller yeşilken yapılır."
         if uygulama
-        else "> Bu PR AI Testing Probe tarafından açıldı (**AI-generated**). Model TypeScript "
+        else f"> Bu PR AI Testing Probe tarafından açıldı (**AI-generated**). Model {dil_adi} "
         "yazmadı: kod, uygulamada doğrulanmış adım → page object eşlemesinden şablonla üretildi. "
         "Merge yalnızca insan onayıyla ve zorunlu kontroller yeşilken yapılır."
     )
@@ -126,6 +138,11 @@ def pr_body(
         "|---|---|",
         f"| Case | `{kod(case_id, 40)}` ({hucre(case_ref, 40)}) |",
         *([f"| Platform | {hucre(platform, 20)} |"] if uygulama else []),
+        *(
+            [f"| Dil | {hucre(dil_adi, 20)} ({hucre(platformlar.cati(platform, dil), 60)}) |"]
+            if dil != platformlar.varsayilan_dil(platform)
+            else []
+        ),
         f"| Onaylı case hash | `{kod(case_hash, 64)}` |",
         f"| Case onaylayan | {hucre(onaylayan or '-', 60)} |",
         f"| Story | {_link(story_key, browse_url)} |",
@@ -169,19 +186,20 @@ def pr_body(
         def isaret(v: Any) -> str:
             return "✓" if v is True else ("✗" if v is False else "—")
 
-        if uygulama:
+        surucu = f"Appium ({hucre(platform, 20)})" if uygulama else "Playwright"
+        if java:
             out.append(
                 f"- pom kilidi {isaret(adim.get('deps'))} · Java AST koruması "
                 f"{isaret(adim.get('guard'))} · test-compile {isaret(adim.get('compile'))} · "
-                f"Appium ({hucre(platform, 20)}) {kontrol.get('gecen', 0)}/"
-                f"{kontrol.get('toplam', 0)} geçti (repeat-each=3, retries=0)"
+                f"{surucu} {kontrol.get('gecen', 0)}/"
+                f"{kontrol.get('toplam', 0)} geçti (repeat-each={int(tekrar)}, retries=0)"
             )
         else:
             out.append(
                 f"- tsc {isaret(adim.get('tsc'))} · eslint {isaret(adim.get('eslint'))} · "
-                f"AST koruması {isaret(adim.get('ast_guard'))} · Playwright "
+                f"AST koruması {isaret(adim.get('ast_guard'))} · {surucu} "
                 f"{kontrol.get('gecen', 0)}/{kontrol.get('toplam', 0)} geçti "
-                "(repeat-each=3, retries=0)"
+                f"(repeat-each={int(tekrar)}, retries=0)"
             )
         out.append(f"- Sonuç: **{hucre(kontrol.get('aciklama'), 200)}**")
         if kontrol.get("run_id"):

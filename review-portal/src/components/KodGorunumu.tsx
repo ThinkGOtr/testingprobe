@@ -1,24 +1,27 @@
 import { useMemo } from "react";
-import { belirtecle, dilBul, satirlaraBol } from "../lib/vurgula";
+import { belirtecle, dilBul, satirlaraBol, type VurguDili } from "../lib/vurgula";
 
 /**
- * Satır numaralı, renklendirilmiş salt okunur kod görünümü. Dil `dil` ya da dosya adından
- * (`dosya` / `kaynakYolu`) çıkarılır; `kaynakYolu` başlık göstermeden yalnızca dili belirler.
+ * Satır numaralı, renklendirilmiş salt okunur kod görünümü. Sözdizimi `dil` verilmişse odur, yoksa
+ * dosya adından (`dosya` / `kaynakYolu`: `.java`, `.cs`, `.py`, `.ts`) çıkarılır; `kaynakYolu` başlık
+ * göstermeden yalnızca dili belirler.
  */
 export function KodGorunumu({
   kod,
   dosya,
   kaynakYolu,
+  dil: verilenDil,
   baslangicSatiri = 1,
   vurguSatiri,
 }: {
   kod: string;
   dosya?: string;
   kaynakYolu?: string;
+  dil?: VurguDili | null;
   baslangicSatiri?: number;
   vurguSatiri?: number;
 }) {
-  const dil = dilBul(kaynakYolu ?? dosya);
+  const dil = verilenDil ?? dilBul(kaynakYolu ?? dosya);
   const satirlar = useMemo(() => satirlaraBol(belirtecle(kod.replace(/\n$/, ""), dil)), [kod, dil]);
   return (
     <figure className="kod">

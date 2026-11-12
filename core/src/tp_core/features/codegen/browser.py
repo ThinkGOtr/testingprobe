@@ -52,6 +52,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from tp_core.features.codegen import platform as platformlar
 from tp_core.gateway import ALLOWED_AGENT_TOOLS, FORBIDDEN_TOOLS, wrap_tool_result
 from tp_core.gateway.snapshot_refs import SNAPSHOT_REF, is_inline_snapshot, snapshot_lines
 from tp_core.ports import ToolSpec
@@ -581,7 +582,6 @@ class AgentBrowser:
 APP_PURPOSE = "verify_and_map_app"
 APP_LAUNCH = "app_launch"
 APP_SCREENSHOT_TOOL = "app_screenshot"
-APP_PLATFORMLARI = ("android", "ios", "windows")
 
 
 class AgentApp(AgentBrowser):
@@ -603,7 +603,7 @@ class AgentApp(AgentBrowser):
     REF_KEY = "ref"
 
     def __init__(self, session: BrowserSession, *, platform: str, **kwargs: Any) -> None:
-        if platform not in APP_PLATFORMLARI:
+        if not platformlar.uygulama_mi(platform):
             raise BrowserError(f"geçersiz uygulama platformu: {platform!r}")
         super().__init__(session, **kwargs)
         self.platform = platform

@@ -58,7 +58,21 @@ RUN cp -r /build/java-araclar/src/test/resources/e2e-app/src ./src \
  && /build/maven/bin/mvn -B -q -Dmaven.repo.local=/build/e2e-m2 surefire:test \
       -Dtest=YokBoyleBirTest -Dsurefire.failIfNoSpecifiedTests=false \
  && rm -rf target src \
- && chmod -R a-w /build/e2e-m2 /build/maven
+ && chmod -R a-w /build/e2e-m2
+# Web + Java (011 §2.6; Playwright for Java + TestNG): ikinci ısıtılmış depo. Güvenilir pom
+# (e2e-java-deps/pom.xml; demo-app/e2e-java/pom.xml ile bayt eşit) + toolchain'in kendi ısınma
+# testi (e2e-java-isinma/: Playwright, TestNG, opentest4j API'leri) derlenir; Surefire TestNG
+# sağlayıcısı da çekilir. Tarayıcı burada AÇILMAZ (bu aşamada yok); çevrimdışı açılış son imajda
+# ağsız denenir (aşağıda, ci aşaması). Playwright Java sürücüsü (driver + driver-bundle) yalnızca
+# jar'dır; koşuda geçici dizine açılır, ağa çıkmaz.
+WORKDIR /build/e2e-java
+COPY e2e-java-deps/pom.xml ./pom.xml
+COPY e2e-java-isinma/src ./src
+RUN /build/maven/bin/mvn -B -q -Dmaven.repo.local=/build/e2e-java-m2 test-compile \
+ && /build/maven/bin/mvn -B -q -Dmaven.repo.local=/build/e2e-java-m2 surefire:test \
+      -Dtest=YokBoyleBirTest -Dsurefire.failIfNoSpecifiedTests=false \
+ && rm -rf target src \
+ && chmod -R a-w /build/e2e-java-m2 /build/maven
 # Çalışma zamanı JDK'sı: derleme için gereksiz jmods/kaynak/man atılır.
 RUN cp -a /opt/java/openjdk /build/jdk \
  && rm -rf /build/jdk/jmods /build/jdk/lib/src.zip /build/jdk/man /build/jdk/demo
@@ -109,13 +123,6 @@ RUN npm ci --ignore-scripts --no-audit --no-fund \
  && chmod -R a-w /opt/e2e
 WORKDIR /opt/toolchain
 
-COPY --from=nodebuild /build/ast-guard/package.json ./ast-guard/package.json
-COPY --from=nodebuild /build/ast-guard/dist ./ast-guard/dist
-COPY --from=nodebuild /build/ast-guard/node_modules ./ast-guard/node_modules
-COPY --from=nodebuild /build/symbols/package.json ./symbols/package.json
-COPY --from=nodebuild /build/symbols/dist ./symbols/dist
-COPY --from=nodebuild /build/symbols/node_modules ./symbols/node_modules
-COPY probe ./probe
 
 # Allure 3 CLI (Node, sabit sürüm): test-runner her koşudan sonra statik tek dosyalık Allure
 # raporu üretir (allure2 eklentisi, ALLURE_NO_ANALYTICS; ağ yok, AI yok). Yapılandırma güvenilir
@@ -127,6 +134,48 @@ RUN npm ci --ignore-scripts --omit=dev --no-audit --no-fund \
  && node node_modules/allure/cli.js --version \
  && chmod -R a-w /opt/allure
 WORKDIR /opt/toolchain
+
+# Katman sırası (OPS-L3): seyrek değişen Java katmanları ve ağsız duman testi, sık değişen kaynak
+# COPY'lerinden (ast-guard/symbols dist, probe, Python paketleri) ÖNCE gelir; Python/TS kaynak
+# değişikliği Java ısınmasını ve duman testini yeniden koşturmaz. Davranış aynıdır.
+
+# Java (009): JDK 17 (başsız kullanım), sabit Maven, java-araclar.jar ve e2e-app'in çevrimdışı
+# deposu. Depo ve pom salt okunur: toolchain-worker `maven.repo.local.tail` olarak okur, koşu başına
+# geçici bir baş deposuna yazar (worker/java.py). Model/MCP/ajan bağımlılığı içermez (anayasa II).
+COPY --from=javabuild /build/jdk /opt/java/openjdk
+COPY --from=javabuild /build/maven /opt/maven
+COPY --from=javabuild /build/java-araclar.jar /opt/toolchain/java-araclar/java-araclar.jar
+COPY --from=javabuild /build/e2e-m2 /opt/e2e-app/m2
+COPY --chmod=444 e2e-app-deps/pom.xml /opt/e2e-app/pom.xml
+COPY --from=javabuild /build/e2e-java-m2 /opt/e2e-java/m2
+COPY --chmod=444 e2e-java-deps/pom.xml /opt/e2e-java/pom.xml
+ENV JAVA_HOME=/opt/java/openjdk \
+    PATH=/opt/java/openjdk/bin:/opt/maven/bin:$PATH
+RUN java -version 2>&1 | head -n 1 \
+ && java -jar /opt/toolchain/java-araclar/java-araclar.jar --help >/dev/null
+
+# Web + Java duman testi (011 §2.6), AĞSIZ: güvenilir pom çevrimdışı (-o, ısıtılmış depo salt
+# okunur kuyruk) derlenir, ısınma testi imajdaki tarayıcıyı (/ms-playwright) indirme yapmadan
+# açar. Sürücü/tarayıcı sürümü uyuşmazsa ya da depo eksikse imaj derlenmez.
+COPY e2e-java-isinma/src /tmp/e2e-java-duman/src
+RUN --network=none cp /opt/e2e-java/pom.xml /tmp/e2e-java-duman/pom.xml \
+ && cd /tmp/e2e-java-duman \
+ && MAVEN_SKIP_RC=1 PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 HOME=/tmp/e2e-java-duman \
+    /opt/maven/bin/mvn -B -q -o -Dmaven.repo.local=/tmp/e2e-java-duman/m2 \
+      -Dmaven.repo.local.tail=/opt/e2e-java/m2 -Dmaven.compiler.proc=none \
+      -Dtest=com/antreklabs/bayi/birim/IsinmaTest.java -Dsurefire.failIfNoSpecifiedTests=true \
+      test-compile surefire:test \
+ && grep -q 'tests="1" errors="0" skipped="0" failures="0"' \
+      target/surefire-reports/TEST-com.antreklabs.bayi.birim.IsinmaTest.xml \
+ && cd / && rm -rf /tmp/e2e-java-duman /tmp/playwright-java-*
+
+COPY --from=nodebuild /build/ast-guard/package.json ./ast-guard/package.json
+COPY --from=nodebuild /build/ast-guard/dist ./ast-guard/dist
+COPY --from=nodebuild /build/ast-guard/node_modules ./ast-guard/node_modules
+COPY --from=nodebuild /build/symbols/package.json ./symbols/package.json
+COPY --from=nodebuild /build/symbols/dist ./symbols/dist
+COPY --from=nodebuild /build/symbols/node_modules ./symbols/node_modules
+COPY probe ./probe
 
 # Python: dependencies first (cache), then the project itself.
 COPY pyproject.toml uv.lock ./
@@ -140,19 +189,6 @@ RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
     uv sync --frozen --no-dev --no-editable --no-cache
 
 COPY bin ./bin
-
-# Java (009): JDK 17 (başsız kullanım), sabit Maven, java-araclar.jar ve e2e-app'in çevrimdışı
-# deposu. Depo ve pom salt okunur: toolchain-worker `maven.repo.local.tail` olarak okur, koşu başına
-# geçici bir baş deposuna yazar (worker/java.py). Model/MCP/ajan bağımlılığı içermez (anayasa II).
-COPY --from=javabuild /build/jdk /opt/java/openjdk
-COPY --from=javabuild /build/maven /opt/maven
-COPY --from=javabuild /build/java-araclar.jar /opt/toolchain/java-araclar/java-araclar.jar
-COPY --from=javabuild /build/e2e-m2 /opt/e2e-app/m2
-COPY --chmod=444 e2e-app-deps/pom.xml /opt/e2e-app/pom.xml
-ENV JAVA_HOME=/opt/java/openjdk \
-    PATH=/opt/java/openjdk/bin:/opt/maven/bin:$PATH
-RUN java -version 2>&1 | head -n 1 \
- && java -jar /opt/toolchain/java-araclar/java-araclar.jar --help >/dev/null
 
 # Bağlama noktaları pwuser'ın: boş bir named volume ilk bağlamada bu sahipliği alır.
 # /checks = merge kapısı volume'ü (tp_checks; yalnızca toolchain-worker rw, test-runner bağlamaz).

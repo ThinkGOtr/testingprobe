@@ -248,6 +248,11 @@ export interface CaseSecimi {
   engel?: string | null;
 }
 
+/** Case kartının kalıcı DOM kimliği (rota çapası `#case-<id>`). */
+export function caseCapasi(caseId: string): string {
+  return `case-${caseId}`;
+}
+
 export function CaseKarti({
   tc,
   guncellendi,
@@ -302,7 +307,8 @@ export function CaseKarti({
   }
 
   return (
-    <article ref={kartRef} className={`case case-${tc.durum}`} aria-labelledby={`${id}-baslik`}>
+    // Kalıcı çapa (`#case-<id>`): Test case'leri satırı doğrudan bu karta götürür (lib/capa.ts kaydırır, odaklar).
+    <article ref={kartRef} id={caseCapasi(tc.id)} className={`case case-${tc.durum}`} aria-labelledby={`${id}-baslik`}>
       <header className="case-baslik">
         <div className="satir-ogeler">
           {secim && tc.durum === "draft" && (

@@ -23,6 +23,17 @@ export const PLATFORM_ACIKLAMASI: Record<Platform, string> = {
   windows: "Masaüstü · Appium + Java",
 };
 
+/**
+ * 011: dil ayrı seçildiğinde platformun yalnız ortam/araç açıklaması (dil adı yok: "Playwright +
+ * TypeScript" Java seçiliyken yanlış olurdu). Dil seçici yokken (011 öncesi core) `PLATFORM_ACIKLAMASI` kalır.
+ */
+export const PLATFORM_ORTAMI: Record<Platform, string> = {
+  web: "Tarayıcı · Playwright",
+  android: "Emülatör · Appium",
+  ios: "Simülatör · Appium",
+  windows: "Masaüstü · Appium",
+};
+
 const PLATFORM_KUMESI = new Set<string>(PLATFORMLAR);
 
 export function platformMi(x: unknown): x is Platform {
@@ -46,21 +57,37 @@ export function dikeyEkranMi(p: Platform | null | undefined): boolean {
 }
 
 /**
- * Check adının dostu etiketi: `local-ci` → "Yerel CI · Web", `local-ci-android` → "Yerel CI · Android".
- * Tanınmayan ad (ör. GitHub `test-local`, `semgrep`) null döner: ham ad gösterilir.
+ * Yerel CI check adları (011 K-T1; core `platform.check_adi(platform, dil)` ile aynı): web + TypeScript
+ * `local-ci`, web + Java `local-ci-web-java` (GitHub karşılığı `web-java`), uygulama
+ * `local-ci-<android|ios|windows>`. `web-java` bir platform DEĞİLDİR: ad tam eşleşmeyle tanınır.
  */
-export function checkEtiketi(ad: string): string | null {
-  if (ad === "local-ci") return `Yerel CI · ${PLATFORM_ETIKETI.web}`;
+const WEB_CHECKLERI: Record<string, string> = {
+  "local-ci": `Yerel CI · ${PLATFORM_ETIKETI.web}`,
+  "local-ci-web-java": `Yerel CI · ${PLATFORM_ETIKETI.web} · Java`,
+};
+
+/** `local-ci-<uygulama platformu>` (web soneki yok: web'in adları yukarıda tam eşleşmeyle). */
+function uygulamaCheckPlatformu(ad: string): Platform | null {
   const m = /^local-ci-([a-z]+)$/.exec(ad);
   const p = m ? platformUyarla(m[1]) : null;
+  return p && p !== "web" ? p : null;
+}
+
+/**
+ * Check adının dostu etiketi: `local-ci` → "Yerel CI · Web", `local-ci-web-java` → "Yerel CI · Web · Java",
+ * `local-ci-android` → "Yerel CI · Android". Tanınmayan ad (ör. GitHub `test-local`, `semgrep`) null
+ * döner: ham ad gösterilir.
+ */
+export function checkEtiketi(ad: string): string | null {
+  if (ad in WEB_CHECKLERI) return WEB_CHECKLERI[ad];
+  const p = uygulamaCheckPlatformu(ad);
   return p ? `Yerel CI · ${PLATFORM_ETIKETI[p]}` : null;
 }
 
-/** Check adından platform (`local-ci` = web, `local-ci-<platform>`); başka check'te null. */
+/** Check adından platform (`local-ci` ve `local-ci-web-java` = web, `local-ci-<platform>`); başka check'te null. */
 export function checkPlatformu(ad: string): Platform | null {
-  if (ad === "local-ci") return "web";
-  const m = /^local-ci-([a-z]+)$/.exec(ad);
-  return m ? platformUyarla(m[1]) : null;
+  if (ad in WEB_CHECKLERI) return "web";
+  return uygulamaCheckPlatformu(ad);
 }
 
 /** Uygulama ajanı araçlarının (app-mcp) insan için Türkçe adları (009 §2.6). */

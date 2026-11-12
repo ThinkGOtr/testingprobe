@@ -9,8 +9,9 @@
 # Sonuçlar (demo-app/e2e-app/target/):
 #   surefire-reports/TEST-*.xml   cihaz koşusu JUnit XML (ci/parse.py JUnit yolu)
 #   allure-results/               Allure sonuçları
+#   extent-report/index.html      Extent (Spark) HTML raporu — tek dosya, çevrimdışı açılır
 #   kanit/<Sınıf>.<metot>/        başarısız testin ekran görüntüsü + sayfa kaynağı (triage)
-#   birim-raporlari/              birim testlerinin JUnit XML'i
+#   birim-raporlari/              birim testlerinin JUnit XML'i (+ extent-report/, allure-results/)
 #
 # Ortam (sistem özelliği karşılıkları: e2e-app/pom.xml, Ayarlar.java):
 #   APPIUM_URL (http://127.0.0.1:4723) · APP_PATH ya da APP_ID · DEVICE_NAME · DEVICE_UDID
@@ -35,7 +36,7 @@ mvn_opts=(-B -ntp)
 [[ "${SKIP_INSTALL:-0}" == "1" ]] && mvn_opts+=(-o)
 
 # Önceki koşunun raporu / kanıtı yeni sonuçla karışmasın.
-rm -rf target/surefire-reports target/allure-results target/kanit target/birim-raporlari
+rm -rf target/surefire-reports target/allure-results target/extent-report target/kanit target/birim-raporlari
 
 step "derleme: ./mvnw test-compile"
 ./mvnw "${mvn_opts[@]}" -q test-compile
@@ -43,8 +44,10 @@ step "derleme: ./mvnw test-compile"
 if [[ "${SKIP_BIRIM:-0}" != "1" ]]; then
   step "birim testleri (cihazsız): -Dgroups=birim"
   # -q yok: takılırsa hangi testte olduğu günlükte görünsün; surefire.timeout asılı çatalı keser.
+  # Birim Extent ve Allure sonuçları ayrı dizine: cihaz koşusunun raporlarına karışmasın.
   ./mvnw "${mvn_opts[@]}" surefire:test -Dgroups=birim -Draporlar.dizini=target/birim-raporlari \
-    -Dsurefire.timeout=600
+    -Dextent.rapor.dizini=target/birim-raporlari/extent-report \
+    -Dallure.results.directory=target/birim-raporlari/allure-results -Dsurefire.timeout=600
 fi
 
 step "cihaz koşusu: platform=$platform $*"
@@ -52,5 +55,6 @@ rc=0
 ./mvnw "${mvn_opts[@]}" surefire:test -Dplatform="$platform" "$@" || rc=$?
 
 printf '\nSONUÇLAR: %s\n' "$root/e2e-app/target/surefire-reports"
+[[ -f target/extent-report/index.html ]] && printf 'EXTENT:   %s\n' "$root/e2e-app/target/extent-report/index.html"
 [[ -d target/kanit ]] && printf 'KANIT:    %s\n' "$root/e2e-app/target/kanit"
 exit "$rc"

@@ -106,6 +106,9 @@ class ScriptCodegen(Base):
     ai_call_ids: Mapped[list[Any]] = mapped_column(JSONB, server_default=EMPTY_LIST, default=list)
     bundle_hash: Mapped[str | None]
     sablon_hash: Mapped[str | None]
+    # 011 §2.2: yalnız doğrulanmamış dillerde (csharp | python) render edilen kaynak. Forge'a
+    # commit edilmez; portal buradan gösterir/indirir.
+    kaynak_kod: Mapped[str | None]
     ilk_eslesme: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     eslesme: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     dogrulama: Mapped[list[Any]] = mapped_column(JSONB, server_default=EMPTY_LIST, default=list)

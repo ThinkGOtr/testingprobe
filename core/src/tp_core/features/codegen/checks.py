@@ -32,7 +32,8 @@ from typing import Any
 
 from tp_core.features.codegen.normalize import find_exact_source, find_source
 
-IDENT_RE = re.compile(r"^[A-Za-z_$][A-Za-z0-9_$]*$")
+# `\A…\Z` + `fullmatch`: `$` sondaki `\n`'i geçirirdi (GÜV-D1).
+IDENT_RE = re.compile(r"\A[A-Za-z_$][A-Za-z0-9_$]*\Z")
 # Engel türleri: öncelik sırasıyla (ilk görülen tür script'in engel_turu olur).
 ONCELIK = ("missing_method", "unknown_method", "unverified_step", "unsourced_value")
 MAX_ADIM_CAGRI = 6  # tek case adımına eşlenebilecek en çok page object çağrısı
@@ -180,7 +181,7 @@ def _imza(
     yer: str,
     sid: str | None,
 ) -> list[Bulgu]:
-    if not (IDENT_RE.match(po or "") and IDENT_RE.match(method or "")):
+    if not (IDENT_RE.fullmatch(po or "") and IDENT_RE.fullmatch(method or "")):
         return [Bulgu("unknown_method", f"{yer}: geçersiz ad {po}.{method}", sid)]
     m = table.method(po, method)
     if m is None:

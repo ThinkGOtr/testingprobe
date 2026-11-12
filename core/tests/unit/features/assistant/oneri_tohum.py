@@ -430,6 +430,12 @@ VAKALAR: dict[str, tuple[str, Kurulum, Kurulum]] = {
         # Defect adayında yeniden üretim önerilmez (karar triage'da; Kod.tsx ile aynı).
         _script("blocked", "not_started", engel_turu="defect_candidate"),
     ),
+    # 011 (MİM-L8): doğrulanmamış dil (C#/Python) — yalnız bilgi; PR/merge önerilmez.
+    "script-dogrulanmamis": (
+        "engineer",
+        _script("unverified", None),
+        _script("closed", None),
+    ),
     "kosu-ortam-hatasi-task": ("engineer", _kosu("error"), _kosu("failed")),
     "kosu-ortam-hatasi-bilgi": ("presenter", _kosu("error"), _kosu("passed")),
     "hata-bakim-onarim": (

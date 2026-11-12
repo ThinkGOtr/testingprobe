@@ -14,10 +14,10 @@
   (silme yumuşaktır, `silindi`).
 
 Revision kimliği diğer açık dalların 0021/0022'siyle çakışmasın diye 0030'dur; dev'e birleşirken
-`down_revision` zincirin son halkasına çekilir.
+`down_revision` zincirin son halkasına (011 `0022_pr_zorunlu_checkler`) çekildi.
 
 Revision ID: 0030
-Revises: 0020
+Revises: 0022
 Create Date: 2026-11-11
 """
 
@@ -26,7 +26,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "0030"
-down_revision: str | None = "0020"
+down_revision: str | None = "0022"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

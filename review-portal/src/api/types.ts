@@ -5,7 +5,9 @@
 // ön inceleme soruları) TEKNIK-TASARIM'daki İngilizce şema adlarını aynen taşır.
 
 import type { Platform } from "../lib/platform";
+import type { Dil, DilKaynagi } from "../lib/dil";
 export type { Platform } from "../lib/platform";
+export type { Dil, DilKaynagi } from "../lib/dil";
 
 export type Rol = "analyst" | "engineer" | "presenter" | "po" | "tester";
 
@@ -792,8 +794,10 @@ export interface BreakVerify {
 /**
  * Script durumları — core `script` makinesiyle birebir aynı küme. "Merge'e hazır" ve "zayıf test"
  * durum değildir: `pr_open` + `break_verify.durum` / `zayif_test` alanlarından türetilir.
+ * 011: `unverified` doğrulanmamış dilin (C#, Python) uç durumudur — kod üretildi ama derlenmedi ve
+ * koşulmadı; PR yok, merge yok (`verifying → unverified`; yeniden üretimle `pending` ya da `closed`).
  */
-export const SCRIPT_DURUMLARI = ["pending", "verifying", "checking", "blocked", "pr_open", "merged", "closed", "failed"] as const;
+export const SCRIPT_DURUMLARI = ["pending", "verifying", "checking", "blocked", "pr_open", "merged", "closed", "failed", "unverified"] as const;
 export type ScriptDurumu = (typeof SCRIPT_DURUMLARI)[number];
 
 export interface Script {
@@ -820,6 +824,15 @@ export interface Script {
    * alanı göndermez; o zaman yalnız web üretilebildiği için uyarlayıcı `web` yazar.
    */
   platform?: Platform | null;
+  /**
+   * 011: üretim dili (core `script.dil`: ts | java | csharp | python). 011 öncesi core alanı
+   * göndermez; uyarlayıcı platformun varsayılanını yazar (web → ts, uygulama → java).
+   */
+  dil?: Dil | null;
+  /** 011: dilin kaynağı (core `script.dil_kaynagi`: algilandi | secildi | varsayilan); bilinmiyorsa null. */
+  dil_kaynagi?: DilKaynagi | null;
+  /** 011: doğrulanmamış dilde üretildi (core `dogrulanmamis` = `durum == "unverified"`): derlenmedi, koşulmadı, PR yok. */
+  dogrulanmamis?: boolean;
   /** null: model çağrısı yok ya da mod bilinmiyor ("live" uydurulmaz). */
   mode: CiktiModu | null;
   olusturma: string;
@@ -873,10 +886,29 @@ export interface YerelKontrolHatasi {
   adim: string | null;
 }
 
+/**
+ * Yerel kontrol adımının sonucu. TEK DOĞRU core `codegen/views.py` `_adim_durumu`: dizge
+ * `passed | failed | skipped` (`skipped` = adım koşmadı / sonucu bilinmiyor). Uyum katmanı
+ * (`uyumDemoB.kontrolAdimlariUyarla`) eski/toolchain biçimlerini (boolean, `ok`, `failure` …) de bu üç
+ * değere indirger; ekran yalnız bu kümeyi görür.
+ */
+export type KontrolAdimDurumu = "passed" | "failed" | "skipped";
+
+/** Yerel kontrolün bir statik adımı (core `yerel_kontrol.adimlar[]`: `{ad, durum}`). */
+export interface KontrolAdimi {
+  ad: string;
+  durum: KontrolAdimDurumu;
+}
+
 export interface YerelKontrol {
   tsc: boolean | null;
   eslint: boolean | null;
   ast_guard: boolean | null;
+  /**
+   * 011: dile göre adım listesi (ts: tsc / eslint / ast_guard; java: deps / guard / compile). Core
+   * göndermiyorsa null: portal eski `tsc` / `eslint` / `ast_guard` alanlarına düşer.
+   */
+  adimlar?: KontrolAdimi[] | null;
   tekrar: number;
   /** Playwright koşusunun sonucu; koşu yapılmadıysa null. */
   sonuc: "passed" | "failed" | "error" | null;
@@ -916,6 +948,36 @@ export interface ScriptDetay extends Script {
   gecikme_butcesi_s?: number | null;
 }
 
+// ---------------------------------------------------------------- Üretim dili (011)
+
+/** `GET /code/languages` seçeneği: `hat` tam (derleme + koşu + PR) ya da doğrulanmamış (yalnız kaynak). */
+export interface DilSecenegi {
+  dil: Dil;
+  etiket: string;
+  /** Test çatısı (ör. "Playwright for Java + TestNG"). */
+  cati: string;
+  hat: "tam" | "dogrulanmamis";
+  /** false: bu dilde üretilemez (ör. depoda o dilin test projesi yok); `neden` Türkçe gerekçedir. */
+  kullanilabilir: boolean;
+  neden: string | null;
+}
+
+/** `GET /code/languages?platform=`: platformun dil seçenekleri ve repodan algılanan dil. */
+export interface KodDilleri {
+  platform: Platform;
+  algilanan: Dil;
+  /** `algilandi`: repodaki elle yazılmış testlerden sayıldı; `varsayilan`: algılama sonuçsuz. */
+  kaynak: "algilandi" | "varsayilan";
+  /** Dil başına elle yazılmış test dosyası sayısı (algılamanın dayanağı). */
+  sayilar: Partial<Record<Dil, number>>;
+  secenekler: DilSecenegi[];
+  /**
+   * Algılama yapılamadıysa (ör. depo okunamadı) core'un Türkçe nedeni; `kaynak` o zaman `varsayilan`
+   * olur. null: algılama yapıldı (sonuçlu ya da sonuçsuz).
+   */
+  neden: string | null;
+}
+
 // ---------------------------------------------------------------- Koşular
 
 /** core `run.tetik` (enums.RUN_TETIK; CI workflow `trigger` girdisiyle ortak liste). */
@@ -940,6 +1002,8 @@ export interface Kosu {
   allure_url: string | null;
   /** Ham allure-results dizini (JSON listesi); rapor varken ikincil bağlantı. */
   allure_sonuclari_url?: string | null;
+  /** Extent (Spark) HTML raporu; yalnızca Java (Appium + TestNG) koşusu üretir, yoksa null. */
+  extent_url?: string | null;
   /** Playwright HTML raporu. */
   rapor_url: string | null;
   /** JUnit XML (core `junit_url`; yoksa yerel artefakt düzeninden türetilir). */
@@ -964,6 +1028,8 @@ export interface Kosu {
    * Bilinmiyorsa null: hiçbir platforma yazılmaz (süzgeçte yalnız "Tümü"nde görünür).
    */
   platform?: Platform | null;
+  /** 011: koşunun dili (core `dil` ya da `ortam.dil`; yalnız tam hat dilleri koşar). Bilinmiyorsa null (uydurulmaz). */
+  dil?: Dil | null;
 }
 
 /** Playwright `test.step` ağacı (core results.json'dan; sınırlı). */
@@ -1432,6 +1498,11 @@ export interface KontrolKulesi {
     kabul_hedefi: number;
     script_ilk_review: number | null;
     script_hedefi: number;
+    /**
+     * 011 MİM-Y2: son script'i doğrulanmamış (`unverified`; C# / Python) birim sayısı — review başarısının
+     * paydasına girmez, ayrı sayılır (core `ai_katkisi.script_dogrulanmamis`). Core vermezse null: gösterilmez.
+     */
+    script_dogrulanmamis?: number | null;
     /** pass@1 (yerel düzeltme turu öncesi) ve düzeltme sonrası ayrı (§12). */
     pass_at_1: number | null;
     duzeltme_sonrasi: number | null;
@@ -1537,6 +1608,38 @@ export interface IsYaniti {
   mesaj?: string;
   /** apply-doc-fixes "son hâl onayı": kararsız uyarıların accept_difference olarak kaydı (ör. "F2 (tur 1)"). */
   kabul_edilen_uyarilar?: string[];
+}
+
+/**
+ * `POST /code/generate` toplu yanıtında case başına sonuç (core `start_generation` `sonuclar[]`).
+ * `basladi` dışındaki durumlar o case için üretimin başlamadığını söyler; `neden` core'un Türkçe gerekçesi.
+ */
+export type UretimSonucDurumu = "basladi" | "cakisma" | "pr_acik" | "merge_edildi" | "suruyor" | "reddedildi" | "bulunamadi";
+
+export interface UretimSonucu {
+  case_id: string;
+  durum: UretimSonucDurumu | (string & {});
+  neden: string | null;
+  script_id: string | null;
+}
+
+/** `POST /code/generate` yanıtı: iş + case başına sonuçlar (011 K-T12). */
+export interface KodUretYaniti extends IsYaniti {
+  sonuclar: UretimSonucu[];
+  /**
+   * core K-T12 (MİM-D1/D2): başka dilde merge edilmiş testi olduğu için üretilmeyen case sayısı. Alan
+   * varsa core `mesaj`ı bu bilgiyi zaten içerir (portal yinelemez); yoksa (eski core) `sonuclar`'dan sayılır.
+   */
+  cakisma_sayisi?: number;
+}
+
+/**
+ * `GET /scripts` listesi ve sınır bilgisi. core listeyi en yeni 200 kayıtla sınırlar; sınıra ulaşıldıysa
+ * listede olmayan bir case'in eski kodu olabilir (QA-Y4: "Kod yok" yerine "bilinmiyor").
+ */
+export interface ScriptListesi {
+  kayitlar: Script[];
+  sinira_ulasti: boolean;
 }
 
 // ---------------------------------------------------------------- SSE

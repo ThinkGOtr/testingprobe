@@ -270,11 +270,15 @@ SCRIPT = Machine(
     initial="pending",
     transitions=_t(
         pending=("verifying", "failed"),
-        verifying=("checking", "blocked", "failed"),
+        # `unverified` (011 §2.2): doğrulanmamış dilde (csharp | python) üretim bitti; kod
+        # derlenmedi ve koşulmadı. Onay kapısı ve `merged`'e geçiş yoktur;
+        # yeniden üretim `pending`'e döner.
+        verifying=("checking", "blocked", "failed", "unverified"),
         checking=("verifying", "pr_open", "blocked", "failed"),
         pr_open=("merged", "checking", "closed"),
         blocked=("verifying", "closed"),
         failed=("pending", "closed"),
+        unverified=("pending", "closed"),
         merged=(),
         closed=(),
     ),

@@ -43,7 +43,7 @@ OTOMASYON_AKTORU = ayarlar.OTOMASYON_AKTORU
 JOB_OTOMATIK_KOD = "codegen.otomatik"
 
 # start_generation'ın "zaten var" sonuçları: yeni üretim gerekmiyor.
-ATLANAN_SONUCLAR = frozenset({"suruyor", "pr_acik", "merge_edildi"})
+ATLANAN_SONUCLAR = frozenset({"suruyor", "pr_acik", "merge_edildi", "dogrulanmamis_var"})
 
 HATA_NEDENI = (
     "Otomatik kod üretimi beklenmedik bir hatayla başlatılamadı; onay geçerli. "
@@ -112,6 +112,7 @@ def kuyruga_al(session: Session, tc: TestCase, onaylayan: Principal) -> dict[str
                 [tc.id],
                 OTOMASYON_AKTORU,
                 platform=platformlar.WEB,
+                dil=None,  # 011: hedef repodan algılanan dil
                 tetik="otomatik",
                 tetikleyen=onaylayan.kullanici_adi,
             )
@@ -309,6 +310,7 @@ def _parca_uret(
                         parca,
                         OTOMASYON_AKTORU,
                         platform=platformlar.WEB,
+                        dil=None,  # 011: hedef repodan algılanan dil
                         tetik="otomatik",
                         tetikleyen=tetikleyen,
                     )

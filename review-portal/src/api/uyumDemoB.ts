@@ -14,6 +14,11 @@ import type {
   BreakAsamasi,
   BreakVerify,
   CheckDurumu,
+  DilSecenegi,
+  IsYaniti,
+  KodDilleri,
+  KodUretYaniti,
+  KontrolAdimi,
   KontrolKulesi,
   KpiAnahtari,
   Kosu,
@@ -26,10 +31,12 @@ import type {
   Script,
   ScriptDetay,
   ScriptDurumu,
+  ScriptListesi,
   Tetik,
   PwAdimi,
   TestDenemesi,
   TestSonucu,
+  UretimSonucu,
   YerelKontrol,
   YerelKontrolHatasi,
   YerelKontrolSinifi,
@@ -39,6 +46,7 @@ import { dizgeler, ilk, kimlik, metin, metinYaDaNull, modUyarla, nesneMi, sayi, 
 import { hazirlikUyarla } from "./uyumFaz5";
 import { scriptOtomasyonAlanlari } from "./uyumOtomasyon";
 import { checkPlatformu, platformUyarla } from "../lib/platform";
+import { DIL_CATISI, DIL_ETIKETI, DILLER, dilKaynagiUyarla, dilUyarla, dogrulanmamisDilMi, gecerliCift, varsayilanDil, type Dil } from "../lib/dil";
 import type { AsistanKuleOlcumu, AsistanliKule, MaliyetGrubu } from "../components/asistan/OnerilerOlcumKarti";
 
 const nesne = (x: unknown): Ham => (nesneMi(x) ? x : {});
@@ -304,11 +312,44 @@ const KONTROL_SONUCU: Record<string, "passed" | "failed" | "error"> = {
   error: "error",
 };
 
+/** Adım sonucu: boolean ya da toolchain/core dizgesi (`ok`, `passed`, `failed` …); tanınmazsa null. */
+function adimDurumu(x: unknown): boolean | null {
+  if (typeof x === "boolean") return x;
+  if (nesneMi(x)) return adimDurumu(x.ok ?? x.durum ?? x.status);
+  const d = metin(x).toLowerCase();
+  if (["ok", "passed", "success", "gecti", "geçti"].includes(d)) return true;
+  if (["failed", "failure", "error", "kaldi", "kaldı", "hata"].includes(d)) return false;
+  return null;
+}
+
+/**
+ * 011 §2.3: `adimlar: [{ad, durum}]` (dile göre: ts tsc/eslint/ast_guard; java deps/guard/compile).
+ * Liste yoksa (011 öncesi core) null: ekran eski `tsc` / `eslint` / `ast_guard` alanlarına düşer.
+ */
+export function kontrolAdimlariUyarla(x: unknown): KontrolAdimi[] | null {
+  if (!Array.isArray(x)) return null;
+  const liste = dizi(x)
+    .map((a): KontrolAdimi => {
+      // Core sözleşmesi dizgedir (`passed|failed|skipped`); boolean ve eski dizgeler de aynı kümeye iner.
+      const d = adimDurumu(ilk(a, "durum", "ok", "sonuc", "status"));
+      return { ad: metin(ilk(a, "ad", "name", "adim")), durum: d === true ? "passed" : d === false ? "failed" : "skipped" };
+    })
+    .filter((a) => a.ad);
+  return liste.length ? liste : null;
+}
+
+/** Adım sonucunun eski (boolean) gösterimi: ekran işareti ve `tsc`/`eslint`/`ast_guard` alanları için. */
+export function kontrolAdimiGecti(d: KontrolAdimi["durum"]): boolean | null {
+  return d === "passed" ? true : d === "failed" ? false : null;
+}
+
 export function yerelKontrolUyarla(x: unknown): YerelKontrol | null {
   if (!nesneMi(x)) return null;
   const run = nesne(x.run);
-  // core `script_codegen.yerel_kontrol` (classify.Siniflama.ozet): adım sonuçları `adimlar`'da.
-  const adimlar = nesne(x.adimlar);
+  // 011: `adimlar` listeyse dile göre adım listesidir; eski alanlar listeden de doldurulur.
+  const liste = kontrolAdimlariUyarla(x.adimlar);
+  // core `script_codegen.yerel_kontrol` (classify.Siniflama.ozet): adım sonuçları `adimlar` sözlüğünde.
+  const adimlar: Ham = liste ? Object.fromEntries(liste.map((a) => [a.ad, kontrolAdimiGecti(a.durum)])) : nesne(x.adimlar);
   const sonucHam = metin(ilk(x, "sonuc", "status") ?? ilk(x, "run_status") ?? run.status).toLowerCase();
   const sonuc = KONTROL_SONUCU[sonucHam] ?? null;
   const sinifHam = metin(ilk(x, "sinif", "siniflandirma", "karar")).toLowerCase();
@@ -316,12 +357,13 @@ export function yerelKontrolUyarla(x: unknown): YerelKontrol | null {
   const tsc = bool(x.tsc ?? adimlar.tsc);
   const eslint = bool(x.eslint ?? adimlar.eslint);
   const ast = bool(x.ast_guard ?? adimlar.ast_guard);
-  if (!sinif && (tsc === false || eslint === false || ast === false)) sinif = "derleme";
+  if (!sinif && (tsc === false || eslint === false || ast === false || liste?.some((a) => a.durum === "failed"))) sinif = "derleme";
   if (!sinif && sonuc === "passed") sinif = "gecti";
   return {
     tsc,
     eslint,
     ast_guard: ast,
+    adimlar: liste,
     tekrar: sayi(ilk(x, "tekrar", "repeat_each"), 0),
     sonuc,
     sinif,
@@ -355,6 +397,8 @@ export function scriptUyarla(s: Ham): Script {
   const yk = yerelKontrolUyarla(ilk(s, "yerel_kontrol", "yerel_kontrol_sonucu"));
   const durum = metin(s.durum, "pending");
   const sinifHam = metin(ilk(s, "yerel_sinif", "yerel_kontrol_sinifi")).toLowerCase();
+  // 009: core her script'te platform gönderir; alan yoksa (009 öncesi core) yalnız web üretilebiliyordu.
+  const platform = s.platform === undefined || s.platform === null ? "web" : platformUyarla(s.platform);
   return {
     id: kimlik(s.id),
     case_ids: caseKimlikleri(s),
@@ -370,8 +414,12 @@ export function scriptUyarla(s: Ham): Script {
     engel: nesneMi(s.engel) && typeof s.engel.tur === "string" ? { tur: s.engel.tur, neden: metinYaDaNull(s.engel.neden) } : null,
     yerel_sinif: SINIF[sinifHam] ?? yk?.sinif ?? null,
     failure_id: metinYaDaNull(kimlik(s.failure_id)),
-    // 009: core her script'te platform gönderir; alan yoksa (009 öncesi core) yalnız web üretilebiliyordu.
-    platform: s.platform === undefined || s.platform === null ? "web" : platformUyarla(s.platform),
+    platform,
+    // 011: core `dil` gönderir; alan yoksa (011 öncesi core / eski kayıt) platformun varsayılanı
+    // (web → ts, uygulama → java). Tanınmayan değer ya da bilinmeyen platformda null (uydurulmaz).
+    dil: s.dil === undefined || s.dil === null ? (platform ? varsayilanDil(platform) : null) : dilUyarla(s.dil),
+    dil_kaynagi: dilKaynagiUyarla(s.dil_kaynagi),
+    dogrulanmamis: s.dogrulanmamis === true || durum === "unverified",
     mode: modUyarla(ilk(s, "mode", "uretim_modu")),
     olusturma: metin(s.olusturma),
     hata: metinYaDaNull(ilk(s, "hata", "son_hata")),
@@ -395,7 +443,8 @@ export function scriptDetayUyarla(s: Ham): ScriptDetay {
   const adimlar = dizi(ilk(s, "adimlar", "ajan_adimlari", "agent_steps")).map((a, i) => ajanAdimiUyarla(a, i + 1));
   return {
     ...scriptUyarla(s),
-    kod: metinYaDaNull(ilk(s, "kod", "icerik")),
+    // 011: doğrulanmamış dilde `kod` = `script_codegen.kaynak_kod` (core serileştirmesi `kod` alanına yazar).
+    kod: metinYaDaNull(ilk(s, "kod", "icerik", "kaynak_kod")),
     adimlar,
     eslemeler: dizi(ilk(s, "eslemeler", "step_mapping", "step_mappings")).map(eslemeUyarla),
     yerel_kontrol: yerelKontrolUyarla(ilk(s, "yerel_kontrol", "yerel_kontrol_sonucu")),
@@ -404,6 +453,121 @@ export function scriptDetayUyarla(s: Ham): ScriptDetay {
     uyarilar: dizgeler(s.uyarilar),
     gecikme_butcesi_s: typeof s.gecikme_butcesi_s === "number" ? s.gecikme_butcesi_s : null,
   };
+}
+
+// ------------------------------------------------------------------ Üretim dili (011)
+
+/**
+ * `GET /code/languages?platform=` yanıtı (011 §2.3). Tanınmayan dil ve platformda geçersiz çift
+ * atılır; seçenek kalmazsa null (seçici çizilmez, üretim core'un algıladığı dille sürer).
+ */
+export function kodDilleriUyarla(govde: unknown, istenen: Platform): KodDilleri | null {
+  if (!nesneMi(govde)) return null;
+  const platform = platformUyarla(govde.platform) ?? istenen;
+  const secenekler: DilSecenegi[] = [];
+  for (const s of dizi(govde.secenekler)) {
+    const dil = dilUyarla(s.dil);
+    if (!dil || !gecerliCift(platform, dil) || secenekler.some((x) => x.dil === dil)) continue;
+    const hat = metin(s.hat);
+    secenekler.push({
+      dil,
+      etiket: metin(s.etiket, DIL_ETIKETI[dil]),
+      cati: metin(s.cati, DIL_CATISI(platform, dil) ?? ""),
+      hat: hat === "dogrulanmamis" || (hat !== "tam" && dogrulanmamisDilMi(dil)) ? "dogrulanmamis" : "tam",
+      kullanilabilir: s.kullanilabilir !== false,
+      neden: metinYaDaNull(s.neden),
+    });
+  }
+  if (secenekler.length === 0) return null;
+  const sayiHam = nesne(govde.sayilar);
+  const sayilar: KodDilleri["sayilar"] = {};
+  for (const d of DILLER) {
+    const n = sayiYaDaNull(sayiHam[d]);
+    if (n !== null) sayilar[d] = n;
+  }
+  const algilanan = dilUyarla(govde.algilanan);
+  return {
+    platform,
+    // Algılanan dil seçeneklerde yoksa (beklenmez) platformun varsayılanına düşülür; kaynak "varsayılan" olur.
+    algilanan: algilanan && secenekler.some((x) => x.dil === algilanan) ? algilanan : (secenekler.find((x) => x.dil === varsayilanDil(platform)) ?? secenekler[0]).dil,
+    kaynak: govde.kaynak === "algilandi" && !!algilanan && secenekler.some((x) => x.dil === algilanan) ? "algilandi" : "varsayilan",
+    sayilar,
+    secenekler,
+    // MİM-B1: algılama yapılamadıysa (depo okunamadı) üst düzey neden; ekran "test bulunamadı" demez.
+    neden: metinYaDaNull(govde.neden),
+  };
+}
+
+// ------------------------------------------------------------------ Kod üretimi isteği (K-T12)
+
+/**
+ * `POST /code/generate` yanıtı: iş alanları aynen, `sonuclar[]` case başına durum ve Türkçe nedenle
+ * (core `start_generation`). Alan yoksa (011 öncesi core) boş liste: ekran bugünkü bildirimle sürer.
+ */
+export function kodUretYanitiUyarla(govde: unknown): KodUretYaniti {
+  const g = nesneMi(govde) ? govde : {};
+  const sonuclar: UretimSonucu[] = [];
+  for (const s of dizi(g.sonuclar)) {
+    const caseId = metin(s.case_id);
+    if (!caseId) continue;
+    sonuclar.push({
+      case_id: caseId,
+      durum: metin(s.durum, "basladi"),
+      neden: metinYaDaNull(s.neden),
+      script_id: metinYaDaNull(s.script_id),
+    });
+  }
+  const { cakisma_sayisi: cakismaSayisi, ...geri } = g;
+  return {
+    ...(geri as unknown as IsYaniti),
+    job_id: metinYaDaNull(g.job_id),
+    durum: metin(g.durum),
+    ...(typeof g.mesaj === "string" ? { mesaj: g.mesaj } : {}),
+    ...(typeof cakismaSayisi === "number" && Number.isInteger(cakismaSayisi) && cakismaSayisi >= 0 ? { cakisma_sayisi: cakismaSayisi } : {}),
+    sonuclar,
+  };
+}
+
+/** core `views.list_scripts` sınırı: en yeni 200 kayıt (`GET /scripts`, sayfalama yok). */
+export const SCRIPT_LISTE_SINIRI = 200;
+
+/**
+ * MİM-D5: core `GET /scripts` düz diziyi korur, liste sınırının aşıldığını yanıt başlığıyla söyler
+ * (`1` aşıldı, `0` aşılmadı). Başlık adı tek yerde: core (F1) adıyla hizalı tutulur.
+ */
+export const SCRIPT_DAHA_FAZLA_BASLIGI = "X-Daha-Fazla";
+
+/** Başlıktan açık bilgi: `1`/`true` → true, `0`/`false` → false; yoksa ya da tanınmazsa null. */
+export function dahaFazlaBasligiOku(h: Headers): boolean | null {
+  const v = h.get(SCRIPT_DAHA_FAZLA_BASLIGI)?.trim().toLowerCase();
+  if (v === "1" || v === "true") return true;
+  if (v === "0" || v === "false") return false;
+  return null;
+}
+
+/**
+ * `GET /scripts` yanıtı + sınır bilgisi. Öncelik: yanıt başlığı (`dahaFazla`, MİM-D5) → zarftaki açık bilgi
+ * (`{items|kayitlar|data, toplam?, sinir|limit?, daha_fazla|has_more?}`) → uzunluk ≥ sınır (bugünkü core:
+ * düz dizi sınıra ulaştıysa liste eksik olabilir).
+ */
+export function scriptListesiUyarla(govde: unknown, dahaFazla: boolean | null = null): ScriptListesi {
+  const ham = Array.isArray(govde)
+    ? govde
+    : nesneMi(govde)
+      ? (([govde.items, govde.kayitlar, govde.data].find(Array.isArray) as unknown[] | undefined) ?? null)
+      : null;
+  if (!ham) throw new Error("Beklenmeyen liste yanıtı");
+  const kayitlar = ham.filter(nesneMi).map(scriptUyarla);
+  let sinira = ham.length >= SCRIPT_LISTE_SINIRI;
+  if (nesneMi(govde)) {
+    const dahaFazla = ilk(govde, "daha_fazla", "has_more", "kesildi", "truncated");
+    const toplam = sayiYaDaNull(ilk(govde, "toplam", "total"));
+    const sinir = sayiYaDaNull(ilk(govde, "sinir", "limit"));
+    if (typeof dahaFazla === "boolean") sinira = dahaFazla;
+    else if (toplam !== null) sinira = toplam > ham.length;
+    else if (sinir !== null) sinira = ham.length >= sinir;
+  }
+  return { kayitlar, sinira_ulasti: dahaFazla ?? sinira };
 }
 
 // ------------------------------------------------------------------ Koşular
@@ -527,6 +691,7 @@ export function kosuUyarla(k: Ham): Kosu {
     atlanan: say("atlanan", (t) => t.durum === "skipped"),
     allure_url: adresUyarla(ilk(k, "allure_url") ?? ilk(art, "allure_url", "allure")),
     allure_sonuclari_url: adresUyarla(ilk(k, "allure_sonuclari_url")),
+    extent_url: adresUyarla(ilk(k, "extent_url")),
     rapor_url: adresUyarla(ilk(k, "rapor_url", "html_url", "playwright_report_url") ?? ilk(art, "rapor_url", "html_url", "html", "report")),
     junit_url: junitAdresi(k, art),
     sauce_url: adresUyarla(ilk(k, "sauce_url") ?? ilk(art, "sauce_url", "sauce")),
@@ -539,7 +704,16 @@ export function kosuUyarla(k: Ham): Kosu {
       metinYaDaNull(k.saglik_hatasi) ?? (saglik.ok === false ? metin(saglik.hata, "Koşu öncesi sağlık yoklaması başarısız.") : null),
     ...githubArtefakti(k.github_artefakt),
     platform: kosuPlatformu(k, ortam),
+    dil: kosuDili(k, ortam),
   };
+}
+
+/**
+ * 011 §2.8: koşunun dili. Alan adı Ş5'te kesinleşir; toleranslı okunur: core `dil` → `ortam.dil` →
+ * toolchain raporunun `lang`'ı (`ortam.lang` / `lang`). Yoksa null (platformdan türetilmez).
+ */
+function kosuDili(k: Ham, ortam: Ham): Dil | null {
+  return dilUyarla(k.dil) ?? dilUyarla(ortam.dil) ?? dilUyarla(ortam.lang) ?? dilUyarla(k.lang);
 }
 
 /**
@@ -751,6 +925,7 @@ export function kontrolKulesiUyarla(govde: unknown): KontrolKulesi & AsistanliKu
       kabul_hedefi: sayi(ai.kabul_hedefi, 0.7),
       script_ilk_review: sayiYaDaNull(ai.script_ilk_review),
       script_hedefi: sayi(ai.script_hedefi, 0.6),
+      script_dogrulanmamis: sayiYaDaNull(ai.script_dogrulanmamis),
       pass_at_1: sayiYaDaNull(ai.pass_at_1),
       duzeltme_sonrasi: sayiYaDaNull(ai.duzeltme_sonrasi),
       ort_ai_sure_ms: sayiYaDaNull(ai.ort_ai_sure_ms),

@@ -343,7 +343,8 @@ def test_diger_ekranlar_ozeti_kuyruktan_gelir(
     assert ozet == {"sayi": 1, "rota": f"/kosular/{rid2}"}
 
     _giris(client, make_user("analyst"))  # rol kapısı: koşu hatası mühendisin işidir
-    assert client.get(UC, params={"rota": "/kosular"}).json()["diger_ekranlar"]["sayi"] == 0
+    # (analist Koşular listesini açamaz; özet herkese açık bir ekrandan sorulur)
+    assert client.get(UC, params={"rota": "/denetim"}).json()["diger_ekranlar"]["sayi"] == 0
 
 
 P95_ESIK_MS = float(os.environ.get("TP_TEST_ONERI_P95_MS", "300"))

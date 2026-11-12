@@ -92,8 +92,8 @@ jobs:
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           filters: |
-            app:
-              - 'demo-app/**'
+            # Uygulama dışı tetikler; demo-app/** ayrı adımda (yalnız-Java değişikliği hariç).
+            app_ek:
               - '.playwright-version'
               - '.github/workflows/ci.yml'
               - 'toolchain/Dockerfile'
@@ -116,11 +116,30 @@ jobs:
               - 'docs/DEMO-VERISI.md'
               - '.github/golden-drift/**'
 
+      # OPS-L2 (011): yalnız Java web projesini (demo-app/e2e-java, ci/run-java-checks.sh,
+      # ci/break-verify-java.sh) değiştiren PR TS
+      # test-local'ini koşmaz; onu web-java.yml doğrular. `every`: dosya demo-app altında VE Java
+      # yollarının dışında olmalı. Diğer her demo-app değişikliği (api, web, e2e, e2e-app, ci, ...)
+      # TS testlerini tetiklemeye devam eder.
+      - name: Uygulama değişikliği (yalnız-Java hariç; yalnızca PR)
+        id: app
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          predicate-quantifier: every
+          filters: |
+            app:
+              - 'demo-app/**'
+              - '!demo-app/e2e-java/**'
+              # Açık dosya adları: `*java*` deseni `*javascript*` adlarını da dışlardı (OPS-L1 tur 2).
+              - '!demo-app/ci/run-java-checks.sh'
+              - '!demo-app/ci/break-verify-java.sh'
+
       - name: Karar
         id: decide
         env:
           EVENT: ${{ github.event_name }}
-          APP: ${{ steps.filter.outputs.app }}
+          APP: ${{ steps.app.outputs.app == 'true' || steps.filter.outputs.app_ek == 'true' }}
           PAGES: ${{ steps.filter.outputs.pages }}
           GUARD_TOOL: ${{ steps.filter.outputs.guard_tool }}
           GOLDENS: ${{ steps.filter.outputs.goldens }}

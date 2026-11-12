@@ -416,6 +416,22 @@ kurallar:
       "Yeniden üret" ile aynı onaylı case için kodu yeniden üretin. "Neden? Sor" ile asistandan ayrıntı
       isteyebilirsiniz.
 
+  - id: script-dogrulanmamis                                        # 011 (MİM-L8)
+    ekran: /kod/:id
+    varlik: script
+    roller: [engineer]
+    kosul: {durum_in: [unverified]}
+    oncelik: 60
+    baslik: Bu test doğrulanmamış bir dilde; PR açılmaz
+    neden: >-
+      C# ve Python çıktısı derlenmez ve koşturulmaz; ana dala giremez, regresyon setine katılmaz.
+    eylem: {tur: bilgi}
+    aciklama: >-
+      Bu script doğrulanmamış bir dilde (C# ya da Python) üretildi: adımlar uygulamada doğrulandı,
+      ama kod derlenmedi, koşturulmadı ve PR açılmadı. Kodu indirip kendi projenizde
+      kullanabilirsiniz. Doğrulanmış ve merge edilebilir bir test için Kod ekranındaki dil
+      seçiciden TypeScript ya da Java seçip aynı case için yeniden üretin.
+
   # ------------------------------------------------------------------ Koşu detay
   - id: kosu-ortam-hatasi-task                                      # §17.3 #16
     ekran: /kosular/:id
@@ -584,9 +600,10 @@ bos_ekranlar:
   - {ekran: /gereksinimler/:id, roller: [engineer, tester, presenter]}
   - {ekran: /gereksinimler/:id/caseler, roller: [po, engineer, presenter]}
   - {ekran: /gereksinimler/:id/yayin, roller: [analyst, po, engineer, tester, presenter]}
-  - {ekran: /kod, roller: [analyst, po, engineer, tester, presenter]}
+  - {ekran: /caseler, roller: [analyst, po, engineer, tester, presenter]}
+  - {ekran: /kod, roller: [engineer, presenter]}
   - {ekran: /kod/:id, roller: [analyst, po, tester, presenter]}
-  - {ekran: /kosular, roller: [analyst, po, engineer, tester]}
+  - {ekran: /kosular, roller: [engineer]}
   - {ekran: /kosular/:id, roller: [analyst, po, tester]}
   - {ekran: /hatalar/:id, roller: [analyst, po, presenter]}
   - {ekran: /bug-taslaklari, roller: [analyst, po, engineer, tester, presenter]}
