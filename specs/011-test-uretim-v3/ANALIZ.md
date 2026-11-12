@@ -70,8 +70,9 @@ Uygulama sırasında verilen teknik kararlar (ürün kararı değil; gerekçesiy
   bunlara bağlı aşağı akış golden'ları (verify-and-map, codegen) bozulmaz.
 - Belgedeki `<PLATFORM>-<MODÜL>-<TÜR>-<NNN>` kimliği modele yazdırılmaz; case kimliği bugünkü gibi
   deterministik `uuid5`'tir. Okunur kısa ad gerekiyorsa kodda türetilir.
-- Sınırlar korunur: story başına ≤ 10 case, case başına ≤ 8 adım (maliyet, review süresi). Sığmayan
-  öğe `not_covered`'a gerekçesiyle yazılır.
+- Sınırlar: story başına ≤ 15 case (K17; ilk sürümde 10), case başına ≤ 8 adım (maliyet, review
+  süresi); derinleştirme tur başına ≤ 10 yeni case. Sığmayan öğe `not_covered`'a gerekçesiyle
+  yazılır; P1 sınır öğesi bırakılmaz.
 - `case_generation.max_tokens` 16000 → 32000 (v3 çıktısı yaklaşık iki kat; düşünme payı dahil).
 - Few-shot olarak belgedeki varsayımsal örnek kullanılmaz; gerekirse kendi golden'larımız.
 
@@ -112,15 +113,19 @@ Dosya bu dalda yazılıdır ve bağlayıcıdır. Özet:
   `not_covered[{item, reason}]`, `observations[{standard_ref, note}]`,
   `automation_open_points[string]`, `config_matrix{parameters[{name, values[]}], constraints[]}`,
   `testability_gaps[{control, missing}]`, `cases[]`.
-- Case: v2 alanları (`title`, `type`, `risk`, `acceptance_criteria_refs`, `preconditions`,
+- Case: v2 alanları (`title`, `type`, `acceptance_criteria_refs`, `preconditions`,
   `steps[{id, action, data, expected}]`, `expected_result`, `tags`) + `technique[]`
-  (EP|BVA|DT|ST|PW|UC|EG), `covers[]`, `priority` (P1|P2|P3), `priority_rationale`, `test_level`
+  (EP|BVA|DT|ST|PW|UC|EG|CL), `covers[]`, `priority` (P1|P2|P3), `priority_rationale`, `test_level`
   (null olabilir), `verification_point` (UI|API|event|DB|log|other), `readiness`
   (ready|assumption_dependent|blocked), `assumption_refs[]`, `open_question_refs[]`,
   `test_data[{name, value, class, synthetic, is_attack_payload}]`, `teardown[]`, `platform` (null
   olabilir), `requires_real_device`, `standard_refs[]`. `type` enum'una `authorization` ve
-  `integration` eklendi.
-- Kapsam öğesi kimliği: `EP-V1`, `EP-I2`, `BV-3`, `DT-R2`, `ST-S1>S2`, `PW-1`, `UC-MF|AF1|EF1`, `EG-1`.
+  `integration` eklendi. K18: v3 case'te `risk` yoktur (risk değerlendirmesi `priority_rationale`'de;
+  P1 yalnız para, güvenlik, veri kaybı ya da geçici çözümsüz ana akış); eski case'te okunur.
+- Kapsam öğesi kimliği: `EP-V1`, `EP-I2`, `BV-3`, `DT-R2`, `ST-T1` (geçerli geçiş: durum + olay →
+  hedef) / `ST-X1` (geçersiz geçiş: durum + olay, hedef yok), `PW-1` (parametre-değer çifti; satır
+  üretilmez), `UC-MF|AF1|EF1`, `EG-1`, `CL-1` (kontrol listesi maddesi; platform eki kategorisi ya
+  da standart maddesi, K19). Tasarım modelinde durumlar kimliklidir (`S1`…).
 - `coverage_matrix` modele yazdırılmaz.
 
 ### 4.2 Deterministik kurallar (`features/cases/schema.py`)

@@ -22,7 +22,7 @@ ajan); sunum sırasında `make demo-check` koşturmak kod üretimini bozmaz, yal
 | Adım | Ne olur | Kanıt (canlı yığında doğrulandı, 2026-10-31) |
 |---|---|---|
 | Demo-A kararları | F1 ve F3 **Dokümanı düzelt** (`fix_doc`); F2 kampanya ve F4 kredi limiti **Kod/veri hatalı** (`code_defect`) | 2. tur `f2-kod-hatasi/TPD-1-r2` REPLAY; AC2 özgün kalır: "her 6 adet alımda 1 bedava (7 adette 1 bedava)" |
-| Case üretimi | 10 case (`f2-kod-hatasi/TPD-1`); C3 = "6 adet kampanyalı üründe bedava ürün verilmez" | `make demo-check` → `C3 DEFECT ADAYI`, çıkış 0 |
+| Case üretimi | 15 case (`f2-kod-hatasi/TPD-1`; C11–C15 K17 sınır case'leri, doğrulama kaydı yok); C3 = "6 adet kampanyalı üründe bedava ürün verilmez" | `make demo-check` → `C3 DEFECT ADAYI`, çıkış 0 |
 | Kod üretimi (C1 sepet sayacı, C2 7 adet, C3 6 adet, C5 750,00 TL) | Ajan (bayi3) adımları SSE `agent.step` + ekran görüntüsüyle; kod şablondan | C1/C2/C5: tsc/eslint/AST ✓, Playwright `--repeat-each=3` 3/3 yeşil → PR (LocalForge) |
 | 6 adet sınırı | Bugünkü kod `adet // 6` → 1 bedava; test `expectFreeQuantity("P-001", 0)` kırmızı | `defect_candidate`, "beklenen "0", gerçekleşen "1" (3/3 tekrar)", **PR açılmaz**, onarım yok |
 | Kırarak doğrula (C2) | bayraksız → `BREAK_CAMPAIGN=1` → bayrak kaldırıldı | yeşil → kırmızı (assertion; `kirma_beklenen_kirmizi`) → yeşil = "Test hata yakalıyor ✓" |

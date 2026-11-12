@@ -261,10 +261,10 @@ v2 alanları korunur, v3 alanları eklenir (hepsi zorunlu; boş liste / `null` o
 
 | Alan | Değer | Not |
 |---|---|---|
-| `title`, `risk`, `acceptance_criteria_refs`, `preconditions`, `steps[{id S1…, action, data\|null, expected}]`, `expected_result`, `tags` | v2 ile aynı | `tags` içinde `AI-generated`; ≤ 8 adım |
+| `title`, `acceptance_criteria_refs`, `preconditions`, `steps[{id S1…, action, data\|null, expected}]`, `expected_result`, `tags` | v2 ile aynı | `tags` içinde `AI-generated` (kategori etiketleri `smoke`/`regression`/`security`/`a11y`/`performance`); ≤ 8 adım. v3'te `risk` yoktur (K18; risk `priority_rationale`'de), eski case'te okunur |
 | `type` | `positive`/`negative`/`boundary`/`authorization`/`integration` | son ikisi v3'te eklendi (Jira'da "yetki", "entegrasyon") |
-| `technique[]` | `EP`/`BVA`/`DT`/`ST`/`PW`/`UC`/`EG` | `covers` önekleriyle çift yönlü uyumlu (BVA ↔ `BV-`) |
-| `covers[]` | kapsam öğesi kimlikleri (`EP-V1`, `EP-I2`, `BV-3`, `DT-R2`, `ST-S1>S2`, `PW-1`, `UC-MF\|AF1\|EF1`, `EG-1`) | `coverage_items`'ta tanımlı olmalı |
+| `technique[]` | `EP`/`BVA`/`DT`/`ST`/`PW`/`UC`/`EG`/`CL` (kontrol listesi, K19) | `covers` önekleriyle çift yönlü uyumlu (BVA ↔ `BV-`) |
+| `covers[]` | kapsam öğesi kimlikleri (`EP-V1`, `EP-I2`, `BV-3`, `DT-R2`, `ST-T1` geçerli geçiş / `ST-X1` geçersiz geçiş (durum + olay), `PW-1` parametre-değer çifti, `UC-MF\|AF1\|EF1`, `EG-1`, `CL-1` kontrol listesi maddesi) | `coverage_items`'ta tanımlı olmalı |
 | `priority`, `priority_rationale` | `P1`/`P2`/`P3` + gerekçe (etki, olasılık, iş kritikliği) | |
 | `test_level` | `UNIT`…`UAT` ya da `null` | üretim girdisindeki seviye (varsayılan `SYSTEM`) |
 | `verification_point` | `UI`/`API`/`event`/`DB`/`log`/`other` | beklenen sonucun doğrulandığı yer |
@@ -353,7 +353,9 @@ Kısa bölümler: §8.2c (üretim ve tutarlılık), §8.2d (iki tur, review, den
 - **Onay kuralı (K6):** yalnız hazır (`ready`) ve tutarlı case onaylanır; `serialize_cases`
   `onay_engeli` alanında nedeni döner (varsayıma bağlı / engelli / tutarsız). Analist "Düzelt" ile
   hazır yapar ya da reddeder. Eski (v2) case hazır sayılır (K9).
-- **Sınırlar:** story başına ≤ 10 case, case başına ≤ 8 adım; sığmayan öğe `not_covered`'a
+- **Sınırlar:** story başına ≤ 15 case (K17; derinleştirme tur başına ≤ 10), case başına ≤ 8 adım;
+  test verisiyle kurulamayan sınır en yakın kurulabilen değerle ya da test verisi hazırlığı ön
+  koşuluyla sınanır, P1 sınırı `out_of_scope` bırakılmaz; sığmayan öğe `not_covered`'a
   gerekçesiyle yazılır. Başlığa teknik öneki yazılmaz; case kimliği deterministik `uuid5`'tir.
 - **Özet ucu:** `GET /requirements/{id}/case-summary` üretim başına üst listeleri, kodda hesaplanan
   kapsam matrisini (`coverage_matrix` → `{satirlar, oranlar}`; birden çok üretimin özetleri
