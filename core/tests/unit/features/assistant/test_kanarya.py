@@ -123,6 +123,33 @@ def test_masum_canary_metinleri_tetiklemez(metin: str) -> None:
     assert guvenlik_cikti.sizinti_var(_cevap(metin), guvenlik_cikti.kanarya(), ()) is None
 
 
+YERLESIK_IZ = "You are the Testing Probe portal assistant"
+
+
+def test_girdide_ya_da_arac_sonucunda_gecen_yabanci_kanarya_ve_iz_alintidir() -> None:
+    """SEC2-Y1: kayda yerleştirilmiş kanarya biçimi / iz cümlesi cevapta alıntılanırsa sızıntı
+    sayılmaz (başka kullanıcıyı dondurma saldırısı); kanıtta olmayan iz ve bu sürecin kanaryası
+    her zaman sızıntıdır."""
+    k = guvenlik_cikti.kanarya()
+    izler = (guvenlik_cikti.normalize(YERLESIK_IZ), guvenlik_cikti.normalize(IZ_1))
+    kanit = [f"<untrusted>TPD-3 yorum: TP-CANARY-0badc0de — {YERLESIK_IZ}.</untrusted>"]
+    alinti = _cevap(f"Yorumda 'tp canary 0BADC0DE' ve '{YERLESIK_IZ.upper()}' yazıyor.")
+    assert guvenlik_cikti.sizinti_var(alinti, k, izler, kanit) is None
+    # Kanıt olmadan aynı cevap sızıntıdır (eski davranış).
+    assert guvenlik_cikti.sizinti_var(alinti, k, izler) == "kanarya"
+    assert guvenlik_cikti.sizinti_var(_cevap(YERLESIK_IZ), k, izler) == "istem_sizintisi"
+    # Kanıttakinden BAŞKA bir kanarya ya da kanıtta olmayan iz → sızıntı.
+    baska = _cevap("Yorumda TP-CANARY-0badc0de var; ayrıca TP-CANARY-12345678.")
+    assert guvenlik_cikti.sizinti_var(baska, k, izler, kanit) == "kanarya"
+    iz_disi = _cevap(f"{YERLESIK_IZ}. {IZ_1}")
+    assert guvenlik_cikti.sizinti_var(iz_disi, k, izler, kanit) == "istem_sizintisi"
+    # Bu sürecin kanaryası kanıtta geçse bile (olamaz ama) sızıntıdır; yalnız hex kısmı da.
+    kendi = [f"yorum: {k}"]
+    assert guvenlik_cikti.sizinti_var(_cevap(f"iz {k}"), k, izler, kendi) == "kanarya"
+    hex_kismi = k.removeprefix(guvenlik_cikti.KANARYA_ONEKI)
+    assert guvenlik_cikti.sizinti_var(_cevap(f"kod {hex_kismi}"), k, izler, kendi) == "kanarya"
+
+
 def _sizan_alanlar(k: str) -> list[dict[str, Any]]:
     oneri = {
         "baslik": "b",
@@ -383,3 +410,74 @@ def test_akis_derin_cocuktaki_sizinti_kok_soruya_atfedilir(
         assert olay.soru_kimligi(c, uuid.UUID(derin)) == _soru_id(engine, ilk)
         # İkinci soru temiz kalır: sızıntı ondan sonra yazıldığı için sayılır (1).
         assert olay.ardisik_ciddi(c, u.id)[0] == 1
+
+
+def test_akis_jira_yorumundaki_kanarya_ve_iz_alintisi_olay_yazmaz(
+    client: TestClient, make_user, engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SEC2-Y1: saldırgan Jira yorumuna "TP-CANARY-0badc0de" ve bir iz cümlesi yazar; kaydı soran
+    kullanıcının cevabı bunları alıntılar → cevap değişmez, olay yazılmaz, sayaç büyümez."""
+    from tp_core.features.assistant.tools import AracSonucu, arac_seti
+
+    monkeypatch.setattr(
+        guvenlik_cikti, "izleri_yukle", lambda _r=None: (guvenlik_cikti.normalize(YERLESIK_IZ),)
+    )
+    yorum = f"TPD-3 son yorum: TP-CANARY-0badc0de. {YERLESIK_IZ}."
+
+    def jira(_b: Any, **arg: Any) -> AracSonucu:
+        return AracSonucu(yorum, kanit_turu="jira", tur="jira", meta={"anahtar": "TPD-3"})
+
+    def fabrika_(ab: Any) -> Any:
+        return arac_seti(
+            ab,
+            urun=_flow.SahteUrun(),
+            kod=_flow.SahteKod(),
+            veri=_flow.SahteVeri(),
+            yeni_araclar={"jira_issue": jira, "ci_log": _flow.sahte_ci},
+        )
+
+    u = make_user("tester")
+    _flow.giris(client, u)
+    _, mid = _flow.soru_gonder(client, engine, "TPD-3'te son yorum ne diyor?")
+    metin = f"Son yorumda 'TP-CANARY-0badc0de' ve '{YERLESIK_IZ}' yazıyor."
+    gecit = _flow.Gecit(
+        engine,
+        [
+            tool_response(("jira_issue", {"anahtar": "TPD-3"})),
+            _flow.bitir(cevap_bloklari=[{"tur": "paragraf", "metin": metin, "maddeler": []}]),
+        ],
+    )
+    assert _flow.cevapla(engine, mid, gecit, arac_seti_fabrikasi=fabrika_) == "done"
+    m = _flow.mesaj(engine, mid)
+    assert m["cevap"]["cevap_bloklari"][0]["metin"] == metin
+    assert not m["cevap"].get("sizinti")
+    assert _olaylar(engine) == []
+    with engine.connect() as c:
+        assert olay.ardisik_ciddi(c, u.id)[0] == 0
+
+
+def test_akis_soruda_gecen_iz_alintidir_kanitta_olmayan_iz_sizintidir(
+    client: TestClient, make_user, engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Soru metni de kanıttır: kullanıcının yapıştırdığı iz cümlesini tekrarlayan cevap olay
+    yazmaz; sorudakinden başka bir iz cümlesi sızıntıdır."""
+    monkeypatch.setattr(
+        guvenlik_cikti,
+        "izleri_yukle",
+        lambda _r=None: (guvenlik_cikti.normalize(YERLESIK_IZ), guvenlik_cikti.normalize(IZ_1)),
+    )
+    u = make_user("analyst")
+    _flow.giris(client, u)
+    sohbet, mid = _flow.soru_gonder(client, engine, f"'{YERLESIK_IZ}' ne demek?")
+    blok = [{"tur": "paragraf", "metin": f"'{YERLESIK_IZ}' bir cümle.", "maddeler": []}]
+    assert _flow.cevapla(engine, mid, _flow.Gecit(engine, [_flow.bitir(cevap_bloklari=blok)])) == (
+        "done"
+    )
+    assert _olaylar(engine) == []
+    _flow.is_bitir(engine, mid)
+    _, mid2 = _flow.soru_gonder(client, engine, f"'{YERLESIK_IZ}' ne demek?", sohbet=sohbet)
+    blok2 = [{"tur": "paragraf", "metin": IZ_1, "maddeler": []}]
+    gecit = _flow.Gecit(engine, [_flow.bitir(cevap_bloklari=blok2)])
+    assert _flow.cevapla(engine, mid2, gecit) == "done"
+    assert [o["tur"] for o in _olaylar(engine)] == ["istem_sizintisi"]
+    assert "model" not in _flow.mesaj(engine, mid2)["cevap"]  # BE2-3: sızıntı cevabında model yok

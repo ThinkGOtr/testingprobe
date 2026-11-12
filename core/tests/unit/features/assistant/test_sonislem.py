@@ -1194,3 +1194,32 @@ def test_cevap_metninde_mention_yankisi_anmaz_kod_blogu_korunur() -> None:
     assert bloklar[0]["metin"] == "ali eklenmez; reader@sim.local kalır."
     assert bloklar[1]["maddeler"] == ["ayse.k yorum yazdı"]
     assert bloklar[2]["metin"] == "@job_handler('x')"
+
+
+def test_rota_rolleri_baglamin_kural_dizininden_okunur(tmp_path: Path) -> None:
+    """BE2-5: rol süzgeci (`schemas.rota_rolleri`) `SonIslemBaglami.rules_dir`'in `rotalar.json`'unu
+    kullanır (varsayılan dizinde `/kosular` herkese açık; bu dizinde yalnız PO)."""
+    import json
+    import shutil
+
+    from tp_core.features.assistant.schemas import rota_rolleri
+    from tp_core.gateway.config import find_rules_dir
+
+    kok = tmp_path / "kurallar"
+    shutil.copytree(find_rules_dir() / "assistant", kok / "assistant")
+    dosya = kok / "assistant" / "rotalar.json"
+    veri = json.loads(dosya.read_text(encoding="utf-8"))
+    for r in veri["rotalar"]:
+        if r.get("kalip") == "/kosular":
+            r["roller"] = ["po"]
+    dosya.write_text(json.dumps(veri, ensure_ascii=False), encoding="utf-8")
+
+    assert rota_rolleri("/kosular") is None
+    assert rota_rolleri("/kosular", rules_dir=kok) == frozenset({"po"})
+    cikti = _cikti(yonlendirmeler=[{"etiket": "Koşular", "rota": "/kosular"}])
+    assert isle(cikti, SonIslemBaglami(rol="tester"))["yonlendirmeler"]
+    assert isle(cikti, SonIslemBaglami(rol="tester", rules_dir=kok))["yonlendirmeler"] == []
+    assert isle(cikti, SonIslemBaglami(rol="po", rules_dir=kok))["yonlendirmeler"]
+    # Dışarıdan verilen süzgeç önceliklidir (testler/çağıranlar için).
+    yok = SonIslemBaglami(rol="po", rules_dir=kok, rota_rolleri=lambda _r: frozenset({"admin"}))
+    assert isle(cikti, yok)["yonlendirmeler"] == []

@@ -238,10 +238,14 @@ describe("kip rozeti", () => {
     const { unmount } = kart(m, { varsayilan_model: "claude-haiku-5-5" });
     expect(screen.getByText(SIZINTI_METNI)).toBeInTheDocument();
     expect(screen.queryByText("Emin değil")).toBeNull();
+    // Kip rozeti de yok (BE2-3): gösterilen metin modelin cevabı değil; status'ta model olsa da.
+    expect(screen.queryByTestId("kip-rozeti")).toBeNull();
+    expect(kipRozeti({ kaynak: "model", amac: "assistant", cevap: { ...m.cevap!, model: "claude-haiku-5-5" } })).toBeNull();
     unmount();
-    // Karşı örnek: sızıntı olmayan cevapta aynı güven rozeti çizilir.
-    kart({ ...m, cevap: { ...m.cevap!, sizinti: false } });
+    // Karşı örnek: sızıntı olmayan cevapta aynı güven rozeti ve CANLI rozeti çizilir.
+    kart({ ...m, cevap: { ...m.cevap!, sizinti: false } }, { varsayilan_model: "claude-haiku-5-5" });
     expect(screen.getByText("Emin değil")).toBeInTheDocument();
+    expect(screen.getByTestId("kip-rozeti")).toHaveTextContent(/^CANLI · Haiku 5\.5$/);
   });
 
   it("rolüne kapalı rotaya 'Git' düğmesi çizilmez; açık rotalar (Kontrol Kulesi) herkese", () => {

@@ -8,11 +8,12 @@
   başlar (aynı süreçteki istekler isabet eder).
 - **Sızıntı taraması** (`sizinti_var`): `sonislem.isle` sonrası cevabın **bütün dizge değerleri**
   (`gorunur_dizgeler`; bloklar, notlar, kaynak alıntı/ref, yönlendirme etiketi, öneri ve Jira
-  taslakları dahil, özyinelemeli) taranır: herhangi bir kanarya (`tp canary` + 8 hex; yalnız bu
-  sürecinki değil, başka sürecin ya da eski bir kanaryanın sızması da sızıntıdır), bu sürecin
-  kanaryasının yalnız hex kısmı ya da `rules/assistant/istem-izleri.yaml`'daki parmak izi
-  cümlelerinden biri. İz eşleşmesi normalize edilmiş metinde yapılır (Türkçe küçük harf, aksan
-  katlama, noktalama → boşluk).
+  taslakları dahil, özyinelemeli; sızıntı taramasının tek kaynağı) taranır: bu sürecin kanaryası
+  (tam ya da yalnız hex kısmı) her zaman sızıntıdır; başka bir kanarya biçimi (`tp canary` + 8
+  hex) ya da `rules/assistant/istem-izleri.yaml`'daki parmak izi cümlelerinden biri yalnız
+  girdide/araç sonuçlarında (`kanit`) geçmiyorsa sızıntıdır (yerleştirilmiş içerik alıntısı
+  değildir). İz eşleşmesi normalize edilmiş metinde yapılır (Türkçe küçük harf, aksan katlama,
+  noktalama → boşluk).
 - Sızıntıda cevap `istem_sizintisi_cevabi()` ile değiştirilir (`sizinti: true`; portal güven
   rozetini göstermez); olay (`kanarya` | `istem_sizintisi`, ciddi) çağıranda (`flow.cevapla`)
   yazılır. Eşleşen metin hiçbir yere yazılmaz.
@@ -134,28 +135,48 @@ def gorunur_dizgeler(deger: Any) -> Iterator[str]:
             yield from gorunur_dizgeler(v)
 
 
-def sizinti_var(
-    cevap: Mapping[str, Any], kanarya: str | None, izler: Iterable[str]
-) -> SizintiTuru | None:
-    """Cevabın dizgelerinde kanarya (herhangi bir `TP-CANARY-` değeri) ya da istem izi var mı.
+def _kanarya_hexleri(metin: str) -> set[str]:
+    """Metindeki kanarya biçimli değerlerin hex kısımları (küçük harf; ayırıcıdan bağımsız)."""
+    return {m.group(0)[-8:].casefold() for m in _KANARYA_DESENI.finditer(metin)}
 
-    `kanarya` bu sürecin değeridir; önek deseni zaten her kanaryayı kapsar, ama değerin kendisi
-    (öneki atılarak yalnız hex kısmı yazılmışsa) da aranır. `izler` normalize edilmiş olmalıdır
-    (`izleri_yukle`)."""
+
+def sizinti_var(
+    cevap: Mapping[str, Any],
+    kanarya: str | None,
+    izler: Iterable[str],
+    kanit: Iterable[str] = (),
+) -> SizintiTuru | None:
+    """Cevabın dizgelerinde kanarya ya da istem izi sızıntısı var mı.
+
+    - **Bu sürecin kanaryası** (`kanarya`; tam değer ya da yalnız hex kısmı) her durumda
+      sızıntıdır: girdide ya da araç sonucunda olamaz (yalnız sistem isteminde).
+    - **Başka bir kanarya biçimi** (`TP-CANARY-` + 8 hex; başka süreç ya da eski kanarya) ve
+      **parmak izi cümleleri** (`izler`, normalize edilmiş: `izleri_yukle`) yalnız `kanit`
+      metinlerinde (soru, ekran bağlamı, sohbet geçmişi, araç sonuçları — modele kullanıcıdan ya da
+      dış kaynaktan giren her şey) geçmiyorsa sızıntıdır. Geçiyorsa cevap yerleştirilmiş içeriği
+      (ör. bir Jira yorumundaki "TP-CANARY-0badc0de") alıntılamıştır: sızıntı sayılmaz; aksi
+      hâlde bir saldırgan kayda yazdığı metinle o kaydı soran başka kullanıcıyı dondurabilirdi
+      (013 inceleme turu 2, SEC2-Y1). Kanarya karşılaştırması hex kısmıyla yapılır (model
+      ayırıcıyı/harf büyüklüğünü değiştirse de alıntı tanınır)."""
     parcalar = list(gorunur_dizgeler(cevap))
     if not parcalar:
         return None
     ham = "\n".join(parcalar)
-    if _KANARYA_DESENI.search(ham):
-        return "kanarya"
-    if kanarya:
-        hex_kismi = kanarya.removeprefix(KANARYA_ONEKI).casefold()
+    hex_kismi = kanarya.removeprefix(KANARYA_ONEKI).casefold() if kanarya else ""
+    if hex_kismi:
         desen = rf"(?<![0-9a-f]){re.escape(hex_kismi)}(?![0-9a-f])"
-        if hex_kismi and re.search(desen, ham.casefold()):
+        if re.search(desen, ham.casefold()):
             return "kanarya"
+    kanit_ham = "\n".join(k for k in kanit if isinstance(k, str) and k)
+    yabanci = _kanarya_hexleri(ham) - {hex_kismi}
+    if yabanci - _kanarya_hexleri(kanit_ham):
+        return "kanarya"
     metin = normalize(ham)
-    if any(iz and iz in metin for iz in izler):
-        return "istem_sizintisi"
+    eslesen = [iz for iz in izler if iz and iz in metin]
+    if eslesen:
+        kanit_metni = normalize(kanit_ham) if kanit_ham else ""
+        if any(iz not in kanit_metni for iz in eslesen):
+            return "istem_sizintisi"
     return None
 
 

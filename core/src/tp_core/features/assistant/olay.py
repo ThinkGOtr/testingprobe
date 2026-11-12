@@ -10,9 +10,11 @@
   dondurma sayımı soruyu tek eşitlikle denetler: çocuk sohbetin sonuna eklendiğinden sıra
   karşılaştırması araya giren başka bir soruya atfederdi.
 - `ardisik_ciddi`: kullanıcının son **temiz kabul edilen** sorusundan (`asistan_mesaj`,
-  `rol='user'`, `tetik='kullanici'`, kendisine bağlı ciddi olay yok) sonraki ciddi olay sayısı ve
-  en yenisinin zamanı. Kabul edilen soru sayacı sıfırlar; niyet sinyalleri ve `kisisel_veri`
-  sayılmaz (ciddi değil).
+  `rol='user'`, `tetik='kullanici'`, İLK cevabına bağlı ciddi olay yok) sonraki ciddi olay sayısı
+  ve en yenisinin zamanı. Kabul edilen soru sayacı sıfırlar; niyet sinyalleri ve `kisisel_veri`
+  sayılmaz (ciddi değil). Derin cevaptaki sızıntı yeni bir ciddi olaydır ama sorunun temizliğini
+  (önceki sıfırlamayı) geri almaz; aynı sorudaki tekrarlanan `istem_sizintisi` bir kez sayılır
+  (kanarya ve sır her seferinde).
 - `dondurma_kalan_s`: sayım ≥ `DONDURMA_ESIK` ve son ciddi olay `DONDURMA_SURE_S` içindeyse kalan
   saniye (≥ 1), değilse None. Saat veritabanından (`now()`) verilir.
 - `dondurma_baslat`: dondurmanın ilk reddinde bir kez `donduruldu` olayı ve `audit_event`
@@ -117,18 +119,31 @@ def olay_yaz(
 
 _ARDISIK = text(
     """
-    SELECT count(*), max(o.zaman) FROM asistan_guvenlik_olay o
+    SELECT
+      -- İz sızıntısı (`istem_sizintisi`) aynı soruda (ilk cevap + derin cevaplar) bir kez sayılır;
+      -- kanarya ve sır her olayda sayılır (013 inceleme turu 2, SEC2-Y4).
+      count(*) FILTER (WHERE o.tur <> 'istem_sizintisi' OR o.mesaj_id IS NULL)
+        + count(DISTINCT o.mesaj_id) FILTER (WHERE o.tur = 'istem_sizintisi'),
+      max(o.zaman)
+    FROM asistan_guvenlik_olay o
     WHERE o.kullanici_id = :k AND o.ciddi
       AND o.zaman > COALESCE(
             (SELECT max(m.olusturma) FROM asistan_mesaj m
              WHERE m.kullanici_id = :k AND m.rol = 'user' AND m.tetik = 'kullanici'
-               -- K11: yalnız TEMİZ biten soru sıfırlar. Kanarya / istem sızıntısı olayı almış
-               -- soru (olay, derin çocukta olsa da kök soruya bağlıdır: `soru_kimligi`)
-               -- sıfırlama noktası değildir; yoksa her sızıntıyı izleyen soru sayacı sıfırlar ve
-               -- sızıntılar eşiğe hiç ulaşmazdı. Kısmi indeks: asistan_guvenlik_olay_mesaj_ix.
+               -- K11: yalnız TEMİZ kabul edilen soru sıfırlar. Temizlik sorunun İLK cevabına
+               -- bakar: kanarya / istem sızıntısı olayı (kök soruya bağlı: `soru_kimligi`) ilk
+               -- cevaptaysa soru sıfırlama noktası değildir (yoksa her sızıntıyı izleyen soru
+               -- sayacı sıfırlar). Derin ("Daha ayrıntılı", `ust_mesaj_id` dolu) cevaptaki sızıntı
+               -- ayrı bir ciddi olay olarak sayılır ama önceki sıfırlamayı geri ALMAZ (013
+               -- inceleme turu 2, BE2-1). Kısmi indeks: asistan_guvenlik_olay_mesaj_ix.
                AND NOT EXISTS (
                  SELECT 1 FROM asistan_guvenlik_olay so
-                 WHERE so.mesaj_id = m.id AND so.kullanici_id = :k AND so.ciddi)),
+                 WHERE so.mesaj_id = m.id AND so.kullanici_id = :k AND so.ciddi
+                   AND NOT EXISTS (
+                     SELECT 1 FROM asistan_mesaj d
+                     WHERE d.kullanici_id = :k AND d.rol = 'assistant'
+                       AND d.ust_mesaj_id IS NOT NULL
+                       AND d.id::text = so.ayrinti->>'cevap'))),
             '-infinity'::timestamptz)
     """
 )

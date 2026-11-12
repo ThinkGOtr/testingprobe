@@ -77,6 +77,9 @@ asistan_hiz
 - `models/enums.TOOL_KANAL` += `asistan`; yeni enum kümeleri `ASISTAN_*` (`models/enums.py`).
 - `GRANT SELECT, INSERT, UPDATE, DELETE ON asistan_sohbet, asistan_mesaj, asistan_durum,
   asistan_oneri_geri_bildirim, asistan_hiz TO tp_app`.
+- 0021 (spec 013): `GRANT SELECT, INSERT, DELETE ON asistan_guvenlik_olay TO tp_app` (UPDATE yok;
+  olay kaydı değiştirilmez, yalnız 90 gün saklama silmesi). Tablo ve dondurma kuralı
+  `specs/013-asistan-guvenlik/ANALIZ.md` §6, `docs/MIMARI-SOZLESME.md` §4.
 - `ai_call`'a kolon eklenmez: kişi bağı `ai_call.ek = {kanal:"asistan", kullanici_id, mesaj_id}` +
   `asistan_mesaj.ai_call_id` (`deterministic_call_id(mesaj_id, amac)`; iş `running`'e alınırken yazılır).
 - `asistan_mesaj.durum` `workflow/states.MACHINES`'e **konmaz** (insan kapısı yok; altyapı kaydı).

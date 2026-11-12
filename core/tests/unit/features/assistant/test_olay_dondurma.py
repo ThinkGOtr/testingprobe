@@ -224,9 +224,9 @@ def test_soru_kimligi_zincirin_kok_sorusu(
 def test_derin_cocuk_sizintisi_kok_soruyu_kirli_sayar(
     client: TestClient, make_user, engine: Engine, canli
 ) -> None:
-    """SEC11: S1, C1, S2, C2, D(C1) — D'nin sızıntısı S1'e bağlı; S2 temiz kalır ve yalnız ondan
-    sonraki olaylar sayılır. S1'in ardından gelen sızıntılar dizisinde temiz soru yoksa sayılar
-    birikir."""
+    """SEC11: S1, C1, S2, C2, D(C1) — D'nin sızıntısı S1'e bağlı (soru kimliği) ve sayılır. S1'in
+    ilk cevabı temiz olduğundan S1 sıfırlama noktası olarak kalır (BE2-1); S2'nin ilk cevabı
+    sızınca S2 sıfırlamaz ve sayılar birikir."""
     u = make_user("analyst")
     giris(client, u)
     s = sohbet_ac(client)
@@ -241,7 +241,7 @@ def test_derin_cocuk_sizintisi_kok_soruyu_kirli_sayar(
         olay.olay_yaz(c, u.id, "kanarya", mesaj_id=s1, ayrinti={"cevap": d})
     with engine.connect() as c:
         assert olay.ardisik_ciddi(c, u.id)[0] == 1
-    # Sızan soru (S1) sıfırlama noktası değil: S2'ye de sızıntı yazılınca sayım 2.
+    # S2'nin ilk cevabına sızıntı: S2 sıfırlama noktası değil, sayım 2 (D + S2).
     with engine.begin() as c:
         s2 = olay.soru_kimligi(c, uuid.UUID(cevaplar[1]))
         olay.olay_yaz(c, u.id, "kanarya", mesaj_id=s2)
@@ -251,6 +251,72 @@ def test_derin_cocuk_sizintisi_kok_soruyu_kirli_sayar(
     assert r.status_code == 202
     with engine.connect() as c:
         assert olay.ardisik_ciddi(c, u.id)[0] == 0
+
+
+def test_derin_cevap_sizintisi_onceki_sifirlamayi_geri_almaz(
+    client: TestClient, make_user, engine: Engine, canli
+) -> None:
+    """BE2-1 (K11 = ardışık ciddi olay): sır×2 → temiz Q1 (sıfırlar) → Q1'in "Daha ayrıntılı"
+    cevabı sızdırır. Derin sızıntı yeni bir ciddi olaydır (1) ama Q1'in temizliğini geri almaz:
+    eski iki sır olayı yeniden sayılıp dondurmaz. Karşı örnek: sızıntı Q1'in İLK cevabındaysa
+    Q1 sıfırlamaz ve 3 olay dondurur."""
+    for ilk_cevapta in (False, True):
+        u = make_user("analyst")
+        giris(client, u)
+        s = sohbet_ac(client)
+        _sir_dene(client, s, 2)
+        r = sor(client, s)
+        assert r.status_code == 202, r.text
+        c1 = r.json()["mesaj_id"]
+        mesaj_bitir(engine, c1, amac="assistant")
+        with engine.connect() as c:
+            assert olay.ardisik_ciddi(c, u.id)[0] == 0
+        sizan = c1 if ilk_cevapta else _derin_cocuk(engine, c1)
+        with engine.begin() as c:
+            q1 = olay.soru_kimligi(c, uuid.UUID(sizan))
+            olay.olay_yaz(c, u.id, "kanarya", mesaj_id=q1, ayrinti={"cevap": sizan})
+        with engine.connect() as c:
+            assert olay.ardisik_ciddi(c, u.id)[0] == (3 if ilk_cevapta else 1)
+        r = sor(client, s)
+        if ilk_cevapta:
+            assert r.status_code == 429 and r.json()["kod"] == "donduruldu", r.text
+        else:
+            assert r.status_code == 202, r.text
+            assert _supheli(engine) == 0
+
+
+def test_ayni_sorudaki_tekrarlanan_iz_sizintisi_bir_kez_sayilir(
+    client: TestClient, make_user, engine: Engine, canli
+) -> None:
+    """SEC2-Y4: aynı sorunun ilk ve derin cevaplarındaki `istem_sizintisi` olayları tek ciddi olay
+    sayılır; kanarya her olayda ayrı sayılır."""
+    u = make_user("analyst")
+    giris(client, u)
+    s = sohbet_ac(client)
+    r = sor(client, s)
+    c1 = r.json()["mesaj_id"]
+    mesaj_bitir(engine, c1, amac="assistant")
+    d1 = _derin_cocuk(engine, c1)
+    d2 = _derin_cocuk(engine, d1)
+    with engine.begin() as c:
+        q = olay.soru_kimligi(c, uuid.UUID(c1))
+        for cevap in (c1, d1, d2):
+            olay.olay_yaz(c, u.id, "istem_sizintisi", mesaj_id=q, ayrinti={"cevap": cevap})
+    with engine.connect() as c:
+        assert olay.ardisik_ciddi(c, u.id)[0] == 1
+    assert sor(client, s).status_code != 429
+    with engine.begin() as c:
+        for cevap in (d1, d2):
+            olay.olay_yaz(c, u.id, "kanarya", mesaj_id=q, ayrinti={"cevap": cevap})
+    with engine.connect() as c:
+        # Yeni soru (yukarıdaki POST) temiz: sıfırlama noktası o; sonraki iki kanarya sayılır.
+        assert olay.ardisik_ciddi(c, u.id)[0] == 2
+    # Soru kimliksiz iz olayları (mesaj_id NULL) birleştirilmez.
+    with engine.begin() as c:
+        olay.olay_yaz(c, u.id, "istem_sizintisi")
+        olay.olay_yaz(c, u.id, "istem_sizintisi")
+    with engine.connect() as c:
+        assert olay.ardisik_ciddi(c, u.id)[0] == 4
 
 
 def test_kisisel_veri_reddi_olay_yazar_sayaca_girmez(

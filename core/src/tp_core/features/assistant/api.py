@@ -397,23 +397,17 @@ def _dondurma_kontrol(session: Session, user: Principal) -> None:
     )
 
 
-def _kart_bul(metin: str, *, baglam: bool) -> bool:
-    """`guvenlik.kart_bul`; ekran bağlamı (JSON) `baglam=True` ile taranır (çevrede kart kelimesi
-    şartı, spec 013 §5.1)."""
-    from tp_core.features.assistant.guvenlik import kart_bul
-
-    return bool(kart_bul(metin, baglam=baglam))
-
-
 def _kisisel_veri_kontrol(session: Session, user: Principal, soru: str, baglam_json: str) -> None:
     """Soru/bağlamda Luhn'lu kart numarası → 422 `kisisel_veri` (değer yazılmaz; specs/013 §5.1).
 
     Olay ciddi değildir, dondurma sayacına girmez (K11); ayrı bağlantıda yazılır. TCKN/IBAN
     reddedilmez, worker'da her zaman maskelenir."""
+    from tp_core.features.assistant.guvenlik import kart_bul
+
     alanlar = []
-    if soru and _kart_bul(soru, baglam=False):
+    if soru and kart_bul(soru, baglam=False):
         alanlar.append("soru")
-    if baglam_json and _kart_bul(baglam_json, baglam=True):
+    if baglam_json and kart_bul(baglam_json, baglam=True):
         alanlar.append("baglam")
     if alanlar:
         _ayri_olay(session, user, olay.TUR_KISISEL, alan=alanlar)
