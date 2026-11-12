@@ -119,6 +119,11 @@ CREATE TABLE test_verisi_surum (
         "CHECK (tetik IN ('elle', 'otomatik'))"
     )
     op.execute(_engel_ck((*ENGEL_TURLERI, "test_verisi")))
+    # Otomatik akış rozeti: gereksinimin son otomatik case işi (gereksinim listesi tek sorgu).
+    op.execute(
+        "CREATE INDEX job_otomatik_case_req_ix ON job ((yuk->>'requirement_id'), olusturma) "
+        "WHERE tur = 'requirements.otomatik_case'"
+    )
     op.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON otomasyon_ayari TO tp_app")
     # Katalog silmesi yumuşaktır: tp_app satır silemez (sürüm geçmişi de RESTRICT ile korunur).
     op.execute("GRANT SELECT, INSERT, UPDATE ON test_verisi TO tp_app")
@@ -127,6 +132,7 @@ CREATE TABLE test_verisi_surum (
 
 
 def downgrade() -> None:
+    op.execute("DROP INDEX job_otomatik_case_req_ix")
     op.execute(
         "UPDATE script_codegen SET engel_turu = 'unsourced_value' WHERE engel_turu = 'test_verisi'"
     )

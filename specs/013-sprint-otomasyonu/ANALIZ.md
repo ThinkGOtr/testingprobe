@@ -55,8 +55,10 @@ Yorumlarım (ürün sahibi söylemedi, makul varsayılan olarak alındı; review
 - **Y1** Otomatik kod üretiminin platformu `web`. Uygulama platformları (Android/iOS/Windows) cihaz
   gerektirdiği için otomatik tetiklenmez; elle düğme kalır. Dil seçimi uretim-dili dev'e girince
   "algılanan dil" olur (bu dalda alan yok).
-- **Y2** Otomatik case üretimi yalnız Jira tetiğiyle akışa alınmış (`qa_tetik_zamani` dolu)
-  gereksinimlerde çalışır. Elle çekilen gereksinimin akışı (demo provası) değişmez.
+- **Y2** (K21 ile değişti) Otomatik case üretimi Jira tetiğiyle akışa alınmış (`qa_tetik_zamani`
+  dolu) gereksinimlerde çalışır. Story bu duruma girerse elle çekilmiş gereksinim de akışa alınır;
+  PO onayından sonra case'ler otomatik üretilir (ayar açıksa). Duruma girmeyen elle çekilmiş
+  gereksinimin akışı (demo provası) değişmez.
 - **Y3** Otomasyon ayarlarını Analist ve Otomasyon mühendisi değiştirir (katalogla aynı).
 - **Y4** Jira'ya yayınlanan case metninde atıflar değere çözülür; **gizli** anahtarlar
   çözülmez, `{veri:anahtar}` olarak kalır (bugün demo parolası Jira'ya açık yazılıyordu).
@@ -188,6 +190,9 @@ Akışa bağlanma (Ş3):
 - **jira-sim**: "QA To Do" durumu (`STATUSES`), `GET/POST /rest/api/3/issue/{key}/transitions`
   (gerçek Jira biçimi), JQL `status = "QA To Do"` desteği. Demo kontrolü:
   `POST /demo/jira-status {jira_key, durum}` (yalnız demo/sim modunda; gerçek Jira'da 409).
+- **Not (K21, tur 2):** duruma giren story aşaması ne olursa olsun akışa alınır (elle çekilmiş
+  dahil; inceleme/PO aşamasında `akisa_alindi`), PO onayından sonra case'ler otomatik üretilir
+  (`otomatik_case` açıksa; kapalıysa neden "PO onayından sonra case üretimini elle başlatın").
 
 ### 3.5 Portal (Ş4)
 

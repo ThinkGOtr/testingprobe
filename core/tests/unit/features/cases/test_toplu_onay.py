@@ -61,7 +61,12 @@ def test_gorulmeyen_atlanir_hash_uyusmazligi_tek_ogeyi_dusurur(api: TestClient, 
     assert [s["case_id"] for s in out["sonuclar"]] == [a["id"], b["id"], c["id"]]
     assert sonuc[a["id"]]["durum"] == "onaylandi" and sonuc[a["id"]]["neden"] is None
     assert sonuc[a["id"]]["otomatik_kod"] is None  # K16: üst düzey alanda
-    assert out["otomatik_kod"] == {"durum": "kapali", "job_id": None, "case_sayisi": 0}
+    assert out["otomatik_kod"] == {
+        "durum": "kapali",
+        "job_id": None,
+        "case_sayisi": 0,
+        "atlanan": [],
+    }
     assert sonuc[b["id"]]["durum"] == "hata" and sonuc[b["id"]]["otomatik_kod"] is None
     assert "değişmiş" in sonuc[b["id"]]["neden"] or "hash" in sonuc[b["id"]]["neden"]
     assert sonuc[c["id"]] == {
@@ -150,7 +155,7 @@ def test_uc_saniye_dolmadan_gorulmus_sayilmaz(api: TestClient, hazir) -> None:
     assert out["sonuclar"][0]["neden"] == (
         "Görüntüleme yeni kaydedildi; birkaç saniye sonra yeniden deneyin"
     )
-    assert out["otomatik_kod"] == {"durum": "yok", "job_id": None, "case_sayisi": 0}
+    assert out["otomatik_kod"] == {"durum": "yok", "job_id": None, "case_sayisi": 0, "atlanan": []}
     assert _durum(a["id"]) == "draft"
 
 

@@ -637,6 +637,20 @@ def _prlari_kapat(engine: Engine, forge: Any, isteyen: str) -> list[dict[str, An
     return kapanan
 
 
+def _otomasyon_demo_ayarlari() -> dict[str, Any]:
+    """013 K20: demo sıfırlaması onay sonrası otomatik kodu kapatır (Demo-B "Kod üret" düğmesiyle
+    yürür). Denetimli (`otomasyon.ayar`, aktör `demo`; isteyen `demo.reset` kaydında); hata
+    sıfırlamayı durdurmaz, özete yazılır."""
+    from tp_core.features.otomasyon import ayarlar
+
+    try:
+        with session_scope() as s:
+            return ayarlar.demo_ayarlarini_yaz(s, "demo")
+    except Exception:
+        log.exception("demo sıfırlaması: otomasyon ayarları yazılamadı")
+        return {"hata": "otomasyon ayarları yazılamadı; Otomasyon sayfasından kapatın"}
+
+
 def run_reset(ctx: JobContext, engine: Engine) -> dict[str, Any]:
     isteyen = str((ctx.yuk or {}).get("isteyen") or "presenter")
     forge = _forge()
@@ -657,6 +671,7 @@ def run_reset(ctx: JobContext, engine: Engine) -> dict[str, Any]:
     ek = _web_ve_ci(engine, forge, sonuc.main_after, "baseline", isteyen)
     jira = _jira_temizle()
     isaretlenen = _silinen_buglari_isaretle(jira.get("silinen") or [], isteyen)
+    otomasyon = _otomasyon_demo_ayarlari()
     ozet = {
         "isteyen": isteyen,
         "bypass_aktoru": BYPASS_ACTOR,
@@ -671,6 +686,7 @@ def run_reset(ctx: JobContext, engine: Engine) -> dict[str, Any]:
         },
         "kapanan_prlar": kapanan,
         "jira": jira,
+        "otomasyon": otomasyon,
         "veritabani": {
             "durum": "dokunulmadi",
             "neden": "denetim ve geçmiş append-only; tam sıfırlama için `make reset` (denetim "
