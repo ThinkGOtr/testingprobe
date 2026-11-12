@@ -4,8 +4,9 @@ Gerçek Agent Probe'a ağ çağrısı yoktur. "Kayıt atılıyor ve cevap geliyo
 
 - `list_products()`: `rules/agent-probe/urunler.yaml`'daki ürünlerden yalnız `hazir: true` olanlar
   (Agent Probe'da ön tanımları tamamlanmış ürünler).
-- `start_agent_test(urun, gereksinim)`: Agent Probe'da kayıt açar → talep no `APT-<yıl>-<n>`,
-  durum `queued`.
+- `start_agent_test(urun, gereksinim)`: Agent Probe'da kayıt açar → talep no `APT-<yıl>-<n>`
+  (`n`: `ajan_testi_talebi_no_seq` dizisi, yarışsız), durum `queued`. Simülasyon sonucu
+  gereksinimi `done`'a taşımaz (`features.agent_probe.service`, `TP_AGENT_PROBE_SIM_TAMAMLAR`).
 - `get_agent_test(talep_no)`: deterministik ilerleme, kaydın açılış anından geçen süreye göre:
   `< kuyruk_s` → `queued`; `< kuyruk_s + kosu_s` → `running` (geçen senaryo sayısı orantılı);
   sonra senaryo tanımlarından `passed` (hepsi geçti) ya da `failed` (en az biri kaldı). Sonuç:
@@ -21,6 +22,8 @@ denetlenebilir saat (`saat`) verir.
   soru/varsayım atfı → `DÜZELTME_GEREKLİ`; aksi `KABUL` (kaynak `sim`).
 - `score_message`: anahtar sözcük kuralları (kaynak `sim`); karar `asistan.karar_ver` ile aynı kod.
   Asistan modeli kapalıyken ya da sözlük/şablon cevaplarında soru bu kurallarla denetlenir.
+- `cevap_on_puani`: asistan cevabının modelsiz ön denetimi (her kipte; doğrulanmış kişisel veri
+  değeri ve nefret kalıbı) — `engelle` ise port çağrılmaz.
 """
 
 from __future__ import annotations
@@ -141,17 +144,15 @@ class PgDeposu:  # pragma: no cover - tp_core.features.agent_probe testleri ger�
         self._engine = engine_factory
 
     def sonraki_no(self, yil: int) -> int:
+        """`ajan_testi_talebi_no_seq` (0027): `nextval` işlemden bağımsız ve yarışsızdır —
+        eşzamanlı iki talep aynı numarayı alamaz (eski `MAX+1` kilitsizdi, güvenlik #9).
+        Numara yıla göre sıfırlanmaz; yıl öneki yalnız okunabilirlik içindir."""
         from sqlalchemy import text
 
-        with self._engine().connect() as conn:
-            deger = conn.execute(
-                text(
-                    "SELECT COALESCE(MAX(CAST(split_part(talep_no, '-', 3) AS integer)), 0) "
-                    "FROM ajan_testi_talebi WHERE talep_no LIKE :o"
-                ),
-                {"o": f"{TALEP_ONEKI}-{yil}-%"},
-            ).scalar()
-        return int(deger or 0) + 1
+        with self._engine().begin() as conn:
+            return int(
+                conn.execute(text("SELECT nextval('ajan_testi_talebi_no_seq')")).scalar_one()
+            )
 
     def kayit(self, talep_no: str) -> SimKayit | None:
         from sqlalchemy import text
@@ -432,6 +433,109 @@ def sim_score(metin: str, yon: Literal["soru", "cevap"], baglam: Mapping[str, An
         kategoriler=kategoriler,
         karar=_asistan.karar_ver(puan, kategoriler, yon),
         gerekce=gerekce,
+        talep_no=f"APS-{_simdi().year}-{uuid5(_SIM_NS, anahtar).hex[:8]}",
+        kaynak="sim",
+        ai_call_id=None,
+    )
+
+
+# ------------------------------------------------------------------ cevap ön denetimi (kurallar)
+
+# Kart numarası (Luhn ile doğrulanır; rastgele 16 haneli sayı eşleşmez).
+_KART: Final = re.compile(r"(?<![\d-])(?:\d{4}[ -]?){3}\d{4}(?![\d-])")
+CEVAP_VERI_PUANI: Final = 20
+_TUR_ADI: Final = {
+    "TCKN": "TC kimlik no",
+    "IBAN": "IBAN",
+    "PHONE": "telefon",
+    "EMAIL": "e-posta",
+    "KART": "kart no",
+}
+
+
+def _luhn(deger: str) -> bool:
+    rakamlar = [int(c) for c in deger if c.isdigit()]
+    if len(rakamlar) != 16 or len(set(rakamlar)) == 1:
+        return False
+    toplam = 0
+    for i, r in enumerate(reversed(rakamlar)):
+        if i % 2:
+            r *= 2
+            if r > 9:
+                r -= 9
+        toplam += r
+    return toplam % 10 == 0
+
+
+def _izin_listesi() -> frozenset[str]:
+    from tp_core.gateway.config import find_rules_dir
+    from tp_core.gateway.factory import load_pii_allowlist
+
+    try:
+        return frozenset(v.lower() for v in load_pii_allowlist(find_rules_dir(None)))
+    except Exception:
+        return frozenset()
+
+
+def kisisel_veri_turleri(metin: str) -> list[str]:
+    """Metindeki kişisel veri türleri (modelsiz). Tanıyıcılar geçit maskelemesinin aynısıdır
+    (TCKN sağlama, IBAN mod-97, telefon, e-posta) + Luhn doğrulamalı kart numarası; maskeleme izin
+    listesindeki (`rules/pii-allowlist.yaml`, demo sentetik değerleri) değerler sayılmaz."""
+    from tp_core.gateway.masking import RECOGNIZERS
+
+    izin = _izin_listesi()
+    turler: list[str] = []
+    for rec in RECOGNIZERS:
+        for m in rec.pattern.finditer(metin or ""):
+            deger = m.group(0)
+            if deger.lower() in izin:
+                continue
+            if rec.validate is not None and not rec.validate(deger):
+                continue
+            if rec.kind not in turler:
+                turler.append(rec.kind)
+            break
+    if any(_luhn(m.group(0)) for m in _KART.finditer(metin or "")):
+        turler.append("KART")
+    return turler
+
+
+def cevap_on_puani(metin: str, baglam: Mapping[str, Any]) -> MessageScore:
+    """Asistan cevabının modelsiz ön denetimi (deterministik önce, constitution XI).
+
+    Yalnız yüksek kesinlikli kalıplar: doğrulanmış kişisel veri değeri (cevapta kişisel veri
+    tabanı `engelle`) ve gruba yönelik aşağılayıcı ifade (`nefret_irkcilik`, taban `engelle`).
+    Anahtar sözcük kuralları (ör. "TC kimlik" alanından söz etmek, prompt injection'ı anlatan bir
+    test senaryosu) cevapta kullanılmaz: test aracının cevapları bunları meşru olarak anar; o
+    kategoriler model puanına bırakılır. Eşleşme yoksa 95 / temiz (karar `gec`).
+    """
+    turler = kisisel_veri_turleri(metin)
+    s = sade(metin)
+    nefret = any(desen.search(s) for k, desen, _ps, _pc in KURALLAR if k == "nefret_irkcilik")
+    kategoriler: list[str] = []
+    nedenler: list[str] = []
+    puan = TEMIZ_PUAN
+    if turler:
+        kategoriler.append("kisisel_veri")
+        nedenler.append(
+            "kişisel veri değeri (" + ", ".join(_TUR_ADI.get(t, t) for t in turler) + ")"
+        )
+        puan = CEVAP_VERI_PUANI
+    if nefret:
+        kategoriler.append("nefret_irkcilik")
+        nedenler.append(_GEREKCE["nefret_irkcilik"])
+        puan = min(puan, 10)
+    kategoriler = _asistan.kategorileri_duzelt(kategoriler, "cevap")
+    anahtar = str(baglam.get("mesaj_id") or "") + ":on-cevap:" + s[:200]
+    return MessageScore(
+        puan=puan,
+        kategoriler=kategoriler,
+        karar=_asistan.karar_ver(puan, kategoriler, "cevap"),
+        gerekce=(
+            "Kural tabanlı ön denetim: " + "; ".join(nedenler) + "."
+            if nedenler
+            else "Kural tabanlı ön denetim: risk kalıbı bulunmadı."
+        ),
         talep_no=f"APS-{_simdi().year}-{uuid5(_SIM_NS, anahtar).hex[:8]}",
         kaynak="sim",
         ai_call_id=None,

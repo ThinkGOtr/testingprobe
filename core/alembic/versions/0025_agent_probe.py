@@ -134,6 +134,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Bilinçli veri dönüşümü (0027 notu): engel / "kontrol çalışmıyor" mesajları silinmez, kısıt
+    # daraltılabilsin diye `kapali` olarak yeniden yazılır; kayıt denetim zincirinde kalır.
     op.execute("UPDATE asistan_mesaj SET kaynak = 'kapali' WHERE kaynak = 'denetim'")
     op.drop_constraint("asistan_mesaj_kaynak_ck", "asistan_mesaj", type_="check")
     op.create_check_constraint(

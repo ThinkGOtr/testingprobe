@@ -5,7 +5,12 @@
 | GET | `/agent-probe/products` | herkes — Agent Probe'da hazır ajan ürünleri (simülasyon) |
 | PUT | `/requirements/{id}/agent-product` (`{urun_kodu: str \\| null}`) | analyst — bağla/kaldır |
 | POST | `/requirements/{id}/agent-test` | analyst — Agent Probe'da test başlat (202) |
-| GET | `/requirements/{id}/agent-test` | herkes — bağlantı + talep; bitmemiş talep sorgulanır |
+| POST | `/requirements/{id}/agent-test/refresh` | analyst — durumu Agent Probe'dan oku, işle |
+| GET | `/requirements/{id}/agent-test` | herkes — bağlantı + talep (yan etkisiz; yalnız okur) |
+
+GET yan etkisizdir (güvenlik #8, backend #11): durum geçişi ve sonuç işleme yalnız POST
+`…/refresh` ile (analist, CSRF korumalı) yapılır. Portal görünümdeki `yenilenebilir` true iken
+(bitmemiş ya da işlenmemiş talep) analist oturumunda `refresh`'i yoklar.
 """
 
 from __future__ import annotations
@@ -49,7 +54,12 @@ def test_baslat(requirement_id: uuid.UUID, session: DbSession, user: Analyst) ->
     return service.gorunum(session, requirement_id)
 
 
+@router.post("/requirements/{requirement_id}/agent-test/refresh")
+def test_yenile(requirement_id: uuid.UUID, session: DbSession, user: Analyst) -> dict[str, Any]:
+    service.yenile(session, requirement_id)
+    return service.gorunum(session, requirement_id)
+
+
 @router.get("/requirements/{requirement_id}/agent-test")
 def ajan_testi(requirement_id: uuid.UUID, session: DbSession, user: CurrentUser) -> dict[str, Any]:
-    service.yenile(session, requirement_id)
     return service.gorunum(session, requirement_id)

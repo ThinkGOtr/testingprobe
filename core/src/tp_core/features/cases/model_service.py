@@ -35,6 +35,7 @@ from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
 from tp_core.audit import audit_on_commit, content_hash
+from tp_core.features.agent_probe.service import ajan_urunu_engeli
 from tp_core.features.cases.model import (
     model_problems,
     model_stats,
@@ -211,6 +212,7 @@ def start_model_generation(
 ) -> dict[str, Any]:
     """Tasarım modeli üretimini başlatır (`modeling`); `{job_id, workflow_id, asama: "model"}`."""
     req = get_requirement(session, requirement_id, lock=True)
+    ajan_urunu_engeli(session, req.id)  # 011 F6: ajan ürününe bağlı gereksinimde model yok (409)
     if req.durum == "modeling" and _stuck_model(session, req):
         transition(session, req, "failed", SYSTEM, "modeling", sebep="model üretimi yarıda kaldı")
     if req.durum not in MODEL_BASLANGIC:
