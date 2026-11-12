@@ -22,13 +22,17 @@
     bir case'te, fazlası yok), `ready_ac_coverage`, `min_cases` / `max_cases`, `contains` /
     `not_contains` (case'lerin birleşik metni), `not_contains_any` (uydurma belirteçleri; `ready`
     case'lerde), `must_not_be_ready_about` (kaynağın sessiz olduğu konu `ready` case'te
-    yazılamaz); set `runs` kez koşar (§12: 5 story × 3 koşu) ve rapor koşu başına readiness /
-    teknik dağılımını taşır (`dagilim`);
+    yazılamaz), `techniques_include`, `must_cover_items_like` (sınır/bölüm konusu bir kapsam
+    öğesinde ya da kararında), `questions_about` (sessiz konu açık soru/varsayımda),
+    `source_grounded` (hazır case'lerin beklenen sonuçlarındaki tırnak içi metin ve TL tutarı
+    girdi mesajına dayanır); set `runs` kez koşar (§12: story × 3 koşu) ve rapor koşu başına
+    readiness / teknik dağılımını ve tekrar oranını taşır (`dagilim`);
   - design_model (011 F3; `eval_agents.design_model_problems`): her zaman model kontrolleri
     (`features.cases.model.model_problems`); `ac_coverage` (koşulların AC atıfları),
     `min_conditions`, `techniques_include`, `contains`, `not_contains_any` (uydurma
     belirteçleri; soru / varsayım / model sorunu dışındaki metinde), `silent_topics` (sessiz
-    konu açık soru / varsayım / model sorunu olarak kayda geçmeli);
+    konu açık soru / varsayım / model sorunu olarak kayda geçmeli), `must_cover_items_like`,
+    `source_grounded` (karar tablosu aksiyonları);
   - consistency_check (ajan): `doc_refs_include`, `acs`, `min_blocking`/`max_blocking`; kanıt
     araç ortamında üretimin `EvidenceVerifier`'ıyla yeniden doğrulanır (`eval_agents`);
   - verify_and_map (ajan): `steps`, `methods` (sembol tablosu), `expects_include`,
@@ -132,8 +136,13 @@ def _text(value: Any) -> str:
     return "" if value is None else str(value)
 
 
-def check_output(purpose: str, expect: Mapping[str, Any], output: Any) -> list[str]:
-    """Beklentiye aykırılıklar (boş = geçti). Türkçe, kısa."""
+def check_output(
+    purpose: str, expect: Mapping[str, Any], output: Any, *, kaynak: str | None = None
+) -> list[str]:
+    """Beklentiye aykırılıklar (boş = geçti). Türkçe, kısa.
+
+    `kaynak`: vakanın girdi metni (mesajların birleşimi); kaynağa dayanma denetimi
+    (`source_grounded`: tırnak içi metin ve TL tutarı) bununla yapılır, verilmezse atlanır."""
     out = output if isinstance(output, Mapping) else {}
     failures: list[str] = []
     if purpose == "triage":
@@ -171,11 +180,11 @@ def check_output(purpose: str, expect: Mapping[str, Any], output: Any) -> list[s
     elif purpose == "requirement_review":
         failures += review_problems(out, expect)
     elif purpose == "case_generation":
-        failures += coverage_problems(out, expect)
+        failures += coverage_problems(out, expect, kaynak=kaynak)
     elif purpose == "design_model":
-        failures += design_model_problems(out, expect)
+        failures += design_model_problems(out, expect, kaynak=kaynak)
     elif purpose == "case_deepening":
-        failures += deepening_problems(out, expect)
+        failures += deepening_problems(out, expect, kaynak=kaynak)
     elif purpose == "consistency_check":
         failures += findings_problems(out, expect)
     elif purpose == "verify_and_map":
@@ -221,6 +230,11 @@ def case_messages(case: Mapping[str, Any]) -> list[ModelMessage]:
     return [ModelMessage(**m) for m in case["messages"]]
 
 
+def case_source(case: Mapping[str, Any]) -> str:
+    """Vakanın kaynağı (girdi mesajlarının birleşimi): gereksinim, AC, PO cevapları, test verisi."""
+    return "\n".join(str(m.get("content") or "") for m in case.get("messages") or [])
+
+
 def run_case(
     gw: Any,
     data: Mapping[str, Any],
@@ -262,7 +276,7 @@ def run_case(
             )
     except GatewayError as exc:
         return CaseResult(cid, False, [type(exc).__name__], error=str(exc)[:500])
-    failures = check_output(purpose, expect, res.output)
+    failures = check_output(purpose, expect, res.output, kaynak=case_source(case))
     if agent and env is not None:
         failures += env.check(res.output, expect)
     return CaseResult(cid, not failures, failures, res.output, res.mode)
@@ -500,8 +514,16 @@ def uretim_dagilimi(results: Sequence[CaseResult]) -> dict[str, Any]:
     koşular. Çıktısı olmayan koşu (geçit hatası) sayılmaz."""
     kosular = {r.id: generation_stats(r.output) for r in results if isinstance(r.output, Mapping)}
     toplam: dict[str, Any] = {"kosu": len(kosular), "readiness": {}, "technique": {}}
-    for ad in ("case", "coverage_items", "covered_items", "not_covered", "open_questions"):
+    for ad in (
+        "case",
+        "coverage_items",
+        "covered_items",
+        "not_covered",
+        "open_questions",
+        "tekrar",
+    ):
         toplam[ad] = sum(int(k[ad]) for k in kosular.values())
+    toplam["tekrar_orani"] = round(toplam["tekrar"] / toplam["case"], 4) if toplam["case"] else None
     for kosu in kosular.values():
         for alan in ("readiness", "technique"):
             for anahtar, adet in kosu[alan].items():
@@ -511,7 +533,11 @@ def uretim_dagilimi(results: Sequence[CaseResult]) -> dict[str, Any]:
     return {
         "toplam": toplam,
         "kosular": kosular,
-        "uydurma": sorted(r.id for r in results if any("uydurma" in f for f in r.failures)),
+        "uydurma": sorted(
+            r.id
+            for r in results
+            if any("uydurma" in f or "kaynakta olmayan" in f for f in r.failures)
+        ),
         "readiness_ihlali": sorted(
             r.id for r in results if any("hazır (ready) case" in f for f in r.failures)
         ),

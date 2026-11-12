@@ -65,7 +65,14 @@ TEKNIK_ONEKI = {
     "PW": "PW-",
     "UC": "UC-",
     "EG": "EG-",
+    "CL": "CL-",
 }
+# Kısa saldırı verisi (ör. `'`) alt dizgi olarak değil, tek başına bir sözcük/simge olarak aranır
+# (`bayi'nin` gibi metinler yanlış pozitif vermesin).
+KISA_VERI = 4
+# Yalnız soru/varsayım bekleyen case'in yazabileceği belirteç (P5/P6: "mesaj metni: AÇIK NOKTA");
+# büyük/küçük harf ve Türkçe ı/i farkı gözetilmez.
+ACIK_NOKTA = re.compile(r"a[çc][ıiİI]k\s+nokta", re.IGNORECASE)
 
 
 @lru_cache(maxsize=4)
@@ -251,6 +258,16 @@ def _case_metinleri(case: Mapping[str, Any]) -> list[tuple[str, str]]:
     return [(ad, _sade(m)) for ad, m in out if _dolu(m)]
 
 
+def veri_geciyor(deger: str, metin: str) -> bool:
+    """Sadeleştirilmiş saldırı verisi sadeleştirilmiş metinde geçiyor mu? Kısa veri (`KISA_VERI`
+    karakterden az; ör. `'`, `--`) yalnız tek başına (boşlukla ayrılmış) geçtiğinde sayılır."""
+    if not deger:
+        return False
+    if len(deger) >= KISA_VERI:
+        return deger in metin
+    return re.search(rf"(?<!\S){re.escape(deger)}(?!\S)", metin) is not None
+
+
 def consistency_problems(case: Mapping[str, Any], ozet: Mapping[str, Any] | None) -> list[str]:
     """Case'in, üretiminin özetiyle ve kendi içinde tutarsızlıkları (boş = tutarlı; §4.2 1–6).
 
@@ -329,6 +346,19 @@ def consistency_problems(case: Mapping[str, Any], ozet: Mapping[str, Any] | None
             )
 
     metinler = _case_metinleri(case)
+    acik_nokta = [alan for alan, metin in metinler if ACIK_NOKTA.search(metin)]
+    if acik_nokta:
+        if durum == READY:
+            sorunlar.append(
+                "readiness: 'ready' case 'AÇIK NOKTA' içeremez (" + ", ".join(acik_nokta) + "); "
+                "bilinmeyen nokta varsayım ya da açık soruyla işaretlenir"
+            )
+        elif not (a_refs or q_refs):
+            sorunlar.append(
+                "'AÇIK NOKTA' bir açık soru ya da varsayım atfı gerektirir ("
+                + ", ".join(acik_nokta)
+                + "); open_question_refs / assumption_refs boş"
+            )
     for veri in case.get("test_data") or []:
         if not isinstance(veri, Mapping):
             continue
@@ -337,7 +367,7 @@ def consistency_problems(case: Mapping[str, Any], ozet: Mapping[str, Any] | None
             sorunlar.append(f"test_data[{ad}]: test verisi sentetik olmalı (synthetic: true)")
         deger = _sade(veri.get("value"))
         if veri.get("is_attack_payload") is True and deger:
-            gecen = [alan for alan, metin in metinler if deger in metin]
+            gecen = [alan for alan, metin in metinler if veri_geciyor(deger, metin)]
             if gecen:
                 sorunlar.append(
                     f"test_data[{ad}]: saldırı verisi yalnız test_data'da yer alır; şu alanlarda "
@@ -350,13 +380,23 @@ def set_problems(
     cases: Sequence[Mapping[str, Any]],
     ozet: Mapping[str, Any] | None,
     kabul_kriterleri: Sequence[Any],
+    *,
+    korunan: Sequence[Mapping[str, Any]] = (),
 ) -> list[str]:
     """Set düzeyi tutarsızlıklar (§4.2): negatif kapsam kararları ve kapsanmayanların gerekçesi.
 
     - her `valid: false` kapsam öğesinin tam bir `negative_coverage` kararı vardır;
-    - `tested` / `covered_by` kararlı öğe en az bir case'in `covers`'ındadır;
+    - `tested` / `covered_by` kararlı öğe en az bir case'in `covers`'ındadır (yalnız soru bekleyen
+      case'lerle kapsanması tutarsızlık değil, hazır olma uyarısıdır: `readiness_warnings`);
+    - `out_of_scope` kararlı öğe hiçbir case'in `covers`'ında değildir (karar ile set çelişir);
+    - [Ekip] case başına tek geçersiz değer: iki ya da daha çok geçersiz eşdeğerlik bölümünü
+      (`EP-I…`, `valid: false`) kapsayan case uyarı alır (hatanın nedeni ayrışmaz). Sınır değer
+      ya da hata tahmini öğesi aynı geçersiz değeri başka teknikle andığı için sayılmaz;
     - hiçbir case'in kapsamadığı öğe `not_covered`'da ya da `out_of_scope` kararında, kapsanmayan
       kabul kriteri `not_covered`'da gerekçelidir.
+
+    `korunan`: üretimde korunan (önceki üretimlerin onaylı/yayınlı ya da IDE) case'leri; yalnız
+    kabul kriteri kapsamına sayılır (kapsam öğesi kimlikleri kendi üretimlerine aittir).
     """
     oz = ozet or {}
     ogeler = [x for x in oz.get("coverage_items") or [] if isinstance(x, Mapping)]
@@ -364,6 +404,11 @@ def set_problems(
     gerekceli = {_ac_ya_da_oge(x.get("item")) for x in oz.get("not_covered") or []}
     kapsanan = {str(c) for case in cases for c in (case.get("covers") or [])}
     tanimli = {str(o.get("id")) for o in ogeler}
+    gecersiz_bolum = {
+        str(o.get("id"))
+        for o in ogeler
+        if o.get("valid") is False and str(o.get("id")).startswith("EP-I")
+    }
     karar_sayisi = Counter(str(k.get("item")) for k in kararlar)
     karar_of = {str(k.get("item")): str(k.get("decision")) for k in kararlar}
     sorunlar: list[str] = []
@@ -381,6 +426,11 @@ def set_problems(
             )
         karar = karar_of.get(kimlik)
         if kimlik in kapsanan:
+            if karar == "out_of_scope":
+                sorunlar.append(
+                    f"{kimlik}: negatif kapsam kararı 'out_of_scope' ama case kapsıyor "
+                    "(karar ya da case düzeltilmeli)"
+                )
             continue
         if karar in ("tested", "covered_by"):
             sorunlar.append(
@@ -391,9 +441,38 @@ def set_problems(
                 f"{kimlik}: hiçbir case kapsamıyor; not_covered'da ya da 'out_of_scope' "
                 "kararında gerekçesi yok"
             )
-    for ref in uncovered_acs(cases, kabul_kriterleri):
+    for no, case in enumerate(cases, start=1):
+        coklu = [str(c) for c in case.get("covers") or [] if str(c) in gecersiz_bolum]
+        if len(coklu) > 1:
+            sorunlar.append(
+                f"C{no}: birden çok geçersiz eşdeğerlik bölümü kapsıyor ("
+                + ", ".join(coklu)
+                + "); [Ekip] case başına tek geçersiz değer"
+            )
+    for ref in uncovered_acs([*cases, *korunan], kabul_kriterleri):
         if ref not in gerekceli:
             sorunlar.append(f"{ref}: hiçbir case kapsamıyor; not_covered'da gerekçesi yok")
+    return sorunlar
+
+
+def readiness_warnings(
+    cases: Sequence[Mapping[str, Any]], ozet: Mapping[str, Any] | None
+) -> list[str]:
+    """Set düzeyi hazır olma uyarıları (tutarsızlık değil; onay engellemez): `tested` kararlı
+    öğeyi yalnız açık soru bekleyen (`blocked`) case'ler kapsıyorsa öğe henüz test edilmiş
+    sayılmaz (beklenen sonuç yok). Kapsam matrisinin `covered_by_ready` sütunu aynı durumu
+    satır düzeyinde gösterir."""
+    sorunlar: list[str] = []
+    for k in (ozet or {}).get("negative_coverage") or []:
+        if not isinstance(k, Mapping) or str(k.get("decision")) != "tested":
+            continue
+        kimlik = str(k.get("item"))
+        kapsayan = [c for c in cases if kimlik in {str(x) for x in (c.get("covers") or [])}]
+        if kapsayan and all(readiness_of(c) == "blocked" for c in kapsayan):
+            sorunlar.append(
+                f"{kimlik}: negatif kapsam kararı 'tested' ama yalnız açık soru bekleyen "
+                "(blocked) case kapsıyor; soru yanıtlanana kadar test edilmiş sayılmaz"
+            )
     return sorunlar
 
 
@@ -418,11 +497,15 @@ def coverage_matrix(
 ) -> dict[str, Any]:
     """Kapsam matrisi (kodda hesaplanır; model yazmaz): `{"satirlar": [...], "oranlar": {...}}`.
 
-    Satır: `{item, tur: "ac"|"oge", tanim, valid, ac_ref, karar, covered_by, gerekce}`.
-    `covered_by` case'in `cases` içindeki 1 tabanlı sırasıdır. `gerekce`: `not_covered` nedeni,
-    yoksa negatif kapsam kararının gerekçesi. Oranlar: gereksinim (AC) kapsamı, öğe kapsamı,
-    negatif karar kapsamı (kararı olan `valid: false` öğeler); payda 0 ise oran `None`.
+    Satır: `{item, tur: "ac"|"oge", tanim, valid, ac_ref, karar, covered_by, covered_by_ready,
+    gerekce}`. `covered_by` case'in `cases` içindeki 1 tabanlı sırasıdır; `covered_by_ready`
+    bunların hazır (`ready`; eski v2 case hazır sayılır) olanlarıdır. `gerekce`: `not_covered`
+    nedeni, yoksa negatif kapsam kararının gerekçesi. Oranlar: gereksinim (AC) kapsamı, öğe
+    kapsamı, negatif karar kapsamı (kararı olan `valid: false` öğeler) ve yalnız hazır case'lerle
+    hazır gereksinim / öğe kapsamı (varsayıma bağlı ya da soru bekleyen case kapsamı
+    tamamlamaz); payda 0 ise oran `None`.
     """
+    hazir = {i for i, c in enumerate(cases, start=1) if readiness_of(c) == READY}
     oz = ozet or {}
     neden = {
         _ac_ya_da_oge(x.get("item")): str(x.get("reason") or "")
@@ -474,6 +557,8 @@ def coverage_matrix(
                 or None,
             }
         )
+    for satir in satirlar:
+        satir["covered_by_ready"] = [i for i in satir["covered_by"] if i in hazir]
     ac_satirlari, oge_satirlari = satirlar[:ac_sayisi], satirlar[ac_sayisi:]
     return {
         "satirlar": satirlar,
@@ -485,6 +570,12 @@ def coverage_matrix(
                 sum(bool(s["covered_by"]) for s in oge_satirlari), len(oge_satirlari)
             ),
             "negatif_karar_kapsami": _oran(kararli, negatif),
+            "hazir_gereksinim_kapsami": _oran(
+                sum(bool(s["covered_by_ready"]) for s in ac_satirlari), ac_sayisi
+            ),
+            "hazir_oge_kapsami": _oran(
+                sum(bool(s["covered_by_ready"]) for s in oge_satirlari), len(oge_satirlari)
+            ),
         },
     }
 

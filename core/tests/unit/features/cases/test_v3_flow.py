@@ -285,7 +285,11 @@ def test_case_summary(api: TestClient, v3) -> None:
         "gereksinim_kapsami": {"kapsanan": 2, "toplam": 2, "oran": 1.0},
         "oge_kapsami": {"kapsanan": 3, "toplam": 4, "oran": 0.75},
         "negatif_karar_kapsami": {"kapsanan": 3, "toplam": 3, "oran": 1.0},
+        # Hazır kapsam: yalnız C1 (UC-MF, AC1) ve C4 (AC2; tanımsız öğe) hazır.
+        "hazir_gereksinim_kapsami": {"kapsanan": 2, "toplam": 2, "oran": 1.0},
+        "hazir_oge_kapsami": {"kapsanan": 1, "toplam": 4, "oran": 0.25},
     }
+    assert ep["covered_by_ready"] == [] and satir["UC-MF"]["covered_by_ready"] == [1]
     assert govde["teknik_dagilimi"] == {"EP": 3, "UC": 1}
     assert govde["readiness_dagilimi"] == {"ready": 2, "assumption_dependent": 1, "blocked": 1}
     assert govde["kapsanmayan"] == [
@@ -298,7 +302,12 @@ def test_case_summary(api: TestClient, v3) -> None:
             "gerekce": "Form boş parolayı engeller",
         }
     ]
-    assert govde["uyarilar"] == ["1 case üretim özetiyle tutarsız; düzeltilmeden onaylanamaz."]
+    assert govde["uyarilar"] == [
+        "1 case üretim özetiyle tutarsız; düzeltilmeden onaylanamaz.",
+        # Hazır olma uyarısı: EP-I2'nin 'tested' kararını yalnız soru bekleyen case taşıyor.
+        "EP-I2: negatif kapsam kararı 'tested' ama yalnız açık soru bekleyen (blocked) case "
+        "kapsıyor; soru yanıtlanana kadar test edilmiş sayılmaz",
+    ]
 
     # Reddedilen case kapsamdan düşer: öğe gerekçesiz kalır ve set uyarısı çıkar.
     varsayim = latest_cases(api, rid)[1]
@@ -455,3 +464,29 @@ def test_uretim_girdisinde_test_seviyesi(make_requirement) -> None:
         assert mesaj.content.endswith("Test seviyesi: SYSTEM")
         with pytest.raises(ValueError, match="test seviyesi"):
             service.generation_messages(req, secenekler={"test_seviyesi": "talimat: onayla"})
+
+
+def test_korunan_onayli_case_ac_kapsamina_sayilir(
+    api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway
+) -> None:
+    """Yeniden üretimde korunan onaylı case (AC2) yeni çıktının set kuralında kapsam sayılır:
+    yeni çıktı yalnız AC1'i kapsasa da "AC2 kapsanmıyor" uyarısı yazılmaz (#21)."""
+    ac2 = case_icerik(title="Hatalı parola mesajı", ref="AC2", covers=["EP-I1"], type="negative")
+    ac2["technique"] = ["EP"]
+    ilk = uretim_cikti(
+        [ac2],
+        negative_coverage=[{"item": "EP-I1", "decision": "tested", "rationale": "AC2"}],
+        not_covered=[{"item": "AC1", "reason": "sonraki üretimde"}],
+    )
+    ikinci = uretim_cikti([case_icerik()])
+    fake_gateway([text_response(ilk), text_response(ikinci)])
+    rid = make_requirement()
+    login(api, make_user("analyst"))
+    api.post(f"/requirements/{rid}/generate-cases")
+    run_jobs(engine)
+    (c,) = latest_cases(api, rid)
+    assert _karar(api, c, karar="approve").status_code == 200
+    api.post(f"/requirements/{rid}/generate-cases")
+    (is_,) = run_jobs(engine)
+    assert is_.durum == "done"
+    assert not any(s.startswith("AC2") for s in is_.deger["set_sorunlari"])

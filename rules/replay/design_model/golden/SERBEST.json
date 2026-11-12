@@ -147,7 +147,8 @@
         "value": "750,00 TL",
         "side": "on",
         "expected": "accept",
-        "inclusive_source": "AC3"
+        "inclusive_source": "AC3",
+        "question_ref": null
       },
       {
         "field": "Kaldırma sonrası kampanyasız sepet toplamı",
@@ -155,7 +156,8 @@
         "value": "749,99 TL",
         "side": "below",
         "expected": "reject",
-        "inclusive_source": "AC3"
+        "inclusive_source": "AC3",
+        "question_ref": null
       }
     ],
     "decision_tables": [

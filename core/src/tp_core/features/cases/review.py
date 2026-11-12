@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -191,27 +192,48 @@ def _oran_metni(oran: Any) -> str:
 
 
 def matrix_text(matris: Sequence[Mapping[str, Any]], oranlar: Mapping[str, Any]) -> str:
-    """Kapsam matrisinin modele giden düz metni (kodda hesaplandı; güvenilir). Satırlar `ACn:`
+    """Kapsam matrisinin modele giden düz metni (kodda hesaplandı; GÜVENİLİR bölüm).
+
+    Yalnız sayısal iskelet: kimlik, tür, geçerlilik, AC atfı, karar, kapsayan set numaraları ve
+    oranlar. Serbest metin (AC / öğe tanımı, `not_covered` nedeni, karar gerekçesi) AI çıktısı ya
+    da gereksinimdir: güvenilir bölüme yazılmaz (güvenlik #2); tanımlar gereksinim bloğunda ve
+    setin `ozet`'inde (güvenilmeyen bloklar) zaten vardır, burada yalnız "gerekçe kayıtlı" denir.
+    Hazır olmayan (varsayıma bağlı / soru bekleyen) kapsayan `*` ile işaretlenir. Satırlar `ACn:`
     ile başlamaz (golden girdi beyanının AC çıkarımına karışmaz)."""
     satirlar = []
+    hazir_olmayan = False
     for s in matris:
-        kapsayan = ", ".join(f"C{n}" for n in s.get("covered_by") or []) or "—"
+        hazir = set(s.get("covered_by_ready") or [])
+        kapsayanlar = []
+        for n in s.get("covered_by") or []:
+            if "covered_by_ready" in s and n not in hazir:
+                kapsayanlar.append(f"C{n}*")
+                hazir_olmayan = True
+            else:
+                kapsayanlar.append(f"C{n}")
+        kapsayan = ", ".join(kapsayanlar) or "—"
         ek = []
         if s.get("tur") == "oge":
             ek.append("geçerli" if s.get("valid") else "geçersiz")
             if s.get("ac_ref"):
-                ek.append(str(s["ac_ref"]))
+                ek.append(_kimlik(s["ac_ref"]))
         if s.get("karar"):
-            ek.append(f"karar {s['karar']}")
+            ek.append(f"karar {_kimlik(s['karar'])}")
         if s.get("gerekce"):
-            ek.append(f"gerekçe: {s['gerekce']}")
-        tanim = " ".join(str(s.get("tanim") or "").split())
+            ek.append("gerekçe kayıtlı")
         satirlar.append(
-            f"- {s.get('item')} [{s.get('tur')}{'; ' + '; '.join(ek) if ek else ''}] "
-            f"kapsayan: {kapsayan} — {tanim}"
+            f"- {_kimlik(s.get('item'))} [{s.get('tur')}{'; ' + '; '.join(ek) if ek else ''}] "
+            f"kapsayan: {kapsayan}"
         )
     oran = ", ".join(f"{k} {_oran_metni(v)}" for k, v in sorted(oranlar.items()))
-    return "\n".join(satirlar) + (f"\nOranlar: {oran}" if oran else "")
+    dipnot = ["* hazır olmayan case (varsayıma bağlı ya da soru bekliyor)"] if hazir_olmayan else []
+    return "\n".join(satirlar + dipnot) + (f"\nOranlar: {oran}" if oran else "")
+
+
+def _kimlik(deger: Any) -> str:
+    """Kimlik/karar alanı güvenilir bölüme yalnız kimlik karakterleriyle girer (model çıktısındaki
+    serbest metin kimlik kılığında sızamasın)."""
+    return re.sub(r"[^0-9A-Za-z_>|:\-]", "", str(deger or ""))[:40] or "?"
 
 
 def requirement_block_for(req: Any) -> tuple[str, str]:

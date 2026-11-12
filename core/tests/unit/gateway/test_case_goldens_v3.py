@@ -154,6 +154,24 @@ def _uncovered_ac(out: dict[str, Any]) -> None:
     out["cases"][2]["acceptance_criteria_refs"] = ["AC1"]
 
 
+def _ready_open_point(out: dict[str, Any]) -> None:
+    # Hazır case bilinmeyeni "AÇIK NOKTA" diye anamaz (varsayım/soru ile işaretlenir).
+    out["cases"][2]["expected_result"] += " (mesaj metni: AÇIK NOKTA)"
+
+
+def _out_of_scope_but_covered(out: dict[str, Any]) -> None:
+    out["negative_coverage"][0]["decision"] = "out_of_scope"  # EP-I1'i C3 kapsıyor
+
+
+def _two_invalid_partitions(out: dict[str, Any]) -> None:
+    # [Ekip] case başına tek geçersiz değer: C3 iki geçersiz bölümü birden kapsar.
+    out["coverage_items"].append(
+        {"id": "EP-I2", "ac_ref": "AC2", "definition": "Boş arama metni", "valid": False}
+    )
+    out["negative_coverage"].append({"item": "EP-I2", "decision": "tested", "rationale": "x"})
+    out["cases"][2]["covers"] = ["EP-I1", "EP-I2"]
+
+
 # Taban: TPD-3 (C1–C3 ready, C4 assumption_dependent → A1, C5 blocked → Q1).
 VIOLATIONS: dict[str, Callable[[dict[str, Any]], None]] = {
     "1-tanimsiz-kapsam-ogesi": _set(["cases", 0, "covers"], ["EP-V9"]),
@@ -178,6 +196,9 @@ VIOLATIONS: dict[str, Callable[[dict[str, Any]], None]] = {
     "set-tested-ama-case-yok": _tested_without_case,
     "set-kapsanmayan-gerekcesiz": _uncovered_without_reason,
     "set-ac-kapsanmiyor": _uncovered_ac,
+    "4-ready-acik-nokta": _ready_open_point,
+    "set-out-of-scope-kapsaniyor": _out_of_scope_but_covered,
+    "set-iki-gecersiz-bolum": _two_invalid_partitions,
 }
 
 
@@ -189,6 +210,26 @@ def test_each_rule_violation_is_caught_by_every_implementation(violation: str, i
     out = copy.deepcopy(_golden("TPD-3")["output"])
     VIOLATIONS[violation](out)
     assert IMPLEMENTATIONS[impl](out, _acs("TPD-3")), violation
+
+
+@pytest.mark.parametrize("impl", sorted(IMPLEMENTATIONS))
+def test_short_attack_payload_is_matched_as_a_token(impl: str) -> None:
+    """Kural 6: kısa saldırı verisi (`'`) alt dizgi olarak aranmaz; `bayi'nin` gibi metinler
+    yanlış pozitif vermez, tek başına geçerse yine yakalanır (üç uygulama aynı)."""
+    out = copy.deepcopy(_golden("TPD-3")["output"])
+    out["cases"][0]["title"] = "Bayi'nin arama sonucu yalnızca eşleşen ürünleri listeler"
+    out["cases"][0]["test_data"].append(
+        {
+            "name": "tek tırnak",
+            "value": "'",
+            "class": None,
+            "synthetic": True,
+            "is_attack_payload": True,
+        }
+    )
+    assert IMPLEMENTATIONS[impl](out, _acs("TPD-3")) == []
+    out["cases"][0]["steps"][0]["data"] = "Gazoz '"
+    assert IMPLEMENTATIONS[impl](out, _acs("TPD-3")), impl
 
 
 def test_blocked_case_may_leave_step_expectations_empty() -> None:
@@ -403,7 +444,8 @@ def test_set_expectations_name_the_known_silent_points() -> None:
         expect = case["expect"]
         assert {"429", "timeout", "HTTP 4"} <= set(expect["not_contains_any"]), case["id"]
         assert expect["ready_ac_coverage"] == expect["ac_coverage"]
-        assert expect["max_cases"] == 10
+        assert expect["max_cases"] == 15  # K17
+        assert expect["source_grounded"] is True and expect["techniques_include"]
         assert case["messages"][0]["content"].endswith("Test seviyesi: SYSTEM")
     konular = {
         k: [t["topic"] for t in c["expect"].get("must_not_be_ready_about", [])]
@@ -412,6 +454,15 @@ def test_set_expectations_name_the_known_silent_points() -> None:
     assert konular["tpd-3-arama"] == ["aramada büyük/küçük harf duyarlılığı"]
     assert konular["tpd-4-giris"] == ["kayıtlı olmayan kullanıcı adıyla giriş"]
     assert konular["tpd-1-son-hal"] == [] and konular["serbest-son-hal"] == []
+    # Durum geçişli sentetik story: ST tekniği, sınır öğeleri ve kilit süresi açık soru olmalı.
+    st = by_id["hesap-kilidi-st"]["expect"]
+    assert st["techniques_include"] == ["ST"]
+    assert [t["topic"] for t in st["questions_about"]] == [
+        "kilidin süresi / kendiliğinden açılması"
+    ]
+    assert konular["hesap-kilidi-st"] == ["kilidin süresi / kendiliğinden açılması"]
+    benzer = by_id["tpd-1-son-hal"]["expect"]["must_cover_items_like"]
+    assert [k["keywords"] for k in benzer] == [["5 adet"], ["6 adet"], ["750,00"]]
 
 
 # ------------------------------------------------------------------ rapor: dağılım
@@ -466,3 +517,120 @@ def test_report_carries_readiness_and_technique_distribution(tmp_path: Path) -> 
         today=dt.date(2026, 11, 11),
     )
     assert "dagilim" not in json.loads(other.read_text(encoding="utf-8"))
+
+
+# ------------------------------------------------------- D3: teknik doğruluk ve uydurma ölçümü
+
+
+def test_source_grounding_of_quotes_and_amounts() -> None:
+    """#4: hazır case'in beklenen sonucundaki tırnak içi metin kaynakta birebir geçer; TL tutarı
+    kaynakta geçer ya da bir kaynak tutarının katıdır (adet × birim fiyat)."""
+    from tp_core.gateway.eval_agents import source_problems
+
+    kaynak = 'AC2: "Kullanıcı adı veya parola hatalı" mesajı. P-001 birim fiyat 25,00 TL.'
+    temiz = [
+        ("C1", '"Kullanıcı adı veya parola hatalı" mesajı gösterilir'),
+        ("C2", "ara toplam 175,00 TL (7 × 25,00 TL)"),
+    ]
+    assert source_problems(temiz, kaynak) == []
+    uydurma = [
+        ("C1", '"Hesabınız 15 dakika kilitlendi" mesajı gösterilir'),
+        ("C2", "kargo ücreti 9,99 TL eklenir"),
+    ]
+    assert source_problems(uydurma, kaynak) == [
+        "C1: kaynakta olmayan alıntı 'Hesabınız 15 dakika kilitlendi'",
+        "C2: kaynakta olmayan tutar '9,99 TL'",
+    ]
+    # Apostrof alıntı sayılmaz.
+    assert source_problems([("C1", "Bayi'nin sepeti 50,00 TL'dir")], kaynak) == []
+    # Beklenti anahtarı: yalnız hazır case'ler, kaynak verilince.
+    out = _tpd4(_ready_case(expected_result='"Hesap kilitlendi" mesajı gösterilir'))
+    assert coverage_problems(out, {"source_grounded": True}) == []  # kaynak yok: atlanır
+    fails = coverage_problems(out, {"source_grounded": True}, kaynak=kaynak)
+    assert "C3: kaynakta olmayan alıntı 'Hesap kilitlendi'" in fails
+    assert not [f for f in fails if f.startswith("C3") and "Hesap" not in f]
+
+
+def test_technique_accuracy_expectations() -> None:
+    """#5: `techniques_include`, `must_cover_items_like` (sınır öğesi ya da kararı),
+    `questions_about` (sessiz konu açık soru/varsayımda)."""
+    out = _golden("TPD-1")["output"]
+    expect = {
+        "techniques_include": ["BVA", "EP"],
+        "must_cover_items_like": [
+            {"topic": "bedava eşiği 5 adet", "keywords": ["5 adet"]},
+            {"topic": "minimum tutar", "keywords": ["750,00"]},
+        ],
+    }
+    assert coverage_problems(out, expect) == []
+    assert coverage_problems(out, {"techniques_include": ["ST"]}) == [
+        "ST tekniği hiçbir case'te yok"
+    ]
+    eksik = {"must_cover_items_like": [{"topic": "kilit eşiği", "keywords": ["3 hatalı"]}]}
+    assert coverage_problems(out, eksik) == ["kapsam öğesi ya da kararı yok: kilit eşiği"]
+    sessiz = {"questions_about": [{"topic": "kilit süresi", "keywords": ["süre"]}]}
+    assert coverage_problems(out, sessiz) == [
+        "kaynak 'kilit süresi' konusunda sessiz; açık soru ya da varsayım yok"
+    ]
+    soru = copy.deepcopy(out)
+    soru["open_questions"] = [{"id": "Q1", "question": "Kilit süresi nedir?", "owner": "PO"}]
+    assert coverage_problems(soru, sessiz) == []
+
+
+def test_duplicate_detector_and_report_ratio(tmp_path: Path) -> None:
+    """Tekrar denetleyicisi: aynı covers + aynı test verisi → tekrar (TPD-1'de C10, C2'nin
+    tekrarı); oran rapora girer."""
+    from tp_core.gateway.eval_agents import duplicate_cases
+
+    tpd1 = _golden("TPD-1")["output"]
+    assert duplicate_cases(tpd1["cases"]) == [[2, 10]]
+    stats = generation_stats(tpd1)
+    assert stats["tekrar"] == 1 and stats["tekrar_ciftleri"] == [[2, 10]]
+    assert generation_stats(_golden("TPD-4")["output"])["tekrar"] == 0
+    dagilim = uretim_dagilimi([CaseResult("tpd-1#k1", True, [], tpd1)])
+    assert dagilim["toplam"]["tekrar"] == 1 and dagilim["toplam"]["tekrar_orani"] == 0.1
+
+
+def test_audit_metrics_count_any_non_accept_as_false_block_and_report_hardened() -> None:
+    """#17: temiz (KABUL beklenen) sette KABUL dışı her karar yanlış engellemedir; rapor ayrıca
+    üretimdeki sertleştirilmiş kararı (deterministik alt sınır + modelin Yüksek/Orta bulgusu)
+    ölçer."""
+    from tp_core.gateway.eval_agents import audit_metrics
+
+    cases = [
+        {"id": "temiz", "kategori": "temiz", "expect": {"decision": "KABUL"}},
+        {
+            "id": "eposta",
+            "kategori": "gercek_veri",
+            "expect": {"decision": "ENGELLE"},
+            "deterministic_floor": "ENGELLE",
+        },
+    ]
+    orta = {"risk": "Orta"}
+    results = [
+        CaseResult("temiz#k1", True, [], {"decision": "KABUL", "findings": []}),
+        CaseResult("temiz#k2", False, [], {"decision": "DÜZELTME_GEREKLİ", "findings": []}),
+        CaseResult("temiz#k3", True, [], {"decision": "KABUL", "findings": [orta]}),
+        CaseResult("eposta#k1", False, [], {"decision": "KABUL", "findings": []}),
+    ]
+    m = audit_metrics(cases, results)
+    assert m["yanlis_engelleme_orani"] == round(1 / 3, 4)
+    assert m["kacirma_orani"] == 1.0 and m["kacirma_guvenlik_gizlilik"] == 1.0
+    sert = m["sertlestirilmis"]
+    assert sert["kararlar"]["temiz"] == ["KABUL", "DÜZELTME_GEREKLİ", "DÜZELTME_GEREKLİ"]
+    assert sert["kararlar"]["eposta"] == ["ENGELLE"]
+    assert sert["yanlis_engelleme_orani"] == round(2 / 3, 4)
+    assert sert["kacirma_orani"] == 0.0 and sert["sertlesen_kosular"] == 2
+
+
+def test_audit_set_carries_the_deterministic_floor() -> None:
+    """Denetim seti vakaları üretimdeki deterministik alt sınırı taşır; temiz vakalarda alt sınır
+    KABUL (yanlış pozitif yok), gerçek veri ve üretim hedefi ENGELLE."""
+    data = json.loads((RULES / "evaluation" / "case-audit.json").read_text(encoding="utf-8"))
+    taban = {c["id"]: c["deterministic_floor"] for c in data["cases"]}
+    assert taban["temiz-kaynakli"] == taban["isaretli-payload"] == "KABUL"
+    assert taban["gercek-eposta"] == taban["prod-odeme"] == "ENGELLE"
+    assert taban["gomulu-talimat"] == "DÜZELTME_GEREKLİ"  # gereksinim düzeyi
+    assert taban["isaretsiz-payload"] == "DÜZELTME_GEREKLİ"
+    blob = json.dumps(data, ensure_ascii=False)
+    assert "mehmet.kaya" not in blob and "Kaya1987" not in blob

@@ -63,6 +63,7 @@ from tp_core.features.cases.schema import (
     is_legacy,
     normalize_ozet,
     readiness_of,
+    readiness_warnings,
     set_problems,
     uncovered_acs,
     unknown_ac_refs,
@@ -967,6 +968,11 @@ def run_generation(
 
     cases = list((result.output or {}).get("cases") or [])
     ozet = normalize_ozet(result.output or {})
+    model_ozeti = ozet  # tur 2: modelin yazdığı üst listeler yalnız sapma karşılaştırmasına girer
+    if onayli_model is not None:
+        from tp_core.features.cases.model import round2_summary
+
+        ozet = round2_summary(onayli_model, ozet)
     with session_scope() as s:
         req = get_requirement(s, rid, lock=True)
         if req.durum != "generating":
@@ -1008,7 +1014,9 @@ def run_generation(
             for tc in eklenen
             if (sorunlar := consistency_problems(tc.icerik, ozet))
         }
-        set_sorunlari = set_problems(cases, ozet, req.kabul_kriterleri)
+        set_sorunlari = set_problems(
+            cases, ozet, req.kabul_kriterleri, korunan=preserved_contents(s, req, uretim_no)
+        )
         kapsanmayan = coverage_gaps(s, req)
         onceki_icerik, onceki_uyari = _old_content_warning(s, req)
         uyarilar = [onceki_uyari] if onceki_uyari else []
@@ -1029,7 +1037,7 @@ def run_generation(
         if onayli_model is not None:
             from tp_core.features.cases.model import round2_differences
 
-            tur2_farklari = round2_differences(onayli_model, ozet)
+            tur2_farklari = round2_differences(onayli_model, model_ozeti)
             uyarilar += [f"Onaylı tasarım modelinden sapma: {f}" for f in tur2_farklari]
         transition(
             s,
@@ -1124,6 +1132,24 @@ def coverage_gaps(session: Session, req: Requirement) -> list[str]:
         if cid_ not in eski
     ]
     return uncovered_acs(icerikler, req.kabul_kriterleri)
+
+
+def preserved_contents(session: Session, req: Requirement, uretim_no: int) -> list[dict[str, Any]]:
+    """Bu üretimin dışındaki güncel case içerikleri (önceki üretimlerden korunan onaylı/yayınlı
+    case'ler ve IDE taslakları; eski PO içeriğine ait olanlar hariç). Set düzeyi AC kapsamı
+    bunlarla birlikte hesaplanır (`set_problems(korunan=...)`)."""
+    eski = old_content_case_ids(session, req)
+    return [
+        dict(icerik)
+        for cid_, icerik in session.execute(
+            select(TestCase.id, TestCase.icerik).where(
+                TestCase.requirement_id == req.id,
+                TestCase.uretim_no != uretim_no,
+                TestCase.durum.notin_(("superseded", "rejected")),
+            )
+        ).all()
+        if cid_ not in eski and icerik
+    ]
 
 
 # ------------------------------------------------------------------ IDE taslakları
@@ -1246,7 +1272,12 @@ def submit_drafts(
     # Set düzeyi kurallar (negatif kapsam kararı, kapsanmayanın gerekçesi) IDE'de uyarıdır:
     # taslaklar parça parça gönderilebilir; kapsam portalda (case-summary) izlenir.
     set_sorunlari = (
-        set_problems([dict(c) for c in cases], ozet, req.kabul_kriterleri)
+        set_problems(
+            [dict(c) for c in cases],
+            ozet,
+            req.kabul_kriterleri,
+            korunan=preserved_contents(session, req, uretim_no),
+        )
         if ozet is not None
         else []
     )
@@ -1722,6 +1753,7 @@ def _coverage_state(session: Session, req: Requirement) -> dict[str, Any]:
     for satir in matris["satirlar"]:
         kapsayan = [guncel[i - 1] for i in satir["covered_by"]]
         satir["covered_by"] = [tc.sira_no for tc in kapsayan]
+        satir["covered_by_ready"] = [guncel[i - 1].sira_no for i in satir["covered_by_ready"]]
         satir["covered_by_cases"] = [
             {
                 "id": str(tc.id),
@@ -1739,6 +1771,7 @@ def _coverage_state(session: Session, req: Requirement) -> dict[str, Any]:
         )
     if ozet_var:
         uyarilar += set_problems(icerikler, birlesik, req.kabul_kriterleri)
+        uyarilar += readiness_warnings(icerikler, birlesik)
     teknikler: dict[str, int] = defaultdict(int)
     for icerik in icerikler:
         for t in icerik.get("technique") or []:

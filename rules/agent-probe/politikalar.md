@@ -8,7 +8,8 @@
 Kullanım: `features/cases/denetim_akisi.py` bu dosyanın "## Politikalar" bölümündeki her madde
 imli satırı denetim girdisine (`CaseSetAuditRequest.policies`) güvenilir metin olarak koyar;
 "## İzinli test ortamları" bölümündeki ana makineler deterministik ortam kontrolünde kullanılır
-(case metnindeki bir URL'nin ana makinesi bu listede değilse karar en az DÜZELTME_GEREKLİ olur).
+(case metnindeki ya da verisindeki bir URL'nin — şemasız `ad.uzantı/yol` dahil — ana makinesi bu
+listede değilse karar ENGELLE olur: üretim ya da üçüncü taraf hedef, denetim karar kuralı).
 
 ## Politikalar
 
