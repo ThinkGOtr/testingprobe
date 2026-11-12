@@ -157,7 +157,7 @@ def test_etiket_ve_ek() -> None:
     assert "<PO belirleyecek>" in rol_eki("analyst")
     assert "Yayın önizleme" in rol_eki("tester")
     assert "role+name > label > data-testid > CSS/XPath" in rol_eki("engineer")
-    # 012: developer'da code.read yok; ek kod üretiminden değil onaylı case/koşu okumasından söz eder.
+    # 012: developer'da code.read yok; ek onaylı case/koşu okumasından söz eder.
     assert "uygulama kodunu göremezsin" in rol_eki("developer")
     assert "Jira" in rol_eki("po")
 
