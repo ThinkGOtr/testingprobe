@@ -108,6 +108,10 @@ export interface Gereksinim {
   cekim_zamani: string;
   po: PoDurumu;
   sayaclar: { bulgu_acik: number; case_toplam: number; case_onayli: number };
+  /** 013 §9 (K15): Jira tetiğiyle alınan story'nin otomatik akışı; tetikle alınmadıysa null/yok. */
+  otomatik_akis?: OtomatikAkis | null;
+  /** 013 §3.0: tetiğin gördüğü son Jira durumu (core gönderirse). */
+  jira_durumu?: string | null;
 }
 
 export type SoruTuru = "ambiguity" | "missing_ac" | "conflict" | "untestable";
@@ -392,11 +396,15 @@ export interface TestCase {
   /** Case gereksinimin önceki (PO onayı değişmiş) içeriğine ait. */
   onceki_icerik?: boolean;
   /**
-   * 013 §3.2: bu kullanıcı case'i son karardan sonra görüntüledi mi (`case_goruntuleme`). Toplu onay
-   * yalnız görülmüş taslakları alır; alan yoksa (eski core) görülmemiş sayılır.
+   * 013 §3.2/K13: bu kullanıcı case'i son karardan sonra görüntüledi mi (kart en az 3 sn kesintisiz
+   * ekranda kaldı, görüntüleme ≥ 3 sn önce kaydedildi). Toplu onay yalnız görülmüş taslakları alır;
+   * alan yoksa (eski core) görülmemiş sayılır.
    */
   goruldu?: boolean;
-  /** Onaya engel (ör. kapsanmayan AC, eski gereksinim içeriği); doluysa toplu onaya girmez. */
+  /**
+   * 013 §9: approve'un reddedeceği neden (durum, gereksinim değişti, bilinmeyen AC, katalogda olmayan
+   * atıf); doluysa toplu onaya girmez. null: engel yok.
+   */
   onay_engeli?: string | null;
   /** 013 §3.3: içerikteki `{veri:anahtar}` atıflarının katalog karşılığı (anahtar → kayıt). */
   veri?: Record<string, CaseVeriAtfi>;
@@ -422,17 +430,30 @@ export interface OtomatikKodSonucu {
   script_id: string | null;
 }
 
-/** `POST /cases/bulk-decision` öğe sonucu. */
+/** `POST /cases/bulk-decision` öğe sonucu (013 §9: öğe `otomatik_kod` artık null; kod üretimi üst düzeyde). */
 export interface TopluKararSonucu {
   case_id: string;
   durum: "onaylandi" | "atlandi" | "hata";
   neden: string | null;
+  /** Eski core öğe başına gönderiyordu; yeni core null. */
   otomatik_kod: OtomatikKodSonucu | null;
+}
+
+/**
+ * Toplu onayın kod üretimi (K16): onaylananlar için tek `codegen.otomatik` arka plan işi.
+ * `yok`: onaylanan case yok ya da üretilecek case kalmadı.
+ */
+export interface TopluOtomatikKod {
+  durum: "kuyrukta" | "kapali" | "yok";
+  job_id: string | null;
+  case_sayisi: number;
 }
 
 export interface TopluKararYaniti {
   sonuclar: TopluKararSonucu[];
   ozet: { onaylandi: number; atlandi: number; hata: number };
+  /** Yeni core üst düzeyde gönderir; eski core göndermez (null). */
+  otomatik_kod: TopluOtomatikKod | null;
 }
 
 /** Test verisi kataloğu kaydı (`GET /test-data`; 013 §3.3). Gizli kayıtta `deger` null. */
@@ -515,8 +536,33 @@ export interface JiraTetikDurumu {
   acik: boolean;
   durum: string;
   aralik_s: number;
-  son_tur: { zaman: string | null; bulunan: number; tetiklenen: number; hata: string | null } | null;
-  son_tetiklenenler: { jira_key: string; zaman: string | null }[];
+  son_tur: {
+    zaman: string | null;
+    bulunan: number;
+    tetiklenen: number;
+    /** Tur sınırı (10) yüzünden sonraki tura kalan story sayısı. */
+    ertelenen: number;
+    /** İlk tur (taban): mevcut story'ler yalnız işaretlendi, tetiklenmedi (K14). */
+    taban: boolean;
+    hata: string | null;
+    /** 013 §9: story başına sonuç (ör. `tetiklendi`, `isaretlendi`, `dokunulmadi`) ve Türkçe neden. */
+    sonuclar: JiraTetikTurSonucu[];
+  } | null;
+  son_tetiklenenler: { jira_key: string; zaman: string | null; sonuc: string | null }[];
+}
+
+export interface JiraTetikTurSonucu {
+  jira_key: string;
+  sonuc: string;
+  neden: string | null;
+}
+
+/** Gereksinimin Jira tetiğiyle alınmış otomatik akışı (013 §9, K15). */
+export interface OtomatikAkis {
+  tetik_zamani: string | null;
+  durum: "suruyor" | "durdu" | "tamam";
+  /** `durdu` iken neden (ör. içerik değişti, inceleme hata verdi, case üretimi reddedildi). */
+  neden: string | null;
 }
 
 export interface CaseAlanFarki {
@@ -750,10 +796,12 @@ export interface Script {
   hata: string | null;
   /** 013: üretimi kim başlattı (`otomatik` = case onayıyla kuyruğa alındı). Eski core göndermez. */
   tetik?: "elle" | "otomatik";
-  /** 013 §3.3: üretimde kullanılan test verisi sürümü güncel değil (yeniden üretilmeli). */
+  /** 013 §3.3: üretimde kullanılan test verisi değeri katalogda değişti (`veri_degisen` dolu). */
   veri_degisti?: boolean;
-  /** Üretimde çözülen `{anahtar: surum}`. */
-  veri_izi?: Record<string, number>;
+  /** 013 §9: üretimde çözülen `{anahtar: değer özeti}` (sha256[:12]; değer değil, sürüm değil). */
+  veri_izi?: Record<string, string>;
+  /** 013 §9: değeri üretimden sonra değişen anahtarlar. */
+  veri_degisen?: string[];
 }
 
 /**

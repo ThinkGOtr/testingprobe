@@ -5,7 +5,9 @@ import type {
   AtifYapanCase,
   CaseVeriAtfi,
   JiraTetikDurumu,
+  JiraTetikTurSonucu,
   OtomasyonAyarlari,
+  OtomatikAkis,
   OtomatikKodSonucu,
   Script,
   TestCase,
@@ -13,6 +15,7 @@ import type {
   TestVerisiSurumu,
   TopluKararSonucu,
   TopluKararYaniti,
+  TopluOtomatikKod,
 } from "./types";
 
 type Ham = Record<string, unknown>;
@@ -92,15 +95,42 @@ export function caseOtomasyonAlanlari(c: Ham): Pick<TestCase, "goruldu" | "onay_
   };
 }
 
-/** Script uyarlayıcısına eklenen 013 alanları (yalnız core gönderdiyse). */
-export function scriptOtomasyonAlanlari(s: Ham): Pick<Script, "tetik" | "veri_degisti" | "veri_izi"> {
-  const iz: Record<string, number> = {};
-  if (nesneMi(s.veri_izi)) for (const [k, v] of Object.entries(s.veri_izi)) if (typeof v === "number") iz[k] = v;
+/**
+ * Script uyarlayıcısına eklenen 013 alanları (yalnız core gönderdiyse). §9: `veri_izi` değer özeti
+ * taşır (`{anahtar: "<sha256[:12]>"}`); özet ekranda gösterilmez, yalnız anahtarlar kullanılır.
+ * `veri_degisti` gelmezse `veri_degisen`den türetilir.
+ */
+export function scriptOtomasyonAlanlari(s: Ham): Pick<Script, "tetik" | "veri_degisti" | "veri_izi" | "veri_degisen"> {
+  const iz: Record<string, string> = {};
+  if (nesneMi(s.veri_izi)) for (const [k, v] of Object.entries(s.veri_izi)) if (typeof v === "string" || typeof v === "number") iz[k] = String(v);
+  const degisen = Array.isArray(s.veri_degisen) ? s.veri_degisen.filter((x): x is string => typeof x === "string" && x !== "") : null;
+  const degisti = typeof s.veri_degisti === "boolean" ? s.veri_degisti : degisen ? degisen.length > 0 : undefined;
   return {
     ...(s.tetik === "otomatik" || s.tetik === "elle" ? { tetik: s.tetik } : {}),
-    ...(typeof s.veri_degisti === "boolean" ? { veri_degisti: s.veri_degisti } : {}),
+    ...(degisti !== undefined ? { veri_degisti: degisti } : {}),
     ...(nesneMi(s.veri_izi) ? { veri_izi: iz } : {}),
+    ...(degisen ? { veri_degisen: degisen } : {}),
   };
+}
+
+const AKIS_DURUMLARI = new Set(["suruyor", "durdu", "tamam"]);
+
+/** Gereksinim `otomatik_akis` (013 §9); geçersiz/eksikse null. */
+export function otomatikAkisUyarla(x: unknown): OtomatikAkis | null {
+  if (!nesneMi(x)) return null;
+  const d = metin(x.durum);
+  if (!AKIS_DURUMLARI.has(d)) return null;
+  return { tetik_zamani: metinYaDaNull(x.tetik_zamani), durum: d as OtomatikAkis["durum"], neden: metinYaDaNull(x.neden) };
+}
+
+const TOPLU_OTOKOD = new Set(["kuyrukta", "kapali", "yok"]);
+
+/** Toplu onay yanıtının üst düzey `otomatik_kod`u (K16); yoksa ya da tanınmazsa null. */
+export function topluOtomatikKodUyarla(x: unknown): TopluOtomatikKod | null {
+  if (!nesneMi(x)) return null;
+  const d = metin(x.durum);
+  if (!TOPLU_OTOKOD.has(d)) return null;
+  return { durum: d as TopluOtomatikKod["durum"], job_id: metinYaDaNull(kimlik(x.job_id)), case_sayisi: sayi(x.case_sayisi) };
 }
 
 const TOPLU_DURUMLAR = new Set(["onaylandi", "atlandi", "hata"]);
@@ -125,6 +155,7 @@ export function topluKararUyarla(govde: unknown): TopluKararYaniti {
       atlandi: o ? sayi(o.atlandi, say("atlandi")) : say("atlandi"),
       hata: o ? sayi(o.hata, say("hata")) : say("hata"),
     },
+    otomatik_kod: topluOtomatikKodUyarla(g.otomatik_kod),
   };
 }
 
@@ -217,8 +248,22 @@ export function jiraTetikDurumuUyarla(govde: unknown): JiraTetikDurumu {
     durum: metin(g.durum, "QA To Do") || "QA To Do",
     aralik_s: sayi(g.aralik_s, 60),
     son_tur: t
-      ? { zaman: metinYaDaNull(t.zaman), bulunan: sayi(t.bulunan), tetiklenen: sayi(t.tetiklenen), hata: metinYaDaNull(t.hata) }
+      ? {
+          zaman: metinYaDaNull(t.zaman),
+          bulunan: sayi(t.bulunan),
+          tetiklenen: sayi(t.tetiklenen),
+          ertelenen: sayi(t.ertelenen),
+          taban: t.taban === true,
+          hata: metinYaDaNull(t.hata),
+          sonuclar: dizi(t.sonuclar).map(
+            (r): JiraTetikTurSonucu => ({ jira_key: metin(r.jira_key), sonuc: metin(r.sonuc), neden: metinYaDaNull(r.neden) }),
+          ),
+        }
       : null,
-    son_tetiklenenler: dizi(g.son_tetiklenenler).map((s) => ({ jira_key: metin(s.jira_key), zaman: metinYaDaNull(s.zaman) })),
+    son_tetiklenenler: dizi(g.son_tetiklenenler).map((s) => ({
+      jira_key: metin(s.jira_key),
+      zaman: metinYaDaNull(s.zaman),
+      sonuc: metinYaDaNull(s.sonuc),
+    })),
   };
 }

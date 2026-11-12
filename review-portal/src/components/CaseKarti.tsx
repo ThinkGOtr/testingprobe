@@ -16,51 +16,123 @@ type Mod = "goster" | "duzenle" | "reddet";
 
 const KARAR_ADI = { approve: "onay", edit: "düzeltme", reject: "ret" } as const;
 
-// Bu oturumda "görüntülendi" bildirilen case'ler (her case için tek istek).
-const goruntulenenler = new Set<string>();
+/** K13: kart bu kadar süre kesintisiz görünür kalınca "görüldü" bildirilir. */
+export const GORULDU_SURE_MS = 3000;
+
+/** Toplu onay notu ve seçim engelinde tek dil (K13). */
+export const GORULDU_KURALI = "en az 3 saniye ekranda kalan case'ler";
+
+// Bu oturumda "görüntülendi" kaydı başarıyla yapılan case'ler, kullanıcıya göre (rol/kişi değişimi
+// başka kullanıcının kaydını kullanmaz). Yalnız istek başarılı olunca eklenir.
+const goruntulenenler = new Map<string, Set<string>>();
+const kullaniciKumesi = (k: string) => {
+  let s = goruntulenenler.get(k);
+  if (!s) goruntulenenler.set(k, (s = new Set()));
+  return s;
+};
 
 /** Testler için: görüntüleme kayıtlarını sıfırlar. */
 export function goruntulenenleriSifirla(): void {
   goruntulenenler.clear();
 }
 
+/** Karar ya da yeniden açma sonrası: sunucuda eşik yeni karar anı olur, case yeniden görülmelidir. */
+export function goruntulemeyiUnut(caseId: string): void {
+  for (const s of goruntulenenler.values()) s.delete(caseId);
+}
+
+type GorunurlukKaydi = Pick<IntersectionObserverEntry, "isIntersecting" | "intersectionRect" | "boundingClientRect" | "rootBounds">;
+
 /**
- * Karar bekleyen case analistin ekranına ilk girdiğinde (kartın yarısı görünür olunca) core'a
- * bildirilir; review süresi (`review_sure_ms`) sunucuda bu andan karara kadar ölçülür. Hata
- * sessizce yutulur: ölçüm kararın önüne geçmez (uç yoksa süre ölçülmez, karar yine verilir).
+ * K13 görünürlük eşiği: kartın görünen yüksekliği `min(%50 kart, %50 viewport)` ve üstü. Viewport'tan
+ * uzun kart da (çok adımlı case, dar ekran) yarım ekranı doldurunca görünür sayılır.
  */
-function useGoruntulemeBildir(tc: TestCase, etkin: boolean, goruntulendi?: (id: string) => void) {
+export function yeterinceGorunur(k: GorunurlukKaydi): boolean {
+  if (!k.isIntersecting) return false;
+  const kart = k.boundingClientRect.height;
+  if (!(kart > 0)) return false;
+  const ekran = k.rootBounds?.height ?? (typeof window !== "undefined" ? window.innerHeight : kart);
+  const esik = Math.min(kart / 2, ekran / 2);
+  return k.intersectionRect.height + 0.5 >= esik;
+}
+
+/** Gözlemci eşikleri: %5 adımlar + bu kartın gereken oranı (uzun kartta %50'nin altında). */
+function gozlemEsikleri(el: HTMLElement): number[] {
+  const esikler = Array.from({ length: 21 }, (_, i) => i / 20);
+  const kart = el.getBoundingClientRect().height;
+  const ekran = typeof window !== "undefined" ? window.innerHeight : 0;
+  if (kart > 0 && ekran > 0) esikler.push(Math.min(0.5, ekran / 2 / kart));
+  return [...new Set(esikler)].sort((a, b) => a - b);
+}
+
+/**
+ * K13: karar bekleyen case kartı analistin ekranında en az 3 sn kesintisiz görünür kalınca core'a
+ * bildirilir (`POST /cases/{id}/viewed`); review süresi sunucuda bu andan karara kadar ölçülür ve
+ * case toplu onaya girebilir. Görünürlük kesilirse sayaç sıfırlanır.
+ *
+ * IntersectionObserver yoksa görünürlük doğrulanamaz: güvenli taraf seçilir, bildirilmez (case toplu
+ * onaya girmez; tekli onay etkilenmez). Hata sessizce yutulur ve kayıt eklenmez; kart yeniden görünür
+ * olunca tekrar denenir.
+ */
+function useGoruntulemeBildir(tc: TestCase, etkin: boolean, kullaniciAnahtari: string | null, goruntulendi?: (id: string) => void) {
   const ref = useRef<HTMLElement | null>(null);
   const geriCagri = useRef(goruntulendi);
   geriCagri.current = goruntulendi;
+  // Sunucu zaten "görüldü" diyorsa bildirilmez; eski core `goruldu` göndermezse ilk görüntüleme zamanına bakılır.
+  const zatenGoruldu = tc.goruldu === true || (tc.goruldu === undefined && !!tc.goruntulenme);
   useEffect(() => {
-    if (!etkin || tc.goruntulenme || goruntulenenler.has(tc.id)) return;
-    const bildir = () => {
-      if (goruntulenenler.has(tc.id)) return;
-      goruntulenenler.add(tc.id);
-      // 013: başarılı görüntüleme kaydı toplu onayın "görüldü" şartını bu oturumda da karşılar.
+    if (!etkin || !kullaniciAnahtari || zatenGoruldu) return;
+    const gorulen = kullaniciKumesi(kullaniciAnahtari);
+    const el = ref.current;
+    if (gorulen.has(tc.id) || !el || typeof IntersectionObserver === "undefined") return;
+    let zamanlayici: ReturnType<typeof setTimeout> | null = null;
+    let gorunur = false;
+    let gonderiliyor = false;
+    const durdur = () => {
+      if (zamanlayici !== null) clearTimeout(zamanlayici);
+      zamanlayici = null;
+    };
+    const gonder = () => {
+      zamanlayici = null;
+      if (gonderiliyor || gorulen.has(tc.id)) return;
+      gonderiliyor = true;
       api
         .caseGoruntulendi(tc.id)
-        .then(() => geriCagri.current?.(tc.id))
-        .catch(() => undefined);
+        .then(() => {
+          gorulen.add(tc.id);
+          g.disconnect();
+          geriCagri.current?.(tc.id);
+        })
+        .catch(() => {
+          // Yeniden denenebilir: sonraki görünürlük bildiriminde sayaç yeniden kurulur.
+          gorunur = false;
+        })
+        .finally(() => {
+          gonderiliyor = false;
+        });
     };
-    const el = ref.current;
-    if (!el || typeof IntersectionObserver === "undefined") {
-      bildir();
-      return;
-    }
     const g = new IntersectionObserver(
       (kayitlar) => {
-        if (kayitlar.some((k) => k.isIntersecting)) {
-          bildir();
-          g.disconnect();
+        const k = kayitlar[kayitlar.length - 1];
+        if (!k) return;
+        const v = yeterinceGorunur(k);
+        if (v && !gorunur) {
+          gorunur = true;
+          durdur();
+          zamanlayici = setTimeout(gonder, GORULDU_SURE_MS);
+        } else if (!v && gorunur) {
+          gorunur = false;
+          durdur();
         }
       },
-      { threshold: 0.5 },
+      { threshold: gozlemEsikleri(el) },
     );
     g.observe(el);
-    return () => g.disconnect();
-  }, [tc.id, tc.goruntulenme, etkin]);
+    return () => {
+      durdur();
+      g.disconnect();
+    };
+  }, [tc.id, zatenGoruldu, etkin, kullaniciAnahtari]);
   return ref;
 }
 /** Onay sonrası otomatik kod üretimi sonucunun kısa Türkçe metni (013 §3.2). */
@@ -109,7 +181,8 @@ export function CaseKarti({
   const kisiAdi = useKisiAdi();
   const bildir = useBildirim();
   // Yalnızca karar verecek rol (analist) ve karar bekleyen case için görüntüleme ölçülür.
-  const kartRef = useGoruntulemeBildir(tc, kullanici?.rol === "analyst" && tc.durum === "draft", goruntulendi);
+  const kullaniciAnahtari = kullanici ? kullanici.id || kullanici.kullanici_adi : null;
+  const kartRef = useGoruntulemeBildir(tc, kullanici?.rol === "analyst" && tc.durum === "draft", kullaniciAnahtari, goruntulendi);
   // core test_case: approved | rejected → draft (yeniden aç). Yayınlanmış case son durumdur.
   const yenidenAcilabilir = gecisVar("test_case", tc.durum, "draft");
   const d = CASE_DURUMU[tc.durum];
@@ -132,6 +205,8 @@ export function CaseKarti({
     });
     if (yeni) {
       setMod("goster");
+      // Karar/yeniden açma yeni eşik: bu case yeniden en az 3 sn görülmeden toplu onaya girmez.
+      goruntulemeyiUnut(tc.id);
       guncellendi(yeni);
       if (yeni.otomatik_kod) bildir(otomatikKodMetni(yeni.otomatik_kod), yeni.otomatik_kod.durum === "reddedildi" || yeni.otomatik_kod.durum === "hata" ? "hata" : "bilgi");
     }
@@ -154,7 +229,8 @@ export function CaseKarti({
             </label>
           )}
           {secim && tc.durum === "draft" && secim.engel && (
-            <span id={`${id}-sec-neden`} className="gorunmez">
+            // Neden görünür (klavye ve dokunmatik kullanıcı da görür); pasif kutunun açıklaması.
+            <span id={`${id}-sec-neden`} className="soluk kucuk case-sec-neden" data-testid="case-sec-neden">
               {secim.engel}
             </span>
           )}
@@ -486,9 +562,16 @@ function CaseDuzenleyici({
       imlec.current = { alan, bas: e.currentTarget.selectionStart ?? 0, son: e.currentTarget.selectionEnd ?? 0 };
     },
   });
+  /** Alan hâlâ formda mı (silinen adımın alanına yazılmaz). */
+  const alanVar = (alan: string) => alan === "onkosul" || alan === "beklenen" || Number(alan.slice(1)) < icerik.steps.length;
   function atifEkle(anahtar: string) {
     const alan = sonAlan;
     if (!alan) return;
+    if (!alanVar(alan)) {
+      setSonAlan(null);
+      imlec.current = null;
+      return;
+    }
     const deger = alanDegeri(alan);
     const h = imlec.current && imlec.current.alan === alan ? imlec.current : { alan, bas: deger.length, son: deger.length };
     const bas = Math.min(h.bas, deger.length);
@@ -625,7 +708,12 @@ function CaseDuzenleyici({
               type="button"
               className="dugme dugme-hayalet dugme-kucuk"
               aria-label={`S${i + 1} adımını sil`}
-              onClick={() => setIcerik((c) => ({ ...c, steps: c.steps.filter((_, j) => j !== i) }))}
+              onClick={() => {
+                setIcerik((c) => ({ ...c, steps: c.steps.filter((_, j) => j !== i) }));
+                // Adım numaraları kayar: son alan/imleç başka adımı gösterebilir, sıfırlanır.
+                setSonAlan(null);
+                imlec.current = null;
+              }}
             >
               Sil
             </button>

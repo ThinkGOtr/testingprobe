@@ -6,13 +6,14 @@ import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "rea
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { ApiError, hataMesaji } from "../api/http";
-import type { AtifYapanCase, Rol, TestVerisi, TestVerisiSurumu } from "../api/types";
+import type { AtifYapanCase, CaseDurumu, Rol, TestVerisi, TestVerisiSurumu } from "../api/types";
 import { ANAHTAR_RE, SIR_ADI_RE, atifYapanlarUyarla } from "../api/uyumOtomasyon";
 import { useKisiAdi, useOturum } from "../auth";
 import { useBildirim } from "../components/Bildirim";
 import { AlanHatasi, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { GIZLI_DEGER } from "../components/VeriAtfi";
 import { useVeri } from "../hooks";
+import { CASE_DURUMU } from "../lib/etiketler";
 import { tarih } from "../lib/format";
 
 /** Kataloğu düzenleyebilen roller (K11). */
@@ -112,7 +113,8 @@ function KayitFormu({
     try {
       const ortak = {
         grup: f.grup.trim() || null,
-        aciklama: f.aciklama.trim() || null,
+        // Düzenlemede boş açıklama "" gider (null core'da "değiştirme" demektir; açıklama silinemezdi).
+        aciklama: duzenle ? f.aciklama.trim() : f.aciklama.trim() || null,
         ...(f.gizli ? { sir_adi: f.sir_adi.trim() } : { deger: f.deger }),
       };
       const k = duzenle
@@ -324,8 +326,9 @@ function SilmeOnayi({
   const [calisiyor, setCalisiyor] = useState(false);
   const [hata, setHata] = useState<{ metin: string; nesne: unknown } | null>(null);
   const [atif, setAtif] = useState<AtifYapanCase[]>([]);
-  const evetRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => evetRef.current?.focus(), []);
+  // İlk odak geri dönülebilir eylemde: çift Enter yanlışlıkla silmesin.
+  const vazgecRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => vazgecRef.current?.focus(), []);
 
   async function sil() {
     setCalisiyor(true);
@@ -361,10 +364,10 @@ function SilmeOnayi({
         <span className="mono">{kayit.anahtar}</span> silinsin mi? Kayıt geçmişte kalır (sürüm + denetim); atıf yapan case varsa silinmez.
       </p>
       <div className="satir-ogeler">
-        <button ref={evetRef} type="button" className="dugme dugme-tehlike dugme-kucuk" disabled={calisiyor} aria-busy={calisiyor || undefined} onClick={() => void sil()}>
+        <button type="button" className="dugme dugme-tehlike dugme-kucuk" disabled={calisiyor} aria-busy={calisiyor || undefined} onClick={() => void sil()}>
           Evet, sil
         </button>
-        <button type="button" className="dugme dugme-ikincil dugme-kucuk" disabled={calisiyor} onClick={vazgec}>
+        <button ref={vazgecRef} type="button" className="dugme dugme-ikincil dugme-kucuk" disabled={calisiyor} onClick={vazgec}>
           Vazgeç
         </button>
       </div>
@@ -372,7 +375,8 @@ function SilmeOnayi({
       {atif.length > 0 && (
         <ul className="duz-liste kucuk" aria-label="Atıf yapan case'ler" data-testid="atif-yapan-caseler">
           {atif.map((c) => {
-            const ad = `${c.case_ref ?? `${c.jira_key ?? "Case"}${c.sira_no !== null ? ` #${c.sira_no}` : ""}`}${c.baslik ? ` · ${c.baslik}` : ""}${c.durum ? ` (${c.durum})` : ""}`;
+            const durum = c.durum ? (CASE_DURUMU[c.durum as CaseDurumu]?.etiket ?? c.durum) : null;
+            const ad = `${c.case_ref ?? `${c.jira_key ?? "Case"}${c.sira_no !== null ? ` #${c.sira_no}` : ""}`}${c.baslik ? ` · ${c.baslik}` : ""}${durum ? ` (${durum})` : ""}`;
             return (
               <li key={c.id}>{c.requirement_id ? <Link to={`/gereksinimler/${encodeURIComponent(c.requirement_id)}/caseler`}>{ad}</Link> : ad}</li>
             );
@@ -380,6 +384,41 @@ function SilmeOnayi({
         </ul>
       )}
     </div>
+  );
+}
+
+/** Model kipi etiketi (K17 notu). */
+const KIP_ADI: Record<string, string> = { live: "canlı", record: "kayıt", replay: "REPLAY", auto: "otomatik" };
+
+/**
+ * K17/K18: katalog case üretimine ne zaman girer ve neyi atfa çevirir. Model kipi `/demo/status`
+ * (herkes okur) `model.mod`'dan; okunamazsa genel ifade.
+ */
+function KatalogKapsamNotu() {
+  const durum = useVeri(() => api.demoDurumu().catch(() => null), []);
+  const mod = durum.veri?.model?.mod ?? null;
+  const kip = mod ? (KIP_ADI[mod] ?? mod) : null;
+  return (
+    <Uyari ton="bilgi" baslik="Katalog case üretimine nasıl girer">
+      <ul className="duz-liste kucuk" data-testid="katalog-kapsam-notu">
+        <li>
+          Model kipi canlı ya da kayıt (live/record) iken case üretimine giden test verisi bu katalogdan kurulur. REPLAY (demo provası)
+          kipinde kayıtlı veri kullanılır; katalog değişikliği o case'lere yansımaz.
+          {kip && (
+            <>
+              {" "}
+              Şu anki kip: <strong>{kip}</strong>
+              {mod === "replay" ? " — katalog değişikliği yeni üretilen case'lere yansımaz." : "."}
+            </>
+          )}
+        </li>
+        <li>
+          Yalnız bayi, ürün, kampanya ve ortak (parola) grupları case metninde otomatik olarak atfa çevrilir; tutar biçimli değerler yalnız
+          adım verisinde ve ön koşullarda. Etiket ve ayar grupları case'e otomatik atfedilmez (gerekirse düzeltirken elle eklenir).
+        </li>
+        <li>Gizli kayıtların değeri hiçbir ekranda gösterilmez; kod üretimi ortam sırrından okur.</li>
+      </ul>
+    </Uyari>
   );
 }
 
@@ -426,6 +465,7 @@ export function TestVerisiSayfasi() {
       {!duzenleyebilir && (
         <Uyari ton="bilgi">Kataloğu Analist ve Mühendis düzenler; siz değerleri ve sürüm geçmişini görüntüleyebilirsiniz.</Uyari>
       )}
+      <KatalogKapsamNotu />
 
       {form && (
         <KayitFormu
@@ -482,9 +522,10 @@ export function TestVerisiSayfasi() {
         ) : gruplar.length === 0 ? (
           <BosDurum baslik="Aramayla eşleşen kayıt yok." />
         ) : (
-          gruplar.map(([grup, l]) => (
-            <section key={grup} className="testveri-grup" aria-labelledby={`${aramaId}-g-${grup}`}>
-              <h2 id={`${aramaId}-g-${grup}`} className="testveri-grup-baslik">
+          gruplar.map(([grup, l], gi) => (
+            // Başlık kimliği indeksle: grup adındaki boşluk aria-labelledby IDREF listesini bölmesin.
+            <section key={grup} className="testveri-grup" aria-labelledby={`${aramaId}-g-${gi}`}>
+              <h2 id={`${aramaId}-g-${gi}`} className="testveri-grup-baslik">
                 {grup} <span className="soluk kucuk">({l.length})</span>
               </h2>
               <div className="tablo-sarici" tabIndex={0} role="region" aria-label={`${grup} grubu test verileri`}>

@@ -6,10 +6,10 @@ import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import { hataMesaji } from "../api/http";
-import type { DemoDurumu, HataAnalizi, HataSinifi, IsYaniti, Kosu, KosuHatasi, PortalOlayi } from "../api/types";
+import type { DemoDurumu, Gereksinim, HataAnalizi, HataSinifi, IsYaniti, Kosu, KosuHatasi, PortalOlayi } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
 import { Cip, IslemDugmesi, Kart, SayfaBasligi, Uyari } from "../components/ui";
-import { HATA_SINIFI, KOSU_DURUMU, TETIK } from "../lib/etiketler";
+import { gereksinimDurumu, HATA_SINIFI, KOSU_DURUMU, TETIK } from "../lib/etiketler";
 import { saat } from "../lib/format";
 import { kisaKosuAdi, kosuHatalari } from "./Kosular";
 
@@ -777,41 +777,61 @@ function SifirlamaKarti() {
 }
 
 /**
+ * Seçilen story taşınınca Jira tetiğinin ne yapacağı (K14/K15 kuralları; kesin karar sunucuda).
+ * `tetiklenir: null`: bilinmiyor (ayar okunamadı).
+ */
+export function tetikIpucu(
+  g: Pick<Gereksinim, "durum" | "sayaclar" | "jira_durumu"> | undefined,
+  ayar: { acik: boolean; durum: string } | null,
+): { tetiklenir: boolean | null; metin: string } {
+  if (!ayar) return { tetiklenir: null, metin: "Tetik ayarı okunamadı; sonucu Otomasyon sayfasındaki son turdan izleyin." };
+  if (!ayar.acik) return { tetiklenir: false, metin: "Tetiklenmez: Jira tetiği kapalı (Otomasyon ayarı)." };
+  if (!g) return { tetiklenir: true, metin: "TP'de yok: tetik story'yi çeker ve ön incelemeye alır (tetiklenir)." };
+  const ayni = (a: string, b: string) => a.trim().toLocaleLowerCase("tr-TR") === b.trim().toLocaleLowerCase("tr-TR");
+  if (g.jira_durumu && ayni(g.jira_durumu, ayar.durum)) {
+    return { tetiklenir: false, metin: `Tetiklenmez: story zaten "${ayar.durum}" durumunda görüldü; yalnız bu duruma yeniden giren story tetiklenir.` };
+  }
+  if (g.durum === "new") return { tetiklenir: true, metin: "Tetiklenir: ön incelemeye girer (PO kapısı korunur)." };
+  if (g.durum === "po_approved" && g.sayaclar.case_toplam === 0) return { tetiklenir: true, metin: "Tetiklenir: PO onaylı ve case'i yok; case üretimi hemen başlar." };
+  return { tetiklenir: false, metin: `Tetiklenmez: TP'de durum "${gereksinimDurumu(g.durum).etiket}" (yalnız yeni ya da case'siz PO onaylı story alınır).` };
+}
+
+/**
  * 013 §3.4 demo kontrolü: jira-sim'de bir story'yi Jira tetiğinin izlediği duruma ("QA To Do") taşır.
- * Yalnız demo/sim modunda; gerçek Jira'da core 409 döner (metni gösterilir). Story listesi gereksinimlerden.
+ * Yalnız demo/sim modunda; gerçek Jira'da core 409 döner (metni gösterilir). Story her zaman serbest
+ * metinle girilir (TP'ye henüz çekilmemiş story de); TP'deki gereksinimler öneri listesidir.
  */
 export function JiraDurumKarti() {
   const id = useId();
   const bildir = useBildirim();
-  const [storyler, setStoryler] = useState<string[] | null>(null);
+  const [gereksinimler, setGereksinimler] = useState<Gereksinim[]>([]);
   const [anahtar, setAnahtar] = useState("");
-  const [hedef, setHedef] = useState("QA To Do");
+  const [ayar, setAyar] = useState<{ acik: boolean; durum: string } | null>(null);
   const [calisiyor, setCalisiyor] = useState(false);
   const [hata, setHata] = useState<string | null>(null);
   const [sonuc, setSonuc] = useState<string | null>(null);
+  const hedef = ayar?.durum ?? "QA To Do";
   useEffect(() => {
     let iptal = false;
     void api
       .gereksinimler()
-      .then((l) => {
-        if (iptal) return;
-        const anahtarlar = [...new Set(l.map((g) => g.jira_key).filter((k): k is string => !!k))].sort((a, b) => a.localeCompare(b, "tr", { numeric: true }));
-        setStoryler(anahtarlar);
-        setAnahtar((x) => x || anahtarlar[0] || "");
-      })
-      .catch(() => !iptal && setStoryler([]));
+      .then((l) => !iptal && setGereksinimler(l.filter((g) => !!g.jira_key)))
+      .catch(() => undefined);
     // Tetiğin izlediği durum adı ayarlanabilir (varsayılan "QA To Do"): ayar okunabilirse o kullanılır.
     void api
       .otomasyonAyarlari()
-      .then((a) => !iptal && setHedef(a.jira_tetik.durum))
+      .then((a) => !iptal && setAyar({ acik: a.jira_tetik.acik, durum: a.jira_tetik.durum }))
       .catch(() => undefined);
     return () => {
       iptal = true;
     };
   }, []);
+  const storyler = [...gereksinimler].sort((a, b) => a.jira_key!.localeCompare(b.jira_key!, "tr", { numeric: true }));
+  const k = anahtar.trim().toUpperCase();
+  const secilen = k ? gereksinimler.find((g) => g.jira_key === k) : undefined;
+  const ipucu = k ? tetikIpucu(secilen, ayar) : null;
 
   async function tasi() {
-    const k = anahtar.trim().toUpperCase();
     if (!k) return setHata("Bir story anahtarı girin (ör. TPD-2).");
     setCalisiyor(true);
     setHata(null);
@@ -838,21 +858,46 @@ export function JiraDurumKarti() {
       </p>
       <div className="satir-ogeler">
         <label htmlFor={`${id}-story`}>Story</label>
-        {storyler && storyler.length > 0 ? (
-          <select id={`${id}-story`} value={anahtar} onChange={(e) => setAnahtar(e.target.value)}>
-            {storyler.map((k) => (
-              <option key={k} value={k}>
-                {k}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <input id={`${id}-story`} className="mono" value={anahtar} placeholder="TPD-2" size={10} onChange={(e) => setAnahtar(e.target.value)} />
-        )}
-        <IslemDugmesi roller={["presenter"]} calisiyor={calisiyor} disabled={!anahtar.trim()} onClick={() => void tasi()}>
+        <input
+          id={`${id}-story`}
+          className="mono"
+          value={anahtar}
+          placeholder="TPD-2"
+          size={12}
+          list={`${id}-oneriler`}
+          autoComplete="off"
+          aria-describedby={`${id}-ipucu`}
+          onChange={(e) => setAnahtar(e.target.value)}
+        />
+        <datalist id={`${id}-oneriler`}>
+          {storyler.map((g) => (
+            <option key={g.id} value={g.jira_key!}>
+              {`${g.baslik} · ${gereksinimDurumu(g.durum).etiket}`}
+            </option>
+          ))}
+        </datalist>
+        <IslemDugmesi roller={["presenter"]} calisiyor={calisiyor} disabled={!k} onClick={() => void tasi()}>
           {hedef === "QA To Do" ? "Story'yi QA To Do'ya taşı" : `Story'yi "${hedef}" durumuna taşı`}
         </IslemDugmesi>
       </div>
+      <p id={`${id}-ipucu`} className="kucuk" data-testid="jira-tetik-ipucu">
+        {!k ? (
+          <span className="soluk">TP'deki story'ler öneri olarak listelenir; TP'ye henüz çekilmemiş bir jira-sim story'si de yazılabilir.</span>
+        ) : (
+          <>
+            {secilen ? (
+              <>
+                TP'de: <Cip ton={gereksinimDurumu(secilen.durum).ton}>{gereksinimDurumu(secilen.durum).etiket}</Cip>{" "}
+              </>
+            ) : ipucu?.metin.startsWith("TP'de yok") ? null : (
+              <>TP'de yok. </>
+            )}
+            {ipucu && (
+              <span data-tetiklenir={ipucu.tetiklenir === null ? "bilinmiyor" : String(ipucu.tetiklenir)}>{ipucu.metin}</span>
+            )}
+          </>
+        )}
+      </p>
       {sonuc && (
         <p className="kucuk" role="status">
           {sonuc}

@@ -72,8 +72,16 @@ const durum = {
     otomatik_kod_uretimi: { acik: true, guncelleyen: null as string | null, guncelleme: null as string | null },
     jira_tetik: { acik: true, durum: "QA To Do", aralik_s: 60, otomatik_case: true, guncelleyen: null as string | null, guncelleme: null as string | null },
   },
-  sonTetiklenenler: [] as { jira_key: string; zaman: string }[],
-  sonTur: null as { zaman: string; bulunan: number; tetiklenen: number; hata: string | null } | null,
+  sonTetiklenenler: [] as { jira_key: string; zaman: string; sonuc: string }[],
+  sonTur: null as {
+    zaman: string;
+    bulunan: number;
+    tetiklenen: number;
+    ertelenen: number;
+    taban: boolean;
+    hata: string | null;
+    sonuclar: { jira_key: string; sonuc: string; neden: string | null }[];
+  } | null,
 };
 
 function tohumSurumleri(): SurumKaydi[] {
@@ -261,7 +269,13 @@ export function otomasyonRotalari(
             kod: "cakisma",
             govde: {
               kod: "cakisma",
-              kullanan: atif.map((c) => ({ case_id: c.id, case_ref: `${c.jira_key ?? "FT"} #${c.sira_no}`, baslik: c.icerik.title, durum: c.durum })),
+              kullanan: atif.map((c) => ({
+                case_id: c.id,
+                case_ref: `${c.jira_key ?? "FT"} #${c.sira_no}`,
+                baslik: c.icerik.title,
+                durum: c.durum,
+                requirement_id: c.requirement_id,
+              })),
             },
           });
         }
@@ -305,6 +319,8 @@ export function otomasyonRotalari(
           if (typeof b.acik === "boolean") durum.ayarlar.otomatik_kod_uretimi.acik = b.acik;
           Object.assign(durum.ayarlar.otomatik_kod_uretimi, { guncelleyen: u.kullanici_adi, guncelleme: simdi() });
         } else if (anahtar === "jira_tetik") {
+          // K14: tetikleyen durumu yalnız engineer değiştirir.
+          if ("durum" in b && u.rol !== "engineer") throw new ApiError(403, "Tetikleyen Jira durumunu yalnız Otomasyon mühendisi değiştirir.");
           const j = durum.ayarlar.jira_tetik;
           const hatali: string[] = [];
           if ("acik" in b && typeof b.acik !== "boolean") hatali.push("acik");
@@ -341,8 +357,8 @@ export function otomasyonRotalari(
         const z = simdi();
         // Örnek veri: tetik turu hemen işlenmiş sayılır (gerçekte worker aralik_s içinde görür).
         if (durum.ayarlar.jira_tetik.acik && b.durum === durum.ayarlar.jira_tetik.durum) {
-          durum.sonTetiklenenler.unshift({ jira_key: b.jira_key, zaman: z });
-          durum.sonTur = { zaman: z, bulunan: 1, tetiklenen: 1, hata: null };
+          durum.sonTetiklenenler.unshift({ jira_key: b.jira_key, zaman: z, sonuc: "tetiklendi" });
+          durum.sonTur = { zaman: z, bulunan: 1, tetiklenen: 1, ertelenen: 0, taban: false, hata: null, sonuclar: [{ jira_key: b.jira_key, sonuc: "tetiklendi", neden: null }] };
         }
         denetim("demo.jira_status", b.jira_key, `jira-sim: ${b.jira_key} → ${b.durum}`);
         return { jira_key: b.jira_key, durum: b.durum, degisti: true, mesaj: `${b.jira_key} jira-sim'de "${b.durum}" durumuna taşındı.` };

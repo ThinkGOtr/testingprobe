@@ -4873,6 +4873,10 @@ td > .satir-baglanti + .cip,
   margin: 0;
   accent-color: var(--accent-solid);
 }
+.case-sec-neden {
+  flex-basis: 100%;
+  order: 99;
+}
 
 /* Atıf çipi: anahtar (mono, ikincil) + değer. Satır içinde sarılabilir; uzun anahtar taşmaz. */
 .veri-atif {

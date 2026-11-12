@@ -150,6 +150,8 @@ export const ENGEL_TURU: Record<string, string> = {
   case_changed: "Case onaydan sonra değişti",
   flaky: "Kararsız test (tekrarlarda hem geçti hem kırmızı)",
   human_rejected: "İnsan review'ı: değişiklik istendi / reddedildi",
+  // 013 K19: gizli test verisinin ortam sırrı tanımsız (model hatası değil; ortam ayarı).
+  test_verisi: "Test verisi sırrı tanımsız",
 };
 
 /** Script review ret nedenleri (sabit taksonomi; core RET_NEDENLERI). */
