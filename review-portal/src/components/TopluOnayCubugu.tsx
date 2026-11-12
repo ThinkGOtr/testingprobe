@@ -5,7 +5,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { TestCase, TopluOnaySonucu } from "../api/types";
 import { useIslem } from "../hooks";
-import { hataListesi, sayiEki, topluOnayEngeli } from "../lib/caseV3";
+import { hataListesi, hazirlikYonlendirmesi, sayiEki, topluOnayEngeli } from "../lib/caseV3";
 import { useBildirim } from "./Bildirim";
 import { AlanHatasi, IslemDugmesi, SayfaIciOnay, Uyari } from "./ui";
 
@@ -51,8 +51,10 @@ export function SecimKutusu({ tc, secili, degistir }: { tc: TestCase; secili: bo
         aria-describedby={engel ? nedenId : undefined}
         onChange={(e) => degistir(tc.id, e.target.checked)}
       />
+      {/* Hazır olmayan taslakta "Neden onaylanamıyor" kutusu nedeni zaten görünür söyler: başlık
+          satırını kalabalıklaştırmamak için neden yalnız ekran okuyucuya (aria-describedby) verilir. */}
       {engel && (
-        <span id={nedenId} className="soluk kucuk toplu-secim-neden">
+        <span id={nedenId} className={hazirlikYonlendirmesi(tc) ? "gorunmez" : "soluk kucuk toplu-secim-neden"}>
           Toplu onaya seçilemez: {engel}
         </span>
       )}
@@ -119,7 +121,10 @@ export function TopluOnayCubugu({
 
   return (
     <div className="toplu-onay" role="group" aria-label="Toplu onay" data-testid="toplu-onay">
-      {taslakVar && (
+      {taslakVar && secilebilir.length === 0 && (
+        <p className="soluk kucuk toplu-onay-satir">Toplu onaya uygun case yok: yalnız hazır ve tutarlı taslaklar seçilebilir.</p>
+      )}
+      {taslakVar && secilebilir.length > 0 && (
         <div className="toplu-onay-satir">
           <label className="toplu-onay-tumu">
             <input

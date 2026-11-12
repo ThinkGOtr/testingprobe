@@ -5268,3 +5268,9 @@ td > .satir-baglanti + .cip,
   display: block;
   margin-top: 0.2rem;
 }
+
+/* D5: "Case kararları" çapası programatik odak alır (durum şeridinden geçiş); başlıkta kalın çerçeve çizilmez. */
+#case-kararlari:focus:not(:focus-visible),
+#case-kararlari[tabindex="-1"]:focus {
+  outline: none;
+}
