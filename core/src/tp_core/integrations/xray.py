@@ -28,6 +28,7 @@ from tp_core.integrations.testmgmt import (
     case_labels,
     find_by_label,
     link_to_story,
+    wiki_noformat,
 )
 from tp_core.ports import JiraPort, PublishedCase
 
@@ -148,6 +149,13 @@ def _error_text(resp: httpx.Response) -> str:
     return str(body)
 
 
+def _step_data(case: CaseContent, data: str | None) -> str:
+    """Xray adım verisi (wiki biçimli alan): saldırı verisi ``{noformat}`` içinde, düz değer."""
+    if data and any(d.is_attack_payload and d.value == data for d in case.test_data):
+        return wiki_noformat(data)
+    return data or ""
+
+
 class XrayTestManagement:
     """Onaylı case'i Xray Cloud Manual Test'i olarak yayınlar (adımlar Xray adım alanında).
 
@@ -172,11 +180,11 @@ class XrayTestManagement:
             "fields": {
                 "project": {"key": self.project},
                 "summary": case.title[:255],
-                "description": case_description_text(case, story_key, steps_table=False),
+                "description": case_description_text(case, story_key, steps_table=False, wiki=True),
                 "labels": case_labels(case),
             },
             "steps": [
-                {"action": s.action, "data": s.data or "", "result": s.expected or ""}
+                {"action": s.action, "data": _step_data(case, s.data), "result": s.expected or ""}
                 for s in case.steps
             ],
         }

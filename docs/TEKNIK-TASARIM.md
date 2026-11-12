@@ -415,8 +415,12 @@ filename="<anahtar>.feature"`, `X-TP-Case-Sayisi` / `X-TP-Senaryo-Sayisi` / `X-T
 - **Biçim:** `# language: tr`, `Özellik: <anahtar> — <başlık>` (AC'ler yorum), case başına
   `Senaryo:`; ön koşullar `Diyelim ki`/`Ve`, test verisi `test verileri:` adımına bağlı
   `| ad | değer | sınıf |` tablosu; her adım `Eğer ki <eylem>` + `O zaman <beklenen>` (adım–beklenen
-  eşlemesi korunur); genel beklenen son beklenenden farklıysa `Ve`. Adım verisi tek satır ve
-  tırnaksızsa `, veri: "<değer>"`, değilse docstring. Temizlik sonda `# Temizlik:` yorumudur
+  eşlemesi korunur); genel beklenen son beklenenden farklıysa `Ve`. Doğal adım dili: anahtar
+  kelimeden sonra baş harf (özel ad değilse) küçük; `Eğer ki` adımında emir kipindeki son fiil
+  koşul kipine çevrilir ("Giriş sayfasını aç" → "giriş sayfasını açarsa"; tanınmayan kelime
+  değişmez). Adım verisi test verisi tablosunda aynen varsa `(test verisi: <ad>)` (değer
+  yinelenmez), yoksa tek satır ve tırnaksızsa `(veri: "<değer>")`, değilse docstring. Kurallar
+  `gherkin.py` modül açıklamasındadır. Temizlik sonda `# Temizlik:` yorumudur
   (`Ve` adımı olsa `O zaman`'a bağlanıp doğrulama gibi okunurdu; otomasyonda hook'a dönüşür).
 - **Etiketler:** `@AC2 @BVA @EP @P1 @sınır-değer @tp-<uuid>` (AC, teknik, öncelik, Türkçe tür, case).
 - **Senaryo taslağı:** aynı AC kümesi, birincil teknik, tür, öncelik, doğrulama noktası, test

@@ -36,7 +36,7 @@ from sqlalchemy import Engine, select, text
 from sqlalchemy.orm import Session
 
 from tp_core.audit import audit_on_commit
-from tp_core.features.cases import service
+from tp_core.features.cases import acik_sorular, service
 from tp_core.features.cases.schema import (
     acceptance_criteria,
     consistency_problems,
@@ -225,6 +225,7 @@ def deepening_messages(
     teknik: str | None = None,
     test_verisi: str | None = None,
     test_seviyesi: str = service.VARSAYILAN_TEST_SEVIYESI,
+    acik_soru_yanitlari: str = "",
 ) -> list[ModelMessage]:
     """Derinleştirme girdisi. `mevcut_caseler`: `_case_ozeti` biçiminde güncel case'ler."""
     from tp_core.gateway import wrap_untrusted
@@ -268,6 +269,8 @@ def deepening_messages(
     po = service._po_cevaplari_metni(req.po_cevaplari, sorular)
     if po:
         parcalar += ["PO cevapları:", wrap_untrusted(po, source=f"{kaynak}:po", kind=kind)]
+    # 011 K16: PO'nun açık soru yanıtları (yoksa girdi değişmez).
+    parcalar += acik_sorular.generation_parts(acik_soru_yanitlari, kaynak, kind)
     mevcut = {"cases": list(mevcut_caseler), "summary": dict(birlesik)}
     parcalar += [
         "Mevcut case seti (güncel case'ler ve birleşik özet; tekrar etme):",
@@ -424,6 +427,7 @@ def run_deepening(
             teknik=teknik,
             test_verisi=testdata.block(),
             test_seviyesi=str(secenekler.get("test_seviyesi") or service.VARSAYILAN_TEST_SEVIYESI),
+            acik_soru_yanitlari=acik_sorular.generation_input(s, req),
         )
         replay_key = service.replay_key_for(req)
         replay_key["name"] = replay_name(replay_key["name"], tur, teknik)

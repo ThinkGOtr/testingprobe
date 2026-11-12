@@ -290,6 +290,7 @@ gönderir). Anahtar boşsa o rol bahsedilmez; aynı kişi iki rolde ise bir kez 
 | Yorum (yer) | Bahsedilen |
 |---|---|
 | PO soru yorumu (story; ön inceleme son hal) | PO + Analist |
+| Case üretimi açık soruları — "Açık soruları PO'ya gönder" (story; `CQn`/`CAn`, 011 K16) | PO + Analist |
 | Onay etiketi kaldırıldı bildirimi (story) | PO |
 | Onaylı doküman düzeltmesi yazıldı, yeniden teyit (story) | PO |
 | Onaylı case'ler Jira/Xray'e yayınlandı — zincir hash yorumu (story) | Testçi |

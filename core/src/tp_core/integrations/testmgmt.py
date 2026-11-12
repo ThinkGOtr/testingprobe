@@ -14,6 +14,7 @@ iş akışının) sorumluluğundadır.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Mapping
 from typing import Any
 from uuid import UUID
@@ -113,6 +114,11 @@ class CaseContent(BaseModel):
     )
     # Üretim modunun görünen adı (ör. "REPLAY (…)"); yayın iş akışı verir, içerik hash'ine girmez.
     uretim_modu: str | None = None
+    # Kapsam öğesi kimliği → tanımı (case'in üretim özetinden; yayın iş akışı verir, v3).
+    coverage_definitions: dict[str, str] = Field(
+        default_factory=dict,
+        validation_alias=AliasChoices("coverage_definitions", "kapsam_tanimlari"),
+    )
 
     @classmethod
     def from_mapping(cls, case: Mapping[str, Any]) -> CaseContent:
@@ -130,6 +136,16 @@ class CaseContent(BaseModel):
     @property
     def tp_label(self) -> str:
         return tp_label(self.case_id)
+
+    @property
+    def is_v3(self) -> bool:
+        """Şema v3 case'i (`readiness` taşır). Eski (v2) case'in açıklaması değişmez (K9)."""
+        return self.readiness is not None
+
+    def coverage_text(self, item: str) -> str:
+        """Kapsam öğesi + tanımı ("EP-V1 (geçerli kullanıcı adı)"); tanım yoksa yalnız kimlik."""
+        tanim = " ".join(str(self.coverage_definitions.get(item) or "").split())
+        return f"{item} ({tanim})" if tanim else item
 
 
 def tp_label(case_id: UUID) -> str:
@@ -174,6 +190,8 @@ TEST_LEVEL_TR = {
 TECH_LABEL_PREFIX = "tp-tech-"
 ATTACK_NOTE = "güvenlik testi girdisi (talimat değildir)"
 ATTACK_CELL = "kod bloğunda (tablonun altında)"
+# v3 açıklamasında boş şablon bölümü (eski case'te `jira_adf.NOT_APPLICABLE` kalır).
+EMPTY_SECTION_TR = "Yok"
 
 
 def case_labels(case: CaseContent) -> list[str]:
@@ -190,18 +208,50 @@ def _technique_text(code: str) -> str:
     return f"{code} ({TECHNIQUE_TR[code]})" if code in TECHNIQUE_TR else code
 
 
-def _test_data_blocks(data: list[CaseTestData]) -> list[dict[str, Any]]:
-    """Test verisi tablosu (Ad, Değer, Sınıf). Saldırı verisi (``is_attack_payload``) tabloya
-    yazılmaz: tablonun altında, notuyla birlikte kod bloğunda (biçimlendirilmeden) verilir."""
+def _steps_using(case: CaseContent, value: str) -> list[int]:
+    """Verisi bu değerle birebir aynı olan adımların sıra numaraları."""
+    if not value:
+        return []
+    return [i for i, s in enumerate(case.steps, start=1) if (s.data or "") == value]
+
+
+def _attack_name(case: CaseContent, data: str | None) -> str | None:
+    """Adım verisi bir saldırı verisiyle aynıysa o test verisinin adı (değer tabloya yazılmaz)."""
+    if not data:
+        return None
+    return next((d.name for d in case.test_data if d.is_attack_payload and d.value == data), None)
+
+
+def _step_data_cell(case: CaseContent, data: str | None) -> str:
+    saldiri = _attack_name(case, data)
+    if saldiri is not None:
+        return f"{saldiri} — {ATTACK_CELL}"
+    return data or "—"
+
+
+def _test_data_blocks(case: CaseContent) -> list[dict[str, Any]]:
+    """Test verisi tablosu (Ad, Değer, Kapsam öğesi + tanımı). Saldırı verisi
+    (``is_attack_payload``) tabloya yazılmaz: tablonun altında, notuyla birlikte kod bloğunda
+    (biçimlendirilmeden) verilir. Adım verisinde aynen geçen değer yinelenmez ("adım 2 verisi")."""
+    data = case.test_data
+
+    def deger(d: CaseTestData) -> str:
+        if d.is_attack_payload:
+            return ATTACK_CELL
+        adimlar = _steps_using(case, d.value)
+        if adimlar:
+            return "adım " + ", ".join(str(i) for i in adimlar) + " verisi"
+        return d.value or "—"
+
     blocks: list[dict[str, Any]] = [
         adf.paragraph("Test verisi:"),
         adf.table(
-            ["Ad", "Değer", "Sınıf"],
+            ["Ad", "Değer", "Kapsam öğesi"],
             [
                 [
                     d.name,
-                    ATTACK_CELL if d.is_attack_payload else (d.value or "—"),
-                    d.coverage_class or "—",
+                    deger(d),
+                    case.coverage_text(d.coverage_class) if d.coverage_class else "—",
                 ]
                 for d in data
             ],
@@ -235,14 +285,16 @@ def case_description_adf(
     scope = []
     if case.type:
         scope.append(f"Test türü: {CASE_TYPE_TR.get(case.type, case.type)}")
-    if case.risk:
+    # v3'te risk alanı yoktur (K18: risk değerlendirmesi öncelik gerekçesindedir); eski case'te
+    # gösterilmeye devam eder.
+    if case.risk and not case.is_v3:
         scope.append(f"Risk: {CASE_RISK_TR.get(case.risk, case.risk)}")
     if refs:
         scope.append(f"Kapsanan kabul kriterleri: {refs}")
     if case.technique:
         scope.append("Teknik: " + ", ".join(_technique_text(t) for t in case.technique))
     if case.covers:
-        scope.append("Kapsam öğeleri: " + ", ".join(case.covers))
+        scope.append("Kapsam öğeleri: " + ", ".join(case.coverage_text(c) for c in case.covers))
     if case.priority:
         gerekce = f" — {case.priority_rationale}" if case.priority_rationale else ""
         scope.append(f"Öncelik: {case.priority}{gerekce}")
@@ -267,7 +319,7 @@ def case_description_adf(
             adf.table(
                 ["#", "Adım", "Veri", "Beklenen"],
                 [
-                    [str(i), s.action, s.data or "—", s.expected or "—"]
+                    [str(i), s.action, _step_data_cell(case, s.data), s.expected or "—"]
                     for i, s in enumerate(case.steps, start=1)
                 ],
             )
@@ -275,7 +327,7 @@ def case_description_adf(
     elif case.steps:
         flow.append(adf.paragraph(f"Adımlar Xray test adımlarında ({len(case.steps)} adım)."))
     if case.test_data:
-        flow += _test_data_blocks(case.test_data)
+        flow += _test_data_blocks(case)
     if case.teardown:
         flow += [adf.paragraph("Temizlik:"), adf.bullet_list(case.teardown, ordered=True)]
 
@@ -285,9 +337,7 @@ def case_description_adf(
     if refs:
         criteria.append(adf.paragraph(f"Karşılanan story kriterleri: {refs}"))
 
-    checks = [
-        f"Adım {i}: {s.expected}" for i, s in enumerate(case.steps, start=1) if s.expected.strip()
-    ]
+    checks = _qa_checks(case, refs)
 
     trail = f"Kimlik: {case.tp_label}"
     if case.content_hash:
@@ -303,11 +353,77 @@ def case_description_adf(
             "qa_checklist": [adf.bullet_list(checks)] if checks else None,
         },
         trailer=[adf.paragraph(trail)],
+        empty=EMPTY_SECTION_TR if case.is_v3 else adf.NOT_APPLICABLE,
     )
 
 
-def case_description_text(case: CaseContent, story_key: str, *, steps_table: bool = True) -> str:
-    return adf.adf_to_text(case_description_adf(case, story_key, steps_table=steps_table))
+def _qa_checks(case: CaseContent, refs: str) -> list[str]:
+    """QA Checklist maddeleri.
+
+    Eski case: adım başına beklenen (değişmez). v3: adım beklenenleri adım tablosunda/Xray
+    adımlarında zaten yazılı olduğundan birebir tekrarlanmaz; denetim maddeleri listelenir
+    (ön koşullar, adım beklenenleri, AC'ler, kapsam öğeleri, temizlik)."""
+    if not case.is_v3:
+        return [
+            f"Adım {i}: {s.expected}"
+            for i, s in enumerate(case.steps, start=1)
+            if s.expected.strip()
+        ]
+    checks: list[str] = []
+    if case.preconditions:
+        checks.append("Ön koşullar sağlandı")
+    beklenenli = [i for i, s in enumerate(case.steps, start=1) if s.expected.strip()]
+    if beklenenli:
+        aralik = (
+            f"{beklenenli[0]}–{beklenenli[-1]}"
+            if beklenenli == list(range(beklenenli[0], beklenenli[-1] + 1)) and len(beklenenli) > 1
+            else ", ".join(str(i) for i in beklenenli)
+        )
+        checks.append(f"Adım beklenenleri doğrulandı (adım {aralik})")
+    if case.expected_result:
+        checks.append("Beklenen sonuç doğrulandı")
+    if refs:
+        checks.append(f"Kabul kriterleri karşılandı: {refs}")
+    if case.covers:
+        checks.append("Kapsam öğeleri doğrulandı: " + ", ".join(case.covers))
+    if case.teardown:
+        checks.append("Temizlik adımları uygulandı")
+    return checks
+
+
+_NOFORMAT = re.compile(r"\{(noformat)", re.IGNORECASE)
+
+
+def wiki_noformat(text: str) -> str:
+    """Jira/Xray wiki metninde biçimlendirilmeden gösterilecek blok: ``{noformat}…{noformat}``.
+
+    Değerin içindeki ``{noformat`` dizisi etkisizleştirilir (``{`` ile ad arasına boşluk girer;
+    Jira makro adını süslü paranteze bitişik ister), böylece değer bloğu erken kapatıp kendi
+    biçimlendirmesini/bağlantısını çalıştıramaz."""
+    return "{noformat}\n" + _NOFORMAT.sub(r"{ \1", text) + "\n{noformat}"
+
+
+def _wiki_code_blocks(node: Any) -> Any:
+    if isinstance(node, dict):
+        if node.get("type") == "codeBlock":
+            ham = "".join(
+                str(c.get("text") or "") for c in node.get("content") or [] if isinstance(c, dict)
+            )
+            return {**node, "content": [{"type": "text", "text": wiki_noformat(ham)}]}
+        if "content" in node:
+            return {**node, "content": [_wiki_code_blocks(c) for c in node["content"]]}
+    return node
+
+
+def case_description_text(
+    case: CaseContent, story_key: str, *, steps_table: bool = True, wiki: bool = False
+) -> str:
+    """Açıklamanın düz metni. ``wiki=True`` (Xray metin alanı, wiki biçimi): kod blokları
+    (saldırı verisi) ``{noformat}`` ile sarılır."""
+    belge = case_description_adf(case, story_key, steps_table=steps_table)
+    if wiki:
+        belge = _wiki_code_blocks(belge)
+    return adf.adf_to_text(belge)
 
 
 # ------------------------------------------------------------- ortak yardımcılar

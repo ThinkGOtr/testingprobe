@@ -9,10 +9,33 @@ Dönüşüm kuralları (docs/TEKNIK-TASARIM.md §8.3 "Gherkin dışa aktarımı"
 - `Özellik:` gereksinim anahtarı + başlık; kabul kriterleri özelliğin altına yorum olarak yazılır.
 - Case başına `Senaryo:` (başlık). Ön koşullar `Diyelim ki` / `Ve`; test verisi `test verileri:`
   adımına bağlı tablo (`| ad | değer | sınıf |`). Her adım `Eğer ki <eylem>` + `O zaman <beklenen>`
-  (adım–beklenen eşlemesi korunur; art arda aynı türde adım `Ve` olur). Case'in genel beklenen
+  (adım–beklenen eşlemesi korunur: otomasyonda her ara beklenen bir doğrulamadır; art arda aynı
+  türde adım — ör. beklenensiz adımın ardından gelen eylem — `Ve` olur). Case'in genel beklenen
   sonucu son beklenenden farklıysa sona `Ve` olarak eklenir.
-- Adım verisi tek satır ve tırnaksızsa `, veri: "<değer>"` olarak satıra eklenir; çok satırlı,
-  tırnaklı ya da uzun veri docstring (`\"\"\"`) olur.
+- Adım verisi test verisi tablosundaki bir değerle birebir aynıysa değer yinelenmez, satırın
+  sonuna `(test verisi: <ad>)` yazılır (saldırı verisi de böylece yalnız tabloda kalır). Değilse,
+  tek satır ve tırnaksızsa `(veri: "<değer>")` eklenir; çok satırlı, tırnaklı ya da uzun veri
+  `, veri:` + docstring (`\"\"\"`) olur.
+
+Doğal adım dili (`dogal_metin`, `kosul_kipi`; yalnız ön koşul, eylem ve beklenen metinlerine
+uygulanır, başlık/tablo/etiket değişmez):
+
+- Anahtar kelimeden sonra büyük harf kayması yok: metnin ilk kelimesi yalnız harflerden oluşan,
+  baş harfi büyük gerisi küçük bir kelimeyse ve ardından büyük harfle başlayan bir kelime
+  gelmiyorsa (özel ad olasılığı: "Portakal Gazozu", "Merkez Bayi") baş harf Türkçe kurala göre
+  küçülür ("Sepet boş" → "sepet boş", "I" → "ı", "İ" → "i"). Kod/ürün kimliği, tırnak, rakam ya
+  da kısaltmayla başlayan metin olduğu gibi kalır.
+- `Eğer ki` adımında eylemin emir kipindeki son fiili koşul kipine çevrilir ("Giriş sayfasını
+  aç" → "giriş sayfasını açarsa", "butonuna bas" → "butonuna basarsa", "sepete git" → "sepete
+  giderse", "kaydet" → "kaydederse"). Fiil, tek heceli fiil sözlüğünden (`TEK_HECELI_FIILLER`,
+  geniş zaman -ar/-er; `GENIS_ZAMAN_IR` istisnaları -ır/-ir/-ur/-ür) ya da çok heceli fiil
+  ekinden (-la/-le; araç eki -yla/-yle ve `_FIIL_OLMAYAN` hariç) ya da sözlükten
+  (`COK_HECELI_FIILLER`) tanınır; geniş zaman + -sa/-se
+  ünlü uyumuyla eklenir. Edilgen geniş zamanla biten eylem ("… açılır") yalnız -sa/-se alır.
+  Tanınmayan son kelimede metin değişmez (yanlış çekim yerine olduğu gibi bırakılır).
+- Senaryo taslağında bu dönüşümler yer tutuculu metne uygulanır; her örnek satırı için
+  "taslağın açılmış hâli = case'in tek başına dönüşümü" denetlenir, tutmazsa case'ler ayrı senaryo
+  kalır (kayıpsızlık korunur).
 - Temizlik (`teardown`) senaryonun sonunda `# Temizlik:` yorumudur: Gherkin'de "after" adımı
   yoktur; `Ve` adımı olarak yazılsa önceki `O zaman`'a bağlanır ve doğrulama gibi okunurdu.
   Otomasyonda temizlik kancası (hook) bu yorumdan yazılır.
@@ -220,6 +243,123 @@ def _tablo(
     return out
 
 
+# --------------------------------------------------------------------------- doğal adım dili
+
+_HARF = "A-Za-zÇĞİÖŞÜÂÎÛçğıöşüâîû"
+_KELIME = re.compile(rf"^[{_HARF}]+$")
+_KUCUK_KELIME = re.compile(r"^[a-zçğıöşüâîû]+$")
+_INCE = set("eiöü")
+_KALIN = set("aıou")
+_UNLU = _INCE | _KALIN | set("âîû")
+# Tek heceli fiiller (emir kipi). Geniş zaman -ar/-er alır; `GENIS_ZAMAN_IR` istisnadır.
+TEK_HECELI_FIILLER = frozenset(
+    {
+        "aç", "al", "an", "as", "at", "bak", "bas", "bil", "bin", "boz", "bul", "çal", "çek",
+        "çık", "çiz", "dök", "dur", "et", "geç", "gel", "gir", "git", "gör", "it", "kal", "kap",
+        "kes", "kır", "koş", "koy", "ol", "sar", "seç", "sık", "sil", "sor", "sür", "tak", "tut",
+        "var", "ver", "vur", "yak", "yap", "yaz", "yık", "yüz",
+    }
+)  # fmt: skip
+GENIS_ZAMAN_IR = frozenset(
+    {"al", "bil", "bul", "dur", "gel", "gör", "kal", "ol", "san", "var", "ver", "vur", "öl"}
+)
+# Ek ailesiyle tanınmayan çok heceli fiiller (emir kipi).
+COK_HECELI_FIILLER = frozenset(
+    {
+        "ara", "aktar", "artır", "azalt", "başlat", "bekle", "bırak", "bitir", "boşalt",
+        "çalıştır", "çevir", "daralt", "değiştir", "dene", "doldur", "durdur", "düzelt",
+        "genişlet", "gerçekleştir", "getir", "göster", "götür", "gönder", "indir", "kaldır",
+        "kapat", "kaydet", "kaydır", "oku", "öde", "seyret", "uzat", "yerleştir", "yükselt",
+    }
+)  # fmt: skip
+# -la/-le ile biten ama fiil olmayan sık kelimeler (araç eki -(y)la/-(y)le ayrıca elenir).
+_FIIL_OLMAYAN = frozenset(
+    {"bile", "hala", "hâlâ", "ile", "kola", "lale", "kale", "parola", "cümle"}
+)
+# Yumuşayan gövdeler: git → gider, et → eder (kaydet → kaydeder).
+_YUMUSAMA = {"git": "gid", "et": "ed", "kaydet": "kayded", "seyret": "seyred"}
+_FIIL_EKI = re.compile(r"(?<!y)l[ae]$")
+_EDILGEN_GENIS = re.compile(r"(?:[ln][ıiuü]r|[ln][ae]n[ıi]r)$")
+
+
+def _son_unlu(kelime: str) -> str:
+    for h in reversed(kelime):
+        if h in _UNLU:
+            return h
+    return "e"
+
+
+def _dortlu(kelime: str) -> str:
+    """Dört yönlü ünlü uyumu (ı/i/u/ü)."""
+    u = _son_unlu(kelime)
+    return {"a": "ı", "ı": "ı", "o": "u", "u": "u", "e": "i", "i": "i", "ö": "ü", "ü": "ü"}.get(
+        u, "i"
+    )
+
+
+def _sart_eki(kelime: str) -> str:
+    return "se" if _son_unlu(kelime) in _INCE or _son_unlu(kelime) == "î" else "sa"
+
+
+def _hece_sayisi(kelime: str) -> int:
+    return sum(1 for h in kelime if h in _UNLU)
+
+
+def _genis_zaman(fiil: str) -> str | None:
+    """Emir kipindeki fiilin geniş zaman (3. tekil) biçimi; fiil tanınmazsa None."""
+    govde = _YUMUSAMA.get(fiil, fiil)
+    if govde.endswith("ed") and fiil.endswith("et"):
+        return govde + "er"  # et-bileşikleri tek heceli "et" gibi çekilir: kaydet → kaydeder
+    if _hece_sayisi(fiil) == 1:
+        if fiil not in TEK_HECELI_FIILLER and fiil not in GENIS_ZAMAN_IR:
+            return None
+        if fiil in GENIS_ZAMAN_IR:
+            return govde + _dortlu(govde) + "r"
+        return govde + ("e" if _son_unlu(govde) in _INCE else "a") + "r"
+    if fiil not in COK_HECELI_FIILLER and (not _FIIL_EKI.search(fiil) or fiil in _FIIL_OLMAYAN):
+        return None
+    if govde[-1] in _UNLU:
+        return govde + "r"
+    return govde + _dortlu(govde) + "r"
+
+
+def kosul_kipi(eylem: str) -> str:
+    """Eylemin son kelimesi emir kipinde fiilse koşul kipine çevrilir ("aç" → "açarsa");
+    edilgen geniş zamanla bitiyorsa -sa/-se eklenir; tanınmazsa metin olduğu gibi döner."""
+    govde, _, son = eylem.rpartition(" ")
+    if not _KUCUK_KELIME.match(son):
+        return eylem
+    if _hece_sayisi(son) >= 2 and _EDILGEN_GENIS.search(son) and son not in COK_HECELI_FIILLER:
+        cekim: str | None = son
+    else:
+        cekim = _genis_zaman(son)
+    if cekim is None:
+        return eylem
+    yeni = cekim + _sart_eki(cekim)
+    return f"{govde} {yeni}" if govde else yeni
+
+
+def _kucuk(harf: str) -> str:
+    return {"I": "ı", "İ": "i"}.get(harf, harf.lower())
+
+
+def dogal_metin(metin: str) -> str:
+    """Anahtar kelimeden sonra gelen metnin baş harfi (özel ad değilse) küçük harf olur."""
+    kelimeler = metin.split(" ")
+    ilk = kelimeler[0]
+    if not ilk or not _KELIME.match(ilk) or len(ilk) < 2:
+        return metin
+    if not (ilk[0].isupper() and ilk[1:] == "".join(_kucuk(h) for h in ilk[1:])):
+        return metin
+    if len(kelimeler) > 1 and kelimeler[1][:1].isupper():
+        return metin
+    return _kucuk(ilk[0]) + metin[1:]
+
+
+def _eylem_metni(eylem: str) -> str:
+    return kosul_kipi(dogal_metin(tek_satir(eylem)))
+
+
 # --------------------------------------------------------------------------- etiketler
 
 
@@ -307,29 +447,46 @@ def _govde(
     a = _Adimlar(girinti)
     for on in icerik.get("preconditions") or []:
         if tek_satir(on):
-            a.ekle("given", tek_satir(on))
+            a.ekle("given", dogal_metin(tek_satir(on)))
     td = [v for v in icerik.get("test_data") or [] if isinstance(v, Mapping)]
     if td:
         a.ekle("given", "test verileri:")
         a.ham(_test_verisi_tablosu(td, td_degerleri, td_siniflari, girinti + GIRINTI))
     son_beklenen = ""
     for eylem, veri, beklenen in zip(eylemler, veriler, beklenenler, strict=True):
+        metin = _eylem_metni(eylem)
+        td_adi = _test_verisi_adi(veri, td, td_degerleri)
         if veri is None or veri == "":
-            a.ekle("when", tek_satir(eylem))
+            a.ekle("when", metin)
+        elif td_adi is not None:
+            a.ekle("when", f"{metin} (test verisi: {td_adi})")
         elif _satir_ici_mi(veri):
-            a.ekle("when", f'{tek_satir(eylem)}, veri: "{veri}"')
+            a.ekle("when", f'{metin} (veri: "{veri}")')
         else:
-            a.ekle("when", f"{tek_satir(eylem)}, veri:")
+            a.ekle("when", f"{metin}, veri:")
             a.ham(_docstring(veri, girinti + GIRINTI))
         if tek_satir(beklenen):
-            a.ekle("then", tek_satir(beklenen))
+            a.ekle("then", dogal_metin(tek_satir(beklenen)))
             son_beklenen = tek_satir(beklenen)
     if tek_satir(sonuc) and tek_satir(sonuc) != son_beklenen:
-        a.ekle("then", tek_satir(sonuc))
+        a.ekle("then", dogal_metin(tek_satir(sonuc)))
     for t in icerik.get("teardown") or []:
         if tek_satir(t):
             a.ham([f"{girinti}# Temizlik: {tek_satir(t)}"])
     return a.satirlar
+
+
+def _test_verisi_adi(
+    veri: str | None, td: Sequence[Mapping[str, Any]], degerler: Sequence[str]
+) -> str | None:
+    """Adım verisi test verisi tablosundaki bir değerle birebir aynıysa o satırın adı."""
+    if not veri:
+        return None
+    for v, deger in zip(td, degerler, strict=True):
+        ad = tek_satir(v.get("name"))
+        if ad and deger == veri:
+            return ad
+    return None
 
 
 def _adim_alanlari(icerik: Mapping[str, Any]) -> tuple[list[str], list[str | None], list[str]]:
@@ -468,7 +625,8 @@ def _beklenen_alani(sutunlar: _Sutunlar, degerler: Sequence[str], rol: str) -> s
     ad = sutunlar.girdi_ile_ayni(araliklar)
     if ad is not None and (onek or sonek):
         return " ".join([*onek, f"<{ad}>", *sonek])
-    return f"<{sutunlar.ad(rol, [tek_satir(d) for d in degerler])}>"
+    # Tüm metin sütunsa değerler doğal adım diliyle yazılır (yer tutucu satırda dönüşmez).
+    return f"<{sutunlar.ad(rol, [dogal_metin(tek_satir(d)) for d in degerler])}>"
 
 
 def _taslak(cases: Sequence[GherkinCase]) -> _Taslak | None:
@@ -520,6 +678,8 @@ def _taslak(cases: Sequence[GherkinCase]) -> _Taslak | None:
             )
     except _Birlestirilemez:
         return None
+    if not _dil_kayipsiz(t, s, icerikler, alanlar, td):
+        return None
     girdi_satirlari = [
         tuple(v[r] for a, v in s.degerler.items() if a == "girdi" or a.startswith("girdi_"))
         for r in range(len(cases))
@@ -536,6 +696,42 @@ def _taslak(cases: Sequence[GherkinCase]) -> _Taslak | None:
 
     t.sutunlar = {ad: list(s.degerler[ad]) for ad in sorted(s.degerler, key=_sira)}
     return t
+
+
+def _dil_kayipsiz(
+    t: _Taslak,
+    s: _Sutunlar,
+    icerikler: Sequence[Mapping[str, Any]],
+    alanlar: Sequence[tuple[list[str], list[str | None], list[str]]],
+    td: Sequence[tuple[list[str], list[str]]],
+) -> bool:
+    """Doğal dil dönüşümleri (baş harf, koşul kipi, test verisi adı) yer tutuculu metinde de
+    satırdaki gibi sonuç veriyor mu: taslağın her açılmış satırı = case'in tekil dönüşümü."""
+
+    def doldur(metin: str, r: int) -> str:
+        return re.sub(
+            r"<([^<>]+)>",
+            lambda m: s.degerler[m.group(1)][r] if m.group(1) in s.degerler else m.group(0),
+            metin,
+        )
+
+    td_kayit = [v for v in icerikler[0].get("test_data") or [] if isinstance(v, Mapping)]
+    for r, icerik in enumerate(icerikler):
+        eylemler, veriler, beklenenler = alanlar[r]
+        satir_td = [v for v in icerik.get("test_data") or [] if isinstance(v, Mapping)]
+        for k, eylem in enumerate(eylemler):
+            if doldur(_eylem_metni(t.eylemler[k]), r) != _eylem_metni(eylem):
+                return False
+            if doldur(dogal_metin(t.beklenenler[k]), r) != dogal_metin(tek_satir(beklenenler[k])):
+                return False
+            if _test_verisi_adi(t.veriler[k], td_kayit, t.td_degerleri) != _test_verisi_adi(
+                veriler[k], satir_td, td[r][0]
+            ):
+                return False
+        sonuc = tek_satir(icerik.get("expected_result"))
+        if doldur(dogal_metin(t.sonuc), r) != dogal_metin(sonuc):
+            return False
+    return True
 
 
 def plan_scenarios(cases: Sequence[GherkinCase]) -> list[Senaryo]:

@@ -435,6 +435,7 @@ def generation_messages(
     secenekler: Mapping[str, Any] | None = None,
     onayli_model: Mapping[str, Any] | None = None,
     gorev: str | None = None,
+    acik_soru_yanitlari: str = "",
 ) -> list[ModelMessage]:
     """Case üretim girdisi: PO onaylı story + kabul kriterleri + PO cevapları (güvenilmeyen).
 
@@ -451,6 +452,10 @@ def generation_messages(
     ayrı bir güvenilmeyen blokta (`tasarim-modeli:<kaynak>`) eklenir; model AI üretimidir, insan
     onaylı olsa da talimat taşımaz. `gorev` ilk (görev) cümlesini değiştirir (tur 1: tasarım
     modeli, `model_service.MODEL_GOREVI`); story/PO/test verisi blokları aynıdır.
+
+    `acik_soru_yanitlari` (011 K16): PO'nun case üretimi açık sorularına verdiği yanıtlar
+    (`acik_sorular.generation_input`); PO cevaplarından sonra ayrı güvenilmeyen blokta
+    (`<kaynak>:po-acik-soru`). Boşsa girdi değişmez (replay golden girdi beyanları).
     """
     from tp_core.gateway import wrap_untrusted
     from tp_core.gateway.inputs import requirement_block
@@ -483,6 +488,9 @@ def generation_messages(
     po = _po_cevaplari_metni(req.po_cevaplari, sorular)
     if po:
         parcalar += ["PO cevapları:", wrap_untrusted(po, source=f"{kaynak}:po", kind=tur)]
+    from tp_core.features.cases import acik_sorular
+
+    parcalar += acik_sorular.generation_parts(acik_soru_yanitlari, kaynak, tur)
     if test_verisi:
         parcalar += [
             "Test verisi (kullanıcılar, ürünler, fiyatlar, ayarlar, arayüz etiketleri; tutarları "
@@ -913,12 +921,15 @@ def run_generation(
                 s, req, uuid.UUID(str(yuk["tasarim_modeli_id"]))
             )
         secenekler = yuk.get("secenekler")
+        from tp_core.features.cases import acik_sorular
+
         messages = generation_messages(
             req,
             _onaylanan_sorular(s, req.id),
             test_verisi=testdata.block(),
             secenekler=secenekler,
             onayli_model=onayli_model,
+            acik_soru_yanitlari=acik_sorular.generation_input(s, req),
         )
         replay_key = replay_key_for(req)
         replay_key["name"] = secenek_modulu.replay_adi(replay_key["name"], secenekler)
@@ -1146,8 +1157,13 @@ def requirement_for_ide(session: Session, requirement_key_: str) -> dict[str, An
         sebep = "Gereksinim içeriği PO onayından sonra değişmiş; PO onayı yenilenmeli"
     if sebep is not None:
         raise GateClosed(sebep)
+    from tp_core.features.cases import acik_sorular
+
     mesaj = generation_messages(
-        req, _onaylanan_sorular(session, req.id), test_verisi=testdata.block()
+        req,
+        _onaylanan_sorular(session, req.id),
+        test_verisi=testdata.block(),
+        acik_soru_yanitlari=acik_sorular.generation_input(session, req),
     )[0]
     return {
         "requirement_id": str(req.id),
@@ -1410,6 +1426,10 @@ def decide(
             tc.icerik, icerik, beklenen_anlam_degisti=beklenen_anlam_degisti
         )
         degisiklik = {"icerik": dict(icerik)}
+        # 011 K16 (D6): yanıtlanan soru atfı kaldırıldıysa denetim kaydı "kaynak: PO yanıtı CQn".
+        from tp_core.features.cases import acik_sorular
+
+        acik_sorular.record_correction_source(session, tc, icerik, user)
     elif icerik is not None:
         raise InvalidDecision("İçerik yalnızca 'edit' kararında gönderilir")
     elif karar == "approve":
@@ -1635,6 +1655,10 @@ def serialize_cases(session: Session, cases: Sequence[TestCase]) -> list[dict[st
                 "olusturma": c.olusturma,
             }
         )
+    # 011 K16 (D6): atıf yapılan soruların PO'ya gönderim/yanıt durumu + düzelt önerisi.
+    from tp_core.features.cases import acik_sorular
+
+    acik_sorular.case_fields(session, out)
     return out
 
 

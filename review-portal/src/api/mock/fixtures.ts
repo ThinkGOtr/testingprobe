@@ -53,6 +53,7 @@ import type { TasarimModeliKaydi } from "../tasarimModeliTipleri";
 import type { KaliteKaydi } from "./kalite";
 
 import { uretimOzetiUyarla } from "../uyum";
+import type { MockAcikSoru } from "./acikSorular";
 import { V3_AC, V3_ACIKLAMA, V3_BASLIK, V3_GEREKSINIM_ID, V3_ICERIKLER, V3_URETIM } from "./caseV3";
 
 export interface MockVeri {
@@ -84,6 +85,8 @@ export interface MockVeri {
   uretimSecenekleri?: Record<string, UretimSecenekleri>;
   /** Son derinleştirmenin durumu (011 P5/P6; gereksinim kimliği → durum). */
   derinlestirmeler?: Record<string, DerinlestirmeDurumu>;
+  /** PO'ya gönderilen açık sorular ve yanıtları (011 K16; gereksinim kimliği → kayıtlar; mock/acikSorular.ts). */
+  acikSorular?: Record<string, MockAcikSoru[]>;
   sayac: number;
 }
 
