@@ -235,6 +235,19 @@ yalnız worker yazar), `asistan_oneri_geri_bildirim`, `asistan_hiz` (`unique nul
 `ai_call.ek = {kanal:"asistan", kullanici_id, mesaj_id}`. `asistan_mesaj.durum` durum makinesinde değildir
 (insan kapısı yok). Saklama 90 gün (`TP_ASISTAN_SAKLAMA_GUN`); `ai_call`/`tool_call` etkilenmez.
 
+**012 kalite doğrulama tabloları (0022 `kalite_dogrulama`, `down_revision="0020"`; ayrıntı
+`specs/012-test-kalite-dogrulama/ANALIZ.md` §5, §11.3, §12):** `karar_tablosu` ve `metamorfik_iliski`
+(içerik JSONB, `icerik_hash`, `onaylanan_hash`, `durum` draft|pending_po|approved|superseded — iş akışı
+makinesi, onay `record_approval` + görülen hash; `gereksinim_hash` ile bayatlık; `UNIQUE
+(requirement_id, sira_no)`), `case_oracle_kontrol` (`UNIQUE (test_case_id, icerik_hash)`; `sonuc`
+uyumlu|uyumsuz|kapsam_disi|kontrol_edilemedi, `ayrintilar` JSONB, `tablo_hashleri` `{<tablo id
+metni>: icerik_hash}` — kayıt yalnız güncel kapsayan tablolarla aynıyken geçerli, `ai_icerik`,
+istisna alanları), `metamorfik_turetme` (`UNIQUE (iliski_id, kaynak_case_id)`), `hata_kosusu`
+(iş durumu, makinede değil) ve `hata_kosusu_adim` (`asama` temel|hata|kapanis, `sonuc`
+bekliyor|yakalandi|kacti|gecersiz|yesil|kirmizi). `tp_app`: SELECT, INSERT, UPDATE (DELETE yok).
+Ekilmiş hata koşuları `run.tetik='break_verify'` + `ortam.hata_kodu`, `ortam.hata_kosusu_id`
+yazar (KPI'lara girmez, triage sınıflandırmaz).
+
 ## 5. HTTP API (core-api, portal `/api/` önekiyle erişir)
 
 Tüm yanıtlar JSON; hata `{"detail": "...", "kod": "..."}` (`kod` sabit enum, aşağıda "Hata `kod`
@@ -295,7 +308,21 @@ gönderilir ve akış kapanır. Portal bunu alınca yeniden bağlanmaz, giriş e
 | POST | `/requirements/{id}/review-complete` | analyst | Taslak kalmadıysa review'ı kapatır (denetim olayı); taslak varsa 409 |
 | GET | `/cases?requirement_id=` · `/cases/{id}` | herkes | |
 | POST | `/cases/{id}/viewed` | analyst | Kartın ilk görüntülenmesi (review süresi ölçümü) |
-| POST | `/cases/{id}/decision` `{karar: approve\|edit\|reject\|reopen, icerik_hash, icerik?, ret_nedeni?, gerekce?, beklenen_anlam_degisti?}` | analyst | `reopen` ("Taslağa al"): approved/rejected → draft; kayıtlı, onaylamayan karar |
+| POST | `/cases/{id}/decision` `{karar: approve\|edit\|reject\|reopen, icerik_hash, icerik?, ret_nedeni?, gerekce?, beklenen_anlam_degisti?, oracle_istisna_gerekce?}` | analyst | `reopen` ("Taslağa al"): approved/rejected → draft; kayıtlı, onaylamayan karar. 012: approve/edit karar tablosu onay kapısından geçer (yüksek riskli uyuşmazlık 422 `oracle_uyumsuz`, `oracle_istisna_gerekce` ≥ 20 karakterle istisna; kontrol bitmemişse 409 `oracle_bekleniyor`); case nesneleri `oracle {sonuc, icerik_hash, ozet, karsilastirmalar, karsilastirilamayan, istisna, kontrol_suruyor} \| null` taşır |
+| GET | `/cases/{id}/oracle?icerik_hash=` | herkes | 012: güncel (ya da önerilen) içeriğin karar tablosu kontrolü `{case_id, icerik_hash, guncel_icerik, kapsayan_tablolar, oracle}` |
+| POST | `/cases/{id}/oracle-check` `{icerik?}` | analyst | 012: önerilen düzeltme içeriği için kontrol (şema denetimli) → 202 `{icerik_hash, job_id}` |
+| GET | `/requirements/{id}/decision-tables` | herkes | 012: `{tablolar, iliskiler, son_taslak}` (durum, `bayat`, hash, onaylayan) |
+| POST | `/requirements/{id}/decision-tables/draft` | analyst | 012: AI taslak işi (`karar_tablosu.draft`) → 202; yalnız PO onaylı gereksinim |
+| POST | `/requirements/{id}/decision-tables` `{icerik?}` · `/requirements/{id}/relations` `{icerik, karar_tablosu_id?}` | analyst | 012: elle tablo / ilişki → 201 |
+| PUT | `/decision-tables/{id}` · `/relations/{id}` `{icerik, icerik_hash}` | analyst | 012: yalnız `draft`'ta; geçersiz içerik 422 `karar_tablosu_gecersiz` / `iliski_gecersiz` |
+| POST | `/decision-tables/{id}/submit\|withdraw\|reopen` (ve `/relations/{id}/…`) | analyst | 012: durum geçişleri; onay ve yeniden açma `oracle.check_requirement` açar |
+| POST | `/decision-tables/{id}/approve\|request-changes` (ve `/relations/{id}/…`) `{icerik_hash, gerekce?}` | po | 012: görülen hash'le onay / gerekçeli değişiklik isteği |
+| POST | `/decision-tables/{id}/evaluate` `{girdiler, icerik?}` | herkes | 012: "örnekle dene" önizlemesi (kayıt yok) |
+| POST | `/requirements/{id}/metamorphic-cases` `{iliski_id, case_ids?}` | analyst | 012: `{turetilen[], atlanan[{sonuc: iliski_gecersiz\|belirsiz_alinti\|olgu_yok\|zaten_turetildi}]}` |
+| GET | `/requirements/{id}/metamorphic-derivations` | herkes | 012: türetme kayıtları |
+| POST | `/fault-runs` `{platformlar[], hatalar?[]}` | engineer · presenter | 012: ekilmiş hata koşusu → 202; süren koşu varsa 409 `hata_kosusu_suruyor` |
+| GET | `/fault-runs?limit=` · `/fault-runs/{id}` · `/fault-runs/catalog` | herkes | 012: koşular, adımlar, katalog |
+| POST | `/fault-runs/{id}/cancel` | engineer · presenter | 012: iptal |
 | GET | `/publish/preview?requirement_id=` | analyst | Dry-run; `hedef`, `proje`, `jira_browse_url`, kalem başına `islem` (`create\|skip_existing\|blocked_not_approved\|blocked_hash_mismatch\|blocked_no_story\|blocked_requirement_changed`), `payload` (`mod_etiketi`, `mod_yorumu` dahil), `uretim_modu`, `icerik_hash`, `onaylayan` |
 | POST | `/publish` `{case_ids[]}` | analyst | Yayın: worker işi (`publish.cases`; yazma kimliği yalnızca worker'da), 45 sn beklenir → 200 `YayinSonucu`; bitmezse 202 `{job_id, durum, sonuclar: []}`; iş başarısızsa 502 |
 | POST | `/code/generate` `{case_ids[]}` | engineer | Kod üretimi (CasesToCode) |
@@ -378,6 +405,11 @@ korunur. Yeni değer yalnız bu tabloya eklenerek kullanılır; asistanın hata 
 | `oneri_gecersiz` | 409 | asistan: `oneri_kural_id` artık geçerli değil |
 | `mesgul` | 429 | asistan: global bekleyen sınırı dolu |
 | `asistan_kapali` | 503 | asistan: `neden` = `worker_yok` \| `maskeleme_kapali` |
+| `oracle_uyumsuz` | 422 | 012: yüksek riskli case'in beklenen değeri onaylı karar tablosuyla uyuşmuyor (istisna gerekçesiyle aşılır) |
+| `oracle_bekleniyor` | 409 | 012: yüksek riskli, tablo kapsamındaki case'in kontrolü bitmedi (kontrol kuyruğa alındı) |
+| `karar_tablosu_gecersiz` | 422 | 012: tablo içeriği şemaya / ifade diline uymuyor (`hatalar` mesajda) |
+| `iliski_gecersiz` | 422 | 012: metamorfik ilişki geçersiz ya da türetme için uygun değil |
+| `hata_kosusu_suruyor` | 409 | 012: süren ekilmiş hata koşusu var |
 
 `asistan_mesaj.hata_kodu` (yanıt değil, mesaj kaydı): `butce_asildi`, `girdi_tavani`, `zaman_asimi`,
 `model_hatasi`.
@@ -433,6 +465,18 @@ ucu Faz 4.
 `agent.step`, `case.generated`, `publish.completed` (`{job_id, requirement_id, requirement_ids,
 hedef, sonuclar}`), `publish.failed` (`{case_id, requirement_id, hedef, hata}`); her olay
 `requirement_id` taşır (portal konu eşlemesi).
+
+**012 olaylar ve iş türleri:** olaylar `karar_tablosu.state` / `metamorfik_iliski.state` (durum
+geçişi), `karar_tablosu.updated` (`eylem` created|updated|ai_draft), `oracle.checked {case_id,
+requirement_id, icerik_hash, sonuc}`, `hata_kosusu.ilerleme {id, durum, platform, hata_kodu, asama,
+sonuc}`; işler `karar_tablosu.draft` (max_deneme 2), `oracle.check_requirement {requirement_id,
+neden}` (anahtar olay başına tekil), `oracle.check_case {case_id, icerik_hash, icerik?}`,
+`hata_kosusu.calistir` (uzun şerit). Denetim: `karar_tablosu.*`, `metamorfik_iliski.*`,
+`oracle.checked`, `oracle.exception`, `oracle.warning`, `metamorfik.derived`. `GET /control-tower`
+ek anahtarlar `beklenti_dogrulugu {oran, uyumlu, uyumsuz, kapsam_disi, kontrol_edilemedi, istisna,
+kapsam_orani}` ve `hata_yakalama {son_kosu, oran, yakalanan, kacan, gecersiz, platformlar,
+kacanlar} | null` (kaynak metni `kaynaklar`'da); `GET /requirements/{id}/case-metrics` ek
+`beklenti_dogrulugu` (+ `kaynak`).
 
 **Faz 2 iş türleri:** `requirements.review`, `requirements.consistency` (max_deneme 1),
 `requirements.apply_doc_fixes`, `requirements.po_request` (son halde PO soru yorumu + `tp-po-pending`),

@@ -564,3 +564,87 @@ Durumlar: `draft` (başlangıç), `pending_po`, `approved`, `superseded` (son du
   seçenekleri: asistanın canlı değerlendirmesini yeniden koşmak (`make eval-live
   A=--update-status`), sahibin istisna yazması, ya da durumu `icerik_degisti` olarak kabul edip
   README tablosunu ve testin durum listesini buna göre güncellemek.
+
+## 12. Birleştirme notları
+
+Dalga 2 (çekirdek birleştirme, 2026-11-12) sonunda uygulamanın §4–§6'dan ayrıldığı yerler. §11'deki
+Ş0 notları geçerlidir; burada yalnız şerit ekleri ve birleştirme düzeltmeleri vardır.
+
+### 12.1 Şekil ve sözleşme farkları
+
+| Konu | §4–§6'da | Uygulamada |
+|---|---|---|
+| İçerik şemaları | `rules/schemas/karar_tablosu.schema.json` | `rules/schemas/icerik/` (§11.1) |
+| Migrasyon | `0022`, `down_revision="0020"` | Aynı; `test_alembic_tek_bas` başı `0022` bekler (`feat/case-gen-v3` birleşince `0021`) |
+| Model çıktısındaki satır | — | `decision_table_draft` çıktısı satır çıktılarını ve ilişki `donusum`/`iliski`'yi `[{ad, ifade}]` listesi verir; `karar_tablosu.service.taslak_tablo_icerigi` / `taslak_iliski_icerigi` içerik biçimine (`cikti: {ad: ifade}`) çevirir |
+| Tablo araması | iki şeritte ayrı | Tek kaynak `karar_tablosu.service.gecerli_tablolar`; `oracle/tablolar.py` yeniden dışa aktarır. AC atfı boşluksuz büyük harfle karşılaştırılır (`"ac 2"` = `"AC2"`) |
+| Tablo olayı | `karar_tablosu.state` | Durum geçişleri `karar_tablosu.state` / `metamorfik_iliski.state` (iş akışı); içerik ve AI taslağı `karar_tablosu.updated` (`eylem`: `created`, `updated`, `ai_draft`) |
+| Oracle işleri | `oracle.check` | `oracle.check_requirement {requirement_id, neden}` (gereksinimin `draft`/`approved` case'leri; düzeltilmiş case'in AI içeriği de) → `oracle.check_case {case_id, icerik_hash, icerik?}`. Tablo onayı, yeniden açma ve onaylı tablonun geçersiz kılınması (Ş1), case üretimi sonu (yalnız geçerli tablo varsa) ve metamorfik türetme (Ş6) `check_requirement` açar |
+| Ş1 iş anahtarı | — | `oracle.check_requirement:<req>:<tablo>:<neden>:<uuid>` — olay başına tekil. Birleştirmede düzeltildi: önceki `…:<onaylanan_hash \| acik>` ikinci yeniden açmayı ve aynı içeriğin yeniden onayını yutuyordu; kayıtlar eski tablo kümesinde kalıp kapı 409'da takılıyordu |
+| Kısmi değerlendirme | eksik girdi → grup `cikarilamadi` | `dogrulama.kismi_degerlendir`: eksik girdi yalnız onu kullanan koşul ve çıktıyı etkiler. Satırlar sırayla denenir; koşulu eksik girdiye dayanan ilk satırda durulur (seçilen satır tam değerlendirmeyle aynıdır). Seçilen satırın eksik girdiye dayanan çıktıları karşılaştırılmaz; o çıktıların doğrulanmış olguları gruptaki `karsilastirilamayan: [{column, value, field, quote, neden}]` listesine yazılır, sonuca girmez. `ifade.degerlendir` sözleşmesi değişmedi |
+| `ayrintilar.gruplar[]` | `{tablo_id, tablo_ad, satir_id, girdiler, karsilastirmalar, durum, neden}` | + `karsilastirilamayan` (yukarıda). Alan yolları 0 tabanlıdır (`steps[3].expected`); `case_degeri`/`tablo_degeri` sayıda düz ondalık metin (`"25.00"`), mantıksalda JSON bool, metinde str |
+| Portal `oracle` nesnesi | `{sonuc, ozet, karsilastirmalar, istisna}` | + `icerik_hash`, `kontrol_suruyor` (kayıt yokken `sonuc: null`), `karsilastirilamayan: [{tablo_id, tablo_ad, column, alan, alinti, case_degeri, neden}]`; `ozet` karşılaştırılamayanları söyler. `GET /cases/{id}/oracle?icerik_hash=` ayrıca `guncel_icerik`, `kapsayan_tablolar` döner |
+| Alıntı sınırı | — | Alanın başındaki sayı alıntısı (`"7 adette"` içinde `7`) önceden yanlışlıkla atılıyordu (boş dizginin `in` denetimi); düzeltildi |
+| Metamorfik olgular | — | Ş6 `karsilastirmalar` ve `karsilastirilamayan`'ı çıktı olgusu olarak okur; mantıksal olgu sayı alıntısından önce ayrılır (`"Minimum 750,00 TL" uyarısı görünür` sayı sayılmaz). Değeri değişen alıntının olgusuz kopyası varsa `belirsiz_alinti`; bu yüzden golden olguları bir değerin case'teki **tüm** geçişlerini taşır |
+| Ek uçlar | — | `GET /requirements/{id}/metamorphic-derivations`, `POST /decision-tables/{id}/evaluate` gövdesinde isteğe bağlı kaydedilmemiş `icerik`, `GET /fault-runs/catalog` |
+| Kontrol Kulesi | `kaynaklar` metniyle | Değerler `kaynak` taşımaz (Kule kuralı); metin `kaynaklar["beklenti_dogrulugu"]`, `kaynaklar["hata_yakalama"]`'dadır (koşu yoksa "henüz yok (ölçülmedi)"). `/requirements/{id}/case-metrics`'teki `beklenti_dogrulugu` `kaynak`'ı nesne içinde taşır |
+| Asistan önerisi | §4.4 "locator onarımı açılmaz" | Yeni olgu `beklenti_farki` (failure); `hata-bakim-onarim` artık `beklenti_farki_esit: false` ister; yeni kurallar `hata-beklenti-case-duzelt` (analist) ve `hata-beklenti-bilgi` (mühendis). Kural sayısı 26 → 28: **ürün sahibi K10 onayı bekler**. Ş7'nin rotası `/gereksinimler/:id/karar-tablolari` öneri kapsamına bilinçli boş, asistan prompt'unun ekran listesine eklendi (asistan paketi zaten `icerik_degisti`, §11.6) |
+
+### 12.2 TPD-1 demo tabloları ve sonuçlar
+
+Demo tabloları Ş1'in AI taslak golden'ıdır (`rules/replay/decision_table_draft/golden/TPD-1.json`);
+oracle şeridi ve testler onu yükler (`core/tests/unit/features/oracle/tpd1.py`), kopya yoktur:
+
+- **T1 "Kampanya: 6 al 1 bedava (7 adette 1 bedava)"** (AC2): girdiler `adet`, `birim_fiyat`;
+  çıktılar `bedava_adet` (R1 `adet >= 7` → `adet // 7`; R2 → `0`), `indirim` (R1 `(adet // 7) *
+  birim_fiyat`, tolerans 0.01; R2 → `0`). Story'yi izler; demo uygulama `adet // 6` uygular.
+- **T2 "Minimum sipariş tutarı (kampanyasız siparişler)"** (AC3, AC6): girdiler `kampanyali_sepet`,
+  `sepet_tutari`; çıktı `minimum_uyarisi` (R1 kampanyalı → yanlış; R2 `sepet_tutari < 750` → doğru;
+  R3 → yanlış).
+- **İlişki** (T1): `adet >= 7 ve adet % 7 == 0` iken `adet × 2` → `bedava_adet × 2`, `indirim × 2`.
+
+Case'ler birim fiyatı yazmaz: `birim_fiyat` olgusu çıkarılmaz (uydurulmaz). Bu yüzden 7 adette
+`indirim` karşılaştırılamaz (`karsilastirilamayan`), 7'den az adette (R2, sabit 0) karşılaştırılır.
+
+Demo ana yolu (`f2-kod-hatasi`: AC2 özgün, case'ler senaryo golden'ından), dürüst sonuçlar
+(`core/tests/unit/features/kalite_e2e/test_tpd1_uctan_uca.py` ile sabit):
+
+| Case | AC | Risk | Sonuç | Ayrıntı |
+|---|---|---|---|---|
+| C1 sepete ekle | AC1 | orta | `kapsam_disi` | Tablo yok; model çağrılmaz |
+| C2 7 adette 1 bedava | AC2 | yüksek | `uyumlu` | T1 R1: bedava 1 = 7 // 7 (3 alıntı); indirim 25,00 karşılaştırılamadı (birim fiyat yok) |
+| C3 6 adette bedava yok | AC2 | yüksek | `uyumlu` | T1 R2: bedava 0 = 0, indirim 0,00 = 0. **Defect adayı:** uygulama 6 // 6 = 1 bedava verir; testin kırmızısı triage'da `product_defect` + `karar_tablosu_uyumlu` ("test beklentisi 0, gerçekleşen 1, tablo 0") |
+| C4 5 adette bedava yok | AC2 | orta | `uyumlu` | T1 R2 |
+| C5 kampanyasız 150 TL | AC3 | yüksek | `uyumlu` | T2 R2: uyarı görünür |
+| C6 kampanyasız 750 TL | AC3 | yüksek | `uyumlu` | T2 R3: tam 750'de uyarı yok |
+| C7 kredi limiti | AC4 | yüksek | `kapsam_disi` | Kredi limiti tablosu yok (limit bayi verisi) |
+| C8 sipariş numarası | AC5 | yüksek | `kapsam_disi` | Hesaplama kuralı yok |
+| C9 kampanyalı 150 TL | AC6 | orta | `uyumlu` | T2 R1: uyarı yok |
+| C10 C2'nin tekrarı | AC2 | orta | `uyumlu` | C2 ile aynı |
+
+Beklenti doğruluğu (AI içeriği): `oran 1.0`, uyumlu 7, uyumsuz 0, kapsam dışı 3, kontrol edilemedi
+0, `kapsam_orani 0.7`. Hiçbir AI case'i tabloyla uyuşmazlık göstermez; kapıyı demoda göstermek için
+analistin yanlış düzeltmesi kullanılır (uçtan uca testte: C5'i "uyarı görünmez" yapmak → önerilen
+içerik `uyumsuz` → 422 `oracle_uyumsuz` → gerekçeli istisnayla onay, `istisna 1`).
+
+F2 `fix_doc` alternatifinde (ana golden, AC2 koda uyarlanmış) yalnız C3 farklıdır ("6 adette 1
+bedava"); bu yolda Ş1 taslağı REPLAY-MISS olur (tablo yok → kontrol yok). Story tablosuyla
+değerlendirilseydi C3 `uyumsuz` olurdu (bedava 1 ≠ 0, indirim 25 ≠ 0; yüksek risk → 422); saf
+testlerde kapının gösterimi olarak tutulur. `case_facts` golden'ları: ana `TPD-1-C2…C6, C9, C10`
+ve senaryo `f2-kod-hatasi/TPD-1-C3`.
+
+Metamorfik türetme ana yolda C2 ve C10'dan iki ek case üretir (C3, C4 ön koşulu sağlamaz:
+`iliski_gecersiz`). Türetilen case `ai_generated=false`'tur, metriğe girmez; golden'ı olmadığı için
+kontrolü `kontrol_edilemedi`'dir. **Bilinen sınır:** T1'de `ara_toplam`/`toplam` kolonu yoktur;
+türetilen case'te "ara toplam 175,00 TL … toplam 150,00 TL" kaynak değerde kalır (14 adet için
+yanlış). Case insan onayından geçer; analist düzeltmeli ya da tabloya bu çıktılar (ve birim fiyat
+girdisi) eklenmelidir.
+
+### 12.3 Açık konular
+
+- Asistan önerisi kural setinin 26 → 28 olması (K10) ve asistan paketinin `icerik_degisti` durumu
+  (§11.6) ürün sahibi kararıdır. Portal sahte veri öneri kuralları (`review-portal/src/api/mock/
+  oneri.ts`) yeni olguyu ve iki kuralı bilmez.
+- Portal `karsilastirilamayan` listesini henüz göstermez (yalnız `ozet` cümlesi söyler).
+- `case_facts` ve `decision_table_draft` golden'ları elle hazırlanmıştır; canlı modelle kayıt
+  (`TP_MODEL_MODE=record`) ve değerlendirme (`evaluations.yaml` `pending`) ürün sahibi kararıdır.

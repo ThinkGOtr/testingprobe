@@ -82,3 +82,27 @@ Demo reposu: https://github.com/ThinkGOtr/testingprobe-demo-app
 **Bilinen sınırlar (hata sayma):** Flaky kartı demo uygulaması deterministik olduğu için boştur.
 "Case başına AI + review" ve maliyet REPLAY'de ölçülmez. Allure'un HTML raporu yoktur (CI yalnız ham
 sonuç üretir; portal listeler). Trace tarayıcıda açılmaz, indirilir.
+
+## 8. Test kalite doğrulama (012)
+
+Ayrıntı: [specs/012-test-kalite-dogrulama/ANALIZ.md](../specs/012-test-kalite-dogrulama/ANALIZ.md)
+§9 kabul senaryoları ve §12.2 TPD-1 sonuç tablosu. Ön koşul: TPD-1 F2 `code_defect` yolunda (AC2
+özgün) PO onaylı, case'ler üretilmiş.
+
+| # | Ne yap | Beklenen | ☐ |
+|---|---|---|---|
+| 8.1 | Analist → TPD-1 → Karar tabloları → "AI taslağı" | İki tablo (Kampanya: 7 adette 1 bedava; Minimum sipariş 750) + bir ilişki, mor "AI" taslak; "örnekle dene" 6 adet → bedava 0, 7 adet → 1 | ☐ |
+| 8.2 | Analist "PO onayına gönder" → PO "Onayla" | Tablo `approved`, onaylayan ve zaman görünür; case kartlarında kontrol çipleri birkaç saniyede dolar | ☐ |
+| 8.3 | Case review: C3 (6 adette bedava yok) | "Tabloyla uyumlu ✓"; karşılaştırma bedava adet 0 = 0, indirim 0,00 = 0; "Onayla" serbest | ☐ |
+| 8.4 | C2 kartı | "Tabloyla uyumlu ✓"; özet "indirim karşılaştırılamadı (birim fiyat)" der | ☐ |
+| 8.5 | C1, C7, C8 | "Tablo yok" (kapsam dışı) | ☐ |
+| 8.6 | C5'i düzelt: beklenen "uyarısı görünmez" yap, gönder | Önce kontrol beklenir; sonra "Tabloyla uyuşmuyor ✗", "Onayla" pasif, API 422 `oracle_uyumsuz` | ☐ |
+| 8.7 | Aynı düzeltmeyi 20+ karakter gerekçeyle "İstisnayla onayla" | Onaylanır; denetimde `oracle.exception`; Kontrol Kulesi istisna sayacı 1 | ☐ |
+| 8.8 | Kontrol Kulesi | "Beklenti doğruluğu" %100 (7 uyumlu, 3 kapsam dışı, kapsam %70); ekilmiş hata koşusu yoksa "Hata yakalama oranı" ölçülmedi; kaynak metinleri görünür | ☐ |
+| 8.9 | Karar tabloları → İlişkiler → "Ek case türet" | C2 ve C10'dan iki `draft` case (14 adet, bedava 2, indirim 50,00); C3, C4 "ön koşul sağlanmadı"; ek case'ler beklenti doğruluğunu değiştirmez | ☐ |
+| 8.10 | Gereksinim metnini değiştir | Tablolar "bayat"; kontrolde kullanılmaz | ☐ |
+| 8.11 | C3 testinin kırmızı koşusu (uygulama 6 adette 1 bedava) → Hata detay | "Ürün hatası"; sinyal "Test beklentisi onaylı karar tablosu … ile aynı, uygulama tablodan farklı (test beklentisi 0, gerçekleşen 1, tablo 0)" | ☐ |
+| 8.12 | Beklenti farkı sınıflı bir hata (test_maintenance/beklenti) → Öneri | Mühendis "otomatik onarımı başlatın" görmez; Analist "Case'in beklenen değeri onaylı karar tablosuyla uyuşmuyor; case'i düzeltin" görür | ☐ |
+| 8.13 | Mühendis/Sunucu → Kontrol Kulesi → Ekilmiş hata koşusu (web) | Temel yeşil → her hata için yakalandı/kaçtı → kapanış yeşil; oran hesaplanır, kaçanlar listelenir; bu koşular geçme oranına girmez, bug taslağı açılmaz | ☐ |
+
+---
