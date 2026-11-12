@@ -10,13 +10,15 @@ multiple windows and privilege levels. Targets come from the options block lines
 .NET MAUI), `Mimari` (x64, ARM64) and `Dağıtım` (MSI, MSIX, DMG, PKG, AppImage); when unknown,
 open question. Do not test a function the application does not offer (printing, drag and drop …).
 
-Besides the functional cases, consider these categories for the story (checklist, not quota):
+Besides the functional cases, consider these categories for the story (checklist, not quota;
+each category you test is a `CL-n` item, common rules):
 
 1. Install / uninstall: as administrator and as standard user, silent install, install over an
    older version (upgrade), downgrade block, leftovers in registry and AppData/Library after
    uninstall, missing prerequisite (.NET/VC++ runtime), disk full.
 2. File system (EP+BVA): path length at the application's valid limit (options line
-   `Yol uzunluğu sınırı`): limit-1 / limit / limit+1. The limit depends on the API, the
+   `Yol uzunluğu sınırı`): limit / limit+1 ([ISTQB] two-value BVA; limit-1 too only with
+   `BVA kipi: 3-değer`). The limit depends on the API, the
    application manifest, the long-path setting and the path type (local, UNC, `\\?\`); when it is
    not given, open question. Turkish/Unicode and space in file names, forbidden characters
    (< > : " | ? *), reserved names (CON, NUL, COM1), read-only / locked file, network drive / UNC

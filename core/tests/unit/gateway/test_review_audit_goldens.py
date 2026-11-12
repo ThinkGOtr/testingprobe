@@ -35,7 +35,16 @@ BEKLENEN_KARAR = {
     "TPD-3": "DÜZELTME_GEREKLİ",
     "TPD-4": "KABUL",
     "SERBEST": "KABUL",
+    "c10-reddedildi/TPD-1": "KABUL",
+    "f2-kod-hatasi-c10-reddedildi/TPD-1": "KABUL",
 }
+
+
+def _set(ad: str) -> tuple[Any, list, dict]:
+    """Golden adının seti: varyantta reddedilen case'ler çıkarılır (`brg.VARYANTLAR`)."""
+    gen_ad, cases = brg.golden_set_cases(ad)
+    req, _, ozet = _golden_set(gen_ad)
+    return req, copy.deepcopy(cases), ozet
 
 
 @pytest.fixture
@@ -89,9 +98,9 @@ def test_golden_dosyalari_ureticiyle_ayni() -> None:
         assert yol.read_text(encoding="utf-8") == brg.dump(kayit), yol
 
 
-@pytest.mark.parametrize("ad", brg.GOLDENLER)
+@pytest.mark.parametrize("ad", [*brg.GOLDENLER, *brg.VARYANTLAR])
 def test_uretim_girdisi_golden_beyanina_uyar(strict_gateway: Gateway, ad: str) -> None:
-    req, cases, ozet = _golden_set(ad)
+    req, cases, ozet = _set(ad)
     r = _review_call(strict_gateway, req, cases, ozet)
     a = _audit_call(strict_gateway, req, cases, ozet)
     assert r.mode == a.mode == "replay"
@@ -126,4 +135,4 @@ def test_gevsek_kipte_de_baska_setin_karari_donmez(monkeypatch: pytest.MonkeyPat
     gw = build_gateway(InMemoryCallRecorder(), settings=GatewaySettings())
     req, cases, ozet = _golden_set("TPD-1")
     with pytest.raises(ReplayNotFound):
-        _audit_call(gw, req, cases[:-1], ozet)  # C10 reddedildi → set değişti
+        _audit_call(gw, req, cases[:-1], ozet)  # son case (C15) reddedildi → set değişti

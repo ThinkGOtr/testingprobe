@@ -179,11 +179,18 @@ def _case(jira_key: str, sira_no: int) -> dict[str, Any]:
     return load_golden("case_generation", jira_key)["output"]["cases"][sira_no - 1]
 
 
+# Doğrulama ajanı kaydı olan case'ler: TPD-1 C1–C10 ve TPD-4 C1–C2. TPD-1 C11–C15 (011 K17 sınır
+# case'leri) sona eklendi; tarayıcı kaydı yok, kod üretimi onlarda dürüst REPLAY-MISS olur
+# (demo/prova kod üretimi C1, C2, C3, C5 ile çalışır).
+VERIFY_KAYITLI = {"TPD-1": 10, "TPD-4": 2}
+
+
 def test_every_golden_case_has_a_verify_and_map_golden() -> None:
     names = {path.stem for _, path, _ in VERIFY}
-    for jira in ("TPD-1", "TPD-4"):
+    for jira, kayitli in VERIFY_KAYITLI.items():
         cases = load_golden("case_generation", jira)["output"]["cases"]
-        expected = {golden_name(jira, case_no=n) for n in range(1, len(cases) + 1)}
+        assert len(cases) >= kayitli
+        expected = {golden_name(jira, case_no=n) for n in range(1, kayitli + 1)}
         assert expected <= names, sorted(expected - names)
 
 
@@ -247,7 +254,7 @@ def test_verify_and_map_golden_is_grounded(purpose: str, path: Path, golden: dic
 def test_known_defect_case_stops_at_missing_method() -> None:
     """AC4 (kredi limiti) kodda yok: eşleme uydurulmaz, mühendise 'eksik metot' olarak düşer."""
     cases = load_golden("case_generation", "TPD-1")["output"]["cases"]
-    for n, case in enumerate(cases, start=1):
+    for n, case in enumerate(cases[: VERIFY_KAYITLI["TPD-1"]], start=1):
         golden = load_golden("verify_and_map", golden_name("TPD-1", case_no=n))
         flagged = "expected-code-defect" in case["tags"]
         assert bool(golden["output"]["missing_methods"]) == flagged, case["title"]
@@ -256,7 +263,8 @@ def test_known_defect_case_stops_at_missing_method() -> None:
 def test_campaign_scripts_catch_break_campaign(monkeypatch: pytest.MonkeyPatch) -> None:
     """Adım 6 (kırarak doğrula): BREAK_CAMPAIGN=1 ile en az bir kampanya beklentisi bozulmalı."""
     caught = []
-    for n, case in enumerate(load_golden("case_generation", "TPD-1")["output"]["cases"], 1):
+    cases = load_golden("case_generation", "TPD-1")["output"]["cases"]
+    for n, case in enumerate(cases[: VERIFY_KAYITLI["TPD-1"]], 1):
         golden = load_golden("verify_and_map", golden_name("TPD-1", case_no=n))
         adds = [m["args"] for m in golden["output"]["step_mapping"] if m["method"] == "addToCart"]
         frees = [e for e in golden["output"]["expects"] if e["method"] == "expectFreeQuantity"]
@@ -590,7 +598,7 @@ def test_tpd_input_match_follows_jira_sim_seed() -> None:
 
 PROMPT = (RULES / "prompts" / "case-generation.md").read_text(encoding="utf-8")
 MAX_CASE_STEPS = 8
-MAX_CASES = 10
+MAX_CASES = 15
 CASE_GOLDENS = list(goldens("case_generation"))
 
 
@@ -637,7 +645,9 @@ def test_tpd1_golden_has_exactly_one_deliberate_duplicate_safe_to_reject() -> No
     ]
     assert dups == [(2, 10)]
     acs = set(story_acs("TPD-1"))
-    remaining = {r for c in TPD1_CASES[:9] for r in c["acceptance_criteria_refs"]}
+    remaining = {
+        r for n, c in enumerate(TPD1_CASES, 1) if n != 10 for r in c["acceptance_criteria_refs"]
+    }
     assert remaining == acs
     note = load_golden("case_generation", "TPD-1")["note"]
     assert "C10" in note and "C2" in note and "tekrar" in note

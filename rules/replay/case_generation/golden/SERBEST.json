@@ -2,7 +2,7 @@
   "kind": "call",
   "purpose": "case_generation",
   "golden": "SERBEST",
-  "note": "Adlandırılmış golden kayıt, serbest metin demo gereksinimi ('Sepetten ürün çıkarma'; metin rules/replay/README.md). Elle hazırlandı (model çıktısı değil; ai_call.model = golden-elle); canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), başka serbest metinlerde REPLAY-MISS. Adım 2 düzeltmelerinden (AC2: 6 adette 1 bedava; AC3: kampanyasız sepette 750,00 TL) ve PO teyidinden sonraki metne göre. Şema v3 (teknik, kapsam öğeleri, öncelik, hazır olma durumu, test verisi, temizlik): v3 alanları ve üst düzey listeler de elle hazırlandı (model çıktısı değil); mevcut case alanları (başlık, tür, risk, AC atıfı, ön koşul, adımlar, beklenen, etiket) ve case sırası v2 ile aynıdır. Girdide `Test seviyesi: SYSTEM` varsayılır (`test_level`). AC3 karar tablosuyla (kampanyalı ürün var/yok × toplam 750,00 TL altı/üstü) modellenmiştir. Bütün case'ler `ready`dir.",
+  "note": "Adlandırılmış golden kayıt, serbest metin demo gereksinimi ('Sepetten ürün çıkarma'; metin rules/replay/README.md). Elle hazırlandı (model çıktısı değil; ai_call.model = golden-elle); canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), başka serbest metinlerde REPLAY-MISS. Adım 2 düzeltmelerinden (AC2: 6 adette 1 bedava; AC3: kampanyasız sepette 750,00 TL) ve PO teyidinden sonraki metne göre. Şema v3 (teknik, kapsam öğeleri, öncelik, hazır olma durumu, test verisi, temizlik): v3 alanları ve üst düzey listeler de elle hazırlandı (model çıktısı değil); mevcut case alanları (başlık, tür, risk, AC atıfı, ön koşul, adımlar, beklenen, etiket) ve case sırası v2 ile aynıdır. Girdide `Test seviyesi: SYSTEM` varsayılır (`test_level`). AC3 karar tablosuyla (kampanyalı ürün var/yok × toplam 750,00 TL altı/üstü) modellenmiştir. Bütün case'ler `ready`dir. 011 K17: BV-2 (749,99 TL) kurulabilen en yakın değerle (749,00 TL) C6'da sınanır (sona eklendi; C1–C5 sırası korunur). `risk` alanı yok (K18).",
   "input_match": {
     "sources": [
       "serbest:*"
@@ -71,7 +71,7 @@
       {
         "id": "BV-2",
         "ac_ref": "AC3",
-        "definition": "Kaldırma sonrası kampanyasız sepet toplamı 750,00 TL'nin hemen altında (749,99 TL): uyarı gösterilir, onay pasif",
+        "definition": "Kaldırma sonrası kampanyasız sepet toplamı 750,00 TL'nin hemen altında (749,99 TL; demo fiyatlarıyla kurulabilen en yakın değer 749,00 TL): uyarı gösterilir, onay pasif",
         "valid": false
       }
     ],
@@ -83,8 +83,8 @@
       },
       {
         "item": "BV-2",
-        "decision": "out_of_scope",
-        "rationale": "Demo ürün fiyatlarıyla 749,99 TL'lik sepet kurulamıyor; sınırın altı DT-R1 case'iyle (15,00 TL) sınanıyor, sınırın hemen altı için ayrı case yazılmadı."
+        "decision": "tested",
+        "rationale": "749,99 TL demo fiyatlarıyla kurulamıyor; sınırın hemen altı kurulabilen en yakın değerle (749,00 TL) kaldırma sonrası sınanıyor."
       }
     ],
     "not_covered": [
@@ -108,7 +108,6 @@
       {
         "title": "Kaldır ile ürün satırı sepetten çıkar ve sepet sayacı azalır",
         "type": "positive",
-        "risk": "medium",
         "acceptance_criteria_refs": [
           "AC1"
         ],
@@ -191,7 +190,6 @@
       {
         "title": "Kampanyalı satır kaldırılınca kampanya indirimi yeniden hesaplanır ve sıfırlanır",
         "type": "positive",
-        "risk": "high",
         "acceptance_criteria_refs": [
           "AC2"
         ],
@@ -281,7 +279,6 @@
       {
         "title": "Kaldırma sonrası kampanyasız sepet minimum tutarın altına düşünce uyarı gösterilir ve onay pasif olur",
         "type": "negative",
-        "risk": "high",
         "acceptance_criteria_refs": [
           "AC3"
         ],
@@ -326,7 +323,7 @@
           "DT-R1"
         ],
         "priority": "P1",
-        "priority_rationale": "Kaldırma sonrası minimum tutarın altına düşen sipariş onaylanabilirse şirket zararına sipariş alınır (limit kuralı); olasılık orta, iş kritikliği yüksek.",
+        "priority_rationale": "Kaldırma sonrası minimum tutarın altına düşen sipariş onaylanabilirse şirket zararına sipariş alınır (para etkili limit kuralı); olasılık orta, iş kritikliği yüksek.",
         "platform": null,
         "test_level": "SYSTEM",
         "verification_point": "UI",
@@ -365,7 +362,6 @@
       {
         "title": "Kaldırma sonrası toplam minimum tutara eşit kalınca uyarı gösterilmez ve onay aktif olur",
         "type": "boundary",
-        "risk": "high",
         "acceptance_criteria_refs": [
           "AC3"
         ],
@@ -411,8 +407,8 @@
           "BV-1",
           "DT-R2"
         ],
-        "priority": "P1",
-        "priority_rationale": "Tam minimum tutarda kalan sipariş reddedilirse geçerli sipariş kaybedilir (limit kuralı); sınır hataları sık görüldüğünden olasılık yüksek, iş kritikliği yüksek.",
+        "priority": "P2",
+        "priority_rationale": "Tam minimum tutarda kalan sipariş reddedilirse bayi sepete ürün ekleyerek siparişi yine verebilir (geçici çözüm var); sınırda sapma için olasılık orta, iş kritikliği orta.",
         "platform": null,
         "test_level": "SYSTEM",
         "verification_point": "UI",
@@ -451,7 +447,6 @@
       {
         "title": "Kaldırma sonrası kampanyalı sepette minimum tutar uyarısı gösterilmez",
         "type": "boundary",
-        "risk": "medium",
         "acceptance_criteria_refs": [
           "AC3"
         ],
@@ -523,6 +518,95 @@
           {
             "name": "kaldırılan ürün ve adet",
             "value": "P-004 × 25",
+            "class": null,
+            "synthetic": true,
+            "is_attack_payload": false
+          }
+        ],
+        "teardown": [
+          "Sepeti boşalt"
+        ]
+      },
+      {
+        "title": "Kaldırma sonrası kampanyasız sepet 749,00 TL'ye düşünce minimum tutar uyarısı gösterilir ve onay pasif olur",
+        "type": "boundary",
+        "acceptance_criteria_refs": [
+          "AC3"
+        ],
+        "preconditions": [
+          "Sepet boş",
+          "Sepette kampanyalı ürün yok"
+        ],
+        "steps": [
+          {
+            "id": "S1",
+            "action": "Giriş sayfasını aç ve bayi kullanıcısıyla giriş yap",
+            "data": "bayi1 / Demo123!",
+            "expected": "Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir"
+          },
+          {
+            "id": "S2",
+            "action": "\"Limonata 330ml\" (P-002) kartında adedi 43 yapıp \"Sepete ekle\" butonuna bas",
+            "data": "P-002 × 43",
+            "expected": "Sepet sayacı 43 olur"
+          },
+          {
+            "id": "S3",
+            "action": "\"Maden Suyu 200ml\" (P-003) kartında adedi 13 yapıp \"Sepete ekle\" butonuna bas",
+            "data": "P-003 × 13",
+            "expected": "Sepet sayacı 56 olur"
+          },
+          {
+            "id": "S4",
+            "action": "\"Şeftalili Soğuk Çay 1L\" (P-004) kartında adedi 1 yapıp \"Sepete ekle\" butonuna bas",
+            "data": "P-004 × 1",
+            "expected": "Sepet sayacı 57 olur"
+          },
+          {
+            "id": "S5",
+            "action": "Üst menüden sepete git ve P-004 satırındaki \"Kaldır\" butonuna bas",
+            "data": "P-004",
+            "expected": "Sepet tutarı minimum sipariş tutarının (750,00 TL) hemen altındadır; \"Minimum sipariş tutarı 750,00 TL\" uyarısı görünür ve \"Siparişi onayla\" butonu pasiftir"
+          }
+        ],
+        "expected_result": "Kaldırma sonrası sepet tutarı minimum sipariş tutarının (750,00 TL) hemen altına düşer; \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur",
+        "tags": [
+          "AI-generated"
+        ],
+        "technique": [
+          "BVA"
+        ],
+        "covers": [
+          "BV-2"
+        ],
+        "priority": "P2",
+        "priority_rationale": "Sınırın hemen altına düşen sipariş onaylanırsa küçük bir sipariş kuralı deler (para etkili limit), ancak kural C3'te sınanır ve sınırdaki karşılaştırma hatası C4 ile birlikte yakalanır; olasılık orta, iş kritikliği orta.",
+        "platform": null,
+        "test_level": "SYSTEM",
+        "verification_point": "UI",
+        "requires_real_device": false,
+        "standard_refs": [],
+        "readiness": "ready",
+        "assumption_refs": [],
+        "open_question_refs": [],
+        "test_data": [
+          {
+            "name": "bayi kullanıcısı",
+            "value": "bayi1 / Demo123!",
+            "class": null,
+            "synthetic": true,
+            "is_attack_payload": false
+          },
+          {
+            "name": "kalan kampanyasız ürünler (749,00 TL; en yakın kurulabilen)",
+            "value": "P-002 × 43 + P-003 × 13",
+            "class": "BV-2",
+            "synthetic": true,
+            "is_attack_payload": false
+          },
+          {
+            "name": "kaldırılan ürün ve adet",
+            "value": "P-004 × 1",
             "class": null,
             "synthetic": true,
             "is_attack_payload": false

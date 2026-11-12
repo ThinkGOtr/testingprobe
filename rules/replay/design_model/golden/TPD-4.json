@@ -64,7 +64,7 @@
       {
         "id": "EP-I2",
         "ac_ref": "AC2",
-        "definition": "Kayıtlı olmayan kullanıcı adı (beklenen sonuç kaynakta tanımsız)",
+        "definition": "Kayıtlı olmayan kullanıcı adı (beklenen sonuç kaynakta tanımsız, Q1)",
         "valid": false
       }
     ],
@@ -86,7 +86,7 @@
       {
         "field": "Kimlik bilgisi",
         "item_id": "EP-I2",
-        "definition": "Kayıtlı olmayan kullanıcı adı (sonuç kaynakta tanımsız)",
+        "definition": "Kayıtlı olmayan kullanıcı adı: sonuç kaynakta tanımsız (Q1)",
         "representative": "Kayıtlı olmayan bir kullanıcı adı",
         "valid": false
       }
@@ -99,13 +99,14 @@
       "parameters": [],
       "constraints": []
     },
-    "model_issues": [
+    "model_issues": [],
+    "open_questions": [
       {
-        "kind": "other",
-        "detail": "Kayıtlı olmayan kullanıcı adıyla girişte gösterilecek sonuç kaynakta yok (AC2 yalnız hatalı parolayı tanımlar); EP-I2 kapsam dışı bırakılmalı, beklenen sonuç uydurulmaz."
+        "id": "Q1",
+        "question": "Kayıtlı olmayan bir kullanıcı adıyla giriş denenirse ne olmalı: AC2'deki \"Kullanıcı adı veya parola hatalı\" mesajı mı gösterilir, başka bir mesaj mı? (Kullanıcı adının kayıtlı olup olmadığını ele vermemesi beklenir mi?)",
+        "owner": "PO"
       }
     ],
-    "open_questions": [],
     "assumptions": []
   }
 }

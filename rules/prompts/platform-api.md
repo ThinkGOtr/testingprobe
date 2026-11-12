@@ -11,7 +11,8 @@ is given, record an open question that the contract is missing) and `Kimlik doğ
 When a contract is given, relate each case to its operation/schema. A response code or field that
 is not in the contract or the story is never written as a requirement: open question.
 
-For each endpoint the story touches, consider these categories (checklist, not quota):
+For each endpoint the story touches, consider these categories (checklist, not quota; each
+category you test is a `CL-n` item, common rules):
 
 1. Schema validation (EP+BVA): per field type, required/optional, null, empty string, min/max,
    value outside the enum, unknown extra field, missing nested object, array with 0/1/max/max+1

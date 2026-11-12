@@ -437,7 +437,8 @@ export function caseIcerikUyarla(x: unknown): TestCaseIcerik {
     type: v2.type,
     technique: dizgeler(i.technique) as CaseTeknigi[],
     covers: dizgeler(i.covers),
-    risk: v2.risk,
+    // 011 K18: v3 şemasında `risk` yok; içerikte olmayan anahtar eklenmez (düzeltme 422 almasın).
+    ...("risk" in i ? { risk: v2.risk } : {}),
     priority: (metin(i.priority, "P2") as TestCaseIcerik["priority"]),
     priority_rationale: metin(i.priority_rationale),
     acceptance_criteria_refs: v2.acceptance_criteria_refs,

@@ -96,6 +96,7 @@ def eski_case_icerik(
 def case_icerik(title: str = "Geçerli bilgilerle giriş", ref: str = "AC1", **over: Any) -> dict:
     """v3 case (hazır, `UC-MF` ana akışını kapsar). Özeti `ozet_icerik` / `uretim_cikti` kurar."""
     icerik = eski_case_icerik(title, ref)
+    icerik.pop("risk")  # 011 K18: v3 case'te `risk` yok (öncelik gerekçesinde)
     icerik.update(
         {
             "technique": ["UC"],

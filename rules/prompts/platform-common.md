@@ -7,11 +7,20 @@ host: case-generation
 These rules apply to every platform section below. They extend the case rules; they never
 override the source rules (no invented rule, message, code, threshold or timing).
 
-- **Checklist, not quota.** The categories in a platform section are a checklist. Write a case only
-  for a category that is relevant to the story and carries risk. For a category you skip, add one
+- **Checklist, not quota.** The categories in a platform section are a checklist ([ISTQB]
+  checklist-based testing, technique `CL`). Write a case only for a category that is relevant to
+  the story and carries risk. Such a case gets a checklist coverage item `CL-n` whose definition
+  names the category and, when there is one, the standard clause (for example
+  `Web:Erişilebilirlik — klavyeyle tamamlama (WCAG-2.1.1)`, `Web:Girdi güvenliği — SQL
+  enjeksiyonu (WSTG-INPV-05)`); the case lists `CL` in `technique` and the item in `covers`
+  (together with the EP/BVA/… items whose input it uses). For a category you skip, add one
   `not_covered` entry (`item`: `<Web|Mobil|Desktop|API|Data>:<category>`, at most 40 characters,
-  for example `Web:Responsive`, `Mobil:Kesintiler`) with the reason ("story has no …"). Do not write one case per category to fill the
-  list. The limits stay: at most 10 cases per story and 8 steps per case.
+  for example `Web:Responsive`, `Mobil:Kesintiler`) with the reason ("story has no …"). Do not
+  write one case per category to fill the list. The limits stay: at most 15 cases per story and
+  8 steps per case.
+- **Category tags.** An accessibility case gets the tag `a11y`; a security case (authentication,
+  authorization, injection, session, sensitive data) gets the tag `security`; a case with a
+  measured time or load target from the source gets `performance`.
 - **Values in the sections are placeholders.** Numbers in a platform section (versions, sizes,
   durations, breakpoints) are examples. A value becomes an expected result only when the story, an
   acceptance criterion, a PO answer, the analyst options block or an adopted standard states it.

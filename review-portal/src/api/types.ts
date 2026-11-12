@@ -368,7 +368,8 @@ export interface TestVerisi {
 export interface TestCaseIcerik {
   title: string;
   type: CaseTuru;
-  risk: "high" | "medium" | "low";
+  /** Yalnız eski (v2) case'te; v3 case'te risk yoktur, öncelik gerekçesindedir (011 K18). */
+  risk?: "high" | "medium" | "low";
   acceptance_criteria_refs: string[];
   preconditions: string[];
   steps: TestAdimi[];

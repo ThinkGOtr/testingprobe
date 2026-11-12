@@ -34,10 +34,10 @@ GOLDENS = ["TPD-1", "TPD-3", "TPD-4", "SERBEST", "f2-kod-hatasi/TPD-1", "platfor
 # Platform eki seçilmemiş üretimler (platform alanları boş); platform golden'ı
 # test_platform_goldens.py'de.
 PLATFORMSUZ = [g for g in GOLDENS if not g.startswith("platform-")]
+# v2 alanları (011 K18: v3 case'te `risk` yok; eski case'lerde okunmaya devam eder).
 V2_FIELDS = (
     "title",
     "type",
-    "risk",
     "acceptance_criteria_refs",
     "preconditions",
     "steps",
@@ -244,13 +244,26 @@ def test_blocked_case_may_leave_step_expectations_empty() -> None:
 
 def test_readiness_distribution_of_the_goldens() -> None:
     """Hazır olmayan case'ler yalnız TPD-3'te ve SONDA (mevcut indeksler kaymaz); TPD-1 (prova:
-    10 case onaylanır), TPD-4 (her case'in verify_and_map golden'ı var) ve SERBEST tümüyle hazır."""
+    bütün case'ler onaylanır), TPD-4 (her case'in verify_and_map golden'ı var) ve SERBEST tümüyle
+    hazır. TPD-1'in karma sepet sorusu (Q1) ve TPD-4'ün kayıtlı olmayan kullanıcı adı sorusu (Q1)
+    case'siz açık sorudur (beklenen uydurulmaz, hiçbir case'e atıf yok)."""
     durumlar = {n: [c["readiness"] for c in _golden(n)["output"]["cases"]] for n in GOLDENS}
     assert durumlar["TPD-3"] == ["ready", "ready", "ready", "assumption_dependent", "blocked"]
-    for name in ("TPD-1", "f2-kod-hatasi/TPD-1", "TPD-4", "SERBEST"):
+    sorular = {
+        "TPD-1": "kampanyalı hem kampanyasız",
+        "f2-kod-hatasi/TPD-1": "kampanyalı hem kampanyasız",
+        "TPD-4": "Kayıtlı olmayan",
+        "SERBEST": None,
+    }
+    for name, konu in sorular.items():
         assert set(durumlar[name]) == {"ready"}, name
         out = _golden(name)["output"]
-        assert out["open_questions"] == [] and out["assumptions"] == [], name
+        assert out["assumptions"] == [], name
+        if konu is None:
+            assert out["open_questions"] == [], name
+        else:
+            assert [(q["id"], q["owner"]) for q in out["open_questions"]] == [("Q1", "PO")], name
+            assert konu in out["open_questions"][0]["question"], name
     tpd3 = _golden("TPD-3")["output"]
     assert [q["id"] for q in tpd3["open_questions"]] == ["Q1"]
     assert [a["id"] for a in tpd3["assumptions"]] == ["A1"]
@@ -279,17 +292,20 @@ def test_v3_fields_follow_the_prompt(name: str) -> None:
         assert case["platform"] is None and case["requires_real_device"] is False
         assert case["standard_refs"] == []
         assert case["test_level"] == "SYSTEM" and case["verification_point"] == "UI"
-        # Öncelik: para, limit, sipariş onayı (risk high) → P1; gerekçe tek cümle.
-        if case["risk"] == "high":
-            assert case["priority"] == "P1", title
+        # Öncelik (K18): `risk` alanı yok; P1 yalnız para, güvenlik, veri kaybı ya da ana akış.
+        assert "risk" not in case, title
         gerekce = case["priority_rationale"]
+        if case["priority"] == "P1":
+            assert any(k in gerekce for k in ("para", "güvenlik", "veri kaybı", "ana akış")), title
         assert gerekce.endswith(".") and gerekce.count(". ") == 0, title
         assert "olasılık" in gerekce and "iş kritikliği" in gerekce, title
         # Test verisi adımlardaki somut verilerle aynı; sınıfı case'in kapsadığı bir öğe.
         metin = "\n".join([*case["preconditions"], *(s["data"] or "" for s in case["steps"])])
         assert case["test_data"], title
         for veri in case["test_data"]:
-            assert veri["value"] in metin, (title, veri["name"])
+            # Birden çok satırlı sepet: `P-004 × 21 + P-002 × 1` (her parça bir adımın verisi).
+            for parca in veri["value"].split(" + "):
+                assert parca in metin, (title, veri["name"])
             assert veri["synthetic"] is True and veri["is_attack_payload"] is False
             assert veri["class"] is None or veri["class"] in case["covers"], (title, veri["name"])
         # Bağımsızlık: sepeti değiştiren case temizlik adımı taşır.
@@ -324,8 +340,9 @@ def test_negative_and_uncovered_decisions_are_explicit() -> None:
 
 def test_scenario_coverage_model_follows_its_own_document() -> None:
     """f2-kod-hatasi belgesinde bedava eşiği 6|7 adettir (ana belgede 5|6): sınır değer öğeleri
-    ve AC2 case'lerinin kapsamı belgeye göre yazılır; case metni (v2 alanları) yalnız C3'te
-    ayrışır."""
+    ve AC2 case'lerinin kapsamı belgeye göre yazılır; case metni yalnız C3'te ve ikinci eşik
+    case'lerinde (C11/C12, adet) ayrışır; C2 (eşik: boundary) ve C4 (bölüm içi: positive) türü
+    belgenin eşiğine göredir."""
     base = _golden("TPD-1")["output"]
     variant = _golden("f2-kod-hatasi/TPD-1")["output"]
 
@@ -336,19 +353,27 @@ def test_scenario_coverage_model_follows_its_own_document() -> None:
     assert tanim(variant, "BV-1").startswith("6 adet")
     assert tanim(variant, "BV-2").startswith("7 adet")
     adet = {2: 7, 3: 6, 4: 5, 10: 7}  # AC2 case'leri: sıra no → adet
-    for out, kapsam in (
-        (base, {2: ["EP-V3"], 3: ["BV-2"], 4: ["BV-1", "EP-V2"], 10: ["EP-V3"]}),
-        (variant, {2: ["BV-2", "EP-V3"], 3: ["BV-1"], 4: ["EP-V2"], 10: ["BV-2", "EP-V3"]}),
+    for out, kapsam, ikinci in (
+        (base, {2: ["EP-V3"], 3: ["BV-2"], 4: ["BV-1", "EP-V2"], 10: ["EP-V3"]}, (11, 12)),
+        (variant, {2: ["BV-2", "EP-V3"], 3: ["BV-1"], 4: ["EP-V2"], 10: ["EP-V3"]}, (13, 14)),
     ):
         for n, covers in kapsam.items():
             case = out["cases"][n - 1]
             assert case["covers"] == covers, (n, case["covers"])
             assert f"P-001 × {adet[n]}" in [s["data"] for s in case["steps"]]
+        for n, a in zip((11, 12), ikinci, strict=True):
+            assert f"P-001 × {a}" in [s["data"] for s in out["cases"][n - 1]["steps"]]
+    assert [c["type"] for c in variant["cases"][1:4]] == ["boundary", "boundary", "positive"]
+    v2_beklenen = {2: ["type"], 4: ["type"]}
     for n, (a, b) in enumerate(zip(base["cases"], variant["cases"], strict=True), start=1):
         v2_farki = [k for k in V2_FIELDS if a[k] != b[k]]
-        assert bool(v2_farki) == (n == 3), (n, v2_farki)
+        if n in (3, 11, 12):
+            assert v2_farki, n
+        else:
+            assert v2_farki == v2_beklenen.get(n, []), (n, v2_farki)
         fark = {k for k in a if a[k] != b[k]} - set(V2_FIELDS)
-        assert fark <= ({"technique", "covers", "test_data"} if n in adet else set()), (n, fark)
+        izinli = {"technique", "covers", "test_data", "priority", "priority_rationale"}
+        assert fark <= (izinli if n in (*adet, 11, 12) else set()), (n, fark)
 
 
 # ------------------------------------------------------------------ değerlendirme beklentileri
@@ -472,12 +497,14 @@ def test_generation_stats_of_the_goldens() -> None:
     stats = {n: generation_stats(_golden(n)["output"]) for n in GOLDENS}
     assert stats["TPD-3"]["readiness"] == {"assumption_dependent": 1, "blocked": 1, "ready": 3}
     assert stats["TPD-3"]["technique"] == {"EG": 2, "EP": 3}
-    assert stats["TPD-1"]["readiness"] == {"ready": 10}
-    assert stats["TPD-1"]["technique"] == {"BVA": 3, "EP": 8, "UC": 1}
-    assert stats["f2-kod-hatasi/TPD-1"]["technique"] == {"BVA": 4, "EP": 8, "UC": 1}
+    assert stats["TPD-1"]["readiness"] == {"ready": 15}
+    assert stats["TPD-1"]["technique"] == {"BVA": 8, "DT": 3, "EP": 10, "UC": 1}
+    assert stats["f2-kod-hatasi/TPD-1"]["technique"] == {"BVA": 8, "DT": 3, "EP": 10, "UC": 1}
     assert stats["TPD-4"]["technique"] == {"EP": 2}
-    assert stats["SERBEST"]["technique"] == {"BVA": 1, "DT": 3, "EP": 1, "UC": 1}
-    assert (stats["TPD-1"]["coverage_items"], stats["TPD-1"]["covered_items"]) == (18, 11)
+    assert stats["SERBEST"]["technique"] == {"BVA": 2, "DT": 3, "EP": 1, "UC": 1}
+    # 011 K17: TPD-1'in bütün kapsam öğeleri case'li (sınırlar en yakın kurulabilen değerle).
+    assert (stats["TPD-1"]["coverage_items"], stats["TPD-1"]["covered_items"]) == (21, 21)
+    assert stats["TPD-1"]["open_questions"] == 1 and stats["TPD-4"]["open_questions"] == 1
     assert stats["TPD-3"]["open_questions"] == 1 and stats["TPD-3"]["assumptions"] == 1
 
 

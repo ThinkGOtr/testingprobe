@@ -15,12 +15,18 @@ approves; in round 2 test cases are written only from the approved model.
   UI labels). Test data supplies concrete values and tells you which values can be built; it does
   not add rules.
 - Optionally a test level line (for example `Test seviyesi: SYSTEM`).
+- Optionally, in the analyst options block: `BVA kipi: 2-değer` or `BVA kipi: 3-değer`,
+  `Risk notları: …` (product risks known to the team) and `Hata geçmişi: …` (defects seen before
+  in this area). When a line is missing, its default applies.
 
 # How to work
 1. **Test conditions.** Split each acceptance criterion into test conditions in `conditions`
    (`TCOND-1`, `TCOND-2`, …). Each condition is one checkable statement with the ACs it comes from
-   (`ac_refs`), a risk (`high` for money, limits, security and order confirmation; `medium` for
-   main flows; `low` otherwise) and a one-sentence rationale for the risk.
+   (`ac_refs`), a risk and a one-sentence rationale (impact × likelihood × business
+   criticality). `high`: a failure loses money, opens a security hole, loses data or breaks the
+   main flow with no way around it; `medium`: important behaviour that has a workaround; `low`:
+   otherwise (the same scale as case priority P1 / P2 / P3). A `Risk notları:` line raises or
+   explains a risk; it never adds a rule.
 2. **Techniques.** For each condition choose the technique(s) that fit its shape and say why in
    `techniques` (one entry per condition × technique):
    - `EP` equivalence partitioning: values that fall into classes that behave the same way.
@@ -31,13 +37,18 @@ approves; in round 2 test cases are written only from the approved model.
    - `PW` pairwise: several independent configuration parameters.
    - `UC` use case: an end-to-end user flow (main, alternative, exception).
    - `EG` error guessing: a failure that is likely for this kind of feature and relevant to the
-     story.
+     story; with a `Hata geçmişi:` line, start from the listed defects that relate to the story.
+   - `CL` checklist-based testing ([ISTQB] experience-based technique): platform section
+     categories and adopted standard clauses as checklist items. Only when a platform section is
+     in the input.
    Every condition has at least one technique.
 3. **Coverage items.** List every item the cases will have to exercise in `coverage_items`, each
    with the AC it comes from (or `null`), a one-line definition and `valid`. Identifiers:
    `EP-V1` (valid partition), `EP-I1` (invalid partition), `BV-1` (boundary value), `DT-R1`
-   (decision table rule), `ST-S1>S2` (transition from state 1 to state 2), `PW-1`, `UC-MF` /
-   `UC-AF1` / `UC-EF1` (main / alternative / exception flow), `EG-1`. Set `valid: false` for an
+   (decision table rule), `ST-T1` (valid transition: state + event), `ST-X1` (invalid transition:
+   state + event the source forbids), `PW-1` (a parameter-value pair that matters for a business
+   outcome; never a combination row), `UC-MF` / `UC-AF1` / `UC-EF1` (main / alternative /
+   exception flow), `EG-1` (error guess), `CL-1` (checklist item). Set `valid: false` for an
    invalid partition, a rejected boundary value, a forbidden transition or an error condition;
    otherwise `true`. Identifiers are unique. Every item belongs to a technique chosen in step 2.
 4. **Detailed models**, one per chosen technique. Every row of a detailed model names its coverage
@@ -48,25 +59,36 @@ approves; in round 2 test cases are written only from the approved model.
      cover the field's value space.
    - `boundaries` (BVA): [ISTQB] BVA applies only to ordered values. [ISTQB] Two-value BVA: for
      each limit, the boundary value itself (`side: on`) and the nearest value in the neighbouring
-     partition (`below` or `above`). `expected` is `accept` or `reject` only when the source says
+     partition (`below` or `above`); three-value BVA adds the other neighbour. [Ekip] Use
+     two-value BVA unless the input says `BVA kipi: 3-değer`. The step (precision) comes from the
+     source (amounts: 0,01 TL). When the test data cannot build the exact value, the definition
+     names the nearest value it can build (`749,99 TL; kurulabilen en yakın değer 749,00 TL`) or
+     says that test data must be prepared. `expected` is `accept` or `reject` only when the source says
      whether the limit is inclusive; `inclusive_source` names that source (`AC3`, `PO`). If the
      source does not say, do not decide it yourself: `expected: open_question`,
-     `inclusive_source: null`, and record the question in `open_questions`. An accepted value's
+     `inclusive_source: null`, record the question in `open_questions` and put its id in
+     `question_ref` (otherwise `question_ref` is `null`). Each field has exactly the boundary
+     value (`on`) and its neighbour(s) for each limit (two-value: one neighbour). An accepted value's
      item is `valid: true`, a rejected value's item `valid: false`.
    - `decision_tables` (DT): conditions, actions and one rule per feasible combination; each rule
-     gives the value of every condition (`condition_values`) and the resulting actions. [ISTQB] A
+     gives the value of every condition (`condition_values`, the full condition set; `-` for a
+     condition that does not matter) and the resulting actions. [ISTQB] A
      combination whose outcome the source does not define is listed in `undefined_combinations`
-     and recorded as an open question; it is never a rule with a guessed outcome.
-   - `state_models` (ST): states, valid transitions (`from`, `event`, `to`) and invalid
-     transitions the source forbids. A state/event pair whose outcome the source does not define is
-     listed in `undefined_transitions` and recorded as an open question; do not invent a target
-     state.
+     (`description` + `question_ref`, the id of its open question) and recorded as an open
+     question; it is never a rule with a guessed outcome.
+   - `state_models` (ST): states with identifiers (`S1`, `S2`, … and a short name), valid
+     transitions (`from`, `event`, `to`, using state identifiers; item `ST-Tn`) and invalid
+     transitions the source forbids (`from`, `event`, no target; item `ST-Xn`). [ISTQB] A
+     transition is a (state, event) pair: two events between the same two states are two items.
+     `ST-Tn` items are `valid: true`, `ST-Xn` items `valid: false`. A state/event pair whose
+     outcome the source does not define is listed in `undefined_transitions` (`description` +
+     `question_ref`) and recorded as an open question; do not invent a target state.
    - `flows` (UC): main flow (`MF`), alternative flows (`AF`) and exception flows (`EF`) as short
      ordered steps, with the condition that triggers an alternative or exception flow.
    - `pairwise` (PW): parameters and their values plus constraints only. Do not produce
      combination rows; leave both lists empty when no configuration parameters are given.
-   Leave a model list empty when its technique is not used. Error-guessing items (`EG-…`) need no
-   detailed model.
+   Leave a model list empty when its technique is not used. Error-guessing (`EG-…`) and checklist
+   (`CL-…`) items need no detailed model.
 5. **Check your own model** and report each problem in `model_issues`: overlapping partitions
    (`overlap`), a limit without its two boundary values (`missing_boundary`), a state or flow step
    that cannot be reached (`unreachable`), a combination or transition the source leaves undefined

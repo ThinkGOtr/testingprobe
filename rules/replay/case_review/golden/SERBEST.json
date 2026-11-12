@@ -11,7 +11,7 @@
     ],
     "contains": [
       "Bayi sepetteki bir ürün satırını kaldırabilmeli; toplamlar ve kampanya indirimi yeniden hesaplanmalıdır.",
-      "Set özeti (set_hash): 55ff7611d469f2aed913d28c0cba9ad371d195ce9dbb719861ac156d29e4c076"
+      "Set özeti (set_hash): 8908a0b8dab77092023adc8d8d3017c53e70a6893b936fa017205c118b8ed132"
     ]
   },
   "output": {
@@ -38,7 +38,7 @@
         "no": 3,
         "title": "Sınır değerler (BVA)",
         "verdict": "UYGUN",
-        "finding": "750,00 TL sınırı C4 ile; sınırın hemen altı (BV-2) demo fiyatlarıyla kurulamadığı için gerekçeyle out_of_scope.",
+        "finding": "750,00 TL sınırı C4 (eşit) ve C6 (749,00 TL; 749,99 TL demo fiyatlarıyla kurulamadığı için kurulabilen en yakın değer) ile sınanıyor.",
         "missing_case": null,
         "question": null,
         "owner": ""
@@ -65,7 +65,7 @@
         "no": 6,
         "title": "Negatif kapsam kararları",
         "verdict": "UYGUN",
-        "finding": "DT-R1 tested, BV-2 gerekçeyle out_of_scope.",
+        "finding": "DT-R1 (C3) ve BV-2 (C6) tested; kararlar gerekçeli.",
         "missing_case": null,
         "question": null,
         "owner": ""
@@ -110,7 +110,7 @@
         "no": 11,
         "title": "Öncelik",
         "verdict": "UYGUN",
-        "finding": "Tutar etkili kurallar P1, ana akış P2.",
+        "finding": "Para etkili C2 ve C3 P1; geçici çözümü olan kaldırma akışı ve sınır case'leri P2.",
         "missing_case": null,
         "question": null,
         "owner": ""

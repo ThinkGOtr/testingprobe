@@ -90,7 +90,10 @@ def test_golden_sema_model_kontrolu_ve_tur2_esitligi(yol: Path) -> None:
         ),
         (
             "acik_soru_yok",
-            lambda m: m["boundaries"][0].update(expected="open_question", inclusive_source=None),
+            lambda m: (
+                m["boundaries"][0].update(expected="open_question", inclusive_source=None),
+                m.update(open_questions=[]),
+            ),
             "open_questions boş",
         ),
         ("onek", lambda m: m["boundaries"][0].update(item_id="EP-V1"), "tekniğine uymuyor"),
@@ -110,10 +113,10 @@ def test_tur2_farki_raporlanir() -> None:
     m = _golden("TPD-4")["output"]
     ozet = copy.deepcopy(model_summary(m))
     ozet["coverage_items"].pop()
-    ozet["open_questions"].append({"id": "Q1", "question": "Yeni soru", "owner": "PO"})
+    ozet["open_questions"].append({"id": "Q9", "question": "Yeni soru", "owner": "PO"})
     farklar = round2_differences(m, ozet)
     assert any("coverage_items" in f and "eksik: EP-I2" in f for f in farklar)
-    assert any("open_questions" in f and "fazla: Q1" in f for f in farklar)
+    assert any("open_questions" in f and "fazla: Q9" in f for f in farklar)
 
 
 # ------------------------------------------------------------------------- akış
@@ -262,7 +265,7 @@ def test_tutarsiz_model_onaylanamaz_duzelt_ve_ret(
     m2 = gorunum["model"]
     yeni = copy.deepcopy(m2["icerik"])
     yeni["open_questions"].append(
-        {"id": "Q1", "question": "Kayıtlı olmayan kullanıcı adında ne gösterilir?", "owner": "PO"}
+        {"id": "Q2", "question": "Boş parolada hangi mesaj gösterilir?", "owner": "PO"}
     )
     r = _karar(api, m2, "edit", icerik=yeni)
     assert r.status_code == 200, r.text
@@ -396,6 +399,7 @@ def test_eval_seti_golden_ciktilariyla_gecer_ve_bozulmayi_yakalar() -> None:
     tpd4 = next(v for v in veri["cases"] if v["id"] == "tpd-4-giris")
     sessiz = copy.deepcopy(_golden("TPD-4")["output"])
     sessiz["model_issues"] = []
+    sessiz["open_questions"] = []  # sessiz nokta ne sorunda ne açık soruda
     assert any("sessiz" in f for f in check_output("design_model", tpd4["expect"], sessiz))
     uydurma = copy.deepcopy(_golden("TPD-4")["output"])
     uydurma["conditions"][1]["statement"] += "; 3 hatalı denemede hesap kilitlenir"

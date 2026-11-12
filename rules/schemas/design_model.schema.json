@@ -34,7 +34,8 @@
               "high",
               "medium",
               "low"
-            ]
+            ],
+            "description": "Koşulun riski: high = hata para kaybı, güvenlik açığı, veri kaybı doğurur ya da ana akışı kırar; medium = önemli davranış, geçici çözümü var; low = diğer (case önceliği P1/P2/P3 ile aynı ölçek)."
           },
           "rationale": {
             "type": "string",
@@ -73,7 +74,8 @@
               "ST",
               "PW",
               "UC",
-              "EG"
+              "EG",
+              "CL"
             ]
           },
           "rationale": {
@@ -93,7 +95,7 @@
       "minItems": 1
     },
     "coverage_items": {
-      "description": "Türetilen kapsam öğeleri (eşdeğerlik bölümü, sınır değer, karar tablosu kuralı, durum geçişi, akış, hata tahmini). Kapsam matrisi bu listeden kodda hesaplanır; model matris yazmaz.",
+      "description": "Türetilen kapsam öğeleri (eşdeğerlik bölümü, sınır değer, karar tablosu kuralı, durum geçişi, pairwise çifti, akış, hata tahmini, kontrol listesi maddesi). Kapsam matrisi bu listeden kodda hesaplanır; model matris yazmaz.",
       "type": "array",
       "items": {
         "type": "object",
@@ -369,7 +371,7 @@
       "maxItems": 6
     },
     "state_models": {
-      "description": "ST: durumlar, geçerli/geçersiz geçişler; tanımsız geçiş açık sorudur.",
+      "description": "ST: durumlar (kimlikli), geçerli geçişler (durum, olay → hedef) ve geçersiz geçişler (durum, olay); tanımsız (durum, olay) çifti açık sorudur.",
       "type": "array",
       "items": {
         "type": "object",
@@ -379,11 +381,26 @@
             "pattern": "^SM[0-9]+$"
           },
           "states": {
+            "description": "Durumlar; her birinin kimliği (S1, S2, …) geçişlerde kullanılır.",
             "type": "array",
             "items": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 60
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^S[0-9]+$"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "additionalProperties": false
             },
             "maxItems": 15,
             "minItems": 1
@@ -398,8 +415,7 @@
                 },
                 "from": {
                   "type": "string",
-                  "minLength": 1,
-                  "maxLength": 60
+                  "pattern": "^S[0-9]+$"
                 },
                 "event": {
                   "type": "string",
@@ -408,8 +424,7 @@
                 },
                 "to": {
                   "type": "string",
-                  "minLength": 1,
-                  "maxLength": 60
+                  "pattern": "^S[0-9]+$"
                 }
               },
               "required": [
@@ -420,7 +435,8 @@
               ],
               "additionalProperties": false
             },
-            "maxItems": 40
+            "maxItems": 40,
+            "description": "Geçerli geçişler (ST-T<n>): kaynak durum + olay → hedef durum (durum kimlikleri)."
           },
           "invalid_transitions": {
             "type": "array",
@@ -432,8 +448,7 @@
                 },
                 "from": {
                   "type": "string",
-                  "minLength": 1,
-                  "maxLength": 60
+                  "pattern": "^S[0-9]+$"
                 },
                 "event": {
                   "type": "string",
@@ -448,7 +463,8 @@
               ],
               "additionalProperties": false
             },
-            "maxItems": 40
+            "maxItems": 40,
+            "description": "Kaynağın yasakladığı geçişler (ST-X<n>): kaynak durum + olay; hedef durum yoktur."
           },
           "undefined_transitions": {
             "type": "array",
@@ -532,7 +548,7 @@
       "maxItems": 20
     },
     "pairwise": {
-      "description": "Konfigürasyon kapsamı için pairwise modeli: yalnız parametreler ve kısıtlar. Satırlar modelce üretilmez. Platform eki yoksa boş.",
+      "description": "PW: yalnız parametreler, değerleri ve kısıtlar; kombinasyon satırı üretilmez (PICT). PW kapsam öğesi bir parametre-değer çiftidir. Konfigürasyon parametresi yoksa boş.",
       "type": "object",
       "properties": {
         "parameters": {
@@ -684,9 +700,9 @@
   "additionalProperties": false,
   "$defs": {
     "coverage_item_id": {
-      "description": "EP-V1 / EP-I2 (geçerli / geçersiz eşdeğerlik bölümü), BV-3 (sınır değer), DT-R2 (karar tablosu kuralı), ST-S1>S2 (durum geçişi), PW-1 (pairwise satırı), UC-MF / UC-AF1 / UC-EF1 (ana / alternatif / istisna akış), EG-1 (hata tahmini).",
+      "description": "EP-V1 / EP-I2 (geçerli / geçersiz eşdeğerlik bölümü), BV-3 (sınır değer), DT-R2 (karar tablosu kuralı), ST-T1 (geçerli durum geçişi: durum + olay) / ST-X1 (geçersiz geçiş: durum + olay; hedef yoktur), PW-1 (pairwise kapsam öğesi: iş sonucunu etkileyen parametre-değer çifti; satır üretilmez), UC-MF / UC-AF1 / UC-EF1 (ana / alternatif / istisna akış), EG-1 (hata tahmini), CL-1 (kontrol listesi maddesi; platform eki kategorisi ya da standart maddesi).",
       "type": "string",
-      "pattern": "^(EP-[VI][0-9]+|BV-[0-9]+|DT-R[0-9]+|ST-S[0-9]+>S[0-9]+|PW-[0-9]+|UC-(MF|AF[0-9]+|EF[0-9]+)|EG-[0-9]+)$"
+      "pattern": "^(EP-[VI][0-9]+|BV-[0-9]+|DT-R[0-9]+|ST-[TX][0-9]+|PW-[0-9]+|UC-(MF|AF[0-9]+|EF[0-9]+)|EG-[0-9]+|CL-[0-9]+)$"
     }
   },
   "required": [

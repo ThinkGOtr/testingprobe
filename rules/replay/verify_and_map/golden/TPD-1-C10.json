@@ -7,7 +7,7 @@
     "sources": [
       "case:TPD-1-C10"
     ],
-    "case_text": "Başlık: Kampanyalı üründen 7 adet sepete eklenince bedava adet ve tutarlar doğru hesaplanır\nTür: positive · Risk: medium\nKabul kriterleri: AC2\nÖn koşullar:\n- Sepet boş\n- P-001 \"6 al 1 bedava\" kampanyasında\nAdımlar:\nS1: Giriş sayfasını aç\n  Veri: (yok)\n  Beklenen: Giriş formu görüntülenir\nS2: Bayi kullanıcısıyla giriş yap\n  Veri: bayi1 / Demo123!\n  Beklenen: Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir\nS3: \"Portakal Gazozu 1L\" (P-001) kartında adedi 7 yapıp \"Sepete ekle\" butonuna bas\n  Veri: P-001 × 7\n  Beklenen: Sepet sayacı 7 olur\nS4: Üst menüden sepete git\n  Veri: (yok)\n  Beklenen: P-001 satırında adet 7, bedava adet 1; ara toplam 175,00 TL, indirim 25,00 TL, toplam 150,00 TL\nBeklenen sonuç: 7 adette 1 adet bedava verilir; indirim 25,00 TL, toplam 150,00 TL\nEtiketler: AI-generated"
+    "case_text": "Başlık: Kampanyalı üründen 7 adet sepete eklenince bedava adet ve tutarlar doğru hesaplanır\nTür: positive\nKabul kriterleri: AC2\nÖn koşullar:\n- Sepet boş\n- P-001 \"6 al 1 bedava\" kampanyasında\nAdımlar:\nS1: Giriş sayfasını aç\n  Veri: (yok)\n  Beklenen: Giriş formu görüntülenir\nS2: Bayi kullanıcısıyla giriş yap\n  Veri: bayi1 / Demo123!\n  Beklenen: Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir\nS3: \"Portakal Gazozu 1L\" (P-001) kartında adedi 7 yapıp \"Sepete ekle\" butonuna bas\n  Veri: P-001 × 7\n  Beklenen: Sepet sayacı 7 olur\nS4: Üst menüden sepete git\n  Veri: (yok)\n  Beklenen: P-001 satırında adet 7, bedava adet 1; ara toplam 175,00 TL, indirim 25,00 TL, toplam 150,00 TL\nBeklenen sonuç: 7 adette 1 adet bedava verilir; indirim 25,00 TL, toplam 150,00 TL\nEtiketler: AI-generated"
   },
   "case": {
     "jira_key": "TPD-1",

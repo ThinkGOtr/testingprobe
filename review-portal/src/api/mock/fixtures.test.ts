@@ -223,7 +223,10 @@ describe("case ve bug taslakları golden kayıtlardan", () => {
   it.skipIf(!goldenVar)("örnek veride TPD-1 case başlıklarının hepsi golden'dan; ana yolda düzenleme (edit) yok", () => {
     const basliklar = new Set(TPD1_GOLDEN_CASELER.map((c) => c.title));
     const caseler = ilkVeri().caseler.filter((c) => c.requirement_id === "req-tpd-1");
-    expect(caseler).toHaveLength(TPD1_GOLDEN_CASELER.length);
+    // Örnek veri golden'ın ilk 10 case'ini taşır; C11–C15 (011 K17 sınır case'leri) sona eklendi,
+    // örnek sayaçlar (liste, karne, ölçümler) değişmesin diye seed'e alınmadı.
+    expect(TPD1_GOLDEN_CASELER).toHaveLength(15);
+    expect(caseler).toHaveLength(10);
     // İnsan düzeltmesi (edit) başlığı da değiştirebilir (C3: Demo-B sınır case'i, story esas alındı).
     for (const c of caseler) if (c.karar !== "edit") expect(basliklar.has(c.icerik.title), c.icerik.title).toBe(true);
     for (const c of caseler) {

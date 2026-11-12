@@ -2,7 +2,7 @@
   "kind": "call",
   "purpose": "design_model",
   "golden": "TPD-1",
-  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı (model çıktısı değil; ai_call.model = golden-elle). Test tasarım modeli (011 F3, iki tur — tur 1). coverage_items / open_questions / assumptions aynı adlı case_generation golden'ının üst listeleriyle BİREBİR aynıdır (tur-2 eşitlik kontrolü REPLAY'de geçer); girdi beyanı (input_match) case_generation golden'ınınkiyle aynıdır. Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record).",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı (model çıktısı değil; ai_call.model = golden-elle). Test tasarım modeli (011 F3, iki tur — tur 1). coverage_items / open_questions / assumptions aynı adlı case_generation golden'ının üst listeleriyle BİREBİR aynıdır (tur-2 eşitlik kontrolü REPLAY'de geçer); girdi beyanı (input_match) case_generation golden'ınınkiyle aynıdır. Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). TPD-1: DT1 karar tablosu (kampanya durumu × toplam); karma sepet tanımsız birleşimdir (undefined_combinations + Q1, PO). BV-6/BV-8 kurulabilen en yakın değerlerle. Risk ölçeği case önceliğiyle aynıdır (high: para, güvenlik, veri kaybı ya da geçici çözümsüz ana akış; medium: geçici çözümü olan önemli davranış; low: diğer).",
   "input_match": {
     "sources": [
       "jira:TPD-1"
@@ -27,8 +27,8 @@
           "AC1"
         ],
         "statement": "\"Sepete ekle\" ile ürün sepete eklenir ve sepet sayacı artar",
-        "risk": "medium",
-        "rationale": "Ana akışın ilk adımı; para etkisi yok."
+        "risk": "high",
+        "rationale": "Ana akışın ilk adımı; çalışmazsa sipariş hiç verilemez (geçici çözüm yok)."
       },
       {
         "id": "TCOND-2",
@@ -73,7 +73,17 @@
         ],
         "statement": "Kampanyalı siparişte minimum sipariş tutarı şartı aranmaz",
         "risk": "medium",
-        "rationale": "AC3'ün istisnası; yanlış uygulanırsa kampanyalı sipariş engellenir."
+        "rationale": "AC3'ün istisnası; yanlış uygulanırsa kampanyalı sipariş engellenir, bayi sepete ürün ekleyerek ilerleyebilir (geçici çözüm var)."
+      },
+      {
+        "id": "TCOND-7",
+        "ac_refs": [
+          "AC3",
+          "AC6"
+        ],
+        "statement": "Kampanyalı ve kampanyasız ürünün aynı sepette olduğu, toplamı 750,00 TL altındaki siparişte minimum tutar şartı",
+        "risk": "high",
+        "rationale": "Hangi kuralın uygulanacağı kaynakta tanımsız (Q1); yanlış seçim ya zararına sipariş ya da engellenen sipariş demektir."
       }
     ],
     "techniques": [
@@ -121,6 +131,21 @@
         "condition_id": "TCOND-6",
         "technique": "EP",
         "rationale": "Kampanyalı sepetin 750,00 TL altı sınıfı ayrı davranır."
+      },
+      {
+        "condition_id": "TCOND-3",
+        "technique": "DT",
+        "rationale": "Sonuç kampanya durumu ve toplam koşullarının birleşimine bağlıdır (AC3 ↔ AC6)."
+      },
+      {
+        "condition_id": "TCOND-6",
+        "technique": "DT",
+        "rationale": "Kampanyalı sepet kuralı AC3 ile aynı karar tablosunda ayrı bir kuraldır."
+      },
+      {
+        "condition_id": "TCOND-7",
+        "technique": "DT",
+        "rationale": "Karma sepet, karar tablosunda sonucu tanımsız birleşimdir."
       }
     ],
     "coverage_items": [
@@ -193,7 +218,7 @@
       {
         "id": "BV-6",
         "ac_ref": "AC3",
-        "definition": "Kampanyasız sepet toplamı 750,00 TL'nin hemen altında (749,99 TL): uyarı gösterilir, onay pasif",
+        "definition": "Kampanyasız sepet toplamı 750,00 TL'nin hemen altında (749,99 TL; demo fiyatlarıyla kurulabilen en yakın değer 749,00 TL): uyarı gösterilir, onay pasif",
         "valid": false
       },
       {
@@ -211,13 +236,13 @@
       {
         "id": "BV-7",
         "ac_ref": "AC4",
-        "definition": "Sipariş tutarı kredi limitine eşit (limit aşılmaz): sipariş onaylanabilir",
+        "definition": "Sipariş tutarı kredi limitine eşit (limit aşılmaz; bayi1 için 2.000,00 TL): sipariş onaylanabilir",
         "valid": true
       },
       {
         "id": "BV-8",
         "ac_ref": "AC4",
-        "definition": "Sipariş tutarı kredi limitinin hemen üzerinde (limit + 0,01 TL): \"Kredi limiti aşıldı\" uyarısı",
+        "definition": "Sipariş tutarı kredi limitinin hemen üzerinde (limit + 0,01 TL; demo fiyatlarıyla kurulabilen en yakın değer limit + 1,00 TL = 2.001,00 TL): \"Kredi limiti aşıldı\" uyarısı",
         "valid": false
       },
       {
@@ -230,6 +255,24 @@
         "id": "EP-V7",
         "ac_ref": "AC6",
         "definition": "Kampanyalı sipariş, toplam 750,00 TL altında: minimum sipariş tutarı şartı aranmaz, onay aktif",
+        "valid": true
+      },
+      {
+        "id": "DT-R1",
+        "ac_ref": "AC3",
+        "definition": "Sepette yalnız kampanyasız ürün var ve toplam 750,00 TL altında: \"Minimum sipariş tutarı 750,00 TL\" uyarısı, onay pasif",
+        "valid": false
+      },
+      {
+        "id": "DT-R2",
+        "ac_ref": "AC6",
+        "definition": "Sepette yalnız kampanyalı ürün var ve toplam 750,00 TL altında: minimum sipariş tutarı şartı aranmaz, onay aktif",
+        "valid": true
+      },
+      {
+        "id": "DT-R3",
+        "ac_ref": "AC3",
+        "definition": "Sepet toplamı 750,00 TL ya da üzeri (kampanya durumundan bağımsız): minimum sipariş uyarısı yok, onay aktif",
         "valid": true
       }
     ],
@@ -347,7 +390,7 @@
       {
         "field": "Kampanyasız sepet toplamı",
         "item_id": "BV-6",
-        "value": "749,99 TL",
+        "value": "749,99 TL (kurulabilen en yakın 749,00 TL)",
         "side": "below",
         "expected": "reject",
         "inclusive_source": "AC3",
@@ -356,7 +399,7 @@
       {
         "field": "Sipariş tutarı (kredi limitine göre)",
         "item_id": "BV-7",
-        "value": "kredi limiti",
+        "value": "2.000,00 TL (bayi1 kredi limiti)",
         "side": "on",
         "expected": "accept",
         "inclusive_source": "AC4",
@@ -365,14 +408,89 @@
       {
         "field": "Sipariş tutarı (kredi limitine göre)",
         "item_id": "BV-8",
-        "value": "kredi limiti + 0,01 TL",
+        "value": "2.000,01 TL (kurulabilen en yakın 2.001,00 TL)",
         "side": "above",
         "expected": "reject",
         "inclusive_source": "AC4",
         "question_ref": null
       }
     ],
-    "decision_tables": [],
+    "decision_tables": [
+      {
+        "id": "DT1",
+        "conditions": [
+          "Sepette kampanyalı ürün var",
+          "Sepette kampanyasız ürün var",
+          "Toplam 750,00 TL altında"
+        ],
+        "actions": [
+          "\"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir",
+          "Onay butonu pasif olur"
+        ],
+        "rules": [
+          {
+            "item_id": "DT-R1",
+            "condition_values": [
+              {
+                "condition": "Sepette kampanyalı ürün var",
+                "value": "hayır"
+              },
+              {
+                "condition": "Sepette kampanyasız ürün var",
+                "value": "evet"
+              },
+              {
+                "condition": "Toplam 750,00 TL altında",
+                "value": "evet"
+              }
+            ],
+            "actions": [
+              "\"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir",
+              "Onay butonu pasif olur"
+            ]
+          },
+          {
+            "item_id": "DT-R2",
+            "condition_values": [
+              {
+                "condition": "Sepette kampanyalı ürün var",
+                "value": "evet"
+              },
+              {
+                "condition": "Sepette kampanyasız ürün var",
+                "value": "hayır"
+              },
+              {
+                "condition": "Toplam 750,00 TL altında",
+                "value": "evet"
+              }
+            ],
+            "actions": []
+          },
+          {
+            "item_id": "DT-R3",
+            "condition_values": [
+              {
+                "condition": "Sepette kampanyalı ürün var",
+                "value": "-"
+              },
+              {
+                "condition": "Sepette kampanyasız ürün var",
+                "value": "-"
+              },
+              {
+                "condition": "Toplam 750,00 TL altında",
+                "value": "hayır"
+              }
+            ],
+            "actions": []
+          }
+        ],
+        "undefined_combinations": [
+          "Kampanyalı ürün var = evet, kampanyasız ürün var = evet, toplam 750,00 TL altında = evet: minimum şartının aranıp aranmayacağı AC3 ile AC6 arasında tanımsız (Q1)."
+        ]
+      }
+    ],
     "state_models": [],
     "flows": [
       {
@@ -394,11 +512,21 @@
     },
     "model_issues": [
       {
+        "kind": "undefined_combination",
+        "detail": "Karma sepet (kampanyalı + kampanyasız ürün) 750,00 TL altında: minimum tutar şartı AC3 ile AC6 arasında tanımsız; PO'ya soruldu (Q1), kural yazılmadı."
+      },
+      {
         "kind": "other",
-        "detail": "BV-6 (749,99 TL) demo ürün fiyatlarıyla kurulamayabilir; sınırın altı EP-I1 temsilcisiyle de sınanabilir."
+        "detail": "BV-6 (749,99 TL) ve BV-8 (limit + 0,01 TL) demo ürün fiyatlarıyla (tam TL) kurulamaz; kurulabilen en yakın değerler 749,00 TL ve 2.001,00 TL (bayi1 limiti 2.000,00 TL)."
       }
     ],
-    "open_questions": [],
+    "open_questions": [
+      {
+        "id": "Q1",
+        "question": "Aynı sepette hem kampanyalı hem kampanyasız ürün varsa ve toplam 750,00 TL'nin altındaysa minimum sipariş tutarı şartı aranır mı? AC3 kampanyasız, AC6 kampanyalı siparişi tanımlıyor; karma sepet ikisinin de kapsamına girebilir.",
+        "owner": "PO"
+      }
+    ],
     "assumptions": []
   }
 }

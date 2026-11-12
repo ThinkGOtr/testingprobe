@@ -25,7 +25,7 @@
         ],
         "statement": "\"Kaldır\" ile satır sepetten çıkar ve sepet sayacı azalır",
         "risk": "medium",
-        "rationale": "Sepet yönetiminin ana akışı."
+        "rationale": "Sepet yönetiminin ana akışı; satır kaldırılamazsa bayi sepeti yeniden kurarak ilerleyebilir (geçici çözüm var)."
       },
       {
         "id": "TCOND-2",
@@ -120,7 +120,7 @@
       {
         "id": "BV-2",
         "ac_ref": "AC3",
-        "definition": "Kaldırma sonrası kampanyasız sepet toplamı 750,00 TL'nin hemen altında (749,99 TL): uyarı gösterilir, onay pasif",
+        "definition": "Kaldırma sonrası kampanyasız sepet toplamı 750,00 TL'nin hemen altında (749,99 TL; demo fiyatlarıyla kurulabilen en yakın değer 749,00 TL): uyarı gösterilir, onay pasif",
         "valid": false
       }
     ],
@@ -153,7 +153,7 @@
       {
         "field": "Kaldırma sonrası kampanyasız sepet toplamı",
         "item_id": "BV-2",
-        "value": "749,99 TL",
+        "value": "749,99 TL (kurulabilen en yakın 749,00 TL)",
         "side": "below",
         "expected": "reject",
         "inclusive_source": "AC3",
@@ -256,7 +256,7 @@
     "model_issues": [
       {
         "kind": "other",
-        "detail": "BV-2 (749,99 TL) demo ürün fiyatlarıyla kurulamayabilir; sınırın altı DT-R1 ile sınanabilir."
+        "detail": "BV-2 (749,99 TL) demo ürün fiyatlarıyla (tam TL) kurulamaz; kurulabilen en yakın değer 749,00 TL ile sınanır."
       }
     ],
     "open_questions": [],

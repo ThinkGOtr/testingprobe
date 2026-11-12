@@ -28,12 +28,26 @@ from tp_core.features.cases.review import SET_HASH_SATIRI, hash_of
 
 # (golden adı, case_generation golden'ı) — senaryo golden'ı aynı göreli yolda.
 GOLDENLER = ("TPD-1", "f2-kod-hatasi/TPD-1", "TPD-3", "TPD-4", "SERBEST")
+# Review önerisine uyan analistin seti (011 K17 sonrası demo): C10 (C2'nin tekrarı) reddedildi.
+# golden adı → (case_generation golden'ı, reddedilen case sıra numaraları).
+VARYANTLAR: dict[str, tuple[str, tuple[int, ...]]] = {
+    "c10-reddedildi/TPD-1": ("TPD-1", (10,)),
+    "f2-kod-hatasi-c10-reddedildi/TPD-1": ("f2-kod-hatasi/TPD-1", (10,)),
+}
+
+
+def golden_set_cases(ad: str) -> tuple[str, list[dict[str, Any]]]:
+    """Golden adının case_generation golden'ı ve setteki (reddedilmemiş) case'leri."""
+    gen_ad, ret = VARYANTLAR.get(ad, (ad, ()))
+    cases = load_golden("case_generation", gen_ad)["output"]["cases"]
+    return gen_ad, [c for no, c in enumerate(cases, start=1) if no not in ret]
+
 
 NOT_ORTAK = (
     "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı (model çıktısı değil; "
     "ai_call.model = golden-elle). Girdi beyanı: gereksinimin AC'leri + açıklaması ve setin "
-    "kimliği (set_hash) — case_generation/{gen} golden'ındaki case'lerin tamamı, düzeltme ve ret "
-    "olmadan. Set değişirse REPLAY-MISS (on_miss: raise). Canlı modelle yeniden kaydedilmeli "
+    "kimliği (set_hash) — case_generation/{gen} golden'ındaki case'lerin {kapsam}. Set değişirse "
+    "REPLAY-MISS (on_miss: raise). Canlı modelle yeniden kaydedilmeli "
     "(TP_MODEL_MODE=record). Üretici: core/tests/unit/gateway/build_review_goldens.py."
 )
 
@@ -87,85 +101,99 @@ def _review(maddeler: dict[int, tuple[str, str, dict[str, Any]]], **ust: Any) ->
     }
 
 
-def _tpd1_review(senaryo: bool) -> dict[str, Any]:
-    esik = "7 adet" if senaryo else "6 adet"
-    return _review(
-        {
-            1: (
-                "UYGUN",
-                "AC1–AC6'nın her biri en az bir case'te (matris: AC1 C1, AC2 C2–C4 ve C10, "
-                "AC3 C5–C6, AC4 C7, AC5 C8, AC6 C9).",
-                {},
-            ),
-            2: (
-                "UYGUN",
-                "Geçersiz bölümler (EP-I1 minimum tutar altı, EP-I2 kredi limiti aşımı) "
-                "C5 ve C7 ile sınanıyor; sepet adedinde tip/boş girdi kaynağın konusu değil.",
-                {},
-            ),
-            3: (
-                "UYGUN_DEGIL",
-                f"Bedava eşiği ({esik}) C3/C4 ile sınanıyor; ikinci eşik (11/12 adet, "
-                "BV-3/BV-4) ve kredi limitine eşit tutar (BV-7) not_covered'da 10 case sınırı "
-                "gerekçesiyle kaldı.",
-                {
-                    "missing_case": "12 adet kampanyalı üründe 2 adet bedava "
-                    "verildiğini doğrulayan sınır case'i (BV-4); C10 yerine yazılabilir."
-                },
-            ),
-            4: (
-                "UYGUN",
-                "Kampanya × minimum tutar koşulu AC3/AC6 ile iki satırda (C5–C6 kampanyasız, "
-                "C9 kampanyalı) sınanıyor; diğer birleşimler kaynakta tanımlı değil.",
-                {},
-            ),
-            5: ("UYGUN", "Story durum geçişi tanımlamıyor; sipariş onayı (C8) tek geçiştir.", {}),
-            6: (
-                "UYGUN",
-                "EP-I1 ve EP-I2 tested; BV-6 ve BV-8 gerekçeyle out_of_scope (demo "
-                "fiyatlarıyla 749,99 TL kurulamaz; limit üstü EP-I2 ile sınanıyor).",
-                {},
-            ),
-            7: (
-                "UYGUN",
-                "Beklenen sonuçlar mesaj metni, tutar ve buton durumuyla ölçülebilir "
-                '("Minimum sipariş tutarı 750,00 TL", "Kredi limiti aşıldı").',
-                {},
-            ),
-            8: (
-                "UYGUN",
-                "Test verisi demo-app tohumundan (bayi1/bayi2, P-001…P-004); kaynakta "
-                "olmayan kural ya da değer yok.",
-                {},
-            ),
-            9: ("UYGUN", PLATFORM_YOK, {}),
-            10: (
-                "UYGUN_DEGIL",
-                "C10, C2 ile aynı sepeti (P-001 × 7) aynı beklenenle sınıyor; "
-                "yalnızca başlık farklı.",
-                {"missing_case": "C10 kaldırılmalı ya da C2 ile birleştirilmeli."},
-            ),
-            11: (
-                "UYGUN",
-                "Para etkili kurallar (kampanya, minimum tutar, kredi limiti, sipariş "
-                "onayı) P1; AC6 ve tekrar dışı akışlar uygun önceliklerde.",
-                {},
-            ),
-            12: (
-                "UYGUN",
-                "Her case kendi sepetini kurar; başka case'in sonucuna bağlı ön koşul yok.",
-                {},
-            ),
-        },
-        missing_cases=[
+def _tpd1_review(senaryo: bool, c10_ret: bool = False) -> dict[str, Any]:
+    """TPD-1 seti (15 case). `c10_ret`: analist review önerisine uyup C10'u reddetti; setin
+    numaraları (`no`) güncel case'lere göre yeniden sayılır (C11–C15 → 10–14)."""
+    if senaryo:
+        ilk, ikinci = "6/7 adet (C3/C2)", "13/14 adet (C11/C12)"
+    else:
+        ilk, ikinci = "5/6 adet (C4/C3)", "11/12 adet (C11/C12)"
+    n = (lambda no: no - 1 if no > 10 else no) if c10_ret else (lambda no: no)
+
+    def c(*nolar: int) -> str:
+        return ", ".join(f"C{n(x)}" for x in nolar)
+
+    ikinci = ikinci.replace("C11/C12", f"C{n(11)}/C{n(12)}")
+    ac2 = c(2, 3, 4, 11, 12) if c10_ret else c(2, 3, 4, 10, 11, 12)
+    maddeler: dict[int, tuple[str, str, dict[str, Any]]] = {
+        1: (
+            "UYGUN",
+            f"AC1–AC6'nın her biri en az bir case'te (matris: AC1 C1, AC2 {ac2}, AC3 "
+            f"{c(5, 6, 13)}, AC4 {c(7, 14, 15)}, AC5 C8, AC6 C9).",
+            {},
+        ),
+        2: (
+            "UYGUN",
+            "Geçersiz bölümler (EP-I1 minimum tutar altı, EP-I2 kredi limiti aşımı) C5 ve C7 ile "
+            "sınanıyor; sepet adedinde tip/boş girdi için kaynakta kural yok.",
+            {},
+        ),
+        3: (
+            "UYGUN",
+            f"Bedava eşikleri iki değerle sınanıyor: {ilk}, ikinci eşik {ikinci}. 750,00 TL "
+            f"sınırı C6 (eşit) ve {c(13)} (749,00 TL; 749,99 TL'ye kurulabilen en yakın değer); "
+            f"kredi limiti {c(14)} (eşit) ve {c(15)} (2.001,00 TL; limit + 0,01 TL'ye en yakın).",
+            {},
+        ),
+        4: (
+            "ACIK_BILGI_GEREKLI",
+            "DT1'in üç kuralı C5, C9 ve C6 ile sınanıyor; kampanyalı ve kampanyasız ürünün aynı "
+            "sepette olduğu, 750,00 TL altındaki birleşim AC3 ile AC6 arasında tanımsız (Q1 "
+            "yanıtsız).",
             {
-                "ac_ref": "AC2",
-                "item": 3,
-                "description": "12 adet kampanyalı ürün sepete eklenir; 2 adet bedava verilir ve "
-                "bayi 10 adet öder.",
-                "technique": "BVA",
-            }
-        ],
+                "question": "Aynı sepette kampanyalı ve kampanyasız ürün varken toplam 750,00 "
+                "TL'nin altındaysa minimum sipariş tutarı şartı aranır mı?",
+                "owner": "PO",
+            },
+        ),
+        5: ("UYGUN", "Story durum geçişi tanımlamıyor; sipariş onayı (C8) tek akıştır.", {}),
+        6: (
+            "UYGUN",
+            f"EP-I1, BV-6, EP-I2, BV-8 ve DT-R1 tested (C5, {c(13)}, C7, {c(15)}); kararlar "
+            "gerekçeli, kurulamayan sınırlar en yakın değerle sınanıyor.",
+            {},
+        ),
+        7: (
+            "UYGUN",
+            "Beklenen sonuçlar mesaj metni, tutar ve buton durumuyla ölçülebilir "
+            '("Minimum sipariş tutarı 750,00 TL", "Kredi limiti aşıldı").',
+            {},
+        ),
+        8: (
+            "UYGUN",
+            "Test verisi demo-app tohumundan (bayi1/bayi2, P-001…P-004); kurulamayan sınırlarda "
+            "kullanılan en yakın değer tanımda açıkça yazılı; kaynakta olmayan kural yok.",
+            {},
+        ),
+        9: ("UYGUN", PLATFORM_YOK, {}),
+        10: (
+            "UYGUN_DEGIL",
+            "C10, C2 ile aynı sepeti (P-001 × 7) aynı beklenenle sınıyor; yalnızca başlık farklı.",
+            {"missing_case": "C10 kaldırılmalı ya da C2 ile birleştirilmeli."},
+        ),
+        11: (
+            "UYGUN",
+            "P1 yalnız para (bedava eşikleri, minimum tutar, kredi limiti aşımı) ve ana akış "
+            "(sepete ekleme, sipariş onayı) case'lerinde; geçici çözümü olan ya da olasılığı düşük "
+            "case'ler P2" + ("." if c10_ret else ", tekrar C10 P3."),
+            {},
+        ),
+        12: (
+            "UYGUN",
+            "Her case kendi sepetini kurar; başka case'in sonucuna bağlı ön koşul yok.",
+            {},
+        ),
+    }
+    if c10_ret:
+        maddeler[10] = ("UYGUN", "Tekrar eden case yok (C2'nin tekrarı C10 reddedildi).", {})
+        return _review(
+            maddeler,
+            summary="Set altı kabul kriterini ve AC2–AC4 sınırlarını kapsıyor; beklenenler "
+            "kaynaklı ve ölçülebilir, tekrar case kalmadı. Tek açık nokta karma sepet "
+            "(kampanyalı + kampanyasız) için minimum tutar kuralı: PO'ya soruldu (Q1).",
+        )
+    return _review(
+        maddeler,
         remove_or_merge=[
             {
                 "case_refs": [2, 10],
@@ -173,9 +201,9 @@ def _tpd1_review(senaryo: bool) -> dict[str, Any]:
                 "reason": "C10 ile C2 aynı sepeti (P-001 × 7) aynı beklenen sonuçla sınıyor.",
             }
         ],
-        summary="Set altı kabul kriterini kapsıyor; beklenenler kaynaklı ve ölçülebilir. İki açık "
-        "var: C10, C2'nin tekrarı (birleştirilmeli) ve AC2'nin ikinci bedava eşiği (12 adet) "
-        "case'siz kaldı.",
+        summary="Set altı kabul kriterini ve AC2–AC4 sınırlarını kapsıyor; beklenenler kaynaklı "
+        "ve ölçülebilir. İki açık var: C10, C2'nin tekrarı (reddedilmeli ya da birleştirilmeli) "
+        "ve karma sepet için minimum tutar kuralı tanımsız (Q1, PO).",
     )
 
 
@@ -226,7 +254,8 @@ def _tpd4_review() -> dict[str, Any]:
             1: ("UYGUN", "AC1 C1, AC2 C2 ile karşılanıyor.", {}),
             2: (
                 "ACIK_BILGI_GEREKLI",
-                "Kayıtlı olmayan kullanıcı adı (EP-I2) kaynakta sonuçsuz; gerekçeyle out_of_scope.",
+                "Kayıtlı olmayan kullanıcı adı (EP-I2) kaynakta sonuçsuz; set PO'ya soruyor (Q1) "
+                "ve öğeyi gerekçeyle out_of_scope bırakıyor.",
                 {
                     "question": "Kayıtlı olmayan kullanıcı adıyla "
                     "girişte hangi mesaj gösterilmeli?",
@@ -236,16 +265,16 @@ def _tpd4_review() -> dict[str, Any]:
             3: ("UYGUN", "Sıralı alan ya da sınır tanımlı değil; uygulanmaz.", {}),
             4: ("UYGUN", "Koşul birleşimi yok; uygulanmaz.", {}),
             5: ("UYGUN", "Durum geçişi (deneme sayısı, kilit) tanımlı değil; uygulanmaz.", {}),
-            6: ("UYGUN", "EP-I1 tested, EP-I2 gerekçeyle out_of_scope.", {}),
+            6: ("UYGUN", "EP-I1 tested, EP-I2 Q1 gerekçesiyle out_of_scope.", {}),
             7: ("UYGUN", "Beklenenler katalog sayfası ve hata mesajıyla ölçülebilir.", {}),
             8: ("UYGUN", "bayi1 / Demo123! demo tohumundan; hatalı parola sentetik.", {}),
             9: ("UYGUN", PLATFORM_YOK, {}),
             10: ("UYGUN", "Tekrar eden case yok.", {}),
-            11: ("UYGUN", "Giriş güvenlik etkili; iki case P1.", {}),
+            11: ("UYGUN", "Giriş ana akış (C1) ve güvenlik (C2) etkili; iki case P1.", {}),
             12: ("UYGUN", "Case'ler bağımsız.", {}),
         },
         summary="Set iki kabul kriterini kapsıyor; beklenenler kaynaklı. Kayıtlı olmayan "
-        "kullanıcı adının sonucu kaynakta yok; PO'ya sorulmalı.",
+        "kullanıcı adının sonucu kaynakta yok; set bunu PO'ya soruyor (Q1).",
     )
 
 
@@ -261,8 +290,8 @@ def _serbest_review() -> dict[str, Any]:
             ),
             3: (
                 "UYGUN",
-                "750,00 TL sınırı C4 ile; sınırın hemen altı (BV-2) demo fiyatlarıyla "
-                "kurulamadığı için gerekçeyle out_of_scope.",
+                "750,00 TL sınırı C4 (eşit) ve C6 (749,00 TL; 749,99 TL demo fiyatlarıyla "
+                "kurulamadığı için kurulabilen en yakın değer) ile sınanıyor.",
                 {},
             ),
             4: (
@@ -271,12 +300,16 @@ def _serbest_review() -> dict[str, Any]:
                 {},
             ),
             5: ("UYGUN", "Durum geçişi yok; uygulanmaz.", {}),
-            6: ("UYGUN", "DT-R1 tested, BV-2 gerekçeyle out_of_scope.", {}),
+            6: ("UYGUN", "DT-R1 (C3) ve BV-2 (C6) tested; kararlar gerekçeli.", {}),
             7: ("UYGUN", "Beklenenler tutar, sayaç ve uyarı metniyle ölçülebilir.", {}),
             8: ("UYGUN", "Ürün ve adetler demo tohumundan.", {}),
             9: ("UYGUN", PLATFORM_YOK, {}),
             10: ("UYGUN", "Tekrar eden case yok.", {}),
-            11: ("UYGUN", "Tutar etkili kurallar P1, ana akış P2.", {}),
+            11: (
+                "UYGUN",
+                "Para etkili C2 ve C3 P1; geçici çözümü olan kaldırma akışı ve sınır case'leri P2.",
+                {},
+            ),
             12: ("UYGUN", "Her case kendi sepetini kurar.", {}),
         },
         summary="Set üç kabul kriterini ve kampanya × minimum tutar tablosunu kapsıyor; açık "
@@ -298,12 +331,34 @@ def _bulgu(
     }
 
 
-def _tpd1_audit() -> dict[str, Any]:
+def _tpd1_audit(c10_ret: bool = False) -> dict[str, Any]:
+    q1 = _bulgu(
+        2 if not c10_ret else 1,
+        None,
+        6,
+        "Düşük",
+        "Karma sepet (kampanyalı + kampanyasız, 750,00 TL altı) için minimum tutar kuralı "
+        "tanımsız; case yok.",
+        "Kaynak sonucu tanımlamıyor; set açık soru (Q1, PO) olarak kaydetmiş, beklenen "
+        "uydurulmamış.",
+        "PO yanıtından sonra karma sepet case'ini ekleyin.",
+    )
+    if c10_ret:
+        return {
+            "decision": "KABUL",
+            "decision_rationale": "Beklenen sonuçlar AC1–AC6'ya dayanıyor, sınırlar kurulabilen "
+            "en yakın değerlerle açıkça sınanıyor, test verisi demo tohumundan ve sentetik, "
+            "adımlar yalnız izinli demo ortamını hedefliyor; gizlilik, yan etki ya da gömülü "
+            "talimat yok. Yalnız düşük riskli bulgu var (AP-001).",
+            "findings": [q1],
+            "missing_scenarios": [],
+        }
     return {
         "decision": "KABUL",
-        "decision_rationale": "Beklenen sonuçlar AC1–AC6'ya dayanıyor, test verisi demo "
-        "tohumundan ve sentetik, adımlar yalnız izinli demo ortamını hedefliyor; gizlilik, yan "
-        "etki ya da gömülü talimat yok. Yalnız düşük riskli bulgular var (AP-001, AP-002).",
+        "decision_rationale": "Beklenen sonuçlar AC1–AC6'ya dayanıyor, sınırlar kurulabilen en "
+        "yakın değerlerle açıkça sınanıyor, test verisi demo tohumundan ve sentetik, adımlar "
+        "yalnız izinli demo ortamını hedefliyor; gizlilik, yan etki ya da gömülü talimat yok. "
+        "Yalnız düşük riskli bulgular var (AP-001, AP-002).",
         "findings": [
             _bulgu(
                 1,
@@ -312,19 +367,11 @@ def _tpd1_audit() -> dict[str, Any]:
                 "Düşük",
                 "C10, C2 ile aynı sepeti aynı beklenenle sınıyor.",
                 "Tekrar case güvenlik ya da doğruluk riski taşımaz; bakım yükü ekler.",
-                "C10'u kaldırın ya da C2 ile birleştirin.",
+                "C10'u reddedin ya da C2 ile birleştirin.",
             ),
-            _bulgu(
-                2,
-                None,
-                6,
-                "Düşük",
-                "AC2'nin ikinci bedava eşiği (12 adet) case'siz.",
-                "Kural ilk eşikte sınanıyor; not_covered'da gerekçesi var.",
-                "12 adet için sınır case'i ekleyin.",
-            ),
+            q1,
         ],
-        "missing_scenarios": ["12 adet kampanyalı üründe 2 adet bedava (AC2 ikinci eşik)."],
+        "missing_scenarios": [],
     }
 
 
@@ -368,7 +415,7 @@ def _tpd4_audit() -> dict[str, Any]:
         "decision": "KABUL",
         "decision_rationale": "İki case de AC1–AC2'ye dayanıyor, test verisi demo tohumundan ve "
         "sentetik, ortam izinli demo uygulaması. Kayıtlı olmayan kullanıcı adının sonucu "
-        "kaynakta olmadığı için case yazılmaması doğru (AP-001, Düşük).",
+        "kaynakta olmadığı için case yazılmayıp PO'ya sorulması (Q1) doğru (AP-001, Düşük).",
         "findings": [
             _bulgu(
                 1,
@@ -376,7 +423,7 @@ def _tpd4_audit() -> dict[str, Any]:
                 6,
                 "Düşük",
                 "Kayıtlı olmayan kullanıcı adı senaryosu yok.",
-                "Kaynak sonucu tanımlamıyor; gerekçeyle out_of_scope.",
+                "Kaynak sonucu tanımlamıyor; set PO'ya soruyor (Q1), öğe gerekçeyle out_of_scope.",
                 "PO yanıtından sonra case ekleyin.",
             ),
         ],
@@ -398,6 +445,8 @@ CIKTILAR = {
     "case_review": {
         "TPD-1": lambda: _tpd1_review(False),
         "f2-kod-hatasi/TPD-1": lambda: _tpd1_review(True),
+        "c10-reddedildi/TPD-1": lambda: _tpd1_review(False, c10_ret=True),
+        "f2-kod-hatasi-c10-reddedildi/TPD-1": lambda: _tpd1_review(True, c10_ret=True),
         "TPD-3": _tpd3_review,
         "TPD-4": _tpd4_review,
         "SERBEST": _serbest_review,
@@ -405,6 +454,8 @@ CIKTILAR = {
     "case_audit": {
         "TPD-1": _tpd1_audit,
         "f2-kod-hatasi/TPD-1": _tpd1_audit,
+        "c10-reddedildi/TPD-1": lambda: _tpd1_audit(c10_ret=True),
+        "f2-kod-hatasi-c10-reddedildi/TPD-1": lambda: _tpd1_audit(c10_ret=True),
         "TPD-3": _tpd3_audit,
         "TPD-4": _tpd4_audit,
         "SERBEST": _serbest_audit,
@@ -415,21 +466,29 @@ CIKTILAR = {
 def build() -> dict[tuple[str, str], dict[str, Any]]:
     out: dict[tuple[str, str], dict[str, Any]] = {}
     for amac, uretici in CIKTILAR.items():
-        for ad in GOLDENLER:
-            gen = load_golden("case_generation", ad)
+        for ad in (*GOLDENLER, *VARYANTLAR):
+            gen_ad, cases = golden_set_cases(ad)
+            gen = load_golden("case_generation", gen_ad)
             im = gen["input_match"]
+            ret = VARYANTLAR.get(ad, (ad, ()))[1]
+            kapsam = (
+                "tamamı, düzeltme ve ret olmadan"
+                if not ret
+                else "tamamı, yalnız " + ", ".join(f"C{n}" for n in ret) + " reddedilmiş (review "
+                "önerisine uyan analist; case numaraları sete göre yeniden sayılır)"
+            )
             spec: dict[str, Any] = {
                 "acceptance_criteria": list(im["acceptance_criteria"]),
                 "contains": [
                     *im.get("contains", []),
-                    SET_HASH_SATIRI + set_hash_of(gen["output"]["cases"]),
+                    SET_HASH_SATIRI + set_hash_of(cases),
                 ],
             }
             out[(amac, ad)] = {
                 "kind": "call",
                 "purpose": amac,
                 "golden": ad,
-                "note": NOT_ORTAK.format(gen=ad),
+                "note": NOT_ORTAK.format(gen=gen_ad, kapsam=kapsam),
                 "input_match": spec,
                 "output": uretici[ad](),
             }

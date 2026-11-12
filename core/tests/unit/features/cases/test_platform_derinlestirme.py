@@ -189,9 +189,9 @@ def test_platform_golden_replay(
         },
     }
     is_ = _uret(api, rid, engine, govde)
-    assert is_.deger["mode"] == "replay" and is_.deger["case_sayisi"] == 4
+    assert is_.deger["mode"] == "replay" and is_.deger["case_sayisi"] == 5
     cases = latest_cases(api, rid)
-    assert [c["icerik"]["platform"] for c in cases] == [None, None, "Web", "Web"]
+    assert [c["icerik"]["platform"] for c in cases] == [None, None, "Web", "Web", "Web"]
     ozet = api.get(f"/requirements/{rid}/case-summary").json()
     assert ozet["uretimler"][0]["observations"][0]["standard_ref"] == "WSTG-ATHN-03"
     assert ozet["uretimler"][0]["config_matrix"]["parameters"]
@@ -414,9 +414,10 @@ def test_derinlestirme_golden_replay(
     )
     (is_,) = run_jobs(engine)
     assert is_.durum == "done", is_
-    assert is_.deger["yeni_case_sayisi"] == 2 and is_.deger["mode"] == "replay"
+    # Sonucu kaynakta olmayan boş parola (EP-I3) out_of_scope + Q2: case yazılmaz.
+    assert is_.deger["yeni_case_sayisi"] == 1 and is_.deger["mode"] == "replay"
     yeni = [c for c in latest_cases(api, rid) if c["uretim_no"] == 2]
-    assert [c["icerik"]["readiness"] for c in yeni] == ["blocked", "assumption_dependent"]
+    assert [c["icerik"]["readiness"] for c in yeni] == ["assumption_dependent"]
     # Golden'ı olmayan teknik: dürüst REPLAY-MISS, set değişmez.
     assert (
         api.post(f"/requirements/{rid}/deepen", json={"tur": "teknik", "teknik": "DT"}).status_code
@@ -425,4 +426,4 @@ def test_derinlestirme_golden_replay(
     (is2,) = run_jobs(engine)
     assert is2.durum == "failed"
     assert "REPLAY-MISS" in api.get(f"/requirements/{rid}/deepen").json()["hata"]
-    assert len(latest_cases(api, rid)) == 4
+    assert len(latest_cases(api, rid)) == 3  # TPD-4 C1–C2 + 1 derinleştirme case'i

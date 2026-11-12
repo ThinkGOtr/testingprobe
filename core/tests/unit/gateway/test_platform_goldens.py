@@ -144,7 +144,15 @@ def test_platform_golden_ozellikleri() -> None:
     }
     assert [o["standard_ref"] for o in out["observations"]] == ["WSTG-ATHN-03"]
     web = [c for c in out["cases"] if c["platform"] == "Web"]
-    assert web and all(r.startswith("WCAG-") for c in web for r in c["standard_refs"])
+    # Erişilebilirlik: benimsenen WCAG maddeleri; güvenlik (N5): WSTG yalnız etiket (beklenen
+    # kaynaktan), saldırı metni yalnız işaretli test verisinde (011 K19: CL öğeleri).
+    a11y = [c for c in web if "a11y" in c["tags"]]
+    guv = [c for c in web if "security" in c["tags"]]
+    assert len(a11y) == 2 and len(guv) == 1
+    assert all(r.startswith("WCAG-") for c in a11y for r in c["standard_refs"])
+    assert guv[0]["standard_refs"] == ["WSTG-INPV-05"]
+    assert [t["is_attack_payload"] for t in guv[0]["test_data"]] == [False, True]
+    assert all("CL" in c["technique"] for c in web)
     assert all(c["requires_real_device"] is False for c in out["cases"])
     # İlk iki case ana TPD-4 golden'ıyla birebir (platformdan bağımsız).
     ana = load_golden("case_generation", "TPD-4")["output"]["cases"]

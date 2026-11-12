@@ -103,7 +103,8 @@ def demo_steps(rules_dir: Path) -> list[dict[str, Any]]:
         }
     )
     cases = load_golden("case_generation", JIRA)["output"]["cases"]
-    for n, case in enumerate(cases, start=1):
+    # Doğrulama ajanı kaydı olan C1–C10 (C11–C15, 011 K17 sınır case'leri: kayıt yok).
+    for n, case in enumerate(cases[:10], start=1):
         steps.append(
             {
                 "kind": "agent",
@@ -179,7 +180,7 @@ def test_demo_steps_cover_steps_2_4_5(rules_dir) -> None:
         "case_generation",
     ]
     cases = load_golden("case_generation", JIRA)["output"]["cases"]
-    assert purposes.count("verify_and_map") == len(cases)
+    assert len(cases) == 15 and purposes.count("verify_and_map") == 10  # kaydı olan C1–C10
 
 
 def test_strict_without_promotion_fails_on_named_golden(strict_gateway, rules_dir) -> None:
