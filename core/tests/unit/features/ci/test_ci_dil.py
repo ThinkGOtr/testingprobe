@@ -29,6 +29,7 @@ from tests.unit.features.ci.helpers import (
 )
 from tests.unit.features.ci.test_ci_platform import JUNIT
 from tp_core.features.ci import clients, dil, enqueue_ci, service, services
+from tp_core.features.codegen import platform as p
 from tp_core.models import Run, Script, TestResult
 from tp_core.ports import PullRequest
 
@@ -386,7 +387,11 @@ def test_scriptsiz_pr_yalniz_e2e_java_degistiyse_java_kosar(
     [
         (["e2e/tests/a.spec.ts", "e2e-java/src/test/java/a/uretilen/XTest.java"], ["ts", "java"]),
         (["e2e/pages/CartPage.ts"], ["ts"]),
-        (["web/src/App.tsx"], ["ts"]),  # test kökü değişmedi: bugünkü davranış
+        # K-T11: test kökleri dışında değişiklik → repodaki tüm tam hat dilleri.
+        (["web/src/App.tsx"], ["ts", "java"]),
+        # GÜV-Y5 kilitlenmesi: api + e2e-java → iki dil koşar (kapı local-ci'ı da görür).
+        (["api/app.py", "e2e-java/src/test/java/a/ekranlar/Kimlikler.java"], ["ts", "java"]),
+        (["e2e-app/pom.xml"], ["ts"]),  # yalnız uygulama (Appium) test kökü: web genişlemez
         (None, ["ts", "java"]),  # fark okunamadı: repodaki tüm diller (güvenli taraf)
     ],
 )
@@ -489,23 +494,25 @@ def test_github_kipinde_gecersiz_web_dilleri_yalniz_ts(
 
 
 def test_check_adi_tek_kaynak() -> None:
-    from tp_core.features.codegen import platform as p
     from tp_core.integrations import forge as f
 
     assert p.check_adi("web") == p.check_adi("web", "ts") == "local-ci"
     assert p.check_adi("web", "java") == f.LOCAL_WEB_JAVA_CHECK == "local-ci-web-java"
     assert p.check_adi("android", "java") == "local-ci-android"
     assert f.APP_PLATFORM_CHECKS == ("local-ci-android", "local-ci-ios", "local-ci-windows")
-    assert f.WEB_TAM_HAT_DILLERI == p.TAM_HAT_DILLERI == dil.TAM_HAT_DILLERI
+    assert f.WEB_TAM_HAT_DILLERI == p.TAM_HAT_DILLERI
 
 
 def test_java_test_kalibi_ve_degisen_diller_saf() -> None:
+    def paket_testi(yol: str) -> bool:  # paket koşusu sayımı (`repodaki_web_dilleri`)
+        return p.java_test_dosyasi_mi(yol, haric=("birim",))
+
     for ad in ("SepetTest.java", "SepetTesti.java", "SepetTests.java", "SepetIT.java"):
-        assert dil.java_testi_mi(f"e2e-java/src/test/java/a/testler/{ad}")
+        assert paket_testi(f"e2e-java/src/test/java/a/testler/{ad}")
     # Üretilen testler paket koşusunda sayılır; birim testleri sayılmaz.
-    assert dil.java_testi_mi("e2e-java/src/test/java/a/uretilen/TPD1WebC2_abTest.java")
-    assert not dil.java_testi_mi("e2e-java/src/test/java/a/birim/KimlikTest.java")
-    assert not dil.java_testi_mi("e2e-java/src/test/java/a/ekranlar/LoginPage.java")
+    assert paket_testi("e2e-java/src/test/java/a/uretilen/TPD1WebC2_abTest.java")
+    assert not paket_testi("e2e-java/src/test/java/a/birim/KimlikTest.java")
+    assert not paket_testi("e2e-java/src/test/java/a/ekranlar/LoginPage.java")
     kw = {"e2e": "demo-app/e2e", "e2e_java": "demo-app/e2e-java"}
     assert dil.degisen_web_dilleri(["demo-app/e2e-java/pom.xml"], **kw) == ("java",)
     assert dil.degisen_web_dilleri(["demo-app/e2e/x.ts", "demo-app/e2e-java/y"], **kw) == (
@@ -513,4 +520,29 @@ def test_java_test_kalibi_ve_degisen_diller_saf() -> None:
         "java",
     )
     assert dil.degisen_web_dilleri([], **kw) == ("ts",)
+
+
+def test_degisen_web_dilleri_kokler_disi_degisiklik_repodaki_tum_diller() -> None:
+    """K-T11: test kökleri dışında (uygulama kodu) değişiklik → repodaki tüm tam hat dilleri."""
+    kw = {"e2e": "demo-app/e2e", "e2e_java": "demo-app/e2e-java"}
+    iki = ("ts", "java")
+    # Yalnız uygulama kodu: repodaki her iki dil koşar (bugün yalnız ts koşuyordu).
+    assert dil.degisen_web_dilleri(["demo-app/api/x.py"], **kw, repodaki=iki) == iki
+    # GÜV-Y5 kilitlenme senaryosu: api + e2e-java değişen PR → iki dil (TS kapısı da beslenir).
+    assert (
+        dil.degisen_web_dilleri(
+            ["demo-app/api/x.py", "demo-app/e2e-java/pom.xml"], **kw, repodaki=iki
+        )
+        == iki
+    )
+    # Repoda yalnız TS varsa uygulama değişikliği yalnız ts koşar.
+    assert dil.degisen_web_dilleri(["demo-app/web/App.tsx"], **kw, repodaki=("ts",)) == ("ts",)
+    # Repoda yalnız Java varsa: java (ts kapısı yapılandırmadan gelir).
+    assert dil.degisen_web_dilleri(["demo-app/web/App.tsx"], **kw, repodaki=("java",)) == ("java",)
+    # Yalnız e2e-app/ (kendi kontrolü olan test kökü) değişti: web dilleri genişlemez.
+    app = {**kw, "repodaki": iki, "diger_test_kokleri": ("demo-app/e2e-app",)}
+    assert dil.degisen_web_dilleri(["demo-app/e2e-app/pom.xml"], **app) == ("ts",)
+    assert dil.degisen_web_dilleri(["demo-app/e2e-java/a"], **app) == ("java",)
+    # Doğrulanmamış diller repodaki listesinde olsa da CI'a girmez.
+    assert dil.degisen_web_dilleri(["x"], **kw, repodaki=("csharp",)) == ("ts",)
     assert dil.tam_hat_dili("csharp") is None and dil.tam_hat_dili("java") == "java"

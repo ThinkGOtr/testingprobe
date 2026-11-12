@@ -42,7 +42,10 @@ MAX_DERINLIK = 512
 MAX_TESTID_DUGUM = 5_000
 MAX_ZINCIR = 16  # her düğümde dıştan içe en yakın 16 kapsayıcı testId
 MAX_SURE_S = 2.0
-_SURE_KONTROL_ARALIGI = 1_000  # her N başlangıç etiketinde bir saat okunur
+# GÜV-Y4: başlangıç, kapanış ve metin olaylarının toplamı da sınırlıdır (eşleşmeyen binlerce
+# `</q>` ya da metin parçası düğüm sınırına takılmadan ayrıştırıcıyı saniyelerce meşgul etmesin).
+MAX_OLAY = 4 * MAX_DUGUM
+_SURE_KONTROL_ARALIGI = 1_000  # her N olayda (başlangıç/kapanış/metin) bir saat okunur
 # Koşu dizini içinde kanıt kökünün olası yerleri (test-runner Java yolu; tekrarlı koşuda
 # `kanit/tekrar-N/`). Rapor `failure.evidence.*.rel` verirse o önceliklidir.
 KANIT_KOKLERI = (
@@ -249,7 +252,9 @@ _BOS_OGELER = frozenset(
 class _TestIdToplayici(HTMLParser):
     """`data-testid`'li öğeleri toplar. Kapsayıcı zinciri tam kopya değildir: açık testId'lerin
     ayrı yığını tutulur ve her düğüme yalnız en yakın `MAX_ZINCIR` kapsayıcı yazılır (O(1)
-    bellek/düğüm). testId'li düğüm sayısı `MAX_TESTID_DUGUM`, süre `MAX_SURE_S` ile sınırlıdır."""
+    bellek/düğüm). testId'li düğüm sayısı `MAX_TESTID_DUGUM`, toplam olay `MAX_OLAY`, süre
+    `MAX_SURE_S` ile sınırlıdır; açık etiket adları sayılır, eşleşmeyen kapanış O(1)'de yok
+    sayılır (GÜV-Y4)."""
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -259,18 +264,26 @@ class _TestIdToplayici(HTMLParser):
         self.dugumler: list[list[Any]] = []
         self._acik: list[int] = []  # açık testId'li öğelerin `dugumler` indeksleri
         self._tid_yigin: list[str] = []  # açık testId'li öğelerin kimlikleri (dıştan içe)
+        self._acik_adlar: dict[str, int] = {}  # açık etiket adı → yığındaki adet
         self.sayac = 0
+        self.olay = 0
         self._son_an = time.monotonic() + MAX_SURE_S
 
     def _zincir(self) -> tuple[str, ...]:
         return tuple(self._tid_yigin[-MAX_ZINCIR:])
 
+    def _olay(self) -> None:
+        self.olay += 1
+        if self.olay > MAX_OLAY:
+            raise DomHatasi("hata anı DOM'u olay sınırını aşıyor")
+        if self.olay % _SURE_KONTROL_ARALIGI == 0 and time.monotonic() > self._son_an:
+            raise DomHatasi("hata anı DOM'u süre bütçesini aşıyor")
+
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self._olay()
         self.sayac += 1
         if self.sayac > MAX_DUGUM or len(self.yigin) > MAX_DERINLIK:
             raise DomHatasi("hata anı DOM'u düğüm/derinlik sınırını aşıyor")
-        if self.sayac % _SURE_KONTROL_ARALIGI == 0 and time.monotonic() > self._son_an:
-            raise DomHatasi("hata anı DOM'u süre bütçesini aşıyor")
         tid: str | None = None
         for ad, deger in attrs:
             if ad == "data-testid" and deger and ev.TESTID_RE.match(deger.strip()):
@@ -282,6 +295,7 @@ class _TestIdToplayici(HTMLParser):
             self.dugumler.append([tid, tag[:80], [], self._zincir()])
         if tag not in _BOS_OGELER:
             self.yigin.append((tag, tid))
+            self._acik_adlar[tag] = self._acik_adlar.get(tag, 0) + 1
             if tid:
                 self._acik.append(len(self.dugumler) - 1)
                 self._tid_yigin.append(tid)
@@ -293,10 +307,15 @@ class _TestIdToplayici(HTMLParser):
             self.handle_endtag(tag)
 
     def handle_endtag(self, tag: str) -> None:
-        # Hoşgörülü kapanış: yığında eşleşen en içteki öğeye kadar kapat; yoksa yok say.
+        # Hoşgörülü kapanış: yığında eşleşen en içteki öğeye kadar kapat; yoksa yok say. Açık
+        # olmayan etiketin kapanışı sayaçtan O(1) elenir (yığın taranmaz; GÜV-Y4).
+        self._olay()
+        if not self._acik_adlar.get(tag):
+            return
         for i in range(len(self.yigin) - 1, -1, -1):
             if self.yigin[i][0] == tag:
-                for _e, t in self.yigin[i:]:
+                for e, t in self.yigin[i:]:
+                    self._acik_adlar[e] -= 1
                     if t and self._acik:
                         self._acik.pop()
                         self._tid_yigin.pop()
@@ -304,6 +323,7 @@ class _TestIdToplayici(HTMLParser):
                 return
 
     def handle_data(self, data: str) -> None:
+        self._olay()
         if not self._acik or (self.yigin and self.yigin[-1][0] in ("script", "style")):
             return
         parca = data.strip()

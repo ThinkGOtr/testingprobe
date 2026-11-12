@@ -883,3 +883,35 @@ def test_olmayan_dal_head_sha_bulunamadi_sayilir(forge: GitHubForge, gh: FakeGit
         forge.head_sha("tp/case-yok")
     with pytest.raises(ForgeValidationError):
         forge.head_sha("kotu")
+
+
+def test_merge_web_java_is_akisi_varsa_web_java_her_zaman_zorunlu(
+    merge_forge: GitHubForge, gh: FakeGitHub
+) -> None:
+    """K-T10 (GÜV-Y3): head'de `.github/workflows/web-java.yml` varsa `web-java` check'i
+    `TP_WEB_DILLERI`'nden bağımsız zorunludur (iş akışı ilgisiz PR'da no-op ile yeşil)."""
+    agac = "d" * 40
+    gh.on("GET", f"{R}/git/commits/{BRANCH_HEAD}", {"sha": BRANCH_HEAD, "tree": {"sha": agac}})
+    gh.on(
+        "GET",
+        f"{R}/git/trees/{agac}",
+        {
+            "truncated": False,
+            "tree": [{"path": ".github/workflows/web-java.yml", "type": "blob", "mode": "100644"}],
+        },
+    )
+    assert merge_forge.zorunlu_checkler(BRANCH_HEAD)[-1] == "web-java"
+    gh.on("GET", f"{R}/commits/{BRANCH_HEAD}/check-runs", ruleset_checks())
+    sonuc = merge_forge.merge_pr_detailed(7, "demo-admin")
+    assert sonuc.bypass is True and "'web-java' durumu: yok" in (sonuc.bypass_reason or "")
+    gh.on("GET", f"{R}/commits/{BRANCH_HEAD}/check-runs", ruleset_checks(**{"web-java": "success"}))
+    assert merge_forge.merge_pr_detailed(7, "demo-admin").bypass is False
+
+
+def test_zorunlu_checkler_is_akisi_yoksa_yapilandirilmis_liste(
+    merge_forge: GitHubForge, gh: FakeGitHub
+) -> None:
+    # Ağaç okunamadı (404) ya da iş akışı yok: yapılandırılmış liste aynen.
+    assert merge_forge.zorunlu_checkler(BRANCH_HEAD) == merge_forge.required_checks
+    gh.on("GET", f"{R}/git/commits/{BRANCH_HEAD}", {"sha": BRANCH_HEAD, "tree": {"sha": MAIN_TREE}})
+    assert merge_forge.zorunlu_checkler(BRANCH_HEAD) == merge_forge.required_checks

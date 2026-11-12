@@ -38,6 +38,12 @@
 {% for mk in markers %}
 #       config.addinivalue_line("markers", "{{ mk.ad | comment }}: {{ mk.aciklama | comment }}")
 {% endfor %}
+#
+# Taban adres ve içe aktarma yolu: göreli page.goto() çağrıları için pytest-playwright'ı
+# --base-url ile koşun (ör. pytest --base-url "$BASE_URL"; ya da pytest.ini'de base_url = ...);
+# "{{ po_package | comment }}" paketinin bulunması için pytest.ini'de proje kökünü ekleyin:
+#   [pytest]
+#   pythonpath = .
 import pytest
 from playwright.sync_api import Page
 

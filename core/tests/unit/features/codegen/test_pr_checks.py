@@ -372,3 +372,24 @@ def test_0014_downgrade_upgrade(db: Db) -> None:
     run_alembic(db.owner_url, "head")
     assert set(KOLONLAR) <= _kolonlar(db.owner_url)
     assert _farklar(db.owner_url) == []
+
+
+def test_github_kipinde_web_java_check_kostuysa_zorunlu(
+    engine: Engine, kip: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """K-T10: `web-java` iş akışı depodaysa (check'i koştu) TP_WEB_DILLERI'nden bağımsız zorunlu
+    (GitHubForge.zorunlu_checkler ile aynı); kırmızı `web-java` merge'i durdurur."""
+    kip("github")
+    monkeypatch.delenv("TP_WEB_DILLERI", raising=False)
+    head = _sha()
+    web_java = {"name": "web-java", "status": "completed", "conclusion": "failure", "url": None}
+    k = PullRequest(number=1, branch="b", baslik="t", head_sha=head, acan="x",
+                    checks=[*YESIL, web_java], checks_sha=head)  # fmt: skip
+    liste, _, engeller = views.pr_checks(head, k)
+    assert {c["ad"]: c["zorunlu"] for c in liste}["web-java"] is True
+    assert engeller == ["Zorunlu kontrol 'web-java': failed"]
+    k.checks = [*YESIL, {**web_java, "conclusion": "success"}]
+    assert views.pr_checks(head, k)[2] == []
+    # Check hiç koşmadıysa (iş akışı yok) zorunlu listeye eklenmez.
+    k.checks = list(YESIL)
+    assert views.pr_checks(head, k)[2] == []

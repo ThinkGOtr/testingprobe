@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
@@ -263,8 +263,26 @@ LOCAL_WEB_E2E_ROOTS: tuple[str, ...] = (LOCAL_WEB_E2E_ROOT, LOCAL_WEB_JAVA_E2E_R
 _KENDI_KONTROLLU_KOKLER: tuple[str, ...] = (LOCAL_APP_E2E_ROOT, LOCAL_WEB_JAVA_E2E_ROOT)
 
 
+# Test kökleri: bunların DIŞINDA bir değişiklik (uygulama kodu vb.) repodaki tüm tam hat
+# dillerinin kontrolünü ister (K-T11).
+_TEST_KOKLERI: tuple[str, ...] = (*LOCAL_WEB_E2E_ROOTS, LOCAL_APP_E2E_ROOT)
+
+
+def yerel_repodaki_web_dilleri(
+    list_files: Callable[[str, str], list[str]], ref: str
+) -> tuple[str, ...]:
+    """LocalForge düzeninde (`e2e/`, `e2e-java/` kökte) `ref`'te web testi olan tam hat dilleri
+    (`platform.repodaki_web_dilleri`; CI ile aynı sayım). Okunamazsa `("ts",)`."""
+    return platformlar.repodaki_web_dilleri(
+        list_files, ref, e2e=LOCAL_WEB_E2E_ROOT, e2e_java=LOCAL_WEB_JAVA_E2E_ROOT
+    )
+
+
 def local_required_checks(
-    configured: Sequence[str], checks: Sequence[CheckRun], changed_paths: Sequence[str]
+    configured: Sequence[str],
+    checks: Sequence[CheckRun],
+    changed_paths: Sequence[str],
+    repodaki_web_dilleri: Sequence[str] = (platformlar.TS,),
 ) -> tuple[tuple[str, ...], str | None]:
     """LocalForge merge kapısı: platform/dil başına zorunlu kontroller + ek ihlal nedeni.
 
@@ -275,6 +293,10 @@ def local_required_checks(
     - PR `e2e-java/` altını değiştiriyorsa `local-ci-web-java` zorunludur (011 K-T1: web + Java
       PR'ı Java derlenip koşmadan merge edilemez).
     - PR `e2e/` altını değiştiriyorsa `local-ci` zorunludur (yapılandırma düşürmüş olsa bile).
+    - PR test köklerinin (`e2e/`, `e2e-java/`, `e2e-app/`) DIŞINDA bir yolu (uygulama kodu vb.)
+      değiştiriyorsa `repodaki_web_dilleri`'nin her birinin kontrolü zorunludur (K-T11: `local-ci`
+      + repoda Java web testi varsa `local-ci-web-java`); CI script'siz PR'da aynı dilleri koşar
+      (`platform.degisen_web_dilleri`).
     - PR yalnızca kendi kontrolü olan kökleri (`e2e-app/`, `e2e-java/`) değiştiriyorsa web
       `local-ci` gerekmez (kaydedilmişse yine yeşil olmalı); yerine o köklerin kontrolü gelir.
     - Yarıda kalmış (`in_progress`) bir kayıt merge'i durdurur; kontrol yeniden koşturulur
@@ -304,6 +326,12 @@ def local_required_checks(
         required.insert(0, REQUIRED_CHECK)
     if touches_java and LOCAL_WEB_JAVA_CHECK not in required:
         required.append(LOCAL_WEB_JAVA_CHECK)
+    if any(not p.startswith(_TEST_KOKLERI) for p in changed_paths):
+        # K-T11: uygulama kodu değişti → repodaki her tam hat dilinin kontrolü.
+        if platformlar.TS in repodaki_web_dilleri and REQUIRED_CHECK not in required:
+            required.insert(0, REQUIRED_CHECK)
+        if platformlar.JAVA in repodaki_web_dilleri and LOCAL_WEB_JAVA_CHECK not in required:
+            required.append(LOCAL_WEB_JAVA_CHECK)
     for name in recorded:
         if name not in required:
             required.append(name)
@@ -331,10 +359,13 @@ GITHUB_PLATFORM_WORKFLOWS: dict[str, str] = {
 
 
 # Web + Java (Playwright for Java + TestNG; 011 §2.8): iş akışı `web-java.yml`, check (= job) adı
-# `web-java`. Web + TS `ci.yml`'in `test-local`'ıdır (değişmez). `TP_WEB_DILLERI` içinde `java`
-# varsa `web-java` GitHub zorunlu kontrol listesine eklenir (ruleset'e de eklenmelidir).
+# `web-java`. Web + TS `ci.yml`'in `test-local`'ıdır (değişmez). K-T10: `web-java.yml` depoda
+# olduğu sürece `web-java` HER ZAMAN zorunludur (iş akışı `changes` + no-op deseniyle ilgisiz PR'da
+# hızla yeşil); `TP_WEB_DILLERI` yalnız Java üretimini ve kardeş koşuyu açar (java varsa iş akışı
+# dosyası okunamasa da zorunlu). Ruleset: `scripts/github-ruleset.sh --checks`.
 WEB_JAVA_CHECK = "web-java"
 WEB_JAVA_WORKFLOW = f"{WEB_JAVA_CHECK}.yml"
+WEB_JAVA_WORKFLOW_YOLU = f".github/workflows/{WEB_JAVA_WORKFLOW}"
 WEB_DILLERI_ENV = "TP_WEB_DILLERI"
 WEB_TAM_HAT_DILLERI: tuple[str, ...] = platformlar.TAM_HAT_DILLERI
 
@@ -387,15 +418,21 @@ def etkin_web_dilleri(env: Mapping[str, str] | None = None) -> tuple[str, ...]:
 
 
 def github_required_checks(
-    configured: Sequence[str], platforms: Sequence[str], web_dilleri: Sequence[str] = ()
+    configured: Sequence[str],
+    platforms: Sequence[str],
+    web_dilleri: Sequence[str] = (),
+    *,
+    web_java_is_akisi: bool = False,
 ) -> tuple[str, ...]:
     """GitHub zorunlu kontrolleri: yapılandırılmış liste + etkin platformların job adları +
-    (web dillerinde `java` etkinse) `web-java`."""
+    `web-java` (K-T10: `web-java.yml` depodaysa — `web_java_is_akisi` — ya da web dillerinde
+    `java` etkinse)."""
+    web_java = web_java_is_akisi or platformlar.JAVA in web_dilleri
     return validate_required_checks(
         [
             *configured,
             *(GITHUB_PLATFORM_CHECKS[p] for p in platforms),
-            *((WEB_JAVA_CHECK,) if "java" in web_dilleri else ()),
+            *((WEB_JAVA_CHECK,) if web_java else ()),
         ]
     )
 

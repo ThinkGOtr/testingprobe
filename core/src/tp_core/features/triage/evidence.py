@@ -128,7 +128,7 @@ def guvenli_oku(yol: Path, kok: Path, limit: int) -> bytes | None:
 
 def kosu_dizini(artifacts_root: Path, dizin: Any) -> Path | None:
     """`run.artefaktlar.dizin` (`runs/<id>`) → yerel koşu dizini (biçim doğrulanır)."""
-    if not isinstance(dizin, str) or not RUN_DIR_RE.match(dizin):
+    if not isinstance(dizin, str) or not RUN_DIR_RE.fullmatch(dizin):
         return None
     return artifacts_root / dizin
 

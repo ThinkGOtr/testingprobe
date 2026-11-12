@@ -92,6 +92,8 @@ from tp_core.integrations.forge import (
     GITHUB_REQUIRED_CHECKS,
     PROTECTED_BRANCHES,
     REQUIRED_CHECKS_ENV,
+    WEB_JAVA_CHECK,
+    WEB_JAVA_WORKFLOW_YOLU,
     ForgeConflictError,
     ForgeError,
     ForgeNotFoundError,
@@ -639,6 +641,18 @@ class GitHubForge:
     def close(self) -> None:
         self._client.close()
 
+    def zorunlu_checkler(self, ref: str) -> tuple[str, ...]:
+        """`ref` için zorunlu check'ler: yapılandırılmış liste + (K-T10) `web-java.yml` depoda
+        varsa `web-java`. İş akışı dosyası okunamazsa yapılandırılmış liste (ruleset yine
+        uygular)."""
+        if WEB_JAVA_CHECK in self.required_checks:
+            return self.required_checks
+        try:
+            var = WEB_JAVA_WORKFLOW_YOLU in self.list_files(".github/workflows/", ref)
+        except ForgeError:
+            return self.required_checks
+        return (*self.required_checks, WEB_JAVA_CHECK) if var else self.required_checks
+
     def human_forge(self) -> GitHubForge:
         """Aynı depo, İNSAN kimliğiyle (`GITHUB_MERGE_TOKEN`, ör. demo-admin üyesi mühendis).
 
@@ -1068,7 +1082,7 @@ class GitHubForge:
                 f"(beklenen {head[:12]}, güncel {pr.head_sha[:12]}); yeniden onay gerekli"
             )
         checks = self.checks(head)
-        verdict = evaluate_required_checks(checks, self.required_checks)
+        verdict = evaluate_required_checks(checks, self.zorunlu_checkler(head))
         # Merge token'ı (ör. demo-admin) ruleset bypass yetkisine sahip olabilir; kontroller
         # kırmızıyken yalnızca BYPASS_ACTOR merge edebilir (LocalForge ile aynı kural).
         if not verdict.passed and actor != BYPASS_ACTOR:

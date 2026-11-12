@@ -23,6 +23,7 @@ Bu modül saf yardımcıdır (veritabanı/ağ yok): hem core-api hem core-worker
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from typing import Any, Literal
 
 Platform = Literal["web", "android", "ios", "windows"]
@@ -62,6 +63,13 @@ UYGULAMA_CATISI = "Appium + TestNG"
 JAVA_TEST_SONEKLERI: tuple[str, ...] = ("Test.java", "Testi.java", "Tests.java", "IT.java")
 KOTLIN_TEST_SONEKLERI: tuple[str, ...] = ("Test.kt",)
 JAVA_HARIC_DIZINLER: tuple[str, ...] = ("birim", "uretilen")
+# Onarım kapsamının (`/check` `test_files`) Java test dosyası sonekleri: toolchain
+# `worker/java.py` `JAVA_TEST_FILE_RE` yalnız bunları kabul eder. Gerekçeli alt küme (MİM-B4):
+# onarım yalnız aracın kendi projelerinde (e2e-app, e2e-java) çalışır; bu projelerin konvansiyonu
+# `<Ad>Test.java` (üretilen) ve `<Ad>Testi.java` (elle yazılmış referans testler). `Tests.java` /
+# `IT.java` yabancı repolardaki elle yazılmış testleri ALGILAMAK içindir (K-T7). Eşitlik:
+# `toolchain/tests/data/core_sozlesme.json` (core ve toolchain testleri aynı dosyayı okur).
+JAVA_KAPSAM_SONEKLERI: tuple[str, ...] = ("Test.java", "Testi.java")
 # TS page object adı Java'da ayrılmış sözcük (ya da geçersiz) ise Java page object'teki karşılığı.
 # `goto` Java'da ayrılmış sözcüktür: e2e-java `LoginPage.goTo()` (011 §2.5 eşitliğinin tek
 # istisnası).
@@ -190,6 +198,74 @@ def java_test_dosyasi_mi(
 
 
 def dil(platform: str | None, dil: str | None = None) -> str:
-    """toolchain-worker `lang` karşılığı: script'in dili; verilmemişse platformun varsayılanı
-    (web → `ts`, diğerleri → `java`; 009 davranışı, geriye uyum)."""
+    """Kaydın etkin dili: `dil` bilinen bir dilse (`DILLER`: tam hat ya da doğrulanmamış) odur;
+    boş ya da bilinmeyen değerde platformun varsayılanı (web → `ts`, uygulama → `java`; 0021
+    öncesi kayıtlar). Geçerli çift denetimi yapmaz (`gecerli_dil` yapar). toolchain-worker `lang`
+    değeri yalnız tam hat dilleri için bunun sonucudur; doğrulanmamış diller toolchain'e gitmez."""
     return dil if dil in DILLER else varsayilan_dil(platform)
+
+
+def java_kapsam_dosyasi_mi(yol: str) -> bool:
+    """Onarım kapsamına (`/check` `test_files`) girebilen Java testi mi? (`JAVA_KAPSAM_SONEKLERI`;
+    tarayıcısız birim testleri `birim/` hariç, üretilenler dahil.)"""
+    return yol.endswith(JAVA_KAPSAM_SONEKLERI) and "birim" not in yol.split("/")[:-1]
+
+
+def _kok(yol: str) -> str:
+    return f"{yol.rstrip('/')}/"
+
+
+def repodaki_web_dilleri(
+    list_files: Callable[[str, str], list[str]], ref: str, *, e2e: str, e2e_java: str
+) -> tuple[str, ...]:
+    """`ref`'te web testi bulunan tam hat dilleri (sıra `ts`, `java`).
+
+    Saf sayım (model yok): ts → `<e2e>/tests/**/*.spec.ts`; java →
+    `<e2e-java>/src/test/java/**` + `java_test_dosyasi_mi` (`birim/` hariç, `uretilen/` dahil:
+    paket koşusu üretilenleri de koşar). Hiçbiri yoksa ya da forge okunamazsa `("ts",)`: bugünkü
+    davranış (koşu / kapı engellenmez). LocalForge merge kapısı ve CI aynı fonksiyonu kullanır.
+    """
+    out: list[str] = []
+    try:
+        if any(y.endswith(".spec.ts") for y in list_files(f"{_kok(e2e)}tests/", ref)):
+            out.append(TS)
+    except Exception:
+        return (TS,)
+    try:
+        if any(
+            java_test_dosyasi_mi(y, haric=("birim",))
+            for y in list_files(f"{_kok(e2e_java)}src/test/java/", ref)
+        ):
+            out.append(JAVA)
+    except Exception:
+        return tuple(out) or (TS,)
+    return tuple(out) or (TS,)
+
+
+def degisen_web_dilleri(
+    degisen: Sequence[str],
+    *,
+    e2e: str,
+    e2e_java: str,
+    repodaki: Sequence[str] = (TS,),
+    diger_test_kokleri: Sequence[str] = (),
+) -> tuple[str, ...]:
+    """Script'siz PR'ın koşturacağı web dilleri (K-T1 + K-T11; sıra `ts`, `java`).
+
+    - `<e2e>/` değiştiyse `ts`, `<e2e-java>/` değiştiyse `java`.
+    - Test köklerinin (`e2e`, `e2e_java`, `diger_test_kokleri` — ör. `e2e-app/`) **dışında** bir
+      değişiklik (uygulama kodu vb.) varsa `repodaki` dillerin tümü (K-T11): uygulama değişikliği
+      her iki dilin testini de kırabilir.
+    - Hiçbiri değişmediyse (boş fark ya da yalnız başka test kökü) `("ts",)`: yapılandırılmış
+      `local-ci` kapısı.
+    """
+    ts_kok, java_kok = _kok(e2e), _kok(e2e_java)
+    test_kokleri = (ts_kok, java_kok, *(_kok(k) for k in diger_test_kokleri))
+    secilen: set[str] = set()
+    if any(y.startswith(ts_kok) for y in degisen):
+        secilen.add(TS)
+    if any(y.startswith(java_kok) for y in degisen):
+        secilen.add(JAVA)
+    if any(not y.startswith(test_kokleri) for y in degisen):
+        secilen.update(d for d in repodaki if d in TAM_HAT_DILLERI)
+    return tuple(d for d in TAM_HAT_DILLERI if d in secilen) or (TS,)

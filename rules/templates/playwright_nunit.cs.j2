@@ -29,6 +29,15 @@
 //     Task {{ m.imza | comment }}
 {% endfor %}
 {% endfor %}
+//
+// Taban adres: PageTest kullanıyorsanız göreli GotoAsync() çağrıları için ContextOptions() içinde
+// BaseURL verin, ör.:
+//   public override BrowserNewContextOptions ContextOptions() =>
+//       new() { BaseURL = Environment.GetEnvironmentVariable("BASE_URL") };
+{% if dealer %}
+// [Property("dealerUsername")] testin sabitlendiği e2e bayisidir (giriş bilgisi değil); kendi
+// fikstürünüzde TestContext.CurrentContext.Test.Properties.Get("dealerUsername") ile okuyun.
+{% endif %}
 using System.Threading.Tasks;
 using {{ po_namespace }};
 using Microsoft.Playwright.NUnit;

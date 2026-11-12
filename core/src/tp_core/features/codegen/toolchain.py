@@ -15,7 +15,7 @@ nesneleri; `/check`: `app → deps → guard → compile → run`, `test_files` 
 **Dil (011 §2.6):** `lang` üretilen kodun dilidir (`ts` | `java`; `csharp` | `python` toolchain'e
 hiç gitmez). Verilmezse platformun varsayılanı kullanılır (yukarıdaki davranış). `lang="java"` +
 web: `/symbols` ve `/check` gövdesi `{lang: "java", platform: "web"}` taşır (kök
-`TP_E2E_JAVA_ROOT`); check adı platformundur (`local-ci`).
+`TP_E2E_JAVA_ROOT`); check adı `platform.check_adi`'dır (`local-ci-web-java`, K-T1).
 """
 
 from __future__ import annotations

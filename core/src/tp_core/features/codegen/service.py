@@ -709,7 +709,8 @@ def dil_cakismasi(
             yer = "web testi" if platform == platformlar.WEB else f"{platform} testi"
             return (
                 f"Bu case'in {yer} {platformlar.DIL_ETIKETI.get(onceki, onceki)} ile merge "
-                "edildi; dil değiştirmek için önce mevcut testi kaldırın"
+                "edildi; dil değiştirmek için önce mevcut testi kaldırın: mevcut test dosyasını "
+                "silen bir PR'ı merge edin, sonra yeniden üretin"
             )
     return None
 
@@ -940,6 +941,15 @@ def start_generation(
             + "; ".join(f"{s['case_id'][:8]}: {s['neden']}" for s in hatali)
         )
     ilk = baslayan[0] if baslayan else {}
+    # K-T12: toplu istekte başka dilde merge edilmiş testi olan case'ler sessizce kaybolmaz;
+    # sayı yanıt mesajına ve `cakisma_sayisi` alanına (portal) yansır.
+    cakisma_sayisi = sum(1 for s in sonuclar if s["durum"] == "cakisma")
+    cakisma_eki = (
+        f" {cakisma_sayisi} case başka dilde merge edilmiş testi olduğu için üretilmedi (mevcut "
+        "test dosyasını silen bir PR'ı merge edin, sonra yeniden üretin)."
+        if cakisma_sayisi
+        else ""
+    )
     return {
         "job_id": ilk.get("job_id"),
         "workflow_id": ilk.get("workflow_id"),
@@ -951,7 +961,9 @@ def start_generation(
             f"{len(baslayan)} case için kod üretimi başlatıldı" + _hedef_eki(platform, dil)
             if baslayan
             else "Yeni üretim gerekmiyor (süren iş ya da açık PR var)."
-        ),
+        )
+        + cakisma_eki,
+        "cakisma_sayisi": cakisma_sayisi,
         "script_ids": [s["script_id"] for s in baslayan],
         "sonuclar": sonuclar,
     }
@@ -1959,7 +1971,8 @@ def _kontrol(
     """toolchain-worker `/check` → (sınıf, atlandı mı). Sonuç `script_kontrol`'e ve `run`'a yazılır.
 
     - `/check` gövdesi dile bakar (`toolchain_hedefi`): web + ts değişmez; uygulama `lang=java` +
-      Appium platformu; web + Java `{lang: "java", platform: "web"}` (check adı yine `local-ci`).
+      Appium platformu; web + Java `{lang: "java", platform: "web"}` (check adı
+      `platform.check_adi`: `local-ci-web-java`, K-T1).
 
     - Koşu dizini `keep=true` ile istenir: kırarak doğrulama ve defect adayı kanıtı test-runner
       temizliğinde silinmez (MIMARI-SOZLESME §2; kod üretimi koşuları azdır).
@@ -3828,12 +3841,10 @@ def _guncelleme_icerigi_dogrula(
 
 
 def _degisen_yollar(forge: ForgePort, eski: str, yeni: str) -> list[str] | None:
-    """Forge değişen yolları verebiliyorsa (LocalForge `git diff`, GitHub compare) onları döner."""
-    fn = getattr(forge, "changed_paths", None)
-    if not callable(fn):
-        return None
+    """Forge'un değişen yolları (`ForgePort.changed_paths`: LocalForge `git diff`, GitHub
+    compare); okunamazsa ya da liste eksik olabilirse None."""
     try:
-        sonuc = fn(eski, yeni)
+        sonuc = forge.changed_paths(eski, yeni)
     except ForgeError:
         return None
     return list(sonuc) if sonuc is not None else None

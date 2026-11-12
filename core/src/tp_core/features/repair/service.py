@@ -41,7 +41,8 @@ koşunun DİLİNE göre seçilir (`onarim_dili`), araç/ortam platforma göre. A
 (triage önerisinin hata anı DOM'u `sayfa.html` / trace DOM'u; mümkünse koşu dizininden yeniden
 okunup aday yeniden hesaplanır), yama Java yöntemiyle (`<e2e-java kökü>/…/ekranlar/Kimlikler.java`,
 `locators.patch_kimlik`), sembol tablosu / koruma / yerel kontrol `{lang: java, platform: web}`
-(check adı `local-ci`), etkilenen testler `e2e-java/src/test/java` (`uretilen/` + `testler/`).
+(check adı `local-ci-web-java`, K-T1), etkilenen testler `e2e-java/src/test/java` (`uretilen/` +
+`testler/`).
 
 Uygunluk (Constitution XI): yalnızca deterministik kuralın (`karar_kaynagi='rule'`) locator önerisi
 (`oneri_turu='locator_fix'`, `failure_ek.oneri`) onarılır; model etiketi yetmez.
@@ -1602,13 +1603,15 @@ def _etkilenen_java(
 ) -> list[str]:
     """Kimlik sabitini kullanan ekranın erişimcisini çağıran Java testleri (forge yolları).
     `kok`: Java proje kökü (uygulama `e2e-app`, web + Java `e2e-java`); `src/test/java` altındaki
-    `uretilen/` ve `testler/` testleri taranır, tarayıcısız birim testleri (`birim/`) hariç."""
+    `uretilen/` ve `testler/` testleri taranır, tarayıcısız birim testleri (`birim/`) hariç.
+    Kalıp `platform.JAVA_KAPSAM_SONEKLERI`'dir: sonuç `/check` `test_files`'a gider ve toolchain
+    yalnız `<Ad>Test.java | <Ad>Testi.java` kabul eder (MİM-B4; gerekçeli alt küme)."""
     kok = kok or e2e_app_root()
     try:
         yollar = [
             y
             for y in forge.list_files(f"{kok}/src/test/java/", sha)
-            if (y.endswith("Test.java") or y.endswith("Testi.java")) and "/birim/" not in y
+            if platformlar.java_kapsam_dosyasi_mi(y)
         ]
     except ForgeError:
         return []
@@ -1659,7 +1662,7 @@ def _yerel_kontrol(
 ) -> tuple[dict[str, Any] | None, str | None, str | None]:
     """`/check` (tam paket) + `run` kaydı (tetik `local_check`). `platform` (android | ios |
     windows) → Java yolu (cihazda Appium koşusu); web + `dil="java"` → `{lang: java, platform:
-    web}` (Playwright for Java, kayıt `local-ci`); web/None → mevcut Playwright yolu."""
+    web}` (Playwright for Java, kayıt `local-ci-web-java`); web/None → mevcut Playwright yolu."""
     web_java = (platform or "web") == "web" and dil == "java"
     toolchain_run_id = f"rp-{sid.hex[:8]}-{uuid.uuid4().hex[:6]}"
     baslama = datetime.now(UTC)

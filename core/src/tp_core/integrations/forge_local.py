@@ -69,6 +69,7 @@ from tp_core.integrations.forge import (
     validate_query,
     validate_ref,
     validate_required_checks,
+    yerel_repodaki_web_dilleri,
 )
 from tp_core.ports import CheckRun, PullRequest
 
@@ -561,7 +562,11 @@ class LocalForge:
             # kontrolleri de zorunlu; e2e-java/ değiştiren PR local-ci-web-java ister.
             fark_tabani = self._merge_base(base_head, head)
             degisen = self.changed_paths(fark_tabani, head) if is_sha(fark_tabani) else []
-            zorunlu, platform_eksik = local_required_checks(self.required_checks, checks, degisen)
+            # K-T11: test kökleri dışı değişiklik repodaki tüm tam hat dillerini ister.
+            repodaki = yerel_repodaki_web_dilleri(self.list_files, head)
+            zorunlu, platform_eksik = local_required_checks(
+                self.required_checks, checks, degisen, repodaki
+            )
             verdict = evaluate_required_checks(checks, zorunlu)
             ihlaller: list[str] = []
             nedenler = [r for r in (verdict.reason() if not verdict.passed else "",

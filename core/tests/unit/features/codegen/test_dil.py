@@ -645,19 +645,24 @@ def _algila(depo: dict[str, str], platform: str = "web") -> dil_algila.Algilama:
     return dil_algila.algila(SahteForge(depo), "main", platform, uygulama_koku="")
 
 
-PW_POM = "<dependency><artifactId>playwright</artifactId></dependency>"
+PW_POM = (
+    "<project><dependencies><dependency><groupId>com.microsoft.playwright</groupId>"
+    "<artifactId>playwright</artifactId></dependency></dependencies></project>"
+)
+PW_JAVA = "import com.microsoft.playwright.Page;\nclass X {}\n"
+PW_KT = "import com.microsoft.playwright.Page\nclass X\n"
 
 
 def test_algila_kokte_standart_maven_ve_tum_java_kaliplari() -> None:
     """QA-Y1: kökte Maven (`src/test/java`) + `*Test`, `*Tests`, `*IT`, `*Testi`; Kotlin sinyali."""
     depo = {
         "pom.xml": PW_POM,
-        "src/test/java/com/x/SepetTest.java": "",
-        "src/test/java/com/x/GirisTests.java": "",
-        "src/test/java/com/x/SiparisIT.java": "",
-        "src/test/java/com/x/KatalogTesti.java": "",
-        "src/test/kotlin/com/x/OdemeTest.kt": "",
-        "src/test/java/com/x/birim/HesapTest.java": "",  # birim testi sayılmaz
+        "src/test/java/com/x/SepetTest.java": PW_JAVA,
+        "src/test/java/com/x/GirisTests.java": PW_JAVA,
+        "src/test/java/com/x/SiparisIT.java": PW_JAVA,
+        "src/test/java/com/x/KatalogTesti.java": PW_JAVA,
+        "src/test/kotlin/com/x/OdemeTest.kt": PW_KT,
+        "src/test/java/com/x/birim/HesapTest.java": PW_JAVA,  # birim testi sayılmaz
         "src/main/java/com/x/Sepet.java": "",
         "e2e/tests/a.spec.ts": "",
     }
@@ -672,8 +677,8 @@ def test_algila_kokte_standart_maven_ve_tum_java_kaliplari() -> None:
 def test_algila_gradle_kotlin_projesi() -> None:
     depo = {
         "ui-tests/build.gradle.kts": 'testImplementation("com.microsoft.playwright:playwright")',
-        "ui-tests/src/test/kotlin/SepetTest.kt": "",
-        "ui-tests/src/test/kotlin/GirisTest.kt": "",
+        "ui-tests/src/test/kotlin/SepetTest.kt": PW_KT,
+        "ui-tests/src/test/kotlin/GirisTest.kt": PW_KT,
     }
     assert _algila(depo).sayilar["java"] == 2
 
@@ -761,6 +766,100 @@ def test_algila_kok_pyproject_zayif_isaret() -> None:
     depo["conftest.py"] = "import pytest\nfrom playwright.sync_api import Page\n"
     dil_algila.onbellegi_temizle()
     assert _algila(depo).sayilar["python"] == 31
+
+
+def test_algila_spring_boot_kok_pom_birim_testleri_sayilmaz() -> None:
+    """QA-Y1 tur 2 (a): kök pom'da (test kapsamlı) Playwright bağımlılığı + 200 servis birim testi
+    + 30 TS spec → Java seçilmez (birim testleri Playwright içe aktarmaz); okuma bütçe içinde."""
+    depo: dict[str, str] = {
+        "pom.xml": PW_POM.replace(
+            "</dependencies>",
+            "<dependency><groupId>org.springframework.boot</groupId></dependency></dependencies>",
+        ),
+        "e2e/package.json": "{}",
+        **{f"e2e/tests/s{i}.spec.ts": "" for i in range(30)},
+    }
+    for i in range(200):
+        paket = f"src/test/java/com/sirket/servis/m{i % 8}"
+        depo[f"{paket}/Servis{i}Test.java"] = "import org.junit.jupiter.api.Test;\nclass S {}\n"
+    f = SayanForge(depo)
+    a = dil_algila.algila(f, "main", "web", uygulama_koku="")
+    assert a.sayilar["java"] == 0 and a.dil == "ts" and a.sayilar["ts"] == 30
+    assert len(f.okunan) <= dil_algila.MAX_ISARET_OKUMA
+
+
+def test_algila_ust_pom_yalniz_surum_ozelligi_modul_isaretlemez() -> None:
+    """QA-Y1 tur 2 (b): üst pom'da yalnız `<playwright.version>` (ve sürüm yönetimi); `order-svc`
+    80 birim testi + `ui-tests` 5 Playwright testi → yalnız ui-tests sayılır."""
+    depo: dict[str, str] = {
+        "pom.xml": (
+            "<project><properties><playwright.version>1.49.0</playwright.version></properties>"
+            "<dependencyManagement><dependencies><dependency>"
+            "<groupId>com.microsoft.playwright</groupId><artifactId>playwright</artifactId>"
+            "<version>${playwright.version}</version></dependency></dependencies>"
+            "</dependencyManagement><modules><module>order-svc</module>"
+            "<module>ui-tests</module></modules></project>"
+        ),
+        "order-svc/pom.xml": "<project><dependencies><dependency><groupId>org.junit"
+        "</groupId></dependency></dependencies></project>",
+        "ui-tests/pom.xml": PW_POM,
+    }
+    for i in range(80):
+        depo[f"order-svc/src/test/java/com/x/order/Siparis{i}Test.java"] = "import org.junit.*;\n"
+    for i in range(5):
+        depo[f"ui-tests/src/test/java/com/x/ui/Akis{i}Test.java"] = PW_JAVA
+    # Soyut taban sınıf (QA-Y7): adla ve (dizinde okunan dosyada) `abstract class` ile sayılmaz.
+    depo["ui-tests/src/test/java/com/x/ui/BaseUiTest.java"] = PW_JAVA
+    depo["ui-tests/src/test/java/com/x/ui/AbstractAkisTest.java"] = PW_JAVA
+    depo["ui-tests/src/test/java/com/x/ortak/OrtakTest.java"] = (
+        "import com.microsoft.playwright.Page;\npublic abstract class OrtakTest {}\n"
+    )
+    a = _algila(depo)
+    assert a.sayilar["java"] == 5 and a.dil == "java"
+
+
+def test_algila_soyut_taban_siniflar_sayilmaz() -> None:
+    """QA-Y7: e2e-java'da ve C#'ta taban sınıf adları test sayılmaz."""
+    kok = "e2e-java/src/test/java/com/antreklabs/bayi/testler"
+    depo = {
+        "e2e-java/pom.xml": "",
+        f"{kok}/SepetTest.java": "",
+        f"{kok}/BaseTest.java": "",
+        f"{kok}/AbstractWebTest.java": "",
+        f"{kok}/WebBaseTest.java": "",
+        f"{kok}/BasketTest.java": "",  # `Base` ön eki değil
+        f"{kok}/DatabaseTest.java": "",
+        "E2E/E2E.csproj": "Microsoft.Playwright",
+        "E2E/SepetTests.cs": "",
+        "E2E/BaseTests.cs": "",
+        "E2E/PageTestBase.cs": "",
+    }
+    a = _algila(depo)
+    assert (a.sayilar["java"], a.sayilar["csharp"]) == (3, 1)
+
+
+def test_algila_python_page_int_parametresi_isaret_degil() -> None:
+    """QA-Y2 tur 2 (c): kökte `pytest-playwright`, `api/tests/test_list*.py` içinde
+    `def fetch(page: int = 1)` + 10 TS spec → TS; yalnız `playwright` içe aktarımı ya da
+    `page: Page` sayılır."""
+    depo: dict[str, str] = {
+        "pyproject.toml": "[dependency-groups]\ndev = ['pytest-playwright']\n",
+        "e2e/package.json": "{}",
+        **{f"e2e/tests/s{i}.spec.ts": "" for i in range(10)},
+        **{
+            f"api/tests/test_list{i}.py": (
+                "# playwright gerekmez\ndef fetch(page: int = 1):\n    return page\n"
+            )
+            for i in range(15)
+        },
+    }
+    a = _algila(depo)
+    assert a.sayilar["python"] == 0 and a.dil == "ts"
+    depo["ui/test_a.py"] = "import playwright.sync_api as pw\n"
+    depo["ui/test_b.py"] = "def test_b(page: Page) -> None: ...\n"
+    depo["ui/test_c.py"] = "def test_c(page: 'sync_api.Page') -> None: ...\n"  # işaret değil
+    dil_algila.onbellegi_temizle()
+    assert _algila(depo).sayilar["python"] == 2
 
 
 def test_algila_izlenmeyen_dizinler() -> None:
@@ -916,8 +1015,8 @@ def test_dil_cakismasi_yalniz_tam_hat_ve_baska_dilde_merged() -> None:
     neden = service.dil_cakismasi([ts_merged], "web", "java")
     assert neden == (
         "Bu case'in web testi TypeScript ile merge edildi; dil değiştirmek için önce mevcut "
-        "testi kaldırın"
-    )
+        "testi kaldırın: mevcut test dosyasını silen bir PR'ı merge edin, sonra yeniden üretin"
+    )  # K-T12: çıkış yolu mesajda
     assert service.dil_cakismasi([ts_merged], "web", "ts") is None
     assert service.dil_cakismasi([ts_merged], "web", "csharp") is None
     assert service.dil_cakismasi([java_acik], "web", "ts") is None
@@ -932,7 +1031,7 @@ def test_views_web_java_kendi_checkini_bekler_ve_adim_listesi_tek_kaynak(
 
     goren: dict[str, list[str]] = {}
 
-    def kapi(conf: Any, kosular: Any, degisen: Any) -> tuple[tuple[str, ...], None]:
+    def kapi(conf: Any, kosular: Any, degisen: Any, *_: Any) -> tuple[tuple[str, ...], None]:
         goren[str(len(goren))] = [k.name for k in kosular]
         return tuple(conf), None
 
@@ -945,3 +1044,11 @@ def test_views_web_java_kendi_checkini_bekler_ve_adim_listesi_tek_kaynak(
     assert views.KONTROL_ADIMLARI is classify.GORUNEN_ADIMLAR
     assert views.KONTROL_ADIMLARI["java"] == classify.JAVA_ADIMLARI
     assert views.KONTROL_ADIMLARI["ts"] == ("tsc", "eslint", "ast_guard")
+
+
+def test_enum_kumeleri_platform_modulu_ile_ayni() -> None:
+    """MİM-L1: veri modeli CHECK kümeleri (`models.enums`) `platform.py` tek kaynağıyla aynı."""
+    from tp_core.models import enums
+
+    assert frozenset(p.PLATFORMLAR) == enums.PLATFORM
+    assert frozenset(p.DILLER) == enums.DIL

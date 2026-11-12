@@ -31,6 +31,7 @@ from tp_core.config import get_settings
 from tp_core.features.ci import service as ci
 from tp_core.features.ci import services as ci_services
 from tp_core.features.codegen import platform as platformlar
+from tp_core.features.codegen import views as cg_views
 from tp_core.features.control_tower import asistan
 from tp_core.integrations.forge_demo import AUDIT_BREAK
 from tp_core.models import (
@@ -576,10 +577,13 @@ def script_olculeri(session: Session) -> dict[str, Any]:
         .order_by(Script.olusturma, Script.id)
     ).all()
     birimler: dict[tuple[str, ...], list[tuple[Any, uuid.UUID | None, str | None]]] = {}
-    dogrulanmamis = 0
+    dogrulanmamis = dogrulanmamis_dilde = 0
     for sc, case_id, case_hash, engel in satirlar:
-        if sc.durum == "unverified" or platformlar.dogrulanmamis_mi(sc.dil):
-            dogrulanmamis += int(sc.durum == "unverified")
+        if platformlar.dogrulanmamis_mi(sc.dil):
+            # Doğrulanmamış dildeki her script (unverified ya da kapanmış eski kayıt) ölçü dışı;
+            # sayaç `views.dogrulanmamis` tek tanımıyla (MİM-L3).
+            dogrulanmamis_dilde += 1
+            dogrulanmamis += int(cg_views.dogrulanmamis(sc))
             continue
         if case_id is None:
             case_id = session.scalar(
@@ -654,7 +658,8 @@ def script_olculeri(session: Session) -> dict[str, Any]:
         "script_replay_miss": replay_miss,
         "script_dogrulanmamis": dogrulanmamis,
         "script_birim_sayisi": len(birimler),
-        "script_uretim_sayisi": len(satirlar),
+        # Tam hat üretimleri (doğrulanmamış dildekiler birime de üretime de girmez).
+        "script_uretim_sayisi": len(satirlar) - dogrulanmamis_dilde,
         "pass_at_1": _oran(p1_pay, p1_payda),
         "pass_at_1_sayisi": p1_payda,
         "pass_at_1_defect_adayi": p1_defect,

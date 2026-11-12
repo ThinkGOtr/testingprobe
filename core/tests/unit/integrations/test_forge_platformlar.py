@@ -9,6 +9,7 @@ from tp_core.integrations.forge import (
     GITHUB_PLATFORM_WORKFLOWS,
     ForgeValidationError,
     etkin_platformlar,
+    evaluate_required_checks,
     github_required_checks,
 )
 from tp_core.integrations.forge_github import GitHubForge
@@ -142,3 +143,49 @@ def test_local_required_checks_web_java_yolu() -> None:
     # Uygulama kodu da değiştiyse TS local-ci yine gerekir.
     zorunlu, _ = local_required_checks(("local-ci",), [], [kimlikler, "web/src/App.tsx"])
     assert zorunlu == ("local-ci", "local-ci-web-java")
+
+
+def test_local_required_checks_kokler_disi_degisiklik_repodaki_diller() -> None:
+    """K-T11 (MİM-B8, GÜV-Y5): test kökleri dışında değişiklik → repodaki tüm tam hat
+    dillerinin kontrolü; CI aynı dilleri koştuğu için kapı açılabilir (kilitlenme yok)."""
+    from tp_core.integrations.forge import local_required_checks
+    from tp_core.ports import CheckRun
+
+    def c(ad: str) -> CheckRun:
+        return CheckRun(name=ad, status="completed", conclusion="success")
+
+    iki = ("ts", "java")
+    # Yalnız uygulama kodu + repoda iki dil: ikisi de zorunlu (bugün yalnız local-ci idi).
+    assert local_required_checks(("local-ci",), [], ["web/src/App.tsx"], iki) == (
+        ("local-ci", "local-ci-web-java"),
+        None,
+    )
+    # Repoda yalnız TS: değişmez.
+    assert local_required_checks(("local-ci",), [], ["web/src/App.tsx"], ("ts",)) == (
+        ("local-ci",),
+        None,
+    )
+    # GÜV-Y5: api + e2e-java değişen PR; CI iki dili koşup ikisini de yazdı → kapı açık.
+    yollar = ["api/app.py", "e2e-java/src/test/java/a/ekranlar/Kimlikler.java"]
+    kosular = [c("local-ci"), c("local-ci-web-java")]
+    zorunlu, neden = local_required_checks(("local-ci",), kosular, yollar, iki)
+    assert zorunlu == ("local-ci", "local-ci-web-java") and neden is None
+    assert evaluate_required_checks(kosular, zorunlu).passed
+    # Yapılandırma local-ci'ı düşürmüş olsa da uygulama değişikliği TS kontrolünü ister.
+    zorunlu, _ = local_required_checks(("local-ci-android",), [], ["api/app.py"], iki)
+    assert zorunlu == ("local-ci", "local-ci-android", "local-ci-web-java")
+    # Yalnız e2e-app/ değişikliği web dillerini genişletmez.
+    app = "e2e-app/src/test/java/a/ekranlar/Kimlikler.java"
+    assert local_required_checks(("local-ci",), [c("local-ci-android")], [app], iki) == (
+        ("local-ci-android",),
+        None,
+    )
+
+
+def test_github_required_checks_web_java_is_akisi() -> None:
+    """K-T10: `web-java.yml` depodaysa `web-java` TP_WEB_DILLERI'nden bağımsız zorunlu."""
+    assert github_required_checks(("test-local",), (), ("ts",), web_java_is_akisi=True) == (
+        "test-local",
+        "web-java",
+    )
+    assert github_required_checks(("test-local",), (), ("ts",)) == ("test-local",)

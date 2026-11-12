@@ -160,6 +160,9 @@ def test_guncelleme_icerigi_dogrulama_birim() -> None:
         def read_file(self, path: str, ref: str = "main") -> str:
             return self.agaclar[ref][path]
 
+        def changed_paths(self, base: str, head: str) -> list[str] | None:
+            return None  # fark bilinmiyor: tam ağaç karşılaştırması (ForgePort sözleşmesi)
+
     eski = {"a.ts": "1", "spec.ts": "S"}
     main = {"a.ts": "2", "b.ts": "B"}
     f = F({"eski": eski, "main": main, "iyi": {"a.ts": "2", "b.ts": "B", "spec.ts": "S"}})
