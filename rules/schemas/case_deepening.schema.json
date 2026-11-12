@@ -149,7 +149,7 @@
       "maxItems": 60
     },
     "not_covered": {
-      "description": "Hiçbir case'in kapsamadığı kapsam öğesi veya kabul kriteri ve gerekçesi.",
+      "description": "Hiçbir case'in kapsamadığı kapsam öğesi veya kabul kriteri ve gerekçesi; açık soru yüzünden kapsanmadıysa soru `question_ref`te.",
       "type": "array",
       "items": {
         "type": "object",
@@ -163,11 +163,24 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 300
+          },
+          "question_ref": {
+            "description": "Öğe bir açık soru yanıtlanmadığı için kapsanmadıysa o soru (Qn); değilse null. Her açık soru bir case atfında, bir negatif kapsam kararının gerekçesinde, bir kapsam öğesinin tanımında ya da burada anılır.",
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^Q[0-9]+$"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
           "item",
-          "reason"
+          "reason",
+          "question_ref"
         ],
         "additionalProperties": false
       },

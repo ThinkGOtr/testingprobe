@@ -22,8 +22,11 @@ set and send it to a new audit.
 - Optionally the test data given to the generator, inside an untrusted block (users, dealer names,
   products, prices, settings, UI labels). It is part of the source: a value taken from it (for
   example a dealer name shown after login, a price, a button label) is supported, not invented.
-  Its demo users and their shared demo password are synthetic demo credentials, not a privacy
-  finding.
+  A demo user's shared demo password from this block is not a privacy finding only when both
+  hold: the case's test data record for it has `synthetic: true`, and the case runs only in the
+  permitted test environments listed below (a demo/test host, not staging or production). A
+  password, token or account of any other environment, or one not marked synthetic, is a
+  control 2 finding even when this block lists it.
 - Optionally the permitted test environments (trusted). A case that does not name an environment
   runs in these environments; that alone is not a finding.
 

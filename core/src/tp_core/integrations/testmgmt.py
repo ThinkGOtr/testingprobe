@@ -403,13 +403,27 @@ def wiki_noformat(text: str) -> str:
     return "{noformat}\n" + _NOFORMAT.sub(r"{ \1", text) + "\n{noformat}"
 
 
+# Jira/Xray wiki biçiminde etkin karakterler: bağlantı/bahsetme `[...]`, makro `{...}`, tablo
+# `|`, görsel/ek `!dosya!`. Case metni (model üretimi; gereksinimden enjeksiyon taşıyabilir) wiki
+# alanına bunlar ters bölüyle kaçışlanarak yazılır (tur 2 güvenlik #14).
+_WIKI_OZEL = re.compile(r"([\[\]{}|!])")
+
+
+def wiki_escape(text: str | None) -> str:
+    """Wiki alanına düz metin: biçim karakterleri kaçışlanır (görünüm aynı kalır)."""
+    return _WIKI_OZEL.sub(r"\\\1", text or "")
+
+
 def _wiki_code_blocks(node: Any) -> Any:
+    """Kod blokları (saldırı verisi) `{noformat}` ile sarılır; diğer metin düğümleri kaçışlanır."""
     if isinstance(node, dict):
         if node.get("type") == "codeBlock":
             ham = "".join(
                 str(c.get("text") or "") for c in node.get("content") or [] if isinstance(c, dict)
             )
             return {**node, "content": [{"type": "text", "text": wiki_noformat(ham)}]}
+        if node.get("type") == "text" and isinstance(node.get("text"), str):
+            return {**node, "text": wiki_escape(node["text"])}
         if "content" in node:
             return {**node, "content": [_wiki_code_blocks(c) for c in node["content"]]}
     return node
@@ -419,7 +433,7 @@ def case_description_text(
     case: CaseContent, story_key: str, *, steps_table: bool = True, wiki: bool = False
 ) -> str:
     """Açıklamanın düz metni. ``wiki=True`` (Xray metin alanı, wiki biçimi): kod blokları
-    (saldırı verisi) ``{noformat}`` ile sarılır."""
+    (saldırı verisi) ``{noformat}`` ile sarılır, diğer metin wiki karakterleri kaçışlanarak."""
     belge = case_description_adf(case, story_key, steps_table=steps_table)
     if wiki:
         belge = _wiki_code_blocks(belge)

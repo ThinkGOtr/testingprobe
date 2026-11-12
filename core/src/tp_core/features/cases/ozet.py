@@ -70,6 +70,10 @@ def _kimlik(alan: str, kayit: Any) -> str | None:
     k = ANAHTAR.get(alan)
     if k is None or not isinstance(kayit, Mapping) or kayit.get(k) is None:
         return None
+    if alan == "not_covered" and kayit.get("question_ref"):
+        # Aynı öğe (ör. AC3) iki ayrı açık soru yüzünden kapsanmamış olabilir: kayıtlar soruyla
+        # ayrışır, biri diğerini ezmez (011 K16; açık soru bağı).
+        return f"{kayit.get(k)}#{kayit.get('question_ref')}"
     return str(kayit.get(k))
 
 

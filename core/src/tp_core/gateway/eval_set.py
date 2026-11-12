@@ -657,9 +657,9 @@ def write_report(
 
 def uretim_dagilimi(results: Sequence[CaseResult]) -> dict[str, Any]:
     """case_generation raporu: koşu başına ve toplamda case sayısı, readiness ve teknik dağılımı,
-    öncelik dağılımı ve P1 oranı (`max_p1_orani` beklentisi), kapsam öğesi sayıları
-    (`eval_agents.generation_stats`) ve uydurma/readiness beklentisine takılan
-    koşular. Çıktısı olmayan koşu (geçit hatası) sayılmaz."""
+    öncelik dağılımı ve P1 oranı (`max_p1_orani` beklentisi), kapsam öğesi sayıları ve yetim
+    açık soru sayısı (`yetim_soru`; `eval_agents.generation_stats`) ve uydurma/readiness
+    beklentisine takılan koşular. Çıktısı olmayan koşu (geçit hatası) sayılmaz."""
     kosular = {r.id: generation_stats(r.output) for r in results if isinstance(r.output, Mapping)}
     toplam: dict[str, Any] = {"kosu": len(kosular), "readiness": {}, "technique": {}, "priority": {}}
     for ad in (
@@ -668,9 +668,10 @@ def uretim_dagilimi(results: Sequence[CaseResult]) -> dict[str, Any]:
         "covered_items",
         "not_covered",
         "open_questions",
+        "yetim_soru",
         "tekrar",
     ):
-        toplam[ad] = sum(int(k[ad]) for k in kosular.values())
+        toplam[ad] = sum(int(k.get(ad) or 0) for k in kosular.values())
     toplam["tekrar_orani"] = round(toplam["tekrar"] / toplam["case"], 4) if toplam["case"] else None
     for kosu in kosular.values():
         for alan in ("readiness", "technique", "priority"):

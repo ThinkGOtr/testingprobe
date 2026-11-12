@@ -6,7 +6,7 @@ yorumu olarak gönderim kaydı ve PO yanıtı. Yalnız ekleme yapar; downgrade t
 Yetki (en az yetki): `tp_app` yalnız SELECT, INSERT, UPDATE (satır silinmez; gereksinim silinirse
 FK `ON DELETE CASCADE` sahibin yetkisiyle temizler).
 
-Birleştirmede zincir doğrusallaştırılır (D1 0026, D4 0027); bu dalda `down_revision = "0025"`.
+Zincir doğrusaldır: 0026 (D1) → 0027 (D4) → 0028 (`down_revision = "0027"`).
 
 Revision ID: 0028
 Revises: 0027

@@ -120,5 +120,8 @@ Titles are Turkish, ≤ 120 characters, unique (also against the existing titles
 `AI-generated` (and `security` / `a11y` only when the case checks that category). At most 10 new
 cases per round (a deepening round adds to a set of at most 15 first-round cases; run another
 round for more), each ≤ 8 steps; items left without a case go to
-`not_covered` with the reason. Zero new cases is valid when the existing set already applies the
-technique completely.
+`not_covered` with the reason (`question_ref` is the open question when the item waits for one,
+otherwise `null`). Every open question you list is named in a new case's `open_question_refs`, a
+`negative_coverage` rationale or a `not_covered` entry's `question_ref`; never delete a question
+or its anchor to make a rule pass. Zero new cases is valid when the existing set already applies
+the technique completely.

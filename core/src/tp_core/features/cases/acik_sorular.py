@@ -8,7 +8,10 @@ Akış:
    yorum biçimi ve idempotency deseniyle (`flow.jira_once`, `Kayıt: tp-<uuid>` işareti, PO +
    analist bahsetmesi). Her soru PO'nun yanıtta kullanacağı kimlikle (`CQn` soru, `CAn` varsayım;
    ön inceleme `Qn`'leriyle çakışmasın diye ayrı önek) ve bekleyen case'lerle yazılır. Aynı soru
-   (normalize metin hash'i) aynı PO onaylı içerik için ikinci kez gönderilmez.
+   (normalize metin hash'i) aynı PO onaylı içerik için ikinci kez gönderilmez. Jira çağrısı
+   gereksinim satır kilidi altında yapılmaz (satırlar `bekliyor` yazılıp commit edilir, yorum
+   kilitsiz yazılır, sonra satırlar kilitle `gonderildi` olur). Yorum boyutu sınırlıdır; sığmayan
+   sorular sonraki gönderime kalır.
 2. **Yanıtın geri okunması** (`read_answers`): PO etiket sorgusu (`flow.run_po_poll`) ve
    `POST …/open-questions/refresh` ile PO hesaplarının (yetki kimliği; görünen ad değil) gönderimden
    sonra yazdığı yorumlardaki `CQn: …` bölümleri soruya bağlanır (yanıt, yazar, zaman). Yanıt
@@ -16,7 +19,9 @@ Akış:
 3. **Case'e yansıması**: case listesinde soru kaydının durumu/yanıtı (`case_fields`,
    `po_sorulari`) ve yanıtlanan soruya bağlı taslak case için "düzelt / yeniden üret" önerisi;
    düzeltmeyle soru atfı kaldırılıp case hazır yapılırsa denetim kaydına "kaynak: PO yanıtı
-   CQn" yazılır (`record_correction_source`).
+   CQn" yazılır (`record_correction_source`; değişmez zincire yalnız etiket ve metin özetleri
+   girer, soru/yanıt metni `acik_soru` tablosunda kalır). Yanıtlanan soruya bağlı case yoksa
+   (yetim soru) öneri "yeniden üret"tir: yanıt bir sonraki üretimin girdisine girer.
 4. **Sonraki üretimler**: yanıtlanan sorular (`generation_input`) üretim/derinleştirme girdisine
    ayrı güvenilmeyen blokta girer; yanıt yoksa girdi bayt bayt aynı kalır (replay golden'ları).
 """
@@ -51,6 +56,13 @@ DURUM_GONDERILMEDI = "gonderilmedi"
 _ETIKET = re.compile(r"(?<![\w])(C[QA]|Q)(\d{1,3})\s*[:.)\-–]\s*", re.IGNORECASE)
 _SAHIP_TR = {"PO": "PO", "analyst": "analist", "developer": "geliştirici"}
 YANIT_SINIRI = 4000
+# Jira yorumunun boyutu (alan sınırı 32.767 karakter; önek ve bahsetmeler için pay bırakılır).
+# Soru metni ve case başlıkları model üretimidir: satır başına kırpılır, sığmayan soru sonraki
+# gönderime kalır.
+YORUM_SINIRI = 24000
+SORU_METNI_SINIRI = 600
+CASE_BASLIGI_SINIRI = 80
+SATIR_CASE_SINIRI = 5
 
 
 class AcikSoruYok(WorkflowError):
@@ -182,11 +194,20 @@ ONERI_MESAJI = (
     "PO yanıtladı: beklenen sonucu yanıta göre yazıp atfı kaldırarak case'i düzeltin (hazır "
     "yapın) ya da yanıtı kaynak alarak yeniden üretin."
 )
+YENIDEN_URET_MESAJI = (
+    "PO yanıtladı ama bu soruya bağlı case yok (soru hiçbir case'te anılmıyordu): yanıt bir "
+    "sonraki üretimin girdisine girer; yanıtı kaynak alarak case'leri yeniden üretin."
+)
 
 
 def _oneri(satir: AcikSoru | None, caseler: Sequence[TestCase]) -> dict[str, Any] | None:
+    if satir is None or satir.durum != "yanitlandi":
+        return None
+    if not caseler:
+        # Yetim soru (011 tur 2 #1): düzeltilecek taslak yok; yanıt ancak yeniden üretimle döner.
+        return {"eylem": "yeniden_uret", "case_ids": [], "mesaj": YENIDEN_URET_MESAJI}
     bekleyen = [tc for tc in caseler if tc.durum == "draft"]
-    if satir is None or satir.durum != "yanitlandi" or not bekleyen:
+    if not bekleyen:
         return None
     return {
         "eylem": "duzelt_veya_yeniden_uret",
@@ -255,19 +276,38 @@ def _gonderim_engeli(req: Requirement, sorular: Sequence[Mapping[str, Any]]) -> 
 # --------------------------------------------------------------------------- gönderim
 
 
+def _kes(metin: Any, sinir: int) -> str:
+    metin = " ".join(str(metin or "").split())
+    return metin if len(metin) <= sinir else metin[: sinir - 1] + "…"
+
+
 def _soru_satiri(satir: AcikSoru, caseler: Sequence[TestCase]) -> str:
+    """Yorumdaki tek satır; model üretimi metinler kırpılır (soru metni, case başlıkları, en çok
+    `SATIR_CASE_SINIRI` case; fazlası "+N case")."""
     sahip = _SAHIP_TR.get(satir.sahip, satir.sahip)
     ek = f" [yanıtlayacak: {sahip}]" if sahip and sahip != "PO" else ""
-    bekleyen = ", ".join(f"#{tc.sira_no} {tc.icerik.get('title') or ''}".strip() for tc in caseler)
+    gosterilen = [
+        f"#{tc.sira_no} {_kes(tc.icerik.get('title'), CASE_BASLIGI_SINIRI)}".strip()
+        for tc in caseler[:SATIR_CASE_SINIRI]
+    ]
+    if len(caseler) > SATIR_CASE_SINIRI:
+        gosterilen.append(f"+{len(caseler) - SATIR_CASE_SINIRI} case")
+    bekleyen = ", ".join(gosterilen)
     kim = "bekleyen case'ler" if satir.tur == "soru" else "dayanan case'ler"
-    return f"- {satir.etiket}{ek} {satir.metin}" + (f" — {kim}: {bekleyen}" if bekleyen else "")
+    metin = _kes(satir.metin, SORU_METNI_SINIRI)
+    return f"- {satir.etiket}{ek} {metin}" + (f" — {kim}: {bekleyen}" if bekleyen else "")
 
 
 def comment_body(
-    req: Requirement, gidecek: Sequence[tuple[AcikSoru, Sequence[TestCase]]], marker: str
+    req: Requirement,
+    gidecek: Sequence[tuple[AcikSoru, Sequence[TestCase]]],
+    marker: str,
+    *,
+    kalan: int = 0,
 ) -> str:
     """PO'ya giden tek yorum (ön inceleme soru yorumunun biçiminde: başlık, liste, nasıl
-    yanıtlanır, `Kayıt:` işareti)."""
+    yanıtlanır, `Kayıt:` işareti). `kalan`: boyut sınırı yüzünden bu yoruma sığmayan soru sayısı
+    (portalda bekler, sonraki gönderimde gider)."""
     sorular = [_soru_satiri(s, c) for s, c in gidecek if s.tur == "soru"]
     varsayimlar = [_soru_satiri(s, c) for s, c in gidecek if s.tur == "varsayim"]
     satirlar = [
@@ -282,6 +322,8 @@ def comment_body(
             "Doğrulanması istenen varsayımlar (case'ler bunlara dayanarak yazıldı):",
             *varsayimlar,
         ]
+    if kalan:
+        satirlar += ["", f"+{kalan} soru daha portalda bekliyor; ayrı bir yorumla gönderilecek."]
     ornek = gidecek[0][0].etiket
     satirlar += [
         "",
@@ -293,20 +335,39 @@ def comment_body(
     return "\n".join(satirlar)
 
 
+def idempotency_key(req_id: uuid.UUID, gereksinim_hash: str, satirlar: Sequence[AcikSoru]) -> str:
+    """Yorumun idempotency anahtarı: gereksinim + PO onaylı içerik + etiketler + (etiket, metin
+    hash'i) özetinin hash'i. Etiketler yeniden kullanılsa (geri alınmış gönderim, değişen set) bile
+    farklı soru metni farklı anahtar (ve farklı `Kayıt:` işareti) verir; eski yorum yeni soruların
+    "mevcut" gönderimi sayılmaz ve PO'nun eski yanıtı yeni soruya bağlanmaz (tur 2 güvenlik #5)."""
+    sirali = sorted(satirlar, key=lambda s: s.etiket)
+    etiketler = ",".join(s.etiket for s in sirali)
+    ozet = hashlib.sha256(
+        "\n".join(f"{s.etiket}={s.metin_hash}" for s in sirali).encode()
+    ).hexdigest()[:16]
+    return f"jira:comment:acik_soru:{req_id}:{gereksinim_hash}:{etiketler}:{ozet}"
+
+
 def send(
     session: Session, requirement_id: uuid.UUID, user: Principal, *, varsayimlar: bool = False
 ) -> dict[str, Any]:
     """`POST /requirements/{id}/open-questions/send`: gönderilmemiş soruları tek yorumla gönderir.
 
-    Satırlar `bekliyor` olarak yazılır, etiketler deterministik verilir (gereksinim başına artan),
-    yorum `flow.jira_once` ile bir kez yazılır (anahtar: gereksinim + etiket kümesi; Jira hatası
-    olursa istek geri alınır ve yeniden denemede aynı etiketler ve anahtar oluşur). Başarıda
-    satırlar `gonderildi` olur; gönderim zamanı yorumun Jira'daki zamanıdır (yanıtlar bundan
-    sonraki PO yorumlarıdır)."""
+    Üç aşama (D4 deseni: dış çağrı gereksinim satır kilidi altında yapılmaz; tur 2 güvenlik #4):
+
+    1. Gereksinim kilitlenir; gidecek kalemler seçilir, yeni satırlar `bekliyor` ve deterministik
+       etiketle (gereksinim başına artan) yazılır; işlem commit edilir (kilit bırakılır). Yorum
+       boyut sınırına (`YORUM_SINIRI`) sığmayan kalemlere satır açılmaz; sonraki gönderime kalır.
+    2. Yorum kilitsiz, `flow.jira_once` ile bir kez yazılır (anahtar: `idempotency_key`). Jira
+       hatasında satırlar `bekliyor` kalır (portalda "gönderilmedi"); yeniden denemede aynı
+       satırlar, etiketler ve anahtar kullanılır (yorum ikinci kez yazılmaz).
+    3. Satırlar kilitlenip `gonderildi` yapılır; gönderim zamanı yorumun Jira'daki zamanıdır
+       (yanıtlar bundan sonraki PO yorumlarıdır)."""
     from tp_core.features.cases.service import get_requirement
     from tp_core.features.requirements import flow, services
     from tp_core.integrations import jira_notify
 
+    # ---- 1. kilit altında hazırlık
     req = get_requirement(session, requirement_id, lock=True)
     if not req.jira_key:
         raise GateClosed(
@@ -322,16 +383,20 @@ def send(
         for tur, onek in ONEK.items()
     }
     gidecek: list[tuple[AcikSoru, list[TestCase]]] = []
-    for k in kalemler:
-        satir = satirlar.get((k.tur, k.hash))
-        if satir is not None and satir.durum != "bekliyor":
-            continue
+    boyut = 0
+    adaylar = [
+        (k, satirlar.get((k.tur, k.hash)))
+        for k in kalemler
+        if satirlar.get((k.tur, k.hash)) is None or satirlar[(k.tur, k.hash)].durum == "bekliyor"
+    ]
+    kalan = 0
+    for i, (k, satir) in enumerate(adaylar):
+        yeni = satir is None
         if satir is None:
-            sonraki[k.tur] += 1
             satir = AcikSoru(
                 requirement_id=req.id,
                 tur=k.tur,
-                etiket=f"{ONEK[k.tur]}{sonraki[k.tur]}",
+                etiket=f"{ONEK[k.tur]}{sonraki[k.tur] + 1}",
                 kaynak_id=k.kaynak_id,
                 metin=k.metin,
                 metin_hash=k.hash,
@@ -340,6 +405,13 @@ def send(
                 gereksinim_hash=req.onaylanan_hash or "",
                 gonderen=user.kullanici_adi,
             )
+        satir_boyu = len(_soru_satiri(satir, k.caseler)) + 1
+        if gidecek and boyut + satir_boyu > YORUM_SINIRI:
+            kalan = len(adaylar) - i  # sıra korunur: sığmayan ve sonrakiler sonraki gönderime
+            break
+        boyut += satir_boyu
+        if yeni:
+            sonraki[k.tur] += 1
             session.add(satir)
         gidecek.append((satir, k.caseler))
     if not gidecek:
@@ -348,22 +420,37 @@ def send(
             "yanıtlandı."
         )
     session.flush()
+    rid, key = req.id, req.jira_key
     etiketler = sorted(s.etiket for s, _ in gidecek)
-    anahtar = f"jira:comment:acik_soru:{req.id}:{req.onaylanan_hash or ''}:" + ",".join(etiketler)
+    satir_idleri = [s.id for s, _ in gidecek]
+    anahtar = idempotency_key(req.id, req.onaylanan_hash or "", [s for s, _ in gidecek])
     marker = flow._marker(anahtar)
-    govde = comment_body(req, gidecek, marker)
+    govde = comment_body(req, gidecek, marker, kalan=kalan)
+    session.commit()  # gereksinim satır kilidi Jira çağrısından önce bırakılır
+
+    # ---- 2. kilitsiz Jira yorumu (bir kez)
     jira = services.jira()
-    key = req.jira_key
     yorum_id = flow.jira_once(
         session.get_bind(),  # type: ignore[arg-type]
         entity_turu="requirement",
-        entity_id=req.id,
+        entity_id=rid,
         idempotency_key=anahtar,
         action=lambda: jira_notify.post_comment(jira, key, govde, jira_notify.PO_SORU),
         find_existing=lambda: flow._comment_with_marker(jira, key, marker),
     )
     zaman = _yorum_zamani(jira, key, marker) or datetime.now(UTC)
-    for satir, _ in gidecek:
+
+    # ---- 3. kilitle ve gönderildi yaz (eşzamanlı aynı gönderim de aynı yorumu bulur)
+    yazilan = session.scalars(
+        select(AcikSoru)
+        .where(AcikSoru.id.in_(satir_idleri))
+        .order_by(AcikSoru.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).all()
+    for satir in yazilan:
+        if satir.durum != "bekliyor":
+            continue
         satir.durum = "gonderildi"
         satir.gonderim_zamani = zaman
         satir.jira_comment_id = yorum_id
@@ -371,11 +458,11 @@ def send(
         session,
         user.kullanici_adi,
         "acik_soru.gonderildi",
-        f"requirement:{req.id}",
-        {"jira_key": key, "etiketler": etiketler, "jira_comment_id": yorum_id},
+        f"requirement:{rid}",
+        {"jira_key": key, "etiketler": etiketler, "jira_comment_id": yorum_id, "kalan": kalan},
     )
     session.flush()
-    return view(session, req.id)
+    return view(session, rid)
 
 
 def _yorum_zamani(jira: Any, key: str, marker: str) -> datetime | None:
@@ -412,7 +499,12 @@ def read_answers(
 ) -> int:
     """Gönderilmiş (yanıtsız) soruların PO yanıtlarını Jira yorumlarından okur; yanıtlanan
     soru sayısını döner. Yalnız PO hesaplarının (yetki kimliği) gönderimden sonraki yorumları
-    sayılır; aynı soruya birden çok yorum yanıt verdiyse sırayla birleştirilir."""
+    sayılır; aynı soruya birden çok yorum yanıt verdiyse sırayla birleştirilir.
+
+    Eşzamanlılık (tur 2 güvenlik #12): periyodik sorgu ve `refresh` ucu aynı anda okuyabilir.
+    Jira yorumları kilitsiz okunur; yazmadan önce satırlar `FOR UPDATE SKIP LOCKED` ile alınıp
+    durumları yeniden denetlenir. Başka okuyucunun tuttuğu satır atlanır, yanıtlanmış satır
+    yeniden yazılmaz (`acik_soru.yanitlandi` denetim kaydı bir kez düşer)."""
     from tp_core.features.requirements import flow
 
     q = select(AcikSoru).where(AcikSoru.durum == "gonderildi")
@@ -422,12 +514,22 @@ def read_answers(
     for satir in session.scalars(q.order_by(AcikSoru.requirement_id, AcikSoru.etiket)):
         bekleyen[satir.requirement_id].append(satir)
     yanitlanan = 0
-    for rid, satirlar in bekleyen.items():
+    for rid, adaylar in bekleyen.items():
         req = session.get(Requirement, rid)
         if req is None or not req.jira_key:
             continue
-        esik = min((s.gonderim_zamani for s in satirlar if s.gonderim_zamani), default=None)
+        esik = min((s.gonderim_zamani for s in adaylar if s.gonderim_zamani), default=None)
         yorumlar = flow._po_cevaplari(jira, req.jira_key, hesaplar, esik)
+        satirlar = session.scalars(
+            select(AcikSoru)
+            .where(
+                AcikSoru.id.in_([s.id for s in adaylar]),
+                AcikSoru.durum == "gonderildi",
+            )
+            .order_by(AcikSoru.etiket)
+            .with_for_update(skip_locked=True)
+            .execution_options(populate_existing=True)
+        ).all()
         for satir in satirlar:
             parcalar: list[tuple[str, dict[str, Any]]] = []
             for y in yorumlar:
@@ -549,11 +651,14 @@ def record_correction_source(
         {
             "kaynak": "PO yanıtı " + ", ".join(etiketler),
             "requirement_id": str(tc.requirement_id),
+            # Değişmez zincire metin girmez (PO yanıtında kişisel veri olabilir; KVKK silme
+            # talebi zinciri bozamaz): etiket + metin özetleri. Metin `acik_soru` satırındadır.
             "sorular": [
                 {
                     "etiket": s.etiket,
-                    "soru": s.metin,
-                    "yanit": s.yanit,
+                    "acik_soru_id": str(s.id),
+                    "soru_hash": s.metin_hash,
+                    "yanit_hash": hashlib.sha256((s.yanit or "").encode()).hexdigest(),
                     "yanit_yazari": s.yanit_yazari,
                 }
                 for s in kaynaklar

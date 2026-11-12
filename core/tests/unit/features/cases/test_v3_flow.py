@@ -476,7 +476,7 @@ def test_korunan_onayli_case_ac_kapsamina_sayilir(
     ilk = uretim_cikti(
         [ac2],
         negative_coverage=[{"item": "EP-I1", "decision": "tested", "rationale": "AC2"}],
-        not_covered=[{"item": "AC1", "reason": "sonraki üretimde"}],
+        not_covered=[{"item": "AC1", "reason": "sonraki üretimde", "question_ref": None}],
     )
     ikinci = uretim_cikti([case_icerik()])
     fake_gateway([text_response(ilk), text_response(ikinci)])

@@ -183,7 +183,13 @@
         "rationale": "Yalnız kampanyasız ürünlü sepette minimum tutar altı AC3'te tanımlı; EP-I1 ile aynı case (150,00 TL) sınıyor."
       }
     ],
-    "not_covered": [],
+    "not_covered": [
+      {
+        "item": "AC3",
+        "reason": "Karma sepette (kampanyalı + kampanyasız ürün, toplam 750,00 TL altı) minimum tutar şartının aranıp aranmadığı kaynakta yok; beklenen sonuç uydurulmadı, case yazılmadı, PO'ya soruldu.",
+        "question_ref": "Q1"
+      }
+    ],
     "observations": [],
     "automation_open_points": [],
     "config_matrix": {

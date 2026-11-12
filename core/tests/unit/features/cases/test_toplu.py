@@ -324,3 +324,69 @@ def test_dogrulanan_varsayim_diger_caselere_yansir(api: TestClient, cs) -> None:
     guncel = {c["id"]: c for c in latest_cases(api, rid)}
     for c in cases[3:]:
         assert all("dogrulama" not in v for v in guncel[c["id"]]["varsayimlar"])
+
+
+def _po_varsayim_kaydi(rid: uuid.UUID, durum: str, yanit: str | None = None) -> None:
+    from tp_core.features.cases import acik_sorular
+    from tp_core.models.acik_soru import AcikSoru
+
+    metin = OZET["assumptions"][0]["statement"]
+    with session_scope() as s:
+        req = s.get(Requirement, rid)
+        satir = s.scalars(select(AcikSoru).where(AcikSoru.requirement_id == rid)).first()
+        if satir is None:
+            satir = AcikSoru(
+                requirement_id=rid,
+                tur="varsayim",
+                etiket="CA1",
+                kaynak_id="A1",
+                metin=metin,
+                metin_hash=acik_sorular.text_hash("varsayim", metin),
+                sahip="",
+                durum=durum,
+                gereksinim_hash=req.onaylanan_hash or "",
+                gonderen="analyst",
+            )
+            s.add(satir)
+        satir.durum = durum
+        satir.yanit = yanit
+
+
+def test_varsayim_dogrulandi_po_kaydina_uyar(api: TestClient, cs) -> None:
+    """Tur 2 güvenlik #8: varsayım PO'ya gönderildiyse yanıt beklenirken ya da PO 'doğru'
+    dışında yanıt verdiyse analist tek tıkla doğrulayamaz (409); PO 'doğru' dediyse kaynak CA1."""
+    rid, cases = cs
+    c = cases[2]
+    _po_varsayim_kaydi(rid, "gonderildi")
+    r = _dogrula(api, c, varsayim_id="A1")
+    assert r.status_code == 409 and "PO yanıtı bekleniyor" in r.json()["detail"]
+    _po_varsayim_kaydi(rid, "yanitlandi", "Hayır, doğru değil: duyarsız")
+    r = _dogrula(api, c, varsayim_id="A1")
+    assert r.status_code == 409 and "'doğru' dışında" in r.json()["detail"]
+    assert _reviews(c["id"]) == []
+    _po_varsayim_kaydi(rid, "yanitlandi", "Evet, doğru.")
+    r = _dogrula(api, c, varsayim_id="A1")
+    assert r.status_code == 200, r.text
+    (rev,) = _reviews(c["id"])
+    assert rev.duzeltme_olculeri["po_dogruladi"] == ["CA1"]
+
+
+def test_po_dogru_yaniti() -> None:
+    from tp_core.features.cases.toplu import po_dogru_dedi
+
+    for evet in ("doğru", "Evet, doğru.", "Doğrudur", "onaylıyorum", "  DOĞRU "):
+        assert po_dogru_dedi(evet), evet
+    for hayir in ("doğru değil", "Hayır", "yanlış, 60 dakika", "", None, "Doğrusu 45 dk"):
+        assert not po_dogru_dedi(hayir), hayir
+
+
+def test_toplu_onay_ters_sirada_kilitler_ve_govde_sirasini_korur(api: TestClient, cs) -> None:
+    """Tur 2 güvenlik #7: satırlar id sırasıyla kilitlenir; yanıt gövde sırasındadır."""
+    _, cases = cs
+    secilen = sorted(cases[:2], key=lambda c: c["id"], reverse=True)
+    r = api.post(
+        "/cases/bulk-decision", json={"karar": "approve", "kalemler": [_kalem(c) for c in secilen]}
+    )
+    assert r.status_code == 200, r.text
+    assert [s["case_id"] for s in r.json()["sonuclar"]] == [c["id"] for c in secilen]
+    assert r.json()["onaylanan"] == 2

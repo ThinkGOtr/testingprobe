@@ -1852,6 +1852,8 @@ export interface CaseKalitesi {
     bekliyor: number;
   };
   tekrar: { oneri: number; case: number; etkilenen_case: number; oran: number | null };
+  /** 011 K16: hiçbir case atfı, karar gerekçesi, not_covered.question_ref ya da öğe tanımının anmadığı açık soru. */
+  yetim_soru?: { toplam: number; yetim: number; yetim_gereksinim: number; oran: number | null };
   readiness: { ready: number; assumption_dependent: number; blocked: number; legacy: number };
   teknik: Record<string, number>;
   icerik_kontrolu: {

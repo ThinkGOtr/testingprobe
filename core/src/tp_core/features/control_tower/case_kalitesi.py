@@ -19,6 +19,8 @@ proje geneli (case'i ya da kalite kaydı olan tüm gereksinimler). Ölçülmeyen
   o durumda olan gereksinim sayısı.
 - **tekrar:** sayılan review'lardaki `remove_or_merge` önerileri / değerlendirilen case sayısı
   (`icerik.case_haritasi`).
+- **yetim_soru:** birleşik özetin açık sorularından hiçbir yerde anılmayanlar (011 K16; PO
+  yanıtı case'e dönmez): `{toplam, yetim, yetim_gereksinim, oran}`.
 - **readiness / teknik:** güncel case'ler (superseded/rejected ve eski PO içeriğine ait olmayan).
 - **icerik_kontrolu:** `asistan_denetim` karar dağılımı; asistan gereksinime bağlı değildir, filtre
   verilse de proje genelidir.
@@ -29,6 +31,8 @@ proje geneli (case'i ya da kalite kaydı olan tüm gereksinimler). Ölçülmeyen
 
 from __future__ import annotations
 
+import threading
+import time
 import uuid
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
@@ -106,6 +110,12 @@ KAYNAKLAR: Final = {
         "readiness anahtarı olmayan eski (v2) case (cases.schema.is_legacy)"
     ),
     "teknik": "güncel case'lerin icerik.technique listesi (bir case birden çok tekniğe sayılır)",
+    "yetim_soru": (
+        "güncel üretimlerin birleşik özetindeki açık sorulardan hiçbir güncel case atfında, "
+        "not_covered.question_ref'te, negatif kapsam gerekçesinde ya da kapsam öğesi tanımında "
+        "anılmayanlar (cases.schema.orphan_questions); yalnız v3 case'i olan gereksinimler; "
+        "oran = yetim / toplam açık soru"
+    ),
     "icerik_kontrolu": (
         "asistan_denetim.karar (gec/uyar/engelle), soru ve cevap puanları ayrı satır; oranlar "
         "satır sayısına göre; proje geneli (asistan gereksinime bağlı değil); saklama temizliği "
@@ -246,6 +256,7 @@ def case_kalitesi(session: Session, requirement_id: uuid.UUID | None = None) -> 
     teknik: dict[str, int] = defaultdict(int)
     guncel_hash: dict[uuid.UUID, str | None] = {}
     hazir_veri = False
+    soru = {"toplam": 0, "yetim": 0, "yetim_gereksinim": 0}
     for req in reqs:
         durum = cases_service._coverage_state(session, req)
         # Güncel küme D1'in tek tanımından (`ozet.current_cases`, eski case dahil).
@@ -262,6 +273,11 @@ def case_kalitesi(session: Session, requirement_id: uuid.UUID | None = None) -> 
         if not any(not is_legacy(tc.icerik) for tc in guncel):
             continue
         n_gereksinim += 1
+        sorular = durum.get("acik_sorular") or {}
+        yetim = len(sorular.get("yetim") or [])
+        soru["toplam"] += int(sorular.get("toplam") or 0)
+        soru["yetim"] += yetim
+        soru["yetim_gereksinim"] += bool(yetim)
         oranlar = durum.get("oranlar") or {}
         for alan, anahtar in KAPSAM_ANAHTARLARI.items():
             kapsam[alan].ekle(oranlar.get(anahtar))
@@ -274,6 +290,12 @@ def case_kalitesi(session: Session, requirement_id: uuid.UUID | None = None) -> 
     kapsam_cikti["kapsam_yontemi"] = (
         "gereksinim_ortalamasi" if any(t.payda_yok for t in kapsam.values()) else "toplam"
     )
+    yetim_soru = {**soru, "oran": _oran(soru["yetim"], soru["toplam"])}
+    if soru["yetim"]:
+        uyarilar.append(
+            f"{soru['yetim']} açık soru hiçbir case'e ya da karara bağlı değil (yetim); PO yanıtı "
+            "case'e dönmez, hazır kapsam olduğundan iyi görünebilir."
+        )
     if n_gereksinim and not hazir_veri:
         uyarilar.append(
             "Hazır kapsam ölçülmüyor: kapsam matrisinde hazır case bilgisi (covered_by_ready) yok."
@@ -492,6 +514,7 @@ def case_kalitesi(session: Session, requirement_id: uuid.UUID | None = None) -> 
         "review": review_cikti,
         "denetim": denetim_cikti,
         "tekrar": tekrar_cikti,
+        "yetim_soru": yetim_soru,
         "readiness": readiness,
         "teknik": dict(sorted(teknik.items())),
         "icerik_kontrolu": icerik_cikti,
@@ -500,3 +523,54 @@ def case_kalitesi(session: Session, requirement_id: uuid.UUID | None = None) -> 
         "kaynaklar": dict(KAYNAKLAR),
         "uyarilar": uyarilar,
     }
+
+
+# --------------------------------------------------------------------------- önbellek (API)
+
+# Uç her oturum açmış kullanıcıya açıktır (K21) ve proje genelinde gereksinim başına birkaç sorgu
+# çalıştırır (tur 2 güvenlik #6). API yolu sonucu kısa süre önbellekte tutar: anahtar gereksinim
+# filtresi, geçerlilik = TTL + DB parmak izi (kalite tablolarının satır sayısı ve son
+# değişiklik zamanı). Parmak izi değişirse (yeni üretim, karar, review, denetim) hemen yeniden
+# hesaplanır; aynı anda gelen istekler tek hesap bekler (anahtar başına kilit).
+ONBELLEK_TTL_S: Final = 30.0
+_PARMAK_IZI_SQL: Final = text(
+    "SELECT"
+    " (SELECT count(*) FROM test_case), (SELECT max(guncelleme) FROM test_case),"
+    " (SELECT count(*) FROM case_uretim), (SELECT max(olusturma) FROM case_uretim),"
+    " (SELECT count(*) FROM case_set_review), (SELECT max(guncelleme) FROM case_set_review),"
+    " (SELECT count(*) FROM case_set_audit), (SELECT max(guncelleme) FROM case_set_audit),"
+    " (SELECT count(*) FROM requirement), (SELECT max(guncelleme) FROM requirement),"
+    " (SELECT count(*) FROM asistan_denetim)"
+)
+_onbellek: dict[uuid.UUID | None, tuple[float, tuple[Any, ...], dict[str, Any]]] = {}
+_kilitler: dict[uuid.UUID | None, threading.Lock] = defaultdict(threading.Lock)
+_kilitler_kilidi = threading.Lock()
+
+
+def _parmak_izi(session: Session) -> tuple[Any, ...]:
+    return tuple(session.execute(_PARMAK_IZI_SQL).one())
+
+
+def case_kalitesi_onbellekli(
+    session: Session, requirement_id: uuid.UUID | None = None
+) -> dict[str, Any]:
+    """`case_kalitesi` + kısa süreli önbellek (API ucu; sonuç kopyalanmaz, salt okunur)."""
+    with _kilitler_kilidi:
+        if requirement_id not in _kilitler and len(_kilitler) > 1024:
+            _kilitler.clear()
+        kilit = _kilitler[requirement_id]
+    with kilit:
+        iz = _parmak_izi(session)
+        kayit = _onbellek.get(requirement_id)
+        simdi = time.monotonic()
+        if kayit is not None and simdi - kayit[0] < ONBELLEK_TTL_S and kayit[1] == iz:
+            return kayit[2]
+        sonuc = case_kalitesi(session, requirement_id)
+        if len(_onbellek) > 256:  # gereksinim filtresi başına bir kayıt; sınırsız büyümesin
+            _onbellek.clear()
+        _onbellek[requirement_id] = (simdi, iz, sonuc)
+        return sonuc
+
+
+def onbellegi_temizle() -> None:
+    _onbellek.clear()

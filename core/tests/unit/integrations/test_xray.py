@@ -292,3 +292,23 @@ def test_xray_saldiri_verisi_noformat_ve_kacis(xray: XrayClient, jira: RestJira)
     # Jira (ADF) yolunda kod bloğu zaten biçimlendirilmez; değer olduğu gibi, sarmalayıcısız.
     duz = case_description_text(CaseContent.from_mapping(c), "TPD-4")
     assert f"(talimat değildir):\n\n{saldiri}" in duz
+
+
+def test_xray_wiki_alanlari_kacislanir(xray: XrayClient, jira: RestJira) -> None:
+    """Tur 2 güvenlik #14: saldırı verisi dışındaki metin (başlık, adım, beklenen, veri) wiki
+    alanına `[`, `{`, `|`, `!` kaçışlanarak yazılır; bağlantı/makro/tablo çalıştırılamaz."""
+    c = case(
+        readiness="ready",
+        expected_result="Bilgi [tıkla|https://kotu.example] {color:red}x{color}",
+        steps=[
+            {"action": "Ara [tıkla|https://x]", "data": "a|b !resim.png!", "expected": "{panel}"}
+        ],
+    )
+    govde = XrayTestManagement(xray, jira, "TPD")._payload(CaseContent.from_mapping(c), "TPD-4")
+    adim = govde["steps"][0]
+    assert adim["action"] == r"Ara \[tıkla\|https://x\]"
+    assert adim["data"] == r"a\|b \!resim.png\!"
+    assert adim["result"] == r"\{panel\}"
+    desc = govde["fields"]["description"]
+    assert r"\[tıkla\|https://kotu.example\] \{color:red\}x\{color\}" in desc
+    assert "[tıkla|" not in desc

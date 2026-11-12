@@ -4,7 +4,9 @@
 her case'e ayrı `review` kaydı (görülen içerik hash'iyle), durum geçişi ve denetim zinciri kaydı
 düşer; onay kuralları (hazır olma, tutarlılık, PO onayının güncelliği) tek yerde kalır.
 
-1. `bulk_approve` (`POST /cases/bulk-decision`, "Seçilenleri onayla"): kalemler gövde sırasıyla,
+1. `bulk_approve` (`POST /cases/bulk-decision`, "Seçilenleri onayla"): önce seçilen case
+   satırları `case_id` sırasıyla kilitlenir (kesişen iki toplu istek ters sırayla gelse de
+   deadlock olmaz; tekil karar da önce case'i kilitler), sonra kalemler gövde sırasıyla,
    her biri kendi SAVEPOINT'inde (`session.begin_nested()`) onaylanır. Bir kalem hata verirse
    yalnız o kalem geri alınır, diğerleri sürer; yanıt kalem kalem sonuç taşır (hepsi başarısız
    olsa bile 200). Gerekçe: her onay bağımsız bir insan kararıdır ve kendi görülen hash'ine
@@ -18,6 +20,9 @@ düşer; onay kuralları (hazır olma, tutarlılık, PO onayının güncelliği)
    `readiness=ready`. Karar `edit` olarak verilir (denetim zincirine düzeltme olarak; K20),
    `beklenen_anlam_degisti=False` ve `duzeltme_olculeri.varsayim_dogrulandi=[kimlikler]` ile.
    Başka atıf kalıyorsa ya da beklenen sonuç boşsa 422: o durumda analist 'Düzelt' kullanır.
+   Varsayım PO'ya doğrulatılmak üzere gönderildiyse (K16, `acik_soru`) PO kaydı esastır: yanıt
+   bekleniyorsa ya da PO "doğru" dışında bir yanıt verdiyse 409 (analist PO yanıtına göre
+   'Düzelt' kullanır); PO "doğru" dediyse kayıt kaynağı olarak `CAn` yazılır.
 
 Denetim kaydı notu: `audit_on_commit` kayıtları oturumda bekler ve SAVEPOINT geri alımı onları
 silmez (`audit/session.py`). Başarısız kalemin bekleyen kayıtları burada elle atılır; aksi halde
@@ -27,10 +32,13 @@ geri alınan karar zincire "verilmiş" gibi yazılırdı.
 from __future__ import annotations
 
 import copy
+import re
+import uuid
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from tp_core.audit.session import _ANAHTAR as _BEKLEYEN_DENETIM
@@ -66,6 +74,23 @@ def _kalem_savepoint(session: Session) -> Iterator[None]:
         raise
 
 
+def _kilitle(session: Session, kimlikler: Sequence[Any]) -> None:
+    """Seçilen case satırlarını tek sorguda `id` sırasıyla kilitler (tutarlı kilit sırası)."""
+    gecerli: set[uuid.UUID] = set()
+    for k in kimlikler:
+        try:
+            gecerli.add(k if isinstance(k, uuid.UUID) else uuid.UUID(str(k)))
+        except ValueError:
+            continue
+    if gecerli:
+        session.scalars(
+            select(TestCase.id)
+            .where(TestCase.id.in_(sorted(gecerli)))
+            .order_by(TestCase.id)
+            .with_for_update()
+        ).all()
+
+
 def bulk_approve(
     session: Session, user: Principal, kalemler: Sequence[tuple[Any, str]]
 ) -> dict[str, Any]:
@@ -74,6 +99,7 @@ def bulk_approve(
         raise InvalidDecision("En az bir case seçilmeli")
     if len(kalemler) > AZAMI_KALEM:
         raise InvalidDecision(f"Tek seferde en fazla {AZAMI_KALEM} case onaylanır")
+    _kilitle(session, [cid for cid, _ in kalemler])
     sonuclar: list[dict[str, Any]] = []
     onaylanan: dict[int, TestCase] = {}
     for sira, (cid, icerik_hash) in enumerate(kalemler):
@@ -184,6 +210,8 @@ def assumption_verified(
     if _beklenen_bos(tc.icerik):
         raise InvalidDecision("Beklenen sonuç boş; 'Düzelt' ile yazın")
 
+    po_kaynak = _po_dogrulamasi(session, tc, kimlikler)
+
     yeni = copy.deepcopy(dict(tc.icerik))
     yeni["assumption_refs"] = []
     yeni["readiness"] = READY
@@ -197,5 +225,55 @@ def assumption_verified(
         icerik_hash=icerik_hash,
         gerekce=metin,
         beklenen_anlam_degisti=False,
-        ek_olculer={"varsayim_dogrulandi": kimlikler},
+        ek_olculer={
+            "varsayim_dogrulandi": kimlikler,
+            **({"po_dogruladi": po_kaynak} if po_kaynak else {}),
+        },
     )
+
+
+# PO'nun "doğru" yanıtı (`CAn: doğru`, "Evet, doğru.", "doğrudur", "onaylıyorum"); olumsuzluk
+# içeren yanıt ("doğru değil", "yanlış", "hayır") sayılmaz.
+_DOGRU = re.compile(r"^\W*(?:evet\W*)?(?:doğru(?:dur)?|dogru(?:dur)?|onayl[ıi]yorum|teyit)\b", re.I)
+_OLUMSUZ = re.compile(r"\b(?:değil|degil|yanlış|yanlis|hayır|hayir)\b", re.I)
+
+
+def po_dogru_dedi(yanit: str | None) -> bool:
+    metin = " ".join(str(yanit or "").split())
+    return bool(_DOGRU.search(metin)) and not _OLUMSUZ.search(metin)
+
+
+def _po_dogrulamasi(session: Session, tc: TestCase, kimlikler: Sequence[str]) -> list[str]:
+    """Varsayımlar PO'ya gönderildiyse (K16) PO kaydına uyulur (tur 2 güvenlik #8): yanıt
+    bekleniyorsa ya da PO "doğru" dışında yanıt verdiyse 409. PO "doğru" dediyse kaynak
+    etiketlerini (`CAn`) döner; hiç gönderilmemişse boş (analistin kendi doğrulaması)."""
+    from tp_core.features.cases import acik_sorular
+
+    ozet = service.summary_for(session, tc) or {}
+    metinler = {
+        str(v.get("id")): str(v.get("statement") or "")
+        for v in ozet.get("assumptions") or []
+        if isinstance(v, Mapping)
+    }
+    req = service.get_requirement(session, tc.requirement_id)
+    satirlar = acik_sorular._rows(session, req)
+    kaynak: list[str] = []
+    for k in kimlikler:
+        metin = metinler.get(k)
+        satir = (
+            satirlar.get(("varsayim", acik_sorular.text_hash("varsayim", metin))) if metin else None
+        )
+        if satir is None or satir.durum == "bekliyor":
+            continue
+        if satir.durum == "gonderildi":
+            raise WorkflowError(
+                f"{k} varsayımı PO'ya doğrulatılmak üzere gönderildi ({satir.etiket}); PO yanıtı "
+                "bekleniyor. Yanıt gelince 'Varsayım doğrulandı' ya da 'Düzelt' kullanın"
+            )
+        if not po_dogru_dedi(satir.yanit):
+            raise WorkflowError(
+                f"PO {satir.etiket} ({k}) varsayımına 'doğru' dışında yanıt verdi; case'i PO "
+                "yanıtına göre 'Düzelt' ile güncelleyin"
+            )
+        kaynak.append(satir.etiket)
+    return kaynak

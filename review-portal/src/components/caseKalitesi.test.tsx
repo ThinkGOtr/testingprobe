@@ -53,6 +53,7 @@ describe("Case kalitesi bölümü", () => {
     expect(kpi).toHaveTextContent("%92");
     expect(within(kpi).getByTestId("hazir-kapsam")).toHaveTextContent("%67");
     expect(within(kpi).getByTestId("tekrar-orani")).toHaveTextContent("%7,9");
+    expect(within(kpi).getByTestId("yetim-soru")).toHaveTextContent("2/9");
 
     const review = within(bolum).getByRole("region", { name: /Case seti review \(P8\)/ });
     expect(within(review).getByTestId("review-ortalama")).toHaveTextContent("%79,2");

@@ -210,6 +210,17 @@ export function CaseKalitesiIcerik({ k, baslikId }: { k: Veri; baslikId: string 
           deger={<span data-testid="tekrar-orani">{k.tekrar.oran === null ? <Olculmedi /> : yuzde(k.tekrar.oran, 1)}</span>}
           alt={k.tekrar.case > 0 ? `${k.tekrar.oneri} birleştir/çıkar önerisi · ${k.tekrar.etkilenen_case}/${k.tekrar.case} case` : undefined}
         />
+        {k.yetim_soru && (
+          <Metrik
+            etiket={
+              <span className="kpi-baslik">
+                Yetim açık soru <KaynakIpucu kaynak={ky.yetim_soru} />
+              </span>
+            }
+            deger={<span data-testid="yetim-soru">{k.yetim_soru.toplam === 0 ? <Olculmedi /> : `${k.yetim_soru.yetim}/${k.yetim_soru.toplam}`}</span>}
+            alt={k.yetim_soru.yetim > 0 ? `${k.yetim_soru.yetim_gereksinim} gereksinimde; PO yanıtı case'e dönmez` : undefined}
+          />
+        )}
       </div>
 
       <div className="ck-izgara">

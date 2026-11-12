@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, text
 
 from tp_core.features.cases import acik_sorular, service
 from tp_core.features.requirements import services
@@ -205,7 +205,11 @@ def test_po_yaniti_soruya_baglanir_ve_case_duzeltilir(
         ).one()
         assert kayit.nesne == f"test_case:{engelli['id']}"
         assert kayit.ozet["kaynak"] == "PO yanıtı CQ1"
-        assert kayit.ozet["sorular"][0]["yanit"].startswith("5 hatalı denemede")
+        # Değişmez zincire metin girmez: etiket + özet (metin acik_soru satırında).
+        (bilgi,) = kayit.ozet["sorular"]
+        assert bilgi["etiket"] == "CQ1" and len(bilgi["yanit_hash"]) == 64
+        assert "yanit" not in bilgi and "soru" not in bilgi
+        assert "5 hatalı denemede" not in str(kayit.ozet)
 
 
 def test_periyodik_okuma_ve_gonderimden_onceki_yorum_sayilmaz(
@@ -268,3 +272,119 @@ def test_yanit_ayristirma() -> None:
     }
     assert acik_sorular.parse_answers("Q1: ön inceleme; XCQ1: yok") == {}
     assert acik_sorular.parse_answers("cq3: x\nCQ3: y") == {"CQ3": "x / y"}
+
+
+YETIM = "Arama sonuçları hangi sırayla listelenir?"
+
+
+@pytest.fixture
+def yetimli(
+    api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway, jira: RestJira
+) -> Iterator[uuid.UUID]:
+    """Q2 hiçbir case'te ya da kararda anılmıyor (yetim; 011 tur 2 #1)."""
+    sorular = [*OZET["open_questions"], {"id": "Q2", "question": YETIM, "owner": "PO"}]
+    fake_gateway([text_response(uretim_cikti(_cases(), **{**OZET, "open_questions": sorular}))])
+    rid = make_requirement()
+    login(api, make_user("analyst"))
+    assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
+    (is_,) = run_jobs(engine)
+    assert is_.durum == "done", is_
+    with services.override(jira=lambda: jira, po_accounts=lambda: {"po@sim.local"}):
+        yield rid
+
+
+def test_yanitlanan_yetim_soru_yeniden_uretim_onerir(
+    api: TestClient, yetimli: uuid.UUID, sim: TestClient
+) -> None:
+    assert api.post(f"/requirements/{yetimli}/open-questions/send").status_code == 200
+    _po_yorumu(sim, "CQ2: Fiyata göre artan.")
+    sorular = api.post(f"/requirements/{yetimli}/open-questions/refresh").json()["sorular"]
+    yetim = next(s for s in sorular if s["kaynak_id"] == "Q2")
+    assert yetim["durum"] == "yanitlandi" and yetim["bekleyen_caseler"] == []
+    assert yetim["oneri"]["eylem"] == "yeniden_uret" and yetim["oneri"]["case_ids"] == []
+    assert "yeniden üretin" in yetim["oneri"]["mesaj"]
+    # Bağlı soru yanıtlanmadıkça önerisi yok.
+    assert next(s for s in sorular if s["kaynak_id"] == "Q1")["oneri"] is None
+
+
+def test_jira_cagrisi_gereksinim_kilidi_altinda_yapilmaz(
+    api: TestClient, ortam: uuid.UUID, engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tur 2 güvenlik #4: yorum yazılırken gereksinim satırı başka işlemce kilitlenebilir."""
+    from tp_core.integrations import jira_notify
+
+    asil = jira_notify.post_comment
+    kilitlenebildi: list[bool] = []
+
+    def yaz(*a: Any, **kw: Any) -> Any:
+        with engine.connect() as c:
+            c.execute(
+                text("SELECT id FROM requirement WHERE id = :i FOR UPDATE NOWAIT"), {"i": ortam}
+            )
+            kilitlenebildi.append(True)
+            c.rollback()
+        return asil(*a, **kw)
+
+    monkeypatch.setattr(jira_notify, "post_comment", yaz)
+    r = api.post(f"/requirements/{ortam}/open-questions/send")
+    assert r.status_code == 200, r.text
+    assert kilitlenebildi == [True]
+    assert r.json()["sorular"][0]["durum"] == "gonderildi"
+
+
+def test_jira_hatasinda_satir_bekler_ve_ayni_etiketle_yeniden_gonderilir(
+    api: TestClient, ortam: uuid.UUID, sim: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tp_core.integrations import jira_notify
+
+    asil = jira_notify.post_comment
+
+    def bozuk(*a: Any, **kw: Any) -> Any:
+        raise RuntimeError("Jira erişilemiyor")
+
+    monkeypatch.setattr(jira_notify, "post_comment", bozuk)
+    with pytest.raises(RuntimeError):
+        api.post(f"/requirements/{ortam}/open-questions/send")
+    soru = api.get(f"/requirements/{ortam}/open-questions").json()["sorular"][0]
+    assert (soru["etiket"], soru["durum"]) == ("CQ1", "gonderilmedi")
+    monkeypatch.setattr(jira_notify, "post_comment", asil)
+    once = len(_yorumlar(sim))
+    r = api.post(f"/requirements/{ortam}/open-questions/send")
+    assert r.status_code == 200, r.text
+    assert (r.json()["sorular"][0]["etiket"], r.json()["sorular"][0]["durum"]) == (
+        "CQ1",
+        "gonderildi",
+    )
+    assert len(_yorumlar(sim)) == once + 1
+
+
+def test_yorum_boyutu_sinirli_sigmayan_soru_sonraki_gonderime_kalir(
+    api: TestClient, yetimli: uuid.UUID, sim: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tur 2 güvenlik #9: yorum boyutu sınırlı; sığmayan soru satırsız kalır, sonra gider."""
+    monkeypatch.setattr(acik_sorular, "YORUM_SINIRI", 120)
+    r = api.post(f"/requirements/{yetimli}/open-questions/send")
+    assert r.status_code == 200, r.text
+    durumlar = {s["kaynak_id"]: (s["etiket"], s["durum"]) for s in r.json()["sorular"]}
+    assert durumlar["Q1"] == ("CQ1", "gonderildi") and durumlar["Q2"] == (None, "gonderilmedi")
+    assert "+1 soru daha portalda bekliyor" in _yorumlar(sim)[-1]
+    r = api.post(f"/requirements/{yetimli}/open-questions/send")
+    assert r.status_code == 200, r.text
+    etiketler = {s["kaynak_id"]: s["etiket"] for s in r.json()["sorular"]}
+    assert (etiketler["Q1"], etiketler["Q2"]) == ("CQ1", "CQ2")
+    # Model üretimi uzun metin satırda kırpılır.
+    uzun = SimpleNamespace(etiket="CQ9", sahip="PO", tur="soru", metin="x" * 5000)
+    tc = SimpleNamespace(sira_no=1, icerik={"title": "t" * 500})
+    satir = acik_sorular._soru_satiri(uzun, [tc] * 9)  # type: ignore[arg-type]
+    assert len(satir) < 1200 and satir.endswith("+4 case")
+
+
+def test_idempotency_anahtari_soru_metnine_baglidir() -> None:
+    """Tur 2 güvenlik #5: aynı etiket farklı soru metniyle farklı anahtar (ve işaret) verir."""
+    rid = uuid.uuid4()
+    a = SimpleNamespace(etiket="CQ1", metin_hash="h1")
+    b = SimpleNamespace(etiket="CQ1", metin_hash="h2")
+    k1 = acik_sorular.idempotency_key(rid, "onay", [a])  # type: ignore[list-item]
+    k2 = acik_sorular.idempotency_key(rid, "onay", [b])  # type: ignore[list-item]
+    assert k1 != k2 and ":CQ1:" in k1
+    assert k1 == acik_sorular.idempotency_key(rid, "onay", [a])  # type: ignore[list-item]

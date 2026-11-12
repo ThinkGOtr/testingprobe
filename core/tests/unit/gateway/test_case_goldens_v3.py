@@ -23,11 +23,8 @@ import pytest
 from tests.unit.gateway import case_v3_rules as v3
 from tests.unit.gateway.demo_sources import RULES, load_golden
 from tp_core.features.cases import schema as case_schema
-from tp_core.gateway.eval_agents import (
-    PLATFORM_KATEGORISI,
-    coverage_problems,
-    generation_stats,
-)
+from tp_core.features.cases.schema import PLATFORM_KATEGORISI
+from tp_core.gateway.eval_agents import coverage_problems, generation_stats
 from tp_core.gateway.eval_set import CaseResult, check_output, uretim_dagilimi, write_report
 
 GOLDENS = ["TPD-1", "TPD-3", "TPD-4", "SERBEST", "f2-kod-hatasi/TPD-1", "platform-web/TPD-4"]
@@ -172,6 +169,25 @@ def _two_invalid_partitions(out: dict[str, Any]) -> None:
     out["cases"][2]["covers"] = ["EP-I1", "EP-I2"]
 
 
+def _orphan_question(out: dict[str, Any]) -> None:
+    # 011 K16: soru hiçbir case'te, kararda, not_covered'da ya da öğe tanımında anılmıyor.
+    out["open_questions"].append({"id": "Q2", "question": "Sıralama nasıl?", "owner": "PO"})
+
+
+def _question_dropped_from_blocked_case(out: dict[str, Any]) -> None:
+    # Yeniden istemede "atfı sil" yolu: C5 hazır yazılır, Q1 yetim kalır.
+    case = out["cases"][4]
+    case["open_question_refs"] = []
+    case["readiness"] = "ready"
+    case["expected_result"] = "Ürün listelenir"
+    for step in case["steps"]:
+        step["expected"] = step["expected"] or "Sonuç görünür"
+
+
+def _unknown_question_ref(out: dict[str, Any]) -> None:
+    out["not_covered"].append({"item": "AC1", "reason": "Soru bekliyor", "question_ref": "Q9"})
+
+
 # Taban: TPD-3 (C1–C3 ready, C4 assumption_dependent → A1, C5 blocked → Q1).
 VIOLATIONS: dict[str, Callable[[dict[str, Any]], None]] = {
     "1-tanimsiz-kapsam-ogesi": _set(["cases", 0, "covers"], ["EP-V9"]),
@@ -199,6 +215,9 @@ VIOLATIONS: dict[str, Callable[[dict[str, Any]], None]] = {
     "4-ready-acik-nokta": _ready_open_point,
     "set-out-of-scope-kapsaniyor": _out_of_scope_but_covered,
     "set-iki-gecersiz-bolum": _two_invalid_partitions,
+    "set-yetim-soru": _orphan_question,
+    "set-yetim-soru-atif-silindi": _question_dropped_from_blocked_case,
+    "set-question-ref-tanimsiz": _unknown_question_ref,
 }
 
 
@@ -328,8 +347,12 @@ def test_negative_and_uncovered_decisions_are_explicit() -> None:
             d["item"] for d in out["negative_coverage"] if d["decision"] == "out_of_scope"
         }
         # Platform ekinde atlanan kategori (`Web:Responsive`) kapsam öğesi değildir.
+        # Açık soru yüzünden kısmen kapsanmayan kabul kriteri (`AC3` + `question_ref`) de
+        # kapsam öğesi değildir.
         kapsanmayan = {
-            n["item"] for n in out["not_covered"] if not PLATFORM_KATEGORISI.fullmatch(n["item"])
+            n["item"]
+            for n in out["not_covered"]
+            if not PLATFORM_KATEGORISI.fullmatch(n["item"]) and not n["item"].startswith("AC")
         }
         assert uncovered == kapsanmayan | out_of_scope, name
     tpd4 = _golden("TPD-4")["output"]
@@ -663,3 +686,57 @@ def test_audit_set_carries_the_deterministic_floor() -> None:
     assert taban["isaretsiz-payload"] == "DÜZELTME_GEREKLİ"
     blob = json.dumps(data, ensure_ascii=False)
     assert "mehmet.kaya" not in blob and "Kaya1987" not in blob
+
+
+@pytest.mark.parametrize("impl", sorted(IMPLEMENTATIONS))
+def test_question_anchors_are_accepted_by_every_implementation(impl: str) -> None:
+    """Açık soru dört yerden biriyle anılır: case atfı, `not_covered.question_ref`, negatif kapsam
+    kararının gerekçesi ya da kapsam öğesinin tanımı (`CQ2`, `Q20` sayılmaz)."""
+    base = _golden("TPD-3")["output"]
+    soru = {"id": "Q2", "question": "Sıralama nasıl?", "owner": "PO"}
+    anchors: list[Callable[[dict[str, Any]], None]] = [
+        _append("not_covered", {"item": "AC1", "reason": "Soru bekliyor", "question_ref": "Q2"}),
+        lambda out: out["negative_coverage"][0].update(
+            rationale=out["negative_coverage"][0]["rationale"] + " (Q2)"
+        ),
+        lambda out: out["coverage_items"][0].update(
+            definition=out["coverage_items"][0]["definition"] + "; sıra Q2'de"
+        ),
+    ]
+    for anchor in anchors:
+        out = copy.deepcopy(base)
+        out["open_questions"].append(soru)
+        anchor(out)
+        assert IMPLEMENTATIONS[impl](out, _acs("TPD-3")) == [], impl
+    out = copy.deepcopy(base)
+    out["open_questions"].append(soru)
+    out["negative_coverage"][0]["rationale"] += " (CQ2, Q20)"
+    assert IMPLEMENTATIONS[impl](out, _acs("TPD-3")), impl
+
+
+def test_negative_category_code_is_valid_only_in_deepening() -> None:
+    """`not_covered.item = "N8"` (case-negative kategori kodu) yalnız derinleştirmede geçerlidir;
+    case_generation'da kapsam öğesi değildir (üretim ve değerlendirme aynı)."""
+    from tp_core.gateway.eval_agents import generation_rule_problems
+
+    out = copy.deepcopy(_golden("TPD-3")["output"])
+    out["not_covered"].append({"item": "N8", "reason": "Eşzamanlılık yok", "question_ref": None})
+    assert generation_rule_problems(out)
+    assert not [p for p in generation_rule_problems(out, ek_set=True) if "N8" in p]
+    acs = _acs("TPD-3")
+    assert any("N8" in p for p in _production_side(out, acs))
+    ozet = v3.summary_of(out)
+    assert not [
+        p
+        for p in case_schema.set_problems(out["cases"], ozet, acs, negatif_kodlari=True)
+        if "N8" in p
+    ]
+
+
+def test_generation_stats_count_orphan_questions() -> None:
+    """Eval raporunun `yetim_soru` sayısı: golden'larda 0, bağı düşen soru 1."""
+    for name in GOLDENS:
+        assert generation_stats(_golden(name)["output"])["yetim_soru"] == 0, name
+    out = copy.deepcopy(_golden("TPD-1")["output"])
+    out["not_covered"] = [n for n in out["not_covered"] if n.get("question_ref") != "Q1"]
+    assert generation_stats(out)["yetim_soru"] == 1

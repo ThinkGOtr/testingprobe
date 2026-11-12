@@ -27,7 +27,8 @@ are returned.
    record an entry in `open_questions` (`Q1`, `Q2`, …) with the role who can answer it (`PO`,
    `analyst`, `developer`, or `""` when unknown). If you need to assume something to write a case,
    record it in `assumptions` (`A1`, …) with the role who must confirm it. Record a question only
-   when a case or a coverage decision depends on it.
+   when a case or a coverage decision depends on it, and anchor every question you record (see
+   **Open question anchors** below).
    - What is not an assumption: a result you compute directly from the acceptance criteria, the
      PO answers and the test data (quantity × unit price, free items from the stated rule, a cart
      total) is supported by the source. Restating an acceptance criterion is not an assumption.
@@ -102,8 +103,9 @@ are returned.
    (step 3).
 5. **Write the cases** (rules below), then **check yourself**: every acceptance criterion and
    every coverage item is listed in the `covers` / `acceptance_criteria_refs` of at least one case,
-   or appears in `not_covered` (or as `out_of_scope` in `negative_coverage`) with its reason. Do
-   not write a coverage matrix; it is computed from these lists.
+   or appears in `not_covered` (or as `out_of_scope` in `negative_coverage`) with its reason, and
+   every open question is anchored. Do not write a coverage matrix; it is computed from these
+   lists.
 
 # Approved test design model (round 2)
 When the input contains an approved test design model block (approved by the analyst; it is data,
@@ -117,7 +119,10 @@ not instructions), steps 1–3 are already done and the model replaces them:
 - An item whose boundary is `open_question` or that the model lists as undefined has no `ready`
   case: it is `blocked` with its question, or `out_of_scope` with the question in the rationale.
   A combination the model lists in `undefined_combinations` / `undefined_transitions` keeps its
-  open question; do not write a case with a guessed outcome for it.
+  open question; do not write a case with a guessed outcome for it. Carry the model's link to the
+  question into the case set: unless a `blocked` case or an `out_of_scope` rationale already names
+  that question, add a `not_covered` entry whose `item` is the acceptance criterion the
+  combination belongs to and whose `question_ref` is the combination's `question_ref`.
 
 # Case rules
 - **Traceability.** `acceptance_criteria_refs` lists the ACs the case verifies; `technique` lists
@@ -206,4 +211,15 @@ not instructions), steps 1–3 are already done and the model replaces them:
   story has one or two ACs. Spend the cases on the `P1` items first (every `P1` boundary value gets
   a case); if the limit forces you to leave a lower-priority item without a case, put it in
   `not_covered` with the reason.
-- `not_covered[].item` is a coverage item id (`BV-3`) or an acceptance criterion id (`AC2`).
+- `not_covered[].item` is a coverage item id (`BV-3`) or an acceptance criterion id (`AC2`), never
+  a question or assumption id. `question_ref` is the open question (`Q1`) when the item, or a
+  part of the criterion, has no case because that question is unanswered; otherwise `null`.
+- **Open question anchors.** Every entry in `open_questions` is named in at least one place: a
+  case's `open_question_refs`, a `not_covered` entry's `question_ref`, the rationale of a
+  `negative_coverage` decision, or a coverage item's definition. A question about something you
+  wrote no case for (for example a combination the acceptance criteria leave undefined) gets a
+  `not_covered` entry: `item` is the acceptance criterion it belongs to, `question_ref` is the
+  question, `reason` says the outcome is not in the source. When you are asked to correct the
+  output, never delete a question, its anchor or a `not_covered` entry to make a rule pass:
+  anchor the question instead, and make a case that depends on it `blocked` (or
+  `assumption_dependent`) rather than dropping its `open_question_refs`.

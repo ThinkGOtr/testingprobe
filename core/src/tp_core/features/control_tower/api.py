@@ -23,5 +23,6 @@ def control_tower(session: DbSession, _user: CurrentUser) -> dict[str, Any]:
 def case_quality(
     session: DbSession, _user: CurrentUser, requirement_id: uuid.UUID | None = None
 ) -> dict[str, Any]:
-    """Case kalitesi: `requirement_id` verilirse yalnız o gereksinim, yoksa proje geneli."""
-    return case_kalitesi.case_kalitesi(session, requirement_id)
+    """Case kalitesi: `requirement_id` verilirse yalnız o gereksinim, yoksa proje geneli. Sonuç
+    kısa süre önbellekte tutulur (`case_kalitesi_onbellekli`: TTL + DB parmak izi)."""
+    return case_kalitesi.case_kalitesi_onbellekli(session, requirement_id)

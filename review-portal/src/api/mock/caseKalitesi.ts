@@ -6,6 +6,7 @@ const KAYNAKLAR = {
   review: "case_set_review (gereksinim başına en güncel tamamlanmış kayıt); skor 0–12, yüzde = skor/12×100",
   denetim: "case_set_audit (gereksinim başına en güncel tamamlanmış kayıt): kod = karar (deterministik sertleştirme sonrası), model = model_karari",
   tekrar: "review'ların remove_or_merge öneri sayısı / değerlendirilen case sayısı",
+  yetim_soru: "birleşik özetin açık sorularından hiçbir case atfı, not_covered.question_ref, negatif kapsam gerekçesi ya da kapsam öğesi tanımında anılmayanlar",
   readiness: "güncel case'lerin icerik.readiness alanı; eski (v2) case readiness taşımaz",
   teknik: "güncel case'lerin teknik listesi (bir case birden çok tekniğe sayılır)",
   icerik_kontrolu: "asistan_denetim kararları (gec/uyar/engelle), soru ve cevap ayrı satır; proje geneli",
@@ -51,6 +52,7 @@ export function mockCaseKalitesi(requirementId: string | null): unknown {
       ? { n: 1, kod: { KABUL: 1, DUZELTME_GEREKLI: 0, ENGELLE: 0 }, model: { KABUL: 1, DUZELTME_GEREKLI: 0, ENGELLE: 0 }, hata: 0, bekliyor: 0 }
       : { n: 6, kod: { KABUL: 3, DUZELTME_GEREKLI: 2, ENGELLE: 1 }, model: { KABUL: 4, DUZELTME_GEREKLI: 2, ENGELLE: 0 }, hata: 1, bekliyor: 1 },
     tekrar: tek ? { oneri: 0, case: 7, etkilenen_case: 0, oran: 0 } : { oneri: 3, case: 38, etkilenen_case: 5, oran: 0.0789 },
+    yetim_soru: tek ? { toplam: 1, yetim: 0, yetim_gereksinim: 0, oran: 0 } : { toplam: 9, yetim: 2, yetim_gereksinim: 1, oran: 0.2222 },
     readiness: tek ? { ready: 5, assumption_dependent: 1, blocked: 1, legacy: 0 } : { ready: 24, assumption_dependent: 6, blocked: 3, legacy: 5 },
     teknik: tek ? { BVA: 2, EP: 3, UC: 2 } : { BVA: 9, CL: 4, DT: 5, EP: 14, ST: 3, UC: 7 },
     icerik_kontrolu: { n: 40, gec: 34, uyar: 4, engelle: 2, engel_orani: 0.05, uyari_orani: 0.1, yon: { cevap: 20, soru: 20 } },

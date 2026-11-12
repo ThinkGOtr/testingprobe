@@ -63,6 +63,7 @@ from tp_core.features.cases.schema import (
     generation_output_problems,
     is_legacy,
     normalize_ozet,
+    orphan_questions,
     readiness_of,
     readiness_warnings,
     rule_reask_enabled,
@@ -1950,7 +1951,7 @@ def _coverage_state(session: Session, req: Requirement) -> dict[str, Any]:
             f"{len(tutarsiz)} case üretim özetiyle tutarsız; düzeltilmeden onaylanamaz."
         )
     if ozet_var:
-        uyarilar += set_problems(icerikler, birlesik, req.kabul_kriterleri)
+        uyarilar += set_problems(icerikler, birlesik, req.kabul_kriterleri, negatif_kodlari=True)
         uyarilar += readiness_warnings(icerikler, birlesik)
     teknikler: dict[str, int] = defaultdict(int)
     for icerik in icerikler:
@@ -1964,6 +1965,11 @@ def _coverage_state(session: Session, req: Requirement) -> dict[str, Any]:
         "oranlar": matris["oranlar"],
         "teknik_dagilimi": dict(sorted(teknikler.items())),
         "readiness_dagilimi": _readiness_dagilimi(icerikler),
+        # 011 K16: birleşik özetin açık soruları ve hiçbir yerde anılmayanlar (Kontrol Kulesi).
+        "acik_sorular": {
+            "toplam": len(birlesik.get("open_questions") or []) if ozet_var else 0,
+            "yetim": orphan_questions(icerikler, birlesik) if ozet_var else [],
+        },
         "uyarilar": uyarilar,
     }
 

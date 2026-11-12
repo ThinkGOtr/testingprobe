@@ -25,11 +25,10 @@ açıklamasıdır (engel / kontrol çalışmıyor), asistan modelinin cevabı de
 hazır değil sabit cevabı) en yakın anlamdır. Geri alma sonrası bu mesajlar engel kaydı olarak
 ayırt edilemez; denetim zinciri (`asistan.denetim`, `asistan.denetim_calismiyor`) kaydı korur.
 
-Birleştirmede zincir sahibi tarafından düzeltilir (D1 0026 kullanır); bu dalda
-`down_revision = "0025"`.
+Zincir doğrusaldır: 0025 → 0026 (D1) → 0027 (`down_revision = "0026"`).
 
 Revision ID: 0027
-Revises: 0025
+Revises: 0026
 Create Date: 2026-11-12
 """
 
