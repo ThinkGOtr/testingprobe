@@ -84,6 +84,12 @@ const durum = {
   } | null,
 };
 
+/** Sim'de tetik açık başlar ve worker taban turunu çoktan koşmuştur (tohum): yeni giriş tetiklenir. */
+function tabanTuru(): NonNullable<typeof durum.sonTur> {
+  return { zaman: T0, bulunan: 0, tetiklenen: 0, ertelenen: 0, taban: true, hata: null, sonuclar: [] };
+}
+durum.sonTur = tabanTuru();
+
 function tohumSurumleri(): SurumKaydi[] {
   return durum.katalog.map((k) => ({
     test_verisi_id: k.id,
@@ -105,7 +111,7 @@ export function otomasyonMockSifirla(): void {
   durum.ayarlar.otomatik_kod_uretimi = { acik: true, guncelleyen: null, guncelleme: null };
   durum.ayarlar.jira_tetik = { acik: true, durum: "QA To Do", aralik_s: 60, otomatik_case: true, guncelleyen: null, guncelleme: null };
   durum.sonTetiklenenler = [];
-  durum.sonTur = null;
+  durum.sonTur = tabanTuru();
 }
 
 export function otomatikKodAcik(): boolean {
@@ -238,7 +244,9 @@ export function otomasyonRotalari(
           }
         }
         if ("aciklama" in b) k.aciklama = istegeBagli(b.aciklama);
-        if ("grup" in b) k.grup = istegeBagli(b.grup);
+        // core: null "değiştirme"; boş metin grubu anahtarın ilk parçasına döndürür.
+        if (b.grup === "") k.grup = k.anahtar.split(".")[0];
+        else if ("grup" in b && b.grup !== null) k.grup = istegeBagli(b.grup) ?? k.grup;
         if ("sir_adi" in b && k.gizli) {
           const s = istegeBagli(b.sir_adi);
           if (!s) throw new ApiError(422, "Gizli kayıt için ortam sırrı adı zorunlu.");

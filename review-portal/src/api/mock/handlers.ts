@@ -129,6 +129,8 @@ export function mockSifirla(): void {
   oneriMockSifirla();
   otomasyonMockSifirla();
   goruntulemeKayitlari.clear();
+  onayVeriIzleri.clear();
+  kodIsleri.clear();
   mockOturumuAyarla(null);
   try {
     sessionStorage.removeItem(VERI_ANAHTARI);
@@ -787,6 +789,9 @@ function caseKarari(id: string, govde: unknown): TestCase {
   c.karar_veren = k.kullanici_adi;
   c.karar_zamani = simdi();
   goruntulemeleriUnut(c.id);
+  // §10 (K10): onay anındaki veri izi (mock: anahtar → katalog sürümü).
+  if (g.karar === "approve" || g.karar === "edit") onayVeriIzleri.set(c.id, veriIzi(c));
+  else onayVeriIzleri.delete(c.id);
   // core gibi: review süresi ilk görüntülemeden (POST /cases/{id}/view) karara kadar ölçülür.
   c.review_sure_ms = c.goruntulenme ? Math.max(0, Date.parse(c.karar_zamani) - Date.parse(c.goruntulenme)) : null;
   denetimEkle("case.decision", c.id, g.karar === "reject" ? `reject: ${g.ret_nedeni}` : g.karar);
@@ -800,10 +805,12 @@ function caseKarari(id: string, govde: unknown): TestCase {
  * core `POST /cases/{id}/viewed`: kullanıcının son karardan sonraki ilk görüntülemesi (idempotent).
  * Review süresi bu andan karara kadar ölçülür.
  */
-function caseGoruntulendi(id: string): { case_id: string; ilk_goruntuleme: string; yeni: boolean } {
+function caseGoruntulendi(id: string): { case_id: string; ilk_goruntuleme: string | null; yeni: boolean } {
   const k = girisGerekli();
   const c = bul(veri.caseler, id, "Case");
-  // 013 K13: kişiye bağlı görüntüleme kaydı (son karardan sonraki ilk görüntüleme).
+  // core (§10): taslak olmayan case'te kayıt açılmaz.
+  if (c.durum !== "draft") return { case_id: c.id, ilk_goruntuleme: null, yeni: false };
+  // 013 K13': kişiye bağlı görüntüleme kaydı (son karardan sonraki ilk görüntüleme; görünürlüğün başında gelir).
   const anahtar = goruntulemeAnahtari(c.id, k.kullanici_adi);
   if (!goruntulemeKayitlari.has(anahtar)) goruntulemeKayitlari.set(anahtar, Date.now());
   const yeni = !c.goruntulenme;
@@ -831,6 +838,7 @@ function caseYenidenAc(id: string, govde: unknown): TestCase {
   c.onaylanan_hash = null;
   c.goruntulenme = null;
   goruntulemeleriUnut(c.id);
+  onayVeriIzleri.delete(c.id);
   denetimEkle("case.reopen", c.id, `Taslağa alındı (önceki karar: ${onceki ?? "—"})`);
   const req = veri.gereksinimler.find((r) => r.id === c.requirement_id);
   if (req) gereksinimOlayi(req);
@@ -1719,6 +1727,22 @@ function tokenIptal(id: string): void {
 /** K13: görüntüleme ile toplu karar arasında en az bu kadar süre (core ile aynı). */
 export const GORULDU_ESIK_MS = 3000;
 export const GORULMEDI_NEDENI = "Case en az 3 saniye ekranda kalmadı";
+/** K13' (§10): görüntüleme kaydı var ama karar 3 sn penceresinin içinde geldi. */
+export const YENI_GORUNTULEME_NEDENI = "Görüntüleme yeni kaydedildi; birkaç saniye sonra yeniden deneyin";
+
+// §10 (K10): onay anındaki case veri izi (anahtar → değer; core'da tuzlu özet). Açıklama/grup değişimi sayılmaz.
+const onayVeriIzleri = new Map<string, Record<string, string | null>>();
+function veriIzi(c: TestCase): Record<string, string | null> {
+  return Object.fromEntries(Object.entries(caseVerisi(c.icerik)).map(([k, v]) => [k, v.deger]));
+}
+/** core `veri_onaydan_sonra_degisen`: her zaman dizi; yalnız approved/published'ta dolar. */
+function onaydanSonraDegisen(c: TestCase): string[] {
+  if (c.durum !== "approved" && c.durum !== "published") return [];
+  const iz = onayVeriIzleri.get(c.id);
+  if (!iz) return [];
+  const simdiki = caseVerisi(c.icerik);
+  return Object.keys(iz).filter((k) => (simdiki[k]?.deger ?? null) !== iz[k]);
+}
 
 // Kişiye bağlı görüntüleme kayıtları (core `case_goruntuleme`): case + kullanıcı → ilk görüntüleme (ms).
 // Karar ya da yeniden açma o case'in kayıtlarını siler (sunucuda eşik son karar anıdır).
@@ -1747,7 +1771,13 @@ function onayEngeli(c: TestCase): string | null {
 
 /** Case yanıtı + 013 alanları (`goruldu` istekte bulunan kullanıcıya göre; `onay_engeli`; `veri`). */
 function caseGorunumu(c: TestCase): TestCase {
-  return { ...c, goruldu: gorulduMu(c.id, oturum()?.kullanici_adi ?? null), onay_engeli: onayEngeli(c), veri: caseVerisi(c.icerik) };
+  return {
+    ...c,
+    goruldu: gorulduMu(c.id, oturum()?.kullanici_adi ?? null),
+    onay_engeli: onayEngeli(c),
+    veri: caseVerisi(c.icerik),
+    veri_onaydan_sonra_degisen: onaydanSonraDegisen(c),
+  };
 }
 
 /**
@@ -1783,7 +1813,10 @@ function topluKarar(govde: unknown) {
     gorulen.add(case_id);
     const c = veri.caseler.find((x) => x.id === case_id);
     if (!c) return { case_id, durum: "hata", neden: `Case bulunamadı: ${case_id}`, otomatik_kod: null };
-    if (c.durum === "draft" && !gorulduMu(c.id, k.kullanici_adi)) return { case_id, durum: "atlandi", neden: GORULMEDI_NEDENI, otomatik_kod: null };
+    if (c.durum === "draft" && !gorulduMu(c.id, k.kullanici_adi)) {
+      const kayitli = goruntulemeKayitlari.has(goruntulemeAnahtari(c.id, k.kullanici_adi));
+      return { case_id, durum: "atlandi", neden: kayitli ? YENI_GORUNTULEME_NEDENI : GORULMEDI_NEDENI, otomatik_kod: null };
+    }
     try {
       caseKarari(case_id, { karar: "approve", icerik_hash: o.icerik_hash });
       return { case_id, durum: "onaylandi", neden: null, otomatik_kod: null };
@@ -1794,15 +1827,41 @@ function topluKarar(govde: unknown) {
   });
   const say = (d: string) => sonuclar.filter((s) => s.durum === d).length;
   const onaylanan = sonuclar.filter((s) => s.durum === "onaylandi").map((s) => veri.caseler.find((c) => c.id === s.case_id)!);
-  const uretilecek = onaylanan.filter((c) => otomatikKod(c).durum === "kuyrukta");
-  const otomatik_kod = !otomatikKodAcik()
-    ? { durum: "kapali", job_id: null, case_sayisi: 0 }
-    : uretilecek.length
-      ? { durum: "kuyrukta", job_id: `job-otokod-${Date.now()}`, case_sayisi: uretilecek.length }
-      : { durum: "yok", job_id: null, case_sayisi: 0 };
+  // core `toplu_kuyruga_al` (§10): süren/açık PR'lı case'ler önceden süzülür, `atlanan` listesinde döner.
+  const kararlar = onaylanan.map((c) => ({ c, o: otomatikKod(c) }));
+  const uretilecek = kararlar.filter((x) => x.o.durum === "kuyrukta").map((x) => x.c);
+  const atlanan = kararlar.filter((x) => x.o.durum === "atlandi").map((x) => ({ case_id: x.c.id, neden: x.o.neden }));
+  let otomatik_kod: { durum: string; job_id: string | null; case_sayisi: number; atlanan?: typeof atlanan };
+  if (!otomatikKodAcik() || onaylanan.length === 0) {
+    otomatik_kod = { durum: otomatikKodAcik() ? "yok" : "kapali", job_id: null, case_sayisi: 0, atlanan: [] };
+  } else if (uretilecek.length) {
+    const job_id = `job-otokod-${++kodIsiSayaci}`;
+    kodIsleri.set(job_id, {
+      job_id,
+      durum: "done",
+      sonuc: {
+        case_sayisi: uretilecek.length,
+        ozet: { kuyrukta: uretilecek.length },
+        sonuclar: uretilecek.map((c) => ({ case_id: c.id, durum: "kuyrukta", neden: null, script_id: null })),
+      },
+    });
+    otomatik_kod = { durum: "kuyrukta", job_id, case_sayisi: uretilecek.length, atlanan };
+  } else {
+    otomatik_kod = { durum: "yok", job_id: null, case_sayisi: 0, atlanan };
+  }
   denetimEkle("cases.bulk_decision", "toplu", `istenen ${sonuclar.length}, onaylandı ${say("onaylandi")}, atlandı ${say("atlandi")}`);
   kaydet();
   return { sonuclar, ozet: { onaylandi: say("onaylandi"), atlandi: say("atlandi"), hata: say("hata") }, otomatik_kod };
+}
+
+// Toplu onayın kod üretimi işleri (core `job`, tür `codegen.otomatik`): mock örnek veri script üretmez.
+const kodIsleri = new Map<string, unknown>();
+let kodIsiSayaci = 0;
+function kodUretimIsi(jobId: string): unknown {
+  girisGerekli();
+  const j = kodIsleri.get(jobId);
+  if (!j) throw new ApiError(404, `Kod üretimi işi bulunamadı: ${jobId}`);
+  return j;
 }
 
 // ------------------------------------------------------------------ yönlendirme
@@ -1820,6 +1879,7 @@ const ROTALAR: Rota[] = [
     kaydet();
   }),
   ["POST", /^\/cases\/bulk-decision$/, (_m, _q, g) => topluKarar(g)],
+  ["GET", /^\/automation\/codegen-jobs\/([^/]+)$/, (m) => kodUretimIsi(decodeURIComponent(m[1]))],
   ["POST", /^\/auth\/login$/, (_m, _q, g) => login(g)],
   ["POST", /^\/auth\/logout$/, () => logout()],
   ["GET", /^\/auth\/me$/, () => girisGerekli()],

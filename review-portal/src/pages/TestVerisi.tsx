@@ -33,6 +33,8 @@ export function testVerisiAra(liste: TestVerisi[], sorgu: string): TestVerisi[] 
   );
 }
 
+export const GRUP_IPUCU = "Boş bırakılırsa grup anahtarın ilk parçası olur.";
+
 /** Grup → kayıtlar (grup adına, sonra anahtara göre sıralı). */
 export function gruplara(liste: TestVerisi[]): [string, TestVerisi[]][] {
   const m = new Map<string, TestVerisi[]>();
@@ -102,7 +104,10 @@ function KayitFormu({
     if (f.gizli && !SIR_ADI_RE.test(f.sir_adi.trim())) return setUyari("Ortam sırrı adı TP_TESTVERI_ ile başlar; büyük harf, rakam ve alt çizgi (ör. TP_TESTVERI_DEMO_PAROLA).");
     if (duzenle) {
       const once = kayittanForm(durum.kayit);
-      if ((["grup", "aciklama", "deger", "sir_adi"] as const).every((k) => f[k].trim() === once[k].trim() && (k !== "deger" || f.deger === once.deger))) {
+      // Boş grup sunucuda anahtarın ilk parçası olur: karşılaştırma o değerle yapılır.
+      const ilkParca = durum.kayit.anahtar.split(".")[0];
+      const grupDegisti = (f.grup.trim() || ilkParca) !== (once.grup.trim() || ilkParca);
+      if (!grupDegisti && (["aciklama", "deger", "sir_adi"] as const).every((k) => f[k].trim() === once[k].trim() && (k !== "deger" || f.deger === once.deger))) {
         return setUyari("Değişiklik yok.");
       }
     }
@@ -112,7 +117,8 @@ function KayitFormu({
     setCalisiyor(true);
     try {
       const ortak = {
-        grup: f.grup.trim() || null,
+        // Düzenlemede boş grup "" gider: core grubu anahtarın ilk parçasına döndürür (null "değiştirme" demektir).
+        grup: duzenle ? f.grup.trim() : f.grup.trim() || null,
         // Düzenlemede boş açıklama "" gider (null core'da "değiştirme" demektir; açıklama silinemezdi).
         aciklama: duzenle ? f.aciklama.trim() : f.aciklama.trim() || null,
         ...(f.gizli ? { sir_adi: f.sir_adi.trim() } : { deger: f.deger }),
@@ -168,7 +174,16 @@ function KayitFormu({
           </div>
           <div className="alan">
             <label htmlFor={`${id}-grup`}>Grup</label>
-            <input id={`${id}-grup`} value={f.grup} placeholder="bayi" onChange={(e) => setF({ ...f, grup: e.target.value })} />
+            <input
+              id={`${id}-grup`}
+              value={f.grup}
+              placeholder="bayi"
+              aria-describedby={`${id}-grup-ipucu`}
+              onChange={(e) => setF({ ...f, grup: e.target.value })}
+            />
+            <span id={`${id}-grup-ipucu`} className="soluk kucuk">
+              {GRUP_IPUCU}
+            </span>
           </div>
           <div className="alan testveri-form-genis">
             <label htmlFor={`${id}-aciklama`}>Açıklama</label>

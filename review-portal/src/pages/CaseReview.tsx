@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateActio
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
-import type { BazKaynagi, CaseMetrikleri, ManuelBaz, TestCase, TopluKararYaniti, TopluOtomatikKod } from "../api/types";
+import type { BazKaynagi, CaseMetrikleri, KodUretimIsi, ManuelBaz, OtomatikKodSonucu, TestCase, TopluKararYaniti, TopluOtomatikKod } from "../api/types";
 import { hataMesaji } from "../api/http";
 import { bazKaynagiUyarla, manuelBazUyarla } from "../api/uyumFaz5";
 import { useKisiAdi, useOturum } from "../auth";
@@ -173,7 +173,8 @@ function otokodBirlestir(a: TopluOtomatikKod | null, b: TopluOtomatikKod | null)
   if (!a) return b;
   if (!b) return a;
   const durum = a.durum === "kuyrukta" || b.durum === "kuyrukta" ? "kuyrukta" : a.durum === "kapali" || b.durum === "kapali" ? "kapali" : "yok";
-  return { durum, job_id: b.job_id ?? a.job_id, case_sayisi: a.case_sayisi + b.case_sayisi };
+  const atlanan = a.atlanan || b.atlanan ? [...(a.atlanan ?? []), ...(b.atlanan ?? [])] : undefined;
+  return { durum, job_id: b.job_id ?? a.job_id, case_sayisi: a.case_sayisi + b.case_sayisi, ...(atlanan ? { atlanan } : {}) };
 }
 
 /**
@@ -206,9 +207,12 @@ const OTOKOD_ETIKET = { kuyrukta: "kuyrukta", kapali: "kapalı", atlandi: "atlan
 export function topluOtokodMetni(y: TopluKararYaniti): string | null {
   const o = y.otomatik_kod;
   if (o) {
-    if (o.durum === "kuyrukta") return `Otomatik kod üretimi: ${o.case_sayisi} case için web kodu üretimi kuyruğa alındı (tek arka plan işi).`;
+    const m = o.atlanan?.length ?? 0;
+    const atlananNotu = m > 0 ? ` ${m} case kod üretimine alınmadı (aşağıda nedeni).` : "";
+    if (o.durum === "kuyrukta") return `Otomatik kod üretimi: ${o.case_sayisi} case için web kodu üretimi kuyruğa alındı (tek arka plan işi).${atlananNotu}`;
     if (o.durum === "kapali") return "Otomatik kod üretimi kapalı (Otomasyon ayarı); kodu Kod üretimi ekranından başlatın.";
-    return y.ozet.onaylandi > 0 ? "Otomatik kod üretimi başlatılmadı: üretilecek case yok (süren ya da açık PR'ı olan case'lere dokunulmaz)." : null;
+    if (m > 0) return `Otomatik kod üretimi başlatılmadı: onaylanan ${m} case'in hiçbiri kod üretimine alınmadı (aşağıda nedeni).`;
+    return y.ozet.onaylandi > 0 ? "Otomatik kod üretimi başlatılmadı: üretilecek case yok." : null;
   }
   const eski = y.sonuclar.filter((s) => s.durum === "onaylandi" && s.otomatik_kod);
   if (eski.length === 0) return null;
@@ -227,7 +231,76 @@ export interface TopluSonucDurumu {
 
 export const TOPLU_SONUC_BASLIK_ID = "toplu-onay-sonucu-baslik";
 
+/** §10 (K13'): sunucu, görüntüleme kaydından hemen sonra gelen kararı bu nedenle atlar (case görülmüş sayılır). */
+export const YENI_GORUNTULEME_NEDENI = "Görüntüleme yeni kaydedildi";
+export const yeniGoruntulemeMi = (neden: string | null) => !!neden && neden.startsWith(YENI_GORUNTULEME_NEDENI);
+
+const IS_DURUMU_ETIKETI: Record<KodUretimIsi["durum"], string> = {
+  kuyrukta: "kuyrukta (henüz başlamadı)",
+  calisiyor: "sürüyor",
+  tamam: "bitti",
+  hata: "hata verdi",
+};
+const OTOKOD_SONUC_ETIKETI: Record<OtomatikKodSonucu["durum"], { etiket: string; ton: "basari" | "uyari" | "hata" | "notr" }> = {
+  kuyrukta: { etiket: "üretim başladı", ton: "basari" },
+  atlandi: { etiket: "atlandı", ton: "uyari" },
+  reddedildi: { etiket: "başlatılamadı", ton: "hata" },
+  kapali: { etiket: "ayar kapalı", ton: "notr" },
+  hata: { etiket: "hata", ton: "hata" },
+};
+
+/** Toplu onayın kod üretimi işinin case başına sonucu (`GET /automation/codegen-jobs/{job_id}`). */
+function KodUretimIsiOzeti({ jobId, ad }: { jobId: string; ad: (id: string) => string }) {
+  const is_ = useVeri(() => api.kodUretimIsi(jobId), [jobId]);
+  const v = is_.veri;
+  return (
+    <div className="toplu-kod-isi" data-testid="kod-uretim-isi">
+      {is_.yukleniyor && !v ? (
+        <p className="soluk kucuk">Kod üretimi sonucu okunuyor…</p>
+      ) : is_.hata && !v ? (
+        <HataKutusu hata={is_.hata} kaynak={is_.hataNesnesi} yenile={() => void is_.yenile()} />
+      ) : v ? (
+        <>
+          <p className="kucuk">
+            Kod üretimi işi {IS_DURUMU_ETIKETI[v.durum]} · {v.case_sayisi} case
+            {Object.entries(v.ozet).length > 0 &&
+              ` · ${Object.entries(v.ozet)
+                .map(([d, n]) => `${n} ${OTOKOD_SONUC_ETIKETI[d as OtomatikKodSonucu["durum"]]?.etiket ?? d}`)
+                .join(" · ")}`}
+          </p>
+          {v.hata && <p className="kucuk hata-metin">{v.hata}</p>}
+          {v.sonuclar.length > 0 && (
+            <ul className="duz-liste kucuk" aria-label="Case başına kod üretimi sonucu">
+              {v.sonuclar.map((o) => {
+                const e = OTOKOD_SONUC_ETIKETI[o.durum];
+                return (
+                  <li key={o.case_id}>
+                    <Cip ton={e.ton}>{e.etiket}</Cip> {ad(o.case_id)}
+                    {o.neden && <> — {o.neden}</>}
+                    {o.script_id && (
+                      <>
+                        {" "}
+                        · <Link to={`/kod/${encodeURIComponent(o.script_id)}`}>Teste git</Link>
+                      </>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {(v.durum === "kuyrukta" || v.durum === "calisiyor") && (
+            <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => void is_.yenile()}>
+              Sonucu yenile
+            </button>
+          )}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function TopluOnaySonucu({ sonuc, kapat }: { sonuc: TopluSonucDurumu; kapat: () => void }) {
+  const [isAcik, setIsAcik] = useState(false);
   const { yanit, hata, gonderilmeyen } = sonuc.cikti;
   const ad = (id: string) => {
     const c = sonuc.caseler.find((x) => x.id === id);
@@ -239,6 +312,9 @@ function TopluOnaySonucu({ sonuc, kapat }: { sonuc: TopluSonucDurumu; kapat: () 
     ? []
     : yanit.sonuclar.filter((s) => s.durum === "onaylandi" && s.otomatik_kod && s.otomatik_kod.durum !== "kuyrukta" && s.otomatik_kod.durum !== "kapali");
   const otokod = topluOtokodMetni(yanit);
+  const otokodAtlanan = yanit.otomatik_kod?.atlanan ?? [];
+  const jobId = yanit.otomatik_kod?.durum === "kuyrukta" ? yanit.otomatik_kod.job_id : null;
+  const yeniGoruntuleme = sorunlu.filter((s) => s.durum === "atlandi" && yeniGoruntulemeMi(s.neden)).length;
   const ton = hata || yanit.ozet.hata > 0 ? "hata" : yanit.ozet.atlandi > 0 ? "uyari" : "basari";
   return (
     <div className={`kart toplu-sonuc toplu-sonuc-${ton}`} data-ton={ton} role="status" data-testid="toplu-onay-sonucu">
@@ -262,10 +338,39 @@ function TopluOnaySonucu({ sonuc, kapat }: { sonuc: TopluSonucDurumu; kapat: () 
           ))}
         </ul>
       )}
+      {yeniGoruntuleme > 0 && (
+        <p className="kucuk" data-testid="toplu-yeni-goruntuleme">
+          {yeniGoruntuleme} case az önce ekranınıza geldiği için atlandı: görüntüleme kaydı en az 3 saniyelik olmalı. Birkaç saniye sonra
+          "Tümünü onayla" ile yeniden deneyin; bu case'ler görülmüş sayılır.
+        </p>
+      )}
       {otokod && (
         <p className="kucuk" data-testid="toplu-otokod">
           {otokod}
         </p>
+      )}
+      {otokodAtlanan.length > 0 && (
+        <ul className="duz-liste kucuk" aria-label="Kod üretimine alınmayan case'ler">
+          {otokodAtlanan.map((a) => (
+            <li key={a.case_id}>
+              {ad(a.case_id)} — {a.neden ?? "Süren ya da açık PR'lı bir üretim var; yeniden üretim mühendis kararıyla."}
+            </li>
+          ))}
+        </ul>
+      )}
+      {jobId && (
+        <>
+          <button
+            type="button"
+            className="dugme dugme-hayalet dugme-kucuk"
+            aria-expanded={isAcik}
+            aria-controls="toplu-kod-isi-ayrinti"
+            onClick={() => setIsAcik((a) => !a)}
+          >
+            {isAcik ? "Kod üretimi sonucunu gizle" : "Kod üretimi sonucunu göster"}
+          </button>
+          <div id="toplu-kod-isi-ayrinti">{isAcik && <KodUretimIsiOzeti jobId={jobId} ad={ad} />}</div>
+        </>
       )}
       {otokodSorunlu.length > 0 && (
         <ul className="duz-liste kucuk" aria-label="Otomatik kod üretimi notları">
@@ -309,9 +414,9 @@ function TopluOnayCubugu({
   const [listeDegisti, setListeDegisti] = useState(false);
   const teyitRef = useRef<HTMLInputElement>(null);
   const tetikleyen = useRef<"secili" | "tumu" | null>(null);
-  // Onay sonrası otomatik kod açıksa teyit metni kod üretimini söyler (K16). Okunamazsa söylenmez.
-  const ayar = useVeri(() => api.otomasyonAyarlari().catch(() => null), []);
-  const otokodAcik = ayar.veri?.otomatik_kod_uretimi.acik === true;
+  // Onay sonrası otomatik kod ayarı teyit açılırken taze okunur (K16; başka kullanıcı değiştirmiş olabilir).
+  const [otokod, setOtokod] = useState<"okunuyor" | "acik" | "kapali" | "bilinmiyor">("okunuyor");
+  const ayarIstegi = useRef(0);
   const { uygun, gorulmeyen, engelli } = topluOnayAdaylari(caseler, gorulenler);
   const seciliUygun = uygun.filter((c) => secili.has(c.id));
   const hedef = onay === "tumu" ? uygun : seciliUygun;
@@ -330,6 +435,12 @@ function TopluOnayCubugu({
   }, [imza, onay, calisiyor]);
 
   function ac(tur: "secili" | "tumu") {
+    const no = ++ayarIstegi.current;
+    setOtokod("okunuyor");
+    api
+      .otomasyonAyarlari()
+      .then((a) => no === ayarIstegi.current && setOtokod(a.otomatik_kod_uretimi.acik ? "acik" : "kapali"))
+      .catch(() => no === ayarIstegi.current && setOtokod("bilinmiyor"));
     tetikleyen.current = tur;
     setOnay(tur);
     setAnladim(false);
@@ -414,7 +525,9 @@ function TopluOnayCubugu({
             <span>
               {n} taslak case onaylanacak ({onay === "tumu" ? `${GORULDU_KURALI}in tümü` : "seçilenler"}). Her case kendi görüntülenen
               içeriğiyle onaylanır; içeriği sonradan değişen case atlanır.
-              {otokodAcik && ` Onaylanan ${n} case için web kodu üretilecek (Otomasyon ayarı açık).`}
+              {otokod === "acik" &&
+                ` Onaylanan ${n} case için web kodu üretilecek (Otomasyon ayarı açık); açık PR'ı ya da süren üretimi olan case'lere dokunulmaz.`}
+              {otokod === "bilinmiyor" && " Otomatik kod üretimi ayarı okunamadı; açıksa onaylananların web kodu üretilir."}
             </span>
           </label>
           <div className="satir-ogeler">
@@ -643,7 +756,21 @@ export function CaseReview() {
           }}
         />
       )}
-      {karar && topluSonuc && <TopluOnaySonucu sonuc={topluSonuc} kapat={() => setTopluSonuc(null)} />}
+      {karar && topluSonuc && (
+        <TopluOnaySonucu
+          sonuc={topluSonuc}
+          kapat={() => {
+            setTopluSonuc(null);
+            // Odak body'ye düşmesin: varsa "Tümünü onayla", yoksa filtre sekmesi.
+            requestAnimationFrame(() => {
+              const hedef =
+                (document.querySelector('[data-toplu="tumu"]:not(:disabled)') as HTMLElement | null) ??
+                (document.querySelector(".sekmeler .sekme.aktif") as HTMLElement | null);
+              hedef?.focus();
+            });
+          }}
+        />
+      )}
 
       {caseler.yukleniyor && !caseler.veri ? (
         <Yukleniyor />

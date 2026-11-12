@@ -405,6 +405,7 @@ describe("Otomasyon sayfası", () => {
                 { jira_key: g.jira_key, sonuc: "akisa_alindi", neden: null },
                 { jira_key: "TPD-99", sonuc: "isaretlendi", neden: "Tetik açıldığında zaten durumdaydı" },
                 { jira_key: "TPD-98", sonuc: "durumda", neden: null },
+                { jira_key: "TPD-97", sonuc: "guncellendi", neden: "Jira'da içerik değişti" },
               ],
             },
             son_tetiklenenler: [{ jira_key: g.jira_key, zaman: "2026-11-12T10:00:00+03:00", sonuc: "akisa_alindi" }],
@@ -414,7 +415,10 @@ describe("Otomasyon sayfası", () => {
     uygulama("/otomasyon");
     const tablo = await screen.findByTestId("jira-tetik-sonuclar");
     await waitFor(() => expect(within(tablo).getByRole("link", { name: g.jira_key! })).toHaveAttribute("href", `/gereksinimler/${g.id}`));
-    expect(tablo).toHaveTextContent("Akışa alındı (PO onayı bekleniyor)");
+    // K21: etiket kısa; ayrıntı neden sütununda.
+    expect(tablo).toHaveTextContent("Akışa alındı");
+    expect(tablo).not.toHaveTextContent("PO onayı bekleniyor");
+    expect(tablo).toHaveTextContent("TPD-97Jira içeriği çekildiJira'da içerik değişti");
     expect(tablo).toHaveTextContent("TPD-99İşaretlendi (zaten durumdaydı, tetiklenmedi)Tetik açıldığında zaten durumdaydı");
     expect(within(tablo).queryByRole("link", { name: "TPD-99" })).toBeNull();
     // `durumda` satırları varsayılan gizli; istenirse gösterilir.
@@ -502,7 +506,7 @@ describe("Kod üretimi ve demo", () => {
     expect(screen.getByTestId("jira-tetik-ipucu")).toHaveTextContent("TP'de yok: tetik story'yi çeker ve ön incelemeye alır (tetiklenir).");
     await u.clear(giris);
     await u.type(giris, ileri.jira_key!);
-    expect(screen.getByTestId("jira-tetik-ipucu")).toHaveTextContent(/^TP'de: .+ Tetiklenmez: TP'de durum/);
+    expect(screen.getByTestId("jira-tetik-ipucu")).toHaveTextContent(/^TP'de: .+ (Tetiklenmez|Akışa alınır|Sunucu karar verir)/);
     if (yeniStory) {
       await u.clear(giris);
       await u.type(giris, yeniStory.jira_key!.toLowerCase());

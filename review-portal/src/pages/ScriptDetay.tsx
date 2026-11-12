@@ -12,7 +12,7 @@ import { SCRIPT_DURUMU, scriptIsareti, scriptUretiliyor } from "../lib/etiketler
 import { ENGEL_TURU, kosuKimligiMi, mergeEngelleri, mergeOnayNotu, mergeUyarilari, RET_NEDENI, YEREL_SINIF } from "../lib/kapi";
 import { saat, tarih } from "../lib/format";
 import { PlatformRozeti } from "../components/Platform";
-import { OTOMATIK_TETIK_ACIKLAMA, OTOMATIK_TETIK_ROZETI, VERI_DEGISTI_METNI } from "./Kod";
+import { OTOMATIK_TETIK_ACIKLAMA, OTOMATIK_TETIK_ROZETI, VERI_DEGISTI_METNI, veriDegistiGecerli } from "./Kod";
 import { aracEtiketi, checkEtiketi, dikeyEkranMi, uygulamaPlatformuMu, type Platform } from "../lib/platform";
 
 const ASAMA_ADI = { baseline: "Bayraksız (yeşil olmalı)", broken: "BREAK_CAMPAIGN=1 (kırmızı olmalı)", restored: "Bayrak kaldırıldı (yeşil olmalı)" } as const;
@@ -574,6 +574,10 @@ const RET_SECENEKLERI = Object.entries(RET_NEDENI) as [RetNedeni, string][];
 export function ScriptDetay() {
   const { id = "" } = useParams();
   const v = useVeri(() => api.script(id), [id]);
+  // "Test verisi değişti" uyarısı Kod listesindeki kuralla aynı (veriDegistiGecerli): daha yeni script
+  // olup olmadığı için liste yalnız uyarı adayı varsa okunur; okunamazsa yalnız durum kuralı uygulanır.
+  const veriAdayi = !!v.veri?.veri_degisti;
+  const tumScriptler = useVeri(() => (veriAdayi ? api.scriptler().catch(() => null) : Promise.resolve(null)), [id, veriAdayi]);
   const islem = useIslem();
   const bildir = useBildirim();
   const sessiz = useGeciktirilmis(() => void v.yenile(true), 300);
@@ -949,7 +953,7 @@ export function ScriptDetay() {
         // Script kaydının saklı hatası API hatası değildir: asistanın "son hata" bağlamına gitmez (§5.5).
         s.hata && <HataKutusu hata={s.hata} kayitDisi />
       )}
-      {s.veri_degisti && s.durum !== "closed" && (
+      {veriDegistiGecerli(s, tumScriptler.veri ?? [s]) && (
         <Uyari ton="uyari" baslik={VERI_DEGISTI_METNI}>
           Bu test üretildikten sonra kullandığı test verisinin değeri katalogda değişti
           {s.veri_degisen && s.veri_degisen.length > 0 && (
