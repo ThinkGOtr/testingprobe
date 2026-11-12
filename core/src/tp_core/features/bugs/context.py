@@ -316,7 +316,10 @@ def _check_row(s: Session, run: Run, test_adi: str | None) -> dict[str, Any] | N
 
 def _fill_case(s: Session, ctx: BugContext, tc: TestCase) -> None:
     ctx.test_case_id = tc.id
-    icerik = dict(tc.icerik or {})
+    # 013 §3.3: model girdisi bugünküyle aynı kalsın diye test verisi atıfları çözülür.
+    from tp_core.features.testveri.service import case_coz_gevsek
+
+    icerik = case_coz_gevsek(s, tc.icerik or {})
     ctx.case_icerik = icerik
     ctx.case_baslik = temiz(icerik.get("title"), 200)
     ctx.case_adimlar = [a for a in icerik.get("steps") or [] if isinstance(a, Mapping)]
