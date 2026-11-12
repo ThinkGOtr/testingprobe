@@ -25,8 +25,10 @@ approves; in round 2 test cases are written only from the approved model.
    (`ac_refs`), a risk and a one-sentence rationale (impact × likelihood × business
    criticality). `high`: a failure loses money, opens a security hole, loses data or breaks the
    main flow with no way around it; `medium`: important behaviour that has a workaround; `low`:
-   otherwise (the same scale as case priority P1 / P2 / P3). A `Risk notları:` line raises or
-   explains a risk; it never adds a rule.
+   otherwise (the same scale as case priority P1 / P2 / P3). `high` is not the default: its
+   rationale names the money, security, data loss or main-flow break it guards; a condition whose
+   failure is unlikely or has a workaround is `medium`. A `Risk notları:` line raises or explains
+   a risk; it never adds a rule.
 2. **Techniques.** For each condition choose the technique(s) that fit its shape and say why in
    `techniques` (one entry per condition × technique):
    - `EP` equivalence partitioning: values that fall into classes that behave the same way.
@@ -62,12 +64,15 @@ approves; in round 2 test cases are written only from the approved model.
      partition (`below` or `above`); three-value BVA adds the other neighbour. [Ekip] Use
      two-value BVA unless the input says `BVA kipi: 3-değer`. The step (precision) comes from the
      source (amounts: 0,01 TL). When the test data cannot build the exact value, the definition
-     names the nearest value it can build (`749,99 TL; kurulabilen en yakın değer 749,00 TL`) or
-     says that test data must be prepared. The nearest buildable value is computed over any mix
-     of the catalogue products (not multiples of one product) on the correct side of the
-     boundary: for 300,01 TL with hypothetical unit prices 40,00 / 12,00 / 9,00 TL it is
-     301,00 TL (7 × 40,00 + 12,00 + 9,00), not 320,00 TL. A number in parentheses in an AC (`(7 adette 1 bedava)`) defines the
-     boundary; when it contradicts another wording of the rule, record an open question.
+     names the nearest value it can build (`1.199,99 TL; kurulabilen en yakın değer 1.198,00 TL`)
+     or says that test data must be prepared. The nearest buildable value is computed over any
+     mix of the catalogue products (not multiples of one product) on the correct side of the
+     boundary: for 1.200,01 TL with hypothetical unit prices 150,00 / 40,00 / 7,00 TL it is
+     1.201,00 TL (6 × 150,00 + 7 × 40,00 + 3 × 7,00), not 1.350,00 TL.
+     When a number in parentheses in an acceptance criterion and another wording of the same rule
+     disagree (for example `(en fazla 8 kişi)` beside `8 kişiden az gruplar`),
+     do not choose one reading: write both readings into the item definition and record an open
+     question for the PO.
      `expected` is `accept` or `reject` only when the source says
      whether the limit is inclusive; `inclusive_source` names that source (`AC3`, `PO`). If the
      source does not say, do not decide it yourself: `expected: open_question`,
@@ -107,13 +112,13 @@ approves; in round 2 test cases are written only from the approved model.
 
 # Rules
 - **No invention.** Never invent a business rule, message text, response code, threshold, timing,
-  limit or state. Idempotency, rate limit, timeout, retry, lockout and similar behaviour appear in
+  limit or state. Idempotency, rate limit, timeout, retry, expiry and similar behaviour appear in
   the model only if the source states them. Hidden limits (column length, integer overflow, leap
   day, midnight) are items only when the source states them.
 - **State durations are questions.** [ISTQB] For a state model, a state's duration, timeout,
-  retry count or automatic exit (for example how long a lock lasts, whether it opens by itself)
-  that the source does not state is an open question; record it even when no transition table
-  row asks for it.
+  retry count or automatic exit (for example how long a seat reservation is held, whether a
+  paused subscription resumes by itself) that the source does not state is an open question;
+  record it even when no transition table row asks for it.
 - **Silence is a question.** When the source does not define an outcome, the item stays in the
   model with its definition saying the outcome is undefined, and an open question records it;
   you do not pick an outcome.

@@ -343,6 +343,34 @@ imzasız commit). Deploy yok.
   Bu üç amaçta `models.yaml` `params.output: prompt`: adaptör `output_config.format` göndermez, tam
   şemayı sistem mesajının (önbelleklenen) son bloğuna koyar; doğrulama ve en çok 2 yeniden isteme
   geçitte. case_review, case_audit ve assistant_guard katı yapılandırılmış çıktıda kalır.
+- **Kural yeniden isteme (`output_check`, inceleme tur 2–3):** şemaya uyan çıktının §4.2 kuralları
+  (case + set + yetim soru; tur 2'de onaylı modelden sapma; derinleştirmede mevcut set ve mevcut
+  case atıflarıyla genişletilmiş görünüm) geçitte denetlenir, ihlalde aynı döngüde (≤2) modelden
+  düzeltme istenir; kalan ihlal uyarı/onay engelidir. `TP_KURAL_YENIDEN_ISTEME` varsayılan açık
+  (`off` kapatır); canlı eval'de de açık, ham model için `eval-live --no-output-check`. İş içinde
+  geçit kalan iş süresine bakar (`gateway.is_suresi`): bir çağrıya yetmiyorsa yeniden istemez.
+- **Eval ölçümleri (`olcumler`):** case üretimi raporu ham modeli ayrı ölçer
+  (`ilk_deneme_gecis_orani`, yeniden isteme/düzelme oranları, kalan ihlal, ek maliyet/süre, kural
+  türü histogramı, `sepet_okunamadi`). `ham_gecis_alt_siniri` 0,6 case-generation setinde
+  bağlayıcıdır. İlk deneme maskesiz son çıktıyla puanlanır.
+- **Bekletme (holdout) seti (tur 3 #2):** case-generation setinin `holdout_cases` bölümü (4 story:
+  kütüphane ödünç, otopark ücreti, poliçe yenileme, kırtasiye teslimatı; kendi test verisi
+  blokları; yalnız genel kural beklentileri) aynı koşuda `alt_kume: holdout` ile koşar ve
+  bağlayıcıdır; rapor `alt_kumeler` ile ayrı gösterir. 2026-11-12 sonuçları "ayar seti"dir. Prompt
+  örnekleri kurgusaldır ve eval/holdout girdileriyle örtüşmez
+  (`tests/unit/gateway/test_prompt_eval_ortusme.py`); holdout sonucuna bakılarak prompt
+  değiştirilirse o vaka yeni alandan yeni story ile değiştirilir.
+- **Denetim girdileri:** `CaseSetAuditRequest.test_data_block` (üretime verilen test verisi,
+  güvenilmeyen blok) ve `allowed_hosts` (izinli test ortamları; `synthetic: true` parola muafiyeti
+  yalnız bunlarda) denetim akışınca doldurulur.
+- **Yetim soru ve `question_ref` (K16):** her açık soru bir case atfında, `not_covered.question_ref`'te,
+  negatif kapsam gerekçesinde ya da kapsam öğesi tanımında anılır (`schema.orphan_questions`; eval
+  aynası `kural_aynasi.yetim_sorular` ve test kopyası aynı sınır tanımını kullanır). Kapsanan AC
+  için `not_covered.question_ref` soru bağıdır: matriste `kismen_hazir`, hazır kapsam oranına
+  girmez, review girdisinde `soru bekliyor Qn`. PO yanıtı + düzeltme kaydıyla kapanan soru yetim
+  sayılmaz ("yeniden üret" önerilmez, Kontrol Kulesi `yetim_soru`'ya girmez). Farklı üretimlerde
+  metni farklı aynı `Qn` uyarı verir (kimlikle birleşme sınırı; çözüm: üretim önekli kimlik,
+  açık nokta).
 
 ## 6. Riskler ve açık noktalar
 

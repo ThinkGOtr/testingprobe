@@ -122,7 +122,7 @@ Demo story'si mutlaka `add-to-cart` ve kampanya hesabı adımlarını içerir.
 |---|---|---|
 | 1 | AI üretir, insan onaylar | Onayın doğruluk kaynağı Postgres: core-api oturumdaki kullanıcıyla `review` satırını (`kullanıcı + nesne_id + içerik_hash`) yazar, ardından Temporal **Update** gönderir; iş akışının Update doğrulayıcısı Postgres'te eşleşen satır yoksa Update'i reddeder (Docker ağı içinden sahte Update etkisizdir). DB yazma kimliği yalnızca core-api ve core-worker'da. Yayın ve PR adımları güncel hash'i onaylanan hash ile karşılaştırır (onay sonrası değişiklik → red). Temporal gRPC ve UI yalnızca host'un `127.0.0.1`'inde; portal dışında onay yolu yok |
 | 2 | CI'da AI yok | CI'da model anahtarı, MCP sunucusu ve ajan bağımlılığı yok; workflow `permissions: contents: read`; `pull_request_target` kullanılmaz |
-| 3 | Yapılandırılmış çıktı | Claude'un yerel yapılandırılmış çıktı / strict tool kullanımı; Pydantic doğrulaması; şema hatasında hata mesajıyla en fazla 2 yeniden istek |
+| 3 | Yapılandırılmış çıktı | Claude'un yerel yapılandırılmış çıktı / strict tool kullanımı; büyük şemalı amaçlarda (case üretimi, tasarım modeli, derinleştirme; `params: { output: prompt }`) şema sistem mesajında gönderilir çünkü API'nin yapılandırılmış çıktı dilbilgisi sınırını aşar, çıktı geçitte tam şemayla doğrulanır; Pydantic doğrulaması; şema hatasında hata mesajıyla en fazla 2 yeniden istek; şemaya uyan çıktının deterministik kural ihlalinde (`output_check`, `TP_KURAL_YENIDEN_ISTEME`, varsayılan açık) aynı döngüde düzeltme isteği, kalan ihlal uyarı/onay engeli (§8.8) |
 | 4 | Kütüphaneye bağlı kod | Kod modelden değil, doğrulanmış adım→page object eşlemesinden **şablonla** üretilir; ayrıca ESLint (`--no-inline-config`) ve `tsc --strict` PR'da ve CI'da zorunlu |
 | 5 | Uygulamayı gerçekten gör | Her adım Playwright MCP snapshot'ında doğrulanmadan eşleme kabul edilmez; `--caps=vision` kapalı |
 | 6 | Onarım yalnızca locator | `locators.ts` saf veri; AST koruması: anahtar kümesi ve niyet değişmez, yalnızca ilgili `testId` değeri değişir; aynı kontrol CI'da zorunlu check |
@@ -346,8 +346,19 @@ Kısa bölümler: §8.2c (üretim ve tutarlılık), §8.2d (iki tur, review, den
   alt dizgi); (7) AC atıfları gereksinimde var.
 - **Set düzeyi kurallar** (`set_problems`): her geçersiz (`valid:false`) öğenin negatif kapsam kararı
   var; `tested`/`covered_by` kararlı öğe en az bir case'in `covers`'ında; kapsanmayan öğe/AC
-  `not_covered`'da ya da `out_of_scope` kararında gerekçeli. Set ihlali 422 değil, `uyarilar` ve
-  denetim kaydıdır (IDE taslağı parça parça gelebilir).
+  `not_covered`'da ya da `out_of_scope` kararında gerekçeli; **yetim açık soru yok** (011 K16,
+  `orphan_questions`): her açık soru bir case'in `open_question_refs`'inde, bir `not_covered`
+  kaydının `question_ref`'inde, bir negatif kapsam gerekçesinde ya da kapsam öğesi tanımında anılır
+  (aksi halde PO yanıtı hiçbir case'e dönmez). `not_covered.question_ref` tanımlı bir soru olmalıdır;
+  kapsanan bir AC için yazılan bu kayıt **soru bağıdır** (bir kombinasyonun sonucu tanımsız, PO
+  yanıtını bekliyor): kapsam matrisinde satır `bekleyen_sorular`/`hazir_durumu: kismen_hazir`
+  taşır ve hazır kapsam oranlarına girmez, review girdisinde `soru bekliyor Qn` diye işaretlenir.
+  PO yanıtıyla kapanan soru (yanıtlandı + düzeltme denetim kaydı `case.po_yaniti_kaynak`;
+  `acik_sorular.closed_question_ids`) yetim sayılmaz ve satırı bekletmez; açık soru listesinde
+  `kapandi: true`, öneri yok. Farklı üretimlerde metni farklı aynı soru kimliği (`Q1`) uyarı
+  verir (`definition_conflicts`): birleşik özet kimlikle birleştiğinden yetim hesabı yanlış
+  eşleşebilir (açık soru listesi metinle eşler). Set ihlali 422 değil, `uyarilar` ve denetim
+  kaydıdır (IDE taslağı parça parça gelebilir).
 - **Uygulama:** model çıktısındaki ihlalde case yine taslak yazılır, `uyarilar`'da gösterilir ve
   **onay reddedilir**; insan düzeltmesinde ve IDE taslağında case düzeyi ihlal 422'dir.
 - **Onay kuralı (K6):** yalnız hazır (`ready`) ve tutarlı case onaylanır; `serialize_cases`
@@ -370,7 +381,11 @@ Kısa bölümler: §8.2c (üretim ve tutarlılık), §8.2d (iki tur, review, den
 - **Denetim kapısı (F5, K2–K3):** `case-audit` v1 (Opus) Agent Probe portu arkasında; karar
   `KABUL`/`DUZELTME_GEREKLI`/`ENGELLE` setin güncel `set_hash`'ine bağlanır (`case_set_audit`).
   `set_hash` = güncel v3 case'lerin içerik hash'lerinin sıralı birleşiminin hash'i; set değişince
-  önceki karar geçersizdir. `TP_DENETIM_KAPISI=off` kapıyı kapatır.
+  önceki karar geçersizdir. `TP_DENETIM_KAPISI=off` kapıyı kapatır. Denetim girdisi
+  (`ports.CaseSetAuditRequest`) üretime verilen test verisi bloğunu (`test_data_block`;
+  güvenilmeyen blok — kullanıcı, bayi adı, fiyat, UI etiketi kaynağı, böylece denetçi bu değerleri
+  uydurma saymaz) ve izinli test ortamlarını (`allowed_hosts`; `synthetic: true` parola yalnız bu
+  ortamlarda muaf) taşır.
 - **Platform ve derinleştirme (F4, K5, K7):** platform ekleri (Web, Mobil, Desktop, API, Data)
   üretim girdisine eklenir, seçim `requirement.uretim_secenekleri`'nde saklanır; "Negatif genişlet"
   / "Teknik derinleştir" mevcut sete ek taslak üretir (mevcut kimliklerle çakışmayan öğe numaraları).
@@ -507,6 +522,10 @@ filename="<anahtar>.feature"`, `X-TP-Case-Sayisi` / `X-TP-Senaryo-Sayisi` / `X-T
 - **Görev başına model (sabit kimlik konfigürasyonda):** case üretimi ve doğrulama ajanı → Claude Sonnet sınıfı; triage ve özetleme → Claude Haiku sınıfı; **portal asistanı (`assistant`) → Haiku sınıfı, otomatik ("Emin değil") veya istek üzerine ("Daha ayrıntılı incele") `assistant_deep` → Sonnet sınıfı** (§8.13); `temperature` sabit (0–0,2).
 - **Asistan kipi pipeline'dan bağımsız:** `TP_ASISTAN_MODEL_MODE=live|off` (varsayılan `off`); asistan geçidi `build_gateway(mode_override="live", replay_fallback=False, budget=AsistanBudget)` ile kurulur, `record` kipine girmez, golden kullanmaz. `run_agent`'ın yeni parametreleri (`tool_channel`, `caller_user_id`, `ek`, `masking_session`, `bitis`, `should_stop`, `toparlama`) varsayılanda eski davranışı korur.
 - **Hata politikası:** 429/529/5xx → üstel geri çekilme, ≤3; şema hatası → hata metniyle ≤2 yeniden istek. Aktivite yeniden denemesi `ai_call.id` ile idempotent (aynı çağrı iki kez faturalanmaz).
+- **Şema sistem mesajında (`params: { output: prompt }`):** `case_generation`, `design_model`, `case_deepening` şemaları Anthropic'in yapılandırılmış çıktı dilbilgisi sınırını aşar ("compiled grammar is too large"). Bu amaçlarda adaptör şemayı `output_config.format` yerine sistem mesajının önbelleklenen son bloğunda gönderir; çıktı geçitte tam şemayla doğrulanır, uymazsa yeniden istenir.
+- **Kural yeniden isteme (`call(output_check=…)`):** şemaya uyan çıktının deterministik kural denetimi (011 §4.2: case tutarlılığı, AC kapsamı, yetim açık soru, tur 2'de onaylı modelden sapma). İhlal varsa model aynı yeniden isteme döngüsünde (≤2) yönlendirilir; ara deneme satırı `hata="kural: …"` taşır, kural hataları `ek.kural_hatalari`'ndadır; sonraki denemeler bozulursa en az ihlalli çıktı döner (`ek.secilen_deneme`). Döngü bitince yalnız kural ihlali kalırsa çıktı uyarıyla döner (hata değil). Anahtar `TP_KURAL_YENIDEN_ISTEME` (varsayılan açık, `off` kapatır); canlı değerlendirmede de açıktır, ham model için `eval-live --no-output-check`.
+- **İş süresi bağlamı (`gateway.is_suresi`):** iş kuyruğu işleyiciyi `is_suresi(zaman_asimi_s)` içinde koşar; geçit yeniden istemeden önce kalan süreye bakar ve bir çağrının en kötü süresine (timeout × (1 + zaman aşımı yeniden denemesi) + pay) yetmiyorsa yeniden istemez, eldeki çıktıyı uyarıyla döndürür (iş zaman aşımına düşüp worker'ı çıkartmaz). İş dışında (eval, betik) süre tanımsızdır.
+- **Değerlendirme ölçümleri (`olcumler`):** case üretimi canlı raporu geçit+model sonucunun yanında ham modeli ölçer: `ilk_deneme_gecis_orani` (bağlayıcı `ham_gecis_alt_siniri`, case-generation'da 0,6), kural/şema yeniden isteme oranı, `duzelme_orani`, `kalan_kural_ihlali`, ek maliyet/süre, kural türü histogramı, `sepet_okunamadi` (uydurma sayılmaz) ve alt küme başına ölçüm. Setin bekletme (holdout) alt kümesi prompt ayarında kullanılmamış, örtüşmeyen alanlardan story'lerdir ve bağlayıcıdır (`rules/README.md` "Bekletme").
 - **Sürüm (bundle):** `bundle_hash` = kurallar + şema + few-shot örnekleri + model kimliği + parametrelerin birleşik hash'i.
 - **Maliyet tavanı:** iş akışı başına 2 USD, günlük 30 USD; aşılırsa duraklat ve insana sor.
 - **Replay:** anahtar `purpose + jira_key + case_sıra_no + input_hash + bundle_hash` (rastgele UUID içermez; `input_hash` zaman damgası ve snapshot ref'leri normalize edilmiş girdiden). Kod üretimi için dosya düzeyinde "golden" test dosyası ve doğrulama kaydı. Iskalama sessiz geçmez: portalda **REPLAY-MISS** gösterilir ve adlandırılmış golden kayda düşülür. Kayıtta `live`/`replay`/`replay_miss`.

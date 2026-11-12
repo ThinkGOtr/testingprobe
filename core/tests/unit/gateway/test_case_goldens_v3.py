@@ -740,3 +740,39 @@ def test_generation_stats_count_orphan_questions() -> None:
     out = copy.deepcopy(_golden("TPD-1")["output"])
     out["not_covered"] = [n for n in out["not_covered"] if n.get("question_ref") != "Q1"]
     assert generation_stats(out)["yetim_soru"] == 1
+
+
+def _yetimler(impl: str, out: dict[str, Any], kapanan: tuple[str, ...] = ()) -> list[str]:
+    from tp_core.features.cases import kural_aynasi
+
+    if impl == "test":
+        hatalar = v3.question_problems(out["cases"], v3.summary_of(out), kapanan)
+        return [h.split()[1] for h in hatalar if "yetim" in h]
+    if impl == "eval":
+        return kural_aynasi.yetim_sorular(out, kapanan=kapanan)
+    return case_schema.orphan_questions(out["cases"], v3.summary_of(out), kapanan=kapanan)
+
+
+@pytest.mark.parametrize("impl", sorted(IMPLEMENTATIONS))
+def test_question_closed_by_po_answer_is_not_orphan(impl: str) -> None:
+    """Tur 3 inceleme #1: PO yanıtıyla kapanan (yanıtlandı + düzeltme kaydı) soru, atfı
+    kaldırılsa da yetim değildir; kapanmayan soru yine yetimdir (üç uygulama aynı)."""
+    out = copy.deepcopy(_golden("TPD-3")["output"])
+    _question_dropped_from_blocked_case(out)
+    assert _yetimler(impl, out) == ["Q1"]
+    assert _yetimler(impl, out, ("Q1",)) == []
+    _orphan_question(out)
+    assert _yetimler(impl, out, ("Q1",)) == ["Q2"]
+
+
+@pytest.mark.parametrize("metin", ["Q1 sorusu", "(Q1)", "ÇQ1 ve", "Q1² bekliyor", "CQ1", "Q10"])
+def test_question_mention_boundary_is_the_same_everywhere(metin: str) -> None:
+    """Tur 3 inceleme #9: serbest metin sınırı tek tanımdan (`schema.soru_aniliyor`); ayna ve
+    test kopyası Unicode sınır durumlarında (`ÇQ1`, `Q1²`) da aynı sonucu verir."""
+    out = copy.deepcopy(_golden("TPD-3")["output"])
+    _question_dropped_from_blocked_case(out)
+    out["coverage_items"][0]["definition"] = metin
+    beklenen = [] if case_schema.soru_aniliyor(metin, "Q1") else ["Q1"]
+    assert {impl: _yetimler(impl, out) for impl in IMPLEMENTATIONS} == dict.fromkeys(
+        IMPLEMENTATIONS, beklenen
+    )

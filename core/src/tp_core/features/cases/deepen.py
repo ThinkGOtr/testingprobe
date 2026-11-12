@@ -376,7 +376,9 @@ def _reddet(rid: uuid.UUID, eylem: str, veri: Mapping[str, Any], neden: str) -> 
     raise PermanentJobError(neden)
 
 
-def _kural_denetimi(birlesik: Mapping[str, Any] | None = None) -> Any:
+def _kural_denetimi(
+    birlesik: Mapping[str, Any] | None = None, mevcut: Sequence[Mapping[str, Any]] = ()
+) -> Any:
     """Derinleştirme çıktısının deterministik kuralları (§4.2, ek set: AC kapsamı tek başına
     aranmaz; negatif kategori kodu `N8` geçerli); ihlalde geçit modelden düzeltme ister.
     Değerlendirme denetleyicisiyle aynı kural (`kural_aynasi.generation_rule_problems`, çapraz
@@ -385,7 +387,10 @@ def _kural_denetimi(birlesik: Mapping[str, Any] | None = None) -> Any:
     Derinleştirme case'i mevcut setin Q/A/kapsam öğelerine atıf yapabilir (011 F4): yalnız
     çıktıya bakan denetim bunları "tanımsız" sayıp modeli mevcut öğeyi yeniden tanımlamaya
     iterdi. `birlesik` verilirse ihlal, mevcut birleşik özetle birlikte de sürüyorsa sayılır
-    (çıktı içi yinelenen kimlik her zaman)."""
+    (çıktı içi yinelenen kimlik her zaman). `mevcut`: setin güncel case içerikleri; genişletilmiş
+    görünüme yeni case'lerle birlikte girer (tur 3 #8): derinleştirme mevcut bir soruyu yeniden
+    listelerse ona mevcut case'lerin atfı görülür, soru yetim sayılıp gereksiz yeniden
+    istenmez."""
     from tp_core.features.cases.kural_aynasi import generation_rule_problems
 
     def check(o: Any) -> list[str]:
@@ -394,7 +399,11 @@ def _kural_denetimi(birlesik: Mapping[str, Any] | None = None) -> Any:
         ham = generation_rule_problems(o, ek_set=True)
         if not birlesik or not ham:
             return ham
-        genis = {**o, **overlay(birlesik, normalize_ozet(o))}
+        genis = {
+            **o,
+            **overlay(birlesik, normalize_ozet(o)),
+            "cases": [*(o.get("cases") or []), *mevcut],
+        }
         surenler = set(generation_rule_problems(genis, ek_set=True))
         return [p for p in ham if p in surenler or p.startswith("yinelenen")]
 
@@ -427,6 +436,7 @@ def run_deepening(
         if set_fingerprint(guncel) != iz:
             _reddet(rid, "cases.deepen_dropped", kayit, SET_DEGISTI)
         birlesik = merged_summary(s, req, guncel)
+        mevcut = [dict(tc.icerik) for tc in guncel]
         secenekler = secenek_modulu.kayitli(req.uretim_secenekleri) or {}
         messages = deepening_messages(
             req,
@@ -453,7 +463,7 @@ def run_deepening(
             workflow_id=wf_id,
             call_id=deterministic_call_id(ctx.job_id, PURPOSE),
             ek={"derinlestirme": {"tur": tur, "teknik": teknik, "uretim_no": uretim_no}},
-            output_check=_kural_denetimi(birlesik) if rule_reask_enabled() else None,
+            output_check=_kural_denetimi(birlesik, mevcut) if rule_reask_enabled() else None,
         )
     except ReplayNotFound as exc:
         neden = (

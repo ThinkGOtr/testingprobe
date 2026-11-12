@@ -229,3 +229,35 @@ def test_derinlestirme_kural_ihlalinde_yeniden_ister(
     assert len(provider.requests) == 3
     assert "Q9" in provider.requests[2].messages[-1]["content"]
     assert is_.deger["tutarsiz"] == {}
+
+
+def test_derinlestirme_mevcut_case_atfini_gorur() -> None:
+    """Tur 3 inceleme #8: derinleştirme mevcut bir soruyu (Q1) yeniden listeler ama yeni case'ler
+    ona atıf yapmaz; Q1'e mevcut case atıf yapıyorsa soru yetim değildir, yeniden istenmez."""
+    from tp_core.features.cases.deepen import _kural_denetimi
+
+    soru = [{"id": "Q1", "question": "Kaç denemede kilitlenir?", "owner": "PO"}]
+    mevcut = case_icerik(
+        title="Kilitli hesap",
+        readiness="blocked",
+        open_question_refs=["Q1"],
+        expected_result="",
+    )
+    birlesik = uretim_cikti([mevcut], open_questions=soru)
+    birlesik.pop("cases")
+    yeni = json.loads(
+        json.dumps(
+            uretim_cikti(
+                [case_icerik(title="Ana akış — oturum süresi", covers=["UC-MF"])],
+                open_questions=soru,
+                coverage_items=[],
+            )
+        )
+    )
+
+    def yetim(sorunlar: list[str]) -> list[str]:
+        return [p for p in sorunlar if "Q1" in p and "yetim" in p]
+
+    assert yetim(_kural_denetimi()(yeni))  # yalnız çıktıya bakan denetim: yetim
+    assert yetim(_kural_denetimi(birlesik)(yeni))  # birleşik özet atfı taşımaz
+    assert yetim(_kural_denetimi(birlesik, [mevcut])(yeni)) == []

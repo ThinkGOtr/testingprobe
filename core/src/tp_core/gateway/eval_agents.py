@@ -684,12 +684,23 @@ _URUN_SATIRI = re.compile(
     r"^\s*[-•*]?\s*([A-Z]{1,5}-\d{1,5})\b[^\n]*?(\d{1,3}(?:\.\d{3})*,\d{2})\s?TL\s*\.?\s*$",
     re.MULTILINE,
 )
-# Case sepeti: ürün kodundan sonra (ad araya girebilir) "× n" ya da "adet n" / "n adet":
-# "P-001 × 6", "P-001 "Portakal Gazozu 1L" × 6", "P-004 x 25", "P-001 …, 25,00 TL, adet 6".
+_KOD = r"[A-Z]{1,5}-\d{1,5}"
+# Ürün satırındaki ad (tırnak içi): "- P-001 · "Portakal Gazozu 1L" · 25,00 TL" → ad ↔ kod.
+_URUN_ADI = re.compile(
+    r"^\s*[-•*]?\s*(" + _KOD + r')\b[^\n"“]*["“]([^"”\n]{2,80})["”]', re.MULTILINE
+)
+# Case sepeti (011 test mimarı 3. tur #3): ürün kodundan sonra (ad araya girebilir; başka bir
+# ürün kodu araya giremez) "× n" ya da "adet n" / "n adet": "P-001 × 6", "P-001 "Portakal
+# Gazozu 1L" × 6", "P-004 x 25", "P-001 …, 25,00 TL, adet 6".
 _SEPET_SATIRI = re.compile(
-    r"\b([A-Z]{1,5}-\d{1,5})\b[^×*\n;]{0,40}?(?:(?:×|\*|\s[xX])\s*(\d{1,4})\b|"
+    r"\b(" + _KOD + r")\b(?:(?!" + _KOD + r")[^×*\n;]){0,40}?(?:(?:×|\*|\s[xX])\s*(\d{1,4})\b|"
     r"\badet\w*\s*:?\s*(\d{1,4})\b|(?<![\d.,])(\d{1,4})\s*adet\b)"
 )
+# Ters yazım: adet önce, ürün kodu sonra ("6 × P-001", "6 adet P-001", "6x P-001").
+_SEPET_SATIRI_TERS = re.compile(
+    r"(?<![\d.,])(\d{1,4})\s*(?:×|\*|[xX](?=\s|[A-Z])|adet\b)\s*(" + _KOD + r")\b"
+)
+_TUTAR_TL = r"(?<![\d.,])(\d{1,3}(?:\.\d{3})*,\d{2})\s?TL"
 # Limit / minimum / eşik bağlamı: tutar bu sözcüğe doğrudan bağlıysa ("kredi limiti 600,00 TL",
 # "minimum sipariş tutarı: 750,00 TL", "limiti 600,00 TL'yi aşan") kaynakla BİREBİR eşleşmeli;
 # sepetle kurulabilir olması yetmez (uydurma limit). Ekisiz tutarın ardından fark sözcüğü
@@ -701,6 +712,62 @@ _ESIK_BAGLAMI = re.compile(
     r"(?!\s*(?:aş|fazla|eksik|üst|üzer|alt|yukarı|aşağı|geç|daha))",
     re.IGNORECASE,
 )
+# Ters sıra (3. tur #4c): tutar önce, eşik adı sonra, sıfat bağıyla ("300,00 TL olan kredi
+# limiti", "300,00 TL'lik limit", "750,00 TL değerindeki minimum sipariş tutarı"). Araya
+# yalnız eşiği niteleyen bir sözcük girebilir (kredi, sipariş, bayi…); eşik adı yalın ya da
+# iyelik halinde olmalı ve ardından etken karşılaştırma gelmemeli: "toplam 525,00 TL olan
+# sipariş limiti aşar" / "150,00 TL olan sepet minimum sipariş tutarının altında" sepet
+# tutarıdır, eşik değil; edilgen "300,00 TL olan kredi limiti aşılmaz" eşiktir.
+_ESIK_BAGLAMI_TERS = re.compile(
+    _TUTAR_TL + r"(?:['’](?:lik|lık|luk|lük)\s+|\s+(?:olan|olarak\s+(?:belirlenen|tanımlı)|"
+    r"değerinde(?:ki)?)\s+)(?:(?:kredi|sipariş|bayi|harcama|ödeme)\s+)?"
+    r"(?:limit(?:i|li)?|minimum(?:\s+sipariş)?(?:\s+tutar[ıi]?)?|eşi(?:k|ği)|tavan[ıi]?|"
+    r"(?:alt|üst)\s+sınır[ıi]?)"
+    r"(?!\w|\s+(?:tutar|sipariş)|"
+    r"\s*(?:aş(?!ıl)|geç(?!il)|fazla|eksik|üst|üzer|alt|yukarı|aşağı|daha))",
+    re.IGNORECASE,
+)
+# Hazırlıkta kabul edilen tutar (3. tur #4b): yalnız sentetik ürün / fiyat kalıbı — "fiyatı
+# 749,99 TL olan … ürün", "749,99 TL fiyatlı", "749,99 TL'lik sentetik ürün", "sentetik ürün
+# (749,99 TL …)", "P-901 · "Deneme" · 749,99 TL". "sepet toplamı 1.234,56 TL" kabul edilmez
+# (hazırlıktaki sepet `case_sepeti_ayrintili` ile yeniden hesaplanır).
+_HAZIRLIK_FIYATI = re.compile(
+    r"fiyat\w*\s*(?::|=|olarak|olan)?\s*"
+    + _TUTAR_TL
+    + r"|"
+    + _TUTAR_TL
+    + r"['’]?(?:lik|lık)?\s+(?:birim\s+)?fiyat\w*|"
+    + _TUTAR_TL
+    + r"['’](?:lik|lık)\s+(?:[\w-]+\s+){0,2}ürün|"
+    r"ürün\w*\s*\(\s*" + _TUTAR_TL + r"|"
+    r"\b" + _KOD + r"\b\s*[·:,\-–]\s*(?:[\"“][^\"”\n]{1,80}[\"”]\s*[·:,\-–]\s*)?" + _TUTAR_TL,
+    re.IGNORECASE,
+)
+# Hazırlıktaki sentetik kodlu ürünün birim fiyatı ("P-901 · "Deneme" · 749,99 TL", "P-901
+# (fiyatı 749,99 TL)"): case'in sepeti bu ürünü de okuyabilsin.
+_HAZIRLIK_URUNU = re.compile(
+    r"\b(" + _KOD + r")\b\s*(?:[·:,\-–(]\s*(?:[\"“][^\"”\n]{1,80}[\"”]\s*[·:,\-–]\s*)?|"
+    r"[^;\n×*]{0,30}?fiyat\w*\s*(?::|=|olarak|olan)?\s*)" + _TUTAR_TL,
+    re.IGNORECASE,
+)
+# Sepetin alt toplamı (gerçek toplam ya da satır tutarı değilse) yalnız sepet/toplam bağlamında
+# kabul edilir (3. tur #4d): "indirim 25,00 TL, toplam 150,00 TL" geçerli; "kalan bakiye
+# 100,00 TL" sepette karşılığı olmayan bir kavramdır.
+_SEPET_BAGLAMI = re.compile(
+    r"toplam|tutar|indirim|bedava|ödenecek|ödenen|ödeme|fiyat|bedel|sepet|satır|net\b|brüt|"
+    r"düş|hesap|sipariş|ürün|kampanya",
+    re.IGNORECASE,
+)
+_YABANCI_BAGLAM = re.compile(
+    r"bakiye|kalan|iade|puan|bonus|komisyon|kargo|vergi|kdv|borç|alacak|kredi|limit|"
+    r"harcanabilir|kullanılabilir",
+    re.IGNORECASE,
+)
+# Case'te tutar var ama sepeti okunamıyor: uydurma DEĞİL, ayrı kategori (3. tur #3). Mesaj
+# "kaynakta olmayan"/"uydurma" içermez; eval raporunun `uydurma` listesine girmez, koşunun
+# hatalarında bu önekle ayrı görünür (`sepet_okunamadi_sayisi`).
+SEPET_OKUNAMADI = "sepet okunamadı"
+HAZIRLIK_ONEKI = "test verisi hazırlığı"
 
 
 def _kurus(tutar: str) -> int:
@@ -730,6 +797,17 @@ def birim_fiyatlar(kaynak: str) -> dict[str, int]:
     for blok in bloklar:
         for kod, fiyat in _URUN_SATIRI.findall(blok):
             out.setdefault(kod, _kurus(fiyat))
+    return out
+
+
+def urun_adlari(kaynak: str) -> dict[str, str]:
+    """Test verisi bloğundaki ürün adları (küçük harf, boşluk sadeleştirilmiş ad → kod): kodsuz
+    yazılmış sepet satırı ("Portakal Gazozu 1L × 6") bu eşlemeyle okunur (3. tur #3)."""
+    bloklar = _TEST_VERISI_BLOGU.findall(kaynak) or [kaynak]
+    out: dict[str, str] = {}
+    for blok in bloklar:
+        for kod, ad in _URUN_ADI.findall(blok):
+            out.setdefault(_kucuk(_bosluk(ad)), kod)
     return out
 
 
@@ -791,39 +869,177 @@ def en_yakin_kurulabilir(
     return v if v >= 0 else None
 
 
-def case_sepeti(case: Mapping[str, Any], fiyatlar: Mapping[str, int]) -> list[tuple[int, int]]:
-    """Case'in sepeti: test verisi değerleri ve adım verilerindeki `P-xxx × n` satırları, birim
-    fiyatı kaynakta bilinen ürünlerle (`(fiyat, adet)`). Sepet metni KAYNAK sayılmaz; yalnız
-    ürün ve adet okunur, tutar birim fiyatlardan yeniden hesaplanır."""
-    parcalar = [str(v.get("value") or "") for v in _kayitlar(case.get("test_data"))]
-    parcalar += [str(a.get("data") or "") for a in _kayitlar(case.get("steps"))]
+@dataclass(frozen=True)
+class CaseSepeti:
+    """Case'in yeniden hesaplanan sepeti (3. tur #3, #4d).
+
+    - `satirlar`: `(birim fiyat, adet)`; her ürünün adedi okunan yorumların en büyüğü (alt toplam
+      kümesi için en geniş sepet);
+    - `toplamlar`: "gerçek" tutarlar — her okuma yorumunun (test verisi, adımlar, hazırlık,
+      adımlar + hazırlık) sepet toplamı ve ürün satırı toplamı; bağlamdan bağımsız kabul edilir;
+    - `eksik_fiyatlar`: case'in test verisi / adım / hazırlık metninin andığı ama adedi
+      okunamayan bilinen ürünlerin birim fiyatları; boş değilse sepet okunamadı (`okunamadi`)."""
+
+    satirlar: tuple[tuple[int, int], ...] = ()
+    toplamlar: frozenset[int] = frozenset()
+    eksik_fiyatlar: tuple[int, ...] = ()
+
+    @property
+    def okunamadi(self) -> bool:
+        return bool(self.eksik_fiyatlar)
+
+    def eksikle_kurulabilir(self, kurus: int) -> bool:
+        """`kurus`, okunan sepetin bir alt toplamı + adedi okunamayan ürünlerin herhangi bir
+        katı mı (okunamayan sepetle açıklanabilen tutar: uydurma değil, "sepet okunamadı")."""
+        if not self.eksik_fiyatlar or kurus > MAX_KAT * max(self.eksik_fiyatlar) + sum(
+            f * n for f, n in self.satirlar
+        ):
+            return False
+        maske = (1 << (kurus + 1)) - 1
+        erisim = 1
+        for fiyat, adet in self.satirlar:
+            for _ in range(max(0, adet)):
+                erisim |= (erisim << fiyat) & maske
+        for a in sorted({f for f in self.eksik_fiyatlar if 0 < f <= kurus}):
+            adim = a
+            while adim <= kurus:
+                erisim |= (erisim << adim) & maske
+                adim <<= 1
+        return bool((erisim >> kurus) & 1)
+
+
+def _adlari_koda_cevir(metin: str, adlar: Mapping[str, str]) -> str:
+    """Metindeki ürün adlarını (tırnaklı ya da tırnaksız; büyük/küçük harf duyarsız) koduyla
+    değiştirir; adın önünde aynı kod varsa ("P-001 "Portakal Gazozu 1L"") tek kod kalır."""
+    for ad, kod in sorted(adlar.items(), key=lambda x: -len(x[0])):
+        desen = (
+            r"(?:\b"
+            + re.escape(kod)
+            + r"\b\s*[·:,(\-–]?\s*)?[\"“«']?"
+            + r"\s+".join(re.escape(p) for p in ad.split())
+            + r"[\"”»']?"
+        )
+        metin = re.sub(desen, kod, metin, flags=re.IGNORECASE)
+    return metin
+
+
+def _sepet_oku(metin: str) -> tuple[dict[str, int], set[str]]:
+    """Metindeki sepet satırları (ürün kodu → toplam adet; aynı ürün birden çok kez eklenirse
+    adetler TOPLANIR) ve anılan bütün ürün kodları. Önce ters yazım ("6 × P-001") okunur ve
+    metinden çıkarılır, sonra düz yazım ("P-001 × 6")."""
     adetler: dict[str, int] = {}
-    for kod, *adet in _SEPET_SATIRI.findall("\n".join(parcalar)):
-        n = next((int(a) for a in adet if a), 0)
-        if kod in fiyatlar:
-            adetler[kod] = max(adetler.get(kod, 0), n)
-    return [(fiyatlar[k], n) for k, n in sorted(adetler.items())]
+    for m in _SEPET_SATIRI_TERS.finditer(metin):
+        adetler[m.group(2)] = adetler.get(m.group(2), 0) + int(m.group(1))
+    kalan = _SEPET_SATIRI_TERS.sub(" ; ", metin)
+    for kod, *adet in _SEPET_SATIRI.findall(kalan):
+        adetler[kod] = adetler.get(kod, 0) + next((int(a) for a in adet if a), 0)
+    return adetler, set(re.findall(r"\b(" + _KOD + r")\b", metin))
+
+
+def _hazirlik_fiyatlari(metin: str) -> set[int]:
+    """Hazırlık metnindeki sentetik ürün fiyatları (`_HAZIRLIK_FIYATI`; 3. tur #4b)."""
+    return {
+        k
+        for m in _HAZIRLIK_FIYATI.finditer(metin)
+        if (k := _kurus(next(g for g in m.groups() if g)))
+    }
+
+
+def _hazirlik_metni(case: Mapping[str, Any]) -> str:
+    return "\n".join(
+        str(p)
+        for p in _liste(case.get("preconditions"))
+        if _kucuk(str(p)).startswith(HAZIRLIK_ONEKI)
+    )
+
+
+def case_sepeti_ayrintili(
+    case: Mapping[str, Any], fiyatlar: Mapping[str, int], adlar: Mapping[str, str] | None = None
+) -> CaseSepeti:
+    """Case'in sepeti: test verisi değerleri, adım verileri ve "Test verisi hazırlığı" ön
+    koşullarındaki `P-xxx × n` / `n × P-xxx` / `n adet P-xxx` satırları; kodsuz yazılmış ürün adı
+    (`adlar`: test verisi bloğundan ad → kod) koda çevrilir. Birim fiyat kaynaktan; hazırlıkta
+    tanımlanan sentetik kodlu ürünün fiyatı (`_HAZIRLIK_URUNU`) o case için eklenir. Sepet metni
+    KAYNAK sayılmaz; yalnız ürün ve adet okunur, tutar birim fiyatlardan yeniden hesaplanır.
+
+    Adımlarda biriken sepet: aynı ürün birden çok adımda eklenirse adetler toplanır. Test verisi
+    çoğunlukla aynı sepeti adımlarla yineler; bu yüzden ürün başına adet, yorumların (test verisi,
+    adımlar, hazırlık, adımlar + hazırlık) en büyüğüdür."""
+    hazirlik = _hazirlik_metni(case)
+    fiyat = dict(fiyatlar)
+    for kod, tutar in _HAZIRLIK_URUNU.findall(hazirlik):
+        fiyat.setdefault(kod, _kurus(tutar))
+    ad = adlar or {}
+
+    def grup(parcalar: Sequence[str]) -> tuple[dict[str, int], set[str]]:
+        return _sepet_oku(_adlari_koda_cevir("\n".join(parcalar), ad))
+
+    td, td_anilan = grup([str(v.get("value") or "") for v in _kayitlar(case.get("test_data"))])
+    adim, adim_anilan = grup([str(a.get("data") or "") for a in _kayitlar(case.get("steps"))])
+    hz, hz_anilan = grup([hazirlik])
+    adim_hz = {k: adim.get(k, 0) + hz.get(k, 0) for k in adim.keys() | hz.keys()}
+    yorumlar = [
+        {k: n for k, n in y.items() if k in fiyat and n > 0} for y in (td, adim, hz, adim_hz)
+    ]
+    yorumlar = [y for y in yorumlar if y]
+    birlesik: dict[str, int] = {}
+    for y in yorumlar:
+        for k, n in y.items():
+            birlesik[k] = max(birlesik.get(k, 0), n)
+    toplamlar = {sum(fiyat[k] * n for k, n in y.items()) for y in yorumlar}
+    toplamlar |= {fiyat[k] * n for y in yorumlar for k, n in y.items()}
+    anilan = {k for k in td_anilan | adim_anilan | hz_anilan if k in fiyat}
+    return CaseSepeti(
+        satirlar=tuple((fiyat[k], n) for k, n in sorted(birlesik.items())),
+        toplamlar=frozenset(toplamlar - {0}),
+        eksik_fiyatlar=tuple(sorted({fiyat[k] for k in anilan - birlesik.keys()})),
+    )
+
+
+def case_sepeti(case: Mapping[str, Any], fiyatlar: Mapping[str, int]) -> list[tuple[int, int]]:
+    """Case'in sepeti `(fiyat, adet)` satırları olarak (`case_sepeti_ayrintili`)."""
+    return list(case_sepeti_ayrintili(case, fiyatlar).satirlar)
+
+
+def _baglam(metin: str, bas: int, son: int, onceki: int) -> str:
+    """Tutarın bağlamı: önceki tutardan (en çok 50 karakter) bu tutara kadar olan metin + ardından
+    gelen, aynı yan cümlede ve sonraki sayıdan önce kalan en çok 25 karakter ("25,00 TL
+    indirim"; "; kredi limiti …" ya da "sipariş 500,00 TL limiti" sonraki ifadedir)."""
+    sonra = re.split(r"[;\n(\d]|,\s|\.\s", metin[son : son + 25])[0]
+    return metin[max(onceki, bas - 50) : bas] + " " + sonra
 
 
 def source_problems(
     metinler: Sequence[tuple[str, str]],
     kaynak: str,
     ek_kaynaklar: Mapping[str, str] | None = None,
-    sepetler: Mapping[str, Sequence[tuple[int, int]]] | None = None,
+    sepetler: Mapping[str, Sequence[tuple[int, int]] | CaseSepeti] | None = None,
 ) -> list[str]:
     """`(etiket, metin)` listesinde kaynağa dayanmayan tırnak içi metin ve TL tutarı.
 
-    - Tırnak içi metin kaynakta (girdi mesajı: gereksinim, AC, PO cevabı, test verisi bloğu) ya da
-      etiketin ek kaynağında boşluk sadeleştirilmiş olarak BİREBİR geçmelidir.
-    - TL tutarı kaynakta ya da ek kaynakta birebir geçiyorsa kabul. Değilse:
-      - limit / minimum / eşik bağlamındaki tutar (`_ESIK_BAGLAMI`) uydurmadır (birebir şart);
-      - etiketin sepeti varsa (`sepetler`: case'in `P-xxx × n` satırları) tutar o sepetin bir
-        alt toplamı olmalıdır (`sepet_alt_toplamlari`; uydurma 501,00 / 775,00 reddedilir);
-      - `sepetler` verilmiş (case bağlamı) ama etiketin sepeti yoksa tutar yalnız ek kaynaktaki
-        (hazırlık) sentetik tutarların katı olabilir — sepetsiz "toplam 501,00 TL" uydurmadır;
+    - Tırnak içi metin kaynakta (girdi mesajı: gereksinim, AC, PO cevabı, test verisi bloğu)
+      boşluk sadeleştirilmiş olarak BİREBİR geçmelidir. Hazırlık ön koşulu (`ek_kaynaklar`) alıntı
+      kaynağı DEĞİLDİR (3. tur #4a): hazırlık yalnız veri/tutar tanımlar, mesaj metni tanımlamaz.
+    - TL tutarı kaynakta birebir geçiyorsa kabul. Değilse:
+      - limit / minimum / eşik bağlamındaki tutar (`_ESIK_BAGLAMI`, ters sıra
+        `_ESIK_BAGLAMI_TERS`: "300,00 TL olan kredi limiti") uydurmadır (birebir şart);
+      - hazırlıktaki sentetik ürün fiyatı (`_HAZIRLIK_FIYATI`; "fiyatı 749,99 TL olan … ürün")
+        kabul; hazırlığa yazılmış keyfi tutar ("sepet toplamı 1.234,56 TL") kaynak değildir;
+      - etiketin sepeti varsa (`sepetler`: `CaseSepeti` ya da `(fiyat, adet)` satırları) tutar
+        sepetin gerçek bir toplamı (sepet toplamı, ürün satırı toplamı) olmalıdır; diğer alt
+        toplamlar (`sepet_alt_toplamlari`: ödenen, indirim…) yalnız sepet/toplam bağlamında
+        (`_SEPET_BAGLAMI`, `_YABANCI_BAGLAM` yokken) kabul edilir — "kalan bakiye 100,00 TL"
+        uydurmadır;
+      - `sepetler` verilmiş (case bağlamı) ama etiketin sepeti yoksa tutar yalnız hazırlıktaki
+        sentetik fiyatların katı olabilir — sepetsiz "toplam 501,00 TL" uydurmadır;
       - `sepetler` hiç verilmemişse (tasarım modeli aksiyonları) tutar test verisi bloğundaki
-        BİRİM FİYATLARIN (+ ek kaynak tutarlarının) birleşimiyle kurulabilmelidir; eşik / limit
+        BİRİM FİYATLARIN (+ hazırlık fiyatlarının) birleşimiyle kurulabilmelidir; eşik / limit
         tutarları yapı taşı değildir.
+    - Sepeti okunamayan case (`CaseSepeti.okunamadi`: bilinen ürün anılıyor ama adedi
+      ayrıştırılamıyor) için sepet yolunda doğrulanamayan ama okunamayan ürünlerle açıklanabilen
+      tutar (`CaseSepeti.eksikle_kurulabilir`) uydurma SAYILMAZ; ayrı kategori
+      `SEPET_OKUNAMADI` ("C3: sepet okunamadı: tutar '125,00 TL' doğrulanamadı") olarak döner.
+      Eşik/limit uydurması bundan etkilenmez.
 
     `ek_kaynaklar` (etiket → metin): yalnız case'in "Test verisi hazırlığı" ön koşulları (K17:
     kurulamayan sınır değeri için sentetik ürün / veri hazırlanır). Case'in kendi test verisi ve
@@ -833,61 +1049,93 @@ def source_problems(
     fiyatlar = set(birim_fiyatlar(kaynak).values())
     out: list[str] = []
     for etiket, metin in metinler:
-        ek = (ek_kaynaklar or {}).get(etiket, "")
-        ek_sade = _bosluk(ek)
-        ek_tutar = _tutarlar(ek)
-        birebir = kaynak_tutar | ek_tutar
+        ek_fiyat = _hazirlik_fiyatlari((ek_kaynaklar or {}).get(etiket, ""))
         for m in TIRNAK_ICI.finditer(metin):
             alinti = _bosluk(next(g for g in m.groups() if g))
-            if alinti not in kaynak_sade and alinti not in ek_sade:
+            if alinti not in kaynak_sade:
                 out.append(f"{etiket}: kaynakta olmayan alıntı {alinti!r}")
         esikler = {_kurus(t) for t in _ESIK_BAGLAMI.findall(metin)}
-        sepet = list((sepetler or {}).get(etiket) or [])
-        alt_toplamlar = sepet_alt_toplamlari(sepet) if sepet else None
-        for tutar in dict.fromkeys(TUTAR.findall(metin)):
+        esikler |= {_kurus(t) for t in _ESIK_BAGLAMI_TERS.findall(metin)}
+        ham = (sepetler or {}).get(etiket)
+        sepet = (
+            ham
+            if isinstance(ham, CaseSepeti)
+            else CaseSepeti(
+                satirlar=tuple(ham or ()),
+                toplamlar=frozenset(
+                    {sum(f * n for f, n in ham or ())} | {f * n for f, n in ham or ()}
+                ),
+            )
+        )
+        alt_toplamlar = sepet_alt_toplamlari(sepet.satirlar) if sepet.satirlar else None
+        onceki = 0
+        goruldu: set[int] = set()
+        for m in TUTAR.finditer(metin):
+            tutar = m.group(1)
             k = _kurus(tutar)
-            if k == 0 or k in birebir:
+            baglam = _baglam(metin, m.start(), m.end(), onceki)
+            onceki = m.end()
+            if k == 0 or k in kaynak_tutar or k in ek_fiyat or k in goruldu:
                 continue
+            goruldu.add(k)
+            okunamadi = f"{etiket}: {SEPET_OKUNAMADI}: tutar '{tutar} TL' doğrulanamadı"
             if k in esikler:
                 out.append(f"{etiket}: kaynakta olmayan eşik/limit tutarı '{tutar} TL'")
             elif alt_toplamlar is not None:
-                if k not in alt_toplamlar:
+                if k in sepet.toplamlar:
+                    continue
+                if (
+                    k in alt_toplamlar
+                    and _SEPET_BAGLAMI.search(baglam)
+                    and not _YABANCI_BAGLAM.search(baglam)
+                ):
+                    continue
+                if sepet.eksikle_kurulabilir(k):
+                    out.append(okunamadi)
+                elif k in alt_toplamlar:
+                    out.append(
+                        f"{etiket}: kaynakta olmayan tutar '{tutar} TL' "
+                        "(sepet/toplam bağlamında değil; yalnız sepet ya da satır toplamı)"
+                    )
+                else:
                     out.append(
                         f"{etiket}: kaynakta olmayan tutar '{tutar} TL' "
                         "(case sepetiyle kurulamıyor)"
                     )
             elif sepetler is not None:
-                # Case bağlamı, sepet yok: yalnız hazırlıktaki sentetik tutarların katları.
-                if not _kurulabilir(k, ek_tutar):
+                # Case bağlamı, sepet yok: yalnız hazırlıktaki sentetik fiyatların katları.
+                if _kurulabilir(k, ek_fiyat):
+                    continue
+                if sepet.eksikle_kurulabilir(k):
+                    out.append(okunamadi)
+                else:
                     out.append(f"{etiket}: kaynakta olmayan tutar '{tutar} TL' (case'te sepet yok)")
-            elif not _kurulabilir(k, fiyatlar | ek_tutar):
+            elif not _kurulabilir(k, fiyatlar | ek_fiyat):
                 out.append(f"{etiket}: kaynakta olmayan tutar '{tutar} TL'")
     return out
 
 
-HAZIRLIK_ONEKI = "test verisi hazırlığı"
+def sepet_okunamadi_sayisi(failures: Sequence[str]) -> int:
+    """Hata listesindeki "sepet okunamadı" kayıtları (uydurmadan ayrı ölçüm; 3. tur #3)."""
+    return sum(1 for f in failures if SEPET_OKUNAMADI in f)
 
 
 def case_kendi_kaynagi(cases: Sequence[Mapping[str, Any]]) -> dict[str, str]:
     """Case'in ek kaynağı (`C<n>` → metin): YALNIZ "Test verisi hazırlığı" ön koşulları (K17).
     Test verisi değerleri ve adım verileri kaynak sayılmaz; sepet `case_sepetleri` ile yeniden
-    hesaplanır (aklama yolu kapalı)."""
-    return {
-        f"C{n}": "\n".join(
-            str(p)
-            for p in _liste(c.get("preconditions"))
-            if _kucuk(str(p)).startswith(HAZIRLIK_ONEKI)
-        )
-        for n, c in enumerate(cases, start=1)
-    }
+    hesaplanır (aklama yolu kapalı). Hazırlıktan yalnız sentetik ürün fiyatı okunur
+    (`source_problems`)."""
+    return {f"C{n}": _hazirlik_metni(c) for n, c in enumerate(cases, start=1)}
 
 
-def case_sepetleri(
-    cases: Sequence[Mapping[str, Any]], kaynak: str
-) -> dict[str, list[tuple[int, int]]]:
-    """`C<n>` → case sepeti (`case_sepeti`), birim fiyatlar kaynağın test verisi bloğundan."""
+def case_sepetleri(cases: Sequence[Mapping[str, Any]], kaynak: str) -> dict[str, CaseSepeti]:
+    """`C<n>` → case sepeti (`case_sepeti_ayrintili`), birim fiyatlar ve ürün adları kaynağın
+    test verisi bloğundan."""
     fiyatlar = birim_fiyatlar(kaynak)
-    return {f"C{n}": case_sepeti(c, fiyatlar) for n, c in enumerate(cases, start=1)}
+    adlar = urun_adlari(kaynak)
+    return {
+        f"C{n}": case_sepeti_ayrintili(c, fiyatlar, adlar) for n, c in enumerate(cases, start=1)
+    }
 
 
 # K17 "en yakın kurulabilir değer" iddiası (ikinci tur #9): kapsam öğesi tanımı "X TL'ye en
@@ -1291,11 +1539,24 @@ _N_ETIKETI = re.compile(r"^N(10|[1-9])$")
 # Edilgen ve etken çatı ("mesajı gösterilir" / "mesajını gösterir", "uyarı ekranda belirir",
 # "… yazısı görünür", "mesajı iletilir"; ikinci tur #13). "yazı" yalnız ad olarak (yazısı,
 # yazıları); "yazılır" fiili sayılmaz.
+# 3. tur #5: fiil kökleri (göster-, görüntülen-, görün-, yer al-, açıl-, listelen-; kipler:
+# "görüntülenmelidir") ve adlar (bildirim, metin/metni, pencere, toast). Olumsuz çatı
+# ("gösterilmez", "görünmez", "listelenmemeli") mesaj iddiası değildir (`_OLUMSUZ_FIIL`).
 _MESAJ_ANILIYOR = re.compile(
-    r"(?<!\w)(mesaj\w*|uyarı\w*|hata\w*|yazı(?:sı|ları|lar|yı|nın)?)\s+(\S+\s+){0,2}"
-    r"(gösterilir|görüntülenir|görünür|çıkar|verilir|gösterir|belirir|yazar|iletilir)\b",
+    r"(?<!\w)(mesaj\w*|uyarı\w*|hata\w*|yazı(?:sı|ları|lar|yı|nın)?|bildirim\w*|metin\w*|"
+    r"metn\w*|pencere\w*|toast\w*)\s+(\S+\s+){0,2}?"
+    r"(göster\w*|görüntülen\w*|görün\w*|yer\s+al\w*|açıl\w*|listelen\w*|"
+    r"çıkar|verilir|belirir|yazar|iletilir)\b",
     re.IGNORECASE,
 )
+# Fiil kökünden sonra olumsuzluk eki: -mez/-maz, -mem…, -med…, -mey… (-meli olumludur).
+_OLUMSUZ_FIIL = re.compile(r"^(?:göster|görüntülen|görün|yer\s+al|açıl|listelen)\w*?m[ae][zmdy]")
+
+
+def mesaj_iddiasi(metin: str) -> bool:
+    """Metin bir mesajın/uyarının GÖSTERİLDİĞİNİ söylüyor mu (`_MESAJ_ANILIYOR`; olumsuz çatı
+    hariç: "uyarı gösterilmez" mesaj metni iddia etmez)."""
+    return any(not _OLUMSUZ_FIIL.match(_kucuk(m.group(3))) for m in _MESAJ_ANILIYOR.finditer(metin))
 
 
 def deepening_problems(
@@ -1317,6 +1578,8 @@ def deepening_problems(
     - `source_grounded` (true): hazır case'lerin beklenen sonuçlarındaki tırnak içi metin ve TL
       tutarı kaynağa dayanır (`source_problems`; `kaynak` yoksa atlanır).
     """
+    from tp_core.features.cases.schema import ACIK_NOKTA
+
     out = output if isinstance(output, Mapping) else {}
     cases = _kayitlar(out.get("cases"))
     failures = list(generation_rule_problems(out, ek_set=True))
@@ -1338,9 +1601,9 @@ def deepening_problems(
         if "source_messages" in expect:
             mesajlar = [str(m) for m in expect["source_messages"]]
             for metin in _beklenen_metinleri(c):
-                if not _MESAJ_ANILIYOR.search(metin):
+                if not mesaj_iddiasi(metin):
                     continue
-                if "AÇIK NOKTA" in metin or any(m in metin for m in mesajlar):
+                if ACIK_NOKTA.search(metin) or any(m in metin for m in mesajlar):
                     continue
                 failures.append(
                     f'C{n}: kaynakta olmayan mesaj ("mesaj metni: AÇIK NOKTA" yazılmalıydı): '

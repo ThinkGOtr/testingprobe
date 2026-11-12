@@ -727,6 +727,177 @@ def case_generation_cases() -> list[dict[str, Any]]:
     return out
 
 
+# ------------------------------------------------- bekletme (holdout) seti (3. tur #2)
+#
+# Prompt ayarında HİÇ kullanılmamış, eval story'lerinden farklı alanlardan dört story. Ayar
+# vakaları (yukarıdaki TPD-1/3/4, SERBEST, HESAP-KILIDI) prompt'un örneklerini ve yönergesini
+# biçimlendirdi; canlı geçişleri genelleme kanıtı değildir. Bekletme vakaları aynı `case-generation`
+# setinin ayrı bölümünde (`holdout_cases`, vakalar `alt_kume: "holdout"`) durur; `load_set` onları
+# `cases`'e ekler ve aynı koşuda koşturur (ayrı paket değil: prompt dosyası olmayan paket durum
+# kaydı / kapı / README sözleşmesine girmez). Raporlarda ayrı satırda görünür
+# (`eval_set.alt_kume_ozeti`). Bağlayıcıdır: set geçişi her vakayı ister.
+#
+# Beklentiler yalnız genel kural denetimleridir (vaka-özel anahtar sözcük / konu ezberi yok): AC
+# kapsamı ve her AC için hazır case, case sayısı sınırları, kaynağa dayalı alıntı ve tutarlar
+# (`source_grounded`), genel uydurma belirteçleri (kaynaklarda yanıt kodu / zaman aşımı / yeniden
+# deneme yok), sayısal sınırı olan story'de BVA ve P1 seçiciliği (`max_p1_orani` 0,6: ayar
+# setindeki en yüksek para hikâyesi çıtası; vaka başına ayarlanmadı). 011 §4.2 deterministik
+# kuralları her çıktıya zaten uygulanır.
+#
+# KURAL: bekletme vakasının canlı sonucuna bakarak prompt değiştirilirse o vaka artık bekletme
+# değildir; yeni alanlardan yeni story ile değiştirilir (`HOLDOUT_STORIES`), eskisi ayar setine
+# taşınabilir. Prompt örnekleri bu alanlardan alınmaz (`test_prompt_eval_ortusme`).
+HOLDOUT = "holdout"
+HOLDOUT_MAX_P1_ORANI = 0.6
+HOLDOUT_STORIES: list[dict[str, Any]] = [
+    {
+        "id": "holdout-kutuphane-odunc",
+        "key": "HOLDOUT-KUTUPHANE",
+        "req_id": "00000000-0000-4000-8000-0000000000f1",
+        "summary": "Kütüphane kioskundan kitap ödünç alma",
+        "description": "Kütüphane üyesi, self-servis kioskta üye kartını ve kitabın barkodunu "
+        "okutarak kitap ödünç alır.",
+        "acs": [
+            'Üyenin üzerinde en çok 4 kitap varken okutulan kitap ödünç verilir ve "Ödünç işlemi '
+            'tamamlandı" mesajı gösterilir.',
+            'Üyenin üzerinde 5 kitap varken yeni kitap okutulursa ödünç verilmez ve "Ödünç '
+            'sınırına ulaştınız" mesajı gösterilir.',
+            'İade tarihi geçmiş kitabı olan üyeye ödünç verilmez ve "Gecikmiş iadeniz var" '
+            "mesajı gösterilir.",
+        ],
+        "data": "Test verisi (kütüphane kioskunun test ortamı):\n"
+        "Üyeler (kart no · durum):\n"
+        "- UK-4001 · üzerinde 4 kitap, gecikmiş iade yok\n"
+        "- UK-4002 · üzerinde 5 kitap, gecikmiş iade yok\n"
+        "- UK-4003 · üzerinde 1 kitap, iade tarihi 3 gün geçmiş\n"
+        "- UK-4004 · üzerinde kitap yok, gecikmiş iade yok\n"
+        "Kitaplar (barkod · ad):\n"
+        '- BK-7101 · "Sessiz Orman"\n'
+        '- BK-7102 · "Mavi Pusula"\n'
+        'Arayüz etiketleri: "Kartını okut", "Kitabı okut", "Ödünç al", "İşlemi bitir"',
+        "techniques": ["BVA"],
+    },
+    {
+        "id": "holdout-otopark-ucret",
+        "key": "HOLDOUT-OTOPARK",
+        "req_id": "00000000-0000-4000-8000-0000000000f2",
+        "summary": "Otopark çıkışında park ücretinin hesaplanması",
+        "description": "Otopark çıkış bariyerindeki ödeme ekranı, giriş bileti okutulduğunda "
+        "kalış süresine göre ücreti gösterir.",
+        "acs": [
+            'Otoparkta 15 dakika ya da daha kısa kalan araçtan ücret alınmaz ve "Ücretsiz '
+            'çıkış" mesajı gösterilir.',
+            "15 dakikadan uzun ve 3 saate kadar (3 saat dahil) kalan araç için ücret 60,00 TL'dir.",
+            "3 saatten uzun kalan araç için ücret 140,00 TL'dir.",
+            "Abone kartı okutulan araçtan kalış süresine bakılmaksızın ücret alınmaz.",
+        ],
+        "data": "Test verisi (otopark ödeme sisteminin test ortamı):\n"
+        "Giriş biletleri (bilet no · giriş saati):\n"
+        "- GB-901 · giriş saati test sırasında elle ayarlanır (dakika hassasiyeti)\n"
+        "- GB-902 · giriş saati test sırasında elle ayarlanır (dakika hassasiyeti)\n"
+        "Abone kartları:\n"
+        "- AK-55 · geçerli abonelik\n"
+        'Arayüz etiketleri: "Bileti okut", "Abone kartını okut", "Öde", "Çıkış"\n'
+        "Tutar biçimi: 1.250,00 TL (tr-TR, iki ondalık).",
+        "techniques": ["BVA"],
+    },
+    {
+        "id": "holdout-police-yenileme",
+        "key": "HOLDOUT-POLICE",
+        "req_id": "00000000-0000-4000-8000-0000000000f3",
+        "summary": "Konut sigortası poliçesinin çevrimiçi yenilenmesi",
+        "description": "Poliçe sahibi, süresi dolmak üzere olan konut sigortası poliçesini müşteri "
+        "panelinden yeniler.",
+        "acs": [
+            'Bitiş tarihine 30 gün ya da daha az kalan poliçede "Poliçeyi yenile" düğmesi '
+            "etkindir.",
+            'Bitiş tarihine 30 günden fazla kalan poliçede "Poliçeyi yenile" düğmesi pasiftir.',
+            'Yenileme onaylandığında poliçenin durumu "Yenilendi" olur ve bitiş tarihi bir yıl '
+            "ileri alınır.",
+            'Süresi dolmuş poliçe çevrimiçi yenilenemez ve "Süresi dolan poliçeler için '
+            'acentenizle görüşün" mesajı gösterilir.',
+        ],
+        "data": "Test verisi (müşteri panelinin test ortamı):\n"
+        "Müşteri hesabı: musteri-t1 / Sinama!42 (sentetik)\n"
+        "Poliçeler (poliçe no · durum):\n"
+        "- KS-3101 · yürürlükte, bitişe 12 gün\n"
+        "- KS-3102 · yürürlükte, bitişe 30 gün\n"
+        "- KS-3103 · yürürlükte, bitişe 45 gün\n"
+        "- KS-3104 · süresi 2 gün önce dolmuş\n"
+        'Arayüz etiketleri: "Poliçelerim", "Poliçeyi yenile", "Yenilemeyi onayla"',
+        "techniques": ["BVA"],
+    },
+    {
+        "id": "holdout-kirtasiye-teslimat",
+        "key": "HOLDOUT-KIRTASIYE",
+        "req_id": "00000000-0000-4000-8000-0000000000f4",
+        "summary": "Okul kırtasiye siparişinde ücretsiz teslimat eşiği",
+        "description": "Okul satın alma sorumlusu, kırtasiye tedarikçisinin çevrimiçi "
+        "kataloğundan toplu sipariş listesi hazırlar.",
+        "acs": [
+            'Sipariş listesinin tutarı 1.000,00 TL ve üzerindeyse özet ekranında "Teslimat '
+            'ücretsiz" yazar.',
+            "Sipariş listesinin tutarı 1.000,00 TL'nin altındaysa özet ekranında \"Ücretsiz "
+            'teslimat için 1.000,00 TL tutarına tamamlayın" uyarısı gösterilir.',
+            'Bir üründen en çok 50 adet listeye eklenebilir; daha fazlası girildiğinde "Bir '
+            'üründen en fazla 50 adet sipariş verilebilir" uyarısı gösterilir.',
+        ],
+        "data": "Test verisi (tedarikçi kataloğunun test ortamı):\n"
+        "Kullanıcı: satinalma-t1 / Sinama!42 (sentetik)\n"
+        "Ürünler (kod · ad · birim fiyat):\n"
+        '- KR-210 · "Fotokopi Kâğıdı A4 (500 yaprak)" · 135,00 TL\n'
+        '- KR-305 · "Kurşun Kalem Kutusu" · 42,50 TL\n'
+        '- KR-412 · "Telli Dosya" · 18,00 TL\n'
+        'Arayüz etiketleri: "Ürünler", "Listeye ekle", "Sipariş listesi", "Siparişi gönder"\n'
+        "Tutar biçimi: 1.250,00 TL (tr-TR, iki ondalık).",
+        "techniques": ["BVA"],
+    },
+]
+
+
+def holdout_cases() -> list[dict[str, Any]]:
+    """Bekletme vakaları: girdi üretimin `generation_messages` kurucusuyla (serbest metin story
+    bloğu + kendi test verisi bloğu + test seviyesi); beklentiler yalnız genel kural denetimleri."""
+    from types import SimpleNamespace
+
+    from tp_core.gateway import wrap_untrusted
+
+    out = []
+    for st in HOLDOUT_STORIES:
+        acs = [f"AC{i}: {metin}" for i, metin in enumerate(st["acs"], start=1)]
+        req = SimpleNamespace(
+            id=st["req_id"],
+            jira_key=None,
+            baslik=st["summary"],
+            aciklama=st["description"],
+            kabul_kriterleri=acs,
+            po_cevaplari=[],
+            uretim_secenekleri=None,
+        )
+        blok = wrap_untrusted(st["data"], source="testdata:bekletme", kind="data")
+        out.append(
+            {
+                "id": st["id"],
+                "alt_kume": HOLDOUT,
+                "description": f"{st['key']} (bekletme seti; prompt ayarında kullanılmadı): "
+                f"{st['summary']}",
+                "replay_key": {"name": st["key"], "jira_key": st["req_id"]},
+                "messages": _msgs(_generation_messages(req, blok)),
+                "expect": {
+                    "ac_coverage": _refs(acs),
+                    "ready_ac_coverage": _refs(acs),
+                    "min_cases": len(acs),
+                    "max_cases": MAX_CASES,
+                    "not_contains_any": FABRICATION_COMMON,
+                    "techniques_include": st["techniques"],
+                    "source_grounded": True,
+                    "max_p1_orani": HOLDOUT_MAX_P1_ORANI,
+                },
+            }
+        )
+    return out
+
+
 def _model_messages(req: Any, data_block: str) -> list[ModelMessage]:
     """Tasarım modeli (011 F3, tur 1) girdisi: üretimin kurucusu, model görev cümlesiyle."""
     from tp_core.features.cases.model_service import MODEL_GOREVI
@@ -1696,7 +1867,15 @@ SETS: dict[str, tuple[str, Callable[[], list[dict[str, Any]]]]] = {
 }
 # Set düzeyi ek alanlar: §12 koşu sayısı, ajan araç ortamı (`tp_core.gateway.eval_agents`).
 EXTRA: dict[str, dict[str, Any]] = {
-    "case-generation": {"runs": 3},
+    # Ham geçiş alt sınırı (3. tur #7) bağlayıcıdır: ilk denemesi (kural yeniden istemesi
+    # olmadan) şemaya ve beklentiye uyan koşu oranı en az 0,6. Gerekçe: üretimde geçit kural
+    # ihlalinde sınırlı sayıda yeniden ister ve iş süresi bütçesi yetmezse hiç istemez
+    # (`is_suresi`, `reask_fits`); ham oran 0,6'nın altındaysa sistemin geçişi büyük ölçüde
+    # yeniden istemeye dayanır (ek maliyet ve süre, düzeltilemeyen ihlal riski). Varsayılan bilgi
+    # eşiği (%70) hiç ölçülmeden bağlayıcı yapılmadı; 0,6 ilk bağlayıcı çıta, canlı ölçüm
+    # biriktikçe yükseltilir. Bekletme vakaları da bu orana girer (ayrıca alt küme olarak
+    # raporlanır).
+    "case-generation": {"runs": 3, "ham_gecis_alt_siniri": 0.6},
     # P9 karar tutarlılığı: aynı girdi 5 koşuda aynı karar (belgedeki metrik).
     "case-audit": {"runs": 5},
     "consistency-check": {"agent": {"tool_env": "consistency", "max_turns": 15}},
@@ -1706,6 +1885,8 @@ EXTRA: dict[str, dict[str, Any]] = {
     **{ek: {"call_bundle": "case-generation"} for ek in PLATFORM_PLAN},
 }
 DEFECT_SETS = ("triage", "bug-draft", "dup-rank")
+# Bekletme (holdout) bölümü olan setler (`holdout_cases`; `eval_set.load_set` birleştirir).
+HOLDOUT_SETS: dict[str, Callable[[], list[dict[str, Any]]]] = {"case-generation": holdout_cases}
 
 
 def build_sets() -> dict[str, dict[str, Any]]:
@@ -1727,6 +1908,8 @@ def build_sets() -> dict[str, dict[str, Any]]:
             "Canlı koşu: make eval-live A='--bundle " + bundle + "'"
         )
         data["cases"] = build()
+        if bundle in HOLDOUT_SETS:
+            data["holdout_cases"] = HOLDOUT_SETS[bundle]()
         out[bundle] = data
     return out
 

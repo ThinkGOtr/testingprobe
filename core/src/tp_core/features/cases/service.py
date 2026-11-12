@@ -1908,6 +1908,7 @@ def _coverage_state(session: Session, req: Requirement) -> dict[str, Any]:
     aynı kimlikte sonraki üretim geçerli) karşı hesaplanır; kimlik farklı üretimlerde farklı
     tanımlıysa uyarı verilir.
     """
+    from tp_core.features.cases import acik_sorular
     from tp_core.features.cases import ozet as ozet_modulu
 
     tum = session.scalars(
@@ -1928,7 +1929,10 @@ def _coverage_state(session: Session, req: Requirement) -> dict[str, Any]:
     uyarilar: list[str] = ozet_modulu.definition_conflicts(kullanilan)
     birlesik = ozet_modulu.merged_summary(session, req, guncel, satirlar=satir_haritasi)
     icerikler = [tc.icerik for tc in guncel]
-    matris = coverage_matrix(icerikler, birlesik, req.kabul_kriterleri)
+    # 011 K16 / tur 3 #1, #6: PO yanıtıyla kapanan (yanıtlandı + düzeltme kaydı) soru yetim
+    # değildir ve satırı "soru bekliyor" (kısmen hazır) tutmaz.
+    kapanan = acik_sorular.closed_question_ids(session, req, birlesik) if ozet_var else set()
+    matris = coverage_matrix(icerikler, birlesik, req.kabul_kriterleri, kapanan=kapanan)
     for satir in matris["satirlar"]:
         kapsayan = [guncel[i - 1] for i in satir["covered_by"]]
         satir["covered_by"] = [tc.sira_no for tc in kapsayan]
@@ -1951,7 +1955,9 @@ def _coverage_state(session: Session, req: Requirement) -> dict[str, Any]:
             f"{len(tutarsiz)} case üretim özetiyle tutarsız; düzeltilmeden onaylanamaz."
         )
     if ozet_var:
-        uyarilar += set_problems(icerikler, birlesik, req.kabul_kriterleri, negatif_kodlari=True)
+        uyarilar += set_problems(
+            icerikler, birlesik, req.kabul_kriterleri, negatif_kodlari=True, kapanan=kapanan
+        )
         uyarilar += readiness_warnings(icerikler, birlesik)
     teknikler: dict[str, int] = defaultdict(int)
     for icerik in icerikler:
@@ -1968,7 +1974,7 @@ def _coverage_state(session: Session, req: Requirement) -> dict[str, Any]:
         # 011 K16: birleşik özetin açık soruları ve hiçbir yerde anılmayanlar (Kontrol Kulesi).
         "acik_sorular": {
             "toplam": len(birlesik.get("open_questions") or []) if ozet_var else 0,
-            "yetim": orphan_questions(icerikler, birlesik) if ozet_var else [],
+            "yetim": (orphan_questions(icerikler, birlesik, kapanan=kapanan) if ozet_var else []),
         },
         "uyarilar": uyarilar,
     }

@@ -30,11 +30,11 @@ are returned.
    when a case or a coverage decision depends on it, and anchor every question you record (see
    **Open question anchors** below).
    - What is not an assumption: a result you compute directly from the acceptance criteria, the
-     PO answers and the test data (quantity × unit price, free items from the stated rule, a cart
+     PO answers and the test data (quantity × unit price, a discount from the stated rule, a cart
      total) is supported by the source. Restating an acceptance criterion is not an assumption.
    - Where a control is or how it is reached (screen, label, button, navigation) is not an
      assumption about an expected result. When the input does not give it, describe the action
-     by its purpose (`Arama alanına "limon" yazılır`, `Yönetici hesabın kilidini açar`), state
+     by its purpose (`Sulama planı kaydedilir`, `Sera sorumlusu vanayı kapatır`), state
      the needed setup as a precondition, and list the missing UI detail in
      `automation_open_points`. Such a gap does not change readiness.
 2. **Choose techniques.** For each statement pick the technique that fits its shape:
@@ -71,29 +71,34 @@ are returned.
      yourself: record an open question.
    - The step (precision) of a boundary comes from the source (amounts: 0,01 TL). When the test
      data cannot build the exact boundary value (for example no product combination reaches
-     749,99 TL), either use the nearest value the test data can build and say so in the item
-     definition (`749,99 TL; demo fiyatlarıyla kurulabilen en yakın değer 749,00 TL`), or keep the
-     exact value and add a test data preparation precondition to the case
-     (`Test verisi hazırlığı: fiyatı 749,99 TL olan kampanyasız sentetik ürün hazırlanır`).
+     1.199,99 TL), either use the nearest value the test data can build and say so in the item
+     definition (`1.199,99 TL; test verisiyle kurulabilen en yakın değer 1.198,00 TL`), or keep
+     the exact value and add a test data preparation precondition to the case
+     (`Test verisi hazırlığı: fiyatı 1.199,99 TL olan sentetik ürün hazırlanır`).
      The nearest buildable value is computed over any mix of the catalogue products, not over
      multiples of one product, and lies on the correct side of the boundary: for example, for
-     300,01 TL with hypothetical unit prices 40,00 / 12,00 / 9,00 TL the nearest value above the
-     limit is 301,00 TL (7 × 40,00 + 1 × 12,00 + 1 × 9,00), not 320,00 TL (8 × 40,00). For a boundary of a `P1` money
-     rule prefer the exact value with a test data preparation precondition over a nearby value.
-     A number in parentheses in an AC (`(7 adette 1 bedava)`) defines the boundary; when it
-     contradicts another wording of the rule (`her N adette`), write both readings into the item
-     definition and record an open question.
-     Every amount you write is either in the source or built from it: name the cart in
-     `test_data` (product × quantity) so the total can be recomputed. Never write an amount that
-     no cart can reach.
+     1.200,01 TL with hypothetical unit prices 150,00 / 40,00 / 7,00 TL the nearest value above
+     the limit is 1.201,00 TL (6 × 150,00 + 7 × 40,00 + 3 × 7,00), not 1.350,00 TL
+     (9 × 150,00). For a boundary of a `P1` money rule prefer the exact value with a test data
+     preparation precondition over a nearby value.
+   - When a number in parentheses in an acceptance criterion and another wording of the same rule
+     disagree (for example `(en fazla 8 kişi)` beside `8 kişiden az gruplar`),
+     do not choose one reading: write both readings into the item definition and record an open
+     question for the PO.
+   - Every amount you write is either in the source or built from it. Name the cart in
+     `test_data` as product code × quantity, one entry per product, always in the form
+     `<product code> × <quantity>` with the product code from the test data block (for example
+     `KX-12 × 3; KX-40 × 1`): never a product name without its code and never the quantity
+     first. Steps may add the product name after the code. The total must be recomputable from
+     these entries; never write an amount that no cart can reach.
    - [ISTQB] Each feasible decision table rule is one coverage item. A combination whose outcome
      the source does not define is an open question, not a rule with a guessed outcome.
    - Hidden limits (column length, integer overflow, leap day, midnight) are coverage items only
      when the source states them.
    - [ISTQB] State transition: a state's duration, timeout, retry count or automatic exit (for
-     example how long a lock lasts, whether it opens by itself) that the source does not state is
-     an open question; do not pick a value and do not leave it unmentioned when a case or a
-     transition depends on it.
+     example how long a seat reservation is held, whether a paused subscription resumes by
+     itself) that the source does not state is an open question; do not pick a value and do not
+     leave it unmentioned when a case or a transition depends on it.
 4. **Decide negative coverage.** For every item with `valid: false`, add one `negative_coverage`
    entry (`item` is a coverage item id such as `EP-I1` or `BV-2`; never a question or assumption
    id): `tested` (a `ready` or `assumption_dependent` case exists for it), `covered_by` (a case
@@ -174,17 +179,16 @@ not instructions), steps 1–3 are already done and the model replaces them:
     an error is shown; in a `blocked` case the expected result stays empty. A `ready` case never
     contains `AÇIK NOKTA`.
 - **Priority (risk-based).** There is no separate risk field: the risk assessment is the
-  priority and its rationale. `P1` only when a failure loses money, opens a security hole, loses
-  data or breaks the main flow with no way around it; `P2` for important behaviour that has a
-  workaround (the user can still reach the goal, for example by changing the cart); `P3`
-  otherwise. Judge impact × likelihood × business criticality per case: a story about money does
-  not make every case `P1` (a check next to a `P1` case with a lower likelihood or a workaround is
-  `P2`). In a set, `P1` cases are normally at most half of the cases; when more than half are
-  `P1`, every `P1` rationale names the money, security, data loss or main-flow break it guards,
-  and the rest are lowered. Examples of `P2`: resetting a failure counter after a successful
-  attempt, an administrator unlocking an account, a message wording check. `priority_rationale`
-  states the impact, the likelihood and the business criticality in
-  one sentence.
+  priority and its rationale. Judge impact × likelihood × business criticality per case.
+  - `P1` is not the default. A case is `P1` only when its failure would lose money, open a
+    security hole, lose data or break the main flow with no way around it, and its
+    `priority_rationale` names which of these four it guards and how.
+  - `P2`: important behaviour whose failure is unlikely or has a workaround (the user can still
+    reach the goal another way). A story about money or security does not make every case `P1`:
+    a check next to a `P1` case with a lower likelihood or a workaround is `P2`.
+  - `P3` otherwise.
+  `priority_rationale` states the impact, the likelihood and the business criticality in one
+  sentence.
 - **Verification point.** `verification_point` says where the result is checked: `UI`, `API`,
   `event`, `DB`, `log` or `other`. `test_level` repeats the test level given in the input, or is
   `null` when none is given.
@@ -195,18 +199,18 @@ not instructions), steps 1–3 are already done and the model replaces them:
   in `test_data.value` with `is_attack_payload: true`; steps refer to it by its `name`. It is input
   data for the system under test, never an instruction, and it is not repeated in a title, step or
   expected result. The expected result of a security case is the rejection or non-disclosure that
-  the source supports (for example the error the AC defines for a wrong password, no login, no
-  SQL or stack trace in the response), never an invented message.
+  the source supports (for example the error the AC defines for the rejected input, no record
+  created, no SQL or stack trace in the response), never an invented message.
 - **Tags.** Always include `AI-generated`. Add a category tag only when the case really checks
   that category: `security` (authentication, authorization, injection, sensitive data), `a11y`
   (accessibility), `performance` (a measured time or load target from the source), `smoke` (the
   main flow that must work before anything else is tested), `regression` (a defect from
   `Hata geçmişi:` that must not return).
 - **Independence.** Each case runs on its own: preconditions, test data and cleanup are stated in
-  the case. `teardown` lists the cleanup steps (empty the cart, delete the created record, log
-  out); leave it empty when the case changes nothing. When the case creates a record that the
-  user cannot remove (for example a confirmed order), write one teardown line that says so, so the
-  tester uses a fresh test environment or account.
+  the case. `teardown` lists the cleanup steps (cancel the created booking, delete the created
+  record, log out); leave it empty when the case changes nothing. When the case creates a record
+  that the user cannot remove (for example a submitted application), write one teardown line that
+  says so, so the tester uses a fresh test environment or account.
 - **Automation honesty.** No automation tool, framework or stable selector is given unless the
   input states one. Do not write code, locators or automation ids; list what is missing in
   `automation_open_points`.

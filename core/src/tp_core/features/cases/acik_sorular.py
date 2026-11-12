@@ -21,7 +21,9 @@ Akış:
    düzeltmeyle soru atfı kaldırılıp case hazır yapılırsa denetim kaydına "kaynak: PO yanıtı
    CQn" yazılır (`record_correction_source`; değişmez zincire yalnız etiket ve metin özetleri
    girer, soru/yanıt metni `acik_soru` tablosunda kalır). Yanıtlanan soruya bağlı case yoksa
-   (yetim soru) öneri "yeniden üret"tir: yanıt bir sonraki üretimin girdisine girer.
+   (yetim soru) öneri "yeniden üret"tir: yanıt bir sonraki üretimin girdisine girer. Düzeltmeyle
+   kapanan soru (yanıtlandı + düzeltme kaydı; `kapandi`) yetim değildir: öneri yok, kapsam
+   özeti ve Kontrol Kulesi onu `yetim` saymaz (`closed_question_ids`).
 4. **Sonraki üretimler**: yanıtlanan sorular (`generation_input`) üretim/derinleştirme girdisine
    ayrı güvenilmeyen blokta girer; yanıt yoksa girdi bayt bayt aynı kalır (replay golden'ları).
 """
@@ -200,8 +202,59 @@ YENIDEN_URET_MESAJI = (
 )
 
 
-def _oneri(satir: AcikSoru | None, caseler: Sequence[TestCase]) -> dict[str, Any] | None:
+def corrected_rows(session: Session, req: Requirement) -> set[uuid.UUID]:
+    """Düzeltmeyle kapanan soru/varsayım satırları: denetim kaydında "kaynak: PO yanıtı CQn"
+    (`case.po_yaniti_kaynak`, `record_correction_source`) olan `acik_soru` kimlikleri."""
+    from tp_core.models.system import AuditEvent
+
+    kayitlar = session.scalars(
+        select(AuditEvent.ozet).where(
+            AuditEvent.eylem == "case.po_yaniti_kaynak",
+            AuditEvent.ozet["requirement_id"].astext == str(req.id),
+        )
+    ).all()
+    kimlikler: set[uuid.UUID] = set()
+    for ozet in kayitlar:
+        for bilgi in (ozet or {}).get("sorular") or []:
+            try:
+                kimlikler.add(uuid.UUID(str(bilgi.get("acik_soru_id"))))
+            except (ValueError, AttributeError):
+                continue
+    return kimlikler
+
+
+def _kapandi(satir: AcikSoru | None, duzeltilen: set[uuid.UUID]) -> bool:
+    """PO yanıtladı ve en az bir case bu yanıtı kaynak alarak düzeltildi (tur 3 inceleme #1)."""
+    return satir is not None and satir.durum == "yanitlandi" and satir.id in duzeltilen
+
+
+def closed_question_ids(
+    session: Session, req: Requirement, birlesik: Mapping[str, Any]
+) -> set[str]:
+    """Birleşik özette PO yanıtıyla kapanmış açık soruların kimlikleri (`Q1`): yanıtlandı +
+    düzeltme kaydı. `schema.orphan_questions(kapanan=…)` bunları yetim saymaz: doğru kapanışta
+    analist atfı kaldırır, soru artık hiçbir yerde anılmaz ama döngü kapanmıştır."""
+    satirlar = _rows(session, req)
+    if not any(r.durum == "yanitlandi" for r in satirlar.values()):
+        return set()
+    duzeltilen = corrected_rows(session, req)
+    kapali: set[str] = set()
+    for kayit in birlesik.get("open_questions") or []:
+        if not isinstance(kayit, Mapping):
+            continue
+        satir = satirlar.get(("soru", text_hash("soru", _metin("soru", kayit))))
+        if _kapandi(satir, duzeltilen):
+            kapali.add(str(kayit.get("id")))
+    return kapali
+
+
+def _oneri(
+    satir: AcikSoru | None, caseler: Sequence[TestCase], *, kapandi: bool = False
+) -> dict[str, Any] | None:
     if satir is None or satir.durum != "yanitlandi":
+        return None
+    if not caseler and kapandi:
+        # Düzeltmeyle kapandı (atıf kaldırıldı, case hazır; tur 3 #1): öneri yok.
         return None
     if not caseler:
         # Yetim soru (011 tur 2 #1): düzeltilecek taslak yok; yanıt ancak yeniden üretimle döner.
@@ -226,9 +279,15 @@ def view(session: Session, requirement_id: uuid.UUID) -> dict[str, Any]:
     req = get_requirement(session, requirement_id)
     kalemler = current_items(session, req)
     satirlar = _rows(session, req)
+    duzeltilen = (
+        corrected_rows(session, req)
+        if any(r.durum == "yanitlandi" for r in satirlar.values())
+        else set()
+    )
     out = []
     for k in kalemler:
         satir = satirlar.get((k.tur, k.hash))
+        kapandi = _kapandi(satir, duzeltilen)
         out.append(
             {
                 "etiket": satir.etiket if satir is not None else None,
@@ -248,7 +307,9 @@ def view(session: Session, requirement_id: uuid.UUID) -> dict[str, Any]:
                 ),
                 "yanit": _yanit(satir),
                 "bekleyen_caseler": [_case_ozeti(tc) for tc in k.caseler],
-                "oneri": _oneri(satir, k.caseler),
+                # Yanıtlandı ve en az bir case yanıtı kaynak alarak düzeltildi (tur 3 #1).
+                "kapandi": kapandi,
+                "oneri": _oneri(satir, k.caseler, kapandi=kapandi),
             }
         )
     sayim = {DURUM_GONDERILMEDI: 0, "gonderildi": 0, "yanitlandi": 0}

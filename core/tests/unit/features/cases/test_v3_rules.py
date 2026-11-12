@@ -294,6 +294,8 @@ def test_kapsam_matrisi_ve_oranlar() -> None:
         "covered_by": [1],
         "covered_by_ready": [1],
         "gerekce": None,
+        "bekleyen_sorular": [],
+        "hazir_durumu": "hazir",
     }
     assert satir["AC2"]["covered_by"] == [2, 3]  # eski case AC satırına sayılır
     assert satir["AC2"]["covered_by_ready"] == [2, 3]  # eski (v2) case hazır sayılır (K9)
@@ -307,6 +309,8 @@ def test_kapsam_matrisi_ve_oranlar() -> None:
         "covered_by": [2],
         "covered_by_ready": [2],
         "gerekce": "AC2 doğrudan ister; kilit süresi Q1 yanıtlanınca eklenir",
+        "bekleyen_sorular": [],
+        "hazir_durumu": "hazir",
     }
     assert satir["BV-1"]["covered_by"] == [] and satir["BV-1"]["gerekce"] == "Sığmadı"
     assert satir["BV-1"]["karar"] == "out_of_scope"
@@ -317,6 +321,37 @@ def test_kapsam_matrisi_ve_oranlar() -> None:
         "hazir_gereksinim_kapsami": {"kapsanan": 2, "toplam": 2, "oran": 1.0},
         "hazir_oge_kapsami": {"kapsanan": 2, "toplam": 3, "oran": 0.6667},
     }
+
+
+def test_kapsam_matrisi_soru_bagli_ac_kismen_hazir() -> None:
+    """Tur 3 inceleme #6: kapsanan AC'nin `not_covered.question_ref` kaydı (bir kombinasyonu PO
+    yanıtını bekliyor) satırı `kismen_hazir` yapar ve hazır kapsam oranına girmez; soru PO
+    yanıtıyla kapandıysa (`kapanan`) satır yeniden hazırdır."""
+    cases = [case_icerik(), _negatif()]
+    oz = _ozet(
+        open_questions=[{"id": "Q1", "question": "?", "owner": "PO"}],
+        not_covered=[
+            {"item": "AC1", "reason": "Kombinasyon tanımsız", "question_ref": "Q1"},
+            {"item": "BV-1", "reason": "Sığmadı"},
+        ],
+    )
+    sonuc = coverage_matrix(cases, oz, ACS)
+    satir = {s["item"]: s for s in sonuc["satirlar"]}
+    assert satir["AC1"]["covered_by_ready"] == [1]
+    assert (satir["AC1"]["bekleyen_sorular"], satir["AC1"]["hazir_durumu"]) == (
+        ["Q1"],
+        "kismen_hazir",
+    )
+    assert (
+        satir["AC2"]["hazir_durumu"] == "hazir" and satir["BV-1"]["hazir_durumu"] == "hazir_degil"
+    )
+    oranlar = sonuc["oranlar"]
+    assert oranlar["gereksinim_kapsami"]["kapsanan"] == 2
+    assert oranlar["hazir_gereksinim_kapsami"] == {"kapsanan": 1, "toplam": 2, "oran": 0.5}
+    kapali = coverage_matrix(cases, oz, ACS, kapanan={"Q1"})
+    satir = {s["item"]: s for s in kapali["satirlar"]}
+    assert (satir["AC1"]["bekleyen_sorular"], satir["AC1"]["hazir_durumu"]) == ([], "hazir")
+    assert kapali["oranlar"]["hazir_gereksinim_kapsami"]["kapsanan"] == 2
 
 
 def test_kapsam_matrisi_hazir_olmayan_kapsami_tamamlamaz() -> None:
@@ -493,3 +528,16 @@ def test_ozet_birlesiminde_ayni_ogenin_soru_kayitlari_ayri_kalir() -> None:
     ]
     birlesik = ozet_modulu.merge([{"not_covered": kayitlar}])
     assert birlesik["not_covered"] == kayitlar
+
+
+def test_farkli_uretimlerin_ayni_soru_kimligi_uyari_verir() -> None:
+    """Tur 3 inceleme #12: farklı üretimlerin metni farklı `Q1`'i kimlikle birleşir; uyarı
+    görünür. Metin aynıysa (boşluk farkı) uyarı yok."""
+    from tp_core.features.cases.ozet import definition_conflicts
+
+    def oz(metin: str) -> dict:
+        return {"open_questions": [{"id": "Q1", "question": metin, "owner": "PO"}]}
+
+    assert definition_conflicts([(1, oz("Kaç gün?")), (2, oz("Kaç  gün?"))]) == []
+    (uyari,) = definition_conflicts([(1, oz("Kaç gün?")), (2, oz("Hangi para birimi?"))])
+    assert uyari.startswith("Açık soru Q1 farklı üretimlerde") and "#2" in uyari

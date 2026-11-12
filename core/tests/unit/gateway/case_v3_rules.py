@@ -197,10 +197,15 @@ def set_problems(
     return problems
 
 
-def question_problems(cases: Sequence[Mapping[str, Any]], summary: Mapping[str, Any]) -> list[str]:
+def question_problems(
+    cases: Sequence[Mapping[str, Any]],
+    summary: Mapping[str, Any],
+    closed: Sequence[str] = (),
+) -> list[str]:
     """Açık soru bağı (011 K16): `not_covered.question_ref` tanımlı bir soru; her soru en az bir
     yerde anılır — case atfı, `not_covered.question_ref`, negatif kapsam kararının gerekçesi ya
-    da kapsam öğesinin tanımı (yetim soru yok)."""
+    da kapsam öğesinin tanımı (yetim soru yok). PO yanıtıyla kapanan soru (`closed`) yetim
+    değildir."""
     problems: list[str] = []
     questions = [str(q["id"]) for q in summary.get("open_questions") or []]
     refs = {
@@ -215,7 +220,7 @@ def question_problems(cases: Sequence[Mapping[str, Any]], summary: Mapping[str, 
     texts += [str(i.get("definition") or "") for i in summary.get("coverage_items") or []]
     for q in questions:
         mentioned = any(re.search(rf"(?<![A-Za-z0-9]){q}(?![0-9])", t) for t in texts)
-        if q not in refs and not mentioned:
+        if q not in refs and q not in closed and not mentioned:
             problems.append(f"set: {q} yetim açık soru")
     return problems
 
