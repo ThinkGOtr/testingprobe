@@ -63,6 +63,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import re
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -243,9 +244,13 @@ def run_case(
     *,
     env: ToolEnv | None = None,
     case_id: str | None = None,
+    output_check: bool = True,
 ) -> CaseResult:
     """Tek vakayı geçitten geçirir (vakanın golden kökü: `case_replay_key`). Geçit hatası vakayı
     düşürür, koşuyu değil (`eval_live` vaka başına bütçe denetimi için bunu tek tek çağırır).
+
+    `output_check=False` (`eval-live --no-output-check`): geçidin kural yeniden istemesi kapalı;
+    ham model ölçülür (üretimdeki geçit+model sistemi yerine).
 
     Ajan setleri (`agent`) üretimdeki araç ortamıyla (`env`) koşar; ortam yoksa vaka çağrılmaz."""
     purpose, bundle = str(data["purpose"]), call_bundle(data)
@@ -273,7 +278,7 @@ def run_case(
                 case_messages(case),
                 dict(schema),
                 replay_key=case_replay_key(data, case),
-                **_output_check(purpose, expect),
+                **(_output_check(purpose, expect) if output_check else {}),
             )
     except GatewayError as exc:
         return CaseResult(cid, False, [type(exc).__name__], error=str(exc)[:500])
@@ -470,6 +475,121 @@ def esik_karari(
         gecti = deger is not None and (deger >= esik if yon == "min" else deger <= esik)
         out.append({"ad": ad, "deger": deger, "esik": esik, "gecti": bool(gecti)})
     return out
+
+
+# Geçidin kural yeniden istemesini (`output_check`) kullanan amaçlar (`_output_check`).
+OUTPUT_CHECK_PURPOSES = frozenset({"case_generation", "case_deepening", "design_model"})
+HAM_GECIS_ALT_SINIRI = 0.7  # ilk deneme geçişi için varsayılan (bilgi) alt sınır
+
+
+def _kural_turu(hata: str) -> str:
+    """Kural ihlali satırının türü: `C3: open_question_refs: …` → `open_question_refs`."""
+    metin = re.sub(r"^C\d+:\s*", "", str(hata))
+    metin = re.sub(r"^\(approved design model\)\s*", "", metin)
+    tur = metin.split(":", 1)[0].strip()
+    return tur[:40] or "?"
+
+
+def kural_yeniden_isteme_olcumleri(
+    data: Mapping[str, Any],
+    results: Sequence[CaseResult],
+    rows: Sequence[Mapping[str, Any]],
+    purpose: str,
+    *,
+    output_check: bool = True,
+) -> dict[str, Any]:
+    """Geçit+model sistemi yerine ham modelin ölçümü (inceleme tur 2, test mimarı #4).
+
+    Çağrı satırlarından (`eval_vaka` etiketli `ai_call`'lar) vaka başına:
+    - `ilk_deneme_gecis_orani`: 1. denemenin çıktısı şemaya uyup beklentiyi (`check_output`)
+      geçen vaka oranı (ham model);
+    - `kural_yeniden_isteme_orani` / `sema_yeniden_isteme_orani`: yeniden istenen vaka oranı;
+    - `duzelme_orani`: kural yeniden istenen vakalardan son çıktısı kural ihlalsiz olanlar;
+    - `kalan_kural_ihlali`: kural ihlaliyle dönen vaka sayısı;
+    - `ek_maliyet_usd` (+ oran) ve `ek_sure_ms` (p50/p95): 2. ve sonraki denemelerin payı;
+    - `kural_turu_histogrami`: 1. denemedeki ihlallerin türleri.
+    Eşik: `ilk_deneme_gecis_orani ≥ ham_gecis_alt_siniri` (setteki alan bağlayıcıdır; yoksa
+    varsayılan %70 yalnız bilgi olarak raporlanır)."""
+    runs = runs_of(data)
+    vakalar = {run_id(c, k, runs): c for c in data["cases"] for k in range(1, runs + 1)}
+    vaka_sayisi = gecen_ilk = kural_yi = sema_yi = duzelen = kalan = 0
+    ek_maliyet = toplam_maliyet = 0.0
+    ek_sureler: list[float] = []
+    histogram: dict[str, int] = {}
+    for r in results:
+        satirlar = [
+            x
+            for x in rows
+            if x.get("eval_vaka") == r.id and x.get("amac") == purpose and x.get("mod") == "live"
+        ]
+        if not satirlar:
+            continue
+        vaka_sayisi += 1
+        ek_of = [x.get("ek") or {} for x in satirlar]
+        ilk = satirlar[0]
+        ilk_kural = list(ek_of[0].get("kural_hatalari") or [])
+        for h in ilk_kural:
+            tur = _kural_turu(h)
+            histogram[tur] = histogram.get(tur, 0) + 1
+        case = vakalar.get(r.id) or {}
+        if ilk.get("sema_gecerli") and not ilk_kural:
+            sorun = check_output(
+                purpose, case.get("expect") or {}, ilk.get("cikti"), kaynak=case_source(case)
+            )
+            gecen_ilk += not sorun
+        denemeler = [x for x, e in zip(satirlar, ek_of, strict=True) if "secilen_deneme" not in e]
+        yeniden = len(denemeler) > 1
+        if yeniden and ilk.get("sema_gecerli"):
+            kural_yi += 1
+        elif yeniden:
+            sema_yi += 1
+        son_ek = ek_of[-1]
+        son_kural = bool(son_ek.get("kural_hatalari")) and satirlar[-1].get("sema_gecerli")
+        kalan += bool(son_kural)
+        if yeniden and ilk.get("sema_gecerli") and not son_kural:
+            duzelen += 1
+        maliyet = [float(x.get("maliyet") or 0.0) for x in satirlar]
+        toplam_maliyet += sum(maliyet)
+        ek_maliyet += sum(
+            m for x, m in zip(satirlar, maliyet, strict=True) if (x.get("deneme") or 1) > 1
+        )
+        if yeniden:
+            ek_sureler.append(
+                float(
+                    sum(int(x.get("sure_ms") or 0) for x in denemeler if (x.get("deneme") or 1) > 1)
+                )
+            )
+
+    def oran(pay: int, payda: int) -> float | None:
+        return round(pay / payda, 4) if payda else None
+
+    ilk_oran = oran(gecen_ilk, vaka_sayisi)
+    bagliyici = "ham_gecis_alt_siniri" in data
+    alt_sinir = float(data.get("ham_gecis_alt_siniri", HAM_GECIS_ALT_SINIRI))
+    return {
+        "amac": purpose,
+        "output_check": output_check,
+        "vaka": vaka_sayisi,
+        "ilk_deneme_gecis": gecen_ilk,
+        "ilk_deneme_gecis_orani": ilk_oran,
+        "kural_yeniden_isteme_orani": oran(kural_yi, vaka_sayisi),
+        "sema_yeniden_isteme_orani": oran(sema_yi, vaka_sayisi),
+        "duzelme_orani": oran(duzelen, kural_yi),
+        "kalan_kural_ihlali": kalan,
+        "ek_maliyet_usd": round(ek_maliyet, 6),
+        "ek_maliyet_orani": round(ek_maliyet / toplam_maliyet, 4) if toplam_maliyet else None,
+        "ek_sure_ms": {"p50": _yuzdelik(ek_sureler, 0.5), "p95": _yuzdelik(ek_sureler, 0.95)},
+        "kural_turu_histogrami": dict(sorted(histogram.items(), key=lambda kv: (-kv[1], kv[0]))),
+        "esikler": [
+            {
+                "ad": "ham_gecis_alt_siniri" if bagliyici else "ham_gecis_alt_siniri (bilgi)",
+                "deger": ilk_oran,
+                "esik": alt_sinir,
+                "gecti": ilk_oran is not None and ilk_oran >= alt_sinir,
+                "bagliyici": bagliyici,
+            }
+        ],
+    }
 
 
 def set_passed(data: Mapping[str, Any], results: Sequence[CaseResult], purpose: str) -> bool:

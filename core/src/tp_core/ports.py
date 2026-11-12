@@ -162,6 +162,12 @@ class CallResult(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
     cost_usd: float = 0.0
+    # Kural yeniden istemesi (`output_check`) yapıldıysa ilk şemaya uyan çıktı (maskesiz): çağıran
+    # denemeler arasında silinen atıfları uyarıya yazabilir (ör. hazır case'te düşen soru atfı).
+    ilk_cikti: Any = None
+    # Geçidin çağırana notları (ör. iş süresi yetmediği için yeniden istenmedi; son deneme şemayı
+    # bozdu, önceki şemaya uyan çıktı döndü).
+    uyarilar: list[str] = Field(default_factory=list)
 
 
 class AgentStep(BaseModel):

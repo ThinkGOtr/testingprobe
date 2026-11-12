@@ -76,14 +76,26 @@ IS_AMACI = {
 
 
 def test_zaman_asimi_butcesi_is_suresini_asmaz() -> None:
-    """Geçidin en kötü süresi (timeout × (1 + zaman aşımı yeniden denemesi)) + pay ≤ iş süresi:
-    aksi halde iş zaman aşımına uğrar ve worker süreci çıkar (diğer şeritler sahipsiz kalır)."""
+    """Geçidin en kötü süresi iş süresini aşmaz; aksi halde iş zaman aşımına uğrar ve worker
+    süreci çıkar (diğer şeritler sahipsiz kalır).
+
+    - İlk çağrı: timeout × (1 + zaman aşımı yeniden denemesi) + 120 ≤ iş süresi.
+    - Şema/kural yeniden istemeleri (en çok 1 + MAX_SCHEMA_REASKS çağrı): sınırsız toplam bazı
+      amaçlarda iş süresini aşar; geçit her yeniden istemeden önce kalan iş süresine bakar
+      (`reask_fits`). En kötü durum benzetimi (her çağrı tam timeout sürer) iş süresinde kalmalı."""
     import tp_core.features.cases.jobs  # noqa: F401
     from tp_core.gateway.config import find_rules_dir, load_model_table
-    from tp_core.gateway.core import RetryPolicy
+    from tp_core.gateway.core import (
+        MAX_SCHEMA_REASKS,
+        YENIDEN_ISTEME_PAYI_S,
+        RetryPolicy,
+        reask_fits,
+        worst_call_s,
+    )
     from tp_core.workflow.jobs import REGISTRY
 
     tablo = load_model_table(find_rules_dir())
+    sinirsiz_asan = []
     for tur, amac in IS_AMACI.items():
         cfg = tablo.purpose(amac)
         tekrar = (
@@ -92,9 +104,44 @@ def test_zaman_asimi_butcesi_is_suresini_asmaz() -> None:
             else RetryPolicy().max_timeout_retries
         )
         assert cfg.timeout_s is not None
-        en_kotu = cfg.timeout_s * (1 + tekrar) + 120
-        assert REGISTRY[tur].zaman_asimi_s >= en_kotu, (tur, amac, en_kotu)
+        za = REGISTRY[tur].zaman_asimi_s
+        tek = worst_call_s(cfg)
+        assert tek == cfg.timeout_s * (1 + tekrar)
+        assert za >= tek + 120, (tur, amac, tek)
         assert tekrar == 0, amac  # uzun amaçlarda zaman aşımını iş kuyruğu yeniden dener
+        # En kötü durum: her deneme tam `tek` sürer; geçidin süre denetimiyle.
+        gecen = tek
+        for _ in range(MAX_SCHEMA_REASKS):
+            if not reask_fits(cfg, za - gecen):
+                break
+            gecen += tek
+        assert gecen + min(120.0, YENIDEN_ISTEME_PAYI_S) <= za, (tur, amac, gecen, za)
+        if tek * (1 + MAX_SCHEMA_REASKS) + 120 > za:
+            sinirsiz_asan.append(tur)
+    # Denetim gerçekten gerekli (sınırsız döngü en az bir işte iş süresini aşardı).
+    assert sinirsiz_asan
+
+
+def test_is_kuyrugu_gecide_kalan_sureyi_verir(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`execute_with_timeout` işleyiciyi `is_suresi(zaman_asimi_s)` içinde koşar."""
+    from tp_core.gateway.is_suresi import kalan_sure
+    from tp_core.workflow.jobs import ClaimedJob, HandlerSpec, Sonuc, execute_with_timeout
+
+    gorulen: list[float | None] = []
+
+    def isleyici(job, kayit):
+        gorulen.append(kalan_sure())
+        return Sonuc("done", 0, None)
+
+    import tp_core.workflow.jobs as jobs_mod
+
+    spec = HandlerSpec("t.sure", lambda ctx: None, 1, 1.0, 1.0, 50, "genel")
+    job = ClaimedJob(uuid.uuid4(), "t.sure", {}, 1, 1, None, 50)
+    monkeypatch.setattr(jobs_mod, "execute", isleyici)
+    sonuc = execute_with_timeout(job, {"t.sure": spec})
+    assert sonuc.durum == "done"
+    assert gorulen[0] is not None and 45 < gorulen[0] <= 50
+    assert kalan_sure() is None  # iş dışında sınırsız
 
 
 # ----------------------------------------------------------- #3/#5 iki tur ve K20

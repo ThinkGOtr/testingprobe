@@ -758,6 +758,67 @@ def set_gateway_factory(factory: GatewayFactory | None) -> None:
     _gateway_factory = factory or default_gateway_factory
 
 
+def generation_check(
+    kabul_kriterleri: Sequence[Any],
+    korunan: Sequence[Mapping[str, Any]],
+    onayli_model: Mapping[str, Any] | None,
+) -> Callable[[Any], list[str]]:
+    """Üretim çağrısının `output_check`'i. Tek turda `generation_output_problems`; tur 2'de
+    (onaylı tasarım modeli var) ayrıca üst listelerin onaylı modelden sapması
+    (`round2_differences`) ve case'lerin ONAYLI modelin listelerine göre tutarlılığı
+    (`round2_summary`): sapma yalnız uyarı/onay engeli kalmasın, model düzeltmeye
+    yönlendirilsin (inceleme tur 2, test mimarı #8)."""
+
+    def check(output: Any) -> list[str]:
+        out = generation_output_problems(output, kabul_kriterleri, korunan=korunan)
+        if onayli_model is None or not isinstance(output, Mapping):
+            return out
+        from tp_core.features.cases.model import round2_differences, round2_summary
+
+        model_ozeti = normalize_ozet({k: v for k, v in output.items() if k != "cases"})
+        out += [
+            f"approved design model: {f} — copy the approved model's lists unchanged"
+            for f in round2_differences(onayli_model, model_ozeti)
+        ]
+        ozet = round2_summary(onayli_model, model_ozeti)
+        cases = [c for c in output.get("cases") or [] if isinstance(c, Mapping)]
+        gorulen = set(out)
+        for n, case in enumerate(cases, start=1):
+            for p in consistency_problems(case, ozet):
+                satir = f"C{n}: {p}"
+                if satir not in gorulen:
+                    gorulen.add(satir)
+                    out.append(f"C{n}: (approved design model) {p}")
+        return out
+
+    return check
+
+
+def dropped_ready_refs(ilk: Any, son_cases: Sequence[Any]) -> list[str]:
+    """Kural yeniden istemesinde açık soru atfı silinip `ready` kalan case'ler.
+
+    İlk şemaya uyan çıktıdaki case ile son çıktıdaki case başlıkla (yoksa sırayla) eşlenir.
+    Dönüş: "C<n> '<başlık>': Q1, Q3" biçiminde kısa satırlar (boş = yok)."""
+    if not isinstance(ilk, Mapping):
+        return []
+    ilk_cases = [c for c in ilk.get("cases") or [] if isinstance(c, Mapping)]
+    basliga = {str(c.get("title") or ""): c for c in ilk_cases}
+    out: list[str] = []
+    for n, case in enumerate(son_cases, start=1):
+        if not isinstance(case, Mapping) or case.get("readiness") != "ready":
+            continue
+        baslik = str(case.get("title") or "")
+        once = basliga.get(baslik) or (ilk_cases[n - 1] if n <= len(ilk_cases) else None)
+        if once is None:
+            continue
+        onceki = [str(r) for r in once.get("open_question_refs") or []]
+        simdi = {str(r) for r in case.get("open_question_refs") or []}
+        dusen = [r for r in onceki if r not in simdi]
+        if dusen:
+            out.append(f"C{n} '{baslik[:60]}': {', '.join(dusen)}")
+    return out
+
+
 def _gen_schema(gw: ModelGateway) -> dict[str, Any]:
     from tp_core.features.cases.schema import generation_schema
 
@@ -1015,11 +1076,7 @@ def run_generation(
             workflow_id=wf_id,
             call_id=deterministic_call_id(ctx.job_id, PURPOSE),
             output_check=(
-                (
-                    lambda o: generation_output_problems(
-                        o, kabul_kriterleri, korunan=korunan_icerikler
-                    )
-                )
+                generation_check(kabul_kriterleri, korunan_icerikler, onayli_model)
                 if rule_reask_enabled()
                 else None
             ),
@@ -1101,6 +1158,17 @@ def run_generation(
         kapsanmayan = coverage_gaps(s, req)
         onceki_icerik, onceki_uyari = _old_content_warning(s, req)
         uyarilar = [onceki_uyari] if onceki_uyari else []
+        # Geçidin notları (ör. iş süresi yetmediği için kural yeniden istemesi yapılmadı) ve
+        # yeniden istemede açık soru atfı silinip hazır kalan case'ler (inceleme tur 2, #5).
+        uyarilar += list(getattr(result, "uyarilar", None) or [])
+        dusen_atiflar = dropped_ready_refs(getattr(result, "ilk_cikti", None), cases)
+        if dusen_atiflar:
+            uyarilar.append(
+                "Kural düzeltmesinde açık soru atfı silinen hazır case'ler: "
+                + "; ".join(dusen_atiflar[:10])
+                + ". Bağımlılığın gerçekten kalktığını (ön koşul) doğrulayın; kalkmadıysa case "
+                "blocked olmalı."
+            )
         if korunan_ide:
             uyarilar.append(
                 f"IDE'den (Claude Code) gelen {korunan_ide} taslak korundu; yeni üretimle "
@@ -1177,6 +1245,8 @@ def run_generation(
                 "tasarim_modeli_id": yuk.get("tasarim_modeli_id"),
                 "tur2_farklari": tur2_farklari,
                 "kimlik_cakismalari": kimlik_cakismalari,
+                "gecit_uyarilari": list(getattr(result, "uyarilar", None) or []),
+                "dusen_soru_atiflari": dusen_atiflar,
                 **cagri_eki,
             },
         )
