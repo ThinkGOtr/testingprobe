@@ -618,6 +618,11 @@ def decision_table_draft_cases() -> list[dict[str, Any]]:
                 "replay_key": _key(key),
                 "messages": _msgs(taslak_mesajlari(req)),
                 "expect": exp,
+            }
+        )
+    return out
+
+
 def case_facts_cases() -> list[dict[str, Any]]:
     """Değer çıkarma (012 §4.3): üretimin `facts_messages` kurucusu, TPD-1 demo tabloları
     (`tests.unit.features.oracle.tpd1`); beklenen olgular golden'ın olgularıdır."""
