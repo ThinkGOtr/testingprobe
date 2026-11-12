@@ -145,6 +145,25 @@ class AuditEvent(Base):
     """Hash zincirli denetim kaydı; yazım yalnızca `audit_on_commit` / `append_audit` ile."""
 
     __tablename__ = "audit_event"
+    __table_args__ = (
+        # 0030 (013): Jira tetiği ve model kipi denetim sorguları için kısmi indeksler.
+        Index(
+            "audit_event_jira_tetik_ix",
+            "id",
+            postgresql_where=text("eylem = 'requirements.jira_tetik'"),
+        ),
+        Index(
+            "audit_event_jira_tetik_key_ix",
+            text("(ozet ->> 'jira_key')"),
+            "id",
+            postgresql_where=text("eylem = 'requirements.jira_tetik'"),
+        ),
+        Index(
+            "audit_event_model_kipi_ix",
+            "id",
+            postgresql_where=text("eylem = 'worker.model_mode'"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     zaman: Mapped[datetime] = olusturma_col()
