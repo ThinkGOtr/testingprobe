@@ -145,7 +145,9 @@ def test_sonradan_giren_tetiklenir_ikinci_turda_cift_tetik_yok(
     assert ozet["acik"] is True and ozet["durum"] == QA and ozet["taban"] is False
     assert ozet["bulunan"] == 1 and ozet["tetiklenen"] == 1 and ozet["hata"] is None
     assert ozet["tetiklenenler"] == ["TPD-4"]
-    assert ozet["sonuclar"] == [{"jira_key": "TPD-4", "sonuc": "tetiklendi", "neden": None}]
+    assert ozet["sonuclar"] == [
+        {"jira_key": "TPD-4", "sonuc": "tetiklendi", "neden": jira_tetik.TETIKLENDI_NEDENI}
+    ]
     req = _req("TPD-4")
     assert req is not None and req.durum == "in_review"
     assert req.jira_durumu == QA and req.qa_tetik_zamani is not None
@@ -399,12 +401,20 @@ def test_acik_varsayilani_simde_acik_gercek_jirada_kapali(
         assert c.execute(text("SELECT count(*) FROM otomasyon_ayari")).scalar_one() == 0
     sahte = _SahteJira()
     assert jira_tetik.tur(engine, sahte)["acik"] is False and sahte.jql == []
-    # Kısmi yazım: açık değer artık satırda; birbirini ezmez.
+    # Kısmi yazım birbirini ezmez; hesaplanmış `acik` satıra dondurulmaz (backend #3b).
     _ayar(aralik_s=90)
     _ayar(otomatik_case=False)
     with new_session() as s:
         a = ayarlar.jira_tetik(s)
     assert (a.acik, a.aralik_s, a.otomatik_case) == (False, 90, False)
+    with engine.connect() as c:
+        deger = c.execute(
+            text("SELECT deger FROM otomasyon_ayari WHERE anahtar = 'jira_tetik'")
+        ).scalar_one()
+    assert deger == {"aralik_s": 90, "otomatik_case": False}
+    monkeypatch.undo()  # sim yeniden doğrulandı: varsayılan açık geri gelir
+    with new_session() as s:
+        assert ayarlar.jira_tetik(s).acik is True
 
 
 # ------------------------------------------------------------------ worker işi + API
@@ -470,17 +480,30 @@ def test_is_kendini_yeniden_planlar_ve_api_son_turu_gosterir(
     assert r.status_code == 200, r.text
     g = r.json()
     assert g["acik"] is True and g["durum"] == QA and g["aralik_s"] == 60
+    assert g["taban_kurulu"] is True
     st = g["son_tur"]
     assert st["bulunan"] == 1 and st["tetiklenen"] == 1 and st["ertelenen"] == 0
     assert st["hata"] is None and st["zaman"] and st["taban"] is False
-    assert st["sonuclar"] == [{"jira_key": "TPD-4", "sonuc": "tetiklendi", "neden": None}]
+    assert st["sonuclar"] == [
+        {"jira_key": "TPD-4", "sonuc": "tetiklendi", "neden": jira_tetik.TETIKLENDI_NEDENI}
+    ]
     assert [t["jira_key"] for t in g["son_tetiklenenler"]] == ["TPD-4"]
     assert g["son_tetiklenenler"][0]["zaman"]
     assert g["son_tetiklenenler"][0]["sonuc"] == "tetiklendi"
+    assert g["son_tetiklenenler"][0]["neden"] == jira_tetik.TETIKLENDI_NEDENI
 
 
 def test_api_oturumsuz_401(api: TestClient) -> None:
     assert api.get("/automation/jira-trigger").status_code == 401
+
+
+def test_api_taban_kurulu_ilk_turdan_once_false(api: TestClient, engine: Engine, make_user) -> None:
+    login(api, make_user("tester"))
+    assert api.get("/automation/jira-trigger").json()["taban_kurulu"] is False
+    _taban(engine)
+    assert api.get("/automation/jira-trigger").json()["taban_kurulu"] is True
+    _ayar(durum="QA Hazır")  # durum değişti: işaret silinir
+    assert api.get("/automation/jira-trigger").json()["taban_kurulu"] is False
 
 
 def test_ayar_kapaliyken_is_yalniz_yeniden_planlar(engine: Engine) -> None:
@@ -785,3 +808,116 @@ def test_demo_jira_status(
     r = api.post("/demo/jira-status", json={"jira_key": "TPD-1", "durum": QA})
     assert r.status_code == 409 and "jira-sim" in r.json()["detail"]
     assert jira.get_issue("TPD-1").status == "To Do"
+
+
+# ------------------------------------------------- sim önbelleği, K23 demo ortamı, ortam
+
+
+def test_sim_onbellegi_olumsuz_sonucu_kisa_tutar(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Backend #3a: hata/olumsuz doğrulama `SIM_NEGATIF_S`, olumlu `SIM_ONBELLEK_S` tutulur."""
+    saat = [1000.0]
+    monkeypatch.setattr(ayarlar.time, "monotonic", lambda: saat[0])
+    sonuc = [False]
+    cagri: list[int] = []
+
+    def dogrula() -> bool:
+        cagri.append(1)
+        if sonuc[0] is None:
+            raise RuntimeError("ağ yok")
+        return sonuc[0]
+
+    monkeypatch.setattr(ayarlar, "_sim_dogrula", dogrula)
+    ayarlar.sim_onbellegini_temizle()
+    try:
+        assert ayarlar.jira_sim_mi() is False
+        saat[0] += ayarlar.SIM_NEGATIF_S - 1
+        assert ayarlar.jira_sim_mi() is False and len(cagri) == 1
+        sonuc[0] = True
+        saat[0] += 2  # olumsuz sonuç süresi doldu: yeniden doğrulanır
+        assert ayarlar.jira_sim_mi() is True and len(cagri) == 2
+        sonuc[0] = None
+        saat[0] += ayarlar.SIM_ONBELLEK_S - 1
+        assert ayarlar.jira_sim_mi() is True and len(cagri) == 2
+        saat[0] += 2
+        assert ayarlar.jira_sim_mi() is False and len(cagri) == 3  # hata → kısa olumsuz
+    finally:
+        ayarlar.sim_onbellegini_temizle()
+
+
+def _model_kipi_kaydi(engine: Engine, mod: str) -> None:
+    from tp_core.audit import append_audit
+
+    with engine.begin() as c:
+        append_audit(c, "system", "worker.model_mode", "core-worker", {"mod": mod})
+
+
+def test_k23_gercek_ortamda_seed_ve_reset_otomatik_koda_dokunmaz(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tp_core.features.demo import service as demo_service
+    from tp_core.seed import seed_otomasyon_demo
+
+    monkeypatch.setattr(ayarlar, "jira_sim_mi", lambda: False)
+    _model_kipi_kaydi(engine, "live")
+    assert seed_otomasyon_demo() == {"otomatik_kod_uretimi": "gercek_ortam"}
+    assert demo_service._otomasyon_demo_ayarlari() == {"otomatik_kod_uretimi": "gercek_ortam"}
+    with engine.connect() as c:
+        assert c.execute(text("SELECT count(*) FROM otomasyon_ayari")).scalar_one() == 0
+    assert _denetim(engine, "otomasyon.ayar") == []
+    # Gerçek Jira ama model kipi REPLAY (worker bildirimi): demo ortamı → kapatılır.
+    _model_kipi_kaydi(engine, "replay")
+    assert seed_otomasyon_demo() == {"otomatik_kod_uretimi": "yazildi"}
+    with new_session() as s:
+        assert ayarlar.otomatik_kod(s).acik is False
+
+
+def test_model_kipi_worker_bildiriminden_yoksa_acik_yapilandirmadan(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tp_core.config import get_settings
+    from tp_core.features.demo.service import MODEL_DURUMU_EYLEM
+
+    assert ayarlar._MODEL_KIPI_EYLEMI == MODEL_DURUMU_EYLEM
+    monkeypatch.setattr(get_settings(), "model_mode", "auto")
+    with new_session() as s:
+        assert ayarlar.model_kipi(s) is None  # auto core-api'de çözülemez
+    monkeypatch.setattr(get_settings(), "model_mode", "replay")
+    with new_session() as s:
+        assert ayarlar.model_kipi(s) == "replay"
+    _model_kipi_kaydi(engine, "live")
+    with new_session() as s:
+        assert ayarlar.model_kipi(s) == "live"  # worker bildirimi önce gelir
+
+
+def test_ayar_ucu_ortam_bilgisi_doner(
+    api: TestClient, engine: Engine, make_user, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """K23: `GET /automation-settings` → `ortam` (portalın REPLAY uyarısı); ayar değildir."""
+    login(api, make_user("tester"))
+    _model_kipi_kaydi(engine, "replay")
+    g = api.get("/automation-settings").json()
+    assert g["replay"] is True and g["model_kipi"] == "replay"
+    assert g["ortam"] == {
+        "model_kipi": "replay", "replay": True, "jira_sim": True, "demo_ortami": True
+    }  # fmt: skip
+    _model_kipi_kaydi(engine, "live")
+    monkeypatch.setattr(ayarlar, "jira_sim_mi", lambda: False)
+    g = api.get("/automation-settings").json()
+    assert g["replay"] is False and g["model_kipi"] == "live"
+    assert g["ortam"] == {
+        "model_kipi": "live", "replay": False, "jira_sim": False, "demo_ortami": False
+    }  # fmt: skip
+    login(api, make_user("engineer"))
+    assert api.put("/automation-settings/ortam", json={"replay": False}).status_code == 404
+
+
+def test_gereksinim_ozeti_jira_durumunu_tasir(
+    engine: Engine, jira: RestJira, api: TestClient, make_user
+) -> None:
+    """QA #4 / frontend #5: `GET /requirements` öğesi `jira_durumu` taşır (portal demo ipucu)."""
+    _tasi(jira, "TPD-4")
+    _taban(engine)
+    login(api, make_user("analyst"))
+    g = {r["jira_key"]: r for r in api.get("/requirements").json()}
+    assert g["TPD-4"]["jira_durumu"] == QA
+    assert all("jira_durumu" in r for r in g.values())

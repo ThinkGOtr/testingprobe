@@ -296,6 +296,10 @@ def on_kontrol(b: Baglam) -> None:
         roller[rol] = me.get("rol")
     b.kanit["roller"] = roller
     b.kontrol("5 portal rolü giriş yaptı", len(roller) == 5, str(roller))
+    if b.prova:
+        # QA #6: provanın İLK kontrolü; açıkken sonraki herhangi bir case onayı kod üretimi
+        # başlatır ve REPLAY-MISS, kontrolden önce oluşurdu.
+        otomatik_kod_kapali(b)
 
     w = b.yigin.worker_ortami()
     b.kanit["core_worker"] = w
@@ -534,9 +538,10 @@ def case_uret(b: Baglam) -> None:
 
 
 def otomatik_kod_kapali(b: Baglam) -> None:
-    """013 K20: demo ortamında onay sonrası otomatik kod KAPALI olmalı (seed / make reset /
-    demo-reset yazar). Açıksa her onay web kod üretimi başlatır; `kod_uret` adımı 4 yeni script
-    alamaz ve strict REPLAY'de kaydı olmayan üretimler REPLAY-MISS verir."""
+    """013 K20/K23: demo ortamında onay sonrası otomatik kod KAPALI olmalı (seed / make reset /
+    demo-reset yazar; P0'ın ilk kontrolü). Açıksa her onay web kod üretimi başlatır;
+    `kod_uret` adımı 4 yeni script alamaz ve strict REPLAY'de kaydı olmayan üretimler
+    REPLAY-MISS verir."""
     ayar = (b.api.get("analist", "/automation-settings") or {}).get("otomatik_kod_uretimi") or {}
     b.kontrol(
         "onay sonrası otomatik kod kapalı (013 K20; make reset/seed yazar)",
@@ -548,7 +553,6 @@ def otomatik_kod_kapali(b: Baglam) -> None:
 def qa_kararlari(b: Baglam) -> None:
     req_id = b.veri["req_id"]
     if b.prova:
-        otomatik_kod_kapali(b)
         for _n, c in sorted(caseler(b, req_id).items()):
             if c["durum"] != "draft":
                 continue

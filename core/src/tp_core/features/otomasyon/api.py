@@ -2,8 +2,12 @@
 
 | Yöntem | Yol | Rol |
 |---|---|---|
-| GET | `/automation-settings` | herkes — `{anahtar: {...değerler, guncelleyen, guncelleme}}` |
+| GET | `/automation-settings` | herkes — `{anahtar: {...}, model_kipi, replay, ortam}` |
 | PUT | `/automation-settings/{anahtar}` | analyst, engineer — gövde kısmi nesne → güncel hepsi |
+
+Ayar değil, yazılamaz (K23; portalın REPLAY uyarısı): üst düzey `model_kipi:
+live|replay|record|null`, `replay: bool` ve ayrıntı `ortam: {model_kipi, replay, jira_sim,
+demo_ortami}`.
 
 `jira_tetik` gövdesinde `durum` alanı varsa yalnız engineer (K14; analist 403). `jira_tetik`
 yazılınca bekleyen tetik turu öne çekilir (`jira_tetik.ayar_degisti`): tetik açıldıysa ya da durum
@@ -26,8 +30,18 @@ AyarYoneticisi = Annotated[Principal, Depends(require_role("analyst", "engineer"
 
 
 @router.get("/automation-settings")
-def ayarlari_getir(session: DbSession, _user: CurrentUser) -> dict[str, dict[str, Any]]:
-    return ayarlar.hepsi(session)
+def ayarlari_getir(session: DbSession, _user: CurrentUser) -> dict[str, Any]:
+    return _govde(session)
+
+
+def _govde(session: Any) -> dict[str, Any]:
+    ortam = ayarlar.ortam(session)
+    return {
+        **ayarlar.hepsi(session),
+        "model_kipi": ortam["model_kipi"],
+        "replay": ortam["replay"],
+        "ortam": ortam,
+    }
 
 
 @router.put("/automation-settings/{anahtar}")
@@ -36,7 +50,7 @@ def ayari_guncelle(
     session: DbSession,
     user: AyarYoneticisi,
     deger: Annotated[dict[str, Any], Body()],
-) -> dict[str, dict[str, Any]]:
+) -> dict[str, Any]:
     if anahtar not in ayarlar.VARSAYILAN:
         raise HTTPException(404, f"Bilinmeyen otomasyon ayarı: {anahtar}")
     if anahtar == ayarlar.JIRA_TETIK and "durum" in deger and user.rol != "engineer":
@@ -52,4 +66,4 @@ def ayari_guncelle(
             hemen=(yeni.acik and not onceki.acik) or yeni.durum != onceki.durum,
             aralik_s=yeni.aralik_s,
         )
-    return ayarlar.hepsi(session)
+    return _govde(session)

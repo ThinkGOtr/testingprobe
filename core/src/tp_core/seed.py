@@ -74,8 +74,10 @@ def seed_test_verisi() -> int:
 
 
 def seed_otomasyon_demo() -> dict[str, str]:
-    """Demo ortamı otomasyon ayarları (013 K20): onay sonrası otomatik kod KAPALI; Demo-B kodu
-    "Kod üret" düğmesiyle yürütür. Yalnız satır yoksa yazılır (denetimli, aktör `seed`)."""
+    """Demo ortamı otomasyon ayarları (013 K20, K23): onay sonrası otomatik kod KAPALI; Demo-B
+    kodu "Kod üret" düğmesiyle yürütür. Yalnız satır yoksa ve yalnız demo ortamında (doğrulanmış
+    Jira sim'i ya da model kipi REPLAY) yazılır (denetimli, aktör `seed`); gerçek Jira'lı
+    kurulumda ürün varsayılanı (açık) korunur (`gercek_ortam`)."""
     from tp_core.features.otomasyon import ayarlar
     from tp_core.models import session_scope
 

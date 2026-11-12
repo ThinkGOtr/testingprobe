@@ -82,6 +82,9 @@ def requirement_summary(req: Requirement, sayaclar: dict[str, int]) -> dict[str,
         "kabul_kriterleri": ac_items(req.kabul_kriterleri),
         "ac_missing": req.ac_missing,
         "durum": req.durum,
+        # Jira durum tetiğinin story'yi son gördüğü durum (013 §3.4; null = tetik durumunda
+        # değil ya da hiç görmedi). Portal demo ipucu "zaten durumda" dalı bunu okur.
+        "jira_durumu": req.jira_durumu,
         "cekim_zamani": _iso(req.cekim_zamani or req.olusturma),
         "po": po_status(req),
         "sayaclar": sayaclar,
