@@ -1318,9 +1318,11 @@ def test_hata_yakalama_ozeti_kule_sekli_ve_kapsam(
             "el_yazisi": {"oran": 0.0, "yakalanan": 0, "kacan": 9},
         }
     ]
-    assert hy["kacanlar"] == hy["ai_kacanlar"] == [
-        {"hata_kodu": "min_siparis_500", "ad": "Minimum sipariş tutarı 500", "platform": "web"}
-    ]
+    assert (
+        hy["kacanlar"]
+        == hy["ai_kacanlar"]
+        == [{"hata_kodu": "min_siparis_500", "ad": "Minimum sipariş tutarı 500", "platform": "web"}]
+    )
     assert "yakalanan 8, kaçan 1" in hy["kaynak"] and "9/9 hata" in hy["kaynak"]
 
 

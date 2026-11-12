@@ -796,8 +796,9 @@ def hata_yakalama_ozeti(session: Session) -> dict[str, Any] | None:
     tam_katalog, gecerli_adim, esik, yeterli, not}, platformlar: [{platform, oran, yakalanan,
     kacan, gecersiz, el_yazisi}], kacanlar: [{hata_kodu, ad, platform}], ai_kacanlar: […],
     kaynak}` (`kaynak`'ı Kule `kaynaklar`'a taşır). `kacanlar`: hiçbir testin (hiçbir kaynak)
-    yakalamadığı hatalar (`kacti`; kabul senaryosu 12); `ai_kacanlar`: üretilen testlerin ölçüldüğü
-    platformlarda üretilen testlerin kaçırdığı hatalar. Sayılar okuma anında `hata_kosusu_adim` satırlarından hesaplanır.
+    yakalamadığı hatalar (`kacti`; kabul senaryosu 12); `ai_kacanlar`: üretilen testlerin
+    ölçüldüğü platformlarda üretilen testlerin kaçırdığı hatalar. Sayılar okuma anında
+    `hata_kosusu_adim` satırlarından hesaplanır.
     """
     kosular = session.scalars(
         select(HataKosusu)
