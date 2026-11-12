@@ -108,7 +108,12 @@ from tp_core.features.codegen.render import (
     ts_literal,
 )
 from tp_core.features.codegen.toolchain import ToolchainClient, ToolchainError
-from tp_core.integrations.forge import CASE_BRANCH_PREFIX, ForgeError, ForgeNotFoundError
+from tp_core.integrations.forge import (
+    CASE_BRANCH_PREFIX,
+    ForgeError,
+    ForgeNotFoundError,
+    ZorunluCheckKaynagi,
+)
 from tp_core.models import (
     AiCall,
     ExternalRef,
@@ -692,6 +697,8 @@ def dil_secenekleri(platform: str | None) -> dict[str, Any]:
         # Algılama yapılamadıysa nedeni (kaynak `varsayilan`); yapıldıysa null.
         "neden": f"Dil algılanamadı ({alg.hata}); varsayılan dil önerildi" if alg.hata else None,
         "sayilar": {d: int(alg.sayilar.get(d, 0)) for d in platformlar.platform_dilleri(p)},
+        # Okuma bütçesi bittiği için sayısı alt sınır olan diller ("en az N"; tur 3 Y-2).
+        "en_az": [d for d in platformlar.platform_dilleri(p) if d in alg.en_az],
         "secenekler": secenekler,
     }
 
@@ -3577,6 +3584,8 @@ def run_merge(ctx: JobContext, engine: Engine) -> dict[str, Any]:
         kabul = merge_kabul_gerekceleri(sc, cg)
         kabul_notu = _review_gerekcesi(s, yuk.get("review_id")) if kabul else None
         break_durum = cg.break_durum
+        # Kullanıcı iletisinde script'in kendi check adı (K-T1: web + Java `local-ci-web-java`).
+        check = platformlar.check_adi(sc.platform, platformlar.dil(sc.platform, sc.dil))
     if engel is not None:
         with engine.begin() as conn:
             append_audit(
@@ -3626,7 +3635,7 @@ def run_merge(ctx: JobContext, engine: Engine) -> dict[str, Any]:
                     )
                 raise PermanentJobError(
                     "Merge yapılmadı: PR dalı main'in gerisinde (başka bir PR merge edildi). Dal "
-                    "otomatik güncelleniyor; local-ci yeni head'de geçtikten sonra yeniden "
+                    f"otomatik güncelleniyor; {check} yeni head'de geçtikten sonra yeniden "
                     "inceleyip merge edin."
                 ) from exc
             raise PermanentJobError(f"Merge reddedildi: {exc}") from exc
@@ -3762,7 +3771,11 @@ def request_update_branch(session: Session, number: int, user: Principal) -> dic
         "job_id": job_id,
         "workflow_id": None,
         "durum": "started",
-        "mesaj": "Dal main ile güncelleniyor; local-ci yeni head'de yeniden koşacak.",
+        "mesaj": (
+            "Dal main ile güncelleniyor; "
+            f"{platformlar.check_adi(sc.platform, platformlar.dil(sc.platform, sc.dil))} "
+            "yeni head'de yeniden koşacak."
+        ),
     }
 
 
@@ -4178,7 +4191,7 @@ def sync_prs(engine: Engine, forge: ForgePort | None = None) -> dict[str, Any]:
             sonuc["hata"] += 1
             continue
         if pr.state not in ("merged", "closed"):
-            if _pr_checklerini_kaydet(forge, int(no), pr.head_sha or head):
+            if _pr_checklerini_kaydet(forge, int(no), pr.head_sha or head, pr.base):
                 sonuc["checks"] += 1
             continue
         try:
@@ -4196,11 +4209,16 @@ def sync_prs(engine: Engine, forge: ForgePort | None = None) -> dict[str, Any]:
     return sonuc
 
 
-def _pr_checklerini_kaydet(forge: ForgePort, no: int, head: str | None) -> bool:
+def _pr_checklerini_kaydet(
+    forge: ForgePort, no: int, head: str | None, base: str | None = None
+) -> bool:
     """Açık PR'ın head check'lerini forge'dan okuyup `pull_request.checks`'e yazar (GitHub kipi:
     core-api GitHub'a erişmez; portal check listesi ve merge kapısı bu kopyayı okur). Biçim
-    LocalForge'un `checks/<sha>.json` listesiyle aynıdır. Yalnızca değişince yazılır; okuma
-    hatası durum senkronunu durdurmaz (kopya bayat kalır → görünüm `pending`). Yazıldıysa True."""
+    LocalForge'un `checks/<sha>.json` listesiyle aynıdır. Forge merge kapısının zorunlu listesini
+    hesaplayabiliyorsa (`ZorunluCheckKaynagi`; K-T13: hedef dal ∪ head `web-java.yml`, okunamazsa
+    kapalı taraf) o da `zorunlu_checkler`'e yazılır: portal aynası kapıyla aynı listeyi görür
+    (MİM-D3). Yalnızca değişince yazılır; okuma hatası durum senkronunu durdurmaz (kopya bayat
+    kalır → görünüm `pending`). Yazıldıysa True."""
     if not head:
         return False
     try:
@@ -4208,12 +4226,18 @@ def _pr_checklerini_kaydet(forge: ForgePort, no: int, head: str | None) -> bool:
     except Exception as exc:
         log.warning("PR #%s check'leri alınamadı (%s): %s", no, head[:12], exc)
         return False
+    zorunlu = (
+        list(forge.zorunlu_checkler(head, base)) if isinstance(forge, ZorunluCheckKaynagi) else None
+    )
     with session_scope() as s:
         kayit = s.get(PullRequest, no, with_for_update=True)
-        if kayit is None or (kayit.checks_sha == head and kayit.checks == liste):
+        if kayit is None or (
+            kayit.checks_sha == head and kayit.checks == liste and kayit.zorunlu_checkler == zorunlu
+        ):
             return False
         kayit.checks = liste
         kayit.checks_sha = head
+        kayit.zorunlu_checkler = zorunlu
         kayit.checks_zaman = datetime.now(UTC)
     return True
 

@@ -67,6 +67,7 @@ import base64
 import contextlib
 import io
 import json
+import logging
 import os
 import re
 import shutil
@@ -119,6 +120,8 @@ from tp_core.integrations.forge import (
     validate_required_checks,
 )
 from tp_core.ports import CheckRun, PullRequest
+
+log = logging.getLogger(__name__)
 
 DEFAULT_API_URL = "https://api.github.com"
 API_VERSION = "2022-11-28"
@@ -629,7 +632,9 @@ class GitHubForge:
             merge_auth=TokenAuth(merge_token) if merge_token else None,
             # 009 §2.7: etkin uygulama platformlarının iş akışı check'leri de zorunlu
             # (`TP_PLATFORMS=android,windows` → `mobil-android`, `masaustu-windows`).
-            # 011 §2.8: web + Java etkinse (`TP_WEB_DILLERI=ts,java`) `web-java` de zorunlu.
+            # 011 §2.8: web + Java etkinse (`TP_WEB_DILLERI=ts,java`) `web-java` de zorunlu;
+            # değilse merge anında `web-java.yml` base ∪ head'de varsa (K-T13,
+            # `zorunlu_checkler`).
             required_checks=github_required_checks(
                 parse_required_checks(env.get(REQUIRED_CHECKS_ENV), GITHUB_REQUIRED_CHECKS),
                 etkin_platformlar(env),
@@ -641,17 +646,37 @@ class GitHubForge:
     def close(self) -> None:
         self._client.close()
 
-    def zorunlu_checkler(self, ref: str) -> tuple[str, ...]:
-        """`ref` için zorunlu check'ler: yapılandırılmış liste + (K-T10) `web-java.yml` depoda
-        varsa `web-java`. İş akışı dosyası okunamazsa yapılandırılmış liste (ruleset yine
-        uygular)."""
+    def _web_java_is_akisi_var(self, ref: str) -> bool:
+        """`ref`'te `.github/workflows/web-java.yml` var mı? Tek dosya okuması (contents API;
+        büyük depoda kesilen ağaç listesine bağlı değil). Yalnız dosyanın 404'ü "yok"tur; ref
+        çözülemez ya da başka bir hata olursa istisna yükselir (çağıran kapalı tarafa düşer)."""
+        validate_ref(ref)
+        sha = ref if is_sha(ref) else self.head_sha(ref)
+        try:
+            self._get(
+                f"{self._r}/contents/{_q(WEB_JAVA_WORKFLOW_YOLU)}",
+                f"dosya {WEB_JAVA_WORKFLOW_YOLU}",
+                params={"ref": sha},
+            )
+        except ForgeNotFoundError:
+            return False
+        return True
+
+    def zorunlu_checkler(self, head: str, base: str | None = None) -> tuple[str, ...]:
+        """PR merge kapısının zorunlu check'leri (K-T10 + K-T13): yapılandırılmış liste +
+        `web-java.yml` PR'ın hedef dalının güncel ucunda (`base`) YA DA `head`'de varsa
+        `web-java`. Base de okunur: iş akışı dosyasını silen PR kendi `web-java` kontrolünü
+        düşüremez (merge token'ı ruleset'i bypass edebildiğinden tek kapı burasıdır). Dosya
+        okunamazsa (ref çözülemedi, ağ/yetki hatası) KAPALI taraf: `web-java` zorunlu. Hesap
+        `github_required_checks(web_java_is_akisi=)`'dadır (MİM-D4)."""
         if WEB_JAVA_CHECK in self.required_checks:
             return self.required_checks
         try:
-            var = WEB_JAVA_WORKFLOW_YOLU in self.list_files(".github/workflows/", ref)
-        except ForgeError:
-            return self.required_checks
-        return (*self.required_checks, WEB_JAVA_CHECK) if var else self.required_checks
+            var = any(self._web_java_is_akisi_var(r) for r in (head, base) if r)
+        except Exception as exc:  # okunamadı → kapalı taraf
+            log.warning("web-java.yml okunamadı (%s); web-java zorunlu sayılıyor", exc)
+            var = True
+        return github_required_checks(self.required_checks, (), web_java_is_akisi=var)
 
     def human_forge(self) -> GitHubForge:
         """Aynı depo, İNSAN kimliğiyle (`GITHUB_MERGE_TOKEN`, ör. demo-admin üyesi mühendis).
@@ -1082,7 +1107,7 @@ class GitHubForge:
                 f"(beklenen {head[:12]}, güncel {pr.head_sha[:12]}); yeniden onay gerekli"
             )
         checks = self.checks(head)
-        verdict = evaluate_required_checks(checks, self.zorunlu_checkler(head))
+        verdict = evaluate_required_checks(checks, self.zorunlu_checkler(head, pr.base))
         # Merge token'ı (ör. demo-admin) ruleset bypass yetkisine sahip olabilir; kontroller
         # kırmızıyken yalnızca BYPASS_ACTOR merge edebilir (LocalForge ile aynı kural).
         if not verdict.passed and actor != BYPASS_ACTOR:

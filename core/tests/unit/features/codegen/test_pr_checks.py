@@ -34,6 +34,8 @@ YESIL = [
     {"name": ad, "status": "completed", "conclusion": "success", "url": f"https://gh/{ad}"}
     for ad in ("test-local", "ast-guard", "semgrep")
 ]
+# Senkronun sakladığı kapı listesi (`web-java.yml` depoda yok).
+KAPI = ["test-local", "ast-guard", "semgrep"]
 
 
 @pytest.fixture
@@ -145,7 +147,7 @@ def test_github_kipinde_db_kopyasi_okunur(engine: Engine, kip: Any) -> None:
     k = PullRequest(number=1, branch="b", baslik="t", head_sha=head, acan="x",
                     checks=[*YESIL, {"name": "sauce", "status": "completed",
                                      "conclusion": "failure", "url": None}],
-                    checks_sha=head)  # fmt: skip
+                    checks_sha=head, zorunlu_checkler=KAPI)  # fmt: skip
     liste, ci, engeller = views.pr_checks(head, k)
     assert ci == "passed" and engeller == []
     durum = {c["ad"]: (c["durum"], c["zorunlu"]) for c in liste}
@@ -206,7 +208,7 @@ def test_merge_kapisi_github_kipinde_db_kopyasini_kullanir(engine: Engine, kip: 
         sc = s.get(Script, sid)
         assert any("pending" in e for e in views.merge_engelleri(sc, cg))
         k = s.get(PullRequest, 503)
-        k.checks, k.checks_sha = YESIL, head
+        k.checks, k.checks_sha, k.zorunlu_checkler = YESIL, head, KAPI
         s.flush()
         assert views.merge_engelleri(sc, cg) == []
         k.checks_sha = _sha()  # dal güncellendi, senkron henüz koşmadı
@@ -374,22 +376,77 @@ def test_0014_downgrade_upgrade(db: Db) -> None:
     assert _farklar(db.owner_url) == []
 
 
-def test_github_kipinde_web_java_check_kostuysa_zorunlu(
+def test_github_kipinde_portal_kapinin_sakli_listesini_kullanir(
     engine: Engine, kip: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """K-T10: `web-java` iş akışı depodaysa (check'i koştu) TP_WEB_DILLERI'nden bağımsız zorunlu
-    (GitHubForge.zorunlu_checkler ile aynı); kırmızı `web-java` merge'i durdurur."""
+    """MİM-D3 / K-T13: portal aynası merge kapısıyla AYNI listeyi kullanır — worker senkronunun
+    sakladığı `zorunlu_checkler` (base ∪ head `web-java.yml`). İş akışını silen PR'da `web-java`
+    hiç koşmasa da zorunludur; liste saklanmamışsa (eski kopya) kapalı taraf."""
     kip("github")
     monkeypatch.delenv("TP_WEB_DILLERI", raising=False)
     head = _sha()
     web_java = {"name": "web-java", "status": "completed", "conclusion": "failure", "url": None}
     k = PullRequest(number=1, branch="b", baslik="t", head_sha=head, acan="x",
-                    checks=[*YESIL, web_java], checks_sha=head)  # fmt: skip
+                    checks=[*YESIL, web_java], checks_sha=head,
+                    zorunlu_checkler=[*KAPI, "web-java"])  # fmt: skip
     liste, _, engeller = views.pr_checks(head, k)
     assert {c["ad"]: c["zorunlu"] for c in liste}["web-java"] is True
     assert engeller == ["Zorunlu kontrol 'web-java': failed"]
     k.checks = [*YESIL, {**web_java, "conclusion": "success"}]
     assert views.pr_checks(head, k)[2] == []
-    # Check hiç koşmadıysa (iş akışı yok) zorunlu listeye eklenmez.
+    # K-T13: iş akışını silen PR — check koşmadı ama base'de var → zorunlu (yok).
     k.checks = list(YESIL)
+    assert views.pr_checks(head, k)[2] == ["Zorunlu kontrol 'web-java': yok"]
+    # İş akışı ne base'de ne head'de: zorunlu değil.
+    k.zorunlu_checkler = list(KAPI)
     assert views.pr_checks(head, k)[2] == []
+    # Liste saklanmamış (eski kopya) ya da bozuk → kapalı taraf.
+    for bozuk in (None, ["geçersiz ad!"], "x"):
+        k.zorunlu_checkler = bozuk
+        assert views.pr_checks(head, k)[2] == ["Zorunlu kontrol 'web-java': yok"]
+
+
+class KapiForge(CheckForge):
+    """`ZorunluCheckKaynagi`: GitHubForge.zorunlu_checkler yüzeyi."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.liste: tuple[str, ...] = tuple(KAPI)
+        self.cagrilar: list[tuple[str, str | None]] = []
+
+    def zorunlu_checkler(self, head: str, base: str | None = None) -> tuple[str, ...]:
+        self.cagrilar.append((head, base))
+        return self.liste
+
+
+def test_sync_prs_kapi_listesini_saklar(engine: Engine) -> None:
+    """MİM-D3: senkron, forge'un head + hedef dal için hesapladığı kapı listesini yazar; liste
+    değişince (ör. base'e `web-java.yml` girdi) check'ler aynı olsa da yeniden yazılır."""
+    head = _sha()
+    _acik_pr(504, head)
+    gh = KapiForge()
+    gh.prs[504] = PortPR(number=504, branch="tp/504", base="main", title="t", body="",
+                         head_sha=head, url="u")  # fmt: skip
+    gh.by_sha[head] = [CheckRun.model_validate(c) for c in YESIL]
+    assert service.sync_prs(engine, gh)["checks"] == 1
+    assert gh.cagrilar == [(head, "main")]
+    assert _kayit(504).zorunlu_checkler == KAPI
+    assert service.sync_prs(engine, gh)["checks"] == 0
+    gh.liste = (*KAPI, "web-java")
+    assert service.sync_prs(engine, gh)["checks"] == 1
+    assert _kayit(504).zorunlu_checkler == [*KAPI, "web-java"]
+
+
+def test_0022_zorunlu_checkler_kolonu(db: Db) -> None:
+    """0022: `pull_request.zorunlu_checkler` (JSONB, boş olabilir); geri alınabilir."""
+    assert "zorunlu_checkler" in _kolonlar(db.owner_url)
+    with psycopg.connect(db.app_url.replace("+psycopg", ""), autocommit=True) as c:
+        c.execute(
+            "INSERT INTO pull_request (branch, baslik, head_sha, acan, zorunlu_checkler) "
+            "VALUES ('b','t','s','x','[\"web-java\"]'::jsonb)"
+        )
+    run_alembic(db.owner_url, "0021", "downgrade")
+    assert "zorunlu_checkler" not in _kolonlar(db.owner_url)
+    run_alembic(db.owner_url, "head")
+    assert "zorunlu_checkler" in _kolonlar(db.owner_url)
+    assert _farklar(db.owner_url) == []

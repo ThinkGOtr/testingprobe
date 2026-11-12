@@ -17,9 +17,16 @@ Java test kalıbı: `*Test.java`, `*Testi.java`, `*Tests.java`, `*IT.java`; alg�
 `*Test.kt` de. `<e2e-java>/src/test/**` her zaman sayılır; başka bir `src/test/**` ağacı (ör. kökte
 standart Maven / Gradle) yalnız Playwright for Java'ya **bağımlı** `pom.xml` / `build.gradle(.kts)`
 altındaysa (`<dependencies>` altında `com.microsoft.playwright`; `<playwright.version>` özelliği
-ya da `dependencyManagement` değil) **ve** test dosyası `com.microsoft.playwright` içe aktarıyorsa
-(dizin başına bir dosya okunarak; QA-Y1 tur 2). Soyut taban sınıflar (`BaseTest`, `Abstract*`,
-`*TestBase`, içerikte `abstract class`) test sayılmaz (QA-Y7).
+ya da `dependencyManagement` değil) **ve** testin kendisi Playwright kullanıyorsa (QA-Y1 tur 2).
+Kullanım işareti **modül** düzeyindedir (tur 3 Y-2): modülün destek sınıfları (taban/soyut sınıf,
+page object: `BaseTest`, `Abstract*`, `*Page`, `*TestBase`, …) `com.microsoft.playwright` içe
+aktarıyorsa, o sınıflara başvuran (`extends BaseTest`, `new LoginPage(page)`) testler de
+Playwright testidir. Test dizinleri örneklenir: dizin başına en çok `DIZIN_ORNEK` dosya okunur;
+biri Playwright testiyse dizinin (okunup Playwright'sız ya da soyut çıkanlar dışındaki) testleri
+sayılır. Dizin önceliği paket yoluna göredir (`src/test/java/` öneki atılır; uçtan uca adlı
+paket önce, sonra çok testli dizin). Soyut taban sınıflar (`BaseTest`, `Abstract*`, `*BaseTest`,
+`*TestBase`, içerikte `abstract class`) test sayılmaz (QA-Y7); `BaseUrlTest` gibi `Base` ile
+başlayan gerçek testler adla elenmez.
 
 `<e2e-app>` (Appium) ve `<e2e-java>` ağaçları C# / Python sayımına girmez; `<e2e-app>` web Java
 sayımına da girmez. En çok dosyası olan dil seçilir; eşitlikte öncelik `ts > java > csharp >
@@ -37,7 +44,11 @@ sayılır.
 **Okuma bütçesi:** işaret/test dosyası okuması (GitHub kipinde her biri bir API çağrısı) **dil
 başına** `MAX_ISARET_OKUMA` ile sınırlıdır. Yalnız altında o dilin test dosyası bulunan proje
 dosyaları okunur; adında test sözcüğü taşıyan dizinler (`tests/`, `E2E`, `*.Tests`, `spec`, …)
-önce, sonra sığ olan.
+önce, sonra sığ olan. Java'da bütçe sırası: proje dosyaları → modül başına en çok
+`MAX_DESTEK_OKUMA` destek sınıfı → test dizini örnekleri. Bütçe test dizinleri bitmeden tükenirse:
+modülde okunan dizinlerin en az `TAHMIN_ESIGI`'i Playwright ve hiçbiri Playwright'sız değilse
+okunmamış dizinleri de sayılır (aynı modülün testleri); değilse okunmamış dizinler sayılmaz ve
+dil `en_az` listesine girer (sayı alt sınırdır; `GET /code/languages` yanıtında `en_az`).
 
 **Önbellek:** sonuç `(forge, commit sha, platform, uygulama kökü)` ile süreç içinde önbelleklenir
 (commit'ler değişmez). Dal adı → sha çözümü `HEAD_TTL_S` (60 sn) önbelleklenir (`GET
@@ -78,9 +89,19 @@ IZLENMEYEN_DIZINLER = frozenset(
 _TEST_DIZIN_RE = re.compile(r"test|e2e|spec|playwright", re.IGNORECASE)
 # Kökte yalnız bağımlılık bildirimi varken test dosyası içerik taramasında önce okunan dizinler
 # (tarayıcı/uçtan uca test adı taşıyanlar; genel `tests/` birim testleri sonra).
-_UCTAN_UCA_DIZIN_RE = re.compile(r"e2e|ui|playwright|browser|web|acceptance", re.IGNORECASE)
+_UCTAN_UCA_DIZIN_RE = re.compile(
+    r"e2e|ui|playwright|browser|web|acceptance|flow|journey|scenario|senaryo", re.IGNORECASE
+)
+# Java kaynak kökü: dizin önceliği bunun ardındaki paket yoluna göre değerlendirilir (her
+# `src/test/` yolu `test` sözcüğünü taşır; ayırt edici değildir).
+_JAVA_KAYNAK_KOKU_RE = re.compile(r"(?:^|/)src/[^/]+/(?:java|kotlin)(?:/|$)")
 # Dil başına okunan işaret / test dosyası sınırı (GitHub kipinde her okuma bir API çağrısıdır).
 MAX_ISARET_OKUMA = 20
+# Java: dizin başına okunan test örneği, modül başına okunan destek sınıfı (taban/page object) ve
+# bütçe bittiğinde modülün okunmamış dizinlerini saymak için gereken Playwright dizini sayısı.
+DIZIN_ORNEK = 3
+MAX_DESTEK_OKUMA = 4
+TAHMIN_ESIGI = 3
 PLAYWRIGHT = "playwright"
 # Test dosyasının kendisinde Playwright kullanımı (kökte yalnız bağımlılık bildirimi varken;
 # QA-Y2 tur 2): `from playwright…` / `import playwright…` ya da `page: Page` tür açıklaması.
@@ -98,11 +119,24 @@ _POM_HARIC_RE = re.compile(
 )
 _POM_BAGIMLILIK_RE = re.compile(r"<dependency\b.*?</dependency\s*>", re.DOTALL)
 _POM_GRUP_RE = re.compile(r"<groupId>\s*com\.microsoft\.playwright\s*</groupId>")
-# Soyut taban sınıf adı (QA-Y7): `Abstract*`, `Base*`, `Taban*`, `*BaseTest(s)`, `*TestBase`.
+# Soyut taban sınıf adı (QA-Y7): `Abstract*`, `Base`/`Taban` + (isteğe bağlı tek sözcük) +
+# `Test(s)|Testi|IT` (`BaseTest`, `BaseUiTest`, `WebBaseTest`), `*TestBase`. `Base` ile başlayan
+# gerçek testler (`BaseUrlTest`, `BasketTest`) adla elenmez: tek sözcüklü ara ad ancak kısaltma
+# (`Ui`, `Web`, `Api`, `E2e`) ise taban sayılır; aksi halde içerikteki `abstract class` belirler.
 _TABAN_AD_RE = re.compile(
-    r"(?:Abstract|Base|Taban[iı]?)(?=[A-Z0-9_]|$)|[A-Za-z0-9_]*(?:Base|Taban[iı]?)"
-    r"(?:Tests?|Testi|IT)$|[A-Za-z0-9_]*TestBase$"
+    r"Abstract(?=[A-Z0-9_]|$)[A-Za-z0-9_]*"
+    r"|(?:Base|Taban[iı]?)(?:Ui|UI|Web|Api|API|E2e|E2E|Pw|Playwright|Selenium)?"
+    r"(?:Tests?|Testi|IT|Sinifi|Class)?"
+    r"|[A-Za-z0-9_]*(?:[a-z0-9_]Base|[a-z0-9_]Taban[iı]?)(?:Tests?|Testi|IT)"
+    r"|[A-Za-z0-9_]*TestBase"
 )
+# Destek sınıfı adı (taban / page object; Y-2): testlerin başvurduğu, Playwright'ı içe aktaran
+# sınıflar. Test kalıbına uymayan (`LoginPage.java`) ya da adla taban sayılan dosyalar.
+_DESTEK_AD_RE = re.compile(
+    r"[A-Za-z0-9_]*(?:Page|Pages|Sayfa(?:si|sı)?|Base|Taban[iı]?|Fixture|Fixtures|Hooks|Driver"
+    r"|Context|Support|Steps)"
+)
+_JAVA_SINIF_AD_RE = re.compile(r"[A-Z][A-Za-z0-9_]*")
 _SOYUT_SINIF_RE = re.compile(r"\babstract\s+(?:\w+\s+)*class\b")
 HEAD_TTL_S = 60.0
 HATA_TTL_S = 15.0
@@ -113,16 +147,23 @@ class Algilama:
     """`dil`: seçilen dil; `kaynak`: `algilandi` | `varsayilan`; `sayilar`: dil → dosya sayısı
     (platformun geçerli dilleri). `projeler`: tam hat dilinin test projesi repoda var mı
     (ts → `<e2e>/package.json`, java → `pom.xml`); forge okunamadıysa boş (bilinmiyor).
-    `hata`: forge okunamadıysa nedeni (sonuç bilinmiyor; `varsayilan` döner)."""
+    `hata`: forge okunamadıysa nedeni (sonuç bilinmiyor; `varsayilan` döner). `en_az`: okuma
+    bütçesi bittiği için sayısı alt sınır olan diller (sıra `DILLER`)."""
 
     dil: str
     kaynak: str
     sayilar: dict[str, int] = field(default_factory=dict)
     projeler: dict[str, bool] = field(default_factory=dict)
     hata: str | None = None
+    en_az: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
-        return {"dil": self.dil, "kaynak": self.kaynak, "sayilar": dict(self.sayilar)}
+        return {
+            "dil": self.dil,
+            "kaynak": self.kaynak,
+            "sayilar": dict(self.sayilar),
+            "en_az": list(self.en_az),
+        }
 
 
 _CACHE: OrderedDict[tuple[str, str, str, str], Algilama] = OrderedDict()
@@ -256,7 +297,7 @@ def _taban_adi_mi(yol: str) -> bool:
     """Ad soyut taban sınıfı gibi mi (QA-Y7: `BaseTest.java`, `AbstractUiTest.java`,
     `PageTestBase.cs`)? Bunlar test değil, testlerin türediği sınıflardır."""
     kok = posixpath.basename(yol).rsplit(".", 1)[0]
-    return bool(_TABAN_AD_RE.match(kok))
+    return bool(_TABAN_AD_RE.fullmatch(kok))
 
 
 def _java_testi(yol: str) -> bool:
@@ -292,58 +333,138 @@ def _java_proje_isareti(yol: str, icerik: str) -> bool:
     return any(_POM_GRUP_RE.search(b) for b in _POM_BAGIMLILIK_RE.findall(govde))
 
 
-def _icerikle_say(
-    forge: Any,
-    sha: str,
-    testler: Sequence[str],
-    butce: _Butce,
-    kullanir: Callable[[str], bool],
-) -> int:
-    """Test dosyalarını dizin dizin örnekleyerek sayar: uçtan uca adlı dizinler önce; her
-    dizinde ilk soyut olmayan dosya okunur, Playwright kullanıyorsa dizinin (okunup soyut çıkanlar
-    dışındaki) tüm testleri sayılır, kullanmıyorsa dizin sayılmaz. Dizin başına tek okuma: 200
-    birim testli bir servis bütçeyi tüketmez, Playwright testleri de bütçe kadarıyla sınırlanmaz.
-    Bütçe biterse okunmamış dizinler sayılmaz (alt sınır)."""
-    gruplar: dict[str, list[str]] = {}
-    for yol in testler:
-        gruplar.setdefault(posixpath.dirname(yol), []).append(yol)
-    n = 0
-    for dizin in sorted(
-        gruplar, key=lambda d: (0 if _UCTAN_UCA_DIZIN_RE.search(d) else 1, *_oncelik(d + "/"))
-    ):
-        soyut = 0
-        for yol in sorted(gruplar[dizin]):
-            icerik = butce.oku(forge, sha, yol)
+def _paket_anahtari(dizin: str) -> str:
+    """Dizin önceliği için anahtar: Java kaynak kökü (`src/test/java/`) atılır, modül öneki +
+    paket yolu kalır (`ui-tests/src/test/java/com/x/flows` → `ui-tests/com/x/flows`)."""
+    return _JAVA_KAYNAK_KOKU_RE.sub("/", dizin).strip("/")
+
+
+class _JavaSayim:
+    """Bir dilin (Java) içerikle sayımı: modül destek sınıfları + dizin örneklemesi (Y-2)."""
+
+    def __init__(self, forge: Any, sha: str, butce: _Butce) -> None:
+        self.forge, self.sha, self.butce = forge, sha, butce
+        self.en_az = False
+
+    def _destek_adlari(self, modul: str, dosyalar: Sequence[str]) -> list[str]:
+        """Modülün Playwright'ı içe aktaran destek sınıflarının adları (taban, page object)."""
+        adaylar = [
+            y
+            for y in dosyalar
+            if _kapsar(modul, y)
+            and "/src/" in "/" + y
+            and y.endswith((".java", ".kt"))
+            and (
+                _taban_adi_mi(y)
+                or (
+                    not platformlar.java_test_dosyasi_mi(y, kotlin=True, haric=())
+                    and _DESTEK_AD_RE.fullmatch(posixpath.basename(y).rsplit(".", 1)[0])
+                )
+            )
+        ]
+        # Önce test ağacındaki taban sınıflar, sonra page object'ler; sığ olan önce.
+        adaylar.sort(
+            key=lambda y: ("/src/test/" not in "/" + y, not _taban_adi_mi(y), *_oncelik(y))
+        )
+        adlar: list[str] = []
+        for yol in adaylar[:MAX_DESTEK_OKUMA]:
+            icerik = self.butce.oku(self.forge, self.sha, yol)
             if icerik is None:
+                break
+            if _JAVA_PLAYWRIGHT_RE.search(icerik):
+                adlar.append(posixpath.basename(yol).rsplit(".", 1)[0])
+        return adlar
+
+    def say(self, modul: str, testler: Sequence[str], dosyalar: Sequence[str]) -> int:
+        """`modul` altındaki `testler`'den Playwright testi olanların sayısı."""
+        if not testler:
+            return 0
+        destek = [a for a in self._destek_adlari(modul, dosyalar) if _JAVA_SINIF_AD_RE.fullmatch(a)]
+        destek_re = (
+            re.compile(r"\b(?:" + "|".join(map(re.escape, destek)) + r")\b") if destek else None
+        )
+
+        def kullanir(icerik: str) -> bool:
+            if _JAVA_PLAYWRIGHT_RE.search(icerik):
+                return True
+            return bool(destek_re and destek_re.search(icerik))
+
+        gruplar: dict[str, list[str]] = {}
+        for yol in testler:
+            gruplar.setdefault(posixpath.dirname(yol), []).append(yol)
+        sira = sorted(
+            gruplar,
+            key=lambda d: (
+                0 if _UCTAN_UCA_DIZIN_RE.search(_paket_anahtari(d)) else 1,
+                -len(gruplar[d]),
+                _paket_anahtari(d),
+            ),
+        )
+        n = olumlu = olumsuz = 0
+        for k, dizin in enumerate(sira):
+            sonuc = self._dizin(sorted(gruplar[dizin]), kullanir)
+            if sonuc is None:  # bütçe bitti
+                kalan = sira[k:]
+                if olumlu >= TAHMIN_ESIGI and olumsuz == 0:
+                    n += sum(len(gruplar[d]) for d in kalan)  # modülün geri kalanı da Playwright
+                else:
+                    self.en_az = True
                 return n
+            if sonuc > 0:
+                olumlu += 1
+                n += sonuc
+            else:
+                olumsuz += 1
+        return n
+
+    def _dizin(self, dosyalar: list[str], kullanir: Callable[[str], bool]) -> int | None:
+        """Dizinin Playwright testi sayısı (0: Playwright'sız); bütçe bittiyse None. En çok
+        `DIZIN_ORNEK` soyut olmayan dosya okunur; okunup soyut ya da Playwright'sız çıkanlar
+        sayılmaz."""
+        dislanan = 0
+        okunan = 0
+        for yol in dosyalar:
+            if okunan >= DIZIN_ORNEK:
+                break
+            icerik = self.butce.oku(self.forge, self.sha, yol)
+            if icerik is None:
+                return None
             if _SOYUT_SINIF_RE.search(icerik):
-                soyut += 1  # soyut taban sınıf (QA-Y7): sayılmaz, dizinin sonraki dosyasına bak
+                dislanan += 1  # soyut taban sınıf (QA-Y7): sayılmaz, örnek hakkı yemez
                 continue
+            okunan += 1
             if kullanir(icerik):
-                n += len(gruplar[dizin]) - soyut
-            break
-    return n
+                return len(dosyalar) - dislanan
+            dislanan += 1
+        return 0
 
 
 def _java_diger_say(
     forge: Any, sha: str, dosyalar: Sequence[str], haric: Sequence[str], butce: _Butce
-) -> int:
+) -> tuple[int, bool]:
     """`e2e-java` / `e2e-app` dışındaki Java testleri (ör. kökte standart Maven / Gradle;
-    QA-Y1 tur 2): yalnız Playwright for Java'ya **bağımlı** proje dosyasının altındakiler ve
-    bunlardan da yalnız `com.microsoft.playwright` içe aktaranlar (zayıf işaret yolu, Python'daki
-    gibi). Kökte Playwright bağımlılığı olan bir Spring Boot projesinin servis birim testleri
-    sayılmaz; üst pom'da yalnız `<playwright.version>` özelliği tüm modülleri işaretlemez."""
+    QA-Y1 tur 2, tur 3 Y-2): yalnız Playwright for Java'ya **bağımlı** proje dosyasının (modül)
+    altındakiler ve bunlardan da Playwright kullananlar (`_JavaSayim`: içe aktarım ya da
+    Playwright'ı içe aktaran destek sınıfına başvuru). Kökte Playwright bağımlılığı olan bir
+    Spring Boot projesinin servis birim testleri sayılmaz; üst pom'da yalnız `<playwright.version>`
+    özelliği tüm modülleri işaretlemez. (sayı, alt sınır mı) döner."""
     testler = [y for y in dosyalar if _izlenir(y, haric) and _java_testi(y)]
     if not testler:
-        return 0
+        return 0, False
     adaylar = [
         y for y in dosyalar if posixpath.basename(y) in JAVA_PROJE_DOSYALARI and _izlenir(y, haric)
     ]
-    dizinler = _isaretli_dizinler(forge, sha, adaylar, testler, butce, _java_proje_isareti)
-    adaylar_t = [y for y in testler if _proje_altinda(y, dizinler)]
-    return _icerikle_say(
-        forge, sha, adaylar_t, butce, lambda i: bool(_JAVA_PLAYWRIGHT_RE.search(i))
-    )
+    moduller = _isaretli_dizinler(forge, sha, adaylar, testler, butce, _java_proje_isareti)
+    kaynak = [y for y in dosyalar if _izlenir(y, haric)]
+    sayim = _JavaSayim(forge, sha, butce)
+    n = 0
+    # İç içe modüllerde test en derin (en özel) modüle aittir; derin modül önce.
+    atanmis: set[str] = set()
+    for modul in sorted(moduller, key=lambda d: -d.count("/") - bool(d)):
+        mt = [y for y in testler if _kapsar(modul, y) and y not in atanmis]
+        atanmis.update(mt)
+        n += sayim.say(modul, mt, kaynak)
+    return n, sayim.en_az
 
 
 def _csharp_say(
@@ -419,6 +540,7 @@ def _python_say(
 def _say(forge: Any, sha: str, platform: str, uygulama_koku: str) -> Algilama:
     tum = forge.list_files(prefix=f"{uygulama_koku}/" if uygulama_koku else "", ref=sha)
     kume = set(tum)
+    en_az: list[str] = []
     e2e_app = _kok(uygulama_koku, platformlar.E2E_APP_DIZINI)
     if platformlar.uygulama_mi(platform):
         sayilar = {platformlar.JAVA: _java_say(tum, e2e_app)}
@@ -428,20 +550,28 @@ def _say(forge: Any, sha: str, platform: str, uygulama_koku: str) -> Algilama:
         e2e_java = _kok(uygulama_koku, platformlar.E2E_JAVA_DIZINI)
         # Java proje ağaçları (Appium e2e-app, web e2e-java) C# / Python sayımına girmez.
         java_agaclari = (e2e_app, e2e_java)
+        java_diger, java_en_az = _java_diger_say(forge, sha, tum, java_agaclari, _Butce())
+        if java_en_az:
+            en_az.append(platformlar.JAVA)
         sayilar = {
             "ts": _ts_say(tum, e2e),
-            "java": _java_say(tum, e2e_java)
-            + _java_diger_say(forge, sha, tum, java_agaclari, _Butce()),
+            "java": _java_say(tum, e2e_java) + java_diger,
             "csharp": _csharp_say(forge, sha, tum, java_agaclari, _Butce()),
             "python": _python_say(forge, sha, tum, uygulama_koku, java_agaclari, _Butce()),
         }
         projeler = {"ts": f"{e2e}/package.json" in kume, "java": f"{e2e_java}/pom.xml" in kume}
     en_cok = max(sayilar.values(), default=0)
     if en_cok <= 0:
-        return Algilama(platformlar.varsayilan_dil(platform), "varsayilan", sayilar, projeler)
+        return Algilama(
+            platformlar.varsayilan_dil(platform),
+            "varsayilan",
+            sayilar,
+            projeler,
+            en_az=tuple(en_az),
+        )
     # Eşitlikte öncelik DILLER sırasıdır: ts > java > csharp > python.
     dil = next(d for d in platformlar.DILLER if sayilar.get(d) == en_cok)
-    return Algilama(dil, "algilandi", sayilar, projeler)
+    return Algilama(dil, "algilandi", sayilar, projeler, en_az=tuple(en_az))
 
 
 def _sha_coz(forge: Any, kimlik: str | None, ref: str) -> str:

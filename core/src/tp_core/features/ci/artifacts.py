@@ -156,6 +156,11 @@ class YolHatasi(ValueError):
 # Java koşusunda raporlar Maven `target/` altındadır (`results/` yok). `target/`'ın tamamı değil,
 # yalnızca rapor dizinleri sunulur (derlenmiş sınıflar, Surefire dökümleri vb. dışarıda kalır).
 _TARGET_RAPOR_DIZINLERI = frozenset({"allure-report", "allure-results", "extent-report"})
+# Extent raporu 50. başarısız testten sonra kanıtı göreli `../kanit/tekrar-N/<Sınıf>.<metot>/`
+# bağlantısıyla gösterir (O-1). `target/kanit/` altında YALNIZ görüntüler sunulur: aynı dizindeki
+# `trace.zip` / `sayfa.html` hassas veri (oturum, form içeriği) taşıyabilir.
+_TARGET_KANIT_DIZINI = "kanit"
+_KANIT_GORUNTU_EKLERI = frozenset({".png", ".jpg", ".jpeg"})
 
 
 def izinli_mi(parcalar: tuple[str, ...]) -> bool:
@@ -165,8 +170,13 @@ def izinli_mi(parcalar: tuple[str, ...]) -> bool:
         return False
     if "results" in parcalar[1:]:
         return True
-    return any(
+    if any(
         a == "target" and b in _TARGET_RAPOR_DIZINLERI for a, b in itertools.pairwise(parcalar[1:])
+    ):
+        return True
+    # Kanıt: dosya `target/kanit/` altında (dizinin kendisi değil) ve görüntü.
+    return PurePosixPath(parcalar[-1]).suffix.lower() in _KANIT_GORUNTU_EKLERI and any(
+        a == "target" and b == _TARGET_KANIT_DIZINI for a, b in itertools.pairwise(parcalar[1:-1])
     )
 
 

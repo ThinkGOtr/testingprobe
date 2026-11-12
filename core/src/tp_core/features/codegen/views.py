@@ -36,13 +36,13 @@ from tp_core.integrations.forge import (
     GITHUB_REQUIRED_CHECKS,
     LOCAL_REQUIRED_CHECKS,
     REQUIRED_CHECKS_ENV,
-    WEB_JAVA_CHECK,
     ForgeValidationError,
     etkin_platformlar,
     etkin_web_dilleri,
     github_required_checks,
     local_required_checks,
     parse_required_checks,
+    validate_required_checks,
 )
 from tp_core.models import PullRequest, Script, ScriptTestCase, StepMapping
 from tp_core.models.codegen_feature import ScriptAdim, ScriptCodegen, ScriptKontrol
@@ -97,6 +97,24 @@ def github_checks(sha: str | None, kayit: PullRequest | None) -> list[dict[str, 
     if not sha or kayit is None or kayit.checks is None or kayit.checks_sha != sha:
         return None
     return _gecerli_checkler(kayit.checks)
+
+
+def github_kapi_zorunlu(
+    yapilandirilmis: Sequence[str], kayit: PullRequest | None
+) -> tuple[str, ...]:
+    """GitHub merge kapısının zorunlu listesi (MİM-D3: kapıyla AYNI sonuç). core-worker PR
+    senkronu `GitHubForge.zorunlu_checkler(head, base)` sonucunu (K-T13: hedef dal ∪ head
+    `web-java.yml`, okunamazsa kapalı taraf) `pull_request.zorunlu_checkler`'e yazar; liste
+    `checks_sha` head'ine aittir (`github_checks` ile birlikte okunur). Yapılandırmayla birleşir
+    (`github_required_checks`, MİM-D4). Kayıt yoksa (eski kopya) kapalı taraf: `web-java`
+    zorunlu."""
+    sakli = kayit.zorunlu_checkler if kayit is not None else None
+    if isinstance(sakli, list) and all(isinstance(a, str) for a in sakli):
+        try:
+            return validate_required_checks([*yapilandirilmis, *sakli])
+        except ForgeValidationError:
+            pass  # bozuk kopya → kapalı taraf
+    return github_required_checks(yapilandirilmis, (), web_java_is_akisi=True)
 
 
 def script_pr_kaydi(sc: Script) -> PullRequest | None:
@@ -184,14 +202,8 @@ def pr_checks(
             # edilebilir" göstermesin.
             ek_engel = f"Yapılandırma hatası: {exc}"
         ham = github_checks(sha, kayit)
-        if (
-            ham is not None
-            and WEB_JAVA_CHECK not in zorunlu
-            and any(c["name"] == WEB_JAVA_CHECK for c in ham)
-        ):
-            # K-T10: `web-java` check'i koştuysa iş akışı depodadır → her zaman zorunlu
-            # (GitHubForge.zorunlu_checkler ile aynı; iş akışı ilgisiz PR'da no-op ile yeşil).
-            zorunlu = (*zorunlu, WEB_JAVA_CHECK)
+        if ham is not None:
+            zorunlu = github_kapi_zorunlu(zorunlu, kayit)
         if ham is None:
             if not sha:
                 return (
@@ -352,14 +364,27 @@ def dogrulanmamis(sc: Script) -> bool:
     return sc.durum == "unverified"
 
 
-def list_scripts(session: Session) -> list[dict[str, Any]]:
+SCRIPT_LISTE_SINIRI = 200
+# `GET /scripts` yanıt başlığı (MİM-D5): liste sınırı aştıysa "1", aşmadıysa "0". Yanıt gövdesi
+# düz dizi kalır (geriye uyumlu); başlık yoksa (eski core) portal ≥ sınır kuralına düşer.
+DAHA_FAZLA_BASLIGI = "X-Daha-Fazla"
+
+
+def list_scripts_sinirli(
+    session: Session, limit: int = SCRIPT_LISTE_SINIRI
+) -> tuple[list[dict[str, Any]], bool]:
+    """En yeni `limit` script + sınırın ötesinde kayıt var mı (`limit+1` okunur)."""
     rows = session.execute(
         select(Script, ScriptCodegen)
         .join(ScriptCodegen, ScriptCodegen.script_id == Script.id)
         .order_by(Script.olusturma.desc())
-        .limit(200)
+        .limit(limit + 1)
     ).all()
-    return [serialize(session, sc, cg) for sc, cg in rows]
+    return [serialize(session, sc, cg) for sc, cg in rows[:limit]], len(rows) > limit
+
+
+def list_scripts(session: Session) -> list[dict[str, Any]]:
+    return list_scripts_sinirli(session)[0]
 
 
 # 011 §2.3: yerel kontrolün dile göre statik adımları (tek kaynak `classify.GORUNEN_ADIMLAR`).

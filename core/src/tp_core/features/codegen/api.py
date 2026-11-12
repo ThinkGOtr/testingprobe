@@ -88,8 +88,14 @@ def languages(
 
 
 @router.get("/scripts")
-def list_scripts(session: DbSession, _user: CurrentUser) -> list[dict[str, Any]]:
-    return views.list_scripts(session)
+def list_scripts(
+    session: DbSession, _user: CurrentUser, response: Response
+) -> list[dict[str, Any]]:
+    """En yeni 200 script (düz dizi). `X-Daha-Fazla: 1` → daha eski kayıtlar var (liste kesildi),
+    `0` → liste tam (MİM-D5)."""
+    liste, daha_fazla = views.list_scripts_sinirli(session)
+    response.headers[views.DAHA_FAZLA_BASLIGI] = "1" if daha_fazla else "0"
+    return liste
 
 
 @router.get("/scripts/{script_id}")

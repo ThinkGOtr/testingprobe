@@ -590,6 +590,7 @@ def test_code_languages_ve_generate_dil_dogrulamasi(
     d = r.json()
     assert d["platform"] == "web" and d["algilanan"] == "ts" and d["kaynak"] == "algilandi"
     assert d["sayilar"]["ts"] >= 8 and d["sayilar"]["java"] == 0
+    assert d["en_az"] == []  # Y-2: alt sınır olan dil yok (geriye uyumlu ek alan)
     secenek = {x["dil"]: x for x in d["secenekler"]}
     assert list(secenek) == ["ts", "java", "csharp", "python"]
     assert secenek["ts"] == {
@@ -836,6 +837,116 @@ def test_algila_soyut_taban_siniflar_sayilmaz() -> None:
     }
     a = _algila(depo)
     assert (a.sayilar["java"], a.sayilar["csharp"]) == (3, 1)
+
+
+# ---------------------------------- Java algılama yanlış negatifleri (inceleme turu 3, Y-2)
+
+PW_GRADLE = 'dependencies { testImplementation("com.microsoft.playwright:playwright:1.49.0") }'
+PW_TABAN = (
+    "import com.microsoft.playwright.*;\npublic abstract class BaseTest { protected Page page; }\n"
+)
+PW_SAYFA = (
+    "import com.microsoft.playwright.Page;\npublic class LoginPage { LoginPage(Page p) {} }\n"
+)
+TABANLI_TEST = (
+    "import org.testng.annotations.Test;\nimport com.x.base.BaseTest;\n"
+    "public class T extends BaseTest {\n  @Test public void t() { new LoginPage(page).ac(); }\n}\n"
+)
+BIRIM = "import org.junit.jupiter.api.Test;\nclass S { @Test void t() {} }\n"
+REST = "import io.restassured.RestAssured;\nclass AaaSmokeTest {}\n"
+
+
+def _ts_specleri(n: int) -> dict[str, str]:
+    return {"e2e/package.json": "{}", **{f"e2e/tests/s{i}.spec.ts": "" for i in range(n)}}
+
+
+@pytest.mark.parametrize(
+    ("proje", "icerik"), [("pom.xml", PW_POM), ("build.gradle", PW_GRADLE)], ids=["S4", "S7"]
+)
+def test_algila_java_import_yalniz_taban_ve_page_objectte(proje: str, icerik: str) -> None:
+    """Y-2 S4/S7: `com.microsoft.playwright` yalnız `BaseTest` ve page object'te; testler
+    `extends BaseTest` + `new LoginPage(page)` (kurumsal en yaygın desen) → modül işareti, 25 test
+    sayılır ve Java 10 TS'yi geçer (Maven ve Gradle)."""
+    depo = {
+        proje: icerik,
+        "src/test/java/com/x/base/BaseTest.java": PW_TABAN,
+        "src/test/java/com/x/pages/LoginPage.java": PW_SAYFA,
+        **{f"src/test/java/com/x/tests/Akis{i:02d}Test.java": TABANLI_TEST for i in range(25)},
+        **_ts_specleri(10),
+    }
+    a = _algila(depo)
+    assert a.sayilar["java"] == 25 and a.dil == "java" and a.en_az == ()
+
+
+def test_algila_java_dizinde_birden_cok_ornek() -> None:
+    """Y-2 S5: dizinde alfabetik ilk dosya RestAssured kullanan `AaaSmokeTest`; 25 Playwright testi
+    aynı dizinde → dizin düşmez, RestAssured testi sayılmaz."""
+    depo = {
+        "pom.xml": PW_POM,
+        "src/test/java/com/x/AaaSmokeTest.java": REST,
+        **{f"src/test/java/com/x/Akis{i:02d}Test.java": PW_JAVA for i in range(25)},
+        **_ts_specleri(10),
+    }
+    a = _algila(depo)
+    assert a.sayilar["java"] == 25 and a.dil == "java"
+
+
+def test_algila_java_paket_yolu_onceligi_birim_paketleri_butceyi_tuketmez() -> None:
+    """Y-2 S1c: `src/test/` her yolda `test` taşır (ayırt edici değil); 40 birim paketi + `zflows`
+    paketinde 40 Playwright testi → öncelik paket yoluna/dizin büyüklüğüne göre, java=40. Bütçe
+    birim paketlerinde bittiği için sayı alt sınır olarak işaretlenir."""
+    depo: dict[str, str] = {"pom.xml": PW_POM, **_ts_specleri(10)}
+    for i in range(40):
+        depo[f"src/test/java/com/x/m{i:02d}/Servis{i}Test.java"] = BIRIM
+    for i in range(40):
+        depo[f"src/test/java/com/x/zflows/Akis{i:02d}Test.java"] = PW_JAVA
+    f = SayanForge(depo)
+    a = dil_algila.algila(f, "main", "web", uygulama_koku="")
+    assert a.sayilar["java"] == 40 and a.dil == "java"
+    assert a.en_az == ("java",) and len(f.okunan) <= dil_algila.MAX_ISARET_OKUMA
+    assert (
+        dil_algila._paket_anahtari("ui-tests/src/test/java/com/x/flows") == "ui-tests/com/x/flows"
+    )
+
+
+def test_algila_java_butce_bitince_modul_tahmini() -> None:
+    """Y-2 S11: 30 pakette 60 Playwright testi (her paket 2) + 40 TS → bütçe 30 paketi okumaya
+    yetmez; okunan paketlerin hepsi Playwright ve hiçbiri Playwright'sız değil → modülün geri
+    kalanı da sayılır: java=60, Java kazanır (alt sınır değil)."""
+    depo: dict[str, str] = {"pom.xml": PW_POM, **_ts_specleri(40)}
+    for k in range(30):
+        for t in range(2):
+            depo[f"src/test/java/com/x/p{k:02d}/Akis{t}Test.java"] = PW_JAVA
+    f = SayanForge(depo)
+    a = dil_algila.algila(f, "main", "web", uygulama_koku="")
+    assert a.sayilar["java"] == 60 and a.dil == "java" and a.en_az == ()
+    assert len(f.okunan) <= dil_algila.MAX_ISARET_OKUMA
+
+
+def test_algila_java_karisik_modulde_butce_bitince_alt_sinir() -> None:
+    """Bütçe biterken modülde Playwright'sız dizin de görüldüyse tahmin yapılmaz: okunan dizinler
+    sayılır, sonuç alt sınırdır (`en_az`) ve `GET /code/languages` yanıtına taşınır."""
+    depo: dict[str, str] = {"pom.xml": PW_POM}
+    for k in range(30):
+        icerik = BIRIM if k % 2 else PW_JAVA
+        for t in range(2):
+            depo[f"src/test/java/com/x/p{k:02d}/Akis{t}Test.java"] = icerik
+    a = _algila(depo)
+    assert 0 < a.sayilar["java"] < 30 and a.en_az == ("java",)
+    assert a.as_dict()["en_az"] == ["java"]
+
+
+def test_algila_base_ile_baslayan_gercek_test_adla_elenmez() -> None:
+    """Kalıntı: `BaseUrlTest` gerçek bir testtir (taban sınıf değil); `BaseTest`, `BaseUiTest`,
+    `AbstractX`, `WebBaseTest`, `PageTestBase` taban sayılmaya devam eder."""
+    for ad in ("BaseUrlTest", "BasketTest", "DatabaseTest", "BaselineTest", "BaseIntegrationTest"):
+        assert not dil_algila._taban_adi_mi(f"x/{ad}.java"), ad
+    for ad in ("BaseTest", "BaseTests", "BaseUiTest", "AbstractWebTest", "WebBaseTest",
+               "PageTestBase", "Base", "TabanTesti", "BaseIT"):  # fmt: skip
+        assert dil_algila._taban_adi_mi(f"x/{ad}.java"), ad
+    kok = "e2e-java/src/test/java/com/antreklabs/bayi/testler"
+    depo = {"e2e-java/pom.xml": "", f"{kok}/BaseUrlTest.java": "", f"{kok}/BaseTest.java": ""}
+    assert _algila(depo).sayilar["java"] == 1
 
 
 def test_algila_python_page_int_parametresi_isaret_degil() -> None:

@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import re
 from collections.abc import Callable, Mapping, Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
@@ -28,7 +28,9 @@ PROTECTED_BRANCHES: frozenset[str] = frozenset({"main"})
 #   `TP_REQUIRED_CHECKS` (virgüllü) ile değiştirilebilir; ruleset ile aynı tutulmalıdır.
 REQUIRED_CHECK = platformlar.YEREL_CHECK  # `local-ci`: LocalForge'un varsayılan zorunlu kontrolü
 LOCAL_REQUIRED_CHECKS: tuple[str, ...] = (REQUIRED_CHECK,)
-GITHUB_REQUIRED_CHECKS: tuple[str, ...] = ("test-local", "ast-guard", "semgrep")
+# Web + TS'in GitHub check (= `ci.yml` job) adı; yerel karşılığı `local-ci`.
+GITHUB_WEB_TS_CHECK = "test-local"
+GITHUB_REQUIRED_CHECKS: tuple[str, ...] = (GITHUB_WEB_TS_CHECK, "ast-guard", "semgrep")
 REQUIRED_CHECKS_ENV = "TP_REQUIRED_CHECKS"
 # Kural seti bypass'ı yalnızca bu insan hesabındadır (anayasa: bot merge edemez).
 BYPASS_ACTOR = "demo-admin"
@@ -263,25 +265,32 @@ LOCAL_WEB_E2E_ROOTS: tuple[str, ...] = (LOCAL_WEB_E2E_ROOT, LOCAL_WEB_JAVA_E2E_R
 _KENDI_KONTROLLU_KOKLER: tuple[str, ...] = (LOCAL_APP_E2E_ROOT, LOCAL_WEB_JAVA_E2E_ROOT)
 
 
-# Test kökleri: bunların DIŞINDA bir değişiklik (uygulama kodu vb.) repodaki tüm tam hat
-# dillerinin kontrolünü ister (K-T11).
-_TEST_KOKLERI: tuple[str, ...] = (*LOCAL_WEB_E2E_ROOTS, LOCAL_APP_E2E_ROOT)
+# Test kökleri (MİM-O1, tek liste: `platform.e2e_kokleri`; CI'ın script'siz PR dil seçimiyle
+# aynı): bunların DIŞINDA bir değişiklik (uygulama kodu vb.) repodaki tüm tam hat dillerinin
+# kontrolünü ister (K-T11). LocalForge deposu yalnız demo-app'tir (uygulama kökü '').
+_YEREL_KOKLER = platformlar.e2e_kokleri("")
+_TEST_KOKLERI: tuple[str, ...] = _YEREL_KOKLER.hepsi
 
 
 def yerel_repodaki_web_dilleri(
     list_files: Callable[[str, str], list[str]], ref: str
 ) -> tuple[str, ...]:
     """LocalForge düzeninde (`e2e/`, `e2e-java/` kökte) `ref`'te web testi olan tam hat dilleri
-    (`platform.repodaki_web_dilleri`; CI ile aynı sayım). Okunamazsa `("ts",)`."""
+    (`platform.repodaki_web_dilleri`; CI ile aynı sayım). Kapı içindir: okunamazsa KAPALI taraf
+    (`TAM_HAT_DILLERI` — uygulama kodu değiştiren PR her iki dilin check'ini ister)."""
     return platformlar.repodaki_web_dilleri(
-        list_files, ref, e2e=LOCAL_WEB_E2E_ROOT, e2e_java=LOCAL_WEB_JAVA_E2E_ROOT
+        list_files,
+        ref,
+        e2e=_YEREL_KOKLER.e2e,
+        e2e_java=_YEREL_KOKLER.e2e_java,
+        okunamazsa=platformlar.TAM_HAT_DILLERI,
     )
 
 
 def local_required_checks(
     configured: Sequence[str],
     checks: Sequence[CheckRun],
-    changed_paths: Sequence[str],
+    changed_paths: Sequence[str] | None,
     repodaki_web_dilleri: Sequence[str] = (platformlar.TS,),
 ) -> tuple[tuple[str, ...], str | None]:
     """LocalForge merge kapısı: platform/dil başına zorunlu kontroller + ek ihlal nedeni.
@@ -294,9 +303,12 @@ def local_required_checks(
       PR'ı Java derlenip koşmadan merge edilemez).
     - PR `e2e/` altını değiştiriyorsa `local-ci` zorunludur (yapılandırma düşürmüş olsa bile).
     - PR test köklerinin (`e2e/`, `e2e-java/`, `e2e-app/`) DIŞINDA bir yolu (uygulama kodu vb.)
-      değiştiriyorsa `repodaki_web_dilleri`'nin her birinin kontrolü zorunludur (K-T11: `local-ci`
-      + repoda Java web testi varsa `local-ci-web-java`); CI script'siz PR'da aynı dilleri koşar
-      (`platform.degisen_web_dilleri`).
+      değiştiriyorsa CI'ın koşacağı dillerin (`platform.degisen_web_dilleri`: değişen kökler +
+      `repodaki_web_dilleri`) kontrolü (`platform.check_adi`) zorunludur (K-T11). Bu dillerde
+      `ts` yoksa (ör. repoda yalnız Java web testi) ve `local-ci` kaydedilmemişse yapılandırılmış
+      `local-ci` düşer: CI onu hiç koşmaz, PR kilitlenmez (MİM-O1).
+    - `changed_paths` None ise (fark tabanı bulunamadı) fark bilinmiyor: KAPALI taraf — tüm tam
+      hat dillerinin kontrolü zorunludur.
     - PR yalnızca kendi kontrolü olan kökleri (`e2e-app/`, `e2e-java/`) değiştiriyorsa web
       `local-ci` gerekmez (kaydedilmişse yine yeşil olmalı); yerine o köklerin kontrolü gelir.
     - Yarıda kalmış (`in_progress`) bir kayıt merge'i durdurur; kontrol yeniden koşturulur
@@ -306,6 +318,14 @@ def local_required_checks(
     platform_names = set(APP_PLATFORM_CHECKS)
     kendi_kontrollu = platform_names | {LOCAL_WEB_JAVA_CHECK}
     recorded = [c.name for c in checks if c.name in kendi_kontrollu]
+    fark_bilinmiyor = changed_paths is None
+    changed_paths = list(changed_paths or ())
+    # K-T11: uygulama kodu değişti (ya da fark bilinmiyor) → CI'ın koşacağı web dilleri.
+    uygulama_dilleri: tuple[str, ...] = ()
+    if fark_bilinmiyor:
+        uygulama_dilleri = platformlar.TAM_HAT_DILLERI
+    elif any(not p.startswith(_TEST_KOKLERI) for p in changed_paths):
+        uygulama_dilleri = _YEREL_KOKLER.degisen_web_dilleri(changed_paths, repodaki_web_dilleri)
     touches_app = any(p.startswith(LOCAL_APP_E2E_ROOT) for p in changed_paths)
     touches_java = any(p.startswith(LOCAL_WEB_JAVA_E2E_ROOT) for p in changed_paths)
     touches_ts = any(p.startswith(LOCAL_WEB_E2E_ROOT) for p in changed_paths)
@@ -315,10 +335,15 @@ def local_required_checks(
     # Kayıtlı her kontrol yeşil olmalı (simetri): web local-ci yalnızca KAYDEDİLMEMİŞSE düşer.
     web_recorded = any(c.name == REQUIRED_CHECK for c in checks)
     yerine_gecen = bool(recorded) or touches_java
+    # MİM-O1: uygulama değişikliğinde CI `ts` koşmayacaksa (repoda TS web testi yok) web
+    # `local-ci` beklenmez (kaydedilmişse yine yeşil olmalı).
+    ts_kosmaz = bool(uygulama_dilleri) and platformlar.TS not in uygulama_dilleri and not touches_ts
     required = [
         n
         for n in configured
-        if not (own_only and yerine_gecen and n == REQUIRED_CHECK and not web_recorded)
+        if not (
+            n == REQUIRED_CHECK and not web_recorded and ((own_only and yerine_gecen) or ts_kosmaz)
+        )
     ]
     if touches_ts and REQUIRED_CHECK not in required:
         # Yapılandırma `local-ci`'ı düşürmüş olsa bile (ör. yalnızca platform kontrolü isteyen
@@ -326,12 +351,15 @@ def local_required_checks(
         required.insert(0, REQUIRED_CHECK)
     if touches_java and LOCAL_WEB_JAVA_CHECK not in required:
         required.append(LOCAL_WEB_JAVA_CHECK)
-    if any(not p.startswith(_TEST_KOKLERI) for p in changed_paths):
-        # K-T11: uygulama kodu değişti → repodaki her tam hat dilinin kontrolü.
-        if platformlar.TS in repodaki_web_dilleri and REQUIRED_CHECK not in required:
-            required.insert(0, REQUIRED_CHECK)
-        if platformlar.JAVA in repodaki_web_dilleri and LOCAL_WEB_JAVA_CHECK not in required:
-            required.append(LOCAL_WEB_JAVA_CHECK)
+    for d in uygulama_dilleri:
+        # K-T11: CI'ın koşacağı her dilin kontrolü (`check_adi`: ts → local-ci, java →
+        # local-ci-web-java).
+        ad = platformlar.check_adi(platformlar.WEB, d)
+        if ad not in required:
+            if ad == REQUIRED_CHECK:
+                required.insert(0, ad)
+            else:
+                required.append(ad)
     for name in recorded:
         if name not in required:
             required.append(name)
@@ -359,10 +387,13 @@ GITHUB_PLATFORM_WORKFLOWS: dict[str, str] = {
 
 
 # Web + Java (Playwright for Java + TestNG; 011 §2.8): iş akışı `web-java.yml`, check (= job) adı
-# `web-java`. Web + TS `ci.yml`'in `test-local`'ıdır (değişmez). K-T10: `web-java.yml` depoda
-# olduğu sürece `web-java` HER ZAMAN zorunludur (iş akışı `changes` + no-op deseniyle ilgisiz PR'da
-# hızla yeşil); `TP_WEB_DILLERI` yalnız Java üretimini ve kardeş koşuyu açar (java varsa iş akışı
-# dosyası okunamasa da zorunlu). Ruleset: `scripts/github-ruleset.sh --checks`.
+# `web-java`. Web + TS `ci.yml`'in `test-local`'ıdır (değişmez). K-T10 + K-T13: `web-java.yml`
+# PR'ın hedef dalının güncel ucunda YA DA head'inde varsa (base ∪ head; dosyayı silen PR kendi
+# kontrolünü düşüremez) `web-java` zorunludur; dosya okunamazsa da zorunlu (kapalı taraf). Tek hesap
+# noktası `github_required_checks(web_java_is_akisi=)` (`GitHubForge.zorunlu_checkler`). İş
+# akışı `changes` + no-op deseniyle ilgisiz PR'da hızla yeşildir; `TP_WEB_DILLERI` Java üretimini
+# ve kardeş koşuyu açar (java varsa her durumda zorunlu). Ruleset: `scripts/github-ruleset.sh
+# --checks`.
 WEB_JAVA_CHECK = "web-java"
 WEB_JAVA_WORKFLOW = f"{WEB_JAVA_CHECK}.yml"
 WEB_JAVA_WORKFLOW_YOLU = f".github/workflows/{WEB_JAVA_WORKFLOW}"
@@ -424,9 +455,10 @@ def github_required_checks(
     *,
     web_java_is_akisi: bool = False,
 ) -> tuple[str, ...]:
-    """GitHub zorunlu kontrolleri: yapılandırılmış liste + etkin platformların job adları +
-    `web-java` (K-T10: `web-java.yml` depodaysa — `web_java_is_akisi` — ya da web dillerinde
-    `java` etkinse)."""
+    """GitHub zorunlu kontrolleri (TEK hesap noktası, MİM-D4): yapılandırılmış liste + etkin
+    platformların job adları + `web-java` (K-T10/K-T13: `web_java_is_akisi` — `web-java.yml`
+    base ∪ head'de var ya da okunamadı — veya web dillerinde `java` etkinse). Merge kapısı
+    (`GitHubForge.zorunlu_checkler`) ve portal aynası (`views.required_checks`) bunu çağırır."""
     web_java = web_java_is_akisi or platformlar.JAVA in web_dilleri
     return validate_required_checks(
         [
@@ -435,6 +467,15 @@ def github_required_checks(
             *((WEB_JAVA_CHECK,) if web_java else ()),
         ]
     )
+
+
+@runtime_checkable
+class ZorunluCheckKaynagi(Protocol):
+    """PR merge kapısının zorunlu listesini head (+ hedef dal) için hesaplayan forge (GitHub
+    kipi: `GitHubForge.zorunlu_checkler`, K-T13). core-worker PR senkronu bu listeyi PR kaydına
+    yazar (`pull_request.zorunlu_checkler`); portal aynası onu okur (MİM-D3)."""
+
+    def zorunlu_checkler(self, head: str, base: str | None = None) -> tuple[str, ...]: ...
 
 
 def get_forge(env: Mapping[str, str] | None = None) -> ForgePort:
