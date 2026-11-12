@@ -4,6 +4,10 @@
 |---|---|---|
 | GET | `/automation-settings` | herkes — `{anahtar: {...değerler, guncelleyen, guncelleme}}` |
 | PUT | `/automation-settings/{anahtar}` | analyst, engineer — gövde kısmi nesne → güncel hepsi |
+
+`jira_tetik` gövdesinde `durum` alanı varsa yalnız engineer (K14; analist 403). `jira_tetik`
+yazılınca bekleyen tetik turu öne çekilir (`jira_tetik.ayar_degisti`): tetik açıldıysa ya da durum
+değiştiyse hemen, değilse en geç yeni `aralik_s` sonra.
 """
 
 from __future__ import annotations
@@ -13,7 +17,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Body, Depends, HTTPException
 
 from tp_core.auth.deps import CurrentUser, DbSession, require_role
-from tp_core.features.otomasyon import ayarlar
+from tp_core.features.otomasyon import ayarlar, jira_tetik
 from tp_core.workflow.service import Principal
 
 router = APIRouter(tags=["otomasyon"])
@@ -35,11 +39,17 @@ def ayari_guncelle(
 ) -> dict[str, dict[str, Any]]:
     if anahtar not in ayarlar.VARSAYILAN:
         raise HTTPException(404, f"Bilinmeyen otomasyon ayarı: {anahtar}")
+    if anahtar == ayarlar.JIRA_TETIK and "durum" in deger and user.rol != "engineer":
+        raise HTTPException(403, "Jira tetiğinin durum adını yalnız Otomasyon mühendisi değiştirir")
+    onceki = ayarlar.oku(session, anahtar)
     try:
-        ayarlar.yaz(session, anahtar, deger, user.kullanici_adi)
+        yeni = ayarlar.yaz(session, anahtar, deger, user.kullanici_adi)
     except ValueError as exc:
         raise HTTPException(422, f"Geçersiz ayar: {exc}") from exc
+    if anahtar == ayarlar.JIRA_TETIK:
+        jira_tetik.ayar_degisti(
+            session.connection(),
+            hemen=(yeni.acik and not onceki.acik) or yeni.durum != onceki.durum,
+            aralik_s=yeni.aralik_s,
+        )
     return ayarlar.hepsi(session)
-
-
-# Ş2 uçları buraya (jira_tetik.py router'ı: router.include_router(...)).

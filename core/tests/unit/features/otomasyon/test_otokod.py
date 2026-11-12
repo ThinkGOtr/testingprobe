@@ -195,7 +195,7 @@ def test_ayar_api_rol_kapisi_ve_dogrulama(api: TestClient, make_user) -> None:
     assert r.json()["otomatik_kod_uretimi"]["acik"] is True
     assert r.json()["otomatik_kod_uretimi"]["guncelleyen"] == muhendis.kullanici_adi
 
-    login(api, make_user("analyst"))
+    login(api, make_user("engineer"))  # durum alanı yalnız engineer (K14)
     r = api.put("/automation-settings/jira_tetik", json={"aralik_s": 120, "durum": "QA Hazır"})
     assert r.status_code == 200, r.text
     j = r.json()["jira_tetik"]
