@@ -120,7 +120,7 @@ VARSAYILAN_TEST_SEVIYESI = "SYSTEM"
 READINESS_TR = {
     "ready": "hazır",
     "assumption_dependent": "varsayıma bağlı",
-    "blocked": "engelli (açık soru bekliyor)",
+    "blocked": "soru bekliyor — açık soru PO yanıtını bekliyor",
 }
 
 
@@ -1290,7 +1290,7 @@ def submit_drafts(
             f"{len(eklenen)} taslak portala düştü; onay portalda analistindir."
             + (f" {len(tekrar)} tekrar case atlandı." if tekrar else "")
             + (
-                f" {hazir_degil} case hazır değil (varsayıma bağlı / engelli); hazır hale "
+                f" {hazir_degil} case hazır değil (varsayıma bağlı / soru bekliyor); hazır hale "
                 "getirilmeden onaylanamaz."
                 if hazir_degil
                 else ""
@@ -1353,8 +1353,12 @@ def decide(
     ret_nedeni: str | None = None,
     gerekce: str | None = None,
     beklenen_anlam_degisti: bool | None = None,
+    ek_olculer: Mapping[str, Any] | None = None,
 ) -> TestCase:
-    """Portal kararı (Constitution I): görülen hash ile `review` kaydı + durum geçişi."""
+    """Portal kararı (Constitution I): görülen hash ile `review` kaydı + durum geçişi.
+
+    `ek_olculer`: `review.duzeltme_olculeri`'ne eklenen işaretler (review satırı yalnız eklenir,
+    sonradan güncellenemez); ör. `toplu.assumption_verified` → `varsayim_dogrulandi`."""
     if karar not in KARARLAR:
         raise InvalidDecision(f"geçersiz karar: {karar} (approve | edit | reject | reopen)")
     tc = get_case(session, cid, lock=True)
@@ -1416,6 +1420,7 @@ def decide(
         olculer = {"mesafe": 0.0, "kucuk_duzeltme": True, "degisen_alanlar": []}
     olculer["review_sure_ms"] = _review_sure_ms(session, tc, user)
     olculer["ilk_karar"] = latest_review(session, "test_case", tc.id) is None
+    olculer.update(ek_olculer or {})
     record_approval(
         session,
         tc,

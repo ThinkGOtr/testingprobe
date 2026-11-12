@@ -101,11 +101,11 @@ def test_denetim_kabul_yayin_kapisini_acar_set_degisince_bayat(
     # Denetim yok: v3 case yayına çıkamaz (K3).
     k = _kalemler(api, rid)
     assert {x["islem"] for x in k} == {"blocked_gate"}
-    assert k[0]["neden"].startswith("Denetim kararı yok")
+    assert k[0]["neden"].startswith("Yayınlanamaz: Denetim kararı yok")
 
     r = api.post(f"/requirements/{rid}/case-audit")
     assert r.status_code == 202 and r.json()["calisiyor"] is True
-    assert _kalemler(api, rid)[0]["neden"].startswith("Denetim bekliyor")
+    assert _kalemler(api, rid)[0]["neden"].startswith("Yayınlanamaz: Denetim bekliyor")
     run_jobs(engine)
     v = api.get(f"/requirements/{rid}/case-audit").json()
     d = v["guncel_karar"]
@@ -204,7 +204,7 @@ def test_model_kabul_dese_de_deterministik_ihlal_sertlestirir(
     assert (d["model_karari"], d["karar"]) == ("KABUL", "DÜZELTME_GEREKLİ")
     assert d["icerik"]["sertlestirildi"] is True
     k = _kalemler(api, rid)[0]
-    assert k["islem"] == "blocked_gate" and k["neden"].startswith("DÜZELTME_GEREKLİ:")
+    assert k["islem"] == "blocked_gate" and k["neden"].startswith("Yayınlanamaz: DÜZELTME_GEREKLİ:")
 
 
 # --------------------------------------------------------------- saf kurallar (DB'siz)

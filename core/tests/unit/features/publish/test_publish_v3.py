@@ -82,16 +82,16 @@ def test_hazir_olmayan_case_yayinlanmaz_ve_onizlemede_nedeniyle_gorunur(
     eski = _kalem(api, rid, a["id"])
     assert (eski["islem"], eski["neden"], eski["readiness"]) == ("create", None, "ready")
     assert eski["labels"] == ["AI-generated", f"tp-{a['id']}", "tp-mod-live"]
-    assert _kalem(api, rid, b["id"])["neden"] == "Onaylı değil (durum: draft)"
+    assert _kalem(api, rid, b["id"])["neden"] == "Yayınlanamaz: Onaylı değil (durum: draft)"
 
     for hazirlik, parca in (
         ("assumption_dependent", "varsayıma bağlı"),
-        ("blocked", "açık soru bekliyor"),
+        ("blocked", "soru bekliyor (açık soru PO yanıtını bekliyor"),
     ):
         _onayli_icerik(engine, a["id"], **{**V3, "readiness": hazirlik})
         k = _kalem(api, rid, a["id"])
         assert k["islem"] == "blocked_not_ready" and k["readiness"] == hazirlik
-        assert k["neden"].startswith("Hazır değil:") and parca in k["neden"]
+        assert k["neden"].startswith("Yayınlanamaz: ") and parca in k["neden"]
         sonuc = publish.run_publish(_ctx([a["id"]]), engine)["sonuclar"][0]
         assert sonuc["durum"] == "failed" and sonuc["hata"] == k["neden"]
         assert _label_count(jira, a["id"]) == 0  # Jira'ya hiçbir şey yazılmadı
@@ -152,7 +152,7 @@ def test_denetim_kapisi_kancasi_yalniz_v3_casee_uygulanir(
         k = _kalem(api, rid, a["id"])
         assert (k["islem"], k["neden"]) == (
             "blocked_gate",
-            "Denetim kararı yok: set için KABUL gerekli",
+            "Yayınlanamaz: Denetim kararı yok: set için KABUL gerekli",
         )
         sonuc = publish.run_publish(_ctx([a["id"]]), engine)["sonuclar"][0]
         assert sonuc["durum"] == "failed" and sonuc["hata"] == k["neden"]

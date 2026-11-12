@@ -177,21 +177,36 @@ def set_gate_check(check: GateCheck | None) -> None:
     _gate_check = check
 
 
+# K22: kullanıcıya dönen her yayın engeli "Yayınlanamaz: …" ile başlar (önizleme `neden`, yayın
+# sonucu `hata`); hazır olma terimleri "Hazır / Varsayıma bağlı / Soru bekliyor".
+YAYINLANAMAZ = "Yayınlanamaz: "
+
 NOT_READY_NEDEN = {
-    "assumption_dependent": (
-        "Hazır değil: varsayıma bağlı (varsayım doğrulanıp case düzeltilmeden yayınlanamaz)"
-    ),
+    "assumption_dependent": ("varsayıma bağlı (önce varsayımı doğrulayıp case'i düzeltin)"),
     "blocked": (
-        "Hazır değil: açık soru bekliyor (soru yanıtlanıp beklenen sonuç yazılmadan yayınlanamaz)"
+        "soru bekliyor (açık soru PO yanıtını bekliyor; yanıt gelince beklenen sonucu yazın)"
     ),
 }
+
+
+def yayinlanamaz(neden: str) -> str:
+    """Engel metnini K22 biçimine getirir (zaten önekliyse olduğu gibi)."""
+    return neden if neden.startswith(YAYINLANAMAZ) else YAYINLANAMAZ + neden
 
 
 def _yayin_engeli(
     session: Session, tc: TestCase, gereksinim_engeli: str | None
 ) -> tuple[str, str] | None:
-    """(önizleme `islem` değeri, neden) ya da None. Sıra (ANALIZ §4.7): durum `approved` → hash
-    eşleşmesi → gereksinim güncel → hazır (`readiness`) → denetim kapısı (yalnız v3 case)."""
+    """(önizleme `islem` değeri, "Yayınlanamaz: …" nedeni) ya da None. Sıra (ANALIZ §4.7): durum
+    `approved` → hash eşleşmesi → gereksinim güncel → hazır (`readiness`) → denetim kapısı (yalnız
+    v3 case)."""
+    engel = _yayin_engeli_ham(session, tc, gereksinim_engeli)
+    return (engel[0], yayinlanamaz(engel[1])) if engel else None
+
+
+def _yayin_engeli_ham(
+    session: Session, tc: TestCase, gereksinim_engeli: str | None
+) -> tuple[str, str] | None:
     if tc.durum != "approved":
         return "blocked_not_approved", f"Onaylı değil (durum: {tc.durum})"
     if not approved_hash_matches(session, tc):
@@ -204,7 +219,7 @@ def _yayin_engeli(
     hazirlik = readiness_of(tc.icerik)
     if hazirlik != "ready":
         return "blocked_not_ready", NOT_READY_NEDEN.get(
-            hazirlik, f"Hazır değil (readiness: {hazirlik!r})"
+            hazirlik, f"hazır değil (readiness: {hazirlik!r})"
         )
     if _gate_check is not None and not is_legacy(tc.icerik):
         kapi = _gate_check(session, tc)
@@ -292,7 +307,7 @@ def preview(session: Session, requirement_id: uuid.UUID) -> dict[str, Any]:
     ).all()
     uyarilar: list[str] = []
     if not req.jira_key:
-        uyarilar.append(STORY_YOK + "; yayın engellenir.")
+        uyarilar.append(yayinlanamaz(STORY_YOK))
     if hedef == "jira":
         uyarilar.append(
             f"Projede 'Test' issue türü yoksa 'Task' + 'test-case' etiketi; '{TEST_LINK}' "
@@ -300,7 +315,7 @@ def preview(session: Session, requirement_id: uuid.UUID) -> dict[str, Any]:
         )
     gereksinim_engeli = requirement_change_reason(req)
     if gereksinim_engeli is not None:
-        uyarilar.append(gereksinim_engeli + "; onaylı case'ler yayınlanamaz.")
+        uyarilar.append(yayinlanamaz(f"onaylı case'ler — {gereksinim_engeli}"))
     kalemler = []
     for tc in cases:
         ref = _created_ref(session, tc.id)
@@ -311,7 +326,7 @@ def preview(session: Session, requirement_id: uuid.UUID) -> dict[str, Any]:
         elif engel is not None:
             islem, neden = engel
         elif not req.jira_key:
-            islem, neden = "blocked_no_story", STORY_YOK
+            islem, neden = "blocked_no_story", yayinlanamaz(STORY_YOK)
         else:
             islem = "create"
         content = CaseContent.from_mapping(case_mapping(session, tc))
@@ -530,7 +545,7 @@ def _publish_one(
     with session_scope() as s:
         tc = s.get(TestCase, cid, with_for_update=True)
         if tc is None:
-            return _sonuc(cid, "failed", hata="Case bulunamadı")
+            return _sonuc(cid, "failed", hata=yayinlanamaz("case bulunamadı"))
         if tc.durum == "published":
             ref = _created_ref(s, cid)
             return _sonuc(
@@ -538,10 +553,10 @@ def _publish_one(
             )
         engel = _engel(s, tc) or po_engeli
         if engel:
-            return _sonuc(cid, "failed", hata=engel)
+            return _sonuc(cid, "failed", hata=yayinlanamaz(engel))
         req = s.get(Requirement, tc.requirement_id)
         if req is None or not req.jira_key:
-            return _sonuc(cid, "failed", hata=STORY_YOK)
+            return _sonuc(cid, "failed", hata=yayinlanamaz(STORY_YOK))
         anahtar = idempotency_key(hedef, tc)
         ref = s.scalars(select(ExternalRef).where(ExternalRef.idempotency_key == anahtar)).first()
         if ref is not None and ref.durum == "created":
