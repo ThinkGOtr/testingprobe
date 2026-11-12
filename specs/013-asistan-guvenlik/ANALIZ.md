@@ -424,3 +424,9 @@ ve bu belge. Bu belgedeki §4–§9 düzeltilmiş hâli anlatır.
 - Yerleştirilmiş alıntı istisnası (§6.3 tur 2): girdide ya da araç sonucunda birebir geçen iz
   cümlesini model tekrarlarsa sızıntı sayılmaz; saldırgan istem cümlesini önce bir kayda yazıp
   sonra alıntılatırsa yalnız o cümle görünür (istemin geri kalanı yine izlerle korunur).
+- TCKN sağlama algoritması rastgele 11 haneli bir kimliğin yaklaşık %1'inde tutar; noktalı biçim
+  (`100.000.001.46`) da asistan oturumunda maskelendiği için 3-3-3-2 gruplu bir değer nadiren
+  TCKN sanılıp maskelenir. Etkisi yalnız maskedir (engel yok, kullanıcı kendi değerini görür).
+- Bağlamsız, çıplak 16 haneli bir sayı (kart ya da kimlik kelimesi yok) soru metninde Luhn'u
+  tuttuğunda (~%4) 422 alır: kesin dedektörün yanlış negatif yerine yanlış pozitif tarafında
+  kalması bilinçlidir; kullanıcı numaranın ne olduğunu yazarak (ör. "sipariş no …") geçer.
