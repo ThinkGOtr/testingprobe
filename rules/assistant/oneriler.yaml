@@ -591,6 +591,8 @@ bos_ekranlar:
   - {ekran: /hatalar/:id, roller: [analyst, po, presenter]}
   - {ekran: /bug-taslaklari, roller: [analyst, po, engineer, tester, presenter]}
   - {ekran: /bug-taslaklari/:id, roller: [po, engineer, presenter]}
+  - {ekran: /test-verisi, roller: [analyst, po, engineer, tester, presenter]}
+  - {ekran: /otomasyon, roller: [analyst, po, engineer, tester, presenter]}
   - {ekran: /kontrol-kulesi, roller: [analyst, po, engineer, tester]}
   - {ekran: /yol-haritasi, roller: [analyst, po, engineer, tester, presenter]}
   - {ekran: /denetim, roller: [analyst, po, engineer, tester, presenter]}

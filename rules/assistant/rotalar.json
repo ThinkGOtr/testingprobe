@@ -19,6 +19,8 @@
     {"kalip": "/yol-haritasi", "ekran": "Yol haritası", "varlik": null, "roller": null},
     {"kalip": "/denetim", "ekran": "Denetim", "varlik": null, "roller": null},
     {"kalip": "/claude-code", "ekran": "Claude Code kanalı", "varlik": null, "roller": ["analyst"]},
-    {"kalip": "/demo", "ekran": "Demo kontrolleri", "varlik": null, "roller": ["presenter"]}
+    {"kalip": "/demo", "ekran": "Demo kontrolleri", "varlik": null, "roller": ["presenter"]},
+    {"kalip": "/test-verisi", "ekran": "Test verisi", "varlik": null, "roller": null},
+    {"kalip": "/otomasyon", "ekran": "Otomasyon", "varlik": null, "roller": null}
   ]
 }
