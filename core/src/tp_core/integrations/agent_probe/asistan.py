@@ -15,9 +15,13 @@ puan < engel → engelle; puan < uyarı → uyar; aksi geç.
 Kategori tabanları (eşikten bağımsız, karar en az bu olur; gerekçe):
 - `nefret_irkcilik` → engelle (iki yön): hiçbir iş bağlamında gösterilmez, puanın modelce
   yumuşatılması kararı değiştirmemeli.
-- `prompt_injection` → engelle (iki yön): soruda asistanın araçları (Jira/CI/kod/veri okuma) ve
-  sistem talimatı hedef alınır — sistem/araç kötüye kullanımı modele hiç ulaşmamalı; cevapta
-  talimat sızıntısı ya da ele geçirilmiş model belirtisidir.
+- `prompt_injection` → soruda engelle (puandan bağımsız): asistanın araçları (Jira/CI/kod/veri
+  okuma) ve sistem talimatı hedef alınır — sistem/araç kötüye kullanımı modele hiç ulaşmamalı.
+  Cevapta engelle; yalnız puan uyarı eşiği ve üstündeyse uyar (`_INJECTION_CEVAP_YUMUSAK`):
+  kontrol modeli cevabı temiz bulup kategoriyi "bulgu" olarak işaretlediğinde (ör. cevap gömülü
+  talimatı uygulamadığını bildirir) yanlış engel olmasın. Talimat sızıntısı ya da ele geçirilmiş
+  model belirtisi düşük puanlanır → engel kalır. Bozuk çıktı / kontrol hatası yine engeldir
+  (puan yoksa 0; hata çağırana taşar, fail-closed).
 - `kisisel_veri` → cevapta engelle (sızıntı: veri kullanıcıya gösterilmez), soruda uyar
   (kullanıcı kendi yazdı; geçit maskelemesi modele gideni ayrıca korur).
 - `zararli_icerik`, `rekabete_aykiri`, `ayrimcilik`, `kufur_taciz` → en az uyar (puan düşükse
@@ -70,7 +74,8 @@ _SIRA: Final[dict[str, int]] = {"gec": 0, "uyar": 1, "engelle": 2}
 # (kategori, yön) → taban karar; yön None = iki yön.
 _TABAN: Final[dict[tuple[str, str | None], AsistanKarari]] = {
     ("nefret_irkcilik", None): "engelle",
-    ("prompt_injection", None): "engelle",
+    ("prompt_injection", "soru"): "engelle",
+    ("prompt_injection", "cevap"): "engelle",
     ("kisisel_veri", "cevap"): "engelle",
     ("kisisel_veri", "soru"): "uyar",
     ("zararli_icerik", None): "uyar",
@@ -79,6 +84,8 @@ _TABAN: Final[dict[tuple[str, str | None], AsistanKarari]] = {
     ("kufur_taciz", None): "uyar",
     ("yanlis_bilgi", "cevap"): "uyar",
 }
+# Cevap yönünde puan uyarı eşiği ve üstündeyse taban bir kademe yumuşar (engelle → uyar).
+_INJECTION_CEVAP_YUMUSAK: Final = frozenset({("prompt_injection", "cevap")})
 
 
 def _esik(ad: str, varsayilan: int) -> int:
@@ -118,6 +125,8 @@ def karar_ver(
     karar: AsistanKarari = "engelle" if puan < engel else "uyar" if puan < uyari else "gec"
     for k in kategorileri_duzelt(kategoriler, yon):
         taban = _TABAN.get((k, yon)) or _TABAN.get((k, None))
+        if taban == "engelle" and (k, yon) in _INJECTION_CEVAP_YUMUSAK and puan >= uyari:
+            taban = "uyar"
         if taban is not None and _SIRA[taban] > _SIRA[karar]:
             karar = taban
     return karar
