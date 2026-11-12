@@ -12,7 +12,7 @@
 #   allure-results/               Allure sonuçları
 #   extent-report/index.html      Extent (Spark) HTML raporu — tek dosya, çevrimdışı açılır
 #   kanit/<Sınıf>.<metot>/        başarısız testin ekran.png + trace.zip + sayfa.html (triage)
-#   birim-raporlari/              birim testlerinin JUnit XML'i (+ extent-report/)
+#   birim-raporlari/              birim testlerinin JUnit XML'i (+ extent-report/, allure-results/)
 #   guard.json                    java-araclar guard raporu
 #
 # Ortam (sistem özelliği karşılıkları: e2e-java/pom.xml, Ayarlar.java):
@@ -80,7 +80,8 @@ step "derleme: ./mvnw test-compile"
 if [[ "${SKIP_BIRIM:-0}" != "1" ]]; then
   step "birim testleri (tarayıcısız): -Dgroups=birim"
   ./mvnw "${mvn_opts[@]}" surefire:test -Dgroups=birim -Draporlar.dizini=target/birim-raporlari \
-    -Dextent.rapor.dizini=target/birim-raporlari/extent-report -Dsurefire.timeout=600
+    -Dextent.rapor.dizini=target/birim-raporlari/extent-report \
+    -Dallure.results.directory=target/birim-raporlari/allure-results -Dsurefire.timeout=600
 fi
 
 step "tarayıcı koşusu: ${BASE_URL:-http://127.0.0.1:8081} $*"

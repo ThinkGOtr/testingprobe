@@ -46,6 +46,10 @@ public class TestGruplariBirimTesti {
             Map.entry("tag", "TPD-1"),
             Map.entry("story", "TPD-1")));
     assertEquals(TestGruplari.allureEtiketleri(new String[] {"duman"}), List.of(Map.entry("tag", "duman")));
+    // QA-Y5: elle yazılmış testin Jira biçimli grubu story değildir (yalnız uretilen grubunda).
+    assertEquals(
+        TestGruplari.allureEtiketleri(new String[] {"kampanya", "TPD-1"}),
+        List.of(Map.entry("tag", "kampanya"), Map.entry("tag", "TPD-1")));
     assertEquals(TestGruplari.allureEtiketleri(null), List.of());
   }
 

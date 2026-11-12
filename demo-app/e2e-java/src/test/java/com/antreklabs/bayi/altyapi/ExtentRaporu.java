@@ -9,6 +9,7 @@ import com.aventstack.extentreports.reporter.JsonFormatter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
@@ -43,7 +44,12 @@ import org.testng.ITestResult;
  *       kopyaladığı css/js/yazı tipi dosyaları {@code index.html} içine gömülür ve silinir. Rapor
  *       ağ olmadan ve portalın sandbox'ında (çerezsiz, opak köken) tek istekle açılır.
  *   <li><b>Kanıt:</b> başarısız testin {@link Kanit} ekran görüntüsü ({@code kanit/<Sınıf>.<metot>/
- *       ekran.png}; bu testte yazıldıysa) rapora base64 gömülür.
+ *       ekran.png}; bu testte yazıldıysa) rapora base64 gömülür — ilk {@value #EN_COK_GOMULU_EKRAN}
+ *       başarısız test için; sonrakilerde rapor dizininden göreli bağlantı ve açıklama satırı (rapor
+ *       ve bellek test sayısıyla büyümez).
+ *   <li><b>Yazım:</b> ara yazım seyrektir (her {@value #ARA_YAZIM_TEST} testte bir ya da
+ *       {@value #ARA_YAZIM_MS} ms'de bir; koşu süre sınırında kesilse de o ana kadarki rapor kalır,
+ *       ara raporun css/js'i yanındaki dizindedir). Tek dosyaya gömme yalnız koşu sonunda yapılır.
  *   <li><b>Tekrarlı koşu:</b> her tekrar ayrı JVM'dir; {@code -Dextent.tekrar=<i>/<n>} ile
  *       {@code i > 1} tekrarında önceki tekrarların testleri rapor dizinindeki {@code extent.json}
  *       arşivinden geri yüklenir, rapor tekrarları birlikte gösterir (tekrar test adına eklenir).
@@ -56,7 +62,12 @@ import org.testng.ITestResult;
  *       (JUnit XML ile aynı test listesi).
  *   <li><b>İş parçacığı güvenliği:</b> test düğümleri sonuç nesnesine göre eşlenir; rapora yazım
  *       tek kilit altındadır.
- *   <li><b>Koşuyu düşürmez:</b> raporlama hatası yalnızca günlüğe yazılır ve rapor kapatılır.
+ *   <li><b>Koşuyu düşürmez:</b> raporlama hatası ({@link OutOfMemoryError} dahil) yalnızca günlüğe
+ *       yazılır, rapor kapatılır ve {@code index.html} kısa bir açıklama sayfasıyla değiştirilir;
+ *       testler ve Surefire JUnit XML'i etkilenmez.
+ *   <li><b>Kaçış:</b> ad, alt bilgi, kategori, cihaz ve bilgi satırları HTML'e kaçışlı girer
+ *       ({@code & < > " ' \}); Spark test adını {@code <script>} içindeki bir JS dizesine de
+ *       yazar (zaman çizelgesi), tırnak ve ters bölü oradan da çıkamaz.
  * </ul>
  *
  * <p>Dizin: sistem özelliği {@code extent.rapor.dizini} (pom: {@code target/extent-report}); boş
@@ -74,15 +85,25 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
   static final long EN_BUYUK_KAYNAK = 8L * 1024 * 1024;
   /** Gömülecek ekran görüntüsünün üst sınırı. */
   static final long EN_BUYUK_EKRAN = 10L * 1024 * 1024;
+  /** Rapora gömülen ekran görüntüsü sayısının üst sınırı (sonrakiler göreli bağlantı). */
+  public static final int EN_COK_GOMULU_EKRAN = 50;
+  /** Ara yazım: bu kadar test bittiğinde … */
+  public static final int ARA_YAZIM_TEST = 25;
+  /** … ya da son yazımdan bu kadar süre (ms) geçtiğinde. */
+  public static final long ARA_YAZIM_MS = 30_000;
 
   private static final Logger LOG = Logger.getLogger(ExtentRaporu.class.getName());
   /** Süreç genelinde tek rapor: TestNG dinleyiciyi her (iç içe) koşu için yeniden örnekler. */
   private static final Durum ORTAK = new Durum(null, null, null);
 
-  private static final Pattern STIL = Pattern.compile("<link\\b[^>]*\\bhref=\"([^\"]+\\.css)\"[^>]*>");
-  private static final Pattern SIMGE =
-      Pattern.compile("(<link\\b[^>]*\\bhref=\")([^\"]+\\.(?:png|ico|svg))(\"[^>]*>)");
-  private static final Pattern BETIK = Pattern.compile("<script\\b[^>]*\\bsrc=\"([^\"]+\\.js)\"[^>]*>\\s*</script>");
+  /** Rapor sayfasındaki yerel başvurular: css {@code <link>}, simge {@code <link>}, betik, {@code url(…)}. */
+  private static final Pattern GOMULECEK =
+      Pattern.compile(
+          "<link\\b[^>]*\\bhref=\"(?<css>[^\"]+\\.css)\"[^>]*>"
+              + "|(?<simgeOn><link\\b[^>]*\\bhref=\")(?<simge>[^\"]+\\.(?:png|ico|svg))(?<simgeSon>\"[^>]*>)"
+              + "|<script\\b[^>]*\\bsrc=\"(?<js>[^\"]+\\.js)\"[^>]*>\\s*</script>"
+              + "|url\\(\\s*['\"]?(?<url>[^'\")]+?)['\"]?\\s*\\)");
+  private static final Pattern SATIR_SONU = Pattern.compile("[\\r\\n\\u2028\\u2029\\u0085]+\\s*");
   private static final Pattern CSS_URL = Pattern.compile("url\\(\\s*['\"]?([^'\")]+?)['\"]?\\s*\\)");
   private static final Pattern DIS_KAYNAK = Pattern.compile("^(?:[a-zA-Z][a-zA-Z0-9+.-]*:|//|#)");
 
@@ -97,6 +118,11 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
     private boolean kapali;
     /** İç içe TestNG koşusu sayacı (bir test kendi içinde TestNG çalıştırabilir). */
     private int derinlik;
+    /** Son yazımdan bu yana biten test sayısı ve son yazımın zamanı ({@link System#nanoTime}). */
+    private int yazilmayan;
+    private long sonYazim;
+    /** Bu JVM'de rapora gömülen ekran görüntüsü sayısı. */
+    private int gomuluEkran;
 
     /** {@code null} verilen değer sistem özelliğinden okunur (birim testleri açıkça verir). */
     Durum(Path dizin, Path kanitKoku, String tekrar) {
@@ -161,6 +187,7 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
             } finally {
               d.rapor = null;
               d.testler.clear();
+              d.gomuluEkran = 0;
             }
           }
         });
@@ -214,7 +241,11 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
    * {@code (tekrar 2/3)} eklenir.
    */
   public static String testAdi(String sinif, String metot, String aciklama, String tekrar) {
-    String ad = aciklama == null || aciklama.isBlank() ? basitAd(sinif) + " › " + metot : aciklama.trim();
+    // Satır sonları tek boşluk: ad zaman çizelgesinde tek satırlık bir JS dizesidir.
+    String ad =
+        aciklama == null || aciklama.isBlank()
+            ? basitAd(sinif) + " › " + metot
+            : SATIR_SONU.matcher(aciklama.strip()).replaceAll(" ");
     return tekrar == null || tekrar.isBlank() ? ad : ad + " (tekrar " + tekrar.trim() + ")";
   }
 
@@ -280,18 +311,20 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
       spark.config().setReportName("Web e2e (Playwright for Java + TestNG)");
       spark.config().setTimeStampFormat("dd.MM.yyyy HH:mm:ss");
       r.attachReporter(new JsonFormatter(arsiv.toFile()), spark);
-      r.setSystemInfo("Platform", PLATFORM);
+      r.setSystemInfo("Platform", kacis(PLATFORM));
       String playwright = System.getProperty("playwright.surumu");
       if (playwright != null && !playwright.isBlank()) {
-        r.setSystemInfo("Playwright for Java", playwright.trim());
+        r.setSystemInfo("Playwright for Java", kacis(playwright.trim()));
       }
       String adres = ozellik("base.url", "BASE_URL");
       if (adres != null) {
-        r.setSystemInfo("Uygulama", adres);
+        r.setSystemInfo("Uygulama", kacis(adres));
       }
-      r.setSystemInfo("Java", System.getProperty("java.version", "?"));
-      r.setSystemInfo("İşletim sistemi", System.getProperty("os.name", "?"));
+      r.setSystemInfo("Java", kacis(System.getProperty("java.version", "?")));
+      r.setSystemInfo("İşletim sistemi", kacis(System.getProperty("os.name", "?")));
       d.rapor = r;
+      d.yazilmayan = 0;
+      d.sonYazim = System.nanoTime();
     }
   }
 
@@ -332,7 +365,7 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
         for (String kimlik : TestGruplari.caseler(gruplar)) {
           t.info("Testing Probe case: " + kacis(kimlik));
         }
-        t.assignDevice(PLATFORM);
+        t.assignDevice(kacis(PLATFORM));
         d.testler.put(sonuc, t);
       }
       return t;
@@ -357,10 +390,7 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
               t.info("Parametreler: " + kacis(Arrays.deepToString(parametreler)));
             }
             if (durum == Status.FAIL || durum == Status.WARNING) {
-              String ekran = ekranGoruntusu(sonuc);
-              if (ekran != null) {
-                t.addScreenCaptureFromBase64String(ekran, "Ekran görüntüsü");
-              }
+              ekranEkle(t, sonuc);
             }
             if (hata != null) {
               hatayiYaz(t, durum, hata);
@@ -376,9 +406,14 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
               t.getModel().setEndTime(new Date(sonuc.getEndMillis()));
             }
             d.testler.remove(sonuc);
+            d.yazilmayan++;
+            // Ara yazım seyrektir (her yazım tüm raporu yeniden üretir; her testte yazmak test
+            // sayısıyla karesel büyür). Koşu süre sınırında kesilse de o ana kadarki rapor kalır.
+            if (d.yazilmayan >= ARA_YAZIM_TEST
+                || System.nanoTime() - d.sonYazim >= ARA_YAZIM_MS * 1_000_000L) {
+              yaz(false);
+            }
           }
-          // Her testten sonra yazılır: koşu süre sınırında kesilse de o ana kadarki rapor kalır.
-          yaz(false);
         });
   }
 
@@ -397,12 +432,73 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
     }
   }
 
-  private static String kacis(String metin) {
-    return metin.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+  /**
+   * HTML metni ve öznitelik değeri için kaçış: {@code & < > " ' \}. Extent adı, alt bilgiyi,
+   * kategorileri ve bilgi satırlarını kaçışsız gömer; Spark test adını ayrıca {@code <script>}
+   * içinde çift tırnaklı bir JS dizesine yazar ({@code dashboard.ftl} zaman çizelgesi). Tırnak ve
+   * ters bölü varlık olarak yazıldığından ad o dizeden çıkamaz, {@code <} ile {@code </script>}
+   * de oluşamaz.
+   */
+  public static String kacis(String metin) {
+    StringBuilder out = new StringBuilder(metin.length() + 16);
+    for (int i = 0; i < metin.length(); i++) {
+      char c = metin.charAt(i);
+      switch (c) {
+        case '&' -> out.append("&amp;");
+        case '<' -> out.append("&lt;");
+        case '>' -> out.append("&gt;");
+        case '"' -> out.append("&quot;");
+        case '\'' -> out.append("&#39;");
+        case '\\' -> out.append("&#92;");
+        default -> out.append(c);
+      }
+    }
+    return out.toString();
   }
 
-  /** Bu testte toplanan kanıt ekran görüntüsü (base64); yoksa ya da eski bir koşudansa null. */
-  private String ekranGoruntusu(ITestResult sonuc) {
+  /**
+   * Bu testte toplanan kanıt ekran görüntüsünü ekler: ilk {@link #EN_COK_GOMULU_EKRAN} görüntü
+   * base64 gömülür, sonrakiler rapor dizininden göreli bağlantı ve açıklama satırıdır.
+   */
+  private void ekranEkle(ExtentTest t, ITestResult sonuc) throws IOException {
+    Path png = ekranDosyasi(sonuc);
+    if (png == null) {
+      return;
+    }
+    if (d.gomuluEkran < EN_COK_GOMULU_EKRAN) {
+      String veri;
+      try {
+        veri = Base64.getEncoder().encodeToString(Files.readAllBytes(png));
+      } catch (IOException e) {
+        return;
+      }
+      t.addScreenCaptureFromBase64String(veri, "Ekran görüntüsü");
+      d.gomuluEkran++;
+      return;
+    }
+    String yol = goreliYol(d.dizin, png);
+    t.info(
+        "Ekran görüntüsü rapora gömülmedi (ilk "
+            + EN_COK_GOMULU_EKRAN
+            + " başarısız test gömülür); kanıt dosyası: <a href=\""
+            + kacis(yol)
+            + "\" target=\"_blank\">"
+            + kacis(yol)
+            + "</a>");
+  }
+
+  /** {@code dosya}'nın rapor dizininden göreli yolu ({@code /} ayraçlı); göreli olamıyorsa mutlak yol. */
+  static String goreliYol(Path raporDizini, Path dosya) {
+    Path hedef = dosya.toAbsolutePath().normalize();
+    try {
+      return raporDizini.toAbsolutePath().normalize().relativize(hedef).toString().replace('\\', '/');
+    } catch (IllegalArgumentException e) {
+      return hedef.toString().replace('\\', '/');
+    }
+  }
+
+  /** Bu testte toplanan kanıt ekran görüntüsü dosyası; yoksa, boşsa, büyükse ya da eski koşudansa null. */
+  private Path ekranDosyasi(ITestResult sonuc) {
     try {
       Class<?> sinif = sonuc.getTestClass().getRealClass();
       Path kok = d.kanitKoku != null ? d.kanitKoku : Path.of(System.getProperty("kanit.dizini", "target/kanit"));
@@ -414,23 +510,29 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
       if (Files.getLastModifiedTime(png).toMillis() + 1000 < sonuc.getStartMillis()) {
         return null;
       }
-      return Base64.getEncoder().encodeToString(Files.readAllBytes(png));
+      return png;
     } catch (IOException | RuntimeException e) {
       return null;
     }
   }
 
   /**
-   * Raporu yazar ve tek dosyaya indirger. Extent çevrimdışı kaynakları yalnızca başlangıçta
-   * kopyalar; bu yüzden kaynak dizini ancak koşu sonunda ({@code temizle}) silinir.
+   * Raporu yazar; {@code son} ise (koşu sonu) tek dosyaya indirger ve gömülen kaynakların
+   * dizinlerini siler. Ara yazım yalnız Extent'in kendi yazımıdır: ara rapor css/js'i yanındaki
+   * dizinden okur (Extent çevrimdışı kaynakları yalnızca başlangıçta kopyalar; bu yüzden dizin
+   * ancak koşu sonunda silinir).
    */
-  private void yaz(boolean temizle) throws IOException {
+  private void yaz(boolean son) throws IOException {
     synchronized (d) {
       if (d.rapor == null) {
         return;
       }
       d.rapor.flush();
-      tekDosya(d.dizin.resolve(RAPOR), temizle);
+      d.yazilmayan = 0;
+      d.sonYazim = System.nanoTime();
+      if (son) {
+        tekDosya(d.dizin.resolve(RAPOR), true);
+      }
     }
   }
 
@@ -448,48 +550,47 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
     // Mutlak yol: rapor dizini göreli verilse de (-Dextent.rapor.dizini=target/…) başvurular çözülür.
     Path mutlak = html.toAbsolutePath().normalize();
     Path kok = mutlak.getParent();
-    // Önce sayfanın kendi satır içi stil başvuruları (logo), sonra css/js dosyaları.
-    String kaynak = cssGom(kok, mutlak, Files.readString(html, StandardCharsets.UTF_8));
+    // Tek geçiş (bellek: kaynak metin + çıktı; ara kopya yok): css/js dosyaları gömülür, simge ve
+    // satır içi stil başvuruları (logo) veri adresine çevrilir.
+    String kaynak = Files.readString(html, StandardCharsets.UTF_8);
     Set<Path> gomulen = new LinkedHashSet<>();
-
-    String sonuc =
-        degistir(
-            STIL,
-            kaynak,
-            m -> {
-              Path css = yerel(kok, kok, m.group(1));
-              if (css == null) {
-                return null;
-              }
-              String icerik = cssGom(kok, css, Files.readString(css, StandardCharsets.UTF_8));
-              gomulen.add(css);
-              return "<style>" + icerik.replace("</style", "<\\/style") + "</style>";
-            });
-    sonuc =
-        degistir(
-            BETIK,
-            sonuc,
-            m -> {
-              Path js = yerel(kok, kok, m.group(1));
-              if (js == null) {
-                return null;
-              }
-              gomulen.add(js);
-              return "<script>" + Files.readString(js, StandardCharsets.UTF_8).replace("</script", "<\\/script") + "</script>";
-            });
+    StringBuilder sonuc = new StringBuilder(kaynak.length() + 1024 * 1024);
+    Matcher m = GOMULECEK.matcher(kaynak);
+    int son = 0;
+    while (m.find()) {
+      String yeni = null;
+      if (m.group("css") != null) {
+        Path css = yerel(kok, kok, m.group("css"));
+        if (css != null) {
+          String icerik = cssGom(kok, css, Files.readString(css, StandardCharsets.UTF_8));
+          gomulen.add(css);
+          yeni = "<style>" + icerik.replace("</style", "<\\/style") + "</style>";
+        }
+      } else if (m.group("js") != null) {
+        Path js = yerel(kok, kok, m.group("js"));
+        if (js != null) {
+          gomulen.add(js);
+          yeni = "<script>" + Files.readString(js, StandardCharsets.UTF_8).replace("</script", "<\\/script") + "</script>";
+        }
+      } else if (m.group("simge") != null) {
+        Path simge = yerel(kok, kok, m.group("simge"));
+        yeni = simge == null ? null : m.group("simgeOn") + veriAdresi(simge) + m.group("simgeSon");
+      } else {
+        yeni = cssUrl(kok, mutlak, m.group("url"));
+      }
+      sonuc.append(kaynak, son, m.start()).append(yeni != null ? yeni : m.group());
+      son = m.end();
+    }
     if (gomulen.isEmpty()) {
       return;
     }
-    sonuc =
-        degistir(
-            SIMGE,
-            sonuc,
-            m -> {
-              Path simge = yerel(kok, kok, m.group(2));
-              return simge == null ? null : m.group(1) + veriAdresi(simge) + m.group(3);
-            });
+    sonuc.append(kaynak, son, kaynak.length());
+    kaynak = null; // yazım sırasında yalnız çıktı bellekte kalsın
     Path gecici = html.resolveSibling(RAPOR + ".tmp");
-    Files.writeString(gecici, sonuc, StandardCharsets.UTF_8);
+    try (Writer w = Files.newBufferedWriter(gecici, StandardCharsets.UTF_8)) {
+      w.append(sonuc);
+    }
+    sonuc = null;
     Files.move(gecici, html, StandardCopyOption.REPLACE_EXISTING);
     if (!temizle) {
       return;
@@ -504,22 +605,22 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
   }
 
   private static String cssGom(Path kok, Path css, String icerik) throws IOException {
-    return degistir(
-        CSS_URL,
-        icerik,
-        m -> {
-          String ham = m.group(1).trim();
-          if (ham.startsWith("data:")) {
-            return null;
-          }
-          Path dosya = yerel(kok, css.getParent(), ham);
-          if (dosya == null) {
-            return null;
-          }
-          // Aynı yazı tipinin woff2'si gömülüyorsa eski biçimler (eot/ttf/otf/woff/svg) gömülmez:
-          // tarayıcı woff2'yi seçer, rapor ~1 MB küçülür.
-          return eskiBicim(dosya) ? "url(data:,)" : "url(" + veriAdresi(dosya) + ")";
-        });
+    return degistir(CSS_URL, icerik, m -> cssUrl(kok, css, m.group(1)));
+  }
+
+  /** {@code url(ham)} başvurusunun gömülü karşılığı ({@code css}: başvuruyu içeren dosya); null → dokunulmaz. */
+  private static String cssUrl(Path kok, Path css, String basvuru) throws IOException {
+    String ham = basvuru.trim();
+    if (ham.startsWith("data:")) {
+      return null;
+    }
+    Path dosya = yerel(kok, css.getParent(), ham);
+    if (dosya == null) {
+      return null;
+    }
+    // Aynı yazı tipinin woff2'si gömülüyorsa eski biçimler (eot/ttf/otf/woff/svg) gömülmez:
+    // tarayıcı woff2'yi seçer, rapor ~1 MB küçülür.
+    return eskiBicim(dosya) ? "url(data:,)" : "url(" + veriAdresi(dosya) + ")";
   }
 
   private static String veriAdresi(Path dosya) throws IOException {
@@ -614,19 +715,51 @@ public final class ExtentRaporu implements IExecutionListener, ITestListener {
     void yap() throws IOException;
   }
 
-  /** Raporlama hatası testi/koşuyu etkilemez: günlüğe yazılır, rapor bu JVM için kapatılır. */
+  /**
+   * Raporlama hatası testi/koşuyu etkilemez: günlüğe yazılır, rapor bu JVM için kapatılır.
+   * {@link OutOfMemoryError} de yakalanır (büyük rapor yazımı): rapor modeli bırakılınca bellek geri
+   * döner, koşu ve Surefire JUnit XML'i sürer.
+   */
   private void guvenli(String adim, Is is) {
     if (d.kapali()) {
       return;
     }
     try {
       is.yap();
-    } catch (IOException | RuntimeException | LinkageError e) {
+    } catch (IOException | RuntimeException | LinkageError | OutOfMemoryError e) {
+      Path dizin;
       synchronized (d) {
         d.kapali = true;
         d.rapor = null;
+        d.testler.clear();
+        dizin = d.dizin;
       }
       LOG.log(Level.WARNING, "Extent raporu devre dışı (" + adim + ")", e);
+      kapanisSayfasi(dizin, adim, e);
+    }
+  }
+
+  /**
+   * Yarıda kalmış (ya da eksik) rapor yerine kısa bir açıklama sayfası yazar; yazılamazsa sessizce
+   * geçer (rapor dizini hiç oluşmamış olabilir).
+   */
+  private static void kapanisSayfasi(Path dizin, String adim, Throwable hata) {
+    if (dizin == null || !Files.isDirectory(dizin)) {
+      return;
+    }
+    try {
+      Files.deleteIfExists(dizin.resolve(RAPOR + ".tmp"));
+      String sayfa =
+          "<!doctype html><html lang=\"tr\"><head><meta charset=\"utf-8\"><title>Extent raporu üretilemedi</title>"
+              + "</head><body><h1>Extent raporu üretilemedi</h1><p>Raporlama hatası ("
+              + kacis(adim)
+              + ": "
+              + kacis(hata.getClass().getSimpleName())
+              + ") nedeniyle rapor bu koşu için kapatıldı. Test sonuçları etkilenmedi: JUnit XML"
+              + " (surefire-reports) ve Allure sonuçlarına bakın.</p></body></html>";
+      Files.writeString(dizin.resolve(RAPOR), sayfa, StandardCharsets.UTF_8);
+    } catch (IOException | RuntimeException | OutOfMemoryError e) {
+      LOG.log(Level.FINE, "Extent açıklama sayfası yazılamadı", e);
     }
   }
 }
