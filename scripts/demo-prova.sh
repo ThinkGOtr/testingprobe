@@ -125,6 +125,17 @@ if [ "$UI" = 1 ] || [ "$UI_TUR" = 1 ]; then
     || { err "rehearsal/ui bağımlılıkları yok: (cd rehearsal/ui && npm ci)"; exit 2; }
 fi
 [ -n "$(env_get SEED_USER_PASSWORD)" ] || { err ".env SEED_USER_PASSWORD yok"; exit 2; }
+# 013 K19: test verisi parola sırrı tanımsızsa kod üretimi `test_verisi` engeliyle durur; farklı
+# değer REPLAY kayıtlarındaki demo parolasıyla uyuşmaz (render taraması PR'ı durdurur).
+# Değer yazdırılmaz. Eksikse: `make env` (.env.example'daki demo değeri eklenir).
+ornek_parola="$(env_get TP_TESTVERI_DEMO_PAROLA .env.example)"
+if [ -z "$(env_get TP_TESTVERI_DEMO_PAROLA)" ]; then
+  err ".env TP_TESTVERI_DEMO_PAROLA boş ya da yok (013 K19): 'make env' çalıştırın ya da .env.example'daki değeri yazın"
+  exit 2
+elif [ -n "$ornek_parola" ] && [ "$(env_get TP_TESTVERI_DEMO_PAROLA)" != "$ornek_parola" ]; then
+  err ".env TP_TESTVERI_DEMO_PAROLA demo değerinden farklı: REPLAY kayıtları demo parolasıyla; prova kod üretiminde durur"
+  exit 2
+fi
 
 # §13 provası strict REPLAY'dir. compose core-worker'a TP_MODEL_MODE'u kabuk ortamından, yoksa .env'den
 # verir (varsayılan auto). auto/live'da prova gerçek, değerlendirilmemiş model çağrısı yapar ve özet

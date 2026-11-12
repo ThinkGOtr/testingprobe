@@ -77,8 +77,10 @@ def _tutar_mi(anahtar: str) -> bool:
     return any(p in anahtar for p in ("tutar", "limit", "fiyat"))
 
 
-def build_text(sorgu: Sorgu | None) -> str:
-    """Bloğun metni. `sorgu` None ya da hata verirse veritabanı kısmı yok sayılır (not düşülür)."""
+def build_text(sorgu: Sorgu | None, parola: str = DEMO_PAROLA) -> str:
+    """Bloğun metni. `sorgu` None ya da hata verirse veritabanı kısmı yok sayılır (not düşülür).
+
+    `parola`: parola yerine basılacak metin (IDE kanalında atıf `{veri:ortak.demo_parola}`)."""
     satirlar: list[str] = ["Test verisi (demo uygulaması):"]
     veri: dict[str, Sequence[Sequence[Any]]] = {}
     if sorgu is not None:
@@ -90,9 +92,7 @@ def build_text(sorgu: Sorgu | None) -> str:
     if veri:
         satirlar.append("Test kullanıcıları (bayi):")
         for kullanici, ad, limit in veri["bayi"]:
-            satirlar.append(
-                f'- {kullanici} / {DEMO_PAROLA} — bayi adı "{ad}", kredi limiti {tl(limit)}'
-            )
+            satirlar.append(f'- {kullanici} / {parola} — bayi adı "{ad}", kredi limiti {tl(limit)}')
         satirlar.append("Ürünler (kod · ad · birim fiyat):")
         for kod, ad, fiyat in veri["urun"]:
             satirlar.append(f'- {kod} · "{ad}" · {tl(fiyat)}')
@@ -106,8 +106,7 @@ def build_text(sorgu: Sorgu | None) -> str:
             satirlar.append(f"- {anahtar} = {deger}{ek}")
     else:
         satirlar.append(
-            f"- {VERITABANI_YOK}; yalnızca sabit bilgiler. Test kullanıcılarının parolası: "
-            f"{DEMO_PAROLA}"
+            f"- {VERITABANI_YOK}; yalnızca sabit bilgiler. Test kullanıcılarının parolası: {parola}"
         )
     satirlar.append("Arayüz etiketleri: " + ", ".join(f'"{e}"' for e in UI_ETIKETLERI))
     satirlar.append("Tutar biçimi: 1.250,00 TL (tr-TR, iki ondalık).")
@@ -169,11 +168,43 @@ def block(session: Session | None = None) -> str:
     return wrap_untrusted(build_text(sorgu), source=KAYNAK, kind="data")
 
 
-def _katalog_metni(session: Session) -> str | None:
+IDE_PAROLA_ATFI = "{veri:ortak.demo_parola}"
+
+
+def ide_block(session: Session) -> str:
+    """IDE/MCP kanalının (`get_requirement`) test verisi bloğu (K17 netleştirme, güvenlik #3).
+
+    Bu kanalda REPLAY yok: model kipinden bağımsız olarak **her zaman katalogdan** kurulur.
+    Gizli değerler (parola dahil) çözülmüş değil **atıf** olarak verilir: blok API yanıtıyla IDE
+    token sahibine döner; IDE taslağı atfı yazar, sunucu çözer. Katalog kurulamazsa DB bloğu,
+    parola yine atıfla; son olarak bilinen gizli değerler maskelenir.
+    """
+    from tp_core.gateway import wrap_untrusted
+
+    metin = _katalog_metni(session, gizli_atif=True)
+    if metin is None:
+        log.warning("IDE test verisi bloğu katalogdan kurulamadı; demo DB'den (parola atıfla)")
+        try:
+            sorgu = _sorgu_fabrikasi()
+        except Exception as exc:
+            log.warning("Test verisi kaynağı açılamadı: %s", exc)
+            sorgu = None
+        metin = build_text(sorgu, parola=IDE_PAROLA_ATFI)
+    try:
+        from tp_core.features.testveri.atif import maskele
+        from tp_core.features.testveri.service import gizli_degerler
+
+        metin = maskele(metin, gizli_degerler(session))
+    except Exception as exc:  # pragma: no cover - katalog okunamazsa parola zaten atıf
+        log.warning("IDE test verisi bloğu maskelenemedi: %s", type(exc).__name__)
+    return wrap_untrusted(metin, source=KAYNAK, kind="data")
+
+
+def _katalog_metni(session: Session, *, gizli_atif: bool = False) -> str | None:
     from tp_core.features.testveri.service import blok_metni
 
     try:
-        return blok_metni(session)
+        return blok_metni(session, gizli_atif=gizli_atif)
     except Exception as exc:  # katalog okunamazsa model girdisi eski yoldan
         log.warning("Test verisi bloğu katalogdan kurulamadı: %s", exc)
         return None

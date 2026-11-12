@@ -6,11 +6,18 @@
   kampanya / ortak grupları (`atif.case_esle` ayrıca tutar kuralını uygular).
 - `cozum_degerleri`: kod üretimi / koşu için (değerler, sürümler); gizli değer
   `os.environ[sir_adi]`'den, sır tanımsızsa o anahtar çözülemez.
-- `veri_izi` (013 §9): `{anahtar: sha256(çözülmüş değer)[:12]}` (gizli için de özet); "veri
-  değişti" yalnız değer (ya da gizlide sır değeri) değişince doğar, açıklama/grup değişimi saymaz.
-- K19: `gizli_degerler` bilinen gizli değerler (ortamda tanımlı); `maskele*` kullanıcıya görünen
-  içerikte bunları `•••` yapar. Gizli bir değerle aynı değeri taşıyan gizli olmayan kayıt
-  reddedilir.
+- `veri_izi` (013 §9/§10): `{anahtar: "h1:" + HMAC-SHA256(sunucu anahtarı, değer)[:16]}`.
+  Anahtar `TP_SESSION_SECRET`'tan türetilir (alan ayrımlı). Oturum sırrı yoksa gizli olmayan
+  değerler `h0:` (anahtarsız HMAC; değer zaten katalogda açık) ile özetlenir, gizli değer hiç
+  özetlenmez (izde yer almaz). Eski kayıtlardaki düz `sha256[:12]` özetler yalnız içeride
+  karşılaştırılır, hiçbir API'de dönmez (`api_veri_izi`). "Veri değişti" yalnız değer (ya da
+  gizlide sır değeri) değişince doğar, açıklama/grup değişimi saymaz.
+- K19: `gizli_degerler` bilinen gizli değerler: ortamda tanımlı sır değerleri + `ortak.demo_parola`
+  gizli kaydı etkinse DB bloğunun sabit demo parolası (`testdata.DEMO_PAROLA`; replay / sır
+  tanımsız yolunda modele giden değer). `maskele*` kullanıcıya görünen içerikte bunları `•••` yapar.
+  Eşlemede sabit demo parolası her zaman `ortak.demo_parola` atfına çevrilir (`takma_degerler`):
+  sır tanımsızsa kod üretimi `test_verisi` engeliyle durur, PR'a düz parola girmez. Gizli bir
+  değerle aynı değeri taşıyan gizli olmayan kayıt reddedilir (genel metin + denetim).
 - CRUD: her değişiklik `test_verisi_surum` satırı + denetim (`testveri.olustur|guncelle|sil`).
   İyimser kilit `beklenen_surum` (409); silme yumuşaktır ve atıf yapan etkin case varsa 409.
 - `tohumla`: demo DB (`cases/testdata.py` sorguları) + sabitlerden; anahtar başına idempotent
@@ -24,6 +31,7 @@ Gizli kaydın değeri katalogda yoktur, API'den dönmez, denetime yazılmaz. `si
 from __future__ import annotations
 
 import hashlib
+import hmac
 import logging
 import os
 import re
@@ -133,11 +141,10 @@ def katalog(session: Session) -> dict[str, str]:
 
 
 def eslem_katalogu(session: Session) -> dict[str, str]:
-    """Eşleme kataloğu: `katalog` + değeri ortamda tanımlı gizli kayıtlar (K18 grupları)."""
+    """Eşleme kataloğu: `katalog` + değeri ortamda tanımlı gizli kayıtlar. Tüm gruplar döner:
+    tekillik tüm katalogla sınanır, K18 grup süzgecini `atif.case_esle` uygular (QA #11)."""
     out: dict[str, str] = {}
     for k in etkin_kayitlar(session):
-        if not atif.eslenebilir_mi(k.anahtar):
-            continue
         deger = sir_degeri(k.sir_adi) if k.gizli else k.deger
         if deger is not None:
             out[k.anahtar] = deger
@@ -156,20 +163,70 @@ def cozum_degerleri(session: Session) -> tuple[dict[str, str], dict[str, int]]:
     return degerler, surumler
 
 
+def gizli_anahtarlar(session: Session) -> set[str]:
+    return set(
+        session.scalars(
+            select(TestVerisi.anahtar).where(
+                TestVerisi.silindi.is_(False), TestVerisi.gizli.is_(True)
+            )
+        ).all()
+    )
+
+
+def kilitli_anahtarlar(session: Session, istenen: Iterable[str]) -> set[str]:
+    """Mimar #5: atıf yazılacak anahtarların etkin satırları `FOR SHARE` ile okunur; `sil`
+    (`FOR UPDATE`) ile sıralanır. Silme önce commit olduysa satır `silindi` görünür ve dönmez;
+    sonra gelirse `sil`, case'ler commit olunca kullanımı görür (409)."""
+    liste = sorted(set(istenen))
+    if not liste:
+        return set()
+    return set(
+        session.scalars(
+            select(TestVerisi.anahtar)
+            .where(TestVerisi.anahtar.in_(liste), TestVerisi.silindi.is_(False))
+            .order_by(TestVerisi.anahtar)
+            .with_for_update(read=True)
+        ).all()
+    )
+
+
 def anahtarlar(session: Session) -> set[str]:
     return set(
         session.scalars(select(TestVerisi.anahtar).where(TestVerisi.silindi.is_(False))).all()
     )
 
 
+def _sabit_demo_parolasi() -> str:
+    from tp_core.features.cases.testdata import DEMO_PAROLA
+
+    return DEMO_PAROLA
+
+
+def takma_degerler(session: Session) -> dict[str, str]:
+    """Katalog dışı bilinen gizli değer → anahtar: `ortak.demo_parola` gizli kaydı etkinse DB
+    bloğunun sabit demo parolası (replay / katalog kurulamayınca modele giden değer)."""
+    var = session.scalars(
+        select(TestVerisi.id).where(
+            TestVerisi.anahtar == DEMO_PAROLA_ANAHTARI,
+            TestVerisi.silindi.is_(False),
+            TestVerisi.gizli.is_(True),
+        )
+    ).first()
+    return {_sabit_demo_parolasi(): DEMO_PAROLA_ANAHTARI} if var is not None else {}
+
+
 def gizli_degerler(session: Session) -> list[str]:
-    """K19: bilinen gizli değerler (etkin gizli kayıtların ortamda tanımlı sır değerleri)."""
+    """K19: bilinen gizli değerler (etkin gizli kayıtların ortamda tanımlı sır değerleri + sabit
+    demo parolası takması; bkz. `takma_degerler`)."""
     out: list[str] = []
     for sir_adi in session.scalars(
         select(TestVerisi.sir_adi).where(TestVerisi.silindi.is_(False), TestVerisi.gizli.is_(True))
     ):
         deger = sir_degeri(sir_adi)
         if deger is not None and deger not in out:
+            out.append(deger)
+    for deger in takma_degerler(session):
+        if deger not in out:
             out.append(deger)
     return out
 
@@ -193,53 +250,122 @@ def maskele(session: Session, obj: Any, gizliler: Iterable[str] | None = None) -
     return atif.maskele_obje(obj, gizli_degerler(session) if gizliler is None else gizliler)
 
 
-def deger_ozeti(deger: str) -> str:
-    """`veri_izi` değeri: çözülmüş değerin sha256 özetinin ilk 12 karakteri."""
+OZET_ANAHTARLI = "h1:"
+OZET_ANAHTARSIZ = "h0:"
+_OZET_ALANI = b"tp-testveri-deger-ozeti:"
+
+
+def _ozet_anahtari() -> bytes | None:
+    """`veri_izi` HMAC anahtarı: `TP_SESSION_SECRET`'tan alan ayrımlı türetilir; yoksa None."""
+    sir = os.environ.get("TP_SESSION_SECRET") or ""
+    if not sir:
+        try:
+            from tp_core.config import get_settings
+
+            ayar = get_settings().session_secret
+            sir = ayar.get_secret_value() if ayar is not None else ""
+        except Exception:
+            sir = ""
+    if not sir:
+        return None
+    return hashlib.sha256(_OZET_ALANI + sir.encode("utf-8")).digest()
+
+
+def deger_ozeti(deger: str, *, gizli: bool = False) -> str | None:
+    """`veri_izi` değeri: tuzlu (sunucu anahtarlı) HMAC özeti. Anahtar yoksa gizli olmayan değer
+    `h0:` (anahtarsız; değer zaten açık), gizli değer None (özetlenmez: sözlük saldırısı yok)."""
+    anahtar = _ozet_anahtari()
+    if anahtar is None:
+        if gizli:
+            return None
+        anahtar, onek = _OZET_ALANI, OZET_ANAHTARSIZ
+    else:
+        onek = OZET_ANAHTARLI
+    return onek + hmac.new(anahtar, deger.encode("utf-8"), hashlib.sha256).hexdigest()[:16]
+
+
+def _eski_ozet(deger: str) -> str:
+    """013 §9 ilk biçimi (düz sha256[:12]); yalnız eski izleri içeride karşılaştırmak için."""
     return hashlib.sha256(deger.encode("utf-8")).hexdigest()[:12]
 
 
-def veri_izi_hesapla(degerler: Mapping[str, str], anahtarlar: Iterable[str]) -> dict[str, str]:
-    """`{anahtar: değer özeti}`; `degerler` çözülmüş değerlerdir (gizli için ortam değeri)."""
-    return {a: deger_ozeti(degerler[a]) for a in dict.fromkeys(anahtarlar) if a in degerler}
+def yeni_bicim_mi(ozet: Any) -> bool:
+    return isinstance(ozet, str) and ozet.startswith((OZET_ANAHTARLI, OZET_ANAHTARSIZ))
 
 
-def guncel_ozetler(session: Session, istenen: Iterable[str]) -> dict[str, str]:
-    """Verilen anahtarların güncel değer özeti; silinmiş/olmayan ya da sırrı tanımsız gizli
-    anahtar sözlükte yer almaz. Tek sorgu (script listesi tüm anahtarları birlikte verir)."""
+def veri_izi_hesapla(
+    degerler: Mapping[str, str],
+    anahtarlar: Iterable[str],
+    gizliler: Iterable[str] = (),
+) -> dict[str, str]:
+    """`{anahtar: değer özeti}`; `degerler` çözülmüş değerlerdir (gizli için ortam değeri),
+    `gizliler` gizli kayıt anahtarları."""
+    gizli = set(gizliler)
+    out: dict[str, str] = {}
+    for a in dict.fromkeys(anahtarlar):
+        if a in degerler and (o := deger_ozeti(degerler[a], gizli=a in gizli)) is not None:
+            out[a] = o
+    return out
+
+
+def api_veri_izi(veri_izi: Mapping[str, Any] | None) -> dict[str, str | None]:
+    """API'ye giden `veri_izi`: yalnız tuzlu özetler; eski düz sha256 özetler `null` (§10)."""
+    return {a: (o if yeni_bicim_mi(o) else None) for a, o in (veri_izi or {}).items()}
+
+
+def guncel_ozetler(session: Session, istenen: Iterable[str]) -> dict[str, tuple[str | None, str]]:
+    """Verilen anahtarların güncel (tuzlu özet, eski düz özet) çifti — iç karşılaştırma için;
+    API'ye dönmez. Silinmiş/olmayan ya da sırrı tanımsız gizli anahtar sözlükte yer almaz. Tek
+    sorgu (script listesi tüm anahtarları birlikte verir)."""
     liste = list(dict.fromkeys(istenen))
     if not liste:
         return {}
-    out: dict[str, str] = {}
+    out: dict[str, tuple[str | None, str]] = {}
     for k in session.scalars(
         select(TestVerisi).where(TestVerisi.anahtar.in_(liste), TestVerisi.silindi.is_(False))
     ):
         deger = sir_degeri(k.sir_adi) if k.gizli else k.deger
         if deger is not None:
-            out[k.anahtar] = deger_ozeti(deger)
+            out[k.anahtar] = (deger_ozeti(deger, gizli=k.gizli), _eski_ozet(deger))
     return out
 
 
 def degisen_anahtarlar(
     session: Session,
     veri_izi: Mapping[str, Any] | None,
-    guncel: Mapping[str, str] | None = None,
+    guncel: Mapping[str, tuple[str | None, str]] | None = None,
 ) -> list[str]:
     """Script'in kullandığı değerlerden değişen / silinen / çözülemeyenler (K10 uyarısı).
 
-    `guncel` verilirse (liste: `guncel_ozetler` tek sorguyla) yeniden sorgulanmaz. Eski biçimli
-    (`{anahtar: sürüm}`) iz değerle karşılaştırılamaz: değişmiş sayılmaz.
+    `guncel` verilirse (liste: `guncel_ozetler` tek sorguyla) yeniden sorgulanmaz. Tuzlu özet
+    tuzlu güncel özetle, eski düz özet (013 §9 ilk biçimi) güncel değerin düz özetiyle içeride
+    karşılaştırılır. Sürüm biçimli (`{anahtar: sürüm}`) iz değişmiş sayılmaz.
     """
     if not veri_izi:
         return []
     if guncel is None:
         guncel = guncel_ozetler(session, veri_izi)
-    return [a for a, ozet in veri_izi.items() if isinstance(ozet, str) and guncel.get(a) != ozet]
+    out: list[str] = []
+    for a, ozet in veri_izi.items():
+        if not isinstance(ozet, str):
+            continue
+        g = guncel.get(a)
+        if g is None or ozet != (g[0] if yeni_bicim_mi(ozet) else g[1]):
+            out.append(a)
+    return out
+
+
+def izler_ayni(session: Session, eski: Mapping[str, Any] | None, yeni: Mapping[str, Any]) -> bool:
+    """Aynı hash'li PR'ın atlama kararı: aynı anahtarlar ve hiçbirinin değeri değişmemiş (eski
+    biçimli iz de değer karşılaştırmasıyla yorumlanır)."""
+    eski = eski or {}
+    return set(eski) == set(yeni) and not degisen_anahtarlar(session, eski)
 
 
 def case_esle(session: Session, icerik: Mapping[str, Any]) -> dict[str, Any]:
     """Case üretimi / IDE kanalı: değerleri atfa çevirir. Katalog boşsa içerik aynen döner."""
-    kat = eslem_katalogu(session)
-    return atif.case_esle(icerik, kat) if kat else dict(icerik)
+    kat, takma = eslem_katalogu(session), takma_degerler(session)
+    return atif.case_esle(icerik, kat, takma) if kat or takma else dict(icerik)
 
 
 def case_coz(session: Session, icerik: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
@@ -261,7 +387,9 @@ def case_coz(session: Session, icerik: Mapping[str, Any]) -> tuple[dict[str, Any
         if sirsiz:
             parcalar.append("test verisi sırrı tanımsız: " + ", ".join(sirsiz))
         raise TestVerisiCozulemedi("; ".join(parcalar), yok + sirsiz)
-    return atif.case_coz(icerik, degerler), veri_izi_hesapla(degerler, istenen)
+    return atif.case_coz(icerik, degerler), veri_izi_hesapla(
+        degerler, istenen, gizli_anahtarlar(session)
+    )
 
 
 def case_coz_gevsek(session: Session, icerik: Mapping[str, Any]) -> dict[str, Any]:
@@ -323,6 +451,7 @@ def kullanim(session: Session, anahtar: str | None = None) -> dict[str, list[dic
     anahtara atıf yapan satırları getirir; kesin kontrol yine atıf ayrıştırmasıyla yapılır.
     """
     out: dict[str, list[dict[str, Any]]] = {}
+    gizli = gizli_degerler(session)
     sorgu = (
         select(
             TestCase.id,
@@ -348,7 +477,7 @@ def kullanim(session: Session, anahtar: str | None = None) -> dict[str, list[dic
                     "case_id": str(cid),
                     "case_ref": f"{jira_key or 'SERBEST'}-C{sira}",
                     "requirement_id": str(rid),
-                    "baslik": str((icerik or {}).get("title") or "")[:200],
+                    "baslik": atif.maskele(str((icerik or {}).get("title") or "")[:200], gizli),
                     "durum": durum,
                 }
             )
@@ -435,14 +564,33 @@ def _deger_dogrula(deger: Any) -> str:
     return deger
 
 
-def _gizliyle_ayni_degil(session: Session, deger: str) -> None:
+GIZLI_CAKISMA_METNI = (
+    "Bu değer kabul edilmedi; parola ve benzeri değerleri gizli kayıt (ortam sırrı) olarak "
+    "tanımlayın"
+)
+
+
+def _gizli_cakisma_denetimi(aktor: str, anahtar: str | None) -> None:
+    """Reddi ayrı işlemde denetime yazar (istek işlemi geri alınır); değer yazılmaz."""
+    try:
+        from tp_core.audit import append_audit
+        from tp_core.db import get_engine
+
+        with get_engine().begin() as conn:
+            append_audit(conn, aktor, "testveri.gizli_cakisma_reddi", None, {"anahtar": anahtar})
+    except Exception as exc:  # denetim yazılamazsa red yine döner
+        log.warning("Test verisi gizli çakışma reddi denetime yazılamadı: %s", type(exc).__name__)
+
+
+def _gizliyle_ayni_degil(
+    session: Session, deger: str, aktor: str = "", anahtar: str | None = None
+) -> None:
     """K19: bilinen bir gizli değerle aynı değeri taşıyan gizli olmayan kayıt açılamaz (değer
-    katalogda ve API'de düz görünür, maskeleme ile eşleme belirsizleşirdi)."""
+    katalogda ve API'de düz görünür, maskeleme ile eşleme belirsizleşirdi). Güvenlik #9: metin
+    genel (hangi kayıtla çakıştığını söylemez); her red denetime yazılır (aktör + anahtar)."""
     if deger in gizli_degerler(session):
-        raise TestVerisiGecersiz(
-            "Bu değer gizli bir test verisinin değeriyle aynı; gizli kayda atıf yapın "
-            "ya da kaydı gizli olarak tanımlayın"
-        )
+        _gizli_cakisma_denetimi(aktor or "bilinmiyor", anahtar)
+        raise TestVerisiGecersiz(GIZLI_CAKISMA_METNI)
 
 
 def _sir_dogrula(sir_adi: Any) -> str:
@@ -497,7 +645,7 @@ def olustur(session: Session, girdi: Mapping[str, Any], aktor: str) -> TestVeris
         if girdi.get("sir_adi"):
             raise TestVerisiGecersiz("Sır adı yalnız gizli kayıtta verilir")
         deger, sir_adi = _deger_dogrula(girdi.get("deger")), None
-        _gizliyle_ayni_degil(session, deger)
+        _gizliyle_ayni_degil(session, deger, aktor, anahtar)
     grup = _metin("Grup", girdi.get("grup"), 100) or anahtar.split(".")[0]
     aciklama = _metin("Açıklama", girdi.get("aciklama"))
 
@@ -554,7 +702,8 @@ def guncelle(
 ) -> TestVerisi:
     """Değer / açıklama / grup / sır adı günceller; sürüm +1 (iyimser kilit). Onay düşmez (K10).
 
-    Açıklama boş metin ya da açıkça `null` ile temizlenir (`girdi`de anahtar varsa).
+    Açıklama boş metin ya da açıkça `null` ile temizlenir (`girdi`de anahtar varsa). Grup boş
+    metin ya da açıkça `null` ile varsayılana (anahtarın ilk parçası) döner.
     """
     k = _kilitli(session, kid, beklenen_surum)
     onceki = None if k.gizli else k.deger
@@ -564,7 +713,7 @@ def guncelle(
             raise TestVerisiGecersiz("Gizli kaydın değeri kataloğa yazılmaz (ortam sırrı)")
         yeni = _deger_dogrula(girdi["deger"])
         if yeni != k.deger:
-            _gizliyle_ayni_degil(session, yeni)
+            _gizliyle_ayni_degil(session, yeni, aktor, k.anahtar)
         degisti |= yeni != k.deger
         k.deger = yeni
     if "sir_adi" in girdi and girdi["sir_adi"] is not None:
@@ -573,8 +722,9 @@ def guncelle(
         yeni = _sir_dogrula(girdi["sir_adi"])
         degisti |= yeni != k.sir_adi
         k.sir_adi = yeni
-    if "grup" in girdi and girdi["grup"] is not None:
-        yeni = _metin("Grup", girdi["grup"], 100) or k.grup
+    if "grup" in girdi:
+        # Frontend #4: boş metin ya da açık `null` grubu temizler → anahtarın ilk parçası.
+        yeni = _metin("Grup", girdi["grup"], 100) or k.anahtar.split(".")[0]
         degisti |= yeni != k.grup
         k.grup = yeni
     if "aciklama" in girdi:
@@ -736,7 +886,7 @@ _URUN_ALANLARI = ("kod", "ad", "fiyat")
 _KAMPANYA_ALANLARI = ("kod", "ad", "urun")
 
 
-def blok_metni(session: Session) -> str | None:
+def blok_metni(session: Session, *, gizli_atif: bool = False) -> str | None:
     """`testdata.build_text` biçiminde blok metni, katalogdan (K17: live/record model girdisi).
 
     Katalog demo DB'yle aynıyken metin `build_text` ile birebir aynıdır (test sabitler). Analistin
@@ -745,6 +895,10 @@ def blok_metni(session: Session) -> str | None:
     (`- anahtar = değer`; yalnız böyle kayıt varsa) yer alır. Gizli kayıtlar (parola dışında)
     değer değil atıf olarak verilir (`{veri:anahtar}`): model case'e atfı yazar.
     Katalog boşsa, parola sırrı tanımsızsa ya da bayi/ürün yoksa None (çağıran DB bloğuna döner).
+
+    `gizli_atif=True` (IDE/MCP kanalı, güvenlik #3): parola da değer yerine atıf
+    (`{veri:ortak.demo_parola}`) olarak verilir; çözülmüş sır istemciye dönmez, sır tanımsız
+    olsa da blok kurulur.
     """
     from tp_core.features.cases import testdata
 
@@ -762,7 +916,10 @@ def blok_metni(session: Session) -> str | None:
     for k in kayitlar:
         parca = k.anahtar.split(".")
         if k.anahtar == DEMO_PAROLA_ANAHTARI:
-            parola = sir_degeri(k.sir_adi) if k.gizli else k.deger
+            if gizli_atif and k.gizli:
+                parola = atif.atif(k.anahtar)
+            else:
+                parola = sir_degeri(k.sir_adi) if k.gizli else k.deger
             continue
         if k.gizli or k.deger is None:
             diger.append(f"- {k.anahtar} = {atif.atif(k.anahtar)} (gizli)")

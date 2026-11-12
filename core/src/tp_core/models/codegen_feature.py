@@ -121,8 +121,9 @@ class ScriptCodegen(Base):
     # `codegen.update_branch` işi dalı günceller (yeni head → PR CI, yeni onay, yeni kırma kanıtı).
     dal: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     break_durum: Mapped[str] = mapped_column(server_default="not_started", default="not_started")
-    # 013: üretimde çözülen test verisi anahtarlarının sürümleri ({anahtar: surum}); katalogda
-    # sürüm ilerlediyse portal "veri değişti" uyarısı gösterir.
+    # 013 §9/§10: üretimde çözülen test verisi anahtarlarının tuzlu değer özetleri
+    # ({anahtar: "h1:<HMAC-SHA256[:16]>"}; sürüm DEĞİL). Yalnız DEĞER değişince (açıklama/grup/
+    # sürüm değil) portal "veri değişti" uyarısı gösterir (testveri.service.degisen_anahtarlar).
     veri_izi: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     tetik: Mapped[str] = mapped_column(server_default="elle", default="elle")
     olusturma: Mapped[datetime] = olusturma_col()

@@ -5,8 +5,9 @@
   durum ve gereksinimin tetikle otomatik akışa alındığı an (NULL = elle akış).
 - `test_verisi` + `test_verisi_surum`: merkezi test verisi kataloğu; case metni değeri değil
   `{veri:anahtar}` atfını taşır. Gizli kayıtta değer tutulmaz, yalnız ortam sırrının adı.
-- `script_codegen.veri_izi`: üretimde çözülen anahtarların değer özetleri
-  ({anahtar: sha256(değer)[:12]}); `script_codegen.tetik`: üretimi kim başlattı
+- `script_codegen.veri_izi`: üretimde çözülen anahtarların tuzlu değer özetleri
+  ({anahtar: "h1:" + HMAC-SHA256(sunucu anahtarı, değer)[:16]}; sürüm değil, specs/013 §9/§10;
+  düz sha256 tutulmaz/dönmez); `script_codegen.tetik`: üretimi kim başlattı
   (`elle` | `otomatik`);
   `script_codegen_engel_ck`'ye `test_verisi` engel türü (sır tanımsız / katalogda olmayan atıf).
 - Geçmiş değişmez: `test_verisi_surum` FK `ON DELETE RESTRICT`; tp_app `test_verisi`yi silemez
