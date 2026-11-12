@@ -567,9 +567,13 @@ def yayin(b: Baglam) -> None:
     req_id = b.veri["req_id"]
     if b.prova:
         on = b.api.get("analist", f"/publish/preview?requirement_id={req_id}")
-        islemler = {k["islem"] for k in on["kalemler"]}
+        # Yalnız portal üretimi: 012 demosunda IDE'den gelen taslak varyant (onaysız) önizlemede
+        # `blocked_not_approved` olarak görünür ve yayına girmez.
+        portal = {c["id"] for c in caseler(b, req_id).values()}
+        kalemler = [k for k in on["kalemler"] if k["case_id"] in portal]
+        islemler = {k["islem"] for k in kalemler}
         b.kontrol("yayın önizlemesi: tüm kalemler create", islemler == {"create"}, str(islemler))
-        ids = [k["case_id"] for k in on["kalemler"] if k["islem"] == "create"]
+        ids = [k["case_id"] for k in kalemler if k["islem"] == "create"]
         y = b.api.post("analist", "/publish", {"case_ids": ids}, beklenen=(200,))
         durumlar = {s["durum"] for s in y["sonuclar"]}
         b.kontrol("yayın: hepsi created", durumlar == {"created"}, str(durumlar))
