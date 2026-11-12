@@ -1039,8 +1039,8 @@ const GHERKIN_ORNEGI = (anahtar: string, baslik: string, n: number) =>
     "  @AC1 @EP @P1 @pozitif @tp-ornek",
     "  Senaryo: Geçerli bilgilerle giriş",
     "    Diyelim ki bayi1 kullanıcısı tanımlı",
-    "    Eğer ki Giriş sayfasını aç",
-    "    O zaman Giriş formu görüntülenir",
+    "    Eğer ki giriş sayfasını açarsa",
+    "    O zaman giriş formu görüntülenir",
     "",
   ].join("\n");
 

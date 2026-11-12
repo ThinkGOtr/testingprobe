@@ -207,14 +207,14 @@ def test_ayni_kalip_taslak_olur() -> None:
     assert len(plan_scenarios(cases)) == 1
     metin = render_feature("K-1", "x", cases)
     assert "Senaryo taslağı: AC2 · sınır değer analizi (BVA) — 3 örnek" in metin
-    assert 'Eğer ki Adedi <girdi> yap, veri: "P-001 × <girdi>"' in metin
-    assert "O zaman Sayaç <girdi> olur" in metin
+    assert 'Eğer ki adedi <girdi> yaparsa (veri: "P-001 × <girdi>")' in metin
+    assert "O zaman sayaç <girdi> olur" in metin
     assert "| teknik | bölüm_id | girdi | sınıf | beklenen" in metin
     _, pickles = _ayristir(metin)
     assert [p["steps"][-1]["text"] for p in pickles] == [
-        "Toplam 125,00 TL",
-        "Toplam 150,00 TL",
-        "Toplam 175,00 TL",
+        "toplam 125,00 TL",
+        "toplam 150,00 TL",
+        "toplam 175,00 TL",
     ]
 
 
@@ -252,7 +252,7 @@ def test_yer_tutucu_cakismasi_birlestirmez() -> None:
     assert "taslağı" not in metin
     # Tekil senaryoda `<` `>` düz metindir (yer tutucu yok).
     _, pickles = _ayristir(metin)
-    assert any(s["text"] == "Sepet <girdi> görünür" for p in pickles for s in p["steps"])
+    assert any(s["text"] == "sepet <girdi> görünür" for p in pickles for s in p["steps"])
 
 
 def test_tirnakli_veri_birlestirmez_ve_docstring_olur() -> None:
@@ -458,3 +458,82 @@ def test_uc_gereksinim_degistiyse_409(api: TestClient, uretilmis) -> None:
 def test_uc_bilinmeyen_gereksinim_404(api: TestClient, make_user) -> None:
     login(api, make_user("analyst"))
     assert api.get(f"/requirements/{uuid.uuid4()}/cases.feature").status_code == 404
+
+
+# ------------------------------------------------------------------ doğal adım dili
+
+
+@pytest.mark.parametrize(
+    ("eylem", "beklenen"),
+    [
+        ("Giriş sayfasını aç", "giriş sayfasını açarsa"),
+        ('"Giriş yap" butonuna bas', '"Giriş yap" butonuna basarsa'),
+        ("Üst menüden sepete git", "üst menüden sepete giderse"),
+        ("Arama alanındaki metni sil", "arama alanındaki metni silerse"),
+        ("Ürünü sepete ekle", "ürünü sepete eklerse"),
+        ("Fiyatı kontrol et", "fiyatı kontrol ederse"),
+        ("Formu kaydet", "formu kaydederse"),
+        ("Kuponu al", "kuponu alırsa"),
+        ("Satırı kaldır", "satırı kaldırırsa"),
+        ("Sepet sayfası açılır", "sepet sayfası açılırsa"),
+        ("Enter tuşuyla", "enter tuşuyla"),  # araç eki: fiil değil, değişmez
+        ("Kullanıcı adı ve parola", "kullanıcı adı ve parola"),
+        ("Adedi <girdi>", "adedi <girdi>"),
+        ("Portakal Gazozu kartını aç", "Portakal Gazozu kartını açarsa"),  # özel ad korunur
+        ("P-001 kartını aç", "P-001 kartını açarsa"),
+        ("IBAN alanını doldur", "IBAN alanını doldurursa"),
+        ("Islak zemin uyarısını kapat", "ıslak zemin uyarısını kapatırsa"),
+    ],
+)
+def test_eylem_kosul_kipi_ve_kucuk_harf(eylem: str, beklenen: str) -> None:
+    assert gherkin._eylem_metni(eylem) == beklenen
+
+
+def test_adim_verisi_test_verisinde_ise_yinelenmez() -> None:
+    c = GherkinCase(
+        "v",
+        case_icerik(
+            test_data=[
+                {
+                    "name": "bayi kullanıcısı",
+                    "value": "bayi1 / Demo123!",
+                    "class": "EP-V1",
+                    "synthetic": True,
+                    "is_attack_payload": False,
+                }
+            ],
+        ),
+    )
+    metin = render_feature("K-1", "x", [c])
+    assert metin.count("bayi1 / Demo123!") == 1  # yalnız test verisi tablosunda
+    assert (
+        "Eğer ki kullanıcı adı ve parolayı gir, Giriş'e basarsa (test verisi: bayi kullanıcısı)"
+        in metin
+    )
+    assert "Diyelim ki bayi1 kullanıcısı tanımlı" in metin
+    assert "O zaman form görünür" in metin
+    _ayristir(metin)
+
+
+def test_saldiri_verisi_adimda_tekrarlanmaz() -> None:
+    yuk = "' OR 1=1 --"
+    c = GherkinCase(
+        "s2",
+        case_icerik(
+            steps=[
+                {"id": "S1", "action": "Kullanıcı adına yaz", "data": yuk, "expected": "Reddedilir"}
+            ],
+            test_data=[
+                {
+                    "name": "kötü niyetli girdi",
+                    "value": yuk,
+                    "class": "EG-1",
+                    "synthetic": True,
+                    "is_attack_payload": True,
+                }
+            ],
+        ),
+    )
+    metin = render_feature("K-1", "x", [c])
+    assert metin.count(yuk) == 1
+    assert "Eğer ki kullanıcı adına yazarsa (test verisi: kötü niyetli girdi)" in metin
