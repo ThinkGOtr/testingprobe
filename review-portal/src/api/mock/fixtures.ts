@@ -546,6 +546,20 @@ export function icerikHash(icerik: TestCaseIcerik): string {
   return `sha256:${sha256Hex(kanonikJson(icerik)).slice(0, 16)}`;
 }
 
+/**
+ * u2 N2 — AI'ın sınır hatası yaptığı C6 (`rules/replay/case_facts/golden/ai-sinir-hatasi/TPD-1-C6.json`, girdi
+ * beyanı `input_match.case_text`): tam 750,00 TL'de uyarı "görünür" der; story "altında uyarı" der (750 dahil geçer).
+ * Golden C6'dan yalnız başlık, S4 beklenen ve beklenen sonuç ayrılır; fixtures.test.ts golden metniyle birebir denetler.
+ */
+export const TPD1_C6_SINIR_HATASI: TestCaseIcerik = {
+  ...TPD1_GOLDEN_CASELER[5],
+  title: "Kampanyasız siparişte minimum tutara eşit toplamda uyarı gösterilir ve onay pasif olur",
+  steps: TPD1_GOLDEN_CASELER[5].steps.map((s, i) =>
+    i === 3 ? { ...s, expected: 'Toplam 750,00 TL; "Minimum sipariş tutarı 750,00 TL" uyarısı görünür ve "Siparişi onayla" butonu pasiftir' } : s,
+  ),
+  expected_result: 'Toplam 750,00 TL olduğunda "Minimum sipariş tutarı 750,00 TL" uyarısı gösterilir ve sipariş onaylanamaz',
+};
+
 function caseler(): TestCase[] {
   const ortak = {
     requirement_id: "req-tpd-1",
@@ -593,7 +607,9 @@ function caseler(): TestCase[] {
     // İnsan kararı: 6 ve 7 adet case'leri kampanya sınırını zaten kapsıyor.
     karar("case-1-6", 4, G[3], { ...analist, durum: "rejected", karar: "reject", ret_nedeni: "duplicate", karar_zamani: t(30, "10:38"), review_sure_ms: 30000 }),
     karar("case-1-4", 5, G[4], { ...analist, durum: "approved", karar: "approve", karar_zamani: t(30, "10:41"), duzeltme_olcusu: 0, review_sure_ms: 52000 }),
-    karar("case-1-7", 6, G[5], { durum: "draft" }),
+    // u2 N2: AI'ın sınır hatası (750,00 TL'de uyarı görünür). T2 düzeltilip onaylanınca kapı bu case'i engeller.
+    // DEMO-AKISI §6: varyant IDE kanalından (Claude Code `submit_drafts`) taslak olarak gelir.
+    karar("case-1-7", 6, TPD1_C6_SINIR_HATASI, { durum: "draft", kanal: "ide" }),
     // Kredi limiti case'i bilinen kod hatasını hedefler (golden etiketi expected-code-defect).
     karar("case-1-5", 7, G[6], { durum: "draft", kanal: "ide", mode: "replay" }),
     karar("case-1-8", 8, G[7], { durum: "draft" }),

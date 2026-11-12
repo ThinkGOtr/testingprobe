@@ -4,7 +4,7 @@ import { useState } from "react";
 import { api } from "../../api/client";
 import type { KararTablosu, KararTablosuIcerik } from "../../api/types";
 import { KOLON_TURU } from "../../lib/etiketler";
-import { satiriOku } from "../../lib/ifadeAciklama";
+import { ifadeGosterimi, satiriOku } from "../../lib/ifadeAciklama";
 import { Cip, IslemDugmesi, Kart } from "../ui";
 import { OrnekIzgarasi } from "./OrnekIzgarasi";
 import { DurumEylemleri, KayitCipleri, KayitNotlari } from "./ortak";
@@ -73,7 +73,7 @@ export function KararTablosuKarti({
           <TabloGorunumu tablo={tablo} />
         )}
 
-        {tablo.durum !== "superseded" && !(duzenle && taslak) && <OrnekIzgarasi tablo={tablo} />}
+        {tablo.durum !== "superseded" && !(duzenle && taslak) && <OrnekIzgarasi tablo={tablo} kriterler={kriterler} />}
 
         {tablo.durum !== "superseded" && <OrnekleDene tablo={tablo} icerik={duzenle && taslak ? (taslakIcerik ?? undefined) : undefined} />}
 
@@ -129,6 +129,7 @@ export function TabloGorunumu({ tablo }: { tablo: KararTablosu }) {
   const t = tablo.icerik;
   const ad = t.ad || "Karar tablosu";
   const degisenler = analistDegistirdi(tablo);
+  const aiSatir = (id: string) => (degisenler.has(id) ? tablo.ai_icerik?.satirlar.find((x) => x.id === id) : undefined);
   return (
     <>
       <h3 className="kt-bolum">Girdiler</h3>
@@ -228,11 +229,16 @@ export function TabloGorunumu({ tablo }: { tablo: KararTablosu }) {
                     )}
                   </td>
                   <td className="kt-ifade" data-etiket="Koşul">
-                    {s.kosul}
+                    {ifadeGosterimi(s.kosul)}
+                    {aiSatir(s.id)?.kosul !== undefined && aiSatir(s.id)!.kosul.trim() !== s.kosul.trim() && (
+                      <span className="kt-ai-ozgun" data-testid="kt-ai-ozgun">
+                        AI taslağında: <span className="mono">{ifadeGosterimi(aiSatir(s.id)!.kosul)}</span>
+                      </span>
+                    )}
                   </td>
                   {t.ciktilar.map((c) => (
                     <td key={c.ad} className="kt-ifade" data-etiket={c.ad}>
-                      {s.cikti[c.ad] ?? "—"}
+                      {s.cikti[c.ad] !== undefined ? ifadeGosterimi(s.cikti[c.ad]) : "—"}
                     </td>
                   ))}
                 </tr>
@@ -249,11 +255,7 @@ export function TabloGorunumu({ tablo }: { tablo: KararTablosu }) {
             {t.satirlar.map((s) => (
               <li key={s.id}>
                 <span className="mono soluk">{s.id}</span>{" "}
-                {satiriOku(
-                  s.kosul,
-                  s.cikti,
-                  t.ciktilar.map((c) => c.ad),
-                )}
+                {satiriOku(s.kosul, s.cikti, t.ciktilar)}
               </li>
             ))}
           </ol>

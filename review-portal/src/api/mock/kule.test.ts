@@ -3,8 +3,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, HATA_KOSUSU_SURUYOR, hataKosusuApi } from "../client";
 import { ApiError } from "../http";
 import type { PortalOlayi } from "../types";
+import { isleriBekle, t2Duzelt, t2Onayla } from "../../test/kaliteYardimci";
 import { oturumAc } from "../../test/yardimci";
-import { bekleyenMockIs, mockIstek, mockSifirla } from "./handlers";
+import { TEST_C2, TEST_C3 } from "./fixtures";
+import { MIN_SIPARIS_DOGRU } from "./kaliteVerisi";
+import { mockIstek, mockSifirla } from "./handlers";
 import { kuleAyar, kuleMockIlerlet, kuleMockKosulariBosalt, kuleMockZamanlayiciVar } from "./kule";
 import { HATA_KATALOGU } from "./kuleVerisi";
 import { mockOlaylaraAbone } from "./olaylar";
@@ -72,22 +75,31 @@ describe("katalog ve örnek koşu", () => {
     await oturumAc("analist");
     const [k] = await hataKosusuApi.liste();
     expect(k).toMatchObject({ id: "hk-1", durum: "done", platformlar: ["web", "android"], baslatan: "muhendis" });
-    // K12: ana oran yalnız AI (üretilmiş) testleri — demo deposunda yok → ölçülmedi; el yazısı suite ayrı
-    // (web 8/9, yalnız kampanya_tek_bedava kaçar; android 7/8 + 1 geçersiz).
-    expect(k.ozet).toMatchObject({ oran: null, yakalanan: 0, kacan: 0, gecersiz: 1, bekleyen: 0 });
+    // K12 + u2 N4: ana oran yalnız üretilmiş (AI) testler — C1, C2 temelde yeşil (C2 üç kampanya hatasını yakalar),
+    // C3 temelde kırmızı (hariç); el yazısı suite ayrı (web 8/9, yalnız kampanya_tek_bedava kaçar; android 7/8 + 1 geçersiz).
+    expect(k.ozet).toMatchObject({ oran: 6 / 17, yakalanan: 6, kacan: 11, gecersiz: 1, bekleyen: 0 });
     expect(k.ozet?.el_yazisi).toEqual({ oran: 15 / 17, yakalanan: 15, kacan: 2 });
-    // R4: tam_katalog + geçerli adım sayısı (web 9 + android 8).
-    expect(k.ozet?.kapsam).toEqual({ kosulan_hata: 9, katalog: 9, platformlar: ["web", "android"], tam_katalog: true, gecerli_adim: 17 });
+    // R4: tam_katalog + geçerli adım sayısı (web 9 + android 8); Q2 Y10 eşiği (%50) aşıldı.
+    expect(k.ozet?.kapsam).toEqual({ kosulan_hata: 9, katalog: 9, platformlar: ["web", "android"], tam_katalog: true, gecerli_adim: 17, esik: 0.5, yeterli: true, not: null });
     expect(k.ozet?.tum_testler).toEqual({ oran: 15 / 17, yakalanan: 15, kacan: 2 });
-    // R4: platform başına suite sayıları (üretilmiş test yok; 29 el yazısı) ve tüm testler.
-    const ortak = { oran: null, yakalanan: 0, kacan: 0, bekleyen: 0, temel: "yesil", kapanis: "yesil", uretilen_test: 0, el_test: 29 };
+    // Q2: suite sayıları yalnız temelde yeşil testler (2 üretilmiş, 29 el yazısı).
+    const ortak = { bekleyen: 0, temel: "yesil", kapanis: "yesil", uretilen_test: 2, el_test: 29 };
     expect(k.ozet?.platformlar).toEqual([
-      { platform: "web", ...ortak, gecersiz: 0, el_yazisi: { oran: 8 / 9, yakalanan: 8, kacan: 1 }, tum_testler: { oran: 8 / 9, yakalanan: 8, kacan: 1 } },
-      { platform: "android", ...ortak, gecersiz: 1, el_yazisi: { oran: 7 / 8, yakalanan: 7, kacan: 1 }, tum_testler: { oran: 7 / 8, yakalanan: 7, kacan: 1 } },
+      { platform: "web", ...ortak, oran: 3 / 9, yakalanan: 3, kacan: 6, gecersiz: 0, gecerli_adim: 9, el_yazisi: { oran: 8 / 9, yakalanan: 8, kacan: 1 }, tum_testler: { oran: 8 / 9, yakalanan: 8, kacan: 1 } },
+      { platform: "android", ...ortak, oran: 3 / 8, yakalanan: 3, kacan: 5, gecersiz: 1, gecerli_adim: 8, el_yazisi: { oran: 7 / 8, yakalanan: 7, kacan: 1 }, tum_testler: { oran: 7 / 8, yakalanan: 7, kacan: 1 } },
     ]);
+    // Q2: `kacanlar` hiçbir testin yakalamadığı; `ai_kacanlar` üretilen testlerin kaçırdığı.
     expect(k.ozet?.kacanlar).toEqual([
       { hata_kodu: "kampanya_tek_bedava", ad: "Kampanyada en çok 1 bedava", platform: "web" },
       { hata_kodu: "kampanya_tek_bedava", ad: "Kampanyada en çok 1 bedava", platform: "android" },
+    ]);
+    expect(k.ozet?.ai_kacanlar?.filter((x) => x.platform === "web").map((x) => x.hata_kodu)).toEqual([
+      "kampanya_tek_bedava",
+      "min_siparis_haric",
+      "min_siparis_muafiyet_yok",
+      "min_siparis_500",
+      "min_siparis_1000",
+      "fiyat_p004_31",
     ]);
     const d = await hataKosusuApi.detay("hk-1");
     // Platform başına temel + 9 hata + kapanış.
@@ -100,28 +112,29 @@ describe("katalog ve örnek koşu", () => {
     expect(gecersiz[0].neden).toMatch(/Appium/);
     const yakalanan = d.adimlar.find((a) => a.platform === "web" && a.hata_kodu === "kampanya_bedava_yok");
     expect(yakalanan?.sonuc).toBe("yakalandi");
-    // §13.2: kıran testler kaynaklarıyla; demo deposunda hepsi el yazısı.
+    // §13.2: kıran testler kaynaklarıyla; üretilmiş C2 testi "ai".
     expect(yakalanan?.kiran_testler).toEqual([
+      { test: TEST_C2, kaynak: "ai" },
       { test: "kampanya: 7 adet P-001 → 1 bedava, toplam 150,00 TL", kaynak: "el" },
       { test: "onaylanan sipariş numarasıyla gösterilir ve geçmişte listelenir", kaynak: "el" },
       { test: "7 adet Portakal Gazozu sepette 1 bedava adet ve sayaç 7 gösterir", kaynak: "el" },
     ]);
-    expect(d.adimlar.every((a) => a.kiran_testler.every((t) => t.kaynak === "el"))).toBe(true);
-    // Temel koşuda kırmızı test yok (alan var, boş).
-    expect(d.adimlar.every((a) => Array.isArray(a.temelde_kirmizi) && a.temelde_kirmizi.length === 0)).toBe(true);
+    expect(d.adimlar.flatMap((a) => a.kiran_testler.filter((t) => t.kaynak === "ai").map((t) => t.test))).toEqual(Array(6).fill(TEST_C2));
+    // K12: C3'ün üretilmiş testi temelde kırmızı (temel adımında listelenir, sayılmaz).
+    expect(d.adimlar.filter((a) => a.asama === "temel").map((a) => a.temelde_kirmizi)).toEqual([[TEST_C3], [TEST_C3]]);
     // Ölçülen gerçek matris (R4): assertion kırmızısı sayıları 3, 2, 1, 1, 4, 5, 5, 7; locator / zaman aşımıyla
     // düşenler sayılmaz ve adım notunda yazılır (haric 1, 1000 2, p002 1).
     const sayilar = Object.fromEntries(d.adimlar.filter((a) => a.platform === "web" && a.asama === "hata").map((a) => [a.hata_kodu, a.kiran_testler.length]));
     expect(sayilar).toEqual({
-      kampanya_bedava_yok: 3,
+      kampanya_bedava_yok: 4,
       kampanya_tek_bedava: 0,
-      kampanya_cift_indirim: 2,
+      kampanya_cift_indirim: 3,
       min_siparis_haric: 1,
       min_siparis_muafiyet_yok: 1,
       min_siparis_500: 4,
       min_siparis_1000: 5,
       fiyat_p004_31: 5,
-      kampanya_urunu_p002: 7,
+      kampanya_urunu_p002: 8,
     });
     const notlar = Object.fromEntries(
       d.adimlar.filter((a) => a.platform === "web" && a.asama === "hata" && a.neden).map((a) => [a.hata_kodu, Number(/^(\d+) test/.exec(a.neden ?? "")?.[1])]),
@@ -138,10 +151,11 @@ describe("katalog ve örnek koşu", () => {
     const a = d.adimlar.find((x) => x.platform === "web" && x.hata_kodu === "kampanya_bedava_yok");
     const k = await api.kosu(a?.run_id ?? "");
     expect(k).toMatchObject({ tetik: "break_verify", platform: "web", hata_kodu: "kampanya_bedava_yok", hata_kosusu_id: "hk-1", durum: "failed" });
-    expect(k.sonuclar.filter((s) => s.durum === "failed").map((s) => s.test_adi)).toEqual(a?.kiran_testler.map((t) => t.test));
-    // Temel koşu: hata kodu yok, yeşil.
+    // Kıran testler + temelde kırmızı C3 testi (her koşuda kırmızı, yakalama sayılmaz).
+    expect(k.sonuclar.filter((s) => s.durum === "failed").map((s) => s.test_adi).sort()).toEqual([...(a?.kiran_testler.map((t) => t.test) ?? []), TEST_C3].sort());
+    // Temel koşu: hata kodu yok; yalnız temelde kırmızı test kırmızı (adım "yeşil" sayılır, test hariç tutulur).
     const temel = await api.kosu(d.adimlar[0].run_id ?? "");
-    expect(temel.durum).toBe("passed");
+    expect(temel.sonuclar.filter((s) => s.durum === "failed").map((s) => s.test_adi)).toEqual([TEST_C3]);
     expect(temel.hata_kodu).toBeUndefined();
     // Ekilmiş hata adımları genel koşu listesine ve Kule'nin son koşularına karışmaz.
     expect((await api.kosular()).some((x) => x.id.startsWith("hk-"))).toBe(false);
@@ -151,24 +165,25 @@ describe("katalog ve örnek koşu", () => {
   it("Kule: beklenti_dogrulugu ve hata_yakalama anahtarları + kaynakları; koşu yokken hata_yakalama null", async () => {
     await oturumAc("analist");
     const k = await api.kontrolKulesi();
-    expect(k.beklenti_dogrulugu).toMatchObject({ uyumlu: 5, uyumsuz: 1, kismen: 1, istisna: 1, kontrolsuz_onay: 0, n_case: 10, n_story: 1, tablolu_story: 1, toplam_story: 4, golden_kaynakli: 10 });
-    expect(k.beklenti_dogrulugu?.oran).toBeCloseTo(5 / 6);
+    // u2 N1: sabit değil, case kartlarıyla aynı hesap — başlangıçta yalnız T1 onaylı: C2, C3, C4 uyumlu, C10 tekrar.
+    expect(k.beklenti_dogrulugu).toMatchObject({ oran: 1, uyumlu: 3, uyumsuz: 0, kismen: 0, istisna: 0, kontrolsuz_onay: 0, n_case: 3, n_story: 1, tablolu_story: 1, tekrar: 1 });
     // Örnek veride ilk durumda onaylı ve tabloyla uyuşmayan case yok (liste örnek veriden hesaplanır).
     expect(k.onayli_uyumsuz).toEqual([]);
     expect(k.hata_yakalama).toMatchObject({
       son_kosu: { id: "hk-1", durum: "done" },
-      oran: null,
-      yakalanan: 0,
-      kacan: 0,
+      oran: 6 / 17,
+      yakalanan: 6,
+      kacan: 11,
       gecersiz: 1,
       el_yazisi: { yakalanan: 15, kacan: 2 },
-      kapsam: { kosulan_hata: 9, katalog: 9, platformlar: ["web", "android"] },
+      kapsam: { kosulan_hata: 9, katalog: 9, platformlar: ["web", "android"], yeterli: true },
     });
+    expect(k.hata_yakalama?.ai_kacanlar).toHaveLength(11);
     // core `hata_yakalama_ozeti`: platform satırında yalnız sayılar (+ el yazısı).
-    expect(k.hata_yakalama?.platformlar[0]).toEqual({ platform: "web", oran: null, yakalanan: 0, kacan: 0, gecersiz: 0, el_yazisi: { oran: 8 / 9, yakalanan: 8, kacan: 1 } });
+    expect(k.hata_yakalama?.platformlar[0]).toEqual({ platform: "web", oran: 3 / 9, yakalanan: 3, kacan: 6, gecersiz: 0, el_yazisi: { oran: 8 / 9, yakalanan: 8, kacan: 1 } });
     expect(k.kaynaklar.beklenti_dogrulugu).toMatch(/^AI'ın ürettiği case içeriklerinin .*case_oracle_kontrol/);
     expect(k.kaynaklar.hata_yakalama).toMatch(
-      /^Son tamamlanan tam katalog ekilmiş hata koşusu \(2026-11-10 14:46; web, android\): AI oranı ölçülmedi \(üretilmiş test yok\); el yazısı 15\/17 \(%88\); geçersiz 1\. /,
+      /^Son tamamlanan tam katalog ekilmiş hata koşusu \(2026-11-10 14:46; web, android\): AI oranı %35; el yazısı 15\/17 \(%88\); geçersiz 1\. /,
     );
     kuleMockKosulariBosalt();
     const bos = await api.kontrolKulesi();
@@ -179,19 +194,38 @@ describe("katalog ve örnek koşu", () => {
 });
 
 describe("Kule onayli_uyumsuz (§13.2)", () => {
-  it("örnek veriden hesaplanır: tablo onayından sonra istisnayla onaylanan uyuşmaz case listeye girer", async () => {
-    await oturumAc("analist");
-    const t = (await api.kararTablolari("req-tpd-1")).tablolar.find((x) => /Minimum/.test(x.icerik.ad) && x.durum !== "superseded")!;
-    await api.kararTablosuGecis(t.id, "submit", { icerik_hash: t.icerik_hash });
-    await oturumAc("po");
-    await api.kararTablosuGecis(t.id, "approve", { icerik_hash: t.icerik_hash });
-    for (let i = 0; i < 200 && bekleyenMockIs() > 0; i++) await new Promise((r) => setTimeout(r, 5));
-    await oturumAc("analist");
+  it("örnek veriden hesaplanır: tablo değişince onaylı case uyuşmaz olur; geçerli istisnalı case listelenmez (u2 N10), künye TPD-1 · C6", async () => {
+    await t2Onayla();
     const c = (await api.caseler("req-tpd-1")).find((x) => x.id === "case-1-7")!;
     expect(c.oracle?.sonuc).toBe("uyumsuz");
     expect((await api.kontrolKulesi()).onayli_uyumsuz).toEqual([]);
-    await api.caseKarari(c.id, { icerik_hash: c.icerik_hash, karar: "approve", oracle_istisna_gerekce: "PO ile görüşüldü: sınır dahil kabul edildi." });
-    expect((await api.kontrolKulesi()).onayli_uyumsuz).toEqual([{ case_id: "case-1-7", requirement_id: "req-tpd-1", baslik: c.icerik.title }]);
+    // Gerekçeli istisnayla onay: aynı tablo kümesiyle geçerli istisna → "onaylı uyumsuz" sayılmaz.
+    await api.caseKarari(c.id, { icerik_hash: c.icerik_hash, karar: "approve", oracle_istisna_gerekce: "PO ile görüşüldü: sınır dahil kabul edildi.", oracle_istisna_turu: "uyumsuz" });
+    expect((await api.kontrolKulesi()).onayli_uyumsuz).toEqual([]);
+    // Tablo sonradan değişir (yeniden açılıp yeni içerikle onaylanır): istisna geçersizleşir, case listeye girer.
+    const t2 = (await api.kararTablolari("req-tpd-1")).tablolar.find((x) => /Minimum/.test(x.icerik.ad) && x.durum !== "superseded")!;
+    await api.kararTablosuGecis(t2.id, "reopen");
+    await t2Duzelt({ ...MIN_SIPARIS_DOGRU, aciklama: "Yeniden gözden geçirildi." });
+    await oturumAc("po");
+    const t2b = (await api.kararTablolari("req-tpd-1")).tablolar.find((x) => x.id === t2.id)!;
+    await api.kararTablosuGecis(t2.id, "approve", { icerik_hash: t2b.icerik_hash });
+    await isleriBekle();
+    await oturumAc("analist");
+    expect((await api.kontrolKulesi()).onayli_uyumsuz).toEqual([{ case_id: "case-1-7", requirement_id: "req-tpd-1", baslik: c.icerik.title, jira_key: "TPD-1", sira_no: 6 }]);
+  });
+
+  it("u2 N1: Kule beklenti doğruluğu case kartlarıyla aynı — T2 düzeltilip onaylanınca 5/6, C6'nın uyuşmazlığı AI'a yazılır", async () => {
+    await t2Onayla();
+    const k = await api.kontrolKulesi();
+    expect(k.beklenti_dogrulugu).toMatchObject({ uyumlu: 5, uyumsuz: 1, n_case: 6, tekrar: 1 });
+    expect(k.beklenti_dogrulugu?.oran).toBeCloseTo(5 / 6);
+    expect((await api.caseMetrikleri("req-tpd-1")).beklenti_dogrulugu).toMatchObject({ uyumlu: 5, uyumsuz: 1 });
+    // PO AI'ın `<= 750` taslağını olduğu gibi onaylasaydı C6 da "uyumlu" görünürdü (bağımsızlık insan onayına dayanır).
+  });
+
+  it("u2 N2: PO AI taslağını düzeltmeden onaylarsa AI'ın sınır hatası C6 da 'uyumlu' görünür", async () => {
+    await t2Onayla({ duzelt: false });
+    expect((await api.caseler("req-tpd-1")).find((x) => x.id === "case-1-7")!.oracle?.sonuc).toBe("uyumlu");
   });
 });
 
@@ -265,7 +299,8 @@ describe("başlatma, ilerleme, iptal", () => {
       d = await hataKosusuApi.detay("hk-2");
       expect(d.durum).toBe("done");
       expect(d.bitis).not.toBeNull();
-      expect(d.ozet).toMatchObject({ oran: null, el_yazisi: { oran: 0.5, yakalanan: 1, kacan: 1 }, gecersiz: 0, kapsam: { kosulan_hata: 2, katalog: 9 } });
+      // Üretilmiş C2 testi bedava-yok hatasını yakalar, tek-bedava hatasını kaçırır: AI 1/2.
+      expect(d.ozet).toMatchObject({ oran: 0.5, el_yazisi: { oran: 0.5, yakalanan: 1, kacan: 1 }, gecersiz: 0, kapsam: { kosulan_hata: 2, katalog: 9 } });
       expect(kuleMockZamanlayiciVar()).toBe(false);
       expect(vi.getTimerCount()).toBe(0);
 
@@ -293,7 +328,7 @@ describe("başlatma, ilerleme, iptal", () => {
     await hataKosusuApi.baslat({ platformlar: ["web"] });
     while (kuleMockIlerlet());
     const h = (await api.kontrolKulesi()).hata_yakalama;
-    expect(h).toMatchObject({ son_kosu: { id: "hk-3" }, oran: null, el_yazisi: { yakalanan: 8, kacan: 1 }, kapsam: { kosulan_hata: 9, katalog: 9, platformlar: ["web"] } });
+    expect(h).toMatchObject({ son_kosu: { id: "hk-3" }, oran: 3 / 9, el_yazisi: { yakalanan: 8, kacan: 1 }, kapsam: { kosulan_hata: 9, katalog: 9, platformlar: ["web"], yeterli: true } });
   });
 
   it("cihaz kapalı platform (iOS): temel koşu koşulamaz → tüm adımlar geçersiz, neden yazılı; oran etkilenmez", async () => {
@@ -308,7 +343,9 @@ describe("başlatma, ilerleme, iptal", () => {
     expect(ios[0].neden).toMatch(/iOS simülatörüne ulaşılamadı/);
     expect(ios[1].neden).toMatch(/Temel koşu yeşil değil/);
     expect(ios.every((a) => a.run_id === null)).toBe(true);
-    expect(d.ozet).toMatchObject({ oran: null, el_yazisi: { oran: 1, yakalanan: 1, kacan: 0 }, gecersiz: 1 });
+    expect(d.ozet).toMatchObject({ oran: 1, el_yazisi: { oran: 1, yakalanan: 1, kacan: 0 }, gecersiz: 1 });
+    // Q2 (Y10): iOS'ta geçerli adım yok → kapsam yetersiz, nedeni yazılı (Kule'de oranlar null olur).
+    expect(d.ozet?.kapsam).toMatchObject({ yeterli: false, not: expect.stringMatching(/ios 0\/9/) });
     expect(d.ozet?.platformlar[1]).toEqual({
       platform: "ios",
       oran: null,
@@ -318,8 +355,7 @@ describe("başlatma, ilerleme, iptal", () => {
       tum_testler: { oran: null, yakalanan: 0, kacan: 0 },
       gecersiz: 1,
       bekleyen: 0,
-      uretilen_test: 0,
-      el_test: 29,
+      gecerli_adim: 0,
       temel: "gecersiz",
       kapanis: "gecersiz",
     });

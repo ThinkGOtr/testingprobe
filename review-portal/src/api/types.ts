@@ -1413,6 +1413,12 @@ export interface HataKosusuKapsami {
   tam_katalog?: boolean;
   /** R4: geçerli (yakalandı | kaçtı) adım sayısı; core vermezse alan yok. */
   gecerli_adim?: number;
+  /** Y10: platform başına geçerli adım alt eşiği (katalog oranı, ör. 0,5); core vermezse alan yok. */
+  esik?: number;
+  /** Y10: her platformda geçerli adım ≥ eşik; false ise Kule oranları null ve `not` nedeni söyler. */
+  yeterli?: boolean;
+  /** Y10: yetersizlik nedeni ("Geçerli hata adımı kataloğun %50'sinin altında …"). */
+  not?: string | null;
 }
 
 /** `hata_kosusu.durum`. */
@@ -1465,6 +1471,8 @@ export interface HataYakalamaPlatformu {
   bekleyen?: number;
   temel?: HataAdimSonucu | null;
   kapanis?: HataAdimSonucu | null;
+  /** Q2: platformun geçerli hata adımı (yakalandı + kaçtı); core vermezse alan yok. */
+  gecerli_adim?: number;
 }
 
 export interface KacanHata {
@@ -1482,7 +1490,10 @@ export interface HataKosusuOzeti {
   /** Koşmamış (`bekliyor`) hata adımları (core verirse; iptal edilen koşuda > 0 olabilir). */
   bekleyen?: number;
   platformlar: HataYakalamaPlatformu[];
+  /** Hiçbir testin (hiçbir kaynak) yakalamadığı hatalar (kabul senaryosu 12). */
   kacanlar: KacanHata[];
+  /** Q2: üretilen (AI) testlerin kaçırdığı hatalar (el yazısı yakalamış olabilir); core vermezse alan yok. */
+  ai_kacanlar?: KacanHata[];
   /** §13.2: `oran` yalnız AI testleri; el yazısı ayrı. Alan yoksa eski biçim (`oran` tüm testler). */
   el_yazisi?: ElYazisiYakalama;
   /** R4: AI + el yazısı birlikte. */
@@ -1542,6 +1553,8 @@ export interface KuleBeklentiDogrulugu {
   toplam_story?: number;
   /** REPLAY (elle hazırlanmış golden) ile üretilmiş kayıt sayısı. */
   golden_kaynakli?: number;
+  /** §13.2 aynı satırı aynı değerlerle denetleyen, tek sayılan case'ler (paydadan da düşülür). */
+  tekrar?: number;
 }
 
 /** §13.2 Kule `onayli_uyumsuz[]`: onaylandıktan sonra tabloyla uyuşmayan case. */
@@ -1549,6 +1562,9 @@ export interface OnayliUyumsuzCase {
   case_id: string;
   requirement_id: string;
   baslik: string;
+  /** Tur 2 (portal isteği): gereksinim anahtarı ve case sıra no ("TPD-1 · C5"); core vermezse alan yok. */
+  jira_key?: string | null;
+  sira_no?: number | null;
 }
 
 /** `GET /control-tower` → `hata_yakalama` (§4.7); hiç koşu yoksa anahtar `null`. */
@@ -1559,7 +1575,10 @@ export interface KuleHataYakalama {
   kacan: number;
   gecersiz: number;
   platformlar: HataYakalamaPlatformu[];
+  /** Hiçbir testin yakalamadığı hatalar. */
   kacanlar: KacanHata[];
+  /** Q2: üretilen (AI) testlerin kaçırdığı hatalar; core vermezse alan yok. */
+  ai_kacanlar?: KacanHata[];
   /** §13.2: `oran` yalnız AI testleri; el yazısı ayrı. Alan yoksa eski biçim. */
   el_yazisi?: ElYazisiYakalama;
   /** R4: AI + el yazısı birlikte. */
@@ -1634,6 +1653,10 @@ export interface KaliteSonKarar {
   gerekce: string | null;
   kullanici: string | null;
   zaman: string | null;
+  /** Geçişin yapıldığı içerik hash'i (geçmiş satırı; çekirdek vermezse alan yok). */
+  icerik_hash?: string | null;
+  /** "Tablo yanlış" yolu: yeniden açmayı tetikleyen case (çekirdek vermezse alan yok). */
+  case_id?: string | null;
 }
 
 interface KaliteKaydi {
@@ -1657,6 +1680,8 @@ interface KaliteKaydi {
   guncelleme: string | null;
   /** R2: içeriği son düzenleyen kullanıcı; çekirdek vermezse alan yok. */
   son_duzenleyen?: string | null;
+  /** Geçiş geçmişi (eskiden yeniye: gönderme, değişiklik isteği, yeniden açma + gerekçe…); çekirdek vermezse alan yok. */
+  gecmis?: KaliteSonKarar[];
 }
 
 export interface KararTablosu extends KaliteKaydi {
@@ -1680,6 +1705,8 @@ export interface TabloOrnegi {
 export interface TabloOrnekUyarisi {
   tur: string;
   mesaj: string;
+  /** Q1: `ortusme` için `uyari` (aynı girdiyi kısıtlayan koşullar) | `bilgi` (yalnız öncelik notu); yoksa alan yok. */
+  onem?: "uyari" | "bilgi";
   satirlar?: string[];
   girdiler?: Record<string, string | number | boolean | null>;
 }
@@ -1752,6 +1779,8 @@ export interface IliskiOlusturma {
 export interface KaliteGecisGirdisi {
   icerik_hash?: string;
   gerekce?: string;
+  /** "Tablo yanlış" yolu (reopen): tabloyu yeniden açtıran case. */
+  case_id?: string;
 }
 
 /** `POST /requirements/{id}/decision-tables/draft` (202). Bir taslak işi sürerken aynı iş döner. */
@@ -1835,7 +1864,17 @@ export interface OracleIstisnasi {
   tur?: OracleIstisnaTuru;
   /** Kaydın ait olduğu içerik hash'i (son kayıt başka içeriğe ait olabilir); çekirdek vermezse alan yok. */
   icerik_hash?: string | null;
+  /**
+   * Tur 2 (S1): aynı içerik + aynı tablo kümesiyle verilmiş, hâlâ geçerli istisna. Aynı türde geçerliyse kapı
+   * gerekçeyi yeniden istemez (çekirdek `oracle.exception_reused` yazar). Çekirdek vermezse alan yok.
+   */
+  gecerli?: boolean;
+  /** Q1: append-only `oracle_istisna` satır kimliği; çekirdek vermezse alan yok. */
+  id?: string | null;
 }
+
+/** K11 kısmen uyumlu sonucun nedenleri (tur 2): `eksik_girdi` dışındaki nedenler zorunlu kapıda gerekçe ister. */
+export type KismenNedeni = "eksik_girdi" | "atilan_olgu" | "kapsanmayan_sayi" | "yok_sayilan";
 
 /** `GET /cases` ve `GET /cases/{id}` yanıtındaki `oracle` ve `GET /cases/{id}/oracle`. */
 export interface CaseOracle {
@@ -1854,6 +1893,10 @@ export interface CaseOracle {
   degerler?: OracleDegerSayimi;
   /** §13.2 sonucun nedeni (ör. `cagri_hatasi`: model çağrısı hatası); çekirdek vermezse alan yok. */
   neden?: string | null;
+  /** Tur 2: kayıt damgası; karar gövdesinde `oracle_kayit_damgasi` olarak geri gönderilir. Çekirdek vermezse alan yok. */
+  damga?: string | null;
+  /** Tur 2: `kismen` nedenleri (bilinmeyen kod aynen); çekirdek vermezse alan yok. */
+  kismen_nedeni?: (KismenNedeni | (string & {}))[];
 }
 
 /** `POST /cases/{id}/oracle-check` (202): `{job_id, icerik_hash}`; sonuç `oracle.checked` ile gelir. */
@@ -1909,6 +1952,8 @@ export interface BeklentiDogrulugu {
   tablolu_story?: number;
   toplam_story?: number;
   golden_kaynakli?: number;
+  /** §13.2 aynı satırı aynı değerlerle denetleyen, tek sayılan case'ler (paydadan da düşülür). */
+  tekrar?: number;
 }
 
 export interface TestCase {
@@ -1926,8 +1971,10 @@ export interface CaseMetrikleri {
 export interface CaseKararGirdisi {
   /** Yüksek riskli uyuşmazlıkta gerekçeli istisna (en az 20 karakter; denetim kaydına düşer). */
   oracle_istisna_gerekce?: string;
-  /** §13.2: `uyumsuz` (tabloya rağmen) | `kontrolsuz` (kontrol edilemedi, yine de); verilmezse çekirdek sonuca göre çıkarır. */
+  /** §13.2: `uyumsuz` (tabloya rağmen) | `kontrolsuz` (kontrol edilemedi, yine de). Gerekçe verilince portal her zaman gönderir. */
   oracle_istisna_turu?: OracleIstisnaTuru;
+  /** Tur 2 (Y9): kararın dayandığı kontrol kaydının damgası; kayıt değiştiyse 409 `oracle_kayit_degisti`. */
+  oracle_kayit_damgasi?: string;
 }
 
 /** 012 Ş7: triage kaydının bağlı olduğu case (alt tür `beklenti` → "Case düzeltilmeli" bağlantısı). */

@@ -303,9 +303,10 @@ test("sunucu: Kontrol Kulesi'nde ekilmiş hata koşusu başlatır (web); ilerlem
   await girisYap(page, "sunucu");
   await page.goto("/kontrol-kulesi");
   // KPI şeridi: iki kalite karosu ve kaynak ipuçları.
-  await expect(page.getByTestId("beklenti-dogrulugu")).toHaveText("%83");
-  // K12: ana oran yalnız üretilmiş (AI) testlerle; demo reposunda üretilmiş test yok → ölçülmedi.
-  await expect(page.getByTestId("hata-yakalama")).toHaveText("ölçülmedi");
+  // u2 N1: örnek veriden hesaplanır (başlangıçta yalnız T1 onaylı: 3/3).
+  await expect(page.getByTestId("beklenti-dogrulugu")).toHaveText("%100");
+  // K12 + u2 N4: ana oran üretilmiş (AI) testlerle — C2 testi 3 kampanya hatasını yakalar; C3 temelde kırmızı (hariç).
+  await expect(page.getByTestId("hata-yakalama")).toHaveText("%35");
   await expect(page.getByRole("img", { name: /^Kaynak: Son tamamlanan tam katalog ekilmiş hata koşusu/ })).toBeVisible();
   const kart = page.getByRole("region", { name: "Ekilmiş hata koşusu" });
   // Örnek verideki bitmiş koşu (web + android): web demo uygulamada ölçülen gerçek matris (el yazısı suite
@@ -314,7 +315,8 @@ test("sunucu: Kontrol Kulesi'nde ekilmiş hata koşusu başlatır (web); ilerlem
   await expect(kart.getByTestId("hk-oran-android")).toContainText("%88 (7/8)");
   await expect(kart.getByTestId("hk-oran-android")).toContainText("1 geçersiz (orana girmez)");
   await expect(kart.getByTestId("hk-hucre-android-min_siparis_1000")).toContainText("Neden: Cihaz/Appium erişilemiyor");
-  await expect(kart.getByTestId("hk-kacanlar").getByRole("listitem")).toHaveCount(1);
+  await expect(kart.locator(".hk-kacan-liste > li")).toHaveCount(1);
+  await expect(kart.getByTestId("hk-ai-kacanlar")).toContainText("AI testlerinin kaçırdıkları (6)");
   await tamSayfaUstten(page, `${EKRAN_DIZINI}/60-kule-ekilmis-hata.png`);
 
   // Yalnız iki hatayla web koşusu (web işaretli gelir; uygulama platformları işaretsiz).
@@ -348,7 +350,7 @@ test("sunucu: Kontrol Kulesi'nde ekilmiş hata koşusu başlatır (web); ilerlem
   await expect(kart.getByTestId("hk-oran-web")).toHaveText("%50 (1/2)");
   await expect(kart.getByTestId("hk-kacan-kampanya_tek_bedava")).toContainText("Kampanyada en çok 1 bedava · Web");
   // Kule ölçüsüne yalnız tam katalog koşusu girer (kısmi seçim girmez); geçmişte iki koşu.
-  await expect(page.getByTestId("hata-yakalama")).toHaveText("ölçülmedi");
+  await expect(page.getByTestId("hata-yakalama")).toHaveText("%35");
   await expect(kart.getByTestId("hk-gecmis").getByRole("row")).toHaveCount(3);
   await tamSayfaUstten(page, `${EKRAN_DIZINI}/62-kule-ekilmis-hata-sonuc.png`);
   // Hücre kendi koşusuna bağlanır.
@@ -1147,27 +1149,40 @@ test("Faz 5: analist TPD-1'e ölçülmüş baz değer girer → Kontrol Kulesi k
   expect(hatalar).toEqual([]);
 });
 
-test("012 karar tablosu: analist taslağı düzenler → PO'ya gönderir → PO onaylar → yüksek riskli uyuşmazlık engellenir → istisnayla onay", async ({ page }) => {
+test("012 demo adım 2–3: PO ızgarada AI sınır hatasını görür → değişiklik iste → analist `< 750` → PO onaylar → AI'ın C6 hatası engellenir → istisnayla onay", async ({ page }) => {
   const hatalar = konsolHatalariniTopla(page);
-  await girisYap(page, "analist");
+  await girisYap(page, "po");
   await page.goto("/gereksinimler/req-tpd-1/karar-tablolari");
   let t2 = page.getByRole("region", { name: /T2 · Minimum sipariş/ });
-  await expect(t2.getByText("AI taslağı")).toBeVisible();
+  await expect(t2.getByText("PO onayı bekliyor")).toBeVisible();
+  // Sınır örnekleri açık: 750,00 eşik satırında AI'ın `<= 750` taslağı "uyarı görünür" der; story "altında" der.
+  const esik = t2.locator("tr[data-esik='true']").filter({ hasText: /^yanlış750/ });
+  await expect(esik).toContainText("uyarı görünür");
+  await expect(esik).toContainText("AC3:");
+  await tamSayfaUstten(page, `${EKRAN_DIZINI}/71-karar-tablosu-po-sinir-hatasi.png`);
+  await t2.getByRole("button", { name: "Değişiklik iste" }).click();
+  await t2.getByLabel("Değişiklik gerekçesi").fill("AC3 'altında' diyor; tam 750,00 TL'de uyarı olmamalı.");
+  await t2.getByRole("button", { name: "Değişiklik isteğini gönder" }).click();
+  await expect(t2.getByText("PO değişiklik istedi")).toBeVisible();
+  await page.getByRole("button", { name: "Çıkış" }).click();
+  await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
+
+  await girisYap(page, "analist");
+  await page.goto("/gereksinimler/req-tpd-1/karar-tablolari");
   await t2.getByRole("button", { name: "Düzenle" }).click();
-  const ad = t2.getByLabel("Tablo adı");
-  await expect(ad).toBeFocused();
-  await ad.fill("Minimum sipariş tutarı (AC3)");
+  await t2.getByRole("group", { name: "Satır R2" }).getByLabel("Koşul").fill("sepet_tutari < 750");
   await t2.getByRole("button", { name: "Kaydet" }).click();
   await expect(t2.getByTestId("kt-duzenleyici")).toHaveCount(0);
-  t2 = page.getByRole("region", { name: /T2 · Minimum sipariş tutarı \(AC3\)/ });
+  await expect(t2.getByTestId("kt-ai-ozgun")).toContainText("AI taslağında: sepet_tutari <= 750");
   await t2.getByRole("button", { name: "PO onayına gönder" }).click();
   await expect(t2.getByText("PO onayı bekliyor")).toBeVisible();
-  await page.screenshot({ path: `${EKRAN_DIZINI}/71-karar-tablosu-po-bekliyor.png`, fullPage: true });
   await page.getByRole("button", { name: "Çıkış" }).click();
   await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
 
   await girisYap(page, "po");
   await page.goto("/gereksinimler/req-tpd-1/karar-tablolari");
+  t2 = page.getByRole("region", { name: /T2 · Minimum sipariş/ });
+  await expect(t2.locator("tr[data-esik='true']").filter({ hasText: /^yanlış750/ })).toContainText("uyarı görünmez");
   await t2.getByRole("button", { name: "PO olarak onayla" }).click();
   await expect(t2.getByText("Onaylı", { exact: true })).toBeVisible();
   await expect(t2.getByTestId("kt-onay")).toContainText("PO onayı:");
@@ -1201,6 +1216,8 @@ test("012 mobil (390 px) karar tabloları: sayfa ve düzenleyici yatay taşmaz",
   await expect(t2).toBeVisible();
   await fontlariBekle(page);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  // T2 PO onayı bekler (u2 N2): analist geri çekip düzenler.
+  await t2.getByRole("button", { name: "Geri çek" }).click();
   await t2.getByRole("button", { name: "Düzenle" }).click();
   await t2.getByText("Örnekle dene").click();
   await expect(t2.getByTestId("kt-duzenleyici")).toBeVisible();

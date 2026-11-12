@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import { ApiError } from "../../api/http";
 import type { KararTablosu, TabloOrnekleri } from "../../api/types";
-import { Uyari } from "../ui";
+import { mantiksalMi, mantiksalOku } from "../../lib/ifadeAciklama";
+import { Cip, Uyari } from "../ui";
 import { degerMetni } from "./oracle";
 
 const UYARI_TURU: Record<string, string> = {
@@ -21,7 +22,34 @@ const UYARI_TURU: Record<string, string> = {
 /** Mobil yığın etiketinde uzun kolon adı alt çizgiden sarabilsin (sözcük ortasından bölünmesin). */
 const kirilabilir = (ad: string) => ad.replace(/_/g, "_\u200b");
 
-export function OrnekIzgarasi({ tablo }: { tablo: KararTablosu }) {
+/** Koşullardaki sabitler: girdi adı → eşik değerleri (`sepet_tutari < 750` → 750). */
+export function esikler(t: KararTablosu["icerik"]): Record<string, number[]> {
+  const e: Record<string, number[]> = {};
+  for (const s of t.satirlar)
+    for (const m of s.kosul.matchAll(/\b([A-Za-z_][A-Za-z0-9_]*)\s*(<=|>=|<|>|==|!=)\s*(-?\d+(?:\.\d+)?)/g)) (e[m[1]] ??= []).push(Number(m[3]));
+  return e;
+}
+
+/** Sayının story metnindeki yazımları: 750 → "750,00" ve "750"; 7 → "7". */
+const yazimlar = (n: number) => [n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }), String(n).replace(".", ",")];
+
+/**
+ * u2 N19: eşik satırında "story ne diyor" — tablonun kabul kriterlerinde eşik sayısının geçtiği cümle (yoksa null).
+ * Kriter metni gereksinimden okunur; anlam uydurulmaz, cümle olduğu gibi alıntılanır.
+ */
+export function storyCumlesi(deger: number, refs: string[], kriterler: { ref: string; metin: string }[] | null): string | null {
+  for (const ref of refs) {
+    const k = kriterler?.find((x) => x.ref.replace(/\s/g, "").toUpperCase() === ref.replace(/\s/g, "").toUpperCase());
+    if (!k) continue;
+    const cumle = k.metin
+      .split(/(?<=\.)\s+/)
+      .find((c) => yazimlar(deger).some((y) => new RegExp(`(^|[^0-9,.])${y.replace(/[.,]/g, (x) => `\\${x}`)}(?![0-9]|,[0-9])`).test(c)));
+    if (cumle) return `${k.ref}: ${cumle.trim()}`;
+  }
+  return null;
+}
+
+export function OrnekIzgarasi({ tablo, kriterler = null }: { tablo: KararTablosu; kriterler?: { ref: string; metin: string }[] | null }) {
   const [acik, setAcik] = useState(tablo.durum === "pending_po");
   const [veri, setVeri] = useState<TabloOrnekleri | null>(null);
   const [hata, setHata] = useState<string | null>(null);
@@ -44,11 +72,16 @@ export function OrnekIzgarasi({ tablo }: { tablo: KararTablosu }) {
     };
   }, [acik, tablo.id, tablo.icerik_hash]);
   const t = tablo.icerik;
+  const esik = esikler(t);
+  const esikSatiri = (girdiler: Record<string, unknown>) =>
+    Object.entries(esik).flatMap(([ad, degerler]) => (typeof girdiler[ad] === "number" && degerler.includes(girdiler[ad] as number) ? [girdiler[ad] as number] : []))[0] ?? null;
+  const hucre = (ad: string, d: string | number | boolean | null | undefined) => (mantiksalMi(d) ? mantiksalOku(ad, d) : degerMetni(d));
   return (
     <details className="kt-ornek" data-testid="kt-ornek" open={acik || undefined} onToggle={(e) => setAcik((e.currentTarget as HTMLDetailsElement).open)}>
       <summary>Sınır örnekleri</summary>
       <p className="soluk kucuk">
         Koşullardaki sınır değerleri ve çevresi tabloyla hesaplandı. Her satırı iş kuralına göre okuyun: beklediğiniz sonuç bu değilse tablo düzeltilmelidir.
+        “Eşik” işaretli satırları story cümlesiyle karşılaştırın (ör. “altında” sınırı dahil etmez).
       </p>
       {yok ? (
         <p className="soluk kucuk">Bu sürüm örnek ızgarasını sunmuyor; “Örnekle dene” ile tek tek deneyebilirsiniz.</p>
@@ -76,14 +109,26 @@ export function OrnekIzgarasi({ tablo }: { tablo: KararTablosu }) {
                         {c.ad}
                       </th>
                     ))}
+                    <th scope="col">Story ne diyor</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {veri.ornekler.map((o, i) => (
-                    <tr key={i} className={o.hata || !o.satir_id ? "oracle-farkli" : undefined}>
+                  {veri.ornekler.map((o, i) => {
+                    const e = esikSatiri(o.girdiler);
+                    const story = e !== null ? storyCumlesi(e, t.ac_refs, kriterler) : null;
+                    return (
+                    <tr key={i} className={[o.hata || !o.satir_id ? "oracle-farkli" : "", e !== null ? "kt-esik" : ""].filter(Boolean).join(" ") || undefined} data-esik={e !== null || undefined}>
                       {t.girdiler.map((g) => (
                         <td key={g.ad} className="mono" data-etiket={kirilabilir(g.ad)}>
-                          {degerMetni(o.girdiler[g.ad])}
+                          {hucre(g.ad, o.girdiler[g.ad])}
+                          {e !== null && o.girdiler[g.ad] === e && (
+                            <>
+                              {" "}
+                              <Cip ton="uyari" title="Koşuldaki sınır değeri: < mı ≤ mü sorusunu bu satır yanıtlar.">
+                                eşik
+                              </Cip>
+                            </>
+                          )}
                         </td>
                       ))}
                       <td className="mono" data-etiket="Satır">
@@ -91,11 +136,15 @@ export function OrnekIzgarasi({ tablo }: { tablo: KararTablosu }) {
                       </td>
                       {t.ciktilar.map((c) => (
                         <td key={c.ad} className="mono" data-etiket={kirilabilir(c.ad)}>
-                          {degerMetni(o.ciktilar[c.ad])}
+                          {hucre(c.ad, o.ciktilar[c.ad])}
                         </td>
                       ))}
+                      <td className="kt-story" data-etiket="Story ne diyor">
+                        {story ?? <span className="soluk">—</span>}
+                      </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -103,8 +152,9 @@ export function OrnekIzgarasi({ tablo }: { tablo: KararTablosu }) {
           {veri.uyarilar.length > 0 && (
             <ul className="duz-liste kt-ornek-uyari" data-testid="kt-ornek-uyari">
               {veri.uyarilar.map((u, i) => (
-                <li key={i} className="kucuk">
-                  <strong>{UYARI_TURU[u.tur] ?? u.tur}:</strong> {u.mesaj}
+                <li key={i} className={`kucuk${u.onem === "bilgi" ? " soluk kt-ornek-bilgi" : ""}`} data-onem={u.onem}>
+                  {/* Q1: `onem: bilgi` örtüşme yalnız öncelik notudur (ör. "R1 önceliklidir"), uyarı değil. */}
+                  <strong>{u.onem === "bilgi" ? "Bilgi" : (UYARI_TURU[u.tur] ?? u.tur)}:</strong> {u.mesaj}
                   {u.satirlar?.length ? <span className="soluk"> (satır {u.satirlar.join(", ")})</span> : null}
                 </li>
               ))}

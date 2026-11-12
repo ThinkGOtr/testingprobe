@@ -339,7 +339,9 @@ export const api = {
     oracleKontrolUyarla(await istek<unknown>("POST", `/cases/${yol(id)}/oracle-check`, { govde: icerik ? { icerik } : {}, kaynak: CASE_KAYNAGI })),
 };
 /** withdraw / reopen gövdesizdir; diğer geçişler görülen hash'i (ve gerekçeyi) taşır. */
-const gecisGovdesi = (gecis: KaliteGecisi, g: KaliteGecisGirdisi) => (gecis === "withdraw" || gecis === "reopen" ? {} : { govde: g });
+/** withdraw gövdesiz; reopen yalnız "Tablo yanlış" yolunda `{icerik_hash, gerekce, case_id}` taşır (u2 N5), yoksa gövdesiz. */
+const gecisGovdesi = (gecis: KaliteGecisi, g: KaliteGecisGirdisi) =>
+  gecis === "withdraw" || (gecis === "reopen" && !g.gerekce) ? {} : { govde: g };
 /** Karar tablosu / ilişki işlemleri tablo listesine bağlıdır (liste çekirdekten geliyorsa işlem örnek veriye düşmez). */
 const KALITE_KAYNAGI = ["GET", "/requirements/1/decision-tables"] as const;
 

@@ -325,7 +325,7 @@ export function KontrolKulesi() {
         <OnayliUyumsuzKarti k={k} />
 
         {/* 012 §4.6: ekilmiş hata koşusu (başlat, ilerleme, hata × platform tablosu, kaçan hatalar). */}
-        <HataKosusuKarti olcuDegisti={() => void v.yenile(true)} />
+        <HataKosusuKarti olcuDegisti={() => void v.yenile(true)} olculenKosuId={v.veri?.hata_yakalama?.son_kosu.id ?? null} />
       </div>
 
       {k.hazirlik.length > 0 && <HazirlikKarti k={k} kazanc={kazanc} />}
