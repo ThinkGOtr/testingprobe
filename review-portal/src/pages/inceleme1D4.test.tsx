@@ -231,6 +231,30 @@ describe("QA-O5: Test case'leri → case kartı ve otomasyon durumu", () => {
   });
 });
 
+describe("D-2 (tur 3): /kod/:id#pr PR kartına kaydırır", () => {
+  it("veri kabuğun çapa aramasından geç gelse de PR kartı çizilince kaydırılır ve odaklanır", async () => {
+    const eski = { ...capaAyar };
+    capaAyar.aralikMs = 5;
+    capaAyar.deneme = 2;
+    try {
+      await oturumAc("muhendis");
+      const sc = (await api.scriptler()).find((x) => x.pr);
+      expect(sc).toBeDefined();
+      const detay = await api.script(sc!.id);
+      // Kabuğun araması (2 × 5 ms) bitmeden veri gelmez.
+      vi.spyOn(api, "script").mockImplementation(() => new Promise((r) => setTimeout(() => r(detay), 80)));
+      const kaydir = vi.fn();
+      Element.prototype.scrollIntoView = kaydir;
+      const { container } = uygulama(`/kod/${encodeURIComponent(sc!.id)}#pr`);
+      await waitFor(() => expect(container.querySelector("#pr")).not.toBeNull());
+      await waitFor(() => expect(document.activeElement).toBe(container.querySelector("#pr")));
+      expect(kaydir).toHaveBeenCalled();
+    } finally {
+      Object.assign(capaAyar, eski);
+    }
+  });
+});
+
 describe("MİM-Y2: Kontrol Kulesi doğrulanmamış script sayacı", () => {
   it("uyum: core `ai_katkisi.script_dogrulanmamis`; yoksa null", () => {
     expect(kontrolKulesiUyarla({ ai_katkisi: { script_dogrulanmamis: 2 } }).ai_katkisi.script_dogrulanmamis).toBe(2);

@@ -138,6 +138,8 @@ describe("QA-Y4: Otomasyon sütunu ve script listesi sınırı", () => {
     const b = await within(satir).findByTestId("otomasyon-bilinmiyor");
     expect(b).toHaveTextContent(`Bilinmiyor: ${OTOMASYON_BILINMIYOR}`);
     expect(b).toHaveAttribute("title", OTOMASYON_BILINMIYOR);
+    // D-3 (tur 3): Kod üretimi de aynı sınırlı listeyi kullanır — oraya yönlendiren döngüsel öneri yok.
+    expect(OTOMASYON_BILINMIYOR).toBe("Kod listesi en yeni 200 kayıtla sınırlı; bu case'in listede görünmeyen daha eski bir kodu olabilir.");
     expect(screen.queryByText("Kod yok")).toBeNull();
     expect(screen.getByTestId("otomasyon-sinir-notu")).toHaveTextContent("en yeni 200 script kaydından");
   });

@@ -233,7 +233,7 @@ function storyAdi(g: Gereksinim | undefined, c: TestCase | undefined): string {
 
 /** Liste sınırına ulaşıldığında eşleşmeyen case'in açıklaması (title + ekran okuyucu). */
 export const OTOMASYON_BILINMIYOR =
-  "Script listesi en yeni 200 kayıtla sınırlı; bu case'in daha eski bir kodu olabilir. Kod üretimi ekranından ya da story'den doğrulayın.";
+  "Kod listesi en yeni 200 kayıtla sınırlı; bu case'in listede görünmeyen daha eski bir kodu olabilir.";
 
 function OtomasyonHucresi({ scriptler, sinirda }: { scriptler: Script[] | null; sinirda: boolean }) {
   if (scriptler === null) return <span className="soluk">—</span>;

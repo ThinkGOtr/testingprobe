@@ -16,13 +16,15 @@ export function capayaGit(el: HTMLElement): void {
 
 /**
  * Konumdaki hash'i izler; aynı adrese yeniden "Git" de (yeni konum anahtarı) yeniden kaydırır.
- * Bulunamayan çapa sessizce yok sayılır (sayfa yukarıda kalır).
+ * Bulunamayan çapa sessizce yok sayılır (sayfa yukarıda kalır). `hazir`: verisi geç gelen sayfa
+ * (ör. ScriptDetay `#pr`) hedefi veri gelince çizer; arama o an (yeniden) başlar — kabuğun genel
+ * araması süre dolup vazgeçmiş olsa da kart çizilince kaydırılır.
  */
-export function useCapayaKaydir(): void {
+export function useCapayaKaydir(hazir = true): void {
   const konum = useLocation();
   useEffect(() => {
     const ham = konum.hash.replace(/^#/, "");
-    if (!ham) return;
+    if (!ham || !hazir) return;
     let id: string;
     try {
       id = decodeURIComponent(ham);
@@ -41,5 +43,5 @@ export function useCapayaKaydir(): void {
     };
     dene();
     return () => clearTimeout(zamanlayici);
-  }, [konum.key, konum.pathname, konum.hash]);
+  }, [konum.key, konum.pathname, konum.hash, hazir]);
 }

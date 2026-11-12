@@ -1162,14 +1162,20 @@ test("011 tur 2: dil algılanamadı, dil çakışması ve Otomasyon sütunu list
   const hatalar = konsolHatalariniTopla(page);
   const kaymaYok = async () =>
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  // D-4 (tur 3): senaryo belgeden ÖNCE kurulur (addInitScript; son eklenen kazanır) ve mevcut belgeye de
+  // yazılır; ilk istekler senaryosuz yola düşmez. Ardından etkin olduğu doğrulanır.
   const senaryo = async (ad: string) => {
+    await page.addInitScript((x) => sessionStorage.setItem("tp-mock-senaryo", x), ad);
     await page.evaluate((x) => sessionStorage.setItem("tp-mock-senaryo", x), ad);
   };
+  const senaryoEtkin = async (ad: string) =>
+    expect.poll(() => page.evaluate(() => sessionStorage.getItem("tp-mock-senaryo"))).toBe(ad);
   for (const genislik of [1440, 390]) {
     await page.setViewportSize({ width: genislik, height: 900 });
     await girisYap(page, "muhendis");
     await senaryo("depo-okunamadi");
     await page.goto("/kod");
+    await senaryoEtkin("depo-okunamadi");
     await expect(page.getByTestId("dil-notu")).toHaveText("Depo okunamadığı için dil algılanamadı; varsayılan: TypeScript. Dili elle seçebilirsiniz.");
     await expect(page.getByRole("group", { name: "Dil" }).getByTestId("secenek-neden")).toHaveCount(4);
     await kaymaYok();
@@ -1195,6 +1201,9 @@ test("011 tur 2: dil algılanamadı, dil çakışması ve Otomasyon sütunu list
     await expect(page.getByTestId("otomasyon-pr").first()).toBeVisible();
     await page.getByTestId("otomasyon-pr").first().click();
     await expect(page).toHaveURL(/\/kod\/scr-[^#]+#pr$/);
+    // D-2 (tur 3): PR kartı veri gelince çizilir; çapa ona kaydırır ve odak verir.
+    await expect(page.locator("#pr")).toBeInViewport();
+    await expect(page.locator("#pr")).toBeFocused();
     await page.getByRole("button", { name: "Çıkış" }).click();
     await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
   }
