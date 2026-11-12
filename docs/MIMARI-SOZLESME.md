@@ -238,9 +238,17 @@ runbook backfill'i `docs/GCP-KURULUM.md`). SCRIPT durum makinesine uç durum `un
 kalır; **`unverified` etkin sayılmaz** (K-T4): doğrulanmamış üretim aynı case+platformun
 `pr_open`/`merged`/devam eden script'ine dokunmaz (kapatma, forge'a yazma yok); eski `unverified`
 kayıtlar yenisi gelince `closed`. Tam hat dilinde istek, aynı case+platformda başka dilde
-`merged` script varsa 409. `_eski_prlari_kapat` yalnız tam hat yolunda çalışır. Koşu kaydı dili
+`merged` script varsa 409 — mesaj çıkış yolunu söyler ("mevcut test dosyasını silen bir PR'ı merge
+edin, sonra yeniden üretin"); toplu istekte çakışan case sayısı yanıt mesajına ve portala yansır;
+kaldırma ürün akışı değildir (K-T12; elle adım `docs/GCP-KURULUM.md` §10.2). `_eski_prlari_kapat` yalnız tam hat yolunda çalışır. Koşu kaydı dili
 **`run.ortam.dil`**'de taşır (`ts|java`; yoksa `ts` sayılır; idempotency kilidi ve etkin koşu
-araması web'de dile göre ayrılır, portal koşu listesinde dil rozeti gösterir).
+araması web'de dile göre ayrılır, portal koşu listesinde dil rozeti gösterir). Script'siz web
+koşusunda kardeş dil dağıtımı **`run.ortam.dil_dagitimi`**'na yazılır (`["ts","java"]` gibi; ilk
+eleman bu koşunun dili, diğerleri `ortam.kardes_kosu` = bu koşu olan kardeş koşulardır). Alanın
+varlığı dağıtımın yapıldığını gösterir (yeniden denemede tekrarlanmaz); kardeş koşularda yazılmaz.
+K-T11: script'siz PR'da web test köklerinin (`e2e/`, `e2e-java/`) DIŞINDA değişiklik varsa repodaki
+tüm tam hat dilleri dağıtılır (LocalForge ve GitHub tutarlı); yalnız test kökü değişen PR'da
+değişen kökün dili.
 
 **Faz 4 tablolar:** 0011 `failure_ek` (failure ile 1:1, cascade: `anahtar` (koşu+test, tekil),
 `kaynak` ∈ ci|codegen|kirma, `script_id`, `kanit` (özet + toolchain ham kaydı `ham{failure, statuses,
@@ -784,8 +792,10 @@ Faz 1 entegrasyonunda eklenenler (boş = yerel simülatör / güvenli varsayıla
   yetki vermez, onay sayılmaz; idempotency işaretleri gövdede aynen kalır.
 - Portal görünen adları (core-api): `TP_GORUNEN_ADLAR` (`kullanici_adi=Ad Soyad`, virgülle; boş = seed
   demo varsayılanları; boş ad = yalnızca rol etiketi). Yalnızca gösterim; yetki kararları roldedir.
-- Forge merge kapısı (yalnızca core-worker): `TP_REQUIRED_CHECKS` (virgülle; boş = `local-ci` /
-  GitHub ruleset listesi `test-local,ast-guard,semgrep`).
+- Forge merge kapısı (core-api + core-worker, `x-core-env`): `TP_REQUIRED_CHECKS` (virgülle; boş =
+  `local-ci` / GitHub ruleset listesi `test-local,ast-guard,semgrep`). Buraya yazılan her check HER
+  PR'da zorunludur; LocalForge'da platform/dil check'leri buraya yazılmaz (aşağıdaki 009/011
+  notları); GitHub'da yazılırsa ruleset ile aynı tutulur.
 - Model geçidi: `TP_REPLAY_STRICT` (1 = prova: girdisi beyanla eşleşmeyen golden'a düşmez,
   `ReplayMiss` verir; beyanı (`input_match`) eşleşen golden geçer).
 - Gereksinim akışı (Faz 2): `DEMOAPP_RO_DATABASE_URL` yalnızca core-worker'da (demoapp_ro; core-api
@@ -1056,20 +1066,27 @@ döndü. `SessionDep` artık `scope="function"` (commit yanıttan önce); satır
 - test-runner: `TP_E2E_APP_ROOT` (`e2e-app`), `APPIUM_URL_ANDROID|IOS|WINDOWS` (compose'da
   `TP_RUNNER_APPIUM_URL_*`; varsayılan `http://appium-gw:4723`, Windows boş), `TP_APP_ID_<P>`,
   `TP_APP_PATH_<P>`, `TP_DEVICE_UDID_<P>`.
-- Merge kapısı: `TP_REQUIRED_CHECKS` platform kontrolleri de alabilir (LocalForge ör.
-  `local-ci,local-ci-android`; GitHub ör. `…,mobil-android,masaustu-windows`, ruleset ile aynı tutulur).
+- Merge kapısı: LocalForge'da platform kontrolleri `TP_REQUIRED_CHECKS`'e YAZILMAZ — yazılan liste
+  her PR'da zorunludur, `local-ci,local-ci-android` web PR'larını (android check'i hiç gelmez) kilitler.
+  LocalForge'da `local-ci-<platform>` yol kuralıyla (PR o platformun kökünü değiştirdiyse) otomatik
+  eklenir; GitHub'da `TP_PLATFORMS` → `mobil-android`/`masaustu-windows` core'ca eklenir (ruleset ile
+  aynı tutulur; ruleset güncellemesi `scripts/github-ruleset.sh --add-checks`, mevcutları korur).
 
 **011 üretim dili ekleri** (`specs/011-uretim-dili/plan.md`):
 - core-api + core-worker (`x-core-env`): `TP_PLATFORMS` (GitHub kipinde etkin uygulama platformları,
   `android,windows`; boş = yalnız web) ve **`TP_WEB_DILLERI`** (`ts,java`; boş = `ts`; `ts` her zaman
   etkin; yalnız `ts|java` geçerli, başka değer GitHub kipinde forge'u başlatmaz). `java` varsa
-  `web-java` GitHub zorunlu check listesine eklenir, web + Java üretimi ve Java kardeş koşusu açılır;
+  web + Java üretimi ve Java kardeş koşusu açılır (`web-java` check'i ise K-T10'a göre
+`web-java.yml` depoda olduğu sürece HER ZAMAN zorunludur; ilgisiz PR'da no-op ile hızla yeşil);
   yoksa `/code/languages` Java'yı kullanılamaz döner (K-T3). core-api de okur (merge kapısı listesi ve
   dil seçenekleri core-worker ile aynı olmalı). LocalForge'da kullanılmaz.
 - toolchain-worker + test-runner: `TP_E2E_JAVA_ROOT` (`e2e-java`; GitHub kipinde `demo-app/e2e-java`),
   `TP_E2E_JAVA_DEPS` (imaj içi `/opt/e2e-java`; değiştirilmez).
-- Merge kapısı örnekleri: LocalForge `local-ci,local-ci-web-java` (yalnız e2e-java değişen PR'da
-  `local-ci-web-java` aranır); GitHub `test-local,ast-guard,semgrep,web-java`.
+- Merge kapısı (K-T11): LocalForge'da `local-ci` + (repoda e2e-java varsa ve PR web+Java'yı
+  koşturuyorsa) `local-ci-web-java` yol kuralıyla otomatik eklenir. `TP_REQUIRED_CHECKS`'e
+  `local-ci,local-ci-web-java` YAZMAYIN: yapılandırılmış liste her PR'da zorunludur ve yalnız TS
+  değiştiren PR'ları (Java koşusu gelmez) kilitler. GitHub ruleset'i:
+  `test-local,ast-guard,semgrep,web-java` + `TP_PLATFORMS` platform check'leri.
 
 ## 7. Kalite kapısı (her şerit)
 - Python: `uv run ruff check`, `uv run ruff format --check`, `uv run pytest` yeşil.

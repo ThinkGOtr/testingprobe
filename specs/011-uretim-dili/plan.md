@@ -19,6 +19,11 @@ sözleşmelere işlendi: K-T1 check adı (§2.6, §2.8), K-T2 push koşusu (§2.
 doğrulanmamış çıktı yolu (§2.7), K-T7 Java test dosyası kalıbı (§2.4), K-T8 rol kısıtı (§2.9), K-T9
 ertelenenler (§5).
 
+**İnceleme turu 2 kararları (K-T10..K-T12, bağlayıcı; ayrıntı `inceleme-tur2.md`):** K-T10 GitHub
+`web-java` check'i her zaman zorunlu (§2.3, §2.8, §6), K-T11 script'siz PR'da test kökleri dışı
+değişiklik → tüm tam hat dilleri (§2.8), K-T12 başka dilde merge edilmiş testin kaldırılması ürün
+akışı değil, 409 çıkış yolu + toplu yanıtta çakışma sayısı (§2.3, §2.7, §5).
+
 ## 2. Sözleşmeler (şeritler arası; değiştirmek isteyen şerit raporunda gerekçesiyle yazar)
 
 ### 2.1 Dil ve geçerli çiftler
@@ -58,7 +63,7 @@ ertelenenler (§5).
   `dil_kaynagi="secildi"`.
 - `GET /code/languages?platform=<p>` →
   ```json
-  {"platform":"web","algilanan":"ts","kaynak":"algilandi|varsayilan",
+  {"platform":"web","algilanan":"ts","kaynak":"algilandi|varsayilan","neden":null,
    "sayilar":{"ts":9,"java":4,"csharp":0,"python":0},
    "secenekler":[
      {"dil":"ts","etiket":"TypeScript","cati":"Playwright Test","hat":"tam","kullanilabilir":true,"neden":null},
@@ -68,7 +73,13 @@ ertelenenler (§5).
   ```
   Uygulama platformlarında tek seçenek `java` (çatı "Appium + TestNG"). Tam hat dili, repoda o dilin
   test projesi yoksa `kullanilabilir=false` + Türkçe `neden` (ör. "Depoda Java web test projesi
-  (e2e-java/pom.xml) yok").
+  (e2e-java/pom.xml) yok"). Üst düzey `neden`: algılama yapılamadıysa (depo okunamadı vb.; `kaynak`
+  `varsayilan`) Türkçe açıklama ("Dil algılanamadı (…); varsayılan dil önerildi"), yapıldıysa `null`.
+  Portal bu durumda "algılandı" demez, nedeni gösterir (MİM-B1 tur 2).
+- **K-T12:** Tam hat dilinde istek, aynı case+platformda başka dilde `merged` script varken 409; mesaj
+  çıkış yolunu söyler ("mevcut test dosyasını silen bir PR'ı merge edin, sonra yeniden üretin").
+  Toplu istekte çakışan case sayısı yanıt mesajına yansır ve portal Kod üretimi'nde çakışmaları ve
+  nedenlerini gösterir. Kaldırma ürün akışı değildir (backlog); elle adım `docs/GCP-KURULUM.md` §10.2.
 - **K-T3 (GitHub kipi):** web + Java üretimi ve Java kardeş koşusu yalnız `java ∈ TP_WEB_DILLERI`
   iken; değilse `/code/languages` Java'yı `kullanilabilir=false` + neden döner. LocalForge'da repodaki
   dosyalar belirler. GitHub kipinde algılama core-api'de `GITHUB_READ_TOKEN`'a bağlıdır.
@@ -169,8 +180,14 @@ ertelenenler (§5).
   uygulanır).
 - Forge zorunlu check kuralı (K-T1): `e2e-java/` değişen PR `local-ci-web-java`, `e2e/` değişen PR
   `local-ci` ister. Script'siz PR CI'ı değişen yollardan dil(ler)i seçer (ikisi de değiştiyse ikisi de
-  koşar). GitHub kipinde web+java için zorunlu check `web-java` (yalnız `java ∈ TP_WEB_DILLERI`, K-T3);
-  ci.yml `test-local` yalnız-Java PR'da no-op (OPS-L2).
+  koşar). **K-T11:** script'siz PR'da web test köklerinin (`e2e/`, `e2e-java/`) **dışında** bir
+  değişiklik (uygulama kodu vb.) varsa repodaki **tüm** tam hat dilleri koşar (LocalForge ve GitHub
+  tutarlı); merge kapısı aynı kuralla (`local-ci` + varsa `local-ci-web-java`). Kardeş dağıtımı
+  `run.ortam.dil_dagitimi`'na yazılır (idempotency; MIMARI-SOZLESME). **K-T10:** GitHub kipinde
+  `web-java` check'i `web-java.yml` depoda olduğu sürece **her zaman zorunlu** (iş akışı `changes` +
+  no-op ile ilgisiz PR'da hızla yeşil); `TP_WEB_DILLERI` yalnız Java üretimini ve kardeş koşuyu açar
+  (K-T3). ci.yml `test-local` yalnız-Java PR'da no-op (OPS-L2). `TP_REQUIRED_CHECKS`'e dil/platform
+  check'i yazılmaz (her PR'da zorunlu olur).
 - Triage: Java mı sorusu **dile/rapora** bakar (`platform=="web"` kısa devresi kalkar). Playwright
   Java kalıpları: `com.microsoft.playwright.TimeoutError` / "waiting for locator" → locator;
   `AssertionFailedError` / `AssertionError` → assertion (ürün hatası adayı); bağlantı hataları →
@@ -199,7 +216,7 @@ ertelenenler (§5).
 | Ş1 core-akış | `core/src/tp_core/{models,workflow}`, `core/alembic`, `features/codegen/**` (render.py hariç), `rules/prompts|schemas|replay|evaluations.yaml`, ilgili testler |
 | Ş2 render | `features/codegen/render.py`, `rules/templates/**`, `features/codegen/checks.py` tür eşlemesi, şablon golden'ları ve testleri |
 | Ş3 toolchain | `toolchain/**`, `docker-compose.yml` toolchain ayarları |
-| Ş4 hedef-repo | `demo-app/e2e-java/**`, `demo-app/ci/*java*`, `.github/workflows/web-java.yml`, `.github/CI.md` |
+| Ş4 hedef-repo | `demo-app/e2e-java/**`, `demo-app/ci/{run-java-checks,break-verify-java}.sh`, `.github/workflows/web-java.yml`, `.github/CI.md` |
 | Ş5 ci-triage | `core/src/tp_core/features/{ci,triage,repair}/**`, `integrations/forge*.py`, ilgili testler |
 | Ş6 portal | `review-portal/**` |
 
@@ -220,12 +237,15 @@ metot adının başlıktan türetilmesi (QA-O6), login literal'i yerine `dealer(
 Test case'leri CSV dışa aktarma ve satır içi adımlar, `@TmsLink` (guard değişikliği gerektirir),
 DB'de (platform, dil) CHECK'i (MİM-L4; backfill sonrası ayrı göç), arm64 QEMU altında imaj duman
 testi izlemesi (OPS-O5), mvnw 3.9.16 ↔ imaj Maven 3.9.11 hizası (OPS-L4), iki dilli paket
-koşularının kapasite izlemesi (OPS-L7).
+koşularının kapasite izlemesi (OPS-L7). Tur 2: başka dilde merge edilmiş testin ürün içinden
+kaldırılması (K-T12).
 
 ## 6. Operasyon (D6)
 Ortam değişkenleri (`TP_WEB_DILLERI`, `TP_PLATFORMS`, `TP_E2E_JAVA_ROOT`): `.env.example`,
 `docker-compose.yml`, `docs/MIMARI-SOZLESME.md` §6. Dağıtım sırası, geri dönüş ve backfill:
 `docs/GCP-KURULUM.md` "011 dağıtım sırası". Mevcut LocalForge'a e2e-java eklemek:
-`make forge-sync-dizin D=e2e-java B=--baseline`. GitHub demo deposu: `scripts/github-demo-repo-init.sh`
+`make forge-sync-dizin D=e2e-java B=--baseline` (tur 2: kök konteynerde `safe.directory`
+`GIT_CONFIG_GLOBAL`'dan; ref'ler tek atomik fetch ile, yarım durum yok). Ruleset'e `web-java`:
+`scripts/github-ruleset.sh --add-checks web-java` (mevcut platform check'leri korunur). GitHub demo deposu: `scripts/github-demo-repo-init.sh`
 web-java.yml + `toolchain/java-araclar` + `toolchain/e2e-java-deps` taşır. Playwright yükseltmesi:
 `docs/PLAYWRIGHT-YUKSELTME.md`, `make playwright-surum-denetle`.

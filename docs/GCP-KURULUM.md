@@ -350,7 +350,8 @@ yerine aşağıdaki adımları izle (VM).
 
 | Değişken | Değer | Not |
 |---|---|---|
-| `TP_E2E_JAVA_ROOT` | `demo-app/e2e-java` | toolchain-worker + test-runner; boş = `e2e-java` (LocalForge) |
+| `TP_E2E_JAVA_ROOT` | `demo-app/e2e-java` | toolchain-worker + test-runner; boş = `e2e-java` (LocalForge). GitHub kipinde varsayılanda kalırsa toolchain-worker başlangıçta `UYARI:` yazar ve `/health` `java_kokleri` uyarı gösterir |
+| `TP_REQUIRED_CHECKS` | genelde **boş** | core-api + core-worker (`x-core-env`); yazılan her check HER PR'da zorunlu. Core `web-java` (K-T10) ve `TP_PLATFORMS` check'lerini kendisi ekler; elle yazılırsa ruleset ile aynı tutun |
 | `TP_WEB_DILLERI` | ilk dağıtımda **boş** (= `ts`); Java açılınca `ts,java` | core-api + core-worker; yalnız `ts\|java` geçerli |
 | `TP_PLATFORMS` | değişmez (ör. boş ya da `android,windows`) | core-api de okur (011 ile compose'a eklendi) |
 
@@ -363,8 +364,11 @@ for i in core toolchain toolchain-mcp review-portal; do
   docker tag testingprobe-$i:local testingprobe-$i:onceki-011
 done
 git pull
-# 1) İmajları derle (çalışan servisler durmaz; toolchain derlemesi ağsız Java duman testini koşar)
-docker compose build
+# 1) İmajları derle (çalışan servisler durmaz; toolchain derlemesi ağsız Java duman testini koşar).
+#    Yalnız bu servisler: `docker compose build` demo-app-web'i de çalışma ağacından yeniden derleyip
+#    kırık demo / forge main'den derlenmiş imajı ezer (OPS-L4). migrate = core imajı (core-api,
+#    core-worker aynı imajı kullanır); toolchain-worker = toolchain imajı (test-runner aynı imaj).
+docker compose build migrate toolchain-worker playwright-mcp review-portal
 # 2) Postgres yedeği
 mkdir -p ~/yedek
 docker compose exec -T postgres pg_dump -U postgres -d tp -Fc > ~/yedek/tp-onceki-011-$(date +%Y%m%d%H%M).dump
@@ -390,21 +394,61 @@ make status && make security-check
    demo-baseline etiketini ve demo/break-locator'ı da taşır, böylece `make demo-reset` e2e-java'yı
    silmez — main demo-baseline'da değilse önce `make demo-baseline`).
 9. **Java'yı GitHub'da aç (en son):** 8. adımdaki PR main'e girmeden ve ruleset'e `web-java`
-   eklenmeden (`scripts/github-ruleset.sh --checks test-local,ast-guard,semgrep,web-java --apply`)
-   `TP_WEB_DILLERI=ts,java` YAZMA: aksi halde Java kardeş koşusu gelmeyen check'i bekler. Sonra
+   eklenmeden `TP_WEB_DILLERI=ts,java` YAZMA: aksi halde Java kardeş koşusu gelmeyen check'i bekler.
+   K-T10: `web-java.yml` demo deposunda olduğu sürece `web-java` **her zaman** zorunludur (ilgisiz
+   PR'da iş akışı `changes` + no-op ile hızla yeşil olur); `TP_WEB_DILLERI` yalnız Java üretimini ve
+   kardeş koşuyu açar. Ruleset'e ekleme mevcut check'leri KORUYARAK yapılır — `--checks` listeyi
+   tümüyle değiştirir (PUT) ve orada yazılmayan platform check'lerini (`mobil-android`,
+   `masaustu-windows`) siler:
+   ```bash
+   # Önerilen: mevcut listeyi okuyup birleştirir (önce kuru çalışma, sonra --apply)
+   scripts/github-ruleset.sh --add-checks web-java
+   scripts/github-ruleset.sh --add-checks web-java --apply
+   # Ya da tam liste (TP_PLATFORMS'taki platformları da yazın; ör. android,windows):
+   scripts/github-ruleset.sh --checks test-local,ast-guard,semgrep,mobil-android,masaustu-windows,web-java --apply
+   ```
+   Ruleset'e `web-java` eklendiğinde **açık PR'lar** bu check'i beklemeye başlar ama iş akışı ancak
+   PR'a yeni bir olay (push, yeniden açma) geldiğinde koşar (OPS-L6): açık PR'ları listeleyip
+   (`gh pr list --state open`) her birine boş commit/rebase gönderin ya da Actions'tan `web-java`'yı
+   yeniden tetikleyin; aksi halde merge "Expected — Waiting for status" ile bekler. Sonra
    `.env`'ye `TP_WEB_DILLERI=ts,java` → `docker compose up -d --no-build --no-deps core-api core-worker`.
+   `TP_REQUIRED_CHECKS` boşsa dokunmayın (core `web-java`'yı K-T10'a, platformları `TP_PLATFORMS`'a
+   göre kendisi ekler); elle yazılıyorsa ruleset'le aynı tutun (`web-java` dahil).
+10. **Başka dilde merge edilmiş testi kaldırma (K-T12, elle):** Bir case için TS testi merge edilmişken
+   Java üretmek 409 döner ("mevcut test dosyasını silen bir PR'ı merge edin, sonra yeniden üretin").
+   Ürün bunu otomatik yapmaz (backlog). Elle: demo deposunda `demo-app/e2e/tests/generated/<case>.spec.ts`
+   (ya da `demo-app/e2e-java/.../uretilen/<Case>Test.java`) dosyasını silen bir PR açın, insan olarak
+   merge edin (CODEOWNERS onayı gerekir), sonra portaldan Kod üretimi'nde case'i diğer dille yeniden
+   üretin. LocalForge'da (demo/prova) elle PR açma yolu yoktur: forge `main`'ine doğrudan yazmayın;
+   `make reset` forge'u demo-baseline'a döndürür (merge edilmiş TÜM üretilen testler gider).
+   `make forge-sync-dizin D=e2e` kullanmayın — forge'da merge edilmiş diğer üretilen testleri de siler.
 
 **Geri dönüş (önerilen: şema kalır):**
 
+Önce: açık **web + Java PR'larını** (kod üretimi/onarım; `ortam.dil = java`) kapatın ya da merge edin —
+eski core bu PR'ları TS sanır, Java kardeş koşusu ve `local-ci-web-java`/`web-java` kapısını bilmez.
+Ruleset'te `web-java` kalırsa ve `web-java.yml` depoda kalırsa check gelmeye devam eder (sorun değil);
+iş akışını depodan kaldırırsanız ruleset'ten de çıkarın (aksi halde PR'lar bekler).
+
 ```bash
 cd /opt/testingprobe
+# a) Yeni imajları sakla: şema downgrade'i (alembic downgrade 0020) YENİ core imajıyla yapılır.
+for i in core toolchain toolchain-mcp review-portal; do
+  docker tag testingprobe-$i:local testingprobe-$i:yeni-011
+done
+# b) Kuyruğu boşalt: tetikleri durdur (TP_WEB_DILLERI'yi .env'den kaldır, Jira/forge tetiklerini
+#    beklet), koşan/kuyruktaki işler bitene kadar bekle — sıfır olmalı:
+docker compose exec -T postgres psql -U postgres -d tp -tAc \
+  "SELECT count(*) FROM run WHERE sonuc IN ('queued','running');"
+# c) Çalışma ağacını ÖNCE eski commit'e al (compose dosyası ve betikler imajlarla aynı sürüm olsun)
+git checkout <önceki commit>
+# d) Eski imajları geri etiketle ve yalnız servisleri yeniden oluştur.
 for i in core toolchain toolchain-mcp review-portal; do
   docker tag testingprobe-$i:onceki-011 testingprobe-$i:local
 done
 # migrate ÇALIŞTIRILMAZ (eski kodda 0021 yok; `make up` migrate'i düşürür) — yalnız servisler:
 docker compose up -d --no-build --no-deps --force-recreate \
   toolchain-worker test-runner core-api core-worker review-portal playwright-mcp
-git checkout <önceki commit>   # çalışma ağacını imajlarla hizala; .env'den TP_WEB_DILLERI'yi kaldır
 ```
 
 Şema 0021'de kalır: eski core yeni kolonları bilmez, sunucu varsayılanlarıyla yazar. Yeniden
@@ -412,8 +456,10 @@ yükseltmede 6. adımdaki backfill'i tekrar koş. `make up` / `git pull` ile ile
 çalışma ağacının yeni koda geçtiğinden emin ol.
 
 **Şema geri alma (downgrade) — yalnız zorunluysa, yedekten dönmek daha güvenlidir:**
-`alembic downgrade 0020` (yeni core imajıyla: `docker compose run --rm migrate alembic downgrade 0020`)
-geri alınamaz veri kaybı yapar:
+`alembic downgrade 0020` yeni core imajıyla yapılır (eski imaj 0021'i bilmez); geri dönüşün a)
+adımında saklanan `:yeni-011` geçici olarak geri etiketlenir:
+`docker tag testingprobe-core:yeni-011 testingprobe-core:local && docker compose run --rm migrate alembic downgrade 0020 && docker tag testingprobe-core:onceki-011 testingprobe-core:local`
+(ardından core servislerini yukarıdaki d) adımıyla yeniden oluştur). Geri alınamaz veri kaybı yapar:
 - `unverified` script'ler `closed` olur ve geri dönmez; `script_codegen.kaynak_kod` (C#/Python kaynağı)
   **silinir** — gerekiyorsa önce portaldan indir.
 - `script.dil` / `dil_kaynagi` silinir: eski core web + Java script'lerini TypeScript sanır. Downgrade'den

@@ -25,7 +25,7 @@ Semgrep imajı sürüm + digest ile sabitlenmiştir. `dependabot.yml` bunları a
 
 | Job | Zorunlu | Ne yapar |
 |---|---|---|
-| `changes` | — | PR'da `dorny/paths-filter` ile `demo-app/**` (yalnız `demo-app/e2e-java/**` / `ci/*java*` değişikliği hariç; bkz. "Web Java iş akışı"), `demo-app/e2e/pages/**`, `toolchain/ast-guard/**` (ve ilgili `scripts/github-*.sh`) değişikliğini tespit eder; tetik türünü (`pr`/`push`/`nightly`/`deploy`/`manual`) belirler. PR dışı olaylarda testler her zaman koşar. |
+| `changes` | — | PR'da `dorny/paths-filter` ile `demo-app/**` (yalnız `demo-app/e2e-java/**` / `ci/run-java-checks.sh` / `ci/break-verify-java.sh` değişikliği hariç; bkz. "Web Java iş akışı"), `demo-app/e2e/pages/**`, `toolchain/ast-guard/**` (ve ilgili `scripts/github-*.sh`) değişikliğini tespit eder; tetik türünü (`pr`/`push`/`nightly`/`deploy`/`manual`) belirler. PR dışı olaylarda testler her zaman koşar. |
 | `test-local` | **evet** | `demo-app/ci/run-checks.sh --retries=1` (elle yazılmış + `e2e/tests/generated/**` üretilen testler); sonuçları yerel koşuyla aynı düzende `test-local-results` artefaktına, HTML raporunu ayrıca `playwright-report`'a yükler. |
 | `ast-guard` | **evet** | PR'da `toolchain/ast-guard`'ı `merge-base(base, head)..head` aralığında çalıştırır. `demo-app/e2e/tsconfig.json` değiştiyse tsc --strict kapısının gevşetilmediğini de doğrular (`strict: true`, strict ailesi kapatılamaz, `extends` yok, kapsam değişmez). |
 | `semgrep` | **evet** | `semgrep/semgrep` konteynerinde `p/default` + `p/typescript`, token/hesap yok, `--metrics=off`. Kapsam: `demo-app/`, `toolchain/ast-guard/`. |
@@ -226,9 +226,9 @@ tarayıcıda açılır), `kanit/<Sınıf>.<metot>/` (ekran görüntüsü + sayfa
 eklenir — ikisi aynı tutulmalıdır:
 
 ```bash
-# ör. Android + Windows etkin:
-TP_REQUIRED_CHECKS=test-local,ast-guard,semgrep,mobil-android,masaustu-windows   # core-worker (.env)
-scripts/github-ruleset.sh --checks test-local,ast-guard,semgrep,mobil-android,masaustu-windows --apply
+# ör. Android + Windows etkin (GitHub kipi; mobil/masaüstü iş akışları ilgisiz PR'da no-op):
+TP_REQUIRED_CHECKS=test-local,ast-guard,semgrep,mobil-android,masaustu-windows   # core-api + core-worker (.env)
+scripts/github-ruleset.sh --add-checks mobil-android,masaustu-windows --apply    # mevcutları korur
 ```
 
 Kısa yol: core-worker `.env`'inde `TP_PLATFORMS=android,windows` verilirse çekirdek ve portal
@@ -262,15 +262,16 @@ tarayıcı koşusu (`testng.xml`, 2 iş parçacığı = 2 bayi).
 | `web-java` | `ubuntu-24.04` | `scripts/github-demo-serve.sh` (API `127.0.0.1:18000` + vite preview `/api` vekili `127.0.0.1:8081`); `BASE_URL`, `DEMO_API_URL`, koşu başına `DEMOAPP_TEST_TOKEN` | `npx playwright@<.playwright-version> install --with-deps chromium` (`~/.cache/ms-playwright` önbellekli); testler indirme yapmaz (`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD`) |
 
 Değişiklik tespiti (`changes` job'u, PR): `demo-app/e2e-java/**`, `demo-app/{api,web}/**`,
-`demo-app/kimlikler.json`, `demo-app/ci/*java*`, `toolchain/java-araclar/**`,
+`demo-app/kimlikler.json`, `demo-app/ci/*java*` (web-java.yml'de geniş süzgeç zararsız: fazladan koşu), `toolchain/java-araclar/**`,
 `toolchain/e2e-java-deps/**` (güvenilir pom), `.playwright-version`, `demo-app/e2e/package.json`
 (sürüm tutarlılığı adımı okur), `scripts/github-demo-serve.sh`, iş akışının kendisi; ilgisiz PR'da
 "no-op, başarılı" (workflow düzeyinde `paths` yok — zorunlu check yapılabilir).
 
 Tersine, ci.yml `test-local` yalnız Java web projesini değiştiren PR'da (`demo-app/e2e-java/**`,
-`demo-app/ci/*java*` dışında `demo-app/` değişikliği yoksa) no-op'tur: `changes` job'unda
-`predicate-quantifier: every` ile ayrı bir `app` süzgeci (`demo-app/**` VE `!demo-app/e2e-java/**`
-VE `!demo-app/ci/*java*`) koşar; uygulama dışı tetikler (`.playwright-version`, `ci.yml`,
+`demo-app/ci/run-java-checks.sh`, `demo-app/ci/break-verify-java.sh` dışında `demo-app/` değişikliği
+yoksa) no-op'tur: `changes` job'unda `predicate-quantifier: every` ile ayrı bir `app` süzgeci
+(`demo-app/**` VE `!demo-app/e2e-java/**` VE bu iki dosyanın açık adları) koşar — `*java*` deseni
+`*javascript*` adlarını da dışlardı (OPS-L1 tur 2); uygulama dışı tetikler (`.playwright-version`, `ci.yml`,
 `toolchain/Dockerfile`, `toolchain/package*.json`, `scripts/github-demo-serve.sh`) `app_ek`
 süzgecindedir. `demo-app/` altındaki diğer her değişiklik (api, web, e2e, e2e-app, kimlikler.json,
 ci/run-checks.sh, …) TS testlerini tetiklemeye devam eder.
@@ -280,22 +281,29 @@ Artefakt `web-java-results`: `ci-meta.json` (`job: web-java`, `platform: web`, `
 `extent-report/index.html`, `kanit/<Sınıf>.<metot>/{ekran.png, trace.zip, sayfa.html}` (triage: web
 yöntemi), `guard.json`, `logs/` (`serve.log`, `run-java-checks.log`). Koşu belirteci artefaktta maskelenir.
 
-**Zorunlu check ve dil kapısı (011 K-T1, K-T3).** GitHub kipinde web + Java yalnız
-`TP_WEB_DILLERI` `java` içerdiğinde açıktır: core `web-java`'yı zorunlu check listesine kendisi ekler
-(`github_required_checks`), Kod üretimi ekranında Java seçilebilir olur ve paket koşularında (gece,
+**Zorunlu check ve dil kapısı (011 K-T1, K-T3, K-T10).** `web-java` check'i `web-java.yml` demo
+deposunda olduğu sürece **her zaman zorunludur** (K-T10; ilgisiz PR'da `changes` + no-op ile hızla
+yeşil; core `github_required_checks` ekler). GitHub kipinde web + Java üretimi yalnız
+`TP_WEB_DILLERI` `java` içerdiğinde açıktır: Kod üretimi ekranında Java seçilebilir olur ve paket koşularında (gece,
 push, deploy) Java kardeş koşusu tetiklenir. `java` yoksa `/code/languages` Java'yı
 `kullanilabilir=false` + neden ile döner ve kardeş koşu açılmaz (gelmeyen check'i saatlerce beklemez).
 Açma sırası: (1) demo deposunda `web-java.yml`, `toolchain/java-araclar/`, `toolchain/e2e-java-deps/`
 bulunmalı (`scripts/github-demo-repo-init.sh --push --update` bunları gönderir; CI'da güvenilir pom
-yoksa `run-java-checks.sh` hata verir); (2) ruleset'e eklenir (`scripts/github-ruleset.sh --checks
-…,web-java --apply`); (3) `.env`'de `TP_WEB_DILLERI=ts,java` ve core yeniden başlatılır.
-`TP_REQUIRED_CHECKS` elle yazılıyorsa `web-java` oraya da eklenmelidir.
+yoksa `run-java-checks.sh` hata verir); (2) ruleset'e mevcut check'ler KORUNARAK eklenir
+(`scripts/github-ruleset.sh --add-checks web-java`, önce kuru, sonra `--apply`; `--checks` listeyi
+tümüyle değiştirir ve yazılmayan platform check'lerini siler) — eklenince açık PR'lar `web-java`'yı
+bekler ama iş akışı ancak PR'a yeni olay (push/yeniden açma) gelince koşar: açık PR'lara boş commit
+gönderin ya da Actions'tan yeniden tetikleyin; (3) `.env`'de `TP_WEB_DILLERI=ts,java` ve core yeniden
+başlatılır. `TP_REQUIRED_CHECKS` elle yazılıyorsa ruleset ile aynı tutulur (`web-java` dahil).
 
 Yerel (LocalForge) kipte check adları: web + TS `local-ci` (değişmez), **web + Java
 `local-ci-web-java`**, uygulama `local-ci-<platform>` (tek kaynak `platform.check_adi(platform, dil)`).
 Merge kuralı: `e2e-java/` değişen PR `local-ci-web-java`, `e2e/` değişen PR `local-ci` ister;
-script'siz PR'da CI değişen yollardan dil(ler)i seçer (ikisi de değiştiyse ikisi de koşar). LocalForge'da
-`TP_WEB_DILLERI` kullanılmaz; repodaki dosyalar belirler.
+script'siz PR'da CI değişen yollardan dil(ler)i seçer (ikisi de değiştiyse ikisi de koşar; K-T11: test
+kökleri dışında değişiklik varsa repodaki tüm tam hat dilleri). LocalForge'da `TP_WEB_DILLERI`
+kullanılmaz; repodaki dosyalar belirler. `TP_REQUIRED_CHECKS`'e `local-ci-web-java` /
+`local-ci-<platform>` YAZMAYIN: yapılandırılmış liste her PR'da zorunludur, o check'i hiç almayan
+PR'lar kilitlenir; yol kuralı onları gerektiğinde ekler.
 
 ## Ruleset
 

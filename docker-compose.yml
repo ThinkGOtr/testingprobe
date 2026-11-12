@@ -78,8 +78,9 @@ x-core-env: &core-env
   TP_WEB_DILLERI: ${TP_WEB_DILLERI:-}
   # Merge kapısının zorunlu check'leri (boş = adaptör varsayılanı: local-ci / ruleset listesi).
   # core-api de okur (kod üretimi ekranının merge kapısı listesi) → ortak blokta (OPS-L2 tur 2).
-  # Platform/dil check'lerini (local-ci-web-java, web-java, mobil-android...) BURAYA YAZMAYIN: yol
-  # kuralı ve TP_PLATFORMS/web-java.yml onları gerektiğinde ekler; burada yazılanlar HER PR'da zorunludur.
+  # Burada yazılanlar HER PR'da zorunludur: LocalForge'da local-ci-web-java / local-ci-<platform>
+  # YAZMAYIN (yol kuralı ekler). GitHub'da platform/web-java check'lerini core TP_PLATFORMS ve K-T10'a
+  # göre kendisi ekler; elle yazılırsa ruleset ile aynı tutun.
   TP_REQUIRED_CHECKS: ${TP_REQUIRED_CHECKS:-}
   TOOLCHAIN_URL: http://toolchain-worker:8100
   # toolchain-worker belirteci: core → toolchain-worker. test-runner'a VERİLMEZ (security-check 4/5).
