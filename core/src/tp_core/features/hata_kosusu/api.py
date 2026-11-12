@@ -4,7 +4,7 @@
 |---|---|---|
 | POST | `/fault-runs` `{platformlar, hatalar?}` | engineer, presenter — 202 `{id, durum}` |
 | GET  | `/fault-runs?limit=` | herkes — son koşular (yeniden eskiye) |
-| GET  | `/fault-runs/catalog` | herkes — hata kataloğu |
+| GET  | `/fault-runs/catalog` | herkes — hata kataloğu (+ `requirement_id`: TPD-1) |
 | GET  | `/fault-runs/{id}` | herkes — koşu + adımlar |
 | POST | `/fault-runs/{id}/cancel` | engineer, presenter — `{id, durum, iptal_istendi}` |
 
@@ -21,11 +21,13 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
 
 from tp_core.api.errors import KodluHata
 from tp_core.auth.deps import CurrentUser, DbSession, require_role
 from tp_core.features.hata_kosusu import katalog as kat
 from tp_core.features.hata_kosusu import service
+from tp_core.models import Requirement
 from tp_core.workflow.service import Principal
 
 router = APIRouter(tags=["hata_kosusu"])
@@ -58,9 +60,20 @@ def liste(
     return service.liste(session, limit)
 
 
+# Katalog TPD-1 demo story'sinin kabul kriterlerine ve tablolarına bağlıdır (`ac_refs`, `tablo`).
+KATALOG_STORY = "TPD-1"
+
+
 @router.get("/fault-runs/catalog")
-def katalog(_user: CurrentUser) -> list[dict[str, Any]]:
-    return kat.katalog()
+def katalog(session: DbSession, _user: CurrentUser) -> list[dict[str, Any]]:
+    """Katalog + `requirement_id` (kural bağlantısı ve "Bu girdiyle ek case türet" için;
+    birleştirme turu 2, portal mock'uyla aynı alan). Story yoksa ya da hata bir kurala/tabloya
+    bağlı değilse `null`."""
+    rid = session.scalar(select(Requirement.id).where(Requirement.jira_key == KATALOG_STORY))
+    return [
+        {**h, "requirement_id": str(rid) if rid and (h.get("ac_refs") or h.get("tablo")) else None}
+        for h in kat.katalog()
+    ]
 
 
 @router.get("/fault-runs/{kosu_id}")

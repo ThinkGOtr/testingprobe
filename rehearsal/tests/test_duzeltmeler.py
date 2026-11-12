@@ -312,3 +312,18 @@ def test_runner_z1_kritik_fail_rapora(baglam):
     s = Calistirici([a for a in steps.adimlar() if a.no == "Z1"], b).calistir()
     assert s[0].durum == FAIL
     assert all(k.sonuc != UYARI for k in s[0].kontroller)
+
+
+def test_caseler_ide_uretimini_atlar(baglam):
+    """012 demo: IDE taslağı (uretim 2, tek case) portal üretiminin (uretim 1) yerine geçmez."""
+    from .conftest import SahteApi
+
+    hepsi = [
+        {"id": "a", "sira_no": 1, "uretim_no": 1, "kanal": "portal"},
+        {"id": "b", "sira_no": 2, "uretim_no": 1, "kanal": "portal"},
+        {"id": "v", "sira_no": 6, "uretim_no": 2, "kanal": "ide"},
+    ]
+    b = baglam(api=SahteApi({"/cases?requirement_id=r": hepsi}))
+    assert {n: c["id"] for n, c in steps.caseler(b, "r").items()} == {1: "a", 2: "b"}
+    b = baglam(api=SahteApi({"/cases?requirement_id=r": hepsi[2:]}))
+    assert list(steps.caseler(b, "r")) == [6]

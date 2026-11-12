@@ -19,7 +19,7 @@ import { isleriBekle, t2Duzelt, t2Onayla } from "../../test/kaliteYardimci";
 import { oturumAc, sar } from "../../test/yardimci";
 import { BildirimProvider } from "../Bildirim";
 import { CaseKarti } from "../CaseKarti";
-import { HataKosusuKarti, turetmeOnerisi } from "../kule/HataKosusuKarti";
+import { ayirtEdiciGirdi, HataKosusuKarti, turetmeOnerisi } from "../kule/HataKosusuKarti";
 import { HataYakalamaKarosu, OnayliUyumsuzKarti } from "../kule/KaliteKpilari";
 import { damgaAlani, karsilastirilamamaNedeni, KarsilastirmaTablosu, ozetMetni } from "./oracle";
 import { OrnekIzgarasi, sayiDegeri } from "./OrnekIzgarasi";
@@ -382,5 +382,14 @@ describe("birleştirme turu 2: çekirdek örnek girdisi metin sayı", () => {
     expect(sayiDegeri(7)).toBe(7);
     expect(sayiDegeri("yedi")).toBeNull();
     expect(sayiDegeri(true)).toBeNull();
+  });
+});
+
+describe("birleştirme turu 2: çekirdeğin çok girdili ayırt edici örneği", () => {
+  it("'adet = 14, ara_toplam = 350,00' → ilk sayısal girdi (adet 14)", () => {
+    expect(ayirtEdiciGirdi("adet = 14, ara_toplam = 350,00")).toEqual({ ad: "adet", deger: 14 });
+    expect(ayirtEdiciGirdi("kampanyali_sepet = yanlış, sepet_tutari = 750,00")).toEqual({ ad: "sepet_tutari", deger: 750 });
+    expect(ayirtEdiciGirdi("adet = 14")).toEqual({ ad: "adet", deger: 14 });
+    expect(ayirtEdiciGirdi("")).toBeNull();
   });
 });

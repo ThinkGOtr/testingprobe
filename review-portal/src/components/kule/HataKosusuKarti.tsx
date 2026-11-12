@@ -597,8 +597,12 @@ function KuralBaglantisi({ oge }: { oge: HataKatalogOgesi | undefined }) {
 
 /** "adet = 14" → {ad: "adet", deger: 14}; tek sayısal atama değilse null. */
 export function ayirtEdiciGirdi(g: string | undefined | null): { ad: string; deger: number } | null {
-  const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(-?\d+(?:[.,]\d+)?)\s*$/.exec(g ?? "");
-  return m ? { ad: m[1], deger: Number(m[2].replace(",", ".")) } : null;
+  // Çekirdek birden çok girdi verir ("adet = 14, ara_toplam = 350"); türetme ilk sayısal girdiyi kullanır.
+  for (const parca of (g ?? "").split(/,\s+|;\s*/)) {
+    const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(-?\d+(?:[.,]\d+)?)\s*$/.exec(parca);
+    if (m) return { ad: m[1], deger: Number(m[2].replace(",", ".")) };
+  }
+  return null;
 }
 
 /** İlişki dönüşümü `ad * k` / `ad + k` ise hedef değerden kaynak değeri (14, `adet * 2` → 7); değilse null. */

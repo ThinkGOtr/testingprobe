@@ -1385,7 +1385,10 @@ def test_api_roller_ve_sekiller(api: TestClient, make_user, engine: Engine) -> N
         "ac_refs",
         "tablo",
         "ayirt_edici",
+        "requirement_id",
     }
+    # TPD-1 yoksa bağlantı yok (birleştirme turu 2: requirement_id, portal mock'uyla aynı alan).
+    assert {h["requirement_id"] for h in kat_} == {None}
     login(api, make_user("engineer"))
     r = api.post(f"/fault-runs/{govde['id']}/cancel")
     assert r.status_code == 200 and r.json() == {
@@ -1752,3 +1755,22 @@ def test_is_anahtarlari_tum_adimlari_kapsar(engine: Engine, muhendis: Principal)
     job_sorgulari = [q for q in sorgular if "FROM job" in q]
     assert job_sorgulari and not any("LIKE" in q.upper() for q in job_sorgulari)
     assert all("idempotency_key = ANY" in q for q in job_sorgulari)
+
+
+def test_katalog_tpd1_gereksinim_kimligini_tasir(api, make_user) -> None:
+    """Birleştirme turu 2: "Bu girdiyle ek case türet" ve kural bağlantısı için katalog öğesi
+    TPD-1'in kimliğini taşır (kurala/tabloya bağlı olmayan hatada `null`)."""
+    from tp_core.models import Requirement, session_scope
+
+    with session_scope() as s:
+        req = Requirement(
+            kaynak="jira", jira_key="TPD-1", baslik="Sepet", aciklama="-", kaynak_hash="t"
+        )
+        s.add(req)
+        s.flush()
+        rid = req.id
+    login(api, make_user("analyst"))
+    kat_ = {h["kod"]: h for h in api.get("/fault-runs/catalog").json()}
+    assert kat_["kampanya_tek_bedava"]["requirement_id"] == str(rid)
+    for h in kat_.values():
+        assert h["requirement_id"] == (str(rid) if (h["ac_refs"] or h["tablo"]) else None)
