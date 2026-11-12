@@ -18,7 +18,9 @@ migrasyon 0022.
   `hata_kosusu.durum` iş durumudur (workflow.MACHINES'te değildir).
 
 `tp_app` bu tablolarda SELECT, INSERT, UPDATE yapabilir (`oracle_istisna`'da yalnız SELECT,
-INSERT); DELETE yoktur.
+INSERT); DELETE yoktur. Bu "uygulama silmez" demektir, "asla silinmez" değil (review 1 mimari 18):
+gereksinim / case silinirse satırlar `ON DELETE CASCADE` ile gider; `case_oracle_kontrol` yeniden
+kontrolde yerinde güncellenir (`guncelleme`); append-only olan yalnız `oracle_istisna`'dır.
 """
 
 from __future__ import annotations
@@ -35,6 +37,12 @@ from tp_core.models import enums
 from tp_core.models.base import Base, guncelleme_col, in_check, olusturma_col, uuid_pk
 from tp_core.models.requirements import EMPTY_LIST, EMPTY_OBJ, _durum
 
+# Onaylı karar tablosu / ilişki onaylanan içerik ve gereksinim hash'i olmadan var olamaz
+# (review 1 mimari 17).
+ONAY_HASH_KOSULU = (
+    "durum <> 'approved' OR (onaylanan_hash IS NOT NULL AND gereksinim_hash IS NOT NULL)"
+)
+
 
 class KararTablosu(Base):
     """PO onaylı karar tablosu (§4.1). `sira_no` gereksinim içinde tekildir; yeniden kullanılmaz."""
@@ -44,6 +52,7 @@ class KararTablosu(Base):
         in_check("durum", enums.durumlar("karar_tablosu"), "karar_tablosu_durum_ck"),
         in_check("uretim_modu", enums.URETIM_MODU, "karar_tablosu_uretim_modu_ck", True),
         UniqueConstraint("requirement_id", "sira_no", name="karar_tablosu_sira_uq"),
+        CheckConstraint(ONAY_HASH_KOSULU, name="karar_tablosu_onay_hash_ck"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -73,6 +82,7 @@ class MetamorfikIliski(Base):
         in_check("durum", enums.durumlar("metamorfik_iliski"), "metamorfik_iliski_durum_ck"),
         in_check("uretim_modu", enums.URETIM_MODU, "metamorfik_iliski_uretim_modu_ck", True),
         UniqueConstraint("requirement_id", "sira_no", name="metamorfik_iliski_sira_uq"),
+        CheckConstraint(ONAY_HASH_KOSULU, name="metamorfik_iliski_onay_hash_ck"),
         Index("metamorfik_iliski_tablo_ix", "karar_tablosu_id"),
     )
 

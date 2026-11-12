@@ -278,3 +278,11 @@ kayitlar:
     neden: İlişki başka bir gereksinime ait olabilir ya da bağlantı eski olabilir.
     cozum: Gereksinimin karar tabloları ekranını yenileyin ve listedeki onaylı ilişkilerden birini seçin.
     rota: /gereksinimler/:id
+  - id: oracle-kayit-degisti
+    kodlar: [oracle_kayit_degisti]
+    metinler: []
+    baslik: Karar tablosu kontrolü siz baktıktan sonra değişti
+    anlam: Onay ya da istisna, ekranda gördüğünüz kontrol kaydına bağlıdır; o kayıt siz karar verirken yeniden hesaplandı (sonuç ya da tablolar değişmiş olabilir).
+    neden: İstisna gerekçesi görülmemiş bir karşılaştırmaya verilmesin diye karar, görülen kaydın damgasını taşır; damga uymazsa karar uygulanmaz.
+    cozum: Case'i yenileyin, güncel karar tablosu sonucunu inceleyin ve kararınızı yeniden verin.
+    rota: /gereksinimler/:id/caseler

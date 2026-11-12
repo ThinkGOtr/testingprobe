@@ -31,6 +31,7 @@ import json
 import os
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -40,6 +41,7 @@ from sqlalchemy.orm import Session
 
 from tp_core.audit import audit_on_commit, content_hash
 from tp_core.events.bus import publish_tx
+from tp_core.features.karar_tablosu.hatalar import OracleKontrolSiniri
 from tp_core.features.oracle import cikarma, dogrulama
 from tp_core.features.oracle.tablolar import (
     ac_normalize,
@@ -52,6 +54,7 @@ from tp_core.models import (
     AppUser,
     CaseOracleKontrol,
     KararTablosu,
+    MetamorfikTuretme,
     OracleIstisna,
     Requirement,
     Review,
@@ -72,10 +75,19 @@ ONAYLI_DURUMLAR = ("approved", "published")
 # `check_requirement` birleştirme: gereksinim başına tek bekleyen iş, kısa gecikmeyle (art arda
 # gelen tablo olayları tek taramada toplanır). `TP_ORACLE_BIRLESTIRME_S` ile değişir (testler 0).
 GEREKSINIM_GECIKME_S = 2.0
-# Başarısız / iptal edilmiş iş idempotens anahtarını kilitlemez: yeni deneme son eki alır.
+# Başarısız / iptal edilmiş iş idempotens anahtarını kilitlemez: yeni deneme son eki alır. Kayıt
+# yazmadan biten (`done`, sonucu `atlandi`) iş de kilitlemez (review 2 t2 N1).
 BITMIS_IS = ("failed", "cancelled")
 NEDEN_CAGRI_HATASI = "cagri_hatasi"
 NEDEN_REPLAY_MISS = "replay_miss"
+# Geçici nedenli kayıt (model çağrısı hatası, REPLAY kaydı yok) gösterilir ve kapıda kullanılır
+# ama önbellek sayılmaz: yeniden kontrol (hız sınırıyla) kuyruğa alınabilir (review 2 g2 Y5).
+GECICI_NEDENLER = (NEDEN_CAGRI_HATASI, NEDEN_REPLAY_MISS)
+# Hız sınırı (review 2 g2 Y6, t2 N10): son bir dakikada açılan yeni `oracle.check_case` işi.
+# Var olan anahtarın işi sınıra takılmaz. Sayım gereksinim başına advisory lock altında (atomik).
+DAKIKA_SINIRI_CASE = 10
+DAKIKA_SINIRI_GEREKSINIM = 120
+DAKIKA_SINIRI_KULLANICI = 30
 
 GatewayFactory = Callable[[Engine], ModelGateway]
 
@@ -142,7 +154,107 @@ def kayit_damgasi(kayit: CaseOracleKontrol | None) -> str:
 
 
 def gecerli_mi(kayit: CaseOracleKontrol | None, kapsayan: Sequence[KararTablosu]) -> bool:
+    """Kayıt güncel kapsayan tablolarla mı yapılmış (gösterim, kapı ve metrik için geçerli)."""
     return kayit is not None and dict(kayit.tablo_hashleri or {}) == tablo_hashleri(kapsayan)
+
+
+def gecici_mi(kayit: CaseOracleKontrol | None) -> bool:
+    """Kaydın nedeni geçici mi (`cagri_hatasi` / `replay_miss`; review 2 g2 Y5)."""
+    return kayit is not None and (kayit.ayrintilar or {}).get("neden") in GECICI_NEDENLER
+
+
+def onbellek_mi(kayit: CaseOracleKontrol | None, kapsayan: Sequence[KararTablosu]) -> bool:
+    """Kayıt yeniden kontrolü gereksiz kılar mı: geçerli ve nedeni geçici değil (review 2 g2 Y5).
+    Geçici nedenli kayıt gösterilir/kapıda kullanılır ama işler onu yeniden hesaplar."""
+    return gecerli_mi(kayit, kapsayan) and not gecici_mi(kayit)
+
+
+# ------------------------------------------------------------------ kalıcı taban (risk, AC)
+
+
+@dataclass(frozen=True)
+class Taban:
+    """Case'in kalıcı risk ve AC tabanı (review 2 g2 Y2, Y3).
+
+    Taban = case'in tarihindeki tüm içerikler: güncel içerik + her `edit` kararının `review.once`
+    ve `review.sonra` içeriği (ilk `once` AI'ın özgün içeriğidir; önceden onaylanmış her içerik
+    bunlardan biridir). Metamorfik türetilmiş case'te kaynak case'in tabanı da "özgün" sayılır
+    (`metamorfik_turetme`). Kolon eklenmedi: review append-only olduğundan taban geri alınamaz.
+
+    - `ac_refs`: içeriklerin AC atıflarının birleşimi (normalize). Bir `(case, hash)` her zaman
+      `taban.ac_refs ∪ içeriğin AC'leri` ile değerlendirilir (tek tablo kümesi kuralı; t2 N8).
+    - `yuksek`: içeriklerden biri yüksek riskliyse (ya da v3 P1) kapı zorunludur; düzeltme riski
+      tabandan aşağı çekemez."""
+
+    ac_refs: frozenset[str]
+    yuksek: bool
+    riskler: tuple[str, ...] = ()
+
+
+def _review_icerikleri(
+    session: Session, ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, list[dict[str, Any]]]:
+    out: dict[uuid.UUID, list[dict[str, Any]]] = {i: [] for i in ids}
+    if not ids:
+        return out
+    for nesne_id, once, sonra in session.execute(
+        select(Review.nesne_id, Review.once, Review.sonra)
+        .where(
+            Review.nesne_turu == "test_case",
+            Review.nesne_id.in_(list(ids)),
+            Review.karar == "edit",
+        )
+        .order_by(Review.sira)
+    ).all():
+        for taraf in (once, sonra):
+            icerik = taraf.get("icerik") if isinstance(taraf, Mapping) else None
+            if isinstance(icerik, Mapping):
+                out[nesne_id].append(dict(icerik))
+    return out
+
+
+def tabanlar(
+    session: Session, cases: Sequence[TestCase], *, _derinlik: int = 0
+) -> dict[uuid.UUID, Taban]:
+    """Case başına kalıcı taban (`Taban`); toplu sorgu (review'lar + türetme kaynakları)."""
+    if not cases:
+        return {}
+    ids = [c.id for c in cases]
+    icerikler: dict[uuid.UUID, list[Mapping[str, Any]]] = {c.id: [c.icerik] for c in cases}
+    for cid, gecmis in _review_icerikleri(session, ids).items():
+        icerikler[cid] += gecmis
+    kaynak_tabani: dict[uuid.UUID, Taban] = {}
+    if _derinlik < 5:
+        kaynak_idleri = dict(
+            session.execute(
+                select(MetamorfikTuretme.turetilen_case_id, MetamorfikTuretme.kaynak_case_id).where(
+                    MetamorfikTuretme.turetilen_case_id.in_(ids)
+                )
+            ).all()
+        )
+        if kaynak_idleri:
+            kaynaklar = session.scalars(
+                select(TestCase).where(TestCase.id.in_(set(kaynak_idleri.values())))
+            ).all()
+            ust = tabanlar(session, kaynaklar, _derinlik=_derinlik + 1)
+            kaynak_tabani = {t: ust[k] for t, k in kaynak_idleri.items() if k in ust}
+    out = {}
+    for cid, liste in icerikler.items():
+        refs = set(ac_refleri(*liste))
+        riskler = {str(i.get("risk") or i.get("priority") or "") for i in liste} - {""}
+        yuksek = any(dogrulama.yuksek_risk_mi(i) for i in liste)
+        if cid in kaynak_tabani:
+            k = kaynak_tabani[cid]
+            refs |= k.ac_refs
+            riskler |= set(k.riskler)
+            yuksek = yuksek or k.yuksek
+        out[cid] = Taban(frozenset(refs), yuksek, tuple(sorted(riskler)))
+    return out
+
+
+def kontrol_refleri(taban: Taban, icerik: Mapping[str, Any] | None = None) -> list[str]:
+    """Bir içeriğin kontrol edildiği AC kümesi: taban ∪ içeriğin AC'leri (tek kural; t2 N8)."""
+    return sorted(set(taban.ac_refs) | set(ac_refleri(icerik)))
 
 
 def kapsayan_tablolar(
@@ -151,10 +263,16 @@ def kapsayan_tablolar(
     icerik: Mapping[str, Any] | None = None,
     *,
     ac_refs: Iterable[Any] | None = None,
+    taban: Taban | None = None,
 ) -> list[KararTablosu]:
-    """Case içeriğini kapsayan geçerli tablolar; `ac_refs` verilirse onunla (V11 birleşim)."""
+    """Case içeriğini kapsayan geçerli tablolar: `taban ∪ içerik` AC'leriyle (review 2 g2 Y2,
+    t2 N8); `ac_refs` verilirse yalnız onunla (düşürme hesabı gibi özel durumlar)."""
     icerik = tc.icerik if icerik is None else icerik
-    refs = list(ac_refs) if ac_refs is not None else ac_refleri(icerik)
+    if ac_refs is not None:
+        refs = list(ac_refs)
+    else:
+        taban = taban if taban is not None else tabanlar(session, [tc])[tc.id]
+        refs = kontrol_refleri(taban, icerik)
     return gecerli_tablolar(session, tc.requirement_id, refs)
 
 
@@ -223,26 +341,6 @@ def istisna_kaydet(
     return kayit
 
 
-def son_istisnalar(
-    session: Session, anahtarlar: Iterable[tuple[uuid.UUID, str]]
-) -> dict[tuple[uuid.UUID, str], OracleIstisna]:
-    """`(case, hash)` başına son istisna (tek sorgu)."""
-    anahtarlar = list(anahtarlar)
-    if not anahtarlar:
-        return {}
-    out: dict[tuple[uuid.UUID, str], OracleIstisna] = {}
-    for i in session.scalars(
-        select(OracleIstisna)
-        .where(
-            OracleIstisna.test_case_id.in_({c for c, _ in anahtarlar}),
-            OracleIstisna.icerik_hash.in_({h for _, h in anahtarlar}),
-        )
-        .order_by(OracleIstisna.zaman, OracleIstisna.id)
-    ):
-        out[(i.test_case_id, i.icerik_hash)] = i
-    return {k: v for k, v in out.items() if k in set(anahtarlar)}
-
-
 def gecerli_istisna(
     session: Session,
     case_id: uuid.UUID,
@@ -265,12 +363,13 @@ def gecerli_istisna(
     return None
 
 
-def istisna_turu(sonuc: str | None) -> str | None:
-    """Sonucun gerektirdiği istisna türü: `uyumsuz` → `uyumsuz`, `kontrol_edilemedi` →
-    `kontrolsuz`; diğerleri istisna gerektirmez."""
+def istisna_turu(sonuc: str | None, ayrintilar: Mapping[str, Any] | None = None) -> str | None:
+    """Sonucun (zorunlu kapıda) gerektirdiği istisna türü: `uyumsuz` → `uyumsuz`,
+    `kontrol_edilemedi` → `kontrolsuz`, nedeni yalnız `eksik_girdi` olmayan `kismen` →
+    `kontrolsuz` (review 2 g2 Y4); diğerleri istisna gerektirmez."""
     if sonuc == dogrulama.UYUMSUZ:
         return "uyumsuz"
-    if sonuc == dogrulama.KONTROL_EDILEMEDI:
+    if sonuc == dogrulama.KONTROL_EDILEMEDI or dogrulama.gerekce_gerekir_mi(sonuc, ayrintilar):
         return "kontrolsuz"
     return None
 
@@ -278,19 +377,75 @@ def istisna_turu(sonuc: str | None) -> str | None:
 # ------------------------------------------------------------------ kuyruk
 
 
-def _bos_anahtar(conn: Any, anahtar: str) -> str:
-    """Anahtarın kullanılabilir hâli: aynı anahtarlı iş `failed`/`cancelled` ise `:yeniden<n>` son
-    eki (review 1 mimari 4: başarısız iş anahtarı ve dolayısıyla onayı kalıcı kilitlemez)."""
+def _anahtar_kullanilabilir_mi(durum: str | None, sonuc: Any) -> bool:
+    """Aynı anahtarlı iş varken anahtar yeniden kullanılabilir mi (yeni iş son ek alır):
+    başarısız/iptal edilmiş ya da kayıt yazmadan bitmiş (`done` + `atlandi`) iş."""
+    if durum in BITMIS_IS:
+        return True
+    return durum == "done" and isinstance(sonuc, Mapping) and bool(sonuc.get("atlandi"))
+
+
+def _bos_anahtar(conn: Any, anahtar: str) -> tuple[str, uuid.UUID | None]:
+    """Anahtarın kullanılabilir hâli ve (varsa) onu taşıyan canlı iş: aynı anahtarlı iş
+    `failed`/`cancelled` ya da kayıt yazmadan bitmişse (`done` + `atlandi`; review 2 t2 N1: A → B
+    → A sonrası kapı sonsuz 409'da kalmasın) `:yeniden<n>` son eki (review 1 mimari 4)."""
     aday, n = anahtar, 0
     while True:
         idempotency_lock(conn, aday)
-        durum = conn.execute(
-            text("SELECT durum FROM job WHERE idempotency_key = :k"), {"k": aday}
-        ).scalar()
-        if durum is None or durum not in BITMIS_IS:
-            return aday
+        satir = conn.execute(
+            text("SELECT id, durum, sonuc FROM job WHERE idempotency_key = :k"), {"k": aday}
+        ).first()
+        if satir is None:
+            return aday, None
+        if not _anahtar_kullanilabilir_mi(satir.durum, satir.sonuc):
+            return aday, satir.id
         n += 1
         aday = f"{anahtar}:yeniden{n}"
+
+
+def canli_is_var(session: Session, anahtar: str) -> bool:
+    """Anahtarın (ya da `:yeniden<n>` son ekli hâlinin) yeniden kullanılamaz bir işi var mı (ana
+    işlemden okunur; kapı varsa ikinci bağlantı açmaz — review 2 t2 N14 / mimari 19)."""
+    for durum, sonuc in session.execute(
+        text(
+            "SELECT durum, sonuc FROM job WHERE idempotency_key = :k OR idempotency_key LIKE :onek"
+        ),
+        {"k": anahtar, "onek": anahtar.replace("%", r"\%").replace("_", r"\_") + ":yeniden%"},
+    ).all():
+        if not _anahtar_kullanilabilir_mi(durum, sonuc):
+            return True
+    return False
+
+
+def _hiz_siniri(
+    conn: Any, case_id: uuid.UUID, requirement_id: uuid.UUID, isteyen_id: uuid.UUID | None
+) -> str | None:
+    """Son bir dakikada açılan `oracle.check_case` işleri: case, gereksinim ve (verilirse)
+    isteyen kullanıcı başına (review 2 g2 Y6). Gereksinim başına işlem kilidi altında sayılır
+    (eşzamanlı iki istek sınırı birlikte aşamaz). Sorgular 0022'deki ifade indekslerini kullanır
+    (`job_oracle_case_ix`, `job_oracle_gereksinim_ix`, `job_oracle_isteyen_ix`). Aşılırsa
+    Türkçe neden, değilse None."""
+    idempotency_lock(conn, f"oracle.hiz_siniri:{requirement_id}")
+    sorgular = [
+        ("case_id", str(case_id), DAKIKA_SINIRI_CASE, "Bu case"),
+        ("requirement_id", str(requirement_id), DAKIKA_SINIRI_GEREKSINIM, "Bu gereksinim"),
+    ]
+    if isteyen_id is not None:
+        sorgular.append(("isteyen_id", str(isteyen_id), DAKIKA_SINIRI_KULLANICI, "Siz"))
+    for alan, deger, sinir, ozne in sorgular:
+        son = conn.execute(
+            text(
+                f"SELECT count(*) FROM job WHERE tur = :t AND (yuk->>'{alan}') = :d "
+                "AND olusturma > now() - interval '1 minute'"
+            ),
+            {"t": CHECK_CASE_JOB, "d": deger},
+        ).scalar_one()
+        if son >= sinir:
+            return (
+                f"{ozne} için son bir dakikada {son} karar tablosu kontrolü istendi; biraz "
+                "bekleyip yeniden deneyin"
+            )
+    return None
 
 
 def kontrol_kuyruga_al(
@@ -301,15 +456,39 @@ def kontrol_kuyruga_al(
     *,
     ac_refs: Sequence[str] | None = None,
     idempotency_key: str | None = None,
-) -> uuid.UUID:
-    """`oracle.check_case` işini çağıranın işleminde kuyruğa alır."""
-    yuk: dict[str, Any] = {"case_id": str(case_id), "icerik_hash": icerik_hash}
+    isteyen_id: uuid.UUID | None = None,
+    sinir_hatasi: bool = True,
+) -> uuid.UUID | None:
+    """`oracle.check_case` işini çağıranın işleminde kuyruğa alır (her kaynak için tek giriş).
+
+    Aynı anahtarın canlı işi varsa o döner (hız sınırına takılmaz). Yeni iş hız sınırından geçer
+    (`_hiz_siniri`): aşılırsa `sinir_hatasi` ise 429 `OracleKontrolSiniri`, değilse `None` (sistem
+    işleri sessizce atlar; kapı bir sonraki denemede yeniden ister)."""
+    conn = session.connection()
+    requirement_id = session.execute(
+        select(TestCase.requirement_id).where(TestCase.id == case_id)
+    ).scalar_one()
+    anahtar = None
+    if idempotency_key:
+        anahtar, mevcut = _bos_anahtar(conn, idempotency_key)
+        if mevcut is not None:
+            return mevcut
+    neden = _hiz_siniri(conn, case_id, requirement_id, isteyen_id)
+    if neden is not None:
+        if sinir_hatasi:
+            raise OracleKontrolSiniri(neden)
+        return None
+    yuk: dict[str, Any] = {
+        "case_id": str(case_id),
+        "requirement_id": str(requirement_id),
+        "icerik_hash": icerik_hash,
+    }
     if icerik is not None:
         yuk["icerik"] = dict(icerik)
     if ac_refs is not None:
         yuk["ac_refs"] = list(ac_refs)
-    conn = session.connection()
-    anahtar = _bos_anahtar(conn, idempotency_key) if idempotency_key else None
+    if isteyen_id is not None:
+        yuk["isteyen_id"] = str(isteyen_id)
     return enqueue(conn, CHECK_CASE_JOB, yuk, idempotency_key=anahtar)
 
 
@@ -333,14 +512,15 @@ def gereksinim_kontrolu_kuyruga_al(
 ) -> uuid.UUID:
     """`oracle.check_requirement` (gereksinim başına tek bekleyen iş; review 1 mimari 14).
 
-    Bekleyen (queued/retry) bir iş varsa o döner (`neden` eklenir); yoksa
+    Yalnız henüz hiç koşmamış (`queued`) işe birleşir (`neden` eklenir; review 2 g2 Y13 / t2 N6:
+    `retry`'daki ya da koşan işe eklenen neden, iş kalıcı başarısız olursa kaybolurdu); yoksa
     `GEREKSINIM_GECIKME_S` sonra koşacak yeni iş açılır. Tablo onayı, yeniden açma ve case üretimi
     art arda gelince tek tarama yapılır."""
     conn = session.connection()
     idempotency_lock(conn, f"{CHECK_REQUIREMENT_JOB}:birlestir:{requirement_id}")
     mevcut = conn.execute(
         text(
-            "SELECT id, yuk FROM job WHERE tur = :t AND durum IN ('queued', 'retry') "
+            "SELECT id, yuk FROM job WHERE tur = :t AND durum = 'queued' "
             "AND yuk->>'requirement_id' = :r ORDER BY olusturma LIMIT 1 FOR UPDATE"
         ),
         {"t": CHECK_REQUIREMENT_JOB, "r": str(requirement_id)},
@@ -387,7 +567,7 @@ def karar_sonrasi(session: Session, tc: TestCase) -> uuid.UUID | None:
     if not kapsayan:
         return None
     mevcut = kayit_bul(session, tc.id, tc.icerik_hash)
-    if gecerli_mi(mevcut, kapsayan):
+    if onbellek_mi(mevcut, kapsayan):
         return None
     anahtar = kontrol_anahtari(
         "karar",
@@ -396,7 +576,9 @@ def karar_sonrasi(session: Session, tc: TestCase) -> uuid.UUID | None:
         tablo_ozeti(tablo_hashleri(kapsayan)),
         kayit_damgasi(mevcut),
     )
-    return kontrol_kuyruga_al(session, tc.id, tc.icerik_hash, None, idempotency_key=anahtar)
+    return kontrol_kuyruga_al(
+        session, tc.id, tc.icerik_hash, None, idempotency_key=anahtar, sinir_hatasi=False
+    )
 
 
 # ------------------------------------------------------------------ işler (worker)
@@ -416,6 +598,7 @@ def run_check_requirement(ctx: JobContext) -> dict[str, Any]:
             .order_by(TestCase.uretim_no, TestCase.sira_no)
         ).all()
         ai = ai_icerikleri(s, cases)
+        tabanlar_ = tabanlar(s, cases)
         mevcutlar = {
             (k.test_case_id, k.icerik_hash): k
             for k in s.scalars(
@@ -432,9 +615,10 @@ def run_check_requirement(ctx: JobContext) -> dict[str, Any]:
             if ai_icerik is not None and content_hash(ai_icerik) != tc.icerik_hash:
                 hedefler.append((content_hash(ai_icerik), ai_icerik, ai_icerik))
             for h, gonderilen, icerik in hedefler:
-                kapsayan = kapsayanlar(tablolar, icerik)
+                # Tek tablo kümesi kuralı: taban ∪ içerik AC'leri (t2 N8).
+                kapsayan = kapsayanlar(tablolar, icerik, kontrol_refleri(tabanlar_[tc.id], icerik))
                 mevcut = mevcutlar.get((tc.id, h))
-                if gecerli_mi(mevcut, kapsayan):
+                if onbellek_mi(mevcut, kapsayan):
                     continue
                 anahtar = kontrol_anahtari(
                     "gereksinim",
@@ -443,8 +627,10 @@ def run_check_requirement(ctx: JobContext) -> dict[str, Any]:
                     tablo_ozeti(tablo_hashleri(kapsayan)),
                     kayit_damgasi(mevcut),
                 )
-                kontrol_kuyruga_al(s, tc.id, h, gonderilen, idempotency_key=anahtar)
-                acilan += 1
+                if kontrol_kuyruga_al(
+                    s, tc.id, h, gonderilen, idempotency_key=anahtar, sinir_hatasi=False
+                ):
+                    acilan += 1
     return {"kontrol_isi": acilan, "neden": yuk.get("neden"), "nedenler": yuk.get("nedenler")}
 
 
@@ -493,7 +679,8 @@ def _check_case(
     cid: uuid.UUID,
     h: str,
 ) -> dict[str, Any]:
-    ac_refs = yuk.get("ac_refs")
+    # Yükteki `ac_refs` bilgi amaçlıdır; tablo kümesi koşu anında tek kuraldan (taban ∪ içerik)
+    # hesaplanır (t2 N8: aynı `(case, hash)` her yerde aynı kümeyle değerlendirilir).
     with session_scope() as s:
         tc = s.get(TestCase, cid)
         if tc is None:
@@ -507,10 +694,10 @@ def _check_case(
         else:
             return {"atlandi": True, "neden": "case içeriği kuyruğa alındıktan sonra değişti"}
         req = s.get(Requirement, tc.requirement_id)
-        kapsayan = kapsayan_tablolar(s, tc, icerik, ac_refs=ac_refs)
+        kapsayan = kapsayan_tablolar(s, tc, icerik)
         hashler = tablo_hashleri(kapsayan)
         mevcut = kayit_bul(s, tc.id, h)
-        if gecerli_mi(mevcut, kapsayan):
+        if onbellek_mi(mevcut, kapsayan):
             return {"sonuc": mevcut.sonuc, "onbellek": True}  # type: ignore[union-attr]
         tablolar = [tablo_gorunumu(t) for t in kapsayan]
         story = req.jira_key if req is not None else None
@@ -543,7 +730,7 @@ def _check_case(
         if tc is None:
             raise PermanentJobError("case silinmiş")
         # Yazım anında yeniden okunan tablo kümesi farklıysa sonuç bayattır (S6).
-        guncel = tablo_hashleri(kapsayan_tablolar(s, tc, icerik, ac_refs=ac_refs))
+        guncel = tablo_hashleri(kapsayan_tablolar(s, tc, icerik))
         if guncel != hashler:
             return {"atlandi": True, "neden": "kontrol sürerken kapsayan tablolar değişti"}
         kayit = _kaydet(
@@ -730,10 +917,17 @@ def karsilastirmalar(kayit: CaseOracleKontrol) -> list[dict[str, Any]]:
     return out
 
 
+_KAPSANMAYAN_NEDENI = {
+    "sayi": "Beklenen alandaki sayı hiçbir tablo değeriyle eşlenmedi",
+    "celiski": "Girdi alanındaki sayı çıkarılan değerlerle eşleşmiyor (çelişebilir)",
+    "yaziyla": "Yazıyla yazılmış sayı karşılaştırılamaz",
+}
+
+
 def karsilastirilamayanlar(kayit: CaseOracleKontrol) -> list[dict[str, Any]]:
     """Case'te doğrulanmış ama tablonun eksik girdi yüzünden hesaplayamadığı beklenen değerler
-    (`dogrulama.kismi_degerlendir`) ve beklenen alanlarda hiçbir olguyla kapsanmayan sayılar
-    (`neden: kapsanmayan_sayi`; tamlık denetimi)."""
+    (`dogrulama.kismi_degerlendir`) ve tamlık denetiminde hiçbir olguyla kapsanmayan sayılar
+    (beklenen alanda sayı, girdi alanında çelişebilecek sayı, yazıyla sayı; review 2 g2 Y1/Y14)."""
     ayr = kayit.ayrintilar or {}
     out = []
     for g in ayr.get("gruplar") or []:
@@ -758,7 +952,7 @@ def karsilastirilamayanlar(kayit: CaseOracleKontrol) -> list[dict[str, Any]]:
                 "alan": k.get("alan"),
                 "alinti": k.get("alinti"),
                 "case_degeri": None,
-                "neden": "Beklenen alandaki sayı hiçbir tablo değeriyle eşlenmedi",
+                "neden": _KAPSANMAYAN_NEDENI.get(k.get("tur"), _KAPSANMAYAN_NEDENI["sayi"]),
             }
         )
     return out
@@ -784,20 +978,41 @@ def _degerler(kayit: CaseOracleKontrol) -> dict[str, int]:
     }
 
 
+def istisna_gecerli_mi(istisna: OracleIstisna | None, kayit: CaseOracleKontrol | None) -> bool:
+    """İstisna kapıda yeniden kullanılabilir mi (S1, §13.2): geçerli kaydın gerektirdiği türde ve
+    kaydın tablo kümesiyle verilmiş."""
+    if istisna is None or kayit is None:
+        return False
+    return istisna.tur == istisna_turu(kayit.sonuc, kayit.ayrintilar) and dict(
+        istisna.tablo_hashleri or {}
+    ) == dict(kayit.tablo_hashleri or {})
+
+
+def istisna_sec(
+    istisnalar: Sequence[OracleIstisna], kayit: CaseOracleKontrol | None
+) -> OracleIstisna | None:
+    """Gösterilecek istisna: geçerli olanların en yenisi, yoksa en yenisi (`zaman` sıralı liste)."""
+    gecerli = [i for i in istisnalar if istisna_gecerli_mi(i, kayit)]
+    if gecerli:
+        return gecerli[-1]
+    return istisnalar[-1] if istisnalar else None
+
+
 def istisna_gorunumu(
     istisna: OracleIstisna | None,
     kullanicilar: Mapping[uuid.UUID, str],
-    hashler: Mapping[str, str] | None,
+    kayit: CaseOracleKontrol | None,
 ) -> dict[str, Any] | None:
     if istisna is None:
         return None
     return {
+        "id": str(istisna.id),
         "tur": istisna.tur,
         "gerekce": istisna.gerekce,
         "veren": kullanicilar.get(istisna.veren_id) if istisna.veren_id else None,
         "zaman": istisna.zaman,
-        # Aynı tablo kümesiyle verildiyse kapı yeniden gerekçe istemez.
-        "gecerli": hashler is not None and dict(istisna.tablo_hashleri or {}) == dict(hashler),
+        # Kapı bu istisnayla yeniden gerekçe istemez (aynı tür + tablo kümesi; S1).
+        "gecerli": istisna_gecerli_mi(istisna, kayit),
     }
 
 
@@ -806,31 +1021,41 @@ def oracle_gorunumu(
     icerik_hash: str,
     kapsayan_var: bool,
     kullanicilar: Mapping[uuid.UUID, str],
-    istisna: OracleIstisna | None = None,
+    istisnalar: Sequence[OracleIstisna] = (),
 ) -> dict[str, Any] | None:
-    """Portal `oracle` nesnesi (§13.2); kapsayan tablo da geçerli kayıt da yoksa `None`."""
+    """Portal `oracle` nesnesi (§13.2 + review 2); kapsayan tablo da geçerli kayıt da yoksa
+    `None`. `damga`: gösterilen kaydın sürüm damgası (`kayit_damgasi`; kayıt yoksa `yok`) —
+    karar gövdesindeki `oracle_kayit_damgasi` buna eşit olmalı (g2 Y9). `kismen_nedeni`: sonuç
+    `kismen` ise neden listesi (`dogrulama.KISMEN_NEDENLERI`), değilse `null` (g2 Y4)."""
     if kayit is None:
         if not kapsayan_var:
             return None
         return {
             "sonuc": None,
             "icerik_hash": icerik_hash,
+            "damga": kayit_damgasi(None),
             "ozet": dogrulama.ozet(None, None),
             "karsilastirmalar": [],
             "karsilastirilamayan": [],
             "degerler": {"uyumlu": 0, "uyumsuz": 0, "karsilastirilamayan": 0, "atilan": 0},
+            "kismen_nedeni": None,
             "istisna": None,
             "neden": None,
             "kontrol_suruyor": True,
         }
+    istisna = istisna_sec(istisnalar, kayit)
     return {
         "sonuc": kayit.sonuc,
         "icerik_hash": icerik_hash,
+        "damga": kayit_damgasi(kayit),
         "ozet": dogrulama.ozet(kayit.sonuc, kayit.ayrintilar),
         "karsilastirmalar": karsilastirmalar(kayit),
         "karsilastirilamayan": karsilastirilamayanlar(kayit),
         "degerler": _degerler(kayit),
-        "istisna": istisna_gorunumu(istisna, kullanicilar, kayit.tablo_hashleri),
+        "kismen_nedeni": dogrulama.kismen_nedenleri(kayit.ayrintilar)
+        if kayit.sonuc == dogrulama.KISMEN
+        else None,
+        "istisna": istisna_gorunumu(istisna, kullanicilar, kayit),
         "neden": (kayit.ayrintilar or {}).get("neden"),
         "kontrol_suruyor": False,
     }
@@ -847,20 +1072,60 @@ def _kullanicilar(session: Session, ids: set[uuid.UUID]) -> dict[uuid.UUID, str]
 def gecerli_tablolar_toplu(
     session: Session, requirement_ids: Iterable[uuid.UUID]
 ) -> dict[uuid.UUID, list[KararTablosu]]:
-    """Gereksinim başına geçerli tablolar (gereksinim başına bir sorgu; tek kaynak
-    `karar_tablosu.service.gecerli_tablolar`). Tablosu hiç olmayan gereksinimler tek sorguyla
-    elenir (Kontrol Kulesi'nde N+1'i sınırlar)."""
+    """Gereksinim başına geçerli tablolar (tek kaynak `karar_tablosu.service.gecerli_tablolar`).
+    Tablosu hiç olmayan gereksinimler tek sorguyla elenir. Sonuç işlem başına önbelleklenir
+    (`session.info`; review 2 t2 N11: Kule'de beklenti doğruluğu ve onaylı-uyumsuz aynı
+    gereksinimler için ikinci kez sorgulamaz); önbellek işlem bitince (commit/rollback) düşer."""
     ids = set(requirement_ids)
     if not ids:
         return {}
-    tablolu = set(
-        session.scalars(
-            select(KararTablosu.requirement_id)
-            .where(KararTablosu.requirement_id.in_(ids), KararTablosu.durum == "approved")
-            .distinct()
+    onbellek = _tablo_onbellegi(session)
+    eksik = ids - set(onbellek)
+    if eksik:
+        tablolu = set(
+            session.scalars(
+                select(KararTablosu.requirement_id)
+                .where(KararTablosu.requirement_id.in_(eksik), KararTablosu.durum == "approved")
+                .distinct()
+            )
         )
-    )
-    return {rid: (gecerli_tablolar(session, rid) if rid in tablolu else []) for rid in ids}
+        for rid in eksik:
+            onbellek[rid] = gecerli_tablolar(session, rid) if rid in tablolu else []
+    return {rid: onbellek[rid] for rid in ids}
+
+
+_ONBELLEK_ANAHTARI = "oracle.gecerli_tablolar"
+
+
+def _tablo_onbellegi(session: Session) -> dict[uuid.UUID, list[KararTablosu]]:
+    """İşlem başına tablo önbelleği: anahtar işlem nesnesine bağlıdır (yeni işlem → boş)."""
+    islem = session.get_transaction()
+    kayit = session.info.get(_ONBELLEK_ANAHTARI)
+    if kayit is None or kayit[0] is not islem:
+        kayit = (islem, {})
+        session.info[_ONBELLEK_ANAHTARI] = kayit
+    return kayit[1]
+
+
+def _istisna_listeleri(
+    session: Session, anahtarlar: Iterable[tuple[uuid.UUID, str]]
+) -> dict[tuple[uuid.UUID, str], list[OracleIstisna]]:
+    """`(case, hash)` başına istisnalar (zaman sıralı; tek sorgu)."""
+    anahtarlar = set(anahtarlar)
+    out: dict[tuple[uuid.UUID, str], list[OracleIstisna]] = {}
+    if not anahtarlar:
+        return out
+    for i in session.scalars(
+        select(OracleIstisna)
+        .where(
+            OracleIstisna.test_case_id.in_({c for c, _ in anahtarlar}),
+            OracleIstisna.icerik_hash.in_({h for _, h in anahtarlar}),
+        )
+        .order_by(OracleIstisna.zaman, OracleIstisna.id)
+    ):
+        if (i.test_case_id, i.icerik_hash) in anahtarlar:
+            out.setdefault((i.test_case_id, i.icerik_hash), []).append(i)
+    return out
 
 
 def case_oracle_ozetleri(
@@ -870,6 +1135,7 @@ def case_oracle_ozetleri(
     if not cases:
         return {}
     tablolar = gecerli_tablolar_toplu(session, {c.requirement_id for c in cases})
+    tabanlar_ = tabanlar(session, cases)
     kayitlar: dict[tuple[uuid.UUID, str], CaseOracleKontrol] = {
         (k.test_case_id, k.icerik_hash): k
         for k in session.scalars(
@@ -879,20 +1145,23 @@ def case_oracle_ozetleri(
             )
         )
     }
-    istisnalar = son_istisnalar(session, [(c.id, c.icerik_hash) for c in cases])
+    istisnalar = _istisna_listeleri(session, [(c.id, c.icerik_hash) for c in cases])
     kullanicilar = _kullanicilar(
-        session, {i.veren_id for i in istisnalar.values() if i.veren_id is not None}
+        session,
+        {i.veren_id for liste in istisnalar.values() for i in liste if i.veren_id is not None},
     )
     out: dict[uuid.UUID, dict[str, Any] | None] = {}
     for c in cases:
-        kapsayan = kapsayanlar(tablolar[c.requirement_id], c.icerik)
+        kapsayan = kapsayanlar(
+            tablolar[c.requirement_id], c.icerik, kontrol_refleri(tabanlar_[c.id], c.icerik)
+        )
         kayit = kayitlar.get((c.id, c.icerik_hash))
         out[c.id] = oracle_gorunumu(
             kayit if gecerli_mi(kayit, kapsayan) else None,
             c.icerik_hash,
             bool(kapsayan),
             kullanicilar,
-            istisnalar.get((c.id, c.icerik_hash)),
+            istisnalar.get((c.id, c.icerik_hash), []),
         )
     return out
 
@@ -909,7 +1178,9 @@ def case_oracle(session: Session, tc: TestCase, icerik_hash: str | None = None) 
     tablolar = gecerli_tablolar(session, tc.requirement_id)
     kayit = kayit_bul(session, tc.id, h)
     if h == tc.icerik_hash:
-        kapsayan = kapsayanlar(tablolar, tc.icerik)
+        kapsayan = kapsayanlar(
+            tablolar, tc.icerik, kontrol_refleri(tabanlar(session, [tc])[tc.id], tc.icerik)
+        )
         gecerli = kayit if gecerli_mi(kayit, kapsayan) else None
         kapsayan_var = bool(kapsayan)
     else:
@@ -922,9 +1193,9 @@ def case_oracle(session: Session, tc: TestCase, icerik_hash: str | None = None) 
         )
         kapsayan_var = True  # önerilen içerik için kayıt yoksa kontrol beklenir
         kapsayan = [t for t in tablolar if str(t.id) in (kayit.tablo_hashleri if gecerli else {})]
-    istisna = son_istisnalar(session, [(tc.id, h)]).get((tc.id, h))
+    istisnalar = _istisna_listeleri(session, [(tc.id, h)]).get((tc.id, h), [])
     kullanicilar = _kullanicilar(
-        session, {istisna.veren_id} if istisna and istisna.veren_id else set()
+        session, {i.veren_id for i in istisnalar if i.veren_id is not None}
     )
     return {
         "case_id": str(tc.id),
@@ -939,7 +1210,7 @@ def case_oracle(session: Session, tc: TestCase, icerik_hash: str | None = None) 
             }
             for t in kapsayan
         ],
-        "oracle": oracle_gorunumu(gecerli, h, kapsayan_var, kullanicilar, istisna),
+        "oracle": oracle_gorunumu(gecerli, h, kapsayan_var, kullanicilar, istisnalar),
     }
 
 
@@ -947,7 +1218,10 @@ def onayli_uyumsuz(session: Session) -> list[dict[str, Any]]:
     """Kontrol Kulesi `onayli_uyumsuz` (§13.2): onaylı/yayınlı case'lerden güncel içeriğinin
     geçerli kaydı `uyumsuz` olup aynı tablo kümesiyle verilmiş `uyumsuz` istisnası olmayanlar.
 
-    Tek sorgu (uyumsuz kayıtlı onaylı case'ler) + yalnız o gereksinimlerin tabloları."""
+    Kaydı geçersizleşmiş case (tablosu yeniden açıldı / değişti / bayat) sayılmaz: geçerlilik
+    güncel kapsayan tablolarla (taban ∪ içerik) denetlenir (review 2 u2 N1 çekirdek kısmı).
+    Tek sorgu (uyumsuz kayıtlı onaylı case'ler) + yalnız o gereksinimlerin tabloları (işlem
+    önbelleğiyle)."""
     satirlar = session.execute(
         select(TestCase, CaseOracleKontrol)
         .join(
@@ -964,23 +1238,16 @@ def onayli_uyumsuz(session: Session) -> list[dict[str, Any]]:
     if not satirlar:
         return []
     tablolar = gecerli_tablolar_toplu(session, {tc.requirement_id for tc, _ in satirlar})
-    istisnalar: dict[tuple[uuid.UUID, str], list[OracleIstisna]] = {}
-    for i in session.scalars(
-        select(OracleIstisna).where(
-            OracleIstisna.test_case_id.in_([tc.id for tc, _ in satirlar]),
-            OracleIstisna.tur == "uyumsuz",
-        )
-    ):
-        istisnalar.setdefault((i.test_case_id, i.icerik_hash), []).append(i)
+    tabanlar_ = tabanlar(session, [tc for tc, _ in satirlar])
+    istisnalar = _istisna_listeleri(session, [(tc.id, tc.icerik_hash) for tc, _ in satirlar])
     out = []
     for tc, kayit in satirlar:
-        if not gecerli_mi(kayit, kapsayanlar(tablolar[tc.requirement_id], tc.icerik)):
+        kapsayan = kapsayanlar(
+            tablolar[tc.requirement_id], tc.icerik, kontrol_refleri(tabanlar_[tc.id], tc.icerik)
+        )
+        if not gecerli_mi(kayit, kapsayan):
             continue
-        hashler = dict(kayit.tablo_hashleri or {})
-        if any(
-            dict(i.tablo_hashleri or {}) == hashler
-            for i in istisnalar.get((tc.id, tc.icerik_hash), [])
-        ):
+        if any(istisna_gecerli_mi(i, kayit) for i in istisnalar.get((tc.id, tc.icerik_hash), [])):
             continue
         out.append(
             {

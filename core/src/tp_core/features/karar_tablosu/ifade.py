@@ -944,6 +944,12 @@ def _sema_hatalari(icerik: Any, ad: str, rules_dir: Path | None) -> list[str]:
     return list(dict.fromkeys(_sema_mesaji(h) for h in hatalar))
 
 
+def sema_hatalari(icerik: Any, rules_dir: Path | None = None) -> list[str]:
+    """Karar tablosu içeriğinin yalnız şema (boyut ve alan) hataları; en çok `AZAMI_HATA`
+    (değerlendirme önizlemesinin boyut sınırı; review 2 güvenlik 13)."""
+    return _sema_hatalari(icerik, KARAR_TABLOSU_SEMASI, rules_dir)[:AZAMI_HATA]
+
+
 # ---------------------------------------------------------------------- karar tablosu
 
 
@@ -1362,7 +1368,9 @@ def sinir_ornekleri(icerik: dict[str, Any], rules_dir: Path | None = None) -> di
     girdiler?}]}`. Uyarı türleri:
 
     - `ortusme`: iki (genel olmayan) satırın koşulu aynı örnekte sağlanıyor ve çıktıları farklı;
-      ilk satır geçerli olur — bilinçli değilse sınır yorumu PO'ya sorulmalı.
+      ilk satır geçerli olur. `onem`: iki koşul aynı girdiyi kısıtlıyorsa `uyari` (sınır yorumu
+      PO'ya sorulmalı), farklı girdileri kısıtlıyorsa `bilgi` (önceki satırın tasarım gereği
+      önceliği; ör. TPD-1 T2 R1 kampanyalı sepet ↔ R2 tutar eşiği).
     - `hic_eslesmez`: satırın koşulu hiçbir örnekte sağlanmıyor.
     - `golgede`: satırın koşulu sağlanıyor ama her seferinde önceki bir satır seçiliyor.
     - `satir_yok`: hiçbir satırın eşleşmediği örnekler (sonuç "satır yok" olur).
@@ -1428,17 +1436,28 @@ def sinir_ornekleri(icerik: dict[str, Any], rules_dir: Path | None = None) -> di
                 if ca is not None and ca == cb:
                     continue
                 ortusme.setdefault((a, b), gosterilen)
+    kosullar = {sat["id"]: set(adlar(sat["kosul"])) for sat in satirlar}
     for (a, b), girdiler in ortusme.items():
+        # Aynı girdiyi kısıtlayan iki satır → sınır yorumu belirsiz (uyarı). Farklı girdileri
+        # kısıtlayan satırlar → önceki satırın önceliği (ör. "kampanyalı sepette minimum
+        # aranmaz" R1, tutar eşiği R2): tasarım gereğidir, bilgi olarak gösterilir.
+        onem = "uyari" if kosullar.get(a, set()) & kosullar.get(b, set()) else "bilgi"
+        mesaj = (
+            f"{a} ve {b} koşulları aynı girdide birlikte sağlanıyor "
+            f"({_ornek_metni(girdiler)}); ilk satır {a} geçerli olur, {b} satırının "
+            "çıktıları farklı. Bilinçli değilse sınır yorumunu PO'ya sorun."
+            if onem == "uyari"
+            else f"{a} önceliklidir: {_ornek_metni(girdiler)} girdisinde {b} de sağlanıyor ama "
+            f"ilk satır {a} geçerli olur (farklı girdileri kısıtlayan satırlar; tasarım "
+            "gereği öncelik)."
+        )
         uyarilar.append(
             {
                 "tur": "ortusme",
+                "onem": onem,
                 "satirlar": [a, b],
                 "girdiler": girdiler,
-                "mesaj": (
-                    f"{a} ve {b} koşulları aynı girdide birlikte sağlanıyor "
-                    f"({_ornek_metni(girdiler)}); ilk satır {a} geçerli olur, {b} satırının "
-                    "çıktıları farklı. Bilinçli değilse sınır yorumunu PO'ya sorun."
-                ),
+                "mesaj": mesaj,
             }
         )
     for satir in satirlar:

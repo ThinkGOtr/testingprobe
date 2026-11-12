@@ -49,6 +49,14 @@ class OracleKontrolSiniri(WorkflowError):
     kod = "oracle_kontrol_siniri"
 
 
+class OracleKayitDegisti(WorkflowError):
+    """Kararla gelen `oracle_kayit_damgasi` güncel kontrol kaydının damgasına uymuyor: analistin
+    gördüğü kayıt karar verilirken yeniden hesaplandı (review 2 g2 Y9)."""
+
+    status_code = 409
+    kod = "oracle_kayit_degisti"
+
+
 class KararTablosuGecersiz(WorkflowError):
     """Karar tablosu içeriği şemaya ya da ifade diline uymuyor; `hatalar` ayrıntıları taşır."""
 
@@ -86,6 +94,7 @@ __all__ = [
     "IliskiGecersiz",
     "KararTablosuGecersiz",
     "OracleBekleniyor",
+    "OracleKayitDegisti",
     "OracleKontrolSiniri",
     "OracleKontrolsuz",
     "OracleUyumsuz",

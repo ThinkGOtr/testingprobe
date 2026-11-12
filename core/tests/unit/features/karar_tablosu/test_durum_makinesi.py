@@ -92,6 +92,8 @@ def _nesne(session: Session, tur: str, sira_no: int = 1, req: Requirement | None
 
 
 def _onayla(session: Session, n: Any, po: Principal) -> Review:
+    # Servisin onayla'sı gibi: `approved` satırı gereksinim hash'i taşır (0022 onay_hash_ck).
+    n.gereksinim_hash = n.gereksinim_hash or "sha256:gereksinim"
     return record_approval(session, n, po, "approve", beklenen_hash=content_hash_of(n))
 
 
@@ -129,6 +131,7 @@ def test_hata_siniflari() -> None:
         hatalar.OracleBekleniyor: (409, "oracle_bekleniyor"),
         hatalar.OracleKontrolsuz: (422, "oracle_kontrolsuz"),
         hatalar.OracleKontrolSiniri: (429, "oracle_kontrol_siniri"),
+        hatalar.OracleKayitDegisti: (409, "oracle_kayit_degisti"),
         hatalar.KararTablosuGecersiz: (422, "karar_tablosu_gecersiz"),
         hatalar.HataKosusuSuruyor: (409, "hata_kosusu_suruyor"),
         hatalar.IliskiGecersiz: (422, "iliski_gecersiz"),

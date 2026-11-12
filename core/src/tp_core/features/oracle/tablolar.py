@@ -40,10 +40,16 @@ def tablo_hashleri(tablolar: Iterable[KararTablosu]) -> dict[str, str]:
 
 
 def kapsayanlar(
-    tablolar: Iterable[KararTablosu], icerik: Mapping[str, Any] | None
+    tablolar: Iterable[KararTablosu],
+    icerik: Mapping[str, Any] | None,
+    refs: Iterable[Any] | None = None,
 ) -> list[KararTablosu]:
-    """Gereksinimin geçerli tablolarından case içeriğinin AC atıflarıyla kesişenler."""
-    refs = list((icerik or {}).get("acceptance_criteria_refs") or [])
+    """Gereksinimin geçerli tablolarından AC atıflarıyla kesişenler: `refs` verilirse onunla
+    (oracle'ın tek kuralı taban ∪ içerik, `service.kontrol_refleri`), değilse içeriğin
+    kendi atıflarıyla."""
+    if refs is None:
+        refs = list((icerik or {}).get("acceptance_criteria_refs") or [])
+    refs = list(refs)
     return [t for t in tablolar if kesisiyor(t, refs)]
 
 

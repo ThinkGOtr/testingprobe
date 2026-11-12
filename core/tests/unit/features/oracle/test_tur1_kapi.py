@@ -59,9 +59,16 @@ def test_riski_dusuren_duzeltme_kapidan_kacamaz(api: TestClient, engine: Engine,
     r = _karar(api, c, karar="edit", icerik=dusuk)
     assert r.status_code == 422 and r.json()["kod"] == "oracle_uyumsuz", r.text
     ev = _denetim("oracle.dusurme")[-1]
-    assert ev.ozet["risk"] == {"once": "high", "sonra": "medium"}
+    assert ev.ozet["risk"] == {"once": "high", "sonra": "medium", "taban": ["high"]}
     # Gerekçeyle geçer (istisna yolu).
-    r = _karar(api, c, karar="edit", icerik=dusuk, oracle_istisna_gerekce=UZUN_GEREKCE)
+    r = _karar(
+        api,
+        c,
+        karar="edit",
+        icerik=dusuk,
+        oracle_istisna_gerekce=UZUN_GEREKCE,
+        oracle_istisna_turu="uyumsuz",
+    )
     assert r.status_code == 200, r.text
 
 
@@ -126,9 +133,24 @@ def test_istisna_append_only_ve_yeniden_kullanim(api: TestClient, engine: Engine
     c = latest_cases(api, k["rid"])[0]
     cid = uuid.UUID(c["id"])
     kayit_yaz(cid, "uyumsuz", uyumsuz_ayrinti(str(k["tid"])))
-    r = _karar(api, c, karar="approve", oracle_istisna_gerekce="1234567890 123456789 abc")
+    r = _karar(
+        api,
+        c,
+        karar="approve",
+        oracle_istisna_turu="uyumsuz",
+        oracle_istisna_gerekce="1234567890 123456789 abc",
+    )
     assert r.status_code == 422 and "10 harf" in r.json()["detail"]
-    assert _karar(api, c, karar="approve", oracle_istisna_gerekce=UZUN_GEREKCE).status_code == 200
+    assert (
+        _karar(
+            api,
+            c,
+            karar="approve",
+            oracle_istisna_turu="uyumsuz",
+            oracle_istisna_gerekce=UZUN_GEREKCE,
+        ).status_code
+        == 200
+    )
     assert _karar(api, c, karar="reopen").status_code == 200
     c = latest_cases(api, k["rid"])[0]
     assert c["oracle"]["istisna"]["gecerli"] is True
@@ -174,7 +196,11 @@ def test_edit_sonrasi_yeni_hash_kontrol_kuyruğunda(api: TestClient, engine: Eng
     yeni = basit_case(adet=4, toplam="40,00", risk="medium")
     assert _karar(api, c, karar="edit", icerik=yeni).status_code == 200
     yukler = [j.yuk for j in _isler(engine, service.CHECK_CASE_JOB)]
-    assert {"case_id": c["id"], "icerik_hash": content_hash(yeni)} in yukler
+    assert {
+        "case_id": c["id"],
+        "requirement_id": str(k["rid"]),
+        "icerik_hash": content_hash(yeni),
+    } in yukler
     run_jobs(engine)
     assert latest_cases(api, k["rid"])[0]["oracle"]["sonuc"] == "uyumlu"
 
@@ -348,4 +374,5 @@ def test_ai_sinir_hatasi_replay_kapisi(
     assert r.status_code == 422 and r.json()["kod"] == "oracle_uyumsuz", r.text
     m = api.get(f"/requirements/{rid}/case-metrics").json()["beklenti_dogrulugu"]
     assert (m["uyumlu"], m["uyumsuz"], m["oran"], m["n_case"]) == (5, 1, round(5 / 6, 4), 6)
+    assert m["kismen"] == 0
     assert m["golden_kaynakli"] == 6

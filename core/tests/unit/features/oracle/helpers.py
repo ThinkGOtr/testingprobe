@@ -72,8 +72,8 @@ def tablo_ekle(rid: uuid.UUID, icerik: dict, analist: Principal, po: Principal) 
         s.flush()
         transition(s, t, "pending_po", analist, "draft")
         record_approval(s, t, po, "approve", beklenen_hash=t.icerik_hash)
+        t.gereksinim_hash = content_hash_of(req)  # geçişten önce (0022 onay_hash_ck)
         transition(s, t, "approved", po, "pending_po")
-        t.gereksinim_hash = content_hash_of(req)
         return t.id
 
 

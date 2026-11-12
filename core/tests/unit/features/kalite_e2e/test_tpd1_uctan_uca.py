@@ -1,7 +1,9 @@
 """012 uçtan uca REPLAY: demo story TPD-1 (ana yol `f2-kod-hatasi`) üzerinde F1–F5 zinciri.
 
 PO onaylı TPD-1 → AI karar tablosu taslağı (decision_table_draft REPLAY) → analist PO'ya gönderir
-→ PO T1/T2 ve ilişkiyi onaylar → case üretimi (case_generation REPLAY, senaryo golden'ı) → tablo
+→ PO T1'i ve ilişkiyi onaylar; T2'de AI'ın sınır hatasını (`<= 750`: tam 750,00 TL'de uyarı)
+sınır örneklerinde yakalar, değişiklik ister, analist `< 750` yapar, PO onaylar (review 2 u2 N2)
+→ case üretimi (case_generation REPLAY, senaryo golden'ı) → tablo
 onayı kontrolü tetikler (case_facts REPLAY) → onay kapısı (C3 "6 adette bedava yok" uyumlu;
 düzeltilmiş yüksek riskli C5 uyuşmaz → 422 → istisna) → beklenti doğruluğu metriği (gereksinim
 ve Kontrol Kulesi) → onaylı ilişkiden metamorfik ek case (metriğe girmez) → C3'ün `// 6`
@@ -112,7 +114,8 @@ def test_tpd1_kalite_dogrulama_uctan_uca(
     liste = _ok(api.get(f"/requirements/{rid}/decision-tables"))
     t1, t2 = liste["tablolar"]
     [iliski] = liste["iliskiler"]
-    assert t1["icerik"] == tpd1.T1 and t2["icerik"] == tpd1.T2  # oracle şeridiyle aynı tablolar
+    # T1 oracle şeridiyle aynı; T2 AI taslağıdır (sınır hatası `<= 750`, PO'ya soru notlarda).
+    assert t1["icerik"] == tpd1.T1 and t2["icerik"] == tpd1.T2_TASLAK != tpd1.T2
     assert (t1["durum"], t1["ai_generated"], t1["uretim_modu"]) == ("draft", True, "replay")
     assert iliski["karar_tablosu_id"] == t1["id"]
 
@@ -123,7 +126,36 @@ def test_tpd1_kalite_dogrulama_uctan_uca(
     assert len(cases) == 10 and all(c["oracle"] is None for c in cases.values())
     assert cases[3]["icerik"]["title"] == "6 adet kampanyalı üründe bedava ürün verilmez"
 
-    # 3) Analist PO'ya gönderir, PO onaylar (görülen hash ile) → oracle.check_requirement.
+    # 3) T2: PO sınır örneklerinde AI'ın sınır hatasını yakalar (tam 750,00 TL'de uyarı R2'den
+    # geliyor, story "altında" der) → değişiklik ister → analist `< 750` yapar → PO onaylar.
+    _rol(api, analist)
+    _ok(api.post(f"/decision-tables/{t2['id']}/submit"))
+    _rol(api, po)
+    ornekler = _ok(api.get(f"/decision-tables/{t2['id']}/ornekler"))["ornekler"]
+    [tam] = [
+        o
+        for o in ornekler
+        if o["girdiler"] == {"kampanyali_sepet": False, "sepet_tutari": "750.00"}
+    ]
+    assert (tam["satir_id"], tam["ciktilar"]) == ("R2", {"minimum_uyarisi": True})
+    gerekce = "Story 'altında' diyor: tam 750,00 TL'de uyarı olmamalı (R2 < 750)."
+    r = _ok(
+        api.post(
+            f"/decision-tables/{t2['id']}/request-changes",
+            json={"icerik_hash": t2["icerik_hash"], "gerekce": gerekce},
+        )
+    )
+    assert r["durum"] == "draft"
+    _rol(api, analist)
+    t2 = _ok(
+        api.put(
+            f"/decision-tables/{t2['id']}",
+            json={"icerik": tpd1.T2, "icerik_hash": t2["icerik_hash"]},
+        )
+    )
+    assert t2["icerik"] == tpd1.T2
+    # Analist T1, düzeltilmiş T2 ve ilişkiyi gönderir; PO onaylar (görülen hash ile) →
+    # oracle.check_requirement.
     for yol, n in (("decision-tables", t1), ("decision-tables", t2), ("relations", iliski)):
         _rol(api, analist)
         _ok(api.post(f"/{yol}/{n['id']}/submit"))
@@ -131,6 +163,12 @@ def test_tpd1_kalite_dogrulama_uctan_uca(
         r = _ok(api.post(f"/{yol}/{n['id']}/approve", json={"icerik_hash": n["icerik_hash"]}))
         assert r["durum"] == "approved" and r["onaylayan"] == po.kullanici_adi
     run_jobs(engine, limit=100)
+    _rol(api, analist)
+    tablolar = _ok(api.get(f"/requirements/{rid}/decision-tables"))["tablolar"]
+    assert [(t["durum"], t["icerik"]) for t in tablolar] == [
+        ("approved", tpd1.T1),
+        ("approved", tpd1.T2),
+    ]
 
     # 4) Story tablolarıyla dürüst sonuçlar (C3 = demo'nun defect adayı: tabloyla aynı).
     _rol(api, analist)
@@ -192,7 +230,10 @@ def test_tpd1_kalite_dogrulama_uctan_uca(
     assert r.status_code == 422 and r.json()["kod"] == "oracle_uyumsuz"
     # 7) Gerekçeli istisna: onaylanır, denetime ve sayaca düşer.
     r = _ok(
-        api.post(f"/cases/{c5['id']}/decision", json={**karar, "oracle_istisna_gerekce": GEREKCE})
+        api.post(
+            f"/cases/{c5['id']}/decision",
+            json={**karar, "oracle_istisna_gerekce": GEREKCE, "oracle_istisna_turu": "uyumsuz"},
+        )
     )
     assert r["durum"] == "approved"
     with session_scope() as s:
@@ -204,7 +245,8 @@ def test_tpd1_kalite_dogrulama_uctan_uca(
 
     # 8) Beklenti doğruluğu: AI içeriği üzerinden (C5'in AI içeriği uyumluydu; düzeltme sayılmaz).
     # C10 = C2 (aynı satır, aynı değerler) tek sayılır; kapsam payda: tablolu story'deki 9 AI
-    # case (tekrar hariç). Tüm kayıtlar elle golden'dan (REPLAY): gösterge.
+    # case (tekrar hariç). Tüm kayıtlar elle golden'dan (REPLAY): gösterge. T2 case'lerinin
+    # `ignored` sepet sayacı S3 verisindeki adedi yineler (`yankilanan_girdi`): kısmen yapmaz.
     beklenen_metrik = {
         "oran": 1.0,
         "uyumlu": 6,

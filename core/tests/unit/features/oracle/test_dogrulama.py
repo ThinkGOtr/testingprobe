@@ -302,7 +302,10 @@ AYRINTI_ALANLARI = {
     "degerler",
     "kapsanmayan_sayilar",
     "yok_sayilan",
+    "reddedilen_yok_sayilan",
     "degerlendirilmeyen_tablolar",
+    "kismen_nedeni",
+    "yankilanan_girdi",
 }
 
 
@@ -335,7 +338,10 @@ def test_tpd1_golden_olgulari_story_tablolariyla(n: int, senaryo: str | None) ->
     assert ayr["degerler"]["karsilastirilamayan"] == 0
     g = ayr["gruplar"][0]
     assert set(g) == GRUP_ALANLARI
-    assert g["satir_id"] is not None and g["durum"] == sonuc
+    # T2 case'leri `ignored` yüzünden kısmen; grup kendisi uyumludur.
+    assert g["satir_id"] is not None and g["durum"] == (d.UYUMLU if sonuc == d.KISMEN else sonuc)
+    if sonuc == d.KISMEN:
+        assert ayr["kismen_nedeni"] == ["yok_sayilan"]
     for k in g["karsilastirmalar"]:
         assert set(k) == {"column", "alan", "alinti", "case_degeri", "tablo_degeri", "uyumlu"}
 
@@ -369,13 +375,8 @@ def test_c3_ana_yol_uyumlu_fix_doc_uyumsuz() -> None:
         (k["column"], k["case_degeri"], k["tablo_degeri"])
         for k in ayr["gruplar"][0]["karsilastirmalar"]
     } == {("bedava_adet", "0", "0"), ("indirim", "0.00", "0"), ("toplam", "150.00", "150.00")}
-    assert ayr["yok_sayilan"] == [
-        {
-            "alan": "expected_result",
-            "alinti": "7. adette",
-            "neden": "kuralın açıklaması (sıra sayısı); tabloda kolonu yok",
-        }
-    ]
+    # "7. adette" sıra sayısıdır: tamlık denetimi saymaz, `ignored` gerekmez (review 2).
+    assert ayr["yok_sayilan"] == [] and ayr["kapsanmayan_sayilar"] == []
     sonuc, ayr = d.degerlendir(tpd1_cases()[2], TABLOLAR[:1], OLGULAR[3])
     assert sonuc == d.UYUMSUZ
     assert "bedava_adet" in d.ozet(sonuc, ayr)
@@ -455,8 +456,10 @@ def test_kontrol_edilemedi_bos_cikti_ve_none() -> None:
     for cikti in ({"groups": []}, None, {}):
         sonuc, ayr = d.degerlendir(_kampanya_case(), TABLOLAR, cikti)
         assert sonuc == d.KONTROL_EDILEMEDI and ayr["gruplar"] == []
-        # Olgu yokken beklenen alandaki sayılar kapsanmamış sayılır (S4: 7, 1, 175, 25, 150).
-        assert ayr["degerler"]["kapsanmayan"] == 5
+        # Olgu yokken beklenen alandaki sayılar kapsanmamış sayılır (S4: 7, 1, 175, 25, 150);
+        # girdi alanlarındaki sayılar (başlık, S3 verisi) da hiçbir değerle eşleşmez (çelişki).
+        turler = [k["tur"] for k in ayr["kapsanmayan_sayilar"]]
+        assert turler.count("sayi") == 5 and set(turler) == {"sayi", "celiski"}
     assert "çıkarılamadı" in d.ozet(d.KONTROL_EDILEMEDI, {"gruplar": []})
 
 
@@ -553,8 +556,10 @@ def test_bir_grup_uyumsuz_digeri_uyumlu_genel_uyumsuz() -> None:
 def test_mantiksal_tablo_degerlendirmesi() -> None:
     case = tpd1_cases()[4]  # C5: kampanyasız, 150 TL → uyarı görünür
     sonuc, ayr = d.degerlendir(case, TABLOLAR[1:], OLGULAR[5])
-    assert sonuc == d.UYUMLU
-    assert ayr["gruplar"][0]["satir_id"] == "R2"
+    # S3 beklenendeki sepet sayacı `ignored`'da ama S3 verisindeki adedi yineler: uyumlu.
+    assert sonuc == d.UYUMLU and ayr["kismen_nedeni"] == []
+    assert ayr["yankilanan_girdi"][0]["kaynaklar"][0]["alan_yolu"] == "steps[2].data"
+    assert ayr["gruplar"][0]["satir_id"] == "R2" and ayr["gruplar"][0]["durum"] == "uyumlu"
     degerler = {k["column"]: k["case_degeri"] for k in ayr["gruplar"][0]["karsilastirmalar"]}
     assert degerler == {"minimum_uyarisi": True}
 
@@ -619,7 +624,7 @@ def test_tamlik_atlanan_sayi_kismen() -> None:
     olgu["groups"][0]["expected"] = olgu["groups"][0]["expected"][:2]  # toplam olgusu yok
     sonuc, ayr = d.degerlendir(case, TABLOLAR[:1], olgu)
     assert sonuc == d.KISMEN
-    assert ayr["kapsanmayan_sayilar"] == [{"alan": S4, "alinti": "140,00"}]
+    assert ayr["kapsanmayan_sayilar"] == [{"alan": S4, "alinti": "140,00", "tur": "sayi"}]
 
 
 def test_tamlik_ignored_kapsar_ama_listelenir() -> None:
@@ -630,24 +635,36 @@ def test_tamlik_ignored_kapsar_ama_listelenir() -> None:
     olgu["ignored"] = [
         {"field": "steps[2].expected", "quote": "Sepet sayacı 7", "reason": "sayaç"},
         {"field": "steps[2].expected", "quote": "Sepet sayacı 8", "reason": "yok"},  # geçmiyor
-        {"field": "steps[2].action", "quote": "adedi 7", "reason": "beklenen alan değil"},
+        {"field": "steps[2].action", "quote": "adedi 7", "reason": "taranan alan değil"},
         {"field": "steps[2].expected", "quote": "Sepet sayacı", "reason": "sayı yok"},
     ]
     sonuc, ayr = d.degerlendir(case, TABLOLAR[:1], olgu)
-    assert sonuc == d.UYUMLU
+    # Sayaç girdi değerini (adet 7) yineler: kısmen yapmaz, `yankilanan_girdi`'de görünür.
+    assert sonuc == d.UYUMLU and ayr["kismen_nedeni"] == []
+    assert [y["alinti"] for y in ayr["yankilanan_girdi"]] == ["Sepet sayacı 7"]
+    assert ayr["kapsanmayan_sayilar"] == []
     assert ayr["yok_sayilan"] == [
         {"alan": "steps[2].expected", "alinti": "Sepet sayacı 7", "neden": "sayaç"}
     ]
+    assert [r["neden"] for r in ayr["reddedilen_yok_sayilan"]] == [
+        "alıntı alanda geçmiyor",
+        "alan taranan bir alan değil",
+        "alıntıda sayı yok",
+    ]
+    assert "Sepet sayacı 7" in d.ozet(sonuc, ayr)
 
 
 @pytest.mark.parametrize(
     ("metin", "sayilar"),
     [
         ("P-001 satırında adet 7, bedava adet 1", ["7", "1"]),
-        ("Portakal Gazozu 1L ve Limonata 330ml", []),
+        # Birime bitişik sayılar sayılır (review 2 g2 Y1); kod benzeri belirteçler sayılmaz.
+        ("Portakal Gazozu 1L ve Limonata 330ml", ["1", "330"]),
+        ("Toplam 45,00TL", ["45,00"]),
+        ("P-001, S1, AC2, x_3", []),
         ("bayi1 / Demo123!", []),
         ("ara toplam 1.250,00 TL; toplam 150,00 TL.", ["1.250,00", "150,00"]),
-        ("bedava 7. adette başlar", ["7"]),
+        ("bedava 7. adette başlar", []),  # sıra sayısı
         ("indirim −25,00 TL", ["25,00"]),
     ],
 )
@@ -664,7 +681,9 @@ def test_v3_alanlari_tamlikta_ve_olguda() -> None:
     olgu = _kampanya_olgulari()
     sonuc, ayr = d.degerlendir(case, TABLOLAR[:1], olgu)
     assert sonuc == d.KISMEN
-    assert ayr["kapsanmayan_sayilar"] == [{"alan": "verification_point", "alinti": "150,00"}]
+    assert ayr["kapsanmayan_sayilar"] == [
+        {"alan": "verification_point", "alinti": "150,00", "tur": "sayi"}
+    ]
     olgu["groups"][0]["expected"].append(_o("toplam", "150.00", "verification_point", "150,00 TL"))
     olgu["groups"][0]["inputs"].append(_o("adet", "7", "test_data[0].value", "7"))
     sonuc, ayr = d.degerlendir(case, TABLOLAR[:1], olgu)
