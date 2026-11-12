@@ -15,6 +15,8 @@ import type {
   DenetimYaniti,
   GereksinimDetay,
   IsYaniti,
+  KodUretYaniti,
+  UretimSonucu,
   KontrolKulesi,
   Kosu,
   KosuDetay,
@@ -100,7 +102,49 @@ const VERI_ANAHTARI = "tp-mock-veri-v5";
 const testModu = import.meta.env.MODE === "test";
 const GECIKME_MS = testModu ? 0 : 120;
 /** Arka plan işlerinin (ajan adımları, koşular) adım aralığı. */
-export const ayar = { isAdimiMs: testModu ? 0 : 900 };
+export const ayar = { isAdimiMs: testModu ? 0 : 900, senaryolar: new Set<string>() };
+
+/** Ekran denetimi için mock senaryoları: `sessionStorage["tp-mock-senaryo"]` (virgüllü) ya da `ayar.senaryolar`. */
+const SENARYO_ANAHTARI = "tp-mock-senaryo";
+export type MockSenaryosu =
+  /** MİM-B1: core forge'u kuramıyor/okuyamıyor; `/code/languages` algılama yapamaz (üst düzey `neden`). */
+  | "depo-okunamadi"
+  /**
+   * QA-Y4 + K-T12: uzun geçmişli depo. `GET /scripts` core gibi en yeni 200 kaydı döner ve bunlar başka
+   * story'lerin kapatılmış kayıtlarıdır (örnek veri listenin dışında kalır). Liste dışındaki eski merge
+   * edilmiş kayıtlar üretimde çakışır: TPD-13 web testi Java ile, TPD-10 web testi TypeScript ile merge edilmiş.
+   */
+  | "uzun-gecmis";
+
+export function mockSenaryosu(ad: MockSenaryosu): boolean {
+  if (ayar.senaryolar.has(ad)) return true;
+  try {
+    return (sessionStorage.getItem(SENARYO_ANAHTARI) ?? "").split(",").map((x) => x.trim()).includes(ad);
+  } catch {
+    return false;
+  }
+}
+
+/** `uzun-gecmis`: liste dışında kalan eski merge edilmiş kayıtlar (case, platform, dil). */
+const LISTE_DISI_MERGED: { case_id: string; platform: Platform; dil: Dil }[] = [
+  { case_id: "case-1-9", platform: "web", dil: "java" },
+  { case_id: "case-1-2", platform: "web", dil: "ts" },
+];
+
+/** `uzun-gecmis`: başka story'lerin en yeni 200 (kapatılmış) kaydı; örnek veriden daha yeni. */
+function uzunGecmisListesi(): ScriptDetay[] {
+  const ornek = veri.scriptler[0];
+  return Array.from({ length: 200 }, (_, i) => ({
+    ...ornek,
+    id: `scr-eski-${i + 1}`,
+    case_ids: [`case-eski-${i + 1}`],
+    requirement_key: `TPD-${100 + Math.floor(i / 4)}`,
+    baslik: `Eski story testi ${i + 1}`,
+    durum: "closed" as const,
+    pr: null,
+    olusturma: `2026-11-0${1 + (i % 9)}T10:00:00+03:00`,
+  }));
+}
 
 let veri: MockVeri = yukle();
 
@@ -126,6 +170,7 @@ function kaydet(): void {
 export function mockSifirla(): void {
   veri = ilkVeri();
   demoKirik = false;
+  ayar.senaryolar.clear();
   asistanMockSifirla();
   oneriMockSifirla();
   mockOturumuAyarla(null);
@@ -972,7 +1017,28 @@ const KOD_GOLDEN: Record<string, { adimlar: () => AjanAdimi[]; kaynak: Record<st
   "case-1-4": { adimlar: minSiparisAdimlari, kaynak: MIN_SIPARIS_KAYNAK, kod: MIN_SIPARIS_TEST_KODU, defect: false },
 };
 
-function kodUret(govde: unknown): IsYaniti {
+/**
+ * core `dil_cakismasi` (K-T4): tam hat isteğinde aynı case+platformun başka dilde merge edilmiş testi
+ * varsa Türkçe neden. `uzun-gecmis` senaryosunda liste dışındaki eski kayıtlar da sayılır.
+ */
+function mockDilCakismasi(caseId: string, platform: Platform, dil: Dil): string | null {
+  if (dogrulanmamisDilMi(dil)) return null;
+  const merged = [
+    ...veri.scriptler.filter((s) => s.durum === "merged" && s.case_ids.includes(caseId) && (s.platform ?? "web") === platform).map((s) => s.dil ?? "ts"),
+    ...(mockSenaryosu("uzun-gecmis") ? LISTE_DISI_MERGED.filter((x) => x.case_id === caseId && x.platform === platform).map((x) => x.dil) : []),
+  ];
+  const onceki = merged.find((d) => d !== dil);
+  if (!onceki) return null;
+  const yer = platform === "web" ? "web testi" : `${platform} testi`;
+  return `Bu case'in ${yer} ${DIL_ETIKETI[onceki]} ile merge edildi; dil değiştirmek için önce mevcut testi kaldırın`;
+}
+
+/** Aynı dilde merge edilmiş (liste dışı) kayıt: core `merge_edildi` (yeniden üretilmez). */
+function mockMergeEdilmis(caseId: string, platform: Platform, dil: Dil): boolean {
+  return mockSenaryosu("uzun-gecmis") && LISTE_DISI_MERGED.some((x) => x.case_id === caseId && x.platform === platform && x.dil === dil);
+}
+
+function kodUret(govde: unknown): KodUretYaniti {
   rolGerekli("engineer");
   const g = (govde ?? {}) as { case_ids?: string[]; platform?: unknown; dil?: unknown };
   const ids = g.case_ids ?? [];
@@ -993,7 +1059,28 @@ function kodUret(govde: unknown): IsYaniti {
   const caseler = ids.map((id) => bul(veri.caseler, id, "Case"));
   const onaysiz = caseler.filter((c) => c.durum !== "approved" && c.durum !== "published");
   if (onaysiz.length) throw new ApiError(409, "Yalnızca onaylı case'ler için kod üretilebilir.");
+  // core `start_generation` `sonuclar[]` (K-T12): case başına durum; çakışan/atlanan case'e dokunulmaz.
+  const sonuclar: UretimSonucu[] = [];
+  const baslayan: typeof caseler = [];
   for (const c of caseler) {
+    const cakisma = mockDilCakismasi(c.id, platform, dil);
+    if (cakisma) sonuclar.push({ case_id: c.id, durum: "cakisma", neden: cakisma, script_id: null });
+    else if (mockMergeEdilmis(c.id, platform, dil))
+      sonuclar.push({ case_id: c.id, durum: "merge_edildi", neden: "bu onaylı içerik için bu platformda PR zaten var", script_id: null });
+    else baslayan.push(c);
+  }
+  if (baslayan.length === 0) {
+    const hatali = sonuclar.filter((x) => x.durum === "cakisma");
+    if (hatali.length === sonuclar.length) {
+      throw new ApiError(
+        409,
+        hatali.length === 1 ? hatali[0].neden! : `Kod üretimi başlatılamadı: ${hatali.map((x) => `${x.case_id.slice(0, 8)}: ${x.neden}`).join("; ")}`,
+        { kod: "dil_cakismasi" },
+      );
+    }
+    return { job_id: null, durum: "none", mesaj: "Yeni üretim gerekmiyor (süren iş ya da açık PR var).", sonuclar };
+  }
+  for (const c of baslayan) {
     // 011 §2.2: etkin anahtar (case, platform); doğrulanmamış script başka dilde yeniden üretilince kapanır.
     for (const eski of veri.scriptler) {
       if (eski.durum === "unverified" && eski.case_ids.includes(c.id) && (eski.platform ?? "web") === platform) gecir("script", eski, "closed");
@@ -1044,6 +1131,7 @@ function kodUret(govde: unknown): IsYaniti {
       engel: null,
     };
     veri.scriptler.unshift(s);
+    sonuclar.push({ case_id: c.id, durum: "basladi", neden: null, script_id: id });
     if (!golden) {
       arkaPlan([
         () => {
@@ -1149,7 +1237,12 @@ function kodUret(govde: unknown): IsYaniti {
   const dilEki = dilVar || javaWeb || dogrulanmamis ? ` · ${DIL_ETIKETI[dil]}${dogrulanmamis ? ", doğrulanmamış" : ""}` : "";
   denetimEkle("code.generate", ids.join(","), app ? `CasesToCode başlatıldı (${platform}${dilEki})` : `CasesToCode başlatıldı${dilEki ? ` (${dilEki.slice(3)})` : ""}`);
   kaydet();
-  return is("started", `${caseler.length} case için kod üretimi başladı${app ? ` (${platform})` : ""}${dilEki ? ` (${dilEki.slice(3)})` : ""}.`);
+  // Sonuçlar istek sırasıyla (core gibi).
+  sonuclar.sort((a, b) => ids.indexOf(a.case_id) - ids.indexOf(b.case_id));
+  return {
+    ...is("started", `${baslayan.length} case için kod üretimi başladı${app ? ` (${platform})` : ""}${dilEki ? ` (${dilEki.slice(3)})` : ""}.`),
+    sonuclar,
+  };
 }
 
 function ozetKosu(k: KosuDetay): Kosu {
@@ -1838,7 +1931,7 @@ const ROTALAR: Rota[] = [
       const ham = q.get("platform");
       const p = ham === null || ham === "" ? "web" : platformUyarla(ham);
       if (!p) throw new ApiError(422, `platform yalnızca ${PLATFORMLAR.join(", ")} olabilir.`);
-      return kodDilleriYaniti(p);
+      return kodDilleriYaniti(p, { depoOkunamadi: mockSenaryosu("depo-okunamadi") });
     },
   ],
   [
@@ -1846,7 +1939,9 @@ const ROTALAR: Rota[] = [
     /^\/scripts$/,
     () => {
       girisGerekli();
-      return veri.scriptler.map((s) => {
+      // core `views.list_scripts`: en yeni 200 kayıt (sayfalama yok). `uzun-gecmis`te örnek veri sınırın dışında kalır.
+      const tum = mockSenaryosu("uzun-gecmis") ? [...uzunGecmisListesi(), ...veri.scriptler] : veri.scriptler;
+      return tum.slice(0, 200).map((s) => {
         const { kod: _k, adimlar: _a, yerel_kontrol: _y, ...ozet } = s;
         return ozet;
       });

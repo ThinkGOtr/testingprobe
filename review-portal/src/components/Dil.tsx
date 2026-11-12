@@ -28,6 +28,23 @@ export function DilRozeti({ dil, platform }: { dil: Dil | null | undefined; plat
  */
 export const ALGILAMA_KAPSAMI = "e2e/, e2e-java/, C# ve Python test projelerinde";
 
+/**
+ * Algılama hiç yapılamadıysa (core üst düzey `neden` dolu: depo/forge okunamadı) "test bulunamadı"
+ * denmez; dürüst ileti budur (MİM-B1).
+ */
+export function algilanamadiMesaji(varsayilan: string): string {
+  return `Depo okunamadığı için dil algılanamadı; varsayılan: ${varsayilan}. Dili elle seçebilirsiniz.`;
+}
+
+/** Dil notunun metni: elle seçim, repodan algılama, algılama sonuçsuz ya da algılama yapılamadı. */
+function dilNotu(diller: KodDilleri, elle: boolean, seciliEtiket: string): string {
+  const algilanan = DIL_ETIKETI[diller.algilanan];
+  if (elle) return `${seciliEtiket} elle seçildi.`;
+  if (diller.neden) return algilanamadiMesaji(algilanan);
+  if (diller.kaynak === "algilandi") return `${algilanan} repodan algılandı${dayanak(diller)}.`;
+  return `${ALGILAMA_KAPSAMI} elle yazılmış test bulunamadı; varsayılan: ${algilanan}.`;
+}
+
 /** Algılamanın dayanağı: "9 elle yazılmış test dosyası" (sayı bilinmiyorsa boş). */
 function dayanak(diller: KodDilleri): string {
   const n = diller.sayilar[diller.algilanan];
@@ -64,8 +81,13 @@ export function DilSecici({
           <DilRozeti dil={tek.dil} platform={diller.platform} />
           <span className="kucuk soluk">
             {tek.cati} · bu platformda tek dil
-            {!tek.kullanilabilir && tek.neden ? ` · Kullanılamıyor: ${tek.neden}` : ""}
+            {tek.neden ? (tek.kullanilabilir ? ` · ${tek.neden}` : ` · Kullanılamıyor: ${tek.neden}`) : ""}
           </span>
+          {diller.neden && (
+            <span className="kucuk" role="status" data-testid="dil-notu" data-kaynak="algilanamadi">
+              {algilanamadiMesaji(DIL_ETIKETI[diller.algilanan]).replace(" Dili elle seçebilirsiniz.", "")}
+            </span>
+          )}
         </span>
       </div>
     );
@@ -88,12 +110,8 @@ export function DilSecici({
         }))}
       />
       <div className="dil-notu kucuk">
-        <span role="status" data-testid="dil-notu" data-kaynak={elle ? "secildi" : diller.kaynak}>
-          {elle
-            ? `${secili?.etiket ?? DIL_ETIKETI[deger]} elle seçildi.`
-            : diller.kaynak === "algilandi"
-              ? `${algilanan} repodan algılandı${dayanak(diller)}.`
-              : `${ALGILAMA_KAPSAMI} elle yazılmış test bulunamadı; varsayılan: ${algilanan}.`}
+        <span role="status" data-testid="dil-notu" data-kaynak={elle ? "secildi" : diller.neden ? "algilanamadi" : diller.kaynak}>
+          {dilNotu(diller, elle, secili?.etiket ?? DIL_ETIKETI[deger])}
         </span>
         {elle && (
           <button type="button" className="dugme-metin" onClick={algilananaDon} disabled={disabled}>

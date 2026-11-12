@@ -46,6 +46,7 @@ const WEB_DILLERI: KodDilleri = {
     { dil: "java", etiket: "Java", cati: "Playwright for Java + TestNG", hat: "tam", kullanilabilir: false, neden: "Depoda Java web test projesi (e2e-java/pom.xml) yok" },
     { dil: "python", etiket: "Python", cati: "pytest-playwright", hat: "dogrulanmamis", kullanilabilir: true, neden: null },
   ],
+  neden: null,
 };
 
 describe("uyum katmanı (core şekli, §2.3)", () => {

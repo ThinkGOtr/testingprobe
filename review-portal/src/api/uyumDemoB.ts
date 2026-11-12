@@ -15,7 +15,9 @@ import type {
   BreakVerify,
   CheckDurumu,
   DilSecenegi,
+  IsYaniti,
   KodDilleri,
+  KodUretYaniti,
   KontrolAdimi,
   KontrolKulesi,
   KpiAnahtari,
@@ -29,10 +31,12 @@ import type {
   Script,
   ScriptDetay,
   ScriptDurumu,
+  ScriptListesi,
   Tetik,
   PwAdimi,
   TestDenemesi,
   TestSonucu,
+  UretimSonucu,
   YerelKontrol,
   YerelKontrolHatasi,
   YerelKontrolSinifi,
@@ -487,7 +491,65 @@ export function kodDilleriUyarla(govde: unknown, istenen: Platform): KodDilleri 
     kaynak: govde.kaynak === "algilandi" && !!algilanan && secenekler.some((x) => x.dil === algilanan) ? "algilandi" : "varsayilan",
     sayilar,
     secenekler,
+    // MİM-B1: algılama yapılamadıysa (depo okunamadı) üst düzey neden; ekran "test bulunamadı" demez.
+    neden: metinYaDaNull(govde.neden),
   };
+}
+
+// ------------------------------------------------------------------ Kod üretimi isteği (K-T12)
+
+/**
+ * `POST /code/generate` yanıtı: iş alanları aynen, `sonuclar[]` case başına durum ve Türkçe nedenle
+ * (core `start_generation`). Alan yoksa (011 öncesi core) boş liste: ekran bugünkü bildirimle sürer.
+ */
+export function kodUretYanitiUyarla(govde: unknown): KodUretYaniti {
+  const g = nesneMi(govde) ? govde : {};
+  const sonuclar: UretimSonucu[] = [];
+  for (const s of dizi(g.sonuclar)) {
+    const caseId = metin(s.case_id);
+    if (!caseId) continue;
+    sonuclar.push({
+      case_id: caseId,
+      durum: metin(s.durum, "basladi"),
+      neden: metinYaDaNull(s.neden),
+      script_id: metinYaDaNull(s.script_id),
+    });
+  }
+  return {
+    ...(g as unknown as IsYaniti),
+    job_id: metinYaDaNull(g.job_id),
+    durum: metin(g.durum),
+    ...(typeof g.mesaj === "string" ? { mesaj: g.mesaj } : {}),
+    sonuclar,
+  };
+}
+
+/** core `views.list_scripts` sınırı: en yeni 200 kayıt (`GET /scripts`, sayfalama yok). */
+export const SCRIPT_LISTE_SINIRI = 200;
+
+/**
+ * `GET /scripts` yanıtı + sınır bilgisi. Düz dizi (bugünkü core): uzunluk sınıra ulaştıysa liste eksik
+ * olabilir. Zarf (`{items|kayitlar|data, toplam?, sinir|limit?, daha_fazla|has_more?}`): açık bilgi
+ * varsa ona, yoksa uzunluk ≥ sınıra bakılır.
+ */
+export function scriptListesiUyarla(govde: unknown): ScriptListesi {
+  const ham = Array.isArray(govde)
+    ? govde
+    : nesneMi(govde)
+      ? (([govde.items, govde.kayitlar, govde.data].find(Array.isArray) as unknown[] | undefined) ?? null)
+      : null;
+  if (!ham) throw new Error("Beklenmeyen liste yanıtı");
+  const kayitlar = ham.filter(nesneMi).map(scriptUyarla);
+  let sinira = ham.length >= SCRIPT_LISTE_SINIRI;
+  if (nesneMi(govde)) {
+    const dahaFazla = ilk(govde, "daha_fazla", "has_more", "kesildi", "truncated");
+    const toplam = sayiYaDaNull(ilk(govde, "toplam", "total"));
+    const sinir = sayiYaDaNull(ilk(govde, "sinir", "limit"));
+    if (typeof dahaFazla === "boolean") sinira = dahaFazla;
+    else if (toplam !== null) sinira = toplam > ham.length;
+    else if (sinir !== null) sinira = ham.length >= sinir;
+  }
+  return { kayitlar, sinira_ulasti: sinira };
 }
 
 // ------------------------------------------------------------------ Koşular

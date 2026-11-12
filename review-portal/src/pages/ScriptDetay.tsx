@@ -6,6 +6,7 @@ import type { AdimEslemesi, AjanAdimi, BreakVerify, PrCheck, PullRequest, RetNed
 import { ajanAdimiUyarla, kontrolAdimiGecti } from "../api/uyumDemoB";
 import { useBildirim } from "../components/Bildirim";
 import { KodGorunumu } from "../components/KodGorunumu";
+import { DilCakismasiKutusu, dilCakismasiMi, uretimBildirimi } from "../components/UretimSonuclari";
 import { BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { SCRIPT_DURUMU, scriptIsareti, scriptUretiliyor } from "../lib/etiketler";
@@ -731,7 +732,7 @@ export function ScriptDetay() {
     setHataYeri("genel");
     const r = await islem.calistir(() => api.kodUret(s!.case_ids, s!.platform ?? "web", dil));
     if (r) {
-      bildir(r.mesaj ?? `${DIL_ETIKETI[dil]} ile yeniden üretim başladı; bu kayıt kapatılır.`);
+      bildir(uretimBildirimi(r, `${DIL_ETIKETI[dil]} ile yeniden üretim başladı; bu kayıt kapatılır.`));
       git("/kod");
     }
   }
@@ -1084,7 +1085,9 @@ export function ScriptDetay() {
         </Uyari>
       )}
       {dogrulanmamis && <DogrulanmamisBandi s={s} calisiyor={islem.calisiyor} uret={(dil) => void baskaDildeUret(dil)} />}
-      {islem.hata && hataYeri === "genel" && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
+      {islem.hata &&
+        hataYeri === "genel" &&
+        (dilCakismasiMi(islem.hataNesnesi) ? <DilCakismasiKutusu hata={islem.hataNesnesi} /> : <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />)}
 
       {/* PR açıldıktan sonra karar kartları (PR + Kırarak doğrula) üste gelir: demo Adım 6–7 kaydırmasız
           (1152×720). Üretim sürerken ajan adımları üstte kalır. Okuma ve sekme sırası görsel sırayla aynı. */}

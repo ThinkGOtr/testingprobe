@@ -12,7 +12,7 @@ import {
 } from "./uyum";
 import { bugIcerikCoreBicimi, bugTaslagiUyarla, hataAnaliziUyarla } from "./uyumTriage";
 import { nesneMi } from "./uyum";
-import { kodDilleriUyarla, kontrolKulesiUyarla, kosuDetayUyarla, kosuUyarla, scriptDetayUyarla, scriptUyarla } from "./uyumDemoB";
+import { kodDilleriUyarla, kodUretYanitiUyarla, kontrolKulesiUyarla, kosuDetayUyarla, kosuUyarla, scriptDetayUyarla, scriptListesiUyarla, scriptUyarla } from "./uyumDemoB";
 import { bazYanitiUyarla, demoDurumuUyarla, gereksinimBazi } from "./uyumFaz5";
 import type {
   BazDegerGirdisi,
@@ -33,6 +33,8 @@ import type {
   HataAnalizi,
   IsYaniti,
   KodDilleri,
+  KodUretYaniti,
+  ScriptListesi,
   KontrolKulesi,
   Kosu,
   KosuDetay,
@@ -152,8 +154,8 @@ export const api = {
    * 011 §2.3: `dil` yalnız kullanıcı elle seçtiyse gönderilir (core `dil_kaynagi="secildi"` yazar);
    * gönderilmezse core repodan algılanan dili kullanır. Alan yokken gövde 011 öncesiyle aynıdır.
    */
-  kodUret: (caseIds: string[], platform: Platform = "web", dil?: Dil | null) =>
-    istek<IsYaniti>("POST", "/code/generate", { govde: { case_ids: caseIds, platform, ...(dil ? { dil } : {}) } }),
+  kodUret: async (caseIds: string[], platform: Platform = "web", dil?: Dil | null): Promise<KodUretYaniti> =>
+    kodUretYanitiUyarla(await istek<unknown>("POST", "/code/generate", { govde: { case_ids: caseIds, platform, ...(dil ? { dil } : {}) } })),
   /**
    * 011 §2.3: platformun dil seçenekleri ve repodan algılanan dil. Uç yoksa (011 öncesi core) `null`:
    * dil seçici çizilmez, üretim bugünkü gibi sürer. Script'ler çekirdekten geliyorsa örnek veriye düşülmez.
@@ -169,6 +171,8 @@ export const api = {
     }
   },
   scriptler: async (): Promise<Script[]> => listeUyarla(await istek<unknown>("GET", "/scripts"), scriptUyarla),
+  /** `GET /scripts` + liste sınırına ulaşıldı mı (core en yeni 200 kayıt; QA-Y4). */
+  scriptListesi: async (): Promise<ScriptListesi> => scriptListesiUyarla(await istek<unknown>("GET", "/scripts")),
   script: async (id: string): Promise<ScriptDetay> => scriptDetayUyarla(nesne(await istek<unknown>("GET", `/scripts/${yol(id)}`))),
   kirarakDogrula: (id: string) => istek<IsYaniti>("POST", `/scripts/${yol(id)}/break-verify`, { kaynak: SCRIPT_KAYNAGI }),
   /** `pr`: incelenen PR; içerik hash'i ve head sha'sı merge'e bağlanır. */

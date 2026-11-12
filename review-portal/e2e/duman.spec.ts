@@ -1157,3 +1157,46 @@ test("011: dil seçici, doğrulanmamış dil uyarısı ve doğrulanmamış scrip
   }
   expect(hatalar).toEqual([]);
 });
+
+test("011 tur 2: dil algılanamadı, dil çakışması ve Otomasyon sütunu liste sınırı (1440 ve 390 px)", async ({ page }) => {
+  const hatalar = konsolHatalariniTopla(page);
+  const kaymaYok = async () =>
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  const senaryo = async (ad: string) => {
+    await page.evaluate((x) => sessionStorage.setItem("tp-mock-senaryo", x), ad);
+  };
+  for (const genislik of [1440, 390]) {
+    await page.setViewportSize({ width: genislik, height: 900 });
+    await girisYap(page, "muhendis");
+    await senaryo("depo-okunamadi");
+    await page.goto("/kod");
+    await expect(page.getByTestId("dil-notu")).toHaveText("Depo okunamadığı için dil algılanamadı; varsayılan: TypeScript. Dili elle seçebilirsiniz.");
+    await expect(page.getByRole("group", { name: "Dil" }).getByTestId("secenek-neden")).toHaveCount(4);
+    await kaymaYok();
+
+    await senaryo("uzun-gecmis");
+    await page.goto("/kod");
+    await page.getByRole("checkbox", { name: /TPD-13/ }).check();
+    await page.getByRole("button", { name: "Seçilenler için kod üret (1)" }).click();
+    await expect(page.getByTestId("dil-cakismasi")).toContainText("Çıkış yolu:");
+    await page.getByRole("checkbox", { name: /TPD-10/ }).check();
+    await page.getByRole("checkbox", { name: /minimum tutarın altında/ }).check();
+    await page.getByRole("button", { name: "Seçilenler için kod üret (3)" }).click();
+    await expect(page.getByTestId("uretim-atlananlar")).toContainText("2 case için üretim başlamadı");
+    await kaymaYok();
+    const sonuc = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze();
+    expect(sonuc.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => v.id)).toEqual([]);
+
+    await page.goto("/caseler");
+    await expect(page.getByTestId("otomasyon-bilinmiyor").first()).toBeVisible();
+    await kaymaYok();
+    await senaryo("");
+    await page.goto("/caseler");
+    await expect(page.getByTestId("otomasyon-pr").first()).toBeVisible();
+    await page.getByTestId("otomasyon-pr").first().click();
+    await expect(page).toHaveURL(/\/kod\/scr-[^#]+#pr$/);
+    await page.getByRole("button", { name: "Çıkış" }).click();
+    await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
+  }
+  expect(hatalar).toEqual([]);
+});
