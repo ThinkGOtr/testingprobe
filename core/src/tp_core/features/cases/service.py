@@ -1788,6 +1788,10 @@ def serialize_cases(session: Session, cases: Sequence[TestCase]) -> list[dict[st
     from tp_core.features.cases import acik_sorular
 
     acik_sorular.case_fields(session, out)
+    # K20 (UX B2): başka case'te doğrulanan varsayım, ona dayanan case'lerde `dogrulama` olur.
+    from tp_core.features.cases import varsayim_dogrulama
+
+    varsayim_dogrulama.case_fields(session, out)
     return out
 
 

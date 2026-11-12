@@ -168,7 +168,7 @@ function YayinEkrani() {
                   · <span className="mono kucuk">{o.jira_browse_url}</span>
                 </>
               )}
-              <span className="soluk"> · hedef sunucu yapılandırmasından gelir (TP_TEST_MGMT)</span>
+              <span className="soluk"> · hedef sunucu yönetici ayarından gelir</span>
             </p>
             {o.uyarilar.map((u) => (
               <Uyari key={u}>{u}</Uyari>

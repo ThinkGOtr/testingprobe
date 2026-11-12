@@ -89,6 +89,8 @@ export interface MockVeri {
   derinlestirmeler?: Record<string, DerinlestirmeDurumu>;
   /** PO'ya gönderilen açık sorular ve yanıtları (011 K16; gereksinim kimliği → kayıtlar; mock/acikSorular.ts). */
   acikSorular?: Record<string, MockAcikSoru[]>;
+  /** K20 "Varsayım doğrulandı" kayıtları (case kimliği → doğrulanan varsayım metinleri; core review `varsayim_dogrulandi`). */
+  varsayimDogrulamalari?: Record<string, { kimlik: string; metin: string; kim: string; zaman: string }[]>;
   sayac: number;
 }
 

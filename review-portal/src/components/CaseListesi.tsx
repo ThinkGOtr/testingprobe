@@ -72,6 +72,7 @@ export function CaseListesi({
   guncellendi,
   topluSonrasi,
   uretimler,
+  varsayimDogrulandi,
 }: {
   liste: TestCase[];
   /** İlk yükleme sürüyor (henüz veri yok). */
@@ -88,6 +89,8 @@ export function CaseListesi({
   topluSonrasi: () => void;
   /** case-summary üretimleri: derinleştirme rozeti için üretim türü (yoksa rozet yok). */
   uretimler?: CaseUretimOzeti[] | null;
+  /** B2: "Varsayım doğrulandı" sonrası aynı varsayıma dayanan case'ler iyimser güncellenir. */
+  varsayimDogrulandi?: (onceki: TestCase, yeni: TestCase, varsayimlar: string[]) => void;
 }) {
   const s = useCaseSuzgeci();
   const { kullanici } = useOturum();
@@ -159,6 +162,7 @@ export function CaseListesi({
               uretimTuru={c.uretim_no !== undefined ? turler.get(c.uretim_no) : undefined}
               secim={analist ? <SecimKutusu tc={c} secili={secim.secili.has(c.id)} degistir={secim.degistir} /> : undefined}
               poyaGonder={<PoyaGonderEylemi tc={c} tamamlandi={yenile} />}
+              varsayimDogrulandi={varsayimDogrulandi}
             />
           ))}
         </div>

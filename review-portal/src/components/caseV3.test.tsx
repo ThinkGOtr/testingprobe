@@ -63,7 +63,11 @@ describe("CaseKarti v3: rozetler ve bloklar", () => {
     expect(hazir).toHaveTextContent("Hazır olma durumu: ✓ Hazır");
     expect(hazir).toHaveAttribute("data-durum", "ready");
     // Teknik rozeti: kısaltma görünür; tam Türkçe ad title'da ve erişilebilir metinde.
-    const teknikler = screen.getByRole("group", { name: "Test tasarım teknikleri" });
+    // B4: dd'de role/aria-label yok (axe definition-list); etiket dt "Teknikler".
+    const teknikler = screen.getByText("Teknikler").nextElementSibling as HTMLElement;
+    expect(teknikler.tagName).toBe("DD");
+    expect(teknikler).not.toHaveAttribute("role");
+    expect(teknikler).not.toHaveAttribute("aria-label");
     expect(within(teknikler).getByTitle("eşdeğerlik bölümleme")).toHaveTextContent("EP (eşdeğerlik bölümleme)");
     expect(within(teknikler).getByTitle("sınır değer analizi")).toHaveTextContent("BVA (sınır değer analizi)");
     expect(screen.getByTestId("case-oncelik")).toHaveTextContent("P1 (Öncelik 1 (en yüksek))");

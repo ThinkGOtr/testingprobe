@@ -332,7 +332,11 @@ describe("case ölçümleri", () => {
     const ozet = await screen.findByRole("region", { name: "Özet" });
     expect(await within(ozet).findByTestId("case-baz")).toHaveTextContent("45 dk 00 sn");
     expect(within(ozet).getByTestId("case-baz")).toHaveTextContent("Varsayılan");
+    expect(within(ozet).getByTestId("case-baz-aciklama")).toHaveTextContent("varsayılan değer (yönetici ayarı)");
     expect(within(ozet).getByTestId("case-baz-aciklama")).toHaveTextContent("kazanca girmez");
+    // B16: ortam değişkeni adı kullanıcıya görünen metinde yok.
+    expect(within(ozet).getByTestId("case-baz-aciklama")).not.toHaveTextContent(/TP_[A-Z_]+/);
+    expect(within(ozet).getByTestId("case-baz").querySelector("[title]")?.getAttribute("title")).not.toMatch(/TP_[A-Z_]+/);
     expect(within(ozet).getByTestId("case-kazanc")).toHaveTextContent("—");
     expect(within(ozet).queryByText(/hedef %30–50/)).toBeNull();
     expect(within(ozet).queryByText(/F0 ölçümü/)).toBeNull();

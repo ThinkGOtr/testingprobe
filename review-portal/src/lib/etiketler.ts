@@ -124,6 +124,7 @@ export const CASE_TEKNIGI: Record<string, string> = {
   PW: "pairwise",
   UC: "kullanım senaryosu",
   EG: "hata tahmini",
+  CL: "kontrol listesi",
 };
 
 /** Hazır olma durumu: renk tek başına anlam taşımaz; metin + işaret birlikte gösterilir. */

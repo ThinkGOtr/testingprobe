@@ -105,7 +105,9 @@ describe("AcikSorularPaneli", () => {
     sar(<AcikSorularPaneli requirementId={V3_GEREKSINIM_ID} />);
     const dugme = await screen.findByRole("button", { name: "Açık soruları PO'ya gönder" });
     expect(dugme).toBeDisabled();
-    expect(screen.getByText(STORY_YOK_ENGELI)).toBeInTheDocument();
+    // B14: neden hangi düğmeye ait olduğunu söyler.
+    expect(screen.getByText(`Gönderim: ${STORY_YOK_ENGELI}`)).toBeInTheDocument();
+    expect(screen.getByText("Yanıt kontrolü: yanıt bekleyen soru yok.")).toBeInTheDocument();
   });
 });
 
@@ -116,7 +118,11 @@ describe("CaseKarti: PO yanıtı", () => {
     await api.acikSorulariGonder(V3_GEREKSINIM_ID);
     let c = await engelliCase();
     sar(<CaseKarti tc={c} guncellendi={() => undefined} />);
-    expect(within(screen.getByTestId("case-acik-sorular")).getByText("CQ1 · PO yanıtı bekleniyor")).toBeInTheDocument();
+    // B7: atıf satırında PO'nun gördüğü kimlik (CQ1), rozet yalnız durumu söyler.
+    const blok = within(screen.getByTestId("case-acik-sorular"));
+    expect(blok.getByTestId("atif-kimlik")).toHaveTextContent(/^CQ1/);
+    expect(blok.getByTestId("atif-kimlik")).toHaveAttribute("title", "Üretimdeki kimlik: Q1");
+    expect(blok.getByText("PO yanıtı bekleniyor")).toBeInTheDocument();
     expect(screen.queryByTestId("po-yanit-onerisi")).not.toBeInTheDocument();
 
     await api.acikSoruYanitlariniOku(V3_GEREKSINIM_ID);
@@ -124,9 +130,10 @@ describe("CaseKarti: PO yanıtı", () => {
     sar(<CaseKarti tc={c} guncellendi={() => undefined} />);
     const bloklar = screen.getAllByTestId("case-acik-sorular");
     const son = bloklar[bloklar.length - 1];
-    expect(within(son).getByText("CQ1 · Yanıtlandı")).toBeInTheDocument();
+    expect(within(son).getByText("Yanıtlandı")).toBeInTheDocument();
     expect(within(son).getByTestId("po-yaniti")).toHaveTextContent(ORNEK_PO_YANITI);
-    expect(screen.getAllByTestId("po-yanit-onerisi").length).toBeGreaterThan(0);
+    // B3: yanıt sonrası tek mesaj — öneri kutusu ayrıca çizilmez (yönlendirme kutusu söyler).
+    expect(screen.queryAllByTestId("po-yanit-onerisi")).toHaveLength(0);
 
     const user = userEvent.setup();
     const dugmeler = screen.getAllByRole("button", { name: "Düzelt" });

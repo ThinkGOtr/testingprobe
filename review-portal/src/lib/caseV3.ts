@@ -2,7 +2,9 @@
 // sunucunun 422 hata listesinin ayrıştırılması. Saf işlevler: hem düzeltme formu hem örnek veri
 // (mock) katmanı kullanır. Nihai doğrulama her zaman sunucudadır (`consistency_problems`).
 import type { AcikSoru, CaseHazirlik, CaseUretimOzeti, TestCase, TestCaseIcerik, Varsayim } from "../api/types";
+import { tarih } from "./format";
 import { CASE_DURUMU, CASE_HAZIRLIK, SORU_SAHIBI } from "./etiketler";
+import { TEKNIK_ONEKI } from "./tasarimModeli";
 
 /** Eski (v2) içerik: `readiness` anahtarı yok (K9). */
 export const eskiIcerik = (i: TestCaseIcerik): boolean => i.readiness === undefined;
@@ -45,7 +47,10 @@ export function hazirlikSorunlari(i: TestCaseIcerik): string[] {
   return s;
 }
 
-const TEKNIK_ONEKI: Record<string, string> = { EP: "EP-", BVA: "BV-", DT: "DT-", ST: "ST-", PW: "PW-", UC: "UC-", EG: "EG-" };
+/** Düzeltme formu ipucu: "EP → EP-, BVA → BV-, …" (tek kaynak: `tasarimModeli.TEKNIK_ONEKI`). */
+export const TEKNIK_ONEK_IPUCU = Object.entries(TEKNIK_ONEKI)
+  .map(([t, o]) => `${t} → ${o}`)
+  .join(", ");
 
 /**
  * §4.2 kural 1–6 (örnek veri katmanı için; core `consistency_problems` karşılığı). `ozet` yoksa
@@ -66,7 +71,7 @@ export function tutarlilikSorunlari(i: TestCaseIcerik, ozet?: Pick<CaseUretimOze
   const varsayimlar = new Set((ozet?.assumptions ?? []).map((a) => a.id));
   for (const a of i.assumption_refs ?? []) if (!varsayimlar.has(a)) s.push(`Varsayım tanımlı değil: ${a}`);
   for (const t of teknikler) {
-    const onek = TEKNIK_ONEKI[t];
+    const onek = (TEKNIK_ONEKI as Record<string, string>)[t];
     if (onek && !covers.some((c) => c.startsWith(onek))) s.push(`Teknik ${t} için kapsam öğesi yok (${onek}… bekleniyor).`);
   }
   s.push(...hazirlikSorunlari(i));
@@ -151,6 +156,32 @@ export interface HazirlikYonlendirmesi {
   metin: string;
   /** "Varsayım doğrulandı" ile doğrulanabilecek varsayımlar (yalnız `tur === "varsayim"`). */
   dogrulanacak: string[];
+  /** B3: atıf yapılan soruların hepsi PO tarafından yanıtlandı; sıradaki eylem "Düzelt" (birincil). */
+  duzeltBirincil?: boolean;
+}
+
+/** Ad çevirici (kullanıcı adı → görünen ad); verilmezse ad aynen yazılır. */
+type AdCevir = (ad: string | null | undefined) => string;
+
+/** B7: PO'ya gönderilen sorunun kimliği (CQ1); gönderilmediyse üretimdeki kimlik (Q1). */
+export function soruKimligi(tc: Pick<TestCase, "po_sorulari">, q: string): string {
+  return tc.po_sorulari?.[q]?.po_etiketi ?? q;
+}
+
+/** B1: gereksinimin Jira story'si yok (core `jira_key` null); alan hiç yoksa (eski core) bilinmiyor sayılır. */
+export const storySiYok = (tc: Pick<TestCase, "jira_key">): boolean => tc.jira_key === null;
+
+const STORY_YOK_METNI = (q: string) =>
+  `${q} PO yanıtı gerektiriyor. Bu gereksinimin Jira story'si olmadığı için soru portaldan gönderilemez; yanıtı PO'dan alıp 'Düzelt' ile beklenen sonucu yazın.`;
+
+/** B2: başka case'te doğrulanan varsayımın notu: "A1, #2 numaralı case'te doğrulandı (Ad, 12 Kas 10:00)." */
+export function dogrulamaNotu(a: Pick<Varsayim, "id" | "dogrulama">, kisiAdi?: AdCevir): string | null {
+  const d = a.dogrulama;
+  if (!d) return null;
+  const kim = d.kim ? (kisiAdi ? kisiAdi(d.kim) : d.kim) : "";
+  const zaman = d.zaman ? tarih(d.zaman) : "";
+  const ek = [kim, zaman].filter(Boolean).join(", ");
+  return `${a.id}, #${d.sira_no} numaralı case'te doğrulandı${ek ? ` (${ek})` : ""}.`;
 }
 
 /**
@@ -159,12 +190,15 @@ export interface HazirlikYonlendirmesi {
  * tutarlılık engeli varsa onun metni. Onaylanabilir case'te ya da taslak olmayan case'te null.
  */
 export function hazirlikYonlendirmesi(
-  tc: Pick<TestCase, "durum" | "readiness" | "icerik" | "onay_engeli" | "acik_sorular" | "legacy" | "po_sorulari">,
+  tc: Pick<TestCase, "durum" | "readiness" | "icerik" | "onay_engeli" | "acik_sorular" | "legacy" | "po_sorulari"> &
+    Partial<Pick<TestCase, "jira_key" | "varsayimlar">>,
+  kisiAdi?: AdCevir,
 ): HazirlikYonlendirmesi | null {
   if (tc.durum !== "draft") return null;
   const eski = caseEski(tc);
   const sorular = eski ? [] : (tc.icerik.open_question_refs ?? []);
   const varsayimlar = eski ? [] : (tc.icerik.assumption_refs ?? []);
+  const storyYok = tc.jira_key === null;
   if (sorular.length) {
     const ek = varsayimlar.length
       ? ` Case ayrıca ${varsayimlar.join(", ")} ${varsayimlar.length > 1 ? "varsayımlarına" : "varsayımına"} bağlı; yanıtla birlikte ${varsayimlar.length > 1 ? "onları" : "onu"} da doğrulayıp 'Düzelt' ile hazır yapın.`
@@ -177,21 +211,53 @@ export function hazirlikYonlendirmesi(
       const yanitli = grup("yanitlandi");
       const gonderildi = grup("gonderildi");
       const gonderilmedi = grup("gonderilmedi");
-      const etiket = (q: string) => (po[q]?.po_etiketi ? `${q} (${po[q]!.po_etiketi})` : q);
-      if (yanitli.length) parcalar.push(`${yanitli.map(etiket).join(", ")} PO tarafından yanıtlandı; beklenen sonucu 'Düzelt' ile bu yanıta göre yazın ya da case'i yeniden üretin.`);
+      // B7: gönderilen soru her yerde PO'nun gördüğü kimlikle (CQ1) anılır.
+      const etiket = (q: string) => soruKimligi(tc, q);
+      if (yanitli.length) parcalar.push(`${yanitli.map(etiket).join(", ")}: PO yanıtladı. 'Düzelt' ile beklenen sonucu yanıta göre yazın (ya da case'i yeniden üretin).`);
       if (gonderildi.length) parcalar.push(`${gonderildi.map(etiket).join(", ")} PO'ya gönderildi, yanıt bekleniyor; yanıt gelince 'Düzelt' ile beklenen sonucu yazın.`);
-      if (gonderilmedi.length) parcalar.push(`${gonderilmedi.join(", ")} PO'nun yanıtını bekliyor ve henüz gönderilmedi; 'Açık soruları PO'ya gönder' ile gönderin, yanıt gelince 'Düzelt' ile beklenen sonucu yazın.`);
-      return { tur: "soru", metin: parcalar.join(" ") + ek, dogrulanacak: [] };
+      if (gonderilmedi.length) {
+        parcalar.push(
+          storyYok
+            ? STORY_YOK_METNI(gonderilmedi.join(", "))
+            : `${gonderilmedi.join(", ")} PO'nun yanıtını bekliyor ve henüz gönderilmedi; 'Açık soruları PO'ya gönder' ile gönderin, yanıt gelince 'Düzelt' ile beklenen sonucu yazın.`,
+        );
+      }
+      return {
+        tur: "soru",
+        metin: parcalar.join(" ") + ek,
+        dogrulanacak: [],
+        duzeltBirincil: yanitli.length > 0 && gonderildi.length === 0 && gonderilmedi.length === 0,
+      };
     }
+    if (storyYok) return { tur: "soru", metin: STORY_YOK_METNI(sorular.join(", ")) + ek, dogrulanacak: [] };
     const sahipler = [...new Set((tc.acik_sorular ?? []).filter((q) => sorular.includes(q.id)).map((q) => q.owner))];
     const bekleyen = sahipler.length === 0 || (sahipler.length === 1 && sahipler[0] === "PO") ? "PO'nun yanıtını bekliyor" : `yanıt bekliyor (sahibi: ${sahipler.map((x) => SORU_SAHIBI[x] ?? x).join(", ")})`;
     return { tur: "soru", metin: `${sorular.join(", ")} ${bekleyen}. Henüz gönderilmediyse 'Açık soruları PO'ya gönder' ile gönderin; yanıt gelince 'Düzelt' ile beklenen sonucu yazın.${ek}`, dogrulanacak: [] };
   }
   if (varsayimlar.length) {
     const cok = varsayimlar.length > 1;
+    const dugme = cok ? "Varsayımlar doğrulandı" : "Varsayım doğrulandı";
+    // B2: aynı varsayım başka case'te doğrulandıysa "doğrulanmadı" denmez; nerede/kim doğruladığı yazılır.
+    const kayit = new Map((tc.varsayimlar ?? []).map((a) => [a.id, a]));
+    const notlar = varsayimlar.flatMap((a) => {
+      const k = kayit.get(a);
+      const n = k ? dogrulamaNotu(k, kisiAdi) : null;
+      return n ? [n] : [];
+    });
+    const dogrulanmamis = varsayimlar.filter((a) => !kayit.get(a)?.dogrulama);
+    if (notlar.length) {
+      const kalan = dogrulanmamis.length
+        ? ` ${dogrulanmamis.join(", ")} ${dogrulanmamis.length > 1 ? "varsayımları" : "varsayımı"} doğrulanmadı.`
+        : "";
+      return {
+        tur: "varsayim",
+        metin: `${notlar.join(" ")}${kalan} Bu case için de onaylamak üzere '${dugme}' düğmesini kullanın; varsayım bu case'e uymuyorsa 'Düzelt' ile beklenen sonucu güncelleyin.`,
+        dogrulanacak: varsayimlar,
+      };
+    }
     return {
       tur: "varsayim",
-      metin: `${varsayimlar.join(", ")} ${cok ? "varsayımları" : "varsayımı"} doğrulanmadı. Doğruladıysanız '${cok ? "Varsayımlar doğrulandı" : "Varsayım doğrulandı"}' ile onaylayın; değilse 'Düzelt' ile beklenen sonucu güncelleyin ya da reddedin.`,
+      metin: `${varsayimlar.join(", ")} ${cok ? "varsayımları" : "varsayımı"} doğrulanmadı. Doğruladıysanız '${dugme}' ile onaylayın; değilse 'Düzelt' ile beklenen sonucu güncelleyin ya da reddedin.`,
       dogrulanacak: varsayimlar,
     };
   }
@@ -201,6 +267,65 @@ export function hazirlikYonlendirmesi(
     return { tur: "genel", metin: `Hazır değil (${CASE_HAZIRLIK[hazirlik]?.etiket ?? hazirlik}): 'Düzelt' ile hazır yapın ya da reddedin.`, dogrulanacak: [] };
   }
   return null;
+}
+
+/** Atıf yapılan soruların hepsi PO tarafından yanıtlandı mı (B3: kart tek mesaj, bilgi tonu). */
+export function sorularYanitlandi(tc: Pick<TestCase, "icerik" | "po_sorulari">): boolean {
+  const sorular = tc.icerik.open_question_refs ?? [];
+  const po = tc.po_sorulari;
+  return sorular.length > 0 && !!po && sorular.every((q) => po[q]?.po_durumu === "yanitlandi");
+}
+
+const normalMetin = (m: string) => m.split(/\s+/).filter(Boolean).join(" ").toLocaleLowerCase("tr");
+
+/**
+ * B2 iyimser güncelleme: `onceki` case'te `ids` varsayımları doğrulandı (yeni hâli `yeni`). Listede aynı
+ * gereksinimin aynı metinli varsayımına dayanan diğer case'lerin varsayım kaydına `dogrulama` yazılır;
+ * sunucu yenilemesi gelince core'un hesapladığı değer geçerli olur.
+ */
+export function dogrulamayiYay(liste: TestCase[], onceki: TestCase, yeni: TestCase, ids: string[]): TestCase[] {
+  const metinler = new Map((onceki.varsayimlar ?? []).filter((a) => ids.includes(a.id)).map((a) => [normalMetin(a.statement), a.id]));
+  return liste.map((c) => {
+    if (c.id === yeni.id) return yeni;
+    if (c.requirement_id !== yeni.requirement_id || !c.varsayimlar?.length || !metinler.size) return c;
+    let degisti = false;
+    const varsayimlar = c.varsayimlar.map((a) => {
+      const kimlik = metinler.get(normalMetin(a.statement));
+      if (!kimlik || a.dogrulama) return a;
+      degisti = true;
+      return { ...a, dogrulama: { case_id: yeni.id, sira_no: yeni.sira_no, kimlik, kim: yeni.karar_veren, zaman: yeni.karar_zamani } };
+    });
+    return degisti ? { ...c, varsayimlar } : c;
+  });
+}
+
+export interface AcikSoruSayimi {
+  gonderilmedi: number;
+  gonderildi: number;
+  yanitlandi: number;
+}
+
+/**
+ * B8: taslak case'lerin atıf yaptığı açık soruların PO durumu (soru metniyle tekilleştirilir). Core
+ * `po_sorulari` yoksa (eski core) null: şeritte öğe çizilmez.
+ */
+export function acikSoruSayimi(caseler: TestCase[]): AcikSoruSayimi | null {
+  const durumlar = new Map<string, "gonderilmedi" | "gonderildi" | "yanitlandi">();
+  let poVar = false;
+  for (const c of caseler) {
+    if (c.durum !== "draft" || caseEski(c) || !c.po_sorulari) continue;
+    poVar = true;
+    const metin = new Map((c.acik_sorular ?? []).map((q) => [q.id, q.question]));
+    for (const q of c.icerik.open_question_refs ?? []) {
+      const k = c.po_sorulari[q];
+      const anahtar = k?.po_etiketi ?? normalMetin(metin.get(q) ?? `${c.uretim_no ?? 1}:${q}`);
+      durumlar.set(anahtar, k?.po_durumu ?? "gonderilmedi");
+    }
+  }
+  if (!poVar) return null;
+  const s: AcikSoruSayimi = { gonderilmedi: 0, gonderildi: 0, yanitlandi: 0 };
+  for (const d of durumlar.values()) s[d] += 1;
+  return s;
 }
 
 /**
