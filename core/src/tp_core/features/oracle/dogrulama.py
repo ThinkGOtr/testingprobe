@@ -23,8 +23,14 @@ olgu atılır (`atilan_olgular` sayılır), asla düzeltilmez:
 
 Grup değerlendirmesi: grubun tablosu bilinmiyorsa grup atılır (olguları atılmış sayılır). Aynı
 girdi kolonu için farklı değerli iki doğrulanmış olgu `cikarilamadi` (çelişkili girdi) olur.
-`ifade.degerlendir` eksik girdi bildirirse `cikarilamadi`, hata verirse `hata`, satır bulunmazsa
-`satir_yok` olur; beklenen olgusu kalmayan grup `karsilastirma_yok` olur. Her beklenen olgu
+Tablo `kismi_degerlendir` ile hesaplanır: case'te bulunmayan bir girdi yalnız onu kullanan
+koşulları ve çıktıları etkiler (satırlar sırayla denenir; karar verilemeyen ilk koşulda durulur,
+yani seçilen satır tam değerlendirmeyle aynıdır). Seçilen satırın eksik girdiye dayanan
+çıktıları karşılaştırılmaz; o çıktıların doğrulanmış beklenen olguları `karsilastirilamayan`
+listesine (neden ile) yazılır — sonuç onlardan etkilenmez, metamorfik türetme onları da okur.
+Satır seçilemiyorsa `cikarilamadi`, hata varsa `hata`, satır bulunmazsa `satir_yok` olur;
+karşılaştırılabilir beklenen olgusu kalmayan grup `karsilastirma_yok` (hiç beklenen yoksa) ya da
+`cikarilamadi` (yalnız hesaplanamayan çıktılar varsa) olur. Her karşılaştırılan beklenen olgu
 `ifade.esit_mi(case_degeri, tablo_degeri, kolon toleransı)` ile karşılaştırılır.
 
 Genel sonuç: herhangi bir karşılaştırma tutmuyorsa `uyumsuz`; değilse en az bir karşılaştırma
@@ -37,7 +43,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
 
@@ -120,13 +126,15 @@ def _sinir_mi(metin: str, bas: int, son: int) -> bool:
     sonra = metin[son] if son < len(metin) else ""
     if once and once.isalnum():
         return False
-    if once in ".," and bas > 1 and metin[bas - 2].isdigit():
+    # `""` her dizginin içindedir: alan başı/sonu ayrı denetlenir (birleştirme: alanın başındaki
+    # sayı alıntısı — "7 adette …" — önceden "işaret düşmüş" sayılıp atılıyordu).
+    if once and once in ".," and bas > 1 and metin[bas - 2].isdigit():
         return False
-    if once in "+-−" and metin[bas : bas + 1].isdigit():  # işaret alıntıdan düşmüş: "−25,00"
+    if once and once in "+-−" and metin[bas : bas + 1].isdigit():  # işaret düşmüş: "−25,00"
         return False
     if sonra and sonra.isalnum():
         return False
-    return not (sonra in ".," and son + 1 < len(metin) and metin[son + 1].isdigit())
+    return not (sonra and sonra in ".," and son + 1 < len(metin) and metin[son + 1].isdigit())
 
 
 def alinti_geciyor_mu(alan: str, alinti: str) -> bool:
@@ -211,6 +219,74 @@ class Tablo:
         return {k["ad"]: k["tur"] for k in self.icerik.get(alan) or []}
 
 
+@dataclass(frozen=True)
+class KismiDegerlendirme:
+    """`kismi_degerlendir` sonucu; `ifade.Degerlendirme`'ye ek olarak `hesaplanamayan`: seçilen
+    satırda eksik girdiye dayandığı için hesaplanmayan çıktı → eksik girdiler."""
+
+    satir_id: str | None = None
+    ciktilar: dict[str, Any] = field(default_factory=dict)
+    hesaplanamayan: dict[str, list[str]] = field(default_factory=dict)
+    eksik_girdiler: list[str] = field(default_factory=list)
+    hata: str | None = None
+
+
+def kismi_degerlendir(icerik: Mapping[str, Any], girdiler: Mapping[str, Any]) -> KismiDegerlendirme:
+    """Eksik girdiye dayanıklı değerlendirme (birleştirme, 012 §12).
+
+    Tüm girdiler varsa `ifade.degerlendir` ile aynıdır. Eksik girdi varsa satırlar sırayla denenir:
+    koşulu eksik bir girdiyi kullanan ilk satırda durulur (`eksik_girdiler` dolar; tam
+    değerlendirme o satırı seçebilirdi). Koşulu sağlanan satırın eksik girdi kullanmayan çıktıları
+    hesaplanır, kullananlar `hesaplanamayan`'a yazılır. Ör. TPD-1 T1: case birim fiyatı yazmıyorsa
+    6 adette `bedava_adet` ve `indirim` (R2, sabit) yine de karşılaştırılır; 7 adette `bedava_adet`
+    karşılaştırılır, `indirim` (birim fiyata dayanır) karşılaştırılamaz.
+    """
+    tam = ifade.degerlendir(dict(icerik), dict(girdiler))
+    if not tam.eksik_girdiler:
+        return KismiDegerlendirme(tam.satir_id, dict(tam.ciktilar), {}, [], tam.hata)
+    eksik = set(tam.eksik_girdiler)
+    ortam: dict[str, Any] = {}
+    for kolon in icerik.get("girdiler") or []:
+        ad = kolon["ad"]
+        if girdiler.get(ad) is None:
+            continue
+        try:
+            ortam[ad] = ifade.girdi_donustur(girdiler[ad], kolon["tur"])
+        except ifade.IfadeHatasi as h:
+            return KismiDegerlendirme(hata=f"girdi '{ad}': {h}")
+    for satir in icerik.get("satirlar") or []:
+        sid = satir["id"]
+        gerekli = [a for a in ifade.adlar(satir["kosul"]) if a in eksik]
+        if gerekli:
+            return KismiDegerlendirme(eksik_girdiler=_sirali(icerik, gerekli))
+        try:
+            if ifade.hesapla(satir["kosul"], ortam) is not True:
+                continue
+        except ifade.IfadeHatasi as h:
+            return KismiDegerlendirme(hata=f"satır {sid} koşul: {h}")
+        ciktilar: dict[str, Any] = {}
+        hesaplanamayan: dict[str, list[str]] = {}
+        for kolon in icerik.get("ciktilar") or []:
+            ad = kolon["ad"]
+            metin = satir["cikti"][ad]
+            gerekli = [a for a in ifade.adlar(metin) if a in eksik]
+            if gerekli:
+                hesaplanamayan[ad] = _sirali(icerik, gerekli)
+                continue
+            try:
+                ciktilar[ad] = ifade.hesapla(metin, ortam)
+            except ifade.IfadeHatasi as h:
+                return KismiDegerlendirme(satir_id=sid, hata=f"satır {sid} çıktı '{ad}': {h}")
+        return KismiDegerlendirme(sid, ciktilar, hesaplanamayan)
+    return KismiDegerlendirme()
+
+
+def _sirali(icerik: Mapping[str, Any], adlar: Sequence[str]) -> list[str]:
+    """Adlar tablonun girdi tanım sırasıyla (`ifade.degerlendir.eksik_girdiler` ile aynı)."""
+    sira = [k["ad"] for k in icerik.get("girdiler") or []]
+    return [a for a in sira if a in adlar]
+
+
 def _tablo_bul(tablolar: Sequence[Tablo], ref: Any) -> Tablo | None:
     r = str(ref or "").strip()
     return next((t for t in tablolar if r in (t.ref, t.id)), None)
@@ -275,6 +351,7 @@ def _grup_degerlendir(
         "satir_id": None,
         "girdiler": [_olgu_kaydi(o) for o in girdiler],
         "karsilastirmalar": [],
+        "karsilastirilamayan": [],
         "durum": G_CIKARILAMADI,
         "neden": None,
     }
@@ -285,7 +362,7 @@ def _grup_degerlendir(
             kayit["neden"] = f"çelişkili girdi: {o['column']}"
             return kayit
         degerler[o["column"]] = o["value"]
-    sonuc = ifade.degerlendir(dict(tablo.icerik), degerler)
+    sonuc = kismi_degerlendir(tablo.icerik, degerler)
     if sonuc.eksik_girdiler:
         kayit["neden"] = "case'te bulunamayan girdi: " + ", ".join(sonuc.eksik_girdiler)
         return kayit
@@ -296,12 +373,24 @@ def _grup_degerlendir(
         kayit.update(durum=G_SATIR_YOK, neden="bu girdilerle eşleşen tablo satırı yok")
         return kayit
     kayit["satir_id"] = sonuc.satir_id
-    if not beklenen:
+    hesaplanan = [o for o in beklenen if o["column"] not in sonuc.hesaplanamayan]
+    kayit["karsilastirilamayan"] = [
+        {
+            **_olgu_kaydi(o),
+            "neden": "case'te bulunamayan girdi: " + ", ".join(sonuc.hesaplanamayan[o["column"]]),
+        }
+        for o in beklenen
+        if o["column"] in sonuc.hesaplanamayan
+    ]
+    if not hesaplanan:
+        if kayit["karsilastirilamayan"]:
+            kayit.update(neden=kayit["karsilastirilamayan"][0]["neden"])
+            return kayit
         kayit.update(durum=G_KARSILASTIRMA_YOK, neden="case'te doğrulanan beklenen değer yok")
         return kayit
     tol = ifade.toleranslar(tablo.icerik)
     karsilastirmalar = []
-    for o in beklenen:
+    for o in hesaplanan:
         tablo_degeri = sonuc.ciktilar.get(o["column"])
         uyumlu = ifade.esit_mi(o["value"], tablo_degeri, tol.get(o["column"], Decimal(0)))
         karsilastirmalar.append(
@@ -336,14 +425,20 @@ def ozet(sonuc: str | None, ayrintilar: Mapping[str, Any] | None) -> str:
     ]
     if sonuc == KAPSAM_DISI:
         return "Bu case'i kapsayan onaylı karar tablosu yok."
+    disarida = [k for g in ayr.get("gruplar") or [] for k in g.get("karsilastirilamayan") or []]
+    ek = (
+        f" {len(disarida)} değer karşılaştırılamadı ({disarida[0].get('neden')})."
+        if disarida
+        else ""
+    )
     if sonuc == UYUMLU:
-        return f"{len(karsilastirmalar)} beklenen değer onaylı karar tablosuyla uyumlu."
+        return f"{len(karsilastirmalar)} beklenen değer onaylı karar tablosuyla uyumlu.{ek}"
     if sonuc == UYUMSUZ:
         bozuk = [k for k in karsilastirmalar if not k.get("uyumlu")]
         ilk = bozuk[0]
         return (
             f"{len(bozuk)} beklenen değer tabloyla uyuşmuyor; ör. {ilk['column']}: case "
-            f"{ilk['alinti']!r}, tablo {ilk['tablo_degeri']}."
+            f"{ilk['alinti']!r}, tablo {ilk['tablo_degeri']}.{ek}"
         )
     if sonuc == KONTROL_EDILEMEDI:
         nedenler = [g.get("neden") for g in ayr.get("gruplar") or [] if g.get("neden")]

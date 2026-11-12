@@ -150,32 +150,52 @@ def bicimle(deger: Decimal, ornek: str) -> str:
 
 
 def _olgu_degeri(deger: Any, alinti: str) -> Any:
-    """Olgunun değeri alıntıyla doğrulanır; tutmazsa None (olgu atılır)."""
+    """Olgunun değeri alıntıyla doğrulanır; tutmazsa None (olgu atılır).
+
+    Kayıttaki değer biçimleri (oracle `ayrintilar`): sayı düz ondalık metin (`"150.00"`),
+    mantıksal JSON bool, metin JSON str. Mantıksal olgu önce ayrılır (alıntısı sayı içerse de —
+    `"Minimum 750,00 TL" uyarısı görünür` — sayı sayılmaz); sayıya okunamayan değerli olgu metin
+    olarak denenir. Değeri değişmeyen mantıksal/metin olgu türetmeyi engellemez (alıntısına
+    dokunulmaz); değişirse `turet` `iliski_gecersiz` verir.
+    """
+    if isinstance(deger, bool):
+        return deger
     sayi = ifade.sayi_ayristir(alinti)
     if sayi is not None:
         try:
             beklenen = ifade.girdi_donustur(deger, "sayi")
         except ifade.IfadeHatasi:
-            return None
-        return sayi if beklenen == sayi else None
-    if isinstance(deger, bool):
-        return deger
+            beklenen = None
+        if beklenen is not None:
+            return sayi if beklenen == sayi else None
     if isinstance(deger, str) and deger.strip() and deger.strip() in alinti:
         return deger
     return None
 
 
 def grup_olgulari(icerik: Mapping[str, Any], grup: Mapping[str, Any]) -> list[Olgu]:
-    """Grubun yeniden doğrulanmış girdi ve çıktı olguları (sıra korunur)."""
-    hamlar: list[tuple[Any, Any, Any, Any, bool]] = [
-        (o.get("column"), o.get("field"), o.get("quote"), o.get("value"), False)
-        for o in grup.get("girdiler") or []
-        if isinstance(o, Mapping)
-    ] + [
-        (k.get("column"), k.get("alan"), k.get("alinti"), k.get("case_degeri"), True)
-        for k in grup.get("karsilastirmalar") or []
-        if isinstance(k, Mapping)
-    ]
+    """Grubun yeniden doğrulanmış girdi ve çıktı olguları (sıra korunur).
+
+    Çıktı olguları `karsilastirmalar[]` ve `karsilastirilamayan[]`'dır (ikincisi: tablonun eksik
+    girdi yüzünden hesaplayamadığı ama case'te doğrulanmış beklenen değerler, olgu biçiminde;
+    birleştirme notu §12). İkisi de case'in kendi değeridir; ilişki onları dönüştürür."""
+    hamlar: list[tuple[Any, Any, Any, Any, bool]] = (
+        [
+            (o.get("column"), o.get("field"), o.get("quote"), o.get("value"), False)
+            for o in grup.get("girdiler") or []
+            if isinstance(o, Mapping)
+        ]
+        + [
+            (k.get("column"), k.get("alan"), k.get("alinti"), k.get("case_degeri"), True)
+            for k in grup.get("karsilastirmalar") or []
+            if isinstance(k, Mapping)
+        ]
+        + [
+            (o.get("column"), o.get("field"), o.get("quote"), o.get("value"), True)
+            for o in grup.get("karsilastirilamayan") or []
+            if isinstance(o, Mapping)
+        ]
+    )
     out: list[Olgu] = []
     for column, alan, alinti, deger, cikti in hamlar:
         if not (isinstance(column, str) and isinstance(alan, str) and isinstance(alinti, str)):

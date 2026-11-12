@@ -9,6 +9,7 @@ import pytest
 
 from tp_core.features.oracle import dogrulama as d
 
+from . import tpd1
 from .tpd1 import OLGULAR, T1, T2, tablo_id, tpd1_cases
 
 TABLOLAR = [d.Tablo(tablo_id(1), "T1", T1["ad"], T1), d.Tablo(tablo_id(2), "T2", T2["ad"], T2)]
@@ -84,6 +85,10 @@ def test_alan_yolu(yol: Any, beklenen: str | None) -> None:
         ("Toplam 150 TL", "150 TL", True),
         ("Toplam 150 TL", "  ", False),
         ("Toplam 150 TL", "Toplam 160 TL", False),
+        ("7 adette 1 adet bedava", "7", True),  # alanın başında (birleştirme düzeltmesi)
+        ("7 adette", "adette", True),
+        ("−7 adet", "7", False),  # işaret düşmüş
+        ("toplam 150", "150", True),  # alanın sonunda
     ],
 )
 def test_alinti_birebir_ve_sinirda(alan: str, alinti: str, gecer: bool) -> None:
@@ -153,69 +158,136 @@ def test_metin_kurali(alinti: str, deger: Any, kabul: bool) -> None:
 # ------------------------------------------------------------------ değerlendirme
 
 
-def _kampanya_case(toplam: str = "150,00 TL") -> dict[str, Any]:
-    return tpd1_cases()[1] | {
+S4 = "steps[3].expected"
+
+
+def _kampanya_case(indirim: str = "25,00 TL", birim: str = "25,00 TL") -> dict[str, Any]:
+    """TPD-1 C2 + birim fiyatı yazan ön koşul (T1'in `indirim`'i birim fiyata dayanır)."""
+    c = tpd1_cases()[1]
+    return c | {
+        "preconditions": [*c["preconditions"], f"P-001 birim fiyatı {birim}"],
         "steps": [
-            *tpd1_cases()[1]["steps"][:3],
+            *c["steps"][:3],
             {
                 "id": "S4",
                 "action": "Üst menüden sepete git",
                 "data": None,
-                "expected": "P-001 satırında adet 7, bedava adet 1; ara toplam 175,00 TL, "
-                f"indirim 25,00 TL, toplam {toplam}",
+                "expected": f"P-001 satırında adet 7, bedava adet 1; indirim {indirim}",
             },
-        ]
+        ],
     }
 
 
-def _kampanya_olgulari(toplam: str = "150,00 TL", toplam_deger: str = "150.00") -> dict:
-    s4 = "steps[3].expected"
+def _kampanya_olgulari(
+    indirim: str = "25,00 TL", indirim_deger: str = "25.00", birim: str = "25,00 TL"
+) -> dict:
     return _grup(
-        [_o("adet", "7", "steps[2].data", "7"), _o("ara_toplam", "175.00", s4, "175,00 TL")],
         [
-            _o("bedava_adet", "1", s4, "adet 1"),
-            _o("indirim", "25.00", s4, "25,00 TL"),
-            _o("toplam", toplam_deger, s4, toplam),
+            _o("adet", "7", "steps[2].data", "7"),
+            _o("birim_fiyat", birim.split()[0].replace(",", "."), "preconditions[2]", birim),
+        ],
+        [
+            _o("bedava_adet", "1", S4, "adet 1"),
+            _o("indirim", indirim_deger, S4, indirim),
         ],
     )
 
 
-def test_uyumlu_tpd1_golden_olgulari() -> None:
-    cases = tpd1_cases()
-    for n, groups in OLGULAR.items():
-        sonuc, ayr = d.degerlendir(cases[n - 1], TABLOLAR, {"groups": groups})
-        assert sonuc == d.UYUMLU, n
-        assert ayr["atilan_olgular"] == 0
-        assert set(ayr) == {"gruplar", "atilan_olgular"}
-        g = ayr["gruplar"][0]
-        assert set(g) == {
-            "tablo_id",
-            "tablo_ad",
-            "satir_id",
-            "girdiler",
-            "karsilastirmalar",
-            "durum",
-            "neden",
-        }
-        assert g["satir_id"] is not None and g["durum"] == "uyumlu"
-        for k in g["karsilastirmalar"]:
-            assert set(k) == {"column", "alan", "alinti", "case_degeri", "tablo_degeri", "uyumlu"}
+GRUP_ALANLARI = {
+    "tablo_id",
+    "tablo_ad",
+    "satir_id",
+    "girdiler",
+    "karsilastirmalar",
+    "karsilastirilamayan",
+    "durum",
+    "neden",
+}
+
+
+def test_tablolar_s1_taslak_goldenindan() -> None:
+    """Oracle şeridinin TPD-1 tabloları Ş1 taslağıyla birebir aynı (kopya yok)."""
+    assert T1["ad"] == "Kampanya: 6 al 1 bedava (7 adette 1 bedava)" and T1["ac_refs"] == ["AC2"]
+    assert [k["ad"] for k in T1["girdiler"]] == ["adet", "birim_fiyat"]
+    assert [k["ad"] for k in T1["ciktilar"]] == ["bedava_adet", "indirim"]
+    assert T1["satirlar"][0]["cikti"]["bedava_adet"] == "adet // 7"
+    assert T2["ac_refs"] == ["AC3", "AC6"]
+    assert [k["ad"] for k in T2["girdiler"]] == ["kampanyali_sepet", "sepet_tutari"]
+    assert [k["ad"] for k in T2["ciktilar"]] == ["minimum_uyarisi"]
+    assert T2["satirlar"][1]["kosul"] == "sepet_tutari < 750"
+
+
+@pytest.mark.parametrize(("n", "senaryo"), [*((n, None) for n in OLGULAR), (3, tpd1.SENARYO)])
+def test_tpd1_golden_olgulari_story_tablolariyla(n: int, senaryo: str | None) -> None:
+    case = tpd1_cases(senaryo)[n - 1]
+    groups = tpd1.SENARYO_OLGULARI[n] if senaryo else OLGULAR[n]
+    kapsayan = [
+        t for t in TABLOLAR if set(t.icerik["ac_refs"]) & set(case["acceptance_criteria_refs"])
+    ]
+    sonuc, ayr = d.degerlendir(case, kapsayan, {"groups": groups})
+    beklenen = tpd1.BEKLENEN_SONUC_ANA_YOL if senaryo else tpd1.BEKLENEN_SONUC_FIX_DOC
+    assert sonuc == beklenen[n]
+    assert ayr["atilan_olgular"] == 0
+    assert set(ayr) == {"gruplar", "atilan_olgular"}
+    g = ayr["gruplar"][0]
+    assert set(g) == GRUP_ALANLARI
+    assert g["satir_id"] is not None and g["durum"] == sonuc
+    for k in g["karsilastirmalar"]:
+        assert set(k) == {"column", "alan", "alinti", "case_degeri", "tablo_degeri", "uyumlu"}
+
+
+def test_c2_indirim_birim_fiyatsiz_karsilastirilamaz() -> None:
+    """7 adette R1: `bedava_adet` karşılaştırılır, `indirim` birim fiyata dayanır → dışarıda."""
+    sonuc, ayr = d.degerlendir(tpd1_cases()[1], TABLOLAR[:1], {"groups": OLGULAR[2]})
+    g = ayr["gruplar"][0]
+    assert sonuc == d.UYUMLU and g["satir_id"] == "R1"
+    assert {k["column"] for k in g["karsilastirmalar"]} == {"bedava_adet"}
+    assert [(o["column"], o["value"], o["field"]) for o in g["karsilastirilamayan"]] == [
+        ("indirim", "25.00", S4),
+        ("indirim", "25.00", "expected_result"),
+    ]
+    assert all("birim_fiyat" in o["neden"] for o in g["karsilastirilamayan"])
+    assert "karşılaştırılamadı" in d.ozet(sonuc, ayr)
+
+
+def test_c3_ana_yol_uyumlu_fix_doc_uyumsuz() -> None:
+    """Demo ana yolu C3 (6 adette bedava yok) tabloyla aynı; koda uyarlanmış C3 uyuşmaz."""
+    ana = tpd1.ana_yol_cases()[2]
+    sonuc, ayr = d.degerlendir(ana, TABLOLAR[:1], {"groups": tpd1.SENARYO_OLGULARI[3]})
+    assert sonuc == d.UYUMLU and ayr["gruplar"][0]["satir_id"] == "R2"
+    assert {
+        (k["column"], k["case_degeri"], k["tablo_degeri"])
+        for k in ayr["gruplar"][0]["karsilastirmalar"]
+    } == {
+        ("bedava_adet", "0", "0"),
+        ("indirim", "0.00", "0"),
+    }
+    sonuc, ayr = d.degerlendir(tpd1_cases()[2], TABLOLAR[:1], {"groups": OLGULAR[3]})
+    assert sonuc == d.UYUMSUZ
+    assert "bedava_adet" in d.ozet(sonuc, ayr)
+
+
+def test_tam_karsilastirma_birim_fiyatla() -> None:
+    sonuc, ayr = d.degerlendir(_kampanya_case(), TABLOLAR, _kampanya_olgulari())
+    g = ayr["gruplar"][0]
+    assert sonuc == d.UYUMLU and g["karsilastirilamayan"] == []
+    assert {k["column"] for k in g["karsilastirmalar"]} == {"bedava_adet", "indirim"}
 
 
 def test_uyumsuz_tek_karsilastirma_yeter() -> None:
-    case = _kampanya_case("175,00 TL")
-    sonuc, ayr = d.degerlendir(case, TABLOLAR, _kampanya_olgulari("175,00 TL", "175.00"))
+    case = _kampanya_case("30,00 TL")
+    sonuc, ayr = d.degerlendir(case, TABLOLAR, _kampanya_olgulari("30,00 TL", "30.00"))
     assert sonuc == d.UYUMSUZ
     g = ayr["gruplar"][0]
     assert g["durum"] == "uyumsuz" and g["satir_id"] == "R1"
     bozuk = [k for k in g["karsilastirmalar"] if not k["uyumlu"]]
     assert bozuk == [
         {
-            "column": "toplam",
-            "alan": "steps[3].expected",
-            "alinti": "175,00 TL",
-            "case_degeri": "175.00",
-            "tablo_degeri": "150.00",
+            "column": "indirim",
+            "alan": S4,
+            "alinti": "30,00 TL",
+            "case_degeri": "30.00",
+            "tablo_degeri": "25.00",
             "uyumlu": False,
         }
     ]
@@ -224,11 +296,11 @@ def test_uyumsuz_tek_karsilastirma_yeter() -> None:
 
 def test_tolerans_icinde_uyumlu_disinda_uyumsuz() -> None:
     sonuc, _ = d.degerlendir(
-        _kampanya_case("150,01 TL"), TABLOLAR, _kampanya_olgulari("150,01 TL", "150.01")
+        _kampanya_case("25,01 TL"), TABLOLAR, _kampanya_olgulari("25,01 TL", "25.01")
     )
-    assert sonuc == d.UYUMLU  # toplam toleransı 0.01
+    assert sonuc == d.UYUMLU  # indirim toleransı 0.01
     sonuc, _ = d.degerlendir(
-        _kampanya_case("150,02 TL"), TABLOLAR, _kampanya_olgulari("150,02 TL", "150.02")
+        _kampanya_case("25,02 TL"), TABLOLAR, _kampanya_olgulari("25,02 TL", "25.02")
     )
     assert sonuc == d.UYUMSUZ
     # bedava_adet toleranssız: 1 yerine 2 yazılırsa uyumsuz
@@ -237,7 +309,7 @@ def test_tolerans_icinde_uyumlu_disinda_uyumsuz() -> None:
         "bedava adet 1", "bedava adet 2"
     )
     olgu = _kampanya_olgulari()
-    olgu["groups"][0]["expected"][0] = _o("bedava_adet", "2", "steps[3].expected", "adet 2")
+    olgu["groups"][0]["expected"][0] = _o("bedava_adet", "2", S4, "adet 2")
     assert d.degerlendir(case, TABLOLAR, olgu)[0] == d.UYUMSUZ
 
 
@@ -254,23 +326,24 @@ def test_kontrol_edilemedi_bos_cikti_ve_none() -> None:
 
 
 def test_tutmayan_olgular_atilir_ve_sayilir() -> None:
-    s4 = "steps[3].expected"
     olgu = _grup(
         [
             _o("adet", "7", "steps[2].data", "7"),
-            _o("ara_toplam", "175.00", "steps[1].expected", "175,00 TL"),  # yanlış alan
+            _o("birim_fiyat", "25.00", "steps[1].expected", "25,00 TL"),  # yanlış alan
         ],
         [
-            _o("indirim", "30.00", s4, "25,00 TL"),  # değer alıntıya eşit değil
-            _o("toplam", "150.00", s4, "150,00TL"),  # alıntı birebir değil
-            _o("kdv", "1", s4, "adet 1"),  # bilinmeyen kolon
-            _o("adet", "7", s4, "adet 7"),  # girdi kolonu beklenende
+            _o("indirim", "25.00", S4, "25,00 TL"),  # geçerli; birim fiyatsız hesaplanamaz
+            _o("indirim", "30.00", S4, "25,00 TL"),  # değer alıntıya eşit değil
+            _o("indirim", "25.00", S4, "25,00TL"),  # alıntı birebir değil
+            _o("kdv", "1", S4, "adet 1"),  # bilinmeyen kolon
+            _o("adet", "7", S4, "adet 7"),  # girdi kolonu beklenende
         ],
     )
     sonuc, ayr = d.degerlendir(_kampanya_case(), TABLOLAR, olgu)
     assert ayr["atilan_olgular"] == 5
     g = ayr["gruplar"][0]
-    assert g["durum"] == "cikarilamadi" and "ara_toplam" in g["neden"]  # girdi eksik
+    assert g["durum"] == "cikarilamadi" and "birim_fiyat" in g["neden"]
+    assert [o["column"] for o in g["karsilastirilamayan"]] == ["indirim"]
     assert sonuc == d.KONTROL_EDILEMEDI
 
 
@@ -279,7 +352,7 @@ def test_bilinmeyen_tablo_grubu_atilir() -> None:
     olgu["groups"][0]["table_ref"] = "T9"
     sonuc, ayr = d.degerlendir(_kampanya_case(), TABLOLAR, olgu)
     assert sonuc == d.KONTROL_EDILEMEDI
-    assert ayr == {"gruplar": [], "atilan_olgular": 5}
+    assert ayr == {"gruplar": [], "atilan_olgular": 4}
     # Tablo kimliğiyle (uuid) atıf da kabul edilir.
     olgu["groups"][0]["table_ref"] = tablo_id(1)
     assert d.degerlendir(_kampanya_case(), TABLOLAR, olgu)[0] == d.UYUMLU
@@ -287,7 +360,7 @@ def test_bilinmeyen_tablo_grubu_atilir() -> None:
 
 def test_celiskili_girdi_cikarilamadi() -> None:
     olgu = _kampanya_olgulari()
-    olgu["groups"][0]["inputs"].append(_o("adet", "1", "steps[3].expected", "adet 1"))
+    olgu["groups"][0]["inputs"].append(_o("adet", "1", S4, "adet 1"))
     sonuc, ayr = d.degerlendir(_kampanya_case(), TABLOLAR, olgu)
     assert sonuc == d.KONTROL_EDILEMEDI
     assert ayr["gruplar"][0]["durum"] == "cikarilamadi"
@@ -295,14 +368,24 @@ def test_celiskili_girdi_cikarilamadi() -> None:
 
 
 def test_satir_yok_ve_hata_kontrol_edilemedi() -> None:
+    yalniz_r1 = d.Tablo("x", "T1", "k", {**T1, "satirlar": T1["satirlar"][:1]})
     case = _kampanya_case()
-    case["steps"][2]["data"] = "P-001 × 0"
+    case["steps"][2]["data"] = "P-001 × 5"
     olgu = _kampanya_olgulari()
-    olgu["groups"][0]["inputs"][0] = _o("adet", "0", "steps[2].data", "0")
-    sonuc, ayr = d.degerlendir(case, TABLOLAR, olgu)  # R1 koşulu adet >= 1
+    olgu["groups"][0]["inputs"][0] = _o("adet", "5", "steps[2].data", "5")
+    sonuc, ayr = d.degerlendir(case, [yalniz_r1], olgu)  # R1 koşulu adet >= 7
     assert sonuc == d.KONTROL_EDILEMEDI and ayr["gruplar"][0]["durum"] == "satir_yok"
-    bolen = {**T1, "satirlar": [{**T1["satirlar"][0], "kosul": "adet >= 0"}]}
-    sonuc, ayr = d.degerlendir(case, [d.Tablo("x", "T1", "k", bolen)], olgu)
+    r1 = T1["satirlar"][0]
+    bolen = {
+        **T1,
+        "satirlar": [
+            {**r1, "cikti": {**r1["cikti"], "bedava_adet": "adet // (adet - 7)"}},
+            *T1["satirlar"][1:],
+        ],
+    }
+    sonuc, ayr = d.degerlendir(
+        _kampanya_case(), [d.Tablo("x", "T1", "k", bolen)], _kampanya_olgulari()
+    )
     assert sonuc == d.KONTROL_EDILEMEDI and ayr["gruplar"][0]["durum"] == "hata"
 
 
@@ -315,13 +398,14 @@ def test_beklenen_yoksa_karsilastirma_yok() -> None:
 
 def test_bir_grup_uyumsuz_digeri_uyumlu_genel_uyumsuz() -> None:
     case = _kampanya_case()
+    case["steps"][3]["expected"] += "; ikinci satır birim fiyatı 20,00 TL"
     iyi = _kampanya_olgulari()["groups"][0]
     kotu = {
         **iyi,
-        "expected": [_o("indirim", "25.00", "steps[3].expected", "25,00 TL")],
+        "expected": [_o("indirim", "25.00", S4, "25,00 TL")],
         "inputs": [
             _o("adet", "7", "steps[2].data", "7"),
-            _o("ara_toplam", "150.00", "expected_result", "150,00 TL"),  # 150/7 ≠ 25
+            _o("birim_fiyat", "20.00", S4, "20,00 TL"),  # 1 × 20 ≠ 25
         ],
     }
     sonuc, ayr = d.degerlendir(case, TABLOLAR, {"groups": [iyi, kotu]})
@@ -330,9 +414,48 @@ def test_bir_grup_uyumsuz_digeri_uyumlu_genel_uyumsuz() -> None:
 
 
 def test_mantiksal_tablo_degerlendirmesi() -> None:
-    case = tpd1_cases()[4]  # C5: kampanyasız, 150 TL → uyarı görünür, onay pasif
+    case = tpd1_cases()[4]  # C5: kampanyasız, 150 TL → uyarı görünür
     sonuc, ayr = d.degerlendir(case, TABLOLAR, {"groups": OLGULAR[5]})
     assert sonuc == d.UYUMLU
     assert ayr["gruplar"][0]["satir_id"] == "R2"
     degerler = {k["column"]: k["case_degeri"] for k in ayr["gruplar"][0]["karsilastirmalar"]}
-    assert degerler == {"minimum_uyarisi": True, "onay_aktif": False}
+    assert degerler == {"minimum_uyarisi": True}
+
+
+# ------------------------------------------------------------------ kısmi değerlendirme
+
+
+def test_kismi_degerlendir_tam_girdide_ifade_ile_ayni() -> None:
+    from tp_core.features.karar_tablosu import ifade
+
+    for girdi in ({"adet": 7, "birim_fiyat": "25"}, {"adet": 6, "birim_fiyat": 25}):
+        tam = ifade.degerlendir(T1, girdi)
+        k = d.kismi_degerlendir(T1, girdi)
+        assert (k.satir_id, k.ciktilar, k.hesaplanamayan, k.eksik_girdiler, k.hata) == (
+            tam.satir_id,
+            tam.ciktilar,
+            {},
+            [],
+            None,
+        )
+
+
+def test_kismi_degerlendir_eksik_girdi_yalniz_onu_kullanani_etkiler() -> None:
+    from decimal import Decimal
+
+    k = d.kismi_degerlendir(T1, {"adet": 14})
+    assert k.satir_id == "R1" and k.ciktilar == {"bedava_adet": Decimal(2)}
+    assert k.hesaplanamayan == {"indirim": ["birim_fiyat"]}
+    k = d.kismi_degerlendir(T1, {"adet": 6})
+    assert k.satir_id == "R2" and k.hesaplanamayan == {}
+    assert k.ciktilar == {"bedava_adet": Decimal(0), "indirim": Decimal(0)}
+    # Koşul eksik girdiyi kullanıyorsa satır seçilemez (tam değerlendirme farklı seçebilirdi).
+    k = d.kismi_degerlendir(T2, {"sepet_tutari": "150"})
+    assert k.satir_id is None and k.eksik_girdiler == ["kampanyali_sepet"]
+    # Koşulu değerlendirilebilen önceki satırlar atlanır, eksik girdili ilk koşulda durulur.
+    ters = {**T2, "satirlar": [T2["satirlar"][1], T2["satirlar"][0], T2["satirlar"][2]]}
+    k = d.kismi_degerlendir(ters, {"sepet_tutari": "900"})
+    assert k.satir_id is None and k.eksik_girdiler == ["kampanyali_sepet"]
+    k = d.kismi_degerlendir(ters, {"sepet_tutari": "100"})
+    assert k.satir_id == "R2" and k.ciktilar == {"minimum_uyarisi": True}
+    assert d.kismi_degerlendir(T1, {"adet": "yedi"}).hata is not None

@@ -100,10 +100,9 @@ def kur(api: TestClient, engine: Engine, make_user, make_requirement, fake_gatew
 def test_tpd1_replay_akisi_golden_sonuclari(
     api: TestClient, engine: Engine, make_user, make_requirement, replay_gateway
 ) -> None:
-    golden = tpd1.RULES / "replay" / "case_generation" / "golden" / "TPD-1.json"
-    import json
-
-    beyan = json.loads(golden.read_text(encoding="utf-8"))["input_match"]
+    """Demo ana yolu: PO onaylı TPD-1 (AC2 özgün) → case'ler f2-kod-hatasi senaryo golden'ından,
+    tablolar Ş1 taslak golden'ından (story: 7 adette 1 bedava)."""
+    beyan = tpd1.taslak_golden()["input_match"]
     rid = make_requirement(
         jira_key="TPD-1",
         baslik="Sepet ve sipariş",
@@ -118,15 +117,16 @@ def test_tpd1_replay_akisi_golden_sonuclari(
     run_jobs(engine, limit=100)
     cases = latest_cases(api, rid)
     assert len(cases) == 10
+    assert next(c for c in cases if c["sira_no"] == 3)["icerik"]["title"] == (
+        "6 adet kampanyalı üründe bedava ürün verilmez"
+    )
     sonuclar = {c["sira_no"]: (c["oracle"] or {}).get("sonuc") for c in cases}
-    assert sonuclar == {n: s for n, s in tpd1.BEKLENEN_SONUC.items()}
+    assert sonuclar == tpd1.BEKLENEN_SONUC_ANA_YOL
     c2 = next(c for c in cases if c["sira_no"] == 2)
     assert c2["oracle"]["kontrol_suruyor"] is False and c2["oracle"]["istisna"] is None
-    assert {k["column"] for k in c2["oracle"]["karsilastirmalar"]} == {
-        "bedava_adet",
-        "indirim",
-        "toplam",
-    }
+    # Birim fiyat case'te yok: 7 adette yalnız bedava adet karşılaştırılır (indirim dışarıda).
+    assert {k["column"] for k in c2["oracle"]["karsilastirmalar"]} == {"bedava_adet"}
+    assert "karşılaştırılamadı" in c2["oracle"]["ozet"]
     assert all(k["uyumlu"] for k in c2["oracle"]["karsilastirmalar"])
     assert {k["tablo_ad"] for k in c2["oracle"]["karsilastirmalar"]} == {tpd1.T1["ad"]}
     with session_scope() as s:

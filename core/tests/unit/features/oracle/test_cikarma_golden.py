@@ -32,10 +32,11 @@ def test_cikarma_girdisi_yalniz_kolon_tanimlarini_tasir() -> None:
     for tablo in tpd1.TABLOLAR.values():
         kolon_adlari = {k["ad"] for k in tablo["girdiler"] + tablo["ciktilar"]}
         for satir in tablo["satirlar"]:
-            if satir["kosul"] not in kolon_adlari:  # yalın kolon adı koşulu ad olarak görünür
-                assert satir["kosul"] not in metin
+            sabit = ("dogru", "yanlis")  # sabitler ve yalın sayılar case metninde de geçer
+            if satir["kosul"] not in kolon_adlari and satir["kosul"] not in sabit:
+                assert satir["kosul"] not in metin  # yalın kolon adı koşulu ad olarak görünür
             for ifade in satir["cikti"].values():
-                if ifade not in ("dogru", "yanlis"):
+                if ifade not in sabit and not ifade.isdigit():
                     assert ifade not in metin, ifade
             assert f'"{satir["id"]}"' not in metin
         assert tablo["aciklama"] not in metin
@@ -60,8 +61,10 @@ def test_replay_anahtari_case_duzeyinde() -> None:
 def test_golden_dosyalari_kurucunun_ciktisi() -> None:
     """Golden'lar `tpd1.py`'den üretilir: `python -m tests.unit.features.oracle.tpd1`."""
     beklenen = tpd1.build_goldens()
-    var = {p.stem for p in tpd1.golden_dir().glob("*.json")}
+    kok = tpd1.golden_dir()
+    var = {str(p.relative_to(kok).with_suffix("")) for p in kok.rglob("*.json")}
     assert var == set(beklenen)
+    assert "f2-kod-hatasi/TPD-1-C3" in var  # demo ana yolunun C3'ü senaryo golden'ı
     for ad, data in beklenen.items():
         stored = (tpd1.golden_dir() / f"{ad}.json").read_text(encoding="utf-8")
         assert stored == tpd1.dump(data), f"{ad} bayat; yeniden üretin"
@@ -71,17 +74,35 @@ def _store() -> ReplayStore:
     return ReplayStore(RULES / "replay")
 
 
-@pytest.mark.parametrize("n", sorted(tpd1.OLGULAR))
-def test_golden_tpd1_girdisiyle_eslesir_ve_uyumlu_sonuc_verir(n: int) -> None:
-    case = tpd1.tpd1_cases()[n - 1]
-    msgs = cikarma.facts_messages(case, cikarma.case_ref("TPD-1", n), tpd1.kolon_girdisi())
+@pytest.mark.parametrize(
+    ("n", "senaryo"),
+    [*((n, None) for n in sorted(tpd1.OLGULAR)), *((n, tpd1.SENARYO) for n in range(1, 11))],
+)
+def test_golden_tpd1_girdisiyle_eslesir_ve_sonuc_verir(n: int, senaryo: str | None) -> None:
+    """Ana golden'lar (fix_doc + değişmeyen case'ler) ve demo ana yolu (f2-kod-hatasi: C3 senaryo
+    golden'ından, diğerleri ana golden'dan) story tablolarıyla beklenen sonucu verir."""
+    case = tpd1.tpd1_cases(senaryo)[n - 1]
+    tablolar = [d.Tablo(tpd1.tablo_id(k), f"T{k}", t["ad"], t) for k, t in tpd1.TABLOLAR.items()]
+    kapsayan = [
+        t for t in tablolar if set(t.icerik["ac_refs"]) & set(case["acceptance_criteria_refs"])
+    ]
+    beklenen = tpd1.BEKLENEN_SONUC_ANA_YOL if senaryo else tpd1.BEKLENEN_SONUC_FIX_DOC
+    if not kapsayan:
+        assert beklenen[n] == "kapsam_disi"  # model çağrılmaz
+        return
+    msgs = cikarma.facts_messages(
+        case,
+        cikarma.case_ref("TPD-1", n),
+        [t for t in tpd1.kolon_girdisi() if t["ref"] in {x.ref for x in kapsayan}],
+    )
     record, mode, _ = _store().lookup(
         "case_facts", "-", f"TPD-1-C{n}", [m.model_dump(mode="json") for m in msgs]
     )
     assert mode == "replay"
-    tablolar = [d.Tablo(tpd1.tablo_id(k), f"T{k}", t["ad"], t) for k, t in tpd1.TABLOLAR.items()]
-    sonuc, ayr = d.degerlendir(case, tablolar, record["output"])
-    assert sonuc == tpd1.BEKLENEN_SONUC[n] == "uyumlu"
+    if senaryo and n in tpd1.SENARYO_OLGULARI:
+        assert record["golden"] == f"{senaryo}/TPD-1-C{n}"
+    sonuc, ayr = d.degerlendir(case, kapsayan, record["output"])
+    assert sonuc == beklenen[n]
     assert ayr["atilan_olgular"] == 0
 
 

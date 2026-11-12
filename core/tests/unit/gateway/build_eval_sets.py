@@ -624,28 +624,42 @@ def decision_table_draft_cases() -> list[dict[str, Any]]:
 
 
 def case_facts_cases() -> list[dict[str, Any]]:
-    """Değer çıkarma (012 §4.3): üretimin `facts_messages` kurucusu, TPD-1 demo tabloları
-    (`tests.unit.features.oracle.tpd1`); beklenen olgular golden'ın olgularıdır."""
+    """Değer çıkarma (012 §4.3): üretimin `facts_messages` kurucusu, TPD-1 demo tabloları (Ş1
+    taslak golden'ından; `tests.unit.features.oracle.tpd1`); beklenen olgular golden'ın
+    olgularıdır (kolon + değer, tekilleştirilmiş). Demo ana yolunun C3'ü (f2-kod-hatasi, "6
+    adette bedava yok") defect adayı anının girdisidir."""
     from tests.unit.features.oracle import tpd1
     from tp_core.features.oracle.cikarma import case_ref, facts_messages, replay_key_for
 
-    cases = tpd1.tpd1_cases()
     tables = tpd1.kolon_girdisi()
+    plan = [
+        ("tpd-1-c2", 2, None, "7 adette 1 bedava; birim fiyat yazmıyor (T1)"),
+        ("tpd-1-c3-f2", 3, tpd1.SENARYO, "6 adette bedava yok — demo ana yolu (T1)"),
+        ("tpd-1-c5", 5, None, "minimum altı, kampanyasız (T2)"),
+    ]
     out = []
-    for n, title in ((2, "7 adette 1 bedava (T1)"), (5, "minimum altı, kampanyasız (T2)")):
-        case = cases[n - 1]
+    for case_id, n, senaryo, title in plan:
+        case = tpd1.tpd1_cases(senaryo)[n - 1]
         refs = {"AC2": "T1", "AC3": "T2", "AC6": "T2"}
         covering = {refs[r] for r in case["acceptance_criteria_refs"] if r in refs}
-        facts = [
-            {"table_ref": g["table_ref"], "kind": kind, "column": f["column"], "value": f["value"]}
-            for g in tpd1.OLGULAR[n]
-            for kind in ("inputs", "expected")
-            for f in g[kind]
-        ]
+        groups = tpd1.olgular(n, senaryo) or []
+        facts = list(
+            {
+                (g["table_ref"], kind, f["column"], json.dumps(f["value"])): {
+                    "table_ref": g["table_ref"],
+                    "kind": kind,
+                    "column": f["column"],
+                    "value": f["value"],
+                }
+                for g in groups
+                for kind in ("inputs", "expected")
+                for f in g[kind]
+            }.values()
+        )
         out.append(
             {
-                "id": f"tpd-1-c{n}",
-                "description": f"TPD-1-C{n}: {title}",
+                "id": case_id,
+                "description": f"TPD-1-C{n}{' (' + senaryo + ')' if senaryo else ''}: {title}",
                 "replay_key": replay_key_for("TPD-1", n),
                 "messages": _msgs(
                     facts_messages(

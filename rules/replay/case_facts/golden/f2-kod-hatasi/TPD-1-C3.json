@@ -1,0 +1,89 @@
+{
+  "kind": "call",
+  "purpose": "case_facts",
+  "golden": "f2-kod-hatasi/TPD-1-C3",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Olgular elle hazırlandı (canlı model çıktısı değil; ai_call.model = golden-elle): case_generation golden'ındaki case'ten dikkatli bir modelin çıkaracağı değerler, alıntılar case alanlarından birebir; birim fiyat case'te yazmadığı için çıkarılmadı. Kolon adları Ş1'in TPD-1 taslak golden'ındaki demo tablolarınındır (T1 kampanya: adet, birim_fiyat → bedava_adet, indirim; T2 minimum sipariş: kampanyali_sepet, sepet_tutari → minimum_uyarisi). Üretildi: python -m tests.unit.features.oracle.tpd1 (elle düzenlemeyin). Girdi beyanı (input_match.case_text) eşleşirse mod REPLAY (köken golden_matched); case düzeltilir ya da önerilen içerik farklıysa REPLAY-MISS ve nötr çıktı (groups: [] → kontrol_edilemedi). Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record).",
+  "input_match": {
+    "sources": [
+      "case:TPD-1-C3"
+    ],
+    "case_text": "Başlık: 6 adet kampanyalı üründe bedava ürün verilmez\nTür: boundary · Risk: high\nKabul kriterleri: AC2\nÖn koşullar:\n- Sepet boş\n- P-001 \"6 al 1 bedava\" kampanyasında\nAdımlar:\nS1: Giriş sayfasını aç\n  Veri: (yok)\n  Beklenen: Giriş formu görüntülenir\nS2: Bayi kullanıcısıyla giriş yap\n  Veri: bayi1 / Demo123!\n  Beklenen: Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir\nS3: \"Portakal Gazozu 1L\" (P-001) kartında adedi 6 yapıp \"Sepete ekle\" butonuna bas\n  Veri: P-001 × 6\n  Beklenen: Sepet sayacı 6 olur\nS4: Üst menüden sepete git\n  Veri: (yok)\n  Beklenen: P-001 satırında adet 6, bedava adet 0; ara toplam 150,00 TL, indirim 0,00 TL, toplam 150,00 TL\nBeklenen sonuç: 6 adette bedava adet 0 olur (bedava 7. adette başlar); indirim 0,00 TL, toplam 150,00 TL\nEtiketler: AI-generated"
+  },
+  "case": {
+    "jira_key": "TPD-1",
+    "sira_no": 3,
+    "title": "6 adet kampanyalı üründe bedava ürün verilmez",
+    "case_golden": "f2-kod-hatasi/TPD-1"
+  },
+  "output": {
+    "groups": [
+      {
+        "table_ref": "T1",
+        "inputs": [
+          {
+            "column": "adet",
+            "value": "6",
+            "field": "title",
+            "quote": "6"
+          },
+          {
+            "column": "adet",
+            "value": "6",
+            "field": "steps[2].action",
+            "quote": "6"
+          },
+          {
+            "column": "adet",
+            "value": "6",
+            "field": "steps[2].data",
+            "quote": "6"
+          },
+          {
+            "column": "adet",
+            "value": "6",
+            "field": "steps[2].expected",
+            "quote": "6"
+          },
+          {
+            "column": "adet",
+            "value": "6",
+            "field": "steps[3].expected",
+            "quote": "6"
+          },
+          {
+            "column": "adet",
+            "value": "6",
+            "field": "expected_result",
+            "quote": "6"
+          }
+        ],
+        "expected": [
+          {
+            "column": "bedava_adet",
+            "value": "0",
+            "field": "steps[3].expected",
+            "quote": "adet 0"
+          },
+          {
+            "column": "bedava_adet",
+            "value": "0",
+            "field": "expected_result",
+            "quote": "adet 0"
+          },
+          {
+            "column": "indirim",
+            "value": "0.00",
+            "field": "steps[3].expected",
+            "quote": "0,00 TL"
+          },
+          {
+            "column": "indirim",
+            "value": "0.00",
+            "field": "expected_result",
+            "quote": "0,00 TL"
+          }
+        ]
+      }
+    ]
+  }
+}

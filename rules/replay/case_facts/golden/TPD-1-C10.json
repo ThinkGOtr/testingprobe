@@ -2,7 +2,7 @@
   "kind": "call",
   "purpose": "case_facts",
   "golden": "TPD-1-C10",
-  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Olgular elle hazırlandı (canlı model çıktısı değil; ai_call.model = golden-elle): case_generation/golden/TPD-1 case'inden dikkatli bir modelin çıkaracağı değerler, alıntılar case alanlarından birebir. Kolon adları TPD-1 demo tablolarınındır (T1 kampanya, T2 minimum sipariş; core/tests/unit/features/oracle/tpd1.py). Üretildi: python -m tests.unit.features.oracle.tpd1 (elle düzenlemeyin). Girdi beyanı (input_match.case_text) eşleşirse mod REPLAY (köken golden_matched); case düzeltilir ya da önerilen içerik farklıysa REPLAY-MISS ve nötr çıktı (groups: [] → kontrol_edilemedi). Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record).",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Olgular elle hazırlandı (canlı model çıktısı değil; ai_call.model = golden-elle): case_generation golden'ındaki case'ten dikkatli bir modelin çıkaracağı değerler, alıntılar case alanlarından birebir; birim fiyat case'te yazmadığı için çıkarılmadı. Kolon adları Ş1'in TPD-1 taslak golden'ındaki demo tablolarınındır (T1 kampanya: adet, birim_fiyat → bedava_adet, indirim; T2 minimum sipariş: kampanyali_sepet, sepet_tutari → minimum_uyarisi). Üretildi: python -m tests.unit.features.oracle.tpd1 (elle düzenlemeyin). Girdi beyanı (input_match.case_text) eşleşirse mod REPLAY (köken golden_matched); case düzeltilir ya da önerilen içerik farklıysa REPLAY-MISS ve nötr çıktı (groups: [] → kontrol_edilemedi). Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record).",
   "input_match": {
     "sources": [
       "case:TPD-1-C10"
@@ -23,14 +23,38 @@
           {
             "column": "adet",
             "value": "7",
+            "field": "title",
+            "quote": "7"
+          },
+          {
+            "column": "adet",
+            "value": "7",
+            "field": "steps[2].action",
+            "quote": "7"
+          },
+          {
+            "column": "adet",
+            "value": "7",
             "field": "steps[2].data",
             "quote": "7"
           },
           {
-            "column": "ara_toplam",
-            "value": "175.00",
+            "column": "adet",
+            "value": "7",
+            "field": "steps[2].expected",
+            "quote": "7"
+          },
+          {
+            "column": "adet",
+            "value": "7",
             "field": "steps[3].expected",
-            "quote": "175,00 TL"
+            "quote": "7"
+          },
+          {
+            "column": "adet",
+            "value": "7",
+            "field": "expected_result",
+            "quote": "7"
           }
         ],
         "expected": [
@@ -41,16 +65,22 @@
             "quote": "adet 1"
           },
           {
+            "column": "bedava_adet",
+            "value": "1",
+            "field": "expected_result",
+            "quote": "1 adet"
+          },
+          {
             "column": "indirim",
             "value": "25.00",
             "field": "steps[3].expected",
             "quote": "25,00 TL"
           },
           {
-            "column": "toplam",
-            "value": "150.00",
-            "field": "steps[3].expected",
-            "quote": "150,00 TL"
+            "column": "indirim",
+            "value": "25.00",
+            "field": "expected_result",
+            "quote": "25,00 TL"
           }
         ]
       }
