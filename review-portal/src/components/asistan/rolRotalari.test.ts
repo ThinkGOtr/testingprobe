@@ -5,6 +5,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { OTOMASYON_ROLLERI } from "../../auth";
 import { ROL_GEREKLI_ROTALAR, rolRotasiAcik } from "./rolRotalari";
 
 const KOK = resolve(__dirname, "../../../..");
@@ -32,10 +33,13 @@ describe("rol kısıtlı rotalar", () => {
 
   it("App.tsx `<RolGerekli>` sarmalayıcıları ile ROL_GEREKLI_ROTALAR aynı", () => {
     const app = readFileSync(APP, "utf8");
-    const desen = /path="([^"]+)"\s*element=\{\s*<RolGerekli roller=\{\[([^\]]*)\]\}/g;
+    // Roller ya satır içi dizi (`roller={["analyst"]}`) ya da auth'taki adlı sabit (`OTOMASYON_ROLLERI`).
+    const SABITLER: Record<string, readonly string[]> = { OTOMASYON_ROLLERI };
+    const desen = /path="([^"]+)"\s*element=\{\s*<RolGerekli roller=\{(?:\[([^\]]*)\]|([A-Z_]+))\}/g;
     const portal: Record<string, string[]> = {};
     for (const m of app.matchAll(desen)) {
-      portal[`/${m[1].replace(/^\/+/, "")}`] = [...m[2].matchAll(/"([^"]+)"/g)].map((r) => r[1]);
+      const roller = m[2] !== undefined ? [...m[2].matchAll(/"([^"]+)"/g)].map((r) => r[1]) : [...(SABITLER[m[3]] ?? [])];
+      portal[`/${m[1].replace(/^\/+/, "")}`] = roller;
     }
     expect(Object.keys(portal).length).toBe((app.match(/<RolGerekli roller=/g) ?? []).length);
     expect(sirali(ROL_GEREKLI_ROTALAR)).toEqual(sirali(portal));

@@ -1,5 +1,6 @@
 // Asistan bağlantılarının rol süzgeci (013 inceleme turu 1, UX15).
 import type { Rol } from "../../api/types";
+import { OTOMASYON_ROLLERI } from "../../auth";
 import { uygulamaRotasiMi } from "../../lib/rotalar";
 
 /**
@@ -7,6 +8,8 @@ import { uygulamaRotasiMi } from "../../lib/rotalar";
  * yönlendirse de rolü tutmayan kullanıcıya "Git" düğmesi gösterilmez (açınca "yetkiniz yok" çıkardı).
  */
 export const ROL_GEREKLI_ROTALAR: Readonly<Record<string, readonly Rol[]>> = {
+  "/kod": OTOMASYON_ROLLERI,
+  "/kosular": OTOMASYON_ROLLERI,
   "/demo": ["presenter"],
   "/claude-code": ["analyst"],
 };

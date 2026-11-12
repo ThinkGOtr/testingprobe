@@ -1213,13 +1213,13 @@ def test_rota_rolleri_baglamin_kural_dizininden_okunur(tmp_path: Path) -> None:
     dosya = kok / "assistant" / "rotalar.json"
     veri = json.loads(dosya.read_text(encoding="utf-8"))
     for r in veri["rotalar"]:
-        if r.get("kalip") == "/kosular":
+        if r.get("kalip") == "/bug-taslaklari":
             r["roller"] = ["po"]
     dosya.write_text(json.dumps(veri, ensure_ascii=False), encoding="utf-8")
 
-    assert rota_rolleri("/kosular") is None
-    assert rota_rolleri("/kosular", rules_dir=kok) == frozenset({"po"})
-    cikti = _cikti(yonlendirmeler=[{"etiket": "Koşular", "rota": "/kosular"}])
+    assert rota_rolleri("/bug-taslaklari") is None
+    assert rota_rolleri("/bug-taslaklari", rules_dir=kok) == frozenset({"po"})
+    cikti = _cikti(yonlendirmeler=[{"etiket": "Bug taslakları", "rota": "/bug-taslaklari"}])
     assert isle(cikti, SonIslemBaglami(rol="tester"))["yonlendirmeler"]
     assert isle(cikti, SonIslemBaglami(rol="tester", rules_dir=kok))["yonlendirmeler"] == []
     assert isle(cikti, SonIslemBaglami(rol="po", rules_dir=kok))["yonlendirmeler"]
