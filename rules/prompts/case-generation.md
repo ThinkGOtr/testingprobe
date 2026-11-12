@@ -81,6 +81,10 @@ are returned.
      the source does not define is an open question, not a rule with a guessed outcome.
    - Hidden limits (column length, integer overflow, leap day, midnight) are coverage items only
      when the source states them.
+   - [ISTQB] State transition: a state's duration, timeout, retry count or automatic exit (for
+     example how long a lock lasts, whether it opens by itself) that the source does not state is
+     an open question; do not pick a value and do not leave it unmentioned when a case or a
+     transition depends on it.
 4. **Decide negative coverage.** For every item with `valid: false`, add one `negative_coverage`
    entry (`item` is a coverage item id such as `EP-I1` or `BV-2`; never a question or assumption
    id): `tested` (a `ready` or `assumption_dependent` case exists for it), `covered_by` (a case

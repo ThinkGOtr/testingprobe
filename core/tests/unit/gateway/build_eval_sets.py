@@ -485,13 +485,13 @@ TEST_LEVEL = "SYSTEM"
 _ESIK_750 = {"topic": "minimum sipariş tutarı sınırı 750,00 TL", "keywords": ["750,00"]}
 ITEMS_LIKE: dict[str, list[dict[str, Any]]] = {
     "TPD-1": [
-        {"topic": "bedava eşiğinin altı: 5 adet", "keywords": ["5 adet"]},
-        {"topic": "bedava eşiği: 6 adet", "keywords": ["6 adet"]},
+        {"topic": "bedava eşiğinin altı: 5 adet", "keywords": ["5 adet", "adedi 5", "5 adette"]},
+        {"topic": "bedava eşiği: 6 adet", "keywords": ["6 adet", "adedi 6", "6 adette"]},
         _ESIK_750,
     ],
     "f2-kod-hatasi/TPD-1": [
-        {"topic": "bedava eşiğinin altı: 6 adet", "keywords": ["6 adet"]},
-        {"topic": "bedava eşiği: 7 adet", "keywords": ["7 adet"]},
+        {"topic": "bedava eşiğinin altı: 6 adet", "keywords": ["6 adet", "adedi 6", "6 adette"]},
+        {"topic": "bedava eşiği: 7 adet", "keywords": ["7 adet", "adedi 7", "7 adette"]},
         _ESIK_750,
     ],
     "SERBEST": [_ESIK_750],

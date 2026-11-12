@@ -487,7 +487,7 @@ def test_set_expectations_name_the_known_silent_points() -> None:
     ]
     assert konular["hesap-kilidi-st"] == ["kilidin süresi / kendiliğinden açılması"]
     benzer = by_id["tpd-1-son-hal"]["expect"]["must_cover_items_like"]
-    assert [k["keywords"] for k in benzer] == [["5 adet"], ["6 adet"], ["750,00"]]
+    assert [k["keywords"][0] for k in benzer] == ["5 adet", "6 adet", "750,00"]
 
 
 # ------------------------------------------------------------------ rapor: dağılım

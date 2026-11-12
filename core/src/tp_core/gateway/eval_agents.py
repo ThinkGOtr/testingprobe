@@ -838,13 +838,21 @@ def _bosluk(metin: str) -> str:
     return re.sub(r"\s+", " ", metin).strip()
 
 
-def source_problems(metinler: Sequence[tuple[str, str]], kaynak: str) -> list[str]:
+def source_problems(
+    metinler: Sequence[tuple[str, str]],
+    kaynak: str,
+    ek_kaynaklar: Mapping[str, str] | None = None,
+) -> list[str]:
     """`(etiket, metin)` listesinde kaynağa dayanmayan tırnak içi metin ve TL tutarı.
 
     Tırnak içi metin kaynakta (girdi mesajı: gereksinim, AC, PO cevabı, test verisi bloğu) boşluk
     sadeleştirilmiş olarak BİREBİR geçmelidir. TL tutarı kaynakta geçmeli ya da kaynak
     tutarlarının tamsayı birleşimi olmalıdır (sepet = Σ adet × birim fiyat); kurulamayan tutar
-    (ör. fiyatlarla oluşamayan 749,99 TL) uydurmadır."""
+    (ör. fiyatlarla oluşamayan 749,99 TL) uydurmadır.
+
+    `ek_kaynaklar` (etiket → metin): case'in kendi tanımladığı değerler — test verisi değerleri,
+    adım verileri ve "Test verisi hazırlığı" ön koşulları (K17: kurulamayan sınır değeri için
+    sentetik ürün hazırlanır). Bunlar o case'in beklenenleri için kaynaktır; uydurma değildir."""
     kaynak_sade = _bosluk(kaynak)
     kaynak_tutar = {_kurus(t) for t in TUTAR.findall(kaynak)} | {
         _kurus(t) for t in re.findall(r"(?<![\d.,])(\d{1,3}(?:\.\d{3})*,\d{2})(?![\d])", kaynak)
@@ -872,13 +880,37 @@ def source_problems(metinler: Sequence[tuple[str, str]], kaynak: str) -> list[st
 
     out: list[str] = []
     for etiket, metin in metinler:
+        ek = (ek_kaynaklar or {}).get(etiket, "")
+        ek_sade = _bosluk(ek)
+        ek_tutar = {
+            _kurus(t) for t in re.findall(r"(?<![\d.,])(\d{1,3}(?:\.\d{3})*,\d{2})(?![\d])", ek)
+        }
         for m in TIRNAK_ICI.finditer(metin):
             alinti = _bosluk(next(g for g in m.groups() if g))
-            if alinti not in kaynak_sade:
+            if alinti not in kaynak_sade and alinti not in ek_sade:
                 out.append(f"{etiket}: kaynakta olmayan alıntı {alinti!r}")
         for tutar in TUTAR.findall(metin):
-            if not turetilir(_kurus(tutar)):
+            if _kurus(tutar) not in ek_tutar and not turetilir(_kurus(tutar)):
                 out.append(f"{etiket}: kaynakta olmayan tutar '{tutar} TL'")
+    return out
+
+
+HAZIRLIK_ONEKI = "test verisi hazırlığı"
+
+
+def case_kendi_kaynagi(cases: Sequence[Mapping[str, Any]]) -> dict[str, str]:
+    """Case'in kendi tanımladığı değerler (`C<n>` → metin): test verisi değerleri, adım verileri,
+    "Test verisi hazırlığı" ön koşulları. `source_problems` bunları o case için kaynak sayar."""
+    out: dict[str, str] = {}
+    for n, c in enumerate(cases, start=1):
+        parcalar = [str(v.get("value") or "") for v in _kayitlar(c.get("test_data"))]
+        parcalar += [str(a.get("data") or "") for a in _kayitlar(c.get("steps"))]
+        parcalar += [
+            str(p)
+            for p in _liste(c.get("preconditions"))
+            if _kucuk(str(p)).startswith(HAZIRLIK_ONEKI)
+        ]
+        out[f"C{n}"] = "\n".join(parcalar)
     return out
 
 
@@ -1011,7 +1043,7 @@ def coverage_problems(
     failures += item_like_problems(out, expect)
     failures += unknowns_problems(out, expect)
     if expect.get("source_grounded") and kaynak is not None:
-        failures += source_problems(_hazir_beklenenler(cases), kaynak)
+        failures += source_problems(_hazir_beklenenler(cases), kaynak, case_kendi_kaynagi(cases))
     if "platforms" in expect:
         failures += platform_problems(out, expect)
     return failures
@@ -1204,7 +1236,7 @@ def deepening_problems(
         if nerede:
             failures.append(f"uydurma belirteci '{belirtec}' hazır case'te: {nerede}")
     if expect.get("source_grounded") and kaynak is not None:
-        failures += source_problems(_hazir_beklenenler(cases), kaynak)
+        failures += source_problems(_hazir_beklenenler(cases), kaynak, case_kendi_kaynagi(cases))
     return failures
 
 
