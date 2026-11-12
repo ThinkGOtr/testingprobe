@@ -13,7 +13,7 @@ import json
 import os
 import re
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -284,7 +284,14 @@ def _break_verify(sc: Script, cg: ScriptCodegen) -> dict[str, Any]:
     return {"durum": cg.break_durum, "asamalar": asamalar, "neden": kd.get("neden")}
 
 
-def serialize(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any]:
+def serialize(
+    session: Session,
+    sc: Script,
+    cg: ScriptCodegen,
+    guncel_ozetler: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """`guncel_ozetler`: liste için tüm script'lerin test verisi özetleri tek sorguda (N+1 yok)."""
+    veri_degisen = testveri.degisen_anahtarlar(session, cg.veri_izi, guncel_ozetler)
     case_ids = [
         str(r)
         for r in session.scalars(
@@ -318,9 +325,11 @@ def serialize(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any]
         "engel": ({"tur": cg.engel_turu, "neden": cg.engel_nedeni} if cg.engel_turu else None),
         "olusturma": sc.olusturma.isoformat(),
         "hata": cg.engel_nedeni,
-        # 013 §3.3 (K10): üretimde kullanılan test verisi sürümleri; güncel sürüm farklıysa uyarı.
+        # 013 §3.3 (K10) / §9: üretimde kullanılan test verisi değer özetleri
+        # ({anahtar: sha256[:12]}); değeri değişen / silinen anahtarlar `veri_degisen`.
         "veri_izi": cg.veri_izi or {},
-        "veri_degisti": testveri.veri_degisti(session, cg.veri_izi),
+        "veri_degisen": veri_degisen,
+        "veri_degisti": bool(veri_degisen),
     }
 
 
@@ -331,7 +340,11 @@ def list_scripts(session: Session) -> list[dict[str, Any]]:
         .order_by(Script.olusturma.desc())
         .limit(200)
     ).all()
-    return [serialize(session, sc, cg) for sc, cg in rows]
+    ozetler = testveri.guncel_ozetler(session, (a for _, cg in rows for a in (cg.veri_izi or {})))
+    gizli = testveri.gizli_degerler(session)
+    return [
+        testveri.maskele(session, serialize(session, sc, cg, ozetler), gizli) for sc, cg in rows
+    ]
 
 
 def _yerel_kontrol(cg: ScriptCodegen) -> dict[str, Any] | None:
@@ -526,7 +539,9 @@ def detail(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any]:
         denetim_hash=cg.denetim_hash,
         bundle_hash=cg.bundle_hash,
     )
-    return out
+    # 013 K19: adım argümanları / ham çıktı, eşleme argümanları, engel/kontrol metinleri
+    # kullanıcıya bilinen gizli test verisi değerini düz göstermez (eski kayıtlar dahil).
+    return testveri.maskele(session, out)
 
 
 def get_pair(session: Session, sid: uuid.UUID) -> tuple[Script, ScriptCodegen] | None:

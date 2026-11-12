@@ -43,6 +43,7 @@ import httpx
 
 from runner import surefire
 from runner.results import decide_status, failure_groups, failures_of
+from runner.run import testveri_env
 from toolchain_common import gitforge, proc, repos
 from toolchain_common.artifacts import KEEP_MARKER, atomic_write_json, run_dir
 from toolchain_common.settings import Settings
@@ -169,8 +170,12 @@ def maven_argv(
 
 
 def maven_env(cfg: Settings, req: RunRequest, platform: str) -> dict[str, str]:
-    """İzin listesi: sistem + e2e-app ayarları (MAVEN_*/JVM seçenekleri geçmez)."""
+    """İzin listesi: sistem + e2e-app ayarları + gizli test verisi `TP_TESTVERI_*` (K19).
+
+    MAVEN_*/JVM seçenekleri geçmez.
+    """
     env = {k: os.environ[k] for k in PASS_ENV if k in os.environ}
+    env.update(testveri_env())
     env.update(app_settings(platform))
     env.update(
         {

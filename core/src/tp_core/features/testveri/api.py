@@ -8,7 +8,9 @@
 | DELETE | `/test-data/{id}?beklenen_surum=` | analyst, engineer — atıf yapan etkin case varsa 409 |
 | GET | `/test-data/{id}/history` | herkes |
 
-Gizli kayıtta değer hiçbir yanıtta dönmez; `sir_tanimli` döner.
+Gizli kayıtta değer hiçbir yanıtta dönmez; `sir_tanimli` döner. PUT'ta `aciklama: ""` (ya da
+açıkça `null`) açıklamayı temizler. DELETE 409 gövdesi: `{detail, kod: "cakisma", kullanan:
+[{case_id, case_ref, requirement_id, baslik, durum}]}`.
 """
 
 from __future__ import annotations
@@ -56,8 +58,7 @@ def listele(session: DbSession, _user: CurrentUser) -> list[dict[str, Any]]:
 @router.post("/test-data", status_code=201)
 def olustur(body: TestVerisiGirdisi, session: DbSession, user: Duzenleyen) -> dict[str, Any]:
     k = service.olustur(session, body.model_dump(), user.kullanici_adi)
-    sayim = len(service.kullanim(session).get(k.anahtar, []))
-    return service.serialize(k, sayim)
+    return service.serialize(k)
 
 
 @router.put("/test-data/{kid}")
@@ -66,8 +67,7 @@ def guncelle(
 ) -> dict[str, Any]:
     girdi = body.model_dump(exclude={"beklenen_surum"}, exclude_unset=True)
     k = service.guncelle(session, kid, girdi, body.beklenen_surum, user.kullanici_adi)
-    sayim = len(service.kullanim(session).get(k.anahtar, []))
-    return service.serialize(k, sayim)
+    return service.serialize(k)
 
 
 @router.delete("/test-data/{kid}", response_model=None)

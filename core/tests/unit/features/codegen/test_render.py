@@ -140,3 +140,25 @@ def test_parse_dealers_ve_slug() -> None:
     assert "bayi3" not in d  # doğrulama ajanının bayisi e2e listesinde değil
     assert render.slug("TPD-1", 3, CASE_ID) == "tpd-1-c3-3f9b1c2e"
     assert render.slug("../x", 3, CASE_ID) == "serbest-c3-3f9b1c2e"
+
+
+def test_gizli_test_verisi_ortamdan_okunur() -> None:
+    """013 K19: gizli değer argümanı `process.env.<SIR>`; adım etiketi/başlıkta `•••`."""
+    gizli = {"Demo123!": "TP_TESTVERI_DEMO_PAROLA"}
+    case = copy.deepcopy(golden_case(2))
+    case["title"] = "bayi1 / Demo123! ile giriş"
+    for adim in case.get("steps") or []:
+        adim["action"] = f"{adim.get('action')} (Demo123!)"
+    r = render.render_test(girdi(2, case=case, gizli_ortam=gizli), RULES)
+    assert 'await loginPage.login("bayi1", process.env.TP_TESTVERI_DEMO_PAROLA);' in r.content
+    assert "Demo123!" not in r.content and "bayi1 / ••• ile giriş" in r.content
+    # Gizli değer yoksa (ya da boş harita) çıktı golden'la birebir; şablon hash'i değişmedi.
+    assert render.render_test(girdi(2, gizli_ortam={}), RULES) == render.render_test(
+        girdi(2), RULES
+    )
+    # Liste içindeki değer ortam okumasına çevrilmez (eslint dizide yalnız literal kabul eder).
+    assert render.args_literal([["Demo123!"]]) == '["Demo123!"]'
+    with pytest.raises(RenderError):
+        render.OrtamDegeri("PATH")
+    with pytest.raises(RenderError):
+        render.render_test(girdi(2, gizli_ortam={"Demo123!": "HOME"}), RULES)

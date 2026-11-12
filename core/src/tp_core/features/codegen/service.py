@@ -97,6 +97,7 @@ from tp_core.features.codegen.render import (
     ts_literal,
 )
 from tp_core.features.codegen.toolchain import ToolchainClient, ToolchainError
+from tp_core.features.testveri import atif
 from tp_core.features.testveri import service as testveri
 from tp_core.integrations.forge import CASE_BRANCH_PREFIX, ForgeError, ForgeNotFoundError
 from tp_core.models import (
@@ -1176,6 +1177,9 @@ def _run_agent_kilitli(
     gw = _gateway(engine)
     with session_scope() as s:
         baslangic = _sonraki_adim(s, sid)
+        # 013 K19: adım kaydı (araç argümanı / özet / ham çıktı) bilinen gizli test verisi
+        # değerlerini taşımaz; ajanın girdisi çözülmüş kalır.
+        tv_gizli = testveri.gizli_degerler(s)
         # Adımlar akarken etiket geçidin gerçek kipini göstersin (REPLAY her an etiketli).
         mod = _gateway_modu(gw)
         if mod is not None:
@@ -1241,6 +1245,10 @@ def _run_agent_kilitli(
                 if REPLAY_SAPMASI in cikti:
                     ozet = f"{ozet} ({REPLAY_SAPMASI}: kayıttaki locator'dan farklı)"
                 ozet = ozet[:500]
+            if tv_gizli:
+                arguman = atif.maskele_obje(arguman, tv_gizli)
+                ozet = atif.maskele(ozet, tv_gizli)
+                ham = atif.maskele(ham, tv_gizli) if ham else ham
             gecen_s = time.monotonic() - zaman["t0"]
             gecikme = not zaman["uyarildi"] and gecen_s > butce
             if gecikme:
@@ -2243,6 +2251,7 @@ def _render(
     uygulama = platformlar.uygulama_mi(platform)
     with session_scope() as s:
         _, cg = _yukle(s, sid)
+        gizli_ortam = testveri.gizli_ortam_adlari(s)
         inp = RenderInput(
             case_id=case_id,
             case=case,
@@ -2255,6 +2264,7 @@ def _render(
             mapping=result.output or {},
             dealers=dealers,
             e2e_root=e2e_app_root() if uygulama else e2e_root(),
+            gizli_ortam=gizli_ortam,
         )
     try:
         rendered = (
@@ -2285,6 +2295,8 @@ def _commit(
         sc, _ = _yukle(s, sid)
         branch = sc.branch or ""
         platform = sc.platform
+        gizli = testveri.gizli_degerler(s)
+    case = {"title": atif.maskele(str(case.get("title") or ""), gizli)}  # K19: commit mesajı
     if platformlar.uygulama_mi(platform):
         mesaj = (
             f"test({ref}, {platform}): {str(case.get('title') or '')[:80]}\n\n"
@@ -2359,6 +2371,7 @@ def _open_pr(
         audit_head = chain_tip(s.connection())
         test_key, case_hash, bundle_hash = cg.test_key, cg.case_hash, cg.bundle_hash
         ajan_bayileri = dict((cg.eslesme or {}).get(AJAN_BAYILERI) or {})
+        gizli = testveri.gizli_degerler(s)
     if engel is not None:
         return _insana(engine, sid, "case_changed", f"PR açılmadı: {engel}")
     js = get_jira_settings()
@@ -2397,6 +2410,8 @@ def _open_pr(
         govde += (
             "\n> Yerel kontrol atlandı (commit yerel forge'da yok); merge kapısı forge CI'ıdır.\n"
         )
+    # 013 K19: PR başlığı/gövdesi bilinen gizli test verisi değerini düz taşımaz.
+    govde = atif.maskele(govde, gizli)
     labels = [
         *PR_LABELS,
         *([story] if story else []),
@@ -2408,7 +2423,10 @@ def _open_pr(
     guncellendi = False
     try:
         pr = forge.open_pr(
-            branch, pr_title(ref, str(case.get("title") or ""), platform), govde, labels
+            branch,
+            atif.maskele(pr_title(ref, str(case.get("title") or ""), platform), gizli),
+            govde,
+            labels,
         )
     except ForgeError as exc:
         return _insana(engine, sid, "environment", f"PR açılamadı: {exc}", hedef="failed")

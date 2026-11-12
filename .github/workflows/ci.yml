@@ -176,6 +176,8 @@ jobs:
       TP_TRIGGER: ${{ needs.changes.outputs.trigger }}
       TP_RESULTS_DIR: ${{ github.workspace }}/results
       CI: "true"
+      # 013 K19: üretilen testler gizli test verisini ortamdan okur (process.env.TP_TESTVERI_*).
+      TP_TESTVERI_DEMO_PAROLA: ${{ secrets.TP_TESTVERI_DEMO_PAROLA }}
     steps:
       - name: No-op (uygulama değişmedi)
         if: env.RUN_TESTS != 'true'
@@ -244,7 +246,8 @@ jobs:
           uv_bin="$(command -v uv)"
           docker_args=(
             --rm --user root --network host
-            -e CI -e TP_TRIGGER -e TP_RESULTS_DIR=/work/results -e TP_APP_ROOT=/work/demo-app
+            -e CI -e TP_TRIGGER -e TP_TESTVERI_DEMO_PAROLA
+            -e TP_RESULTS_DIR=/work/results -e TP_APP_ROOT=/work/demo-app
             -e UV_PROJECT_ENVIRONMENT=/work/demo-app/api/.venv -e UV_CACHE_DIR=/tmp/uv-cache
             -v "$uv_bin:/usr/local/bin/uv:ro"
             -v "$GITHUB_WORKSPACE:/work" -w /work
@@ -623,6 +626,7 @@ jobs:
     env:
       SAUCE_USERNAME: ${{ secrets.SAUCE_USERNAME }}
       SAUCE_ACCESS_KEY: ${{ secrets.SAUCE_ACCESS_KEY }}
+      TP_TESTVERI_DEMO_PAROLA: ${{ secrets.TP_TESTVERI_DEMO_PAROLA }}
       SAUCE_TETIKLER: ${{ vars.SAUCE_TETIKLER }}
       # saucectl bölge adı: us-west-1 | eu-central-1 | us-east-4 (repo değişkeni SAUCE_REGION)
       SAUCE_REGION: ${{ vars.SAUCE_REGION || 'us-west-1' }}
@@ -773,6 +777,7 @@ jobs:
               -e "BASE_URL=http://$APP_HOST:$APP_PORT" \
               -e "TP_EXTERNAL_SERVER=1" \
               -e "DEMOAPP_TEST_TOKEN=$DEMOAPP_TEST_TOKEN" \
+              -e "TP_TESTVERI_DEMO_PAROLA=$TP_TESTVERI_DEMO_PAROLA" \
               -e "TP_SAUCE=1" \
               -e "TP_TRIGGER=$TP_TRIGGER" \
               2>&1 | tee ../results/sauce/saucectl.log || rc=${PIPESTATUS[0]}

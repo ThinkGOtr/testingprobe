@@ -105,5 +105,52 @@ def test_golden_case_metinleri_esle_coz_sonrasi_birebir() -> None:
             e = atif.case_esle(case, kat)
             eslenen_toplam += len(atif.case_atiflari(e))
             assert atif.case_coz(e, kat) == case, (yol.name, case.get("title"))
-    # Eşleme gerçekten çalıştı (bayi, parola, ürün, etiket değerleri golden'larda geçer).
+    # Eşleme gerçekten çalıştı (bayi, parola, ürün değerleri golden'larda geçer); K18 gereği
+    # etiket / ayar atfı yok.
     assert eslenen_toplam > 20
+    for yol in sorted(GOLDEN.rglob("*.json")):
+        for case in (
+            json.loads(yol.read_text(encoding="utf-8")).get("output", {}).get("cases") or []
+        ):
+            for a in atif.case_atiflari(atif.case_esle(case, kat)):
+                assert atif.eslenebilir_mi(a), a
+
+
+def test_k18_grup_ve_tutar_kurallari() -> None:
+    kat = {
+        "bayi.bayi2.kredi_limiti": "500,00 TL",
+        "urun.p_001.fiyat": "25,00 TL",
+        "ayar.min_siparis_tutari": "750.00",
+        "etiket.katalog": "Katalog",
+        "kampanya.k_6al1.kod": "K-6AL1",
+        "ortak.sayi": "1234",
+    }
+    case = {
+        "title": "Limit",
+        "preconditions": ["Kredi limiti 500,00 TL", "Katalog açık"],
+        "steps": [
+            {"id": "S1", "action": "Katalog'da K-6AL1 seç; 750.00", "data": "25,00 TL; 1234",
+             "expected": "Toplam 500,00 TL"},
+        ],
+        "expected_result": "Toplam 25,00 TL ve 1234",
+    }  # fmt: skip
+    e = atif.case_esle(case, kat)
+    # Tutar biçimli değerler yalnız ön koşul ve adım verisinde eşlenir.
+    assert e["preconditions"] == ["Kredi limiti {veri:bayi.bayi2.kredi_limiti}", "Katalog açık"]
+    assert e["steps"][0]["data"] == "{veri:urun.p_001.fiyat}; {veri:ortak.sayi}"
+    assert e["steps"][0]["expected"] == "Toplam 500,00 TL"
+    assert e["expected_result"] == "Toplam 25,00 TL ve 1234"
+    # etiket.* / ayar.* hiç eşlenmez; diğer gruplar serbest metinde eşlenir.
+    assert e["steps"][0]["action"] == "Katalog'da {veri:kampanya.k_6al1.kod} seç; 750.00"
+    assert atif.case_coz(e, kat) == case
+    assert atif.tutar_mi("1.250,00 TL") and atif.tutar_mi("12") and not atif.tutar_mi("P-001")
+
+
+def test_maskele() -> None:
+    gizli = ["Demo123!", "Demo"]
+    assert atif.maskele("bayi1 / Demo123! ve Demo", gizli) == "bayi1 / ••• ve •••"
+    assert atif.maskele_obje({"a": ["Demo123!", 3], "b": None}, gizli) == {
+        "a": ["•••", 3],
+        "b": None,
+    }
+    assert atif.maskele_obje({"a": "x"}, []) == {"a": "x"}

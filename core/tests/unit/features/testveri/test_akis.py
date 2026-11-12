@@ -60,13 +60,17 @@ def test_case_uretimi_eslenir_hash_eslenmis_icerikten(
     assert c["veri"] == {
         "bayi.bayi1.kullanici_adi": {"deger": "bayi1", "gizli": False, "surum": 1, "var": True},
         "ortak.demo_parola": {"deger": None, "gizli": True, "surum": 1, "var": True},
-        "etiket.katalog": {"deger": "Katalog", "gizli": False, "surum": 1, "var": True},
-    }
-    # Çözüm bugünkü metne döner.
+    }  # K18: `etiket.*` (ör. "Katalog") eşlenmez, metinde değer kalır
+    assert "Katalog" in str(c["icerik"]["steps"])
+    # Çözüm bugünkü metne döner; veri_izi değer özetidir (gizli için de).
     with session_scope() as s:
         cozulmus, izi = service.case_coz(s, c["icerik"])
     assert cozulmus == ham
-    assert izi == {"bayi.bayi1.kullanici_adi": 1, "ortak.demo_parola": 1, "etiket.katalog": 1}
+    assert izi == {
+        "bayi.bayi1.kullanici_adi": service.deger_ozeti("bayi1"),
+        "ortak.demo_parola": service.deger_ozeti(DEMO_PAROLA),
+    }
+    assert all(len(v) == 12 for v in izi.values())
 
 
 def test_ayni_icerik_yeniden_uretimde_tekrar_sayilir(
@@ -189,3 +193,70 @@ def test_yayinda_gizli_atif_korunur_digerleri_cozulur(
     assert r.status_code == 200
     on = api.get("/publish/preview", params={"requirement_id": str(rid)})
     assert on.status_code == 200 and DEMO_PAROLA not in on.text
+
+
+def test_yayinda_duz_gizli_deger_tum_alanlarda_maskelenir(
+    api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway, katalog
+) -> None:
+    """K19: başlıkta / etiketlerde / analistin düz yazdığı parola yayına `•••` gider."""
+    rid, _ = _uret(api, engine, make_user, make_requirement, fake_gateway, [case_icerik()])
+    (c,) = latest_cases(api, rid)
+    with session_scope() as s:
+        tc = s.get(TestCase, uuid.UUID(c["id"]))
+        icerik = dict(tc.icerik)
+        icerik["title"] = f"bayi1 / {DEMO_PAROLA} ile giriş"
+        icerik["tags"] = [DEMO_PAROLA]
+        icerik["expected_result"] = f"Parola {DEMO_PAROLA} kabul edilir"
+        tc.icerik = icerik
+    with session_scope() as s:
+        mapping = publish.case_mapping(s, s.get(TestCase, uuid.UUID(c["id"])))
+    assert DEMO_PAROLA not in str(mapping)
+    assert mapping["title"] == "bayi1 / ••• ile giriş" and mapping["tags"] == ["•••"]
+    assert mapping["expected_result"] == "Parola ••• kabul edilir"
+    assert mapping["steps"][1]["data"] == f"bayi1 / {PAROLA_ATFI}"  # atıf yine atıf
+
+
+def test_gizliyle_ayni_degerli_kayit_reddedilir_aciklama_temizlenir(
+    api: TestClient, make_user, katalog
+) -> None:
+    login(api, make_user("analyst"))
+    r = api.post("/test-data", json={"anahtar": "ortak.kopya", "deger": DEMO_PAROLA})
+    assert r.status_code == 422 and "gizli" in r.json()["detail"]
+    liste = {x["anahtar"]: x for x in api.get("/test-data").json()}
+    k = liste["bayi.bayi1.ad"]
+    r = api.put(f"/test-data/{k['id']}", json={"deger": DEMO_PAROLA, "beklenen_surum": 1})
+    assert r.status_code == 422
+    # Boş açıklama açıklamayı temizler; yanıt kullanım sayısını taşır.
+    r = api.put(f"/test-data/{k['id']}", json={"aciklama": "", "beklenen_surum": 1})
+    assert r.status_code == 200, r.text
+    assert r.json()["aciklama"] == "" and r.json()["surum"] == 2
+    assert r.json()["kullanim"] == 0
+
+
+def test_eslemeden_sonra_silinen_anahtar_atfi_duz_icerige_doner(
+    engine: Engine, make_requirement, katalog, monkeypatch
+) -> None:
+    """Silme yarışı: eşleme kataloğu okunduktan sonra silinen anahtara atıf yazılmaz."""
+    from tp_core.features.cases import service as cases_service
+    from tp_core.models import Requirement
+
+    gercek = service.eslem_katalogu
+
+    def eslem_sonra_sil(s):  # eşleme kataloğu okunur, ardından kayıt silinir
+        kat = gercek(s)
+        k = s.scalars(
+            select(TestVerisi).where(TestVerisi.anahtar == "bayi.bayi1.kullanici_adi")
+        ).one()
+        k.silindi = True
+        s.flush()
+        return kat
+
+    monkeypatch.setattr(service, "eslem_katalogu", eslem_sonra_sil)
+    rid = make_requirement()
+    with session_scope() as s:
+        req = s.get(Requirement, rid)
+        (tc,), _ = cases_service.store_cases(
+            s, req, [case_icerik()], uretim_no=1, kanal="portal", ai_call_id=None, uretim_modu=None
+        )
+        assert "bayi.bayi1.kullanici_adi" not in str(tc.icerik)
+        assert tc.icerik == case_icerik() and tc.icerik_hash == content_hash(case_icerik())
