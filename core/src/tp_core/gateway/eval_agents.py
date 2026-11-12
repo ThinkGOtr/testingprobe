@@ -1170,7 +1170,12 @@ def platform_problems(out: Mapping[str, Any], expect: Mapping[str, Any]) -> list
 
 NEGATIF_TURLER = ("negative", "authorization", "boundary")
 _N_ETIKETI = re.compile(r"^N(10|[1-9])$")
-_MESAJ_ANILIYOR = re.compile(r"mesaj|hata göster|uyarı göster", re.IGNORECASE)
+# Beklenen sonucun bir mesajın GÖSTERİLDİĞİNİ söylediği yerler (canlı eval 2026-11-12: "parola
+# mesajda görünmez" gibi sızıntı yokluğu denetimi mesaj iddiası değildir).
+_MESAJ_ANILIYOR = re.compile(
+    r"(mesaj|uyarı|hata)\w*\s+(\S+\s+){0,2}(gösterilir|görüntülenir|görünür|çıkar|verilir)\b",
+    re.IGNORECASE,
+)
 
 
 def deepening_problems(

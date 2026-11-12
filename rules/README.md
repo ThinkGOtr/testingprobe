@@ -265,11 +265,11 @@ varsa çıkış 1. Bu tablo kayıtla aynı olmalıdır (`test_evaluation_status.
 | `requirement-review` | v3 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `consistency-check` | v4 | **canlı değerlendirme bekliyor** |
 | `case-generation` | v3 | **canlı değerlendirildi** (2026-11-12; `evaluation/results/case-generation-v3-2026-11-12.json`) |
-| `design-model` (011 F3 iki tur; `design_model` golden'ları) | v1 | **canlı değerlendirme bekliyor** |
+| `design-model` (011 F3 iki tur; `design_model` golden'ları) | v1 | **canlı değerlendirildi** (2026-11-12; `evaluation/results/design-model-v1-2026-11-12.json`) |
 | `case-review` (011 P8; `case_review` golden'ları) | v1 | **canlı değerlendirildi** (2026-11-12; `evaluation/results/case-review-v1-2026-11-12.json`) |
-| `case-audit` (011 P9, Agent Probe denetimi; `case_audit` golden'ları) | v1 | **canlı değerlendirme bekliyor** |
-| `platform-common` (011 F4 ortak platform eki; `case-generation` girdisine eklenir) | v1 | **canlı değerlendirme bekliyor** |
-| `platform-web` (P1; golden `case_generation/golden/platform-web/TPD-4`) | v1 | **canlı değerlendirme bekliyor** |
+| `case-audit` (011 P9, Agent Probe denetimi; `case_audit` golden'ları) | v1 | **canlı değerlendirildi** (2026-11-12; `evaluation/results/case-audit-v1-2026-11-12.json`) |
+| `platform-common` (011 F4 ortak platform eki; `case-generation` girdisine eklenir) | v1 | **canlı değerlendirildi** (2026-11-12; `evaluation/results/platform-common-v1-2026-11-12.json`) |
+| `platform-web` (P1; golden `case_generation/golden/platform-web/TPD-4`) | v1 | **canlı değerlendirildi** (2026-11-12; `evaluation/results/platform-web-v1-2026-11-12.json`) |
 | `platform-mobile` (P2) | v1 | **canlı değerlendirildi** (2026-11-12; `evaluation/results/platform-mobile-v1-2026-11-12.json`) |
 | `platform-desktop` (P3) | v1 | **canlı değerlendirildi** (2026-11-12; `evaluation/results/platform-desktop-v1-2026-11-12.json`) |
 | `platform-api` (P4) | v1 | **canlı değerlendirildi** (2026-11-12; `evaluation/results/platform-api-v1-2026-11-12.json`) |

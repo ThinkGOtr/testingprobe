@@ -60,15 +60,15 @@ bundles:
       calls: evaluation/results/case-generation-v3-2026-11-12.calls.jsonl
   design-model:
     version: 1
-    status: pending
-    note: '011 F3 (iki tur — tur 1): test tasarım modeli v1 (koşullar, teknikler, kapsam öğeleri, ayrıntılı
-      modeller, model sorunları, açık soru / varsayım). Golden çıktıları elle hazırlandı; coverage_items
-      / open_questions / assumptions case_generation golden''larıyla birebir aynı. Değerlendirme seti:
-      rules/evaluation/design-model.json (5 story; AC kapsamı, model kontrolleri, sessiz noktalar için
-      açık soru beklentisi, uydurma belirteçleri). Canlı değerlendirme yapılmadı; onaylı istisna yok.
-      011 D2 (sürüm aynı; canlı değerlendirilmedi): risk ölçeği P1/P2/P3 ile hizalı, CL tekniği, durumlar
-      kimlikli (S1..) ve geçiş (durum, olay) ikilisi (ST-T/ST-X), BVA kipi / Risk notları / Hata geçmişi;
-      TPD-1 karma sepet DT + Q1, TPD-4 kayıtlı olmayan kullanıcı Q1.'
+    status: evaluated
+    note: 'Canlı değerlendirme 2026-11-12, claude-sonnet-5-5 (anthropic), 6/6 vaka geçti: evaluation/results/design-model-v1-2026-11-12.json'
+    evaluation:
+      date: '2026-11-12'
+      model: claude-sonnet-5-5
+      provider: anthropic
+      results: evaluation/results/design-model-v1-2026-11-12.json
+      guardrails_version: 1
+      calls: evaluation/results/design-model-v1-2026-11-12.calls.jsonl
   case-review:
     version: 1
     status: evaluated
@@ -82,13 +82,15 @@ bundles:
       calls: evaluation/results/case-review-v1-2026-11-12.calls.jsonl
   case-audit:
     version: 1
-    status: pending
-    note: '011 D şeridi (P9, Agent Probe denetimi; claude-opus-5-5): KABUL / DÜZELTME_GEREKLİ / ENGELLE,
-      deterministik sertleştirme kodda. Golden çıktıları elle hazırlandı (TPD-1 KABUL, TPD-3 DÜZELTME_GEREKLİ,
-      TPD-4 KABUL, SERBEST KABUL). Değerlendirme seti: rules/evaluation/case-audit.json (belgedeki 9 kategori,
-      5 koşu; `audit_problems`: yanlış engelleme, kaçırma, karar tutarlılığı). Canlı değerlendirme yapılmadı;
-      onaylı istisna yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): kontrol 9: ready case''te AÇIK
-      NOKTA; C10 reddedilmiş TPD-1 seti için ayrı golden.'
+    status: evaluated
+    note: 'Canlı değerlendirme 2026-11-12, claude-opus-5-5 (anthropic), 45/45 vaka geçti: evaluation/results/case-audit-v1-2026-11-12.json'
+    evaluation:
+      date: '2026-11-12'
+      model: claude-opus-5-5
+      provider: anthropic
+      results: evaluation/results/case-audit-v1-2026-11-12.json
+      guardrails_version: 1
+      calls: evaluation/results/case-audit-v1-2026-11-12.calls.jsonl
   verify-and-map:
     version: 3
     status: pending
@@ -188,20 +190,28 @@ bundles:
               p90: 13.522
   platform-common:
     version: 1
-    status: pending
-    note: '011 F4: Ortak platform eki kuralları (kontrol listesi/kota değil, benimsenen standart → beklenen
-      sonuç, aksi gözlem, config_matrix satırsız, requires_real_device, testability_gaps, test türü kuralları).
-      Seti: evaluation/platform-common.json (çağrı case-generation ile; ek metni girdide). İçerik hash''i
-      ek + ev sahibi prompt + şema + case_generation ayarını kapsar. Canlı değerlendirme yapılmadı; onaylı
-      istisna yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): kategoriler CL-n kapsam öğesi, a11y/security
-      etiketleri, ≤ 15 case.'
+    status: evaluated
+    note: 'Canlı değerlendirme 2026-11-12, claude-sonnet-5-5 (anthropic), 2/2 vaka geçti: evaluation/results/platform-common-v1-2026-11-12.json'
+    evaluation:
+      date: '2026-11-12'
+      model: claude-sonnet-5-5
+      provider: anthropic
+      results: evaluation/results/platform-common-v1-2026-11-12.json
+      guardrails_version: 1
+      calls: evaluation/results/platform-common-v1-2026-11-12.calls.jsonl
+      icerik_hash: sha256:29147a46a27dfb834042bd9e2f5fd82292ccf1107d3348fae992f5b0b7ee1cfb
   platform-web:
     version: 1
-    status: pending
-    note: '011 F4: P1 Web eki. Golden: replay/case_generation/golden/platform-web/TPD-4.json (elle hazırlandı).
-      Seti: evaluation/platform-web.json. Canlı değerlendirme yapılmadı; onaylı istisna yok. 011 D2 (sürüm
-      aynı; canlı değerlendirilmedi): iki değerli BVA (timeout, kırılım), girdi güvenliği beklentisi;
-      golden''da CL ve işaretli SQLi case''i.'
+    status: evaluated
+    note: 'Canlı değerlendirme 2026-11-12, claude-sonnet-5-5 (anthropic), 1/1 vaka geçti: evaluation/results/platform-web-v1-2026-11-12.json'
+    evaluation:
+      date: '2026-11-12'
+      model: claude-sonnet-5-5
+      provider: anthropic
+      results: evaluation/results/platform-web-v1-2026-11-12.json
+      guardrails_version: 1
+      calls: evaluation/results/platform-web-v1-2026-11-12.calls.jsonl
+      icerik_hash: sha256:ab3bd2b17bbd971c13f9bb8fa4497fabeba526705c204a7a167c0b42507d1aa8
   platform-mobile:
     version: 1
     status: evaluated
