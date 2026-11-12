@@ -1354,8 +1354,19 @@ def _goster_deger(deger: Any) -> Any:
     return str(deger) if isinstance(deger, Decimal) else deger
 
 
+def _metin_deger(deger: Any) -> str:
+    """Uyarı metninde değer: mantıksal `doğru`/`yanlış`, sayı ondalık virgülle (`749,99`); Python
+    repr'i (`True`, `749.99`) kullanıcıya gösterilmez (birleştirme turu 2 ekran turu)."""
+    if isinstance(deger, bool):
+        return "doğru" if deger else "yanlış"
+    metin = str(deger)
+    if isinstance(deger, (Decimal, int, float)) or re.fullmatch(r"-?\d+\.\d+", metin):
+        return metin.replace(".", ",")
+    return metin
+
+
 def _ornek_metni(girdiler: Mapping[str, Any]) -> str:
-    return ", ".join(f"{a}={_goster_deger(d)}" for a, d in girdiler.items())
+    return ", ".join(f"{a} = {_metin_deger(d)}" for a, d in girdiler.items())
 
 
 def sinir_ornekleri(icerik: dict[str, Any], rules_dir: Path | None = None) -> dict[str, Any]:

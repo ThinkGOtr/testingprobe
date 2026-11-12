@@ -22,7 +22,7 @@ import { CaseKarti } from "../CaseKarti";
 import { HataKosusuKarti, turetmeOnerisi } from "../kule/HataKosusuKarti";
 import { HataYakalamaKarosu, OnayliUyumsuzKarti } from "../kule/KaliteKpilari";
 import { damgaAlani, karsilastirilamamaNedeni, KarsilastirmaTablosu, ozetMetni } from "./oracle";
-import { OrnekIzgarasi } from "./OrnekIzgarasi";
+import { OrnekIzgarasi, sayiDegeri } from "./OrnekIzgarasi";
 import { caseOracleYanitiUyarla } from "../../api/uyumKalite";
 import { icerikFarklari } from "./ortak";
 
@@ -372,5 +372,15 @@ describe("u2 N17: yüzen asistan başlatıcısı", () => {
     Object.defineProperty(window, "scrollY", { value: 0, configurable: true });
     window.dispatchEvent(new Event("scroll"));
     await waitFor(() => expect(b).not.toHaveClass("kucuk"));
+  });
+});
+
+describe("birleştirme turu 2: çekirdek örnek girdisi metin sayı", () => {
+  it("eşik satırı çekirdeğin '750.00' metniyle de bulunur (gerçek portal ekran turu)", () => {
+    expect(sayiDegeri("750.00")).toBe(750);
+    expect(sayiDegeri(" 749.99 ")).toBe(749.99);
+    expect(sayiDegeri(7)).toBe(7);
+    expect(sayiDegeri("yedi")).toBeNull();
+    expect(sayiDegeri(true)).toBeNull();
   });
 });

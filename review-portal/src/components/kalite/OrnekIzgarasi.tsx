@@ -30,6 +30,13 @@ export function esikler(t: KararTablosu["icerik"]): Record<string, number[]> {
   return e;
 }
 
+/** Örnek girdisi sayı: çekirdek ondalık sayıları metin verir ("750.00"), mock sayı verir; ikisi de sayıya çevrilir. */
+export function sayiDegeri(d: unknown): number | null {
+  if (typeof d === "number") return Number.isFinite(d) ? d : null;
+  if (typeof d === "string" && /^-?\d+(?:\.\d+)?$/.test(d.trim())) return Number(d.trim());
+  return null;
+}
+
 /** Sayının story metnindeki yazımları: 750 → "750,00" ve "750"; 7 → "7". */
 const yazimlar = (n: number) => [n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }), String(n).replace(".", ",")];
 
@@ -74,7 +81,10 @@ export function OrnekIzgarasi({ tablo, kriterler = null }: { tablo: KararTablosu
   const t = tablo.icerik;
   const esik = esikler(t);
   const esikSatiri = (girdiler: Record<string, unknown>) =>
-    Object.entries(esik).flatMap(([ad, degerler]) => (typeof girdiler[ad] === "number" && degerler.includes(girdiler[ad] as number) ? [girdiler[ad] as number] : []))[0] ?? null;
+    Object.entries(esik).flatMap(([ad, degerler]) => {
+      const n = sayiDegeri(girdiler[ad]);
+      return n !== null && degerler.includes(n) ? [n] : [];
+    })[0] ?? null;
   const hucre = (ad: string, d: string | number | boolean | null | undefined) => (mantiksalMi(d) ? mantiksalOku(ad, d) : degerMetni(d));
   return (
     <details className="kt-ornek" data-testid="kt-ornek" open={acik || undefined} onToggle={(e) => setAcik((e.currentTarget as HTMLDetailsElement).open)}>

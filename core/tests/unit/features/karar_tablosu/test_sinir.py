@@ -145,6 +145,9 @@ def test_t2_para_sinirlari_kurus_adimiyla() -> None:
     assert ortusme["satirlar"] == ["R1", "R2"]
     assert ortusme["girdiler"]["kampanyali_sepet"] is True
     assert ortusme["onem"] == "bilgi" and "önceliklidir" in ortusme["mesaj"]
+    # Mesajda Python repr'i yok (birleştirme turu 2 ekran turu): "True" / "749.99" değil.
+    assert "kampanyali_sepet = doğru, sepet_tutari = 749,99" in ortusme["mesaj"]
+    assert "True" not in ortusme["mesaj"] and "749.99" not in ortusme["mesaj"]
 
 
 def test_ortusme_onemi_ayni_girdide_uyari() -> None:
