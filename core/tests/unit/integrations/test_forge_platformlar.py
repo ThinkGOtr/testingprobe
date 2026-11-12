@@ -182,6 +182,68 @@ def test_local_required_checks_kokler_disi_degisiklik_repodaki_diller() -> None:
     )
 
 
+def test_local_required_checks_repoda_yalniz_java_uygulama_pr_kilitlenmez() -> None:
+    """MİM-O1: repoda yalnız Java web testi var (`e2e/tests/*.spec.ts` yok); script'siz PR
+    uygulama kodunu değiştiriyor → CI yalnız java koşar (`degisen_web_dilleri`), kapı da yalnız
+    `local-ci-web-java` ister (yapılandırılmış `local-ci` beklenmez; kaydedilmişse yeşil olmalı)."""
+    from tp_core.features.codegen import platform as platformlar
+    from tp_core.integrations.forge import local_required_checks
+    from tp_core.ports import CheckRun
+
+    yollar = ["web/src/App.tsx"]
+    kokler = platformlar.e2e_kokleri("")
+    ci_dilleri = kokler.degisen_web_dilleri(yollar, ("java",))
+    assert ci_dilleri == ("java",)
+    zorunlu, neden = local_required_checks(("local-ci",), [], yollar, ("java",))
+    assert zorunlu == tuple(platformlar.check_adi("web", d) for d in ci_dilleri)
+    assert zorunlu == ("local-ci-web-java",) and neden is None
+    yesil = [CheckRun(name="local-ci-web-java", status="completed", conclusion="success")]
+    assert evaluate_required_checks(yesil, zorunlu).passed
+    # Kaydedilmiş kırmızı local-ci yine durdurur (simetri).
+    kirmizi = [*yesil, CheckRun(name="local-ci", status="completed", conclusion="failure")]
+    zorunlu, _ = local_required_checks(("local-ci",), kirmizi, yollar, ("java",))
+    assert not evaluate_required_checks(kirmizi, zorunlu).passed
+    # e2e/ de değiştiyse CI ts de koşar → local-ci zorunlu.
+    zorunlu, _ = local_required_checks(
+        ("local-ci",), [], [*yollar, "e2e/tests/a.spec.ts"], ("java",)
+    )
+    assert zorunlu == ("local-ci", "local-ci-web-java")
+
+
+def test_local_required_checks_fark_bilinmiyor_ya_da_repo_okunamadi_kapali_taraf() -> None:
+    """GÜV: ortak ata yok (fark None) → tüm tam hat dillerinin check'i; repo okunamazsa
+    `yerel_repodaki_web_dilleri` kapalı taraf (iki dil)."""
+    from tp_core.integrations.forge import local_required_checks, yerel_repodaki_web_dilleri
+
+    assert local_required_checks(("local-ci",), [], None, ("ts",)) == (
+        ("local-ci", "local-ci-web-java"),
+        None,
+    )
+
+    def bozuk(_onek: str, _ref: str) -> list[str]:
+        raise OSError("okunamadı")
+
+    assert yerel_repodaki_web_dilleri(bozuk, "main") == ("ts", "java")
+    assert yerel_repodaki_web_dilleri(lambda _o, _r: [], "main") == ("ts",)
+
+
+def test_e2e_kokleri_tek_liste() -> None:
+    """MİM-O1: LocalForge kapısının test kökleri CI'ın kullandığı `e2e_kokleri` ile aynıdır."""
+    from tp_core.features.codegen import platform as platformlar
+    from tp_core.integrations import forge
+
+    assert (
+        forge._TEST_KOKLERI
+        == platformlar.e2e_kokleri("").hepsi
+        == ("e2e/", "e2e-java/", "e2e-app/")
+    )
+    assert platformlar.e2e_kokleri("demo-app/").hepsi == (
+        "demo-app/e2e/",
+        "demo-app/e2e-java/",
+        "demo-app/e2e-app/",
+    )
+
+
 def test_github_required_checks_web_java_is_akisi() -> None:
     """K-T10: `web-java.yml` depodaysa `web-java` TP_WEB_DILLERI'nden bağımsız zorunlu."""
     assert github_required_checks(("test-local",), (), ("ts",), web_java_is_akisi=True) == (

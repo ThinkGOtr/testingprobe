@@ -24,7 +24,7 @@ Bu modül saf yardımcıdır (veritabanı/ağ yok): hem core-api hem core-worker
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 Platform = Literal["web", "android", "ios", "windows"]
 WEB = "web"
@@ -34,6 +34,8 @@ PLATFORMLAR: tuple[str, ...] = (WEB, *UYGULAMA_PLATFORMLARI)
 E2E_APP_DIZINI = "e2e-app"
 # Web + Java (Playwright for Java + TestNG) test projesinin kökü: `<app root>/e2e-java` (011 §2.5).
 E2E_JAVA_DIZINI = "e2e-java"
+# Web + TS (Playwright) test projesinin kökü: `<app root>/e2e`.
+E2E_DIZINI = "e2e"
 # e2e-app / e2e-java köküne göre (iki Java projesi aynı paket düzenini kullanır).
 JAVA_URETILEN_DIZIN = "src/test/java/com/antreklabs/bayi/uretilen"
 
@@ -215,30 +217,71 @@ def _kok(yol: str) -> str:
     return f"{yol.rstrip('/')}/"
 
 
+class E2eKokleri(NamedTuple):
+    """Forge deposundaki test kökleri (sonu `/`). Tek liste (MİM-O1): CI'ın script'siz PR dil
+    seçimi (`ci/service._web_dilleri`) ve LocalForge merge kapısı (`forge.local_required_checks`)
+    aynı kökleri `e2e_kokleri(<app root>)` ile kurar; bunların DIŞINDA bir değişiklik uygulama
+    kodudur (K-T11)."""
+
+    e2e: str
+    e2e_java: str
+    e2e_app: str
+
+    @property
+    def hepsi(self) -> tuple[str, ...]:
+        return (self.e2e, self.e2e_java, self.e2e_app)
+
+    def degisen_web_dilleri(
+        self, degisen: Sequence[str], repodaki: Sequence[str] = ("ts",)
+    ) -> tuple[str, ...]:
+        """`degisen_web_dilleri` bu köklerle (diğer test kökü: `e2e_app`)."""
+        return degisen_web_dilleri(
+            degisen,
+            e2e=self.e2e,
+            e2e_java=self.e2e_java,
+            repodaki=repodaki,
+            diger_test_kokleri=(self.e2e_app,),
+        )
+
+
+def e2e_kokleri(kok: str = "") -> E2eKokleri:
+    """`kok` (uygulama kökü; LocalForge '' , GitHub `demo-app`) altındaki test kökleri."""
+    on = f"{kok.strip('/')}/" if kok.strip("/") else ""
+    return E2eKokleri(
+        e2e=f"{on}{E2E_DIZINI}/",
+        e2e_java=f"{on}{E2E_JAVA_DIZINI}/",
+        e2e_app=f"{on}{E2E_APP_DIZINI}/",
+    )
+
+
 def repodaki_web_dilleri(
-    list_files: Callable[[str, str], list[str]], ref: str, *, e2e: str, e2e_java: str
+    list_files: Callable[[str, str], list[str]],
+    ref: str,
+    *,
+    e2e: str,
+    e2e_java: str,
+    okunamazsa: Sequence[str] = ("ts",),
 ) -> tuple[str, ...]:
     """`ref`'te web testi bulunan tam hat dilleri (sıra `ts`, `java`).
 
     Saf sayım (model yok): ts → `<e2e>/tests/**/*.spec.ts`; java →
     `<e2e-java>/src/test/java/**` + `java_test_dosyasi_mi` (`birim/` hariç, `uretilen/` dahil:
     paket koşusu üretilenleri de koşar). Hiçbiri yoksa ya da forge okunamazsa `("ts",)`: bugünkü
-    davranış (koşu / kapı engellenmez). LocalForge merge kapısı ve CI aynı fonksiyonu kullanır.
+    davranış (koşu engellenmez). LocalForge merge kapısı ve CI aynı fonksiyonu kullanır; kapı
+    okuma hatasında kapalı tarafa düşer (`okunamazsa=TAM_HAT_DILLERI`: her iki dilin check'i
+    zorunlu), CI varsayılanla (`("ts",)`) koşar.
     """
     out: list[str] = []
     try:
         if any(y.endswith(".spec.ts") for y in list_files(f"{_kok(e2e)}tests/", ref)):
             out.append(TS)
-    except Exception:
-        return (TS,)
-    try:
         if any(
             java_test_dosyasi_mi(y, haric=("birim",))
             for y in list_files(f"{_kok(e2e_java)}src/test/java/", ref)
         ):
             out.append(JAVA)
     except Exception:
-        return tuple(out) or (TS,)
+        return tuple(okunamazsa)
     return tuple(out) or (TS,)
 
 

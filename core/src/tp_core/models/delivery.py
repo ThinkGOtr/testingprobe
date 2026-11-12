@@ -129,6 +129,10 @@ class PullRequest(Base):
     checks: Mapped[list[Any] | None] = mapped_column(JSONB)
     checks_sha: Mapped[str | None]
     checks_zaman: Mapped[datetime | None]
+    # GitHub kipi (011 K-T13, 0022): senkronun `checks_sha` head'i için hesapladığı merge kapısı
+    # zorunlu listesi (`GitHubForge.zorunlu_checkler`: base ∪ head `web-java.yml`); portal aynası
+    # bunu okur. None: eski kopya (portal kapalı tarafa düşer).
+    zorunlu_checkler: Mapped[list[Any] | None] = mapped_column(JSONB)
     olusturma: Mapped[datetime] = olusturma_col()
     guncelleme: Mapped[datetime] = guncelleme_col()
 

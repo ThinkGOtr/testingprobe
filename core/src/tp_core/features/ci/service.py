@@ -455,14 +455,18 @@ def gh_sonuc_artefakti(run: Run) -> str:
 def gh_check_adi(run: Run) -> str:
     """Koşunun GitHub job/check adı: web + TS `test-local`, web + Java `web-java`, uygulama
     `mobil-android` | `mobil-ios` | `masaustu-windows` (`gh_sonuc_artefakti` ile aynı mantık)."""
-    from tp_core.integrations.forge import GITHUB_PLATFORM_CHECKS, WEB_JAVA_CHECK
+    from tp_core.integrations.forge import (
+        GITHUB_PLATFORM_CHECKS,
+        GITHUB_WEB_TS_CHECK,
+        WEB_JAVA_CHECK,
+    )
 
     p = kosu_platformu(run)
     if p in platformlar.UYGULAMA_PLATFORMLARI:
         return GITHUB_PLATFORM_CHECKS[p]
     if kosu_dili(run) == platformlar.JAVA:
         return WEB_JAVA_CHECK
-    return "test-local"
+    return GITHUB_WEB_TS_CHECK
 
 
 def check_body_platformu(platform: str, dil: str | None = None) -> dict[str, Any]:
@@ -1013,9 +1017,12 @@ def _web_dilleri(run: Run) -> tuple[str, ...]:
     except Exception as exc:  # forge kurulamadı: koşu engellenmez, bugünkü davranış
         log.warning("ci.run %s: forge kurulamadı (%s); ts koşuyor", run.id, exc)
         return (platformlar.TS,)
-    kokler = {"e2e": cg.e2e_root(), "e2e_java": cg.e2e_java_root()}
+    # Test kökleri tek listeden (MİM-O1): LocalForge kapısı da `e2e_kokleri` kullanır.
+    kokler = platformlar.e2e_kokleri(cg.app_root())
     try:
-        repodaki = dilmod.repodaki_web_dilleri(forge.list_files, ref, **kokler)
+        repodaki = dilmod.repodaki_web_dilleri(
+            forge.list_files, ref, e2e=kokler.e2e, e2e_java=kokler.e2e_java
+        )
     except Exception as exc:  # forge dosya listesi sunmuyor: bugünkü davranış
         log.warning("ci.run %s: repodaki diller okunamadı (%s); ts", run.id, exc)
         repodaki = (platformlar.TS,)
@@ -1028,9 +1035,7 @@ def _web_dilleri(run: Run) -> tuple[str, ...]:
             degisen = None
         if degisen is not None:
             # K-T11: test kökleri dışında değişiklik → repodaki tüm tam hat dilleri.
-            return dilmod.degisen_web_dilleri(
-                degisen, **kokler, repodaki=repodaki, diger_test_kokleri=(cg.e2e_app_root(),)
-            )
+            return kokler.degisen_web_dilleri(degisen, repodaki)
     return repodaki
 
 
@@ -2101,7 +2106,7 @@ def serialize_runs(session: Session, runs: Sequence[Run]) -> list[dict[str, Any]
                 or platformlar.WEB,
                 # 011: koşunun dili (`ortam.dil`; eski kayıtta platformun varsayılanı).
                 "dil": dilmod.ortam_dili(o)
-                or dilmod.platformlar.varsayilan_dil(
+                or platformlar.varsayilan_dil(
                     o.get("platform") or script_platform.get(r.script_id)
                 ),
                 "saglik_hatasi": (saglik or {}).get("hata")

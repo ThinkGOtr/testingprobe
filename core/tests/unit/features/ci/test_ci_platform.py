@@ -262,6 +262,30 @@ def test_izinli_mi_target_rapor_dizinleri() -> None:
         assert not izinli_mi(tuple(yol.split("/"))), yol
 
 
+def test_izinli_mi_target_kanit_yalniz_goruntu() -> None:
+    """O-1: Extent'in göreli `../kanit/tekrar-N/<Sınıf>.<metot>/ekran.png` bağlantıları sunulur;
+    aynı dizindeki trace / sayfa dökümü (hassas olabilir) sunulmaz."""
+    from tp_core.features.ci.artifacts import izinli_mi
+
+    for yol in (
+        "src/e2e-java/target/kanit/tekrar-1/LoginTest.girisYapar/ekran.png",
+        "src/demo-app/e2e-java/target/kanit/tekrar-2/A.b/ekran.PNG",
+        "src/e2e-app/target/kanit/tekrar-1/A.b/ekran.jpg",
+        "src/e2e-app/target/kanit/x.jpeg",
+    ):
+        assert izinli_mi(tuple(yol.split("/"))), yol
+    for yol in (
+        "src/e2e-java/target/kanit/tekrar-1/LoginTest.girisYapar/trace.zip",
+        "src/e2e-java/target/kanit/tekrar-1/LoginTest.girisYapar/sayfa.html",
+        "src/e2e-java/target/kanit/tekrar-1/LoginTest.girisYapar",
+        "src/e2e-java/target/kanit",
+        "src/e2e-java/kanit/tekrar-1/A.b/ekran.png",
+        "src/e2e-java/target/classes/kanit.png",
+        "target/kanit/a.png",
+    ):
+        assert not izinli_mi(tuple(yol.split("/"))), yol
+
+
 def test_serialize_runs_platformu_eski_kayitta_scriptten(engine: Engine) -> None:
     sid = _script(engine, "ios")
     with Session(engine) as s, s.begin():
@@ -436,3 +460,14 @@ def test_github_alimi_uygulama_artefaktindan(
             "GirisTesti › girisYap",
             "TPD1AndroidC2_0a1b2c3dTest › senaryo",
         }
+
+
+def test_gh_dizin_ve_url_yolu_fullmatch() -> None:
+    """Kalıntı (GÜV-Y7 devamı): `GH_DIR_RE` / `URL_PATH_RE` sondaki satır sonunu kabul etmez."""
+    from tp_core.features.ci import github_artifacts
+    from tp_core.features.triage import evidence
+
+    assert github_artifacts.yol("gh/12-1\n") is None
+    assert github_artifacts.GH_DIR_RE.fullmatch("gh/12-1")
+    assert evidence._url_yolu("https://x.test/a/b") == "/a/b"
+    assert evidence.URL_PATH_RE.fullmatch("/a/b\n") is None

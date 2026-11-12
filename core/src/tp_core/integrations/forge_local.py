@@ -183,8 +183,10 @@ class LocalForge:
             env.get("TP_FORGE_PATH") or DEFAULT_FORGE_PATH,
             env.get("TP_ARTIFACTS_PATH") or DEFAULT_ARTIFACTS_PATH,
             env.get("TP_FORGE_PRS_PATH") or None,
-            # MIMARI-SOZLESME: `TP_REQUIRED_CHECKS` boş = `local-ci` (ör. platform kontrolünü her
-            # PR'da zorunlu kılmak için `local-ci,local-ci-android`).
+            # MIMARI-SOZLESME: `TP_REQUIRED_CHECKS` boş = `local-ci`; yalnız HER PR'da zorunlu
+            # kontroller içindir (ör. `local-ci,local-ci-android`). PR'a göre gereken kontroller
+            # (`local-ci-web-java`, `local-ci-<platform>`, K-T11 dilleri) kapıda otomatik eklenir
+            # (`forge.local_required_checks`); listeye yazılmaz.
             required_checks=parse_required_checks(
                 env.get(REQUIRED_CHECKS_ENV), LOCAL_REQUIRED_CHECKS
             ),
@@ -561,8 +563,11 @@ class LocalForge:
             # Platform/dil başına kapı (009 §2.7, 011 K-T1): kayıtlı uygulama / web + Java
             # kontrolleri de zorunlu; e2e-java/ değiştiren PR local-ci-web-java ister.
             fark_tabani = self._merge_base(base_head, head)
-            degisen = self.changed_paths(fark_tabani, head) if is_sha(fark_tabani) else []
-            # K-T11: test kökleri dışı değişiklik repodaki tüm tam hat dillerini ister.
+            # Ortak ata yoksa fark bilinmiyor (None): kapı KAPALI tarafa düşer (tüm tam hat
+            # dillerinin check'i zorunlu; `local_required_checks`).
+            degisen = self.changed_paths(fark_tabani, head) if is_sha(fark_tabani) else None
+            # K-T11: test kökleri dışı değişiklik CI'ın koşacağı dillerin check'ini ister
+            # (`platform.degisen_web_dilleri`; repo okunamazsa kapalı taraf).
             repodaki = yerel_repodaki_web_dilleri(self.list_files, head)
             zorunlu, platform_eksik = local_required_checks(
                 self.required_checks, checks, degisen, repodaki

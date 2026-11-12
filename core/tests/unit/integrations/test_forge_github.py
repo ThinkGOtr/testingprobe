@@ -885,21 +885,26 @@ def test_olmayan_dal_head_sha_bulunamadi_sayilir(forge: GitHubForge, gh: FakeGit
         forge.head_sha("kotu")
 
 
+WEB_JAVA_YML = f"{R}/contents/.github/workflows/web-java.yml"
+
+
+def _web_java_yml(gh: FakeGitHub, *refler: str) -> None:
+    """`web-java.yml` yalnız verilen ref'lerde (sha) var; diğerlerinde 404."""
+
+    def yanit(req: httpx.Request) -> httpx.Response:
+        if req.url.params.get("ref") in refler:
+            return httpx.Response(200, json={"type": "file", "sha": "f" * 40, "content": ""})
+        return httpx.Response(404, json={"message": "Not Found"})
+
+    gh.on("GET", WEB_JAVA_YML, yanit)
+
+
 def test_merge_web_java_is_akisi_varsa_web_java_her_zaman_zorunlu(
     merge_forge: GitHubForge, gh: FakeGitHub
 ) -> None:
     """K-T10 (GÜV-Y3): head'de `.github/workflows/web-java.yml` varsa `web-java` check'i
     `TP_WEB_DILLERI`'nden bağımsız zorunludur (iş akışı ilgisiz PR'da no-op ile yeşil)."""
-    agac = "d" * 40
-    gh.on("GET", f"{R}/git/commits/{BRANCH_HEAD}", {"sha": BRANCH_HEAD, "tree": {"sha": agac}})
-    gh.on(
-        "GET",
-        f"{R}/git/trees/{agac}",
-        {
-            "truncated": False,
-            "tree": [{"path": ".github/workflows/web-java.yml", "type": "blob", "mode": "100644"}],
-        },
-    )
+    _web_java_yml(gh, BRANCH_HEAD)
     assert merge_forge.zorunlu_checkler(BRANCH_HEAD)[-1] == "web-java"
     gh.on("GET", f"{R}/commits/{BRANCH_HEAD}/check-runs", ruleset_checks())
     sonuc = merge_forge.merge_pr_detailed(7, "demo-admin")
@@ -911,7 +916,51 @@ def test_merge_web_java_is_akisi_varsa_web_java_her_zaman_zorunlu(
 def test_zorunlu_checkler_is_akisi_yoksa_yapilandirilmis_liste(
     merge_forge: GitHubForge, gh: FakeGitHub
 ) -> None:
-    # Ağaç okunamadı (404) ya da iş akışı yok: yapılandırılmış liste aynen.
+    # İş akışı ne head'de ne base'de (dosya 404): yapılandırılmış liste aynen.
+    _web_java_yml(gh)
     assert merge_forge.zorunlu_checkler(BRANCH_HEAD) == merge_forge.required_checks
-    gh.on("GET", f"{R}/git/commits/{BRANCH_HEAD}", {"sha": BRANCH_HEAD, "tree": {"sha": MAIN_TREE}})
+    assert merge_forge.zorunlu_checkler(BRANCH_HEAD, "main") == merge_forge.required_checks
+    gh.on("GET", f"{R}/commits/{BRANCH_HEAD}/check-runs", ruleset_checks())
+    assert merge_forge.merge_pr_detailed(7, "ali").bypass is False
+
+
+def test_k_t13_is_akisini_silen_pr_web_java_kontrolunu_dusuremez(
+    merge_forge: GitHubForge, gh: FakeGitHub
+) -> None:
+    """K-T13 (F-G1): `web-java.yml`'yi silen PR'ın head'inde dosya yok ama hedef dalın (main)
+    güncel ucunda var → `web-java` hâlâ zorunlu; insan merge'ü reddedilir."""
+    _web_java_yml(gh, MAIN)
     assert merge_forge.zorunlu_checkler(BRANCH_HEAD) == merge_forge.required_checks
+    assert merge_forge.zorunlu_checkler(BRANCH_HEAD, "main")[-1] == "web-java"
+    gh.on("GET", f"{R}/commits/{BRANCH_HEAD}/check-runs", ruleset_checks())
+    with pytest.raises(ForgeProtectionError, match="'web-java' durumu: yok"):
+        merge_forge.merge_pr_detailed(7, "ali")
+    # Base okunurken istek hedef dalın güncel ucuna (sha) gider.
+    refler = [r.url.params.get("ref") for r in gh.calls if r.url.path == WEB_JAVA_YML]
+    assert MAIN in refler and BRANCH_HEAD in refler
+
+
+@pytest.mark.parametrize("durum", [500, 403])
+def test_k_t13_is_akisi_okunamazsa_web_java_zorunlu(
+    merge_forge: GitHubForge, gh: FakeGitHub, durum: int
+) -> None:
+    """K-T13: dosya okunamazsa (404 dışı hata) kapalı taraf — `web-java` zorunlu."""
+    gh.on("GET", WEB_JAVA_YML, lambda _r: httpx.Response(durum, json={"message": "x"}))
+    assert merge_forge.zorunlu_checkler(BRANCH_HEAD, "main")[-1] == "web-java"
+
+
+def test_k_t13_base_cozulemezse_web_java_zorunlu(merge_forge: GitHubForge, gh: FakeGitHub) -> None:
+    """K-T13: hedef dal sha'ya çözülemezse (ör. dal yok) kapalı taraf."""
+    _web_java_yml(gh)
+    assert merge_forge.zorunlu_checkler(BRANCH_HEAD, "yok-dal")[-1] == "web-java"
+
+
+def test_k_t13_web_java_yapilandirilmissa_okuma_yok(gh: FakeGitHub) -> None:
+    forge = GitHubForge(
+        REPO,
+        TokenAuth("bot"),
+        required_checks=("test-local", "web-java"),
+        transport=httpx.MockTransport(gh),
+    )
+    assert forge.zorunlu_checkler(BRANCH_HEAD, "main") == ("test-local", "web-java")
+    assert gh.count("GET", WEB_JAVA_YML) == 0
