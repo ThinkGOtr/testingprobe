@@ -188,11 +188,41 @@ def test_beklenen_alanda_girdiyi_yineleyen_ignored_kismen_yapmaz(sayac: str, son
     assert s == sonuc
     if sonuc == d.UYUMLU:
         assert ayr["yankilanan_girdi"] == [
-            {"alan": "steps[0].expected", "alinti": "Sepet sayacı 3", "degerler": ["3"]}
+            {
+                "alan": "steps[0].expected",
+                "alinti": "Sepet sayacı 3",
+                "kaynaklar": [{"deger": "3", "kaynak": "olgu"}],
+            }
         ]
         assert ayr["kismen_nedeni"] == []
     else:
         assert ayr["yankilanan_girdi"] == [] and ayr["kismen_nedeni"] == ["yok_sayilan"]
+
+
+def test_ignored_girdi_alanindaki_sayiyi_yinelerse_kismen_yapmaz() -> None:
+    """Ürün sahibi kararı (a): "Sepet sayacı 10" sayısı S3 verisinde ("P-002 × 10") yazıyorsa
+    yankıdır (`kaynak: girdi_alani`); girdi alanlarının hiçbirinde ve hiçbir girdi olgusunda
+    olmayan sayı (`Sepet sayacı 11`) `yok_sayilan` ile kısmen yapar."""
+    case = tpd1.ana_yol_cases()[4]  # C5
+    olgu = copy.deepcopy(tpd1.olgular(5))
+    assert olgu is not None
+    sonuc, ayr = d.degerlendir(case, [T2], olgu)
+    assert sonuc == d.UYUMLU and ayr["kismen_nedeni"] == []
+    assert ayr["yankilanan_girdi"] == [
+        {
+            "alan": "steps[2].expected",
+            "alinti": "Sepet sayacı 10",
+            "kaynaklar": [{"deger": "10", "kaynak": "girdi_alani", "alan_yolu": "steps[2].data"}],
+        }
+    ]
+    case = copy.deepcopy(case)
+    case["steps"][2]["expected"] = "Sepet sayacı 11 olur"
+    for o in olgu["ignored"]:
+        if o["field"] == "steps[2].expected":
+            o["quote"] = "Sepet sayacı 11"
+    sonuc, ayr = d.degerlendir(case, [T2], olgu)
+    assert sonuc == d.KISMEN and ayr["kismen_nedeni"] == ["yok_sayilan"]
+    assert ayr["yankilanan_girdi"] == []
 
 
 def test_g2_y14_baslik_ve_veri_alanlari_cikarilan_girdiyle_celismez() -> None:

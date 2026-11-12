@@ -245,18 +245,18 @@ def test_tpd1_kalite_dogrulama_uctan_uca(
 
     # 8) Beklenti doğruluğu: AI içeriği üzerinden (C5'in AI içeriği uyumluydu; düzeltme sayılmaz).
     # C10 = C2 (aynı satır, aynı değerler) tek sayılır; kapsam payda: tablolu story'deki 9 AI
-    # case (tekrar hariç). Tüm kayıtlar elle golden'dan (REPLAY): gösterge. T2 case'leri (C5, C6,
-    # C9) sepet sayacını `ignored`'a yazdığı için kısmen (review 2 g2 Y1): orana girmez.
+    # case (tekrar hariç). Tüm kayıtlar elle golden'dan (REPLAY): gösterge. T2 case'lerinin
+    # `ignored` sepet sayacı S3 verisindeki adedi yineler (`yankilanan_girdi`): kısmen yapmaz.
     beklenen_metrik = {
         "oran": 1.0,
-        "uyumlu": 3,
+        "uyumlu": 6,
         "uyumsuz": 0,
-        "kismen": 3,
+        "kismen": 0,
         "kontrol_edilemedi": 0,
         "kapsam_disi": 3,
         "istisna": 1,
         "kontrolsuz_onay": 0,
-        "n_case": 3,
+        "n_case": 6,
         "n_story": 1,
         "tablolu_story": 1,
         "toplam_story": 1,

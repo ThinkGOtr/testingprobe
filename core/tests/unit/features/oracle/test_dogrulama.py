@@ -556,8 +556,9 @@ def test_bir_grup_uyumsuz_digeri_uyumlu_genel_uyumsuz() -> None:
 def test_mantiksal_tablo_degerlendirmesi() -> None:
     case = tpd1_cases()[4]  # C5: kampanyasız, 150 TL → uyarı görünür
     sonuc, ayr = d.degerlendir(case, TABLOLAR[1:], OLGULAR[5])
-    # S3 beklenendeki sepet sayacı `ignored`'da: en iyi kısmen (review 2 g2 Y1).
-    assert sonuc == d.KISMEN and ayr["kismen_nedeni"] == ["yok_sayilan"]
+    # S3 beklenendeki sepet sayacı `ignored`'da ama S3 verisindeki adedi yineler: uyumlu.
+    assert sonuc == d.UYUMLU and ayr["kismen_nedeni"] == []
+    assert ayr["yankilanan_girdi"][0]["kaynaklar"][0]["alan_yolu"] == "steps[2].data"
     assert ayr["gruplar"][0]["satir_id"] == "R2" and ayr["gruplar"][0]["durum"] == "uyumlu"
     degerler = {k["column"]: k["case_degeri"] for k in ayr["gruplar"][0]["karsilastirmalar"]}
     assert degerler == {"minimum_uyarisi": True}

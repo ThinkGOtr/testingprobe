@@ -706,8 +706,10 @@ anahtarlıdır, case başına dakikada 10 yeni iş.
 `expected_result`, `verification_point`) her sayı bir olgunun ya da `ignored` kaydının alıntısı
 içinde olmalı; değilse kayıt `kismen` olur (fark varsa `uyumsuz`).
 Review 2: beklenen alandaki kabul edilmiş `ignored` kaydı kontrolü en iyi `kismen` yapar (`kismen_nedeni:
-yok_sayilan`) — sayıları doğrulanmış bir girdi değerini yineliyorsa (adet 7 iken "Sepet sayacı 7") yapmaz,
-`ayrintilar.yankilanan_girdi`'ye yazılır; başlık/girdi alanlarındaki `ignored` kısmen yapmaz.
+yok_sayilan`) — her sayısı bir girdiyi yineliyorsa yapmaz: doğrulanmış bir girdi olgusu (`kaynak: olgu`)
+ya da case'in girdi alanlarında (`title`, `steps[i].data`, `test_data[i].value`) yazan sayı (`kaynak:
+girdi_alani` + `alan_yolu`; ör. "P-002 × 10" iken "Sepet sayacı 10"); `ayrintilar.yankilanan_girdi`'ye
+yazılır. Yazıyla sayı yankı sayılmaz; başlık/girdi alanlarındaki `ignored` kısmen yapmaz.
 
 **Karar gövdesi** (`POST /cases/{id}/decision`, `approve` | `edit`): `oracle_istisna_gerekce?`
 (≤ 2000; iki tür için de) + `oracle_istisna_turu?: uyumsuz|kontrolsuz` (verilmezse sonuçtan

@@ -339,8 +339,7 @@ def test_ai_sinir_hatasi_replay_kapisi(
     api: TestClient, engine: Engine, make_user, make_requirement, replay_gateway
 ) -> None:
     """Analist/PO 1, 3a: AI'ın klasik sınır hatası (tam 750,00 TL'de uyarı görünür) REPLAY'de
-    golden'la (`ai-sinir-hatasi/TPD-1-C6`) uyumsuz çıkar; yüksek risk → 422; oran 3/4 (C5, C9
-    `ignored` yüzünden kısmen; review 2 g2 Y1)."""
+    golden'la (`ai-sinir-hatasi/TPD-1-C6`) uyumsuz çıkar; yüksek risk → 422; oran 5/6."""
     from . import tpd1
 
     beyan = tpd1.taslak_golden()["input_match"]
@@ -374,6 +373,6 @@ def test_ai_sinir_hatasi_replay_kapisi(
     r = _karar(api, by[6], karar="approve")
     assert r.status_code == 422 and r.json()["kod"] == "oracle_uyumsuz", r.text
     m = api.get(f"/requirements/{rid}/case-metrics").json()["beklenti_dogrulugu"]
-    assert (m["uyumlu"], m["uyumsuz"], m["oran"], m["n_case"]) == (3, 1, 0.75, 4)
-    assert m["kismen"] == 2
+    assert (m["uyumlu"], m["uyumsuz"], m["oran"], m["n_case"]) == (5, 1, round(5 / 6, 4), 6)
+    assert m["kismen"] == 0
     assert m["golden_kaynakli"] == 6

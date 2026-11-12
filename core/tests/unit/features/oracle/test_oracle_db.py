@@ -123,17 +123,16 @@ def test_tpd1_replay_akisi_golden_sonuclari(
         assert all(r.ai_call_id is None for r in rows if r.sonuc == "kapsam_disi")
     m = api.get(f"/requirements/{rid}/case-metrics").json()["beklenti_dogrulugu"]
     # C10 C2'nin tekrarıdır (aynı satır, aynı değerler): tek sayılır.
-    # T2 case'leri (C5, C6, C9) `ignored` yüzünden kısmen (review 2 g2 Y1): orana girmez.
     assert {k: v for k, v in m.items() if k != "kaynak"} == {
         "oran": 1.0,
-        "uyumlu": 3,
+        "uyumlu": 6,
         "uyumsuz": 0,
-        "kismen": 3,
+        "kismen": 0,
         "kontrol_edilemedi": 0,
         "kapsam_disi": 3,
         "istisna": 0,
         "kontrolsuz_onay": 0,
-        "n_case": 3,
+        "n_case": 6,
         "n_story": 1,
         "tablolu_story": 1,
         "toplam_story": 1,

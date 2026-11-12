@@ -772,7 +772,7 @@ def degerlendir(
     kapsanmayan = kapsanmayan_sayilar(icerik, alintilar, degerler)
     eksik_tablolar = [t.ref for t in tablolar if t.id not in gorulen]
     ayr = _ayrintilar(gruplar, atilan, kapsanmayan, yok_sayilan, reddedilen, eksik_tablolar)
-    ayr["yankilanan_girdi"] = yankilanan_girdiler(yok_sayilan, girdi_degerleri)
+    ayr["yankilanan_girdi"] = yankilanan_girdiler(yok_sayilan, girdi_degerleri, icerik)
     ayr["kismen_nedeni"] = kismen_nedenleri(ayr)
     return _genel_sonuc(gruplar, ayr), ayr
 
@@ -873,29 +873,51 @@ def _grup_degerlendir(
 
 
 def yankilanan_girdiler(
-    yok_sayilan: Sequence[Mapping[str, Any]], girdi_degerleri: Sequence[Any]
+    yok_sayilan: Sequence[Mapping[str, Any]],
+    girdi_degerleri: Sequence[Any],
+    icerik: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    """Beklenen alandaki kabul edilmiş `ignored` kayıtlarından yalnız doğrulanmış bir GİRDİ
-    olgusunun değerini yineleyenler (ör. adet 7 iken "Sepet sayacı 7"): kontrolü kısmen yapmaz,
-    denetlenebilsin diye `ayrintilar.yankilanan_girdi`'ye yazılır (review 2, ürün sahibi kararı).
-    Alıntıdaki her rakamla yazılmış sayı bir girdi değerine eşit olmalı; yazıyla sayı içeren
-    alıntı yankı sayılmaz. Girdi değerleri kaydın tüm gruplarındandır (`ignored` grupsuzdur)."""
-    bilinen = set()
+    """Beklenen alandaki kabul edilmiş `ignored` kayıtlarından yalnız girdiyi yineleyenler (ör.
+    S3 verisi "P-002 × 10" iken "Sepet sayacı 10"): kontrolü kısmen yapmaz, denetlenebilsin diye
+    `ayrintilar.yankilanan_girdi`'ye yazılır (review 2, ürün sahibi kararı).
+
+    Alıntıdaki her rakamla yazılmış sayı ya doğrulanmış bir GİRDİ olgusunun değerine (`kaynak:
+    olgu`; girdi değerleri kaydın tüm gruplarından, `ignored` grupsuzdur) ya da case'in girdi
+    alanlarında (`title`, `steps[i].data`, `test_data[i].value`) yazan bir sayıya (`kaynak:
+    girdi_alani`, `alan_yolu` ile) eşit olmalı. Yazıyla sayı içeren alıntı yankı sayılmaz;
+    çıktı birimi/adı taşıyan alıntı zaten reddedilmiştir."""
+    olgu = set()
     for d in girdi_degerleri:
         try:
-            bilinen.add(ifade.girdi_donustur(d, ifade.SAYI))
+            olgu.add(ifade.girdi_donustur(d, ifade.SAYI))
         except (ifade.IfadeHatasi, TypeError, ValueError):
             continue
+    alan_sayilari: list[tuple[str, Any]] = []
+    for yol in _girdi_alanlari(icerik or {}):
+        alan = alan_coz(icerik or {}, yol)
+        if not alan:
+            continue
+        metin = temizle(alan)
+        alan_sayilari += [(yol, ifade.sayi_ayristir(metin[a:b])) for a, b in sayi_gecisleri(metin)]
     out = []
     for y in yok_sayilan:
         if not _BEKLENEN_ALAN.match(str(y.get("alan") or "")):
             continue
         q = temizle(str(y.get("alinti") or ""))
         sayilar = [ifade.sayi_ayristir(q[a:b]) for a, b in sayi_gecisleri(q)]
-        if sayilar and not yaziyla_sayilar(q) and all(x in bilinen for x in sayilar):
-            out.append(
-                {"alan": y["alan"], "alinti": y["alinti"], "degerler": [goster(x) for x in sayilar]}
-            )
+        if not sayilar or yaziyla_sayilar(q):
+            continue
+        kaynaklar = []
+        for x in sayilar:
+            if x is not None and x in olgu:
+                kaynaklar.append({"deger": goster(x), "kaynak": "olgu"})
+                continue
+            yol = next((p for p, v in alan_sayilari if x is not None and v == x), None)
+            if yol is None:
+                break
+            kaynaklar.append({"deger": goster(x), "kaynak": "girdi_alani", "alan_yolu": yol})
+        else:
+            out.append({"alan": y["alan"], "alinti": y["alinti"], "kaynaklar": kaynaklar})
     return out
 
 
@@ -909,7 +931,8 @@ def kismen_nedenleri(ayr: Mapping[str, Any] | None) -> list[str]:
     - `kapsanmayan_sayi`: tamlık denetiminde kapsanmayan sayı (`kapsanmayan_sayilar`).
     - `yok_sayilan`: modelin "hiçbir kolona ait değil" dediği (kabul edilmiş) `ignored` kaydı,
       yalnız beklenen alandaysa (`steps[i].expected`, `expected_result`, `verification_point`)
-      ve doğrulanmış bir girdi değerini yinelemiyorsa (`yankilanan_girdi`).
+      ve bir girdiyi (doğrulanmış girdi olgusu ya da girdi alanındaki sayı) yinelemiyorsa
+      (`yankilanan_girdi`).
 
     Eski kayıtlarda da (`kismen_nedeni` alanı yokken) ayrıntılardan hesaplanır."""
     ayr = ayr or {}

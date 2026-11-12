@@ -368,13 +368,13 @@ BEKLENEN_SONUC_ANA_YOL: dict[int, str] = {
     3: "uyumlu",  # bedava 0, indirim 0, toplam = ara toplam (uygulama 6 // 6 = 1 → defect adayı)
     4: "uyumlu",
     # T2 case'leri: S3 beklenendeki sepet sayacı ("Sepet sayacı 10") `ignored`'da (tabloda kolonu
-    # yok); beklenen alandaki kabul edilmiş `ignored` kontrolü en iyi `kismen` yapar (review 2 g2
-    # Y1; `kismen_nedeni: [yok_sayilan]`). S3 verisindeki ürün adedi (girdi alanı) etkilemez.
-    5: "kismen",
-    6: "kismen",
+    # yok) ama S3 verisindeki adedi ("P-002 × 10") yineler: kısmen yapmaz, kayıtta
+    # `yankilanan_girdi` (review 2 ürün sahibi kararı).
+    5: "uyumlu",
+    6: "uyumlu",
     7: "kapsam_disi",
     8: "kapsam_disi",
-    9: "kismen",
+    9: "uyumlu",
     10: "uyumlu",
 }
 # Ana golden (fix_doc alternatifi) yalnız C3'te farklıdır: "6 adette 1 bedava" story tablosuyla
