@@ -73,7 +73,9 @@ export function SegmentGrubu<T extends string>({
           const adId = `${ad}-${s.deger}-ad`;
           const altId = `${ad}-${s.deger}-alt`;
           const aciklama = aciklamali ? s.aciklama : undefined;
-          const neden = s.pasif ? s.neden?.trim() || "Bu seçenek kullanılamıyor." : undefined;
+          // Pasif seçeneğin nedeni "Kullanılamıyor: …" diye; açık seçeneğin nedeni (ör. depo okunamadığı için
+          // kullanılabilirlik bilinmiyor) de görünür ve aynı tanımla okunur (MİM-B1).
+          const neden = s.pasif ? s.neden?.trim() || "Bu seçenek kullanılamıyor." : s.neden?.trim() || undefined;
           const alt = !!aciklama || !!neden;
           return (
             <label key={s.deger} className={`platform-secenek${s.pasif ? " pasif" : ""}`}>
@@ -97,9 +99,9 @@ export function SegmentGrubu<T extends string>({
                 <span className="platform-secenek-alt" id={altId}>
                   {aciklama}
                   {neden && (
-                    <span className="platform-secenek-neden" data-testid="secenek-neden">
+                    <span className="platform-secenek-neden" data-testid="secenek-neden" data-pasif={s.pasif ? "evet" : "hayir"}>
                       {aciklama && <span className="gorunmez">. </span>}
-                      Kullanılamıyor: {neden}
+                      {s.pasif ? `Kullanılamıyor: ${neden}` : neden}
                     </span>
                   )}
                 </span>

@@ -38,7 +38,8 @@ export function caseScriptleri(scriptler: readonly Script[] | null): Map<string,
 export function TestCaseleri() {
   const caseler = useVeri(() => api.caseler(), []);
   const gereksinimler = useVeri(() => api.gereksinimler(), []);
-  const scriptler = useVeri(() => api.scriptler(), []);
+  // QA-Y4: core listeyi en yeni 200 kayıtla sınırlar; sınıra ulaşıldıysa eşleşmeyen case "bilinmiyor"dur.
+  const scriptler = useVeri(() => api.scriptListesi(), []);
   const [filtre, setFiltre] = useState(BOS_FILTRE);
   const [eskiler, setEskiler] = useState(false);
   const sessizYenile = useGeciktirilmis(() => {
@@ -47,7 +48,8 @@ export function TestCaseleri() {
     void scriptler.yenile(true);
   });
   useOlay(sessizYenile, ["case.generated", "case.updated", "requirement.updated", "script.updated", "pr.opened", "pr.merged"]);
-  const otomasyon = useMemo(() => caseScriptleri(scriptler.veri ?? null), [scriptler.veri]);
+  const otomasyon = useMemo(() => caseScriptleri(scriptler.veri?.kayitlar ?? null), [scriptler.veri]);
+  const listeSinirda = !!scriptler.veri?.sinira_ulasti;
 
   const gMap = useMemo(() => new Map((gereksinimler.veri ?? []).map((g) => [g.id, g])), [gereksinimler.veri]);
   const tum = caseler.veri ?? [];
@@ -178,6 +180,12 @@ export function TestCaseleri() {
                 {CASE_DURUMLARI.filter((d) => sayilar[d]).map((d) => ` · ${sayilar[d]} ${CASE_DURUMU[d].etiket.toLocaleLowerCase("tr-TR")}`)}
               </span>
             </div>
+            {/* Dokunmatik ekranda title görünmez: sınır bilgisi listenin üstünde bir kez yazılır. */}
+            {listeSinirda && (
+              <p className="kucuk soluk" data-testid="otomasyon-sinir-notu">
+                Otomasyon sütunu en yeni 200 script kaydından eşlenir; eşleşmeyen case'lerde "Bilinmiyor" yazar (daha eski bir kodu olabilir).
+              </p>
+            )}
             {liste.length === 0 ? (
               <BosDurum baslik="Süzgece uyan test case'i yok.">
                 <button type="button" className="dugme dugme-ikincil dugme-kucuk" onClick={() => setFiltre(BOS_FILTRE)}>
@@ -204,7 +212,7 @@ export function TestCaseleri() {
                   </thead>
                   <tbody>
                     {liste.map((c) => (
-                      <CaseSatiri key={c.id} c={c} g={gMap.get(c.requirement_id)} scriptler={otomasyon ? (otomasyon.get(c.id) ?? []) : null} />
+                      <CaseSatiri key={c.id} c={c} g={gMap.get(c.requirement_id)} scriptler={otomasyon ? (otomasyon.get(c.id) ?? []) : null} sinirda={listeSinirda} />
                     ))}
                   </tbody>
                 </table>
@@ -223,9 +231,20 @@ function storyAdi(g: Gereksinim | undefined, c: TestCase | undefined): string {
   return anahtar ?? "Serbest metin gereksinim";
 }
 
-function OtomasyonHucresi({ scriptler }: { scriptler: Script[] | null }) {
+/** Liste sınırına ulaşıldığında eşleşmeyen case'in açıklaması (title + ekran okuyucu). */
+export const OTOMASYON_BILINMIYOR =
+  "Script listesi en yeni 200 kayıtla sınırlı; bu case'in daha eski bir kodu olabilir. Kod üretimi ekranından ya da story'den doğrulayın.";
+
+function OtomasyonHucresi({ scriptler, sinirda }: { scriptler: Script[] | null; sinirda: boolean }) {
   if (scriptler === null) return <span className="soluk">—</span>;
-  if (scriptler.length === 0) return <span className="soluk kucuk">Kod yok</span>;
+  if (scriptler.length === 0)
+    return sinirda ? (
+      <span className="soluk kucuk otomasyon-bilinmiyor" title={OTOMASYON_BILINMIYOR} data-testid="otomasyon-bilinmiyor">
+        Bilinmiyor<span className="gorunmez">: {OTOMASYON_BILINMIYOR}</span>
+      </span>
+    ) : (
+      <span className="soluk kucuk">Kod yok</span>
+    );
   return (
     <ul className="duz-liste otomasyon-liste">
       {scriptler.map((s) => {
@@ -235,11 +254,16 @@ function OtomasyonHucresi({ scriptler }: { scriptler: Script[] | null }) {
             <PlatformRozeti platform={s.platform} />
             <DilRozeti dil={s.dil} platform={s.platform} />
             <Cip ton={d.ton}>{d.etiket}</Cip>
-            {s.pr && (
-              <span className="mono">
-                PR #{s.pr.number}
-                <span className="gorunmez"> ({s.pr.durum === "merged" ? "birleşti" : s.pr.durum === "open" ? "açık" : "kapalı"})</span>
-              </span>
+            {/* Script ekranı (`/kod/:id`) her role açık tekil ekrandır; PR numarası o ekranın PR kartına götürür. */}
+            {s.pr ? (
+              <Link to={`/kod/${encodeURIComponent(s.id)}#pr`} className="mono" data-testid="otomasyon-pr">
+                PR #{s.pr.number}{" "}
+                <span className="gorunmez">({s.pr.durum === "merged" ? "birleşti" : s.pr.durum === "open" ? "açık" : "kapalı"}) · script</span>
+              </Link>
+            ) : (
+              <Link to={`/kod/${encodeURIComponent(s.id)}`} data-testid="otomasyon-script-baglanti">
+                Script
+              </Link>
             )}
           </li>
         );
@@ -248,7 +272,7 @@ function OtomasyonHucresi({ scriptler }: { scriptler: Script[] | null }) {
   );
 }
 
-function CaseSatiri({ c, g, scriptler }: { c: TestCase; g: Gereksinim | undefined; scriptler: Script[] | null }) {
+function CaseSatiri({ c, g, scriptler, sinirda }: { c: TestCase; g: Gereksinim | undefined; scriptler: Script[] | null; sinirda: boolean }) {
   const durum = CASE_DURUMU[c.durum];
   const risk = RISK[c.icerik.risk];
   const gYolu = `/gereksinimler/${encodeURIComponent(c.requirement_id)}`;
@@ -278,7 +302,7 @@ function CaseSatiri({ c, g, scriptler }: { c: TestCase; g: Gereksinim | undefine
         {!c.jira_test_key ? "—" : testAdresi ? <DisBaglanti href={testAdresi}>{c.jira_test_key}</DisBaglanti> : c.jira_test_key}
       </td>
       <td data-etiket="Otomasyon">
-        <OtomasyonHucresi scriptler={scriptler} />
+        <OtomasyonHucresi scriptler={scriptler} sinirda={sinirda} />
       </td>
       <td className="tek-satir" data-etiket="Son karar">
         {c.karar_zamani ? tarih(c.karar_zamani) : "—"}

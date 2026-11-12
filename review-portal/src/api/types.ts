@@ -761,6 +761,11 @@ export interface KodDilleri {
   /** Dil başına elle yazılmış test dosyası sayısı (algılamanın dayanağı). */
   sayilar: Partial<Record<Dil, number>>;
   secenekler: DilSecenegi[];
+  /**
+   * Algılama yapılamadıysa (ör. depo okunamadı) core'un Türkçe nedeni; `kaynak` o zaman `varsayilan`
+   * olur. null: algılama yapıldı (sonuçlu ya da sonuçsuz).
+   */
+  neden: string | null;
 }
 
 // ---------------------------------------------------------------- Koşular
@@ -1393,6 +1398,33 @@ export interface IsYaniti {
   mesaj?: string;
   /** apply-doc-fixes "son hâl onayı": kararsız uyarıların accept_difference olarak kaydı (ör. "F2 (tur 1)"). */
   kabul_edilen_uyarilar?: string[];
+}
+
+/**
+ * `POST /code/generate` toplu yanıtında case başına sonuç (core `start_generation` `sonuclar[]`).
+ * `basladi` dışındaki durumlar o case için üretimin başlamadığını söyler; `neden` core'un Türkçe gerekçesi.
+ */
+export type UretimSonucDurumu = "basladi" | "cakisma" | "pr_acik" | "merge_edildi" | "suruyor" | "reddedildi" | "bulunamadi";
+
+export interface UretimSonucu {
+  case_id: string;
+  durum: UretimSonucDurumu | (string & {});
+  neden: string | null;
+  script_id: string | null;
+}
+
+/** `POST /code/generate` yanıtı: iş + case başına sonuçlar (011 K-T12). */
+export interface KodUretYaniti extends IsYaniti {
+  sonuclar: UretimSonucu[];
+}
+
+/**
+ * `GET /scripts` listesi ve sınır bilgisi. core listeyi en yeni 200 kayıtla sınırlar; sınıra ulaşıldıysa
+ * listede olmayan bir case'in eski kodu olabilir (QA-Y4: "Kod yok" yerine "bilinmiyor").
+ */
+export interface ScriptListesi {
+  kayitlar: Script[];
+  sinira_ulasti: boolean;
 }
 
 // ---------------------------------------------------------------- SSE

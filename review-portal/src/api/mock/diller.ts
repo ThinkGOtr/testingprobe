@@ -14,30 +14,42 @@ import { eslemeler, t, TPD1_GOLDEN_CASELER } from "./fixtures";
 /** Örnek depodaki elle yazılmış test sayıları (algılamanın dayanağı): web'de TypeScript çoğunlukta. */
 const WEB_SAYILARI: Record<Dil, number> = { ts: 9, java: 4, csharp: 0, python: 0 };
 
-/** `GET /code/languages?platform=` örnek yanıtı (core şekli, §2.3). */
-export function kodDilleriYaniti(platform: Platform): KodDilleri {
+/** core `codegen.service.DEPO_OKUNAMADI`: depo okunamadığında her seçeneğin nedeni (seçenek açık kalır). */
+export const DEPO_OKUNAMADI = "Depo okunamadı; bu dilin test projesi doğrulanamadı (kullanılabilirlik bilinmiyor)";
+
+/**
+ * `GET /code/languages?platform=` örnek yanıtı (core şekli, §2.3). `depoOkunamadi` (mock senaryosu
+ * `depo-okunamadi`): core'un forge'u kuramadığı/okuyamadığı durum — kaynak `varsayilan`, sayılar 0,
+ * üst düzey `neden` dolu ve her seçenekte `DEPO_OKUNAMADI` (kullanılabilir kalır).
+ */
+export function kodDilleriYaniti(platform: Platform, secenek: { depoOkunamadi?: boolean } = {}): KodDilleri {
+  const okunamadi = !!secenek.depoOkunamadi;
+  const neden = okunamadi ? "Dil algılanamadı (forge kurulamadı: ConnectError); varsayılan dil önerildi" : null;
+  const secenekNedeni = okunamadi ? DEPO_OKUNAMADI : null;
   if (platform !== "web") {
     return {
       platform,
       algilanan: "java",
-      kaynak: "algilandi",
-      sayilar: { java: 6 },
-      secenekler: [{ dil: "java", etiket: "Java", cati: DIL_CATISI(platform, "java")!, hat: "tam", kullanilabilir: true, neden: null }],
+      kaynak: okunamadi ? "varsayilan" : "algilandi",
+      sayilar: { java: okunamadi ? 0 : 6 },
+      secenekler: [{ dil: "java", etiket: "Java", cati: DIL_CATISI(platform, "java")!, hat: "tam", kullanilabilir: true, neden: secenekNedeni }],
+      neden,
     };
   }
   return {
     platform,
     algilanan: "ts",
-    kaynak: "algilandi",
-    sayilar: { ...WEB_SAYILARI },
+    kaynak: okunamadi ? "varsayilan" : "algilandi",
+    sayilar: okunamadi ? { ts: 0, java: 0, csharp: 0, python: 0 } : { ...WEB_SAYILARI },
     secenekler: gecerliDiller(platform).map((dil) => ({
       dil,
       etiket: DIL_ETIKETI[dil],
       cati: DIL_CATISI(platform, dil)!,
       hat: dil === "ts" || dil === "java" ? "tam" : "dogrulanmamis",
       kullanilabilir: true,
-      neden: null,
+      neden: secenekNedeni,
     })),
+    neden,
   };
 }
 

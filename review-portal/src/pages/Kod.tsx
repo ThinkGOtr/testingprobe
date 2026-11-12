@@ -12,7 +12,8 @@ import { PlatformRozeti, PlatformSecici } from "../components/Platform";
 import { PLATFORM_ETIKETI, type Platform } from "../lib/platform";
 import { DilRozeti, DilSecici } from "../components/Dil";
 import { DIL_ETIKETI, dogrulanmamisDilMi, type Dil } from "../lib/dil";
-import type { Script } from "../api/types";
+import type { Script, UretimSonucu } from "../api/types";
+import { baslamayanlar, DilCakismasiKutusu, dilCakismasiMi, UretimAtlananlar, uretimBildirimi } from "../components/UretimSonuclari";
 
 /** Doğrulanmamış dil (C#, Python) seçiliyken üretim düğmesinin yanında duran açık uyarı. */
 export const DOGRULANMAMIS_UYARISI = "Kod derlenmez ve koşulmaz; PR açılmaz.";
@@ -38,6 +39,12 @@ export function Kod() {
   const dilEngeli = seciliSecenek && !seciliSecenek.kullanilabilir ? (seciliSecenek.neden ?? `${seciliSecenek.etiket} bu depoda üretilemiyor.`) : null;
   const islem = useIslem();
   const bildir = useBildirim();
+  // K-T12: son isteğin üretimi başlamayan case'leri (çakışma, açık/merge edilmiş PR, süren iş); yeni istekte sıfırlanır.
+  const [atlananlar, setAtlananlar] = useState<UretimSonucu[]>([]);
+  const caseAdi = (id: string) => {
+    const c = (caseler.veri ?? []).find((x) => x.id === id);
+    return c ? `${c.jira_test_key ?? `${c.jira_key ?? "FT"} #${c.sira_no}`} · ${c.icerik.title}` : null;
+  };
   const sessiz = useGeciktirilmis(() => {
     void scriptler.yenile(true);
   });
@@ -62,9 +69,11 @@ export function Kod() {
   // `secildi`'ye kaymaz). Dil değiştirmek ayrı karar: script detayında. 011 öncesi core'da gövde bugünküyle aynıdır.
   const yenidenUret = async (sc: Script, p: Platform) => {
     const dil = dilVerisi && sc.dil && sc.dil_kaynagi === "secildi" ? sc.dil : null;
+    setAtlananlar([]);
     const s = await islem.calistir(() => (dil ? api.kodUret(sc.case_ids, p, dil) : api.kodUret(sc.case_ids, p)));
     if (s) {
-      bildir(s.mesaj ?? "Yeniden üretim başladı; eski kayıt kapatılır.");
+      setAtlananlar(baslamayanlar(s));
+      bildir(uretimBildirimi(s, "Yeniden üretim başladı; eski kayıt kapatılır."));
       void scriptler.yenile(true);
     }
   };
@@ -92,9 +101,11 @@ export function Kod() {
             onClick={async () => {
               // `dil` yalnız elle seçimde gönderilir (core `dil_kaynagi="secildi"`); aksi halde core algılar.
               const dil = elleGecerli ? seciliDil : null;
+              setAtlananlar([]);
               const s = await islem.calistir(() => (dil ? api.kodUret(seciliAdaylar, platform, dil) : api.kodUret(seciliAdaylar, platform)));
               if (s) {
-                bildir(s.mesaj ?? "Kod üretimi başladı.");
+                setAtlananlar(baslamayanlar(s));
+                bildir(uretimBildirimi(s, "Kod üretimi başladı."));
                 setSecili(new Set());
                 void scriptler.yenile(true);
                 void caseler.yenile(true);
@@ -154,7 +165,9 @@ export function Kod() {
             </Uyari>
           </div>
         )}
-        {islem.hata && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
+        {islem.hata &&
+          (dilCakismasiMi(islem.hataNesnesi) ? <DilCakismasiKutusu hata={islem.hataNesnesi} /> : <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />)}
+        <UretimAtlananlar sonuclar={atlananlar} caseAdi={caseAdi} kapat={() => setAtlananlar([])} />
         {caseler.yukleniyor && !caseler.veri ? (
           <Yukleniyor />
         ) : caseler.hata && !caseler.veri ? (
