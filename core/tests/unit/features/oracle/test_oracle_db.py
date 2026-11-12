@@ -16,7 +16,7 @@ from tp_core.audit import content_hash
 from tp_core.features.cases import service as cases_service
 from tp_core.features.oracle import service
 from tp_core.features.oracle.tablolar import gecerli_tablolar
-from tp_core.gateway.errors import ProviderPermanentError
+from tp_core.gateway.errors import ProviderPermanentError, ReplayMiss
 from tp_core.gateway.testing import text_response
 from tp_core.models import (
     AiCall,
@@ -515,6 +515,27 @@ def test_model_hatasi_son_denemede_kontrol_edilemedi(api: TestClient, engine: En
     assert r.status_code == 422 and r.json()["kod"] == "oracle_kontrolsuz"
     r = _karar(api, c, karar="approve", oracle_istisna_gerekce=UZUN_GEREKCE)
     assert r.status_code == 200, r.text
+
+
+def test_kati_replay_kaydi_yoksa_neden_replay_miss(api: TestClient, engine: Engine, kur) -> None:
+    """Katı REPLAY (`TP_REPLAY_STRICT=1`, demo/izole yığın) `ReplayMiss` fırlatır: kayıt
+    `kontrol_edilemedi` + `neden: replay_miss` olur, `cagri_hatasi` değil; ilk denemede de
+    (yeniden denemek sonucu değiştirmez). İzole yığında bulundu."""
+    k = kur([basit_case(toplam="30,00")])
+    c = latest_cases(api, k["rid"])[0]
+
+    class Kati:
+        rules_dir = tpd1.RULES
+
+        def call(self, *a: Any, **kw: Any) -> Any:
+            raise ReplayMiss("case_facts", "k", "TPD-1-C1")
+
+    yuk = {"case_id": c["id"], "icerik_hash": c["icerik_hash"]}
+    ctx = JobContext(uuid.uuid4(), service.CHECK_CASE_JOB, yuk, deneme=1, max_deneme=3)
+    assert service.run_check_case(ctx, engine, Kati())["sonuc"] == "kontrol_edilemedi"  # type: ignore[arg-type]
+    assert "cagri_hatasi" not in _denetim("oracle.checked")[-1].ozet
+    c = latest_cases(api, k["rid"])[0]
+    assert c["oracle"]["neden"] == "replay_miss"
 
 
 def test_icerik_degistiyse_eski_is_atlanir(api: TestClient, engine: Engine, kur) -> None:

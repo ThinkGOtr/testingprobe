@@ -658,8 +658,12 @@ def _olgulari_cikar(
         )
     except PermanentJobError:
         raise
+    except ReplayNotFound:
+        # Katı REPLAY (`TP_REPLAY_STRICT=1`) kayıt yokken `ReplayMiss` fırlatır; bu bir çağrı
+        # hatası değil, gevşek kipteki nötr çıktıyla aynı anlam: `neden: replay_miss`.
+        return None, None, "replay_miss", None
     except Exception as exc:
-        if not isinstance(exc, ReplayNotFound) and not ctx.son_deneme:
+        if not ctx.son_deneme:
             raise
         return None, None, None, f"{type(exc).__name__}: {str(exc)[:300]}"
     return result.output, result.call_id, result.mode, None
