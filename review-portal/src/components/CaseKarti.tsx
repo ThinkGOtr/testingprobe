@@ -1,5 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type TextareaHTMLAttributes } from "react";
 import { api } from "../api/client";
+import { ApiError } from "../api/http";
 import { caseKarariVerilebilir, GECIS_YOK, gecisVar, type CaseKarari } from "../api/sozlesme/durumMakinesi";
 import { useKisiAdi, useOturum } from "../auth";
 import type { OtomatikKodSonucu, RetNedeni, TestCase, TestCaseIcerik, TestVerisi } from "../api/types";
@@ -546,8 +547,16 @@ export function maskeliAlanlar(i: TestCaseIcerik): string[] {
     if (var_(s.action) || var_(s.data) || var_(s.expected)) l.push(`S${j + 1}`);
   });
   if (var_(i.expected_result)) l.push("Beklenen sonuç");
+  if ((i.tags ?? []).some(var_)) l.push("Etiketler");
   return l;
 }
+
+/** Review tur 4: düzeltme 429'u (aktör başına gizli değer denemesi freni; core `COK_DENEME_METNI`). */
+export const cokDenemeHatasiMi = (hata: string | null | undefined, kaynak?: unknown) =>
+  (kaynak instanceof ApiError && kaynak.status === 429) || (!!hata && /çok sayıda test verisi/i.test(hata));
+
+export const COK_DENEME_IPUCU =
+  "Kısa sürede gizli değer (parola vb.) içeren çok sayıda düzeltme gönderildi; güvenlik için düzeltme bir süre (en çok 15 dakika) durduruldu. Sonra yeniden deneyin; gizli değeri düz yazmak yerine \"Test verisi ekle\" ile {veri:anahtar} atfı olarak ekleyin.";
 
 /** §12 eşiği: düzeltme ölçüsü bu değerin altındaysa (ve beklenen sonuç anlamca değişmediyse) küçük düzeltme. */
 export const KUCUK_DUZELTME_ESIGI = 0.15;
@@ -919,6 +928,11 @@ function CaseDuzenleyici({
       {!uyari && maskeHatasiMi(hata) && (
         <p className="kucuk" data-testid="maske-hatasi-ipucu">
           {MASKE_HATASI_IPUCU}
+        </p>
+      )}
+      {!uyari && cokDenemeHatasiMi(hata, hataKaynagi) && (
+        <p className="kucuk" data-testid="cok-deneme-ipucu">
+          {COK_DENEME_IPUCU}
         </p>
       )}
       <div className="eylemler">

@@ -1163,16 +1163,8 @@ def decide(
     if karar == "edit":
         if icerik is None:
             raise InvalidDecision("Düzeltme kararı düzenlenmiş içerikle verilir")
-        # K22: maskeli görünüm geri gönderilmişse kaydedilmez (sır kalıcı `•••` olurdu); analistin
-        # düz yazdığı gizli değer kaydedilmeden atfa çevrilir. Atfa dönemeyen (bitişik) gizli
-        # geçiş de reddedilir. Atfa çevrilen içerik yeni içeriktir (hash ondan).
-        if atif.maske_iceriyor_mu(icerik):
-            raise InvalidCaseContent(MASKELI_DUZELTME_METNI)
-        gizli_eslem = testveri.gizli_eslemi(session)
-        gizliler = testveri.gizli_degerler(session)
-        icerik = atif.case_gizli_esle(icerik, gizli_eslem)
-        if atif.gizli_kalan(icerik, gizliler):
-            raise InvalidCaseContent(DUZ_GIZLI_DUZELTME_METNI)
+        # Review tur 4 (gizli değer kâhini): önce gizli değerden bağımsız denetimler (şema,
+        # katalog atıfları, maske); gizli değer işlemlerine yalnız geçerli gövde ulaşır.
         hatalar = content_errors(dict(icerik), req.kabul_kriterleri)
         if hatalar:
             raise InvalidCaseContent("Düzenlenen case şemaya uymuyor", hatalar)
@@ -1181,6 +1173,25 @@ def decide(
             raise InvalidCaseContent(
                 "Katalogda olmayan test verisi anahtarı: " + ", ".join(bilinmeyen_veri)
             )
+        # K22: maskeli görünüm geri gönderilmişse kaydedilmez (sır kalıcı `•••` olurdu).
+        if atif.maske_iceriyor_mu(icerik):
+            raise InvalidCaseContent(MASKELI_DUZELTME_METNI)
+        # Gizli değer işlemleri: aktör başına fren değerden bağımsız (her düzeltmede) sınanır;
+        # analistin düz yazdığı gizli değer kaydedilmeden atfa çevrilir, atfa dönemeyen (belirsiz)
+        # geçiş reddedilir. Her iki durum denetime yazılır ve frene sayılır. Atfa çevrilen içerik
+        # yeni içeriktir (hash ondan).
+        testveri.cakisma_freni(session, user.kullanici_adi)
+        gizli_eslem = testveri.gizli_eslemi(session)
+        gizliler = testveri.gizli_degerler(session)
+        esli = atif.case_gizli_esle(icerik, gizli_eslem)
+        kalan = atif.gizli_kalan(esli, gizliler)
+        if kalan or esli != dict(icerik):
+            testveri.gizli_duzeltme_denetimi(
+                user.kullanici_adi, str(tc.id), atif.donusen_anahtarlar(icerik, esli)
+            )
+        if kalan:
+            raise InvalidCaseContent(DUZ_GIZLI_DUZELTME_METNI)
+        icerik = esli
         # Analistin gördüğü (K22 görünümü) içerikle aynıysa değişiklik yok: ham içerikte düz
         # duran gizli değerin atıf olarak geri gelmesi düzeltme sayılmaz.
         gorunen = atif.case_gorunum(tc.icerik, gizli_eslem, gizliler)
@@ -1587,9 +1598,22 @@ def serialize_cases(
             }
         )
     # 013 K19 / güvenlik #7: API bilinen gizli değeri düz döndürmez. Case alanları yukarıda atıf
-    # (K22); kalan metinler (uyarılar vb.) `•••`. Onay hash'leri ham içerikten; yapısal alanlar
-    # kalır.
-    return testveri.maskele(session, out, gizliler)
+    # (K22, kelime sınırlı görünüm); kalan case dışı metinler (uyarılar vb.) alt dize `•••`.
+    # Review tur 4: case alanları (`icerik`, `ai_icerik`, `fark`) alt dize maskesinden geçmez
+    # (kısa sır ilgisiz metni bozmasın). Onay hash'leri ham içerikten; yapısal alanlar kalır.
+    maskeli = testveri.maskele(
+        session,
+        [{k: v for k, v in o.items() if k not in _CASE_GORUNUM_ALANLARI} for o in out],
+        gizliler,
+    )
+    return [
+        {k: (o[k] if k in _CASE_GORUNUM_ALANLARI else m[k]) for k in o}
+        for o, m in zip(out, maskeli, strict=True)
+    ]
+
+
+# `serialize_cases` içinde zaten K22 case görünümünden (`case_gorunum`) geçmiş alanlar.
+_CASE_GORUNUM_ALANLARI = frozenset({"icerik", "ai_icerik", "fark"})
 
 
 def list_cases(

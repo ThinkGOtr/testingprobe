@@ -457,7 +457,8 @@ def veri_haritasi(session: Session) -> dict[str, dict[str, Any]]:
 def case_verisi(harita: Mapping[str, Mapping[str, Any]], icerik: Mapping[str, Any]) -> dict:
     """`serialize_cases` `veri` alanı: case'in atıfları → {deger|null, gizli, surum, var}."""
     out: dict[str, dict[str, Any]] = {}
-    for a in atif.case_atiflari(icerik):
+    # Review tur 4: başlık / etiket atıfları (K22 gizli) dahil; store kilitlemeyle aynı kural.
+    for a in atif.case_tum_atiflari(icerik):
         k = harita.get(a)
         out[a] = (
             {**k, "var": True}
@@ -478,6 +479,8 @@ def _like_kacis(metin: str) -> str:
 
 def kullanim(session: Session, anahtar: str | None = None) -> dict[str, list[dict[str, Any]]]:
     """Anahtar → atıf yapan etkin case'ler (`{case_id, case_ref, requirement_id, baslik, durum}`).
+
+    Başlık ve etiketlerdeki atıflar (K22) da sayılır (review tur 4: silme koruması).
 
     `anahtar` verilirse SQL ön süzgeci (`icerik::text LIKE '%{veri:<anahtar>}%'`) yalnız o
     anahtara atıf yapan satırları getirir; kesin kontrol yine atıf ayrıştırmasıyla yapılır.
@@ -502,7 +505,7 @@ def kullanim(session: Session, anahtar: str | None = None) -> dict[str, list[dic
         desen = "%" + _like_kacis(atif.atif(anahtar)) + "%"
         sorgu = sorgu.where(cast(TestCase.icerik, Text).like(desen, escape="\\"))
     for cid, icerik, durum, sira, rid, jira_key in session.execute(sorgu).all():
-        for a in atif.case_atiflari(icerik or {}):
+        for a in atif.case_tum_atiflari(icerik or {}):
             if anahtar is not None and a != anahtar:
                 continue
             out.setdefault(a, []).append(
@@ -629,17 +632,56 @@ COK_DENEME_METNI = (
 )
 
 
+# Frene sayılan denetim eylemleri: katalogdaki eşitlik reddi ve case düzeltmesinde gizli değerin
+# atfa çevrilmesi / `DUZ_GIZLI` reddi (review tur 4: edit yolu da aynı kâhin; aynı kova).
+FREN_EYLEMLERI = ("testveri.gizli_cakisma_reddi", "testveri.gizli_duzeltme")
+
+
 def _cakisma_freni(session: Session, aktor: str) -> None:
-    """Aktörün son pencerede `GIZLI_CAKISMA_SINIRI` reddi varsa değeri hiç sınamadan 429."""
+    """Aktörün son pencerede `GIZLI_CAKISMA_SINIRI` frene sayılan olayı varsa değeri hiç
+    sınamadan 429.
+
+    Review tur 4 (yarış): aktör başına işlem kilidi (`pg_advisory_xact_lock`) alınır; olay ayrı
+    işlemde, istek işlemi bitmeden yazıldığından aynı aktörün paralel istekleri sıralanır ve
+    sayımı birbirinden görür."""
+    a = aktor or "bilinmiyor"
+    session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": "tp-testveri-fren:" + a}
+    )
     sayi = session.execute(
         text(
-            "SELECT count(*) FROM audit_event WHERE eylem = 'testveri.gizli_cakisma_reddi' "
+            "SELECT count(*) FROM audit_event WHERE eylem = ANY(:e) "
             "AND aktor = :a AND zaman > now() - make_interval(mins => :m)"
         ),
-        {"a": aktor or "bilinmiyor", "m": GIZLI_CAKISMA_PENCERESI_DK},
+        {"e": list(FREN_EYLEMLERI), "a": a, "m": GIZLI_CAKISMA_PENCERESI_DK},
     ).scalar_one()
     if sayi >= GIZLI_CAKISMA_SINIRI:
         raise TestVerisiCokDeneme(COK_DENEME_METNI)
+
+
+def cakisma_freni(session: Session, aktor: str) -> None:
+    """`_cakisma_freni`'nin dış modüllere açık adı (case düzeltmesi, review tur 4)."""
+    _cakisma_freni(session, aktor)
+
+
+def gizli_duzeltme_denetimi(aktor: str, case_id: str, anahtarlar: Iterable[str]) -> None:
+    """Case düzeltmesinde gizli değer atfa çevrildi ya da `DUZ_GIZLI` reddi verildi: ayrı işlemde
+    denetime yazılır (istek işlemi geri alınsa da frene sayılır); değer yazılmaz."""
+    try:
+        from tp_core.audit import append_audit
+        from tp_core.db import get_engine
+
+        liste = sorted(set(anahtarlar))  # DUZ_GIZLI reddinde boş olabilir (anahtar bilinmez)
+        with get_engine().begin() as conn:
+            append_audit(
+                conn,
+                aktor or "bilinmiyor",
+                "testveri.gizli_duzeltme",
+                f"test_case:{case_id}",
+                {"case_id": case_id, "anahtar": liste},
+            )
+    except Exception as exc:  # denetim yazılamazsa karar yine döner
+        log.warning("Gizli değer düzeltme denetimi yazılamadı: %s", type(exc).__name__)
 
 
 def _gizliyle_ayni_degil(

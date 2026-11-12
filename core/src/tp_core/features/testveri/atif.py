@@ -23,8 +23,14 @@ Sözleşme:
   metinler: bug taslağı, PR, log, denetim, yayın). Güvenlik tur 3 #2: en az `MIN_DEGER` karakter,
   **alt dize** (kelime sınırı yok: `Demo123!x`, `"Demo123!"`, JSON kaçışlı biçim de yakalanır);
   atıf metnine (`{veri:…}`) dokunulmaz; `maskele_obje` yapısal alanlara (id, hash, sha, durum...)
-  dokunmaz. `gizli_geciyor_mu` (render sonrası sızıntı taraması) aynı alt dize kuralıyla.
-  Kelime sınırı yalnız atıf eşlemesinde (`esle`, `case_esle`, `case_gizli_esle`) kalır.
+  dokunmaz. `gizli_geciyor_mu` (render sonrası sızıntı taraması) alt dize kuralıyla; ancak
+  `KISA_SIR`'dan kısa sırlarda kelime sınırıyla (aşağıda gerekçe).
+- Review tur 4 (FE #2): case dışı metin maskesi (`maskele` / `maskele_obje`: PR, commit, log, bug,
+  denetim, ScriptAdim) tam alt dize kalır. Render taraması (`gizli_geciyor_mu`), case alanları
+  (`case_gorunum`, `metin_gorunum`) ve düzeltme denetimi (`gizli_kalan`) `_tarama_deseni`
+  kullanır: `KISA_SIR`'dan kısa sır kelime sınırlı (eşlemeyle aynı), uzun sır alt dize. Böylece
+  kısa sır ("1234") ilgisiz metni ("SKU-12345") maskeleyip case'i düzeltilemez / kodu
+  üretilemez yapmaz; bitişik uzun sır ("Demo123!x") ise API'de düz dönmez (K19).
 - K22 (013 §9): case içeriğinde gizli değer `•••` değil geri dönüşebilir atıf olarak gösterilir.
   `gizli_eslem`: yalnız gizli kayıtların değer → anahtar eşlemi (tekillik tüm katalogla; açık
   değerler K18 gereği başlıkta eşlenmez). `case_gizli_esle`: başlık ve etiketler dahil tüm metin
@@ -207,11 +213,37 @@ def _maske_listesi(gizliler: Iterable[str]) -> list[str]:
 
 
 def _maske_deseni(gizliler: Iterable[str]) -> re.Pattern[str] | None:
-    """Alt dize deseni (güvenlik tur 3 #2: bitişik sır da yakalanır; uzundan kısaya)."""
+    """Alt dize deseni (güvenlik tur 3 #2: bitişik sır da yakalanır; uzundan kısaya). Yalnız
+    case dışı metin maskesi için."""
     liste = _maske_listesi(gizliler)
     if not liste:
         return None
     return re.compile("|".join(re.escape(g) for g in liste))
+
+
+# Alt dize kuralının uygulandığı en kısa sır uzunluğu (review tur 4); daha kısası kelime sınırlı.
+KISA_SIR = 6
+
+
+def _tarama_deseni(gizliler: Iterable[str]) -> re.Pattern[str] | None:
+    """Render sonrası sızıntı taraması ve case alanı (görünüm / düzeltme denetimi) deseni:
+    `KISA_SIR` ve üstü sır alt dize, daha kısası kelime sınırlı.
+
+    Gerekçe: tarama bulursa kod üretimi durur (fail-closed). 3–5 karakterlik bir sır (PIN, OTP,
+    CVV: "1234") alt dize olarak ilgisiz metinlerde (sipariş no "SKU-12345", telefon, tutar,
+    seçici) sık geçer; alt dize kuralı bu case'lerin kodunu kalıcı olarak kilitlerdi (yanlış
+    pozitif kilit). Kısa sırrın bitişik yazımı (ör. "x1234") böylece taramadan kaçabilir; bu,
+    ayırt edilemeyen yanlış pozitiflerle kod üretimini kilitlemekten daha küçük risk olarak kabul
+    edildi. Uzun sırlarda (parola: "Demo123!") alt dize korunur: "Demo123!x", tırnaklı ya da JSON
+    kaçışlı geçişler yakalanır; tesadüfi geçiş olasılığı ihmal edilebilir."""
+    liste = _maske_listesi(gizliler)
+    if not liste:
+        return None
+    parcalar = [
+        re.escape(g) if len(g) >= KISA_SIR else r"(?<![\w])" + re.escape(g) + r"(?![\w])"
+        for g in liste
+    ]
+    return re.compile("|".join(parcalar))
 
 
 def _atif_disinda(metin: str, f: Callable[[str], str]) -> str:
@@ -240,15 +272,19 @@ def yapisal_mi(anahtar: Any) -> bool:
     )
 
 
-def gizli_geciyor_mu(metin: str, gizliler: Iterable[str]) -> list[str]:
-    """Metinde (alt dize olarak, atıf dışında) geçen bilinen gizli değerler (render sonrası sızıntı
-    taraması; boş = temiz). Güvenlik tur 3 #2: kelime sınırı yok; bulursa engel (fail-closed)."""
-    desen = _maske_deseni(gizliler)
+def _gecisler(metin: str, desen: re.Pattern[str] | None) -> list[str]:
     if desen is None or not metin:
         return []
     bulunan: list[str] = []
     _atif_disinda(metin, lambda p: bulunan.extend(m.group(0) for m in desen.finditer(p)) or p)
     return list(dict.fromkeys(bulunan))
+
+
+def gizli_geciyor_mu(metin: str, gizliler: Iterable[str]) -> list[str]:
+    """Metinde (atıf dışında) geçen bilinen gizli değerler (render sonrası sızıntı taraması;
+    boş = temiz). Güvenlik tur 3 #2: uzun sırda kelime sınırı yok (bitişik geçiş de yakalanır);
+    `KISA_SIR`'dan kısa sırda kelime sınırı (`_tarama_deseni` gerekçesi). Bulursa engel."""
+    return _gecisler(metin, _tarama_deseni(gizliler))
 
 
 def _maskele_desenle(metin: str, desen: re.Pattern[str]) -> str:
@@ -339,8 +375,11 @@ def case_gorunum(
     case: Mapping[str, Any], eslem: Mapping[str, str], gizliler: Iterable[str]
 ) -> dict[str, Any]:
     """K22 API görünümü: gizli değer atfa (`case_gizli_esle`); atfa dönemeyen kalan geçişler
-    (bitişik sır, belirsiz değer) `•••`. Yalnız görünüm: saklanan içerik ve hash değişmez."""
-    desen = _maske_deseni(gizliler)
+    (bitişik uzun sır, belirsiz değer) `•••`. Yalnız görünüm: saklanan içerik ve hash değişmez.
+
+    Review tur 4: `_tarama_deseni` (kısa sır kelime sınırlı): tam alt dize maskesi kısa sırda
+    ilgisiz metni ("SKU-12345") bozup case'i düzeltilemez yapıyordu."""
+    desen = _tarama_deseni(gizliler)
 
     def _f(m: str) -> str:
         m = _esle_tekil(m, eslem) if eslem else m
@@ -368,12 +407,14 @@ def maske_iceriyor_mu(case: Mapping[str, Any]) -> bool:
 
 
 def gizli_kalan(case: Mapping[str, Any], gizliler: Iterable[str]) -> bool:
-    """`case_gizli_esle` sonrası atıf dışında hâlâ gizli değer geçiyor mu (bitişik yazım)?"""
+    """`case_gizli_esle` sonrası atıf dışında hâlâ gizli değer geçiyor mu (bitişik uzun sır,
+    belirsiz değer)? Review tur 4: görünümle aynı kural (`_tarama_deseni`)."""
+    desen = _tarama_deseni(gizliler)
     kalan = False
 
     def _f(m: str) -> str:
         nonlocal kalan
-        kalan = kalan or bool(gizli_geciyor_mu(m, gizliler))
+        kalan = kalan or bool(_gecisler(m, desen))
         return m
 
     _case_metinleri(case, _f)
@@ -390,3 +431,22 @@ def case_tum_atiflari(case: Mapping[str, Any]) -> list[str]:
 
     _case_metinleri(case, _f)
     return list(dict.fromkeys(toplanan))
+
+
+def _tum_atif_gecisleri(case: Mapping[str, Any]) -> list[str]:
+    toplanan: list[str] = []
+
+    def _f(m: str) -> str:
+        toplanan.extend(ATIF_RE.findall(m))
+        return m
+
+    _case_metinleri(case, _f)
+    return toplanan
+
+
+def donusen_anahtarlar(once: Mapping[str, Any], sonra: Mapping[str, Any]) -> list[str]:
+    """`case_gizli_esle` ile yeni eklenen atıfların anahtarları (geçiş sayısı artanlar)."""
+    from collections import Counter
+
+    fark = Counter(_tum_atif_gecisleri(sonra)) - Counter(_tum_atif_gecisleri(once))
+    return sorted(fark)

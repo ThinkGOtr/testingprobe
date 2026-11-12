@@ -4,10 +4,9 @@ import type { CaseVeriAtfi } from "../api/types";
 import { atifParcalari } from "../api/uyumOtomasyon";
 
 export const GIZLI_DEGER = "••• (gizli)";
-const YOK: CaseVeriAtfi = { deger: null, gizli: false, surum: null, var: false };
 
 export function VeriCipi({ anahtar, kayit }: { anahtar: string; kayit: CaseVeriAtfi | undefined }) {
-  // `veri` alanı hiç gelmediyse (eski core) değer bilinmiyor: nötr çip, kırmızı değil.
+  // `veri` alanı ya da içinde bu anahtar yoksa değer bilinmiyor: nötr çip, kırmızı değil.
   const durum = kayit === undefined ? "bilinmiyor" : !kayit.var ? "yok" : kayit.gizli ? "gizli" : "deger";
   const deger = durum === "gizli" ? GIZLI_DEGER : durum === "deger" ? (kayit?.deger ?? "") : durum === "yok" ? "katalogda yok" : null;
   const ipucu =
@@ -42,8 +41,9 @@ export function AtifliMetin({ metin, veri }: { metin: string | null | undefined;
         p.tur === "metin" ? (
           <span key={i}>{p.metin}</span>
         ) : (
-          // `veri` geldi ama anahtar içinde yoksa katalogda yok sayılır (kırmızı).
-          <VeriCipi key={i} anahtar={p.anahtar} kayit={veri ? (veri[p.anahtar] ?? YOK) : undefined} />
+          // Kırmızı "katalogda yok" yalnız core anahtarı `var: false` döndürdüyse; `veri` gelmediyse
+          // ya da anahtar içinde yoksa (ör. eski core'da başlık atfı) değer bilinmiyor: nötr çip.
+          <VeriCipi key={i} anahtar={p.anahtar} kayit={veri?.[p.anahtar]} />
         ),
       )}
     </>

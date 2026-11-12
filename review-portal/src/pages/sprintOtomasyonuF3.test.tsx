@@ -15,7 +15,8 @@ import type { TestCase, TopluKararYaniti } from "../api/types";
 import { jiraTetikDurumuUyarla, otomasyonAyarlariUyarla } from "../api/uyumOtomasyon";
 import { OturumProvider } from "../auth";
 import { BildirimProvider } from "../components/Bildirim";
-import { CaseKarti, goruntulenenleriSifirla, MASKE_HATASI_IPUCU, maskeliAlanlar } from "../components/CaseKarti";
+import { CaseKarti, COK_DENEME_IPUCU, goruntulenenleriSifirla, MASKE_HATASI_IPUCU, maskeliAlanlar } from "../components/CaseKarti";
+import { AtifliMetin } from "../components/VeriAtfi";
 import { gozlemciKur } from "../test/gorunurluk";
 import { oturumAc } from "../test/yardimci";
 import { topluOnayla, topluOtokodMetni, TopluOnaySonucu } from "./CaseReview";
@@ -252,6 +253,53 @@ describe("K22: gizli değer atfı ve maske", () => {
         expected_result: "ok",
       }),
     ).toEqual(["Başlık", "S2"]);
+  });
+});
+
+describe("Review tur 4: başlık atfı, etiket maskesi, düzeltme 429", () => {
+  it("veri geldi ama anahtar yoksa çip nötr; yalnız var:false kırmızı", () => {
+    const { container } = render(
+      <AtifliMetin
+        metin="{veri:ortak.demo_parola} ve {veri:bayi.silinen.ad}"
+        veri={{ "bayi.silinen.ad": { deger: null, gizli: false, surum: null, var: false } }}
+      />,
+    );
+    expect(container.querySelector('[data-anahtar="ortak.demo_parola"]')).toHaveAttribute("data-durum", "bilinmiyor");
+    expect(container.querySelector('[data-anahtar="bayi.silinen.ad"]')).toHaveAttribute("data-durum", "yok");
+    expect(container.querySelector('[data-anahtar="ortak.demo_parola"]')).not.toHaveTextContent("katalogda yok");
+  });
+
+  it("maskeliAlanlar etiketleri de kapsar", () => {
+    expect(
+      maskeliAlanlar({
+        title: "t",
+        type: "positive",
+        risk: "low",
+        preconditions: [],
+        acceptance_criteria_refs: ["AC1"],
+        tags: ["giris", "x•••"],
+        steps: [{ id: "S1", action: "a", data: null, expected: "e" }],
+        expected_result: "ok",
+      }),
+    ).toEqual(["Etiketler"]);
+  });
+
+  it("düzeltme 429'u anlaşılır ipucuyla gösterilir", async () => {
+    const { rid } = taslaklariKur(1);
+    await oturumAc("analist");
+    izle((x) => {
+      if (x.path.endsWith("/decision")) {
+        throw new ApiError(429, "Çok sayıda test verisi değeri reddedildi; bir süre sonra yeniden deneyin (parola ve benzeri değerleri gizli kayıt olarak tanımlayın)");
+      }
+      return undefined;
+    });
+    uygulama(`/gereksinimler/${rid}/caseler`);
+    const kart = (await screen.findByRole("heading", { name: "Taslak 1" })).closest("article") as HTMLElement;
+    const u = userEvent.setup();
+    await u.click(within(kart).getByRole("button", { name: "Düzelt" }));
+    await u.click(within(kart).getByRole("button", { name: "Düzeltip onayla" }));
+    expect(await within(kart).findByTestId("cok-deneme-ipucu")).toHaveTextContent(COK_DENEME_IPUCU);
+    expect(within(kart).queryByTestId("maske-hatasi-ipucu")).toBeNull();
   });
 });
 
