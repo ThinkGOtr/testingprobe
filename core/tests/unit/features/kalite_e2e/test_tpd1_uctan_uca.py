@@ -5,7 +5,8 @@ PO onaylı TPD-1 → AI karar tablosu taslağı (decision_table_draft REPLAY) �
 onayı kontrolü tetikler (case_facts REPLAY) → onay kapısı (C3 "6 adette bedava yok" uyumlu;
 düzeltilmiş yüksek riskli C5 uyuşmaz → 422 → istisna) → beklenti doğruluğu metriği (gereksinim
 ve Kontrol Kulesi) → onaylı ilişkiden metamorfik ek case (metriğe girmez) → C3'ün `// 6`
-uygulamasına karşı kırmızısı triage'da `product_defect` + `karar_tablosu_uyumlu`.
+uygulamasına karşı kırmızı koşusu (Playwright rapor fikstürü) `classify_run`'da `product_defect` +
+`karar_tablosu_uyumlu` (oracle kaydı yukarıdaki gerçek kontrolden gelir).
 
 Canlı model yoktur: tüm çağrılar REPLAY golden'larıdır; yalnız düzeltilmiş C5 içeriğinin değer
 çıkarması sahte modeldir (golden'ı yoktur, REPLAY-MISS nötr çıktı verirdi).
@@ -21,20 +22,34 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
 from tests.unit.features.cases.helpers import latest_cases, login, run_jobs
 from tests.unit.features.oracle import tpd1
+from tests.unit.features.triage.conftest import (  # noqa: F401  (pytest fikstürleri)
+    KTest,
+    artefakt_kok,
+    kosu_kur,
+    toolchain,
+    triage_env,
+)
 from tp_core.audit import PgCallRecorder
 from tp_core.features.cases import service as cases_service
 from tp_core.features.karar_tablosu import service as kt_service
 from tp_core.features.oracle import service as oracle_service
-from tp_core.features.triage import service as triage_service
-from tp_core.features.triage.rules import Girdi, siniflandir
+from tp_core.features.triage import classify_run
 from tp_core.gateway import build_gateway
 from tp_core.gateway.config import GatewaySettings
 from tp_core.gateway.matching import untrusted_blocks
-from tp_core.models import AiCall, AuditEvent, CaseOracleKontrol, TestCase, session_scope
+from tp_core.models import (
+    AiCall,
+    AuditEvent,
+    CaseOracleKontrol,
+    Failure,
+    TestCase,
+    TestResult,
+    session_scope,
+)
 
 GEREKCE = "PO ile görüşüldü: kampanya dışı istisna, tablo güncellenecek."
 # Analistin düzelttiği C5: toplam 150 TL iken "uyarı görünmez" (T2: 750 altında uyarı görünür).
@@ -123,7 +138,13 @@ def _by_sira(cases: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
 
 
 def test_tpd1_kalite_dogrulama_uctan_uca(
-    api: TestClient, engine: Engine, make_user, make_requirement, gecit: OracleGecidi
+    api: TestClient,
+    engine: Engine,
+    make_user,
+    make_requirement,
+    gecit: OracleGecidi,
+    triage_env: Any,  # noqa: F811  (sahte toolchain, artefakt kökü)
+    artefakt_kok: Any,  # noqa: F811
 ) -> None:
     beyan = tpd1.taslak_golden()["input_match"]
     rid = make_requirement(
@@ -265,33 +286,50 @@ def test_tpd1_kalite_dogrulama_uctan_uca(
     m2 = _ok(api.get(f"/requirements/{rid}/case-metrics"))["beklenti_dogrulugu"]
     assert {k: v for k, v in m2.items() if k != "kaynak"} == beklenen_metrik  # türetilen sayılmaz
 
-    # 10) Triage: onaylı C3'ün testi `// 6` uygulamasında kırmızı (bedava 0 beklenir, 1 gelir).
+    # 10) Triage: onaylı C3'ün testi `// 6` uygulamasında kırmızı (S4'te bedava 0 beklenir, 1
+    # gelir). Oracle kaydı adım 3'teki gerçek kontrolün kaydıdır; `classify_run` onu okur.
+    c3_id = uuid.UUID(cases[3]["id"])
+    run_id = kosu_kur(
+        engine,
+        artefakt_kok,
+        testler=[
+            KTest(
+                "TPD-1 C3 › 6 adet kampanyalı üründe bedava ürün verilmez",
+                file="tests/sepet/kampanya.spec.ts",
+                statuses=["unexpected"] * 3,
+                failure={
+                    "type": "assertion",
+                    "message": "Error: expect(locator).toHaveText(expected) failed\n\n"
+                    "Locator: getByTestId('cart-line-free-P-001')\n"
+                    'Expected: "0"\nReceived: "1"',
+                    "matcher": "toHaveText",
+                    "locator": "getByTestId('cart-line-free-P-001')",
+                    "expected": '"0"',
+                    "received": '"1"',
+                    "step": {
+                        "title": 'Expect "toHaveText"',
+                        "path": ["S4 — Üst menüden sepete git", 'Expect "toHaveText"'],
+                    },
+                    "aria_snapshot": '- main:\n  - cell: "1"',
+                    "aria_snapshot_scope": "page",
+                },
+            )
+        ],
+    )
     with session_scope() as s:
-        oracle = triage_service.oracle_karsilastirmalari(s, [uuid.UUID(cases[3]["id"])])
-    karsilastirmalar = oracle[uuid.UUID(cases[3]["id"])]
-    g = Girdi(
-        test_adi="TPD-1 C3 › 6 adet kampanyalı üründe bedava ürün verilmez",
-        dosya="tests/generated/TPD-1-c3.spec.ts",
-        hata_turu="assertion",
-        mesaj="Error: expect(locator).toHaveText(expected) failed\n\n"
-        'Locator: getByTestId(\'cart-line-free-P-001\')\nExpected: "0"\nReceived: "1"',
-        beklenen='"0"',
-        gerceklesen='"1"',
-        matcher="toHaveText",
-        locator="getByTestId('cart-line-free-P-001')",
-        aria='- main:\n  - cell: "1"',
-        platform="web",
-        oracle=karsilastirmalar,
-    )
-    karar_, _ek, _neden = siniflandir(g)
-    assert karar_ is not None
-    assert (karar_.sinif, karar_.alt_tur, karar_.kural, karar_.oneri_turu) == (
-        "product_defect",
-        None,
-        "karar_tablosu",
-        "bug_draft",
-    )
-    [sinyal] = [x for x in karar_.sinyaller if str(x["kod"]).startswith("karar_tablosu_")]
+        s.execute(update(TestResult).where(TestResult.run_id == run_id).values(test_case_id=c3_id))
+    classify_run(engine, run_id)
+    with session_scope() as s:
+        f = s.scalars(select(Failure).where(Failure.run_id == run_id)).one()
+        assert (f.sinif, f.alt_tur, f.karar_kaynagi, f.oneri_turu) == (
+            "product_defect",
+            None,
+            "rule",
+            "bug_draft",
+        )
+        [sinyal] = [x for x in f.eslesen_sinyaller if str(x["kod"]).startswith("karar_tablosu_")]
     assert sinyal["kod"] == "karar_tablosu_uyumlu"
     assert "test beklentisi 0, gerçekleşen 1, tablo 0" in sinyal["aciklama"]
     assert tpd1.T1["ad"] in sinyal["aciklama"]
+    assert sinyal["baslik"].startswith("Uygulama onaylı kurala aykırı (T1 · R2: adet 6")
+    assert sinyal["baslik"].endswith("→ bedava_adet 0)")

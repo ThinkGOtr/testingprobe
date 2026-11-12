@@ -46,7 +46,11 @@ _LOCATOR_KALIPLARI = (
 )
 _ASSERTION = re.compile(r"expect\([^)]*\)\.\w+", re.I)
 _RECEIVED = re.compile(r"^\s*Received(?: string| value)?:\s*(?P<v>.+)$", re.I | re.M)
-_EXPECTED = re.compile(r"^\s*Expected(?: string| value| pattern)?:\s*(?P<v>.+)$", re.I | re.M)
+# Playwright: `Expected: …`, `Expected string: …` (toHaveText), `Expected substring: …`
+# (toContainText), `Expected pattern: /…/` (düzenli ifade; triage değer saymaz).
+_EXPECTED = re.compile(
+    r"^\s*Expected(?: string| value| pattern| substring)?:\s*(?P<v>.+)$", re.I | re.M
+)
 _ORTAM = re.compile(r"net::ERR_|ECONNREFUSED|ENOTFOUND|page\.goto: Timeout", re.I)
 
 # Java / Appium (009 §2.3). Sınıf adları paketli ya da paketsiz gelebilir (Surefire `type` ya da
@@ -76,6 +80,17 @@ def java_beklenen_gorulen(mesaj: str | None) -> tuple[str | None, str | None]:
     if m is None:
         return None, None
     return m.group("exp"), m.group("rec")
+
+
+def testng_bicimi(mesaj: str | None) -> bool:
+    """Beklenen/görülen TestNG `Assert` biçiminden mi (`expected [X] but found [Y]`)?
+
+    TestNG değerleri Java `toString()` ile basar: `Double` / `BigDecimal` binlik ayırıcı
+    kullanmaz, ondalık ayırıcı her zaman noktadır (`new BigDecimal("2.500")` → `2.500` = 2,5).
+    `Bekle.dogrula` ise ekrandaki metni (Türkçe yazım: `1.250,00 TL`) basar. İkisi de varsa
+    `java_beklenen_gorulen` gibi `Bekle.dogrula` önceliklidir (False)."""
+    m = mesaj or ""
+    return _JAVA_BEKLENEN.search(m) is None and _TESTNG_BEKLENEN.search(m) is not None
 
 
 def java_hata_turu(message: str | None) -> str | None:
