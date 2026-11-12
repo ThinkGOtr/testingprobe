@@ -6,7 +6,7 @@ import type { BugTaslagi, HataAnalizi, LocatorOnarimi, LocatorProbeSonucu, Sagli
 import { useBildirim } from "../components/Bildirim";
 import { Baglanti, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
-import { altTurEtiketi, HATA_SINIFI, TRIAGE_ALT_TUR, type Ton } from "../lib/etiketler";
+import { altTurEtiketi, HATA_SINIFI, sinyalBasligi, TRIAGE_ALT_TUR, type Ton } from "../lib/etiketler";
 import { tarih } from "../lib/format";
 import { kisaKosuAdi } from "./Kosular";
 import { PlatformRozeti } from "../components/Platform";
@@ -713,23 +713,38 @@ export function HataDetay() {
             <BosDurum baslik="Sinyal kaydı yok." />
           ) : (
             <ul className="sinyal-liste" aria-label="Eşleşen sinyaller">
-              {h.eslesen_sinyaller.map((sg) => (
-                <li key={sg.kod}>
-                  <span aria-hidden="true">✓</span>
-                  <div>
-                    <div>{sg.aciklama}</div>
-                    <div className="kucuk soluk mono">
-                      {sg.kod}
-                      {sg.kaynak && ` · ${sg.kaynak}`}
+              {h.eslesen_sinyaller.map((sg) => {
+                const { baslik, ayrinti } = sinyalBasligi(sg);
+                const tabloSinyali = sg.kod.startsWith("karar_tablosu");
+                return (
+                  <li key={sg.kod} data-testid={`sinyal-${sg.kod}`}>
+                    <span aria-hidden="true">✓</span>
+                    <div>
+                      <div className="sinyal-baslik">
+                        {tabloSinyali ? <strong>{baslik}</strong> : baslik}
+                        {tabloSinyali && h.requirement_id && (
+                          <>
+                            {" "}
+                            <Link className="kucuk" to={`/gereksinimler/${encodeURIComponent(h.requirement_id)}/karar-tablolari`}>
+                              Karar tablosunu aç
+                            </Link>
+                          </>
+                        )}
+                      </div>
+                      {ayrinti && <div className="kucuk">{ayrinti}</div>}
+                      <div className="kucuk soluk mono">
+                        {sg.kod}
+                        {sg.kaynak && ` · ${sg.kaynak}`}
+                      </div>
+                      {sg.kanit && (
+                        <pre className="kod-blok sinyal-kanit" tabIndex={0}>
+                          {sg.kanit}
+                        </pre>
+                      )}
                     </div>
-                    {sg.kanit && (
-                      <pre className="kod-blok sinyal-kanit" tabIndex={0}>
-                        {sg.kanit}
-                      </pre>
-                    )}
-                  </div>
-                </li>
-              ))}
+                  </li>
+                );
+              })}
             </ul>
           )}
           {h.llm_yorumu && (

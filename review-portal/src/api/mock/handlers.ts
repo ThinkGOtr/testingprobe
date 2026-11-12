@@ -1585,7 +1585,7 @@ function kontrolKulesi(): KontrolKulesi & AsistanliKule {
     // Asistan dışı AI işleri: AI katkısı kartındaki toplamlarla aynı (core `amac_gruplari.diger`).
     asistan: oneriKuleOlcumu({ cagri: 14 + caseler.length, maliyet_usd: caseler.reduce((a, c) => a + c.maliyet_usd, 0), maliyet_usd_bugun: 0, amaclar: [] }),
     // 012/Ş8 (§4.7): beklenti doğruluğu ve hata yakalama oranı (api/mock/kule.ts).
-    ...kuleKaliteOlcumu(),
+    ...kuleKaliteOlcumu(veri),
     uyarilar: [
       kazancOzeti(hazirlikSatirlari()).hesaplanan
         ? "Kazanç yalnızca story için ölçülmüş baz değerden hesaplanır."

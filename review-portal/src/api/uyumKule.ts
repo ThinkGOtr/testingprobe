@@ -3,6 +3,8 @@
 // "ölçülmedi"dir; sayı olmayan oran null kalır (0 yazılmaz).
 import { platformUyarla, type Platform } from "../lib/platform";
 import type {
+  AyirtEdiciOrnek,
+  ElYazisiYakalama,
   HataAdimAsamasi,
   HataAdimSonucu,
   HataKatalogOgesi,
@@ -10,13 +12,16 @@ import type {
   HataKosusuAdimi,
   HataKosusuDetay,
   HataKosusuDurumu,
+  HataKosusuKapsami,
   HataKosusuOzeti,
   HataYakalamaPlatformu,
   KacanHata,
+  KiranTest,
   KontrolKulesi,
   Kosu,
   KuleBeklentiDogrulugu,
   KuleHataYakalama,
+  OnayliUyumsuzCase,
 } from "./types";
 import { dizgeler, ilk, kimlik, metin, metinYaDaNull, nesneMi, sayi, sayiYaDaNull, type Ham } from "./uyum";
 
@@ -43,6 +48,31 @@ function oran(x: unknown): number | null {
   return o !== null && Number.isFinite(o) ? o : null;
 }
 
+/** §13.2 `el_yazisi`; nesne değilse alan eklenmez (eski çekirdek). */
+function elYazisiUyarla(x: unknown): { el_yazisi?: ElYazisiYakalama } {
+  if (!nesneMi(x)) return {};
+  return { el_yazisi: { oran: oran(x.oran), yakalanan: sayi(x.yakalanan), kacan: sayi(x.kacan) } };
+}
+
+/** R4 `tum_testler` (AI + el yazısı); nesne değilse alan eklenmez. */
+function tumTestlerUyarla(x: unknown): { tum_testler?: ElYazisiYakalama } {
+  const e = elYazisiUyarla(x).el_yazisi;
+  return e ? { tum_testler: e } : {};
+}
+
+function kapsamUyarla(x: unknown): { kapsam?: HataKosusuKapsami } {
+  if (!nesneMi(x)) return {};
+  return {
+    kapsam: {
+      kosulan_hata: sayi(x.kosulan_hata),
+      katalog: sayi(x.katalog),
+      platformlar: platformlar(x.platformlar),
+      ...(typeof x.tam_katalog === "boolean" ? { tam_katalog: x.tam_katalog } : {}),
+      ...(typeof x.gecerli_adim === "number" ? { gecerli_adim: sayi(x.gecerli_adim) } : {}),
+    },
+  };
+}
+
 const adimSonucu = (x: unknown): HataAdimSonucu | null => (typeof x === "string" && SONUCLAR.has(x) ? (x as HataAdimSonucu) : null);
 
 function platformOzetiUyarla(x: Ham): HataYakalamaPlatformu | null {
@@ -54,6 +84,10 @@ function platformOzetiUyarla(x: Ham): HataYakalamaPlatformu | null {
     yakalanan: sayi(x.yakalanan),
     kacan: sayi(x.kacan),
     gecersiz: sayi(x.gecersiz),
+    ...elYazisiUyarla(x.el_yazisi),
+    ...tumTestlerUyarla(x.tum_testler),
+    ...(typeof x.uretilen_test === "number" ? { uretilen_test: sayi(x.uretilen_test) } : {}),
+    ...(typeof x.el_test === "number" ? { el_test: sayi(x.el_test) } : {}),
     // Koşu özetinin ek alanları (core `ozet_hesapla`); Kule ölçüsü bunları vermez → alan eklenmez.
     ...("bekleyen" in x ? { bekleyen: sayi(x.bekleyen) } : {}),
     ...("temel" in x ? { temel: adimSonucu(x.temel) } : {}),
@@ -80,7 +114,27 @@ function ozetUyarla(x: unknown): HataKosusuOzeti | null {
     ...("bekleyen" in x ? { bekleyen: sayi(x.bekleyen) } : {}),
     platformlar: dizi(x.platformlar).map(platformOzetiUyarla).filter(dolu),
     kacanlar: dizi(x.kacanlar).map(kacanUyarla).filter(dolu),
+    ...elYazisiUyarla(x.el_yazisi),
+    ...tumTestlerUyarla(x.tum_testler),
+    ...kapsamUyarla(x.kapsam),
   };
+}
+
+/** "adet = 14" biçimi: nesne → "ad = değer" listesi; metin/sayı aynen; boşsa "". */
+function ornekMetni(x: unknown): string {
+  if (typeof x === "string") return x;
+  if (typeof x === "number" || typeof x === "boolean") return String(x);
+  if (nesneMi(x))
+    return Object.entries(x)
+      .map(([k, v]) => `${k} = ${typeof v === "boolean" ? (v ? "doğru" : "yanlış") : typeof v === "object" ? JSON.stringify(v) : String(v)}`)
+      .join(", ");
+  return "";
+}
+
+function ayirtEdiciUyarla(x: unknown): AyirtEdiciOrnek | null {
+  if (!nesneMi(x)) return null;
+  const o = { girdi: ornekMetni(x.girdi), dogru: ornekMetni(x.dogru), hatali: ornekMetni(x.hatali) };
+  return o.girdi ? o : null;
 }
 
 export function hataKatalogOgesiUyarla(x: Ham): HataKatalogOgesi {
@@ -91,7 +145,23 @@ export function hataKatalogOgesiUyarla(x: Ham): HataKatalogOgesi {
     tur: x.tur === "veri" ? "veri" : "kod",
     aciklama: metin(ilk(x, "aciklama", "etki")),
     yakalayan_kural: metinYaDaNull(ilk(x, "yakalayan_kural", "beklenen_kural")),
+    // K9 ekleri: anahtar yoksa alan eklenmez.
+    ...("ac_refs" in x ? { ac_refs: dizgeler(x.ac_refs) } : {}),
+    ...("tablo" in x ? { tablo: metinYaDaNull(x.tablo) } : {}),
+    ...("ayirt_edici" in x ? { ayirt_edici: ayirtEdiciUyarla(x.ayirt_edici) } : {}),
+    ...("requirement_id" in x ? { requirement_id: metinYaDaNull(kimlik(x.requirement_id)) } : {}),
   };
+}
+
+/** `kiran_testler`: `[{test, kaynak}]` (§13.2) ya da eski `[ad]` (kaynak bilinmiyor → null). */
+export function kiranTestlerUyarla(x: unknown): KiranTest[] {
+  return (Array.isArray(x) ? x : []).flatMap((t): KiranTest[] => {
+    if (typeof t === "string") return t ? [{ test: t, kaynak: null }] : [];
+    if (!nesneMi(t)) return [];
+    const test = metin(ilk(t, "test", "ad", "test_adi"));
+    const k = t.kaynak;
+    return test ? [{ test, kaynak: k === "ai" || k === "el" ? k : null }] : [];
+  });
 }
 
 /** Katalog yanıtı: dizi ya da `{hatalar | items: [...]}`. */
@@ -113,7 +183,8 @@ export function hataKosusuAdimiUyarla(x: Ham, i = 0): HataKosusuAdimi | null {
     asama: (ASAMALAR.has(asama) ? asama : x.hata_kodu ? "hata" : "temel") as HataAdimAsamasi,
     run_id: metinYaDaNull(kimlik(x.run_id)),
     sonuc: (SONUCLAR.has(sonuc) ? sonuc : "bekliyor") as HataAdimSonucu,
-    kiran_testler: dizgeler(x.kiran_testler),
+    kiran_testler: kiranTestlerUyarla(x.kiran_testler),
+    ...("temelde_kirmizi" in x ? { temelde_kirmizi: dizgeler(x.temelde_kirmizi) } : {}),
     neden: metinYaDaNull(x.neden),
     sure_ms: sayiYaDaNull(x.sure_ms),
     sira: sayi(x.sira, i),
@@ -137,6 +208,7 @@ export function hataKosusuUyarla(x: Ham): HataKosusu {
     baslama: metinYaDaNull(x.baslama),
     bitis: metinYaDaNull(x.bitis),
     olusturma: metin(ilk(x, "olusturma", "baslama")),
+    ...(typeof x.iptal_istendi === "boolean" ? { iptal_istendi: x.iptal_istendi } : {}),
   };
 }
 
@@ -165,7 +237,20 @@ function beklentiUyarla(x: Ham): KuleBeklentiDogrulugu {
     kontrol_edilemedi: sayi(x.kontrol_edilemedi),
     istisna: sayi(x.istisna),
     kapsam_orani: oran(x.kapsam_orani),
+    // §13.2 ekleri: anahtar yoksa alan eklenmez (sayı uydurulmaz).
+    ...Object.fromEntries(
+      (["kismen", "kontrolsuz_onay", "n_case", "n_story", "tablolu_story", "toplam_story", "golden_kaynakli"] as const)
+        .filter((a) => typeof x[a] === "number" && Number.isFinite(x[a]))
+        .map((a) => [a, x[a] as number]),
+    ),
   };
+}
+
+function onayliUyumsuzUyarla(x: unknown): OnayliUyumsuzCase[] {
+  return dizi(x).flatMap((c) => {
+    const case_id = kimlik(ilk(c, "case_id", "id"));
+    return case_id ? [{ case_id, requirement_id: kimlik(c.requirement_id), baslik: metin(ilk(c, "baslik", "title"), case_id) }] : [];
+  });
 }
 
 function hataYakalamaUyarla(x: Ham): KuleHataYakalama | null {
@@ -182,6 +267,9 @@ function hataYakalamaUyarla(x: Ham): KuleHataYakalama | null {
     gecersiz: sayi(x.gecersiz),
     platformlar: dizi(x.platformlar).map(platformOzetiUyarla).filter(dolu),
     kacanlar: dizi(x.kacanlar).map(kacanUyarla).filter(dolu),
+    ...elYazisiUyarla(x.el_yazisi),
+    ...tumTestlerUyarla(x.tum_testler),
+    ...kapsamUyarla(x.kapsam),
   };
 }
 
@@ -202,8 +290,9 @@ export function kuleKaliteKaynaklari<T extends Partial<Record<"beklenti_dogrulug
  * Kule yanıtının iki kalite anahtarı (§4.7). Anahtar yanıtta yoksa (eski core) sonuçta da yoktur
  * (`undefined` → karo "ölçülmedi", sıfır yazılmaz); `null` aynen null kalır.
  */
-export function kuleKaliteUyarla(g: Ham): Pick<KontrolKulesi, "beklenti_dogrulugu" | "hata_yakalama"> {
-  const sonuc: Pick<KontrolKulesi, "beklenti_dogrulugu" | "hata_yakalama"> = {};
+export function kuleKaliteUyarla(g: Ham): Pick<KontrolKulesi, "beklenti_dogrulugu" | "hata_yakalama" | "onayli_uyumsuz"> {
+  const sonuc: Pick<KontrolKulesi, "beklenti_dogrulugu" | "hata_yakalama" | "onayli_uyumsuz"> = {};
+  if (Array.isArray(g.onayli_uyumsuz)) sonuc.onayli_uyumsuz = onayliUyumsuzUyarla(g.onayli_uyumsuz);
   if ("beklenti_dogrulugu" in g) sonuc.beklenti_dogrulugu = nesneMi(g.beklenti_dogrulugu) ? beklentiUyarla(g.beklenti_dogrulugu) : null;
   if ("hata_yakalama" in g) sonuc.hata_yakalama = nesneMi(g.hata_yakalama) ? hataYakalamaUyarla(g.hata_yakalama) : null;
   return sonuc;
@@ -237,4 +326,25 @@ export function yakalamaOrani(adimlar: readonly Pick<HataKosusuAdimi, "asama" | 
     gecersiz: h.filter((a) => a.sonuc === "gecersiz").length,
     bekleyen: h.filter((a) => a.sonuc === "bekliyor").length,
   };
+}
+
+/**
+ * K12 (§13.1): bir kaynağın (AI ya da el yazısı) testleriyle yakalama. Adım, o kaynaktan en az bir test
+ * kırmızıya döndüyse "yakalandı" sayılır; geçerli (yakalandı | kaçtı) diğer adımlar o kaynak için "kaçtı".
+ * `olculdu: false`: adımlarda bu kaynağın hiçbir testi görünmüyor (ör. üretilmiş test yok) — oran null.
+ */
+export function kaynakOrani(
+  adimlar: readonly Pick<HataKosusuAdimi, "asama" | "sonuc" | "kiran_testler">[],
+  kaynak: "ai" | "el",
+): { oran: number | null; yakalanan: number; kacan: number; olculdu: boolean } {
+  const gecerli = adimlar.filter((a) => a.asama === "hata" && (a.sonuc === "yakalandi" || a.sonuc === "kacti"));
+  const yakalanan = gecerli.filter((a) => a.sonuc === "yakalandi" && a.kiran_testler.some((t) => t.kaynak === kaynak)).length;
+  const kacan = gecerli.length - yakalanan;
+  const olculdu = adimlar.some((a) => a.kiran_testler.some((t) => t.kaynak === kaynak));
+  return { oran: olculdu && gecerli.length > 0 ? yakalanan / gecerli.length : null, yakalanan, kacan, olculdu };
+}
+
+/** Adımların kıran testlerinde kaynak bilgisi var mı (§13.2 biçimi); yoksa eski çekirdek → ayrım çizilmez. */
+export function kaynakBilgisiVar(adimlar: readonly Pick<HataKosusuAdimi, "kiran_testler">[]): boolean {
+  return adimlar.some((a) => a.kiran_testler.some((t) => t.kaynak !== null));
 }

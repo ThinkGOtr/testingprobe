@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { ekilmisHataEtiketi } from "../lib/etiketler";
 import { kontrolKulesiUyarla, kosuUyarla } from "./uyumDemoB";
-import { hataKataloguUyarla, hataKosusuDetayUyarla, hataKosusuKimligi, hataKosusuUyarla, yakalamaOrani } from "./uyumKule";
+import { hataKataloguUyarla, hataKosusuDetayUyarla, hataKosusuKimligi, hataKosusuUyarla, kaynakBilgisiVar, kaynakOrani, kiranTestlerUyarla, yakalamaOrani } from "./uyumKule";
 
 describe("kontrolKulesiUyarla: kalite anahtarları (§4.7)", () => {
   it("anahtarlar yoksa (eski core) alan da yok; sıfır uydurulmaz", () => {
@@ -165,5 +165,102 @@ describe("012 hizalama: gerçek core şekilleri", () => {
 
   it("POST /fault-runs 202 gövdesi `{id, durum}` → kimlik", () => {
     expect(hataKosusuKimligi({ id: "6f1c", durum: "queued" })).toBe("6f1c");
+  });
+});
+
+describe("review turu 1 sözleşmesi (§13.2)", () => {
+  it("katalog K9 alanları: ac_refs, tablo, ayirt_edici (nesne → 'ad = değer'); anahtar yoksa alan yok", () => {
+    const [a, b] = hataKataloguUyarla([
+      { kod: "kampanya_tek_bedava", ac_refs: ["AC2"], tablo: "T1", ayirt_edici: { girdi: { adet: 14 }, dogru: { bedava_adet: 2 }, hatali: { bedava_adet: 1 } } },
+      { kod: "eski" },
+    ]);
+    expect(a).toMatchObject({ ac_refs: ["AC2"], tablo: "T1", ayirt_edici: { girdi: "adet = 14", dogru: "bedava_adet = 2", hatali: "bedava_adet = 1" } });
+    expect(b).not.toHaveProperty("ac_refs");
+    expect(b).not.toHaveProperty("tablo");
+    expect(b).not.toHaveProperty("ayirt_edici");
+    expect(hataKataloguUyarla([{ kod: "x", ayirt_edici: { girdi: "" } }])[0].ayirt_edici).toBeNull();
+  });
+
+  it("kiran_testler: [{test, kaynak}] ya da eski [ad] (kaynak null); temelde_kirmizi yalnız varsa", () => {
+    expect(kiranTestlerUyarla([{ test: "A", kaynak: "ai" }, { test: "B", kaynak: "el" }, { test: "C", kaynak: "?" }, "D", 3, { kaynak: "ai" }])).toEqual([
+      { test: "A", kaynak: "ai" },
+      { test: "B", kaynak: "el" },
+      { test: "C", kaynak: null },
+      { test: "D", kaynak: null },
+    ]);
+    const d = hataKosusuDetayUyarla({
+      id: "k",
+      adimlar: [
+        { id: "a", platform: "web", asama: "temel", sonuc: "yesil", temelde_kirmizi: ["C3"], sira: 1 },
+        { id: "b", platform: "web", asama: "hata", hata_kodu: "x", sonuc: "yakalandi", kiran_testler: ["eski"], sira: 2 },
+      ],
+    });
+    expect(d.adimlar[0].temelde_kirmizi).toEqual(["C3"]);
+    expect(d.adimlar[1]).not.toHaveProperty("temelde_kirmizi");
+    expect(kaynakBilgisiVar(d.adimlar)).toBe(false);
+  });
+
+  it("kaynakOrani: AI ve el ayrı; kaynağın testi hiç yoksa ölçülmedi (oran null)", () => {
+    const a = (sonuc: "yakalandi" | "kacti" | "gecersiz", ...k: ("ai" | "el")[]) => ({ asama: "hata" as const, sonuc, kiran_testler: k.map((kaynak, i) => ({ test: `t${i}`, kaynak })) });
+    const adimlar = [a("yakalandi", "el"), a("yakalandi", "el", "ai"), a("kacti"), a("gecersiz")];
+    expect(kaynakOrani(adimlar, "el")).toEqual({ oran: 2 / 3, yakalanan: 2, kacan: 1, olculdu: true });
+    expect(kaynakOrani(adimlar, "ai")).toEqual({ oran: 1 / 3, yakalanan: 1, kacan: 2, olculdu: true });
+    expect(kaynakOrani([a("yakalandi", "el")], "ai")).toEqual({ oran: null, yakalanan: 0, kacan: 1, olculdu: false });
+  });
+
+  it("Kule: beklenti ekleri yalnız varsa; el_yazisi, kapsam; onayli_uyumsuz (dizi değilse alan yok)", () => {
+    const k = kontrolKulesiUyarla({
+      beklenti_dogrulugu: { oran: 0.8, uyumlu: 4, uyumsuz: 1, kismen: 2, kontrolsuz_onay: 1, n_case: 7, n_story: 1, tablolu_story: 1, toplam_story: 4, golden_kaynakli: 7, kapsam_disi: 0, kontrol_edilemedi: 0, istisna: 0, kapsam_orani: 1 },
+      hata_yakalama: {
+        son_kosu: { id: "f", durum: "done" },
+        oran: null,
+        yakalanan: 0,
+        kacan: 0,
+        gecersiz: 0,
+        el_yazisi: { oran: 0.5, yakalanan: 1, kacan: 1 },
+        kapsam: { kosulan_hata: 9, katalog: 9, platformlar: ["web", "tv"] },
+        platformlar: [{ platform: "web", oran: null, yakalanan: 0, kacan: 0, gecersiz: 0, el_yazisi: { oran: 0.5, yakalanan: 1, kacan: 1 } }],
+        kacanlar: [],
+      },
+      onayli_uyumsuz: [{ case_id: "c1", requirement_id: "r1", baslik: "B" }, { baslik: "kimliksiz" }],
+    });
+    expect(k.beklenti_dogrulugu).toMatchObject({ kismen: 2, kontrolsuz_onay: 1, n_case: 7, n_story: 1, tablolu_story: 1, toplam_story: 4, golden_kaynakli: 7 });
+    expect(k.hata_yakalama).toMatchObject({ oran: null, el_yazisi: { oran: 0.5, yakalanan: 1, kacan: 1 }, kapsam: { kosulan_hata: 9, katalog: 9, platformlar: ["web"] } });
+    expect(k.hata_yakalama!.platformlar[0].el_yazisi).toEqual({ oran: 0.5, yakalanan: 1, kacan: 1 });
+    expect(k.onayli_uyumsuz).toEqual([{ case_id: "c1", requirement_id: "r1", baslik: "B" }]);
+    const eski = kontrolKulesiUyarla({ beklenti_dogrulugu: { oran: 1, uyumlu: 1 }, hata_yakalama: { son_kosu: { id: "f" }, oran: 1 } });
+    expect(eski.beklenti_dogrulugu).not.toHaveProperty("kismen");
+    expect(eski.beklenti_dogrulugu).not.toHaveProperty("n_case");
+    expect(eski.hata_yakalama).not.toHaveProperty("el_yazisi");
+    expect(eski.hata_yakalama).not.toHaveProperty("kapsam");
+    expect("onayli_uyumsuz" in eski).toBe(false);
+  });
+
+  it("R4 gerçek şekiller: iptal_istendi, tum_testler, kapsam tam_katalog/gecerli_adim, platform test sayıları; yoksa alan yok", () => {
+    const k = hataKosusuUyarla({
+      id: "hk-9",
+      durum: "running",
+      iptal_istendi: true,
+      ozet: {
+        oran: null,
+        yakalanan: 0,
+        kacan: 0,
+        gecersiz: 0,
+        tum_testler: { oran: 0.5, yakalanan: 1, kacan: 1 },
+        kapsam: { kosulan_hata: 2, katalog: 9, platformlar: ["web"], tam_katalog: false, gecerli_adim: 2 },
+        platformlar: [{ platform: "web", oran: null, yakalanan: 0, kacan: 0, gecersiz: 0, tum_testler: { oran: 0.5, yakalanan: 1, kacan: 1 }, uretilen_test: 0, el_test: 29 }],
+        kacanlar: [],
+      },
+    });
+    expect(k.iptal_istendi).toBe(true);
+    expect(k.ozet?.tum_testler).toEqual({ oran: 0.5, yakalanan: 1, kacan: 1 });
+    expect(k.ozet?.kapsam).toEqual({ kosulan_hata: 2, katalog: 9, platformlar: ["web"], tam_katalog: false, gecerli_adim: 2 });
+    expect(k.ozet?.platformlar[0]).toMatchObject({ uretilen_test: 0, el_test: 29, tum_testler: { oran: 0.5, yakalanan: 1, kacan: 1 } });
+    // Eski gövde: alanlar eklenmez (değer uydurulmaz).
+    const eski = hataKosusuUyarla({ id: "hk-1", durum: "done", ozet: { oran: 1, yakalanan: 1, kacan: 0, gecersiz: 0, kapsam: { kosulan_hata: 1, katalog: 9, platformlar: ["web"] }, platformlar: [{ platform: "web", oran: 1, yakalanan: 1, kacan: 0, gecersiz: 0 }], kacanlar: [] } });
+    expect("iptal_istendi" in eski).toBe(false);
+    expect(eski.ozet && "tum_testler" in eski.ozet).toBe(false);
+    expect(eski.ozet?.kapsam).toEqual({ kosulan_hata: 1, katalog: 9, platformlar: ["web"] });
+    expect(eski.ozet && Object.keys(eski.ozet.platformlar[0])).not.toContain("uretilen_test");
   });
 });

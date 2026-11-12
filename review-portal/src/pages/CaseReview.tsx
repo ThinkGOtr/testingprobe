@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import type { BazKaynagi, CaseMetrikleri, ManuelBaz, TestCase } from "../api/types";
@@ -156,6 +156,17 @@ export function CaseReview() {
   }, ["case.generated", "case.updated", "requirement.updated", "publish.updated"]);
 
   const liste = caseler.veri ?? [];
+  // `#case-<id>` (ek case türetme sonucu, Kule bağlantıları): liste yüklenince o karta kaydır ve odakla.
+  const { hash } = useLocation();
+  const odaklanan = useRef<string | null>(null);
+  useEffect(() => {
+    if (!hash.startsWith("#case-") || !caseler.veri || odaklanan.current === hash) return;
+    const el = document.getElementById(decodeURIComponent(hash.slice(1)));
+    if (!el) return;
+    odaklanan.current = hash;
+    el.scrollIntoView?.({ block: "start" });
+    el.focus();
+  }, [hash, caseler.veri]);
   const ozet = useMemo(() => caseOzeti(liste, metrik.veri), [liste, metrik.veri]);
   const gorunen = liste.filter((c) =>
     filtre === "hepsi"

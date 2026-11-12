@@ -65,12 +65,14 @@ import type {
   MetamorfikIliski,
   OracleKontrolYaniti,
   TabloDegerlendirmesi,
+  TabloOrnekleri,
   TestCaseIcerik,
   TuretmeGirdisi,
   TuretmeYaniti,
 } from "./types";
 import {
   degerlendirmeUyarla,
+  tabloOrnekleriUyarla,
   iliskiUyarla,
   kaliteTaslakUyarla,
   kararTablolariUyarla,
@@ -313,6 +315,9 @@ export const api = {
   /** "Örnekle dene" (herkes; kayıt yok). `icerik` verilirse kaydedilmemiş içerik değerlendirilir. */
   kararTablosuDene: async (id: string, girdiler: Record<string, string | number | boolean>, icerik?: KararTablosuIcerik): Promise<TabloDegerlendirmesi> =>
     degerlendirmeUyarla(await istek<unknown>("POST", `/decision-tables/${yol(id)}/evaluate`, { govde: { girdiler, ...(icerik ? { icerik } : {}) }, kaynak: KALITE_KAYNAGI })),
+  /** Sınır değerlerinden örnek ızgarası (R2 `GET /decision-tables/{id}/ornekler`; kayıt yok). */
+  kararTablosuOrnekleri: async (id: string): Promise<TabloOrnekleri> =>
+    tabloOrnekleriUyarla(await istek<unknown>("GET", `/decision-tables/${yol(id)}/ornekler`, { kaynak: KALITE_KAYNAGI })),
   /** Elle ilişki (analyst; 201). */
   iliskiEkle: async (requirementId: string, g: IliskiOlusturma): Promise<MetamorfikIliski> =>
     iliskiUyarla(await istek<unknown>("POST", `/requirements/${yol(requirementId)}/relations`, { govde: g, kaynak: KALITE_KAYNAGI })),

@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { Rotalar } from "../../App";
 import { olayKonulari } from "../../api/events";
 import { mockVerisi } from "../../api/mock/handlers";
-import { altTurEtiketi, KARAR_TABLOSU_SINYALI } from "../../lib/etiketler";
+import { altTurEtiketi, KARAR_TABLOSU_SINYALI, sinyalBasligi } from "../../lib/etiketler";
 import { OturumProvider } from "../../auth";
 import { BildirimProvider } from "../../components/Bildirim";
 import { oturumAc } from "../../test/yardimci";
@@ -28,7 +28,35 @@ describe("triage: test beklentisi (karar tablosu)", () => {
     expect(altTurEtiketi("beklenti")).toBe("Test beklentisi (karar tablosu)");
     expect(altTurEtiketi("locator")).toBe("locator");
     expect(altTurEtiketi(null)).toBeNull();
-    expect(Object.keys(KARAR_TABLOSU_SINYALI)).toEqual(["karar_tablosu_uyumlu", "karar_tablosu_beklenti_farkli", "karar_tablosu_ikisi_de_farkli"]);
+    expect(Object.keys(KARAR_TABLOSU_SINYALI)).toEqual([
+      "karar_tablosu_uyumlu",
+      "karar_tablosu_beklenti_farkli",
+      "karar_tablosu_ikisi_de_farkli",
+      "karar_tablosu_tablo_suphesi",
+    ]);
+    expect(KARAR_TABLOSU_SINYALI.karar_tablosu_tablo_suphesi).toBe("Tablo da yanlış olabilir");
+  });
+
+  it("sinyal başlığı (R3): core `baslik` başlık, `aciklama` ayrıntı; başlık yoksa karar tablosu etiketi; diğer sinyal tek satır", () => {
+    expect(sinyalBasligi({ kod: "karar_tablosu_uyumlu", baslik: "Uygulama onaylı kurala aykırı (T1 · R2: adet 6 → bedava_adet 0)", aciklama: "ayrıntı" })).toEqual({
+      baslik: "Uygulama onaylı kurala aykırı (T1 · R2: adet 6 → bedava_adet 0)",
+      ayrinti: "ayrıntı",
+    });
+    expect(sinyalBasligi({ kod: "karar_tablosu_beklenti_farkli", aciklama: "uzun teknik metin" })).toEqual({
+      baslik: "Uygulama onaylı karar tablosuyla aynı; test beklentisi farklı",
+      ayrinti: "uzun teknik metin",
+    });
+    expect(sinyalBasligi({ kod: "health_ok", aciklama: "Sağlık kontrolü başarılı" })).toEqual({ baslik: "Sağlık kontrolü başarılı", ayrinti: null });
+  });
+
+  it("HataDetay (C3 defect adayı): karar tablosu sinyali tek satır başlıkla, ayrıntı altında; beklenti için bug taslağı düğmesi eklenmez", async () => {
+    await oturumAc("analist");
+    uygulama("/hatalar/fail-4");
+    const sinyal = await screen.findByTestId("sinyal-karar_tablosu_uyumlu");
+    expect(within(sinyal).getByText("Uygulama onaylı kurala aykırı (T1 · R2: adet 6 → bedava_adet 0)").tagName).toBe("STRONG");
+    expect(sinyal).toHaveTextContent(/Test beklentisi 0, gerçekleşen 1, onaylı karar tablosu \(T1, satır R2\) 0/);
+    // Diğer sinyaller değişmeden tek satır.
+    expect(within(screen.getByTestId("sinyal-health_ok")).getByText("Koşu öncesi sağlık kontrolü başarılı")).toBeInTheDocument();
   });
 
   it("HataDetay: 'Case düzeltilmeli' kutusu case'e bağlanır; 'Öneri üretilmedi' gösterilmez", async () => {

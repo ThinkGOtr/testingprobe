@@ -4,7 +4,9 @@ import { useState } from "react";
 import { api } from "../../api/client";
 import type { KararTablosu, KararTablosuIcerik } from "../../api/types";
 import { KOLON_TURU } from "../../lib/etiketler";
-import { IslemDugmesi, Kart } from "../ui";
+import { satiriOku } from "../../lib/ifadeAciklama";
+import { Cip, IslemDugmesi, Kart } from "../ui";
+import { OrnekIzgarasi } from "./OrnekIzgarasi";
 import { DurumEylemleri, KayitCipleri, KayitNotlari } from "./ortak";
 import { OrnekleDene } from "./OrnekleDene";
 import { TabloDuzenleyici } from "./TabloDuzenleyici";
@@ -28,7 +30,8 @@ export function KararTablosuKarti({
   duzenleAcik = false,
 }: {
   tablo: KararTablosu;
-  kriterler: { ref: string; metin: string }[];
+  /** `null`: gereksinim okunamadı (kabul kriterleri bilinmiyor; düzenleme kapalı). */
+  kriterler: { ref: string; metin: string }[] | null;
   guncellendi: (t: KararTablosu) => void;
   yenile: () => void;
   duzenleAcik?: boolean;
@@ -70,6 +73,8 @@ export function KararTablosuKarti({
           <TabloGorunumu tablo={tablo} />
         )}
 
+        {tablo.durum !== "superseded" && !(duzenle && taslak) && <OrnekIzgarasi tablo={tablo} />}
+
         {tablo.durum !== "superseded" && <OrnekleDene tablo={tablo} icerik={duzenle && taslak ? (taslakIcerik ?? undefined) : undefined} />}
 
         {tablo.durum !== "superseded" && (
@@ -81,7 +86,15 @@ export function KararTablosuKarti({
             engel={duzenle && taslak ? "Önce düzenlemeyi kaydedin ya da vazgeçin." : undefined}
             ek={
               taslak && !duzenle ? (
-                <IslemDugmesi id={duzenleId} roller={["analyst"]} kucuk tur="ikincil" onClick={() => setDuzenle(true)}>
+                <IslemDugmesi
+                id={duzenleId}
+                roller={["analyst"]}
+                kucuk
+                tur="ikincil"
+                disabled={kriterler === null}
+                title={kriterler === null ? "Gereksinim okunamadı; kabul kriterleri bilinmeden düzenlenemez." : undefined}
+                onClick={() => setDuzenle(true)}
+              >
                   Düzenle
                 </IslemDugmesi>
               ) : null
@@ -93,9 +106,29 @@ export function KararTablosuKarti({
   );
 }
 
+/**
+ * AI taslağından (çekirdek `ai_icerik` verirse) farklılaşan satırlar: koşulu ya da bir çıktısı değişen,
+ * ya da taslakta olmayan satır kimlikleri. `ai_icerik` yoksa boş (işaret uydurulmaz).
+ */
+export function analistDegistirdi(tablo: Pick<KararTablosu, "icerik" | "ai_icerik" | "ai_generated">): Set<string> {
+  const ai = tablo.ai_icerik;
+  if (!ai || !tablo.ai_generated) return new Set();
+  return new Set(
+    tablo.icerik.satirlar
+      .filter((s) => {
+        const o = ai.satirlar.find((x) => x.id === s.id);
+        if (!o) return true;
+        const anahtarlar = new Set([...Object.keys(s.cikti), ...Object.keys(o.cikti)]);
+        return o.kosul.trim() !== s.kosul.trim() || [...anahtarlar].some((k) => (o.cikti[k] ?? "").trim() !== (s.cikti[k] ?? "").trim());
+      })
+      .map((s) => s.id),
+  );
+}
+
 export function TabloGorunumu({ tablo }: { tablo: KararTablosu }) {
   const t = tablo.icerik;
   const ad = t.ad || "Karar tablosu";
+  const degisenler = analistDegistirdi(tablo);
   return (
     <>
       <h3 className="kt-bolum">Girdiler</h3>
@@ -183,6 +216,16 @@ export function TabloGorunumu({ tablo }: { tablo: KararTablosu }) {
                 <tr key={s.id}>
                   <td className="mono" data-etiket="Satır">
                     {s.id}
+                    {degisenler.has(s.id) && (
+                      <>
+                        {" "}
+                        <span data-testid="kt-analist-degistirdi">
+                          <Cip ton="notr" title="Bu satır AI taslağındaki hâlinden farklı: analist düzenledi.">
+                            analist değiştirdi
+                          </Cip>
+                        </span>
+                      </>
+                    )}
                   </td>
                   <td className="kt-ifade" data-etiket="Koşul">
                     {s.kosul}
@@ -196,6 +239,24 @@ export function TabloGorunumu({ tablo }: { tablo: KararTablosu }) {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+      {t.satirlar.length > 0 && (
+        <div className="kt-anlam" data-testid="kt-anlam">
+          <h3 className="kt-bolum">Satırların anlamı</h3>
+          <p className="soluk kucuk">Koşulu ilk sağlayan satır geçerlidir. PO, ifadeyi değil bu iş kuralını onaylar.</p>
+          <ol className="duz-liste kt-anlam-liste">
+            {t.satirlar.map((s) => (
+              <li key={s.id}>
+                <span className="mono soluk">{s.id}</span>{" "}
+                {satiriOku(
+                  s.kosul,
+                  s.cikti,
+                  t.ciktilar.map((c) => c.ad),
+                )}
+              </li>
+            ))}
+          </ol>
         </div>
       )}
     </>

@@ -12,17 +12,32 @@ import "./kalite.css";
 
 type Kayit = KararTablosu | MetamorfikIliski;
 
+/** Başarılı durum geçişinin ekran okuyucu duyurusu (ve görünür satırı). */
+const GECIS_DUYURUSU: Record<KaliteGecisi, string> = {
+  submit: "PO onayına gönderildi.",
+  withdraw: "Geri çekildi; kayıt taslağa döndü.",
+  reopen: "Yeniden açıldı; kayıt taslağa döndü ve yeniden PO onayı gerekir.",
+  approve: "PO olarak onaylandı.",
+  "request-changes": "Değişiklik istendi; kayıt analiste taslak olarak döndü.",
+};
+
 /** Durum çipi + AI taslağı işareti (mor = AI) + bayat uyarısı + kabul kriteri atıfları. */
 export function KayitCipleri({ k }: { k: Kayit }) {
   const d = KARAR_TABLOSU_DURUMU[k.durum];
   return (
     <div className="kt-ust">
       <Cip ton={d.ton}>{d.etiket}</Cip>
-      {k.ai_generated && (
-        <Cip ton="vurgu" title="Model kabul kriterinden çıkardı; analist düzenler, PO onaylar.">
-          AI taslağı
-        </Cip>
-      )}
+      {/* Mor yalnız insan kapısından geçmemiş AI taslağında; PO'ya giden / onaylanan kayıtta köken nötr yazılır. */}
+      {k.ai_generated &&
+        (k.durum === "draft" ? (
+          <Cip ton="vurgu" title="Model kabul kriterinden çıkardı; analist düzenler, PO onaylar.">
+            AI taslağı
+          </Cip>
+        ) : (
+          <Cip ton="notr" title="İlk taslağı model çıkardı; analist düzenledi ve PO onayına gönderdi.">
+            AI kökenli
+          </Cip>
+        ))}
       <ReplayRozeti mode={k.uretim_modu} />
       {k.bayat && (
         <Cip ton="uyari" title="Gereksinim onaydan sonra değişti; kontrolde kullanılmaz.">
@@ -43,6 +58,12 @@ export function KayitNotlari({ k, ad }: { k: Kayit; ad: "Tablo" | "İlişki" }) 
   const kisiAdi = useKisiAdi();
   return (
     <>
+      {k.son_duzenleyen && (
+        <p className="soluk kucuk" data-testid="kt-son-duzenleyen">
+          Son düzenleyen: {kisiAdi(k.son_duzenleyen)}
+          {k.guncelleme && `, ${tarih(k.guncelleme)}`}
+        </p>
+      )}
       {k.durum === "approved" && (
         <p className="kucuk kt-onay" data-testid="kt-onay">
           <strong>PO onayı:</strong> {k.onaylayan ? kisiAdi(k.onaylayan) : "onaylayan bildirilmedi"}
@@ -147,18 +168,34 @@ export function DurumEylemleri<T extends Kayit>({
   const [istekAcik, setIstekAcik] = useState(false);
   const [gerekce, setGerekce] = useState("");
   const [uyari, setUyari] = useState<string | null>(null);
+  const [onayNotu, setOnayNotu] = useState("");
+  const [duyuru, setDuyuru] = useState("");
   const id = useId();
   const alan = useRef<HTMLTextAreaElement | null>(null);
+  const istekDugmesi = useRef<HTMLSpanElement | null>(null);
+  const durumSatiri = useRef<HTMLParagraphElement | null>(null);
+  // PO'nun gözden geçirdiği içerik: kart PO onayı beklerken ilk görülen hash sabitlenir. Sessiz yenileme
+  // içeriği değiştirirse onay o anki hash'le gönderilmez; uyarı gösterilir ve yeniden gözden geçirme istenir.
+  const [gorulenHash, setGorulenHash] = useState<string | null>(kayit.durum === "pending_po" ? kayit.icerik_hash : null);
+  useEffect(() => {
+    if (kayit.durum !== "pending_po") setGorulenHash(null);
+    else setGorulenHash((h) => h ?? kayit.icerik_hash);
+  }, [kayit.durum, kayit.icerik_hash]);
+  const icerikDegisti = kayit.durum === "pending_po" && gorulenHash !== null && gorulenHash !== kayit.icerik_hash;
   useEffect(() => {
     if (istekAcik) alan.current?.focus();
   }, [istekAcik]);
   useEffect(() => setIstekAcik(false), [kayit.durum]);
 
   async function yap(g: KaliteGecisi, ekGovde: Partial<KaliteGecisGirdisi> = {}) {
-    const yeni = await islem.calistir(() => gecis(g, { icerik_hash: kayit.icerik_hash, ...ekGovde }), { cakismada: yenile });
+    const yeni = await islem.calistir(() => gecis(g, { icerik_hash: gorulenHash ?? kayit.icerik_hash, ...ekGovde }), { cakismada: yenile });
     if (yeni) {
       setGerekce("");
+      setOnayNotu("");
       guncellendi(yeni);
+      // Durum geçişinden sonra odak kaybolmasın: duyuru satırına odak + role="status".
+      setDuyuru(GECIS_DUYURUSU[g]);
+      requestAnimationFrame(() => durumSatiri.current?.focus());
     }
     return yeni;
   }
@@ -175,8 +212,35 @@ export function DurumEylemleri<T extends Kayit>({
   const hatalar = alanHatalari(islem.hataNesnesi);
   if (kayit.durum === "superseded") return null;
   const ortak = { kucuk: true, calisiyor: islem.calisiyor, disabled: !!engel, title: engel } as const;
+  const kapanisOdagi = () => requestAnimationFrame(() => istekDugmesi.current?.querySelector("button")?.focus());
   return (
     <div className="kt-eylemler" data-testid="kt-eylemler">
+      <p ref={durumSatiri} tabIndex={-1} role="status" className="kucuk kt-duyuru" data-testid="kt-duyuru">
+        {duyuru}
+      </p>
+      {icerikDegisti && (
+        <div data-testid="kt-icerik-degisti">
+          <Uyari baslik="İçerik siz bakarken değişti — yeniden gözden geçirin">
+            Analist bu kaydı siz incelerken değiştirdi. Onay, gördüğünüz eski içerik için gönderilmez.{" "}
+            <button
+              type="button"
+              className="dugme dugme-ikincil dugme-kucuk"
+              onClick={() => {
+                setGorulenHash(kayit.icerik_hash);
+                setDuyuru("Güncel içerik gözden geçirildi olarak işaretlendi.");
+              }}
+            >
+              Güncel içeriği gözden geçirdim
+            </button>
+          </Uyari>
+        </div>
+      )}
+      {kayit.durum === "pending_po" && (
+        <div className="alan kt-alan-genis kt-onay-notu">
+          <label htmlFor={`${id}-onay-notu`}>PO onay notu (isteğe bağlı)</label>
+          <input id={`${id}-onay-notu`} value={onayNotu} maxLength={500} onChange={(e) => setOnayNotu(e.target.value)} />
+        </div>
+      )}
       <div className="eylemler">
         {kayit.durum === "draft" && (
           <IslemDugmesi roller={["analyst"]} {...ortak} onClick={() => void yap("submit")}>
@@ -185,12 +249,20 @@ export function DurumEylemleri<T extends Kayit>({
         )}
         {kayit.durum === "pending_po" && (
           <>
-            <IslemDugmesi roller={["po"]} {...ortak} onClick={() => void yap("approve")}>
+            <IslemDugmesi
+              roller={["po"]}
+              {...ortak}
+              disabled={!!engel || icerikDegisti}
+              title={engel ?? (icerikDegisti ? "İçerik siz bakarken değişti; önce güncel içeriği gözden geçirin." : undefined)}
+              onClick={() => void yap("approve", onayNotu.trim() ? { gerekce: onayNotu.trim() } : {})}
+            >
               PO olarak onayla
             </IslemDugmesi>
-            <IslemDugmesi roller={["po"]} {...ortak} tur="ikincil" aria-expanded={istekAcik} onClick={() => setIstekAcik((a) => !a)}>
-              Değişiklik iste
-            </IslemDugmesi>
+            <span ref={istekDugmesi} className="satir-ogeler">
+              <IslemDugmesi roller={["po"]} {...ortak} tur="ikincil" aria-expanded={istekAcik} onClick={() => setIstekAcik((a) => !a)}>
+                Değişiklik iste
+              </IslemDugmesi>
+            </span>
             <IslemDugmesi roller={["analyst"]} {...ortak} tur="ikincil" onClick={() => void yap("withdraw")}>
               Geri çek
             </IslemDugmesi>
@@ -215,7 +287,14 @@ export function DurumEylemleri<T extends Kayit>({
             <IslemDugmesi roller={["po"]} type="submit" kucuk tur="ikincil" calisiyor={islem.calisiyor}>
               Değişiklik isteğini gönder
             </IslemDugmesi>
-            <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => setIstekAcik(false)}>
+            <button
+              type="button"
+              className="dugme dugme-hayalet dugme-kucuk"
+              onClick={() => {
+                setIstekAcik(false);
+                kapanisOdagi();
+              }}
+            >
               Vazgeç
             </button>
           </div>
@@ -250,18 +329,24 @@ export function AcSecici({
 }: {
   secili: string[];
   degisti: (refs: string[]) => void;
-  kriterler: { ref: string; metin: string }[];
+  /** `null`: gereksinim okunamadı (kabul kriterleri bilinmiyor; düzenleme kapalı). */
+  kriterler: { ref: string; metin: string }[] | null;
   hata?: ReactNode;
 }) {
   const id = useId();
-  const tumu = [...kriterler.map((k) => k.ref), ...secili.filter((r) => !kriterler.some((k) => k.ref === r))];
+  const liste = kriterler ?? [];
+  const tumu = [...liste.map((k) => k.ref), ...secili.filter((r) => !liste.some((k) => k.ref === r))];
   return (
     <fieldset className="kt-ac" aria-describedby={hata ? `${id}-hata` : undefined}>
       <legend>Kabul kriterleri</legend>
-      {tumu.length === 0 && <p className="soluk kucuk">Gereksinimde kabul kriteri yok.</p>}
+      {kriterler === null ? (
+        <p className="soluk kucuk">Gereksinim okunamadı; kabul kriterleri bilinmiyor.</p>
+      ) : (
+        tumu.length === 0 && <p className="soluk kucuk">Gereksinimde kabul kriteri yok.</p>
+      )}
       <div className="kt-ac-liste">
         {tumu.map((ref) => {
-          const k = kriterler.find((x) => x.ref === ref);
+          const k = liste.find((x) => x.ref === ref);
           return (
             <label key={ref} className="kt-ac-secenek" title={k?.metin}>
               <input

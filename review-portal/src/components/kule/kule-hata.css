@@ -262,3 +262,98 @@
 .hk-gecmis tr[data-gosterilen] > td:first-child {
   box-shadow: inset 3px 0 0 var(--accent);
 }
+
+/* ---- §13.2 / review turu 1 ekleri */
+/* KPI karosunda n satırı ayrı satır (oranın güvenilirliği). */
+.kule-kpi .kule-n {
+  display: block;
+  margin-top: 2px;
+}
+/* Uzun koşu onayı */
+.hk-onay {
+  display: grid;
+  gap: 8px;
+  max-width: 96ch;
+}
+.hk-onay:focus-visible,
+.hk-ilerleme:focus-visible,
+.hk-sonuc h3:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.hk-sure {
+  margin: 8px 0 0;
+  color: var(--text-2);
+}
+.hk-kapsam,
+.hk-suite {
+  max-width: 96ch;
+  margin: 0 0 8px;
+  color: var(--text-2);
+}
+.hk-suite {
+  margin-top: 4px;
+}
+.hk-tablo tfoot .hk-oran-ai th {
+  color: var(--text);
+}
+/* Kural × hata dağılımı */
+.hk-kural-dagilim {
+  margin-top: 16px;
+}
+.hk-kural-dagilim > p {
+  margin: 4px 0 8px;
+  color: var(--text-2);
+  max-width: 96ch;
+}
+.hk-kural-dagilim tbody th {
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--text);
+  /* Satır başlığı gövde zemininde (sütun başlığı zemini satırı ikiye bölüyordu). */
+  background: var(--surface);
+}
+/* Kaçan hata: kural, ayırt edici girdi, case isteği */
+.hk-kacan-liste > li + li {
+  border-top: 1px solid var(--border-soft);
+  padding-top: 8px;
+}
+.hk-kacan-ayrinti {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 8px 0 0;
+}
+.hk-kacan-ayrinti dt {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.hk-kacan-ayrinti dd {
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  .hk-kacan-ayrinti {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hk-kacan-ayrinti dd + dt {
+    margin-top: 4px;
+  }
+}
+.hk-istek {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.hk-kacanlar .hk-istek p {
+  margin: 0 0 8px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.kule-onayli-uyumsuz .duz-liste > li + li {
+  margin-top: 6px;
+}

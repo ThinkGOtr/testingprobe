@@ -101,20 +101,20 @@ export function CaseKarti({
 
   // 012 (ANALIZ §4.3): beklenen sonuç kontrolü kapısı ve düzeltme ön kontrolü.
   const kapi = useOracleKapisi(tc);
-  const onKontrol = useDuzeltmeOnKontrolu(tc, (icerik, beklenenAnlamDegisti, istisnaGerekce) =>
+  const onKontrol = useDuzeltmeOnKontrolu(tc, (icerik, beklenenAnlamDegisti, istisnaGerekce, istisnaTuru) =>
     karar(() =>
       api.caseKarari(tc.id, {
         ...bag,
         karar: "edit",
         icerik,
         ...(beklenenAnlamDegisti !== undefined ? { beklenen_anlam_degisti: beklenenAnlamDegisti } : {}),
-        ...(istisnaGerekce ? { oracle_istisna_gerekce: istisnaGerekce } : {}),
+        ...(istisnaGerekce ? { oracle_istisna_gerekce: istisnaGerekce, ...(istisnaTuru ? { oracle_istisna_turu: istisnaTuru } : {}) } : {}),
       }),
     ),
   );
 
   return (
-    <article ref={kartRef} className={`case case-${tc.durum}`} aria-labelledby={`${id}-baslik`}>
+    <article ref={kartRef} id={`case-${tc.id}`} tabIndex={-1} className={`case case-${tc.durum}`} aria-labelledby={`${id}-baslik`}>
       <header className="case-baslik">
         <div className="satir-ogeler">
           <span className="mono soluk">#{tc.sira_no}</span>
@@ -146,6 +146,7 @@ export function CaseKarti({
               setMod("goster");
             }}
             kaydet={onKontrol.gonder}
+            degisti={onKontrol.icerikDegisti}
           />
           <DuzeltmeOnKontrolPaneli kontrol={onKontrol} calisiyor={islem.calisiyor} />
         </>
@@ -253,8 +254,9 @@ export function CaseKarti({
       {mod === "goster" && !kilitli && !kararVerildi && (
         <OracleKapisi
           kapi={kapi}
+          tc={tc}
           calisiyor={islem.calisiyor}
-          onayla={(gerekce) => karar(() => api.caseKarari(tc.id, { ...bag, karar: "approve", oracle_istisna_gerekce: gerekce }))}
+          onayla={(gerekce, tur) => karar(() => api.caseKarari(tc.id, { ...bag, karar: "approve", oracle_istisna_gerekce: gerekce, oracle_istisna_turu: tur }))}
         />
       )}
       {mod === "goster" && kararVerildi && (
@@ -393,8 +395,11 @@ function CaseDuzenleyici({
   calisiyor,
   hata,
   hataKaynagi,
+  degisti,
 }: {
   ilk: TestCaseIcerik;
+  /** Formdaki herhangi bir değişiklik (ön kontrol engelini düşürür: eski içerik istisnayla gönderilmez). */
+  degisti?: () => void;
   kaydet: (i: TestCaseIcerik, beklenenAnlamDegisti?: boolean) => void;
   vazgec: () => void;
   calisiyor: boolean;
@@ -416,6 +421,17 @@ function CaseDuzenleyici({
       .filter(Boolean);
   const [onKosulMetni, setOnKosulMetni] = useState(() => listeMetni(ilk.preconditions));
   const [acMetni, setAcMetni] = useState(() => ilk.acceptance_criteria_refs.join(", "));
+  // Her düzenleme (adım ekleme/kaldırma dahil) çağırana bildirilir; ilk çizim sayılmaz.
+  const degistiRef = useRef(degisti);
+  degistiRef.current = degisti;
+  const ilkCizim = useRef(true);
+  useEffect(() => {
+    if (ilkCizim.current) {
+      ilkCizim.current = false;
+      return;
+    }
+    degistiRef.current?.();
+  }, [icerik, onKosulMetni, acMetni, anlamDegisti]);
 
   const adimGuncelle = (i: number, alan: "action" | "data" | "expected", deger: string) =>
     setIcerik((c) => ({

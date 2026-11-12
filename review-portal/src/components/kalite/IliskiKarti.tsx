@@ -44,7 +44,8 @@ export function IliskiKarti({
 }: {
   iliski: MetamorfikIliski;
   tablolar: KararTablosu[];
-  kriterler: { ref: string; metin: string }[];
+  /** `null`: gereksinim okunamadı (kabul kriterleri bilinmiyor; düzenleme kapalı). */
+  kriterler: { ref: string; metin: string }[] | null;
   guncellendi: (r: MetamorfikIliski) => void;
   yenile: () => void;
 }) {
@@ -65,6 +66,11 @@ export function IliskiKarti({
         <span className="mono soluk">İ{iliski.sira_no}</span> · {r.ad || "Adsız ilişki"}
       </h3>
       <KayitNotlari k={iliski} ad="İlişki" />
+      {iliski.tablo_engeli && (
+        <p className="kucuk uyari-metin" data-testid="iliski-tablo-engeli">
+          <strong>Bağlı tablo:</strong> {iliski.tablo_engeli}
+        </p>
+      )}
       {duzenle && taslak ? (
         <IliskiDuzenleyici
           requirementId={iliski.requirement_id}
@@ -99,7 +105,17 @@ export function IliskiKarti({
           <dt>İlişki</dt>
           <dd>
             <IfadeListesi esleme={r.iliski} ok="←" />
+            <span className="soluk kucuk">
+              “yeni ← ifade”: soldaki ad türetilen case'in değeri; sağdaki adlar kaynak case'in (dönüşümden önceki) değerleridir. Ör. “adet ← adet * 2”: 7 adetli
+              kaynaktan 14 adetli case.
+            </span>
           </dd>
+          {r.degismez && r.degismez.length > 0 && (
+            <>
+              <dt>Değişmez</dt>
+              <dd className="kt-ifade">{r.degismez.join(", ")}</dd>
+            </>
+          )}
           {r.aciklama && (
             <>
               <dt>Açıklama</dt>
@@ -114,10 +130,24 @@ export function IliskiKarti({
           gecis={(g, govde) => api.iliskiGecis(iliski.id, g, govde)}
           guncellendi={guncellendi}
           yenile={yenile}
-          engel={duzenle && taslak ? "Önce düzenlemeyi kaydedin ya da vazgeçin." : undefined}
+          engel={
+            duzenle && taslak
+              ? "Önce düzenlemeyi kaydedin ya da vazgeçin."
+              : iliski.tablo_engeli && iliski.durum === "draft"
+                ? iliski.tablo_engeli
+                : undefined
+          }
           ek={
             taslak && !duzenle ? (
-              <IslemDugmesi id={duzenleId} roller={["analyst"]} kucuk tur="ikincil" onClick={() => setDuzenle(true)}>
+              <IslemDugmesi
+                id={duzenleId}
+                roller={["analyst"]}
+                kucuk
+                tur="ikincil"
+                disabled={kriterler === null}
+                title={kriterler === null ? "Gereksinim okunamadı; kabul kriterleri bilinmeden düzenlenemez." : undefined}
+                onClick={() => setDuzenle(true)}
+              >
                 Düzenle
               </IslemDugmesi>
             ) : null
@@ -152,7 +182,8 @@ export function IliskiDuzenleyici({
   requirementId: string;
   iliski?: MetamorfikIliski;
   tablolar: KararTablosu[];
-  kriterler: { ref: string; metin: string }[];
+  /** `null`: gereksinim okunamadı (kabul kriterleri bilinmiyor; düzenleme kapalı). */
+  kriterler: { ref: string; metin: string }[] | null;
   kaydedildi: (r: MetamorfikIliski) => void;
   vazgec: () => void;
   yenile: () => void;
@@ -205,9 +236,15 @@ export function IliskiDuzenleyici({
     const oneriler = secilenTablo ? (tur === "donusum" ? secilenTablo.icerik.girdiler : secilenTablo.icerik.ciktilar).map((k) => k.ad) : [];
     const listeId = `${id}-${tur}-oneriler`;
     const genel = bag(tur);
+    const ipucuId = `${id}-${tur}-ipucu`;
     return (
-      <fieldset className="kt-grup">
+      <fieldset className="kt-grup" aria-describedby={ipucuId}>
         <legend>{baslik}</legend>
+        <p id={ipucuId} className="soluk kucuk">
+          {tur === "donusum"
+            ? "Soldaki ad türetilen case'in girdisidir; sağdaki ifadedeki adlar kaynak case'in (dönüşümden önceki) değerleridir. Ör. adet = adet * 2."
+            : "Soldaki ad türetilen case'in beklenen çıktısıdır; sağdaki ifadedeki adlar kaynak case'in değerleridir (tablodan hesaplanmaz). Ör. bedava_adet = bedava_adet * 2."}
+        </p>
         {genel.mesaj}
         {oneriler.length > 0 && (
           <datalist id={listeId}>
@@ -356,6 +393,7 @@ export function IliskiDuzenleyici({
 }
 
 /** Türetme sonucundaki case bağlantısı: case review sayfası. */
-export function CaseBaglantisi({ requirementId, children }: { requirementId: string; children: ReactNode }) {
-  return <Link to={`/gereksinimler/${encodeURIComponent(requirementId)}/caseler`}>{children}</Link>;
+/** Case review'a bağlantı; `caseId` verilirse o karta kaydırılır ve odaklanır (`#case-<id>`). */
+export function CaseBaglantisi({ requirementId, caseId, children }: { requirementId: string; caseId?: string | null; children: ReactNode }) {
+  return <Link to={`/gereksinimler/${encodeURIComponent(requirementId)}/caseler${caseId ? `#case-${encodeURIComponent(caseId)}` : ""}`}>{children}</Link>;
 }

@@ -9,7 +9,7 @@ import { Rotalar } from "../../App";
 import { api } from "../../api/client";
 import { bekleyenMockIs, mockVerisi } from "../../api/mock/handlers";
 import { kaliteVerisi } from "../../api/mock/kalite";
-import { MIN_SIPARIS_TABLOSU } from "../../api/mock/kaliteVerisi";
+import { MIN_SIPARIS_TABLOSU, YEDI_ARTIS_ILISKISI } from "../../api/mock/kaliteVerisi";
 import { mockOlayYayinla } from "../../api/mock/olaylar";
 import { OturumProvider } from "../../auth";
 import { BildirimProvider } from "../../components/Bildirim";
@@ -41,12 +41,15 @@ describe("liste", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Karar tabloları" })).toBeInTheDocument();
     const t1 = await kart(KAMPANYA);
     expect(within(t1).getByText("Onaylı")).toBeInTheDocument();
-    expect(within(t1).getByText("AI taslağı")).toBeInTheDocument();
+    // Onyüz 15: PO onayından geçmiş kayıtta köken nötr "AI kökenli" (mor "AI taslağı" yalnız taslakta).
+    expect(within(t1).getByText("AI kökenli")).toBeInTheDocument();
+    expect(within(t1).queryByText("AI taslağı")).toBeNull();
     expect(within(t1).getByText("AC2")).toBeInTheDocument();
     expect(within(t1).getByTestId("kt-onay")).toHaveTextContent("PO onayı:");
     expect(t1).toHaveClass("insan-kapisi", "kapi-gecti");
     const t2 = await kart(MIN);
     expect(within(t2).getByText("Taslak")).toBeInTheDocument();
+    expect(within(t2).getByText("AI taslağı")).toBeInTheDocument();
     expect(t2).toHaveClass("kt-ai");
     expect(t2).not.toHaveClass("kapi-gecti");
     // Satırlar tablosu: her çıktı için bir sütun.
@@ -55,9 +58,44 @@ describe("liste", () => {
     expect(within(satirlar).getByText("adet >= 7")).toBeInTheDocument();
     // İlişkiler bölümü.
     const iliskiler = screen.getByTestId("iliskiler");
-    expect(within(iliskiler).getAllByTestId("iliski-kart")).toHaveLength(2);
+    expect(within(iliskiler).getAllByTestId("iliski-kart")).toHaveLength(1);
     expect(screen.getByRole("link", { name: "Case review" })).toHaveAttribute("href", `/gereksinimler/${REQ}/caseler`);
     expect(screen.getByRole("link", { name: /← TPD-1/ })).toHaveAttribute("href", `/gereksinimler/${REQ}`);
+  });
+
+  it("analist/PO 5, 10: satırların düz Türkçe anlamı, AI taslağından ayrılan satır işareti, sınır örnekleri", async () => {
+    await oturumAc("po");
+    uygulama();
+    const t1 = await kart(KAMPANYA);
+    const anlam = within(t1).getByTestId("kt-anlam");
+    expect(anlam).toHaveTextContent("Eğer adet 7 ya da daha fazla → bedava adet: adet ÷ 7 (tam kısım)");
+    expect(anlam).toHaveTextContent("Diğer tüm durumlarda → bedava adet: 0");
+    expect(within(t1).queryByTestId("kt-analist-degistirdi")).toBeNull();
+    const t2 = await kart(MIN);
+    // T2 R2'yi (`<= 750`) analist değiştirdi; AI taslağı `< 750` idi.
+    const degisen = within(t2).getAllByTestId("kt-analist-degistirdi");
+    expect(degisen).toHaveLength(1);
+    expect(degisen[0].closest("tr")).toHaveTextContent("R2");
+    expect(within(t2).getByTestId("kt-anlam")).toHaveTextContent("Eğer sepet tutari 750 ya da daha az → minimum uyarisi: doğru");
+    // Sınır örnekleri (PO onayı beklemeyen kart kapalı gelir; açınca yüklenir).
+    const ornek = within(t2).getByTestId("kt-ornek");
+    await userEvent.click(within(ornek).getByText("Sınır örnekleri"));
+    const izgara = await within(ornek).findByRole("region", { name: /sınır örnekleri/ });
+    const satir750 = within(izgara)
+      .getAllByRole("row")
+      .find((r) => /^yanlış750R/.test(r.textContent ?? ""));
+    expect(satir750).toHaveTextContent("R2");
+    expect(satir750).toHaveTextContent("doğru");
+  });
+
+  it("onyüz 12: gereksinim okunamazsa hata kutusu ve analist eylemleri nedenle kapalı", async () => {
+    await oturumAc("analist");
+    vi.spyOn(api, "gereksinim").mockRejectedValue(new Error("ağ hatası"));
+    uygulama();
+    expect(await screen.findByTestId("gereksinim-hata")).toHaveTextContent("Gereksinim okunamadı");
+    await waitFor(() => expect(screen.getByRole("button", { name: "AI taslağı üret" })).toBeDisabled());
+    const t2 = await kart(MIN);
+    expect(within(t2).getByRole("button", { name: "Düzenle" })).toBeDisabled();
   });
 
   it("gereksinim onaydan sonra değişince onaylı tablo 'Bayat' ve uyarı gösterir", async () => {
@@ -162,7 +200,10 @@ describe("düzenleyici", () => {
     expect(await within(form).findByTestId("kt-kayit-hatasi")).toHaveTextContent("doğrulama hatası");
     const kosul = within(r1).getByLabelText("Koşul");
     expect(kosul).toHaveAttribute("aria-invalid", "true");
-    expect(document.getElementById(kosul.getAttribute("aria-describedby")!)).toHaveTextContent(/bilinmeyen/);
+    const bagli = kosul.getAttribute("aria-describedby")!.split(" ").map((x) => document.getElementById(x)?.textContent ?? "");
+    expect(bagli.some((m) => /bilinmeyen/.test(m))).toBe(true);
+    // Onyüz 4: koşul alanı ifade dili özetine de bağlı.
+    expect(bagli.some((m) => /İfade dili/.test(m))).toBe(true);
     expect(within(r1).getByLabelText(/minimum_uyarisi ifadesi/)).toHaveAttribute("aria-invalid", "true");
     expect(within(girdi).getByLabelText("Ad")).toHaveAttribute("aria-invalid", "true");
     expect(within(t2).getByTestId("kt-duzenleyici")).toBeInTheDocument();
@@ -276,6 +317,37 @@ describe("rol kapıları ve durum geçişleri", () => {
     expect(kalite().tablolar.find((x) => x.id === "kt-2")).toMatchObject({ durum: "draft", onaylanan_hash: null });
   });
 
+  it("onyüz 6, 7: PO incelerken içerik değişirse uyarı ve onay kapalı; gözden geçirince onay notuyla onaylar, duyuru satırı odak alır", async () => {
+    await oturumAc("analist");
+    const t = () => kalite().tablolar.find((x) => x.id === "kt-2")!;
+    await api.kararTablosuGecis("kt-2", "submit", { icerik_hash: t().icerik_hash });
+    await oturumAc("po");
+    uygulama();
+    const t2 = await kart(MIN);
+    expect(within(t2).getByRole("button", { name: "PO olarak onayla" })).toBeEnabled();
+    // Analist arka planda geri çekip R2'yi düzeltti ve yeniden gönderdi.
+    await oturumAc("analist");
+    await api.kararTablosuGecis("kt-2", "withdraw");
+    const yeni = { ...t().icerik, satirlar: t().icerik.satirlar.map((x) => (x.id === "R2" ? { ...x, kosul: "sepet_tutari < 750" } : x)) };
+    await api.kararTablosuKaydet("kt-2", { icerik: yeni, icerik_hash: t().icerik_hash });
+    await api.kararTablosuGecis("kt-2", "submit", { icerik_hash: t().icerik_hash });
+    await oturumAc("po");
+    mockOlayYayinla({ type: "karar_tablosu.updated", id: "kt-2", data: { id: "kt-2", requirement_id: REQ, durum: "pending_po", eylem: "duzenle" } });
+    expect(await within(t2).findByTestId("kt-icerik-degisti", undefined, { timeout: 3000 })).toHaveTextContent("İçerik siz bakarken değişti");
+    expect(within(t2).getByRole("button", { name: "PO olarak onayla" })).toBeDisabled();
+    await userEvent.click(within(t2).getByRole("button", { name: "Güncel içeriği gözden geçirdim" }));
+    expect(within(t2).queryByTestId("kt-icerik-degisti")).toBeNull();
+    const onayla = vi.spyOn(api, "kararTablosuGecis");
+    await userEvent.type(within(t2).getByLabelText("PO onay notu (isteğe bağlı)"), "Örneklerle kontrol edildi");
+    await userEvent.click(within(t2).getByRole("button", { name: "PO olarak onayla" }));
+    expect(await within(t2).findByText("Onaylı")).toBeInTheDocument();
+    expect(onayla).toHaveBeenCalledWith("kt-2", "approve", { icerik_hash: t().icerik_hash, gerekce: "Örneklerle kontrol edildi" });
+    const duyuru = within(t2).getByTestId("kt-duyuru");
+    expect(duyuru).toHaveTextContent("PO olarak onaylandı.");
+    expect(duyuru).toHaveAttribute("role", "status");
+    await waitFor(() => expect(duyuru).toHaveFocus());
+  });
+
   it("görülen hash eskiyse geçiş 409 verir ve liste yenilenir", async () => {
     await oturumAc("analist");
     uygulama();
@@ -308,11 +380,12 @@ describe("örnekle dene", () => {
   it("eşleşen satır ve çıktılar", async () => {
     await oturumAc("po");
     uygulama();
-    const d = await dene(KAMPANYA, { adet: "14", birim_fiyat: "25,00" });
+    const d = await dene(KAMPANYA, { adet: "14", ara_toplam: "350,00" });
     const s = await within(d).findByTestId("kt-dene-sonuc");
     expect(s).toHaveTextContent("Eşleşen satır: R1");
     expect(within(s).getByRole("row", { name: /bedava_adet 2/ })).toBeInTheDocument();
     expect(within(s).getByRole("row", { name: /indirim 50 TL/ })).toBeInTheDocument();
+    expect(within(s).getByRole("row", { name: /toplam 300 TL/ })).toBeInTheDocument();
     await waitFor(() => expect(s).toHaveFocus());
   });
 
@@ -321,7 +394,7 @@ describe("örnekle dene", () => {
     uygulama();
     const d = await dene(KAMPANYA, { adet: "7" });
     expect(await within(d).findByText("Eksik girdi")).toBeInTheDocument();
-    expect(within(d).getByTestId("kt-dene-sonuc")).toHaveTextContent("birim_fiyat");
+    expect(within(d).getByTestId("kt-dene-sonuc")).toHaveTextContent("ara_toplam");
   });
 
   it("eşleşen satır yok", async () => {
@@ -329,14 +402,14 @@ describe("örnekle dene", () => {
     const t = kalite().tablolar.find((x) => x.id === "kt-1")!;
     t.icerik = { ...t.icerik, satirlar: t.icerik.satirlar.filter((s) => s.id === "R1") };
     uygulama();
-    const d = await dene(KAMPANYA, { adet: "3", birim_fiyat: "25" });
+    const d = await dene(KAMPANYA, { adet: "3", ara_toplam: "75" });
     expect(await within(d).findByText("Eşleşen satır yok")).toBeInTheDocument();
   });
 
   it("hata: sayı girdisine metin", async () => {
     await oturumAc("analist");
     uygulama();
-    const d = await dene(KAMPANYA, { adet: "yedi", birim_fiyat: "25" });
+    const d = await dene(KAMPANYA, { adet: "yedi", ara_toplam: "25" });
     expect(await within(d).findByText("Değerlendirilemedi")).toBeInTheDocument();
     expect(within(d).getByTestId("kt-dene-sonuc")).toHaveTextContent("'adet' girdisi sayi türünde olmalı");
   });
@@ -356,7 +429,7 @@ describe("AI taslağı", () => {
     await kart(KAMPANYA);
     await userEvent.click(screen.getByRole("button", { name: "AI taslağı üret" }));
     const onay = screen.getByTestId("taslak-onay");
-    expect(onay).toHaveTextContent("2 tablo ve 2 ilişki");
+    expect(onay).toHaveTextContent("2 tablo ve 1 ilişki");
     await userEvent.click(within(onay).getByRole("button", { name: "Evet, yeni taslak üret" }));
     expect(screen.queryByTestId("taslak-onay")).toBeNull();
     await waitFor(() => expect(bekleyenMockIs()).toBe(0), { timeout: 3000 });
@@ -364,7 +437,16 @@ describe("AI taslağı", () => {
     expect(await kart(/T3 · Kampanya/)).toBeInTheDocument();
     expect(await kart(/T4 · Minimum/)).toBeInTheDocument();
     expect(screen.getByText("Yerini yenisi alan tablolar (2)")).toBeInTheDocument();
-    expect(screen.getByText("Yerini yenisi alan ilişkiler (2)")).toBeInTheDocument();
+    expect(screen.getByText("Yerini yenisi alan ilişkiler (1)")).toBeInTheDocument();
+  });
+
+  it("onyüz 22: yeniden üretim onayında Vazgeç odağı 'AI taslağı üret'e döndürür", async () => {
+    await oturumAc("analist");
+    uygulama();
+    await kart(KAMPANYA);
+    await userEvent.click(screen.getByRole("button", { name: "AI taslağı üret" }));
+    await userEvent.click(within(screen.getByTestId("taslak-onay")).getByRole("button", { name: "Vazgeç" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "AI taslağı üret" })).toHaveFocus());
   });
 
   it("iş sürerken 'AI taslağı üretiliyor…' durumu ve meşgul düğme; sonuç olayı gelince kalkar", async () => {
@@ -397,6 +479,8 @@ describe("AI taslağı", () => {
 describe("ilişkiler", () => {
   it("taslak ilişki düzenlenir; geçersiz ifade alanın yanında, geçerli kayıt sonrası PO onayına gider", async () => {
     await oturumAc("analist");
+    // Örnek veride taslak ilişki yok (golden'da yalnız I1): elle eklenir.
+    await api.iliskiEkle(REQ, { icerik: YEDI_ARTIS_ILISKISI, karar_tablosu_id: "kt-1" });
     uygulama();
     const r = (await screen.findAllByTestId("iliski-kart")).find((x) => within(x).queryByText("Taslak"))!;
     await userEvent.click(within(r).getByRole("button", { name: "Düzenle" }));
@@ -429,15 +513,23 @@ describe("ilişkiler", () => {
     const s = await within(bolum).findByTestId("turet-sonuc");
     expect(turet).toHaveBeenCalledWith(REQ, { iliski_id: "mi-1", case_ids: ["case-1-2", "case-1-3"] });
     expect(within(s).getByText("Türetilen (1)")).toBeInTheDocument();
-    expect(within(s).getByRole("link", { name: /\(ilişki: Adet iki katına/ })).toHaveAttribute("href", `/gereksinimler/${REQ}/caseler`);
+    // Onyüz 13: bağlantı türetilen case'in kartına gider.
+    const yeniId = mockVerisi().caseler.at(-1)!.id;
+    expect(within(s).getByRole("link", { name: /\(ilişki: Adet iki katına/ })).toHaveAttribute("href", `/gereksinimler/${REQ}/caseler#case-${yeniId}`);
     expect(within(s).getByText("Atlanan (1)")).toBeInTheDocument();
-    expect(within(s).getByText("Atlandı: ilişki geçersiz")).toBeInTheDocument();
+    // Onyüz 17: atlama nedeni düz dil.
+    expect(within(s).getByText("Atlandı: ilişkinin ön koşulu bu case için sağlanmıyor")).toBeInTheDocument();
     expect(within(s).getByText(/Ön koşul sağlanmıyor/)).toBeInTheDocument();
     await waitFor(() => expect(s).toHaveFocus());
 
     await userEvent.click(within(bolum).getByRole("button", { name: "Ek case türet" }));
-    await waitFor(() => expect(within(bolum).getByText("Atlandı: zaten türetildi")).toBeInTheDocument());
-    expect(within(bolum).getByRole("link", { name: "Türetilen case'i aç" })).toBeInTheDocument();
+    await waitFor(() => expect(within(bolum).getByText("Atlandı: bu case'ten bu ilişkiyle daha önce türetildi")).toBeInTheDocument());
+    expect(within(bolum).getByRole("link", { name: "Türetilen case'i aç" })).toHaveAttribute("href", `/gereksinimler/${REQ}/caseler#case-${yeniId}`);
+    // Onyüz 14: türetme geçmişi açılınca yüklenir.
+    const gecmis = within(bolum).getByTestId("turetme-gecmisi");
+    await userEvent.click(within(gecmis).getByText("Türetme geçmişi"));
+    expect(await within(gecmis).findByText("Türetildi")).toBeInTheDocument();
+    expect(within(gecmis).getByRole("link", { name: "Türetilen case" })).toHaveAttribute("href", `/gereksinimler/${REQ}/caseler#case-${yeniId}`);
   });
 
   it("onaylı ilişki yoksa düğme pasif ve nedeni görünür; PO türetemez", async () => {
