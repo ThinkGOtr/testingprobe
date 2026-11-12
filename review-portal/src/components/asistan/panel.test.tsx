@@ -599,7 +599,8 @@ describe("Asistana sor ve son hata", () => {
     uygulama("/gereksinimler/boyle-bir-gereksinim-yok");
     // Canlı bölge yalnız metindir; düğme kutuda kardeş öğedir.
     const kutu = (await screen.findByRole("alert", {}, { timeout: 5000 })).parentElement!;
-    await u.click(within(kutu).getByRole("button", { name: "Asistana sor" }));
+    // Düğme son hata kaydı yazılınca çizilir (yük altında alarmdan bir tik sonra): beklenir.
+    await u.click(await within(kutu).findByRole("button", { name: "Asistana sor" }));
     expect(within(panel()).getByLabelText("Sorunuz")).toHaveValue("Bu hata ne demek, ne yapmalıyım?");
     expect(within(panel()).getByText(/Son hata:/)).toBeInTheDocument();
   });

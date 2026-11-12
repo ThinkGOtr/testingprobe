@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { canliDerleme, cekirdekYetenekleri, mockDegisikligineAbone, mockUclari, mockZorunlu, ucVar, type Yetenekler } from "../api/http";
 import { useBaglantiDurumu, type BaglantiDurumu } from "../api/events";
 import type { Rol } from "../api/types";
-import { useOturum } from "../auth";
+import { OTOMASYON_ROLLERI, useOturum } from "../auth";
 import { useCapayaKaydir } from "../lib/capa";
 import { ROL } from "../lib/etiketler";
 import { TEMA_ETIKETI, useTema } from "../lib/tema";
@@ -34,8 +34,11 @@ const NAV: { grup: string; ogeler: NavOgesi[] }[] = [
     grup: "İş akışı",
     ogeler: [
       { yol: "/gereksinimler", ad: "Gereksinimler", ikon: "gereksinim", odak: ["analyst", "po"], uc: ["GET", "/requirements"] },
-      { yol: "/kod", ad: "Kod üretimi", ikon: "kod", odak: ["engineer"], uc: ["GET", "/scripts"] },
-      { yol: "/kosular", ad: "Koşular", ikon: "kosu", odak: ["presenter", "engineer"], uc: ["GET", "/runs"] },
+      { yol: "/caseler", ad: "Test case'leri", ikon: "caseler", odak: ["analyst", "tester"], uc: ["GET", "/cases"] },
+      // Kod üretimi ve Koşular otomasyon işidir: yalnız mühendis (ve demo sunucusu) menüsünde
+      // (`OTOMASYON_ROLLERI`; App.tsx aynı listeyle rotayı da korur).
+      { yol: "/kod", ad: "Kod üretimi", ikon: "kod", gorunur: OTOMASYON_ROLLERI, odak: ["engineer"], uc: ["GET", "/scripts"] },
+      { yol: "/kosular", ad: "Koşular", ikon: "kosu", gorunur: OTOMASYON_ROLLERI, odak: ["presenter", "engineer"], uc: ["GET", "/runs"] },
       { yol: "/bug-taslaklari", ad: "Bug taslakları", ikon: "bug", odak: ["tester"], uc: ["GET", "/bug-drafts"] },
     ],
   },

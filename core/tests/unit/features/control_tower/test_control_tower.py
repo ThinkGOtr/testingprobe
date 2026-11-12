@@ -261,11 +261,13 @@ def _script(
     pr_no: int | None = None,
     ilk_sinif: str | None = None,
     zaman: datetime | None = None,
+    dil: str = "ts",
 ) -> uuid.UUID:
     sc = Script(
         id=uuid.uuid4(),
         dosya_yolu=f"e2e/tests/generated/{uuid.uuid4().hex[:6]}.spec.ts",
         durum=durum,
+        dil=dil,
         pass_at_1=pass_at_1,
         insan_review_sonucu=review,
         head_sha=head_sha,
@@ -501,6 +503,37 @@ def test_eksik_metot_ve_replay_miss_review_paydasina_girmez(
     assert (so["script_eksik_metot"], so["script_replay_miss"]) == (1, 1)
     assert (so["script_ortam_hatasi"], so["script_defect_adayi"]) == (0, 0)
     assert (so["pass_at_1"], so["pass_at_1_sayisi"]) == (1.0, 3)
+
+
+def test_dogrulanmamis_script_review_paydasina_girmez(
+    engine: Engine, make_requirement_case
+) -> None:
+    """MİM-Y2: `unverified` (C# / Python) script PR'a ve insan review'una girmez; ilk review
+    başarısının paydasına katılmaz, `script_dogrulanmamis`'ta ayrı sayılır. Eski (yenisi gelince
+    kapanmış) doğrulanmamış kayıt da paydaya girmez; aynı case'in merge edilmiş TS testi birimini
+    korur (doğrulanmamış üretim onu gizlemez)."""
+    c = [make_requirement_case(title=f"case {i}") for i in range(3)]
+    with Session(engine) as s, s.begin(), allow_state_write():
+        _script(s, c[0], "merged", pass_at_1=True, review="kabul", head_sha=SHA_B, pr_no=40,
+                ilk_sinif="gecti")  # fmt: skip
+        r = _run_ekle(s, "pr", "passed", datetime.now(UTC) - timedelta(minutes=5),
+                      [("C0", "passed", c[0])])  # fmt: skip
+        s.execute(update(Run).where(Run.id == r).values(commit=SHA_B))
+        # Aynı case + (aynı hash) için sonradan C# üretimi: TS birimini gizlemez.
+        _script(s, c[0], "unverified", dil="csharp")
+        _script(s, c[1], "unverified", dil="python")
+        _script(s, c[2], "closed", dil="csharp")  # eski doğrulanmamış, yenisi gelince kapandı
+    with Session(engine) as s:
+        so = ct.script_olculeri(s)
+        k = ct.control_tower(s)
+    assert so["script_dogrulanmamis"] == 2
+    assert (so["script_ilk_review"], so["script_review_sayisi"]) == (1.0, 1)
+    assert (so["pass_at_1"], so["pass_at_1_sayisi"]) == (1.0, 1)
+    # Tur 2 (MİM-L3): üretim sayısı da tam hat üretimleridir; doğrulanmamış dildeki kayıtlar
+    # (unverified + kapanmış eski) yalnız `script_dogrulanmamis`'ta görünür.
+    assert so["script_birim_sayisi"] == 1 and so["script_uretim_sayisi"] == 1
+    # API yanıtı (`GET /control-tower` `ai_katkisi`) alanı taşır.
+    assert k["ai_katkisi"]["script_dogrulanmamis"] == 2
 
 
 def test_demo_kirma_commiti_gecme_oranina_girmez(engine: Engine) -> None:

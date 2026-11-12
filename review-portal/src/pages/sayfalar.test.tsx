@@ -74,7 +74,7 @@ describe("oturum ve yönlendirme", () => {
     await u.click(dugme);
     expect(dugme).toHaveAttribute("aria-expanded", "true");
     expect(menu).toHaveClass("acik");
-    within(menu).getByRole("link", { name: "Koşular" }).focus();
+    within(menu).getByRole("link", { name: "Bug taslakları" }).focus();
     await u.keyboard("{Escape}");
     expect(dugme).toHaveAttribute("aria-expanded", "false");
     expect(menu).not.toHaveClass("acik");
@@ -115,8 +115,8 @@ describe("oturum ve yönlendirme", () => {
     const dugme = screen.getByRole("button", { name: "Menü" });
     const menu = screen.getByRole("navigation", { name: "Ana menü" });
     await u.click(dugme);
-    await u.click(within(menu).getByRole("link", { name: "Koşular" }));
-    await screen.findByRole("heading", { name: "Koşular", level: 1 });
+    await u.click(within(menu).getByRole("link", { name: "Bug taslakları" }));
+    await screen.findByRole("heading", { name: "Bug taslakları", level: 1 });
     expect(dugme).toHaveAttribute("aria-expanded", "false");
     expect(menu).not.toHaveClass("acik");
     expect(screen.getByRole("main")).toHaveFocus();
@@ -137,8 +137,8 @@ describe("ekranlar", () => {
     // TPD-1: core durumu `done`, akış ipucu 6 (Review + kırma)
     expect(screen.getByText("Case'ler yayınlandı")).toBeInTheDocument();
     expect(screen.getByText("Review + kırma")).toBeInTheDocument();
-    // TPD-1 case sayacı: 9 üretildi, 1 reddedildi → süitte 8; 4'ü onaylı/yayında
-    expect(screen.getByText("4/8")).toBeInTheDocument();
+    // TPD-1 case sayacı: 10 üretildi, 2 reddedildi → süitte 8; 6'sı onaylı/yayında
+    expect(screen.getByText("6/8")).toBeInTheDocument();
     expect(screen.getByText("Serbest metin")).toBeInTheDocument();
   });
 

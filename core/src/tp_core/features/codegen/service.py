@@ -41,6 +41,17 @@ akışın aynısıdır. `android` | `ios` | `windows`: sembol tablosu Java ekran
 dalıyla önek çakışması yok), dosya `<e2e-app>/…/uretilen/<Story><Platform>C<n>_<uuid8>Test.java`;
 aynı case'in platformları birbirinin script'ini/PR'ını kapatmaz.
 
+**Üretim dili (011 §2.1, §2.7):** dil platformdan türetilmez (`script.dil`: `ts` | `java` |
+`csharp` | `python`). Her dal iki sorudan birine bakar: **araç/ortam** (ajan + MCP, tekrar sayısı,
+dal adı) platforma; **kod/derleme** (sembol tablosu, fikstür/bayi kaynağı, şablon, `/check`
+gövdesi, hata satırı eşleme) dile. Web + Java: ajan web'dir (`verify_and_map`, Playwright MCP;
+REPLAY anahtarı dil içermez), sembol tablosu/fikstür/bayiler `e2e-java`'dan, dosya
+`<e2e-java>/…/uretilen/<Sinif>Test.java`, `/check` `{lang: "java", platform: "web"}`, tekrar 3.
+Doğrulanmamış diller (`csharp`, `python`): ajan adımları tarayıcıda yine doğrular, eşleme repodaki
+tam hat dilinin tablosuyla ("referans tablo": önce ts, yoksa java) denetlenir; render edilen
+kaynak `script_codegen.kaynak_kod`'a yazılır, **commit/PR/yerel kontrol yoktur**, durum
+`unverified` (yeniden üretim: `unverified → pending`).
+
 Tüm dış etkiler (dal, PR, merge) yalnızca core-worker'dadır (forge yazma kimliği ve `tp_forge`
 yalnızca orada). Kararlar ve geçişler denetim zincirine yazılır (Constitution VIII).
 """
@@ -66,7 +77,9 @@ from tp_core.audit.chain import chain_tip
 from tp_core.config import get_settings
 from tp_core.events.bus import publish_tx
 from tp_core.features.codegen import checks as kontroller
+from tp_core.features.codegen import dil_algila
 from tp_core.features.codegen import platform as platformlar
+from tp_core.features.codegen import render as render_modulu
 from tp_core.features.codegen.browser import (
     MAX_TOOL_CALLS,
     AgentApp,
@@ -91,13 +104,16 @@ from tp_core.features.codegen.render import (
     java_repo_path,
     parse_dealers,
     parse_java_dealers,
-    render_java_test,
-    render_test,
     slug,
     ts_literal,
 )
 from tp_core.features.codegen.toolchain import ToolchainClient, ToolchainError
-from tp_core.integrations.forge import CASE_BRANCH_PREFIX, ForgeError, ForgeNotFoundError
+from tp_core.integrations.forge import (
+    CASE_BRANCH_PREFIX,
+    ForgeError,
+    ForgeNotFoundError,
+    ZorunluCheckKaynagi,
+)
 from tp_core.models import (
     AiCall,
     ExternalRef,
@@ -154,7 +170,8 @@ REPEAT_EACH_UYGULAMA = 1
 
 
 def tekrar_sayisi(platform: str | None) -> int:
-    """Yerel kontrolün `repeat_each`'i: web 3, uygulama (cihaz) 1."""
+    """Yerel kontrolün `repeat_each`'i: web 3, uygulama (cihaz) 1. Araç/ortam sorusudur: dile
+    bakmaz (web + Java da 3 tekrar koşar; 011 §2.7)."""
     return REPEAT_EACH_UYGULAMA if platformlar.uygulama_mi(platform) else REPEAT_EACH
 
 
@@ -202,23 +219,80 @@ def e2e_app_root() -> str:
     return f"{kok}/{platformlar.E2E_APP_DIZINI}" if kok else platformlar.E2E_APP_DIZINI
 
 
-def bayiler_path() -> str:
-    """Java e2e bayileri (`Bayiler.E2E`; web `tests/fixtures.ts` `DEALERS` karşılığı)."""
-    return f"{e2e_app_root()}/src/test/java/com/antreklabs/bayi/altyapi/Bayiler.java"
+def e2e_java_root() -> str:
+    """Forge deposunda web + Java (Playwright for Java + TestNG) projesinin kökü (`e2e-java` ya da
+    `demo-app/e2e-java`; 011 §2.5)."""
+    kok = app_root()
+    return f"{kok}/{platformlar.E2E_JAVA_DIZINI}" if kok else platformlar.E2E_JAVA_DIZINI
 
 
-def e2e_goreli(dosya_yolu: str | None, platform: str | None = None) -> str:
-    """Forge yolu → toolchain `/check` `test_files` yolu (e2e / e2e-app köküne göre)."""
+def java_koku(platform: str | None) -> str:
+    """Java test projesinin forge kökü: uygulama platformu → `e2e-app`, web → `e2e-java`."""
+    return e2e_app_root() if platformlar.uygulama_mi(platform) else e2e_java_root()
+
+
+def bayiler_path(platform: str | None = None) -> str:
+    """Java e2e bayileri (`Bayiler.E2E`; web `tests/fixtures.ts` `DEALERS` karşılığı). `platform`
+    verilmezse uygulama projesi (`e2e-app`; 009 çağıranları); `web` → `e2e-java`."""
+    kok = e2e_app_root() if platform is None else java_koku(platform)
+    return f"{kok}/src/test/java/com/antreklabs/bayi/altyapi/Bayiler.java"
+
+
+def uretim_koku(dil: str | None, platform: str | None) -> str:
+    """Üretilen testin forge'daki proje kökü (`RenderInput.e2e_root`): ts → `e2e`; java → `e2e-app`
+    (uygulama) / `e2e-java` (web); doğrulanmamış diller → `e2e-csharp` / `e2e-python` (yalnız
+    gösterilen yol: bu dillerde forge'a hiçbir şey yazılmaz)."""
+    d = platformlar.dil(platform, dil)
+    if platformlar.java_mi(d):
+        return java_koku(platform)
+    if d == platformlar.TS:
+        return e2e_root()
+    kok = app_root()
+    return f"{kok}/e2e-{d}" if kok else f"e2e-{d}"
+
+
+def e2e_goreli(dosya_yolu: str | None, platform: str | None = None, dil: str | None = None) -> str:
+    """Forge yolu → toolchain `/check` `test_files` yolu (dilin proje köküne göre: ts `e2e`,
+    Java `e2e-app` / `e2e-java`). `dil` verilmezse platformun varsayılanı."""
     yol = dosya_yolu or ""
-    kokler = (
-        (e2e_app_root(), platformlar.E2E_APP_DIZINI)
-        if platformlar.uygulama_mi(platform)
-        else (e2e_root(), "e2e")
-    )
+    d = platformlar.dil(platform, dil)
+    if not platformlar.java_mi(d):
+        kokler = (e2e_root(), "e2e")
+    elif platformlar.uygulama_mi(platform):
+        kokler = (e2e_app_root(), platformlar.E2E_APP_DIZINI)
+    else:
+        kokler = (e2e_java_root(), platformlar.E2E_JAVA_DIZINI)
     for kok in kokler:
         if yol.startswith(kok + "/"):
             return yol[len(kok) + 1 :]
     return yol
+
+
+def baslangic_dosya_yolu(
+    dil: str, platform: str, story: str | None, sira_no: int, case_id: uuid.UUID
+) -> str:
+    """Script'in üretim başlamadan gösterilen dosya yolu; render sonrası `Rendered.repo_path`
+    yazılır ve aynıdır: yollar render'ın kendi kuralından türetilir (K-T6, tek kaynak)."""
+    if platformlar.java_mi(dil):
+        # Web + Java sınıf adı da platformu taşır (`TPD1WebC3_<uuid8>Test`): `java-araclar guard`
+        # dosya adı kuralı ve e2e-app adlarıyla aynı biçim.
+        return java_repo_path(java_koku(platform), story, platform, sira_no, case_id)
+    if platformlar.dogrulanmamis_mi(dil):
+        return render_modulu.dogrulanmamis_repo_path(
+            dil, story, sira_no, case_id, uretim_koku(dil, platform)
+        )
+    return f"{e2e_root()}/tests/generated/{slug(story, sira_no, case_id)}.spec.ts"
+
+
+def toolchain_hedefi(platform: str | None, dil: str | None) -> dict[str, str]:
+    """`ToolchainClient.symbols` / `.check` anahtar argümanları. Web + ts → boş (istek baytları
+    değişmez); uygulama → `platform` (009); web + Java → `lang="java"`, `platform="web"`."""
+    d = platformlar.dil(platform, dil)
+    if not platformlar.java_mi(d):
+        return {}
+    if platformlar.uygulama_mi(platform):
+        return {"platform": str(platform)}
+    return {"lang": platformlar.JAVA, "platform": platformlar.WEB}
 
 
 def adim5_butce_s() -> int:
@@ -236,6 +310,18 @@ class ScriptNotFound(WorkflowError):
 
 class CodegenRejected(WorkflowError):
     """İstek kabul edilmedi (case onaysız, hash eşleşmiyor …)."""
+
+
+class GecersizDil(CodegenRejected):
+    """Bilinmeyen dil, geçersiz (platform, dil) çifti ya da repoda projesi olmayan dil (422)."""
+
+    status_code = 422
+
+
+class DilCakismasi(CodegenRejected):
+    """Case'in bu platformdaki testi başka bir tam hat dilinde merge edilmiş (409; K-T4)."""
+
+    kod = "dil_cakismasi"
 
 
 class MergeGirdisiHatali(WorkflowError):
@@ -473,21 +559,217 @@ def replay_temel_durum_engeli() -> str | None:
     return REPLAY_TEMEL_ENGELI if durum == NEW_TESTID else None
 
 
+def proje_dosyasi(dil: str, platform: str | None = platformlar.WEB) -> str:
+    """Tam hat dilinin forge'daki test projesi dosyası (uygulama köküne göre; `TP_FORGE_APP_ROOT`):
+    ts → `<e2e>/package.json`, Java → `<e2e-java|e2e-app>/pom.xml`."""
+    if platformlar.java_mi(dil):
+        return f"{java_koku(platform)}/pom.xml"
+    return f"{e2e_root()}/package.json"
+
+
+DEPO_OKUNAMADI = (
+    "Depo okunamadı; bu dilin test projesi doğrulanamadı (kullanılabilirlik bilinmiyor)"
+)
+
+
+def _github_dil_engeli(platform: str, dil: str) -> str | None:
+    """K-T3: GitHub kipinde web + Java yalnız `java ∈ TP_WEB_DILLERI` iken üretilebilir (iş akışı
+    `web-java` zorunlu check'i ve kardeş koşu buna bağlı). LocalForge'da repodaki dosyalar
+    belirler. Geçersiz değer yapılandırma hatasıdır (GitHubForge da kurulamaz)."""
+    if (
+        get_settings().forge != "github"
+        or platformlar.uygulama_mi(platform)
+        or not platformlar.java_mi(dil)
+    ):
+        return None
+    import os
+
+    from tp_core.integrations.forge import (
+        WEB_DILLERI_ENV,
+        ForgeValidationError,
+        etkin_web_dilleri,
+    )
+
+    try:
+        etkin = etkin_web_dilleri(os.environ)
+    except ForgeValidationError as exc:
+        return f"Yapılandırma hatası: {exc}"
+    if platformlar.JAVA in etkin:
+        return None
+    return (
+        f"GitHub kipinde Java web hattı etkin değil ({WEB_DILLERI_ENV} java içermiyor; "
+        "web-java iş akışı zorunlu check değil)"
+    )
+
+
+def _proje_engeli(alg: dil_algila.Algilama, platform: str, dil: str) -> str | None:
+    """Dil bu repoda üretilemiyorsa Türkçe neden; üretilebiliyorsa (ya da repo okunamadığı için
+    bilinmiyorsa) None. Tam hat dili kendi test projesini ister; doğrulanmamış dil referans tablo
+    için bir tam hat projesi ister (011 §2.3, §2.7). GitHub kipinde Java web ayrıca
+    `TP_WEB_DILLERI`'ne bağlıdır (K-T3)."""
+    github = _github_dil_engeli(platform, dil)
+    if github:
+        return github
+    if not alg.projeler:
+        return None  # forge okunamadı: engelleme (işte ortam hatası olarak görünür)
+    if platformlar.uygulama_mi(platform):
+        return (
+            None
+            if alg.projeler.get(platformlar.JAVA)
+            else f"Depoda Java uygulama test projesi ({proje_dosyasi(platformlar.JAVA, platform)}) "
+            "yok"
+        )
+    if platformlar.tam_hat_mi(dil):
+        if alg.projeler.get(dil):
+            return None
+        ad = "TypeScript" if dil == platformlar.TS else "Java web"
+        return f"Depoda {ad} test projesi ({proje_dosyasi(dil, platform)}) yok"
+    if any(alg.projeler.get(d) for d in platformlar.TAM_HAT_DILLERI):
+        return None
+    return (
+        f"Depoda referans alınacak tam hat test projesi ({proje_dosyasi(platformlar.TS)} ya da "
+        f"{proje_dosyasi(platformlar.JAVA)}) yok"
+    )
+
+
+def _algila(platform: str) -> dil_algila.Algilama:
+    """`main`'deki testlerden dil algılama; forge kurulamaz/okunamazsa varsayılan (`hata` dolu).
+
+    core-api forge'u yalnız okumak için kurar (GitHub kipinde `GITHUB_READ_TOKEN`); kurulamazsa
+    algılama atlanır ve `/code/languages` sonucu "bilinmiyor" diye işaretler."""
+    try:
+        forge = _forge()
+    except Exception as exc:  # core-api forge'a erişemiyorsa algılama atlanır
+        log.warning("dil algılama için forge kurulamadı: %s", exc)
+        return dil_algila.varsayilan(platform, hata=f"forge kurulamadı: {type(exc).__name__}")
+    return dil_algila.algila(forge, "main", platform, uygulama_koku=app_root())
+
+
+def dil_coz(platform: str, dil: str | None) -> tuple[str, str]:
+    """İsteğin (dil, dil_kaynagi)'sı (011 §2.3). `dil` verildiyse `secildi` (geçersiz çift ya da
+    repoda projesi olmayan dil → `GecersizDil`, 422); verilmediyse repodan algılanan dil
+    (`algilandi`), algılama sonuçsuzsa ya da algılanan dil üretilemiyorsa platformun varsayılanı
+    (`varsayilan`)."""
+    alg = _algila(platform)
+    if dil is not None and str(dil).strip():
+        try:
+            secilen = platformlar.gecerli_dil(platform, dil)
+        except ValueError as exc:
+            raise GecersizDil(str(exc)) from exc
+        engel = _proje_engeli(alg, platform, secilen)
+        if engel:
+            raise GecersizDil(f"{platformlar.DIL_ETIKETI[secilen]} ile kod üretilemez: {engel}")
+        return secilen, "secildi"
+    if alg.kaynak == "algilandi" and _proje_engeli(alg, platform, alg.dil) is None:
+        return alg.dil, "algilandi"
+    return platformlar.varsayilan_dil(platform), "varsayilan"
+
+
+def dil_secenekleri(platform: str | None) -> dict[str, Any]:
+    """`GET /code/languages?platform=<p>` (011 §2.3): algılanan dil, dosya sayıları ve platformun
+    dil seçenekleri (çatı, hat, kullanılabilirlik + neden)."""
+    try:
+        p = platformlar.gecerli(platform)
+    except ValueError as exc:
+        raise GecersizDil(str(exc)) from exc
+    alg = _algila(p)
+    algilanan, kaynak = alg.dil, alg.kaynak
+    if kaynak == "algilandi" and _proje_engeli(alg, p, algilanan) is not None:
+        algilanan, kaynak = platformlar.varsayilan_dil(p), "varsayilan"
+    secenekler = []
+    for d in platformlar.platform_dilleri(p):
+        neden = _proje_engeli(alg, p, d)
+        secenekler.append(
+            {
+                "dil": d,
+                "etiket": platformlar.DIL_ETIKETI[d],
+                "cati": platformlar.cati(p, d),
+                "hat": "tam" if platformlar.tam_hat_mi(d) else "dogrulanmamis",
+                # Depo okunamadıysa engellenmez ama "bilinmiyor" nedeni dürüstçe yazılır.
+                "kullanilabilir": neden is None,
+                "neden": neden or (DEPO_OKUNAMADI if alg.hata else None),
+            }
+        )
+    return {
+        "platform": p,
+        "algilanan": algilanan,
+        "kaynak": kaynak,
+        # Algılama yapılamadıysa nedeni (kaynak `varsayilan`); yapıldıysa null.
+        "neden": f"Dil algılanamadı ({alg.hata}); varsayılan dil önerildi" if alg.hata else None,
+        "sayilar": {d: int(alg.sayilar.get(d, 0)) for d in platformlar.platform_dilleri(p)},
+        # Okuma bütçesi bittiği için sayısı alt sınır olan diller ("en az N"; tur 3 Y-2).
+        "en_az": [d for d in platformlar.platform_dilleri(p) if d in alg.en_az],
+        "secenekler": secenekler,
+    }
+
+
+def dil_cakismasi(
+    mevcut: Sequence[tuple[Script, ScriptCodegen]], platform: str, dil: str
+) -> str | None:
+    """K-T4: tam hat isteğinde aynı case+platformun başka dilde **merge edilmiş** script'i varsa
+    Türkçe neden (409); yoksa None. Doğrulanmamış istek repoya yazmadığı için çakışmaz."""
+    if not platformlar.tam_hat_mi(dil):
+        return None
+    for sc, _cg in mevcut:
+        onceki = platformlar.dil(platform, sc.dil)
+        if sc.durum == "merged" and onceki != dil:
+            yer = "web testi" if platform == platformlar.WEB else f"{platform} testi"
+            return (
+                f"Bu case'in {yer} {platformlar.DIL_ETIKETI.get(onceki, onceki)} ile merge "
+                "edildi; dil değiştirmek için önce mevcut testi kaldırın: mevcut test dosyasını "
+                "silen bir PR'ı merge edin, sonra yeniden üretin"
+            )
+    return None
+
+
+def _yeniden_bekleyene_al(session: Session, sc: Script, cg: ScriptCodegen, user: Principal) -> None:
+    """`unverified → pending` (011 §2.2): doğrulanmamış script aynı kayıtta yeniden üretilir
+    (başka dilde ya da aynı dilde). Önceki üretimin kaynağı, eşlemesi ve ajan adımları silinir;
+    denetim zinciri ve `ai_call` kayıtları kalır."""
+    transition(session, sc, "pending", user, "unverified", sebep="yeniden üretim istendi")
+    session.execute(text("DELETE FROM script_adim WHERE script_id = :s"), {"s": sc.id})
+    session.execute(text("DELETE FROM step_mapping WHERE script_id = :s"), {"s": sc.id})
+    sc.icerik = sc.icerik_hash = sc.head_sha = None
+    sc.pass_at_1 = sc.onarim_sonrasi_sonuc = None
+    cg.kaynak_kod = cg.eslesme = cg.ilk_eslesme = cg.yerel_kontrol = None
+    cg.dogrulama = []
+    cg.engel_turu = cg.engel_nedeni = None
+    cg.sablon_hash = cg.bundle_hash = cg.symbols_sha = None
+    cg.duzeltme_turu = 0
+
+
 def start_generation(
     session: Session,
     case_ids: Sequence[uuid.UUID],
     user: Principal,
     platform: str = platformlar.WEB,
+    dil: str | None = None,
 ) -> dict[str, Any]:
     """`POST /code/generate`: uygun case'ler için script + iş akışı + `codegen.generate` işi.
 
     `platform` (009 §2.1; varsayılan `web`): üretilecek testin hedefi. Aynı case'in başka
     platformdaki script'i/PR'ı bu istekten etkilenmez.
+
+    `dil` (011 §2.3): üretim dili. Verilmezse hedef repodan algılanır (`dil_kaynagi="algilandi"`,
+    sonuçsuzsa `varsayilan`); verilirse `secildi`.
+
+    Etkin script anahtarı (case, platform)'dur ve yalnız **tam hat** (ts, java) script'leri etkin
+    sayılır (inceleme turu 1, K-T4):
+
+    - Tam hat isteği: başka dildeki açık PR'ı kapatıp yeniden üretir (dil değiştirmek = yeniden
+      üretmek); aynı dil + aynı onaylı içerik için açık/merge edilmiş PR varsa yeniden üretilmez.
+      Aynı case+platformda **başka dilde merge edilmiş** script varsa istek reddedilir (409): repoda
+      aynı case iki kez olmasın. En yeni `unverified` kayıt yeniden kullanılır.
+    - Doğrulanmamış (csharp, python) istek: tam hat script'lerine (`pr_open`, `merged`, süren
+      üretim) **dokunmaz** — kapatma yok, forge'a yazma yok. Yalnız doğrulanmamış kayıtlar
+      değerlendirilir: süren üretim atlatır, en yeni `unverified` yeniden kullanılır, eskileri
+      `closed` olur.
     """
     try:
         platform = platformlar.gecerli(platform)
     except ValueError as exc:
         raise CodegenRejected(str(exc)) from exc
+    dil, dil_kaynagi = dil_coz(platform, dil)
     ids = list(dict.fromkeys(case_ids))
     if not ids:
         raise CodegenRejected("En az bir case seçin")
@@ -502,31 +784,56 @@ def start_generation(
         tc = session.get(TestCase, cid, with_for_update=True)
         if tc is None:
             sonuclar.append(
-                {"case_id": str(cid), "platform": platform, "durum": "bulunamadi",
+                {"case_id": str(cid), "platform": platform, "dil": dil, "durum": "bulunamadi",
                  "neden": "case yok"}
             )  # fmt: skip
             continue
         engel = case_blocker(session, tc)
         if engel:
             sonuclar.append(
-                {"case_id": str(cid), "platform": platform, "durum": "reddedildi", "neden": engel}
-            )
+                {"case_id": str(cid), "platform": platform, "dil": dil, "durum": "reddedildi",
+                 "neden": engel}
+            )  # fmt: skip
             continue
         h = content_hash(tc.icerik)
         atla: dict[str, Any] | None = None
-        for sc, cg in _mevcut_scriptler(session, cid, platform):
+        yeniden: tuple[Script, ScriptCodegen] | None = None
+        mevcut = _mevcut_scriptler(session, cid, platform)
+        cakisma = dil_cakismasi(mevcut, platform, dil)
+        if cakisma:
+            # Hiçbir kayda dokunulmadan reddedilir (kapatma/geçiş yok).
+            sonuclar.append(
+                {"case_id": str(cid), "platform": platform, "dil": dil, "durum": "cakisma",
+                 "neden": cakisma}
+            )  # fmt: skip
+            continue
+        for sc, cg in mevcut:
+            if not platformlar.tam_hat_mi(dil) and not platformlar.dogrulanmamis_mi(sc.dil):
+                # K-T4: doğrulanmamış üretim tam hat script'ine (PR'ı, merge'ü, süren işi) dokunmaz.
+                continue
             if sc.durum in AKTIF and recover_stuck(session, sc, cg):
                 pass  # iş dışı çöküşle takılmıştı: failed'a alındı, aşağıda kapanır
             if sc.durum in AKTIF:
                 atla = {"durum": "suruyor", "script_id": str(sc.id), "neden": "üretim sürüyor"}
                 break
-            if sc.durum in ("pr_open", "merged") and cg.case_hash == h:
+            # Dil değiştirmek yeniden üretmektir (011 §2.2): başka dildeki PR bu isteği atlatmaz.
+            if sc.durum in ("pr_open", "merged") and cg.case_hash == h and sc.dil == dil:
                 atla = {
                     "durum": "pr_acik" if sc.durum == "pr_open" else "merge_edildi",
                     "script_id": str(sc.id),
                     "neden": "bu onaylı içerik için bu platformda PR zaten var",
                 }
                 break
+            if sc.durum == "unverified":
+                # Doğrulanmamış script'in PR'ı yoktur: en yenisi aynı kayıtta yeniden üretilir.
+                if yeniden is None:
+                    yeniden = (sc, cg)
+                else:
+                    transition(
+                        session, sc, "closed", user, "unverified",
+                        sebep="case için yeniden üretim istendi",
+                    )  # fmt: skip
+                continue
             if sc.durum in ("pr_open", "blocked", "failed"):
                 transition(
                     session,
@@ -537,46 +844,71 @@ def start_generation(
                     sebep="case için yeniden üretim istendi",
                 )
         if atla is not None:
-            sonuclar.append({"case_id": str(cid), "platform": platform, **atla})
+            sonuclar.append({"case_id": str(cid), "platform": platform, "dil": dil, **atla})
             continue
         req = session.get(Requirement, tc.requirement_id)
         story = req.jira_key if req else None
-        if platformlar.uygulama_mi(platform):
-            dosya = java_repo_path(e2e_app_root(), story, platform, tc.sira_no, cid)
+        dosya = baslangic_dosya_yolu(dil, platform, story, tc.sira_no, cid)
+        # Doğrulanmamış dilde forge'a hiçbir şey yazılmaz: dal yoktur.
+        dal = branch_for(cid, platform) if platformlar.tam_hat_mi(dil) else None
+        baslik = str(tc.icerik.get("title") or "")[:300]
+        if yeniden is not None:
+            sc, cg = yeniden
+            onceki_is = cg.job_id
+            _yeniden_bekleyene_al(session, sc, cg, user)
+            sc.dosya_yolu, sc.branch, sc.uretim_modu = dosya, dal, beklenen_uretim_modu()
+            sc.dil, sc.dil_kaynagi = dil, dil_kaynagi
+            cg.requirement_id, cg.case_hash, cg.story_key = tc.requirement_id, h, story
+            cg.test_key, cg.sira_no, cg.baslik = _test_key(session, cid), tc.sira_no, baslik
+            cg.uretim_modu = sc.uretim_modu
+            is_anahtari = f"{GEN_JOB}:{sc.id}:{onceki_is}"
         else:
-            dosya = f"{e2e_root()}/tests/generated/{slug(story, tc.sira_no, cid)}.spec.ts"
-        sc = Script(
-            tur="test",
-            dosya_yolu=dosya,
-            branch=branch_for(cid, platform),
-            uretim_modu=beklenen_uretim_modu(),
-            platform=platform,
-        )
-        session.add(sc)
-        session.flush()
-        cg = ScriptCodegen(
-            script_id=sc.id,
-            test_case_id=cid,
-            requirement_id=tc.requirement_id,
-            case_hash=h,
-            story_key=story,
-            test_key=_test_key(session, cid),
-            sira_no=tc.sira_no,
-            baslik=str(tc.icerik.get("title") or "")[:300],
-            uretim_modu=sc.uretim_modu,
-        )
-        session.add_all([cg, ScriptTestCase(script_id=sc.id, test_case_id=cid)])
+            sc = Script(
+                tur="test",
+                dosya_yolu=dosya,
+                branch=dal,
+                uretim_modu=beklenen_uretim_modu(),
+                platform=platform,
+                dil=dil,
+                dil_kaynagi=dil_kaynagi,
+            )
+            session.add(sc)
+            session.flush()
+            cg = ScriptCodegen(
+                script_id=sc.id,
+                test_case_id=cid,
+                requirement_id=tc.requirement_id,
+                case_hash=h,
+                story_key=story,
+                test_key=_test_key(session, cid),
+                sira_no=tc.sira_no,
+                baslik=baslik,
+                uretim_modu=sc.uretim_modu,
+            )
+            session.add_all([cg, ScriptTestCase(script_id=sc.id, test_case_id=cid)])
+            is_anahtari = f"{GEN_JOB}:{sc.id}"
         session.flush()
         wf_id, job_id = start_workflow(
             session.connection(),
             WORKFLOW_TUR,
             user.kullanici_adi,
-            yuk={"script_id": str(sc.id), "baslatan": user.as_dict(), "platform": platform},
+            yuk={
+                "script_id": str(sc.id),
+                "baslatan": user.as_dict(),
+                "platform": platform,
+                "dil": dil,
+            },
             job_tur=GEN_JOB,
             nesne_turu="script",
             nesne_id=sc.id,
-            baglam={"case_id": str(cid), "story": story, "case_hash": h, "platform": platform},
-            idempotency_key=f"{GEN_JOB}:{sc.id}",
+            baglam={
+                "case_id": str(cid),
+                "story": story,
+                "case_hash": h,
+                "platform": platform,
+                "dil": dil,
+            },
+            idempotency_key=is_anahtari,
         )
         cg.workflow_id, cg.job_id = wf_id, job_id
         audit_on_commit(
@@ -590,12 +922,15 @@ def start_generation(
                 "workflow_id": wf_id,
                 "job_id": job_id,
                 "platform": platform,
+                "dil": dil,
+                "dil_kaynagi": dil_kaynagi,
             },
         )
         sonuclar.append(
             {
                 "case_id": str(cid),
                 "platform": platform,
+                "dil": dil,
                 "durum": "basladi",
                 "script_id": str(sc.id),
                 "job_id": str(job_id),
@@ -603,27 +938,54 @@ def start_generation(
             }
         )
     baslayan = [s for s in sonuclar if s["durum"] == "basladi"]
-    hatali = [s for s in sonuclar if s["durum"] in ("bulunamadi", "reddedildi")]
+    hatali = [s for s in sonuclar if s["durum"] in ("bulunamadi", "reddedildi", "cakisma")]
     if not baslayan and hatali and len(hatali) == len(sonuclar):
-        raise CodegenRejected(
+        if len(hatali) == 1 and hatali[0]["durum"] == "cakisma":
+            raise DilCakismasi(hatali[0]["neden"])
+        hata = DilCakismasi if any(s["durum"] == "cakisma" for s in hatali) else CodegenRejected
+        raise hata(
             "Kod üretimi başlatılamadı: "
             + "; ".join(f"{s['case_id'][:8]}: {s['neden']}" for s in hatali)
         )
     ilk = baslayan[0] if baslayan else {}
+    # K-T12: toplu istekte başka dilde merge edilmiş testi olan case'ler sessizce kaybolmaz;
+    # sayı yanıt mesajına ve `cakisma_sayisi` alanına (portal) yansır.
+    cakisma_sayisi = sum(1 for s in sonuclar if s["durum"] == "cakisma")
+    cakisma_eki = (
+        f" {cakisma_sayisi} case başka dilde merge edilmiş testi olduğu için üretilmedi (mevcut "
+        "test dosyasını silen bir PR'ı merge edin, sonra yeniden üretin)."
+        if cakisma_sayisi
+        else ""
+    )
     return {
         "job_id": ilk.get("job_id"),
         "workflow_id": ilk.get("workflow_id"),
         "durum": "started" if baslayan else "none",
         "platform": platform,
+        "dil": dil,
+        "dil_kaynagi": dil_kaynagi,
         "mesaj": (
-            f"{len(baslayan)} case için kod üretimi başlatıldı"
-            + ("." if platform == platformlar.WEB else f" ({platform}).")
+            f"{len(baslayan)} case için kod üretimi başlatıldı" + _hedef_eki(platform, dil)
             if baslayan
             else "Yeni üretim gerekmiyor (süren iş ya da açık PR var)."
-        ),
+        )
+        + cakisma_eki,
+        "cakisma_sayisi": cakisma_sayisi,
         "script_ids": [s["script_id"] for s in baslayan],
         "sonuclar": sonuclar,
     }
+
+
+def _hedef_eki(platform: str, dil: str) -> str:
+    """Yanıt iletisinin sonu: varsayılan hedefte (web + ts) yalnız nokta; yoksa platform ve/veya
+    dil (`(android).`, `(Java).`; doğrulanmamış dilde açık not)."""
+    parcalar = [] if platform == platformlar.WEB else [platform]
+    if dil != platformlar.varsayilan_dil(platform):
+        parcalar.append(platformlar.DIL_ETIKETI.get(dil, dil))
+    ek = f" ({', '.join(parcalar)})." if parcalar else "."
+    if platformlar.dogrulanmamis_mi(dil):
+        ek += " Doğrulanmamış dil: kod üretilir ama derlenmez/koşulmaz, PR açılmaz."
+    return ek
 
 
 # ----------------------------------------------------------------- iş (worker): durum
@@ -967,6 +1329,98 @@ def locator_capraz_kontrol(
             if not any(i == t or (p and i.startswith(t)) for t, p in bilinen):
                 out.append((n, f"dönen testId '{i}' page object kütüphanesinde yok"))
                 break
+    return out
+
+
+def locator_capraz_kontrol_testid(
+    kayitlar: Sequence[tuple[Any, ...]],
+    table: kontroller.SymbolTable,
+    *,
+    canli: bool = False,
+) -> list[tuple[int, str]]:
+    """Web ajanının `browser_generate_locator` sonuçlarını **Java** sembol tablosuyla kıyaslar
+    (011 §2.7: web + Java; tablo `e2e-java` `Kimlikler`'den gelir).
+
+    Java tablosunun locator'ları yalnız `testId` (+ `prefix`) taşır: `role`/`name` boştur,
+    `within` yoktur ve anahtarlar `Giris.GIRIS_YAP` biçimindedir. Bu yüzden
+    `locator_capraz_kontrol`'ün rol/ad ve kapsam yolları kullanılamaz; denetim
+    **testId eşitliği** üzerinden yapılır:
+
+    - Dönen ifadede `getByTestId` olmalı (rol/metin locator'ı page object'in bulacağı eleman
+      olduğunu kanıtlamaz) ve zincirdeki **her** testId Kimlikler'de tanımlı olmalı (tam eşit ya da
+      önek anahtarında önek + değer).
+    - Element açıklaması bir Kimlikler anahtarı taşıyorsa (`button "Giriş yap" (Giris.GIRIS_YAP)`)
+      son testId o anahtarın testId'si olmalı (önekte önek + ürün kodu).
+    - Ürün kodu biliniyorsa (açıklamada ya da canlı snapshot'ta elemanın kartında) zincirdeki her
+      önek testId'si tam o ürünün kimliği olmalı (`product-card-P-001`): başka ürünün kartındaki
+      eleman kabul edilmez.
+    - Canlı kipte `target` bir snapshot ref'i olmalı; `REPLAY sapması` her kipte uyuşmazdır.
+
+    TS tablosuna göre zayıflayan denetim (bilerek, raporlanır): (1) hedefin canlı rol/adından
+    beklenen anahtarın çözülmesi yok — dönen testId'nin kütüphanede **bir** locator olduğu
+    doğrulanır, modelin eşlediği metodun kullandığı locator olduğu değil; (2) `within` kapsamı
+    zorunlu tutulamaz; (3) TS biçimli ipucu (`(login.submit)`) Java tablosunda çözülmez. Yanlış
+    eşleme yine yerel kontrolde (derleme + 3 tekrar koşu) kırmızı olur.
+    """
+    tablo = table.locators()
+    bilinen = [
+        (str(v.get("testId")), bool(v.get("prefix")))
+        for v in tablo.values()
+        if isinstance(v.get("testId"), str) and v.get("testId")
+    ]
+    tamlar = {t for t, p in bilinen if not p}
+    # Uzun önek önce: `cart-line-qty-` kimliği `cart-line-` önekine yanlış bağlanmasın.
+    onekler = sorted((t for t, p in bilinen if p), key=len, reverse=True)
+
+    def onek_of(kimlik: str) -> str | None:
+        return next((o for o in onekler if kimlik.startswith(o) and kimlik != o), None)
+
+    out: list[tuple[int, str]] = []
+    for kayit in kayitlar:
+        n, element, cikti = kayit[0], kayit[1], kayit[2]
+        hedef: LocatorHedefi | None = kayit[3] if len(kayit) > 3 else None
+        metin = cikti or ""
+        if REPLAY_SAPMASI in metin:
+            satir = next((x for x in metin.splitlines() if REPLAY_SAPMASI in x), metin)
+            out.append((n, satir.strip()[:300]))
+            continue
+        if canli and hedef is not None and not hedef.ref_gecerli:
+            out.append((n, f"target snapshot ref'i değil ({hedef.target!r}); seçici verilemez"))
+            continue
+        ifade = donen_locator(metin)
+        ids = _TESTID.findall(ifade or "")
+        if not ids:
+            out.append((n, f"testId'li locator dönmedi ({ifade or 'locator yok'})"))
+            continue
+        kod_m = _URUN_KODU.search(element or "")
+        kod = kod_m.group(1) if kod_m else (hedef.kod if hedef else None)
+        neden: str | None = None
+        for kimlik in ids:
+            if kimlik in tamlar:
+                continue
+            onek = onek_of(kimlik)
+            if onek is None:
+                neden = f"dönen testId '{kimlik}' Kimlikler'de yok"
+            elif kod and kimlik != onek + kod and onek_of(onek + kod) == onek:
+                neden = f"dönen testId '{kimlik}', beklenen '{onek}{kod}'"
+            if neden:
+                break
+        m = _APP_LOCATOR_IPUCU.search(element or "")
+        spec = tablo.get(m.group(1)) if m else None
+        if neden is None and spec is not None and isinstance(spec.get("testId"), str):
+            beklenen = str(spec["testId"])
+            if spec.get("prefix"):
+                tamam = ids[-1] == beklenen + kod if kod else ids[-1].startswith(beklenen)
+                istenen = beklenen + (kod or "…")
+            else:
+                tamam, istenen = ids[-1] == beklenen, beklenen
+            if not tamam:
+                neden = (
+                    f"{m.group(1) if m else ''} için dönen testId '{ids[-1]}', "
+                    f"kütüphanedeki '{istenen}'"
+                )
+        if neden:
+            out.append((n, neden))
     return out
 
 
@@ -1389,7 +1843,8 @@ def _basarisizi_esle(s: Session, sid: uuid.UUID, basarisiz: list[dict[str, Any]]
         return
     sc = s.get(Script, sid)
     satirlar = (sc.icerik or "").splitlines() if sc else []
-    java = sc is not None and platformlar.uygulama_mi(sc.platform)
+    # Kod sorusu: üretilen dosyanın dili (web + Java da Java satırıdır).
+    java = sc is not None and platformlar.java_mi(platformlar.dil(sc.platform, sc.dil))
     literal = java_literal if java else ts_literal
     satir_re = _JAVA_CAGRI_SATIRI if java else _CAGRI_SATIRI
     beklenenler = s.scalars(
@@ -1436,6 +1891,7 @@ def _kosu_kaydet(
     baslama: datetime,
     hata: str | None = None,
     platform: str = platformlar.WEB,
+    dil: str | None = None,
 ) -> str | None:
     """Kontrol koşusunu `run` satırı olarak kaydeder (tetik `local_check` | `break_verify`) ve
     JUnit/JSON raporunu CI yoluyla aynı ayrıştırıcıdan `test_result`'a işler. `run.id` döner.
@@ -1463,6 +1919,7 @@ def _kosu_kaydet(
                     "ref": None,
                     "codegen_tur": tur,
                     "platform": platform,
+                    "dil": platformlar.dil(platform, dil),
                 },
                 artefaktlar={},
             )
@@ -1516,8 +1973,13 @@ def _kontrol(
     yerel_forge: bool = True,
     pr_no: int | None = None,
     platform: str = platformlar.WEB,
+    dil: str | None = None,
 ) -> tuple[Siniflama, bool]:
     """toolchain-worker `/check` → (sınıf, atlandı mı). Sonuç `script_kontrol`'e ve `run`'a yazılır.
+
+    - `/check` gövdesi dile bakar (`toolchain_hedefi`): web + ts değişmez; uygulama `lang=java` +
+      Appium platformu; web + Java `{lang: "java", platform: "web"}` (check adı
+      `platform.check_adi`: `local-ci-web-java`, K-T1).
 
     - Koşu dizini `keep=true` ile istenir: kırarak doğrulama ve defect adayı kanıtı test-runner
       temizliğinde silinmez (MIMARI-SOZLESME §2; kod üretimi koşuları azdır).
@@ -1542,8 +2004,7 @@ def _kontrol(
             break_campaign=kirma,
             run_id=toolchain_run_id,
             keep=True,
-            # Web isteği değişmez; uygulama platformu toolchain'in Java yolunu seçer.
-            **({"platform": platform} if platformlar.uygulama_mi(platform) else {}),
+            **toolchain_hedefi(platform, dil),
         )
         sinif = classify(report)
         sure = report.get("duration_ms")
@@ -1566,7 +2027,7 @@ def _kontrol(
     run_uuid = None
     if not atlandi:
         run_uuid = _kosu_kaydet(
-            sid, sha, tur, kirma, repeat_each, pr_no, report, baslama, sinif.hata, platform
+            sid, sha, tur, kirma, repeat_each, pr_no, report, baslama, sinif.hata, platform, dil
         )
     kayit_sinifi = kirma_sinifi(sinif) if kirma else sinif
     with session_scope() as s:
@@ -1606,6 +2067,7 @@ def _kontrol(
             {
                 "script_id": sid,
                 "platform": platform,
+                "dil": platformlar.dil(platform, dil),
                 "tur": tur,
                 "sinif": kayit_sinifi.sinif,
                 "sonuc": "skipped" if atlandi else sinif.sonuc,
@@ -1697,9 +2159,11 @@ def _eski_prlari_kapat(
     """Yeniden üretimle `closed`'a alınan eski script'lerin forge'da hâlâ açık PR'larını kapatır
     (yalnızca aynı platformun script'leri: başka platformun PR'ı bu üretimin yerine geçmez).
 
-    `start_generation` (core-api) forge'a erişemez; script'i kapatır, PR'ı worker kapatır. Forge
-    kapatma desteklemiyorsa ya da kapatma başarısızsa PR'a yorum yazılır ve kayıt açık kalır
-    (LocalForge ve GitHubForge `close_pr` destekler); denetime ikisi de yazılır.
+    Yalnız tam hat üretiminde çağrılır (K-T4: doğrulanmamış üretim başka script'in PR'ına
+    dokunmaz). `start_generation` (core-api) forge'a **yazmaz** (yazma kimliği yalnız
+    core-worker'dadır; core-api forge'u yalnız dil algılaması için okur): script'i kapatır, PR'ı
+    worker kapatır. Forge kapatma desteklemiyorsa ya da kapatma başarısızsa PR'a yorum yazılır ve
+    kayıt açık kalır (LocalForge ve GitHubForge `close_pr` destekler); denetime ikisi de yazılır.
     """
     with session_scope() as s:
         hedefler = [
@@ -1753,6 +2217,74 @@ def _eski_prlari_kapat(
             )
 
 
+def _tablo_dili(forge: ForgePort, sha: str, platform: str, dil: str) -> str:
+    """Sembol tablosunun alınacağı dil (011 §2.7). Tam hat dilinde kendisi; doğrulanmamış dilde
+    repodaki tam hat dili ("referans tablo": önce ts, yoksa java). Repo okunamadıysa ts denenir;
+    hiç tam hat projesi yoksa `ToolchainError` (script ortam hatasıyla insana düşer)."""
+    if platformlar.tam_hat_mi(dil):
+        return dil
+    projeler = dil_algila.algila(forge, sha, platform, uygulama_koku=app_root()).projeler
+    if not projeler:
+        return platformlar.TS
+    for aday in platformlar.TAM_HAT_DILLERI:
+        if projeler.get(aday):
+            return aday
+    raise ToolchainError(
+        None,
+        "referans sembol tablosu için depoda tam hat test projesi (e2e ya da e2e-java) yok",
+    )
+
+
+def _ajan_tablo_dili(forge: ForgePort, sha: str, platform: str, tablo_dili: str) -> str:
+    """Doğrulama ajanına verilecek sembol tablosunun dili (K-T5). Web + Java tablosunda, **canlı**
+    kipte ve repoda TS projesi varsa `ts` (prompt rol + ad ile bulmayı TS tablosuyla anlatır; §2.5
+    PO eşitliği adları aynı kılar); aksi halde denetim tablosunun dili. REPLAY'de ajan kayıtlı
+    çıktıyı döndürür: tablo değişmez (ek `/symbols` çağrısı da yapılmaz)."""
+    if platformlar.uygulama_mi(platform) or not platformlar.java_mi(tablo_dili):
+        return tablo_dili
+    if beklenen_uretim_modu() != "live":
+        return tablo_dili
+    projeler = dil_algila.algila(forge, sha, platform, uygulama_koku=app_root()).projeler
+    return platformlar.TS if projeler.get(platformlar.TS) else tablo_dili
+
+
+def _dogrulanmamis_bitir(
+    engine: Engine, sid: uuid.UUID, rendered: Rendered, result: AgentResult, tablo_dili: str
+) -> dict[str, Any]:
+    """Doğrulanmamış dilde üretimin sonu (011 §2.7, karar K3): render edilen kaynak
+    `script_codegen.kaynak_kod`'a yazılır; forge'a commit, yerel kontrol ve PR **yoktur**; script
+    `unverified` olur (onay kapısı ve `merged`'e geçiş yok). `script.icerik` boş kalır: onay/merge
+    hash'i yalnız forge'a giden kod içindir."""
+    with session_scope() as s:
+        sc, cg = _yukle(s, sid, lock=True)
+        cg.kaynak_kod = rendered.content
+        sc.dosya_yolu = rendered.repo_path
+        sc.branch = None
+        transition(
+            s, sc, "unverified", SYSTEM, "verifying",
+            sebep="doğrulanmamış dil: kod üretildi; derlenmedi, koşulmadı, PR açılmadı",
+            ozet={"dil": sc.dil, "referans_tablo": tablo_dili},
+        )  # fmt: skip
+        _wf_bitir(s, cg.workflow_id, "done")
+        audit_on_commit(
+            s,
+            "system",
+            "codegen.unverified",
+            f"script:{sid}",
+            {
+                "dil": sc.dil,
+                "platform": sc.platform,
+                "dosya": rendered.repo_path,
+                "kaynak_hash": content_hash(rendered.content),
+                "sablon_hash": rendered.template_hash,
+                "referans_tablo": tablo_dili,
+                "mode": result.mode,
+            },
+        )
+        dil = sc.dil
+    return {"durum": "unverified", "dil": dil, "dosya": rendered.repo_path}
+
+
 def run_generation(ctx: JobContext, engine: Engine) -> dict[str, Any]:
     """`codegen.generate` işi: doğrula → eşle → kontrol → şablon → yerel kontrol → PR."""
     yuk = ctx.yuk or {}
@@ -1772,38 +2304,59 @@ def run_generation(ctx: JobContext, engine: Engine) -> dict[str, Any]:
         case = dict(tc.icerik)
         case_id, story, sira_no = tc.id, cg.story_key, cg.sira_no
         platform = sc.platform or platformlar.WEB
+        dil = platformlar.dil(platform, sc.dil)
         if engel is None:
             transition(s, sc, "verifying", SYSTEM, "pending", sebep="doğrulama ajanı")
     if engel is not None:
         return _insana(engine, sid, "case_changed", engel, hedef="failed")
+    if not platformlar.gecerli_cift(platform, dil):
+        return _insana(
+            engine, sid, "environment",
+            f"geçersiz platform/dil çifti: {platform} + {dil}", hedef="failed",
+        )  # fmt: skip
     ref = case_ref(story, sira_no)
-    uygulama = platformlar.uygulama_mi(platform)
+    tam_hat = platformlar.tam_hat_mi(dil)
 
     try:
         forge = _forge()
-        _eski_prlari_kapat(engine, forge, case_id, sid, platform)
+        if tam_hat:
+            # K-T4: doğrulanmamış üretim başka script'in PR'ına dokunmaz (forge'a yazma yok).
+            _eski_prlari_kapat(engine, forge, case_id, sid, platform)
         main_sha = forge.head_sha("main")
+        # Kod sorusu: sembol tablosu, fikstürler ve bayiler HEDEF DİLİN projesinden okunur
+        # (doğrulanmamış dilde repodaki tam hat dilinin "referans tablo"su; 011 §2.7).
+        tablo_dili = _tablo_dili(forge, main_sha, platform, dil)
+        java_tablo = platformlar.java_mi(tablo_dili)
+        # K-T5: canlı web ajanına repoda TS projesi varsa TS tablosu verilir (rol + ad ile bulma,
+        # §2.5 PO eşitliği); denetim ve render hedef dilin tablosuyla yapılır.
+        ajan_tablo_dili = _ajan_tablo_dili(forge, main_sha, platform, tablo_dili)
         client = _toolchain()
         try:
             table = kontroller.SymbolTable(
-                client.symbols(main_sha, platform=platform)
-                if uygulama
-                else client.symbols(main_sha)
+                client.symbols(main_sha, **toolchain_hedefi(platform, tablo_dili))
+            )
+            ajan_table = (
+                table
+                if ajan_tablo_dili == tablo_dili
+                else kontroller.SymbolTable(
+                    client.symbols(main_sha, **toolchain_hedefi(platform, ajan_tablo_dili))
+                )
             )
         finally:
             client.close()
-        # Bayiler (+ web fikstürleri): web `tests/fixtures.ts`, Java `altyapi/Bayiler.java`;
+        # Bayiler (+ TS fikstürleri): ts `tests/fixtures.ts`, Java `altyapi/Bayiler.java`;
         # Java fikstür erişimcileri sembol tablosunun `fixtures` alanındadır (TestTabani).
         fixtures_src = forge.read_file(
-            bayiler_path() if uygulama else fixtures_path(), ref=main_sha
+            bayiler_path(platform) if java_tablo else fixtures_path(), ref=main_sha
         )
-        branch = _dal_sec(forge, case_id, platform)
+        # Doğrulanmamış dilde forge'a yazılmaz: dal seçilmez.
+        branch = _dal_sec(forge, case_id, platform) if tam_hat else None
     except (ForgeError, ToolchainError) as exc:
         return _insana(
             engine, sid, "environment", f"forge/sembol tablosu okunamadı: {exc}", hedef="failed"
         )
     yerel_forge = _yerel_forge_mu(forge)
-    if uygulama:
+    if java_tablo:
         fixtures = {str(f) for f in table.raw.get("fixtures") or [] if isinstance(f, str)}
         dealers = parse_java_dealers(fixtures_src)
     else:
@@ -1814,11 +2367,24 @@ def run_generation(ctx: JobContext, engine: Engine) -> dict[str, Any]:
         # Üretimin tabanı: sembol tablosu, fikstürler ve dal aynı main commit'inden (symbols_sha).
         cg.symbols_sha = main_sha
         sc.branch = branch
+        audit_on_commit(
+            s,
+            "system",
+            "codegen.tablolar",
+            f"script:{sid}",
+            {
+                "dil": dil,
+                "platform": platform,
+                "symbols_sha": main_sha,
+                "denetim_tablosu": tablo_dili,
+                "ajan_tablosu": ajan_tablo_dili,
+            },
+        )
 
     # ---- 1. tur eşleme
     sonuc = _eslemeyi_al(
         engine, ctx, sid, wf_id, case_id, case, ref, story, sira_no, table, dealers, 1,
-        fixtures=fixtures, platform=platform,
+        fixtures=fixtures, platform=platform, tablo_dili=tablo_dili, ajan_table=ajan_table,
     )  # fmt: skip
     if isinstance(sonuc, dict):
         return sonuc
@@ -1828,16 +2394,20 @@ def run_generation(ctx: JobContext, engine: Engine) -> dict[str, Any]:
         _, cg = _yukle(s, sid)
         cg.ilk_eslesme = dict(result.output or {})
     rendered = _render(
-        engine, sid, case_id, case, story, sira_no, result, denetim, dealers, platform
-    )
+        engine, sid, case_id, case, story, sira_no, result, denetim, dealers, platform, dil,
+        tablo_dili, table.raw,
+    )  # fmt: skip
     if isinstance(rendered, dict):
         return rendered
+    if not tam_hat:
+        # Doğrulanmamış dil (csharp | python): kaynak saklanır; commit / yerel kontrol / PR yok.
+        return _dogrulanmamis_bitir(engine, sid, rendered, result, tablo_dili)
     commit = _commit(engine, sid, forge, rendered, ref, case, "verifying", main_sha)
     if isinstance(commit, dict):
         return commit
     sinif, atlandi = _kontrol(
         engine, sid, commit, rendered.test_file, "local_check", yerel_forge=yerel_forge,
-        platform=platform, repeat_each=tekrar_sayisi(platform),
+        platform=platform, repeat_each=tekrar_sayisi(platform), dil=dil,
     )  # fmt: skip
     # Ortam hatası modelin başarısı/başarısızlığı değildir: pass@1 ölçülmedi sayılır. Kararsız
     # (flaky) ve defect adayı "geçmedi"dir (control_tower defect adayını paydadan ayrıca ayırır).
@@ -1870,6 +2440,8 @@ def run_generation(ctx: JobContext, engine: Engine) -> dict[str, Any]:
             feedback=_feedback(sinif),
             fixtures=fixtures,
             platform=platform,
+            tablo_dili=tablo_dili,
+            ajan_table=ajan_table,
         )
         if isinstance(sonuc, dict):
             return sonuc
@@ -1883,8 +2455,9 @@ def run_generation(ctx: JobContext, engine: Engine) -> dict[str, Any]:
                 "(Constitution VI: assertion'lar otomatik değişmez).",
             )
         rendered = _render(
-            engine, sid, case_id, case, story, sira_no, result, denetim, dealers, platform
-        )
+            engine, sid, case_id, case, story, sira_no, result, denetim, dealers, platform, dil,
+            tablo_dili, table.raw,
+        )  # fmt: skip
         if isinstance(rendered, dict):
             return rendered
         commit = _commit(engine, sid, forge, rendered, ref, case, "verifying", main_sha)
@@ -1892,7 +2465,7 @@ def run_generation(ctx: JobContext, engine: Engine) -> dict[str, Any]:
             return commit
         sinif, atlandi = _kontrol(
             engine, sid, commit, rendered.test_file, "remap_check", yerel_forge=yerel_forge,
-            platform=platform, repeat_each=tekrar_sayisi(platform),
+            platform=platform, repeat_each=tekrar_sayisi(platform), dil=dil,
         )  # fmt: skip
         with session_scope() as s:
             sc, _ = _yukle(s, sid, lock=True)
@@ -2020,14 +2593,20 @@ def _eslemeyi_al(
     feedback: str | None = None,
     fixtures: set[str] | None = None,
     platform: str = platformlar.WEB,
+    tablo_dili: str | None = None,
+    ajan_table: kontroller.SymbolTable | None = None,
 ) -> tuple[AgentResult, kontroller.Sonuc] | dict[str, Any]:
+    """`tablo_dili`: denetim sembol tablosunun (`table`) dili (yoksa platformun varsayılanı). Ajan
+    ve araç platforma bağlıdır; locator çapraz kontrolünün yöntemi ve fikstür kaynağı tablonun
+    diline. `ajan_table`: ajana verilen tablo (K-T5; yoksa `table`)."""
     from tp_core.gateway.errors import BudgetExceeded, GatewayError
 
     uygulama = platformlar.uygulama_mi(platform)
+    java_tablo = platformlar.java_mi(platformlar.dil(platform, tablo_dili))
     try:
         kosu = _run_agent(
-            engine, sid, ctx.job_id, wf_id, case, ref, story, sira_no, table, dealers, tur,
-            feedback, platform,
+            engine, sid, ctx.job_id, wf_id, case, ref, story, sira_no, ajan_table or table,
+            dealers, tur, feedback, platform,
         )  # fmt: skip
     except BudgetExceeded as exc:
         return _insana(engine, sid, "agent_error", f"bütçe aşıldı: {exc}", hedef="failed")
@@ -2082,7 +2661,13 @@ def _eslemeyi_al(
     if gorulme is not None:
         engel, neden, hedef = gorulme
         return _insana(engine, sid, engel, neden, hedef=hedef)
-    capraz = app_locator_capraz_kontrol if uygulama else locator_capraz_kontrol
+    if uygulama:
+        capraz = app_locator_capraz_kontrol
+    elif java_tablo:
+        # Web ajanı + Java tablosu (Kimlikler: rol/ad/kapsam yok) → testId eşitliği.
+        capraz = locator_capraz_kontrol_testid
+    else:
+        capraz = locator_capraz_kontrol
     uyusmaz = capraz(kosu.locatorlar, table, canli=result.mode == "live")
     if uyusmaz:
         with session_scope() as s:
@@ -2129,12 +2714,17 @@ def _eslemeyi_al(
                 eksik,
                 dogrulama=[{"tur": "unverified_step", "mesaj": eksik, "step_id": None}],
             )
+    if java_tablo and not uygulama:
+        # Web + Java: TS adlı eşleme (`goto`) Java page object adlarına (`goTo`) normalize edilir;
+        # denetim, eşleme kaydı, şablon ve PR gövdesi Java adlarını görür (uygulama ve TS yolu
+        # değişmez; ham ajan çıktısı `cg.eslesme`'de kalır).
+        result = result.model_copy(update={"output": platformlar.java_eslemesi(result.output)})
     denetim = kontroller.check_mapping(
         result.output or {},
         case,
         table,
         fixtures=fixtures,
-        fixture_kaynagi="TestTabani.java" if uygulama else "tests/fixtures.ts",
+        fixture_kaynagi="TestTabani.java" if java_tablo else "tests/fixtures.ts",
     )
     _store_mapping(engine, sid, case_id, result.output or {}, denetim)
     with session_scope() as s:
@@ -2174,8 +2764,15 @@ def _render(
     denetim: kontroller.Sonuc,
     dealers: Mapping[str, Any],
     platform: str = platformlar.WEB,
+    dil: str | None = None,
+    tablo_dili: str | None = None,
+    sembol_tablosu: Mapping[str, Any] | None = None,
 ) -> Rendered | dict[str, Any]:
-    uygulama = platformlar.uygulama_mi(platform)
+    """Şablon (dil, platform) çiftine göre tek giriş noktasından seçilir (`render.render_dil`).
+    `tablo_dili`: eşlemenin denetlendiği sembol tablosunun dili; doğrulanmamış dilde başlık ve
+    adlar (ve parametre türleri: `sembol_tablosu`, ham `/symbols` çıktısı) bu "referans
+    tablo"dan türetilir (`referans_dil`; tam hat dillerinde yok sayılır)."""
+    dil = platformlar.dil(platform, dil)
     with session_scope() as s:
         _, cg = _yukle(s, sid)
         inp = RenderInput(
@@ -2189,13 +2786,16 @@ def _render(
             bundle_hash=cg.bundle_hash,
             mapping=result.output or {},
             dealers=dealers,
-            e2e_root=e2e_app_root() if uygulama else e2e_root(),
+            e2e_root=uretim_koku(dil, platform),
         )
     try:
-        rendered = (
-            render_java_test(inp, platform, _rules_dir())
-            if uygulama
-            else render_test(inp, _rules_dir())
+        rendered = render_modulu.render_dil(
+            inp,
+            dil=dil,
+            platform=platform,
+            rules=_rules_dir(),
+            referans_dil=tablo_dili,
+            sembol_tablosu=sembol_tablosu,
         )
     except RenderError as exc:
         return _insana(engine, sid, "unknown_method", f"şablon reddetti: {exc}")
@@ -2220,18 +2820,14 @@ def _commit(
         sc, _ = _yukle(s, sid)
         branch = sc.branch or ""
         platform = sc.platform
-    if platformlar.uygulama_mi(platform):
-        mesaj = (
-            f"test({ref}, {platform}): {str(case.get('title') or '')[:80]}\n\n"
-            "AI-generated (AI Testing Probe / CasesToCode): şablonla üretildi, model Java "
-            "yazmadı.\n"
-        )
-    else:
-        mesaj = (
-            f"test({ref}): {str(case.get('title') or '')[:80]}\n\n"
-            "AI-generated (AI Testing Probe / CasesToCode): şablonla üretildi, model TypeScript "
-            "yazmadı.\n"
-        )
+        dil = platformlar.dil(platform, sc.dil)
+    # Başlık eki platformdur (uygulama); "model <dil> yazmadı" cümlesi dildir.
+    hedef = f"{ref}, {platform}" if platformlar.uygulama_mi(platform) else ref
+    mesaj = (
+        f"test({hedef}): {str(case.get('title') or '')[:80]}\n\n"
+        "AI-generated (AI Testing Probe / CasesToCode): şablonla üretildi, model "
+        f"{platformlar.DIL_ETIKETI.get(dil, dil)} yazmadı.\n"
+    )
     try:
         sha = forge.commit_files(
             branch, {rendered.repo_path: rendered.content}, mesaj, base=base_sha
@@ -2257,6 +2853,7 @@ def _commit(
                 "dosya": rendered.repo_path,
                 "base": base_sha,
                 "platform": platform,
+                "dil": dil,
             },
         )
     return sha
@@ -2289,6 +2886,7 @@ def _open_pr(
         # (Constitution I; story değiştiyse onaysız içerik için PR açılmaz).
         engel = kaynak_engeli(s, cg)
         platform = sc.platform or platformlar.WEB
+        dil = platformlar.dil(platform, sc.dil)
         branch = sc.branch or branch_for(case_id, platform)
         onaylayan = _onaylayan(s, case_id)
         audit_head = chain_tip(s.connection())
@@ -2327,6 +2925,8 @@ def _open_pr(
         mapping_hash=rendered.mapping_hash,
         ajan_bayileri=ajan_bayileri,
         platform=platform,
+        dil=dil,
+        tekrar=tekrar_sayisi(platform),
     )
     if atlandi:
         govde += (
@@ -2336,6 +2936,8 @@ def _open_pr(
         *PR_LABELS,
         *([story] if story else []),
         *([f"platform:{platform}"] if platformlar.uygulama_mi(platform) else []),
+        # Varsayılan dışı dil (web + Java) etiketle görünür; web + ts ve uygulama PR'ları değişmez.
+        *([f"dil:{dil}"] if dil != platformlar.varsayilan_dil(platform) else []),
     ]
     # Dal politikası (MIMARI-SOZLESME §4 / TEKNIK-TASARIM §8.4 adım 6 güncellemesi): her üretim
     # forge'da olmayan yeni bir dala (`_dal_sec`) gider, dolayısıyla her zaman yeni PR açılır;
@@ -2343,7 +2945,7 @@ def _open_pr(
     guncellendi = False
     try:
         pr = forge.open_pr(
-            branch, pr_title(ref, str(case.get("title") or ""), platform), govde, labels
+            branch, pr_title(ref, str(case.get("title") or ""), platform, dil), govde, labels
         )
     except ForgeError as exc:
         return _insana(engine, sid, "environment", f"PR açılamadı: {exc}", hedef="failed")
@@ -2394,6 +2996,7 @@ def _open_pr(
                 "mode": result.mode,
                 "pass_at_1": sc.pass_at_1,
                 "platform": platform,
+                "dil": dil,
             },
         )
         _olay(
@@ -2402,6 +3005,7 @@ def _open_pr(
             {
                 "script_id": sid,
                 "platform": platform,
+                "dil": dil,
                 "case_id": case_id,
                 "requirement_id": cg.requirement_id,
                 "pr_number": pr.number,
@@ -2538,9 +3142,10 @@ def _break_verify(ctx: JobContext, engine: Engine) -> dict[str, Any]:
             test_file = None
         else:
             durum, neden = "", ""
-            test_file = e2e_goreli(sc.dosya_yolu, sc.platform)
+            test_file = e2e_goreli(sc.dosya_yolu, sc.platform, sc.dil)
         pr_no = sc.pr_no
         platform = sc.platform or platformlar.WEB
+        dil = platformlar.dil(platform, sc.dil)
     if test_file:
         yerel_forge = _yerel_forge_mu(_forge())
 
@@ -2549,7 +3154,7 @@ def _break_verify(ctx: JobContext, engine: Engine) -> dict[str, Any]:
             _bv_guncelle(sid, asama, "running", None)
             sinif, atl = _kontrol(
                 engine, sid, head, test_file, tur, kirma=kirma, repeat_each=1,
-                yerel_forge=yerel_forge, pr_no=pr_no, platform=platform,
+                yerel_forge=yerel_forge, pr_no=pr_no, platform=platform, dil=dil,
             )  # fmt: skip
             _bv_guncelle(sid, asama, "passed" if sinif.sinif == "gecti" else "failed", sinif.run_id)
             return sinif, atl
@@ -2979,6 +3584,8 @@ def run_merge(ctx: JobContext, engine: Engine) -> dict[str, Any]:
         kabul = merge_kabul_gerekceleri(sc, cg)
         kabul_notu = _review_gerekcesi(s, yuk.get("review_id")) if kabul else None
         break_durum = cg.break_durum
+        # Kullanıcı iletisinde script'in kendi check adı (K-T1: web + Java `local-ci-web-java`).
+        check = platformlar.check_adi(sc.platform, platformlar.dil(sc.platform, sc.dil))
     if engel is not None:
         with engine.begin() as conn:
             append_audit(
@@ -3028,7 +3635,7 @@ def run_merge(ctx: JobContext, engine: Engine) -> dict[str, Any]:
                     )
                 raise PermanentJobError(
                     "Merge yapılmadı: PR dalı main'in gerisinde (başka bir PR merge edildi). Dal "
-                    "otomatik güncelleniyor; local-ci yeni head'de geçtikten sonra yeniden "
+                    f"otomatik güncelleniyor; {check} yeni head'de geçtikten sonra yeniden "
                     "inceleyip merge edin."
                 ) from exc
             raise PermanentJobError(f"Merge reddedildi: {exc}") from exc
@@ -3164,7 +3771,11 @@ def request_update_branch(session: Session, number: int, user: Principal) -> dic
         "job_id": job_id,
         "workflow_id": None,
         "durum": "started",
-        "mesaj": "Dal main ile güncelleniyor; local-ci yeni head'de yeniden koşacak.",
+        "mesaj": (
+            "Dal main ile güncelleniyor; "
+            f"{platformlar.check_adi(sc.platform, platformlar.dil(sc.platform, sc.dil))} "
+            "yeni head'de yeniden koşacak."
+        ),
     }
 
 
@@ -3243,12 +3854,10 @@ def _guncelleme_icerigi_dogrula(
 
 
 def _degisen_yollar(forge: ForgePort, eski: str, yeni: str) -> list[str] | None:
-    """Forge değişen yolları verebiliyorsa (LocalForge `git diff`, GitHub compare) onları döner."""
-    fn = getattr(forge, "changed_paths", None)
-    if not callable(fn):
-        return None
+    """Forge'un değişen yolları (`ForgePort.changed_paths`: LocalForge `git diff`, GitHub
+    compare); okunamazsa ya da liste eksik olabilirse None."""
     try:
-        sonuc = fn(eski, yeni)
+        sonuc = forge.changed_paths(eski, yeni)
     except ForgeError:
         return None
     return list(sonuc) if sonuc is not None else None
@@ -3582,7 +4191,7 @@ def sync_prs(engine: Engine, forge: ForgePort | None = None) -> dict[str, Any]:
             sonuc["hata"] += 1
             continue
         if pr.state not in ("merged", "closed"):
-            if _pr_checklerini_kaydet(forge, int(no), pr.head_sha or head):
+            if _pr_checklerini_kaydet(forge, int(no), pr.head_sha or head, pr.base):
                 sonuc["checks"] += 1
             continue
         try:
@@ -3600,11 +4209,16 @@ def sync_prs(engine: Engine, forge: ForgePort | None = None) -> dict[str, Any]:
     return sonuc
 
 
-def _pr_checklerini_kaydet(forge: ForgePort, no: int, head: str | None) -> bool:
+def _pr_checklerini_kaydet(
+    forge: ForgePort, no: int, head: str | None, base: str | None = None
+) -> bool:
     """Açık PR'ın head check'lerini forge'dan okuyup `pull_request.checks`'e yazar (GitHub kipi:
     core-api GitHub'a erişmez; portal check listesi ve merge kapısı bu kopyayı okur). Biçim
-    LocalForge'un `checks/<sha>.json` listesiyle aynıdır. Yalnızca değişince yazılır; okuma
-    hatası durum senkronunu durdurmaz (kopya bayat kalır → görünüm `pending`). Yazıldıysa True."""
+    LocalForge'un `checks/<sha>.json` listesiyle aynıdır. Forge merge kapısının zorunlu listesini
+    hesaplayabiliyorsa (`ZorunluCheckKaynagi`; K-T13: hedef dal ∪ head `web-java.yml`, okunamazsa
+    kapalı taraf) o da `zorunlu_checkler`'e yazılır: portal aynası kapıyla aynı listeyi görür
+    (MİM-D3). Yalnızca değişince yazılır; okuma hatası durum senkronunu durdurmaz (kopya bayat
+    kalır → görünüm `pending`). Yazıldıysa True."""
     if not head:
         return False
     try:
@@ -3612,12 +4226,18 @@ def _pr_checklerini_kaydet(forge: ForgePort, no: int, head: str | None) -> bool:
     except Exception as exc:
         log.warning("PR #%s check'leri alınamadı (%s): %s", no, head[:12], exc)
         return False
+    zorunlu = (
+        list(forge.zorunlu_checkler(head, base)) if isinstance(forge, ZorunluCheckKaynagi) else None
+    )
     with session_scope() as s:
         kayit = s.get(PullRequest, no, with_for_update=True)
-        if kayit is None or (kayit.checks_sha == head and kayit.checks == liste):
+        if kayit is None or (
+            kayit.checks_sha == head and kayit.checks == liste and kayit.zorunlu_checkler == zorunlu
+        ):
             return False
         kayit.checks = liste
         kayit.checks_sha = head
+        kayit.zorunlu_checkler = zorunlu
         kayit.checks_zaman = datetime.now(UTC)
     return True
 

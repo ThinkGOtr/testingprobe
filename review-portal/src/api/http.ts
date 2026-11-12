@@ -300,6 +300,8 @@ export interface IstekSecenegi {
    * yoktur; sahte başarı gösterilmez), 501 `UC_YOK` döner. Kaynak da örnek veriyse işlem de oraya gider.
    */
   kaynak?: readonly [string, string];
+  /** Başarılı core yanıtının başlıkları (ör. `GET /scripts` liste sınırı); örnek veride çağrılmaz. */
+  basliklar?: (h: Headers) => void;
 }
 
 /**
@@ -369,6 +371,7 @@ async function istekGonder<T>(
   yanitBasliklariniOku(res, path);
 
   if (res.ok) {
+    secenek.basliklar?.(res.headers);
     if (res.status === 204) return undefined as T;
     const metin = await res.text();
     if (!metin) return undefined as T;

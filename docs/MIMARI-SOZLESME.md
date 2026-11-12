@@ -131,6 +131,22 @@ alır; yoksa web/TS (eski gövde değişmez). Java'da sembol tablosu `java-aracl
 e2e-app köküne göre `src/test/java/…Test.java`. Kayıtlı kontrol adı platform başınadır:
 `local-ci-android|ios|windows` (web `local-ci` değişmez).
 
+**011 web + Java yolu (`specs/011-uretim-dili/plan.md` §2.6, inceleme turu 1 K-T1):**
+- **Kabul kuralı (`/symbols`, `/check`, `/ast-guard`):** gövde `{lang, platform}`. `lang` yalnız
+  `ts|java` (`csharp|python` toolchain'e hiç gitmez → 422). `lang="java"` + `platform="web"` (ya da
+  `platform` yok) → web + Java, kök **`TP_E2E_JAVA_ROOT`** (varsayılan `e2e-java`; GitHub kipinde
+  `demo-app/e2e-java`), güvenilir pom **`TP_E2E_JAVA_DEPS`** (imajda `/opt/e2e-java`: `pom.xml` +
+  ısıtılmış salt okunur `m2`). `lang="java"` + uygulama platformu → `TP_E2E_APP_ROOT` (009,
+  değişmez). `lang="ts"` + uygulama platformu → 422. Gövdesiz/eski istek web + TS'dir.
+- Java web adımları uygulama Java ile aynı adlardadır: `app → deps (pom kilidi) → guard → compile →
+  run`; rapor `lang:"java"`, `platform:"web"` taşır; tarayıcı imajdaki `/ms-playwright` (indirme yok).
+- **Check adı (tek kaynak `platform.check_adi(platform, dil)`; core, toolchain worker `check_name`
+  ve portal aynalar):** web + TS **`local-ci`** (değişmez) · web + Java **`local-ci-web-java`** ·
+  uygulama `local-ci-<platform>`. Kardeş koşular aynı sha'ya farklı adla yazar; birbirini ezmez.
+  GitHub karşılığı: `test-local` (TS) · `web-java` (Java) · `mobil-android|masaustu-windows`.
+- **Yerel merge kuralı:** `e2e-java/` değişen PR `local-ci-web-java`, `e2e/` değişen PR `local-ci`
+  ister; script'siz PR'da CI değişen yollardan dil(ler)i seçer, ikisi de değiştiyse ikisi de koşar.
+
 ### test-runner HTTP API (:8200, yalnızca runner-net)
 - `POST /run {sha, grep?, repeat_each, retries, env:{BREAK_CAMPAIGN?}, run_id}` → `{status: passed|failed|error, junit, json, artifacts_dir, duration_ms, saglik:{ok, zaman, web:{url,status,ms,hata}, api:{url,status,ms,hata}, hata}}`
 - Koşudan önce `GET BASE_URL/` ve `GET DEMO_API_URL/health` (`TP_HEALTH_TIMEOUT_S`, 5 sn) yoklanır.
@@ -143,6 +159,12 @@ e2e-app köküne göre `src/test/java/…Test.java`. Kayıtlı kontrol adı plat
 - **009:** `POST /run {…, lang:"java", platform}` `demo-app/e2e-app`'i (`TP_E2E_APP_ROOT`) Maven +
   Surefire ile koşturur (`runner/java_run.py`); sağlık adımı ayrıca `APPIUM_URL_<PLATFORM>/status`
   yoklar. Rapor: Surefire JUnit XML, Allure, kanıt `target/kanit/<Sınıf>.<metot>/`.
+- **011:** `POST /run {…, lang:"java", platform:"web"}` `demo-app/e2e-java`'yı (`TP_E2E_JAVA_ROOT`)
+  koşturur: Appium sağlık kontrolü yok, API + web origin yoklanır, `repeat_each` desteklenir (web
+  varsayılanı 3), tarayıcı imajdaki `/ms-playwright`. Kanıt `target/kanit/<Sınıf>.<metot>/{ekran.png,
+  trace.zip, sayfa.html}` (triage web yöntemi). Bellek: Surefire `argLine -Xmx512m -Dfile.encoding=UTF-8`.
+  Raporlar: Extent test adı = TestNG description (`Sınıf.metot` alt bilgi; `tp-case-*` kategoriye
+  girmez), Allure etiketleri `story`, `tp-case`, `tag` TestTabani'ndan.
 
 ## 3. Kod sahipliği (şeritler)
 
@@ -206,6 +228,29 @@ deneme sonuçları; test_result ile cascade), `test_result_commit_ix_ci`. `scrip
 insan merge'ünde `kabul` (değişiklik istenmeden). `run.tetik` ayrıca `break_verify|local_check|manual`
 olabilir; Kontrol Kulesi kırma koşularını (`break_verify`, `ortam.break_campaign`) KPI'lara katmaz.
 
+**011 üretim dili (0021 `script_dil`, `specs/011-uretim-dili/plan.md` §2.2):** `script.dil` (`ts|java|csharp|python`,
+NOT NULL, sunucu varsayılanı `'ts'`, CHECK `script_dil_ck`; backfill web→`ts`, uygulama→`java`),
+`script.dil_kaynagi` (`algilandi|secildi|varsayilan`, varsayılan `varsayilan`), `script_codegen.kaynak_kod`
+(TEXT NULL; yalnız doğrulanmamış dillerde render edilen kaynak, forge'a commit edilmez). Geçerli
+(platform, dil): web × her dil; uygulama × yalnız `java` (DB'de çift CHECK'i yok — göç penceresi;
+runbook backfill'i `docs/GCP-KURULUM.md` §10.2 adım 7). SCRIPT durum makinesine uç durum `unverified`
+(`verifying → unverified → pending|closed`; onay/merge yok). Etkin script anahtarı (case, platform)
+kalır; **`unverified` etkin sayılmaz** (K-T4): doğrulanmamış üretim aynı case+platformun
+`pr_open`/`merged`/devam eden script'ine dokunmaz (kapatma, forge'a yazma yok); eski `unverified`
+kayıtlar yenisi gelince `closed`. Tam hat dilinde istek, aynı case+platformda başka dilde
+`merged` script varsa 409 — mesaj çıkış yolunu söyler ("mevcut test dosyasını silen bir PR'ı merge
+edin, sonra yeniden üretin"); toplu istekte çakışan case sayısı yanıt mesajına ve portala yansır;
+kaldırma ürün akışı değildir (K-T12; elle adım `docs/GCP-KURULUM.md` §10.2 adım 12). `_eski_prlari_kapat` yalnız tam hat yolunda çalışır. Koşu kaydı dili
+**`run.ortam.dil`**'de taşır (`ts|java`; yoksa `ts` sayılır; idempotency kilidi ve etkin koşu
+araması web'de dile göre ayrılır, portal koşu listesinde dil rozeti gösterir). Script'siz web
+koşusunda kardeş dil dağıtımı **`run.ortam.dil_dagitimi`**'na yazılır (`["ts","java"]` gibi; ilk
+eleman bu koşunun dili, diğerleri `ortam.kardes_kosu` = bu koşu olan kardeş koşulardır). Alanın
+varlığı dağıtımın yapıldığını gösterir (yeniden denemede tekrarlanmaz); kardeş koşularda yazılmaz.
+K-T11: script'siz PR'da test köklerinin (`e2e/`, `e2e-java/`, `e2e-app/`) DIŞINDA değişiklik varsa
+repodaki tüm tam hat dilleri dağıtılır; yalnız test kökü değişen PR'da değişen kökün dili. GitHub'da
+`web-java.yml` yol süzgeci daha dardır (ör. yalnız `mobile/`/`desktop/` değişen PR'da Java koşmaz,
+`web-java` no-op yeşil; LocalForge koşar).
+
 **Faz 4 tablolar:** 0011 `failure_ek` (failure ile 1:1, cascade: `anahtar` (koşu+test, tekil),
 `kaynak` ∈ ci|codegen|kirma, `script_id`, `kanit` (özet + toolchain ham kaydı `ham{failure, statuses,
 consistent}`), `kanit_linkleri`, `oneri` (locator önerisi: `locator_key, old_testid, new_testid, dosya,
@@ -235,7 +280,7 @@ yalnız worker yazar), `asistan_oneri_geri_bildirim`, `asistan_hiz` (`unique nul
 `ai_call.ek = {kanal:"asistan", kullanici_id, mesaj_id}`. `asistan_mesaj.durum` durum makinesinde değildir
 (insan kapısı yok). Saklama 90 gün (`TP_ASISTAN_SAKLAMA_GUN`); `ai_call`/`tool_call` etkilenmez.
 
-**Asistan güvenlik olayı (0021 `asistan_guvenlik`, ayrıntı `specs/013-asistan-guvenlik/ANALIZ.md`
+**Asistan güvenlik olayı (0023 `asistan_guvenlik`, ayrıntı `specs/013-asistan-guvenlik/ANALIZ.md`
 §6):** `asistan_guvenlik_olay(id, kullanici_id, mesaj_id null, tur, ciddi, ayrinti jsonb, zaman)`;
 indeksler `(kullanici_id, zaman desc)` ve kısmi `(mesaj_id) WHERE mesaj_id IS NOT NULL`; tp_app
 yalnız `SELECT, INSERT, DELETE` (UPDATE yok). `tur` ∈ `sir_icerik|kisisel_veri|kanarya|
@@ -312,7 +357,8 @@ gönderilir ve akış kapanır. Portal bunu alınca yeniden bağlanmaz, giriş e
 | POST | `/cases/{id}/decision` `{karar: approve\|edit\|reject\|reopen, icerik_hash, icerik?, ret_nedeni?, gerekce?, beklenen_anlam_degisti?}` | analyst | `reopen` ("Taslağa al"): approved/rejected → draft; kayıtlı, onaylamayan karar |
 | GET | `/publish/preview?requirement_id=` | analyst | Dry-run; `hedef`, `proje`, `jira_browse_url`, kalem başına `islem` (`create\|skip_existing\|blocked_not_approved\|blocked_hash_mismatch\|blocked_no_story\|blocked_requirement_changed`), `payload` (`mod_etiketi`, `mod_yorumu` dahil), `uretim_modu`, `icerik_hash`, `onaylayan` |
 | POST | `/publish` `{case_ids[]}` | analyst | Yayın: worker işi (`publish.cases`; yazma kimliği yalnızca worker'da), 45 sn beklenir → 200 `YayinSonucu`; bitmezse 202 `{job_id, durum, sonuclar: []}`; iş başarısızsa 502 |
-| POST | `/code/generate` `{case_ids[]}` | engineer | Kod üretimi (CasesToCode) |
+| POST | `/code/generate` `{case_ids[], platform?, dil?}` | engineer | Kod üretimi (CasesToCode); `dil` yoksa algılanan (011) |
+| GET | `/code/languages?platform=` | engineer · presenter | Algılanan dil + dil seçenekleri (011 §2.3, K-T3, K-T8) |
 | GET | `/scripts` · `/scripts/{id}` | herkes | Üretilen test + PR + adım görüntüleri |
 | POST | `/scripts/{id}/break-verify` | engineer | Kırarak doğrula (BREAK_CAMPAIGN) |
 | POST | `/prs/{number}/merge` | engineer | LocalForge'da insan onaylı merge |
@@ -470,6 +516,21 @@ eski kısıt `NOT VALID` olarak yalnızca yeni satırlara uygulanır.
   script_ids, sonuclar[{case_id, durum, script_id, job_id, workflow_id}]}`. Yalnızca onaylı/yayınlı,
   içerik hash'i onaylı hash'e eşit ve gereksinimin PO onayı güncel case'ler (aksi 409; rol 403).
   Aynı onaylı hash için açık/merge edilmiş PR varsa yeniden üretilmez; blocked/failed yeniden üretilir.
+- **011 dil alanları:** `POST /code/generate {case_ids[], platform="web", dil?: ts|java|csharp|python}`;
+  geçersiz (platform, dil) çifti 422 (Türkçe). `dil` yoksa algılanan dil (`dil_kaynagi="algilandi"`,
+  algılama sonuçsuzsa `varsayilan`), varsa `secildi`. Yeniden üretim mevcut `dil_kaynagi`'nı korur.
+  Tam hat dilinde başka dilde merge edilmiş script → 409 (K-T4). `GET /code/languages?platform=` →
+  `{platform, algilanan, kaynak, sayilar{ts,java,csharp,python}, secenekler[{dil, etiket, cati, hat:
+  tam|dogrulanmamis, kullanilabilir, neden}]}`; tam hat dili repoda yoksa ya da GitHub kipinde
+  `java ∉ TP_WEB_DILLERI` ise `kullanilabilir=false` + Türkçe `neden` (K-T3). Algılama saf sayımdır
+  (Java: `*Test.java|*Testi.java|*Tests.java|*IT.java`, `birim/` ve `uretilen/` hariç; `*Test.kt`
+  yalnız sinyal; tek sabit `platform.py`, `dil_algila` ve `ci/dil` ortak — K-T7), `(ref sha,
+  platform)` ile önbelleklenir, forge hatası üretimi engellemez. Uç `engineer|presenter`'a açıktır;
+  Kod üretimi/Koşular ekranlarındaki rol kısıtı **arayüz düzenidir, yetki sınırı değildir** (K-T8).
+  Script serileştirmesi ek alanlar: `dil`, `dil_kaynagi`, `dogrulanmamis` (`durum == "unverified"`),
+  doğrulanmamışta `kod` = `kaynak_kod` (yol K-T6: `<e2e-csharp kökü>/tests/Generated/<Story>WebC<n>_<u8>Tests.cs` (C# metotları `…Async`) · `<e2e-python kökü>/tests/generated/test_<slug>.py`); `yerel_kontrol.adimlar[{ad, durum: passed|failed|skipped}]`
+  (ts: tsc/eslint/ast_guard; java: deps/guard/compile; eski alanlar korunur). Denetim ve SSE
+  yükleri (`codegen.requested` vb.) `dil` taşır.
 - `GET /scripts` · `/scripts/{id}`: `engel{tur, neden}`, `adimlar[]` (`arguman`, `izinli`,
   `ekran_goruntusu_url`), `eslemeler[]` (doğrulama satırında `verified` = değerin onaylı case
   metninde bulunması, uygulamada gözlem değildir), `yerel_kontrol{…, atlandi}`, `dogrulama[]`,
@@ -748,8 +809,10 @@ Faz 1 entegrasyonunda eklenenler (boş = yerel simülatör / güvenli varsayıla
   yetki vermez, onay sayılmaz; idempotency işaretleri gövdede aynen kalır.
 - Portal görünen adları (core-api): `TP_GORUNEN_ADLAR` (`kullanici_adi=Ad Soyad`, virgülle; boş = seed
   demo varsayılanları; boş ad = yalnızca rol etiketi). Yalnızca gösterim; yetki kararları roldedir.
-- Forge merge kapısı (yalnızca core-worker): `TP_REQUIRED_CHECKS` (virgülle; boş = `local-ci` /
-  GitHub ruleset listesi `test-local,ast-guard,semgrep`).
+- Forge merge kapısı (core-api + core-worker, `x-core-env`): `TP_REQUIRED_CHECKS` (virgülle; boş =
+  `local-ci` / GitHub ruleset listesi `test-local,ast-guard,semgrep`). Buraya yazılan her check HER
+  PR'da zorunludur; LocalForge'da platform/dil check'leri buraya yazılmaz (aşağıdaki 009/011
+  notları); GitHub'da yazılırsa ruleset ile aynı tutulur.
 - Model geçidi: `TP_REPLAY_STRICT` (1 = prova: girdisi beyanla eşleşmeyen golden'a düşmez,
   `ReplayMiss` verir; beyanı (`input_match`) eşleşen golden geçer).
 - Gereksinim akışı (Faz 2): `DEMOAPP_RO_DATABASE_URL` yalnızca core-worker'da (demoapp_ro; core-api
@@ -1020,8 +1083,36 @@ döndü. `SessionDep` artık `scope="function"` (commit yanıttan önce); satır
 - test-runner: `TP_E2E_APP_ROOT` (`e2e-app`), `APPIUM_URL_ANDROID|IOS|WINDOWS` (compose'da
   `TP_RUNNER_APPIUM_URL_*`; varsayılan `http://appium-gw:4723`, Windows boş), `TP_APP_ID_<P>`,
   `TP_APP_PATH_<P>`, `TP_DEVICE_UDID_<P>`.
-- Merge kapısı: `TP_REQUIRED_CHECKS` platform kontrolleri de alabilir (LocalForge ör.
-  `local-ci,local-ci-android`; GitHub ör. `…,mobil-android,masaustu-windows`, ruleset ile aynı tutulur).
+- Merge kapısı: LocalForge'da platform kontrolleri `TP_REQUIRED_CHECKS`'e YAZILMAZ — yazılan liste
+  her PR'da zorunludur, `local-ci,local-ci-android` web PR'larını (android check'i hiç gelmez) kilitler.
+  LocalForge'da `local-ci-<platform>` yol kuralıyla (PR o platformun kökünü değiştirdiyse) otomatik
+  eklenir; GitHub'da `TP_PLATFORMS` → `mobil-android`/`masaustu-windows` core'ca eklenir (ruleset ile
+  aynı tutulur; ruleset güncellemesi `scripts/github-ruleset.sh --add-checks`, mevcutları korur).
+
+**011 üretim dili ekleri** (`specs/011-uretim-dili/plan.md`):
+- core-api + core-worker (`x-core-env`): `TP_PLATFORMS` (GitHub kipinde etkin uygulama platformları,
+  `android,windows`; boş = yalnız web) ve **`TP_WEB_DILLERI`** (`ts,java`; boş = `ts`; `ts` her zaman
+  etkin; yalnız `ts|java` geçerli, başka değer GitHub kipinde forge'u başlatmaz). `java` varsa
+  web + Java üretimi ve Java kardeş koşusu açılır (`web-java` check'i ise K-T10'a göre
+`web-java.yml` depoda olduğu sürece HER ZAMAN zorunludur; ilgisiz PR'da no-op ile hızla yeşil);
+  yoksa `/code/languages` Java'yı kullanılamaz döner (K-T3). core-api de okur (merge kapısı listesi ve
+  dil seçenekleri core-worker ile aynı olmalı). LocalForge'da kullanılmaz.
+- toolchain-worker + test-runner: `TP_E2E_JAVA_ROOT` (`e2e-java`; GitHub kipinde `demo-app/e2e-java`),
+  `TP_E2E_JAVA_DEPS` (imaj içi `/opt/e2e-java`; değiştirilmez).
+- Merge kapısı (K-T11): LocalForge'da `local-ci` + (repoda e2e-java varsa ve PR web+Java'yı
+  koşturuyorsa) `local-ci-web-java` yol kuralıyla otomatik eklenir. `TP_REQUIRED_CHECKS`'e
+  `local-ci,local-ci-web-java` YAZMAYIN: yapılandırılmış liste her PR'da zorunludur ve yalnız TS
+  değiştiren PR'ları (Java koşusu gelmez) kilitler. GitHub ruleset'i:
+  `test-local,ast-guard,semgrep,web-java` + `TP_PLATFORMS` platform check'leri.
+- GitHub merge kapısı (K-T13): zorunlu liste PR'ın **base ∪ head** ağacından (`web-java.yml` birinde
+  varsa `web-java`); ağaç okunamaz ya da `truncated` ise kapalı taraf (`web-java` zorunlu). Portal
+  aynası listeyi core'dan okur. `web-java.yml`'yi silen PR: önce ruleset'ten çıkar, sonra insan
+  merge'ü (`docs/GCP-KURULUM.md` §10.2 adım 11).
+- Güvenilir pom (K-T14): toolchain `check_deps` commit'teki pom'u imajdaki kopyayla
+  (`TP_E2E_APP_ROOT`/`pom.xml` ↔ `toolchain/e2e-app-deps/pom.xml`; e2e-java için `e2e-java-deps`)
+  bayt bayt karşılaştırır. Pom'u değiştiren dağıtımda toolchain imajının hemen ardından depo/forge
+  eşitlenir (`docs/GCP-KURULUM.md` §10.2 adım 5; LocalForge `make forge-sync-dizin D=e2e-app
+  K=uretilen` — `--koru` merge edilmiş üretilen testleri forge main'deki hâliyle bırakır).
 
 ## 7. Kalite kapısı (her şerit)
 - Python: `uv run ruff check`, `uv run ruff format --check`, `uv run pytest` yeşil.

@@ -23,6 +23,13 @@ from tp_core.models.base import Base, guncelleme_col, in_check, olusturma_col, u
 from tp_core.models.requirements import EMPTY_LIST, EMPTY_OBJ, _durum
 
 
+def _varsayilan_dil(context: Any) -> str:
+    """INSERT'te `dil` verilmediyse satırın platformundan (011 §2.1 varsayılanı)."""
+    from tp_core.features.codegen.platform import varsayilan_dil
+
+    return varsayilan_dil(context.get_current_parameters().get("platform"))
+
+
 class Script(Base):
     """Üretilen Playwright testi veya locator onarımı (§8.4, §8.7)."""
 
@@ -32,6 +39,8 @@ class Script(Base):
         in_check("durum", enums.durumlar("script"), "script_durum_ck"),
         in_check("uretim_modu", enums.URETIM_MODU, "script_mod_ck", True),
         in_check("platform", enums.PLATFORM, "script_platform_ck"),
+        in_check("dil", enums.DIL, "script_dil_ck"),
+        in_check("dil_kaynagi", enums.DIL_KAYNAGI, "script_dil_kaynagi_ck"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -56,6 +65,11 @@ class Script(Base):
     uretim_modu: Mapped[str | None]
     # 009 §2.1: hedef platform. Kod üretimi (case, platform) çiftinedir; `web` mevcut davranış.
     platform: Mapped[str] = mapped_column(server_default="web", default="web")
+    # 011 §2.1: üretim dili (ts | java | csharp | python); platformdan türetilmez. Verilmezse
+    # platformun varsayılanı yazılır (web → ts, uygulama → java; eski çağıranlar için geriye uyum).
+    dil: Mapped[str] = mapped_column(server_default="ts", default=_varsayilan_dil)
+    # Dil nereden geldi: repodan algılandı | kullanıcı seçti | varsayılan.
+    dil_kaynagi: Mapped[str] = mapped_column(server_default="varsayilan", default="varsayilan")
     olusturma: Mapped[datetime] = olusturma_col()
     guncelleme: Mapped[datetime] = guncelleme_col()
 
@@ -115,6 +129,10 @@ class PullRequest(Base):
     checks: Mapped[list[Any] | None] = mapped_column(JSONB)
     checks_sha: Mapped[str | None]
     checks_zaman: Mapped[datetime | None]
+    # GitHub kipi (011 K-T13, 0022): senkronun `checks_sha` head'i için hesapladığı merge kapısı
+    # zorunlu listesi (`GitHubForge.zorunlu_checkler`: base ∪ head `web-java.yml`); portal aynası
+    # bunu okur. None: eski kopya (portal kapalı tarafa düşer).
+    zorunlu_checkler: Mapped[list[Any] | None] = mapped_column(JSONB)
     olusturma: Mapped[datetime] = olusturma_col()
     guncelleme: Mapped[datetime] = guncelleme_col()
 

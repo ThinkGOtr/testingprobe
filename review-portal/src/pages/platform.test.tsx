@@ -255,7 +255,8 @@ describe("Koşular ve Kontrol Kulesi", () => {
 
   it("platform dağılımı: kapatılanlar sayılmaz; PR açık/birleşti/defect adayı", () => {
     const d = platformDagilimi(mockVerisi().scriptler);
-    expect(d.find((x) => x.platform === "web")).toMatchObject({ toplam: 3, pr_acik: 2, defect: 1 });
+    // 011: web'de ayrıca C9 Java PR'ı (açık) ve C8 doğrulanmamış Python script'i.
+    expect(d.find((x) => x.platform === "web")).toMatchObject({ toplam: 5, pr_acik: 3, defect: 1 });
     expect(d.find((x) => x.platform === "windows")).toMatchObject({ toplam: 1, pr_acik: 1 });
   });
 });

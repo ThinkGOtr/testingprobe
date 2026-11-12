@@ -138,14 +138,23 @@ const EKRAN_UCU: Record<string, readonly [string, string]> = {
   "/kosular": ["GET", "/runs"],
   "/kontrol-kulesi": ["GET", "/control-tower"],
   "/bug-taslaklari": ["GET", "/bug-drafts"],
+  "/caseler": ["GET", "/cases"],
   "/gereksinimler": ["GET", "/requirements"],
   "/yol-haritasi": ["GET", "/requirements"],
 };
 
+/**
+ * Otomasyon ekranlarını (Kod üretimi, Koşular listeleri) açabilen roller: mühendis ve demo sunucusu.
+ * Analist / PO / testçi menüde görmez ve liste adresine giremez; kanıt bağlantılarının götürdüğü
+ * tekil ekranlar (`/kod/:id`, `/kosular/:id`) herkese açık kalır (bug taslağı, gereksinim detayı).
+ * `rules/assistant/rotalar.json` `roller` alanı bununla aynıdır.
+ */
+export const OTOMASYON_ROLLERI: Rol[] = ["engineer", "presenter"];
+
 const ROL_SAYFALARI: Record<Rol, string[]> = {
   engineer: ["/kod", "/kosular", "/gereksinimler"],
   presenter: ["/yol-haritasi", "/kontrol-kulesi", "/kosular", "/gereksinimler"],
-  tester: ["/bug-taslaklari", "/kosular", "/gereksinimler"],
+  tester: ["/bug-taslaklari", "/caseler", "/gereksinimler"],
   analyst: ["/gereksinimler"],
   po: ["/gereksinimler"],
 };

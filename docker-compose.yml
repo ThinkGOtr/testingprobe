@@ -67,6 +67,21 @@ x-core-env: &core-env
   GITHUB_REPO: ${GITHUB_REPO:-}
   GITHUB_READ_TOKEN: ${GITHUB_READ_TOKEN:-}
   GITHUB_API_URL: ${GITHUB_API_URL:-}
+  # GitHub kipinde zorunlu iş akışı check'leri (sır değil; core-api de okur: kod üretimi ekranının
+  # merge kapısı listesi ve `/code/languages` kullanılabilirliği core-worker ile aynı olmalı).
+  # TP_PLATFORMS: android,windows → mobil-android / masaustu-windows (009; boş = yalnız web).
+  # TP_WEB_DILLERI: ts,java → GitHub kipinde web + Java üretimi ve Java kardeş koşusu yalnız `java`
+  # buradayken açılır (011 K-T3). `web-java` check'i ise web-java.yml depoda olduğu sürece her zaman
+  # zorunludur (K-T10; ilgisiz PR'da no-op ile hızla yeşil). Boş = yalnız ts. LocalForge'da etkisizdir
+  # (repodaki dosyalar belirler). Geçersiz değer GitHubForge'u başlatmaz (bkz. .env.example).
+  TP_PLATFORMS: ${TP_PLATFORMS:-}
+  TP_WEB_DILLERI: ${TP_WEB_DILLERI:-}
+  # Merge kapısının zorunlu check'leri (boş = adaptör varsayılanı: local-ci / ruleset listesi).
+  # core-api de okur (kod üretimi ekranının merge kapısı listesi) → ortak blokta (OPS-L2 tur 2).
+  # Burada yazılanlar HER PR'da zorunludur: LocalForge'da local-ci-web-java / local-ci-<platform>
+  # YAZMAYIN (yol kuralı ekler). GitHub'da platform/web-java check'lerini core TP_PLATFORMS ve K-T10'a
+  # göre kendisi ekler; elle yazılırsa ruleset ile aynı tutun.
+  TP_REQUIRED_CHECKS: ${TP_REQUIRED_CHECKS:-}
   TOOLCHAIN_URL: http://toolchain-worker:8100
   # toolchain-worker belirteci: core → toolchain-worker. test-runner'a VERİLMEZ (security-check 4/5).
   TP_TOOLCHAIN_TOKEN: ${TP_TOOLCHAIN_TOKEN:?make env çalıştırın}
@@ -232,8 +247,6 @@ services:
       GH_APP_PRIVATE_KEY: ${GH_APP_PRIVATE_KEY:-}
       GH_APP_PRIVATE_KEY_PATH: ${GH_APP_PRIVATE_KEY_PATH:-}
       GH_APP_INSTALLATION_ID: ${GH_APP_INSTALLATION_ID:-}
-      # Merge kapısının zorunlu check'leri (boş = adaptör varsayılanı: local-ci / ruleset listesi)
-      TP_REQUIRED_CHECKS: ${TP_REQUIRED_CHECKS:-}
       # Jira yorumlarında rol @bahsetmeleri (accountId; boş = yok). Yalnızca bildirim, yetki değil.
       JIRA_HESAP_ANALIST: ${JIRA_HESAP_ANALIST:-}
       JIRA_HESAP_PO: ${JIRA_HESAP_PO:-}
@@ -318,12 +331,17 @@ services:
       # Uç noktalar (/health hariç) Bearer belirteç ister; belirteçsiz başlatma 503 + degraded.
       TP_TOOLCHAIN_TOKEN: ${TP_TOOLCHAIN_TOKEN:?make env çalıştırın}
       TP_TOOLCHAIN_REQUIRE_TOKEN: "1"
+      # Yalnız tanı: GitHub kipinde Java kökleri LocalForge varsayılanındaysa başlangıç uyarısı (OPS-L7).
+      TP_FORGE: ${TP_FORGE:-local}
       # Forge deposunda e2e kökü: LocalForge 'e2e'; TP_FORGE=github iken 'demo-app/e2e'
       # (core TP_FORGE_APP_ROOT varsayılanı 'demo-app' ile eşleşmeli).
       TP_E2E_ROOT: ${TP_E2E_ROOT:-e2e}
       # Java e2e kökü (009 §2.3; /symbols, /check, /ast-guard `lang=java`): LocalForge 'e2e-app';
       # TP_FORGE=github iken 'demo-app/e2e-app'.
       TP_E2E_APP_ROOT: ${TP_E2E_APP_ROOT:-e2e-app}
+      # Web + Java kökü (011 §2.6; `lang=java` + `platform=web`): LocalForge 'e2e-java';
+      # TP_FORGE=github iken 'demo-app/e2e-java'.
+      TP_E2E_JAVA_ROOT: ${TP_E2E_JAVA_ROOT:-e2e-java}
       # Çalışan uygulamanın commit eşleşmesinde karşılaştırılan uygulama yolları (/check `app`,
       # /locator-probe): LocalForge 'web,api'; TP_FORGE=github iken 'demo-app/web,demo-app/api'.
       TP_APP_PATHS: ${TP_APP_PATHS:-web,api}
@@ -367,6 +385,9 @@ services:
       # /test/* sıfırlaması (DEMO_API_URL) her zaman bu yığının demo-app-api'sidir; Windows
       # uygulaması aynı API'ye dış kapıdan (TP_APP_ARGS_WINDOWS=--api-url https://<bayi>/api) gider.
       TP_E2E_APP_ROOT: ${TP_E2E_APP_ROOT:-e2e-app}
+      # Web + Java koşusu (011 §2.6, Playwright for Java): Appium yok; BASE_URL/DEMO_API_URL ve
+      # imajdaki /ms-playwright tarayıcısı (indirme kapalı) kullanılır.
+      TP_E2E_JAVA_ROOT: ${TP_E2E_JAVA_ROOT:-e2e-java}
       APPIUM_URL_ANDROID: ${TP_RUNNER_APPIUM_URL_ANDROID:-http://appium-gw:4723}
       APPIUM_URL_IOS: ${TP_RUNNER_APPIUM_URL_IOS:-http://appium-gw:4723}
       APPIUM_URL_WINDOWS: ${TP_RUNNER_APPIUM_URL_WINDOWS:-}

@@ -3,7 +3,7 @@ import { canliDerleme, cekirdekYetenekleri, ucVar, type Yetenekler } from "./api
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { OlayProvider } from "./api/events";
 import type { Rol } from "./api/types";
-import { OturumProvider, useOturum, varsayilanSayfa } from "./auth";
+import { OTOMASYON_ROLLERI, OturumProvider, useOturum, varsayilanSayfa } from "./auth";
 import { BildirimProvider } from "./components/Bildirim";
 import { Kabuk } from "./components/Kabuk";
 import { AsistanPaneli } from "./components/asistan/AsistanPaneli";
@@ -21,6 +21,7 @@ import { Kod } from "./pages/Kod";
 import { KontrolKulesi } from "./pages/KontrolKulesi";
 import { KosuDetay, Kosular } from "./pages/Kosular";
 import { ScriptDetay } from "./pages/ScriptDetay";
+import { TestCaseleri } from "./pages/TestCaseleri";
 import { Yayin } from "./pages/Yayin";
 import { YolHaritasi } from "./pages/YolHaritasi";
 import { ROL } from "./lib/etiketler";
@@ -103,9 +104,24 @@ export function Rotalar() {
         <Route path="gereksinimler/:id" element={<GereksinimDetay />} />
         <Route path="gereksinimler/:id/caseler" element={<CaseReview />} />
         <Route path="gereksinimler/:id/yayin" element={<Yayin />} />
-        <Route path="kod" element={<Kod />} />
+        <Route path="caseler" element={<TestCaseleri />} />
+        <Route
+          path="kod"
+          element={
+            <RolGerekli roller={OTOMASYON_ROLLERI}>
+              <Kod />
+            </RolGerekli>
+          }
+        />
         <Route path="kod/:id" element={<ScriptDetay />} />
-        <Route path="kosular" element={<Kosular />} />
+        <Route
+          path="kosular"
+          element={
+            <RolGerekli roller={OTOMASYON_ROLLERI}>
+              <Kosular />
+            </RolGerekli>
+          }
+        />
         <Route path="kosular/:id" element={<KosuDetay />} />
         <Route path="hatalar/:id" element={<HataDetay />} />
         <Route path="bug-taslaklari" element={<BugTaslaklari />} />

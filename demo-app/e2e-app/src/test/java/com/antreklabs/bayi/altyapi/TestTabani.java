@@ -83,6 +83,8 @@ public abstract class TestTabani implements IHookable {
   /** Hazırlık → test → kapanış. */
   @Override
   public void run(IHookCallBack geriCagri, ITestResult sonuc) {
+    // Allure: story / tp-case / gruplar etiket olarak (üretilen test notasyon taşımaz; gruplar yeter).
+    TestGruplari.allureyeEkle(sonuc.getMethod().getGroups());
     try {
       Method metot = sonuc.getMethod().getConstructorOrMethod().getMethod();
       metotAdi = metot.getName();

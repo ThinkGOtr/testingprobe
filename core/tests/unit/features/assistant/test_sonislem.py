@@ -222,10 +222,12 @@ def test_yalniz_rota_kalibina_uyan_ic_rota_baglanti_olur() -> None:
 @pytest.mark.parametrize(
     ("rol", "beklenen"),
     [
-        ("tester", ["/kosular"]),  # /demo yalnız presenter, /claude-code yalnız analyst
-        ("presenter", ["/demo", "/kosular"]),
-        ("analyst", ["/claude-code", "/kosular"]),
-        (None, ["/demo", "/claude-code", "/kosular"]),  # rol bilinmiyor → süzgeç yok
+        # /demo yalnız presenter, /claude-code yalnız analyst, /kosular yalnız engineer + presenter
+        ("tester", ["/denetim"]),
+        ("presenter", ["/demo", "/kosular", "/denetim"]),
+        ("analyst", ["/claude-code", "/denetim"]),
+        ("engineer", ["/kosular", "/denetim"]),
+        (None, ["/demo", "/claude-code", "/kosular", "/denetim"]),  # rol bilinmiyor → süzgeç yok
     ],
 )
 def test_yonlendirme_rolun_acamadigi_ekrana_dusmez(rol: str | None, beklenen: list[str]) -> None:
@@ -236,6 +238,7 @@ def test_yonlendirme_rolun_acamadigi_ekrana_dusmez(rol: str | None, beklenen: li
                 {"etiket": "Demo", "rota": "/demo"},
                 {"etiket": "Claude Code", "rota": "/claude-code"},
                 {"etiket": "Koşular", "rota": "/kosular"},
+                {"etiket": "Denetim", "rota": "/denetim"},
             ]
         ),
         SonIslemBaglami(rol=rol),

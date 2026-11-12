@@ -1,0 +1,23 @@
+# 011 — İnceleme turu 2: bulgular, kararlar, şeritler
+
+Taban: `feat/uretim-dili` @ 93df94a (tur 1 düzeltmeleri birleşik). Tur 1'in yüksek maddelerinin tamamı
+KAPANDI (4 rol doğruladı). Bu tur: tur 2 yeni bulguları + KISMEN kalanlar.
+
+## Yeni kararlar
+- **K-T10 (GÜV-Y3):** GitHub kipinde `web-java` check'i, `web-java.yml` depoda olduğu sürece **her zaman
+  zorunlu** (iş akışı `changes` + no-op deseniyle ilgisiz PR'da hızla yeşil). `TP_WEB_DILLERI` yalnız
+  Java üretimini ve kardeş koşuyu açar. Core `github_required_checks` ve runbook ruleset örneği buna göre.
+- **K-T11 (MİM-B8, OPS-O4, GÜV-Y5):** Script'siz PR'da web test köklerinin (`e2e/`, `e2e-java/`)
+  **dışında** bir değişiklik (uygulama kodu vb.) varsa repodaki **tüm** tam hat dilleri koşar (LocalForge
+  ve GitHub tutarlı). Merge kapısı aynı kuralla (`local-ci` + varsa `local-ci-web-java`).
+- **K-T12 (MİM-B5):** Başka dilde merge edilmiş testin kaldırılması ürün akışı değildir (backlog); 409
+  mesajı çıkış yolunu söyler ("mevcut test dosyasını silen bir PR'ı merge edin, sonra yeniden üretin"),
+  toplu istekte çakışan case sayısı yanıt mesajına ve portala yansır. Runbook'ta elle kaldırma adımı.
+
+## Şeritler
+| Şerit | Bulgular |
+|---|---|
+| E1 core | MİM-B2 (sahte toolchain `check_name` mantığıyla yazsın; web+Java akış testi merge kapısını da doğrulasın; core↔toolchain check adı sözleşme fikstürü/testi), MİM-B4 (onarım/toolchain Java test kalıbı tek kaynak ya da gerekçeli alt küme), K-T10 core, K-T11 (`degisen_web_dilleri`, `local_required_checks`), K-T12 (409 mesajı, toplu yanıtta çakışma sayısı), MİM-B6 (eski docstring'ler, `ci/service.py:695,:723` literal → `check_adi`), MİM-B7 (ölü kod/takma adlar, `dil()` docstring, `ForgePort`'a `merge_base`/`changed_paths`), MİM-L1/L2/L3 kalanları (`enums.PLATFORM/DIL` ↔ `platform.py` eşitlik testi, `browser.APP_PLATFORMLARI`, delegasyon sadeleştirme, Kontrol Kulesi ve `script_uretim_sayisi` → `views.dogrulanmamis`/tek tanım), GÜV-Y4 (DOM `handle_endtag`/`handle_data` olay sayacı + süre denetimi, eşleşmeyen kapanış O(1), toplam olay sınırı), GÜV-Y7 (`ci/service.py` `RUN_DIR_RE/SHA_RE/REF_RE/SAUCE_URL_RE`, `ci/artifacts.py` `_OGE_RE/_TOKEN_RE` → fullmatch), QA-Y1 tur2 (Java algılama: kök/parent pom yalnız `dependencies` altında `com.microsoft.playwright` artifact'ı varsa ve test içeriğinde `com.microsoft.playwright` import'u — Python'daki zayıf işaret yolu), QA-Y2 tur2 (Python: yalnız `from/import playwright` ya da `page: Page`), QA-Y7 (soyut taban sınıfları sayma), OPS-L3 (GitHub PR yorumunda dil/check adı başlığı), render başlık notları (C# `PageTest` için `BaseURL`/`ContextOptions`, `[Property("dealerUsername")]` açıklaması; Python `--base-url` ve `pythonpath`) |
+| E2 java | GÜV-Y1 + QA-Y3 (Extent `kacis`: `"`→`&quot;`, `'`→`&#39;`, `\`→`&#92;` + `<script>` bağlamı testi), QA-O1 (Extent bellek: ara yazımı seyrelt — N testte bir / 30 sn; tek dosya gömmeyi koşu sonunda yap; gömülü ekran sayısına sınır (fazlası `kanit/` göreli bağlantı); `guvenli` `OutOfMemoryError`'u da yakalayıp raporu kapatsın; 300+ başarısız test deneyi), QA-Y5 (story etiketi yalnız `uretilen` grubunda), QA-Y6 (`run-java-checks.sh` birim adımı ayrı `allure.results.directory`), OPS-O2 (`java.io.tmpdir`: pom `argLine`'a `${tp.java.tmpdir}` benzeri özellik + runner `-D` ile koşu dizini; iki pom bayt eşit; `toolchain/runner/java_run.py`) — e2e-java ve e2e-app birlikte |
+| E3 ops-doküman | OPS-Y1 (`forge-init.sh sync-dizin`: `GIT_CONFIG_GLOBAL` ile `safe.directory`, `--baseline` zorla push yerine `fetch +refs`, main push'tan önce hazırlık; test `--shared=0666` + mümkünse farklı uid docker duman testi), OPS-O1 runbook (yeni imajı etiketle, kuyruk boşalt, açık Java PR notu geri dönüşte, checkout sırası), OPS-O3 (ruleset komutu platform check'lerini korusun; K-T10), OPS-L1 (`ci.yml` `!demo-app/ci/*java*` → açık dosya adları), OPS-L2 (`TP_REQUIRED_CHECKS` → `x-core-env`), OPS-L4 (runbook build listesi), OPS-L6 (ruleset sonrası açık PR notu), OPS-L7 (toolchain başlangıç uyarısı: GitHub kipi + varsayılan `TP_E2E_JAVA_ROOT`), GÜV-Y2 (CODEOWNERS: `/demo-app/e2e-java/` ve `/demo-app/e2e-app/` tüm dizin), GÜV-Y6 (`forge-init` bash regex + tar dışlamaları, Makefile tırnak), MİM-B3 (MIMARI-SOZLESME yanlış `TP_REQUIRED_CHECKS` örnekleri), MİM-B6 doküman kısmı (`ortam.dil_dagitimi`, plan §2.3 `neden`), K-T10/K-T11/K-T12 dokümanlara |
+| E4 portal | MİM-B1 (`KodDilleri.neden` alanı; algılama yapılamadığında doğru mesaj; mock + test), QA-Y4 (Otomasyon sütunu: liste sınırı aşıldıysa "bilinmiyor"; PR numarası ve script bağlantı — `/kod/:id` herkese açık), K-T12 portal (toplu yanıttaki çakışma ve nedenleri Kod üretiminde gösterilsin) |

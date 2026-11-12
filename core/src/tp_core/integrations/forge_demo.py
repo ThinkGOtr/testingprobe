@@ -114,15 +114,12 @@ MAX_BREAK_FILES = 5
 
 
 class DemoForge(ForgePort, Protocol):
-    """`merge_pr_detailed`, `merge_base`, `changed_paths` sunan forge (LocalForge, GitHubForge)."""
+    """`merge_pr_detailed` sunan forge (LocalForge, GitHubForge); `merge_base` / `changed_paths`
+    `ForgePort`'tadır."""
 
     def merge_pr_detailed(
         self, number: int, actor: str, *, expected_head_sha: str | None = None
     ) -> MergeResult: ...
-
-    def merge_base(self, a: str, b: str) -> str: ...
-
-    def changed_paths(self, base: str, head: str) -> list[str] | None: ...
 
 
 class DemoOutcome(BaseModel):
@@ -264,14 +261,8 @@ def verify_break_diff(
     Dönen değer denetim için fark özetidir: {head, taban, dosyalar, degisen_satir}.
     """
     web_src = app_path(forge, WEB_SRC_PREFIX)
-    merge_base = getattr(forge, "merge_base", None)
-    changed_paths = getattr(forge, "changed_paths", None)
-    if not callable(merge_base) or not callable(changed_paths):
-        raise ForgeValidationError(
-            "forge kırılma farkını doğrulayamıyor (merge_base/changed_paths)"
-        )
-    base = merge_base(base_ref, head_sha)
-    paths = changed_paths(base, head_sha)
+    base = forge.merge_base(base_ref, head_sha)
+    paths = forge.changed_paths(base, head_sha)
     if paths is None:
         raise ForgeError(f"'{branch}' farkı okunamadı (liste kesilmiş olabilir)")
     if not paths:

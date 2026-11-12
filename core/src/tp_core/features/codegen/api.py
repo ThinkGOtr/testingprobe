@@ -2,7 +2,8 @@
 
 | Yöntem | Yol | Rol |
 |---|---|---|
-| POST | `/code/generate` `{case_ids[], platform?}` | engineer — CasesToCode (202) |
+| POST | `/code/generate` `{case_ids[], platform?, dil?}` | engineer — CasesToCode (202) |
+| GET  | `/code/languages?platform=` | engineer, presenter — algılanan dil + seçenekler (K-T8) |
 | GET  | `/scripts` · `/scripts/{id}` | herkes — üretilen test, PR, adımlar, yerel kontrol |
 | GET  | `/scripts/{id}/screenshots/{n}` | herkes — ajan adımının ekran görüntüsü (PNG) |
 | POST | `/scripts/{id}/break-verify` | engineer — kırarak doğrula (202) |
@@ -16,6 +17,11 @@ head için ikinci istek aynı işi bekler (idempotent). Kırarak doğrulama `pas
 (açık insan kabulü) zorunludur; yoksa 409. `head_sha` yoksa 422; PR zaten merge edildiyse 409
 "PR zaten merge edildi". Dal main'in gerisindeyse (başka PR merge edildi) merge onay kaydı
 yazılmadan 409 döner; dal otomatik güncellenir (ya da `update-branch`).
+
+Rol kısıtı (K-T8): Kod üretimi / Koşular ekranlarının rol bazlı görünürlüğü **arayüz düzenidir,
+yetki sınırı değildir**; okuma uçları oturum açmış herkese açıktır. Tek istisna `GET
+/code/languages`: her çağrı forge'u okur (GitHub hız sınırı), bu yüzden yalnız üretimi başlatan
+(engineer) ve sunum yapan (presenter) rollere açıktır.
 
 Review (`karar` ∈ {degisiklik_iste, reddet}, `ret_nedeni` sabit taksonomiden) script'i kapatır ve
 `insan_review_sonucu`'nu yazar (Constitution X); PR worker'da kapatılır.
@@ -40,6 +46,7 @@ from tp_core.workflow.service import Principal
 router = APIRouter(tags=["codegen"])
 
 Engineer = Annotated[Principal, Depends(require_role("engineer"))]
+EngineerPresenter = Annotated[Principal, Depends(require_role("engineer", "presenter"))]
 MERGE_BEKLEME_S = 20.0  # portal nginx /api/ zaman aşımı 30 sn
 
 
@@ -47,6 +54,8 @@ class KodUretGirdisi(BaseModel):
     case_ids: list[uuid.UUID] = Field(min_length=1, max_length=service.MAX_CASE)
     # 009 §2.1: üretilecek testin platformu; yoksa web (geriye uyum). Bilinmeyen değer 422.
     platform: Literal["web", "android", "ios", "windows"] = "web"
+    # 011 §2.3: üretim dili; yoksa hedef repodan algılanır. Geçersiz (platform, dil) çifti 422.
+    dil: Literal["ts", "java", "csharp", "python"] | None = None
 
 
 class MergeGirdisi(BaseModel):
@@ -66,12 +75,27 @@ class ReviewGirdisi(BaseModel):
 
 @router.post("/code/generate", status_code=202)
 def generate(body: KodUretGirdisi, session: DbSession, user: Engineer) -> dict[str, Any]:
-    return service.start_generation(session, body.case_ids, user, body.platform)
+    return service.start_generation(session, body.case_ids, user, body.platform, body.dil)
+
+
+@router.get("/code/languages")
+def languages(
+    _user: EngineerPresenter,
+    platform: Literal["web", "android", "ios", "windows"] = "web",
+) -> dict[str, Any]:
+    """Algılanan dil, depodaki elle yazılmış test sayıları ve platformun dil seçenekleri."""
+    return service.dil_secenekleri(platform)
 
 
 @router.get("/scripts")
-def list_scripts(session: DbSession, _user: CurrentUser) -> list[dict[str, Any]]:
-    return views.list_scripts(session)
+def list_scripts(
+    session: DbSession, _user: CurrentUser, response: Response
+) -> list[dict[str, Any]]:
+    """En yeni 200 script (düz dizi). `X-Daha-Fazla: 1` → daha eski kayıtlar var (liste kesildi),
+    `0` → liste tam (MİM-D5)."""
+    liste, daha_fazla = views.list_scripts_sinirli(session)
+    response.headers[views.DAHA_FAZLA_BASLIGI] = "1" if daha_fazla else "0"
+    return liste
 
 
 @router.get("/scripts/{script_id}")

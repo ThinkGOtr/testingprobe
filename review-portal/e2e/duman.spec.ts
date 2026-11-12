@@ -47,6 +47,10 @@ function konsolHatalariniTopla(page: Page): string[] {
   return hatalar;
 }
 
+// Kod üretimi ve Koşular listeleri yalnız mühendis + sunucuya açıktır (auth.tsx OTOMASYON_ROLLERI);
+// analist turunda atlanır, sunucu oturumunda gezilir.
+const OTOMASYON_LISTELERI = ["/kod", "/kosular"];
+
 const ROTALAR: { yol: string; ad: string; baslik: RegExp }[] = [
   { yol: "/gereksinimler", ad: "01-gereksinimler", baslik: /^Gereksinimler$/ },
   { yol: "/gereksinimler/req-tpd-1", ad: "02-gereksinim-tpd1", baslik: /Kampanyalı sepet/ },
@@ -54,9 +58,13 @@ const ROTALAR: { yol: string; ad: string; baslik: RegExp }[] = [
   { yol: "/gereksinimler/req-tpd-3", ad: "04-gereksinim-tpd3-injection", baslik: /Ürün arama/ },
   { yol: "/gereksinimler/req-tpd-1/caseler", ad: "05-case-review", baslik: /^Case review$/ },
   { yol: "/gereksinimler/req-tpd-1/yayin", ad: "06-yayin-onizleme", baslik: /^Yayın önizleme$/ },
+  { yol: "/caseler", ad: "06b-test-caseleri", baslik: /^Test case'leri$/ },
   { yol: "/kod", ad: "07-kod-uretimi", baslik: /^Kod üretimi$/ },
   { yol: "/kod/scr-2", ad: "08-script-detay", baslik: /7 adet kampanyalı/ },
   { yol: "/kod/scr-3", ad: "08b-script-defect-adayi", baslik: /6 adet kampanyalı/ },
+  // 011 üretim dili: web + Java PR'ı ve doğrulanmamış Python kaynağı.
+  { yol: "/kod/scr-java", ad: "08c-script-web-java", baslik: /Kampanyalı siparişte minimum sipariş tutarı şartı aranmaz/ },
+  { yol: "/kod/scr-py", ad: "08d-script-dogrulanmamis", baslik: /Onaylanan siparişin numarası gösterilir/ },
   { yol: "/kosular", ad: "09-kosular", baslik: /^Koşular$/ },
   { yol: "/kosular/run-107", ad: "10-kosu-detay", baslik: /run-107/ },
   { yol: "/hatalar/fail-2", ad: "11-triage-locator", baslik: /^Triage sonucu$/ },
@@ -89,12 +97,26 @@ test("analist tüm rotaları gezer (ekran görüntüleri)", async ({ page }) => 
   await expect(page.getByText("ÖRNEK VERİ", { exact: true })).toBeVisible();
   // Örnek veri derlemesinde her ekranın üstünde tam genişlik "gerçek değil" bandı.
   await expect(page.getByTestId("ornek-veri-bandi")).toContainText("ÖRNEK VERİ — gerçek değil");
-  for (const r of ROTALAR) {
-    await page.goto(r.yol);
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText(r.baslik);
-    await expect(page.getByRole("status").filter({ hasText: "Yükleniyor" })).toHaveCount(0);
-    await page.screenshot({ path: `${EKRAN_DIZINI}/${r.ad}.png`, fullPage: true });
-  }
+  const gez = async (rotalar: typeof ROTALAR) => {
+    for (const r of rotalar) {
+      await page.goto(r.yol);
+      await expect(page.getByRole("heading", { level: 1 })).toHaveText(r.baslik);
+      await expect(page.getByRole("status").filter({ hasText: "Yükleniyor" })).toHaveCount(0);
+      await page.screenshot({ path: `${EKRAN_DIZINI}/${r.ad}.png`, fullPage: true });
+    }
+  };
+  await gez(ROTALAR.filter((r) => !OTOMASYON_LISTELERI.includes(r.yol)));
+  // Analist otomasyon listelerini menüde görmez; adresle gelirse yetki mesajı alır.
+  const menu = page.getByRole("navigation", { name: "Ana menü" });
+  await expect(menu.getByRole("link", { name: /Test case'leri/ })).toBeVisible();
+  await expect(menu.getByText("Kod üretimi")).toHaveCount(0);
+  await expect(menu.getByText("Koşular")).toHaveCount(0);
+  await page.goto("/kod");
+  await expect(page.getByText("Bu ekran için yetkiniz yok.")).toBeVisible();
+  await page.getByRole("button", { name: "Çıkış" }).click();
+  await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
+  await girisYap(page, "sunucu");
+  await gez(ROTALAR.filter((r) => OTOMASYON_LISTELERI.includes(r.yol)));
   expect(hatalar).toEqual([]);
 });
 
@@ -560,8 +582,12 @@ const AXE_SAYFALARI: { yol: string; ad: string; hazir: (p: Page) => Promise<void
     hazir: (p) => expect(p.getByText("5 adet kampanyalı üründe bedava ürün verilmez").first()).toBeVisible(),
   },
   { yol: "/gereksinimler/req-tpd-1/yayin", ad: "06-yayin-onizleme", hazir: (p) => expect(p.getByText("Oluşturulacak kayıtlar").first()).toBeVisible() },
+  { yol: "/caseler", ad: "06b-test-caseleri", hazir: (p) => expect(p.getByRole("region", { name: "Test case'leri tablosu" })).toBeVisible() },
   { yol: "/kod", ad: "07-kod-uretimi", hazir: (p) => expect(p.getByRole("region", { name: "Üretilen testler tablosu" })).toBeVisible() },
   { yol: "/kod/scr-2", ad: "08-script-detay", hazir: (p) => expect(p.getByText("c2-kampanya-7-adet-1-bedava.spec.ts").first()).toBeVisible() },
+  // 011: web + Java (Java kontrol adımları) ve doğrulanmamış Python (uyarı bandı, karar kartı yerine açıklama).
+  { yol: "/kod/scr-java", ad: "08c-script-web-java", hazir: (p) => expect(p.getByRole("list", { name: "Yerel kontrol adımları" })).toContainText("pom kilidi") },
+  { yol: "/kod/scr-py", ad: "08d-script-dogrulanmamis", hazir: (p) => expect(p.getByTestId("dogrulanmamis-bandi")).toBeVisible() },
   { yol: "/kosular", ad: "09-kosular", hazir: (p) => expect(p.getByRole("region", { name: "Koşular tablosu" })).toBeVisible() },
   {
     yol: "/kosular/run-107",
@@ -598,6 +624,11 @@ const F0_INCOMPLETE: Record<string, [number, number, number, number, number]> = 
   "/gereksinimler/req-tpd-1": [6, 9, 6, 9, 6],
   "/gereksinimler/req-tpd-1/caseler": [0, 0, 0, 0, 0],
   "/kod/scr-2": [8, 8, 8, 8, 8],
+  // 011 tur 1 (D4) ölçümü: scr-java'nın kırma/onay simgeleri scr-2 ile aynı ("yalnız metin dışı karakter");
+  // scr-py 390 px'te dosya yolu `.kod-dosya` arka planı belirlenemez. Değerler bu turdan önceki dalda da
+  // aynıydı (ölçüldü); eski [0…] tabanı sayfalar hiç ölçülmeden yazılmıştı.
+  "/kod/scr-java": [8, 9, 8, 9, 8],
+  "/kod/scr-py": [0, 1, 0, 1, 0],
   "/denetim": [0, 0, 0, 0, 0],
   "/kontrol-kulesi": [2, 2, 2, 2, 2],
   "/gereksinimler/req-ft-1": [2, 3, 2, 3, 2],
@@ -607,6 +638,7 @@ const F0_INCOMPLETE: Record<string, [number, number, number, number, number]> = 
   "/bug-taslaklari/bug-4": [0, 0, 0, 0, 0],
   "/yol-haritasi": [8, 8, 8, 8, 8],
   "/gereksinimler": [0, 0, 0, 0, 0],
+  "/caseler": [0, 0, 0, 0, 0],
   "/kod": [0, 0, 0, 0, 0],
   "/kosular": [0, 0, 0, 0, 0],
   "/kosular/run-107": [17, 17, 17, 17, 17],
@@ -672,7 +704,7 @@ for (const tur of TEMA_TURLARI) {
       await denetle("/giris", genislik, "00-giris");
 
       await girisYap(page, "analist");
-      for (const s of AXE_SAYFALARI) {
+      for (const s of AXE_SAYFALARI.filter((x) => !OTOMASYON_LISTELERI.includes(x.yol))) {
         await page.goto(s.yol);
         await s.hazir(page);
         await denetle(s.yol, genislik, s.ad);
@@ -682,6 +714,12 @@ for (const tur of TEMA_TURLARI) {
 
       // Demo kontrolleri yalnız sunucu rolünde (App.tsx RolGerekli presenter); onay grubu açık haliyle.
       await girisYap(page, "sunucu");
+      // Kod üretimi ve Koşular listeleri (yalnız mühendis + sunucu).
+      for (const s of AXE_SAYFALARI.filter((x) => OTOMASYON_LISTELERI.includes(x.yol))) {
+        await page.goto(s.yol);
+        await s.hazir(page);
+        await denetle(s.yol, genislik, s.ad);
+      }
       await page.goto("/demo");
       await page.getByRole("button", { name: "Buton kimliğini değiştir" }).click();
       await expect(page.getByRole("group", { name: "Buton kimliği değiştirme onayı" })).toBeVisible();
@@ -1055,5 +1093,120 @@ test("Faz 5: analist TPD-1'e ölçülmüş baz değer girer → Kontrol Kulesi k
   await expect(page.getByRole("list", { name: "14 adımlı demo akışı" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await page.screenshot({ path: `${EKRAN_DIZINI}/56-mobil-yol-haritasi.png`, fullPage: true });
+  expect(hatalar).toEqual([]);
+});
+
+// 011 üretim dili: Kod üretimi dil seçicisi (algılanan → elle seçim → doğrulanmamış uyarı) ve
+// doğrulanmamış script detayı (indirme). Ekran görüntüleri açık temada 1440 ve 390 px:
+// e2e/ekranlar/dil/ (gitignore). 390 px'te sayfa yatay kaymaz.
+test("011: dil seçici, doğrulanmamış dil uyarısı ve doğrulanmamış script (1440 ve 390 px, açık tema)", async ({ page }) => {
+  const DIL_DIZINI = `${EKRAN_DIZINI}/dil`;
+  mkdirSync(DIL_DIZINI, { recursive: true });
+  const hatalar = konsolHatalariniTopla(page);
+  await page.addInitScript(() => {
+    localStorage.setItem("tp-tema-v", "2");
+    localStorage.setItem("tp-tema", "acik");
+  });
+  const kaymaYok = async () =>
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  for (const genislik of [1440, 390]) {
+    await page.setViewportSize({ width: genislik, height: 900 });
+    await girisYap(page, "muhendis");
+    await page.goto("/kod");
+    const dil = page.getByRole("group", { name: "Dil" });
+    await expect(dil.getByRole("radio", { name: "TypeScript" })).toBeChecked();
+    await expect(page.getByTestId("dil-notu")).toHaveText("TypeScript repodan algılandı (9 elle yazılmış test dosyası).");
+    await kaymaYok();
+    await page.screenshot({ path: `${DIL_DIZINI}/01-kod-algilandi-${genislik}.png`, fullPage: true, animations: "disabled" });
+    // Klavye: ok tuşlarıyla Python'a (TypeScript → Java → C# → Python).
+    await dil.getByRole("radio", { name: "TypeScript" }).focus();
+    for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowRight");
+    await expect(dil.getByRole("radio", { name: "Python" })).toBeChecked();
+    await expect(page.getByTestId("dogrulanmamis-dil-uyarisi")).toContainText("Kod derlenmez ve koşulmaz; PR açılmaz.");
+    await page.getByRole("checkbox", { name: /Kampanyasız siparişte minimum tutarın altında/ }).check();
+    await expect(page.getByRole("button", { name: "Seçilenler için kod üret (1) · Python" })).toBeEnabled();
+    await kaymaYok();
+    await page.screenshot({ path: `${DIL_DIZINI}/02-kod-dogrulanmamis-secili-${genislik}.png`, fullPage: true, animations: "disabled" });
+    const sonuc = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze();
+    expect(sonuc.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => v.id)).toEqual([]);
+    await page.getByRole("button", { name: "Algılanana dön (TypeScript)" }).click();
+    await expect(page.getByTestId("dogrulanmamis-dil-uyarisi")).toHaveCount(0);
+    // Android: tek dil (Java), salt bilgi.
+    await page.getByRole("group", { name: "Hedef platform" }).getByText("Android", { exact: true }).click();
+    await expect(page.getByTestId("dil-bilgi")).toContainText("bu platformda tek dil");
+    await page.screenshot({ path: `${DIL_DIZINI}/03-kod-android-tek-dil-${genislik}.png`, fullPage: true, animations: "disabled" });
+
+    await page.goto("/kod/scr-py");
+    const bant = page.getByTestId("dogrulanmamis-bandi");
+    await expect(bant).toContainText("Doğrulanmamış kod: Python (pytest-playwright)");
+    await expect(page.getByRole("button", { name: "Merge et" })).toHaveCount(0);
+    const indirme = page.waitForEvent("download");
+    await bant.getByRole("button", { name: "Kodu indir" }).click();
+    const d = await indirme;
+    expect(d.suggestedFilename()).toMatch(/^test_tpd_1_c8_[0-9a-f]{8}\.py$/);
+    expect(readFileSync(await d.path(), "utf8")).toContain("def test_tpd_1_c8_");
+    await kaymaYok();
+    await page.screenshot({ path: `${DIL_DIZINI}/04-script-dogrulanmamis-${genislik}.png`, fullPage: true, animations: "disabled" });
+
+    await page.goto("/kod/scr-java");
+    await expect(page.getByRole("list", { name: "Yerel kontrol adımları" })).toContainText("Playwright (Java)");
+    await kaymaYok();
+    await page.screenshot({ path: `${DIL_DIZINI}/05-script-web-java-${genislik}.png`, fullPage: true, animations: "disabled" });
+    await page.getByRole("button", { name: "Çıkış" }).click();
+    await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
+  }
+  expect(hatalar).toEqual([]);
+});
+
+test("011 tur 2: dil algılanamadı, dil çakışması ve Otomasyon sütunu liste sınırı (1440 ve 390 px)", async ({ page }) => {
+  const hatalar = konsolHatalariniTopla(page);
+  const kaymaYok = async () =>
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  // D-4 (tur 3): senaryo belgeden ÖNCE kurulur (addInitScript; son eklenen kazanır) ve mevcut belgeye de
+  // yazılır; ilk istekler senaryosuz yola düşmez. Ardından etkin olduğu doğrulanır.
+  const senaryo = async (ad: string) => {
+    await page.addInitScript((x) => sessionStorage.setItem("tp-mock-senaryo", x), ad);
+    await page.evaluate((x) => sessionStorage.setItem("tp-mock-senaryo", x), ad);
+  };
+  const senaryoEtkin = async (ad: string) =>
+    expect.poll(() => page.evaluate(() => sessionStorage.getItem("tp-mock-senaryo"))).toBe(ad);
+  for (const genislik of [1440, 390]) {
+    await page.setViewportSize({ width: genislik, height: 900 });
+    await girisYap(page, "muhendis");
+    await senaryo("depo-okunamadi");
+    await page.goto("/kod");
+    await senaryoEtkin("depo-okunamadi");
+    await expect(page.getByTestId("dil-notu")).toHaveText("Depo okunamadığı için dil algılanamadı; varsayılan: TypeScript. Dili elle seçebilirsiniz.");
+    // Depo okunamadı nedeni seçenek kutularında tekrarlanmaz; notta bir kez.
+    await expect(page.getByRole("group", { name: "Dil" }).getByTestId("secenek-neden")).toHaveCount(0);
+    await kaymaYok();
+
+    await senaryo("uzun-gecmis");
+    await page.goto("/kod");
+    await page.getByRole("checkbox", { name: /TPD-13/ }).check();
+    await page.getByRole("button", { name: "Seçilenler için kod üret (1)" }).click();
+    await expect(page.getByTestId("dil-cakismasi")).toContainText("silen bir PR'ı merge edin");
+    await page.getByRole("checkbox", { name: /TPD-10/ }).check();
+    await page.getByRole("checkbox", { name: /minimum tutarın altında/ }).check();
+    await page.getByRole("button", { name: "Seçilenler için kod üret (3)" }).click();
+    await expect(page.getByTestId("uretim-atlananlar")).toContainText("2 case için üretim başlamadı");
+    await kaymaYok();
+    const sonuc = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze();
+    expect(sonuc.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => v.id)).toEqual([]);
+
+    await page.goto("/caseler");
+    await expect(page.getByTestId("otomasyon-bilinmiyor").first()).toBeVisible();
+    await kaymaYok();
+    await senaryo("");
+    await page.goto("/caseler");
+    await expect(page.getByTestId("otomasyon-pr").first()).toBeVisible();
+    await page.getByTestId("otomasyon-pr").first().click();
+    await expect(page).toHaveURL(/\/kod\/scr-[^#]+#pr$/);
+    // D-2 (tur 3): PR kartı veri gelince çizilir; çapa ona kaydırır ve odak verir.
+    await expect(page.locator("#pr")).toBeInViewport();
+    await expect(page.locator("#pr")).toBeFocused();
+    await page.getByRole("button", { name: "Çıkış" }).click();
+    await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
+  }
   expect(hatalar).toEqual([]);
 });

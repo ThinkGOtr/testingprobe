@@ -228,7 +228,8 @@ describe("ekranlarda görünür neden", () => {
   });
 
   it("Koşular (yetkisiz rol): nedenGizli rol nedenini bastırmaz; grupta bir kez yazılır, açıklamayla birlikte bağlı", async () => {
-    await oturumAc("analist");
+    // Mühendis Koşular ekranını açabilir ama koşu tetikleyemez (tetik yalnız sunucuda).
+    await oturumAc("muhendis");
     const { container } = uygulama("/kosular");
     const gece = await screen.findByRole("button", { name: "Gece koşusunu şimdi başlat" });
     const deploy = screen.getByRole("button", { name: "Deploy sonrası testleri koş" });

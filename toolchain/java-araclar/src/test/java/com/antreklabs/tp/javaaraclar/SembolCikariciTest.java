@@ -65,6 +65,17 @@ class SembolCikariciTest {
     assertEquals(List.of("girisEkrani", "katalogEkrani", "sepetEkrani"), t.get("fixtures"));
   }
 
+  @Test
+  void webPageObjectExpectMetotlariDogrulamadir() {
+    assertEquals("expect", SembolCikarici.tur("expectTotal"));
+    assertEquals("expect", SembolCikarici.tur("expect"));
+    assertEquals("expect", SembolCikarici.tur("expect2"));
+    assertEquals("expect", SembolCikarici.tur("dogrulaToplam"));
+    assertEquals("action", SembolCikarici.tur("expected"));
+    assertEquals("action", SembolCikarici.tur("expectedTotal"));
+    assertEquals("action", SembolCikarici.tur("addToCart"));
+  }
+
   @SuppressWarnings("unchecked")
   @Test
   void kindVeDocVeKimlikCozumu() throws IOException {

@@ -5,9 +5,9 @@ Modelsiz kuralların (constitution XI) sözleşmesi burada zorlanır:
 - `rotalar.json` portalın rotalarıyla (App.tsx + lib/rotalar.ts) birebir.
 - `hata-sozlugu.yaml`: bilinen `kod`'lar (api/errors.py, WorkflowError ailesi, CSRF) kapsanır.
 - `urun-terimleri.yaml`: genel QA terimi yok; S9 ("Flaky test…") genel bilgi kalır.
-- `oneriler.yaml`: §17.3'ün 26 kuralı; kapalı olgu/operatör/yer tutucu kümesi, serbest metin olgusu
-  yer tutucu olamaz, sistem hattı olan ekranda Jira eylemi yok, tek eylem, rol hizalama (FastAPI
-  `require_role` + `APPROVER_ROLES`), kapsam matrisi.
+- `oneriler.yaml`: §17.3'ün 26 kuralı + 011 `script-dogrulanmamis`; kapalı olgu/operatör/yer
+  tutucu kümesi, serbest metin olgusu yer tutucu olamaz, sistem hattı olan ekranda Jira eylemi
+  yok, tek eylem, rol hizalama (FastAPI `require_role` + `APPROVER_ROLES`), kapsam matrisi.
 - `jira-taslaklari.yaml`: taslakta URL/wiki bağlantı/mention/HTML yok, yer tutucular geçerli.
 - `evaluation/assistant.json` iskeleti ve asistan golden'ları.
 """
@@ -200,7 +200,11 @@ def _normalize(metin: str) -> str:
 
 def _bilinen_kodlar() -> set[str]:
     from tp_core.api import csrf, errors
+    from tp_core.api import main as _api_main  # noqa: F401  (özellik router'larını yükler)
     from tp_core.workflow import service
+
+    # Kodlu WorkflowError alt sınıfları özellik modüllerinde tanımlıdır (ör. codegen
+    # `DilCakismasi`); API modülü hepsini içe aktarır, dosya tek başına koşsa da görünür.
 
     def alt_siniflar(cls: type) -> Iterator[type]:
         for alt in cls.__subclasses__():
@@ -530,12 +534,13 @@ def test_oneriler_kural_dosyasi_gecerli() -> None:
     assert kural_hatalari(_oneriler(), _taslaklar(), _rotalar()) == []
 
 
-def test_oneriler_ilk_kural_seti_26_kural_tek_eylem() -> None:
-    """§17.3 tablosu (K10 onaylı): 26 satır, her satır tek kural ve tek eylem."""
+def test_oneriler_kural_seti_27_kural_tek_eylem() -> None:
+    """§17.3 tablosu (K10 onaylı): 26 satır + 011 `script-dogrulanmamis` (bilgi); her satır tek
+    kural ve tek eylem."""
     kurallar = _oneriler()["kurallar"]
-    assert len(kurallar) == 26
+    assert len(kurallar) == 27
     turler = [k["eylem"]["tur"] for k in kurallar]
-    assert turler.count("rota") == 12 and turler.count("bilgi") == 8
+    assert turler.count("rota") == 12 and turler.count("bilgi") == 9
     assert turler.count("jira_taslak") == 3 and turler.count("jira_yorum") == 2
     assert turler.count("jira_kaydi") == 1
 

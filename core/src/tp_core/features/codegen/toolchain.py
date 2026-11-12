@@ -11,6 +11,11 @@ Sembol tablosu commit'e bağlıdır (commit'ler değişmez): süreç içinde (sh
 eklenir; toolchain-worker Java yolunu seçer (`/symbols`: `java-araclar symbols` ile e2e-app ekran
 nesneleri; `/check`: `app → deps → guard → compile → run`, `test_files` e2e-app köküne göre).
 `web` ya da `None` gövdeye hiç yazılmaz (mevcut TS yolu, istek baytları değişmez).
+
+**Dil (011 §2.6):** `lang` üretilen kodun dilidir (`ts` | `java`; `csharp` | `python` toolchain'e
+hiç gitmez). Verilmezse platformun varsayılanı kullanılır (yukarıdaki davranış). `lang="java"` +
+web: `/symbols` ve `/check` gövdesi `{lang: "java", platform: "web"}` taşır (kök
+`TP_E2E_JAVA_ROOT`); check adı `platform.check_adi`'dır (`local-ci-web-java`, K-T1).
 """
 
 from __future__ import annotations
@@ -18,9 +23,12 @@ from __future__ import annotations
 import threading
 from collections import OrderedDict
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
+
+from tp_core.features.codegen import platform as platformlar
 
 
 def varsayilan_check_timeout_s() -> float:
@@ -44,6 +52,32 @@ class ToolchainError(RuntimeError):
         super().__init__(detail)
         self.status = status
         self.detail = detail
+
+
+@dataclass(frozen=True)
+class _Hedef:
+    """İsteğin (platform, dil) hedefi: araç/ortam platforma, kod/derleme yolu dile bakar."""
+
+    platform: str
+    java: bool
+    govde: dict[str, Any]  # `/symbols` gövdesine eklenecek alanlar
+    anahtar: tuple[str, ...]  # sembol önbelleği anahtar eki
+
+
+def _hedef(platform: str | None, lang: str | None) -> _Hedef:
+    p = platform or platformlar.WEB
+    dil = platformlar.dil(p, lang)
+    if dil not in platformlar.TAM_HAT_DILLERI or (lang is not None and lang != dil):
+        # `csharp` / `python` toolchain'e hiç gitmez (011 §2.6).
+        raise ToolchainError(None, f"toolchain yalnızca ts | java dillerini işler: {lang!r}")
+    if not platformlar.gecerli_cift(p, dil):
+        raise ToolchainError(None, f"geçersiz platform/dil çifti: {p} + {dil}")
+    if not platformlar.java_mi(dil):
+        return _Hedef(p, False, {}, ())
+    if platformlar.uygulama_mi(p):
+        # Java tablosu Android/iOS/Windows için aynıdır (ekran nesneleri platformdan bağımsız).
+        return _Hedef(p, True, {"platform": p}, ("java",))
+    return _Hedef(p, True, {"lang": "java", "platform": p}, ("java", "web"))
 
 
 _SYMBOL_CACHE: OrderedDict[tuple[str, ...], dict[str, Any]] = OrderedDict()
@@ -93,27 +127,31 @@ class ToolchainClient:
             raise ToolchainError(resp.status_code, f"toolchain-worker {path}: geçersiz yanıt")
         return data
 
-    def symbols(self, sha: str, *, platform: str | None = None) -> dict[str, Any]:
-        uygulama = bool(platform) and platform != "web"
-        # Java tablosu Android/iOS/Windows için aynıdır (ekran nesneleri platformdan bağımsız).
-        dil = ("java",) if uygulama else ()
-        anahtar = (self.base_url, sha, *dil)
+    def symbols(
+        self, sha: str, *, platform: str | None = None, lang: str | None = None
+    ) -> dict[str, Any]:
+        """Sembol tablosu. `lang` üretilen kodun dilidir (yoksa platformun varsayılanı: web → ts,
+        uygulama → java). İstek gövdesi: ts `{sha}`; uygulama Java `{sha, platform}` (009, baytlar
+        değişmez); web + Java `{sha, lang: "java", platform: "web"}` (011 §2.6; e2e-java tablosu).
+        Önbellek anahtarı tabloları ayırır: TS, uygulama Java'sı (platformlar ortak), web Java'sı.
+        """
+        yol = _hedef(platform, lang)
+        anahtar = (self.base_url, sha, *yol.anahtar)
         with _LOCK:
             if anahtar in _SYMBOL_CACHE:
                 _SYMBOL_CACHE.move_to_end(anahtar)
                 return _SYMBOL_CACHE[anahtar]
-        govde: dict[str, Any] = {"sha": sha}
-        if uygulama:
-            govde["platform"] = platform
-        tablo = self._post("/symbols", govde, SYMBOLS_TIMEOUT_S)
+        tablo = self._post("/symbols", {"sha": sha, **yol.govde}, SYMBOLS_TIMEOUT_S)
         if "page_objects" not in tablo:
             raise ToolchainError(200, "sembol tablosu page_objects içermiyor")
-        if uygulama and tablo.get("lang") not in (None, "java"):
+        if yol.java and tablo.get("lang") not in (None, "java"):
             raise ToolchainError(200, f"Java sembol tablosu beklenirken lang={tablo.get('lang')}")
+        if not yol.java and tablo.get("lang") not in (None, "ts"):
+            raise ToolchainError(200, f"TS sembol tablosu beklenirken lang={tablo.get('lang')}")
         with _LOCK:
             _SYMBOL_CACHE[anahtar] = tablo
             if tablo.get("sha") and tablo["sha"] != sha:
-                _SYMBOL_CACHE[(self.base_url, str(tablo["sha"]), *dil)] = tablo
+                _SYMBOL_CACHE[(self.base_url, str(tablo["sha"]), *yol.anahtar)] = tablo
             while len(_SYMBOL_CACHE) > _CACHE_MAX:
                 _SYMBOL_CACHE.popitem(last=False)
         return tablo
@@ -129,10 +167,13 @@ class ToolchainClient:
         run_id: str | None = None,
         keep: bool = False,
         platform: str | None = None,
+        lang: str | None = None,
     ) -> dict[str, Any]:
         """`keep=True`: koşu dizini test-runner temizliğinde silinmez (`.keep`; kırarak doğrulama
         ve defect adayı kanıtı, MIMARI-SOZLESME §2). `platform` (`android|ios|windows`): Java
-        yolu; `test_files` e2e-app köküne göre (`src/test/java/…/<Ad>Test.java`)."""
+        yolu; `test_files` e2e-app köküne göre (`src/test/java/…/<Ad>Test.java`). `lang="java"` +
+        web (011 §2.6): gövde `{lang: "java", platform: "web"}`, `test_files` e2e-java köküne
+        göre. `lang` yoksa platformun varsayılanı (web → ts: gövde değişmez)."""
         body: dict[str, Any] = {
             "sha": sha,
             "test_files": list(test_files),
@@ -143,8 +184,9 @@ class ToolchainClient:
         }
         if run_id:
             body["run_id"] = run_id
-        if platform and platform != "web":
-            # Ş8 sözleşmesi: Java yolu açıkça (`lang`) + Appium sürücüsü (`platform`).
+        yol = _hedef(platform, lang)
+        if yol.java:
+            # Java yolu açıkça (`lang`) + sürücü/ortam (`platform`: Appium platformu ya da `web`).
             body["lang"] = "java"
-            body["platform"] = platform
+            body["platform"] = yol.platform
         return self._post("/check", body, self.check_timeout_s)

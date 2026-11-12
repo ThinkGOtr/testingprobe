@@ -54,7 +54,7 @@ Portal asistanı (AI-ASISTAN-PLANI) modelden önce bu dosyalardaki deterministik
 | `assistant/hata-sozlugu.yaml` | Hata `kod`'u (MIMARI-SOZLESME §5) veya `detail`/görünen metin parçası → anlam, neden, çözüm, ekran |
 | `assistant/urun-terimleri.yaml` | "Ürüne özgü soru" sınıflandırması için ürün terimleri (genel QA terimleri girmez) |
 | `assistant/rotalar.json` | Portalın iç rotaları (`App.tsx` ile birebir); bağlam rotası bunlara indirgenir, cevaptaki iç rota yalnız bunlara uyarsa bağlantı olur |
-| `assistant/oneriler.yaml` | Öneri düğmesi kuralları (§17.3, 26 kural; tek kural tek eylem), olgu sözleşmesi, bilinçli boş ekranlar |
+| `assistant/oneriler.yaml` | Öneri düğmesi kuralları (§17.3, 26 kural + 011 `script-dogrulanmamis` = 27; tek kural tek eylem; yeni kural K10 yeniden onayı ister — 2026-11-12 onaylandı), olgu sözleşmesi, bilinçli boş ekranlar |
 | `assistant/jira-taslaklari.yaml` | Önerilerin Jira kayıt/yorum taslakları (olgu yer tutuculu düz metin; URL yok) |
 
 - `dev` birleştirmesi bayrak arkasıdır (`TP_ASISTAN_MODEL_MODE=off`, `TP_ASISTAN_ONERI`); constitution

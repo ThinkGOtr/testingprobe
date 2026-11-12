@@ -189,7 +189,7 @@ Akış:
 
 ## 6. Güvenlik olayı, dondurma, kanarya (K4, K5a, K11)
 
-### 6.1 Tablo (S3, migrasyon `0021_asistan_guvenlik.py`)
+### 6.1 Tablo (S3, migrasyon `0023_asistan_guvenlik.py`; dev 0021–0022 sonrası)
 
 `asistan_guvenlik_olay(id uuid pk, kullanici_id uuid not null, mesaj_id uuid null, tur text not
 null, ciddi bool not null, ayrinti jsonb not null default '{}', zaman timestamptz not null default
@@ -363,7 +363,7 @@ Hepsi `feat/asistan-guvenlik` (bu belgenin commit'i) tabanından ayrı worktree'
 |---|---|---|
 | **S1** sinyal + kesin dedektör | `feat/ag-s1-sinyal` · `../tp-wt-ag-s1` | `features/assistant/guvenlik.py` (yeni), `rules/assistant/sinyaller.yaml` (yeni), `features/assistant/maskeleme.py`, `features/assistant/api.py` (yalnız `_kisisel_veri_kontrol` + çağrısı), `features/assistant/flow.py` (yalnız `ilk_mesaj` sinyal satırı + `cevap["sinyaller"]`), `features/assistant/sonislem.py` (yalnız `isle` sonunda çıktı sinyali notu), testler `test_guvenlik.py` |
 | **S2** rol politikası | `feat/ag-s2-rol` · `../tp-wt-ag-s2` | `rules/assistant/rol-politikasi.yaml` (yeni), `features/assistant/rol_politikasi.py` (yeni), `features/assistant/tools/__init__.py`, `features/assistant/flow.py` (yalnız `ROL_ETIKETI` yerine politika etiketi + `ek` satırı, `arac_baglami`'na politika), testler `test_rol_politikasi.py` |
-| **S3** olay + dondurma + kanarya | `feat/ag-s3-olay` · `../tp-wt-ag-s3` | `core/alembic/versions/0021_asistan_guvenlik.py`, `models/` asistan modeli, `features/assistant/olay.py` (yeni), `features/assistant/guvenlik_cikti.py` (yeni), `features/assistant/budget.py` (sabitler), `features/assistant/api.py` (yalnız dondurma + `_sir_kontrol` olay yazımı), `features/assistant/temizlik.py`, `gateway/core.py` (yalnız `sistem_eki`), `features/assistant/flow.py` (yalnız `cevapla` içinde kanarya + çıktı denetimi), testler `test_olay_dondurma.py`, `test_kanarya.py` |
+| **S3** olay + dondurma + kanarya | `feat/ag-s3-olay` · `../tp-wt-ag-s3` | `core/alembic/versions/0023_asistan_guvenlik.py`, `models/` asistan modeli, `features/assistant/olay.py` (yeni), `features/assistant/guvenlik_cikti.py` (yeni), `features/assistant/budget.py` (sabitler), `features/assistant/api.py` (yalnız dondurma + `_sir_kontrol` olay yazımı), `features/assistant/temizlik.py`, `gateway/core.py` (yalnız `sistem_eki`), `features/assistant/flow.py` (yalnız `cevapla` içinde kanarya + çıktı denetimi), testler `test_olay_dondurma.py`, `test_kanarya.py` |
 | **S4** portal | `feat/ag-s4-portal` · `../tp-wt-ag-s4` | `review-portal/src/components/asistan/*`, `review-portal/src/api/asistan.ts`, `review-portal/src/api/mock/asistan.ts`, ilgili vitest dosyaları, `review-portal/e2e/asistan-guvenlik.spec.ts` (yeni) |
 | **S5** prompt + eval + vaka testi | `feat/ag-s5-eval` · `../tp-wt-ag-s5` | `rules/prompts/assistant.md`, `rules/assistant/istem-izleri.yaml` (yeni), `rules/evaluation/assistant.json`, `core/tests/unit/features/assistant/test_guvenlik_vakalari.py` (yeni; S1 arayüzüne göre yazılır), `specs/008-ai-asistan/spec.md` (013'e atıf) |
 

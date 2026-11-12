@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -78,6 +79,16 @@ class Settings:
     mvn_timeout_s: float = 300
     # Boş = imajdaki `TOOLCHAIN_HOME/java-araclar/java-araclar.jar` (geliştirmede target/ yolu).
     java_araclar_jar_path: Path | None = None
+    # Web + Java (011 §2.5–2.6; Playwright for Java + TestNG): hedef proje kökü (forge'da;
+    # local-forge `e2e-java`, GitHub monorepo `demo-app/e2e-java`) ve imajdaki güvenilir pom +
+    # ikinci ısıtılmış Maven deposu (`/opt/e2e-java/{pom.xml,m2}`).
+    e2e_java_root: str = "e2e-java"
+    e2e_java_deps: Path = Path("/opt/e2e-java")
+
+    @property
+    def e2e_java_m2(self) -> Path:
+        """Web + Java hattının çevrimdışı Maven deposu (salt okunur kuyruk)."""
+        return self.e2e_java_deps / "m2"
 
     @property
     def java_araclar_jar(self) -> Path:
@@ -187,4 +198,35 @@ def settings() -> Settings:
         java_araclar_jar_path=(
             Path(env("TP_JAVA_ARACLAR_JAR")) if env("TP_JAVA_ARACLAR_JAR", "").strip() else None
         ),
+        e2e_java_root=env("TP_E2E_JAVA_ROOT", "e2e-java"),
+        e2e_java_deps=Path(env("TP_E2E_JAVA_DEPS", "/opt/e2e-java")),
     )
+
+
+def github_kipi(cfg: Settings, env: Mapping[str, str] | None = None) -> bool:
+    """Forge GitHub monoreposu mu? `TP_FORGE=github` (compose verir), uzak ayna adresi ya da
+    `demo-app/` önekli e2e kökü bunu gösterir (toolchain davranışı buna bağlı değil)."""
+    env = os.environ if env is None else env
+    return (
+        (env.get("TP_FORGE") or "").strip().lower() == "github"
+        or bool(cfg.forge_remote_url)
+        or cfg.e2e_root.strip().startswith("demo-app/")
+    )
+
+
+def kok_uyarilari(cfg: Settings, env: Mapping[str, str] | None = None) -> list[str]:
+    """OPS-L7 (011 tur 2): GitHub kipinde Java kökleri LocalForge varsayılanında bırakılmışsa
+    (`e2e-java` / `e2e-app`) Java koşuları "proje yok" ile düşer; başlangıçta uyarılır."""
+    if not github_kipi(cfg, env):
+        return []
+    uyarilar = []
+    for ad, deger, beklenen in (
+        ("TP_E2E_JAVA_ROOT", cfg.e2e_java_root, "demo-app/e2e-java"),
+        ("TP_E2E_APP_ROOT", cfg.e2e_app_root, "demo-app/e2e-app"),
+    ):
+        if deger.strip().strip("/") in ("e2e-java", "e2e-app"):
+            uyarilar.append(
+                f"GitHub kipi ama {ad}={deger!r} (LocalForge varsayılanı); monorepoda "
+                f"{beklenen!r} bekleniyor — .env'de {ad}={beklenen} verin"
+            )
+    return uyarilar

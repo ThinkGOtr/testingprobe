@@ -100,3 +100,40 @@ def test_sema_adi_kurali_ayni(drift: ModuleType) -> None:
     for purpose in sorted(drift.model_purposes()):
         if (RULES / "schemas" / f"{purpose}.schema.json").exists():
             assert drift.load_schema(purpose) == bundle.load_schema(RULES, purpose)
+
+
+# --------------------------------------------------------------- core ↔ toolchain (011 tur 2)
+
+TOOLCHAIN_SOZLESME = REPO / "toolchain" / "tests" / "data" / "core_sozlesme.json"
+
+
+@pytest.fixture(scope="module")
+def toolchain_sozlesme() -> dict:
+    if not TOOLCHAIN_SOZLESME.exists():
+        pytest.skip("toolchain yok")
+    return json.loads(TOOLCHAIN_SOZLESME.read_text(encoding="utf-8"))
+
+
+def test_check_adi_toolchain_check_name_ile_ayni(toolchain_sozlesme: dict) -> None:
+    """MİM-B2: core `platform.check_adi` ↔ toolchain worker `check_name` (toolchain tarafı aynı
+    dosyayı `toolchain/tests/test_core_sozlesme.py`'de sınar)."""
+    from tp_core.features.codegen import platform as p
+
+    for g in toolchain_sozlesme["check_adlari"]:
+        assert p.check_adi(g["platform"], g["lang"]) == g["check"], g
+    ciftler = {(g["lang"], g["platform"] or p.WEB) for g in toolchain_sozlesme["check_adlari"]}
+    beklenen = {(d, pl) for pl in p.PLATFORMLAR for d in p.TAM_HAT_DILLERI if p.gecerli_cift(pl, d)}
+    assert ciftler == beklenen
+
+
+def test_java_kapsam_sonekleri_toolchain_ile_ayni(toolchain_sozlesme: dict) -> None:
+    """MİM-B4: onarımın `test_files`'a koyduğu Java testleri toolchain'in kabul ettiği küme."""
+    from tp_core.features.codegen import platform as p
+
+    assert list(p.JAVA_KAPSAM_SONEKLERI) == toolchain_sozlesme["java_kapsam_sonekleri"]
+    assert set(p.JAVA_KAPSAM_SONEKLERI) <= set(p.JAVA_TEST_SONEKLERI)
+    for yol in toolchain_sozlesme["java_kapsam_ornekleri"]["kabul"]:
+        assert p.java_kapsam_dosyasi_mi(yol), yol
+    for yol in toolchain_sozlesme["java_kapsam_ornekleri"]["red"]:
+        assert not p.java_kapsam_dosyasi_mi(yol), yol
+    assert not p.java_kapsam_dosyasi_mi("src/test/java/a/birim/KimlikTest.java")
