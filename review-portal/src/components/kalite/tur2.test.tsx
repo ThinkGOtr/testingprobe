@@ -21,7 +21,9 @@ import { BildirimProvider } from "../Bildirim";
 import { CaseKarti } from "../CaseKarti";
 import { HataKosusuKarti, turetmeOnerisi } from "../kule/HataKosusuKarti";
 import { HataYakalamaKarosu, OnayliUyumsuzKarti } from "../kule/KaliteKpilari";
-import { KarsilastirmaTablosu } from "./oracle";
+import { damgaAlani, karsilastirilamamaNedeni, KarsilastirmaTablosu } from "./oracle";
+import { OrnekIzgarasi } from "./OrnekIzgarasi";
+import { caseOracleYanitiUyarla } from "../../api/uyumKalite";
 import { icerikFarklari } from "./ortak";
 
 const REQ = "req-tpd-1";
@@ -309,5 +311,43 @@ describe("tur 2: kısmen nedenleri düz Türkçe", () => {
     await userEvent.click(within(k).getByRole("button", { name: "Değerleri elle doğruladım, onayla" }));
     await waitFor(() => expect(mockVerisi().caseler.find((x) => x.id === c.id)!.durum).toBe("approved"));
     expect(kararSpy).toHaveBeenCalledWith(c.id, expect.objectContaining({ oracle_istisna_turu: "kontrolsuz", oracle_kayit_damgasi: kayit.damga }));
+  });
+});
+
+describe("Q1 sözleşme ayrıntıları", () => {
+  it("damga 'yok' gönderilmez; kısmen nedeni null → alan yok; istisna id okunur", () => {
+    expect(damgaAlani({ damga: "yok" } as never)).toEqual({});
+    expect(damgaAlani({ damga: "2026-11-12T10:00:00+00:00" } as never)).toEqual({ oracle_kayit_damgasi: "2026-11-12T10:00:00+00:00" });
+    const o = caseOracleYanitiUyarla({
+      case_id: "c",
+      oracle: { sonuc: "uyumsuz", ozet: "", karsilastirmalar: [], kismen_nedeni: null, damga: "yok", istisna: { id: "ist-1", gerekce: "g", tur: "uyumsuz", gecerli: true }, kontrol_suruyor: false },
+    })!;
+    expect(o).not.toHaveProperty("kismen_nedeni");
+    expect(o.istisna).toMatchObject({ id: "ist-1", gecerli: true });
+  });
+
+  it("karşılaştırılamayan sayı türleri düz Türkçe", () => {
+    expect(karsilastirilamamaNedeni("Beklenen alandaki sayı hiçbir tablo değeriyle eşlenmedi")).toBe("case metninde karşılaştırılmayan sayı");
+    expect(karsilastirilamamaNedeni("Girdi alanındaki sayı çıkarılan değerlerle eşleşmiyor (çelişebilir)")).toBe("girdi değeri çelişiyor");
+    expect(karsilastirilamamaNedeni("Yazıyla yazılmış sayı karşılaştırılamaz")).toBe("yazıyla yazılmış sayı");
+    expect(karsilastirilamamaNedeni("case'te bulunamayan girdi: ara_toplam")).toBe("case'te bulunamayan girdi: ara_toplam");
+  });
+
+  it("ornekler: `ortusme` + `onem: bilgi` uyarı değil bilgi notu", async () => {
+    await oturumAc("po");
+    const t = (await api.kararTablolari(REQ)).tablolar[1];
+    vi.spyOn(api, "kararTablosuOrnekleri").mockResolvedValue({
+      ornekler: [],
+      uyarilar: [
+        { tur: "ortusme", onem: "bilgi", mesaj: "R1 önceliklidir (kampanyalı sepette R2'ye bakılmaz).", satirlar: ["R1", "R2"] },
+        { tur: "ortusme", onem: "uyari", mesaj: "R2 ve R3 aynı tutarı kısıtlıyor.", satirlar: ["R2", "R3"] },
+      ],
+    });
+    yalin(<OrnekIzgarasi tablo={t} />);
+    const liste = await screen.findByTestId("kt-ornek-uyari");
+    const [bilgi, uyari] = within(liste).getAllByRole("listitem");
+    expect(bilgi).toHaveTextContent(/^Bilgi: R1 önceliklidir/);
+    expect(bilgi).toHaveAttribute("data-onem", "bilgi");
+    expect(uyari).toHaveTextContent(/^Satırlar örtüşüyor: R2 ve R3/);
   });
 });

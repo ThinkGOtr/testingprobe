@@ -150,6 +150,7 @@ export function tabloOrnekleriUyarla(x: unknown): TabloOrnekleri {
         {
           tur: metin(u.tur, "bilgi"),
           mesaj: metin(u.mesaj),
+          ...(u.onem === "uyari" || u.onem === "bilgi" ? { onem: u.onem } : {}),
           ...(Array.isArray(u.satirlar) ? { satirlar: metinler(u.satirlar) } : {}),
           ...(nesneMi(u.girdiler) ? { girdiler: kayit(u.girdiler) } : {}),
         },
@@ -257,6 +258,7 @@ function istisnaUyarla(i: Ham): OracleIstisnasi {
     ...(i.tur === "uyumsuz" || i.tur === "kontrolsuz" ? { tur: i.tur } : {}),
     ...("icerik_hash" in i ? { icerik_hash: metinYaDaNull(i.icerik_hash) } : {}),
     ...(typeof i.gecerli === "boolean" ? { gecerli: i.gecerli } : {}),
+    ...("id" in i ? { id: metinYaDaNull(i.id) } : {}),
   };
 }
 
@@ -305,6 +307,7 @@ export function oracleUyarla(x: unknown): CaseOracle | null {
     ...degerSayimiUyarla(x.degerler),
     ...("neden" in x ? { neden: metinYaDaNull(x.neden) } : {}),
     ...("damga" in x ? { damga: metinYaDaNull(x.damga) } : {}),
+    // Q1: `kismen_nedeni` yalnız `kismen` sonuçta liste, diğerlerinde null (alan eklenmez).
     ...(Array.isArray(x.kismen_nedeni) ? { kismen_nedeni: metinler(x.kismen_nedeni) } : {}),
   };
 }

@@ -185,7 +185,16 @@ export function oracleHatasi(e: unknown): e is ApiError {
 
 /** Tur 2 (Y9): karar gövdesine kontrol kaydının damgası (çekirdek vermezse alan yok). */
 export function damgaAlani(o: CaseOracle | null | undefined): { oracle_kayit_damgasi?: string } {
-  return o?.damga ? { oracle_kayit_damgasi: o.damga } : {};
+  // Q1: kayıt yokken çekirdek damgayı "yok" yazar; o zaman gönderilmez.
+  return o?.damga && o.damga !== "yok" ? { oracle_kayit_damgasi: o.damga } : {};
+}
+
+/** Q1: tamlık denetimi nedenleri (kapsanmayan sayı türleri) düz Türkçe; diğer nedenler aynen. */
+export function karsilastirilamamaNedeni(neden: string): string {
+  if (/^Beklenen alandaki sayı/.test(neden)) return "case metninde karşılaştırılmayan sayı";
+  if (/^Girdi alanındaki sayı/.test(neden) || /^çelişkili girdi/.test(neden)) return "girdi değeri çelişiyor";
+  if (/^Yazıyla yazılmış sayı/i.test(neden)) return "yazıyla yazılmış sayı";
+  return neden;
 }
 
 /**
@@ -330,8 +339,8 @@ export function KarsilastirmaTablosu({
         {nedenler.map((neden) => (
           <tbody key={neden} className="oracle-karsilastirilamadi" data-testid="oracle-karsilastirilamadi">
             <tr>
-              <th scope="rowgroup" colSpan={5} className="kucuk">
-                Karşılaştırılamadı: {neden}
+              <th scope="rowgroup" colSpan={5} className="kucuk" title={neden}>
+                Karşılaştırılamadı: {karsilastirilamamaNedeni(neden)}
               </th>
             </tr>
             {karsilastirilamayan
@@ -861,7 +870,7 @@ export function useDuzeltmeOnKontrolu(
         if (!oracle) return setDurum({ asama: "zaman_asimi", icerik, anlam });
         // K10 + V11 + tur 2: yüksek riskte uyuşmazlık, kontrol edilemedi ya da gerekçe isteyen kısmen → gerekçe;
         // aynı tür + içerik + tablo kümesiyle geçerli saklı istisna varsa gerekçe istenmez (S1).
-        const damga = oracle.damga ?? undefined;
+        const damga = damgaAlani(oracle).oracle_kayit_damgasi;
         if (yuksekRisk(tc, icerik)) {
           const tur: OracleIstisnaTuru | null =
             oracle.sonuc === "uyumsuz" ? "uyumsuz" : oracle.sonuc === "kontrol_edilemedi" || (oracle.sonuc === "kismen" && kismenGerekceIster(oracle)) ? "kontrolsuz" : null;

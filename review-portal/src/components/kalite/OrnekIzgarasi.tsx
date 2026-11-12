@@ -152,8 +152,9 @@ export function OrnekIzgarasi({ tablo, kriterler = null }: { tablo: KararTablosu
           {veri.uyarilar.length > 0 && (
             <ul className="duz-liste kt-ornek-uyari" data-testid="kt-ornek-uyari">
               {veri.uyarilar.map((u, i) => (
-                <li key={i} className="kucuk">
-                  <strong>{UYARI_TURU[u.tur] ?? u.tur}:</strong> {u.mesaj}
+                <li key={i} className={`kucuk${u.onem === "bilgi" ? " soluk kt-ornek-bilgi" : ""}`} data-onem={u.onem}>
+                  {/* Q1: `onem: bilgi` örtüşme yalnız öncelik notudur (ör. "R1 önceliklidir"), uyarı değil. */}
+                  <strong>{u.onem === "bilgi" ? "Bilgi" : (UYARI_TURU[u.tur] ?? u.tur)}:</strong> {u.mesaj}
                   {u.satirlar?.length ? <span className="soluk"> (satır {u.satirlar.join(", ")})</span> : null}
                 </li>
               ))}

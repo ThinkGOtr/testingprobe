@@ -1705,6 +1705,8 @@ export interface TabloOrnegi {
 export interface TabloOrnekUyarisi {
   tur: string;
   mesaj: string;
+  /** Q1: `ortusme` için `uyari` (aynı girdiyi kısıtlayan koşullar) | `bilgi` (yalnız öncelik notu); yoksa alan yok. */
+  onem?: "uyari" | "bilgi";
   satirlar?: string[];
   girdiler?: Record<string, string | number | boolean | null>;
 }
@@ -1867,6 +1869,8 @@ export interface OracleIstisnasi {
    * gerekçeyi yeniden istemez (çekirdek `oracle.exception_reused` yazar). Çekirdek vermezse alan yok.
    */
   gecerli?: boolean;
+  /** Q1: append-only `oracle_istisna` satır kimliği; çekirdek vermezse alan yok. */
+  id?: string | null;
 }
 
 /** K11 kısmen uyumlu sonucun nedenleri (tur 2): `eksik_girdi` dışındaki nedenler zorunlu kapıda gerekçe ister. */
