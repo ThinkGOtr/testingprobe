@@ -3,7 +3,7 @@
 // rolü, örnek gereksinim ve dar ekran tabloları.
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -330,7 +330,8 @@ describe("case ölçümleri", () => {
     );
     uygulama("/gereksinimler/req-tpd-1/caseler");
     const ozet = await screen.findByRole("region", { name: "Özet" });
-    expect(await within(ozet).findByTestId("case-baz")).toHaveTextContent("45 dk 00 sn");
+    // Ölçüm verisi özet kartından sonra gelebilir (yük altında): metin gelene dek beklenir.
+    await waitFor(() => expect(within(ozet).getByTestId("case-baz")).toHaveTextContent("45 dk 00 sn"));
     expect(within(ozet).getByTestId("case-baz")).toHaveTextContent("Varsayılan");
     expect(within(ozet).getByTestId("case-baz-aciklama")).toHaveTextContent("kazanca girmez");
     expect(within(ozet).getByTestId("case-kazanc")).toHaveTextContent("—");

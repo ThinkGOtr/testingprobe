@@ -515,11 +515,13 @@ export function kodUretYanitiUyarla(govde: unknown): KodUretYaniti {
       script_id: metinYaDaNull(s.script_id),
     });
   }
+  const { cakisma_sayisi: cakismaSayisi, ...geri } = g;
   return {
-    ...(g as unknown as IsYaniti),
+    ...(geri as unknown as IsYaniti),
     job_id: metinYaDaNull(g.job_id),
     durum: metin(g.durum),
     ...(typeof g.mesaj === "string" ? { mesaj: g.mesaj } : {}),
+    ...(typeof cakismaSayisi === "number" && Number.isInteger(cakismaSayisi) && cakismaSayisi >= 0 ? { cakisma_sayisi: cakismaSayisi } : {}),
     sonuclar,
   };
 }
@@ -528,11 +530,25 @@ export function kodUretYanitiUyarla(govde: unknown): KodUretYaniti {
 export const SCRIPT_LISTE_SINIRI = 200;
 
 /**
- * `GET /scripts` yanıtı + sınır bilgisi. Düz dizi (bugünkü core): uzunluk sınıra ulaştıysa liste eksik
- * olabilir. Zarf (`{items|kayitlar|data, toplam?, sinir|limit?, daha_fazla|has_more?}`): açık bilgi
- * varsa ona, yoksa uzunluk ≥ sınıra bakılır.
+ * MİM-D5: core `GET /scripts` düz diziyi korur, liste sınırının aşıldığını yanıt başlığıyla söyler
+ * (`1` aşıldı, `0` aşılmadı). Başlık adı tek yerde: core (F1) adıyla hizalı tutulur.
  */
-export function scriptListesiUyarla(govde: unknown): ScriptListesi {
+export const SCRIPT_DAHA_FAZLA_BASLIGI = "X-Daha-Fazla";
+
+/** Başlıktan açık bilgi: `1`/`true` → true, `0`/`false` → false; yoksa ya da tanınmazsa null. */
+export function dahaFazlaBasligiOku(h: Headers): boolean | null {
+  const v = h.get(SCRIPT_DAHA_FAZLA_BASLIGI)?.trim().toLowerCase();
+  if (v === "1" || v === "true") return true;
+  if (v === "0" || v === "false") return false;
+  return null;
+}
+
+/**
+ * `GET /scripts` yanıtı + sınır bilgisi. Öncelik: yanıt başlığı (`dahaFazla`, MİM-D5) → zarftaki açık bilgi
+ * (`{items|kayitlar|data, toplam?, sinir|limit?, daha_fazla|has_more?}`) → uzunluk ≥ sınır (bugünkü core:
+ * düz dizi sınıra ulaştıysa liste eksik olabilir).
+ */
+export function scriptListesiUyarla(govde: unknown, dahaFazla: boolean | null = null): ScriptListesi {
   const ham = Array.isArray(govde)
     ? govde
     : nesneMi(govde)
@@ -549,7 +565,7 @@ export function scriptListesiUyarla(govde: unknown): ScriptListesi {
     else if (toplam !== null) sinira = toplam > ham.length;
     else if (sinir !== null) sinira = ham.length >= sinir;
   }
-  return { kayitlar, sinira_ulasti: sinira };
+  return { kayitlar, sinira_ulasti: dahaFazla ?? sinira };
 }
 
 // ------------------------------------------------------------------ Koşular

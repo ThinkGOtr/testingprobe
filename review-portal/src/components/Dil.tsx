@@ -32,8 +32,13 @@ export const ALGILAMA_KAPSAMI = "e2e/, e2e-java/, C# ve Python test projelerinde
  * Algılama hiç yapılamadıysa (core üst düzey `neden` dolu: depo/forge okunamadı) "test bulunamadı"
  * denmez; dürüst ileti budur (MİM-B1).
  */
-export function algilanamadiMesaji(varsayilan: string): string {
-  return `Depo okunamadığı için dil algılanamadı; varsayılan: ${varsayilan}. Dili elle seçebilirsiniz.`;
+/**
+ * Algılama yapılamadığında not. `elleSecilebilir` (varsayılan): seçenek birden çoksa elle seçim önerilir;
+ * tek seçenekte öneri eklenmez (metin parçalardan kurulur, sonradan kırpılmaz).
+ */
+export function algilanamadiMesaji(varsayilan: string, elleSecilebilir = true): string {
+  const temel = `Depo okunamadığı için dil algılanamadı; varsayılan: ${varsayilan}.`;
+  return elleSecilebilir ? `${temel} Dili elle seçebilirsiniz.` : temel;
 }
 
 /** Dil notunun metni: elle seçim, repodan algılama, algılama sonuçsuz ya da algılama yapılamadı. */
@@ -85,7 +90,7 @@ export function DilSecici({
           </span>
           {diller.neden && (
             <span className="kucuk" role="status" data-testid="dil-notu" data-kaynak="algilanamadi">
-              {algilanamadiMesaji(DIL_ETIKETI[diller.algilanan]).replace(" Dili elle seçebilirsiniz.", "")}
+              {algilanamadiMesaji(DIL_ETIKETI[diller.algilanan], false)}
             </span>
           )}
         </span>

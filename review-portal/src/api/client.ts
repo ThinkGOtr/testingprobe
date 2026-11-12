@@ -12,7 +12,7 @@ import {
 } from "./uyum";
 import { bugIcerikCoreBicimi, bugTaslagiUyarla, hataAnaliziUyarla } from "./uyumTriage";
 import { nesneMi } from "./uyum";
-import { kodDilleriUyarla, kodUretYanitiUyarla, kontrolKulesiUyarla, kosuDetayUyarla, kosuUyarla, scriptDetayUyarla, scriptListesiUyarla, scriptUyarla } from "./uyumDemoB";
+import { dahaFazlaBasligiOku, kodDilleriUyarla, kodUretYanitiUyarla, kontrolKulesiUyarla, kosuDetayUyarla, kosuUyarla, scriptDetayUyarla, scriptListesiUyarla, scriptUyarla } from "./uyumDemoB";
 import { bazYanitiUyarla, demoDurumuUyarla, gereksinimBazi } from "./uyumFaz5";
 import type {
   BazDegerGirdisi,
@@ -172,7 +172,11 @@ export const api = {
   },
   scriptler: async (): Promise<Script[]> => listeUyarla(await istek<unknown>("GET", "/scripts"), scriptUyarla),
   /** `GET /scripts` + liste sınırına ulaşıldı mı (core en yeni 200 kayıt; QA-Y4). */
-  scriptListesi: async (): Promise<ScriptListesi> => scriptListesiUyarla(await istek<unknown>("GET", "/scripts")),
+  scriptListesi: async (): Promise<ScriptListesi> => {
+    let dahaFazla: boolean | null = null;
+    const govde = await istek<unknown>("GET", "/scripts", { basliklar: (h) => (dahaFazla = dahaFazlaBasligiOku(h)) });
+    return scriptListesiUyarla(govde, dahaFazla);
+  },
   script: async (id: string): Promise<ScriptDetay> => scriptDetayUyarla(nesne(await istek<unknown>("GET", `/scripts/${yol(id)}`))),
   kirarakDogrula: (id: string) => istek<IsYaniti>("POST", `/scripts/${yol(id)}/break-verify`, { kaynak: SCRIPT_KAYNAGI }),
   /** `pr`: incelenen PR; içerik hash'i ve head sha'sı merge'e bağlanır. */

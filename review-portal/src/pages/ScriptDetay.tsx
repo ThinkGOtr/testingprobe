@@ -17,6 +17,7 @@ import { aracEtiketi, checkEtiketi, dikeyEkranMi, uygulamaPlatformuMu, type Plat
 import { DilRozeti } from "../components/Dil";
 import { DIL_CATISI, DIL_ETIKETI, gecerliDiller, KONTROL_ADIMI, kontrolAdimlari, kontrolZinciri, kosuAraci, type Dil } from "../lib/dil";
 import { vurguDili } from "../lib/vurgula";
+import { useCapayaKaydir } from "../lib/capa";
 
 const ASAMA_ADI = { baseline: "Bayraksız (yeşil olmalı)", broken: "BREAK_CAMPAIGN=1 (kırmızı olmalı)", restored: "Bayrak kaldırıldı (yeşil olmalı)" } as const;
 const SONUC = {
@@ -703,6 +704,8 @@ export function ScriptDetay() {
     ["agent.step", "pr.opened", "pr.merged", "ci.status", "script.updated"],
     id,
   );
+  // D-2 (tur 3): `/kod/:id#pr` (Test case'leri PR bağlantısı) — PR kartı (`id="pr"`) veri gelince çizilir.
+  useCapayaKaydir(Boolean(v.veri));
 
   if (v.yukleniyor && !v.veri) return <Yukleniyor />;
   if (v.hata && !v.veri) return <HataKutusu hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />;

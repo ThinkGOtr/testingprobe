@@ -1416,6 +1416,11 @@ export interface UretimSonucu {
 /** `POST /code/generate` yanıtı: iş + case başına sonuçlar (011 K-T12). */
 export interface KodUretYaniti extends IsYaniti {
   sonuclar: UretimSonucu[];
+  /**
+   * core K-T12 (MİM-D1/D2): başka dilde merge edilmiş testi olduğu için üretilmeyen case sayısı. Alan
+   * varsa core `mesaj`ı bu bilgiyi zaten içerir (portal yinelemez); yoksa (eski core) `sonuclar`'dan sayılır.
+   */
+  cakisma_sayisi?: number;
 }
 
 /**

@@ -66,7 +66,7 @@ import {
 import { mockOlayYayinla } from "./olaylar";
 import { javaDosyaYolu, javaTestKodu, uygulamayaCevir } from "./platformlar";
 import { PLATFORMLAR, PLATFORM_ETIKETI, platformUyarla, type Platform } from "../../lib/platform";
-import { DIL_ETIKETI, DILLER, dilUyarla, dogrulanmamisDilMi, gecerliCift, type Dil } from "../../lib/dil";
+import { DIL_ETIKETI, DILLER, dilUyarla, dogrulanmamisDilMi, gecerliCift, varsayilanDil, type Dil } from "../../lib/dil";
 import { algilananDil, csharpCiktisi, JAVA_KONTROL_ACIKLAMASI, javaAdimlari, javaWebCiktisi, javaYerelGecti, kodDilleriYaniti, pythonCiktisi } from "./diller";
 import { asistanMockSifirla, asistanRotalari } from "./asistan";
 import { oneriKuleOlcumu, oneriMockSifirla, oneriRotalari } from "./oneri";
@@ -1030,12 +1030,34 @@ function mockDilCakismasi(caseId: string, platform: Platform, dil: Dil): string 
   const onceki = merged.find((d) => d !== dil);
   if (!onceki) return null;
   const yer = platform === "web" ? "web testi" : `${platform} testi`;
-  return `Bu case'in ${yer} ${DIL_ETIKETI[onceki]} ile merge edildi; dil değiştirmek için önce mevcut testi kaldırın`;
+  // core `dil_cakismasi` iletisinin birebir kopyası (MİM-D1).
+  return `Bu case'in ${yer} ${DIL_ETIKETI[onceki]} ile merge edildi; dil değiştirmek için önce mevcut testi kaldırın: mevcut test dosyasını silen bir PR'ı merge edin, sonra yeniden üretin`;
 }
 
 /** Aynı dilde merge edilmiş (liste dışı) kayıt: core `merge_edildi` (yeniden üretilmez). */
 function mockMergeEdilmis(caseId: string, platform: Platform, dil: Dil): boolean {
   return mockSenaryosu("uzun-gecmis") && LISTE_DISI_MERGED.some((x) => x.case_id === caseId && x.platform === platform && x.dil === dil);
+}
+
+/** core `start_generation` K-T12: çakışan case sayısı ve ileti eki (birebir core metni). */
+function cakismaSayisi(sonuclar: UretimSonucu[]): number {
+  return sonuclar.filter((x) => x.durum === "cakisma").length;
+}
+
+function cakismaEki(sonuclar: UretimSonucu[]): string {
+  const n = cakismaSayisi(sonuclar);
+  return n
+    ? ` ${n} case başka dilde merge edilmiş testi olduğu için üretilmedi (mevcut test dosyasını silen bir PR'ı merge edin, sonra yeniden üretin).`
+    : "";
+}
+
+/** core `_hedef_eki`: varsayılan hedefte (web + ts) yalnız nokta; yoksa platform ve/veya dil. */
+function hedefEki(platform: Platform, dil: Dil): string {
+  const parcalar: string[] = platform === "web" ? [] : [platform];
+  if (dil !== varsayilanDil(platform)) parcalar.push(DIL_ETIKETI[dil]);
+  let ek = parcalar.length ? ` (${parcalar.join(", ")}).` : ".";
+  if (dogrulanmamisDilMi(dil)) ek += " Doğrulanmamış dil: kod üretilir ama derlenmez/koşulmaz, PR açılmaz.";
+  return ek;
 }
 
 function kodUret(govde: unknown): KodUretYaniti {
@@ -1078,7 +1100,7 @@ function kodUret(govde: unknown): KodUretYaniti {
         { kod: "dil_cakismasi" },
       );
     }
-    return { job_id: null, durum: "none", mesaj: "Yeni üretim gerekmiyor (süren iş ya da açık PR var).", sonuclar };
+    return { job_id: null, durum: "none", mesaj: "Yeni üretim gerekmiyor (süren iş ya da açık PR var)." + cakismaEki(sonuclar), cakisma_sayisi: cakismaSayisi(sonuclar), sonuclar };
   }
   for (const c of baslayan) {
     // 011 §2.2: etkin anahtar (case, platform); doğrulanmamış script başka dilde yeniden üretilince kapanır.
@@ -1240,7 +1262,8 @@ function kodUret(govde: unknown): KodUretYaniti {
   // Sonuçlar istek sırasıyla (core gibi).
   sonuclar.sort((a, b) => ids.indexOf(a.case_id) - ids.indexOf(b.case_id));
   return {
-    ...is("started", `${baslayan.length} case için kod üretimi başladı${app ? ` (${platform})` : ""}${dilEki ? ` (${dilEki.slice(3)})` : ""}.`),
+    ...is("started", `${baslayan.length} case için kod üretimi başlatıldı${hedefEki(platform, dil)}${cakismaEki(sonuclar)}`),
+    cakisma_sayisi: cakismaSayisi(sonuclar),
     sonuclar,
   };
 }
