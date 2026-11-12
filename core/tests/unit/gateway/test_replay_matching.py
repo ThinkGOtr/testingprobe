@@ -257,7 +257,8 @@ def test_verify_and_map_matches_the_approved_case_even_as_ascii_json(rules_dir) 
     recorder = InMemoryCallRecorder()
     gw = _gateway(rules_dir, recorder, strict=True)
     cases = load_golden("case_generation", "TPD-1")["output"]["cases"]
-    for n, case in enumerate(cases, start=1):
+    # Doğrulama ajanı kaydı olan C1–C10 (C11–C15, 011 K17 sınır case'leri: kayıt yok).
+    for n, case in enumerate(cases[:10], start=1):
         # json.dumps varsayılanı ensure_ascii=True: "ü" → "ü"; eşleşme yine bulmalı.
         block = wrap_untrusted(json.dumps(case), source=f"case:TPD-1-C{n}")
         msg = ModelMessage(role="user", content=f"Onaylı case:\n{block}")

@@ -14,7 +14,7 @@
     ],
     "contains": [
       "Bayi, katalogdan ürünleri sepete ekleyip kampanya indirimiyle siparişini onaylayabilmelidir.",
-      "Set özeti (set_hash): c327d943255e1935d766efd882ee6b1e99cb0c839076611842e49e423f060525"
+      "Set özeti (set_hash): c7e23405bb43f51487559b7d52571731b9ea25164b54da07cbda30aa13b1d7c1"
     ]
   },
   "output": {
@@ -23,7 +23,7 @@
         "no": 1,
         "title": "İzlenebilirlik",
         "verdict": "UYGUN",
-        "finding": "AC1–AC6'nın her biri en az bir case'te (matris: AC1 C1, AC2 C2–C4 ve C10, AC3 C5–C6, AC4 C7, AC5 C8, AC6 C9).",
+        "finding": "AC1–AC6'nın her biri en az bir case'te (matris: AC1 C1, AC2 C2, C3, C4, C10, C11, C12, AC3 C5, C6, C13, AC4 C7, C14, C15, AC5 C8, AC6 C9).",
         "missing_case": null,
         "question": null,
         "owner": ""
@@ -32,7 +32,7 @@
         "no": 2,
         "title": "Denklik bölümleri (EP)",
         "verdict": "UYGUN",
-        "finding": "Geçersiz bölümler (EP-I1 minimum tutar altı, EP-I2 kredi limiti aşımı) C5 ve C7 ile sınanıyor; sepet adedinde tip/boş girdi kaynağın konusu değil.",
+        "finding": "Geçersiz bölümler (EP-I1 minimum tutar altı, EP-I2 kredi limiti aşımı) C5 ve C7 ile sınanıyor; sepet adedinde tip/boş girdi için kaynakta kural yok.",
         "missing_case": null,
         "question": null,
         "owner": ""
@@ -40,26 +40,26 @@
       {
         "no": 3,
         "title": "Sınır değerler (BVA)",
-        "verdict": "UYGUN_DEGIL",
-        "finding": "Bedava eşiği (7 adet) C3/C4 ile sınanıyor; ikinci eşik (11/12 adet, BV-3/BV-4) ve kredi limitine eşit tutar (BV-7) not_covered'da 10 case sınırı gerekçesiyle kaldı.",
-        "missing_case": "12 adet kampanyalı üründe 2 adet bedava verildiğini doğrulayan sınır case'i (BV-4); C10 yerine yazılabilir.",
+        "verdict": "UYGUN",
+        "finding": "Bedava eşikleri iki değerle sınanıyor: 6/7 adet (C3/C2), ikinci eşik 13/14 adet (C11/C12). 750,00 TL sınırı C6 (eşit) ve C13 (749,00 TL; 749,99 TL'ye kurulabilen en yakın değer); kredi limiti C14 (eşit) ve C15 (2.001,00 TL; limit + 0,01 TL'ye en yakın).",
+        "missing_case": null,
         "question": null,
         "owner": ""
       },
       {
         "no": 4,
         "title": "Karar tablosu (DT)",
-        "verdict": "UYGUN",
-        "finding": "Kampanya × minimum tutar koşulu AC3/AC6 ile iki satırda (C5–C6 kampanyasız, C9 kampanyalı) sınanıyor; diğer birleşimler kaynakta tanımlı değil.",
+        "verdict": "ACIK_BILGI_GEREKLI",
+        "finding": "DT1'in üç kuralı C5, C9 ve C6 ile sınanıyor; kampanyalı ve kampanyasız ürünün aynı sepette olduğu, 750,00 TL altındaki birleşim AC3 ile AC6 arasında tanımsız (Q1 yanıtsız).",
         "missing_case": null,
-        "question": null,
-        "owner": ""
+        "question": "Aynı sepette kampanyalı ve kampanyasız ürün varken toplam 750,00 TL'nin altındaysa minimum sipariş tutarı şartı aranır mı?",
+        "owner": "PO"
       },
       {
         "no": 5,
         "title": "Durum geçişleri (ST)",
         "verdict": "UYGUN",
-        "finding": "Story durum geçişi tanımlamıyor; sipariş onayı (C8) tek geçiştir.",
+        "finding": "Story durum geçişi tanımlamıyor; sipariş onayı (C8) tek akıştır.",
         "missing_case": null,
         "question": null,
         "owner": ""
@@ -68,7 +68,7 @@
         "no": 6,
         "title": "Negatif kapsam kararları",
         "verdict": "UYGUN",
-        "finding": "EP-I1 ve EP-I2 tested; BV-6 ve BV-8 gerekçeyle out_of_scope (demo fiyatlarıyla 749,99 TL kurulamaz; limit üstü EP-I2 ile sınanıyor).",
+        "finding": "EP-I1, BV-6, EP-I2, BV-8 ve DT-R1 tested (C5, C13, C7, C15); kararlar gerekçeli, kurulamayan sınırlar en yakın değerle sınanıyor.",
         "missing_case": null,
         "question": null,
         "owner": ""
@@ -86,7 +86,7 @@
         "no": 8,
         "title": "Somut ve kaynaklı test verisi",
         "verdict": "UYGUN",
-        "finding": "Test verisi demo-app tohumundan (bayi1/bayi2, P-001…P-004); kaynakta olmayan kural ya da değer yok.",
+        "finding": "Test verisi demo-app tohumundan (bayi1/bayi2, P-001…P-004); kurulamayan sınırlarda kullanılan en yakın değer tanımda açıkça yazılı; kaynakta olmayan kural yok.",
         "missing_case": null,
         "question": null,
         "owner": ""
@@ -113,7 +113,7 @@
         "no": 11,
         "title": "Öncelik",
         "verdict": "UYGUN",
-        "finding": "Para etkili kurallar (kampanya, minimum tutar, kredi limiti, sipariş onayı) P1; AC6 ve tekrar dışı akışlar uygun önceliklerde.",
+        "finding": "P1 yalnız para (bedava eşikleri, minimum tutar, kredi limiti aşımı) ve ana akış (sepete ekleme, sipariş onayı) case'lerinde; geçici çözümü olan ya da olasılığı düşük case'ler P2, tekrar C10 P3.",
         "missing_case": null,
         "question": null,
         "owner": ""
@@ -129,14 +129,7 @@
       }
     ],
     "score": 10,
-    "missing_cases": [
-      {
-        "ac_ref": "AC2",
-        "item": 3,
-        "description": "12 adet kampanyalı ürün sepete eklenir; 2 adet bedava verilir ve bayi 10 adet öder.",
-        "technique": "BVA"
-      }
-    ],
+    "missing_cases": [],
     "remove_or_merge": [
       {
         "case_refs": [
@@ -147,6 +140,6 @@
         "reason": "C10 ile C2 aynı sepeti (P-001 × 7) aynı beklenen sonuçla sınıyor."
       }
     ],
-    "summary": "Set altı kabul kriterini kapsıyor; beklenenler kaynaklı ve ölçülebilir. İki açık var: C10, C2'nin tekrarı (birleştirilmeli) ve AC2'nin ikinci bedava eşiği (12 adet) case'siz kaldı."
+    "summary": "Set altı kabul kriterini ve AC2–AC4 sınırlarını kapsıyor; beklenenler kaynaklı ve ölçülebilir. İki açık var: C10, C2'nin tekrarı (reddedilmeli ya da birleştirilmeli) ve karma sepet için minimum tutar kuralı tanımsız (Q1, PO)."
   }
 }

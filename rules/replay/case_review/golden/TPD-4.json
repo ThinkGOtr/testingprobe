@@ -10,7 +10,7 @@
     ],
     "contains": [
       "Bayi, kullanıcı adı ve parolasıyla portala giriş yapabilmelidir.",
-      "Set özeti (set_hash): 1875b145758f5eca0a4581c54a4ec0790ed9d484d7258731fb669e3aec5a5e24"
+      "Set özeti (set_hash): c156bf48bc7f16269fc1499afd3ec4570a86c2c0c3e063424d0ac6f369cdad11"
     ]
   },
   "output": {
@@ -28,7 +28,7 @@
         "no": 2,
         "title": "Denklik bölümleri (EP)",
         "verdict": "ACIK_BILGI_GEREKLI",
-        "finding": "Kayıtlı olmayan kullanıcı adı (EP-I2) kaynakta sonuçsuz; gerekçeyle out_of_scope.",
+        "finding": "Kayıtlı olmayan kullanıcı adı (EP-I2) kaynakta sonuçsuz; set PO'ya soruyor (Q1) ve öğeyi gerekçeyle out_of_scope bırakıyor.",
         "missing_case": null,
         "question": "Kayıtlı olmayan kullanıcı adıyla girişte hangi mesaj gösterilmeli?",
         "owner": "PO"
@@ -64,7 +64,7 @@
         "no": 6,
         "title": "Negatif kapsam kararları",
         "verdict": "UYGUN",
-        "finding": "EP-I1 tested, EP-I2 gerekçeyle out_of_scope.",
+        "finding": "EP-I1 tested, EP-I2 Q1 gerekçesiyle out_of_scope.",
         "missing_case": null,
         "question": null,
         "owner": ""
@@ -109,7 +109,7 @@
         "no": 11,
         "title": "Öncelik",
         "verdict": "UYGUN",
-        "finding": "Giriş güvenlik etkili; iki case P1.",
+        "finding": "Giriş ana akış (C1) ve güvenlik (C2) etkili; iki case P1.",
         "missing_case": null,
         "question": null,
         "owner": ""
@@ -127,6 +127,6 @@
     "score": 11,
     "missing_cases": [],
     "remove_or_merge": [],
-    "summary": "Set iki kabul kriterini kapsıyor; beklenenler kaynaklı. Kayıtlı olmayan kullanıcı adının sonucu kaynakta yok; PO'ya sorulmalı."
+    "summary": "Set iki kabul kriterini kapsıyor; beklenenler kaynaklı. Kayıtlı olmayan kullanıcı adının sonucu kaynakta yok; set bunu PO'ya soruyor (Q1)."
   }
 }

@@ -13,7 +13,7 @@ imli satırı denetim girdisine (`CaseSetAuditRequest.policies`) güvenilir meti
 ## Politikalar
 
 - KVKK: test verisinde gerçek kişi, müşteri ya da çalışan verisi (ad-soyad + iletişim, TCKN, telefon, adres, e-posta) kullanılmaz; kişisel veri yalnız sentetik ve açıkça uydurma olabilir.
-- Test verisi sentetiktir (`synthetic: true`); geçerli sağlama toplamlı TCKN, IBAN veya kart numarası, gerçek parola, token, API anahtarı ve üretim verisi kullanılmaz. E-posta adresleri ayrılmış/test alan adlarındadır (example.com, *.test, *.local, sim.local).
+- Test verisi sentetiktir (`synthetic: true`); geçerli sağlama toplamlı TCKN, IBAN veya kart numarası, gerçek parola, token, API anahtarı ve üretim verisi kullanılmaz. E-posta adresleri ayrılmış/test alan adlarındadır (example.com, *.test, sim.local).
 - Testler yalnız izinli test ortamlarında koşar (aşağıdaki liste); üretim (prod/canlı) sistemlerine, gerçek üçüncü taraf servislerine ve gerçek kullanıcı hesaplarına istek atan adım yazılmaz.
 - Gerçek ödeme, gerçek e-posta ve gerçek SMS gönderimi yapılmaz; ödeme, bildirim ve mesaj servisleri yalnız simülatör/sahte (sandbox) uçlarla test edilir.
 - Negatif ve güvenlik testleri (enjeksiyon, XSS, SQLi, yetki aşımı) yalnız izinli test ortamında ve saldırı verisi `is_attack_payload: true` ile işaretlenmiş olarak yazılır; saldırı metni adım/başlık metnine talimat olarak yazılmaz.
@@ -25,8 +25,14 @@ imli satırı denetim girdisine (`CaseSetAuditRequest.policies`) güvenilir meti
 - localhost
 - 127.0.0.1
 - demo-app
+- demo-app-web
+- demo-app-api
 - jira-sim
-- *.local
+- sim.local
 - *.test
 - example.com
 - *.example.com
+
+Not: `*.local` gibi geniş bir desen bilinçli olarak yok (`.local` mDNS ile yerel ağdaki herhangi bir
+makineye çözülebilir; test ortamı olduğunu kanıtlamaz). Yeni bir yerel test ortamı açık adıyla
+eklenir.

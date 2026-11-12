@@ -7,7 +7,7 @@
     "sources": [
       "case:TPD-1-C1"
     ],
-    "case_text": "Başlık: Sepete ekle ile ürün sepete eklenir ve sepet sayacı artar\nTür: positive · Risk: medium\nKabul kriterleri: AC1\nÖn koşullar:\n- Sepet boş\nAdımlar:\nS1: Giriş sayfasını aç\n  Veri: (yok)\n  Beklenen: Giriş formu görüntülenir\nS2: Bayi kullanıcısıyla giriş yap\n  Veri: bayi1 / Demo123!\n  Beklenen: Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir\nS3: \"Portakal Gazozu 1L\" (P-001) kartında adedi 1 yapıp \"Sepete ekle\" butonuna bas\n  Veri: P-001 × 1\n  Beklenen: Sepet sayacı 1 olur\nBeklenen sonuç: Ürün sepete eklenir ve sepet sayacı 1 olur\nEtiketler: AI-generated"
+    "case_text": "Başlık: Sepete ekle ile ürün sepete eklenir ve sepet sayacı artar\nTür: positive\nKabul kriterleri: AC1\nÖn koşullar:\n- Sepet boş\nAdımlar:\nS1: Giriş sayfasını aç\n  Veri: (yok)\n  Beklenen: Giriş formu görüntülenir\nS2: Bayi kullanıcısıyla giriş yap\n  Veri: bayi1 / Demo123!\n  Beklenen: Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir\nS3: \"Portakal Gazozu 1L\" (P-001) kartında adedi 1 yapıp \"Sepete ekle\" butonuna bas\n  Veri: P-001 × 1\n  Beklenen: Sepet sayacı 1 olur\nBeklenen sonuç: Ürün sepete eklenir ve sepet sayacı 1 olur\nEtiketler: AI-generated"
   },
   "case": {
     "jira_key": "TPD-1",

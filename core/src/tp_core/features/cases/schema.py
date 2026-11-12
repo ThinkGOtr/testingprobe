@@ -65,6 +65,7 @@ TEKNIK_ONEKI = {
     "PW": "PW-",
     "UC": "UC-",
     "EG": "EG-",
+    "CL": "CL-",
 }
 
 
@@ -113,6 +114,8 @@ def _legacy_schema(rules_dir: str) -> dict[str, Any]:
     v3 alanları içerikte varsa yine v3 tanımlarıyla doğrulanır (bilinmeyen alan reddedilir).
     """
     sema = copy.deepcopy(case_schema(Path(rules_dir)))
+    # 011 K18: v3 şemasında `risk` yok; eski case'te v2 alanı olarak kalır ve okunur.
+    sema["properties"].setdefault("risk", {"type": "string", "enum": ["high", "medium", "low"]})
     sema["required"] = list(V2_ZORUNLU)
     sema["properties"]["expected_result"]["minLength"] = 1
     sema["properties"]["steps"]["items"]["properties"]["expected"]["minLength"] = 1

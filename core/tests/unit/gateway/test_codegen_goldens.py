@@ -146,30 +146,43 @@ def test_scenario_round_two_findings_inherit_round_one_code_defects() -> None:
 CASE_TEXT_FIELDS = (
     "title",
     "type",
-    "risk",
     "acceptance_criteria_refs",
     "preconditions",
     "steps",
     "expected_result",
     "tags",
 )
-# AC2'nin case'leri (7 / 6 / 5 / 7 adet): senaryo belgesinde bedava eşiği 6|7, ana belgede 5|6.
-AC2_CASES = (2, 3, 4, 10)
+# AC2'nin case'leri (7 / 6 / 5 / 7 adet; ikinci eşik C11/C12): senaryo belgesinde bedava eşiği
+# 6|7, ana belgede 5|6.
+AC2_CASES = (2, 3, 4, 10, 11, 12)
+# Doğrulama ajanı kaydı olan case'ler (C11–C15, 011 K17 sınır case'leri: kayıt yok).
+KAYITLI = 10
+# Senaryoda case metni ayrışan ve kendi doğrulama kaydı olan case'ler: C3 (6 adette bedava yok),
+# C2 (7 adet = eşik: boundary) ve C4 (5 adet = bölüm içi: positive) — C2/C4'te yalnız tür farklı.
+SENARYO_KAYITLI = (2, 3, 4)
 
 
 def test_scenario_cases_differ_from_the_main_golden_only_in_the_ac2_boundary() -> None:
-    """Case metni (v2 alanları) yalnız C3'te ayrışır: verify_and_map ana golden'ları diğer
-    case'lerle eşleşir. Şema v3 kapsam alanları (`technique`, `covers`, `test_data.class`) belgenin
-    eşiğine göre yazıldığından AC2 case'lerinde farklı olabilir; başka hiçbir alan ayrışmaz."""
+    """Case metni (v2 alanları) C3'te (beklenen) ve C11/C12'de (ikinci eşik adedi) ayrışır; C2 ve
+    C4'te yalnız tür (belgenin eşiğine göre) farklıdır. Diğer case'lerde verify_and_map ana
+    golden'ları eşleşir. Şema v3 kapsam ve öncelik alanları belgenin eşiğine göre yazıldığından AC2
+    case'lerinde farklı olabilir; başka hiçbir alan ayrışmaz."""
     base = load_golden("case_generation", "TPD-1")["output"]["cases"]
     variant = load_golden("case_generation", f"{SCENARIO}/TPD-1")["output"]["cases"]
     assert len(base) == len(variant)
     pairs = list(enumerate(zip(base, variant, strict=True), 1))
     text_differs = [n for n, (a, b) in pairs if any(a[k] != b[k] for k in CASE_TEXT_FIELDS)]
-    assert text_differs == [3]
+    assert text_differs == [2, 3, 4, 11, 12]
+    for n in (2, 4):
+        a, b = base[n - 1], variant[n - 1]
+        assert [k for k in CASE_TEXT_FIELDS if a[k] != b[k]] == ["type"], n
     for n, (a, b) in pairs:
         other = {k for k in a.keys() | b.keys() if a.get(k) != b.get(k)} - set(CASE_TEXT_FIELDS)
-        allowed = {"technique", "covers", "test_data"} if n in AC2_CASES else set()
+        allowed = (
+            {"technique", "covers", "test_data", "priority", "priority_rationale"}
+            if n in AC2_CASES
+            else set()
+        )
         assert other <= allowed, (n, sorted(other))
     c3 = variant[2]
     assert c3["type"] == "boundary" and c3["acceptance_criteria_refs"] == ["AC2"]
@@ -480,7 +493,12 @@ def _by_title(prefix: str) -> tuple[int, dict[str, Any], dict[str, Any]]:
 
 def test_demo_b_seven_free_one_is_green_today_and_red_under_break_campaign() -> None:
     n, _case, golden = _by_title("7 adet kampanyalı üründe 1 adet bedava")
-    assert golden["golden"] == golden_name("TPD-1", case_no=n)  # ana golden eşleşir
+    # Senaryoda 7 adet eşiğin kendisidir (boundary): senaryo kaydı; tarayıcı yörüngesi ana kayıtla
+    # aynı.
+    assert golden["golden"] == f"{SCENARIO}/TPD-1-C{n}"
+    assert (
+        golden["output"] == load_golden("verify_and_map", golden_name("TPD-1", case_no=n))["output"]
+    )
     assert _failing_expects(golden, break_campaign=False) == []
     broken = _failing_expects(golden, break_campaign=True)
     assert any(f.startswith("expectFreeQuantity") for f in broken), broken
@@ -521,7 +539,7 @@ def test_fix_doc_alternative_has_no_assertion_defect_candidate() -> None:
     kampanya case'leri bugünkü kodda yeşildir; tek kod hatası AC4'tür ve eksik metot olarak durur
     (assertion'a varmaz)."""
     cases = load_golden("case_generation", "TPD-1")["output"]["cases"]
-    for n in range(1, len(cases) + 1):
+    for n in range(1, KAYITLI + 1):
         golden = load_golden("verify_and_map", golden_name("TPD-1", case_no=n))
         assert _failing_expects(golden, break_campaign=False) == [], cases[n - 1]["title"]
 
@@ -647,7 +665,7 @@ def test_code_defect_scenario_replays_end_to_end_in_strict_mode(rules_dir, jira)
     assert recorder.ai_calls[-1]["ek"]["replay_kaynagi"] == (
         f"case_generation/golden/{SCENARIO}/TPD-1.json"
     )
-    for n, case in enumerate(cases.output["cases"], start=1):
+    for n, case in enumerate(cases.output["cases"][:KAYITLI], start=1):
         result, calls, streamed = _run_verify(gw, rules_dir, case, n)
         row = recorder.ai_calls[-1]
         assert result.mode == "replay" and row["mod"] == "replay", case["title"]
@@ -655,7 +673,7 @@ def test_code_defect_scenario_replays_end_to_end_in_strict_mode(rules_dir, jira)
         used = row["ek"]["replay_kaynagi"]
         expected = (
             f"verify_and_map/golden/{SCENARIO}/TPD-1-C{n}.json"
-            if n == 3
+            if n in SENARYO_KAYITLI
             else f"verify_and_map/golden/TPD-1-C{n}.json"
         )
         assert used == expected, (n, used)
@@ -675,7 +693,7 @@ def test_code_defect_scenario_replays_end_to_end_in_strict_mode(rules_dir, jira)
 def test_main_path_cases_never_pick_the_scenario_goldens(rules_dir) -> None:
     gw = _gateway(rules_dir, InMemoryCallRecorder(), strict=True)
     cases = load_golden("case_generation", "TPD-1")["output"]["cases"]
-    for n, case in enumerate(cases, start=1):
+    for n, case in enumerate(cases[:KAYITLI], start=1):
         result, _, _ = _run_verify(gw, rules_dir, case, n)
         assert result.output == load_golden("verify_and_map", f"TPD-1-C{n}")["output"]
 

@@ -9,19 +9,24 @@ come from the options block lines `Tarayıcılar` and `Çözünürlükler`; when
 support policy is an open question (common rules). Test what the user sees; do not depend on
 implementation details such as CSS classes.
 
-Besides the functional cases, consider these categories for the story (checklist, not quota):
+Besides the functional cases, consider these categories for the story (checklist, not quota;
+each category you test is a `CL-n` item, common rules):
 
 1. Browser behaviour: Back/Forward, page refresh in the middle of a form, double click / double
    submit, autofill, copy-paste.
-2. Session and state: session timeout (only when the source gives the duration: timeout-1 s /
-   timeout / +1 s), the same record edited in two tabs, Back after logout, cleared
-   cookies/localStorage, "remember me".
+2. Session and state: session timeout (only when the source gives the duration; [ISTQB]
+   two-value BVA: timeout and timeout+1 s, with `BVA kipi: 3-değer` also timeout-1 s), the same
+   record edited in two tabs, Back after logout, cleared cookies/localStorage, "remember me".
 3. URL and authorization: direct URL to a page the role may not open, changing an id in the URL
    (IDOR), query parameter manipulation, login redirect after a deep link.
-4. Responsive: breakpoints defined in the design (for example 767/768/769 px), zoom 200 %,
-   horizontal scrolling. Only breakpoints the source or options give.
+4. Responsive: breakpoints defined in the design (for example 767/768 px for a 768 px breakpoint;
+   769 px only with `BVA kipi: 3-değer`), zoom 200 %, horizontal scrolling. Only breakpoints the
+   source or options give.
 5. Input security (permitted test environment only): XSS, SQL injection, HTML injection, very long
-   input, Unicode/emoji/RTL text, leading/trailing spaces. Attack text only in `test_data`.
+   input, Unicode/emoji/RTL text, leading/trailing spaces. Attack text only in `test_data` with
+   `is_attack_payload: true`. Put the payload into a field whose rejection the source defines
+   (for example a wrong password) so the expected result is the source's (no login, the AC's
+   error, no SQL/stack trace in the response); tag `security`.
 6. Network: slow connection, connection lost during a request, the UI on a 500/503/timeout
    response, loading state and button lock. The UI reaction is an expected result only when the
    source states it; otherwise open question.
@@ -31,6 +36,7 @@ Besides the functional cases, consider these categories for the story (checklist
    authentication, `WCAG-3.2.6` consistent help, `WCAG-3.3.7` redundant entry). For
    `WCAG-2.5.8` target size (24×24 CSS px) also evaluate the spacing, equivalent control, inline,
    user-agent and essential exceptions; do not fail a small target without checking them.
+   Tag accessibility cases `a11y`.
 8. Localization: language switch, date/currency/decimal format (1.234,56 vs 1,234.56), Turkish
    characters (İ/ı, Ş/ş) in search and sorting.
 

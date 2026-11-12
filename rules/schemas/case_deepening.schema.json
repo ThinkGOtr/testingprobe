@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "tp:case_deepening",
-  "title": "Derinleştirme (011 P5 negatif / P6 teknik): case_generation v3 ile aynı yapı; yalnız YENİ case ve öğeler. Fark: cases 0–10 (sıfır yeni case geçerli cevaptır).",
+  "title": "Derinleştirme (011 P5 negatif / P6 teknik): case_generation v3 ile aynı yapı; yalnız YENİ case ve öğeler. Fark: cases 0–10 (tur başına en çok 10 yeni case; sıfır yeni case geçerli cevaptır).",
   "x-version": 3,
   "type": "object",
   "properties": {
@@ -76,7 +76,7 @@
       "maxItems": 20
     },
     "coverage_items": {
-      "description": "Türetilen kapsam öğeleri (eşdeğerlik bölümü, sınır değer, karar tablosu kuralı, durum geçişi, akış, hata tahmini). Kapsam matrisi bu listeden kodda hesaplanır; model matris yazmaz.",
+      "description": "Türetilen kapsam öğeleri (eşdeğerlik bölümü, sınır değer, karar tablosu kuralı, durum geçişi, pairwise çifti, akış, hata tahmini, kontrol listesi maddesi). Kapsam matrisi bu listeden kodda hesaplanır; model matris yazmaz.",
       "type": "array",
       "items": {
         "type": "object",
@@ -306,7 +306,7 @@
             ]
           },
           "technique": {
-            "description": "Case'in türetildiği test tasarım teknikleri: EP eşdeğerlik bölümleme, BVA sınır değer, DT karar tablosu, ST durum geçişi, PW pairwise, UC kullanım senaryosu, EG hata tahmini.",
+            "description": "Case'in türetildiği test tasarım teknikleri: EP eşdeğerlik bölümleme, BVA sınır değer, DT karar tablosu, ST durum geçişi, PW pairwise, UC kullanım senaryosu, EG hata tahmini, CL kontrol listesine dayalı test (ISTQB deneyime dayalı teknik; platform eki kategorileri).",
             "type": "array",
             "items": {
               "type": "string",
@@ -317,7 +317,8 @@
                 "ST",
                 "PW",
                 "UC",
-                "EG"
+                "EG",
+                "CL"
               ]
             },
             "minItems": 1,
@@ -332,24 +333,17 @@
             "minItems": 1,
             "uniqueItems": true
           },
-          "risk": {
-            "type": "string",
-            "enum": [
-              "high",
-              "medium",
-              "low"
-            ]
-          },
           "priority": {
             "type": "string",
             "enum": [
               "P1",
               "P2",
               "P3"
-            ]
+            ],
+            "description": "P1: hata para kaybı, güvenlik açığı, veri kaybı doğurur ya da ana akışı kırar; P2: önemli davranış, geçici çözümü var; P3: diğer. Risk değerlendirmesi `priority_rationale`'dedir (v3 case'te ayrı `risk` alanı yoktur)."
           },
           "priority_rationale": {
-            "description": "Öncelik gerekçesi: etki, olasılık ve iş kritikliği.",
+            "description": "Öncelik gerekçesi (risk değerlendirmesi): etki × olasılık × iş kritikliği, tek cümle.",
             "type": "string",
             "minLength": 1,
             "maxLength": 300
@@ -564,7 +558,8 @@
             },
             "contains": {
               "const": "AI-generated"
-            }
+            },
+            "description": "`AI-generated` zorunlu. Kategori etiketleri yalnız case'in gerçekten sınadığı konu için: `smoke`, `regression`, `security`, `a11y`, `performance` (derinleştirmede ayrıca N1–N10)."
           }
         },
         "required": [
@@ -572,7 +567,6 @@
           "type",
           "technique",
           "covers",
-          "risk",
           "priority",
           "priority_rationale",
           "acceptance_criteria_refs",
@@ -612,9 +606,9 @@
   "additionalProperties": false,
   "$defs": {
     "coverage_item_id": {
-      "description": "EP-V1 / EP-I2 (geçerli / geçersiz eşdeğerlik bölümü), BV-3 (sınır değer), DT-R2 (karar tablosu kuralı), ST-S1>S2 (durum geçişi), PW-1 (pairwise satırı), UC-MF / UC-AF1 / UC-EF1 (ana / alternatif / istisna akış), EG-1 (hata tahmini).",
+      "description": "EP-V1 / EP-I2 (geçerli / geçersiz eşdeğerlik bölümü), BV-3 (sınır değer), DT-R2 (karar tablosu kuralı), ST-T1 (geçerli durum geçişi: durum + olay) / ST-X1 (geçersiz geçiş: durum + olay; hedef yoktur), PW-1 (pairwise kapsam öğesi: iş sonucunu etkileyen parametre-değer çifti; satır üretilmez), UC-MF / UC-AF1 / UC-EF1 (ana / alternatif / istisna akış), EG-1 (hata tahmini), CL-1 (kontrol listesi maddesi; platform eki kategorisi ya da standart maddesi).",
       "type": "string",
-      "pattern": "^(EP-[VI][0-9]+|BV-[0-9]+|DT-R[0-9]+|ST-S[0-9]+>S[0-9]+|PW-[0-9]+|UC-(MF|AF[0-9]+|EF[0-9]+)|EG-[0-9]+)$"
+      "pattern": "^(EP-[VI][0-9]+|BV-[0-9]+|DT-R[0-9]+|ST-[TX][0-9]+|PW-[0-9]+|UC-(MF|AF[0-9]+|EF[0-9]+)|EG-[0-9]+|CL-[0-9]+)$"
     }
   }
 }

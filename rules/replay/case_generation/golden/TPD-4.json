@@ -2,7 +2,7 @@
   "kind": "call",
   "purpose": "case_generation",
   "golden": "TPD-4",
-  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı (model çıktısı değil); canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), eşleşmezse REPLAY-MISS. Şema v3 (teknik, kapsam öğeleri, öncelik, hazır olma durumu, test verisi, temizlik): v3 alanları ve üst düzey listeler de elle hazırlandı (model çıktısı değil); mevcut case alanları (başlık, tür, risk, AC atıfı, ön koşul, adımlar, beklenen, etiket) ve case sırası v2 ile aynıdır. Girdide `Test seviyesi: SYSTEM` varsayılır (`test_level`). İki case de `ready`dir. Kayıtlı olmayan kullanıcı adı (EP-I2) kaynakta tanımsızdır: beklenen sonuç uydurulmaz, `negative_coverage` kararı `out_of_scope`tur ve case yazılmaz (bu golden'ın her case'i verify_and_map golden'ına ve yayın testlerine bağlıdır; hazır olmayan case örnekleri TPD-3'tedir).",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı (model çıktısı değil); canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), eşleşmezse REPLAY-MISS. Şema v3 (teknik, kapsam öğeleri, öncelik, hazır olma durumu, test verisi, temizlik): v3 alanları ve üst düzey listeler de elle hazırlandı (model çıktısı değil); mevcut case alanları (başlık, tür, risk, AC atıfı, ön koşul, adımlar, beklenen, etiket) ve case sırası v2 ile aynıdır. Girdide `Test seviyesi: SYSTEM` varsayılır (`test_level`). İki case de `ready`dir. Kayıtlı olmayan kullanıcı adı (EP-I2) kaynakta tanımsızdır: beklenen sonuç uydurulmaz, `negative_coverage` kararı `out_of_scope`tur ve case yazılmaz (bu golden'ın her case'i verify_and_map golden'ına ve yayın testlerine bağlıdır; hazır olmayan case örnekleri TPD-3'tedir). 011: kayıtlı olmayan kullanıcı adının sonucu kaynakta tanımsız → açık soru Q1 (PO), EP-I2 out_of_scope gerekçesi Q1'i anar (model_issues değil). C2 `security` etiketli. `risk` alanı yok (K18).",
   "input_match": {
     "sources": [
       "jira:TPD-4"
@@ -16,7 +16,13 @@
     ]
   },
   "output": {
-    "open_questions": [],
+    "open_questions": [
+      {
+        "id": "Q1",
+        "question": "Kayıtlı olmayan bir kullanıcı adıyla giriş denenirse ne olmalı: AC2'deki \"Kullanıcı adı veya parola hatalı\" mesajı mı gösterilir, başka bir mesaj mı? (Kullanıcı adının kayıtlı olup olmadığını ele vermemesi beklenir mi?)",
+        "owner": "PO"
+      }
+    ],
     "assumptions": [],
     "coverage_items": [
       {
@@ -34,7 +40,7 @@
       {
         "id": "EP-I2",
         "ac_ref": "AC2",
-        "definition": "Kayıtlı olmayan kullanıcı adı (beklenen sonuç kaynakta tanımsız)",
+        "definition": "Kayıtlı olmayan kullanıcı adı (beklenen sonuç kaynakta tanımsız, Q1)",
         "valid": false
       }
     ],
@@ -47,7 +53,7 @@
       {
         "item": "EP-I2",
         "decision": "out_of_scope",
-        "rationale": "AC2 yalnızca hatalı parolayı tanımlar; kayıtlı olmayan kullanıcı adında gösterilecek sonuç kaynakta yok. Beklenen sonuç uydurulmadı, case yazılmadı."
+        "rationale": "AC2 yalnızca hatalı parolayı tanımlar; kayıtlı olmayan kullanıcı adında gösterilecek sonuç kaynakta yok, PO'ya soruldu (Q1). Beklenen sonuç uydurulmadı, case yazılmadı."
       }
     ],
     "not_covered": [],
@@ -62,7 +68,6 @@
       {
         "title": "Geçerli kullanıcı adı ve parola ile giriş yapılır",
         "type": "positive",
-        "risk": "medium",
         "acceptance_criteria_refs": [
           "AC1"
         ],
@@ -119,7 +124,6 @@
       {
         "title": "Hatalı parola ile girişte hata mesajı gösterilir",
         "type": "negative",
-        "risk": "medium",
         "acceptance_criteria_refs": [
           "AC2"
         ],
@@ -142,7 +146,8 @@
         ],
         "expected_result": "\"Kullanıcı adı veya parola hatalı\" mesajı gösterilir ve giriş yapılmaz",
         "tags": [
-          "AI-generated"
+          "AI-generated",
+          "security"
         ],
         "technique": [
           "EP"

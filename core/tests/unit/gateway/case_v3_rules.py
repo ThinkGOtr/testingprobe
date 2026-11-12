@@ -24,6 +24,7 @@ PREFIX = {
     "PW": "PW-",
     "UC": "UC-",
     "EG": "EG-",
+    "CL": "CL-",
 }
 SUMMARY_KEYS = (
     "open_questions",

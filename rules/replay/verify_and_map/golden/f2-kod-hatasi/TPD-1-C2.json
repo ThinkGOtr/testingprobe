@@ -1,0 +1,279 @@
+{
+  "kind": "agent",
+  "purpose": "verify_and_map",
+  "golden": "f2-kod-hatasi/TPD-1-C2",
+  "note": "Senaryo kopyası (f2-kod-hatasi): bu belgede C2'nin türü 'boundary' (ana belgede 'positive'); başlık, ön koşul, adımlar ve beklenen ana golden'la birebir aynı olduğundan tarayıcı adımları ve çıktı ana verify_and_map/golden/TPD-1-C2.json kaydının aynısıdır, yalnız girdi beyanı (case_text) farklıdır. Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Model çıktısı (step_mapping/expects/missing_methods) elle hazırlandı (canlı model çıktısı değil; ai_call.model = golden-elle). Tarayıcı adımları demo-app'in güncel kaynağına (e2e webServer yolu) karşı Playwright MCP 1.64.1 (compose yığını: playwright-mcp + demo-app-web/demo-app-api) (--isolated, --caps=testing) ile koşturulup kaydedildi (core/tests/unit/gateway/record_verify_goldens.py); yerel kök http://demo-app-web:8080 ile değiştirildi. Ajan tarayıcısı doğrulama bayisiyle (bayi3) girer; case'teki giriş verisi eşleme argümanıdır. Locator doğrulaması: eylemde kullanılan her locator ilk kullanımından önce doğrulanır — eleman son snapshot'ta sembol tablosundaki rol/adla bulunur, browser_generate_locator o snapshot ref'iyle çağrılır ve dönen getByTestId page object'in testId'siyle karşılaştırılır; eylemler testId seçicisiyle yapılır. Snapshot ref'leri oturuma özgüdür ve aynı yörüngede bile koşudan koşuya kayabilir: kayıttaki ref yalnızca o kaydın gözlemidir; adımın `hedef` alanı (rol/ad/kapsam) REPLAY'de ref'in canlı son snapshot'tan yeniden çözülmesi içindir (gateway.snapshot_refs). evidence_ref'teki 'kayıttaki not' değerleri kayıt anındaki sayfadandır; REPLAY koşusunda yeniden ölçülmez. Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), eşleşmezse REPLAY-MISS.",
+  "input_match": {
+    "sources": [
+      "case:TPD-1-C2"
+    ],
+    "case_text": "Başlık: 7 adet kampanyalı üründe 1 adet bedava verilir\nTür: boundary\nKabul kriterleri: AC2\nÖn koşullar:\n- Sepet boş\n- P-001 \"6 al 1 bedava\" kampanyasında\nAdımlar:\nS1: Giriş sayfasını aç\n  Veri: (yok)\n  Beklenen: Giriş formu görüntülenir\nS2: Bayi kullanıcısıyla giriş yap\n  Veri: bayi1 / Demo123!\n  Beklenen: Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir\nS3: \"Portakal Gazozu 1L\" (P-001) kartında adedi 7 yapıp \"Sepete ekle\" butonuna bas\n  Veri: P-001 × 7\n  Beklenen: Sepet sayacı 7 olur\nS4: Üst menüden sepete git\n  Veri: (yok)\n  Beklenen: P-001 satırında adet 7, bedava adet 1; ara toplam 175,00 TL, indirim 25,00 TL, toplam 150,00 TL\nBeklenen sonuç: 7 adette 1 adet bedava verilir; indirim 25,00 TL, toplam 150,00 TL\nEtiketler: AI-generated"
+  },
+  "case": {
+    "jira_key": "TPD-1",
+    "sira_no": 2,
+    "title": "7 adet kampanyalı üründe 1 adet bedava verilir",
+    "case_golden": "f2-kod-hatasi/TPD-1"
+  },
+  "steps": [
+    {
+      "tool": "browser_navigate",
+      "args": {
+        "url": "http://demo-app-web:8080/giris"
+      },
+      "result_summary": "await page.goto('http://demo-app-web:8080/giris'); · URL /giris",
+      "allowed": true
+    },
+    {
+      "tool": "browser_snapshot",
+      "args": {},
+      "result_summary": "URL /giris | heading \"Bayi girişi\" [level=1] | textbox \"Kullanıcı adı\" [ref=e16] | textbox \"Parola\" [ref=e19] | button \"Giriş yap\" [disabled] [ref=e20]",
+      "allowed": true
+    },
+    {
+      "tool": "browser_generate_locator",
+      "args": {
+        "element": "textbox \"Kullanıcı adı\" (login.username)",
+        "target": "e16"
+      },
+      "result_summary": "getByTestId('login-username')",
+      "allowed": true,
+      "hedef": {
+        "rol": "textbox",
+        "ad": "Kullanıcı adı"
+      }
+    },
+    {
+      "tool": "browser_generate_locator",
+      "args": {
+        "element": "textbox \"Parola\" (login.password)",
+        "target": "e19"
+      },
+      "result_summary": "getByTestId('login-password')",
+      "allowed": true,
+      "hedef": {
+        "rol": "textbox",
+        "ad": "Parola"
+      }
+    },
+    {
+      "tool": "browser_generate_locator",
+      "args": {
+        "element": "button \"Giriş yap\" (login.submit)",
+        "target": "e20"
+      },
+      "result_summary": "getByTestId('login-submit')",
+      "allowed": true,
+      "hedef": {
+        "rol": "button",
+        "ad": "Giriş yap"
+      }
+    },
+    {
+      "tool": "browser_type",
+      "args": {
+        "element": "Kullanıcı adı",
+        "target": "[data-testid=\"login-username\"]",
+        "text": "bayi3"
+      },
+      "result_summary": "await page.locator('[data-testid=\"login-username\"]').fill('bayi3');",
+      "allowed": true
+    },
+    {
+      "tool": "browser_type",
+      "args": {
+        "element": "Parola",
+        "target": "[data-testid=\"login-password\"]",
+        "text": "Demo123!"
+      },
+      "result_summary": "await page.locator('[data-testid=\"login-password\"]').fill('Demo123!');",
+      "allowed": true
+    },
+    {
+      "tool": "browser_click",
+      "args": {
+        "element": "Giriş yap",
+        "target": "[data-testid=\"login-submit\"]"
+      },
+      "result_summary": "await page.locator('[data-testid=\"login-submit\"]').click(); · URL /katalog",
+      "allowed": true
+    },
+    {
+      "tool": "browser_snapshot",
+      "args": {},
+      "result_summary": "URL /katalog | heading \"Ürün kataloğu\" [level=1] | link \"Sepet 0 ürün\" [ref=e33] | generic: Doğrulama Bayi | paragraph: P-001 | heading \"Portakal Gazozu 1L\" [level=2] | paragraph: \"Kampanya: 6 al 1 bedava\" | paragraph: 25,00 TL | spinbutton \"Adet\" [ref=e56]: \"1\" | button \"Sepete ekle\" [ref=e57] | status",
+      "allowed": true
+    },
+    {
+      "tool": "browser_generate_locator",
+      "args": {
+        "element": "P-001 kartında spinbutton \"Adet\" (catalog.quantityInput)",
+        "target": "e56"
+      },
+      "result_summary": "getByTestId('qty-input-P-001')",
+      "allowed": true,
+      "hedef": {
+        "rol": "spinbutton",
+        "ad": "Adet",
+        "kapsam": "paragraph: P-001"
+      }
+    },
+    {
+      "tool": "browser_generate_locator",
+      "args": {
+        "element": "P-001 kartında button \"Sepete ekle\" (catalog.addToCart)",
+        "target": "e57"
+      },
+      "result_summary": "getByTestId('product-card-P-001').getByTestId('add-to-cart')",
+      "allowed": true,
+      "hedef": {
+        "rol": "button",
+        "ad": "Sepete ekle",
+        "kapsam": "paragraph: P-001"
+      }
+    },
+    {
+      "tool": "browser_type",
+      "args": {
+        "element": "P-001 adet",
+        "target": "[data-testid=\"product-card-P-001\"] [data-testid=\"qty-input-P-001\"]",
+        "text": "7"
+      },
+      "result_summary": "await page.locator('[data-testid=\"product-card-P-001\"] [data-testid=\"qty-input-P-001\"]').fill('7');",
+      "allowed": true
+    },
+    {
+      "tool": "browser_click",
+      "args": {
+        "element": "P-001 kartında Sepete ekle",
+        "target": "[data-testid=\"product-card-P-001\"] [data-testid=\"add-to-cart\"]"
+      },
+      "result_summary": "await page.locator('[data-testid=\"product-card-P-001\"] [data-testid=\"add-to-cart\"]').click(); · URL /katalog",
+      "allowed": true
+    },
+    {
+      "tool": "browser_wait_for",
+      "args": {
+        "text": "7 adet sepete eklendi."
+      },
+      "result_summary": "await page.getByText(\"7 adet sepete eklendi.\").first().waitFor({ state: 'visible' }); · URL /katalog",
+      "allowed": true
+    },
+    {
+      "tool": "browser_snapshot",
+      "args": {},
+      "result_summary": "URL /katalog | heading \"Ürün kataloğu\" [level=1] | link \"Sepet 7 ürün\" [ref=e99] | generic: Doğrulama Bayi | paragraph: P-001 | heading \"Portakal Gazozu 1L\" [level=2] | paragraph: \"Kampanya: 6 al 1 bedava\" | paragraph: 25,00 TL | spinbutton \"Adet\" [ref=e56]: \"7\" | button \"Sepete ekle\" [ref=e57] | status: 7 adet sepete eklendi.",
+      "allowed": true
+    },
+    {
+      "tool": "browser_generate_locator",
+      "args": {
+        "element": "link \"Sepet\" (nav.cart; sayaç içinde)",
+        "target": "e99"
+      },
+      "result_summary": "getByTestId('nav-cart')",
+      "allowed": true,
+      "hedef": {
+        "rol": "link",
+        "ad": "Sepet"
+      }
+    },
+    {
+      "tool": "browser_click",
+      "args": {
+        "element": "Sepet",
+        "target": "[data-testid=\"nav-cart\"]"
+      },
+      "result_summary": "await page.locator('[data-testid=\"nav-cart\"]').click(); · URL /sepet",
+      "allowed": true
+    },
+    {
+      "tool": "browser_snapshot",
+      "args": {},
+      "result_summary": "URL /sepet | heading \"Sepetim\" [level=1] | link \"Sepet 7 ürün\" [ref=e99] | generic: Doğrulama Bayi | rowheader \"Portakal Gazozu 1L P-001 6 al 1 bedava\" | cell \"25,00 TL\" | cell \"7\" | cell \"1\" | cell \"150,00 TL\" | term: Ara toplam | definition: 175,00 TL | term: Kampanya indirimi | definition: −25,00 TL | term: Genel toplam | definition: 150,00 TL | button \"Siparişi onayla\" [ref=e140]",
+      "allowed": true
+    }
+  ],
+  "output": {
+    "step_mapping": [
+      {
+        "step_id": "S1",
+        "po": "LoginPage",
+        "method": "goto",
+        "args": [],
+        "verified": true,
+        "evidence_ref": "Giriş formu (textbox \"Kullanıcı adı\", \"Parola\", button \"Giriş yap\") · /giris"
+      },
+      {
+        "step_id": "S2",
+        "po": "LoginPage",
+        "method": "login",
+        "args": [
+          "bayi1",
+          "Demo123!"
+        ],
+        "verified": true,
+        "evidence_ref": "button \"Giriş yap\" → /katalog; oturum \"Doğrulama Bayi\" (doğrulama bayisi bayi3; case'in bayisi bayi1 eşleme argümanıdır)"
+      },
+      {
+        "step_id": "S3",
+        "po": "CatalogPage",
+        "method": "addToCart",
+        "args": [
+          "P-001",
+          7
+        ],
+        "verified": true,
+        "evidence_ref": "button \"Sepete ekle\" (product-card-P-001) → status \"7 adet sepete eklendi.\"; sepet bağlantısı \"Sepet 7 ürün\""
+      },
+      {
+        "step_id": "S4",
+        "po": "CatalogPage",
+        "method": "openCart",
+        "args": [],
+        "verified": true,
+        "evidence_ref": "link \"Sepet\" → /sepet; kayıttaki not — gözlenen: P-001 satırı adet 7, bedava 1; ara toplam 175,00 TL; indirim 25,00 TL; toplam 150,00 TL; \"Siparişi onayla\" aktif"
+      }
+    ],
+    "expects": [
+      {
+        "po": "CartPage",
+        "method": "expectLineQuantity",
+        "args": [
+          "P-001",
+          7
+        ]
+      },
+      {
+        "po": "CartPage",
+        "method": "expectFreeQuantity",
+        "args": [
+          "P-001",
+          1
+        ]
+      },
+      {
+        "po": "CartPage",
+        "method": "expectSubtotal",
+        "args": [
+          "175,00 TL"
+        ]
+      },
+      {
+        "po": "CartPage",
+        "method": "expectDiscount",
+        "args": [
+          "25,00 TL"
+        ]
+      },
+      {
+        "po": "CartPage",
+        "method": "expectTotal",
+        "args": [
+          "150,00 TL"
+        ]
+      }
+    ],
+    "missing_methods": []
+  }
+}

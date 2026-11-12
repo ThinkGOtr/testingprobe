@@ -36,7 +36,7 @@
           "AC6"
         ],
         "min_cases": 6,
-        "max_cases": 10,
+        "max_cases": 15,
         "contains": [
           "Minimum sipariş tutarı 750,00 TL",
           "Kredi limiti aşıldı"
@@ -102,7 +102,7 @@
           "AC6"
         ],
         "min_cases": 6,
-        "max_cases": 10,
+        "max_cases": 15,
         "contains": [
           "Minimum sipariş tutarı 750,00 TL"
         ],
@@ -159,7 +159,7 @@
           "AC2"
         ],
         "min_cases": 2,
-        "max_cases": 10,
+        "max_cases": 15,
         "contains": [
           "Ürün bulunamadı"
         ],
@@ -226,7 +226,7 @@
           "AC2"
         ],
         "min_cases": 2,
-        "max_cases": 10,
+        "max_cases": 15,
         "contains": [
           "Kullanıcı adı veya parola hatalı"
         ],
@@ -304,7 +304,7 @@
           "AC3"
         ],
         "min_cases": 3,
-        "max_cases": 10,
+        "max_cases": 15,
         "contains": [
           "750,00 TL"
         ],

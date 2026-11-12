@@ -120,7 +120,8 @@ def approved_case_text(case: Mapping[str, Any]) -> str:
     lines = [f"Başlık: {_text(case.get('title'))}"]
     kind, risk = _text(case.get("type")), _text(case.get("risk"))
     if kind or risk:
-        lines.append(f"Tür: {kind or '-'} · Risk: {risk or '-'}")
+        # v3 case'te `risk` yoktur (011 K18; risk öncelik gerekçesindedir): satır yalnız türü taşır.
+        lines.append(f"Tür: {kind or '-'}" + (f" · Risk: {risk}" if risk else ""))
     refs = [str(r) for r in case.get("acceptance_criteria_refs") or []]
     if refs:
         lines.append(f"Kabul kriterleri: {', '.join(refs)}")

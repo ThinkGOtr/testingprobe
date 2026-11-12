@@ -7,7 +7,7 @@
     "sources": [
       "case:TPD-1-C6"
     ],
-    "case_text": "Başlık: Kampanyasız siparişte minimum tutara eşit toplamda uyarı gösterilmez ve onay aktif olur\nTür: boundary · Risk: high\nKabul kriterleri: AC3\nÖn koşullar:\n- Sepet boş\n- Sepette kampanyalı ürün yok\nAdımlar:\nS1: Giriş sayfasını aç\n  Veri: (yok)\n  Beklenen: Giriş formu görüntülenir\nS2: Bayi kullanıcısıyla giriş yap\n  Veri: bayi1 / Demo123!\n  Beklenen: Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir\nS3: \"Şeftalili Soğuk Çay 1L\" (P-004) kartında adedi 25 yapıp \"Sepete ekle\" butonuna bas\n  Veri: P-004 × 25\n  Beklenen: Sepet sayacı 25 olur\nS4: Üst menüden sepete git\n  Veri: (yok)\n  Beklenen: Toplam 750,00 TL; minimum sipariş uyarısı görünmez ve \"Siparişi onayla\" butonu aktiftir\nBeklenen sonuç: Toplam 750,00 TL olduğunda uyarı gösterilmez ve sipariş onaylanabilir\nEtiketler: AI-generated"
+    "case_text": "Başlık: Kampanyasız siparişte minimum tutara eşit toplamda uyarı gösterilmez ve onay aktif olur\nTür: boundary\nKabul kriterleri: AC3\nÖn koşullar:\n- Sepet boş\n- Sepette kampanyalı ürün yok\nAdımlar:\nS1: Giriş sayfasını aç\n  Veri: (yok)\n  Beklenen: Giriş formu görüntülenir\nS2: Bayi kullanıcısıyla giriş yap\n  Veri: bayi1 / Demo123!\n  Beklenen: Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir\nS3: \"Şeftalili Soğuk Çay 1L\" (P-004) kartında adedi 25 yapıp \"Sepete ekle\" butonuna bas\n  Veri: P-004 × 25\n  Beklenen: Sepet sayacı 25 olur\nS4: Üst menüden sepete git\n  Veri: (yok)\n  Beklenen: Toplam 750,00 TL; minimum sipariş uyarısı görünmez ve \"Siparişi onayla\" butonu aktiftir\nBeklenen sonuç: Toplam 750,00 TL olduğunda uyarı gösterilmez ve sipariş onaylanabilir\nEtiketler: AI-generated"
   },
   "case": {
     "jira_key": "TPD-1",

@@ -7,7 +7,7 @@
     "sources": [
       "case:TPD-4-C1"
     ],
-    "case_text": "Başlık: Geçerli kullanıcı adı ve parola ile giriş yapılır\nTür: positive · Risk: medium\nKabul kriterleri: AC1\nÖn koşullar:\n- Oturum açık değil\nAdımlar:\nS1: Giriş sayfasını aç\n  Veri: (yok)\n  Beklenen: Giriş formu görüntülenir\nS2: Kullanıcı adı ve parola gir, \"Giriş yap\" butonuna bas\n  Veri: bayi1 / Demo123!\n  Beklenen: Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir\nBeklenen sonuç: Bayi başarıyla giriş yapar ve katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir\nEtiketler: AI-generated"
+    "case_text": "Başlık: Geçerli kullanıcı adı ve parola ile giriş yapılır\nTür: positive\nKabul kriterleri: AC1\nÖn koşullar:\n- Oturum açık değil\nAdımlar:\nS1: Giriş sayfasını aç\n  Veri: (yok)\n  Beklenen: Giriş formu görüntülenir\nS2: Kullanıcı adı ve parola gir, \"Giriş yap\" butonuna bas\n  Veri: bayi1 / Demo123!\n  Beklenen: Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir\nBeklenen sonuç: Bayi başarıyla giriş yapar ve katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir\nEtiketler: AI-generated"
   },
   "case": {
     "jira_key": "TPD-4",

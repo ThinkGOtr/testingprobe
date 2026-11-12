@@ -478,7 +478,7 @@ SILENT = {
         }
     ],
 }
-MAX_CASES = 10  # case-generation.md: "at most 10 cases per story"
+MAX_CASES = 15  # case-generation.md: "at most 15 cases per story" (011 K17)
 TEST_LEVEL = "SYSTEM"
 
 

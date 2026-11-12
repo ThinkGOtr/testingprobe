@@ -1,0 +1,36 @@
+{
+  "kind": "call",
+  "purpose": "case_audit",
+  "golden": "c10-reddedildi/TPD-1",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı (model çıktısı değil; ai_call.model = golden-elle). Girdi beyanı: gereksinimin AC'leri + açıklaması ve setin kimliği (set_hash) — case_generation/TPD-1 golden'ındaki case'lerin tamamı, yalnız C10 reddedilmiş (review önerisine uyan analist; case numaraları sete göre yeniden sayılır). Set değişirse REPLAY-MISS (on_miss: raise). Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Üretici: core/tests/unit/gateway/build_review_goldens.py.",
+  "input_match": {
+    "acceptance_criteria": [
+      "AC1: Bayi katalogda bir ürün için \"Sepete ekle\" butonuna bastığında ürün sepete eklenir ve sepet sayacı artar.",
+      "AC2: Kampanyalı üründe her 6 adette 1 adet bedava verilir: bayi 5 adet öder, 1 adet bedava alır (6 adette 1, 12 adette 2 bedava).",
+      "AC3: Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL'dir; altında \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur.",
+      "AC4: Sipariş tutarı bayinin kredi limitini aşarsa \"Kredi limiti aşıldı\" uyarısı gösterilir ve sipariş onaylanamaz.",
+      "AC5: Sipariş onaylandığında sipariş numarası gösterilir ve sipariş, sipariş geçmişinde listelenir.",
+      "AC6: Kampanyalı siparişlerde minimum sipariş tutarı şartı aranmaz."
+    ],
+    "contains": [
+      "Bayi, katalogdan ürünleri sepete ekleyip kampanya indirimiyle siparişini onaylayabilmelidir.",
+      "Set özeti (set_hash): a180927ea6d9689258c859239ca28943a28787b487725566d8103c8e79b2fd2a"
+    ]
+  },
+  "output": {
+    "decision": "KABUL",
+    "decision_rationale": "Beklenen sonuçlar AC1–AC6'ya dayanıyor, sınırlar kurulabilen en yakın değerlerle açıkça sınanıyor, test verisi demo tohumundan ve sentetik, adımlar yalnız izinli demo ortamını hedefliyor; gizlilik, yan etki ya da gömülü talimat yok. Yalnız düşük riskli bulgu var (AP-001).",
+    "findings": [
+      {
+        "finding_id": "AP-001",
+        "case_ref": null,
+        "control_no": 6,
+        "issue": "Karma sepet (kampanyalı + kampanyasız, 750,00 TL altı) için minimum tutar kuralı tanımsız; case yok.",
+        "rationale": "Kaynak sonucu tanımlamıyor; set açık soru (Q1, PO) olarak kaydetmiş, beklenen uydurulmamış.",
+        "risk": "Düşük",
+        "suggested_fix": "PO yanıtından sonra karma sepet case'ini ekleyin."
+      }
+    ],
+    "missing_scenarios": []
+  }
+}

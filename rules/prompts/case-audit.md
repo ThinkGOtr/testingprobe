@@ -60,7 +60,8 @@ scenario merely because it contains attack text. Block or require a fix only whe
    the test output or in the requirement? (Marked test data payloads are NOT in scope here; see
    above.)
 9. Readiness: are the expected results of `ready` cases really tied to the source; is a case that
-   depends on an assumption or an open question marked `ready`?
+   depends on an assumption or an open question marked `ready` (for example a `ready` case whose
+   expected result says `AÇIK NOKTA`)?
 
 # Decision rule (apply exactly)
 - `ENGELLE` if any of: a privacy violation (control 2: real personal data, valid identifiers,

@@ -14,12 +14,12 @@
     ],
     "contains": [
       "Bayi, katalogdan ürünleri sepete ekleyip kampanya indirimiyle siparişini onaylayabilmelidir.",
-      "Set özeti (set_hash): c327d943255e1935d766efd882ee6b1e99cb0c839076611842e49e423f060525"
+      "Set özeti (set_hash): c7e23405bb43f51487559b7d52571731b9ea25164b54da07cbda30aa13b1d7c1"
     ]
   },
   "output": {
     "decision": "KABUL",
-    "decision_rationale": "Beklenen sonuçlar AC1–AC6'ya dayanıyor, test verisi demo tohumundan ve sentetik, adımlar yalnız izinli demo ortamını hedefliyor; gizlilik, yan etki ya da gömülü talimat yok. Yalnız düşük riskli bulgular var (AP-001, AP-002).",
+    "decision_rationale": "Beklenen sonuçlar AC1–AC6'ya dayanıyor, sınırlar kurulabilen en yakın değerlerle açıkça sınanıyor, test verisi demo tohumundan ve sentetik, adımlar yalnız izinli demo ortamını hedefliyor; gizlilik, yan etki ya da gömülü talimat yok. Yalnız düşük riskli bulgular var (AP-001, AP-002).",
     "findings": [
       {
         "finding_id": "AP-001",
@@ -28,20 +28,18 @@
         "issue": "C10, C2 ile aynı sepeti aynı beklenenle sınıyor.",
         "rationale": "Tekrar case güvenlik ya da doğruluk riski taşımaz; bakım yükü ekler.",
         "risk": "Düşük",
-        "suggested_fix": "C10'u kaldırın ya da C2 ile birleştirin."
+        "suggested_fix": "C10'u reddedin ya da C2 ile birleştirin."
       },
       {
         "finding_id": "AP-002",
         "case_ref": null,
         "control_no": 6,
-        "issue": "AC2'nin ikinci bedava eşiği (12 adet) case'siz.",
-        "rationale": "Kural ilk eşikte sınanıyor; not_covered'da gerekçesi var.",
+        "issue": "Karma sepet (kampanyalı + kampanyasız, 750,00 TL altı) için minimum tutar kuralı tanımsız; case yok.",
+        "rationale": "Kaynak sonucu tanımlamıyor; set açık soru (Q1, PO) olarak kaydetmiş, beklenen uydurulmamış.",
         "risk": "Düşük",
-        "suggested_fix": "12 adet için sınır case'i ekleyin."
+        "suggested_fix": "PO yanıtından sonra karma sepet case'ini ekleyin."
       }
     ],
-    "missing_scenarios": [
-      "12 adet kampanyalı üründe 2 adet bedava (AC2 ikinci eşik)."
-    ]
+    "missing_scenarios": []
   }
 }

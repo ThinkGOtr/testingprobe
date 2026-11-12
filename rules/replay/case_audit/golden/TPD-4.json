@@ -10,19 +10,19 @@
     ],
     "contains": [
       "Bayi, kullanıcı adı ve parolasıyla portala giriş yapabilmelidir.",
-      "Set özeti (set_hash): 1875b145758f5eca0a4581c54a4ec0790ed9d484d7258731fb669e3aec5a5e24"
+      "Set özeti (set_hash): c156bf48bc7f16269fc1499afd3ec4570a86c2c0c3e063424d0ac6f369cdad11"
     ]
   },
   "output": {
     "decision": "KABUL",
-    "decision_rationale": "İki case de AC1–AC2'ye dayanıyor, test verisi demo tohumundan ve sentetik, ortam izinli demo uygulaması. Kayıtlı olmayan kullanıcı adının sonucu kaynakta olmadığı için case yazılmaması doğru (AP-001, Düşük).",
+    "decision_rationale": "İki case de AC1–AC2'ye dayanıyor, test verisi demo tohumundan ve sentetik, ortam izinli demo uygulaması. Kayıtlı olmayan kullanıcı adının sonucu kaynakta olmadığı için case yazılmayıp PO'ya sorulması (Q1) doğru (AP-001, Düşük).",
     "findings": [
       {
         "finding_id": "AP-001",
         "case_ref": null,
         "control_no": 6,
         "issue": "Kayıtlı olmayan kullanıcı adı senaryosu yok.",
-        "rationale": "Kaynak sonucu tanımlamıyor; gerekçeyle out_of_scope.",
+        "rationale": "Kaynak sonucu tanımlamıyor; set PO'ya soruyor (Q1), öğe gerekçeyle out_of_scope.",
         "risk": "Düşük",
         "suggested_fix": "PO yanıtından sonra case ekleyin."
       }

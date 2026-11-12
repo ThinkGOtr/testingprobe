@@ -1,6 +1,6 @@
 # language: tr
 # Testing Probe — onaylı ve hazır case'lerden deterministik dönüşüm (model çağrısı yok).
-# 5 case · 5 senaryo (0 taslak)
+# 6 case · 6 senaryo (0 taslak)
 Özellik: SERBEST — Sepetten ürün kaldırma
   # AC1: Satırdaki "Kaldır" butonuna basıldığında ürün sepetten çıkar ve sepet sayacı azalır.
   # AC2: Kaldırma sonrası kampanya indirimi her 6 adette 1 bedava kuralıyla yeniden hesaplanır.
@@ -67,7 +67,7 @@
     Ve "Minimum sipariş tutarı 750,00 TL" uyarısı gösterilir ve onay butonu pasif olur
     # Temizlik: Sepeti boşalt
 
-  @AC3 @BVA @DT @P1 @sınır-değer @tp-163ecc34-7109-53fa-997a-1e4c60a4054b
+  @AC3 @BVA @DT @P2 @sınır-değer @tp-163ecc34-7109-53fa-997a-1e4c60a4054b
   Senaryo: Kaldırma sonrası toplam minimum tutara eşit kalınca uyarı gösterilmez ve onay aktif olur
     Diyelim ki Sepet boş
     Ve Sepette kampanyalı ürün yok
@@ -105,4 +105,26 @@
     Eğer ki Üst menüden sepete git ve P-004 satırındaki "Kaldır" butonuna bas, veri: "P-004"
     O zaman Toplam 125,00 TL; minimum sipariş uyarısı görünmez ve "Siparişi onayla" butonu aktiftir
     Ve Kampanyalı sepette toplam 125,00 TL olsa da minimum sipariş uyarısı gösterilmez ve sipariş onaylanabilir
+    # Temizlik: Sepeti boşalt
+
+  @AC3 @BVA @P2 @sınır-değer @tp-bab57e15-539e-5c1e-a893-f3b3ade3cd13
+  Senaryo: Kaldırma sonrası kampanyasız sepet 749,00 TL'ye düşünce minimum tutar uyarısı gösterilir ve onay pasif olur
+    Diyelim ki Sepet boş
+    Ve Sepette kampanyalı ürün yok
+    Ve test verileri:
+      | ad                                                          | değer                   | sınıf |
+      | bayi kullanıcısı                                            | bayi1 / Demo123!        |       |
+      | kalan kampanyasız ürünler (749,00 TL; en yakın kurulabilen) | P-002 × 43 + P-003 × 13 | BV-2  |
+      | kaldırılan ürün ve adet                                     | P-004 × 1               |       |
+    Eğer ki Giriş sayfasını aç ve bayi kullanıcısıyla giriş yap, veri: "bayi1 / Demo123!"
+    O zaman Katalog sayfası "Merkez Bayi" oturumuyla görüntülenir
+    Eğer ki "Limonata 330ml" (P-002) kartında adedi 43 yapıp "Sepete ekle" butonuna bas, veri: "P-002 × 43"
+    O zaman Sepet sayacı 43 olur
+    Eğer ki "Maden Suyu 200ml" (P-003) kartında adedi 13 yapıp "Sepete ekle" butonuna bas, veri: "P-003 × 13"
+    O zaman Sepet sayacı 56 olur
+    Eğer ki "Şeftalili Soğuk Çay 1L" (P-004) kartında adedi 1 yapıp "Sepete ekle" butonuna bas, veri: "P-004 × 1"
+    O zaman Sepet sayacı 57 olur
+    Eğer ki Üst menüden sepete git ve P-004 satırındaki "Kaldır" butonuna bas, veri: "P-004"
+    O zaman Sepet tutarı minimum sipariş tutarının (750,00 TL) hemen altındadır; "Minimum sipariş tutarı 750,00 TL" uyarısı görünür ve "Siparişi onayla" butonu pasiftir
+    Ve Kaldırma sonrası sepet tutarı minimum sipariş tutarının (750,00 TL) hemen altına düşer; "Minimum sipariş tutarı 750,00 TL" uyarısı gösterilir ve onay butonu pasif olur
     # Temizlik: Sepeti boşalt

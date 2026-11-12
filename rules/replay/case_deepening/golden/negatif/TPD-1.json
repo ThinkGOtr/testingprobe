@@ -2,7 +2,7 @@
   "kind": "call",
   "purpose": "case_deepening",
   "golden": "negatif/TPD-1",
-  "note": "Derinleştirme golden'ı (011 P5 negatif genişletme). Elle hazırlandı (model çıktısı değil). Mevcut set olarak TPD-1 ana golden'ının case'leri varsayılır (yeni kimlikler: EP-I3, EG-1/2, Q1, A1/A2 — ana golden'da yok). Girdi beyanı mevcut set bloğunu denetlemez; kimlik çakışmasını kod reddeder (deepen.id_conflicts). Mesaj metni kaynakta olmayan negatifte 'mesaj metni: AÇIK NOKTA' yazılır, beklenen sonuç uydurulmaz. Tür/teknik golden adındadır (`negatif/…`, `teknik-ep/…`; deepen.replay_name); girdi beyanı story bloğunu denetler.",
+  "note": "Derinleştirme golden'ı (011 P5 negatif genişletme). Elle hazırlandı (model çıktısı değil). Mevcut set olarak TPD-1 ana golden'ının case'leri varsayılır (yeni kimlikler: EP-I3, EG-1/2, Q2, A1/A2 — ana golden'da yok; ana golden'ın Q1'i karma sepet sorusudur). Girdi beyanı mevcut set bloğunu denetlemez; kimlik çakışmasını kod reddeder (deepen.id_conflicts). Mesaj metni kaynakta olmayan negatifte 'hata gösterilir (mesaj metni: AÇIK NOKTA)' yalnız hatanın gösterildiğini söyleyen varsayıma (A2) bağlı assumption_dependent case'te yazılır; sonucu tamamen bilinmeyen oturumsuz erişimin kararı out_of_scope'tur (Q2); out_of_scope öğeye case yazılmaz. Tür/teknik golden adındadır (`negatif/…`, `teknik-ep/…`; deepen.replay_name); girdi beyanı story bloğunu denetler.",
   "input_match": {
     "sources": [
       "jira:TPD-1"
@@ -22,7 +22,7 @@
   "output": {
     "open_questions": [
       {
-        "id": "Q1",
+        "id": "Q2",
         "question": "Oturum açmamış kullanıcı sepet sayfasının adresine doğrudan giderse ne olur (giriş sayfasına yönlendirme mi, hata mı)?",
         "owner": "PO"
       }
@@ -35,7 +35,7 @@
       },
       {
         "id": "A2",
-        "statement": "Adet alanına 0 girilip \"Sepete ekle\"ye basıldığında ürün sepete eklenmez.",
+        "statement": "Adet alanına 0 girilip \"Sepete ekle\"ye basıldığında ürün sepete eklenmez ve kullanıcıya bir hata gösterilir (hata metni kaynakta yok).",
         "owner": "PO"
       }
     ],
@@ -55,7 +55,7 @@
       {
         "id": "EG-2",
         "ac_ref": "AC5",
-        "definition": "Oturum açmadan sepet sayfasına doğrudan erişim (beklenen sonuç kaynakta yok, Q1)",
+        "definition": "Oturum açmadan sepet sayfasına doğrudan erişim (beklenen sonuç kaynakta yok, Q2)",
         "valid": false
       }
     ],
@@ -72,8 +72,8 @@
       },
       {
         "item": "EG-2",
-        "decision": "tested",
-        "rationale": "N6 yetki: oturumsuz erişim; beklenen sonuç açık soru Q1 yanıtlanınca yazılır."
+        "decision": "out_of_scope",
+        "rationale": "N6 yetki: oturumsuz erişimin sonucu kaynakta yok (Q2); case yazılmadı; yanıt gelince case eklenir."
       }
     ],
     "not_covered": [],
@@ -88,7 +88,6 @@
       {
         "title": "Adet 0 iken Sepete ekle ile ürün sepete eklenmez ve sepet sayacı değişmez",
         "type": "negative",
-        "risk": "medium",
         "acceptance_criteria_refs": [
           "AC1"
         ],
@@ -161,7 +160,6 @@
       {
         "title": "Siparişi onayla butonuna çift tıklamada tek sipariş oluşur",
         "type": "negative",
-        "risk": "high",
         "acceptance_criteria_refs": [
           "AC5"
         ],
@@ -248,50 +246,6 @@
         "teardown": [
           "Oluşturulan sipariş, sipariş geçmişinde kalır; test ortamı sıfırlanırken temizle"
         ]
-      },
-      {
-        "title": "Oturum açmadan sepet sayfasına doğrudan erişim denenir",
-        "type": "authorization",
-        "risk": "high",
-        "acceptance_criteria_refs": [
-          "AC5"
-        ],
-        "preconditions": [
-          "Oturum açık değil"
-        ],
-        "steps": [
-          {
-            "id": "S1",
-            "action": "Tarayıcıda sepet sayfasının adresini doğrudan aç",
-            "data": null,
-            "expected": ""
-          }
-        ],
-        "expected_result": "",
-        "tags": [
-          "AI-generated",
-          "N6"
-        ],
-        "technique": [
-          "EG"
-        ],
-        "covers": [
-          "EG-2"
-        ],
-        "priority": "P2",
-        "priority_rationale": "Oturumsuz sepet erişimi başka bayinin verisini açığa çıkarabilir (güvenlik); olasılık düşük, etki yüksek.",
-        "platform": null,
-        "test_level": "SYSTEM",
-        "verification_point": "UI",
-        "requires_real_device": false,
-        "standard_refs": [],
-        "readiness": "blocked",
-        "assumption_refs": [],
-        "open_question_refs": [
-          "Q1"
-        ],
-        "test_data": [],
-        "teardown": []
       }
     ]
   }

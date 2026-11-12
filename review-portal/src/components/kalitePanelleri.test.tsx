@@ -103,10 +103,18 @@ describe("mock: review (P8) ve denetim (P9) akışı", () => {
 
   it("golden kopyası: review/denetim çıktıları rules/replay ile aynı adlarla", () => {
     const k = KAYNAK as unknown as { case_review: Record<string, unknown>; case_audit: Record<string, { decision: string }> };
-    expect(Object.keys(k.case_audit).sort()).toEqual(["SERBEST", "TPD-1", "TPD-3", "TPD-4", "f2-kod-hatasi/TPD-1"]);
+    expect(Object.keys(k.case_audit).sort()).toEqual([
+      "SERBEST",
+      "TPD-1",
+      "TPD-3",
+      "TPD-4",
+      "c10-reddedildi/TPD-1",
+      "f2-kod-hatasi-c10-reddedildi/TPD-1",
+      "f2-kod-hatasi/TPD-1",
+    ]);
     expect(k.case_audit["TPD-1"].decision).toBe("KABUL");
     expect(k.case_audit["TPD-3"].decision).toBe("DÜZELTME_GEREKLİ");
-    expect(Object.keys(k.case_review)).toHaveLength(5);
+    expect(Object.keys(k.case_review)).toHaveLength(7);
   });
 
   it("case review sayfası: review bulguları ve denetim paneli, Denetime gönder", async () => {

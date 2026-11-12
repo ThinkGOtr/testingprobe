@@ -21,14 +21,17 @@ def test_code_defect_path_has_the_six_no_free_defect_candidate() -> None:
     assert r.ok
     assert [(c.sira_no, c.golden) for c in r.defect_candidates] == [(3, "f2-kod-hatasi/TPD-1-C3")]
     assert r.defect_candidates[0].title.startswith("6 adet kampanyalı üründe bedava ürün verilmez")
-    assert all(c.golden for c in r.cases)  # hepsi REPLAY (MISS yok)
+    # C1–C10 REPLAY (MISS yok); C11–C15 (011 K17 sınır case'leri) doğrulama kaydı yok → dürüst
+    # REPLAY-MISS, kontrolün sonucunu değiştirmez (karar defect adayına göre).
+    assert all(c.golden for c in r.cases if c.sira_no <= 10)
+    assert [c.sira_no for c in r.cases if not c.golden] == [11, 12, 13, 14, 15]
     assert "TAMAM" in r.report()
 
 
 def test_default_fix_doc_path_fails_with_the_presenter_hint() -> None:
     r = evaluate("TPD-1", _numbered(MAIN))
     assert not r.ok and r.defect_candidates == []
-    assert all(c.golden for c in r.cases)
+    assert all(c.golden for c in r.cases if c.sira_no <= 10)
     report = r.report()
     assert "HATA" in report and HINT in report and "Kod hatalı" in report
 

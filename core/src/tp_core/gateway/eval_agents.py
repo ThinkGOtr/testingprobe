@@ -560,6 +560,7 @@ TEKNIK_ONEKI: dict[str, str] = {
     "PW": "PW-",
     "UC": "UC-",
     "EG": "EG-",
+    "CL": "CL-",
 }
 READINESS = ("ready", "assumption_dependent", "blocked")
 # Platform ekinde atlanan kategori (011 F4, `platform-common`): `not_covered.item` =

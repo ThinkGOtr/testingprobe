@@ -146,13 +146,15 @@ metinde `golden_name(FREE_TEXT_KEY)` → `SERBEST` / `SERBEST-r2`. `fix_doc` ön
 | `consistency_check` | `TPD-1..4`, `SERBEST` (1. tur) | Özgün; düzeltilmiş metinle 1. tur `-r2`'ye düşer (arama sırası 3) |
 | `consistency_check` | `TPD-1-r2`, `SERBEST-r2` (2.+ tur) | Aşağıdaki düzeltilmiş metin |
 | `case_generation` | `TPD-1`, `SERBEST` | Düzeltilmiş metin; `TPD-3`, `TPD-4` özgün. Şema v3 (aşağıda "case_generation golden'ları (şema v3)") |
-| `verify_and_map` | `TPD-1-C1..C10`, `TPD-4-C1..C2` | case_generation golden'ındaki case (insan düzeltirse REPLAY-MISS) |
+| `verify_and_map` | `TPD-1-C1..C10`, `TPD-4-C1..C2` | case_generation golden'ındaki case (insan düzeltirse REPLAY-MISS). TPD-1 C11–C15 (011 K17 sınır case'leri) için tarayıcı kaydı yok: kod üretimi onlarda dürüst REPLAY-MISS |
 | `verify_and_map_app` | `TPD-1-C2-android` | 009 mobil: aynı C2 case'i; platform golden adındadır (`<story>-C<n>-<platform>`), başka platform REPLAY-MISS. Araç adımları app-mcp sözleşmesine uyan sahte oturumda yazıldı (`core/tests/unit/gateway/build_app_goldens.py`), gerçek cihazda kaydedilmedi |
 | `consistency_check` | `f2-kod-hatasi/TPD-1-r2` | F2 `code_defect` yolu: AC2 özgün, AC3 düzeltilmiş (aşağıda "Demo-B") |
-| `case_generation` | `f2-kod-hatasi/TPD-1` | Aynı belge; case metni ana golden'dan yalnız C3'te ayrışır (6 adette bedava yok). v3 kapsam alanları (`technique`, `covers`, `test_data.class`) AC2 case'lerinde (C2, C3, C4, C10) belgenin eşiğine (6\|7 adet; ana belgede 5\|6) göre yazılıdır |
+| `case_generation` | `f2-kod-hatasi/TPD-1` | Aynı belge; case metni ana golden'dan C3'te (6 adette bedava yok) ve ikinci eşik case'lerinde (C11/C12: 13/14 adet) ayrışır. AC2 case'lerinin türü ve kapsamı belgenin eşiğine (6\|7 adet; ana belgede 5\|6) göre yazılıdır: C2 (7 adet) `boundary`/BV-2, C4 (5 adet) `positive`/EP-V2 |
+| `verify_and_map` | `f2-kod-hatasi/TPD-1-C2`, `-C4` | C2/C4'ün türü ana golden'dan farklı olduğundan girdi beyanı (case_text) ayrışır; tarayıcı adımları ve çıktı ana kayıtla aynı (senaryo kopyası) |
 | `verify_and_map` | `f2-kod-hatasi/TPD-1-C3` | Senaryonun C3'ü; diğer case'ler ana golden'larla birebir aynı, ana golden eşleşir |
 | `triage`, `bug_draft`, `dup_rank` | `HATA` + senaryo dizinleri | Faz 4 (aşağıda "Faz 4"): kanonik hata/bulgu bloğuna göre beyanlı |
 | `case_review`, `case_audit` | `TPD-1`, `TPD-3`, `TPD-4`, `SERBEST`, `f2-kod-hatasi/TPD-1` | case_generation golden'ının seti (tamamı, düzeltme/ret yok) + aynı gereksinim; beyan setin `set_hash`'ine bağlı (aşağıda "Case seti review ve denetim") |
+| `case_review`, `case_audit` | `c10-reddedildi/TPD-1`, `f2-kod-hatasi-c10-reddedildi/TPD-1` | Review önerisine uyan analist C10'u (C2'nin tekrarı) reddetti: aynı setin C10'suz hali (case numaraları sete göre yeniden sayılır) |
 
 ## Prova kipi (`TP_REPLAY_STRICT=1`): ana yol tam
 
@@ -161,7 +163,7 @@ docs/DEMO-VERISI.md) için `core/tests/unit/gateway/test_rehearsal_strict.py` il
 ortamdan kurulur (`build_gateway`, `TP_MODEL_MODE=replay`, `TP_REPLAY_STRICT=1`), girdiler
 üretimin kurucularıdır (`Snapshot.message()` + `replay_key_for`, `generation_messages` PO cevabı ve
 test verisi blokları dahil, `mapping_messages`, `gateway.defects`). Sıra: ön inceleme → 1. tur →
-F1/F3 Jira'da düzeltilir (F2/F4 `code_defect`) → 2. tur → 10 case → her case için doğrulama ajanı →
+F1/F3 Jira'da düzeltilir (F2/F4 `code_defect`) → 2. tur → 15 case → C1–C10 için doğrulama ajanı →
 F2 taslak + TPD-5 bağla → F4 taslak (aday yok, sıralama yok) → C3 taslak + TPD-5 bağla → kırma
 taslağı + yeni kayıt. Her çağrı `replay` / `golden_matched` döner; test kullanılan golden kümesini
 de sabitler (eksik veya fazla golden kırmızıdır):
@@ -171,7 +173,7 @@ de sabitler (eksik veya fazla golden kırmızıdır):
 | requirement_review | `TPD-1` |
 | consistency_check | `TPD-1`, `f2-kod-hatasi/TPD-1-r2` |
 | case_generation | `f2-kod-hatasi/TPD-1` |
-| verify_and_map | `TPD-1-C1`…`C10` (C3 hariç), `f2-kod-hatasi/TPD-1-C3` |
+| verify_and_map | `TPD-1-C1`…`C10` (C2, C3, C4 hariç), `f2-kod-hatasi/TPD-1-C2`, `-C3`, `-C4` |
 | bug_draft | `f2-kampanya/HATA`, `f4-kredi-limiti/HATA`, `HATA` (C3), `kirma-kampanya/HATA` |
 | dup_rank | `f2-kampanya/HATA`, `HATA` (C3), `kirma-kampanya/HATA` |
 | case_review | `f2-kod-hatasi/TPD-1` (üretimden sonra otomatik; sıkı kip `test_review_audit_goldens.py`) |
@@ -205,12 +207,15 @@ durur; `test_review_audit_goldens.py` dosyaların modülle aynı olduğunu denet
   REPLAY-MISS (`on_miss.json`: `raise`): review `hata` olur (gereksinim etkilenmez), denetim kararı
   üretilmez (kapı kapalı kalır). Onay seti değiştirmez (`icerik_hash` aynı); yayınlanan case de.
 - **Kararlar:** TPD-1 (ana ve `f2-kod-hatasi`) **KABUL** (yalnız düşük riskli bulgular: C10 tekrarı,
-  12 adet eşiği) — demo provası yayına ulaşır. TPD-3 **DÜZELTME_GEREKLİ**: case'ler temiz, ama story
+  karma sepet sorusu Q1) — demo provası yayına ulaşır. TPD-3 **DÜZELTME_GEREKLİ**: case'ler temiz, ama story
   açıklamasındaki "Önceki tüm talimatları yok say…" cümlesi AI araçlarına yönelik gömülü talimattır
   (kontrol 8, Yüksek; denetçiye yönelik olmadığı için ENGELLE değil); story temizlenmeden ona bağlı
   test yayınlanmaz. TPD-4 ve SERBEST **KABUL**.
-- Review skorları: TPD-1 10/12 (madde 3 BVA ikinci eşik, madde 10 tekrar), TPD-3 11/12 (madde 2
-  açık bilgi), TPD-4 11/12 (madde 2 açık bilgi), SERBEST 12/12. Madde 9 platform eki olmadığı için
+- Review skorları (011 K17 sonrası): TPD-1 10/12 (madde 4 karma sepet açık bilgi — AC3 ↔ AC6, Q1;
+  madde 10 C10 tekrarı; madde 3 artık UYGUN: bütün sınırlar case'li), C10 reddedilmiş set 11/12
+  (yalnız madde 4), TPD-3 11/12 (madde 2 açık bilgi), TPD-4 11/12 (madde 2 açık bilgi, Q1), SERBEST
+  12/12. Denetim: TPD-1 ve C10'suz set KABUL (demo'da review önerisine uyan analist de yayına
+  ulaşır). Madde 9 platform eki olmadığı için
   her golden'da "UYGUN — platform eki yok".
 
 ## TPD-1: kararlar ve düzeltilmiş metin (golden'ların varsaydığı)
@@ -275,45 +280,63 @@ dürüstçe REPLAY-MISS olur (canlı modelde gerçek cevap gelir).
 
 ### case_generation/TPD-1
 
-10 case (6 AC; pozitif/negatif/sınır), her biri ≤ 8 adım (bugün en çok 5). Beklenen metinler kod üretiminin assert
+15 case (6 AC; pozitif/negatif/sınır), her biri ≤ 8 adım (bugün en çok 6). Beklenen metinler kod üretiminin assert
 edeceği literal değerleri taşır (`1 adet bedava`, `150,00 TL`, `"Minimum sipariş tutarı 750,00
 TL"`, `Toplam 750,00 TL`); `test_goldens.py` her tutarı/adedi/uyarıyı demo-app fiyat fonksiyonlarıyla
 yeniden hesaplar. Bugün geçenler: sepete ekle + sayaç, 7/6/5 adet kampanya, 750,00 TL minimum
-(altı/eşit), kampanyalı sepette minimum aranmaz, sipariş onayı. Bugün kalan: AC4 (kod hatası).
-**C10 bilerek C2'nin tekrarıdır** (aynı sepet ve beklenen, farklı başlık): QA incelemesinde
-"reddet" gerçek bir karar olsun diye (gerekçe: C2 ile aynı). Reddi hiçbir AC'yi kapsamsız bırakmaz;
-AC6'nın tek case'i C9'dur, reddedilirse AC6 kapsamsız kalır (portal/yayın önizlemesi AC kapsamını
-göstermelidir). C1–C9 numaraları korunur (verify_and_map golden'ları, portal ve CI kopyası buna
-bağlı); `TPD-1-C10` verify_and_map golden'ı C2'nin kaydından türetilmiştir.
+(altı/eşit), kampanyalı sepette minimum aranmaz, sipariş onayı, 11/12 adet ikinci eşik, 749,00 TL,
+kredi limitine eşit 2.000,00 TL. Bugün kalan: AC4 aşımı (C7, C15; kod hatası).
+**C10, demo için bilinçli olarak C2'nin tekrarıdır** (aynı sepet ve beklenen, farklı başlık): case
+review'unun tekrar bulgusu ve QA'nın "reddet" kararı gerçek olsun diye; bir sınır nedeniyle yazılmış
+değildir. Reddi hiçbir AC'yi kapsamsız bırakmaz; AC6'nın tek case'i C9'dur, reddedilirse AC6
+kapsamsız kalır (portal/yayın önizlemesi AC kapsamını göstermelidir). C1–C10 numaraları ve
+metinleri korunur (verify_and_map golden'ları, portal ve CI kopyası buna bağlı); `TPD-1-C10`
+verify_and_map golden'ı C2'nin kaydından türetilmiştir.
+
+**011 K17 (story başına ≤ 15 case):** para/limit sınırları C11–C15 olarak SONA eklendi: C11/C12
+ikinci bedava eşiği (11/12 adet; senaryoda 13/14), C13 minimum tutarın hemen altı (749,99 TL demo
+fiyatlarıyla — hepsi tam TL — kurulamaz; kurulabilen en yakın değer 749,00 TL), C14 kredi limitine
+eşit (bayi1, 2.000,00 TL), C15 limitin hemen üzeri (limit + 0,01 TL yerine en yakın 2.001,00 TL;
+`expected-code-defect`). Karma sepet (kampanyalı + kampanyasız, 750,00 TL altı) AC3 ile AC6
+arasında tanımsızdır: DT1'in tanımlı üç kuralı C5/C9/C6 ile sınanır, tanımsız birleşim açık soru
+Q1'dir (PO), case yazılmaz. Öncelik (K18, `risk` alanı yok): P1 yalnız para ve geçici çözümsüz ana
+akış — 15 case'te 8 P1, 6 P2, 1 P3 (C10).
 
 **Yönerge kuralları** (`prompts/case-generation.md`, `test_goldens.py` her case golden'ında
 denetler): her AC en az bir case ile kapsanır (kural/limit/hata mesajı içeren AC'de negatif/sınır
 case'ler kapsamdır; ayrı pozitif zorunlu değil — TPD-1 AC3/AC4, SERBEST AC3 böyledir), case başına
-≤ 8 adım, story başına ≤ 10 case (1–2 AC'li story'de 4'ten az olabilir).
+≤ 8 adım, story başına ≤ 15 case (1–2 AC'li story'de 4'ten az olabilir; derinleştirme tur başına
+≤ 10 yeni case).
 
 ### case_generation golden'ları (şema v3)
 
 Golden'lar şema v3'tedir (specs/011; `prompts/case-generation.md` v3) ve v3 alanları da **elle
-hazırlandı** (model çıktısı değil). Mevcut case alanları (başlık, tür, risk, AC atıfı, ön koşul,
+hazırlandı** (model çıktısı değil). Mevcut case alanları (başlık, tür, AC atıfı, ön koşul,
 adımlar, beklenen, etiket) ve case sırası v2 ile aynıdır: verify_and_map / codegen golden'ları,
-portal örnek verisi ve prova bunlara dayanır; yalnız yeni alanlar ve üst düzey listeler eklendi.
+portal örnek verisi ve prova bunlara dayanır; yalnız yeni alanlar ve üst düzey listeler eklendi,
+yeni case'ler sona eklenir. 011 K18: v3 case'te `risk` alanı yoktur (risk değerlendirmesi
+`priority_rationale`'de); doğrulama ajanının girdi metni (`approved_case_text`) türü yalnız
+`Tür: <tür>` satırıyla taşır, eski case'te `· Risk: …` devam eder.
 
 - **Üst düzey listeler:** `coverage_items` (EP / BVA / DT / UC / EG öğeleri, AC'ye bağlı),
   `negative_coverage` (her `valid: false` öğe için tek karar), `not_covered` (gerekçeli),
   `open_questions`, `assumptions`; platform bölümü olmadığından `observations`,
   `automation_open_points`, `config_matrix`, `testability_gaps` boştur.
-- **Case alanları:** `technique` ↔ `covers` öneki uyumlu; `priority` + tek cümlelik gerekçe (para,
-  limit, sipariş onayı = P1); `verification_point: UI`; `test_level: SYSTEM` (üretim girdisinin
+- **Case alanları:** `technique` ↔ `covers` öneki uyumlu (`CL` → `CL-`); `priority` + tek cümlelik
+  gerekçe (P1 yalnız para, güvenlik, veri kaybı ya da geçici çözümsüz ana akış; geçici çözümü olan
+  P2); `verification_point: UI`; `test_level: SYSTEM` (üretim girdisinin
   `Test seviyesi: SYSTEM` satırı); `test_data` adımlardaki somut verilerle aynı ve sentetik;
   `teardown` (sepeti değiştiren case: "Sepeti boşalt"); `platform: null`.
-- **Hazır olma durumu:** `TPD-1` (10 case; provanın "hepsini onayla" adımı), `f2-kod-hatasi/TPD-1`,
+- **Hazır olma durumu:** `TPD-1` (15 case; provanın "hepsini onayla" adımı), `f2-kod-hatasi/TPD-1`,
   `TPD-4` (her case'in verify_and_map golden'ı var) ve `SERBEST` tümüyle `ready`. Hazır olmayan
   iki örnek `TPD-3`'ün SONUNDADIR (C1–C3 indeksleri kaymaz): C4 `assumption_dependent` (A1: arama
   temizlenince tüm ürünler listelenir), C5 `blocked` (Q1: büyük/küçük harf duyarlılığı; beklenen
   boş). K6 gereği bu iki case düzeltilmeden onaylanamaz. `TPD-4`'te kaynağın sessiz kaldığı bölüm
-  (kayıtlı olmayan kullanıcı adı) `out_of_scope` kararıdır; case yazılmaz.
-- **Kapsanmayanlar gerçektir:** `TPD-1`'de AC2'nin ikinci eşiği (11/12 adet) ve AC4'ün sınır
-  değerleri 10 case sınırı nedeniyle `not_covered` / `out_of_scope` olarak gerekçelidir.
+  (kayıtlı olmayan kullanıcı adı) açık soru Q1'dir (PO) ve `out_of_scope` kararının gerekçesi Q1'i
+  anar; case yazılmaz. TPD-1'in karma sepet sorusu da case'siz Q1'dir.
+- **Kurulamayan sınır (K17):** test verisiyle tam değeri kurulamayan sınır kurulabilen en yakın
+  değerle sınanır ve öğe tanımı bunu söyler (TPD-1 BV-6 749,00 TL, BV-8 2.001,00 TL; SERBEST BV-2
+  749,00 TL); P1 sınırı `out_of_scope` bırakılmaz.
 - **Denetim:** `test_case_goldens_v3.py` her golden'ı 011 §4.2 deterministik kurallarına üç ayrı
   uygulamayla sorar (test yardımcısı `case_v3_rules.py`, değerlendirme
   `eval_agents.generation_rule_problems`, üretim `features.cases.schema`) ve kural başına bir
@@ -336,10 +359,15 @@ bloğunu, test verisini ve test seviyesini gönderir). REPLAY-MISS: `design_mode
   case_generation golden'ına `golden_matched` ile düşer ve `run_generation` sonundaki eşitlik
   kontrolü (`features.cases.model.round2_differences`) uyarı üretmez.
 - **Ayrıntılı modeller:** her `EP`/`BVA`/`DT`/`ST`/`UC` öğesi bir ayrıntılı satıra bağlıdır
-  (`model_problems` boş). TPD-1: 9 bölüm, 8 sınır (iki değerli; dahil/hariç kaynağı AC2/AC3/AC4),
-  ana akış. SERBEST: 2 bölüm, 2 sınır, 4 kurallı karar tablosu (DT1), ana akış. TPD-3: 3 bölüm +
-  EG öğeleri; büyük/küçük harf `Q1` ve `model_issues`'ta. TPD-4: 3 bölüm; kayıtlı olmayan kullanıcı
-  adı (`EP-I2`) sonucu tanımsız: case golden'ında soru olmadığından (eşitlik) `model_issues`'ta.
+  (`model_problems` boş). TPD-1: 9 bölüm, 8 sınır (iki değerli; dahil/hariç kaynağı AC2/AC3/AC4;
+  kurulamayan iki değerde en yakın değer), 3 kurallı karar tablosu DT1 (kampanya durumu × toplam;
+  karma sepet `undefined_combinations` + Q1), ana akış. SERBEST: 2 bölüm, 2 sınır, 4 kurallı karar
+  tablosu (DT1), ana akış. TPD-3: 3 bölüm + EG öğeleri; büyük/küçük harf `Q1` ve `model_issues`'ta.
+  TPD-4: 3 bölüm; kayıtlı olmayan kullanıcı adı (`EP-I2`) sonucu tanımsız: açık soru Q1 (PO; case
+  golden'ıyla aynı, `model_issues`'ta değil). Risk ölçeği case önceliğiyle aynıdır (high = P1).
+  Durum modelinde durumlar kimliklidir (`S1`…), geçişler (durum, olay) ikilisidir: geçerli
+  `ST-T<n>` (from/event/to), geçersiz `ST-X<n>` (from/event, hedef yok); golden'larda durum modeli
+  yoktur.
 - **Denetim:** `core/tests/unit/features/cases/test_design_model.py` her golden'ı şemaya,
   `model_problems`'a ve case_generation eşitliğine sorar.
 ## 011 F4: platform ekli üretim ve derinleştirme golden'ları
@@ -359,16 +387,23 @@ ile dürüst REPLAY-MISS'tir (sıfır taslak, gereksinim `failed`). Platformsuz 
 denetlemez — canlı değerlendirmede ayrı vaka yoktur (açık nokta).
 
 `platform-web/TPD-4`: WCAG 2.2 AA benimsenmiş, tarayıcı/çözünürlük verilmiş Web üretimi. İlk iki
-case ana TPD-4 golden'ıyla birebir (platformdan bağımsız, `platform: null`), iki Web case'i
-benimsenen WCAG maddelerine bağlı; WSTG benimsenmediği için hesap kilidi konusu `observations`'tadır;
+case ana TPD-4 golden'ıyla birebir (platformdan bağımsız, `platform: null`); Web eki kategorileri
+kontrol listesi tekniğiyle (`CL`, 011 K19) kapsam öğesidir: iki erişilebilirlik case'i (C3 CL-1,
+C4 CL-2; `a11y`) benimsenen WCAG maddelerine bağlı, C5 Web girdi güvenliği (CL-3, N5; `security`):
+parola alanına işaretli SQL enjeksiyonu verisi (`is_attack_payload: true`, metni yalnız
+`test_data`'da), beklenen AC2'den (giriş yapılmaz, AC2 mesajı) ve hassas bilgi sızmaz — uydurma
+mesaj yok. WSTG benimsenmediği için hesap kilidi konusu `observations`'tadır (C5'in `WSTG-INPV-05`
+atfı yalnız etikettir, beklenen kaynaktan); kayıtlı olmayan kullanıcı adı Q1, kırılım noktaları Q2;
 `config_matrix` yalnız parametre taşır; atlanan Web kategorileri `not_covered`'da `Web:<kategori>`.
 
 **Derinleştirme** (`case_deepening/golden/negatif/<story>.json`,
 `case_deepening/golden/teknik-<teknik>/<story>.json`; `deepen.replay_name`): yalnız senaryo
 dizinleri vardır; tür/teknik golden adındadır, girdi beyanı story bloğunu denetler (mevcut set
 bloğu değişken olduğundan beyana girmez). Golden'ların varsaydığı mevcut set story'nin ana
-case_generation golden'ıdır; yeni kimlikler onunla çakışmaz (`negatif/TPD-1`: EP-I3, EG-1/2, Q1,
-A1/A2; `teknik-ep/TPD-4`: EP-I3, EP-I4, Q1, A1). Mevcut set farklıysa ve kimlik çakışırsa kod
+case_generation golden'ıdır; yeni kimlikler onunla çakışmaz (`negatif/TPD-1`: EP-I3, EG-1/2, Q2,
+A1/A2; `teknik-ep/TPD-4`: EP-I3, EP-I4, Q2, A1 — ana golden'ların Q1'i artık dolu). Sonucu
+kaynakta olmayan geçersiz öğeye case yazılmaz: kararı `out_of_scope`, gerekçesi açık soruyu anar
+(`out_of_scope` öğe hiçbir case'in `covers`'ında olmaz; engelli case geçerli öğeler içindir). Mevcut set farklıysa ve kimlik çakışırsa kod
 çıktıyı reddeder (`deepen.id_conflicts`; iş `failed`, set değişmez). `on_miss.json` `raise`:
 golden'ı olmayan tür/teknik REPLAY-MISS'tir.
 

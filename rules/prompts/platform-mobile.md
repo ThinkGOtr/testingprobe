@@ -9,7 +9,8 @@ permissions and lifecycle transitions, so focus on state transitions and recover
 from the options block lines `İşletim sistemi / sürüm matrisi`, `Cihaz sınıfları` and
 `Uygulama tipi` (native, hybrid, Flutter, React Native, mobile web); when unknown, open question.
 
-Besides the functional cases, consider these categories for the story (checklist, not quota):
+Besides the functional cases, consider these categories for the story (checklist, not quota;
+each category you test is a `CL-n` item, common rules):
 
 1. App lifecycle (ST): foreground → background → foreground, app killed by the OS and reopened,
    screen lock/sleep and return, switching apps. At each transition: is entered data kept, is an

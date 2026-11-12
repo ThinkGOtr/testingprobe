@@ -1,0 +1,136 @@
+{
+  "kind": "call",
+  "purpose": "case_review",
+  "golden": "c10-reddedildi/TPD-1",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı (model çıktısı değil; ai_call.model = golden-elle). Girdi beyanı: gereksinimin AC'leri + açıklaması ve setin kimliği (set_hash) — case_generation/TPD-1 golden'ındaki case'lerin tamamı, yalnız C10 reddedilmiş (review önerisine uyan analist; case numaraları sete göre yeniden sayılır). Set değişirse REPLAY-MISS (on_miss: raise). Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Üretici: core/tests/unit/gateway/build_review_goldens.py.",
+  "input_match": {
+    "acceptance_criteria": [
+      "AC1: Bayi katalogda bir ürün için \"Sepete ekle\" butonuna bastığında ürün sepete eklenir ve sepet sayacı artar.",
+      "AC2: Kampanyalı üründe her 6 adette 1 adet bedava verilir: bayi 5 adet öder, 1 adet bedava alır (6 adette 1, 12 adette 2 bedava).",
+      "AC3: Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL'dir; altında \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur.",
+      "AC4: Sipariş tutarı bayinin kredi limitini aşarsa \"Kredi limiti aşıldı\" uyarısı gösterilir ve sipariş onaylanamaz.",
+      "AC5: Sipariş onaylandığında sipariş numarası gösterilir ve sipariş, sipariş geçmişinde listelenir.",
+      "AC6: Kampanyalı siparişlerde minimum sipariş tutarı şartı aranmaz."
+    ],
+    "contains": [
+      "Bayi, katalogdan ürünleri sepete ekleyip kampanya indirimiyle siparişini onaylayabilmelidir.",
+      "Set özeti (set_hash): a180927ea6d9689258c859239ca28943a28787b487725566d8103c8e79b2fd2a"
+    ]
+  },
+  "output": {
+    "items": [
+      {
+        "no": 1,
+        "title": "İzlenebilirlik",
+        "verdict": "UYGUN",
+        "finding": "AC1–AC6'nın her biri en az bir case'te (matris: AC1 C1, AC2 C2, C3, C4, C10, C11, AC3 C5, C6, C12, AC4 C7, C13, C14, AC5 C8, AC6 C9).",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 2,
+        "title": "Denklik bölümleri (EP)",
+        "verdict": "UYGUN",
+        "finding": "Geçersiz bölümler (EP-I1 minimum tutar altı, EP-I2 kredi limiti aşımı) C5 ve C7 ile sınanıyor; sepet adedinde tip/boş girdi için kaynakta kural yok.",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 3,
+        "title": "Sınır değerler (BVA)",
+        "verdict": "UYGUN",
+        "finding": "Bedava eşikleri iki değerle sınanıyor: 5/6 adet (C4/C3), ikinci eşik 11/12 adet (C10/C11). 750,00 TL sınırı C6 (eşit) ve C12 (749,00 TL; 749,99 TL'ye kurulabilen en yakın değer); kredi limiti C13 (eşit) ve C14 (2.001,00 TL; limit + 0,01 TL'ye en yakın).",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 4,
+        "title": "Karar tablosu (DT)",
+        "verdict": "ACIK_BILGI_GEREKLI",
+        "finding": "DT1'in üç kuralı C5, C9 ve C6 ile sınanıyor; kampanyalı ve kampanyasız ürünün aynı sepette olduğu, 750,00 TL altındaki birleşim AC3 ile AC6 arasında tanımsız (Q1 yanıtsız).",
+        "missing_case": null,
+        "question": "Aynı sepette kampanyalı ve kampanyasız ürün varken toplam 750,00 TL'nin altındaysa minimum sipariş tutarı şartı aranır mı?",
+        "owner": "PO"
+      },
+      {
+        "no": 5,
+        "title": "Durum geçişleri (ST)",
+        "verdict": "UYGUN",
+        "finding": "Story durum geçişi tanımlamıyor; sipariş onayı (C8) tek akıştır.",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 6,
+        "title": "Negatif kapsam kararları",
+        "verdict": "UYGUN",
+        "finding": "EP-I1, BV-6, EP-I2, BV-8 ve DT-R1 tested (C5, C12, C7, C14); kararlar gerekçeli, kurulamayan sınırlar en yakın değerle sınanıyor.",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 7,
+        "title": "Ölçülebilir beklenen sonuç",
+        "verdict": "UYGUN",
+        "finding": "Beklenen sonuçlar mesaj metni, tutar ve buton durumuyla ölçülebilir (\"Minimum sipariş tutarı 750,00 TL\", \"Kredi limiti aşıldı\").",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 8,
+        "title": "Somut ve kaynaklı test verisi",
+        "verdict": "UYGUN",
+        "finding": "Test verisi demo-app tohumundan (bayi1/bayi2, P-001…P-004); kurulamayan sınırlarda kullanılan en yakın değer tanımda açıkça yazılı; kaynakta olmayan kural yok.",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 9,
+        "title": "Platform checklist'i",
+        "verdict": "UYGUN",
+        "finding": "UYGUN — platform eki yok",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 10,
+        "title": "Tekrar eden case",
+        "verdict": "UYGUN",
+        "finding": "Tekrar eden case yok (C2'nin tekrarı C10 reddedildi).",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 11,
+        "title": "Öncelik",
+        "verdict": "UYGUN",
+        "finding": "P1 yalnız para (bedava eşikleri, minimum tutar, kredi limiti aşımı) ve ana akış (sepete ekleme, sipariş onayı) case'lerinde; geçici çözümü olan ya da olasılığı düşük case'ler P2.",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      },
+      {
+        "no": 12,
+        "title": "Case bağımsızlığı",
+        "verdict": "UYGUN",
+        "finding": "Her case kendi sepetini kurar; başka case'in sonucuna bağlı ön koşul yok.",
+        "missing_case": null,
+        "question": null,
+        "owner": ""
+      }
+    ],
+    "score": 11,
+    "missing_cases": [],
+    "remove_or_merge": [],
+    "summary": "Set altı kabul kriterini ve AC2–AC4 sınırlarını kapsıyor; beklenenler kaynaklı ve ölçülebilir, tekrar case kalmadı. Tek açık nokta karma sepet (kampanyalı + kampanyasız) için minimum tutar kuralı: PO'ya soruldu (Q1)."
+  }
+}

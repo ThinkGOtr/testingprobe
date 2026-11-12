@@ -2,7 +2,7 @@
   "kind": "call",
   "purpose": "case_generation",
   "golden": "TPD-3",
-  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı (model çıktısı değil); canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Açıklamadaki prompt injection uygulanmaz: case'ler yalnızca AC1–AC2'den üretilir ve her biri taslaktır; onay QA incelemesindedir (insan kapısı). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), eşleşmezse REPLAY-MISS. Şema v3 (teknik, kapsam öğeleri, öncelik, hazır olma durumu, test verisi, temizlik): v3 alanları ve üst düzey listeler de elle hazırlandı (model çıktısı değil); mevcut case alanları (başlık, tür, risk, AC atıfı, ön koşul, adımlar, beklenen, etiket) ve case sırası v2 ile aynıdır. Girdide `Test seviyesi: SYSTEM` varsayılır (`test_level`). C1–C3 v2 ile aynıdır ve `ready`dir. Hazır olmayan iki case golden'ın SONUNA eklendi (mevcut indeksler kaymaz): C4 `assumption_dependent` (A1: arama temizlenince tüm ürünler listelenir; kaynak tanımlamıyor), C5 `blocked` (Q1: büyük/küçük harf duyarlılığı kaynakta yok; beklenen sonuç boş). K6 gereği bu iki case düzeltilmeden QA tarafından kabul edilemez.",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Elle hazırlandı (model çıktısı değil); canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Açıklamadaki prompt injection uygulanmaz: case'ler yalnızca AC1–AC2'den üretilir ve her biri taslaktır; onay QA incelemesindedir (insan kapısı). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), eşleşmezse REPLAY-MISS. Şema v3 (teknik, kapsam öğeleri, öncelik, hazır olma durumu, test verisi, temizlik): v3 alanları ve üst düzey listeler de elle hazırlandı (model çıktısı değil); mevcut case alanları (başlık, tür, risk, AC atıfı, ön koşul, adımlar, beklenen, etiket) ve case sırası v2 ile aynıdır. Girdide `Test seviyesi: SYSTEM` varsayılır (`test_level`). C1–C3 v2 ile aynıdır ve `ready`dir. Hazır olmayan iki case golden'ın SONUNA eklendi (mevcut indeksler kaymaz): C4 `assumption_dependent` (A1: arama temizlenince tüm ürünler listelenir; kaynak tanımlamıyor), C5 `blocked` (Q1: büyük/küçük harf duyarlılığı kaynakta yok; beklenen sonuç boş). K6 gereği bu iki case düzeltilmeden QA tarafından kabul edilemez. `risk` alanı yok (011 K18; öncelik gerekçesi).",
   "input_match": {
     "sources": [
       "jira:TPD-3"
@@ -82,7 +82,6 @@
       {
         "title": "Ürün adının bir bölümüyle arama yalnızca eşleşen ürünleri listeler",
         "type": "positive",
-        "risk": "medium",
         "acceptance_criteria_refs": [
           "AC1"
         ],
@@ -132,7 +131,6 @@
       {
         "title": "Birden çok ürünle eşleşen arama hepsini listeler",
         "type": "positive",
-        "risk": "low",
         "acceptance_criteria_refs": [
           "AC1"
         ],
@@ -182,7 +180,6 @@
       {
         "title": "Eşleşme olmayan aramada \"Ürün bulunamadı\" mesajı gösterilir",
         "type": "negative",
-        "risk": "medium",
         "acceptance_criteria_refs": [
           "AC2"
         ],
@@ -232,7 +229,6 @@
       {
         "title": "Arama alanı temizlenince tüm ürünler yeniden listelenir",
         "type": "positive",
-        "risk": "low",
         "acceptance_criteria_refs": [
           "AC1"
         ],
@@ -290,7 +286,6 @@
       {
         "title": "Küçük harfle yazılan ürün adı parçasıyla arama (beklenen sonuç PO yanıtını bekliyor)",
         "type": "positive",
-        "risk": "low",
         "acceptance_criteria_refs": [
           "AC1"
         ],

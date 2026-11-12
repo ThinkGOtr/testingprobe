@@ -100,7 +100,7 @@ export function CaseKarti({
   // core test_case: approved | rejected → draft (yeniden aç). Yayınlanmış case son durumdur.
   const yenidenAcilabilir = gecisVar("test_case", tc.durum, "draft");
   const d = CASE_DURUMU[tc.durum];
-  const r = RISK[tc.icerik.risk];
+  const r = tc.icerik.risk ? RISK[tc.icerik.risk] : undefined;
   // Son durumlar (core): yayınlanan ve yerini yenisi alan case'e karar verilmez.
   const kilitli = tc.durum === "published" || tc.durum === "superseded";
   // core test_case makinesi: kararlar yalnızca izinli geçişlerde (draft → approved | rejected).
@@ -752,20 +752,22 @@ function CaseDuzenleyici({
             ))}
           </select>
         </div>
-        <div className="alan">
-          <label htmlFor={`${id}-risk`}>Risk</label>
-          <select
-            id={`${id}-risk`}
-            value={icerik.risk}
-            onChange={(e) => setIcerik({ ...icerik, risk: e.target.value as TestCaseIcerik["risk"] })}
-          >
-            {(["high", "medium", "low"] as const).map((k) => (
-              <option key={k} value={k}>
-                {RISK[k].etiket}
-              </option>
-            ))}
-          </select>
-        </div>
+        {icerik.risk !== undefined && (
+          <div className="alan">
+            <label htmlFor={`${id}-risk`}>Risk</label>
+            <select
+              id={`${id}-risk`}
+              value={icerik.risk}
+              onChange={(e) => setIcerik({ ...icerik, risk: e.target.value as TestCaseIcerik["risk"] })}
+            >
+              {(["high", "medium", "low"] as const).map((k) => (
+                <option key={k} value={k}>
+                  {RISK[k].etiket}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="alan">
           <label htmlFor={`${id}-ac`}>Kabul kriteri atıfları</label>
           <input

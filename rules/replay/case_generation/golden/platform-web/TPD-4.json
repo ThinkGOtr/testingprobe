@@ -2,7 +2,7 @@
   "kind": "call",
   "purpose": "case_generation",
   "golden": "platform-web/TPD-4",
-  "note": "Senaryo golden'ı (011 F4, P1 Web eki): TPD-4 için Web platformu, benimsenen standart WCAG 2.2 AA, tarayıcılar ve çözünürlükler seçilmiş üretim. Elle hazırlandı (model çıktısı değil). Girdi beyanı analist seçenek bloğunu (`jira:TPD-4:secenekler`: Platformlar: Web, Benimsenen standartlar: WCAG 2.2 AA) içerir; golden adı `secenekler.replay_adi` ile platformdan türer; platformsuz TPD-4 girdisi bu golden'a eşleşmez. İlk iki case ana TPD-4 golden'ıyla aynıdır (platformdan bağımsız, platform null); iki Web case'i benimsenen WCAG maddelerine bağlıdır; WSTG benimsenmediği için gözlemdir; config_matrix yalnız parametre içerir (satır yok).",
+  "note": "Senaryo golden'ı (011 F4, P1 Web eki): TPD-4 için Web platformu, benimsenen standart WCAG 2.2 AA, tarayıcılar ve çözünürlükler seçilmiş üretim. Elle hazırlandı (model çıktısı değil). Girdi beyanı analist seçenek bloğunu (`jira:TPD-4:secenekler`: Platformlar: Web, Benimsenen standartlar: WCAG 2.2 AA) içerir; golden adı `secenekler.replay_adi` ile platformdan türer; platformsuz TPD-4 girdisi bu golden'a eşleşmez. İlk iki case ana TPD-4 golden'ıyla aynıdır (platformdan bağımsız, platform null); iki Web case'i benimsenen WCAG maddelerine bağlıdır; WSTG benimsenmediği için gözlemdir; config_matrix yalnız parametre içerir (satır yok). 011 K19: erişilebilirlik case'leri (C3, C4) kontrol listesi tekniğiyle (CL-1, CL-2; `a11y`); C5 Web girdi güvenliği (CL-3, N5): parola alanına işaretli SQL enjeksiyonu verisi (is_attack_payload), beklenen AC2'den (giriş yapılmaz, AC2 mesajı) + hassas bilgi sızmaz; uydurma mesaj yok, `security` etiketli. Kayıtlı olmayan kullanıcı adı Q1 (ana TPD-4 ile aynı), kırılım noktaları Q2. `risk` alanı yok (K18).",
   "input_match": {
     "sources": [
       "jira:TPD-4",
@@ -22,6 +22,11 @@
     "open_questions": [
       {
         "id": "Q1",
+        "question": "Kayıtlı olmayan bir kullanıcı adıyla giriş denenirse ne olmalı: AC2'deki \"Kullanıcı adı veya parola hatalı\" mesajı mı gösterilir, başka bir mesaj mı? (Kullanıcı adının kayıtlı olup olmadığını ele vermemesi beklenir mi?)",
+        "owner": "PO"
+      },
+      {
+        "id": "Q2",
         "question": "Giriş sayfası için tasarımda tanımlı responsive kırılım noktaları (breakpoint) var mı?",
         "owner": "PO"
       }
@@ -43,7 +48,25 @@
       {
         "id": "EP-I2",
         "ac_ref": "AC2",
-        "definition": "Kayıtlı olmayan kullanıcı adı (beklenen sonuç kaynakta tanımsız)",
+        "definition": "Kayıtlı olmayan kullanıcı adı (beklenen sonuç kaynakta tanımsız, Q1)",
+        "valid": false
+      },
+      {
+        "id": "CL-1",
+        "ac_ref": "AC1",
+        "definition": "Web:Erişilebilirlik — giriş yalnız klavyeyle tamamlanır, odak sırası mantıklıdır (WCAG-2.1.1, WCAG-2.4.3)",
+        "valid": true
+      },
+      {
+        "id": "CL-2",
+        "ac_ref": "AC2",
+        "definition": "Web:Erişilebilirlik — hata mesajı ilgili alanla ilişkilendirilir ve ekran okuyucuya duyurulur (WCAG-3.3.1, WCAG-1.3.1)",
+        "valid": true
+      },
+      {
+        "id": "CL-3",
+        "ac_ref": "AC2",
+        "definition": "Web:Girdi güvenliği — parola alanına SQL enjeksiyonu girdisi: giriş yapılmaz, AC2 mesajı gösterilir, hassas bilgi sızmaz (WSTG-INPV-05)",
         "valid": false
       }
     ],
@@ -56,7 +79,12 @@
       {
         "item": "EP-I2",
         "decision": "out_of_scope",
-        "rationale": "AC2 yalnızca hatalı parolayı tanımlar; kayıtlı olmayan kullanıcı adında gösterilecek sonuç kaynakta yok. Beklenen sonuç uydurulmadı, case yazılmadı."
+        "rationale": "AC2 yalnızca hatalı parolayı tanımlar; kayıtlı olmayan kullanıcı adında gösterilecek sonuç kaynakta yok, PO'ya soruldu (Q1). Beklenen sonuç uydurulmadı, case yazılmadı."
+      },
+      {
+        "item": "CL-3",
+        "decision": "tested",
+        "rationale": "Giriş formu kimlik doğrulama girdisidir (güvenlik); işaretli saldırı verisi hatalı parola bölümüne (EP-I1) konarak AC2'nin tanımladığı ret ve sızıntı olmaması sınanıyor. İzinli test ortamında."
       }
     ],
     "not_covered": [
@@ -74,11 +102,7 @@
       },
       {
         "item": "Web:Responsive",
-        "reason": "Kırılım noktaları verilmedi (Q1); çözünürlükler config_matrix'te."
-      },
-      {
-        "item": "Web:Girdi güvenliği",
-        "reason": "Story'de girdi doğrulama kuralı yok; hesap kilidi/deneme sınırı tanımsız."
+        "reason": "Kırılım noktaları verilmedi (Q2); çözünürlükler config_matrix'te."
       },
       {
         "item": "Web:Ağ",
@@ -122,7 +146,6 @@
       {
         "title": "Geçerli kullanıcı adı ve parola ile giriş yapılır",
         "type": "positive",
-        "risk": "medium",
         "acceptance_criteria_refs": [
           "AC1"
         ],
@@ -179,7 +202,6 @@
       {
         "title": "Hatalı parola ile girişte hata mesajı gösterilir",
         "type": "negative",
-        "risk": "medium",
         "acceptance_criteria_refs": [
           "AC2"
         ],
@@ -202,7 +224,8 @@
         ],
         "expected_result": "\"Kullanıcı adı veya parola hatalı\" mesajı gösterilir ve giriş yapılmaz",
         "tags": [
-          "AI-generated"
+          "AI-generated",
+          "security"
         ],
         "technique": [
           "EP"
@@ -241,7 +264,6 @@
       {
         "title": "Giriş yalnız klavyeyle (Tab ve Enter) tamamlanır ve ürün kataloğu açılır",
         "type": "positive",
-        "risk": "medium",
         "acceptance_criteria_refs": [
           "AC1"
         ],
@@ -276,13 +298,14 @@
         ],
         "expected_result": "Giriş yalnız klavyeyle tamamlanır; odak sırası kullanıcı adı → parola → \"Giriş yap\" olur ve ürün kataloğu açılır",
         "tags": [
-          "AI-generated"
+          "AI-generated",
+          "a11y"
         ],
         "technique": [
-          "EP"
+          "CL"
         ],
         "covers": [
-          "EP-V1"
+          "CL-1"
         ],
         "priority": "P2",
         "priority_rationale": "Klavyeyle giriş yapılamazsa klavye kullanan bayiler portala giremez (erişilebilirlik, benimsenen WCAG 2.2 AA); olasılık düşük, etkisi yüksek.",
@@ -301,7 +324,7 @@
           {
             "name": "geçerli kullanıcı adı ve parola",
             "value": "bayi1 / Demo123!",
-            "class": "EP-V1",
+            "class": null,
             "synthetic": true,
             "is_attack_payload": false
           }
@@ -313,7 +336,6 @@
       {
         "title": "Hatalı parola mesajı ekran okuyucuya parola alanıyla ilişkili olarak duyurulur",
         "type": "negative",
-        "risk": "medium",
         "acceptance_criteria_refs": [
           "AC2"
         ],
@@ -342,12 +364,15 @@
         ],
         "expected_result": "\"Kullanıcı adı veya parola hatalı\" mesajı gösterilir, alanla ilişkilidir (erişilebilir açıklama) ve giriş yapılmaz",
         "tags": [
-          "AI-generated"
+          "AI-generated",
+          "a11y"
         ],
         "technique": [
+          "CL",
           "EP"
         ],
         "covers": [
+          "CL-2",
           "EP-I1"
         ],
         "priority": "P3",
@@ -377,6 +402,79 @@
             "class": "EP-I1",
             "synthetic": true,
             "is_attack_payload": false
+          }
+        ],
+        "teardown": []
+      },
+      {
+        "title": "Parola alanına SQL enjeksiyonu girdisiyle giriş yapılamaz ve hassas bilgi gösterilmez",
+        "type": "negative",
+        "acceptance_criteria_refs": [
+          "AC2"
+        ],
+        "preconditions": [
+          "Oturum açık değil",
+          "İzinli test ortamı (demo uygulaması)"
+        ],
+        "steps": [
+          {
+            "id": "S1",
+            "action": "Giriş sayfasını aç",
+            "data": null,
+            "expected": "Giriş formu görüntülenir"
+          },
+          {
+            "id": "S2",
+            "action": "Kayıtlı kullanıcı adını ve parola alanına \"SQL enjeksiyonu girdisi\" test verisini gir, \"Giriş yap\" butonuna bas",
+            "data": "bayi1 / SQL enjeksiyonu girdisi",
+            "expected": "\"Kullanıcı adı veya parola hatalı\" mesajı görünür ve giriş sayfasında kalınır"
+          },
+          {
+            "id": "S3",
+            "action": "Sayfadaki hata metnini ve tarayıcı geliştirici araçlarında giriş isteğinin yanıtını incele",
+            "data": null,
+            "expected": "Hata metninde ve yanıtta SQL ifadesi, veritabanı hata ayrıntısı ya da yığın izi (stack trace) görünmez"
+          }
+        ],
+        "expected_result": "Giriş yapılmaz; \"Kullanıcı adı veya parola hatalı\" mesajı gösterilir ve hata metninde ya da yanıtta SQL ifadesi veya yığın izi gibi hassas bilgi görünmez",
+        "tags": [
+          "AI-generated",
+          "security"
+        ],
+        "technique": [
+          "CL",
+          "EP"
+        ],
+        "covers": [
+          "CL-3",
+          "EP-I1"
+        ],
+        "priority": "P1",
+        "priority_rationale": "Kimlik doğrulama girdisinde enjeksiyon açığı yetkisiz erişim ve veri sızıntısı demektir (güvenlik); giriş formu en çok denenen saldırı yüzeyi olduğundan olasılık orta, iş kritikliği yüksek.",
+        "platform": "Web",
+        "test_level": "SYSTEM",
+        "verification_point": "UI",
+        "requires_real_device": false,
+        "standard_refs": [
+          "WSTG-INPV-05"
+        ],
+        "readiness": "ready",
+        "assumption_refs": [],
+        "open_question_refs": [],
+        "test_data": [
+          {
+            "name": "kayıtlı kullanıcı adı",
+            "value": "bayi1",
+            "class": null,
+            "synthetic": true,
+            "is_attack_payload": false
+          },
+          {
+            "name": "SQL enjeksiyonu girdisi",
+            "value": "' OR '1'='1' -- ",
+            "class": "CL-3",
+            "synthetic": true,
+            "is_attack_payload": true
           }
         ],
         "teardown": []

@@ -7,7 +7,7 @@
     "sources": [
       "case:TPD-4-C2"
     ],
-    "case_text": "Başlık: Hatalı parola ile girişte hata mesajı gösterilir\nTür: negative · Risk: medium\nKabul kriterleri: AC2\nÖn koşullar:\n- Oturum açık değil\nAdımlar:\nS1: Giriş sayfasını aç\n  Veri: (yok)\n  Beklenen: Giriş formu görüntülenir\nS2: Kullanıcı adı ve hatalı parola gir, \"Giriş yap\" butonuna bas\n  Veri: bayi1 / Yanlis123!\n  Beklenen: \"Kullanıcı adı veya parola hatalı\" mesajı görünür ve giriş sayfasında kalınır\nBeklenen sonuç: \"Kullanıcı adı veya parola hatalı\" mesajı gösterilir ve giriş yapılmaz\nEtiketler: AI-generated"
+    "case_text": "Başlık: Hatalı parola ile girişte hata mesajı gösterilir\nTür: negative\nKabul kriterleri: AC2\nÖn koşullar:\n- Oturum açık değil\nAdımlar:\nS1: Giriş sayfasını aç\n  Veri: (yok)\n  Beklenen: Giriş formu görüntülenir\nS2: Kullanıcı adı ve hatalı parola gir, \"Giriş yap\" butonuna bas\n  Veri: bayi1 / Yanlis123!\n  Beklenen: \"Kullanıcı adı veya parola hatalı\" mesajı görünür ve giriş sayfasında kalınır\nBeklenen sonuç: \"Kullanıcı adı veya parola hatalı\" mesajı gösterilir ve giriş yapılmaz\nEtiketler: AI-generated, security"
   },
   "case": {
     "jira_key": "TPD-4",
