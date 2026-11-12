@@ -22,6 +22,7 @@ import {
   refsiz,
   SEPET_TEST_KODU,
   SINIR_TEST_KODU,
+  TPD1_C6_SINIR_HATASI,
   TPD1_GOLDEN_CASELER,
   turGoldenAdi,
 } from "./fixtures";
@@ -499,5 +500,26 @@ describe("Demo-B örnek verisi: assertion değerleri onaylı case metninden (§8
         expect(s.eslemeler.some((e) => e.method === m[1]), `${s.id}: ${m[1]}`).toBe(true);
       }
     }
+  });
+});
+
+describe("u2 N2: AI sınır hatası C6 (ai-sinir-hatasi golden'ı)", () => {
+  const golden = yol("rules/replay/case_facts/golden/ai-sinir-hatasi/TPD-1-C6.json");
+  it.skipIf(!existsSync(golden))("örnek C6 metni golden girdi beyanıyla (case_text) birebir", () => {
+    const g = json("rules/replay/case_facts/golden/ai-sinir-hatasi/TPD-1-C6.json") as { input_match: { case_text: string } };
+    const c = TPD1_C6_SINIR_HATASI;
+    const RISK: Record<string, string> = { high: "high", medium: "medium", low: "low" };
+    const metin = [
+      `Başlık: ${c.title}`,
+      `Tür: ${c.type} · Risk: ${RISK[c.risk]}`,
+      `Kabul kriterleri: ${c.acceptance_criteria_refs.join(", ")}`,
+      "Ön koşullar:",
+      ...c.preconditions.map((p) => `- ${p}`),
+      "Adımlar:",
+      ...c.steps.flatMap((s, i) => [`S${i + 1}: ${s.action}`, `  Veri: ${s.data ?? "(yok)"}`, `  Beklenen: ${s.expected}`]),
+      `Beklenen sonuç: ${c.expected_result}`,
+      `Etiketler: ${c.tags.join(", ")}`,
+    ].join("\n");
+    expect(metin).toBe(g.input_match.case_text);
   });
 });

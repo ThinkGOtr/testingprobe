@@ -754,6 +754,8 @@ function caseKarari(id: string, govde: unknown): TestCase {
     const beklenenDegisti =
       typeof g.beklenen_anlam_degisti === "boolean" ? g.beklenen_anlam_degisti : c.icerik.expected_result !== g.icerik.expected_result;
     const kaynakInsan = typeof g.beklenen_anlam_degisti === "boolean";
+    // core: AI özgün içeriği ilk düzeltmede saklanır (beklenti doğruluğu AI'ın yazdığını ölçer, insanın düzelttiğini değil).
+    if (c.ai_generated && !c.ai_icerik && c.karar !== "edit") c.ai_icerik = c.icerik;
     c.icerik = g.icerik;
     c.surum += 1;
     c.icerik_hash = icerikHash(g.icerik);

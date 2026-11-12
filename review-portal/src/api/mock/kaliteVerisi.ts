@@ -11,9 +11,12 @@
 // "AI taslağı üret" golden'ı birebir döndürür. Case metinleri ara toplamı yazar: 7 adette bedava adet,
 // indirim ve toplam karşılaştırılır.
 //
-// Bilinçli örnek: başlangıçtaki T2 taslağında sınır `sepet_tutari <= 750` yazılıdır (golden: `< 750`).
-// AC3 "altında uyarı" der (750 dahil geçer). Analist düzeltmeden PO onaylarsa yüksek riskli sınır case'i
-// (C6, toplam 750,00 TL) "Tabloyla uyuşmuyor" olur ve onay kapısı kapanır (ANALIZ §4.3, kabul senaryosu 3).
+// Demo anlatısı (review turu 2, u2 N2): AI taslağı T2'de klasik sınır hatası yapar — R2 `sepet_tutari <= 750`
+// (story "altında uyarı" der: tam 750,00 TL'de uyarı yok). Taslak PO onayı bekler; PO sınır örnekleri ızgarasında
+// "750,00 TL'de uyarı görünür" satırını story'yle karşılaştırır → "Değişiklik iste" → analist `< 750` yapar → PO
+// onaylar. Aynı hatayı AI case üretiminde de yapar: C6 ("tam 750,00 TL'de uyarı görünür", `ai-sinir-hatasi`
+// golden'ı). T2 düzeltilip onaylanınca C6 "Tabloyla uyuşmuyor" olur ve yüksek riskli onay kapısı kapanır.
+// PO hatayı kaçırıp `<=`'yi onaylasaydı C6 da "uyumlu" görünürdü: bağımsızlık insan onayına dayanır.
 import type { CiktiModu, KararTablosuIcerik, MetamorfikIliskiIcerik } from "../types";
 
 export const KALITE_REQ = "req-tpd-1";
@@ -48,8 +51,11 @@ export const KAMPANYA_TABLOSU: KararTablosuIcerik = {
   ],
 };
 
-/** Golden T2 — birebir (sınır `sepet_tutari < 750`: tam 750,00 TL'de uyarı yok). */
-export const MIN_SIPARIS_GOLDEN: KararTablosuIcerik = {
+/**
+ * T2'nin doğru hâli (story: "altında uyarı" → `sepet_tutari < 750`; tam 750,00 TL'de uyarı yok). Analistin PO
+ * isteğiyle yaptığı düzeltme budur; testler ve örnek veri bu içeriği "düzeltilmiş T2" olarak kullanır.
+ */
+export const MIN_SIPARIS_DOGRU: KararTablosuIcerik = {
   ad: "Minimum sipariş tutarı (kampanyasız siparişler)",
   ac_refs: ["AC3", "AC6"],
   aciklama:
@@ -72,14 +78,21 @@ export const MIN_SIPARIS_GOLDEN: KararTablosuIcerik = {
   ],
 };
 
+/** AI taslağının PO'ya sorusu (taslak notu; tablo açıklamasının sonunda durur). */
+export const T2_PO_SORUSU =
+  'Taslak notu (AI): AC3 "altında uyarı" diyor; tam 750,00 TL\'de uyarının gösterilip gösterilmeyeceğini PO teyit etmeli.';
+
 /**
- * Örnek verideki T2 taslağı: golden'la aynı kolonlar, R2 sınırı bilinçli olarak `<= 750` (demo anlatısı,
- * dosya başı). Yalnız bu satır golden'dan ayrılır.
+ * AI taslağındaki T2 (golden `decision_table_draft/TPD-1`, u2 N2): R2 sınırı `sepet_tutari <= 750` — AI'ın
+ * sınır hatası; açıklamada PO'ya soru. Örnek veride T2 bu içerikle PO onayı bekler.
  */
 export const MIN_SIPARIS_TABLOSU: KararTablosuIcerik = {
-  ...MIN_SIPARIS_GOLDEN,
-  satirlar: MIN_SIPARIS_GOLDEN.satirlar.map((s) => (s.id === "R2" ? { ...s, kosul: "sepet_tutari <= 750" } : s)),
+  ...MIN_SIPARIS_DOGRU,
+  aciklama: `${MIN_SIPARIS_DOGRU.aciklama} ${T2_PO_SORUSU}`,
+  satirlar: MIN_SIPARIS_DOGRU.satirlar.map((s) => (s.id === "R2" ? { ...s, kosul: "sepet_tutari <= 750" } : s)),
 };
+/** Geriye uyum: eski ad (golden artık AI'ın `<=` taslağıdır). */
+export const MIN_SIPARIS_GOLDEN = MIN_SIPARIS_TABLOSU;
 
 /** Golden'daki tek ilişki (T1) — V9 biçiminde (ara toplam ve toplam da iki katına çıkar). */
 export const IKI_KAT_ILISKISI: MetamorfikIliskiIcerik = {
@@ -110,7 +123,7 @@ export const YEDI_ARTIS_ILISKISI: MetamorfikIliskiIcerik = {
 
 export interface TabloTohumu {
   icerik: KararTablosuIcerik;
-  durum: "draft" | "approved";
+  durum: "draft" | "pending_po" | "approved";
 }
 export interface IliskiTohumu {
   icerik: MetamorfikIliskiIcerik;
@@ -120,19 +133,19 @@ export interface IliskiTohumu {
 }
 
 /**
- * Başlangıç durumu (yalnız TPD-1): T1 onaylı, T2 taslağı (R2 sınırını analist `<= 750` yaptı — AI golden'ı
- * `< 750`; ekranda satır "analist değiştirdi" diye işaretlenir); I1 onaylı (golden).
+ * Başlangıç durumu (yalnız TPD-1): T1 onaylı; T2 AI taslağı PO onayı bekliyor (analist değiştirmeden gönderdi;
+ * R2'de AI'ın `<= 750` sınır hatası var — demo adımı 2'de PO yakalar); I1 onaylı (golden).
  */
 export const ILK_TABLOLAR: TabloTohumu[] = [
   { icerik: KAMPANYA_TABLOSU, durum: "approved" },
-  { icerik: MIN_SIPARIS_TABLOSU, durum: "draft" },
+  { icerik: MIN_SIPARIS_TABLOSU, durum: "pending_po" },
 ];
 export const ILK_ILISKILER: IliskiTohumu[] = [
   { icerik: IKI_KAT_ILISKISI, durum: "approved" },
 ];
 
-/** Tablo tohumunun AI taslağındaki özgün içeriği (ekranda "analist değiştirdi" işareti için; sıra = ILK_TABLOLAR). */
-export const ILK_TABLO_AI_ICERIKLERI: KararTablosuIcerik[] = [KAMPANYA_TABLOSU, MIN_SIPARIS_GOLDEN];
+/** Tablo tohumunun AI taslağındaki özgün içeriği ("analist değiştirdi" işareti için; sıra = ILK_TABLOLAR). */
+export const ILK_TABLO_AI_ICERIKLERI: KararTablosuIcerik[] = [KAMPANYA_TABLOSU, MIN_SIPARIS_TABLOSU];
 
 /**
  * "AI taslağı üret" çıktısı (amaç `decision_table_draft`): TPD-1 için kayıtlı (REPLAY) taslak; başka
@@ -140,7 +153,7 @@ export const ILK_TABLO_AI_ICERIKLERI: KararTablosuIcerik[] = [KAMPANYA_TABLOSU, 
  */
 export function taslakCiktisi(jiraKey: string | null): { mod: CiktiModu; tablolar: KararTablosuIcerik[]; iliskiler: MetamorfikIliskiIcerik[] } {
   if (jiraKey !== "TPD-1") return { mod: "replay_miss", tablolar: [], iliskiler: [] };
-  return { mod: "replay", tablolar: [KAMPANYA_TABLOSU, MIN_SIPARIS_GOLDEN], iliskiler: [IKI_KAT_ILISKISI] };
+  return { mod: "replay", tablolar: [KAMPANYA_TABLOSU, MIN_SIPARIS_TABLOSU], iliskiler: [IKI_KAT_ILISKISI] };
 }
 
 /**

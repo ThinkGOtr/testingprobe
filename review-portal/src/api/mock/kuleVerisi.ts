@@ -1,7 +1,8 @@
 // 012/Ş8 örnek verisi: ekilmiş hata kataloğu (ANALIZ §4.6'daki dokuz hata), örnek test paketi, hata ×
 // platform sonuç tablosu ve bitmiş bir koşu (web + android). Sayılar ÖRNEK VERİ bandı altında gösterilir.
 import type { Platform } from "../../lib/platform";
-import type { HataKatalogOgesi, HataKosusuAdimi, HataKosusuDetay, KuleBeklentiDogrulugu } from "../types";
+import type { HataKatalogOgesi, HataKosusuAdimi, HataKosusuDetay } from "../types";
+import { TEST_C1, TEST_C2, TEST_C3 } from "./fixtures";
 import { KALITE_REQ } from "./kaliteVerisi";
 
 const hata = (
@@ -66,8 +67,22 @@ const T_PO_MIN = "indirimsiz sepette minimum tutar uyarısı metni ve pasif onay
 const T_PO_GECMIS = "onaylanan sipariş geçmişte numarasıyla bulunur";
 const T_PO_EXPECT = "expect* metotları yanlış değerde assertion hatasıyla kırmızı olur";
 
-/** Onaylı test paketi (adım koşusu ayrıntısındaki test listesi). */
+/**
+ * Üretilmiş (AI) testler (`tests/generated/`): onaylı TPD-1 case'lerinden şablonla üretilen C1, C2, C3 testleri —
+ * triage ve script ekranlarındaki testlerle aynı adlar (u2 N4: Kule ile triage aynı şeyi söyler). K12: ana oran
+ * yalnız bunlarla ölçülür.
+ */
+export const AI_TESTLERI: readonly string[] = [TEST_C1, TEST_C2, TEST_C3];
+
+/**
+ * Hatasız temel koşuda zaten kırmızı olan testler (K12: hariç tutulur ve listelenir). C3'ün testi onaylı tabloyu
+ * izler (6 adette bedava 0), bugünkü uygulama 1 bedava verir → açık defect adayı (triage `fail-4`).
+ */
+export const TEMELDE_KIRMIZI: readonly string[] = [TEST_C3];
+
+/** Onaylı test paketi (adım koşusu ayrıntısındaki test listesi): üretilmiş testler + el yazısı suite. */
 export const PAKET_TESTLERI = [
+  ...AI_TESTLERI,
   T_DEALER,
   T_KATALOG,
   T_AC1,
@@ -100,12 +115,6 @@ export const PAKET_TESTLERI = [
 ];
 
 /**
- * Üretilmiş (AI) testler: demo deposunda henüz yok (`tests/generated/`, `uretilen/` boş). K12: ana oran yalnız
- * bu testlerle ölçülür; boşken "ölçülmedi". Bütün kıran testler el yazısı suite'tendir (`kaynak: "el"`).
- */
-export const AI_TESTLERI: readonly string[] = [];
-
-/**
  * `sayilmayan`: hatalı koşuda kırmızıya dönen ama assertion dışı nedenle (locator bulunamadı, zaman aşımı)
  * düştüğü için yakalama sayılmayan testler (K12). Core bunları adımın `neden` notunda bildirir.
  */
@@ -115,27 +124,31 @@ export type MockAdimSonucu =
   | { sonuc: "gecersiz"; neden: string };
 
 /**
- * Web: demo uygulamada ölçülen gerçek matris (2026-11-12; `demo-app/README.md` "Ekilmiş hatalar"):
+ * Web: demo uygulamada ölçülen el yazısı matris (2026-11-12; `demo-app/README.md` "Ekilmiş hatalar") + üretilmiş
+ * C2 testi (7 adet, ara toplam 175 / indirim 25 / toplam 150 / bedava 1): bedava yok, çift indirim ve kampanya ürünü
+ * hatalarında kırmızıya döner; C1 (sepete ekle) hiçbir hatayı ayırt etmez; C3 temelde kırmızı (hariç). AI: 3/9.
+ * El yazısı:
  * yakalanan 8/9, kaçan yalnız `kampanya_tek_bedava` (K9: el yazımı testler yalnız 6–7 adeti dener; hata 12
  * adet ve üstünde görünür). Kıran testlerin hepsi el yazısı suite'ten; assertion kırmızısı sayıları
  * 3, 2, 1, 1, 4, 5, 5, 7. Locator / zaman aşımıyla düşen testler sayılmaz: `min_siparis_haric` 1,
  * `min_siparis_1000` 2, `kampanya_urunu_p002` 1.
  */
 const WEB: Record<string, MockAdimSonucu> = {
-  kampanya_bedava_yok: { sonuc: "yakalandi", testler: [T_KAMPANYA, T_SIPARIS, T_PO_BEDAVA] },
+  kampanya_bedava_yok: { sonuc: "yakalandi", testler: [TEST_C2, T_KAMPANYA, T_SIPARIS, T_PO_BEDAVA] },
   kampanya_tek_bedava: { sonuc: "kacti" },
-  kampanya_cift_indirim: { sonuc: "yakalandi", testler: [T_KAMPANYA, T_SIPARIS] },
+  kampanya_cift_indirim: { sonuc: "yakalandi", testler: [TEST_C2, T_KAMPANYA, T_SIPARIS] },
   min_siparis_haric: { sonuc: "yakalandi", testler: [T_MIN_ULAS], sayilmayan: [T_PO_GECMIS] },
   min_siparis_muafiyet_yok: { sonuc: "yakalandi", testler: [T_MUAF] },
   min_siparis_500: { sonuc: "yakalandi", testler: [T_A11Y_SEPET, T_MIN_ALT, T_API_RED, T_PO_MIN] },
   min_siparis_1000: { sonuc: "yakalandi", testler: [T_A11Y_SEPET, T_MIN_ALT, T_MIN_ULAS, T_API_RED, T_PO_MIN], sayilmayan: [T_PO_GECMIS, T_LOC_MENU] },
   fiyat_p004_31: { sonuc: "yakalandi", testler: [T_KATALOG, T_MIN_ULAS, T_MOBIL, T_SIPARIS, T_PO_GECMIS] },
-  kampanya_urunu_p002: { sonuc: "yakalandi", testler: [T_A11Y_SEPET, T_KATALOG, T_KAMPANYA, T_KAMPANYASIZ, T_MIN_ALT, T_MUAF, T_PO_BEDAVA], sayilmayan: [T_SIPARIS] },
+  kampanya_urunu_p002: { sonuc: "yakalandi", testler: [TEST_C2, T_A11Y_SEPET, T_KATALOG, T_KAMPANYA, T_KAMPANYASIZ, T_MIN_ALT, T_MUAF, T_PO_BEDAVA], sayilmayan: [T_SIPARIS] },
 };
 
 /** Sayılmayan kırmızılar için adım notu (core `neden`). */
 export const sayilmayanNotu = (testler: readonly string[]) =>
-  `${testler.length} test assertion dışı nedenle kırmızı (locator / zaman aşımı); yakalama sayılmadı: ${testler.join(", ")}`;
+  // u2 N15: test adları cümleye karışmasın — tırnak içinde.
+  `${testler.length} test assertion dışı nedenle kırmızı (locator / zaman aşımı); yakalama sayılmadı: ${testler.map((t) => `“${t}”`).join(", ")}`;
 
 /** Platform × hata sonucu. `null`: platformun temel koşusu koşulamadı (cihaz kapalı) → tüm adımlar geçersiz. */
 export const MOCK_SONUCLAR: Record<Platform, Record<string, MockAdimSonucu> | null> = {
@@ -196,7 +209,9 @@ export function adimiSonuclandir(kosuId: string, a: HataKosusuAdimi, temelYesil:
   if (a.asama === "temel") {
     if (tablo) {
       kosu();
+      // K12: temel koşu "yeşil" sayılır; temelde kırmızı testler listelenir ve platformun sayımından hariç tutulur.
       a.sonuc = "yesil";
+      a.temelde_kirmizi = [...TEMELDE_KIRMIZI];
     } else {
       a.sonuc = "gecersiz";
       a.neden = TEMEL_KOSULAMADI[a.platform] ?? "Platforma ulaşılamadı.";
@@ -251,29 +266,6 @@ export function ilkHataKosulari(): HataKosusuDetay[] {
     },
   ];
 }
-
-/**
- * Örnek beklenti doğruluğu (§4.7, §13.2): TPD-1'in 10 AI case'i — 5 uyumlu, 1 uyuşmayan (istisnayla onaylandı),
- * 1 kısmen uyumlu (orana girmez), 3 kapsam dışı. Kapsam = (5 + 1 + 1) / 10. Tek story'de tablo var (1 / 4);
- * kayıtlar REPLAY'den (elle hazırlanmış golden), n < 20 → gösterge.
- */
-export const MOCK_BEKLENTI: KuleBeklentiDogrulugu = {
-  oran: 5 / 6,
-  uyumlu: 5,
-  uyumsuz: 1,
-  kismen: 1,
-  kapsam_disi: 3,
-  kontrol_edilemedi: 0,
-  istisna: 1,
-  kontrolsuz_onay: 0,
-  kapsam_orani: 7 / 10,
-  n_case: 10,
-  n_story: 1,
-  tablolu_story: 1,
-  toplam_story: 4,
-  golden_kaynakli: 10,
-};
-
 
 /** core `oracle/metrik.py` `KAYNAK` (Kule bunu `kaynaklar.beklenti_dogrulugu`'na yazar). */
 export const BEKLENTI_KAYNAGI =

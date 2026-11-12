@@ -89,7 +89,14 @@ function durum(x: unknown): KararTablosuDurumu {
 
 function sonKarar(x: unknown): KaliteSonKarar | null {
   if (!nesneMi(x) || !metin(x.karar)) return null;
-  return { karar: metin(x.karar), gerekce: metinYaDaNull(x.gerekce), kullanici: metinYaDaNull(x.kullanici), zaman: metinYaDaNull(x.zaman) };
+  return {
+    karar: metin(x.karar),
+    gerekce: metinYaDaNull(x.gerekce),
+    kullanici: metinYaDaNull(x.kullanici),
+    zaman: metinYaDaNull(x.zaman),
+    ...("icerik_hash" in x ? { icerik_hash: metinYaDaNull(x.icerik_hash) } : {}),
+    ...("case_id" in x ? { case_id: metinYaDaNull(x.case_id) } : {}),
+  };
 }
 
 function ortak(h: Ham) {
@@ -113,6 +120,7 @@ function ortak(h: Ham) {
     olusturma: metinYaDaNull(h.olusturma),
     guncelleme: metinYaDaNull(h.guncelleme),
     ...("son_duzenleyen" in h ? { son_duzenleyen: metinYaDaNull(h.son_duzenleyen) } : {}),
+    ...(Array.isArray(h.gecmis) ? { gecmis: h.gecmis.map(sonKarar).filter((g): g is KaliteSonKarar => g !== null) } : {}),
   };
 }
 
@@ -248,6 +256,7 @@ function istisnaUyarla(i: Ham): OracleIstisnasi {
     zaman: metinYaDaNull(i.zaman),
     ...(i.tur === "uyumsuz" || i.tur === "kontrolsuz" ? { tur: i.tur } : {}),
     ...("icerik_hash" in i ? { icerik_hash: metinYaDaNull(i.icerik_hash) } : {}),
+    ...(typeof i.gecerli === "boolean" ? { gecerli: i.gecerli } : {}),
   };
 }
 
@@ -295,6 +304,8 @@ export function oracleUyarla(x: unknown): CaseOracle | null {
     kontrol_suruyor: suruyor,
     ...degerSayimiUyarla(x.degerler),
     ...("neden" in x ? { neden: metinYaDaNull(x.neden) } : {}),
+    ...("damga" in x ? { damga: metinYaDaNull(x.damga) } : {}),
+    ...(Array.isArray(x.kismen_nedeni) ? { kismen_nedeni: metinler(x.kismen_nedeni) } : {}),
   };
 }
 
@@ -360,7 +371,7 @@ export function beklentiDogruluguUyarla(x: unknown): BeklentiDogrulugu | null | 
     kapsam_orani: oran(x.kapsam_orani),
     // §13.2 ekleri: anahtar yoksa alan eklenmez (sayı uydurulmaz).
     ...Object.fromEntries(
-      (["kismen", "kontrolsuz_onay", "n_case", "n_story", "tablolu_story", "toplam_story", "golden_kaynakli"] as const)
+      (["kismen", "kontrolsuz_onay", "n_case", "n_story", "tablolu_story", "toplam_story", "golden_kaynakli", "tekrar"] as const)
         .filter((a) => sayiMi(x[a]))
         .map((a) => [a, x[a] as number]),
     ),

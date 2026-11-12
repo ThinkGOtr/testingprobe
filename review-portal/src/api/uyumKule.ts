@@ -239,7 +239,7 @@ function beklentiUyarla(x: Ham): KuleBeklentiDogrulugu {
     kapsam_orani: oran(x.kapsam_orani),
     // §13.2 ekleri: anahtar yoksa alan eklenmez (sayı uydurulmaz).
     ...Object.fromEntries(
-      (["kismen", "kontrolsuz_onay", "n_case", "n_story", "tablolu_story", "toplam_story", "golden_kaynakli"] as const)
+      (["kismen", "kontrolsuz_onay", "n_case", "n_story", "tablolu_story", "toplam_story", "golden_kaynakli", "tekrar"] as const)
         .filter((a) => typeof x[a] === "number" && Number.isFinite(x[a]))
         .map((a) => [a, x[a] as number]),
     ),

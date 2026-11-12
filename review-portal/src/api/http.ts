@@ -392,6 +392,8 @@ async function istekGonder<T>(
 
 /** Karar uçlarında 409'un kullanıcıya gösterilen hâli (içerik görüntülendikten sonra değişti). */
 export const ICERIK_DEGISTI = "İçerik değişti, yeniden inceleyin.";
+/** Tur 2 (Y9): 409 `oracle_kayit_degisti` — karar, analistin gördüğü kontrol kaydına bağlıdır. */
+export const ORACLE_KAYIT_DEGISTI = "Kontrol sonucu siz bakarken değişti; yeniden gözden geçirin.";
 
 /** İnsan kararı uçlarından dönen çakışma (409): ekran eski içeriği gösteriyor, yeniden yüklenmeli. */
 export function kararCakismasi(e: unknown): e is ApiError {
@@ -404,7 +406,7 @@ export function kararCakismasi(e: unknown): e is ApiError {
  * yalnızca sunucunun gerekçesi — içerik değişmediği için "İçerik değişti" denmez.
  */
 export function cakismaMesaji(e: ApiError): string {
-  const metin = /[iİ]çerik[^.]*değiş|head sha|hash/.test(e.detail) ? ICERIK_DEGISTI : e.detail;
+  const metin = e.kod === "oracle_kayit_degisti" ? ORACLE_KAYIT_DEGISTI : /[iİ]çerik[^.]*değiş|head sha|hash/.test(e.detail) ? ICERIK_DEGISTI : e.detail;
   // Kullanıcının gördüğü metin son hata kaydına eklenir (asistan bağlamı, §5.5).
   gorunenMetinEkle(e.kayitId, metin);
   return metin;

@@ -9,6 +9,7 @@ import type {
   CaseMetrikleri,
   CaseOracle,
   KararTablosu,
+  OracleIstisnasi,
   OracleIstisnaTuru,
   OracleKarsilastirilamayan,
   OracleKarsilastirma,
@@ -18,7 +19,7 @@ import type {
 import { beklentiDogruluguUyarla } from "../../api/uyumKalite";
 import { useKisiAdi } from "../../auth";
 import { useGeciktirilmis, useVeri } from "../../hooks";
-import { ORACLE_DURUMU, ORACLE_NEDENI, type OracleGorunumu } from "../../lib/etiketler";
+import { kismenNedeniMetni, ORACLE_DURUMU, ORACLE_NEDENI, type OracleGorunumu } from "../../lib/etiketler";
 import { tarih, yuzde } from "../../lib/format";
 import { AlanHatasi, Cip, IslemDugmesi, Metrik, Olculmedi, Uyari } from "../ui";
 import { CEKIRDEK_BILDIRMIYOR, GOSTERGE_ESIGI } from "../kule/KaliteKpilari";
@@ -100,6 +101,10 @@ export interface OracleKapisiDurumu {
   istisnaTuru: OracleIstisnaTuru | null;
   /** Sunucu "kontrol sürüyor" diyor: "Kontrolü yeniden iste" önerilir. */
   suruyor: boolean;
+  /** Tur 2 (S1): aynı tür + içerik + tablo kümesiyle verilmiş geçerli saklı istisna; kapı gerekçeyi yeniden istemez. */
+  sakliIstisna: OracleIstisnasi | null;
+  /** Tur 2: kısmen sonucun nedenleri (düz Türkçe gösterilir); yoksa boş. */
+  kismenNedenleri: string[];
 }
 
 export const ENGEL_UYUMSUZ = "Beklenen değer onaylı karar tablosuyla uyuşmuyor. Yüksek riskli case gerekçeli istisna olmadan onaylanamaz.";
@@ -107,6 +112,10 @@ export const ENGEL_SURUYOR = "Beklenen sonuç kontrolü sürüyor; bitince onayl
 export const ENGEL_KONTROLSUZ =
   "Beklenen değer onaylı karar tablosuyla kontrol edilemedi. Yüksek riskli case, değerleri elle doğruladığınızı söyleyen bir gerekçe olmadan onaylanamaz.";
 export const UYARI_KISMEN = "Karşılaştırılan değerler tabloyla aynı; bazı değerler kontrol edilemedi. Onay engellenmez; o değerleri elle doğrulayın.";
+export const ENGEL_KISMEN =
+  "Karşılaştırılan değerler tabloyla aynı, ama bazı beklenen değerler doğrulanamadı. Yüksek riskli case, o değerleri elle doğruladığınızı söyleyen bir gerekçe olmadan onaylanamaz.";
+/** Tur 2 (Y4): `eksik_girdi` dışındaki kısmen nedenleri zorunlu kapıda gerekçe ister (nedenler yoksa eski davranış: uyarı). */
+export const kismenGerekceIster = (o: CaseOracle | null | undefined): boolean => (o?.kismen_nedeni ?? []).some((n) => n !== "eksik_girdi");
 export const UYARI_UYUMSUZ = "Beklenen değer onaylı karar tablosuyla uyuşmuyor. Onay engellenmez; uyarı kayda geçer.";
 export const UYARI_KONTROL_EDILEMEDI = "Beklenen değer tabloyla karşılaştırılamadı. Onaylamadan önce değerleri elle doğrulayın; onay uyarıyla kayda geçer.";
 
@@ -117,29 +126,45 @@ export function kontrolEdilemeyenSayisi(o: CaseOracle | null | undefined): numbe
 }
 
 /**
- * ANALIZ §4.3 kapı tablosu + §13 (K10, K11, V11) — ekran tarafı; sunucu aynı kuralı uygular. Saklı istisna
- * kapıyı açmaz (çekirdek gerekçeyi her onayda yeniden ister). "Sürüyor" yalnız sunucu `kontrol_suruyor`
- * dediğinde engeller; kayıt yokken ekranın tahmini onayı kapatmaz.
+ * ANALIZ §4.3 kapı tablosu + §13 (K10, K11, V11) + tur 2 — ekran tarafı; sunucu aynı kuralı uygular (mock/core
+ * uyumu `oracle.test.tsx`'te §13.2 tablosuyla denetlenir). Aynı tür + içerik + tablo kümesiyle verilmiş geçerli
+ * saklı istisna (`istisna.gecerli`) kapıyı açar (S1, çekirdekle tek kural). Yüksek riskte kısmen sonuç, nedeni
+ * eksik girdi dışındaysa gerekçe ister (tür `kontrolsuz`). "Sürüyor" yalnız sunucu `kontrol_suruyor` dediğinde engeller.
  */
 export function oracleKapisi(tc: Pick<TestCase, "oracle" | "icerik"> & { ai_icerik?: TestCaseIcerik | null }, tablolar: KararTablosu[] | null): OracleKapisiDurumu {
   const gorunum = oracleGorunumu(tc, tablolar);
   const yuksek = yuksekRisk(tc);
-  const d: OracleKapisiDurumu = { gorunum, engel: null, uyari: null, istisnaGerekli: false, istisnaTuru: null, suruyor: false };
+  const o = tc.oracle;
+  const d: OracleKapisiDurumu = {
+    gorunum,
+    engel: null,
+    uyari: null,
+    istisnaGerekli: false,
+    istisnaTuru: null,
+    suruyor: false,
+    sakliIstisna: null,
+    kismenNedenleri: gorunum === "kismen" ? [...(o?.kismen_nedeni ?? [])] : [],
+  };
+  const zorunlu = (tur: OracleIstisnaTuru, engel: string) => {
+    const i = o?.istisna;
+    // Saklı istisna yalnız aynı içeriğe (hash biliniyorsa), aynı türe ve geçerliyse kapıyı açar.
+    if (i && i.gecerli === true && (i.tur ?? tur) === tur && (!i.icerik_hash || !o?.icerik_hash || i.icerik_hash === o.icerik_hash)) {
+      d.sakliIstisna = i;
+      return;
+    }
+    d.engel = engel;
+    d.istisnaGerekli = true;
+    d.istisnaTuru = tur;
+  };
   if (gorunum === "uyumsuz") {
     if (!yuksek) d.uyari = UYARI_UYUMSUZ;
-    else {
-      d.engel = ENGEL_UYUMSUZ;
-      d.istisnaGerekli = true;
-      d.istisnaTuru = "uyumsuz";
-    }
-  } else if (gorunum === "kismen") d.uyari = UYARI_KISMEN;
-  else if (gorunum === "kontrol_edilemedi") {
+    else zorunlu("uyumsuz", ENGEL_UYUMSUZ);
+  } else if (gorunum === "kismen") {
+    if (yuksek && kismenGerekceIster(o)) zorunlu("kontrolsuz", ENGEL_KISMEN);
+    else d.uyari = UYARI_KISMEN;
+  } else if (gorunum === "kontrol_edilemedi") {
     if (!yuksek) d.uyari = UYARI_KONTROL_EDILEMEDI;
-    else {
-      d.engel = ENGEL_KONTROLSUZ;
-      d.istisnaGerekli = true;
-      d.istisnaTuru = "kontrolsuz";
-    }
+    else zorunlu("kontrolsuz", ENGEL_KONTROLSUZ);
   } else if (gorunum === "suruyor") {
     d.suruyor = true;
     if (yuksek && tc.oracle?.kontrol_suruyor) d.engel = ENGEL_SURUYOR;
@@ -154,7 +179,12 @@ export function useOracleKapisi(tc: TestCase): OracleKapisiDurumu {
 
 /** Sunucunun kapı hataları (422 `oracle_uyumsuz` / `oracle_kontrolsuz`, 409 `oracle_bekleniyor`). */
 export function oracleHatasi(e: unknown): e is ApiError {
-  return e instanceof ApiError && (e.kod === "oracle_uyumsuz" || e.kod === "oracle_bekleniyor" || e.kod === "oracle_kontrolsuz");
+  return e instanceof ApiError && (e.kod === "oracle_uyumsuz" || e.kod === "oracle_bekleniyor" || e.kod === "oracle_kontrolsuz" || e.kod === "oracle_kayit_degisti");
+}
+
+/** Tur 2 (Y9): karar gövdesine kontrol kaydının damgası (çekirdek vermezse alan yok). */
+export function damgaAlani(o: CaseOracle | null | undefined): { oracle_kayit_damgasi?: string } {
+  return o?.damga ? { oracle_kayit_damgasi: o.damga } : {};
 }
 
 /**
@@ -313,14 +343,35 @@ function IstisnaNotu({ oracle }: { oracle: CaseOracle }) {
   const kisiAdi = useKisiAdi();
   if (!oracle.istisna) return null;
   const i = oracle.istisna;
+  const kunye = (
+    <span className="soluk">
+      {i.veren && ` — ${kisiAdi(i.veren)}`}
+      {i.zaman && `, ${tarih(i.zaman)}`}
+    </span>
+  );
+  if (i.gecerli === true) return null; // Geçerli saklı istisna kapı bölümünde gösterilir (Onayla açık).
   return (
     <p className="kucuk" data-testid="oracle-istisna">
       <strong>{i.tur === "kontrolsuz" ? "Kontrol edilemeden onay gerekçesi:" : "Gerekçeli istisna:"}</strong> {i.gerekce}
+      {kunye}
       <span className="soluk">
-        {i.veren && ` · ${kisiAdi(i.veren)}`}
-        {i.zaman && `, ${tarih(i.zaman)}`}
+        {i.gecerli === false
+          ? " Bu istisna artık geçerli değil (tablo ya da içerik değişti); onayda gerekçe yeniden istenir."
+          : " Saklı gerekçe bu içerik ve aynı tablolarla geçerli olduğu sürece yeniden kullanılır."}
       </span>
-      <span className="soluk"> Saklı gerekçe onayı açmaz; bu içerik yeniden onaylanırken gerekçe yeniden istenir.</span>
+    </p>
+  );
+}
+
+/** Tur 2 (S1): geçerli saklı istisna — "Saklı istisna geçerli: <gerekçe> — <veren>, <zaman>"; Onayla açıktır. */
+export function SakliIstisnaNotu({ istisna }: { istisna: OracleIstisnasi }) {
+  const kisiAdi = useKisiAdi();
+  return (
+    <p className="kucuk oracle-sakli" data-testid="oracle-sakli-istisna">
+      <strong>Saklı istisna geçerli:</strong> {istisna.gerekce}
+      {istisna.veren && ` — ${kisiAdi(istisna.veren)}`}
+      {istisna.zaman && `, ${tarih(istisna.zaman)}`}
+      <span className="soluk"> · Aynı içerik ve aynı onaylı tablolarla verildi; onay gerekçesiz verilebilir, yeniden kullanım denetime yazılır.</span>
     </p>
   );
 }
@@ -384,6 +435,16 @@ export function OracleAyrinti({ tc }: { tc: TestCase }) {
         <p className="kucuk soluk" data-testid="oracle-degerler">
           Değer düzeyinde: {d.uyumlu} uyumlu · {d.uyumsuz} farklı · {d.karsilastirilamayan} karşılaştırılamadı{d.atilan > 0 ? ` · ${d.atilan} doğrulanamadığı için atıldı` : ""}
         </p>
+      )}
+      {gorunum === "kismen" && (o?.kismen_nedeni?.length ?? 0) > 0 && (
+        <div className="kucuk" data-testid="oracle-kismen-nedeni">
+          Neden kısmen:
+          <ul className="duz-liste">
+            {[...new Set(o!.kismen_nedeni)].map((n) => (
+              <li key={n}>{kismenNedeniMetni(n)}</li>
+            ))}
+          </ul>
+        </div>
       )}
       {o?.neden && ORACLE_NEDENI[o.neden] && (
         <p className="kucuk" data-testid="oracle-neden">

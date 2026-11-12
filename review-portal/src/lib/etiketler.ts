@@ -304,6 +304,15 @@ export const TURETME_ATLAMA: Record<TuretmeAtlamaSonucu, string> = {
 /** Kontrol sonucunun nedeni (§13.2 `oracle.neden`); bilinmeyen kod gösterilmez. */
 export const ORACLE_NEDENI: Record<string, string> = { cagri_hatasi: "Kontrol yapılamadı (model hatası)" };
 
+/** Tur 2: `kismen` sonucun nedenleri, düz Türkçe (bilinmeyen kod aynen gösterilir). */
+export const KISMEN_NEDENI: Record<string, string> = {
+  eksik_girdi: "case metninde tablonun bir girdisi yok; o değer hesaplanamadı",
+  atilan_olgu: "case'ten çıkarılan bir değer metinde doğrulanamadığı için atıldı",
+  kapsanmayan_sayi: "beklenen sonuçta tabloyla eşleştirilemeyen bir sayı var",
+  yok_sayilan: "beklenen sonuçtaki bir ifade kontrol dışında bırakıldı",
+};
+export const kismenNedeniMetni = (n: string): string => KISMEN_NEDENI[n] ?? n;
+
 /** 012 Ş3 triage ayrımı (ANALIZ §4.4): alt tür etiketleri; bilinmeyen alt tür ham gösterilir. */
 export const TRIAGE_ALT_TUR: Record<string, string> = {
   beklenti: "Test beklentisi (karar tablosu)",
