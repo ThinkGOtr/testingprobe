@@ -363,6 +363,11 @@ def test_ayni_tanimla_mevcut_ogeye_atif_cakisma_degil() -> None:
     assert deepen.id_conflicts(farkli, mevcut)
     assert deepen.next_numbers(["EP-I1", "EP-I7", "Q2", "ST-S1>S2"])["EP-I"] == 8
     assert deepen.next_numbers([])["Q"] == 1
+    # Durum geçişi (ST-T / ST-X) ve kontrol listesi (CL) aileleri de numaralanır.
+    numara = deepen.next_numbers(["ST-T2", "ST-X1", "CL-4"])
+    assert (numara["ST-T"], numara["ST-X"], numara["CL"]) == (3, 2, 5)
+    # Tireli aileler (BV-n, EG-n) de sayılır (önceden atlanıyordu).
+    assert deepen.next_numbers(["BV-3", "EG-2"])["BV"] == 4
 
 
 def test_derinlestirme_kapilari(

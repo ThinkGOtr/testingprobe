@@ -31,6 +31,7 @@ from tp_core.gateway.eval_set import (
     GUARDRAILS,
     case_messages,
     case_replay_key,
+    case_source,
     check_output,
     guardrails_coverage,
     load_set,
@@ -65,6 +66,10 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch, rules_dir: Path) -> None:
     monkeypatch.setenv("TP_RULES_DIR", str(rules_dir))
 
 
+# Golden'ı olmayan (yalnız canlı ölçülen) sentetik vakalar: REPLAY'de dürüstçe iskalar.
+GOLDENSIZ = {"hesap-kilidi-st"}
+
+
 def _golden_output(rules_dir: Path, data: dict[str, Any], case: dict[str, Any]) -> Any:
     store = ReplayStore(rules_dir / "replay")
     msgs = [m.model_dump(mode="json") for m in case_messages(case)]
@@ -87,12 +92,15 @@ def test_every_prompt_bundle_except_guardrails_has_an_eval_set() -> None:
 
 
 def test_case_generation_set_is_five_stories_times_three_runs() -> None:
-    """TEKNİK-TASARIM §12: 5 story × 3 koşu; girdi üretimin kurucusuyla (test verisi dahil)."""
+    """TEKNİK-TASARIM §12: 5 story × 3 koşu + golden'sız durum geçişli (ST) sentetik story;
+    girdi üretimin kurucusuyla (test verisi dahil)."""
     data = load_set(RULES, "case-generation")
-    assert data["runs"] == 3 and len(data["cases"]) == 5
+    assert data["runs"] == 3 and len(data["cases"]) == 6
     keys = {c["replay_key"]["name"] for c in data["cases"]}
-    assert keys == {"TPD-1", "TPD-3", "TPD-4", "SERBEST"}
+    assert keys == {"TPD-1", "TPD-3", "TPD-4", "SERBEST", "HESAP-KILIDI"}
     for case in data["cases"]:
+        if case["id"] in GOLDENSIZ:
+            continue
         content = case["messages"][0]["content"]
         assert 'source="testdata:demo-app"' in content and "bayi1 / Demo123!" in content
         golden = load_golden("case_generation", case["replay_key"]["name"])
@@ -113,8 +121,13 @@ def test_golden_outputs_meet_their_own_expectations(rules_dir: Path, bundle: str
     geçmeli). Girdi beyanı eşleşir: set girdisi demo'nun gerçek girdisidir."""
     data = load_set(rules_dir, bundle)
     for case in data["cases"]:
+        if case["id"] in GOLDENSIZ:
+            continue
         out = _golden_output(rules_dir, data, case)
-        assert check_output(str(data["purpose"]), case["expect"], out) == [], case["id"]
+        kaynak = case_source(case)
+        assert check_output(str(data["purpose"]), case["expect"], out, kaynak=kaynak) == [], case[
+            "id"
+        ]
 
 
 @pytest.mark.parametrize("bundle", ["requirement-review", "case-generation"])
@@ -131,6 +144,9 @@ def test_replay_smoke_of_single_call_sets(rules_dir: Path, bundle: str) -> None:
     results = run_set(gw, rules_dir, data)
     assert len(results) == len(data["cases"]) * int(data.get("runs") or 1)
     for r in results:
+        if r.id.split("#k")[0] in GOLDENSIZ:
+            assert r.mode is None and not r.ok and "ReplayNoOutput" in r.failures, r.id
+            continue
         assert r.mode == "replay" and r.ok, (r.id, r.failures, r.error)
     if bundle == "case-generation":
         assert {r.id for r in results} >= {"tpd-4-giris#k1", "tpd-4-giris#k3"}

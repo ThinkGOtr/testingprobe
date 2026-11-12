@@ -24,7 +24,9 @@ PREFIX = {
     "PW": "PW-",
     "UC": "UC-",
     "EG": "EG-",
+    "CL": "CL-",
 }
+OPEN_POINT = re.compile(r"a[çc][ıiİI]k\s+nokta", re.IGNORECASE)
 SUMMARY_KEYS = (
     "open_questions",
     "assumptions",
@@ -63,6 +65,13 @@ def _other_fields(case: Mapping[str, Any]) -> list[str]:
     for step in case.get("steps") or []:
         out += [step.get("action"), step.get("data"), step.get("expected")]
     return [_norm(x) for x in out if _filled(x)]
+
+
+def _occurs(value: str, field: str) -> bool:
+    """Kısa veri (< 4 karakter, ör. `'`) yalnız boşlukla ayrılmış tek başına geçtiğinde sayılır."""
+    if len(value) >= 4:
+        return value in field
+    return any(token == value for token in field.split(" "))
 
 
 def case_problems(case: Mapping[str, Any], summary: Mapping[str, Any]) -> list[str]:
@@ -110,13 +119,23 @@ def case_problems(case: Mapping[str, Any], summary: Mapping[str, Any]) -> list[s
             problems.append("kural 4: blocked case'te expected_result dolu")
     else:
         problems.append(f"kural 4: readiness {readiness!r}")
-    # 5, 6
+    # 4 (ek): "AÇIK NOKTA" yalnız varsayım/soru atıflı, hazır olmayan case'te
     fields = _other_fields(case)
+    if any(OPEN_POINT.search(f) for f in fields):
+        if readiness == "ready":
+            problems.append("kural 4: ready case 'AÇIK NOKTA' içeriyor")
+        elif not (a_refs or q_refs):
+            problems.append("kural 4: 'AÇIK NOKTA' atıfsız")
+    # 5, 6
     for data in case.get("test_data") or []:
         if data.get("synthetic") is not True:
             problems.append(f"kural 5: sentetik olmayan veri {data.get('name')!r}")
         value = _norm(data.get("value"))
-        if data.get("is_attack_payload") is True and value and any(value in f for f in fields):
+        if (
+            data.get("is_attack_payload") is True
+            and value
+            and any(_occurs(value, f) for f in fields)
+        ):
             problems.append(f"kural 6: saldırı verisi başka alanda {data.get('name')!r}")
     return problems
 
@@ -147,12 +166,20 @@ def set_problems(
     known = {str(i["id"]) for i in items}
     for item in sorted(set(decisions) - known):
         problems.append(f"set: tanımsız öğeye negatif kapsam kararı {item}")
+    invalid_partitions = {
+        str(i["id"]) for i in items if i["valid"] is False and str(i["id"]).startswith("EP-I")
+    }
+    for n, case in enumerate(cases, start=1):
+        if len([c for c in case.get("covers") or [] if c in invalid_partitions]) > 1:
+            problems.append(f"set: C{n} birden çok geçersiz bölüm kapsıyor")
     for item in items:
         ident = str(item["id"])
         if item["valid"] is False and decisions.get(ident, 0) != 1:
             problems.append(f"set: {ident} için {decisions.get(ident, 0)} negatif kapsam kararı")
         decision = decision_of.get(ident, {})
         if ident in covered:
+            if decision.get("decision") == "out_of_scope":
+                problems.append(f"set: {ident} out_of_scope ama kapsanıyor")
             continue
         if decision.get("decision") in ("tested", "covered_by"):
             problems.append(f"set: {ident} kararı {decision['decision']} ama case yok")

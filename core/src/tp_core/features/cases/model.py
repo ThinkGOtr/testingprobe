@@ -18,9 +18,15 @@ Kontroller (`model_problems`, modelden önce gelen deterministik kapı; Constitu
 6. Geçerlilik: bölümün `valid`'i öğesininkine eşit; `reject` sınır `valid:false`, `accept` sınır
    `valid:true` öğeye bağlı; geçersiz geçiş `valid:false`, geçerli geçiş `valid:true`; `EP-I` öneki
    `valid:false`, `EP-V` öneki `valid:true`.
-7. Ref'ler: `open_question` beklenen sınır için en az bir açık soru vardır; karar tablosu
-   kuralının koşul değerleri tablonun koşullarıdır; geçişlerin durumları modelin durumlarıdır;
-   akış türü öğe kimliğine uyar (`UC-MF` ↔ MF …).
+   `ST-X` (yasak geçiş) öneki `valid:false`, `ST-T` (geçiş) öneki `valid:true`.
+7. Ref'ler: `open_question` beklenen sınır, tanımsız karar tablosu kombinasyonu ve tanımsız geçiş
+   `question_ref` ile tanımlı bir açık soruya bağlıdır (sınırın öğesi yine `valid` seçer:
+   soru yanıtlanınca değişebilir); verilen her `question_ref` tanımlıdır. Karar tablosu kuralının
+   koşul değerleri tablonun koşullarının TAMAMIDIR (fazlası da eksiği de yok); geçişlerin
+   durumları modelin durumlarıdır; akış türü öğe kimliğine uyar (`UC-MF` ↔ MF …).
+8. Sınır değer (BVA, iki değer): her alanda `on` sınır sayısı komşu (`below` / `above`) değer
+   sayısına eşittir; alanın hem sınır hem komşu değeri vardır (tek başına sınır ya da tek başına
+   komşu değer eksik çifttir).
 
 İhlal: model taslak olarak yazılır, sorunlar gösterilir ve **onay reddedilir** (case kararıyla aynı
 desen); insan düzeltmesinde (`edit`) ihlal → 422.
@@ -190,6 +196,10 @@ def model_problems(
             s.append(f"{oge_id}: geçersiz bölüm kimliği ama valid:true")
         if oge_id.startswith("EP-V") and gecerli(oge_id) is False:
             s.append(f"{oge_id}: geçerli bölüm kimliği ama valid:false")
+        if oge_id.startswith("ST-X") and gecerli(oge_id):
+            s.append(f"{oge_id}: yasak geçiş kimliği ama valid:true")
+        if oge_id.startswith("ST-T") and gecerli(oge_id) is False:
+            s.append(f"{oge_id}: geçiş kimliği ama valid:false")
     for p in _kayitlar(model.get("partitions")):
         k = str(p.get("item_id"))
         if gecerli(k) is not None and gecerli(k) != (p.get("valid") is True):
@@ -203,6 +213,10 @@ def model_problems(
             s.append(f"{k}: kabul edilen sınır değer valid:false")
         if beklenen == "open_question" and not soru_var:
             s.append(f"{k}: sınır sonucu açık soru ama open_questions boş")
+        if beklenen == "open_question" and not b.get("question_ref"):
+            s.append(f"{k}: sınır sonucu açık soru ama question_ref yok")
+        if k in ogeler and not isinstance(ogeler[k].get("valid"), bool):
+            s.append(f"{k}: sınırın kapsam öğesi valid seçmemiş (true/false)")
         if beklenen in ("accept", "reject") and not str(b.get("inclusive_source") or "").strip():
             s.append(f"{k}: sınırın dahil/hariç kaynağı (inclusive_source) yok")
     for sm in _kayitlar(model.get("state_models")):
@@ -222,6 +236,11 @@ def model_problems(
                 s.append(f"{k}: geçişte tanımsız durum: {t.get('from')}")
         if sm.get("undefined_transitions") and not soru_var:
             s.append(f"{sm.get('id')}: tanımsız geçiş var ama open_questions boş")
+        for metin, ref in _tanimsizlar(sm.get("undefined_transitions")):
+            if not ref:
+                s.append(
+                    f"{sm.get('id')}: tanımsız geçişin açık sorusu (question_ref) yok: {metin}"
+                )
 
     # 7. Karar tablosu ve akış ref'leri.
     for dt in _kayitlar(model.get("decision_tables")):
@@ -233,18 +252,80 @@ def model_problems(
                     f"{r.get('item_id')}: tabloda olmayan koşul: "
                     + ", ".join(sorted(adlar - tablo_kosul))
                 )
+            if tablo_kosul - adlar:
+                s.append(
+                    f"{r.get('item_id')}: kuralda değeri verilmeyen koşul: "
+                    + ", ".join(sorted(tablo_kosul - adlar))
+                )
         if dt.get("undefined_combinations") and not soru_var:
             s.append(f"{dt.get('id')}: tanımsız kombinasyon var ama open_questions boş")
+        for metin, ref in _tanimsizlar(dt.get("undefined_combinations")):
+            if not ref:
+                s.append(
+                    f"{dt.get('id')}: tanımsız kombinasyonun açık sorusu (question_ref) yok: "
+                    + metin
+                )
     for f in _kayitlar(model.get("flows")):
         k, tur = str(f.get("item_id")), str(f.get("kind"))
         if k.startswith("UC-") and not k.removeprefix("UC-").startswith(tur):
             s.append(f"{k}: akış türü ({tur}) kimlikle uyuşmuyor")
+    soru_ids = {str(q.get("id")) for q in sorular}
+    tanimsiz_soru = sorted({r for r in _question_refs(model) if r not in soru_ids})
+    if tanimsiz_soru:
+        s.append(f"question_ref tanımlı olmayan açık soruya: {', '.join(tanimsiz_soru)}")
+
+    # 8. Sınır değer çiftleri (alan başına sınır + komşu).
+    alanlar: dict[str, list[str]] = {}
+    for b in _kayitlar(model.get("boundaries")):
+        alanlar.setdefault(str(b.get("field")), []).append(str(b.get("side")))
+    for alan, yanlar in alanlar.items():
+        on = yanlar.count("on")
+        komsu = len(yanlar) - on
+        if on != komsu or not on:
+            s.append(
+                f"sınır değer çifti eksik ({alan}): {on} sınır, {komsu} komşu değer "
+                "(her sınır değerin komşu bölümdeki en yakın değeri de olmalı)"
+            )
     return s
+
+
+def _tanimsizlar(deger: Any) -> list[tuple[str, str | None]]:
+    """Tanımsız kombinasyon / geçiş kayıtları `(metin, question_ref)`. Eski kayıtta (düz metin)
+    `question_ref` yoktur."""
+    out: list[tuple[str, str | None]] = []
+    for x in deger if isinstance(deger, list) else []:
+        if isinstance(x, Mapping):
+            metin = str(x.get("description") or "")
+            ref = x.get("question_ref")
+            out.append((metin, str(ref) if ref else None))
+        else:
+            out.append((str(x), None))
+    return out
+
+
+def _question_refs(model: Mapping[str, Any]) -> list[str]:
+    """Modeldeki tüm `question_ref`'ler (sınır, tanımsız kombinasyon, tanımsız geçiş)."""
+    refs = [b.get("question_ref") for b in _kayitlar(model.get("boundaries"))]
+    for dt in _kayitlar(model.get("decision_tables")):
+        refs += [r for _, r in _tanimsizlar(dt.get("undefined_combinations"))]
+    for sm in _kayitlar(model.get("state_models")):
+        refs += [r for _, r in _tanimsizlar(sm.get("undefined_transitions"))]
+    return [str(r) for r in refs if r]
 
 
 def model_summary(model: Mapping[str, Any]) -> dict[str, Any]:
     """Modelden case-generation v3 üst düzey listeleri (tur 2'de aynen kopyalanır)."""
     return {alan: [dict(x) for x in _kayitlar(model.get(alan))] for alan in MODEL_OZET_ALANLARI}
+
+
+def round2_summary(model: Mapping[str, Any], ozet: Mapping[str, Any]) -> dict[str, Any]:
+    """Tur 2'nin kayıtlı özeti: `coverage_items` / `open_questions` / `assumptions` ONAYLI
+    MODELİN listeleridir (modelin kopyası değil); diğer üst listeler üretimden gelir.
+
+    Böylece modelde olmayan öğeye / soruya / varsayıma atıf yapan case tutarlılık kurallarında
+    (`consistency_problems`) yakalanır ve onaylanamaz. Modelin yazdığı kopya yalnız sapma
+    karşılaştırmasına girer (`round2_differences`)."""
+    return {**dict(ozet), **model_summary(model)}
 
 
 def round2_differences(model: Mapping[str, Any], ozet: Mapping[str, Any]) -> list[str]:

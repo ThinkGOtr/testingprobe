@@ -28,7 +28,7 @@
           "AC2"
         ],
         "min_cases": 2,
-        "max_cases": 10,
+        "max_cases": 15,
         "contains": [
           "Kullanıcı adı veya parola hatalı"
         ],
@@ -73,6 +73,7 @@
           "48 dp",
           "16 ms"
         ],
+        "source_grounded": true,
         "must_not_be_ready_about": [
           {
             "topic": "kayıtlı olmayan kullanıcı adıyla giriş",

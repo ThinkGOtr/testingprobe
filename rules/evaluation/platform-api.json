@@ -28,7 +28,7 @@
           "AC2"
         ],
         "min_cases": 2,
-        "max_cases": 10,
+        "max_cases": 15,
         "contains": [
           "Kullanıcı adı veya parola hatalı"
         ],
@@ -68,6 +68,7 @@
           "API"
         ],
         "observation_thresholds": [],
+        "source_grounded": true,
         "must_not_be_ready_about": [
           {
             "topic": "kayıtlı olmayan kullanıcı adıyla giriş",

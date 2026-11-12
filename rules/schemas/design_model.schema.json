@@ -219,6 +219,18 @@
                 "type": "null"
               }
             ]
+          },
+          "question_ref": {
+            "description": "Sınır sonucu açık soruysa (`expected: open_question`) bağlı açık soru (Qn); değilse null.",
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^Q[0-9]+$"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -227,7 +239,8 @@
           "value",
           "side",
           "expected",
-          "inclusive_source"
+          "inclusive_source",
+          "question_ref"
         ],
         "additionalProperties": false
       },
@@ -318,12 +331,28 @@
             "minItems": 1
           },
           "undefined_combinations": {
-            "description": "Kaynağın sonucunu tanımlamadığı kombinasyonlar (her biri açık soru).",
+            "description": "Kaynağın sonucunu tanımlamadığı kombinasyonlar; her biri bir açık soruya bağlıdır (question_ref).",
             "type": "array",
             "items": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 200
+              "type": "object",
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "Tanımsız koşul kombinasyonu (koşul = değer, …)."
+                },
+                "question_ref": {
+                  "description": "Bu belirsizliği soran açık soru (open_questions[].id).",
+                  "type": "string",
+                  "pattern": "^Q[0-9]+$"
+                }
+              },
+              "required": [
+                "description",
+                "question_ref"
+              ],
+              "additionalProperties": false
             },
             "maxItems": 16
           }
@@ -424,11 +453,28 @@
           "undefined_transitions": {
             "type": "array",
             "items": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 200
+              "type": "object",
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "Tanımsız geçiş (durum + olay)."
+                },
+                "question_ref": {
+                  "description": "Bu belirsizliği soran açık soru (open_questions[].id).",
+                  "type": "string",
+                  "pattern": "^Q[0-9]+$"
+                }
+              },
+              "required": [
+                "description",
+                "question_ref"
+              ],
+              "additionalProperties": false
             },
-            "maxItems": 20
+            "maxItems": 20,
+            "description": "Kaynağın tanımlamadığı geçişler (durum + olay); her biri bir açık soruya bağlıdır (question_ref)."
           }
         },
         "required": [

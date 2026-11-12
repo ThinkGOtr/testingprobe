@@ -36,7 +36,7 @@
           "AC6"
         ],
         "min_cases": 6,
-        "max_cases": 10,
+        "max_cases": 15,
         "contains": [
           "Minimum sipariş tutarı 750,00 TL"
         ],
@@ -75,7 +75,8 @@
           "48 dp",
           "16 ms",
           "2 sn"
-        ]
+        ],
+        "source_grounded": true
       }
     }
   ]

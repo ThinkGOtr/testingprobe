@@ -58,8 +58,22 @@ TEKNIKLER = ("EP", "BVA", "DT", "ST", "PW", "UC", "EG")
 MAX_YENI_CASE = 10
 # Numaralı kimlik aileleri (yeni numara bunların her biri için ayrı verilir). `ST-…` kimlikleri
 # durum adlarıdır, numara taşımaz; yalnız birebir çakışma denetlenir.
-_KIMLIK_RE = re.compile(r"^(EP-V|EP-I|BV|DT-R|PW|UC-AF|UC-EF|EG|Q|A)(\d+)$")
-AILELER = ("EP-V", "EP-I", "BV", "DT-R", "PW", "UC-AF", "UC-EF", "EG", "Q", "A")
+_KIMLIK_RE = re.compile(r"^(EP-V|EP-I|BV|DT-R|ST-T|ST-X|PW|UC-AF|UC-EF|EG|CL|Q|A)-?(\d+)$")
+AILELER = (
+    "EP-V",
+    "EP-I",
+    "BV",
+    "DT-R",
+    "ST-T",
+    "ST-X",
+    "PW",
+    "UC-AF",
+    "UC-EF",
+    "EG",
+    "CL",
+    "Q",
+    "A",
+)
 # Modele giden mevcut set özetinin alanları (kimlikli listeler; gözlem vb. girdiyi şişirmez).
 MESAJ_OZET_ALANLARI = (
     "coverage_items",
@@ -425,7 +439,8 @@ def run_deepening(
         raise  # pragma: no cover  (_reddet fırlatır)
 
     cikti = result.output or {}
-    cases = list(cikti.get("cases") or [])[:MAX_YENI_CASE]
+    # Tavan şemadadır (`case_deepening.schema.json` maxItems; geçit doğrular): sessiz kesme yok.
+    cases = list(cikti.get("cases") or [])
     ozet = normalize_ozet(cikti)
     cakisma = id_conflicts(ozet, birlesik)
     if cakisma:
@@ -484,6 +499,11 @@ def run_deepening(
             tc.sira_no for tc in eklenen if _norm(tc.icerik.get("title")) in mevcut_basliklar
         ]
         uyarilar: list[str] = []
+        if len(cases) > MAX_YENI_CASE:
+            uyarilar.append(
+                f"Derinleştirme {len(cases)} yeni case üretti (beklenen en çok {MAX_YENI_CASE}); "
+                "hepsi taslak olarak yazıldı, gözden geçirin."
+            )
         if tekrar:
             uyarilar.append(
                 f"{len(tekrar)} case mevcut bir case'le aynı içerikte olduğu için eklenmedi."

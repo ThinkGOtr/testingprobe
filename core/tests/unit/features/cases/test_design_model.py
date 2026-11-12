@@ -17,11 +17,20 @@ from tp_core.features.cases.model import (
     model_problems,
     model_summary,
     round2_differences,
+    round2_summary,
     validate_model,
 )
 from tp_core.features.requirements.flow import apply_content_change
 from tp_core.gateway.testing import text_response
-from tp_core.models import AiCall, AuditEvent, Requirement, Review, TasarimModeli, session_scope
+from tp_core.models import (
+    AiCall,
+    AuditEvent,
+    CaseUretim,
+    Requirement,
+    Review,
+    TasarimModeli,
+    session_scope,
+)
 from tp_core.workflow.service import SYSTEM
 
 from .helpers import TPD4, case_icerik, latest_cases, login, run_jobs, uretim_cikti
@@ -288,6 +297,27 @@ def test_tur2_sapmasi_uyari_ve_denetim(
     with session_scope() as s:
         olay = s.scalars(select(AuditEvent).where(AuditEvent.eylem == "cases.generated")).one()
         assert olay.ozet["tur2_farklari"] == is_.deger["tur2_farklari"]
+        # Kayıtlı özetin üst listeleri ONAYLI MODELİNKİDİR (modelin kopyası değil).
+        (u,) = s.scalars(select(CaseUretim)).all()
+        assert u.ozet["coverage_items"] == model["coverage_items"]
+    # Modelde olmayan öğeye (UC-MF) atıf yapan case tutarsızdır: onaylanamaz (test mimarı #1).
+    assert is_.deger["tutarsiz"] == {"1": ["covers: tanımlı olmayan kapsam öğesi: UC-MF"]}
+    (case,) = latest_cases(api, rid)
+    assert case["onay_engeli"] and "tutarsız" in case["onay_engeli"]
+
+
+def test_tur2_ozeti_onayli_modelin_listelerini_alir() -> None:
+    m = _golden("TPD-4")["output"]
+    uretim = {
+        "coverage_items": [{"id": "UC-MF", "ac_ref": "AC1", "definition": "x", "valid": True}],
+        "open_questions": [{"id": "Q9", "question": "Uydurma soru", "owner": "PO"}],
+        "assumptions": [],
+        "not_covered": [{"item": "AC2", "reason": "sığmadı"}],
+    }
+    oz = round2_summary(m, uretim)
+    assert oz["coverage_items"] == m["coverage_items"]
+    assert oz["open_questions"] == m["open_questions"] == []
+    assert oz["not_covered"] == uretim["not_covered"]  # modelde olmayan listeler üretimden
 
 
 def test_story_degisince_model_superseded(
@@ -345,7 +375,8 @@ def test_eval_seti_golden_ciktilariyla_gecer_ve_bozulmayi_yakalar() -> None:
     from tp_core.gateway.eval_set import check_output
 
     veri = json.loads((RULES / "evaluation" / "design-model.json").read_text())
-    assert veri["purpose"] == "design_model" and len(veri["cases"]) == 5
+    # 5 golden'lı story + golden'sız durum geçişli (ST) sentetik story (yalnız canlı ölçülür).
+    assert veri["purpose"] == "design_model" and len(veri["cases"]) == 6
     goldenlar = {
         "tpd-1-son-hal": "TPD-1",
         "tpd-1-f2-kod-hatasi": "f2-kod-hatasi/TPD-1",
@@ -353,9 +384,15 @@ def test_eval_seti_golden_ciktilariyla_gecer_ve_bozulmayi_yakalar() -> None:
         "tpd-4-giris": "TPD-4",
         "serbest-son-hal": "SERBEST",
     }
+    from tp_core.gateway.eval_set import case_source
+
     for vaka in veri["cases"]:
+        if vaka["id"] == "hesap-kilidi-st":
+            assert vaka["expect"]["techniques_include"] == ["ST"]
+            continue
         cikti = _golden(goldenlar[vaka["id"]])["output"]
-        assert check_output("design_model", vaka["expect"], cikti) == [], vaka["id"]
+        kaynak = case_source(vaka)
+        assert check_output("design_model", vaka["expect"], cikti, kaynak=kaynak) == [], vaka["id"]
     tpd4 = next(v for v in veri["cases"] if v["id"] == "tpd-4-giris")
     sessiz = copy.deepcopy(_golden("TPD-4")["output"])
     sessiz["model_issues"] = []
@@ -363,3 +400,67 @@ def test_eval_seti_golden_ciktilariyla_gecer_ve_bozulmayi_yakalar() -> None:
     uydurma = copy.deepcopy(_golden("TPD-4")["output"])
     uydurma["conditions"][1]["statement"] += "; 3 hatalı denemede hesap kilitlenir"
     assert any("uydurma" in f for f in check_output("design_model", tpd4["expect"], uydurma))
+
+
+# ------------------------------------------------- model kontrolleri: ref'ler ve sınır çiftleri
+
+
+def _serbest() -> dict[str, Any]:
+    return copy.deepcopy(_golden("SERBEST")["output"])
+
+
+def test_acik_soru_sinirinin_question_ref_i_ve_valid_secimi() -> None:
+    m = _serbest()
+    m["open_questions"] = [{"id": "Q1", "question": "750,00 TL dahil mi?", "owner": "PO"}]
+    b = m["boundaries"][0]
+    b.update(expected="open_question", inclusive_source=None, question_ref=None)
+    assert any("question_ref yok" in s for s in model_problems(m))
+    b["question_ref"] = "Q7"
+    assert any("tanımlı olmayan açık soruya: Q7" in s for s in model_problems(m))
+    b["question_ref"] = "Q1"
+    assert model_problems(m) == []
+    assert validate_model(m, RULES) == []
+
+
+def test_tanimsiz_kombinasyon_ve_gecis_soruya_baglanir() -> None:
+    m = _serbest()
+    m["open_questions"] = [{"id": "Q1", "question": "Kampanya + limit aşımı?", "owner": "PO"}]
+    dt = m["decision_tables"][0]
+    dt["undefined_combinations"] = [{"description": "kampanya=evet, limit=aşıldı"}]
+    assert validate_model(m, RULES)  # şema: question_ref zorunlu
+    assert any("question_ref) yok" in s for s in model_problems(m))
+    dt["undefined_combinations"][0]["question_ref"] = "Q1"
+    assert validate_model(m, RULES) == [] and model_problems(m) == []
+    # Eski kayıt (düz metin) şemaya uymaz; kontrol yine soru bağını ister.
+    dt["undefined_combinations"] = ["kampanya=evet, limit=aşıldı"]
+    assert validate_model(m, RULES)
+    assert any("question_ref) yok" in s for s in model_problems(m))
+
+
+def test_karar_tablosu_kuralinda_eksik_kosul() -> None:
+    m = _serbest()
+    kural = m["decision_tables"][0]["rules"][0]
+    kural["condition_values"] = kural["condition_values"][:-1]
+    assert any("kuralda değeri verilmeyen koşul" in s for s in model_problems(m))
+
+
+def test_sinir_degerleri_alan_basina_cift() -> None:
+    m = _serbest()
+    assert [b["side"] for b in m["boundaries"]] == ["on", "below"]
+    tek = copy.deepcopy(m)
+    tek["boundaries"].pop()  # komşu değer yok
+    assert any("sınır değer çifti eksik" in s for s in model_problems(tek))
+    komsusuz = copy.deepcopy(m)
+    komsusuz["boundaries"][1]["side"] = "on"  # iki sınır, sıfır komşu
+    assert any("2 sınır, 0 komşu" in s for s in model_problems(komsusuz))
+
+
+def test_durum_gecisi_kimlik_onekleri_gecerlilikle_tutarli() -> None:
+    m = _serbest()
+    m["coverage_items"] += [
+        {"id": "ST-X1", "ac_ref": None, "definition": "Yasak geçiş", "valid": True},
+        {"id": "ST-T1", "ac_ref": None, "definition": "Geçiş", "valid": False},
+    ]
+    sorunlar = model_problems(m)
+    assert "ST-X1: yasak geçiş kimliği ama valid:true" in sorunlar
+    assert "ST-T1: geçiş kimliği ama valid:false" in sorunlar

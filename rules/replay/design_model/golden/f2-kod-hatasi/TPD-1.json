@@ -305,7 +305,8 @@
         "value": "6",
         "side": "below",
         "expected": "accept",
-        "inclusive_source": "AC2"
+        "inclusive_source": "AC2",
+        "question_ref": null
       },
       {
         "field": "Kampanyalı ürün adedi",
@@ -313,7 +314,8 @@
         "value": "7",
         "side": "on",
         "expected": "accept",
-        "inclusive_source": "AC2"
+        "inclusive_source": "AC2",
+        "question_ref": null
       },
       {
         "field": "Kampanyalı ürün adedi",
@@ -321,7 +323,8 @@
         "value": "13",
         "side": "below",
         "expected": "accept",
-        "inclusive_source": "AC2"
+        "inclusive_source": "AC2",
+        "question_ref": null
       },
       {
         "field": "Kampanyalı ürün adedi",
@@ -329,7 +332,8 @@
         "value": "14",
         "side": "on",
         "expected": "accept",
-        "inclusive_source": "AC2"
+        "inclusive_source": "AC2",
+        "question_ref": null
       },
       {
         "field": "Kampanyasız sepet toplamı",
@@ -337,7 +341,8 @@
         "value": "750,00 TL",
         "side": "on",
         "expected": "accept",
-        "inclusive_source": "AC3"
+        "inclusive_source": "AC3",
+        "question_ref": null
       },
       {
         "field": "Kampanyasız sepet toplamı",
@@ -345,7 +350,8 @@
         "value": "749,99 TL",
         "side": "below",
         "expected": "reject",
-        "inclusive_source": "AC3"
+        "inclusive_source": "AC3",
+        "question_ref": null
       },
       {
         "field": "Sipariş tutarı (kredi limitine göre)",
@@ -353,7 +359,8 @@
         "value": "kredi limiti",
         "side": "on",
         "expected": "accept",
-        "inclusive_source": "AC4"
+        "inclusive_source": "AC4",
+        "question_ref": null
       },
       {
         "field": "Sipariş tutarı (kredi limitine göre)",
@@ -361,7 +368,8 @@
         "value": "kredi limiti + 0,01 TL",
         "side": "above",
         "expected": "reject",
-        "inclusive_source": "AC4"
+        "inclusive_source": "AC4",
+        "question_ref": null
       }
     ],
     "decision_tables": [],

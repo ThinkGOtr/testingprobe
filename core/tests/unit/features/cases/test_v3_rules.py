@@ -288,9 +288,11 @@ def test_kapsam_matrisi_ve_oranlar() -> None:
         "ac_ref": "AC1",
         "karar": None,
         "covered_by": [1],
+        "covered_by_ready": [1],
         "gerekce": None,
     }
     assert satir["AC2"]["covered_by"] == [2, 3]  # eski case AC satırına sayılır
+    assert satir["AC2"]["covered_by_ready"] == [2, 3]  # eski (v2) case hazır sayılır (K9)
     assert satir["EP-I1"] == {
         "item": "EP-I1",
         "tur": "oge",
@@ -299,6 +301,7 @@ def test_kapsam_matrisi_ve_oranlar() -> None:
         "ac_ref": "AC2",
         "karar": "tested",
         "covered_by": [2],
+        "covered_by_ready": [2],
         "gerekce": "AC2 doğrudan ister",
     }
     assert satir["BV-1"]["covered_by"] == [] and satir["BV-1"]["gerekce"] == "Sığmadı"
@@ -307,7 +310,30 @@ def test_kapsam_matrisi_ve_oranlar() -> None:
         "gereksinim_kapsami": {"kapsanan": 2, "toplam": 2, "oran": 1.0},
         "oge_kapsami": {"kapsanan": 2, "toplam": 3, "oran": 0.6667},
         "negatif_karar_kapsami": {"kapsanan": 2, "toplam": 2, "oran": 1.0},
+        "hazir_gereksinim_kapsami": {"kapsanan": 2, "toplam": 2, "oran": 1.0},
+        "hazir_oge_kapsami": {"kapsanan": 2, "toplam": 3, "oran": 0.6667},
     }
+
+
+def test_kapsam_matrisi_hazir_olmayan_kapsami_tamamlamaz() -> None:
+    """Varsayıma bağlı / soru bekleyen case satırı kapsar (`covered_by`) ama hazır kapsam
+    (`covered_by_ready`, `hazir_*` oranları) yalnız `ready` case'lerle sayılır."""
+    cases = [
+        case_icerik(),
+        _negatif(readiness="blocked", open_question_refs=["Q1"], expected_result=""),
+    ]
+    oz = _ozet(open_questions=[{"id": "Q1", "question": "?", "owner": "PO"}])
+    sonuc = coverage_matrix(cases, oz, ACS)
+    satir = {s["item"]: s for s in sonuc["satirlar"]}
+    assert satir["EP-I1"]["covered_by"] == [2] and satir["EP-I1"]["covered_by_ready"] == []
+    assert satir["AC2"]["covered_by_ready"] == []
+    assert sonuc["oranlar"]["gereksinim_kapsami"]["oran"] == 1.0
+    assert sonuc["oranlar"]["hazir_gereksinim_kapsami"] == {
+        "kapsanan": 1,
+        "toplam": 2,
+        "oran": 0.5,
+    }
+    assert sonuc["oranlar"]["hazir_oge_kapsami"]["kapsanan"] == 1  # yalnız UC-MF
 
 
 def test_kapsam_matrisi_ozetsiz_ve_acsiz() -> None:
@@ -385,3 +411,68 @@ def test_olcu_ve_fark_v3_alanlarini_kapsar() -> None:
     # Eski case v3'e yükseltilirse eklenen alanlar farkta görünür.
     yukseltme = metrics.field_diff(eski_case_icerik(), case_icerik())
     assert {"technique", "covers", "readiness"} <= {f["alan"] for f in yukseltme}
+
+
+# ------------------------------------------------- D3: kenar durumlar (AÇIK NOKTA, set kuralları)
+
+
+def test_acik_nokta_yalniz_atifli_ve_hazir_olmayan_casete() -> None:
+    from tp_core.features.cases.schema import consistency_problems
+
+    beklenen = "Hata gösterilir (mesaj metni: AÇIK NOKTA)"
+    hazir = _negatif(expected_result=beklenen)
+    assert any("'ready' case 'AÇIK NOKTA'" in p for p in consistency_problems(hazir, _ozet()))
+    varsayimli = _negatif(
+        expected_result=beklenen.replace("AÇIK", "Açık"),
+        readiness="assumption_dependent",
+        assumption_refs=["A1"],
+    )
+    assert consistency_problems(varsayimli, _ozet()) == []
+
+
+def test_kontrol_listesi_teknigi_cl_onekiyle() -> None:
+    from tp_core.features.cases.schema import TEKNIK_ONEKI, consistency_problems
+
+    assert TEKNIK_ONEKI["CL"] == "CL-"
+    oz = _ozet()
+    oz["coverage_items"].append(
+        {"id": "CL-1", "ac_ref": "AC1", "definition": "Hata mesajı alanla ilişkili", "valid": True}
+    )
+    case = case_icerik(technique=["UC", "CL"], covers=["UC-MF", "CL-1"])
+    assert consistency_problems(case, oz) == []
+
+
+def test_set_kurallari_kenar_durumlari() -> None:
+    from tp_core.features.cases.schema import readiness_warnings
+
+    # out_of_scope kararlı öğeyi kapsayan case.
+    kapsayan = [case_icerik(), _negatif(covers=["EP-I1", "BV-1"], technique=["EP", "BVA"])]
+    assert any(
+        "'out_of_scope' ama case kapsıyor" in p for p in set_problems(kapsayan, _ozet(), ACS)
+    )
+    # İki geçersiz bölüm (EP-I) tek case'te: uyarı; sınır öğesi sayılmaz.
+    oz = _ozet()
+    oz["coverage_items"].append(
+        {"id": "EP-I2", "ac_ref": "AC2", "definition": "Boş parola", "valid": False}
+    )
+    oz["negative_coverage"].append({"item": "EP-I2", "decision": "tested", "rationale": "x"})
+    iki = [case_icerik(), _negatif(covers=["EP-I1", "EP-I2"])]
+    assert any("birden çok geçersiz eşdeğerlik bölümü" in p for p in set_problems(iki, oz, ACS))
+    # tested kararlı öğeyi yalnız blocked case kapsıyor: tutarsızlık değil, hazır olma uyarısı.
+    engelli = [
+        case_icerik(),
+        _negatif(readiness="blocked", open_question_refs=["Q1"], expected_result=""),
+    ]
+    assert not any("blocked" in p for p in set_problems(engelli, _ozet(), ACS))
+    assert [u.split(":")[0] for u in readiness_warnings(engelli, _ozet())] == ["EP-I1"]
+    assert readiness_warnings([case_icerik(), _negatif()], _ozet()) == []
+
+
+def test_korunan_onayli_caseler_ac_kapsamina_sayilir() -> None:
+    """Üretimde korunan (önceki üretimin onaylı) case AC2'yi kapsıyorsa yeni üretim için
+    "AC2 kapsanmıyor" denmez (yanlış uyarı yok)."""
+    yeni = [case_icerik()]
+    oz = _ozet(not_covered=[{"item": "EP-I1", "reason": "önceki üretimde"}])
+    assert any(p.startswith("AC2:") for p in set_problems(yeni, oz, ACS))
+    korunan = [_negatif()]
+    assert not any(p.startswith("AC2:") for p in set_problems(yeni, oz, ACS, korunan=korunan))

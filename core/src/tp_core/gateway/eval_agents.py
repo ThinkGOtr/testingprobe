@@ -560,8 +560,12 @@ TEKNIK_ONEKI: dict[str, str] = {
     "PW": "PW-",
     "UC": "UC-",
     "EG": "EG-",
+    "CL": "CL-",
 }
 READINESS = ("ready", "assumption_dependent", "blocked")
+# Kısa saldırı verisi yalnız tek başına geçtiğinde sayılır (`features.cases.schema.KISA_VERI`).
+KISA_VERI = 4
+ACIK_NOKTA = re.compile(r"a[çc][ıiİI]k\s+nokta", re.IGNORECASE)
 # Platform ekinde atlanan kategori (011 F4, `platform-common`): `not_covered.item` =
 # `<Platform>:<kategori>`.
 PLATFORM_KATEGORISI = re.compile(r"(Web|Mobil|Desktop|API|Data):[^\n]{1,32}")
@@ -596,6 +600,14 @@ def _case_metni(case: Mapping[str, Any]) -> str:
     for veri in _kayitlar(case.get("test_data")):
         parcalar += [str(veri.get("name") or ""), str(veri.get("value") or "")]
     return "\n".join(p for p in parcalar if p)
+
+
+def _veri_geciyor(deger: str, metin: str) -> bool:
+    if not deger:
+        return False
+    if len(deger) >= KISA_VERI:
+        return deger in metin
+    return re.search(rf"(?<!\S){re.escape(deger)}(?!\S)", metin) is not None
 
 
 def case_rule_problems(case: Mapping[str, Any], output: Mapping[str, Any]) -> list[str]:
@@ -659,14 +671,20 @@ def case_rule_problems(case: Mapping[str, Any], output: Mapping[str, Any]) -> li
             sorunlar.append("blocked case'te açık soru atıfı yok")
         if beklenen:
             sorunlar.append("blocked case'te expected_result dolu")
-    # 5–6. Test verisi: sentetik; saldırı verisi başka alanda geçmez.
+    # "AÇIK NOKTA" yalnız varsayıma bağlı / soru bekleyen case'te, atfıyla.
     alanlar = [_sade(alan) for alan in _saldiri_alanlari(case)]
+    if any(ACIK_NOKTA.search(alan) for alan in alanlar):
+        if durum == "ready":
+            sorunlar.append("ready case 'AÇIK NOKTA' içeriyor")
+        elif not (a_refs or q_refs):
+            sorunlar.append("'AÇIK NOKTA' var ama varsayım/soru atfı yok")
+    # 5–6. Test verisi: sentetik; saldırı verisi başka alanda geçmez.
     for veri in _kayitlar(case.get("test_data")):
         if veri.get("synthetic") is not True:
             sorunlar.append(f"test verisi sentetik değil: {veri.get('name')}")
         deger = _sade(veri.get("value"))
         saldiri = veri.get("is_attack_payload") is True and bool(deger)
-        if saldiri and any(deger in alan for alan in alanlar):
+        if saldiri and any(_veri_geciyor(deger, alan) for alan in alanlar):
             sorunlar.append(f"saldırı verisi başka alanda geçiyor: {veri.get('name')}")
     return sorunlar
 
@@ -714,9 +732,21 @@ def generation_rule_problems(output: Any, *, ek_set: bool = False) -> list[str]:
     )
     if tanimsiz:
         sorunlar.append(f"tanımsız kapsam öğesine karar/gerekçe: {tanimsiz}")
+    gecersiz_bolum = {
+        str(o.get("id"))
+        for o in ogeler
+        if o.get("valid") is False and str(o.get("id")).startswith("EP-I")
+    }
+    for n, case in enumerate(cases, start=1):
+        coklu = [str(k) for k in _liste(case.get("covers")) if str(k) in gecersiz_bolum]
+        if len(coklu) > 1:
+            sorunlar.append(f"C{n}: birden çok geçersiz bölüm kapsıyor: {coklu}")
     for oge in ogeler:
         kimlik = str(oge.get("id"))
         karar_listesi = kararlar.get(kimlik, [])
+        kapsayan = [c for c in cases if kimlik in {str(k) for k in _liste(c.get("covers"))}]
+        if kapsayan and any(k.get("decision") == "out_of_scope" for k in karar_listesi):
+            sorunlar.append(f"{kimlik}: karar out_of_scope ama case kapsıyor")
         kapsam_disi = any(
             k.get("decision") == "out_of_scope" and str(k.get("rationale") or "").strip()
             for k in karar_listesi
@@ -756,8 +786,11 @@ def generation_stats(output: Any) -> dict[str, Any]:
             teknik[str(t)] = teknik.get(str(t), 0) + 1
     ogeler = _kayitlar(out.get("coverage_items"))
     kapsanan = {str(k) for c in cases for k in _liste(c.get("covers"))}
+    tekrarlar = duplicate_cases(cases)
     return {
         "case": len(cases),
+        "tekrar": sum(len(g) - 1 for g in tekrarlar),
+        "tekrar_ciftleri": tekrarlar,
         "readiness": dict(sorted(hazirlik.items())),
         "technique": dict(sorted(teknik.items())),
         "coverage_items": len(ogeler),
@@ -769,6 +802,118 @@ def generation_stats(output: Any) -> dict[str, Any]:
     }
 
 
+def _tekrar_imzasi(case: Mapping[str, Any]) -> tuple[Any, ...] | None:
+    """Tekrar denetleyicisi imzası: aynı kapsam öğeleri + aynı test verisi değerleri. Kapsamı ya
+    da verisi boş case karşılaştırılmaz (imza anlamsız)."""
+    covers = tuple(sorted(str(k) for k in _liste(case.get("covers"))))
+    veri = tuple(sorted(_sade(v.get("value")) for v in _kayitlar(case.get("test_data"))))
+    return (covers, veri) if covers and veri else None
+
+
+def duplicate_cases(cases: Sequence[Mapping[str, Any]]) -> list[list[int]]:
+    """Tekrar case'ler: aynı `covers` ve aynı test verisiyle yazılmış case grupları (1 tabanlı
+    sıra no; her grup ilk case + tekrarları). Tekrar oranı = (grup üyeleri − grup sayısı) / case."""
+    gruplar: dict[tuple[Any, ...], list[int]] = {}
+    for n, case in enumerate(cases, start=1):
+        imza = _tekrar_imzasi(case)
+        if imza is not None:
+            gruplar.setdefault(imza, []).append(n)
+    return [g for g in gruplar.values() if len(g) > 1]
+
+
+# Uydurma ölçümü (011 #4): hazır case'in beklenen sonucundaki tırnak içi metin kaynakta birebir
+# geçer; TL tutarı kaynakta geçer ya da bir kaynak tutarının tamsayı katıdır (adet × birim fiyat).
+TUTAR = re.compile(r"(?<![\d.,])(\d{1,3}(?:\.\d{3})*,\d{2})\s?TL\b")
+TIRNAK_ICI = re.compile(
+    r'"([^"\n]{2,160})"|“([^”\n]{2,160})”|«([^»\n]{2,160})»|(?<!\w)\'([^\'\n]{2,80})\'(?!\w)'
+)
+MAX_KAT = 999
+
+
+def _kurus(tutar: str) -> int:
+    return int(tutar.replace(".", "").replace(",", ""))
+
+
+def _bosluk(metin: str) -> str:
+    return re.sub(r"\s+", " ", metin).strip()
+
+
+def source_problems(metinler: Sequence[tuple[str, str]], kaynak: str) -> list[str]:
+    """`(etiket, metin)` listesinde kaynağa dayanmayan tırnak içi metin ve TL tutarı.
+
+    Tırnak içi metin kaynakta (girdi mesajı: gereksinim, AC, PO cevabı, test verisi bloğu) boşluk
+    sadeleştirilmiş olarak BİREBİR geçmelidir. TL tutarı kaynakta geçmeli ya da bir kaynak
+    tutarının 2–999 katı olmalıdır (ara toplam = adet × birim fiyat); uydurma eşik, ücret ya da
+    limit kaynakta yoktur."""
+    kaynak_sade = _bosluk(kaynak)
+    kaynak_tutar = {_kurus(t) for t in TUTAR.findall(kaynak)} | {
+        _kurus(t) for t in re.findall(r"(?<![\d.,])(\d{1,3}(?:\.\d{3})*,\d{2})(?![\d])", kaynak)
+    }
+    kaynak_tutar.discard(0)
+
+    def turetilir(kurus: int) -> bool:
+        if kurus == 0 or kurus in kaynak_tutar:
+            return True
+        return any(kurus % a == 0 and 2 <= kurus // a <= MAX_KAT for a in kaynak_tutar)
+
+    out: list[str] = []
+    for etiket, metin in metinler:
+        for m in TIRNAK_ICI.finditer(metin):
+            alinti = _bosluk(next(g for g in m.groups() if g))
+            if alinti not in kaynak_sade:
+                out.append(f"{etiket}: kaynakta olmayan alıntı {alinti!r}")
+        for tutar in TUTAR.findall(metin):
+            if not turetilir(_kurus(tutar)):
+                out.append(f"{etiket}: kaynakta olmayan tutar '{tutar} TL'")
+    return out
+
+
+def _hazir_beklenenler(cases: Sequence[Mapping[str, Any]]) -> list[tuple[str, str]]:
+    return [
+        (f"C{n}", metin)
+        for n, c in enumerate(cases, start=1)
+        if c.get("readiness") == "ready"
+        for metin in _beklenen_metinleri(c)
+    ]
+
+
+def _kapsam_metni(out: Mapping[str, Any]) -> str:
+    """Kapsam öğeleri, negatif kapsam kararları ve kapsanmayan gerekçeleri (öğe benzerliği)."""
+    parcalar = [str(o.get("definition") or "") for o in _kayitlar(out.get("coverage_items"))]
+    parcalar += [
+        f"{k.get('item')} {k.get('rationale') or ''}"
+        for k in _kayitlar(out.get("negative_coverage"))
+    ]
+    parcalar += [
+        f"{n.get('item')} {n.get('reason') or ''}" for n in _kayitlar(out.get("not_covered"))
+    ]
+    return _kucuk("\n".join(parcalar))
+
+
+def item_like_problems(out: Mapping[str, Any], expect: Mapping[str, Any]) -> list[str]:
+    """`must_cover_items_like`: `[{"topic", "keywords": [...]}]` — teknik doğruluk: her konu
+    (ör. "bedava eşiği 5 adet", "minimum tutar sınırı 750,00 TL") bir kapsam öğesi tanımında ya
+    da negatif kapsam / kapsanmayan kararında anılır (anahtar sözcüklerden biri, büyük/küçük harf
+    duyarsız)."""
+    metin = _kapsam_metni(out)
+    return [
+        f"kapsam öğesi ya da kararı yok: {konu.get('topic')}"
+        for konu in expect.get("must_cover_items_like") or []
+        if not any(_kucuk(str(a)) in metin for a in konu.get("keywords") or [])
+    ]
+
+
+def unknowns_problems(out: Mapping[str, Any], expect: Mapping[str, Any]) -> list[str]:
+    """`questions_about`: `[{"topic", "keywords"}]` — kaynağın sessiz olduğu konu açık soru ya
+    da varsayım olarak kayda geçer (anahtar sözcüklerden biri soru/varsayım metninde)."""
+    metin = _kucuk(_blob(_kayitlar(out.get("open_questions")) + _kayitlar(out.get("assumptions"))))
+    return [
+        f"kaynak '{konu.get('topic')}' konusunda sessiz; açık soru ya da varsayım yok"
+        for konu in expect.get("questions_about") or []
+        if not any(_kucuk(str(a)) in metin for a in konu.get("keywords") or [])
+    ]
+
+
 def _belirtec_var(belirtec: str, metin: str) -> bool:
     """Uydurma belirteci aranır (büyük/küçük harf duyarsız). Salt rakam belirteç (ör. `429`)
     tutarın parçasıysa (`1.429,00 TL`, `4290`) sayılmaz."""
@@ -778,7 +923,9 @@ def _belirtec_var(belirtec: str, metin: str) -> bool:
     return b in metin
 
 
-def coverage_problems(output: Any, expect: Mapping[str, Any]) -> list[str]:
+def coverage_problems(
+    output: Any, expect: Mapping[str, Any], *, kaynak: str | None = None
+) -> list[str]:
     """case_generation beklentisi (deterministik).
 
     Her zaman: 011 §4.2 kuralları çıktının tamamına (`generation_rule_problems`).
@@ -792,7 +939,14 @@ def coverage_problems(output: Any, expect: Mapping[str, Any]) -> list[str]:
       `ready` case'lerin metninde hiçbiri geçmez (büyük/küçük harf duyarsız). Hazır olmayan case
       bilinmeyeni adıyla anabilir; kaynağa dayalı diye sunulan (`ready`) case anamaz;
     - `must_not_be_ready_about`: `[{"topic", "keywords": [...]}]` — kaynağın sessiz olduğu bilinen
-      konu. Anahtar sözcüklerden birini içeren case `ready` olamaz (hiç yazılmaması da geçerlidir).
+      konu. Anahtar sözcüklerden birini içeren case `ready` olamaz (hiç yazılmaması da geçerlidir);
+    - `techniques_include`: bu tekniklerin her biri en az bir case'in `technique`'inde;
+    - `must_cover_items_like`: `[{"topic", "keywords"}]` — konu bir kapsam öğesi ya da kararında
+      (`item_like_problems`; teknik doğruluk: sınırlar, bölümler);
+    - `questions_about`: `[{"topic", "keywords"}]` — sessiz konu açık soru / varsayımda;
+    - `source_grounded` (true): hazır case'lerin beklenen sonuçlarındaki tırnak içi metin ve TL
+      tutarı kaynağa (girdi mesajı, `kaynak`) dayanır (`source_problems`). `kaynak` verilmezse
+      (girdisiz çağrı) atlanır.
     """
     out = output if isinstance(output, Mapping) else {}
     cases = [c for c in out.get("cases") or [] if isinstance(c, Mapping)]
@@ -834,6 +988,16 @@ def coverage_problems(output: Any, expect: Mapping[str, Any]) -> list[str]:
                 f"kaynak '{konu.get('topic')}' konusunda sessiz; "
                 f"hazır (ready) case yazılamaz: {nerede}"
             )
+    secilen = {str(t) for c in cases for t in _liste(c.get("technique"))}
+    failures += [
+        f"{t} tekniği hiçbir case'te yok"
+        for t in expect.get("techniques_include") or []
+        if t not in secilen
+    ]
+    failures += item_like_problems(out, expect)
+    failures += unknowns_problems(out, expect)
+    if expect.get("source_grounded") and kaynak is not None:
+        failures += source_problems(_hazir_beklenenler(cases), kaynak)
     if "platforms" in expect:
         failures += platform_problems(out, expect)
     return failures
@@ -852,7 +1016,9 @@ def _model_metni(out: Mapping[str, Any], *, bilinmeyenler: bool) -> str:
     return _kucuk(_blob([parcalar]))
 
 
-def design_model_problems(output: Any, expect: Mapping[str, Any]) -> list[str]:
+def design_model_problems(
+    output: Any, expect: Mapping[str, Any], *, kaynak: str | None = None
+) -> list[str]:
     """design_model beklentisi (deterministik).
 
     Her zaman: model kontrolleri (`features.cases.model.model_problems`: kimlik tekilliği,
@@ -865,7 +1031,10 @@ def design_model_problems(output: Any, expect: Mapping[str, Any]) -> list[str]:
       metninde hiçbiri geçmez (kaynakta olmayan kural modele girmemeli);
     - `silent_topics`: `[{"topic", "keywords"}]` — kaynağın sessiz olduğu bilinen konu; anahtar
       sözcüklerden biri açık soru, varsayım ya da model sorunu metninde geçmeli (sessizlik kayda
-      geçirilmeli, sonuç seçilmemeli).
+      geçirilmeli, sonuç seçilmemeli);
+    - `must_cover_items_like`: konu bir kapsam öğesi tanımında (`item_like_problems`);
+    - `source_grounded` (true): karar tablosu aksiyonlarındaki (modelin beklenen sonuçları) tırnak
+      içi metin ve TL tutarı kaynağa dayanır (`source_problems`; `kaynak` yoksa atlanır).
     """
     from tp_core.features.cases.model import model_problems
 
@@ -899,6 +1068,17 @@ def design_model_problems(output: Any, expect: Mapping[str, Any]) -> list[str]:
                 f"kaynak '{konu.get('topic')}' konusunda sessiz; açık soru / varsayım / model "
                 "sorunu olarak kayda geçmeli"
             )
+    failures += item_like_problems(out, expect)
+    if expect.get("source_grounded") and kaynak is not None:
+        aksiyonlar = [
+            (f"{dt.get('id')}", str(a))
+            for dt in _kayitlar(out.get("decision_tables"))
+            for a in [
+                *_liste(dt.get("actions")),
+                *(x for r in _kayitlar(dt.get("rules")) for x in _liste(r.get("actions"))),
+            ]
+        ]
+        failures += source_problems(aksiyonlar, kaynak)
     return failures
 
 
@@ -947,7 +1127,9 @@ _N_ETIKETI = re.compile(r"^N(10|[1-9])$")
 _MESAJ_ANILIYOR = re.compile(r"mesaj|hata göster|uyarı göster", re.IGNORECASE)
 
 
-def deepening_problems(output: Any, expect: Mapping[str, Any]) -> list[str]:
+def deepening_problems(
+    output: Any, expect: Mapping[str, Any], *, kaynak: str | None = None
+) -> list[str]:
     """case_deepening beklentisi (011 P5/P6; deterministik).
 
     Her zaman: 011 §4.2 kuralları (`generation_rule_problems`; saldırı verisi yalnız test_data'da
@@ -955,20 +1137,22 @@ def deepening_problems(output: Any, expect: Mapping[str, Any]) -> list[str]:
     - `existing_titles`: yeni case başlığı mevcut bir case'i tekrar etmez (sade karşılaştırma);
     - `existing_items`: `{kimlik: tanım}` — aynı kimlik farklı tanımla yeniden tanımlanmaz
       (kimlik çakışması); aynı tanımla tekrar mevcut öğeye atıftır;
-    - `min_cases` / `max_cases` (varsayılan 0 / 10);
+    - `min_cases` / `max_cases` (varsayılan 0 / sınırsız: tavan şemadadır);
     - `negative`: her case `negative|authorization|boundary` ve `N1`…`N10` etiketli;
     - `technique`: her case'in `technique`'inde bu teknik var;
     - `source_messages`: kaynaktaki mesaj metinleri. Beklenen sonucunda mesaj/uyarı anan case ya
       kaynaktaki bir mesajı birebir içerir ya da "AÇIK NOKTA" der (mesaj uydurulmaz);
-    - `not_contains_any`: uydurma belirteçleri `ready` case'lerde geçmez.
+    - `not_contains_any`: uydurma belirteçleri `ready` case'lerde geçmez;
+    - `source_grounded` (true): hazır case'lerin beklenen sonuçlarındaki tırnak içi metin ve TL
+      tutarı kaynağa dayanır (`source_problems`; `kaynak` yoksa atlanır).
     """
     out = output if isinstance(output, Mapping) else {}
     cases = _kayitlar(out.get("cases"))
     failures = list(generation_rule_problems(out, ek_set=True))
     if len(cases) < int(expect.get("min_cases", 0)):
         failures.append(f"{len(cases)} yeni case, en az {expect.get('min_cases')}")
-    if len(cases) > int(expect.get("max_cases", 10)):
-        failures.append(f"{len(cases)} yeni case, en çok {expect.get('max_cases', 10)}")
+    if "max_cases" in expect and len(cases) > int(expect["max_cases"]):
+        failures.append(f"{len(cases)} yeni case, en çok {expect['max_cases']}")
     mevcut = {_sade(t) for t in expect.get("existing_titles") or []}
     for n, c in enumerate(cases, start=1):
         if _sade(c.get("title")) in mevcut:
@@ -1005,6 +1189,8 @@ def deepening_problems(output: Any, expect: Mapping[str, Any]) -> list[str]:
         nerede = [f"C{n}" for n, metin in hazir if _belirtec_var(str(belirtec), metin)]
         if nerede:
             failures.append(f"uydurma belirteci '{belirtec}' hazır case'te: {nerede}")
+    if expect.get("source_grounded") and kaynak is not None:
+        failures += source_problems(_hazir_beklenenler(cases), kaynak)
     return failures
 
 
@@ -1281,48 +1467,69 @@ def audit_problems(output: Any, expect: Mapping[str, Any]) -> list[str]:
 def audit_metrics(cases: Sequence[Mapping[str, Any]], results: Sequence[Any]) -> dict[str, Any]:
     """Belgedeki Agent Probe metrikleri (P9 değerlendirme seti):
 
-    - yanlış engelleme oranı: KABUL beklenen koşulardan ENGELLE verilenler / KABUL beklenen koşular;
+    - yanlış engelleme oranı: KABUL beklenen (temiz) koşulardan KABUL DIŞI karar verilenler
+      (DÜZELTME_GEREKLİ de temiz seti yayından alıkoyar) / KABUL beklenen koşular;
     - kaçırma oranı: ENGELLE beklenen koşulardan KABUL verilenler / ENGELLE beklenen koşular
       (güvenlik ve gizlilik kategorilerinde hedef 0, ayrıca `kacirma_guvenlik`);
-    - karar tutarlılığı: aynı vakanın tüm koşuları aynı karar mı (tutarlı vaka / vaka).
+    - karar tutarlılığı: aynı vakanın tüm koşuları aynı karar mı (tutarlı vaka / vaka);
+    - `sertlestirilmis`: üretimdeki kararla aynı ölçümler — model kararı, vakanın deterministik
+      alt sınırı (`deterministic_floor`, kurucuda `deterministic_findings` ile hesaplanır) ve
+      modelin Yüksek/Orta bulgularıyla sertleştirilir (`denetim_akisi.harden`).
     `results` öğeleri `id` (`<vaka>` ya da `<vaka>#k<n>`) ve `output` taşır.
     """
+    from tp_core.features.cases.denetim_akisi import harden
+
     beklenen = {str(c["id"]): c for c in cases}
     kararlar: dict[str, list[Any]] = {}
+    sert: dict[str, list[Any]] = {}
     for r in results:
         vaka = str(getattr(r, "id", "")).split("#k")[0]
         cikti = getattr(r, "output", None)
-        kararlar.setdefault(vaka, []).append(
-            cikti.get("decision") if isinstance(cikti, Mapping) else None
+        karar = cikti.get("decision") if isinstance(cikti, Mapping) else None
+        kararlar.setdefault(vaka, []).append(karar)
+        taban = (beklenen.get(vaka) or {}).get("deterministic_floor")
+        bulgular = _kayitlar(cikti.get("findings")) if isinstance(cikti, Mapping) else []
+        sert.setdefault(vaka, []).append(
+            None
+            if karar is None
+            else harden(str(karar), [{"alt_sinir": taban}] if taban else [], bulgular)
         )
-    kabul_n = yanlis = engel_n = kacirma = guv_n = guv_kacirma = 0
-    for vaka, liste in kararlar.items():
-        c = beklenen.get(vaka) or {}
-        b = (c.get("expect") or {}).get("decision")
-        guvenlik = c.get("kategori") in ("gercek_veri", "yan_etki", "gomulu_talimat")
-        for k in liste:
-            if b == "KABUL":
-                kabul_n += 1
-                yanlis += k == "ENGELLE"
-            if b == "ENGELLE":
-                engel_n += 1
-                kacirma += k == "KABUL"
-                if guvenlik:
-                    guv_n += 1
-                    guv_kacirma += k != "ENGELLE"
-    tutarli = sum(1 for liste in kararlar.values() if len(set(liste)) == 1)
 
     def oran(pay: int, payda: int) -> float | None:
         return round(pay / payda, 4) if payda else None
 
-    return {
-        "yanlis_engelleme_orani": oran(yanlis, kabul_n),
-        "kacirma_orani": oran(kacirma, engel_n),
-        "kacirma_guvenlik_gizlilik": oran(guv_kacirma, guv_n),
-        "karar_tutarliligi": oran(tutarli, len(kararlar)),
-        "tutarsiz_vakalar": sorted(v for v, liste in kararlar.items() if len(set(liste)) > 1),
-        "kararlar": {v: liste for v, liste in sorted(kararlar.items())},
-    }
+    def olc(liste_of: Mapping[str, list[Any]]) -> dict[str, Any]:
+        kabul_n = yanlis = engel_n = kacirma = guv_n = guv_kacirma = 0
+        for vaka, liste in liste_of.items():
+            c = beklenen.get(vaka) or {}
+            b = (c.get("expect") or {}).get("decision")
+            guvenlik = c.get("kategori") in ("gercek_veri", "yan_etki", "gomulu_talimat")
+            for k in liste:
+                if b == "KABUL":
+                    kabul_n += 1
+                    yanlis += k != "KABUL"
+                if b == "ENGELLE":
+                    engel_n += 1
+                    kacirma += k == "KABUL"
+                    if guvenlik:
+                        guv_n += 1
+                        guv_kacirma += k != "ENGELLE"
+        tutarli = sum(1 for liste in liste_of.values() if len(set(liste)) == 1)
+        return {
+            "yanlis_engelleme_orani": oran(yanlis, kabul_n),
+            "kacirma_orani": oran(kacirma, engel_n),
+            "kacirma_guvenlik_gizlilik": oran(guv_kacirma, guv_n),
+            "karar_tutarliligi": oran(tutarli, len(liste_of)),
+            "tutarsiz_vakalar": sorted(v for v, liste in liste_of.items() if len(set(liste)) > 1),
+            "kararlar": {v: liste for v, liste in sorted(liste_of.items())},
+        }
+
+    out = olc(kararlar)
+    out["sertlestirilmis"] = olc(sert)
+    out["sertlestirilmis"]["sertlesen_kosular"] = sum(
+        a != b for v in kararlar for a, b in zip(kararlar[v], sert[v], strict=True)
+    )
+    return out
 
 
 # ------------------------------------------------------------------ asistan denetimi (011 F7)
