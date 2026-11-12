@@ -481,6 +481,10 @@ def test_katalog_dokuz_kod_ve_k9_alanlari() -> None:
     tek = k["kampanya_tek_bedava"]
     assert (tek["ac_refs"], tek["tablo"]) == (["AC2"], "T1")
     assert tek["ayirt_edici"]["girdi"]["adet"] == 14
+    # u2 N6: 12 adette story (T1, adet // 7) de 1 der; ayrılan adet 14'tür ve açıklamada öndedir.
+    assert tek["aciklama"].startswith("Ayırt edici girdi 14 adet: doğru 2 bedava, hatalı 1.")
+    assert "14 adette (7'nin 2 katı) ayrılır" in tek["aciklama"]
+    assert all("12 adet" not in h["aciklama"] for h in hatalar)
     assert tek["ayirt_edici"]["dogru"]["bedava_adet"] == 2
     assert tek["ayirt_edici"]["hatali"]["bedava_adet"] == 1
     assert k["min_siparis_haric"]["tablo"] == "T2" and k["fiyat_p004_31"]["tablo"] is None

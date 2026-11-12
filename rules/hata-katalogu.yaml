@@ -40,7 +40,7 @@ hatalar:
   - kod: kampanya_tek_bedava
     ad: Kampanyada en çok 1 bedava
     tur: kod
-    aciklama: Bedava adet en çok 1 verilir (min(1, adet // 6)). 6 ve 7 adette doğru görünür; 12 adet ve üstünde eksik kalır (14 adette 2 yerine 1).
+    aciklama: "Ayırt edici girdi 14 adet: doğru 2 bedava, hatalı 1. Bedava adet en çok 1 verilir (min(1, adet // 6)). Hatasız uygulamayla 6 ve 7 adette aynı sonucu verir; 14 adette (7'nin 2 katı) ayrılır."
     yakalayan_kural: Kampanya (çoklu bedava adet)
     ac_refs: [AC2]
     tablo: T1
