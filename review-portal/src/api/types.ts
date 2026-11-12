@@ -1413,6 +1413,12 @@ export interface HataKosusuKapsami {
   tam_katalog?: boolean;
   /** R4: geçerli (yakalandı | kaçtı) adım sayısı; core vermezse alan yok. */
   gecerli_adim?: number;
+  /** Y10: platform başına geçerli adım alt eşiği (katalog oranı, ör. 0,5); core vermezse alan yok. */
+  esik?: number;
+  /** Y10: her platformda geçerli adım ≥ eşik; false ise Kule oranları null ve `not` nedeni söyler. */
+  yeterli?: boolean;
+  /** Y10: yetersizlik nedeni ("Geçerli hata adımı kataloğun %50'sinin altında …"). */
+  not?: string | null;
 }
 
 /** `hata_kosusu.durum`. */
@@ -1465,6 +1471,8 @@ export interface HataYakalamaPlatformu {
   bekleyen?: number;
   temel?: HataAdimSonucu | null;
   kapanis?: HataAdimSonucu | null;
+  /** Q2: platformun geçerli hata adımı (yakalandı + kaçtı); core vermezse alan yok. */
+  gecerli_adim?: number;
 }
 
 export interface KacanHata {
@@ -1482,7 +1490,10 @@ export interface HataKosusuOzeti {
   /** Koşmamış (`bekliyor`) hata adımları (core verirse; iptal edilen koşuda > 0 olabilir). */
   bekleyen?: number;
   platformlar: HataYakalamaPlatformu[];
+  /** Hiçbir testin (hiçbir kaynak) yakalamadığı hatalar (kabul senaryosu 12). */
   kacanlar: KacanHata[];
+  /** Q2: üretilen (AI) testlerin kaçırdığı hatalar (el yazısı yakalamış olabilir); core vermezse alan yok. */
+  ai_kacanlar?: KacanHata[];
   /** §13.2: `oran` yalnız AI testleri; el yazısı ayrı. Alan yoksa eski biçim (`oran` tüm testler). */
   el_yazisi?: ElYazisiYakalama;
   /** R4: AI + el yazısı birlikte. */
@@ -1551,6 +1562,9 @@ export interface OnayliUyumsuzCase {
   case_id: string;
   requirement_id: string;
   baslik: string;
+  /** Tur 2 (portal isteği): gereksinim anahtarı ve case sıra no ("TPD-1 · C5"); core vermezse alan yok. */
+  jira_key?: string | null;
+  sira_no?: number | null;
 }
 
 /** `GET /control-tower` → `hata_yakalama` (§4.7); hiç koşu yoksa anahtar `null`. */
@@ -1561,7 +1575,10 @@ export interface KuleHataYakalama {
   kacan: number;
   gecersiz: number;
   platformlar: HataYakalamaPlatformu[];
+  /** Hiçbir testin yakalamadığı hatalar. */
   kacanlar: KacanHata[];
+  /** Q2: üretilen (AI) testlerin kaçırdığı hatalar; core vermezse alan yok. */
+  ai_kacanlar?: KacanHata[];
   /** §13.2: `oran` yalnız AI testleri; el yazısı ayrı. Alan yoksa eski biçim. */
   el_yazisi?: ElYazisiYakalama;
   /** R4: AI + el yazısı birlikte. */

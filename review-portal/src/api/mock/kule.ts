@@ -28,6 +28,8 @@ const VARSAYILAN_ADIM_MS = testModu ? 20 : 1400;
 export const kuleAyar = { adimMs: VARSAYILAN_ADIM_MS };
 
 const BASLATAN_ROLLER: Rol[] = ["engineer", "presenter"];
+/** core `TP_HATA_KOSUSU_GECERLI_ESIK` varsayılanı (Y10). */
+const GECERLI_ESIK = 0.5;
 const HATA_KODU_KALIBI = /^[a-z0-9_]{1,40}$/;
 
 let kosular: HataKosusuDetay[] = [];
@@ -63,12 +65,16 @@ function ozetHesapla(k: HataKosusuDetay): HataKosusuOzeti {
       ...ayrik(pa),
       gecersiz,
       bekleyen,
-      uretilen_test: AI_TESTLERI.length,
+      // Q2: yalnız temelde yeşil testler sayılır (temelde kırmızı C3 hariç).
+      uretilen_test: AI_TESTLERI.filter((t) => !TEMELDE_KIRMIZI.includes(t)).length,
       el_test: PAKET_TESTLERI.length - AI_TESTLERI.length,
       temel: pa.find((a) => a.asama === "temel")?.sonuc ?? null,
       kapanis: pa.find((a) => a.asama === "kapanis")?.sonuc ?? null,
+      gecerli_adim: pa.filter((a) => a.asama === "hata" && (a.sonuc === "yakalandi" || a.sonuc === "kacti")).length,
     };
   });
+  // Y10 (Q2): her platformda geçerli hata adımı ≥ eşik × katalog; değilse Kule oranları null ve not nedeni söyler.
+  const yetersiz = platformlar.filter((p) => (p.gecerli_adim ?? 0) === 0 || (p.gecerli_adim ?? 0) < GECERLI_ESIK * HATA_KATALOGU.length);
   const { gecersiz, bekleyen } = yakalamaOrani(k.adimlar);
   return {
     ...ayrik(k.adimlar),
@@ -80,10 +86,19 @@ function ozetHesapla(k: HataKosusuDetay): HataKosusuOzeti {
       platformlar: [...k.platformlar],
       tam_katalog: HATA_KATALOGU.every((h) => k.hatalar.includes(h.kod)),
       gecerli_adim: k.adimlar.filter((a) => a.asama === "hata" && (a.sonuc === "yakalandi" || a.sonuc === "kacti")).length,
+      esik: GECERLI_ESIK,
+      yeterli: yetersiz.length === 0,
+      not: yetersiz.length
+        ? `Geçerli hata adımı kataloğun %${Math.round(GECERLI_ESIK * 100)}'inin altında (${yetersiz.map((p) => `${p.platform} ${p.gecerli_adim}/${HATA_KATALOGU.length}`).join("; ")}); oran ölçü sayılmaz.`
+        : null,
     },
     platformlar,
+    // Q2: `kacanlar` = hiçbir testin yakalamadığı; `ai_kacanlar` = üretilen testlerin kaçırdığı (el yazısı yakalamış olabilir).
     kacanlar: k.adimlar
       .filter((a) => a.asama === "hata" && a.sonuc === "kacti" && a.hata_kodu)
+      .map((a) => ({ hata_kodu: a.hata_kodu as string, ad: katalogAdi(a.hata_kodu) as string, platform: a.platform })),
+    ai_kacanlar: k.adimlar
+      .filter((a) => a.asama === "hata" && (a.sonuc === "kacti" || a.sonuc === "yakalandi") && a.hata_kodu && !a.kiran_testler.some((t) => t.kaynak === "ai"))
       .map((a) => ({ hata_kodu: a.hata_kodu as string, ad: katalogAdi(a.hata_kodu) as string, platform: a.platform })),
   };
 }
@@ -327,9 +342,22 @@ export function onayliUyumsuz(v: MockVeri): NonNullable<KontrolKulesi["onayli_uy
 }
 
 /** Kule yanıtına eklenen kalite anahtarları (§4.7, §13.2); ölçüye giren koşu yoksa `hata_yakalama: null`. */
+/** Y10 (Q2): kapsam yetersizse sayılar kalır, tüm oran alanları null. */
+function oranlariSil(o: HataKosusuOzeti): HataKosusuOzeti {
+  if (o.kapsam?.yeterli !== false) return o;
+  const sil = <T extends { oran: number | null }>(x: T | undefined) => (x ? { ...x, oran: null } : x);
+  return {
+    ...o,
+    oran: null,
+    el_yazisi: sil(o.el_yazisi),
+    tum_testler: sil(o.tum_testler),
+    platformlar: o.platformlar.map((p) => ({ ...p, oran: null, el_yazisi: sil(p.el_yazisi) })),
+  };
+}
+
 export function kuleKaliteOlcumu(v: MockVeri): Required<Pick<KontrolKulesi, "beklenti_dogrulugu" | "hata_yakalama" | "onayli_uyumsuz">> {
   const son = olcuKosusu();
-  const o = son ? ozetHesapla(son) : null;
+  const o = son ? oranlariSil(ozetHesapla(son)) : null;
   return {
     // u2 N1: sabit sayı yok — case kartlarıyla aynı hesap (kalite.ts `beklentiDogruluguHesapla`).
     beklenti_dogrulugu: beklentiDogruluguHesapla(v, null),
@@ -345,6 +373,7 @@ export function kuleKaliteOlcumu(v: MockVeri): Required<Pick<KontrolKulesi, "bek
             gecersiz: o.gecersiz,
             platformlar: o.platformlar.map(({ platform, oran, yakalanan, kacan, gecersiz, el_yazisi }) => ({ platform, oran, yakalanan, kacan, gecersiz, el_yazisi })),
             kacanlar: o.kacanlar,
+            ai_kacanlar: o.ai_kacanlar,
             el_yazisi: o.el_yazisi,
             tum_testler: o.tum_testler,
             kapsam: o.kapsam,

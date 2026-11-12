@@ -69,6 +69,9 @@ function kapsamUyarla(x: unknown): { kapsam?: HataKosusuKapsami } {
       platformlar: platformlar(x.platformlar),
       ...(typeof x.tam_katalog === "boolean" ? { tam_katalog: x.tam_katalog } : {}),
       ...(typeof x.gecerli_adim === "number" ? { gecerli_adim: sayi(x.gecerli_adim) } : {}),
+      ...(typeof x.esik === "number" ? { esik: x.esik } : {}),
+      ...(typeof x.yeterli === "boolean" ? { yeterli: x.yeterli } : {}),
+      ...("not" in x ? { not: metinYaDaNull(x.not) } : {}),
     },
   };
 }
@@ -92,6 +95,7 @@ function platformOzetiUyarla(x: Ham): HataYakalamaPlatformu | null {
     ...("bekleyen" in x ? { bekleyen: sayi(x.bekleyen) } : {}),
     ...("temel" in x ? { temel: adimSonucu(x.temel) } : {}),
     ...("kapanis" in x ? { kapanis: adimSonucu(x.kapanis) } : {}),
+    ...(typeof x.gecerli_adim === "number" ? { gecerli_adim: sayi(x.gecerli_adim) } : {}),
   };
 }
 
@@ -114,6 +118,7 @@ function ozetUyarla(x: unknown): HataKosusuOzeti | null {
     ...("bekleyen" in x ? { bekleyen: sayi(x.bekleyen) } : {}),
     platformlar: dizi(x.platformlar).map(platformOzetiUyarla).filter(dolu),
     kacanlar: dizi(x.kacanlar).map(kacanUyarla).filter(dolu),
+    ...(Array.isArray(x.ai_kacanlar) ? { ai_kacanlar: x.ai_kacanlar.map((k) => kacanUyarla(nesne(k))).filter(dolu) } : {}),
     ...elYazisiUyarla(x.el_yazisi),
     ...tumTestlerUyarla(x.tum_testler),
     ...kapsamUyarla(x.kapsam),
@@ -249,7 +254,16 @@ function beklentiUyarla(x: Ham): KuleBeklentiDogrulugu {
 function onayliUyumsuzUyarla(x: unknown): OnayliUyumsuzCase[] {
   return dizi(x).flatMap((c) => {
     const case_id = kimlik(ilk(c, "case_id", "id"));
-    return case_id ? [{ case_id, requirement_id: kimlik(c.requirement_id), baslik: metin(ilk(c, "baslik", "title"), case_id) }] : [];
+    if (!case_id) return [];
+    return [
+      {
+        case_id,
+        requirement_id: kimlik(c.requirement_id),
+        baslik: metin(ilk(c, "baslik", "title"), case_id),
+        ...("jira_key" in c ? { jira_key: metinYaDaNull(c.jira_key) } : {}),
+        ...(typeof c.sira_no === "number" ? { sira_no: c.sira_no } : {}),
+      },
+    ];
   });
 }
 
@@ -267,6 +281,7 @@ function hataYakalamaUyarla(x: Ham): KuleHataYakalama | null {
     gecersiz: sayi(x.gecersiz),
     platformlar: dizi(x.platformlar).map(platformOzetiUyarla).filter(dolu),
     kacanlar: dizi(x.kacanlar).map(kacanUyarla).filter(dolu),
+    ...(Array.isArray(x.ai_kacanlar) ? { ai_kacanlar: x.ai_kacanlar.map((k) => kacanUyarla(nesne(k))).filter(dolu) } : {}),
     ...elYazisiUyarla(x.el_yazisi),
     ...tumTestlerUyarla(x.tum_testler),
     ...kapsamUyarla(x.kapsam),
