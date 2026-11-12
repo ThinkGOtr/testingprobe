@@ -66,6 +66,8 @@ import { javaDosyaYolu, javaTestKodu, uygulamayaCevir } from "./platformlar";
 import { PLATFORMLAR, platformUyarla, type Platform } from "../../lib/platform";
 import { asistanMockSifirla, asistanRotalari } from "./asistan";
 import { oneriKuleOlcumu, oneriMockSifirla, oneriRotalari } from "./oneri";
+import { kuleKaliteOlcumu, kuleMockSifirla, kuleRotalari } from "./kule";
+import { KULE_KALITE_KAYNAKLARI } from "./kuleVerisi";
 import type { AsistanliKule } from "../../components/asistan/OnerilerOlcumKarti";
 import { kirmaTaslagiMi } from "../../lib/yolHaritasi";
 import { BAZ_NOT_EN_AZ, BAZ_NOT_EN_COK, BAZ_UST_SINIR_S, kazancOzeti } from "../uyumFaz5";
@@ -126,6 +128,7 @@ export function mockSifirla(): void {
   demoKirik = false;
   asistanMockSifirla();
   oneriMockSifirla();
+  kuleMockSifirla();
   mockOturumuAyarla(null);
   try {
     sessionStorage.removeItem(VERI_ANAHTARI);
@@ -1470,6 +1473,8 @@ const KULE_KAYNAKLARI: KontrolKulesi["kaynaklar"] = {
   a11y: "@axe-core/playwright · WCAG 2.2 AA · demo story sayfaları",
   asistan: "asistan_mesaj (Neden? Sor) + asistan_oneri_geri_bildirim (Faydalı/Gizle/Yaptım) · ai_call assistant* amaçları",
   son_kosular: "run tablosu (yerel test-runner, GitHub Actions, Sauce Labs)",
+  // 012/Ş8 (§4.7)
+  ...KULE_KALITE_KAYNAKLARI,
 };
 
 function kontrolKulesi(): KontrolKulesi & AsistanliKule {
@@ -1578,6 +1583,8 @@ function kontrolKulesi(): KontrolKulesi & AsistanliKule {
     kaynaklar: KULE_KAYNAKLARI,
     // Asistan dışı AI işleri: AI katkısı kartındaki toplamlarla aynı (core `amac_gruplari.diger`).
     asistan: oneriKuleOlcumu({ cagri: 14 + caseler.length, maliyet_usd: caseler.reduce((a, c) => a + c.maliyet_usd, 0), maliyet_usd_bugun: 0, amaclar: [] }),
+    // 012/Ş8 (§4.7): beklenti doğruluğu ve hata yakalama oranı (api/mock/kule.ts).
+    ...kuleKaliteOlcumu(),
     uyarilar: [
       kazancOzeti(hazirlikSatirlari()).hesaplanan
         ? "Kazanç yalnızca story için ölçülmüş baz değerden hesaplanır."
@@ -1712,6 +1719,8 @@ const ROTALAR: Rota[] = [
   ...asistanRotalari(girisGerekli),
   // Öneri düğmesi (§17, uç 10–11): api/mock/oneri.ts.
   ...oneriRotalari(girisGerekli, () => veri),
+  // 012/Ş8 ekilmiş hata koşusu (ANALIZ §4.6): api/mock/kule.ts.
+  ...kuleRotalari(girisGerekli, rolGerekli),
   ["POST", /^\/auth\/login$/, (_m, _q, g) => login(g)],
   ["POST", /^\/auth\/logout$/, () => logout()],
   ["GET", /^\/auth\/me$/, () => girisGerekli()],
@@ -1910,6 +1919,7 @@ const ROTALAR: Rota[] = [
       const k = rolGerekli("presenter");
       veri = ilkVeri();
       demoKirik = false;
+      kuleMockSifirla();
       mockOturumuAyarla(k);
       kaydet();
       mockOlayYayinla({ type: "demo.reset", id: "demo", data: { eylem: "reset" } });

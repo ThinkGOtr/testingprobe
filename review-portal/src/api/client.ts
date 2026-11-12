@@ -265,3 +265,31 @@ export const api = {
 };
 
 export type Api = typeof api;
+
+// ---------------------------------------------------------------- 012/Ş8: ekilmiş hata koşusu (ANALIZ §4.6)
+// Ayrı nesne (`api`'ye dokunmadan): Ş7 ile aynı dosyaya ekleme yapılırken çakışmasın.
+import { hataKataloguUyarla, hataKosusuDetayUyarla, hataKosusuKimligi, hataKosusuUyarla } from "./uyumKule";
+import type { HataKatalogOgesi, HataKosusu, HataKosusuDetay, HataKosusuGirdisi } from "./types";
+
+/** Koşu işlemleri koşu listesine bağlıdır: liste çekirdekten geliyorsa işlem örnek veriye düşmez. */
+const HATA_KOSUSU_KAYNAGI = ["GET", "/fault-runs"] as const;
+/** core 409 kodu: süren bir ekilmiş hata koşusu varken yenisi başlatılamaz. */
+export const HATA_KOSUSU_SURUYOR = "hata_kosusu_suruyor";
+
+export const hataKosusuApi = {
+  /** `GET /fault-runs/catalog` → hata kataloğu (kod, ad, tür, açıklama). */
+  katalog: async (): Promise<HataKatalogOgesi[]> =>
+    hataKataloguUyarla(await istek<unknown>("GET", "/fault-runs/catalog", { kaynak: HATA_KOSUSU_KAYNAGI })),
+  /** `GET /fault-runs?limit=` → son koşular (yeniden eskiye). */
+  liste: async (limit = 5): Promise<HataKosusu[]> =>
+    listeUyarla(await istek<unknown>("GET", "/fault-runs", { sorgu: { limit } }), hataKosusuUyarla),
+  /** `GET /fault-runs/{id}` → koşu + adımlar. */
+  detay: async (id: string): Promise<HataKosusuDetay> =>
+    hataKosusuDetayUyarla(nesne(await istek<unknown>("GET", `/fault-runs/${yol(id)}`, { kaynak: HATA_KOSUSU_KAYNAGI }))),
+  /** `POST /fault-runs` (engineer, presenter) → 202; süren koşu varsa 409 `hata_kosusu_suruyor`. */
+  baslat: async (g: HataKosusuGirdisi): Promise<{ id: string | null }> => ({
+    id: hataKosusuKimligi(await istek<unknown>("POST", "/fault-runs", { govde: g, kaynak: HATA_KOSUSU_KAYNAGI })),
+  }),
+  /** `POST /fault-runs/{id}/cancel` (engineer, presenter). */
+  iptal: (id: string) => istek<unknown>("POST", `/fault-runs/${yol(id)}/cancel`, { kaynak: HATA_KOSUSU_KAYNAGI }),
+};

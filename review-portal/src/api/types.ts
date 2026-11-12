@@ -1170,7 +1170,10 @@ export type KpiAnahtari =
   | "a11y"
   | "son_kosular"
   /** Asistan ölçümü (Kule "Öneriler ve asistan" kartı; core `asistan.KAYNAK`). */
-  | "asistan";
+  | "asistan"
+  /** 012 §4.7: beklenti doğruluğu ve hata yakalama oranı (Kule KPI şeridi). */
+  | "beklenti_dogrulugu"
+  | "hata_yakalama";
 
 /**
  * Ölçülmemiş değerler `null`'dır: portal "ölçülmedi" / "veri yok" yazar, sayı uydurmaz
@@ -1352,4 +1355,139 @@ export interface PortalOlayi {
   /** İlgili nesne kimliği (script_id, requirement_id, run_id …). */
   id?: string;
   data: Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------- 012/Ş8: ekilmiş hata koşusu ve kalite KPI'ları
+// (specs/012-test-kalite-dogrulama/ANALIZ.md §4.6, §4.7, §5). Bu blok yalnız ekleme yapar; `Kosu` ve
+// `KontrolKulesi` arayüz birleştirmesiyle (declaration merging) genişler, var olan satırlar değişmez.
+
+export type HataTuru = "kod" | "veri";
+
+/** `GET /fault-runs/catalog` öğesi (core `rules/hata-katalogu.yaml`: kod, ad, tür, açıklama, yakalayan kural). */
+export interface HataKatalogOgesi {
+  kod: string;
+  ad: string;
+  tur: HataTuru;
+  aciklama: string;
+  /** Hatayı yakalaması beklenen kural (ANALIZ §4.6 tablosu, ör. "kampanya"); core vermezse null. */
+  yakalayan_kural: string | null;
+}
+
+/** `hata_kosusu.durum`. */
+export type HataKosusuDurumu = "queued" | "running" | "done" | "failed" | "cancelled";
+/** `hata_kosusu_adim.asama`. */
+export type HataAdimAsamasi = "temel" | "hata" | "kapanis";
+/**
+ * `hata_kosusu_adim.sonuc`. Hata adımı: `yakalandi | kacti | gecersiz`; temel ve kapanış koşusu:
+ * `yesil | kirmizi` (koşulamadıysa `gecersiz`); henüz koşmadıysa `bekliyor`.
+ */
+export type HataAdimSonucu = "bekliyor" | "yakalandi" | "kacti" | "gecersiz" | "yesil" | "kirmizi";
+
+/** `hata_kosusu_adim` satırı (koşu detayında `adimlar[]`). */
+export interface HataKosusuAdimi {
+  id: string;
+  platform: Platform;
+  /** Temel ve kapanış koşusunda null. */
+  hata_kodu: string | null;
+  asama: HataAdimAsamasi;
+  /** Adımın `run` kaydı (`/kosular/:id`); koşu açılmadıysa null. */
+  run_id: string | null;
+  sonuc: HataAdimSonucu;
+  /** `yakalandi` adımında kırmızıya dönen testlerin adları. */
+  kiran_testler: string[];
+  /** `gecersiz` (ve kırmızı temel/kapanış) adımının nedeni. */
+  neden: string | null;
+  sure_ms: number | null;
+  sira: number;
+}
+
+export interface HataYakalamaPlatformu {
+  platform: Platform;
+  /** `yakalanan / (yakalanan + kacan)`; payda 0 ise null (ölçülmedi). */
+  oran: number | null;
+  yakalanan: number;
+  kacan: number;
+  gecersiz: number;
+}
+
+export interface KacanHata {
+  hata_kodu: string;
+  ad: string;
+  platform: Platform;
+}
+
+/** `hata_kosusu.ozet` (JSONB): koşu bitince yazılır; süren koşuda null. */
+export interface HataKosusuOzeti {
+  oran: number | null;
+  yakalanan: number;
+  kacan: number;
+  gecersiz: number;
+  platformlar: HataYakalamaPlatformu[];
+  kacanlar: KacanHata[];
+}
+
+/** `hata_kosusu` satırı (`GET /fault-runs` öğesi). */
+export interface HataKosusu {
+  id: string;
+  durum: HataKosusuDurumu;
+  platformlar: Platform[];
+  hatalar: string[];
+  commit: string | null;
+  /** Başlatan kullanıcının kimliği (`baslatan_id`) ve — core verirse — kullanıcı adı (`baslatan`). */
+  baslatan_id: string | null;
+  baslatan: string | null;
+  ozet: HataKosusuOzeti | null;
+  uyarilar: string[];
+  baslama: string | null;
+  bitis: string | null;
+  olusturma: string;
+}
+
+/** `GET /fault-runs/{id}`: koşu + adımları (sıra numarasına göre). */
+export interface HataKosusuDetay extends HataKosusu {
+  adimlar: HataKosusuAdimi[];
+}
+
+/** `POST /fault-runs` gövdesi; `hatalar` verilmezse kataloğun tamamı. */
+export interface HataKosusuGirdisi {
+  platformlar: Platform[];
+  hatalar?: string[];
+}
+
+/** `GET /control-tower` → `beklenti_dogrulugu` (§4.7). `oran = uyumlu / (uyumlu + uyumsuz)`; payda 0 ise null. */
+export interface KuleBeklentiDogrulugu {
+  oran: number | null;
+  uyumlu: number;
+  uyumsuz: number;
+  kapsam_disi: number;
+  kontrol_edilemedi: number;
+  /** Uyuşmazlığa rağmen gerekçeli istisnayla onaylanan case sayısı. */
+  istisna: number;
+  /** Karar tablosu kapsamındaki case'lerin payı; core vermezse null. */
+  kapsam_orani: number | null;
+}
+
+/** `GET /control-tower` → `hata_yakalama` (§4.7); hiç koşu yoksa anahtar `null`. */
+export interface KuleHataYakalama {
+  son_kosu: { id: string; bitis: string | null; durum: HataKosusuDurumu };
+  oran: number | null;
+  yakalanan: number;
+  kacan: number;
+  gecersiz: number;
+  platformlar: HataYakalamaPlatformu[];
+  kacanlar: KacanHata[];
+}
+
+export interface KontrolKulesi {
+  /** `undefined`: core bu anahtarı sunmuyor (eski sürüm); `null`: ölçülmedi. Sıfır uydurulmaz. */
+  beklenti_dogrulugu?: KuleBeklentiDogrulugu | null;
+  /** `undefined`: core sunmuyor; `null`: henüz ekilmiş hata koşusu yok. */
+  hata_yakalama?: KuleHataYakalama | null;
+}
+
+export interface Kosu {
+  /** Ekilmiş hata koşusunun adımıysa hatanın kodu (core `run.ortam.hata_kodu`, V6); değilse yok. */
+  hata_kodu?: string | null;
+  /** Bağlı ekilmiş hata koşusu (core `run.ortam.hata_kosusu_id`). */
+  hata_kosusu_id?: string | null;
 }

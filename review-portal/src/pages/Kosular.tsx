@@ -11,6 +11,7 @@ import { sure, tarih } from "../lib/format";
 import { CiAdimlari, githubYedekNotu, TestSonuclari } from "./KosuSonuclari";
 import { PlatformRozeti } from "../components/Platform";
 import { checkEtiketi, PLATFORMLAR, PLATFORM_ETIKETI, platformaGoreSuz, platformSecimiOku, type Platform } from "../lib/platform";
+import { EkilmisHataCipi } from "../components/kule/EkilmisHataCipi";
 
 const TETIK_TONU: Partial<Record<Tetik, "notr" | "bilgi" | "vurgu" | "uyari">> = {
   nightly: "notr",
@@ -59,6 +60,8 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
                     kırma
                   </Cip>
                 )}
+                {/* 012/Ş8: ekilmiş hata koşusunun adımı ("Ekilmiş hata: <ad>"); diğer koşularda çizilmez. */}
+                <EkilmisHataCipi kosu={k} />
               </td>
               <td>
                 <Cip ton={TETIK_TONU[k.tetik] ?? "notr"}>{TETIK[k.tetik] ?? k.tetik}</Cip>
@@ -444,6 +447,7 @@ export function KosuDetay() {
             </Cip>
             <Cip ton="notr">{KAYNAK[k.kaynak] ?? k.kaynak}</Cip>
             <PlatformRozeti platform={k.platform} />
+            <EkilmisHataCipi kosu={k} />
             <SauceCipi k={k} />
             <span className="mono">{k.commit}</span>
             <span className="soluk">{tarih(k.baslangic)}</span>

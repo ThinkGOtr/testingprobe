@@ -206,3 +206,53 @@ export const SEVERITY: Record<string, string> = {
   minor: "Düşük",
   trivial: "Önemsiz",
 };
+
+// ---------------------------------------------------------------- 012/Ş8: ekilmiş hata koşusu
+
+import type { HataAdimSonucu, HataKosusuDurumu, HataTuru } from "../api/types";
+
+/** `hata_kosusu.durum` etiketi. */
+export const HATA_KOSUSU_DURUMU: Record<HataKosusuDurumu, { etiket: string; ton: Ton }> = {
+  queued: { etiket: "Sırada", ton: "notr" },
+  running: { etiket: "Koşuyor", ton: "bilgi" },
+  done: { etiket: "Tamamlandı", ton: "notr" },
+  failed: { etiket: "Tamamlanamadı", ton: "hata" },
+  cancelled: { etiket: "İptal edildi", ton: "notr" },
+};
+
+/** Adım sonucu: işaret metindir (renk tek başına anlam taşımaz). */
+export const HATA_ADIM_SONUCU: Record<HataAdimSonucu, { etiket: string; ton: Ton }> = {
+  bekliyor: { etiket: "bekliyor", ton: "notr" },
+  yakalandi: { etiket: "✓ yakalandı", ton: "basari" },
+  kacti: { etiket: "✗ kaçtı", ton: "hata" },
+  gecersiz: { etiket: "⚠ geçersiz", ton: "uyari" },
+  yesil: { etiket: "✓ yeşil", ton: "basari" },
+  kirmizi: { etiket: "✗ kırmızı", ton: "hata" },
+};
+
+export const HATA_TURU: Record<HataTuru, string> = { kod: "Kod hatası", veri: "Veri hatası" };
+
+/**
+ * Hata kodunun görünen adı (core `rules/hata-katalogu.yaml` ile aynı dokuz kod, ANALIZ §4.6). Katalog
+ * ucu okunabildiyse oradaki ad önceliklidir; bu tablo katalog yokken (koşu listeleri) yedektir.
+ */
+export const EKILMIS_HATA_ADI: Record<string, string> = {
+  kampanya_bedava_yok: "Kampanyada bedava ürün verilmiyor",
+  kampanya_esik_7: "Kampanya eşiği 6 yerine 7",
+  kampanya_cift_indirim: "Kampanya indirimi iki kez düşülüyor",
+  min_siparis_haric: "Minimum sipariş sınırı dahil değil",
+  min_siparis_muafiyet_yok: "Kampanyalı sepet minimum siparişten muaf değil",
+  min_siparis_500: "Minimum sipariş 750 yerine 500",
+  min_siparis_1000: "Minimum sipariş 750 yerine 1000",
+  fiyat_p004_31: "P-004 fiyatı 30 yerine 31",
+  kampanya_urunu_p002: "Kampanyalı ürün P-001 yerine P-002",
+};
+
+export function ekilmisHataAdi(kod: string, katalogAdi?: string | null): string {
+  return katalogAdi?.trim() || EKILMIS_HATA_ADI[kod] || kod;
+}
+
+/** Ekilmiş hata koşusunun adımı olan koşunun etiketi ("Ekilmiş hata: <ad>"); başka koşuda null. */
+export function ekilmisHataEtiketi(k: { hata_kodu?: string | null }, katalogAdi?: string | null): string | null {
+  return k.hata_kodu ? `Ekilmiş hata: ${ekilmisHataAdi(k.hata_kodu, katalogAdi)}` : null;
+}
