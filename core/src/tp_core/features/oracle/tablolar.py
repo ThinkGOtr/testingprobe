@@ -1,26 +1,18 @@
-# Ş1 `gecerli_tablolar` ile birleştirmede değiştirilecek.
-#
-# Ş1 (karar tablosu şeridi) `tp_core.features.karar_tablosu.service.gecerli_tablolar` işlevini
-# aynı imzayla sunacak. Birleştirmede bu modüldeki tanım silinir ve `gecerli_tablolar` oradan içe
-# aktarılır; oracle şeridinin geri kalanı tablo aramasını YALNIZ bu işlev üzerinden yapar.
 """Kontrolde kullanılabilecek karar tabloları (012 ANALIZ §4.3 adım 1, §11.2 "Bayat").
 
-Geçerli tablo: `durum == "approved"`, bayat değil (`gereksinim_hash == content_hash_of(gereksinim)`)
-ve `icerik.ac_refs` verilen AC atıflarıyla kesişiyor (`ac_refs=None` → kesişim aranmaz).
+Tablo araması tek kaynaktan yapılır: `tp_core.features.karar_tablosu.service.gecerli_tablolar`
+(onaylı, bayat olmayan, `icerik.ac_refs`'i verilen AC atıflarıyla kesişen; `ac_refs=None` → hepsi).
+Bu modül onu yeniden dışa aktarır ve oracle'ın küçük yardımcılarını taşır.
 """
 
 from __future__ import annotations
 
 import re
-import uuid
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping
 from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
-from tp_core.models import KararTablosu, Requirement
-from tp_core.workflow.service import content_hash_of
+from tp_core.features.karar_tablosu.service import gecerli_tablolar
+from tp_core.models import KararTablosu
 
 
 def ac_normalize(ref: Any) -> str:
@@ -34,22 +26,6 @@ def kesisiyor(tablo: KararTablosu, ac_refs: Iterable[Any] | None) -> bool:
         return True
     istenen = {ac_normalize(r) for r in ac_refs}
     return any(ac_normalize(r) in istenen for r in (tablo.icerik or {}).get("ac_refs") or [])
-
-
-def gecerli_tablolar(
-    session: Session, requirement_id: uuid.UUID, ac_refs: Sequence[str] | None = None
-) -> list[KararTablosu]:
-    """Gereksinimin onaylı, bayat olmayan ve AC atıflarıyla kesişen tabloları (`sira_no` sırası)."""
-    req = session.get(Requirement, requirement_id)
-    if req is None:
-        return []
-    guncel = content_hash_of(req)
-    tablolar = session.scalars(
-        select(KararTablosu)
-        .where(KararTablosu.requirement_id == requirement_id, KararTablosu.durum == "approved")
-        .order_by(KararTablosu.sira_no)
-    ).all()
-    return [t for t in tablolar if t.gereksinim_hash == guncel and kesisiyor(t, ac_refs)]
 
 
 def tablo_ref(tablo: KararTablosu) -> str:
@@ -69,3 +45,13 @@ def kapsayanlar(
     """Gereksinimin geçerli tablolarından case içeriğinin AC atıflarıyla kesişenler."""
     refs = list((icerik or {}).get("acceptance_criteria_refs") or [])
     return [t for t in tablolar if kesisiyor(t, refs)]
+
+
+__all__ = [
+    "ac_normalize",
+    "gecerli_tablolar",
+    "kapsayanlar",
+    "kesisiyor",
+    "tablo_hashleri",
+    "tablo_ref",
+]

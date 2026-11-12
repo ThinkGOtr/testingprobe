@@ -21,6 +21,7 @@ yazılmaz, özette raporlanır. Geçerli öğeler `draft`, `ai_generated=true` y
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
@@ -214,15 +215,18 @@ def _icerik_yaz(nesne: Any, icerik: dict[str, Any]) -> None:
 def oracle_kontrolu_iste(session: Session, tablo: KararTablosu, neden: str) -> uuid.UUID:
     """Gereksinimin beklenen sonuç kontrolünü kuyruğa ekler (işleyici: oracle şeridi).
 
-    `neden`: `tablo_onaylandi` | `tablo_degisti`. Anahtar tablonun onaylı hash'ini taşır; aynı
-    onay için iş bir kez eklenir.
+    `neden`: `tablo_onaylandi` | `tablo_degisti`. Her durum olayı (onay, yeniden açma, geçersiz
+    kılma) kendi işini açar: anahtar olay başına tekildir (birleştirme notu: önceki anahtar
+    `…:<onaylanan_hash | acik>` ikinci yeniden açmayı ve aynı içeriğin yeniden onayını yutuyordu;
+    kayıtlar eski tablo kümesinde kalıp onay kapısı 409'da takılıyordu). Gereksiz kontrolü
+    işleyici önler: geçerli kaydı olan içerik için `oracle.check_case` açılmaz.
     """
     rid = tablo.requirement_id
     return enqueue(
         session.connection(),
         ORACLE_JOB,
         {"requirement_id": str(rid), "neden": neden},
-        idempotency_key=(f"{ORACLE_JOB}:{rid}:{tablo.id}:{tablo.onaylanan_hash or 'acik'}"),
+        idempotency_key=f"{ORACLE_JOB}:{rid}:{tablo.id}:{neden}:{uuid.uuid4().hex}",
     )
 
 
@@ -524,12 +528,13 @@ def gecerli_tablolar(
     tablolar: list[KararTablosu] = list(_gecerli(session, TABLO, requirement_id))  # type: ignore[arg-type]
     if ac_refs is None:
         return tablolar
-    istenen = {str(r).strip().upper() for r in ac_refs}
-    return [
-        t
-        for t in tablolar
-        if istenen & {str(r).strip().upper() for r in t.icerik.get("ac_refs") or []}
-    ]
+    istenen = {_ac(r) for r in ac_refs}
+    return [t for t in tablolar if istenen & {_ac(r) for r in t.icerik.get("ac_refs") or []}]
+
+
+def _ac(ref: Any) -> str:
+    """AC atfı karşılaştırma biçimi: boşluksuz, büyük harf (`"ac 2"` → `"AC2"`)."""
+    return re.sub(r"\s+", "", str(ref)).upper()
 
 
 def gecerli_iliskiler(session: Session, requirement_id: uuid.UUID) -> list[MetamorfikIliski]:
