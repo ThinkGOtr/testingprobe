@@ -48,6 +48,7 @@ ENGEL_TURU = frozenset(
         "check_unknown",  # sınıflandırılamayan kırmızı
         "flaky",  # tekrarların bir kısmı geçti, bir kısmı kırmızı (defect adayı değil)
         "human_rejected",  # mühendis PR'ı reddetti / değişiklik istedi (POST /prs/{n}/review)
+        "test_verisi",  # 013 K19: test verisi atfı çözülemedi (sır tanımsız / katalogda yok)
         "case_changed",  # case onaydan sonra değişti
     }
 )

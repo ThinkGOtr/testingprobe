@@ -9,8 +9,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select
 
+import tp_core.features.codegen.jobs  # noqa: F401  (codegen.otomatik işleyicisi)
 from tests.unit.features.cases.helpers import (
     case_icerik,
+    goruntule,
     latest_cases,
     login,
     otomatik_kod_ayari,
@@ -20,9 +22,12 @@ from tp_core.audit import audit_on_commit
 from tp_core.features.codegen import service as codegen_service
 from tp_core.features.codegen import views
 from tp_core.features.otomasyon import otokod
+from tp_core.features.testveri import service as testveri
 from tp_core.gateway.testing import text_response
 from tp_core.models import AuditEvent, Job, Script, TestCase, session_scope
 from tp_core.models.codegen_feature import ScriptCodegen
+from tp_core.models.guard import allow_state_write
+from tp_core.workflow.jobs import process_one
 
 
 @pytest.fixture
@@ -159,21 +164,130 @@ def test_beklenmeyen_hata_onayi_geri_almaz_ve_denetlenir(
     assert d.aktor == "otomasyon" and d.nesne == f"test_case:{c['id']}"
 
 
-def test_toplu_onayda_otomatik_kod(api: TestClient, hazir) -> None:
+def _pr_ac(script_id: str) -> None:
+    """Test kurulumu: script'i `pr_open`'a çeker (forge/CI akışı olmadan)."""
+    with allow_state_write(), session_scope() as s:
+        s.get(Script, uuid.UUID(script_id)).durum = "pr_open"
+
+
+def test_otomatik_uretim_acik_prye_dokunmaz_elle_uretim_kapatir(
+    api: TestClient, hazir, make_user
+) -> None:
+    """K16: otomatik tetik açık PR'lı script'i kapatmaz (`atlandi`); elle üretim aynı kalır."""
     rid, _ = hazir
+    c = latest_cases(api, rid)[0]
+    sid = _onayla(api, c).json()["otomatik_kod"]["script_id"]
+    _pr_ac(sid)
+    # Aynı içerik bile olsa, farklı içerik (yeniden açma + düzeltme) de olsa: dokunulmaz.
+    api.post(
+        f"/cases/{c['id']}/decision", json={"karar": "reopen", "icerik_hash": c["icerik_hash"]}
+    )
+    yeni = {**c["icerik"], "title": c["icerik"]["title"] + " yapılır"}
+    r = api.post(
+        f"/cases/{c['id']}/decision",
+        json={"karar": "edit", "icerik_hash": c["icerik_hash"], "icerik": yeni},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["otomatik_kod"] == {
+        "durum": "atlandi", "neden": "Açık PR var; yeniden üretim mühendis kararıyla",
+        "script_id": sid,
+    }  # fmt: skip
+    with session_scope() as s:
+        assert s.get(Script, uuid.UUID(sid)).durum == "pr_open"
+    assert len(_scriptler(c["id"])) == 1
+
+    # Elle üretim (mühendis): içerik değiştiği için eski PR kapanır, yeni script açılır.
+    with session_scope() as s:
+        cevap = codegen_service.start_generation(s, [uuid.UUID(c["id"])], make_user("engineer"))
+    assert cevap["sonuclar"][0]["durum"] == "basladi"
+    with session_scope() as s:
+        assert s.get(Script, uuid.UUID(sid)).durum == "closed"
+
+
+def test_sir_tanimsizsa_acik_pr_reddedilmez_atlanir(
+    api: TestClient, hazir, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Atıf çözümü atlama kararından SONRA: açık PR'lı case `pr_acik` döner, `reddedildi` değil."""
+    rid, _ = hazir
+    c = latest_cases(api, rid)[0]
+    sid = _onayla(api, c).json()["otomatik_kod"]["script_id"]
+    _pr_ac(sid)
+
+    def cozulemez(_s, _icerik):
+        raise testveri.TestVerisiCozulemedi("test verisi sırrı tanımsız: ortak.x", ["ortak.x"])
+
+    monkeypatch.setattr(testveri, "case_coz", cozulemez)
+    with session_scope() as s:
+        cevap = codegen_service.start_generation(
+            s, [uuid.UUID(c["id"])], otokod.OTOMASYON_AKTORU, tetik="otomatik"
+        )
+        assert cevap["sonuclar"][0]["durum"] == "pr_acik"
+        # Elle, aynı hash: veri çözülemiyor → red; açık PR KAPATILMAZ.
+        with pytest.raises(codegen_service.CodegenRejected, match="Test verisi sırrı tanımsız"):
+            codegen_service.start_generation(s, [uuid.UUID(c["id"])], otokod.OTOMASYON_AKTORU)
+        assert s.get(Script, uuid.UUID(sid)).durum == "pr_open"
+
+
+def test_toplu_onay_tek_otomatik_is_parcalarla_uretir(
+    api: TestClient, hazir, engine: Engine, db, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Uçtan uca (K16): toplu onay → tek `codegen.otomatik` işi → worker → script'ler otomatik."""
+    rid, analist = hazir
+    monkeypatch.setattr(otokod, "MAX_CASE", 1)  # 2 case → 2 parça
+    cagri: list[int] = []
+    asil = otokod.start_generation
+
+    def say(session, case_ids, user, **kw):
+        cagri.append(len(case_ids))
+        return asil(session, case_ids, user, **kw)
+
+    monkeypatch.setattr(otokod, "start_generation", say)
     cs = latest_cases(api, rid)
+    goruntule(api, db, *[c["id"] for c in cs])
+    govde = {
+        "karar": "approve",
+        "ogeler": [{"case_id": c["id"], "icerik_hash": c["icerik_hash"]} for c in cs],
+    }
+    r = api.post("/cases/bulk-decision", json=govde)
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert [s["otomatik_kod"] for s in out["sonuclar"]] == [None, None]
+    ok = out["otomatik_kod"]
+    assert ok["durum"] == "kuyrukta" and ok["case_sayisi"] == 2 and ok["job_id"]
+    assert cagri == [] and all(_scriptler(c["id"]) == [] for c in cs)  # istek içinde üretim yok
+    with session_scope() as s:
+        job = s.get(Job, uuid.UUID(ok["job_id"]))
+        assert job.tur == "codegen.otomatik" and job.idempotency_key.startswith("codegen.otomatik:")
+        assert job.yuk["tetikleyen"] == analist.kullanici_adi
+    [d] = _denetim("cases.bulk_decision")
+    assert d.ozet["otomatik_kod"]["job_id"] == ok["job_id"]
+
+    sonuc = process_one(engine, "test-worker")
+    assert sonuc is not None
+    with session_scope() as s:
+        job = s.get(Job, uuid.UUID(ok["job_id"]))
+        assert job.durum == "done", job.hata
+        assert job.sonuc["ozet"] == {"kuyrukta": 2} and cagri == [1, 1]
     for c in cs:
-        assert api.post(f"/cases/{c['id']}/viewed").status_code == 200
+        [cg] = _scriptler(c["id"])
+        assert cg.tetik == "otomatik"
+
+
+def test_toplu_onay_ayar_kapali_is_yok(api: TestClient, hazir, db) -> None:
+    rid, _ = hazir
+    otomatik_kod_ayari(False)
+    c = latest_cases(api, rid)[0]
+    goruntule(api, db, c["id"])
     r = api.post(
         "/cases/bulk-decision",
         json={
             "karar": "approve",
-            "ogeler": [{"case_id": c["id"], "icerik_hash": c["icerik_hash"]} for c in cs],
+            "ogeler": [{"case_id": c["id"], "icerik_hash": c["icerik_hash"]}],
         },
     )
-    assert r.status_code == 200, r.text
-    assert [s["otomatik_kod"]["durum"] for s in r.json()["sonuclar"]] == ["kuyrukta"] * 2
-    assert all(_scriptler(c["id"])[0].tetik == "otomatik" for c in cs)
+    assert r.json()["otomatik_kod"] == {"durum": "kapali", "job_id": None, "case_sayisi": 0}
+    with session_scope() as s:
+        assert s.scalars(select(Job).where(Job.tur == "codegen.otomatik")).first() is None
 
 
 # --------------------------------------------------------------------- ayar API'si

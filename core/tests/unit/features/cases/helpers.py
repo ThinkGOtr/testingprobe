@@ -279,3 +279,26 @@ def latest_cases(client: TestClient, rid: uuid.UUID) -> list[dict[str, Any]]:
     r = client.get("/cases", params={"requirement_id": str(rid)})
     assert r.status_code == 200, r.text
     return r.json()
+
+
+def goruntule(client: TestClient, db: Any, *case_ids: str, once_s: int = 5) -> None:
+    """013 K13: case'leri görüntüler ve görüntülemeyi `once_s` sn geriye çeker (toplu onayın
+    "en az 3 sn ekranda" şartı). tp_app `case_goruntuleme`yi güncelleyemez: sahip bağlantısı."""
+    from sqlalchemy import create_engine
+    from sqlalchemy import text as sql_text
+
+    for cid in case_ids:
+        r = client.post(f"/cases/{cid}/viewed")
+        assert r.status_code == 200, r.text
+    sahip = create_engine(db.owner_url)
+    try:
+        with sahip.begin() as conn:
+            conn.execute(
+                sql_text(
+                    "UPDATE case_goruntuleme SET zaman = zaman - make_interval(secs => :s) "
+                    "WHERE test_case_id = ANY(CAST(:ids AS uuid[]))"
+                ),
+                {"s": once_s, "ids": list(case_ids)},
+            )
+    finally:
+        sahip.dispose()

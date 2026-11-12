@@ -5,9 +5,9 @@
 | POST | `/requirements/{id}/generate-cases` | analyst — yalnızca PO onaylı gereksinim |
 | GET  | `/cases?requirement_id=` | herkes |
 | GET  | `/cases/{id}` | herkes |
-| POST | `/cases/{id}/viewed` | analyst — ilk görüntüleme (review süresinin başlangıcı) |
+| POST | `/cases/{id}/viewed` | analyst — ilk görüntüleme (≥ 3 sn sonra `goruldu`, K13) |
 | POST | `/cases/{id}/decision` (aşağıda `CaseKararGirdisi`) | analyst — yanıtta `otomatik_kod` |
-| POST | `/cases/bulk-decision` (aşağıda `TopluKararGirdisi`) | analyst — yalnız approve (013) |
+| POST | `/cases/bulk-decision` (`TopluKararGirdisi`) | analyst — approve; üstte `otomatik_kod` |
 | GET  | `/requirements/{id}/case-metrics` | herkes — kabul oranı ve süreler (§12) |
 | POST | `/requirements/{id}/review-complete` | analyst |
 """

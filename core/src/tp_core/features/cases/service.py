@@ -32,6 +32,7 @@ onay yalnızca portalda oturumlu insanın `review` kaydıyla verilir.
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
@@ -39,6 +40,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Engine, func, select, text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from tp_core.audit import audit_on_commit, content_hash
@@ -78,6 +80,8 @@ from tp_core.workflow.service import (
     record_approval,
     transition,
 )
+
+log = logging.getLogger(__name__)
 
 GEN_JOB = "cases.generate"
 WORKFLOW_TUR = "case_generation"
@@ -120,6 +124,7 @@ class InvalidCaseContent(WorkflowError):
         if ayrinti:
             metin += " — " + json.dumps(ayrinti, ensure_ascii=False)
         super().__init__(metin)
+        self.mesaj = mesaj
         self.hatalar = ayrinti
 
 
@@ -1030,6 +1035,49 @@ def _review_sure_ms(session: Session, tc: TestCase, user: Principal) -> int | No
     return int(deger) if deger is not None else None
 
 
+def _karar_engeli(tc: TestCase, req: Requirement | None) -> WorkflowError | None:
+    """Her içerik kararının (approve/edit/reject) reddedileceği neden: durum ya da gereksinim."""
+    if tc.durum != "draft":
+        return WorkflowError(
+            f"Karar yalnızca taslak durumundaki case için verilir (durum: {tc.durum}); "
+            "önce 'Taslağa al' kullanın"
+        )
+    engel = requirement_change_reason(req)
+    return RequirementChanged(engel) if engel is not None else None
+
+
+def _onay_icerik_engeli(
+    tc: TestCase, req: Requirement | None, katalog_anahtarlari: set[str]
+) -> WorkflowError | None:
+    """Yalnız `approve`'un ek reddi: bilinmeyen AC atfı, katalogda olmayan test verisi atfı."""
+    bilinmeyen = unknown_ac_refs(tc.icerik, req.kabul_kriterleri) if req is not None else []
+    if bilinmeyen:
+        return InvalidCaseContent(
+            "Case gereksinimde olmayan kabul kriterine atıf yapıyor ("
+            + ", ".join(bilinmeyen)
+            + "); 'Düzelt' ile düzeltin ya da reddedin",
+            ["acceptance_criteria_refs: " + ", ".join(bilinmeyen)],
+        )
+    bilinmeyen_veri = atif.bilinmeyen_atiflar(tc.icerik, katalog_anahtarlari)
+    if bilinmeyen_veri:
+        return InvalidCaseContent(
+            "Katalogda olmayan test verisi anahtarı: " + ", ".join(bilinmeyen_veri)
+        )
+    return None
+
+
+def onay_engeli(tc: TestCase, req: Requirement | None, katalog_anahtarlari: set[str]) -> str | None:
+    """`decide(approve)`'un bu case'i reddedeceği neden (portal `onay_engeli`; None = onaylanır).
+
+    `decide` ile aynı kurallar (`_karar_engeli` + `_onay_icerik_engeli`); hash uyuşmazlığı ve
+    görülme şartı istek anına bağlı olduğundan burada yoktur.
+    """
+    hata = _karar_engeli(tc, req) or _onay_icerik_engeli(tc, req, katalog_anahtarlari)
+    if hata is None:
+        return None
+    return hata.mesaj if isinstance(hata, InvalidCaseContent) else str(hata)
+
+
 def decide(
     session: Session,
     cid: uuid.UUID,
@@ -1041,8 +1089,11 @@ def decide(
     ret_nedeni: str | None = None,
     gerekce: str | None = None,
     beklenen_anlam_degisti: bool | None = None,
+    toplu: bool = False,
 ) -> TestCase:
-    """Portal kararı (Constitution I): görülen hash ile `review` kaydı + durum geçişi."""
+    """Portal kararı (Constitution I): görülen hash ile `review` kaydı + durum geçişi.
+
+    `toplu`: toplu onaydan geliyor (review `duzeltme_olculeri.kanal = "toplu"`; denetim izi)."""
     if karar not in KARARLAR:
         raise InvalidDecision(f"geçersiz karar: {karar} (approve | edit | reject | reopen)")
     tc = get_case(session, cid, lock=True)
@@ -1050,26 +1101,15 @@ def decide(
         raise InvalidDecision("karar, görüntülenen içeriğin hash'ini (icerik_hash) taşımalı")
     if karar == "reopen":
         return _reopen(session, tc, user, icerik_hash, gerekce)
-    if tc.durum != "draft":
-        raise WorkflowError(
-            f"Karar yalnızca taslak durumundaki case için verilir (durum: {tc.durum}); "
-            "önce 'Taslağa al' kullanın"
-        )
     req = get_requirement(session, tc.requirement_id)
-    engel = requirement_change_reason(req)
-    if engel is not None:
-        # PO onayı sıfırlanmış/değişmiş metnin case'i onaylanamaz (ret de eski metne aittir).
-        raise RequirementChanged(engel)
+    # PO onayı sıfırlanmış/değişmiş metnin case'i onaylanamaz (ret de eski metne aittir).
+    hata = _karar_engeli(tc, req)
+    if hata is None and karar == "approve":
+        hata = _onay_icerik_engeli(tc, req, testveri.anahtarlar(session))
+    if hata is not None:
+        raise hata
     olculer: dict[str, Any] = {}
     degisiklik: dict[str, Any] | None = None
-    if karar == "approve":
-        bilinmeyen = unknown_ac_refs(tc.icerik, req.kabul_kriterleri)
-        if bilinmeyen:
-            raise InvalidCaseContent(
-                "Case gereksinimde olmayan kabul kriterine atıf yapıyor; 'Düzelt' ile düzeltin "
-                "ya da reddedin",
-                ["acceptance_criteria_refs: " + ", ".join(bilinmeyen)],
-            )
     if karar == "edit":
         if icerik is None:
             raise InvalidDecision("Düzeltme kararı düzenlenmiş içerikle verilir")
@@ -1093,6 +1133,8 @@ def decide(
         olculer = {"mesafe": 0.0, "kucuk_duzeltme": True, "degisen_alanlar": []}
     olculer["review_sure_ms"] = _review_sure_ms(session, tc, user)
     olculer["ilk_karar"] = latest_review(session, "test_case", tc.id) is None
+    if toplu:
+        olculer["kanal"] = "toplu"
     record_approval(
         session,
         tc,
@@ -1156,19 +1198,26 @@ def _reopen(
 
 
 TOPLU_KARAR_MAX = 200
-GORULMEDI_NEDENI = "Bu case'i açıp görmediniz"
+# K13: görüntüleme ile karar arasındaki en kısa süre (sn); `goruldu` ve toplu onay şartı.
+GORULME_MIN_S = 3
+GORULMEDI_NEDENI = f"Case en az {GORULME_MIN_S} saniye ekranda kalmadı"
+DB_HATA_NEDENI = "Veritabanı hatası (kilit/eşzamanlılık); bu case için yeniden deneyin"
+BEKLENMEYEN_HATA_NEDENI = "Beklenmeyen hata; bu case için yeniden deneyin"
 
 
 def bulk_decide(
     session: Session, ogeler: Sequence[tuple[uuid.UUID, str]], user: Principal
 ) -> dict[str, Any]:
-    """Toplu onay (013 §3.2, K3): her öğe kendi SAVEPOINT'inde tekli `decide(approve)` kurallarıyla.
+    """Toplu onay (013 §3.2, K3/K13/K16): her öğe kendi SAVEPOINT'inde tekli `decide(approve)`.
 
-    Görülme şartı: kullanıcının bu case'i son karardan sonra açmış olması (`goruldu_kumesi`);
-    yoksa `atlandi`. Bir öğenin hatası (hash uyuşmazlığı, durum, gereksinim değişimi …) yalnız o
-    öğeyi düşürür (`hata`). Onaylanan her case için otomatik kod üretimi kuyruğa alınır.
+    - Görülme şartı (K13): kullanıcının son karardan sonraki görüntülemesi en az
+      `GORULME_MIN_S` sn önce olmalı (`goruldu_kumesi`); yoksa `atlandi`.
+    - Kilitler case_id sırasıyla alınır (eşzamanlı toplu onaylarda deadlock yok); yanıt istek
+      sırasındadır. Bir öğenin hatası (iş kuralı, DB hatası, beklenmeyen) yalnız o öğeyi düşürür.
+    - Kod üretimi onaydan ayrıdır (K16): onaylananlar için tek `codegen.otomatik` işi kuyruğa
+      alınır (`otokod.toplu_kuyruga_al`); öğelerde `otomatik_kod` null.
     """
-    from tp_core.features.otomasyon.otokod import kuyruga_al, savepoint
+    from tp_core.features.otomasyon.otokod import savepoint, toplu_kuyruga_al
 
     if not 1 <= len(ogeler) <= TOPLU_KARAR_MAX:
         raise InvalidDecision(f"Toplu kararda 1..{TOPLU_KARAR_MAX} case olmalı")
@@ -1176,6 +1225,7 @@ def bulk_decide(
         raise InvalidDecision("toplu karar yalnızca oturumlu kullanıcıyla verilir")
     gorulen = goruldu_kumesi(session, [cid for cid, _ in ogeler], user.id)
     sonuclar: list[dict[str, Any]] = []
+    islenecek: list[tuple[uuid.UUID, str, dict[str, Any]]] = []
     islenen: set[uuid.UUID] = set()
     for cid, icerik_hash in ogeler:
         sonuc: dict[str, Any] = {"case_id": str(cid), "durum": "onaylandi", "neden": None,
@@ -1188,25 +1238,45 @@ def bulk_decide(
         if cid not in gorulen:
             sonuc.update(durum="atlandi", neden=GORULMEDI_NEDENI)
             continue
+        islenecek.append((cid, icerik_hash, sonuc))
+    onaylanan: list[uuid.UUID] = []
+    for cid, icerik_hash, sonuc in sorted(islenecek, key=lambda o: o[0]):
         try:
             with savepoint(session):
-                tc = decide(session, cid, user, karar="approve", icerik_hash=icerik_hash)
+                decide(session, cid, user, karar="approve", icerik_hash=icerik_hash, toplu=True)
                 session.flush()
         except WorkflowError as exc:
             sonuc.update(durum="hata", neden=str(exc))
             continue
-        sonuc["otomatik_kod"] = kuyruga_al(session, tc, user)
+        except DBAPIError:
+            log.exception("toplu onay: case %s veritabanı hatası", cid)
+            sonuc.update(durum="hata", neden=DB_HATA_NEDENI)
+            continue
+        except Exception:
+            log.exception("toplu onay: case %s beklenmeyen hata", cid)
+            sonuc.update(durum="hata", neden=BEKLENMEYEN_HATA_NEDENI)
+            continue
+        onaylanan.append(cid)
     ozet = {
         d: sum(1 for s in sonuclar if s["durum"] == d) for d in ("onaylandi", "atlandi", "hata")
     }
+    otomatik_kod = toplu_kuyruga_al(session, onaylanan, user)
     audit_on_commit(
         session,
         user.kullanici_adi,
         "cases.bulk_decision",
         None,
-        {"istenen": len(ogeler), **ozet},
+        {
+            "istenen": len(ogeler),
+            **ozet,
+            "ogeler": [
+                {"case_id": s["case_id"], "durum": s["durum"], "neden": s["neden"]}
+                for s in sonuclar
+            ],
+            "otomatik_kod": otomatik_kod,
+        },
     )
-    return {"sonuclar": sonuclar, "ozet": ozet}
+    return {"sonuclar": sonuclar, "ozet": ozet, "otomatik_kod": otomatik_kod}
 
 
 # --------------------------------------------------------------------- listeleme
@@ -1270,8 +1340,8 @@ def _usernames(session: Session, ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:
 def goruldu_kumesi(
     session: Session, ids: Sequence[uuid.UUID], kullanici_id: uuid.UUID | None
 ) -> set[uuid.UUID]:
-    """Kullanıcının son karardan (reopen dahil; `mark_viewed` ile aynı eşik) SONRA görüntülediği
-    case'ler (013 §3.2 toplu onay görülme şartı)."""
+    """Kullanıcının son karardan (reopen dahil; `mark_viewed` ile aynı eşik) SONRA görüntülediği ve
+    görüntülemesi en az `GORULME_MIN_S` sn önce olan case'ler (013 §3.2 görülme şartı, K13)."""
     if kullanici_id is None or not ids:
         return set()
     son_karar = (
@@ -1289,6 +1359,7 @@ def goruldu_kumesi(
                 CaseGoruntuleme.user_id == kullanici_id,
                 CaseGoruntuleme.test_case_id.in_(ids),
                 (son_karar.is_(None)) | (CaseGoruntuleme.zaman > son_karar),
+                CaseGoruntuleme.zaman <= func.now() - timedelta(seconds=GORULME_MIN_S),
             )
             .distinct()
         )
@@ -1300,7 +1371,8 @@ def serialize_cases(
 ) -> list[dict[str, Any]]:
     """Portal `TestCase` biçimi (review-portal/src/api/types.ts) + ek alanlar.
 
-    `goruldu`: `kullanici_id` bu case'i son karardan sonra açtı mı (verilmezse False)."""
+    `goruldu`: `kullanici_id` bu case'i son karardan sonra en az `GORULME_MIN_S` sn önce görüntüledi
+    mi (verilmezse False). `onay_engeli`: `decide(approve)`'un reddedeceği neden (`onay_engeli`)."""
     ids = [c.id for c in cases]
     gorulen = goruldu_kumesi(session, ids, kullanici_id)
     reviews = _reviews_by_case(session, ids)
@@ -1322,6 +1394,7 @@ def serialize_cases(
     for r in reqs.values():
         eski |= old_content_case_ids(session, r)
     veri_haritasi = testveri.veri_haritasi(session)
+    katalog_anahtarlari = testveri.anahtarlar(session)
     out = []
     for c in cases:
         rs = reviews.get(c.id, [])
@@ -1388,6 +1461,7 @@ def serialize_cases(
                 else None,
                 "olusturma": c.olusturma,
                 "goruldu": c.id in gorulen,
+                "onay_engeli": onay_engeli(c, req, katalog_anahtarlari),
                 # 013 §3.3: case'in test verisi atıfları (gizli → deger null).
                 "veri": testveri.case_verisi(veri_haritasi, c.icerik),
             }

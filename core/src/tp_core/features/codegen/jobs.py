@@ -3,6 +3,8 @@
 - `codegen.generate` / `codegen.break_verify` / `codegen.merge`: CasesToCode akışı.
 - `codegen.update_branch`: main ilerleyince açık PR dalını günceller (yeni head → PR CI).
 - `codegen.pr_close`: insan reddi / değişiklik isteği sonrası PR'a yorum + kapatma.
+- `codegen.otomatik` (013 K16): toplu onayda onaylanan case'lerin otomatik web kod üretimi;
+  `MAX_CASE`'lik parçalarla `start_generation` (`features/otomasyon/otokod.py:toplu_uret`).
 - `codegen.pr_sync`: GitHub kipinde açık PR'ların forge durumunu (GitHub arayüzünde merge/kapatma)
   çekirdeğe işler ve kendini `TP_CODEGEN_PR_SYNC_S` (60 sn) sonrasına yeniden planlar.
 """
@@ -18,6 +20,7 @@ from sqlalchemy.orm import Session
 from tp_core.db import get_engine
 from tp_core.features.codegen import service
 from tp_core.features.codegen.toolchain import varsayilan_check_timeout_s
+from tp_core.features.otomasyon import otokod
 from tp_core.workflow.jobs import JobContext, job_handler
 
 # İş zaman aşımı, içindeki /check çağrılarının istemci zaman aşımından türetilir (CI şeridinin
@@ -52,6 +55,11 @@ def update_branch(ctx: JobContext) -> dict[str, Any]:
 @job_handler(service.PR_CLOSE_JOB, max_deneme=3, zaman_asimi_s=60)
 def pr_close(ctx: JobContext) -> dict[str, Any]:
     return service.run_pr_close(ctx, get_engine())
+
+
+@job_handler(otokod.JOB_OTOMATIK_KOD, max_deneme=3, backoff_s=10.0, zaman_asimi_s=600)
+def otomatik(ctx: JobContext) -> dict[str, Any]:
+    return otokod.toplu_uret(dict(ctx.yuk or {}))
 
 
 @job_handler(service.PR_SYNC_JOB, max_deneme=1, zaman_asimi_s=300)

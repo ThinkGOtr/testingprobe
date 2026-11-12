@@ -474,6 +474,25 @@ def replay_temel_durum_engeli() -> str | None:
     return REPLAY_TEMEL_ENGELI if durum == NEW_TESTID else None
 
 
+OTOMATIK_PR_ACIK = "Açık PR var; yeniden üretim mühendis kararıyla"
+
+
+def veri_engeli_metni(exc: testveri.TestVerisiCozulemedi) -> str:
+    """Çözülemeyen atfın Türkçe nedeni (ör. "Test verisi sırrı tanımsız: <anahtar>")."""
+    metin = str(exc).strip()
+    return metin[:1].upper() + metin[1:]
+
+
+def _veri_coz(
+    session: Session, icerik: Mapping[str, Any]
+) -> tuple[dict[str, Any] | None, str | None]:
+    """(yeni `veri_izi`, None) ya da (None, Türkçe engel nedeni)."""
+    try:
+        return testveri.case_coz(session, icerik)[1], None
+    except testveri.TestVerisiCozulemedi as exc:
+        return None, veri_engeli_metni(exc)
+
+
 def start_generation(
     session: Session,
     case_ids: Sequence[uuid.UUID],
@@ -522,45 +541,50 @@ def start_generation(
             )
             continue
         h = content_hash(tc.icerik)
-        # 013 §3.3: atıflar şimdi çözülebilmeli; veri sürümü değiştiyse açık PR atlatmaz.
-        try:
-            _, veri_izi = testveri.case_coz(session, tc.icerik)
-        except testveri.TestVerisiCozulemedi as exc:
-            sonuclar.append(
-                {"case_id": str(cid), "platform": platform, "durum": "reddedildi",
-                 "neden": f"Test verisi çözülemedi: {exc}"}
-            )  # fmt: skip
-            continue
+        # 013 §3.3: atıflar yalnız gerektiğinde (aynı hash'li PR'ın veri karşılaştırması) ya da
+        # atlama kararından SONRA çözülür: süren/açık PR'lı case çözülemeyen atıfla reddedilmez.
+        cozum: tuple[dict[str, Any] | None, str | None] | None = None
         atla: dict[str, Any] | None = None
+        kapatilacak: list[Script] = []
         for sc, cg in _mevcut_scriptler(session, cid, platform):
             if sc.durum in AKTIF and recover_stuck(session, sc, cg):
                 pass  # iş dışı çöküşle takılmıştı: failed'a alındı, aşağıda kapanır
             if sc.durum in AKTIF:
                 atla = {"durum": "suruyor", "script_id": str(sc.id), "neden": "üretim sürüyor"}
                 break
-            if (
-                sc.durum in ("pr_open", "merged")
-                and cg.case_hash == h
-                and (cg.veri_izi or {}) == veri_izi
-            ):
-                atla = {
-                    "durum": "pr_acik" if sc.durum == "pr_open" else "merge_edildi",
-                    "script_id": str(sc.id),
-                    "neden": "bu onaylı içerik için bu platformda PR zaten var",
-                }
+            if sc.durum == "pr_open" and tetik == "otomatik":
+                # K16: otomatik üretim açık PR'ı kapatmaz; yeniden üretim mühendisin kararı.
+                atla = {"durum": "pr_acik", "script_id": str(sc.id), "neden": OTOMATIK_PR_ACIK}
                 break
+            if sc.durum in ("pr_open", "merged") and cg.case_hash == h:
+                if cozum is None:
+                    cozum = _veri_coz(session, tc.icerik)
+                if cozum[1] is None and (cg.veri_izi or {}) == cozum[0]:
+                    atla = {
+                        "durum": "pr_acik" if sc.durum == "pr_open" else "merge_edildi",
+                        "script_id": str(sc.id),
+                        "neden": "bu onaylı içerik için bu platformda PR zaten var",
+                    }
+                    break
             if sc.durum in ("pr_open", "blocked", "failed"):
-                transition(
-                    session,
-                    sc,
-                    "closed",
-                    user,
-                    sc.durum,
-                    sebep="case için yeniden üretim istendi",
-                )
+                kapatilacak.append(sc)
         if atla is not None:
             sonuclar.append({"case_id": str(cid), "platform": platform, **atla})
             continue
+        if cozum is None:
+            cozum = _veri_coz(session, tc.icerik)
+        veri_izi, veri_engeli = cozum
+        if veri_engeli is not None:
+            # Çözülemeyen atıf: eski script/PR'lar kapatılmaz (yeniden üretim yapılamıyor).
+            sonuclar.append(
+                {"case_id": str(cid), "platform": platform, "durum": "reddedildi",
+                 "neden": veri_engeli}
+            )  # fmt: skip
+            continue
+        for sc in kapatilacak:
+            transition(
+                session, sc, "closed", user, sc.durum, sebep="case için yeniden üretim istendi"
+            )
         req = session.get(Requirement, tc.requirement_id)
         story = req.jira_key if req else None
         if platformlar.uygulama_mi(platform):
@@ -1807,7 +1831,7 @@ def run_generation(ctx: JobContext, engine: Engine) -> dict[str, Any]:
         try:
             case, cg.veri_izi = testveri.case_coz(s, tc.icerik)
         except testveri.TestVerisiCozulemedi as exc:
-            case, veri_engeli = dict(tc.icerik), f"Test verisi çözülemedi: {exc}"
+            case, veri_engeli = dict(tc.icerik), veri_engeli_metni(exc)
         case_id, story, sira_no = tc.id, cg.story_key, cg.sira_no
         platform = sc.platform or platformlar.WEB
         if engel is None and veri_engeli is None:
@@ -1815,7 +1839,8 @@ def run_generation(ctx: JobContext, engine: Engine) -> dict[str, Any]:
     if engel is not None:
         return _insana(engine, sid, "case_changed", engel, hedef="failed")
     if veri_engeli is not None:
-        return _insana(engine, sid, "unsourced_value", veri_engeli, hedef="failed")
+        # 013 K19: model hatası değil, ortam/katalog engeli (MODEL_ENGELLERI'nde yok).
+        return _insana(engine, sid, "test_verisi", veri_engeli, hedef="failed")
     ref = case_ref(story, sira_no)
     uygulama = platformlar.uygulama_mi(platform)
 

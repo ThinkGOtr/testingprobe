@@ -7,28 +7,38 @@ olarak iş akışı yüküne ve denetime yazılır. Engineer rol kapısı bilin�
 
 Kural: otomatik kod üretimi **onayı asla geri almaz**. Üretim kendi SAVEPOINT'inde başlar;
 reddedilir ya da beklenmedik biçimde patlarsa yalnız o SAVEPOINT geri alınır.
+
+Toplu onay (K16) üretimi onay isteğinden ayırır: `toplu_kuyruga_al` tek `codegen.otomatik` işi
+kuyruğa alır; iş (`toplu_uret`, işleyici `codegen/jobs.py`) `MAX_CASE`'lik parçalarla
+`start_generation` çağırır. Otomatik üretim süren ya da açık PR'lı script'e dokunmaz (K16,
+`codegen.service.start_generation`).
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
-from collections.abc import Iterator
+import uuid
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from tp_core.audit.session import _ANAHTAR as _DENETIM_ANAHTARI
 from tp_core.audit.session import audit_on_commit
 from tp_core.features.codegen import platform as platformlar
-from tp_core.features.codegen.service import CodegenRejected, start_generation
+from tp_core.features.codegen.service import MAX_CASE, CodegenRejected, start_generation
 from tp_core.features.otomasyon import ayarlar
-from tp_core.models import TestCase
+from tp_core.models import Review, TestCase, session_scope
+from tp_core.workflow.jobs import enqueue
 from tp_core.workflow.service import Principal
 
 log = logging.getLogger(__name__)
 
 OTOMASYON_AKTORU = ayarlar.OTOMASYON_AKTORU
+JOB_OTOMATIK_KOD = "codegen.otomatik"
 
 # start_generation'ın "zaten var" sonuçları: yeni üretim gerekmiyor.
 ATLANAN_SONUCLAR = frozenset({"suruyor", "pr_acik", "merge_edildi"})
@@ -106,10 +116,93 @@ def kuyruga_al(session: Session, tc: TestCase, onaylayan: Principal) -> dict[str
              "mesaj": str(exc)[:500]},
         )  # fmt: skip
         return _sonuc("hata", HATA_NEDENI)
-    ilk = (cevap.get("sonuclar") or [{}])[0]
-    durum = ilk.get("durum")
+    return _ogeden((cevap.get("sonuclar") or [{}])[0], cevap.get("mesaj"))
+
+
+def _ogeden(oge: dict[str, Any], mesaj: str | None = None) -> dict[str, Any]:
+    """`start_generation` öğe sonucu → otomatik kod sonucu."""
+    durum = oge.get("durum")
     if durum == "basladi":
-        return _sonuc("kuyrukta", None, ilk.get("script_id"))
+        return _sonuc("kuyrukta", None, oge.get("script_id"))
     if durum in ATLANAN_SONUCLAR:
-        return _sonuc("atlandi", ilk.get("neden"), ilk.get("script_id"))
-    return _sonuc("reddedildi", ilk.get("neden") or cevap.get("mesaj"))
+        return _sonuc("atlandi", oge.get("neden"), oge.get("script_id"))
+    return _sonuc("reddedildi", oge.get("neden") or mesaj)
+
+
+# ---------------------------------------------------------------- toplu onay (K16)
+
+
+def toplu_kuyruga_al(
+    session: Session, case_ids: Sequence[uuid.UUID], onaylayan: Principal
+) -> dict[str, Any]:
+    """Toplu onayda onaylanan case'ler için tek `codegen.otomatik` işi (onayla aynı işlemde).
+
+    Dönen (bulk yanıtı üst düzey `otomatik_kod`): `{durum: "kuyrukta"|"kapali"|"yok", job_id,
+    case_sayisi}`. İdempotent anahtar onay review kayıtlarından türer (aynı onay kümesi = aynı iş).
+    """
+    ids = list(dict.fromkeys(case_ids))
+    if not ids:
+        return {"durum": "yok", "job_id": None, "case_sayisi": 0}
+    if not ayarlar.otomatik_kod(session).acik:
+        return {"durum": "kapali", "job_id": None, "case_sayisi": 0}
+    son_review = {
+        nesne_id: rid
+        for nesne_id, rid in session.execute(
+            select(Review.nesne_id, func.max(Review.sira))
+            .where(Review.nesne_turu == "test_case", Review.nesne_id.in_(ids))
+            .group_by(Review.nesne_id)
+        ).all()
+    }
+    ozet = "|".join(f"{cid}:{son_review.get(cid)}" for cid in sorted(ids))
+    anahtar = f"{JOB_OTOMATIK_KOD}:{hashlib.sha256(ozet.encode()).hexdigest()[:32]}"
+    job_id = enqueue(
+        session.connection(),
+        JOB_OTOMATIK_KOD,
+        {
+            "case_ids": [str(c) for c in ids],
+            "tetikleyen": onaylayan.kullanici_adi,
+        },
+        idempotency_key=anahtar,
+    )
+    return {"durum": "kuyrukta", "job_id": str(job_id), "case_sayisi": len(ids)}
+
+
+def toplu_uret(yuk: dict[str, Any]) -> dict[str, Any]:
+    """`codegen.otomatik` işinin gövdesi: `MAX_CASE`'lik parçalarla `start_generation`.
+
+    Her parça kendi işleminde (önceki parçaların üretimi kalıcı). Ayar iş sırasında kapanırsa
+    kalan case'ler `kapali`. Yeniden denemede başlamış üretimler `atlandi` (süren üretim) döner.
+    """
+    ids = [uuid.UUID(str(c)) for c in yuk.get("case_ids") or []]
+    tetikleyen = yuk.get("tetikleyen")
+    sonuclar: list[dict[str, Any]] = []
+    for i in range(0, len(ids), MAX_CASE):
+        parca = ids[i : i + MAX_CASE]
+        with session_scope() as s:
+            if not ayarlar.otomatik_kod(s).acik:
+                sonuclar += [
+                    {"case_id": str(c), **_sonuc("kapali", "Otomatik kod üretimi ayarı kapalı")}
+                    for c in parca
+                ]
+                continue
+            try:
+                with savepoint(s):
+                    cevap = start_generation(
+                        s,
+                        parca,
+                        OTOMASYON_AKTORU,
+                        platform=platformlar.WEB,
+                        tetik="otomatik",
+                        tetikleyen=tetikleyen,
+                    )
+            except CodegenRejected as exc:
+                sonuclar += [{"case_id": str(c), **_sonuc("reddedildi", str(exc))} for c in parca]
+                continue
+            sonuclar += [
+                {"case_id": o.get("case_id"), **_ogeden(o, cevap.get("mesaj"))}
+                for o in cevap.get("sonuclar") or []
+            ]
+    ozet: dict[str, int] = {}
+    for o in sonuclar:
+        ozet[o["durum"]] = ozet.get(o["durum"], 0) + 1
+    return {"tetikleyen": tetikleyen, "case_sayisi": len(ids), "ozet": ozet, "sonuclar": sonuclar}

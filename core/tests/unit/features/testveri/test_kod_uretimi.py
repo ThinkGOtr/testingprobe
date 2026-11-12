@@ -7,11 +7,12 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, text
 
 from tests.unit.features.cases.helpers import login, run_jobs
 from tests.unit.features.codegen.conftest import golden_cases, tpd1_acs
 from tp_core.audit import content_hash
+from tp_core.features.codegen import service as codegen_service
 from tp_core.features.testveri import atif, service
 from tp_core.models import Requirement, Script, TestCase, case_id, session_scope
 from tp_core.models.codegen_feature import ScriptCodegen
@@ -137,25 +138,38 @@ def test_sir_tanimsiz_ya_da_silinmis_anahtar_uretimi_reddeder(
     monkeypatch.delenv(service.DEMO_PAROLA_SIRRI)
     r = _uret(api, cid)
     assert r.status_code == 409
-    assert "test verisi sırrı tanımsız: ortak.demo_parola" in r.json()["detail"]
+    assert "Test verisi sırrı tanımsız: ortak.demo_parola" in r.json()["detail"]
 
+    # Silinmiş (katalogda olmayan) anahtar.
+    with session_scope() as s:
+        k = s.scalars(select(TestVerisi).where(TestVerisi.anahtar == "ortak.demo_parola")).one()
+        k.silindi = True
+    r = _uret(api, cid)
+    assert r.status_code == 409
+    assert "Katalogda olmayan test verisi anahtarı: ortak.demo_parola" in r.json()["detail"]
+    with session_scope() as s:
+        k = s.scalars(select(TestVerisi).where(TestVerisi.anahtar == "ortak.demo_parola")).one()
+        k.silindi = False
+
+    with session_scope() as s:
+        tanim = s.execute(
+            text(
+                "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                "WHERE conname = 'script_codegen_engel_ck'"
+            )
+        ).scalar_one()
+    if "test_verisi" not in tanim:
+        pytest.skip("engel_turu CHECK'inde test_verisi yok (D3 migration 0030 birleşince koşar)")
     # İstekten sonra sır kalkarsa iş üretimi durdurur (Türkçe neden, insana).
     monkeypatch.setenv(service.DEMO_PAROLA_SIRRI, DEMO_PAROLA)
     sid = _uret(api, cid).json()["script_ids"][0]
     monkeypatch.delenv(service.DEMO_PAROLA_SIRRI)
     run_jobs(engine)
     sc, cg = _script(sid)
-    assert sc.durum == "failed" and cg.engel_turu == "unsourced_value"
-    assert "test verisi sırrı tanımsız: ortak.demo_parola" in cg.engel_nedeni
-
-    # Silinmiş (katalogda olmayan) anahtar.
-    monkeypatch.setenv(service.DEMO_PAROLA_SIRRI, DEMO_PAROLA)
-    with session_scope() as s:
-        k = s.scalars(select(TestVerisi).where(TestVerisi.anahtar == "ortak.demo_parola")).one()
-        k.silindi = True
-    r = _uret(api, cid)
-    assert r.status_code == 409
-    assert "katalogda olmayan test verisi anahtarı: ortak.demo_parola" in r.json()["detail"]
+    # 013 K19: ayrı engel türü (model hatası sayılmaz); D3 migration 0030 CHECK'e ekler.
+    assert sc.durum == "failed" and cg.engel_turu == "test_verisi"
+    assert cg.engel_nedeni == "Test verisi sırrı tanımsız: ortak.demo_parola"
+    assert "test_verisi" not in codegen_service.MODEL_ENGELLERI
 
 
 def test_negatif_kontrol_cozulmeden_giderse_replay_eslesmez(
