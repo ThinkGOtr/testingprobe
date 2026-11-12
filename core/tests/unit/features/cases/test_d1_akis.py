@@ -87,10 +87,10 @@ def test_zaman_asimi_butcesi_is_suresini_asmaz() -> None:
     from tp_core.gateway.config import find_rules_dir, load_model_table
     from tp_core.gateway.core import (
         MAX_SCHEMA_REASKS,
-        YENIDEN_ISTEME_PAYI_S,
         RetryPolicy,
         reask_fits,
         worst_call_s,
+        yeniden_isteme_payi,
     )
     from tp_core.workflow.jobs import REGISTRY
 
@@ -115,7 +115,7 @@ def test_zaman_asimi_butcesi_is_suresini_asmaz() -> None:
             if not reask_fits(cfg, za - gecen):
                 break
             gecen += tek
-        assert gecen + min(120.0, YENIDEN_ISTEME_PAYI_S) <= za, (tur, amac, gecen, za)
+        assert gecen + yeniden_isteme_payi(cfg) <= za, (tur, amac, gecen, za)
         if tek * (1 + MAX_SCHEMA_REASKS) + 120 > za:
             sinirsiz_asan.append(tur)
     # Denetim gerçekten gerekli (sınırsız döngü en az bir işte iş süresini aşardı).

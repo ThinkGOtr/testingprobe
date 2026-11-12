@@ -312,3 +312,23 @@ def test_xray_wiki_alanlari_kacislanir(xray: XrayClient, jira: RestJira) -> None
     desc = govde["fields"]["description"]
     assert r"\[tıkla\|https://kotu.example\] \{color:red\}x\{color\}" in desc
     assert "[tıkla|" not in desc
+
+
+def test_wiki_kacisi_ters_boluyle_asilamaz() -> None:
+    """Tur 3 güvenlik #4: `\\[…\\|…\\]` girdisi `\\\\[` (satır sonu + kaçışsız `[`) üretmez; ters
+    bölü önce `&#92;` olur, özel karakterler sonra kaçışlanır."""
+    import re
+
+    from tp_core.integrations.testmgmt import TERS_BOLU_VARLIGI, wiki_escape
+
+    cikti = wiki_escape(r"\[buraya\|https://evil.example\]")
+    assert cikti == (
+        f"{TERS_BOLU_VARLIGI}\\[buraya{TERS_BOLU_VARLIGI}\\|https://evil.example"
+        f"{TERS_BOLU_VARLIGI}\\]"
+    )
+    assert "\\\\" not in cikti
+    # Her özel karakterin önünde tam bir (tek) ters bölü kalır.
+    assert all(cikti[m.start() - 1] == "\\" for m in re.finditer(r"[\[\]|]", cikti))
+    assert wiki_escape("C:\\yol\\dosya") == "C:&#92;yol&#92;dosya"
+    assert wiki_escape("\\\\[x]") == "&#92;&#92;\\[x\\]"
+    assert wiki_escape(None) == ""

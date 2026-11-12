@@ -20,7 +20,7 @@ from tp_core.features.requirements import services
 from tp_core.gateway.testing import text_response
 from tp_core.integrations.jira import RestJira
 from tp_core.integrations.jira_adf import text_to_adf
-from tp_core.models import AuditEvent, ExternalRef, Requirement, session_scope
+from tp_core.models import AuditEvent, ExternalRef, Requirement, new_session, session_scope
 from tp_core.models.acik_soru import AcikSoru
 
 from .helpers import case_icerik, latest_cases, login, run_jobs, uretim_cikti
@@ -347,6 +347,7 @@ def test_jira_hatasinda_satir_bekler_ve_ayni_etiketle_yeniden_gonderilir(
         api.post(f"/requirements/{ortam}/open-questions/send")
     soru = api.get(f"/requirements/{ortam}/open-questions").json()["sorular"][0]
     assert (soru["etiket"], soru["durum"]) == ("CQ1", "gonderilmedi")
+    assert soru["gonderim_belirsiz"] is True  # tur 3 #11: portal ipucu
     monkeypatch.setattr(jira_notify, "post_comment", asil)
     once = len(_yorumlar(sim))
     r = api.post(f"/requirements/{ortam}/open-questions/send")
@@ -356,6 +357,7 @@ def test_jira_hatasinda_satir_bekler_ve_ayni_etiketle_yeniden_gonderilir(
         "gonderildi",
     )
     assert len(_yorumlar(sim)) == once + 1
+    assert r.json()["sorular"][0]["gonderim_belirsiz"] is False
 
 
 def test_yorum_boyutu_sinirli_sigmayan_soru_sonraki_gonderime_kalir(
@@ -388,3 +390,133 @@ def test_idempotency_anahtari_soru_metnine_baglidir() -> None:
     k2 = acik_sorular.idempotency_key(rid, "onay", [b])  # type: ignore[list-item]
     assert k1 != k2 and ":CQ1:" in k1
     assert k1 == acik_sorular.idempotency_key(rid, "onay", [a])  # type: ignore[list-item]
+
+
+def _analist() -> Any:
+    from tp_core.workflow.service import Principal
+
+    return Principal(id=None, kullanici_adi="analyst-b", rol="analyst")
+
+
+def test_eszamanli_gonderim_tek_yorum_yazar(
+    api: TestClient, ortam: uuid.UUID, sim: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tur 3 güvenlik #1: A'nın Jira çağrısı sürerken gelen aynı gönderim (çift tık, iki analist)
+    `intent` kaydını belirsiz sayıp yorumu ikinci kez yazamaz; 409 alır."""
+    from tp_core.integrations import jira_notify
+
+    asil = jira_notify.post_comment
+    cagri: list[int] = []
+    ikinci: list[Exception] = []
+
+    def yaz(*a: Any, **kw: Any) -> Any:
+        cagri.append(1)
+        if len(cagri) == 1:  # A Jira çağrısındayken B aynı seti gönderir
+            try:
+                with new_session() as s:
+                    acik_sorular.send(s, ortam, _analist())
+            except Exception as exc:  # beklenen 409 toplanır
+                ikinci.append(exc)
+        return asil(*a, **kw)
+
+    monkeypatch.setattr(jira_notify, "post_comment", yaz)
+    once = len(_yorumlar(sim))
+    r = api.post(f"/requirements/{ortam}/open-questions/send")
+    assert r.status_code == 200, r.text
+    assert len(cagri) == 1 and len(_yorumlar(sim)) == once + 1
+    assert len(ikinci) == 1 and isinstance(ikinci[0], acik_sorular.GonderimSuruyor)
+    assert ikinci[0].status_code == 409  # type: ignore[attr-defined]
+    assert r.json()["sorular"][0]["durum"] == "gonderildi"
+    with session_scope() as s:
+        assert (
+            len(
+                s.scalars(
+                    select(AuditEvent.id).where(AuditEvent.eylem == "acik_soru.gonderildi")
+                ).all()
+            )
+            == 1
+        )
+
+
+def test_gec_gelen_esit_gonderim_denetimi_ciftlemez(
+    api: TestClient, ortam: uuid.UUID, sim: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tur 3 güvenlik #1: A yorumu yazdıktan sonra (aşama 3'ten önce) gelen B aynı yorumu bulur,
+    satırları o işaretler; A satırları atlar ve denetim kaydı bir kez düşer."""
+    from tp_core.integrations import jira_notify
+
+    asil_yaz = jira_notify.post_comment
+    asil_zaman = acik_sorular._yorum_zamani
+    cagri: list[int] = []
+    b_sonuc: list[dict[str, Any]] = []
+    b_basladi: list[int] = []
+
+    def yaz(*a: Any, **kw: Any) -> Any:
+        cagri.append(1)
+        return asil_yaz(*a, **kw)
+
+    def zaman(*a: Any, **kw: Any) -> Any:
+        if not b_basladi:
+            b_basladi.append(1)
+            with new_session() as s:
+                b_sonuc.append(acik_sorular.send(s, ortam, _analist()))
+                s.commit()
+        return asil_zaman(*a, **kw)
+
+    monkeypatch.setattr(jira_notify, "post_comment", yaz)
+    monkeypatch.setattr(acik_sorular, "_yorum_zamani", zaman)
+    once = len(_yorumlar(sim))
+    r = api.post(f"/requirements/{ortam}/open-questions/send")
+    assert r.status_code == 200, r.text
+    assert len(cagri) == 1 and len(_yorumlar(sim)) == once + 1
+    assert b_sonuc[0]["sorular"][0]["durum"] == "gonderildi"
+    with session_scope() as s:
+        kayitlar = s.scalars(
+            select(AuditEvent).where(AuditEvent.eylem == "acik_soru.gonderildi")
+        ).all()
+        assert len(kayitlar) == 1
+
+
+def test_yanit_okuma_gereksinim_basina_commit_eder(
+    api: TestClient,
+    ortam: uuid.UUID,
+    sim: TestClient,
+    jira: RestJira,
+    engine: Engine,
+    make_requirement,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tur 3 güvenlik #10: bir gereksinimin satır kilitleri sonraki gereksinimin Jira okuması
+    boyunca tutulmaz (gereksinim başına commit)."""
+    from tp_core.features.requirements import flow
+
+    assert api.post(f"/requirements/{ortam}/open-questions/send").status_code == 200
+    _po_yorumu(sim, "CQ1: 5 deneme")
+    ikinci = make_requirement(jira_key="TPD-1")
+    with session_scope() as s:
+        s.add(
+            AcikSoru(
+                requirement_id=ikinci,
+                tur="soru",
+                etiket="CQ1",
+                kaynak_id="Q1",
+                metin="Başka soru",
+                metin_hash="h",
+                durum="gonderildi",
+                gereksinim_hash="",
+                gonderen="analyst",
+            )
+        )
+    asil = flow._po_cevaplari
+    kilitsiz: list[bool] = []
+
+    def oku(*a: Any, **kw: Any) -> Any:
+        with engine.connect() as c:  # okuyucu hiçbir açık soru satırını kilitli tutmuyor
+            c.execute(text("SELECT id FROM acik_soru FOR UPDATE NOWAIT")).all()
+            kilitsiz.append(True)
+            c.rollback()
+        return asil(*a, **kw)
+
+    monkeypatch.setattr(flow, "_po_cevaplari", oku)
+    assert acik_sorular.poll(jira, frozenset({"po@sim.local"})) == 1
+    assert kilitsiz == [True, True]

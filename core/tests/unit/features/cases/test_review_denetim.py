@@ -400,6 +400,29 @@ def test_izinsiz_ortam_engelle_ve_semasiz_host() -> None:
     ):
         adim = [{"id": "S1", "action": metin, "data": None, "expected": "x"}]
         assert _bulgular([_case(steps=adim)]) == {}, metin
+    # Tur 3 güvenlik #5: sürüm (ilk etiket rakam), i18n/kod anahtarı (belirsiz üst alan adı,
+    # ana makine bağlamı yok) yanlış pozitif ENGELLE vermez; `.co/.app/.ai` ve bağlamlı belirsiz
+    # üst alan adı yakalanır.
+    for metin in (
+        "sürüm 2.1.0.dev yüklü",
+        "Sepet.toplam.tr anahtarı görünür",
+        "rapor.v2.dev etiketi",
+        "Sepet.toplam.tr",
+    ):
+        assert denetim_akisi.hosts_in(metin) == set(), metin
+        adim = [{"id": "S1", "action": metin, "data": None, "expected": "x"}]
+        assert _bulgular([_case(steps=adim)]) == {}, metin
+    for metin, host in (
+        ("staging.firma.co aç", "staging.firma.co"),
+        ("canli.firma.app aç", "canli.firma.app"),
+        ("model.firma.ai çağır", "model.firma.ai"),
+        ("staging.firma.dev aç", "staging.firma.dev"),
+        ("rapor.v2.dev sunucusuna bağlan", "rapor.v2.dev"),
+        ("rakip.firma.com.tr aç", "rakip.firma.com.tr"),
+    ):
+        assert denetim_akisi.hosts_in(metin) == {host}, metin
+        adim = [{"id": "S1", "action": metin, "data": None, "expected": "x"}]
+        assert _bulgular([_case(steps=adim)]) == {"izinsiz_ortam": "ENGELLE"}, metin
 
 
 @pytest.mark.parametrize(

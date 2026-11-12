@@ -207,6 +207,12 @@ function SoruSatiri({ s, dogrulama }: { s: AcikSoruKaydi; dogrulama?: Varsayim["
         </span>
       </div>
       <p>{s.metin}</p>
+      {s.gonderim_belirsiz && (
+        <p className="soluk kucuk" data-testid="gonderim-belirsiz">
+          Gönderim sonucu belirsiz: yorum Jira'ya yazılmış olabilir. Yeniden gönderin; aynı yorum
+          ikinci kez yazılmaz.
+        </p>
+      )}
       {s.yanit && <PoYanitiMetni yanit={s.yanit} />}
       {s.bekleyen_caseler.length > 0 && (
         <p className="kucuk">

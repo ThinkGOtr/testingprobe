@@ -409,9 +409,15 @@ def wiki_noformat(text: str) -> str:
 _WIKI_OZEL = re.compile(r"([\[\]{}|!])")
 
 
+# Metindeki ters bölü önce HTML varlığına çevrilir (tur 3 güvenlik #4): aksi halde `\[` girdisi
+# `\\[` olur; wiki `\\`'yi satır sonu okur ve `[` yeniden kaçışsız (bağlantı etkin) kalır.
+TERS_BOLU_VARLIGI = "&#92;"
+
+
 def wiki_escape(text: str | None) -> str:
-    """Wiki alanına düz metin: biçim karakterleri kaçışlanır (görünüm aynı kalır)."""
-    return _WIKI_OZEL.sub(r"\\\1", text or "")
+    """Wiki alanına düz metin: önce ters bölü etkisizleşir (`&#92;`), sonra biçim karakterleri
+    kaçışlanır (görünüm aynı kalır)."""
+    return _WIKI_OZEL.sub(r"\\\1", (text or "").replace("\\", TERS_BOLU_VARLIGI))
 
 
 def _wiki_code_blocks(node: Any) -> Any:

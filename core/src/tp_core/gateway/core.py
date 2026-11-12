@@ -284,8 +284,10 @@ MAX_RULE_ERRORS = 30  # kural yeniden istemesinde listelenen en çok ihlal (gird
 # değer kimliklerine indirgenir ya da bu uzunlukta kesilir, ihlal satırı da tavanla kırpılır.
 KURAL_ALINTI_TAVANI = 40
 KURAL_SATIR_TAVANI = 300
-# Yeniden isteme ancak işin kalan süresi bir çağrının en kötü süresi + bu payı karşılarsa yapılır
-# (yanıtın işlenmesi, DB yazımı, iş sonu adımları).
+# Yeniden isteme ancak işin kalan süresi bir çağrının en kötü süresi + pay karşılarsa yapılır
+# (yanıtın işlenmesi, DB yazımı, iş sonu adımları). Pay amacın zaman aşımıyla orantılıdır
+# (`yeniden_isteme_payi`: min(tavan, timeout_s); tur 3 güvenlik #7): 10 sn'lik kısa amaç
+# (`assistant_guard`) 70 sn değil 20 sn kalan süre ister.
 YENIDEN_ISTEME_PAYI_S = 60.0
 DEFAULT_MAX_TOKENS = 4096  # ports.ModelGateway.call varsayılanı
 DEFAULT_TIMEOUT_S = 120.0  # models.yaml defaults.timeout_s (amaçta yoksa)
@@ -345,7 +347,12 @@ def worst_call_s(cfg: PurposeConfig, retry: RetryPolicy | None = None) -> float:
 
 def reask_fits(cfg: PurposeConfig, kalan_s: float | None, retry: RetryPolicy | None = None) -> bool:
     """İşin kalan süresi (None = iş dışında, sınırsız) bir yeniden istemeye yetiyor mu?"""
-    return kalan_s is None or kalan_s >= worst_call_s(cfg, retry) + YENIDEN_ISTEME_PAYI_S
+    return kalan_s is None or kalan_s >= worst_call_s(cfg, retry) + yeniden_isteme_payi(cfg)
+
+
+def yeniden_isteme_payi(cfg: PurposeConfig) -> float:
+    """İş sonu adımları için pay: `min(YENIDEN_ISTEME_PAYI_S, timeout_s)`."""
+    return min(YENIDEN_ISTEME_PAYI_S, float(cfg.timeout_s or DEFAULT_TIMEOUT_S))
 
 
 @dataclass(frozen=True)
@@ -919,7 +926,9 @@ class Gateway:
             row.update(
                 maskeli_girdi=[],
                 maskeleme_farki=mask_diff,
-                deneme=attempt,
+                # Seçim satırı ayrı deneme numarası taşır (başarısız son denemeyle karışmasın;
+                # ölçümler onu `secilen_deneme` ile ayırır, maliyeti 0).
+                deneme=attempt + 1,
                 cikti=best.output,
                 sema_gecerli=True,
                 kural_hatalari=best.kural,
@@ -1041,7 +1050,17 @@ class Gateway:
                         elde_var=not errors or best is not None,
                     )
             final = not errors and (not rule_errors or durma is not None)
-            ara_kural = not errors and bool(rule_errors) and durma is None
+            # Kural yolunda durulduğunda (deneme sınırı, bütçe, iş süresi) önceki bir deneme
+            # daha az ihlalliyse o döner (tur 3 güvenlik #6); bu satır ara deneme sayılır.
+            daha_iyisi_var = (
+                final
+                and bool(rule_errors)
+                and best is not None
+                and len(best.kural) < len(rule_errors)
+            )
+            if daha_iyisi_var:
+                final = False
+            ara_kural = not errors and bool(rule_errors) and (durma is None or daha_iyisi_var)
             row.update(
                 cikti=output if parse_error is None else response.text,
                 sema_gecerli=not errors,
@@ -1074,6 +1093,9 @@ class Gateway:
                 if durma not in (None, "deneme_siniri"):
                     log.warning("'%s': %s", purpose, uyarilar[0])
                 return sonuc(output, row_id, uyarilar, attempt)
+            if daha_iyisi_var:
+                assert durma is not None
+                return en_iyiyi_don(durma, attempt)
             if rule_errors and (best is None or len(rule_errors) <= len(best.kural)):
                 best = _Aday(output, rule_errors, attempt, _served_model(cfg, response))
             if durma is not None:  # şema hatası ve yeniden istenmeyecek
@@ -2070,7 +2092,26 @@ def _call_result_from(
         output_tokens=sum(int(r.get("cikti_token") or 0) for r in family),
         cost_usd=round(sum(float(r.get("maliyet") or 0) for r in family), 6),
         ilk_cikti=_ilk_gecerli_cikti(done, family, session),
+        uyarilar=_kayitli_uyarilar(done),
     )
+
+
+def _kayitli_uyarilar(done: Mapping[str, Any]) -> list[str]:
+    """İdempotent dönüşte kural yeniden istemesinin durma uyarısı satırın `ek`'inden yeniden
+    kurulur (tur 3 güvenlik #6): ilk dönüşle aynı uyarı (deneme sınırında `durdu` yazılmaz)."""
+    ek = done.get("ek")
+    if not isinstance(ek, Mapping) or ek.get("kural_gecerli") is not False:
+        return []
+    kural = ek.get("kural_hatalari") or []
+    if not kural:
+        return []
+    neden = str(ek.get("kural_yeniden_isteme_durdu") or "deneme_siniri")
+    secilen = ek.get("secilen_deneme")
+    return [
+        _durma_uyarisi(
+            neden, [str(k) for k in kural], secilen=int(secilen) if secilen is not None else None
+        )
+    ]
 
 
 def _ilk_gecerli_cikti(

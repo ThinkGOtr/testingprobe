@@ -17,11 +17,12 @@ Kategori tabanları (eşikten bağımsız, karar en az bu olur; gerekçe):
   yumuşatılması kararı değiştirmemeli.
 - `prompt_injection` → soruda engelle (puandan bağımsız): asistanın araçları (Jira/CI/kod/veri
   okuma) ve sistem talimatı hedef alınır — sistem/araç kötüye kullanımı modele hiç ulaşmamalı.
-  Cevapta engelle; yalnız puan uyarı eşiği ve üstündeyse uyar (`_INJECTION_CEVAP_YUMUSAK`):
-  kontrol modeli cevabı temiz bulup kategoriyi "bulgu" olarak işaretlediğinde (ör. cevap gömülü
-  talimatı uygulamadığını bildirir) yanlış engel olmasın. Talimat sızıntısı ya da ele geçirilmiş
-  model belirtisi düşük puanlanır → engel kalır. Bozuk çıktı / kontrol hatası yine engeldir
-  (puan yoksa 0; hata çağırana taşar, fail-closed).
+  Cevapta da puandan bağımsız engelle (tur 3 güvenlik #2): cevap yönünde kategori "cevap gömülü
+  talimata uydu, sızdırdı ya da okuru yönlendiriyor" demektir; cevap metni Jira/kaynak içeriğinden
+  etkilenebildiği için yüksek puana güvenilmez. Kategori işaretli ama puan uyarı eşiği ve
+  üstündeyse (tutarsız etiket) karar yine engeldir; durum `tutarsiz_etiket` ile ayrıca izlenir
+  (denetim kaydında işaret + log). Bozuk çıktı / kontrol hatası yine engeldir (puan yoksa 0; hata
+  çağırana taşar, fail-closed).
 - `kisisel_veri` → cevapta engelle (sızıntı: veri kullanıcıya gösterilmez), soruda uyar
   (kullanıcı kendi yazdı; geçit maskelemesi modele gideni ayrıca korur).
 - `zararli_icerik`, `rekabete_aykiri`, `ayrimcilik`, `kufur_taciz` → en az uyar (puan düşükse
@@ -84,8 +85,6 @@ _TABAN: Final[dict[tuple[str, str | None], AsistanKarari]] = {
     ("kufur_taciz", None): "uyar",
     ("yanlis_bilgi", "cevap"): "uyar",
 }
-# Cevap yönünde puan uyarı eşiği ve üstündeyse taban bir kademe yumuşar (engelle → uyar).
-_INJECTION_CEVAP_YUMUSAK: Final = frozenset({("prompt_injection", "cevap")})
 
 
 def _esik(ad: str, varsayilan: int) -> int:
@@ -125,11 +124,23 @@ def karar_ver(
     karar: AsistanKarari = "engelle" if puan < engel else "uyar" if puan < uyari else "gec"
     for k in kategorileri_duzelt(kategoriler, yon):
         taban = _TABAN.get((k, yon)) or _TABAN.get((k, None))
-        if taban == "engelle" and (k, yon) in _INJECTION_CEVAP_YUMUSAK and puan >= uyari:
-            taban = "uyar"
         if taban is not None and _SIRA[taban] > _SIRA[karar]:
             karar = taban
     return karar
+
+
+def tutarsiz_etiket(
+    puan: int, kategoriler: Sequence[str], yon: str, esik: tuple[int, int] | None = None
+) -> bool:
+    """Kontrol modelinin tutarsız etiketi: cevapta `prompt_injection` işaretli ama puan uyarı
+    eşiği ve üstünde (gerekçe/puan "temiz" diyor). Karar yine engeldir (`karar_ver`); bu işaret
+    yalnız izleme içindir (prompt kalitesi / olası puan manipülasyonu)."""
+    _, uyari = esik or esikler()
+    return (
+        yon == "cevap"
+        and "prompt_injection" in kategorileri_duzelt(kategoriler, yon)
+        and puan >= uyari
+    )
 
 
 def en_agir(*kararlar: str | None) -> str:

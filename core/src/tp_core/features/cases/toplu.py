@@ -232,20 +232,35 @@ def assumption_verified(
     )
 
 
-# PO'nun "doğru" yanıtı (`CAn: doğru`, "Evet, doğru.", "doğrudur", "onaylıyorum"); olumsuzluk
-# içeren yanıt ("doğru değil", "yanlış", "hayır") sayılmaz.
-_DOGRU = re.compile(r"^\W*(?:evet\W*)?(?:doğru(?:dur)?|dogru(?:dur)?|onayl[ıi]yorum|teyit)\b", re.I)
-_OLUMSUZ = re.compile(r"\b(?:değil|degil|yanlış|yanlis|hayır|hayir)\b", re.I)
+# PO'nun kesin "doğru" yanıtı (tur 3 güvenlik #9): yanıt yalnız onay sözcüklerinden ve
+# noktalamadan oluşmalı ("CAn: doğru", "Evet", "Evet, doğru.", "doğrudur", "onaylıyorum"). Ek
+# koşul ya da açıklama ("Doğru, ama yalnız mobilde", "doğru değil", "evet ama…") kesin onay
+# sayılmaz; analist PO yanıtına göre "Düzelt" kullanır.
+_ONAY_SOZCUKLERI = frozenset(
+    {
+        "evet",
+        "doğru",
+        "dogru",
+        "doğrudur",
+        "dogrudur",
+        "onaylıyorum",
+        "onayliyorum",
+        "teyit",
+        "ediyorum",
+    }
+)
+_SOZCUK = re.compile(r"\w+")
 
 
 def po_dogru_dedi(yanit: str | None) -> bool:
-    metin = " ".join(str(yanit or "").split())
-    return bool(_DOGRU.search(metin)) and not _OLUMSUZ.search(metin)
+    sozcukler = [w.casefold() for w in _SOZCUK.findall(str(yanit or ""))]
+    return bool(sozcukler) and all(w in _ONAY_SOZCUKLERI for w in sozcukler)
 
 
 def _po_dogrulamasi(session: Session, tc: TestCase, kimlikler: Sequence[str]) -> list[str]:
     """Varsayımlar PO'ya gönderildiyse (K16) PO kaydına uyulur (tur 2 güvenlik #8): yanıt
-    bekleniyorsa ya da PO "doğru" dışında yanıt verdiyse 409. PO "doğru" dediyse kaynak
+    bekleniyorsa, gönderim sürüyor/belirsizse (`bekliyor`) ya da PO kesin "doğru" dışında
+    (ek koşullu dahil) yanıt verdiyse 409. PO "doğru" dediyse kaynak
     etiketlerini (`CAn`) döner; hiç gönderilmemişse boş (analistin kendi doğrulaması)."""
     from tp_core.features.cases import acik_sorular
 
@@ -263,8 +278,13 @@ def _po_dogrulamasi(session: Session, tc: TestCase, kimlikler: Sequence[str]) ->
         satir = (
             satirlar.get(("varsayim", acik_sorular.text_hash("varsayim", metin))) if metin else None
         )
-        if satir is None or satir.durum == "bekliyor":
+        if satir is None:
             continue
+        if satir.durum == "bekliyor":  # Jira çağrısı sürüyor ya da sonucu belirsiz
+            raise WorkflowError(
+                f"{k} varsayımının PO'ya gönderimi sürüyor ya da sonucu belirsiz "
+                f"({satir.etiket}); açık sorular ekranından gönderimi tamamlayın"
+            )
         if satir.durum == "gonderildi":
             raise WorkflowError(
                 f"{k} varsayımı PO'ya doğrulatılmak üzere gönderildi ({satir.etiket}); PO yanıtı "
@@ -272,8 +292,8 @@ def _po_dogrulamasi(session: Session, tc: TestCase, kimlikler: Sequence[str]) ->
             )
         if not po_dogru_dedi(satir.yanit):
             raise WorkflowError(
-                f"PO {satir.etiket} ({k}) varsayımına 'doğru' dışında yanıt verdi; case'i PO "
-                "yanıtına göre 'Düzelt' ile güncelleyin"
+                f"PO {satir.etiket} ({k}) varsayımına kesin 'doğru' dışında (ek koşullu ya da "
+                "açıklamalı) yanıt verdi; case'i PO yanıtına göre 'Düzelt' ile güncelleyin"
             )
         kaynak.append(satir.etiket)
     return kaynak

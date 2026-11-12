@@ -537,8 +537,10 @@ def harcama_oku(engine: Engine, call_id: uuid.UUID, gw: Any = None) -> Harcama:
 # Modelin kendi cevabında yazdığı belirsizlik (birinci tekil; "emin değilseniz" gibi kullanıcıya
 # yönelik kalıplar sayılmaz). Model `guven=orta` verip metinde "emin değilim" dediğinde rozet
 # "Kaynakla doğrulandı" kalabilir (canlı eval s13, 2026-11-12): metin de tetik sayılır.
+# ASCII yazım da sayılır ("emin degilim", "dogrulayamadim"; tur 3 güvenlik #11).
 _BELIRSIZLIK: Final = re.compile(
-    r"\b(emin değilim|emin olamadım|doğrulayamadım|teyit edemedim|bilmiyorum)\b"
+    r"\b(em[iı]n de[gğ][iı]l[iı]m|em[iı]n olamad[ıi]m|do[gğ]rulayamad[ıi]m"
+    r"|tey[iı]t edemed[iı]m|b[iı]lm[iı]yorum)\b"
 )
 
 
