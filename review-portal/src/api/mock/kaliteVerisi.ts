@@ -78,9 +78,12 @@ export const MIN_SIPARIS_DOGRU: KararTablosuIcerik = {
   ],
 };
 
-/** AI taslağının PO'ya sorusu (taslak notu; tablo açıklamasının sonunda durur). */
+/**
+ * AI taslağının PO'ya sorusu: golden `decision_table_draft/TPD-1` `output.notes`'taki soru. Çekirdek taslak notunu
+ * tabloya yazmıyor; örnek veride PO'nun görmesi için T2 açıklamasının sonuna eklenir (varsayım, raporda).
+ */
 export const T2_PO_SORUSU =
-  'Taslak notu (AI): AC3 "altında uyarı" diyor; tam 750,00 TL\'de uyarının gösterilip gösterilmeyeceğini PO teyit etmeli.';
+  "PO sorusu (AI taslak notu): tam 750,00 TL'lik kampanyasız siparişte uyarı gösterilmeli mi? (sınır örneklerinde 750 satırını kontrol edin)";
 
 /**
  * AI taslağındaki T2 (golden `decision_table_draft/TPD-1`, u2 N2): R2 sınırı `sepet_tutari <= 750` — AI'ın
