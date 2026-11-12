@@ -16,4 +16,19 @@ Ortak modüller (Ş0; diğer şeritler bunları kullanır, yeniden yazmaz):
 
 `ifade` saf ve yan etkisizdir (`eval` yok; kendi ayrıştırıcısı). `hatalar` 012'nin API hata
 kodlarını taşır (`rules/assistant/hata-sozlugu.yaml` ile eşit).
+
+Ş1 (tablo ve ilişki servisi):
+
+- `service`: elle tablo/ilişki, içerik güncelleme (yalnız `draft`; görülen `icerik_hash`),
+  gönder / geri çek / yeniden aç (analist), onay / değişiklik isteği (PO), "örnekle dene",
+  liste (`bayat` hesaplanır), AI taslağı (`karar_tablosu.draft`, amaç `decision_table_draft`).
+  Diğer şeritlerin okuma yardımcıları:
+
+      service.gecerli_tablolar(session, requirement_id, ac_refs=None)  # onaylı, bayat değil
+      service.gecerli_iliskiler(session, requirement_id)
+      service.bayat_mi(nesne, requirement)
+
+  Tablo onaylanınca / onaylı tablo yeniden açılınca `oracle.check_requirement` işi kuyruğa girer
+  (işleyici oracle şeridindedir).
+- `api`: uçlar (modül belgesindeki tablo); `jobs`: `karar_tablosu.draft` işleyicisi.
 """

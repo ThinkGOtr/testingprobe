@@ -1,0 +1,10 @@
+{
+  "kind": "call",
+  "purpose": "decision_table_draft",
+  "note": "Nötr REPLAY-MISS yedeği (golden değildir, model çıktısı değildir). Girdi, adlandırılmış golden'ın girdi beyanına (input_match) uymadığında veya bu anahtar için golden yoksa golden'ın tabloları başka bir dokümana aittir (başka kural, başka eşik, olmayan AC'ler). Geçit onların yerine bu çıktıyı döner (ai_call.ek.replay_kokeni = miss_neutral). Tablo ve ilişki üretilmez; mevcut taslaklara dokunulmaz, analist tabloyu elle açabilir. Bkz. rules/replay/README.md.",
+  "output": {
+    "tables": [],
+    "relations": [],
+    "notes": "Bu girdi için kayıtlı model çıktısı yok (REPLAY-MISS); canlı model gerekir. Karar tablosu taslağı üretilmedi; tabloyu elle açabilirsiniz."
+  }
+}
