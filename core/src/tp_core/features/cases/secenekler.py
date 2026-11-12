@@ -144,6 +144,9 @@ class UretimSecenekleri(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    # Üretim kipi tercihi (011 K20): son açıkça seçilen kip saklanır; kipsiz çağrıda kullanılır.
+    # Model girdisine girmez (`secenek_metni`/`serbest_metin_var` okumaz). None = tercih yok.
+    kip: Literal["iki_tur", "tek_tur"] | None = None
     platformlar: list[str] = Field(default_factory=list, max_length=len(PLATFORMLAR))
     test_seviyesi: str = VARSAYILAN_TEST_SEVIYESI
     benimsenen_standartlar: list[str] = Field(default_factory=list, max_length=STANDART_SAYISI)

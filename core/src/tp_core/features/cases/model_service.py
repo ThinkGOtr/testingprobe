@@ -165,6 +165,16 @@ def require_approved_model(session: Session, req: Requirement) -> TasarimModeli:
     return m
 
 
+def usable_approved_model(session: Session, req: Requirement) -> TasarimModeli | None:
+    """Son model onaylı, güncel ve onay hash'i eşleşiyorsa o model; değilse None (409 yok)."""
+    m = latest_model(session, req.id)
+    if m is None or m.durum != "approved":
+        return None
+    if not is_current(m, req) or not approved_hash_matches(session, m):
+        return None
+    return m
+
+
 def approved_content(
     session: Session, req: Requirement, mid: uuid.UUID
 ) -> tuple[dict[str, Any] | None, str | None]:
@@ -209,8 +219,16 @@ def _stuck_model(session: Session, req: Requirement) -> bool:
 def start_model_generation(
     session: Session, requirement_id: uuid.UUID, user: Principal
 ) -> dict[str, Any]:
-    """Tasarım modeli üretimini başlatır (`modeling`); `{job_id, workflow_id, asama: "model"}`."""
+    """Tasarım modeli üretimini başlatır (`modeling`); `{job_id, workflow_id, asama: "model"}`.
+
+    Süren bir derinleştirme varsa 409 (derinleştirme mevcut sete ektir; model yeni sete gider)."""
+    from tp_core.features.cases import deepen
+
     req = get_requirement(session, requirement_id, lock=True)
+    if deepen.running(session, req.id):
+        raise deepen.DeepeningConflict(
+            "Bu gereksinimde süren bir derinleştirme var; bitmesini bekleyin"
+        )
     if req.durum == "modeling" and _stuck_model(session, req):
         transition(session, req, "failed", SYSTEM, "modeling", sebep="model üretimi yarıda kaldı")
     if req.durum not in MODEL_BASLANGIC:
@@ -270,8 +288,9 @@ def run_model_generation(
     ctx: JobContext, engine: Engine, gateway: ModelGateway | None = None
 ) -> dict[str, Any]:
     """`model.generate` işi: model çağrısı → `tasarim_modeli` taslağı → `model_ready`."""
+    from tp_core.features.cases import secenekler as secenek_modulu
     from tp_core.features.cases import testdata
-    from tp_core.features.cases.service import generation_messages
+    from tp_core.features.cases.service import generation_messages, preserved_set
     from tp_core.gateway import deterministic_call_id
     from tp_core.gateway.errors import BudgetExceeded, GatewayError, ReplayMiss, ReplayNotFound
 
@@ -285,10 +304,23 @@ def run_model_generation(
         if req.durum != "modeling":
             return {"atlandi": True, "durum": req.durum}
         po_guncel = _po_guncel(req)
+        # Üretim seçenekleri (011 K5): platform ekleri ve analist seçenekleri model turunda da
+        # girdidir; tur 2 aynı kayıtlı seçenekleri kullanır (`start_generation`).
+        secenekler = secenek_modulu.kayitli(req.uretim_secenekleri)
+        # Korunan (onaylı/yayınlı) case'lerin kimlikleri: tur 2 modelin kimliklerini aynen
+        # kopyalar; model bunlarla çakışan kimlik üretmesin (011 D1 #13).
+        _, _, korunan_kimlikler = preserved_set(s, req)
         messages = generation_messages(
-            req, _onaylanan_sorular(s, req.id), test_verisi=testdata.block(), gorev=MODEL_GOREVI
+            req,
+            _onaylanan_sorular(s, req.id),
+            test_verisi=testdata.block(),
+            secenekler=secenekler,
+            gorev=MODEL_GOREVI,
+            korunan_kimlikler=korunan_kimlikler,
         )
         replay_key = replay_key_for(req)
+        replay_key["name"] = secenek_modulu.replay_adi(replay_key["name"], secenekler)
+        cagri_eki = secenek_modulu.ai_call_eki(secenekler)
         gereksinim_hash = req.onaylanan_hash
     if not po_guncel:
         neden = "gereksinim içeriği PO onayından sonra değişmiş"
@@ -309,6 +341,7 @@ def run_model_generation(
             replay_key=replay_key,
             workflow_id=wf_id,
             call_id=deterministic_call_id(ctx.job_id, PURPOSE),
+            **({"ek": cagri_eki} if cagri_eki else {}),
         )
     except BudgetExceeded as exc:
         _fail(rid, f"bütçe aşıldı: {exc}")
@@ -377,6 +410,7 @@ def run_model_generation(
                 "superseded": onceki,
                 "sorunlar": sorunlar,
                 "ozet": model_stats(icerik),
+                **cagri_eki,
             },
         )
         return {
@@ -428,8 +462,11 @@ def decide_model(
         raise InvalidDecision(f"geçersiz karar: {karar} (approve | edit | reject)")
     if icerik_hash is None:
         raise InvalidDecision("karar, görüntülenen içeriğin hash'ini (icerik_hash) taşımalı")
-    m = get_model(session, mid, lock=True)
+    # Kilit sırası gereksinim → model (`supersede_models`, `start_model_generation` ile aynı;
+    # ters sıra eşzamanlı kararda kilitlenme riskidir).
+    m = get_model(session, mid)
     req = get_requirement(session, m.requirement_id, lock=True)
+    session.refresh(m, with_for_update=True)
     if m.durum != "draft":
         raise WorkflowError(
             f"Karar yalnızca onay bekleyen (taslak) model için verilir (durum: {m.durum})"
@@ -480,6 +517,52 @@ def decide_model(
     hedef = "rejected" if karar == "reject" else "approved"
     transition(session, m, hedef, user, "draft", sebep=f"karar: {karar}")
     return m
+
+
+def decide_and_continue(
+    session: Session, mid: uuid.UUID, user: Principal, **karar: Any
+) -> dict[str, Any]:
+    """`POST /design-models/{id}/decision` (011 K20): karar + onayda (approve | edit) tur 2.
+
+    Onaylanan modelden case üretimi AYNI işlemde başlar (`start_generation(kip="iki_tur")`;
+    kip tercihi `iki_tur` olarak saklanır). Tur 2 başlatılamazsa (ör. Jira PO etiketi
+    doğrulanamadı, AI ajan ürünü) karar yine kaydedilir; yanıt `tur2_baslatildi: false` ve
+    `tur2_engeli` taşır, analist "Case üret" ile yeniden dener. Yanıt: model görünümü +
+    `tur2_baslatildi`, `tur2` (`{job_id, workflow_id, uretim_no, kip, asama}` | None),
+    `tur2_engeli`.
+    """
+    from tp_core.audit import session as audit_session
+    from tp_core.features.cases.service import start_generation
+
+    m = decide_model(session, mid, user, **karar)
+    session.flush()
+    tur2: dict[str, Any] | None = None
+    engel: str | None = None
+    if karar.get("karar") in ("approve", "edit"):
+        bekleyen = len(audit_session.pending_audit(session))
+        try:
+            with session.begin_nested():
+                sonuc = start_generation(session, m.requirement_id, user, kip="iki_tur")
+            tur2 = {
+                "job_id": str(sonuc["job_id"]) if sonuc.get("job_id") else None,
+                "workflow_id": str(sonuc["workflow_id"]) if sonuc.get("workflow_id") else None,
+                "uretim_no": sonuc.get("uretim_no"),
+                "kip": sonuc.get("kip"),
+                "asama": sonuc.get("asama"),
+            }
+        except WorkflowError as exc:
+            # SAVEPOINT geri alındı; geri alınan adımların bekleyen denetim kayıtları da düşer.
+            liste = session.info.get(audit_session._ANAHTAR)
+            if isinstance(liste, list):
+                del liste[bekleyen:]
+            engel = str(exc)
+    req = get_requirement(session, m.requirement_id)
+    return {
+        **serialize_model(session, m, req),
+        "tur2_baslatildi": tur2 is not None,
+        "tur2": tur2,
+        "tur2_engeli": engel,
+    }
 
 
 # --------------------------------------------------------------------- serileştirme

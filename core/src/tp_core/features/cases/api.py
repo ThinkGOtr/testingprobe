@@ -73,9 +73,10 @@ class CaseKararGirdisi(BaseModel):
 class UretimBaslatGirdisi(BaseModel):
     """`POST generate-cases` gövdesi (isteğe bağlı; gövdesiz çağrı geriye uyumlu).
 
-    `kip` (011 F3): `iki_tur` (gövde verildiğinde varsayılan; önce test tasarım modeli, analist
-    onayı, sonra yalnız onaylı modelden case) | `tek_tur` (hızlı; doğrudan case). Gövdesiz çağrı
-    geriye uyum için tek turdur; IDE/MCP kanalı tek turdur.
+    `kip` (011 F3, K20): `iki_tur` (önce test tasarım modeli, analist onayı, sonra yalnız onaylı
+    modelden case) | `tek_tur` (hızlı; doğrudan case). Açıkça verilen kip gereksinimin üretim
+    seçeneklerinde saklanır. Kip verilmezse kayıtlı kip; kayıt yoksa gövdeli çağrıda `iki_tur`,
+    gövdesiz çağrıda `tek_tur` (geriye uyum: prova, IDE/MCP).
 
     Diğer alanlar üretim seçenekleridir (011 K5; anlamsal doğrulama `secenekler.dogrula`, 422).
     Seçenek alanlarından hiçbiri verilmezse gereksinimde kayıtlı son seçenekler kullanılır.
@@ -83,7 +84,7 @@ class UretimBaslatGirdisi(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    kip: Literal["iki_tur", "tek_tur"] = "iki_tur"
+    kip: Literal["iki_tur", "tek_tur"] | None = None
 
     platformlar: list[str] | None = None
     test_seviyesi: str | None = None
@@ -96,7 +97,7 @@ class UretimBaslatGirdisi(BaseModel):
         alanlar = {
             k: v
             for k in secenek_modulu.UretimSecenekleri.model_fields
-            if (v := getattr(self, k)) is not None
+            if k != "kip" and (v := getattr(self, k)) is not None
         }
         return alanlar or None
 
@@ -110,14 +111,15 @@ def generate_cases(
     user: Analyst,
     body: UretimBaslatGirdisi | None = None,
 ) -> IsYaniti:
-    kip = body.kip if body is not None else "tek_tur"
     sonuc = service.start_generation(
         session,
         requirement_id,
         user,
-        kip=kip,
+        kip=body.kip if body is not None else None,
         secenekler=body.secenekler() if body else None,
+        varsayilan_kip="iki_tur" if body is not None else "tek_tur",
     )
+    kip = sonuc["kip"]
     model_asamasi = sonuc.get("asama") == "model"
     return IsYaniti(
         job_id=sonuc["job_id"],

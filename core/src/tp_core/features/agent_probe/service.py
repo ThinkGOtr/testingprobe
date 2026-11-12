@@ -45,6 +45,7 @@ from tp_core.workflow.service import (
     content_hash_of,
     transition,
 )
+from tp_core.workflow.states import AJAN_TESTI_GECTI, register_guard
 
 AKTOR: Final = "agent-probe"
 BITMEMIS: Final = frozenset({"queued", "running"})
@@ -127,6 +128,11 @@ def ajan_testi_gecti(req: Any) -> bool:
         and son.durum == "passed"
         and son.gereksinim_hash == content_hash_of(req)
     )
+
+
+# Durum makinesi koşulu (`po_approved → done`): workflow katmanı features'a bağımlı olmaz,
+# koşul burada kaydedilir (011 D1 #16).
+register_guard(AJAN_TESTI_GECTI, ajan_testi_gecti)
 
 
 def _gereksinim(

@@ -38,8 +38,8 @@ from tp_core.workflow.states import (
     ENTITY_BY_TABLE,
     KARARLAR,
     MACHINES,
-    RET_NEDENLERI,
     Machine,
+    ret_nedenleri,
 )
 
 
@@ -304,14 +304,15 @@ def record_approval(
         user_id = user.id
     else:
         raise ApprovalNotAllowed(f"geçersiz onay kanalı: {kanal}")
-    if karar == "reject" and ret_nedeni not in RET_NEDENLERI:
-        raise InvalidDecision(f"ret nedeni taksonomiden olmalı: {sorted(RET_NEDENLERI)}")
+    taksonomi = ret_nedenleri(kind)
+    if karar == "reject" and ret_nedeni not in taksonomi:
+        raise InvalidDecision(f"ret nedeni taksonomiden olmalı: {sorted(taksonomi)}")
     # Script review'da "değişiklik iste" de taksonomik ret nedeni taşır (TEKNIK-TASARIM §8.4,
     # Constitution X: ret nedenleri ölçülür).
     if ret_nedeni is not None and karar not in ("reject", "request_changes"):
         raise InvalidDecision("ret nedeni yalnızca 'reject' / 'request_changes' kararında verilir")
-    if ret_nedeni is not None and ret_nedeni not in RET_NEDENLERI:
-        raise InvalidDecision(f"ret nedeni taksonomiden olmalı: {sorted(RET_NEDENLERI)}")
+    if ret_nedeni is not None and ret_nedeni not in taksonomi:
+        raise InvalidDecision(f"ret nedeni taksonomiden olmalı: {sorted(taksonomi)}")
     if (
         kind == "consistency_finding"
         and karar == "accept_difference"

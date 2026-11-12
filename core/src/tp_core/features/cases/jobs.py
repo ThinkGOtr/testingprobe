@@ -18,7 +18,7 @@ from tp_core.workflow.jobs import JobContext, job_handler
 log = logging.getLogger(__name__)
 
 
-@job_handler(GEN_JOB, max_deneme=2, zaman_asimi_s=600)
+@job_handler(GEN_JOB, max_deneme=2, zaman_asimi_s=900)
 def generate_cases(ctx: JobContext) -> dict[str, Any]:
     return run_generation(ctx, get_engine())
 
@@ -35,7 +35,7 @@ def audit_cases(ctx: JobContext) -> dict[str, Any]:
     return denetim_akisi.run_audit(ctx, get_engine())
 
 
-@job_handler(DEEPEN_JOB, max_deneme=2, zaman_asimi_s=600)
+@job_handler(DEEPEN_JOB, max_deneme=2, zaman_asimi_s=900)
 def deepen_cases(ctx: JobContext) -> dict[str, Any]:
     return run_deepening(ctx, get_engine())
 

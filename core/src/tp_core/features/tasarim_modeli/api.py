@@ -4,7 +4,7 @@
 |---|---|---|
 | GET  | `/requirements/{id}/design-model` | herkes — son model + geçmiş özeti |
 | POST | `/requirements/{id}/design-model` | analyst — modeli (yeniden) üret (202) |
-| POST | `/design-models/{id}/decision` (`ModelKararGirdisi`) | analyst — approve / edit / reject |
+| POST | `/design-models/{id}/decision` (`ModelKararGirdisi`) | analyst — approve/edit/reject; K20 |
 
 İki turun başlangıcı ve onaylı modelden case üretimi `POST /requirements/{id}/generate-cases`
 (`{kip: "iki_tur"}`) ucundadır (`features.cases.api`).
@@ -12,11 +12,12 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from tp_core.auth.deps import CurrentUser, DbSession, require_role
 from tp_core.features.cases import model_service
@@ -28,23 +29,41 @@ router = APIRouter(tags=["design-model"])
 Analyst = Annotated[Principal, Depends(require_role("analyst"))]
 
 
+# Düzenlenen modelin JSON boyutu üst sınırı (karakter). Golden modeller ~20K; büyük gövde
+# doğrulama/hash/kayıt maliyetini şişirmesin (422).
+MODEL_ICERIK_SINIRI = 200_000
+
+
 class ModelKararGirdisi(BaseModel):
+    """Tasarım modeli kararı. Bilinmeyen alan reddedilir (422); ret nedenleri modele özgüdür
+    (`workflow.states.MODEL_RET_NEDENLERI`; case taksonomisinin kopyası değil)."""
+
+    model_config = ConfigDict(extra="forbid")
+
     karar: Literal["approve", "edit", "reject"]
     # Ekranda görülen modelin hash'i (edit'te düzeltme ÖNCESİ). Zorunlu.
-    icerik_hash: str | None = None
+    icerik_hash: str | None = Field(default=None, max_length=128)
     icerik: dict[str, Any] | None = None
     ret_nedeni: (
         Literal[
-            "hallucinated_step",
+            "wrong_technique",
+            "missing_condition",
+            "wrong_coverage_item",
+            "wrong_boundary",
+            "invented_rule",
             "missing_ac",
-            "wrong_test_data",
             "out_of_scope",
-            "duplicate",
-            "wrong_element",
         ]
         | None
     ) = None
     gerekce: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("icerik")
+    @classmethod
+    def _boyut(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
+        if v is not None and len(json.dumps(v, ensure_ascii=False)) > MODEL_ICERIK_SINIRI:
+            raise ValueError(f"model içeriği en fazla {MODEL_ICERIK_SINIRI} karakter olabilir")
+        return v
 
 
 @router.get("/requirements/{requirement_id}/design-model")
@@ -75,7 +94,9 @@ def regenerate_design_model(
 def decide_design_model(
     model_id: uuid.UUID, body: ModelKararGirdisi, session: DbSession, user: Analyst
 ) -> dict[str, Any]:
-    m = model_service.decide_model(
+    """Karar; onayda (approve | edit) tur 2 aynı işlemde başlar (011 K20): yanıt model
+    görünümüne ek `tur2_baslatildi`, `tur2` (iş bilgisi) ve `tur2_engeli` taşır."""
+    return model_service.decide_and_continue(
         session,
         model_id,
         user,
@@ -85,6 +106,3 @@ def decide_design_model(
         ret_nedeni=body.ret_nedeni,
         gerekce=body.gerekce,
     )
-    session.flush()
-    req = model_service.get_requirement(session, m.requirement_id)
-    return model_service.serialize_model(session, m, req)

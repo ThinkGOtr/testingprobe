@@ -160,11 +160,10 @@ def test_iki_tur_replay_uctan_uca(
     assert r.status_code == 200, r.text
     assert r.json()["durum"] == "approved" and r.json()["onaylanan_hash"] == m["icerik_hash"]
     assert r.json()["kararlar"][0]["karar"] == "approve"
-    assert _model(api, rid)["case_uretimi_hazir"] is True
-
-    r = api.post(f"/requirements/{rid}/generate-cases", json={"kip": "iki_tur"})
-    assert r.status_code == 202, r.text
-    assert r.json()["asama"] == "case" and r.json()["uretim_no"] == 1
+    # K20: onay tur 2'yi aynı işlemde başlatır (ayrı "Case üret" yok).
+    assert r.json()["tur2_baslatildi"] is True and r.json()["tur2_engeli"] is None
+    assert r.json()["tur2"]["asama"] == "case" and r.json()["tur2"]["uretim_no"] == 1
+    assert r.json()["tur2"]["job_id"] and r.json()["tur2"]["kip"] == "iki_tur"
     assert _durum(rid) == "generating"
     (is_,) = run_jobs(engine)
     assert is_.durum == "done", is_.hata
@@ -235,8 +234,11 @@ def test_tutarsiz_model_onaylanamaz_duzelt_ve_ret(
     r = _karar(api, m, "edit", icerik=m["icerik"])
     assert r.status_code == 422
     # Ret → yeniden üretim (model_ready → modeling) → yeni sürüm; eskisi superseded.
-    r = _karar(api, m, "reject", ret_nedeni="wrong_element", gerekce="bölüm geçerliliği yanlış")
+    r = _karar(
+        api, m, "reject", ret_nedeni="wrong_coverage_item", gerekce="bölüm geçerliliği yanlış"
+    )
     assert r.status_code == 200 and r.json()["durum"] == "rejected"
+    assert r.json()["tur2_baslatildi"] is False
     assert _durum(rid) == "model_ready"
     assert (
         api.post(f"/requirements/{rid}/generate-cases", json={"kip": "iki_tur"}).status_code == 409
@@ -275,10 +277,8 @@ def test_tur2_sapmasi_uyari_ve_denetim(
     login(api, make_user("analyst"))
     api.post(f"/requirements/{rid}/generate-cases", json={"kip": "iki_tur"})
     run_jobs(engine)
-    assert _karar(api, _model(api, rid)["model"], "approve").status_code == 200
-    assert (
-        api.post(f"/requirements/{rid}/generate-cases", json={"kip": "iki_tur"}).status_code == 202
-    )
+    r = _karar(api, _model(api, rid)["model"], "approve")
+    assert r.status_code == 200 and r.json()["tur2_baslatildi"] is True  # K20
     (is_,) = run_jobs(engine)
     assert is_.durum == "done" and _durum(rid) == "cases_ready"  # onay engeli değil
     assert is_.deger["tur2_farklari"]
@@ -299,6 +299,7 @@ def test_story_degisince_model_superseded(
     run_jobs(engine)
     m = _model(api, rid)["model"]
     assert _karar(api, m, "approve").status_code == 200
+    run_jobs(engine)  # K20: onaydan sonra tur 2 koşar (cases_ready)
     with session_scope() as s:
         req = s.get(Requirement, rid, with_for_update=True)
         sonuc = apply_content_change(

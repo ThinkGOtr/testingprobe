@@ -431,6 +431,7 @@ def generation_messages(
     secenekler: Mapping[str, Any] | None = None,
     onayli_model: Mapping[str, Any] | None = None,
     gorev: str | None = None,
+    korunan_kimlikler: Sequence[str] | None = None,
 ) -> list[ModelMessage]:
     """Case üretim girdisi: PO onaylı story + kabul kriterleri + PO cevapları (güvenilmeyen).
 
@@ -504,7 +505,41 @@ def generation_messages(
                 kind="text",
             ),
         ]
+    if korunan_kimlikler:
+        # Tam yeniden üretimde korunan (onaylı/yayınlı, IDE taslağı) case'lerin kimlikleri: yeni
+        # üretim aynı kimliği farklı tanımla kullanmasın (kapsam matrisi kimlikle birleşir).
+        from tp_core.features.cases.deepen import next_numbers
+
+        numaralar = next_numbers(korunan_kimlikler)
+        parcalar += [
+            "Korunan case'lerin kimlikleri (onaylı/yayınlı case'ler bu üretimden sonra da sette "
+            "kalır; bu kimlikleri FARKLI tanımla kullanma, aynı öğeyse aynı tanımla kullan): "
+            + ", ".join(korunan_kimlikler),
+            "Yeni kimlik numaraları: " + ", ".join(f"{a}: {n}" for a, n in numaralar.items()),
+        ]
     return [ModelMessage(role="user", content="\n\n".join(parcalar))]
+
+
+KORUNAN_DURUMLAR = ("approved", "published")
+
+
+def preserved_set(
+    session: Session, req: Requirement
+) -> tuple[list[TestCase], dict[str, Any], list[str]]:
+    """Yeniden üretimde KORUNACAK v3 case'ler (onaylı/yayınlı + karar bekleyen IDE taslağı),
+    onların birleşik özeti ve kimlikleri (kapsam öğesi, soru, varsayım, `covers`; sıralı)."""
+    from tp_core.features.cases import ozet as ozet_modulu
+    from tp_core.features.cases.deepen import existing_ids
+
+    korunan = [
+        tc
+        for tc in ozet_modulu.current_cases(session, req, include_legacy=False)
+        if tc.durum in KORUNAN_DURUMLAR or (tc.kanal == "ide" and tc.durum == "draft")
+    ]
+    if not korunan:
+        return [], normalize_ozet(None), []
+    birlesik = ozet_modulu.merged_summary(session, req, korunan)
+    return korunan, birlesik, existing_ids(birlesik, [tc.icerik for tc in korunan])
 
 
 def replay_key_for(req: Requirement) -> dict[str, str]:
@@ -529,36 +564,60 @@ def start_generation(
     requirement_id: uuid.UUID,
     user: Principal,
     *,
-    kip: str = "tek_tur",
+    kip: str | None = None,
     secenekler: Mapping[str, Any] | None = None,
+    varsayilan_kip: str = "tek_tur",
 ) -> dict[str, Any]:
     """`POST /requirements/{id}/generate-cases`: kapıdan geçir, iş akışını ve işi aç.
 
-    `kip="iki_tur"` (011 F3): gereksinim `model_ready` değilse tasarım modeli üretimi başlar
-    (`asama: "model"`); `model_ready` ise onaylı ve güncel modelden case üretimi (tur 2, `asama:
-    "case"`). `tek_tur` eski yoldur (gövdesiz çağrı).
+    Kip (011 K1, K20): `kip` verilmezse gereksinimde kayıtlı kip (`uretim_secenekleri.kip`),
+    kayıt yoksa `varsayilan_kip` (gövdesiz API çağrısı, prova ve IDE için `tek_tur`). Açıkça
+    verilen kip seçeneklerle birlikte saklanır.
+
+    `kip="iki_tur"` (011 F3): gereksinim `model_ready` ise onaylı ve güncel modelden case üretimi
+    (tur 2, `asama: "case"`). `failed` / `cases_ready` iken son model ONAYLI ve güncelse yine
+    doğrudan tur 2'ye gidilir (tur-2 hatası onaylı modeli çöpe atmaz; model yalnız açıkça
+    `POST /design-model` ile yeniden üretilir). Diğer durumlarda tasarım modeli üretimi başlar
+    (`asama: "model"`). `tek_tur` doğrudan case üretimidir.
 
     `secenekler` (011 K5) verilirse doğrulanır ve gereksinimde saklanır (iki turda model
-    aşamasında da; tur 2 aynı seçenekleri kullanır); verilmezse kayıtlı son seçenekler (yoksa
-    None = bugünkü davranış) kullanılır. İş yükünde (`yuk.secenekler`) taşınır.
+    üretimi başlamadan önce; model ve tur 2 aynı seçenekleri kullanır); verilmezse kayıtlı son
+    seçenekler (yoksa None = bugünkü davranış) kullanılır. İş yükünde (`yuk.secenekler`) taşınır.
+    Süren bir derinleştirme varsa 409.
     """
+    from tp_core.features.cases import deepen
     from tp_core.features.cases import secenekler as secenek_modulu
 
+    req = get_requirement(session, requirement_id, lock=True)
+    kayitli = secenek_modulu.kayitli(req.uretim_secenekleri)
+    acik_kip = kip is not None
+    if kip is None:
+        kip = (kayitli or {}).get("kip") or varsayilan_kip
     if kip not in KIPLER:
         raise InvalidDecision(f"geçersiz üretim kipi: {kip} (iki_tur | tek_tur)")
-    if secenekler is not None:
-        secenekler = secenek_modulu.dogrula(secenekler)
+    if secenekler is not None or acik_kip:
+        taban = dict(secenekler) if secenekler is not None else dict(kayitli or {})
+        secenekler = secenek_modulu.dogrula({**taban, "kip": kip})
+    if deepen.running(session, req.id):
+        raise deepen.DeepeningConflict(
+            "Bu gereksinimde süren bir derinleştirme var; bitmesini bekleyin"
+        )
     tasarim_modeli_id: uuid.UUID | None = None
     if kip == "iki_tur":
         from tp_core.features.cases import model_service
 
-        req = get_requirement(session, requirement_id, lock=True)
-        if req.durum != "model_ready":
-            sonuc = model_service.start_model_generation(session, requirement_id, user)
+        if req.durum == "model_ready":
+            tasarim_modeli_id = model_service.require_approved_model(session, req).id
+        elif (
+            req.durum in ("failed", "cases_ready")
+            and (onayli := model_service.usable_approved_model(session, req)) is not None
+        ):
+            tasarim_modeli_id = onayli.id
+        else:
             if secenekler is not None:
-                req.uretim_secenekleri = secenekler
+                req.uretim_secenekleri = secenekler  # model üretimi seçenekleri görür
+            sonuc = model_service.start_model_generation(session, requirement_id, user)
             return {**sonuc, "kip": kip}
-        tasarim_modeli_id = model_service.require_approved_model(session, req).id
     req = get_requirement(session, requirement_id, lock=True)
     _ajan_urunu_engeli(session, req.id)
     if req.durum == "generating":
@@ -909,12 +968,14 @@ def run_generation(
                 s, req, uuid.UUID(str(yuk["tasarim_modeli_id"]))
             )
         secenekler = yuk.get("secenekler")
+        _, korunan_ozet, korunan_kimlikler = preserved_set(s, req)
         messages = generation_messages(
             req,
             _onaylanan_sorular(s, req.id),
             test_verisi=testdata.block(),
             secenekler=secenekler,
             onayli_model=onayli_model,
+            korunan_kimlikler=korunan_kimlikler,
         )
         replay_key = replay_key_for(req)
         replay_key["name"] = secenek_modulu.replay_adi(replay_key["name"], secenekler)
@@ -1020,6 +1081,18 @@ def run_generation(
                 + "); düzeltilmeden onaylanamaz."
             )
         uyarilar += set_sorunlari
+        # Kimlik ad alanı: korunan case'lerin özetinde FARKLI tanımlı kimlik kapsam matrisinde
+        # yanlış öğeye bağlanır (model yeni numara kullanmadı; ör. REPLAY golden'ı).
+        from tp_core.features.cases.deepen import id_conflicts
+
+        kimlik_cakismalari = id_conflicts(ozet, korunan_ozet) if korunan_kimlikler else []
+        if kimlik_cakismalari:
+            uyarilar.append(
+                "Yeni üretim korunan case'lerin kimliklerini farklı tanımla kullandı ("
+                + "; ".join(kimlik_cakismalari[:5])
+                + "); kapsam matrisi son üretimin tanımını gösterir, korunan case'leri gözden "
+                "geçirin."
+            )
         # Tur 2 (011 F3): üst listeler onaylı modelinkine eşit olmalı; fark uyarı + denetim kaydı.
         tur2_farklari: list[str] = []
         if onayli_model is not None:
@@ -1071,6 +1144,7 @@ def run_generation(
                 "kip": yuk.get("kip") or "tek_tur",
                 "tasarim_modeli_id": yuk.get("tasarim_modeli_id"),
                 "tur2_farklari": tur2_farklari,
+                "kimlik_cakismalari": kimlik_cakismalari,
                 **cagri_eki,
             },
         )
@@ -1099,6 +1173,7 @@ def run_generation(
             "tutarsiz": {str(k): v for k, v in tutarsiz.items()},
             "set_sorunlari": set_sorunlari,
             "tur2_farklari": tur2_farklari,
+            "kimlik_cakismalari": kimlik_cakismalari,
             "uyarilar": uyarilar,
         }
 
@@ -1247,6 +1322,11 @@ def submit_drafts(
         else []
     )
     onceki_icerik, onceki_uyari = _old_content_warning(session, req)
+    # P8 review her üretimden sonra (011 K4) — IDE taslağı da seti değiştirir; tavsiye niteliğinde
+    # ayrı iş (aynı set için süren review varsa yeni iş açılmaz).
+    from tp_core.features.cases import review
+
+    review_id = review.schedule_review(session, req, uretim_no) if eklenen else None
     audit_on_commit(
         session,
         aktor,
@@ -1260,6 +1340,7 @@ def submit_drafts(
             "onceki_icerik_case_ids": onceki_icerik,
             "ozet_var": ozet is not None,
             "set_sorunlari": set_sorunlari,
+            "review_id": review_id,
             "readiness": _readiness_dagilimi([tc.icerik for tc in eklenen]),
         },
     )

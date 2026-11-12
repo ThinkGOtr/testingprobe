@@ -35,22 +35,31 @@ purposes:
     model: claude-sonnet-5-5
     max_tokens: 32000           # v3 çıktısı (kapsam öğeleri, test verisi, gerekçeler) v2'nin ~2 katı
     timeout_s: 600              # ~10K karakter Türkçe JSON + uyarlamalı düşünme: dakikalar sürebilir
+    max_timeout_retries: 0      # zaman aşımında geçit yeniden denemez; iş düzeyinde yeniden denenir
     params: { effort: medium }
   design_model:               # 011 F3 iki tur — tur 1: test tasarım modeli (case yazılmaz)
     model: claude-sonnet-5-5
     max_tokens: 16000           # koşullar + öğeler + ayrıntılı modeller; case çıktısının yaklaşık yarısı
     timeout_s: 420
+    max_timeout_retries: 0
     params: { effort: medium }
   # 011 D şeridi: case seti review'u (P8; tavsiye) ve Agent Probe denetimi (P9; yayın kapısı, K8).
+  # Uzun amaçlarda (case_generation, design_model, case_review, case_audit, case_deepening)
+  # `max_timeout_retries: 0`: zaman aşımını geçit değil iş kuyruğu yeniden dener. Geçit içi ikinci
+  # deneme iş süresini (`features/*/jobs.py` `zaman_asimi_s`) aşıyordu; iş süresi dolunca worker
+  # süreci çıkar ve diğer şeritlerdeki işler sahipsiz kalır. Kural (test_zaman_asimi_butcesi):
+  # iş `zaman_asimi_s` ≥ timeout_s × (1 + max_timeout_retries) + 120.
   case_review:
     model: claude-sonnet-5-5
     max_tokens: 16000           # 12 madde + eksik case önerileri; uyarlamalı düşünme payı dahil
     timeout_s: 300
+    max_timeout_retries: 0
     params: { effort: medium }
   case_audit:
     model: claude-opus-5-5
     max_tokens: 16000
     timeout_s: 600              # Opus, büyük set + review girdisi: dakikalar sürebilir
+    max_timeout_retries: 0
     # Opus 5.5'te düşünme kapatılamaz (thinking alanı gönderilmez, uyarlamalı); varsayılan çaba
     # `medium`'dur, denetim kapısı için açıkça `high`. Sunucu tarafı ret yedeği (`fallbacks:
     # default`) açık kalır: saldırı verisi içeren setler sınıflandırıcıya takılırsa sunucu başka
@@ -60,6 +69,7 @@ purposes:
     model: claude-sonnet-5-5
     max_tokens: 32000           # case_generation ile aynı çıktı yapısı (en çok 10 yeni case)
     timeout_s: 600
+    max_timeout_retries: 0
     params: { effort: medium }
   consistency_check:          # ajan: kod (GitHub MCP, salt okuma) + veri (db_query) araçları
     model: claude-sonnet-5-5

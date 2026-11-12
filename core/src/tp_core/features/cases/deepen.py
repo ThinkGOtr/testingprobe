@@ -278,6 +278,11 @@ def _calisan(session: Session, requirement_id: uuid.UUID) -> bool:
     return row is not None
 
 
+def running(session: Session, requirement_id: uuid.UUID) -> bool:
+    """Gereksinimde süren (etkin işli) derinleştirme var mı (üretim başlatma da denetler)."""
+    return _calisan(session, requirement_id)
+
+
 def start_deepening(
     session: Session,
     requirement_id: uuid.UUID,
