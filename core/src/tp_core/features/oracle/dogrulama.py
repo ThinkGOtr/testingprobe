@@ -743,6 +743,17 @@ def _eksik_ozeti(ayr: Mapping[str, Any]) -> str:
     return "; ".join(parcalar)
 
 
+def deger_metni(deger: Any) -> str:
+    """Özet cümlesinde tablo değeri: mantıksal `doğru`/`yanlış`, ondalık virgüllü (`25,00`).
+
+    Önceden Python `str()` yazılıyordu (`tablo True`, `tablo 25.00`); 422 metni ve portal
+    özeti kullanıcıya bu hâliyle görünüyordu (izole yığın ekran turu)."""
+    if isinstance(deger, bool):
+        return "doğru" if deger else "yanlış"
+    metin = str(deger)
+    return metin.replace(".", ",") if re.fullmatch(r"-?\d+\.\d+", metin) else metin
+
+
 def ozet(sonuc: str | None, ayrintilar: Mapping[str, Any] | None) -> str:
     """Portal çipinin yanındaki tek cümlelik Türkçe özet."""
     ayr = ayrintilar or {}
@@ -766,7 +777,7 @@ def ozet(sonuc: str | None, ayrintilar: Mapping[str, Any] | None) -> str:
         ilk = bozuk[0]
         return (
             f"{len(bozuk)} beklenen değer tabloyla uyuşmuyor; ör. {ilk['column']}: case "
-            f"{ilk['alinti']!r}, tablo {ilk['tablo_degeri']}.{ek}"
+            f"“{ilk['alinti']}”, tablo {deger_metni(ilk['tablo_degeri'])}.{ek}"
         )
     if sonuc == KONTROL_EDILEMEDI:
         nedenler = [g.get("neden") for g in ayr.get("gruplar") or [] if g.get("neden")]

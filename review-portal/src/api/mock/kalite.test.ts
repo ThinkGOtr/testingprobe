@@ -384,7 +384,7 @@ describe("beklenen sonuç kontrolü ve onay kapısı (§4.3)", () => {
     expect((await caseBul("case-1-4")).oracle?.sonuc).toBe("uyumlu");
     expect((await caseBul("case-1-9")).oracle?.sonuc).toBe("uyumlu");
     expect((await caseBul("case-1-7")).oracle?.ozet).toBe(
-      "3 beklenen değer tabloyla uyuşmuyor; ör. minimum_uyarisi: case 'uyarı gösterilmez', tablo True.",
+      "3 beklenen değer tabloyla uyuşmuyor; ör. minimum_uyarisi: case “uyarı gösterilmez”, tablo doğru.",
     );
     expect((await api.caseMetrikleri(REQ)).beklenti_dogrulugu).toMatchObject({ uyumlu: 6, uyumsuz: 1, oran: 6 / 7 });
   });

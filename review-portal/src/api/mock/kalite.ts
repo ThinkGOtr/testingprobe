@@ -617,16 +617,13 @@ function grupHesapla(icerik: TestCaseIcerik, t: TabloKaydi): Grup {
   };
 }
 
-/** u2 N3: özet cümlesinde alıntı Türkçe tırnakla (“…”), Python repr'i değil. */
-const tirnak = (x: string): string => `“${x}”`;
-/** u2 N3: tablo değeri Türkçe: mantıksal doğru/yanlış, sayı 1.234,56 (ondalık varsa iki hane). */
-export function degerTr(x: unknown): string {
-  if (x === true || x === "dogru" || x === "true") return "doğru";
-  if (x === false || x === "yanlis" || x === "false") return "yanlış";
-  const n = typeof x === "number" ? x : typeof x === "string" && /^-?\d+(\.\d+)?$/.test(x) ? Number(x) : null;
-  if (n === null) return String(x);
-  return Number.isInteger(n) ? n.toLocaleString("tr-TR") : n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+/** core `dogrulama.deger_metni`: mantıksal `doğru`/`yanlış`, ondalık virgüllü (`25,00`). */
+const degerMetni = (x: unknown): string => {
+  if (x === true) return "doğru";
+  if (x === false) return "yanlış";
+  const m = String(x);
+  return /^-?\d+\.\d+$/.test(m) ? m.replace(".", ",") : m;
+};
 
 /** core `dogrulama.ozet` karşılığı: portal çipinin yanındaki tek cümle (metinler çekirdekle aynı). */
 export function oracleOzeti(sonuc: OracleSonucu | null, gruplar: Grup[]): string {
@@ -638,7 +635,7 @@ export function oracleOzeti(sonuc: OracleSonucu | null, gruplar: Grup[]): string
   if (sonuc === "uyumsuz") {
     const bozuk = karsilastirmalar.filter((k) => !k.uyumlu);
     const ilk = bozuk[0];
-    return `${bozuk.length} beklenen değer tabloyla uyuşmuyor; ör. ${ilk.column}: case ${tirnak(ilk.alinti)}, tablo ${degerTr(ilk.tablo_degeri)}.${ek}`;
+    return `${bozuk.length} beklenen değer tabloyla uyuşmuyor; ör. ${ilk.column}: case “${ilk.alinti}”, tablo ${degerMetni(ilk.tablo_degeri)}.${ek}`;
   }
   if (sonuc === "kismen") {
     const degerlendirilemeyen = gruplar.filter((g) => g.durum === "cikarilamadi" || g.durum === "hata").length;
