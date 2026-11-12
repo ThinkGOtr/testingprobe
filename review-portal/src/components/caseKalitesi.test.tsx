@@ -94,7 +94,10 @@ describe("Case kalitesi bölümü", () => {
     sar(<CaseKalitesiBolumu />);
     const hedefler = await screen.findByTestId("case-kalitesi-hedefler");
     expect(hedefler).toHaveTextContent("Ekip hedefi, standart değil");
-    expect(hedefler).toHaveTextContent("Case seti review ortalaması: ≥ %80");
+    // B12: not yalnız başlıkta (maddelerde tekrarlanmaz); her maddede renksiz güncel değer.
+    const maddeler = within(hedefler).getAllByTestId("hedef-maddesi");
+    expect(maddeler[0]).toHaveTextContent(/^Case seti review ortalaması: hedef ≥ %80 · şu an (%[\d,]+|ölçülmedi)$/);
+    for (const m of maddeler) expect(m).not.toHaveTextContent("standart değil");
     // Eşik/kapı dili ve tutturdu/tutmadı işareti yok.
     expect(hedefler).not.toHaveTextContent(/hedef tuttu|hedefin altında|✓|✗/);
   });

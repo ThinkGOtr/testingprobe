@@ -13,14 +13,15 @@ import type { CaseKalitesi as Veri, CaseKalitesiKarar } from "../api/types";
 import { useGeciktirilmis, useVeri } from "../hooks";
 import { yuzde } from "../lib/format";
 import { CASE_HAZIRLIK } from "../lib/etiketler";
-import { DERINLESTIRME_TEKNIKLERI } from "../lib/uretimSecenekleri";
+import { TEKNIK_ADI } from "../lib/tasarimModeli";
 import { KaynakIpucu } from "./KaynakIpucu";
 import { HataKutusu, Metrik, Olculmedi, Uyari } from "./ui";
 
-/** Bu sayının altında oranlar yön göstermez; panelde not düşülür. */
-export const KUCUK_ORNEKLEM = 5;
+/** Bu sayının altında oranlar yön göstermez; panelde n ile birlikte not düşülür (B11). */
+export const KUCUK_ORNEKLEM = 20;
 
-const KARAR_ETIKETI: Record<CaseKalitesiKarar, string> = {
+/** K22 / B13: karar terimleri tek sözlükte — "Kabul", "Düzeltme gerekli", "Engelle" (kod ENGELLE). */
+export const KARAR_ETIKETI: Record<CaseKalitesiKarar, string> = {
   KABUL: "Kabul",
   DUZELTME_GEREKLI: "Düzeltme gerekli",
   ENGELLE: "Engelle",
@@ -35,10 +36,8 @@ const HAZIRLIK_SIRASI: { anahtar: keyof Veri["readiness"]; etiket: string }[] = 
   { anahtar: "legacy", etiket: "Eski biçim" },
 ];
 
-const TEKNIK_ADI: Record<string, string> = {
-  ...Object.fromEntries(DERINLESTIRME_TEKNIKLERI.map((t) => [t.kod, t.ad])),
-  CL: "Kontrol listesi",
-};
+/** B5: teknik adları tek kaynaktan (tasarım modeli sözlüğü; CL dahil). */
+const teknikAdi = (t: string): string | undefined => (TEKNIK_ADI as Record<string, string>)[t];
 
 /** 404/405/501: eski core'da uç yok; bölüm sessizce gizlenir. */
 function ucYok(e: unknown): boolean {
@@ -55,23 +54,27 @@ interface Cubuk {
 
 /**
  * Yatay dağılım çubukları: etiket | çubuk | "n (%pay)". Çubuk süs (aria-hidden), değer metin olarak okunur;
- * liste ekran okuyucuda satır satır gezilir. Çubuk boyu panel içindeki en büyük değere göre.
+ * liste ekran okuyucuda satır satır gezilir. Çubuk boyu panel içindeki en büyük değere göre; yan yana
+ * karşılaştırılan dağılımlar (P9 kod/model) ortak ölçek için `enBuyuk` verir (B9). Ek ad (ör. tekniğin
+ * tam adı) etiketin altına sarılır: dar ekranda değer kesilmez (B10).
  */
-export function DagilimCubuklari({ satirlar, etiket, testId }: { satirlar: Cubuk[]; etiket: string; testId?: string }) {
+export function DagilimCubuklari({ satirlar, etiket, testId, enBuyuk: ortak }: { satirlar: Cubuk[]; etiket: string; testId?: string; enBuyuk?: number }) {
   const toplam = satirlar.reduce((a, s) => a + s.n, 0);
-  const enBuyuk = Math.max(1, ...satirlar.map((s) => s.n));
+  const enBuyuk = Math.max(1, ortak ?? 0, ...satirlar.map((s) => s.n));
   return (
     <ul className="ck-dagilim" aria-label={etiket} data-testid={testId}>
       {satirlar.map((s) => (
         <li key={s.etiket} className="ck-dagilim-satir">
-          <span className="ck-dagilim-etiket">{s.etiket}</span>
+          <span className="ck-dagilim-etiket">
+            {s.etiket}
+            {s.ek && <span className="ck-dagilim-ek soluk"> · {s.ek}</span>}
+          </span>
           <span className="ck-dagilim-iz" aria-hidden="true">
             {s.n > 0 && <span className="ck-dagilim-cubuk" style={{ width: `${(s.n / enBuyuk) * 100}%` }} />}
           </span>
           <span className="ck-dagilim-deger">
             <strong>{s.n}</strong>
             {toplam > 0 && <span className="soluk"> ({yuzde(s.n / toplam)})</span>}
-            {s.ek && <span className="soluk"> · {s.ek}</span>}
           </span>
         </li>
       ))}
@@ -83,9 +86,21 @@ function KucukOrneklem({ n, birim }: { n: number; birim: string }) {
   if (n === 0 || n >= KUCUK_ORNEKLEM) return null;
   return (
     <p className="kucuk soluk ck-orneklem" data-testid="kucuk-orneklem">
-      Küçük örneklem ({n} {birim}): dağılım yön göstermez, karşılaştırma için erken.
+      n={n} {birim} · küçük örneklem: dağılım yön göstermez, karşılaştırma için erken.
     </p>
   );
+}
+
+/** B12: ekip hedefinin metriğinin güncel değeri (renksiz metin); bilinmeyen/ölçülmemiş metrik "ölçülmedi". */
+export function hedefGuncelDegeri(k: Veri, metrik: string | undefined): string | null {
+  if (!metrik) return null;
+  let d: unknown = k;
+  for (const p of metrik.split(".")) d = d && typeof d === "object" ? (d as Record<string, unknown>)[p] : undefined;
+  if (d === undefined) return null;
+  if (d === null || typeof d !== "number") return "ölçülmedi";
+  // review.ortalama yüzde (0–100); diğer oranlar 0–1.
+  if (metrik === "review.ortalama") return `%${d.toLocaleString("tr-TR", { maximumFractionDigits: 1 })}`;
+  return yuzde(d, 1);
 }
 
 function Panel({ baslik, kaynak, children, testId }: { baslik: string; kaynak?: string; children: ReactNode; testId?: string }) {
@@ -133,6 +148,8 @@ export function CaseKalitesiIcerik({ k, baslikId }: { k: Veri; baslikId: string 
   const teknikler = Object.entries(k.teknik).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   const ic = k.icerik_kontrolu;
   const caseToplam = HAZIRLIK_SIRASI.reduce((a, h) => a + k.readiness[h.anahtar], 0);
+  // B9: kod ve model kararı yan yana; iki dağılım ortak ölçekle çizilir.
+  const denetimOlcegi = Math.max(1, ...KARAR_SIRASI.flatMap((x) => [k.denetim.kod[x], k.denetim.model[x]]));
   return (
     <section className="kart case-kalitesi" aria-labelledby={baslikId} data-testid="case-kalitesi">
       <div className="kart-baslik">
@@ -229,6 +246,7 @@ export function CaseKalitesiIcerik({ k, baslikId }: { k: Veri; baslikId: string 
                 <DagilimCubuklari
                   etiket="Kod kararı dağılımı"
                   testId="denetim-kod"
+                  enBuyuk={denetimOlcegi}
                   satirlar={KARAR_SIRASI.map((x) => ({ etiket: KARAR_ETIKETI[x], n: k.denetim.kod[x] }))}
                 />
               </div>
@@ -237,6 +255,7 @@ export function CaseKalitesiIcerik({ k, baslikId }: { k: Veri; baslikId: string 
                 <DagilimCubuklari
                   etiket="Model kararı dağılımı"
                   testId="denetim-model"
+                  enBuyuk={denetimOlcegi}
                   satirlar={KARAR_SIRASI.map((x) => ({ etiket: KARAR_ETIKETI[x], n: k.denetim.model[x] }))}
                 />
               </div>
@@ -259,7 +278,7 @@ export function CaseKalitesiIcerik({ k, baslikId }: { k: Veri; baslikId: string 
             <p className="soluk kucuk">Teknik bilgisi olan case yok.</p>
           ) : (
             <>
-              <DagilimCubuklari etiket="Test tasarım tekniği dağılımı" satirlar={teknikler.map(([t, n]) => ({ etiket: t, n, ek: TEKNIK_ADI[t] }))} />
+              <DagilimCubuklari etiket="Test tasarım tekniği dağılımı" satirlar={teknikler.map(([t, n]) => ({ etiket: t, n, ek: teknikAdi(t) }))} />
               <p className="kucuk soluk">Bir case birden çok tekniğe sayılabilir.</p>
             </>
           )}
@@ -271,7 +290,7 @@ export function CaseKalitesiIcerik({ k, baslikId }: { k: Veri; baslikId: string 
           ) : (
             <>
               <p className="ck-ozet">
-                Engel oranı <strong data-testid="icerik-engel-orani">{oranMetni(ic.engel_orani) ?? <Olculmedi />}</strong>
+                Engelleme oranı <strong data-testid="icerik-engel-orani">{oranMetni(ic.engel_orani) ?? <Olculmedi />}</strong>
                 <span className="soluk"> · </span>
                 uyarı oranı <strong data-testid="icerik-uyari-orani">{oranMetni(ic.uyari_orani) ?? <Olculmedi />}</strong>
               </p>
@@ -280,7 +299,7 @@ export function CaseKalitesiIcerik({ k, baslikId }: { k: Veri; baslikId: string 
                 satirlar={[
                   { etiket: "Geçti", n: ic.gec },
                   { etiket: "Uyarı", n: ic.uyar },
-                  { etiket: "Engel", n: ic.engelle },
+                  { etiket: "Engelle", n: ic.engelle },
                 ]}
               />
               <p className="kucuk soluk">
@@ -306,12 +325,18 @@ export function CaseKalitesiIcerik({ k, baslikId }: { k: Veri; baslikId: string 
           </h3>
           <p className="kucuk soluk">Ekip hedefi, standart değil: eşik ya da kapı olarak uygulanmaz, değerler hedefe göre renklendirilmez.</p>
           <ul className="duz-liste kucuk">
-            {k.hedefler.map((h) => (
-              <li key={`${h.ad}-${h.metrik ?? ""}`}>
-                {h.ad}: <strong>{h.hedef}</strong>
-                {h.not && <span className="soluk"> ({h.not})</span>}
-              </li>
-            ))}
+            {k.hedefler.map((h) => {
+              const guncel = hedefGuncelDegeri(k, h.metrik);
+              // B12: "ekip hedefi, standart değil" başlık notunda; maddede tekrarlanmaz.
+              const not = h.not && !/standart değil/i.test(h.not) ? h.not : null;
+              return (
+                <li key={`${h.ad}-${h.metrik ?? ""}`} data-testid="hedef-maddesi">
+                  {h.ad}: hedef <strong>{h.hedef}</strong>
+                  {guncel !== null && <span> · şu an {guncel}</span>}
+                  {not && <span className="soluk"> ({not})</span>}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
@@ -348,7 +373,7 @@ function SurumTablosu({ k }: { k: Veri }) {
                 Düzeltme
               </th>
               <th scope="col" className="sayi">
-                Engel
+                Engelle
               </th>
               <th scope="col" className="sayi">
                 Tekrar
@@ -381,7 +406,7 @@ function SurumTablosu({ k }: { k: Veri }) {
           </tbody>
         </table>
       </div>
-      <p className="kucuk soluk">Kabul / Düzeltme / Engel: Agent Probe denetiminin kod kararı. “—”: ölçülmedi.</p>
+      <p className="kucuk soluk">Kabul / Düzeltme / Engelle: Agent Probe denetiminin kod kararı. “—”: ölçülmedi.</p>
     </div>
   );
 }

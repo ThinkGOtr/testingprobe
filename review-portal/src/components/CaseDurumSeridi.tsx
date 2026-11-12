@@ -1,12 +1,28 @@
 import { useCallback, type MouseEvent, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import type { CaseDenetimGorunumu, TestCase } from "../api/types";
-import { caseHazirlik } from "../lib/caseV3";
+import { acikSoruSayimi, caseHazirlik, type AcikSoruSayimi } from "../lib/caseV3";
 import { DENETIM_KARARI } from "./KalitePanelleri";
 
 /** Case review sayfasındaki bölüm kimlikleri (durum şeridi ve "göster" bağlantılarının hedefi). */
 export const CASE_KARARLARI_ID = "case-kararlari";
 export const DENETIM_ID = "denetim";
+/** Açık sorular ve PO yanıtları paneli (AcikSorularPaneli `Kart id`). */
+export const ACIK_SORULAR_ID = "acik-sorular";
+
+/**
+ * B8: durum şeridinin açık soru öğesi. Sıradaki eylemi öne alır: PO yanıtı geldiyse (düzelt), soru
+ * gönderilmediyse (gönder), yalnız yanıt bekleniyorsa (bekle). Soru yoksa ya da core alanı yoksa null.
+ */
+export function acikSoruSeritDurumu(s: AcikSoruSayimi | null): { metin: string; ton: SeritTonu } | null {
+  if (!s) return null;
+  const parcalar: string[] = [];
+  if (s.yanitlandi) parcalar.push(`${s.yanitlandi} PO yanıtı geldi`);
+  if (s.gonderilmedi) parcalar.push(`${s.gonderilmedi} soru PO'ya gönderilmedi`);
+  if (s.gonderildi) parcalar.push(`${s.gonderildi} PO yanıtı bekleniyor`);
+  if (!parcalar.length) return null;
+  return { metin: parcalar.join(" · "), ton: s.yanitlandi || s.gonderilmedi ? "uyari" : "notr" };
+}
 
 /**
  * Sayfa içi bölüme kaydırır ve odağı taşır (klavye/ekran okuyucu kullanıcısı bölümde kalır).
@@ -106,6 +122,7 @@ export function CaseDurumSeridi({
   const bekleyen = caseler.filter((c) => c.durum === "draft").length;
   const hazirDegil = caseler.filter(hazirDegilMi).length;
   const dn = denetimSeritDurumu(denetim);
+  const acik = acikSoruSeritDurumu(acikSoruSayimi(caseler));
   const yayinAcik = yayinAcikMi(denetim);
   const hazirDegilParam = new URLSearchParams(location.search);
   hazirDegilParam.set("filtre", "hazir-degil");
@@ -130,6 +147,13 @@ export function CaseDurumSeridi({
             {hazirDegil} hazır değil
           </Link>
         </li>
+        {acik && (
+          <li className={`durum-seridi-${acik.ton}`}>
+            <BolumBaglantisi hedef={ACIK_SORULAR_ID} testId="serit-acik-sorular">
+              {acik.metin}
+            </BolumBaglantisi>
+          </li>
+        )}
         {dn && (
           <li className={`durum-seridi-${dn.ton}`}>
             <BolumBaglantisi hedef={DENETIM_ID} testId="serit-denetim">

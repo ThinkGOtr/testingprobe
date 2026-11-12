@@ -1057,3 +1057,22 @@ test("Faz 5: analist TPD-1'e ölçülmüş baz değer girer → Kontrol Kulesi k
   await page.screenshot({ path: `${EKRAN_DIZINI}/56-mobil-yol-haritasi.png`, fullPage: true });
   expect(hatalar).toEqual([]);
 });
+
+test("v3 case review (req-ft-2) axe: ciddi ihlal yok; özellik listesi definition-list kuralına uyar (UX B4)", async ({ page }) => {
+  test.setTimeout(120_000);
+  await girisYap(page, "analist");
+  for (const genislik of [1440, 390]) {
+    await page.setViewportSize({ width: genislik, height: 900 });
+    await page.goto("/gereksinimler/req-ft-2/caseler");
+    await expect(page.getByTestId("case-v3").first()).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "Yükleniyor" })).toHaveCount(0);
+    await fontlariBekle(page);
+    const sonuc = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze();
+    const ciddi = sonuc.violations
+      .filter((x) => x.impact === "serious" || x.impact === "critical")
+      .map((v) => `${genislik}px ${v.id} → ${v.nodes.map((n) => n.target.join(" ")).slice(0, 3).join(", ")}`);
+    expect(ciddi).toEqual([]);
+    const liste = sonuc.violations.filter((x) => x.id === "definition-list" || x.id === "aria-allowed-role").map((v) => v.id);
+    expect(liste).toEqual([]);
+  }
+});

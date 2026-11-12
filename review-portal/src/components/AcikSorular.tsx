@@ -1,7 +1,7 @@
 // Açık soru döngüsü (specs/011 K16; D6): "Açık soruları PO'ya gönder" paneli, case kartındaki
 // soru durumu/yanıtı, düzeltme formunda yanıt metni ve "düzelt / yeniden üret" önerisi.
 // PO yanıtı Jira yorumundan gelen güvenilmeyen düz metindir: yalnız metin düğümü olarak yazılır.
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   ACIK_SORU_DURUMU,
   type AcikSoruKaydi,
@@ -10,7 +10,9 @@ import {
 import { api } from "../api/client";
 import { ApiError } from "../api/http";
 import type { AcikSoru, PoSoruDurumu, TestCase, Varsayim } from "../api/types";
+import { useKisiAdi } from "../auth";
 import { useIslem, useVeri } from "../hooks";
+import { dogrulamaNotu, storySiYok } from "../lib/caseV3";
 import { useBildirim } from "./Bildirim";
 import { CASE_HAZIRLIK, SORU_SAHIBI } from "../lib/etiketler";
 import { tarih } from "../lib/format";
@@ -51,31 +53,72 @@ export function PoYanitiMetni({
 }: {
   yanit: { metin: string; yazar: string | null; zaman: string | null };
 }) {
+  // B17: yazar görünen adıyla (kullanıcı adı eşlenemezse — Jira görünen adı — aynen).
+  const kisiAdi = useKisiAdi();
+  const ek = [yanit.yazar ? kisiAdi(yanit.yazar) : "", yanit.zaman ? tarih(yanit.zaman) : ""].filter(Boolean).join(", ");
   return (
     <blockquote className="po-yaniti" data-testid="po-yaniti">
       <span className="po-yaniti-metin">{yanit.metin}</span>
-      <span className="soluk kucuk">
+      <span className="soluk kucuk" data-testid="po-yaniti-kaynak">
         {" "}
-        — PO yanıtı{yanit.yazar ? ` (${yanit.yazar}` : ""}
-        {yanit.yazar && yanit.zaman
-          ? `, ${tarih(yanit.zaman)})`
-          : yanit.yazar
-            ? ")"
-            : yanit.zaman
-              ? ` (${tarih(yanit.zaman)})`
-              : ""}
+        — PO yanıtı{ek ? ` (${ek})` : ""}
       </span>
     </blockquote>
   );
 }
 
-/** Case kartındaki atıf satırının PO bölümü (alan yoksa — eski core — hiçbir şey çizilmez). */
-export function AtifPoDurumu({ kayit }: { kayit: PoSoruDurumu }) {
+/**
+ * B15 / B2: varsayım rozeti. Başka case'te doğrulandıysa "Doğrulandı (#2)"; PO'ya gönderilmemiş ve sahibi
+ * PO olmayan varsayımda "Doğrulanmadı" (PO rozeti yalnız gönderilince); diğer durumlarda PO durumu.
+ */
+export function VarsayimRozeti({
+  durum,
+  sahip,
+  dogrulama,
+}: {
+  durum: AcikSoruDurumu | undefined;
+  sahip: string;
+  dogrulama?: Varsayim["dogrulama"];
+}) {
+  const kisiAdi = useKisiAdi();
+  if (dogrulama) {
+    return (
+      <Cip ton="basari" title={dogrulamaNotu({ id: dogrulama.kimlik ?? "Varsayım", dogrulama }, kisiAdi) ?? undefined}>
+        <span data-testid="varsayim-dogrulandi">✓ Doğrulandı (#{dogrulama.sira_no})</span>
+      </Cip>
+    );
+  }
+  if (!durum) return null;
+  if (durum === "gonderilmedi" && sahip !== "PO") {
+    return (
+      <Cip ton="notr" title="Varsayım henüz doğrulanmadı. Doğrulamayı analist yapar; isterseniz PO'ya da gönderebilirsiniz.">
+        Doğrulanmadı
+      </Cip>
+    );
+  }
+  return <PoDurumRozeti durum={durum} />;
+}
+
+/**
+ * Case kartındaki atıf satırının PO bölümü (alan yoksa — eski core — hiçbir şey çizilmez). Kimlik (CQ1)
+ * satır başında yazılır (B7); rozet yalnız durumu söyler. Varsayımda `VarsayimRozeti` (B2/B15).
+ */
+export function AtifPoDurumu({ kayit, varsayim }: { kayit: PoSoruDurumu & { owner?: string; dogrulama?: Varsayim["dogrulama"] }; varsayim?: boolean }) {
+  if (varsayim) {
+    if (!kayit.po_durumu && !kayit.dogrulama) return null;
+    return (
+      <>
+        {" "}
+        <VarsayimRozeti durum={kayit.po_durumu} sahip={kayit.owner ?? ""} dogrulama={kayit.dogrulama} />
+        {kayit.po_yaniti && <PoYanitiMetni yanit={kayit.po_yaniti} />}
+      </>
+    );
+  }
   if (!kayit.po_durumu) return null;
   return (
     <>
       {" "}
-      <PoDurumRozeti durum={kayit.po_durumu} etiket={kayit.po_etiketi} />
+      <PoDurumRozeti durum={kayit.po_durumu} />
       {kayit.po_yaniti && <PoYanitiMetni yanit={kayit.po_yaniti} />}
     </>
   );
@@ -148,13 +191,17 @@ export function DuzeltmeKaynaklari({
   );
 }
 
-function SoruSatiri({ s }: { s: AcikSoruKaydi }) {
+function SoruSatiri({ s, dogrulama }: { s: AcikSoruKaydi; dogrulama?: Varsayim["dogrulama"] }) {
   return (
     <li className="acik-soru" data-testid="acik-soru-satiri">
       <div className="satir-ogeler">
-        <span className="mono ac-ref">{s.etiket ?? s.kaynak_id}</span>
+        <span className="mono ac-ref" title={s.etiket ? `Üretimdeki kimlik: ${s.kaynak_id}` : undefined}>
+          {s.etiket ?? s.kaynak_id}
+        </span>
+        {/* B7: gönderilen soru PO'nun gördüğü kimlikle anılır; üretimdeki kimlik yalnız ipucu. */}
+        {s.etiket && <span className="soluk kucuk">üretimdeki kimlik: {s.kaynak_id}</span>}
         <Cip ton="notr">{s.tur === "soru" ? "Açık soru" : "Varsayım"}</Cip>
-        <PoDurumRozeti durum={s.durum} />
+        {s.tur === "varsayim" ? <VarsayimRozeti durum={s.durum} sahip={s.sahip} dogrulama={dogrulama} /> : <PoDurumRozeti durum={s.durum} />}
         <span className="soluk kucuk">
           Sahibi: {SORU_SAHIBI[s.sahip] ?? s.sahip}
         </span>
@@ -189,12 +236,53 @@ function SoruSatiri({ s }: { s: AcikSoruKaydi }) {
 }
 
 /** CaseReview: güncel setin açık soruları, PO durumu ve "Açık soruları PO'ya gönder". */
+/** Panel sayacı ve gönder düğmesinin nedeni (B6): sorular ve varsayımlar ayrı sayılır. */
+export function panelSayimi(sorular: AcikSoruKaydi[], varsayimlarDahil: boolean, jiraEngeli: string | null) {
+  const say = (tur: "soru" | "varsayim") => {
+    const s = { gonderilmedi: 0, gonderildi: 0, yanitlandi: 0 };
+    for (const k of sorular) if (k.tur === tur) s[k.durum] += 1;
+    return s;
+  };
+  const soru = say("soru");
+  const varsayim = say("varsayim");
+  const varsayimVar = sorular.some((k) => k.tur === "varsayim");
+  const parca = (s: typeof soru, tam: boolean) =>
+    (
+      [
+        [s.gonderilmedi, "gönderilmedi"],
+        [s.gonderildi, "yanıt bekleniyor"],
+        [s.yanitlandi, "yanıtlandı"],
+      ] as const
+    )
+      .filter(([n]) => tam || n > 0)
+      .map(([n, e]) => `${n} ${e}`)
+      .join(" · ");
+  const metin = `Sorular: ${parca(soru, true)}${varsayimVar ? ` | Varsayımlar: ${parca(varsayim, false) || "—"}` : ""}`;
+  const gonderilecek = soru.gonderilmedi + (varsayimlarDahil ? varsayim.gonderilmedi : 0);
+  const neden = jiraEngeli
+    ? jiraEngeli
+    : gonderilecek > 0
+      ? undefined
+      : varsayim.gonderilmedi > 0
+        ? `Gönderilmemiş soru yok; ${varsayim.gonderilmedi} varsayım gönderilmedi. Göndermek için "Case'lerin dayandığı varsayımları da doğrulama için gönder" kutusunu işaretleyin.`
+        : "Gönderilmemiş soru ya da varsayım yok.";
+  return { metin, gonderilecek, neden };
+}
+
+const normal = (m: string) => m.split(/\s+/).filter(Boolean).join(" ").toLocaleLowerCase("tr");
+
 export function AcikSorularPaneli({
   requirementId,
   tazele,
+  caseler,
 }: {
   requirementId: string;
   tazele?: () => void;
+  /**
+   * Sayfanın case listesi: varsayımın başka case'te doğrulandığı bilgisi (B2) buradan okunur; case
+   * kartından yapılan gönderim/yanıt (PO durumu değişimi) paneli sessizce tazeler.
+   */
+  caseler?: TestCase[];
 }) {
   const durum = useVeri(
     () =>
@@ -210,6 +298,18 @@ export function AcikSorularPaneli({
   const [islem, setIslem] = useState<"gonder" | "oku" | null>(null);
   const [hata, setHata] = useState<string | null>(null);
   const id = useId();
+  // Case listesindeki PO durumları değişince (kartın "PO'ya gönder"i) panel sessizce yeniden okunur.
+  const imza = JSON.stringify((caseler ?? []).map((c) => [c.id, c.po_sorulari ?? null]));
+  const oncekiImza = useRef(imza);
+  const { yenile } = durum;
+  useEffect(() => {
+    if (oncekiImza.current === imza) return;
+    oncekiImza.current = imza;
+    void yenile(true);
+  }, [imza, yenile]);
+  // B2: varsayım metni → başka case'te doğrulama (core `varsayimlar[].dogrulama`).
+  const dogrulamalar = new Map<string, NonNullable<Varsayim["dogrulama"]>>();
+  for (const c of caseler ?? []) for (const a of c.varsayimlar ?? []) if (a.dogrulama && !dogrulamalar.has(normal(a.statement))) dogrulamalar.set(normal(a.statement), a.dogrulama);
 
   const calistir = async (tur: "gonder" | "oku") => {
     setIslem(tur);
@@ -233,17 +333,10 @@ export function AcikSorularPaneli({
   const varsayimVar = !!v?.sorular.some(
     (s) => s.tur === "varsayim" && s.durum === "gonderilmedi",
   );
-  const gonderilecek = v
-    ? v.sorular.filter(
-        (s) => s.durum === "gonderilmedi" && (varsayimlar || s.tur === "soru"),
-      ).length
-    : 0;
+  const sayim = panelSayimi(v?.sorular ?? [], varsayimlar, v && !v.jira_key ? (v.gonderim_engeli ?? "Gereksinimin Jira story'si yok.") : null);
   const bekleyenVar = !!v?.sorular.some((s) => s.durum === "gonderildi");
-  const gonderNedeni = !v?.jira_key
-    ? (v?.gonderim_engeli ?? undefined)
-    : gonderilecek === 0
-      ? "Gönderilmemiş açık soru yok."
-      : undefined;
+  // B14: dar ekranda iki düğmenin nedeni alt alta düşer; her neden hangi düğmeye ait olduğunu söyler.
+  const gonderNedeni = sayim.neden ? `Gönderim: ${sayim.neden}` : undefined;
 
   return (
     <Kart
@@ -269,7 +362,7 @@ export function AcikSorularPaneli({
               title={
                 bekleyenVar
                   ? "PO'nun story'ye yazdığı yanıtları şimdi oku"
-                  : "Yanıt bekleyen soru yok."
+                  : "Yanıt kontrolü: yanıt bekleyen soru yok."
               }
               onClick={() => void calistir("oku")}
             >
@@ -301,8 +394,7 @@ export function AcikSorularPaneli({
       {v && v.sorular.length > 0 && (
         <>
           <p className="soluk kucuk" data-testid="acik-soru-sayim">
-            {v.sayim.gonderilmedi} gönderilmedi · {v.sayim.gonderildi} PO yanıtı
-            bekleniyor · {v.sayim.yanitlandi} yanıtlandı
+            {sayim.metin}
           </p>
           {varsayimVar && (
             <label className="kucuk" htmlFor={`${id}-varsayim`}>
@@ -320,6 +412,7 @@ export function AcikSorularPaneli({
               <SoruSatiri
                 key={`${s.tur}-${s.kaynak_id}-${s.etiket ?? ""}`}
                 s={s}
+                dogrulama={s.tur === "varsayim" ? dogrulamalar.get(normal(s.metin)) : undefined}
               />
             ))}
           </ul>
@@ -342,10 +435,15 @@ export function PoyaGonderEylemi({ tc, tamamlandi }: { tc: TestCase; tamamlandi?
   const po = tc.po_sorulari;
   const gonderilmemis = sorular.filter((q) => !po || (po[q]?.po_durumu ?? "gonderilmedi") === "gonderilmedi");
   if (sorular.length === 0 || gonderilmemis.length === 0) return null;
+  // B1: story'si olmayan gereksinimde soru portaldan gönderilemez (core 409); düğme çizilmez, nedeni
+  // kutunun metninde ("yanıtı PO'dan alıp 'Düzelt' ile …").
+  if (storySiYok(tc)) return null;
   const gonder = async () => {
     const y = await islem.calistir(() => api.acikSorulariGonder(tc.requirement_id));
     if (y) {
-      bildir(`Açık sorular PO'ya gönderildi (${gonderilmemis.join(", ")}); yanıt gelince case'e bağlanır.`);
+      // B7: bildirimde PO'nun göreceği kimlik (CQ1).
+      const etiketler = gonderilmemis.map((q) => y.sorular?.find((s) => s.tur === "soru" && s.kaynak_id === q)?.etiket ?? q);
+      bildir(`Açık sorular PO'ya gönderildi (${etiketler.join(", ")}); yanıt gelince case'e bağlanır.`);
       tamamlandi?.();
     }
   };

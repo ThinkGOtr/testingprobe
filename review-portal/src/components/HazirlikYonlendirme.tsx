@@ -4,6 +4,7 @@
 import { useId, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import type { TestCase } from "../api/types";
+import { useKisiAdi } from "../auth";
 import { useIslem } from "../hooks";
 import { hazirlikYonlendirmesi } from "../lib/caseV3";
 import { useBildirim } from "./Bildirim";
@@ -14,6 +15,8 @@ export function HazirlikYonlendirme({
   guncellendi,
   yenile,
   poyaGonder,
+  duzelt,
+  varsayimDogrulandi,
 }: {
   tc: TestCase;
   /** Başarılı doğrulamadan dönen (onaylı) case. */
@@ -22,8 +25,16 @@ export function HazirlikYonlendirme({
   yenile?: () => void;
   /** D6: açık soruyu PO'ya gönderme eylemi (ve yanıt gösterimi) bu yuvaya verilir. */
   poyaGonder?: ReactNode;
+  /** B3: PO yanıtı geldiğinde birincil "Düzelt" düğmesi (kartın düzeltme kipini açar). */
+  duzelt?: () => void;
+  /**
+   * B2: doğrulama başarılı; aynı varsayıma dayanan diğer case'ler (iyimser) güncellensin. Verilmezse
+   * yalnız `guncellendi` + `yenile` (liste sessizce yeniden yüklenir).
+   */
+  varsayimDogrulandi?: (onceki: TestCase, yeni: TestCase, varsayimlar: string[]) => void;
 }) {
-  const y = hazirlikYonlendirmesi(tc);
+  const kisiAdi = useKisiAdi();
+  const y = hazirlikYonlendirmesi(tc, kisiAdi);
   const islem = useIslem();
   const bildir = useBildirim();
   const [onayAcik, setOnayAcik] = useState(false);
@@ -53,7 +64,10 @@ export function HazirlikYonlendirme({
     if (yeni) {
       setOnayAcik(false);
       bildir(`Case #${tc.sira_no} onaylandı: ${varsayimlar.join(", ")} ${cok ? "varsayımları" : "varsayımı"} doğrulandı.`);
-      guncellendi(yeni);
+      if (varsayimDogrulandi) varsayimDogrulandi(tc, yeni, varsayimlar);
+      else guncellendi(yeni);
+      // Aynı varsayıma dayanan diğer case'ler ve açık sorular paneli sunucudaki doğrulama bilgisini alır.
+      yenile?.();
     }
   }
 
@@ -65,6 +79,13 @@ export function HazirlikYonlendirme({
           {y.metin}
         </p>
         {y.tur === "soru" && poyaGonder}
+        {y.duzeltBirincil && duzelt && (
+          <div className="eylemler">
+            <IslemDugmesi roller={["analyst"]} kucuk onClick={duzelt} data-testid="yonlendirme-duzelt">
+              Düzelt
+            </IslemDugmesi>
+          </div>
+        )}
         {/* D6: "Açık soruları PO'ya gönder" (PoyaGonderEylemi, CaseListesi bağlar). */}
         {y.dogrulanacak.length > 0 && !onayAcik && (
           <div className="eylemler">

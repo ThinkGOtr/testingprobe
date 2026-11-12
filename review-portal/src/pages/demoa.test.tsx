@@ -168,6 +168,9 @@ describe("yayın", () => {
     const u = userEvent.setup();
     uygulama("/gereksinimler/req-tpd-1/yayin");
     expect(await screen.findByTestId("yayin-hedefi")).toHaveTextContent("Jira (Test issue) · proje TPD · http://127.0.0.1:8090");
+    // B16: hedefin kaynağı ortam değişkeni adıyla değil, "yönetici ayarı" diye anılır.
+    expect(screen.getByTestId("yayin-hedefi")).toHaveTextContent("hedef sunucu yönetici ayarından gelir");
+    expect(screen.getByTestId("yayin-hedefi")).not.toHaveTextContent(/TP_[A-Z_]+/);
     // Önizlemedeki mevcut anahtar jira-sim'e bağlanır.
     expect(screen.getByRole("link", { name: /TPD-9/ })).toHaveAttribute("href", "http://127.0.0.1:8090/browse/TPD-9");
     // case-1-4 (zaten onaylı) + case-1-7 (az önce onaylandı)

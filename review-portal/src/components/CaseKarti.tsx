@@ -18,7 +18,19 @@ import {
   type Varsayim,
 } from "../api/types";
 import { useIslem } from "../hooks";
-import { atiflariCoz, caseEski, caseHazirlik, eskiIcerik, hataListesi, hazirlikSorunlari, kimlikListesi } from "../lib/caseV3";
+import {
+  atiflariCoz,
+  caseEski,
+  caseHazirlik,
+  eskiIcerik,
+  hataListesi,
+  hazirlikSorunlari,
+  hazirlikYonlendirmesi,
+  kimlikListesi,
+  soruKimligi,
+  sorularYanitlandi,
+  TEKNIK_ONEK_IPUCU,
+} from "../lib/caseV3";
 import {
   CASE_DURUMU,
   CASE_HAZIRLIK,
@@ -90,6 +102,7 @@ export function CaseKarti({
   secim,
   uretimTuru,
   poyaGonder,
+  varsayimDogrulandi,
 }: {
   tc: TestCase;
   guncellendi: (t: TestCase) => void;
@@ -101,6 +114,8 @@ export function CaseKarti({
   uretimTuru?: string;
   /** D6: açık soruyu PO'ya gönderme eylemi; "Neden onaylanamıyor" kutusuna yerleşir. */
   poyaGonder?: ReactNode;
+  /** B2: "Varsayım doğrulandı" başarılı; liste aynı varsayıma dayanan case'leri iyimser günceller. */
+  varsayimDogrulandi?: (onceki: TestCase, yeni: TestCase, varsayimlar: string[]) => void;
 }) {
   const [mod, setMod] = useState<Mod>("goster");
   const islem = useIslem();
@@ -125,9 +140,13 @@ export function CaseKarti({
   const hazirlik = caseHazirlik(tc);
   // K6: hazır olmayan ya da tutarlılık ihlali olan case onaylanamaz. Core `onay_engeli` approve'un
   // vereceği 422 metninin aynısıdır: varsa o gösterilir. Alan yoksa (eski core) içerikten türetilir.
+  // B3: PO yanıtı geldiyse ipucu "açık soru bekliyor" demez; sıradaki eylemi söyler.
+  const poYanitladi = !eski && tc.durum === "draft" && sorularYanitlandi(tc);
   const onayEngeli = !verilebilir("approve")
     ? gecisYokNedeni("approve")
-    : tc.onay_engeli
+    : poYanitladi
+      ? "PO yanıtladı: önce 'Düzelt' ile beklenen sonucu yanıta göre yazın."
+      : tc.onay_engeli
       ? `${tc.onay_engeli}. "Düzelt" ile giderin ya da reddedin.`
       : tc.onay_engeli === undefined && hazirlik !== "ready"
         ? `Hazır değil (${CASE_HAZIRLIK[hazirlik].etiket}): "Düzelt" ile hazır yapın ya da reddedin.`
@@ -167,7 +186,16 @@ export function CaseKarti({
         </div>
         {tc.jira_test_key && <span className="mono">{tc.jira_test_key}</span>}
       </header>
-      {mod === "goster" && !kilitli && <HazirlikYonlendirme tc={tc} guncellendi={guncellendi} yenile={yenile} poyaGonder={poyaGonder} />}
+      {mod === "goster" && !kilitli && (
+        <HazirlikYonlendirme
+          tc={tc}
+          guncellendi={guncellendi}
+          yenile={yenile}
+          poyaGonder={poyaGonder}
+          duzelt={verilebilir("edit") ? () => setMod("duzenle") : undefined}
+          varsayimDogrulandi={varsayimDogrulandi}
+        />
+      )}
 
       {mod === "duzenle" ? (
         <>
@@ -175,6 +203,7 @@ export function CaseKarti({
           <DuzeltmeKaynaklari sorular={tc.acik_sorular} varsayimlar={tc.varsayimlar} />
           <CaseDuzenleyici
             ilk={tc.icerik}
+            soruEtiketleri={(tc.icerik.open_question_refs ?? []).filter((q) => soruKimligi(tc, q) !== q).map((q) => `${q} = ${soruKimligi(tc, q)}`)}
             calisiyor={islem.calisiyor}
             hata={islem.hata}
             hataKaynagi={islem.hataNesnesi}
@@ -196,7 +225,11 @@ export function CaseKarti({
           <h3 id={`${id}-baslik`} className="case-ad">
             {tc.icerik.title}
           </h3>
-          {eski ? <CaseOzellikleri tc={tc} uretimTuru={uretimTuru} /> : <CaseV3Ozeti tc={tc} hazirlik={hazirlik} uretimTuru={uretimTuru} />}
+          {eski ? (
+            <CaseOzellikleri tc={tc} uretimTuru={uretimTuru} />
+          ) : (
+            <CaseV3Ozeti tc={tc} hazirlik={hazirlik} uretimTuru={uretimTuru} yonlendirmeVar={!kilitli && hazirlikYonlendirmesi(tc) !== null} />
+          )}
           {tc.icerik.preconditions.length > 0 && (
             <p className="kucuk">
               <strong>Ön koşul:</strong> {tc.icerik.preconditions.join(" · ")}
@@ -234,7 +267,15 @@ export function CaseKarti({
           </div>
           <p>
             <strong>Beklenen sonuç:</strong>{" "}
-            {tc.icerik.expected_result || <span className="soluk">— (henüz yazılamıyor: açık soru yanıtlanmalı)</span>}
+            {tc.icerik.expected_result || (
+              <span className="soluk">
+                {poYanitladi
+                  ? "— (PO yanıtına göre yazılacak)"
+                  : (tc.icerik.open_question_refs?.length ?? 0) > 0
+                    ? "— (henüz yazılamıyor: açık soru yanıtlanmalı)"
+                    : "—"}
+              </span>
+            )}
           </p>
           {!eski && (tc.icerik.teardown?.length ?? 0) > 0 && (
             <div className="kucuk" data-testid="case-temizlik">
@@ -388,16 +429,34 @@ export function TeknikRozeti({ teknik, sade }: { teknik: string; /** Kart özell
   );
 }
 
-function AtifListesi({ kayitlar, metin }: { kayitlar: (AcikSoru | Varsayim | { id: string })[]; metin: (k: AcikSoru | Varsayim) => string }) {
+function AtifListesi({
+  kayitlar,
+  metin,
+  varsayim,
+}: {
+  kayitlar: (AcikSoru | Varsayim | { id: string })[];
+  metin: (k: AcikSoru | Varsayim) => string;
+  varsayim?: boolean;
+}) {
   return (
     <ul className="case-atif-listesi">
       {kayitlar.map((k) => (
         <li key={k.id}>
-          <span className="mono ac-ref">{k.id}</span>{" "}
+          {/* B7: PO'ya gönderilen soru PO'nun gördüğü kimlikle (CQ1); üretimdeki kimlik ipucunda. */}
+          {"po_etiketi" in k && k.po_etiketi && !varsayim ? (
+            <span className="mono ac-ref" title={`Üretimdeki kimlik: ${k.id}`} data-testid="atif-kimlik">
+              {k.po_etiketi}
+              <span className="gorunmez"> (üretimdeki kimlik: {k.id})</span>
+            </span>
+          ) : (
+            <span className="mono ac-ref" data-testid="atif-kimlik">
+              {k.id}
+            </span>
+          )}{" "}
           {"owner" in k ? (
             <>
               {metin(k)} <span className="soluk kucuk">· Sahibi: {SORU_SAHIBI[k.owner] ?? k.owner}</span>
-              <AtifPoDurumu kayit={k} />
+              <AtifPoDurumu kayit={k} varsayim={varsayim} />
             </>
           ) : (
             <span className="soluk">metni bu yanıtta yok (Kapsam ve açık noktalar paneline bakın)</span>
@@ -485,19 +544,32 @@ function CaseOzellikleri({ tc, uretimTuru, children }: { tc: TestCase; uretimTur
 }
 
 /** v3 blokları: özellikler (teknik, kapsam, doğrulama noktası …) ve atıf yapılan açık sorular / varsayımlar. */
-function CaseV3Ozeti({ tc, hazirlik, uretimTuru }: { tc: TestCase; hazirlik: CaseHazirlik; uretimTuru?: string }) {
+function CaseV3Ozeti({
+  tc,
+  hazirlik,
+  uretimTuru,
+  yonlendirmeVar,
+}: {
+  tc: TestCase;
+  hazirlik: CaseHazirlik;
+  uretimTuru?: string;
+  /** "Neden onaylanamıyor" kutusu çiziliyor: PO yanıtı önerisi onun metninde (B3: tek mesaj). */
+  yonlendirmeVar?: boolean;
+}) {
   const i = tc.icerik;
   const sorular = atiflariCoz(i.open_question_refs, tc.acik_sorular);
   const varsayimlar = atiflariCoz(i.assumption_refs, tc.varsayimlar);
   // K6: onaylı case hazırdır; eski kayıtta varsayım kaldıysa başlık yalnız bilgi verir.
   const taslak = tc.durum === "draft";
+  const yanitli = sorularYanitlandi(tc);
   return (
     <div className="case-v3" data-testid="case-v3">
       <CaseOzellikleri tc={tc} uretimTuru={uretimTuru}>
         {(i.technique?.length ?? 0) > 0 && (
           <div>
             <dt>Teknikler</dt>
-            <dd className="satir-ogeler" role="group" aria-label="Test tasarım teknikleri">
+            {/* B4: dd'de role/aria-label yok (definition-list kuralı); etiket işini dt görür. */}
+            <dd className="satir-ogeler">
               {i.technique!.map((t) => (
                 <TeknikRozeti key={t} teknik={t} sade />
               ))}
@@ -551,10 +623,13 @@ function CaseV3Ozeti({ tc, hazirlik, uretimTuru }: { tc: TestCase; hazirlik: Cas
           </div>
         )}
       </CaseOzellikleri>
-      <PoYanitOnerisi tc={tc} />
+      {!yonlendirmeVar && <PoYanitOnerisi tc={tc} />}
       {sorular.length > 0 && (
         <div data-testid="case-acik-sorular">
-          <Uyari baslik={hazirlik === "blocked" ? "Açık sorular (yanıtlanmadan bu case hazır olamaz)" : "Açık sorular"}>
+          <Uyari
+            ton={yanitli ? "bilgi" : undefined}
+            baslik={yanitli ? "Açık sorular ve PO yanıtı" : hazirlik === "blocked" ? "Açık sorular (yanıtlanmadan bu case hazır olamaz)" : "Açık sorular"}
+          >
             <AtifListesi kayitlar={sorular} metin={(k) => (k as AcikSoru).question} />
           </Uyari>
         </div>
@@ -562,7 +637,7 @@ function CaseV3Ozeti({ tc, hazirlik, uretimTuru }: { tc: TestCase; hazirlik: Cas
       {varsayimlar.length > 0 && (
         <div data-testid="case-varsayimlar">
           <Uyari ton="bilgi" baslik={taslak ? "Dayandığı varsayımlar (doğrulanmadan onaylanamaz)" : "Dayandığı varsayımlar"}>
-            <AtifListesi kayitlar={varsayimlar} metin={(k) => (k as Varsayim).statement} />
+            <AtifListesi kayitlar={varsayimlar} metin={(k) => (k as Varsayim).statement} varsayim />
           </Uyari>
         </div>
       )}
@@ -709,8 +784,11 @@ function CaseDuzenleyici({
   calisiyor,
   hata,
   hataKaynagi,
+  soruEtiketleri = [],
 }: {
   ilk: TestCaseIcerik;
+  /** B7: PO'ya gönderilen soruların üretim kimliği ↔ PO kimliği eşlemesi ("Q1 = CQ1"). */
+  soruEtiketleri?: string[];
   kaydet: (i: TestCaseIcerik, beklenenAnlamDegisti?: boolean) => void;
   vazgec: () => void;
   calisiyor: boolean;
@@ -941,8 +1019,7 @@ function CaseDuzenleyici({
               onChange={(e) => setKapsamMetni(e.target.value)}
             />
             <span id={`${id}-kapsam-ipucu`} className="soluk kucuk">
-              Virgülle ayırın. Kimlik öneki seçili teknikle uyumlu olmalı (EP → EP-, BVA → BV-, DT → DT-, ST → ST-, PW → PW-, UC → UC-, EG → EG-);
-              tanımsız öğe sunucuda reddedilir.
+              Virgülle ayırın. Kimlik öneki seçili teknikle uyumlu olmalı ({TEKNIK_ONEK_IPUCU}); tanımsız öğe sunucuda reddedilir.
             </span>
           </div>
           <fieldset className="alan" data-testid="hazirlik-alani">
@@ -969,7 +1046,19 @@ function CaseDuzenleyici({
               </div>
               <div className="alan">
                 <label htmlFor={`${id}-soru`}>Açık soru atıfları</label>
-                <input id={`${id}-soru`} className="mono" value={soruMetni} placeholder="Q1" onChange={(e) => setSoruMetni(e.target.value)} />
+                <input
+                  id={`${id}-soru`}
+                  className="mono"
+                  value={soruMetni}
+                  placeholder="Q1"
+                  aria-describedby={soruEtiketleri.length ? `${id}-soru-ipucu` : undefined}
+                  onChange={(e) => setSoruMetni(e.target.value)}
+                />
+                {soruEtiketleri.length > 0 && (
+                  <span id={`${id}-soru-ipucu`} className="soluk kucuk" data-testid="soru-kimlik-ipucu">
+                    Atıf üretimdeki kimlikle yazılır; PO'nun gördüğü kimlik: {soruEtiketleri.join(", ")}.
+                  </span>
+                )}
               </div>
             </div>
             <p id={`${id}-hazirlik-ipucu`} className="soluk kucuk">

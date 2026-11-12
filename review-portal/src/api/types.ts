@@ -414,6 +414,18 @@ export interface Varsayim extends PoSoruDurumu {
   id: string;
   statement: string;
   owner: string;
+  /** K20 (UX B2): aynı varsayım başka bir case'te "Varsayım doğrulandı" ile doğrulandı (core `varsayim_dogrulama`). */
+  dogrulama?: VarsayimDogrulamasi | null;
+}
+
+/** Varsayımın doğrulandığı case ve karar (bilgi amaçlı: bu case'i onaylamaz). */
+export interface VarsayimDogrulamasi {
+  case_id: string;
+  sira_no: number;
+  /** Doğrulayan case'teki kimlik (ör. A1). */
+  kimlik?: string;
+  kim: string | null;
+  zaman: string | null;
 }
 
 export type RetNedeni =

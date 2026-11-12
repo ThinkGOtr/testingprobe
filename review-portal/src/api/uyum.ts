@@ -485,7 +485,24 @@ function acikSoruUyarla(x: Ham, po?: unknown): AcikSoru {
 
 function varsayimUyarla(x: Ham, po?: unknown): Varsayim {
   const id = metin(x.id);
-  return { id, statement: metin(ilk(x, "statement", "varsayim", "metin")), owner: metin(ilk(x, "owner", "sahip")), ...poDurumu(po, id) };
+  const d = nesneMi(x.dogrulama) ? (x.dogrulama as Ham) : null;
+  return {
+    id,
+    statement: metin(ilk(x, "statement", "varsayim", "metin")),
+    owner: metin(ilk(x, "owner", "sahip")),
+    ...poDurumu(po, id),
+    ...(d && metin(d.case_id)
+      ? {
+          dogrulama: {
+            case_id: metin(d.case_id),
+            sira_no: typeof d.sira_no === "number" ? d.sira_no : Number(d.sira_no) || 0,
+            ...(d.kimlik !== undefined ? { kimlik: metin(d.kimlik) } : {}),
+            kim: metinYaDaNull(d.kim),
+            zaman: metinYaDaNull(d.zaman),
+          },
+        }
+      : {}),
+  };
 }
 
 function poYanitOnerisiUyarla(x: unknown): TestCase["po_yanit_onerisi"] {

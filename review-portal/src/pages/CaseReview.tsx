@@ -17,7 +17,7 @@ import { KapsamPaneli } from "../components/KapsamPaneli";
 import { Cip, IslemDugmesi, Kart, Metrik, ReplayRozeti, SayfaBasligi, Uyari } from "../components/ui";
 import { HedefOlcer } from "../components/Grafikler";
 import { useGeciktirilmis, useVeri } from "../hooks";
-import { caseEski } from "../lib/caseV3";
+import { caseEski, dogrulamayiYay } from "../lib/caseV3";
 import { dolar, sure, yuzde } from "../lib/format";
 import { YAYIN_ROLU_GEREKLI } from "./Yayin";
 
@@ -291,7 +291,7 @@ export function CaseReview() {
                 {baz.kaynak === "olcum"
                   ? `ölçüm${baz.giren ? ` · ${kisiAdi(baz.giren)}` : ""}${baz.not ? ` · ${baz.not}` : ""}`
                   : baz.kaynak === "varsayilan"
-                    ? "varsayılan (TP_MANUAL_BASELINE_S) — bu story için ölçülmedi, kazanca girmez"
+                    ? "varsayılan değer (yönetici ayarı) — bu story için ölçülmedi, kazanca girmez"
                     : "bu story için baz değer girilmedi"}
               </span>
             }
@@ -368,7 +368,7 @@ export function CaseReview() {
       )}
 
       {/* 011 K16: açık soruların PO'ya gönderimi ve yanıtları; gönderim/yanıt case listesini tazeler. */}
-      {caseler.veri && liste.length > 0 && <AcikSorularPaneli requirementId={id} tazele={() => void caseler.yenile(true)} />}
+      {caseler.veri && liste.length > 0 && <AcikSorularPaneli requirementId={id} tazele={() => void caseler.yenile(true)} caseler={liste} />}
 
       {review.veri !== null && caseler.veri && liste.length > 0 && (
         <ReviewPaneli
@@ -426,6 +426,14 @@ export function CaseReview() {
           void denetim.yenile(true);
         }}
         uretimler={kapsam.veri?.uretimler}
+        varsayimDogrulandi={(onceki, yeni, varsayimlar) => {
+          // B2: aynı varsayıma dayanan diğer case'ler ve panel hemen "doğrulandı (#n)" der; ardından
+          // liste sunucudan sessizce yenilenir (HazirlikYonlendirme `yenile`).
+          caseler.setVeri(dogrulamayiYay(liste, onceki, yeni, varsayimlar));
+          void kapsam.yenile(true);
+          void review.yenile(true);
+          void denetim.yenile(true);
+        }}
       />
     </>
   );

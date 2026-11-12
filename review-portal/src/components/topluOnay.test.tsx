@@ -39,6 +39,11 @@ async function v3Case(id: string): Promise<TestCase> {
 
 const ham = (id: string) => mockVerisi().caseler.find((c) => c.id === id)!;
 
+/** Örnek v3 gereksinimi serbest metindir (story yok); PO'ya gönderim Jira story'si ister. */
+function jiraStorysiVer(anahtar = "TPD-9") {
+  mockVerisi().gereksinimler.find((g) => g.id === V3_GEREKSINIM_ID)!.jira_key = anahtar;
+}
+
 /** Kart başlığından makaleyi bulur. */
 async function kart(baslik: string | RegExp) {
   return within((await screen.findByRole("heading", { name: baslik })).closest("article")!);
@@ -56,6 +61,7 @@ describe("sayıya Türkçe ek", () => {
 describe("Neden onaylanamıyor kutusu (UX-2)", () => {
   it("metinler: tek varsayım, çok varsayım, soru (+varsayım), tutarlılık; onaylı ve hazır case'te kutu yok", async () => {
     await oturumAc("analist");
+    jiraStorysiVer();
     const varsayim = await v3Case("case-v3-2");
     expect(hazirlikYonlendirmesi(varsayim)).toEqual({
       tur: "varsayim",
@@ -69,6 +75,7 @@ describe("Neden onaylanamıyor kutusu (UX-2)", () => {
       tur: "soru",
       metin: "Q1 PO'nun yanıtını bekliyor ve henüz gönderilmedi; 'Açık soruları PO'ya gönder' ile gönderin, yanıt gelince 'Düzelt' ile beklenen sonucu yazın.",
       dogrulanacak: [],
+      duzeltBirincil: false,
     });
     const ikisi = { ...soru, icerik: { ...soru.icerik, assumption_refs: ["A1"] } };
     const y = hazirlikYonlendirmesi(ikisi)!;
@@ -83,6 +90,7 @@ describe("Neden onaylanamıyor kutusu (UX-2)", () => {
 
   it("kartta: varsayımda 'Varsayım doğrulandı' düğmesi; soruda düğme yok ve D6 yuvası çizilir", async () => {
     await oturumAc("analist");
+    jiraStorysiVer();
     const { unmount } = sar(<CaseKarti tc={await v3Case("case-v3-2")} guncellendi={() => {}} />);
     const kutu = within(screen.getByTestId("hazirlik-yonlendirme"));
     expect(kutu.getByText("Neden onaylanamıyor, ne yapmalı?")).toBeInTheDocument();
@@ -280,7 +288,7 @@ describe("case kartı sadeliği (UX-12) ve derinleştirme rozeti (UX-5)", () => 
     const ozellik = within(screen.getByTestId("case-ozellikler"));
     expect(ozellik.getByText("Tür").nextElementSibling).toHaveTextContent("Sınır");
     expect(ozellik.queryByText("Risk")).not.toBeInTheDocument();
-    expect(ozellik.getByRole("group", { name: "Test tasarım teknikleri" })).toBeInTheDocument();
+    expect(ozellik.getByText("Teknikler").nextElementSibling).toHaveTextContent(/EP/);
     unmount();
 
     const eski = await v3Case("case-v3-1");
@@ -366,14 +374,20 @@ describe("örnek veri K6 tutarlılığı (UX-10)", () => {
 describe("D6: soru bekleyen case'te metin PO durumuna göre (K16)", () => {
   it("gönderilmedi / gönderildi / yanıtlandı ve D6 alanı yokken eski metin", async () => {
     await oturumAc("analist");
+    jiraStorysiVer();
     const soru = await v3Case("case-v3-3");
     const po = (d: "gonderilmedi" | "gonderildi" | "yanitlandi") => ({
       ...soru,
       po_sorulari: { Q1: { tur: "soru" as const, po_etiketi: "CQ1", po_durumu: d, po_yaniti: d === "yanitlandi" ? { metin: "Evet", yazar: "PO", zaman: null } : null } },
     });
     expect(hazirlikYonlendirmesi(po("gonderilmedi"))!.metin).toContain("'Açık soruları PO'ya gönder' ile gönderin");
-    expect(hazirlikYonlendirmesi(po("gonderildi"))!.metin).toBe("Q1 (CQ1) PO'ya gönderildi, yanıt bekleniyor; yanıt gelince 'Düzelt' ile beklenen sonucu yazın.");
-    expect(hazirlikYonlendirmesi(po("yanitlandi"))!.metin).toMatch(/^Q1 \(CQ1\) PO tarafından yanıtlandı; beklenen sonucu 'Düzelt' ile/);
+    // B7: gönderilen soru PO'nun gördüğü kimlikle (CQ1) anılır; "Q1 (CQ1)" karışıklığı yok.
+    expect(hazirlikYonlendirmesi(po("gonderildi"))!.metin).toBe("CQ1 PO'ya gönderildi, yanıt bekleniyor; yanıt gelince 'Düzelt' ile beklenen sonucu yazın.");
+    // B3: yanıt gelince tek mesaj ve sıradaki eylem "Düzelt" (birincil).
+    const yanit = hazirlikYonlendirmesi(po("yanitlandi"))!;
+    expect(yanit.metin).toBe("CQ1: PO yanıtladı. 'Düzelt' ile beklenen sonucu yanıta göre yazın (ya da case'i yeniden üretin).");
+    expect(yanit.duzeltBirincil).toBe(true);
+    expect(hazirlikYonlendirmesi(po("gonderildi"))!.duzeltBirincil).toBe(false);
     const { po_sorulari: _p, ...eski } = soru;
     expect(hazirlikYonlendirmesi(eski)!.metin).toBe("Q1 PO'nun yanıtını bekliyor. Henüz gönderilmediyse 'Açık soruları PO'ya gönder' ile gönderin; yanıt gelince 'Düzelt' ile beklenen sonucu yazın.");
   });
@@ -382,6 +396,7 @@ describe("D6: soru bekleyen case'te metin PO durumuna göre (K16)", () => {
 describe("D5 × D6: kutudaki 'Açık soruları PO'ya gönder' eylemi", () => {
   it("gönderilmemiş soruda düğme; tıklanınca gereksinimin soruları gönderilir ve liste yenilenir; gönderildiyse düğme yok", async () => {
     await oturumAc("analist");
+    jiraStorysiVer();
     const soru = (await api.caseler(V3_GEREKSINIM_ID)).find((c) => c.id === "case-v3-3")!;
     const spy = vi.spyOn(api, "acikSorulariGonder").mockResolvedValue({} as Awaited<ReturnType<typeof api.acikSorulariGonder>>);
     const yenile = vi.fn();

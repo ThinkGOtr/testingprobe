@@ -29,6 +29,7 @@ import type {
   SerbestMetinGirdisi,
   TestCase,
   TestCaseIcerik,
+  Varsayim,
   YayinOnizleme,
   YayinSonucu,
 } from "../types";
@@ -956,7 +957,8 @@ function varsayimDogrulandi(id: string, govde: unknown): TestCase {
   const kalan = [...refler.filter((x) => !istenen.includes(x)), ...(c.icerik.open_question_refs ?? [])];
   if (kalan.length) throw new ApiError(422, `Case'in başka varsayımı/sorusu var (${kalan.join(", ")}); önce onları çözün ya da 'Düzelt' kullanın`);
   const yeni: TestCaseIcerik = { ...c.icerik, readiness: "ready", assumption_refs: [] };
-  const sorunlar = tutarlilikSorunlari(yeni, birlesikOzet(veri.caseUretimleri?.[c.requirement_id]));
+  const ozet = birlesikOzet(veri.caseUretimleri?.[c.requirement_id]);
+  const sorunlar = tutarlilikSorunlari(yeni, ozet);
   if (sorunlar.length) throw new ApiError(422, `Varsayım doğrulansa da case hazır olamıyor — ${JSON.stringify(sorunlar)}`);
   const once = kanonikJson(c.icerik);
   c.icerik = yeni;
@@ -975,6 +977,11 @@ function varsayimDogrulandi(id: string, govde: unknown): TestCase {
   c.karar_zamani = simdi();
   c.review_sure_ms = c.goruntulenme ? Math.max(0, Date.parse(c.karar_zamani) - Date.parse(c.goruntulenme)) : null;
   denetimEkle("case.decision", c.id, `edit (varsayim_dogrulandi: ${istenen.join(", ")})`);
+  // core `varsayim_dogrulama`: aynı metinli varsayıma dayanan diğer case'lere `dogrulama` yansır.
+  (veri.varsayimDogrulamalari ??= {})[c.id] = istenen.flatMap((kimlik) => {
+    const a = ozet?.assumptions.find((x) => x.id === kimlik);
+    return a ? [{ kimlik, metin: a.statement, kim: k.kullanici_adi, zaman: c.karar_zamani! }] : [];
+  });
   const req = veri.gereksinimler.find((r) => r.id === c.requirement_id);
   if (req) gereksinimOlayi(req);
   else kaydet();
@@ -1012,8 +1019,25 @@ function caseCikti(c: TestCase): TestCase {
 
 /** v3 alanları + 011 K16 PO soru durumu (core `serialize_cases` + `acik_sorular.case_fields`). */
 function caseZengin(c: TestCase): TestCase {
-  const v3 = { ...c, ...caseV3Alanlari(c, veri.caseUretimleri?.[c.requirement_id]) };
-  return { ...v3, ...caseAcikSoruAlanlari(veri, v3) };
+  // core: case'in `jira_key`'i gereksinimin güncel story anahtarıdır.
+  const req = veri.gereksinimler.find((r) => r.id === c.requirement_id);
+  const v3 = { ...c, ...(req ? { jira_key: req.jira_key } : {}), ...caseV3Alanlari(c, veri.caseUretimleri?.[c.requirement_id]) };
+  return { ...v3, ...caseAcikSoruAlanlari(veri, v3), ...varsayimDogrulamaAlanlari(v3) };
+}
+
+/** core `varsayim_dogrulama.case_fields`: güncel setteki onaylı başka case'te doğrulanan varsayım. */
+function varsayimDogrulamaAlanlari(c: TestCase): Pick<TestCase, "varsayimlar"> | Record<string, never> {
+  if (!c.varsayimlar?.length || !veri.varsayimDogrulamalari) return {};
+  const normal = (m: string) => m.split(/\s+/).filter(Boolean).join(" ").toLocaleLowerCase("tr");
+  const harita = new Map<string, NonNullable<Varsayim["dogrulama"]>>();
+  for (const o of veri.caseler) {
+    if (o.requirement_id !== c.requirement_id || o.id === c.id || (o.durum !== "approved" && o.durum !== "published")) continue;
+    for (const d of veri.varsayimDogrulamalari[o.id] ?? []) {
+      if (!harita.has(normal(d.metin))) harita.set(normal(d.metin), { case_id: o.id, sira_no: o.sira_no, kimlik: d.kimlik, kim: d.kim, zaman: d.zaman });
+    }
+  }
+  if (!harita.size) return {};
+  return { varsayimlar: c.varsayimlar.map((a) => (harita.has(normal(a.statement)) ? { ...a, dogrulama: harita.get(normal(a.statement)) } : a)) };
 }
 
 const acikSoruBaglami: AcikSoruBaglami = {

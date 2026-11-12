@@ -5310,3 +5310,28 @@ td > .satir-baglanti + .cip,
 #case-kararlari[tabindex="-1"]:focus {
   outline: none;
 }
+
+/* B10: dar ekranda dağılım satırı iki satıra bölünür (etiket + değer üstte, çubuk altta); tekniğin tam
+   adı etiketin içinde sarılır, değer sütunu kesilmez. */
+.ck-dagilim-etiket {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 520px) {
+  .ck-dagilim-satir {
+    grid-template-columns: minmax(0, 1fr) max-content;
+    grid-template-areas:
+      "etiket deger"
+      "iz iz";
+    row-gap: 2px;
+  }
+  .ck-dagilim-etiket {
+    grid-area: etiket;
+  }
+  .ck-dagilim-iz {
+    grid-area: iz;
+  }
+  .ck-dagilim-deger {
+    grid-area: deger;
+  }
+}

@@ -18,7 +18,7 @@ export const BAZ_KAYNAGI: Record<BazKaynagi, { etiket: string; ton: Ton; aciklam
   varsayilan: {
     etiket: "Varsayılan",
     ton: "bilgi",
-    aciklama: "Ortam ayarı (TP_MANUAL_BASELINE_S); bu story için ölçülmedi. Kazanç hesabına girmez.",
+    aciklama: "Varsayılan değer (yönetici ayarı); bu story için ölçülmedi. Kazanç hesabına girmez.",
   },
   olculmedi: { etiket: "Ölçülmedi", ton: "notr", aciklama: "Baz değer yok; kazanç hesaplanmaz." },
 };

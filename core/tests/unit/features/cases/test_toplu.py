@@ -297,3 +297,30 @@ def test_varsayim_dogrulandi_eski_case_422(api: TestClient, cs) -> None:
     eski = next(c for c in latest_cases(api, rid) if c["uretim_no"] == 7)
     r = _dogrula(api, eski, varsayim_id="A1")
     assert r.status_code == 422 and r.json()["detail"] == "Eski biçimli case'te varsayım yok"
+
+
+def test_dogrulanan_varsayim_diger_caselere_yansir(api: TestClient, cs) -> None:
+    """UX B2: A1 #3'te doğrulanınca A1'e dayanan diğer case'lerin A1 kaydı `dogrulama` taşır;
+    case taslağa alınınca doğrulama bilgisi düşer. Diğer case'ler kendiliğinden onaylanmaz."""
+    rid, cases = cs
+    tek = cases[2]
+    assert _dogrula(api, tek, varsayim_id="A1").status_code == 200
+    guncel = {c["id"]: c for c in latest_cases(api, rid)}
+    for c in cases[3:]:
+        g = guncel[c["id"]]
+        a1 = next(v for v in g["varsayimlar"] if v["id"] == "A1")
+        assert a1["dogrulama"]["case_id"] == tek["id"]
+        assert a1["dogrulama"]["sira_no"] == tek["sira_no"]
+        assert a1["dogrulama"]["kimlik"] == "A1" and a1["dogrulama"]["kim"]
+        assert all("dogrulama" not in v for v in g["varsayimlar"] if v["id"] != "A1")
+        assert g["durum"] == "draft"
+    # Taslağa alınan case'in doğrulaması sayılmaz.
+    taze = api.get(f"/cases/{tek['id']}").json()
+    r = api.post(
+        f"/cases/{tek['id']}/decision",
+        json={"karar": "reopen", "icerik_hash": taze["icerik_hash"]},
+    )
+    assert r.status_code == 200, r.text
+    guncel = {c["id"]: c for c in latest_cases(api, rid)}
+    for c in cases[3:]:
+        assert all("dogrulama" not in v for v in guncel[c["id"]]["varsayimlar"])
