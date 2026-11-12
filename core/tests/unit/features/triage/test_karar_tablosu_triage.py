@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, select, text, update
 from sqlalchemy.orm import Session
 
 from tp_core.features.triage import classify_run, get_failure
@@ -30,6 +30,27 @@ from .conftest import KTest, kosu_kur
 pytestmark = pytest.mark.usefixtures("triage_env")
 
 DOSYA = "tests/generated/TPD-1-c3-abcd1234.spec.ts"
+# Üretilen testin kaynağı (şablon biçimi); `_failure` test_location satırı 14 = toplam doğrulaması.
+URETILEN_TEST = "\n".join(
+    [
+        "// AI-generated — AI Testing Probe (CasesToCode).",
+        'import { test } from "../fixtures";',
+        "",
+        'test.describe("TPD-1 · C3", () => {',
+        '  test("6 adet toplam", async ({ cartPage, catalogPage }) => {',
+        "    // S1 — Sepete 6 adet ekle",
+        '    await catalogPage.addToCart("P-001", 6);',
+        "    // S2 — Sepete git",
+        "    await catalogPage.openCart();",
+        "    // Beklenen sonuç (değerler onaylı case metninden)",
+        "    await catalogPage.expectCartCount(6);",
+        '    await cartPage.expectLineQuantity("P-001", 6);',
+        '    await cartPage.expectFreeQuantity("P-001", 0);',
+        '    await cartPage.expectTotal("125,00 TL");',
+        "  });",
+        "});",
+    ]
+)
 ARIA = """- main:
   - definition: "Toplam: 125,00 TL\""""
 TABLO_ICERIK: dict[str, Any] = {
@@ -41,7 +62,12 @@ TABLO_ICERIK: dict[str, Any] = {
 }
 
 
-def _failure(beklenen: str, gerceklesen: str) -> dict[str, Any]:
+ADIM_S2 = "S2 — Sepete git"
+
+
+def _failure(beklenen: str, gerceklesen: str, adim: str | None = ADIM_S2) -> dict[str, Any]:
+    """Playwright hata girdisi. `adim`: başarısız `test.step` başlığı (elle yazılmış testte case
+    adımı; None → adım yok, üretilen testin satırından bulunur)."""
     return {
         "type": "assertion",
         "message": "Error: expect(locator).toHaveText(expected) failed\n\n"
@@ -55,6 +81,7 @@ def _failure(beklenen: str, gerceklesen: str) -> dict[str, Any]:
         "test_location": {"file": DOSYA, "line": 14},
         "aria_snapshot": ARIA,
         "aria_snapshot_scope": "page",
+        "step": {"title": adim, "path": [adim]} if adim else None,
     }
 
 
@@ -78,7 +105,10 @@ def _kur(
     """Gereksinim + onaylı case + onaylı tablo + bu case içeriğinin oracle kontrol kaydı."""
     icerik = {
         "title": "6 adet kampanyalı üründe toplam",
-        "steps": [{"action": "Sepete 6 adet ekle", "expected": f"Toplam {case_degeri} TL"}],
+        "steps": [
+            {"id": "S1", "action": "Sepete 6 adet ekle", "expected": "Sepet sayacı 6 olur"},
+            {"id": "S2", "action": "Sepete git", "expected": f"Toplam {case_degeri} TL"},
+        ],
     }
     h = content_hash(icerik)
     with allow_state_write(), Session(engine) as s, s.begin():
@@ -129,7 +159,7 @@ def _kur(
                             "karsilastirmalar": [
                                 {
                                     "column": "toplam",
-                                    "alan": "steps[0].expected",
+                                    "alan": "steps[1].expected",
                                     "alinti": f"Toplam {case_degeri} TL",
                                     "case_degeri": case_degeri,
                                     "tablo_degeri": tablo_degeri,
@@ -147,7 +177,14 @@ def _kur(
         return Kurulum(req.id, tc.id, tablo.id, h)
 
 
-def _kosu(engine: Engine, kok: Path, k: Kurulum, beklenen: str, gerceklesen: str) -> uuid.UUID:
+def _kosu(
+    engine: Engine,
+    kok: Path,
+    k: Kurulum,
+    beklenen: str,
+    gerceklesen: str,
+    adim: str | None = ADIM_S2,
+) -> uuid.UUID:
     rid = kosu_kur(
         engine,
         kok,
@@ -156,7 +193,7 @@ def _kosu(engine: Engine, kok: Path, k: Kurulum, beklenen: str, gerceklesen: str
                 "TPD-1 C3 › 6 adet toplam",
                 file=DOSYA,
                 statuses=["unexpected"] * 2,
-                failure=_failure(beklenen, gerceklesen),
+                failure=_failure(beklenen, gerceklesen, adim),
             )
         ],
     )
@@ -217,6 +254,7 @@ def test_senaryo9_beklenti_tabloda_uygulama_farkli_product_defect_ve_bug_taslagi
     assert kodlar[-1] == "karar_tablosu_uyumlu"
     sinyal = f.eslesen_sinyaller[-1]
     assert "Kampanya toplamı" in sinyal["aciklama"]
+    assert sinyal["baslik"] == "Uygulama onaylı kurala aykırı (T1 · R1: adet 6 → toplam 150.00)"
     assert str(k.case) in sinyal["kanit"] and k.case_hash in sinyal["kanit"]
     # Bug taslağı bugünkü product_defect ile aynı biçimde istenir.
     assert sonuc["bug_taslagi_istenen"] == 1 and cagrilar == [f.id]
@@ -240,7 +278,7 @@ def test_senaryo10_beklenti_farkli_test_maintenance_beklenti_bug_taslagi_yok(
     assert ek.kural == "karar_tablosu" and ek.oneri is None
     assert f.gerekce == BEKLENTI_ONERISI
     assert ek.oneri_yok_nedeni and BEKLENTI_ONERISI in ek.oneri_yok_nedeni
-    assert _kodlar(f)[-1] == "karar_tablosu_beklenti_farkli"
+    assert _kodlar(f)[-2:] == ["karar_tablosu_beklenti_farkli", "karar_tablosu_tablo_suphesi"]
     assert sonuc["bug_taslagi_istenen"] == 0 and cagrilar == []
     with Session(engine) as s:
         d = get_failure(s, f.id)
@@ -289,7 +327,7 @@ def test_uretilen_test_script_codegen_bagi_ve_yayinlanmis_case(
     k = _kur(engine, case_degeri="125.00", case_durum="published")
     sid = uuid.uuid4()
     with Session(engine) as s, s.begin():
-        s.add(Script(id=sid, dosya_yolu=f"e2e/{DOSYA}"))
+        s.add(Script(id=sid, dosya_yolu=f"e2e/{DOSYA}", icerik=URETILEN_TEST))
         s.flush()
         s.add(
             ScriptCodegen(
@@ -305,11 +343,46 @@ def test_uretilen_test_script_codegen_bagi_ve_yayinlanmis_case(
         engine,
         artefakt_kok,
         script_id=sid,
-        testler=[KTest("TPD-1 C3", file=DOSYA, failure=_failure("125,00 TL", "150,00 TL"))],
+        testler=[
+            KTest("TPD-1 C3", file=DOSYA, failure=_failure("125,00 TL", "150,00 TL", adim=None))
+        ],
     )
     classify_run(engine, rid)
     f, _ek = _tek(engine, rid)
     assert (f.sinif, f.alt_tur) == ("test_maintenance", "beklenti")
+
+
+def test_uretilen_test_baska_icerikten_uretildiyse_adim_eslenmez(
+    engine: Engine, artefakt_kok: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Script başka bir case içeriğinden üretildiyse (`script_codegen.case_hash` ≠ onaylı hash)
+    satırı onaylı içeriğe eşlenmez → inceltme yok."""
+    _bugs_modulu(monkeypatch)
+    k = _kur(engine, case_degeri="125.00")
+    sid = uuid.uuid4()
+    with Session(engine) as s, s.begin():
+        s.add(Script(id=sid, dosya_yolu=f"e2e/{DOSYA}", icerik=URETILEN_TEST))
+        s.flush()
+        s.add(
+            ScriptCodegen(
+                script_id=sid,
+                test_case_id=k.case,
+                requirement_id=k.req,
+                case_hash="e" * 64,
+                story_key="TPD-1",
+                sira_no=3,
+            )
+        )
+    rid = kosu_kur(
+        engine,
+        artefakt_kok,
+        script_id=sid,
+        testler=[
+            KTest("TPD-1 C3", file=DOSYA, failure=_failure("125,00 TL", "150,00 TL", adim=None))
+        ],
+    )
+    classify_run(engine, rid)
+    _bugunku(engine, rid)
 
 
 # ----------------------------------------------------------------------------- kayıt seçimi
@@ -426,4 +499,103 @@ def test_oracle_sorgulari_kosu_basina_toplu(
         finally:
             event.remove(engine, "before_cursor_execute", say)
     assert set(harita) == {k.case, k2.case}
-    assert bir == iki <= 4
+    # case + kontrol + `oracle_istisna` varlığı (+ tablo varsa satırları) + tablo + gereksinim.
+    assert bir == iki <= 6
+
+
+# ----------------------------------------------------------------------------- istisna (K2)
+
+
+def test_senaryo10_istisna_ile_onaylanmissa_bugunku_davranis(
+    engine: Engine, artefakt_kok: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review K2: case 125 bekler, tablo 150, uygulama 150 — ama case içeriği tabloya rağmen
+    gerekçeli istisnayla onaylanmış ("case doğru, tablo güncellenecek"). Tablo bu case için
+    doğruluk kaynağı değildir: `test_maintenance/beklenti` DEĞİL, bugünkü `product_defect` + bug
+    taslağı (gerçek hata gizlenmez)."""
+    cagrilar = _bugs_modulu(monkeypatch)
+    k = _kur(engine, case_degeri="125.00", sonuc="uyumsuz")
+    with Session(engine) as s, s.begin():
+        kayit = s.scalars(
+            select(CaseOracleKontrol).where(CaseOracleKontrol.test_case_id == k.case)
+        ).one()
+        kayit.istisna_gerekce = "PO ile görüşüldü: case doğru, tablo güncellenecek."
+    rid = _kosu(engine, artefakt_kok, k, "125,00 TL", "150,00 TL")
+    sonuc = classify_run(engine, rid)
+    _bugunku(engine, rid)
+    f, _ek = _tek(engine, rid)
+    assert f.oneri_turu == "bug_draft" and cagrilar == [f.id]
+    assert sonuc["bug_taslagi_istenen"] == 1
+
+
+def test_oracle_istisna_tablosundaki_kayit_da_inceltmeyi_kapatir(
+    engine: Engine, db: Any, artefakt_kok: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R1'in append-only `oracle_istisna` tablosu (§13.2) varsa (case, hash) satırı da istisnadır.
+    Tablo bu dalda henüz yoksa test onu sözleşmedeki kolonlarla kurar."""
+    _bugs_modulu(monkeypatch)
+    k = _kur(engine, case_degeri="125.00", sonuc="uyumsuz")
+    sahip = db.engine("tp_owner")
+    try:
+        with sahip.begin() as c:
+            c.execute(
+                text(
+                    "CREATE TABLE IF NOT EXISTS oracle_istisna ("
+                    "id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "
+                    "test_case_id uuid NOT NULL, icerik_hash text NOT NULL, tur text NOT NULL, "
+                    "gerekce text NOT NULL, veren_id uuid, zaman timestamptz DEFAULT now())"
+                )
+            )
+            c.execute(text("GRANT SELECT ON oracle_istisna TO tp_app"))
+            c.execute(
+                text(
+                    "INSERT INTO oracle_istisna (test_case_id, icerik_hash, tur, gerekce) "
+                    "VALUES (:c, :h, 'uyumsuz', 'PO ile görüşüldü: case doğru, tablo yanlış.')"
+                ),
+                {"c": k.case, "h": k.case_hash},
+            )
+        # Başka hash'in istisnası bu içeriği etkilemez.
+        k2 = _kur(engine, case_degeri="125.00", sonuc="uyumsuz")
+        with sahip.begin() as c:
+            c.execute(
+                text(
+                    "INSERT INTO oracle_istisna (test_case_id, icerik_hash, tur, gerekce) "
+                    "VALUES (:c, :h, 'uyumsuz', 'Eski içerik için verilmiş istisna gerekçesi.')"
+                ),
+                {"c": k2.case, "h": "0" * 64},
+            )
+        rid = _kosu(engine, artefakt_kok, k, "125,00 TL", "150,00 TL")
+        classify_run(engine, rid)
+        _bugunku(engine, rid)
+        rid2 = _kosu(engine, artefakt_kok, k2, "125,00 TL", "150,00 TL")
+        classify_run(engine, rid2)
+        f2, _ = _tek(engine, rid2)
+        assert (f2.sinif, f2.alt_tur) == ("test_maintenance", "beklenti")
+    finally:
+        sahip.dispose()
+
+
+# ----------------------------------------------------------------------------- adım eşlemesi (O6)
+
+
+def test_karsilastirma_baska_adima_aitse_inceltme_yok(
+    engine: Engine, artefakt_kok: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review O6: kırmızı S1'de (sepete ekleme); karşılaştırma S2'nin (`steps[1].expected`).
+    Değerler tesadüfen eşleşse de tablo kullanılmaz."""
+    _bugs_modulu(monkeypatch)
+    k = _kur(engine, case_degeri="125.00")
+    rid = _kosu(engine, artefakt_kok, k, "125,00 TL", "150,00 TL", adim="S1 — Sepete 6 adet ekle")
+    classify_run(engine, rid)
+    _bugunku(engine, rid)
+
+
+def test_adim_belirlenemezse_inceltme_yok(
+    engine: Engine, artefakt_kok: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Adım başlığı yok, koşu üretilen bir teste bağlı değil: başarısız adım bilinmez."""
+    _bugs_modulu(monkeypatch)
+    k = _kur(engine, case_degeri="125.00")
+    rid = _kosu(engine, artefakt_kok, k, "125,00 TL", "150,00 TL", adim=None)
+    classify_run(engine, rid)
+    _bugunku(engine, rid)
