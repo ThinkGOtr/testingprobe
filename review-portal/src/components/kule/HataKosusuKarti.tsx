@@ -76,7 +76,12 @@ export function HataKosusuKarti({ olcuDegisti, olculenKosuId = null }: { olcuDeg
   // Tur 2: varsayılan, Kule KPI'ının ölçtüğü koşu (`hata_yakalama.son_kosu.id`); en yeni koşu (ör. tümü geçersiz
   // bir uygulama koşusu) geçmişten seçilebilir. Süren koşu varsa o gösterilir.
   const olculen = olculenKosuId && liste.veri?.some((k) => k.id === olculenKosuId) ? olculenKosuId : null;
-  const gosterilenId = secili ?? suren?.id ?? olculen ?? liste.veri?.[0]?.id ?? null;
+  // Bu oturumda izlenen (başlatılan ya da sürerken görülen) koşu bitince de gösterilmeye devam eder.
+  const [izlenen, setIzlenen] = useState<string | null>(null);
+  useEffect(() => {
+    if (suren?.id) setIzlenen(suren.id);
+  }, [suren?.id]);
+  const gosterilenId = secili ?? suren?.id ?? izlenen ?? olculen ?? liste.veri?.[0]?.id ?? null;
   const detay = useVeri(() => (gosterilenId ? hataKosusuApi.detay(gosterilenId) : Promise.resolve(null)), [gosterilenId]);
   // Süren koşunun adımları (ilerleme): gösterilen koşu o değilse ayrıca okunur.
   const surenDetay = useVeri(() => (suren && suren.id !== gosterilenId ? hataKosusuApi.detay(suren.id) : Promise.resolve(null)), [suren?.id, gosterilenId]);

@@ -351,3 +351,19 @@ describe("Q1 sözleşme ayrıntıları", () => {
     expect(uyari).toHaveTextContent(/^Satırlar örtüşüyor: R2 ve R3/);
   });
 });
+
+describe("u2 N17: yüzen asistan başlatıcısı", () => {
+  it("sayfa kaydırılınca yalnız ikona küçülür (ad aria-label'da kalır); tepede adıyla", async () => {
+    await oturumAc("analist");
+    uygulama(YOL);
+    const b = await screen.findByRole("button", { name: "Asistanı aç" });
+    expect(b).not.toHaveClass("kucuk");
+    Object.defineProperty(window, "scrollY", { value: 400, configurable: true });
+    window.dispatchEvent(new Event("scroll"));
+    await waitFor(() => expect(b).toHaveClass("kucuk"));
+    expect(b).toHaveAccessibleName("Asistanı aç");
+    Object.defineProperty(window, "scrollY", { value: 0, configurable: true });
+    window.dispatchEvent(new Event("scroll"));
+    await waitFor(() => expect(b).not.toHaveClass("kucuk"));
+  });
+});

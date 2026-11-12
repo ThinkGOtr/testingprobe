@@ -872,27 +872,21 @@ html:has(.asistan-bune-bindirme):has(.asistan-bune-ipucu) {
   }
 }
 
-/* u2 N17 (tur 2): 1440 px'te yüzen başlatıcı içeriğin sağ sütununu (T1 "Tolerans", case "Reddet") örtüyordu.
-   Masaüstünde (≥861 px) başlatıcı yalnız ikon (44 px daire; ad aria-label'da) ve içerik sağda ve altta
-   başlatıcı kadar boşluk bırakır: sağ kenardaki sütun ve sayfa sonundaki eylemler altında kalmaz. */
-@media (min-width: 861px) {
-  body:has(.asistan-baslatici-kap) .icerik {
-    padding-right: 76px;
-    padding-bottom: 96px;
-  }
-  .asistan-baslatici {
-    width: 44px;
-    min-height: 44px;
-    padding: 0;
-    justify-content: center;
-    border-radius: 50%;
-  }
-  .asistan-baslatici-metin {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-  }
+/* u2 N17 (tur 2): 1440 px'te geniş yüzen başlatıcı içeriğin sağ sütununu (T1 "Tolerans", case "Reddet") örtüyordu.
+   Sayfa kaydırılınca (AsistanPaneli `kucuk`) başlatıcı yalnız ikona (44 px daire; ad aria-label'da) küçülür; sayfa
+   tepesinde adıyla durur. İçerik yerleşimi değişmez (axe color-contrast tabanı korunur). */
+.asistan-baslatici.kucuk {
+  justify-content: center;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-radius: 50%;
+}
+.asistan-baslatici.kucuk .asistan-baslatici-metin {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
