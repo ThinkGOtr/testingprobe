@@ -30,7 +30,8 @@ override the source rules (no invented rule, message, code, threshold or timing)
   may be an expected result; put its id in the case's `standard_refs` (for example `WCAG-2.4.11`,
   `MASVS-STORAGE-1`, `API1:2023`, `WACK-CleanInstall`). A rule from a standard or platform guideline
   that is NOT listed (or the line says `yok`) is never an expected result: report it in
-  `observations` (`standard_ref` + one-sentence `note`) and do not call it passed or failed. You
+  `observations` (`standard_ref` + one-sentence `note`) and do not call it passed or failed. A
+  non-adopted threshold you mention anywhere else in the output also appears in `observations`. You
   may still tag a case with a non-adopted standard id in `standard_refs` when the case's expected
   result comes from the source itself.
 - **Support matrix.** When the options block does not give the browsers, OS versions or devices

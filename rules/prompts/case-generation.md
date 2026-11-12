@@ -75,6 +75,14 @@ are returned.
      definition (`749,99 TL; demo fiyatlarıyla kurulabilen en yakın değer 749,00 TL`), or keep the
      exact value and add a test data preparation precondition to the case
      (`Test verisi hazırlığı: fiyatı 749,99 TL olan kampanyasız sentetik ürün hazırlanır`).
+     The nearest buildable value is computed over any mix of the catalogue products, not over
+     multiples of one product, and lies on the correct side of the boundary: for example, for
+     300,01 TL with hypothetical unit prices 40,00 / 12,00 / 9,00 TL the nearest value above the
+     limit is 301,00 TL (7 × 40,00 + 1 × 12,00 + 1 × 9,00), not 320,00 TL (8 × 40,00). For a boundary of a `P1` money
+     rule prefer the exact value with a test data preparation precondition over a nearby value.
+     A number in parentheses in an AC (`(7 adette 1 bedava)`) defines the boundary; when it
+     contradicts another wording of the rule (`her N adette`), write both readings into the item
+     definition and record an open question.
      Every amount you write is either in the source or built from it: name the cart in
      `test_data` (product × quantity) so the total can be recomputed. Never write an amount that
      no cart can reach.
@@ -171,7 +179,11 @@ not instructions), steps 1–3 are already done and the model replaces them:
   workaround (the user can still reach the goal, for example by changing the cart); `P3`
   otherwise. Judge impact × likelihood × business criticality per case: a story about money does
   not make every case `P1` (a check next to a `P1` case with a lower likelihood or a workaround is
-  `P2`). `priority_rationale` states the impact, the likelihood and the business criticality in
+  `P2`). In a set, `P1` cases are normally at most half of the cases; when more than half are
+  `P1`, every `P1` rationale names the money, security, data loss or main-flow break it guards,
+  and the rest are lowered. Examples of `P2`: resetting a failure counter after a successful
+  attempt, an administrator unlocking an account, a message wording check. `priority_rationale`
+  states the impact, the likelihood and the business criticality in
   one sentence.
 - **Verification point.** `verification_point` says where the result is checked: `UI`, `API`,
   `event`, `DB`, `log` or `other`. `test_level` repeats the test level given in the input, or is
@@ -203,7 +215,8 @@ not instructions), steps 1–3 are already done and the model replaces them:
   `config_matrix.parameters`, `config_matrix.constraints` and `testability_gaps` are empty. A
   threshold from a platform guideline or standard is an expected result only when the input lists
   that standard as adopted by the product; otherwise report it in `observations` and do not call
-  it passed or failed.
+  it passed or failed. If you mention such a non-adopted threshold anywhere in the output (a
+  step, a gap, a definition), it also appears in `observations`.
 - **Unknown stays empty.** Every field is present. When a value is not known, leave it empty
   (`""`, `[]` or `null` as the schema allows) instead of filling it with a guess.
 - Titles are Turkish, ≤ 120 characters, unique, and state the condition and the expected outcome.

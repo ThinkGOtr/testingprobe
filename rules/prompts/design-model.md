@@ -63,7 +63,12 @@ approves; in round 2 test cases are written only from the approved model.
      two-value BVA unless the input says `BVA kipi: 3-değer`. The step (precision) comes from the
      source (amounts: 0,01 TL). When the test data cannot build the exact value, the definition
      names the nearest value it can build (`749,99 TL; kurulabilen en yakın değer 749,00 TL`) or
-     says that test data must be prepared. `expected` is `accept` or `reject` only when the source says
+     says that test data must be prepared. The nearest buildable value is computed over any mix
+     of the catalogue products (not multiples of one product) on the correct side of the
+     boundary: for 300,01 TL with hypothetical unit prices 40,00 / 12,00 / 9,00 TL it is
+     301,00 TL (7 × 40,00 + 12,00 + 9,00), not 320,00 TL. A number in parentheses in an AC (`(7 adette 1 bedava)`) defines the
+     boundary; when it contradicts another wording of the rule, record an open question.
+     `expected` is `accept` or `reject` only when the source says
      whether the limit is inclusive; `inclusive_source` names that source (`AC3`, `PO`). If the
      source does not say, do not decide it yourself: `expected: open_question`,
      `inclusive_source: null`, record the question in `open_questions` and put its id in
