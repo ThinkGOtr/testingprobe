@@ -288,15 +288,28 @@ def test_replay_golden_tpd1(
     for t in (kampanya, minimum):
         assert ifade.gonderim_hatalari(t.icerik) == []  # PO'ya gönderilebilir
 
-    def bedava(adet: int) -> dict[str, Any]:
+    def kampanya_ciktisi(adet: int, ara_toplam: str) -> dict[str, Any]:
         return ifade.degerlendir(
-            kampanya.icerik, {"adet": adet, "birim_fiyat": "25,00 TL"}
+            kampanya.icerik, {"adet": adet, "ara_toplam": ara_toplam}
         ).as_dict()["ciktilar"]
 
-    # Story: 7 adette 1 bedava (6 öde + 1 bedava). Kod `// 6` uygular; tablo story'yi izler.
-    assert bedava(6) == {"bedava_adet": "0", "indirim": "0"}
-    assert bedava(7) == {"bedava_adet": "1", "indirim": "25.00"}
-    assert bedava(14) == {"bedava_adet": "2", "indirim": "50.00"}
+    # Story: 7 adette 1 bedava (6 öde + 1 bedava), birim fiyat 25,00 TL. Kod `// 6` uygular;
+    # tablo story'yi izler (review V9: girdi ara toplam, çıktılar bedava adet/indirim/toplam).
+    assert kampanya_ciktisi(6, "150,00 TL") == {
+        "bedava_adet": "0",
+        "indirim": "0",
+        "toplam": "150.00",
+    }
+    assert kampanya_ciktisi(7, "175,00 TL") == {
+        "bedava_adet": "1",
+        "indirim": "25.00",
+        "toplam": "150.00",
+    }
+    assert kampanya_ciktisi(14, "350,00 TL") == {
+        "bedava_adet": "2",
+        "indirim": "50.00",
+        "toplam": "300.00",
+    }
 
     def uyari(kampanyali: bool, tutar: str) -> Any:
         girdi = {"kampanyali_sepet": kampanyali, "sepet_tutari": tutar}
@@ -309,8 +322,13 @@ def test_replay_golden_tpd1(
 
     (iliski,) = _nesneler(rid, MetamorfikIliski)
     assert iliski.karar_tablosu_id == kampanya.id and iliski.icerik["tablo_ref"] == "T1"
-    sonuc_ = ifade.iliski_uygula(iliski.icerik, {"adet": 7}, {"bedava_adet": 1, "indirim": 25})
+    sonuc_ = ifade.iliski_uygula(
+        iliski.icerik,
+        {"adet": 7, "ara_toplam": 175},
+        {"bedava_adet": 1, "indirim": 25, "toplam": 150},
+    )
     assert sonuc_.gecerli and sonuc_.girdiler["adet"] == 14 and sonuc_.ciktilar["bedava_adet"] == 2
+    assert sonuc_.ciktilar["indirim"] == 50 and sonuc_.ciktilar["toplam"] == 300
     assert "AC3" in ozet["notes"]
 
 

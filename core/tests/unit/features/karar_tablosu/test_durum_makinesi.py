@@ -127,6 +127,8 @@ def test_hata_siniflari() -> None:
     beklenen = {
         hatalar.OracleUyumsuz: (422, "oracle_uyumsuz"),
         hatalar.OracleBekleniyor: (409, "oracle_bekleniyor"),
+        hatalar.OracleKontrolsuz: (422, "oracle_kontrolsuz"),
+        hatalar.OracleKontrolSiniri: (429, "oracle_kontrol_siniri"),
         hatalar.KararTablosuGecersiz: (422, "karar_tablosu_gecersiz"),
         hatalar.HataKosusuSuruyor: (409, "hata_kosusu_suruyor"),
         hatalar.IliskiGecersiz: (422, "iliski_gecersiz"),

@@ -59,12 +59,18 @@ TABLO: dict[str, Any] = {
         {"id": "R2", "kosul": "dogru", "cikti": {"bedava_adet": "0"}},
     ],
 }
-# Dikkatli bir modelin C3'ten çıkaracağı olgular (alıntılar case alanlarından birebir).
+# Dikkatli bir modelin C3'ten çıkaracağı olgular (alıntılar case alanlarından birebir; beklenen
+# alanlardaki her sayı bir olguda ya da `ignored`'da alıntılanır, yoksa sonuç `kismen` olur).
 OLGULAR = {
     "groups": [
         {
             "table_ref": "T1",
-            "inputs": [{"column": "adet", "value": "6", "field": "steps[2].data", "quote": "6"}],
+            "inputs": [
+                {"column": "adet", "value": "6", "field": "steps[2].data", "quote": "6"},
+                {"column": "adet", "value": "6", "field": "steps[2].expected", "quote": "6"},
+                {"column": "adet", "value": "6", "field": "steps[3].expected", "quote": "adet 6"},
+                {"column": "adet", "value": "6", "field": "expected_result", "quote": "6 adette"},
+            ],
             "expected": [
                 {
                     "column": "bedava_adet",
@@ -80,7 +86,25 @@ OLGULAR = {
                 },
             ],
         }
-    ]
+    ],
+    # Beklenen alanlardaki tablonun kolonu olmayan sayılar (tamlık denetimi; şema zorunlu kılar).
+    "ignored": [
+        {
+            "field": "steps[3].expected",
+            "quote": "ara toplam 150,00 TL, indirim 0,00 TL, toplam 150,00 TL",
+            "reason": "tutarlar bu tablonun kolonu değil",
+        },
+        {
+            "field": "expected_result",
+            "quote": "bedava 7. adette başlar",
+            "reason": "kampanya eşiği; kural metni, kolon değeri değil",
+        },
+        {
+            "field": "expected_result",
+            "quote": "indirim 0,00 TL, toplam 150,00 TL",
+            "reason": "tutarlar bu tablonun kolonu değil",
+        },
+    ],
 }
 
 
