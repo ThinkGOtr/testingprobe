@@ -335,20 +335,33 @@ hata yakalıyor mu?" diye sorduğunda ya da kalite odaklı ikinci oturumda oynan
 değerler: [DEMO-VERISI.md](DEMO-VERISI.md) "Test kalite doğrulama (012)"; adım adım doğrulama:
 [DEGISIKLIK-TEST-REHBERI.md](DEGISIKLIK-TEST-REHBERI.md) §8; tasarım:
 `specs/012-test-kalite-dogrulama/ANALIZ.md`. Özellik henüz dev'de değildir (özellik dalı
-`feat/test-kalite-dogrulama`); bu akış review turu 2 düzeltmeleri (Kule beklenti doğruluğunun
-gerçek veriden hesaplanması, T2 AI sınır hatası golden'ı, üretilmiş test notu) birleşince birebir
-geçerlidir.
+`feat/test-kalite-dogrulama`); akış review turu 2 birleştirmesinden sonra izole yığında (tp-kalite,
+2026-11-13) gerçek API ve portalla uçtan uca yürütüldü.
 
 **Hazırlık (provada, sahnede değil):**
 - Demo-A tamamlanmış (TPD-1 `f2-kod-hatasi` yolu, case'ler üretilmiş). Karar tabloları: T1 ve
   ilişki PO onaylı; **T2 AI taslağı (`<= 750`) PO onayına gönderilmiş ama onaylanmamış** (adım 2
   canlı yapılır).
 - AI'ın sınır hatası yaptığı C6 varyantı (`ai-sinir-hatasi`) IDE kanalından taslak olarak
-  gönderilmiş (Claude Code, `submit_drafts`; portal case üretimi bu case'i üretmez). Hazır betik
-  yok; prova sırasında elle.
+  gönderilmiş (Claude Code, MCP `submit_draft_cases`; portal case üretimi bu case'i üretmez). Hazır
+  betik yok; prova sırasında elle. **Sıra önemli:** gönderim listesi ana yolun C1–C5'ini aynen ve
+  varyantı 6. sırada taşımalı (C1–C5 tekrar olarak atlanır, `tekrar_sira: [1..5]`; varyant
+  `sira_no` 6 alır ve golden anahtarı `TPD-1-C6` olur). Varyant tek başına gönderilirse `sira_no` 1
+  olur, golden eşleşmez (REPLAY-MISS) ve çip "Kontrol edilemedi" görünür. Gönderim yeni bir üretim
+  (`uretim_no` 2) açar (prova betiği portal üretimini izler). **Yayından (A8) önce** gönderin: tüm
+  onaylı case'ler yayınlanınca gereksinim `done` olur ve IDE taslağı 409 ile reddedilir ("Gereksinim
+  PO onaylı değil (durum: done)"). İzole yığında doğrulanan sıra: A1–A5 → case üretimi + tablo
+  taslağı → A7 (QA onayları) → IDE varyantı → A8, B1–B4, C1.
 - Kontrol Kulesi → "Ekilmiş hata koşusu" web için **önceden koşulmuş** (temel + 9 hata + kapanış;
   sahnede başlatmak dakikalar sürer). Mühendis ya da sunucu başlatır.
-- Kule'de beklenen: el yazısı 8/9, AI oranı "ölçülmedi", kaçan `kampanya_tek_bedava`.
+- Kule'de beklenen (izole yığında ölçüldü, 2026-11-13; prova Demo-B'si C1, C2, C5'in üretilmiş
+  testlerini main'e birleştirir): **AI (üretilen testler) 5/9 (%56)**, el yazısı **8/9 (%89)**,
+  tüm testler 8/9; **hiçbir testin yakalamadığı tek hata `kampanya_tek_bedava`**; AI testlerinin
+  kaçırdıkları 4 (`kampanya_tek_bedava`, `min_siparis_haric`, `min_siparis_muafiyet_yok`,
+  `fiyat_p004_31`). AI oranı hangi üretilmiş testlerin main'de olduğuna bağlıdır (önceki ölçüm:
+  yalnız C1, C2 → AI 3/9; temelde kırmızı kalan üretilmiş test — ör. ürün hatasını yakalayan C3 —
+  "temelde kırmızı, hariç" diye listelenir, orana girmez). Depoda üretilmiş test yokken AI oranı
+  **"ölçülmedi"** görünür; el yazısı oran AI'a yazılmaz.
 
 | # | Rol / ekran | Ne tıklanır | İzleyici ne görür | Söylenecek | Süre | Yedek |
 |---|---|---|---|---|---|---|
@@ -357,7 +370,7 @@ geçerlidir.
 | 3 | Analist · **Case review** → C6 varyantı | Karta bakın; "Onayla"nın üzerine gelin | "Tabloyla uyuşmuyor ✗", yüksek risk; karşılaştırma: uyarı — case "görünür", tablo "görünmez" (T2 · R3); "Onayla" pasif, nedeni yazıyor; iki yol: "İstisnayla onayla" ve "Tablo yanlış" | "Aynı sınır hatasını case üreten AI de yaptı. Yüksek riskli bir case onaylı tabloyla çelişiyorsa onaylanamaz. İnsan yine karar verebilir — ama gerekçe yazarak, kayda geçerek; ya da tablonun yanlış olduğunu söyleyip PO'ya geri gönderir." Düzeltme göstermek isterseniz: "Düzelt" ile başlık, S4 ve beklenen sonucu ana yol C6 metnine çevirin → uyumlu → onay | 1 dk | Çip "kontrol edilemedi" ise: metin golden'la birebir değildir, dürüstçe söyleyin (REPLAY) |
 | 4 | Analist · C2 | Karşılaştırma tablosunu açın | Ara toplam 175,00 → bedava 1, indirim 25,00, toplam 150,00; hepsi "uyumlu"; satır T1 · R1 | "Kontrol modelin sözüne güvenmiyor: AI yalnız case'te yazan değeri ve alıntısını çıkarıyor; alıntı case'te birebir yoksa atılıyor. Hesabı AI değil, tablonun ifade dili yapıyor." | 0,5 dk | — |
 | 5 | Testçi · **Hatalar** → C3 testinin kırmızısı | Hata detayı | "Ürün hatası"; tek satırlık sinyal "Uygulama onaylı kurala aykırı (T1 · R2)": test 0 bekledi, uygulama 1 verdi, tablo 0 | "Test kırmızı olunca soru şu: test mi yanlış, uygulama mı? Test beklentisi onaylı tabloyla aynı, uygulama farklı — bu bir ürün hatası; bakım değil. Tersi olsaydı sistem case'i düzeltin derdi, otomatik onarım ya da bug açmazdı." | 0,5 dk | Kırmızı koşu yoksa Demo-B'deki defect adayı koşusunu kullanın |
-| 6 | Mühendis/Sunucu · **Kontrol Kulesi** → Ekilmiş hata koşusu | Son koşuyu açın; "Kural dağılımı" | 9 hata × web: el yazısı suite 8/9; **AI (üretilen testler) "ölçülmedi"**; kural × hata dağılımı; temel ve kapanış yeşil | "Hata yakalama oranını kendimiz ölçüyoruz: uygulamaya bilerek hata koyup suite'i koşuyoruz. Bir hata ancak temelde yeşil olan bir test assertion ile kırmızıya dönerse 'yakalandı' sayılır. Bugün depoda üretilmiş test yok, bu yüzden AI oranı 'ölçülmedi' — el yazısı oranı AI'a yazmıyoruz." | 1 dk | Koşu yoksa "henüz yok (ölçülmedi)" kutusunu gösterin; sahnede başlatmayın |
+| 6 | Mühendis/Sunucu · **Kontrol Kulesi** → Ekilmiş hata koşusu | Son koşuyu açın; "Kural dağılımı" | 9 hata × web: **AI (üretilen testler) 5/9**, el yazısı suite 8/9, tüm testler 8/9; "AI testlerinin kaçırdıkları (4)"; kural × hata dağılımı; temel ve kapanış yeşil | "Hata yakalama oranını kendimiz ölçüyoruz: uygulamaya bilerek hata koyup suite'i koşuyoruz. Bir hata ancak temelde yeşil olan bir test assertion ile kırmızıya dönerse 'yakalandı' sayılır. Ana oran yalnız onaylı case'lerden üretilen testlerden: üç üretilmiş test 5/9 yakaladı; el yazısı suite ayrı sütunda (8/9) — onu AI'a yazmıyoruz. Üretilmiş test yokken bu kutu 'ölçülmedi' der." | 1 dk | Koşu yoksa "henüz yok (ölçülmedi)" kutusunu gösterin; sahnede başlatmayın |
 | 7 | Aynı kart · Kaçan hatalar | `kampanya_tek_bedava` → "Bu girdiyle ek case türet" | Ayırt edici girdi: 14 adet → doğru 2 bedava, hatalı 1; ilişki + kaynak C2 ile 14 adetlik `draft` case (bedava 2, indirim 50,00, toplam 300,00) | "Kaçan hata bir yapılacak iş: hangi girdinin onu gösterdiğini biliyoruz. PO'nun onayladığı ilişkiden 14 adetlik case'i türetiyoruz; analist onaylayınca test üretilir ve bu hata artık yakalanır." | 0,5 dk | Mühendis/sunucu rolünde düğme analiste iletir: analist profiline geçin |
 | 8 | Kontrol Kulesi · KPI şeridi | "Beklenti doğruluğu" ve "Hata yakalama oranı" kutuları | Değerin yanında n, "gösterge" ve "REPLAY / elle golden" etiketi; kaynak metinleri | "Bu sayılar bugün bir model ölçümü değil: AI çıktıları REPLAY, golden'lar elle hazırlandı. Ekran bunu kendisi söylüyor. Canlı modele geçince aynı ekran gerçek oranı gösterir." | 0,5 dk | — |
 

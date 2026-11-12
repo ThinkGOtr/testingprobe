@@ -499,9 +499,12 @@ Onaylı T2'ye göre 750,00 TL R3'tür (uyarı yok): sonuç **uyumsuz** (`minimum
 tablo yanlış), risk yüksek → "Onayla" pasif, API 422 `oracle_uyumsuz`. Analist case'i düzeltir
 (başlık, S4 ve beklenen sonucu ana yol C6 metnine: "… uyarı gösterilmez ve onay aktif olur",
 "Toplam 750,00 TL; minimum sipariş uyarısı görünmez ve "Siparişi onayla" butonu aktiftir"); önerilen
-içerik ana yol golden'ıyla eşleşir → uyumlu → onay. Bu case'le beklenti doğruluğu 5/6 olur.
+içerik ana yol golden'ıyla eşleşir → uyumlu → onay. Gerçek yığında bu case'le (ana yolun C6'sı da
+sayıldığı için) beklenti doğruluğu 6/7, kapsam 7/10 olur (izole yığın, 2026-11-12); portal sahte
+verisinde varyant ana yol C6'nın yerindedir: 5/6.
 Dürüstlük notları: (1) portal case üretimi golden'ı bu case'i üretmez; varyant IDE/MCP taslağı
-(`submit_drafts`, Claude Code kanalı) ya da portal sahte verisiyle gelir. (2) PO, T2'yi AI'ın
+(MCP `submit_draft_cases`, Claude Code kanalı; liste ana yolun C1–C5'i + 6. sırada varyant, ki
+`sira_no` 6 ve golden anahtarı `TPD-1-C6` olsun) ya da portal sahte verisiyle gelir. (2) PO, T2'yi AI'ın
 `<= 750` taslağıyla onaylasaydı bu case **uyumlu** görünürdü: iki AI çıktısı aynı yanlış okumayı
 paylaşabilir; korumayı sağlayan PO'nun tabloyu bağımsız onaylamasıdır.
 
@@ -540,7 +543,13 @@ yeşilken hatalı koşuda **assertion** ile kırmızıya dönerse yakalar.
 | `kampanya_urunu_p002` | 7 (+1 zaman aşımı) | yakalandı |
 
 El yazısı suite: **8/9 (%89)**, kaçan `kampanya_tek_bedava`. Ürünün ana oranı yalnız onaylı
-case'lerden üretilen testlerle (`tests/generated/`) hesaplanır; depoda üretilmiş test olmadığı için
-Kule'de AI oranı **"ölçülmedi"**dir. Kaçan hata için "Bu girdiyle ek case türet" (ilişki, kaynak C2,
+case'lerden üretilen testlerle (`tests/generated/`) hesaplanır; depoda üretilmiş test yokken Kule'de
+AI oranı **"ölçülmedi"**dir. İzole yığında ölçülen (2026-11-13, prova Demo-B'si sonrası; main'de
+C1, C2, C5'in üretilmiş testleri): **AI 5/9 (%56)** — yakalanan `kampanya_bedava_yok`,
+`kampanya_cift_indirim` (C2), `min_siparis_500`, `min_siparis_1000` (C5), `kampanya_urunu_p002`
+(C2); AI'ın kaçırdıkları `kampanya_tek_bedava`, `min_siparis_haric`, `min_siparis_muafiyet_yok`,
+`fiyat_p004_31`. Tüm testler 8/9; hiçbir testin yakalamadığı tek hata `kampanya_tek_bedava`.
+Yalnız C1, C2 üretilmişken AI 3/9 ölçülmüştü; temelde kırmızı üretilmiş test (C3, ürün hatasını
+yakalayan) "temelde kırmızı, hariç" listelenir ve orana girmez. Kaçan hata için "Bu girdiyle ek case türet" (ilişki, kaynak C2,
 adet 14) 14 adetlik case'i önerir; onaylanıp test üretilince hata yakalanır. Uygulama
 platformlarında (android, ios, windows) matris ölçülmedi.
