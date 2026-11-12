@@ -5,6 +5,7 @@
 | POST | `/demo/break-locator?zorla=` | `demo.manage` — locator kırılması (demo-admin bypass'ı) |
 | POST | `/demo/reset` | `demo.manage` — main → baseline, tp/* PR kapat, uygulama, AI Bug silme |
 | GET  | `/demo/status` | `dashboard.read` — forge main/testid, uygulama commit'i, `onarim_on_kosulu` |
+| POST | `/demo/jira-status` | `demo.manage` — jira-sim'de story'yi duruma taşı (gerçek Jira'da 409) |
 
 Yazan uçlar yalnız `TP_DEMO_MODE=1` iken çalışır; kapalıyken izinli rol de 403 (`demo_kapali`,
 "Demo kipi kapalı (TP_DEMO_MODE=0)"; denetimde `authz.denied`, `neden: demo_kapali`) alır.
@@ -27,6 +28,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.concurrency import run_in_threadpool
+from pydantic import BaseModel, Field
 
 from tp_core.api.errors import KodluHata
 from tp_core.auth.deps import DbSession
@@ -96,3 +98,19 @@ def status(_user: Okur) -> dict[str, Any]:
     with session_scope() as s:
         ayar = get_settings()
         return {**service.durum(session=s), "demo_modu": ayar.demo_mode, "ortam": ayar.ortam}
+
+
+class JiraDurumIstegi(BaseModel):
+    jira_key: str = Field(min_length=3, max_length=40)
+    durum: str = Field(min_length=1, max_length=100)
+
+
+@router.post("/demo/jira-status")
+def jira_status(body: JiraDurumIstegi, user: DemoYoneticisi) -> dict[str, Any]:
+    """jira-sim'deki story'yi verilen duruma taşır (ör. "QA To Do": Jira durum tetiği provası)."""
+    from tp_core.integrations.jira import JiraError
+
+    try:
+        return service.jira_durum_tasi(user, body.jira_key, body.durum)
+    except JiraError as exc:
+        raise HTTPException(502, f"Jira'ya erişilemedi: {exc}") from exc

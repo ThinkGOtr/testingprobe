@@ -11,6 +11,16 @@ deterministik kontrollerden geçmiş `step_mapping` / `expects` ile render edili
 - Case bir e2e bayisiyle giriş yapıyorsa (`LoginPage.login("bayi2", …)`) test o bayiye sabitlenir
   (`test.use({ dealerUsername })`, demo-app fixtures sözleşmesi): bayiye özgü değerler (kredi
   limiti) doğru bayide doğrulanır ve bayi kilidi paralel işçilerle çakışmayı önler.
+- 013 K19: bilinen gizli test verisi değeri (`RenderInput.gizli_ortam`: değer → sır adı) üst
+  düzey çağrı argümanıysa literal yerine ortam okuması basılır (TS `process.env.<SIR>`, Java
+  `System.getenv("<SIR>")`); adım etiketlerinde ve başlıkta değer `•••` olur. PR/commit'te düz
+  parola kalmaz; e2e sözleşmeleri (eslint `generatedTestSyntax`, `java-araclar guard`) yalnız bu
+  biçimi ve `TP_TESTVERI_*` adlarını kabul eder. Şablonlar değişmez (süzgeç düzeyinde).
+  Render sonrası tarama (güvenlik #4/#5): `RenderInput.gizli_taranacak` (bilinen tüm gizli
+  değerler; sırrı tanımsız olanlar dahil) çıktıda alt dize olarak geçerse (kelime sınırı yok:
+  `Demo123!x`, kaçışlı biçim; güvenlik tur 3 #2) `GizliSizinti` (fail-closed; servis
+  `test_verisi` engeliyle durdurur, commit/PR yok). Etiket/başlık maskesi de bu listeyi ve
+  `atif.maskele` kuralını kullanır.
 - Çıktı deterministiktir (zaman/rastgelelik yok); dosya adı case'e göre sabittir
   (`<e2e kökü>/tests/generated/<story>-c<sıra>-<case uuid'nin ilk 8'i>.spec.ts`; e2e kökü
   LocalForge'da `e2e`, GitHub monoreposunda `demo-app/e2e`). Yeniden üretim aynı dosya yolunu
@@ -28,8 +38,8 @@ import json
 import re
 import unicodedata
 import uuid
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -57,6 +67,61 @@ _DEALER_RE = re.compile(
 
 class RenderError(ValueError):
     """Şablona güvensiz/geçersiz değer gitti (kontrollerin kaçırdığı bir durum: insana)."""
+
+
+class GizliSizinti(RenderError):
+    """Üretilen kod bilinen bir gizli test verisini düz taşıyor (K19; değer mesajda yok)."""
+
+
+GIZLI_SIZINTI_METNI = (
+    "Test verisi sırrı tanımsız ya da case'te atıf değil: üretilen kod gizli test verisini düz "
+    "içeriyordu; commit/PR açılmadı. Sırrı (TP_TESTVERI_*) tanımlayıp yeniden üretin"
+)
+
+
+SIR_ADI_RE = re.compile(r"^TP_TESTVERI_[A-Z0-9_]{1,64}$")
+GIZLI_MASKE = "•••"
+
+
+@dataclass(frozen=True)
+class OrtamDegeri:
+    """Gizli test verisi argümanı: üretilen kod değeri bu ortam değişkeninden okur (K19)."""
+
+    ad: str
+
+    def __post_init__(self) -> None:
+        if not SIR_ADI_RE.match(self.ad):
+            raise RenderError(f"geçersiz sır adı: {self.ad!r}")
+
+
+def _gizli_arg(value: Any, gizli_ortam: Mapping[str, str]) -> Any:
+    if isinstance(value, str) and value in gizli_ortam:
+        return OrtamDegeri(gizli_ortam[value])
+    return value
+
+
+def _maskeli(metin: str, gizli: Iterable[str]) -> str:
+    """Etiket / başlık maskesi: `atif.maskele` ile aynı kural (alt dize, en az `MIN_DEGER`)."""
+    from tp_core.features.testveri.atif import maskele
+
+    return maskele(metin, gizli)
+
+
+def _tum_gizliler(inp: RenderInput) -> tuple[str, ...]:
+    return tuple(dict.fromkeys([*inp.gizli_ortam, *inp.gizli_taranacak]))
+
+
+def _sizinti_tara(content: str, inp: RenderInput) -> None:
+    from tp_core.features.testveri.atif import gizli_geciyor_mu
+
+    # Literal kaçışlı biçimler de (JSON/Java: `\"`, `\uXXXX`) taranır.
+    adaylar = {
+        v
+        for g in _tum_gizliler(inp)
+        for v in (g, json.dumps(g)[1:-1], json.dumps(g, ensure_ascii=False)[1:-1])
+    }
+    if gizli_geciyor_mu(content, adaylar):
+        raise GizliSizinti(GIZLI_SIZINTI_METNI)
 
 
 # ----------------------------------------------------------------------------- süzgeçler
@@ -95,8 +160,14 @@ def comment(value: Any) -> str:
     return metin if len(metin) <= 160 else metin[:159] + "…"
 
 
+def _ts_arg(value: Any) -> str:
+    if isinstance(value, OrtamDegeri):
+        return f"process.env.{value.ad}"
+    return ts_literal(value)
+
+
 def args_literal(args: Sequence[Any]) -> str:
-    return ", ".join(ts_literal(a) for a in args)
+    return ", ".join(_ts_arg(a) for a in args)
 
 
 def _env(templates_dir: Path) -> jinja2.Environment:
@@ -154,6 +225,10 @@ class RenderInput:
     dealers: Mapping[str, Mapping[str, str]]
     # Forge deposunda e2e kökü (`e2e` LocalForge; GitHub monoreposunda `demo-app/e2e`).
     e2e_root: str = E2E_ROOT
+    # 013 K19: bilinen gizli test verisi değeri → sır (ortam değişkeni) adı.
+    gizli_ortam: Mapping[str, str] = field(default_factory=dict)
+    # Render sonrası taranacak bilinen gizli değerler (sırrı tanımsız olanlar dahil).
+    gizli_taranacak: Sequence[str] = ()
 
 
 @dataclass(frozen=True)
@@ -213,11 +288,18 @@ def build_context(inp: RenderInput, template_hash: str) -> dict[str, Any]:
     adimlar = {str(s.get("id")): s for s in case.get("steps") or [] if isinstance(s, Mapping)}
     kullanilan: list[str] = []
 
+    gizli = inp.gizli_ortam
+    maske = _tum_gizliler(inp)
+
     def cagri(item: Mapping[str, Any]) -> dict[str, Any]:
         fx = ident(fixture_name(ident(str(item.get("po")))))
         if fx not in kullanilan:
             kullanilan.append(fx)
-        return {"fixture": fx, "method": ident(str(item.get("method"))), "args": list(item["args"])}
+        return {
+            "fixture": fx,
+            "method": ident(str(item.get("method"))),
+            "args": [_gizli_arg(a, gizli) for a in item["args"]],
+        }
 
     steps: list[dict[str, Any]] = []
     for m in inp.mapping.get("step_mapping") or []:
@@ -226,7 +308,8 @@ def build_context(inp: RenderInput, template_hash: str) -> dict[str, Any]:
             steps[-1]["calls"].append(cagri(m))
             continue
         eylem = (adimlar.get(sid) or {}).get("action") or ""
-        steps.append({"sid": sid, "label": f"{sid} — {eylem}", "calls": [cagri(m)]})
+        etiket = _maskeli(f"{sid} — {eylem}", maske)
+        steps.append({"sid": sid, "label": etiket, "calls": [cagri(m)]})
     expects = [cagri(e) for e in inp.mapping.get("expects") or []]
     story = inp.story_key if inp.story_key and _STORY_RE.fullmatch(inp.story_key) else None
     case_ref = f"{story or 'SERBEST'}-C{int(inp.sira_no)}"
@@ -243,7 +326,9 @@ def build_context(inp: RenderInput, template_hash: str) -> dict[str, Any]:
         "template_hash": template_hash,
         "dealer": _pinned_dealer(inp.mapping, inp.dealers),
         "describe": f"{story or 'Serbest metin'} · C{int(inp.sira_no)}",
-        "title": f"{str(case.get('title') or case_ref).strip()} {URETILEN_ETIKETI}",
+        "title": _maskeli(
+            f"{str(case.get('title') or case_ref).strip()} {URETILEN_ETIKETI}", maske
+        ),
         "tags": tags,
         "fixtures": sorted(kullanilan),
         "steps": steps,
@@ -258,6 +343,7 @@ def render_test(inp: RenderInput, rules_dir: Path) -> Rendered:
         content = template.render(**ctx)
     except jinja2.TemplateError as exc:  # pragma: no cover - şablon hatası (geliştirici)
         raise RenderError(f"şablon render edilemedi: {exc}") from exc
+    _sizinti_tara(content, inp)
     ad = slug(inp.story_key, inp.sira_no, inp.case_id)
     test_file = f"{GENERATED_DIR}/{ad}.spec.ts"
     return Rendered(
@@ -419,8 +505,14 @@ def java_comment(value: Any) -> str:
     return re.sub(r"\s+", " ", temiz).strip() or "-"
 
 
+def _java_arg(value: Any) -> str:
+    if isinstance(value, OrtamDegeri):
+        return f'System.getenv("{value.ad}")'
+    return java_literal(value)
+
+
 def java_args(args: Sequence[Any]) -> str:
-    return ", ".join(java_literal(a) for a in args)
+    return ", ".join(_java_arg(a) for a in args)
 
 
 def java_ident(value: Any) -> str:
@@ -488,11 +580,14 @@ def build_java_context(inp: RenderInput, platform: str, template_hash: str) -> d
     case = inp.case
     adimlar = {str(s.get("id")): s for s in case.get("steps") or [] if isinstance(s, Mapping)}
 
+    gizli = inp.gizli_ortam
+    maske = _tum_gizliler(inp)
+
     def cagri(item: Mapping[str, Any]) -> dict[str, Any]:
         return {
             "fixture": java_ident(fixture_name(java_ident(str(item.get("po"))))),
             "method": java_ident(str(item.get("method"))),
-            "args": list(item["args"]),
+            "args": [_gizli_arg(a, gizli) for a in item["args"]],
         }
 
     steps: list[dict[str, Any]] = []
@@ -502,7 +597,8 @@ def build_java_context(inp: RenderInput, platform: str, template_hash: str) -> d
             steps[-1]["calls"].append(cagri(m))
             continue
         eylem = (adimlar.get(sid) or {}).get("action") or ""
-        steps.append({"sid": sid, "label": f"{sid} — {eylem}", "calls": [cagri(m)]})
+        etiket = _maskeli(f"{sid} — {eylem}", maske)
+        steps.append({"sid": sid, "label": etiket, "calls": [cagri(m)]})
     expects = [cagri(e) for e in inp.mapping.get("expects") or []]
     story = inp.story_key if inp.story_key and _STORY_RE.fullmatch(inp.story_key) else None
     gruplar = [JAVA_URETILEN_GRUBU, platform, f"tp-case-{inp.case_id}"] + ([story] if story else [])
@@ -527,7 +623,7 @@ def build_java_context(inp: RenderInput, platform: str, template_hash: str) -> d
         "dealer": dealer,
         "class_name": java_class_name(inp.story_key, platform, inp.sira_no, inp.case_id),
         "groups": gruplar,
-        "description": str(case.get("title") or "").strip() or ref,
+        "description": _maskeli(str(case.get("title") or "").strip(), maske) or ref,
         "steps": steps,
         "expects": expects,
     }
@@ -546,6 +642,7 @@ def render_java_test(inp: RenderInput, platform: str, rules_dir: Path) -> Render
         content = template.render(**ctx)
     except jinja2.TemplateError as exc:  # pragma: no cover - şablon hatası (geliştirici)
         raise RenderError(f"şablon render edilemedi: {exc}") from exc
+    _sizinti_tara(content, inp)
     test_file = f"{JAVA_GENERATED_DIR}/{ctx['class_name']}.java"
     return Rendered(
         content=content,
@@ -826,12 +923,25 @@ def py_literal(value: Any) -> str:
     raise RenderError(f"şablona basılamayan değer türü: {type(value).__name__}")
 
 
+def _cs_arg(value: Any) -> str:
+    if isinstance(value, OrtamDegeri):
+        return f'System.Environment.GetEnvironmentVariable("{value.ad}")'
+    return cs_literal(value)
+
+
+def _py_arg(value: Any) -> str:
+    if isinstance(value, OrtamDegeri):
+        # Şablon `os`'u içe aktarmaz; ifade kendi içinde (013 K19).
+        return f'__import__("os").environ["{value.ad}"]'
+    return py_literal(value)
+
+
 def cs_args(args: Sequence[Any]) -> str:
-    return ", ".join(cs_literal(a) for a in args)
+    return ", ".join(_cs_arg(a) for a in args)
 
 
 def py_args(args: Sequence[Any]) -> str:
-    return ", ".join(py_literal(a) for a in args)
+    return ", ".join(_py_arg(a) for a in args)
 
 
 def _gorunmezsiz_yorum(value: Any) -> str:
@@ -1035,6 +1145,7 @@ def build_unverified_context(
     nesneler: dict[str, dict[str, str]] = {}  # sınıf → {sinif, degisken, modul}
     ayrilmis_sinif = _CS_AYRILMIS_SINIF if cs else _PY_AYRILMIS_SINIF
     tablo_turleri = _tablo_parametreleri(sembol_tablosu)
+    maske = _tum_gizliler(inp)
     imzalar: dict[str, list[dict[str, str]]] = {}  # sınıf → [{ad, parametreler}] (ilk kullanım)
 
     def nesne(po: Any) -> str:
@@ -1074,6 +1185,8 @@ def build_unverified_context(
         degisken = nesne(item.get("po"))
         hedef_metot = cs_method_name(metot) if cs else py_name(metot)
         imza(str(item.get("po")), metot, hedef_metot, args)
+        # 013 K19: bilinen gizli test verisi ortam değişkeninden okunur (düz literal değil).
+        args = [_gizli_arg(a, inp.gizli_ortam) for a in args]
         return {"fixture": degisken, "method": hedef_metot, "args": args}
 
     steps: list[dict[str, Any]] = []
@@ -1083,7 +1196,8 @@ def build_unverified_context(
             steps[-1]["calls"].append(cagri(m))
             continue
         eylem = (adimlar.get(sid) or {}).get("action") or ""
-        steps.append({"sid": sid, "label": f"{sid} — {eylem}", "calls": [cagri(m)]})
+        etiket = _maskeli(f"{sid} — {eylem}", maske)
+        steps.append({"sid": sid, "label": etiket, "calls": [cagri(m)]})
     expects = [cagri(e) for e in inp.mapping.get("expects") or []]
     if not nesneler:
         raise RenderError("eşleme boş: render edilecek çağrı yok")
@@ -1109,7 +1223,7 @@ def build_unverified_context(
         "mapping_hash": mapping_hash(inp.mapping),
         "template_hash": template_hash,
         "dealer": dealer,
-        "description": str(case.get("title") or "").strip() or ref,
+        "description": _maskeli(str(case.get("title") or "").strip() or ref, maske),
         "tags": etiketler,
         "story": story,
         "namespace": CS_NAMESPACE,
@@ -1144,6 +1258,8 @@ def render_unverified_test(
         content = template.render(**ctx)
     except jinja2.TemplateError as exc:  # pragma: no cover - şablon hatası (geliştirici)
         raise RenderError(f"şablon render edilemedi: {exc}") from exc
+    # 013 K19 / güvenlik #4-#5: doğrulanmamış kod da (portalda gösterilir) düz sır taşımaz.
+    _sizinti_tara(content, inp)
     if dil == "csharp":
         sinif, test = ctx["class_name"], ctx["test_method"]
     else:

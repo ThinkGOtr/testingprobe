@@ -20,7 +20,9 @@ import { Kod } from "./pages/Kod";
 import { KontrolKulesi } from "./pages/KontrolKulesi";
 import { KosuDetay, Kosular } from "./pages/Kosular";
 import { ScriptDetay } from "./pages/ScriptDetay";
+import { Otomasyon } from "./pages/Otomasyon";
 import { TestCaseleri } from "./pages/TestCaseleri";
+import { TestVerisiSayfasi } from "./pages/TestVerisi";
 import { Yayin } from "./pages/Yayin";
 import { YolHaritasi } from "./pages/YolHaritasi";
 import { ROTA_IZINLERI } from "./lib/yetki";
@@ -114,6 +116,8 @@ export function Rotalar() {
         <Route path="kontrol-kulesi" element={<Korumali yol="/kontrol-kulesi"><KontrolKulesi /></Korumali>} />
         <Route path="yol-haritasi" element={<Korumali yol="/yol-haritasi"><YolHaritasi /></Korumali>} />
         <Route path="denetim" element={<Korumali yol="/denetim"><Denetim /></Korumali>} />
+        <Route path="test-verisi" element={<Korumali yol="/test-verisi"><TestVerisiSayfasi /></Korumali>} />
+        <Route path="otomasyon" element={<Korumali yol="/otomasyon"><Otomasyon /></Korumali>} />
         <Route path="claude-code" element={<Korumali yol="/claude-code"><ClaudeCode /></Korumali>} />
         <Route path="demo" element={<Korumali yol="/demo"><DemoKontrolleri /></Korumali>} />
         <Route path="*" element={<Bulunamadi />} />

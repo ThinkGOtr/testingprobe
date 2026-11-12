@@ -117,7 +117,11 @@ Kod üretimi (TEKNIK-TASARIM §8.4) onaylı case'i doğrulanmış page object e�
 `test`/`signedInTest`, `describe`/`use`, `dealerUsername`/`tag`, page object fikstürleri ve
 `pages/**/*.page.ts`'teki herkese açık `async` metotlar tanımlayıcı olarak geçebilir; hesaplanmış üye
 erişimi (`cartPage["page"]`), zincirli üye (`a.b.c`), `globalThis`/`fetch` gibi her başka ad, literal
-olmayan argüman ve `await <fikstür>.<metot>(…)` dışındaki deyimler reddedilir. Sözleşme
+olmayan argüman ve `await <fikstür>.<metot>(…)` dışındaki deyimler reddedilir. Tek istisna
+(specs/013 K19): gizli test verisi doğrudan çağrı argümanı olarak `process.env.TP_TESTVERI_<AD>`
+biçiminde ortamdan okunabilir; ad `tests/testveri-env.d.ts`'te `string` olarak bildirilmelidir
+(strict + `noUncheckedIndexedAccess` altında tsc'nin geçmesi için) ve koşum ortamı (test-runner,
+CI) bu değişkeni vermelidir. Sözleşme
 `eslint.config.js` içinde kalır (toolchain-worker bu dosyayı güvenilir kopyasıyla hash'le karşılaştırır;
 değiştiğinde `toolchain/e2e-deps/eslint.config.js` de güncellenmelidir).
 

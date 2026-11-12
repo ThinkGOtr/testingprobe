@@ -312,6 +312,10 @@ def on_kontrol(b: Baglam) -> None:
         roller == PORTAL_HESAPLARI,
         str(roller),
     )
+    if b.prova:
+        # QA #6: provanın İLK kontrolü; açıkken sonraki herhangi bir case onayı kod üretimi
+        # başlatır ve REPLAY-MISS, kontrolden önce oluşurdu.
+        otomatik_kod_kapali(b)
 
     w = b.yigin.worker_ortami()
     b.kanit["core_worker"] = w
@@ -547,6 +551,19 @@ def case_uret(b: Baglam) -> None:
     )
     for n, c in cs.items():
         mod_kontrol(b, f"C{n}", c.get("mode"))
+
+
+def otomatik_kod_kapali(b: Baglam) -> None:
+    """013 K20/K23: demo ortamında onay sonrası otomatik kod KAPALI olmalı (seed / make reset /
+    demo-reset yazar; P0'ın ilk kontrolü). Açıksa her onay web kod üretimi başlatır;
+    `kod_uret` adımı 4 yeni script alamaz ve strict REPLAY'de kaydı olmayan üretimler
+    REPLAY-MISS verir."""
+    ayar = (b.api.get("analist", "/automation-settings") or {}).get("otomatik_kod_uretimi") or {}
+    b.kontrol(
+        "onay sonrası otomatik kod kapalı (013 K20; make reset/seed yazar)",
+        ayar.get("acik") is False,
+        f"otomatik_kod_uretimi.acik={ayar.get('acik')!r}",
+    )
 
 
 SON_ONAYA_HAZIR = ("ready", "approved", "published")  # Testçi kabulünü geçmiş durumlar
@@ -874,16 +891,7 @@ def ci_tetikleri(b: Baglam) -> None:
     push = kosu_bekle(
         b,
         "son merge'ün push CI'ı bitti",
-        lambda ks: next(
-            (
-                k
-                for k in ks
-                if k.get("tetik") == "push"
-                and k.get("commit") == sha
-                and (k.get("dil") or "ts") == "ts"
-            ),
-            None,
-        ),
+        lambda ks: next((k for k in ks if _ts_push(k) and k.get("commit") == sha), None),
         300,
     )
     b.kontrol(
@@ -1411,13 +1419,17 @@ def locator_kir(b: Baglam) -> None:
         )
 
 
+def _ts_push(k: dict[str, Any]) -> bool:
+    """Provanın push koşusu: Playwright TypeScript hattı (011 üretim diliyle aynı push için
+    Java web koşusu da açılır; beklenen sayılar ve triage akışı TS paketine göredir)."""
+    return k.get("tetik") == "push" and (k.get("dil") or "ts") == "ts"
+
+
 def _kirmizi_push(ks: list[dict[str, Any]], sha: str | None) -> dict[str, Any] | None:
     for k in ks:
-        if k.get("tetik") != "push":
-            continue
         # 011: aynı commit'e web paketinin Java kardeş koşusu da düşer; locator senaryosunun
-        # beklenen kırmızı sayısı (LOCATOR_KIRMIZI) TS (ana) paketinindir.
-        if (k.get("dil") or "ts") != "ts":
+        # beklenen kırmızı sayısı (LOCATOR_KIRMIZI) TS (ana) paketinindir (`_ts_push`).
+        if not _ts_push(k):
             continue
         if sha and k.get("commit") == sha:
             return k
@@ -1589,16 +1601,7 @@ def ci_yesil(b: Baglam) -> None:
     k = kosu_bekle(
         b,
         "onarım merge'ünün push CI'ı bitti",
-        lambda ks: next(
-            (
-                x
-                for x in ks
-                if x.get("tetik") == "push"
-                and x.get("commit") == sha
-                and (x.get("dil") or "ts") == "ts"
-            ),
-            None,
-        ),
+        lambda ks: next((x for x in ks if _ts_push(x) and x.get("commit") == sha), None),
         300,
     )
     b.kanit["push"] = {

@@ -12,6 +12,7 @@ import { mockOlayYayinla } from "../api/mock/olaylar";
 import { OturumProvider } from "../auth";
 import { BildirimProvider } from "../components/Bildirim";
 import { goruntulenenleriSifirla } from "../components/CaseKarti";
+import { gozlemciKur } from "../test/gorunurluk";
 import { oturumAc } from "../test/yardimci";
 
 function uygulama(yol: string) {
@@ -111,13 +112,19 @@ describe("PO teyidi insan kapısı şeridi", () => {
 });
 
 describe("case review", () => {
-  it("karar bekleyen case'ler görüntülendi olarak bir kez bildirilir; review süresi bundan ölçülür", async () => {
+  it("karar bekleyen case'ler 3 sn görünür kalınca görüntülendi olarak bir kez bildirilir; review süresi bundan ölçülür", async () => {
+    const g = gozlemciKur();
     await oturumAc("testci");
     const casus = vi.spyOn(api, "caseGoruntulendi");
-    const u = userEvent.setup();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const u = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     uygulama("/gereksinimler/req-tpd-1/caseler");
     await screen.findByText("Case review");
-    await waitFor(() => expect(casus).toHaveBeenCalled());
+    // K13: gözlenen (karar bekleyen) kartlar görünür olur, 3 sn dolar.
+    await waitFor(() => expect(g.gozlenenler().length).toBe(2));
+    for (const el of g.gozlenenler()) g.goster(el);
+    await act(async () => void (await vi.advanceTimersByTimeAsync(3000)));
+    await waitFor(() => expect(casus).toHaveBeenCalledTimes(2));
     const bildirilen = casus.mock.calls.map((c) => c[0]).sort();
     // Yalnızca taslak (karar bekleyen) case'ler: case-1-5, 1-7 (C8 ve C9 yayınlandı: 011 dil örnekleri)
     expect(bildirilen).toEqual(["case-1-5", "case-1-7"]);
@@ -126,6 +133,8 @@ describe("case review", () => {
     await u.click(within(kart).getByRole("button", { name: "Kabul et" }));
     await waitFor(() => expect(mockVerisi().caseler.find((c) => c.id === "case-1-7")!.review_sure_ms).not.toBeNull());
     expect(casus).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it("Testçi olmayan rol görüntüleme bildirmez (ölçüm yalnızca karar verenin süresi)", async () => {

@@ -65,6 +65,14 @@ const CIZIM = {
       <path d="M9.5 8V6.5a2.5 2.5 0 0 1 5 0V8M12 12v8M3.5 13H7M17 13h3.5M4.5 8.5 7 10M19.5 8.5 17 10M4.5 18.5 7 17M19.5 18.5 17 17" />
     </>
   ),
+  // 013: test verisi kataloğu (veritabanı silindiri) ve otomasyon (şimşek).
+  veri: (
+    <>
+      <ellipse cx="12" cy="6" rx="7" ry="2.5" />
+      <path d="M5 6v12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V6M5 12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5" />
+    </>
+  ),
+  otomasyon: <path d="M13 3 5 13.5h6L10 21l8-10.5h-6L13 3Z" />,
   harita: <path d="M9 4 3.5 6v14L9 18l6 2 5.5-2V4L15 6 9 4ZM9 4v14M15 6v14" />,
   kule: (
     <>

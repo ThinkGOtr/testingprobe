@@ -9,11 +9,14 @@
 - Diğer tablolar dokunulmaz: `requirement_baz_deger.giren_rol` girişi yapanın o anki rolüdür
   (tarihsel; yalnız analist/PO yazabiliyordu), denetim kaydı append-only'dir.
 
+Not (birleştirme): dev'deki 013 sprint otomasyonu göçü 0030 önce gelir; 012 göçleri 0031
+(roller) → 0032 (case ready) → 0033 olarak ardından zincirlenir (tek baş).
+
 Geri alma: `admin` → `presenter`. Yeni rollerde (`auditor`, `developer`, `viewer`) hesap varsa
 geri alma durur (bu hesaplar eski modelde karşılıksızdır; bilerek silinmeleri gerekir).
 
-Revision ID: 0024
-Revises: 0023
+Revision ID: 0031
+Revises: 0030
 Create Date: 2026-11-11
 """
 
@@ -22,8 +25,8 @@ from collections.abc import Sequence
 from alembic import op
 from sqlalchemy import text
 
-revision: str = "0024"
-down_revision: str | None = "0023"
+revision: str = "0031"
+down_revision: str | None = "0030"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -54,7 +57,7 @@ def downgrade() -> None:
     adlar = list(yeni_rollu)
     if adlar:
         raise RuntimeError(
-            "0024 geri alınamaz: eski rol modelinde karşılığı olmayan hesaplar var: "
+            "0031 geri alınamaz: eski rol modelinde karşılığı olmayan hesaplar var: "
             + ", ".join(adlar)
         )
     op.execute("ALTER TABLE ci_tetik DROP CONSTRAINT ci_tetik_tetik_ck")

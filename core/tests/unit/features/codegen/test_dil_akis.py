@@ -432,3 +432,31 @@ def muhendis(api: TestClient, make_user: Any) -> Any:
     u = make_user("engineer")
     login(api, u)
     return u
+
+
+def test_otomatik_tetik_ayni_icerikli_dogrulanmamis_scripti_ezmez(
+    api: TestClient, engine: Engine, dil_codegen: Any, hazir: dict[str, Any], muhendis: Any
+) -> None:
+    """013 K16 × 011: otomatik üretim, aynı dil + aynı onaylı içerik + aynı veri izi için zaten
+    üretilmiş `unverified` script'i yeniden üretmez (`dogrulanmamis_var`); başka dilde ya da elle
+    istek aynı kaydı yeniden üretir (011 davranışı)."""
+    from tp_core.features.codegen import service as codegen_service
+    from tp_core.features.otomasyon import otokod
+
+    cid = hazir["cases"][2]
+    r = api.post("/code/generate", json={"case_ids": [str(cid)], "dil": "csharp"})
+    assert r.status_code == 202, r.text
+    sid = uuid.UUID(r.json()["script_ids"][0])
+    run_jobs(engine)
+    with session_scope() as s:
+        assert s.get(Script, sid).durum == "unverified"
+        cevap = codegen_service.start_generation(
+            s, [cid], otokod.OTOMASYON_AKTORU, dil="csharp", tetik="otomatik"
+        )
+        oge = cevap["sonuclar"][0]
+        assert (oge["durum"], oge["script_id"]) == ("dogrulanmamis_var", str(sid))
+        assert otokod._ogeden(oge)["durum"] == "atlandi"
+        assert s.get(Script, sid).durum == "unverified"
+    # Elle aynı dil: 011 davranışı korunur (aynı kayıt yeniden üretilir).
+    r = api.post("/code/generate", json={"case_ids": [str(cid)], "dil": "csharp"}).json()
+    assert r["script_ids"] == [str(sid)]

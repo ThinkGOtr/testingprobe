@@ -88,8 +88,8 @@ oturumu ve Jira PO kanalını kabul eder).
 | `requirement.po_reject_free_text` | po | `POST /requirements/{id}/po-reject` `{gerekce (1..2000), icerik_hash}` | T04: yalnız `kaynak == free_text` ve `pending_po`; `review` kararı `po_reject` (gerekçe + hash), `pending_po` → `new` (Analist yeniden inceler; ön inceleme kayıtları geçersizlenir), denetim + `po.rejected` olayı. Jira kaynaklı 410 `po_onayi_jira` |
 | `baseline.manage` | po | `PUT/DELETE /requirements/{id}/baseline`, `POST /baseline-file/apply` | K7 |
 | `case.generate` | tester | `POST /requirements/{id}/generate-cases` | gereksinim PO onaylı (mevcut kapı) |
-| `case.decide` | tester | `POST /cases/{id}/decision` karar ∈ `accept`, `edit`, `reject`, `reopen`; `POST /cases/{id}/viewed` | ret nedeni zorunlu (mevcut) |
-| `case.approve` | analyst | `POST /cases/{id}/decision` karar ∈ `approve`, `send_back`; `POST /requirements/{id}/review-complete` | yalnız `ready` case; `send_back` gerekçe ister |
+| `case.decide` | tester | `POST /cases/{id}/decision` karar ∈ `accept`, `edit`, `reject`, `reopen`; `POST /cases/bulk-decision` karar = `accept` (013 toplu kabul); `POST /cases/{id}/viewed` | ret nedeni zorunlu (mevcut) |
+| `case.approve` | analyst | `POST /cases/{id}/decision` karar ∈ `approve`, `send_back`; `POST /cases/bulk-decision` karar = `approve` (013 toplu son onay); `POST /requirements/{id}/review-complete` | yalnız `ready` case; `send_back` gerekçe ister |
 | `case.publish` | tester | `POST /publish` | onaylı + hash değişmemiş (mevcut kapı) |
 | `token.issue` | tester | `POST /tokens` | yayın / IDE gönderim kanalı |
 | `code.generate` | engineer | `POST /code/generate`, `GET /code/languages` | onaylı case (mevcut). `GET /code/languages` (011 üretim dili, K-T8) her çağrıda forge'u okur; yalnız üretimi başlatan role açık, portal 403'ü "dil seçici yok" sayar |
@@ -100,17 +100,20 @@ oturumu ve Jira PO kanalını kabul eder).
 | `run.trigger_scheduled` | engineer | `POST /ci/trigger` tetik ∈ `deploy`, `nightly` | |
 | `run.trigger_manual` | engineer, developer | `POST /ci/trigger` tetik = `manual` | developer: `TP_ORTAM≠prod` |
 | `bug.decide` | tester | `POST /bug-drafts/{id}/decision`, `/prepare`, `/publish` | |
-| `demo.manage` | admin, engineer | `POST /demo/break-locator`, `POST /demo/reset` | `TP_DEMO_MODE=1`; kapalıyken 403 `demo_kapali` ("Demo kipi kapalı (TP_DEMO_MODE=0)", denetimde `authz.denied` `neden: demo_kapali`); worker işleri (`demo.break`/`demo.reset`) ve host CLI (`python -m tp_core.features.demo on-kosul`, `web-istek --eylem break\|baseline`) da reddeder |
+| `demo.manage` | admin, engineer | `POST /demo/break-locator`, `POST /demo/reset`, `POST /demo/jira-status` (013) | `TP_DEMO_MODE=1`; kapalıyken 403 `demo_kapali` ("Demo kipi kapalı (TP_DEMO_MODE=0)", denetimde `authz.denied` `neden: demo_kapali`); worker işleri (`demo.break`/`demo.reset`) ve host CLI (`python -m tp_core.features.demo on-kosul`, `web-istek --eylem break\|baseline`) da reddeder |
 | `audit.verify` | admin, auditor | `GET /audit?verify=true` | |
+| `automation.manage` | analyst, engineer | `PUT /automation-settings/{anahtar}` (013 Y3) | `jira_tetik` gövdesinde `durum` varsa ayrıca `automation.jira_status` |
+| `automation.jira_status` | engineer | `PUT /automation-settings/jira_tetik` gövdesinde `durum` (013 K14) | |
+| `testdata.manage` | analyst, tester, engineer | `POST /test-data`, `PUT/DELETE /test-data/{id}` (013 K11) | Testçi (012'de case'i düzelten rol) de düzenler: düzeltmedeki `{veri:…}` atfı katalogda olmalı |
 
 ### 4.2 Okuma
 
 | İzin | Roller | Uçlar / not |
 |---|---|---|
-| `dashboard.read` | hepsi | Kontrol Kulesi uçları, `GET /demo/status`, `GET /auth/me` |
-| `requirement.read` | admin, analyst, po, tester, engineer, developer | gereksinim listesi/detayı, bulgular, baz değer okuma |
-| `case.read` | admin, analyst, po, tester, engineer, developer* | case listesi/detayı (portal `/caseler` Test case'leri ekranı dahil, 011 dev birleştirmesi), `GET /requirements/{id}/case-metrics`; *developer yalnız `approved`/`published` case; karar geçmişi ve chat yok |
-| `code.read` | admin, analyst, tester, engineer | script listesi/detayı, ekran görüntüleri (`GET /scripts/{id}/screenshots/{n}`), onarım durumu (`GET /failures/{id}/fix`) |
+| `dashboard.read` | hepsi | Kontrol Kulesi uçları, `GET /demo/status`, `GET /auth/me`, `GET /automation-settings` (013) |
+| `requirement.read` | admin, analyst, po, tester, engineer, developer | gereksinim listesi/detayı, bulgular, baz değer okuma, Jira tetik durumu (`GET /automation/jira-trigger`; portal `/otomasyon`, 013) |
+| `case.read` | admin, analyst, po, tester, engineer, developer* | case listesi/detayı (portal `/caseler` Test case'leri ekranı dahil, 011 dev birleştirmesi), `GET /requirements/{id}/case-metrics`, test verisi kataloğu (`GET /test-data`, `GET /test-data/{id}/history`; portal `/test-verisi`, 013); *developer yalnız `approved`/`published` case; karar geçmişi ve chat yok |
+| `code.read` | admin, analyst, tester, engineer | script listesi/detayı, ekran görüntüleri (`GET /scripts/{id}/screenshots/{n}`), onarım durumu (`GET /failures/{id}/fix`), toplu onayın kod işi (`GET /automation/codegen-jobs/{job_id}`, 013) |
 | `run.read` | hepsi | koşu listesi/detayı |
 | `run.artifacts` | admin, analyst, po, tester, engineer, developer | ham artefaktlar, `GET /artifacts/runs/{run_id}/{yol}` (auditor ve viewer hariç) |
 | `failure.read` | admin, analyst, po, tester, engineer, developer | hata sınıflaması |
@@ -125,6 +128,16 @@ oturumu ve Jira PO kanalını kabul eder).
 | `demo.read` | admin, analyst, po, tester, engineer | Demo yol haritası sayfası (portal; çekirdek ucu yok) |
 
 Not (dev birleştirmesi, 2026-11-12): dev'deki "Kod üretimi / Koşular listeleri yalnız engineer + presenter" menü/rota kısıtı (`OTOMASYON_ROLLERI`, Hakan geri bildirimi) bu tabloya çevrildi: `/kod` → `code.read`, `/kosular` → `run.read`; ayrı rol listesi tutulmaz.
+
+Not (013 sprint otomasyonu birleştirmesi, 2026-11-12): dev'in `require_role("analyst", "engineer")`
+uçları (otomasyon ayarları, test verisi) `automation.manage` / `testdata.manage` izinlerine,
+`/demo/jira-status` (presenter) `demo.manage` + demo kipine çevrildi. Toplu onay (`POST
+/cases/bulk-decision`) iki adıma eşlendi: Testçi `accept` (taslak → `ready`, "Toplu kabul"),
+Analist `approve` (`ready` → `approved`, "Toplu onayla"); izin tekli kararla aynı tablodan
+(`TEST_CASE_KARAR_IZNI`), her öğe tekli `decide`'ın tüm kapılarından (hash, durum, gereksinim,
+görevler ayrılığı) geçer. Onay sonrası otomatik kod yalnız Analist son onayından sonra kuyruğa
+alınır. Jira tetiğiyle PO onayı sonrası otomatik case üretimi sistem aktörüyle başlar ve case'ler
+`draft` kalır (Testçi kabulü + Analist son onayı gerekir; AI/sistem insan kapısını geçemez).
 
 Ayar izinleri: `integration.manage` / `system.settings` bu kurulumda uygulanmaz — entegrasyon ve
 sistem ayarları `.env` / sır yöneticisiyle yapılır, portalda ayar ekranı yoktur.
@@ -196,7 +209,7 @@ Kapsam dışı kalan uçlar: `/auth/*`, `/api/auth/aiprobe/*` (giriş akışı),
   `draft` kalır. Eski `approve` kayıtları (Analist kararı) yayın kapısı için geçerli kalır.
 - Ölçümler (`metrics.py`, kabul/düzeltme oranları) Testçi kararlarını (`accept`/`edit`/`reject`)
   sayar; `approve` / `send_back` ayrı "son onay" metriği olur.
-- Eski analist onayı (0026): göç anında var olan, analist hesabının test_case `edit` kayıtları
+- Eski analist onayı (0033): göç anında var olan, analist hesabının test_case `edit` kayıtları
   `review.eski_onay = true` işaretlenir ve yayın / kod üretimi kapısında `approve` sayılır;
   kararı verenin güncel rolüne bakılmaz.
 - Gösterilen son onay (`son_onay`): en son Analist kararı, ancak ondan sonra Testçi kararı

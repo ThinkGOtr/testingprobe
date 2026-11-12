@@ -13,6 +13,7 @@ import { SCRIPT_DURUMU, scriptIsareti, scriptUretiliyor } from "../lib/etiketler
 import { ENGEL_TURU, kosuKimligiMi, mergeEngelleri, mergeOnayNotu, mergeUyarilari, RET_NEDENI, YEREL_SINIF } from "../lib/kapi";
 import { saat, tarih } from "../lib/format";
 import { PlatformRozeti } from "../components/Platform";
+import { OTOMATIK_TETIK_ACIKLAMA, OTOMATIK_TETIK_ROZETI, VERI_DEGISTI_METNI, veriDegistiGecerli } from "./Kod";
 import { aracEtiketi, checkEtiketi, dikeyEkranMi, uygulamaPlatformuMu, type Platform } from "../lib/platform";
 import { DilRozeti } from "../components/Dil";
 import { DIL_CATISI, DIL_ETIKETI, gecerliDiller, KONTROL_ADIMI, kontrolAdimlari, kontrolZinciri, kosuAraci, type Dil } from "../lib/dil";
@@ -679,6 +680,10 @@ export function ScriptDetay() {
   const { id = "" } = useParams();
   const v = useVeri(() => api.script(id), [id]);
   const git = useNavigate();
+  // "Test verisi değişti" uyarısı Kod listesindeki kuralla aynı (veriDegistiGecerli): daha yeni script
+  // olup olmadığı için liste yalnız uyarı adayı varsa okunur; okunamazsa yalnız durum kuralı uygulanır.
+  const veriAdayi = !!v.veri?.veri_degisti;
+  const tumScriptler = useVeri(() => (veriAdayi ? api.scriptler().catch(() => null) : Promise.resolve(null)), [id, veriAdayi]);
   const islem = useIslem();
   const bildir = useBildirim();
   const sessiz = useGeciktirilmis(() => void v.yenile(true), 300);
@@ -1056,6 +1061,11 @@ export function ScriptDetay() {
             {sinif && <Cip ton={sinif.ton}>{sinif.etiket}</Cip>}
             <ReplayRozeti mode={s.mode} />
             <PlatformRozeti platform={s.platform} />
+            {s.tetik === "otomatik" && (
+              <Cip ton="bilgi" title={OTOMATIK_TETIK_ACIKLAMA}>
+                {OTOMATIK_TETIK_ROZETI}
+              </Cip>
+            )}
             <DilRozeti dil={s.dil} platform={s.platform} />
             {s.requirement_key && <span className="mono">{s.requirement_key}</span>}
             <span className="soluk">{tarih(s.olusturma)}</span>
@@ -1077,6 +1087,25 @@ export function ScriptDetay() {
       ) : (
         // Script kaydının saklı hatası API hatası değildir: asistanın "son hata" bağlamına gitmez (§5.5).
         s.hata && <HataKutusu hata={s.hata} kayitDisi />
+      )}
+      {veriDegistiGecerli(s, tumScriptler.veri ?? [s]) && (
+        <Uyari ton="uyari" baslik={VERI_DEGISTI_METNI}>
+          Bu test üretildikten sonra kullandığı test verisinin değeri katalogda değişti
+          {s.veri_degisen && s.veri_degisen.length > 0 && (
+            <>
+              {" "}
+              (değişen:{" "}
+              {s.veri_degisen.map((k, i) => (
+                <span key={k}>
+                  {i > 0 && ", "}
+                  <span className="mono">{k}</span>
+                </span>
+              ))}
+              )
+            </>
+          )}
+          . Kod eski değerle duruyor; <Link to="/kod">Kod üretimi</Link> ekranından yeniden üretin (değerler: <Link to="/test-verisi">Test verisi</Link>).
+        </Uyari>
       )}
       {s.uyarilar.length > 0 && (
         <Uyari ton="bilgi">

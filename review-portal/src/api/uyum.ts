@@ -2,6 +2,7 @@
 // core-api'nin gerçek şekli (platform şeridi) ile portalın beklediği şekil farklı olduğunda burada
 // eşlenir; mock arka uç zaten portal şeklini döndürdüğü için iki şekil de kabul edilir.
 
+import { caseOtomasyonAlanlari, otomatikAkisUyarla } from "./uyumOtomasyon";
 import type {
   Bulgu,
   DenetimOlayi,
@@ -232,6 +233,8 @@ export function gereksinimUyarla(g: Ham): Gereksinim {
       case_toplam: sayi(s.case_toplam),
       case_onayli: sayi(s.case_onayli),
     },
+    ...(g.otomatik_akis !== undefined ? { otomatik_akis: otomatikAkisUyarla(g.otomatik_akis) } : {}),
+    ...(typeof g.jira_durumu === "string" && g.jira_durumu ? { jira_durumu: g.jira_durumu } : {}),
   };
 }
 
@@ -465,6 +468,7 @@ export function caseUyarla(c: Ham): TestCase {
     ...(Array.isArray(c.fark) ? { fark: c.fark.filter(nesneMi).map(farkUyarla) } : {}),
     ...(c.duzeltme_nedeni !== undefined ? { duzeltme_nedeni: metinYaDaNull(c.duzeltme_nedeni) } : {}),
     ...(c.onceki_icerik === true ? { onceki_icerik: true } : {}),
+    ...caseOtomasyonAlanlari(c),
   };
 }
 

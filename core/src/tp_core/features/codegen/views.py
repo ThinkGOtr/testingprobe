@@ -13,7 +13,7 @@ import json
 import os
 import re
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +32,7 @@ from tp_core.features.codegen.service import (
     merge_kabul_gerekceleri,
     screenshot_url,
 )
+from tp_core.features.testveri import service as testveri
 from tp_core.integrations.forge import (
     GITHUB_REQUIRED_CHECKS,
     LOCAL_REQUIRED_CHECKS,
@@ -320,7 +321,14 @@ def _break_verify(sc: Script, cg: ScriptCodegen) -> dict[str, Any]:
     return {"durum": cg.break_durum, "asamalar": asamalar, "neden": kd.get("neden")}
 
 
-def serialize(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any]:
+def serialize(
+    session: Session,
+    sc: Script,
+    cg: ScriptCodegen,
+    guncel_ozetler: Mapping[str, tuple[str | None, str]] | None = None,
+) -> dict[str, Any]:
+    """`guncel_ozetler`: liste için tüm script'lerin test verisi özetleri tek sorguda (N+1 yok)."""
+    veri_degisen = testveri.degisen_anahtarlar(session, cg.veri_izi, guncel_ozetler)
     case_ids = [
         str(r)
         for r in session.scalars(
@@ -353,9 +361,16 @@ def serialize(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any]
         "break_verify": _break_verify(sc, cg),
         "yerel_sinif": None if yk.get("atlandi") else yk.get("sinif"),
         "mode": cg.uretim_modu,
+        # 013 §3.2: elle (kod üretimi ekranı) | otomatik (case onayı sonrası).
+        "tetik": cg.tetik,
         "engel": ({"tur": cg.engel_turu, "neden": cg.engel_nedeni} if cg.engel_turu else None),
         "olusturma": sc.olusturma.isoformat(),
         "hata": cg.engel_nedeni,
+        # 013 §3.3 (K10) / §10: üretimde kullanılan test verisi değer özetleri (tuzlu HMAC,
+        # {anahtar: "h1:…"}; eski düz özetler null); değişen / silinen anahtarlar `veri_degisen`.
+        "veri_izi": testveri.api_veri_izi(cg.veri_izi),
+        "veri_degisen": veri_degisen,
+        "veri_degisti": bool(veri_degisen),
     }
 
 
@@ -380,7 +395,12 @@ def list_scripts_sinirli(
         .order_by(Script.olusturma.desc())
         .limit(limit + 1)
     ).all()
-    return [serialize(session, sc, cg) for sc, cg in rows[:limit]], len(rows) > limit
+    sayfa = rows[:limit]
+    ozetler = testveri.guncel_ozetler(session, (a for _, cg in sayfa for a in (cg.veri_izi or {})))
+    gizli = testveri.gizli_degerler(session)
+    return [
+        testveri.maskele(session, serialize(session, sc, cg, ozetler), gizli) for sc, cg in sayfa
+    ], len(rows) > limit
 
 
 def list_scripts(session: Session) -> list[dict[str, Any]]:
@@ -598,7 +618,9 @@ def detail(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any]:
         denetim_hash=cg.denetim_hash,
         bundle_hash=cg.bundle_hash,
     )
-    return out
+    # 013 K19: adım argümanları / ham çıktı, eşleme argümanları, engel/kontrol metinleri
+    # kullanıcıya bilinen gizli test verisi değerini düz göstermez (eski kayıtlar dahil).
+    return testveri.maskele(session, out)
 
 
 def get_pair(session: Session, sid: uuid.UUID) -> tuple[Script, ScriptCodegen] | None:

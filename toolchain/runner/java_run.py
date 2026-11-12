@@ -57,6 +57,7 @@ import httpx
 
 from runner import surefire
 from runner.results import decide_status, failure_groups, failures_of
+from runner.run import testveri_env
 from toolchain_common import gitforge, proc, repos
 from toolchain_common.artifacts import KEEP_MARKER, atomic_write_json, run_dir
 from toolchain_common.settings import Settings
@@ -216,11 +217,13 @@ def maven_argv(
 def maven_env(
     cfg: Settings, req: RunRequest, platform: str, tmp_dir: Path | None = None
 ) -> dict[str, str]:
-    """İzin listesi: sistem + proje ayarları (ortamdaki MAVEN_*/JVM seçenekleri geçmez).
+    """İzin listesi: sistem + proje ayarları + gizli test verisi `TP_TESTVERI_*` (K19; ortamdaki
+    MAVEN_*/JVM seçenekleri geçmez).
     `MAVEN_OPTS` sabittir (bellek sınırı, OPS-O6); `tmp_dir` verilirse `TMPDIR` odur (koşu
     dizini altı; ortamdaki TMPDIR'in yerine geçer) ve Maven JVM'inin `java.io.tmpdir`'i de odur
     (JVM Linux'ta TMPDIR okumaz, OPS-O2)."""
     env = {k: os.environ[k] for k in PASS_ENV if k in os.environ}
+    env.update(testveri_env())
     env["MAVEN_OPTS"] = MAVEN_OPTS
     if tmp_dir is not None:
         env["TMPDIR"] = str(tmp_dir)

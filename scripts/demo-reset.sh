@@ -51,6 +51,11 @@ for h in j.get("hatalar") or []:
     print("  UYARI: %s silinemedi: %s" % (h.get("key"), h.get("hata")))
 if j.get("durum") in ("hata", "atlandi") and j.get("neden"):
     print("  jira: %s — %s" % (j.get("durum"), j.get("neden")))
+o = s.get("otomasyon") or {}
+if o.get("hata"):
+    print("  UYARI: %s" % o["hata"])
+elif o:
+    print("  otomasyon: onay sonrası otomatik kod kapalı (%s)" % o.get("otomatik_kod_uretimi"))
 '
 "$TP_REPO_ROOT/scripts/demo-web-sync.sh" --wait baseline
 

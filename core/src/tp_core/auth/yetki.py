@@ -91,6 +91,12 @@ IZINLER: Final[dict[str, frozenset[str]]] = {
     "bug.decide": _r(TESTER),
     "demo.manage": _r(ADMIN, ENGINEER),
     "audit.verify": _r(ADMIN, AUDITOR),
+    # 013 sprint otomasyonu: otomasyon ayarları ve test verisi kataloğu (specs/013 Y3, K11).
+    # Katalogu case'i düzelten Testçi (012) de düzenler: düzeltmedeki `{veri:…}` atfı katalogda
+    # olmalı. Jira tetiğinin durum adı yalnız Otomasyon mühendisinin (K14).
+    "automation.manage": _r(ANALYST, ENGINEER),
+    "automation.jira_status": _r(ENGINEER),
+    "testdata.manage": _r(ANALYST, TESTER, ENGINEER),
     # okuma
     "dashboard.read": _HEPSI,
     "requirement.read": _IS_ROLLERI,

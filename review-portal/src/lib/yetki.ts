@@ -59,6 +59,10 @@ export const IZINLER = {
   "bug.decide": ["tester"],
   "demo.manage": ["admin", "engineer"],
   "audit.verify": ["admin", "auditor"],
+  // 013 sprint otomasyonu: otomasyon ayarları ve test verisi kataloğu.
+  "automation.manage": ["analyst", "engineer"],
+  "automation.jira_status": ["engineer"],
+  "testdata.manage": ["analyst", "tester", "engineer"],
   // okuma
   "dashboard.read": HEPSI,
   "requirement.read": IS_ROLLERI,
@@ -137,6 +141,8 @@ export const ROTA_IZINLERI: Record<string, readonly Izin[]> = {
   "/demo": ["demo.manage"],
   "/denetim": ["audit.read_all", "audit.read_own"],
   "/claude-code": ["claude_code.read"],
+  "/test-verisi": ["case.read"],
+  "/otomasyon": ["requirement.read"],
 };
 
 /**

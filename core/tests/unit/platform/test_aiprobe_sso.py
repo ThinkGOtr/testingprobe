@@ -951,17 +951,19 @@ def test_alembic_tek_bas() -> None:
 
     script = ScriptDirectory.from_config(alembic_config())
     bas = script.get_heads()
-    # 011: 0021 (script dili) → 0022 (PR zorunlu check'ler); 013: 0023 (asistan güvenlik olayı);
-    # 012: 0024 (roller, S1) → 0025 (case ready, S2) → 0026 (eski onay işareti, PO reddi).
-    assert bas == ["0026"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
+    # 011: 0021 (script dili) → 0022 (PR zorunlu check'ler); 013: 0023 (asistan güvenlik olayı)
+    # → 0030 (sprint otomasyonu); 012: 0031 (roller, S1) → 0032 (case ready, S2) → 0033 (eski
+    # onay işareti, PO reddi).
+    assert bas == ["0033"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
     assert script.get_revision("0019").down_revision == "0018"
     assert script.get_revision("0020").down_revision == "0019"
     assert script.get_revision("0021").down_revision == "0020"  # 011 script dili
     assert script.get_revision("0022").down_revision == "0021"
     assert script.get_revision("0023").down_revision == "0022"  # 013 asistan güvenlik
-    assert script.get_revision("0024").down_revision == "0023"  # 012 rol modeli v2
-    assert script.get_revision("0025").down_revision == "0024"
-    assert script.get_revision("0026").down_revision == "0025"
+    assert script.get_revision("0030").down_revision == "0023"  # 013 sprint otomasyonu
+    assert script.get_revision("0031").down_revision == "0030"  # 012 rol modeli v2
+    assert script.get_revision("0032").down_revision == "0031"
+    assert script.get_revision("0033").down_revision == "0032"
 
 
 # ------------------------------------------------------------------ inceleme bulguları (2026-11-10)

@@ -1247,3 +1247,43 @@ def test_python_strict_markers_parcasi_sablonla_birebir() -> None:
     kayitli = {d.split(":")[0].split("(")[0] for ad, d in kayitlar if ad == "markers"}
     kullanilan = {i[0] for i in _py_yapi(r.content)["isaretler"]}  # story + dealer dahil
     assert kullanilan == kayitli == {ad.split("(")[0] for ad, _ in render.PY_ISARETLER}
+
+
+# --------------------------------------------- 013 K19 × 011: doğrulanmamış dilde gizli test verisi
+
+
+@pytest.mark.parametrize(
+    ("dil", "okuma"),
+    [
+        ("csharp", 'System.Environment.GetEnvironmentVariable("TP_TESTVERI_DEMO_PAROLA")'),
+        ("python", '__import__("os").environ["TP_TESTVERI_DEMO_PAROLA"]'),
+    ],
+)
+def test_dogrulanmamis_dilde_gizli_deger_ortamdan_okunur(dil: str, okuma: str) -> None:
+    """Gizli değer argümanı ortam değişkeninden okunur; başlık/adım etiketinde `•••`; boş harita
+    çıktıyı (golden) değiştirmez."""
+    gizli = {"Demo123!": "TP_TESTVERI_DEMO_PAROLA"}
+    case = copy.deepcopy(golden_case(2))
+    case["title"] = "bayi1 / Demo123! ile giriş"
+    for adim in case.get("steps") or []:
+        adim["action"] = f"{adim.get('action')} (Demo123!)"
+    r = render.render_dil(
+        girdi(2, case=case, gizli_ortam=gizli), dil=dil, platform="web", rules=RULES
+    )
+    assert okuma in r.content
+    assert "Demo123!" not in r.content and "•••" in r.content
+    assert (
+        render.render_dil(girdi(2, gizli_ortam={}), dil=dil, platform="web", rules=RULES).content
+        == render.render_dil(girdi(2), dil=dil, platform="web", rules=RULES).content
+    )
+
+
+@pytest.mark.parametrize("dil", ["csharp", "python"])
+def test_dogrulanmamis_dilde_sirri_tanimsiz_gizli_deger_sizinti_taramasina_takilir(
+    dil: str,
+) -> None:
+    """Sırrı tanımsız (yalnız taranacak) gizli değer düz literal kalırsa render fail-closed."""
+    with pytest.raises(render.GizliSizinti):
+        render.render_dil(
+            girdi(2, gizli_taranacak=("Demo123!",)), dil=dil, platform="web", rules=RULES
+        )

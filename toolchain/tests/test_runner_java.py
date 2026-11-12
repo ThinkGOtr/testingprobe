@@ -416,3 +416,26 @@ def test_app_settings_windows_args_and_workdir(monkeypatch: pytest.MonkeyPatch) 
         "APP_ARGS": "--api-url http://192.168.64.1:18081/api",
         "APP_WORKDIR": r"C:\tp\bayi\win-arm64",
     }
+
+
+def test_maven_env_passes_only_testveri_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    """K19: Java koşusu da `TP_TESTVERI_<AD>` değişkenlerini (yalnızca bunları) geçirir."""
+    from types import SimpleNamespace
+
+    from runner import java_run
+    from runner.run import RunRequest
+
+    monkeypatch.setenv("TP_TESTVERI_DEMO_PAROLA", "gizli")
+    monkeypatch.setenv("TP_TESTVERI_a", "kucuk")
+    monkeypatch.setenv("MAVEN_OPTS", "-Dkotu")
+    cfg = SimpleNamespace(demo_api_url="http://a", demoapp_test_token="t")
+    cfg.base_url = "http://w"
+    req = RunRequest(sha="a" * 40, run_id="r1", lang="java")
+    # Uygulama ve web (011 Java web hattı) koşuları aynı izin listesini kullanır.
+    for platform in ("android", "web"):
+        env = java_run.maven_env(cfg, req, platform)  # type: ignore[arg-type]
+        assert env["TP_TESTVERI_DEMO_PAROLA"] == "gizli"
+        assert "TP_TESTVERI_a" not in env
+        # Ortamdaki MAVEN_OPTS geçmez; yerine sabit değer (OPS-O6) yazılır.
+        assert env["MAVEN_OPTS"] == java_run.MAVEN_OPTS
+        assert "-Dkotu" not in env["MAVEN_OPTS"]

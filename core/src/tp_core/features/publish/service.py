@@ -148,8 +148,11 @@ def approver_of(session: Session, tc: TestCase) -> str | None:
 def case_mapping(session: Session, tc: TestCase) -> dict[str, Any]:
     """Adaptöre giden case (şema + kimlik + onaylayan + onaylanan hash + üretim modu)."""
     mod = mode_of(tc)
+    # 013 Y4: gizli olmayan test verisi atıfları değere çözülür; gizliler atıf kalır.
+    from tp_core.features.testveri.service import yayin_icin_coz
+
     return {
-        **tc.icerik,
+        **yayin_icin_coz(session, tc.icerik),
         "id": str(tc.id),
         "onaylayan": approver_of(session, tc),
         "onaylanan_hash": tc.onaylanan_hash,
@@ -555,7 +558,8 @@ def _publish_one(
         mapping = case_mapping(s, tc)
         story_key = req.jira_key
         icerik_hash = tc.icerik_hash
-        baslik = str(tc.icerik.get("title") or "")
+        # Jira'ya giden başlık maskelidir (K19); mevcut issue karşılaştırması da o başlıkla.
+        baslik = str(mapping.get("title") or "")
         mod = mode_of(tc)
         # intent commit edilir: dış çağrıdan sonra çöksek de kayıt (ve tp-<uuid> araması) kalır.
     try:

@@ -67,6 +67,9 @@ without such an id use the list screen.
 - `/kontrol-kulesi` (Kontrol Kulesi), `/yol-haritasi` (Yol haritası), `/denetim` (Denetim)
 - `/claude-code` (Claude Code kanalı; token Testçi'de), `/demo` (Demo kontrolleri: demo verisi
   sıfırlama; yalnız Sistem Yöneticisi ve Automation Engineer, demo modunda)
+- `/test-verisi` (Test verisi kataloğu: case'lerdeki `{veri:anahtar}` atıflarının değerleri;
+  Analist, Testçi ve Automation Engineer düzenler), `/otomasyon` (Otomasyon ayarları: onay sonrası
+  otomatik kod, Jira durum tetiği; Analist ve Automation Engineer değiştirir)
 This list is reference data: you may point to these screens in `yonlendirmeler` without a tool
 call, but do not claim a screen's detailed behaviour unless a tool showed it.
 

@@ -18,6 +18,51 @@ import { baslamayanlar, DilCakismasiKutusu, dilCakismasiMi, UretimAtlananlar, ur
 /** Doğrulanmamış dil (C#, Python) seçiliyken üretim düğmesinin yanında duran açık uyarı. */
 export const DOGRULANMAMIS_UYARISI = "Kod derlenmez ve koşulmaz; PR açılmaz.";
 
+export const OTOMATIK_TETIK_ACIKLAMA = "Bu test, case onaylanınca otomatik kod üretimiyle başlatıldı (Otomasyon ayarı).";
+export const OTOMATIK_TETIK_ROZETI = "Onay sonrası otomatik";
+export const VERI_DEGISTI_METNI = "Test verisi değişti; yeniden üretin";
+
+const SUREN_DURUMLAR = new Set(["pending", "verifying", "checking"]);
+const scriptPlatformu = (s: Pick<Script, "platform">) => (s.platform === undefined ? "web" : s.platform);
+
+/** Aynı case + platform için bu script'ten sonra üretilmiş başka script var mı (eski kayıt). */
+export function dahaYeniScriptVar(s: Script, tum: readonly Script[]): boolean {
+  const p = scriptPlatformu(s);
+  return tum.some(
+    (o) => o.id !== s.id && scriptPlatformu(o) === p && Date.parse(o.olusturma) > Date.parse(s.olusturma) && o.case_ids.some((c) => s.case_ids.includes(c)),
+  );
+}
+
+/**
+ * "Test verisi değişti" uyarısı ve yeniden üretim yalnız güncel kayıtta anlamlı: süren üretim
+ * (pending/verifying/checking) bitmeden, kapatılmış ya da yerine yenisi üretilmiş eski kayıtta gösterilmez.
+ */
+export function veriDegistiGecerli(s: Script, tum: readonly Script[]): boolean {
+  return !!s.veri_degisti && s.durum !== "closed" && !SUREN_DURUMLAR.has(s.durum) && !dahaYeniScriptVar(s, tum);
+}
+
+/** Değeri değişen anahtarların kısa metni (değer/özet gösterilmez). */
+export const veriDegisenMetni = (s: Pick<Script, "veri_degisen">) =>
+  s.veri_degisen && s.veri_degisen.length > 0 ? `Değeri değişen test verisi: ${s.veri_degisen.join(", ")}` : "Üretimde kullanılan test verisinin değeri katalogda değişti.";
+
+/** 013 §3.5: otomatik tetik rozeti ve "test verisi değişti" işareti (core göndermediyse hiçbiri). */
+export function OtomasyonIsaretleri({ s, veriUyarisi = !!s.veri_degisti }: { s: Pick<Script, "tetik" | "veri_degisti" | "veri_degisen">; veriUyarisi?: boolean }) {
+  return (
+    <>
+      {s.tetik === "otomatik" && (
+        <Cip ton="bilgi" title={OTOMATIK_TETIK_ACIKLAMA}>
+          {OTOMATIK_TETIK_ROZETI}
+        </Cip>
+      )}
+      {veriUyarisi && (
+        <Cip ton="uyari" title={veriDegisenMetni(s)}>
+          {VERI_DEGISTI_METNI}
+        </Cip>
+      )}
+    </>
+  );
+}
+
 export function Kod() {
   const scriptler = useVeri(() => api.scriptler(), []);
   const caseler = useVeri(() => api.caseler(), []);
@@ -240,7 +285,7 @@ export function Kod() {
                   const isaret = scriptIsareti(s);
                   const sinif = s.yerel_sinif && s.yerel_sinif !== "gecti" ? YEREL_SINIF[s.yerel_sinif] : null;
                   const yenidenUretilebilir =
-                    (s.durum === "blocked" || s.durum === "failed") &&
+                    (s.durum === "blocked" || s.durum === "failed" || veriDegistiGecerli(s, tumScriptler)) &&
                     s.case_ids.length > 0 &&
                     s.platform !== null &&
                     !(s.yerel_sinif === "defect_adayi" || s.engel?.tur === "defect_candidate");
@@ -271,6 +316,7 @@ export function Kod() {
                             </Cip>
                           )}
                           <ReplayRozeti mode={s.mode} />
+                          <OtomasyonIsaretleri s={s} veriUyarisi={veriDegistiGecerli(s, tumScriptler)} />
                         </span>
                       </td>
                       <td data-etiket="PR">
@@ -302,12 +348,21 @@ export function Kod() {
                       </td>
                       <td className={yenidenUretilebilir ? undefined : "bos-hucre"} data-etiket="Eylem">
                         {/* Defect adayının testi doğru (uygulama farklı davranıyor): yeniden üretim önerilmez, karar triage'da. */}
+                        {/* 013: test verisi değişen güncel script de yeniden üretilebilir (süren / eski kayıtta değil). */}
                         {yenidenUretilebilir && (
                           <IslemDugmesi
                             izin="code.generate"
                             tur="ikincil"
                             calisiyor={islem.calisiyor}
-                            title="Aynı onaylı case için kodu yeniden üretir; bu kayıt kapatılır."
+                            title={
+                              s.durum === "blocked" || s.durum === "failed"
+                                ? "Aynı onaylı case için kodu yeniden üretir; bu kayıt kapatılır."
+                                : s.durum === "unverified"
+                                  ? "Kodu güncel test verisiyle yeniden üretir (doğrulanmamış dil; PR açılmaz)."
+                                  : s.durum === "merged"
+                                    ? "Kodu güncel test verisiyle yeniden üretir; birleşmiş kayıt değişmez, yeni PR açılır."
+                                    : "Kodu güncel test verisiyle yeniden üretir; bu kayıt ve açık PR'ı kapatılır, yenisi açılır."
+                            }
                             onClick={() => yenidenUret(s, s.platform === undefined ? "web" : (s.platform as Platform))}
                           >
                             Yeniden üret

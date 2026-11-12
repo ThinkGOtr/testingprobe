@@ -116,6 +116,10 @@ export interface Gereksinim {
   cekim_zamani: string;
   po: PoDurumu;
   sayaclar: { bulgu_acik: number; case_toplam: number; case_onayli: number };
+  /** 013 §9 (K15): Jira tetiğiyle alınan story'nin otomatik akışı; tetikle alınmadıysa null/yok. */
+  otomatik_akis?: OtomatikAkis | null;
+  /** 013 §3.0: tetiğin gördüğü son Jira durumu (core gönderirse). */
+  jira_durumu?: string | null;
 }
 
 export type SoruTuru = "ambiguity" | "missing_ac" | "conflict" | "untestable";
@@ -418,6 +422,204 @@ export interface TestCase {
   duzeltme_nedeni?: string | null;
   /** Case gereksinimin önceki (PO onayı değişmiş) içeriğine ait. */
   onceki_icerik?: boolean;
+  /**
+   * 013 §3.2/K13: bu kullanıcı case'i son karardan sonra görüntüledi mi (kart en az 3 sn kesintisiz
+   * ekranda kaldı, görüntüleme ≥ 3 sn önce kaydedildi). Toplu onay yalnız görülmüş taslakları alır;
+   * alan yoksa (eski core) görülmemiş sayılır.
+   */
+  goruldu?: boolean;
+  /**
+   * 013 §9: approve'un reddedeceği neden (durum, gereksinim değişti, bilinmeyen AC, katalogda olmayan
+   * atıf); doluysa toplu onaya girmez. null: engel yok.
+   */
+  onay_engeli?: string | null;
+  /** 013 §3.3: içerikteki `{veri:anahtar}` atıflarının katalog karşılığı (anahtar → kayıt). */
+  veri?: Record<string, CaseVeriAtfi>;
+  /** 013 §3.2: tekli karar yanıtındaki otomatik kod üretimi sonucu. */
+  otomatik_kod?: OtomatikKodSonucu | null;
+  /**
+   * 013 §10 (K10 case yarısı): onaydan sonra katalogda değeri değişen test verisi anahtarları
+   * (yalnız anahtar; değer/özet yok). Core göndermezse ya da boşsa alan yok.
+   */
+  veri_onaydan_sonra_degisen?: string[];
+}
+
+/** Case serileştirmesindeki atıf kaydı (`veri: {anahtar: {deger, gizli, surum, var}}`). */
+export interface CaseVeriAtfi {
+  /** Gizli ya da katalogda yoksa null. */
+  deger: string | null;
+  gizli: boolean;
+  surum: number | null;
+  /** Anahtar katalogda (silinmemiş) var mı. */
+  var: boolean;
+}
+
+/** Onay sonrası otomatik kod üretimi (013 §3.2 `otomatik_kod`). */
+export interface OtomatikKodSonucu {
+  /** `hata`: beklenmeyen hata; onay geçerli kalır, kod elle başlatılır. */
+  durum: "kuyrukta" | "reddedildi" | "kapali" | "atlandi" | "hata";
+  neden: string | null;
+  script_id: string | null;
+}
+
+/** `POST /cases/bulk-decision` öğe sonucu (013 §9: öğe `otomatik_kod` artık null; kod üretimi üst düzeyde). */
+export interface TopluKararSonucu {
+  case_id: string;
+  durum: "onaylandi" | "atlandi" | "hata";
+  neden: string | null;
+  /** Eski core öğe başına gönderiyordu; yeni core null. */
+  otomatik_kod: OtomatikKodSonucu | null;
+}
+
+/**
+ * Toplu onayın kod üretimi (K16): onaylananlar için tek `codegen.otomatik` arka plan işi.
+ * `yok`: onaylanan case yok ya da üretilecek case kalmadı.
+ */
+export interface TopluOtomatikKod {
+  durum: "kuyrukta" | "kapali" | "yok";
+  job_id: string | null;
+  /** İşe giren (üretilecek) case sayısı; atlananlar dahil değil. */
+  case_sayisi: number;
+  /** §10: işe alınmayan onaylı case'ler (açık PR, süren üretim) ve nedeni; core göndermezse yok. */
+  atlanan?: { case_id: string; neden: string | null }[];
+}
+
+/** `GET /automation/codegen-jobs/{job_id}`: toplu onayın kod üretimi işi ve case başına sonuç. */
+export interface KodUretimIsi {
+  job_id: string;
+  durum: "kuyrukta" | "calisiyor" | "tamam" | "hata";
+  case_sayisi: number;
+  /** Sonuç durumu → sayı (kuyrukta, atlandi, reddedildi, kapali, hata). */
+  ozet: Record<string, number>;
+  sonuclar: { case_id: string; durum: OtomatikKodSonucu["durum"]; neden: string | null; script_id: string | null }[];
+  hata: string | null;
+}
+
+export interface TopluKararYaniti {
+  sonuclar: TopluKararSonucu[];
+  ozet: { onaylandi: number; atlandi: number; hata: number };
+  /** Yeni core üst düzeyde gönderir; eski core göndermez (null). */
+  otomatik_kod: TopluOtomatikKod | null;
+}
+
+/** Test verisi kataloğu kaydı (`GET /test-data`; 013 §3.3). Gizli kayıtta `deger` null. */
+export interface TestVerisi {
+  id: string;
+  anahtar: string;
+  grup: string | null;
+  aciklama: string | null;
+  deger: string | null;
+  gizli: boolean;
+  /** Gizli kaydın ortam sırrı adı (değer kataloğa yazılmaz). */
+  sir_adi: string | null;
+  /** Ortam sırrı tanımlı mı (yalnız gizli kayıtta anlamlı). */
+  sir_tanimli: boolean;
+  surum: number;
+  guncelleyen: string | null;
+  guncelleme: string | null;
+  /** Atıf yapan etkin case sayısı. */
+  kullanim: number;
+}
+
+export interface TestVerisiGirdisi {
+  anahtar: string;
+  grup?: string | null;
+  aciklama?: string | null;
+  deger?: string | null;
+  gizli?: boolean;
+  sir_adi?: string | null;
+}
+
+export interface TestVerisiGuncelleme {
+  deger?: string | null;
+  aciklama?: string | null;
+  grup?: string | null;
+  sir_adi?: string | null;
+  /** İyimser kilit: ekranda görülen sürüm; uyuşmazsa 409. */
+  beklenen_surum: number;
+}
+
+/** `GET /test-data/{id}/history` (gizli değer yok). */
+export interface TestVerisiSurumu {
+  surum: number;
+  islem: "olustur" | "guncelle" | "sil";
+  deger: string | null;
+  gizli: boolean;
+  sir_adi: string | null;
+  degistiren: string | null;
+  zaman: string | null;
+}
+
+/** Silme 409'unda atıf yapan case. */
+export interface AtifYapanCase {
+  id: string;
+  /** Core `case_ref` (ör. "TPD-2 #3"); yoksa null. */
+  case_ref: string | null;
+  durum: string | null;
+  requirement_id: string | null;
+  jira_key: string | null;
+  sira_no: number | null;
+  baslik: string;
+}
+
+/** `GET /automation-settings` (013 §3.1). */
+export interface OtomasyonAyarlari {
+  otomatik_kod_uretimi: { acik: boolean; guncelleyen: string | null; guncelleme: string | null };
+  jira_tetik: {
+    acik: boolean;
+    durum: string;
+    aralik_s: number;
+    otomatik_case: boolean;
+    guncelleyen: string | null;
+    guncelleme: string | null;
+  };
+  /**
+   * K23: model geçidi REPLAY kipinde mi (core ayar ucunda `replay` ya da `model_kipi` verirse).
+   * Bilinmiyorsa yok; portal `/demo/status` → `model.mod`'a düşer.
+   */
+  replay?: boolean;
+}
+
+export type OtomasyonAyarAnahtari = Exclude<keyof OtomasyonAyarlari, "replay">;
+
+/** `GET /automation/jira-trigger` (013 §3.4). */
+export interface JiraTetikDurumu {
+  acik: boolean;
+  durum: string;
+  aralik_s: number;
+  son_tur: {
+    zaman: string | null;
+    bulunan: number;
+    tetiklenen: number;
+    /** Tur sınırı (10) yüzünden sonraki tura kalan story sayısı. */
+    ertelenen: number;
+    /** İlk tur (taban): mevcut story'ler yalnız işaretlendi, tetiklenmedi (K14). */
+    taban: boolean;
+    hata: string | null;
+    /** 013 §9: story başına sonuç (ör. `tetiklendi`, `isaretlendi`, `dokunulmadi`) ve Türkçe neden. */
+    sonuclar: JiraTetikTurSonucu[];
+  } | null;
+  /** Story başına son tetik sonucu; `neden` kalıcı Türkçe gerekçe (tur 3; core göndermezse null). */
+  son_tetiklenenler: { jira_key: string; zaman: string | null; sonuc: string | null; neden: string | null }[];
+  /**
+   * Sonraki tur taban turu mu (işaret yok: duruma girenler yalnız işaretlenir). Core `taban_bekleniyor`
+   * ya da `taban_kurulu` verirse; yoksa yok (portal tahmin eder).
+   */
+  taban_bekleniyor?: boolean;
+}
+
+export interface JiraTetikTurSonucu {
+  jira_key: string;
+  sonuc: string;
+  neden: string | null;
+}
+
+/** Gereksinimin Jira tetiğiyle alınmış otomatik akışı (013 §9, K15). */
+export interface OtomatikAkis {
+  tetik_zamani: string | null;
+  durum: "suruyor" | "durdu" | "tamam";
+  /** `durdu` iken neden (ör. içerik değişti, inceleme hata verdi, case üretimi reddedildi). */
+  neden: string | null;
 }
 
 /** core `son_onay`: Analistin son onay kararı. */
@@ -676,6 +878,14 @@ export interface Script {
   mode: CiktiModu | null;
   olusturma: string;
   hata: string | null;
+  /** 013: üretimi kim başlattı (`otomatik` = case onayıyla kuyruğa alındı). Eski core göndermez. */
+  tetik?: "elle" | "otomatik";
+  /** 013 §3.3: üretimde kullanılan test verisi değeri katalogda değişti (`veri_degisen` dolu). */
+  veri_degisti?: boolean;
+  /** 013 §9: üretimde çözülen `{anahtar: değer özeti}` (sha256[:12]; değer değil, sürüm değil). */
+  veri_izi?: Record<string, string>;
+  /** 013 §9: değeri üretimden sonra değişen anahtarlar. */
+  veri_degisen?: string[];
 }
 
 /**

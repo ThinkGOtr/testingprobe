@@ -37,6 +37,10 @@ const NAV: { grup: string; ogeler: NavOgesi[] }[] = [
       { yol: "/kod", ad: "Kod üretimi", ikon: "kod", odak: ["engineer"], uc: ["GET", "/scripts"] },
       { yol: "/kosular", ad: "Koşular", ikon: "kosu", odak: ["engineer", "developer"], uc: ["GET", "/runs"] },
       { yol: "/bug-taslaklari", ad: "Bug taslakları", ikon: "bug", odak: ["tester"], uc: ["GET", "/bug-drafts"] },
+      // 013 (012'ye uyarlandı): katalogu Analist, Testçi ve Mühendis düzenler (`testdata.manage`);
+      // otomasyon ayarlarını Analist ve Mühendis (`automation.manage`).
+      { yol: "/test-verisi", ad: "Test verisi", ikon: "veri", odak: ["analyst", "tester", "engineer"], uc: ["GET", "/test-data"] },
+      { yol: "/otomasyon", ad: "Otomasyon", ikon: "otomasyon", odak: ["analyst", "engineer"], uc: ["GET", "/automation-settings"] },
     ],
   },
   {

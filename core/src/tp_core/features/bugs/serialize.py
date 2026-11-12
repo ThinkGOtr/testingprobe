@@ -17,6 +17,8 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from tp_core.features.bugs.service import _requirement_id, mod_label_of
+from tp_core.features.testveri.atif import maskele_obje
+from tp_core.features.testveri.service import gizli_degerler
 from tp_core.models import AppUser, BugDraft, Review
 from tp_core.models.bugs_feature import BugDraftEk
 
@@ -86,6 +88,7 @@ def bug_draft_view(s: Session, b: BugDraft) -> dict[str, Any]:
     mod_metni, _ = mod_label_of(s, b)
     rid = _requirement_id(s, b)
     jira_silindi = bool(((ek.yayin if ek else None) or {}).get("jira_silindi"))
+    gizli = gizli_degerler(s) if ek else []
     adaylar = []
     for a in b.mukerrer_adaylari or []:
         if isinstance(a, dict):
@@ -117,13 +120,14 @@ def bug_draft_view(s: Session, b: BugDraft) -> dict[str, Any]:
         "hazirlik": {
             "durum": ek.hazirlik_durum if ek else None,
             "no": ek.hazirlik_no if ek else 0,
-            "hata": ek.hazirlik_hatasi if ek else None,
+            "hata": maskele_obje(ek.hazirlik_hatasi, gizli) if ek else None,
             "job_id": str(ek.job_id) if ek and ek.job_id else None,
         },
         "uretim": ek.uretim if ek else None,
-        "imza": ek.imza if ek else {},
-        "jql": ek.jql if ek else None,
-        "arama": ek.arama if ek else {},
+        # 013 K19 (güvenlik #1): eski kayıtlar dahil imza / JQL / arama maskeli döner.
+        "imza": maskele_obje(ek.imza, gizli) if ek else {},
+        "jql": maskele_obje(ek.jql, gizli) if ek else None,
+        "arama": maskele_obje(ek.arama, gizli) if ek else {},
         "oneri": ek.oneri if ek else {},
         "dup_mode": ek.dup_uretim_modu if ek else None,
         "duzeltmeler": ek.duzeltmeler if ek else [],

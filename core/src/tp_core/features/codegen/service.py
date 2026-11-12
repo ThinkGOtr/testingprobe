@@ -97,6 +97,7 @@ from tp_core.features.codegen.classify import Siniflama, classify, kirma_sinifi
 from tp_core.features.codegen.ozet import adim_ozeti, ham_cikti, insan_ozeti  # noqa: F401
 from tp_core.features.codegen.prbody import pr_body, pr_title
 from tp_core.features.codegen.render import (
+    GizliSizinti,
     Rendered,
     RenderError,
     RenderInput,
@@ -108,6 +109,8 @@ from tp_core.features.codegen.render import (
     ts_literal,
 )
 from tp_core.features.codegen.toolchain import ToolchainClient, ToolchainError
+from tp_core.features.testveri import atif
+from tp_core.features.testveri import service as testveri
 from tp_core.integrations.forge import (
     CASE_BRANCH_PREFIX,
     ForgeError,
@@ -126,7 +129,7 @@ from tp_core.models import (
     WorkflowInstance,
     session_scope,
 )
-from tp_core.models.codegen_feature import ScriptAdim, ScriptCodegen, ScriptKontrol
+from tp_core.models.codegen_feature import TETIK, ScriptAdim, ScriptCodegen, ScriptKontrol
 from tp_core.ports import AgentResult, AgentStep, ForgePort, ModelGateway, ModelMessage
 from tp_core.workflow.jobs import JobContext, PermanentJobError, enqueue, start_workflow
 from tp_core.workflow.service import (
@@ -559,6 +562,28 @@ def replay_temel_durum_engeli() -> str | None:
     return REPLAY_TEMEL_ENGELI if durum == NEW_TESTID else None
 
 
+OTOMATIK_PR_ACIK = "Açık PR var; yeniden üretim mühendis kararıyla"
+OTOMATIK_DOGRULANMAMIS_VAR = (
+    "Bu onaylı içerik için doğrulanmamış kod zaten üretildi; yeniden üretim mühendis kararıyla"
+)
+
+
+def veri_engeli_metni(exc: testveri.TestVerisiCozulemedi) -> str:
+    """Çözülemeyen atfın Türkçe nedeni (ör. "Test verisi sırrı tanımsız: <anahtar>")."""
+    metin = str(exc).strip()
+    return metin[:1].upper() + metin[1:]
+
+
+def _veri_coz(
+    session: Session, icerik: Mapping[str, Any]
+) -> tuple[dict[str, Any] | None, str | None]:
+    """(yeni `veri_izi`, None) ya da (None, Türkçe engel nedeni)."""
+    try:
+        return testveri.case_coz(session, icerik)[1], None
+    except testveri.TestVerisiCozulemedi as exc:
+        return None, veri_engeli_metni(exc)
+
+
 def proje_dosyasi(dil: str, platform: str | None = platformlar.WEB) -> str:
     """Tam hat dilinin forge'daki test projesi dosyası (uygulama köküne göre; `TP_FORGE_APP_ROOT`):
     ts → `<e2e>/package.json`, Java → `<e2e-java|e2e-app>/pom.xml`."""
@@ -744,6 +769,8 @@ def start_generation(
     user: Principal,
     platform: str = platformlar.WEB,
     dil: str | None = None,
+    tetik: str = "elle",
+    tetikleyen: str | None = None,
 ) -> dict[str, Any]:
     """`POST /code/generate`: uygun case'ler için script + iş akışı + `codegen.generate` işi.
 
@@ -753,18 +780,30 @@ def start_generation(
     `dil` (011 §2.3): üretim dili. Verilmezse hedef repodan algılanır (`dil_kaynagi="algilandi"`,
     sonuçsuzsa `varsayilan`); verilirse `secildi`.
 
+    `tetik` (013 §3.2): `elle` (kod üretimi ekranı) | `otomatik` (case onayı sonrası,
+    `features/otomasyon/otokod.py`; `dil=None` = algılanan dil); `script_codegen.tetik`e yazılır.
+    `tetikleyen`: otomatik üretimi doğuran onaylayan kullanıcının adı (iş akışı yükü + denetim).
+
     Etkin script anahtarı (case, platform)'dur ve yalnız **tam hat** (ts, java) script'leri etkin
     sayılır (inceleme turu 1, K-T4):
 
     - Tam hat isteği: başka dildeki açık PR'ı kapatıp yeniden üretir (dil değiştirmek = yeniden
-      üretmek); aynı dil + aynı onaylı içerik için açık/merge edilmiş PR varsa yeniden üretilmez.
-      Aynı case+platformda **başka dilde merge edilmiş** script varsa istek reddedilir (409): repoda
-      aynı case iki kez olmasın. En yeni `unverified` kayıt yeniden kullanılır.
+      üretmek); aynı dil + aynı onaylı içerik + aynı test verisi izi için açık/merge edilmiş PR
+      varsa yeniden üretilmez. Aynı case+platformda **başka dilde merge edilmiş** script varsa
+      istek reddedilir (409): repoda aynı case iki kez olmasın. En yeni `unverified` kayıt yeniden
+      kullanılır.
     - Doğrulanmamış (csharp, python) istek: tam hat script'lerine (`pr_open`, `merged`, süren
       üretim) **dokunmaz** — kapatma yok, forge'a yazma yok. Yalnız doğrulanmamış kayıtlar
       değerlendirilir: süren üretim atlatır, en yeni `unverified` yeniden kullanılır, eskileri
       `closed` olur.
+    - Otomatik tetik (K16): açık PR'ı kapatmaz (dili ne olursa olsun) ve aynı dil + aynı onaylı
+      içerik + aynı veri izi için zaten üretilmiş `unverified` script'i yeniden üretmez.
+
+    Kapatmalar (eski PR / eski `unverified` kayıtlar) test verisi atıfları çözüldükten SONRA
+    yapılır: çözülemeyen atıfla reddedilen case'in mevcut kayıtlarına dokunulmaz (013 §3.3).
     """
+    if tetik not in TETIK:
+        raise CodegenRejected(f"geçersiz tetik: {tetik} (elle | otomatik)")
     try:
         platform = platformlar.gecerli(platform)
     except ValueError as exc:
@@ -796,7 +835,11 @@ def start_generation(
             )  # fmt: skip
             continue
         h = content_hash(tc.icerik)
+        # 013 §3.3: atıflar yalnız gerektiğinde (aynı hash'li PR'ın veri karşılaştırması) ya da
+        # atlama kararından SONRA çözülür: süren/açık PR'lı case çözülemeyen atıfla reddedilmez.
+        cozum: tuple[dict[str, Any] | None, str | None] | None = None
         atla: dict[str, Any] | None = None
+        kapatilacak: list[Script] = []
         yeniden: tuple[Script, ScriptCodegen] | None = None
         mevcut = _mevcut_scriptler(session, cid, platform)
         cakisma = dil_cakismasi(mevcut, platform, dil)
@@ -816,36 +859,59 @@ def start_generation(
             if sc.durum in AKTIF:
                 atla = {"durum": "suruyor", "script_id": str(sc.id), "neden": "üretim sürüyor"}
                 break
+            if sc.durum == "pr_open" and tetik == "otomatik":
+                # K16: otomatik üretim açık PR'ı kapatmaz; yeniden üretim mühendisin kararı.
+                atla = {"durum": "pr_acik", "script_id": str(sc.id), "neden": OTOMATIK_PR_ACIK}
+                break
             # Dil değiştirmek yeniden üretmektir (011 §2.2): başka dildeki PR bu isteği atlatmaz.
             if sc.durum in ("pr_open", "merged") and cg.case_hash == h and sc.dil == dil:
-                atla = {
-                    "durum": "pr_acik" if sc.durum == "pr_open" else "merge_edildi",
-                    "script_id": str(sc.id),
-                    "neden": "bu onaylı içerik için bu platformda PR zaten var",
-                }
-                break
+                if cozum is None:
+                    cozum = _veri_coz(session, tc.icerik)
+                if cozum[1] is None and testveri.izler_ayni(session, cg.veri_izi, cozum[0]):
+                    atla = {
+                        "durum": "pr_acik" if sc.durum == "pr_open" else "merge_edildi",
+                        "script_id": str(sc.id),
+                        "neden": "bu onaylı içerik için bu platformda PR zaten var",
+                    }
+                    break
             if sc.durum == "unverified":
+                if tetik == "otomatik" and cg.case_hash == h and sc.dil == dil:
+                    # K16: aynı onaylı içerik + aynı veri için doğrulanmamış kod zaten üretildi;
+                    # otomatik üretim onu ezmez (yeniden üretim mühendisin kararı).
+                    if cozum is None:
+                        cozum = _veri_coz(session, tc.icerik)
+                    if cozum[1] is None and testveri.izler_ayni(session, cg.veri_izi, cozum[0]):
+                        atla = {
+                            "durum": "dogrulanmamis_var",
+                            "script_id": str(sc.id),
+                            "neden": OTOMATIK_DOGRULANMAMIS_VAR,
+                        }
+                        break
                 # Doğrulanmamış script'in PR'ı yoktur: en yenisi aynı kayıtta yeniden üretilir.
                 if yeniden is None:
                     yeniden = (sc, cg)
                 else:
-                    transition(
-                        session, sc, "closed", user, "unverified",
-                        sebep="case için yeniden üretim istendi",
-                    )  # fmt: skip
+                    kapatilacak.append(sc)
                 continue
             if sc.durum in ("pr_open", "blocked", "failed"):
-                transition(
-                    session,
-                    sc,
-                    "closed",
-                    user,
-                    sc.durum,
-                    sebep="case için yeniden üretim istendi",
-                )
+                kapatilacak.append(sc)
         if atla is not None:
             sonuclar.append({"case_id": str(cid), "platform": platform, "dil": dil, **atla})
             continue
+        if cozum is None:
+            cozum = _veri_coz(session, tc.icerik)
+        veri_izi, veri_engeli = cozum
+        if veri_engeli is not None:
+            # Çözülemeyen atıf: eski script/PR'lar kapatılmaz (yeniden üretim yapılamıyor).
+            sonuclar.append(
+                {"case_id": str(cid), "platform": platform, "dil": dil, "durum": "reddedildi",
+                 "neden": veri_engeli}
+            )  # fmt: skip
+            continue
+        for sc in kapatilacak:
+            transition(
+                session, sc, "closed", user, sc.durum, sebep="case için yeniden üretim istendi"
+            )
         req = session.get(Requirement, tc.requirement_id)
         story = req.jira_key if req else None
         dosya = baslangic_dosya_yolu(dil, platform, story, tc.sira_no, cid)
@@ -861,6 +927,7 @@ def start_generation(
             cg.requirement_id, cg.case_hash, cg.story_key = tc.requirement_id, h, story
             cg.test_key, cg.sira_no, cg.baslik = _test_key(session, cid), tc.sira_no, baslik
             cg.uretim_modu = sc.uretim_modu
+            cg.tetik, cg.veri_izi = tetik, veri_izi
             is_anahtari = f"{GEN_JOB}:{sc.id}:{onceki_is}"
         else:
             sc = Script(
@@ -884,20 +951,25 @@ def start_generation(
                 sira_no=tc.sira_no,
                 baslik=baslik,
                 uretim_modu=sc.uretim_modu,
+                tetik=tetik,
+                veri_izi=veri_izi,
             )
             session.add_all([cg, ScriptTestCase(script_id=sc.id, test_case_id=cid)])
             is_anahtari = f"{GEN_JOB}:{sc.id}"
         session.flush()
+        yuk: dict[str, Any] = {
+            "script_id": str(sc.id),
+            "baslatan": user.as_dict(),
+            "platform": platform,
+            "dil": dil,
+        }
+        otomatik_ek = {"tetik": tetik, "tetikleyen": tetikleyen} if tetik != "elle" else {}
+        yuk.update(otomatik_ek)
         wf_id, job_id = start_workflow(
             session.connection(),
             WORKFLOW_TUR,
             user.kullanici_adi,
-            yuk={
-                "script_id": str(sc.id),
-                "baslatan": user.as_dict(),
-                "platform": platform,
-                "dil": dil,
-            },
+            yuk=yuk,
             job_tur=GEN_JOB,
             nesne_turu="script",
             nesne_id=sc.id,
@@ -924,6 +996,7 @@ def start_generation(
                 "platform": platform,
                 "dil": dil,
                 "dil_kaynagi": dil_kaynagi,
+                **otomatik_ek,
             },
         )
         sonuclar.append(
@@ -1069,8 +1142,12 @@ def _insana(
     hedef: str = "blocked",
     dogrulama: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Script'i insana düşürür (`blocked`; ortam/beklenmeyen hatada `failed`)."""
+    """Script'i insana düşürür (`blocked`; ortam/beklenmeyen hatada `failed`).
+
+    013 K19 / güvenlik #8: neden (çözülmüş case metni, assertion beklenen değeri, istisna metni
+    taşıyabilir) engel kaydına, geçişe, iş akışına ve denetime maskeli yazılır."""
     with session_scope() as s:
+        neden = atif.maskele(neden, testveri.gizli_degerler(s))
         sc, cg = _yukle(s, sid, lock=True)
         mevcut = sc.durum
         if mevcut in ("blocked", "failed", "closed", "merged"):
@@ -1574,6 +1651,9 @@ def _run_agent_kilitli(
     gw = _gateway(engine)
     with session_scope() as s:
         baslangic = _sonraki_adim(s, sid)
+        # 013 K19: adım kaydı (araç argümanı / özet / ham çıktı) bilinen gizli test verisi
+        # değerlerini taşımaz; ajanın girdisi çözülmüş kalır.
+        tv_gizli = testveri.gizli_degerler(s)
         # Adımlar akarken etiket geçidin gerçek kipini göstersin (REPLAY her an etiketli).
         mod = _gateway_modu(gw)
         if mod is not None:
@@ -1639,6 +1719,10 @@ def _run_agent_kilitli(
                 if REPLAY_SAPMASI in cikti:
                     ozet = f"{ozet} ({REPLAY_SAPMASI}: kayıttaki locator'dan farklı)"
                 ozet = ozet[:500]
+            if tv_gizli:
+                arguman = atif.maskele_obje(arguman, tv_gizli)
+                ozet = atif.maskele(ozet, tv_gizli)
+                ham = atif.maskele(ham, tv_gizli) if ham else ham
             gecen_s = time.monotonic() - zaman["t0"]
             gecikme = not zaman["uyarildi"] and gecen_s > butce
             if gecikme:
@@ -2301,14 +2385,23 @@ def run_generation(ctx: JobContext, engine: Engine) -> dict[str, Any]:
         engel = case_blocker(s, tc)
         if engel is None and content_hash(tc.icerik) != cg.case_hash:
             engel = "case içeriği istekten sonra değişmiş"
-        case = dict(tc.icerik)
+        # 013 §3.3: doğrulama ajanı / kontroller / şablon / PR çözülmüş metni görür (replay
+        # girdisi bugünküyle aynı); çözülemeyen atıf üretimi durdurur.
+        veri_engeli = None
+        try:
+            case, cg.veri_izi = testveri.case_coz(s, tc.icerik)
+        except testveri.TestVerisiCozulemedi as exc:
+            case, veri_engeli = dict(tc.icerik), veri_engeli_metni(exc)
         case_id, story, sira_no = tc.id, cg.story_key, cg.sira_no
         platform = sc.platform or platformlar.WEB
         dil = platformlar.dil(platform, sc.dil)
-        if engel is None:
+        if engel is None and veri_engeli is None:
             transition(s, sc, "verifying", SYSTEM, "pending", sebep="doğrulama ajanı")
     if engel is not None:
         return _insana(engine, sid, "case_changed", engel, hedef="failed")
+    if veri_engeli is not None:
+        # 013 K19: model hatası değil, ortam/katalog engeli (MODEL_ENGELLERI'nde yok).
+        return _insana(engine, sid, "test_verisi", veri_engeli, hedef="failed")
     if not platformlar.gecerli_cift(platform, dil):
         return _insana(
             engine, sid, "environment",
@@ -2775,6 +2868,8 @@ def _render(
     dil = platformlar.dil(platform, dil)
     with session_scope() as s:
         _, cg = _yukle(s, sid)
+        gizli_ortam = testveri.gizli_ortam_adlari(s)
+        gizli_tara = testveri.gizli_degerler(s)
         inp = RenderInput(
             case_id=case_id,
             case=case,
@@ -2787,6 +2882,8 @@ def _render(
             mapping=result.output or {},
             dealers=dealers,
             e2e_root=uretim_koku(dil, platform),
+            gizli_ortam=gizli_ortam,
+            gizli_taranacak=tuple(gizli_tara),
         )
     try:
         rendered = render_modulu.render_dil(
@@ -2797,6 +2894,9 @@ def _render(
             referans_dil=tablo_dili,
             sembol_tablosu=sembol_tablosu,
         )
+    except GizliSizinti as exc:
+        # 013 K19 / güvenlik #4-#5: PR'da düz sır yok (fail-closed); sır tanımsızsa da buraya düşer.
+        return _insana(engine, sid, "test_verisi", str(exc), hedef="failed")
     except RenderError as exc:
         return _insana(engine, sid, "unknown_method", f"şablon reddetti: {exc}")
     with session_scope() as s:
@@ -2821,6 +2921,8 @@ def _commit(
         branch = sc.branch or ""
         platform = sc.platform
         dil = platformlar.dil(platform, sc.dil)
+        gizli = testveri.gizli_degerler(s)
+    case = {"title": atif.maskele(str(case.get("title") or ""), gizli)}  # K19: commit mesajı
     # Başlık eki platformdur (uygulama); "model <dil> yazmadı" cümlesi dildir.
     hedef = f"{ref}, {platform}" if platformlar.uygulama_mi(platform) else ref
     mesaj = (
@@ -2892,6 +2994,7 @@ def _open_pr(
         audit_head = chain_tip(s.connection())
         test_key, case_hash, bundle_hash = cg.test_key, cg.case_hash, cg.bundle_hash
         ajan_bayileri = dict((cg.eslesme or {}).get(AJAN_BAYILERI) or {})
+        gizli = testveri.gizli_degerler(s)
     if engel is not None:
         return _insana(engine, sid, "case_changed", f"PR açılmadı: {engel}")
     js = get_jira_settings()
@@ -2932,6 +3035,8 @@ def _open_pr(
         govde += (
             "\n> Yerel kontrol atlandı (commit yerel forge'da yok); merge kapısı forge CI'ıdır.\n"
         )
+    # 013 K19: PR başlığı/gövdesi bilinen gizli test verisi değerini düz taşımaz.
+    govde = atif.maskele(govde, gizli)
     labels = [
         *PR_LABELS,
         *([story] if story else []),
@@ -2945,7 +3050,10 @@ def _open_pr(
     guncellendi = False
     try:
         pr = forge.open_pr(
-            branch, pr_title(ref, str(case.get("title") or ""), platform, dil), govde, labels
+            branch,
+            atif.maskele(pr_title(ref, str(case.get("title") or ""), platform, dil), gizli),
+            govde,
+            labels,
         )
     except ForgeError as exc:
         return _insana(engine, sid, "environment", f"PR açılamadı: {exc}", hedef="failed")

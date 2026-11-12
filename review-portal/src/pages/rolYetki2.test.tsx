@@ -16,6 +16,7 @@ import { durumNotu, goruntulenenleriSifirla } from "../components/CaseKarti";
 import { IZINLER, rotaDeseni } from "../lib/yetki";
 import { oturumAc } from "../test/yardimci";
 import { ARTEFAKT_MASKELI, MANUEL_PROD_ENGELI } from "./Kosular";
+import { gozlemciKur } from "../test/gorunurluk";
 
 function uygulama(yol: string) {
   return render(
@@ -195,11 +196,16 @@ describe("case kartı: Analist görüntüleme ölçümü ve metinler", () => {
     c.testci_karari = "accept";
     c.testci = "testci";
     const casus = vi.spyOn(api, "caseGoruntulendi");
+    // 013 K13': görüntüleme kart görünür olunca gider (jsdom'da sahte gözlemciyle).
+    const g = gozlemciKur();
     await oturumAc("analist");
     uygulama(CASELER);
     await screen.findAllByRole("article");
+    await waitFor(() => expect(g.gozlenenler().length).toBeGreaterThan(0));
+    for (const el of g.gozlenenler()) g.goster(el);
     await waitFor(() => expect(casus).toHaveBeenCalledWith("case-1-7"));
     expect(casus.mock.calls.filter(([id]) => id === "case-1-7")).toHaveLength(1);
+    vi.unstubAllGlobals();
     // Taslaktaki case'ler Analist için ölçülmez.
     const taslaklar = mockVerisi().caseler.filter((x) => x.requirement_id === "req-tpd-1" && x.durum === "draft").map((x) => x.id);
     for (const id of taslaklar) expect(casus).not.toHaveBeenCalledWith(id);

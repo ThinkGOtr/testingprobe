@@ -100,6 +100,8 @@ public final class UretilenTestKoruyucu {
   static final Pattern DOSYA_ADI = Pattern.compile("^[A-Za-z][A-Za-z0-9]*C[0-9]+_[0-9a-f]{8}Test\\.java$");
   static final Pattern BAYI = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$");
   static final Pattern GRUP = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$");
+  /** Gizli test verisi ortam değişkeni adı (specs/013 K19). */
+  static final Pattern GIZLI_VERI = Pattern.compile("^TP_TESTVERI_[A-Z0-9_]{1,64}$");
   static final Pattern INT = Pattern.compile("^(0|[1-9][0-9]*)$");
   static final Pattern LONG = Pattern.compile("^(0|[1-9][0-9]*)[lL]$");
   static final Pattern DOUBLE = Pattern.compile("^[0-9]+(\\.[0-9]+([eE][+-]?[0-9]+)?[dD]?|[eE][+-]?[0-9]+[dD]?|[dD])$");
@@ -438,7 +440,7 @@ public final class UretilenTestKoruyucu {
       List<String> turler = new ArrayList<>();
       boolean argOk = true;
       for (Expression arg : cagri.getArguments()) {
-        String t = literalTuru(arg);
+        String t = gizliVeri(arg) ? "String" : literalTuru(arg);
         if (t == null) {
           argOk = false;
           siniflandir(arg, "non_literal_argument",
@@ -502,6 +504,21 @@ public final class UretilenTestKoruyucu {
     static boolean duzAd(ClassOrInterfaceType t, String ad) {
       return t.getNameAsString().equals(ad) && t.getScope().isEmpty() && t.getTypeArguments().isEmpty()
           && t.getAnnotations().isEmpty();
+    }
+
+    /**
+     * Gizli test verisi (specs/013 K19): yalnızca ekran çağrısının doğrudan argümanı olarak
+     * {@code System.getenv("TP_TESTVERI_…")} — kapsam niteliksiz düz {@code System}, tür argümanı yok,
+     * tek argüman metin bloğu olmayan string literal. Türü String sayılır; başka her biçim reddedilir.
+     */
+    static boolean gizliVeri(Expression e) {
+      return e instanceof MethodCallExpr m
+          && m.getNameAsString().equals("getenv")
+          && m.getTypeArguments().isEmpty()
+          && m.getScope().filter(k -> k instanceof NameExpr ne && ne.getNameAsString().equals("System")).isPresent()
+          && m.getArguments().size() == 1
+          && m.getArgument(0) instanceof StringLiteralExpr s // metin bloğu ayrı türdür (TextBlockLiteralExpr)
+          && GIZLI_VERI.matcher(s.asString()).matches();
     }
 
     /** İzinli literal ise Java türü (String/int/long/double/boolean), değilse null. */

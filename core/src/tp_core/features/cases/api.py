@@ -5,8 +5,9 @@
 | POST | `/requirements/{id}/generate-cases` | `case.generate` — yalnızca PO onaylı gereksinim |
 | GET  | `/cases?requirement_id=` | `case.read` (developer: yalnız approved/published, geçmiş yok) |
 | GET  | `/cases/{id}` | `case.read` (developer: aynı süzgeç; görünmeyen case 404) |
-| POST | `/cases/{id}/viewed` | `case.decide` veya `case.approve` — ilk görüntüleme (review süresinin başlangıcı) |
-| POST | `/cases/{id}/decision` (aşağıda `CaseKararGirdisi`) | karar başına: `case.decide` (accept, edit, reject, reopen) / `case.approve` (approve, send_back) |
+| POST | `/cases/{id}/viewed` | `case.decide` veya `case.approve` — görünürlüğün başında (≥ 3 sn sonra `goruldu`, 013 K13') |
+| POST | `/cases/{id}/decision` (aşağıda `CaseKararGirdisi`) | karar başına: `case.decide` (accept, edit, reject, reopen) / `case.approve` (approve, send_back); yanıtta `otomatik_kod` |
+| POST | `/cases/bulk-decision` (`TopluKararGirdisi`) | karar başına: `case.decide` (accept: toplu kabul) / `case.approve` (approve: toplu son onay; üstte `otomatik_kod`) |
 | GET  | `/requirements/{id}/case-metrics` | `case.read` — kabul oranı ve süreler (§12); developer: yalnız durum sayıları |
 | POST | `/requirements/{id}/review-complete` | `case.approve` |
 """  # noqa: E501
@@ -22,6 +23,7 @@ from pydantic import BaseModel, Field
 from tp_core.auth.deps import CurrentUser, DbSession
 from tp_core.auth.yetki import izin, izinli, reddet
 from tp_core.features.cases import service
+from tp_core.features.otomasyon.otokod import kuyruga_al
 from tp_core.workflow.service import Principal
 from tp_core.workflow.states import TEST_CASE_KARAR_IZNI
 
@@ -38,6 +40,17 @@ class IsYaniti(BaseModel):
     mesaj: str | None = None
     workflow_id: uuid.UUID | None = None
     uretim_no: int | None = None
+
+
+class TopluKararOgesi(BaseModel):
+    case_id: uuid.UUID
+    icerik_hash: str = Field(min_length=1, max_length=200)
+
+
+class TopluKararGirdisi(BaseModel):
+    # 012: Testçi toplu kabul (draft → ready) | Analist toplu son onay (ready → approved).
+    karar: Literal["accept", "approve"]
+    ogeler: list[TopluKararOgesi] = Field(min_length=1, max_length=service.TOPLU_KARAR_MAX)
 
 
 class CaseKararGirdisi(BaseModel):
@@ -89,6 +102,20 @@ def get_case(case_id: uuid.UUID, session: DbSession, user: Okuyucu) -> dict[str,
     return service.get_case_view(session, case_id, user)
 
 
+@router.post("/cases/bulk-decision")
+def bulk_decision(
+    body: TopluKararGirdisi, request: Request, session: DbSession, user: CurrentUser
+) -> dict[str, Any]:
+    # 012: toplu kabul (Testçi, `case.decide`) ya da toplu son onay (Analist, `case.approve`);
+    # izin tekli kararla aynı tablodan. Her öğe tekli `decide`'ın tüm kapılarından geçer.
+    izin_adi = TEST_CASE_KARAR_IZNI[body.karar]
+    if not izinli(user.rol, izin_adi):
+        raise reddet(session, user, izin_adi, "rol", request.url.path, karar=body.karar)
+    return service.bulk_decide(
+        session, [(o.case_id, o.icerik_hash) for o in body.ogeler], user, karar=body.karar
+    )
+
+
 @router.post("/cases/{case_id}/viewed")
 def mark_viewed(
     case_id: uuid.UUID, request: Request, session: DbSession, user: CurrentUser
@@ -123,7 +150,10 @@ def decide(
         beklenen_anlam_degisti=body.beklenen_anlam_degisti,
     )
     session.flush()
-    return service.serialize_cases(session, [tc], user)[0]
+    # 013 §3.2 (K4): son onay (Analist `approve`; case approved olur) otomatik kod üretimini
+    # kuyruğa alır; üretimin reddi/hatası onayı geri almaz. Testçi kabulü kod üretmez (012).
+    otomatik_kod = kuyruga_al(session, tc, user) if body.karar == "approve" else None
+    return {**service.serialize_cases(session, [tc], user)[0], "otomatik_kod": otomatik_kod}
 
 
 @router.get("/requirements/{requirement_id}/case-metrics")

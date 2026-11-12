@@ -45,6 +45,8 @@ export const EKRAN_ADLARI: Record<string, string> = {
   "/denetim": "Denetim",
   "/claude-code": "Claude Code kanalı",
   "/demo": "Demo kontrolleri",
+  "/test-verisi": "Test verisi",
+  "/otomasyon": "Otomasyon",
 };
 
 /** `:id` taşıyan desenin varlık türü. */

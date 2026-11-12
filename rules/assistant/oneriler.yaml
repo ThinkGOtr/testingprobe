@@ -630,6 +630,8 @@ bos_ekranlar:
   - {ekran: /hatalar/:id, roller: [admin, auditor, analyst, po, developer, viewer]}
   - {ekran: /bug-taslaklari, roller: [admin, auditor, analyst, po, tester, engineer, developer, viewer]}
   - {ekran: /bug-taslaklari/:id, roller: [admin, auditor, po, engineer, developer, viewer]}
+  - {ekran: /test-verisi, roller: [admin, analyst, po, tester, engineer, developer]}
+  - {ekran: /otomasyon, roller: [admin, analyst, po, tester, engineer, developer]}
   - {ekran: /kontrol-kulesi, roller: [auditor, analyst, po, tester, engineer, developer, viewer]}
   - {ekran: /yol-haritasi, roller: [admin, analyst, po, tester, engineer]}
   - {ekran: /denetim, roller: [admin, auditor, analyst, po, tester, engineer, developer, viewer]}

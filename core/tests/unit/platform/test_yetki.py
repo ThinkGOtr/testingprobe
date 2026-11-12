@@ -4,7 +4,7 @@
   istisna listesindedir (yeni uç izinsiz eklenirse test kırılır; varsayılan ret).
 - Rol × uç matrisi: yasak uç 403 (`yetki_yok`) ve `authz.denied` denetim satırı; izinli uç 403
   değildir.
-- Ortam/demo bayrakları, developer'ın üretimde koşu başlatamaması, `presenter` → `admin`, 0024 göçü.
+- Ortam/demo bayrakları, developer'ın üretimde koşu başlatamaması, `presenter` → `admin`, 0031 göçü.
 """
 
 from __future__ import annotations
@@ -59,6 +59,7 @@ KARAR_BAZLI: frozenset[tuple[str, str]] = frozenset(
     {
         ("POST", "/cases/{case_id}/decision"),
         ("POST", "/cases/{case_id}/viewed"),
+        ("POST", "/cases/bulk-decision"),  # 013 toplu: accept → case.decide, approve → .approve
     }
 )
 
@@ -209,6 +210,25 @@ MATRIS: tuple[tuple[str, str, dict[str, Any] | None, str], ...] = (
     ("GET", "/audit", None, "audit.read_all|audit.read_own"),
     ("GET", "/audit?verify=true", None, "audit.verify"),
     ("GET", "/assistant/conversations", None, "assistant.use"),
+    # 013 sprint otomasyonu (012'ye uyarlandı): toplu karar karar başına, ayarlar, test verisi.
+    (
+        "POST",
+        "/cases/bulk-decision",
+        {"karar": "accept", "ogeler": [{"case_id": R, "icerik_hash": "h"}]},
+        "case.decide",
+    ),
+    (
+        "POST",
+        "/cases/bulk-decision",
+        {"karar": "approve", "ogeler": [{"case_id": R, "icerik_hash": "h"}]},
+        "case.approve",
+    ),
+    ("GET", "/automation-settings", None, "dashboard.read"),
+    ("PUT", "/automation-settings/olmayan_ayar", {"acik": False}, "automation.manage"),
+    ("GET", "/automation/jira-trigger", None, "requirement.read"),
+    ("GET", f"/automation/codegen-jobs/{R}", None, "code.read"),
+    ("GET", "/test-data", None, "case.read"),
+    ("PUT", f"/test-data/{R}", {"beklenen_surum": 1}, "testdata.manage"),
 )
 
 
@@ -727,21 +747,21 @@ def test_presenter_admin_sayilir_ve_mfa_ister() -> None:
     assert display_name("eski", "presenter", {}) == "eski · Sistem Yöneticisi"
 
 
-# ------------------------------------------------------------------ 0024 göçü (rol modeli)
+# ------------------------------------------------------------------ 0031 göçü (rol modeli)
 
 
-def test_0024_rol_presenter_admin_olur_ve_geri_alinir(pg: PgServer) -> None:
+def test_0031_rol_presenter_admin_olur_ve_geri_alinir(pg: PgServer) -> None:
     ad = pg.create_empty_db()
     owner = pg.url("tp_owner", ad)
     try:
-        run_alembic(owner, "0023")
+        run_alembic(owner, "0030")
         with psycopg.connect(owner.replace("+psycopg", ""), autocommit=True) as c:
             c.execute(
                 "INSERT INTO app_user (id, kullanici_adi, rol, parola_hash) VALUES "
                 "(gen_random_uuid(), 'sunucu', 'presenter', 'x'), "
                 "(gen_random_uuid(), 'analist', 'analyst', 'x')"
             )
-        run_alembic(owner, "0024")
+        run_alembic(owner, "0031")
         with psycopg.connect(owner.replace("+psycopg", ""), autocommit=True) as c:
             roller = dict(c.execute("SELECT kullanici_adi, rol FROM app_user").fetchall())
             assert roller == {"sunucu": "admin", "analist": "analyst"}
@@ -755,10 +775,10 @@ def test_0024_rol_presenter_admin_olur_ve_geri_alinir(pg: PgServer) -> None:
                 "VALUES (gen_random_uuid(), 'izleyici', 'viewer', 'x')"
             )
         with pytest.raises(RuntimeError, match="izleyici"):
-            run_alembic(owner, "0023", "downgrade")
+            run_alembic(owner, "0030", "downgrade")
         with psycopg.connect(owner.replace("+psycopg", ""), autocommit=True) as c:
             c.execute("DELETE FROM app_user WHERE kullanici_adi = 'izleyici'")
-        run_alembic(owner, "0023", "downgrade")
+        run_alembic(owner, "0030", "downgrade")
         with psycopg.connect(owner.replace("+psycopg", ""), autocommit=True) as c:
             assert c.execute(
                 "SELECT rol FROM app_user WHERE kullanici_adi = 'sunucu'"
@@ -769,12 +789,12 @@ def test_0024_rol_presenter_admin_olur_ve_geri_alinir(pg: PgServer) -> None:
             c.execute(f'DROP DATABASE IF EXISTS "{ad}" WITH (FORCE)')
 
 
-def test_0026_eski_analist_editi_isaretlenir_ve_po_reject(pg: PgServer) -> None:
+def test_0033_eski_analist_editi_isaretlenir_ve_po_reject(pg: PgServer) -> None:
     ad = pg.create_empty_db()
     owner = pg.url("tp_owner", ad)
     dsn = owner.replace("+psycopg", "")
     try:
-        run_alembic(owner, "0025")
+        run_alembic(owner, "0032")
         with psycopg.connect(dsn, autocommit=True) as c:
             analist, testci = (
                 c.execute(
@@ -791,7 +811,7 @@ def test_0026_eski_analist_editi_isaretlenir_ve_po_reject(pg: PgServer) -> None:
                     "%s, %s, 'h')",
                     (kullanici, karar),
                 )
-        run_alembic(owner, "0026")
+        run_alembic(owner, "0033")
         with psycopg.connect(dsn, autocommit=True) as c:
             satirlar = c.execute(
                 "SELECT u.kullanici_adi, r.karar, r.eski_onay FROM review r "
@@ -811,7 +831,7 @@ def test_0026_eski_analist_editi_isaretlenir_ve_po_reject(pg: PgServer) -> None:
             # Append-only tetikleyicisi göçten sonra yine açık.
             with pytest.raises(psycopg.errors.InsufficientPrivilege, match="append-only"):
                 c.execute("UPDATE review SET eski_onay = false")
-        run_alembic(owner, "0025", "downgrade")
+        run_alembic(owner, "0032", "downgrade")
         run_alembic(owner, "head")
     finally:
         with pg.super_conn() as c:

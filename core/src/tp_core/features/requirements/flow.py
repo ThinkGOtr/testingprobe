@@ -2684,11 +2684,27 @@ def po_check(engine: Engine, jira: Any, req_id: uuid.UUID, hesaplar: frozenset[s
             {"id": req.id, "requirement_id": req.id, "onaylayan": onay.author, "kanal": "jira"},
         )
         emit_requirement(s, req, olay="po_approved")
+        _otomatik_case(s, req)
     try:
         jira.remove_labels(key, [PO_PENDING_LABEL])
     except Exception as exc:  # panodaki etiket kozmetik; onay kaydı esastır
         log.warning("%s: %s etiketi kaldırılamadı: %s", key, PO_PENDING_LABEL, exc)
     return "onaylandi"
+
+
+def _otomatik_case(s: Session, req: Requirement) -> None:
+    """Jira durum tetiğiyle akışa alınmış gereksinimde case üretimini kuyruğa alır (specs/013
+    §3.4). Kendi savepoint'inde: hata PO onayını geri almaz (Testçi elle başlatabilir, 012)."""
+    if req.qa_tetik_zamani is None:
+        return  # elle çekilmiş gereksinim: davranış değişmez
+    from tp_core.features.otomasyon import jira_tetik
+    from tp_core.features.otomasyon.otokod import savepoint
+
+    try:
+        with savepoint(s):  # geri alımda bekleyen denetim kayıtları da düşer
+            jira_tetik.po_onayi_sonrasi(s, req)
+    except Exception as exc:
+        log.warning("%s: otomatik case üretimi kuyruğa alınamadı: %s", req.jira_key, exc)
 
 
 # --------------------------------------------------------------------- iş hatası
