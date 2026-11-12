@@ -3,19 +3,20 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { hataKosusuApi } from "../../api/client";
 import { OlayProvider } from "../../api/events";
 import { kuleAyar, kuleMockIlerlet, kuleMockKosulariBosalt } from "../../api/mock/kule";
 import type { KontrolKulesi as Kule, Kosu } from "../../api/types";
 import { kontrolKulesiUyarla } from "../../api/uyumDemoB";
+import { hataKosusuDetayUyarla } from "../../api/uyumKule";
 import { OturumProvider } from "../../auth";
 import { KontrolKulesi } from "../../pages/KontrolKulesi";
 import { KosuTablosu } from "../../pages/Kosular";
 import { oturumAc, sar } from "../../test/yardimci";
 import { BildirimProvider } from "../Bildirim";
 import { HataKosusuKarti } from "./HataKosusuKarti";
-import { BeklentiDogruluguKarosu, HataYakalamaKarosu } from "./KaliteKpilari";
+import { BeklentiDogruluguKarosu, HataYakalamaKarosu, OnayliUyumsuzKarti } from "./KaliteKpilari";
 
 /** Olay akışıyla (süreç içi mock olay yolu) sarar: kart `hata_kosusu.ilerleme` olaylarını dinler. */
 function olayli(ui: ReactElement) {
@@ -43,18 +44,25 @@ describe("KPI şeridi: Beklenti doğruluğu ve Hata yakalama oranı", () => {
     expect(serit.children[5]).toHaveTextContent("Beklenti doğruluğu");
     expect(serit.children[6]).toHaveTextContent("Hata yakalama oranı");
     expect(within(serit).getByTestId("beklenti-dogrulugu")).toHaveTextContent("%83");
-    expect(within(serit).getByTestId("beklenti-ayrinti")).toHaveTextContent("5 uyumlu · 1 uyuşmayan · kapsam %70 · 1 kontrol edilemedi · 1 istisnayla onaylanan");
-    expect(within(serit).getByTestId("hata-yakalama")).toHaveTextContent("%88");
-    expect(within(serit).getByTestId("hata-yakalama-ayrinti")).toHaveTextContent(/^15\/17 hata yakalandı · 1 geçersiz \(orana girmez\) · son koşu 10 Kas/);
+    // §13.2: kısmen ayrı (orana girmez), kapsamın paydası etiketli, kontrolsüz onay sayacı; n ve "gösterge".
+    expect(within(serit).getByTestId("beklenti-ayrinti")).toHaveTextContent(
+      "5 uyumlu · 1 uyuşmayan · 1 kısmen (orana girmez) · tablosu olan story'lerde kapsam %70 · tablosu olan story: 1 / 4 · 1 istisnayla onaylanan · 0 kontrolsüz onay",
+    );
+    expect(within(serit).getByTestId("beklenti-n")).toHaveTextContent(/^n = 10 case · 1 story · REPLAY \/ elle golden gösterge$/);
+    // K12: ana oran yalnız AI testleri — demo deposunda üretilmiş test yok → ölçülmedi; el yazısı suite ayrı.
+    expect(within(serit).getByTestId("hata-yakalama")).toHaveTextContent(/^ölçülmedi$/);
+    expect(within(serit).getByTestId("hata-yakalama-ayrinti")).toHaveTextContent(
+      /^AI testleri: ölçülmedi \(üretilmiş test yok\) · el yazısı suite %88 \(15\/17\) · 9 ekilmiş hata üzerinde · Web, Android · 1 geçersiz \(orana girmez\) · son koşu 10 Kas/,
+    );
     // Kaynak metinleri core'unkiyle aynı (`metrik.KAYNAK`, `hata_yakalama_ozeti`).
     expect(within(serit).getByRole("img", { name: /^Kaynak: AI'ın ürettiği case içeriklerinin/ })).toBeInTheDocument();
-    expect(within(serit).getByRole("img", { name: /^Kaynak: Son tamamlanan ekilmiş hata koşusu \(2026-11-10 14:46; web, android\)/ })).toBeInTheDocument();
+    expect(within(serit).getByRole("img", { name: /^Kaynak: Son tamamlanan tam katalog ekilmiş hata koşusu \(2026-11-10 14:46; web, android\)/ })).toBeInTheDocument();
     // Var olan öğeler yerinde ve tekil.
     for (const id of ["gecme-orani", "defect-adayi-ozet", "hazirlik-kazanci"]) expect(within(serit).getAllByTestId(id)).toHaveLength(1);
     expect(screen.getAllByText("ölçülmüş baz yok")).toHaveLength(1);
   });
 
-  it("anahtarlar yanıtta yoksa (eski core): 'ölçülmedi' + 'çekirdek bildirmedi'; sıfır ya da yüzde yazılmaz", () => {
+  it("anahtarlar yanıtta yoksa (eski core): 'ölçülmedi' + 'çekirdek bildirmiyor'; sıfır ya da yüzde yazılmaz", () => {
     const k = kule({});
     render(
       <>
@@ -66,8 +74,10 @@ describe("KPI şeridi: Beklenti doğruluğu ve Hata yakalama oranı", () => {
       expect(screen.getByTestId(id)).toHaveTextContent(/^ölçülmedi$/);
       expect(screen.getByTestId(id)).not.toHaveTextContent(/%|\d/);
     }
-    expect(screen.getByTestId("beklenti-ayrinti")).toHaveTextContent("çekirdek bu ölçüyü bildirmedi");
-    expect(screen.getByTestId("hata-yakalama-ayrinti")).toHaveTextContent("çekirdek bu ölçüyü bildirmedi");
+    // Oracle metriğiyle aynı tek ifade.
+    expect(screen.getByTestId("beklenti-ayrinti")).toHaveTextContent("çekirdek bu ölçümü bildirmiyor");
+    expect(screen.getByTestId("hata-yakalama-ayrinti")).toHaveTextContent("çekirdek bu ölçümü bildirmiyor");
+    expect(screen.queryByTestId("beklenti-n")).toBeNull();
     expect(screen.getAllByRole("img", { name: "Kaynak: core bu ölçünün kaynağını bildirmedi" })).toHaveLength(2);
   });
 
@@ -124,9 +134,15 @@ describe("Ekilmiş hata koşusu kartı: form ve rol kapısı", () => {
     expect(within(kod).getAllByRole("checkbox")).toHaveLength(5);
     expect(within(veri).getAllByRole("checkbox")).toHaveLength(4);
     for (const c of [...within(kod).getAllByRole("checkbox"), ...within(veri).getAllByRole("checkbox")]) expect(c).toBeChecked();
-    expect(within(kod).getByRole("checkbox", { name: "Kampanya eşiği 6 yerine 7" })).toHaveAccessibleDescription(/7'ye tam bölünerek.*Yakalaması beklenen kural: Kampanya \(6'nın katlarında bedava adet\)\..*kampanya_esik_7/);
-    expect(within(k).getByTestId("hk-tahmin")).toHaveTextContent("Seçim: 9 hata × 1 platform = 11 koşu");
-    expect(within(k).getByTestId("hk-tahmin")).toHaveTextContent("Android, iOS ve Windows'ta her hata 3–5 dakika sürer");
+    expect(within(kod).getByRole("checkbox", { name: "Kampanyada en çok 1 bedava" })).toHaveAccessibleDescription(
+      /min\(1, adet \/\/ 6\).*Yakalaması beklenen kural: Kampanya \(katlarda bedava adet\)\..*kampanya_tek_bedava/,
+    );
+    // Aritmetik açık: hata + çerçeve koşuları (temel, kapanış) = platform başına koşu; toplam ve web süresi.
+    expect(within(k).getByTestId("hk-tahmin")).toHaveTextContent(
+      "Seçim: 9 hata + 2 çerçeve koşusu (temel, kapanış) = 11 koşu / platform; 1 platform × 11 = toplam 11 koşu.",
+    );
+    expect(within(k).getByTestId("hk-sure-tahmini")).toHaveTextContent("Tahmini süre: yaklaşık 11 dakika (web'de koşu başına ~1 dk)");
+    expect(within(k).getByTestId("hk-tahmin")).toHaveTextContent("Android, iOS ve Windows'ta her koşu 3–5 dakika sürer");
     expect(within(k).getByRole("button", { name: "Koşuyu başlat" })).toBeEnabled();
   });
 
@@ -137,8 +153,9 @@ describe("Ekilmiş hata koşusu kartı: form ve rol kapısı", () => {
     const k = await kart();
     await within(k).findByRole("group", { name: "Kod hatası (5)" });
     await u.click(within(k).getByRole("checkbox", { name: "Android" }));
-    expect(within(k).getByTestId("hk-tahmin")).toHaveTextContent("9 hata × 2 platform = 22 koşu");
-    expect(within(k).getByTestId("hk-tahmin")).toHaveTextContent("yaklaşık 27–45 dakika");
+    expect(within(k).getByTestId("hk-tahmin")).toHaveTextContent("2 platform × 11 = toplam 22 koşu");
+    // Web 11 × 1 dk + Android 11 × 3–5 dk (temel ve kapanış dahil).
+    expect(within(k).getByTestId("hk-sure-tahmini")).toHaveTextContent("yaklaşık 44–66 dakika");
     await u.click(within(k).getByRole("checkbox", { name: "Android" }));
     await u.click(within(k).getByRole("checkbox", { name: "Web" }));
     const dugme = within(k).getByRole("button", { name: "Koşuyu başlat" });
@@ -148,7 +165,7 @@ describe("Ekilmiş hata koşusu kartı: form ve rol kapısı", () => {
     await u.click(within(k).getByRole("checkbox", { name: "Web" }));
     for (const c of within(k).getAllByRole("checkbox").filter((x) => (x as HTMLInputElement).checked && !x.dataset.testid)) await u.click(c);
     expect(dugme).toHaveAccessibleDescription("En az bir hata seçin.");
-  });
+  }, 20_000);
 
   it.each([
     ["analist", false],
@@ -183,12 +200,12 @@ describe("Ekilmiş hata koşusu kartı: sonuç tablosu, kaçan hatalar, geçmiş
     sar(<HataKosusuKarti />);
     const tablo = within(await screen.findByRole("region", { name: "Ekilmiş hata sonuç tablosu" }));
     expect(tablo.getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Hata", "Web", "Android"]);
-    // Temel + dokuz hata + kapanış + oran satırı.
-    expect(tablo.getAllByRole("rowheader")).toHaveLength(12);
-    expect(tablo.getByRole("rowheader", { name: /Kampanya eşiği 6 yerine 7.*Kod hatası.*kampanya_esik_7/ })).toBeInTheDocument();
+    // Temel + dokuz hata + kapanış + üç oran satırı (AI, el yazısı, tüm testler).
+    expect(tablo.getAllByRole("rowheader")).toHaveLength(14);
+    expect(tablo.getByRole("rowheader", { name: /Kampanyada en çok 1 bedava.*Kod hatası.*kampanya_tek_bedava/ })).toBeInTheDocument();
 
     expect(hucre("web", "kampanya_bedava_yok")).toHaveTextContent("✓ yakalandı");
-    expect(hucre("web", "kampanya_esik_7")).toHaveTextContent("✗ kaçtı");
+    expect(hucre("web", "kampanya_tek_bedava")).toHaveTextContent("✗ kaçtı");
     expect(hucre("android", "min_siparis_1000")).toHaveTextContent("⚠ geçersiz");
     // Geçersizin nedeni görünür metin (yalnız ipucu değil); koşusu olmadığı için bağlantı yok.
     expect(within(hucre("android", "min_siparis_1000")).getByText(/Neden: Cihaz\/Appium erişilemiyor/)).toBeVisible();
@@ -200,20 +217,21 @@ describe("Ekilmiş hata koşusu kartı: sonuç tablosu, kaçan hatalar, geçmiş
     }
     // Her hücre kendi koşusuna bağlanır.
     expect(within(hucre("web", "kampanya_bedava_yok")).getByRole("link", { name: /koşuyu aç: Kampanyada bedava ürün verilmiyor · Web/ })).toHaveAttribute("href", "/kosular/hk-1-r2");
-    expect(within(hucre("web", "kampanya_esik_7")).getByRole("link")).toHaveAttribute("href", "/kosular/hk-1-r3");
+    expect(within(hucre("web", "kampanya_tek_bedava")).getByRole("link")).toHaveAttribute("href", "/kosular/hk-1-r3");
     expect(within(screen.getByTestId("hk-temel-android")).getByRole("link")).toHaveAttribute("href", "/kosular/hk-1-r12");
     // Yakalayan testler: açılır liste.
-    const ozet = within(hucre("web", "kampanya_bedava_yok")).getByText(/^3 test yakaladı/);
+    const ozet = within(hucre("web", "kampanya_bedava_yok")).getByText(/^3 test yakaladı \(3 el yazısı\)/);
     expect(ozet.closest("details")).not.toHaveAttribute("open");
     await u.click(ozet);
     expect(ozet.closest("details")).toHaveAttribute("open");
+    // Her kıran test kaynağıyla (§13.2): demo deposunda hepsi el yazısı.
     expect(within(hucre("web", "kampanya_bedava_yok")).getAllByRole("listitem").map((x) => x.textContent)).toEqual([
-      "kampanya: 7 adet P-001 → 1 bedava, toplam 150,00 TL",
-      "onaylanan sipariş numarasıyla gösterilir ve geçmişte listelenir",
-      "7 adet Portakal Gazozu sepette 1 bedava adet ve sayaç 7 gösterir",
+      "kampanya: 7 adet P-001 → 1 bedava, toplam 150,00 TL el yazısı",
+      "onaylanan sipariş numarasıyla gösterilir ve geçmişte listelenir el yazısı",
+      "7 adet Portakal Gazozu sepette 1 bedava adet ve sayaç 7 gösterir el yazısı",
     ]);
-    expect(within(hucre("web", "kampanya_esik_7")).queryByText(/test yakaladı/)).toBeNull();
-  });
+    expect(within(hucre("web", "kampanya_tek_bedava")).queryByText(/test yakaladı/)).toBeNull();
+  }, 20_000);
 
   it("platform başına oran; geçersiz adım paydaya girmez ve bunu ekran söyler", async () => {
     await oturumAc("analist");
@@ -225,6 +243,19 @@ describe("Ekilmiş hata koşusu kartı: sonuç tablosu, kaçan hatalar, geçmiş
     expect(screen.getByTestId("hk-oran-android")).toHaveTextContent("%88 (7/8)");
     expect(screen.getByTestId("hk-oran-android")).toHaveTextContent("⚠ 1 geçersiz (orana girmez)");
     expect(screen.getByTestId("hk-oran-genel")).toHaveTextContent("%88 (15/17)");
+    // K12: AI (ana oran) ve el yazısı ayrı satır; üretilmiş test yokken AI ölçülmedi (sıfır yazılmaz).
+    for (const p of ["web", "android"]) expect(screen.getByTestId(`hk-oran-ai-${p}`)).toHaveTextContent(/^ölçülmedi — üretilmiş test yok$/);
+    expect(screen.getByTestId("hk-oran-el-web")).toHaveTextContent(/^%89 \(8\/9\)$/);
+    expect(screen.getByTestId("hk-oran-el-android")).toHaveTextContent(/^%88 \(7\/8\)$/);
+    expect(screen.getByTestId("hk-oran-ayrik")).toHaveTextContent("AI testleri: ölçülmedi (üretilmiş test yok) · El yazısı: %88 (15/17)");
+    expect(screen.getByTestId("hk-oran-notu")).toHaveTextContent(/Ana oran yalnız onaylı case'lerden üretilen \(AI\) testlerle/);
+    // Kapsam ve suite satırı; kural × hata dağılımı.
+    expect(screen.getByTestId("hk-kapsam")).toHaveTextContent(/^Kapsam: 9\/9 katalog hatası · Web, Android$/);
+    expect(screen.getByTestId("hk-suite")).toHaveTextContent("Suite: temel koşuda kırmızı test yok; bütün testler sayıldı.");
+    const dagilim = within(screen.getByTestId("hk-kural-dagilim"));
+    expect(dagilim.getByText(/^9 ekilmiş hata üzerinde \(mutation score değildir/)).toBeInTheDocument();
+    expect(dagilim.getAllByRole("rowheader").map((x) => x.textContent)).toEqual(["T1 · AC2", "T2 · AC3", "T2 · AC6", "AC1 (tablo yok)"]);
+    expect(dagilim.getByRole("rowheader", { name: "T1 · AC2" }).closest("tr")).toHaveTextContent(/^T1 · AC2\s*43 \/ 4 · ✗ 1 kaçtı3 \/ 4 · ✗ 1 kaçtı$/);
     expect(screen.getByTestId("hk-oran-notu")).toHaveTextContent(/Oran = yakalanan \/ \(yakalanan \+ kaçan\)\. ⚠ Geçersiz adımlar .* orana girmez/);
   });
 
@@ -233,19 +264,40 @@ describe("Ekilmiş hata koşusu kartı: sonuç tablosu, kaçan hatalar, geçmiş
     sar(<HataKosusuKarti />);
     const liste = within(await screen.findByTestId("hk-kacanlar"));
     expect(liste.getByRole("heading", { name: "Kaçan hatalar", level: 3 })).toBeVisible();
-    // Gerçek web matrisinde yalnız kampanya_esik_7 kaçar.
+    // Gerçek web matrisinde yalnız kampanya_tek_bedava kaçar.
     expect(liste.getAllByRole("listitem")).toHaveLength(1);
-    expect(liste.getByTestId("hk-kacan-kampanya_esik_7")).toHaveTextContent("✗ Kampanya eşiği 6 yerine 7 · Web, Android");
+    expect(liste.getByTestId("hk-kacan-kampanya_tek_bedava")).toHaveTextContent("✗ Kampanyada en çok 1 bedava · Web, Android");
     expect(liste.queryByTestId("hk-kacan-fiyat_p004_31")).toBeNull();
     expect(liste.queryByTestId("hk-kacan-min_siparis_1000")).toBeNull();
     expect(liste.queryByTestId("hk-kacan-kampanya_bedava_yok")).toBeNull();
     expect(liste.getByText(/bütün onaylı testler yeşil kaldı/)).toBeInTheDocument();
   });
 
+  it("kaçan hata uygulanabilir: kural bağlantısı (T1 · AC2), ayırt edici girdi, 'Bu girdiyle ek case türet' ve kopyalanabilir case isteği", async () => {
+    await oturumAc("analist");
+    const u = userEvent.setup();
+    const yaz = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: yaz }, configurable: true });
+    sar(<HataKosusuKarti />);
+    const kacan = within(await screen.findByTestId("hk-kacan-kampanya_tek_bedava"));
+    // Kural: karar tablosuna bağlantı (T1 = gereksinimin 1 numaralı tablosu).
+    expect(await kacan.findByRole("link", { name: /^T1 · AC2\s*karar tablosunu aç$/ })).toHaveAttribute("href", "/gereksinimler/req-tpd-1/karar-tablolari#tablo-kt-1");
+    expect(kacan.getByTestId("hk-kacan-ayrinti-kampanya_tek_bedava")).toHaveTextContent("Ayırt edici girdiadet = 14 → doğru bedava_adet = 2, hatalı uygulama bedava_adet = 1");
+    expect(kacan.getByRole("link", { name: "Bu girdiyle ek case türet" })).toHaveAttribute("href", "/gereksinimler/req-tpd-1/karar-tablolari#ek-case-turet");
+    const istek =
+      'Case isteği: ekilmiş hata "Kampanyada en çok 1 bedava" (kampanya_tek_bedava) Web, Android koşusunda hiçbir onaylı testle yakalanmadı. ' +
+      "Kural: T1 · AC2. Ayırt edici örnek: adet = 14 → doğru: bedava_adet = 2; hatalı uygulama: bedava_adet = 1. " +
+      "Bu girdiyle beklenen değeri onaylı karar tablosuna göre yazan bir case ekleyin.";
+    expect(kacan.getByTestId("hk-istek-kampanya_tek_bedava")).toHaveTextContent(istek);
+    await u.click(kacan.getByRole("button", { name: "Case isteğini kopyala" }));
+    expect(yaz).toHaveBeenCalledWith(istek);
+    expect(await screen.findByText("Case isteği panoya kopyalandı.")).toBeInTheDocument();
+  });
+
   it("geçmiş: tarih, başlatan, platformlar, oran; eski koşu açılabilir", async () => {
     await oturumAc("muhendis");
     kuleAyar.adimMs = 3_600_000;
-    await hataKosusuApi.baslat({ platformlar: ["web"], hatalar: ["kampanya_bedava_yok", "kampanya_esik_7"] });
+    await hataKosusuApi.baslat({ platformlar: ["web"], hatalar: ["kampanya_bedava_yok", "kampanya_tek_bedava"] });
     while (kuleMockIlerlet());
     const u = userEvent.setup();
     sar(<HataKosusuKarti />);
@@ -254,11 +306,12 @@ describe("Ekilmiş hata koşusu kartı: sonuç tablosu, kaçan hatalar, geçmiş
     const yeni = within(gecmis.getByTestId("hk-gecmis-hk-2"));
     const eski = within(gecmis.getByTestId("hk-gecmis-hk-1"));
     expect(gecmis.getAllByRole("row").map((r) => r.getAttribute("data-testid"))).toEqual([null, "hk-gecmis-hk-2", "hk-gecmis-hk-1"]);
-    expect(yeni.getByText("%50 (1/2)")).toBeInTheDocument();
+    // §13.2: AI ve el yazısı ayrı; üretilmiş test yokken AI ölçülmedi.
+    expect(yeni.getByRole("cell", { name: "AI ölçülmedi · el yazısı %50 (1/2)" })).toBeInTheDocument();
     expect(yeni.getByText("Web")).toBeInTheDocument();
     expect(yeni.getByText("Gokhan Sipahi · Mühendis")).toBeInTheDocument();
     expect(yeni.getByText("gösteriliyor")).toBeInTheDocument();
-    expect(eski.getByText("%88 (15/17)")).toBeInTheDocument();
+    expect(eski.getByText(/el yazısı %88 \(15\/17\)/)).toBeInTheDocument();
     expect(eski.getByText("Web, Android")).toBeInTheDocument();
     expect(eski.getByText("· 1 geçersiz")).toBeInTheDocument();
     expect(eski.getByText(/^10 Kas/)).toBeInTheDocument();
@@ -267,9 +320,11 @@ describe("Ekilmiş hata koşusu kartı: sonuç tablosu, kaçan hatalar, geçmiş
     expect(screen.queryByTestId("hk-oran-android")).toBeNull();
     await u.click(eski.getByRole("button", { name: /^Aç: 10 Kas/ }));
     await waitFor(() => expect(screen.getByTestId("hk-sonuc")).toHaveAttribute("data-kosu", "hk-1"));
+    // "Aç" düğmesi kaybolur; odak açılan koşunun sonuç başlığına geçer.
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Sonuç tablosu", level: 3 })).toHaveFocus());
     expect(screen.getByTestId("hk-oran-android")).toBeInTheDocument();
     expect(within(screen.getByTestId("hk-gecmis-hk-1")).getByText("gösteriliyor")).toBeInTheDocument();
-  });
+  }, 20_000);
 
   it("koşu listesinde ekilmiş hata adımı 'Ekilmiş hata: <ad>' okunur; diğer koşuların metni değişmez", () => {
     const k = (ek: Partial<Kosu>): Kosu => ({
@@ -315,10 +370,14 @@ describe("Ekilmiş hata koşusu kartı: başlat → ilerleme → bitiş, 409, ip
     // Yalnız iki hata: bir kod, bir veri.
     for (const c of within(await within(k).findByRole("group", { name: "Kod hatası (5)" })).getAllByRole("checkbox").slice(1)) await u.click(c);
     for (const c of within(within(k).getByRole("group", { name: "Veri hatası (4)" })).getAllByRole("checkbox").slice(0, 3)) await u.click(c);
-    expect(within(k).getByTestId("hk-tahmin")).toHaveTextContent("2 hata × 1 platform = 4 koşu");
+    expect(within(k).getByTestId("hk-tahmin")).toHaveTextContent("2 hata + 2 çerçeve koşusu (temel, kapanış) = 4 koşu / platform; 1 platform × 4 = toplam 4 koşu");
+    // Kısa koşu (≤ 15 dk): onay adımı yok.
     await u.click(within(k).getByRole("button", { name: "Koşuyu başlat" }));
+    expect(within(k).queryByTestId("hk-onay")).toBeNull();
 
     const ilerleme = within(await within(k).findByTestId("hk-ilerleme"));
+    // Başlatınca odak ilerleme bölümüne geçer.
+    await waitFor(() => expect(within(k).getByTestId("hk-ilerleme")).toHaveFocus());
     expect(ilerleme.getByText("Koşu sırada")).toBeInTheDocument();
     expect(await ilerleme.findByTestId("hk-sayac")).toHaveTextContent("adım 1 / 4");
     expect(ilerleme.getByTestId("hk-simdiki")).toHaveTextContent("Web · Temel koşu (hatasız)");
@@ -351,7 +410,7 @@ describe("Ekilmiş hata koşusu kartı: başlat → ilerleme → bitiş, 409, ip
     expect(within(k).getByRole("button", { name: "Koşuyu başlat" })).toBeEnabled();
     expect(within(screen.getByTestId("hk-gecmis-hk-2")).getByText("Tamamlandı")).toBeInTheDocument();
     await waitFor(() => expect(olcuDegisti).toHaveBeenCalledTimes(1));
-  });
+  }, 20_000);
 
   it("409 hata_kosusu_suruyor: 'süren koşu var' mesajı; süren koşu ekrana gelir", async () => {
     await oturumAc("sunucu");
@@ -373,7 +432,7 @@ describe("Ekilmiş hata koşusu kartı: başlat → ilerleme → bitiş, 409, ip
   it("iptal: süren koşu 'İptal edildi' olur, ilerleme kapanır, koşmayan adımlar bekliyor kalır; form yeniden açılır", async () => {
     await oturumAc("muhendis");
     kuleAyar.adimMs = 3_600_000;
-    await hataKosusuApi.baslat({ platformlar: ["web"], hatalar: ["kampanya_bedava_yok", "kampanya_esik_7"] });
+    await hataKosusuApi.baslat({ platformlar: ["web"], hatalar: ["kampanya_bedava_yok", "kampanya_tek_bedava"] });
     kuleMockIlerlet();
     kuleMockIlerlet();
     kuleMockIlerlet();
@@ -387,8 +446,10 @@ describe("Ekilmiş hata koşusu kartı: başlat → ilerleme → bitiş, 409, ip
     expect((await hataKosusuApi.detay("hk-2")).durum).toBe("cancelled");
     expect(await within(screen.getByTestId("hk-gecmis-hk-2")).findByText("İptal edildi")).toBeInTheDocument();
     await waitFor(() => expect(within(screen.getByTestId("hk-sonuc")).getByText(/muhendis tarafından iptal edildi/)).toBeInTheDocument());
+    // İptalden sonra odak kaybolmaz: sonuç başlığına geçer.
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Sonuç tablosu", level: 3 })).toHaveFocus());
     expect(hucre("web", "kampanya_bedava_yok")).toHaveTextContent("✓ yakalandı");
-    expect(hucre("web", "kampanya_esik_7")).toHaveTextContent("bekliyor");
+    expect(hucre("web", "kampanya_tek_bedava")).toHaveTextContent("bekliyor");
     // Sayılan tek adım yakalandı: oran 1/1; kalan adım orana girmez.
     expect(screen.getByTestId("hk-oran-web")).toHaveTextContent("%100 (1/1)");
     expect(within(k).getByRole("button", { name: "Koşuyu başlat" })).toBeEnabled();
@@ -403,5 +464,157 @@ describe("Ekilmiş hata koşusu kartı: başlat → ilerleme → bitiş, 409, ip
     const ilerleme = within(await screen.findByTestId("hk-ilerleme"));
     expect(ilerleme.getByRole("button", { name: "İptal et" })).toBeDisabled();
     expect(ilerleme.getByRole("button", { name: "İptal et" })).toHaveAccessibleDescription("Bu işlem için gereken rol: Mühendis / Sunucu");
+  });
+});
+
+describe("review turu 1: süre, onay, odak, duyuru ve olaysız yenileme", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("uzun seçim (> 15 dk) onay ister: onay bölümü odak alır; Vazgeç başlat düğmesine döner; 'Evet, başlat' koşuyu başlatır", async () => {
+    await oturumAc("muhendis");
+    kuleAyar.adimMs = 3_600_000;
+    const u = userEvent.setup();
+    sar(<HataKosusuKarti />);
+    const k = await kart();
+    await within(k).findByRole("group", { name: "Kod hatası (5)" });
+    await u.click(within(k).getByRole("checkbox", { name: "Android" }));
+    await u.click(within(k).getByRole("button", { name: "Koşuyu başlat" }));
+    const onay = await within(k).findByTestId("hk-onay");
+    expect(onay).toHaveTextContent("Bu seçim yaklaşık 44–66 dakika sürer (22 koşu).");
+    await waitFor(() => expect(onay).toHaveFocus());
+    expect((await hataKosusuApi.liste()).map((x) => x.id)).toEqual(["hk-1"]);
+    await u.click(within(onay).getByRole("button", { name: "Vazgeç" }));
+    expect(within(k).queryByTestId("hk-onay")).toBeNull();
+    await waitFor(() => expect(within(k).getByRole("button", { name: "Koşuyu başlat" })).toHaveFocus());
+    await u.click(within(k).getByRole("button", { name: "Koşuyu başlat" }));
+    await u.click(within(await within(k).findByTestId("hk-onay")).getByRole("button", { name: "Evet, başlat" }));
+    expect(await within(k).findByTestId("hk-ilerleme")).toBeInTheDocument();
+    expect((await hataKosusuApi.liste()).map((x) => x.id)).toEqual(["hk-2", "hk-1"]);
+  }, 20_000);
+
+  it("sahte saat: ilerlemede başlangıç, geçen süre ve kalan tahmini; canlı bölge yalnız adım değişince değişir", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: false, now: new Date("2026-11-12T12:04:00+03:00") });
+    await oturumAc("sunucu");
+    kuleAyar.adimMs = 3_600_000;
+    await hataKosusuApi.baslat({ platformlar: ["web"], hatalar: ["kampanya_bedava_yok", "kampanya_tek_bedava"] });
+    kuleMockIlerlet(); // running (baslama = 12:04)
+    sar(<HataKosusuKarti />);
+    const ilerleme = async () => {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      return screen.getByTestId("hk-ilerleme");
+    };
+    let i = await ilerleme();
+    await act(async () => void (await vi.advanceTimersByTimeAsync(10)));
+    i = await ilerleme();
+    expect(within(i).getByTestId("hk-sure")).toHaveTextContent(/^başladı 12:04 · geçen <1 dk · tahmini kalan ~4 dk$/);
+    const duyuru = within(i).getByTestId("hk-duyuru");
+    expect(duyuru).toHaveAttribute("role", "status");
+    expect(duyuru).toHaveTextContent("Koşu sürüyor · Web · Temel koşu (hatasız) · adım 1 / 4");
+    const ilkDuyuru = duyuru.textContent;
+
+    // İki adım 6 dakikada bitti: kalan = ortalama adım süresi × kalan adım.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6 * 60_000);
+      kuleMockIlerlet();
+      kuleMockIlerlet();
+      await vi.advanceTimersByTimeAsync(5000); // yoklama (olay akışı yok)
+      await vi.advanceTimersByTimeAsync(400);
+    });
+    i = screen.getByTestId("hk-ilerleme");
+    expect(within(i).getByTestId("hk-sure")).toHaveTextContent(/^başladı 12:04 · geçen 6 dk · tahmini kalan ~6 dk$/);
+    expect(within(i).getByTestId("hk-duyuru")).toHaveTextContent("adım 3 / 4");
+    expect(within(i).getByTestId("hk-duyuru").textContent).not.toBe(ilkDuyuru);
+    // Süre canlı bölgede değil.
+    expect(within(i).getByTestId("hk-duyuru")).not.toHaveTextContent(/geçen|dk/);
+    expect(within(i).getByTestId("hk-sure").closest("[aria-live]")).toBeNull();
+  });
+
+  it("olay akışı yokken: yoklama süren koşunun bittiğini görünce Kule ölçüleri bir kez yenilenir", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: false });
+    await oturumAc("muhendis");
+    kuleAyar.adimMs = 3_600_000;
+    await hataKosusuApi.baslat({ platformlar: ["web"], hatalar: ["kampanya_bedava_yok"] });
+    const olcuDegisti = vi.fn();
+    sar(<HataKosusuKarti olcuDegisti={olcuDegisti} />); // OlayProvider yok
+    await act(async () => void (await vi.advanceTimersByTimeAsync(10)));
+    expect(screen.getByTestId("hk-ilerleme")).toBeInTheDocument();
+    await act(async () => {
+      while (kuleMockIlerlet());
+    });
+    expect(olcuDegisti).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000); // yoklama
+      await vi.advanceTimersByTimeAsync(400); // birleştirilmiş yenileme
+    });
+    expect(screen.queryByTestId("hk-ilerleme")).toBeNull();
+    expect(olcuDegisti).toHaveBeenCalledTimes(1);
+    await act(async () => void (await vi.advanceTimersByTimeAsync(20_000)));
+    expect(olcuDegisti).toHaveBeenCalledTimes(1);
+  });
+
+  it("eski çekirdek biçimi (kaynaksız kıran test, el_yazisi yok): AI/el satırı ve suite satırı çizilmez", async () => {
+    const eski = hataKosusuDetayUyarla({
+      id: "e1",
+      durum: "done",
+      platformlar: ["web"],
+      hatalar: ["a"],
+      ozet: { oran: 1, yakalanan: 1, kacan: 0, gecersiz: 0, platformlar: [], kacanlar: [] },
+      adimlar: [
+        { id: "1", platform: "web", asama: "temel", sonuc: "yesil", sira: 1 },
+        { id: "2", platform: "web", asama: "hata", hata_kodu: "a", sonuc: "yakalandi", kiran_testler: ["T"], sira: 2 },
+        { id: "3", platform: "web", asama: "kapanis", sonuc: "yesil", sira: 3 },
+      ],
+    });
+    vi.spyOn(hataKosusuApi, "liste").mockResolvedValue([eski]);
+    vi.spyOn(hataKosusuApi, "detay").mockResolvedValue(eski);
+    await oturumAc("analist");
+    sar(<HataKosusuKarti />);
+    await screen.findByTestId("hk-sonuc");
+    expect(screen.queryByTestId("hk-oran-ai-web")).toBeNull();
+    expect(screen.queryByTestId("hk-oran-el-web")).toBeNull();
+    expect(screen.queryByTestId("hk-suite")).toBeNull();
+    expect(screen.getByRole("rowheader", { name: "Yakalama oranı" })).toBeInTheDocument();
+    expect(screen.getByTestId("hk-oran-web")).toHaveTextContent("%100 (1/1)");
+    expect(within(screen.getByTestId("hk-gecmis-e1")).getByText("%100 (1/1)")).toBeInTheDocument();
+    vi.restoreAllMocks();
+  });
+
+  it("temelde kırmızı testler suite satırında hariç tutulduğu söylenerek listelenir", async () => {
+    const d = hataKosusuDetayUyarla({
+      id: "t1",
+      durum: "done",
+      platformlar: ["web"],
+      hatalar: ["a"],
+      adimlar: [
+        { id: "1", platform: "web", asama: "temel", sonuc: "yesil", temelde_kirmizi: ["C3: 6 adette bedava yok"], sira: 1 },
+        { id: "2", platform: "web", asama: "hata", hata_kodu: "a", sonuc: "kacti", kiran_testler: [], temelde_kirmizi: ["C3: 6 adette bedava yok"], sira: 2 },
+      ],
+    });
+    vi.spyOn(hataKosusuApi, "liste").mockResolvedValue([d]);
+    vi.spyOn(hataKosusuApi, "detay").mockResolvedValue(d);
+    await oturumAc("analist");
+    sar(<HataKosusuKarti />);
+    expect(await screen.findByTestId("hk-suite")).toHaveTextContent(
+      "Suite: temel koşuda zaten kırmızı olan testler sayılmadı (açık defect adayı olabilir) — Web: 1 test (C3: 6 adette bedava yok).",
+    );
+    vi.restoreAllMocks();
+  });
+});
+
+describe("Kule: onaylı ama tabloyla uyuşmayan case'ler kartı", () => {
+  it("liste case review'a bağlanır; boş liste 'hepsi uyumlu'; anahtar yoksa kart yok", () => {
+    const { unmount } = sar(<OnayliUyumsuzKarti k={kule({ onayli_uyumsuz: [{ case_id: "case-1-7", requirement_id: "req-tpd-1", baslik: "750 TL'de uyarı" }] })} />);
+    const kartEl = screen.getByRole("region", { name: "Onaylandıktan sonra tabloyla uyuşmayan case'ler" });
+    expect(within(kartEl).getByRole("link", { name: "750 TL'de uyarı" })).toHaveAttribute("href", "/gereksinimler/req-tpd-1/caseler#case-case-1-7");
+    unmount();
+    const { unmount: u2 } = sar(<OnayliUyumsuzKarti k={kule({ onayli_uyumsuz: [] })} />);
+    expect(screen.getByTestId("onayli-uyumsuz")).toHaveTextContent("Onaylı case'lerin hepsi güncel onaylı tablolarla uyumlu ya da kapsam dışı.");
+    u2();
+    sar(<OnayliUyumsuzKarti k={kule({})} />);
+    expect(screen.queryByTestId("onayli-uyumsuz")).toBeNull();
   });
 });

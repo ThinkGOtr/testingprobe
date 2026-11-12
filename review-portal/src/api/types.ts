@@ -1371,6 +1371,42 @@ export interface HataKatalogOgesi {
   aciklama: string;
   /** Hatayı yakalaması beklenen kural (ANALIZ §4.6 tablosu, ör. "kampanya"); core vermezse null. */
   yakalayan_kural: string | null;
+  /** K9 (§13.1): kuralın kabul kriterleri (ör. ["AC2"]); core vermezse alan yok. */
+  ac_refs?: string[];
+  /** K9: kuralın karar tablosu etiketi (ör. "T1"); tablosuz kuralda null; core vermezse alan yok. */
+  tablo?: string | null;
+  /** K9: hatayı ayırt eden örnek — girdi ve doğru / hatalı çıktı (düz metin); core vermezse alan yok. */
+  ayirt_edici?: AyirtEdiciOrnek | null;
+  /** Kuralın gereksinimi (bağlantı için); sözleşmede yok, core verirse kullanılır (uydurulmaz). */
+  requirement_id?: string | null;
+}
+
+/** K9 `ayirt_edici`: `{girdi, dogru, hatali}`; nesne gelirse "ad = değer" metnine çevrilir. */
+export interface AyirtEdiciOrnek {
+  girdi: string;
+  dogru: string;
+  hatali: string;
+}
+
+/** §13.2 `kiran_testler[]` öğesi; eski çekirdek yalnız test adını verir → `kaynak: null` (bilinmiyor). */
+export interface KiranTest {
+  test: string;
+  /** "ai": onaylı case'ten üretilen test (`tests/generated/`, `uretilen/`); "el": el yazısı suite. */
+  kaynak: "ai" | "el" | null;
+}
+
+/** §13.2 `el_yazisi`: el yazısı suite'in ayrı yakalama sayısı (ana oran yalnız AI testleriyle, K12). */
+export interface ElYazisiYakalama {
+  oran: number | null;
+  yakalanan: number;
+  kacan: number;
+}
+
+/** §13.2 `kapsam`: koşulan hata / katalog ve platformlar. */
+export interface HataKosusuKapsami {
+  kosulan_hata: number;
+  katalog: number;
+  platformlar: Platform[];
 }
 
 /** `hata_kosusu.durum`. */
@@ -1393,8 +1429,10 @@ export interface HataKosusuAdimi {
   /** Adımın `run` kaydı (`/kosular/:id`); koşu açılmadıysa null. */
   run_id: string | null;
   sonuc: HataAdimSonucu;
-  /** `yakalandi` adımında kırmızıya dönen testlerin adları. */
-  kiran_testler: string[];
+  /** `yakalandi` adımında kırmızıya dönen testler ve kaynakları (§13.2; eski biçimde kaynak null). */
+  kiran_testler: KiranTest[];
+  /** K12: hatasız temelde zaten kırmızı olduğu için sayılmayan testler; core vermezse alan yok. */
+  temelde_kirmizi?: string[];
   /** `gecersiz` (ve kırmızı temel/kapanış) adımının nedeni. */
   neden: string | null;
   sure_ms: number | null;
@@ -1405,8 +1443,10 @@ export interface HataKosusuAdimi {
 
 export interface HataYakalamaPlatformu {
   platform: Platform;
-  /** `yakalanan / (yakalanan + kacan)`; payda 0 ise null (ölçülmedi). */
+  /** `yakalanan / (yakalanan + kacan)`; payda 0 ise null (ölçülmedi). `el_yazisi` varsa yalnız AI testleri (K12). */
   oran: number | null;
+  /** §13.2 el yazısı suite ayrı sütunu; core vermezse alan yok (eski biçim: `oran` tüm testler). */
+  el_yazisi?: ElYazisiYakalama;
   yakalanan: number;
   kacan: number;
   gecersiz: number;
@@ -1432,6 +1472,9 @@ export interface HataKosusuOzeti {
   bekleyen?: number;
   platformlar: HataYakalamaPlatformu[];
   kacanlar: KacanHata[];
+  /** §13.2: `oran` yalnız AI testleri; el yazısı ayrı. Alan yoksa eski biçim (`oran` tüm testler). */
+  el_yazisi?: ElYazisiYakalama;
+  kapsam?: HataKosusuKapsami;
 }
 
 /** `hata_kosusu` satırı (`GET /fault-runs` öğesi). */
@@ -1473,6 +1516,24 @@ export interface KuleBeklentiDogrulugu {
   istisna: number;
   /** Karar tablosu kapsamındaki case'lerin payı; core vermezse null. */
   kapsam_orani: number | null;
+  // §13.2 ekleri: core vermezse alan yok (sayı uydurulmaz).
+  /** K11 kısmen uyumlu (orana girmez). */
+  kismen?: number;
+  /** K10 gerekçeyle "kontrol edilemedi, yine de onayla" sayısı. */
+  kontrolsuz_onay?: number;
+  n_case?: number;
+  n_story?: number;
+  tablolu_story?: number;
+  toplam_story?: number;
+  /** REPLAY (elle hazırlanmış golden) ile üretilmiş kayıt sayısı. */
+  golden_kaynakli?: number;
+}
+
+/** §13.2 Kule `onayli_uyumsuz[]`: onaylandıktan sonra tabloyla uyuşmayan case. */
+export interface OnayliUyumsuzCase {
+  case_id: string;
+  requirement_id: string;
+  baslik: string;
 }
 
 /** `GET /control-tower` → `hata_yakalama` (§4.7); hiç koşu yoksa anahtar `null`. */
@@ -1484,6 +1545,9 @@ export interface KuleHataYakalama {
   gecersiz: number;
   platformlar: HataYakalamaPlatformu[];
   kacanlar: KacanHata[];
+  /** §13.2: `oran` yalnız AI testleri; el yazısı ayrı. Alan yoksa eski biçim. */
+  el_yazisi?: ElYazisiYakalama;
+  kapsam?: HataKosusuKapsami;
 }
 
 export interface KontrolKulesi {
@@ -1491,6 +1555,8 @@ export interface KontrolKulesi {
   beklenti_dogrulugu?: KuleBeklentiDogrulugu | null;
   /** `undefined`: core sunmuyor; `null`: henüz ekilmiş hata koşusu yok. */
   hata_yakalama?: KuleHataYakalama | null;
+  /** §13.2: `undefined` core sunmuyor; boş dizi: yok. */
+  onayli_uyumsuz?: OnayliUyumsuzCase[];
 }
 
 export interface Kosu {

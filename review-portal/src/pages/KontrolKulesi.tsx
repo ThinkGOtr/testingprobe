@@ -16,7 +16,7 @@ import { KaynakIpucu } from "../components/KaynakIpucu";
 import { PlatformSuzgeci } from "../components/Platform";
 import type { Script } from "../api/types";
 import { PLATFORMLAR, PLATFORM_ETIKETI, platformaGoreSuz, platformSecimiOku, type Platform, type PlatformSecimi } from "../lib/platform";
-import { BeklentiDogruluguKarosu, HataYakalamaKarosu } from "../components/kule/KaliteKpilari";
+import { BeklentiDogruluguKarosu, HataYakalamaKarosu, OnayliUyumsuzKarti } from "../components/kule/KaliteKpilari";
 import { HataKosusuKarti } from "../components/kule/HataKosusuKarti";
 
 /** Platform başına üretilen test sayıları (Kule "Platform dağılımı"; kapatılan kayıtlar sayılmaz). */
@@ -320,6 +320,9 @@ export function KontrolKulesi() {
             </ul>
           )}
         </Kart>
+
+        {/* 012 §13.2: onaylı ama güncel tabloyla uyuşmayan case'ler (çekirdek anahtarı sunmuyorsa çizilmez). */}
+        <OnayliUyumsuzKarti k={k} />
 
         {/* 012 §4.6: ekilmiş hata koşusu (başlat, ilerleme, hata × platform tablosu, kaçan hatalar). */}
         <HataKosusuKarti olcuDegisti={() => void v.yenile(true)} />

@@ -239,6 +239,7 @@ export const HATA_TURU: Record<HataTuru, string> = { kod: "Kod hatası", veri: "
 export const EKILMIS_HATA_ADI: Record<string, string> = {
   kampanya_bedava_yok: "Kampanyada bedava ürün verilmiyor",
   kampanya_esik_7: "Kampanya eşiği 6 yerine 7",
+  kampanya_tek_bedava: "Kampanyada en çok 1 bedava",
   kampanya_cift_indirim: "Kampanya indirimi iki kez düşülüyor",
   min_siparis_haric: "Minimum sipariş sınırı dahil değil",
   min_siparis_muafiyet_yok: "Kampanyalı sepet minimumdan muaf değil",

@@ -2,26 +2,36 @@
 // platform sonuç tablosu ve bitmiş bir koşu (web + android). Sayılar ÖRNEK VERİ bandı altında gösterilir.
 import type { Platform } from "../../lib/platform";
 import type { HataKatalogOgesi, HataKosusuAdimi, HataKosusuDetay, KuleBeklentiDogrulugu } from "../types";
+import { KALITE_REQ } from "./kaliteVerisi";
 
-const hata = (kod: string, tur: HataKatalogOgesi["tur"], ad: string, aciklama: string, yakalayan_kural: string): HataKatalogOgesi => ({
-  kod,
-  ad,
-  tur,
-  aciklama,
-  yakalayan_kural,
-});
+const hata = (
+  kod: string,
+  tur: HataKatalogOgesi["tur"],
+  ad: string,
+  aciklama: string,
+  yakalayan_kural: string,
+  kural: { ac_refs: string[]; tablo: string | null; ayirt_edici: HataKatalogOgesi["ayirt_edici"] },
+): HataKatalogOgesi => ({ kod, ad, tur, aciklama, yakalayan_kural, ...kural, requirement_id: KALITE_REQ });
 
-/** core `rules/hata-katalogu.yaml` ile birebir (kod, ad, tür, açıklama, yakalayan kural; aynı sıra). */
+const T1 = (girdi: string, dogru: string, hatali: string) => ({ ac_refs: ["AC2"], tablo: "T1", ayirt_edici: { girdi, dogru, hatali } });
+const T2 = (ac: string, girdi: string, dogru: string, hatali: string) => ({ ac_refs: [ac], tablo: "T2", ayirt_edici: { girdi, dogru, hatali } });
+
+/**
+ * core `rules/hata-katalogu.yaml` ile birebir (kod, ad, tür, açıklama, yakalayan kural; aynı sıra). K9 (§13.1):
+ * `kampanya_esik_7` çıktı (story'ye uygun davranıştı); yerine `kampanya_tek_bedava`. Kayıtlar `ac_refs`,
+ * `tablo` ve `ayirt_edici` taşır. `requirement_id` sözleşmede yok (bağlantı için önerilen alan; core
+ * vermezse portal bağlantı çizmez).
+ */
 export const HATA_KATALOGU: HataKatalogOgesi[] = [
-  hata("kampanya_bedava_yok", "kod", "Kampanyada bedava ürün verilmiyor", "Kampanyalı üründe bedava adet her zaman 0 hesaplanır (mevcut kırılma; BREAK_CAMPAIGN ile aynı etki).", "Kampanya (6 al 1 bedava)"),
-  hata("kampanya_esik_7", "kod", "Kampanya eşiği 6 yerine 7", "Bedava adet, adet 6'ya değil 7'ye tam bölünerek hesaplanır.", "Kampanya (6'nın katlarında bedava adet)"),
-  hata("kampanya_cift_indirim", "kod", "Kampanya indirimi iki kez düşülüyor", "Kampanya indirimi sepet toplamından iki kez düşülür.", "Kampanyalı sepetin toplamı"),
-  hata("min_siparis_haric", "kod", "Minimum sipariş sınırı dahil değil", "Toplam minimum tutara eşitken sipariş kabul edilmez (sınır dahil olması gerekirken hariç tutulur).", "Minimum sipariş tutarı sınır değeri"),
-  hata("min_siparis_muafiyet_yok", "kod", "Kampanyalı sepet minimumdan muaf değil", "Kampanyalı sepet de minimum sipariş tutarına tabi tutulur.", "Minimum sipariş muafiyeti (kampanyalı sepet)"),
-  hata("min_siparis_500", "veri", "Minimum sipariş tutarı 500", "Minimum sipariş tutarı 750 yerine 500 okunur.", "Minimum sipariş tutarı"),
-  hata("min_siparis_1000", "veri", "Minimum sipariş tutarı 1000", "Minimum sipariş tutarı 750 yerine 1000 okunur.", "Minimum sipariş tutarı"),
-  hata("fiyat_p004_31", "veri", "P-004 fiyatı 31", "P-004 ürününün birim fiyatı 30 yerine 31 okunur.", "Satır ve sepet toplamı"),
-  hata("kampanya_urunu_p002", "veri", "Kampanyalı ürün P-002", "Kampanyalı ürün P-001 yerine P-002 olarak okunur.", "Kampanya (kampanyalı ürün)"),
+  hata("kampanya_bedava_yok", "kod", "Kampanyada bedava ürün verilmiyor", "Kampanyalı üründe bedava adet her zaman 0 hesaplanır (mevcut kırılma; BREAK_CAMPAIGN ile aynı etki).", "Kampanya (6 al 1 bedava)", T1("adet = 7", "bedava_adet = 1", "bedava_adet = 0")),
+  hata("kampanya_tek_bedava", "kod", "Kampanyada en çok 1 bedava", "Bedava adet min(1, adet // 6) hesaplanır: 6 ve 7 adette doğru görünür, 12 adet ve üstünde eksik bedava verir.", "Kampanya (katlarda bedava adet)", T1("adet = 14", "bedava_adet = 2", "bedava_adet = 1")),
+  hata("kampanya_cift_indirim", "kod", "Kampanya indirimi iki kez düşülüyor", "Kampanya indirimi sepet toplamından iki kez düşülür.", "Kampanyalı sepetin toplamı", T1("adet = 7, ara_toplam = 175,00", "toplam = 150,00", "toplam = 125,00")),
+  hata("min_siparis_haric", "kod", "Minimum sipariş sınırı dahil değil", "Toplam minimum tutara eşitken sipariş kabul edilmez (sınır dahil olması gerekirken hariç tutulur).", "Minimum sipariş tutarı sınır değeri", T2("AC3", "kampanyali_sepet = yanlış, sepet_tutari = 750,00", "minimum_uyarisi = yanlış", "minimum_uyarisi = doğru")),
+  hata("min_siparis_muafiyet_yok", "kod", "Kampanyalı sepet minimumdan muaf değil", "Kampanyalı sepet de minimum sipariş tutarına tabi tutulur.", "Minimum sipariş muafiyeti (kampanyalı sepet)", T2("AC6", "kampanyali_sepet = doğru, sepet_tutari = 150,00", "minimum_uyarisi = yanlış", "minimum_uyarisi = doğru")),
+  hata("min_siparis_500", "veri", "Minimum sipariş tutarı 500", "Minimum sipariş tutarı 750 yerine 500 okunur (story'nin eski değeri).", "Minimum sipariş tutarı", T2("AC3", "kampanyali_sepet = yanlış, sepet_tutari = 600,00", "minimum_uyarisi = doğru", "minimum_uyarisi = yanlış")),
+  hata("min_siparis_1000", "veri", "Minimum sipariş tutarı 1000", "Minimum sipariş tutarı 750 yerine 1000 okunur.", "Minimum sipariş tutarı", T2("AC3", "kampanyali_sepet = yanlış, sepet_tutari = 800,00", "minimum_uyarisi = yanlış", "minimum_uyarisi = doğru")),
+  hata("fiyat_p004_31", "veri", "P-004 fiyatı 31", "P-004 ürününün birim fiyatı 30 yerine 31 okunur.", "Satır ve sepet toplamı", { ac_refs: ["AC1"], tablo: null, ayirt_edici: { girdi: "1 adet P-004", dogru: "satır tutarı = 30,00", hatali: "satır tutarı = 31,00" } }),
+  hata("kampanya_urunu_p002", "veri", "Kampanyalı ürün P-002", "Kampanyalı ürün P-001 yerine P-002 olarak okunur.", "Kampanya (kampanyalı ürün)", T1("7 adet P-001", "bedava_adet = 1", "bedava_adet = 0")),
 ];
 
 // Demo uygulamanın el yazımı web paketi (`demo-app/e2e/tests/*.spec.ts`); adlar Playwright test başlığıdır
@@ -89,16 +99,22 @@ export const PAKET_TESTLERI = [
   T_PO_EXPECT,
 ];
 
+/**
+ * Üretilmiş (AI) testler: demo deposunda henüz yok (`tests/generated/`, `uretilen/` boş). K12: ana oran yalnız
+ * bu testlerle ölçülür; boşken "ölçülmedi". Bütün kıran testler el yazısı suite'tendir (`kaynak: "el"`).
+ */
+export const AI_TESTLERI: readonly string[] = [];
+
 export type MockAdimSonucu = { sonuc: "yakalandi"; testler: string[] } | { sonuc: "kacti" } | { sonuc: "gecersiz"; neden: string };
 
 /**
  * Web: demo uygulamada ölçülen gerçek matris (2026-11-12; `demo-app/README.md` "Ekilmiş hatalar"):
- * yakalanan 8/9, kaçan yalnız `kampanya_esik_7` (el yazımı testler 6. adet sınırını bilerek doğrulamaz;
- * 7 ve 14 adette iki kural aynı sonucu verir).
+ * yakalanan 8/9, kaçan yalnız `kampanya_tek_bedava` (K9: el yazımı testler yalnız 6–7 adeti dener; hata 12
+ * adet ve üstünde görünür). Kıran testlerin hepsi el yazısı suite'ten.
  */
 const WEB: Record<string, MockAdimSonucu> = {
   kampanya_bedava_yok: { sonuc: "yakalandi", testler: [T_KAMPANYA, T_SIPARIS, T_PO_BEDAVA] },
-  kampanya_esik_7: { sonuc: "kacti" },
+  kampanya_tek_bedava: { sonuc: "kacti" },
   kampanya_cift_indirim: { sonuc: "yakalandi", testler: [T_KAMPANYA, T_SIPARIS] },
   min_siparis_haric: { sonuc: "yakalandi", testler: [T_MIN_ULAS, T_PO_GECMIS] },
   min_siparis_muafiyet_yok: { sonuc: "yakalandi", testler: [T_MUAF] },
@@ -134,7 +150,7 @@ export function adimIskeleti(kosuId: string, platformlar: readonly Platform[], h
   const adimlar: HataKosusuAdimi[] = [];
   const ekle = (platform: Platform, asama: HataKosusuAdimi["asama"], hata_kodu: string | null) => {
     const sira = adimlar.length + 1;
-    adimlar.push({ id: `${kosuId}-a${sira}`, platform, hata_kodu, asama, run_id: null, sonuc: "bekliyor", kiran_testler: [], neden: null, sure_ms: null, sira });
+    adimlar.push({ id: `${kosuId}-a${sira}`, platform, hata_kodu, asama, run_id: null, sonuc: "bekliyor", kiran_testler: [], temelde_kirmizi: [], neden: null, sure_ms: null, sira });
   };
   for (const p of platformlar) {
     ekle(p, "temel", null);
@@ -178,7 +194,7 @@ export function adimiSonuclandir(kosuId: string, a: HataKosusuAdimi, temelYesil:
     return;
   }
   kosu();
-  if (s.sonuc === "yakalandi") a.kiran_testler = [...s.testler];
+  if (s.sonuc === "yakalandi") a.kiran_testler = s.testler.map((test) => ({ test, kaynak: AI_TESTLERI.includes(test) ? "ai" : "el" }));
 }
 
 /** Örnek veride bitmiş koşu: web + android, dokuz hata (web 8/9; android 7/8 + 1 geçersiz). */
@@ -207,16 +223,28 @@ export function ilkHataKosulari(): HataKosusuDetay[] {
   ];
 }
 
-/** Örnek beklenti doğruluğu (§4.7): 5 uyumlu, 1 uyuşmayan (istisnayla onaylandı), 3 kapsam dışı, 1 kontrol edilemedi. */
+/**
+ * Örnek beklenti doğruluğu (§4.7, §13.2): TPD-1'in 10 AI case'i — 5 uyumlu, 1 uyuşmayan (istisnayla onaylandı),
+ * 1 kısmen uyumlu (orana girmez), 3 kapsam dışı. Kapsam = (5 + 1 + 1) / 10. Tek story'de tablo var (1 / 4);
+ * kayıtlar REPLAY'den (elle hazırlanmış golden), n < 20 → gösterge.
+ */
 export const MOCK_BEKLENTI: KuleBeklentiDogrulugu = {
   oran: 5 / 6,
   uyumlu: 5,
   uyumsuz: 1,
+  kismen: 1,
   kapsam_disi: 3,
-  kontrol_edilemedi: 1,
+  kontrol_edilemedi: 0,
   istisna: 1,
+  kontrolsuz_onay: 0,
   kapsam_orani: 7 / 10,
+  n_case: 10,
+  n_story: 1,
+  tablolu_story: 1,
+  toplam_story: 4,
+  golden_kaynakli: 10,
 };
+
 
 /** core `oracle/metrik.py` `KAYNAK` (Kule bunu `kaynaklar.beklenti_dogrulugu`'na yazar). */
 export const BEKLENTI_KAYNAGI =
