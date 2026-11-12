@@ -6,6 +6,7 @@
 // yolundan yayımlar. Cevaplar hazırlanmış örneklerdir ve `ornek_veri: true` taşır: arayüz
 // "ÖRNEK VERİ" gösterir (sahte canlı gösterim yok). Model çağrısı yapılmaz.
 import { ApiError, BU_FAZDA_YOK } from "../http";
+import { dondurulduMetni, KISISEL_VERI_METNI, SIZINTI_METNI } from "../asistan";
 import type {
   AsistanCevabi,
   AsistanDurumu,
@@ -143,9 +144,31 @@ function sirVar(metin: string): boolean {
   return SIR_DESENLERI.some((d) => d.test(metin));
 }
 
-// Core `guvenlik.kart_bul` (013 §5.1) karşılığı: 13–19 hane, boşluk/tire/nokta ayraçlı, Luhn geçerli;
-// URL içindekiler ve herkese açık test kartları hariç.
-const TEST_KARTLARI = new Set(["4111111111111111", "5555555555554444", "4242424242424242", "5528790000000008", "4000056655665556"]);
+// Core `guvenlik.kart_bul` (013 §5.1, inceleme turu 1) karşılığı: NFKC (tam genişlik rakam), sol
+// sınır yalnız rakam (`kart5105…` yakalanır), ayraç boşluk/sekme/satır sonu, nokta, tire, alt çizgi,
+// eğik çizgi ya da uzun tire (tekrarlı olabilir); bilinen kart ağı IIN öneki, 13–19 hane, Luhn.
+// Yalnız şemalı URL ve TR IBAN taranmaz (yol/sorgu dizesindeki kart da yakalanır); herkese açık
+// test kartları geçer. `5105105105105100` bilerek listede yok: müşteri kartı gibi verilen senaryo
+// (013 §9) engellenir. Bağlam (ekran JSON'u) için çevrede kart|card|pan|kredi kelimesi aranır.
+export const MOCK_TEST_KARTLARI: ReadonlySet<string> = new Set([
+  "4111111111111111",
+  "5555555555554444",
+  "4242424242424242",
+  "5528790000000008",
+  "4000056655665556",
+  "4012888888881881",
+  "378282246310005",
+  "371449635398431",
+  "6011111111111117",
+]);
+
+const KART_ONEKI = /^(?:4|5[1-5]|2[2-7]|3[47]|3[0689]|35|6|9792)/;
+const KART_ADAYI = /(?<!\d)\d+(?:[\s._/\u2010-\u2015\u2212-]+\d+)*(?!\d)/g;
+const KART_AYRACI = /[\s._/\u2010-\u2015\u2212-]+/;
+const SEMALI_URL = /\b[a-z][a-z0-9+.-]*:\/\/\S+/gi;
+const IBAN = /\bTR\d{2}(?:[ -]?\d){22}\b/gi;
+const KART_KELIMESI = /(?<![a-zçğıöşü])(?:kart|card|pan|kredi)/i;
+const BAGLAM_PENCERESI = 40;
 
 function luhn(hane: string): boolean {
   let top = 0;
@@ -160,11 +183,33 @@ function luhn(hane: string): boolean {
   return top % 10 === 0;
 }
 
-export function mockKartVar(metin: string): boolean {
-  const urlsuz = metin.replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, " ");
-  for (const m of urlsuz.matchAll(/(?<![\d.-])\d(?:[ .-]?\d){12,18}(?![\d])/g)) {
-    const hane = m[0].replace(/\D/g, "");
-    if (hane.length >= 13 && hane.length <= 19 && !TEST_KARTLARI.has(hane) && luhn(hane)) return true;
+function kartMi(hane: string): boolean {
+  return hane.length >= 13 && hane.length <= 19 && KART_ONEKI.test(hane) && !MOCK_TEST_KARTLARI.has(hane) && luhn(hane);
+}
+
+/** Metinde kart numarası var mı. `baglam`: ekran JSON'u — yalnız çevresinde kart kelimesi geçen aday sayılır. */
+export function mockKartVar(metin: string, { baglam = false }: { baglam?: boolean } = {}): boolean {
+  if (!metin) return false;
+  const temiz = metin.normalize("NFKC").replace(IBAN, " ").replace(SEMALI_URL, " ");
+  for (const m of temiz.matchAll(KART_ADAYI)) {
+    const gruplar = m[0].split(KART_AYRACI);
+    let bulundu = false;
+    for (let bas = 0; bas < gruplar.length && !bulundu; bas++) {
+      let hane = "";
+      for (let son = bas; son < gruplar.length; son++) {
+        hane += gruplar[son];
+        if (hane.length > 19) break;
+        if (kartMi(hane)) {
+          bulundu = true;
+          break;
+        }
+      }
+    }
+    if (!bulundu) continue;
+    if (!baglam) return true;
+    const i = m.index ?? 0;
+    const cevre = temiz.slice(Math.max(0, i - BAGLAM_PENCERESI), i + m[0].length + BAGLAM_PENCERESI);
+    if (KART_KELIMESI.test(cevre)) return true;
   }
   return false;
 }
@@ -180,7 +225,7 @@ function dondurmaKalani(k: Kullanici): number | null {
 function dondurmaKontrol(k: Kullanici): void {
   const kalan = dondurmaKalani(k);
   if (kalan !== null) {
-    throw new ApiError(429, "Art arda engellenen istekler nedeniyle asistan geçici olarak kullanılamıyor.", { kod: "donduruldu", ek: { kalan_s: kalan } });
+    throw new ApiError(429, dondurulduMetni(kalan), { kod: "donduruldu", ek: { kalan_s: kalan } });
   }
 }
 
@@ -301,8 +346,8 @@ function soruGonder(sohbetId: string, govde: unknown, k: Kullanici): { mesaj_id:
     throw new ApiError(422, "Soru veya bağlam gizli bilgi (token/parola) içeriyor.", { kod: "sir_icerik" });
   }
   // Kart numarası: 422 `kisisel_veri`; dondurma sayacına girmez (K11).
-  if (mockKartVar(soru) || mockKartVar(baglamMetni)) {
-    throw new ApiError(422, "Soru kişisel veri (kart numarası) içeriyor.", { kod: "kisisel_veri" });
+  if (mockKartVar(soru) || mockKartVar(baglamMetni, { baglam: true })) {
+    throw new ApiError(422, KISISEL_VERI_METNI, { kod: "kisisel_veri" });
   }
   const oneriKuralId = typeof g.oneri_kural_id === "string" ? g.oneri_kural_id : null;
   if (oneriKuralId && asistanMockAyar.gecersizOneriler.includes(oneriKuralId)) {
@@ -536,6 +581,15 @@ function cevapUret(m: MockMesaj): { cevap: AsistanCevabi; kaynak: AsistanMesaji[
         guven_gosterimi: "Kısmen",
         oneriler,
       }),
+    };
+  }
+
+  // Sızıntı yerine gelen sabit cevap (013 §6; core çıktı denetimi): ekran testi için talimat isteyen soru.
+  if (/sistem talimat|system prompt/i.test(soru)) {
+    return {
+      kaynak: "model",
+      amac: derin ? "assistant_deep" : "assistant",
+      cevap: bos({ cevap_bloklari: [{ tur: "paragraf", metin: SIZINTI_METNI }], guven: "dusuk", guven_gosterimi: "Emin değil", sizinti: true }),
     };
   }
 
