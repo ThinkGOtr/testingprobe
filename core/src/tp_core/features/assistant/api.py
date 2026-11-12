@@ -16,12 +16,12 @@ dahil edilir.
   kaynağını görür; başkasının ya da silinmiş sohbetin kaynağına her uç 404 (`ust_mesaj_id` dahil).
 - core-api model anahtarını ve kipini **bilmez** (İlke II): durum worker'ın yazdığı `asistan_durum`
   satırından okunur. Model gerekip gerekmediğine (sözlük/şablon) worker karar verir.
-- POST mesaj transaction sırası: dondurma (429 `donduruldu` + `kalan_s`; specs/013 §6.2) →
-  doğrulama (422, sır → `sir_icerik` + güvenlik olayı, kart → `kisisel_veri`) → sahiplik (404) → hizmet
-  durumu (503) → öneri geçerliliği (409 `oneri_gecersiz`) → saatlik hak (429 `hiz_siniri`) → bütçe
-  (402) → `budget.global_kilit` → kullanıcı işi (409 `bekleyen_var`) ve global sayaç (429 `mesgul`)
-  → mesaj INSERT (kısıt ihlali kısıt adına göre 409) → `assistant.answer` işi (aynı transaction).
-  Kilit, otomatik yükseltme transaction'ıyla aynı anahtardır ve ilk yazımdan önce alınır.
+- POST mesaj transaction sırası: dondurma (429 `donduruldu` + `kalan_s`; specs/013 §6.2) → doğrulama
+  (422, sır → `sir_icerik` + güvenlik olayı, kart → `kisisel_veri`) → sahiplik (404) → hizmet durumu
+  (503) → öneri geçerliliği (409 `oneri_gecersiz`) → saatlik hak (429 `hiz_siniri`) → bütçe (402) →
+  `budget.global_kilit` → kullanıcı işi (409 `bekleyen_var`) ve global sayaç (429 `mesgul`) → mesaj
+  INSERT (kısıt ihlali kısıt adına göre 409) → `assistant.answer` işi (aynı transaction). Kilit,
+  otomatik yükseltme transaction'ıyla aynı anahtardır ve ilk yazımdan önce alınır.
 - İş yükü daima `{mesaj_id, kullanici_id, tetik}`; idempotency anahtarı `assistant.answer:<id>`.
 """
 
