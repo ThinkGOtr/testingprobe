@@ -623,8 +623,8 @@ bos_ekranlar:
   - {ekran: /gereksinimler/:id/caseler, roller: [admin, auditor, po, engineer, developer, viewer]}
   - {ekran: /gereksinimler/:id/yayin, roller: [admin, auditor, analyst, po, tester, engineer, developer, viewer]}
   - {ekran: /caseler, roller: [admin, auditor, analyst, po, tester, engineer, developer, viewer]}
-  - {ekran: /kod, roller: [admin, auditor, analyst, po, tester, engineer, developer, viewer]}
-  - {ekran: /kod/:id, roller: [admin, auditor, analyst, po, tester, developer, viewer]}
+  - {ekran: /kod, roller: [admin, analyst, tester, engineer]}
+  - {ekran: /kod/:id, roller: [admin, analyst, tester]}
   - {ekran: /kosular, roller: [admin, auditor, analyst, po, tester, developer, viewer]}
   - {ekran: /kosular/:id, roller: [auditor, analyst, po, tester, developer, viewer]}
   - {ekran: /hatalar/:id, roller: [admin, auditor, analyst, po, developer, viewer]}

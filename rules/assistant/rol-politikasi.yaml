@@ -58,7 +58,7 @@ roller:
   engineer:
     etiket: Automation Engineer
     araclar: tum
-    ek: &kod_eki >-
+    ek: >-
       Kodu yalnız kaynakta görünenden üret; sır, üretim host'u veya gerçek müşteri girdisi
       kullanma. Beklenen değerleri onaylı case'ten al. Bakım onarımı yalnız locator değişikliğidir.
       Kod çalıştıramaz, PR açamaz, merge, deploy veya CI başlatamazsın. Locator önceliği:
@@ -67,7 +67,10 @@ roller:
     etiket: Developer
     # 012: developer'da `code.read` yok → uygulama kodu araçları verilmez.
     araclar: [product_search, product_read, probe_get, probe_list, probe_jobs, probe_audit, probe_my_queue, jira_issue, ci_log, db_schema, db_query]
-    ek: *kod_eki
+    ek: >-
+      Onaylı ve yayınlanmış case'leri ve koşu sonuçlarını açıkla; taslak case'leri, karar geçmişini
+      ve uygulama kodunu göremezsin. Manuel koşuyu yalnız prod dışı ortamda kullanıcı başlatır;
+      sen koşu başlatamaz, kod yazamaz veya değiştiremezsin.
   viewer:
     etiket: Görüntüleyici
     araclar: [product_search, product_read, probe_get, probe_list]
