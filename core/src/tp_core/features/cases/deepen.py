@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 
 from tp_core.audit import audit_on_commit
 from tp_core.features.cases import acik_sorular, service
+from tp_core.features.cases import ozet as ozet_modulu
 from tp_core.features.cases.schema import (
     acceptance_criteria,
     consistency_problems,
@@ -59,6 +60,14 @@ MAX_YENI_CASE = 10
 # durum adlarıdır, numara taşımaz; yalnız birebir çakışma denetlenir.
 _KIMLIK_RE = re.compile(r"^(EP-V|EP-I|BV|DT-R|PW|UC-AF|UC-EF|EG|Q|A)(\d+)$")
 AILELER = ("EP-V", "EP-I", "BV", "DT-R", "PW", "UC-AF", "UC-EF", "EG", "Q", "A")
+# Modele giden mevcut set özetinin alanları (kimlikli listeler; gözlem vb. girdiyi şişirmez).
+MESAJ_OZET_ALANLARI = (
+    "coverage_items",
+    "open_questions",
+    "assumptions",
+    "negative_coverage",
+    "not_covered",
+)
 SET_DEGISTI = (
     "Mevcut case seti derinleştirme sürerken değişti (yeni üretim, düzeltme ya da ret); sonuç eski "
     "sete göre üretildiği için yazılmadı. Derinleştirmeyi yeniden başlatın."
@@ -73,44 +82,13 @@ class DeepeningConflict(WorkflowError):
 
 
 def current_cases(session: Session, req: Requirement) -> list[TestCase]:
-    """Güncel case'ler: superseded/ret olmayan, güncel PO onaylı içerik için üretilmiş (kapsam
-    matrisiyle aynı küme)."""
-    eski = service.old_content_case_ids(session, req)
-    return [
-        tc
-        for tc in session.scalars(
-            select(TestCase)
-            .where(
-                TestCase.requirement_id == req.id,
-                TestCase.durum.notin_(("superseded", "rejected")),
-            )
-            .order_by(TestCase.uretim_no, TestCase.sira_no)
-        ).all()
-        if tc.id not in eski
-    ]
+    """Güncel case'ler (kapsam matrisiyle aynı küme; `ozet.current_cases`)."""
+    return ozet_modulu.current_cases(session, req)
 
 
 def merged_summary(session: Session, req: Requirement, cases: Sequence[TestCase]) -> dict:
-    """Güncel case'i olan üretimlerin özetleri birleşik (aynı kimlikte sonraki üretim geçerli)."""
-    uretimler = {tc.uretim_no for tc in cases}
-    satirlar = sorted(
-        (u for u in service.summaries(session, {req.id}).values() if u.uretim_no in uretimler),
-        key=lambda u: u.uretim_no,
-    )
-    anahtar = {
-        "coverage_items": "id",
-        "open_questions": "id",
-        "assumptions": "id",
-        "negative_coverage": "item",
-        "not_covered": "item",
-    }
-    birlesik: dict[str, dict[str, Any]] = {alan: {} for alan in anahtar}
-    for u in satirlar:
-        ozet = normalize_ozet(u.ozet or {})
-        for alan, k in anahtar.items():
-            for oge in ozet.get(alan) or []:
-                birlesik[alan][str(oge.get(k))] = oge
-    return {alan: list(v.values()) for alan, v in birlesik.items()}
+    """Güncel case'i olan üretimlerin özetleri birleşik (`ozet.merged_summary`)."""
+    return ozet_modulu.merged_summary(session, req, cases)
 
 
 def existing_ids(ozet: Mapping[str, Any], cases: Sequence[Mapping[str, Any]] = ()) -> list[str]:
@@ -191,21 +169,7 @@ def case_ozeti(i: Mapping[str, Any], ref: str, durum: str) -> dict[str, Any]:
     }
 
 
-def overlay(birlesik: Mapping[str, Any], yeni: Mapping[str, Any]) -> dict[str, Any]:
-    """Birleşik özete yeni üretimin özeti (aynı kimlikte yeni geçerli)."""
-    anahtar = {
-        "coverage_items": "id",
-        "open_questions": "id",
-        "assumptions": "id",
-        "negative_coverage": "item",
-        "not_covered": "item",
-    }
-    out: dict[str, Any] = {}
-    for alan, k in anahtar.items():
-        kayit = {str(o.get(k)): o for o in birlesik.get(alan) or []}
-        kayit.update({str(o.get(k)): o for o in yeni.get(alan) or []})
-        out[alan] = list(kayit.values())
-    return out
+overlay = ozet_modulu.overlay
 
 
 def set_fingerprint(cases: Sequence[TestCase]) -> list[str]:
@@ -271,7 +235,8 @@ def deepening_messages(
         parcalar += ["PO cevapları:", wrap_untrusted(po, source=f"{kaynak}:po", kind=kind)]
     # 011 K16: PO'nun açık soru yanıtları (yoksa girdi değişmez).
     parcalar += acik_sorular.generation_parts(acik_soru_yanitlari, kaynak, kind)
-    mevcut = {"cases": list(mevcut_caseler), "summary": dict(birlesik)}
+    ozet_ = {alan: list(birlesik.get(alan) or []) for alan in MESAJ_OZET_ALANLARI}
+    mevcut = {"cases": list(mevcut_caseler), "summary": ozet_}
     parcalar += [
         "Mevcut case seti (güncel case'ler ve birleşik özet; tekrar etme):",
         wrap_untrusted(
@@ -314,6 +279,11 @@ def _calisan(session: Session, requirement_id: uuid.UUID) -> bool:
         {"t": WORKFLOW_TUR, "r": requirement_id},
     ).first()
     return row is not None
+
+
+def running(session: Session, requirement_id: uuid.UUID) -> bool:
+    """Gereksinimde süren (etkin işli) derinleştirme var mı (üretim başlatma da denetler)."""
+    return _calisan(session, requirement_id)
 
 
 def start_deepening(
@@ -499,7 +469,12 @@ def run_deepening(
             ai_call_id=result.call_id,
             tur=tur,
         )
-        tutarsiz = {tc.sira_no: p for tc in eklenen if (p := consistency_problems(tc.icerik, ozet))}
+        # Derinleştirme case'i mevcut Q/A/kapsam öğelerine atıf yapabilir (011 F4): denetim özeti
+        # = önceki birleşik özet + bu üretimin özeti (`ozet.audit_summary` ile aynı kural).
+        denetim_ozeti = overlay(birlesik, ozet)
+        tutarsiz = {
+            tc.sira_no: p for tc in eklenen if (p := consistency_problems(tc.icerik, denetim_ozeti))
+        }
         bilinmeyen = {
             tc.sira_no: refs
             for tc in eklenen
@@ -532,9 +507,7 @@ def run_deepening(
         # Set düzeyi kurallar birleşik set üzerinde (mevcut + yeni): derinleştirme yalnız ek
         # öğeler taşır, AC kapsamını tek başına sağlamaz.
         uyarilar += set_problems(
-            [*(tc.icerik for tc in guncel), *cases],
-            overlay(birlesik, ozet),
-            req.kabul_kriterleri,
+            [*(tc.icerik for tc in guncel), *cases], denetim_ozeti, req.kabul_kriterleri
         )
         # P8 review her üretimden (derinleştirme dahil) sonra otomatik planlanır (011 K4).
         from tp_core.features.cases import review

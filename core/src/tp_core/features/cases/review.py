@@ -23,26 +23,26 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, exists, func, select
 from sqlalchemy.orm import Session
 
 from tp_core.audit import audit_on_commit
 from tp_core.auth.deps import CurrentUser, DbSession, require_role
 from tp_core.events.bus import publish_tx
 from tp_core.features.cases.schema import (
-    OZET_ALANLARI,
     acceptance_criteria,
     coverage_matrix,
-    is_legacy,
     normalize_ozet,
 )
-from tp_core.models import AiCall, CaseSetReview, Requirement, TestCase, session_scope
+from tp_core.models import AiCall, CaseSetReview, Job, Requirement, TestCase, session_scope
 from tp_core.ports import ModelGateway, ModelMessage
 from tp_core.workflow.jobs import JobContext, PermanentJobError, enqueue
 from tp_core.workflow.service import Principal, WorkflowError
@@ -56,8 +56,24 @@ REVIEW_KARARLARI = ("UYGUN", "UYGUN_DEGIL", "ACIK_BILGI_GEREKLI")
 SET_KULLANILIR = frozenset({"cases_ready", "done"})
 
 
+# Kalite satırının (review/denetim) işi bu durumlardayken satır "sürüyor" sayılır (011 D1 #1).
+ETKIN_IS_DURUMLARI = ("queued", "retry", "running")
+YARIDA_KALDI = "iş yarıda kaldı (zaman aşımı ya da worker çöküşü); yeniden gönderin"
+SET_DEGISTI_HATA = "set değişti, yeniden gönderin"
+# Gereksinim başına kayan 24 saatlik sınır (maliyet; 011 D1 #8). Ortamla ayarlanır.
+REVIEW_SINIRI_ORTAMI = "TP_REVIEW_GUNLUK_SINIR"
+REVIEW_VARSAYILAN_SINIR = 30
+SINIR_PENCERESI = timedelta(hours=24)
+
+
 class ReviewNotAllowed(WorkflowError):
     status_code = 409
+
+
+class KaliteSiniri(WorkflowError):
+    """Gereksinim başına review/denetim sayısı sınırı aşıldı (429, `hiz_siniri`)."""
+
+    status_code = 429
 
 
 # --------------------------------------------------------------------------- set
@@ -97,23 +113,10 @@ def hash_of(icerik_hashleri: Sequence[str]) -> str | None:
 
 
 def current_cases(session: Session, req: Requirement) -> list[TestCase]:
-    """Setin case'leri: `_coverage_state`'in `guncel` kümesi (superseded/ret olmayan, eski PO
-    içeriğine ait olmayan) içinden v3 (legacy olmayan) case'ler; üretim + sıra no sırasıyla."""
-    from tp_core.features.cases.service import old_content_case_ids
+    """Setin case'leri: güncel v3 case'ler (`ozet.current_cases(include_legacy=False)`)."""
+    from tp_core.features.cases import ozet
 
-    eski = old_content_case_ids(session, req)
-    return [
-        tc
-        for tc in session.scalars(
-            select(TestCase)
-            .where(
-                TestCase.requirement_id == req.id,
-                TestCase.durum.notin_(("superseded", "rejected")),
-            )
-            .order_by(TestCase.uretim_no, TestCase.sira_no)
-        ).all()
-        if tc.id not in eski and not is_legacy(tc.icerik)
-    ]
+    return ozet.current_cases(session, req, include_legacy=False)
 
 
 def set_hash(session: Session, req: Requirement) -> str | None:
@@ -121,50 +124,12 @@ def set_hash(session: Session, req: Requirement) -> str | None:
     return hash_of([tc.icerik_hash for tc in current_cases(session, req)])
 
 
-def _birlesik_ozet(session: Session, req: Requirement, uretimler: set[int]) -> dict[str, Any]:
-    """Setin case'i olan üretimlerin özetleri birleşik: kimlikli kayıtlar (`id`/`item`) için
-    sonraki üretim geçerli; diğer listeler sırayla birleşir (tekrarsız)."""
-    from tp_core.features.cases.service import summaries
-
-    out = normalize_ozet(None)
-    satirlar = sorted(
-        (u for u in summaries(session, {req.id}).values() if u.uretim_no in uretimler and u.ozet),
-        key=lambda u: u.uretim_no,
-    )
-    for u in satirlar:
-        ozet = normalize_ozet(u.ozet)
-        for alan in OZET_ALANLARI:
-            if alan == "config_matrix":
-                for k in ("parameters", "constraints"):
-                    for x in ozet[alan][k]:
-                        if x not in out[alan][k]:
-                            out[alan][k].append(x)
-                continue
-            for x in ozet[alan]:
-                anahtar = (
-                    x.get("id") or x.get("item") or x.get("control")
-                    if isinstance(x, Mapping)
-                    else None
-                )
-                if anahtar is not None:
-                    out[alan] = [
-                        y
-                        for y in out[alan]
-                        if not (
-                            isinstance(y, Mapping)
-                            and (y.get("id") or y.get("item") or y.get("control")) == anahtar
-                        )
-                    ]
-                    out[alan].append(x)
-                elif x not in out[alan]:
-                    out[alan].append(x)
-    return out
-
-
 def snapshot(session: Session, req: Requirement) -> SetGirdisi:
     """Güncel v3 setin review/denetim girdisi (matris covered_by = set numaraları)."""
+    from tp_core.features.cases.ozet import merged_summary
+
     cases = current_cases(session, req)
-    ozet = _birlesik_ozet(session, req, {tc.uretim_no for tc in cases})
+    ozet = merged_summary(session, req, cases)
     matris = coverage_matrix([tc.icerik for tc in cases], ozet, req.kabul_kriterleri)
     return SetGirdisi(
         req=req,
@@ -281,17 +246,123 @@ def replay_key_for(req: Any) -> dict[str, str]:
 # ----------------------------------------------------------------------- planlama
 
 
-def _bekleyen(session: Session, requirement_id: uuid.UUID, hash_: str) -> CaseSetReview | None:
+def etkin_is(model: Any) -> Any:
+    """Kalite satırının işi kuyrukta / çalışıyor / yeniden denenecek (SQL koşulu)."""
+    return exists().where(Job.id == model.job_id, Job.durum.in_(ETKIN_IS_DURUMLARI))
+
+
+def bekleyen_satir(session: Session, model: Any, requirement_id: uuid.UUID, hash_: str) -> Any:
+    """Aynı set için SÜREN satır: `bekliyor` VE etkin işi var. İşi iş dışında ölmüş `bekliyor`
+    satırı kilit sayılmaz (zaman aşımı, worker çöküşü, `reap_stale`/`release_orphans`)."""
     return session.scalars(
-        select(CaseSetReview)
+        select(model)
         .where(
-            CaseSetReview.requirement_id == requirement_id,
-            CaseSetReview.set_hash == hash_,
-            CaseSetReview.durum == "bekliyor",
+            model.requirement_id == requirement_id,
+            model.set_hash == hash_,
+            model.durum == "bekliyor",
+            etkin_is(model),
         )
-        .order_by(CaseSetReview.olusturma.desc())
+        .order_by(model.olusturma.desc())
         .limit(1)
     ).first()
+
+
+def _bekleyen(session: Session, requirement_id: uuid.UUID, hash_: str) -> CaseSetReview | None:
+    return bekleyen_satir(session, CaseSetReview, requirement_id, hash_)
+
+
+def mark_failed(
+    session: Session, satir: Any, neden: str, *, eylem: str, olay: str, anahtar: str
+) -> None:
+    """`bekliyor` satırı çağıranın işleminde `hata` yapar (denetim kaydı + olay). Satır kilitli
+    olmalı; artık `bekliyor` değilse dokunmaz."""
+    if satir.durum != "bekliyor":
+        return
+    satir.durum, satir.hata = "hata", neden[:1000]
+    audit_on_commit(
+        session,
+        "system",
+        eylem,
+        f"requirement:{satir.requirement_id}",
+        {anahtar: satir.id, "set_hash": satir.set_hash, "hata": neden[:300]},
+    )
+    publish_tx(
+        session.connection(), olay, {"requirement_id": satir.requirement_id, "durum": "hata"}
+    )
+
+
+def _review_hatasi(session: Session, satir: CaseSetReview, neden: str) -> None:
+    mark_failed(
+        session,
+        satir,
+        neden,
+        eylem="cases.review_failed",
+        olay="case.review",
+        anahtar="review_id",
+    )
+
+
+def close_stuck(
+    session: Session,
+    model: Any,
+    hata_yaz: Callable[[Session, Any, str], None],
+    requirement_id: uuid.UUID | None = None,
+) -> int:
+    """Etkin işi olmayan `bekliyor` satırları kilit altında `hata` ("iş yarıda kaldı") yapar."""
+    q = (
+        select(model)
+        .where(model.durum == "bekliyor", ~etkin_is(model))
+        .with_for_update(skip_locked=True)
+    )
+    if requirement_id is not None:
+        q = q.where(model.requirement_id == requirement_id)
+    n = 0
+    for satir in session.scalars(q).all():
+        son_hata = (
+            session.scalar(select(Job.son_hata).where(Job.id == satir.job_id))
+            if satir.job_id
+            else None
+        )
+        hata_yaz(session, satir, YARIDA_KALDI + (f" — {son_hata}" if son_hata else ""))
+        n += 1
+    return n
+
+
+def close_stuck_reviews(session: Session, requirement_id: uuid.UUID | None = None) -> int:
+    return close_stuck(session, CaseSetReview, _review_hatasi, requirement_id)
+
+
+def daily_limit(ortam: str, varsayilan: int) -> int:
+    """Gereksinim başına 24 saatlik sınır (ortam; geçersiz/boş → varsayılan, 0 → sınırsız)."""
+    try:
+        return max(int(os.environ.get(ortam) or varsayilan), 0)
+    except ValueError:
+        return varsayilan
+
+
+def recent_count(session: Session, model: Any, requirement_id: uuid.UUID) -> int:
+    esik = datetime.now(UTC) - SINIR_PENCERESI
+    return int(
+        session.scalar(
+            select(func.count())
+            .select_from(model)
+            .where(model.requirement_id == requirement_id, model.olusturma >= esik)
+        )
+        or 0
+    )
+
+
+def limit_reason(
+    session: Session, model: Any, requirement_id: uuid.UUID, ortam: str, varsayilan: int, ad: str
+) -> str | None:
+    """Sınır aşıldıysa Türkçe neden (None = istenebilir)."""
+    sinir = daily_limit(ortam, varsayilan)
+    if sinir and recent_count(session, model, requirement_id) >= sinir:
+        return (
+            f"Bu gereksinim için son 24 saatte en çok {sinir} {ad} çalıştırılabilir (maliyet "
+            f"sınırı, {ortam}); daha sonra yeniden deneyin"
+        )
+    return None
 
 
 def schedule_review(
@@ -305,9 +376,25 @@ def schedule_review(
     hash_ = set_hash(session, req)
     if hash_ is None:
         return None
+    close_stuck_reviews(session, req.id)
     mevcut = _bekleyen(session, req.id, hash_)
     if mevcut is not None:
         return mevcut.id
+    sinir = limit_reason(
+        session, CaseSetReview, req.id, REVIEW_SINIRI_ORTAMI, REVIEW_VARSAYILAN_SINIR, "review"
+    )
+    if sinir is not None:
+        if isteyen != "system":
+            raise KaliteSiniri(sinir)
+        # Otomatik review (K4) tavsiyedir: sınırda planlanmaz, üretimi engellemez.
+        audit_on_commit(
+            session,
+            "system",
+            "cases.review_skipped",
+            f"requirement:{req.id}",
+            {"set_hash": hash_, "neden": sinir},
+        )
+        return None
     satir = CaseSetReview(
         requirement_id=req.id, uretim_no=uretim_no, set_hash=hash_, isteyen=isteyen
     )
@@ -368,21 +455,8 @@ def output_problems(cikti: Mapping[str, Any], case_sayisi: int) -> list[str]:
 def _hata_yaz(review_id: uuid.UUID, neden: str) -> None:
     with session_scope() as s:
         satir = s.get(CaseSetReview, review_id, with_for_update=True)
-        if satir is None or satir.durum != "bekliyor":
-            return
-        satir.durum, satir.hata = "hata", neden[:1000]
-        audit_on_commit(
-            s,
-            "system",
-            "cases.review_failed",
-            f"requirement:{satir.requirement_id}",
-            {"review_id": review_id, "set_hash": satir.set_hash, "hata": neden[:300]},
-        )
-        publish_tx(
-            s.connection(),
-            "case.review",
-            {"requirement_id": satir.requirement_id, "durum": "hata"},
-        )
+        if satir is not None:
+            _review_hatasi(s, satir, neden)
 
 
 def run_review(
@@ -393,31 +467,42 @@ def run_review(
     from tp_core.gateway.errors import GatewayError, ReplayNotFound
 
     rid_ = uuid.UUID(str((ctx.yuk or {})["review_id"]))
-    with session_scope() as s:
-        satir = s.get(CaseSetReview, rid_)
-        if satir is None:
-            raise PermanentJobError("review kaydı yok")
-        if satir.durum != "bekliyor":
-            return {"atlandi": True, "durum": satir.durum}
-        req = s.get(Requirement, satir.requirement_id)
-        if req is None:
-            raise PermanentJobError("gereksinim silinmiş")
-        girdi = snapshot(s, req)
-        if girdi.set_hash is None:
-            satir.durum, satir.hata = "hata", "sette v3 case kalmadı"
-            return {"atlandi": True, "neden": "boş set"}
-        satir.set_hash = girdi.set_hash  # iş sırasında set değiştiyse güncel set incelenir
-        harita = girdi.harita()
-        messages = review_messages(
-            req,
-            [tc.icerik for tc in girdi.cases],
-            girdi.ozet,
-            girdi.matris,
-            girdi.oranlar,
-            girdi.set_hash,
-        )
-        replay_key = replay_key_for(req)
-        case_sayisi = len(girdi.cases)
+    try:
+        with session_scope() as s:
+            satir = s.get(CaseSetReview, rid_, with_for_update=True)
+            if satir is None:
+                raise PermanentJobError("review kaydı yok")
+            if satir.durum != "bekliyor":
+                return {"atlandi": True, "durum": satir.durum}
+            req = s.get(Requirement, satir.requirement_id)
+            if req is None:
+                raise PermanentJobError("gereksinim silinmiş")
+            girdi = snapshot(s, req)
+            if girdi.set_hash is None:
+                _review_hatasi(s, satir, "sette v3 case kalmadı")
+                return {"atlandi": True, "neden": "boş set"}
+            if girdi.set_hash != satir.set_hash:
+                # İş beklerken set değişti: eski set için model çağrılmaz; güncel set için yeni
+                # review planlanır (aynı işlemde; çift iş açılmaz).
+                _review_hatasi(s, satir, SET_DEGISTI_HATA)
+                yeni = schedule_review(s, req, satir.uretim_no)
+                return {"atlandi": True, "neden": "set değişti", "yeni_review_id": str(yeni)}
+            harita = girdi.harita()
+            messages = review_messages(
+                req,
+                [tc.icerik for tc in girdi.cases],
+                girdi.ozet,
+                girdi.matris,
+                girdi.oranlar,
+                girdi.set_hash,
+            )
+            replay_key = replay_key_for(req)
+            case_sayisi = len(girdi.cases)
+    except PermanentJobError:
+        raise
+    except Exception as exc:  # girdi kurulamadı: satır kilitte kalmasın (tavsiye)
+        _hata_yaz(rid_, f"review girdisi kurulamadı: {type(exc).__name__}: {str(exc)[:300]}")
+        return {"hata": type(exc).__name__}
     try:
         gw = gateway or _gateway(engine)
         rules_dir = getattr(gw, "rules_dir", None)
@@ -446,6 +531,16 @@ def run_review(
     except Exception as exc:  # tavsiye: hiçbir hata gereksinimi etkilemez
         _hata_yaz(rid_, f"{type(exc).__name__}: {str(exc)[:300]}")
         return {"hata": type(exc).__name__}
+    try:
+        return _review_yaz(rid_, sonuc, harita, case_sayisi)
+    except Exception as exc:  # sonuç yazılamadı: satır `bekliyor`da kalmasın
+        _hata_yaz(rid_, f"review sonucu yazılamadı: {type(exc).__name__}: {str(exc)[:300]}")
+        return {"hata": type(exc).__name__}
+
+
+def _review_yaz(
+    rid_: uuid.UUID, sonuc: Any, harita: dict[str, Any], case_sayisi: int
+) -> dict[str, Any]:
     cikti = dict(sonuc.output or {})
     sorunlar = output_problems(cikti, case_sayisi)
     skor = score_of(cikti)
@@ -493,6 +588,13 @@ def _mod(session: Session, ai_call_id: uuid.UUID | None) -> str | None:
     if ai_call_id is None:
         return None
     return session.scalar(select(AiCall.mod).where(AiCall.id == ai_call_id))
+
+
+def is_running(session: Session, satir: Any) -> bool:
+    """Satır `bekliyor` ve işi etkin (işi ölmüş satır sürüyor görünmez)."""
+    if satir is None or satir.durum != "bekliyor" or satir.job_id is None:
+        return False
+    return session.scalar(select(Job.durum).where(Job.id == satir.job_id)) in ETKIN_IS_DURUMLARI
 
 
 def latest(session: Session, requirement_id: uuid.UUID) -> CaseSetReview | None:
@@ -553,7 +655,7 @@ def view(session: Session, requirement_id: uuid.UUID) -> dict[str, Any]:
         "set_hash": guncel,
         "review": serialize(session, son, guncel),
         "bayat": son is not None and son.set_hash != guncel,
-        "calisiyor": son is not None and son.durum == "bekliyor",
+        "calisiyor": is_running(session, son),
         "yeniden_calistirilabilir": guncel is not None and req.durum in SET_KULLANILIR,
     }
 

@@ -1,6 +1,6 @@
 """Kolon değer kümeleri (CHECK kısıtları). `durum` kümeleri workflow.states'ten gelir."""
 
-from tp_core.workflow.states import KARARLAR, MACHINES, RET_NEDENLERI
+from tp_core.workflow.states import KARARLAR, MACHINES, TUM_RET_NEDENLERI
 
 ROLLER = frozenset({"analyst", "engineer", "presenter", "po", "tester"})
 REQUIREMENT_KAYNAK = frozenset({"jira", "free_text"})
@@ -12,7 +12,7 @@ REVIEW_NESNE = frozenset(KARARLAR)
 REVIEW_KARAR = frozenset().union(*KARARLAR.values())
 # github: GitHub arayüzünde insanın yaptığı merge (GitHub kipi; çekirdeğe senkronla işlenir, 0010).
 REVIEW_KANAL = frozenset({"portal", "jira", "github"})
-RET_NEDENI = RET_NEDENLERI
+RET_NEDENI = TUM_RET_NEDENLERI
 TOKEN_KAPSAM = frozenset({"publish", "submit"})
 PO_ONAY_KAYNAGI = frozenset({"jira_label", "portal"})
 VERDICT = frozenset({"ready", "needs_po"})

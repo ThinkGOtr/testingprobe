@@ -200,6 +200,27 @@ RET_NEDENLERI = frozenset(
         "wrong_element",
     }
 )
+# Test tasarım modeli (011 F3) ret nedenleri: case'inkinin kopyası değil, modele özgü — yanlış
+# teknik seçimi · eksik test koşulu · hatalı kapsam öğesi (bölüm/geçerlilik) · hatalı sınır değeri ·
+# kaynakta olmayan kural (uydurma) · eksik kabul kriteri · kapsam dışı.
+MODEL_RET_NEDENLERI = frozenset(
+    {
+        "wrong_technique",
+        "missing_condition",
+        "wrong_coverage_item",
+        "wrong_boundary",
+        "invented_rule",
+        "missing_ac",
+        "out_of_scope",
+    }
+)
+# `review.ret_nedeni` CHECK kısıtının değer kümesi (migrasyon 0026).
+TUM_RET_NEDENLERI = RET_NEDENLERI | MODEL_RET_NEDENLERI
+
+
+def ret_nedenleri(kind: str) -> frozenset[str]:
+    """Nesne türünün ret nedeni taksonomisi (tasarım modeli ayrı; diğerleri ortak)."""
+    return MODEL_RET_NEDENLERI if kind == "design_model" else RET_NEDENLERI
 
 
 def _gerekce_var(f: Any) -> bool:
@@ -209,11 +230,28 @@ def _gerekce_var(f: Any) -> bool:
     return karar != "accept_difference" or bool((getattr(f, "gerekce", None) or "").strip())
 
 
-def _ajan_testi_gecti(r: Any) -> bool:
-    """011 F6: gereksinim ajan ürününe bağlı ve son Agent Probe testi bu içerik için geçti."""
-    from tp_core.features.agent_probe.service import ajan_testi_gecti
+# Özellik katmanının sağladığı koşullar (katman kuralı: workflow, features'a bağımlı olmaz).
+# Özellik modülü yüklenirken `register_guard(ad, fn)` ile kaydeder; kayıtsız koşul geçişi
+# REDDEDER (fail-closed).
+_KAYITLI_KOSULLAR: dict[str, Callable[[Any], bool]] = {}
+AJAN_TESTI_GECTI = "ajan_testi_gecti"
 
-    return ajan_testi_gecti(r)
+
+def register_guard(ad: str, check: Callable[[Any], bool]) -> None:
+    """Adlandırılmış koşulu bağlar (ör. `features.agent_probe.service` → `ajan_testi_gecti`)."""
+    _KAYITLI_KOSULLAR[ad] = check
+
+
+def _kayitli_kosul(ad: str) -> Callable[[Any], bool]:
+    def check(entity: Any) -> bool:
+        fn = _KAYITLI_KOSULLAR.get(ad)
+        return bool(fn(entity)) if fn is not None else False
+
+    return check
+
+
+# 011 F6: gereksinim ajan ürününe bağlı ve son Agent Probe testi bu içerik için geçti.
+_ajan_testi_gecti = _kayitli_kosul(AJAN_TESTI_GECTI)
 
 
 REQUIREMENT = Machine(

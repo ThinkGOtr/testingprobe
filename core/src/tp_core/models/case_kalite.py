@@ -16,7 +16,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ForeignKey, Index, Integer, text
+from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -62,6 +62,10 @@ class CaseSetAudit(Base):
         in_check("karar", DENETIM_KARARLARI, "case_set_audit_karar_ck", nullable=True),
         in_check("model_karari", DENETIM_KARARLARI, "case_set_audit_model_karar_ck", nullable=True),
         in_check("kaynak", DENETIM_KAYNAK, "case_set_audit_kaynak_ck"),
+        # 0026: tamamlanmış denetimin kararı vardır (kapı kararsız satırı okuyamaz).
+        CheckConstraint(
+            "durum <> 'tamamlandi' OR karar IS NOT NULL", name="case_set_audit_tamam_karar_ck"
+        ),
         Index("case_set_audit_req_ix", "requirement_id", "olusturma"),
     )
 

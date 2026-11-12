@@ -262,8 +262,23 @@ def test_gateway_retries_timeout_only_once(make_gateway, rules_dir, sleeps) -> N
             load_schema(rules_dir, "case_generation"),
             replay_key={"name": "TPD-1"},
         )
-    assert len(sleeps) == 1  # ilk deneme + bir yeniden deneme (429/5xx için 3)
+    # case_generation zaman aşımında geçitte yeniden denenmez (models.yaml
+    # `max_timeout_retries: 0`; iş kuyruğu yeniden dener — iş süresi bütçesi, 011 D1 #2).
+    assert len(sleeps) == 0 and len(provider.requests) == 1
     assert provider.requests[0].timeout_s == 600
+
+    # Ayarı olmayan amaçta geçit varsayılanı: ilk deneme + bir yeniden deneme (429/5xx için 3).
+    gw, provider = make_gateway([timeout, timeout, timeout])
+    sleeps.clear()
+    with pytest.raises(ProviderTransientError):
+        gw.call(
+            "requirement_review",
+            "requirement-review",
+            [ModelMessage(role="user", content="x")],
+            load_schema(rules_dir, "requirement_review"),
+            replay_key={"name": "TPD-1"},
+        )
+    assert len(sleeps) == 1 and len(provider.requests) == 2
 
 
 def test_server_side_fallback_default_is_sent_for_sonnet() -> None:

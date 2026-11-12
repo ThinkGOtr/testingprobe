@@ -39,7 +39,6 @@ from __future__ import annotations
 import logging
 import os
 import uuid
-from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, Final
 
@@ -57,6 +56,7 @@ from tp_core.workflow.service import (
     content_hash_of,
     transition,
 )
+from tp_core.workflow.states import AJAN_TESTI_GECTI, register_guard
 
 log = logging.getLogger(__name__)
 
@@ -174,13 +174,9 @@ def ajan_testi_gecti(req: Any) -> bool:
     )
 
 
-def done_korumasini_kaydet(
-    kaydet: Callable[[str, str, str, Callable[[Any], bool]], None],
-) -> None:
-    """`po_approved → done` korumasını durum makinesine kaydeder (D1'in kayıt/enjeksiyon kancası):
-    `kaydet(kaynak_durum, hedef_durum, aciklama, kosul)`. Koşul `ajan_testi_gecti`dir."""
-    kaynak, hedef = DONE_GECISI
-    kaydet(kaynak, hedef, DONE_KORUMASI_ACIKLAMASI, ajan_testi_gecti)
+# Durum makinesi koşulu (`po_approved → done`): workflow katmanı features'a bağımlı olmaz,
+# koşul burada kaydedilir (011 D1 #16).
+register_guard(AJAN_TESTI_GECTI, ajan_testi_gecti)
 
 
 def _gereksinim(

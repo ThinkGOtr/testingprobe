@@ -97,11 +97,12 @@ def current_items(session: Session, req: Requirement) -> list[Kalem]:
     Case → soru eşlemesi case'in kendi üretim özetindeki metinle yapılır (aynı `Q1` farklı
     üretimlerde farklı soru olabilir); varsayımlar yalnız bir case'in dayandığıysa listelenir.
     """
-    from tp_core.features.cases.review import _birlesik_ozet, current_cases
+    from tp_core.features.cases import ozet as ozet_modulu
+    from tp_core.features.cases.review import current_cases
     from tp_core.features.cases.service import summaries
 
     cases = current_cases(session, req)
-    birlesik = _birlesik_ozet(session, req, {tc.uretim_no for tc in cases})
+    birlesik = ozet_modulu.merged_summary(session, req, cases)
     ozetler = {u.uretim_no: normalize_ozet(u.ozet) for u in summaries(session, {req.id}).values()}
     kalemler: dict[tuple[str, str], Kalem] = {}
     for tur, alan in (("soru", "open_questions"), ("varsayim", "assumptions")):

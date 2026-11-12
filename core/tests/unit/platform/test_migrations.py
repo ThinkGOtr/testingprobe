@@ -299,3 +299,37 @@ def test_0008_downgrade_reopen_kararini_silmez(pg: PgServer) -> None:
     finally:
         with pg.super_conn() as c:
             c.execute(f'DROP DATABASE IF EXISTS "{ad}" WITH (FORCE)')
+
+
+# 0026 (specs/011 D1 #19): kalite tabloları en az yetkiyle; tamamlanan denetimin kararı vardır.
+KALITE_TABLOLARI = ("case_uretim", "tasarim_modeli", "case_set_review", "case_set_audit")
+
+
+@pytest.mark.parametrize("tablo", KALITE_TABLOLARI)
+@pytest.mark.parametrize("islem", ["DELETE FROM {t}", "TRUNCATE {t}"])
+def test_0026_tp_app_kalite_kayitlarini_silemez(db: Db, tablo: str, islem: str) -> None:
+    with _app(db) as c, pytest.raises(psycopg.errors.InsufficientPrivilege):
+        c.execute(islem.format(t=tablo))
+
+
+def test_0026_tamamlanan_denetim_kararsiz_yazilamaz(db: Db) -> None:
+    rid = uuid.uuid4()
+    with _app(db) as c:
+        c.execute(
+            "INSERT INTO requirement (id, kaynak, baslik, kaynak_hash) "
+            "VALUES (%s, 'free_text', 'b', 'h')",
+            (rid,),
+        )
+        ekle = (
+            "INSERT INTO case_set_audit (requirement_id, set_hash, durum, karar) "
+            "VALUES (%s, 'h', %s, %s)"
+        )
+        with pytest.raises(psycopg.errors.CheckViolation):
+            c.execute(ekle, (rid, "tamamlandi", None))
+        c.execute(ekle, (rid, "bekliyor", None))
+        c.execute(ekle, (rid, "tamamlandi", "KABUL"))
+        with pytest.raises(psycopg.errors.CheckViolation):
+            c.execute("UPDATE case_set_audit SET karar = NULL WHERE durum = 'tamamlandi'")
+        # Gereksinim silinince kalite kayıtları (CASCADE) tablo sahibi yetkisiyle silinir.
+        c.execute("DELETE FROM requirement WHERE id = %s", (rid,))
+        assert c.execute("SELECT count(*) FROM case_set_audit").fetchone() == (0,)

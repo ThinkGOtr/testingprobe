@@ -7,8 +7,9 @@
   test_case.icerik_hash == test_case.onaylanan_hash`) **ve** gereksinim `cases_ready|done` ve PO
   onayı güncel içerikte (`onaylanan_hash == content_hash_of(req)`; story değişip PO onayı
   sıfırlandıysa eski metnin case'i yayınlanmaz) **ve** case hazır (`readiness == ready`; eski
-  v2 case hazır sayılır) **ve** v3 case'te denetim kapısı (`set_gate_check`; bağlı değilse engel
-  yok). Değilse o case yayınlanmaz.
+  v2 case hazır sayılır) **ve** v3 case'te denetim kapısı (`set_gate_check`; kapı açıkken
+  (`TP_DENETIM_KAPISI`) bağlı değilse engel: fail-closed). Değilse o case yayınlanmaz. Kapı
+  durumu önizlemede ve yayın işinde gereksinim başına bir kez hesaplanır (`KAPI_ONBELLEGI`).
 - **Mevcut issue:** adaptör `tp-<uuid>` etiketli issue bulursa onu döndürür ve içeriğini
   güncellemez. Bu yüzden yazmadan önce bulunan issue'nun açıklamasındaki onaylanan içerik hash'i
   güncel hash'le karşılaştırılır; farklıysa (onaydan sonra düzeltilmiş case) yayın açık hatayla
@@ -180,15 +181,42 @@ def idempotency_key(hedef: str, tc: TestCase) -> str:
 
 
 # Denetim kapısı (ANALIZ §4.7, K3): yalnız v3 case'ler için, hazır olma kontrolünden sonra çağrılır.
-# Dönen metin yayın engelidir (None = engel yok). Varsayılan: kapı bağlı değil, engel yok.
+# Dönen metin yayın engelidir (None = engel yok). Kapı bağlı değilken `TP_DENETIM_KAPISI` açıksa
+# (varsayılan) yayın KAPALIDIR (fail-closed): bağlama içe aktarma yan etkisine (`publish/__init__`)
+# kalmış bir kurulum hatası kapıyı sessizce açmaz.
 GateCheck = Callable[[Session, TestCase], str | None]
 _gate_check: GateCheck | None = None
+KAPI_BAGLI_DEGIL = "Denetim kapısı bağlı değil: v3 case yayınlanamaz (TP_DENETIM_KAPISI açık)"
 
 
 def set_gate_check(check: GateCheck | None) -> None:
-    """Denetim kapısını bağlar (None → kapı yok). Eski (v2) case'ler için çağrılmaz (K9)."""
+    """Denetim kapısını bağlar (None → bağ yok: kapı açıkken engel). Eski (v2) case'ler için
+    çağrılmaz (K9)."""
     global _gate_check
     _gate_check = check
+
+
+def _kapi(session: Session, tc: TestCase) -> str | None:
+    from tp_core.features.cases import denetim_akisi
+
+    if _gate_check is None:
+        return KAPI_BAGLI_DEGIL if denetim_akisi.gate_enabled() else None
+    return _gate_check(session, tc)
+
+
+def gate_cache(session: Session, onbellek: dict[Any, Any] | None = None) -> dict[Any, Any]:
+    """Oturuma kapı önbelleği bağlar (gereksinim başına tek hesap); önbelleği döner."""
+    from tp_core.features.cases.denetim_akisi import KAPI_ONBELLEGI
+
+    onbellek = {} if onbellek is None else onbellek
+    session.info[KAPI_ONBELLEGI] = onbellek
+    return onbellek
+
+
+def drop_gate_cache(session: Session) -> None:
+    from tp_core.features.cases.denetim_akisi import KAPI_ONBELLEGI
+
+    session.info.pop(KAPI_ONBELLEGI, None)
 
 
 NOT_READY_NEDEN = {
@@ -220,8 +248,8 @@ def _yayin_engeli(
         return "blocked_not_ready", NOT_READY_NEDEN.get(
             hazirlik, f"Hazır değil (readiness: {hazirlik!r})"
         )
-    if _gate_check is not None and not is_legacy(tc.icerik):
-        kapi = _gate_check(session, tc)
+    if not is_legacy(tc.icerik):
+        kapi = _kapi(session, tc)
         if kapi:
             return "blocked_gate", kapi
     return None
@@ -315,6 +343,7 @@ def preview(session: Session, requirement_id: uuid.UUID) -> dict[str, Any]:
     gereksinim_engeli = requirement_change_reason(req)
     if gereksinim_engeli is not None:
         uyarilar.append(gereksinim_engeli + "; onaylı case'ler yayınlanamaz.")
+    gate_cache(session)  # kapı durumu bu önizlemede bir kez hesaplanır
     kalemler = []
     for tc in cases:
         ref = _created_ref(session, tc.id)
@@ -355,6 +384,7 @@ def preview(session: Session, requirement_id: uuid.UUID) -> dict[str, Any]:
                 "payload": payload,
             }
         )
+    drop_gate_cache(session)
     return {
         "requirement_id": str(req.id),
         "hedef": hedef,
@@ -538,6 +568,7 @@ def _publish_one(
     aktor: str,
     job_id: uuid.UUID | None = None,
     po_engeli: str | None = None,
+    kapi_onbellegi: dict[Any, Any] | None = None,
 ) -> dict[str, Any]:
     tm = t.tm
     hedef = tm.name
@@ -550,7 +581,12 @@ def _publish_one(
             return _sonuc(
                 cid, "exists", ref.external_key if ref else None, url=ref.url if ref else None
             )
+        # Yazmadan önceki kapı denetimi iş boyunca gereksinim başına bir kez hesaplanır; yazdıktan
+        # sonraki denetim (aşağıda) önbelleksizdir (dış çağrı sırasında set değişmiş olabilir).
+        if kapi_onbellegi is not None:
+            gate_cache(s, kapi_onbellegi)
         engel = _engel(s, tc) or po_engeli
+        drop_gate_cache(s)
         if engel:
             return _sonuc(cid, "failed", hata=engel)
         req = s.get(Requirement, tc.requirement_id)
@@ -795,8 +831,17 @@ def run_publish(ctx: JobContext, engine: Engine, targets: Targets | None = None)
         raise PermanentJobError("geçersiz case kimliği") from exc
     t = targets or _targets_factory()
     po_engelleri = _po_etiket_engelleri(ids)
+    kapi_onbellegi: dict[Any, Any] = {}
     sonuclar = [
-        _publish_one(t, cid, aktor, ctx.job_id, po_engeli=po_engelleri.get(cid)) for cid in ids
+        _publish_one(
+            t,
+            cid,
+            aktor,
+            ctx.job_id,
+            po_engeli=po_engelleri.get(cid),
+            kapi_onbellegi=kapi_onbellegi,
+        )
+        for cid in ids
     ]
 
     with session_scope() as s:
