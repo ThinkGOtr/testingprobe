@@ -6,6 +6,7 @@ import type {
   CaseVeriAtfi,
   JiraTetikDurumu,
   JiraTetikTurSonucu,
+  KodUretimIsi,
   OtomasyonAyarlari,
   OtomatikAkis,
   OtomatikKodSonucu,
@@ -85,9 +86,13 @@ export function onayEngeliUyarla(x: unknown): string | null {
 }
 
 /** Case uyarlayıcısına eklenen 013 alanları (yalnız core gönderdiyse). */
-export function caseOtomasyonAlanlari(c: Ham): Pick<TestCase, "goruldu" | "onay_engeli" | "veri" | "otomatik_kod"> {
+export function caseOtomasyonAlanlari(c: Ham): Pick<TestCase, "goruldu" | "onay_engeli" | "veri" | "otomatik_kod" | "veri_onaydan_sonra_degisen"> {
   const veri = caseVeriUyarla(c.veri);
+  const degisen = Array.isArray(c.veri_onaydan_sonra_degisen)
+    ? c.veri_onaydan_sonra_degisen.filter((x): x is string => typeof x === "string" && x !== "")
+    : null;
   return {
+    ...(degisen && degisen.length > 0 ? { veri_onaydan_sonra_degisen: degisen } : {}),
     ...(typeof c.goruldu === "boolean" ? { goruldu: c.goruldu } : {}),
     ...(c.onay_engeli !== undefined ? { onay_engeli: onayEngeliUyarla(c.onay_engeli) } : {}),
     ...(veri ? { veri } : {}),
@@ -130,7 +135,61 @@ export function topluOtomatikKodUyarla(x: unknown): TopluOtomatikKod | null {
   if (!nesneMi(x)) return null;
   const d = metin(x.durum);
   if (!TOPLU_OTOKOD.has(d)) return null;
-  return { durum: d as TopluOtomatikKod["durum"], job_id: metinYaDaNull(kimlik(x.job_id)), case_sayisi: sayi(x.case_sayisi) };
+  const atlanan = Array.isArray(x.atlanan)
+    ? dizi(x.atlanan).map((a) => ({ case_id: kimlik(a.case_id), neden: metinYaDaNull(a.neden) })).filter((a) => a.case_id !== "")
+    : undefined;
+  return {
+    durum: d as TopluOtomatikKod["durum"],
+    job_id: metinYaDaNull(kimlik(x.job_id)),
+    case_sayisi: sayi(x.case_sayisi),
+    ...(atlanan ? { atlanan } : {}),
+  };
+}
+
+/** core iş durumu (queued/running/retry/done/failed/cancelled) ya da Türkçe karşılığı → portal durumu. */
+const IS_DURUMU: Record<string, KodUretimIsi["durum"]> = {
+  queued: "kuyrukta",
+  retry: "kuyrukta",
+  kuyrukta: "kuyrukta",
+  running: "calisiyor",
+  calisiyor: "calisiyor",
+  done: "tamam",
+  tamam: "tamam",
+  failed: "hata",
+  cancelled: "hata",
+  hata: "hata",
+};
+
+/**
+ * `GET /automation/codegen-jobs/{job_id}`: toplu onayın kod üretimi işi. Sonuç alanları üst düzeyde
+ * ya da `sonuc` içinde gelebilir (`{case_sayisi, ozet, sonuclar[{case_id, durum, neden, script_id}]}`).
+ */
+export function kodUretimIsiUyarla(govde: unknown, jobId = ""): KodUretimIsi {
+  const g = nesneMi(govde) ? govde : {};
+  const ic = nesneMi(g.sonuc) ? g.sonuc : g;
+  const sonuclar = dizi(ic.sonuclar).map((o) => {
+    const ok = otomatikKodUyarla(o);
+    return {
+      case_id: kimlik(o.case_id),
+      durum: ok?.durum ?? ("hata" as const),
+      neden: ok ? ok.neden : metinYaDaNull(o.neden),
+      script_id: ok ? ok.script_id : null,
+    };
+  });
+  const ozet: Record<string, number> = {};
+  if (nesneMi(ic.ozet)) {
+    for (const [k, v] of Object.entries(ic.ozet)) if (typeof v === "number") ozet[k] = v;
+  } else {
+    for (const o of sonuclar) ozet[o.durum] = (ozet[o.durum] ?? 0) + 1;
+  }
+  return {
+    job_id: metinYaDaNull(kimlik(g.job_id ?? g.id)) ?? jobId,
+    durum: IS_DURUMU[metin(g.durum)] ?? (sonuclar.length ? "tamam" : "kuyrukta"),
+    case_sayisi: sayi(ic.case_sayisi, sonuclar.length),
+    ozet,
+    sonuclar,
+    hata: metinYaDaNull(g.hata) ?? metinYaDaNull(g.son_hata),
+  };
 }
 
 const TOPLU_DURUMLAR = new Set(["onaylandi", "atlandi", "hata"]);
@@ -228,12 +287,13 @@ export function otomasyonAyarlariUyarla(govde: unknown): OtomasyonAyarlari {
   const k = nesneMi(g.otomatik_kod_uretimi) ? g.otomatik_kod_uretimi : {};
   const j = nesneMi(g.jira_tetik) ? g.jira_tetik : {};
   return {
-    otomatik_kod_uretimi: { acik: k.acik !== false, guncelleyen: metinYaDaNull(k.guncelleyen), guncelleme: metinYaDaNull(k.guncelleme) },
+    // K14: eksik ya da bozuk `acik` açık sayılmaz (bilinmiyorsa kapalı gösterilir).
+    otomatik_kod_uretimi: { acik: k.acik === true, guncelleyen: metinYaDaNull(k.guncelleyen), guncelleme: metinYaDaNull(k.guncelleme) },
     jira_tetik: {
-      acik: j.acik !== false,
+      acik: j.acik === true,
       durum: metin(j.durum, "QA To Do") || "QA To Do",
       aralik_s: sayi(j.aralik_s, 60),
-      otomatik_case: j.otomatik_case !== false,
+      otomatik_case: j.otomatik_case === true,
       guncelleyen: metinYaDaNull(j.guncelleyen),
       guncelleme: metinYaDaNull(j.guncelleme),
     },
@@ -244,7 +304,7 @@ export function jiraTetikDurumuUyarla(govde: unknown): JiraTetikDurumu {
   const g = nesneMi(govde) ? govde : {};
   const t = nesneMi(g.son_tur) ? g.son_tur : null;
   return {
-    acik: g.acik !== false,
+    acik: g.acik === true,
     durum: metin(g.durum, "QA To Do") || "QA To Do",
     aralik_s: sayi(g.aralik_s, 60),
     son_tur: t

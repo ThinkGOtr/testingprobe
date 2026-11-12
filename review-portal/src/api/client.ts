@@ -16,6 +16,7 @@ import { kontrolKulesiUyarla, kosuDetayUyarla, kosuUyarla, scriptDetayUyarla, sc
 import { bazYanitiUyarla, demoDurumuUyarla, gereksinimBazi } from "./uyumFaz5";
 import {
   jiraTetikDurumuUyarla,
+  kodUretimIsiUyarla,
   otomasyonAyarlariUyarla,
   surumlerUyarla,
   testVerileriUyarla,
@@ -57,6 +58,7 @@ import type {
   YayinOnizleme,
   YayinSonucu,
   JiraTetikDurumu,
+  KodUretimIsi,
   OtomasyonAyarAnahtari,
   OtomasyonAyarlari,
   TestVerisi,
@@ -308,6 +310,9 @@ export const api = {
     otomasyonAyarlariUyarla(
       await istek<unknown>("PUT", `/automation-settings/${yol(anahtar)}`, { govde: deger, kaynak: ["GET", "/automation-settings"] }),
     ),
+  /** Toplu onayın kod üretimi işi (`otomatik_kod.job_id`); case başına sonuç. */
+  kodUretimIsi: async (jobId: string): Promise<KodUretimIsi> =>
+    kodUretimIsiUyarla(await istek<unknown>("GET", `/automation/codegen-jobs/${yol(jobId)}`), jobId),
   jiraTetikDurumu: async (): Promise<JiraTetikDurumu> => jiraTetikDurumuUyarla(await istek<unknown>("GET", "/automation/jira-trigger")),
 
   // Sunum

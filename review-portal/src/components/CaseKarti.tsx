@@ -16,8 +16,11 @@ type Mod = "goster" | "duzenle" | "reddet";
 
 const KARAR_ADI = { approve: "onay", edit: "düzeltme", reject: "ret" } as const;
 
-/** K13: kart bu kadar süre kesintisiz görünür kalınca "görüldü" bildirilir. */
+/** K13': kart bu kadar süre kesintisiz görünür kalınca yerelde "görüldü" sayılır (kayıt görünürlüğün başında gider). */
 export const GORULDU_SURE_MS = 3000;
+
+/** §10 (K10): onaylı case'te katalog değeri değişti uyarısı. */
+export const VERI_ONAYDAN_SONRA_DEGISTI = "Test verisi onaydan sonra değişti";
 
 /** Toplu onay notu ve seçim engelinde tek dil (K13). */
 export const GORULDU_KURALI = "en az 3 saniye ekranda kalan case'ler";
@@ -65,14 +68,24 @@ function gozlemEsikleri(el: HTMLElement): number[] {
   return [...new Set(esikler)].sort((a, b) => a - b);
 }
 
+/** Görüntüleme kaydı hata verirse kart görünür kaldıkça bu aralıkla yeniden denenir. */
+export const YENIDEN_DENEME_MS = 2000;
+/** Bir görünürlük döneminde en çok bu kadar yeniden deneme. */
+export const YENIDEN_DENEME_SAYISI = 3;
+
+/** Sekme görünür mü (`document.visibilityState`); ortam bilmiyorsa görünür sayılır. */
+const sekmeGorunur = () => typeof document === "undefined" || document.visibilityState !== "hidden";
+
 /**
- * K13: karar bekleyen case kartı analistin ekranında en az 3 sn kesintisiz görünür kalınca core'a
- * bildirilir (`POST /cases/{id}/viewed`); review süresi sunucuda bu andan karara kadar ölçülür ve
- * case toplu onaya girebilir. Görünürlük kesilirse sayaç sıfırlanır.
+ * K13' (§10): karar bekleyen case kartı analistin ekranında görünür olunca core'a HEMEN bildirilir
+ * (`POST /cases/{id}/viewed`; review süresi sunucuda bu andan karara kadar ölçülür). Case yerelde ancak
+ * kart 3 sn kesintisiz görünür kalınca (ve sekme görünürken) "görüldü" sayılır ve toplu onaya girer;
+ * kayıt başarısızsa görüldü sayılmaz. Kayıt sonradan (yeniden denemeyle) yapıldıysa 3 sn o andan
+ * sayılır: sunucu da görüntüleme kaydı ile karar arasında ≥ 3 sn arar (çift bekleme yok).
  *
- * IntersectionObserver yoksa görünürlük doğrulanamaz: güvenli taraf seçilir, bildirilmez (case toplu
- * onaya girmez; tekli onay etkilenmez). Hata sessizce yutulur ve kayıt eklenmez; kart yeniden görünür
- * olunca tekrar denenir.
+ * Görünürlük kesilirse ya da sekme gizlenirse sayaç sıfırlanır. POST hata verirse kart görünür kaldıkça
+ * zamanlayıcıyla sınırlı sayıda yeniden denenir. IntersectionObserver yoksa görünürlük doğrulanamaz:
+ * güvenli taraf seçilir, bildirilmez (case toplu onaya girmez; tekli onay etkilenmez).
  */
 function useGoruntulemeBildir(tc: TestCase, etkin: boolean, kullaniciAnahtari: string | null, goruntulendi?: (id: string) => void) {
   const ref = useRef<HTMLElement | null>(null);
@@ -85,52 +98,100 @@ function useGoruntulemeBildir(tc: TestCase, etkin: boolean, kullaniciAnahtari: s
     const gorulen = kullaniciKumesi(kullaniciAnahtari);
     const el = ref.current;
     if (gorulen.has(tc.id) || !el || typeof IntersectionObserver === "undefined") return;
-    let zamanlayici: ReturnType<typeof setTimeout> | null = null;
-    let gorunur = false;
+    let bitti = false;
+    /** Gözlemcinin son görünürlük bilgisi (sekme durumundan bağımsız). */
+    let kesisiyor = false;
+    /** Şu anki kesintisiz görünürlük döneminin başı (ms); dönem yoksa null. */
+    let donemBasi: number | null = null;
+    /** Bu efektte sunucuya yapılan başarılı kaydın zamanı (ms). */
+    let kayitZamani: number | null = null;
     let gonderiliyor = false;
-    const durdur = () => {
-      if (zamanlayici !== null) clearTimeout(zamanlayici);
-      zamanlayici = null;
+    let deneme = 0;
+    let sayac: ReturnType<typeof setTimeout> | null = null;
+    let tekrar: ReturnType<typeof setTimeout> | null = null;
+    const temizle = () => {
+      if (sayac !== null) clearTimeout(sayac);
+      if (tekrar !== null) clearTimeout(tekrar);
+      sayac = tekrar = null;
+    };
+    const gorunurMu = () => kesisiyor && sekmeGorunur();
+    const bitir = () => {
+      bitti = true;
+      temizle();
+      g.disconnect();
+      document.removeEventListener("visibilitychange", sekmeDegisti);
+    };
+    /** Dönem 3 sn'yi doldurdu ve kayıt 3 sn önce yapıldıysa: yerelde "görüldü". */
+    const denetle = () => {
+      sayac = null;
+      if (bitti || donemBasi === null || kayitZamani === null) return;
+      const hedef = Math.max(donemBasi, kayitZamani) + GORULDU_SURE_MS;
+      const kalan = hedef - Date.now();
+      if (kalan > 0) {
+        sayac = setTimeout(denetle, kalan);
+        return;
+      }
+      gorulen.add(tc.id);
+      bitir();
+      geriCagri.current?.(tc.id);
     };
     const gonder = () => {
-      zamanlayici = null;
-      if (gonderiliyor || gorulen.has(tc.id)) return;
+      tekrar = null;
+      if (bitti || gonderiliyor || kayitZamani !== null || !gorunurMu()) return;
       gonderiliyor = true;
       api
         .caseGoruntulendi(tc.id)
         .then(() => {
-          gorulen.add(tc.id);
-          g.disconnect();
-          geriCagri.current?.(tc.id);
+          // Karar/yeniden açma ya da sayfa değişimi sonrası gelen yanıt kaydı geri getirmez.
+          if (bitti) return;
+          kayitZamani = Date.now();
+          if (donemBasi !== null) denetle();
         })
         .catch(() => {
-          // Yeniden denenebilir: sonraki görünürlük bildiriminde sayaç yeniden kurulur.
-          gorunur = false;
+          if (bitti) return;
+          // Kart görünür kaldıkça sınırlı sayıda yeniden denenir; dönem değişince sayaç sıfırlanır.
+          if (gorunurMu() && deneme < YENIDEN_DENEME_SAYISI) {
+            deneme += 1;
+            tekrar = setTimeout(gonder, YENIDEN_DENEME_MS);
+          }
         })
         .finally(() => {
           gonderiliyor = false;
         });
     };
+    /** Görünürlük (gözlemci + sekme) değişti: dönemi başlat ya da sıfırla. */
+    const guncelle = () => {
+      if (bitti) return;
+      if (gorunurMu()) {
+        if (donemBasi !== null) return;
+        donemBasi = Date.now();
+        deneme = 0;
+        if (kayitZamani === null) gonder();
+        else denetle();
+      } else {
+        donemBasi = null;
+        temizle();
+      }
+    };
+    function sekmeDegisti() {
+      guncelle();
+    }
     const g = new IntersectionObserver(
       (kayitlar) => {
         const k = kayitlar[kayitlar.length - 1];
         if (!k) return;
-        const v = yeterinceGorunur(k);
-        if (v && !gorunur) {
-          gorunur = true;
-          durdur();
-          zamanlayici = setTimeout(gonder, GORULDU_SURE_MS);
-        } else if (!v && gorunur) {
-          gorunur = false;
-          durdur();
-        }
+        kesisiyor = yeterinceGorunur(k);
+        guncelle();
       },
       { threshold: gozlemEsikleri(el) },
     );
     g.observe(el);
+    document.addEventListener("visibilitychange", sekmeDegisti);
     return () => {
-      durdur();
+      bitti = true;
+      temizle();
       g.disconnect();
+      document.removeEventListener("visibilitychange", sekmeDegisti);
     };
   }, [tc.id, zatenGoruldu, etkin, kullaniciAnahtari]);
   return ref;
@@ -406,6 +467,19 @@ export function CaseKarti({
             </div>
           ))}
         </details>
+      )}
+      {tc.veri_onaydan_sonra_degisen && tc.veri_onaydan_sonra_degisen.length > 0 && (
+        // §10 (K10): onaydan sonra katalogda değeri değişen test verisi; yalnız anahtarlar (değer/özet yok).
+        <p className="kucuk uyari-metin" role="note" data-testid="case-veri-degisti">
+          <strong>{VERI_ONAYDAN_SONRA_DEGISTI}:</strong>{" "}
+          {tc.veri_onaydan_sonra_degisen.map((k, i) => (
+            <span key={k}>
+              {i > 0 && ", "}
+              <span className="mono">{k}</span>
+            </span>
+          ))}
+          . Ekrandaki değer güncel katalog değeridir; onaylanan değer farklıydı. Gerekirse case'i yeniden açıp gözden geçirin.
+        </p>
       )}
       {tc.uyarilar && tc.uyarilar.length > 0 && (
         <ul className="duz-liste kucuk hata-metin">

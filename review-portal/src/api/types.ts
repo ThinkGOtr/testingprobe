@@ -410,6 +410,11 @@ export interface TestCase {
   veri?: Record<string, CaseVeriAtfi>;
   /** 013 §3.2: tekli karar yanıtındaki otomatik kod üretimi sonucu. */
   otomatik_kod?: OtomatikKodSonucu | null;
+  /**
+   * 013 §10 (K10 case yarısı): onaydan sonra katalogda değeri değişen test verisi anahtarları
+   * (yalnız anahtar; değer/özet yok). Core göndermezse ya da boşsa alan yok.
+   */
+  veri_onaydan_sonra_degisen?: string[];
 }
 
 /** Case serileştirmesindeki atıf kaydı (`veri: {anahtar: {deger, gizli, surum, var}}`). */
@@ -446,7 +451,21 @@ export interface TopluKararSonucu {
 export interface TopluOtomatikKod {
   durum: "kuyrukta" | "kapali" | "yok";
   job_id: string | null;
+  /** İşe giren (üretilecek) case sayısı; atlananlar dahil değil. */
   case_sayisi: number;
+  /** §10: işe alınmayan onaylı case'ler (açık PR, süren üretim) ve nedeni; core göndermezse yok. */
+  atlanan?: { case_id: string; neden: string | null }[];
+}
+
+/** `GET /automation/codegen-jobs/{job_id}`: toplu onayın kod üretimi işi ve case başına sonuç. */
+export interface KodUretimIsi {
+  job_id: string;
+  durum: "kuyrukta" | "calisiyor" | "tamam" | "hata";
+  case_sayisi: number;
+  /** Sonuç durumu → sayı (kuyrukta, atlandi, reddedildi, kapali, hata). */
+  ozet: Record<string, number>;
+  sonuclar: { case_id: string; durum: OtomatikKodSonucu["durum"]; neden: string | null; script_id: string | null }[];
+  hata: string | null;
 }
 
 export interface TopluKararYaniti {

@@ -776,24 +776,64 @@ function SifirlamaKarti() {
   );
 }
 
+export interface TetikIpucuAyari {
+  acik: boolean;
+  durum: string;
+  /** PO onayından sonra case'leri otomatik üret (bilinmiyorsa kapalı sayılır). */
+  otomatik_case?: boolean;
+  /** İlk (taban) tur henüz koşmadı: duruma girenler yalnız işaretlenir. Bilinmiyorsa undefined. */
+  tabanBekleniyor?: boolean;
+}
+
+/** core `jira_tetik.AKIS_SURUYOR`: inceleme/PO aşaması; story akışa alınır (K21). */
+const AKIS_SURUYOR = new Set(["in_review", "findings_open", "doc_final", "pending_po"]);
+const IZLE = "Sonucu Otomasyon sayfasındaki son turdan izleyin.";
+
 /**
- * Seçilen story taşınınca Jira tetiğinin ne yapacağı (K14/K15 kuralları; kesin karar sunucuda).
- * `tetiklenir: null`: bilinmiyor (ayar okunamadı).
+ * Seçilen story taşınınca Jira tetiğinin ne yapacağı — core `jira_tetik.giris_isle` kurallarının
+ * tahmini (kesin karar sunucuda). `tetiklenir: null`: portal bilemez, sunucu karar verir.
  */
 export function tetikIpucu(
   g: Pick<Gereksinim, "durum" | "sayaclar" | "jira_durumu"> | undefined,
-  ayar: { acik: boolean; durum: string } | null,
+  ayar: TetikIpucuAyari | null,
 ): { tetiklenir: boolean | null; metin: string } {
-  if (!ayar) return { tetiklenir: null, metin: "Tetik ayarı okunamadı; sonucu Otomasyon sayfasındaki son turdan izleyin." };
+  if (!ayar) return { tetiklenir: null, metin: `Tetik ayarı okunamadı; sunucu karar verir. ${IZLE}` };
   if (!ayar.acik) return { tetiklenir: false, metin: "Tetiklenmez: Jira tetiği kapalı (Otomasyon ayarı)." };
+  if (ayar.tabanBekleniyor) {
+    return {
+      tetiklenir: false,
+      metin: `Tetiklenmez: tetiğin ilk (taban) turu henüz koşmadı; o turda "${ayar.durum}" durumundaki story'ler yalnız işaretlenir. Taban turundan sonra taşıyın.`,
+    };
+  }
   if (!g) return { tetiklenir: true, metin: "TP'de yok: tetik story'yi çeker ve ön incelemeye alır (tetiklenir)." };
   const ayni = (a: string, b: string) => a.trim().toLocaleLowerCase("tr-TR") === b.trim().toLocaleLowerCase("tr-TR");
   if (g.jira_durumu && ayni(g.jira_durumu, ayar.durum)) {
-    return { tetiklenir: false, metin: `Tetiklenmez: story zaten "${ayar.durum}" durumunda görüldü; yalnız bu duruma yeniden giren story tetiklenir.` };
+    return {
+      tetiklenir: false,
+      metin: `Tetiklenmez: story zaten "${ayar.durum}" durumunda görüldü; yalnız bu duruma yeniden giren story tetiklenir (içerik değiştiyse Jira içeriği çekilir).`,
+    };
   }
+  const otomatikCase = ayar.otomatik_case === true;
   if (g.durum === "new") return { tetiklenir: true, metin: "Tetiklenir: ön incelemeye girer (PO kapısı korunur)." };
-  if (g.durum === "po_approved" && g.sayaclar.case_toplam === 0) return { tetiklenir: true, metin: "Tetiklenir: PO onaylı ve case'i yok; case üretimi hemen başlar." };
-  return { tetiklenir: false, metin: `Tetiklenmez: TP'de durum "${gereksinimDurumu(g.durum).etiket}" (yalnız yeni ya da case'siz PO onaylı story alınır).` };
+  if (g.durum === "po_approved") {
+    if (!otomatikCase) return { tetiklenir: false, metin: "Tetiklenmez: PO onaylı, ama otomatik case üretimi kapalı; case üretimini elle başlatın." };
+    if (g.sayaclar.case_toplam === 0) return { tetiklenir: true, metin: "Tetiklenir: PO onaylı ve case'i yok; case üretimi hemen başlar." };
+    if (g.sayaclar.case_onayli > 0) return { tetiklenir: false, metin: "Tetiklenmez: PO onaylı ve etkin case'leri var." };
+    // Case'ler taslak (etkin) da olabilir, yalnız reddedilmiş (etkin değil) de: portal ayırt edemez.
+    return { tetiklenir: null, metin: `Sunucu karar verir: etkin case yoksa (yalnız reddedilmişler) case üretimi başlar, taslak case varsa dokunulmaz. ${IZLE}` };
+  }
+  if (AKIS_SURUYOR.has(g.durum)) {
+    return {
+      tetiklenir: true,
+      metin: otomatikCase
+        ? "Akışa alınır: elle çekilmiş gereksinim de akışa alınır; PO onayından sonra case'ler otomatik üretilir."
+        : "Akışa alınır: otomatik case kapalı; PO onayından sonra case üretimini elle başlatın.",
+    };
+  }
+  return {
+    tetiklenir: null,
+    metin: `Sunucu karar verir: TP'de durum "${gereksinimDurumu(g.durum).etiket}"; genelde dokunulmaz, Jira içeriği değiştiyse yeniden değerlendirilir. ${IZLE}`,
+  };
 }
 
 /**
@@ -806,7 +846,8 @@ export function JiraDurumKarti() {
   const bildir = useBildirim();
   const [gereksinimler, setGereksinimler] = useState<Gereksinim[]>([]);
   const [anahtar, setAnahtar] = useState("");
-  const [ayar, setAyar] = useState<{ acik: boolean; durum: string } | null>(null);
+  const [ayar, setAyar] = useState<TetikIpucuAyari | null>(null);
+  const [tabanBekleniyor, setTabanBekleniyor] = useState<boolean | undefined>(undefined);
   const [calisiyor, setCalisiyor] = useState(false);
   const [hata, setHata] = useState<string | null>(null);
   const [sonuc, setSonuc] = useState<string | null>(null);
@@ -820,7 +861,12 @@ export function JiraDurumKarti() {
     // Tetiğin izlediği durum adı ayarlanabilir (varsayılan "QA To Do"): ayar okunabilirse o kullanılır.
     void api
       .otomasyonAyarlari()
-      .then((a) => !iptal && setAyar({ acik: a.jira_tetik.acik, durum: a.jira_tetik.durum }))
+      .then((a) => !iptal && setAyar({ acik: a.jira_tetik.acik, durum: a.jira_tetik.durum, otomatik_case: a.jira_tetik.otomatik_case }))
+      .catch(() => undefined);
+    // Taban turu: henüz hiç tur koşmadıysa ilk tur yalnız işaretler (okunamazsa bilinmiyor).
+    void api
+      .jiraTetikDurumu()
+      .then((d) => !iptal && setTabanBekleniyor(d.acik && d.son_tur === null))
       .catch(() => undefined);
     return () => {
       iptal = true;
@@ -829,7 +875,7 @@ export function JiraDurumKarti() {
   const storyler = [...gereksinimler].sort((a, b) => a.jira_key!.localeCompare(b.jira_key!, "tr", { numeric: true }));
   const k = anahtar.trim().toUpperCase();
   const secilen = k ? gereksinimler.find((g) => g.jira_key === k) : undefined;
-  const ipucu = k ? tetikIpucu(secilen, ayar) : null;
+  const ipucu = k ? tetikIpucu(secilen, ayar && { ...ayar, tabanBekleniyor }) : null;
 
   async function tasi() {
     if (!k) return setHata("Bir story anahtarı girin (ör. TPD-2).");

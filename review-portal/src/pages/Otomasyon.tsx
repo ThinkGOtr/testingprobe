@@ -20,6 +20,11 @@ export const ARALIK_EN_COK = 3600;
 /** K14: tur başına en çok tetiklenen story. */
 export const TUR_BASINA_EN_COK = 10;
 export const DURUM_YALNIZ_MUHENDIS = "Tetikleyen Jira durumunu yalnız Otomasyon mühendisi değiştirir.";
+/** K21: elle çekilmiş gereksinim de akışa alınır (otomatik case ayarına göre iki metin). */
+export const AKIS_METNI_OTOMATIK =
+  "Story bu duruma girerse elle çekilmiş gereksinim de akışa alınır; PO onayından sonra case'ler otomatik üretilir.";
+export const AKIS_METNI_ELLE =
+  "Story bu duruma girerse elle çekilmiş gereksinim de akışa alınır; otomatik case kapalıyken PO onayından sonra case üretimini elle başlatın.";
 export const JIRA_YAZIM_METNI =
   "Tetik Jira'yı okur; başlattığı ön inceleme bulgusuz biterse PO'ya Jira yorumu ve etiketi yazılır.";
 
@@ -28,12 +33,13 @@ const TUR_SONUCU: Record<string, { etiket: string; ton: Ton }> = {
   tetiklendi: { etiket: "Tetiklendi (ön incelemeye girdi)", ton: "basari" },
   yeniden_tetiklendi: { etiket: "Yeniden tetiklendi (içerik değişti)", ton: "basari" },
   case_uretimi: { etiket: "Case üretimi başladı", ton: "basari" },
-  akisa_alindi: { etiket: "Akışa alındı (PO onayı bekleniyor)", ton: "bilgi" },
+  // Ayrıntı (aşama, otomatik case ayarı) neden sütununda.
+  akisa_alindi: { etiket: "Akışa alındı", ton: "bilgi" },
   isaretlendi: { etiket: "İşaretlendi (zaten durumdaydı, tetiklenmedi)", ton: "notr" },
   ertelendi: { etiket: `Sonraki tura kaldı (tur sınırı ${TUR_BASINA_EN_COK})`, ton: "uyari" },
   dokunulmadi: { etiket: "Dokunulmadı", ton: "notr" },
   durumda: { etiket: "Durumda (değişiklik yok)", ton: "notr" },
-  guncellendi: { etiket: "Güncellendi (yalnız Jira durumu)", ton: "notr" },
+  guncellendi: { etiket: "Jira içeriği çekildi", ton: "bilgi" },
   hata: { etiket: "Hata", ton: "hata" },
 };
 /** Eylemsiz, kalabalık sonuç: tabloda varsayılan olarak gizlenir. */
@@ -225,8 +231,8 @@ function JiraTetikKarti({
             />
             <label htmlFor={`${id}-case`}>PO onayından sonra case'leri otomatik üret</label>
           </div>
-          <p id={`${id}-case-ipucu`} className="soluk kucuk">
-            Yalnız bu tetikle akışa alınmış story'lerde çalışır; elle çekilen gereksinimin akışı değişmez.
+          <p id={`${id}-case-ipucu`} className="soluk kucuk" data-testid="akis-notu">
+            {f.otomatik_case ? AKIS_METNI_OTOMATIK : AKIS_METNI_ELLE}
           </p>
         </fieldset>
         {uyari && <AlanHatasi>{uyari}</AlanHatasi>}

@@ -12,7 +12,7 @@ import { mockGoruntulemeEkle, mockIstek, mockVerisi } from "../api/mock/handlers
 import type { TestCase, TopluKararYaniti } from "../api/types";
 import { OturumProvider } from "../auth";
 import { BildirimProvider } from "../components/Bildirim";
-import { goruntulenenleriSifirla, yeterinceGorunur } from "../components/CaseKarti";
+import { goruntulenenleriSifirla, YENIDEN_DENEME_MS, YENIDEN_DENEME_SAYISI, yeterinceGorunur } from "../components/CaseKarti";
 import { gozlemciKur } from "../test/gorunurluk";
 import { oturumAc } from "../test/yardimci";
 import { TOPLU_UST_SINIR, topluOnayla } from "./CaseReview";
@@ -87,7 +87,7 @@ describe("K13 görünürlük eşiği", () => {
 });
 
 describe("K13: kart en az 3 sn kesintisiz görünür kalınca bildirilir", () => {
-  it("3 sn dolmadan kesilirse sayaç sıfırlanır; dolunca bir kez bildirilir ve toplu onaya girer", async () => {
+  it("K13': kayıt görünürlüğün başında gider; 3 sn dolmadan kesilirse yerelde görülmez; dolunca toplu onaya girer", async () => {
     const { rid, caseler } = taslaklariKur();
     const g = gozlemciKur();
     await oturumAc("analist");
@@ -98,18 +98,23 @@ describe("K13: kart en az 3 sn kesintisiz görünür kalınca bildirilir", () =>
     await screen.findByRole("button", { name: "Tümünü onayla (0)" });
 
     await gosterBekle(g, k1);
+    // POST görünürlüğün başında (review süresi bu andan ölçülür).
+    await waitFor(() => expect(casus).toHaveBeenCalledTimes(1));
+    expect(casus).toHaveBeenCalledWith(caseler[0].id);
     await ilerlet(2900);
-    expect(casus).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Tümünü onayla (0)" })).toBeInTheDocument();
     g.gizle(k1);
     await ilerlet(3000);
-    expect(casus).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Tümünü onayla (0)" })).toBeInTheDocument();
 
+    // Yeni görünürlük döneminde sayaç baştan; kayıt zaten yapıldığı için ikinci POST yok.
     await gosterBekle(g, k1);
-    await ilerlet(3000);
-    expect(casus).toHaveBeenCalledTimes(1);
-    expect(casus).toHaveBeenCalledWith(caseler[0].id);
+    await ilerlet(2900);
+    expect(screen.getByRole("button", { name: "Tümünü onayla (0)" })).toBeInTheDocument();
+    await ilerlet(200);
     expect(await screen.findByRole("button", { name: "Tümünü onayla (1)" })).toBeInTheDocument();
-    // Bildirilen kart yeniden görünse de ikinci istek gitmez.
+    expect(casus).toHaveBeenCalledTimes(1);
+    // Görülen kart artık gözlenmez; yeniden görünse de istek gitmez.
     expect(g.gozlenenler()).not.toContain(k1);
     g.gizle(k1);
     g.goster(k1);
@@ -132,7 +137,7 @@ describe("K13: kart en az 3 sn kesintisiz görünür kalınca bildirilir", () =>
     expect(casus.mock.calls.map((c) => c[0])).toEqual([caseler[1].id]);
   });
 
-  it("istek hata verirse kayıt eklenmez; kart yeniden görünür olunca tekrar denenir", async () => {
+  it("POST hata verirse kart görünür kaldıkça zamanlayıcıyla yeniden denenir; 3 sn başarılı kayıttan sayılır", async () => {
     const { rid } = taslaklariKur();
     const g = gozlemciKur();
     await oturumAc("analist");
@@ -141,13 +146,67 @@ describe("K13: kart en az 3 sn kesintisiz görünür kalınca bildirilir", () =>
     uygulama(`/gereksinimler/${rid}/caseler`);
     const k1 = await kart("Taslak 1");
     await gosterBekle(g, k1);
-    await ilerlet(3000);
-    expect(casus).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(casus).toHaveBeenCalledTimes(1));
+    // Kart hareket etmeden yeniden denenir.
+    await ilerlet(YENIDEN_DENEME_MS);
+    await waitFor(() => expect(casus).toHaveBeenCalledTimes(2));
+    // Görünürlüğün 3. saniyesi: kayıt 2. saniyede yapıldı, sunucu penceresi henüz dolmadı.
+    await ilerlet(1000);
     expect(screen.getByRole("button", { name: "Tümünü onayla (0)" })).toBeInTheDocument();
-    await gosterBekle(g, k1);
-    await ilerlet(3000);
-    expect(casus).toHaveBeenCalledTimes(2);
+    await ilerlet(2100);
     expect(await screen.findByRole("button", { name: "Tümünü onayla (1)" })).toBeInTheDocument();
+  });
+
+  it("yeniden deneme sınırlı; kart görünmüyorsa denenmez", async () => {
+    const { rid } = taslaklariKur();
+    const g = gozlemciKur();
+    await oturumAc("analist");
+    const casus = vi.spyOn(api, "caseGoruntulendi").mockRejectedValue(new Error("ağ yok"));
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    uygulama(`/gereksinimler/${rid}/caseler`);
+    const k1 = await kart("Taslak 1");
+    await gosterBekle(g, k1);
+    await ilerlet(YENIDEN_DENEME_MS * (YENIDEN_DENEME_SAYISI + 3));
+    expect(casus).toHaveBeenCalledTimes(1 + YENIDEN_DENEME_SAYISI);
+    g.gizle(k1);
+    await ilerlet(YENIDEN_DENEME_MS * 3);
+    expect(casus).toHaveBeenCalledTimes(1 + YENIDEN_DENEME_SAYISI);
+    // Yeni görünürlük döneminde yeniden denenir.
+    g.goster(k1);
+    await waitFor(() => expect(casus).toHaveBeenCalledTimes(2 + YENIDEN_DENEME_SAYISI));
+    expect(screen.getByRole("button", { name: "Tümünü onayla (0)" })).toBeInTheDocument();
+  });
+
+  it("sekme gizlenince sayaç durur ve sıfırlanır; gizli sekmede kayıt gönderilmez", async () => {
+    const { rid } = taslaklariKur();
+    const g = gozlemciKur();
+    let gorunurluk: DocumentVisibilityState = "hidden";
+    vi.spyOn(document, "visibilityState", "get").mockImplementation(() => gorunurluk);
+    const sekme = (d: DocumentVisibilityState) => {
+      gorunurluk = d;
+      act(() => void document.dispatchEvent(new Event("visibilitychange")));
+    };
+    await oturumAc("analist");
+    const casus = vi.spyOn(api, "caseGoruntulendi");
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    uygulama(`/gereksinimler/${rid}/caseler`);
+    const k1 = await kart("Taslak 1");
+    await gosterBekle(g, k1);
+    await ilerlet(4000);
+    expect(casus).not.toHaveBeenCalled();
+
+    sekme("visible");
+    await waitFor(() => expect(casus).toHaveBeenCalledTimes(1));
+    await ilerlet(2000);
+    sekme("hidden");
+    await ilerlet(3000);
+    expect(screen.getByRole("button", { name: "Tümünü onayla (0)" })).toBeInTheDocument();
+    sekme("visible");
+    await ilerlet(2900);
+    expect(screen.getByRole("button", { name: "Tümünü onayla (0)" })).toBeInTheDocument();
+    await ilerlet(200);
+    expect(await screen.findByRole("button", { name: "Tümünü onayla (1)" })).toBeInTheDocument();
+    expect(casus).toHaveBeenCalledTimes(1);
   });
 
   it("karar + yeniden açma sonrası case yeniden görülmeden toplu onaya girmez; yeniden bildirilir", async () => {
