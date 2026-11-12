@@ -198,6 +198,25 @@ def test_cevap_engellenirse_gosterilmez(client: TestClient, make_user, engine: E
     assert m["maliyet_usd"] > 0
 
 
+def test_cevapta_injection_yuksek_puanda_engel_ve_tutarsiz_etiket_izlenir(
+    client: TestClient, make_user, engine: Engine
+) -> None:
+    """Tur 3 güvenlik #2: cevapta `prompt_injection` işaretliyse puan yüksek olsa da cevap
+    gösterilmez; tutarsız etiket denetim kaydında işaretlenir."""
+    giris(client, make_user("analyst"))
+    _, mid = soru_gonder(client, engine, "Flaky test nasıl ayıklanır?")
+    gecit = Gecit(engine, [puan(95), bitir(), puan(92, "prompt_injection", "temiz")])
+    assert cevapla(engine, mid, gecit) == "done"
+    m = mesaj(engine, mid)
+    assert m["kaynak"] == "denetim" and m["cevap"]["denetim"]["engellenen"] == "cevap"
+    assert "Cevap metni." not in json.dumps(m["cevap"], ensure_ascii=False)
+    olaylar = [o for o in denetim_olaylari(engine, mid) if o["eylem"] == "asistan.denetim"]
+    assert [(o["yon"], o["karar"], o.get("tutarsiz_etiket")) for o in olaylar] == [
+        ("soru", "gec", None),
+        ("cevap", "engelle", True),
+    ]
+
+
 def test_cevapta_kisisel_veri_kural_on_denetimiyle_engellenir(
     client: TestClient, make_user, engine: Engine
 ) -> None:

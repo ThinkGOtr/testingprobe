@@ -661,7 +661,12 @@ def uretim_dagilimi(results: Sequence[CaseResult]) -> dict[str, Any]:
     açık soru sayısı (`yetim_soru`; `eval_agents.generation_stats`) ve uydurma/readiness
     beklentisine takılan koşular. Çıktısı olmayan koşu (geçit hatası) sayılmaz."""
     kosular = {r.id: generation_stats(r.output) for r in results if isinstance(r.output, Mapping)}
-    toplam: dict[str, Any] = {"kosu": len(kosular), "readiness": {}, "technique": {}, "priority": {}}
+    toplam: dict[str, Any] = {
+        "kosu": len(kosular),
+        "readiness": {},
+        "technique": {},
+        "priority": {},
+    }
     for ad in (
         "case",
         "coverage_items",

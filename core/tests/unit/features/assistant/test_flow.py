@@ -1614,6 +1614,10 @@ def _dogrulanmis_cevap(metin: str, *, urune_ozgu: bool = True, **ek: Any) -> dic
         "EMİN DEĞİLİM: haftalık veriyi göremedim.",
         "Bu ayrıntıyı teyit edemedim.",
         "Nedenini bilmiyorum.",
+        # Tur 3 güvenlik #11: ASCII yazım.
+        "Bundan emin degilim.",
+        "Nedenini dogrulayamadim.",
+        "EMIN DEGILIM.",
     ],
 )
 def test_otomatik_tetik_metindeki_belirsizlik(monkeypatch: pytest.MonkeyPatch, metin: str) -> None:
@@ -1635,6 +1639,7 @@ def test_otomatik_tetik_madde_icindeki_belirsizlik(monkeypatch: pytest.MonkeyPat
         ("Hariç tutulanlar kodda doğrulandı.", {}, {}),
         # Kullanıcıya yönelik kalıp birinci tekil belirsizlik değildir.
         ("Emin değilseniz Kontrol Kulesi'ne bakın.", {}, {}),
+        ("Emin degilseniz Kontrol Kulesi'ne bakın.", {}, {}),
         # Genel (ürüne özgü olmayan) soru: metin tetiklemez.
         ("Emin değilim.", {"urune_ozgu": False}, {}),
         # Eylem reddi tetiklemez.

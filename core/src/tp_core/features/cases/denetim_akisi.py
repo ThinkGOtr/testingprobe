@@ -164,13 +164,42 @@ SEMASIZ_HOST = re.compile(
     re.IGNORECASE,
 )
 # Yolsuz ve `www`'siz ana makine (`prod.firma.com`, tur 2 güvenlik #15): en az üç etiket ve
-# yaygın üst alan adı. Ters alan adı biçimi (`com.firma.app`, paket/bundle kimliği) sayılmaz.
+# yaygın üst alan adı. Ters alan adı biçimi (`com.firma.app`, paket/bundle kimliği) ve ilk etiketi
+# tümüyle rakam olan ad (`2.1.0.dev` sürümü) sayılmaz (tur 3 güvenlik #5).
 SEMASIZ_ALT_ALAN = re.compile(
-    r"(?<![@\w./:-])(?!(?:com|net|org|io|tr|de|uk|co|gov|edu)\.)"
-    r"((?:[a-z0-9-]+\.){2,}(?:com|net|org|io|dev|cloud|internal|corp|lan|local|gov|edu|tr))"
+    r"(?<![@\w./:-])(?!(?:com|net|org|io|tr|de|uk|co|gov|edu)\.)(?!\d+\.)"
+    r"((?:[a-z0-9-]+\.){2,}"
+    r"(?:com|net|org|io|co|app|ai|dev|cloud|internal|corp|lan|local|gov|edu|tr))"
     r"(?![\w.-]*\w)",
     re.IGNORECASE,
 )
+# Kod/anahtar adlarıyla karışan üst alan adları (`Sepet.toplam.tr` i18n anahtarı, `rapor.v2.dev`):
+# bu adlar yalnız ana makine bağlamı varsa sayılır: ikinci düzey kayıt adı (`firma.com.tr`), ortam
+# öneki (`staging.…`, `api.…`) ya da yakında ana makine sözcüğü (sunucu, ortam, host, URL…).
+_BELIRSIZ_UST_ALAN = frozenset({"dev", "tr", "local", "lan"})
+_IKINCI_DUZEY = frozenset({"com", "net", "org", "gov", "edu", "co", "k12", "bel", "gen", "biz"})
+_ORTAM_ONEKI = frozenset(
+    {"www", "api", "staging", "stage", "prod", "preprod", "uat", "test", "qa", "dev", "admin"}
+)
+_HOST_BAGLAMI = re.compile(
+    r"(?<!\w)(?:https?|url\w*|host\w*|sunucu\w*|server\w*|ortam\w*|environment\w*|env"
+    r"|endpoint\w*|adres\w*|domain\w*|alan\s+ad\w*|bağlan\w*|baglan\w*|eriş\w*|eris\w*"
+    r"|ping|dns)(?!\w)",
+    re.IGNORECASE,
+)
+_BAGLAM_PENCERESI = 60
+
+
+def _alt_alan_host_mu(metin: str, m: re.Match[str]) -> bool:
+    etiketler = m.group(1).lower().split(".")
+    if etiketler[-1] not in _BELIRSIZ_UST_ALAN:
+        return True
+    if etiketler[-2] in _IKINCI_DUZEY or etiketler[0] in _ORTAM_ONEKI:
+        return True
+    pencere = metin[max(0, m.start() - _BAGLAM_PENCERESI) : m.end() + _BAGLAM_PENCERESI]
+    return _HOST_BAGLAMI.search(pencere) is not None
+
+
 # Şemasız IP (`10.0.0.5/admin`, `10.0.0.5:8080`): ardından yol ya da port gelmeli (tutar ya da
 # sürüm numarası yanlış pozitif vermesin); oktetler `hosts_in`'de doğrulanır.
 SEMASIZ_IP = re.compile(r"(?<![\w.@/:-])(\d{1,3}(?:\.\d{1,3}){3})(?=:\d+|/)")
@@ -241,7 +270,7 @@ def hosts_in(metin: str) -> set[str]:
     out = {h for h in URL_DESENI.findall(metin)}
     for a, b in SEMASIZ_HOST.findall(metin):
         out.add(a or b)
-    out.update(SEMASIZ_ALT_ALAN.findall(metin))
+    out.update(m.group(1) for m in SEMASIZ_ALT_ALAN.finditer(metin) if _alt_alan_host_mu(metin, m))
     out.update(ip for ip in SEMASIZ_IP.findall(metin) if _ip_gecerli(ip))
     return {h.lower().rstrip(".") for h in out if h}
 

@@ -357,10 +357,16 @@ def test_varsayim_dogrulandi_po_kaydina_uyar(api: TestClient, cs) -> None:
     dışında yanıt verdiyse analist tek tıkla doğrulayamaz (409); PO 'doğru' dediyse kaynak CA1."""
     rid, cases = cs
     c = cases[2]
+    _po_varsayim_kaydi(rid, "bekliyor")  # tur 3 #9: gönderim sürüyor / belirsiz
+    r = _dogrula(api, c, varsayim_id="A1")
+    assert r.status_code == 409 and "sonucu belirsiz" in r.json()["detail"]
     _po_varsayim_kaydi(rid, "gonderildi")
     r = _dogrula(api, c, varsayim_id="A1")
     assert r.status_code == 409 and "PO yanıtı bekleniyor" in r.json()["detail"]
     _po_varsayim_kaydi(rid, "yanitlandi", "Hayır, doğru değil: duyarsız")
+    r = _dogrula(api, c, varsayim_id="A1")
+    assert r.status_code == 409 and "'doğru' dışında" in r.json()["detail"]
+    _po_varsayim_kaydi(rid, "yanitlandi", "Doğru, ama yalnız mobilde")
     r = _dogrula(api, c, varsayim_id="A1")
     assert r.status_code == 409 and "'doğru' dışında" in r.json()["detail"]
     assert _reviews(c["id"]) == []
@@ -374,9 +380,32 @@ def test_varsayim_dogrulandi_po_kaydina_uyar(api: TestClient, cs) -> None:
 def test_po_dogru_yaniti() -> None:
     from tp_core.features.cases.toplu import po_dogru_dedi
 
-    for evet in ("doğru", "Evet, doğru.", "Doğrudur", "onaylıyorum", "  DOĞRU "):
+    for evet in (
+        "doğru",
+        "Evet, doğru.",
+        "Doğrudur",
+        "onaylıyorum",
+        "  DOĞRU ",
+        "Evet",
+        "evet.",
+        "EVET DOĞRU!",
+        "doğru / evet",
+    ):
         assert po_dogru_dedi(evet), evet
-    for hayir in ("doğru değil", "Hayır", "yanlış, 60 dakika", "", None, "Doğrusu 45 dk"):
+    # Tur 3 güvenlik #9: ek koşul ya da açıklama taşıyan yanıt kesin onay değildir.
+    for hayir in (
+        "doğru değil",
+        "Hayır",
+        "yanlış, 60 dakika",
+        "",
+        None,
+        "Doğrusu 45 dk",
+        "Doğru, ama yalnız mobilde",
+        "Evet ama yalnız web",
+        "doğru, 30 gün için",
+        "doğru fakat kampanyada değil",
+        "...",
+    ):
         assert not po_dogru_dedi(hayir), hayir
 
 

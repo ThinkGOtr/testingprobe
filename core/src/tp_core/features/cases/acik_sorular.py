@@ -28,18 +28,19 @@ Akış:
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import re
 import uuid
 from collections import defaultdict
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
+from sqlalchemy import Engine, select, text
 from sqlalchemy.orm import Session
 
 from tp_core.audit import audit_on_commit
@@ -47,7 +48,7 @@ from tp_core.auth.deps import CurrentUser, DbSession, require_role
 from tp_core.features.cases.schema import READY, is_legacy, normalize_ozet, readiness_of
 from tp_core.models import Requirement, TestCase
 from tp_core.models.acik_soru import AcikSoru
-from tp_core.workflow.service import GateClosed, Principal, WorkflowError
+from tp_core.workflow.service import ConcurrentTransition, GateClosed, Principal, WorkflowError
 
 ONEK = {"soru": "CQ", "varsayim": "CA"}
 DURUM_GONDERILMEDI = "gonderilmedi"
@@ -67,6 +68,48 @@ SATIR_CASE_SINIRI = 5
 
 class AcikSoruYok(WorkflowError):
     """Gönderilecek yanıtlanmamış soru yok (409)."""
+
+
+class GonderimSuruyor(ConcurrentTransition):
+    """Aynı soru seti için başka bir gönderim Jira çağrısında (409; tur 3 güvenlik #1)."""
+
+
+# Gönderim danışma kilidinin ad alanı (iki argümanlı; `workflow.jobs.IDEMPOTENCY_LOCK_NS` ile
+# çakışmaz: `jira_once` aynı anahtar için kendi işlem kilidini başka bağlantıda alır).
+GONDERIM_KILIT_NS = 7_310_031
+
+
+@contextlib.contextmanager
+def _gonderim_kilidi(engine: Engine, anahtar: str) -> Iterator[None]:
+    """İdempotency anahtarı üzerinde oturum düzeyi danışma kilidi (`pg_try_advisory_lock`),
+    ayrı bir bağlantıda Jira çağrısı boyunca tutulur. Kilit alınamazsa aynı soru seti şu an
+    gönderiliyordur: bekletilmez, `GonderimSuruyor` (409). Böylece eşzamanlı iki gönderim (çift
+    tık, iki analist) `jira_once`'un `intent` kaydını "belirsiz" sayıp yorumu ikinci kez yazamaz.
+    Süreç düşerse kilit bağlantıyla birlikte bırakılır."""
+    conn = engine.connect()
+    try:
+        alindi = conn.execute(
+            text("SELECT pg_try_advisory_lock(:ns, hashtext(:k))"),
+            {"ns": GONDERIM_KILIT_NS, "k": anahtar},
+        ).scalar()
+        conn.commit()
+        if not alindi:
+            raise GonderimSuruyor(
+                "Bu açık sorular şu anda gönderiliyor; birkaç saniye sonra listeyi yenileyin."
+            )
+        try:
+            yield
+        finally:
+            try:
+                conn.execute(
+                    text("SELECT pg_advisory_unlock(:ns, hashtext(:k))"),
+                    {"ns": GONDERIM_KILIT_NS, "k": anahtar},
+                )
+                conn.commit()
+            except Exception:  # pragma: no cover - kilit bağlantıyla birlikte düşer
+                conn.invalidate()
+    finally:
+        conn.close()
 
 
 def normalize(metin: Any) -> str:
@@ -247,6 +290,10 @@ def view(session: Session, requirement_id: uuid.UUID) -> dict[str, Any]:
                     else None
                 ),
                 "yanit": _yanit(satir),
+                # Etiketli ama `bekliyor` satır: gönderim yarıda kaldı (Jira hatası/zaman aşımı;
+                # yorum yazılmış olabilir). Portal "gönderim belirsiz" ipucu gösterir; yeniden
+                # gönderim aynı anahtarla yorumu bulur, ikinci kez yazmaz (tur 3 güvenlik #11).
+                "gonderim_belirsiz": satir is not None and satir.durum == "bekliyor",
                 "bekleyen_caseler": [_case_ozeti(tc) for tc in k.caseler],
                 "oneri": _oneri(satir, k.caseler),
             }
@@ -360,9 +407,12 @@ def send(
        boyut sınırına (`YORUM_SINIRI`) sığmayan kalemlere satır açılmaz; sonraki gönderime kalır.
     2. Yorum kilitsiz, `flow.jira_once` ile bir kez yazılır (anahtar: `idempotency_key`). Jira
        hatasında satırlar `bekliyor` kalır (portalda "gönderilmedi"); yeniden denemede aynı
-       satırlar, etiketler ve anahtar kullanılır (yorum ikinci kez yazılmaz).
+       satırlar, etiketler ve anahtar kullanılır (yorum ikinci kez yazılmaz). Jira çağrısı
+       boyunca anahtar üzerinde oturum düzeyi danışma kilidi tutulur; aynı anda aynı seti
+       gönderen ikinci istek 409 (`GonderimSuruyor`) alır (tur 3 güvenlik #1).
     3. Satırlar kilitlenip `gonderildi` yapılır; gönderim zamanı yorumun Jira'daki zamanıdır
-       (yanıtlar bundan sonraki PO yorumlarıdır)."""
+       (yanıtlar bundan sonraki PO yorumlarıdır). Denetim kaydı yalnız bu istek en az bir satırı
+       `gonderildi` yaptıysa yazılır."""
     from tp_core.features.cases.service import get_requirement
     from tp_core.features.requirements import flow, services
     from tp_core.integrations import jira_notify
@@ -421,23 +471,24 @@ def send(
         )
     session.flush()
     rid, key = req.id, req.jira_key
-    etiketler = sorted(s.etiket for s, _ in gidecek)
     satir_idleri = [s.id for s, _ in gidecek]
     anahtar = idempotency_key(req.id, req.onaylanan_hash or "", [s for s, _ in gidecek])
     marker = flow._marker(anahtar)
     govde = comment_body(req, gidecek, marker, kalan=kalan)
     session.commit()  # gereksinim satır kilidi Jira çağrısından önce bırakılır
 
-    # ---- 2. kilitsiz Jira yorumu (bir kez)
+    # ---- 2. kilitsiz Jira yorumu (bir kez); aynı anahtarlı eşzamanlı gönderim 409 alır
     jira = services.jira()
-    yorum_id = flow.jira_once(
-        session.get_bind(),  # type: ignore[arg-type]
-        entity_turu="requirement",
-        entity_id=rid,
-        idempotency_key=anahtar,
-        action=lambda: jira_notify.post_comment(jira, key, govde, jira_notify.PO_SORU),
-        find_existing=lambda: flow._comment_with_marker(jira, key, marker),
-    )
+    motor: Engine = session.get_bind()  # type: ignore[assignment]
+    with _gonderim_kilidi(motor, anahtar):
+        yorum_id = flow.jira_once(
+            motor,
+            entity_turu="requirement",
+            entity_id=rid,
+            idempotency_key=anahtar,
+            action=lambda: jira_notify.post_comment(jira, key, govde, jira_notify.PO_SORU),
+            find_existing=lambda: flow._comment_with_marker(jira, key, marker),
+        )
     zaman = _yorum_zamani(jira, key, marker) or datetime.now(UTC)
 
     # ---- 3. kilitle ve gönderildi yaz (eşzamanlı aynı gönderim de aynı yorumu bulur)
@@ -448,19 +499,27 @@ def send(
         .with_for_update()
         .execution_options(populate_existing=True)
     ).all()
+    guncellenen: list[str] = []
     for satir in yazilan:
         if satir.durum != "bekliyor":
             continue
         satir.durum = "gonderildi"
         satir.gonderim_zamani = zaman
         satir.jira_comment_id = yorum_id
-    audit_on_commit(
-        session,
-        user.kullanici_adi,
-        "acik_soru.gonderildi",
-        f"requirement:{rid}",
-        {"jira_key": key, "etiketler": etiketler, "jira_comment_id": yorum_id, "kalan": kalan},
-    )
+        guncellenen.append(satir.etiket)
+    if guncellenen:  # denetim kaydı yalnız bu istek satırları gerçekten gönderildi yaptıysa
+        audit_on_commit(
+            session,
+            user.kullanici_adi,
+            "acik_soru.gonderildi",
+            f"requirement:{rid}",
+            {
+                "jira_key": key,
+                "etiketler": sorted(guncellenen),
+                "jira_comment_id": yorum_id,
+                "kalan": kalan,
+            },
+        )
     session.flush()
     return view(session, rid)
 
@@ -504,26 +563,29 @@ def read_answers(
     Eşzamanlılık (tur 2 güvenlik #12): periyodik sorgu ve `refresh` ucu aynı anda okuyabilir.
     Jira yorumları kilitsiz okunur; yazmadan önce satırlar `FOR UPDATE SKIP LOCKED` ile alınıp
     durumları yeniden denetlenir. Başka okuyucunun tuttuğu satır atlanır, yanıtlanmış satır
-    yeniden yazılmaz (`acik_soru.yanitlandi` denetim kaydı bir kez düşer)."""
+    yeniden yazılmaz (`acik_soru.yanitlandi` denetim kaydı bir kez düşer). Oturum gereksinim
+    başına commit edilir; çağıran açık bir `session.begin()` bloğu içinde çağırmamalıdır."""
     from tp_core.features.requirements import flow
 
     q = select(AcikSoru).where(AcikSoru.durum == "gonderildi")
     if requirement_ids is not None:
         q = q.where(AcikSoru.requirement_id.in_(list(requirement_ids)))
-    bekleyen: dict[uuid.UUID, list[AcikSoru]] = defaultdict(list)
+    bekleyen: dict[uuid.UUID, list[tuple[uuid.UUID, datetime | None]]] = defaultdict(list)
     for satir in session.scalars(q.order_by(AcikSoru.requirement_id, AcikSoru.etiket)):
-        bekleyen[satir.requirement_id].append(satir)
+        bekleyen[satir.requirement_id].append((satir.id, satir.gonderim_zamani))
+    session.commit()  # okuma işlemi Jira çağrısından önce kapanır
     yanitlanan = 0
     for rid, adaylar in bekleyen.items():
-        req = session.get(Requirement, rid)
-        if req is None or not req.jira_key:
+        jira_key = session.scalar(select(Requirement.jira_key).where(Requirement.id == rid))
+        session.commit()
+        if not jira_key:
             continue
-        esik = min((s.gonderim_zamani for s in adaylar if s.gonderim_zamani), default=None)
-        yorumlar = flow._po_cevaplari(jira, req.jira_key, hesaplar, esik)
+        esik = min((z for _, z in adaylar if z), default=None)
+        yorumlar = flow._po_cevaplari(jira, jira_key, hesaplar, esik)
         satirlar = session.scalars(
             select(AcikSoru)
             .where(
-                AcikSoru.id.in_([s.id for s in adaylar]),
+                AcikSoru.id.in_([i for i, _ in adaylar]),
                 AcikSoru.durum == "gonderildi",
             )
             .order_by(AcikSoru.etiket)
@@ -561,15 +623,18 @@ def read_answers(
                     "jira_comment_id": satir.yanit_yorum_id,
                 },
             )
-    session.flush()
+        # Gereksinim başına commit (tur 3 güvenlik #10): satır kilitleri sonraki gereksinimlerin
+        # Jira okumaları boyunca tutulmaz; denetim kayıtları da bu commit'le düşer.
+        session.commit()
     return yanitlanan
 
 
 def poll(jira: Any, hesaplar: frozenset[str]) -> int:
-    """PO etiket sorgusunun (`flow.run_po_poll`) çağırdığı giriş: kendi işlemiyle okur."""
-    from tp_core.models import session_scope
+    """PO etiket sorgusunun (`flow.run_po_poll`) çağırdığı giriş: kendi oturumuyla okur;
+    `read_answers` gereksinim başına commit eder (hata olursa yalnız o gereksinim geri alınır)."""
+    from tp_core.models import new_session
 
-    with session_scope() as s:
+    with new_session() as s:
         return read_answers(s, jira, hesaplar)
 
 

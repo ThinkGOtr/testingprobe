@@ -197,3 +197,74 @@ def test_record_kipinde_ihlalli_son_cikti_da_kaydedilir(make_gateway, rules_dir)
     assert kayit["output"] == KOTU and kayit["kural_ihlali"]
     replay_gw, _ = make_gateway(mode="replay")
     assert _call(replay_gw, rules_dir).output == KOTU  # REPLAY-MISS değil
+
+
+def _ihlal_sayisi(o):
+    # summary "KURAL-n" → n ihlal; "Hazır." → temiz.
+    s = o["summary"]
+    return [f"C{i}: summary: kural {i}" for i in range(int(s.split("-")[1]))] if "-" in s else []
+
+
+def _n(n: int):
+    return text_response({**IYI, "summary": f"KURAL-{n}"})
+
+
+def test_deneme_sinirinda_daha_az_ihlalli_onceki_cikti_doner(
+    make_gateway, rules_dir, recorder
+) -> None:
+    """Tur 3 güvenlik #6: kural yolunda durulunca son çıktı değil en az ihlalli çıktı döner;
+    seçim satırı ayrı deneme numarası taşır; idempotent dönüş uyarıyı yeniden kurar."""
+    gw, provider = make_gateway([_n(1), _n(3), _n(2)])
+    cid = uuid4()
+    res = _call(gw, rules_dir, call_id=cid, check=_ihlal_sayisi)
+    assert res.output["summary"] == "KURAL-1" and len(provider.requests) == 3
+    assert "1. denemenin şemaya uyan çıktısı" in res.uyarilar[0]
+    *denemeler, secim = recorder.ai_calls
+    assert [r["deneme"] for r in denemeler] == [1, 2, 3]
+    assert all(r["hata"].startswith("kural: ") for r in denemeler)  # hiçbiri tamamlanmış değil
+    assert secim["deneme"] == 4 and secim["ek"]["secilen_deneme"] == 1
+    assert secim["ek"]["kural_yeniden_isteme_durdu"] == "deneme_siniri"
+    again = _call(gw, rules_dir, call_id=cid, check=_ihlal_sayisi)
+    assert again.output["summary"] == "KURAL-1" and len(provider.requests) == 3
+    assert again.uyarilar == res.uyarilar
+
+
+def test_deneme_sinirinda_son_cikti_en_iyiyse_o_doner_ve_uyari_korunur(
+    make_gateway, rules_dir, recorder
+) -> None:
+    gw, provider = make_gateway([_n(3), _n(2), _n(1)])
+    cid = uuid4()
+    res = _call(gw, rules_dir, call_id=cid, check=_ihlal_sayisi)
+    assert res.output["summary"] == "KURAL-1" and len(provider.requests) == 3
+    assert len(recorder.ai_calls) == 3 and recorder.ai_calls[-1]["hata"] is None
+    assert "düzeltme isteğinden sonra" in res.uyarilar[0]
+    again = _call(gw, rules_dir, call_id=cid, check=_ihlal_sayisi)
+    assert again.uyarilar == res.uyarilar and len(provider.requests) == 3
+
+
+def test_is_suresinde_durulunca_onceki_daha_iyi_cikti_doner(
+    make_gateway, rules_dir, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tp_core.gateway import core
+
+    gw, provider = make_gateway([_n(1), _n(2)])
+    cfg = gw.models.purpose("requirement_review")
+    kalanlar = iter([core.worst_call_s(cfg) + core.yeniden_isteme_payi(cfg), 0.0])
+    monkeypatch.setattr(core, "kalan_sure", lambda: next(kalanlar))
+    res = _call(gw, rules_dir, check=_ihlal_sayisi)
+    assert res.output["summary"] == "KURAL-1" and len(provider.requests) == 2
+    assert "kalan süresi" in res.uyarilar[0] and "1. denemenin" in res.uyarilar[0]
+
+
+def test_yeniden_isteme_payi_orantili() -> None:
+    """Tur 3 güvenlik #7: pay `min(60, timeout_s)`; kısa amaç 70 sn değil 20 sn ister."""
+    from types import SimpleNamespace
+
+    from tp_core.gateway.core import reask_fits, yeniden_isteme_payi
+
+    kisa = SimpleNamespace(timeout_s=10.0, max_timeout_retries=0)
+    uzun = SimpleNamespace(timeout_s=600.0, max_timeout_retries=0)
+    assert yeniden_isteme_payi(kisa) == 10.0  # type: ignore[arg-type]
+    assert yeniden_isteme_payi(uzun) == 60.0  # type: ignore[arg-type]
+    assert reask_fits(kisa, 20.0) and not reask_fits(kisa, 19.9)  # type: ignore[arg-type]
+    assert reask_fits(uzun, 660.0) and not reask_fits(uzun, 659.0)  # type: ignore[arg-type]

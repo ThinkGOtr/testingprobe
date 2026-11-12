@@ -390,21 +390,26 @@ def kaydet(
                         "sure": p.sure_ms,
                     },
                 )
-                audit_on_commit(
-                    s,
-                    aktor,
-                    "asistan.denetim",
-                    f"asistan_mesaj:{mesaj_id}",
-                    {
-                        "yon": p.yon,
-                        "puan": p.skor.puan,
-                        "karar": p.skor.karar,
-                        "kategoriler": list(p.skor.kategoriler),
-                        "kaynak": p.skor.kaynak,
-                        "talep_no": p.skor.talep_no,
-                        "ai_call_id": str(p.skor.ai_call_id) if p.skor.ai_call_id else None,
-                    },
-                )
+                ozet: dict[str, Any] = {
+                    "yon": p.yon,
+                    "puan": p.skor.puan,
+                    "karar": p.skor.karar,
+                    "kategoriler": list(p.skor.kategoriler),
+                    "kaynak": p.skor.kaynak,
+                    "talep_no": p.skor.talep_no,
+                    "ai_call_id": str(p.skor.ai_call_id) if p.skor.ai_call_id else None,
+                }
+                # Tur 3 güvenlik #2: cevapta injection işaretli ama yüksek puan → karar engel
+                # kalır; tutarsız etiket ayrıca izlenir (denetim kaydında işaret + log sayacı).
+                if guard.tutarsiz_etiket(p.skor.puan, p.skor.kategoriler, p.yon):
+                    ozet["tutarsiz_etiket"] = True
+                    log.warning(
+                        "asistan_denetim.tutarsiz_etiket yon=%s puan=%s talep_no=%s",
+                        p.yon,
+                        p.skor.puan,
+                        p.skor.talep_no,
+                    )
+                audit_on_commit(s, aktor, "asistan.denetim", f"asistan_mesaj:{mesaj_id}", ozet)
             s.commit()
     except Exception as exc:  # kayıt hatası cevabı düşürmez (karar zaten verildi)
         log.warning("asistan denetimi kaydedilemedi (%s)", type(exc).__name__)

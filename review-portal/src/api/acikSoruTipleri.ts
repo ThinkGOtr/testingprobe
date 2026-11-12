@@ -69,6 +69,8 @@ export interface AcikSoruKaydi {
     jira_comment_id: string | null;
   } | null;
   yanit: PoYaniti | null;
+  /** Gönderim yarıda kaldı (Jira hatası/zaman aşımı); yorum yazılmış olabilir. */
+  gonderim_belirsiz?: boolean;
   bekleyen_caseler: AcikSoruBekleyenCase[];
   oneri: AcikSoruOnerisi | null;
 }
