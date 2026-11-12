@@ -1,6 +1,8 @@
 """012 test kalite doğrulama hata sınıfları (ANALIZ §5; MIMARI-SOZLESME §5 `kod` sözleşmesi).
 
-Tek ortak modül: karar tablosu, oracle, metamorfik ve hata koşusu şeritleri buradan içe aktarır.
+Ortak modül: karar tablosu, oracle ve metamorfik şeritleri buradan içe aktarır. Hata koşusu hatası
+(`HataKosusuSuruyor`) kendi özelliğindedir (`hata_kosusu.hatalar`); burada geriye uyum için tembel
+olarak verilir.
 `kod` sınıf başına sabittir; anlamları `rules/assistant/hata-sozlugu.yaml`'dadır (kural testi
 `WorkflowError` alt sınıflarını bu sözlükle karşılaştırır).
 """
@@ -8,6 +10,7 @@ Tek ortak modül: karar tablosu, oracle, metamorfik ve hata koşusu şeritleri b
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any
 
 from tp_core.workflow.service import WorkflowError
 
@@ -68,15 +71,18 @@ class IliskiGecersiz(WorkflowError):
         self.hatalar = list(hatalar)
 
 
-class HataKosusuSuruyor(WorkflowError):
-    """Süren (queued | running) bir ekilmiş hata koşusu varken yenisi başlatılamaz."""
+def __getattr__(ad: str) -> Any:
+    """Geriye uyum: `HataKosusuSuruyor` `hata_kosusu.hatalar`'a taşındı (döngüsel içe aktarma
+    olmasın diye tembel)."""
+    if ad == "HataKosusuSuruyor":
+        from tp_core.features.hata_kosusu.hatalar import HataKosusuSuruyor
 
-    status_code = 409
-    kod = "hata_kosusu_suruyor"
+        return HataKosusuSuruyor
+    raise AttributeError(f"module {__name__!r} has no attribute {ad!r}")
 
 
 __all__ = [
-    "HataKosusuSuruyor",
+    "HataKosusuSuruyor",  # noqa: F822  (tembel; modül __getattr__)
     "IliskiGecersiz",
     "KararTablosuGecersiz",
     "OracleBekleniyor",
