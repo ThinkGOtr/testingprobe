@@ -86,7 +86,11 @@ export function DilSecici({
           <DilRozeti dil={tek.dil} platform={diller.platform} />
           <span className="kucuk soluk">
             {tek.cati} · bu platformda tek dil
-            {tek.neden ? (tek.kullanilabilir ? ` · ${tek.neden}` : ` · Kullanılamıyor: ${tek.neden}`) : ""}
+            {tek.neden && !(diller.neden && tek.kullanilabilir)
+              ? tek.kullanilabilir
+                ? ` · ${tek.neden}`
+                : ` · Kullanılamıyor: ${tek.neden}`
+              : ""}
           </span>
           {diller.neden && (
             <span className="kucuk" role="status" data-testid="dil-notu" data-kaynak="algilanamadi">
@@ -111,7 +115,9 @@ export function DilSecici({
           ad: s.etiket,
           aciklama: s.hat === "dogrulanmamis" ? `${s.cati} · doğrulanmamış` : s.cati,
           pasif: !s.kullanilabilir,
-          neden: s.neden,
+          // Algılama hiç yapılamadıysa (üst düzey `neden`) kullanılabilir seçeneklerdeki aynı "depo
+          // okunamadı" nedeni her kutuda tekrarlanmaz; durum altta tek notla söylenir.
+          neden: diller.neden && s.kullanilabilir ? undefined : s.neden,
         }))}
       />
       <div className="dil-notu kucuk">

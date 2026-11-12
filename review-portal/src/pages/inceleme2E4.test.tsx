@@ -54,7 +54,7 @@ describe("MİM-B1: dil algılanamadı (depo okunamadı)", () => {
     expect(w.secenekler.every((s) => s.kullanilabilir && s.neden === DEPO_OKUNAMADI)).toBe(true);
   });
 
-  it("Kod üretimi: dürüst ileti ('test bulunamadı' denmez); açık seçeneklerde neden görünür ve tanım olarak okunur", async () => {
+  it("Kod üretimi: dürüst ileti ('test bulunamadı' denmez); depo okunamadı nedeni tek notta, açık seçeneklerde tekrarlanmaz", async () => {
     await oturumAc("muhendis");
     ayar.senaryolar.add("depo-okunamadi");
     const u = userEvent.setup();
@@ -67,14 +67,10 @@ describe("MİM-B1: dil algılanamadı (depo okunamadı)", () => {
     expect(not).toHaveAttribute("data-kaynak", "algilanamadi");
     const java = within(grup).getByRole("radio", { name: "Java" });
     expect(java).not.toHaveAttribute("aria-disabled");
-    expect(java).toHaveAccessibleDescription(/^Playwright for Java \+ TestNG\.\s?Depo okunamadı; bu dilin test projesi doğrulanamadı \(kullanılabilirlik bilinmiyor\)$/);
-    const nedenler = within(grup).getAllByTestId("secenek-neden");
-    expect(nedenler).toHaveLength(4);
-    for (const n of nedenler) {
-      expect(n).toBeVisible();
-      expect(n).toHaveAttribute("data-pasif", "hayir");
-      expect(n).not.toHaveTextContent("Kullanılamıyor");
-    }
+    // Aynı "depo okunamadı" nedeni dört kutuda tekrarlanmaz (ekran testi bulgusu); not tek yerde söyler.
+    expect(java).toHaveAccessibleDescription("Playwright for Java + TestNG");
+    expect(within(grup).queryAllByTestId("secenek-neden")).toHaveLength(0);
+    expect(grup).not.toHaveTextContent(DEPO_OKUNAMADI);
     // Açık seçenek seçilebilir; üretim engellenmez.
     await u.click(java);
     expect(java).toBeChecked();
@@ -84,7 +80,7 @@ describe("MİM-B1: dil algılanamadı (depo okunamadı)", () => {
     expect(screen.getByRole("button", { name: "Seçilenler için kod üret (1)" })).toBeEnabled();
   });
 
-  it("tek dilli platform: seçenek nedeni ve algılanamadı notu (elle seçim önerilmez)", async () => {
+  it("tek dilli platform: algılanamadı notu tek yerde (elle seçim önerilmez)", async () => {
     await oturumAc("muhendis");
     ayar.senaryolar.add("depo-okunamadi");
     const u = userEvent.setup();
@@ -92,7 +88,7 @@ describe("MİM-B1: dil algılanamadı (depo okunamadı)", () => {
     await screen.findByRole("group", { name: "Dil" });
     await u.click(screen.getByRole("radio", { name: /^Android/ }));
     const bilgi = await screen.findByTestId("dil-bilgi");
-    expect(bilgi).toHaveTextContent(DEPO_OKUNAMADI);
+    expect(bilgi).not.toHaveTextContent(DEPO_OKUNAMADI);
     expect(bilgi).not.toHaveTextContent("Kullanılamıyor");
     // Tek seçenek: elle seçim önerisi yok; metin parçalardan kurulur (kırpma yok).
     expect(within(bilgi).getByTestId("dil-notu").textContent).toBe("Depo okunamadığı için dil algılanamadı; varsayılan: Java.");

@@ -1177,7 +1177,8 @@ test("011 tur 2: dil algılanamadı, dil çakışması ve Otomasyon sütunu list
     await page.goto("/kod");
     await senaryoEtkin("depo-okunamadi");
     await expect(page.getByTestId("dil-notu")).toHaveText("Depo okunamadığı için dil algılanamadı; varsayılan: TypeScript. Dili elle seçebilirsiniz.");
-    await expect(page.getByRole("group", { name: "Dil" }).getByTestId("secenek-neden")).toHaveCount(4);
+    // Depo okunamadı nedeni seçenek kutularında tekrarlanmaz; notta bir kez.
+    await expect(page.getByRole("group", { name: "Dil" }).getByTestId("secenek-neden")).toHaveCount(0);
     await kaymaYok();
 
     await senaryo("uzun-gecmis");
