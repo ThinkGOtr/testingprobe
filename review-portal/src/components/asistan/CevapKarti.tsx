@@ -40,7 +40,7 @@ export function KipRozeti({
   mesaj,
   modeller,
 }: {
-  mesaj: Pick<AsistanMesaji, "kaynak" | "amac"> & { cevap?: Pick<AsistanCevabi, "model"> | null };
+  mesaj: Pick<AsistanMesaji, "kaynak" | "amac"> & { cevap?: Pick<AsistanCevabi, "model" | "sizinti"> | null };
   modeller?: Pick<AsistanDurumu, "varsayilan_model" | "derin_model"> | null;
 }) {
   const aciklamaId = useId();

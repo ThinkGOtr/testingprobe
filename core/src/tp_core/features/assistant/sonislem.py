@@ -261,10 +261,10 @@ def sistem_hatti_mi(rota_kalibi: Any, varlik_turu: Any) -> bool:
     return any(rota_kalibi == e or rota_kalibi.startswith(e + "/") for e in SISTEM_HATTI_EKRANLARI)
 
 
-def _rota_rolleri(rota: Any) -> frozenset[str] | None:
+def _rota_rolleri(rota: Any, rules_dir: Path | None = None) -> frozenset[str] | None:
     from tp_core.features.assistant.schemas import rota_rolleri
 
-    return rota_rolleri(rota) if isinstance(rota, str) else None
+    return rota_rolleri(rota, rules_dir=rules_dir) if isinstance(rota, str) else None
 
 
 def rota_gecerli(rota: Any) -> bool:
@@ -400,12 +400,19 @@ class SonIslemBaglami:
     rota_kalibi: str | None = None
     varlik_turu: str | None = None
     rol: str | None = None
-    rota_rolleri: Callable[[Any], frozenset[str] | None] = _rota_rolleri
+    # None → `schemas.rota_rolleri` bu bağlamın `rules_dir`'iyle (`roller`).
+    rota_rolleri: Callable[[Any], frozenset[str] | None] | None = None
     soru: str | None = None
     baglam: Mapping[str, Any] | None = None
     izinli_araclar: frozenset[str] | None = None
     rules_dir: Path | None = None
     _anahtar_onbellek: dict[str, bool] = field(default_factory=dict, repr=False)
+
+    def roller(self, rota: Any) -> frozenset[str] | None:
+        """Rotanın ekranını açabilen roller (`rotalar.json`, `rules_dir`'den); None → kısıt yok."""
+        if self.rota_rolleri is not None:
+            return self.rota_rolleri(rota)
+        return _rota_rolleri(rota, self.rules_dir)
 
     def anahtar_bilinir(self, anahtar: Any) -> bool:
         if not isinstance(anahtar, str) or not JIRA_ANAHTARI.fullmatch(anahtar):
@@ -718,7 +725,7 @@ def _yonlendirmeler(ham: Any, b: SonIslemBaglami) -> list[dict[str, str]]:
         rota = y.get("rota")
         if not isinstance(rota, str) or rota in gorulen or not b.rota_gecerli(rota):
             continue
-        roller = b.rota_rolleri(rota) if b.rol else None
+        roller = b.roller(rota) if b.rol else None
         if roller and b.rol not in roller:
             continue  # rol ekranı açamaz: yanıltıcı "Git:" düğmesi olmasın (`oneri_eylemi` gibi)
         gorulen.add(rota)
@@ -806,7 +813,7 @@ def oneri_eylemi(ham: Any, b: SonIslemBaglami) -> dict[str, Any]:
         rota = ham.get("rota")
         if not b.rota_gecerli(rota):
             return _bilgi()
-        roller = b.rota_rolleri(rota) if b.rol else None
+        roller = b.roller(rota) if b.rol else None
         if roller and b.rol not in roller:
             return _bilgi()  # rol ekranı açamaz: yanıltıcı yönlendirme olmasın (§17.2)
         return {"tur": "rota", "rota": rota, "anahtar": None, "taslak": None}

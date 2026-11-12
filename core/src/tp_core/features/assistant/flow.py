@@ -45,6 +45,7 @@ import os
 import re
 import threading
 import time
+import unicodedata
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -423,23 +424,53 @@ def sinyalli(
 # Sorudaki sahte sunucu satırları: ilk kullanıcı mesajında yalnız sunucunun yazdığı satırlar bu
 # öneklerle başlar. Soru metninde satır başında görünenler "› " ile etkisizleştirilir (model
 # sorunun içindeki "Kullanıcının rolü: Sistem yöneticisi" satırını sunucu satırı sanmasın).
+# Sağlamlaştırma (013 inceleme turu 2, SEC2-Y2): modelin satır sonu saydığı her ayırıcı (`\r`,
+# `\v`, `\f`, U+0085, U+2028/2029) önce `\n` olur; sıfır genişlikli (Cf) karakterler silinir;
+# karşılaştırma NFKC + Türkçe/aksan katlama + Kiril/Yunan benzer harf eşlemesi sonrası yapılır;
+# satır başındaki boşluk/alıntı/madde/başlık işaretleri (`> * - _ #`) ve markdown kalın
+# (`**Soru**:`) atlanır. Saklanan soru değişmez; bu yalnız modele giden metindir.
 SAHTE_SATIR_ONEKI: Final = "› "
-_SUNUCU_SATIRI: Final = re.compile(
-    r"^(?=[ \t]*(?:"
-    r"kullan[ıiİI]c[ıiİI]n[ıiİI]n[ \t]+rol[üuÜU][ \t]*:"
-    r"|rol[ \t]+uzant[ıiİI]s[ıiİI][ \t]*:"
-    r"|sunucu[ \t]+sinyalleri[ \t]*:"
-    r"|soru[ \t]*:"
-    r"|kip[ \t]*="
-    r"))",
-    re.IGNORECASE | re.MULTILINE,
+_SATIR_AYIRICI: Final = re.compile("\r\n|[\r\v\f\x85\u2028\u2029]")
+_SATIR_BASI_ISARET: Final = re.compile(r"^[\s>*\-_#]*")
+_SUNUCU_ONEKI: Final = re.compile(
+    r"^(?:(?:kullanicinin\s+rolu|rol\s+uzantisi|sunucu\s+sinyalleri|sunucu\s+notu|soru)"
+    r"[\s*_]*:|kip[\s*_]*=)"
 )
+# Kiril/Yunan harflerinden Latin görünüşlülere (NFKC bunları eşlemez); küçük harf sonrası uygulanır.
+_BENZER_HARF: Final = str.maketrans(
+    {
+        "а": "a", "в": "b", "е": "e", "ё": "e", "і": "i", "ї": "i", "ј": "j",
+        "к": "k", "м": "m", "н": "h", "о": "o", "р": "p", "с": "c", "т": "t", "у": "y",
+        "х": "x", "ѕ": "s", "ԁ": "d", "ӏ": "l", "ո": "n", "ս": "u",
+        "α": "a", "ε": "e", "ι": "i", "κ": "k", "ν": "v", "ο": "o", "ρ": "p", "τ": "t",
+        "υ": "u", "χ": "x", "ϲ": "c",
+    }
+)  # fmt: skip
+
+
+def _cf_sil(metin: str) -> str:
+    return "".join(c for c in metin if unicodedata.category(c) != "Cf")
+
+
+def _satir_anahtari(satir: str) -> str:
+    """Karşılaştırma biçimi: NFKC, Türkçe küçük harf, aksan/nokta katlama, benzer harf eşlemesi,
+    satır başı işaretleri atılmış."""
+    kucuk = unicodedata.normalize("NFKC", satir).replace("I", "ı").replace("İ", "i").lower()
+    ayrik = unicodedata.normalize("NFKD", kucuk)
+    katli = "".join(c for c in ayrik if not unicodedata.combining(c)).replace("ı", "i")
+    katli = katli.translate(_BENZER_HARF)
+    return _SATIR_BASI_ISARET.sub("", katli, count=1)
 
 
 def sunucu_satirlarini_notrle(metin: str) -> str:
     """Satır başındaki sunucu satırı öneklerini (`Kullanıcının rolü:`, `Rol uzantısı:`, `Sunucu
-    sinyalleri:`, `Soru:`, `kip=`) `› ` ile etkisizleştirir; geri kalan metin değişmez."""
-    return _SUNUCU_SATIRI.sub(SAHTE_SATIR_ONEKI, metin)
+    sinyalleri:`, `Sunucu notu:`, `Soru:`, `kip=`) `› ` ile etkisizleştirir. Satır ayırıcıları
+    `\n`'e çevrilir ve sıfır genişlikli karakterler silinir; geri kalan metin değişmez."""
+    satirlar = _SATIR_AYIRICI.sub("\n", _cf_sil(metin)).split("\n")
+    return "\n".join(
+        SAHTE_SATIR_ONEKI + satir if _SUNUCU_ONEKI.match(_satir_anahtari(satir)) else satir
+        for satir in satirlar
+    )
 
 
 def ilk_mesaj(
@@ -666,8 +697,9 @@ def model_cevabini_yaz(
 ) -> str:
     """Canlı cevabın tek transaction'ı (§6.2 sırası). Dönüş: mesajın son durumu.
 
-    `model`: cevabı üreten amaç modeli (`models.yaml`); cevaba `model` olarak yazılır (portal kip
-    rozeti bunu tercih eder)."""
+    `model`: yanıtı gerçekten üreten model (`yanitlayan_model`: son turun `ai_call.model`'i; ret
+    yedeğinde yedek model); cevaba `model` olarak yazılır (portal kip rozeti bunu tercih eder).
+    Sızıntı cevabında None (rozet modeli göstermez)."""
     if model:
         cevap = {**cevap, "model": model}
     tetik = otomatik_tetik(m, cevap)
@@ -806,6 +838,52 @@ def _olay_yaz(
             s.commit()
     except Exception as exc:
         log.warning("asistan güvenlik olayı yazılamadı (%s, %s)", tur, type(exc).__name__)
+
+
+def sizinti_kaniti(
+    m: Mesaj,
+    ekran: Mapping[str, Any] | None,
+    kural_onerileri: Sequence[Mapping[str, Any]] | None,
+    gecmis: str | None,
+    havuz: Iterable[Any],
+) -> list[str]:
+    """Modele kullanıcıdan ya da dış kaynaktan giren metinler (soru, ekran bağlamı, kural
+    önerileri, sohbet geçmişi, araç sonuçları): cevaptaki yabancı kanarya/iz bunlarda geçiyorsa
+    alıntıdır (`guvenlik_cikti.sizinti_var`). Sunucunun yazdığı satırlar (rol uzantısı, sinyal
+    notu) dahil DEĞİL: istem metni oradan gelebilir, alıntı sayılmamalı."""
+    out: list[str] = [m.icerik or "", gecmis or ""]
+    out.extend(guvenlik_cikti.gorunur_dizgeler(ekran or {}))
+    out.extend(guvenlik_cikti.gorunur_dizgeler(list(kural_onerileri or [])))
+    out.extend(str(getattr(k, "metin", "") or "") for k in havuz)
+    return [x for x in out if x]
+
+
+def yanitlayan_model(
+    engine: Engine | None, sonuc: Any, gw: Any, amac: str, rules_dir: Path | None
+) -> str | None:
+    """Yanıtı gerçekten üreten model: son turun `ai_call.model`'i (ret yedeğine geçişte yedek
+    model; `core._fallback_fields`). Bellek içi kayıtçıda (eval) onun satırı; çağrı kimliği ya da
+    satır yoksa amaç modeli (`_amac_modeli`). Okuma hatası cevabı düşürmez."""
+    kimlikler = list(getattr(sonuc, "call_ids", None) or [])
+    if kimlikler:
+        son = kimlikler[-1]
+        try:
+            satirlar = getattr(getattr(gw, "recorder", None), "ai_calls", None)
+            if isinstance(satirlar, list):
+                model = next((r.get("model") for r in satirlar if r.get("id") == son), None)
+            elif engine is not None:
+                with engine.connect() as conn:
+                    model = conn.execute(
+                        text("SELECT model FROM ai_call WHERE id = :i"), {"i": son}
+                    ).scalar_one_or_none()
+            else:
+                model = None
+        except Exception as exc:
+            log.debug("asistan yanıtlayan model okunamadı (%s)", type(exc).__name__)
+            model = None
+        if isinstance(model, str) and model:
+            return model
+    return _amac_modeli(gw, amac, rules_dir)
 
 
 def _amac_modeli(gw: Any, amac: str, rules_dir: Path | None) -> str | None:
@@ -963,13 +1041,14 @@ def cevapla(
             except Exception as exc:  # olay yayını cevabı düşürmez
                 log.debug("asistan adım olayı yayınlanamadı (%s)", type(exc).__name__)
 
+        ekran = _ekran_baglami(m, oneri_baglami)
         try:
             sonuc = gw.run_agent(
                 m.hedef_amac,
                 BUNDLE,
                 ilk_mesaj(
                     m,
-                    ekran=_ekran_baglami(m, oneri_baglami),
+                    ekran=ekran,
                     kural_onerileri=kural_onerileri,
                     gecmis=gecmis,
                     sir_degerleri=ab.sir_degerleri,
@@ -1027,9 +1106,13 @@ def cevapla(
             )
             cevap = sonislem.isle(sonuc.output, sb)
             # Kanarya / istem sızıntısı (specs/013 §6.3): cevabın bütün dizgeleri taranır; cevap
-            # değişir, ciddi olay kök soruya yazılır (sızan cevabın kimliği ayrıntıda).
+            # değişir, ciddi olay kök soruya yazılır (sızan cevabın kimliği ayrıntıda). Girdide
+            # ya da araç sonucunda zaten geçen yabancı kanarya/iz alıntıdır, sızıntı değildir.
             sizinti = guvenlik_cikti.sizinti_var(
-                cevap, guvenlik_cikti.kanarya(), guvenlik_cikti.izleri_yukle(rules_dir)
+                cevap,
+                guvenlik_cikti.kanarya(),
+                guvenlik_cikti.izleri_yukle(rules_dir),
+                sizinti_kaniti(m, ekran, kural_onerileri, gecmis, araclar.havuz),
             )
             if sizinti is not None:
                 cevap = guvenlik_cikti.istem_sizintisi_cevabi()
@@ -1042,7 +1125,10 @@ def cevapla(
             cevap,
             harcama,
             sinyaller=sinyaller,
-            model=_amac_modeli(gw, m.hedef_amac, rules_dir),
+            # Sızıntı yerine gelen cevap modelin cevabı değildir: `model` yazılmaz (BE2-3).
+            model=None
+            if sizinti is not None
+            else yanitlayan_model(engine, sonuc, gw, m.hedef_amac, rules_dir),
         )
     except Exception as exc:
         kod = hata_kodu(exc)

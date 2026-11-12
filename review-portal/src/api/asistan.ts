@@ -198,12 +198,15 @@ export const KIP_ACIKLAMALARI: Record<KipRozetTuru, string> = {
 /**
  * Cevap kartının kip rozeti (013 §7, K12). `model` → `CANLI · <kısa ad>`: model adı önce cevabın
  * kendi `cevap.model` alanından, yoksa status'tan (derin cevapta derin model; status bildirmiyorsa
- * yalnız `CANLI`); `sozluk|sablon` → `ŞABLON`; `kapali` → `MODEL KAPALI`.
+ * yalnız `CANLI`); `sozluk|sablon` → `ŞABLON`; `kapali` → `MODEL KAPALI`. Sızıntı yerine gelen
+ * cevapta (`cevap.sizinti`) rozet yoktur: gösterilen metin modelin cevabı değildir (013 inceleme
+ * turu 2, BE2-3; core da bu cevaba `model` yazmaz).
  */
 export function kipRozeti(
-  m: Pick<AsistanMesaji, "kaynak" | "amac"> & { cevap?: Pick<AsistanCevabi, "model"> | null },
+  m: Pick<AsistanMesaji, "kaynak" | "amac"> & { cevap?: Pick<AsistanCevabi, "model" | "sizinti"> | null },
   durum?: Pick<AsistanDurumu, "varsayilan_model" | "derin_model"> | null,
 ): KipRozeti | null {
+  if (m.cevap?.sizinti) return null;
   switch (m.kaynak) {
     case "model": {
       const ad =
