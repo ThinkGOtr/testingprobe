@@ -21,7 +21,8 @@
 6. §7.3 son işlem (`sonislem.isle`) → otomatik yükseltme kararı (§6.2) → `done` (+ gerekirse çocuk
    mesaj ve işi, **aynı transaction**) → `assistant.answered {…, derin_bekliyor}`.
 6b. **Denetim** (011 F7; `denetim.py`, `TP_ASISTAN_DENETIM`): soru kural ön denetimi her yolda
-   (2'den önce); canlı yolda soru port ile modelden önce, cevap port ile yazmadan önce puanlanır.
+   (2'den önce); canlı yolda soru port ile modelden önce, cevap (gösterilen tüm serbest metin,
+   tavanda kesilmiş; önce modelsiz kural ön denetimi) port ile yazmadan önce puanlanır.
    `engelle` → `kaynak='denetim'` açıklama; `uyar` → not; port hatası → fail-closed.
 7. İstisnalar yakalanır → `error` + `hata_kodu` (`butce_asildi`, `girdi_tavani`, `zaman_asimi`,
    `model_hatasi`); iptal hata değildir (durum `iptal` kalır). Kayda yalnız sınıf adı yazılır
@@ -987,11 +988,25 @@ def cevapla(
             cevap = sonislem.isle(sonuc.output, sb)
         finally:
             araclar.havuz.temizle()
-        # (6a) Denetim: cevap kullanıcıya gösterilmeden.
+        # (6a) İçerik kontrolü: cevap kullanıcıya gösterilmeden. Gösterilen tüm serbest metin
+        # alanları puanlanır; tavanı aşan cevap tavanda kesilir; önce modelsiz kural ön denetimi.
         if denetim_acik:
+            cevap, d.kesildi = asistan_denetim.tavana_kes(cevap)
+            gosterilen = asistan_denetim.gosterilen_metin(cevap)
+            on_cevap = asistan_denetim.cevap_kural_puani(gosterilen, m.id)
+            if on_cevap.karar == "engelle":
+                d.cevap = on_cevap
+                asistan_denetim.kaydet(session_factory, m.id, m.kullanici_adi, on_cevap)
+                return _denetim_yaz(
+                    session_factory,
+                    m,
+                    asistan_denetim.engel_cevabi(d, "cevap"),
+                    harcama,
+                    model_calisti=True,
+                )
             try:
                 p = asistan_denetim.port_puani(
-                    _cevap_metni(cevap) or "(boş cevap)",
+                    gosterilen or "(boş cevap)",
                     "cevap",
                     mesaj_id=m.id,
                     kullanici_id=m.kullanici_id,

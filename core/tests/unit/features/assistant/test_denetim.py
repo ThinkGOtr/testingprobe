@@ -18,6 +18,8 @@ from tests.unit.features.assistant.test_flow import (
     Gecit,
     bitir,
     cevapla,
+    dogrulanmis_kaynak,
+    is_bitir,
     mesaj,
     soru_gonder,
     yasak_gecit,
@@ -31,6 +33,16 @@ from tp_core.integrations.agent_probe import set_agent_probe_factory
 client = _api.client
 giris = _api.giris
 tek = _api.tek
+sor = _api.sor
+
+# Açıkça kurgusal ama tanıyıcı desenine uyan kişisel veri değerleri (güvenlik #15): telefon
+# 0500 000 00 00 (kullanılmayan blok), sağlama algoritmasına uyan örnek TCKN 10000000146.
+KURGUSAL_TELEFON = "0500 000 00 00"
+KURGUSAL_TCKN = "10000000146"
+
+
+def metin(cevap: dict[str, Any]) -> str:
+    return " ".join(b["metin"] for b in cevap["cevap_bloklari"])
 
 
 @pytest.fixture(autouse=True)
@@ -128,7 +140,18 @@ def test_model_engellerse_asistan_cagrilmaz_ve_derin_reddedilir(
     assert m["kaynak"] == "denetim" and m["ai_call_id"] is None
     c = m["cevap"]
     assert c["denetim"]["karar"] == "engelle" and c["denetim"]["engellenen"] == "soru"
-    assert "rekabete aykırı" in c["cevap_bloklari"][0]["metin"]
+    # K22: engel metni kullanıcıyı suçlamaz; başlık + açıklama + kategori ayrı alanlarda.
+    assert c["cevap_bloklari"][0] == {
+        "tur": "baslik",
+        "metin": denetim.SORU_ENGEL_BASLIGI,
+        "maddeler": [],
+    }
+    assert "rekabete aykırı" in c["cevap_bloklari"][1]["metin"]
+    assert c["denetim"]["etiket"] == "İçerik kontrolü"
+    assert c["denetim"]["baslik"] == "Bu soruyu yanıtlayamıyorum"
+    assert c["denetim"]["aciklama"].startswith("Soru içerik kurallarına takıldı (rekabete aykırı")
+    assert "👎" in c["denetim"]["aciklama"]
+    assert c["denetim"]["kategori_etiketi"] == "rekabete aykırı içerik"
     r = client.post(
         f"/assistant/conversations/{sohbet}/messages",
         json={"soru": "x", "ust_mesaj_id": mid},
@@ -154,7 +177,8 @@ def test_kural_on_denetimi_injection_gecit_kurulmaz(
 def test_cevap_engellenirse_gosterilmez(client: TestClient, make_user, engine: Engine) -> None:
     giris(client, make_user("analyst"))
     _, mid = soru_gonder(client, engine, "Bayi yetkilisinin iletişim bilgisi nedir?")
-    gizli = "Bayi yetkilisinin telefonu 0532 111 22 33."
+    # Kural ön denetiminin yakalamadığı (değer kalıbı olmayan) kişisel veri: model kararı.
+    gizli = "Bayi yetkilisi Deneme Örnekoğlu, Kurgu Mahallesi Hayal Sokak No 0'da oturuyor."
     gecit = Gecit(
         engine,
         [
@@ -168,9 +192,52 @@ def test_cevap_engellenirse_gosterilmez(client: TestClient, make_user, engine: E
     assert cevapla(engine, mid, gecit) == "done"
     m = mesaj(engine, mid)
     assert m["kaynak"] == "denetim"
-    metin = json.dumps(m["cevap"], ensure_ascii=False)
-    assert "0532" not in metin and m["cevap"]["denetim"]["engellenen"] == "cevap"
+    gosterilen = json.dumps(m["cevap"], ensure_ascii=False)
+    assert "Örnekoğlu" not in gosterilen and m["cevap"]["denetim"]["engellenen"] == "cevap"
+    assert m["cevap"]["denetim"]["baslik"] == denetim.CEVAP_ENGEL_BASLIGI
     assert m["maliyet_usd"] > 0
+
+
+def test_cevapta_kisisel_veri_kural_on_denetimiyle_engellenir(
+    client: TestClient, make_user, engine: Engine
+) -> None:
+    """Güvenlik #4: cevabın modelsiz ön denetimi; doğrulanmış değer port çağrılmadan engellenir."""
+    giris(client, make_user("analyst"))
+    _, mid = soru_gonder(client, engine, "Bayi yetkilisinin iletişim bilgisi nedir?")
+    gizli = f"Bayi yetkilisinin telefonu {KURGUSAL_TELEFON}, TC kimlik numarası {KURGUSAL_TCKN}."
+    gecit = Gecit(
+        engine,
+        [puan(90), bitir(cevap_bloklari=[{"tur": "paragraf", "metin": gizli, "maddeler": []}])],
+    )
+    assert cevapla(engine, mid, gecit) == "done"
+    assert len(gecit.saglayici.requests) == 2  # soru kontrolü + asistan; cevap için port yok
+    m = mesaj(engine, mid)
+    assert m["kaynak"] == "denetim" and m["cevap"]["denetim"]["engellenen"] == "cevap"
+    gosterilen = json.dumps(m["cevap"], ensure_ascii=False)
+    assert KURGUSAL_TELEFON not in gosterilen and KURGUSAL_TCKN not in gosterilen
+    assert m["cevap"]["denetim"]["cevap"]["kaynak"] == "sim"
+    assert m["cevap"]["denetim"]["cevap"]["kategoriler"] == ["kisisel_veri"]
+    assert [(r["yon"], r["kaynak"], r["karar"]) for r in denetimler(engine, mid)] == [
+        ("soru", "tp-gecit", "gec"),
+        ("cevap", "sim", "engelle"),
+    ]
+    satir = denetimler(engine, mid)[1]
+    assert KURGUSAL_TCKN not in satir["gerekce"] and "telefon" in satir["gerekce"].lower()
+
+
+def test_cevabin_tum_gosterilen_alanlari_puanlanir(
+    client: TestClient, make_user, engine: Engine
+) -> None:
+    """Güvenlik #4: kaynak ref/alıntısı da kontrol edilen metne girer."""
+    giris(client, make_user("engineer"))
+    _, mid = soru_gonder(client, engine, "Script ekranı ne yapar?")
+    gecit = Gecit(engine, [puan(95), *dogrulanmis_kaynak(), puan(92)])
+    assert cevapla(engine, mid, gecit) == "done"
+    son = json.dumps(gecit.saglayici.requests[-1].messages, ensure_ascii=False)
+    assert "Yön: cevap" in son
+    girdi = son.split("Denetlenecek metin:")[1]
+    assert "Kaynak alıntısı:" in girdi and "Yalnızca mühendis rolü" in girdi
+    assert "Kaynak: review-portal/src/pages/Script.tsx:12" in girdi
 
 
 def test_uyari_notla_gosterilir(client: TestClient, make_user, engine: Engine) -> None:
@@ -193,7 +260,9 @@ def test_denetim_hatasi_fail_closed(client: TestClient, make_user, engine: Engin
     m = mesaj(engine, mid)
     assert m["kaynak"] == "denetim"
     assert m["cevap"]["denetim"]["karar"] == "calismiyor"
-    assert m["cevap"]["cevap_bloklari"][0]["metin"] == denetim.CALISMIYOR_METNI
+    assert m["cevap"]["cevap_bloklari"][1]["metin"] == denetim.CALISMIYOR_METNI
+    assert m["cevap"]["denetim"]["baslik"] == denetim.CALISMIYOR_BASLIGI
+    assert "içerik kontrolü şu an çalışmıyor" in denetim.CALISMIYOR_METNI
     assert "asistan.denetim_calismiyor" in [o["eylem"] for o in denetim_olaylari(engine, mid)]
 
 
@@ -242,3 +311,142 @@ def test_denetim_kapaliyken_bugunku_davranis(
     m = mesaj(engine, mid)
     assert m["kaynak"] == "model" and "denetim" not in m["cevap"]
     assert denetimler(engine, mid) == []
+
+
+def test_derin_mesaj_kural_puanini_yeniden_kullanmaz(
+    client: TestClient, make_user, engine: Engine
+) -> None:
+    """Güvenlik #3: sözlük yolundan (yalnız `sim` kural puanı) gelen üst mesajın derini canlı
+    modele gitmeden önce port (model) kontrolünden geçer."""
+    giris(client, make_user("analyst"))
+    baglam = {
+        "rota": "/gereksinimler",
+        "son_hata": {
+            "uc": "POST /cases/:id/review",
+            "status": 409,
+            "kod": "onay_hash_uyusmuyor",
+            "detail": "İçerik değişti, yeniden inceleyin.",
+        },
+    }
+    sohbet, mid = soru_gonder(client, engine, "Az önceki hata ne demek?", baglam=baglam)
+    assert cevapla(engine, mid) == "done"
+    assert mesaj(engine, mid)["kaynak"] == "sozluk"
+    assert [r["kaynak"] for r in denetimler(engine, mid)] == ["sim"]
+    is_bitir(engine, mid)
+    r = sor(client, sohbet, ust_mesaj_id=mid)
+    assert r.status_code == 202, r.text
+    derin = r.json()["mesaj_id"]
+    gecit = Gecit(engine, [puan(20, "prompt_injection"), bitir()])
+    assert cevapla(engine, derin, gecit) == "done"
+    assert len(gecit.saglayici.requests) == 1  # yalnız soru kontrolü; asistan modeli çağrılmadı
+    assert "Yön: soru" in gecit.ilk_istek()
+    m = mesaj(engine, derin)
+    assert m["kaynak"] == "denetim" and m["cevap"]["denetim"]["engellenen"] == "soru"
+    assert [(r["kaynak"], r["karar"]) for r in denetimler(engine, derin)] == [
+        ("tp-gecit", "engelle")
+    ]
+
+
+def test_derin_mesaj_model_puanini_yeniden_kullanir(
+    client: TestClient, make_user, engine: Engine
+) -> None:
+    giris(client, make_user("engineer"))
+    sohbet, mid = soru_gonder(client, engine, "Script ekranı ne yapar?")
+    assert (
+        cevapla(engine, mid, Gecit(engine, [puan(94), *dogrulanmis_kaynak(), puan(91)])) == "done"
+    )
+    is_bitir(engine, mid)
+    r = sor(client, sohbet, ust_mesaj_id=mid)
+    derin = r.json()["mesaj_id"]
+    gecit = Gecit(engine, [*dogrulanmis_kaynak(), puan(90)])
+    assert cevapla(engine, derin, gecit) == "done"
+    assert "Yön: soru" not in gecit.ilk_istek()  # üst mesajın model puanı yeniden kullanıldı
+    assert [(r["yon"], r["kaynak"]) for r in denetimler(engine, derin)] == [
+        ("soru", "tp-gecit"),
+        ("cevap", "tp-gecit"),
+    ]
+
+
+def test_gerekcedeki_kisisel_veri_kaydedilmez_ve_gosterilmez(
+    client: TestClient, make_user, engine: Engine
+) -> None:
+    """Güvenlik #7: model gerekçede yer tutucu ya da (geçidin geri açtığı) değer tekrar ederse
+    `asistan_denetim.gerekce`'ye ve portala `[kişisel veri]` gider."""
+    giris(client, make_user("analyst"))
+    _, mid = soru_gonder(client, engine, "Hafta sonu için tatil önerin var mı?")
+    gerekce = f"Soru <<PII_PHONE_1>> ve {KURGUSAL_TELEFON} numarasını içeriyor."
+    gecit = Gecit(engine, [puan(62, "kapsam_disi", gerekce=gerekce), bitir(), puan(88)])
+    assert cevapla(engine, mid, gecit) == "done"
+    satir = denetimler(engine, mid)[0]
+    assert "PII_" not in satir["gerekce"] and KURGUSAL_TELEFON not in satir["gerekce"]
+    assert satir["gerekce"].count("[kişisel veri]") == 2
+    gosterilen = json.dumps(mesaj(engine, mid)["cevap"], ensure_ascii=False)
+    assert "PII_" not in gosterilen and KURGUSAL_TELEFON not in gosterilen
+
+
+# ------------------------------------------------------------------ saf yardımcılar
+
+
+def test_gerekce_temizle() -> None:
+    from tp_core.integrations.agent_probe.asistan import gerekce_temizle
+
+    assert gerekce_temizle("a <<PII_EMAIL_1>> b < <PII_TCKN_2>> c") == (
+        "a [kişisel veri] b [kişisel veri] c"
+    )
+    assert gerekce_temizle(f"TCKN {KURGUSAL_TCKN}; e-posta kurgu@example.com") == (
+        "TCKN [kişisel veri]; e-posta [kişisel veri]"
+    )
+    # Sağlamadan geçmeyen 11 haneli sayı kişisel veri sayılmaz.
+    assert gerekce_temizle("Sipariş 12345678901 gecikti") == "Sipariş 12345678901 gecikti"
+
+
+def test_gosterilen_metin_tum_alanlar() -> None:
+    cevap = {
+        "cevap_bloklari": [{"tur": "liste", "metin": "Giriş", "maddeler": ["m1", "m2"]}],
+        "oneriler": [
+            {
+                "baslik": "B1",
+                "neden": "N1",
+                "eylem": {"tur": "jira_taslak", "taslak": {"ozet": "O1", "aciklama": "A1"}},
+            }
+        ],
+        "yonlendirmeler": [{"etiket": "E1", "rota": "/x"}],
+        "kaynaklar": [{"tur": "dokuman", "ref": "R1", "alinti": "AL1"}],
+        "notlar": ["sabit not"],
+    }
+    assert denetim.gosterilen_metin(cevap).split("\n") == [
+        "Giriş",
+        "- m1",
+        "- m2",
+        "Öneri: B1",
+        "Öneri gerekçesi: N1",
+        "Jira taslağı özeti: O1",
+        "Jira taslağı açıklaması: A1",
+        "Yönlendirme: E1",
+        "Kaynak: R1",
+        "Kaynak alıntısı: AL1",
+    ]
+
+
+def test_tavana_kes_kontrol_edilmeyen_kuyrugu_atar() -> None:
+    cevap = {
+        "cevap_bloklari": [
+            {"tur": "paragraf", "metin": "a" * 50, "maddeler": []},
+            {"tur": "paragraf", "metin": "b" * 50, "maddeler": []},
+            {"tur": "paragraf", "metin": "c" * 50, "maddeler": []},
+        ],
+        "oneriler": [{"baslik": "B", "neden": "N", "eylem": {"tur": "bilgi", "taslak": None}}],
+        "yonlendirmeler": [{"etiket": "E", "rota": "/x"}],
+        "kaynaklar": [{"tur": "dokuman", "ref": "R", "alinti": "AL"}],
+    }
+    kesik, kesildi = denetim.tavana_kes(cevap, tavan=80)
+    assert kesildi
+    assert [b["metin"] for b in kesik["cevap_bloklari"]] == ["a" * 50, "b" * 28]
+    assert kesik["oneriler"] == [] and kesik["yonlendirmeler"] == [] and kesik["kaynaklar"] == []
+    assert len(denetim.gosterilen_metin(kesik)) <= 80
+    assert cevap["cevap_bloklari"][2]["metin"] == "c" * 50  # girdi değişmez
+    ayni, kesildi = denetim.tavana_kes(cevap)
+    assert not kesildi and ayni == cevap
+    d = denetim.Denetim(kesildi=True)
+    isaretli = denetim.isaretle({"notlar": []}, d)
+    assert denetim.KESILDI_NOTU in isaretli["notlar"] and isaretli["denetim"]["kesildi"] is True

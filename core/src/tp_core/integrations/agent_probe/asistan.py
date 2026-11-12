@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import contextvars
 import os
+import re
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -126,6 +127,36 @@ def en_agir(*kararlar: str | None) -> str:
     return max((k for k in kararlar if k), key=lambda k: _SIRA.get(k, 0), default="gec")
 
 
+# ------------------------------------------------------------------ gerekçe temizliği
+
+KISISEL_VERI_YERINE: Final = "[kişisel veri]"
+GEREKCE_TAVANI: Final = 400
+# `<<PII_EMAIL_1>>` ve maskelemenin etkisizleştirdiği `< <PII_…>>` biçimi.
+_YER_TUTUCU: Final = re.compile(r"<\s*<\s*PII_[A-Za-z]+_\d+\s*>\s*>")
+
+
+def gerekce_temizle(metin: str | None) -> str:
+    """Modelin gerekçesinden kişisel veriyi temizler (kayıt ve portal gösterimi öncesi).
+
+    Geçit maskelemesi açıkken model `<<PII_…>>` yer tutucusunu gerekçede tekrar ederse geçit onu
+    gerçek değere geri açar; değer `asistan_denetim.gerekce`'ye ve portala taşınmasın diye hem
+    yer tutucular hem de maskeleme tanıyıcılarının (TCKN, IBAN, telefon, e-posta; doğrulamalı)
+    yakaladığı değerler `[kişisel veri]` olur. Kayıt "metin yok" ilkesini korur (§5.1).
+    """
+    from tp_core.gateway.masking import RECOGNIZERS
+
+    metin = _YER_TUTUCU.sub(KISISEL_VERI_YERINE, metin or "")
+    for rec in RECOGNIZERS:
+
+        def yerine(m: re.Match[str], rec: Any = rec) -> str:
+            if rec.validate is not None and not rec.validate(m.group(0)):
+                return m.group(0)
+            return KISISEL_VERI_YERINE
+
+        metin = rec.pattern.sub(yerine, metin)
+    return metin[:GEREKCE_TAVANI]
+
+
 # ------------------------------------------------------------------ girdi
 
 
@@ -220,7 +251,7 @@ def score_message(
         puan=max(0, min(100, puan)),
         kategoriler=kategoriler,
         karar=karar_ver(puan, kategoriler, yon),
-        gerekce=str(out.get("gerekce") or "")[:400],
+        gerekce=gerekce_temizle(str(out.get("gerekce") or "")),
         talep_no=talep_no(sonuc.call_id),
         kaynak="tp-gecit",
         ai_call_id=sonuc.call_id,

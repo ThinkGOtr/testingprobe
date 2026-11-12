@@ -202,9 +202,13 @@ def test_asistan_icerik_hash_sabit_dosya_listesi() -> None:
         "prompts/assistant.md",
         "schemas/assistant.schema.json",
         "schemas/assistant_deep.schema.json",
-        "prompts/assistant-guard.md",  # 011 F7: denetim cevabı belirler
-        "schemas/assistant_guard.schema.json",
     } <= set(dosyalar)
+    # 011 F7 içerik kontrolü kendi hash'iyle kapılanır; asistan içeriğine girmez (D4 kararı).
+    assert not any("assistant-guard" in p or "assistant_guard" in p for p in dosyalar)
+    assert icerik_dosyalari(RULES, "assistant-guard") == [
+        "prompts/assistant-guard.md",
+        "schemas/assistant_guard.schema.json",
+    ]
     kural = {p for p in dosyalar if p.startswith("assistant/")}
     assert kural == {
         f"assistant/{p.name}"
