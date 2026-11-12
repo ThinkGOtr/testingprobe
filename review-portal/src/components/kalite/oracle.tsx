@@ -19,7 +19,8 @@ import type {
 import { beklentiDogruluguUyarla } from "../../api/uyumKalite";
 import { useKisiAdi } from "../../auth";
 import { useGeciktirilmis, useVeri } from "../../hooks";
-import { kismenNedeniMetni, ORACLE_DURUMU, ORACLE_NEDENI, type OracleGorunumu } from "../../lib/etiketler";
+import { kismenNedeniMetni, ORACLE_DURUMU, ORACLE_NEDENI, ORACLE_NEDENI_ACIKLAMA, type OracleGorunumu } from "../../lib/etiketler";
+import { alintiMetni, mantiksalMi, mantiksalOku } from "../../lib/ifadeAciklama";
 import { tarih, yuzde } from "../../lib/format";
 import { AlanHatasi, Cip, IslemDugmesi, Metrik, Olculmedi, Uyari } from "../ui";
 import { CEKIRDEK_BILDIRMIYOR, GOSTERGE_ESIGI } from "../kule/KaliteKpilari";
@@ -262,6 +263,17 @@ function useToleranslar(): Record<string, string> {
   );
 }
 
+/** Karşılaştırma hücresi: mantıksal çıktı iş dilinde (u2 N18), diğerleri `degerMetni`. */
+export function karsilastirmaDegeri(column: string, d: string | number | boolean | null | undefined): string {
+  return mantiksalMi(d) ? mantiksalOku(column, d) : degerMetni(d);
+}
+
+/** Bağlamdaki tablolardan `tablo_id` → "T2". */
+function useTabloRefleri(): Record<string, string> {
+  const { tablolar } = useContext(Baglam);
+  return useMemo(() => Object.fromEntries((tablolar ?? []).map((t) => [t.id, `T${t.sira_no}`])), [tablolar]);
+}
+
 export function KarsilastirmaTablosu({
   satirlar,
   baslik,
@@ -273,6 +285,7 @@ export function KarsilastirmaTablosu({
   karsilastirilamayan?: OracleKarsilastirilamayan[];
 }) {
   const toleranslar = useToleranslar();
+  const refler = useTabloRefleri();
   const nedenler = [...new Set(karsilastirilamayan.map((k) => k.neden))];
   return (
     <div className="tablo-sarici" tabIndex={0} role="region" aria-label={baslik}>
@@ -293,14 +306,20 @@ export function KarsilastirmaTablosu({
               <td data-etiket="Alan">
                 <span className="mono">{k.column}</span> <span className="soluk kucuk">· {alanEtiketi(k.alan)}</span>
               </td>
-              <td data-etiket="Case metnindeki ifade">“{k.alinti}”</td>
+              <td data-etiket="Case metnindeki ifade">{alintiMetni(k.alinti)}</td>
               <td className="mono" data-etiket="Case değeri">
-                {degerMetni(k.case_degeri)}
+                {karsilastirmaDegeri(k.column, k.case_degeri)}
               </td>
               <td className="mono" data-etiket="Tablo değeri">
-                {degerMetni(k.tablo_degeri)}
+                {karsilastirmaDegeri(k.column, k.tablo_degeri)}
                 {toleransMetni(k, toleranslar)}
-                {k.satir_id && <span className="soluk kucuk"> · satır {k.satir_id}</span>}
+                {k.satir_id && (
+                  <span className="soluk kucuk">
+                    {" "}
+                    · {k.tablo_id && refler[k.tablo_id] ? `${refler[k.tablo_id]} · ` : "satır "}
+                    {k.satir_id}
+                  </span>
+                )}
               </td>
               <td data-etiket="Sonuç" className={k.uyumlu ? undefined : "hata-metin"}>
                 {k.uyumlu ? "Aynı ✓" : "Farklı ✗"}
@@ -322,9 +341,9 @@ export function KarsilastirmaTablosu({
                   <td data-etiket="Alan">
                     <span className="mono">{k.column}</span> <span className="kucuk">· {alanEtiketi(k.alan)}</span>
                   </td>
-                  <td data-etiket="Case metnindeki ifade">“{k.alinti}”</td>
+                  <td data-etiket="Case metnindeki ifade">{alintiMetni(k.alinti)}</td>
                   <td className="mono" data-etiket="Case değeri">
-                    {degerMetni(k.case_degeri)}
+                    {karsilastirmaDegeri(k.column, k.case_degeri)}
                   </td>
                   <td className="mono" data-etiket="Tablo değeri">
                     —
@@ -448,7 +467,7 @@ export function OracleAyrinti({ tc }: { tc: TestCase }) {
       )}
       {o?.neden && ORACLE_NEDENI[o.neden] && (
         <p className="kucuk" data-testid="oracle-neden">
-          {ORACLE_NEDENI[o.neden]}: değer çıkarma adımı model çağrısında hata aldı; tablo ile case karşılaştırılmadı.
+          {ORACLE_NEDENI[o.neden]}: {ORACLE_NEDENI_ACIKLAMA[o.neden] ?? "tablo ile case karşılaştırılmadı."}
         </p>
       )}
       {(satirlar.length > 0 || disarida.length > 0) && (
@@ -527,27 +546,63 @@ export function IstisnaFormu({
   );
 }
 
+/** "Tablo yanlış" etkisi: tablonun kabul kriterine atıf yapan, kontrolü süren (taslak/onaylı/yayınlı) case sayısı. */
+export function etkilenenCaseSayisi(tablo: KararTablosu, caseler: TestCase[]): number {
+  const refs = new Set(tablo.icerik.ac_refs.map(acAnahtari));
+  return caseler.filter(
+    (c) => c.requirement_id === tablo.requirement_id && ["draft", "approved", "published"].includes(c.durum) && c.icerik.acceptance_criteria_refs.some((r) => refs.has(acAnahtari(r))),
+  ).length;
+}
+
 /**
- * V10 "Tablo yanlış" yolu: case'i kapsayan onaylı tabloyu yeniden açar (taslağa döner, PO onayı yeniden
- * gerekir); case onaylanmaz. Tablo bağlamda bilinmiyorsa yalnız tabloya bağlantı verilir.
+ * V10 "Tablo yanlış" yolu (u2 N5): case'i kapsayan onaylı tabloyu yeniden açar (taslağa döner, PO onayı yeniden
+ * gerekir); case onaylanmaz. Önce etki onayı ("N case'in kontrolü durur") ve zorunlu gerekçe; gerekçe ve case
+ * tablonun geçmişine yazılır, PO tablo yeniden gelince görür. Tablo bağlamda bilinmiyorsa yalnız bağlantı verilir.
  */
 function TabloYanlisYolu({ tc }: { tc: TestCase }) {
   const { tablolar } = useContext(Baglam);
   const farkliTabloId = tc.oracle?.karsilastirmalar.find((k) => !k.uyumlu)?.tablo_id ?? null;
   const tablo =
     (tablolar ?? []).find((t) => t.id === farkliTabloId && t.durum === "approved") ?? (tablolar ? kapsayanTablolar(tc.icerik, tablolar)[0] : undefined) ?? null;
-  const [durum, setDurum] = useState<"bos" | "acildi" | "hata">("bos");
+  const [durum, setDurum] = useState<"bos" | "onay" | "acildi" | "hata">("bos");
   const [hata, setHata] = useState<string | null>(null);
   const [calisiyor, setCalisiyor] = useState(false);
+  const [etki, setEtki] = useState<number | null>(null);
+  const [gerekce, setGerekce] = useState("");
+  const [uyari, setUyari] = useState<string | null>(null);
+  const id = useId();
+  const alan = useRef<HTMLTextAreaElement | null>(null);
+  const acan = useRef<HTMLSpanElement | null>(null);
   const yolu = kararTablolariYolu(tc.requirement_id, tablo?.id ?? farkliTabloId);
-  async function yenidenAc() {
+  useEffect(() => {
+    if (durum !== "onay" || !tablo) return;
+    alan.current?.focus();
+    let iptal = false;
+    api.caseler(tc.requirement_id).then(
+      (l) => !iptal && setEtki(etkilenenCaseSayisi(tablo, l)),
+      () => !iptal && setEtki(null),
+    );
+    return () => {
+      iptal = true;
+    };
+  }, [durum, tablo, tc.requirement_id]);
+  async function yenidenAc(e: FormEvent) {
+    e.preventDefault();
     if (!tablo) return;
+    const g = gerekce.trim();
+    const sorun = gerekceSorunu(g);
+    if (sorun) {
+      setUyari(sorun.replace("Gerekçe", "Tablonun neden yanlış olduğu"));
+      alan.current?.focus();
+      return;
+    }
+    setUyari(null);
     setCalisiyor(true);
     try {
-      await api.kararTablosuGecis(tablo.id, "reopen", { icerik_hash: tablo.icerik_hash });
+      await api.kararTablosuGecis(tablo.id, "reopen", { icerik_hash: tablo.icerik_hash, gerekce: g, case_id: tc.id });
       setDurum("acildi");
-    } catch (e) {
-      setHata(e instanceof Error ? e.message : "Tablo yeniden açılamadı.");
+    } catch (err) {
+      setHata(err instanceof Error ? err.message : "Tablo yeniden açılamadı.");
       setDurum("hata");
     } finally {
       setCalisiyor(false);
@@ -561,11 +616,53 @@ function TabloYanlisYolu({ tc }: { tc: TestCase }) {
       </p>
       {durum === "acildi" ? (
         <p className="kucuk" role="status">
-          Tablo taslağa döndü. <Link to={yolu}>Tabloyu düzeltin ve PO onayına gönderin</Link>.
+          Tablo taslağa döndü; gerekçeniz tablonun geçmişine yazıldı. <Link to={yolu}>Tabloyu düzeltin ve PO onayına gönderin</Link>.
         </p>
+      ) : durum === "onay" && tablo ? (
+        <form className="ret-formu" onSubmit={(e) => void yenidenAc(e)} noValidate data-testid="tablo-yanlis-onay">
+          <p className="kucuk" role="status" data-testid="tablo-yanlis-etki">
+            <strong>
+              T{tablo.sira_no} yeniden açılırsa{" "}
+              {etki === null ? "bu tabloyla kontrol edilen case'lerin" : `${etki} case'in`} kontrolü durur
+            </strong>{" "}
+            (tablo yeniden PO onayından geçene dek kapsam dışı sayılırlar).
+          </p>
+          <div className="alan">
+            <label htmlFor={`${id}-gerekce`}>Tablo neden yanlış?</label>
+            <textarea
+              ref={alan}
+              id={`${id}-gerekce`}
+              rows={2}
+              value={gerekce}
+              aria-required="true"
+              aria-invalid={uyari ? true : undefined}
+              aria-describedby={`${id}-ipucu`}
+              onChange={(e) => setGerekce(e.target.value)}
+            />
+            <span id={`${id}-ipucu`} className="soluk kucuk">
+              En az {ISTISNA_EN_AZ} karakter. Gerekçe ve bu case tablonun geçmişine yazılır; PO tabloyu yeniden onaylarken görür.
+            </span>
+          </div>
+          {uyari && <AlanHatasi>{uyari}</AlanHatasi>}
+          <div className="eylemler">
+            <IslemDugmesi roller={["analyst"]} type="submit" kucuk tur="tehlike" calisiyor={calisiyor}>
+              Tabloyu yeniden aç
+            </IslemDugmesi>
+            <button
+              type="button"
+              className="dugme dugme-hayalet dugme-kucuk"
+              onClick={() => {
+                setDurum("bos");
+                requestAnimationFrame(() => acan.current?.querySelector("button")?.focus());
+              }}
+            >
+              Vazgeç
+            </button>
+          </div>
+        </form>
       ) : tablo ? (
-        <span className="satir-ogeler">
-          <IslemDugmesi roller={["analyst"]} kucuk tur="ikincil" calisiyor={calisiyor} onClick={() => void yenidenAc()}>
+        <span ref={acan} className="satir-ogeler">
+          <IslemDugmesi roller={["analyst"]} kucuk tur="ikincil" onClick={() => setDurum("onay")}>
             Tablo yanlış → tabloyu yeniden aç
           </IslemDugmesi>
           <Link className="kucuk" to={yolu}>
@@ -601,6 +698,13 @@ export function OracleKapisi({
 }) {
   const [acik, setAcik] = useState(false);
   const dugme = useRef<HTMLSpanElement | null>(null);
+  if (kapi.sakliIstisna) {
+    return (
+      <div className="oracle-kapi" data-testid="oracle-kapi" data-tur="sakli">
+        <SakliIstisnaNotu istisna={kapi.sakliIstisna} />
+      </div>
+    );
+  }
   if (kapi.uyari) {
     return (
       <div data-testid="oracle-uyari">
@@ -617,7 +721,8 @@ export function OracleKapisi({
   }
   if (!kapi.istisnaGerekli || !kapi.istisnaTuru) return null;
   const tur = kapi.istisnaTuru;
-  const metin = tur === "kontrolsuz" ? "Kontrol edilemedi, yine de onayla" : "Case doğru, istisnayla onayla";
+  const kismen = kapi.gorunum === "kismen";
+  const metin = tur === "kontrolsuz" ? (kismen ? "Değerleri elle doğruladım, onayla" : "Kontrol edilemedi, yine de onayla") : "Case doğru, istisnayla onayla";
   return (
     <div className="oracle-kapi" data-testid="oracle-kapi" data-tur={tur}>
       {acik ? (
@@ -639,12 +744,14 @@ export function OracleKapisi({
         </IslemDugmesi>
         <span className="soluk kucuk">
           {tur === "kontrolsuz"
-            ? "Değerleri elle doğruladıysanız gerekçe yazarak onaylayabilir ya da kontrolü yeniden isteyebilirsiniz."
+            ? kismen
+              ? `Doğrulanamayan değerler: ${kapi.kismenNedenleri.map(kismenNedeniMetni).join("; ") || "nedeni bildirilmedi"}. Elle doğruladıysanız gerekçe yazarak onaylayın.`
+              : "Değerleri elle doğruladıysanız gerekçe yazarak onaylayabilir ya da kontrolü yeniden isteyebilirsiniz."
             : "Uyuşmazlık bilinçliyse gerekçe yazarak onaylayabilir ya da “Düzelt” ile değeri tabloya getirebilirsiniz."}
         </span>
       </span>
       {tc && !acik && tur === "uyumsuz" && <TabloYanlisYolu tc={tc} />}
-      {tc && !acik && tur === "kontrolsuz" && <KontrolYenidenIste tc={tc} />}
+      {tc && !acik && tur === "kontrolsuz" && !kismen && <KontrolYenidenIste tc={tc} />}
     </div>
   );
 }
@@ -657,7 +764,7 @@ export const ON_KONTROL = { araMs: 1000, zamanAsimiMs: 20000 };
 type OnKontrolDurumu =
   | { asama: "bos" }
   | { asama: "bekliyor" }
-  | { asama: "engel"; oracle: CaseOracle; icerik: TestCaseIcerik; anlam: boolean | undefined; tur: OracleIstisnaTuru }
+  | { asama: "engel"; oracle: CaseOracle; icerik: TestCaseIcerik; anlam: boolean | undefined; tur: OracleIstisnaTuru; damga?: string }
   | { asama: "zaman_asimi"; icerik: TestCaseIcerik; anlam: boolean | undefined }
   | { asama: "hata"; mesaj: string };
 
@@ -684,7 +791,7 @@ export interface DuzeltmeOnKontrolu {
  */
 export function useDuzeltmeOnKontrolu(
   tc: TestCase,
-  karar: (icerik: TestCaseIcerik, beklenenAnlamDegisti: boolean | undefined, istisnaGerekce?: string, istisnaTuru?: OracleIstisnaTuru) => void,
+  karar: (icerik: TestCaseIcerik, beklenenAnlamDegisti: boolean | undefined, istisnaGerekce?: string, istisnaTuru?: OracleIstisnaTuru, damga?: string) => void,
 ): DuzeltmeOnKontrolu {
   const { tablolar } = useContext(Baglam);
   const [durum, setDurum] = useState<OnKontrolDurumu>({ asama: "bos" });
@@ -749,13 +856,17 @@ export function useDuzeltmeOnKontrolu(
         uyandir.current = null;
         if (benim !== kosu.current) return;
         if (!oracle) return setDurum({ asama: "zaman_asimi", icerik, anlam });
-        // S1 + K10 + V11: yüksek riskte uyuşmazlık ya da kontrol edilemedi → gerekçe (saklı istisna açmaz).
+        // K10 + V11 + tur 2: yüksek riskte uyuşmazlık, kontrol edilemedi ya da gerekçe isteyen kısmen → gerekçe;
+        // aynı tür + içerik + tablo kümesiyle geçerli saklı istisna varsa gerekçe istenmez (S1).
+        const damga = oracle.damga ?? undefined;
         if (yuksekRisk(tc, icerik)) {
-          if (oracle.sonuc === "uyumsuz") return setDurum({ asama: "engel", oracle, icerik, anlam, tur: "uyumsuz" });
-          if (oracle.sonuc === "kontrol_edilemedi") return setDurum({ asama: "engel", oracle, icerik, anlam, tur: "kontrolsuz" });
+          const tur: OracleIstisnaTuru | null =
+            oracle.sonuc === "uyumsuz" ? "uyumsuz" : oracle.sonuc === "kontrol_edilemedi" || (oracle.sonuc === "kismen" && kismenGerekceIster(oracle)) ? "kontrolsuz" : null;
+          const sakli = oracle.istisna?.gecerli === true && (oracle.istisna.tur ?? tur) === tur;
+          if (tur && !sakli) return setDurum({ asama: "engel", oracle, icerik, anlam, tur, ...(damga ? { damga } : {}) });
         }
         setDurum({ asama: "bos" });
-        kararRef.current(icerik, anlam);
+        kararRef.current(icerik, anlam, undefined, undefined, damga);
       })();
     },
     [tablolar, tc],
@@ -766,7 +877,7 @@ export function useDuzeltmeOnKontrolu(
     bekliyor: durum.asama === "bekliyor",
     gonder,
     istisnaylaGonder: (gerekce) => {
-      if (durum.asama === "engel") kararRef.current(durum.icerik, durum.anlam, gerekce, durum.tur);
+      if (durum.asama === "engel") kararRef.current(durum.icerik, durum.anlam, gerekce, durum.tur, durum.damga);
     },
     yenidenDene: () => {
       if (durum.asama === "zaman_asimi") gonder(durum.icerik, durum.anlam);

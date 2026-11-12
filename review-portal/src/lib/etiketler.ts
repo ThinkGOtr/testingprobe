@@ -302,7 +302,15 @@ export const TURETME_ATLAMA: Record<TuretmeAtlamaSonucu, string> = {
 };
 
 /** Kontrol sonucunun nedeni (§13.2 `oracle.neden`); bilinmeyen kod gösterilmez. */
-export const ORACLE_NEDENI: Record<string, string> = { cagri_hatasi: "Kontrol yapılamadı (model hatası)" };
+export const ORACLE_NEDENI: Record<string, string> = {
+  cagri_hatasi: "Kontrol yapılamadı (model hatası)",
+  replay_miss: "Kayıtlı yanıt yok (REPLAY)",
+};
+/** Nedenin açıklama cümlesi (karşılaştırma ayrıntısında). */
+export const ORACLE_NEDENI_ACIKLAMA: Record<string, string> = {
+  cagri_hatasi: "değer çıkarma adımı model çağrısında hata aldı; tablo ile case karşılaştırılmadı.",
+  replay_miss: "bu case metni için kayıtlı (REPLAY) model yanıtı yok — metin kayıttaki golden'la birebir değil; tablo ile case karşılaştırılmadı.",
+};
 
 /** Tur 2: `kismen` sonucun nedenleri, düz Türkçe (bilinmeyen kod aynen gösterilir). */
 export const KISMEN_NEDENI: Record<string, string> = {

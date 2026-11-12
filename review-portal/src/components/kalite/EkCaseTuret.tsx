@@ -1,6 +1,7 @@
 // 012 Ş7 — "Ek case türet" (ANALIZ §4.5): onaylı ilişki + isteğe bağlı kaynak case'ler →
 // `POST /requirements/{id}/metamorphic-cases` → türetilen (bağlantılı) ve atlanan (nedenli) liste.
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../../api/client";
 import type { MetamorfikIliski, MetamorfikTuretme, TestCase, TuretmeAtlamaSonucu, TuretmeYaniti } from "../../api/types";
 import { tarih } from "../../lib/format";
@@ -24,14 +25,24 @@ export function EkCaseTuret({
   turetildi: () => void;
 }) {
   const uygun = iliskiler.filter((r) => r.durum === "approved" && !r.bayat);
-  const [iliskiId, setIliskiId] = useState("");
-  const [secili, setSecili] = useState<string[]>([]);
+  // u2 N7: Kule'deki kaçan hatadan gelen bağlantı ilişkiyi, kaynak case'i ve türetilecek girdiyi taşır.
+  const [parametreler] = useSearchParams();
+  const pIliski = parametreler.get("iliski") ?? "";
+  const pKaynak = parametreler.get("kaynak");
+  const pGirdi = parametreler.get("girdi");
+  const [iliskiId, setIliskiId] = useState(pIliski);
+  const [secili, setSecili] = useState<string[]>(pKaynak ? [pKaynak] : []);
   const [sonuc, setSonuc] = useState<TuretmeYaniti | null>(null);
   const islem = useIslem();
   const id = useId();
   const sonucRef = useRef<HTMLDivElement | null>(null);
   const secilen = uygun.find((r) => r.id === iliskiId) ?? uygun[0];
-  const kaynaklar = caseler.filter((c) => ONAYLI_CASE.has(c.durum));
+  // u2 N12: kaynak listesi seçili ilişkinin kabul kriterine atıf yapan onaylı case'lerle süzülür.
+  const iliskiRefleri = new Set((secilen?.icerik.ac_refs ?? []).map((r) => r.replace(/\s/g, "").toUpperCase()));
+  const kaynaklar = caseler.filter(
+    (c) => ONAYLI_CASE.has(c.durum) && (!secilen || c.icerik.acceptance_criteria_refs.some((r) => iliskiRefleri.has(r.replace(/\s/g, "").toUpperCase()))),
+  );
+  const kaynakCase = pKaynak ? caseler.find((c) => c.id === pKaynak) : undefined;
   const baslik = (cid: string) => caseler.find((c) => c.id === cid)?.icerik.title ?? cid;
 
   async function turet(e: FormEvent) {
@@ -52,10 +63,31 @@ export function EkCaseTuret({
         Onaylı ilişki, kaynak case'in doğrulanmış değerlerinden yeni girdi ve beklenen değer hesaplar. Türetilen case taslak olarak yazılır; insan onayından ve
         beklenen sonuç kontrolünden geçer. Aynı kaynak ve ilişki ikinci kez türetilmez.
       </p>
+      {pKaynak && secilen?.id === pIliski && (
+        <p className="kucuk turet-onizleme" data-testid="turet-onizleme">
+          Kaçan hata için hazırlandı: <strong>İ{secilen.sira_no}</strong> ilişkisi, kaynak{" "}
+          <strong>{kaynakCase ? `C${kaynakCase.sira_no}` : pKaynak}</strong>
+          {pGirdi && (
+            <>
+              {" "}
+              · türetilecek girdi: <strong className="mono">{pGirdi}</strong>
+            </>
+          )}
+          . Kontrol edip “Ek case türet”e basın.
+        </p>
+      )}
       <form onSubmit={turet} noValidate>
         <div className="alan">
           <label htmlFor={`${id}-iliski`}>İlişki</label>
-          <select id={`${id}-iliski`} value={secilen?.id ?? ""} disabled={uygun.length === 0} onChange={(e) => setIliskiId(e.target.value)}>
+          <select
+            id={`${id}-iliski`}
+            value={secilen?.id ?? ""}
+            disabled={uygun.length === 0}
+            onChange={(e) => {
+              setIliskiId(e.target.value);
+              setSecili([]);
+            }}
+          >
             {uygun.length === 0 && <option value="">Onaylı ilişki yok</option>}
             {uygun.map((r) => (
               <option key={r.id} value={r.id}>
@@ -67,10 +99,10 @@ export function EkCaseTuret({
         <fieldset>
           <legend>Kaynak case'ler (isteğe bağlı)</legend>
           <p id={`${id}-kaynak-ipucu`} className="soluk kucuk">
-            Seçilmezse ilişkinin kabul kriterine atıf yapan onaylı case'ler kullanılır.
+            Seçilmezse ilişkinin kabul kriterine ({[...iliskiRefleri].join(", ") || "—"}) atıf yapan onaylı case'ler kullanılır; liste yalnız onları gösterir.
           </p>
           {kaynaklar.length === 0 ? (
-            <p className="soluk kucuk">Onaylı case yok.</p>
+            <p className="soluk kucuk">Bu ilişkinin kabul kriterine atıf yapan onaylı case yok.</p>
           ) : (
             <div className="turet-kaynaklar">
               {kaynaklar.map((c) => (

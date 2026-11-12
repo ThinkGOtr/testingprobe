@@ -8,7 +8,7 @@ import { CASE_DURUMU, CASE_TURU, RET_NEDENI, RISK } from "../lib/etiketler";
 import { sure, tarih } from "../lib/format";
 import { FarkGorunumu } from "./FarkGorunumu";
 import { AlanHatasi, Cip, IslemDugmesi, ReplayRozeti } from "./ui";
-import { DuzeltmeOnKontrolPaneli, OracleAyrinti, OracleCipi, OracleKapisi, oracleHatasindaYenile, TuretmeCipi, useDuzeltmeOnKontrolu, useOracleKapisi } from "./kalite/oracle";
+import { damgaAlani, DuzeltmeOnKontrolPaneli, OracleAyrinti, OracleCipi, OracleKapisi, oracleHatasindaYenile, TuretmeCipi, useDuzeltmeOnKontrolu, useOracleKapisi } from "./kalite/oracle";
 
 type Mod = "goster" | "duzenle" | "reddet";
 
@@ -101,14 +101,16 @@ export function CaseKarti({
 
   // 012 (ANALIZ §4.3): beklenen sonuç kontrolü kapısı ve düzeltme ön kontrolü.
   const kapi = useOracleKapisi(tc);
-  const onKontrol = useDuzeltmeOnKontrolu(tc, (icerik, beklenenAnlamDegisti, istisnaGerekce, istisnaTuru) =>
+  const onKontrol = useDuzeltmeOnKontrolu(tc, (icerik, beklenenAnlamDegisti, istisnaGerekce, istisnaTuru, damga) =>
     karar(() =>
       api.caseKarari(tc.id, {
         ...bag,
         karar: "edit",
         icerik,
         ...(beklenenAnlamDegisti !== undefined ? { beklenen_anlam_degisti: beklenenAnlamDegisti } : {}),
-        ...(istisnaGerekce ? { oracle_istisna_gerekce: istisnaGerekce, ...(istisnaTuru ? { oracle_istisna_turu: istisnaTuru } : {}) } : {}),
+        // Tur 2 (Y9): gerekçe verilince tür her zaman gönderilir; karar görülen kontrol kaydının damgasını taşır.
+        ...(istisnaGerekce && istisnaTuru ? { oracle_istisna_gerekce: istisnaGerekce, oracle_istisna_turu: istisnaTuru } : {}),
+        ...(damga ? { oracle_kayit_damgasi: damga } : {}),
       }),
     ),
   );
@@ -206,7 +208,14 @@ export function CaseKarti({
 
       <footer className="case-alt">
         <span className="soluk kucuk">
-          {tc.mode === "replay" || tc.mode === "replay_miss" ? "AI: REPLAY — ölçülmedi" : `AI ${sure(tc.ai_sure_ms)}`}
+          {/* u2 N11: AI çıktısı olmayan case'te (ilişkiden türetilen, elle) "AI 0 ms" yazılmaz. */}
+          {!tc.ai_generated
+            ? tc.icerik.tags?.includes("metamorfik")
+              ? "İlişkiden türetildi (model çağrısı yok)"
+              : "Elle yazıldı (model çağrısı yok)"
+            : tc.mode === "replay" || tc.mode === "replay_miss"
+              ? "AI: REPLAY — ölçülmedi"
+              : `AI ${sure(tc.ai_sure_ms)}`}
           {tc.review_sure_ms !== null && ` · review ${sure(tc.review_sure_ms)}`}
           {tc.karar_veren && ` · ${kisiAdi(tc.karar_veren)}, ${tarih(tc.karar_zamani)}`}
           {tc.durum === "draft" && tc.karar && ` · taslağa alındı (önceki karar: ${KARAR_ADI[tc.karar]})`}
@@ -224,7 +233,7 @@ export function CaseKarti({
               disabled={!verilebilir("approve") || !!kapi.engel}
               title={gecisYokNedeni("approve") ?? kapi.engel ?? undefined}
               calisiyor={islem.calisiyor}
-              onClick={() => karar(() => api.caseKarari(tc.id, { ...bag, karar: "approve" }))}
+              onClick={() => karar(() => api.caseKarari(tc.id, { ...bag, karar: "approve", ...damgaAlani(tc.oracle) }))}
             >
               Onayla
             </IslemDugmesi>
@@ -256,7 +265,9 @@ export function CaseKarti({
           kapi={kapi}
           tc={tc}
           calisiyor={islem.calisiyor}
-          onayla={(gerekce, tur) => karar(() => api.caseKarari(tc.id, { ...bag, karar: "approve", oracle_istisna_gerekce: gerekce, oracle_istisna_turu: tur }))}
+          onayla={(gerekce, tur) =>
+            karar(() => api.caseKarari(tc.id, { ...bag, karar: "approve", oracle_istisna_gerekce: gerekce, oracle_istisna_turu: tur, ...damgaAlani(tc.oracle) }))
+          }
         />
       )}
       {mod === "goster" && kararVerildi && (

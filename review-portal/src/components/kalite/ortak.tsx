@@ -2,7 +2,8 @@
 // hatalarının alanlara dağıtımı, durum geçişi düğmeleri (ANALIZ §4.1 makinesi).
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ApiError } from "../../api/http";
-import type { KaliteGecisGirdisi, KaliteGecisi, KararTablosu, MetamorfikIliski } from "../../api/types";
+import { Link } from "react-router-dom";
+import type { KaliteGecisGirdisi, KaliteGecisi, KaliteSonKarar, KararTablosu, MetamorfikIliski } from "../../api/types";
 import { useKisiAdi } from "../../auth";
 import { useIslem } from "../../hooks";
 import { KARAR_TABLOSU_DURUMU } from "../../lib/etiketler";
@@ -53,6 +54,61 @@ export function KayitCipleri({ k }: { k: Kayit }) {
   );
 }
 
+const GECMIS_EYLEMI: Record<string, string> = {
+  submit: "PO onayına gönderdi",
+  withdraw: "Geri çekti",
+  reopen: "Yeniden açtı",
+  approve: "PO olarak onayladı",
+  request_changes: "Değişiklik istedi",
+  duzenle: "İçeriği düzenledi",
+};
+
+/** u2 N5: kaydın geçiş geçmişi (gerekçeler ve "Tablo yanlış" bildirimleri dahil); çekirdek vermezse çizilmez. */
+export function KayitGecmisi({ k }: { k: Kayit }) {
+  const kisiAdi = useKisiAdi();
+  if (!k.gecmis?.length) return null;
+  return (
+    <details className="kt-gecmis" data-testid="kt-gecmis">
+      <summary className="kucuk">Geçmiş ({k.gecmis.length})</summary>
+      <ol className="duz-liste kucuk">
+        {[...k.gecmis].reverse().map((g, i) => (
+          <li key={`${g.zaman ?? ""}-${i}`}>
+            <span className="soluk">{g.zaman ? tarih(g.zaman) : "zaman bildirilmedi"}</span> · {g.kullanici ? kisiAdi(g.kullanici) : "kişi bildirilmedi"}:{" "}
+            {GECMIS_EYLEMI[g.karar] ?? g.karar}
+            {g.karar === "reopen" && g.case_id && " (Tablo yanlış bildirimi)"}
+            {g.gerekce && <> — “{g.gerekce}”</>}
+            {g.icerik_hash && <span className="mono soluk"> · {kisaHash(g.icerik_hash)}</span>}
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
+/** u2 N5: "Tablo yanlış" yoluyla yeniden açılma notu — PO, tablo yeniden gelince nedenini görür. */
+function TabloYanlisNotu({ k, karar }: { k: Kayit; karar: KaliteSonKarar }) {
+  const kisiAdi = useKisiAdi();
+  return (
+    <div data-testid="kt-tablo-yanlis-notu">
+      <Uyari baslik="Tablo yanlış bildirildi (case incelemesinden yeniden açıldı)">
+        “{karar.gerekce}”
+        <span className="soluk kucuk">
+          {karar.kullanici && ` · ${kisiAdi(karar.kullanici)}`}
+          {karar.zaman && `, ${tarih(karar.zaman)}`}
+        </span>
+        {karar.case_id && (
+          <>
+            {" "}
+            <Link className="kucuk" to={`/gereksinimler/${encodeURIComponent(k.requirement_id)}/caseler#case-${encodeURIComponent(karar.case_id)}`}>
+              Bildiren case'i aç
+            </Link>
+          </>
+        )}
+      </Uyari>
+    </div>
+  );
+}
+
 /** Onay bilgisi (yalnız PO onayından sonra), bayat ve "değişiklik istendi" notları. */
 export function KayitNotlari({ k, ad }: { k: Kayit; ad: "Tablo" | "İlişki" }) {
   const kisiAdi = useKisiAdi();
@@ -76,6 +132,7 @@ export function KayitNotlari({ k, ad }: { k: Kayit; ad: "Tablo" | "İlişki" }) 
           Gereksinim bu onaydan sonra değişti. {ad} beklenen sonuç kontrolünde kullanılmaz; yeniden açıp gözden geçirin ve PO onayına gönderin.
         </Uyari>
       )}
+      {(k.durum === "draft" || k.durum === "pending_po") && k.son_karar?.karar === "reopen" && k.son_karar.gerekce && <TabloYanlisNotu k={k} karar={k.son_karar} />}
       {k.durum === "draft" && k.son_karar?.karar === "request_changes" && (
         <Uyari baslik="PO değişiklik istedi">
           {k.son_karar.gerekce ?? "Gerekçe bildirilmedi."}
@@ -85,6 +142,7 @@ export function KayitNotlari({ k, ad }: { k: Kayit; ad: "Tablo" | "İlişki" }) 
           </span>
         </Uyari>
       )}
+      <KayitGecmisi k={k} />
     </>
   );
 }
@@ -177,10 +235,17 @@ export function DurumEylemleri<T extends Kayit>({
   // PO'nun gözden geçirdiği içerik: kart PO onayı beklerken ilk görülen hash sabitlenir. Sessiz yenileme
   // içeriği değiştirirse onay o anki hash'le gönderilmez; uyarı gösterilir ve yeniden gözden geçirme istenir.
   const [gorulenHash, setGorulenHash] = useState<string | null>(kayit.durum === "pending_po" ? kayit.icerik_hash : null);
+  // u2 N9: sabitlenen hash'in içeriği — değişince PO neyin değiştiğini satır satır görür.
+  const [gorulenIcerik, setGorulenIcerik] = useState<unknown>(kayit.durum === "pending_po" ? kayit.icerik : null);
   useEffect(() => {
-    if (kayit.durum !== "pending_po") setGorulenHash(null);
-    else setGorulenHash((h) => h ?? kayit.icerik_hash);
-  }, [kayit.durum, kayit.icerik_hash]);
+    if (kayit.durum !== "pending_po") {
+      setGorulenHash(null);
+      setGorulenIcerik(null);
+    } else {
+      setGorulenHash((h) => h ?? kayit.icerik_hash);
+      setGorulenIcerik((i: unknown) => i ?? kayit.icerik);
+    }
+  }, [kayit.durum, kayit.icerik_hash, kayit.icerik]);
   const icerikDegisti = kayit.durum === "pending_po" && gorulenHash !== null && gorulenHash !== kayit.icerik_hash;
   useEffect(() => {
     if (istekAcik) alan.current?.focus();
@@ -221,12 +286,14 @@ export function DurumEylemleri<T extends Kayit>({
       {icerikDegisti && (
         <div data-testid="kt-icerik-degisti">
           <Uyari baslik="İçerik siz bakarken değişti — yeniden gözden geçirin">
-            Analist bu kaydı siz incelerken değiştirdi. Onay, gördüğünüz eski içerik için gönderilmez.{" "}
+            Analist bu kaydı siz incelerken değiştirdi. Onay, gördüğünüz eski içerik için gönderilmez.
+            <IcerikFarki eski={gorulenIcerik} yeni={kayit.icerik} />
             <button
               type="button"
               className="dugme dugme-ikincil dugme-kucuk"
               onClick={() => {
                 setGorulenHash(kayit.icerik_hash);
+                setGorulenIcerik(kayit.icerik);
                 setDuyuru("Güncel içerik gözden geçirildi olarak işaretlendi.");
               }}
             >
@@ -410,5 +477,79 @@ export function SiraDugmeleri({
         Kaldır
       </button>
     </span>
+  );
+}
+
+// ------------------------------------------------------------------ içerik farkı (u2 N9)
+
+type Duz = Record<string, string>;
+
+/** İçeriği okunur yollara açar: dizi öğeleri `id`/`ad` ile anahtarlanır ("Satır R2 · koşul", "Çıktı indirim · tolerans"). */
+export function icerigiDuzlestir(x: unknown, onek = "", cikti: Duz = {}): Duz {
+  const ADLAR: Record<string, string> = {
+    satirlar: "Satır",
+    girdiler: "Girdi",
+    ciktilar: "Çıktı",
+    kosul: "koşul",
+    cikti: "çıktı",
+    ad: "ad",
+    tur: "tür",
+    birim: "birim",
+    tolerans: "tolerans",
+    aciklama: "açıklama",
+    ac_refs: "kabul kriterleri",
+    on_kosul: "ön koşul",
+    donusum: "dönüşüm",
+    iliski: "ilişki",
+    degismez: "değişmez",
+    tablo_ref: "tablo",
+  };
+  if (Array.isArray(x)) {
+    if (x.every((o) => typeof o !== "object" || o === null)) {
+      cikti[onek] = x.join(", ");
+      return cikti;
+    }
+    x.forEach((o, i) => {
+      const r = o as Record<string, unknown>;
+      const anahtar = typeof r.id === "string" ? r.id : typeof r.ad === "string" ? r.ad : String(i + 1);
+      const { id: _id, ...kalan } = r;
+      void _id;
+      icerigiDuzlestir(kalan, `${onek} ${anahtar}`, cikti);
+    });
+    return cikti;
+  }
+  if (x && typeof x === "object") {
+    for (const [k, v] of Object.entries(x as Record<string, unknown>)) {
+      const ad = ADLAR[k] ?? k;
+      icerigiDuzlestir(v, onek ? (Array.isArray(v) && ad[0] === ad[0].toUpperCase() ? ad : `${onek} · ${ad}`) : ad, cikti);
+    }
+    return cikti;
+  }
+  cikti[onek] = x === null || x === undefined ? "" : String(x);
+  return cikti;
+}
+
+/** Görülen ve güncel içerik arasındaki fark satırları. */
+export function icerikFarklari(eski: unknown, yeni: unknown): { yol: string; once: string | null; sonra: string | null }[] {
+  const a = icerigiDuzlestir(eski);
+  const b = icerigiDuzlestir(yeni);
+  return [...new Set([...Object.keys(a), ...Object.keys(b)])]
+    .filter((k) => a[k] !== b[k])
+    .map((k) => ({ yol: k, once: k in a ? a[k] : null, sonra: k in b ? b[k] : null }));
+}
+
+export function IcerikFarki({ eski, yeni }: { eski: unknown; yeni: unknown }) {
+  if (!eski) return null;
+  const f = icerikFarklari(eski, yeni);
+  if (f.length === 0) return null;
+  return (
+    <ul className="duz-liste kt-fark" data-testid="kt-icerik-farki" aria-label="Gördüğünüz içerikten bu yana değişenler">
+      {f.map((x) => (
+        <li key={x.yol} className="kucuk">
+          <strong>{x.yol}:</strong> {x.once !== null ? <del className="mono">{x.once || "(boş)"}</del> : <span className="soluk">(yoktu)</span>} →{" "}
+          {x.sonra !== null ? <ins className="mono">{x.sonra || "(boş)"}</ins> : <span className="soluk">(kaldırıldı)</span>}
+        </li>
+      ))}
+    </ul>
   );
 }
