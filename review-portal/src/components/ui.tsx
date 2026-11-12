@@ -1,8 +1,8 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode, type RefObject } from "react";
-import { Link } from "react-router-dom";
+import { Link, type LinkProps } from "react-router-dom";
 import { buFazdaYok } from "../api/http";
 import type { CiktiModu, Degerlendirme } from "../api/types";
-import { useIzin } from "../auth";
+import { useIzin, useRotaIzni } from "../auth";
 import { type Ton } from "../lib/etiketler";
 import { izinNedeni, type Izin } from "../lib/yetki";
 import { baglantiTuru } from "../lib/rotalar";
@@ -376,6 +376,19 @@ export function DisBaglanti({ href, children }: { href: string; children: ReactN
 }
 
 /**
+ * Korumalı rotaya bağlantı: oturum adresin rotasının iznine (`ROTA_IZINLERI`) sahipse `Link`,
+ * değilse düz metin (izinsiz rol "yetkiniz yok" kartına götürülmez). Korumasız adres hep bağlantıdır.
+ */
+export function IzinliLink({ to, children, ...geri }: { to: string; children: ReactNode } & Omit<LinkProps, "to">) {
+  if (!useRotaIzni(to)) return <span className={geri.className}>{children}</span>;
+  return (
+    <Link to={to} {...geri}>
+      {children}
+    </Link>
+  );
+}
+
+/**
  * Adresin türüne göre bağlantı: dış adres yeni sekmede, portal ekranı uygulama içinde açılır.
  * Adres yoksa ya da portalın sunmadığı bir yolsa (ör. artifact sunucusu, forge) tıklanamaz metin
  * olarak gösterilir ve nedeni yazılır — "Sayfa bulunamadı"ya giden ölü bağlantı üretilmez.
@@ -383,7 +396,7 @@ export function DisBaglanti({ href, children }: { href: string; children: ReactN
 export function Baglanti({ href, children, yokNedeni }: { href: string | null | undefined; children: ReactNode; yokNedeni?: string }) {
   const tur = baglantiTuru(href);
   if (tur === "dis" && href) return <DisBaglanti href={href}>{children}</DisBaglanti>;
-  if (tur === "ic" && href) return <Link to={href}>{children}</Link>;
+  if (tur === "ic" && href) return <IzinliLink to={href}>{children}</IzinliLink>;
   return (
     <span className="baglanti-yok">
       {children}

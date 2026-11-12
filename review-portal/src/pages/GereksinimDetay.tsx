@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useId, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { ApiError } from "../api/http";
@@ -538,8 +538,58 @@ export function caseUretHatasi(e: unknown): never {
 /** Jira kaynaklı story'de PO onayı yalnız Jira'dan verilir (ANALIZ 012 K6); portalda düğme yoktur. */
 export const PO_ONAYI_JIRADA = "PO onayı Jira'da: story'ye tp-po-approved etiketi konur. Portalda PO onay düğmesi yoktur.";
 
+/** PO "Geri çevir" (serbest metin, T04): gerekçe zorunlu, en çok 2000 karakter. */
+function PoRetFormu({ gonder, vazgec, calisiyor }: { gonder: (gerekce: string) => void; vazgec: () => void; calisiyor: boolean }) {
+  const [gerekce, setGerekce] = useState("");
+  const [uyari, setUyari] = useState<string | null>(null);
+  const id = useId();
+  return (
+    <form
+      className="ret-formu"
+      data-testid="po-ret-formu"
+      noValidate
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!gerekce.trim()) return setUyari("Geri çevirme gerekçesi zorunludur.");
+        setUyari(null);
+        gonder(gerekce.trim());
+      }}
+    >
+      <div className="alan">
+        <label htmlFor={`${id}-gerekce`}>Geri çevirme gerekçesi</label>
+        <textarea
+          id={`${id}-gerekce`}
+          value={gerekce}
+          maxLength={2000}
+          rows={3}
+          required
+          aria-required="true"
+          aria-invalid={uyari ? true : undefined}
+          aria-describedby={uyari ? `${id}-uyari` : undefined}
+          placeholder="Analistin neyi değiştirmesi gerekiyor?"
+          onChange={(e) => setGerekce(e.target.value)}
+        />
+      </div>
+      {uyari && (
+        <p id={`${id}-uyari`} className="hata-metin kucuk" role="alert">
+          {uyari}
+        </p>
+      )}
+      <div className="eylemler">
+        <IslemDugmesi izin="requirement.po_reject_free_text" type="submit" tur="tehlike" calisiyor={calisiyor}>
+          Geri çevir
+        </IslemDugmesi>
+        <button type="button" className="dugme dugme-hayalet" onClick={vazgec}>
+          Vazgeç
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function PoKarti({ g, yenile }: { g: Detay; yenile: () => void }) {
   const islem = useIslem();
+  const [retAcik, setRetAcik] = useState(false);
   const bildir = useBildirim();
   const po = g.po;
   // Serbest metin gereksinimin Jira story'si yok: PO teyidi portalda (`requirement.po_approve_free_text`).
@@ -587,6 +637,7 @@ function PoKarti({ g, yenile }: { g: Detay; yenile: () => void }) {
             </p>
           )}
           {serbest && (
+            <div className="eylemler">
             <IslemDugmesi
               izin="requirement.po_approve_free_text"
               calisiyor={islem.calisiyor}
@@ -601,6 +652,26 @@ function PoKarti({ g, yenile }: { g: Detay; yenile: () => void }) {
             >
               PO olarak onayla
             </IslemDugmesi>
+            {!retAcik && (
+              <IslemDugmesi izin="requirement.po_reject_free_text" tur="ikincil" onClick={() => setRetAcik(true)}>
+                Geri çevir
+              </IslemDugmesi>
+            )}
+            </div>
+          )}
+          {serbest && retAcik && (
+            <PoRetFormu
+              calisiyor={islem.calisiyor}
+              vazgec={() => setRetAcik(false)}
+              gonder={async (gerekce) => {
+                const s = await islem.calistir(() => api.poReddet(g, gerekce), { cakismada: yenile });
+                if (s) {
+                  setRetAcik(false);
+                  bildir("Gereksinim PO tarafından geri çevrildi.");
+                  yenile();
+                }
+              }}
+            />
           )}
           {islem.hata && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
         </>

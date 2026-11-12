@@ -26,6 +26,7 @@ import type {
   SonHata,
   SonKontrol,
   TestAdimi,
+  SonOnay,
   TestCase,
   TestCaseIcerik,
   YayinOnizleme,
@@ -401,11 +402,35 @@ export function caseIcerikUyarla(x: unknown): TestCaseIcerik {
 }
 
 const CASE_KARARLARI = new Set(["accept", "edit", "reject", "reopen", "approve", "send_back"]);
-const TESTCI_KARARLARI = new Set(["accept", "edit", "reject"]);
+// `approve`: 012 öncesi kayıtta Testçi kabulü olmadan verilen onay (core testci_kararlari, eski).
+const TESTCI_KARARLARI = new Set(["accept", "edit", "reject", "approve"]);
+
+/** core `son_onay` → `{karar, veren, zaman, gerekce}`; geçersizse null. */
+export function sonOnayUyarla(x: unknown): SonOnay | null {
+  if (!nesneMi(x)) return null;
+  const karar = metin(x.karar);
+  if (karar !== "approve" && karar !== "send_back") return null;
+  return { karar, veren: metinYaDaNull(x.veren), zaman: metinYaDaNull(x.zaman), gerekce: metinYaDaNull(x.gerekce) };
+}
 
 export function caseUyarla(c: Ham): TestCase {
   const karar = metin(ilk(c, "karar", "son_karar"));
   const testciKarari = metin(ilk(c, "testci_karari", "tester_karar"));
+  const sonOnay = c.son_onay !== undefined ? sonOnayUyarla(c.son_onay) : undefined;
+  // Son onay alanları core `son_onay`'dan; eski/örnek yanıtın düz alanları yalnız `son_onay` yoksa.
+  const onay =
+    sonOnay !== undefined
+      ? {
+          son_onay: sonOnay,
+          gerekce: sonOnay?.karar === "send_back" ? sonOnay.gerekce : null,
+          onaylayan: sonOnay?.karar === "approve" ? sonOnay.veren : null,
+          onay_zamani: sonOnay?.karar === "approve" ? sonOnay.zaman : null,
+        }
+      : {
+          ...(c.gerekce !== undefined ? { gerekce: metinYaDaNull(c.gerekce) } : {}),
+          ...(c.onaylayan !== undefined ? { onaylayan: metinYaDaNull(c.onaylayan) } : {}),
+          ...(c.onay_zamani !== undefined ? { onay_zamani: metinYaDaNull(c.onay_zamani) } : {}),
+        };
   return {
     id: kimlik(c.id),
     requirement_id: kimlik(c.requirement_id),
@@ -416,10 +441,10 @@ export function caseUyarla(c: Ham): TestCase {
     icerik: caseIcerikUyarla(c.icerik),
     durum: metin(c.durum, "draft") as CaseDurumu,
     karar: CASE_KARARLARI.has(karar) ? (karar as TestCase["karar"]) : null,
-    ...(c.gerekce !== undefined ? { gerekce: metinYaDaNull(c.gerekce) } : {}),
+    ...onay,
     ...(TESTCI_KARARLARI.has(testciKarari) ? { testci_karari: testciKarari as NonNullable<TestCase["testci_karari"]> } : {}),
-    ...(c.onaylayan !== undefined ? { onaylayan: metinYaDaNull(c.onaylayan) } : {}),
-    ...(c.onay_zamani !== undefined ? { onay_zamani: metinYaDaNull(c.onay_zamani) } : {}),
+    ...(c.testci !== undefined ? { testci: metinYaDaNull(c.testci) } : {}),
+    ...(c.kisitli === true ? { kisitli: true } : {}),
     ret_nedeni: (metinYaDaNull(c.ret_nedeni) as RetNedeni | null),
     karar_veren: metinYaDaNull(c.karar_veren),
     karar_zamani: metinYaDaNull(c.karar_zamani),

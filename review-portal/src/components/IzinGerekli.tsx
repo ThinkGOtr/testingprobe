@@ -25,3 +25,4 @@ export function IzinGerekli({ izin, children }: { izin: Izin | readonly Izin[]; 
   }
   return <>{children}</>;
 }
+

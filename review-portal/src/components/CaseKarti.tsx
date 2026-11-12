@@ -20,14 +20,25 @@ const KARAR_ADI: Record<string, string> = {
   reopen: "taslağa alma",
 };
 
-/** Karar sonrası durum notu (ANALIZ 012 §5). */
-const DURUM_NOTU: Partial<Record<TestCase["durum"], string>> = {
-  ready: "Testçi kabul etti; Analist son onayı bekleniyor. Değiştirmek için taslağa alın.",
-  approved: "Analist onayladı. Değiştirmek için taslağa alın; onay düşer ve yeniden karar gerekir.",
-  rejected: "Reddedildi. Yeniden değerlendirmek için taslağa alın.",
-};
+/**
+ * Karar sonrası durum notu (ANALIZ 012 §5). "Taslağa al" Testçinin işlemidir: yönerge yalnız ona;
+ * Analist onaya hazır case'te değişiklik için gerekçeyle geri gönderir.
+ */
+export function durumNotu(durum: TestCase["durum"], testci: boolean, onaylayici: boolean): string {
+  if (durum === "ready") {
+    if (testci) return "Testçi kabul etti; Analist son onayı bekleniyor. Değiştirmek için taslağa alın.";
+    if (onaylayici) return "Testçi kabul etti; son onayınızı bekliyor. Değişiklik gerekiyorsa gerekçeyle Geri gönderin.";
+    return "Testçi kabul etti; Analist son onayı bekleniyor.";
+  }
+  if (durum === "approved") {
+    return testci ? "Analist onayladı. Değiştirmek için taslağa alın; onay düşer ve yeniden karar gerekir." : "Analist onayladı.";
+  }
+  if (durum === "rejected") return testci ? "Reddedildi. Yeniden değerlendirmek için taslağa alın." : "Reddedildi.";
+  return "Karar verildi.";
+}
 
-// Bu oturumda "görüntülendi" bildirilen case'ler (her case için tek istek).
+// Bu oturumda "görüntülendi" bildirilen case'ler: case kimliği + durum (her karar evresinde tek istek;
+// Testçi taslakta, Analist onaya hazır evrede görür).
 const goruntulenenler = new Set<string>();
 
 /** Testler için: görüntüleme kayıtlarını sıfırlar. */
@@ -42,11 +53,14 @@ export function goruntulenenleriSifirla(): void {
  */
 function useGoruntulemeBildir(tc: TestCase, etkin: boolean) {
   const ref = useRef<HTMLElement | null>(null);
+  const anahtar = `${tc.id}:${tc.durum}`;
+  // Testçi taslakta `goruntulenme` doluysa ölçüm zaten başladı; Analist evresi (ready) ayrı ölçülür.
+  const basladi = tc.durum === "draft" && !!tc.goruntulenme;
   useEffect(() => {
-    if (!etkin || tc.goruntulenme || goruntulenenler.has(tc.id)) return;
+    if (!etkin || basladi || goruntulenenler.has(anahtar)) return;
     const bildir = () => {
-      if (goruntulenenler.has(tc.id)) return;
-      goruntulenenler.add(tc.id);
+      if (goruntulenenler.has(anahtar)) return;
+      goruntulenenler.add(anahtar);
       api.caseGoruntulendi(tc.id).catch(() => undefined);
     };
     const el = ref.current;
@@ -65,7 +79,7 @@ function useGoruntulemeBildir(tc: TestCase, etkin: boolean) {
     );
     g.observe(el);
     return () => g.disconnect();
-  }, [tc.id, tc.goruntulenme, etkin]);
+  }, [tc.id, anahtar, basladi, etkin]);
   return ref;
 }
 export function CaseKarti({
@@ -82,11 +96,12 @@ export function CaseKarti({
   const islem = useIslem();
   const id = useId();
   const testci = useIzin("case.decide");
+  const onaylayici = useIzin("case.approve");
   // Developer: yalnız onaylı/yayınlanmış case, karar geçmişi ve eylem yok (core süzgeciyle aynı).
   const kisitli = useCaseKisitli();
-  const kisiAdi = useKisiAdi();
-  // Yalnızca karar verecek rol (Testçi) ve karar bekleyen case için görüntüleme ölçülür.
-  const kartRef = useGoruntulemeBildir(tc, testci && tc.durum === "draft");
+  // Yalnızca karar verecek rol ve onun karar evresi için görüntüleme ölçülür: Testçi taslakta,
+  // Analist (case.approve) onaya hazır case'te.
+  const kartRef = useGoruntulemeBildir(tc, (testci && tc.durum === "draft") || (onaylayici && tc.durum === "ready"));
   // core test_case: ready | approved | rejected → draft ("Taslağa al"). Yayınlanmış case son durumdur.
   const yenidenAcilabilir = caseKarariVerilebilir(tc.durum, "reopen");
   const d = CASE_DURUMU[tc.durum];
@@ -221,8 +236,6 @@ export function CaseKarti({
           {!kisitli && (
             <>
               {tc.review_sure_ms !== null && ` · review ${sure(tc.review_sure_ms)}`}
-              {tc.karar_veren && ` · ${kisiAdi(tc.karar_veren)}, ${tarih(tc.karar_zamani)}`}
-              {tc.onaylayan && ` · onay: ${kisiAdi(tc.onaylayan)}${tc.onay_zamani ? `, ${tarih(tc.onay_zamani)}` : ""}`}
               {tc.durum === "draft" && tc.karar && tc.karar !== "send_back" && ` · taslağa alındı (önceki karar: ${KARAR_ADI[tc.karar] ?? tc.karar})`}
               {tc.durum === "draft" && tc.karar === "send_back" && (
                 <span data-testid="case-geri-gonderildi">{` · Analist geri gönderdi${tc.gerekce ? `: ${tc.gerekce}` : ""}`}</span>
@@ -294,10 +307,11 @@ export function CaseKarti({
           </div>
         )}
       </footer>
+      {!kisitli && <KararIzi tc={tc} />}
       {mod === "goster" && !kisitli && kararVerildi && (
         <div className="satir-ogeler">
           <p className="soluk kucuk" data-testid="case-karar-kilit">
-            {DURUM_NOTU[tc.durum] ?? "Karar verildi."}
+            {durumNotu(tc.durum, testci, onaylayici)}
           </p>
           {yenidenAcilabilir && (
             <IslemDugmesi izin="case.decide" kucuk tur="ikincil" calisiyor={islem.calisiyor} onClick={() => karar(() => api.caseYenidenAc(tc))}>
@@ -329,6 +343,50 @@ export function CaseKarti({
         <AlanHatasi asistan={{ hata: islem.hata, kaynak: islem.hataNesnesi }}>{islem.hata}</AlanHatasi>
       )}
     </article>
+  );
+}
+
+/**
+ * Kimin ne karar verdiği, ayrı etiketli satırlarda (ANALIZ 012 §5): Testçi kararı (`testci`,
+ * `testci_karari`) ve Analist son onayı (`son_onay`). `karar_veren` son karardır (Analist olabilir);
+ * yalnız core Testçi/son onay alanlarını vermezse "Son karar" etiketiyle gösterilir.
+ */
+function KararIzi({ tc }: { tc: TestCase }) {
+  const kisiAdi = useKisiAdi();
+  const so = tc.son_onay ?? (tc.onaylayan ? { karar: "approve" as const, veren: tc.onaylayan, zaman: tc.onay_zamani ?? null, gerekce: null } : null);
+  // Testçi kararının zamanı: son karar Testçininse `karar_zamani` (core ayrı zaman alanı vermez).
+  const testciZamani =
+    tc.testci && tc.karar_veren === tc.testci && (!so || so.zaman !== tc.karar_zamani) ? tc.karar_zamani : null;
+  const satirlar: { id: string; etiket: string; metin: string }[] = [];
+  if (tc.testci || tc.testci_karari) {
+    const k = tc.testci_karari ? (KARAR_ADI[tc.testci_karari] ?? tc.testci_karari) : null;
+    satirlar.push({
+      id: "case-testci-karari",
+      etiket: "Testçi kararı",
+      metin: [k, tc.testci ? kisiAdi(tc.testci) : null, testciZamani ? tarih(testciZamani) : null].filter(Boolean).join(" · "),
+    });
+  }
+  if (so) {
+    satirlar.push({
+      id: "case-son-onay",
+      etiket: "Analist son onayı",
+      metin: [so.karar === "approve" ? "onaylandı" : "geri gönderildi", so.veren ? kisiAdi(so.veren) : null, so.zaman ? tarih(so.zaman) : null]
+        .filter(Boolean)
+        .join(" · "),
+    });
+  }
+  if (satirlar.length === 0 && tc.karar_veren) {
+    satirlar.push({ id: "case-son-karar", etiket: "Son karar", metin: `${kisiAdi(tc.karar_veren)}${tc.karar_zamani ? ` · ${tarih(tc.karar_zamani)}` : ""}` });
+  }
+  if (satirlar.length === 0) return null;
+  return (
+    <ul className="duz-liste soluk kucuk" aria-label="Karar izi">
+      {satirlar.map((s) => (
+        <li key={s.id} data-testid={s.id}>
+          <strong>{s.etiket}:</strong> {s.metin}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -417,6 +475,9 @@ function RetFormu({
   );
 }
 
+/** Gerekçe alanlarının üst sınırı (core `gerekce` ≤ 2000). */
+export const GEREKCE_EN_COK = 2000;
+
 /** Analist "Geri gönder": gerekçe zorunlu (ready → draft; ANALIZ 012 §5). */
 function GeriGonderFormu({
   gonder,
@@ -434,6 +495,7 @@ function GeriGonderFormu({
   const [gerekce, setGerekce] = useState("");
   const [uyari, setUyari] = useState<string | null>(null);
   const id = useId();
+  const hataVar = !!(uyari || hata);
   return (
     <form
       className="ret-formu"
@@ -451,12 +513,19 @@ function GeriGonderFormu({
         <OtoMetin
           id={`${id}-gerekce`}
           value={gerekce}
+          maxLength={GEREKCE_EN_COK}
           aria-required="true"
+          aria-invalid={hataVar || undefined}
+          aria-describedby={hataVar ? `${id}-gerekce-hata` : undefined}
           placeholder="Testçinin neyi düzeltmesi gerekiyor?"
           onChange={(e) => setGerekce(e.target.value)}
         />
       </div>
-      {(uyari || hata) && <AlanHatasi asistan={uyari ? null : { hata, kaynak: hataKaynagi }}>{uyari ?? hata}</AlanHatasi>}
+      {hataVar && (
+        <div id={`${id}-gerekce-hata`}>
+          <AlanHatasi asistan={uyari ? null : { hata, kaynak: hataKaynagi }}>{uyari ?? hata}</AlanHatasi>
+        </div>
+      )}
       <div className="eylemler">
         <IslemDugmesi izin="case.approve" type="submit" kucuk calisiyor={calisiyor}>
           Geri gönder
@@ -662,7 +731,7 @@ function CaseDuzenleyici({
       )}
       <div className="eylemler">
         <IslemDugmesi izin="case.decide" type="submit" kucuk calisiyor={calisiyor}>
-          Düzeltip kabul et
+          Düzelterek kabul et
         </IslemDugmesi>
         <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={vazgec}>
           Vazgeç

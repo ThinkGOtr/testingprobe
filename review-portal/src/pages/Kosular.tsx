@@ -1,11 +1,12 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import type { HataSinifi, Kosu, KosuDetay as KosuDetayTuru, KosuHatasi, KosuKaynagi, Tetik } from "../api/types";
-import { useIzin } from "../auth";
+import { useIzin, useOturum } from "../auth";
+import { normalizeRol } from "../lib/yetki";
 import { useBildirim } from "../components/Bildirim";
-import { BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, Metrik, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, Metrik, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { HATA_SINIFI, KAYNAK, KOSU_DURUMU, TETIK } from "../lib/etiketler";
 import { sure, tarih } from "../lib/format";
@@ -102,6 +103,10 @@ const GECE_ACIKLAMASI =
   "Her gece 02:00'de (UTC) zamanlanmış koşuyu şimdi başlatır: aynı onaylı test paketi; kod değişmese de veri/ortam kaymasını ve kararsız (flaky) testleri yakalar.";
 export const MANUEL_ACIKLAMASI =
   "Main'deki onaylı testleri şimdi koşturur (manuel tetik). Developer rolü yalnız prod dışı ortamda başlatabilir.";
+/** Maskeli koşu (core `maskeli: true`): ham artefaktlar rolde gizli; "yok" denmez. */
+export const ARTEFAKT_MASKELI = "Ham artefaktlar bu rolde görünmez";
+/** Developer + `TP_ORTAM=prod`: manuel koşu düğmesi pasif (core 403). */
+export const MANUEL_PROD_ENGELI = "Developer prod ortamında manuel koşu başlatamaz (TP_ORTAM=prod).";
 const DEPLOY_ACIKLAMASI =
   "Müşterinin deploy hattının yükleme bitince göndereceği sinyali taklit eder ve testleri koşturur; uygulamayı hiçbir yere yüklemez.";
 
@@ -148,6 +153,22 @@ export function Kosular() {
   // (Automation Engineer, Developer; developer prod'da 403 → core'un mesajı gösterilir).
   const zamanliTetik = useIzin("run.trigger_scheduled");
   const manuelTetik = useIzin("run.trigger_manual");
+  // Developer prod ortamında manuel koşu başlatamaz (core 403): `/demo/status` → `ortam`.
+  const { kullanici } = useOturum();
+  const gelistirici = normalizeRol(kullanici?.rol) === "developer";
+  const [ortam, setOrtam] = useState<string | null>(null);
+  useEffect(() => {
+    if (!gelistirici || !manuelTetik) return;
+    let iptal = false;
+    api
+      .demoDurumu()
+      .then((d) => !iptal && setOrtam(d.ortam ?? null))
+      .catch(() => undefined);
+    return () => {
+      iptal = true;
+    };
+  }, [gelistirici, manuelTetik]);
+  const manuelProdEngeli = gelistirici && ortam === "prod";
   const bildir = useBildirim();
   const sessiz = useGeciktirilmis(() => void v.yenile(true));
   useOlay(sessiz, ["ci.status", "failure.classified"]);
@@ -220,9 +241,10 @@ export function Kosular() {
                   izin="run.trigger_manual"
                   tur={zamanliTetik ? "ikincil" : "birincil"}
                   calisiyor={manuelIslem.calisiyor}
-                  title={MANUEL_ACIKLAMASI}
+                  disabled={manuelProdEngeli}
+                  title={manuelProdEngeli ? MANUEL_PROD_ENGELI : MANUEL_ACIKLAMASI}
                   aria-describedby="kosular-manuel-aciklama"
-                  nedenGizli
+                  nedenGizli={!manuelProdEngeli}
                   onClick={() => tetikle("manual")}
                 >
                   Manuel koşu başlat
@@ -380,7 +402,7 @@ function HataListesi({ k }: { k: KosuDetayTuru }) {
             <PlatformRozeti platform={k.platform} />
             <span>{h.test_adi}</span>
             {h.ozet && <span className="kucuk soluk">{h.ozet}</span>}
-            <Link to={`/hatalar/${encodeURIComponent(h.id)}`}>Triage sonucunu aç</Link>
+            <IzinliLink to={`/hatalar/${encodeURIComponent(h.id)}`}>Triage sonucunu aç</IzinliLink>
           </li>
         ))}
       </ul>
@@ -495,6 +517,23 @@ export function KosuDetay() {
         </Uyari>
       )}
       <Kart baslik="Raporlar ve bağlantılar">
+        {k.maskeli ? (
+          <p className="soluk" data-testid="artefakt-maskeli">
+            {ARTEFAKT_MASKELI}
+            {k.ci_url && (
+              <>
+                {" · "}
+                <Baglanti href={k.ci_url}>CI işi</Baglanti>
+              </>
+            )}
+            {k.script_id && (
+              <>
+                {" · "}
+                <IzinliLink to={`/kod/${encodeURIComponent(k.script_id)}`}>Üretilen test</IzinliLink>
+              </>
+            )}
+          </p>
+        ) : (
         <div className="artefakt-baglantilari">
           <Baglanti href={k.rapor_url} yokNedeni="koşu bu raporu üretmedi ya da core sunmuyor">
             Playwright HTML raporu{githubaGider(k.rapor_url) ? " (GitHub)" : ""}
@@ -525,9 +564,10 @@ export function KosuDetay() {
           <ArtefaktBaglantisi href={k.log_url} ghYedek={ghYedek} ciUrl={k.ci_url} yokNedeni="yok">
             Koşu günlüğü
           </ArtefaktBaglantisi>
-          {k.script_id && <Link to={`/kod/${encodeURIComponent(k.script_id)}`}>Üretilen test</Link>}
+          {k.script_id && <IzinliLink to={`/kod/${encodeURIComponent(k.script_id)}`}>Üretilen test</IzinliLink>}
         </div>
-        {ghYedek && <p className="kucuk soluk">{ghYedek}</p>}
+        )}
+        {ghYedek && !k.maskeli && <p className="kucuk soluk">{ghYedek}</p>}
         {k.hata && <p className="kucuk hata-metin">{k.hata}</p>}
         {k.uyarilar.length > 0 && (
           <ul className="kucuk duz-liste">

@@ -11,7 +11,7 @@ import { BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, Metrik, ReplayRozeti, Sa
 import { HedefOlcer } from "../components/Grafikler";
 import { useGeciktirilmis, useVeri } from "../hooks";
 import { dolar, sure, yuzde } from "../lib/format";
-import { YAYIN_ROLU_GEREKLI } from "./Yayin";
+import { ONIZLEME_YETKISI_YOK } from "./Yayin";
 
 const ONAYLI = new Set(["approved", "published"]);
 
@@ -176,7 +176,7 @@ export function CaseReview() {
           : c.durum === "rejected",
   );
   const g = gereksinim.veri;
-  const yayinYetkili = useIzin("case.publish");
+  const yayinYetkili = useIzin("publish.preview");
   // Developer: yalnız onaylı/yayınlanmış case'ler; karar özeti ve geçmişi yok (core süzgeci).
   const kisitli = useCaseKisitli();
   const mod = aiModu(liste, metrik.veri);
@@ -201,7 +201,7 @@ export function CaseReview() {
               Yayın önizleme
             </Link>
           ) : (
-            <IslemDugmesi tur="ikincil" disabled title={YAYIN_ROLU_GEREKLI}>
+            <IslemDugmesi tur="ikincil" disabled title={ONIZLEME_YETKISI_YOK}>
               Yayın önizleme
             </IslemDugmesi>
           )
@@ -308,7 +308,7 @@ export function CaseReview() {
           </ul>
         )}
         <p className="soluk kucuk">
-          Review süresi, case kartı ekranınıza ilk girdiği andan kararınıza kadar sunucuda ölçülür. Yeniden açılan case'in süresi yeniden
+          Review süresi, case kartı ekranınıza ilk girdiği andan kararınıza kadar sunucuda ölçülür. Taslağa alınan case'in süresi yeniden
           başlar.
         </p>
       </Kart>

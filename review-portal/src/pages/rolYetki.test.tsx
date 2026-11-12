@@ -47,13 +47,16 @@ describe("case inceleme: Testçi kararı → Analist son onayı", () => {
     await screen.findAllByRole("article");
     expect(screen.getByText(/Onaya hazır \(1\)/)).toBeInTheDocument();
     const k2 = kart(6);
-    // Analist Testçi kararlarını veremez; Yayın önizleme pasif.
+    // Analist Testçi kararlarını veremez; yayın önizlemesini salt okunur görür (publish.preview).
     expect(within(kart(7)).getByRole("button", { name: "Kabul et" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Yayın önizleme" })).toBeDisabled();
+    expect(screen.getByRole("link", { name: "Yayın önizleme" })).toBeInTheDocument();
     await waitFor(() => expect(within(k2).getByRole("button", { name: "Onayla" })).toBeEnabled());
     await u.click(within(k2).getByRole("button", { name: "Onayla" }));
     await waitFor(() => expect(within(k2).getByText("Onaylı")).toBeInTheDocument());
-    expect(mockVerisi().caseler.find((c) => c.id === "case-1-7")).toMatchObject({ durum: "approved", onaylayan: "analist" });
+    expect(mockVerisi().caseler.find((c) => c.id === "case-1-7")).toMatchObject({ durum: "approved", testci: "testci", son_onay: { karar: "approve", veren: "analist" } });
+    // Kart: Testçi kararı ve Analist son onayı ayrı etiketli satırlarda.
+    expect(within(k2).getByTestId("case-testci-karari")).toHaveTextContent(/Testçi kararı:.*kabul.*Fatih Arslan/);
+    expect(within(k2).getByTestId("case-son-onay")).toHaveTextContent(/Analist son onayı:.*onaylandı.*Cengizhan Gunaydin/);
   });
 
   it("Analist gerekçeyle geri gönderir → case taslağa döner ve gerekçe kartta görünür", async () => {

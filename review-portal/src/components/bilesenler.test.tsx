@@ -191,7 +191,7 @@ describe("CaseKarti", () => {
     const veri = screen.getByLabelText("S1 veri");
     await u.clear(veri);
     await u.type(veri, "81");
-    await u.click(screen.getByRole("button", { name: "Düzeltip kabul et" }));
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul et" }));
     await waitFor(() => expect(guncellendi).toHaveBeenCalled());
     const [, girdi] = spy.mock.calls[0];
     expect(girdi.karar).toBe("edit");

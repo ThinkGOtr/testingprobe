@@ -1,7 +1,7 @@
 // Mock arka uç: §5 uçlarının süreç içi uygulaması. Durum makinesi kuralları ve rol kontrolleri
 // gerçek API'yi taklit eder (insan kapıları atlanamaz), böylece ekranlar arka uç olmadan
 // demo edilebilir ve ekran testine girebilir. Tüm üretilen çıktılar mode alanıyla işaretlidir.
-import { ApiError, mockOturumu, mockOturumuAyarla } from "../http";
+import { ApiError, DEMO_KAPALI, mockOturumu, mockOturumuAyarla } from "../http";
 import type {
   AjanAdimi,
   Bulgu,
@@ -175,11 +175,15 @@ function girisGerekli(): Kullanici {
   return k;
 }
 
-/** core `izin(...)` bağımlılığı: rol izne sahip değilse 403 `yetki_yok` (+ `authz.denied` denetimi). */
-function izinGerekli(izin: Izin): Kullanici {
+/**
+ * core `izin(...)` bağımlılığı: rol izinlerden hiçbirine sahip değilse 403 `yetki_yok`
+ * (+ `authz.denied` denetimi). Birden çok izin "herhangi biri" demektir.
+ */
+function izinGerekli(...izinler: [Izin, ...Izin[]]): Kullanici {
   const k = girisGerekli();
-  if (!rolIzinleri(k.rol).includes(izin)) {
-    denetimEkle("authz.denied", izin, `Yetkisiz istek (${k.rol})`, k.kullanici_adi);
+  const roller = rolIzinleri(k.rol);
+  if (!izinler.some((i) => roller.includes(i))) {
+    denetimEkle("authz.denied", izinler.join("|"), `Yetkisiz istek (${k.rol})`, k.kullanici_adi);
     kaydet();
     throw new ApiError(403, "Bu işlem için yetkiniz yok", { kod: "yetki_yok" });
   }
@@ -191,7 +195,7 @@ export const mockOrtam = { ortam: "dev", demoModu: true };
 
 function demoGerekli(): Kullanici {
   const k = izinGerekli("demo.manage");
-  if (!mockOrtam.demoModu) throw new ApiError(403, "Demo kontrolleri kapalı (TP_DEMO_MODE=0).", { kod: "demo_kapali" });
+  if (!mockOrtam.demoModu) throw new ApiError(403, DEMO_KAPALI, { kod: "demo_kapali" });
   return k;
 }
 
@@ -681,6 +685,29 @@ function poOnayla(id: string, govde: unknown): GereksinimDetay {
 }
 
 /**
+ * core `POST /requirements/{id}/po-reject` (T04): yalnız serbest metin gereksinimde, `pending_po`
+ * iken ve `requirement.po_reject_free_text` (PO) izniyle; gerekçe zorunlu (≤2000). Gereksinim
+ * `new`'e döner. Jira kaynaklı story'de 410 `po_onayi_jira`.
+ */
+function poReddet(id: string, govde: unknown): GereksinimDetay {
+  izinGerekli("requirement.po_reject_free_text");
+  const g = bul(veri.gereksinimler, id, "Gereksinim");
+  if (g.kaynak !== "free_text") {
+    throw new ApiError(410, "Jira kaynaklı story'de PO kararı Jira'dan verilir: tp-po-approved etiketi.", { kod: "po_onayi_jira" });
+  }
+  const gerekce = String((govde as { gerekce?: unknown } | null)?.gerekce ?? "").trim();
+  if (!gerekce) throw new ApiError(422, "PO reddi için gerekçe zorunludur.");
+  if (gerekce.length > 2000) throw new ApiError(422, "Gerekçe en fazla 2000 karakter olabilir.");
+  hashGerekli(govde, g.icerik_hash);
+  if (g.durum !== "pending_po") throw new ApiError(409, "Gereksinim PO teyidi beklemiyor.");
+  gecir("requirement", g, "new");
+  g.po = { durum: "not_requested", onaylayan: null, zaman: null, kanal: "portal" };
+  denetimEkle("po.reject", g.id, `PO reddi (portal, serbest metin): ${gerekce}`);
+  gereksinimOlayi(g);
+  return cikti(g);
+}
+
+/**
  * Simülatör: PO'nun Jira'da `tp-po-approved` etiketini koyması (ANALIZ 012 K6; portalda PO onay ucu
  * yok → 410). Testler ve örnek veri akışı PO teyidini bununla verir; insan rolü kontrolü Jira'dadır.
  */
@@ -769,26 +796,54 @@ function caseUret(id: string): IsYaniti {
   return is("started", "Case üretimi başlatıldı.");
 }
 
-/** Developer görünümü: içerik ve durum; karar geçmişi, ret/gerekçe, AI farkı yok. */
-function caseKisitli(c: TestCase): TestCase {
-  return {
-    ...c,
-    karar: null,
-    testci_karari: null,
-    karar_veren: null,
-    karar_zamani: null,
-    ret_nedeni: null,
-    gerekce: null,
-    onaylayan: null,
-    onay_zamani: null,
-    duzeltme_olcusu: null,
-    duzeltme_nedeni: null,
-    kucuk_duzeltme: null,
-    review_sure_ms: null,
-    goruntulenme: null,
-    ai_icerik: null,
-    fark: [],
+/** core `KISITLI_GIZLI_ALANLAR`: developer görünümünde yanıttan çıkarılan alanlar. */
+const KISITLI_GIZLI_ALANLAR = [
+  "karar",
+  "ret_nedeni",
+  "karar_veren",
+  "karar_zamani",
+  "duzeltme_olcusu",
+  "kucuk_duzeltme",
+  "review_sure_ms",
+  "ai_icerik",
+  "fark",
+  "duzeltme_nedeni",
+  "testci_karari",
+  "testci",
+  "son_onay",
+] as const;
+
+/**
+ * core `serialize_cases` biçimi: Testçi kararı (`testci_karari`, `testci`) ve Analist son onayı
+ * (`son_onay`) ayrı; `karar`/`karar_veren`/`karar_zamani` son karardır (Analist olabilir). Düz
+ * `gerekce`/`onaylayan`/`onay_zamani` core'da yoktur. Developer (kısıtlı görünüm): geçmiş alanları
+ * çıkarılır, `kisitli: true`.
+ */
+function caseYaniti(c: TestCase, kullanici?: Kullanici | null): Record<string, unknown> {
+  const { gerekce: _g, onaylayan: _o, onay_zamani: _z, ...ham } = c;
+  void _g;
+  void _o;
+  void _z;
+  // 012 öncesi kayıt (örnek veri): Testçi kararı alanı yoksa son karar Testçi kararı sayılır (core testci_kararlari).
+  const eski = c.testci_karari === undefined && c.karar !== null && c.karar !== "send_back" && c.karar !== "reopen";
+  const out: Record<string, unknown> = {
+    ...ham,
+    testci_karari: c.testci_karari ?? (eski ? c.karar : null),
+    testci: c.testci ?? (eski ? c.karar_veren : null),
+    son_onay: c.son_onay ?? null,
   };
+  const r = normalizeRol(kullanici?.rol);
+  if (r && KISITLI_CASE_ROLLERI.includes(r)) {
+    for (const a of KISITLI_GIZLI_ALANLAR) delete out[a];
+    delete out.goruntulenme;
+    out.kisitli = true;
+  }
+  return out;
+}
+
+/** Karar uçlarının yanıtı: güncel hash'li kopya, core biçiminde. */
+function caseCikti(c: TestCase, kullanici: Kullanici): Record<string, unknown> {
+  return caseYaniti(cikti(c), kullanici);
 }
 
 const TESTCI_KARARLARI = ["accept", "edit", "reject"] as const;
@@ -799,7 +854,7 @@ const ANALIST_KARARLARI = ["approve", "send_back"] as const;
  * `reject` (draft → rejected), `reopen` ("Taslağa al"); Analist `approve` (ready → approved) ve
  * `send_back` (ready → draft, gerekçe zorunlu).
  */
-function caseKarari(id: string, govde: unknown): TestCase {
+function caseKarari(id: string, govde: unknown): Record<string, unknown> {
   const g = (govde ?? {}) as Partial<CaseKararGirdisi>;
   // core: "Taslağa al" aynı karar ucunda `karar: "reopen"` ile verilir.
   if (g.karar === "reopen") return caseYenidenAc(id, govde);
@@ -817,18 +872,21 @@ function caseKarari(id: string, govde: unknown): TestCase {
   if (!caseKarariVerilebilir(c.durum, g.karar)) throw new ApiError(409, GECIS_YOK);
   if (g.karar === "approve" || g.karar === "send_back") {
     if (g.karar === "send_back" && !g.gerekce?.trim()) throw new ApiError(422, "Geri gönderme için gerekçe zorunludur.");
-    // core: onaylayan hesap son düzenleyen hesaptan farklı olmalı (rol farklı olduğu için K2 ile uyumlu).
-    if (g.karar === "approve" && c.karar_veren === k.kullanici_adi) {
-      throw new ApiError(409, "Case'i son düzenleyen hesap onaylayamaz.");
+    // core ApprovalNotAllowed (görevler ayrılığı, K2): kabul eden/düzenleyen hesap son onayı veremez.
+    if (g.karar === "approve" && (c.testci ?? c.karar_veren) === k.kullanici_adi) {
+      throw new ApiError(403, "Case'i kabul eden/düzenleyen hesap son onayı veremez (görevler ayrılığı)", { kod: "onay_yetkisi_yok" });
     }
     gecir("test_case", c, hedef);
+    const zaman = simdi();
+    const gerekce = g.karar === "send_back" ? g.gerekce!.trim() : null;
     c.onaylanan_hash = g.karar === "approve" ? c.icerik_hash : null;
-    c.gerekce = g.karar === "send_back" ? g.gerekce!.trim() : null;
     if (g.karar === "send_back") c.goruntulenme = null;
+    // core: karar/karar_veren/karar_zamani son karardır (Analist dahil); son onay ayrı alanda.
     c.karar = g.karar;
-    c.onaylayan = g.karar === "approve" ? k.kullanici_adi : null;
-    c.onay_zamani = g.karar === "approve" ? simdi() : null;
-    denetimEkle("case.decision", c.id, g.karar === "send_back" ? `send_back: ${c.gerekce}` : "approve");
+    c.karar_veren = k.kullanici_adi;
+    c.karar_zamani = zaman;
+    c.son_onay = { karar: g.karar, veren: k.kullanici_adi, zaman, gerekce };
+    denetimEkle("case.decision", c.id, g.karar === "send_back" ? `send_back: ${gerekce}` : "approve");
   } else {
     if (g.karar === "reject") {
       if (!g.ret_nedeni) throw new ApiError(422, "Ret için neden seçilmelidir.");
@@ -869,11 +927,10 @@ function caseKarari(id: string, govde: unknown): TestCase {
     }
     // Son onay (Analist) bu içerik hash'ine bağlanır; Testçi kararı onayı düşürür.
     c.onaylanan_hash = null;
-    c.gerekce = null;
-    c.onaylayan = null;
-    c.onay_zamani = null;
+    c.son_onay = null;
     c.karar = g.karar;
     c.testci_karari = g.karar;
+    c.testci = k.kullanici_adi;
     c.karar_veren = k.kullanici_adi;
     c.karar_zamani = simdi();
     // core gibi: review süresi ilk görüntülemeden (POST /cases/{id}/view) karara kadar ölçülür.
@@ -883,7 +940,7 @@ function caseKarari(id: string, govde: unknown): TestCase {
   const req = veri.gereksinimler.find((r) => r.id === c.requirement_id);
   if (req) gereksinimOlayi(req);
   else kaydet();
-  return cikti(c);
+  return caseCikti(c, k);
 }
 
 /**
@@ -891,7 +948,8 @@ function caseKarari(id: string, govde: unknown): TestCase {
  * Review süresi bu andan karara kadar ölçülür.
  */
 function caseGoruntulendi(id: string): { case_id: string; ilk_goruntuleme: string; yeni: boolean } {
-  girisGerekli();
+  // core: görüntüleme kaydı karar verecek rollere (case.decide | case.approve).
+  izinGerekli("case.decide", "case.approve");
   const c = bul(veri.caseler, id, "Case");
   const yeni = !c.goruntulenme;
   if (yeni) {
@@ -906,8 +964,8 @@ function caseGoruntulendi(id: string): { case_id: string; ilk_goruntuleme: strin
  * gerekir. core karar kaydı yazmaz: son karar (`karar`) önceki karar olarak kalır; ekran durumdan
  * (`draft`) karar beklediğini anlar.
  */
-function caseYenidenAc(id: string, govde: unknown): TestCase {
-  izinGerekli("case.decide");
+function caseYenidenAc(id: string, govde: unknown): Record<string, unknown> {
+  const k = izinGerekli("case.decide");
   const c = bul(veri.caseler, id, "Case");
   if (c.durum !== "ready" && c.durum !== "approved" && c.durum !== "rejected") {
     throw new ApiError(409, `Yalnızca onaya hazır, onaylı veya reddedilmiş case taslağa alınabilir (durum: ${c.durum})`);
@@ -916,14 +974,14 @@ function caseYenidenAc(id: string, govde: unknown): TestCase {
   gecir("test_case", c, "draft");
   const onceki = c.karar;
   c.onaylanan_hash = null;
-  c.onaylayan = null;
-  c.onay_zamani = null;
+  // Taslağa alınan case'in son onayı düşer (yeniden Testçi kararı + Analist onayı gerekir).
+  c.son_onay = null;
   c.goruntulenme = null;
   denetimEkle("case.reopen", c.id, `Taslağa alındı (önceki karar: ${onceki ?? "—"})`);
   const req = veri.gereksinimler.find((r) => r.id === c.requirement_id);
   if (req) gereksinimOlayi(req);
   else kaydet();
-  return cikti(c);
+  return caseCikti(c, k);
 }
 
 const acAnahtari = (r: string) => r.replace(/\s/g, "").toUpperCase();
@@ -987,7 +1045,8 @@ function caseMetrikleri(rid: string): CaseMetrikleri {
 }
 
 function yayinOnizleme(q: URLSearchParams): YayinOnizleme {
-  izinGerekli("case.publish");
+  // core: önizleme `publish.preview` (salt okunur); yayın `case.publish`.
+  izinGerekli("publish.preview");
   const rid = q.get("requirement_id");
   if (!rid) throw new ApiError(422, "requirement_id zorunlu.");
   const g = bul(veri.gereksinimler, rid, "Gereksinim");
@@ -1217,6 +1276,17 @@ function ozetKosu(k: KosuDetay): Kosu {
   const { sonuclar: _s, ...ozet } = k;
   void _s;
   return ozet;
+}
+
+/** core `ci/api.ARTEFAKT_ALANLARI`: `run.artifacts` olmayan rolde null'lanan ham artefakt alanları. */
+const ARTEFAKT_ALANLARI = ["allure_url", "allure_sonuclari_url", "rapor_url", "junit_url", "log_url", "sauce_url", "artefakt_kok"] as const;
+
+/** core `ci/api.maskele`: rol `run.artifacts` taşımıyorsa artefakt bağlantıları null, ekler boş, `maskeli: true`. */
+function kosuMaskele<T extends Kosu>(k: T, kullanici: Kullanici): T {
+  if (rolIzinleri(kullanici.rol).includes("run.artifacts")) return k;
+  const out: Record<string, unknown> = { ...(k as unknown as Record<string, unknown>), ...Object.fromEntries(ARTEFAKT_ALANLARI.map((a) => [a, null])), maskeli: true };
+  if (Array.isArray(out.sonuclar)) out.sonuclar = (out.sonuclar as Record<string, unknown>[]).map((r) => ({ ...r, ekler: [] }));
+  return out as unknown as T;
 }
 
 function kosuOlustur(tetik: Kosu["tetik"], kaynak: Kosu["kaynak"], break_campaign: boolean, pr_no: number | null): KosuDetay {
@@ -1581,7 +1651,7 @@ const KULE_KAYNAKLARI: KontrolKulesi["kaynaklar"] = {
 };
 
 function kontrolKulesi(): KontrolKulesi & AsistanliKule {
-  girisGerekli();
+  const kullanici = izinGerekli("dashboard.read");
   // core gibi: Kontrol Kulesi yalnızca CI koşularını sayar (yerel kontrol ve kırarak doğrula hariç).
   const ciKosulari = veri.kosular.filter((k) => ["pr", "push", "nightly", "deploy", "manual"].includes(k.tetik));
   const sonuclar = ciKosulari.flatMap((k) => k.sonuclar.map((s) => ({ ...s, kosu: k })));
@@ -1609,7 +1679,7 @@ function kontrolKulesi(): KontrolKulesi & AsistanliKule {
     flaky.set(s.test_adi, e);
   }
   return {
-    son_kosular: ciKosulari.slice(0, 6).map(ozetKosu),
+    son_kosular: ciKosulari.slice(0, 6).map((k) => kosuMaskele(ozetKosu(k), kullanici)),
     gecme_orani: { oran: sayilan.length ? gecen / sayilan.length : null, toplam: sayilan.length, gecen, donem_gun: 7, son_n: null, birim: "test", test: null },
     // Hedef çizgisi yalnızca core bir hedef bildirirse çizilir (tasarımda geçme oranı hedefi yok).
     gecme_hedefi: null,
@@ -1832,7 +1902,7 @@ const ROTALAR: Rota[] = [
     "GET",
     /^\/requirements$/,
     () => {
-      girisGerekli();
+      izinGerekli("requirement.read");
       return veri.gereksinimler.map((g) => {
         sayaclariGuncelle(g);
         const { on_inceleme: _o, kontrol_turu: _k, kontrol_turu_ust_sinir: _u, jira_url: _j, uyarilar: _w, ...ozet } = g;
@@ -1855,7 +1925,7 @@ const ROTALAR: Rota[] = [
     "GET",
     /^\/requirements\/([^/]+)$/,
     (m) => {
-      girisGerekli();
+      izinGerekli("requirement.read");
       const g = bul(veri.gereksinimler, decodeURIComponent(m[1]), "Gereksinim");
       sayaclariGuncelle(g);
       // Kanıtı doğrulanamayıp elenen bulgular gösterilmez; yalnızca sayısı (core ile aynı alan).
@@ -1873,7 +1943,7 @@ const ROTALAR: Rota[] = [
     "GET",
     /^\/requirements\/([^/]+)\/findings$/,
     (m) => {
-      girisGerekli();
+      izinGerekli("requirement.read");
       const id = decodeURIComponent(m[1]);
       bul(veri.gereksinimler, id, "Gereksinim");
       return veri.bulgular.filter((b) => b.requirement_id === id);
@@ -1882,6 +1952,7 @@ const ROTALAR: Rota[] = [
   ["POST", /^\/findings\/([^/]+)\/decision$/, (m, _q, g) => bulguKarari(decodeURIComponent(m[1]), g)],
   ["POST", /^\/requirements\/([^/]+)\/apply-doc-fixes$/, (m) => duzeltmeleriUygula(decodeURIComponent(m[1]))],
   ["POST", /^\/requirements\/([^/]+)\/po-approve$/, (m, _q, g) => poOnayla(decodeURIComponent(m[1]), g)],
+  ["POST", /^\/requirements\/([^/]+)\/po-reject$/, (m, _q, g) => poReddet(decodeURIComponent(m[1]), g)],
   ["POST", /^\/requirements\/([^/]+)\/generate-cases$/, (m) => caseUret(decodeURIComponent(m[1]))],
   [
     "GET",
@@ -1892,8 +1963,8 @@ const ROTALAR: Rota[] = [
       const liste = veri.caseler.filter((c) => !rid || c.requirement_id === rid).sort((a, b) => a.sira_no - b.sira_no);
       // core süzgeci (case.read notu): developer yalnız onaylı/yayınlanmış case'i, karar geçmişi olmadan görür.
       const r = normalizeRol(k.rol);
-      if (r && KISITLI_CASE_ROLLERI.includes(r)) return liste.filter((c) => c.durum === "approved" || c.durum === "published").map(caseKisitli);
-      return liste;
+      const gorunen = r && KISITLI_CASE_ROLLERI.includes(r) ? liste.filter((c) => c.durum === "approved" || c.durum === "published") : liste;
+      return gorunen.map((c) => caseYaniti(c, k));
     },
   ],
   ["POST", /^\/cases\/([^/]+)\/decision$/, (m, _q, g) => caseKarari(decodeURIComponent(m[1]), g)],
@@ -1906,7 +1977,7 @@ const ROTALAR: Rota[] = [
     "GET",
     /^\/scripts$/,
     () => {
-      girisGerekli();
+      izinGerekli("code.read");
       return veri.scriptler.map((s) => {
         const { kod: _k, adimlar: _a, yerel_kontrol: _y, ...ozet } = s;
         return ozet;
@@ -1917,7 +1988,7 @@ const ROTALAR: Rota[] = [
     "GET",
     /^\/scripts\/([^/]+)$/,
     (m) => {
-      girisGerekli();
+      izinGerekli("code.read");
       const s = bul(veri.scriptler, decodeURIComponent(m[1]), "Script");
       return { ...s, merge_kabul_gerekli: mergeKabulGerekli(s) };
     },
@@ -1931,23 +2002,23 @@ const ROTALAR: Rota[] = [
     "GET",
     /^\/runs$/,
     () => {
-      girisGerekli();
-      return veri.kosular.map(ozetKosu);
+      const k = izinGerekli("run.read");
+      return veri.kosular.map((x) => kosuMaskele(ozetKosu(x), k));
     },
   ],
   [
     "GET",
     /^\/runs\/([^/]+)$/,
     (m) => {
-      girisGerekli();
-      return bul(veri.kosular, decodeURIComponent(m[1]), "Koşu");
+      const k = izinGerekli("run.read");
+      return kosuMaskele(bul(veri.kosular, decodeURIComponent(m[1]), "Koşu"), k);
     },
   ],
   [
     "GET",
     /^\/failures$/,
     (_m, q) => {
-      girisGerekli();
+      izinGerekli("failure.read");
       const sinif = q.get("sinif");
       const script = q.get("script_id");
       const limit = Math.min(200, Number(q.get("limit") ?? 50) || 50);
@@ -1961,7 +2032,7 @@ const ROTALAR: Rota[] = [
     "GET",
     /^\/failures\/([^/]+)$/,
     (m) => {
-      girisGerekli();
+      izinGerekli("failure.read");
       return bul(veri.hatalar, decodeURIComponent(m[1]), "Hata analizi");
     },
   ],
@@ -1970,7 +2041,7 @@ const ROTALAR: Rota[] = [
     "GET",
     /^\/bug-drafts$/,
     () => {
-      girisGerekli();
+      izinGerekli("bug.read");
       return veri.bugTaslaklari;
     },
   ],
@@ -1978,7 +2049,7 @@ const ROTALAR: Rota[] = [
     "GET",
     /^\/bug-drafts\/([^/]+)$/,
     (m) => {
-      girisGerekli();
+      izinGerekli("bug.read");
       return bul(veri.bugTaslaklari, decodeURIComponent(m[1]), "Bug taslağı");
     },
   ],

@@ -240,9 +240,12 @@ describe("mock arka uç: case kararı ve yayın", () => {
     await girisYap("analist");
     await expect(api.caseKarari("case-1-5", { ...caseH("case-1-5"), karar: "accept" })).rejects.toMatchObject({ status: 403 });
     const onayli = await api.caseKarari("case-1-5", { ...caseH("case-1-5"), karar: "approve" });
-    expect(onayli).toMatchObject({ durum: "approved", onaylayan: "analist", testci_karari: "edit" });
+    expect(onayli).toMatchObject({ durum: "approved", onaylayan: "analist", testci_karari: "edit", testci: "testci", karar_veren: "analist" });
+    expect(onayli.son_onay).toMatchObject({ karar: "approve", veren: "analist", gerekce: null });
     expect(onayli.onaylanan_hash).toBe(onayli.icerik_hash);
-    await expect(api.yayinOnizleme("req-tpd-1")).rejects.toMatchObject({ status: 403 });
+    // Analist önizlemeyi salt okunur görür (publish.preview); yayın Testçinin (case.publish).
+    await expect(api.yayinOnizleme("req-tpd-1")).resolves.toBeTruthy();
+    await expect(api.yayinla(["case-1-5"])).rejects.toMatchObject({ status: 403 });
 
     await girisYap("testci");
     p = await api.yayinOnizleme("req-tpd-1");

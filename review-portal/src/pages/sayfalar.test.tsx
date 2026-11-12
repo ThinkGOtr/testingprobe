@@ -40,20 +40,34 @@ describe("oturum ve yönlendirme", () => {
     expect(screen.getByText("ÖRNEK VERİ")).toBeInTheDocument();
   });
 
-  it("menü role duyarlı: Claude Code kanalı yalnızca Testçiye görünür", async () => {
+  it("menü role duyarlı: Claude Code kanalı claude_code.read rollerine görünür (Developer görmez)", async () => {
+    await oturumAc("gelistirici");
+    const ilk = uygulama("/");
+    expect(await screen.findByRole("heading", { name: "Koşular", level: 1 })).toBeInTheDocument();
+    let menu = screen.getByRole("navigation", { name: "Ana menü" });
+    expect(within(menu).queryByText("Claude Code kanalı")).toBeNull();
+    expect(within(menu).getByText("Kontrol Kulesi")).toBeInTheDocument();
+    ilk.unmount();
     await oturumAc("muhendis");
     uygulama("/");
     expect(await screen.findByRole("heading", { name: "Kod üretimi", level: 1 })).toBeInTheDocument();
-    const menu = screen.getByRole("navigation", { name: "Ana menü" });
-    expect(within(menu).queryByText("Claude Code kanalı")).toBeNull();
-    expect(within(menu).getByText("Kontrol Kulesi")).toBeInTheDocument();
+    menu = screen.getByRole("navigation", { name: "Ana menü" });
+    expect(within(menu).getByText("Claude Code kanalı")).toBeInTheDocument();
   });
 
   it("yetkisiz rolde Claude Code ekranı erişim mesajı verir", async () => {
-    await oturumAc("analist");
+    await oturumAc("gelistirici");
     uygulama("/claude-code");
     expect(await screen.findByText("Bu ekran için yetkiniz yok.")).toBeInTheDocument();
-    expect(screen.getByText("Gereken rol: Testçi")).toBeInTheDocument();
+    expect(screen.getByText("Gereken rol: Sistem Yöneticisi / Analist / Testçi / Automation Engineer")).toBeInTheDocument();
+  });
+
+  it("Analist Claude Code ekranını görür; token oluşturma Testçiye ait (token.issue)", async () => {
+    await oturumAc("analist");
+    uygulama("/claude-code");
+    const d = await screen.findByRole("button", { name: "8 saatlik token oluştur" });
+    expect(d).toBeDisabled();
+    expect(d).toHaveAccessibleDescription("Bu işlem için gereken rol: Testçi");
   });
 
   it("çıkış oturumu kapatır", async () => {

@@ -537,6 +537,7 @@ export function kosuUyarla(k: Ham): Kosu {
       metinYaDaNull(k.saglik_hatasi) ?? (saglik.ok === false ? metin(saglik.hata, "Koşu öncesi sağlık yoklaması başarısız.") : null),
     ...githubArtefakti(k.github_artefakt),
     platform: kosuPlatformu(k, ortam),
+    ...(k.maskeli === true ? { maskeli: true } : {}),
   };
 }
 

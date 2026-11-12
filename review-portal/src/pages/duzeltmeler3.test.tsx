@@ -229,7 +229,7 @@ describe("case düzeltmesi: 'beklenen sonuç anlamca değişti mi?' insan karar�
     await duzeltmeyiAc(u);
     expect(screen.queryByTestId("beklenen-anlam")).not.toBeInTheDocument();
     await u.type(screen.getByLabelText("Başlık"), " (düzeltildi)");
-    await u.click(screen.getByRole("button", { name: "Düzeltip kabul et" }));
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul et" }));
     await waitFor(() => expect(spy).toHaveBeenCalled());
     expect(spy.mock.calls[0][1]).toMatchObject({ karar: "edit", beklenen_anlam_degisti: false });
   });
@@ -244,11 +244,11 @@ describe("case düzeltmesi: 'beklenen sonuç anlamca değişti mi?' insan karar�
     await u.type(screen.getByLabelText("Beklenen sonuç"), ".");
     const soru = screen.getByTestId("beklenen-anlam");
     expect(soru).toHaveTextContent("Beklenen sonuç anlamca değişti mi?");
-    await u.click(screen.getByRole("button", { name: "Düzeltip kabul et" }));
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul et" }));
     expect(screen.getByRole("alert")).toHaveTextContent("Evet ya da Hayır seçin");
     expect(spy).not.toHaveBeenCalled();
     await u.click(within(soru).getByLabelText(/Hayır/));
-    await u.click(screen.getByRole("button", { name: "Düzeltip kabul et" }));
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul et" }));
     await waitFor(() => expect(spy).toHaveBeenCalled());
     expect(spy.mock.calls[0][1]).toMatchObject({ karar: "edit", beklenen_anlam_degisti: false });
     await waitFor(() => expect(son).not.toBeNull());
@@ -273,7 +273,7 @@ describe("case düzeltmesi: 'beklenen sonuç anlamca değişti mi?' insan karar�
     await duzeltmeyiAc(u);
     await u.type(screen.getByLabelText("Beklenen sonuç"), ".");
     await u.click(within(screen.getByTestId("beklenen-anlam")).getByLabelText(/Evet/));
-    await u.click(screen.getByRole("button", { name: "Düzeltip kabul et" }));
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul et" }));
     await waitFor(() => expect(son).not.toBeNull());
     expect(spy.mock.calls[0][1]).toMatchObject({ beklenen_anlam_degisti: true });
     expect(son!.kucuk_duzeltme).toBe(false);

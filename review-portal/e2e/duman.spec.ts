@@ -505,7 +505,9 @@ test("hiçbir rolde ölü iç bağlantı yok (her href bir ekrana çıkar)", asy
     for (const h of hrefler) {
       await page.goto(h);
       await expect(page.getByRole("heading", { name: "Sayfa bulunamadı", level: 1 }), `${rol}: ${h}`).toHaveCount(0);
-      await expect(page.getByRole("heading", { level: 1 }).or(page.getByText("Bu ekran için yetkiniz yok.")), `${rol}: ${h}`).toBeVisible();
+      // İzinsiz rotaya bağlantı verilmez (ROTA_IZINLERI; düz metin): her href rolün açabildiği ekrandır.
+      await expect(page.getByText("Bu ekran için yetkiniz yok."), `${rol}: ${h}`).toHaveCount(0);
+      await expect(page.getByRole("heading", { level: 1 }), `${rol}: ${h}`).toBeVisible();
     }
     await page.getByRole("button", { name: "Çıkış" }).click();
     await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
@@ -830,12 +832,10 @@ test("pasiflik nedeni yerleşimi (review 3): neden kendi düğmesinin altında, 
   const nedenK = await kutu(satir.locator(".dugme-neden"));
   expect(nedenK.x).toBeGreaterThanOrEqual(yenidenAc.x - 1);
   expect(nedenK.y).toBeGreaterThanOrEqual(yenidenAc.y + yenidenAc.height - 1);
-  // Tek düğmeli sayfa başlığında kısa neden tek satır, sağ kenarı düğmeyle aynı.
+  // Analist yayın önizlemesini salt okunur görür (publish.preview): başlıkta bağlantı, neden yok.
   const yayin = page.locator(".sayfa-basligi .eylemler");
-  const yayinNeden = await metinKenari(yayin.locator(".dugme-neden"));
-  expect(yayinNeden.satir).toBe(1);
-  const yayinD = await kutu(yayin.getByRole("button", { name: "Yayın önizleme" }));
-  expect(Math.abs(yayinNeden.sag - (yayinD.x + yayinD.width))).toBeLessThanOrEqual(1);
+  await expect(yayin.getByRole("link", { name: "Yayın önizleme" })).toBeVisible();
+  await expect(yayin.locator(".dugme-neden")).toHaveCount(0);
 
   // Script detay, analist: sola yaslı merge grubunda neden metni düğmenin sol kenarından başlar; komşu kart başlıkları aynı hizada.
   for (const g of [1440, 1152]) {

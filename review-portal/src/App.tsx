@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { canliDerleme, cekirdekYetenekleri, ucVar, type Yetenekler } from "./api/http";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { OlayProvider } from "./api/events";
-import { OturumProvider, useIzin, useIzinler, useOturum, varsayilanSayfa } from "./auth";
+import { OturumProvider, useDemoModu, useIzin, useIzinler, useOturum, varsayilanSayfa } from "./auth";
 import { BildirimProvider } from "./components/Bildirim";
 import { Kabuk } from "./components/Kabuk";
 import { AsistanPaneli } from "./components/asistan/AsistanPaneli";
@@ -46,6 +46,8 @@ function AnaSayfa() {
   const { kullanici } = useOturum();
   const izinler = useIzinler();
   const canli = canliDerleme();
+  // Sistem Yöneticisi açılışı: demo kipinde Demo yol haritası, değilse Kontrol Kulesi.
+  const demo = useDemoModu(izinler.has("demo.read"));
   const [yetenekler, setYetenekler] = useState<Yetenekler | null | undefined>(canli ? undefined : null);
   useEffect(() => {
     if (!canli) return;
@@ -57,9 +59,9 @@ function AnaSayfa() {
   }, [canli]);
   if (!kullanici) return <Navigate to="/giris" replace />;
   // Canlı derlemede core'un uç listesi okunana kadar bekle (henüz olmayan ekrana yönlendirme yok).
-  if (yetenekler === undefined) return <Yukleniyor />;
+  if (yetenekler === undefined || demo === undefined) return <Yukleniyor />;
   const y = yetenekler;
-  return <Navigate to={varsayilanSayfa(kullanici.rol, y ? (m, yol) => ucVar(y, m, yol) : undefined, izinler)} replace />;
+  return <Navigate to={varsayilanSayfa(kullanici.rol, y ? (m, yol) => ucVar(y, m, yol) : undefined, izinler, demo)} replace />;
 }
 
 function Bulunamadi() {
@@ -98,7 +100,7 @@ export function Rotalar() {
         <Route path="gereksinimler" element={<Korumali yol="/gereksinimler"><Gereksinimler /></Korumali>} />
         <Route path="gereksinimler/:id" element={<Korumali yol="/gereksinimler/:id"><GereksinimDetay /></Korumali>} />
         <Route path="gereksinimler/:id/caseler" element={<Korumali yol="/gereksinimler/:id/caseler"><CaseReview /></Korumali>} />
-        {/* Yayın ekranı kendi bilgi kartıyla korunur (aynı izin: `case.publish`). */}
+        {/* Yayın ekranı kendi bilgi kartıyla korunur (`publish.preview` salt okunur; yayın `case.publish`). */}
         <Route path="gereksinimler/:id/yayin" element={<Yayin />} />
         <Route path="kod" element={<Korumali yol="/kod"><Kod /></Korumali>} />
         <Route path="kod/:id" element={<Korumali yol="/kod/:id"><ScriptDetay /></Korumali>} />

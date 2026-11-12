@@ -290,7 +290,7 @@ export const MOCK_KURALLAR: MockKural[] = [
     baslik: "PR merge kararınızı bekliyor",
     neden: "Doğrulanmış test merge edilmeden gece koşularına ve regresyon setine girmez.",
     eylem: { tur: "rota", rota: "/kod/:id", capa: "pr" },
-    aciklama: "Script'in PR'ı açık ve kırarak doğrulama geçti. Değişikliği inceleyip merge kararını verin; merge yalnızca Mühendis onayıyla yapılır.",
+    aciklama: "Script'in PR'ı açık ve kırarak doğrulama geçti. Değişikliği inceleyip merge kararını verin; merge yalnızca Automation Engineer onayıyla yapılır.",
   },
   {
     id: "script-insana-dustu",
@@ -325,7 +325,7 @@ export const MOCK_KURALLAR: MockKural[] = [
     baslik: "Koşu ortam hatasıyla bitti; mühendis inceliyor",
     neden: "Bu koşunun test sonucu yok; demo öncesi güncel ve başarılı bir koşu gerekir.",
     eylem: { tur: "bilgi" },
-    aciklama: "Koşu testler çalışmadan bitti. İnceleme Mühendis rolündedir; düzeltildikten sonra yeni bir koşu tetiklenebilir.",
+    aciklama: "Koşu testler çalışmadan bitti. İnceleme Automation Engineer rolündedir; düzeltildikten sonra yeni bir koşu tetiklenebilir.",
   },
   {
     id: "hata-bakim-onarim",

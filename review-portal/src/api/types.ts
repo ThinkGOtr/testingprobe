@@ -371,13 +371,22 @@ export interface TestCase {
    * (ANALIZ 012 §5). Eski kayıtlarda Analist `approve`/`edit` kararı da olabilir.
    */
   karar: CaseKararTuru | null;
-  /** Son `send_back` gerekçesi (Analist geri gönderdiyse). */
+  /** Son `send_back` gerekçesi (Analist geri gönderdiyse); core `son_onay.gerekce`'den türetilir. */
   gerekce?: string | null;
-  /** Testçinin son kararı (`accept` | `edit` | `reject`); Analist onayından sonra da korunur (ölçümler). */
-  testci_karari?: "accept" | "edit" | "reject" | null;
-  /** Son onayı veren Analist hesabı ve zamanı (`approve`). */
+  /**
+   * Testçinin son içerik kararı (`accept` | `edit` | `reject`); Analist onayından sonra da korunur
+   * (ölçümler). 012 öncesi kayıtlarda Testçi kabulü olmadan verilen `approve` bu alanda kalır (eski).
+   */
+  testci_karari?: "accept" | "edit" | "reject" | "approve" | null;
+  /** Testçi kararını veren hesap (core `testci`). */
+  testci?: string | null;
+  /** Analistin son onay kararı (core `son_onay`): `approve` ya da `send_back` (gerekçeli). */
+  son_onay?: SonOnay | null;
+  /** Son onayı veren Analist hesabı ve zamanı (`son_onay.karar === "approve"`'dan türetilir). */
   onaylayan?: string | null;
   onay_zamani?: string | null;
+  /** Kısıtlı görünüm (developer): karar geçmişi alanları core'da çıkarıldı. */
+  kisitli?: boolean;
   ret_nedeni: RetNedeni | null;
   karar_veren: string | null;
   karar_zamani: string | null;
@@ -407,6 +416,14 @@ export interface TestCase {
   duzeltme_nedeni?: string | null;
   /** Case gereksinimin önceki (PO onayı değişmiş) içeriğine ait. */
   onceki_icerik?: boolean;
+}
+
+/** core `son_onay`: Analistin son onay kararı. */
+export interface SonOnay {
+  karar: "approve" | "send_back";
+  veren: string | null;
+  zaman: string | null;
+  gerekce: string | null;
 }
 
 export interface CaseAlanFarki {
@@ -738,6 +755,11 @@ export type KosuKaynagi = "local" | "github" | "sauce";
 
 export interface Kosu {
   id: string;
+  /**
+   * Ham artefakt bağlantıları bu rolde gizli (core `run.artifacts` yok: Denetçi, Görüntüleyici);
+   * artefakt alanları null, test ekleri boş gelir.
+   */
+  maskeli?: boolean;
   tetik: Tetik;
   kaynak: KosuKaynagi;
   commit: string;

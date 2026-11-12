@@ -283,13 +283,12 @@ describe("ekranlarda görünür neden", () => {
     }
   });
 
-  it("Case review: yayın yetkisi olmayan rolde 'Yayın önizleme' nedeni görünür ve bağlı", async () => {
+  it("Yayın önizleme: yayın yetkisi olmayan rolde 'Seçilenleri yayınla' nedeni görünür ve bağlı", async () => {
     await oturumAc("po");
-    uygulama("/gereksinimler/req-tpd-1/caseler");
-    const d = await screen.findByRole("button", { name: "Yayın önizleme" });
+    uygulama("/gereksinimler/req-tpd-1/yayin");
+    const d = await screen.findByRole("button", { name: /Seçilenleri yayınla/ });
     expect(d).toBeDisabled();
-    expect(d).toHaveAttribute("title", "Yayın Testçi rolü gerektirir");
-    expect(d).toHaveAccessibleDescription("Yayın Testçi rolü gerektirir");
+    expect(d).toHaveAccessibleDescription("Bu işlem için gereken rol: Testçi");
   });
 
   it("Case review (karar verilmiş case): 'Taslağa al' satırı metin + düğme karışık grup; neden düğmenin sarıcısında", async () => {

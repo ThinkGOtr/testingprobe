@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { canliDerleme, cekirdekYetenekleri, mockDegisikligineAbone, mockUclari, mockZorunlu, ucVar, type Yetenekler } from "../api/http";
 import { useBaglantiDurumu, type BaglantiDurumu } from "../api/events";
 import type { Rol } from "../api/types";
-import { useIzin, useIzinler, useOturum } from "../auth";
+import { DEMO_ROTALARI, useDemoModu, useIzin, useIzinler, useOturum } from "../auth";
 import { izinVar, normalizeRol, rolEtiketi, ROTA_IZINLERI } from "../lib/yetki";
 import { useCapayaKaydir } from "../lib/capa";
 import { TEMA_ETIKETI, useTema } from "../lib/tema";
@@ -143,6 +143,8 @@ export function Kabuk() {
 function KabukIcerik() {
   const { kullanici } = useOturum();
   const izinler = useIzinler();
+  // Demo menü öğeleri (Demo yol haritası, Demo kontrolleri) demo kipi kapalıyken gizlenir.
+  const demoModu = useDemoModu(izinVar(izinler, "demo.read", "demo.manage"));
   const olaylarAcik = useIzin("events.read");
   const cikis = useCikis();
   const kip = useKimlikKipi();
@@ -337,7 +339,9 @@ function KabukIcerik() {
       <div className="govde">
         <nav ref={menuRef} id="yan-menu" className={`yan-menu${menuAcik ? " acik" : ""}`} aria-label="Ana menü">
           {NAV.map((g) => {
-            const ogeler = g.ogeler.filter((o) => izinVar(izinler, ...(ROTA_IZINLERI[o.yol] ?? [])));
+            const ogeler = g.ogeler.filter(
+              (o) => izinVar(izinler, ...(ROTA_IZINLERI[o.yol] ?? [])) && !(demoModu === false && DEMO_ROTALARI.includes(o.yol)),
+            );
             if (ogeler.length === 0) return null;
             return (
               <div key={g.grup} className="menu-grup">

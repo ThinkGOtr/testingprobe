@@ -217,7 +217,7 @@ describe("case düzeltme formu", () => {
     const ac = screen.getByLabelText("Kabul kriteri atıfları");
     await u.clear(ac);
     await u.type(ac, "ac2, AC3");
-    await u.click(screen.getByRole("button", { name: "Düzeltip kabul et" }));
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul et" }));
     await waitFor(() => expect(spy).toHaveBeenCalled());
     const [, girdi] = spy.mock.calls[0];
     expect(girdi.karar).toBe("edit");
@@ -237,7 +237,7 @@ describe("case düzeltme formu", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Düzelterek kabul" })).toBeEnabled());
     await u.click(screen.getByRole("button", { name: "Düzelterek kabul" }));
     await u.clear(screen.getByLabelText("Kabul kriteri atıfları"));
-    await u.click(screen.getByRole("button", { name: "Düzeltip kabul et" }));
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul et" }));
     expect(screen.getByRole("alert")).toHaveTextContent("En az bir kabul kriteri atfı gerekir");
     expect(spy).not.toHaveBeenCalled();
   });

@@ -1,10 +1,10 @@
 import { type ReactNode } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import type { KontrolKulesi as Kule, KpiAnahtari } from "../api/types";
 import { HedefOlcer, OranSutunlari } from "../components/Grafikler";
-import { BosDurum, Cip, HataKutusu, Ilerleme, Kart, Metrik, Olculmedi, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { BosDurum, Cip, HataKutusu, Ilerleme, Kart, Metrik, Olculmedi, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
 import { useGeciktirilmis, useVeri } from "../hooks";
 import { kazancOzeti, type KazancOzeti } from "../api/uyumFaz5";
 import { BAZ_KAYNAGI } from "../components/BazDegerKarti";
@@ -162,7 +162,7 @@ export function KontrolKulesi() {
           <div className="metrik-etiket">açık defect adayı</div>
           {defectAdayi > 0 && (
             <div className="metrik-alt">
-              Assertion kırmızı; PR açılmadı, main koşularına ve bu orana girmez. <Link to="/kod">Kod üretiminde incele</Link>
+              Assertion kırmızı; PR açılmadı, main koşularına ve bu orana girmez. <IzinliLink to="/kod">Kod üretiminde incele</IzinliLink>
             </div>
           )}
         </div>
@@ -442,9 +442,9 @@ function HazirlikKarti({ k, kazanc }: { k: Kule; kazanc: KazancOzeti }) {
                 <tr key={h.requirement_id || h.story_key || ""} data-testid={`hazirlik-${h.story_key ?? h.requirement_id}`}>
                   <td>
                     {h.requirement_id ? (
-                      <Link to={`/gereksinimler/${encodeURIComponent(h.requirement_id)}`} className="mono">
+                      <IzinliLink to={`/gereksinimler/${encodeURIComponent(h.requirement_id)}`} className="mono">
                         {h.story_key ?? "serbest metin"}
-                      </Link>
+                      </IzinliLink>
                     ) : (
                       <span className="mono">{h.story_key ?? "—"}</span>
                     )}

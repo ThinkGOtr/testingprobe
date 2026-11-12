@@ -244,7 +244,7 @@ export function sonrakiAdimlar(x: SonrakiGirdi): YolAdimi[] {
       ? adim(5, {
           hal: "bekliyor",
           kanit: "Kod üretilmedi.",
-          ipucu: "Mühendis: Kod üretimi → C1, C2, C3, C5 seç → üret.",
+          ipucu: "Automation Engineer: Kod üretimi → C1, C2, C3, C5 seç → üret.",
           baglanti: { yol: "/kod", etiket: "Kod üretimi" },
         })
       : adim(5, {
@@ -291,7 +291,7 @@ export function sonrakiAdimlar(x: SonrakiGirdi): YolAdimi[] {
         baglanti: { yol: `/kod/${kodla(sonMerge.id)}`, etiket: "Merge edilen PR" },
         simulator: forgeSim,
       })
-    : adim(7, { hal: "bekliyor", kanit: "Merge edilmiş PR yok.", ipucu: "Mühendis: zorunlu local-ci yeşilken \"Merge et\"." });
+    : adim(7, { hal: "bekliyor", kanit: "Merge edilmiş PR yok.", ipucu: "Automation Engineer: zorunlu local-ci yeşilken \"Merge et\"." });
 
   // 8 — CI tetikleri. Yalnızca BU story'nin koşuları sayılır: story PR'ının CI'ı ya da story'nin ilk
   // merge'ünden sonra başlayan koşular. `make reset` + `make demo-reset`in main için kuyruğa aldığı temel
@@ -517,7 +517,7 @@ export function locatorAdimlari(x: Pick<YolGirdisi, "demo" | "hatalar" | "kosula
     }),
     yap("L4", "Onarım PR'ı (yalnızca testId)", "ai", {
       hal: onarimli.length > 0 ? "tamam" : loc.length > 0 ? "suruyor" : "bekliyor",
-      kanit: onarimli.length > 0 ? "Bot PR açıldı (AST koruması + tam paket yerel kontrol)." : loc.length > 0 ? "Mühendis: \"Onarım PR'ı aç\"." : "—",
+      kanit: onarimli.length > 0 ? "Bot PR açıldı (AST koruması + tam paket yerel kontrol)." : loc.length > 0 ? "Automation Engineer: \"Onarım PR'ı aç\"." : "—",
       baglanti: (onarimli[0] ?? ilkLoc) ? { yol: `/hatalar/${kodla((onarimli[0] ?? ilkLoc)!.id)}`, etiket: "Onarım" } : null,
     }),
     yap("L5", "Merge → CI yeniden yeşil", "insan", {

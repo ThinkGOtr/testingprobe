@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import type { BugTaslagi, BugTaslakIcerik, MukerrerAday, MukerrerArama } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
-import { AlanHatasi, BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { AlanHatasi, BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { KisiAdi } from "../components/KisiAdi";
 import { BUG_DURUMU, SEVERITY, type Ton } from "../lib/etiketler";
@@ -519,7 +519,7 @@ export function BugTaslakDetay() {
               <Cip ton="notr" title="Doğrulanmış kanıttan şablonla yazıldı; model çağrısı yok">Şablon</Cip>
             )}
             {kirma && <KirmaCipi />}
-            {b.failure_id && <Link to={`/hatalar/${encodeURIComponent(b.failure_id)}`}>Triage sonucu</Link>}
+            {b.failure_id && <IzinliLink to={`/hatalar/${encodeURIComponent(b.failure_id)}`}>Triage sonucu</IzinliLink>}
             {b.onaylayan && (
               <span className="soluk">
                 <KisiAdi ad={b.onaylayan} />

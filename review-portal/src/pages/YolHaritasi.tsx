@@ -3,12 +3,11 @@
 // ilgili ekrana bağlanır; model kipi (REPLAY/strict) ve prompt değerlendirme durumu üstte yazılır.
 // Okunamayan kaynak "tamam" sayılmaz: adım "bekliyor" kalır ve okunamayan uç açıkça listelenir.
 import { useCallback, useEffect } from "react";
-import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import { buFazdaYok, hataMesaji } from "../api/http";
 import type { BugTaslagi, DemoDurumu, GereksinimDetay, HataAnalizi, KontrolKulesi, Kosu, Script, TestCase } from "../api/types";
-import { Cip, HataKutusu, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { Cip, HataKutusu, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
 import { useGeciktirilmis, useVeri } from "../hooks";
 import type { Ton } from "../lib/etiketler";
 import { saat } from "../lib/format";
@@ -92,9 +91,9 @@ function AdimSatiri({ a }: { a: YolAdimi }) {
         {a.ipucu && <p className="yh-ipucu">↳ {a.ipucu}</p>}
       </div>
       {a.baglanti ? (
-        <Link className="yh-baglanti" to={a.baglanti.yol}>
+        <IzinliLink className="yh-baglanti" to={a.baglanti.yol}>
           {a.baglanti.etiket} →
-        </Link>
+        </IzinliLink>
       ) : (
         <span />
       )}

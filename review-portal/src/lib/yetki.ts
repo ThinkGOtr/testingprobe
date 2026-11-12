@@ -42,6 +42,7 @@ export const IZINLER = {
   "requirement.import": ["analyst"],
   "requirement.review": ["analyst"],
   "requirement.po_approve_free_text": ["po"],
+  "requirement.po_reject_free_text": ["po"],
   "baseline.manage": ["po"],
   "case.generate": ["tester"],
   "case.decide": ["tester"],
@@ -72,6 +73,9 @@ export const IZINLER = {
   "events.read": IS_ROLLERI,
   "assistant.use": HEPSI,
   "token.read": HEPSI,
+  "publish.preview": ["admin", "analyst", "po", "tester", "engineer"],
+  "claude_code.read": ["admin", "analyst", "tester", "engineer"],
+  "demo.read": ["admin", "analyst", "po", "tester", "engineer"],
 } as const satisfies Record<string, readonly Rol[]>;
 
 export type Izin = keyof typeof IZINLER;
@@ -119,7 +123,7 @@ export const ROTA_IZINLERI: Record<string, readonly Izin[]> = {
   "/gereksinimler": ["requirement.read"],
   "/gereksinimler/:id": ["requirement.read"],
   "/gereksinimler/:id/caseler": ["case.read"],
-  "/gereksinimler/:id/yayin": ["case.publish"],
+  "/gereksinimler/:id/yayin": ["publish.preview"],
   "/kod": ["code.read"],
   "/kod/:id": ["code.read"],
   "/kosular": ["run.read"],
@@ -128,8 +132,26 @@ export const ROTA_IZINLERI: Record<string, readonly Izin[]> = {
   "/bug-taslaklari": ["bug.read"],
   "/bug-taslaklari/:id": ["bug.read"],
   "/kontrol-kulesi": ["dashboard.read"],
-  "/yol-haritasi": ["demo.manage"],
+  "/yol-haritasi": ["demo.read"],
   "/demo": ["demo.manage"],
   "/denetim": ["audit.read_all", "audit.read_own"],
-  "/claude-code": ["token.issue"],
+  "/claude-code": ["claude_code.read"],
 };
+
+/**
+ * Adresin `ROTA_IZINLERI` deseni ("/kod/abc?x=1" → "/kod/:id"); tabloda yoksa null (korumasız rota).
+ */
+export function rotaDeseni(yol: string): string | null {
+  const temiz = (yol.split(/[?#]/)[0] || "/").replace(/\/+$/, "") || "/";
+  for (const desen of Object.keys(ROTA_IZINLERI)) {
+    const re = new RegExp(`^${desen.replace(/:[^/]+/g, "[^/]+")}$`);
+    if (re.test(temiz)) return desen;
+  }
+  return null;
+}
+
+/** Adrese gitmek için gereken izinler (herhangi biri); korumasız rotada boş dizi. */
+export function rotaIzinleri(yol: string): readonly Izin[] {
+  const d = rotaDeseni(yol);
+  return d ? ROTA_IZINLERI[d] : [];
+}

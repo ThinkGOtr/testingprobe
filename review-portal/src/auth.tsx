@@ -4,7 +4,7 @@ import { ApiError, mockOturumuAyarla, yetkisizOlunca } from "./api/http";
 import type { Kullanici, Rol } from "./api/types";
 import { oturumVerileriniTemizle } from "./lib/oturumTemizligi";
 import { formlariSakla } from "./lib/formYedegi";
-import { izinVar, KISITLI_CASE_ROLLERI, normalizeRol, oturumIzinleri, ROTA_IZINLERI, type Izin } from "./lib/yetki";
+import { izinVar, KISITLI_CASE_ROLLERI, normalizeRol, oturumIzinleri, rotaIzinleri, ROTA_IZINLERI, type Izin } from "./lib/yetki";
 import { aiprobeCikisAdresi, aiprobeKipinde, cikisYonlendirmesi, kimlikKipi, yonlendirmeSayaciniSifirla } from "./lib/kimlikKipi";
 
 interface OturumBaglami {
@@ -134,6 +134,17 @@ export function useIzinler(): ReadonlySet<string> {
   return useMemo(() => oturumIzinleri(kullanici), [kullanici]);
 }
 
+/**
+ * Adrese gidilebilir mi (`ROTA_IZINLERI`): korumasız adres ya da oturum yokken (sayfa koruması
+ * zaten girişe yönlendirir) true; oturumlu ve izinsizse false.
+ */
+export function useRotaIzni(yol: string): boolean {
+  const kullanici = useContext(Baglam)?.kullanici ?? null;
+  const izinler = useIzinler();
+  const istenen = rotaIzinleri(yol);
+  return !kullanici || istenen.length === 0 || izinVar(izinler, ...istenen);
+}
+
 /** Oturum verilen izinlerden en az birine sahip mi? (`useIzin("case.approve")`) */
 export function useIzin(...izinler: Izin[]): boolean {
   return izinVar(useIzinler(), ...izinler);
@@ -146,6 +157,33 @@ export function useIzin(...izinler: Izin[]): boolean {
 export function useCaseKisitli(): boolean {
   const rol = normalizeRol(useContext(Baglam)?.kullanici?.rol);
   return !!rol && KISITLI_CASE_ROLLERI.includes(rol);
+}
+
+/** Demo menü öğeleri ve demo açılış ekranı yalnız demo kipinde (`/demo/status` → `demo_modu`). */
+export const DEMO_ROTALARI: readonly string[] = ["/yol-haritasi", "/demo"];
+
+/**
+ * Demo kipi açık mı (`GET /demo/status` → `demo_modu`). `etkin` false ise istek atılmaz (null).
+ * undefined: okunuyor; null: bilinmiyor (uç yok/hata); boolean: core'un bildirdiği.
+ */
+export function useDemoModu(etkin = true): boolean | null | undefined {
+  const [deger, setDeger] = useState<boolean | null | undefined>(etkin ? undefined : null);
+  useEffect(() => {
+    if (!etkin) {
+      setDeger(null);
+      return;
+    }
+    let iptal = false;
+    setDeger(undefined);
+    api
+      .demoDurumu()
+      .then((d) => !iptal && setDeger(typeof d.demo_modu === "boolean" ? d.demo_modu : null))
+      .catch(() => !iptal && setDeger(null));
+    return () => {
+      iptal = true;
+    };
+  }, [etkin]);
+  return deger;
 }
 
 /** Ekranın core'daki veri ucu (canlı derlemede ekran ancak uç varsa açılış sayfası olur). */
@@ -180,8 +218,12 @@ export function varsayilanSayfa(
   rol: Rol,
   ucVar?: (method: string, yol: string) => boolean,
   izinler: ReadonlySet<string> = oturumIzinleri({ rol }),
+  /** Demo kipi açık mı; açık değilse (false/bilinmiyor) demo ekranları açılış olmaz. Verilmezse süzülmez. */
+  demoAcik?: boolean | null,
 ): string {
-  const adaylar = (ROL_SAYFALARI[normalizeRol(rol) ?? rol] ?? ["/kontrol-kulesi"]).filter((y) => izinVar(izinler, ...(ROTA_IZINLERI[y] ?? [])));
+  const adaylar = (ROL_SAYFALARI[normalizeRol(rol) ?? rol] ?? ["/kontrol-kulesi"])
+    .filter((y) => izinVar(izinler, ...(ROTA_IZINLERI[y] ?? [])))
+    .filter((y) => demoAcik === undefined || demoAcik === true || !DEMO_ROTALARI.includes(y));
   const son = "/kontrol-kulesi";
   if (!ucVar) return adaylar[0] ?? son;
   return adaylar.find((y) => !EKRAN_UCU[y] || ucVar(...EKRAN_UCU[y])) ?? son;

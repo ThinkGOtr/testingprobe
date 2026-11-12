@@ -105,6 +105,16 @@ export const api = {
     detayUyarla(
       nesne(await istek<unknown>("POST", `/requirements/${yol(g.id)}/po-approve`, { govde: { icerik_hash: g.icerik_hash } })),
     ),
+  /**
+   * Serbest metin gereksinimde PO reddi (`requirement.po_reject_free_text`; pending_po → new).
+   * Gerekçe zorunlu; Jira kaynaklı story'de core 410 (`po_onayi_jira`).
+   */
+  poReddet: async (g: Pick<GereksinimDetay, "id" | "icerik_hash">, gerekce: string): Promise<GereksinimDetay> =>
+    detayUyarla(
+      nesne(
+        await istek<unknown>("POST", `/requirements/${yol(g.id)}/po-reject`, { govde: { gerekce, icerik_hash: g.icerik_hash } }),
+      ),
+    ),
   caseUret: (id: string) => istek<IsYaniti>("POST", `/requirements/${yol(id)}/generate-cases`),
   /**
    * Story başına manuel baz değer (Faz 5; analyst | po). Yanıt baz değer ya da gereksinim
