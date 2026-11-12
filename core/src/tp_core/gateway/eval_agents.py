@@ -779,9 +779,12 @@ def generation_stats(output: Any) -> dict[str, Any]:
     cases = _kayitlar(out.get("cases"))
     hazirlik: dict[str, int] = {}
     teknik: dict[str, int] = {}
+    oncelik: dict[str, int] = {}
     for case in cases:
         durum = str(case.get("readiness") or "yok")
         hazirlik[durum] = hazirlik.get(durum, 0) + 1
+        p = str(case.get("priority") or "yok")
+        oncelik[p] = oncelik.get(p, 0) + 1
         for t in _liste(case.get("technique")):
             teknik[str(t)] = teknik.get(str(t), 0) + 1
     ogeler = _kayitlar(out.get("coverage_items"))
@@ -793,12 +796,15 @@ def generation_stats(output: Any) -> dict[str, Any]:
         "tekrar_ciftleri": tekrarlar,
         "readiness": dict(sorted(hazirlik.items())),
         "technique": dict(sorted(teknik.items())),
+        "priority": dict(sorted(oncelik.items())),
+        "p1_orani": round(oncelik.get("P1", 0) / len(cases), 4) if cases else None,
         "coverage_items": len(ogeler),
         "covered_items": sum(1 for o in ogeler if str(o.get("id")) in kapsanan),
         "invalid_items": sum(1 for o in ogeler if o.get("valid") is False),
         "not_covered": len(_liste(out.get("not_covered"))),
         "open_questions": len(_liste(out.get("open_questions"))),
         "assumptions": len(_liste(out.get("assumptions"))),
+        "observations": len(_liste(out.get("observations"))),
     }
 
 
@@ -821,76 +827,202 @@ def duplicate_cases(cases: Sequence[Mapping[str, Any]]) -> list[list[int]]:
     return [g for g in gruplar.values() if len(g) > 1]
 
 
-# Uydurma ölçümü (011 #4): hazır case'in beklenen sonucundaki tırnak içi metin kaynakta birebir
-# geçer; TL tutarı kaynakta geçer ya da kaynak tutarlarından kurulabilen bir sepettir.
+# Uydurma ölçümü (011 #4; ikinci tur #2): hazır case'in beklenen sonucundaki tırnak içi metin
+# kaynakta birebir geçer; TL tutarı kaynakta birebir geçer ya da case'in KENDİ sepetinin
+# (test verisindeki `P-xxx × n`) birim fiyatlarla yeniden hesaplanmış bir alt toplamıdır.
 TUTAR = re.compile(r"(?<![\d.,])(\d{1,3}(?:\.\d{3})*,\d{2})\s?TL\b")
+_CIPLAK_TUTAR = re.compile(r"(?<![\d.,])(\d{1,3}(?:\.\d{3})*,\d{2})(?![\d])")
 TIRNAK_ICI = re.compile(
     r'"([^"\n]{2,160})"|“([^”\n]{2,160})”|«([^»\n]{2,160})»|(?<!\w)\'([^\'\n]{2,80})\'(?!\w)'
 )
 MAX_KAT = 999
+# Test verisi bloğu (`<untrusted kind="data" source="testdata:…">`): birim fiyatlar yalnız buradan.
+_TEST_VERISI_BLOGU = re.compile(
+    r'<untrusted kind="data" source="testdata:[^"]*"[^>]*>(.*?)</untrusted', re.DOTALL
+)
+# Ürün satırı: madde işaretiyle başlayan, ürün koduyla açılan ve birim fiyatla biten satır
+# ("- P-001 · "Portakal Gazozu 1L" · 25,00 TL").
+_URUN_SATIRI = re.compile(
+    r"^\s*[-•*]?\s*([A-Z]{1,5}-\d{1,5})\b[^\n]*?(\d{1,3}(?:\.\d{3})*,\d{2})\s?TL\s*\.?\s*$",
+    re.MULTILINE,
+)
+# Case sepeti: ürün kodundan sonra (ad araya girebilir) "× n" ya da "adet n" / "n adet":
+# "P-001 × 6", "P-001 "Portakal Gazozu 1L" × 6", "P-004 x 25", "P-001 …, 25,00 TL, adet 6".
+_SEPET_SATIRI = re.compile(
+    r"\b([A-Z]{1,5}-\d{1,5})\b[^×*\n;]{0,40}?(?:(?:×|\*|\s[xX])\s*(\d{1,4})\b|"
+    r"\badet\w*\s*:?\s*(\d{1,4})\b|(?<![\d.,])(\d{1,4})\s*adet\b)"
+)
+# Limit / minimum / eşik bağlamı: tutar bu sözcüğe doğrudan bağlıysa ("kredi limiti 600,00 TL",
+# "minimum sipariş tutarı: 750,00 TL", "limiti 600,00 TL'yi aşan") kaynakla BİREBİR eşleşmeli;
+# sepetle kurulabilir olması yetmez (uydurma limit). Ekisiz tutarın ardından fark sözcüğü
+# geliyorsa ("limitini 25,00 TL aşar", "limitin 1,00 TL üstü") fark tutarıdır, eşik değil.
+_ESIK_BAGLAMI = re.compile(
+    r"(?:limit\w*|minimum\w*(?:\s+sipariş)?(?:\s+tutar\w*)?|eşi[kğ]\w*|tavan\w*|"
+    r"(?:alt|üst)\s+sınır\w*)\s*(?:\(|:|=|olan|olarak|değeri)?\s*"
+    r"(?<![\d.,])(\d{1,3}(?:\.\d{3})*,\d{2})\s?TL\b"
+    r"(?!\s*(?:aş|fazla|eksik|üst|üzer|alt|yukarı|aşağı|geç|daha))",
+    re.IGNORECASE,
+)
 
 
 def _kurus(tutar: str) -> int:
     return int(tutar.replace(".", "").replace(",", ""))
 
 
+def _tl(kurus: int) -> str:
+    """Kuruş → tr-TR tutar ("1.250,00")."""
+    lira, kr = divmod(kurus, 100)
+    return f"{lira:,}".replace(",", ".") + f",{kr:02d}"
+
+
 def _bosluk(metin: str) -> str:
     return re.sub(r"\s+", " ", metin).strip()
+
+
+def _tutarlar(metin: str) -> set[int]:
+    return {_kurus(t) for t in _CIPLAK_TUTAR.findall(metin)} - {0}
+
+
+def birim_fiyatlar(kaynak: str) -> dict[str, int]:
+    """Kaynağın test verisi bloğundaki ürün birim fiyatları (`kod` → kuruş). Blok yoksa (ör. birim
+    testlerinde düz metin) bütün kaynak taranır. Eşik / limit / ayar tutarları yapı taşı DEĞİLDİR
+    (yalnız ürün satırları); aynı kod iki kez geçerse ilki geçerlidir."""
+    bloklar = _TEST_VERISI_BLOGU.findall(kaynak) or [kaynak]
+    out: dict[str, int] = {}
+    for blok in bloklar:
+        for kod, fiyat in _URUN_SATIRI.findall(blok):
+            out.setdefault(kod, _kurus(fiyat))
+    return out
+
+
+def _kurulabilir(kurus: int, yapi_taslari: set[int]) -> bool:
+    """`kurus`, yapı taşlarının negatif olmayan tamsayı birleşimi mi (sınırsız sırt çantası, bit
+    kümesiyle; en çok MAX_KAT × en büyük yapı taşı)."""
+    if kurus == 0 or kurus in yapi_taslari:
+        return True
+    taslar = {t for t in yapi_taslari if 0 < t <= kurus}
+    if not taslar or kurus > MAX_KAT * max(yapi_taslari):
+        return False
+    maske = (1 << (kurus + 1)) - 1
+    erisim = 1
+    for a in sorted(taslar):
+        adim = a
+        while adim <= kurus:  # ikiye katlama: erişim ∪ erişim+a ∪ erişim+2a ∪ …
+            erisim |= (erisim << adim) & maske
+            adim <<= 1
+    return bool((erisim >> kurus) & 1)
+
+
+def _bitler(maske: int) -> set[int]:
+    """Bit kümesindeki 1 bitlerinin konumları (doğrusal: ikili gösterim üzerinden)."""
+    return {i for i, b in enumerate(reversed(bin(maske)[2:])) if b == "1"}
+
+
+def sepet_alt_toplamlari(sepet: Sequence[tuple[int, int]]) -> set[int]:
+    """Sepetin (`(birim fiyat, adet)` satırları) bütün alt toplamları: Σ fiyat × k, 0 ≤ k ≤ adet.
+    Ara toplam, ödenen tutar (bedava adetler düşülmüş), indirim ve satır tutarları bu kümededir."""
+    erisim = 1
+    for fiyat, adet in sepet:
+        for _ in range(max(0, adet)):
+            erisim |= erisim << fiyat
+    return _bitler(erisim)
+
+
+def en_yakin_kurulabilir(
+    hedef: int, fiyatlar: set[int], *, yon: str, tavan: int = 1_000_000
+) -> int | None:
+    """K17: `hedef`e (kuruş) birim fiyatların sınırsız birleşimiyle kurulabilen en yakın değer;
+    `yon="ust"` hedef ve üstü en küçük, `yon="alt"` hedef ve altı en büyük. Yoksa None."""
+    if not fiyatlar:
+        return None
+    ust = hedef + max(fiyatlar)
+    if ust > tavan:
+        return None
+    maske = (1 << (ust + 1)) - 1
+    erisim = 1
+    for a in sorted(f for f in fiyatlar if 0 < f <= ust):
+        adim = a
+        while adim <= ust:
+            erisim |= (erisim << adim) & maske
+            adim <<= 1
+    bitler = bin(erisim)[2:][::-1]  # bitler[v] == "1" → v kurulabilir
+    if yon == "ust":
+        v = bitler.find("1", hedef)
+        return v if v >= 0 else None
+    v = bitler.rfind("1", 0, hedef + 1)
+    return v if v >= 0 else None
+
+
+def case_sepeti(case: Mapping[str, Any], fiyatlar: Mapping[str, int]) -> list[tuple[int, int]]:
+    """Case'in sepeti: test verisi değerleri ve adım verilerindeki `P-xxx × n` satırları, birim
+    fiyatı kaynakta bilinen ürünlerle (`(fiyat, adet)`). Sepet metni KAYNAK sayılmaz; yalnız
+    ürün ve adet okunur, tutar birim fiyatlardan yeniden hesaplanır."""
+    parcalar = [str(v.get("value") or "") for v in _kayitlar(case.get("test_data"))]
+    parcalar += [str(a.get("data") or "") for a in _kayitlar(case.get("steps"))]
+    adetler: dict[str, int] = {}
+    for kod, *adet in _SEPET_SATIRI.findall("\n".join(parcalar)):
+        n = next((int(a) for a in adet if a), 0)
+        if kod in fiyatlar:
+            adetler[kod] = max(adetler.get(kod, 0), n)
+    return [(fiyatlar[k], n) for k, n in sorted(adetler.items())]
 
 
 def source_problems(
     metinler: Sequence[tuple[str, str]],
     kaynak: str,
     ek_kaynaklar: Mapping[str, str] | None = None,
+    sepetler: Mapping[str, Sequence[tuple[int, int]]] | None = None,
 ) -> list[str]:
     """`(etiket, metin)` listesinde kaynağa dayanmayan tırnak içi metin ve TL tutarı.
 
-    Tırnak içi metin kaynakta (girdi mesajı: gereksinim, AC, PO cevabı, test verisi bloğu) boşluk
-    sadeleştirilmiş olarak BİREBİR geçmelidir. TL tutarı kaynakta geçmeli ya da kaynak
-    tutarlarının tamsayı birleşimi olmalıdır (sepet = Σ adet × birim fiyat); kurulamayan tutar
-    (ör. fiyatlarla oluşamayan 749,99 TL) uydurmadır.
+    - Tırnak içi metin kaynakta (girdi mesajı: gereksinim, AC, PO cevabı, test verisi bloğu) ya da
+      etiketin ek kaynağında boşluk sadeleştirilmiş olarak BİREBİR geçmelidir.
+    - TL tutarı kaynakta ya da ek kaynakta birebir geçiyorsa kabul. Değilse:
+      - limit / minimum / eşik bağlamındaki tutar (`_ESIK_BAGLAMI`) uydurmadır (birebir şart);
+      - etiketin sepeti varsa (`sepetler`: case'in `P-xxx × n` satırları) tutar o sepetin bir
+        alt toplamı olmalıdır (`sepet_alt_toplamlari`; uydurma 501,00 / 775,00 reddedilir);
+      - `sepetler` verilmiş (case bağlamı) ama etiketin sepeti yoksa tutar yalnız ek kaynaktaki
+        (hazırlık) sentetik tutarların katı olabilir — sepetsiz "toplam 501,00 TL" uydurmadır;
+      - `sepetler` hiç verilmemişse (tasarım modeli aksiyonları) tutar test verisi bloğundaki
+        BİRİM FİYATLARIN (+ ek kaynak tutarlarının) birleşimiyle kurulabilmelidir; eşik / limit
+        tutarları yapı taşı değildir.
 
-    `ek_kaynaklar` (etiket → metin): case'in kendi tanımladığı değerler — test verisi değerleri,
-    adım verileri ve "Test verisi hazırlığı" ön koşulları (K17: kurulamayan sınır değeri için
-    sentetik ürün hazırlanır). Bunlar o case'in beklenenleri için kaynaktır; uydurma değildir."""
+    `ek_kaynaklar` (etiket → metin): yalnız case'in "Test verisi hazırlığı" ön koşulları (K17:
+    kurulamayan sınır değeri için sentetik ürün / veri hazırlanır). Case'in kendi test verisi ve
+    adım verisi kaynak DEĞİLDİR (aklama: `test_data.value="1.234,56 TL"`)."""
     kaynak_sade = _bosluk(kaynak)
-    kaynak_tutar = {_kurus(t) for t in TUTAR.findall(kaynak)} | {
-        _kurus(t) for t in re.findall(r"(?<![\d.,])(\d{1,3}(?:\.\d{3})*,\d{2})(?![\d])", kaynak)
-    }
-    kaynak_tutar.discard(0)
-
-    def turetilir(kurus: int) -> bool:
-        """Kaynak tutarlarının negatif olmayan tamsayı birleşimi (sepet: Σ adet × birim fiyat;
-        K17: sınır değeri test verisinden kurulabilen sepetle seçilir). Bit kümesiyle sınırsız
-        sırt çantası; en çok MAX_KAT adet × en büyük kaynak tutarı kadar."""
-        if kurus == 0 or kurus in kaynak_tutar:
-            return True
-        if not kaynak_tutar or kurus > MAX_KAT * max(kaynak_tutar):
-            return False
-        maske = (1 << (kurus + 1)) - 1
-        erisim = 1
-        for a in sorted(kaynak_tutar):
-            if a > kurus:
-                continue
-            adim = a
-            while adim <= kurus:  # ikiye katlama: erişim ∪ erişim+a ∪ erişim+2a ∪ …
-                erisim |= (erisim << adim) & maske
-                adim <<= 1
-        return bool((erisim >> kurus) & 1)
-
+    kaynak_tutar = _tutarlar(kaynak)
+    fiyatlar = set(birim_fiyatlar(kaynak).values())
     out: list[str] = []
     for etiket, metin in metinler:
         ek = (ek_kaynaklar or {}).get(etiket, "")
         ek_sade = _bosluk(ek)
-        ek_tutar = {
-            _kurus(t) for t in re.findall(r"(?<![\d.,])(\d{1,3}(?:\.\d{3})*,\d{2})(?![\d])", ek)
-        }
+        ek_tutar = _tutarlar(ek)
+        birebir = kaynak_tutar | ek_tutar
         for m in TIRNAK_ICI.finditer(metin):
             alinti = _bosluk(next(g for g in m.groups() if g))
             if alinti not in kaynak_sade and alinti not in ek_sade:
                 out.append(f"{etiket}: kaynakta olmayan alıntı {alinti!r}")
-        for tutar in TUTAR.findall(metin):
-            if _kurus(tutar) not in ek_tutar and not turetilir(_kurus(tutar)):
+        esikler = {_kurus(t) for t in _ESIK_BAGLAMI.findall(metin)}
+        sepet = list((sepetler or {}).get(etiket) or [])
+        alt_toplamlar = sepet_alt_toplamlari(sepet) if sepet else None
+        for tutar in dict.fromkeys(TUTAR.findall(metin)):
+            k = _kurus(tutar)
+            if k == 0 or k in birebir:
+                continue
+            if k in esikler:
+                out.append(f"{etiket}: kaynakta olmayan eşik/limit tutarı '{tutar} TL'")
+            elif alt_toplamlar is not None:
+                if k not in alt_toplamlar:
+                    out.append(
+                        f"{etiket}: kaynakta olmayan tutar '{tutar} TL' "
+                        "(case sepetiyle kurulamıyor)"
+                    )
+            elif sepetler is not None:
+                # Case bağlamı, sepet yok: yalnız hazırlıktaki sentetik tutarların katları.
+                if not _kurulabilir(k, ek_tutar):
+                    out.append(f"{etiket}: kaynakta olmayan tutar '{tutar} TL' (case'te sepet yok)")
+            elif not _kurulabilir(k, fiyatlar | ek_tutar):
                 out.append(f"{etiket}: kaynakta olmayan tutar '{tutar} TL'")
     return out
 
@@ -899,19 +1031,94 @@ HAZIRLIK_ONEKI = "test verisi hazırlığı"
 
 
 def case_kendi_kaynagi(cases: Sequence[Mapping[str, Any]]) -> dict[str, str]:
-    """Case'in kendi tanımladığı değerler (`C<n>` → metin): test verisi değerleri, adım verileri,
-    "Test verisi hazırlığı" ön koşulları. `source_problems` bunları o case için kaynak sayar."""
-    out: dict[str, str] = {}
-    for n, c in enumerate(cases, start=1):
-        parcalar = [str(v.get("value") or "") for v in _kayitlar(c.get("test_data"))]
-        parcalar += [str(a.get("data") or "") for a in _kayitlar(c.get("steps"))]
-        parcalar += [
+    """Case'in ek kaynağı (`C<n>` → metin): YALNIZ "Test verisi hazırlığı" ön koşulları (K17).
+    Test verisi değerleri ve adım verileri kaynak sayılmaz; sepet `case_sepetleri` ile yeniden
+    hesaplanır (aklama yolu kapalı)."""
+    return {
+        f"C{n}": "\n".join(
             str(p)
             for p in _liste(c.get("preconditions"))
             if _kucuk(str(p)).startswith(HAZIRLIK_ONEKI)
-        ]
-        out[f"C{n}"] = "\n".join(parcalar)
-    return out
+        )
+        for n, c in enumerate(cases, start=1)
+    }
+
+
+def case_sepetleri(
+    cases: Sequence[Mapping[str, Any]], kaynak: str
+) -> dict[str, list[tuple[int, int]]]:
+    """`C<n>` → case sepeti (`case_sepeti`), birim fiyatlar kaynağın test verisi bloğundan."""
+    fiyatlar = birim_fiyatlar(kaynak)
+    return {f"C{n}": case_sepeti(c, fiyatlar) for n, c in enumerate(cases, start=1)}
+
+
+# K17 "en yakın kurulabilir değer" iddiası (ikinci tur #9): kapsam öğesi tanımı "X TL'ye en
+# yakın" ya da "en yakın (kurulabilen) değer Y TL" diyorsa, Y birim fiyatların birleşimiyle X'e
+# o yönde kurulabilen en yakın değer olmalıdır; X kurulabiliyorsa "kurulamaz" iddiası yanlıştır.
+_EN_YAKIN = re.compile(r"en\s+yak[ıi]n", re.IGNORECASE)
+_HEDEFE_EN_YAKIN = re.compile(
+    r"(?<![\d.,])(\d{1,3}(?:\.\d{3})*,\d{2})\s?TL['’]?\s*(?:y?[ae]|n[ıi]n)?\s+"
+    r"(?:\w+\s+){0,3}?en\s+yak[ıi]n",
+    re.IGNORECASE,
+)
+_EN_YAKIN_DEGER = re.compile(
+    r"en\s+yak[ıi]n\s+(?:kurulabil\w*\s+)?(?:de[ğg]er\w*|tutar\w*)?\s*(?::|=)?\s*"
+    r"(?:[^\d;()\n]{0,30}=\s*)?(?<![\d.,])(\d{1,3}(?:\.\d{3})*,\d{2})\s?TL",
+    re.IGNORECASE,
+)
+
+
+def nearest_value_problems(output: Any, kaynak: str) -> list[str]:
+    """Kapsam öğesi tanımlarındaki K17 "en yakın kurulabilir değer" iddiaları, kaynağın test
+    verisi bloğundaki birim fiyatlarla deterministik hesaplanıp karşılaştırılır.
+
+    Öğe tanımında "en yakın" geçer ve tanımdan bir hedef (kurulamayan ideal sınır değeri: "X TL'ye
+    en yakın" ya da tanımdaki kurulamayan tutar) ile bir iddia (en yakın değer Y; yoksa tanımdaki
+    ilk kurulabilen tutar) okunabiliyorsa: yön Y > X ise üst, değilse alt; X'in kendisi
+    kurulabiliyorsa ideal değer X ± 0,01 TL'dir ("500,00 TL üstünde en yakın"); beklenen en yakın
+    değer `en_yakin_kurulabilir`. Hedef ya da iddia okunamıyorsa (ör. "limit + 0,01 TL")
+    denetlenmez."""
+    out = output if isinstance(output, Mapping) else {}
+    fiyatlar = set(birim_fiyatlar(kaynak).values())
+    if not fiyatlar:
+        return []
+    enkucuk = min(fiyatlar)
+    sorunlar: list[str] = []
+    for oge in _kayitlar(out.get("coverage_items")):
+        tanim = str(oge.get("definition") or "")
+        if not _EN_YAKIN.search(tanim):
+            continue
+        tutarlar = [_kurus(t) for t in _CIPLAK_TUTAR.findall(tanim)]
+        m_hedef = _HEDEFE_EN_YAKIN.search(tanim)
+        m_iddia = _EN_YAKIN_DEGER.search(tanim)
+        iddia = _kurus(m_iddia.group(1)) if m_iddia else None
+        if m_hedef:
+            hedef: int | None = _kurus(m_hedef.group(1))
+        else:
+            adaylar = [
+                t for t in tutarlar if t != iddia and t >= enkucuk and not _kurulabilir(t, fiyatlar)
+            ]
+            hedef = adaylar[0] if adaylar else None
+        if hedef is None:
+            continue
+        if iddia is None:
+            adaylar = [t for t in tutarlar if t != hedef and _kurulabilir(t, fiyatlar)]
+            iddia = adaylar[0] if adaylar else None
+        if iddia is None or iddia == hedef:
+            continue
+        kimlik = oge.get("id")
+        yon = "ust" if iddia > hedef else "alt"
+        if _kurulabilir(hedef, fiyatlar):
+            # "500,00 TL üstünde kurulabilen en yakın değer": hedef sınırın kendisi; ideal değer
+            # sınırın bir kuruş ötesidir (sınırın kendisi kurulabiliyor).
+            hedef += 1 if yon == "ust" else -1
+        dogru = en_yakin_kurulabilir(hedef, fiyatlar, yon=yon)
+        if dogru is not None and dogru != iddia:
+            sorunlar.append(
+                f"{kimlik}: {_tl(hedef)} TL için kurulabilen en yakın "
+                f"{'üst' if yon == 'ust' else 'alt'} değer {_tl(dogru)} TL, iddia {_tl(iddia)} TL"
+            )
+    return sorunlar
 
 
 def _hazir_beklenenler(cases: Sequence[Mapping[str, Any]]) -> list[tuple[str, str]]:
@@ -936,16 +1143,51 @@ def _kapsam_metni(out: Mapping[str, Any]) -> str:
     return _kucuk("\n".join(parcalar))
 
 
+def _sinir_oge_metni(out: Mapping[str, Any]) -> str:
+    """Sınır değeri öğelerinin (`BV-`) tanımları: sayısal konu yalnız burada aranır."""
+    return _kucuk(
+        "\n".join(
+            str(o.get("definition") or "")
+            for o in _kayitlar(out.get("coverage_items"))
+            if str(o.get("id") or "").startswith("BV-")
+        )
+    )
+
+
+def _anahtar_gecer(anahtar: str, metin: str) -> bool:
+    """Sayısal anahtar sözcük rakam sınırıyla aranır: "5 adet" "15 adet"te, "750,00" "1.750,00"da
+    geçmez (`(?<![\\d.,])5 adet`); sonunda rakam varsa ardından rakam gelmez."""
+    a = _kucuk(anahtar)
+    if not re.search(r"\d", a):
+        return a in metin
+    desen = re.escape(a)
+    if a[0].isdigit():
+        desen = r"(?<![\d.,])" + desen
+    if a[-1].isdigit():
+        desen += r"(?![.,]?\d)"
+    return re.search(desen, metin) is not None
+
+
 def item_like_problems(out: Mapping[str, Any], expect: Mapping[str, Any]) -> list[str]:
     """`must_cover_items_like`: `[{"topic", "keywords": [...]}]` — teknik doğruluk: her konu
-    (ör. "bedava eşiği 5 adet", "minimum tutar sınırı 750,00 TL") bir kapsam öğesi tanımında ya
-    da negatif kapsam / kapsanmayan kararında anılır (anahtar sözcüklerden biri, büyük/küçük harf
-    duyarsız)."""
+    (ör. "bedava eşiği 5 adet", "minimum tutar sınırı 750,00 TL") bir kapsam öğesinde anılır
+    (anahtar sözcüklerden biri, büyük/küçük harf duyarsız).
+
+    Sayısal anahtar sözcük (sınır değeri: "5 adet", "750,00", "3 hatalı") YALNIZ `BV-` öğesi
+    tanımında ve rakam sınırıyla aranır ("15 adet / 1.750,00 TL" sınırları "5 adet / 750,00"
+    konusunu geçmez; ikinci tur #7). Sayısal olmayan anahtar sözcük kapsam öğesi tanımında ya da
+    negatif kapsam / kapsanmayan kararında aranır."""
     metin = _kapsam_metni(out)
+    sinir = _sinir_oge_metni(out)
+
+    def gecer(a: Any) -> bool:
+        a = str(a)
+        return _anahtar_gecer(a, sinir) if re.search(r"\d", a) else _kucuk(a) in metin
+
     return [
         f"kapsam öğesi ya da kararı yok: {konu.get('topic')}"
         for konu in expect.get("must_cover_items_like") or []
-        if not any(_kucuk(str(a)) in metin for a in konu.get("keywords") or [])
+        if not any(gecer(a) for a in konu.get("keywords") or [])
     ]
 
 
@@ -969,6 +1211,18 @@ def _belirtec_var(belirtec: str, metin: str) -> bool:
     return b in metin
 
 
+def priority_problems(cases: Sequence[Mapping[str, Any]], expect: Mapping[str, Any]) -> list[str]:
+    """`max_p1_orani` (0–1): P1 case sayısı / case sayısı bu değeri aşarsa P1 seçiciliği yok
+    (yönerge: P1 yalnız para, güvenlik, veri kaybı ya da bozuk ana akış; case-review madde 11)."""
+    if "max_p1_orani" not in expect or not cases:
+        return []
+    esik = float(expect["max_p1_orani"])
+    p1 = sum(1 for c in cases if c.get("priority") == "P1")
+    if p1 / len(cases) > esik:
+        return [f"P1 oranı {p1}/{len(cases)} = {p1 / len(cases):.2f}, en çok {esik:.2f}"]
+    return []
+
+
 def coverage_problems(
     output: Any, expect: Mapping[str, Any], *, kaynak: str | None = None
 ) -> list[str]:
@@ -990,8 +1244,11 @@ def coverage_problems(
     - `must_cover_items_like`: `[{"topic", "keywords"}]` — konu bir kapsam öğesi ya da kararında
       (`item_like_problems`; teknik doğruluk: sınırlar, bölümler);
     - `questions_about`: `[{"topic", "keywords"}]` — sessiz konu açık soru / varsayımda;
+    - `max_p1_orani`: P1 case oranı bu değeri aşmaz (`priority_problems`; P1 seçiciliği);
     - `source_grounded` (true): hazır case'lerin beklenen sonuçlarındaki tırnak içi metin ve TL
-      tutarı kaynağa (girdi mesajı, `kaynak`) dayanır (`source_problems`). `kaynak` verilmezse
+      tutarı kaynağa (girdi mesajı, `kaynak`) dayanır (`source_problems`: tutar case'in sepetinden
+      yeniden hesaplanır, eşik/limit birebir) ve kapsam öğelerindeki K17 "en yakın kurulabilir
+      değer" iddiası birim fiyatlarla doğrulanır (`nearest_value_problems`). `kaynak` verilmezse
       (girdisiz çağrı) atlanır.
     """
     out = output if isinstance(output, Mapping) else {}
@@ -1042,8 +1299,15 @@ def coverage_problems(
     ]
     failures += item_like_problems(out, expect)
     failures += unknowns_problems(out, expect)
+    failures += priority_problems(cases, expect)
     if expect.get("source_grounded") and kaynak is not None:
-        failures += source_problems(_hazir_beklenenler(cases), kaynak, case_kendi_kaynagi(cases))
+        failures += source_problems(
+            _hazir_beklenenler(cases),
+            kaynak,
+            case_kendi_kaynagi(cases),
+            case_sepetleri(cases, kaynak),
+        )
+        failures += nearest_value_problems(out, kaynak)
     if "platforms" in expect:
         failures += platform_problems(out, expect)
     return failures
@@ -1125,6 +1389,7 @@ def design_model_problems(
             ]
         ]
         failures += source_problems(aksiyonlar, kaynak)
+        failures += nearest_value_problems(out, kaynak)
     return failures
 
 
@@ -1140,6 +1405,7 @@ def platform_problems(out: Mapping[str, Any], expect: Mapping[str, Any]) -> list
     - `platforms`: case `platform` alanı seçili platformlardan biri ya da null;
     - `observation_thresholds`: benimsenmeyen standart/rehber eşikleri (ör. `44×44`, `48 dp`);
       hiçbir case'in beklenen sonucunda geçmez (gözlem olmalıydı);
+      ayrıca eşik çıktının başka bir yerinde anılıyorsa bir gözlemde de anılmalıdır (olumlu yön);
     - `observations_min`: en az bu kadar gözlem;
     - config_matrix yalnız parametre + kısıt: satır yok, her parametrenin değeri var.
     """
@@ -1159,6 +1425,18 @@ def platform_problems(out: Mapping[str, Any], expect: Mapping[str, Any]) -> list
                 )
     if len(_kayitlar(out.get("observations"))) < int(expect.get("observations_min", 0)):
         failures.append(f"gözlem sayısı {expect.get('observations_min')} altında")
+    # Olumlu yön (ikinci tur #18): benimsenmeyen eşik çıktının herhangi bir yerinde (adım,
+    # test edilebilirlik boşluğu, otomasyon notu …) anılıyorsa bir gözlemde de anılmalıdır.
+    gozlem = _kucuk(_blob(_kayitlar(out.get("observations"))))
+    geri_kalan = _kucuk(_blob([{k: v for k, v in out.items() if k != "observations"}]))
+    for esik in expect.get("observation_thresholds") or []:
+        e = _kucuk(str(esik))
+        beklenende = any(f"'{esik}'" in f for f in failures)
+        if e in geri_kalan and e not in gozlem and not beklenende:
+            failures.append(
+                f"benimsenmeyen standart eşiği '{esik}' anılıyor ama gözlem yok "
+                "(observations'a yazılmalıydı)"
+            )
     matris = out.get("config_matrix") if isinstance(out.get("config_matrix"), Mapping) else {}
     if any(k not in ("parameters", "constraints") for k in matris):
         failures.append("config_matrix yalnız parameters/constraints taşır (satır üretilmez)")
@@ -1172,8 +1450,12 @@ NEGATIF_TURLER = ("negative", "authorization", "boundary")
 _N_ETIKETI = re.compile(r"^N(10|[1-9])$")
 # Beklenen sonucun bir mesajın GÖSTERİLDİĞİNİ söylediği yerler (canlı eval 2026-11-12: "parola
 # mesajda görünmez" gibi sızıntı yokluğu denetimi mesaj iddiası değildir).
+# Edilgen ve etken çatı ("mesajı gösterilir" / "mesajını gösterir", "uyarı ekranda belirir",
+# "… yazısı görünür", "mesajı iletilir"; ikinci tur #13). "yazı" yalnız ad olarak (yazısı,
+# yazıları); "yazılır" fiili sayılmaz.
 _MESAJ_ANILIYOR = re.compile(
-    r"(mesaj|uyarı|hata)\w*\s+(\S+\s+){0,2}(gösterilir|görüntülenir|görünür|çıkar|verilir)\b",
+    r"(?<!\w)(mesaj\w*|uyarı\w*|hata\w*|yazı(?:sı|ları|lar|yı|nın)?)\s+(\S+\s+){0,2}"
+    r"(gösterilir|görüntülenir|görünür|çıkar|verilir|gösterir|belirir|yazar|iletilir)\b",
     re.IGNORECASE,
 )
 
@@ -1241,7 +1523,13 @@ def deepening_problems(
         if nerede:
             failures.append(f"uydurma belirteci '{belirtec}' hazır case'te: {nerede}")
     if expect.get("source_grounded") and kaynak is not None:
-        failures += source_problems(_hazir_beklenenler(cases), kaynak, case_kendi_kaynagi(cases))
+        failures += source_problems(
+            _hazir_beklenenler(cases),
+            kaynak,
+            case_kendi_kaynagi(cases),
+            case_sepetleri(cases, kaynak),
+        )
+        failures += nearest_value_problems(out, kaynak)
     return failures
 
 

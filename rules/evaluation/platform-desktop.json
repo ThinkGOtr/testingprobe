@@ -76,7 +76,8 @@
           "16 ms",
           "2 sn"
         ],
-        "source_grounded": true
+        "source_grounded": true,
+        "max_p1_orani": 0.6
       }
     }
   ]

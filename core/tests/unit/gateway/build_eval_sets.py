@@ -503,6 +503,24 @@ ITEMS_LIKE: dict[str, list[dict[str, Any]]] = {
     ],
     "SERBEST": [_ESIK_750],
 }
+# P1 seçiciliği (ikinci tur #10; `eval_agents.priority_problems`): yönerge P1'i para, güvenlik,
+# veri kaybı ya da bozuk ana akışla sınırlar (case-generation.md, case-review.md madde 11). Eşik
+# story'nin risk profiline göre; golden'lar eşiğin altındadır:
+# - TPD-1 (son hal ve f2): para hikâyesi (kampanya, minimum tutar, kredi limiti) — sınırların
+#   çoğu P1 olabilir, ama sepete ekleme, ikinci bedava eşiği, listeleme P2/P3 → 0,6 (golden
+#   7/15 ve 8/15).
+# - TPD-3 (arama): para/güvenlik yok → 0,5 (golden 0/5).
+# - SERBEST (sepetten çıkarma): yalnız minimum tutar sınırı para kuralı → 0,5 (golden 2/6).
+# - HESAP-KILIDI (ST): kilit eşiği ve kilitli giriş güvenlik (P1); sayaç sıfırlama ve yönetici
+#   kilit açma geçici çözümü olan akışlar → 0,75.
+# - TPD-4 (giriş): iki AC'nin ikisi de ana akış + güvenlik (golden 2/2 P1); eşik konmaz.
+MAX_P1_ORANI: dict[str, float] = {
+    "TPD-1": 0.6,
+    "f2-kod-hatasi/TPD-1": 0.6,
+    "TPD-3": 0.5,
+    "SERBEST": 0.5,
+    "HESAP-KILIDI": 0.75,
+}
 TECHNIQUES: dict[str, list[str]] = {
     "TPD-1": ["BVA", "EP"],
     "f2-kod-hatasi/TPD-1": ["BVA", "EP"],
@@ -536,11 +554,25 @@ ST_EXPECT: dict[str, Any] = {
     "must_cover_items_like": [
         {
             "topic": "kilit eşiğinin altı: 2 hatalı deneme",
-            "keywords": ["2 hatalı", "iki hatalı", "2. hatalı", "ikinci hatalı"],
+            "keywords": [
+                "2 hatalı",
+                "iki hatalı",
+                "2. hatalı",
+                "ikinci hatalı",
+                "2 art arda",
+                "2 ardışık",
+            ],
         },
         {
             "topic": "kilit eşiği: 3 hatalı deneme",
-            "keywords": ["3 hatalı", "üç hatalı", "3. hatalı", "üçüncü hatalı"],
+            "keywords": [
+                "3 hatalı",
+                "üç hatalı",
+                "3. hatalı",
+                "üçüncü hatalı",
+                "3 art arda",
+                "3 ardışık",
+            ],
         },
         {"topic": "kilitli durumda giriş denemesi", "keywords": ["kilitli"]},
     ],
@@ -653,6 +685,8 @@ def case_generation_cases() -> list[dict[str, Any]]:
             expect["must_cover_items_like"] = ITEMS_LIKE[golden]
         if key in SILENT:
             expect["must_not_be_ready_about"] = SILENT[key]
+        if golden in MAX_P1_ORANI:
+            expect["max_p1_orani"] = MAX_P1_ORANI[golden]
         out.append(
             {
                 "id": case_id,
@@ -686,6 +720,7 @@ def case_generation_cases() -> list[dict[str, Any]]:
                     }
                 ],
                 "questions_about": ST_SILENT,
+                "max_p1_orani": MAX_P1_ORANI[ST_KEY],
             },
         }
     )
@@ -1381,9 +1416,14 @@ def platform_cases(bundle: str) -> list[dict[str, Any]]:
         }
         if key in SILENT:
             expect["must_not_be_ready_about"] = SILENT[key]
+        if key in MAX_P1_ORANI:
+            expect["max_p1_orani"] = MAX_P1_ORANI[key]
         # Gözlem yalnız benimsenmeyen bir standart eşiği söz konusuysa gerekir (WCAG burada
-        # benimsenmiş); sayı zorunluluğu konmaz. Benimsenmeyen eşiğin beklenen sonuca girmemesi
-        # `observation_thresholds` ile denetlenir (canlı eval 2026-11-12).
+        # benimsenmiş); sayı zorunluluğu (`observations_min`) konmaz: canlı koşuların hiçbiri
+        # gözlem yazmadı (2026-11-12) ve eşiği hiç anmamak da doğrudur. `observation_thresholds`
+        # iki yönü denetler: eşik beklenen sonuca girmez; eşik çıktının başka bir yerinde
+        # anılıyorsa bir gözlemde de anılır (olumlu yön, ikinci tur #18). Gözlem sayısı rapora
+        # (`dagilim.kosular[].observations`) ölçüm olarak girer.
         out.append(
             {
                 "id": case_id,
