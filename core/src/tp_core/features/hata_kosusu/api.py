@@ -6,10 +6,12 @@
 | GET  | `/fault-runs?limit=` | herkes — son koşular (yeniden eskiye) |
 | GET  | `/fault-runs/catalog` | herkes — hata kataloğu |
 | GET  | `/fault-runs/{id}` | herkes — koşu + adımlar |
-| POST | `/fault-runs/{id}/cancel` | engineer, presenter — iptal |
+| POST | `/fault-runs/{id}/cancel` | engineer, presenter — `{id, durum, iptal_istendi}` |
 
-Süren koşu varken başlatma 409 `hata_kosusu_suruyor`. İptal: kuyruktaki koşu hemen, süren koşu
-adım arasında durur (koşmakta olan `/check` bitene kadar beklenir).
+Süren koşu varken başlatma 409 `hata_kosusu_suruyor`; geçersiz platform/hata kodu 422
+`gecersiz_istek`. İptal: koşan adım yoksa koşu hemen `cancelled`; varsa koşu `running` kalır,
+`iptal_istendi: true` olur ve adım bitince durur. GET uçları salt okunurdur (yarıda kalan koşuyu
+başlatma, worker açılışı ve tarama işi kapatır).
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
+from tp_core.api.errors import KodluHata
 from tp_core.auth.deps import CurrentUser, DbSession, require_role
 from tp_core.features.hata_kosusu import katalog as kat
 from tp_core.features.hata_kosusu import service
@@ -43,7 +46,7 @@ def baslat(body: KosuGirdisi, session: DbSession, user: Baslatan) -> dict[str, A
     try:
         return service.baslat(session, body.platformlar, body.hatalar, user)
     except service.GecersizIstek as exc:
-        raise HTTPException(422, str(exc)) from exc
+        raise KodluHata(exc.status_code, exc.kod, str(exc)) from exc
 
 
 @router.get("/fault-runs")

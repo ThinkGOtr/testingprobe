@@ -89,9 +89,9 @@ public class AyarlarBirimTesti {
     assertEquals(kampanya.govde("bayi1", false), "{\"kullanici_adi\":\"bayi1\",\"kampanya\":false}");
 
     // TP_FAULT: {"hata": kod} açar, {"hata": null} kaldırır.
-    TestVerisi.Kirilma hata = TestVerisi.kirilma(Ayarlar.haritadan(Map.of(), Map.of("TP_FAULT", "kampanya_esik_7"))).orElseThrow();
-    assertEquals(hata.hataKodu(), "kampanya_esik_7");
-    assertEquals(hata.govde("bayi2", true), "{\"kullanici_adi\":\"bayi2\",\"hata\":\"kampanya_esik_7\"}");
+    TestVerisi.Kirilma hata = TestVerisi.kirilma(Ayarlar.haritadan(Map.of(), Map.of("TP_FAULT", "kampanya_tek_bedava"))).orElseThrow();
+    assertEquals(hata.hataKodu(), "kampanya_tek_bedava");
+    assertEquals(hata.govde("bayi2", true), "{\"kullanici_adi\":\"bayi2\",\"hata\":\"kampanya_tek_bedava\"}");
     assertEquals(hata.govde("bayi2", false), "{\"kullanici_adi\":\"bayi2\",\"hata\":null}");
 
     // İkisi birlikte → TP_FAULT geçerli.
@@ -106,11 +106,11 @@ public class AyarlarBirimTesti {
     assertTrue(
         org.testng.Assert.expectThrows(
                 IllegalStateException.class,
-                () -> TestVerisi.kip(Ayarlar.haritadan(Map.of(), Map.of("TP_FAULT", "kampanya_esik_7", "TP_E2E_NO_RESET", "1"))))
+                () -> TestVerisi.kip(Ayarlar.haritadan(Map.of(), Map.of("TP_FAULT", "kampanya_tek_bedava", "TP_E2E_NO_RESET", "1"))))
             .getMessage()
             .contains("TP_FAULT için DEMOAPP_TEST_TOKEN gerekir"));
     assertEquals(
-        TestVerisi.kip(Ayarlar.haritadan(Map.of(), Map.of("TP_FAULT", "kampanya_esik_7", "DEMOAPP_TEST_TOKEN", "t"))),
+        TestVerisi.kip(Ayarlar.haritadan(Map.of(), Map.of("TP_FAULT", "kampanya_tek_bedava", "DEMOAPP_TEST_TOKEN", "t"))),
         TestVerisi.Kip.SIFIRLAMA);
   }
 
