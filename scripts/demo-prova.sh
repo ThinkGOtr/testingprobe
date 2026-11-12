@@ -181,6 +181,13 @@ strict_ac() {
   [ "$(worker_strict)" = 1 ] || die "core-worker TP_REPLAY_STRICT=1 değil"
 }
 
+# Arayüz provası bu yığının portalına ve jira-sim'ine gider (.env portları; yalıtılmış ikinci yığında
+# varsayılan 8080/8090 BAŞKA yığını hedeflerdi). Kabukta verilmişse o kullanılır.
+PORTAL_PORT="${TP_PORTAL_PORT:-$(env_get TP_PORTAL_PORT)}"
+JIRA_PORT="${JIRA_SIM_PORT:-$(env_get JIRA_SIM_PORT)}"
+export PORTAL_URL="${PORTAL_URL:-http://127.0.0.1:${PORTAL_PORT:-8080}}"
+export JIRA_SIM_URL="${JIRA_SIM_URL:-http://127.0.0.1:${JIRA_PORT:-8090}}"
+
 ZAMAN="$(date +%Y%m%d-%H%M%S)"
 OZET="$RAPOR_KOK/prova-ozeti-$ZAMAN.md"
 satirlar=()
