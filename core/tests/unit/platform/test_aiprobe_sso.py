@@ -935,9 +935,12 @@ def test_alembic_tek_bas() -> None:
 
     script = ScriptDirectory.from_config(alembic_config())
     bas = script.get_heads()
-    assert bas == ["0020"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
+    # 012: `0022_kalite_dogrulama` 0020'nin ardından gelir (ANALIZ V7; feat/case-gen-v3'ün 0021'i
+    # birleşince 0022'nin ebeveyni 0021 olur).
+    assert bas == ["0022"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
     assert script.get_revision("0019").down_revision == "0018"
     assert script.get_revision("0020").down_revision == "0019"
+    assert script.get_revision("0022").down_revision == "0020"
 
 
 # ------------------------------------------------------------------ inceleme bulguları (2026-11-10)

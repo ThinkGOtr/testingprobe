@@ -149,10 +149,31 @@ metinde `golden_name(FREE_TEXT_KEY)` → `SERBEST` / `SERBEST-r2`. `fix_doc` ön
 | `verify_and_map` | `TPD-1-C1..C10`, `TPD-4-C1..C2` | case_generation golden'ındaki case (insan düzeltirse REPLAY-MISS) |
 | `verify_and_map_app` | `TPD-1-C2-android` | 009 mobil: aynı C2 case'i; platform golden adındadır (`<story>-C<n>-<platform>`), başka platform REPLAY-MISS. Araç adımları app-mcp sözleşmesine uyan sahte oturumda yazıldı (`core/tests/unit/gateway/build_app_goldens.py`), gerçek cihazda kaydedilmedi |
 | `decision_table_draft` | `TPD-1` | 012 karar tablosu: demo ana yolunun (`f2-kod-hatasi`) PO onaylı metni — AC2 özgün (7 adette 1 bedava → `adet // 7`; kod `// 6` uygular, tablo story'yi izler), AC3 düzeltilmiş (kampanyasız 750,00 TL), AC6. Başka metin (fix_doc yolu dahil) nötr REPLAY-MISS: boş taslak (`on_miss.json`) |
+| `case_facts` | `TPD-1-C2…C6`, `TPD-1-C9`, `TPD-1-C10`, `f2-kod-hatasi/TPD-1-C3` | 012 değer çıkarma: case_generation golden'ındaki case metni (`input_match.case_text`); demo ana yolunun C3'ü senaryo golden'ından. Düzeltilmiş/önerilen içerik ve golden'ı olmayan case (C1, C7, C8 zaten modele gitmez; metamorfik türetilen case'ler) nötr REPLAY-MISS: `groups: []` → `kontrol_edilemedi` (`on_miss.json`). Ayrıntı aşağıda "012 değer çıkarma" |
 | `consistency_check` | `f2-kod-hatasi/TPD-1-r2` | F2 `code_defect` yolu: AC2 özgün, AC3 düzeltilmiş (aşağıda "Demo-B") |
 | `case_generation` | `f2-kod-hatasi/TPD-1` | Aynı belge; ana golden'dan tek farkı C3 (6 adette bedava yok) |
 | `verify_and_map` | `f2-kod-hatasi/TPD-1-C3` | Senaryonun C3'ü; diğer case'ler ana golden'larla birebir aynı, ana golden eşleşir |
 | `triage`, `bug_draft`, `dup_rank` | `HATA` + senaryo dizinleri | Faz 4 (aşağıda "Faz 4"): kanonik hata/bulgu bloğuna göre beyanlı |
+
+## 012 değer çıkarma (`case_facts`)
+
+Karar tablosu kontrolü (specs/012-test-kalite-dogrulama/ANALIZ.md §4.3, §12) için model case'ten
+tablo kolonlarına karşılık gelen değerleri **alıntısıyla** çıkarır; model tablonun yalnız kolon
+tanımlarını görür (satır, koşul, ifade görmez). Golden adı case düzeyidir
+(`golden_name(story, case_no=n)` → `TPD-1-C3`); eşleşme case içeriğinin kanonik metnine göredir.
+
+- Golden'lar elle hazırlanmıştır (`ai_call.model = golden-elle`) ve
+  `core/tests/unit/features/oracle/tpd1.py`'den üretilir:
+  `cd core && uv run python -m tests.unit.features.oracle.tpd1` (elle düzenlemeyin;
+  `test_cikarma_golden.py` depodakiyle aynı olduğunu denetler).
+- Kolon adları Ş1'in `decision_table_draft/golden/TPD-1.json` tablolarınındır (T1: `adet`,
+  `birim_fiyat` → `bedava_adet`, `indirim`; T2: `kampanyali_sepet`, `sepet_tutari` →
+  `minimum_uyarisi`). Case birim fiyatı yazmadığı için `birim_fiyat` olgusu yoktur.
+- Bir değer case'te birden çok yerde geçiyorsa (başlık, adım eylemi/verisi/beklenen, sonuç) her
+  geçiş ayrı olgudur: metamorfik türetme değişen alıntının bütün kopyalarını ister.
+- Alıntılar birebirdir; ürün her olguyu deterministik doğrular, tutmayanı atar.
+- Değerlendirme seti `rules/evaluation/case-facts.json` (C2, ana yol C3, C5) aynı modülden
+  `build_eval_sets.py` ile üretilir.
 
 ## Prova kipi (`TP_REPLAY_STRICT=1`): ana yol tam
 

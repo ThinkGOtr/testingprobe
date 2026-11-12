@@ -394,6 +394,26 @@ def karsilastirmalar(kayit: CaseOracleKontrol) -> list[dict[str, Any]]:
     return out
 
 
+def karsilastirilamayanlar(kayit: CaseOracleKontrol) -> list[dict[str, Any]]:
+    """Case'te doğrulanmış ama tablonun eksik girdi yüzünden hesaplayamadığı beklenen değerler
+    (`dogrulama.kismi_degerlendir`; ör. birim fiyat yazmayan case'te indirim)."""
+    out = []
+    for g in (kayit.ayrintilar or {}).get("gruplar") or []:
+        for o in g.get("karsilastirilamayan") or []:
+            out.append(
+                {
+                    "tablo_id": g.get("tablo_id"),
+                    "tablo_ad": g.get("tablo_ad"),
+                    "column": o.get("column"),
+                    "alan": o.get("field"),
+                    "alinti": o.get("quote"),
+                    "case_degeri": o.get("value"),
+                    "neden": o.get("neden"),
+                }
+            )
+    return out
+
+
 def oracle_gorunumu(
     kayit: CaseOracleKontrol | None,
     icerik_hash: str,
@@ -409,6 +429,7 @@ def oracle_gorunumu(
             "icerik_hash": icerik_hash,
             "ozet": dogrulama.ozet(None, None),
             "karsilastirmalar": [],
+            "karsilastirilamayan": [],
             "istisna": None,
             "kontrol_suruyor": True,
         }
@@ -424,6 +445,7 @@ def oracle_gorunumu(
         "icerik_hash": icerik_hash,
         "ozet": dogrulama.ozet(kayit.sonuc, kayit.ayrintilar),
         "karsilastirmalar": karsilastirmalar(kayit),
+        "karsilastirilamayan": karsilastirilamayanlar(kayit),
         "istisna": istisna,
         "kontrol_suruyor": False,
     }
