@@ -657,10 +657,11 @@ def write_report(
 
 def uretim_dagilimi(results: Sequence[CaseResult]) -> dict[str, Any]:
     """case_generation raporu: koşu başına ve toplamda case sayısı, readiness ve teknik dağılımı,
-    kapsam öğesi sayıları (`eval_agents.generation_stats`) ve uydurma/readiness beklentisine takılan
+    öncelik dağılımı ve P1 oranı (`max_p1_orani` beklentisi), kapsam öğesi sayıları
+    (`eval_agents.generation_stats`) ve uydurma/readiness beklentisine takılan
     koşular. Çıktısı olmayan koşu (geçit hatası) sayılmaz."""
     kosular = {r.id: generation_stats(r.output) for r in results if isinstance(r.output, Mapping)}
-    toplam: dict[str, Any] = {"kosu": len(kosular), "readiness": {}, "technique": {}}
+    toplam: dict[str, Any] = {"kosu": len(kosular), "readiness": {}, "technique": {}, "priority": {}}
     for ad in (
         "case",
         "coverage_items",
@@ -672,11 +673,14 @@ def uretim_dagilimi(results: Sequence[CaseResult]) -> dict[str, Any]:
         toplam[ad] = sum(int(k[ad]) for k in kosular.values())
     toplam["tekrar_orani"] = round(toplam["tekrar"] / toplam["case"], 4) if toplam["case"] else None
     for kosu in kosular.values():
-        for alan in ("readiness", "technique"):
+        for alan in ("readiness", "technique", "priority"):
             for anahtar, adet in kosu[alan].items():
                 toplam[alan][anahtar] = toplam[alan].get(anahtar, 0) + adet
     toplam["readiness"] = dict(sorted(toplam["readiness"].items()))
     toplam["technique"] = dict(sorted(toplam["technique"].items()))
+    toplam["priority"] = dict(sorted(toplam["priority"].items()))
+    p1 = toplam["priority"].get("P1", 0)
+    toplam["p1_orani"] = round(p1 / toplam["case"], 4) if toplam["case"] else None
     return {
         "toplam": toplam,
         "kosular": kosular,
