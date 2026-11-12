@@ -52,7 +52,7 @@ from tp_core.features.oracle import dogrulama, service
 from tp_core.features.oracle.tablolar import tablo_hashleri
 from tp_core.models import KararTablosu, TestCase, session_scope
 from tp_core.models.enums import ORACLE_ISTISNA_TUR
-from tp_core.workflow.service import InvalidDecision, Principal
+from tp_core.workflow.service import InvalidDecision, Principal, WorkflowError
 
 ISTISNA_EN_AZ = 20
 ISTISNA_EN_AZ_HARF = 10
@@ -133,8 +133,55 @@ def onay_denetimi(
     _tablolari_kilitle(session, tc)
     ac_refs = service.ac_refleri(sakli, gonderilen)
     kapsayan = service.kapsayan_tablolar(session, tc, gonderilen, ac_refs=ac_refs)
-    dusurme = _dusurme(session, tc, user, icerik_hash, sakli, ai, gonderilen, kapsayan)
-    zorunlu = yuksek or dusurme
+    dusurme = _dusurme(session, tc, icerik_hash, sakli, ai, gonderilen, kapsayan)
+    try:
+        uyarilar = _kapi(
+            session,
+            tc,
+            icerik_hash,
+            istisna_gerekce,
+            user,
+            gonderilen,
+            istisna_turu,
+            yuksek or dusurme is not None,
+            kapsayan,
+            ac_refs,
+        )
+    except WorkflowError:
+        if dusurme is not None:
+            # Engellenen düşürme denemesi de denetlenir (istek geri alınır; ayrı işlem).
+            with session_scope() as s:
+                audit_on_commit(
+                    s,
+                    user.kullanici_adi,
+                    "oracle.dusurme",
+                    f"test_case:{tc.id}",
+                    {**dusurme, "engellendi": True},
+                )
+        raise
+    if dusurme is not None:
+        audit_on_commit(
+            session,
+            user.kullanici_adi,
+            "oracle.dusurme",
+            f"test_case:{tc.id}",
+            {**dusurme, "engellendi": False},
+        )
+    return uyarilar
+
+
+def _kapi(
+    session: Session,
+    tc: TestCase,
+    icerik_hash: str,
+    istisna_gerekce: str | None,
+    user: Principal,
+    gonderilen: Mapping[str, Any],
+    istisna_turu: str | None,
+    zorunlu: bool,
+    kapsayan: list[KararTablosu],
+    ac_refs: list[str],
+) -> list[str]:
     if not kapsayan:
         return []
     hashler = tablo_hashleri(kapsayan)
@@ -196,44 +243,36 @@ def onay_denetimi(
 def _dusurme(
     session: Session,
     tc: TestCase,
-    user: Principal,
     icerik_hash: str,
     sakli: Mapping[str, Any],
     ai: Mapping[str, Any] | None,
     gonderilen: Mapping[str, Any],
     kapsayan: list[KararTablosu],
-) -> bool:
-    """Riski ya da kapsanan tabloyu düşüren düzeltme → `oracle.dusurme` (V11)."""
+) -> dict[str, Any] | None:
+    """Riski ya da kapsanan tabloyu düşüren düzeltmenin `oracle.dusurme` özeti (V11); yoksa None."""
     if gonderilen is sakli:
-        return False
+        return None
     risk = (dogrulama.yuksek_risk_mi(sakli) or dogrulama.yuksek_risk_mi(ai)) and not (
         dogrulama.yuksek_risk_mi(gonderilen)
     )
     yalniz = {str(t.id) for t in service.kapsayan_tablolar(session, tc, gonderilen)}
     dusen = [t for t in kapsayan if str(t.id) not in yalniz]
     if not risk and not dusen:
-        return False
-    audit_on_commit(
-        session,
-        user.kullanici_adi,
-        "oracle.dusurme",
-        f"test_case:{tc.id}",
-        {
-            "icerik_hash": icerik_hash,
-            "risk": {
-                "once": sakli.get("risk") or sakli.get("priority"),
-                "sonra": gonderilen.get("risk") or gonderilen.get("priority"),
-            }
-            if risk
-            else None,
-            "dusen_tablolar": [{"id": str(t.id), "ad": t.icerik.get("ad")} for t in dusen],
-            "ac_refs": {
-                "once": list(sakli.get("acceptance_criteria_refs") or []),
-                "sonra": list(gonderilen.get("acceptance_criteria_refs") or []),
-            },
+        return None
+    return {
+        "icerik_hash": icerik_hash,
+        "risk": {
+            "once": sakli.get("risk") or sakli.get("priority"),
+            "sonra": gonderilen.get("risk") or gonderilen.get("priority"),
+        }
+        if risk
+        else None,
+        "dusen_tablolar": [{"id": str(t.id), "ad": t.icerik.get("ad")} for t in dusen],
+        "ac_refs": {
+            "once": list(sakli.get("acceptance_criteria_refs") or []),
+            "sonra": list(gonderilen.get("acceptance_criteria_refs") or []),
         },
-    )
-    return True
+    }
 
 
 def _istisna_yaz(

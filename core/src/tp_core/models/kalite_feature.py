@@ -149,7 +149,9 @@ class OracleIstisna(Base):
     icerik_hash: Mapped[str]
     tur: Mapped[str]
     gerekce: Mapped[str]
-    veren_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id"))
+    # Portal kararında her zaman dolu (kapı oturumsuz istisnayı reddeder); sistem/eski kayıtlar
+    # için boş olabilir.
+    veren_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("app_user.id"))
     tablo_hashleri: Mapped[dict[str, Any]] = mapped_column(
         JSONB, server_default=EMPTY_OBJ, default=dict
     )

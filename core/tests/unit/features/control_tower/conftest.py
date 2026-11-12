@@ -1,7 +1,11 @@
 """Kontrol Kulesi testleri: CI şeridinin fikstürleri."""
 
+import os
 import sys
 from pathlib import Path
+
+# Oracle gereksinim kontrolü birleştirme gecikmesi (run_after): testlerde işler hemen koşar.
+os.environ.setdefault("TP_ORACLE_BIRLESTIRME_S", "0")
 
 CORE = Path(__file__).resolve().parents[4]
 if str(CORE) not in sys.path:

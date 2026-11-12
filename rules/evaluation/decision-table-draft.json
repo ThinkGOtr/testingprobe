@@ -1,7 +1,7 @@
 {
   "bundle": "decision-table-draft",
   "purpose": "decision_table_draft",
-  "version": 1,
+  "version": 2,
   "note": "Üretildi: core/tests/unit/gateway/build_eval_sets.py (elle düzenlemeyin). Canlı koşu: make eval-live A='--bundle decision-table-draft'",
   "cases": [
     {

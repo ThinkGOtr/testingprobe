@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
@@ -69,7 +70,7 @@ OLAY_ONAYLI_UYUMSUZ = "oracle.onayli_uyumsuz"
 KONTROL_DURUMLARI = ("draft", "approved", "published")
 ONAYLI_DURUMLAR = ("approved", "published")
 # `check_requirement` birleştirme: gereksinim başına tek bekleyen iş, kısa gecikmeyle (art arda
-# gelen tablo olayları tek taramada toplanır).
+# gelen tablo olayları tek taramada toplanır). `TP_ORACLE_BIRLESTIRME_S` ile değişir (testler 0).
 GEREKSINIM_GECIKME_S = 2.0
 # Başarısız / iptal edilmiş iş idempotens anahtarını kilitlemez: yeni deneme son eki alır.
 BITMIS_IS = ("failed", "cancelled")
@@ -320,6 +321,13 @@ def kontrol_anahtari(
     return f"{CHECK_CASE_JOB}:{tur}:{case_id}:{icerik_hash}:{tablo_ozeti_}:{damga}"
 
 
+def _gecikme_s() -> float:
+    try:
+        return max(0.0, float(os.environ.get("TP_ORACLE_BIRLESTIRME_S", GEREKSINIM_GECIKME_S)))
+    except ValueError:
+        return GEREKSINIM_GECIKME_S
+
+
 def gereksinim_kontrolu_kuyruga_al(
     session: Session, requirement_id: uuid.UUID, neden: str
 ) -> uuid.UUID:
@@ -352,7 +360,9 @@ def gereksinim_kontrolu_kuyruga_al(
         conn,
         CHECK_REQUIREMENT_JOB,
         {"requirement_id": str(requirement_id), "neden": neden},
-        run_after=datetime.now(UTC) + timedelta(seconds=GEREKSINIM_GECIKME_S),
+        # Gecikme 0 ise DB saati (None → now()); uygulama ile DB saati arasındaki kayma işi
+        # geciktirmesin.
+        run_after=(datetime.now(UTC) + timedelta(seconds=g)) if (g := _gecikme_s()) > 0 else None,
     )
 
 
@@ -507,12 +517,17 @@ def _check_case(
         sira_no, rid = tc.sira_no, tc.requirement_id
         ai_orijinal = ai_icerikleri(s, [tc]).get(tc.id)
         ai_icerik = ai_orijinal is not None and content_hash(ai_orijinal) == h
+        # Metamorfik türetilmiş case: olgular dönüşümden bilinir, model çağrılmaz (Ş6).
+        turetilen = _turetilen_olgulari(s, tc) if h == tc.icerik_hash and tablolar else None
 
     call_id: uuid.UUID | None = None
     mod: str | None = None
     cagri_hatasi: str | None = None
     if not tablolar:
         sonuc, ayrintilar = dogrulama.degerlendir(icerik, [], None)
+    elif turetilen is not None:
+        sonuc, ayrintilar = dogrulama.degerlendir(icerik, tablolar, turetilen)
+        ayrintilar["kaynak"] = "metamorfik"
     else:
         cikti, call_id, mod, cagri_hatasi = _olgulari_cikar(
             ctx, engine, gateway, icerik, story, sira_no, tablolar
@@ -568,6 +583,16 @@ def _check_case(
             "mode": mod,
             **({"onayli_uyumsuz": True} if onayli_uyumsuz else {}),
         }
+
+
+def _turetilen_olgulari(s: Session, tc: TestCase) -> Mapping[str, Any] | None:
+    """`metamorfik.service.turetilen_olgulari` (türetme ürünü değilse ya da güncel içeriği
+    vermiyorsa None → normal değer çıkarma)."""
+    if tc.ai_generated:
+        return None
+    from tp_core.features.metamorfik.service import turetilen_olgulari
+
+    return turetilen_olgulari(s, tc)
 
 
 def _onayli_uyumsuz_sinyali(
@@ -765,7 +790,7 @@ def istisna_gorunumu(
     return {
         "tur": istisna.tur,
         "gerekce": istisna.gerekce,
-        "veren": kullanicilar.get(istisna.veren_id),
+        "veren": kullanicilar.get(istisna.veren_id) if istisna.veren_id else None,
         "zaman": istisna.zaman,
         # Aynı tablo kümesiyle verildiyse kapı yeniden gerekçe istemez.
         "gecerli": hashler is not None and dict(istisna.tablo_hashleri or {}) == dict(hashler),
@@ -851,7 +876,9 @@ def case_oracle_ozetleri(
         )
     }
     istisnalar = son_istisnalar(session, [(c.id, c.icerik_hash) for c in cases])
-    kullanicilar = _kullanicilar(session, {i.veren_id for i in istisnalar.values()})
+    kullanicilar = _kullanicilar(
+        session, {i.veren_id for i in istisnalar.values() if i.veren_id is not None}
+    )
     out: dict[uuid.UUID, dict[str, Any] | None] = {}
     for c in cases:
         kapsayan = kapsayanlar(tablolar[c.requirement_id], c.icerik)
@@ -892,7 +919,9 @@ def case_oracle(session: Session, tc: TestCase, icerik_hash: str | None = None) 
         kapsayan_var = True  # önerilen içerik için kayıt yoksa kontrol beklenir
         kapsayan = [t for t in tablolar if str(t.id) in (kayit.tablo_hashleri if gecerli else {})]
     istisna = son_istisnalar(session, [(tc.id, h)]).get((tc.id, h))
-    kullanicilar = _kullanicilar(session, {istisna.veren_id} if istisna else set())
+    kullanicilar = _kullanicilar(
+        session, {istisna.veren_id} if istisna and istisna.veren_id else set()
+    )
     return {
         "case_id": str(tc.id),
         "icerik_hash": h,

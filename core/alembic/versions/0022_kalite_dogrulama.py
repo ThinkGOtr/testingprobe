@@ -20,7 +20,8 @@
 kayıtları silinmez). `oracle_istisna` yalnız SELECT, INSERT (append-only).
 
 Review turu 1 (2026-11-12): dal dev'e girmediği için yerinde güncellendi (§13.2): `kismen` sonucu,
-`case_oracle_kontrol.guncelleme`, `oracle_istisna`.
+`case_oracle_kontrol.guncelleme`, `oracle_istisna`, `metamorfik_turetme.sonuc`
+`tutarsiz_kalan_deger`.
 
 V7: `feat/case-gen-v3` `0021`'i kullanıyor; iki dal birleşirken `down_revision` `"0021"` yapılır.
 
@@ -143,7 +144,7 @@ CREATE TABLE oracle_istisna (
     icerik_hash TEXT NOT NULL,
     tur TEXT NOT NULL,
     gerekce TEXT NOT NULL,
-    veren_id UUID NOT NULL,
+    veren_id UUID,
     tablo_hashleri JSONB DEFAULT '{}'::jsonb NOT NULL,
     zaman TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
     PRIMARY KEY (id),
@@ -151,7 +152,7 @@ CREATE TABLE oracle_istisna (
     FOREIGN KEY(test_case_id) REFERENCES test_case (id) ON DELETE CASCADE,
     FOREIGN KEY(veren_id) REFERENCES app_user (id)
 )
-""",  # noqa: E501
+""",
     "CREATE INDEX oracle_istisna_case_ix ON oracle_istisna (test_case_id, icerik_hash)",
     """
 CREATE TABLE metamorfik_turetme (
@@ -164,7 +165,7 @@ CREATE TABLE metamorfik_turetme (
     olusturan_id UUID,
     olusturma TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
     PRIMARY KEY (id),
-    CONSTRAINT metamorfik_turetme_sonuc_ck CHECK (sonuc IN ('belirsiz_alinti', 'iliski_gecersiz', 'olgu_yok', 'turetildi')),
+    CONSTRAINT metamorfik_turetme_sonuc_ck CHECK (sonuc IN ('belirsiz_alinti', 'iliski_gecersiz', 'olgu_yok', 'turetildi', 'tutarsiz_kalan_deger')),
     CONSTRAINT metamorfik_turetme_cift_uq UNIQUE (iliski_id, kaynak_case_id),
     FOREIGN KEY(iliski_id) REFERENCES metamorfik_iliski (id) ON DELETE CASCADE,
     FOREIGN KEY(kaynak_case_id) REFERENCES test_case (id) ON DELETE CASCADE,

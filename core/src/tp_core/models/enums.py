@@ -71,7 +71,9 @@ ORACLE_SONUC = frozenset({"uyumlu", "uyumsuz", "kismen", "kapsam_disi", "kontrol
 # `oracle_istisna.tur` (review 1 K10/V10): uyuşmazlığa ya da kontrol edilemeyen yüksek riskli
 # case'e verilen gerekçeli onay.
 ORACLE_ISTISNA_TUR = frozenset({"uyumsuz", "kontrolsuz"})
-TURETME_SONUC = frozenset({"turetildi", "iliski_gecersiz", "belirsiz_alinti", "olgu_yok"})
+TURETME_SONUC = frozenset(
+    {"turetildi", "iliski_gecersiz", "belirsiz_alinti", "olgu_yok", "tutarsiz_kalan_deger"}
+)
 # `hata_kosusu.durum` workflow.MACHINES'e konmaz (insan kapısı yok; iş kendi yazar).
 HATA_KOSUSU_DURUM = frozenset({"queued", "running", "done", "failed", "cancelled"})
 HATA_KOSUSU_SUREN = frozenset({"queued", "running"})
