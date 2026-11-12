@@ -62,6 +62,7 @@ tp-vm'e deploy (ayrıca istenecek).
 | K21 | Kalite metrikleri | Kontrol Kulesi'nde "Case kalitesi" bölümü: kapsam oranları (hazır kapsam dahil), P8 skor dağılımı, P9 kararları, tekrar oranı, asistan denetimi; prompt sürümüne göre kırılım |
 | K22 | Terimler | Hazır olma: Hazır / Varsayıma bağlı / Soru bekliyor. Yayın engelleri "Yayınlanamaz: …". P9: "Agent Probe denetimi", düğme "Agent Probe'a gönder". Asistan: "İçerik kontrolü". Menü: "Denetim kaydı". Tutarlılık kontrolü: "Yeniden kontrol et" |
 | K23 | Önceki varsayılanlar | TPD-3 (açıklamada injection) denetimi DÜZELTME_GEREKLİ kalır; başarısız Agent Probe testinde bug taslağı açılmaz |
+| K24 | Canlı değerlendirme bütçesi | Tavan 30 → 60 USD; tüm yeni paketler belgedeki koşu sayılarıyla (denetim 5 koşu, case üretimi 3 koşu) |
 
 Uygulama sırasında verilen teknik kararlar (ürün kararı değil; gerekçesiyle):
 
