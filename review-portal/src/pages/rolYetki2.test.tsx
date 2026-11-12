@@ -407,3 +407,22 @@ describe("mock okuma uçları core gibi izin ister", () => {
     await expect(api.caseGoruntulendi("case-1-7")).resolves.toBeTruthy();
   });
 });
+
+describe("Demo yol haritası: rolün okuyamadığı kaynak istenmez (012)", () => {
+  it("PO kod üretimini göremez: 403 uyarısı değil, sessiz not", async () => {
+    await oturumAc("po");
+    const spy = vi.spyOn(api, "scriptler");
+    uygulama("/yol-haritasi");
+    expect(await screen.findByTestId("yh-rol-kapali")).toHaveTextContent("Kod üretimi");
+    expect(screen.queryByText(/yetkiniz yok/i)).toBeNull();
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("Automation Engineer tüm kaynakları okur, not çıkmaz", async () => {
+    await oturumAc("muhendis");
+    uygulama("/yol-haritasi");
+    await screen.findByText("Demo yol haritası", { selector: "h1" });
+    await waitFor(() => expect(screen.queryByTestId("yh-rol-kapali")).toBeNull());
+  });
+});
