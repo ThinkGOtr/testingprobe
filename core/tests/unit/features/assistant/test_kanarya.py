@@ -95,19 +95,71 @@ def test_kanarya_gorunur_her_alanda_yakalanir() -> None:
 
 @pytest.mark.parametrize(
     "metin",
-    ["TP-CANARY-deadbeef", "tp-canary-00000000", "TP_CANARY 12345678", "eski: TP-CANARY-"],
+    [
+        "TP-CANARY-deadbeef",
+        "tp-canary-00000000",
+        "TP_CANARY 12345678",
+        "iz: Tp Canary_0BADC0DE.",
+        "eski kanarya (TP-CANARY-a1b2c3d4)",
+    ],
 )
 def test_baska_kanarya_degerleri_de_yakalanir(metin: str) -> None:
     assert guvenlik_cikti.sizinti_var(_cevap(metin), guvenlik_cikti.kanarya(), ()) == "kanarya"
 
 
-def test_gorunmeyen_alan_taranmaz() -> None:
+@pytest.mark.parametrize(
+    "metin",
+    [
+        "HTTP canary uç noktası 200 dönüyor.",
+        "smtp-canary testi geçti.",
+        "Stp canary deadbeef",  # kelime sınırı yok
+        "TP-CANARY- öneki tek başına",
+        "TP-CANARY-1234567 (7 hane)",
+        "TP-CANARY-deadbeef9 (9 hane)",
+        "TP-CANARY-xyzxyzxy",
+    ],
+)
+def test_masum_canary_metinleri_tetiklemez(metin: str) -> None:
+    assert guvenlik_cikti.sizinti_var(_cevap(metin), guvenlik_cikti.kanarya(), ()) is None
+
+
+def _sizan_alanlar(k: str) -> list[dict[str, Any]]:
+    oneri = {
+        "baslik": "b",
+        "neden": "n",
+        "eylem": {"tur": "jira_taslak", "taslak": {"ozet": "o", "aciklama": "a"}},
+    }
+    return [
+        {"kaynaklar": [{"tur": "genel_bilgi", "ref": "r", "alinti": f"iz {k}"}]},
+        {"kaynaklar": [{"tur": "urun_kodu", "ref": f"docs/{k}.md:1", "alinti": "x"}]},
+        {"yonlendirmeler": [{"rota": "/kod", "etiket": f"Git {k}"}]},
+        {"jira_baglantilari": [{"anahtar": "TPD-1", "etiket": k}]},
+        {"oneriler": [{**oneri, "eylem": {"tur": "jira_taslak", "taslak": {"baslik_yeni": k}}}]},
+        {"gelecekte_eklenen_alan": {"ic": [k]}},
+    ]
+
+
+def test_cevabin_butun_dizgeleri_taranir() -> None:
+    """SEC1: kaynak alıntı/ref, yönlendirme etiketi, Jira taslağı ve ileride eklenen her alan
+    (özyinelemeli) taranır; sunucunun ürettiği özetler (sha256) yanlış pozitif vermez."""
     k = guvenlik_cikti.kanarya()
-    cevap = _cevap(dogrulama={"x": k}, kaynaklar=[{"tur": "genel_bilgi", "alinti": IZ_1}])
-    assert guvenlik_cikti.sizinti_var(cevap, k, (guvenlik_cikti.normalize(IZ_1),)) is None
+    for alan in _sizan_alanlar(k):
+        assert guvenlik_cikti.sizinti_var(_cevap(**alan), k, ()) == "kanarya", alan
+    iz = guvenlik_cikti.normalize(IZ_1)
+    alinti = _cevap(kaynaklar=[{"tur": "genel_bilgi", "ref": "r", "alinti": IZ_1}])
+    assert guvenlik_cikti.sizinti_var(alinti, k, (iz,)) == "istem_sizintisi"
+    sha = "a" * 8 + k.removeprefix(guvenlik_cikti.KANARYA_ONEKI) + "b" * 48
+    temiz = _cevap(dogrulama={"docs/a.md:1": {"dogrulandi": True, "sha256": sha}})
+    assert guvenlik_cikti.sizinti_var(temiz, k, (iz,)) is None
+    assert list(guvenlik_cikti.gorunur_dizgeler({"a": ["x", {"b": "y"}, 3, None], "c": ""})) == [
+        "x",
+        "y",
+    ]
 
 
-def test_iz_dosyasi_yukleme_ve_normalize_eslesme(iz_kuralları: Path, tmp_path: Path) -> None:
+def test_iz_dosyasi_yukleme_ve_normalize_eslesme(
+    iz_kuralları: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     izler = guvenlik_cikti.izleri_yukle(iz_kuralları)
     assert izler == (guvenlik_cikti.normalize(IZ_1), guvenlik_cikti.normalize(IZ_2))
     assert all(len(i) >= guvenlik_cikti.IZ_EN_KISA for i in izler)  # "kısa iz" atlandı
@@ -126,7 +178,9 @@ def test_iz_dosyasi_yukleme_ve_normalize_eslesme(iz_kuralları: Path, tmp_path: 
     bozuk = tmp_path / "bozuk"
     (bozuk / "assistant").mkdir(parents=True)
     (bozuk / "assistant" / guvenlik_cikti.IZ_DOSYASI).write_text("izler: [", encoding="utf-8")
-    assert guvenlik_cikti.izleri_yukle(bozuk) == ()
+    with caplog.at_level("WARNING"):
+        assert guvenlik_cikti.izleri_yukle(bozuk) == ()
+    assert "istem izleri yüklenemedi" in caplog.text and "izler: [" not in caplog.text
     duz = tmp_path / "duz"
     (duz / "assistant").mkdir(parents=True)
     (duz / "assistant" / guvenlik_cikti.IZ_DOSYASI).write_text(f"- {IZ_1}\n", encoding="utf-8")
@@ -135,7 +189,12 @@ def test_iz_dosyasi_yukleme_ve_normalize_eslesme(iz_kuralları: Path, tmp_path: 
 
 def test_istem_sizintisi_cevabi() -> None:
     c = guvenlik_cikti.istem_sizintisi_cevabi()
-    assert set(c) == set(sonislem.bos_cevap())
+    assert set(c) == set(sonislem.bos_cevap()) | {"sizinti"}
+    assert c["sizinti"] is True
+    assert guvenlik_cikti.SIZINTI_METNI == (
+        "Bu cevap gösterilemedi. Sorunuzu ekran, kayıt ya da koşu adıyla yeniden sorabilirsiniz; "
+        "neler yapabildiğimi görmek için 'Ne yapabilirsin?' yazın."
+    )
     assert c["cevap_bloklari"] == [
         {"tur": "paragraf", "metin": guvenlik_cikti.SIZINTI_METNI, "maddeler": []}
     ]
@@ -208,16 +267,31 @@ def test_kayit_ekle_replay_eksiz_bulunur(make_gateway, rules_dir) -> None:
 # ------------------------------------------------------------------ akış
 
 
-def _olaylar(engine: Engine) -> list[dict[str, Any]]:
+def _olaylar(engine: Engine, *, sinyal: bool = False) -> list[dict[str, Any]]:
+    """Güvenlik olayları; niyet sinyali olayları (`sinyal`) istenmedikçe süzülür."""
     with engine.connect() as c:
         return [
             dict(r)
             for r in c.execute(
                 text(
-                    "SELECT kullanici_id, mesaj_id, tur, ciddi, ayrinti FROM asistan_guvenlik_olay"
-                )
+                    "SELECT kullanici_id, mesaj_id, tur, ciddi, ayrinti FROM asistan_guvenlik_olay "
+                    "WHERE tur <> 'sinyal' OR :s ORDER BY zaman"
+                ),
+                {"s": sinyal},
             ).mappings()
         ]
+
+
+def _soru_id(engine: Engine, cevap_id: str) -> uuid.UUID:
+    with engine.connect() as c:
+        return c.execute(
+            text(
+                "SELECT q.id FROM asistan_mesaj q JOIN asistan_mesaj a "
+                "ON a.sohbet_id = q.sohbet_id AND q.sira = a.sira - 1 AND q.rol = 'user' "
+                "WHERE a.id = :a"
+            ),
+            {"a": cevap_id},
+        ).scalar_one()
 
 
 def test_akis_kanarya_saglayiciya_gider_temiz_cevap_degismez(
@@ -268,13 +342,44 @@ def test_akis_sizan_cevap_degisir_ve_olay_yazilir(
     olaylar = _olaylar(engine)
     assert len(olaylar) == 1
     o = olaylar[0]
+    # Olay sorunun kendisine bağlanır; sızan cevabın kimliği ayrıntıda (değer/metin yok).
     assert (o["kullanici_id"], o["mesaj_id"], o["tur"], o["ciddi"]) == (
         u.id,
-        uuid.UUID(mid),
+        _soru_id(engine, mid),
         beklenen,
         True,
     )
-    assert o["ayrinti"] == {}
+    assert o["ayrinti"] == {"cevap": mid}
+    assert m["cevap"]["sizinti"] is True
     with engine.connect() as c:
         # Sızıntı, sorunun kabulünden sonra yazılır: dondurma sayacına girer (K11).
+        assert olay.ardisik_ciddi(c, u.id)[0] == 1
+
+
+def test_akis_derin_cocuktaki_sizinti_kok_soruya_atfedilir(
+    client: TestClient, make_user, engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SEC11: "Daha ayrıntılı" çocuk araya giren başka bir sorudan sonra eklenip sızdırsa da olay
+    zincirin kök sorusuna bağlanır; araya giren temiz soru sıfırlama noktası olarak kalır."""
+    monkeypatch.setattr(guvenlik_cikti, "izleri_yukle", lambda _r=None: ())
+    u = make_user("analyst")
+    _flow.giris(client, u)
+    sohbet, ilk = _flow.soru_gonder(client, engine, "Kampanya kuralı nedir?")
+    assert _flow.cevapla(engine, ilk, _flow.Gecit(engine, [_flow.bitir()])) == "done"
+    _flow.is_bitir(engine, ilk)
+    _, ikinci = _flow.soru_gonder(client, engine, "Sepet ekranı ne yapar?", sohbet=sohbet)
+    assert _flow.cevapla(engine, ikinci, _flow.Gecit(engine, [_flow.bitir()])) == "done"
+    _flow.is_bitir(engine, ikinci)
+    r = _flow.sor(client, sohbet, ust_mesaj_id=ilk)
+    assert r.status_code == 202, r.text
+    derin = r.json()["mesaj_id"]
+    sizan = [{"tur": "paragraf", "metin": f"iz {guvenlik_cikti.kanarya()}", "maddeler": []}]
+    gecit = _flow.Gecit(engine, [_flow.bitir(cevap_bloklari=sizan)])
+    assert _flow.cevapla(engine, derin, gecit) == "done"
+    [o] = _olaylar(engine)
+    assert o["tur"] == "kanarya" and o["mesaj_id"] == _soru_id(engine, ilk)
+    assert o["ayrinti"] == {"cevap": derin}
+    with engine.connect() as c:
+        assert olay.soru_kimligi(c, uuid.UUID(derin)) == _soru_id(engine, ilk)
+        # İkinci soru temiz kalır: sızıntı ondan sonra yazıldığı için sayılır (1).
         assert olay.ardisik_ciddi(c, u.id)[0] == 1

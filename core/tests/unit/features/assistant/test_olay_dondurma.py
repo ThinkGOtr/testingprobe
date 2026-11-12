@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 
+from tests.unit.conftest import Db
 from tests.unit.features.assistant import test_asistan_api as _api
 from tp_core.audit import verify_chain
 from tp_core.features.assistant import budget, olay
@@ -81,7 +82,11 @@ def test_uc_ardisik_sir_dondurur_ve_kalan_s_doner(
     assert govde["kod"] == "donduruldu"
     assert 0 < govde["kalan_s"] <= budget.DONDURMA_SURE_S
     assert r.headers["Retry-After"] == str(govde["kalan_s"])
-    assert "dk" in govde["detail"]
+    dk = -(-govde["kalan_s"] // 60)
+    assert govde["detail"] == (
+        "Art arda engellenen istekler nedeniyle asistan geçici olarak durduruldu. "
+        f"Yaklaşık {dk} dk sonra yeniden sorabilirsiniz; sorunuz kutuda duruyor."
+    )
     assert tek(engine, "SELECT count(*) FROM asistan_mesaj") == 0
 
     # Dondurma başlangıcında bir kez `donduruldu` olayı + denetim satırı (ayrıntıda yalnız sayı).
@@ -92,7 +97,9 @@ def test_uc_ardisik_sir_dondurur_ve_kalan_s_doner(
             text("SELECT aktor, nesne, ozet FROM audit_event WHERE eylem = 'asistan.supheli'")
         ).one()
         assert verify_chain(c).ok
-    assert aktor == u.kullanici_adi and nesne == f"app_user:{u.id}"
+    # Denetim aktörü takma ad (kullanıcı adı değil; PRV5).
+    assert aktor == f"app_user:{u.id}" and nesne == f"app_user:{u.id}"
+    assert u.kullanici_adi not in json.dumps([aktor, nesne, ozet])
     assert set(ozet) == {"ardisik_ciddi", "sure_s"} and ozet["ardisik_ciddi"] == 3
 
     # Donmuş kullanıcının sır denemesi 429 alır; sayaç büyümez, yeni olay/denetim yazılmaz.
@@ -153,7 +160,8 @@ def test_sizintili_cevaplar_sayaci_sifirlamaz_ve_dondurur(
         mid = r.json()["mesaj_id"]
         mesaj_bitir(engine, mid, amac="assistant")
         with engine.begin() as c:
-            olay.olay_yaz(c, u.id, "istem_sizintisi", mesaj_id=uuid.UUID(mid))
+            soru = olay.soru_kimligi(c, uuid.UUID(mid))
+            olay.olay_yaz(c, u.id, "istem_sizintisi", mesaj_id=soru)
     with engine.connect() as c:
         assert olay.ardisik_ciddi(c, u.id)[0] == 3
     r = sor(client, s)
@@ -166,21 +174,146 @@ def test_sizintili_cevaplar_sayaci_sifirlamaz_ve_dondurur(
     mid = r.json()["mesaj_id"]
     mesaj_bitir(engine, mid, amac="assistant")
     with engine.begin() as c:
-        olay.olay_yaz(c, v.id, "kanarya", mesaj_id=uuid.UUID(mid))
+        olay.olay_yaz(c, v.id, "kanarya", mesaj_id=olay.soru_kimligi(c, uuid.UUID(mid)))
     r = sor(client, s2)  # temiz biten soru
     mesaj_bitir(engine, r.json()["mesaj_id"], amac="assistant")
     with engine.connect() as c:
         assert olay.ardisik_ciddi(c, v.id)[0] == 0
 
 
-def test_on_dakikadan_eski_ucuncu_olay_dondurmaz(
+def _derin_cocuk(engine: Engine, ust: str) -> str:
+    """Üst cevaba "Daha ayrıntılı" çocuğu (sohbetin sonuna; API'nin eklediği biçimde)."""
+    cocuk = uuid.uuid4()
+    with engine.begin() as c:
+        c.execute(
+            text(
+                "INSERT INTO asistan_mesaj (id, sohbet_id, kullanici_id, sira, rol, ust_mesaj_id, "
+                "icerik, durum, amac, kip, tetik) SELECT :id, sohbet_id, kullanici_id, "
+                "(SELECT max(sira) + 1 FROM asistan_mesaj x WHERE x.sohbet_id = a.sohbet_id), "
+                "'assistant', a.id, a.icerik, 'done', 'assistant_deep', 'soru', 'kullanici' "
+                "FROM asistan_mesaj a WHERE a.id = :u"
+            ),
+            {"id": cocuk, "u": ust},
+        )
+    return str(cocuk)
+
+
+def test_soru_kimligi_zincirin_kok_sorusu(
     client: TestClient, make_user, engine: Engine, canli
+) -> None:
+    u = make_user("analyst")
+    giris(client, u)
+    s = sohbet_ac(client)
+    cevaplar = []
+    for _ in range(2):
+        r = sor(client, s)
+        assert r.status_code == 202, r.text
+        cevaplar.append(r.json()["mesaj_id"])
+        mesaj_bitir(engine, cevaplar[-1], amac="assistant")
+    cocuk = _derin_cocuk(engine, cevaplar[0])
+    torun = _derin_cocuk(engine, cocuk)
+    with engine.connect() as c:
+        sorular = [olay.soru_kimligi(c, uuid.UUID(m)) for m in cevaplar]
+        assert len(set(sorular)) == 2
+        for m in (cocuk, torun):
+            assert olay.soru_kimligi(c, uuid.UUID(m)) == sorular[0]
+        assert olay.soru_kimligi(c, sorular[1]) == sorular[1]  # kullanıcı mesajı kendisi
+        assert olay.soru_kimligi(c, uuid.uuid4()) is None
+
+
+def test_derin_cocuk_sizintisi_kok_soruyu_kirli_sayar(
+    client: TestClient, make_user, engine: Engine, canli
+) -> None:
+    """SEC11: S1, C1, S2, C2, D(C1) — D'nin sızıntısı S1'e bağlı; S2 temiz kalır ve yalnız ondan
+    sonraki olaylar sayılır. S1'in ardından gelen sızıntılar dizisinde temiz soru yoksa sayılar
+    birikir."""
+    u = make_user("analyst")
+    giris(client, u)
+    s = sohbet_ac(client)
+    cevaplar = []
+    for _ in range(2):
+        r = sor(client, s)
+        cevaplar.append(r.json()["mesaj_id"])
+        mesaj_bitir(engine, cevaplar[-1], amac="assistant")
+    d = _derin_cocuk(engine, cevaplar[0])
+    with engine.begin() as c:
+        s1 = olay.soru_kimligi(c, uuid.UUID(d))
+        olay.olay_yaz(c, u.id, "kanarya", mesaj_id=s1, ayrinti={"cevap": d})
+    with engine.connect() as c:
+        assert olay.ardisik_ciddi(c, u.id)[0] == 1
+    # Sızan soru (S1) sıfırlama noktası değil: S2'ye de sızıntı yazılınca sayım 2.
+    with engine.begin() as c:
+        s2 = olay.soru_kimligi(c, uuid.UUID(cevaplar[1]))
+        olay.olay_yaz(c, u.id, "kanarya", mesaj_id=s2)
+    with engine.connect() as c:
+        assert olay.ardisik_ciddi(c, u.id)[0] == 2
+    r = sor(client, s)  # temiz kabul edilen soru sayacı sıfırlar
+    assert r.status_code == 202
+    with engine.connect() as c:
+        assert olay.ardisik_ciddi(c, u.id)[0] == 0
+
+
+def test_kisisel_veri_reddi_olay_yazar_sayaca_girmez(
+    client: TestClient, make_user, engine: Engine, canli
+) -> None:
+    u = make_user("tester")
+    giris(client, u)
+    s = sohbet_ac(client)
+    for _ in range(budget.DONDURMA_ESIK + 1):
+        r = sor(client, s, soru="Müşterinin kartı 5105 1051 0510 5100, ödeme neden düştü?")
+        assert r.status_code == 422 and r.json()["kod"] == "kisisel_veri", r.text
+    assert r.json()["detail"] == (
+        "Soru ya da eklenen ekran bilgisi bir kart numarası içeriyor. Numarayı silin ya da "
+        "maskeleyin (ör. 5105 **** **** 5100) ve yeniden gönderin."
+    )
+    olaylar = _olaylar(engine, u.id)
+    assert [o["tur"] for o in olaylar] == ["kisisel_veri"] * (budget.DONDURMA_ESIK + 1)
+    assert all(not o["ciddi"] and o["ayrinti"] == {"alan": ["soru"]} for o in olaylar)
+    assert "5105" not in json.dumps(olaylar, default=str)
+    assert sor(client, s).status_code == 202
+
+
+def test_ret_yolunda_olay_yazim_hatasi_500_donmez(
+    client: TestClient,
+    make_user,
+    engine: Engine,
+    canli,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """BE6: olay yazımı düşse de 422/429 aynen döner; kayda yalnız sınıf adı."""
+    u = make_user("analyst")
+    giris(client, u)
+    s = sohbet_ac(client)
+
+    def bozuk(*_a: object, **_k: object) -> None:
+        raise RuntimeError(f"bağlantı koptu {SAHTE}")
+
+    monkeypatch.setattr(olay, "olay_yaz", bozuk)
+    with caplog.at_level("WARNING"):
+        r = sor(client, s, soru=f"token bu mu {SAHTE}?")
+        assert r.status_code == 422 and r.json()["kod"] == "sir_icerik", r.text
+        r = sor(client, s, soru="kart 5105105105105100 neden reddedildi?")
+        assert r.status_code == 422 and r.json()["kod"] == "kisisel_veri", r.text
+    assert "RuntimeError" in caplog.text and SAHTE not in caplog.text
+    monkeypatch.undo()
+
+    _sir_dene(client, s, budget.DONDURMA_ESIK)
+    monkeypatch.setattr(olay, "dondurma_baslat", bozuk)
+    r = sor(client, s)
+    assert r.status_code == 429 and r.json()["kod"] == "donduruldu", r.text
+
+
+def test_on_dakikadan_eski_ucuncu_olay_dondurmaz(
+    client: TestClient, make_user, engine: Engine, db: Db, canli
 ) -> None:
     u = make_user("po")
     giris(client, u)
     s = sohbet_ac(client)
     _sir_dene(client, s, 3)
-    with engine.begin() as c:
+    # Olay satırı tp_app için değiştirilemez (UPDATE yetkisi yok); zaman sahiple geri alınır.
+    sahip = db.engine("tp_owner")
+    with sahip.begin() as c:
         c.execute(
             text(
                 "UPDATE asistan_guvenlik_olay SET zaman = zaman - make_interval(secs => :s) "
@@ -188,6 +321,7 @@ def test_on_dakikadan_eski_ucuncu_olay_dondurmaz(
             ),
             {"s": budget.DONDURMA_SURE_S + 60, "k": u.id},
         )
+    sahip.dispose()
     r = sor(client, s)
     assert r.status_code == 202, r.text
     assert _supheli(engine) == 0

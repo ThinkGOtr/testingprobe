@@ -1048,7 +1048,10 @@ class Gateway:
           eldekiyle `submit_result` çağırmaya yönlendirilir (nudge geçmişte kalıcıdır).
         - `sistem_eki`: canlı isteğin sistem metninin EN SONUNA eklenir (asistan kanaryası;
           specs/013 §6.3). Replay anahtarı, girdi özeti ve bundle hash'i bundan hesaplanmaz;
-          replay kipinde sistem metni kullanılmadığından etkisizdir.
+          replay kipinde sistem metni kullanılmadığından etkisizdir. Sağlayıcının prompt
+          önbelleği ise sistem metninin tamamını önek sayar: ek (kanarya) süreç başına
+          değiştiğinden önbellek her worker sürecinde bir kez soğuk başlar, aynı süreçteki
+          istekler isabet eder.
         """
         self._check_agent_tools(purpose, tools)
         # Model yasak argümanları (dosya yazma vb.) hiç görmez; anahtar da daraltılmış şemadandır.

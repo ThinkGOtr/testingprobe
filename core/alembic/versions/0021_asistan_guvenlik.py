@@ -6,10 +6,16 @@
   (dondurma sayacı yalnız bunları sayar; tutarlılık kısıtla zorlanır).
 - `ayrinti` yalnız kimlik/sayı taşır (desen adı, sinyal kimlikleri, sayılar); değer, soru metni
   veya eşleşme **asla** yazılmaz (uygulama kuralı, `features/assistant/olay.py`).
-- `mesaj_id` yabancı anahtardır ama boş bırakılabilir: reddedilen sorunun mesajı yoktur; mesaj
-  saklama temizliğiyle silinince olay kalır (`ON DELETE SET NULL`).
+- `mesaj_id` olayın ait olduğu **kullanıcı sorusudur** (`rol='user'`; derin çocuktaki sızıntı da
+  zincirin kök sorusuna bağlanır, `olay.soru_kimligi`). Yabancı anahtardır ama boş bırakılabilir:
+  reddedilen sorunun mesajı yoktur; mesaj saklama temizliğiyle silinince olay kalır
+  (`ON DELETE SET NULL`).
 - İndeks `(kullanici_id, zaman DESC)`: dondurma denetimi her POST'ta kullanıcının son olaylarına
-  bakar. Saklama 90 gün (`temizlik.py`, `TP_ASISTAN_SAKLAMA_GUN`).
+  bakar. Kısmi indeks `(mesaj_id) WHERE mesaj_id IS NOT NULL`: dondurma sayımı "ciddi olay almış
+  soru" denetimini soru kimliğiyle yapar (K11). Saklama 90 gün (`temizlik.py`,
+  `TP_ASISTAN_SAKLAMA_GUN`).
+- `tp_app` yetkisi SELECT, INSERT, DELETE (saklama temizliği): olay satırı yazıldıktan sonra
+  değiştirilmez (UPDATE yok).
 
 Model ↔ şema eşitliği tests/unit/features/assistant/test_migration.py'de doğrulanır.
 
@@ -51,13 +57,15 @@ CREATE TABLE asistan_guvenlik_olay (
 """,
     "CREATE INDEX asistan_guvenlik_olay_kullanici_ix "
     "ON asistan_guvenlik_olay (kullanici_id, zaman DESC)",
+    "CREATE INDEX asistan_guvenlik_olay_mesaj_ix "
+    "ON asistan_guvenlik_olay (mesaj_id) WHERE mesaj_id IS NOT NULL",
 )
 
 
 def upgrade() -> None:
     for stmt in CREATE_STATEMENTS:
         op.execute(stmt)
-    op.execute(f"GRANT SELECT, INSERT, UPDATE, DELETE ON {TABLO} TO tp_app")
+    op.execute(f"GRANT SELECT, INSERT, DELETE ON {TABLO} TO tp_app")
 
 
 def downgrade() -> None:

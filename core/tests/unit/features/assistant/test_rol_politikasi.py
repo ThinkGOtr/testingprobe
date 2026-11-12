@@ -166,6 +166,7 @@ def _bozuk(degistir: Any) -> dict[str, Any]:
         (lambda v: v["roller"]["po"].update(gizli=True), "anahtarları"),
         (lambda v: v["roller"]["po"].pop("etiket"), "anahtarları"),
         (lambda v: v["roller"]["po"].update(ek="x" * 600), "aşıyor"),
+        (lambda v: v["roller"]["po"].update(ek="x" * 401), "400 karakteri aşıyor"),
         (lambda v: v["roller"].pop("denetci"), "eksik"),
         (lambda v: v["esleme"].update(yeni="yok_rol"), "tanımsız"),
         (lambda v: v.update(roller=[]), "roller"),
@@ -174,6 +175,50 @@ def _bozuk(degistir: Any) -> dict[str, Any]:
 def test_bozuk_politika_yuklemede_hata(degistir: Any, mesaj: str) -> None:
     with pytest.raises(RolPolitikasiHatasi, match=mesaj):
         politika_coz(_bozuk(degistir))
+
+
+def test_ek_ust_siniri_dosya_yorumuyla_tutarli() -> None:
+    """Dosya yorumu "≤ 400 karakter" der; yükleyici aynı sınırı zorlar (BE: 450 ile çelişmesin)."""
+    assert rol_politikasi.EK_UST == 400
+    yorum = (find_rules_dir() / "assistant" / "rol-politikasi.yaml").read_text(encoding="utf-8")
+    assert f"≤ {rol_politikasi.EK_UST} karakter" in yorum
+    sinirda = _bozuk(lambda v: v["roller"]["po"].update(ek="x" * rol_politikasi.EK_UST))
+    assert politika_coz(sinirda).roller["po"].ek == "x" * rol_politikasi.EK_UST
+
+
+def test_rules_dir_her_yerde_kullanilir(tmp_path: Path) -> None:
+    """BE5: etiket, rol eki, ilk mesaj ve şablon verilen kural dizinini okur."""
+    ham = _ham()
+    ham["roller"]["analist"]["etiket"] = "Deneme etiketi"
+    ham["roller"]["analist"]["ek"] = "Deneme eki."
+    ham["roller"]["analist"]["araclar"] = ["product_search"]
+    (tmp_path / "assistant").mkdir()
+    (tmp_path / "assistant" / "rol-politikasi.yaml").write_text(
+        yaml.safe_dump(ham, allow_unicode=True), encoding="utf-8"
+    )
+    assert rol_politikasi.etiket("analyst", rules_dir=tmp_path) == "Deneme etiketi"
+    icerik = str(
+        flow.ilk_mesaj(
+            _mesaj("analyst"),
+            ekran=None,
+            kural_onerileri=None,
+            gecmis=None,
+            sinyaller=[],
+            rules_dir=tmp_path,
+        )[0].content
+    )
+    assert icerik.startswith("Kullanıcının rolü: Deneme etiketi\n\nRol uzantısı: Deneme eki.")
+
+    from tp_core.features.assistant.maskeleme import mesaj_oturumu
+    from tp_core.features.assistant.sablon import sablon_cevabi
+    from tp_core.features.assistant.tools import arac_baglami
+
+    def db_yok():  # araç çağrılırsa test düşer
+        raise AssertionError("şablon kural dizinindeki politikayı okumadı")
+
+    oturum = mesaj_oturumu(PiiMasker(enabled=False))
+    b = arac_baglami(uuid.uuid4(), "analyst", oturum, db=db_yok, sir_degerleri=())
+    assert sablon_cevabi(b, "Bugün ne yapmalıyım?", rules_dir=tmp_path) is None
 
 
 def test_dosya_yoksa_hata(tmp_path: Path) -> None:
