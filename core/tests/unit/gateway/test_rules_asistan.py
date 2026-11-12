@@ -76,6 +76,7 @@ OLGU_ADLARI = frozenset(
         "basarisiz_adimlar",
         "hata_sinifi",
         "onarim_durumu",
+        "beklenti_farki",
         "flaky_tekrar",
         "bug_taslagi_var",
         "bug_taslagi_id",
@@ -535,11 +536,12 @@ def test_oneriler_kural_dosyasi_gecerli() -> None:
 
 
 def test_oneriler_ilk_kural_seti_26_kural_tek_eylem() -> None:
-    """§17.3 tablosu (K10 onaylı): 26 satır, her satır tek kural ve tek eylem."""
+    """§17.3 tablosu (K10 onaylı) 26 satır + 012 §4.4'ün iki kuralı (hata-beklenti-case-duzelt,
+    hata-beklenti-bilgi; ürün sahibi K10 onayı bekliyor): her satır tek kural ve tek eylem."""
     kurallar = _oneriler()["kurallar"]
-    assert len(kurallar) == 26
+    assert len(kurallar) == 28
     turler = [k["eylem"]["tur"] for k in kurallar]
-    assert turler.count("rota") == 12 and turler.count("bilgi") == 8
+    assert turler.count("rota") == 12 and turler.count("bilgi") == 10
     assert turler.count("jira_taslak") == 3 and turler.count("jira_yorum") == 2
     assert turler.count("jira_kaydi") == 1
 

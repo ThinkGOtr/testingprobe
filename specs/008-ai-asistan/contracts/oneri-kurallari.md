@@ -138,7 +138,7 @@ HD `/hatalar/:id`, BT `/bug-taslaklari/:id`, KK `/kontrol-kulesi`, K `/kosular`.
 | 15 | `script-insana-dustu` | SD | engineer | `durum_in:[blocked]`, `defect_adayi_esit:false` | rota `/kod` | **`POST /code/generate`** (research R3) |
 | 16 | `kosu-ortam-hatasi-task` | KD | engineer | `ci_sonuc_esit:error` | jira_taslak `ortam-hatasi-task` | — |
 | 17 | `kosu-ortam-hatasi-bilgi` | KD | presenter | `ci_sonuc_esit:error` | bilgi | — |
-| 18 | `hata-bakim-onarim` | HD | engineer | `hata_sinifi_esit:test_maintenance`, `onarim_durumu_esit:none` | rota HD | `POST /failures/{failure_id}/fix` |
+| 18 | `hata-bakim-onarim` | HD | engineer | `hata_sinifi_esit:test_maintenance`, `onarim_durumu_esit:none`, `beklenti_farki_esit:false` (012) | rota HD | `POST /failures/{failure_id}/fix` |
 | 19 | `hata-bug-taslagi-karari` | HD | tester | `hata_sinifi_esit:product_defect`, `bug_taslagi_var_esit:true` | rota `/bug-taslaklari/:id` | `POST /bug-drafts/{draft_id}/decision` |
 | 20 | `hata-flaky-task` | HD | engineer | `hata_sinifi_esit:flaky`, `flaky_tekrar_gte:3` | jira_taslak `flaky-task` | — |
 | 21 | `hata-test-verisi-task` | HD | tester | `hata_sinifi_esit:test_data` | jira_taslak `test-verisi-task` | — |
@@ -147,6 +147,8 @@ HD `/hatalar/:id`, BT `/bug-taslaklari/:id`, KK `/kontrol-kulesi`, K `/kosular`.
 | 24 | `bug-taslagi-bulgudan` | BT | analyst | `durum_in:[draft]`, `bulgu_kaynakli_esit:true` | bilgi | — |
 | 25 | `butce-uyarisi` | KK | presenter | `butce_orani_gte:0.8` | bilgi | — |
 | 26 | `guncel-kosu-yok` | K | presenter | `son_kosu_saat_gte:24` | rota K | `POST /ci/trigger` |
+| 27 | `hata-beklenti-case-duzelt` (012 §4.4) | HD | analyst | `hata_sinifi_esit:test_maintenance`, `beklenti_farki_esit:true` | bilgi | — |
+| 28 | `hata-beklenti-bilgi` (012 §4.4) | HD | engineer | `hata_sinifi_esit:test_maintenance`, `beklenti_farki_esit:true` | bilgi | — |
 
 Tablo `rules/assistant/oneriler.yaml` ile birebirdir (kaynak dosyadır; çelişkide dosya geçerlidir).
 Plan v6 §17.3 tablosundan farklar ve nedenleri:

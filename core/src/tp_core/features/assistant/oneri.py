@@ -673,6 +673,8 @@ def _failure_olgulari(session: Session, f: Any) -> dict[str, Any]:
     o: dict[str, Any] = {
         "hata_sinifi": f.sinif,
         "onarim_durumu": f.oneri_durumu,
+        # 012 §4.4: test beklentisi onaylı karar tablosundan farklı (onarım/bug taslağı yok).
+        "beklenti_farki": f.sinif == "test_maintenance" and f.alt_tur == "beklenti",
         "flaky_tekrar": _flaky_tekrar(session, f.test_adi),
     }
     # Karar bekleyen (`draft`) ilişkili taslak: doğrudan bağ ya da kardeş hata listesi.
@@ -739,6 +741,7 @@ OLGU_HESAPLAYICILARI: Final[Mapping[str, frozenset[str]]] = {
     "basarisiz_adimlar": frozenset({"run"}),
     "hata_sinifi": frozenset({"failure"}),
     "onarim_durumu": frozenset({"failure"}),
+    "beklenti_farki": frozenset({"failure"}),
     "flaky_tekrar": frozenset({"failure"}),
     "bug_taslagi_var": frozenset({"failure"}),
     "bug_taslagi_id": frozenset({"failure"}),

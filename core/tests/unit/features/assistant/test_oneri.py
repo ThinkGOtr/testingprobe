@@ -46,8 +46,8 @@ def _kisi(rol: str) -> Principal:
 
 def test_kural_seti_yuklenir_ve_ilk_set_26_kural() -> None:
     ks = _ks()
-    assert len(ks.kurallar) == 26
-    assert len({k.id for k in ks.kurallar}) == 26
+    assert len(ks.kurallar) == 28  # §17.3'ün 26 kuralı + 012 §4.4'ün iki kuralı
+    assert len({k.id for k in ks.kurallar}) == 28
     assert set(ks.taslaklar) == {
         "po-hatirlatma",
         "ac-eksik",
