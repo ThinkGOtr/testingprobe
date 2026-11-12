@@ -50,12 +50,12 @@ def _uyumsuz_ozet(kayit: Any) -> str:
 
 
 def _kontrolu_baslat(
-    tc: TestCase, icerik_hash: str, icerik: Mapping[str, Any] | None, tablo_ozeti: str
+    tc: TestCase, icerik_hash: str, icerik: Mapping[str, Any] | None, tablo_ozeti: str, damga: str
 ) -> None:
     """409 öncesi kontrolü AYRI işlemde kuyruğa alır (istek geri alınınca iş kaybolmasın).
 
-    Anahtar tablo kümesini de taşır: aynı tablolarla tekrar denemede yeni iş açılmaz, tablo
-    değişince açılır."""
+    Anahtar tablo kümesini ve mevcut (geçersiz) kaydın damgasını taşır: aynı durumda tekrar
+    denemede yeni iş açılmaz; tablo değişince ya da önceki içeriğine dönünce (A → B → A) açılır."""
     gonderilen = None if icerik_hash == tc.icerik_hash else icerik
     with session_scope() as s:
         service.kontrol_kuyruga_al(
@@ -63,7 +63,9 @@ def _kontrolu_baslat(
             tc.id,
             icerik_hash,
             gonderilen,
-            idempotency_key=f"{service.CHECK_CASE_JOB}:kapi:{tc.id}:{icerik_hash}:{tablo_ozeti}",
+            idempotency_key=(
+                f"{service.CHECK_CASE_JOB}:kapi:{tc.id}:{icerik_hash}:{tablo_ozeti}:{damga}"
+            ),
         )
 
 
@@ -91,7 +93,11 @@ def onay_denetimi(
         if not yuksek:
             return []
         _kontrolu_baslat(
-            tc, icerik_hash, icerik, service.tablo_ozeti(service.tablo_hashleri(kapsayan))
+            tc,
+            icerik_hash,
+            icerik,
+            service.tablo_ozeti(service.tablo_hashleri(kapsayan)),
+            service.kayit_damgasi(service.kayit_bul(session, tc.id, icerik_hash)),
         )
         raise OracleBekleniyor(
             "Yüksek riskli case'in karar tablosu kontrolü henüz bitmedi; kontrol kuyruğa alındı, "

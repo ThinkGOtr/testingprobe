@@ -365,6 +365,64 @@ def test_tablo_degisince_kayit_bayatlar_ve_yeniden_hesaplanir(
     assert len(_kayitlar(c["id"])) == 1  # aynı (case, hash) satırı güncellendi
 
 
+def _tablo_onay_isi(rid: Any) -> None:
+    """Gerçek onay ucu gibi: tablo onayı `oracle.check_requirement` açar."""
+    with session_scope() as s:
+        service.gereksinim_kontrolu_kuyruga_al(s, rid, "tablo_onaylandi")
+
+
+B_TABLO = {
+    **BASIT,
+    "satirlar": [{"id": "R1", "kosul": "adet >= 1", "cikti": {"toplam": "adet * 11"}}],
+}
+
+
+def test_tablo_onceki_icerigine_donunce_kayit_yeniden_hesaplanir(
+    api: TestClient, engine: Engine, kur
+) -> None:
+    """A → B → A: tablo daha önce kontrol edilmiş içeriğe dönünce kontrol yeniden koşar.
+
+    İzole yığında bulundu: iş anahtarı (case, hash, tablo özeti) A'ya dönüşte ilk A işiyle
+    çakışıyordu; satır B'de kalıyor, case'in `oracle`'ı boş ve metrik eksik sayıyordu."""
+    k = kur([basit_case(toplam="30,00")], tablo_once=True, olgu_sayisi=10)
+    c = latest_cases(api, k["rid"])[0]
+    assert c["oracle"]["sonuc"] == "uyumlu"
+    tablo_degistir(k["tid"], B_TABLO, k["analist"], k["po"])
+    _tablo_onay_isi(k["rid"])
+    run_jobs(engine)
+    assert latest_cases(api, k["rid"])[0]["oracle"]["sonuc"] == "uyumsuz"
+    tablo_degistir(k["tid"], BASIT, k["analist"], k["po"])
+    _tablo_onay_isi(k["rid"])
+    run_jobs(engine)
+    c = latest_cases(api, k["rid"])[0]
+    assert c["oracle"]["sonuc"] == "uyumlu", c["oracle"]
+    m = api.get(f"/requirements/{k['rid']}/case-metrics").json()["beklenti_dogrulugu"]
+    assert (m["uyumlu"], m["uyumsuz"]) == (1, 0)
+    # Değişiklik yokken tekrar: geçerli kayıt için iş açılmaz.
+    _tablo_onay_isi(k["rid"])
+    assert len(run_jobs(engine)) == 1
+
+
+def test_kapi_tablo_onceki_icerigine_donunce_kalici_409_vermez(
+    api: TestClient, engine: Engine, kur
+) -> None:
+    """Kapının 409 işi de A → B → A'da yeniden açılır (önceden ilk A işiyle çakışıp kalıcı
+    `oracle_bekleniyor` veriyordu)."""
+    k = kur([basit_case(toplam="30,00")], olgu_sayisi=10)  # tablo onayı kontrol işi açmaz
+    c = latest_cases(api, k["rid"])[0]
+    for icerik in (B_TABLO, BASIT):
+        r = _karar(api, c, karar="approve")
+        assert r.status_code == 409 and r.json()["kod"] == "oracle_bekleniyor", r.text
+        run_jobs(engine)
+        tablo_degistir(k["tid"], icerik, k["analist"], k["po"])
+    r = _karar(api, c, karar="approve")
+    assert r.status_code == 409, r.text
+    run_jobs(engine)
+    r = _karar(api, c, karar="approve")
+    assert r.status_code == 200, r.text
+    assert r.json()["oracle"]["sonuc"] == "uyumlu"
+
+
 def test_bayat_ve_kesismeyen_tablo_kullanilmaz(api: TestClient, kur) -> None:
     k = kur([basit_case()])
     with session_scope() as s:

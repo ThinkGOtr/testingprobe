@@ -96,6 +96,17 @@ def kayit_bul(
     return session.scalars(q).first()
 
 
+def kayit_damgasi(kayit: CaseOracleKontrol | None) -> str:
+    """İş anahtarı için mevcut kaydın sürümü: kayıt yoksa `yok`, varsa son yazım zamanı.
+
+    Tablo özeti tek başına yetmez: tablo önceki bir içeriğe dönünce (A → B → A) anahtar ilk A
+    işiyle çakışır, yeni iş açılmaz ve satır B'de kalır (kayıt hiç geçerli olmaz). Satır her
+    yazımda `olusturma`'yı yeniler; değişiklik yokken anahtar aynı kalır (tekrar iş açılmaz)."""
+    if kayit is None or kayit.olusturma is None:
+        return "yok"
+    return kayit.olusturma.isoformat()
+
+
 def gecerli_mi(kayit: CaseOracleKontrol | None, kapsayan: Sequence[KararTablosu]) -> bool:
     return kayit is not None and dict(kayit.tablo_hashleri or {}) == tablo_hashleri(kapsayan)
 
@@ -215,9 +226,13 @@ def run_check_requirement(ctx: JobContext) -> dict[str, Any]:
                 hedefler.append((content_hash(ai_icerik), ai_icerik, ai_icerik))
             for h, gonderilen, icerik in hedefler:
                 kapsayan = kapsayanlar(tablolar, icerik)
-                if gecerli_mi(kayit_bul(s, tc.id, h), kapsayan):
+                mevcut = kayit_bul(s, tc.id, h)
+                if gecerli_mi(mevcut, kapsayan):
                     continue
-                anahtar = f"{CHECK_CASE_JOB}:{tc.id}:{h}:{tablo_ozeti(tablo_hashleri(kapsayan))}"
+                anahtar = (
+                    f"{CHECK_CASE_JOB}:{tc.id}:{h}:{tablo_ozeti(tablo_hashleri(kapsayan))}"
+                    f":{kayit_damgasi(mevcut)}"
+                )
                 kontrol_kuyruga_al(s, tc.id, h, gonderilen, idempotency_key=anahtar)
                 acilan += 1
     return {"kontrol_isi": acilan, "neden": yuk.get("neden")}
