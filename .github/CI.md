@@ -281,17 +281,24 @@ Artefakt `web-java-results`: `ci-meta.json` (`job: web-java`, `platform: web`, `
 `extent-report/index.html`, `kanit/<Sınıf>.<metot>/{ekran.png, trace.zip, sayfa.html}` (triage: web
 yöntemi), `guard.json`, `logs/` (`serve.log`, `run-java-checks.log`). Koşu belirteci artefaktta maskelenir.
 
-**Zorunlu check ve dil kapısı (011 K-T1, K-T3, K-T10).** `web-java` check'i `web-java.yml` demo
+**Zorunlu check ve dil kapısı (011 K-T1, K-T3, K-T10, K-T13).** `web-java` check'i `web-java.yml` demo
 deposunda olduğu sürece **her zaman zorunludur** (K-T10; ilgisiz PR'da `changes` + no-op ile hızla
-yeşil; core `github_required_checks` ekler). GitHub kipinde web + Java üretimi yalnız
+yeşil; core `github_required_checks` ekler). K-T13: core zorunlu listeyi PR'ın **base ∪ head**
+ağacından hesaplar (`web-java.yml` birinde varsa zorunlu; ağaç okunamaz ya da `truncated` ise kapalı
+taraf — zorunlu). Bu yüzden `web-java.yml`'yi silen PR check'i hiç almaz ve kilitlenir: önce
+ruleset'ten `web-java` çıkarılır (`--checks` tam liste), PR GitHub arayüzünden insan olarak merge
+edilir (`docs/GCP-KURULUM.md` §10.2 adım 11). GitHub kipinde web + Java üretimi yalnız
 `TP_WEB_DILLERI` `java` içerdiğinde açıktır: Kod üretimi ekranında Java seçilebilir olur ve paket koşularında (gece,
 push, deploy) Java kardeş koşusu tetiklenir. `java` yoksa `/code/languages` Java'yı
 `kullanilabilir=false` + neden ile döner ve kardeş koşu açılmaz (gelmeyen check'i saatlerce beklemez).
 Açma sırası: (1) demo deposunda `web-java.yml`, `toolchain/java-araclar/`, `toolchain/e2e-java-deps/`
 bulunmalı (`scripts/github-demo-repo-init.sh --push --update` bunları gönderir; CI'da güvenilir pom
-yoksa `run-java-checks.sh` hata verir); (2) ruleset'e mevcut check'ler KORUNARAK eklenir
+yoksa `run-java-checks.sh` hata verir; aynı PR 011'in e2e-app pom değişikliğini de taşır ve toolchain
+imajı güncellendikten hemen sonra merge edilir — K-T14, `docs/GCP-KURULUM.md` §10.2 adım 5); (2) ruleset'e mevcut check'ler KORUNARAK eklenir
 (`scripts/github-ruleset.sh --add-checks web-java`, önce kuru, sonra `--apply`; `--checks` listeyi
-tümüyle değiştirir ve yazılmayan platform check'lerini siler) — eklenince açık PR'lar `web-java`'yı
+tümüyle değiştirir ve yazılmayan platform check'lerini siler; `--add-checks` mevcut ruleset'te zorunlu
+check yoksa/boşsa `--checks` tabanıyla birleştirir, `--apply` her zaman canlı ruleset'i okur —
+`--existing-json` yalnız kuru çalışma içindir, `--apply`'da yok sayılır ve farklıysa uyarır) — eklenince açık PR'lar `web-java`'yı
 bekler ama iş akışı ancak PR'a yeni olay (push/yeniden açma) gelince koşar: açık PR'lara boş commit
 gönderin ya da Actions'tan yeniden tetikleyin; (3) `.env`'de `TP_WEB_DILLERI=ts,java` ve core yeniden
 başlatılır. `TP_REQUIRED_CHECKS` elle yazılıyorsa ruleset ile aynı tutulur (`web-java` dahil).
@@ -300,7 +307,11 @@ Yerel (LocalForge) kipte check adları: web + TS `local-ci` (değişmez), **web 
 `local-ci-web-java`**, uygulama `local-ci-<platform>` (tek kaynak `platform.check_adi(platform, dil)`).
 Merge kuralı: `e2e-java/` değişen PR `local-ci-web-java`, `e2e/` değişen PR `local-ci` ister;
 script'siz PR'da CI değişen yollardan dil(ler)i seçer (ikisi de değiştiyse ikisi de koşar; K-T11: test
-kökleri dışında değişiklik varsa repodaki tüm tam hat dilleri). LocalForge'da `TP_WEB_DILLERI`
+kökleri — `e2e/`, `e2e-java/`, `e2e-app/` — dışında değişiklik varsa repodaki tüm tam hat dilleri; böyle
+bir uygulama PR'ı yerel CI'ı ~2× yükler). GitHub'da `web-java.yml`'nin `changes` yol süzgeci daha
+dardır (`demo-app/e2e-java/**`, `demo-app/api/**`, `demo-app/web/**`, Java araçları ve iş akışının
+kendisi): ör. yalnız `demo-app/mobile/**` ya da `demo-app/desktop/**` değişen PR'da GitHub Java'yı
+koşmaz (no-op yeşil), LocalForge koşar. LocalForge'da `TP_WEB_DILLERI`
 kullanılmaz; repodaki dosyalar belirler. `TP_REQUIRED_CHECKS`'e `local-ci-web-java` /
 `local-ci-<platform>` YAZMAYIN: yapılandırılmış liste her PR'da zorunludur, o check'i hiç almayan
 PR'lar kilitlenir; yol kuralı onları gerektiğinde ekler.

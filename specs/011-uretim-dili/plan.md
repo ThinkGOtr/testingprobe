@@ -24,6 +24,11 @@ ertelenenler (§5).
 değişiklik → tüm tam hat dilleri (§2.8), K-T12 başka dilde merge edilmiş testin kaldırılması ürün
 akışı değil, 409 çıkış yolu + toplu yanıtta çakışma sayısı (§2.3, §2.7, §5).
 
+**İnceleme turu 3 kararları (K-T13, K-T14, bağlayıcı; ayrıntı `inceleme-tur3.md`):** K-T13 GitHub
+merge kapısının zorunlu listesi base ∪ head ağacından, okunamaz/kesikse kapalı taraf (§2.8), K-T14
+011 dağıtımı e2e-app güvenilir pom'unu da değiştirir → toolchain adımının hemen ardından e2e-app +
+e2e-java eşitlemesi, LocalForge'da `uretilen/` korunarak (§6).
+
 ## 2. Sözleşmeler (şeritler arası; değiştirmek isteyen şerit raporunda gerekçesiyle yazar)
 
 ### 2.1 Dil ve geçerli çiftler
@@ -51,7 +56,7 @@ akışı değil, 409 çıkış yolu + toplu yanıtta çakışma sayısı (§2.3,
   dilde merge edilmiş** script varsa **409** ("Bu case'in web testi TypeScript ile merge edildi; dil
   değiştirmek için önce mevcut testi kaldırın"). `_eski_prlari_kapat` yalnız tam hat yolunda.
 - DB'de (platform, dil) çift CHECK'i yoktur (MİM-L4: göç penceresinde eski core'un yazdığı satırlar;
-  dağıtım runbook'u backfill yapar: `docs/GCP-KURULUM.md` "011 dağıtım sırası").
+  dağıtım runbook'u backfill yapar: `docs/GCP-KURULUM.md` §10.2 adım 7).
 - SCRIPT durum makinesine uç durum **`unverified`** eklenir: `verifying → unverified`,
   `unverified → pending` (başka dilde / yeniden üret), `unverified → closed`. Onay kapısı yok,
   `merged`'e geçiş yok. Sözleşme JSON'u (`review-portal/src/api/sozlesme/durum-makineleri.json`)
@@ -79,7 +84,7 @@ akışı değil, 409 çıkış yolu + toplu yanıtta çakışma sayısı (§2.3,
 - **K-T12:** Tam hat dilinde istek, aynı case+platformda başka dilde `merged` script varken 409; mesaj
   çıkış yolunu söyler ("mevcut test dosyasını silen bir PR'ı merge edin, sonra yeniden üretin").
   Toplu istekte çakışan case sayısı yanıt mesajına yansır ve portal Kod üretimi'nde çakışmaları ve
-  nedenlerini gösterir. Kaldırma ürün akışı değildir (backlog); elle adım `docs/GCP-KURULUM.md` §10.2.
+  nedenlerini gösterir. Kaldırma ürün akışı değildir (backlog); elle adım `docs/GCP-KURULUM.md` §10.2 adım 12.
 - **K-T3 (GitHub kipi):** web + Java üretimi ve Java kardeş koşusu yalnız `java ∈ TP_WEB_DILLERI`
   iken; değilse `/code/languages` Java'yı `kullanilabilir=false` + neden döner. LocalForge'da repodaki
   dosyalar belirler. GitHub kipinde algılama core-api'de `GITHUB_READ_TOKEN`'a bağlıdır.
@@ -180,13 +185,20 @@ akışı değil, 409 çıkış yolu + toplu yanıtta çakışma sayısı (§2.3,
   uygulanır).
 - Forge zorunlu check kuralı (K-T1): `e2e-java/` değişen PR `local-ci-web-java`, `e2e/` değişen PR
   `local-ci` ister. Script'siz PR CI'ı değişen yollardan dil(ler)i seçer (ikisi de değiştiyse ikisi de
-  koşar). **K-T11:** script'siz PR'da web test köklerinin (`e2e/`, `e2e-java/`) **dışında** bir
-  değişiklik (uygulama kodu vb.) varsa repodaki **tüm** tam hat dilleri koşar (LocalForge ve GitHub
-  tutarlı); merge kapısı aynı kuralla (`local-ci` + varsa `local-ci-web-java`). Kardeş dağıtımı
+  koşar). **K-T11:** script'siz PR'da test köklerinin (`e2e/`, `e2e-java/`, `e2e-app/`) **dışında**
+  bir değişiklik (uygulama kodu vb.) varsa repodaki **tüm** tam hat dilleri koşar; merge kapısı aynı
+  kuralla (`local-ci` + varsa `local-ci-web-java`). LocalForge ↔ GitHub farkı (MİM-D6): GitHub
+  `web-java.yml` yol süzgeci daha dardır (`demo-app/e2e-java/**`, `api/**`, `web/**`, Java araçları);
+  ör. yalnız `mobile/` ya da `desktop/` değiştiren PR'da GitHub Java'yı koşmaz (no-op yeşil), LocalForge
+  koşar. Kapasite: LocalForge'da uygulama PR'ı yerel CI'ı ~2× yükler (OPS-O3). Kardeş dağıtımı
   `run.ortam.dil_dagitimi`'na yazılır (idempotency; MIMARI-SOZLESME). **K-T10:** GitHub kipinde
   `web-java` check'i `web-java.yml` depoda olduğu sürece **her zaman zorunlu** (iş akışı `changes` +
   no-op ile ilgisiz PR'da hızla yeşil); `TP_WEB_DILLERI` yalnız Java üretimini ve kardeş koşuyu açar
-  (K-T3). ci.yml `test-local` yalnız-Java PR'da no-op (OPS-L2). `TP_REQUIRED_CHECKS`'e dil/platform
+  (K-T3). **K-T13:** core'un GitHub merge kapısı zorunlu listeyi **base ∪ head** ağacından hesaplar
+  (`web-java.yml` birinde varsa `web-java` zorunlu); ağaç okunamaz ya da `truncated` ise kapalı taraf
+  (`web-java` zorunlu). Portal aynası aynı listeyi core'dan okur. `web-java.yml`'yi silen PR için önce
+  ruleset'ten çıkarılır, PR insan olarak merge edilir (runbook §10.2 adım 11). ci.yml `test-local`
+  yalnız-Java PR'da no-op (OPS-L2). `TP_REQUIRED_CHECKS`'e dil/platform
   check'i yazılmaz (her PR'da zorunlu olur).
 - Triage: Java mı sorusu **dile/rapora** bakar (`platform=="web"` kısa devresi kalkar). Playwright
   Java kalıpları: `com.microsoft.playwright.TimeoutError` / "waiting for locator" → locator;
@@ -241,11 +253,20 @@ koşularının kapasite izlemesi (OPS-L7). Tur 2: başka dilde merge edilmiş te
 kaldırılması (K-T12).
 
 ## 6. Operasyon (D6)
-Ortam değişkenleri (`TP_WEB_DILLERI`, `TP_PLATFORMS`, `TP_E2E_JAVA_ROOT`): `.env.example`,
+Ortam değişkenleri (`TP_WEB_DILLERI`, `TP_PLATFORMS`, `TP_E2E_JAVA_ROOT`, `TP_E2E_APP_ROOT`): `.env.example`,
 `docker-compose.yml`, `docs/MIMARI-SOZLESME.md` §6. Dağıtım sırası, geri dönüş ve backfill:
-`docs/GCP-KURULUM.md` "011 dağıtım sırası". Mevcut LocalForge'a e2e-java eklemek:
-`make forge-sync-dizin D=e2e-java B=--baseline` (tur 2: kök konteynerde `safe.directory`
-`GIT_CONFIG_GLOBAL`'dan; ref'ler tek atomik fetch ile, yarım durum yok). Ruleset'e `web-java`:
-`scripts/github-ruleset.sh --add-checks web-java` (mevcut platform check'leri korunur). GitHub demo deposu: `scripts/github-demo-repo-init.sh`
+`docs/GCP-KURULUM.md` §10.2 (adım 0–8; Java'yı açma adım 10). **K-T14:** 011 e2e-app güvenilir pom'unu
+(`demo-app/e2e-app/pom.xml` ↔ `toolchain/e2e-app-deps/pom.xml`) da değiştirir; toolchain adımının
+(adım 4) hemen ardından e2e-app ve e2e-java depo/forge'da eşitlenir (adım 5), aradaki pencerede Java
+koşusu/onarımı tetiklenmez, açık PR dalları güncellenir, geri dönüşte pom da eskiye döner.
+LocalForge: `make forge-sync-dizin D=e2e-app K=uretilen` ve `D=e2e-java K=uretilen` (`--koru`:
+merge edilmiş üretilen testler forge main'deki hâliyle kalır; main demo-baseline'daysa `B=--baseline`);
+GitHub: `scripts/github-demo-repo-init.sh --push --update` PR'ı (üretilen test dizinleri uzak main'deki
+hâliyle kalır) adım 4'ün hemen ardından merge edilir. sync-dizin: kök konteynerde `safe.directory`
+`GIT_CONFIG_GLOBAL`'dan; ref'ler tek atomik fetch ile (`--no-write-fetch-head`), yarım durum yok; tüm
+git çağrıları `core.hooksPath=/dev/null` (forge deposunun hook'ları çalışmaz); volume yoksa
+oluşturmadan hata. Ruleset'e `web-java`:
+`scripts/github-ruleset.sh --add-checks web-java` (mevcut platform check'leri korunur; mevcut liste
+boşsa `--checks` tabanı; `--apply` canlı ruleset'i okur, `--existing-json` yalnız kuru çalışma). GitHub demo deposu: `scripts/github-demo-repo-init.sh`
 web-java.yml + `toolchain/java-araclar` + `toolchain/e2e-java-deps` taşır. Playwright yükseltmesi:
 `docs/PLAYWRIGHT-YUKSELTME.md`, `make playwright-surum-denetle`.

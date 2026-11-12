@@ -344,13 +344,28 @@ port açılmaz. Özet (ayrıntı ve sorun giderme: [WINDOWS-GCP.md](WINDOWS-GCP.
 `specs/011-uretim-dili` script tablosuna `dil` / `dil_kaynagi`, `script_codegen.kaynak_kod` ve SCRIPT
 durumu `unverified` ekler (göç `0021_script_dil`). Toolchain ile core birlikte değişir (check adı
 `local-ci-web-java`, `/check` gövdesi `{lang, platform}`); sıra önemlidir. `git pull && make up`
-yerine aşağıdaki adımları izle (VM).
+yerine aşağıdaki adımları izle (VM). Bu bölümdeki atıflar "§10.2 adım N" biçimindedir (N aşağıdaki
+dağıtım sırasındaki numara).
+
+**Güvenilir pom (K-T14).** 011, `demo-app/e2e-app/pom.xml` ile `toolchain/e2e-app-deps/pom.xml`'i de
+değiştirir (Extent, `argLine`, `tp.java.tmpdir`; `e2e-java` için aynısı). Toolchain her Java koşusunda
+(uygulama koşusu, onarım doğrulaması) commit'teki pom'u imajdaki güvenilir kopyayla bayt bayt
+karşılaştırır. Yeni toolchain imajı (adım 4) forge/demo deposundaki **eski** e2e-app pom'unu görünce
+koşu "pom.xml imajdaki güvenilir kopyadan farklı" hatasıyla düşer; tersi (eski imaj + yeni pom) de
+öyle. Bu yüzden adım 4'ün **hemen ardından** e2e-app ve e2e-java depo/forge'da eşitlenir (adım 5).
+**Adım 4 ile adım 5'in bitişi arasında Java uygulama koşusu ya da onarım TETİKLEMEYİN** (Koşular'dan
+elle koşu, Jira "QA To Do" tetiği, onarım; gece koşusu saatine denk getirmeyin); bu pencerede düşen
+koşuyu adım 5'ten sonra yeniden başlatın. **Açık PR'lar:** eski main'den açılmış dallar eski pom'u
+taşır; adım 5'ten sonra açık uygulama/Java PR'larını (`gh pr list --state open`) GitHub'da
+"Update branch" ile (ya da `git rebase origin/main`) güncelleyin; LocalForge'da açık PR dalı
+güncellenemez: dağıtımdan önce merge edin ya da portaldan kapatıp adım 5'ten sonra yeniden üretin.
 
 **Ortam değişkenleri (`.env`, GitHub kipi):**
 
 | Değişken | Değer | Not |
 |---|---|---|
 | `TP_E2E_JAVA_ROOT` | `demo-app/e2e-java` | toolchain-worker + test-runner; boş = `e2e-java` (LocalForge). GitHub kipinde varsayılanda kalırsa toolchain-worker başlangıçta `UYARI:` yazar ve `/health` `java_kokleri` uyarı gösterir |
+| `TP_E2E_APP_ROOT` | `demo-app/e2e-app` | toolchain-worker + test-runner (009'dan beri; değişmez); boş = `e2e-app` (LocalForge). Pom kilidi (K-T14) bu kökteki `pom.xml`'i karşılaştırır |
 | `TP_REQUIRED_CHECKS` | genelde **boş** | core-api + core-worker (`x-core-env`); yazılan her check HER PR'da zorunlu. Core `web-java` (K-T10) ve `TP_PLATFORMS` check'lerini kendisi ekler; elle yazılırsa ruleset ile aynı tutun |
 | `TP_WEB_DILLERI` | ilk dağıtımda **boş** (= `ts`); Java açılınca `ts,java` | core-api + core-worker; yalnız `ts\|java` geçerli |
 | `TP_PLATFORMS` | değişmez (ör. boş ya da `android,windows`) | core-api de okur (011 ile compose'a eklendi) |
@@ -375,25 +390,51 @@ docker compose exec -T postgres pg_dump -U postgres -d tp -Fc > ~/yedek/tp-oncek
 # 3) Şema 0021 (eski core yeni kolonlarla çalışmaya devam eder: hepsinin sunucu varsayılanı var)
 docker compose run --rm migrate
 # 4) toolchain-worker ve test-runner BİRLİKTE (aynı imaj; check adı ve /check gövdesi birlikte değişir)
+#    UYARI (K-T14): bundan adım 5 bitene kadar Java uygulama koşusu/onarım tetiklemeyin (pom penceresi).
 docker compose up -d --no-build --no-deps --wait toolchain-worker test-runner
-# 5) core-api + core-worker + portal
+# 5) HEMEN ARDINDAN e2e-app + e2e-java'yı depo/forge'da eşitle (K-T14) — aşağıdaki "Adım 5" notu.
+#    GitHub kipinde bu iki komut yerine önceden hazırlanmış güncelleme PR'ını şimdi merge edin.
+#    LocalForge (bu VM): merge edilmiş üretilen testler (uretilen/) forge main'deki hâliyle KALIR.
+#    main demo-baseline'daysa (`scripts/forge-init.sh status` → main_baseline_mi: true) B=--baseline da
+#    ekleyin (make demo-reset yeni pom'u geri almasın).
+make forge-sync-dizin D=e2e-app K=uretilen
+make forge-sync-dizin D=e2e-java K=uretilen
+# 6) core-api + core-worker + portal
 docker compose up -d --no-build --no-deps --wait core-api core-worker review-portal playwright-mcp
-# 6) Backfill (OPS-O2): göç penceresinde ESKİ core'un yazdığı uygulama script'leri sunucu varsayılanı
+# 7) Backfill (OPS-O2): göç penceresinde ESKİ core'un yazdığı uygulama script'leri sunucu varsayılanı
 #    'ts' ile girmiş olabilir. İdempotenttir; her geri dönüş/yeniden yükseltmeden sonra da koşun.
 docker compose exec -T postgres psql -U postgres -d tp -v ON_ERROR_STOP=1 \
   -c "UPDATE script SET dil='java' WHERE platform<>'web' AND dil='ts';"
-# 7) Doğrula
+# 8) Doğrula
 make status && make security-check
 ```
 
-8. **(İsteğe bağlı) e2e-java'yı forge'a ekle.** GitHub kipinde demo deposu:
-   `scripts/github-demo-repo-init.sh --push --update` (Mac; yeni ağaç `demo-app/e2e-java/`,
-   `.github/workflows/web-java.yml`, `toolchain/java-araclar/`, `toolchain/e2e-java-deps/` taşır) →
-   PR'ı insan olarak merge et. Yerel forge (LocalForge) kullanan kurulumda depoyu silmeden:
-   `make forge-sync-dizin D=e2e-java B=--baseline` (main'e tek commit; PR kaydı korunur; `B=--baseline`
-   demo-baseline etiketini ve demo/break-locator'ı da taşır, böylece `make demo-reset` e2e-java'yı
-   silmez — main demo-baseline'da değilse önce `make demo-baseline`).
-9. **Java'yı GitHub'da aç (en son):** 8. adımdaki PR main'e girmeden ve ruleset'e `web-java`
+**Adım 5 — e2e-app + e2e-java eşitleme (K-T14, zorunlu; adım 4'ün hemen ardından):**
+
+   - **LocalForge:** yukarıdaki iki `make forge-sync-dizin … K=uretilen` komutu (main'e dizin başına tek
+     commit, PR kaydı korunur, `uretilen/` altındaki merge edilmiş üretilen testler forge main'deki
+     hâliyle kalır; ürün deposunun `uretilen/` örnekleri forge'a girmez). e2e-java forge'da yoksa
+     ikinci komut onu ekler. `K=uretilen` olmadan çalıştırmayın: merge edilmiş Java testleri silinir.
+     Volume yoksa betik oluşturmadan durur (`COMPOSE_PROJECT_NAME` yanlışsa boş volume bırakmaz).
+     `B=--baseline` olmadan yapılan eşitlemeyi `make demo-reset` (main → demo-baseline) geri alır ve
+     eski pom döner: sıfırlamadan sonra iki komutu `B=--baseline` ile yeniden koşun (`make reset` forge'u
+     çalışma ağacından yeniden kurduğu için gerekmez).
+   - **GitHub kipi:** `scripts/github-demo-repo-init.sh --push --update` (Mac; yeni ağaç e2e-app pom'unu
+     ve `demo-app/e2e-java/`, `.github/workflows/web-java.yml`, `toolchain/java-araclar/`,
+     `toolchain/e2e-java-deps/`'u taşır; merge edilmiş üretilen testler — `demo-app/e2e/tests/generated/`,
+     `demo-app/{e2e-java,e2e-app}/src/test/java/**/uretilen/` — uzak main'deki hâliyle kalır) → PR'ı
+     açın. Pencereyi kısaltmak için PR'ı adım 0'dan ÖNCE açıp CI'ını yeşillendirin, ama merge'ü adım 4'ün
+     **hemen ardından** yapın (önce merge edilirse eski toolchain yeni pom'u reddeder; pencere bu PR'ın
+     merge'üne kadar açıktır). PR farkını gözden geçirin: üretilen test dosyası silinmemeli.
+     Ardından açık PR'ları "Update branch" ile güncelleyin (yukarıdaki "Açık PR'lar").
+
+Sonraki adımlar (8'den sonra):
+
+9. **(İsteğe bağlı) LocalForge'da e2e-java'yı kalıcılaştır.** Adım 5'teki eşitleme `B=--baseline`'sız
+   yapıldıysa ve main sonradan demo-baseline'a döndüyse: `make forge-sync-dizin D=e2e-java B=--baseline
+   K=uretilen` (demo-baseline etiketini ve demo/break-locator'ı da taşır; main demo-baseline'da değilse
+   önce `make demo-baseline`). Aynısı `D=e2e-app` için.
+10. **Java'yı GitHub'da aç (en son):** adım 5'teki PR main'e girmeden ve ruleset'e `web-java`
    eklenmeden `TP_WEB_DILLERI=ts,java` YAZMA: aksi halde Java kardeş koşusu gelmeyen check'i bekler.
    K-T10: `web-java.yml` demo deposunda olduğu sürece `web-java` **her zaman** zorunludur (ilgisiz
    PR'da iş akışı `changes` + no-op ile hızla yeşil olur); `TP_WEB_DILLERI` yalnız Java üretimini ve
@@ -412,23 +453,51 @@ make status && make security-check
    (`gh pr list --state open`) her birine boş commit/rebase gönderin ya da Actions'tan `web-java`'yı
    yeniden tetikleyin; aksi halde merge "Expected — Waiting for status" ile bekler. Sonra
    `.env`'ye `TP_WEB_DILLERI=ts,java` → `docker compose up -d --no-build --no-deps core-api core-worker`.
-   `TP_REQUIRED_CHECKS` boşsa dokunmayın (core `web-java`'yı K-T10'a, platformları `TP_PLATFORMS`'a
-   göre kendisi ekler); elle yazılıyorsa ruleset'le aynı tutun (`web-java` dahil).
-10. **Başka dilde merge edilmiş testi kaldırma (K-T12, elle):** Bir case için TS testi merge edilmişken
+   `TP_REQUIRED_CHECKS` boşsa dokunmayın (core `web-java`'yı K-T10/K-T13'e, platformları
+   `TP_PLATFORMS`'a göre kendisi ekler); elle yazılıyorsa ruleset'le aynı tutun (`web-java` dahil).
+   `--add-checks` mevcut ruleset'te zorunlu check yoksa ya da liste boşsa `--checks` (varsayılan
+   `test-local,ast-guard,semgrep`) ile birleştirir; `--apply` her zaman canlı ruleset'i okur
+   (`--existing-json` yalnız kuru çalışma içindir, `--apply`'da yok sayılır ve farklıysa uyarır).
+   **K-T13:** core'un merge kapısı zorunlu listeyi PR'ın **base ∪ head** ağacından hesaplar:
+   `web-java.yml` ikisinden birinde varsa `web-java` zorunludur; ağaç okunamazsa ya da kesik
+   (`truncated`) gelirse kapalı tarafa düşer (`web-java` zorunlu sayılır).
+   **Kapasite (K-T11):** script'siz PR'da test kökleri (`e2e/`, `e2e-java/`, `e2e-app/`) dışında
+   değişiklik (uygulama kodu vb.) varsa repodaki tüm tam hat dilleri koşar: LocalForge'da böyle bir
+   uygulama PR'ı yerel CI'ı yaklaşık **iki kat** sürer/yükler (TS + Java tarayıcı koşusu; toolchain
+   yuvası iki kez dolar). GitHub'da `web-java.yml`'nin yol süzgeci daha dardır (`demo-app/e2e-java/**`,
+   `demo-app/api/**`, `demo-app/web/**`, Java araçları…): ör. yalnız `demo-app/mobile/**` ya da
+   `demo-app/desktop/**` değiştiren PR'da GitHub Java'yı koşmaz (`web-java` no-op yeşil), LocalForge
+   ise K-T11 gereği koşar.
+11. **`web-java.yml`'yi depodan kaldırma (OPS-D4, K-T13 — yalnız gerekirse; önerilen: bırakın).**
+   K-T13 gereği iş akışını silen PR'ın **base**'inde `web-java.yml` olduğundan `web-java` o PR için
+   zorunludur, ama head'de iş akışı olmadığından GitHub check'i hiç göndermez — PR "Expected — Waiting
+   for status" ile kilitlenir. Sıra: (1) `.env`'de `TP_WEB_DILLERI`'den `java`'yı çıkarın, core'u
+   yeniden oluşturun; (2) ruleset'ten `web-java`'yı çıkarın — `--add-checks` çıkaramaz, tam liste
+   `--checks` ile (önce kuru): `scripts/github-ruleset.sh --checks test-local,ast-guard,semgrep[,platform check'leri] --apply`;
+   (3) silen PR'ı GitHub arayüzünden insan olarak merge edin (core'un kapısı bu PR'da hâlâ `web-java`
+   ister; core üzerinden merge denemeyin); (4) main'de `web-java.yml` kalmayınca core artık `web-java`
+   istemez. `TP_REQUIRED_CHECKS` elle yazılmışsa oradan da çıkarın.
+12. **Başka dilde merge edilmiş testi kaldırma (K-T12, elle):** Bir case için TS testi merge edilmişken
    Java üretmek 409 döner ("mevcut test dosyasını silen bir PR'ı merge edin, sonra yeniden üretin").
    Ürün bunu otomatik yapmaz (backlog). Elle: demo deposunda `demo-app/e2e/tests/generated/<case>.spec.ts`
    (ya da `demo-app/e2e-java/.../uretilen/<Case>Test.java`) dosyasını silen bir PR açın, insan olarak
    merge edin (CODEOWNERS onayı gerekir), sonra portaldan Kod üretimi'nde case'i diğer dille yeniden
    üretin. LocalForge'da (demo/prova) elle PR açma yolu yoktur: forge `main`'ine doğrudan yazmayın;
    `make reset` forge'u demo-baseline'a döndürür (merge edilmiş TÜM üretilen testler gider).
-   `make forge-sync-dizin D=e2e` kullanmayın — forge'da merge edilmiş diğer üretilen testleri de siler.
+   `make forge-sync-dizin D=e2e` yalnız `K=tests/generated` ile kullanılabilir (merge edilmiş TS
+   testleri korunur); `K`'sız forge'da merge edilmiş diğer üretilen testleri de siler.
 
 **Geri dönüş (önerilen: şema kalır):**
 
 Önce: açık **web + Java PR'larını** (kod üretimi/onarım; `ortam.dil = java`) kapatın ya da merge edin —
 eski core bu PR'ları TS sanır, Java kardeş koşusu ve `local-ci-web-java`/`web-java` kapısını bilmez.
 Ruleset'te `web-java` kalırsa ve `web-java.yml` depoda kalırsa check gelmeye devam eder (sorun değil);
-iş akışını depodan kaldırırsanız ruleset'ten de çıkarın (aksi halde PR'lar bekler).
+iş akışını depodan kaldırırsanız önce ruleset'ten çıkarın (§10.2 adım 11 sırası; aksi halde PR'lar
+bekler). **Pom'lar da eskiye döner (K-T14):** eski toolchain imajının güvenilir pom'u eskidir; depo/forge
+e2e-app pom'u yeni kalırsa geri dönüşten sonra her Java uygulama koşusu "pom.xml imajdaki güvenilir
+kopyadan farklı" ile düşer. Bu yüzden b) ile c) arasında e2e-app eşitlenir (aşağıda b2; kuyruk boş ve
+tetikler durmuş olduğundan pencere sorun olmaz). e2e-java için gerekmez (eski toolchain web + Java
+koşturmaz; dosyalar depoda kalabilir).
 
 ```bash
 cd /opt/testingprobe
@@ -437,9 +506,19 @@ for i in core toolchain toolchain-mcp review-portal; do
   docker tag testingprobe-$i:local testingprobe-$i:yeni-011
 done
 # b) Kuyruğu boşalt: tetikleri durdur (TP_WEB_DILLERI'yi .env'den kaldır, Jira/forge tetiklerini
-#    beklet), koşan/kuyruktaki işler bitene kadar bekle — sıfır olmalı:
+#    beklet), koşan/kuyruktaki işler bitene kadar bekle — iki sorgu da BOŞ/sıfır olmalı
+#    (job = Postgres iş kuyruğu: kod üretimi, onarım, CI, triage...; run = koşu kayıtları):
+docker compose exec -T postgres psql -U postgres -d tp -tAc \
+  "SELECT tur, count(*) FROM job WHERE durum IN ('queued','retry','running') GROUP BY tur;"
 docker compose exec -T postgres psql -U postgres -d tp -tAc \
   "SELECT count(*) FROM run WHERE sonuc IN ('queued','running');"
+# b2) e2e-app pom'unu eskiye döndür (K-T14; YENİ betiklerle, c'den ÖNCE — eski kodda sync-dizin yok).
+#     LocalForge: eski commit'in e2e-app'i geçici dizinden, merge edilmiş testler korunarak:
+ESKI=$(mktemp -d) && git archive <önceki commit> demo-app/e2e-app | tar -x -C "$ESKI"
+TP_FORGE_SRC="$ESKI/demo-app" scripts/forge-init.sh sync-dizin e2e-app --koru uretilen
+#     GitHub kipi: demo deposunda yalnız demo-app/e2e-app/pom.xml'i eski hâline getiren bir PR açıp
+#     (içerik: git show <önceki commit>:demo-app/e2e-app/pom.xml) insan olarak merge edin.
+#     github-demo-repo-init.sh --update'i eski commit'ten KOŞMAYIN: eski sürüm üretilen testleri korumaz.
 # c) Çalışma ağacını ÖNCE eski commit'e al (compose dosyası ve betikler imajlarla aynı sürüm olsun)
 git checkout <önceki commit>
 # d) Eski imajları geri etiketle ve yalnız servisleri yeniden oluştur.
@@ -452,7 +531,7 @@ docker compose up -d --no-build --no-deps --force-recreate \
 ```
 
 Şema 0021'de kalır: eski core yeni kolonları bilmez, sunucu varsayılanlarıyla yazar. Yeniden
-yükseltmede 6. adımdaki backfill'i tekrar koş. `make up` / `git pull` ile ileri dönmeden önce
+yükseltmede §10.2 adım 7'deki backfill'i tekrar koş ve adım 5'i (pom eşitleme) yinele. `make up` / `git pull` ile ileri dönmeden önce
 çalışma ağacının yeni koda geçtiğinden emin ol.
 
 **Şema geri alma (downgrade) — yalnız zorunluysa, yedekten dönmek daha güvenlidir:**

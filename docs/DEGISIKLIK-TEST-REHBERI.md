@@ -52,9 +52,11 @@ Demo reposu: https://github.com/ThinkGOtr/testingprobe-demo-app
 
 ## 4a. Üretim dili (011): web + Java ve doğrulanmamış diller
 
-Ön koşul: 011 dağıtımı yapıldı (`docs/GCP-KURULUM.md` §10.2). GitHub kipinde web + Java için demo
-deposunda `demo-app/e2e-java/` + `web-java.yml` merge edilmiş, ruleset'te `web-java` var ve `.env`'de
-`TP_WEB_DILLERI=ts,java`; LocalForge'da `make forge-sync-dizin D=e2e-java B=--baseline` yapılmış.
+Ön koşul: 011 dağıtımı yapıldı (`docs/GCP-KURULUM.md` §10.2 adım 0–8, e2e-app/e2e-java eşitlemesi
+adım 5 dahil). GitHub kipinde web + Java için demo deposunda `demo-app/e2e-java/` + `web-java.yml`
+merge edilmiş, ruleset'te `web-java` var ve `.env`'de `TP_WEB_DILLERI=ts,java` (§10.2 adım 10);
+LocalForge'da `make forge-sync-dizin D=e2e-app K=uretilen` ve `make forge-sync-dizin D=e2e-java
+K=uretilen` yapılmış (main demo-baseline'daysa `B=--baseline` ile).
 Sunucu ve mühendis rolleri dil seçiciyi görür; Kod üretimi/Koşular ekranlarındaki rol kısıtı arayüz
 düzenidir, yetki sınırı değildir (üretim ucu engineer ister).
 

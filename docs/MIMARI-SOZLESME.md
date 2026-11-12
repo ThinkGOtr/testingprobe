@@ -233,22 +233,23 @@ NOT NULL, sunucu varsayılanı `'ts'`, CHECK `script_dil_ck`; backfill web→`ts
 `script.dil_kaynagi` (`algilandi|secildi|varsayilan`, varsayılan `varsayilan`), `script_codegen.kaynak_kod`
 (TEXT NULL; yalnız doğrulanmamış dillerde render edilen kaynak, forge'a commit edilmez). Geçerli
 (platform, dil): web × her dil; uygulama × yalnız `java` (DB'de çift CHECK'i yok — göç penceresi;
-runbook backfill'i `docs/GCP-KURULUM.md`). SCRIPT durum makinesine uç durum `unverified`
+runbook backfill'i `docs/GCP-KURULUM.md` §10.2 adım 7). SCRIPT durum makinesine uç durum `unverified`
 (`verifying → unverified → pending|closed`; onay/merge yok). Etkin script anahtarı (case, platform)
 kalır; **`unverified` etkin sayılmaz** (K-T4): doğrulanmamış üretim aynı case+platformun
 `pr_open`/`merged`/devam eden script'ine dokunmaz (kapatma, forge'a yazma yok); eski `unverified`
 kayıtlar yenisi gelince `closed`. Tam hat dilinde istek, aynı case+platformda başka dilde
 `merged` script varsa 409 — mesaj çıkış yolunu söyler ("mevcut test dosyasını silen bir PR'ı merge
 edin, sonra yeniden üretin"); toplu istekte çakışan case sayısı yanıt mesajına ve portala yansır;
-kaldırma ürün akışı değildir (K-T12; elle adım `docs/GCP-KURULUM.md` §10.2). `_eski_prlari_kapat` yalnız tam hat yolunda çalışır. Koşu kaydı dili
+kaldırma ürün akışı değildir (K-T12; elle adım `docs/GCP-KURULUM.md` §10.2 adım 12). `_eski_prlari_kapat` yalnız tam hat yolunda çalışır. Koşu kaydı dili
 **`run.ortam.dil`**'de taşır (`ts|java`; yoksa `ts` sayılır; idempotency kilidi ve etkin koşu
 araması web'de dile göre ayrılır, portal koşu listesinde dil rozeti gösterir). Script'siz web
 koşusunda kardeş dil dağıtımı **`run.ortam.dil_dagitimi`**'na yazılır (`["ts","java"]` gibi; ilk
 eleman bu koşunun dili, diğerleri `ortam.kardes_kosu` = bu koşu olan kardeş koşulardır). Alanın
 varlığı dağıtımın yapıldığını gösterir (yeniden denemede tekrarlanmaz); kardeş koşularda yazılmaz.
-K-T11: script'siz PR'da web test köklerinin (`e2e/`, `e2e-java/`) DIŞINDA değişiklik varsa repodaki
-tüm tam hat dilleri dağıtılır (LocalForge ve GitHub tutarlı); yalnız test kökü değişen PR'da
-değişen kökün dili.
+K-T11: script'siz PR'da test köklerinin (`e2e/`, `e2e-java/`, `e2e-app/`) DIŞINDA değişiklik varsa
+repodaki tüm tam hat dilleri dağıtılır; yalnız test kökü değişen PR'da değişen kökün dili. GitHub'da
+`web-java.yml` yol süzgeci daha dardır (ör. yalnız `mobile/`/`desktop/` değişen PR'da Java koşmaz,
+`web-java` no-op yeşil; LocalForge koşar).
 
 **Faz 4 tablolar:** 0011 `failure_ek` (failure ile 1:1, cascade: `anahtar` (koşu+test, tekil),
 `kaynak` ∈ ci|codegen|kirma, `script_id`, `kanit` (özet + toolchain ham kaydı `ham{failure, statuses,
@@ -1087,6 +1088,15 @@ döndü. `SessionDep` artık `scope="function"` (commit yanıttan önce); satır
   `local-ci,local-ci-web-java` YAZMAYIN: yapılandırılmış liste her PR'da zorunludur ve yalnız TS
   değiştiren PR'ları (Java koşusu gelmez) kilitler. GitHub ruleset'i:
   `test-local,ast-guard,semgrep,web-java` + `TP_PLATFORMS` platform check'leri.
+- GitHub merge kapısı (K-T13): zorunlu liste PR'ın **base ∪ head** ağacından (`web-java.yml` birinde
+  varsa `web-java`); ağaç okunamaz ya da `truncated` ise kapalı taraf (`web-java` zorunlu). Portal
+  aynası listeyi core'dan okur. `web-java.yml`'yi silen PR: önce ruleset'ten çıkar, sonra insan
+  merge'ü (`docs/GCP-KURULUM.md` §10.2 adım 11).
+- Güvenilir pom (K-T14): toolchain `check_deps` commit'teki pom'u imajdaki kopyayla
+  (`TP_E2E_APP_ROOT`/`pom.xml` ↔ `toolchain/e2e-app-deps/pom.xml`; e2e-java için `e2e-java-deps`)
+  bayt bayt karşılaştırır. Pom'u değiştiren dağıtımda toolchain imajının hemen ardından depo/forge
+  eşitlenir (`docs/GCP-KURULUM.md` §10.2 adım 5; LocalForge `make forge-sync-dizin D=e2e-app
+  K=uretilen` — `--koru` merge edilmiş üretilen testleri forge main'deki hâliyle bırakır).
 
 ## 7. Kalite kapısı (her şerit)
 - Python: `uv run ruff check`, `uv run ruff format --check`, `uv run pytest` yeşil.

@@ -175,7 +175,7 @@ Tüm hedefler repo kökünden çalışır; çıkış kodu `0` = başarı. `make 
 | `make demo-baseline` | Forge main → demo-baseline + demo-app-web yeniden derleme (PR kaydı korunur) |
 | `make locator-break-verify` | Çevrimdışı ön kontrol: kırılma → yalnızca add-to-cart locator hatası → testId onarımı → yeşil |
 | `make forge-init [F=--force]` | Yerel forge deposunu hazırlar (`make up` zaten çağırır) |
-| `make forge-sync-dizin D=<dizin> [B=--baseline]` | Mevcut yerel forge'a `demo-app/<dizin>`'i (ör. `e2e-java`) main'e tek commit ile ekler/eşitler; PR kaydını silmez (`--force`'un aksine). `B=--baseline` demo-baseline'ı da taşır |
+| `make forge-sync-dizin D=<dizin> [B=--baseline] [K=uretilen]` | Mevcut yerel forge'a `demo-app/<dizin>`'i (ör. `e2e-java`) main'e tek commit ile ekler/eşitler; PR kaydını silmez (`--force`'un aksine). `B=--baseline` demo-baseline'ı da taşır; `K=<alt-yol>` (ör. `uretilen`, `tests/generated`) o yolları forge main'deki hâliyle bırakır (merge edilmiş üretilen testler; 011 pom eşitlemesi: `docs/GCP-KURULUM.md` §10.2 adım 5) |
 | `make playwright-surum-denetle` | Playwright sürüm sabitlerini (`.playwright-version`, toolchain/MCP/e2e manifestleri, imaj, Java sürücü çekirdeği, pom kilidi) denetler; yükseltme listesi [docs/PLAYWRIGHT-YUKSELTME.md](docs/PLAYWRIGHT-YUKSELTME.md) |
 
 **Gerçek sistemler**
