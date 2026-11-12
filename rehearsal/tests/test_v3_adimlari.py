@@ -81,7 +81,7 @@ def test_model_uret_oge_sayisi_sapinca_fail(baglam):
         },
         {f"/requirements/{RID}/generate-cases": {"kip": "iki_tur", "asama": "model"}},
     )
-    with pytest.raises(Basarisiz, match="18 kapsam öğesi"):
+    with pytest.raises(Basarisiz, match="21 kapsam öğesi"):
         steps.model_uret(_hazir(baglam(), api))
 
 
