@@ -14,9 +14,9 @@ Sync Impact Report
 - Templates requiring updates: yok (şablonlar kuralı çalışma anında okur) ✅; bağlı belgeler
   docs/TEKNIK-TASARIM.md v1.8 (§3 satır 4–6, §7, §8.4–8.7), docs/MIMARI-SOZLESME.md,
   specs/011-uretim-dili/plan.md §4 aynı dalda güncellendi ✅
-- Onay durumu: teknik lider ⏳ + ürün sahibi ⏳ (Governance); 011 ürün sahibi kararları K1–K3
-  (2026-11-11) içeriği onaylı, metin onayı main birleştirme koşuludur
-- Follow-up TODOs: 2.1.0 onayı; onaycı isimlerinin F0 notuna işlenmesi
+- Onay durumu: teknik lider ✅ + ürün sahibi ✅ — onaylandı (2026-11-12, proje sahibi onayı);
+  011 ürün sahibi kararları K1–K3 (2026-11-11) ile birlikte metin onayı tamam
+- Follow-up TODOs: onaycı isimlerinin F0 notuna işlenmesi
 - Önceki: 2.0.0 → 2.0.1 (PATCH: İlke VII'deki kimlik servisi cümlesi koda uygun hale
   getirildi — giden alanlar tam listelendi (`uid`, `auth_time`, `acr`, `session_epoch_ms`) ve
   bağlama API'sinin rol hesaplarının `kullanici_adi`/`ad_soyad`/`rol`'ünü yalnız aiprobe-home
@@ -223,4 +223,4 @@ ve etkisi yazılır ve teknik lider ile ürün sahibi tarafından onaylanır. S�
 kaldırma veya yeniden tanımlama MAJOR, yeni ilke veya bölüm MINOR, açıklama ve ifade düzeltmeleri
 PATCH. Çalışma zamanı rehberi için `docs/TEKNIK-TASARIM.md` ve `CLAUDE.md` kullanılır.
 
-**Version**: 2.1.0 | **Ratified**: 2026-10-30 | **Last Amended**: 2026-11-11
+**Version**: 2.1.0 | **Ratified**: 2026-10-30 | **Last Amended**: 2026-11-12
