@@ -176,7 +176,8 @@ async function giris(page: Page, rol: string) {
   await page.getByLabel("Parola").fill(PAROLA);
   await page.getByRole("button", { name: "Giriş yap" }).click();
   await expect(page.getByRole("navigation", { name: "Ana menü" })).toBeVisible();
-  await expect(page.locator(".kullanici-ad")).toHaveText(rol);
+  // Üst çubuk görünen adı gösterir; kullanıcı adı başlıkta "(rol)" olarak durur.
+  await expect(page.locator(".kullanici-ad")).toHaveAttribute("title", new RegExp(`\\(${rol}\\)$`));
   rolSimdi = rol;
 }
 
