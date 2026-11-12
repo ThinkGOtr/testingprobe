@@ -281,6 +281,13 @@ turTesti("tur: tamamlanmış demo akışının ekranları (salt okuma)", async (
       await expect(page.getByText("F0 ölçümü", { exact: false })).toHaveCount(0);
     }
   });
+  await adim(page, "Tasarım modeli onaylı, review ve denetim (KABUL)", async () => {
+    await page.goto(`/gereksinimler/${req.id}`);
+    await expect(page.getByTestId("tasarim-modeli-paneli").getByTestId("model-kararlar")).toContainText("Onay — analist");
+    await page.goto(`/gereksinimler/${req.id}/caseler`);
+    await expect(page.getByTestId("review-skor")).toBeVisible();
+    await expect(page.locator("#denetim").getByTestId("denetim-karari")).toContainText("KABUL");
+  });
   await adim(page, "Yayın: Jira Test issue'ları", async () => {
     await page.goto(`/gereksinimler/${req.id}/yayin`);
     await expect(page.getByText(/TPD-\d+/).first()).toBeVisible();
@@ -454,16 +461,33 @@ canliTesti("canlı: 14 adım + locator kırma/onarım arayüzden", async ({ page
     () => jira,
   );
   rolSimdi = "analist";
-  await adim(page, "Case üretimi (10 case)", async () => {
+  // 011 K15: iki tur (tasarım modeli → analist onayı → case), otomatik review, denetim kapısı.
+  await adim(page, "Tasarım modeli (iki tur, tur 1)", async () => {
     await expect(async () => {
       await page.reload();
       await expect(page.getByRole("button", { name: "Case üret" })).toBeEnabled({ timeout: 2_000 });
     }).toPass({ timeout: 90_000 });
+    await page.getByTestId("uretim-kipi").getByRole("radio", { name: /İki tur/ }).check();
     await page.getByRole("button", { name: "Case üret" }).click();
+    const panel = page.getByTestId("tasarim-modeli-paneli");
+    await expect(panel.getByRole("button", { name: "Modeli onayla" })).toBeEnabled({ timeout: 120_000 });
+    await expect(panel.getByTestId("model-ozet")).toContainText("18 kapsam öğesi");
+    await expect(panel.getByTestId("model-kontrol-sorunlari")).toHaveCount(0);
+  });
+  await adim(page, "Model onayı (analist)", async () => {
+    const panel = page.getByTestId("tasarim-modeli-paneli");
+    await panel.getByRole("button", { name: "Modeli onayla" }).click();
+    await expect(panel.getByTestId("model-kararlar")).toContainText("Onay — analist", { timeout: 30_000 });
+  });
+  await adim(page, "Case üretimi (tur 2, onaylı modelden 10 case)", async () => {
+    await page.getByTestId("tasarim-modeli-paneli").getByRole("button", { name: "Case'leri üret" }).click();
     await expect(page.getByRole("link", { name: "Case review" })).toBeVisible({ timeout: 120_000 });
   });
-  await adim(page, "QA: 10 case onayı", async () => {
+  await adim(page, "Otomatik review (P8): skor 10/12", async () => {
     await page.getByRole("link", { name: "Case review" }).click();
+    await expect(page.getByTestId("review-skor")).toContainText("10/12", { timeout: 90_000 });
+  });
+  await adim(page, "QA: 10 case onayı", async () => {
     const onayla = page.getByRole("button", { name: "Onayla", exact: true });
     await expect(onayla.first()).toBeVisible({ timeout: 30_000 });
     for (let i = 0; i < 20 && (await onayla.count()) > 0; i++) {
@@ -471,6 +495,12 @@ canliTesti("canlı: 14 adım + locator kırma/onarım arayüzden", async ({ page
       await onayla.first().click();
       await expect(onayla).toHaveCount(n - 1, { timeout: 15_000 });
     }
+  });
+  await adim(page, "Denetime gönder (P9) → KABUL", async () => {
+    const denetim = page.locator("#denetim");
+    await denetim.getByRole("button", { name: "Denetime gönder" }).click();
+    await expect(denetim.getByTestId("denetim-karari")).toContainText("KABUL", { timeout: 90_000 });
+    await expect(denetim.getByTestId("denetim-yayin-engeli")).toHaveCount(0);
   });
   await adim(page, "Yayın: önizleme → Jira Test issue'ları", async () => {
     await page.getByRole("link", { name: "Yayın önizleme" }).first().click();

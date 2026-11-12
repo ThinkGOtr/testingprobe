@@ -131,6 +131,28 @@ class Yigin:
             return None
         return [{"mod": s[0], "amac": s[1], "sayi": int(s[2])} for s in satirlar if len(s) == 3]
 
+    def ai_call_kokenleri(
+        self, baslangic_iso: str, amaclar: tuple[str, ...]
+    ) -> list[dict[str, Any]] | None:
+        """Seçili amaçların çağrıları: [{amac, mod, koken, kaynak}] (ai_call.ek, salt okuma)."""
+        # amaclar sabit kod listesidir (dışarıdan gelmez); yine de yalnız [a-z_] kabul edilir.
+        if not all(a.replace("_", "").isalpha() and a.islower() for a in amaclar):
+            raise ValueError(f"geçersiz amaç: {amaclar}")
+        liste = ", ".join(f"'{a}'" for a in amaclar)
+        satirlar = self.psql(
+            "SELECT amac, mod, coalesce(ek->>'replay_kokeni', ''), "
+            "coalesce(ek->>'replay_kaynagi', '') FROM ai_call "
+            f"WHERE olusturma >= '{baslangic_iso}'::timestamptz AND amac IN ({liste}) "
+            "ORDER BY olusturma"
+        )
+        if satirlar is None:
+            return None
+        return [
+            {"amac": s[0], "mod": s[1], "koken": s[2], "kaynak": s[3]}
+            for s in satirlar
+            if len(s) == 4
+        ]
+
     def bot_main_push_dene(self) -> dict[str, Any] | None:
         """Sahte bot push'u: main'e doğrudan commit. {reddedildi, main_degismedi, hata_turu}."""
         r = self._calistir(

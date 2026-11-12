@@ -95,13 +95,28 @@ class Api:
         return {}
 
 
+V3_TEMIZ = [
+    {
+        "amac": a,
+        "mod": "replay",
+        "koken": "golden_matched",
+        "kaynak": f"{a}/golden/f2-kod-hatasi/TPD-1.json",
+    }
+    for a in ("design_model", "case_generation", "case_review", "case_audit")
+]
+
+
 class Yigin:
-    def __init__(self, kipler=None, push=None, sec_kod=0) -> None:
+    def __init__(self, kipler=None, push=None, sec_kod=0, kokenler=V3_TEMIZ) -> None:
         self.kipler, self.push, self.sec_kod = kipler, push, sec_kod
+        self.kokenler = kokenler
         self.hedefler: list[str] = []
 
     def ai_call_kipleri(self, _):
         return self.kipler
+
+    def ai_call_kokenleri(self, _, amaclar):
+        return None if self.kokenler is None else [k for k in self.kokenler if k["amac"] in amaclar]
 
     def bot_main_push_dene(self):
         return self.push
@@ -160,6 +175,27 @@ def test_z1_temiz(baglam):
     b.veri.update(baslangic_iso="x", model_modu="replay")
     steps.son_denetim(b)
     assert {k.sonuc for k in b.kontroller} == {PASS}
+
+
+def test_z1_v3_cagrisi_eksikse_fail(baglam):
+    b = baglam(api=_z1_api())
+    b.yigin = Yigin(
+        kipler=[{"mod": "replay", "amac": "x", "sayi": 15}],
+        kokenler=[k for k in V3_TEMIZ if k["amac"] != "case_audit"],
+    )
+    b.veri.update(baslangic_iso="x", model_modu="replay")
+    with pytest.raises(Basarisiz, match="case_audit"):
+        steps.son_denetim(b)
+
+
+def test_z1_v3_cagrisi_golden_matched_degilse_fail(baglam):
+    b = baglam(api=_z1_api())
+    sapan = [dict(k) for k in V3_TEMIZ]
+    sapan[2]["koken"] = "miss_neutral"
+    b.yigin = Yigin(kipler=[{"mod": "replay", "amac": "x", "sayi": 15}], kokenler=sapan)
+    b.veri.update(baslangic_iso="x", model_modu="replay")
+    with pytest.raises(Basarisiz, match="golden_matched"):
+        steps.son_denetim(b)
 
 
 # ---------------------------------------------------------------- P1
