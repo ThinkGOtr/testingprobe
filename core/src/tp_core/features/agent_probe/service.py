@@ -7,15 +7,24 @@ gelir).
 
 Akış ve durumlar:
 
-1. Analist gereksinimi bir ajan ürününe bağlar (`urun_bagla`). Gereksinimin güncel case'i varsa ya
-   da üretim sürüyorsa bağlanamaz; bağlıyken case üretimi (portal ve IDE) 409 `ajan_urunu` alır.
+1. Analist gereksinimi bir ajan ürününe bağlar (`urun_bagla`). Gereksinimin güncel case'i varsa,
+   case üretimi ya da tasarım modeli (iki tur: `modeling`, `model_ready`) sürüyorsa ya da
+   gereksinim `done` ise bağlanamaz/kaldırılamaz; bağlıyken case üretimi (portal, IDE) ve tasarım
+   modeli üretimi (`model_service.start_model_generation`) 409 `ajan_urunu` alır.
 2. "Agent Probe'da test başlat" (`test_baslat`): yalnız `po_approved` ve PO onayı güncel içerikte;
-   süren talep yokken. Port kaydı açar (talep no `APT-<yıl>-<n>`), satır `queued`.
-3. Sorgulama (`gorunum(..., yenile=True)`, `GET /requirements/{id}/agent-test`): bitmemiş talebin
+   süren talep yokken. Port kaydı açar (talep no `APT-<yıl>-<n>`), satır `queued`. Port çağrısı
+   gereksinim satır kilidi altında YAPILMAZ (ileride http portu): ön denetim kilitsiz, çağrıdan
+   sonra satır kilitlenip engel yeniden denetlenir.
+3. Sorgulama (`yenile`, `POST /requirements/{id}/agent-test/refresh`, analist): bitmemiş talebin
    durumu porttan okunur ve yazılır (queued → running → passed | failed | error; geri gitmez).
-4. Sonuç bir kez işlenir (`islenme`):
+   `GET /requirements/{id}/agent-test` yan etkisizdir (yalnız okur).
+4. Sonuç bir kez işlenir (`islenme`; talep satırı `FOR UPDATE` ile tazelenir, eşzamanlı iki
+   işleme yarışmaz):
    - `passed` → gereksinim `po_approved → done` (kapı: PO onayı güncel; koşul: bu içerik için geçen
-     ajan testi). PO onayı bu arada geçersizleştiyse geçiş yapılmaz, `surec = onay_gecersiz`.
+     **gerçek** ajan testi). PO onayı bu arada geçersizleştiyse geçiş yapılmaz,
+     `surec = onay_gecersiz`. **Simülasyon** talebi (`simulasyon=True`) gereksinimi ilerletmez:
+     sonuç gösterilir, `surec = simule` (güvenlik #5). Demo için `TP_AGENT_PROBE_SIM_TAMAMLAR=on`
+     ile açılabilir (varsayılan kapalı).
    - `failed` → `surec = bulgu`: kalan senaryolar talebin sonucunda listelenir; gereksinim
      `po_approved` kalır, ajan düzeltilince test yeniden başlatılır. Bug taslağı ÜRETİLMEZ: Testing
      Probe'un bug akışı CI koşusundaki bir hataya (`failure`) bağlıdır ve Jira'ya yayın kapısıyla
@@ -27,7 +36,10 @@ Her adım `audit_on_commit` ile denetim zincirine yazılır.
 
 from __future__ import annotations
 
+import logging
+import os
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, Final
 
@@ -46,7 +58,19 @@ from tp_core.workflow.service import (
     transition,
 )
 
+log = logging.getLogger(__name__)
+
 AKTOR: Final = "agent-probe"
+SIM_TAMAMLAR_ORTAMI: Final = "TP_AGENT_PROBE_SIM_TAMAMLAR"
+# Bağlantının değiştirilemediği gereksinim durumları (case/tasarım modeli akışı ya da tamamlandı).
+BAGLANTI_KILITLI: Final = frozenset(
+    {"generating", "cases_ready", "modeling", "model_ready", "done"}
+)
+# Durum makinesi koruması (`workflow.states.REQUIREMENT`): kayıt edilebilir biçim (D1 bağlar).
+DONE_GECISI: Final = ("po_approved", "done")
+DONE_KORUMASI_ACIKLAMASI: Final = (
+    "yalnız Agent Probe testi geçen AI ajan ürünü gereksinimi case'siz tamamlanır"
+)
 BITMEMIS: Final = frozenset({"queued", "running"})
 SON_DURUMLAR: Final = frozenset({"passed", "failed", "error"})
 _SIRA: Final = {"queued": 0, "running": 1, "passed": 2, "failed": 2, "error": 2}
@@ -85,8 +109,16 @@ class GereksinimYok(WorkflowError):
 # ------------------------------------------------------------------ sorgular
 
 
-def baglanti(session: Session, requirement_id: uuid.UUID) -> AjanUrunuBaglantisi | None:
-    return session.get(AjanUrunuBaglantisi, requirement_id)
+def baglanti(
+    session: Session, requirement_id: uuid.UUID, *, tazele: bool = False
+) -> AjanUrunuBaglantisi | None:
+    if not tazele:
+        return session.get(AjanUrunuBaglantisi, requirement_id)
+    return session.scalars(
+        select(AjanUrunuBaglantisi)
+        .where(AjanUrunuBaglantisi.requirement_id == requirement_id)
+        .execution_options(populate_existing=True)
+    ).first()
 
 
 def talepler(session: Session, requirement_id: uuid.UUID) -> list[AjanTestiTalebi]:
@@ -113,8 +145,20 @@ def ajan_urunu_engeli(session: Session, requirement_id: uuid.UUID) -> None:
         )
 
 
+def sim_tamamlar() -> bool:
+    """`TP_AGENT_PROBE_SIM_TAMAMLAR=on`: simülasyon sonucu gereksinimi `done`'a taşıyabilir
+    (yalnız demo; varsayılan kapalı)."""
+    return (os.environ.get(SIM_TAMAMLAR_ORTAMI) or "").strip().lower() in (
+        "1",
+        "on",
+        "true",
+        "acik",
+    )
+
+
 def ajan_testi_gecti(req: Any) -> bool:
-    """Durum makinesi koşulu (`po_approved → done`): bağlı ürünün son talebi bu içerikte geçti."""
+    """Durum makinesi koşulu (`po_approved → done`): bağlı ürünün son talebi bu içerikte geçti ve
+    talep gerçek Agent Probe sonucudur (simülasyon yalnız `TP_AGENT_PROBE_SIM_TAMAMLAR=on` iken)."""
     session = object_session(req)
     if session is None:
         return False
@@ -126,13 +170,28 @@ def ajan_testi_gecti(req: Any) -> bool:
         and son.urun_kodu == b.urun_kodu
         and son.durum == "passed"
         and son.gereksinim_hash == content_hash_of(req)
+        and (not son.simulasyon or sim_tamamlar())
     )
+
+
+def done_korumasini_kaydet(
+    kaydet: Callable[[str, str, str, Callable[[Any], bool]], None],
+) -> None:
+    """`po_approved → done` korumasını durum makinesine kaydeder (D1'in kayıt/enjeksiyon kancası):
+    `kaydet(kaynak_durum, hedef_durum, aciklama, kosul)`. Koşul `ajan_testi_gecti`dir."""
+    kaynak, hedef = DONE_GECISI
+    kaydet(kaynak, hedef, DONE_KORUMASI_ACIKLAMASI, ajan_testi_gecti)
 
 
 def _gereksinim(
     session: Session, requirement_id: uuid.UUID, *, kilitle: bool = False
 ) -> Requirement:
-    req = session.get(Requirement, requirement_id, with_for_update=kilitle or None)
+    req = session.get(
+        Requirement,
+        requirement_id,
+        with_for_update=kilitle or None,
+        populate_existing=kilitle,
+    )
     if req is None:
         raise GereksinimYok("Gereksinim bulunamadı")
     return req
@@ -197,10 +256,18 @@ def baslatma_engeli(session: Session, req: Requirement) -> str | None:
 def urun_bagla(
     session: Session, requirement_id: uuid.UUID, urun_kodu: str | None, user: Principal
 ) -> None:
+    # Ürün listesi port çağrısıdır: satır kilidi alınmadan önce denetlenir.
+    if urun_kodu is not None and _urun(urun_kodu) is None:
+        raise AjanUrunuBaglanamaz("Ürün Agent Probe'da hazır değil ya da yok.")
     req = _gereksinim(session, requirement_id, kilitle=True)
     son = son_talep(session, req.id)
     if son is not None and son.durum in BITMEMIS:
         raise AjanUrunuBaglanamaz("Süren bir ajan testi varken ürün bağlantısı değiştirilemez.")
+    if req.durum in BAGLANTI_KILITLI:
+        raise AjanUrunuBaglanamaz(
+            "Gereksinim case üretimi, tasarım modeli ya da tamamlanmış durumda "
+            f"({req.durum}); ajan ürünü bağlantısı değiştirilemez."
+        )
     mevcut = baglanti(session, req.id)
     if urun_kodu is None:
         if mevcut is not None:
@@ -213,12 +280,10 @@ def urun_bagla(
                 {"urun_kodu": mevcut.urun_kodu},
             )
         return
-    if req.durum in ("generating", "cases_ready") or _aktif_case_var(session, req.id):
+    if _aktif_case_var(session, req.id):
         raise AjanUrunuBaglanamaz(
             "Bu gereksinim için case üretilmiş ya da üretim sürüyor; ajan ürününe bağlanamaz."
         )
-    if _urun(urun_kodu) is None:
-        raise AjanUrunuBaglanamaz("Ürün Agent Probe'da hazır değil ya da yok.")
     if mevcut is None:
         session.add(
             AjanUrunuBaglantisi(
@@ -248,22 +313,41 @@ def _gereksinim_ozeti(req: Requirement) -> dict[str, Any]:
 
 
 def test_baslat(session: Session, requirement_id: uuid.UUID, user: Principal) -> AjanTestiTalebi:
-    req = _gereksinim(session, requirement_id, kilitle=True)
+    """Ön denetim kilitsiz → port çağrısı (satır kilidi YOK) → satır kilidi + engel yeniden
+    denetimi → kayıt. Yarışta kaybeden istek 409 alır; açılmış uzak talep kaydı (yetim) günlüğe
+    ve denetim zincirine yazılmaz (işlem geri alınır), uyarı olarak loglanır."""
+    req = _gereksinim(session, requirement_id)
     engel = baslatma_engeli(session, req)
     if engel is not None:
         raise AjanTestiBaslatilamaz(engel)
     b = baglanti(session, req.id)
     assert b is not None
+    urun_kodu = b.urun_kodu
+    icerik_hash = content_hash_of(req)
+    ozet = _gereksinim_ozeti(req)
     port = _port()
     try:
-        bilet = port.start_agent_test(b.urun_kodu, req.id, _gereksinim_ozeti(req))
+        bilet = port.start_agent_test(urun_kodu, req.id, ozet)
     except WorkflowError:
         raise
     except Exception as exc:
         raise AgentProbeErisilemiyor("Agent Probe'a test talebi atılamadı") from exc
+    req = _gereksinim(session, requirement_id, kilitle=True)
+    b = baglanti(session, req.id, tazele=True)
+    engel = baslatma_engeli(session, req)
+    if engel is None and (
+        b is None or b.urun_kodu != urun_kodu or content_hash_of(req) != icerik_hash
+    ):
+        engel = "Gereksinim ya da ürün bağlantısı talep sırasında değişti; yeniden deneyin."
+    if engel is not None:
+        log.warning(
+            "ajan testi talebi %s kayda alınmadı (eşzamanlı değişiklik); Agent Probe'da yetim",
+            bilet.talep_no,
+        )
+        raise AjanTestiBaslatilamaz(engel)
     talep = AjanTestiTalebi(
         requirement_id=req.id,
-        urun_kodu=b.urun_kodu,
+        urun_kodu=urun_kodu,
         talep_no=bilet.talep_no,
         durum=bilet.durum,
         ozet=bilet.ozet,
@@ -271,7 +355,7 @@ def test_baslat(session: Session, requirement_id: uuid.UUID, user: Principal) ->
         url=bilet.url,
         simulasyon=bilet.simulasyon,
         baslatan=user.kullanici_adi,
-        gereksinim_hash=content_hash_of(req),
+        gereksinim_hash=icerik_hash,
     )
     session.add(talep)
     session.flush()
@@ -319,7 +403,13 @@ def _isle(session: Session, req: Requirement, talep: AjanTestiTalebi) -> None:
     if talep.durum not in SON_DURUMLAR or talep.islenme is not None:
         return
     talep.islenme = datetime.now(UTC)
-    if talep.durum == "passed":
+    if talep.durum == "passed" and talep.simulasyon and not sim_tamamlar():
+        talep.surec = "simule"
+        talep.surec_notu = (
+            "Simülasyon sonucu: senaryolar geçti, ancak simüle edilmiş sonuç gereksinimi "
+            "tamamlanmış saymaz. Gerçek Agent Probe sonucu gerekir."
+        )
+    elif talep.durum == "passed":
         if req.durum == "po_approved" and ajan_testi_gecti(req):
             try:
                 with session.begin_nested():
@@ -370,25 +460,33 @@ def _isle(session: Session, req: Requirement, talep: AjanTestiTalebi) -> None:
 
 
 def yenile(session: Session, requirement_id: uuid.UUID) -> None:
-    """Sorgulama: bitmemiş son talebin durumunu porttan okur, sonucu işler. Port erişilemezse
-    mevcut kayıt gösterilir (sorgulama hatası talebi `error` yapmaz; yeniden denenir)."""
+    """Sorgulama (`POST …/agent-test/refresh`): bitmemiş son talebin durumunu porttan okur, sonucu
+    işler. Port çağrısı kilitsizdir; yazmadan önce gereksinim ve talep satırı `FOR UPDATE` ile
+    tazelenir (eşzamanlı iki yenileme sonucu iki kez işleyemez). Port erişilemezse mevcut kayıt
+    kalır (sorgulama hatası talebi `error` yapmaz; yeniden denenir)."""
     son = son_talep(session, requirement_id)
     if son is None:
         return
+    bilet: AgentTestTicket | None = None
     if son.durum in BITMEMIS:
         try:
             bilet = _port().get_agent_test(son.talep_no)
         except Exception:
             return
-        req = _gereksinim(session, requirement_id, kilitle=True)
-        session.refresh(son, with_for_update=True)
+    elif son.islenme is not None:
+        return
+    req = _gereksinim(session, requirement_id, kilitle=True)
+    session.refresh(son, with_for_update=True)
+    if bilet is not None:
         _uygula(session, son, bilet)
         session.flush()
-        _isle(session, req, son)
-    elif son.islenme is None:
-        req = _gereksinim(session, requirement_id, kilitle=True)
-        _isle(session, req, son)
+    _isle(session, req, son)
     session.flush()
+
+
+def yenilenebilir(talep: AjanTestiTalebi | None) -> bool:
+    """Portal: yenileme (`POST …/refresh`) gerekir mi (bitmemiş ya da işlenmemiş son talep)."""
+    return talep is not None and (talep.durum in BITMEMIS or talep.islenme is None)
 
 
 # ------------------------------------------------------------------ görünüm
@@ -434,6 +532,8 @@ def gorunum(session: Session, requirement_id: uuid.UUID) -> dict[str, Any]:
         "baglayan": b.baglayan if b else None,
         "baglanma": _iso(b.guncelleme) if b else None,
         "simulasyon": True,
+        "sim_tamamlar": sim_tamamlar(),
+        "yenilenebilir": yenilenebilir(liste[0] if liste else None),
         "baslatilabilir": engel is None,
         "engel": engel,
         "talep": talep_ozeti(liste[0]) if liste else None,

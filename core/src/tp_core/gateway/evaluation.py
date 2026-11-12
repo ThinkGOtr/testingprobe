@@ -96,20 +96,26 @@ _PLATFORM_EKLERI = (
 # 011 P5/P6 derinleştirme: prompt + kendi şeması (case_generation kopyası) + amaç ayarı.
 _DERINLESTIRME = ("case-negative", "case-technique")
 
-# 011 F7: asistan denetimi (`assistant-guard` prompt'u, şeması, `assistant_guard` amaç ayarı)
-# asistanın kullanıcıya gösterdiği cevabı belirler (engel/uyarı); `--via-flow` koşusu denetim açık
-# koşar, bu yüzden asistan içeriğine dahildir.
+# 011 F7 asistan içerik kontrolü (`assistant-guard`) KENDİ içerik hash'iyle kapılanır (prompt,
+# şema, `assistant_guard` amaç ayarı); asistan içeriğine dahil edilmez (D4 kararı). Gerekçe: kontrol
+# asistanın cevabını üretmez, yalnız gösterip göstermemeye karar verir; o kararın doğruluğu (yanlış
+# engelleme dahil: temiz soru/cevap vakaları) `assistant-guard` setiyle ölçülür. Asistan hash'ine
+# girdiğinde her eşik/prompt ayarı asistanın tüm `--via-flow` koşusunu (en pahalı set) bayatlatır,
+# kontrolün kendi şema/ayar değişikliği ise hiçbir kapıya takılmazdı (yalnız sürüm). Kontrol
+# değiştiğinde `--bundle assistant --via-flow` koşusu önerilir (uçtan uca etki), kapı değildir.
 ICERIK_KAYNAKLARI: Mapping[str, IcerikKaynagi] = {
     "assistant": IcerikKaynagi(
         dosyalar=(
             "prompts/assistant.md",
             "schemas/assistant.schema.json",
             "schemas/assistant_deep.schema.json",
-            "prompts/assistant-guard.md",
-            "schemas/assistant_guard.schema.json",
         ),
         globlar=("assistant/*.yaml", "assistant/*.json"),
-        model_amaclari=("assistant", "assistant_deep", "assistant_guard"),
+        model_amaclari=("assistant", "assistant_deep"),
+    ),
+    "assistant-guard": IcerikKaynagi(
+        dosyalar=("prompts/assistant-guard.md", "schemas/assistant_guard.schema.json"),
+        model_amaclari=("assistant_guard",),
     ),
     **{
         ek: IcerikKaynagi(

@@ -1,8 +1,10 @@
 """Ajan ürünü bağlama ve Agent Probe ajan testi talebi (011 F6, K10; §4.4 A satırları).
 
 Gerçek Postgres + gerçek API; Agent Probe süreç içi simülatör (`PgDeposu`: kayıt `ajan_testi_talebi`
-satırı), denetlenebilir saat. Durum geçişleri: queued → running → passed (gereksinim `done`) |
-failed (bulgu, gereksinim `po_approved` kalır); case üretimi bağlı gereksinimde 409."""
+satırı), denetlenebilir saat. Durum geçişleri: queued → running → passed (gereksinim `done` yalnız
+`TP_AGENT_PROBE_SIM_TAMAMLAR=on` iken; varsayılan `simule`) | failed (bulgu, gereksinim
+`po_approved` kalır); case üretimi ve tasarım modeli bağlı gereksinimde 409. Durum yalnız
+`POST …/agent-test/refresh` (analist) ile ilerler; GET yan etkisizdir."""
 
 from __future__ import annotations
 
@@ -47,6 +49,17 @@ def _ilerlet(saat: Saat, s: float) -> None:
     saat.t = saat.t + timedelta(seconds=s)
 
 
+def _yenile(api: TestClient, rid: uuid.UUID) -> dict:
+    r = api.post(f"/requirements/{rid}/agent-test/refresh")
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+@pytest.fixture
+def sim_tamamlar(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TP_AGENT_PROBE_SIM_TAMAMLAR", "on")
+
+
 def test_urun_listesi_yalniz_hazir(analist: TestClient, saat: Saat) -> None:
     r = analist.get("/agent-probe/products")
     assert r.status_code == 200, r.text
@@ -56,7 +69,7 @@ def test_urun_listesi_yalniz_hazir(analist: TestClient, saat: Saat) -> None:
 
 
 def test_gecen_ajan_testi_gereksinimi_tamamlar(
-    analist: TestClient, saat: Saat, make_requirement, engine
+    analist: TestClient, saat: Saat, make_requirement, engine, sim_tamamlar
 ) -> None:
     rid = make_requirement()
     r = analist.put(f"/requirements/{rid}/agent-product", json={"urun_kodu": "destek-asistani"})
@@ -78,15 +91,19 @@ def test_gecen_ajan_testi_gereksinimi_tamamlar(
     assert r.status_code == 409
 
     _ilerlet(saat, 10)
-    assert analist.get(f"/requirements/{rid}/agent-test").json()["talep"]["durum"] == "running"
-    _ilerlet(saat, 60)
+    # GET yan etkisizdir: süre geçse de durum yalnız POST refresh ile ilerler.
     v = analist.get(f"/requirements/{rid}/agent-test").json()
+    assert v["talep"]["durum"] == "queued" and v["yenilenebilir"]
+    assert _yenile(analist, rid)["talep"]["durum"] == "running"
+    _ilerlet(saat, 60)
+    assert analist.get(f"/requirements/{rid}/agent-test").json()["talep"]["durum"] == "running"
+    v = _yenile(analist, rid)
     assert v["talep"]["durum"] == "passed" and v["talep"]["surec"] == "tamamlandi"
-    assert v["talep"]["sonuc"]["gecen"] == 3
+    assert v["talep"]["sonuc"]["gecen"] == 3 and not v["yenilenebilir"]
     with session_scope() as s:
         assert s.get(Requirement, rid).durum == "done"
     # Yeniden sorgu idempotent (bir kez işlenir).
-    assert analist.get(f"/requirements/{rid}/agent-test").json()["talep"] == v["talep"]
+    assert _yenile(analist, rid)["talep"] == v["talep"]
     with engine.connect() as c:
         eylemler = [
             r[0]
@@ -115,7 +132,7 @@ def test_kalan_ajan_testi_bulgu_ve_yeniden_test(
     analist.put(f"/requirements/{rid}/agent-product", json={"urun_kodu": "kredi-danismani"})
     analist.post(f"/requirements/{rid}/agent-test")
     _ilerlet(saat, 200)
-    v = analist.get(f"/requirements/{rid}/agent-test").json()
+    v = _yenile(analist, rid)
     assert v["talep"]["durum"] == "failed" and v["talep"]["surec"] == "bulgu"
     assert v["talep"]["sonuc"]["kalan"] == 2
     with session_scope() as s:
@@ -143,10 +160,15 @@ def test_yetki_ve_engeller(api: TestClient, saat: Saat, make_requirement, make_u
     r = api.post(f"/requirements/{rid}/agent-test")
     assert r.status_code == 409 and r.json()["kod"] == "ajan_testi_baslatilamaz"
     assert api.get(f"/requirements/{uuid.uuid4()}/agent-test").status_code == 404
+    assert api.post(f"/requirements/{uuid.uuid4()}/agent-test/refresh").status_code == 404
+    # Yenileme (yan etkili) yalnız analist; GET herkese açık ve yan etkisiz.
+    login(api, make_user("tester"))
+    assert api.post(f"/requirements/{rid}/agent-test/refresh").status_code == 403
+    assert api.get(f"/requirements/{rid}/agent-test").status_code == 200
 
 
 def test_icerik_degisirse_gecen_test_gereksinimi_ilerletmez(
-    analist: TestClient, saat: Saat, make_requirement
+    analist: TestClient, saat: Saat, make_requirement, sim_tamamlar
 ) -> None:
     rid = make_requirement()
     analist.put(f"/requirements/{rid}/agent-product", json={"urun_kodu": "destek-asistani"})
@@ -154,7 +176,7 @@ def test_icerik_degisirse_gecen_test_gereksinimi_ilerletmez(
     with session_scope() as s:
         s.get(Requirement, rid).aciklama = "Değişti"
     _ilerlet(saat, 100)
-    v = analist.get(f"/requirements/{rid}/agent-test").json()
+    v = _yenile(analist, rid)
     assert v["talep"]["durum"] == "passed" and v["talep"]["surec"] == "onay_gecersiz"
     with session_scope() as s:
         assert s.get(Requirement, rid).durum == "po_approved"
@@ -172,3 +194,135 @@ def test_case_varken_baglanamaz(analist: TestClient, saat: Saat, make_requiremen
         )
     r = analist.put(f"/requirements/{rid}/agent-product", json={"urun_kodu": "destek-asistani"})
     assert r.status_code == 409, r.text
+
+
+def test_simulasyon_sonucu_gereksinimi_tamamlamaz(
+    analist: TestClient, saat: Saat, make_requirement, engine
+) -> None:
+    """Güvenlik #5: simüle edilmiş `passed` gerçek `done` geçişi yapmaz (varsayılan)."""
+    rid = make_requirement()
+    analist.put(f"/requirements/{rid}/agent-product", json={"urun_kodu": "destek-asistani"})
+    analist.post(f"/requirements/{rid}/agent-test")
+    _ilerlet(saat, 100)
+    v = _yenile(analist, rid)
+    assert v["talep"]["durum"] == "passed" and v["talep"]["surec"] == "simule"
+    assert "Simülasyon" in v["talep"]["surec_notu"] and v["sim_tamamlar"] is False
+    with session_scope() as s:
+        req = s.get(Requirement, rid)
+        assert req.durum == "po_approved"
+        # Durum makinesi koruması da simülasyonu geçmiş saymaz.
+        from tp_core.features.agent_probe.service import ajan_testi_gecti
+
+        assert ajan_testi_gecti(req) is False
+    with engine.connect() as c:
+        hedefler = [
+            r[0]
+            for r in c.execute(
+                text(
+                    "SELECT ozet->>'to' FROM audit_event WHERE nesne = :n "
+                    "AND eylem = 'requirement.transition'"
+                ),
+                {"n": f"requirement:{rid}"},
+            )
+        ]
+    assert "done" not in hedefler, hedefler
+
+
+@pytest.mark.parametrize("durum", ["modeling", "model_ready", "generating", "cases_ready"])
+def test_model_ve_uretim_durumlarinda_baglanti_degismez(
+    analist: TestClient, saat: Saat, make_requirement, engine, durum: str
+) -> None:
+    rid = make_requirement()
+    assert (
+        analist.put(
+            f"/requirements/{rid}/agent-product", json={"urun_kodu": "destek-asistani"}
+        ).status_code
+        == 200
+    )
+    with engine.begin() as c:  # test kurgusu: durum doğrudan (ORM koruması dışında)
+        c.execute(text("UPDATE requirement SET durum = :d WHERE id = :r"), {"d": durum, "r": rid})
+    for govde in ({"urun_kodu": "kredi-danismani"}, {"urun_kodu": None}):
+        r = analist.put(f"/requirements/{rid}/agent-product", json=govde)
+        assert r.status_code == 409 and r.json()["kod"] == "ajan_urunu_baglanamaz", r.text
+
+
+def test_bagli_gereksinimde_tasarim_modeli_baslatilmaz(
+    analist: TestClient, saat: Saat, make_requirement
+) -> None:
+    """İki tur yolu (POST design-model ve generate-cases kip=iki_tur) da 409 `ajan_urunu`."""
+    rid = make_requirement()
+    analist.put(f"/requirements/{rid}/agent-product", json={"urun_kodu": "destek-asistani"})
+    r = analist.post(f"/requirements/{rid}/design-model")
+    assert r.status_code == 409 and r.json()["kod"] == "ajan_urunu", r.text
+    r = analist.post(f"/requirements/{rid}/generate-cases", json={"kip": "iki_tur"})
+    assert r.status_code == 409 and r.json()["kod"] == "ajan_urunu", r.text
+    with session_scope() as s:
+        assert s.get(Requirement, rid).durum == "po_approved"
+
+
+class _KilitDenetleyenPort(SimAgentProbe):
+    """`start_agent_test` sırasında gereksinim satırının kilitli OLMADIĞINI başka bağlantıdan
+    `FOR UPDATE NOWAIT` ile doğrular (port çağrısı satır kilidi altında yapılmaz)."""
+
+    def __init__(self, testler: SimAjanTestleri, sahip_url: str) -> None:
+        super().__init__(testler)
+        self.url = sahip_url
+        self.kilitliydi: bool | None = None
+
+    def start_agent_test(self, urun_kodu, requirement_id, gereksinim):  # type: ignore[no-untyped-def]
+        import psycopg
+
+        with psycopg.connect(self.url.replace("+psycopg", ""), autocommit=False) as c:
+            try:
+                c.execute(
+                    "SELECT 1 FROM requirement WHERE id = %s FOR UPDATE NOWAIT", (requirement_id,)
+                )
+                self.kilitliydi = False
+            except psycopg.errors.LockNotAvailable:
+                self.kilitliydi = True
+            c.rollback()
+        return super().start_agent_test(urun_kodu, requirement_id, gereksinim)
+
+
+def test_port_cagrisi_satir_kilidi_altinda_yapilmaz(
+    analist: TestClient, saat: Saat, make_requirement, db
+) -> None:
+    port = _KilitDenetleyenPort(SimAjanTestleri(PgDeposu(), saat=saat), db.owner_url)
+    set_agent_probe_factory(lambda: port)
+    rid = make_requirement()
+    analist.put(f"/requirements/{rid}/agent-product", json={"urun_kodu": "destek-asistani"})
+    r = analist.post(f"/requirements/{rid}/agent-test")
+    assert r.status_code == 202, r.text
+    assert port.kilitliydi is False
+
+
+def test_talep_numarasi_diziden_tekil(saat: Saat, db) -> None:
+    """Güvenlik #9: numara `ajan_testi_talebi_no_seq`'ten; ardışık çağrılar çakışmaz."""
+    depo = PgDeposu()
+    numaralar = [depo.sonraki_no(2026) for _ in range(5)]
+    assert len(set(numaralar)) == 5 and numaralar == sorted(numaralar)
+
+
+def test_tp_app_kayit_tablolarinda_yalniz_gereken_yetkiler(db) -> None:
+    """Güvenlik #14 (0027): asistan_denetim S/I; ajan_testi_talebi S/I/U (kod neyi kullanıyorsa)."""
+    import psycopg
+
+    beklenen = {
+        "asistan_denetim": {"SELECT", "INSERT"},
+        "ajan_testi_talebi": {"SELECT", "INSERT", "UPDATE"},
+        "ajan_urunu_baglantisi": {"SELECT", "INSERT", "UPDATE", "DELETE"},
+    }
+    with psycopg.connect(db.app_url.replace("+psycopg", ""), autocommit=True) as c:
+        for tablo, izinli in beklenen.items():
+            for yetki in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE"):
+                var = c.execute(
+                    "SELECT has_table_privilege('tp_app', %s, %s)", (tablo, yetki)
+                ).fetchone()[0]
+                assert var == (yetki in izinli), (tablo, yetki)
+        assert c.execute(
+            "SELECT has_sequence_privilege('tp_app', 'ajan_testi_talebi_no_seq', 'USAGE')"
+        ).fetchone()[0]
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            c.execute("DELETE FROM asistan_denetim")
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            c.execute("DELETE FROM ajan_testi_talebi")

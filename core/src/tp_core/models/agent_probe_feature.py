@@ -6,7 +6,8 @@
   silinir) ve sıcak `requirement` modeline dokunulmaz.
 - `ajan_testi_talebi`: Agent Probe'a atılan ajan testi kaydı (talep no `APT-<yıl>-<n>`), durumu ve
   sonucu. `islenme`: Testing Probe sonucu işledi (geçti → gereksinim `done`; kaldı → bulgu); `surec`
-  işlemenin sonucu. Bu sürümde talepler simülatöre gider (`simulasyon`).
+  işlemenin sonucu (`simule`: simülasyon sonucu gösterildi, gereksinim ilerletilmedi). Bu sürümde
+  talepler simülatöre gider (`simulasyon`); talep no `ajan_testi_talebi_no_seq` dizisinden (0027).
 - `asistan_denetim`: asistan sorusu/cevabı için denetim puanı ve kodun verdiği karar (011 F7).
   `ai_call_id` geçit çağrısıdır (sim kaynağında boş); asistanın soru başı bütçesi bu kolonla denetim
   çağrılarını da sayar.
@@ -25,7 +26,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from tp_core.models.base import Base, guncelleme_col, in_check, olusturma_col, uuid_pk
 
 AJAN_TESTI_DURUM = frozenset({"queued", "running", "passed", "failed", "error"})
-AJAN_TESTI_SUREC = frozenset({"tamamlandi", "bulgu", "onay_gecersiz", "hata"})
+AJAN_TESTI_SUREC = frozenset({"tamamlandi", "bulgu", "onay_gecersiz", "hata", "simule"})
 DENETIM_YON = frozenset({"soru", "cevap"})
 DENETIM_KARAR = frozenset({"gec", "uyar", "engelle"})
 DENETIM_KAYNAK = frozenset({"tp-gecit", "agent-probe", "sim"})
